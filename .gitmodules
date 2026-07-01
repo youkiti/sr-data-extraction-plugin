@@ -1,0 +1,6 @@
+[submodule "tiab-review-plugin"]
+	path = tiab-review-plugin
+	url = https://github.com/youkiti/tiab-review-plugin
+[submodule "sr-query-builder-plugin"]
+	path = sr-query-builder-plugin
+	url = https://github.com/youkiti/sr-query-builder-plugin
