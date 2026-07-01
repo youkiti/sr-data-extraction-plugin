@@ -90,7 +90,7 @@ src/
 │
 ├── features/                      # ドメイン機能（UI に依存しない純粋ロジック）
 │   ├── project/
-│   │   ├── createProject.ts       # スプレッドシート 9 タブ + Drive フォルダ 4 種の生成
+│   │   ├── createProject.ts       # スプレッドシート 12 タブ + Drive フォルダ 4 種の生成
 │   │   ├── selectProject.ts
 │   │   └── projectStore.ts
 │   ├── documents/
@@ -110,19 +110,20 @@ src/
 │   │   ├── planRun.ts             # document × スキーマのバッチ分割 + トークン / コスト概算
 │   │   ├── executeRun.ts          # 実行・進捗・partial_failure 処理
 │   │   ├── validateAiOutput.ts    # zod 検証 + 「値と quote の矛盾 → confidence=low 強制」
-│   │   └── extractionRepository.ts
+│   │   ├── evidenceRepository.ts  # Evidence タブ I/O（追記のみ）
+│   │   └── annotationRepository.ts# StudyData / ResultsData の annotator 行 I/O
 │   ├── anchoring/                 # 技術的中核（requirements.md §5）
 │   │   ├── normalizeText.ts       # 空白圧縮 / ハイフネーション結合 / リガチャ / NFKC
 │   │   ├── anchorQuote.ts         # exact → normalized → fuzzy の段階的マッチング
 │   │   ├── fuzzyMatch.ts          # スライディングウィンドウ + 編集距離（quote 長の 15% 閾値）
 │   │   └── highlightMap.ts        # マッチ文字範囲 → テキスト層 span 座標への写像
 │   ├── verification/
-│   │   ├── decide.ts              # accept / edit / reject / not_reported の状態遷移
+│   │   ├── decide.ts              # accept / edit / reject / not_reported → annotator 行更新 + Decisions 追記
 │   │   └── undoHistory.ts
 │   └── export/
-│       ├── buildLongCsv.ts
-│       ├── buildWideCsv.ts        # 1 行 = study × arm（Q6）、outcome は {outcome}__{stat} 列展開
-│       ├── buildAuditCsv.ts
+│       ├── buildStudyWideCsv.ts   # StudyData の確定 annotator 行（Q6）
+│       ├── buildResultsLongCsv.ts # ResultsData の long（arm / outcome / RoB）
+│       ├── buildAuditCsv.ts       # Evidence + Decisions の結合
 │       └── csvEncode.ts           # UTF-8 BOM 付き
 │
 ├── lib/                           # 外部 API / 低レベルユーティリティ
@@ -145,10 +146,11 @@ src/
 ├── domain/                        # 型定義・スキーマ（純粋型、runtime 依存ゼロ）
 │   ├── project.ts / document.ts / protocol.ts
 │   ├── schemaField.ts / schemaVersion.ts
-│   ├── extraction.ts / extractionRun.ts
+│   ├── annotation.ts              # annotator / annotator_type と StudyData・ResultsData 行の型
+│   ├── evidence.ts / decision.ts / extractionRun.ts
 │   ├── anchor.ts                  # anchor_status / マッチ結果型
 │   ├── exportLog.ts / llmApiLog.ts
-│   └── sheetsSchema.ts            # 9 タブ（Meta / Protocol / Documents / SchemaVersions / SchemaFields / ExtractionRuns / Extractions / LLMApiLog / ExportLog）の列定義
+│   └── sheetsSchema.ts            # 12 タブ（Meta / Protocol / Documents / SchemaVersions / SchemaFields / ExtractionRuns / StudyData / ResultsData / Evidence / Decisions / LLMApiLog / ExportLog）の列定義。StudyData の値列はスキーマから動的生成
 │
 ├── skills/                        # LLM プロンプト定義（sr-query-builder の skills 管理方式）
 │   ├── draft-schema.md
@@ -200,7 +202,7 @@ extracted_texts/{id}.txt（ページ別）──▶   ├─ exact（ai_page ± 
 anchorQuote() ──文字範囲──▶ highlightMap() ──span 座標──▶ pdfViewer オーバーレイ描画
 ```
 
-- アンカリングは**取り込み済みテキスト層（extracted_texts）に対して実行**し、結果（`anchor_status` + 文字オフセット）を `Extractions` 保存時に確定する。ビューア表示時は座標写像のみ行う（再計算しない）
+- アンカリングは**取り込み済みテキスト層（extracted_texts）に対して実行**し、結果（`anchor_status` + 文字オフセット）を `Evidence` 保存時に確定する。ビューア表示時は座標写像のみ行う（再計算しない）
 
 ## 3. ビルド構成
 

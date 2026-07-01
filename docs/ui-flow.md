@@ -53,15 +53,15 @@ flowchart TD
 
 | ハッシュ | 画面名 | 主な操作 | 主要 Sheets タブ |
 |---|---|---|---|
-| `#/home` | プロジェクト概要 | プロジェクト名・文献数・現在の Protocol / Schema version・検証進捗の表示。各ステップへ移動 | `Meta` / `Documents` / `SchemaVersions` / `Extractions`（集計のみ） |
-| `#/documents` | 文献取り込み（S3） | Drive Picker 起動 → **著作権フリー / 利用許諾済みの確認チェック（必須）** → PDF コピー + テキスト層抽出。文献一覧に `text_status`（`ok` / `partial` / `no_text_layer`）バッジと study_label（AI 提案・編集可）を表示 | `Documents` 追記 |
+| `#/home` | プロジェクト概要 | プロジェクト名・文献数・現在の Protocol / Schema version・検証進捗の表示。各ステップへ移動 | `Meta` / `Documents` / `SchemaVersions` / `StudyData` / `ResultsData`（集計のみ） |
+| `#/documents` | 文献取り込み（S3） | Drive Picker 起動 → PDF コピー + テキスト層抽出。著作権フリー / 利用許諾済みは事前確認の運用（画面上部に注意書きのみ、チェック UI なし）。文献一覧に `text_status`（`ok` / `partial` / `no_text_layer`）バッジと study_label（AI 提案・編集可）を表示 | `Documents` 追記 |
 | `#/protocol` | プロトコル入力（S4） | 手入力 / `.md` / `.docx`。sr-query-builder の protocol 画面 UI を移植（再訪時の 3 モード分岐も踏襲） | `Protocol` 追記 |
 | `#/schema` | スキーマデザイン（S5） | `draft-schema` skill 実行（プロトコル + サンプル論文 1〜3 本）→ 表形式エディタで項目の追加 / 削除 / 型変更 / `extraction_instruction` 編集 → 版として確定。版履歴の閲覧・過去版からの派生もここ | `SchemaVersions` / `SchemaFields` 追記, `LLMApiLog` |
-| `#/pilot` | パイロット抽出（S6） | 対象 2〜3 本を選択 → `extract-data` skill 実行 → S8 と同じ検証 UI（埋め込み）で確認 → 「スキーマを改訂して再パイロット」導線 | `ExtractionRuns`（`pilot`）/ `Extractions` |
-| `#/extract` | 一括抽出（S7） | 対象文献選択（既定: 未抽出の全件）、モデル選択、**コスト概算表示 → 実行確認**、進捗バー、失敗文献のリトライ | `ExtractionRuns`（`full` / `single_document`）/ `Extractions`, `LLMApiLog` |
-| `#/verify` | 検証（S8） | §3 参照。document 選択 → 2 ペイン検証 | `Extractions`（human 列の更新） |
-| `#/dashboard` | ダッシュボード（S9） | document × section の検証進捗マトリクス、anchor 失敗率、not_reported 率。セルクリックで `#/verify` の該当 document / section へ | `Extractions` / `Documents`（読み取りのみ） |
-| `#/export` | エクスポート（S10） | 形式選択（wide / long / audit）、プレビュー、CSV 生成 + Drive 保存 + ダウンロード。`unreviewed` 残存時は警告ダイアログ | `ExportLog` 追記 |
+| `#/pilot` | パイロット抽出（S6） | 対象 2〜3 本を選択 → `extract-data` skill 実行 → S8 と同じ検証 UI（埋め込み）で確認 → 「スキーマを改訂して再パイロット」導線 | `ExtractionRuns`（`pilot`）/ `Evidence` / `StudyData` / `ResultsData` |
+| `#/extract` | 一括抽出（S7） | 対象文献選択（既定: 未抽出の全件）、モデル選択、**コスト概算表示 → 実行確認**、進捗バー、失敗文献のリトライ | `ExtractionRuns`（`full` / `single_document`）/ `Evidence` / `StudyData` / `ResultsData`, `LLMApiLog` |
+| `#/verify` | 検証（S8） | §3 参照。document 選択 → 2 ペイン検証 | `StudyData` / `ResultsData`（自分の annotator 行の更新）+ `Decisions` 追記 |
+| `#/dashboard` | ダッシュボード（S9） | document × section の検証進捗マトリクス、anchor 失敗率、not_reported 率。セルクリックで `#/verify` の該当 document / section へ | `StudyData` / `ResultsData` / `Evidence` / `Documents`（読み取りのみ） |
+| `#/export` | エクスポート（S10） | 形式選択（study_wide / results_long / audit）、プレビュー、CSV 生成 + Drive 保存 + ダウンロード。未検証セル残存時は警告ダイアログ | `ExportLog` 追記 |
 
 ## 3. 検証画面（`#/verify`）の内部構造
 
@@ -77,7 +77,7 @@ flowchart LR
         end
         PDF <-->|双方向ジャンプ| Form
     end
-    Form -->|判定ごと即時保存| Sheets[("Extractions<br/>（失敗時オフラインキュー）")]
+    Form -->|判定ごと即時保存| Sheets[("StudyData / ResultsData + Decisions<br/>（失敗時オフラインキュー）")]
 ```
 
 - **entity タブの順序**: `study` → `arm`（冒頭で arm 数・名称の確定 UI）→ `outcome_result`。arm 未確定のうちは arm / outcome タブをディム表示
@@ -95,9 +95,9 @@ flowchart LR
 | `→ #/schema` | `Protocol` に少なくとも 1 行存在 | サイドバーでディム、クリック時はトーストで誘導 |
 | `→ #/pilot` | 確定済み `schema_version` ≥ 1 **かつ** document ≥ 1（`no_text_layer` の document は `pdf_native` モードでのみ抽出対象 ※requirements.md Q7） | 同上 |
 | `→ #/extract` | 確定済み `schema_version` ≥ 1 | パイロット未実施の場合は警告バナー（「パイロット抽出を推奨します」）を出すが遷移は許可 |
-| `→ #/verify` | `Extractions` に少なくとも 1 行存在 | サイドバーでディム |
+| `→ #/verify` | `Evidence` に少なくとも 1 行存在（AI 抽出実施済み） | サイドバーでディム |
 | `→ #/dashboard` | なし（0 件でも空状態 UI） | — |
-| `→ #/export` | `Extractions` に少なくとも 1 行存在 | サイドバーでディム。`unreviewed` 残存はガードではなく警告ダイアログで扱う |
+| `→ #/export` | `StudyData` / `ResultsData` に少なくとも 1 行存在 | サイドバーでディム。未検証セル残存はガードではなく警告ダイアログで扱う |
 
 ## 5. グローバル UI 要素
 
@@ -138,5 +138,5 @@ flowchart LR
 - 検証画面 2 ペインの最小幅・分割比率（PDF ビューアは最小 600px 幅を想定。メインビューは最小幅 1280px）
 - PDF.js ビューアの仮想化（100 ページ超の PDF でのページ描画戦略）
 - entity タブ（arm / outcome）のインスタンス追加・削除 UI の詳細
-- ハイライト色のトークン定義（accepted = 緑系 / unreviewed = 黄系 / low confidence = 橙系。[requirements.md §5](requirements.md)）
+- ハイライト色のトークン定義（検証済み = 緑系 / 未検証 = 黄系 / low confidence = 橙系。[requirements.md §5](requirements.md)）
 - コスト概算の算出式（トークン単価テーブルの持ち方）
