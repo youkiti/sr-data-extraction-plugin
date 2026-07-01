@@ -224,6 +224,8 @@ sr-query-builder と同一（`dev` / `watch` / `build` / `release:alpha` / `lint
 
 ## 4. テスト方針
 
+実装フェーズの詳細計画（フェーズ分け・E2E seam・PDF fixture 運用・CI）は [test-strategy.md](test-strategy.md) を参照。本節はその前提となる方針を定める。
+
 ### 4.1 カバレッジ目標
 
 sr-query-builder と同じく **`src/` 配下の TS に対して行・分岐カバレッジ 100 %** を `coverageThreshold` で強制。エントリは起動フックのみに薄くし、実処理を `bootstrap*.ts` に分離する。

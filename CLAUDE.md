@@ -12,6 +12,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | [docs/ui-flow.md](docs/ui-flow.md) | 画面遷移図モック（Popup / メインビュー hash ルーティング / ガード条件） |
 | [docs/architecture.md](docs/architecture.md) | `src/` 構成案・ビルド・テスト方針（実装着手時に承認を取る起案） |
 | [docs/ui-states.md](docs/ui-states.md) | UI 状態マトリクス（**全編 target spec**。実装開始後は drift 注記で管理） |
+| [docs/test-strategy.md](docs/test-strategy.md) | テスト戦略。jest 100% + Playwright の流用構成・E2E seam（worker 解決 / 状態注入）・PDF fixture 2 層運用・フェーズ計画・CI 段階導入 |
 
 次のステップ: docs/architecture.md §7 のチェックポイント 1（スケルトン PR での方針承認）→ プロジェクト scaffolding（package.json / webpack / jest / manifest）→ 画面実装。
 
