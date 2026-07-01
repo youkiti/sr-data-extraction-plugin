@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 | ドキュメント | 内容 |
 |---|---|
-| [docs/requirements.md](docs/requirements.md) | 要件定義書 v0.4。データ設計（Sheets 12 タブ、annotator 軸）・機能要件（S1〜S11）・quote アンカリング方式・未決定事項 Q1〜Q9（レビュー済み） |
+| [docs/requirements.md](docs/requirements.md) | 要件定義書 v0.5。データ設計（Sheets 12 タブ、annotator 軸）・機能要件（S1〜S11）・quote アンカリング方式・未決定事項 Q1〜Q9（レビュー済み） |
 | [docs/ui-flow.md](docs/ui-flow.md) | 画面遷移図モック（Popup / メインビュー hash ルーティング / ガード条件） |
 | [docs/architecture.md](docs/architecture.md) | `src/` 構成案・ビルド・テスト方針（実装着手時に承認を取る起案） |
 | [docs/ui-states.md](docs/ui-states.md) | UI 状態マトリクス（**全編 target spec**。実装開始後は drift 注記で管理） |
