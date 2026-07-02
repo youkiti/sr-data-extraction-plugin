@@ -18,7 +18,7 @@
 // 個別実行: node tools/selenium/manualCheck.mjs picker verify
 // エッジ:   node tools/selenium/manualCheck.mjs cancel
 import { createHash } from 'node:crypto';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import readline from 'node:readline';
@@ -76,6 +76,26 @@ const EXTENSION_ID = computeExtensionId();
 const POPUP_URL = `chrome-extension://${EXTENSION_ID}/popup/popup.html`;
 const APP_URL = `chrome-extension://${EXTENSION_ID}/app/app.html`;
 
+/**
+ * 再描画による stale element を吸収して読み直す。
+ * app のビューはストア更新のたびに DOM を丸ごと作り直す（replaceChildren）ため、
+ * 要素の取得〜読み取りの間に再描画が挟まると stale になる。読み取りを 1 つの
+ * クロージャにまとめてリトライする
+ */
+async function retryOnStale(fn, attempts = 5) {
+  for (let i = 0; ; i++) {
+    try {
+      return await fn();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (i >= attempts - 1 || !message.includes('stale element')) {
+        throw err;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 300));
+    }
+  }
+}
+
 /** 表示中の要素を 1 つ返す（見つからなければ null） */
 async function findVisible(driver, selector) {
   for (const element of await driver.findElements(By.css(selector))) {
@@ -86,15 +106,38 @@ async function findVisible(driver, selector) {
   return null;
 }
 
-/** 新しいウィンドウ（タブ）が開くのを待ち、そのハンドルを返す */
-async function waitForNewWindow(driver, beforeHandles, timeoutMs, what) {
+/**
+ * beforeHandles に無い新規タブのうち、URL が prefix で始まるものが開くのを待って
+ * そのハンドルを返す（切替えた状態で返る）。複数の新規タブが開いても（ユーザーの
+ * 先回り操作などで想定外のタブが混ざっても）目的のタブだけを拾う。
+ * フォーカス移動を避けるため、切替えは「未確認の新規ハンドルが現れたとき」だけ行う
+ */
+async function waitForWindowWithUrl(driver, beforeHandles, prefix, timeoutMs, what) {
+  const checked = new Set(beforeHandles);
+  let found = null;
   await driver.wait(
-    async () => (await driver.getAllWindowHandles()).length > beforeHandles.length,
+    async () => {
+      for (const handle of await driver.getAllWindowHandles()) {
+        if (checked.has(handle)) {
+          continue;
+        }
+        checked.add(handle);
+        try {
+          await driver.switchTo().window(handle);
+          if ((await driver.getCurrentUrl()).startsWith(prefix)) {
+            found = handle;
+            return true;
+          }
+        } catch {
+          // 確認中に閉じられたタブは無視する
+        }
+      }
+      return false;
+    },
     timeoutMs,
     `${what} のタブが開きません`,
   );
-  const handles = await driver.getAllWindowHandles();
-  return handles.find((h) => !beforeHandles.includes(h));
+  return found;
 }
 
 /** 指定ハンドルのタブが閉じられるのを待つ */
@@ -201,9 +244,7 @@ async function sceneProject(driver) {
   await driver.findElement(By.css('#popup-create-title')).sendKeys(title);
   await driver.findElement(By.css('#popup-create-form button[type=submit]')).click();
   log(`  「${title}」を作成中（Sheets 13 タブ + Drive フォルダ生成。1 分程度かかります）…`);
-  const appHandle = await waitForNewWindow(driver, before, 3 * 60 * 1000, 'メインビュー');
-  await driver.switchTo().window(appHandle);
-  await driver.wait(until.urlContains('app/app.html'), 10000);
+  await waitForWindowWithUrl(driver, before, APP_URL, 3 * 60 * 1000, 'メインビュー');
   await driver.wait(async () => {
     const status = await driver.findElement(By.css('#app-status')).getText();
     return status.includes('プロジェクト:');
@@ -221,17 +262,13 @@ async function runPickerRound(driver, instruction) {
   await driver.wait(until.elementIsEnabled(importButton), 30000, '取り込みボタンが有効になりません');
   const before = await driver.getAllWindowHandles();
   await importButton.click();
-  const pickerHandle = await waitForNewWindow(driver, before, 30000, 'Picker');
-  await driver.switchTo().window(pickerHandle);
+  const pickerHandle = await waitForWindowWithUrl(driver, before, PICKER_ORIGIN, 30000, 'Picker');
   const pickerUrl = await driver.getCurrentUrl();
-  if (!pickerUrl.startsWith(PICKER_ORIGIN)) {
-    ng(`Picker タブの URL が想定外です: ${pickerUrl}`);
-  } else {
-    ok(`Picker タブが開きました: ${pickerUrl.split('#')[0]}`);
-  }
+  ok(`Picker タブが開きました: ${pickerUrl.split('#')[0]}`);
   log(`\n>>> ${instruction}`);
   log('>>> （タブが閉じるのを自動検知します。Enter は不要）');
-  await driver.switchTo().window(before[before.length - 1]);
+  // Picker タブに表示を残したまま待つ（switchTo はタブを前面化してしまうため呼ばない。
+  // getAllWindowHandles はセッション単位の操作なので現タブが閉じられても失敗しない）
   await waitForWindowClosed(driver, pickerHandle, 10 * 60 * 1000, 'Picker');
   await switchToApp(driver, '#/documents');
   // 取り込みが始まったか（進捗行の出現）を少し待って判定する
@@ -254,30 +291,44 @@ async function scenePicker(driver) {
     throw new Error('picker 失敗');
   }
   ok('取り込み開始（進捗行を表示）');
-  // 完了 = 取り込みボタンが再度有効になる（importing = false）
+  // 完了 = 取り込みボタンが再度有効になる（importing = false）。
+  // 進捗更新のたびに再描画されるため、要素は毎回取り直し stale は「未完了」扱いにする
   await driver.wait(async () => {
-    const button = await driver.findElement(By.css('#documents-import'));
-    return await button.isEnabled();
+    try {
+      return await driver.findElement(By.css('#documents-import')).isEnabled();
+    } catch {
+      return false;
+    }
   }, 10 * 60 * 1000, '取り込みが完了しません');
-  const statuses = await driver.findElements(By.css('.documents__progress-status'));
-  for (const status of statuses) {
-    const text = await status.getText();
+  const progressTexts = await retryOnStale(async () => {
+    const statuses = await driver.findElements(By.css('.documents__progress-status'));
+    return Promise.all(statuses.map((status) => status.getText()));
+  });
+  for (const text of progressTexts) {
     if (text.startsWith('完了')) {
       ok(`進捗行: ${text}`);
     } else {
       ng(`進捗行: ${text}`);
     }
   }
-  const rows = await driver.findElements(By.css('#documents-table tbody tr'));
-  if (rows.length === 0) {
+  const tableRows = await retryOnStale(async () => {
+    const rows = await driver.findElements(By.css('#documents-table tbody tr'));
+    const result = [];
+    for (const row of rows) {
+      const cells = await row.findElements(By.css('td'));
+      result.push({
+        filename: await cells[1].getText(),
+        badge: (await cells[2].getText()).replace(/\s+/g, ' '),
+      });
+    }
+    return result;
+  });
+  if (tableRows.length === 0) {
     ng('一覧に文献が表示されていません');
     throw new Error('picker 失敗');
   }
-  for (const row of rows) {
-    const cells = await row.findElements(By.css('td'));
-    const filename = await cells[1].getText();
-    const badge = await cells[2].getText();
-    ok(`一覧: ${filename} / text_status = ${badge.replace(/\s+/g, ' ')}`);
+  for (const row of tableRows) {
+    ok(`一覧: ${row.filename} / text_status = ${row.badge}`);
   }
   log('  → 手順書 §1-2 の裏取り（Sheets の Documents タブ / Drive の documents/ + extracted_texts/）は目視で確認してください');
 }
@@ -316,12 +367,17 @@ async function sceneVerify(driver) {
     ng(`カウント読込失敗: ${await error.getText()}`);
     throw new Error('verify 失敗');
   }
-  const labels = await driver.findElements(By.css('.home__summary-label'));
-  const values = await driver.findElements(By.css('.home__summary-value'));
+  const summary = await retryOnStale(async () => {
+    const labels = await driver.findElements(By.css('.home__summary-label'));
+    const values = await driver.findElements(By.css('.home__summary-value'));
+    const pairs = [];
+    for (let i = 0; i < labels.length; i++) {
+      pairs.push({ label: await labels[i].getText(), value: await values[i].getText() });
+    }
+    return pairs;
+  });
   let documentsCount = -1;
-  for (let i = 0; i < labels.length; i++) {
-    const label = await labels[i].getText();
-    const value = await values[i].getText();
+  for (const { label, value } of summary) {
     ok(`${label}: ${value}`);
     if (label === '文献数') {
       documentsCount = Number(value);
@@ -349,8 +405,12 @@ const SCENES = {
 // ---------------------------------------------------------------------------
 
 async function main() {
-  const args = process.argv.slice(2).filter((a) => a !== '--keep');
-  const keep = process.argv.includes('--keep');
+  const rawArgs = process.argv.slice(2);
+  const keep = rawArgs.includes('--keep');
+  // --auto: stdin を使わない（別プロセスからの起動用）。失敗時は一時停止せず
+  // スクリーンショット + DOM を .selenium-profile/ へ保存して終了する
+  const auto = rawArgs.includes('--auto');
+  const args = rawArgs.filter((a) => !a.startsWith('--'));
   const names = args.length > 0 ? args : ['login', 'project', 'picker', 'verify'];
   for (const name of names) {
     if (!(name in SCENES)) {
@@ -392,8 +452,21 @@ async function main() {
     failed = true;
     console.error(`\n中断: ${err instanceof Error ? err.message : String(err)}`);
     console.error('結果は docs/manual-testing.md §3 の結果メモに記録してください。');
+    if (auto) {
+      try {
+        writeFileSync(
+          path.join(PROFILE_DIR, 'last-failure.png'),
+          await driver.takeScreenshot(),
+          'base64',
+        );
+        writeFileSync(path.join(PROFILE_DIR, 'last-failure.html'), await driver.getPageSource());
+        console.error(`失敗時の状態を保存しました: ${path.join(PROFILE_DIR, 'last-failure.png')} / .html`);
+      } catch {
+        // 取得できない状態（ブラウザごと落ちた等）は諦める
+      }
+    }
   } finally {
-    if (keep || failed) {
+    if (!auto && (keep || failed)) {
       await pause('ブラウザを開いたままにしています。目視確認が済んだら Enter で終了します');
     }
     await driver.quit().catch(() => undefined);
