@@ -10,6 +10,8 @@ interface PdfTextItemLike {
   width?: number;
   height?: number;
   hasEOL?: boolean;
+  /** TextMarkedContent 側の識別子。読まないが、union を構造的に受けるために宣言する */
+  type?: string;
 }
 
 export interface PdfPageLike {

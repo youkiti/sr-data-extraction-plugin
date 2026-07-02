@@ -12,13 +12,17 @@ export interface ChromeMock {
     };
   };
   runtime: {
+    id: string;
     getURL: jest.Mock;
     onInstalled: { addListener: jest.Mock };
+    onMessageExternal: { addListener: jest.Mock; removeListener: jest.Mock };
     /** chrome.identity 系コールバック API のエラー通知。テストから直接設定する */
     lastError: { message: string } | undefined;
   };
   tabs: {
     create: jest.Mock;
+    remove: jest.Mock;
+    onRemoved: { addListener: jest.Mock; removeListener: jest.Mock };
   };
   identity: {
     getAuthToken: jest.Mock;
@@ -43,12 +47,16 @@ export function installChromeMock(): ChromeMock {
       },
     },
     runtime: {
+      id: 'test-extension-id',
       getURL: jest.fn((path: string) => `chrome-extension://test-extension-id/${path}`),
       onInstalled: { addListener: jest.fn() },
+      onMessageExternal: { addListener: jest.fn(), removeListener: jest.fn() },
       lastError: undefined,
     },
     tabs: {
       create: jest.fn(async () => ({})),
+      remove: jest.fn(async () => undefined),
+      onRemoved: { addListener: jest.fn(), removeListener: jest.fn() },
     },
     identity: {
       // 既定はログイン済み（トークン取得成功）。失敗させたいテストは

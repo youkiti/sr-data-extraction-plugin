@@ -5,7 +5,18 @@ import { createInitialState, createStore, type AppState, type Store } from './st
 import { findRoute, normalizeHash, ROUTES, type RouteHash } from './router';
 import { guardRoute } from './guards';
 import { showToast } from './ui/toast';
+import type { ViewContext } from './views/types';
+import {
+  importFromPicker,
+  loadDocuments,
+  saveStudyLabel,
+  type DocumentsServiceDeps,
+} from './services/documentsService';
+import { createChromeGoogleApiDeps } from './services/factories';
 import { loadCurrentProject } from '../features/project/projectStore';
+import { createChromeProfileDeps } from '../lib/google/identity';
+import { createChromePickerDeps } from '../lib/google/picker';
+import { loadDisposablePdf } from '../lib/pdf/loadPdf';
 
 declare global {
   interface Window {
@@ -25,13 +36,31 @@ export async function seedState(win: Window): Promise<AppState> {
       ...state,
       ...preloaded,
       counts: { ...state.counts, ...(preloaded.counts ?? {}) },
+      documents: { ...state.documents, ...(preloaded.documents ?? {}) },
     };
   }
   return state;
 }
 
+/** app 実行時のサービス依存（documentsService ほか）。テストは fake を注入する */
+export type AppDeps = DocumentsServiceDeps;
+
+/** Chrome ランタイムから AppDeps を組み立てる既定実装 */
+export function createChromeAppDeps(): AppDeps {
+  const google = createChromeGoogleApiDeps();
+  return {
+    google,
+    profile: createChromeProfileDeps(),
+    picker: createChromePickerDeps(google),
+    loadPdf: loadDisposablePdf,
+  };
+}
+
 /** 起動配線を行い、後続の画面実装（services 層）が使うストアを返す */
-export async function bootstrapApp(win: Window): Promise<Store | null> {
+export async function bootstrapApp(
+  win: Window,
+  deps: AppDeps = createChromeAppDeps(),
+): Promise<Store | null> {
   const doc = win.document;
   const statusEl = doc.getElementById('app-status');
   const contextEl = doc.getElementById('app-context');
@@ -45,6 +74,21 @@ export async function bootstrapApp(win: Window): Promise<Store | null> {
 
   const store = createStore(await seedState(win));
   let currentHash: RouteHash = '#/home';
+
+  // view のユーザー操作をサービス層へ委譲するコンテキスト（views/types.ts）
+  const viewContext: ViewContext = {
+    documents: {
+      onImport: () => {
+        void importFromPicker(store, deps);
+      },
+      onReload: () => {
+        void loadDocuments(store, deps, { force: true });
+      },
+      onSaveStudyLabel: (documentId, label) => {
+        void saveStudyLabel(store, deps, documentId, label);
+      },
+    },
+  };
 
   const renderHeader = (state: AppState): void => {
     if (state.currentProject) {
@@ -87,7 +131,7 @@ export async function bootstrapApp(win: Window): Promise<Store | null> {
 
   const renderRoute = (): void => {
     const route = findRoute(currentHash);
-    contentEl.replaceChildren(route.render(store.getState()));
+    contentEl.replaceChildren(route.render(store.getState(), viewContext));
     contextEl.textContent = `${route.label} 画面を表示しています`;
   };
 
@@ -105,6 +149,10 @@ export async function bootstrapApp(win: Window): Promise<Store | null> {
     currentHash = target;
     renderRoute();
     renderNav(store.getState());
+    if (currentHash === '#/documents') {
+      // 初回表示時に一覧を読み込む（読込済みなら loadDocuments 側で no-op）
+      void loadDocuments(store, deps);
+    }
   };
 
   titleButton.addEventListener('click', () => {

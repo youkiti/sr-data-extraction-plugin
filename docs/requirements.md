@@ -113,6 +113,10 @@ https://www.googleapis.com/auth/drive.file     # Drive Picker で選択したフ
   - `https://openrouter.ai/*`（P1）
 - `action.default_popup`: `popup.html`
 - PDF.js の worker は拡張パッケージに同梱（CDN 参照不可、CSP 準拠）
+- **Drive Picker は MV3 の remote hosted code 制約により拡張ページ内で動かせない**ため、
+  ホスト済み HTTPS ページ（`hosted/picker.html`。GitHub Pages へデプロイ）を新規タブで開き、
+  `externally_connectable`（デプロイ先オリジンのみ許可）で選択結果を受け取る
+  【決定 2026-07-02。OAuth トークンは URL に載せず、ページからの ready メッセージへの応答で渡す】
 
 ---
 

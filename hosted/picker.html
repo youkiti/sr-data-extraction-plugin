@@ -1,0 +1,112 @@
+<!doctype html>
+<!--
+  Drive Picker ホストページ（lib/google/picker.ts の対向実装）。
+
+  MV3 では apis.google.com のスクリプトを拡張ページで読み込めないため、
+  このページを HTTPS でホストし（既定: GitHub Pages。lib/google/picker.ts の
+  PICKER_PAGE_URL と manifest.json の externally_connectable.matches に合わせる）、
+  拡張が新規タブで開く。プロトコルは picker.ts 冒頭のコメントを正典とする。
+
+  デプロイ時の設定（このファイル内のプレースホルダを書き換える）:
+  - PICKER_API_KEY : GCP の API キー（Google Picker API を有効化したプロジェクトのもの）
+  - PICKER_APP_ID  : GCP のプロジェクト番号（drive.file スコープの選択ファイルを拡張へ許可するのに必須）
+-->
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SR データ抽出 — Drive Picker</title>
+    <style>
+      body {
+        font-family: "Hiragino Sans", "Noto Sans JP", "Yu Gothic UI", sans-serif;
+        margin: 40px;
+        color: #1f2a26;
+      }
+      .error { color: #b3261e; }
+    </style>
+  </head>
+  <body>
+    <h1>Drive から PDF を選択</h1>
+    <p id="status">読み込み中…</p>
+    <script>
+      // デプロイ時に実値へ書き換える（API キーはブラウザキー = 公開前提の値）
+      var PICKER_API_KEY = '__PICKER_API_KEY__';
+      var PICKER_APP_ID = '__PICKER_APP_ID__';
+
+      var MESSAGE_SOURCE = 'sr-data-extraction-picker';
+      var statusEl = document.getElementById('status');
+
+      function fail(message) {
+        statusEl.textContent = message;
+        statusEl.className = 'error';
+      }
+
+      // 拡張 ID はフラグメントで受け取る（トークンは URL に載せず ready 応答で受け取る）
+      var params = new URLSearchParams(location.hash.slice(1));
+      var extensionId = params.get('extension_id');
+
+      function send(message, callback) {
+        chrome.runtime.sendMessage(extensionId, message, callback);
+      }
+
+      function onPickerAction() {
+        return function (data) {
+          var action = data[google.picker.Response.ACTION];
+          if (action === google.picker.Action.PICKED) {
+            var files = data[google.picker.Response.DOCUMENTS].map(function (doc) {
+              return { id: doc[google.picker.Document.ID], name: doc[google.picker.Document.NAME] };
+            });
+            send({ source: MESSAGE_SOURCE, kind: 'picked', files: files });
+            statusEl.textContent = '選択を拡張へ送信しました。このタブは自動的に閉じます。';
+          } else if (action === google.picker.Action.CANCEL) {
+            send({ source: MESSAGE_SOURCE, kind: 'cancelled' });
+          }
+        };
+      }
+
+      function showPicker(token) {
+        var view = new google.picker.DocsView(google.picker.ViewId.DOCS)
+          .setMimeTypes('application/pdf')
+          .setIncludeFolders(true);
+        new google.picker.PickerBuilder()
+          .enableFeature(google.picker.Feature.MULTISELECT_ENABLED)
+          .setDeveloperKey(PICKER_API_KEY)
+          .setAppId(PICKER_APP_ID)
+          .setOAuthToken(token)
+          .addView(view)
+          .setTitle('取り込む PDF を選択（著作権フリー / 利用許諾済みのもののみ）')
+          .setCallback(onPickerAction())
+          .build()
+          .setVisible(true);
+        statusEl.textContent = 'PDF を選択してください。';
+      }
+
+      function onApiLoaded() {
+        gapi.load('picker', function () {
+          // 拡張へ ready を送り、応答で OAuth トークンを受け取ってから Picker を表示する
+          send({ source: MESSAGE_SOURCE, kind: 'ready' }, function (response) {
+            if (chrome.runtime.lastError || !response || !response.token) {
+              fail('拡張からトークンを受け取れませんでした。拡張のタブから開き直してください。');
+              return;
+            }
+            showPicker(response.token);
+          });
+        });
+      }
+
+      if (!extensionId) {
+        fail('このページは SR データ抽出拡張から開いてください（extension_id がありません）。');
+      } else if (typeof chrome === 'undefined' || !chrome.runtime || !chrome.runtime.sendMessage) {
+        fail('このブラウザでは拡張と通信できません（Chrome で開いてください）。');
+      } else {
+        var script = document.createElement('script');
+        script.src = 'https://apis.google.com/js/api.js';
+        script.onload = onApiLoaded;
+        script.onerror = function () {
+          fail('Google Picker API の読み込みに失敗しました。ネットワークを確認してください。');
+        };
+        document.body.appendChild(script);
+      }
+    </script>
+  </body>
+</html>

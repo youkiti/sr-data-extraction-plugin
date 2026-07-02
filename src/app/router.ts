@@ -1,6 +1,7 @@
 // ハッシュルーティングのルート定義（ui-flow.md §2）。
 // 遷移時のガード適用・描画は bootstrap.ts が行い、本ファイルは定義と正規化のみを持つ
 import type { AppState } from './store';
+import type { ViewContext } from './views/types';
 import { renderHomeView } from './views/homeView';
 import { renderDocumentsView } from './views/documentsView';
 import { renderProtocolView } from './views/protocolView';
@@ -26,7 +27,7 @@ export interface RouteDefinition {
   hash: RouteHash;
   /** サイドバー・スクリーンリーダ通知用の表示名 */
   label: string;
-  render(state: AppState): HTMLElement;
+  render(state: AppState, ctx: ViewContext): HTMLElement;
 }
 
 export const ROUTES: RouteDefinition[] = [

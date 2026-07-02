@@ -23,6 +23,9 @@
     "type": "module"
   },
   "permissions": ["identity", "identity.email", "storage", "tabs"],
+  "externally_connectable": {
+    "matches": ["https://youkiti.github.io/*"]
+  },
   "host_permissions": [
     "https://sheets.googleapis.com/*",
     "https://www.googleapis.com/*",

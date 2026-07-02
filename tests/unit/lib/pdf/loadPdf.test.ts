@@ -1,5 +1,10 @@
 import { GlobalWorkerOptions, getDocument } from 'pdfjs-dist';
-import { PDF_WORKER_ASSET, configurePdfWorker, loadPdf } from '../../../../src/lib/pdf/loadPdf';
+import {
+  PDF_WORKER_ASSET,
+  configurePdfWorker,
+  loadDisposablePdf,
+  loadPdf,
+} from '../../../../src/lib/pdf/loadPdf';
 
 jest.mock('pdfjs-dist', () => ({
   GlobalWorkerOptions: { workerSrc: '' },
@@ -40,5 +45,27 @@ describe('loadPdf', () => {
     const arg = mockedGetDocument.mock.calls[0]?.[0] as { data: Uint8Array };
     expect(arg.data).toBeInstanceOf(Uint8Array);
     expect([...arg.data]).toEqual([1, 2, 3]);
+  });
+});
+
+describe('loadDisposablePdf', () => {
+  test('getPage を委譲し、destroy は loadingTask.destroy へ振り向ける（pdfjs 6.x）', async () => {
+    const page = { pageNumber: 1 };
+    const destroy = jest.fn(async () => undefined);
+    const doc = {
+      numPages: 2,
+      getPage: jest.fn(async () => page),
+      loadingTask: { destroy },
+    };
+    mockedGetDocument.mockReturnValue({
+      promise: Promise.resolve(doc),
+    } as unknown as ReturnType<typeof getDocument>);
+
+    const disposable = await loadDisposablePdf(new Uint8Array([9]).buffer);
+    expect(disposable.numPages).toBe(2);
+    await expect(disposable.getPage(1)).resolves.toBe(page);
+    expect(doc.getPage).toHaveBeenCalledWith(1);
+    await disposable.destroy();
+    expect(destroy).toHaveBeenCalled();
   });
 });

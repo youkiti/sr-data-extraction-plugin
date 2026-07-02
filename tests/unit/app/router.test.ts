@@ -1,5 +1,10 @@
 import { ROUTES, findRoute, normalizeHash } from '../../../src/app/router';
 import { createInitialState } from '../../../src/app/store';
+import type { ViewContext } from '../../../src/app/views/types';
+
+const stubCtx: ViewContext = {
+  documents: { onImport: jest.fn(), onReload: jest.fn(), onSaveStudyLabel: jest.fn() },
+};
 
 describe('normalizeHash', () => {
   test('定義済みハッシュはそのまま返す', () => {
@@ -40,26 +45,26 @@ describe('ROUTES', () => {
   test.each(ROUTES.map((route) => [route.label, route] as const))(
     '%s の render が見出し付きの要素を返す',
     (_label, route) => {
-      const element = route.render(createInitialState());
+      const element = route.render(createInitialState(), stubCtx);
       expect(element).toBeInstanceOf(HTMLElement);
       expect(element.querySelector('h2')?.textContent).toBeTruthy();
     },
   );
 
   test('#/documents は著作権の注意書きを常時表示する（ui-states.md §3）', () => {
-    const element = findRoute('#/documents').render(createInitialState());
+    const element = findRoute('#/documents').render(createInitialState(), stubCtx);
     expect(element.textContent).toContain('著作権フリー / 利用許諾済みの PDF のみ取り込んでください');
   });
 
   test('#/home はプロジェクト名と進捗サマリを表示する（0 件でも崩れない）', () => {
     const state = createInitialState();
-    const emptyView = findRoute('#/home').render(state);
+    const emptyView = findRoute('#/home').render(state, stubCtx);
     expect(emptyView.textContent).toContain('未選択');
     expect(emptyView.querySelectorAll('dd')).toHaveLength(5);
 
     state.currentProject = { projectId: 'p1', spreadsheetId: 's1', driveFolderId: 'f1', name: '肺炎 SR' };
     state.counts.documents = 12;
-    const filledView = findRoute('#/home').render(state);
+    const filledView = findRoute('#/home').render(state, stubCtx);
     expect(filledView.textContent).toContain('肺炎 SR');
     expect(filledView.textContent).toContain('12');
   });

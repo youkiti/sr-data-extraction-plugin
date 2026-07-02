@@ -133,7 +133,10 @@ src/
 ├── lib/                           # 外部 API / 低レベルユーティリティ
 │   ├── google/
 │   │   ├── auth.ts / sheets.ts / drive.ts / identity.ts   # 既存 2 拡張から流用
-│   │   └── picker.ts              # Drive Picker（drive.file スコープ）
+│   │   └── picker.ts              # Drive Picker（drive.file スコープ）。MV3 は apis.google.com を
+│   │                              #   拡張ページで読めないため、ホスト済みページ（hosted/picker.html を
+│   │                              #   GitHub Pages へデプロイ）+ externally_connectable メッセージングで実装
+│   │                              #   【決定 2026-07-02。トークンは URL に載せず ready 応答で受け渡す】
 │   ├── pdf/
 │   │   ├── loadPdf.ts             # pdfjs-dist 初期化（worker は同梱、CSP 準拠。バージョンは 6.1.200 固定）
 │   │   └── textLayer.ts           # ページ別テキスト + span 座標の取得（anchor-spike の抽出ロジックを正式化）
