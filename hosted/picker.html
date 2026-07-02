@@ -65,15 +65,23 @@
       }
 
       function showPicker(token) {
-        var view = new google.picker.DocsView(google.picker.ViewId.DOCS)
+        // ビューは addView した分だけ左側のタブになる。
+        // 既定タブ = マイドライブ（PDF フィルタ + フォルダ階層）、
+        // 補助タブ = 最近使用したファイル / スター付き（PDF フィルタ）
+        var driveView = new google.picker.DocsView(google.picker.ViewId.DOCS)
           .setMimeTypes('application/pdf')
           .setIncludeFolders(true);
+        var starredView = new google.picker.DocsView()
+          .setStarred(true)
+          .setMimeTypes('application/pdf');
         new google.picker.PickerBuilder()
           .enableFeature(google.picker.Feature.MULTISELECT_ENABLED)
           .setDeveloperKey(PICKER_API_KEY)
           .setAppId(PICKER_APP_ID)
           .setOAuthToken(token)
-          .addView(view)
+          .addView(driveView)
+          .addView(google.picker.ViewId.RECENTLY_PICKED)
+          .addView(starredView)
           .setTitle('取り込む PDF を選択（著作権フリー / 利用許諾済みのもののみ）')
           .setCallback(onPickerAction())
           .build()

@@ -85,7 +85,7 @@ npm run manual:check -- cancel    # §1-3 のキャンセル系エッジ
 | 3 | 「新規作成」でプロジェクトを作る | Sheets（13 タブ）+ Drive `SR Data Extraction/{プロジェクト名}/` が生成され（ルートフォルダの色 = アイコン色に近いピンク）、メインビュータブが自動で開く | [ ] |
 | 4 | サイドバーから `#/documents` へ | 空状態 + 著作権の注意書き + 「Drive から PDF を取り込む」ボタン | [ ] |
 | 5 | 「Drive から PDF を取り込む」をクリック | **新規タブ**で `https://youkiti.github.io/sr-data-extraction-plugin/picker.html#extension_id={拡張 ID}` が開く | [ ] |
-| 6 | Picker ページの表示を待つ | 「読み込み中…」→ Google Picker の UI（Drive のファイル一覧。PDF のみ）が描画される。**エラー文言が出ないこと** | [ ] |
+| 6 | Picker ページの表示を待つ | 「読み込み中…」→ Google Picker の UI が描画され、タブ 3 つ（マイドライブ〔PDF のみ〕/ 最近使用したファイル〔PDF 以外も出る = Picker API の仕様で mime フィルタ不可〕/ スター付き〔PDF のみ〕）が並ぶ。**エラー文言が出ないこと** | [ ] |
 | 7 | PDF を 1〜2 本選択して「選択」 | Picker タブが**自動で閉じ**、元のタブに戻る | [ ] |
 | 8 | 取り込み進捗を見る | ファイルごとの進捗行（コピー → テキスト抽出の 2 段階）→ 完了。取り込み中はボタンが無効化される | [ ] |
 | 9 | 一覧を確認 | 取り込んだ PDF が一覧に出て、`text_status` バッジ（ok = 緑）と study_label 入力が使える | [ ] |
