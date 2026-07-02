@@ -20,7 +20,7 @@ import { generateUuid, shortUuid } from '../../utils/uuid';
  * 手順（requirements.md §3.1 / ui-flow.md §1）:
  *
  * 1. project_id（UUID v4）発行
- * 2. Drive トップフォルダ作成（`マイドライブ/sr-data-extraction/{title}_{id_short}/`）
+ * 2. Drive トップフォルダ作成（`マイドライブ/SR Data Extraction/{title}_{id_short}/`）
  * 3. サブフォルダ（documents / extracted_texts / raw_protocols / logs/llm）作成
  * 4. スプレッドシート作成（13 タブを一括初期化）
  * 5. 各タブのヘッダ行書き込み
@@ -31,7 +31,10 @@ import { generateUuid, shortUuid } from '../../utils/uuid';
  * drive_folder_id で紐づけできるため MVP では行わない）。
  */
 
-const ROOT_FOLDER_NAME = 'sr-data-extraction';
+/** ルートフォルダはアプリの正式名称で作る */
+const ROOT_FOLDER_NAME = 'SR Data Extraction';
+/** アイコン背景色（src/icons/）。Drive パレット外の色は最も近い色に丸められる */
+const ROOT_FOLDER_COLOR = '#e9318f';
 
 export interface CreateProjectInput {
   projectTitle: string;
@@ -55,7 +58,7 @@ export interface CreateProjectResult {
  * 純粋でない関数はここから注入する。
  */
 export interface CreateProjectHelpers {
-  /** ルート `sr-data-extraction/` フォルダの ID を取得（無ければ作る）。null でマイドライブ直下にする */
+  /** ルート `SR Data Extraction/` フォルダの ID を取得（無ければ作る）。null でマイドライブ直下にする */
   ensureRootFolder?: (deps: GoogleApiDeps) => Promise<string | null>;
   newUuid?: () => string;
   now?: () => string;
@@ -121,10 +124,13 @@ export async function createProject(
 }
 
 /**
- * `sr-data-extraction` ルートフォルダを確保する既定実装。
- * My Drive ルート直下を検索して既存フォルダを再利用し、無ければ新規作成する。
+ * `SR Data Extraction` ルートフォルダを確保する既定実装。
+ * My Drive ルート直下を検索して既存フォルダを再利用し、無ければ
+ * アイコン色付きで新規作成する。
  */
 async function defaultEnsureRootFolder(deps: GoogleApiDeps): Promise<string> {
-  const folder = await ensureRootFolder(ROOT_FOLDER_NAME, deps);
+  const folder = await ensureRootFolder(ROOT_FOLDER_NAME, deps, {
+    folderColorRgb: ROOT_FOLDER_COLOR,
+  });
   return folder.id;
 }

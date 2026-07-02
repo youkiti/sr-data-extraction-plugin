@@ -18,18 +18,28 @@ interface DriveListResponse {
   files?: DriveFileRef[];
 }
 
+export interface CreateFolderOptions {
+  /**
+   * フォルダ色（例: '#e9318f'）。Drive のパレット外の色は最も近いパレット色に
+   * 自動で丸められる（API 仕様）。
+   */
+  folderColorRgb?: string;
+}
+
 /**
  * Drive にフォルダを作成する。`parentId` を指定すると配下に、null で「マイドライブ直下」。
  */
 export async function createFolder(
   name: string,
   parentId: string | null,
-  deps: GoogleApiDeps
+  deps: GoogleApiDeps,
+  options: CreateFolderOptions = {}
 ): Promise<DriveFileRef> {
   const body = {
     name,
     mimeType: 'application/vnd.google-apps.folder',
     parents: parentId ? [parentId] : undefined,
+    folderColorRgb: options.folderColorRgb,
   };
   const url = `${METADATA_API}?fields=id,webViewLink`;
   const res = await googleFetch(
@@ -114,7 +124,8 @@ export async function uploadTextFile(
  */
 export async function ensureRootFolder(
   name: string,
-  deps: GoogleApiDeps
+  deps: GoogleApiDeps,
+  options: CreateFolderOptions = {}
 ): Promise<DriveFileRef> {
   const escapedName = name.replace(/'/g, "\\'");
   const query = [
@@ -132,7 +143,7 @@ export async function ensureRootFolder(
   if (existing) {
     return existing;
   }
-  return createFolder(name, null, deps);
+  return createFolder(name, null, deps, options);
 }
 
 /**

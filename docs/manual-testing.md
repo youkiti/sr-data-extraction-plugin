@@ -82,7 +82,7 @@ npm run manual:check -- cancel    # §1-3 のキャンセル系エッジ
 |---|---|---|---|
 | 1 | ツールバーの拡張アイコンで Popup を開く | 未ログインならログインボタンが出る | [ ] |
 | 2 | ログイン | Chrome の OAuth 同意画面 → 承諾でログイン済み表示（スコープは spreadsheets + drive.file の 2 つ） | [ ] |
-| 3 | 「新規作成」でプロジェクトを作る | Sheets（13 タブ）+ Drive `sr-data-extraction/{プロジェクト名}/` が生成され、メインビュータブが自動で開く | [ ] |
+| 3 | 「新規作成」でプロジェクトを作る | Sheets（13 タブ）+ Drive `SR Data Extraction/{プロジェクト名}/` が生成され（ルートフォルダの色 = アイコン色に近いピンク）、メインビュータブが自動で開く | [ ] |
 | 4 | サイドバーから `#/documents` へ | 空状態 + 著作権の注意書き + 「Drive から PDF を取り込む」ボタン | [ ] |
 | 5 | 「Drive から PDF を取り込む」をクリック | **新規タブ**で `https://youkiti.github.io/sr-data-extraction-plugin/picker.html#extension_id={拡張 ID}` が開く | [ ] |
 | 6 | Picker ページの表示を待つ | 「読み込み中…」→ Google Picker の UI（Drive のファイル一覧。PDF のみ）が描画される。**エラー文言が出ないこと** | [ ] |

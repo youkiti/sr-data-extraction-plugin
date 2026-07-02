@@ -48,6 +48,15 @@ describe('createFolder', () => {
     await createFolder('root', null, deps);
     const body = JSON.parse((fetch.mock.calls[0][1] as RequestInit).body as string);
     expect(body.parents).toBeUndefined();
+    expect(body.folderColorRgb).toBeUndefined();
+  });
+
+  test('folderColorRgb 指定で色付きフォルダを作成', async () => {
+    const fetch = jest.fn().mockResolvedValue(okJson({ id: 'F1', webViewLink: '' }));
+    const deps = { fetch, getAccessToken: jest.fn().mockResolvedValue('t') };
+    await createFolder('SR Data Extraction', null, deps, { folderColorRgb: '#e9318f' });
+    const body = JSON.parse((fetch.mock.calls[0][1] as RequestInit).body as string);
+    expect(body.folderColorRgb).toBe('#e9318f');
   });
 });
 
@@ -120,27 +129,30 @@ describe('ensureRootFolder', () => {
         okJson({ files: [{ id: 'ROOT1', webViewLink: 'https://drive/root' }] }),
       );
     const deps = { fetch, getAccessToken: jest.fn().mockResolvedValue('t') };
-    const result = await ensureRootFolder('sr-data-extraction', deps);
+    const result = await ensureRootFolder('SR Data Extraction', deps);
     expect(result).toEqual({ id: 'ROOT1', webViewLink: 'https://drive/root' });
     expect(fetch).toHaveBeenCalledTimes(1);
     const [url] = fetch.mock.calls[0] as [string, RequestInit];
     const decoded = decodeURIComponent(url);
     expect(decoded).toContain("'root' in parents");
-    expect(decoded).toContain("name='sr-data-extraction'");
+    expect(decoded).toContain("name='SR Data Extraction'");
   });
 
-  test('既存フォルダが無ければ新規作成する（親 undefined でマイドライブ直下）', async () => {
+  test('既存フォルダが無ければ新規作成する（親 undefined でマイドライブ直下・色指定を引き継ぐ）', async () => {
     const fetch = jest
       .fn()
       .mockResolvedValueOnce(okJson({ files: [] }))
       .mockResolvedValueOnce(okJson({ id: 'ROOT2', webViewLink: 'https://drive/new-root' }));
     const deps = { fetch, getAccessToken: jest.fn().mockResolvedValue('t') };
-    const result = await ensureRootFolder('sr-data-extraction', deps);
+    const result = await ensureRootFolder('SR Data Extraction', deps, {
+      folderColorRgb: '#e9318f',
+    });
     expect(result).toEqual({ id: 'ROOT2', webViewLink: 'https://drive/new-root' });
     expect(fetch).toHaveBeenCalledTimes(2);
     const createBody = JSON.parse((fetch.mock.calls[1] as [string, RequestInit])[1].body as string);
-    expect(createBody.name).toBe('sr-data-extraction');
+    expect(createBody.name).toBe('SR Data Extraction');
     expect(createBody.parents).toBeUndefined();
+    expect(createBody.folderColorRgb).toBe('#e9318f');
   });
 });
 

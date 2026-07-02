@@ -122,7 +122,13 @@ describe('createProject', () => {
     );
     // 既定の ensureRootFolder は My Drive 直下を検索する GET を発行する
     const searchCall = calls[0];
-    expect(decodeURIComponent(searchCall?.url ?? '')).toContain("name='sr-data-extraction'");
+    expect(decodeURIComponent(searchCall?.url ?? '')).toContain("name='SR Data Extraction'");
+    // ルートフォルダの新規作成はアイコン色付き
+    const rootCreate = calls.find((c) => {
+      if (!c.body) return false;
+      return (JSON.parse(c.body) as { name?: string }).name === 'SR Data Extraction';
+    });
+    expect(JSON.parse(rootCreate?.body ?? '{}').folderColorRgb).toBe('#e9318f');
     // 既定の newUuid / now が使われる（形式のみ検証）
     expect(result.meta.projectId).toMatch(/^[0-9a-f-]{36}$/);
     expect(result.meta.createdAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
