@@ -143,3 +143,35 @@ export async function getFileText(fileId: string, deps: GoogleApiDeps): Promise<
   const res = await googleFetch(url, { method: 'GET' }, deps);
   return await res.text();
 }
+
+/**
+ * ファイル ID を指定してバイナリ実体を取得する（PDF のダウンロード用）。`alt=media`。
+ */
+export async function getFileBinary(fileId: string, deps: GoogleApiDeps): Promise<ArrayBuffer> {
+  const url = `${METADATA_API}/${encodeURIComponent(fileId)}?alt=media`;
+  const res = await googleFetch(url, { method: 'GET' }, deps);
+  return await res.arrayBuffer();
+}
+
+/**
+ * ファイルを指定フォルダへコピーする（files.copy）。
+ * 文献取り込み（S3 / ※Q9）の「プロジェクト内コピー = 凍結スナップショット」を作るのに使う。
+ * drive.file スコープでは Picker でユーザーが選択したファイルに対してのみ許可される
+ */
+export async function copyFile(
+  sourceFileId: string,
+  params: { name: string; parentId: string },
+  deps: GoogleApiDeps
+): Promise<DriveFileRef> {
+  const url = `${METADATA_API}/${encodeURIComponent(sourceFileId)}/copy?fields=id,webViewLink`;
+  const res = await googleFetch(
+    url,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: params.name, parents: [params.parentId] }),
+    },
+    deps
+  );
+  return (await res.json()) as DriveFileRef;
+}

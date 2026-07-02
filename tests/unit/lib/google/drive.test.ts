@@ -1,7 +1,9 @@
 import {
+  copyFile,
   createFolder,
   ensureChildFolder,
   ensureRootFolder,
+  getFileBinary,
   getFileText,
   uploadTextFile,
 } from '../../../../src/lib/google/drive';
@@ -149,5 +151,38 @@ describe('getFileText', () => {
     await expect(getFileText('FILE-id', deps)).resolves.toBe('hello world');
     const [url] = fetch.mock.calls[0];
     expect(url).toContain('/drive/v3/files/FILE-id?alt=media');
+  });
+});
+
+describe('getFileBinary', () => {
+  test('alt=media でバイナリ実体を取得', async () => {
+    const bytes = new Uint8Array([1, 2, 3]).buffer;
+    const fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({}),
+      text: async () => '',
+      arrayBuffer: async () => bytes,
+    } as Response);
+    const deps = { fetch, getAccessToken: jest.fn().mockResolvedValue('t') };
+    await expect(getFileBinary('FILE-id', deps)).resolves.toBe(bytes);
+    const [url] = fetch.mock.calls[0];
+    expect(url).toContain('/drive/v3/files/FILE-id?alt=media');
+  });
+});
+
+describe('copyFile', () => {
+  test('files.copy でコピー先フォルダと名前を指定する', async () => {
+    const fetch = jest
+      .fn()
+      .mockResolvedValue(okJson({ id: 'COPY-1', webViewLink: 'https://drive/copy' }));
+    const deps = { fetch, getAccessToken: jest.fn().mockResolvedValue('t') };
+    const result = await copyFile('SRC-1', { name: 'smith2020.pdf', parentId: 'DOCS' }, deps);
+    expect(result).toEqual({ id: 'COPY-1', webViewLink: 'https://drive/copy' });
+    const [url, init] = fetch.mock.calls[0];
+    expect(url).toContain('/drive/v3/files/SRC-1/copy?fields=id,webViewLink');
+    expect((init as RequestInit).method).toBe('POST');
+    const body = JSON.parse((init as RequestInit).body as string);
+    expect(body).toEqual({ name: 'smith2020.pdf', parents: ['DOCS'] });
   });
 });

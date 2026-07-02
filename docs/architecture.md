@@ -94,9 +94,11 @@ src/
 │   │   ├── selectProject.ts
 │   │   └── projectStore.ts
 │   ├── documents/
-│   │   ├── importDocuments.ts     # Picker 選択 → documents/ へコピー（Q9）→ Documents 追記
-│   │   ├── extractTextLayer.ts    # PDF.js でページ別テキスト抽出 → extracted_texts/{id}.txt
+│   │   ├── importDocuments.ts     # Picker 選択 → documents/ へコピー（Q9）→ テキスト抽出 → Documents 追記
+│   │   ├── extractTextLayer.ts    # PDF バイト列 → テキスト層 + text_status + extracted_texts 本文
+│   │   ├── extractedText.ts       # extracted_texts/{id}.txt の形式（form feed 区切り）の serialize / parse
 │   │   ├── detectTextStatus.ts    # ok / partial / no_text_layer 判定
+│   │   ├── loadDocumentPages.ts   # text_ref → ページ別テキスト復元（extractionService へ注入）
 │   │   └── documentRepository.ts
 │   ├── protocol/                  # sr-query-builder から移植（parseDocx / parseMarkdown / repository）
 │   ├── schema/
@@ -133,8 +135,8 @@ src/
 │   │   ├── auth.ts / sheets.ts / drive.ts / identity.ts   # 既存 2 拡張から流用
 │   │   └── picker.ts              # Drive Picker（drive.file スコープ）
 │   ├── pdf/
-│   │   ├── loadPdf.ts             # pdfjs-dist 初期化（worker は同梱、CSP 準拠）
-│   │   └── textLayer.ts           # ページ別テキスト + span 座標の取得
+│   │   ├── loadPdf.ts             # pdfjs-dist 初期化（worker は同梱、CSP 準拠。バージョンは 6.1.200 固定）
+│   │   └── textLayer.ts           # ページ別テキスト + span 座標の取得（anchor-spike の抽出ロジックを正式化）
 │   ├── llm/
 │   │   ├── LLMProvider.ts         # interface（テキスト入力 + PDF 直接入力の両対応 ※Q3）
 │   │   ├── GeminiProvider.ts      # MVP 実装
