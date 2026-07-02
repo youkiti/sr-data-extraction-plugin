@@ -152,12 +152,6 @@ src/
 │   ├── exportLog.ts / llmApiLog.ts
 │   └── sheetsSchema.ts            # 12 タブ（Meta / Protocol / Documents / SchemaVersions / SchemaFields / ExtractionRuns / StudyData / ResultsData / Evidence / Decisions / LLMApiLog / ExportLog）の列定義。StudyData の値列はスキーマから動的生成
 │
-├── skills/                        # LLM プロンプト定義（sr-query-builder の skills 管理方式）
-│   ├── draft-schema.md
-│   ├── extract-data.md
-│   ├── suggest-study-label.md
-│   └── relocate-quote.md          # P1
-│
 ├── styles/
 │   ├── tokens.css                 # tiab-review トンマナのカラートークン + ハイライト色
 │   └── globals.css
@@ -183,7 +177,7 @@ utils
 
 - 上位は下位を import 可、逆は不可。ESLint の `import/no-restricted-paths` で機械的に強制
 - `domain/` は純粋型のみ。runtime バリデーションは `features/*` 側で zod
-- `skills/*.md` は webpack の asset として読み込み、プロンプト版数（ファイルハッシュ or 明示 version）を `LLMApiLog` に記録する
+- LLM プロンプトは `features/*/skills/*.ts` の TS 定数として持ち（sr-query-builder の実装方式に合わせる。当初案の `skills/*.md` asset 読み込みは webpack / jest への loader 追加コストに見合わないため不採用）、明示版数（例: `EXTRACT_DATA_PROMPT_VERSION`）を `LLMApiLog` に記録する
 
 ### 2.2 UI 実装方針
 

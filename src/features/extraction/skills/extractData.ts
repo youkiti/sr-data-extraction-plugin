@@ -1,0 +1,175 @@
+// extract-data skill のプロンプト管理（requirements.md §4.3）
+// - プロンプトは sr-query-builder の skills 管理方式（TS 定数）で持ち、
+//   明示版数 EXTRACT_DATA_PROMPT_VERSION を LLMApiLog に記録する（architecture.md §2.1）
+// - 抽出対象論文は英語を主想定のため、プロンプト本文は英語（requirements.md §6）
+// - LLM 呼び出し自体は executeRun 側の責務（lib/llm 移植後に配線）。ここは
+//   「プロンプト構築 → 構造化出力スキーマ → 応答パース（validateAiOutput へ委譲）」の純粋関数のみ
+import type { EntityLevel, SchemaField } from '../../../domain/schemaField';
+import {
+  AiOutputFormatError,
+  validateAiOutput,
+  type ValidateAiOutputResult,
+} from '../validateAiOutput';
+
+/** LLMApiLog.purpose と対応づける skill 識別子 */
+export const EXTRACT_DATA_SKILL_NAME = 'extract-data';
+
+/** プロンプト版数。プロンプト文言・スキーマを変えたら必ずインクリメントする */
+export const EXTRACT_DATA_PROMPT_VERSION = 1;
+
+/** text_only モードで LLM へ渡すページ別本文（extracted_texts/{id}.txt 由来） */
+export interface ExtractDataPage {
+  /** 1-indexed ページ番号。プロンプト内の [PAGE n] マーカーになる */
+  page: number;
+  text: string;
+}
+
+export interface ExtractDataPromptInput {
+  /** 当該バッチで抽出する項目（同一 schema_version。分割は planRun の責務） */
+  fields: readonly SchemaField[];
+  /** 論文本文（ページ順）。pdf_native モード（※Q3）は lib/llm 移植時に別途対応 */
+  pages: readonly ExtractDataPage[];
+  /** RQ・PICO 等の要約。項目の解釈を安定させる補助コンテキスト（省略可） */
+  protocolContext?: string | null;
+}
+
+/**
+ * システムプロンプト。quote の verbatim 必須化（言い換え禁止・最大 300 文字）と
+ * not_reported / confidence の規約はアンカリング成功率・監査性に直結するため、
+ * 文言を変える場合は EXTRACT_DATA_PROMPT_VERSION を上げる
+ */
+export const EXTRACT_DATA_SYSTEM_PROMPT = `
+You are a meticulous data extraction assistant for a systematic review.
+Extract the requested fields from the research article and return ONLY a JSON array — no markdown fences, no commentary.
+
+Rules:
+- "quote": copy the supporting passage VERBATIM from the article text — character for character, exactly as it appears (including line-break artifacts), no paraphrasing, no ellipsis. At most 300 characters; choose the shortest passage that contains the reported value. Highlighting in the PDF viewer depends on an exact match.
+- Never infer, compute, or guess values that are not explicitly stated. If the article does not report a field, return the item with "not_reported": true, "value": null and "quote": null.
+- "value": report exactly as written in the article. Do not convert units, do not round, do not translate.
+- "page": the 1-indexed page number where the quote appears. Page boundaries are marked as [PAGE n] in the article text.
+- "confidence": self-assess each item as "high", "medium" or "low".
+- "field_id" is the matching key: echo it exactly as listed. Never invent field_ids.
+- Return one item for EVERY listed field and EVERY entity instance it applies to (see the entity_key rules).
+`.trim();
+
+/** entity_key の構成規約（requirements.md §3.3 / utils/entityKey.ts と同一規則） */
+const ENTITY_KEY_RULES: Record<EntityLevel, string> = {
+  study: '- study level: "entity_key" is always "-" (one instance per article).',
+  arm: '- arm level: identify every study arm (group), number them in order of first appearance, and use "arm:1", "arm:2", ... Keep the same numbering consistent across all arm-level and outcome-level items.',
+  outcome_result:
+    '- outcome_result level: use "outcome:<slug>", appending "|arm:<n>" when the value is arm-specific and "|time:<token>" when a timepoint applies (e.g. "outcome:mortality|arm:1|time:30d"). <slug> is a short lowercase snake_case name; never use "|" or ":" inside segment values; reuse the identical slug for the same outcome across fields.',
+  rob_domain: '- rob_domain level: use "rob:<domain_id>" (e.g. "rob:domain_1").',
+};
+
+/** ENTITY_KEY_RULES の出力順（study → arm → outcome_result → rob_domain） */
+const ENTITY_LEVEL_ORDER: readonly EntityLevel[] = ['study', 'arm', 'outcome_result', 'rob_domain'];
+
+/** 1 項目ぶんの定義ブロック。null / 空の補助情報は行ごと省略する */
+function renderField(field: SchemaField): string {
+  const lines = [
+    `- field_id: ${field.fieldId}`,
+    `  field_name: ${field.fieldName}`,
+    `  entity_level: ${field.entityLevel}`,
+    `  data_type: ${field.dataType}`,
+  ];
+  if (field.unit !== null) {
+    lines.push(`  unit: ${field.unit} (report the value as written even if the article uses a different unit)`);
+  }
+  if (field.allowedValues !== null) {
+    lines.push(`  allowed_values: ${field.allowedValues} ("value" must be one of these)`);
+  }
+  if (field.extractionInstruction !== '') {
+    lines.push(`  instruction: ${field.extractionInstruction}`);
+  }
+  if (field.example !== null) {
+    lines.push(`  example: ${field.example}`);
+  }
+  return lines.join('\n');
+}
+
+/**
+ * ユーザープロンプトを組み立てる。
+ * fields は fieldIndex 順に並べ、entity_key 規約は当該バッチに現れる entity_level のぶんだけ提示する
+ */
+export function buildExtractDataUserPrompt(input: ExtractDataPromptInput): string {
+  if (input.fields.length === 0) {
+    throw new Error('extract-data skill に抽出項目が 1 件も渡されていません');
+  }
+  if (input.pages.length === 0) {
+    throw new Error('extract-data skill に本文ページが 1 件も渡されていません');
+  }
+  const sections: string[] = [];
+
+  const protocol = input.protocolContext?.trim() ?? '';
+  if (protocol !== '') {
+    sections.push(`## Protocol context\n\n${protocol}`);
+  }
+
+  const fields = [...input.fields].sort((a, b) => a.fieldIndex - b.fieldIndex);
+  sections.push(`## Fields to extract\n\n${fields.map(renderField).join('\n')}`);
+
+  const presentLevels = new Set(fields.map((field) => field.entityLevel));
+  const rules = ENTITY_LEVEL_ORDER.filter((level) => presentLevels.has(level)).map(
+    (level) => ENTITY_KEY_RULES[level],
+  );
+  sections.push(`## entity_key rules\n\n${rules.join('\n')}`);
+
+  const body = input.pages.map((page) => `[PAGE ${page.page}]\n${page.text}`).join('\n\n');
+  sections.push(`## Article text\n\n${body}`);
+
+  sections.push(
+    `## Output format\n\nReturn a JSON array. Each element must be:\n` +
+      `{ "field_id": "<as listed>", "entity_key": "<per the rules>", "value": "<as reported>" | null, ` +
+      `"not_reported": true | false, "quote": "<verbatim, <=300 chars>" | null, "page": <1-indexed> | null, ` +
+      `"confidence": "high" | "medium" | "low" }`,
+  );
+
+  return sections.join('\n\n');
+}
+
+/**
+ * 構造化出力（constrained decoding）用の JSON Schema。
+ * LLMProvider の ChatOptions.responseSchema に渡す想定（標準 JSON Schema 方言。
+ * プロバイダ実装が各社方言へ変換する）。validateAiOutput と同じ形状を制約する
+ */
+export const EXTRACT_DATA_RESPONSE_SCHEMA: Record<string, unknown> = {
+  type: 'array',
+  items: {
+    type: 'object',
+    properties: {
+      field_id: { type: 'string' },
+      entity_key: { type: 'string' },
+      value: { type: ['string', 'null'] },
+      not_reported: { type: 'boolean' },
+      quote: { type: ['string', 'null'] },
+      page: { type: ['integer', 'null'] },
+      confidence: { type: ['string', 'null'], enum: ['high', 'medium', 'low', null] },
+    },
+    required: ['field_id', 'entity_key', 'value', 'not_reported', 'quote', 'page', 'confidence'],
+    additionalProperties: false,
+  },
+};
+
+/** 構造化出力を要求しても markdown フェンスで包むモデルがあるため防御的に剥がす */
+function stripJsonFence(text: string): string {
+  const trimmed = text.trim();
+  const match = /^```(?:json)?\s*\n?([\s\S]*?)\n?```$/.exec(trimmed);
+  return match?.[1] ?? trimmed;
+}
+
+/**
+ * LLM 応答テキストをパースして validateAiOutput（zod 検証 + confidence=low 強制）へ委譲する。
+ * JSON としてパースできない応答は AiOutputFormatError（バッチ全体の失敗として executeRun が扱う）
+ */
+export function parseExtractDataResponse(
+  text: string,
+  fields: readonly SchemaField[],
+): ValidateAiOutputResult {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(stripJsonFence(text));
+  } catch (error) {
+    throw new AiOutputFormatError(`AI 応答が JSON としてパースできません: ${String(error)}`);
+  }
+  return validateAiOutput(raw, fields);
+}
