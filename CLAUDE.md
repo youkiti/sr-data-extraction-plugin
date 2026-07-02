@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 現在のフェーズ
 
-**フェーズ 1 実装中**（2026-07 時点）。scaffolding（package.json / webpack / jest / Playwright / CI-1）と `src/` の骨格（popup / app シェル〔router / store / guards / views 雛形〕 / options〔API キー保存は実装済み〕 / anchoring 中核〔スパイクから移植〕）に加え、`lib/google/`（OAuth + Sheets + Drive。sr-query-builder からコピー流用）・プロジェクト生成（`features/project/`: 12 タブ + Drive フォルダ 4 種）・Popup S1（ログイン / 新規作成 / 既存 ID / 最近のプロジェクト）・CSV エクスポートビルダーまで実装済み。ドキュメント一式が正典：
+**フェーズ 1 実装中**（2026-07 時点）。scaffolding（package.json / webpack / jest / Playwright / CI-1）と `src/` の骨格（popup / app シェル〔router / store / guards / views 雛形〕 / options〔API キー保存は実装済み〕 / anchoring 中核〔スパイクから移植〕）に加え、`lib/google/`（OAuth + Sheets + Drive。sr-query-builder からコピー流用）・プロジェクト生成（`features/project/`: 12 タブ + Drive フォルダ 4 種）・Popup S1（ログイン / 新規作成 / 既存 ID / 最近のプロジェクト）・CSV エクスポートビルダー・extraction の AI 応答バリデーション（`validateAiOutput`: zod + 値/quote 矛盾 → confidence=low 強制）まで実装済み。ドキュメント一式が正典：
 
 | ドキュメント | 内容 |
 |---|---|

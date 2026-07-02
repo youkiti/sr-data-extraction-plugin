@@ -1,0 +1,83 @@
+[
+  {
+    "field_id": "f_design",
+    "entity_key": "-",
+    "value": "randomized controlled trial",
+    "not_reported": false,
+    "quote": "In this randomized controlled trial, we enrolled adults with hypertension.",
+    "page": 1,
+    "confidence": "high"
+  },
+  {
+    "field_id": "f_total_n",
+    "entity_key": "-",
+    "value": 128,
+    "not_reported": false,
+    "quote": "A total of 128 participants were randomized.",
+    "page": 2,
+    "confidence": "high",
+    "field_name": "sample_size_total"
+  },
+  {
+    "field_id": "f_total_n",
+    "entity_key": "-",
+    "value": "142",
+    "not_reported": false,
+    "quote": "Participants were recruited from three university hospitals.",
+    "page": 0,
+    "confidence": "high"
+  },
+  {
+    "field_id": "f_arm_n",
+    "entity_key": "arm:1",
+    "value": "64",
+    "not_reported": false,
+    "quote": null,
+    "page": null,
+    "confidence": "medium"
+  },
+  {
+    "field_id": "f_mean_change",
+    "entity_key": "outcome:sbp_change|arm:1|time:12w",
+    "value": "-12.5",
+    "not_reported": true,
+    "quote": "the mean change in systolic blood pressure was −12·5 mm Hg",
+    "page": 6,
+    "confidence": "medium"
+  },
+  {
+    "field_id": "f_country",
+    "entity_key": "-",
+    "value": "Japan",
+    "not_reported": false,
+    "quote": "conducted at 12 hospitals in Japan",
+    "page": 1,
+    "confidence": "very_high"
+  },
+  {
+    "field_id": "f_unknown",
+    "entity_key": "-",
+    "value": "x",
+    "not_reported": false,
+    "quote": "quote",
+    "page": 1,
+    "confidence": "low"
+  },
+  {
+    "field_id": "f_arm_n",
+    "value": "64",
+    "not_reported": false,
+    "quote": "64 patients",
+    "page": 3,
+    "confidence": "high"
+  },
+  {
+    "field_id": "f_arm_n",
+    "entity_key": "-",
+    "value": "64",
+    "not_reported": false,
+    "quote": "64 patients in the control group",
+    "page": 3,
+    "confidence": "high"
+  }
+]
