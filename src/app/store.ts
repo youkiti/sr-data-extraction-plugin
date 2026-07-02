@@ -9,6 +9,7 @@ import type { SchemaField } from '../domain/schemaField';
 import type { SchemaVersion } from '../domain/schemaVersion';
 import type { BatchFailure, RunProgress } from '../features/extraction/executeRun';
 import type { ExtractDocRow } from '../features/extraction/docProgress';
+import type { DashboardData } from '../features/verification/dashboard';
 import type { SchemaEditorRow } from '../features/schema/types';
 import type { FieldValidationError } from '../features/schema/validateField';
 import type { VerificationProgress } from '../features/verification/progress';
@@ -167,6 +168,8 @@ export interface VerifyState {
   loadError: string | null;
   /** 表示中の文献（URL クエリ ?doc= と同期する） */
   selectedDocumentId: string | null;
+  /** URL クエリ ?entity= のセル単位ディープリンク（S9 ダッシュボードのセルクリック）。null = なし */
+  deepLinkEntityKey: string | null;
   verification: VerificationData | null;
   verifyLoading: boolean;
   verifyError: string | null;
@@ -174,6 +177,14 @@ export interface VerifyState {
   studyValues: Record<string, string | null> | null;
   /** オフラインキューへ退避した判定書き込みの件数 */
   queuedDecisions: number;
+}
+
+/** #/dashboard（S9）の画面状態 */
+export interface DashboardState {
+  /** 集計結果。null = 未読込（画面表示時に読み込む） */
+  data: DashboardData | null;
+  loading: boolean;
+  loadError: string | null;
 }
 
 export interface AppState {
@@ -185,6 +196,7 @@ export interface AppState {
   pilot: PilotState;
   extract: ExtractState;
   verify: VerifyState;
+  dashboard: DashboardState;
 }
 
 export type StateListener = (state: AppState) => void;
@@ -278,11 +290,17 @@ export function createInitialState(): AppState {
       loading: false,
       loadError: null,
       selectedDocumentId: null,
+      deepLinkEntityKey: null,
       verification: null,
       verifyLoading: false,
       verifyError: null,
       studyValues: null,
       queuedDecisions: 0,
+    },
+    dashboard: {
+      data: null,
+      loading: false,
+      loadError: null,
     },
   };
 }

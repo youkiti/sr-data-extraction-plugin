@@ -84,11 +84,17 @@ describe('createInitialState', () => {
         loading: false,
         loadError: null,
         selectedDocumentId: null,
+        deepLinkEntityKey: null,
         verification: null,
         verifyLoading: false,
         verifyError: null,
         studyValues: null,
         queuedDecisions: 0,
+      },
+      dashboard: {
+        data: null,
+        loading: false,
+        loadError: null,
       },
     });
   });

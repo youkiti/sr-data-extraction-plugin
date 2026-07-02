@@ -67,6 +67,7 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<DocumentsViewCall
         onReloadTargets: jest.fn(),
       },
       verify: makeVerifyStub(),
+      dashboard: { onReload: jest.fn() },
     },
     callbacks,
   };

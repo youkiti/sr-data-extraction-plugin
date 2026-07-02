@@ -193,6 +193,15 @@ describe('seedState', () => {
     expect(state.schema.model).toBe('gemini-test');
     expect(state.schema.drafting).toBe(false); // 未指定フィールドは既定値
   });
+
+  test('E2E seam: dashboard スライスも部分注入でマージする', async () => {
+    const stub = createWindowStub({
+      dashboard: { loadError: '注入エラー' } as unknown as AppState['dashboard'],
+    });
+    const state = await seedState(asWindow(stub));
+    expect(state.dashboard.loadError).toBe('注入エラー');
+    expect(state.dashboard.loading).toBe(false); // 未指定フィールドは既定値
+  });
 });
 
 describe('bootstrapApp', () => {
@@ -1039,7 +1048,7 @@ describe('bootstrapApp: #/extract', () => {
 // #/verify（S8）の配線
 // ---------------------------------------------------------------------------
 
-describe('bootstrapApp: #/verify', () => {
+describe('bootstrapApp: #/verify・#/dashboard', () => {
   afterEach(async () => {
     const { disposeVerificationPanelCache } = await import(
       '../../../src/app/views/verificationPanel'
@@ -1145,8 +1154,10 @@ describe('bootstrapApp: #/verify', () => {
       }
       let json: unknown = {};
       if (url.includes('fields=sheets.properties.title')) {
-        // ArmStructures タブなしの旧プロジェクトを模す（読み出しは空 = 未確定）
-        json = { sheets: [{ properties: { title: 'Meta' } }] };
+        // 存在するタブ = Meta + tabValues のキー（ArmStructures を渡さなければ旧プロジェクト相当）
+        json = {
+          sheets: ['Meta', ...Object.keys(tabValues)].map((title) => ({ properties: { title } })),
+        };
       } else if (method === 'GET' && url.includes('/values/')) {
         const tab = Object.keys(tabValues).find((name) => url.includes(`/values/${name}`));
         json = { values: tab === undefined ? [] : tabValues[tab] };
@@ -1313,5 +1324,76 @@ describe('bootstrapApp: #/verify', () => {
     await flush();
     await flush();
     expect(urls().some((url) => url.includes('Decisions') && url.includes(':append'))).toBe(true);
+  });
+
+  test('?entity= ディープリンクは verify スライスへ写り、該当タブへ切替える', async () => {
+    const stub = createWindowStub(verifyPreloaded());
+    const tabs = {
+      ...BASE_TABS,
+      SchemaFields: [[...SHEET_HEADERS.SchemaFields], FIELD_ROW, ARM_FIELD_ROW],
+      Evidence: [
+        [...SHEET_HEADERS.Evidence],
+        EVIDENCE_ROW,
+        ['ev-arm', 'run-1', 'doc-1', 'f-arm-n', 'arm:1', '50', 'FALSE', '', '', '', ''],
+      ],
+      // 群構成は確定済み（未確定だとロック中タブへのディープリンクは無視される）
+      ArmStructures: [
+        [...SHEET_HEADERS.ArmStructures],
+        ['doc-1', '1', 'arm:1', '介入群', 'tester@example.com', 'human_with_ai', 't0', ''],
+      ],
+    };
+    const { deps } = createVerifyFakeDeps(tabs);
+    const store = await bootstrapApp(asWindow(stub), deps);
+    stub.location.hash = '#/verify?doc=doc-1&entity=arm:1';
+    stub.fireHashChange();
+    await flush();
+    await flush();
+    await flush(); // focusEntity は DOM 接続後の microtask で適用される
+
+    expect(store?.getState().verify.deepLinkEntityKey).toBe('arm:1');
+    expect(document.querySelector('.verify__tab--active')?.textContent).toBe('群（arm）');
+    const focused = document.querySelector('.verify__cell--focused') as HTMLElement;
+    expect(focused.querySelector('.verify__cell-label')?.textContent).toBe('群の N');
+  });
+
+  test('#/dashboard 入場で集計を読み込み、セルが ?doc=&entity= ディープリンクを持つ', async () => {
+    const stub = createWindowStub(verifyPreloaded());
+    const { deps, fetchMock } = createVerifyFakeDeps(BASE_TABS);
+    const store = await bootstrapApp(asWindow(stub), deps);
+    stub.location.hash = '#/dashboard';
+    stub.fireHashChange();
+    await flush();
+    await flush();
+
+    expect(store?.getState().dashboard.data?.rows).toHaveLength(1);
+    expect(document.querySelector('#dashboard-summary')?.textContent).toContain('検証進捗');
+    const link = document.querySelector('#dashboard-matrix a');
+    expect(link?.getAttribute('href')).toBe('#/verify?doc=doc-1&entity=-');
+
+    // 同じ状態での再 hashchange は再読込しない（読込済みガード）
+    const callsBefore = fetchMock.mock.calls.length;
+    stub.fireHashChange();
+    await flush();
+    expect(fetchMock.mock.calls.length).toBe(callsBefore);
+  });
+
+  test('#/dashboard の読み込み失敗は #dashboard-load-error + 再読み込みで force 再取得する', async () => {
+    const stub = createWindowStub(verifyPreloaded());
+    const { deps, fetchMock } = createVerifyFakeDeps(BASE_TABS, { failEvidence: true });
+    await bootstrapApp(asWindow(stub), deps);
+    stub.location.hash = '#/dashboard';
+    stub.fireHashChange();
+    await flush();
+    await flush();
+    expect(document.getElementById('dashboard-load-error')?.textContent).toContain(
+      '進捗を読み込めませんでした',
+    );
+
+    const callsBefore = fetchMock.mock.calls.length;
+    (document.getElementById('dashboard-reload') as HTMLButtonElement).click();
+    await flush();
+    await flush();
+    expect(fetchMock.mock.calls.length).toBeGreaterThan(callsBefore);
+    expect(document.getElementById('dashboard-load-error')).not.toBeNull(); // 依然失敗のまま
   });
 });

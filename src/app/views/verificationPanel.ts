@@ -39,6 +39,11 @@ export interface VerificationPanelOptions {
   onDecision: (decision: Decision) => void;
   /** 群構成の確定・改訂ごとに呼ばれる（ArmStructures への追記はサービス層の責務） */
   onArmConfirm?: (arms: readonly DraftArm[]) => void;
+  /**
+   * URL クエリ ?entity= のセル単位ディープリンク（ui-flow.md §3。S9 ダッシュボードのセルクリック）。
+   * renderCachedVerificationPanel が値の変化を検知して focusEntity を呼ぶ
+   */
+  focusEntityKey?: string | null;
   now?: () => string;
   /** テスト差し替え用（pdfViewer へ渡す） */
   renderPage?: typeof renderPdfPageToCanvas;
@@ -46,6 +51,8 @@ export interface VerificationPanelOptions {
 
 export interface VerificationPanelHandle {
   root: HTMLElement;
+  /** 指定 entity のタブへ切替え、先頭セルへスクロール・フォーカスする（?entity= ディープリンク） */
+  focusEntity(entityKey: string): void;
   dispose(): void;
 }
 
@@ -377,6 +384,33 @@ export function createVerificationPanel(
     }
   }
 
+  /**
+   * ?entity= ディープリンクの着地（ui-states.md §3 `#/verify`）。
+   * entity の属するタブへ切替えて先頭セルへスクロール・フォーカスする。
+   * 存在しない entity_key・ロック中のタブに属する entity は無視して通常表示のまま
+   */
+  function focusEntity(entityKey: string): void {
+    for (const tab of tabs) {
+      if (tabLocked(tab)) {
+        continue;
+      }
+      const model = buildTabModel(tab, data.fields, data.evidence, ownDecisions);
+      const cell = model.cells.find((candidate) => candidate.entityKey === entityKey);
+      if (cell === undefined) {
+        continue;
+      }
+      if (cell.cellKey !== focusedCellKey) {
+        focusCell(cell.cellKey, { jump: true, domFocus: true });
+      } else {
+        // 初期フォーカスと同一セル（study の先頭など）でもスクロール・フォーカスは行う
+        const element = findCellElement(cell.cellKey);
+        element.scrollIntoView?.({ block: 'nearest' });
+        element.focus();
+      }
+      return;
+    }
+  }
+
   function commit(cell: VerificationCell, action: DecisionAction, value: string | null): void {
     const decision: Decision = {
       decidedAt: now(),
@@ -481,6 +515,7 @@ export function createVerificationPanel(
 
   return {
     root,
+    focusEntity,
     dispose() {
       ownerDoc.removeEventListener('keydown', handleKeydown);
     },
@@ -491,18 +526,41 @@ export function createVerificationPanel(
 // ストア再描画との整合（view は純粋関数のまま、パネルの生存期間だけここで管理する）
 // ---------------------------------------------------------------------------
 
-let cachedPanel: { data: VerificationData; handle: VerificationPanelHandle } | null = null;
+let cachedPanel: {
+  data: VerificationData;
+  handle: VerificationPanelHandle;
+  /** 適用済みの ?entity=（同じ値の再描画でフォーカスを奪い直さないための記録） */
+  appliedFocusEntity: string | null;
+} | null = null;
 
 /**
  * 同じ VerificationData 参照に対しては同一パネル（DOM / 判定の楽観状態）を返す。
- * データが差し替わったら古いパネルを破棄して作り直す
+ * データが差し替わったら古いパネルを破棄して作り直す。
+ * focusEntityKey は値が変わったときだけ focusEntity を呼ぶ（ストア再描画では発火しない）
  */
 export function renderCachedVerificationPanel(options: VerificationPanelOptions): HTMLElement {
-  if (cachedPanel !== null && cachedPanel.data === options.data) {
-    return cachedPanel.handle.root;
+  if (cachedPanel === null || cachedPanel.data !== options.data) {
+    cachedPanel?.handle.dispose();
+    cachedPanel = {
+      data: options.data,
+      handle: createVerificationPanel(options),
+      appliedFocusEntity: null,
+    };
   }
-  cachedPanel?.handle.dispose();
-  cachedPanel = { data: options.data, handle: createVerificationPanel(options) };
+  const focusEntityKey = options.focusEntityKey ?? null;
+  if (focusEntityKey !== cachedPanel.appliedFocusEntity) {
+    cachedPanel.appliedFocusEntity = focusEntityKey;
+    if (focusEntityKey !== null) {
+      // render 時点ではパネルが DOM 未接続（スクロール・フォーカス不能）のため、
+      // 呼び出し側が接続し終えた後（microtask）に適用する
+      const handle = cachedPanel.handle;
+      queueMicrotask(() => {
+        if (cachedPanel?.handle === handle) {
+          handle.focusEntity(focusEntityKey);
+        }
+      });
+    }
+  }
   return cachedPanel.handle.root;
 }
 

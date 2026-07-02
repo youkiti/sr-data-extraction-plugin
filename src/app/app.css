@@ -1245,3 +1245,72 @@
   color: var(--color-danger);
   padding: 8px;
 }
+
+/* --- #/dashboard（S9）---------------------------------------------------- */
+
+.dashboard__error {
+  color: var(--color-danger);
+}
+
+.dashboard__empty {
+  border: 1px dashed var(--color-border);
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.dashboard__summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  align-items: baseline;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface);
+  padding: 12px 16px;
+  margin: 0 0 16px;
+}
+
+.dashboard__summary dt {
+  font-size: 13px;
+  color: var(--color-text-muted);
+}
+
+.dashboard__summary dd {
+  margin: 0 16px 0 0;
+  font-weight: 700;
+}
+
+.dashboard__matrix {
+  border-collapse: collapse;
+  background: var(--color-surface);
+}
+
+.dashboard__matrix-caption {
+  caption-side: top;
+  text-align: left;
+  color: var(--color-text-muted);
+  font-size: 13px;
+  margin-bottom: 8px;
+}
+
+.dashboard__matrix th,
+.dashboard__matrix td {
+  border: 1px solid var(--color-border);
+  padding: 6px 10px;
+  text-align: left;
+  font-size: 13px;
+}
+
+.dashboard__doc {
+  white-space: nowrap;
+}
+
+.dashboard__matrix .dashboard__cell,
+.dashboard__matrix .dashboard__rate {
+  text-align: right;
+}
+
+.dashboard__cell-link {
+  color: var(--color-primary);
+  text-decoration: underline;
+}

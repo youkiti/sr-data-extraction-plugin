@@ -1,4 +1,4 @@
-import { ROUTES, docQueryOf, findRoute, normalizeHash } from '../../../src/app/router';
+import { ROUTES, docQueryOf, entityQueryOf, findRoute, normalizeHash } from '../../../src/app/router';
 import { createInitialState } from '../../../src/app/store';
 import type { ViewContext } from '../../../src/app/views/types';
 
@@ -48,6 +48,7 @@ const stubCtx: ViewContext = {
     onDecision: jest.fn(),
     onArmConfirm: jest.fn(),
   },
+  dashboard: { onReload: jest.fn() },
 };
 
 describe('normalizeHash', () => {
@@ -81,6 +82,20 @@ describe('docQueryOf', () => {
     expect(docQueryOf('#/verify')).toBeNull();
     expect(docQueryOf('#/verify?entity=arm:1')).toBeNull();
     expect(docQueryOf('#/verify?doc=')).toBeNull();
+  });
+});
+
+describe('entityQueryOf', () => {
+  test('#/verify?doc=...&entity=... の entity を取り出す（URL エンコードも復元）', () => {
+    expect(entityQueryOf('#/verify?doc=doc-1&entity=arm:1')).toBe('arm:1');
+    expect(entityQueryOf('#/verify?doc=doc-1&entity=arm%3A1')).toBe('arm:1');
+    expect(entityQueryOf('#/verify?entity=outcome:mortality|arm:1')).toBe('outcome:mortality|arm:1');
+  });
+
+  test('クエリなし・entity なし・空値は null', () => {
+    expect(entityQueryOf('#/verify')).toBeNull();
+    expect(entityQueryOf('#/verify?doc=doc-1')).toBeNull();
+    expect(entityQueryOf('#/verify?entity=')).toBeNull();
   });
 });
 

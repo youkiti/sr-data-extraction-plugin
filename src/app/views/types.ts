@@ -100,6 +100,12 @@ export interface VerifyViewCallbacks {
   onArmConfirm(arms: readonly { armKey: string; armName: string }[]): void;
 }
 
+/** #/dashboard（S9）のユーザー操作コールバック（セルクリックはハッシュ遷移のためここに持たない） */
+export interface DashboardViewCallbacks {
+  /** 読み込み失敗時の再読み込み（強制再取得） */
+  onReload(): void;
+}
+
 export interface ViewContext {
   documents: DocumentsViewCallbacks;
   protocol: ProtocolViewCallbacks;
@@ -107,4 +113,5 @@ export interface ViewContext {
   pilot: PilotViewCallbacks;
   extract: ExtractViewCallbacks;
   verify: VerifyViewCallbacks;
+  dashboard: DashboardViewCallbacks;
 }

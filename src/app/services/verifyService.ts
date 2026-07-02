@@ -67,10 +67,66 @@ export function latestRunEvidenceByDocument(
   return result;
 }
 
+/** 検証対象 1 文献ぶんの素材（一覧 = target、ダッシュボード集計は ownDecisions も使う） */
+export interface VerifyTargetMaterial {
+  target: VerifyTarget;
+  /** 自分の annotator 行への判定のみ（cells.ts と同じ契約） */
+  ownDecisions: Decision[];
+}
+
 /**
- * 検証対象一覧を読み込む（S8 の初期表示）。
- * 進捗チップの分母・分子はセルモデル（features/verification/progress.ts）で数える
+ * Evidence がある document の検証素材一式を読み込む（S8 一覧と S9 ダッシュボードの共通素材）。
+ * 進捗の分母・分子はセルモデル（features/verification/progress.ts）で数える
  */
+export async function readVerifyTargetMaterials(
+  store: Store,
+  deps: VerificationDeps,
+  spreadsheetId: string,
+): Promise<VerifyTargetMaterial[]> {
+  const documents = await resolveDocuments(store, deps, spreadsheetId);
+  const allEvidence = await readEvidenceRows(spreadsheetId, deps.google);
+  const runVersions = await readRunSchemaVersions(spreadsheetId, deps.google);
+  const allDecisions = await readAllDecisions(spreadsheetId, deps.google);
+  const annotator = (await getCurrentUserEmail(deps.profile)) ?? '';
+
+  const byDocument = latestRunEvidenceByDocument(allEvidence);
+  const fieldsByVersion = new Map<number, SchemaField[]>();
+  const materials: VerifyTargetMaterial[] = [];
+  for (const document of documents) {
+    const entry = byDocument.get(document.documentId);
+    if (entry === undefined) {
+      continue; // Evidence なし = まだ AI 抽出していない文献は一覧に出さない
+    }
+    const schemaVersion = runVersions.get(entry.runId);
+    if (schemaVersion === undefined) {
+      throw new Error(
+        `ExtractionRuns に run_id ${entry.runId} がありません（Evidence と実行記録が不整合です）`,
+      );
+    }
+    let fields = fieldsByVersion.get(schemaVersion);
+    if (fields === undefined) {
+      fields = await getSchemaFieldsByVersion(spreadsheetId, schemaVersion, deps.google);
+      fieldsByVersion.set(schemaVersion, fields);
+    }
+    const ownDecisions = allDecisions.filter(
+      (decision) =>
+        decision.documentId === document.documentId && decision.annotator === annotator,
+    );
+    materials.push({
+      target: {
+        document,
+        evidence: entry.evidence,
+        fields,
+        schemaVersion,
+        progress: verificationProgress(fields, entry.evidence, ownDecisions),
+      },
+      ownDecisions,
+    });
+  }
+  return materials;
+}
+
+/** 検証対象一覧を読み込む（S8 の初期表示） */
 export async function loadVerifyTargets(
   store: Store,
   deps: VerificationDeps,
@@ -86,45 +142,8 @@ export async function loadVerifyTargets(
   }
   patchVerify(store, { loading: true, loadError: null });
   try {
-    const spreadsheetId = project.spreadsheetId;
-    const documents = await resolveDocuments(store, deps, spreadsheetId);
-    const allEvidence = await readEvidenceRows(spreadsheetId, deps.google);
-    const runVersions = await readRunSchemaVersions(spreadsheetId, deps.google);
-    const allDecisions = await readAllDecisions(spreadsheetId, deps.google);
-    const annotator = (await getCurrentUserEmail(deps.profile)) ?? '';
-
-    const byDocument = latestRunEvidenceByDocument(allEvidence);
-    const fieldsByVersion = new Map<number, SchemaField[]>();
-    const targets: VerifyTarget[] = [];
-    for (const document of documents) {
-      const entry = byDocument.get(document.documentId);
-      if (entry === undefined) {
-        continue; // Evidence なし = まだ AI 抽出していない文献は一覧に出さない
-      }
-      const schemaVersion = runVersions.get(entry.runId);
-      if (schemaVersion === undefined) {
-        throw new Error(
-          `ExtractionRuns に run_id ${entry.runId} がありません（Evidence と実行記録が不整合です）`,
-        );
-      }
-      let fields = fieldsByVersion.get(schemaVersion);
-      if (fields === undefined) {
-        fields = await getSchemaFieldsByVersion(spreadsheetId, schemaVersion, deps.google);
-        fieldsByVersion.set(schemaVersion, fields);
-      }
-      const ownDecisions = allDecisions.filter(
-        (decision) =>
-          decision.documentId === document.documentId && decision.annotator === annotator,
-      );
-      targets.push({
-        document,
-        evidence: entry.evidence,
-        fields,
-        schemaVersion,
-        progress: verificationProgress(fields, entry.evidence, ownDecisions),
-      });
-    }
-    patchVerify(store, { loading: false, targets });
+    const materials = await readVerifyTargetMaterials(store, deps, project.spreadsheetId);
+    patchVerify(store, { loading: false, targets: materials.map((material) => material.target) });
   } catch (err) {
     patchVerify(store, { loading: false, loadError: toMessage(err) });
   }

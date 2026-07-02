@@ -55,6 +55,7 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<VerifyViewCallbac
         onReloadTargets: jest.fn(),
       },
       verify: callbacks,
+      dashboard: { onReload: jest.fn() },
     },
     callbacks,
   };
@@ -242,6 +243,45 @@ describe('renderVerifyView', () => {
     expect(callbacks.onDecision).toHaveBeenCalledWith(
       expect.objectContaining({ action: 'not_reported', documentId: 'doc-1' }),
     );
+  });
+
+  test('deepLinkEntityKey（?entity=）がパネルへ渡り、該当タブへ切替える', async () => {
+    const { ctx } = makeCtx();
+    const verification: VerificationData = {
+      ...makeVerification(),
+      fields: [
+        makeField(),
+        makeField({ fieldId: 'f-arm-n', fieldName: 'arm_n', entityLevel: 'arm' }),
+      ],
+      evidence: [
+        {
+          evidenceId: 'ev-arm',
+          runId: 'run-1',
+          documentId: 'doc-1',
+          fieldId: 'f-arm-n',
+          entityKey: 'arm:1',
+          value: '50',
+          notReported: false,
+          quote: null,
+          page: null,
+          confidence: null,
+          anchorStatus: null,
+        },
+      ],
+      // ディープリンク先の arm タブが使えるよう群構成は確定済みにする
+      armStructure: { version: 1, arms: [{ armKey: 'arm:1', armName: '介入群' }] },
+    };
+    const root = render(
+      makeState({
+        targets: [makeTarget()],
+        selectedDocumentId: 'doc-1',
+        verification,
+        deepLinkEntityKey: 'arm:1',
+      }),
+      ctx,
+    );
+    await Promise.resolve(); // focusEntity は DOM 接続後の microtask で適用される
+    expect(root.querySelector('.verify__tab--active')?.textContent).toBe('群（arm）');
   });
 
   test('群構成の確定が onArmConfirm へ委譲される', () => {

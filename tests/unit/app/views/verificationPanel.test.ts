@@ -860,3 +860,119 @@ describe('renderCachedVerificationPanel', () => {
     disposeVerificationPanelCache();
   });
 });
+
+describe('focusEntity（?entity= ディープリンクの着地）', () => {
+  test('別タブの entity はタブ切替 + 先頭セルへフォーカスする', () => {
+    const { panel } = createPanel();
+    panel.focusEntity('arm:1');
+    expect(panel.root.querySelector('.verify__tab--active')?.textContent).toBe('群（arm）');
+    expect(cellEl(panel.root, KEY_ARM)?.classList.contains('verify__cell--focused')).toBe(true);
+    panel.dispose();
+  });
+
+  test('初期フォーカスと同一セル（study の先頭）でも DOM フォーカスを当てる', () => {
+    const { panel } = createPanel();
+    panel.focusEntity('-');
+    expect(document.activeElement).toBe(cellEl(panel.root, KEY_TOTAL));
+    panel.dispose();
+  });
+
+  test('存在しない entity_key は何もしない', () => {
+    const { panel } = createPanel();
+    panel.focusEntity('arm:9');
+    expect(panel.root.querySelector('.verify__tab--active')?.textContent).toBe('Study');
+    expect(cellEl(panel.root, KEY_TOTAL)?.classList.contains('verify__cell--focused')).toBe(true);
+    panel.dispose();
+  });
+
+  test('群構成未確定でロック中のタブに属する entity は無視する', () => {
+    const { panel } = createPanel({ armStructure: null });
+    panel.focusEntity('arm:1');
+    expect(panel.root.querySelector('.verify__tab--active')?.textContent).toBe('Study');
+    panel.dispose();
+  });
+});
+
+describe('renderCachedVerificationPanel: focusEntityKey（?entity= ディープリンク）', () => {
+  afterEach(() => {
+    disposeVerificationPanelCache();
+  });
+
+  const flushMicrotasks = (): Promise<void> => Promise.resolve();
+
+  function studyTab(root: HTMLElement): HTMLButtonElement | undefined {
+    return [...root.querySelectorAll<HTMLButtonElement>('.verify__tab')].find(
+      (button) => button.textContent === 'Study',
+    );
+  }
+
+  test('focusEntityKey は DOM 接続後（microtask）に適用される', async () => {
+    const data = makeData();
+    const root = renderCachedVerificationPanel({
+      data,
+      onDecision: jest.fn(),
+      now: () => 't',
+      renderPage,
+      focusEntityKey: 'arm:1',
+    });
+    document.body.replaceChildren(root);
+    expect(root.querySelector('.verify__tab--active')?.textContent).toBe('Study'); // 適用前
+    await flushMicrotasks();
+    expect(root.querySelector('.verify__tab--active')?.textContent).toBe('群（arm）');
+    expect(cellEl(root, KEY_ARM)?.classList.contains('verify__cell--focused')).toBe(true);
+  });
+
+  test('同じ focusEntityKey の再描画ではフォーカスを奪い直さない', async () => {
+    const data = makeData();
+    const options = {
+      data,
+      onDecision: jest.fn(),
+      now: () => 't',
+      renderPage,
+      focusEntityKey: 'arm:1',
+    };
+    const root = renderCachedVerificationPanel(options);
+    document.body.replaceChildren(root);
+    await flushMicrotasks();
+    studyTab(root)?.click(); // ユーザーが Study タブへ戻る
+    expect(root.querySelector('.verify__tab--active')?.textContent).toBe('Study');
+    renderCachedVerificationPanel(options); // ストア再描画相当
+    await flushMicrotasks();
+    expect(root.querySelector('.verify__tab--active')?.textContent).toBe('Study');
+  });
+
+  test('null へ戻すとリセットされ、再指定で再適用される', async () => {
+    const data = makeData();
+    const base = { data, onDecision: jest.fn(), now: () => 't', renderPage };
+    const root = renderCachedVerificationPanel({ ...base, focusEntityKey: 'arm:1' });
+    document.body.replaceChildren(root);
+    await flushMicrotasks();
+    studyTab(root)?.click();
+    renderCachedVerificationPanel({ ...base, focusEntityKey: null });
+    await flushMicrotasks();
+    expect(root.querySelector('.verify__tab--active')?.textContent).toBe('Study');
+    renderCachedVerificationPanel({ ...base, focusEntityKey: 'arm:1' });
+    await flushMicrotasks();
+    expect(root.querySelector('.verify__tab--active')?.textContent).toBe('群（arm）');
+  });
+
+  test('適用前にデータが差し替わったら古いパネルへは適用しない', async () => {
+    const first = renderCachedVerificationPanel({
+      data: makeData(),
+      onDecision: jest.fn(),
+      now: () => 't',
+      renderPage,
+      focusEntityKey: 'arm:1',
+    });
+    const second = renderCachedVerificationPanel({
+      data: makeData({ document: makeDocumentRecord({ documentId: 'doc-2' }) }),
+      onDecision: jest.fn(),
+      now: () => 't',
+      renderPage,
+    });
+    document.body.replaceChildren(second);
+    await flushMicrotasks();
+    expect(first.querySelector('.verify__tab--active')?.textContent).toBe('Study');
+    expect(second.querySelector('.verify__tab--active')?.textContent).toBe('Study');
+  });
+});

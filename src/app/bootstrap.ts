@@ -2,7 +2,7 @@
 // E2E seam（test-strategy.md §2.1）: window.__E2E_PRELOADED_STATE__ があれば
 // ストアのシードへ上書きマージする（本番動作には影響しない）
 import { createInitialState, createStore, type AppState, type Store, type VerifyTarget } from './store';
-import { docQueryOf, findRoute, normalizeHash, ROUTES, type RouteHash } from './router';
+import { docQueryOf, entityQueryOf, findRoute, normalizeHash, ROUTES, type RouteHash } from './router';
 import { guardRoute } from './guards';
 import { showToast } from './ui/toast';
 import type { ViewContext } from './views/types';
@@ -60,6 +60,7 @@ import {
   persistVerifyArmConfirmation,
   persistVerifyDecision,
 } from './services/verifyService';
+import { loadDashboard } from './services/dashboardService';
 import { createChromeGoogleApiDeps } from './services/factories';
 import { loadCurrentProject } from '../features/project/projectStore';
 import { extractDocxText } from '../lib/docx/extractDocxText';
@@ -93,6 +94,7 @@ export async function seedState(win: Window): Promise<AppState> {
       pilot: { ...state.pilot, ...(preloaded.pilot ?? {}) },
       extract: { ...state.extract, ...(preloaded.extract ?? {}) },
       verify: { ...state.verify, ...(preloaded.verify ?? {}) },
+      dashboard: { ...state.dashboard, ...(preloaded.dashboard ?? {}) },
     };
   }
   return state;
@@ -264,13 +266,26 @@ export async function bootstrapApp(
         void persistVerifyArmConfirmation(store, deps, arms);
       },
     },
+    dashboard: {
+      onReload: () => {
+        void loadDashboard(store, deps, { force: true });
+      },
+    },
   };
 
   /**
    * #/verify の表示同期: 一覧を読み込み、?doc=（なければ選択済み or 先頭）を開く。
-   * セレクタ切替も hash 書き換え経由でここへ合流する（ui-states.md §3 の URL 同期）
+   * セレクタ切替も hash 書き換え経由でここへ合流する（ui-states.md §3 の URL 同期）。
+   * ?entity=（S9 ダッシュボードのセル単位ディープリンク）は verify スライスへ写し、
+   * 検証パネルが該当タブへの切替 + 先頭セルへのスクロール・フォーカスとして消費する
    */
   const syncVerifyRoute = async (): Promise<void> => {
+    const entity = entityQueryOf(win.location.hash);
+    if (entity !== store.getState().verify.deepLinkEntityKey) {
+      store.setState({
+        verify: { ...store.getState().verify, deepLinkEntityKey: entity },
+      });
+    }
     await loadVerifyTargets(store, deps);
     const verify = store.getState().verify;
     const targets = verify.targets;
@@ -382,6 +397,10 @@ export async function bootstrapApp(
     if (currentHash === '#/verify') {
       // 一覧読込 → ?doc=（なければ先頭）の検証データ読込。セレクタ切替も同じ経路
       void syncVerifyRoute();
+    }
+    if (currentHash === '#/dashboard') {
+      // 初回表示時に集計を読み込む（読込済みなら loadDashboard 側で no-op）
+      void loadDashboard(store, deps);
     }
   };
 

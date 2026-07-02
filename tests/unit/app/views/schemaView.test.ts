@@ -57,6 +57,7 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<SchemaViewCallbac
         onDecision: jest.fn(),
         onArmConfirm: jest.fn(),
       },
+      dashboard: { onReload: jest.fn() },
     },
     callbacks,
   };

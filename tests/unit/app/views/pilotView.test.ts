@@ -76,6 +76,7 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<PilotViewCallback
         onDecision: jest.fn(),
         onArmConfirm: jest.fn(),
       },
+      dashboard: { onReload: jest.fn() },
     },
     callbacks,
   };

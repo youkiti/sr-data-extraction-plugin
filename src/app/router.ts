@@ -57,15 +57,24 @@ export function findRoute(hash: RouteHash): RouteDefinition {
   return ROUTES.find((route) => route.hash === hash) as RouteDefinition;
 }
 
-/**
- * `#/verify?doc={document_id}` の doc クエリを取り出す（ui-flow.md §3）。
- * `?entity=`（セル単位ディープリンク）は S9 ダッシュボード実装時に追加する — ui-flow.md §3 の注記参照
- */
-export function docQueryOf(rawHash: string): string | null {
+function queryParamOf(rawHash: string, name: string): string | null {
   const query = rawHash.split('?')[1];
   if (query === undefined) {
     return null;
   }
-  const value = new URLSearchParams(query).get('doc');
+  const value = new URLSearchParams(query).get(name);
   return value === null || value === '' ? null : value;
+}
+
+/** `#/verify?doc={document_id}` の doc クエリを取り出す（ui-flow.md §3） */
+export function docQueryOf(rawHash: string): string | null {
+  return queryParamOf(rawHash, 'doc');
+}
+
+/**
+ * `#/verify?doc=...&entity={entity_key}` の entity クエリを取り出す（ui-flow.md §3 の
+ * セル単位ディープリンク。S9 ダッシュボードのセルクリックが遷移元）
+ */
+export function entityQueryOf(rawHash: string): string | null {
+  return queryParamOf(rawHash, 'entity');
 }

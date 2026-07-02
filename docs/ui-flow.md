@@ -65,9 +65,7 @@ flowchart TD
 
 ## 3. 検証画面（`#/verify`）の内部構造
 
-[requirements.md §4.2](requirements.md) の 2 ペイン構成。URL は `#/verify?doc={document_id}&entity={entity_key}` で状態を保持し、ダッシュボードからの直接ジャンプを可能にする。
-
-> **実装スコープの注記（2026-07-02）**: `?doc=`（文献選択）は S8 実装済み。`?entity=`（セル単位のディープリンク。該当 entity タブへの切替 + 該当項目へのスクロール・フォーカス）は消費者が S9 ダッシュボードのセルクリックのみのため**未実装 — S9 ダッシュボード実装時に必ず一緒に実装すること**（このメモを消すのはそのとき）。
+[requirements.md §4.2](requirements.md) の 2 ペイン構成。URL は `#/verify?doc={document_id}&entity={entity_key}` で状態を保持し、ダッシュボードからの直接ジャンプを可能にする（`?doc=` は S8、`?entity=` は S9 ダッシュボードと同時に実装済み。2026-07-02）。
 
 ```mermaid
 flowchart LR

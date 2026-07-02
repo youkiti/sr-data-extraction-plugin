@@ -1,8 +1,8 @@
 // #/verify: 検証（S8・中核画面 / ui-states.md §3）。
 // 状態: 一覧読み込み中 / 一覧読み込み失敗 / 空 / 通常（document セレクタ + 2 ペイン検証パネル）。
-// 文献の切替は URL クエリ ?doc= と同期する（セレクタ変更 → hash 書き換え → サービス層が読込。
-// ?entity= は S9 ダッシュボード実装時に追加 — ui-flow.md §3 の注記参照）。
-// 2 ペイン本体は #/pilot と同じ verificationPanel を使う
+// 文献の切替は URL クエリ ?doc= と同期する（セレクタ変更 → hash 書き換え → サービス層が読込）。
+// ?entity=（S9 ダッシュボードのセル単位ディープリンク）は該当タブへの切替 + 先頭セルへの
+// スクロール・フォーカスとしてパネルへ渡す。2 ペイン本体は #/pilot と同じ verificationPanel を使う
 import { el } from '../ui/dom';
 import type { AppState, VerifyTarget } from '../store';
 import type { ViewContext } from './types';
@@ -117,6 +117,7 @@ export function renderVerifyView(state: AppState, ctx: ViewContext): HTMLElement
         data: verify.verification,
         onDecision: (decision) => ctx.verify.onDecision(decision),
         onArmConfirm: (arms) => ctx.verify.onArmConfirm(arms),
+        focusEntityKey: verify.deepLinkEntityKey,
       }),
     );
   }
