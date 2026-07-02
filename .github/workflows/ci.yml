@@ -1,0 +1,30 @@
+# CI-1（docs/test-strategy.md §4）: typecheck + jest（カバレッジ 100% 込み）+ lint + lint:css + dev ビルド。
+# Playwright E2E は CI-2（フェーズ 2〜3 で spec が安定してから）で追加する
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: 依存関係のインストール
+        run: npm ci
+      - name: 型検査
+        run: npm run typecheck
+      - name: ESLint
+        run: npm run lint
+      - name: stylelint
+        run: npm run lint:css
+      - name: jest（カバレッジ 100% 強制）
+        run: npm test
+      - name: dev ビルド検証（作業原則 7）
+        run: npm run dev

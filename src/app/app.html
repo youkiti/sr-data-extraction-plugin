@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SR データ抽出 — メインビュー</title>
+    <link rel="stylesheet" href="../styles/tokens.css" />
+    <link rel="stylesheet" href="../styles/globals.css" />
+    <link rel="stylesheet" href="app.css" />
+  </head>
+  <body>
+    <div class="app">
+      <header class="app__header">
+        <h1 class="app__title-heading">
+          <button id="app-title" class="app__title" type="button">SR データ抽出</button>
+        </h1>
+        <p id="app-status" class="app__status">読み込み中…</p>
+        <button id="app-open-popup" type="button" hidden>プロジェクト選択（Popup）を開く</button>
+        <p id="app-context" class="app__context" aria-live="polite">起動中</p>
+      </header>
+      <div class="app__body">
+        <aside class="app__sidebar">
+          <nav aria-label="ステップナビゲーション">
+            <ul id="app-nav" class="app__nav"></ul>
+          </nav>
+        </aside>
+        <main id="app-content" class="app__content"></main>
+      </div>
+    </div>
+    <script src="app.js"></script>
+  </body>
+</html>

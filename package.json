@@ -1,0 +1,47 @@
+{
+  "name": "sr-data-extraction-plugin",
+  "version": "0.1.0",
+  "private": true,
+  "description": "SR のデータ抽出工程を支援する Chrome 拡張（AI 事前抽出 + 人間検証 + 監査証跡）",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "dev": "webpack --mode development",
+    "watch": "webpack --mode development --watch",
+    "build": "webpack --mode production",
+    "lint": "eslint \"src/**/*.ts\" \"tests/**/*.ts\"",
+    "lint:css": "stylelint \"src/**/*.css\"",
+    "typecheck": "tsc --noEmit",
+    "test": "jest --coverage",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "^4.12.1",
+    "@playwright/test": "^1.61.1",
+    "@types/chrome": "^0.2.2",
+    "@types/jest": "^30.0.0",
+    "@types/node": "^24.0.0",
+    "@typescript-eslint/eslint-plugin": "^8.62.1",
+    "@typescript-eslint/parser": "^8.62.1",
+    "copy-webpack-plugin": "^14.0.0",
+    "dotenv": "^17.4.2",
+    "eslint": "^8.57.1",
+    "eslint-plugin-import": "^2.31.0",
+    "jest": "^30.4.2",
+    "jest-environment-jsdom": "^30.4.1",
+    "prettier": "^3.6.2",
+    "stylelint": "^17.14.0",
+    "stylelint-config-standard": "^40.0.0",
+    "ts-jest": "^29.4.11",
+    "ts-loader": "^9.5.4",
+    "ts-node": "^10.9.2",
+    "typescript": "~6.0.3",
+    "webpack": "^5.108.3",
+    "webpack-cli": "^6.0.1"
+  }
+}

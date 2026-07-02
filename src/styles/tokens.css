@@ -1,0 +1,21 @@
+/* カラートークン（tiab-review トンマナ準拠の緑基調 + quote ハイライト色）
+   ハイライトの実色は requirements.md §5-4 のとおりトンマナ確定時に再調整する */
+:root {
+  --color-bg: #f7f8f8;
+  --color-surface: #fff;
+  --color-text: #1f2a26;
+  --color-text-muted: #5b6b64;
+  --color-border: #d6ded9;
+  --color-primary: #1b5e4a;
+  --color-primary-hover: #174f3f;
+  --color-on-primary: #fff;
+  --color-danger: #b3261e;
+  --color-warning-bg: #fff6dd;
+  --color-warning-border: #e2c765;
+
+  /* quote ハイライト（検証済み = 緑系 / 未検証 = 黄系 / low confidence = 橙系） */
+  --color-highlight-verified: rgb(46 160 100 / 35%);
+  --color-highlight-unverified: rgb(255 214 79 / 40%);
+  --color-highlight-low-confidence: rgb(255 152 0 / 40%);
+  --font-family-base: "Hiragino Sans", "Noto Sans JP", "Yu Gothic UI", sans-serif;
+}
