@@ -93,6 +93,23 @@ export async function appendRow(
   row: readonly (string | number | boolean | null)[],
   deps: GoogleApiDeps
 ): Promise<void> {
+  await appendRows(spreadsheetId, tab, [row], deps);
+}
+
+/**
+ * 指定タブに複数行をまとめて追記する（1 API 呼び出し）。
+ * Evidence のバッチ追記など「行数が多く 1 行ずつの往復が高くつく」用途向け。
+ * 空配列は no-op（API を呼ばない）。null は空文字に変換する
+ */
+export async function appendRows(
+  spreadsheetId: string,
+  tab: string,
+  rows: readonly (readonly (string | number | boolean | null)[])[],
+  deps: GoogleApiDeps
+): Promise<void> {
+  if (rows.length === 0) {
+    return;
+  }
   const range = `${tab}!A1`;
   const url = `${API_BASE}/${spreadsheetId}/values/${encodeURIComponent(range)}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`;
   await googleFetch(
@@ -101,7 +118,7 @@ export async function appendRow(
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        values: [row.map((v) => (v === null ? '' : v))],
+        values: rows.map((row) => row.map((v) => (v === null ? '' : v))),
       }),
     },
     deps
@@ -111,8 +128,9 @@ export async function appendRow(
 /**
  * 指定タブの 1 行を丸ごと上書きする（annotator 行の現在値更新などの行書き換え用）。
  *
- * - 範囲は `{tab}!A{rowIndex}:Z{rowIndex}`（rowIndex は 1 始まりのシート行番号。
- *   ヘッダ行が 1 行目なので、データ 1 件目は通常 2 を渡す）
+ * - 範囲は `{tab}!A{rowIndex}` を起点にし、渡した values の幅ぶん右へ展開して書き込む
+ *   （rowIndex は 1 始まりのシート行番号。ヘッダ行が 1 行目なので、データ 1 件目は通常 2 を渡す。
+ *   StudyData の動的値列は 26 列 = Z 列を超えうるため、終端列は固定しない）
  * - valueInputOption=RAW で PUT する。null は空文字に変換する（appendRow と同じ挙動）
  *
  * 行の追加ではなく既存セルの上書きなので、行番号は呼び出し側が
@@ -126,7 +144,7 @@ export async function updateRow(
   row: readonly (string | number | boolean | null)[],
   deps: GoogleApiDeps
 ): Promise<void> {
-  const range = `${tab}!A${rowIndex}:Z${rowIndex}`;
+  const range = `${tab}!A${rowIndex}`;
   const url = `${API_BASE}/${spreadsheetId}/values/${encodeURIComponent(range)}?valueInputOption=RAW`;
   await googleFetch(
     url,
@@ -143,13 +161,14 @@ export async function updateRow(
 
 /**
  * 指定タブの全行を 2 次元配列で取得する。`majorDimension=ROWS`。
+ * 範囲はタブ名のみ指定（= 全列全行）。StudyData の動的値列が Z 列を超えても取りこぼさない
  */
 export async function getSheetValues(
   spreadsheetId: string,
   tab: string,
   deps: GoogleApiDeps
 ): Promise<string[][]> {
-  const range = `${tab}!A1:Z`;
+  const range = tab;
   const url = `${API_BASE}/${spreadsheetId}/values/${encodeURIComponent(range)}`;
   const res = await googleFetch(url, { method: 'GET' }, deps);
   const json = (await res.json()) as { values?: string[][] };

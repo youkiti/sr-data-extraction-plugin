@@ -61,7 +61,7 @@ function makeGoogle(): GoogleApiDeps {
             properties: { title },
           })),
         };
-      } else if (url.includes(`/values/${encodeURIComponent('Meta!A1:Z')}`)) {
+      } else if (url.endsWith('/values/Meta')) {
         json = {
           values: [
             [...SHEET_HEADERS.Meta],

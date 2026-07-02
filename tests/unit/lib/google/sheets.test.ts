@@ -1,5 +1,6 @@
 import {
   appendRow,
+  appendRows,
   createSpreadsheet,
   getSheetTitles,
   getSheetValues,
@@ -92,26 +93,59 @@ describe('appendRow', () => {
 });
 
 describe('updateRow', () => {
-  test('PUT /values/{tab}!A{n}:Z{n}?valueInputOption=RAW で行を上書き、null は空文字に変換', async () => {
+  test('PUT /values/{tab}!A{n}?valueInputOption=RAW で行を上書き、null は空文字に変換', async () => {
     const d = deps();
     await updateRow('sid', 'StudyData', 3, ['x', null, true], d);
     const [url, init] = d.fetch.mock.calls[0];
     expect(url).toContain('/sid/values/');
-    // range は StudyData!A3:Z3（encodeURIComponent 済み）
-    expect(decodeURIComponent(url as string)).toContain('StudyData!A3:Z3?valueInputOption=RAW');
+    // range は起点セル StudyData!A3 のみ指定し、values の幅ぶん右へ展開する
+    // （StudyData の動的値列は Z 列 = 26 列を超えうるため終端列は固定しない）
+    expect(decodeURIComponent(url as string)).toContain('StudyData!A3?valueInputOption=RAW');
     expect((init as RequestInit).method).toBe('PUT');
     const body = JSON.parse((init as RequestInit).body as string);
     expect(body.values).toEqual([['x', '', true]]);
   });
 });
 
+describe('appendRows', () => {
+  test('POST :append で複数行を一括追加、null は空文字に変換', async () => {
+    const d = deps();
+    await appendRows(
+      'sid',
+      'Evidence',
+      [
+        ['a', 1, null],
+        ['b', 2, true],
+      ],
+      d
+    );
+    expect(d.fetch).toHaveBeenCalledTimes(1);
+    const [url, init] = d.fetch.mock.calls[0];
+    expect(url).toContain(':append?valueInputOption=RAW');
+    const body = JSON.parse((init as RequestInit).body as string);
+    expect(body.values).toEqual([
+      ['a', 1, ''],
+      ['b', 2, true],
+    ]);
+  });
+
+  test('空配列は no-op（API を呼ばない）', async () => {
+    const d = deps();
+    await appendRows('sid', 'Evidence', [], d);
+    expect(d.fetch).not.toHaveBeenCalled();
+  });
+});
+
 describe('getSheetValues', () => {
-  test('values が返ってくればそのまま返す', async () => {
+  test('values が返ってくればそのまま返す（range はタブ名のみ = 全列全行）', async () => {
     const d = deps({ values: [['a', 'b'], ['c', 'd']] });
     await expect(getSheetValues('sid', 'Documents', d)).resolves.toEqual([
       ['a', 'b'],
       ['c', 'd'],
     ]);
+    const [url] = d.fetch.mock.calls[0];
+    expect(url).toContain('/sid/values/Documents');
+    expect(decodeURIComponent(url as string)).not.toContain('Documents!');
   });
 
   test('values が未定義なら [] を返す', async () => {

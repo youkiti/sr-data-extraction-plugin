@@ -110,8 +110,10 @@ src/
 │   │   ├── planRun.ts             # document × スキーマのバッチ分割 + トークン / コスト概算
 │   │   ├── executeRun.ts          # 実行・進捗・partial_failure 処理
 │   │   ├── validateAiOutput.ts    # zod 検証 + 「値と quote の矛盾 → confidence=low 強制」
+│   │   ├── aiAnnotationRows.ts    # Evidence → ai annotator 行の転記素材（純粋関数。§4.3）
 │   │   ├── evidenceRepository.ts  # Evidence タブ I/O（追記のみ）
-│   │   └── annotationRepository.ts# StudyData / ResultsData の annotator 行 I/O
+│   │   ├── annotationRepository.ts# StudyData / ResultsData の annotator 行 I/O（upsert + 重複キー検出 + 値列の追加）
+│   │   └── runRepository.ts       # ExtractionRuns タブ I/O（実行完了時に確定 status で 1 行追記）
 │   ├── anchoring/                 # 技術的中核（requirements.md §5）
 │   │   ├── normalizeText.ts       # 空白圧縮 / ハイフネーション結合 / リガチャ / NFKC
 │   │   ├── anchorQuote.ts         # exact → normalized → fuzzy の段階的マッチング
@@ -138,7 +140,8 @@ src/
 │   │   ├── GeminiProvider.ts      # MVP 実装
 │   │   ├── OpenRouterProvider.ts  # P1
 │   │   ├── providerFactory.ts
-│   │   └── apiLogger.ts           # LLMApiLog + Drive 保存（プロンプト版数も記録）
+│   │   ├── apiLogger.ts           # LLMApiLog + Drive 保存（プロンプト版数も記録）
+│   │   └── apiLogRepository.ts    # LLMApiLog タブへの行追記（apiLogger の appendLogEntry 実装）
 │   └── storage/
 │       ├── chromeStorage.ts / secretsStore.ts
 │       └── offlineQueue.ts        # tiab-review の実装を共通化して流用
