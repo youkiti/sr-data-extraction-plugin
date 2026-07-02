@@ -1,6 +1,7 @@
 // view が受け取る共通コンテキスト。view は render(state, ctx) の純粋関数のまま、
 // 副作用（サービス呼び出し）はコールバック経由で bootstrap へ委譲する（architecture.md §2.2）
 import type { Decision } from '../../domain/decision';
+import type { ExportFormat } from '../../domain/exportLog';
 import type { ProtocolSubmitInput } from '../../features/protocol/submitInput';
 import type { OutcomePresetKind } from '../../features/schema/presets/outcomeTemplates';
 import type { SchemaEditorRow } from '../../features/schema/types';
@@ -106,6 +107,22 @@ export interface DashboardViewCallbacks {
   onReload(): void;
 }
 
+/** #/export（S10）のユーザー操作コールバック */
+export interface ExportViewCallbacks {
+  /** 形式選択ラジオの切替（サマリ・プレビューが追随する） */
+  onSelectFormat(format: ExportFormat): void;
+  /** 「CSV を生成して Drive に保存」: 未検証セルが残っていれば警告ダイアログを開く */
+  onGenerate(): void;
+  /** 警告ダイアログの「続行して生成」 */
+  onConfirmGenerate(): void;
+  /** 警告ダイアログの「中止」 */
+  onCancelGenerate(): void;
+  /** 生成完了カードの「ローカル保存」（Blob ダウンロード） */
+  onDownload(): void;
+  /** 読み込み失敗時の再読み込み（強制再取得） */
+  onReload(): void;
+}
+
 export interface ViewContext {
   documents: DocumentsViewCallbacks;
   protocol: ProtocolViewCallbacks;
@@ -114,4 +131,5 @@ export interface ViewContext {
   extract: ExtractViewCallbacks;
   verify: VerifyViewCallbacks;
   dashboard: DashboardViewCallbacks;
+  export: ExportViewCallbacks;
 }

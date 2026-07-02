@@ -1,7 +1,7 @@
 // ExtractionRuns タブ I/O（requirements.md §3.1: 追記のみ・上書き禁止）。
 // run 1 件 = 実行完了時に確定 status（done / partial_failure）で 1 行追記する。
 // 実行中の進捗は UI（S7 の進捗バー）で in-memory 管理し、シートには残さない
-import type { ExtractionRun } from '../../domain/extractionRun';
+import type { ExtractionRun, RunAuditInfo } from '../../domain/extractionRun';
 import { SHEET_HEADERS } from '../../domain/sheetsSchema';
 import { appendRow, getSheetValues } from '../../lib/google/sheets';
 import type { GoogleApiDeps } from '../../lib/google/types';
@@ -77,6 +77,31 @@ export async function readRunSchemaVersions(
     map.set(runId, version);
   });
   return map;
+}
+
+/**
+ * audit.csv の Evidence 結合（buildAuditCsv）が使う run の最小情報
+ * （run_id / schema_version / started_at）を全 run ぶん読み込む（S10）
+ */
+export async function readRunAuditInfos(
+  spreadsheetId: string,
+  deps: GoogleApiDeps,
+): Promise<RunAuditInfo[]> {
+  const rows = await readRunRows(spreadsheetId, deps);
+  return rows.map((raw, i) => {
+    const cell = raw[2] ?? '';
+    // Number('') は 0 になるため、空セルは明示的に不正として扱う（readRunSchemaVersions と同じ規約）
+    const version = cell === '' ? Number.NaN : Number(cell);
+    if (!Number.isInteger(version)) {
+      throw new Error(`ExtractionRuns ${i + 2} 行目: schema_version "${cell}" が整数ではありません`);
+    }
+    const startedAt = raw[9] ?? '';
+    return {
+      runId: raw[0] ?? '',
+      schemaVersion: version,
+      startedAt: startedAt === '' ? null : startedAt,
+    };
+  });
 }
 
 /**

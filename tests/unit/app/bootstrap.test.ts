@@ -9,6 +9,25 @@ jest.mock('pdfjs-dist', () => ({
   GlobalWorkerOptions: { workerSrc: '' },
   getDocument: jest.fn(),
 }));
+// #/export の配線テストはサービス呼び出しの委譲だけを見る（実処理は exportService.test.ts）
+jest.mock('../../../src/app/services/exportService', () => ({
+  loadExportData: jest.fn(),
+  selectExportFormat: jest.fn(),
+  requestExportGenerate: jest.fn(),
+  confirmExportGenerate: jest.fn(),
+  cancelExportWarning: jest.fn(),
+  downloadExportResult: jest.fn(),
+}));
+import {
+  cancelExportWarning,
+  confirmExportGenerate,
+  downloadExportResult,
+  loadExportData,
+  requestExportGenerate,
+  selectExportFormat,
+} from '../../../src/app/services/exportService';
+import type { BuiltExport } from '../../../src/features/export/buildExport';
+import type { ExportFormat } from '../../../src/domain/exportLog';
 import type { AppState } from '../../../src/app/store';
 import { SHEET_HEADERS } from '../../../src/domain/sheetsSchema';
 import { CURRENT_PROJECT_STORAGE_KEY } from '../../../src/features/project/projectStore';
@@ -201,6 +220,15 @@ describe('seedState', () => {
     const state = await seedState(asWindow(stub));
     expect(state.dashboard.loadError).toBe('注入エラー');
     expect(state.dashboard.loading).toBe(false); // 未指定フィールドは既定値
+  });
+
+  test('E2E seam: export スライスも部分注入でマージする', async () => {
+    const stub = createWindowStub({
+      export: { loadError: '注入エラー' } as unknown as AppState['export'],
+    });
+    const state = await seedState(asWindow(stub));
+    expect(state.export.loadError).toBe('注入エラー');
+    expect(state.export.format).toBe('study_wide'); // 未指定フィールドは既定値
   });
 });
 
@@ -1395,5 +1423,117 @@ describe('bootstrapApp: #/verify・#/dashboard', () => {
     await flush();
     expect(fetchMock.mock.calls.length).toBeGreaterThan(callsBefore);
     expect(document.getElementById('dashboard-load-error')).not.toBeNull(); // 依然失敗のまま
+  });
+});
+
+// ---------------------------------------------------------------------------
+// #/export（S10）の配線
+// ---------------------------------------------------------------------------
+
+describe('bootstrapApp: #/export', () => {
+  const loadExportDataMock = loadExportData as jest.Mock;
+  const selectExportFormatMock = selectExportFormat as jest.Mock;
+  const requestExportGenerateMock = requestExportGenerate as jest.Mock;
+  const confirmExportGenerateMock = confirmExportGenerate as jest.Mock;
+  const cancelExportWarningMock = cancelExportWarning as jest.Mock;
+  const downloadExportResultMock = downloadExportResult as jest.Mock;
+
+  beforeEach(() => {
+    installChromeMock();
+    document.body.innerHTML = APP_TEMPLATE;
+  });
+
+  function makeBuilt(format: ExportFormat): BuiltExport {
+    return {
+      format,
+      csv: 'csv',
+      header: ['study_label'],
+      previewRows: [['Smith 2020']],
+      rowCount: 1,
+      documentCount: 1,
+      unverifiedCellCount: format === 'results_long' ? null : 0,
+      skippedStudyLabels: [],
+      droppedRowCount: 0,
+    };
+  }
+
+  function exportPreloaded(exportPatch: Partial<AppState['export']> = {}): Partial<AppState> {
+    return {
+      currentProject: PROJECT,
+      counts: {
+        documents: 1,
+        protocolVersions: 1,
+        schemaVersions: 1,
+        pilotRuns: 1,
+        evidenceRows: 1,
+        dataRows: 1, // #/export のガード（ui-flow.md §4）
+      },
+      export: exportPatch as AppState['export'],
+    };
+  }
+
+  test('#/export 入場で素材読込を起動し、各操作をサービスへ委譲する', async () => {
+    const stub = createWindowStub(
+      exportPreloaded({
+        built: {
+          study_wide: makeBuilt('study_wide'),
+          results_long: makeBuilt('results_long'),
+          audit: makeBuilt('audit'),
+        },
+        schemaVersion: 2,
+      }),
+    );
+    const { deps } = createFakeDeps([]);
+    const store = await bootstrapApp(asWindow(stub), deps);
+    stub.location.hash = '#/export';
+    stub.fireHashChange();
+    expect(loadExportDataMock).toHaveBeenCalledWith(store, deps);
+
+    // 形式ラジオ切替 → selectExportFormat
+    const radios = document.querySelectorAll<HTMLInputElement>('#export-format input[type=radio]');
+    (radios[2] as HTMLInputElement).dispatchEvent(new Event('change'));
+    expect(selectExportFormatMock).toHaveBeenCalledWith(store, 'audit');
+
+    // 生成 → requestExportGenerate
+    (document.getElementById('export-generate') as HTMLButtonElement).click();
+    expect(requestExportGenerateMock).toHaveBeenCalledWith(store, deps);
+
+    // 警告ダイアログ → confirm / cancel
+    store?.setState({ export: { ...store.getState().export, confirmingWarning: true } });
+    (document.getElementById('export-warning-continue') as HTMLButtonElement).click();
+    expect(confirmExportGenerateMock).toHaveBeenCalledWith(store, deps);
+    (document.getElementById('export-warning-cancel') as HTMLButtonElement).click();
+    expect(cancelExportWarningMock).toHaveBeenCalledWith(store);
+
+    // 結果カード → downloadExportResult
+    store?.setState({
+      export: {
+        ...store.getState().export,
+        confirmingWarning: false,
+        result: {
+          format: 'study_wide',
+          filename: 'study_wide_20260703-090000.csv',
+          fileRef: 'https://drive/file-1',
+          rowCount: 1,
+          exportedAt: '2026-07-03T09:00:00.000Z',
+          csv: 'csv',
+        },
+      },
+    });
+    (document.getElementById('export-download') as HTMLButtonElement).click();
+    expect(downloadExportResultMock).toHaveBeenCalledWith(store);
+  });
+
+  test('#/export の読み込み失敗は再読み込みで force 再取得を委譲する', async () => {
+    const stub = createWindowStub(exportPreloaded({ loadError: '権限がありません' }));
+    const { deps } = createFakeDeps([]);
+    const store = await bootstrapApp(asWindow(stub), deps);
+    stub.location.hash = '#/export';
+    stub.fireHashChange();
+    expect(document.getElementById('export-load-error')?.textContent).toContain(
+      '権限がありません',
+    );
+    (document.getElementById('export-reload') as HTMLButtonElement).click();
+    expect(loadExportDataMock).toHaveBeenCalledWith(store, deps, { force: true });
   });
 });

@@ -49,6 +49,14 @@ const stubCtx: ViewContext = {
     onArmConfirm: jest.fn(),
   },
   dashboard: { onReload: jest.fn() },
+  export: {
+    onSelectFormat: jest.fn(),
+    onGenerate: jest.fn(),
+    onConfirmGenerate: jest.fn(),
+    onCancelGenerate: jest.fn(),
+    onDownload: jest.fn(),
+    onReload: jest.fn(),
+  },
 };
 
 describe('normalizeHash', () => {

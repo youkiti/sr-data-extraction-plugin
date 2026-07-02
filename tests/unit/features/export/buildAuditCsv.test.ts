@@ -162,6 +162,16 @@ describe('buildAuditCsv', () => {
     expect(rows[2]?.[21]).toBe('Table 2 と本文で不一致、Table 2 採用');
     expect(result.undecidedCellCount).toBe(0);
     expect(result.droppedRowCount).toBe(0);
+    expect(result.documentCount).toBe(1);
+  });
+
+  test('Evidence も判定もない document は documentCount に数えない', () => {
+    const documents = [doc('d1', 'Tanaka 2023'), doc('d2', 'Suzuki 2024')];
+    const fields = [field('f1', 'total_n', 1)];
+    const runs = [run('run-1', 1, '2026-07-01T00:00:00Z')];
+    const evidences = [evidence('e1', 'run-1', 'd1', 'f1', '-')];
+    const result = buildAuditCsv(documents, [], evidences, runs, fields);
+    expect(result.documentCount).toBe(1);
   });
 
   test('判定 0 件のセルは最新 run の代表 Evidence でプレースホルダ 1 行を出す', () => {

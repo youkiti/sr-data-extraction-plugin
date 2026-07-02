@@ -4,7 +4,7 @@
 import type { Decision } from '../../domain/decision';
 import type { DocumentRecord } from '../../domain/document';
 import type { Evidence } from '../../domain/evidence';
-import type { ExtractionRun } from '../../domain/extractionRun';
+import type { RunAuditInfo } from '../../domain/extractionRun';
 import type { SchemaField } from '../../domain/schemaField';
 import { buildCsv } from './csvEncode';
 
@@ -51,6 +51,8 @@ export interface AuditCsvResult {
   undecidedCellCount: number;
   /** field_id が SchemaFields に見つからず出力から除外した行数（判定行 + プレースホルダ行） */
   droppedRowCount: number;
+  /** CSV に行が出た文献数（ExportLog.document_count） */
+  documentCount: number;
 }
 
 /** ソートと行内容をまとめた中間表現。sortKey は document 内で一意（結合規則 4 の並び順を単一文字列比較に落とす） */
@@ -66,7 +68,7 @@ export function buildAuditCsv(
   documents: readonly DocumentRecord[],
   decisions: readonly Decision[],
   evidences: readonly Evidence[],
-  runs: readonly ExtractionRun[],
+  runs: readonly RunAuditInfo[],
   fields: readonly SchemaField[],
 ): AuditCsvResult {
   const fieldById = new Map(fields.map((field) => [field.fieldId, field]));
@@ -97,6 +99,7 @@ export function buildAuditCsv(
   const csvRows: string[][] = [];
   let undecidedCellCount = 0;
   let droppedRowCount = 0;
+  let documentCount = 0;
 
   for (const doc of documents) {
     const evidenceByCell = new Map<string, Evidence[]>();
@@ -210,9 +213,12 @@ export function buildAuditCsv(
     // 結合規則 4: entity_key → field_index → annotator → decision_seq の順（document は取り込み順のまま）
     // sortKey は document 内で一意なので等値分岐は不要
     items.sort((a, b) => (a.sortKey < b.sortKey ? -1 : 1));
+    if (items.length > 0) {
+      documentCount++;
+    }
     for (const item of items) {
       csvRows.push(item.row);
     }
   }
-  return { csv: buildCsv(AUDIT_HEADER, csvRows), undecidedCellCount, droppedRowCount };
+  return { csv: buildCsv(AUDIT_HEADER, csvRows), undecidedCellCount, droppedRowCount, documentCount };
 }

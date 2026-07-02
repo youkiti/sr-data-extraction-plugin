@@ -61,6 +61,14 @@ import {
   persistVerifyDecision,
 } from './services/verifyService';
 import { loadDashboard } from './services/dashboardService';
+import {
+  cancelExportWarning,
+  confirmExportGenerate,
+  downloadExportResult,
+  loadExportData,
+  requestExportGenerate,
+  selectExportFormat,
+} from './services/exportService';
 import { createChromeGoogleApiDeps } from './services/factories';
 import { loadCurrentProject } from '../features/project/projectStore';
 import { extractDocxText } from '../lib/docx/extractDocxText';
@@ -95,6 +103,7 @@ export async function seedState(win: Window): Promise<AppState> {
       extract: { ...state.extract, ...(preloaded.extract ?? {}) },
       verify: { ...state.verify, ...(preloaded.verify ?? {}) },
       dashboard: { ...state.dashboard, ...(preloaded.dashboard ?? {}) },
+      export: { ...state.export, ...(preloaded.export ?? {}) },
     };
   }
   return state;
@@ -271,6 +280,26 @@ export async function bootstrapApp(
         void loadDashboard(store, deps, { force: true });
       },
     },
+    export: {
+      onSelectFormat: (format) => {
+        selectExportFormat(store, format);
+      },
+      onGenerate: () => {
+        void requestExportGenerate(store, deps);
+      },
+      onConfirmGenerate: () => {
+        void confirmExportGenerate(store, deps);
+      },
+      onCancelGenerate: () => {
+        cancelExportWarning(store);
+      },
+      onDownload: () => {
+        downloadExportResult(store);
+      },
+      onReload: () => {
+        void loadExportData(store, deps, { force: true });
+      },
+    },
   };
 
   /**
@@ -401,6 +430,10 @@ export async function bootstrapApp(
     if (currentHash === '#/dashboard') {
       // 初回表示時に集計を読み込む（読込済みなら loadDashboard 側で no-op）
       void loadDashboard(store, deps);
+    }
+    if (currentHash === '#/export') {
+      // 初回表示時に素材を読み込んで 3 形式の CSV を構築（読込済みなら loadExportData 側で no-op）
+      void loadExportData(store, deps);
     }
   };
 

@@ -2,7 +2,9 @@
 // 状態変更は必ず setState 経由で行う（architecture.md §2.2）
 import type { DocumentRecord } from '../domain/document';
 import type { Evidence } from '../domain/evidence';
+import type { ExportFormat } from '../domain/exportLog';
 import type { ExtractionRun } from '../domain/extractionRun';
+import type { BuiltExport } from '../features/export/buildExport';
 import type { ProjectRef } from '../domain/project';
 import type { Protocol } from '../domain/protocol';
 import type { SchemaField } from '../domain/schemaField';
@@ -179,6 +181,35 @@ export interface VerifyState {
   queuedDecisions: number;
 }
 
+/** #/export（S10）の直近の生成結果（結果カードの素材。次の生成開始まで残す） */
+export interface ExportResultInfo {
+  format: ExportFormat;
+  filename: string;
+  /** Drive の webViewLink（ExportLog.file_ref と同値） */
+  fileRef: string;
+  rowCount: number;
+  exportedAt: string;
+  /** ローカル保存用の CSV 本文（Drive に保存したものと同一内容を保持する） */
+  csv: string;
+}
+
+/** #/export（S10）の画面状態 */
+export interface ExportState {
+  /** 選択中の形式 */
+  format: ExportFormat;
+  /** 3 形式の構築結果。null = 未読込（画面表示時に読み込む） */
+  built: Record<ExportFormat, BuiltExport> | null;
+  /** built の構築に使った最新確定版（ExportLog.schema_version） */
+  schemaVersion: number | null;
+  loading: boolean;
+  loadError: string | null;
+  /** 未検証セル残存の警告ダイアログ（#export-warning）を表示中か */
+  confirmingWarning: boolean;
+  generating: boolean;
+  generateError: string | null;
+  result: ExportResultInfo | null;
+}
+
 /** #/dashboard（S9）の画面状態 */
 export interface DashboardState {
   /** 集計結果。null = 未読込（画面表示時に読み込む） */
@@ -197,6 +228,7 @@ export interface AppState {
   extract: ExtractState;
   verify: VerifyState;
   dashboard: DashboardState;
+  export: ExportState;
 }
 
 export type StateListener = (state: AppState) => void;
@@ -301,6 +333,17 @@ export function createInitialState(): AppState {
       data: null,
       loading: false,
       loadError: null,
+    },
+    export: {
+      format: 'study_wide',
+      built: null,
+      schemaVersion: null,
+      loading: false,
+      loadError: null,
+      confirmingWarning: false,
+      generating: false,
+      generateError: null,
+      result: null,
     },
   };
 }

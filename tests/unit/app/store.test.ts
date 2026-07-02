@@ -96,6 +96,17 @@ describe('createInitialState', () => {
         loading: false,
         loadError: null,
       },
+      export: {
+        format: 'study_wide',
+        built: null,
+        schemaVersion: null,
+        loading: false,
+        loadError: null,
+        confirmingWarning: false,
+        generating: false,
+        generateError: null,
+        result: null,
+      },
     });
   });
 });
