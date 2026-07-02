@@ -14,7 +14,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | [docs/ui-states.md](docs/ui-states.md) | UI 状態マトリクス（target spec。**スケルトン段階の実装状況は冒頭の drift 注記を参照**） |
 | [docs/test-strategy.md](docs/test-strategy.md) | テスト戦略。jest 100% + Playwright の流用構成・E2E seam（worker 解決 / 状態注入）・PDF fixture 2 層運用・フェーズ計画・CI 段階導入 |
 
-次のステップ: 実機での Picker 動作確認（hosted/picker.html はデプロイ済み。hosted/README.md）と、実機での通し確認（S1 プロジェクト作成 → S3 取り込み → … → S10 エクスポート）。テストは jest（カバレッジ 100% 強制）+ Playwright smoke + CI-1 が稼働済みのため、作業原則 7・8 は**有効**。
+次のステップ: 実機での Picker 動作確認（hosted/picker.html はデプロイ済み。hosted/README.md）と、実機での通し確認（S1 プロジェクト作成 → S3 取り込み → … → S10 エクスポート）。手順・チェックリストは [docs/manual-testing.md](docs/manual-testing.md)。テストは jest（カバレッジ 100% 強制）+ Playwright smoke + CI-1 が稼働済みのため、作業原則 7・8 は**有効**。
 
 ## 目的（ゴール）
 

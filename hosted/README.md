@@ -14,3 +14,8 @@ MV3 の remote hosted code 制約により、Google Picker（`apis.google.com/js
 
 - `src/lib/google/picker.ts` の `PICKER_PAGE_URL`
 - `src/manifest.json` の `externally_connectable.matches`
+
+## 実機での動作確認
+
+デプロイ後の実機確認手順（チェックリスト + トラブルシューティング）は
+[docs/manual-testing.md](../docs/manual-testing.md) を参照。
