@@ -106,7 +106,9 @@ src/
 │   │   ├── detectTextStatus.ts    # ok / partial / no_text_layer 判定
 │   │   ├── loadDocumentPages.ts   # text_ref → ページ別テキスト復元（extractionService へ注入）
 │   │   └── documentRepository.ts
-│   ├── protocol/                  # sr-query-builder から移植（parseDocx / parseMarkdown / repository）
+│   ├── protocol/                  # sr-query-builder から移植（parseManual / parseMarkdown / parseDocx /
+│   │                              #   protocolRepository〔ProtocolBlocks 関連は除外〕）+ saveProtocol
+│   │                              #   （raw_protocols/ 退避 → 新 version 追記。LLM 抽出なし）
 │   ├── schema/
 │   │   ├── skills/draftSchema.ts  # draft-schema skill 呼び出し
 │   │   ├── schemaRepository.ts    # SchemaVersions / SchemaFields I/O
@@ -146,6 +148,8 @@ src/
 │   ├── pdf/
 │   │   ├── loadPdf.ts             # pdfjs-dist 初期化（worker は同梱、CSP 準拠。バージョンは 6.1.200 固定）
 │   │   └── textLayer.ts           # ページ別テキスト + span 座標の取得（anchor-spike の抽出ロジックを正式化）
+│   ├── docx/
+│   │   └── extractDocxText.ts     # mammoth.extractRawText のラッパ（features/protocol の DocxExtractor 実装）
 │   ├── llm/
 │   │   ├── LLMProvider.ts         # interface（テキスト入力 + PDF 直接入力の両対応 ※Q3）
 │   │   ├── GeminiProvider.ts      # MVP 実装

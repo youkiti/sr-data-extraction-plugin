@@ -1,7 +1,7 @@
 import { createInitialState, createStore } from '../../../src/app/store';
 
 describe('createInitialState', () => {
-  test('プロジェクト未選択・全カウント 0・documents 未読込で開始する', () => {
+  test('プロジェクト未選択・全カウント 0・documents / protocol 未読込で開始する', () => {
     expect(createInitialState()).toEqual({
       currentProject: null,
       counts: {
@@ -18,6 +18,16 @@ describe('createInitialState', () => {
         loadError: null,
         importing: false,
         importRows: [],
+      },
+      protocol: {
+        records: null,
+        loading: false,
+        loadError: null,
+        saving: false,
+        saveError: null,
+        editing: false,
+        selectedVersion: null,
+        draftText: '',
       },
     });
   });

@@ -4,6 +4,13 @@ import type { ViewContext } from '../../../src/app/views/types';
 
 const stubCtx: ViewContext = {
   documents: { onImport: jest.fn(), onReload: jest.fn(), onSaveStudyLabel: jest.fn() },
+  protocol: {
+    onSubmit: jest.fn(),
+    onStartEdit: jest.fn(),
+    onCancelEdit: jest.fn(),
+    onSelectVersion: jest.fn(),
+    onReload: jest.fn(),
+  },
 };
 
 describe('normalizeHash', () => {

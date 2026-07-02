@@ -2,6 +2,7 @@
 // 状態変更は必ず setState 経由で行う（architecture.md §2.2）
 import type { DocumentRecord } from '../domain/document';
 import type { ProjectRef } from '../domain/project';
+import type { Protocol } from '../domain/protocol';
 
 /** ガード判定・進捗サマリに使う各タブの行数サマリ（ui-flow.md §4） */
 export interface ProgressCounts {
@@ -41,10 +42,28 @@ export interface DocumentsState {
   importRows: ImportRow[];
 }
 
+/** #/protocol（S4）の画面状態 */
+export interface ProtocolState {
+  /** Protocol タブの全 version（降順）。null = 未読込（画面表示時に読み込む） */
+  records: Protocol[] | null;
+  loading: boolean;
+  loadError: string | null;
+  saving: boolean;
+  /** 保存・パース失敗の文言（フォームのエラー領域に表示） */
+  saveError: string | null;
+  /** 既存版があるときに再入力フォームを開いているか（読み取り専用 ↔ フォームの分岐） */
+  editing: boolean;
+  /** 読み取り専用表示で選択中の版。null = 最新 */
+  selectedVersion: number | null;
+  /** 保存中・保存失敗の再描画でフォーム本文を復元するための下書き（手入力のみ） */
+  draftText: string;
+}
+
 export interface AppState {
   currentProject: ProjectRef | null;
   counts: ProgressCounts;
   documents: DocumentsState;
+  protocol: ProtocolState;
 }
 
 export type StateListener = (state: AppState) => void;
@@ -72,6 +91,16 @@ export function createInitialState(): AppState {
       loadError: null,
       importing: false,
       importRows: [],
+    },
+    protocol: {
+      records: null,
+      loading: false,
+      loadError: null,
+      saving: false,
+      saveError: null,
+      editing: false,
+      selectedVersion: null,
+      draftText: '',
     },
   };
 }

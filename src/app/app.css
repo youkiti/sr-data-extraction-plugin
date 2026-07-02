@@ -256,3 +256,133 @@
   display: block;
   color: var(--color-text-muted);
 }
+
+/* #/protocol（S4）: 入力フォーム・読み取り専用サマリ（ui-states.md §3） */
+.protocol__form {
+  display: grid;
+  gap: 16px;
+  max-width: 760px;
+  margin-top: 16px;
+}
+
+.protocol__source {
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 12px 16px;
+}
+
+.protocol__source legend {
+  font-weight: 700;
+  padding: 0 4px;
+}
+
+.protocol__source-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: 16px;
+}
+
+.protocol__field {
+  display: grid;
+  gap: 6px;
+}
+
+.protocol__field > span {
+  font-weight: 700;
+}
+
+.protocol__textarea {
+  font: inherit;
+  padding: 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  min-height: 160px;
+  resize: vertical;
+}
+
+.protocol__error {
+  color: var(--color-danger);
+  margin: 0;
+}
+
+.protocol__status {
+  color: var(--color-primary);
+  margin: 0;
+}
+
+.protocol__actions {
+  display: flex;
+  gap: 12px;
+  margin: 8px 0;
+}
+
+.protocol__submit {
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  border: none;
+  border-radius: 6px;
+  padding: 8px 16px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.protocol__submit:disabled {
+  opacity: 0.55;
+  cursor: progress;
+}
+
+.protocol__submit:hover:enabled {
+  background: var(--color-primary-hover);
+}
+
+.protocol__readonly {
+  display: grid;
+  gap: 12px;
+  max-width: 760px;
+  margin-top: 16px;
+}
+
+.protocol__versions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.protocol__versions > span {
+  font-weight: 700;
+}
+
+.protocol__version-select {
+  font: inherit;
+  padding: 4px 8px;
+}
+
+.protocol__old-note {
+  margin: 0;
+  padding: 8px 12px;
+  background: var(--color-warning-bg);
+  border: 1px solid var(--color-warning-border);
+  border-radius: 6px;
+}
+
+.protocol__summary {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 8px 16px;
+  margin: 0;
+  padding: 12px 16px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+}
+
+.protocol__summary dt {
+  font-weight: 700;
+}
+
+.protocol__summary dd {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

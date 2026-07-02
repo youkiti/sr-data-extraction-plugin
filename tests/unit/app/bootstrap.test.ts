@@ -114,6 +114,9 @@ function createFakeDeps(values: string[][]): { deps: AppDeps; fetchMock: jest.Mo
     loadPdf: async () => {
       throw new Error('pdf not available in test');
     },
+    extractDocxText: async () => {
+      throw new Error('docx not available in test');
+    },
   };
   return { deps, fetchMock };
 }
@@ -165,6 +168,16 @@ describe('seedState', () => {
     expect(state.documents.records).toEqual([]);
     expect(state.documents.importing).toBe(true);
     expect(state.documents.loading).toBe(false); // 未指定フィールドは既定値
+  });
+
+  test('E2E seam: protocol スライスも部分注入でマージする', async () => {
+    const stub = createWindowStub({
+      protocol: { records: [], editing: true } as unknown as AppState['protocol'],
+    });
+    const state = await seedState(asWindow(stub));
+    expect(state.protocol.records).toEqual([]);
+    expect(state.protocol.editing).toBe(true);
+    expect(state.protocol.saving).toBe(false); // 未指定フィールドは既定値
   });
 });
 
@@ -328,6 +341,86 @@ describe('bootstrapApp', () => {
     expect(
       (document.querySelector('.documents__label-input') as HTMLInputElement).value,
     ).toBe('Smith 2020a');
+  });
+
+  test('#/protocol 入場で全 version を読み込む（0 件 → 新規フォーム表示）', async () => {
+    const stub = createWindowStub({ currentProject: PROJECT });
+    const { deps, fetchMock } = createFakeDeps([[...SHEET_HEADERS.Protocol]]);
+    await bootstrapApp(asWindow(stub), deps);
+
+    stub.location.hash = '#/protocol';
+    stub.fireHashChange();
+    await flush();
+
+    expect(fetchMock).toHaveBeenCalledTimes(1); // Protocol タブの values GET
+    expect(document.getElementById('protocol-form')).not.toBeNull();
+  });
+
+  test('#/protocol の保存 → 読み取り専用 → 編集 / キャンセル / 再読み込みが配線されている', async () => {
+    const stub = createWindowStub({ currentProject: PROJECT });
+    const { deps, fetchMock } = createFakeDeps([[...SHEET_HEADERS.Protocol]]);
+    await bootstrapApp(asWindow(stub), deps);
+    stub.location.hash = '#/protocol';
+    stub.fireHashChange();
+    await flush();
+
+    // 保存: 手入力本文 → ensureChildFolder / version 解決 / 追記 まで fake fetch で通る
+    const textarea = document.getElementById('protocol-inline') as HTMLTextAreaElement;
+    textarea.value = 'P: 成人肺炎';
+    (document.getElementById('protocol-form') as HTMLFormElement).dispatchEvent(
+      new Event('submit', { cancelable: true }),
+    );
+    await flush();
+    expect(toastTexts()).toContain('プロトコル v1 を保存しました');
+    expect(document.getElementById('protocol-readonly')).not.toBeNull();
+
+    // 編集 → 再入力フォーム → キャンセルで読み取り専用へ戻る
+    (document.getElementById('protocol-edit') as HTMLButtonElement).click();
+    expect(document.getElementById('protocol-form')).not.toBeNull();
+    (document.getElementById('protocol-cancel') as HTMLButtonElement).click();
+    expect(document.getElementById('protocol-readonly')).not.toBeNull();
+
+    // 再読み込み（Protocol タブは fake ではヘッダーのみ → 空フォームへ戻る）
+    const callsBefore = fetchMock.mock.calls.length;
+    (document.getElementById('protocol-reload') as HTMLButtonElement).click();
+    await flush();
+    expect(fetchMock.mock.calls.length).toBeGreaterThan(callsBefore);
+    expect(document.getElementById('protocol-form')).not.toBeNull();
+  });
+
+  test('#/protocol のバージョン切替が配線されている', async () => {
+    const makeProtocolSeed = (version: number): Record<string, unknown> => ({
+      version,
+      frameworkType: null,
+      researchQuestion: '',
+      inclusionCriteria: null,
+      exclusionCriteria: null,
+      studyDesign: null,
+      blockCount: 0,
+      combinationExpression: '',
+      sourceType: 'manual',
+      sourceFilename: null,
+      rawTextRef: null,
+      rawTextPreview: 'preview',
+      rawTextInline: '本文',
+      createdAt: `2026-07-0${version}T00:00:00Z`,
+      createdBy: 'tester@example.com',
+    });
+    const stub = createWindowStub({
+      currentProject: PROJECT,
+      protocol: {
+        records: [makeProtocolSeed(2), makeProtocolSeed(1)],
+      } as unknown as AppState['protocol'],
+    });
+    await bootstrapApp(asWindow(stub));
+    stub.location.hash = '#/protocol';
+    stub.fireHashChange();
+    await flush();
+
+    const select = document.getElementById('protocol-version-select') as HTMLSelectElement;
+    select.value = '1';
+    select.dispatchEvent(new Event('change'));
+    expect(document.getElementById('protocol-old-note')?.textContent).toContain('最新: v2');
   });
 
   test('ストア更新でヘッダ・サイドバー・現在ルートを再描画する', async () => {

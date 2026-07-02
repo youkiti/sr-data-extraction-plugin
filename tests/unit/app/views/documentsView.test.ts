@@ -31,7 +31,14 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<DocumentsViewCall
     onReload: jest.fn(),
     onSaveStudyLabel: jest.fn(),
   };
-  return { ctx: { documents: callbacks }, callbacks };
+  const protocol = {
+    onSubmit: jest.fn(),
+    onStartEdit: jest.fn(),
+    onCancelEdit: jest.fn(),
+    onSelectVersion: jest.fn(),
+    onReload: jest.fn(),
+  };
+  return { ctx: { documents: callbacks, protocol }, callbacks };
 }
 
 function makeState(patch: Partial<AppState['documents']> = {}, withProject = true): AppState {

@@ -62,7 +62,7 @@ architecture.md §7 のチェックポイントと対応させる：
 |---|---|---|
 | 0 | スケルトン PR（チェックポイント 1） | jest + chrome-mock + カバレッジ 100% + eslint / stylelint / typecheck 一式。**Playwright も配管だけ通す**（app.html が開いて `#/home` が描画される smoke 1 本 = sr-query-builder の `app-smoke-of-smoke.spec.ts` 相当）。§2.1 の seam 2 点もここで入れる |
 | 1 | 各機能実装と並走 | 実装と同 PR で unit テスト（100% 強制のため自動的に並走）。anchoring のみ fixture + テスト先行（§2.3） |
-| 2 | 各画面完成ごと | ルート別 E2E spec（popup / documents / schema / pilot / extract / verify / dashboard / export）+ axe。ui-states.md の該当セクションと照合し、乖離は drift 注記へ |
+| 2 | 各画面完成ごと | ルート別 E2E spec（popup / documents / protocol / schema / pilot / extract / verify / dashboard / export）+ axe。ui-states.md の該当セクションと照合し、乖離は drift 注記へ |
 | 3 | MVP 統合 | journey spec（取り込み → スキーマ → 抽出 → 検証 → CSV エクスポート貫通）+ エラー系 journey（API 失敗 / partial_failure / anchor failed） |
 
 Playwright をフェーズ 0 で入れるのは、後付けにすると chrome スタブ / worker 解決 / 状態注入の seam 設計が実装から漏れて手戻りするため（sr-query-builder で実証済み）。

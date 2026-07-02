@@ -12,8 +12,17 @@ import {
   saveStudyLabel,
   type DocumentsServiceDeps,
 } from './services/documentsService';
+import {
+  cancelEditProtocol,
+  loadProtocols,
+  selectProtocolVersion,
+  startEditProtocol,
+  submitProtocol,
+  type ProtocolServiceDeps,
+} from './services/protocolService';
 import { createChromeGoogleApiDeps } from './services/factories';
 import { loadCurrentProject } from '../features/project/projectStore';
+import { extractDocxText } from '../lib/docx/extractDocxText';
 import { createChromeProfileDeps } from '../lib/google/identity';
 import { createChromePickerDeps } from '../lib/google/picker';
 import { loadDisposablePdf } from '../lib/pdf/loadPdf';
@@ -37,13 +46,14 @@ export async function seedState(win: Window): Promise<AppState> {
       ...preloaded,
       counts: { ...state.counts, ...(preloaded.counts ?? {}) },
       documents: { ...state.documents, ...(preloaded.documents ?? {}) },
+      protocol: { ...state.protocol, ...(preloaded.protocol ?? {}) },
     };
   }
   return state;
 }
 
-/** app 実行時のサービス依存（documentsService ほか）。テストは fake を注入する */
-export type AppDeps = DocumentsServiceDeps;
+/** app 実行時のサービス依存（documentsService / protocolService ほか）。テストは fake を注入する */
+export type AppDeps = DocumentsServiceDeps & ProtocolServiceDeps;
 
 /** Chrome ランタイムから AppDeps を組み立てる既定実装 */
 export function createChromeAppDeps(): AppDeps {
@@ -53,6 +63,7 @@ export function createChromeAppDeps(): AppDeps {
     profile: createChromeProfileDeps(),
     picker: createChromePickerDeps(google),
     loadPdf: loadDisposablePdf,
+    extractDocxText,
   };
 }
 
@@ -86,6 +97,23 @@ export async function bootstrapApp(
       },
       onSaveStudyLabel: (documentId, label) => {
         void saveStudyLabel(store, deps, documentId, label);
+      },
+    },
+    protocol: {
+      onSubmit: (input) => {
+        void submitProtocol(store, deps, input);
+      },
+      onStartEdit: () => {
+        startEditProtocol(store);
+      },
+      onCancelEdit: () => {
+        cancelEditProtocol(store);
+      },
+      onSelectVersion: (version) => {
+        selectProtocolVersion(store, version);
+      },
+      onReload: () => {
+        void loadProtocols(store, deps, { force: true });
       },
     },
   };
@@ -152,6 +180,10 @@ export async function bootstrapApp(
     if (currentHash === '#/documents') {
       // 初回表示時に一覧を読み込む（読込済みなら loadDocuments 側で no-op）
       void loadDocuments(store, deps);
+    }
+    if (currentHash === '#/protocol') {
+      // 初回表示時に全 version を読み込む（読込済みなら loadProtocols 側で no-op）
+      void loadProtocols(store, deps);
     }
   };
 
