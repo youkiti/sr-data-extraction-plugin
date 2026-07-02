@@ -14,7 +14,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | [docs/ui-states.md](docs/ui-states.md) | UI 状態マトリクス（target spec。**スケルトン段階の実装状況は冒頭の drift 注記を参照**） |
 | [docs/test-strategy.md](docs/test-strategy.md) | テスト戦略。jest 100% + Playwright の流用構成・E2E seam（worker 解決 / 状態注入）・PDF fixture 2 層運用・フェーズ計画・CI 段階導入 |
 
-次のステップ: 実機での通し確認の続き（S4 プロトコル → … → S10 エクスポート）。**Picker の実機動作確認は 2026-07-03 に完了**（S1 ログイン / プロジェクト作成 → S3 Picker 取り込み → `#/home` の batchGet 実弾まで。Selenium 半自動ハーネス `tools/selenium/manualCheck.mjs` で実施。キャンセル系エッジと Sheets / Drive の目視裏取りは未実施 — [docs/manual-testing.md](docs/manual-testing.md) §3 の結果メモ参照）。テストは jest（カバレッジ 100% 強制）+ Playwright smoke + CI-1 が稼働済みのため、作業原則 7・8 は**有効**。
+次のステップ: 実機での通し確認の続き（S4 プロトコル → … → S10 エクスポート）。**Picker の実機動作確認は 2026-07-03 に完了**（S1 ログイン / プロジェクト作成 → S3 Picker 取り込み → `#/home` の batchGet 実弾まで。Selenium 半自動ハーネス `tools/selenium/manualCheck.mjs` で実施。**Sheets / Drive の裏取り（§1-2 #1〜2）も 2026-07-03 に Drive API 経由で確認済み**。キャンセル系エッジ（§1-3）と S4 以降の通し確認（§2）が未実施 — [docs/manual-testing.md](docs/manual-testing.md) §3 の結果メモ参照）。テストは jest（カバレッジ 100% 強制）+ Playwright smoke + CI-1 が稼働済みのため、作業原則 7・8 は**有効**。
 
 ## 目的（ゴール）
 
