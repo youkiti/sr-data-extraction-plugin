@@ -1,13 +1,14 @@
 import {
   initPilotSelection,
   loadPilotVerification,
+  persistPilotArmConfirmation,
   persistPilotDecision,
   runPilot,
   setPilotModel,
   togglePilotDocument,
   type PilotServiceDeps,
-  type QueuedDecisionWrite,
 } from '../../../../src/app/services/pilotService';
+import type { QueuedDecisionWrite } from '../../../../src/app/services/verificationService';
 import { runExtraction } from '../../../../src/app/services/extractionService';
 import { resolveProtocol } from '../../../../src/app/services/schemaService';
 import { createInitialState, createStore, type Store } from '../../../../src/app/store';
@@ -23,6 +24,10 @@ import {
   upsertResultsDataRows,
   upsertStudyDataRows,
 } from '../../../../src/features/extraction/annotationRepository';
+import {
+  appendArmStructureVersion,
+  readArmStructuresByDocument,
+} from '../../../../src/features/verification/armStructureRepository';
 import {
   appendDecisionRows,
   readDecisionsByDocument,
@@ -49,6 +54,12 @@ jest.mock('../../../../src/features/verification/decisionRepository', () => ({
   appendDecisionRows: jest.fn(),
   readDecisionsByDocument: jest.fn(),
 }));
+jest.mock('../../../../src/features/verification/armStructureRepository', () => ({
+  // latestArmStructure は純粋関数なので実物を使う
+  ...jest.requireActual('../../../../src/features/verification/armStructureRepository'),
+  appendArmStructureVersion: jest.fn(),
+  readArmStructuresByDocument: jest.fn(),
+}));
 jest.mock('../../../../src/lib/google/drive', () => ({
   ensureChildFolder: jest.fn(),
   getFileBinary: jest.fn(),
@@ -68,6 +79,12 @@ const upsertResultsMock = upsertResultsDataRows as jest.MockedFunction<
 const appendDecisionsMock = appendDecisionRows as jest.MockedFunction<typeof appendDecisionRows>;
 const readDecisionsMock = readDecisionsByDocument as jest.MockedFunction<
   typeof readDecisionsByDocument
+>;
+const appendArmVersionMock = appendArmStructureVersion as jest.MockedFunction<
+  typeof appendArmStructureVersion
+>;
+const readArmStructuresMock = readArmStructuresByDocument as jest.MockedFunction<
+  typeof readArmStructuresByDocument
 >;
 const ensureChildFolderMock = ensureChildFolder as jest.MockedFunction<typeof ensureChildFolder>;
 const getFileBinaryMock = getFileBinary as jest.MockedFunction<typeof getFileBinary>;
@@ -246,6 +263,7 @@ beforeEach(() => {
   }));
   readDecisionsMock.mockResolvedValue([]);
   readStudyDataSheetMock.mockResolvedValue({ fieldNames: [], rows: [] });
+  readArmStructuresMock.mockResolvedValue([]);
   getFileBinaryMock.mockResolvedValue(new ArrayBuffer(8));
   getCurrentUserEmailMock.mockResolvedValue(ME);
 });
@@ -750,7 +768,7 @@ describe('persistPilotDecision', () => {
 describe('キュー項目のキー関数', () => {
   test('id は判定時刻 × field × entity、ソートキーは判定時刻', async () => {
     const { decisionWriteId, decisionWriteSortKey } = await import(
-      '../../../../src/app/services/pilotService'
+      '../../../../src/app/services/verificationService'
     );
     const item: QueuedDecisionWrite = {
       decision: makeDecision({ decidedAt: 't1', fieldId: 'f-x', entityKey: 'arm:1' }),
@@ -760,5 +778,115 @@ describe('キュー項目のキー関数', () => {
     };
     expect(decisionWriteId(item)).toBe('t1|f-x|arm:1');
     expect(decisionWriteSortKey(item)).toBe('t1');
+  });
+});
+
+describe('persistPilotArmConfirmation', () => {
+  function makeVerificationStore(): Store {
+    const store = makeStore({
+      documents: [makeDocument()],
+      fields: [makeField()],
+      pilot: {
+        run: makeRun(),
+        runFields: [makeField()],
+        evidence: [makeEvidence()],
+      },
+    });
+    return store;
+  }
+
+  test('検証データ表示中は ArmStructures へ新 version を追記する', async () => {
+    const store = makeVerificationStore();
+    const deps = makeDeps();
+    await loadPilotVerification(store, deps, 'doc-1');
+    appendArmVersionMock.mockResolvedValue({
+      version: 1,
+      arms: [{ armKey: 'arm:1', armName: '介入群' }],
+    });
+    await persistPilotArmConfirmation(store, deps, [{ armKey: 'arm:1', armName: '介入群' }]);
+    expect(appendArmVersionMock).toHaveBeenCalledWith(
+      'sheet-1',
+      {
+        documentId: 'doc-1',
+        arms: [{ armKey: 'arm:1', armName: '介入群' }],
+        annotator: ME,
+        annotatorType: 'human_with_ai',
+        confirmedAt: 't-now',
+      },
+      deps.google,
+    );
+  });
+
+  test('now 未注入は既定の nowIso8601 で確定時刻を作る', async () => {
+    const store = makeVerificationStore();
+    const deps = makeDeps({ now: undefined });
+    await loadPilotVerification(store, deps, 'doc-1');
+    appendArmVersionMock.mockResolvedValue({ version: 1, arms: [] });
+    await persistPilotArmConfirmation(store, deps, [{ armKey: 'arm:1', armName: 'A' }]);
+    const input = appendArmVersionMock.mock.calls.at(-1)?.[1];
+    expect(input?.confirmedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+  });
+
+  test('保存失敗はトーストのみで throw しない', async () => {
+    const store = makeVerificationStore();
+    const deps = makeDeps();
+    await loadPilotVerification(store, deps, 'doc-1');
+    appendArmVersionMock.mockRejectedValue(new Error('offline'));
+    await expect(
+      persistPilotArmConfirmation(store, deps, [{ armKey: 'arm:1', armName: 'A' }]),
+    ).resolves.toBeUndefined();
+    // Error 以外の throw も文字列化してトーストする
+    appendArmVersionMock.mockRejectedValue('壊れた応答');
+    await expect(
+      persistPilotArmConfirmation(store, deps, [{ armKey: 'arm:1', armName: 'A' }]),
+    ).resolves.toBeUndefined();
+  });
+
+  test('プロジェクト未選択・検証データ未読込は何もしない', async () => {
+    appendArmVersionMock.mockClear();
+    await persistPilotArmConfirmation(makeStore({ withProject: false }), makeDeps(), []);
+    await persistPilotArmConfirmation(makeStore({}), makeDeps(), []);
+    expect(appendArmVersionMock).not.toHaveBeenCalled();
+  });
+
+  test('検証データ束には自分の確定済み群構成（最新 version）が入る', async () => {
+    const store = makeVerificationStore();
+    readArmStructuresMock.mockResolvedValue([
+      {
+        documentId: 'doc-1',
+        version: 1,
+        armKey: 'arm:1',
+        armName: '旧名',
+        annotator: ME,
+        annotatorType: 'human_with_ai',
+        confirmedAt: 't0',
+        note: null,
+      },
+      {
+        documentId: 'doc-1',
+        version: 2,
+        armKey: 'arm:1',
+        armName: '介入群',
+        annotator: ME,
+        annotatorType: 'human_with_ai',
+        confirmedAt: 't1',
+        note: null,
+      },
+      {
+        documentId: 'doc-1',
+        version: 9,
+        armKey: 'arm:1',
+        armName: '他人の確定',
+        annotator: 'other@example.com',
+        annotatorType: 'human_with_ai',
+        confirmedAt: 't2',
+        note: null,
+      },
+    ]);
+    await loadPilotVerification(store, makeDeps(), 'doc-1');
+    expect(store.getState().pilot.verification?.armStructure).toEqual({
+      version: 2,
+      arms: [{ armKey: 'arm:1', armName: '介入群' }],
+    });
   });
 });

@@ -7,24 +7,6 @@ import AxeBuilder from '@axe-core/playwright';
 
 const QUOTE = 'Mortality was 12 percent';
 
-const FIELD = {
-  schemaVersion: 1,
-  fieldId: 'f-total',
-  fieldIndex: 1,
-  section: 'results',
-  fieldName: 'mortality_pct',
-  fieldLabel: '死亡率',
-  entityLevel: 'study',
-  dataType: 'text',
-  unit: null,
-  allowedValues: null,
-  required: true,
-  extractionInstruction: 'Report overall mortality.',
-  example: null,
-  aiGenerated: false,
-  note: null,
-};
-
 const DOCUMENT = {
   documentId: 'doc-1',
   studyLabel: 'Smith 2020',

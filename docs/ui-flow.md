@@ -59,13 +59,15 @@ flowchart TD
 | `#/schema` | スキーマデザイン（S5） | `draft-schema` skill 実行（プロトコル + サンプル論文 1〜3 本）→ 表形式エディタで項目の追加 / 削除 / 型変更 / `extraction_instruction` 編集 → 版として確定。版履歴の閲覧・過去版からの派生もここ | `SchemaVersions` / `SchemaFields` 追記, `LLMApiLog` |
 | `#/pilot` | パイロット抽出（S6） | 対象 2〜3 本を選択 → `extract-data` skill 実行 → S8 と同じ検証 UI（埋め込み）で確認 → 「スキーマを改訂して再パイロット」導線 | `ExtractionRuns`（`pilot`）/ `Evidence` / `StudyData` / `ResultsData` |
 | `#/extract` | 一括抽出（S7） | 対象文献選択（既定: 未抽出の全件）、モデル選択、**コスト概算表示 → 実行確認**、進捗バー、失敗文献のリトライ | `ExtractionRuns`（`full` / `single_document`）/ `Evidence` / `StudyData` / `ResultsData`, `LLMApiLog` |
-| `#/verify` | 検証（S8） | §3 参照。document 選択 → 2 ペイン検証 | `StudyData` / `ResultsData`（自分の annotator 行の更新）+ `Decisions` 追記 |
+| `#/verify` | 検証（S8） | §3 参照。document 選択 → 2 ペイン検証 | `StudyData` / `ResultsData`（自分の annotator 行の更新）+ `Decisions` 追記 + `ArmStructures` 追記（群構成の確定） |
 | `#/dashboard` | ダッシュボード（S9） | document × section の検証進捗マトリクス、anchor 失敗率、not_reported 率。セルクリックで `#/verify` の該当 document / section へ | `StudyData` / `ResultsData` / `Evidence` / `Documents`（読み取りのみ） |
 | `#/export` | エクスポート（S10） | 形式選択（study_wide / results_long / audit）、プレビュー、CSV 生成 + Drive 保存 + ダウンロード。未検証セル残存時は警告ダイアログ | `ExportLog` 追記 |
 
 ## 3. 検証画面（`#/verify`）の内部構造
 
 [requirements.md §4.2](requirements.md) の 2 ペイン構成。URL は `#/verify?doc={document_id}&entity={entity_key}` で状態を保持し、ダッシュボードからの直接ジャンプを可能にする。
+
+> **実装スコープの注記（2026-07-02）**: `?doc=`（文献選択）は S8 実装済み。`?entity=`（セル単位のディープリンク。該当 entity タブへの切替 + 該当項目へのスクロール・フォーカス）は消費者が S9 ダッシュボードのセルクリックのみのため**未実装 — S9 ダッシュボード実装時に必ず一緒に実装すること**（このメモを消すのはそのとき）。
 
 ```mermaid
 flowchart LR
@@ -80,7 +82,7 @@ flowchart LR
     Form -->|判定ごと即時保存| Sheets[("StudyData / ResultsData + Decisions<br/>（失敗時オフラインキュー）")]
 ```
 
-- **entity タブの順序**: `study` → `arm`（冒頭で arm 数・名称の確定 UI）→ `outcome_result`。arm 未確定のうちは arm / outcome タブをディム表示
+- **entity タブの順序**: `study` → `arm`（冒頭で arm 数・名称の確定 UI。確定内容は `ArmStructures` へ新 version として追記）→ `outcome_result`。arm 未確定（= `ArmStructures` に行なし）のうちは arm / outcome タブをディム表示
 - **anchor_status = failed の項目**: フォーム側に quote 全文 + 「本文内を検索」ボタン（PDF.js のテキスト検索へ quote を投入）
 - **複数一致時**: 「他 n 箇所に一致」リンクでハイライトを切替
 - **戻る操作**: 直近の判定履歴（項目単位）を戻せる（tiab-review の「直近 5 件履歴」を読み替えて移植）

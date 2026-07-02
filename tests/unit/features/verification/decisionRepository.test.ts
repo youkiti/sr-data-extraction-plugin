@@ -2,6 +2,7 @@ import type { Decision } from '../../../../src/domain/decision';
 import {
   appendDecisionRows,
   decisionToRow,
+  readAllDecisions,
   readDecisionsByDocument,
 } from '../../../../src/features/verification/decisionRepository';
 
@@ -176,5 +177,11 @@ describe('readDecisionsByDocument', () => {
     const deps = makeDeps([DECISIONS_HEADER, short]);
     const decisions = await readDecisionsByDocument('sheet-1', 'doc-1', deps);
     expect(decisions[0]).toMatchObject({ value: null, note: null });
+  });
+
+  test('readAllDecisions は document で絞らず全行を返す（S8 の進捗チップ素材）', async () => {
+    const deps = makeDeps([DECISIONS_HEADER, row(), row({ 2: 'doc-2' })]);
+    const decisions = await readAllDecisions('sheet-1', deps);
+    expect(decisions.map((decision) => decision.documentId)).toEqual(['doc-1', 'doc-2']);
   });
 });

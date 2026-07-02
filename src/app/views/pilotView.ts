@@ -251,6 +251,7 @@ function renderVerification(run: ExtractionRun, state: AppState, ctx: ViewContex
       renderCachedVerificationPanel({
         data: state.pilot.verification,
         onDecision: (decision) => ctx.pilot.onDecision(decision),
+        onArmConfirm: (arms) => ctx.pilot.onArmConfirm(arms),
       }),
     );
   }

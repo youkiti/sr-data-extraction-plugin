@@ -1,8 +1,8 @@
 // メインビューの起動配線: ストアのシード → ヘッダ / サイドバー描画 → ルーティング開始。
 // E2E seam（test-strategy.md §2.1）: window.__E2E_PRELOADED_STATE__ があれば
 // ストアのシードへ上書きマージする（本番動作には影響しない）
-import { createInitialState, createStore, type AppState, type Store } from './store';
-import { findRoute, normalizeHash, ROUTES, type RouteHash } from './router';
+import { createInitialState, createStore, type AppState, type Store, type VerifyTarget } from './store';
+import { docQueryOf, findRoute, normalizeHash, ROUTES, type RouteHash } from './router';
 import { guardRoute } from './guards';
 import { showToast } from './ui/toast';
 import type { ViewContext } from './views/types';
@@ -37,12 +37,19 @@ import {
 import {
   initPilotSelection,
   loadPilotVerification,
+  persistPilotArmConfirmation,
   persistPilotDecision,
   runPilot,
   setPilotModel,
   togglePilotDocument,
   type PilotServiceDeps,
 } from './services/pilotService';
+import {
+  loadVerifyTargets,
+  openVerifyDocument,
+  persistVerifyArmConfirmation,
+  persistVerifyDecision,
+} from './services/verifyService';
 import { createChromeGoogleApiDeps } from './services/factories';
 import { loadCurrentProject } from '../features/project/projectStore';
 import { extractDocxText } from '../lib/docx/extractDocxText';
@@ -74,6 +81,7 @@ export async function seedState(win: Window): Promise<AppState> {
       protocol: { ...state.protocol, ...(preloaded.protocol ?? {}) },
       schema: { ...state.schema, ...(preloaded.schema ?? {}) },
       pilot: { ...state.pilot, ...(preloaded.pilot ?? {}) },
+      verify: { ...state.verify, ...(preloaded.verify ?? {}) },
     };
   }
   return state;
@@ -202,7 +210,49 @@ export async function bootstrapApp(
       onDecision: (decision) => {
         void persistPilotDecision(store, deps, decision);
       },
+      onArmConfirm: (arms) => {
+        void persistPilotArmConfirmation(store, deps, arms);
+      },
     },
+    verify: {
+      onSelectDocument: (documentId) => {
+        // hash 書き換え → hashchange → syncVerifyRoute の一本道（直リンクと同じ経路を通す）
+        win.location.hash = `#/verify?doc=${encodeURIComponent(documentId)}`;
+      },
+      onRetryLoad: () => {
+        void loadVerifyTargets(store, deps, { force: true }).then(() => syncVerifyRoute());
+      },
+      onDecision: (decision) => {
+        void persistVerifyDecision(store, deps, decision);
+      },
+      onArmConfirm: (arms) => {
+        void persistVerifyArmConfirmation(store, deps, arms);
+      },
+    },
+  };
+
+  /**
+   * #/verify の表示同期: 一覧を読み込み、?doc=（なければ選択済み or 先頭）を開く。
+   * セレクタ切替も hash 書き換え経由でここへ合流する（ui-states.md §3 の URL 同期）
+   */
+  const syncVerifyRoute = async (): Promise<void> => {
+    await loadVerifyTargets(store, deps);
+    const verify = store.getState().verify;
+    const targets = verify.targets;
+    if (targets === null || targets.length === 0) {
+      return;
+    }
+    const desired =
+      docQueryOf(win.location.hash) ??
+      verify.selectedDocumentId ??
+      (targets[0] as VerifyTarget).document.documentId;
+    // 読み込み中の再入は openVerifyDocument 側の verifyLoading ガードが弾く
+    const alreadyShown =
+      desired === verify.selectedDocumentId &&
+      (verify.verification !== null || verify.verifyError !== null);
+    if (!alreadyShown) {
+      await openVerifyDocument(store, deps, desired);
+    }
   };
 
   const renderHeader = (state: AppState): void => {
@@ -283,6 +333,10 @@ export async function bootstrapApp(
       void Promise.all([loadDocuments(store, deps), loadSchema(store, deps)]).then(() => {
         initPilotSelection(store);
       });
+    }
+    if (currentHash === '#/verify') {
+      // 一覧読込 → ?doc=（なければ先頭）の検証データ読込。セレクタ切替も同じ経路
+      void syncVerifyRoute();
     }
   };
 

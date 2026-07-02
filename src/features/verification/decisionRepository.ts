@@ -85,12 +85,11 @@ function parseSchemaVersion(value: string, context: string): number {
 }
 
 /**
- * 指定 document の判定履歴を読み込む（S6 / S8 検証画面の初期状態の素材）。
+ * Decisions タブの全行を読み込む（S8 の document 一覧の進捗チップ素材）。
  * シート行順のまま返す。畳み込み時の時系列順序は cellState 側で decided_at ソートする
  */
-export async function readDecisionsByDocument(
+export async function readAllDecisions(
   spreadsheetId: string,
-  documentId: string,
   deps: GoogleApiDeps,
 ): Promise<Decision[]> {
   const values = await getSheetValues(spreadsheetId, DECISIONS_TAB, deps);
@@ -105,13 +104,9 @@ export async function readDecisionsByDocument(
       );
     }
   });
-  const decisions: Decision[] = [];
-  values.slice(1).forEach((raw, i) => {
-    if (cellAt(raw, 2) !== documentId) {
-      return;
-    }
+  return values.slice(1).map((raw, i) => {
     const context = `Decisions ${i + 2} 行目`;
-    decisions.push({
+    return {
       decidedAt: cellAt(raw, 0),
       decidedBy: cellAt(raw, 1),
       documentId: cellAt(raw, 2),
@@ -123,7 +118,18 @@ export async function readDecisionsByDocument(
       action: parseAction(cellAt(raw, 8), context),
       value: emptyToNull(cellAt(raw, 9)),
       note: emptyToNull(cellAt(raw, 10)),
-    });
+    };
   });
-  return decisions;
+}
+
+/**
+ * 指定 document の判定履歴を読み込む（S6 / S8 検証画面の初期状態の素材）
+ */
+export async function readDecisionsByDocument(
+  spreadsheetId: string,
+  documentId: string,
+  deps: GoogleApiDeps,
+): Promise<Decision[]> {
+  const all = await readAllDecisions(spreadsheetId, deps);
+  return all.filter((decision) => decision.documentId === documentId);
 }

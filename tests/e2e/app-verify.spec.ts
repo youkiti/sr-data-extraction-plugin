@@ -1,0 +1,327 @@
+// #/verify（S8 単独画面）のルート別 E2E（test-strategy.md §3 + ui-states.md §3）。
+// 状態は __E2E_PRELOADED_STATE__ で注入し、Sheets / Drive は page.route で stub する。
+// 一覧（進捗チップ）→ ?doc= 直リンク / セレクタ切替（hash 同期）→ 2 ペイン検証 →
+// 群構成の確定（arm 未確定ゲート → ArmStructures 追記）まで実 PDF の canvas 描画つきで通す
+import { expect, test, type Page } from '@playwright/test';
+import AxeBuilder from '@axe-core/playwright';
+
+const QUOTE = 'Mortality was 12 percent';
+
+const DOCUMENT_1 = {
+  documentId: 'doc-1',
+  studyLabel: 'Smith 2020',
+  driveFileId: 'drive-1',
+  sourceFileId: 'src-1',
+  filename: 'smith2020.pdf',
+  pmid: null,
+  doi: null,
+  textRef: 'https://drive.google.com/file/d/txt-1/view',
+  textStatus: 'ok',
+  pageCount: 1,
+  charCount: 4000,
+  importedAt: '2026-07-01T00:00:00Z',
+  importedBy: 'e2e@example.com',
+  note: null,
+};
+
+const DOCUMENT_2 = {
+  ...DOCUMENT_1,
+  documentId: 'doc-2',
+  studyLabel: 'Jones 2021',
+  driveFileId: 'drive-2',
+  filename: 'jones2021.pdf',
+};
+
+const SCHEMA_FIELDS_HEADERS = [
+  'schema_version', 'field_id', 'field_index', 'section', 'field_name', 'field_label',
+  'entity_level', 'data_type', 'unit', 'allowed_values', 'required', 'extraction_instruction',
+  'example', 'ai_generated', 'note',
+];
+
+const STUDY_FIELD_ROW = [
+  '1', 'f-total', '1', 'results', 'mortality_pct', '死亡率', 'study', 'text', '', '',
+  'TRUE', 'Report overall mortality.', '', 'FALSE', '',
+];
+
+const ARM_FIELD_ROW = [
+  '1', 'f-arm-n', '2', 'outcomes', 'arm_n', '群の N', 'arm', 'integer', '', '',
+  'TRUE', '群別 N を抽出', '', 'FALSE', '',
+];
+
+const EVIDENCE_HEADERS = [
+  'evidence_id', 'run_id', 'document_id', 'field_id', 'entity_key', 'value', 'not_reported',
+  'quote', 'page', 'confidence', 'anchor_status',
+];
+
+const EVIDENCE_ROW_1 = ['ev-1', 'run-1', 'doc-1', 'f-total', '-', '12', 'FALSE', QUOTE, '1', 'high', 'exact'];
+const EVIDENCE_ROW_2 = ['ev-2', 'run-1', 'doc-2', 'f-total', '-', '9', 'FALSE', '', '', '', ''];
+const ARM_EVIDENCE_ROW = ['ev-3', 'run-1', 'doc-1', 'f-arm-n', 'arm:1', '50', 'FALSE', '', '', '', ''];
+
+const RUNS_HEADERS = [
+  'run_id', 'run_type', 'schema_version', 'document_ids', 'provider', 'requested_model',
+  'model_version', 'input_mode', 'status', 'started_at', 'finished_at', 'tokens_in',
+  'tokens_out', 'cost_estimate',
+];
+
+const RUN_ROW = [
+  'run-1', 'pilot', '1', 'doc-1,doc-2', 'gemini', 'gemini-test', '', 'text_only', 'done',
+  't1', 't2', '', '', '',
+];
+
+const DECISIONS_HEADERS = [
+  'decided_at', 'decided_by', 'document_id', 'field_id', 'entity_key', 'annotator',
+  'annotator_type', 'schema_version', 'action', 'value', 'note',
+];
+
+const STUDY_DATA_HEADERS = [
+  'document_id', 'annotator', 'annotator_type', 'schema_version', 'run_id', 'updated_at',
+];
+
+const RESULTS_DATA_HEADERS = [
+  'result_id', 'document_id', 'field_id', 'annotator', 'annotator_type', 'schema_version',
+  'entity_key', 'run_id', 'value', 'not_reported', 'updated_at',
+];
+
+/** テキスト層つきの最小 1 ページ PDF（app-pilot.spec.ts と同じ手組み構成） */
+function minimalPdf(text: string): Buffer {
+  const content = `BT /F1 12 Tf 72 720 Td (${text}) Tj ET`;
+  const objects = [
+    '',
+    '1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n',
+    '2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n',
+    '3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>\nendobj\n',
+    `4 0 obj\n<< /Length ${content.length} >>\nstream\n${content}\nendstream\nendobj\n`,
+    '5 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n',
+  ];
+  let pdf = '%PDF-1.4\n';
+  const offsets: number[] = [0];
+  for (let i = 1; i < objects.length; i++) {
+    offsets[i] = pdf.length;
+    pdf += objects[i];
+  }
+  const xrefStart = pdf.length;
+  pdf += `xref\n0 ${objects.length}\n0000000000 65535 f \n`;
+  for (let i = 1; i < objects.length; i++) {
+    pdf += `${String(offsets[i]).padStart(10, '0')} 00000 n \n`;
+  }
+  pdf += `trailer\n<< /Size ${objects.length} /Root 1 0 R >>\nstartxref\n${xrefStart}\n%%EOF`;
+  return Buffer.from(pdf, 'latin1');
+}
+
+/** Sheets / Drive の stub を配線し、書き込み URL を appendUrls へ記録する */
+async function setupRoutes(
+  page: Page,
+  options: { schemaRows: string[][]; evidenceRows: string[][] },
+): Promise<string[]> {
+  const appendUrls: string[] = [];
+
+  await page.route('https://sheets.googleapis.com/**', async (route) => {
+    const url = decodeURIComponent(route.request().url());
+    if (route.request().method() === 'GET') {
+      if (url.includes('fields=sheets.properties.title')) {
+        // ArmStructures タブなし（v0.7 より前の既存プロジェクト）→ 書き込み時にタブを作る
+        const titles = ['Meta', 'Documents', 'SchemaFields', 'Evidence', 'Decisions'];
+        await route.fulfill({
+          json: { sheets: titles.map((title) => ({ properties: { title } })) },
+        });
+      } else if (url.includes('/values/Evidence')) {
+        await route.fulfill({ json: { values: [EVIDENCE_HEADERS, ...options.evidenceRows] } });
+      } else if (url.includes('/values/ExtractionRuns')) {
+        await route.fulfill({ json: { values: [RUNS_HEADERS, RUN_ROW] } });
+      } else if (url.includes('/values/Decisions')) {
+        await route.fulfill({ json: { values: [DECISIONS_HEADERS] } });
+      } else if (url.includes('/values/StudyData')) {
+        await route.fulfill({ json: { values: [STUDY_DATA_HEADERS] } });
+      } else if (url.includes('/values/ResultsData')) {
+        await route.fulfill({ json: { values: [RESULTS_DATA_HEADERS] } });
+      } else if (url.includes('/values/SchemaFields')) {
+        await route.fulfill({ json: { values: [SCHEMA_FIELDS_HEADERS, ...options.schemaRows] } });
+      } else {
+        await route.fulfill({ json: { values: [] } });
+      }
+      return;
+    }
+    appendUrls.push(url);
+    await route.fulfill({ json: {} });
+  });
+
+  await page.route('https://www.googleapis.com/**', async (route) => {
+    const url = decodeURIComponent(route.request().url());
+    if (url.includes('alt=media')) {
+      await route.fulfill({ contentType: 'application/pdf', body: minimalPdf(QUOTE) });
+      return;
+    }
+    await route.fulfill({ json: {} });
+  });
+
+  return appendUrls;
+}
+
+async function initApp(page: Page, hash: string): Promise<void> {
+  await page.addInitScript(() => {
+    const win = window as unknown as Record<string, unknown>;
+    win.chrome = {
+      storage: {
+        local: {
+          get: async () => ({}),
+          set: async () => undefined,
+          remove: async () => undefined,
+        },
+      },
+      runtime: {
+        id: 'e2e-extension-id',
+        getURL: (p: string) => `/${p}`,
+        lastError: undefined,
+        onMessageExternal: { addListener: () => undefined, removeListener: () => undefined },
+      },
+      tabs: {
+        create: async () => ({ id: 1 }),
+        remove: async () => undefined,
+        onRemoved: { addListener: () => undefined, removeListener: () => undefined },
+      },
+      identity: {
+        getAuthToken: (_opts: unknown, cb: (token?: string) => void) => {
+          cb('e2e-token');
+        },
+        removeCachedAuthToken: (_details: unknown, cb: () => void) => {
+          cb();
+        },
+        getProfileUserInfo: (_opts: unknown, cb: (info: unknown) => void) => {
+          cb({ email: 'e2e@example.com', id: '1' });
+        },
+      },
+    };
+    win.__E2E_PRELOADED_STATE__ = {
+      currentProject: {
+        projectId: 'e2e-project',
+        spreadsheetId: 'e2e-sheet',
+        driveFolderId: 'e2e-folder',
+        name: 'E2E プロジェクト',
+      },
+      counts: {
+        documents: 2,
+        protocolVersions: 1,
+        schemaVersions: 1,
+        pilotRuns: 1,
+        evidenceRows: 2,
+        dataRows: 0,
+      },
+      documents: {
+        records: [
+          {
+            documentId: 'doc-1',
+            studyLabel: 'Smith 2020',
+            driveFileId: 'drive-1',
+            sourceFileId: 'src-1',
+            filename: 'smith2020.pdf',
+            pmid: null,
+            doi: null,
+            textRef: 'https://drive.google.com/file/d/txt-1/view',
+            textStatus: 'ok',
+            pageCount: 1,
+            charCount: 4000,
+            importedAt: '2026-07-01T00:00:00Z',
+            importedBy: 'e2e@example.com',
+            note: null,
+          },
+          {
+            documentId: 'doc-2',
+            studyLabel: 'Jones 2021',
+            driveFileId: 'drive-2',
+            sourceFileId: 'src-2',
+            filename: 'jones2021.pdf',
+            pmid: null,
+            doi: null,
+            textRef: 'https://drive.google.com/file/d/txt-2/view',
+            textStatus: 'ok',
+            pageCount: 1,
+            charCount: 4000,
+            importedAt: '2026-07-01T00:00:00Z',
+            importedBy: 'e2e@example.com',
+            note: null,
+          },
+        ],
+        loading: false,
+        loadError: null,
+        importing: false,
+        importRows: [],
+      },
+    };
+  });
+  await page.goto(`/app/app.html${hash}`);
+}
+
+test('一覧 + 検証フロー: 進捗チップ → ハイライト → 承認 → Decisions 追記 → セレクタ切替の hash 同期', async ({ page }) => {
+  const appendUrls = await setupRoutes(page, {
+    schemaRows: [STUDY_FIELD_ROW],
+    evidenceRows: [EVIDENCE_ROW_1, EVIDENCE_ROW_2],
+  });
+  await initApp(page, '#/verify');
+
+  // 一覧: 進捗チップ付きのセレクタ + 先頭文献（doc-1）の自動読込
+  const select = page.locator('#verify-doc');
+  await expect(select).toBeVisible({ timeout: 15_000 });
+  await expect(select.locator('option').nth(0)).toHaveText('Smith 2020（判定済み 0 / 1）');
+  await expect(select.locator('option').nth(1)).toHaveText('Jones 2021（判定済み 0 / 1）');
+
+  // 2 ペイン + 実 PDF の canvas 描画 + quote ハイライト
+  await expect(page.locator('.verify__panes')).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator('.verify__cell-label')).toHaveText('死亡率');
+  await expect(page.locator('.pdf-viewer__page-indicator')).toHaveText('1 / 1 ページ');
+  await expect(page.locator('.pdf-viewer__hl--unverified')).toHaveCount(1, { timeout: 15_000 });
+
+  // 判定: 承認 → チップ更新 + Decisions 追記
+  await page.locator('.verify__action--accept').click();
+  await expect(page.locator('.verify__chip')).toHaveText('承認');
+  await expect
+    .poll(() => appendUrls.filter((url) => url.includes('Decisions') && url.includes(':append')).length)
+    .toBeGreaterThan(0);
+
+  const results = await new AxeBuilder({ page }).analyze();
+  expect(results.violations).toEqual([]);
+
+  // セレクタ切替 → URL クエリ同期（?doc=）→ 該当文献の検証データへ切替
+  await select.selectOption('doc-2');
+  await expect(page).toHaveURL(/#\/verify\?doc=doc-2$/);
+  await expect(page.locator('.verify__ai-value')).toHaveText('9', { timeout: 15_000 });
+});
+
+test('?doc= 直リンク + 群構成の確定: タブディム → 確定 → ArmStructures 追記 → arm タブ有効', async ({ page }) => {
+  const appendUrls = await setupRoutes(page, {
+    schemaRows: [STUDY_FIELD_ROW, ARM_FIELD_ROW],
+    evidenceRows: [EVIDENCE_ROW_1, EVIDENCE_ROW_2, ARM_EVIDENCE_ROW],
+  });
+  await initApp(page, '#/verify?doc=doc-1');
+
+  // ?doc= 直リンクで doc-1 が選択される
+  await expect(page.locator('#verify-doc')).toHaveValue('doc-1', { timeout: 15_000 });
+  await expect(page.locator('.verify__panes')).toBeVisible({ timeout: 15_000 });
+
+  // arm 未確定: arm タブがディムされ、確定カードが AI ドラフト（arm:1）を出す
+  const armTab = page.locator('.verify__tab', { hasText: '群（arm）' });
+  await expect(armTab).toBeDisabled();
+  await expect(page.locator('#verify-arm-card .verify__arm-lead')).toContainText(
+    'まず群構成を確定してください',
+  );
+  await expect(page.locator('.verify__arm-key')).toHaveText('arm:1');
+
+  // 名称を入れて確定 → 楽観反映（要約 + タブ有効化）+ ArmStructures への追記（タブ作成込み）
+  await page.locator('.verify__arm-name').fill('介入群');
+  await page.locator('#verify-arm-confirm').click();
+  await expect(page.locator('.verify__arm-summary')).toContainText('群構成: 1 群（version 1）');
+  await expect(armTab).toBeEnabled();
+  await expect
+    .poll(() => appendUrls.filter((url) => url.includes(':batchUpdate')).length)
+    .toBeGreaterThan(0);
+  await expect
+    .poll(() => appendUrls.filter((url) => url.includes('ArmStructures!A1:append')).length)
+    .toBeGreaterThan(0);
+
+  // arm タブへ切替 → arm セル（群の N）が検証できる
+  await armTab.click();
+  await expect(page.locator('.verify__group-heading')).toHaveText('群 1');
+  await expect(page.locator('.verify__cell-label')).toHaveText('群の N');
+
+  const results = await new AxeBuilder({ page }).analyze();
+  expect(results.violations).toEqual([]);
+});

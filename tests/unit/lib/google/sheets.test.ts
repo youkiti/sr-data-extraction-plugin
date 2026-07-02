@@ -1,4 +1,5 @@
 import {
+  addSheetTab,
   appendRow,
   appendRows,
   createSpreadsheet,
@@ -66,6 +67,20 @@ describe('getSheetTitles', () => {
     await expect(getSheetTitles('sid', deps({}))).resolves.toEqual([]);
     const d = deps({ sheets: [{}, { properties: {} }, { properties: { title: 'Meta' } }] });
     await expect(getSheetTitles('sid', d)).resolves.toEqual(['Meta']);
+  });
+});
+
+describe('addSheetTab', () => {
+  test('POST :batchUpdate の addSheet でタブを追加する', async () => {
+    const d = deps();
+    await addSheetTab('sid', 'ArmStructures', d);
+    const [url, init] = d.fetch.mock.calls[0];
+    expect(url).toContain('/sid:batchUpdate');
+    expect((init as RequestInit).method).toBe('POST');
+    const body = JSON.parse((init as RequestInit).body as string);
+    expect(body).toEqual({
+      requests: [{ addSheet: { properties: { title: 'ArmStructures' } } }],
+    });
   });
 });
 

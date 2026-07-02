@@ -1,84 +1,34 @@
 // #/pilot（S6）のサービス層。
 // - パイロット実行: extractionService.runExtraction（runType = 'pilot'）を配線する
-// - 埋め込み検証 UI のデータ束（VerificationData）の組み立て: run の Evidence + Decisions +
-//   PDF（バイナリ → pdfjs → テキスト層）を読み込む
-// - 判定の永続化: 自分の annotator 行（StudyData / ResultsData）の upsert + Decisions 追記。
-//   失敗時はオフラインキュー（lib/storage/offlineQueue）へ退避し、成功時に再送する
-import { NOT_REPORTED_TOKEN } from '../../domain/annotation';
+// - 検証データ束の組み立て / 判定・群構成の永続化は S8 と共有の verificationService へ委譲する
 import type { Decision } from '../../domain/decision';
 import type { DocumentRecord } from '../../domain/document';
-import type { EntityLevel, SchemaField } from '../../domain/schemaField';
+import type { SchemaField } from '../../domain/schemaField';
 import { readDocuments } from '../../features/documents/documentRepository';
-import type { DisposablePdfDocument } from '../../features/documents/extractTextLayer';
 import { makeLoadDocumentPages } from '../../features/documents/loadDocumentPages';
 import { buildAiAnnotationRows } from '../../features/extraction/aiAnnotationRows';
-import {
-  readStudyDataSheet,
-  upsertResultsDataRows,
-  upsertStudyDataRows,
-} from '../../features/extraction/annotationRepository';
-import {
-  appendDecisionRows,
-  readDecisionsByDocument,
-} from '../../features/verification/decisionRepository';
-import type { VerificationData } from '../../features/verification/types';
-import { ensureChildFolder, getFileBinary } from '../../lib/google/drive';
-import { getCurrentUserEmail, type ProfileDeps } from '../../lib/google/identity';
-import type { GoogleApiDeps } from '../../lib/google/types';
+import { ensureChildFolder } from '../../lib/google/drive';
 import type { LLMProvider } from '../../lib/llm/LLMProvider';
 import type { ProviderConfig } from '../../lib/llm/providerFactory';
-import type { PdfViewerDocument, RenderablePdfPage } from '../../lib/pdf/renderPage';
-import { extractTextLayerPages } from '../../lib/pdf/textLayer';
-import { createOfflineQueue, type OfflineQueue } from '../../lib/storage/offlineQueue';
 import { nowIso8601 } from '../../utils/iso8601';
 import type { PilotState, Store } from '../store';
 import { showToast } from '../ui/toast';
 import { runExtraction } from './extractionService';
 import { resolveProtocol } from './schemaService';
+import {
+  loadVerificationBundle,
+  persistArmConfirmation,
+  persistDecisionWrite,
+  type QueuedDecisionWrite,
+  type VerificationDeps,
+} from './verificationService';
 
-export interface PilotServiceDeps {
-  google: GoogleApiDeps;
-  profile: ProfileDeps;
+export interface PilotServiceDeps extends VerificationDeps {
   /** BYOK の Gemini API キーを解決する（既定は lib/storage/secretsStore.loadGeminiApiKey） */
   loadApiKey: () => Promise<string | null>;
   /** provider 生成（実行時は lib/llm/providerFactory.createProvider。テストは fake を注入） */
   buildProvider: (config: ProviderConfig) => LLMProvider;
-  /** lib/pdf/loadPdf.ts（テストは fake で完結させるため注入） */
-  loadPdf: (data: ArrayBuffer) => Promise<DisposablePdfDocument>;
-  /** テスト差し替え用のオフラインキュー（既定はモジュール共有の 'decisions' キュー） */
-  decisionQueue?: OfflineQueue<QueuedDecisionWrite>;
-  newUuid?: () => string;
-  now?: () => string;
 }
-
-/**
- * 判定 1 操作ぶんの書き込み内容。オフライン退避 → 再送で同じ経路を通せるよう、
- * StudyData の全量 values スナップショットまで自己完結で持つ（再送は後勝ち上書きで冪等）
- */
-export interface QueuedDecisionWrite {
-  decision: Decision;
-  fieldName: string;
-  entityLevel: EntityLevel;
-  /** entity_level = study のときの StudyData 行 values 全量。他レベルは null */
-  studyValues: Record<string, string | null> | null;
-}
-
-/** キュー項目の同定キー（同じ判定の再 enqueue は置換 = upsert になる） */
-export function decisionWriteId(item: QueuedDecisionWrite): string {
-  return `${item.decision.decidedAt}|${item.decision.fieldId}|${item.decision.entityKey}`;
-}
-
-/** flush の再送順（判定した時刻の昇順） */
-export function decisionWriteSortKey(item: QueuedDecisionWrite): string {
-  return item.decision.decidedAt;
-}
-
-/** モジュール共有の判定キュー（用途名 'decisions'。spreadsheetId × userEmail で分離される） */
-const sharedDecisionQueue = createOfflineQueue<QueuedDecisionWrite>({
-  name: 'decisions',
-  getId: decisionWriteId,
-  getSortKey: decisionWriteSortKey,
-});
 
 function toMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
@@ -245,14 +195,6 @@ export async function runPilot(store: Store, deps: PilotServiceDeps): Promise<vo
   }
 }
 
-/** DisposablePdfDocument → ビューア用の最小形。render の viewport 型は実体が同一のため安全 */
-function toViewerDocument(pdf: DisposablePdfDocument): PdfViewerDocument {
-  return {
-    numPages: pdf.numPages,
-    getPage: (pageNumber) => pdf.getPage(pageNumber) as unknown as Promise<RenderablePdfPage>,
-  };
-}
-
 /**
  * 埋め込み検証 UI のデータ束を読み込む（文献切替を含む）。
  * PDF の読み込み失敗は verifyError にせず pdfError として持ち、フォーム側の検証は続行できる
@@ -284,98 +226,24 @@ export async function loadPilotVerification(
     studyValues: null,
   });
   try {
-    const annotator = (await getCurrentUserEmail(deps.profile)) ?? '';
-    const decisions = await readDecisionsByDocument(
-      project.spreadsheetId,
-      documentId,
-      deps.google,
+    const bundle = await loadVerificationBundle(
+      {
+        spreadsheetId: project.spreadsheetId,
+        document,
+        fields: runFields,
+        evidence: evidence.filter((item) => item.documentId === documentId),
+        schemaVersion: run.schemaVersion,
+      },
+      deps,
     );
-    const studySheet = await readStudyDataSheet(project.spreadsheetId, deps.google);
-    const studyValues =
-      studySheet.rows.find(
-        (row) => row.documentId === documentId && row.annotator === annotator,
-      )?.values ?? {};
-
-    let pdf: PdfViewerDocument | null = null;
-    let pdfError: string | null = null;
-    let textPages: VerificationData['textPages'] = [];
-    let disposePdf: VerificationData['disposePdf'];
-    try {
-      const binary = await getFileBinary(document.driveFileId, deps.google);
-      const disposable = await deps.loadPdf(binary);
-      textPages = await extractTextLayerPages(disposable);
-      pdf = toViewerDocument(disposable);
-      disposePdf = async () => {
-        await disposable.destroy();
-      };
-    } catch (err) {
-      pdfError = toMessage(err);
-    }
-
-    const verification: VerificationData = {
-      document,
-      fields: runFields,
-      evidence: evidence.filter((item) => item.documentId === documentId),
-      decisions,
-      annotator,
-      schemaVersion: run.schemaVersion,
-      pdf,
-      pdfError,
-      textPages,
-      disposePdf,
-    };
-    patchPilot(store, { verifyLoading: false, verification, studyValues });
+    patchPilot(store, {
+      verifyLoading: false,
+      verification: bundle.verification,
+      studyValues: bundle.studyValues,
+    });
   } catch (err) {
     patchPilot(store, { verifyLoading: false, verifyError: toMessage(err) });
   }
-}
-
-/** 判定書き込みの実体（オフライン再送でも同じ経路を通す）。annotator 行 → Decisions の順 */
-async function saveDecisionWrite(
-  spreadsheetId: string,
-  write: QueuedDecisionWrite,
-  deps: PilotServiceDeps,
-): Promise<void> {
-  const { decision } = write;
-  if (write.studyValues !== null) {
-    await upsertStudyDataRows(
-      spreadsheetId,
-      [
-        {
-          documentId: decision.documentId,
-          annotator: decision.annotator,
-          annotatorType: decision.annotatorType,
-          schemaVersion: decision.schemaVersion,
-          runId: null,
-          updatedAt: decision.decidedAt,
-          values: write.studyValues,
-        },
-      ],
-      deps.google,
-    );
-  } else {
-    const notReported = decision.value === NOT_REPORTED_TOKEN;
-    await upsertResultsDataRows(
-      spreadsheetId,
-      [
-        {
-          documentId: decision.documentId,
-          fieldId: decision.fieldId,
-          annotator: decision.annotator,
-          annotatorType: decision.annotatorType,
-          schemaVersion: decision.schemaVersion,
-          entityKey: decision.entityKey,
-          runId: null,
-          value: notReported ? null : decision.value,
-          notReported,
-          updatedAt: decision.decidedAt,
-        },
-      ],
-      deps.google,
-      { newUuid: deps.newUuid },
-    );
-  }
-  await appendDecisionRows(spreadsheetId, [decision], deps.google);
 }
 
 /**
@@ -410,18 +278,38 @@ export async function persistPilotDecision(
     entityLevel: field.entityLevel,
     studyValues,
   };
-  const queue = deps.decisionQueue ?? sharedDecisionQueue;
-  try {
-    await saveDecisionWrite(project.spreadsheetId, write, deps);
-  } catch {
-    await queue.enqueue(project.spreadsheetId, decision.annotator, write);
+  const result = await persistDecisionWrite(project.spreadsheetId, write, deps);
+  if (result.status === 'queued') {
     patchPilot(store, { queuedDecisions: store.getState().pilot.queuedDecisions + 1 });
-    showToast('保存に失敗したため、判定をオフラインキューへ退避しました（復帰後に再送されます）');
+  } else {
+    patchPilot(store, { queuedDecisions: result.remainingCount });
+  }
+}
+
+/**
+ * 埋め込み検証パネルの群構成確定を永続化し、次回読み込み用に楽観結果をスライスへ反映する。
+ * パネル側は確定を楽観反映済みのため、失敗時はトーストのみ（verificationService 側で表示）
+ */
+export async function persistPilotArmConfirmation(
+  store: Store,
+  deps: PilotServiceDeps,
+  arms: readonly { armKey: string; armName: string }[],
+): Promise<void> {
+  const state = store.getState();
+  const project = state.currentProject;
+  const verification = state.pilot.verification;
+  if (!project || verification === null) {
     return;
   }
-  // 保存が通ったら過去の退避分も再送する（tiab-review と同じ復帰動作）
-  const result = await queue.flush(project.spreadsheetId, decision.annotator, (item) =>
-    saveDecisionWrite(project.spreadsheetId, item, deps),
+  await persistArmConfirmation(
+    project.spreadsheetId,
+    {
+      documentId: verification.document.documentId,
+      arms,
+      annotator: verification.annotator,
+      annotatorType: 'human_with_ai',
+      confirmedAt: (deps.now ?? nowIso8601)(),
+    },
+    deps,
   );
-  patchPilot(store, { queuedDecisions: result.remainingCount });
 }

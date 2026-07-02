@@ -776,10 +776,18 @@ describe('bootstrapApp: #/pilot', () => {
     expect(store?.getState().pilot.verifyError).toBe('まだエラー');
   });
 
-  test('#/pilot の判定保存（onDecision）が persistPilotDecision まで配線されている', async () => {
+  test('#/pilot の判定保存（onDecision）と群構成確定（onArmConfirm）が配線されている', async () => {
+    const ARM_FIELD = {
+      ...FIELD,
+      fieldId: 'f-arm-n',
+      fieldIndex: 2,
+      fieldName: 'arm_n',
+      fieldLabel: '群の N',
+      entityLevel: 'arm' as const,
+    };
     const verification = {
       document: DOC_RECORD,
-      fields: [FIELD],
+      fields: [FIELD, ARM_FIELD],
       evidence: [
         {
           evidenceId: 'ev-1',
@@ -794,10 +802,24 @@ describe('bootstrapApp: #/pilot', () => {
           confidence: null,
           anchorStatus: null,
         },
+        {
+          evidenceId: 'ev-arm',
+          runId: 'run-1',
+          documentId: 'doc-1',
+          fieldId: 'f-arm-n',
+          entityKey: 'arm:1',
+          value: '50',
+          notReported: false,
+          quote: null,
+          page: null,
+          confidence: null,
+          anchorStatus: null,
+        },
       ],
       decisions: [],
       annotator: 'tester@example.com',
       schemaVersion: 1,
+      armStructure: null,
       pdf: null,
       pdfError: 'テストでは PDF なし',
       textPages: [],
@@ -829,9 +851,299 @@ describe('bootstrapApp: #/pilot', () => {
     await flush();
     await flush();
 
-    const urls = fetchMock.mock.calls.map((call) => decodeURIComponent(String(call[0])));
-    expect(urls.some((url) => url.includes('Decisions') && url.includes(':append'))).toBe(true);
+    const urls = () => fetchMock.mock.calls.map((call) => decodeURIComponent(String(call[0])));
+    expect(urls().some((url) => url.includes('Decisions') && url.includes(':append'))).toBe(true);
     expect(store?.getState().pilot.studyValues).toEqual({ sample_size_total: '120' });
     expect(document.querySelector('.verify__chip--accept')).not.toBeNull();
+
+    // 群構成の確定 → ArmStructures への追記まで配線されている
+    const nameInput = document.querySelector('.verify__arm-name') as HTMLInputElement;
+    nameInput.value = '介入群';
+    nameInput.dispatchEvent(new Event('change'));
+    (document.getElementById('verify-arm-confirm') as HTMLButtonElement).click();
+    await flush();
+    await flush();
+    expect(urls().some((url) => url.includes('ArmStructures!A1:append'))).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// #/verify（S8）の配線
+// ---------------------------------------------------------------------------
+
+describe('bootstrapApp: #/verify', () => {
+  afterEach(async () => {
+    const { disposeVerificationPanelCache } = await import(
+      '../../../src/app/views/verificationPanel'
+    );
+    disposeVerificationPanelCache();
+  });
+
+  const FIELD_ROW = [
+    '1',
+    'f-total',
+    '1',
+    'methods',
+    'sample_size_total',
+    '総サンプルサイズ',
+    'study',
+    'integer',
+    '',
+    '',
+    'TRUE',
+    '総 N を抽出',
+    '',
+    'FALSE',
+    '',
+  ];
+  const ARM_FIELD_ROW = [
+    '1',
+    'f-arm-n',
+    '2',
+    'outcomes',
+    'arm_n',
+    '群の N',
+    'arm',
+    'integer',
+    '',
+    '',
+    'TRUE',
+    '群別 N を抽出',
+    '',
+    'FALSE',
+    '',
+  ];
+  const EVIDENCE_ROW = [
+    'ev-1',
+    'run-1',
+    'doc-1',
+    'f-total',
+    '-',
+    '120',
+    'FALSE',
+    'a total of 120',
+    '1',
+    'high',
+    'exact',
+  ];
+  const RUN_ROW = [
+    'run-1',
+    'pilot',
+    '1',
+    'doc-1',
+    'gemini',
+    'gemini-test',
+    '',
+    'text_only',
+    'done',
+    't1',
+    't2',
+    '',
+    '',
+    '',
+  ];
+
+  const DOC_RECORD_1 = {
+    documentId: 'doc-1',
+    studyLabel: 'Smith 2020',
+    driveFileId: 'drive-1',
+    sourceFileId: 'src-1',
+    filename: 'smith2020.pdf',
+    pmid: null,
+    doi: null,
+    textRef: 'ref',
+    textStatus: 'ok' as const,
+    pageCount: 2,
+    charCount: 1000,
+    importedAt: 't0',
+    importedBy: 'tester@example.com',
+    note: null,
+  };
+  const DOC_RECORD_2 = { ...DOC_RECORD_1, documentId: 'doc-2', studyLabel: 'Jones 2021' };
+
+  /** タブ名で values をルーティングする Sheets/Drive スタブ */
+  function createVerifyFakeDeps(
+    tabValues: Record<string, string[][]>,
+    options: { failEvidence?: boolean; failStudyData?: boolean } = {},
+  ): { deps: AppDeps; fetchMock: jest.Mock } {
+    const fetchMock = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = decodeURIComponent(String(input));
+      const method = (init as RequestInit | undefined)?.method ?? 'GET';
+      if (options.failEvidence && url.includes('/values/Evidence')) {
+        return { ok: false, status: 500, json: async () => ({}), text: async () => 'boom' };
+      }
+      if (options.failStudyData && url.includes('/values/StudyData')) {
+        return { ok: false, status: 500, json: async () => ({}), text: async () => 'boom' };
+      }
+      let json: unknown = {};
+      if (url.includes('fields=sheets.properties.title')) {
+        // ArmStructures タブなしの旧プロジェクトを模す（読み出しは空 = 未確定）
+        json = { sheets: [{ properties: { title: 'Meta' } }] };
+      } else if (method === 'GET' && url.includes('/values/')) {
+        const tab = Object.keys(tabValues).find((name) => url.includes(`/values/${name}`));
+        json = { values: tab === undefined ? [] : tabValues[tab] };
+      }
+      return { ok: true, status: 200, json: async () => json, text: async () => '' };
+    });
+    const { deps } = createFakeDeps([]);
+    deps.google = { fetch: fetchMock as unknown as typeof fetch, getAccessToken: async () => 'token' };
+    return { deps, fetchMock };
+  }
+
+  function verifyPreloaded(documents = [DOC_RECORD_1]): Partial<AppState> {
+    return {
+      currentProject: PROJECT,
+      counts: { evidenceRows: 1 } as AppState['counts'],
+      documents: { records: documents } as unknown as AppState['documents'],
+    };
+  }
+
+  const BASE_TABS: Record<string, string[][]> = {
+    Evidence: [[...SHEET_HEADERS.Evidence], EVIDENCE_ROW],
+    ExtractionRuns: [[...SHEET_HEADERS.ExtractionRuns], RUN_ROW],
+    Decisions: [[...SHEET_HEADERS.Decisions]],
+    SchemaFields: [[...SHEET_HEADERS.SchemaFields], FIELD_ROW],
+    StudyData: [['document_id', 'annotator', 'annotator_type', 'schema_version', 'run_id', 'updated_at']],
+  };
+
+  test('#/verify 入場で一覧を読み込み、?doc= なしは先頭文献を開く', async () => {
+    const stub = createWindowStub(verifyPreloaded());
+    const { deps } = createVerifyFakeDeps(BASE_TABS);
+    const store = await bootstrapApp(asWindow(stub), deps);
+    stub.location.hash = '#/verify';
+    stub.fireHashChange();
+    await flush();
+    await flush();
+
+    const select = document.getElementById('verify-doc') as HTMLSelectElement;
+    expect(select.options[0]?.textContent).toBe('Smith 2020（判定済み 0 / 1）');
+    expect(store?.getState().verify.selectedDocumentId).toBe('doc-1');
+    // PDF はスタブで開けない → pdfError 側のペインでフォームは使える
+    expect(document.querySelector('.verify__panes')).not.toBeNull();
+    expect(document.querySelector('.verify__pdf-error')).not.toBeNull();
+
+    // 同じ状態での再 hashchange は再読込しない（alreadyShown）
+    const decisionsReads = () =>
+      (deps.google.fetch as unknown as jest.Mock).mock.calls.filter(([url]) =>
+        decodeURIComponent(String(url)).includes('/values/Decisions'),
+      ).length;
+    const before = decisionsReads();
+    stub.fireHashChange();
+    await flush();
+    expect(decisionsReads()).toBe(before);
+  });
+
+  test('セレクタ切替は hash 書き換え → ?doc= の文献を開く（直リンクと同経路）', async () => {
+    const stub = createWindowStub(verifyPreloaded([DOC_RECORD_1, DOC_RECORD_2]));
+    const tabs = {
+      ...BASE_TABS,
+      Evidence: [
+        [...SHEET_HEADERS.Evidence],
+        EVIDENCE_ROW,
+        ['ev-2', 'run-1', 'doc-2', 'f-total', '-', '99', 'FALSE', '', '', '', ''],
+      ],
+    };
+    const { deps } = createVerifyFakeDeps(tabs);
+    const store = await bootstrapApp(asWindow(stub), deps);
+    stub.location.hash = '#/verify';
+    stub.fireHashChange();
+    await flush();
+    await flush();
+    expect(store?.getState().verify.selectedDocumentId).toBe('doc-1');
+
+    const select = document.getElementById('verify-doc') as HTMLSelectElement;
+    select.value = 'doc-2';
+    select.dispatchEvent(new Event('change'));
+    expect(stub.location.hash).toBe('#/verify?doc=doc-2');
+    stub.fireHashChange();
+    await flush();
+    await flush();
+    expect(store?.getState().verify.selectedDocumentId).toBe('doc-2');
+  });
+
+  test('?doc= が存在しない文献なら #verify-error を出し、選び直せる', async () => {
+    const stub = createWindowStub(verifyPreloaded());
+    const { deps } = createVerifyFakeDeps(BASE_TABS);
+    const store = await bootstrapApp(asWindow(stub), deps);
+    stub.location.hash = '#/verify?doc=doc-9';
+    stub.fireHashChange();
+    await flush();
+    await flush();
+    expect(store?.getState().verify.verifyError).toContain('doc-9 が見つかりません');
+    expect(document.getElementById('verify-error')?.textContent).toContain('doc-9');
+    expect(document.getElementById('verify-doc')).not.toBeNull();
+  });
+
+  test('一覧読み込み失敗は #verify-error + 再試行が force 再読込につながる', async () => {
+    const stub = createWindowStub(verifyPreloaded());
+    const { deps, fetchMock } = createVerifyFakeDeps(BASE_TABS, { failEvidence: true });
+    await bootstrapApp(asWindow(stub), deps);
+    stub.location.hash = '#/verify';
+    stub.fireHashChange();
+    await flush();
+    await flush();
+    expect(document.getElementById('verify-error')?.textContent).toContain(
+      '検証対象を読み込めませんでした',
+    );
+
+    const callsBefore = fetchMock.mock.calls.length;
+    (document.getElementById('verify-retry') as HTMLButtonElement).click();
+    await flush();
+    await flush();
+    expect(fetchMock.mock.calls.length).toBeGreaterThan(callsBefore);
+    expect(document.getElementById('verify-error')).not.toBeNull(); // 依然失敗のまま
+  });
+
+  test('検証データ読込失敗（verifyError）後の同一 hash 再発火は再読込しない', async () => {
+    const stub = createWindowStub(verifyPreloaded());
+    const { deps, fetchMock } = createVerifyFakeDeps(BASE_TABS, { failStudyData: true });
+    const store = await bootstrapApp(asWindow(stub), deps);
+    stub.location.hash = '#/verify?doc=doc-1';
+    stub.fireHashChange();
+    await flush();
+    await flush();
+    expect(store?.getState().verify.selectedDocumentId).toBe('doc-1');
+    expect(store?.getState().verify.verifyError).toContain('HTTP 500');
+
+    const callsBefore = fetchMock.mock.calls.length;
+    stub.fireHashChange(); // alreadyShown（verifyError あり）→ 再読込しない
+    await flush();
+    expect(fetchMock.mock.calls.length).toBe(callsBefore);
+  });
+
+  test('判定と群構成確定がサービス層の書き込みまで配線されている', async () => {
+    const stub = createWindowStub(verifyPreloaded());
+    const tabs = {
+      ...BASE_TABS,
+      SchemaFields: [[...SHEET_HEADERS.SchemaFields], FIELD_ROW, ARM_FIELD_ROW],
+      Evidence: [
+        [...SHEET_HEADERS.Evidence],
+        EVIDENCE_ROW,
+        ['ev-arm', 'run-1', 'doc-1', 'f-arm-n', 'arm:1', '50', 'FALSE', '', '', '', ''],
+      ],
+    };
+    const { deps, fetchMock } = createVerifyFakeDeps(tabs);
+    await bootstrapApp(asWindow(stub), deps);
+    stub.location.hash = '#/verify';
+    stub.fireHashChange();
+    await flush();
+    await flush();
+
+    // 群構成の確定 → ArmStructures タブ作成（旧プロジェクト）+ 追記
+    const nameInput = document.querySelector('.verify__arm-name') as HTMLInputElement;
+    nameInput.value = '介入群';
+    nameInput.dispatchEvent(new Event('change'));
+    (document.getElementById('verify-arm-confirm') as HTMLButtonElement).click();
+    await flush();
+    await flush();
+    const urls = () => fetchMock.mock.calls.map((call) => decodeURIComponent(String(call[0])));
+    expect(urls().some((url) => url.includes(':batchUpdate'))).toBe(true);
+    expect(urls().some((url) => url.includes('ArmStructures!A1:append'))).toBe(true);
+
+    // 判定（study セルの承認）→ StudyData upsert + Decisions 追記
+    (document.querySelector('.verify__action--accept') as HTMLButtonElement).click();
+    await flush();
+    await flush();
+    expect(urls().some((url) => url.includes('Decisions') && url.includes(':append'))).toBe(true);
   });
 });

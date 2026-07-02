@@ -66,6 +66,20 @@ export interface PilotViewCallbacks {
   onRetryVerifyLoad(): void;
   /** 検証パネルの判定 1 操作（annotator 行の更新 + Decisions 追記） */
   onDecision(decision: Decision): void;
+  /** 群構成の確定・改訂（ArmStructures へ新 version を追記） */
+  onArmConfirm(arms: readonly { armKey: string; armName: string }[]): void;
+}
+
+/** #/verify（S8）のユーザー操作コールバック */
+export interface VerifyViewCallbacks {
+  /** document セレクタの切替（URL ?doc= と同期する） */
+  onSelectDocument(documentId: string): void;
+  /** 一覧読み込み失敗時の再試行 */
+  onRetryLoad(): void;
+  /** 検証パネルの判定 1 操作（annotator 行の更新 + Decisions 追記） */
+  onDecision(decision: Decision): void;
+  /** 群構成の確定・改訂（ArmStructures へ新 version を追記） */
+  onArmConfirm(arms: readonly { armKey: string; armName: string }[]): void;
 }
 
 export interface ViewContext {
@@ -73,4 +87,5 @@ export interface ViewContext {
   protocol: ProtocolViewCallbacks;
   schema: SchemaViewCallbacks;
   pilot: PilotViewCallbacks;
+  verify: VerifyViewCallbacks;
 }

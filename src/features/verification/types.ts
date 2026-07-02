@@ -1,5 +1,6 @@
 // 検証パネル（S6 埋め込み / S8 単独）の入力データ束。
-// サービス層（pilotService / 将来の verifyService）が組み立て、verificationPanel が消費する
+// サービス層（verificationService.loadVerificationBundle）が組み立て、verificationPanel が消費する
+import type { ConfirmedArmStructure } from '../../domain/armStructure';
 import type { Decision } from '../../domain/decision';
 import type { DocumentRecord } from '../../domain/document';
 import type { Evidence } from '../../domain/evidence';
@@ -18,6 +19,11 @@ export interface VerificationData {
   /** 自分（判定者）の email。human_with_ai 行の annotator になる */
   annotator: string;
   schemaVersion: number;
+  /**
+   * 自分が確定した群構成（ArmStructures の最新 version）。null = 未確定で、
+   * arm / outcome_result レベル項目があるスキーマでは該当タブをディムし確定カードを出す
+   */
+  armStructure: ConfirmedArmStructure | null;
   /** PDF ドキュメント。読み込み失敗時は null + pdfError */
   pdf: PdfViewerDocument | null;
   pdfError: string | null;

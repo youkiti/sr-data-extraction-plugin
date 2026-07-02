@@ -10,6 +10,7 @@ import type { SchemaVersion } from '../domain/schemaVersion';
 import type { BatchFailure, RunProgress } from '../features/extraction/executeRun';
 import type { SchemaEditorRow } from '../features/schema/types';
 import type { FieldValidationError } from '../features/schema/validateField';
+import type { VerificationProgress } from '../features/verification/progress';
 import type { VerificationData } from '../features/verification/types';
 
 /** ガード判定・進捗サマリに使う各タブの行数サマリ（ui-flow.md §4） */
@@ -119,6 +120,35 @@ export interface PilotState {
   queuedDecisions: number;
 }
 
+/** #/verify（S8）の一覧 1 文献ぶんの検証素材（Evidence がある document のみ） */
+export interface VerifyTarget {
+  document: DocumentRecord;
+  /** 表示する run（当該 document の最新 run）の Evidence */
+  evidence: Evidence[];
+  /** 表示する run の schema_version の全項目 */
+  fields: SchemaField[];
+  schemaVersion: number;
+  /** セレクタの進捗チップ（判定済み n / 総セル m） */
+  progress: VerificationProgress;
+}
+
+/** #/verify（S8）の画面状態 */
+export interface VerifyState {
+  /** 検証対象一覧。null = 未読込（画面表示時に読み込む） */
+  targets: VerifyTarget[] | null;
+  loading: boolean;
+  loadError: string | null;
+  /** 表示中の文献（URL クエリ ?doc= と同期する） */
+  selectedDocumentId: string | null;
+  verification: VerificationData | null;
+  verifyLoading: boolean;
+  verifyError: string | null;
+  /** 表示中文献の自分の StudyData 行の values（判定保存時の全量上書きの素材） */
+  studyValues: Record<string, string | null> | null;
+  /** オフラインキューへ退避した判定書き込みの件数 */
+  queuedDecisions: number;
+}
+
 export interface AppState {
   currentProject: ProjectRef | null;
   counts: ProgressCounts;
@@ -126,6 +156,7 @@ export interface AppState {
   protocol: ProtocolState;
   schema: SchemaState;
   pilot: PilotState;
+  verify: VerifyState;
 }
 
 export type StateListener = (state: AppState) => void;
@@ -192,6 +223,17 @@ export function createInitialState(): AppState {
       batchFailures: [],
       rejectedCount: 0,
       verifyDocumentId: null,
+      verification: null,
+      verifyLoading: false,
+      verifyError: null,
+      studyValues: null,
+      queuedDecisions: 0,
+    },
+    verify: {
+      targets: null,
+      loading: false,
+      loadError: null,
+      selectedDocumentId: null,
       verification: null,
       verifyLoading: false,
       verifyError: null,

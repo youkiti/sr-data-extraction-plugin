@@ -63,6 +63,17 @@ describe('createInitialState', () => {
         studyValues: null,
         queuedDecisions: 0,
       },
+      verify: {
+        targets: null,
+        loading: false,
+        loadError: null,
+        selectedDocumentId: null,
+        verification: null,
+        verifyLoading: false,
+        verifyError: null,
+        studyValues: null,
+        queuedDecisions: 0,
+      },
     });
   });
 });

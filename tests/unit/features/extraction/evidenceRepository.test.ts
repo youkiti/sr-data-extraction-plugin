@@ -2,7 +2,9 @@ import type { Evidence } from '../../../../src/domain/evidence';
 import {
   appendEvidenceRows,
   evidenceToRow,
+  readEvidenceRows,
 } from '../../../../src/features/extraction/evidenceRepository';
+import { SHEET_HEADERS } from '../../../../src/domain/sheetsSchema';
 
 function makeEvidence(overrides: Partial<Evidence> = {}): Evidence {
   return {
@@ -83,5 +85,96 @@ describe('appendEvidenceRows', () => {
     const d = deps();
     await appendEvidenceRows('sid', [], d);
     expect(d.fetch).not.toHaveBeenCalled();
+  });
+});
+
+describe('readEvidenceRows', () => {
+  function readDeps(values: string[][]): { fetch: jest.Mock; getAccessToken: jest.Mock } {
+    return {
+      fetch: jest.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({ values }),
+        text: async () => '',
+      } as Response),
+      getAccessToken: jest.fn().mockResolvedValue('token'),
+    };
+  }
+
+  const sheetRow = (overrides: Record<number, string> = {}): string[] => {
+    const base = [
+      'ev-1',
+      'run-1',
+      'doc-1',
+      'f-1',
+      '-',
+      '120',
+      'FALSE',
+      'total of 120 patients',
+      '3',
+      'high',
+      'exact',
+    ];
+    for (const [index, value] of Object.entries(overrides)) {
+      base[Number(index)] = value;
+    }
+    return base;
+  };
+
+  test('全行をシート行順のままパースして返す（TRUE の大小文字も許容）', async () => {
+    const values = [
+      [...SHEET_HEADERS.Evidence],
+      sheetRow(),
+      sheetRow({ 0: 'ev-2', 5: '', 6: 'True', 7: '', 8: '', 9: '', 10: '' }),
+    ];
+    const rows = await readEvidenceRows('sheet-1', readDeps(values));
+    expect(rows[0]).toEqual(makeEvidence());
+    expect(rows[1]).toEqual(
+      makeEvidence({
+        evidenceId: 'ev-2',
+        value: null,
+        notReported: true,
+        quote: null,
+        page: null,
+        confidence: null,
+        anchorStatus: null,
+      }),
+    );
+  });
+
+  test('ヘッダ行なし・列名不一致はエラー', async () => {
+    await expect(readEvidenceRows('sheet-1', readDeps([]))).rejects.toThrow(
+      'Evidence タブにヘッダ行がありません',
+    );
+    const badHeader = [...SHEET_HEADERS.Evidence];
+    badHeader[4] = 'wrong';
+    await expect(readEvidenceRows('sheet-1', readDeps([badHeader]))).rejects.toThrow(
+      'Evidence のヘッダ 5 列目が "entity_key" ではありません',
+    );
+  });
+
+  test('page / confidence / anchor_status の不正値はエラー', async () => {
+    await expect(
+      readEvidenceRows('sheet-1', readDeps([[...SHEET_HEADERS.Evidence], sheetRow({ 8: 'p3' })])),
+    ).rejects.toThrow('Evidence 2 行目: page "p3" が正の整数ではありません');
+    await expect(
+      readEvidenceRows('sheet-1', readDeps([[...SHEET_HEADERS.Evidence], sheetRow({ 9: 'sure' })])),
+    ).rejects.toThrow('confidence "sure" が不正です');
+    await expect(
+      readEvidenceRows('sheet-1', readDeps([[...SHEET_HEADERS.Evidence], sheetRow({ 10: 'ok' })])),
+    ).rejects.toThrow('anchor_status "ok" が不正です');
+  });
+
+  test('ラグ配列（末尾セル欠落）は null として読む', async () => {
+    const short = sheetRow();
+    short.length = 6; // not_reported 以降が欠落
+    const rows = await readEvidenceRows('sheet-1', readDeps([[...SHEET_HEADERS.Evidence], short]));
+    expect(rows[0]).toMatchObject({
+      notReported: false,
+      quote: null,
+      page: null,
+      confidence: null,
+      anchorStatus: null,
+    });
   });
 });

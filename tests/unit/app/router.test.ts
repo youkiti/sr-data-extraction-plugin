@@ -1,4 +1,4 @@
-import { ROUTES, findRoute, normalizeHash } from '../../../src/app/router';
+import { ROUTES, docQueryOf, findRoute, normalizeHash } from '../../../src/app/router';
 import { createInitialState } from '../../../src/app/store';
 import type { ViewContext } from '../../../src/app/views/types';
 
@@ -31,6 +31,13 @@ const stubCtx: ViewContext = {
     onSelectVerifyDocument: jest.fn(),
     onRetryVerifyLoad: jest.fn(),
     onDecision: jest.fn(),
+    onArmConfirm: jest.fn(),
+  },
+  verify: {
+    onSelectDocument: jest.fn(),
+    onRetryLoad: jest.fn(),
+    onDecision: jest.fn(),
+    onArmConfirm: jest.fn(),
   },
 };
 
@@ -52,6 +59,19 @@ describe('normalizeHash', () => {
 describe('findRoute', () => {
   test('ハッシュに対応するルート定義を返す', () => {
     expect(findRoute('#/schema').label).toBe('スキーマ');
+  });
+});
+
+describe('docQueryOf', () => {
+  test('#/verify?doc=... の doc を取り出す（URL エンコードも復元）', () => {
+    expect(docQueryOf('#/verify?doc=doc-1')).toBe('doc-1');
+    expect(docQueryOf('#/verify?doc=doc%20x&other=1')).toBe('doc x');
+  });
+
+  test('クエリなし・doc なし・空値は null', () => {
+    expect(docQueryOf('#/verify')).toBeNull();
+    expect(docQueryOf('#/verify?entity=arm:1')).toBeNull();
+    expect(docQueryOf('#/verify?doc=')).toBeNull();
   });
 });
 

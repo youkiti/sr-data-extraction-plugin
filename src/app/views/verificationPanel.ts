@@ -9,9 +9,11 @@
 // 同じ VerificationData 参照なら同一インスタンス（DOM / PDF canvas / 判定の楽観状態）を返し、
 // データが差し替わったときだけ作り直す
 import { NOT_REPORTED_TOKEN } from '../../domain/annotation';
+import type { ConfirmedArmStructure } from '../../domain/armStructure';
 import type { Decision, DecisionAction } from '../../domain/decision';
 import type { Evidence } from '../../domain/evidence';
 import type { EntityLevel } from '../../domain/schemaField';
+import { draftArms, needsArmConfirmation, type DraftArm } from '../../features/verification/armDraft';
 import { availableTabs, buildTabModel, type TabModel, type VerificationCell } from '../../features/verification/cells';
 import { cellKeyOf, deriveCellStates, undoRevertValue } from '../../features/verification/cellState';
 import {
@@ -35,6 +37,8 @@ export interface VerificationPanelOptions {
   data: VerificationData;
   /** 判定 1 操作ごとに呼ばれる（永続化 + オフラインキュー退避はサービス層の責務） */
   onDecision: (decision: Decision) => void;
+  /** 群構成の確定・改訂ごとに呼ばれる（ArmStructures への追記はサービス層の責務） */
+  onArmConfirm?: (arms: readonly DraftArm[]) => void;
   now?: () => string;
   /** テスト差し替え用（pdfViewer へ渡す） */
   renderPage?: typeof renderPdfPageToCanvas;
@@ -65,8 +69,21 @@ export function createVerificationPanel(
   /** 複数一致の表示中出現（cellKey → occurrences の index）。未設定は selectedIndex */
   const matchSelection = new Map<string, number>();
 
+  // --- 群構成（arm 確定ゲート。requirements.md §4.2 / ui-states.md §3） -----
+  // 確定は判定と同じく楽観反映し、永続化は onArmConfirm へ委譲する
+  const armRequired = needsArmConfirmation(data.fields);
+  let armStructure: ConfirmedArmStructure | null = data.armStructure;
+  let armEditing = armRequired && armStructure === null;
+  let armRows: DraftArm[] =
+    armStructure !== null
+      ? armStructure.arms.map((arm) => ({ ...arm }))
+      : draftArms(data.fields, data.evidence);
+  let armError: string | null = null;
+  const armLocked = (): boolean => armRequired && armStructure === null;
+  const tabLocked = (tab: EntityLevel): boolean => armLocked() && tab !== 'study';
+
   const tabs = availableTabs(data.fields);
-  let activeTab: EntityLevel = tabs[0] ?? 'study';
+  let activeTab: EntityLevel = tabs.find((tab) => !tabLocked(tab)) ?? tabs[0] ?? 'study';
   let focusedCellKey: string | null = null;
   let editing: { cellKey: string; action: 'edit' | 'reject' } | null = null;
 
@@ -177,7 +194,20 @@ export function createVerificationPanel(
     return null;
   }
 
+  /** 追加行の arm_key（既存の `arm:数値` の最大 + 1。非数値キーは数えない） */
+  function nextArmKey(): string {
+    let max = 0;
+    for (const arm of armRows) {
+      const match = /^arm:(\d+)$/.exec(arm.armKey);
+      if (match !== null) {
+        max = Math.max(max, Number(match[1]));
+      }
+    }
+    return `arm:${max + 1}`;
+  }
+
   const handlers: VerificationFormHandlers = {
+    // ロック中タブの排他は verificationForm 側が担う（disabled ボタンにはリスナを付けない）
     onSelectTab(tab) {
       activeTab = tab;
       focusedCellKey = currentTabModel().cells[0]?.cellKey ?? null;
@@ -237,6 +267,51 @@ export function createVerificationPanel(
       syncViewer();
       viewer?.focusHighlight(cellKey);
     },
+    onArmNameChange(index, name) {
+      // フォームは armRows から描画され、change は同一描画世代の index しか渡さない
+      (armRows[index] as DraftArm).armName = name;
+    },
+    onArmAddRow() {
+      armRows.push({ armKey: nextArmKey(), armName: '' });
+      refreshForm();
+    },
+    onArmRemoveRow(index) {
+      armRows.splice(index, 1);
+      refreshForm();
+    },
+    onArmConfirm() {
+      const trimmed = armRows.map((arm) => ({ armKey: arm.armKey, armName: arm.armName.trim() }));
+      if (trimmed.length === 0) {
+        armError = '少なくとも 1 つの群が必要です';
+        refreshForm();
+        return;
+      }
+      if (trimmed.some((arm) => arm.armName === '')) {
+        armError = '名称が空の群があります。すべての群に名称を入力してください';
+        refreshForm();
+        return;
+      }
+      // 楽観反映（判定と同じ流儀）。永続化はサービス層へ委譲する
+      armStructure = { version: (armStructure?.version ?? 0) + 1, arms: trimmed };
+      armRows = trimmed.map((arm) => ({ ...arm }));
+      armEditing = false;
+      armError = null;
+      refreshForm();
+      options.onArmConfirm?.(trimmed);
+    },
+    onArmRevise() {
+      // 確定済みカードにしか「改訂」は出ないため armStructure は非 null
+      armRows = (armStructure as ConfirmedArmStructure).arms.map((arm) => ({ ...arm }));
+      armEditing = true;
+      armError = null;
+      refreshForm();
+    },
+    onArmCancelRevise() {
+      armRows = (armStructure as ConfirmedArmStructure).arms.map((arm) => ({ ...arm }));
+      armEditing = false;
+      armError = null;
+      refreshForm();
+    },
   };
 
   function refreshForm(): void {
@@ -250,9 +325,18 @@ export function createVerificationPanel(
       editing,
       highlightInfo: highlightInfo(),
       canSearchText: data.textPages.some((page) => page.text !== ''),
+      armCard: armRequired
+        ? {
+            editing: armEditing,
+            rows: armRows,
+            confirmedVersion: armStructure?.version ?? null,
+            error: armError,
+          }
+        : null,
+      armLocked: armLocked(),
     };
     formPane.replaceChildren(renderVerificationForm(model, handlers));
-    if (hadFocus && focusedCellKey !== null && editing === null) {
+    if (hadFocus && focusedCellKey !== null && editing === null && !tabLocked(activeTab)) {
       findCellElement(focusedCellKey).focus();
     }
   }
@@ -269,7 +353,8 @@ export function createVerificationPanel(
       return;
     }
     const tab = tabOfCell(cellKey);
-    if (tab === null) {
+    if (tab === null || tabLocked(tab)) {
+      // ロック中のタブへはジャンプしない（ハイライトクリック経由。群構成の確定が先）
       return;
     }
     focusedCellKey = cellKey;
@@ -326,7 +411,7 @@ export function createVerificationPanel(
   }
 
   function handleKeydown(event: KeyboardEvent): void {
-    if (!root.isConnected || editing !== null) {
+    if (!root.isConnected || editing !== null || tabLocked(activeTab)) {
       return;
     }
     if (event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) {

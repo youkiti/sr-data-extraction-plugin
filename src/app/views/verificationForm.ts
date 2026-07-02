@@ -15,6 +15,17 @@ export interface CellHighlightInfo {
   matchIndex: number;
 }
 
+/** 群構成確定カード（requirements.md §4.2 / ui-states.md §3 `#/verify`）の表示モデル */
+export interface ArmCardModel {
+  /** 編集中か（未確定のうちは常に編集中） */
+  editing: boolean;
+  /** 編集中は編集行、確定済み表示中は確定内容 */
+  rows: readonly { armKey: string; armName: string }[];
+  /** 確定済み version。null = 未確定 */
+  confirmedVersion: number | null;
+  error: string | null;
+}
+
 export interface VerificationFormModel {
   tabs: EntityLevel[];
   activeTab: EntityLevel;
@@ -25,6 +36,10 @@ export interface VerificationFormModel {
   highlightInfo: ReadonlyMap<string, CellHighlightInfo>;
   /** テキスト層があるとき true（false なら「本文内を検索」を出さない。ui-states.md §3） */
   canSearchText: boolean;
+  /** 群構成確定カード。null = 群構成が不要なスキーマ（arm / outcome_result 項目なし） */
+  armCard: ArmCardModel | null;
+  /** true のとき study 以外のタブをディムし、該当タブの本文を確定案内に差し替える */
+  armLocked: boolean;
 }
 
 export interface VerificationFormHandlers {
@@ -42,6 +57,16 @@ export interface VerificationFormHandlers {
   onSearchQuote(quote: string): void;
   /** 「他 n 箇所に一致」の切替 */
   onCycleMatch(cellKey: string): void;
+  /** 群構成カード: 名称の編集確定（change 単位） */
+  onArmNameChange(index: number, name: string): void;
+  onArmAddRow(): void;
+  onArmRemoveRow(index: number): void;
+  /** 「群構成を確定」（検証 → ArmStructures へ新 version 追記） */
+  onArmConfirm(): void;
+  /** 確定済みカードの「改訂」 */
+  onArmRevise(): void;
+  /** 改訂のキャンセル（確定済みがあるときだけ出る） */
+  onArmCancelRevise(): void;
 }
 
 const TAB_LABELS: Record<EntityLevel, string> = {
@@ -277,10 +302,121 @@ function renderTabs(model: VerificationFormModel, handlers: VerificationFormHand
     if (tab === model.activeTab) {
       button.classList.add('verify__tab--active');
     }
-    button.addEventListener('click', () => handlers.onSelectTab(tab));
+    if (model.armLocked && tab !== 'study') {
+      // arm 未確定のうちは arm / outcome_result（/ rob_domain）タブをディム（ui-states.md §3）
+      button.disabled = true;
+      button.classList.add('verify__tab--locked');
+      button.setAttribute('aria-disabled', 'true');
+    } else {
+      button.addEventListener('click', () => handlers.onSelectTab(tab));
+    }
     return button;
   });
   return el('div', { className: 'verify__tabs', attributes: { role: 'tablist' } }, buttons);
+}
+
+function renderArmCardEditor(
+  card: ArmCardModel,
+  handlers: VerificationFormHandlers,
+): HTMLElement[] {
+  const rows = card.rows.map((arm, index) => {
+    const input = el('input', {
+      className: 'verify__arm-name',
+      attributes: { type: 'text', 'aria-label': `群 ${arm.armKey} の名称` },
+    });
+    input.value = arm.armName;
+    input.addEventListener('change', () => handlers.onArmNameChange(index, input.value));
+    const removeButton = el('button', {
+      className: 'verify__arm-remove',
+      text: '削除',
+      attributes: { type: 'button', 'aria-label': `群 ${arm.armKey} を削除` },
+    });
+    removeButton.addEventListener('click', () => handlers.onArmRemoveRow(index));
+    return el('li', { className: 'verify__arm-row' }, [
+      el('code', { className: 'verify__arm-key', text: arm.armKey }),
+      input,
+      removeButton,
+    ]);
+  });
+
+  const addButton = el('button', {
+    className: 'verify__arm-add',
+    text: '群を追加',
+    attributes: { type: 'button' },
+  });
+  addButton.addEventListener('click', () => handlers.onArmAddRow());
+
+  const confirmButton = el('button', {
+    id: 'verify-arm-confirm',
+    className: 'verify__arm-confirm',
+    text: '群構成を確定',
+    attributes: { type: 'button' },
+  });
+  confirmButton.addEventListener('click', () => handlers.onArmConfirm());
+
+  const actions: HTMLElement[] = [addButton, confirmButton];
+  if (card.confirmedVersion !== null) {
+    const cancelButton = el('button', {
+      className: 'verify__arm-cancel',
+      text: 'キャンセル',
+      attributes: { type: 'button' },
+    });
+    cancelButton.addEventListener('click', () => handlers.onArmCancelRevise());
+    actions.push(cancelButton);
+  }
+
+  const children: HTMLElement[] = [];
+  if (card.confirmedVersion === null) {
+    children.push(
+      el('p', {
+        className: 'verify__arm-lead',
+        text: 'まず群構成を確定してください（AI ドラフトを初期値に、群の名称・数を確定します）',
+      }),
+    );
+  }
+  children.push(el('ul', { className: 'verify__arm-rows' }, rows));
+  if (card.error !== null) {
+    children.push(
+      el('p', {
+        id: 'verify-arm-error',
+        className: 'verify__arm-error',
+        attributes: { role: 'alert' },
+        text: card.error,
+      }),
+    );
+  }
+  children.push(el('div', { className: 'verify__arm-actions' }, actions));
+  return children;
+}
+
+function renderArmCardSummary(
+  card: ArmCardModel,
+  handlers: VerificationFormHandlers,
+): HTMLElement[] {
+  const reviseButton = el('button', {
+    id: 'verify-arm-revise',
+    className: 'verify__arm-revise',
+    text: '改訂',
+    attributes: { type: 'button' },
+  });
+  reviseButton.addEventListener('click', () => handlers.onArmRevise());
+  return [
+    el('p', {
+      className: 'verify__arm-summary',
+      text: `群構成: ${card.rows.length} 群（version ${card.confirmedVersion}）— ${card.rows
+        .map((arm) => arm.armName)
+        .join(' / ')}`,
+    }),
+    el('div', { className: 'verify__arm-actions' }, [reviseButton]),
+  ];
+}
+
+function renderArmCard(card: ArmCardModel, handlers: VerificationFormHandlers): HTMLElement {
+  const children: HTMLElement[] = [el('h4', { className: 'verify__arm-heading', text: '群構成' })];
+  children.push(
+    ...(card.editing ? renderArmCardEditor(card, handlers) : renderArmCardSummary(card, handlers)),
+  );
+  return el('section', { id: 'verify-arm-card', className: 'verify__arm-card' }, children);
 }
 
 export function renderVerificationForm(
@@ -288,6 +424,19 @@ export function renderVerificationForm(
   handlers: VerificationFormHandlers,
 ): HTMLElement {
   const children: HTMLElement[] = [renderTabs(model, handlers)];
+  if (model.armCard !== null) {
+    children.push(renderArmCard(model.armCard, handlers));
+  }
+  if (model.armLocked && model.activeTab !== 'study') {
+    // study 項目のないスキーマではロック対象タブが初期表示になりうる。本文を確定案内に差し替える
+    children.push(
+      el('p', {
+        className: 'verify__locked-note',
+        text: 'まず群構成を確定してください',
+      }),
+    );
+    return el('div', { className: 'verify__form' }, children);
+  }
   if (model.tabModel.cells.length === 0) {
     children.push(
       el('p', {

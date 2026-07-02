@@ -1,7 +1,9 @@
 import type { ExtractionRun } from '../../../../src/domain/extractionRun';
+import { SHEET_HEADERS } from '../../../../src/domain/sheetsSchema';
 import {
   appendExtractionRun,
   extractionRunToRow,
+  readRunSchemaVersions,
 } from '../../../../src/features/extraction/runRepository';
 
 function makeRun(overrides: Partial<ExtractionRun> = {}): ExtractionRun {
@@ -76,5 +78,74 @@ describe('appendExtractionRun', () => {
     expect(decodeURIComponent(url as string)).toContain('/sid/values/ExtractionRuns!A1:append');
     const body = JSON.parse((init as RequestInit).body as string);
     expect(body.values[0][0]).toBe('run-1');
+  });
+});
+
+describe('readRunSchemaVersions', () => {
+  function readDeps(values: string[][]): { fetch: jest.Mock; getAccessToken: jest.Mock } {
+    return {
+      fetch: jest.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({ values }),
+        text: async () => '',
+      } as Response),
+      getAccessToken: jest.fn().mockResolvedValue('token'),
+    };
+  }
+
+  const runRow = (runId: string, version: string): string[] => [
+    runId,
+    'pilot',
+    version,
+    'doc-1',
+    'gemini',
+    'gemini-test',
+    '',
+    'text_only',
+    'done',
+    't1',
+    't2',
+    '',
+    '',
+    '',
+  ];
+
+  test('run_id → schema_version のマップを返す', async () => {
+    const values = [[...SHEET_HEADERS.ExtractionRuns], runRow('run-1', '1'), runRow('run-2', '3')];
+    const map = await readRunSchemaVersions('sheet-1', readDeps(values));
+    expect(map.get('run-1')).toBe(1);
+    expect(map.get('run-2')).toBe(3);
+    expect(map.size).toBe(2);
+  });
+
+  test('ヘッダ行なし・列名不一致・schema_version 非整数はエラー', async () => {
+    await expect(readRunSchemaVersions('sheet-1', readDeps([]))).rejects.toThrow(
+      'ExtractionRuns タブにヘッダ行がありません',
+    );
+    const badHeader = [...SHEET_HEADERS.ExtractionRuns];
+    badHeader[2] = 'wrong';
+    await expect(readRunSchemaVersions('sheet-1', readDeps([badHeader]))).rejects.toThrow(
+      'ExtractionRuns のヘッダ 3 列目が "schema_version" ではありません',
+    );
+    await expect(
+      readRunSchemaVersions(
+        'sheet-1',
+        readDeps([[...SHEET_HEADERS.ExtractionRuns], runRow('run-1', 'v1')]),
+      ),
+    ).rejects.toThrow('ExtractionRuns 2 行目: schema_version "v1" が整数ではありません');
+  });
+
+  test('ヘッダのラグ配列（列の欠落）は空文字として不一致エラー', async () => {
+    const shortHeader = [...SHEET_HEADERS.ExtractionRuns].slice(0, 2);
+    await expect(readRunSchemaVersions('sheet-1', readDeps([shortHeader]))).rejects.toThrow(
+      'ExtractionRuns のヘッダ 3 列目が "schema_version" ではありません（実際: ""）',
+    );
+  });
+
+  test('データ行のラグ配列（schema_version 欠落）はエラー', async () => {
+    await expect(
+      readRunSchemaVersions('sheet-1', readDeps([[...SHEET_HEADERS.ExtractionRuns], []])),
+    ).rejects.toThrow('ExtractionRuns 2 行目: schema_version "" が整数ではありません');
   });
 });

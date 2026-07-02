@@ -40,6 +40,13 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<SchemaViewCallbac
         onSelectVerifyDocument: jest.fn(),
         onRetryVerifyLoad: jest.fn(),
         onDecision: jest.fn(),
+        onArmConfirm: jest.fn(),
+      },
+      verify: {
+        onSelectDocument: jest.fn(),
+        onRetryLoad: jest.fn(),
+        onDecision: jest.fn(),
+        onArmConfirm: jest.fn(),
       },
     },
     callbacks,

@@ -56,3 +56,16 @@ export function findRoute(hash: RouteHash): RouteDefinition {
   // normalizeHash 済みのハッシュのみ渡される前提のため必ず見つかる
   return ROUTES.find((route) => route.hash === hash) as RouteDefinition;
 }
+
+/**
+ * `#/verify?doc={document_id}` の doc クエリを取り出す（ui-flow.md §3）。
+ * `?entity=`（セル単位ディープリンク）は S9 ダッシュボード実装時に追加する — ui-flow.md §3 の注記参照
+ */
+export function docQueryOf(rawHash: string): string | null {
+  const query = rawHash.split('?')[1];
+  if (query === undefined) {
+    return null;
+  }
+  const value = new URLSearchParams(query).get('doc');
+  return value === null || value === '' ? null : value;
+}

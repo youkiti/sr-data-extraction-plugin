@@ -96,7 +96,7 @@ src/
 │
 ├── features/                      # ドメイン機能（UI に依存しない純粋ロジック）
 │   ├── project/
-│   │   ├── createProject.ts       # スプレッドシート 12 タブ + Drive フォルダ 4 種の生成
+│   │   ├── createProject.ts       # スプレッドシート 13 タブ + Drive フォルダ 4 種の生成
 │   │   ├── selectProject.ts
 │   │   └── projectStore.ts
 │   ├── documents/
@@ -170,7 +170,7 @@ src/
 │   ├── evidence.ts / decision.ts / extractionRun.ts
 │   ├── anchor.ts                  # anchor_status / マッチ結果型
 │   ├── exportLog.ts / llmApiLog.ts
-│   └── sheetsSchema.ts            # 12 タブ（Meta / Protocol / Documents / SchemaVersions / SchemaFields / ExtractionRuns / StudyData / ResultsData / Evidence / Decisions / LLMApiLog / ExportLog）の列定義。StudyData の値列はスキーマから動的生成
+│   └── sheetsSchema.ts            # 13 タブ（Meta / Protocol / Documents / SchemaVersions / SchemaFields / ExtractionRuns / StudyData / ResultsData / ArmStructures / Evidence / Decisions / LLMApiLog / ExportLog）の列定義。StudyData の値列はスキーマから動的生成
 │
 ├── styles/
 │   ├── tokens.css                 # tiab-review トンマナのカラートークン + ハイライト色

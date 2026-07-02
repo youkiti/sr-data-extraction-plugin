@@ -35,6 +35,7 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<PilotViewCallback
     onSelectVerifyDocument: jest.fn(),
     onRetryVerifyLoad: jest.fn(),
     onDecision: jest.fn(),
+    onArmConfirm: jest.fn(),
   };
   return {
     ctx: {
@@ -60,6 +61,12 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<PilotViewCallback
         onStartNewVersion: jest.fn(),
       },
       pilot: callbacks,
+      verify: {
+        onSelectDocument: jest.fn(),
+        onRetryLoad: jest.fn(),
+        onDecision: jest.fn(),
+        onArmConfirm: jest.fn(),
+      },
     },
     callbacks,
   };

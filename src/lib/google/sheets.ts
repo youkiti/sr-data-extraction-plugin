@@ -6,7 +6,7 @@ const API_BASE = 'https://sheets.googleapis.com/v4/spreadsheets';
 
 /**
  * Sheets API v4 の薄いラッパ群。Sheets API は JSON なので XML 変換は不要。
- * 12 タブの初期化やヘッダ書き込みなど、プロジェクト作成で使う最小限の機能だけ提供する。
+ * 13 タブの初期化やヘッダ書き込みなど、プロジェクト作成で使う最小限の機能だけ提供する。
  */
 
 export interface CreatedSpreadsheet {
@@ -60,6 +60,30 @@ export async function getSheetTitles(
   return (json.sheets ?? [])
     .map((sheet) => sheet.properties?.title ?? '')
     .filter((title) => title !== '');
+}
+
+/**
+ * スプレッドシートにタブを 1 つ追加する（batchUpdate addSheet）。
+ * ArmStructures タブ追加（v0.7）より前に作られた既存プロジェクトへの
+ * 後方互換フォールバック（書き込み時にタブがなければ作る）で使う。
+ */
+export async function addSheetTab(
+  spreadsheetId: string,
+  title: string,
+  deps: GoogleApiDeps
+): Promise<void> {
+  const url = `${API_BASE}/${encodeURIComponent(spreadsheetId)}:batchUpdate`;
+  await googleFetch(
+    url,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        requests: [{ addSheet: { properties: { title } } }],
+      }),
+    },
+    deps
+  );
 }
 
 /**

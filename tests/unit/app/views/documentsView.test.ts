@@ -51,7 +51,16 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<DocumentsViewCall
     onCancelEditor: jest.fn(),
     onStartNewVersion: jest.fn(),
   };
-  return { ctx: { documents: callbacks, protocol, schema, pilot: makePilotStub() }, callbacks };
+  return {
+    ctx: {
+      documents: callbacks,
+      protocol,
+      schema,
+      pilot: makePilotStub(),
+      verify: makeVerifyStub(),
+    },
+    callbacks,
+  };
 }
 
 function makePilotStub(): ViewContext['pilot'] {
@@ -62,6 +71,16 @@ function makePilotStub(): ViewContext['pilot'] {
     onSelectVerifyDocument: jest.fn(),
     onRetryVerifyLoad: jest.fn(),
     onDecision: jest.fn(),
+    onArmConfirm: jest.fn(),
+  };
+}
+
+function makeVerifyStub(): ViewContext['verify'] {
+  return {
+    onSelectDocument: jest.fn(),
+    onRetryLoad: jest.fn(),
+    onDecision: jest.fn(),
+    onArmConfirm: jest.fn(),
   };
 }
 

@@ -14,7 +14,7 @@ export interface ProjectServiceDeps {
 }
 
 /**
- * 新規プロジェクトを作成し、Sheets（12 タブ）/ Drive（フォルダ 4 種）を初期化して
+ * 新規プロジェクトを作成し、Sheets（13 タブ）/ Drive（フォルダ 4 種）を初期化して
  * chrome.storage の currentProject / recentProjects に登録する。
  */
 export async function createNewProject(

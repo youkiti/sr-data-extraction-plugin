@@ -73,6 +73,12 @@ function makeHandlers(): jest.Mocked<VerificationFormHandlers> {
     onJump: jest.fn(),
     onSearchQuote: jest.fn(),
     onCycleMatch: jest.fn(),
+    onArmNameChange: jest.fn(),
+    onArmAddRow: jest.fn(),
+    onArmRemoveRow: jest.fn(),
+    onArmConfirm: jest.fn(),
+    onArmRevise: jest.fn(),
+    onArmCancelRevise: jest.fn(),
   };
 }
 
@@ -92,6 +98,8 @@ function makeModel(
     editing: null,
     highlightInfo: new Map<string, CellHighlightInfo>(),
     canSearchText: true,
+    armCard: null,
+    armLocked: false,
     ...overrides,
   };
 }
@@ -350,5 +358,122 @@ describe('renderVerificationForm', () => {
     expect(handlers.onFocusCell).toHaveBeenCalledWith(other.cellKey);
     cellEls[0]?.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
     expect(handlers.onFocusCell).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('renderVerificationForm: 群構成確定カード（ui-states.md §3 `#/verify`）', () => {
+  const editingCard = {
+    editing: true,
+    rows: [
+      { armKey: 'arm:1', armName: '介入群' },
+      { armKey: 'arm:2', armName: '' },
+    ],
+    confirmedVersion: null,
+    error: null,
+  };
+
+  test('arm 未確定: study 以外のタブをディムし、編集カード + 確定案内を出す', () => {
+    const { root, handlers } = render(
+      makeModel([makeCell()], { armCard: editingCard, armLocked: true }),
+    );
+    const tabs = root.querySelectorAll<HTMLButtonElement>('.verify__tab');
+    expect(tabs[0]?.disabled).toBe(false);
+    expect(tabs[1]?.disabled).toBe(true);
+    expect(tabs[1]?.getAttribute('aria-disabled')).toBe('true');
+    expect(tabs[1]?.classList.contains('verify__tab--locked')).toBe(true);
+    tabs[1]?.click();
+    expect(handlers.onSelectTab).not.toHaveBeenCalled();
+
+    const card = root.querySelector('#verify-arm-card');
+    expect(card).not.toBeNull();
+    expect(card?.querySelector('.verify__arm-lead')?.textContent).toContain(
+      'まず群構成を確定してください',
+    );
+    const inputs = card?.querySelectorAll<HTMLInputElement>('.verify__arm-name');
+    expect(inputs).toHaveLength(2);
+    expect(inputs?.[0]?.value).toBe('介入群');
+    // 未確定のうちはキャンセルボタンなし
+    expect(card?.querySelector('.verify__arm-cancel')).toBeNull();
+  });
+
+  test('編集カードの操作がハンドラを呼ぶ（名称変更・追加・削除・確定）', () => {
+    const { root, handlers } = render(
+      makeModel([makeCell()], { armCard: editingCard, armLocked: true }),
+    );
+    const input = root.querySelector<HTMLInputElement>('.verify__arm-name');
+    input!.value = '対照群';
+    input!.dispatchEvent(new Event('change'));
+    expect(handlers.onArmNameChange).toHaveBeenCalledWith(0, '対照群');
+    root.querySelector<HTMLButtonElement>('.verify__arm-add')?.click();
+    expect(handlers.onArmAddRow).toHaveBeenCalled();
+    root.querySelectorAll<HTMLButtonElement>('.verify__arm-remove')[1]?.click();
+    expect(handlers.onArmRemoveRow).toHaveBeenCalledWith(1);
+    root.querySelector<HTMLButtonElement>('#verify-arm-confirm')?.click();
+    expect(handlers.onArmConfirm).toHaveBeenCalled();
+  });
+
+  test('エラーは #verify-arm-error（role=alert）に出す', () => {
+    const { root } = render(
+      makeModel([makeCell()], {
+        armCard: { ...editingCard, error: '名称が空の群があります' },
+        armLocked: true,
+      }),
+    );
+    const error = root.querySelector('#verify-arm-error');
+    expect(error?.getAttribute('role')).toBe('alert');
+    expect(error?.textContent).toContain('名称が空の群があります');
+  });
+
+  test('確定済み: 要約 + 改訂ボタン。タブはディムされない', () => {
+    const confirmedCard = {
+      editing: false,
+      rows: [
+        { armKey: 'arm:1', armName: '介入群' },
+        { armKey: 'arm:2', armName: '対照群' },
+      ],
+      confirmedVersion: 2,
+      error: null,
+    };
+    const { root, handlers } = render(
+      makeModel([makeCell()], { armCard: confirmedCard, armLocked: false }),
+    );
+    expect(root.querySelector('.verify__arm-summary')?.textContent).toBe(
+      '群構成: 2 群（version 2）— 介入群 / 対照群',
+    );
+    const tabs = root.querySelectorAll<HTMLButtonElement>('.verify__tab');
+    expect(tabs[1]?.disabled).toBe(false);
+    root.querySelector<HTMLButtonElement>('#verify-arm-revise')?.click();
+    expect(handlers.onArmRevise).toHaveBeenCalled();
+  });
+
+  test('改訂中（確定済みあり）はキャンセルボタンを出す', () => {
+    const { root, handlers } = render(
+      makeModel([makeCell()], {
+        armCard: { ...editingCard, confirmedVersion: 1 },
+        armLocked: false,
+      }),
+    );
+    root.querySelector<HTMLButtonElement>('.verify__arm-cancel')?.click();
+    expect(handlers.onArmCancelRevise).toHaveBeenCalled();
+  });
+
+  test('ロック中にロック対象タブが表示中なら本文を確定案内に差し替える（study 項目なしスキーマ）', () => {
+    const armCell = makeCell({
+      field: makeField({ fieldId: 'f-arm', entityLevel: 'arm' }),
+      entityKey: 'arm:1',
+    });
+    const { root } = render(
+      makeModel([armCell], {
+        tabs: ['arm', 'outcome_result'],
+        activeTab: 'arm',
+        armCard: editingCard,
+        armLocked: true,
+      }),
+    );
+    expect(root.querySelector('.verify__locked-note')?.textContent).toBe(
+      'まず群構成を確定してください',
+    );
+    expect(root.querySelector('.verify__cell')).toBeNull();
+    expect(root.querySelector('.verify__shortcut-note')).toBeNull();
   });
 });

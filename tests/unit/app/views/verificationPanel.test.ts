@@ -170,6 +170,8 @@ function makeData(overrides: Partial<VerificationData> = {}): VerificationData {
     decisions: [],
     annotator: ME,
     schemaVersion: 1,
+    // 既定は確定済み（群構成ゲートの挙動は専用 describe で null にして検証する）
+    armStructure: { version: 1, arms: [{ armKey: 'arm:1', armName: '介入群' }] },
     pdf: makePdf(),
     pdfError: null,
     textPages: PAGES,
@@ -604,6 +606,214 @@ describe('キーボードガード', () => {
     pressKey('a');
     const decision = onDecision.mock.calls[0]?.[0] as Decision;
     expect(decision.decidedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    panel.dispose();
+  });
+});
+
+describe('群構成の確定ゲート（arm 未確定時。ui-states.md §3 `#/verify`）', () => {
+  test('未確定: arm タブがディムされ、AI ドラフトを初期値にした編集カードが出る', () => {
+    const { panel } = createPanel({ armStructure: null });
+    const tabs = panel.root.querySelectorAll<HTMLButtonElement>('.verify__tab');
+    expect(tabs[1]?.disabled).toBe(true);
+    const input = panel.root.querySelector<HTMLInputElement>('.verify__arm-name');
+    // arm 名フィールド（name / label）が無いスキーマは表示ラベルが初期値
+    expect(input?.value).toBe('群 1');
+    panel.dispose();
+  });
+
+  test('arm 名フィールドがあるスキーマは Evidence の値を初期値にする', () => {
+    const nameField = makeField({
+      fieldId: 'f-arm-name',
+      fieldIndex: 5,
+      fieldName: 'arm_name',
+      fieldLabel: '群の名称',
+      entityLevel: 'arm',
+    });
+    const { panel } = createPanel({
+      armStructure: null,
+      fields: [...FIELDS, nameField],
+      evidence: [
+        ...EVIDENCE,
+        makeEvidence({
+          evidenceId: 'ev-name',
+          fieldId: 'f-arm-name',
+          entityKey: 'arm:1',
+          value: 'アスピリン群',
+          quote: null,
+          anchorStatus: null,
+        }),
+      ],
+    });
+    expect(panel.root.querySelector<HTMLInputElement>('.verify__arm-name')?.value).toBe(
+      'アスピリン群',
+    );
+    panel.dispose();
+  });
+
+  test('確定フローの楽観反映: 名称編集 → 確定でタブが有効になり onArmConfirm が呼ばれる', () => {
+    const onArmConfirm = jest.fn();
+    const { panel } = createPanel({ armStructure: null }, { onArmConfirm });
+    const input = panel.root.querySelector<HTMLInputElement>('.verify__arm-name');
+    input!.value = '  介入群  ';
+    input!.dispatchEvent(new Event('change'));
+    panel.root.querySelector<HTMLButtonElement>('#verify-arm-confirm')?.click();
+    expect(onArmConfirm).toHaveBeenCalledWith([{ armKey: 'arm:1', armName: '介入群' }]);
+    // 楽観反映: カードが要約になり、arm タブが有効化される
+    expect(panel.root.querySelector('.verify__arm-summary')?.textContent).toContain(
+      '群構成: 1 群（version 1）',
+    );
+    expect(panel.root.querySelectorAll<HTMLButtonElement>('.verify__tab')[1]?.disabled).toBe(
+      false,
+    );
+    panel.dispose();
+  });
+
+  test('行の追加は次の arm:n を採番し、名称が空のままの確定はエラー', () => {
+    const onArmConfirm = jest.fn();
+    const { panel } = createPanel({ armStructure: null }, { onArmConfirm });
+    panel.root.querySelector<HTMLButtonElement>('.verify__arm-add')?.click();
+    const keys = [...panel.root.querySelectorAll('.verify__arm-key')].map(
+      (node) => node.textContent,
+    );
+    expect(keys).toEqual(['arm:1', 'arm:2']);
+    panel.root.querySelector<HTMLButtonElement>('#verify-arm-confirm')?.click();
+    expect(onArmConfirm).not.toHaveBeenCalled();
+    expect(panel.root.querySelector('#verify-arm-error')?.textContent).toContain('名称が空の群');
+    panel.dispose();
+  });
+
+  test('全行削除しての確定は「少なくとも 1 つ」エラー。存在しない行の名称変更は無害', () => {
+    const onArmConfirm = jest.fn();
+    const { panel } = createPanel(
+      { armStructure: null, evidence: [makeEvidence()] }, // arm Evidence なし → ドラフト 0 行
+      { onArmConfirm },
+    );
+    panel.root.querySelector<HTMLButtonElement>('#verify-arm-confirm')?.click();
+    expect(onArmConfirm).not.toHaveBeenCalled();
+    expect(panel.root.querySelector('#verify-arm-error')?.textContent).toContain(
+      '少なくとも 1 つの群が必要です',
+    );
+    // ドラフト 0 行からの追加は arm:1 になる
+    panel.root.querySelector<HTMLButtonElement>('.verify__arm-add')?.click();
+    expect(panel.root.querySelector('.verify__arm-key')?.textContent).toBe('arm:1');
+    panel.dispose();
+  });
+
+  test('非数値の arm キーは追加時の採番で数えない（arm:1 から振る）', () => {
+    const { panel } = createPanel({
+      armStructure: null,
+      evidence: [
+        makeEvidence({
+          evidenceId: 'ev-named',
+          fieldId: 'f-arm-n',
+          entityKey: 'arm:intervention',
+          quote: null,
+          anchorStatus: null,
+        }),
+      ],
+    });
+    panel.root.querySelector<HTMLButtonElement>('.verify__arm-add')?.click();
+    const keys = [...panel.root.querySelectorAll('.verify__arm-key')].map(
+      (node) => node.textContent,
+    );
+    expect(keys).toEqual(['arm:intervention', 'arm:1']);
+    panel.dispose();
+  });
+
+  test('outcome キーの arm 参照からもドラフトを集める（削除ボタンの行詰めも確認）', () => {
+    const { panel } = createPanel({
+      armStructure: null,
+      evidence: [
+        makeEvidence({
+          evidenceId: 'ev-out',
+          fieldId: 'f-arm-n',
+          entityKey: 'outcome:mortality|arm:2|time:30d',
+          quote: null,
+          anchorStatus: null,
+        }),
+        ...EVIDENCE,
+      ],
+    });
+    const keys = () =>
+      [...panel.root.querySelectorAll('.verify__arm-key')].map((node) => node.textContent);
+    expect(keys()).toEqual(['arm:1', 'arm:2']);
+    panel.root.querySelector<HTMLButtonElement>('.verify__arm-remove')?.click();
+    expect(keys()).toEqual(['arm:2']);
+    panel.dispose();
+  });
+
+  test('未確定のロック中: arm セルへのハイライトクリックとキーボードのタブ内クランプ', () => {
+    const { panel, onDecision } = createPanel({ armStructure: null });
+    // page 2 の arm ハイライトをクリックしてもロック中タブへは移らない
+    panel.root.querySelector<HTMLButtonElement>('.pdf-viewer__next')?.click();
+    const armRect = [...panel.root.querySelectorAll<HTMLButtonElement>('.pdf-viewer__hl')].find(
+      (node) => node.getAttribute('aria-label') === '根拠: 群の N',
+    );
+    armRect?.click();
+    expect(panel.root.querySelector('.verify__tab--active')?.textContent).toBe('Study');
+    // study タブの判定操作は通常どおり有効
+    pressKey('a');
+    expect(onDecision).toHaveBeenCalledTimes(1);
+    panel.dispose();
+  });
+
+  test('study 項目なしスキーマは初期表示から確定案内になり、キー操作は無害', () => {
+    const armOnly = [
+      makeField({ fieldId: 'f-arm-n', fieldName: 'arm_n', fieldLabel: '群の N', entityLevel: 'arm' }),
+    ];
+    const { panel, onDecision } = createPanel({
+      armStructure: null,
+      fields: armOnly,
+      evidence: [
+        makeEvidence({ fieldId: 'f-arm-n', entityKey: 'arm:1', quote: 'n=50 here', page: 2 }),
+      ],
+    });
+    expect(panel.root.querySelector('.verify__locked-note')?.textContent).toBe(
+      'まず群構成を確定してください',
+    );
+    pressKey('j');
+    pressKey('a');
+    expect(onDecision).not.toHaveBeenCalled();
+    // 確定するとセルが描画される
+    const input = panel.root.querySelector<HTMLInputElement>('.verify__arm-name');
+    input!.value = 'A 群';
+    input!.dispatchEvent(new Event('change'));
+    panel.root.querySelector<HTMLButtonElement>('#verify-arm-confirm')?.click();
+    expect(panel.root.querySelector('.verify__locked-note')).toBeNull();
+    expect(panel.root.querySelector('.verify__cell')).not.toBeNull();
+    panel.dispose();
+  });
+
+  test('改訂 → キャンセルで確定内容へ戻る（onArmConfirm は呼ばれない）', () => {
+    const onArmConfirm = jest.fn();
+    const { panel } = createPanel({}, { onArmConfirm });
+    panel.root.querySelector<HTMLButtonElement>('#verify-arm-revise')?.click();
+    const input = panel.root.querySelector<HTMLInputElement>('.verify__arm-name');
+    expect(input?.value).toBe('介入群');
+    input!.value = '書き換え';
+    input!.dispatchEvent(new Event('change'));
+    panel.root.querySelector<HTMLButtonElement>('.verify__arm-cancel')?.click();
+    expect(panel.root.querySelector('.verify__arm-summary')?.textContent).toContain('介入群');
+    expect(onArmConfirm).not.toHaveBeenCalled();
+  });
+
+  test('改訂の確定は version をインクリメントして onArmConfirm を呼ぶ', () => {
+    const onArmConfirm = jest.fn();
+    const { panel } = createPanel({}, { onArmConfirm });
+    panel.root.querySelector<HTMLButtonElement>('#verify-arm-revise')?.click();
+    panel.root.querySelector<HTMLButtonElement>('#verify-arm-confirm')?.click();
+    expect(onArmConfirm).toHaveBeenCalledWith([{ armKey: 'arm:1', armName: '介入群' }]);
+    expect(panel.root.querySelector('.verify__arm-summary')?.textContent).toContain('version 2');
+    panel.dispose();
+  });
+
+  test('群構成が不要なスキーマ（study のみ）ではカードを出さない', () => {
+    const { panel } = createPanel({
+      armStructure: null,
+      fields: [makeField()],
+      evidence: [makeEvidence()],
+    });
+    expect(panel.root.querySelector('#verify-arm-card')).toBeNull();
     panel.dispose();
   });
 });
