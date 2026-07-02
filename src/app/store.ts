@@ -1,12 +1,16 @@
 // メインビューの中央ストア（単方向フロー）。view は render(state) の純粋関数とし、
 // 状態変更は必ず setState 経由で行う（architecture.md §2.2）
 import type { DocumentRecord } from '../domain/document';
+import type { Evidence } from '../domain/evidence';
+import type { ExtractionRun } from '../domain/extractionRun';
 import type { ProjectRef } from '../domain/project';
 import type { Protocol } from '../domain/protocol';
 import type { SchemaField } from '../domain/schemaField';
 import type { SchemaVersion } from '../domain/schemaVersion';
+import type { BatchFailure, RunProgress } from '../features/extraction/executeRun';
 import type { SchemaEditorRow } from '../features/schema/types';
 import type { FieldValidationError } from '../features/schema/validateField';
+import type { VerificationData } from '../features/verification/types';
 
 /** ガード判定・進捗サマリに使う各タブの行数サマリ（ui-flow.md §4） */
 export interface ProgressCounts {
@@ -86,12 +90,42 @@ export interface SchemaState {
   confirming: boolean;
 }
 
+/** #/pilot（S6）の画面状態。run の結果と埋め込み検証 UI の素材はタブのセッション内で保持する */
+export interface PilotState {
+  /** 対象文献の選択。初回表示時にテキスト層ありの先頭 3 本を既定選択する（ui-states.md §3） */
+  selectedDocumentIds: string[];
+  /** 既定選択を一度だけ行うためのフラグ（ユーザーの選択解除を上書きしない） */
+  selectionInitialized: boolean;
+  model: string;
+  running: boolean;
+  progress: RunProgress | null;
+  runError: string | null;
+  /** 直近のパイロット run（完了後に埋め込み検証 UI と再パイロット導線を出す） */
+  run: ExtractionRun | null;
+  /** 直近 run に使ったスキーマ項目（判定保存時の field_name / entity_level 解決に使う） */
+  runFields: SchemaField[] | null;
+  /** 直近 run の全 Evidence（文献切替時の検証素材。Sheets を読み直さない） */
+  evidence: Evidence[] | null;
+  batchFailures: BatchFailure[];
+  rejectedCount: number;
+  /** 埋め込み検証 UI で表示中の文献 */
+  verifyDocumentId: string | null;
+  verification: VerificationData | null;
+  verifyLoading: boolean;
+  verifyError: string | null;
+  /** 表示中文献の自分の StudyData 行の values（判定保存時の全量上書きの素材） */
+  studyValues: Record<string, string | null> | null;
+  /** オフラインキューへ退避した判定書き込みの件数 */
+  queuedDecisions: number;
+}
+
 export interface AppState {
   currentProject: ProjectRef | null;
   counts: ProgressCounts;
   documents: DocumentsState;
   protocol: ProtocolState;
   schema: SchemaState;
+  pilot: PilotState;
 }
 
 export type StateListener = (state: AppState) => void;
@@ -144,6 +178,25 @@ export function createInitialState(): AppState {
       editorErrors: [],
       editorOrigin: 'user_edit',
       confirming: false,
+    },
+    pilot: {
+      selectedDocumentIds: [],
+      selectionInitialized: false,
+      model: '',
+      running: false,
+      progress: null,
+      runError: null,
+      run: null,
+      runFields: null,
+      evidence: null,
+      batchFailures: [],
+      rejectedCount: 0,
+      verifyDocumentId: null,
+      verification: null,
+      verifyLoading: false,
+      verifyError: null,
+      studyValues: null,
+      queuedDecisions: 0,
     },
   };
 }

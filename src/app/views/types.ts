@@ -1,5 +1,6 @@
 // view が受け取る共通コンテキスト。view は render(state, ctx) の純粋関数のまま、
 // 副作用（サービス呼び出し）はコールバック経由で bootstrap へ委譲する（architecture.md §2.2）
+import type { Decision } from '../../domain/decision';
 import type { ProtocolSubmitInput } from '../../features/protocol/submitInput';
 import type { OutcomePresetKind } from '../../features/schema/presets/outcomeTemplates';
 import type { SchemaEditorRow } from '../../features/schema/types';
@@ -51,8 +52,25 @@ export interface SchemaViewCallbacks {
   onStartNewVersion(): void;
 }
 
+/** #/pilot（S6）のユーザー操作コールバック */
+export interface PilotViewCallbacks {
+  /** 対象文献チェックボックスの切替（最大 3 本） */
+  onToggleDocument(documentId: string, selected: boolean): void;
+  /** requested_model の変更 */
+  onChangeModel(model: string): void;
+  /** 「パイロット抽出を実行」 */
+  onRun(): void;
+  /** 埋め込み検証 UI の対象文献切替 */
+  onSelectVerifyDocument(documentId: string): void;
+  /** 検証データ読み込み失敗時の再試行 */
+  onRetryVerifyLoad(): void;
+  /** 検証パネルの判定 1 操作（annotator 行の更新 + Decisions 追記） */
+  onDecision(decision: Decision): void;
+}
+
 export interface ViewContext {
   documents: DocumentsViewCallbacks;
   protocol: ProtocolViewCallbacks;
   schema: SchemaViewCallbacks;
+  pilot: PilotViewCallbacks;
 }

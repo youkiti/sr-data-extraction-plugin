@@ -44,6 +44,25 @@ describe('createInitialState', () => {
         editorOrigin: 'user_edit',
         confirming: false,
       },
+      pilot: {
+        selectedDocumentIds: [],
+        selectionInitialized: false,
+        model: '',
+        running: false,
+        progress: null,
+        runError: null,
+        run: null,
+        runFields: null,
+        evidence: null,
+        batchFailures: [],
+        rejectedCount: 0,
+        verifyDocumentId: null,
+        verification: null,
+        verifyLoading: false,
+        verifyError: null,
+        studyValues: null,
+        queuedDecisions: 0,
+      },
     });
   });
 });

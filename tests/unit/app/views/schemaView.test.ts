@@ -33,6 +33,14 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<SchemaViewCallbac
         onReload: jest.fn(),
       },
       schema: callbacks,
+      pilot: {
+        onToggleDocument: jest.fn(),
+        onChangeModel: jest.fn(),
+        onRun: jest.fn(),
+        onSelectVerifyDocument: jest.fn(),
+        onRetryVerifyLoad: jest.fn(),
+        onDecision: jest.fn(),
+      },
     },
     callbacks,
   };

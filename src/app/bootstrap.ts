@@ -34,6 +34,15 @@ import {
   updateEditorRow,
   type SchemaServiceDeps,
 } from './services/schemaService';
+import {
+  initPilotSelection,
+  loadPilotVerification,
+  persistPilotDecision,
+  runPilot,
+  setPilotModel,
+  togglePilotDocument,
+  type PilotServiceDeps,
+} from './services/pilotService';
 import { createChromeGoogleApiDeps } from './services/factories';
 import { loadCurrentProject } from '../features/project/projectStore';
 import { extractDocxText } from '../lib/docx/extractDocxText';
@@ -64,13 +73,14 @@ export async function seedState(win: Window): Promise<AppState> {
       documents: { ...state.documents, ...(preloaded.documents ?? {}) },
       protocol: { ...state.protocol, ...(preloaded.protocol ?? {}) },
       schema: { ...state.schema, ...(preloaded.schema ?? {}) },
+      pilot: { ...state.pilot, ...(preloaded.pilot ?? {}) },
     };
   }
   return state;
 }
 
-/** app 実行時のサービス依存（documents / protocol / schema の各サービス）。テストは fake を注入する */
-export type AppDeps = DocumentsServiceDeps & ProtocolServiceDeps & SchemaServiceDeps;
+/** app 実行時のサービス依存（documents / protocol / schema / pilot の各サービス）。テストは fake を注入する */
+export type AppDeps = DocumentsServiceDeps & ProtocolServiceDeps & SchemaServiceDeps & PilotServiceDeps;
 
 /** Chrome ランタイムから AppDeps を組み立てる既定実装 */
 export function createChromeAppDeps(): AppDeps {
@@ -170,6 +180,29 @@ export async function bootstrapApp(
         startEditorFromCurrent(store);
       },
     },
+    pilot: {
+      onToggleDocument: (documentId, selected) => {
+        togglePilotDocument(store, documentId, selected);
+      },
+      onChangeModel: (model) => {
+        setPilotModel(store, model);
+      },
+      onRun: () => {
+        void runPilot(store, deps);
+      },
+      onSelectVerifyDocument: (documentId) => {
+        void loadPilotVerification(store, deps, documentId);
+      },
+      onRetryVerifyLoad: () => {
+        const documentId = store.getState().pilot.verifyDocumentId;
+        if (documentId !== null) {
+          void loadPilotVerification(store, deps, documentId);
+        }
+      },
+      onDecision: (decision) => {
+        void persistPilotDecision(store, deps, decision);
+      },
+    },
   };
 
   const renderHeader = (state: AppState): void => {
@@ -244,6 +277,12 @@ export async function bootstrapApp(
       void loadSchema(store, deps);
       void loadDocuments(store, deps);
       void loadProtocols(store, deps);
+    }
+    if (currentHash === '#/pilot') {
+      // 文献 + スキーマの読込後に既定選択（テキスト層ありの先頭 3 本）を一度だけ適用する
+      void Promise.all([loadDocuments(store, deps), loadSchema(store, deps)]).then(() => {
+        initPilotSelection(store);
+      });
     }
   };
 

@@ -51,7 +51,18 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<DocumentsViewCall
     onCancelEditor: jest.fn(),
     onStartNewVersion: jest.fn(),
   };
-  return { ctx: { documents: callbacks, protocol, schema }, callbacks };
+  return { ctx: { documents: callbacks, protocol, schema, pilot: makePilotStub() }, callbacks };
+}
+
+function makePilotStub(): ViewContext['pilot'] {
+  return {
+    onToggleDocument: jest.fn(),
+    onChangeModel: jest.fn(),
+    onRun: jest.fn(),
+    onSelectVerifyDocument: jest.fn(),
+    onRetryVerifyLoad: jest.fn(),
+    onDecision: jest.fn(),
+  };
 }
 
 function makeState(patch: Partial<AppState['documents']> = {}, withProject = true): AppState {

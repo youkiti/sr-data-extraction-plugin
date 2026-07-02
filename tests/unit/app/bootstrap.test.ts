@@ -598,3 +598,240 @@ describe('bootstrapApp', () => {
     expect(document.getElementById('app-content')?.textContent).toContain('追加プロジェクト');
   });
 });
+
+// ---------------------------------------------------------------------------
+// #/pilot（S6）の配線
+// ---------------------------------------------------------------------------
+
+describe('bootstrapApp: #/pilot', () => {
+  // パネルのモジュールキャッシュを毎回破棄する（キーボードリスナの後始末）
+  afterEach(async () => {
+    const { disposeVerificationPanelCache } = await import(
+      '../../../src/app/views/verificationPanel'
+    );
+    disposeVerificationPanelCache();
+  });
+
+  const FIELD = {
+    schemaVersion: 1,
+    fieldId: 'f-total',
+    fieldIndex: 1,
+    section: 'methods',
+    fieldName: 'sample_size_total',
+    fieldLabel: '総サンプルサイズ',
+    entityLevel: 'study' as const,
+    dataType: 'integer' as const,
+    unit: null,
+    allowedValues: null,
+    required: true,
+    extractionInstruction: '総 N を抽出',
+    example: null,
+    aiGenerated: false,
+    note: null,
+  };
+
+  const DOC_RECORD = {
+    documentId: 'doc-1',
+    studyLabel: 'Smith 2020',
+    driveFileId: 'drive-1',
+    sourceFileId: 'src-1',
+    filename: 'smith2020.pdf',
+    pmid: null,
+    doi: null,
+    textRef: 'https://drive.google.com/file/d/txt-1/view',
+    textStatus: 'ok' as const,
+    pageCount: 10,
+    charCount: 20000,
+    importedAt: '2026-07-02T00:00:00Z',
+    importedBy: 'tester@example.com',
+    note: null,
+  };
+
+  const SCHEMA_VERSION_ROW = {
+    schemaVersion: 1,
+    parentVersion: null,
+    protocolVersion: 1,
+    createdByType: 'user_edit' as const,
+    createdAt: 't0',
+    createdBy: 'tester@example.com',
+    note: null,
+  };
+
+  const RUN = {
+    runId: 'run-1',
+    runType: 'pilot' as const,
+    schemaVersion: 1,
+    documentIds: ['doc-1', 'doc-x'],
+    provider: 'gemini',
+    requestedModel: 'gemini-test',
+    modelVersion: null,
+    inputMode: 'text_only' as const,
+    status: 'done' as const,
+    startedAt: 't1',
+    finishedAt: 't2',
+    tokensIn: null,
+    tokensOut: null,
+    costEstimate: null,
+  };
+
+  function pilotPreloaded(pilotPatch: Partial<AppState['pilot']> = {}): Partial<AppState> {
+    return {
+      currentProject: PROJECT,
+      counts: { schemaVersions: 1, documents: 1 } as AppState['counts'],
+      documents: { records: [DOC_RECORD] } as unknown as AppState['documents'],
+      schema: {
+        versions: [SCHEMA_VERSION_ROW],
+        currentFields: [FIELD],
+      } as unknown as AppState['schema'],
+      pilot: pilotPatch as AppState['pilot'],
+    };
+  }
+
+  test('seedState は pilot スライスも部分注入でマージする', async () => {
+    const stub = createWindowStub({ pilot: { model: 'gemini-x' } as AppState['pilot'] });
+    const state = await seedState(asWindow(stub));
+    expect(state.pilot.model).toBe('gemini-x');
+    expect(state.pilot.running).toBe(false); // 他フィールドは既定を維持
+  });
+
+  test('#/pilot 入場で既定選択が適用され、選択・モデル・実行が配線されている', async () => {
+    const stub = createWindowStub(pilotPreloaded());
+    const { deps } = createFakeDeps([[...SHEET_HEADERS.Documents]]);
+    const store = await bootstrapApp(asWindow(stub), deps);
+
+    stub.location.hash = '#/pilot';
+    stub.fireHashChange();
+    await flush();
+
+    // 既定選択（テキスト層ありの先頭 = doc-1）
+    expect(store?.getState().pilot.selectedDocumentIds).toEqual(['doc-1']);
+    const checkbox = document.querySelector(
+      '#pilot-documents input[type="checkbox"]',
+    ) as HTMLInputElement;
+    expect(checkbox.checked).toBe(true);
+
+    // 選択解除の配線
+    checkbox.checked = false;
+    checkbox.dispatchEvent(new Event('change'));
+    expect(store?.getState().pilot.selectedDocumentIds).toEqual([]);
+
+    // モデル変更の配線
+    const model = document.getElementById('pilot-model') as HTMLInputElement;
+    model.value = 'gemini-test';
+    model.dispatchEvent(new Event('change'));
+    expect(store?.getState().pilot.model).toBe('gemini-test');
+
+    // 実行の配線（API キー未設定 → インラインエラー）
+    const box = document.querySelector(
+      '#pilot-documents input[type="checkbox"]',
+    ) as HTMLInputElement;
+    box.checked = true;
+    box.dispatchEvent(new Event('change'));
+    (document.getElementById('pilot-run') as HTMLButtonElement).click();
+    await flush();
+    expect(document.getElementById('pilot-run-error')?.textContent).toContain(
+      'Gemini API キーが未設定です',
+    );
+  });
+
+  test('#/pilot の検証セクション（文献切替 / 再試行）が配線されている', async () => {
+    const stub = createWindowStub(
+      pilotPreloaded({
+        selectionInitialized: true,
+        selectedDocumentIds: ['doc-1'],
+        model: 'gemini-test',
+        run: RUN,
+        runFields: [FIELD],
+        evidence: [],
+        // 再試行の対象（loadPilotVerification は文献未発見時に verifyDocumentId を変えない）
+        verifyDocumentId: 'doc-x',
+      } as Partial<AppState['pilot']>),
+    );
+    const { deps } = createFakeDeps([[...SHEET_HEADERS.Documents]]);
+    const store = await bootstrapApp(asWindow(stub), deps);
+    stub.location.hash = '#/pilot';
+    stub.fireHashChange();
+    await flush();
+
+    // 文献切替: 一覧に無い ID → verifyError の配線を観測
+    const select = document.getElementById('pilot-verify-doc') as HTMLSelectElement;
+    select.value = 'doc-x';
+    select.dispatchEvent(new Event('change'));
+    await flush();
+    expect(store?.getState().pilot.verifyError).toContain('doc-x が見つかりません');
+    expect(document.getElementById('pilot-verify-error')?.textContent).toContain('doc-x');
+
+    // 再試行の配線（verifyDocumentId は doc-x のまま → 再度同じエラー）
+    (document.getElementById('pilot-verify-retry') as HTMLButtonElement).click();
+    await flush();
+    expect(store?.getState().pilot.verifyError).toContain('doc-x が見つかりません');
+
+    // verifyDocumentId が無いときの再試行は何もしない
+    const current = store?.getState();
+    store?.setState({
+      pilot: { ...(current as AppState).pilot, verifyDocumentId: null, verifyError: 'まだエラー' },
+    });
+    (document.getElementById('pilot-verify-retry') as HTMLButtonElement).click();
+    await flush();
+    expect(store?.getState().pilot.verifyError).toBe('まだエラー');
+  });
+
+  test('#/pilot の判定保存（onDecision）が persistPilotDecision まで配線されている', async () => {
+    const verification = {
+      document: DOC_RECORD,
+      fields: [FIELD],
+      evidence: [
+        {
+          evidenceId: 'ev-1',
+          runId: 'run-1',
+          documentId: 'doc-1',
+          fieldId: 'f-total',
+          entityKey: '-',
+          value: '120',
+          notReported: false,
+          quote: null,
+          page: null,
+          confidence: null,
+          anchorStatus: null,
+        },
+      ],
+      decisions: [],
+      annotator: 'tester@example.com',
+      schemaVersion: 1,
+      pdf: null,
+      pdfError: 'テストでは PDF なし',
+      textPages: [],
+    };
+    const stub = createWindowStub(
+      pilotPreloaded({
+        selectionInitialized: true,
+        selectedDocumentIds: ['doc-1'],
+        model: 'gemini-test',
+        run: { ...RUN, documentIds: ['doc-1'] },
+        runFields: [FIELD],
+        evidence: verification.evidence,
+        verifyDocumentId: 'doc-1',
+        verification,
+      } as unknown as Partial<AppState['pilot']>),
+    );
+    // StudyData ヘッダを返す fake（判定保存の upsert が読む）
+    const { deps, fetchMock } = createFakeDeps([
+      ['document_id', 'annotator', 'annotator_type', 'schema_version', 'run_id', 'updated_at'],
+    ]);
+    const store = await bootstrapApp(asWindow(stub), deps);
+    stub.location.hash = '#/pilot';
+    stub.fireHashChange();
+    await flush();
+
+    // 埋め込み検証パネルの承認ボタン → 判定保存
+    const accept = document.querySelector('.verify__action--accept') as HTMLButtonElement;
+    accept.click();
+    await flush();
+    await flush();
+
+    const urls = fetchMock.mock.calls.map((call) => decodeURIComponent(String(call[0])));
+    expect(urls.some((url) => url.includes('Decisions') && url.includes(':append'))).toBe(true);
+    expect(store?.getState().pilot.studyValues).toEqual({ sample_size_total: '120' });
+    expect(document.querySelector('.verify__chip--accept')).not.toBeNull();
+  });
+});

@@ -136,8 +136,11 @@ export function setDraftModel(store: Store, model: string): void {
   patchSchema(store, { model: model.trim() });
 }
 
-/** 最新プロトコルの本文を解決する（raw_text_inline 優先、無ければ raw_protocols/ の退避テキスト） */
-async function resolveProtocol(
+/**
+ * 最新プロトコルの本文を解決する（raw_text_inline 優先、無ければ raw_protocols/ の退避テキスト）。
+ * pilotService も抽出プロンプトの protocolContext としてこれを再利用する
+ */
+export async function resolveProtocol(
   store: Store,
   deps: SchemaServiceDeps,
   spreadsheetId: string,

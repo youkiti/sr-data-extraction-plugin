@@ -24,6 +24,14 @@ const stubCtx: ViewContext = {
     onCancelEditor: jest.fn(),
     onStartNewVersion: jest.fn(),
   },
+  pilot: {
+    onToggleDocument: jest.fn(),
+    onChangeModel: jest.fn(),
+    onRun: jest.fn(),
+    onSelectVerifyDocument: jest.fn(),
+    onRetryVerifyLoad: jest.fn(),
+    onDecision: jest.fn(),
+  },
 };
 
 describe('normalizeHash', () => {
