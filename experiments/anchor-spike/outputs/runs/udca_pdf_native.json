@@ -1,0 +1,316 @@
+{
+ "runId": "udca_pdf_native",
+ "model": "gemini-3.1-flash-lite",
+ "mode": "pdf_native",
+ "pdfId": "udca",
+ "executedAt": "2026-07-01T23:15:10.914Z",
+ "elapsedMs": 7773,
+ "usedResponseSchema": true,
+ "usageMetadata": {
+  "promptTokenCount": 7119,
+  "candidatesTokenCount": 2094,
+  "totalTokenCount": 9213,
+  "promptTokensDetails": [
+   {
+    "modality": "TEXT",
+    "tokenCount": 1919
+   },
+   {
+    "modality": "IMAGE",
+    "tokenCount": 5200
+   }
+  ],
+  "serviceTier": "standard"
+ },
+ "promptChars": 6529,
+ "parseError": null,
+ "rowCount": 20,
+ "discardedRowCount": 0,
+ "evidence": [
+  {
+   "run": "udca_pdf_native",
+   "pdfId": "udca",
+   "mode": "pdf_native",
+   "field_id": "f01_study_design",
+   "entity_key": "study",
+   "value": "paralleled randomized single-blinded controlled clinical trial",
+   "not_reported": false,
+   "quote": "The present study is a paralleled randomized single-blinded controlled clinical trial",
+   "page": 2,
+   "confidence": "high"
+  },
+  {
+   "run": "udca_pdf_native",
+   "pdfId": "udca",
+   "mode": "pdf_native",
+   "field_id": "f02_country",
+   "entity_key": "study",
+   "value": "Iran",
+   "not_reported": false,
+   "quote": "17 Shahrivar Hospital in Rasht, Iran.",
+   "page": 1,
+   "confidence": "high"
+  },
+  {
+   "run": "udca_pdf_native",
+   "pdfId": "udca",
+   "mode": "pdf_native",
+   "field_id": "f03_sample_size_total",
+   "entity_key": "study",
+   "value": "106",
+   "not_reported": false,
+   "quote": "In this study, 106 term neonates were admitted",
+   "page": 2,
+   "confidence": "high"
+  },
+  {
+   "run": "udca_pdf_native",
+   "pdfId": "udca",
+   "mode": "pdf_native",
+   "field_id": "f04_population",
+   "entity_key": "study",
+   "value": "3 to 7 days of age, 2500 to 4000 grams birth weight, exclusive breastfeeding, 38 to 42 weeks of gestation, 14–20 mg/dL total serum bilirubin (TSB), and less than 1.5 mg/dL direct bilirubin.",
+   "not_reported": false,
+   "quote": "The inclusion criteria were 3 to 7 days of age, 2500 to 4000 grams birth weight, exclusive breastfeeding, 38 to 42 weeks of gestation, 14–20 mg/dL total serum bilirubin (TSB), and less than 1.5 mg/dL direct bilirubin.",
+   "page": 3,
+   "confidence": "high"
+  },
+  {
+   "run": "udca_pdf_native",
+   "pdfId": "udca",
+   "mode": "pdf_native",
+   "field_id": "f05_randomization_method",
+   "entity_key": "study",
+   "value": "randomized blocking",
+   "not_reported": false,
+   "quote": "Eligible patients were randomly allocated by randomized blocking (or grouping). The following website “https://www.sealedenvelope.com” was used by a third party to produce the randomized list.",
+   "page": 3,
+   "confidence": "high"
+  },
+  {
+   "run": "udca_pdf_native",
+   "pdfId": "udca",
+   "mode": "pdf_native",
+   "field_id": "f06_blinding",
+   "entity_key": "study",
+   "value": "Parents/guardians were blinded",
+   "not_reported": false,
+   "quote": "Parents/guardians were blinded to the groups enrolled.",
+   "page": 3,
+   "confidence": "high"
+  },
+  {
+   "run": "udca_pdf_native",
+   "pdfId": "udca",
+   "mode": "pdf_native",
+   "field_id": "f07_registration_id",
+   "entity_key": "study",
+   "value": "IRCT20210201050199N1",
+   "not_reported": false,
+   "quote": "The clinical trial was registered in the Iranian registry of clinical trials (Number: IRCT20210201050199N1, Date: 2021-04-03).",
+   "page": 3,
+   "confidence": "high"
+  },
+  {
+   "run": "udca_pdf_native",
+   "pdfId": "udca",
+   "mode": "pdf_native",
+   "field_id": "f08_primary_outcome_definition",
+   "entity_key": "study",
+   "value": "change of TSB level from baseline",
+   "not_reported": false,
+   "quote": "We considered the change of TSB level from baseline as the primary outcome",
+   "page": 3,
+   "confidence": "high"
+  },
+  {
+   "run": "udca_pdf_native",
+   "pdfId": "udca",
+   "mode": "pdf_native",
+   "field_id": "f09_arm_label",
+   "entity_key": "arm:1",
+   "value": "intervention group",
+   "not_reported": false,
+   "quote": "The intervention group received 10 mg/kg/day oral UDCA divided into two doses plus phototherapy",
+   "page": 3,
+   "confidence": "high"
+  },
+  {
+   "run": "udca_pdf_native",
+   "pdfId": "udca",
+   "mode": "pdf_native",
+   "field_id": "f10_arm_n_randomized",
+   "entity_key": "arm:1",
+   "value": "53",
+   "not_reported": false,
+   "quote": "106 were enrolled in two groups of 53 neonates",
+   "page": 4,
+   "confidence": "high"
+  },
+  {
+   "run": "udca_pdf_native",
+   "pdfId": "udca",
+   "mode": "pdf_native",
+   "field_id": "f11_intervention_description",
+   "entity_key": "arm:1",
+   "value": "10 mg/kg/day oral UDCA divided into two doses plus phototherapy",
+   "not_reported": false,
+   "quote": "The intervention group received 10 mg/kg/day oral UDCA divided into two doses plus phototherapy, which was dissolved in breast milk",
+   "page": 3,
+   "confidence": "high"
+  },
+  {
+   "run": "udca_pdf_native",
+   "pdfId": "udca",
+   "mode": "pdf_native",
+   "field_id": "f09_arm_label",
+   "entity_key": "arm:2",
+   "value": "control group",
+   "not_reported": false,
+   "quote": "The control group received phototherapy alone.",
+   "page": 3,
+   "confidence": "high"
+  },
+  {
+   "run": "udca_pdf_native",
+   "pdfId": "udca",
+   "mode": "pdf_native",
+   "field_id": "f10_arm_n_randomized",
+   "entity_key": "arm:2",
+   "value": "53",
+   "not_reported": false,
+   "quote": "106 were enrolled in two groups of 53 neonates",
+   "page": 4,
+   "confidence": "high"
+  },
+  {
+   "run": "udca_pdf_native",
+   "pdfId": "udca",
+   "mode": "pdf_native",
+   "field_id": "f11_intervention_description",
+   "entity_key": "arm:2",
+   "value": "phototherapy alone",
+   "not_reported": false,
+   "quote": "The control group received phototherapy alone.",
+   "page": 3,
+   "confidence": "high"
+  },
+  {
+   "run": "udca_pdf_native",
+   "pdfId": "udca",
+   "mode": "pdf_native",
+   "field_id": "f12_primary_outcome_result_arm",
+   "entity_key": "outcome:primary|arm:1",
+   "value": "7.74±1.39",
+   "not_reported": false,
+   "quote": "Bilirubin at the discharge (mg/dl) SD ± mean 7.74±1.39",
+   "page": 6,
+   "confidence": "high"
+  },
+  {
+   "run": "udca_pdf_native",
+   "pdfId": "udca",
+   "mode": "pdf_native",
+   "field_id": "f12_primary_outcome_result_arm",
+   "entity_key": "outcome:primary|arm:2",
+   "value": "8.67±1.35",
+   "not_reported": false,
+   "quote": "Bilirubin at the discharge (mg/dl) SD ± mean 8.67±1.35",
+   "page": 6,
+   "confidence": "high"
+  },
+  {
+   "run": "udca_pdf_native",
+   "pdfId": "udca",
+   "mode": "pdf_native",
+   "field_id": "f13_ae_any_arm",
+   "entity_key": "outcome:primary|arm:1",
+   "value": "0",
+   "not_reported": false,
+   "quote": "No side effects including nausea, vomiting, constipation, bloating, and skin rash were observed in the two groups.",
+   "page": 4,
+   "confidence": "high"
+  },
+  {
+   "run": "udca_pdf_native",
+   "pdfId": "udca",
+   "mode": "pdf_native",
+   "field_id": "f13_ae_any_arm",
+   "entity_key": "outcome:primary|arm:2",
+   "value": "0",
+   "not_reported": false,
+   "quote": "No side effects including nausea, vomiting, constipation, bloating, and skin rash were observed in the two groups.",
+   "page": 4,
+   "confidence": "high"
+  },
+  {
+   "run": "udca_pdf_native",
+   "pdfId": "udca",
+   "mode": "pdf_native",
+   "field_id": "f14_primary_outcome_effect_estimate",
+   "entity_key": "outcome:primary",
+   "value": null,
+   "not_reported": true,
+   "quote": null,
+   "page": null,
+   "confidence": "high"
+  },
+  {
+   "run": "udca_pdf_native",
+   "pdfId": "udca",
+   "mode": "pdf_native",
+   "field_id": "f15_primary_outcome_p_value",
+   "entity_key": "outcome:primary",
+   "value": "<0.001",
+   "not_reported": false,
+   "quote": "Bilirubin at the discharge (mg/dl) SD ± mean 7.74±1.39 8.67±1.35 <0.001",
+   "page": 6,
+   "confidence": "high"
+  }
+ ],
+ "rawResponse": {
+  "candidates": [
+   {
+    "content": {
+     "parts": [
+      {
+       "text": "[\n  {\n    \"field_id\": \"f01_study_design\",\n    \"entity_key\": \"study\",\n    \"not_reported\": false,\n    \"confidence\": \"high\",\n    \"page\": 2,\n    \"quote\": \"The present study is a paralleled randomized single-blinded controlled clinical trial\",\n    \"value\": \"paralleled randomized single-blinded controlled clinical trial\"\n  },\n  {\n    \"field_id\": \"f02_country\",\n    \"entity_key\": \"study\",\n    \"not_reported\": false,\n    \"confidence\": \"high\",\n    \"page\": 1,\n    \"quote\": \"17 Shahrivar Hospital in Rasht, Iran.\",\n    \"value\": \"Iran\"\n  },\n  {\n    \"field_id\": \"f03_sample_size_total\",\n    \"entity_key\": \"study\",\n    \"not_reported\": false,\n    \"confidence\": \"high\",\n    \"page\": 2,\n    \"quote\": \"In this study, 106 term neonates were admitted\",\n    \"value\": \"106\"\n  },\n  {\n    \"field_id\": \"f04_population\",\n    \"entity_key\": \"study\",\n    \"not_reported\": false,\n    \"confidence\": \"high\",\n    \"page\": 3,\n    \"quote\": \"The inclusion criteria were 3 to 7 days of age, 2500 to 4000 grams birth weight, exclusive breastfeeding, 38 to 42 weeks of gestation, 14–20 mg/dL total serum bilirubin (TSB), and less than 1.5 mg/dL direct bilirubin.\",\n    \"value\": \"3 to 7 days of age, 2500 to 4000 grams birth weight, exclusive breastfeeding, 38 to 42 weeks of gestation, 14–20 mg/dL total serum bilirubin (TSB), and less than 1.5 mg/dL direct bilirubin.\"\n  },\n  {\n    \"field_id\": \"f05_randomization_method\",\n    \"entity_key\": \"study\",\n    \"not_reported\": false,\n    \"confidence\": \"high\",\n    \"page\": 3,\n    \"quote\": \"Eligible patients were randomly allocated by randomized blocking (or grouping). The following website “https://www.sealedenvelope.com” was used by a third party to produce the randomized list.\",\n    \"value\": \"randomized blocking\"\n  },\n  {\n    \"field_id\": \"f06_blinding\",\n    \"entity_key\": \"study\",\n    \"not_reported\": false,\n    \"confidence\": \"high\",\n    \"page\": 3,\n    \"quote\": \"Parents/guardians were blinded to the groups enrolled.\",\n    \"value\": \"Parents/guardians were blinded\"\n  },\n  {\n    \"field_id\": \"f07_registration_id\",\n    \"entity_key\": \"study\",\n    \"not_reported\": false,\n    \"confidence\": \"high\",\n    \"page\": 3,\n    \"quote\": \"The clinical trial was registered in the Iranian registry of clinical trials (Number: IRCT20210201050199N1, Date: 2021-04-03).\",\n    \"value\": \"IRCT20210201050199N1\"\n  },\n  {\n    \"field_id\": \"f08_primary_outcome_definition\",\n    \"entity_key\": \"study\",\n    \"not_reported\": false,\n    \"confidence\": \"high\",\n    \"page\": 3,\n    \"quote\": \"We considered the change of TSB level from baseline as the primary outcome\",\n    \"value\": \"change of TSB level from baseline\"\n  },\n  {\n    \"field_id\": \"f09_arm_label\",\n    \"entity_key\": \"arm:1\",\n    \"not_reported\": false,\n    \"confidence\": \"high\",\n    \"page\": 3,\n    \"quote\": \"The intervention group received 10 mg/kg/day oral UDCA divided into two doses plus phototherapy\",\n    \"value\": \"intervention group\"\n  },\n  {\n    \"field_id\": \"f10_arm_n_randomized\",\n    \"entity_key\": \"arm:1\",\n    \"not_reported\": false,\n    \"confidence\": \"high\",\n    \"page\": 4,\n    \"quote\": \"106 were enrolled in two groups of 53 neonates\",\n    \"value\": \"53\"\n  },\n  {\n    \"field_id\": \"f11_intervention_description\",\n    \"entity_key\": \"arm:1\",\n    \"not_reported\": false,\n    \"confidence\": \"high\",\n    \"page\": 3,\n    \"quote\": \"The intervention group received 10 mg/kg/day oral UDCA divided into two doses plus phototherapy, which was dissolved in breast milk\",\n    \"value\": \"10 mg/kg/day oral UDCA divided into two doses plus phototherapy\"\n  },\n  {\n    \"field_id\": \"f09_arm_label\",\n    \"entity_key\": \"arm:2\",\n    \"not_reported\": false,\n    \"confidence\": \"high\",\n    \"page\": 3,\n    \"quote\": \"The control group received phototherapy alone.\",\n    \"value\": \"control group\"\n  },\n  {\n    \"field_id\": \"f10_arm_n_randomized\",\n    \"entity_key\": \"arm:2\",\n    \"not_reported\": false,\n    \"confidence\": \"high\",\n    \"page\": 4,\n    \"quote\": \"106 were enrolled in two groups of 53 neonates\",\n    \"value\": \"53\"\n  },\n  {\n    \"field_id\": \"f11_intervention_description\",\n    \"entity_key\": \"arm:2\",\n    \"not_reported\": false,\n    \"confidence\": \"high\",\n    \"page\": 3,\n    \"quote\": \"The control group received phototherapy alone.\",\n    \"value\": \"phototherapy alone\"\n  },\n  {\n    \"field_id\": \"f12_primary_outcome_result_arm\",\n    \"entity_key\": \"outcome:primary|arm:1\",\n    \"not_reported\": false,\n    \"confidence\": \"high\",\n    \"page\": 6,\n    \"quote\": \"Bilirubin at the discharge (mg/dl) SD ± mean 7.74±1.39\",\n    \"value\": \"7.74±1.39\"\n  },\n  {\n    \"field_id\": \"f12_primary_outcome_result_arm\",\n    \"entity_key\": \"outcome:primary|arm:2\",\n    \"not_reported\": false,\n    \"confidence\": \"high\",\n    \"page\": 6,\n    \"quote\": \"Bilirubin at the discharge (mg/dl) SD ± mean 8.67±1.35\",\n    \"value\": \"8.67±1.35\"\n  },\n  {\n    \"field_id\": \"f13_ae_any_arm\",\n    \"entity_key\": \"outcome:primary|arm:1\",\n    \"not_reported\": false,\n    \"confidence\": \"high\",\n    \"page\": 4,\n    \"quote\": \"No side effects including nausea, vomiting, constipation, bloating, and skin rash were observed in the two groups.\",\n    \"value\": \"0\"\n  },\n  {\n    \"field_id\": \"f13_ae_any_arm\",\n    \"entity_key\": \"outcome:primary|arm:2\",\n    \"not_reported\": false,\n    \"confidence\": \"high\",\n    \"page\": 4,\n    \"quote\": \"No side effects including nausea, vomiting, constipation, bloating, and skin rash were observed in the two groups.\",\n    \"value\": \"0\"\n  },\n  {\n    \"field_id\": \"f14_primary_outcome_effect_estimate\",\n    \"entity_key\": \"outcome:primary\",\n    \"not_reported\": true,\n    \"confidence\": \"high\",\n    \"page\": null,\n    \"quote\": null,\n    \"value\": null\n  },\n  {\n    \"field_id\": \"f15_primary_outcome_p_value\",\n    \"entity_key\": \"outcome:primary\",\n    \"not_reported\": false,\n    \"confidence\": \"high\",\n    \"page\": 6,\n    \"quote\": \"Bilirubin at the discharge (mg/dl) SD ± mean 7.74±1.39 8.67±1.35 <0.001\",\n    \"value\": \"<0.001\"\n  }\n]",
+       "thoughtSignature": "EjQKMgEMOdbHBQmKkX4yCwMv5/llhliixmSb06+XBIbjguTyOkMk4JnCJxLOFIZyJ0Dkf4+9"
+      }
+     ],
+     "role": "model"
+    },
+    "finishReason": "STOP",
+    "index": 0,
+    "citationMetadata": {
+     "citationSources": [
+      {
+       "startIndex": 905,
+       "endIndex": 1121,
+       "uri": "https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0273516",
+       "license": ""
+      }
+     ]
+    }
+   }
+  ],
+  "usageMetadata": {
+   "promptTokenCount": 7119,
+   "candidatesTokenCount": 2094,
+   "totalTokenCount": 9213,
+   "promptTokensDetails": [
+    {
+     "modality": "TEXT",
+     "tokenCount": 1919
+    },
+    {
+     "modality": "IMAGE",
+     "tokenCount": 5200
+    }
+   ],
+   "serviceTier": "standard"
+  },
+  "modelVersion": "gemini-3.1-flash-lite",
+  "responseId": "fZ9FauS8N57U2roPw-2CqAg"
+ }
+}

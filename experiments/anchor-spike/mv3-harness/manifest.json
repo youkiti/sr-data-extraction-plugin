@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "anchor-spike MV3 harness (dev)",
+  "description": "PDF.js worker 同梱方式の MV3 CSP 確認用（architecture.md §7 チェックポイント 2）",
+  "version": "0.1.0",
+  "background": {
+    "service_worker": "service-worker.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "anchor-spike harness"
+  }
+}

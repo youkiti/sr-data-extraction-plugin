@@ -1,0 +1,298 @@
+{
+ "runId": "thermocov_text_only",
+ "model": "gemini-3.1-flash-lite",
+ "mode": "text_only",
+ "pdfId": "thermocov",
+ "executedAt": "2026-07-01T23:15:38.778Z",
+ "elapsedMs": 5542,
+ "usedResponseSchema": true,
+ "usageMetadata": {
+  "promptTokenCount": 21399,
+  "candidatesTokenCount": 2154,
+  "totalTokenCount": 23553,
+  "promptTokensDetails": [
+   {
+    "modality": "TEXT",
+    "tokenCount": 21399
+   }
+  ],
+  "serviceTier": "standard"
+ },
+ "promptChars": 69755,
+ "parseError": null,
+ "rowCount": 20,
+ "discardedRowCount": 0,
+ "evidence": [
+  {
+   "run": "thermocov_text_only",
+   "pdfId": "thermocov",
+   "mode": "text_only",
+   "field_id": "f01_study_design",
+   "entity_key": "study",
+   "value": "multicenter, open-label, parallel-group, randomized, explanatory, adaptive trial",
+   "not_reported": false,
+   "quote": "This was a multicenter, open-label, parallel-group, randomized, explanatory, adaptive trial",
+   "page": 3,
+   "confidence": "high"
+  },
+  {
+   "run": "thermocov_text_only",
+   "pdfId": "thermocov",
+   "mode": "text_only",
+   "field_id": "f02_country",
+   "entity_key": "study",
+   "value": "Mexico",
+   "not_reported": false,
+   "quote": "Three temporal COVID-19 units in Mexico City, Jalisco, and Tabasco recruited patients",
+   "page": 3,
+   "confidence": "high"
+  },
+  {
+   "run": "thermocov_text_only",
+   "pdfId": "thermocov",
+   "mode": "text_only",
+   "field_id": "f03_sample_size_total",
+   "entity_key": "study",
+   "value": "105",
+   "not_reported": false,
+   "quote": "One-hundred and five participants (thermotherapy n = 54, control n = 51) with a median age of 53 (IQR: 41–64) years were included for analysis",
+   "page": 2,
+   "confidence": "high"
+  },
+  {
+   "run": "thermocov_text_only",
+   "pdfId": "thermocov",
+   "mode": "text_only",
+   "field_id": "f04_population",
+   "entity_key": "study",
+   "value": "hospitalized adult patients with symptoms of COVID-19 with ≤5 days from symptom onset, meeting criteria for mild or moderate COVID-19",
+   "not_reported": false,
+   "quote": "Eligible participants were patients with symptoms of COVID-19... who were admitted to hospital upon a compatible clinical presentation, meeting criteria for mild or moderate COVID-19",
+   "page": 3,
+   "confidence": "high"
+  },
+  {
+   "run": "thermocov_text_only",
+   "pdfId": "thermocov",
+   "mode": "text_only",
+   "field_id": "f05_randomization_method",
+   "entity_key": "study",
+   "value": "centralized computer-generated sequence of minimization with a random component of 20%",
+   "not_reported": false,
+   "quote": "Patients were randomized in a 1:1 ratio through a centralized computer-generated sequence of minimization with a random component of 20%.",
+   "page": 4,
+   "confidence": "high"
+  },
+  {
+   "run": "thermocov_text_only",
+   "pdfId": "thermocov",
+   "mode": "text_only",
+   "field_id": "f06_blinding",
+   "entity_key": "study",
+   "value": "Participants and medical staff were not blinded; data analyst was blinded.",
+   "not_reported": false,
+   "quote": "Participants and medical staff could not be blinded to the intervention since a medical device was employed. The data analyst (AKG) was blinded to the treatment groups.",
+   "page": 4,
+   "confidence": "high"
+  },
+  {
+   "run": "thermocov_text_only",
+   "pdfId": "thermocov",
+   "mode": "text_only",
+   "field_id": "f07_registration_id",
+   "entity_key": "study",
+   "value": "NCT04363541",
+   "not_reported": false,
+   "quote": "Clinical Trial registration: www.clinicaltrials.gov, identifier: NCT04363541.",
+   "page": 2,
+   "confidence": "high"
+  },
+  {
+   "run": "thermocov_text_only",
+   "pdfId": "thermocov",
+   "mode": "text_only",
+   "field_id": "f08_primary_outcome_definition",
+   "entity_key": "study",
+   "value": "composite outcome of progression to severe COVID-19, critical COVID-19, or death",
+   "not_reported": false,
+   "quote": "The primary outcome was a composite outcome of progression to severe COVID-19, critical COVID-19, or death",
+   "page": 3,
+   "confidence": "high"
+  },
+  {
+   "run": "thermocov_text_only",
+   "pdfId": "thermocov",
+   "mode": "text_only",
+   "field_id": "f09_arm_label",
+   "entity_key": "arm:1",
+   "value": "thermotherapy",
+   "not_reported": false,
+   "quote": "thermotherapy n = 54",
+   "page": 2,
+   "confidence": "high"
+  },
+  {
+   "run": "thermocov_text_only",
+   "pdfId": "thermocov",
+   "mode": "text_only",
+   "field_id": "f10_arm_n_randomized",
+   "entity_key": "arm:1",
+   "value": "72",
+   "not_reported": false,
+   "quote": "144 were randomized to thermotherapy (n = 72) or standard care (n = 72)",
+   "page": 5,
+   "confidence": "high"
+  },
+  {
+   "run": "thermocov_text_only",
+   "pdfId": "thermocov",
+   "mode": "text_only",
+   "field_id": "f11_intervention_description",
+   "entity_key": "arm:1",
+   "value": "local thermotherapy via an electric heat pad (30 × 40 cm) in the thorax continuously for 90 min, twice daily (every 12 h), for 5 days.",
+   "not_reported": false,
+   "quote": "local thermotherapy via an electric heat pad (30 × 40 cm) in the thorax continuously for 90 min, twice daily (every 12 h), for 5 days.",
+   "page": 3,
+   "confidence": "high"
+  },
+  {
+   "run": "thermocov_text_only",
+   "pdfId": "thermocov",
+   "mode": "text_only",
+   "field_id": "f09_arm_label",
+   "entity_key": "arm:2",
+   "value": "control",
+   "not_reported": false,
+   "quote": "control n = 51",
+   "page": 2,
+   "confidence": "high"
+  },
+  {
+   "run": "thermocov_text_only",
+   "pdfId": "thermocov",
+   "mode": "text_only",
+   "field_id": "f10_arm_n_randomized",
+   "entity_key": "arm:2",
+   "value": "72",
+   "not_reported": false,
+   "quote": "144 were randomized to thermotherapy (n = 72) or standard care (n = 72)",
+   "page": 5,
+   "confidence": "high"
+  },
+  {
+   "run": "thermocov_text_only",
+   "pdfId": "thermocov",
+   "mode": "text_only",
+   "field_id": "f11_intervention_description",
+   "entity_key": "arm:2",
+   "value": "standard in-hospital care according to national guidelines",
+   "not_reported": false,
+   "quote": "Both the control and intervention groups received standard in-hospital care according to national guidelines.",
+   "page": 3,
+   "confidence": "high"
+  },
+  {
+   "run": "thermocov_text_only",
+   "pdfId": "thermocov",
+   "mode": "text_only",
+   "field_id": "f12_primary_outcome_result_arm",
+   "entity_key": "outcome:primary|arm:1",
+   "value": "14/54 (25.9%)",
+   "not_reported": false,
+   "quote": "25.9% (14/54) of those receiving thermotherapy",
+   "page": 2,
+   "confidence": "high"
+  },
+  {
+   "run": "thermocov_text_only",
+   "pdfId": "thermocov",
+   "mode": "text_only",
+   "field_id": "f13_ae_any_arm",
+   "entity_key": "outcome:primary|arm:1",
+   "value": "7 (12.9%)",
+   "not_reported": false,
+   "quote": "seven (12.9%) in the thermotherapy group had at least one AE",
+   "page": 2,
+   "confidence": "high"
+  },
+  {
+   "run": "thermocov_text_only",
+   "pdfId": "thermocov",
+   "mode": "text_only",
+   "field_id": "f12_primary_outcome_result_arm",
+   "entity_key": "outcome:primary|arm:2",
+   "value": "16/51 (31.4%)",
+   "not_reported": false,
+   "quote": "31.4% (16/51) of patients in the control group",
+   "page": 2,
+   "confidence": "high"
+  },
+  {
+   "run": "thermocov_text_only",
+   "pdfId": "thermocov",
+   "mode": "text_only",
+   "field_id": "f13_ae_any_arm",
+   "entity_key": "outcome:primary|arm:2",
+   "value": "7 (13.7%)",
+   "not_reported": false,
+   "quote": "Seven (13.7%) patients in the control group",
+   "page": 2,
+   "confidence": "high"
+  },
+  {
+   "run": "thermocov_text_only",
+   "pdfId": "thermocov",
+   "mode": "text_only",
+   "field_id": "f14_primary_outcome_effect_estimate",
+   "entity_key": "outcome:primary",
+   "value": "risk difference = 5.5%; 95%CI: −11.8–22.7",
+   "not_reported": false,
+   "quote": "risk difference = 5.5%; 95%CI: −11.8–22.7",
+   "page": 2,
+   "confidence": "high"
+  },
+  {
+   "run": "thermocov_text_only",
+   "pdfId": "thermocov",
+   "mode": "text_only",
+   "field_id": "f15_primary_outcome_p_value",
+   "entity_key": "outcome:primary",
+   "value": "0.54",
+   "not_reported": false,
+   "quote": "p = 0.54",
+   "page": 2,
+   "confidence": "high"
+  }
+ ],
+ "rawResponse": {
+  "candidates": [
+   {
+    "content": {
+     "parts": [
+      {
+       "text": "[\n  {\n    \"field_id\": \"f01_study_design\",\n    \"entity_key\": \"study\",\n    \"not_reported\": false,\n    \"confidence\": \"high\",\n    \"page\": 3,\n    \"quote\": \"This was a multicenter, open-label, parallel-group, randomized, explanatory, adaptive trial\",\n    \"value\": \"multicenter, open-label, parallel-group, randomized, explanatory, adaptive trial\"\n  },\n  {\n    \"field_id\": \"f02_country\",\n    \"entity_key\": \"study\",\n    \"not_reported\": false,\n    \"confidence\": \"high\",\n    \"page\": 3,\n    \"quote\": \"Three temporal COVID-19 units in Mexico City, Jalisco, and Tabasco recruited patients\",\n    \"value\": \"Mexico\"\n  },\n  {\n    \"field_id\": \"f03_sample_size_total\",\n    \"entity_key\": \"study\",\n    \"not_reported\": false,\n    \"confidence\": \"high\",\n    \"page\": 2,\n    \"quote\": \"One-hundred and five participants (thermotherapy n = 54, control n = 51) with a median age of 53 (IQR: 41–64) years were included for analysis\",\n    \"value\": \"105\"\n  },\n  {\n    \"field_id\": \"f04_population\",\n    \"entity_key\": \"study\",\n    \"not_reported\": false,\n    \"confidence\": \"high\",\n    \"page\": 3,\n    \"quote\": \"Eligible participants were patients with symptoms of COVID-19... who were admitted to hospital upon a compatible clinical presentation, meeting criteria for mild or moderate COVID-19\",\n    \"value\": \"hospitalized adult patients with symptoms of COVID-19 with ≤5 days from symptom onset, meeting criteria for mild or moderate COVID-19\"\n  },\n  {\n    \"field_id\": \"f05_randomization_method\",\n    \"entity_key\": \"study\",\n    \"not_reported\": false,\n    \"confidence\": \"high\",\n    \"page\": 4,\n    \"quote\": \"Patients were randomized in a 1:1 ratio through a centralized computer-generated sequence of minimization with a random component of 20%.\",\n    \"value\": \"centralized computer-generated sequence of minimization with a random component of 20%\"\n  },\n  {\n    \"field_id\": \"f06_blinding\",\n    \"entity_key\": \"study\",\n    \"not_reported\": false,\n    \"confidence\": \"high\",\n    \"page\": 4,\n    \"quote\": \"Participants and medical staff could not be blinded to the intervention since a medical device was employed. The data analyst (AKG) was blinded to the treatment groups.\",\n    \"value\": \"Participants and medical staff were not blinded; data analyst was blinded.\"\n  },\n  {\n    \"field_id\": \"f07_registration_id\",\n    \"entity_key\": \"study\",\n    \"not_reported\": false,\n    \"confidence\": \"high\",\n    \"page\": 2,\n    \"quote\": \"Clinical Trial registration: www.clinicaltrials.gov, identifier: NCT04363541.\",\n    \"value\": \"NCT04363541\"\n  },\n  {\n    \"field_id\": \"f08_primary_outcome_definition\",\n    \"entity_key\": \"study\",\n    \"not_reported\": false,\n    \"confidence\": \"high\",\n    \"page\": 3,\n    \"quote\": \"The primary outcome was a composite outcome of progression to severe COVID-19, critical COVID-19, or death\",\n    \"value\": \"composite outcome of progression to severe COVID-19, critical COVID-19, or death\"\n  },\n  {\n    \"field_id\": \"f09_arm_label\",\n    \"entity_key\": \"arm:1\",\n    \"not_reported\": false,\n    \"confidence\": \"high\",\n    \"page\": 2,\n    \"quote\": \"thermotherapy n = 54\",\n    \"value\": \"thermotherapy\"\n  },\n  {\n    \"field_id\": \"f10_arm_n_randomized\",\n    \"entity_key\": \"arm:1\",\n    \"not_reported\": false,\n    \"confidence\": \"high\",\n    \"page\": 5,\n    \"quote\": \"144 were randomized to thermotherapy (n = 72) or standard care (n = 72)\",\n    \"value\": \"72\"\n  },\n  {\n    \"field_id\": \"f11_intervention_description\",\n    \"entity_key\": \"arm:1\",\n    \"not_reported\": false,\n    \"confidence\": \"high\",\n    \"page\": 3,\n    \"quote\": \"local thermotherapy via an electric heat pad (30 × 40 cm) in the thorax continuously for 90 min, twice daily (every 12 h), for 5 days.\",\n    \"value\": \"local thermotherapy via an electric heat pad (30 × 40 cm) in the thorax continuously for 90 min, twice daily (every 12 h), for 5 days.\"\n  },\n  {\n    \"field_id\": \"f09_arm_label\",\n    \"entity_key\": \"arm:2\",\n    \"not_reported\": false,\n    \"confidence\": \"high\",\n    \"page\": 2,\n    \"quote\": \"control n = 51\",\n    \"value\": \"control\"\n  },\n  {\n    \"field_id\": \"f10_arm_n_randomized\",\n    \"entity_key\": \"arm:2\",\n    \"not_reported\": false,\n    \"confidence\": \"high\",\n    \"page\": 5,\n    \"quote\": \"144 were randomized to thermotherapy (n = 72) or standard care (n = 72)\",\n    \"value\": \"72\"\n  },\n  {\n    \"field_id\": \"f11_intervention_description\",\n    \"entity_key\": \"arm:2\",\n    \"not_reported\": false,\n    \"confidence\": \"high\",\n    \"page\": 3,\n    \"quote\": \"Both the control and intervention groups received standard in-hospital care according to national guidelines.\",\n    \"value\": \"standard in-hospital care according to national guidelines\"\n  },\n  {\n    \"field_id\": \"f12_primary_outcome_result_arm\",\n    \"entity_key\": \"outcome:primary|arm:1\",\n    \"not_reported\": false,\n    \"confidence\": \"high\",\n    \"page\": 2,\n    \"quote\": \"25.9% (14/54) of those receiving thermotherapy\",\n    \"value\": \"14/54 (25.9%)\"\n  },\n  {\n    \"field_id\": \"f13_ae_any_arm\",\n    \"entity_key\": \"outcome:primary|arm:1\",\n    \"not_reported\": false,\n    \"confidence\": \"high\",\n    \"page\": 2,\n    \"quote\": \"seven (12.9%) in the thermotherapy group had at least one AE\",\n    \"value\": \"7 (12.9%)\"\n  },\n  {\n    \"field_id\": \"f12_primary_outcome_result_arm\",\n    \"entity_key\": \"outcome:primary|arm:2\",\n    \"not_reported\": false,\n    \"confidence\": \"high\",\n    \"page\": 2,\n    \"quote\": \"31.4% (16/51) of patients in the control group\",\n    \"value\": \"16/51 (31.4%)\"\n  },\n  {\n    \"field_id\": \"f13_ae_any_arm\",\n    \"entity_key\": \"outcome:primary|arm:2\",\n    \"not_reported\": false,\n    \"confidence\": \"high\",\n    \"page\": 2,\n    \"quote\": \"Seven (13.7%) patients in the control group\",\n    \"value\": \"7 (13.7%)\"\n  },\n  {\n    \"field_id\": \"f14_primary_outcome_effect_estimate\",\n    \"entity_key\": \"outcome:primary\",\n    \"not_reported\": false,\n    \"confidence\": \"high\",\n    \"page\": 2,\n    \"quote\": \"risk difference = 5.5%; 95%CI: −11.8–22.7\",\n    \"value\": \"risk difference = 5.5%; 95%CI: −11.8–22.7\"\n  },\n  {\n    \"field_id\": \"f15_primary_outcome_p_value\",\n    \"entity_key\": \"outcome:primary\",\n    \"not_reported\": false,\n    \"confidence\": \"high\",\n    \"page\": 2,\n    \"quote\": \"p = 0.54\",\n    \"value\": \"0.54\"\n  }\n]",
+       "thoughtSignature": "EjQKMgEMOdbHfz6hzr8Vav/NcxEpysXsqIvn1SLExg+67JjiT9SRL0rmiOvY6QeB+7bmwtdq"
+      }
+     ],
+     "role": "model"
+    },
+    "finishReason": "STOP",
+    "index": 0
+   }
+  ],
+  "usageMetadata": {
+   "promptTokenCount": 21399,
+   "candidatesTokenCount": 2154,
+   "totalTokenCount": 23553,
+   "promptTokensDetails": [
+    {
+     "modality": "TEXT",
+     "tokenCount": 21399
+    }
+   ],
+   "serviceTier": "standard"
+  },
+  "modelVersion": "gemini-3.1-flash-lite",
+  "responseId": "m59FarrbErn92roP2ZrYgAQ"
+ }
+}
