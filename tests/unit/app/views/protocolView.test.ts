@@ -38,6 +38,19 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<ProtocolViewCallb
     ctx: {
       documents: { onImport: jest.fn(), onReload: jest.fn(), onSaveStudyLabel: jest.fn() },
       protocol: callbacks,
+      schema: {
+        onReload: jest.fn(),
+        onToggleSample: jest.fn(),
+        onChangeModel: jest.fn(),
+        onRunDraft: jest.fn(),
+        onEditRow: jest.fn(),
+        onAddRow: jest.fn(),
+        onRemoveRow: jest.fn(),
+        onInsertPreset: jest.fn(),
+        onConfirm: jest.fn(),
+        onCancelEditor: jest.fn(),
+        onStartNewVersion: jest.fn(),
+      },
     },
     callbacks,
   };

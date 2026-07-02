@@ -1,6 +1,8 @@
 // view が受け取る共通コンテキスト。view は render(state, ctx) の純粋関数のまま、
 // 副作用（サービス呼び出し）はコールバック経由で bootstrap へ委譲する（architecture.md §2.2）
 import type { ProtocolSubmitInput } from '../../features/protocol/submitInput';
+import type { OutcomePresetKind } from '../../features/schema/presets/outcomeTemplates';
+import type { SchemaEditorRow } from '../../features/schema/types';
 
 /** #/documents（S3）のユーザー操作コールバック */
 export interface DocumentsViewCallbacks {
@@ -26,7 +28,31 @@ export interface ProtocolViewCallbacks {
   onReload(): void;
 }
 
+/** #/schema（S5）のユーザー操作コールバック */
+export interface SchemaViewCallbacks {
+  /** 一覧（SchemaVersions + 現行版）の再読み込み */
+  onReload(): void;
+  /** サンプル論文チェックボックスの切替（最大 3 本） */
+  onToggleSample(documentId: string, selected: boolean): void;
+  /** requested_model の変更 */
+  onChangeModel(model: string): void;
+  /** 「AI にスキーマをドラフトさせる」 */
+  onRunDraft(): void;
+  /** エディタ行の編集確定（change イベント単位） */
+  onEditRow(index: number, patch: Partial<SchemaEditorRow>): void;
+  onAddRow(): void;
+  onRemoveRow(index: number): void;
+  /** 二値 / 連続アウトカムのプリセット挿入 */
+  onInsertPreset(kind: OutcomePresetKind): void;
+  /** 「版として確定」（note = 改訂理由） */
+  onConfirm(note: string): void;
+  onCancelEditor(): void;
+  /** 確定済み画面の「新しい版を作る」 */
+  onStartNewVersion(): void;
+}
+
 export interface ViewContext {
   documents: DocumentsViewCallbacks;
   protocol: ProtocolViewCallbacks;
+  schema: SchemaViewCallbacks;
 }

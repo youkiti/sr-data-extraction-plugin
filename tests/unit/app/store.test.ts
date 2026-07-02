@@ -29,6 +29,21 @@ describe('createInitialState', () => {
         selectedVersion: null,
         draftText: '',
       },
+      schema: {
+        versions: null,
+        currentFields: null,
+        loading: false,
+        loadError: null,
+        drafting: false,
+        draftElapsedSeconds: 0,
+        draftError: null,
+        selectedDocumentIds: [],
+        model: '',
+        editorRows: null,
+        editorErrors: [],
+        editorOrigin: 'user_edit',
+        confirming: false,
+      },
     });
   });
 });

@@ -38,7 +38,20 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<DocumentsViewCall
     onSelectVersion: jest.fn(),
     onReload: jest.fn(),
   };
-  return { ctx: { documents: callbacks, protocol }, callbacks };
+  const schema = {
+    onReload: jest.fn(),
+    onToggleSample: jest.fn(),
+    onChangeModel: jest.fn(),
+    onRunDraft: jest.fn(),
+    onEditRow: jest.fn(),
+    onAddRow: jest.fn(),
+    onRemoveRow: jest.fn(),
+    onInsertPreset: jest.fn(),
+    onConfirm: jest.fn(),
+    onCancelEditor: jest.fn(),
+    onStartNewVersion: jest.fn(),
+  };
+  return { ctx: { documents: callbacks, protocol, schema }, callbacks };
 }
 
 function makeState(patch: Partial<AppState['documents']> = {}, withProject = true): AppState {

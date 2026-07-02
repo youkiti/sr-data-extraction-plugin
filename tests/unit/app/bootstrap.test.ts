@@ -117,6 +117,10 @@ function createFakeDeps(values: string[][]): { deps: AppDeps; fetchMock: jest.Mo
     extractDocxText: async () => {
       throw new Error('docx not available in test');
     },
+    loadApiKey: async () => null,
+    buildProvider: () => {
+      throw new Error('llm not available in test');
+    },
   };
   return { deps, fetchMock };
 }
@@ -178,6 +182,16 @@ describe('seedState', () => {
     expect(state.protocol.records).toEqual([]);
     expect(state.protocol.editing).toBe(true);
     expect(state.protocol.saving).toBe(false); // 未指定フィールドは既定値
+  });
+
+  test('E2E seam: schema スライスも部分注入でマージする', async () => {
+    const stub = createWindowStub({
+      schema: { versions: [], model: 'gemini-test' } as unknown as AppState['schema'],
+    });
+    const state = await seedState(asWindow(stub));
+    expect(state.schema.versions).toEqual([]);
+    expect(state.schema.model).toBe('gemini-test');
+    expect(state.schema.drafting).toBe(false); // 未指定フィールドは既定値
   });
 });
 
@@ -421,6 +435,155 @@ describe('bootstrapApp', () => {
     select.value = '1';
     select.dispatchEvent(new Event('change'));
     expect(document.getElementById('protocol-old-note')?.textContent).toContain('最新: v2');
+  });
+
+  const EDITOR_ROW = {
+    fieldId: null,
+    section: 'methods',
+    fieldName: 'study_design',
+    fieldLabel: '研究デザイン',
+    entityLevel: 'study',
+    dataType: 'text',
+    unit: null,
+    allowedValues: null,
+    required: true,
+    extractionInstruction: 'Report the design.',
+    example: null,
+    aiGenerated: true,
+    note: null,
+  };
+
+  test('#/schema 入場で schema / documents / protocol を読み込む（版なし → ドラフトフォーム）', async () => {
+    const stub = createWindowStub({
+      currentProject: PROJECT,
+      counts: { protocolVersions: 1 } as AppState['counts'],
+    });
+    const { deps, fetchMock } = createFakeDeps([[...SHEET_HEADERS.SchemaVersions]]);
+    await bootstrapApp(asWindow(stub), deps);
+
+    stub.location.hash = '#/schema';
+    stub.fireHashChange();
+    await flush();
+
+    // SchemaVersions / Documents / Protocol の 3 タブを読む
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(document.getElementById('schema-draft-form')).not.toBeNull();
+
+    // モデル入力とドラフト実行の配線（選択 0 本 → ガード文言）
+    const model = document.getElementById('schema-model') as HTMLInputElement;
+    model.value = 'gemini-test';
+    model.dispatchEvent(new Event('change'));
+    (document.getElementById('schema-draft-run') as HTMLButtonElement).click();
+    await flush();
+    expect(document.getElementById('schema-draft-error')?.textContent).toContain('1〜3 本選択');
+  });
+
+  test('#/schema のエディタ操作（追加 / 編集 / 削除 / プリセット / 確定 / キャンセル）が配線されている', async () => {
+    const stub = createWindowStub({
+      currentProject: PROJECT,
+      counts: { protocolVersions: 1 } as AppState['counts'],
+      schema: { versions: [], editorRows: [EDITOR_ROW] } as unknown as AppState['schema'],
+    });
+    const { deps } = createFakeDeps([[...SHEET_HEADERS.Protocol]]);
+    await bootstrapApp(asWindow(stub), deps);
+    stub.location.hash = '#/schema';
+    stub.fireHashChange();
+    await flush();
+    expect(document.getElementById('schema-editor')).not.toBeNull();
+
+    (document.getElementById('schema-add-row') as HTMLButtonElement).click();
+    expect(document.querySelectorAll('#schema-editor-table tbody tr')).toHaveLength(2);
+
+    const nameInput = document.querySelector(
+      'input[aria-label="2 行目の field_name"]',
+    ) as HTMLInputElement;
+    nameInput.value = 'country';
+    nameInput.dispatchEvent(new Event('change'));
+
+    (document.querySelector('button[aria-label="2 行目を削除"]') as HTMLButtonElement).click();
+    expect(document.querySelectorAll('#schema-editor-table tbody tr')).toHaveLength(1);
+
+    (document.getElementById('schema-preset-binary') as HTMLButtonElement).click();
+    expect(document.querySelectorAll('#schema-editor-table tbody tr')).toHaveLength(3);
+
+    // 確定: fake fetch は Protocol タブがヘッダーのみ → 「プロトコルが未入力」で失敗表示
+    (document.getElementById('schema-confirm') as HTMLButtonElement).click();
+    await flush();
+    expect(document.getElementById('schema-confirm-error')?.textContent).toContain(
+      'プロトコルが未入力',
+    );
+
+    (document.getElementById('schema-editor-cancel') as HTMLButtonElement).click();
+    expect(document.getElementById('schema-editor')).toBeNull();
+    expect(document.getElementById('schema-draft-form')).not.toBeNull();
+  });
+
+  test('#/schema の確定済み画面（新しい版を作る / 再読み込み / サンプル選択）が配線されている', async () => {
+    const stub = createWindowStub({
+      currentProject: PROJECT,
+      counts: { protocolVersions: 1, schemaVersions: 1 } as AppState['counts'],
+      schema: {
+        versions: [
+          {
+            schemaVersion: 1,
+            parentVersion: null,
+            protocolVersion: 1,
+            createdByType: 'ai_draft',
+            createdAt: '2026-07-02T00:00:00Z',
+            createdBy: 'e2e@example.com',
+            note: null,
+          },
+        ],
+        currentFields: [],
+      } as unknown as AppState['schema'],
+      documents: {
+        records: [
+          {
+            documentId: 'doc-1',
+            studyLabel: 'Smith 2020',
+            driveFileId: 'drive-1',
+            sourceFileId: 'src-1',
+            filename: 'smith2020.pdf',
+            pmid: null,
+            doi: null,
+            textRef: 'https://drive.google.com/file/d/txt-1/view',
+            textStatus: 'ok',
+            pageCount: 2,
+            charCount: 4000,
+            importedAt: '2026-07-01T00:00:00Z',
+            importedBy: 'e2e@example.com',
+            note: null,
+          },
+        ],
+      } as unknown as AppState['documents'],
+    });
+    const { deps, fetchMock } = createFakeDeps([[...SHEET_HEADERS.SchemaVersions]]);
+    await bootstrapApp(asWindow(stub), deps);
+    stub.location.hash = '#/schema';
+    stub.fireHashChange();
+    await flush();
+    expect(document.getElementById('schema-confirmed')).not.toBeNull();
+
+    // 新しい版を作る → エディタ → キャンセルで戻る
+    (document.getElementById('schema-new-version') as HTMLButtonElement).click();
+    expect(document.getElementById('schema-editor')).not.toBeNull();
+    (document.getElementById('schema-editor-cancel') as HTMLButtonElement).click();
+
+    // 再読み込み（fake はヘッダーのみ → 版なしのドラフトフォームへ）
+    (document.getElementById('schema-reload') as HTMLButtonElement).click();
+    await flush();
+    expect(fetchMock).toHaveBeenCalled();
+    expect(document.getElementById('schema-draft-form')).not.toBeNull();
+
+    // サンプル論文の選択切替
+    const checkbox = document.querySelector(
+      '#schema-sample-list input[type="checkbox"]',
+    ) as HTMLInputElement;
+    checkbox.checked = true;
+    checkbox.dispatchEvent(new Event('change'));
+    expect(document.querySelector('.schema__samples legend')?.textContent).toContain(
+      '1 / 3 本選択中',
+    );
   });
 
   test('ストア更新でヘッダ・サイドバー・現在ルートを再描画する', async () => {

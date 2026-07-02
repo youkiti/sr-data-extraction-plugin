@@ -20,12 +20,28 @@ import {
   submitProtocol,
   type ProtocolServiceDeps,
 } from './services/protocolService';
+import {
+  addEditorRow,
+  cancelEditor,
+  confirmSchema,
+  insertOutcomePreset,
+  loadSchema,
+  removeEditorRow,
+  runDraftSchema,
+  setDraftModel,
+  startEditorFromCurrent,
+  toggleSampleDocument,
+  updateEditorRow,
+  type SchemaServiceDeps,
+} from './services/schemaService';
 import { createChromeGoogleApiDeps } from './services/factories';
 import { loadCurrentProject } from '../features/project/projectStore';
 import { extractDocxText } from '../lib/docx/extractDocxText';
 import { createChromeProfileDeps } from '../lib/google/identity';
 import { createChromePickerDeps } from '../lib/google/picker';
+import { createProvider } from '../lib/llm/providerFactory';
 import { loadDisposablePdf } from '../lib/pdf/loadPdf';
+import { loadGeminiApiKey } from '../lib/storage/secretsStore';
 
 declare global {
   interface Window {
@@ -47,13 +63,14 @@ export async function seedState(win: Window): Promise<AppState> {
       counts: { ...state.counts, ...(preloaded.counts ?? {}) },
       documents: { ...state.documents, ...(preloaded.documents ?? {}) },
       protocol: { ...state.protocol, ...(preloaded.protocol ?? {}) },
+      schema: { ...state.schema, ...(preloaded.schema ?? {}) },
     };
   }
   return state;
 }
 
-/** app 実行時のサービス依存（documentsService / protocolService ほか）。テストは fake を注入する */
-export type AppDeps = DocumentsServiceDeps & ProtocolServiceDeps;
+/** app 実行時のサービス依存（documents / protocol / schema の各サービス）。テストは fake を注入する */
+export type AppDeps = DocumentsServiceDeps & ProtocolServiceDeps & SchemaServiceDeps;
 
 /** Chrome ランタイムから AppDeps を組み立てる既定実装 */
 export function createChromeAppDeps(): AppDeps {
@@ -64,6 +81,8 @@ export function createChromeAppDeps(): AppDeps {
     picker: createChromePickerDeps(google),
     loadPdf: loadDisposablePdf,
     extractDocxText,
+    loadApiKey: loadGeminiApiKey,
+    buildProvider: createProvider,
   };
 }
 
@@ -114,6 +133,41 @@ export async function bootstrapApp(
       },
       onReload: () => {
         void loadProtocols(store, deps, { force: true });
+      },
+    },
+    schema: {
+      onReload: () => {
+        void loadSchema(store, deps, { force: true });
+      },
+      onToggleSample: (documentId, selected) => {
+        toggleSampleDocument(store, documentId, selected);
+      },
+      onChangeModel: (model) => {
+        setDraftModel(store, model);
+      },
+      onRunDraft: () => {
+        void runDraftSchema(store, deps);
+      },
+      onEditRow: (index, patch) => {
+        updateEditorRow(store, index, patch);
+      },
+      onAddRow: () => {
+        addEditorRow(store);
+      },
+      onRemoveRow: (index) => {
+        removeEditorRow(store, index);
+      },
+      onInsertPreset: (kind) => {
+        insertOutcomePreset(store, kind);
+      },
+      onConfirm: (note) => {
+        void confirmSchema(store, deps, note);
+      },
+      onCancelEditor: () => {
+        cancelEditor(store);
+      },
+      onStartNewVersion: () => {
+        startEditorFromCurrent(store);
       },
     },
   };
@@ -183,6 +237,12 @@ export async function bootstrapApp(
     }
     if (currentHash === '#/protocol') {
       // 初回表示時に全 version を読み込む（読込済みなら loadProtocols 側で no-op）
+      void loadProtocols(store, deps);
+    }
+    if (currentHash === '#/schema') {
+      // スキーマ一覧に加え、ドラフトフォームが使う文献一覧・プロトコルも先読みする
+      void loadSchema(store, deps);
+      void loadDocuments(store, deps);
       void loadProtocols(store, deps);
     }
   };

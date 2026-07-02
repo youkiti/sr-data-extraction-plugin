@@ -110,9 +110,11 @@ src/
 │   │                              #   protocolRepository〔ProtocolBlocks 関連は除外〕）+ saveProtocol
 │   │                              #   （raw_protocols/ 退避 → 新 version 追記。LLM 抽出なし）
 │   ├── schema/
-│   │   ├── skills/draftSchema.ts  # draft-schema skill 呼び出し
-│   │   ├── schemaRepository.ts    # SchemaVersions / SchemaFields I/O
-│   │   ├── validateField.ts       # field_name の snake_case・enum 許容値等のバリデーション
+│   │   ├── skills/draftSchema.ts  # draft-schema skill（プロンプト構築 + 応答スキーマ + パース）
+│   │   ├── schemaRepository.ts    # SchemaVersions / SchemaFields I/O（追記のみ）
+│   │   ├── saveSchemaVersion.ts   # 「版として確定」パイプライン（検証 → 採番 → 追記）
+│   │   ├── validateField.ts       # field_name の snake_case・重複・enum 許容値等のバリデーション
+│   │   ├── types.ts               # SchemaEditorRow（エディタ行）
 │   │   └── presets/outcomeTemplates.ts  # 二値 / 連続アウトカムのメタ解析入力テンプレート（§3.3）
 │   ├── extraction/
 │   │   ├── skills/extractData.ts  # extract-data skill（構造化 JSON 強制）

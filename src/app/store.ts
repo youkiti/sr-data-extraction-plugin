@@ -3,6 +3,10 @@
 import type { DocumentRecord } from '../domain/document';
 import type { ProjectRef } from '../domain/project';
 import type { Protocol } from '../domain/protocol';
+import type { SchemaField } from '../domain/schemaField';
+import type { SchemaVersion } from '../domain/schemaVersion';
+import type { SchemaEditorRow } from '../features/schema/types';
+import type { FieldValidationError } from '../features/schema/validateField';
 
 /** ガード判定・進捗サマリに使う各タブの行数サマリ（ui-flow.md §4） */
 export interface ProgressCounts {
@@ -59,11 +63,35 @@ export interface ProtocolState {
   draftText: string;
 }
 
+/** #/schema（S5）の画面状態 */
+export interface SchemaState {
+  /** SchemaVersions タブの全版（降順）。null = 未読込 */
+  versions: SchemaVersion[] | null;
+  /** 最新版（versions[0]）の項目。確定済みサマリに使う */
+  currentFields: SchemaField[] | null;
+  loading: boolean;
+  loadError: string | null;
+  /** ドラフト生成の実行状態。経過時間も store で持ち再描画に耐える（ui-states.md §3） */
+  drafting: boolean;
+  draftElapsedSeconds: number;
+  draftError: string | null;
+  /** ドラフトフォームの選択状態（サンプル論文 1〜3 本 + requested_model） */
+  selectedDocumentIds: string[];
+  model: string;
+  /** エディタ行。null = エディタ非表示 */
+  editorRows: SchemaEditorRow[] | null;
+  editorErrors: FieldValidationError[];
+  /** 確定時の created_by_type（AI ドラフト直後 = ai_draft。人が触ったら user_edit） */
+  editorOrigin: 'ai_draft' | 'user_edit';
+  confirming: boolean;
+}
+
 export interface AppState {
   currentProject: ProjectRef | null;
   counts: ProgressCounts;
   documents: DocumentsState;
   protocol: ProtocolState;
+  schema: SchemaState;
 }
 
 export type StateListener = (state: AppState) => void;
@@ -101,6 +129,21 @@ export function createInitialState(): AppState {
       editing: false,
       selectedVersion: null,
       draftText: '',
+    },
+    schema: {
+      versions: null,
+      currentFields: null,
+      loading: false,
+      loadError: null,
+      drafting: false,
+      draftElapsedSeconds: 0,
+      draftError: null,
+      selectedDocumentIds: [],
+      model: '',
+      editorRows: null,
+      editorErrors: [],
+      editorOrigin: 'user_edit',
+      confirming: false,
     },
   };
 }

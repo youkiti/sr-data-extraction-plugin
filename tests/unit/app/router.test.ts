@@ -11,6 +11,19 @@ const stubCtx: ViewContext = {
     onSelectVersion: jest.fn(),
     onReload: jest.fn(),
   },
+  schema: {
+    onReload: jest.fn(),
+    onToggleSample: jest.fn(),
+    onChangeModel: jest.fn(),
+    onRunDraft: jest.fn(),
+    onEditRow: jest.fn(),
+    onAddRow: jest.fn(),
+    onRemoveRow: jest.fn(),
+    onInsertPreset: jest.fn(),
+    onConfirm: jest.fn(),
+    onCancelEditor: jest.fn(),
+    onStartNewVersion: jest.fn(),
+  },
 };
 
 describe('normalizeHash', () => {
