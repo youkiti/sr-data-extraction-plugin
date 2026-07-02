@@ -61,6 +61,7 @@ import {
   persistVerifyDecision,
 } from './services/verifyService';
 import { loadDashboard } from './services/dashboardService';
+import { loadProgressCounts } from './services/homeService';
 import {
   cancelExportWarning,
   confirmExportGenerate,
@@ -96,6 +97,12 @@ export async function seedState(win: Window): Promise<AppState> {
       ...state,
       ...preloaded,
       counts: { ...state.counts, ...(preloaded.counts ?? {}) },
+      // counts を注入したテストは「読込済み」として扱い、起動時の Sheets 読込を行わない
+      home: {
+        ...state.home,
+        countsLoaded: preloaded.counts !== undefined,
+        ...(preloaded.home ?? {}),
+      },
       documents: { ...state.documents, ...(preloaded.documents ?? {}) },
       protocol: { ...state.protocol, ...(preloaded.protocol ?? {}) },
       schema: { ...state.schema, ...(preloaded.schema ?? {}) },
@@ -147,6 +154,11 @@ export async function bootstrapApp(
 
   // view のユーザー操作をサービス層へ委譲するコンテキスト（views/types.ts）
   const viewContext: ViewContext = {
+    home: {
+      onReload: () => {
+        void loadProgressCounts(store, deps, { force: true });
+      },
+    },
     documents: {
       onImport: () => {
         void importFromPicker(store, deps);
@@ -393,6 +405,10 @@ export async function bootstrapApp(
     currentHash = target;
     renderRoute();
     renderNav(store.getState());
+    if (currentHash === '#/home') {
+      // 起動時に読めなかった場合の再入場リトライ（読込済みなら loadProgressCounts 側で no-op）
+      void loadProgressCounts(store, deps);
+    }
     if (currentHash === '#/documents') {
       // 初回表示時に一覧を読み込む（読込済みなら loadDocuments 側で no-op）
       void loadDocuments(store, deps);
@@ -452,5 +468,8 @@ export async function bootstrapApp(
 
   renderHeader(store.getState());
   handleHashChange();
+  // ガード・#/home サマリの進捗カウントを起動時に読み込む（プロジェクト未選択 /
+  // E2E seam で counts 注入済み（countsLoaded）なら loadProgressCounts 側で no-op）
+  void loadProgressCounts(store, deps);
   return store;
 }

@@ -3,6 +3,7 @@ import { createInitialState } from '../../../src/app/store';
 import type { ViewContext } from '../../../src/app/views/types';
 
 const stubCtx: ViewContext = {
+  home: { onReload: jest.fn() },
   documents: { onImport: jest.fn(), onReload: jest.fn(), onSaveStudyLabel: jest.fn() },
   protocol: {
     onSubmit: jest.fn(),

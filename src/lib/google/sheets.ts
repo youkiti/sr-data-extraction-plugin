@@ -184,6 +184,25 @@ export async function updateRow(
 }
 
 /**
+ * 複数範囲を 1 API 呼び出しでまとめて取得する（values:batchGet）。
+ * 進捗カウント（#/home + ガード）のように「多数タブの行数だけ欲しい」用途で
+ * タブごとの GET 往復を避けるために使う。
+ * 返り値は ranges と同順・同数（空範囲は `[]`。API は空範囲の values を省略する）
+ */
+export async function getBatchValues(
+  spreadsheetId: string,
+  ranges: readonly string[],
+  deps: GoogleApiDeps
+): Promise<string[][][]> {
+  const query = ranges.map((r) => `ranges=${encodeURIComponent(r)}`).join('&');
+  const url = `${API_BASE}/${encodeURIComponent(spreadsheetId)}/values:batchGet?${query}`;
+  const res = await googleFetch(url, { method: 'GET' }, deps);
+  const json = (await res.json()) as { valueRanges?: { values?: string[][] }[] };
+  const valueRanges = json.valueRanges ?? [];
+  return ranges.map((_, i) => valueRanges[i]?.values ?? []);
+}
+
+/**
  * 指定タブの全行を 2 次元配列で取得する。`majorDimension=ROWS`。
  * 範囲はタブ名のみ指定（= 全列全行）。StudyData の動的値列が Z 列を超えても取りこぼさない
  */

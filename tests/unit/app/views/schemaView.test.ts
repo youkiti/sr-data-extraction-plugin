@@ -24,6 +24,7 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<SchemaViewCallbac
   };
   return {
     ctx: {
+      home: { onReload: jest.fn() },
       documents: { onImport: jest.fn(), onReload: jest.fn(), onSaveStudyLabel: jest.fn() },
       protocol: {
         onSubmit: jest.fn(),

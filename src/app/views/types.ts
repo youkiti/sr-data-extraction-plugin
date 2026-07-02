@@ -6,6 +6,12 @@ import type { ProtocolSubmitInput } from '../../features/protocol/submitInput';
 import type { OutcomePresetKind } from '../../features/schema/presets/outcomeTemplates';
 import type { SchemaEditorRow } from '../../features/schema/types';
 
+/** #/home のユーザー操作コールバック */
+export interface HomeViewCallbacks {
+  /** 進捗カウント読込失敗時の再読み込み（force 再取得） */
+  onReload(): void;
+}
+
 /** #/documents（S3）のユーザー操作コールバック */
 export interface DocumentsViewCallbacks {
   /** 「Drive から PDF を取り込む」: Picker 起動 → importDocuments */
@@ -124,6 +130,7 @@ export interface ExportViewCallbacks {
 }
 
 export interface ViewContext {
+  home: HomeViewCallbacks;
   documents: DocumentsViewCallbacks;
   protocol: ProtocolViewCallbacks;
   schema: SchemaViewCallbacks;

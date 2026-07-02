@@ -127,6 +127,10 @@
   font-weight: 700;
 }
 
+.home__error {
+  color: var(--color-danger);
+}
+
 /* #/documents（S3）: 取り込み操作・進捗行・一覧（ui-states.md §3） */
 .documents__actions {
   display: flex;

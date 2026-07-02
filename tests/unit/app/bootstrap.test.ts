@@ -86,6 +86,9 @@ const PROJECT = {
   name: 'テスト SR',
 };
 
+/** 起動時の進捗カウント読込（batchGet）を発火させないための注入（読込済み扱い） */
+const COUNTS_LOADED = { countsLoaded: true } as AppState['home'];
+
 /** Documents タブ 1 行分（SHEET_HEADERS.Documents の列順） */
 const DOC_ROW = [
   'doc-1',
@@ -181,6 +184,27 @@ describe('seedState', () => {
     });
     const state = await seedState(asWindow(stub));
     expect(state.counts.documents).toBe(0);
+  });
+
+  test('E2E seam: counts 注入で home.countsLoaded が立つ（起動時の Sheets 読込を抑止）', async () => {
+    const withCounts = await seedState(
+      asWindow(createWindowStub({ counts: { documents: 4 } as AppState['counts'] })),
+    );
+    expect(withCounts.home.countsLoaded).toBe(true);
+
+    const withoutCounts = await seedState(asWindow(createWindowStub({})));
+    expect(withoutCounts.home.countsLoaded).toBe(false);
+  });
+
+  test('E2E seam: home スライスも部分注入でマージする（counts 併用時の明示指定が勝つ）', async () => {
+    const stub = createWindowStub({
+      counts: { documents: 4 } as AppState['counts'],
+      home: { countsLoaded: false, countsError: '注入エラー' } as AppState['home'],
+    });
+    const state = await seedState(asWindow(stub));
+    expect(state.home.countsLoaded).toBe(false);
+    expect(state.home.countsError).toBe('注入エラー');
+    expect(state.home.countsLoading).toBe(false); // 未指定フィールドは既定値
   });
 
   test('E2E seam: documents スライスも部分注入でマージする', async () => {
@@ -334,7 +358,7 @@ describe('bootstrapApp', () => {
   });
 
   test('#/documents 入場で一覧を読み込む（0 件 → 空状態表示）', async () => {
-    const stub = createWindowStub({ currentProject: PROJECT });
+    const stub = createWindowStub({ currentProject: PROJECT, home: COUNTS_LOADED });
     const { deps, fetchMock } = createFakeDeps([[...SHEET_HEADERS.Documents]]);
     await bootstrapApp(asWindow(stub), deps);
 
@@ -347,7 +371,7 @@ describe('bootstrapApp', () => {
   });
 
   test('#/documents の再読み込みボタンで強制再取得する', async () => {
-    const stub = createWindowStub({ currentProject: PROJECT });
+    const stub = createWindowStub({ currentProject: PROJECT, home: COUNTS_LOADED });
     const { deps, fetchMock } = createFakeDeps([[...SHEET_HEADERS.Documents], DOC_ROW]);
     await bootstrapApp(asWindow(stub), deps);
     stub.location.hash = '#/documents';
@@ -361,7 +385,7 @@ describe('bootstrapApp', () => {
   });
 
   test('#/documents の取り込みボタンは Picker 起動失敗をトーストで案内する', async () => {
-    const stub = createWindowStub({ currentProject: PROJECT });
+    const stub = createWindowStub({ currentProject: PROJECT, home: COUNTS_LOADED });
     const { deps } = createFakeDeps([[...SHEET_HEADERS.Documents]]);
     await bootstrapApp(asWindow(stub), deps);
     stub.location.hash = '#/documents';
@@ -374,7 +398,7 @@ describe('bootstrapApp', () => {
   });
 
   test('#/documents の study_label 編集が保存まで配線されている', async () => {
-    const stub = createWindowStub({ currentProject: PROJECT });
+    const stub = createWindowStub({ currentProject: PROJECT, home: COUNTS_LOADED });
     const { deps, fetchMock } = createFakeDeps([[...SHEET_HEADERS.Documents], DOC_ROW]);
     await bootstrapApp(asWindow(stub), deps);
     stub.location.hash = '#/documents';
@@ -395,7 +419,7 @@ describe('bootstrapApp', () => {
   });
 
   test('#/protocol 入場で全 version を読み込む（0 件 → 新規フォーム表示）', async () => {
-    const stub = createWindowStub({ currentProject: PROJECT });
+    const stub = createWindowStub({ currentProject: PROJECT, home: COUNTS_LOADED });
     const { deps, fetchMock } = createFakeDeps([[...SHEET_HEADERS.Protocol]]);
     await bootstrapApp(asWindow(stub), deps);
 
@@ -408,7 +432,7 @@ describe('bootstrapApp', () => {
   });
 
   test('#/protocol の保存 → 読み取り専用 → 編集 / キャンセル / 再読み込みが配線されている', async () => {
-    const stub = createWindowStub({ currentProject: PROJECT });
+    const stub = createWindowStub({ currentProject: PROJECT, home: COUNTS_LOADED });
     const { deps, fetchMock } = createFakeDeps([[...SHEET_HEADERS.Protocol]]);
     await bootstrapApp(asWindow(stub), deps);
     stub.location.hash = '#/protocol';
@@ -633,6 +657,110 @@ describe('bootstrapApp', () => {
       'プロジェクト: 追加プロジェクト',
     );
     expect(document.getElementById('app-content')?.textContent).toContain('追加プロジェクト');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 進捗カウントの起動時読込（#/home + ガードの実データ化）
+// ---------------------------------------------------------------------------
+
+describe('bootstrapApp: 進捗カウントの起動時読込', () => {
+  beforeEach(() => {
+    installChromeMock();
+    document.body.innerHTML = APP_TEMPLATE;
+  });
+
+  /** batchGet 応答（7 範囲）。failFirst = true なら 1 回目だけ HTTP 500 を返す */
+  function createCountsDeps(options: { failFirst?: boolean } = {}): {
+    deps: AppDeps;
+    fetchMock: jest.Mock;
+  } {
+    const { deps, fetchMock } = createFakeDeps([]);
+    let failed = false;
+    fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (options.failFirst === true && !failed) {
+        failed = true;
+        return { ok: false, status: 500, json: async () => ({}), text: async () => 'boom' };
+      }
+      let json: unknown = {};
+      if (url.includes('/values:batchGet')) {
+        json = {
+          valueRanges: [
+            { values: [['doc-1'], ['doc-2']] }, // Documents
+            { values: [['1']] }, // Protocol
+            { values: [['1']] }, // SchemaVersions
+            { values: [['pilot']] }, // ExtractionRuns run_type
+            { values: [['ev-1'], ['ev-2'], ['ev-3']] }, // Evidence
+            { values: [['doc-1']] }, // StudyData
+            { values: [['r-1']] }, // ResultsData
+          ],
+        };
+      }
+      return { ok: true, status: 200, json: async () => json, text: async () => '' };
+    });
+    return { deps, fetchMock };
+  }
+
+  test('起動時に batchGet 1 回で counts を読み、サマリとガードのディム解除へ反映する', async () => {
+    const stub = createWindowStub({ currentProject: PROJECT });
+    const { deps, fetchMock } = createCountsDeps();
+    const store = await bootstrapApp(asWindow(stub), deps);
+    await flush();
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(decodeURIComponent(String(fetchMock.mock.calls[0][0]))).toContain('/values:batchGet');
+    expect(store?.getState().counts).toEqual({
+      documents: 2,
+      protocolVersions: 1,
+      schemaVersions: 1,
+      pilotRuns: 1,
+      evidenceRows: 3,
+      dataRows: 2,
+    });
+    // #/home のサマリが実データで描画される
+    expect(document.querySelector('.home__summary')?.textContent).toContain('文献数');
+    // ガード: protocolVersions = 1 で #/schema のディムが解除される
+    const schemaLink = document.querySelector('#app-nav a[href="#/schema"]') as HTMLAnchorElement;
+    expect(schemaLink.getAttribute('aria-disabled')).toBeNull();
+  });
+
+  test('読込失敗は #home-counts-error + 再読み込みで force 再取得して復帰する', async () => {
+    const stub = createWindowStub({ currentProject: PROJECT });
+    const { deps, fetchMock } = createCountsDeps({ failFirst: true });
+    const store = await bootstrapApp(asWindow(stub), deps);
+    await flush();
+
+    expect(document.getElementById('home-counts-error')?.textContent).toContain(
+      '進捗を読み込めませんでした',
+    );
+    expect(store?.getState().home.countsLoaded).toBe(false);
+
+    (document.getElementById('home-counts-reload') as HTMLButtonElement).click();
+    await flush();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(store?.getState().home.countsLoaded).toBe(true);
+    expect(document.getElementById('home-counts-error')).toBeNull();
+    expect(document.querySelector('.home__summary')).not.toBeNull();
+  });
+
+  test('E2E seam: counts 注入済み（countsLoaded）なら起動時読込を行わない', async () => {
+    const stub = createWindowStub({
+      currentProject: PROJECT,
+      counts: { documents: 4 } as AppState['counts'],
+    });
+    const { deps, fetchMock } = createCountsDeps();
+    await bootstrapApp(asWindow(stub), deps);
+    await flush();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  test('プロジェクト未選択なら起動時読込を行わない', async () => {
+    const stub = createWindowStub();
+    const { deps, fetchMock } = createCountsDeps();
+    await bootstrapApp(asWindow(stub), deps);
+    await flush();
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });
 

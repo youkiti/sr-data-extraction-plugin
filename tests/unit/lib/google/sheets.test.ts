@@ -3,6 +3,7 @@ import {
   appendRow,
   appendRows,
   createSpreadsheet,
+  getBatchValues,
   getSheetTitles,
   getSheetValues,
   updateRow,
@@ -166,5 +167,30 @@ describe('getSheetValues', () => {
   test('values が未定義なら [] を返す', async () => {
     const d = deps({});
     await expect(getSheetValues('sid', 'Documents', d)).resolves.toEqual([]);
+  });
+});
+
+describe('getBatchValues', () => {
+  test('values:batchGet に ranges をクエリで並べ、範囲順の values を返す', async () => {
+    const d = deps({
+      valueRanges: [{ values: [['doc-1'], ['doc-2']] }, { values: [['1']] }],
+    });
+    await expect(getBatchValues('sid', ['Documents!A2:A', 'Protocol!A2:A'], d)).resolves.toEqual([
+      [['doc-1'], ['doc-2']],
+      [['1']],
+    ]);
+    const [url] = d.fetch.mock.calls[0];
+    expect(decodeURIComponent(url as string)).toContain(
+      '/sid/values:batchGet?ranges=Documents!A2:A&ranges=Protocol!A2:A',
+    );
+  });
+
+  test('空範囲（values 省略）・valueRanges 未定義は [] で埋めて範囲数を保つ', async () => {
+    const d = deps({ valueRanges: [{}] });
+    await expect(getBatchValues('sid', ['Documents!A2:A', 'Evidence!A2:A'], d)).resolves.toEqual([
+      [],
+      [],
+    ]);
+    await expect(getBatchValues('sid', ['Documents!A2:A'], deps({}))).resolves.toEqual([[]]);
   });
 });

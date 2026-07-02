@@ -11,26 +11,22 @@ import type { SchemaField } from '../domain/schemaField';
 import type { SchemaVersion } from '../domain/schemaVersion';
 import type { BatchFailure, RunProgress } from '../features/extraction/executeRun';
 import type { ExtractDocRow } from '../features/extraction/docProgress';
+import type { ProgressCounts } from '../features/project/progressCounts';
 import type { DashboardData } from '../features/verification/dashboard';
 import type { SchemaEditorRow } from '../features/schema/types';
 import type { FieldValidationError } from '../features/schema/validateField';
 import type { VerificationProgress } from '../features/verification/progress';
 import type { VerificationData } from '../features/verification/types';
 
-/** ガード判定・進捗サマリに使う各タブの行数サマリ（ui-flow.md §4） */
-export interface ProgressCounts {
-  /** Documents タブの行数 */
-  documents: number;
-  /** Protocol の版数（1 以上でスキーマ設計へ進める） */
-  protocolVersions: number;
-  /** 確定済み schema_version の数 */
-  schemaVersions: number;
-  /** pilot run の実行数（0 のとき一括抽出前に警告バナー） */
-  pilotRuns: number;
-  /** Evidence タブの行数（1 以上で検証へ進める） */
-  evidenceRows: number;
-  /** StudyData / ResultsData の行数合計（1 以上でエクスポートへ進める） */
-  dataRows: number;
+// 定義は features/project/progressCounts.ts（Sheets 読み出しと同居）。従来の import 先を維持する
+export type { ProgressCounts };
+
+/** #/home + ガードが使う進捗カウントの読込状態（counts 本体は AppState.counts） */
+export interface HomeState {
+  /** Sheets からの読込が完了したか（E2E seam の counts 注入時も true = 再読込しない） */
+  countsLoaded: boolean;
+  countsLoading: boolean;
+  countsError: string | null;
 }
 
 /** 取り込み進捗 1 行の段階（ui-states.md §3「コピー → テキスト抽出の 2 段階表示」+ 前後の状態） */
@@ -221,6 +217,7 @@ export interface DashboardState {
 export interface AppState {
   currentProject: ProjectRef | null;
   counts: ProgressCounts;
+  home: HomeState;
   documents: DocumentsState;
   protocol: ProtocolState;
   schema: SchemaState;
@@ -249,6 +246,11 @@ export function createInitialState(): AppState {
       pilotRuns: 0,
       evidenceRows: 0,
       dataRows: 0,
+    },
+    home: {
+      countsLoaded: false,
+      countsLoading: false,
+      countsError: null,
     },
     documents: {
       records: null,

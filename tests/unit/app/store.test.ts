@@ -12,6 +12,11 @@ describe('createInitialState', () => {
         evidenceRows: 0,
         dataRows: 0,
       },
+      home: {
+        countsLoaded: false,
+        countsLoading: false,
+        countsError: null,
+      },
       documents: {
         records: null,
         loading: false,
