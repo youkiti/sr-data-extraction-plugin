@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 現在のフェーズ
 
-**フェーズ 1 実装中**（2026-07 時点）。scaffolding（package.json / webpack / jest / Playwright / CI-1）と `src/` の骨格（popup / app シェル〔router / store / guards / views 雛形〕 / options〔API キー保存は実装済み〕 / anchoring 中核〔スパイクから移植〕）に加え、`lib/google/`（OAuth + Sheets + Drive。sr-query-builder からコピー流用）・プロジェクト生成（`features/project/`: 12 タブ + Drive フォルダ 4 種）・Popup S1（ログイン / 新規作成 / 既存 ID / 最近のプロジェクト）・CSV エクスポートビルダー・extraction の AI 応答バリデーション（`validateAiOutput`: zod + 値/quote 矛盾 → confidence=low 強制）・extract-data skill のプロンプト管理（`skills/extractData.ts`: プロンプト構築 + 構造化出力スキーマ + 応答パース。LLM 呼び出し配線は lib/llm 移植後の executeRun 側）まで実装済み。ドキュメント一式が正典：
+**フェーズ 1 実装中**（2026-07 時点）。scaffolding（package.json / webpack / jest / Playwright / CI-1）と `src/` の骨格（popup / app シェル〔router / store / guards / views 雛形〕 / options〔API キー保存は実装済み〕 / anchoring 中核〔スパイクから移植〕）に加え、`lib/google/`（OAuth + Sheets + Drive。sr-query-builder からコピー流用）・プロジェクト生成（`features/project/`: 12 タブ + Drive フォルダ 4 種）・Popup S1（ログイン / 新規作成 / 既存 ID / 最近のプロジェクト）・CSV エクスポートビルダー・extraction の AI 応答バリデーション（`validateAiOutput`: zod + 値/quote 矛盾 → confidence=low 強制）・extract-data skill のプロンプト管理（`skills/extractData.ts`: プロンプト構築 + 構造化出力スキーマ + 応答パース。LLM 呼び出し配線は lib/llm 移植後の executeRun 側）・一括抽出の実行計画（`planRun.ts`: document × スキーマのバッチ分割〔全項目 or section 単位をトークン予算で判断〕+ トークン / コスト概算。単価表は `lib/llm/pricing.ts` を sr-query-builder から先行移植）まで実装済み。ドキュメント一式が正典：
 
 | ドキュメント | 内容 |
 |---|---|
