@@ -309,7 +309,7 @@ describe('executeRun の正常系', () => {
     expect(result.rejectedItems).toHaveLength(0);
     expect(result.batchFailures).toHaveLength(0);
     expect(progress).toEqual([
-      { totalBatches: 1, completedBatches: 1, documentId: 'd1', section: null },
+      { totalBatches: 1, completedBatches: 1, documentId: 'd1', section: null, failure: null },
     ]);
   });
 
@@ -450,8 +450,14 @@ describe('executeRun の partial_failure', () => {
     expect(result.tokensIn).toBe(10);
     expect(result.tokensOut).toBe(20);
     expect(progress).toEqual([
-      { totalBatches: 2, completedBatches: 1, documentId: 'd1', section: 'methods' },
-      { totalBatches: 2, completedBatches: 2, documentId: 'd1', section: 'population' },
+      {
+        totalBatches: 2,
+        completedBatches: 1,
+        documentId: 'd1',
+        section: 'methods',
+        failure: { documentId: 'd1', section: 'methods', reason: 'api_error', detail: 'boom' },
+      },
+      { totalBatches: 2, completedBatches: 2, documentId: 'd1', section: 'population', failure: null },
     ]);
   });
 

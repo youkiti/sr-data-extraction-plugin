@@ -58,6 +58,8 @@ export interface RunProgress {
   /** 直近に処理したバッチ */
   documentId: string;
   section: string | null;
+  /** 直近のバッチが失敗していればその内訳（S7 の document 単位進捗リストの素材）。成功なら null */
+  failure: BatchFailure | null;
 }
 
 export interface ExecuteRunDeps {
@@ -175,16 +177,24 @@ export async function executeRun(
   let modelVersion: string | null = null;
   let completedBatches = 0;
 
-  const failBatch = (batch: PlannedBatch, reason: BatchFailureReason, detail: string): void => {
-    batchFailures.push({ documentId: batch.documentId, section: batch.section, reason, detail });
+  const failBatch = (batch: PlannedBatch, reason: BatchFailureReason, detail: string): BatchFailure => {
+    const failure: BatchFailure = {
+      documentId: batch.documentId,
+      section: batch.section,
+      reason,
+      detail,
+    };
+    batchFailures.push(failure);
+    return failure;
   };
-  const reportProgress = (batch: PlannedBatch): void => {
+  const reportProgress = (batch: PlannedBatch, failure: BatchFailure | null = null): void => {
     completedBatches += 1;
     deps.onProgress?.({
       totalBatches: input.plan.batches.length,
       completedBatches,
       documentId: batch.documentId,
       section: batch.section,
+      failure,
     });
   };
 
@@ -210,8 +220,7 @@ export async function executeRun(
       loadedDocuments.set(batch.documentId, loaded);
     }
     if (loaded.kind === 'error') {
-      failBatch(batch, 'load_failed', loaded.detail);
-      reportProgress(batch);
+      reportProgress(batch, failBatch(batch, 'load_failed', loaded.detail));
       continue;
     }
 
@@ -235,8 +244,7 @@ export async function executeRun(
         responseSchema: EXTRACT_DATA_RESPONSE_SCHEMA,
       });
     } catch (err) {
-      failBatch(batch, 'api_error', toDetail(err));
-      reportProgress(batch);
+      reportProgress(batch, failBatch(batch, 'api_error', toDetail(err)));
       continue;
     }
     tokensIn = addTokens(tokensIn, response.tokensIn);
@@ -247,8 +255,7 @@ export async function executeRun(
     try {
       validated = parseExtractDataResponse(response.text, batchFields);
     } catch (err) {
-      failBatch(batch, 'format_error', toDetail(err));
-      reportProgress(batch);
+      reportProgress(batch, failBatch(batch, 'format_error', toDetail(err)));
       continue;
     }
     for (const item of validated.rejected) {
@@ -262,8 +269,7 @@ export async function executeRun(
       try {
         await deps.appendEvidence(rows);
       } catch (err) {
-        failBatch(batch, 'save_failed', toDetail(err));
-        reportProgress(batch);
+        reportProgress(batch, failBatch(batch, 'save_failed', toDetail(err)));
         continue;
       }
       evidence.push(...rows);

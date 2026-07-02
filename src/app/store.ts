@@ -8,6 +8,7 @@ import type { Protocol } from '../domain/protocol';
 import type { SchemaField } from '../domain/schemaField';
 import type { SchemaVersion } from '../domain/schemaVersion';
 import type { BatchFailure, RunProgress } from '../features/extraction/executeRun';
+import type { ExtractDocRow } from '../features/extraction/docProgress';
 import type { SchemaEditorRow } from '../features/schema/types';
 import type { FieldValidationError } from '../features/schema/validateField';
 import type { VerificationProgress } from '../features/verification/progress';
@@ -120,6 +121,32 @@ export interface PilotState {
   queuedDecisions: number;
 }
 
+/** #/extract（S7）の画面状態。run の結果はタブのセッション内で保持する */
+export interface ExtractState {
+  /** 対象文献の選択。初回表示時に「未抽出の全件」を既定選択する（ui-states.md §3） */
+  selectedDocumentIds: string[];
+  /** 既定選択を一度だけ行うためのフラグ（ユーザーの選択解除を上書きしない） */
+  selectionInitialized: boolean;
+  model: string;
+  /** ExtractionRuns 由来の抽出済み document_id。null = 未読込（画面表示時に読み込む） */
+  extractedDocumentIds: string[] | null;
+  loading: boolean;
+  loadError: string | null;
+  /** 実行確認カード（#extract-confirm）を表示中か */
+  confirming: boolean;
+  running: boolean;
+  /** 実行中〜完了後の document 単位進捗（1 行 = 1 document） */
+  docRows: ExtractDocRow[];
+  progress: RunProgress | null;
+  runError: string | null;
+  /** 直近の full run（完了後にサマリ + 検証導線を出す） */
+  run: ExtractionRun | null;
+  /** 直近 run の応答要素の破棄件数（partial_failure バナーに併記） */
+  rejectedCount: number;
+  /** 再試行（single_document run）実行中の document_id。null = なし */
+  retryingDocumentId: string | null;
+}
+
 /** #/verify（S8）の一覧 1 文献ぶんの検証素材（Evidence がある document のみ） */
 export interface VerifyTarget {
   document: DocumentRecord;
@@ -156,6 +183,7 @@ export interface AppState {
   protocol: ProtocolState;
   schema: SchemaState;
   pilot: PilotState;
+  extract: ExtractState;
   verify: VerifyState;
 }
 
@@ -228,6 +256,22 @@ export function createInitialState(): AppState {
       verifyError: null,
       studyValues: null,
       queuedDecisions: 0,
+    },
+    extract: {
+      selectedDocumentIds: [],
+      selectionInitialized: false,
+      model: '',
+      extractedDocumentIds: null,
+      loading: false,
+      loadError: null,
+      confirming: false,
+      running: false,
+      docRows: [],
+      progress: null,
+      runError: null,
+      run: null,
+      rejectedCount: 0,
+      retryingDocumentId: null,
     },
     verify: {
       targets: null,

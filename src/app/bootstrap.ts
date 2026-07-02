@@ -45,6 +45,16 @@ import {
   type PilotServiceDeps,
 } from './services/pilotService';
 import {
+  cancelExtractConfirm,
+  initExtractSelection,
+  loadExtractTargets,
+  requestExtractRun,
+  retryExtractDocument,
+  runExtract,
+  setExtractModel,
+  toggleExtractDocument,
+} from './services/extractService';
+import {
   loadVerifyTargets,
   openVerifyDocument,
   persistVerifyArmConfirmation,
@@ -81,6 +91,7 @@ export async function seedState(win: Window): Promise<AppState> {
       protocol: { ...state.protocol, ...(preloaded.protocol ?? {}) },
       schema: { ...state.schema, ...(preloaded.schema ?? {}) },
       pilot: { ...state.pilot, ...(preloaded.pilot ?? {}) },
+      extract: { ...state.extract, ...(preloaded.extract ?? {}) },
       verify: { ...state.verify, ...(preloaded.verify ?? {}) },
     };
   }
@@ -214,6 +225,30 @@ export async function bootstrapApp(
         void persistPilotArmConfirmation(store, deps, arms);
       },
     },
+    extract: {
+      onToggleDocument: (documentId, selected) => {
+        toggleExtractDocument(store, documentId, selected);
+      },
+      onChangeModel: (model) => {
+        setExtractModel(store, model);
+      },
+      onRequestRun: () => {
+        void requestExtractRun(store, deps);
+      },
+      onConfirmRun: () => {
+        void runExtract(store, deps);
+      },
+      onCancelConfirm: () => {
+        cancelExtractConfirm(store);
+      },
+      onRetryDocument: (documentId) => {
+        void retryExtractDocument(store, deps, documentId);
+      },
+      onReloadTargets: () => {
+        void loadDocuments(store, deps, { force: true });
+        void loadExtractTargets(store, deps, { force: true });
+      },
+    },
     verify: {
       onSelectDocument: (documentId) => {
         // hash 書き換え → hashchange → syncVerifyRoute の一本道（直リンクと同じ経路を通す）
@@ -332,6 +367,16 @@ export async function bootstrapApp(
       // 文献 + スキーマの読込後に既定選択（テキスト層ありの先頭 3 本）を一度だけ適用する
       void Promise.all([loadDocuments(store, deps), loadSchema(store, deps)]).then(() => {
         initPilotSelection(store);
+      });
+    }
+    if (currentHash === '#/extract') {
+      // 文献 + スキーマ + 抽出済み document の読込後に既定選択（未抽出の全件）を一度だけ適用する
+      void Promise.all([
+        loadDocuments(store, deps),
+        loadSchema(store, deps),
+        loadExtractTargets(store, deps),
+      ]).then(() => {
+        initExtractSelection(store);
       });
     }
     if (currentHash === '#/verify') {

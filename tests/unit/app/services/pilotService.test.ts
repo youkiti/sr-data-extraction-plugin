@@ -445,7 +445,7 @@ describe('runPilot: 実行', () => {
     const store = makeReadyStore();
     let observed: unknown = null;
     runExtractionMock.mockImplementation(async (params) => {
-      params.onProgress?.({ totalBatches: 2, completedBatches: 1, documentId: 'doc-1', section: null });
+      params.onProgress?.({ totalBatches: 2, completedBatches: 1, documentId: 'doc-1', section: null, failure: null });
       observed = store.getState().pilot.progress;
       return makeOutcome();
     });
@@ -455,6 +455,7 @@ describe('runPilot: 実行', () => {
       completedBatches: 1,
       documentId: 'doc-1',
       section: null,
+      failure: null,
     });
     expect(store.getState().pilot.progress).toBeNull();
   });

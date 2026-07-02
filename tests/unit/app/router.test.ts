@@ -33,6 +33,15 @@ const stubCtx: ViewContext = {
     onDecision: jest.fn(),
     onArmConfirm: jest.fn(),
   },
+  extract: {
+    onToggleDocument: jest.fn(),
+    onChangeModel: jest.fn(),
+    onRequestRun: jest.fn(),
+    onConfirmRun: jest.fn(),
+    onCancelConfirm: jest.fn(),
+    onRetryDocument: jest.fn(),
+    onReloadTargets: jest.fn(),
+  },
   verify: {
     onSelectDocument: jest.fn(),
     onRetryLoad: jest.fn(),

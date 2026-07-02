@@ -36,14 +36,11 @@ export async function appendExtractionRun(
   await appendRow(spreadsheetId, RUNS_TAB, extractionRunToRow(run), deps);
 }
 
-/**
- * run_id → schema_version のマップを読み込む（S8 検証画面が Evidence の表示 run から
- * スキーマ版を引くための最小読み出し。フル ExtractionRun のパースはまだ消費者がないため持たない）
- */
-export async function readRunSchemaVersions(
+/** ヘッダ行を検証してデータ行だけを返す（読み出し系の共通前処理） */
+async function readRunRows(
   spreadsheetId: string,
   deps: GoogleApiDeps,
-): Promise<Map<string, number>> {
+): Promise<(string | null)[][]> {
   const values = await getSheetValues(spreadsheetId, RUNS_TAB, deps);
   const header = values[0];
   if (header === undefined) {
@@ -56,8 +53,20 @@ export async function readRunSchemaVersions(
       );
     }
   });
+  return values.slice(1);
+}
+
+/**
+ * run_id → schema_version のマップを読み込む（S8 検証画面が Evidence の表示 run から
+ * スキーマ版を引くための最小読み出し。フル ExtractionRun のパースはまだ消費者がないため持たない）
+ */
+export async function readRunSchemaVersions(
+  spreadsheetId: string,
+  deps: GoogleApiDeps,
+): Promise<Map<string, number>> {
+  const rows = await readRunRows(spreadsheetId, deps);
   const map = new Map<string, number>();
-  values.slice(1).forEach((raw, i) => {
+  rows.forEach((raw, i) => {
     const runId = raw[0] ?? '';
     const cell = raw[2] ?? '';
     // Number('') は 0 になるため、空セルは明示的に不正として扱う
@@ -68,4 +77,25 @@ export async function readRunSchemaVersions(
     map.set(runId, version);
   });
   return map;
+}
+
+/**
+ * これまでの run（pilot / full / single_document すべて）で抽出済みの document_id 集合を返す。
+ * S7 の対象選択の既定値（= 未抽出の全件）を出すための最小読み出し
+ */
+export async function readExtractedDocumentIds(
+  spreadsheetId: string,
+  deps: GoogleApiDeps,
+): Promise<Set<string>> {
+  const rows = await readRunRows(spreadsheetId, deps);
+  const ids = new Set<string>();
+  for (const raw of rows) {
+    // document_ids 列（4 列目）はカンマ区切り（§3.2）
+    for (const id of (raw[3] ?? '').split(',')) {
+      if (id !== '') {
+        ids.add(id);
+      }
+    }
+  }
+  return ids;
 }

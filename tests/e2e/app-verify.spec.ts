@@ -7,31 +7,6 @@ import AxeBuilder from '@axe-core/playwright';
 
 const QUOTE = 'Mortality was 12 percent';
 
-const DOCUMENT_1 = {
-  documentId: 'doc-1',
-  studyLabel: 'Smith 2020',
-  driveFileId: 'drive-1',
-  sourceFileId: 'src-1',
-  filename: 'smith2020.pdf',
-  pmid: null,
-  doi: null,
-  textRef: 'https://drive.google.com/file/d/txt-1/view',
-  textStatus: 'ok',
-  pageCount: 1,
-  charCount: 4000,
-  importedAt: '2026-07-01T00:00:00Z',
-  importedBy: 'e2e@example.com',
-  note: null,
-};
-
-const DOCUMENT_2 = {
-  ...DOCUMENT_1,
-  documentId: 'doc-2',
-  studyLabel: 'Jones 2021',
-  driveFileId: 'drive-2',
-  filename: 'jones2021.pdf',
-};
-
 const SCHEMA_FIELDS_HEADERS = [
   'schema_version', 'field_id', 'field_index', 'section', 'field_name', 'field_label',
   'entity_level', 'data_type', 'unit', 'allowed_values', 'required', 'extraction_instruction',

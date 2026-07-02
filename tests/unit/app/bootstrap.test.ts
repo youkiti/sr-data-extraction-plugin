@@ -868,6 +868,174 @@ describe('bootstrapApp: #/pilot', () => {
 });
 
 // ---------------------------------------------------------------------------
+// #/extract（S7）の配線
+// ---------------------------------------------------------------------------
+
+describe('bootstrapApp: #/extract', () => {
+  beforeEach(() => {
+    installChromeMock();
+    document.body.innerHTML = APP_TEMPLATE;
+  });
+
+  const FIELD = {
+    schemaVersion: 1,
+    fieldId: 'f-total',
+    fieldIndex: 1,
+    section: 'methods',
+    fieldName: 'sample_size_total',
+    fieldLabel: '総サンプルサイズ',
+    entityLevel: 'study' as const,
+    dataType: 'integer' as const,
+    unit: null,
+    allowedValues: null,
+    required: true,
+    extractionInstruction: '総 N を抽出',
+    example: null,
+    aiGenerated: false,
+    note: null,
+  };
+
+  const DOC_RECORD = {
+    documentId: 'doc-1',
+    studyLabel: 'Smith 2020',
+    driveFileId: 'drive-1',
+    sourceFileId: 'src-1',
+    filename: 'smith2020.pdf',
+    pmid: null,
+    doi: null,
+    textRef: 'https://drive.google.com/file/d/txt-1/view',
+    textStatus: 'ok' as const,
+    pageCount: 10,
+    charCount: 20000,
+    importedAt: '2026-07-02T00:00:00Z',
+    importedBy: 'tester@example.com',
+    note: null,
+  };
+
+  function extractPreloaded(extractPatch: Partial<AppState['extract']> = {}): Partial<AppState> {
+    return {
+      currentProject: PROJECT,
+      counts: { schemaVersions: 1, documents: 1, pilotRuns: 1 } as AppState['counts'],
+      documents: { records: [DOC_RECORD] } as unknown as AppState['documents'],
+      schema: {
+        versions: [
+          {
+            schemaVersion: 1,
+            parentVersion: null,
+            protocolVersion: 1,
+            createdByType: 'user_edit',
+            createdAt: 't0',
+            createdBy: 'tester@example.com',
+            note: null,
+          },
+        ],
+        currentFields: [FIELD],
+      } as unknown as AppState['schema'],
+      extract: extractPatch as AppState['extract'],
+    };
+  }
+
+  test('seedState は extract スライスも部分注入でマージする', async () => {
+    const stub = createWindowStub({ extract: { model: 'gemini-x' } as AppState['extract'] });
+    const state = await seedState(asWindow(stub));
+    expect(state.extract.model).toBe('gemini-x');
+    expect(state.extract.running).toBe(false); // 他フィールドは既定を維持
+  });
+
+  test('#/extract 入場で既定選択が適用され、選択・モデル・実行確認 → 実行が配線されている', async () => {
+    const stub = createWindowStub(extractPreloaded());
+    const { deps, fetchMock } = createFakeDeps([[...SHEET_HEADERS.ExtractionRuns]]);
+    deps.loadApiKey = async () => 'api-key';
+    const store = await bootstrapApp(asWindow(stub), deps);
+
+    stub.location.hash = '#/extract';
+    stub.fireHashChange();
+    await flush();
+
+    // ExtractionRuns を読んで既定選択（未抽出の全件 = doc-1）
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(store?.getState().extract.selectedDocumentIds).toEqual(['doc-1']);
+
+    // 選択解除 / 再選択の配線
+    const checkbox = document.querySelector(
+      '#extract-documents input[type="checkbox"]',
+    ) as HTMLInputElement;
+    checkbox.checked = false;
+    checkbox.dispatchEvent(new Event('change'));
+    expect(store?.getState().extract.selectedDocumentIds).toEqual([]);
+    checkbox.checked = true;
+    checkbox.dispatchEvent(new Event('change'));
+
+    // モデル変更の配線
+    const model = document.getElementById('extract-model') as HTMLInputElement;
+    model.value = 'gemini-test';
+    model.dispatchEvent(new Event('change'));
+    expect(store?.getState().extract.model).toBe('gemini-test');
+
+    // 実行 → 確認カード → キャンセルの配線
+    (document.getElementById('extract-run') as HTMLButtonElement).click();
+    await flush();
+    expect(document.getElementById('extract-confirm')).not.toBeNull();
+    (document.getElementById('extract-confirm-cancel') as HTMLButtonElement).click();
+    expect(document.getElementById('extract-confirm')).toBeNull();
+
+    // 確認 → 実行の配線（fake fetch は Protocol タブを返せない → runError 表示で観測）
+    (document.getElementById('extract-run') as HTMLButtonElement).click();
+    await flush();
+    (document.getElementById('extract-confirm-run') as HTMLButtonElement).click();
+    await flush();
+    expect(store?.getState().extract.runError).not.toBeNull();
+    expect(document.getElementById('extract-run-error')).not.toBeNull();
+  });
+
+  test('#/extract の再試行と再読み込みが配線されている', async () => {
+    const stub = createWindowStub(
+      extractPreloaded({
+        selectionInitialized: true,
+        selectedDocumentIds: ['doc-1'],
+        model: 'gemini-test',
+        extractedDocumentIds: ['doc-1'],
+        run: {
+          runId: 'run-1',
+          runType: 'full',
+          schemaVersion: 1,
+          documentIds: ['doc-1'],
+          provider: 'gemini',
+          requestedModel: 'gemini-test',
+          modelVersion: null,
+          inputMode: 'text_only',
+          status: 'partial_failure',
+          startedAt: 't1',
+          finishedAt: 't2',
+          tokensIn: null,
+          tokensOut: null,
+          costEstimate: null,
+        },
+        docRows: [{ documentId: 'doc-1', status: 'failed', detail: 'api_error（500）' }],
+      } as Partial<AppState['extract']>),
+    );
+    const { deps, fetchMock } = createFakeDeps([[...SHEET_HEADERS.ExtractionRuns]]);
+    const store = await bootstrapApp(asWindow(stub), deps);
+    stub.location.hash = '#/extract';
+    stub.fireHashChange();
+    await flush();
+
+    // 再試行の配線（API キー未設定 → インラインエラーで観測）
+    (document.querySelector('.extract__retry') as HTMLButtonElement).click();
+    await flush();
+    expect(store?.getState().extract.runError).toContain('Gemini API キーが未設定です');
+
+    // 読み込み失敗 → 再読み込みの配線（documents + ExtractionRuns を強制再取得）
+    const current = store?.getState() as AppState;
+    store?.setState({ extract: { ...current.extract, loadError: 'boom' } });
+    const callsBefore = fetchMock.mock.calls.length;
+    (document.getElementById('extract-reload') as HTMLButtonElement).click();
+    await flush();
+    expect(fetchMock.mock.calls.length).toBeGreaterThan(callsBefore);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // #/verify（S8）の配線
 // ---------------------------------------------------------------------------
 

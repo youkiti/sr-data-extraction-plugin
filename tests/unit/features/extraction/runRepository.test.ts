@@ -3,6 +3,7 @@ import { SHEET_HEADERS } from '../../../../src/domain/sheetsSchema';
 import {
   appendExtractionRun,
   extractionRunToRow,
+  readExtractedDocumentIds,
   readRunSchemaVersions,
 } from '../../../../src/features/extraction/runRepository';
 
@@ -147,5 +148,61 @@ describe('readRunSchemaVersions', () => {
     await expect(
       readRunSchemaVersions('sheet-1', readDeps([[...SHEET_HEADERS.ExtractionRuns], []])),
     ).rejects.toThrow('ExtractionRuns 2 行目: schema_version "" が整数ではありません');
+  });
+});
+
+describe('readExtractedDocumentIds', () => {
+  function readDeps(values: string[][]): { fetch: jest.Mock; getAccessToken: jest.Mock } {
+    return {
+      fetch: jest.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({ values }),
+        text: async () => '',
+      } as Response),
+      getAccessToken: jest.fn().mockResolvedValue('token'),
+    };
+  }
+
+  const runRow = (documentIds: string): string[] => [
+    'run-1',
+    'pilot',
+    '1',
+    documentIds,
+    'gemini',
+    'gemini-test',
+    '',
+    'text_only',
+    'done',
+    't1',
+    't2',
+    '',
+    '',
+    '',
+  ];
+
+  test('全 run の document_ids（カンマ区切り）の和集合を返す', async () => {
+    const values = [
+      [...SHEET_HEADERS.ExtractionRuns],
+      runRow('doc-1,doc-2'),
+      runRow('doc-2,doc-3'),
+    ];
+    const ids = await readExtractedDocumentIds('sheet-1', readDeps(values));
+    expect([...ids].sort()).toEqual(['doc-1', 'doc-2', 'doc-3']);
+  });
+
+  test('run 0 件は空集合、document_ids 欠落行（ラグ配列）は無視する', async () => {
+    expect((await readExtractedDocumentIds('sheet-1', readDeps([[...SHEET_HEADERS.ExtractionRuns]]))).size).toBe(0);
+    const ids = await readExtractedDocumentIds(
+      'sheet-1',
+      readDeps([[...SHEET_HEADERS.ExtractionRuns], ['run-1', 'pilot', '1']]),
+    );
+    expect(ids.size).toBe(0);
+  });
+
+  test('ヘッダ行なしはエラー（readRunSchemaVersions と同じ前処理）', async () => {
+    await expect(readExtractedDocumentIds('sheet-1', readDeps([]))).rejects.toThrow(
+      'ExtractionRuns タブにヘッダ行がありません',
+    );
   });
 });

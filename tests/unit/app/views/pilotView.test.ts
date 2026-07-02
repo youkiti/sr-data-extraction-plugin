@@ -61,6 +61,15 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<PilotViewCallback
         onStartNewVersion: jest.fn(),
       },
       pilot: callbacks,
+      extract: {
+        onToggleDocument: jest.fn(),
+        onChangeModel: jest.fn(),
+        onRequestRun: jest.fn(),
+        onConfirmRun: jest.fn(),
+        onCancelConfirm: jest.fn(),
+        onRetryDocument: jest.fn(),
+        onReloadTargets: jest.fn(),
+      },
       verify: {
         onSelectDocument: jest.fn(),
         onRetryLoad: jest.fn(),
@@ -290,7 +299,7 @@ describe('実行中', () => {
       makeState({
         pilot: {
           running: true,
-          progress: { totalBatches: 4, completedBatches: 1, documentId: 'doc-1', section: null },
+          progress: { totalBatches: 4, completedBatches: 1, documentId: 'doc-1', section: null, failure: null },
         },
       }),
     );
@@ -310,6 +319,7 @@ describe('実行中', () => {
             completedBatches: 2,
             documentId: 'doc-1',
             section: 'methods',
+            failure: null,
           },
         },
       }),

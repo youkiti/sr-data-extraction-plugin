@@ -70,6 +70,24 @@ export interface PilotViewCallbacks {
   onArmConfirm(arms: readonly { armKey: string; armName: string }[]): void;
 }
 
+/** #/extract（S7）のユーザー操作コールバック */
+export interface ExtractViewCallbacks {
+  /** 対象文献チェックボックスの切替（上限なし） */
+  onToggleDocument(documentId: string, selected: boolean): void;
+  /** requested_model の変更 */
+  onChangeModel(model: string): void;
+  /** 「一括抽出を実行」: 検証 → 実行確認カードを開く */
+  onRequestRun(): void;
+  /** 確認カードの「実行する」: full run を開始 */
+  onConfirmRun(): void;
+  /** 確認カードのキャンセル */
+  onCancelConfirm(): void;
+  /** 失敗した文献 1 本の再試行（run_type = single_document） */
+  onRetryDocument(documentId: string): void;
+  /** 読み込み失敗時の再読み込み（文献一覧 + 抽出済み document を強制再取得） */
+  onReloadTargets(): void;
+}
+
 /** #/verify（S8）のユーザー操作コールバック */
 export interface VerifyViewCallbacks {
   /** document セレクタの切替（URL ?doc= と同期する） */
@@ -87,5 +105,6 @@ export interface ViewContext {
   protocol: ProtocolViewCallbacks;
   schema: SchemaViewCallbacks;
   pilot: PilotViewCallbacks;
+  extract: ExtractViewCallbacks;
   verify: VerifyViewCallbacks;
 }
