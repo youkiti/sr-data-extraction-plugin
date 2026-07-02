@@ -1,0 +1,29 @@
+// ExtractionRuns タブに対応する型（requirements.md §3.2）。AI 一括抽出の実行単位
+import type { LlmProviderId } from './llmApiLog';
+
+export type RunType = 'pilot' | 'full' | 'single_document';
+
+/** PDF を直接 LLM へ渡すか、抽出済みテキストのみ渡すか（※Q3） */
+export type InputMode = 'pdf_native' | 'text_only';
+
+export type RunStatus = 'queued' | 'running' | 'done' | 'partial_failure';
+
+export interface ExtractionRun {
+  runId: string;
+  runType: RunType;
+  schemaVersion: number;
+  /** シート上はカンマ区切りで保持する */
+  documentIds: string[];
+  provider: LlmProviderId;
+  requestedModel: string;
+  /** API 応答から記録する実モデル版 */
+  modelVersion: string | null;
+  inputMode: InputMode;
+  status: RunStatus;
+  startedAt: string | null;
+  finishedAt: string | null;
+  tokensIn: number | null;
+  tokensOut: number | null;
+  /** 実行前にコスト概算を UI 表示する */
+  costEstimate: number | null;
+}
