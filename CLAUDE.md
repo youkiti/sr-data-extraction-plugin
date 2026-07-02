@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 現在のフェーズ
 
-**フェーズ 1 実装中**（2026-07 時点）。scaffolding（package.json / webpack / jest / Playwright / CI-1）と `src/` の骨格（popup / app シェル〔router / store / guards / views 雛形〕 / options〔API キー保存は実装済み〕 / anchoring 中核〔スパイクから移植〕）に加え、`lib/google/`（OAuth + Sheets + Drive。sr-query-builder からコピー流用）・プロジェクト生成（`features/project/`: 12 タブ + Drive フォルダ 4 種）・Popup S1（ログイン / 新規作成 / 既存 ID / 最近のプロジェクト）・CSV エクスポートビルダー・extraction の AI 応答バリデーション（`validateAiOutput`: zod + 値/quote 矛盾 → confidence=low 強制）・extract-data skill のプロンプト管理（`skills/extractData.ts`: プロンプト構築 + 構造化出力スキーマ + 応答パース。LLM 呼び出し配線は lib/llm 移植後の executeRun 側）・一括抽出の実行計画（`planRun.ts`: document × スキーマのバッチ分割〔全項目 or section 単位をトークン予算で判断〕+ トークン / コスト概算。単価表は `lib/llm/pricing.ts` を sr-query-builder から先行移植）まで実装済み。ドキュメント一式が正典：
+**フェーズ 1 実装中**（2026-07 時点）。scaffolding（package.json / webpack / jest / Playwright / CI-1）と `src/` の骨格（popup / app シェル〔router / store / guards / views 雛形〕 / options〔API キー保存は実装済み〕 / anchoring 中核〔スパイクから移植〕）に加え、`lib/google/`（OAuth + Sheets + Drive。sr-query-builder からコピー流用）・プロジェクト生成（`features/project/`: 12 タブ + Drive フォルダ 4 種）・Popup S1（ログイン / 新規作成 / 既存 ID / 最近のプロジェクト）・CSV エクスポートビルダー・extraction の AI 応答バリデーション（`validateAiOutput`: zod + 値/quote 矛盾 → confidence=low 強制）・extract-data skill のプロンプト管理（`skills/extractData.ts`: プロンプト構築 + 構造化出力スキーマ + 応答パース）・一括抽出の実行計画（`planRun.ts`: document × スキーマのバッチ分割〔全項目 or section 単位をトークン予算で判断〕+ トークン / コスト概算）・`lib/llm/` 一式（sr-query-builder から移植: `LLMProvider` 抽象 + `GeminiProvider`〔nullable union → Gemini 方言変換を追加〕+ `withRetry` + `withLogging`〔プロンプト版数記録を追加〕+ `providerFactory`〔model 必須・OpenRouter は P1 エラー〕+ 単価表 `pricing.ts`）・一括抽出の実行（`executeRun.ts`: planRun の計画を消費してバッチごとに LLM 呼び出し → 応答検証 → quote アンカリング確定 → Evidence 生成。進捗通知と partial_failure〔バッチ失敗 4 種 + 要素破棄〕の記録。ExtractionRuns 行の書き込みと ai annotator 行への転記は未配線のサービス層の責務）まで実装済み。ドキュメント一式が正典：
 
 | ドキュメント | 内容 |
 |---|---|
@@ -14,7 +14,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | [docs/ui-states.md](docs/ui-states.md) | UI 状態マトリクス（target spec。**スケルトン段階の実装状況は冒頭の drift 注記を参照**） |
 | [docs/test-strategy.md](docs/test-strategy.md) | テスト戦略。jest 100% + Playwright の流用構成・E2E seam（worker 解決 / 状態注入）・PDF fixture 2 層運用・フェーズ計画・CI 段階導入 |
 
-次のステップ: フェーズ 1 の画面実装の続き（documents → protocol → schema → …。test-strategy.md §3）と app シェルの Sheets 読込（進捗カウント）。テストは jest（カバレッジ 100% 強制）+ Playwright smoke + CI-1 が稼働済みのため、作業原則 7・8 は**有効**。
+次のステップ: フェーズ 1 の画面実装の続き（documents → protocol → schema → …。test-strategy.md §3）と app シェルの Sheets 読込（進捗カウント）、および extraction のサービス層配線（evidenceRepository / annotationRepository / ExtractionRuns I/O と executeRun の結線、ai annotator 行への転記）。テストは jest（カバレッジ 100% 強制）+ Playwright smoke + CI-1 が稼働済みのため、作業原則 7・8 は**有効**。
 
 ## 目的（ゴール）
 
