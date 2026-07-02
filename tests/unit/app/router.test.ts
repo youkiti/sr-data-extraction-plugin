@@ -57,7 +57,7 @@ describe('ROUTES', () => {
     expect(emptyView.textContent).toContain('未選択');
     expect(emptyView.querySelectorAll('dd')).toHaveLength(5);
 
-    state.currentProject = { spreadsheetId: 's1', name: '肺炎 SR' };
+    state.currentProject = { projectId: 'p1', spreadsheetId: 's1', driveFolderId: 'f1', name: '肺炎 SR' };
     state.counts.documents = 12;
     const filledView = findRoute('#/home').render(state);
     expect(filledView.textContent).toContain('肺炎 SR');

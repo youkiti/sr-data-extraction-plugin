@@ -64,7 +64,7 @@ describe('seedState', () => {
   });
 
   test('chrome.storage.local の currentProject を読み込む', async () => {
-    const project = { spreadsheetId: 's1', name: '保存済みプロジェクト' };
+    const project = { projectId: 'p1', spreadsheetId: 's1', driveFolderId: 'f1', name: '保存済みプロジェクト' };
     chromeMock.storage.local.data[CURRENT_PROJECT_STORAGE_KEY] = project;
     const state = await seedState(asWindow(createWindowStub()));
     expect(state.currentProject).toEqual(project);
@@ -72,7 +72,7 @@ describe('seedState', () => {
 
   test('E2E seam: __E2E_PRELOADED_STATE__ をシードへ上書きマージする', async () => {
     const stub = createWindowStub({
-      currentProject: { spreadsheetId: 'e2e', name: 'E2E プロジェクト' },
+      currentProject: { projectId: 'pe', spreadsheetId: 'e2e', driveFolderId: 'fe', name: 'E2E プロジェクト' },
       counts: { documents: 4 } as AppState['counts'],
     });
     const state = await seedState(asWindow(stub));
@@ -83,7 +83,7 @@ describe('seedState', () => {
 
   test('E2E seam: counts なしの注入でも既定カウントを維持する', async () => {
     const stub = createWindowStub({
-      currentProject: { spreadsheetId: 'e2e', name: 'E2E プロジェクト' },
+      currentProject: { projectId: 'pe', spreadsheetId: 'e2e', driveFolderId: 'fe', name: 'E2E プロジェクト' },
     });
     const state = await seedState(asWindow(stub));
     expect(state.counts.documents).toBe(0);
@@ -117,7 +117,7 @@ describe('bootstrapApp', () => {
 
   test('プロジェクト選択済み: ヘッダにプロジェクト名を表示し導線は隠す', async () => {
     await bootstrapApp(
-      asWindow(createWindowStub({ currentProject: { spreadsheetId: 's1', name: '肺炎 SR' } })),
+      asWindow(createWindowStub({ currentProject: { projectId: 'p1', spreadsheetId: 's1', driveFolderId: 'f1', name: '肺炎 SR' } })),
     );
     expect(document.getElementById('app-status')?.textContent).toBe('プロジェクト: 肺炎 SR');
     expect((document.getElementById('app-open-popup') as HTMLButtonElement).hidden).toBe(true);
@@ -196,7 +196,7 @@ describe('bootstrapApp', () => {
     const store = await bootstrapApp(asWindow(stub));
     expect(store).not.toBeNull();
 
-    store?.setState({ currentProject: { spreadsheetId: 's9', name: '追加プロジェクト' } });
+    store?.setState({ currentProject: { projectId: 'p9', spreadsheetId: 's9', driveFolderId: 'f9', name: '追加プロジェクト' } });
     expect(document.getElementById('app-status')?.textContent).toBe(
       'プロジェクト: 追加プロジェクト',
     );

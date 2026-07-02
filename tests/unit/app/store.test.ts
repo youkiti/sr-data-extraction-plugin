@@ -22,7 +22,7 @@ describe('createStore', () => {
     const listener = jest.fn();
     store.subscribe(listener);
 
-    const project = { spreadsheetId: 's1', name: 'P' };
+    const project = { projectId: 'p1', spreadsheetId: 's1', driveFolderId: 'f1', name: 'P' };
     store.setState({ currentProject: project });
 
     expect(store.getState().currentProject).toEqual(project);
@@ -36,7 +36,7 @@ describe('createStore', () => {
     const listener = jest.fn();
     const unsubscribe = store.subscribe(listener);
     unsubscribe();
-    store.setState({ currentProject: { spreadsheetId: 's1', name: 'P' } });
+    store.setState({ currentProject: { projectId: 'p1', spreadsheetId: 's1', driveFolderId: 'f1', name: 'P' } });
     expect(listener).not.toHaveBeenCalled();
   });
 

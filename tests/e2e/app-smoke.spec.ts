@@ -20,7 +20,7 @@ test.beforeEach(async ({ page }) => {
     };
     // 状態注入 seam: ストアのシードに使われる（全ガード充足の状態で smoke する）
     win.__E2E_PRELOADED_STATE__ = {
-      currentProject: { spreadsheetId: 'e2e-sheet', name: 'E2E プロジェクト' },
+      currentProject: { projectId: 'e2e-project', spreadsheetId: 'e2e-sheet', driveFolderId: 'e2e-folder', name: 'E2E プロジェクト' },
       counts: {
         documents: 2,
         protocolVersions: 1,

@@ -11,11 +11,75 @@
     <main class="popup">
       <h1 class="popup__title">SR データ抽出</h1>
       <p id="popup-status" class="popup__status">読み込み中…</p>
-      <p id="popup-project" class="popup__project" hidden></p>
-      <button id="open-app" type="button">メインビューを開く</button>
-      <p class="popup__note">
-        プロジェクトの新規作成・切替はスケルトン段階では未実装です（docs/ui-states.md §1 参照）。
-      </p>
+
+      <section class="popup__section" id="popup-auth" hidden>
+        <p class="popup__muted">
+          プロジェクトは Google Sheets / Drive に保存されます。Google
+          アカウントでログインしてください。
+        </p>
+        <button type="button" id="login-button" class="popup__button popup__button--primary">
+          Google でログイン
+        </button>
+        <p class="popup__form-error" id="login-error"></p>
+      </section>
+
+      <div id="popup-projects" hidden>
+        <section class="popup__section popup__account" id="popup-account">
+          <p class="popup__muted popup__account-row">
+            ログイン中:
+            <span id="popup-email" class="popup__account-email">—</span>
+          </p>
+          <button type="button" id="logout-button" class="popup__button popup__button--text">
+            ログアウト
+          </button>
+        </section>
+
+        <section class="popup__section" id="popup-recent-section" hidden>
+          <h2 class="popup__section-title">最近のプロジェクト</h2>
+          <ul class="popup__recent" id="popup-recent"></ul>
+        </section>
+
+        <section class="popup__section">
+          <h2 class="popup__section-title">新規プロジェクト</h2>
+          <p class="popup__muted">
+            データ抽出プロジェクトを作成します（スプレッドシート + Drive フォルダを生成）。
+          </p>
+          <form id="popup-create-form" class="popup__form">
+            <label class="popup__visually-hidden" for="popup-create-title">
+              プロジェクトタイトル
+            </label>
+            <input
+              type="text"
+              id="popup-create-title"
+              class="popup__input"
+              placeholder="プロジェクトタイトル"
+            />
+            <button type="submit" class="popup__button">作成</button>
+          </form>
+          <p class="popup__form-error" id="popup-create-error"></p>
+        </section>
+
+        <section class="popup__section">
+          <h2 class="popup__section-title">スプレッドシート ID で開く</h2>
+          <form id="popup-open-form" class="popup__form">
+            <label class="popup__visually-hidden" for="popup-open-id">
+              スプレッドシート ID
+            </label>
+            <input
+              type="text"
+              id="popup-open-id"
+              class="popup__input"
+              placeholder="スプレッドシート ID"
+            />
+            <button type="submit" class="popup__button">開く</button>
+          </form>
+          <p class="popup__form-error" id="popup-open-error"></p>
+        </section>
+      </div>
+
+      <button type="button" id="open-options" class="popup__button popup__button--text">
+        設定を開く
+      </button>
     </main>
     <script src="popup.js"></script>
   </body>
