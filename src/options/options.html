@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SR データ抽出 — 設定</title>
+    <link rel="stylesheet" href="../styles/tokens.css" />
+    <link rel="stylesheet" href="../styles/globals.css" />
+    <link rel="stylesheet" href="options.css" />
+  </head>
+  <body>
+    <main class="options">
+      <h1>設定</h1>
+      <p id="options-status" class="options__status">読み込み中…</p>
+      <section class="options__section">
+        <h2>Gemini API キー（BYOK）</h2>
+        <p class="options__help">
+          API キーはこの端末の chrome.storage にのみ保存され、開発者へ送信されることはありません。
+        </p>
+        <div class="options__row">
+          <label for="gemini-api-key">Gemini API キー</label>
+          <input id="gemini-api-key" type="password" autocomplete="off" />
+          <button id="save-keys" type="button">保存</button>
+        </div>
+      </section>
+      <section class="options__section">
+        <h2>表示言語</h2>
+        <div class="options__row">
+          <label for="ui-language">言語</label>
+          <select id="ui-language" disabled>
+            <option selected>日本語（MVP は ja 固定）</option>
+          </select>
+        </div>
+      </section>
+    </main>
+    <script src="options.js"></script>
+  </body>
+</html>

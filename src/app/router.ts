@@ -1,0 +1,57 @@
+// ハッシュルーティングのルート定義（ui-flow.md §2）。
+// 遷移時のガード適用・描画は bootstrap.ts が行い、本ファイルは定義と正規化のみを持つ
+import type { AppState } from './store';
+import { renderHomeView } from './views/homeView';
+import { renderDocumentsView } from './views/documentsView';
+import { renderProtocolView } from './views/protocolView';
+import { renderSchemaView } from './views/schemaView';
+import { renderPilotView } from './views/pilotView';
+import { renderExtractView } from './views/extractView';
+import { renderVerifyView } from './views/verifyView';
+import { renderDashboardView } from './views/dashboardView';
+import { renderExportView } from './views/exportView';
+
+export type RouteHash =
+  | '#/home'
+  | '#/documents'
+  | '#/protocol'
+  | '#/schema'
+  | '#/pilot'
+  | '#/extract'
+  | '#/verify'
+  | '#/dashboard'
+  | '#/export';
+
+export interface RouteDefinition {
+  hash: RouteHash;
+  /** サイドバー・スクリーンリーダ通知用の表示名 */
+  label: string;
+  render(state: AppState): HTMLElement;
+}
+
+export const ROUTES: RouteDefinition[] = [
+  { hash: '#/home', label: 'Home', render: renderHomeView },
+  { hash: '#/documents', label: '文献取り込み', render: renderDocumentsView },
+  { hash: '#/protocol', label: 'プロトコル', render: renderProtocolView },
+  { hash: '#/schema', label: 'スキーマ', render: renderSchemaView },
+  { hash: '#/pilot', label: 'パイロット抽出', render: renderPilotView },
+  { hash: '#/extract', label: '一括抽出', render: renderExtractView },
+  { hash: '#/verify', label: '検証', render: renderVerifyView },
+  { hash: '#/dashboard', label: 'ダッシュボード', render: renderDashboardView },
+  { hash: '#/export', label: 'エクスポート', render: renderExportView },
+];
+
+/**
+ * location.hash をルートへ正規化する。クエリ（#/verify?doc=... 等）は切り落とし、
+ * 未知のハッシュ・空文字は #/home へ倒す
+ */
+export function normalizeHash(rawHash: string): RouteHash {
+  const base = rawHash.split('?')[0];
+  const matched = ROUTES.find((route) => route.hash === base);
+  return matched ? matched.hash : '#/home';
+}
+
+export function findRoute(hash: RouteHash): RouteDefinition {
+  // normalizeHash 済みのハッシュのみ渡される前提のため必ず見つかる
+  return ROUTES.find((route) => route.hash === hash) as RouteDefinition;
+}

@@ -1,0 +1,30 @@
+/* Popup（S1）のレイアウト */
+.popup {
+  width: 320px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.popup__title {
+  margin: 0;
+  font-size: 16px;
+  color: var(--color-primary);
+}
+
+.popup__status {
+  margin: 0;
+  color: var(--color-text-muted);
+}
+
+.popup__project {
+  margin: 0;
+  font-weight: 700;
+}
+
+.popup__note {
+  margin: 0;
+  font-size: 12px;
+  color: var(--color-text-muted);
+}

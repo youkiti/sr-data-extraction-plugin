@@ -4,6 +4,10 @@ dist/
 coverage/
 *.zip
 
+# Playwright の実行成果物
+test-results/
+playwright-report/
+
 # 環境変数（OAUTH_CLIENT_ID 等）
 .env
 

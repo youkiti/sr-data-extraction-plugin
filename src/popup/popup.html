@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <title>SR データ抽出</title>
+    <link rel="stylesheet" href="../styles/tokens.css" />
+    <link rel="stylesheet" href="../styles/globals.css" />
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <main class="popup">
+      <h1 class="popup__title">SR データ抽出</h1>
+      <p id="popup-status" class="popup__status">読み込み中…</p>
+      <p id="popup-project" class="popup__project" hidden></p>
+      <button id="open-app" type="button">メインビューを開く</button>
+      <p class="popup__note">
+        プロジェクトの新規作成・切替はスケルトン段階では未実装です（docs/ui-states.md §1 参照）。
+      </p>
+    </main>
+    <script src="popup.js"></script>
+  </body>
+</html>
