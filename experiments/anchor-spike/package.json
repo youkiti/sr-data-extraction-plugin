@@ -1,0 +1,21 @@
+{
+  "name": "anchor-spike",
+  "private": true,
+  "version": "0.1.0",
+  "description": "extract → anchor 技術スパイク（PLAN.md 参照）",
+  "type": "module",
+  "scripts": {
+    "extract-text": "tsx src/extract-text.ts",
+    "run-extract": "tsx src/run-extract.ts",
+    "anchor": "tsx src/anchor-run.ts",
+    "report": "tsx src/report.ts"
+  },
+  "devDependencies": {
+    "dotenv": "^17.4.2",
+    "pdfjs-dist": "^6.1.200",
+    "playwright": "^1.61.1",
+    "playwright-core": "^1.61.1",
+    "tsx": "^4.22.4",
+    "typescript": "^6.0.3"
+  }
+}

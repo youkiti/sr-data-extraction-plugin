@@ -1,0 +1,18 @@
+{
+ "checkedAt": "2026-07-01T23:21:40.178Z",
+ "extensionLoaded": true,
+ "ok": true,
+ "pdfjsVersion": "6.1.200",
+ "pageCount": 10,
+ "renderedPage1": true,
+ "fakeWorker": false,
+ "warnings": [],
+ "page1TextLength": 3471,
+ "consoleErrors": [],
+ "nodeVsBrowser": {
+  "identical": true,
+  "nodeLength": 3471,
+  "browserLength": 3471,
+  "firstDiffIndex": null
+ }
+}

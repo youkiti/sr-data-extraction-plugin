@@ -1,0 +1,21 @@
+# 依存・ビルド成果物（実装フェーズで使用）
+node_modules/
+dist/
+coverage/
+*.zip
+
+# 環境変数（OAUTH_CLIENT_ID 等）
+.env
+
+# E2E / anchoring 用の実論文 PDF fixture
+# 再取得方法は tests/fixtures/pdf/README.md を参照（fetch-pdfs.ps1 で一括取得）
+tests/fixtures/pdf/*.pdf
+
+# anchor-spike の MV3 ハーネスへコピーする vendor / fixture（再現手順は REPORT.md 参照）
+experiments/anchor-spike/mv3-harness/pdf.min.mjs
+experiments/anchor-spike/mv3-harness/pdf.worker.min.mjs
+experiments/anchor-spike/mv3-harness/udca.pdf
+
+# OS / エディタ
+.DS_Store
+Thumbs.db
