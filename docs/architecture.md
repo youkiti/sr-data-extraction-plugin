@@ -9,17 +9,21 @@
 
 ```
 sr-data-extraction-plugin/
+├── .github/workflows/ci.yml       # CI-1（typecheck + lint + jest + dev ビルド。test-strategy.md §4）
 ├── docs/
 │   ├── requirements.md
 │   ├── ui-flow.md
 │   ├── architecture.md            # 本ファイル
-│   └── ui-states.md
+│   ├── ui-states.md
+│   └── test-strategy.md
 ├── src/                           # 全ソース（HTML / CSS / TS が同居。webpack がコピー）
 ├── tests/
 │   ├── setup/                     # jest 共通セットアップ（chrome モック等）
-│   ├── fixtures/                  # テスト用 PDF・テキスト層 fixture
-│   ├── integration/               # 複数機能をまたぐシナリオテスト
-│   └── e2e/                       # Playwright（実装フェーズで追加）
+│   ├── fixtures/                  # テスト用 PDF fixture（test-strategy.md §2.2）
+│   ├── unit/                      # 単体テスト（src/ 構成をミラー）
+│   └── e2e/                       # Playwright（ルート別 spec + axe）
+├── hosted/                        # GitHub Pages でホストする Drive Picker ページ（picker.html + README.md）
+├── tools/                         # 開発補助スクリプト（playwright-server.js 等）
 ├── experiments/                   # 抽出精度ベンチマーク（requirements.md §8。tiab-review の運用を踏襲）
 ├── sr-query-builder-plugin/       # サブモジュール（要件・UI 構成の参照実装）
 ├── tiab-review-plugin/            # サブモジュール（技術スタック・オフライン同期の参照実装）
@@ -27,8 +31,10 @@ sr-data-extraction-plugin/
 ├── .eslintrc.cjs
 ├── .gitignore
 ├── .prettierrc
+├── .stylelintrc.cjs
 ├── jest.config.ts
 ├── package.json
+├── playwright.config.ts
 ├── tsconfig.json
 ├── webpack.config.js
 ├── LICENSE                        # MIT
@@ -66,7 +72,7 @@ src/
 │   │   ├── extractionService.ts   # pilot / full / single_document の実行管理
 │   │   ├── verifyService.ts       # 判定保存 + undo 履歴
 │   │   └── exportService.ts
-│   ├── views/                     # 各ルートの描画関数（render(state): HTMLElement）
+│   ├── views/                     # 各ルートの描画関数（render(state, ctx): HTMLElement。ctx は views/types.ts の ViewContext）
 │   │   ├── homeView.ts
 │   │   ├── documentsView.ts
 │   │   ├── protocolView.ts        # sr-query-builder から移植
@@ -190,7 +196,7 @@ utils
 ### 2.2 UI 実装方針
 
 - UI ライブラリは使わない（既存 2 拡張と揃える）
-- 各 view は「`render(state): HTMLElement` を返す純粋関数」、状態は `app/store.ts` の中央ストアで単方向フロー
+- 各 view は「`render(state, ctx): HTMLElement` を返す純粋関数」（`ctx` は `views/types.ts` の `ViewContext`。サービス呼び出し等の副作用はここ経由）、状態は `app/store.ts` の中央ストアで単方向フロー
 - **例外**: `ui/pdfViewer.ts` は PDF.js の canvas 描画・スクロール位置などリッチな内部状態を持つため、再レンダで破棄されない**長寿命コンポーネント**として実装する（store の再描画から分離。sr-query-builder の `draftRun` / `expandRun` と同じ思想）
 
 ### 2.3 quote アンカリングのデータフロー
