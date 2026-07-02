@@ -50,6 +50,32 @@ npm run dev
 
 ## 1. Picker 動作確認（主目的）
 
+### 1-0. 実施方法: Selenium 半自動ハーネス（推奨）
+
+§1-1〜§1-3 の操作・検証は [tools/selenium/manualCheck.mjs](../tools/selenium/manualCheck.mjs) が
+自動化する。人が行うのは **Google ログイン / OAuth 同意 / Picker のファイル選択**の 3 箇所だけで、
+コンソールが都度案内する（タブが閉じたことなどは自動検知する）。
+
+```
+npm run dev                 # dist/ を生成（.env の OAUTH_CLIENT_ID 必須）
+npm run manual:check -- prepare   # 初回のみ: 専用プロファイルに拡張を手動読込 + Google ログイン
+npm run manual:check              # login → project → picker → verify を順に実行
+npm run manual:check -- cancel    # §1-3 のキャンセル系エッジ
+```
+
+- Chrome 137+ は `--load-extension` フラグが使えないため、`prepare` で開く専用プロファイル
+  （`.selenium-profile/`。gitignore 済み）に **chrome://extensions から dist/ を 1 回手動で読み込む**。
+  以後の実行はこのプロファイルを再利用するため再読込は不要（`npm run dev` し直しても
+  同じフォルダを指すので、chrome://extensions の「更新」だけでよい）
+- 拡張 ID は manifest.json の `key` から決定的に導出され `ibpbkgffgkmdmflamhadbcfjgfljjgip`。
+  ハーネスが起動時に表示するので、GCP の OAuth クライアント「アイテム ID」との一致確認（§0-3）に使う
+- シーン対応: `login` = §1-1 #1〜2 / `project` = #3 / `picker` = #4〜9 + §1-2 #3 の一部 /
+  `verify` = §1-2 #3（`#/home` の batchGet 実弾）/ `cancel` = §1-3 #1〜2。
+  §1-2 #1〜2（Sheets タブ・Drive フォルダの裏取り）と §1-3 #3〜4 は目視で行う
+- 失敗時はブラウザを開いたまま停止するので、そのまま目視確認 → §3 の結果メモへ記録する
+
+以降の表は手動で実施する場合（またはハーネスの結果を照合する場合）のチェックリスト。
+
 ### 1-1. 正常系: 取り込みまで通す
 
 | # | 操作 | 期待結果 | OK |
