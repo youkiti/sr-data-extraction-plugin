@@ -3,6 +3,12 @@
 /** 段階的マッチングの結果区分。Evidence.anchor_status に記録する */
 export type AnchorStatus = 'exact' | 'normalized' | 'fuzzy' | 'failed';
 
+/** テキスト内の文字範囲 [start, end)（UTF-16 オフセット） */
+export interface CharRange {
+  start: number;
+  end: number;
+}
+
 /** 正規化済みのページテキスト（extracted_texts のページ別テキストに共通正規化を適用したもの） */
 export interface NormalizedPage {
   /** 1-indexed ページ番号 */
