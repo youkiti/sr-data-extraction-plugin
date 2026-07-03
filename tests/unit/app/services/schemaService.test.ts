@@ -29,6 +29,7 @@ import type { SchemaEditorRow } from '../../../../src/features/schema/types';
 import { ensureChildFolder, getFileText, uploadTextFile } from '../../../../src/lib/google/drive';
 import { appendLlmApiLog } from '../../../../src/lib/llm/apiLogRepository';
 import type { ChatResponse, LLMProvider } from '../../../../src/lib/llm/LLMProvider';
+import { installChromeMock } from '../../../setup/chrome-mock';
 
 jest.mock('../../../../src/features/schema/schemaRepository', () => ({
   getSchemaFieldsByVersion: jest.fn(),
@@ -286,6 +287,42 @@ describe('loadSchema', () => {
     listVersionsMock.mockRejectedValue('壊れた応答');
     await loadSchema(store, makeDeps().deps, { force: true });
     expect(store.getState().schema.loadError).toBe('壊れた応答');
+  });
+});
+
+describe('loadSchema の既定モデル注入（S11。ui-states.md §2「既定モデル」）', () => {
+  beforeEach(() => {
+    listVersionsMock.mockResolvedValue([]);
+  });
+
+  test('model が空文字なら既定モデル設定で埋める', async () => {
+    const store = makeStore();
+    await loadSchema(store, makeDeps({ loadDefaultModel: async () => 'gemini-2.5-pro' }).deps);
+    expect(store.getState().schema.model).toBe('gemini-2.5-pro');
+  });
+
+  test('既定モデル未設定（null）なら空のまま（回帰なし）', async () => {
+    const store = makeStore();
+    await loadSchema(store, makeDeps({ loadDefaultModel: async () => null }).deps);
+    expect(store.getState().schema.model).toBe('');
+  });
+
+  test('ユーザーが入力済みの model は上書きしない（設定の読み出し自体を行わない）', async () => {
+    const store = makeStore();
+    store.setState({ schema: { ...store.getState().schema, model: 'user-typed-model' } });
+    const loadDefaultModelMock = jest.fn(async () => 'gemini-2.5-pro');
+    await loadSchema(store, makeDeps({ loadDefaultModel: loadDefaultModelMock }).deps);
+    expect(store.getState().schema.model).toBe('user-typed-model');
+    expect(loadDefaultModelMock).not.toHaveBeenCalled();
+  });
+
+  test('deps.loadDefaultModel 未指定なら settingsStore（chrome.storage.local）から読む', async () => {
+    const chromeMock = installChromeMock();
+    chromeMock.storage.local.data['settings.defaultModel'] = 'gemini-2.0-flash';
+    const store = makeStore();
+    await loadSchema(store, makeDeps().deps);
+    expect(store.getState().schema.model).toBe('gemini-2.0-flash');
+    installChromeMock(); // 後続テストへ設定値を持ち越さない
   });
 });
 

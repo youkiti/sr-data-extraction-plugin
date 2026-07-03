@@ -2,7 +2,7 @@
 
 システマティックレビュー（SR）／スコーピングレビューの**データ抽出工程**を支援する、MIT ライセンスの OSS Chrome 拡張です。SR ツール群 3 部作（[sr-query-builder](https://github.com/youkiti/sr-query-builder-plugin) → [tiab-review](https://github.com/youkiti/tiab-review-plugin) → 本拡張）の 3 作目にあたります。
 
-> **開発ステータス**: スケルトン段階（要件定義完了・画面実装はこれから）。正典ドキュメントは [docs/requirements.md](docs/requirements.md) を起点に参照してください。
+> **開発ステータス**: MVP 機能実装済み（S1〜S10。実機通し確認は 2026-07-03 完了）・リリース準備中。正典ドキュメントは [docs/requirements.md](docs/requirements.md) を起点に、残タスクは [docs/remaining-work-plan.md](docs/remaining-work-plan.md) を参照してください。
 
 ## なにをするツールか
 

@@ -53,6 +53,7 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<DocumentsViewCall
   };
   return {
     ctx: {
+      home: { onReload: jest.fn() },
       documents: callbacks,
       protocol,
       schema,

@@ -1,7 +1,7 @@
 # sr-data-extraction-plugin 要件定義書（v0.8）
 
 - **作成日**: 2026-07-02（v0.1）/ **更新**: 2026-07-02（v0.2: 未決定事項を暫定確定に格上げ・関連ドキュメント整備 / v0.3: ユーザーレビュー反映 — Q1・Q4・Q6・Q7・Q9 確定、スキャン PDF 対応方針、規模想定の拡大、Q8 に CESAR 基準を追記 / v0.4: データ設計を再編 — `StudyData`（wide）+ `ResultsData`（long）+ annotator 軸で二重抽出に対応、著作権確認チェック機能を廃止し事前確認の運用へ / v0.5: 整合性レビュー反映 — `Documents` に `source_file_id` を追加しコピー ID と分離、`text_ref` を `no_text_layer` 時のみ空に、AI 出力 JSON を `field_id` 基準に変更、`StudyData` / `ResultsData` の更新キーを明文化、`Decisions` に `schema_version` / 対象 annotator を追加、二重抽出の MVP/P1 境界を明記 / v0.6: `audit.csv` の行形式を確定 — 判定中心デノーマライズ型（1 行 = 1 判定イベント + 未判定セルのプレースホルダ行）、Evidence 添付規則・列仕様・構造的欠損トークン `.` を §4.4 に明文化 / v0.7: 群構成の確定を永続化する `ArmStructures` タブを追加（12 → 13 タブ）— 検証画面冒頭の arm 確定 UI（§4.2）の保存先。1 行 = 1 arm・確定/改訂のたびに全 arm 行を新 version で追記する追記型。`entity_key`（`arm:n`）で `ResultsData` と join でき、メタ解析前処理での流用を想定 / v0.8: 著作権への配慮に関する文言を UI から削除 — 学術研究目的のデータ抽出（テキスト・データマイニング）は著作権法上の権利制限規定（30 条の 4 等）の範囲内であり適法との整理。「著作権フリーのみ対象」という前提記述も廃止。取り込み画面の注意書きは PDF の外部送信先（LLM API のみ）の説明だけを残す）
-- **ステータス**: 要件定義フェーズ（実装未着手）。§10 の Q1〜Q9 はレビュー済み（Q8 の閾値のみベンチマーク設計時に最終確定）
+- **ステータス**: S1〜S10 実装済み・実機通し確認完了（2026-07-03）。残タスクは [docs/remaining-work-plan.md](remaining-work-plan.md) を参照。§10 の Q1〜Q9 はレビュー済み（Q8 の閾値のみベンチマーク設計時に最終確定）
 - **関連ドキュメント**:
   - [docs/ui-flow.md](ui-flow.md) — 画面遷移図モック
   - [docs/architecture.md](architecture.md) — ディレクトリ構造案 / アーキテクチャ概要
