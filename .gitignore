@@ -8,6 +8,10 @@ coverage/
 test-results/
 playwright-report/
 
+# Selenium 実機確認の専用 Chrome プロファイル（tools/selenium/manualCheck.mjs。
+# Google ログイン状態と手動読込した拡張が永続化されるため共有しない）
+.selenium-profile/
+
 # 環境変数（OAUTH_CLIENT_ID 等）
 .env
 

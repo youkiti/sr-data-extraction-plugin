@@ -12,6 +12,8 @@ export interface StudyWideCsvResult {
   skippedDocumentIds: string[];
   /** 未検証（空セル）の個数。エクスポート前の警告ダイアログ（§4.4）に使う */
   unverifiedCellCount: number;
+  /** CSV に行が出た文献数（ExportLog.document_count） */
+  documentCount: number;
 }
 
 export function buildStudyWideCsv(
@@ -44,5 +46,10 @@ export function buildStudyWideCsv(
     }
     csvRows.push(line);
   }
-  return { csv: buildCsv(header, csvRows), skippedDocumentIds, unverifiedCellCount };
+  return {
+    csv: buildCsv(header, csvRows),
+    skippedDocumentIds,
+    unverifiedCellCount,
+    documentCount: csvRows.length, // 1 行 = 1 study
+  };
 }

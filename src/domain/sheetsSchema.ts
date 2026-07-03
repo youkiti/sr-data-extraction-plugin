@@ -1,4 +1,4 @@
-// Google Sheets の 12 タブ定義（requirements.md §3.2）。実 I/O は lib/google/sheets.ts 側で行う。
+// Google Sheets の 13 タブ定義（requirements.md §3.2）。実 I/O は lib/google/sheets.ts 側で行う。
 // Meta / Protocol / LLMApiLog は sr-query-builder のスキーマを流用（ProtocolBlocks は持たない）
 
 export const SHEET_TABS = [
@@ -10,6 +10,7 @@ export const SHEET_TABS = [
   'ExtractionRuns',
   'StudyData',
   'ResultsData',
+  'ArmStructures',
   'Evidence',
   'Decisions',
   'LLMApiLog',
@@ -133,6 +134,16 @@ export const SHEET_HEADERS: Record<SheetTabName, readonly string[]> = {
     'value',
     'not_reported',
     'updated_at',
+  ],
+  ArmStructures: [
+    'document_id',
+    'version',
+    'arm_key',
+    'arm_name',
+    'annotator',
+    'annotator_type',
+    'confirmed_at',
+    'note',
   ],
   Evidence: [
     'evidence_id',

@@ -1,6 +1,7 @@
 // ハッシュルーティングのルート定義（ui-flow.md §2）。
 // 遷移時のガード適用・描画は bootstrap.ts が行い、本ファイルは定義と正規化のみを持つ
 import type { AppState } from './store';
+import type { ViewContext } from './views/types';
 import { renderHomeView } from './views/homeView';
 import { renderDocumentsView } from './views/documentsView';
 import { renderProtocolView } from './views/protocolView';
@@ -26,7 +27,7 @@ export interface RouteDefinition {
   hash: RouteHash;
   /** サイドバー・スクリーンリーダ通知用の表示名 */
   label: string;
-  render(state: AppState): HTMLElement;
+  render(state: AppState, ctx: ViewContext): HTMLElement;
 }
 
 export const ROUTES: RouteDefinition[] = [
@@ -54,4 +55,26 @@ export function normalizeHash(rawHash: string): RouteHash {
 export function findRoute(hash: RouteHash): RouteDefinition {
   // normalizeHash 済みのハッシュのみ渡される前提のため必ず見つかる
   return ROUTES.find((route) => route.hash === hash) as RouteDefinition;
+}
+
+function queryParamOf(rawHash: string, name: string): string | null {
+  const query = rawHash.split('?')[1];
+  if (query === undefined) {
+    return null;
+  }
+  const value = new URLSearchParams(query).get(name);
+  return value === null || value === '' ? null : value;
+}
+
+/** `#/verify?doc={document_id}` の doc クエリを取り出す（ui-flow.md §3） */
+export function docQueryOf(rawHash: string): string | null {
+  return queryParamOf(rawHash, 'doc');
+}
+
+/**
+ * `#/verify?doc=...&entity={entity_key}` の entity クエリを取り出す（ui-flow.md §3 の
+ * セル単位ディープリンク。S9 ダッシュボードのセルクリックが遷移元）
+ */
+export function entityQueryOf(rawHash: string): string | null {
+  return queryParamOf(rawHash, 'entity');
 }
