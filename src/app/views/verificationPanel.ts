@@ -21,6 +21,7 @@ import {
   type EvidenceHighlight,
   type HighlightOccurrence,
 } from '../../features/verification/highlights';
+import { verificationProgress } from '../../features/verification/progress';
 import type { VerificationData } from '../../features/verification/types';
 import type { renderPdfPageToCanvas } from '../../lib/pdf/renderPage';
 import { nowIso8601 } from '../../utils/iso8601';
@@ -341,6 +342,7 @@ export function createVerificationPanel(
           }
         : null,
       armLocked: armLocked(),
+      progress: verificationProgress(data.fields, data.evidence, ownDecisions),
     };
     formPane.replaceChildren(renderVerificationForm(model, handlers));
     if (hadFocus && focusedCellKey !== null && editing === null && !tabLocked(activeTab)) {

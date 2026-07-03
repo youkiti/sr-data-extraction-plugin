@@ -7,6 +7,7 @@ import type { EntityLevel } from '../../domain/schemaField';
 import { NOT_REPORTED_TOKEN } from '../../domain/annotation';
 import type { TabModel, VerificationCell } from '../../features/verification/cells';
 import type { CellStatus } from '../../features/verification/cellState';
+import type { VerificationProgress } from '../../features/verification/progress';
 import { el } from '../ui/dom';
 
 /** セルに対応するハイライトの表示情報（0 件 = ハイライトなし → フォールバック UI） */
@@ -40,6 +41,8 @@ export interface VerificationFormModel {
   armCard: ArmCardModel | null;
   /** true のとき study 以外のタブをディムし、該当タブの本文を確定案内に差し替える */
   armLocked: boolean;
+  /** 全 entity タブ横断の判定進捗（判定のたびに更新。「どこまでやったか」の可視化） */
+  progress: VerificationProgress;
 }
 
 export interface VerificationFormHandlers {
@@ -292,6 +295,36 @@ function renderCell(
   return node;
 }
 
+/**
+ * 判定進捗バー（全 entity タブ横断）。判定のたびに refreshForm で作り直され、
+ * 「判定済み N / 総数 M」と充填バーが即時に更新される（automation bias 対策 UI の一部）
+ */
+function renderProgress(progress: VerificationProgress): HTMLElement {
+  const { decided, total } = progress;
+  const remaining = Math.max(total - decided, 0);
+  const text = el('span', {
+    className: 'verify__progress-text',
+    text:
+      total === 0
+        ? '判定対象の項目がありません'
+        : `判定済み ${decided} / ${total}${remaining > 0 ? `（残り ${remaining}）` : '（すべて判定済み）'}`,
+  });
+  const bar = el('progress', {
+    className: 'verify__progress-bar',
+    // max=0 は無効なので、総数 0 のときはバーを不定表示にしない（value/max とも 1）
+    attributes: { value: String(decided), max: String(Math.max(total, 1)) },
+  });
+  return el(
+    'div',
+    {
+      id: 'verify-progress',
+      className: 'verify__progress',
+      attributes: { role: 'status', 'aria-live': 'polite' },
+    },
+    [text, bar],
+  );
+}
+
 function renderTabs(model: VerificationFormModel, handlers: VerificationFormHandlers): HTMLElement {
   const buttons = model.tabs.map((tab) => {
     const button = el('button', {
@@ -423,7 +456,7 @@ export function renderVerificationForm(
   model: VerificationFormModel,
   handlers: VerificationFormHandlers,
 ): HTMLElement {
-  const children: HTMLElement[] = [renderTabs(model, handlers)];
+  const children: HTMLElement[] = [renderTabs(model, handlers), renderProgress(model.progress)];
   if (model.armCard !== null) {
     children.push(renderArmCard(model.armCard, handlers));
   }

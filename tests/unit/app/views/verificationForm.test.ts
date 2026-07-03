@@ -100,6 +100,7 @@ function makeModel(
     canSearchText: true,
     armCard: null,
     armLocked: false,
+    progress: { decided: 0, total: cells.length },
     ...overrides,
   };
 }
@@ -129,6 +130,34 @@ describe('renderVerificationForm', () => {
     expect(root.querySelector('.verify__empty')?.textContent).toContain(
       'このタブに表示できる項目がありません',
     );
+  });
+
+  test('判定進捗バーを描画する（判定済み / 総数 + 残り）', () => {
+    const { root } = render(
+      makeModel([makeCell()], { progress: { decided: 3, total: 10 } }),
+    );
+    const progress = root.querySelector('#verify-progress');
+    expect(progress?.getAttribute('role')).toBe('status');
+    expect(progress?.getAttribute('aria-live')).toBe('polite');
+    expect(root.querySelector('.verify__progress-text')?.textContent).toBe(
+      '判定済み 3 / 10（残り 7）',
+    );
+    const bar = root.querySelector<HTMLProgressElement>('.verify__progress-bar');
+    expect(bar?.getAttribute('value')).toBe('3');
+    expect(bar?.getAttribute('max')).toBe('10');
+  });
+
+  test('全件判定済みは「すべて判定済み」、総数 0 は対象なしを出す', () => {
+    const done = render(makeModel([makeCell()], { progress: { decided: 5, total: 5 } }));
+    expect(done.root.querySelector('.verify__progress-text')?.textContent).toBe(
+      '判定済み 5 / 5（すべて判定済み）',
+    );
+    // 総数 0 でも progress の max は 1 に落として不定表示を避ける
+    const none = render(makeModel([], { progress: { decided: 0, total: 0 } }));
+    expect(none.root.querySelector('.verify__progress-text')?.textContent).toBe(
+      '判定対象の項目がありません',
+    );
+    expect(none.root.querySelector<HTMLProgressElement>('.verify__progress-bar')?.getAttribute('max')).toBe('1');
   });
 
   test('AI 抽出なしセルは注記を出し、承認を無効化する', () => {

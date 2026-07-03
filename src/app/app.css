@@ -885,6 +885,44 @@
   margin-bottom: 8px;
 }
 
+/* 判定進捗（判定のたびに即時更新。「どこまでやったか」の可視化） */
+.verify__progress {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-surface);
+}
+
+.verify__progress-text {
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.verify__progress-bar {
+  flex: 1;
+  height: 10px;
+}
+
+.verify__progress-bar::-webkit-progress-bar {
+  background: var(--color-bg);
+  border-radius: 5px;
+}
+
+.verify__progress-bar::-webkit-progress-value {
+  background: var(--color-primary);
+  border-radius: 5px;
+}
+
+.verify__progress-bar::-moz-progress-bar {
+  background: var(--color-primary);
+  border-radius: 5px;
+}
+
 .verify__tab {
   border: 1px solid var(--color-border);
   border-radius: 6px 6px 0 0;
