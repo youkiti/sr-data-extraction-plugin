@@ -1,0 +1,307 @@
+// GeminiProvider（API キー方式 / systemInstruction 分離 / 構造化出力）の単体テスト
+// （sr-query-builder から流用。nullable union → nullable 変換のテストを追加）
+import { GeminiProvider, toGeminiSchema } from '../../../../src/lib/llm/GeminiProvider';
+import { LlmProviderError } from '../../../../src/lib/llm/LLMProvider';
+
+function jsonResponse(body: unknown, status = 200): Response {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    json: async () => body,
+    text: async () => JSON.stringify(body),
+  } as Response;
+}
+
+function errorResponse(status: number, body = 'err'): Response {
+  return {
+    ok: false,
+    status,
+    json: async () => ({}),
+    text: async () => body,
+  } as Response;
+}
+
+describe('GeminiProvider.chat', () => {
+  test('user メッセージを contents に渡し、テキストを返す', async () => {
+    const fetch = jest.fn().mockResolvedValue(
+      jsonResponse({
+        candidates: [
+          {
+            content: { parts: [{ text: 'Hello!' }], role: 'model' },
+            finishReason: 'STOP',
+          },
+        ],
+        usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 20 },
+      }),
+    );
+    const provider = new GeminiProvider({ apiKey: 'k', fetch });
+    const result = await provider.chat([{ role: 'user', content: 'hi' }]);
+    expect(result).toEqual({
+      text: 'Hello!',
+      tokensIn: 10,
+      tokensOut: 20,
+      raw: expect.any(Object),
+    });
+    expect(provider.providerId).toBe('gemini');
+    expect(provider.model).toBe('gemini-3.5-flash');
+    const [url, init] = fetch.mock.calls[0];
+    expect(url).toContain('/models/gemini-3.5-flash:generateContent');
+    expect(url).toContain('key=k');
+    const body = JSON.parse((init as RequestInit).body as string);
+    expect(body.contents).toEqual([{ role: 'user', parts: [{ text: 'hi' }] }]);
+    expect(body.systemInstruction).toBeUndefined();
+    expect(body.generationConfig).toBeUndefined();
+  });
+
+  test('system メッセージは systemInstruction に分離される', async () => {
+    const fetch = jest
+      .fn()
+      .mockResolvedValue(jsonResponse({ candidates: [{ content: { parts: [{ text: 'ok' }] } }] }));
+    const provider = new GeminiProvider({ apiKey: 'k', fetch });
+    await provider.chat([
+      { role: 'system', content: 'You are helpful.' },
+      { role: 'user', content: 'q' },
+    ]);
+    const body = JSON.parse((fetch.mock.calls[0][1] as RequestInit).body as string);
+    expect(body.systemInstruction).toEqual({ parts: [{ text: 'You are helpful.' }] });
+    expect(body.contents).toEqual([{ role: 'user', parts: [{ text: 'q' }] }]);
+  });
+
+  test('model ロールはそのまま contents に入る', async () => {
+    const fetch = jest
+      .fn()
+      .mockResolvedValue(jsonResponse({ candidates: [{ content: { parts: [{ text: 'ok' }] } }] }));
+    const provider = new GeminiProvider({ apiKey: 'k', fetch });
+    await provider.chat([
+      { role: 'user', content: 'q1' },
+      { role: 'model', content: 'a1' },
+      { role: 'user', content: 'q2' },
+    ]);
+    const body = JSON.parse((fetch.mock.calls[0][1] as RequestInit).body as string);
+    expect(body.contents.map((c: { role: string }) => c.role)).toEqual(['user', 'model', 'user']);
+  });
+
+  test('temperature / maxOutputTokens / responseFormat=json を generationConfig に反映する', async () => {
+    const fetch = jest
+      .fn()
+      .mockResolvedValue(jsonResponse({ candidates: [{ content: { parts: [{ text: '{}' }] } }] }));
+    const provider = new GeminiProvider({ apiKey: 'k', fetch });
+    await provider.chat([{ role: 'user', content: 'q' }], {
+      temperature: 0.2,
+      maxOutputTokens: 256,
+      responseFormat: 'json',
+    });
+    const body = JSON.parse((fetch.mock.calls[0][1] as RequestInit).body as string);
+    expect(body.generationConfig).toEqual({
+      temperature: 0.2,
+      maxOutputTokens: 256,
+      responseMimeType: 'application/json',
+    });
+  });
+
+  test('responseSchema を渡すと responseMimeType + 変換済み responseSchema を載せる', async () => {
+    const fetch = jest
+      .fn()
+      .mockResolvedValue(jsonResponse({ candidates: [{ content: { parts: [{ text: '{}' }] } }] }));
+    const provider = new GeminiProvider({ apiKey: 'k', fetch });
+    await provider.chat([{ role: 'user', content: 'q' }], {
+      responseFormat: 'json',
+      responseSchema: {
+        type: 'object',
+        properties: { name: { type: 'string' } },
+        required: ['name'],
+        additionalProperties: false,
+      },
+      temperature: 0.3,
+    });
+    const body = JSON.parse((fetch.mock.calls[0][1] as RequestInit).body as string);
+    expect(body.generationConfig.responseMimeType).toBe('application/json');
+    // type は大文字 enum へ、additionalProperties は落ちる
+    expect(body.generationConfig.responseSchema).toEqual({
+      type: 'OBJECT',
+      properties: { name: { type: 'STRING' } },
+      required: ['name'],
+    });
+    expect(body.generationConfig.temperature).toBe(0.3);
+  });
+
+  test('responseFormat=text なら responseMimeType を付けない', async () => {
+    const fetch = jest
+      .fn()
+      .mockResolvedValue(jsonResponse({ candidates: [{ content: { parts: [{ text: '' }] } }] }));
+    const provider = new GeminiProvider({ apiKey: 'k', fetch });
+    await provider.chat([{ role: 'user', content: 'q' }], { responseFormat: 'text' });
+    const body = JSON.parse((fetch.mock.calls[0][1] as RequestInit).body as string);
+    expect(body.generationConfig).toBeUndefined();
+  });
+
+  test('複数 parts は連結してテキスト化、空 parts は除外', async () => {
+    const fetch = jest.fn().mockResolvedValue(
+      jsonResponse({
+        candidates: [{ content: { parts: [{ text: 'foo' }, { text: '' }, { text: 'bar' }] } }],
+      }),
+    );
+    const provider = new GeminiProvider({ apiKey: 'k', fetch });
+    const r = await provider.chat([{ role: 'user', content: 'q' }]);
+    expect(r.text).toBe('foobar');
+  });
+
+  test('candidates が無い場合は空文字', async () => {
+    const fetch = jest.fn().mockResolvedValue(jsonResponse({}));
+    const provider = new GeminiProvider({ apiKey: 'k', fetch });
+    const r = await provider.chat([{ role: 'user', content: 'q' }]);
+    expect(r.text).toBe('');
+    expect(r.tokensIn).toBeNull();
+    expect(r.tokensOut).toBeNull();
+  });
+
+  test('parts に text が無いキーがあっても落ちない', async () => {
+    const fetch = jest
+      .fn()
+      .mockResolvedValue(jsonResponse({ candidates: [{ content: { parts: [{}] } }] }));
+    const provider = new GeminiProvider({ apiKey: 'k', fetch });
+    const r = await provider.chat([{ role: 'user', content: 'q' }]);
+    expect(r.text).toBe('');
+  });
+
+  test('model オプションを反映する', async () => {
+    const fetch = jest
+      .fn()
+      .mockResolvedValue(jsonResponse({ candidates: [{ content: { parts: [{ text: 'ok' }] } }] }));
+    const provider = new GeminiProvider({ apiKey: 'k', model: 'gemini-2.5-pro', fetch });
+    await provider.chat([{ role: 'user', content: 'q' }]);
+    const url = fetch.mock.calls[0][0] as string;
+    expect(url).toContain('/models/gemini-2.5-pro:');
+  });
+
+  test('HTTP エラーは LlmProviderError', async () => {
+    const fetch = jest.fn().mockResolvedValue(errorResponse(429, 'rate limit'));
+    const provider = new GeminiProvider({ apiKey: 'k', fetch });
+    try {
+      await provider.chat([{ role: 'user', content: 'q' }]);
+      throw new Error('should have thrown');
+    } catch (err) {
+      expect(err).toBeInstanceOf(LlmProviderError);
+      const e = err as LlmProviderError;
+      expect(e.status).toBe(429);
+      expect(e.responseBody).toBe('rate limit');
+      expect(e.providerId).toBe('gemini');
+    }
+  });
+
+  test('text() が失敗しても空文字で吸収して LlmProviderError を投げる', async () => {
+    const failingRes = {
+      ok: false,
+      status: 500,
+      json: async () => ({}),
+      text: async (): Promise<string> => {
+        throw new Error('net');
+      },
+    } as Response;
+    const fetch = jest.fn().mockResolvedValue(failingRes);
+    const provider = new GeminiProvider({ apiKey: 'k', fetch });
+    await expect(provider.chat([{ role: 'user', content: 'q' }])).rejects.toMatchObject({
+      status: 500,
+      responseBody: '',
+    });
+  });
+
+  test('既定の fetch を使ったコンストラクタ（注入なし）', () => {
+    // fetch が globalThis に無い jsdom 環境では作るだけは成功する
+    const provider = new GeminiProvider({ apiKey: 'k' });
+    expect(provider.providerId).toBe('gemini');
+  });
+
+  test('fetch 未注入なら globalThis.fetch にフォールバックする', async () => {
+    const stub = jest
+      .fn()
+      .mockResolvedValue(jsonResponse({ candidates: [{ content: { parts: [{ text: 'ok' }] } }] }));
+    const original = (globalThis as { fetch?: typeof fetch }).fetch;
+    (globalThis as { fetch?: typeof fetch }).fetch = stub as unknown as typeof fetch;
+    try {
+      const provider = new GeminiProvider({ apiKey: 'k' });
+      const r = await provider.chat([{ role: 'user', content: 'q' }]);
+      expect(r.text).toBe('ok');
+      expect(stub).toHaveBeenCalled();
+    } finally {
+      if (original === undefined) {
+        delete (globalThis as { fetch?: typeof fetch }).fetch;
+      } else {
+        (globalThis as { fetch?: typeof fetch }).fetch = original;
+      }
+    }
+  });
+});
+
+describe('toGeminiSchema', () => {
+  test('type を大文字 enum に写し、未対応キーを落とす', () => {
+    expect(
+      toGeminiSchema({
+        type: 'object',
+        properties: {
+          summary: { type: 'string', description: 'd' },
+          items: { type: 'array', items: { type: 'string' } },
+        },
+        required: ['summary', 'items'],
+        additionalProperties: false,
+        $schema: 'http://json-schema.org/draft-07/schema#',
+      }),
+    ).toEqual({
+      type: 'OBJECT',
+      properties: {
+        summary: { type: 'STRING', description: 'd' },
+        items: { type: 'ARRAY', items: { type: 'STRING' } },
+      },
+      required: ['summary', 'items'],
+    });
+  });
+
+  test('enum はそのまま保持する', () => {
+    expect(toGeminiSchema({ type: 'string', enum: ['a', 'b'] })).toEqual({
+      type: 'STRING',
+      enum: ['a', 'b'],
+    });
+  });
+
+  test('nullable union（type: [T, null]）は type + nullable: true に写す', () => {
+    expect(toGeminiSchema({ type: ['string', 'null'] })).toEqual({
+      type: 'STRING',
+      nullable: true,
+    });
+    expect(toGeminiSchema({ type: ['integer', 'null'] })).toEqual({
+      type: 'INTEGER',
+      nullable: true,
+    });
+  });
+
+  test('null を含まない配列 type は単型として写し、nullable を付けない', () => {
+    expect(toGeminiSchema({ type: ['string'] })).toEqual({ type: 'STRING' });
+  });
+
+  test('解決できない配列 type（多型 union / 未知型）は type ごと落とす', () => {
+    expect(toGeminiSchema({ type: ['string', 'integer'] })).toEqual({});
+    expect(toGeminiSchema({ type: ['mystery', 'null'] })).toEqual({});
+  });
+
+  test('type が文字列でも配列でもない場合は落とす', () => {
+    expect(toGeminiSchema({ type: 42 })).toEqual({});
+  });
+
+  test('未知の型名（文字列）は type ごと落とす', () => {
+    expect(toGeminiSchema({ type: 'mystery' })).toEqual({});
+  });
+
+  test('enum の null は取り除いて nullable: true に写す（extract-data の confidence）', () => {
+    expect(toGeminiSchema({ type: ['string', 'null'], enum: ['high', 'medium', 'low', null] })).toEqual(
+      {
+        type: 'STRING',
+        nullable: true,
+        enum: ['high', 'medium', 'low'],
+      },
+    );
+  });
+
+  test('enum が配列でない場合はそのまま通す（プロバイダ側でエラーにさせる）', () => {
+    expect(toGeminiSchema({ enum: 'oops' })).toEqual({ enum: 'oops' });
+  });
+});

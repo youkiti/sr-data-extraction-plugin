@@ -62,6 +62,12 @@ module.exports = (_env, argv) => {
           { from: '**/*.css', context: 'src' },
           { from: '_locales', to: '_locales', context: 'src' },
           { from: 'icons', to: 'icons', context: 'src' },
+          {
+            // PDF.js worker は拡張に同梱する（CDN 不可・MV3 CSP 準拠。architecture.md §3.1）。
+            // 実行時は chrome.runtime.getURL('pdf.worker.min.mjs') で解決する
+            from: 'node_modules/pdfjs-dist/build/pdf.worker.min.mjs',
+            to: 'pdf.worker.min.mjs',
+          },
         ],
       }),
     ],

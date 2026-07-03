@@ -7,7 +7,7 @@ import {
 } from '../../../src/domain/sheetsSchema';
 
 describe('SHEET_TABS', () => {
-  test('requirements.md §3.2 の 12 タブを定義順に持つ', () => {
+  test('requirements.md §3.2 の 13 タブを定義順に持つ', () => {
     expect(SHEET_TABS).toEqual([
       'Meta',
       'Protocol',
@@ -17,6 +17,7 @@ describe('SHEET_TABS', () => {
       'ExtractionRuns',
       'StudyData',
       'ResultsData',
+      'ArmStructures',
       'Evidence',
       'Decisions',
       'LLMApiLog',
@@ -88,6 +89,19 @@ describe('SHEET_HEADERS', () => {
     for (const key of ['annotator', 'annotator_type', 'schema_version', 'action']) {
       expect(SHEET_HEADERS.Decisions).toContain(key);
     }
+  });
+
+  test('ArmStructures は群構成の確定行（version + arm_key + arm_name + annotator）を持つ', () => {
+    expect(SHEET_HEADERS.ArmStructures).toEqual([
+      'document_id',
+      'version',
+      'arm_key',
+      'arm_name',
+      'annotator',
+      'annotator_type',
+      'confirmed_at',
+      'note',
+    ]);
   });
 });
 

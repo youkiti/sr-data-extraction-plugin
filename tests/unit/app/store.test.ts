@@ -1,7 +1,7 @@
 import { createInitialState, createStore } from '../../../src/app/store';
 
 describe('createInitialState', () => {
-  test('プロジェクト未選択・全カウント 0 で開始する', () => {
+  test('プロジェクト未選択・全カウント 0・documents / protocol 未読込で開始する', () => {
     expect(createInitialState()).toEqual({
       currentProject: null,
       counts: {
@@ -11,6 +11,106 @@ describe('createInitialState', () => {
         pilotRuns: 0,
         evidenceRows: 0,
         dataRows: 0,
+      },
+      home: {
+        countsLoaded: false,
+        countsLoading: false,
+        countsError: null,
+      },
+      documents: {
+        records: null,
+        loading: false,
+        loadError: null,
+        importing: false,
+        importRows: [],
+      },
+      protocol: {
+        records: null,
+        loading: false,
+        loadError: null,
+        saving: false,
+        saveError: null,
+        editing: false,
+        selectedVersion: null,
+        draftText: '',
+      },
+      schema: {
+        versions: null,
+        currentFields: null,
+        loading: false,
+        loadError: null,
+        drafting: false,
+        draftElapsedSeconds: 0,
+        draftError: null,
+        selectedDocumentIds: [],
+        model: '',
+        editorRows: null,
+        editorErrors: [],
+        editorOrigin: 'user_edit',
+        confirming: false,
+      },
+      pilot: {
+        selectedDocumentIds: [],
+        selectionInitialized: false,
+        model: '',
+        running: false,
+        progress: null,
+        runError: null,
+        run: null,
+        runFields: null,
+        evidence: null,
+        batchFailures: [],
+        rejectedCount: 0,
+        verifyDocumentId: null,
+        verification: null,
+        verifyLoading: false,
+        verifyError: null,
+        studyValues: null,
+        queuedDecisions: 0,
+      },
+      extract: {
+        selectedDocumentIds: [],
+        selectionInitialized: false,
+        model: '',
+        extractedDocumentIds: null,
+        loading: false,
+        loadError: null,
+        confirming: false,
+        running: false,
+        docRows: [],
+        progress: null,
+        runError: null,
+        run: null,
+        rejectedCount: 0,
+        retryingDocumentId: null,
+      },
+      verify: {
+        targets: null,
+        loading: false,
+        loadError: null,
+        selectedDocumentId: null,
+        deepLinkEntityKey: null,
+        verification: null,
+        verifyLoading: false,
+        verifyError: null,
+        studyValues: null,
+        queuedDecisions: 0,
+      },
+      dashboard: {
+        data: null,
+        loading: false,
+        loadError: null,
+      },
+      export: {
+        format: 'study_wide',
+        built: null,
+        schemaVersion: null,
+        loading: false,
+        loadError: null,
+        confirmingWarning: false,
+        generating: false,
+        generateError: null,
+        result: null,
       },
     });
   });
@@ -22,7 +122,7 @@ describe('createStore', () => {
     const listener = jest.fn();
     store.subscribe(listener);
 
-    const project = { spreadsheetId: 's1', name: 'P' };
+    const project = { projectId: 'p1', spreadsheetId: 's1', driveFolderId: 'f1', name: 'P' };
     store.setState({ currentProject: project });
 
     expect(store.getState().currentProject).toEqual(project);
@@ -36,7 +136,7 @@ describe('createStore', () => {
     const listener = jest.fn();
     const unsubscribe = store.subscribe(listener);
     unsubscribe();
-    store.setState({ currentProject: { spreadsheetId: 's1', name: 'P' } });
+    store.setState({ currentProject: { projectId: 'p1', spreadsheetId: 's1', driveFolderId: 'f1', name: 'P' } });
     expect(listener).not.toHaveBeenCalled();
   });
 

@@ -1,0 +1,194 @@
+import { rateText, renderDashboardView } from '../../../../src/app/views/dashboardView';
+import { createInitialState, type AppState } from '../../../../src/app/store';
+import type { DashboardViewCallbacks, ViewContext } from '../../../../src/app/views/types';
+import type { DashboardData } from '../../../../src/features/verification/dashboard';
+
+function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<DashboardViewCallbacks> } {
+  const callbacks = { onReload: jest.fn() };
+  return {
+    ctx: {
+      home: { onReload: jest.fn() },
+      documents: { onImport: jest.fn(), onReload: jest.fn(), onSaveStudyLabel: jest.fn() },
+      protocol: {
+        onSubmit: jest.fn(),
+        onStartEdit: jest.fn(),
+        onCancelEdit: jest.fn(),
+        onSelectVersion: jest.fn(),
+        onReload: jest.fn(),
+      },
+      schema: {
+        onReload: jest.fn(),
+        onToggleSample: jest.fn(),
+        onChangeModel: jest.fn(),
+        onRunDraft: jest.fn(),
+        onEditRow: jest.fn(),
+        onAddRow: jest.fn(),
+        onRemoveRow: jest.fn(),
+        onInsertPreset: jest.fn(),
+        onConfirm: jest.fn(),
+        onCancelEditor: jest.fn(),
+        onStartNewVersion: jest.fn(),
+      },
+      pilot: {
+        onToggleDocument: jest.fn(),
+        onChangeModel: jest.fn(),
+        onRun: jest.fn(),
+        onSelectVerifyDocument: jest.fn(),
+        onRetryVerifyLoad: jest.fn(),
+        onDecision: jest.fn(),
+        onArmConfirm: jest.fn(),
+      },
+      extract: {
+        onToggleDocument: jest.fn(),
+        onChangeModel: jest.fn(),
+        onRequestRun: jest.fn(),
+        onConfirmRun: jest.fn(),
+        onCancelConfirm: jest.fn(),
+        onRetryDocument: jest.fn(),
+        onReloadTargets: jest.fn(),
+      },
+      verify: {
+        onSelectDocument: jest.fn(),
+        onRetryLoad: jest.fn(),
+        onDecision: jest.fn(),
+        onArmConfirm: jest.fn(),
+      },
+      dashboard: callbacks,
+      export: {
+        onSelectFormat: jest.fn(),
+        onGenerate: jest.fn(),
+        onConfirmGenerate: jest.fn(),
+        onCancelGenerate: jest.fn(),
+        onDownload: jest.fn(),
+        onReload: jest.fn(),
+      },
+    },
+    callbacks,
+  };
+}
+
+function makeData(overrides: Partial<DashboardData> = {}): DashboardData {
+  return {
+    sections: ['methods', 'outcomes'],
+    rows: [
+      {
+        documentId: 'doc-1',
+        studyLabel: 'Smith 2020',
+        cells: [
+          { section: 'methods', decided: 1, total: 2, entityKey: '-' },
+          { section: 'outcomes', decided: 0, total: 3, entityKey: 'arm:1' },
+        ],
+        progress: { decided: 1, total: 5 },
+        anchor: { numerator: 1, denominator: 4 },
+        notReported: { numerator: 0, denominator: 5 },
+      },
+      {
+        documentId: 'doc 2', // URL エンコード確認用の空白入り ID
+        studyLabel: 'Jones 2021',
+        cells: [null, { section: 'outcomes', decided: 0, total: 0, entityKey: null }],
+        progress: { decided: 0, total: 0 },
+        anchor: { numerator: 0, denominator: 0 },
+        notReported: { numerator: 0, denominator: 0 },
+      },
+    ],
+    totals: {
+      progress: { decided: 1, total: 5 },
+      anchor: { numerator: 1, denominator: 4 },
+      notReported: { numerator: 0, denominator: 5 },
+    },
+    ...overrides,
+  };
+}
+
+function makeState(patch: Partial<AppState['dashboard']> = {}): AppState {
+  const state = createInitialState();
+  state.currentProject = {
+    projectId: 'p1',
+    spreadsheetId: 's1',
+    driveFolderId: 'f1',
+    name: 'テスト SR',
+  };
+  state.dashboard = { ...state.dashboard, ...patch };
+  return state;
+}
+
+describe('rateText', () => {
+  test('分母 0 は「—」、それ以外は n / m（%）', () => {
+    expect(rateText({ numerator: 0, denominator: 0 })).toBe('—');
+    expect(rateText({ numerator: 1, denominator: 4 })).toBe('1 / 4（25%）');
+  });
+});
+
+describe('renderDashboardView', () => {
+  test('読み込み中（data 未読込 / loading = true）は #dashboard-loading', () => {
+    const { ctx } = makeCtx();
+    const unloaded = renderDashboardView(makeState(), ctx);
+    expect(unloaded.querySelector('#dashboard-loading')?.textContent).toContain(
+      '進捗を読み込んでいます',
+    );
+    const loading = renderDashboardView(makeState({ data: makeData(), loading: true }), ctx);
+    expect(loading.querySelector('#dashboard-loading')).not.toBeNull();
+    expect(loading.querySelector('#dashboard-matrix')).toBeNull();
+  });
+
+  test('読み込み失敗は #dashboard-load-error + 再読み込み', () => {
+    const { ctx, callbacks } = makeCtx();
+    const root = renderDashboardView(makeState({ loadError: '権限がありません' }), ctx);
+    const error = root.querySelector('#dashboard-load-error');
+    expect(error?.getAttribute('role')).toBe('alert');
+    expect(error?.textContent).toContain('権限がありません');
+    (root.querySelector('#dashboard-reload') as HTMLButtonElement).click();
+    expect(callbacks.onReload).toHaveBeenCalled();
+  });
+
+  test('0 件は #dashboard-empty + #/extract への導線', () => {
+    const { ctx } = makeCtx();
+    const root = renderDashboardView(
+      makeState({ data: makeData({ rows: [], sections: [] }) }),
+      ctx,
+    );
+    expect(root.querySelector('#dashboard-empty')?.textContent).toContain('まだ抽出がありません');
+    expect(root.querySelector('#dashboard-empty a')?.getAttribute('href')).toBe('#/extract');
+  });
+
+  test('通常: サマリに検証進捗・anchor 失敗率・not_reported 率を出す', () => {
+    const { ctx } = makeCtx();
+    const root = renderDashboardView(makeState({ data: makeData() }), ctx);
+    const summary = root.querySelector('#dashboard-summary');
+    expect(summary?.textContent).toContain('検証進捗');
+    expect(summary?.textContent).toContain('1 / 5（20%）');
+    expect(summary?.textContent).toContain('anchor 失敗率');
+    expect(summary?.textContent).toContain('1 / 4（25%）');
+    expect(summary?.textContent).toContain('not_reported 率');
+    expect(summary?.textContent).toContain('0 / 5（0%）');
+  });
+
+  test('通常: マトリクスは行見出し = study_label、セル = ディープリンク付き判定数', () => {
+    const { ctx } = makeCtx();
+    const root = renderDashboardView(makeState({ data: makeData() }), ctx);
+    const matrix = root.querySelector('#dashboard-matrix') as HTMLTableElement;
+    const headers = [...matrix.querySelectorAll('thead th')].map((th) => th.textContent);
+    expect(headers).toEqual(['文献', 'methods', 'outcomes', 'anchor 失敗率', 'not_reported 率']);
+
+    const row1 = matrix.querySelectorAll('tbody tr')[0] as HTMLTableRowElement;
+    expect(row1.querySelector('th')?.textContent).toBe('Smith 2020（1 / 5）');
+    const links = [...row1.querySelectorAll('a')];
+    expect(links.map((a) => a.textContent)).toEqual(['1 / 2', '0 / 3']);
+    expect(links[0]?.getAttribute('href')).toBe('#/verify?doc=doc-1&entity=-');
+    expect(links[1]?.getAttribute('href')).toBe('#/verify?doc=doc-1&entity=arm%3A1');
+    expect(links[0]?.getAttribute('aria-label')).toBe(
+      'Smith 2020 の methods を検証（判定済み 1 / 2）',
+    );
+  });
+
+  test('通常: スキーマに無い section とセル 0 件は「—」でリンクなし、率の分母 0 も「—」', () => {
+    const { ctx } = makeCtx();
+    const root = renderDashboardView(makeState({ data: makeData() }), ctx);
+    const row2 = root.querySelectorAll('#dashboard-matrix tbody tr')[1] as HTMLTableRowElement;
+    expect(row2.querySelectorAll('a')).toHaveLength(0);
+    const cells = [...row2.querySelectorAll('td')].map((td) => td.textContent);
+    expect(cells).toEqual(['—', '—', '—', '—']);
+    // 空白入り document_id の行見出し（リンクは無いが表示は保つ）
+    expect(row2.querySelector('th')?.textContent).toBe('Jones 2021（0 / 0）');
+  });
+});

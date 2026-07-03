@@ -84,6 +84,7 @@ describe('buildResultsLongCsv', () => {
     );
     expect(result.skippedDocumentIds).toEqual([]);
     expect(result.droppedRowCount).toBe(0);
+    expect(result.documentCount).toBe(1);
   });
 
   test('not_reported 行は value 空 + true になる', () => {
@@ -121,5 +122,15 @@ describe('buildResultsLongCsv', () => {
     const result = buildResultsLongCsv(documents, [], [field('f1', 'event_count', 1)]);
     expect(result.skippedDocumentIds).toEqual([]);
     expect(result.droppedRowCount).toBe(0);
+    expect(result.documentCount).toBe(0);
+  });
+
+  test('行が全て除外された study は documentCount に数えない', () => {
+    const documents = [doc('d1', 'Smith 2020'), doc('d2', 'Doe 2019')];
+    const fields = [field('f1', 'event_count', 1)];
+    const rows = [resultRow('d1', 'f1', 'arm:1', '5'), resultRow('d2', 'f-unknown', 'arm:1', '9')];
+    const result = buildResultsLongCsv(documents, rows, fields);
+    expect(result.documentCount).toBe(1);
+    expect(result.droppedRowCount).toBe(1);
   });
 });

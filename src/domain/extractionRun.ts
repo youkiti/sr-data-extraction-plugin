@@ -8,6 +8,12 @@ export type InputMode = 'pdf_native' | 'text_only';
 
 export type RunStatus = 'queued' | 'running' | 'done' | 'partial_failure';
 
+/**
+ * audit.csv の Evidence 結合（buildAuditCsv）と runRepository.readRunAuditInfos が共有する
+ * run の最小情報。schema_version の突合と started_at の新旧比較にだけ使う
+ */
+export type RunAuditInfo = Pick<ExtractionRun, 'runId' | 'schemaVersion' | 'startedAt'>;
+
 export interface ExtractionRun {
   runId: string;
   runType: RunType;

@@ -2,11 +2,11 @@
 
 システマティックレビュー（SR）／スコーピングレビューの**データ抽出工程**を支援する、MIT ライセンスの OSS Chrome 拡張です。SR ツール群 3 部作（[sr-query-builder](https://github.com/youkiti/sr-query-builder-plugin) → [tiab-review](https://github.com/youkiti/tiab-review-plugin) → 本拡張）の 3 作目にあたります。
 
-> **開発ステータス**: スケルトン段階（要件定義完了・画面実装はこれから）。正典ドキュメントは [docs/requirements.md](docs/requirements.md) を起点に参照してください。
+> **開発ステータス**: MVP 機能実装済み（S1〜S10。実機通し確認は 2026-07-03 完了）・リリース準備中。正典ドキュメントは [docs/requirements.md](docs/requirements.md) を起点に、残タスクは [docs/remaining-work-plan.md](docs/remaining-work-plan.md) を参照してください。
 
 ## なにをするツールか
 
-1. Google Drive 上の**著作権フリー（OA / パブリックドメイン）採用論文 PDF** と研究プロトコルから、AI が抽出スキーマ（コーディングシート）をドラフト
+1. Google Drive 上の**採用論文 PDF** と研究プロトコルから、AI が抽出スキーマ（コーディングシート）をドラフト
 2. AI が各論文からスキーマに沿ってデータを抽出し、各値に**根拠となる本文箇所（verbatim quote）**を付与
 3. PDF.js ビューア上で根拠箇所を**ハイライト表示**
 4. 研究者がハイライトを目視確認しながら **accept / edit / reject / not_reported** で最終判定（全判断の監査証跡を記録）
@@ -36,7 +36,7 @@ flowchart LR
 ```
 
 - OAuth スコープは `spreadsheets` と `drive.file` のみ。`drive.file` により、アクセスできるのは**ユーザーが Picker で明示的に選択したファイルと拡張が作成したファイルだけ**です（Drive 全体を読むスコープは要求しません）
-- 取り込む PDF が著作権フリー / 利用許諾済みであることは、ユーザーが取り込み前に確認する運用です（詳細: [docs/requirements.md §1.5](docs/requirements.md)）
+- 学術研究目的のデータ抽出（テキスト・データマイニング）は著作権法上の権利制限規定（30 条の 4 等）の範囲内であり適法との整理です。PDF が外部へ送信されるのは LLM API への抽出リクエストのみです（詳細: [docs/requirements.md §1.5](docs/requirements.md)）
 
 ## 開発セットアップ
 

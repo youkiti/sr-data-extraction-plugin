@@ -81,6 +81,7 @@ describe('buildStudyWideCsv', () => {
     );
     expect(result.skippedDocumentIds).toEqual([]);
     expect(result.unverifiedCellCount).toBe(0);
+    expect(result.documentCount).toBe(2);
   });
 
   test('未検証セル（null / 値未設定）を数える。NR は未報告であり数えない', () => {
@@ -101,5 +102,6 @@ describe('buildStudyWideCsv', () => {
     const result = buildStudyWideCsv(documents, rows, fields);
     expect(result.skippedDocumentIds).toEqual(['d1', 'd2']);
     expect(result.csv).toBe(`${CSV_BOM}study_label,country\r\n`);
+    expect(result.documentCount).toBe(0);
   });
 });
