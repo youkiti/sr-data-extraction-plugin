@@ -1,11 +1,13 @@
 # CI-1（docs/test-strategy.md §4）: typecheck + jest（カバレッジ 100% 込み）+ lint + lint:css + dev ビルド。
-# Playwright E2E は CI-2（フェーズ 2〜3 で spec が安定してから）で追加する
+# CI-2 導入済み（2026-07-03）: Playwright E2E を e2e ジョブとして check と並列実行する
 name: CI
 
 on:
   push:
     branches: [master]
   pull_request:
+  # push トリガーは master のみのため、作業ブランチ上で手動実行して green を確認する用途
+  workflow_dispatch:
 
 jobs:
   check:
@@ -28,3 +30,19 @@ jobs:
         run: npm test
       - name: dev ビルド検証（作業原則 7）
         run: npm run dev
+
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: 依存関係のインストール
+        run: npm ci
+      - name: Playwright ブラウザの取得
+        run: npx playwright install --with-deps chromium
+      # E2E は spec 内で合成する minimal PDF を stub 配信するため、実 PDF fixture の取得（fetch-pdfs.ps1）は不要
+      - name: Playwright E2E
+        run: npm run test:e2e
