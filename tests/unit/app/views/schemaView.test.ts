@@ -260,6 +260,22 @@ describe('renderSchemaView', () => {
   });
 
   describe('編集中（editorRows != null）', () => {
+    test('data_type の凡例（型ごとの説明 + 例）をボタン下に表示する', () => {
+      const { ctx } = makeCtx();
+      const view = renderSchemaView(
+        makeState({ versions: [], editorRows: [makeEditorRow()] }),
+        ctx,
+      );
+      const help = view.querySelector('#schema-datatype-help');
+      expect(help?.textContent).toContain('data_type の種類');
+      expect(help?.textContent).toContain('text = 自由記述の文字列（例: プラセボ対照）');
+      expect(help?.textContent).toContain('integer = 整数（例: 120）');
+      expect(help?.textContent).toContain('float = 小数を含む数値（例: 12.5）');
+      expect(help?.textContent).toContain('boolean = はい / いいえの 2 値（例: TRUE）');
+      expect(help?.textContent).toContain('「許容値」列に | 区切りで指定');
+      expect(help?.textContent).toContain('date = 日付（例: 2024-01-15）');
+    });
+
     test('行の各セルが値を持ち、change で onEditRow に patch を渡す', () => {
       const { ctx, callbacks } = makeCtx();
       const view = renderSchemaView(

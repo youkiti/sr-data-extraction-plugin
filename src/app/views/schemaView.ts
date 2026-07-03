@@ -14,6 +14,16 @@ import type { ViewContext } from './types';
 const ENTITY_LEVELS: readonly EntityLevel[] = ['study', 'arm', 'outcome_result', 'rob_domain'];
 const DATA_TYPES: readonly FieldDataType[] = ['text', 'integer', 'float', 'boolean', 'enum', 'date'];
 
+/** data_type 列の凡例（表形式エディタのボタン下に常時表示） */
+const DATA_TYPE_DESCRIPTIONS: Record<FieldDataType, string> = {
+  text: '自由記述の文字列（例: プラセボ対照）',
+  integer: '整数（例: 120）',
+  float: '小数を含む数値（例: 12.5）',
+  boolean: 'はい / いいえの 2 値（例: TRUE）',
+  enum: '決まった選択肢から 1 つ。「許容値」列に | 区切りで指定（例: high|some|low）',
+  date: '日付（例: 2024-01-15）',
+};
+
 const CREATED_BY_TYPE_LABELS: Record<SchemaVersion['createdByType'], string> = {
   ai_draft: 'AI ドラフト',
   user_edit: '手動編集',
@@ -318,6 +328,17 @@ function renderEditor(
   cancelButton.disabled = schema.confirming;
   cancelButton.addEventListener('click', () => ctx.schema.onCancelEditor());
 
+  const dataTypeHelp = el('div', { id: 'schema-datatype-help', className: 'schema__datatype-help' }, [
+    el('span', { className: 'schema__datatype-help-title', text: 'data_type の種類:' }),
+    el(
+      'ul',
+      { className: 'schema__datatype-help-list' },
+      DATA_TYPES.map((type) =>
+        el('li', {}, [el('code', { text: type }), ` = ${DATA_TYPE_DESCRIPTIONS[type]}`]),
+      ),
+    ),
+  ]);
+
   const children: HTMLElement[] = [
     el('h3', { text: `スキーマ編集（${rows.length} 項目）` }),
     el('div', { className: 'schema__editor-actions' }, [
@@ -325,6 +346,7 @@ function renderEditor(
       presetBinary,
       presetContinuous,
     ]),
+    dataTypeHelp,
     el('div', { className: 'schema__table-wrap' }, [table]),
   ];
   if (errorItems.length > 0) {

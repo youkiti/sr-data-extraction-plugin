@@ -471,6 +471,30 @@
   margin: 8px 0;
 }
 
+/* data_type の凡例（エディタのボタン下。muted で本文の邪魔をしない） */
+.schema__datatype-help {
+  margin: 4px 0 8px;
+  font-size: 13px;
+  color: var(--color-text-muted);
+}
+
+.schema__datatype-help-title {
+  font-weight: 700;
+}
+
+.schema__datatype-help-list {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 16px;
+}
+
+.schema__datatype-help-list code {
+  font-weight: 700;
+}
+
 .schema__primary {
   background: var(--color-primary);
   color: var(--color-on-primary);
