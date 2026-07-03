@@ -24,6 +24,25 @@
         </div>
       </section>
       <section class="options__section">
+        <h2>既定モデル</h2>
+        <p class="options__help">
+          S5 スキーマ画面の初期値になります。単価表にないモデルはコスト概算が表示されません。
+        </p>
+        <p id="default-model-status" class="options__status">読み込み中…</p>
+        <div class="options__row">
+          <label for="default-model">既定モデル</label>
+          <input
+            id="default-model"
+            type="text"
+            list="default-model-candidates"
+            autocomplete="off"
+            placeholder="例: gemini-2.5-pro"
+          />
+          <datalist id="default-model-candidates"></datalist>
+          <button id="save-default-model" type="button">保存</button>
+        </div>
+      </section>
+      <section class="options__section">
         <h2>表示言語</h2>
         <div class="options__row">
           <label for="ui-language">言語</label>

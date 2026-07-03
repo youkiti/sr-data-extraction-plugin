@@ -34,6 +34,7 @@ import { withLogging } from '../../lib/llm/apiLogger';
 import type { LLMProvider } from '../../lib/llm/LLMProvider';
 import type { ProviderConfig } from '../../lib/llm/providerFactory';
 import { withRetry } from '../../lib/llm/retry';
+import { loadDefaultModel } from '../../lib/storage/settingsStore';
 import type { SchemaState, Store } from '../store';
 import { showToast } from '../ui/toast';
 
@@ -44,6 +45,8 @@ export interface SchemaServiceDeps {
   loadApiKey: () => Promise<string | null>;
   /** provider 生成（実行時は lib/llm/providerFactory.createProvider。テストは fake を注入） */
   buildProvider: (config: ProviderConfig) => LLMProvider;
+  /** Options の既定モデル設定を解決する（未指定は lib/storage/settingsStore.loadDefaultModel） */
+  loadDefaultModel?: () => Promise<string | null>;
   newUuid?: () => string;
   now?: () => string;
 }
@@ -104,9 +107,16 @@ export async function loadSchema(
             latest.schemaVersion,
             deps.google,
           );
+    // 既定モデルの注入（S11。ui-states.md §2「既定モデル」）:
+    // ユーザーが画面で入力済みの値は上書きせず、空のときだけ Options の設定値で埋める
+    const currentModel = store.getState().schema.model;
+    const model =
+      currentModel !== ''
+        ? currentModel
+        : ((await (deps.loadDefaultModel ?? loadDefaultModel)()) ?? '');
     const after = store.getState();
     store.setState({
-      schema: { ...after.schema, loading: false, loadError: null, versions, currentFields },
+      schema: { ...after.schema, loading: false, loadError: null, versions, currentFields, model },
       counts: { ...after.counts, schemaVersions: versions.length },
     });
   } catch (err) {
