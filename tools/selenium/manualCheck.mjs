@@ -182,6 +182,59 @@ async function textOf(driver, selector) {
 }
 
 /**
+ * チェックボックス群の状態を JS 側で一括読み取りする。
+ * クリックのたびにビューが丸ごと再描画される（replaceChildren）ため、
+ * WebElement を保持して回すと 2 個目以降が stale になる
+ */
+async function readCheckboxStates(driver, selector) {
+  return driver.executeScript(
+    'return [...document.querySelectorAll(arguments[0])].map((el) => ({ checked: el.checked, disabled: el.disabled }));',
+    selector,
+  );
+}
+
+/** i 番目のチェックボックスをクリックする（再描画に備えて毎回取り直す） */
+async function clickCheckbox(driver, selector, index) {
+  await retryOnStale(async () => {
+    const boxes = await driver.findElements(By.css(selector));
+    await boxes[index].click();
+  });
+}
+
+/** コスト概算が実値になったか（= スキーマ + 選択が揃ったか） */
+async function isEstimateReady(driver, estimateSelector) {
+  const text = await textOf(driver, estimateSelector);
+  return text.includes('バッチ') || text.includes('概算不可') || text.includes('計算できません');
+}
+
+/**
+ * 文献 + スキーマの非同期読込と既定選択の適用を「コスト概算が実値になる」ことで待つ。
+ * 読込完了後も選択 0 件のままなら、先頭から maxSelect 本まで選び足して再待機する
+ */
+async function waitForEstimate(driver, estimateSelector, docsSelector, maxSelect) {
+  try {
+    await driver.wait(async () => isEstimateReady(driver, estimateSelector), 60000);
+    return;
+  } catch {
+    // 既定選択が 0 件のままの可能性 → 手動で選択して再待機
+  }
+  const boxes = await readCheckboxStates(driver, docsSelector);
+  let selected = boxes.filter((box) => !box.disabled && box.checked).length;
+  for (let i = 0; i < boxes.length && selected < maxSelect; i++) {
+    if (boxes[i].disabled || boxes[i].checked) {
+      continue;
+    }
+    await clickCheckbox(driver, docsSelector, i);
+    selected++;
+  }
+  await driver.wait(
+    async () => isEstimateReady(driver, estimateSelector),
+    60000,
+    'コスト概算が表示されません（スキーマ / 文献一覧の読込と選択状態を確認してください）',
+  );
+}
+
+/**
  * beforeHandles に無い新規タブのうち、URL が prefix で始まるものが開くのを待って
  * そのハンドルを返す（切替えた状態で返る）。複数の新規タブが開いても（ユーザーの
  * 先回り操作などで想定外のタブが混ざっても）目的のタブだけを拾う。
@@ -233,8 +286,20 @@ async function switchToApp(driver, hash) {
       break;
     }
   }
-  // hash 遷移ではなくフル読み込みにして bootstrap（batchGet 込み）を毎回通す
-  await driver.get(`${APP_URL}${hash}`);
+  // まず #/home をフル読み込みして bootstrap（batchGet 込み）を通す。
+  // ガード付きルートを直接フル読み込みすると、カウント読込前のガード判定で
+  // #/home へリダイレクトされるため、カウント完了を待ってから hash 遷移する
+  await driver.get(`${APP_URL}#/home`);
+  await driver.wait(
+    async () =>
+      (await findVisible(driver, '.home__summary')) !== null ||
+      (await findVisible(driver, '#home-counts-error')) !== null,
+    60000,
+    '#/home のカウントが読み込まれません',
+  );
+  if (hash !== '#/home') {
+    await driver.executeScript('location.hash = arguments[0];', hash);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -547,20 +612,14 @@ async function sceneSchema(driver) {
   }
   if (state === '#schema-draft-form') {
     // サンプル文献を先頭から最大 2 本選択（no_text_layer は disabled）
-    const checkboxes = await driver.findElements(
-      By.css('#schema-sample-list input[type="checkbox"]'),
-    );
-    let selected = 0;
-    for (const box of checkboxes) {
-      if (selected >= 2) {
-        break;
-      }
-      if (!(await box.isEnabled())) {
+    const selector = '#schema-sample-list input[type="checkbox"]';
+    const boxes = await readCheckboxStates(driver, selector);
+    let selected = boxes.filter((box) => box.checked).length;
+    for (let i = 0; i < boxes.length && selected < 2; i++) {
+      if (boxes[i].disabled || boxes[i].checked) {
         continue;
       }
-      if (!(await box.isSelected())) {
-        await box.click();
-      }
+      await clickCheckbox(driver, selector, i);
       selected++;
     }
     if (selected === 0) {
@@ -627,6 +686,8 @@ async function scenePilot(driver) {
     throw new Error('pilot 失敗');
   }
   if (state === '#pilot-run') {
+    // 文献 + スキーマの読込完了 → 既定選択の適用をコスト概算の実値化で待つ
+    await waitForEstimate(driver, '#pilot-estimate', '#pilot-documents input[type="checkbox"]', 3);
     ok(`コスト概算: ${await textOf(driver, '#pilot-estimate')}`);
     const modelInput = await driver.findElement(By.css('#pilot-model'));
     if (((await modelInput.getAttribute('value')) ?? '').trim() === '') {
@@ -702,21 +763,16 @@ async function sceneExtract(driver) {
     ng('パイロット未実施の警告が出ています（pilot シーンを先に実行してください）');
   }
   // 既定選択（未抽出）が 0 件なら、抽出済みを含めて全件選択して再抽出の経路を通す
-  const checkboxes = await driver.findElements(
-    By.css('#extract-documents input[type="checkbox"]'),
-  );
-  let selectedCount = 0;
-  for (const box of checkboxes) {
-    if ((await box.isEnabled()) && (await box.isSelected())) {
-      selectedCount++;
-    }
-  }
+  const selector = '#extract-documents input[type="checkbox"]';
+  const boxes = await readCheckboxStates(driver, selector);
+  let selectedCount = boxes.filter((box) => !box.disabled && box.checked).length;
   if (selectedCount === 0) {
-    for (const box of checkboxes) {
-      if (await box.isEnabled()) {
-        await box.click();
-        selectedCount++;
+    for (let i = 0; i < boxes.length; i++) {
+      if (boxes[i].disabled || boxes[i].checked) {
+        continue;
       }
+      await clickCheckbox(driver, selector, i);
+      selectedCount++;
     }
     log(`  未抽出 0 件のため全 ${selectedCount} 件を選択（再抽出）`);
   } else {
@@ -730,6 +786,8 @@ async function sceneExtract(driver) {
   if (((await modelInput.getAttribute('value')) ?? '').trim() === '') {
     await setValue(driver, modelInput, DEFAULT_MODEL);
   }
+  // スキーマ読込の完了をコスト概算の実値化で待つ
+  await waitForEstimate(driver, '#extract-estimate', selector, 1);
   ok(`コスト概算: ${await textOf(driver, '#extract-estimate')}`);
   await driver.findElement(By.css('#extract-run')).click();
   await driver.wait(

@@ -212,15 +212,33 @@ describe('validateAiOutput', () => {
   });
 
   describe('entity_key と entity_level の整合', () => {
-    it('パースできない entity_key は entity_key_mismatch', () => {
-      const { rejected } = runOne({ entity_key: 'bogus' });
+    // arm / outcome_result はインスタンス識別が必要なので不整合キーは破棄する
+    it('arm 項目のパースできない entity_key は entity_key_mismatch', () => {
+      const { rejected } = validateAiOutput(
+        [{ field_id: 'f_arm_n', entity_key: 'bogus', value: '10', not_reported: false }],
+        FIELDS,
+      );
       expect(rejected[0]?.reason).toBe('entity_key_mismatch');
     });
 
-    it('study 項目に arm キーは entity_key_mismatch', () => {
-      const { rejected } = runOne({ entity_key: 'arm:1' });
+    it('arm 項目に study キー相当は entity_key_mismatch', () => {
+      const { rejected } = validateAiOutput(
+        [{ field_id: 'f_arm_n', entity_key: '-', value: '10', not_reported: false }],
+        FIELDS,
+      );
       expect(rejected[0]?.reason).toBe('entity_key_mismatch');
     });
+
+    // study レベルは 1 document 1 インスタンスでキーが決定的なので、
+    // モデルの表記ゆれ（"study" / "_" / 誤った "arm:1" 等）は破棄せず '-' へ正規化する
+    it.each(['-', 'study', '_', 'bogus', 'arm:1'])(
+      'study 項目の entity_key %p は "-" に正規化して通す',
+      (entityKey) => {
+        const { items, rejected } = runOne({ entity_key: entityKey });
+        expect(rejected).toEqual([]);
+        expect(items[0]?.entityKey).toBe('-');
+      },
+    );
 
     it('outcome_result 項目は outcome キーで通る', () => {
       const { items } = validateAiOutput(

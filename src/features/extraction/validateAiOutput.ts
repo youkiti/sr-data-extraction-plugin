@@ -10,7 +10,7 @@
 import { z } from 'zod';
 import type { Confidence } from '../../domain/evidence';
 import type { SchemaField } from '../../domain/schemaField';
-import { parseEntityKey } from '../../utils/entityKey';
+import { parseEntityKey, STUDY_ENTITY_KEY } from '../../utils/entityKey';
 import { normalizeText } from '../anchoring/normalizeText';
 
 /** 応答全体（配列）の形式不正。要素単位の不正は rejected で返し、これは投げる */
@@ -162,20 +162,30 @@ export function validateAiOutput(
       });
       return;
     }
-    const entity = parseEntityKey(parsed.data.entity_key);
-    if (entity === null || entity.level !== field.entityLevel) {
-      rejected.push({
-        index,
-        reason: 'entity_key_mismatch',
-        detail: `entity_key "${parsed.data.entity_key}" が entity_level "${field.entityLevel}"（${field.fieldName}）と整合しません`,
-        raw: element,
-      });
-      return;
+    // study レベルは 1 document 1 インスタンスで entity_key が決定的（'-'）。
+    // モデルが "study" / "_" / "" など別表記を返しても意味は一意なので、
+    // 破棄せず正典キーへ正規化する（arm / outcome_result はインスタンス識別が
+    // 必要なので従来どおり厳格に検証する）
+    let entityKey: string;
+    if (field.entityLevel === 'study') {
+      entityKey = STUDY_ENTITY_KEY;
+    } else {
+      const entity = parseEntityKey(parsed.data.entity_key);
+      if (entity === null || entity.level !== field.entityLevel) {
+        rejected.push({
+          index,
+          reason: 'entity_key_mismatch',
+          detail: `entity_key "${parsed.data.entity_key}" が entity_level "${field.entityLevel}"（${field.fieldName}）と整合しません`,
+          raw: element,
+        });
+        return;
+      }
+      entityKey = parsed.data.entity_key;
     }
     const forcedLowReasons = detectContradictions(parsed.data);
     items.push({
       fieldId: parsed.data.field_id,
-      entityKey: parsed.data.entity_key,
+      entityKey,
       value: parsed.data.value,
       notReported: parsed.data.not_reported,
       quote: parsed.data.quote,
