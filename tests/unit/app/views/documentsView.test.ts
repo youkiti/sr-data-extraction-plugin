@@ -117,11 +117,11 @@ function makeState(patch: Partial<AppState['documents']> = {}, withProject = tru
 }
 
 describe('renderDocumentsView', () => {
-  test('著作権の注意書きを常時表示する（チェック UI は持たない）', () => {
+  test('LLM 送信に関する注意書きを常時表示する（チェック UI は持たない）', () => {
     const { ctx } = makeCtx();
     const view = renderDocumentsView(makeState(), ctx);
     expect(view.textContent).toContain(
-      '著作権フリー / 利用許諾済みの PDF のみ取り込んでください',
+      '取り込んだ PDF が外部へ送信されるのは LLM API への抽出リクエストのみです',
     );
     expect(view.querySelectorAll('input[type="checkbox"]')).toHaveLength(0);
   });

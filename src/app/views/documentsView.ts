@@ -1,5 +1,5 @@
 // #/documents: 文献取り込み（S3 / ui-states.md §3）。
-// 著作権の注意書きは常時表示（requirements.md §1.5。チェック UI は設けない）。
+// PDF の外部送信先（LLM API のみ）の注意書きは常時表示（requirements.md §1.5）。
 // 状態: 読み込み中 / 読み込み失敗 / 空 / 取り込み中（進捗行）/ 一覧 N 件（text_status バッジ +
 // study_label インライン編集）。データは AppState.documents（documentsService が更新）から描く
 import type { DocumentRecord, TextStatus } from '../../domain/document';
@@ -135,7 +135,7 @@ export function renderDocumentsView(state: AppState, ctx: ViewContext): HTMLElem
     el('h2', { text: '文献取り込み' }),
     el('p', {
       className: 'view__notice',
-      text: '著作権フリー / 利用許諾済みの PDF のみ取り込んでください。取り込んだ PDF が外部へ送信されるのは LLM API への抽出リクエストのみです。',
+      text: '取り込んだ PDF が外部へ送信されるのは LLM API への抽出リクエストのみです。',
     }),
     el('p', {
       className: 'view__lead',

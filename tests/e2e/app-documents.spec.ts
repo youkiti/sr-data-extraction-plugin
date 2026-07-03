@@ -105,8 +105,8 @@ test('一覧 N 件: text_status バッジ・注記・study_label 入力を表示
   await expect(page.locator('.documents__badge--no_text_layer')).toHaveText('no_text_layer');
   await expect(page.locator('.documents__badge-note')).toHaveText('pdf_native 抽出のみ・ハイライト不可');
   await expect(page.locator('.documents__label-input').first()).toHaveValue('Smith 2020');
-  // 常時表示の著作権注意書き（チェック UI は無い）
-  await expect(page.locator('.view__notice')).toContainText('著作権フリー / 利用許諾済みの PDF のみ取り込んでください');
+  // 常時表示の LLM 送信注意書き（チェック UI は無い）
+  await expect(page.locator('.view__notice')).toContainText('取り込んだ PDF が外部へ送信されるのは LLM API への抽出リクエストのみです');
   await expect(page.locator('#documents-import')).toBeEnabled();
 });
 

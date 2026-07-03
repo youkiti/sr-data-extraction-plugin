@@ -44,7 +44,7 @@ npm run dev
 
 ### 0-4. テスト素材
 
-- [ ] **著作権フリー / 利用許諾済み**の論文 PDF を 2〜3 本、自分の Google Drive（マイドライブ）に置く。
+- [ ] 論文 PDF を 2〜3 本、自分の Google Drive（マイドライブ）に置く。
   うち 1 本はテキスト層のある通常の PDF、可能ならスキャン画像のみの PDF も 1 本
   （`no_text_layer` バッジの確認用）
 
@@ -87,7 +87,7 @@ npm run manual:check -- options protocol schema pilot extract verify dashboard e
 | 1 | ツールバーの拡張アイコンで Popup を開く | 未ログインならログインボタンが出る | [ ] |
 | 2 | ログイン | Chrome の OAuth 同意画面 → 承諾でログイン済み表示（スコープは spreadsheets + drive.file の 2 つ） | [ ] |
 | 3 | 「新規作成」でプロジェクトを作る | Sheets（13 タブ）+ Drive `SR Data Extraction/{プロジェクト名}/` が生成され（ルートフォルダの色 = アイコン色に近いピンク）、メインビュータブが自動で開く | [ ] |
-| 4 | サイドバーから `#/documents` へ | 空状態 + 著作権の注意書き + 「Drive から PDF を取り込む」ボタン | [ ] |
+| 4 | サイドバーから `#/documents` へ | 空状態 + LLM 送信の注意書き + 「Drive から PDF を取り込む」ボタン | [ ] |
 | 5 | 「Drive から PDF を取り込む」をクリック | **新規タブ**で `https://youkiti.github.io/sr-data-extraction-plugin/picker.html#extension_id={拡張 ID}` が開く | [ ] |
 | 6 | Picker ページの表示を待つ | 「読み込み中…」→ Google Picker の UI が描画され、タブ 3 つ（マイドライブ〔PDF のみ〕/ 最近使用したファイル〔PDF 以外も出る = Picker API の仕様で mime フィルタ不可〕/ スター付き〔PDF のみ〕）が並ぶ。**エラー文言が出ないこと** | [ ] |
 | 7 | PDF を 1〜2 本選択して「選択」 | Picker タブが**自動で閉じ**、元のタブに戻る | [ ] |

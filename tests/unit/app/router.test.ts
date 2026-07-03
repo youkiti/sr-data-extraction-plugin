@@ -132,9 +132,9 @@ describe('ROUTES', () => {
     },
   );
 
-  test('#/documents は著作権の注意書きを常時表示する（ui-states.md §3）', () => {
+  test('#/documents は LLM 送信の注意書きを常時表示する（ui-states.md §3）', () => {
     const element = findRoute('#/documents').render(createInitialState(), stubCtx);
-    expect(element.textContent).toContain('著作権フリー / 利用許諾済みの PDF のみ取り込んでください');
+    expect(element.textContent).toContain('取り込んだ PDF が外部へ送信されるのは LLM API への抽出リクエストのみです');
   });
 
   test('#/home はプロジェクト名と進捗サマリを表示する（0 件でも崩れない）', () => {
