@@ -344,6 +344,17 @@ export async function bootstrapApp(
     if (!alreadyShown) {
       await openVerifyDocument(store, deps, desired);
     }
+    // 初回入場（?doc= 無し）は既定文献を URL へ書き戻し、リロード・共有・戻る操作で
+    // 同じ文献へ着地できるようにする。replaceState は hashchange を発火しないため
+    // 再入ループにならず履歴も汚さない（セル単位ディープリンクの ?entity= は保つ）
+    if (docQueryOf(win.location.hash) === null) {
+      const entityQuery = entity !== null ? `&entity=${encodeURIComponent(entity)}` : '';
+      win.history.replaceState(
+        null,
+        '',
+        `#/verify?doc=${encodeURIComponent(desired)}${entityQuery}`,
+      );
+    }
   };
 
   const renderHeader = (state: AppState): void => {

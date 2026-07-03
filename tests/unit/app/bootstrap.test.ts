@@ -35,6 +35,8 @@ import { CURRENT_PROJECT_STORAGE_KEY } from '../../../src/features/project/proje
 interface WindowStub {
   document: Document;
   location: { hash: string };
+  // hashchange を発火しない URL 正規化（syncVerifyRoute の ?doc= 書き戻し）用
+  history: { replaceState: jest.Mock };
   __E2E_PRELOADED_STATE__?: Partial<AppState>;
   addEventListener: jest.Mock;
   fireHashChange(): void;
@@ -45,6 +47,12 @@ function createWindowStub(preloaded?: Partial<AppState>): WindowStub {
   const stub: WindowStub = {
     document,
     location: { hash: '' },
+    // 実 history と同じく、hashchange を発火せずに location.hash だけ差し替える
+    history: {
+      replaceState: jest.fn((_state: unknown, _title: string, url: string) => {
+        stub.location.hash = url;
+      }),
+    },
     __E2E_PRELOADED_STATE__: preloaded,
     addEventListener: jest.fn((type: string, handler: EventListener) => {
       (listeners[type] ??= []).push(handler);
@@ -1353,6 +1361,9 @@ describe('bootstrapApp: #/verify・#/dashboard', () => {
     const select = document.getElementById('verify-doc') as HTMLSelectElement;
     expect(select.options[0]?.textContent).toBe('Smith 2020（判定済み 0 / 1）');
     expect(store?.getState().verify.selectedDocumentId).toBe('doc-1');
+    // ?doc= なし入場でも既定文献を URL へ書き戻す（replaceState 経由。共有・リロード可能に）
+    expect(stub.history.replaceState).toHaveBeenCalledWith(null, '', '#/verify?doc=doc-1');
+    expect(stub.location.hash).toBe('#/verify?doc=doc-1');
     // PDF はスタブで開けない → pdfError 側のペインでフォームは使える
     expect(document.querySelector('.verify__panes')).not.toBeNull();
     expect(document.querySelector('.verify__pdf-error')).not.toBeNull();
@@ -1366,6 +1377,20 @@ describe('bootstrapApp: #/verify・#/dashboard', () => {
     stub.fireHashChange();
     await flush();
     expect(decisionsReads()).toBe(before);
+  });
+
+  test('?entity= だけの入場は既定文献を補い ?entity= を保って書き戻す', async () => {
+    const stub = createWindowStub(verifyPreloaded());
+    const { deps } = createVerifyFakeDeps(BASE_TABS);
+    const store = await bootstrapApp(asWindow(stub), deps);
+    stub.location.hash = '#/verify?entity=-';
+    stub.fireHashChange();
+    await flush();
+    await flush();
+    expect(store?.getState().verify.selectedDocumentId).toBe('doc-1');
+    // doc は既定で補い、セル単位ディープリンクの entity は維持する
+    expect(stub.history.replaceState).toHaveBeenCalledWith(null, '', '#/verify?doc=doc-1&entity=-');
+    expect(stub.location.hash).toBe('#/verify?doc=doc-1&entity=-');
   });
 
   test('セレクタ切替は hash 書き換え → ?doc= の文献を開く（直リンクと同経路）', async () => {
