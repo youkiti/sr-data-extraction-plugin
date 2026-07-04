@@ -1,7 +1,7 @@
 # 抽出精度ベンチマーク計画（Q8: 既定モデル確定）— 事前登録 README
 
-- **ステータス**: **ドラフト v0.1 — ユーザー承認待ち**（§9 のチェックリストに回答が付くまで実行に着手しない。**承認前に API は一切叩かない**。ランナー・package.json / tsconfig も承認後に作成する）
-- **作成日**: 2026-07-03
+- **ステータス**: **v1.0 — ユーザー承認済み（2026-07-04）**。§9 チェックリスト全項目承認。実装は [IMPLEMENTATION.md](IMPLEMENTATION.md) の手順で着手可。**API を叩く §8.4-4（ランナー実行）の前に、コスト上限 $5 の監視を有効にすること**
+- **作成日**: 2026-07-03（承認 2026-07-04）
 - **位置づけ**: requirements.md §8「既定 LLM モデルは抽出精度ベンチマークで確定してから固定する」（未決定事項 Q8）の実施計画。S1〜S10 実装・実機通し確認は完了しており、これが**リリース（remaining-work-plan.md タスク E）前の最後の技術的ブロッカー**（同タスク D）
 - **参照**: [requirements.md §8・§10 Q8](../../docs/requirements.md) / [remaining-work-plan.md タスク D](../../docs/remaining-work-plan.md) / [anchor-spike PLAN.md](../anchor-spike/PLAN.md)・[REPORT.md](../anchor-spike/REPORT.md)（構成・トンマナ・実測トークンの出典） / [tests/fixtures/pdf/README.md](../../tests/fixtures/pdf/README.md)（データセットのライセンス・特性） / [src/lib/llm/pricing.ts](../../src/lib/llm/pricing.ts)（単価表）
 
@@ -12,7 +12,7 @@
 anchor-spike（2026-07-02、🟢 Green）は「LLM の verbatim quote が PDF.js テキスト層にアンカリングできる」ことを `gemini-3.1-flash-lite` 1 モデルで実証したが、**抽出値そのものの正確度は目視スポットチェックに留めた**（REPORT.md §5-3 の限界）。本ベンチマークはその残り半分:
 
 1. 人間ゴールドスタンダードとの突合で**抽出精度を定量測定**し、
-2. 複数の Gemini 系モデルを同一条件で比較して、
+2. 複数のモデル（Gemini 系 + OpenRouter 系）を同一条件で比較して、
 3. **既定モデルを 1 つ確定する**（= Q8 の解決）。
 
 確定したモデルは (a) [pricing.ts](../../src/lib/llm/pricing.ts) の単価表の固定 ID 化、(b) タスク C（Options 既定モデル設定）の工場出荷値、(c) requirements.md Q8 の「解決済み」更新、に反映する（remaining-work-plan.md タスク D「確定の反映」。別コミット）。
@@ -27,16 +27,16 @@ anchor-spike（2026-07-02、🟢 Green）は「LLM の verbatim quote が PDF.js
 
 ## 3. 比較対象モデル
 
-[pricing.ts](../../src/lib/llm/pricing.ts) の `MODEL_PRICING` にある **Gemini 系 3 モデル**を候補とする（キーは実コードからの引用。OpenRouter 系 `qwen/qwen3-235b-a22b-2507` / `deepseek/deepseek-v4-flash` は P1 のため対象外 — `providerFactory` も現状 OpenRouter 指定で P1 エラーを投げる）:
+[pricing.ts](../../src/lib/llm/pricing.ts) の `MODEL_PRICING` を基に、**Gemini 系 2 モデル + OpenRouter 系 1 モデル**の計 3 種を候補とする（キーは実コードからの引用）。OpenRouter は 2026-07-04 に [`OpenRouterProvider`](../../src/lib/llm/OpenRouterProvider.ts) / [`providerFactory`](../../src/lib/llm/providerFactory.ts)（`/` を含むモデル ID を openrouter に解決）が実装済みで、Qwen 系を Gemini と同一ハーネスで比較できる（旧稿の「OpenRouter は P1 のため対象外・providerFactory が P1 エラーを投げる」は解消済み）:
 
-| # | pricing.ts のモデル ID | 入力 $/1M | 出力 $/1M | 期待役どころ |
-|---|---|---|---|---|
-| 1 | `gemini-2.5-pro` | 1.25 | 10.00 | 精度上限の基準（最高性能・最高単価） |
-| 2 | `gemini-3.5-flash` | 0.15 | 0.60 | 精度とコストのバランス候補 |
-| 3 | `gemini-2.0-flash` | 0.10 | 0.40 | 低コスト候補（無料枠あり） |
+| # | モデル ID | provider | 入力 $/1M | 出力 $/1M | 期待役どころ |
+|---|---|---|---|---|---|
+| 1 | `gemini-3.5-flash` | gemini | 0.15 | 0.60 | 精度とコストのバランス候補 |
+| 2 | `gemini-3.1-flash-lite` | gemini | 0.10 | 0.40 | 低コスト候補（スパイク実績・無料枠あり）。**pricing.ts 未収載 → 実行前に単価追記が必要**（§9 #2）。単価は概算で要確認 |
+| 3 | `qwen/qwen3-235b-a22b-2507` | openrouter | 0.14 | 0.14 | OpenRouter 系（大規模 MoE）の比較候補。pricing.ts 収載済み |
 
-- **任意の第 4 候補**: `gemini-3.1-flash-lite`（anchor-spike の実績モデル。anchor 成功率 96.2% の実測があるが**単価表に未収載**）。追加する場合は pricing.ts への単価追記が先に必要 → §9 チェックリストでユーザー判断
-- **固定バージョン ID の方針**: 上表の ID はエイリアスの可能性がある。実行直前（承認後の最初の作業）に Gemini API の `models` エンドポイントで**日付付き / 番号付きスナップショット ID の有無を確認し、あればそれに固定**して本表と REPORT.md に記録する。スナップショットが存在しないモデルはエイリアス ID + 実行日時の記録で代替する（tiab-review の固定バージョン ID 方針。requirements.md §2 の LLM 行にも明記あり）
+- **固定バージョン ID の方針**: 上表の ID はエイリアスの可能性がある。実行直前（承認後の最初の作業）に、Gemini 2 モデルは Gemini API の `models` エンドポイントで**日付付き / 番号付きスナップショット ID の有無を確認し、あればそれに固定**する。OpenRouter の Qwen は ID にサフィックス（`-2507`）を含む固定版だが、単価は openrouter.ai の料金ページで実行時の値を再確認する（変動しうるため）。いずれも確認結果を本表と REPORT.md に記録する。スナップショットが存在しないモデルはエイリアス ID + 実行日時の記録で代替する（tiab-review の固定バージョン ID 方針。requirements.md §2 の LLM 行にも明記あり）
+- **`gemini-3.1-flash-lite` の pricing.ts 追記**: 現状 `MODEL_PRICING` に未収載のため、上表の 0.10 / 0.40 は同クラス（`gemini-2.0-flash`）からの概算。承認後に正規の単価を確認して pricing.ts に追記してから実行する（§8.4-3 と同じチェックポイント）
 
 ## 4. 評価指標（requirements.md §8 の案をそのまま採用）
 
@@ -172,15 +172,18 @@ entity 展開後のゴールド行数の想定: 各論文 2 arm として、stud
 
 | モデル | 単価（入 / 出 $/1M） | 入力 180K | 出力 36K | 小計 |
 |---|---|---|---|---|
-| `gemini-2.5-pro` | 1.25 / 10.00 | $0.225 | $0.360 | **$0.59** |
 | `gemini-3.5-flash` | 0.15 / 0.60 | $0.027 | $0.022 | **$0.05** |
-| `gemini-2.0-flash` | 0.10 / 0.40 | $0.018 | $0.014 | **$0.03** |
-| **合計（3 モデル）** | | | | **≈ $0.67** |
+| `gemini-3.1-flash-lite` | 0.10 / 0.40 | $0.018 | $0.014 | **$0.03** |
+| `qwen/qwen3-235b-a22b-2507` | 0.14 / 0.14 | $0.025 | $0.005 | **$0.03** |
+| **合計（3 モデル）** | | | | **≈ $0.11** |
 
-- 第 4 候補 `gemini-3.1-flash-lite` を足しても同クラス単価なら +$0.05 程度
+- 3 モデルとも低〜中単価帯のため、旧稿（`gemini-2.5-pro` を含む $0.67）より安い ≈ $0.11 に収まる
 - デバッグ再実行・スナップショット ID 差し替え等の余裕を見て、**コスト上限 $5** を提案する（超えそうになったら中断して報告）→ §9 チェックリスト
 
 ## 8. 実行計画（承認後に着手）
+
+> **実装の詳細手順は [IMPLEMENTATION.md](IMPLEMENTATION.md)（ジュニア SE 向け作業指示書）にある。** 本 §8 は方針、IMPLEMENTATION.md は手順。
+> **スコープ確定（2026-07-04 ユーザー決定）**: 本ベンチマークは **text_only モードのみ**を測定する（pdf_native は本番スキル `buildExtractDataUserPrompt` が text 専用のため今回スコープ外。§8.4-4・§9 #8 参照）。
 
 ### 8.1 src/ 本番コードの再利用（プロンプト・判定ロジックの二重管理を避ける）
 
@@ -189,7 +192,7 @@ entity 展開後のゴールド行数の想定: 各論文 2 arm として、stud
 | プロンプト構築・構造化出力スキーマ・応答パース | [src/features/extraction/skills/extractData.ts](../../src/features/extraction/skills/extractData.ts)（`EXTRACT_DATA_SYSTEM_PROMPT` は現行の版数 1 を凍結して使う。ベンチマーク中はプロンプトを変更しない） |
 | 応答検証 | [src/features/extraction/validateAiOutput.ts](../../src/features/extraction/validateAiOutput.ts)（破棄行は §4.0 のとおり不正解として計上） |
 | quote アンカリング | [src/features/anchoring/](../../src/features/anchoring/)（`normalizeText` / `locateQuote` / `fuzzyMatch` / `anchorQuote`） |
-| LLM 呼び出し | [src/lib/llm/](../../src/lib/llm/) の `GeminiProvider` + `withRetry`（+ `withLogging` のプロンプト版数記録、`pricing.ts` の `estimateCostUsd`） |
+| LLM 呼び出し | [src/lib/llm/](../../src/lib/llm/) の `createProvider`（`providerFactory` がモデル ID から Gemini / OpenRouter を解決）+ `withRetry`（+ `withLogging` のプロンプト版数記録、`pricing.ts` の `estimateCostUsd`）。Qwen は `OpenRouterProvider`、Gemini 2 モデルは `GeminiProvider` に自動振り分け |
 | PDF テキスト層抽出 | anchor-spike の `src/extract-text.ts` 構成を流用（Node + pdfjs-dist legacy ビルド。@napi-rs/canvas 等は不要。ブラウザ出力との一致は spike H4 で 3,471 文字完全一致を確認済み） |
 
 ### 8.2 独立 package 構成（anchor-spike と同様）
@@ -200,7 +203,7 @@ experiments/extraction-benchmark/
 ├── REPORT.md            # 結果・採用モデル・判断根拠（実行後に作成）
 ├── package.json         # tsx / typescript / dotenv / pdfjs-dist のみ（承認後に作成）
 ├── tsconfig.json        # 同上
-├── .env                 # GEMINI_API_KEY（コミットしない。下記 8.3）
+├── .env                 # GEMINI_API_KEY + OPENROUTER_API_KEY（コミットしない。下記 8.3）
 ├── gold/                # ゴールドスタンダード {pdf_id}.json（ユーザー作成）
 ├── src/
 │   ├── runner.ts        # モデル × 論文 × モード × 反復の実行（npx tsx src/runner.ts）
@@ -215,28 +218,28 @@ experiments/extraction-benchmark/
 
 ### 8.3 API キー
 
-`experiments/extraction-benchmark/.env` に `GEMINI_API_KEY` を置く。**リポジトリの [.gitignore](../../.gitignore) の `.env` パターン（16 行目）がサブディレクトリにも効くことを `git check-ignore` で確認済み**（`.gitignore` の追記は不要）。
+`experiments/extraction-benchmark/.env` に `GEMINI_API_KEY`（Gemini 2 モデル用）と `OPENROUTER_API_KEY`（Qwen 用。OpenRouter の BYOK）を置く。**リポジトリの [.gitignore](../../.gitignore) の `.env` パターン（16 行目）がサブディレクトリにも効くことを `git check-ignore` で確認済み**（`.gitignore` の追記は不要）。
 
 ### 8.4 手順（チェックポイント）
 
 1. **チェックポイント 1（本 README のユーザー承認）** — §9 のチェックリスト回答をもって §3〜§7 を凍結 ← **いまここ**
 2. ゴールドスタンダード作成（ユーザー。§6.3）— ランナー実装（3）と並行可
 3. モデルのスナップショット ID 確認・固定（§3）→ 本 README の表を更新
-4. ランナー実装 + 実行（2 論文 × 2 モード × 3 反復 × 3〜4 モデル）。主解析は **text_only モード**（anchor-spike で既定候補に傾いたモード。REPORT §H3）、pdf_native は副次として参考報告（Q3 の最終確定はパイロットで行う建付けを変えない）
+4. ランナー実装 + 実行（2 論文 × **text_only モードのみ** × 3 反復 × 3 モデル = 18 run）。**pdf_native は今回スコープ外**（2026-07-04 決定。本番スキル `buildExtractDataUserPrompt` が text 専用のため。Q3 の最終確定はパイロットで行う建付けは変えない）。REPORT には「pdf_native は範囲外」と明記する
 5. 採点・集計 → REPORT.md（全モデルの指標と採用判断。anchor-spike/REPORT.md のトンマナ）
 6. **確定の反映**（別コミット）: pricing.ts の固定 ID 化 / タスク C の工場出荷値 / requirements.md Q8 を解決済みに / CLAUDE.md の注記更新
 
-## 9. ユーザー承認チェックリスト（Yes / No で回答してください）
+## 9. ユーザー承認チェックリスト（2026-07-04 全項目承認済み）
 
 | # | 論点 | 提案 | 回答 |
 |---|---|---|---|
-| 1 | 比較対象モデル | `gemini-2.5-pro` / `gemini-3.5-flash` / `gemini-2.0-flash` の 3 種（§3。スナップショット ID があればそれに固定） | |
-| 2 | 第 4 候補の追加 | `gemini-3.1-flash-lite`（スパイク実績あり・要 pricing.ts 追記）を加えるか | |
-| 3 | 足切り閾値 | not_reported 特異度 ≥ 92%・重大エラー率 ≤ 3%（CESAR 出発点）・anchor 成功率 ≥ 90%（§5 手順 1） | |
-| 4 | 同等マージン | 項目レベル正確度の差 **X = 5 ポイント**以内は「同等」とみなしコストで選ぶ（§5 手順 2） | |
-| 5 | タイブレーク順 | 同等群では 実測コスト → anchor 成功率 → 応答時間（§5 手順 3） | |
-| 6 | コスト上限 | **$5**（概算 $0.67 の余裕込み。§7） | |
-| 7 | ゴールドスタンダード | ユーザーが手作業で作成（§6.3 の JSON スキーマ・§6.2 の 20 項目案で確定してよいか。所要目安 2〜3 h × 2 論文） | |
-| 8 | 主解析モード | text_only を主解析、pdf_native は副次（§8.4-4） | |
+| 1 | 比較対象モデル | `gemini-3.5-flash` / `gemini-3.1-flash-lite` / `qwen/qwen3-235b-a22b-2507` の 3 種（§3。Gemini 2 + OpenRouter 1。スナップショット ID / 実行時単価があればそれに固定） | ✅ 承認 |
+| 2 | pricing.ts 追記 | `gemini-3.1-flash-lite` を `MODEL_PRICING` に追記する（現状未収載。単価は実行前に確認。§3 の注記） | ✅ 承認 |
+| 3 | 足切り閾値 | not_reported 特異度 ≥ 92%・重大エラー率 ≤ 3%（CESAR 出発点）・anchor 成功率 ≥ 90%（§5 手順 1） | ✅ 承認 |
+| 4 | 同等マージン | 項目レベル正確度の差 **X = 5 ポイント**以内は「同等」とみなしコストで選ぶ（§5 手順 2） | ✅ 承認 |
+| 5 | タイブレーク順 | 同等群では 実測コスト → anchor 成功率 → 応答時間（§5 手順 3） | ✅ 承認 |
+| 6 | コスト上限 | **$5**（概算 $0.67 の余裕込み。§7） | ✅ 承認 |
+| 7 | ゴールドスタンダード | ユーザーが手作業で作成（§6.3 の JSON スキーマ・§6.2 の 20 項目案で確定してよいか。所要目安 2〜3 h × 2 論文） | ✅ 承認 |
+| 8 | 主解析モード | ~~text_only を主解析、pdf_native は副次~~ → **2026-07-04 確定: text_only のみ測定・pdf_native はスコープ外**（§8.4-4） | ✅ 承認 |
 
-承認（全項目の回答）が付き次第、§8.4 のステップ 2 以降に着手する。**それまで API 呼び出し・ランナー実装・package.json / tsconfig の作成は行わない。**
+**全項目承認済み（2026-07-04）**。§8.4 のステップ 2 以降・[IMPLEMENTATION.md](IMPLEMENTATION.md) の手順に着手可。実装の詳細はそちらを参照。
