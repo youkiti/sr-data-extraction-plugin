@@ -81,6 +81,8 @@ const OPTIONS_URL = `chrome-extension://${EXTENSION_ID}/options/options.html`;
 
 // S5 ドラフトで使う既定モデル（pricing.ts に単価があるもの）
 const DEFAULT_MODEL = 'gemini-3.5-flash';
+// モデルセレクタの「その他（直接入力）」option 値（src/app/ui/modelSelect.ts と同期）
+const MODEL_SELECT_OTHER = '__other__';
 // LLM 実弾（ドラフト / 抽出）の完了待ち上限
 const LLM_TIMEOUT = 15 * 60 * 1000;
 // ユーザー操作（キー入力・エディタ確認・判定など）の待ち上限
@@ -152,6 +154,40 @@ async function setValue(driver, element, value) {
     element,
     value,
   );
+}
+
+/**
+ * モデルセレクタ（src/app/ui/modelSelect.ts の共有ウィジェット）の現在値を返す。
+ * 「その他（直接入力）」選択中は隣のテキスト入力 `#{id}-custom` の値を返す
+ */
+async function readModelValue(driver, selectId) {
+  const select = await driver.findElement(By.css(`#${selectId}`));
+  const value = (await select.getAttribute('value')) ?? '';
+  if (value !== MODEL_SELECT_OTHER) {
+    return value;
+  }
+  const custom = await driver.findElement(By.css(`#${selectId}-custom`));
+  return ((await custom.getAttribute('value')) ?? '').trim();
+}
+
+/**
+ * モデルセレクタへ値を設定する。単価表カタログの option があれば直接選択し、
+ * なければ「その他（直接入力）」へ切り替えてテキスト入力へ流し込む
+ * （どちらも change 発火でウィジェットの onChange → state 更新まで届かせる）
+ */
+async function selectModel(driver, selectId, model) {
+  const select = await driver.findElement(By.css(`#${selectId}`));
+  const hasOption = await driver.executeScript(
+    'return Array.from(arguments[0].options).some((o) => o.value === arguments[1]);',
+    select,
+    model,
+  );
+  if (hasOption) {
+    await setValue(driver, select, model);
+    return;
+  }
+  await setValue(driver, select, MODEL_SELECT_OTHER);
+  await setValue(driver, await driver.findElement(By.css(`#${selectId}-custom`)), model);
 }
 
 /** いずれかのセレクタが表示されるまで待ち、一致したセレクタ文字列を返す */
@@ -576,14 +612,13 @@ async function ensureDefaultModel(driver) {
     const text = await textOf(driver, '#default-model-status');
     return text !== '' && !text.includes('読み込み中');
   }, 15000, '既定モデルの状態が確定しません');
-  const input = await driver.findElement(By.css('#default-model'));
-  const current = await input.getAttribute('value');
+  const current = await readModelValue(driver, 'default-model');
   const status = await textOf(driver, '#default-model-status');
   if (current === DEFAULT_MODEL && status.includes('保存済み')) {
     ok(`既定モデルは既に ${DEFAULT_MODEL} で保存済みです`);
     return;
   }
-  await setValue(driver, input, DEFAULT_MODEL);
+  await selectModel(driver, 'default-model', DEFAULT_MODEL);
   await driver.findElement(By.css('#save-default-model')).click();
   await driver.wait(async () => {
     const text = await textOf(driver, '#default-model-status');
@@ -650,7 +685,7 @@ async function sceneSchema(driver) {
     // S11 / PR #5 の検証: Options の既定モデルが #schema-model に prefill されているか。
     // schemaService.loadSchema は schema.model が空のときだけ既定モデルで埋めるため、
     // 未入力状態のこの下書きフォームでは DEFAULT_MODEL が入っているはず
-    const prefilled = await driver.findElement(By.css('#schema-model')).getAttribute('value');
+    const prefilled = await readModelValue(driver, 'schema-model');
     if (prefilled === DEFAULT_MODEL) {
       ok(`既定モデルの prefill を確認: #schema-model = ${prefilled}`);
     } else {
@@ -673,7 +708,7 @@ async function sceneSchema(driver) {
       throw new Error('schema 失敗');
     }
     ok(`サンプル ${selected} 本を選択`);
-    await setValue(driver, await driver.findElement(By.css('#schema-model')), DEFAULT_MODEL);
+    await selectModel(driver, 'schema-model', DEFAULT_MODEL);
     await driver.findElement(By.css('#schema-draft-run')).click();
     log(`  ドラフト生成中（${DEFAULT_MODEL} 実弾。数十秒〜数分かかります）…`);
     const result = await waitForAnyVisible(
@@ -735,9 +770,8 @@ async function scenePilot(driver) {
     // 文献 + スキーマの読込完了 → 既定選択の適用をコスト概算の実値化で待つ
     await waitForEstimate(driver, '#pilot-estimate', '#pilot-documents input[type="checkbox"]', 3);
     ok(`コスト概算: ${await textOf(driver, '#pilot-estimate')}`);
-    const modelInput = await driver.findElement(By.css('#pilot-model'));
-    if (((await modelInput.getAttribute('value')) ?? '').trim() === '') {
-      await setValue(driver, modelInput, DEFAULT_MODEL);
+    if ((await readModelValue(driver, 'pilot-model')) === '') {
+      await selectModel(driver, 'pilot-model', DEFAULT_MODEL);
     }
     await driver.findElement(By.css('#pilot-run')).click();
     log('  パイロット抽出を実行中（Gemini 実弾。数分かかります）…');
@@ -828,9 +862,8 @@ async function sceneExtract(driver) {
     ng('選択できる文献がありません');
     throw new Error('extract 失敗');
   }
-  const modelInput = await driver.findElement(By.css('#extract-model'));
-  if (((await modelInput.getAttribute('value')) ?? '').trim() === '') {
-    await setValue(driver, modelInput, DEFAULT_MODEL);
+  if ((await readModelValue(driver, 'extract-model')) === '') {
+    await selectModel(driver, 'extract-model', DEFAULT_MODEL);
   }
   // スキーマ読込の完了をコスト概算の実値化で待つ
   await waitForEstimate(driver, '#extract-estimate', selector, 1);
