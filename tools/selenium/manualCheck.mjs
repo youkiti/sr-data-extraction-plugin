@@ -424,7 +424,7 @@ async function scenePicker(driver) {
   log('\n[picker] Picker 正常系 + 取り込み（手順書 §1-1 #4〜9）');
   const started = await runPickerRound(
     driver,
-    'Picker で著作権フリーの PDF を 1〜2 本選択してください',
+    'Picker で PDF を 1〜2 本選択してください',
   );
   if (!started) {
     ng('取り込みが始まりませんでした（キャンセル or 選択が伝わっていない）');
