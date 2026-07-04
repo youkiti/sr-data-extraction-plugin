@@ -371,7 +371,7 @@ describe('runDraftSchema', () => {
 
     store.setState({ schema: { ...store.getState().schema, selectedDocumentIds: ['doc-1'] } });
     await runDraftSchema(store, makeDeps().deps);
-    expect(store.getState().schema.draftError).toContain('モデル名');
+    expect(store.getState().schema.draftError).toContain('モデルを選択してください');
 
     store.setState({ schema: { ...store.getState().schema, model: 'gemini-test' } });
     await runDraftSchema(store, makeDeps({ loadApiKey: async () => null }).deps);

@@ -225,12 +225,12 @@ describe('未実行（setup）', () => {
     expect(callbacks.onToggleDocument).toHaveBeenCalledWith('doc-1', false);
   });
 
-  test('モデル入力の変更と実行ボタン', () => {
+  test('モデル選択の変更と実行ボタン', () => {
     const { root, callbacks } = render(makeState());
-    const model = root.querySelector<HTMLInputElement>('#pilot-model');
-    model!.value = 'gemini-next';
+    const model = root.querySelector<HTMLSelectElement>('#pilot-model');
+    model!.value = 'gemini-2.0-flash';
     model!.dispatchEvent(new Event('change'));
-    expect(callbacks.onChangeModel).toHaveBeenCalledWith('gemini-next');
+    expect(callbacks.onChangeModel).toHaveBeenCalledWith('gemini-2.0-flash');
     root.querySelector<HTMLButtonElement>('#pilot-run')?.click();
     expect(callbacks.onRun).toHaveBeenCalled();
   });

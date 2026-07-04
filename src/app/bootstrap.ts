@@ -77,7 +77,7 @@ import { createChromeProfileDeps } from '../lib/google/identity';
 import { createChromePickerDeps } from '../lib/google/picker';
 import { createProvider } from '../lib/llm/providerFactory';
 import { loadDisposablePdf } from '../lib/pdf/loadPdf';
-import { loadGeminiApiKey } from '../lib/storage/secretsStore';
+import { loadGeminiApiKey, loadOpenRouterApiKey } from '../lib/storage/secretsStore';
 
 declare global {
   interface Window {
@@ -128,7 +128,8 @@ export function createChromeAppDeps(): AppDeps {
     picker: createChromePickerDeps(google),
     loadPdf: loadDisposablePdf,
     extractDocxText,
-    loadApiKey: loadGeminiApiKey,
+    loadApiKey: (provider) =>
+      provider === 'openrouter' ? loadOpenRouterApiKey() : loadGeminiApiKey(),
     buildProvider: createProvider,
   };
 }

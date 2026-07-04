@@ -263,14 +263,18 @@ describe('未実行（setup）', () => {
 
   test('モデル変更・実行ボタンのコールバック + インラインエラー表示', () => {
     const { root, callbacks } = render(
-      makeState({ extract: { runError: 'モデル名を入力してください（例: gemini-2.5-flash）' } }),
+      makeState({ extract: { runError: 'モデルを選択してください（「その他」で直接入力も可）' } }),
     );
-    const model = root.querySelector<HTMLInputElement>('#extract-model');
-    model!.value = ' gemini-x ';
+    // 「その他」の直接入力は trim してコールバックへ渡る（modelSelect ウィジェット）
+    const model = root.querySelector<HTMLSelectElement>('#extract-model');
+    model!.value = '__other__';
     model!.dispatchEvent(new Event('change'));
-    expect(callbacks.onChangeModel).toHaveBeenCalledWith(' gemini-x ');
+    const custom = root.querySelector<HTMLInputElement>('#extract-model-custom');
+    custom!.value = ' gemini-x ';
+    custom!.dispatchEvent(new Event('change'));
+    expect(callbacks.onChangeModel).toHaveBeenCalledWith('gemini-x');
 
-    expect(root.querySelector('#extract-run-error')?.textContent).toContain('モデル名');
+    expect(root.querySelector('#extract-run-error')?.textContent).toContain('モデルを選択');
 
     root.querySelector<HTMLButtonElement>('#extract-run')?.click();
     expect(callbacks.onRequestRun).toHaveBeenCalledTimes(1);

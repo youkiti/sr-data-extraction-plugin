@@ -16,6 +16,8 @@ import { planRun } from '../../features/extraction/planRun';
 import { readExtractedDocumentIds } from '../../features/extraction/runRepository';
 import { ensureChildFolder } from '../../lib/google/drive';
 import type { GoogleApiDeps } from '../../lib/google/types';
+import { missingApiKeyMessage } from '../../lib/llm/modelCatalog';
+import { resolveProviderId } from '../../lib/llm/providerFactory';
 import { nowIso8601 } from '../../utils/iso8601';
 import type { ExtractState, Store } from '../store';
 import { showToast } from '../ui/toast';
@@ -131,13 +133,11 @@ export async function requestExtractRun(store: Store, deps: ExtractServiceDeps):
     return;
   }
   if (extract.model === '') {
-    patchExtract(store, { runError: 'モデル名を入力してください（例: gemini-2.5-flash）' });
+    patchExtract(store, { runError: 'モデルを選択してください（「その他」で直接入力も可）' });
     return;
   }
-  if ((await deps.loadApiKey()) === null) {
-    patchExtract(store, {
-      runError: 'Gemini API キーが未設定です。設定画面（Options）で保存してください',
-    });
+  if ((await deps.loadApiKey(resolveProviderId(extract.model))) === null) {
+    patchExtract(store, { runError: missingApiKeyMessage(resolveProviderId(extract.model)) });
     return;
   }
   patchExtract(store, { runError: null, confirming: true });
@@ -245,11 +245,11 @@ export async function runExtract(store: Store, deps: ExtractServiceDeps): Promis
   ) {
     return;
   }
-  const apiKey = await deps.loadApiKey();
+  const apiKey = await deps.loadApiKey(resolveProviderId(state.extract.model));
   if (apiKey === null) {
     patchExtract(store, {
       confirming: false,
-      runError: 'Gemini API キーが未設定です。設定画面（Options）で保存してください',
+      runError: missingApiKeyMessage(resolveProviderId(state.extract.model)),
     });
     return;
   }
@@ -312,11 +312,9 @@ export async function retryExtractDocument(
   ) {
     return;
   }
-  const apiKey = await deps.loadApiKey();
+  const apiKey = await deps.loadApiKey(resolveProviderId(state.extract.model));
   if (apiKey === null) {
-    patchExtract(store, {
-      runError: 'Gemini API キーが未設定です。設定画面（Options）で保存してください',
-    });
+    patchExtract(store, { runError: missingApiKeyMessage(resolveProviderId(state.extract.model)) });
     return;
   }
   // 対象行を差し替えるヘルパ（他の行の結果表示は維持する）

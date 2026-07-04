@@ -155,7 +155,7 @@ src/
 │   ├── llm/
 │   │   ├── LLMProvider.ts         # interface（テキスト入力 + PDF 直接入力の両対応 ※Q3）
 │   │   ├── GeminiProvider.ts      # MVP 実装
-│   │   ├── OpenRouterProvider.ts  # P1
+│   │   ├── OpenRouterProvider.ts  # OpenAI 互換 API（sr-query-builder から移植）
 │   │   ├── providerFactory.ts
 │   │   ├── apiLogger.ts           # LLMApiLog + Drive 保存（プロンプト版数も記録）
 │   │   └── apiLogRepository.ts    # LLMApiLog タブへの行追記（apiLogger の appendLogEntry 実装）

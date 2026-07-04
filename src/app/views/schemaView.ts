@@ -8,6 +8,7 @@ import type { SchemaVersion } from '../../domain/schemaVersion';
 import type { SchemaEditorRow } from '../../features/schema/types';
 import type { FieldValidationError } from '../../features/schema/validateField';
 import { el } from '../ui/dom';
+import { createModelSelect } from '../ui/modelSelect';
 import type { AppState, SchemaState } from '../store';
 import type { ViewContext } from './types';
 
@@ -94,17 +95,18 @@ function renderDraftForm(state: AppState, ctx: ViewContext): HTMLElement {
     );
   }
 
-  const modelInput = el('input', {
+  const modelSelect = createModelSelect(document, {
     id: 'schema-model',
+    ariaLabel: 'モデル名（requested_model）',
+    value: model,
+    placeholderLabel: '選択してください',
+    onChange: (value) => ctx.schema.onChangeModel(value),
     className: 'schema__model-input',
-    attributes: { type: 'text', placeholder: '例: gemini-2.5-flash' },
   });
-  modelInput.value = model;
-  modelInput.addEventListener('change', () => ctx.schema.onChangeModel(modelInput.value));
   children.push(
-    el('label', { className: 'schema__field' }, [
-      el('span', { text: 'モデル（requested_model）' }),
-      modelInput,
+    el('div', { className: 'schema__field' }, [
+      el('label', { text: 'モデル（requested_model）', attributes: { for: 'schema-model' } }),
+      modelSelect,
     ]),
   );
 

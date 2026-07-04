@@ -6,6 +6,7 @@ import type { DocumentRecord } from '../../domain/document';
 import type { ExtractionRun } from '../../domain/extractionRun';
 import { planRun } from '../../features/extraction/planRun';
 import { el } from '../ui/dom';
+import { createModelSelect } from '../ui/modelSelect';
 import type { AppState } from '../store';
 import type { ViewContext } from './types';
 import { renderCachedVerificationPanel } from './verificationPanel';
@@ -103,17 +104,14 @@ function renderEstimate(state: AppState): HTMLElement {
 }
 
 function renderSetup(state: AppState, ctx: ViewContext): HTMLElement {
-  const modelInput = el('input', {
+  const modelSelect = createModelSelect(document, {
     id: 'pilot-model',
+    ariaLabel: 'モデル名（requested_model）',
+    value: state.pilot.model,
+    placeholderLabel: '選択してください',
+    onChange: (value) => ctx.pilot.onChangeModel(value),
     className: 'pilot__model-input',
-    attributes: {
-      type: 'text',
-      placeholder: '例: gemini-2.5-flash',
-      'aria-label': 'モデル名（requested_model）',
-    },
   });
-  modelInput.value = state.pilot.model;
-  modelInput.addEventListener('change', () => ctx.pilot.onChangeModel(modelInput.value));
 
   const runButton = el('button', {
     id: 'pilot-run',
@@ -128,7 +126,7 @@ function renderSetup(state: AppState, ctx: ViewContext): HTMLElement {
     renderDocumentSelector(state, ctx),
     el('div', { className: 'pilot__model' }, [
       el('label', { text: 'モデル: ', attributes: { for: 'pilot-model' } }),
-      modelInput,
+      modelSelect,
     ]),
     renderEstimate(state),
   ];

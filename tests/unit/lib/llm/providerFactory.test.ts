@@ -1,6 +1,7 @@
 // createProvider / resolveProviderId の単体テスト
-// （sr-query-builder から流用。本拡張の調整: model 必須 + OpenRouter は P1 未対応エラー）
+// （sr-query-builder から流用。本拡張の調整: model 必須）
 import { GeminiProvider } from '../../../../src/lib/llm/GeminiProvider';
+import { OpenRouterProvider } from '../../../../src/lib/llm/OpenRouterProvider';
 import { createProvider, resolveProviderId } from '../../../../src/lib/llm/providerFactory';
 
 describe('resolveProviderId', () => {
@@ -27,13 +28,19 @@ describe('createProvider', () => {
     expect(provider.model).toBe('gemini-3.5-flash');
   });
 
-  test('openrouter（明示・自動解決とも）は P1 未対応として投げる', () => {
-    expect(() =>
-      createProvider({ provider: 'openrouter', apiKey: 'k', model: 'qwen/qwen3-235b-a22b-2507' }),
-    ).toThrow('OpenRouter プロバイダは P1 で対応予定');
-    expect(() => createProvider({ apiKey: 'k', model: 'qwen/qwen3-235b-a22b-2507' })).toThrow(
-      'OpenRouter プロバイダは P1 で対応予定',
-    );
+  test('openrouter（明示・自動解決とも）は OpenRouterProvider が返る', () => {
+    const explicit = createProvider({
+      provider: 'openrouter',
+      apiKey: 'k',
+      model: 'qwen/qwen3-235b-a22b-2507',
+    });
+    expect(explicit).toBeInstanceOf(OpenRouterProvider);
+    expect(explicit.providerId).toBe('openrouter');
+    expect(explicit.model).toBe('qwen/qwen3-235b-a22b-2507');
+
+    const resolved = createProvider({ apiKey: 'k', model: 'deepseek/deepseek-v4-flash' });
+    expect(resolved).toBeInstanceOf(OpenRouterProvider);
+    expect(resolved.model).toBe('deepseek/deepseek-v4-flash');
   });
 
   test('fetch オプションを渡しても生成できる（GeminiProvider へ pass-through）', () => {

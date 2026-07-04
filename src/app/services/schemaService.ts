@@ -4,6 +4,7 @@
 // 全呼び出しを LLMApiLog + Drive（logs/llm/）に残す
 import type { Protocol } from '../../domain/protocol';
 import type { DocumentRecord } from '../../domain/document';
+import type { LlmProviderId } from '../../domain/llmApiLog';
 import { readDocuments } from '../../features/documents/documentRepository';
 import {
   makeLoadDocumentPages,
@@ -32,7 +33,8 @@ import type { GoogleApiDeps } from '../../lib/google/types';
 import { appendLlmApiLog } from '../../lib/llm/apiLogRepository';
 import { withLogging } from '../../lib/llm/apiLogger';
 import type { LLMProvider } from '../../lib/llm/LLMProvider';
-import type { ProviderConfig } from '../../lib/llm/providerFactory';
+import { missingApiKeyMessage } from '../../lib/llm/modelCatalog';
+import { resolveProviderId, type ProviderConfig } from '../../lib/llm/providerFactory';
 import { withRetry } from '../../lib/llm/retry';
 import { loadDefaultModel } from '../../lib/storage/settingsStore';
 import type { SchemaState, Store } from '../store';
@@ -41,8 +43,8 @@ import { showToast } from '../ui/toast';
 export interface SchemaServiceDeps {
   google: GoogleApiDeps;
   profile: ProfileDeps;
-  /** BYOK の Gemini API キーを解決する（既定は lib/storage/secretsStore.loadGeminiApiKey） */
-  loadApiKey: () => Promise<string | null>;
+  /** BYOK の API キーをプロバイダ別に解決する（既定は lib/storage/secretsStore の各 load 関数） */
+  loadApiKey: (provider: LlmProviderId) => Promise<string | null>;
   /** provider 生成（実行時は lib/llm/providerFactory.createProvider。テストは fake を注入） */
   buildProvider: (config: ProviderConfig) => LLMProvider;
   /** Options の既定モデル設定を解決する（未指定は lib/storage/settingsStore.loadDefaultModel） */
@@ -200,14 +202,12 @@ export async function runDraftSchema(store: Store, deps: SchemaServiceDeps): Pro
     return;
   }
   if (model === '') {
-    patchSchema(store, { draftError: 'モデル名を入力してください（例: gemini-2.5-flash）' });
+    patchSchema(store, { draftError: 'モデルを選択してください（「その他」で直接入力も可）' });
     return;
   }
-  const apiKey = await deps.loadApiKey();
+  const apiKey = await deps.loadApiKey(resolveProviderId(model));
   if (apiKey === null) {
-    patchSchema(store, {
-      draftError: 'Gemini API キーが未設定です。設定画面（Options）で保存してください',
-    });
+    patchSchema(store, { draftError: missingApiKeyMessage(resolveProviderId(model)) });
     return;
   }
 

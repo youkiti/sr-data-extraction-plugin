@@ -236,11 +236,15 @@ describe('renderSchemaView', () => {
         ),
         ctx,
       );
-      const model = view.querySelector('#schema-model') as HTMLInputElement;
-      expect(model.value).toBe('gemini-test');
-      model.value = 'gemini-next';
+      // 単価表にないモデル（gemini-test）は「その他」+ 直接入力テキストで復元される
+      const model = view.querySelector('#schema-model') as HTMLSelectElement;
+      const custom = view.querySelector('#schema-model-custom') as HTMLInputElement;
+      expect(model.value).toBe('__other__');
+      expect(custom.hidden).toBe(false);
+      expect(custom.value).toBe('gemini-test');
+      model.value = 'gemini-2.0-flash';
       model.dispatchEvent(new Event('change'));
-      expect(callbacks.onChangeModel).toHaveBeenCalledWith('gemini-next');
+      expect(callbacks.onChangeModel).toHaveBeenCalledWith('gemini-2.0-flash');
 
       expect(view.querySelector('#schema-draft-error')?.textContent).toBe('API キーが未設定です');
       (view.querySelector('#schema-draft-run') as HTMLButtonElement).click();
