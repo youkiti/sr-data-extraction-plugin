@@ -537,9 +537,15 @@ async function sceneHome(driver) {
 // ---------------------------------------------------------------------------
 
 async function sceneOptions(driver) {
-  log('\n[options] Gemini API キーの保存（手順書 §2 #1）');
+  log('\n[options] Gemini API キーの保存 + 既定モデル設定（手順書 §2 #1）');
   await driver.get(OPTIONS_URL);
   await driver.wait(until.elementLocated(By.css('#options-status')), 10000);
+  await ensureGeminiKey(driver);
+  await ensureDefaultModel(driver);
+}
+
+/** Gemini API キーの保存（未設定なら手入力を促す） */
+async function ensureGeminiKey(driver) {
   // 初期判定（「読み込み中…」→「Gemini: 保存済み / 未設定」）を待つ
   await driver.wait(async () => {
     const text = await textOf(driver, '#options-status');
@@ -547,7 +553,7 @@ async function sceneOptions(driver) {
   }, 15000, 'Options の状態が確定しません');
   const status = await textOf(driver, '#options-status');
   if (status.includes('保存済み')) {
-    ok(`既に保存済みです（${status}）`);
+    ok(`Gemini キーは既に保存済みです（${status}）`);
     return;
   }
   log('\n>>> 開いた Options 画面で Gemini API キーを入力し「保存」を押してください');
@@ -557,6 +563,33 @@ async function sceneOptions(driver) {
     return text.includes('保存しました');
   }, USER_ACTION_TIMEOUT, 'API キーが保存されません');
   ok('Gemini API キーを保存しました');
+}
+
+/**
+ * 既定モデル設定を DEFAULT_MODEL で保存する（S11 / PR #5）。
+ * この値は S5 スキーマ画面のモデル入力へ注入されるため、sceneSchema の prefill 検証と対になる
+ */
+async function ensureDefaultModel(driver) {
+  log('\n[options] 既定モデルの保存（S11。#/schema への注入を後段で検証）');
+  // 初期判定（HTML 既定「読み込み中…」→ bootstrap の「既定モデル: 保存済み / 未設定」）を待つ
+  await driver.wait(async () => {
+    const text = await textOf(driver, '#default-model-status');
+    return text !== '' && !text.includes('読み込み中');
+  }, 15000, '既定モデルの状態が確定しません');
+  const input = await driver.findElement(By.css('#default-model'));
+  const current = await input.getAttribute('value');
+  const status = await textOf(driver, '#default-model-status');
+  if (current === DEFAULT_MODEL && status.includes('保存済み')) {
+    ok(`既定モデルは既に ${DEFAULT_MODEL} で保存済みです`);
+    return;
+  }
+  await setValue(driver, input, DEFAULT_MODEL);
+  await driver.findElement(By.css('#save-default-model')).click();
+  await driver.wait(async () => {
+    const text = await textOf(driver, '#default-model-status');
+    return text.includes('保存しました');
+  }, 15000, '既定モデルが保存されません');
+  ok(`既定モデルを ${DEFAULT_MODEL} で保存しました`);
 }
 
 async function sceneProtocol(driver) {
@@ -607,10 +640,23 @@ async function sceneSchema(driver) {
     throw new Error('schema 失敗');
   }
   if (state === '#schema-confirmed') {
+    // 確定済みプロジェクトでは下書きフォームが出ず、既定モデルの prefill を観測できない。
+    // prefill 検証には project シーンで新規プロジェクトを作り直す必要がある
+    log('  ※ 確定済みのため既定モデル prefill 検証はスキップ（新規プロジェクトで下書きフォームを出すこと）');
     ok(`既に確定済み: ${await textOf(driver, '#schema-current-meta')}`);
     return;
   }
   if (state === '#schema-draft-form') {
+    // S11 / PR #5 の検証: Options の既定モデルが #schema-model に prefill されているか。
+    // schemaService.loadSchema は schema.model が空のときだけ既定モデルで埋めるため、
+    // 未入力状態のこの下書きフォームでは DEFAULT_MODEL が入っているはず
+    const prefilled = await driver.findElement(By.css('#schema-model')).getAttribute('value');
+    if (prefilled === DEFAULT_MODEL) {
+      ok(`既定モデルの prefill を確認: #schema-model = ${prefilled}`);
+    } else {
+      ng(`既定モデルが prefill されていません: #schema-model = "${prefilled}"（期待: ${DEFAULT_MODEL}）`);
+      throw new Error('schema 失敗（既定モデル prefill）');
+    }
     // サンプル文献を先頭から最大 2 本選択（no_text_layer は disabled）
     const selector = '#schema-sample-list input[type="checkbox"]';
     const boxes = await readCheckboxStates(driver, selector);
