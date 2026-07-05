@@ -15,9 +15,12 @@ export const TARGETS = [
 
 /**
  * 比較対象モデル（README §3）。
- * id はエイリアスの可能性がある。実行直前（承認後の最初の作業）に
- * Gemini API の models エンドポイント / OpenRouter の料金ページでスナップショット ID と
- * 実行時単価を確認し、あれば固定値へ差し替えて README §3 の表と本表を更新する。
+ * 2026-07-05 に公式ドキュメント / 料金ページでスナップショット ID と実行時単価を確認済み:
+ * - gemini-3.5-flash: 公式に日付付き callable スナップショット ID は列挙されていない（内部版数は 05-2026）。
+ *   README §3 のフォールバックに従いエイリアス ID のまま使用し、実行日時を runs JSON に記録する。単価 $1.50 / $9.00。
+ * - gemini-3.1-flash-lite: GA 版。callable スナップショット ID は未列挙 → エイリアスのまま。単価 $0.25 / $1.50（text）。
+ * - qwen/qwen3-235b-a22b-2507: 既に固定版（Instruct 2507）。単価 $0.09 / $0.10。
+ * 単価は src/lib/llm/pricing.ts に反映済み（本表の id と MODEL_PRICING のキーは一致）。
  * keyEnv を明示することで createProvider の自動 provider 解決と .env のキー対応がずれない。
  */
 export const MODELS = [

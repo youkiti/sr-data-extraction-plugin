@@ -29,14 +29,18 @@ anchor-spike（2026-07-02、🟢 Green）は「LLM の verbatim quote が PDF.js
 
 [pricing.ts](../../src/lib/llm/pricing.ts) の `MODEL_PRICING` を基に、**Gemini 系 2 モデル + OpenRouter 系 1 モデル**の計 3 種を候補とする（キーは実コードからの引用）。OpenRouter は 2026-07-04 に [`OpenRouterProvider`](../../src/lib/llm/OpenRouterProvider.ts) / [`providerFactory`](../../src/lib/llm/providerFactory.ts)（`/` を含むモデル ID を openrouter に解決）が実装済みで、Qwen 系を Gemini と同一ハーネスで比較できる（旧稿の「OpenRouter は P1 のため対象外・providerFactory が P1 エラーを投げる」は解消済み）:
 
+**単価・スナップショット ID は 2026-07-05 に各公式ページで確認・確定した**（旧稿の概算値から更新済み。出典は §3 末尾）。
+
 | # | モデル ID | provider | 入力 $/1M | 出力 $/1M | 期待役どころ |
 |---|---|---|---|---|---|
-| 1 | `gemini-3.5-flash` | gemini | 0.15 | 0.60 | 精度とコストのバランス候補 |
-| 2 | `gemini-3.1-flash-lite` | gemini | 0.10 | 0.40 | 低コスト候補（スパイク実績・無料枠あり）。**pricing.ts 未収載 → 実行前に単価追記が必要**（§9 #2）。単価は概算で要確認 |
-| 3 | `qwen/qwen3-235b-a22b-2507` | openrouter | 0.14 | 0.14 | OpenRouter 系（大規模 MoE）の比較候補。pricing.ts 収載済み |
+| 1 | `gemini-3.5-flash` | gemini | 1.50 | 9.00 | 精度とコストのバランス候補（旧概算 0.15 / 0.60 から実価格へ更新） |
+| 2 | `gemini-3.1-flash-lite` | gemini | 0.25 | 1.50 | 低コスト候補（スパイク実績）。**pricing.ts に追記済み**（旧概算 0.10 / 0.40 → 実価格。入力はテキストレート。音声は $0.50） |
+| 3 | `qwen/qwen3-235b-a22b-2507` | openrouter | 0.09 | 0.10 | OpenRouter 系（大規模 MoE）の比較候補。固定版 Instruct 2507（旧概算 0.14 / 0.14 → 実価格） |
 
-- **固定バージョン ID の方針**: 上表の ID はエイリアスの可能性がある。実行直前（承認後の最初の作業）に、Gemini 2 モデルは Gemini API の `models` エンドポイントで**日付付き / 番号付きスナップショット ID の有無を確認し、あればそれに固定**する。OpenRouter の Qwen は ID にサフィックス（`-2507`）を含む固定版だが、単価は openrouter.ai の料金ページで実行時の値を再確認する（変動しうるため）。いずれも確認結果を本表と REPORT.md に記録する。スナップショットが存在しないモデルはエイリアス ID + 実行日時の記録で代替する（tiab-review の固定バージョン ID 方針。requirements.md §2 の LLM 行にも明記あり）
-- **`gemini-3.1-flash-lite` の pricing.ts 追記**: 現状 `MODEL_PRICING` に未収載のため、上表の 0.10 / 0.40 は同クラス（`gemini-2.0-flash`）からの概算。承認後に正規の単価を確認して pricing.ts に追記してから実行する（§8.4-3 と同じチェックポイント）
+- **固定バージョン ID の確認結果（2026-07-05）**: Gemini 2 モデルとも、公式ドキュメントに**日付付き / 番号付きの callable スナップショット ID は列挙されていない**（`gemini-3.5-flash` の内部版数は `3.5-flash-05-2026`）。README のフォールバック方針に従い、**エイリアス ID（`gemini-3.5-flash` / `gemini-3.1-flash-lite`）のまま使用し、実行日時を `outputs/runs/*.json` に記録**する（requirements.md §2 の LLM 行の方針）。OpenRouter の Qwen は ID にサフィックス（`-2507`）を含む固定版で、単価も openrouter.ai の料金ページで再確認済み。
+- **`gemini-3.1-flash-lite` の pricing.ts 追記**: 実価格 0.25 / 1.50 を確認し、`MODEL_PRICING` に追記済み。あわせて `gemini-3.5-flash`（0.15 / 0.60 → 1.50 / 9.00）・`qwen/qwen3-235b-a22b-2507`（0.14 / 0.14 → 0.09 / 0.10）の旧概算も実価格へ更新した（コスト集計・§5 手順 3 のタイブレークを正しくするため）。`config.ts` の `id` と `MODEL_PRICING` のキーは一致。
+- **出典（2026-07-05 確認）**: Gemini 2 モデル = [Gemini API 公式料金ページ](https://ai.google.dev/gemini-api/docs/pricing)、Qwen = [OpenRouter モデルページ](https://openrouter.ai/qwen/qwen3-235b-a22b-2507)。
+- **確認単価での再計算**: §7 の 1 パス想定（入力 60K / 出力 12K、各モデル 3 反復）で 3 モデル計 ≈ **$0.71**（旧概算 $0.11 を置換。gemini-3.5-flash の値上げが主因）。**コスト上限 $5 に対しては依然十分な余裕**（§7 の $5 上限は据え置き）。
 
 ## 4. 評価指標（requirements.md §8 の案をそのまま採用）
 
@@ -177,8 +181,8 @@ entity 展開後のゴールド行数の想定: 各論文 2 arm として、stud
 | `qwen/qwen3-235b-a22b-2507` | 0.14 / 0.14 | $0.025 | $0.005 | **$0.03** |
 | **合計（3 モデル）** | | | | **≈ $0.11** |
 
-- 3 モデルとも低〜中単価帯のため、旧稿（`gemini-2.5-pro` を含む $0.67）より安い ≈ $0.11 に収まる
-- デバッグ再実行・スナップショット ID 差し替え等の余裕を見て、**コスト上限 $5** を提案する（超えそうになったら中断して報告）→ §9 チェックリスト
+- **注（2026-07-05 単価確認後）**: 上表は事前登録時の概算単価に基づく。§3 で確定した実価格（gemini-3.5-flash が 1.50 / 9.00 へ上振れ）で再計算すると 3 モデル計 ≈ **$0.71**。この表の $0.11 は事前登録の記録として残す（実行時の実測コストは runs JSON の `costUsd` 合計が正典）。
+- 実価格でも 3 モデル計 ≈ $0.71 で、デバッグ再実行等の余裕を見た**コスト上限 $5** に十分収まる（超えそうになったら中断して報告）→ §9 チェックリスト
 
 ## 8. 実行計画（承認後に着手）
 

@@ -23,8 +23,11 @@ export const MODEL_PRICING: Readonly<Record<string, ModelPricing>> = {
   // 以下は 2026-06 時点の概算価格。実際の単価は各プロバイダの料金ページで確認すること。
   // gemini-2.0-flash は無料枠ではコスト 0 だが、従量課金枠での参考単価を記載する。
   'gemini-2.0-flash': { inputPerMillion: 0.1, outputPerMillion: 0.4 },
-  'gemini-3.5-flash': { inputPerMillion: 0.15, outputPerMillion: 0.6 },
-  'qwen/qwen3-235b-a22b-2507': { inputPerMillion: 0.14, outputPerMillion: 0.14 },
+  // 以下 3 モデルは抽出精度ベンチマーク（Q8）の比較対象。単価は各公式ページで 2026-07-05 に確認・更新。
+  // gemini-3.1-flash-lite の入力はテキスト/画像/動画レート（音声は $0.50）。ベンチマークは text_only。
+  'gemini-3.5-flash': { inputPerMillion: 1.5, outputPerMillion: 9.0 },
+  'gemini-3.1-flash-lite': { inputPerMillion: 0.25, outputPerMillion: 1.5 },
+  'qwen/qwen3-235b-a22b-2507': { inputPerMillion: 0.09, outputPerMillion: 0.1 },
   'deepseek/deepseek-v4-flash': { inputPerMillion: 0.07, outputPerMillion: 0.14 },
 };
 
