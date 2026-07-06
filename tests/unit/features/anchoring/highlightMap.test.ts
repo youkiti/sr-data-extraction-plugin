@@ -82,6 +82,43 @@ describe('highlightMap', () => {
     expect(highlightMap(items, { start: 1, end: 1 })).toEqual([]);
     expect(highlightMap(items, { start: 2, end: 1 })).toEqual([]);
   });
+
+  test('90 度回転 item（transform [0,s,-s,0]）は縦横が入れ替わった矩形になる', () => {
+    // /Rotate 90 の表ページの item と同じ形: 基線方向が生座標の +y、上方向が -x
+    const items: TextLayerItem[] = [
+      {
+        charStart: 0,
+        str: 'abcde',
+        transform: [0, 10, -10, 0, 100, 200],
+        width: 50,
+        height: 10,
+        hasEOL: false,
+      },
+    ];
+    expect(highlightMap(items, { start: 0, end: 5 })).toEqual([
+      { itemIndex: 0, x: 90, y: 200, width: 10, height: 50 },
+    ]);
+    // 部分一致は基線方向（+y）に按分される
+    expect(highlightMap(items, { start: 1, end: 3 })).toEqual([
+      { itemIndex: 0, x: 90, y: 210, width: 10, height: 20 },
+    ]);
+  });
+
+  test('退化した transform（全成分 0）は水平テキストとして扱う', () => {
+    const items: TextLayerItem[] = [
+      {
+        charStart: 0,
+        str: 'ab',
+        transform: [0, 0, 0, 0, 30, 40],
+        width: 20,
+        height: 10,
+        hasEOL: false,
+      },
+    ];
+    expect(highlightMap(items, { start: 0, end: 2 })).toEqual([
+      { itemIndex: 0, x: 30, y: 40, width: 20, height: 10 },
+    ]);
+  });
 });
 
 describe('アンカリング一気通貫（正規化 → anchorQuote → locateQuoteRange → toRawRange → highlightMap）', () => {

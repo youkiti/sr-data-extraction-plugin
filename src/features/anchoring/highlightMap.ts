@@ -16,7 +16,9 @@ export interface HighlightRect {
 
 /**
  * 文字範囲と重なる item ごとに矩形を返す。item 内の部分一致は文字数比例で幅を按分する
- * （等幅近似）。MVP は水平テキストのみ対応し、transform の平行移動成分（e, f）を原点に使う
+ * （等幅近似）。回転テキスト（/Rotate 90 の表ページ等。item transform の a, b, c, d が
+ * 回転を含む）は、基線方向へ按分した区間 + 上方向の押し出しの外接矩形として扱う
+ * （90 度単位の回転では正確、斜めの透かし等は bbox 近似）
  */
 export function highlightMap(items: readonly TextLayerItem[], range: CharRange): HighlightRect[] {
   const rects: HighlightRect[] = [];
@@ -36,12 +38,25 @@ export function highlightMap(items: readonly TextLayerItem[], range: CharRange):
     }
     const startFraction = (overlapStart - itemStart) / len;
     const endFraction = (overlapEnd - itemStart) / len;
+    // 基線方向（読み進む向き）と上方向の単位ベクトル。退化した transform は水平テキスト扱い
+    const [a, b, c, d, e, f] = item.transform;
+    const advanceNorm = Math.hypot(a, b);
+    const upNorm = Math.hypot(c, d);
+    const dirX = advanceNorm === 0 ? 1 : a / advanceNorm;
+    const dirY = advanceNorm === 0 ? 0 : b / advanceNorm;
+    const upX = upNorm === 0 ? 0 : c / upNorm;
+    const upY = upNorm === 0 ? 1 : d / upNorm;
+    // 按分した基線区間の両端 + 上方向 height ぶんの押し出しで外接矩形を作る
+    const x0 = e + dirX * item.width * startFraction;
+    const y0 = f + dirY * item.width * startFraction;
+    const x1 = e + dirX * item.width * endFraction + upX * item.height;
+    const y1 = f + dirY * item.width * endFraction + upY * item.height;
     rects.push({
       itemIndex,
-      x: item.transform[4] + item.width * startFraction,
-      y: item.transform[5],
-      width: item.width * (endFraction - startFraction),
-      height: item.height,
+      x: Math.min(x0, x1),
+      y: Math.min(y0, y1),
+      width: Math.abs(x1 - x0),
+      height: Math.abs(y1 - y0),
     });
   });
   return rects;

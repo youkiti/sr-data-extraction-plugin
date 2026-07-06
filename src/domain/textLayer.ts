@@ -5,6 +5,9 @@
 /** PDF ユーザー空間への変換行列 [a, b, c, d, e, f]（e, f が原点座標） */
 export type PdfTransform = [number, number, number, number, number, number];
 
+/** ページの表示回転（/Rotate。時計回りの度数） */
+export type PageRotation = 0 | 90 | 180 | 270;
+
 /** span 1 個ぶんのテキスト層 item */
 export interface TextLayerItem {
   /** ページテキスト内の開始文字オフセット */
@@ -23,9 +26,14 @@ export interface TextLayerPage {
   page: number;
   /** item を読み順（コンテンツストリーム順）で連結したテキスト。hasEOL 位置に \n を挿入 */
   text: string;
-  /** PDF ポイント単位のページサイズ */
+  /** PDF ポイント単位のページサイズ（回転適用後の表示寸法。/Rotate 90 の縦置きページは横長になる） */
   width: number;
   height: number;
+  /**
+   * ページの表示回転。item の transform は回転前の生座標系なので、
+   * 表示座標への変換（app/ui/pdfViewer）はこの回転を適用する必要がある
+   */
+  rotation: PageRotation;
   items: TextLayerItem[];
 }
 

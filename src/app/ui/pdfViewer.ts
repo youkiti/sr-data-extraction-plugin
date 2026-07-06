@@ -2,13 +2,15 @@
 // 根拠ハイライトのオーバーレイ描画）。
 // - 単一ページ表示。canvas 描画は非同期・連番ガードで競合を破棄する
 // - オーバーレイは TextLayerPage の寸法（scale 1）から同期配置できるため、canvas の
-//   描画完了を待たずにハイライトが出る（PDF ユーザー空間は原点左下 → CSS は左上に変換）
+//   描画完了を待たずにハイライトが出る（PDF ユーザー空間 → CSS 左上原点への写像は
+//   ページ回転込みで toDisplayRect が行う）
 // - ハイライト矩形はクリック可能（フォーム側への双方向ジャンプ。ui-flow.md §3）
 import type { TextLayerPage } from '../../domain/textLayer';
 import {
   renderPdfPageToCanvas,
   type PdfViewerDocument,
 } from '../../lib/pdf/renderPage';
+import { toDisplayRect } from '../../lib/pdf/viewportRect';
 import { searchPages, type HighlightOccurrence } from '../../features/verification/highlights';
 import { el } from './dom';
 
@@ -115,31 +117,32 @@ export function createPdfViewer(options: PdfViewerOptions): PdfViewerHandle {
     scroller,
   ]);
 
-  /** 現在ページの scale 1 寸法（テキスト層が無いページ番号は canvas 描画後の寸法に任せる） */
-  function pageDims(): { width: number; height: number } | null {
-    const page = options.pages.find((candidate) => candidate.page === currentPage);
-    return page === undefined ? null : { width: page.width, height: page.height };
+  /** 現在ページのテキスト層（テキスト層が無いページ番号は canvas 描画後の寸法に任せる） */
+  function currentTextLayerPage(): TextLayerPage | null {
+    return options.pages.find((candidate) => candidate.page === currentPage) ?? null;
   }
 
   function rectStyle(
     node: HTMLElement,
-    pageHeight: number,
+    page: TextLayerPage,
     rect: { x: number; y: number; width: number; height: number },
   ): void {
-    node.style.left = `${rect.x * scale}px`;
-    node.style.top = `${(pageHeight - rect.y - rect.height) * scale}px`;
-    node.style.width = `${rect.width * scale}px`;
-    node.style.height = `${rect.height * scale}px`;
+    // 矩形は回転前のユーザー空間なので、ページ回転込みで表示座標へ写像してから拡縮する
+    const display = toDisplayRect(rect, page);
+    node.style.left = `${display.left * scale}px`;
+    node.style.top = `${display.top * scale}px`;
+    node.style.width = `${display.width * scale}px`;
+    node.style.height = `${display.height * scale}px`;
   }
 
   function renderOverlay(): void {
-    const dims = pageDims();
+    const page = currentTextLayerPage();
     overlay.replaceChildren();
-    if (dims === null) {
+    if (page === null) {
       return;
     }
-    pageWrap.style.width = `${dims.width * scale}px`;
-    pageWrap.style.height = `${dims.height * scale}px`;
+    pageWrap.style.width = `${page.width * scale}px`;
+    pageWrap.style.height = `${page.height * scale}px`;
     for (const highlight of highlights) {
       if (highlight.occurrence.page !== currentPage) {
         continue;
@@ -152,7 +155,7 @@ export function createPdfViewer(options: PdfViewerOptions): PdfViewerHandle {
         if (highlight.id === activeId) {
           node.classList.add('pdf-viewer__hl--active');
         }
-        rectStyle(node, dims.height, rect);
+        rectStyle(node, page, rect);
         node.addEventListener('click', () => options.onHighlightClick?.(highlight.id));
         overlay.append(node);
       }
@@ -161,7 +164,7 @@ export function createPdfViewer(options: PdfViewerOptions): PdfViewerHandle {
     if (hit !== undefined && hit.page === currentPage) {
       for (const rect of hit.rects) {
         const node = el('span', { className: 'pdf-viewer__hl pdf-viewer__hl--search' });
-        rectStyle(node, dims.height, rect);
+        rectStyle(node, page, rect);
         overlay.append(node);
       }
     }
