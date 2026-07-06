@@ -73,6 +73,7 @@ describe('createInitialState', () => {
         selectionInitialized: false,
         model: '',
         extractedDocumentIds: null,
+        interruptedDocumentIds: null,
         loading: false,
         loadError: null,
         confirming: false,

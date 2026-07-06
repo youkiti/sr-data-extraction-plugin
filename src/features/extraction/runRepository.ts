@@ -1,6 +1,9 @@
 // ExtractionRuns タブ I/O（requirements.md §3.1: 追記のみ・上書き禁止）。
-// run 1 件 = 実行完了時に確定 status（done / partial_failure）で 1 行追記する。
-// 実行中の進捗は UI（S7 の進捗バー）で in-memory 管理し、シートには残さない
+// run 1 件 = 2 行プロトコル（requirements.md §4.3）:
+//   1. 実行開始時に status='running' の行を追記（Evidence より先。中断検出の印）
+//   2. 実行完了時に確定 status（done / partial_failure）の行を同じ run_id で追記
+// 読み手は run_id ごとに「完了行があるか」で完了 / 中断を判別する。
+// 実行中の細かい進捗は UI（S7 の進捗バー）で in-memory 管理し、シートには残さない
 import type { ExtractionRun, RunAuditInfo } from '../../domain/extractionRun';
 import { SHEET_HEADERS } from '../../domain/sheetsSchema';
 import { appendRow, getSheetValues } from '../../lib/google/sheets';
@@ -104,23 +107,54 @@ export async function readRunAuditInfos(
   });
 }
 
+/** 完了行の status（2 行プロトコルの 2 行目）。running 行しかない run は中断とみなす */
+const COMPLETED_STATUSES: ReadonlySet<string> = new Set(['done', 'partial_failure']);
+
+/** document_ids 列（4 列目）のカンマ区切りを分解する（§3.2）。ラグ配列の欠落セルは空扱い */
+function parseDocumentIds(cell: string | null | undefined): string[] {
+  return (cell ?? '').split(',').filter((id) => id !== '');
+}
+
+export interface RunDocumentCoverage {
+  /** 完了行を持つ run で抽出済みの document_id 集合（S7 既定選択 = 未抽出の全件の素材） */
+  extracted: Set<string>;
+  /**
+   * 中断された run（running 行のみで完了行がない）に含まれ、かつその後の run でも
+   * 抽出されていない document_id 集合（S7 の中断バナーの素材）
+   */
+  interrupted: Set<string>;
+}
+
 /**
- * これまでの run（pilot / full / single_document すべて）で抽出済みの document_id 集合を返す。
- * S7 の対象選択の既定値（= 未抽出の全件）を出すための最小読み出し
+ * これまでの run（pilot / full / single_document すべて）の document カバレッジを返す。
+ * 抽出済みに数えるのは完了行のみ。中断 run の文献は「未抽出」に戻るため、
+ * S7 の既定選択（未抽出の全件）がそのまま再開手段になる
  */
-export async function readExtractedDocumentIds(
+export async function readRunDocumentCoverage(
   spreadsheetId: string,
   deps: GoogleApiDeps,
-): Promise<Set<string>> {
+): Promise<RunDocumentCoverage> {
   const rows = await readRunRows(spreadsheetId, deps);
-  const ids = new Set<string>();
+  const extracted = new Set<string>();
+  const completedRunIds = new Set<string>();
   for (const raw of rows) {
-    // document_ids 列（4 列目）はカンマ区切り（§3.2）
-    for (const id of (raw[3] ?? '').split(',')) {
-      if (id !== '') {
-        ids.add(id);
+    if (COMPLETED_STATUSES.has(raw[8] ?? '')) {
+      completedRunIds.add(raw[0] ?? '');
+      for (const id of parseDocumentIds(raw[3])) {
+        extracted.add(id);
       }
     }
   }
-  return ids;
+  const interrupted = new Set<string>();
+  for (const raw of rows) {
+    if (completedRunIds.has(raw[0] ?? '')) {
+      continue;
+    }
+    for (const id of parseDocumentIds(raw[3])) {
+      if (!extracted.has(id)) {
+        interrupted.add(id);
+      }
+    }
+  }
+  return { extracted, interrupted };
 }

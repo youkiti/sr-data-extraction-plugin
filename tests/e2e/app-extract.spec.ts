@@ -200,8 +200,9 @@ async function initApp(page: Page, options: InitOptions = {}): Promise<void> {
   await page.goto('/app/app.html#/extract');
 }
 
-test('未実行: 未抽出の既定選択 + 抽出済みバッジ + コスト概算 + 実行前バリデーション', async ({ page }) => {
-  // ExtractionRuns に doc-2 の run が 1 件 → doc-2 は抽出済み（既定選択から外す）
+test('未実行: 未抽出の既定選択 + 抽出済みバッジ + 中断バナー + コスト概算 + 実行前バリデーション', async ({ page }) => {
+  // ExtractionRuns に doc-2 の完了 run が 1 件 → doc-2 は抽出済み（既定選択から外す）。
+  // doc-1 は running 行のみの中断 run → 未抽出のまま既定選択に含まれ、中断バナーが出る
   await page.route('https://sheets.googleapis.com/**', async (route) => {
     const url = decodeURIComponent(route.request().url());
     if (route.request().method() === 'GET' && url.includes('ExtractionRuns')) {
@@ -211,6 +212,8 @@ test('未実行: 未抽出の既定選択 + 抽出済みバッジ + コスト概
             RUNS_HEADERS,
             ['run-0', 'pilot', '1', 'doc-2', 'gemini', 'gemini-test', '', 'text_only', 'done',
               't1', 't2', '', '', ''],
+            ['run-1', 'full', '1', 'doc-1', 'gemini', 'gemini-test', '', 'text_only', 'running',
+              't3', '', '', '', ''],
           ],
         },
       });
@@ -223,6 +226,11 @@ test('未実行: 未抽出の既定選択 + 抽出済みバッジ + コスト概
 
   // パイロット未実施の警告バナー（ui-flow.md §4）
   await expect(page.locator('#extract-pilot-warning')).toContainText('パイロット抽出を推奨します');
+
+  // 中断 run（running 行のみ）の残り文献バナー（requirements.md §3.2 の 2 行プロトコル）
+  await expect(page.locator('#extract-interrupted-warning')).toContainText(
+    '前回の抽出が途中で中断されています（未完了 1 件）',
+  );
 
   // 既定選択 = 未抽出の全件（doc-1 のみ）。抽出済みバッジ + no_text_layer は選択不可
   await expect(page.locator('#extract-documents li')).toHaveCount(3);
@@ -362,9 +370,10 @@ test('実行確認 → 一部失敗 → 再試行成功 → 完了（ExtractionR
   await expect(rows.nth(0)).toContainText('Smith 2020');
   await expect(rows.nth(1)).toContainText('失敗');
   await expect(rows.nth(1)).toContainText('api_error');
+  // 2 行プロトコル: run 1 回 = running 行 + 完了行の 2 追記
   await expect
     .poll(() => appendUrls.filter((url) => url.includes('ExtractionRuns!A1:append')).length)
-    .toBe(1);
+    .toBe(2);
   expect(appendUrls.some((url) => url.includes('Evidence!A1:append'))).toBe(true);
 
   const partialAxe = await new AxeBuilder({ page }).analyze();
@@ -380,6 +389,6 @@ test('実行確認 → 一部失敗 → 再試行成功 → 完了（ExtractionR
   await expect(rows.nth(1)).toContainText('完了');
   await expect
     .poll(() => appendUrls.filter((url) => url.includes('ExtractionRuns!A1:append')).length)
-    .toBe(2);
+    .toBe(4); // full run + single_document run × 各 2 行
   await expect(page.locator('#extract-verify-link')).toHaveAttribute('href', '#/verify');
 });

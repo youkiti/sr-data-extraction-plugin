@@ -9,7 +9,13 @@ const BATCH_VALUE_RANGES = [
   { values: [['doc-1'], ['doc-2'], ['doc-3']] }, // Documents
   { values: [['1']] }, // Protocol
   { values: [['1']] }, // SchemaVersions
-  { values: [['pilot'], ['full']] }, // ExtractionRuns run_type
+  // ExtractionRuns run_type〜status（完了行のみ pilot に数える）
+  {
+    values: [
+      ['pilot', '1', 'doc-1', 'gemini', 'gemini-test', '', 'text_only', 'done'],
+      ['full', '1', 'doc-1', 'gemini', 'gemini-test', '', 'text_only', 'done'],
+    ],
+  },
   { values: [['ev-1'], ['ev-2'], ['ev-3'], ['ev-4']] }, // Evidence
   { values: [['doc-1']] }, // StudyData
   { values: [['r-1'], ['r-2']] }, // ResultsData

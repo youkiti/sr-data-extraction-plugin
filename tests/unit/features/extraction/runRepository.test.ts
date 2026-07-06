@@ -3,8 +3,8 @@ import { SHEET_HEADERS } from '../../../../src/domain/sheetsSchema';
 import {
   appendExtractionRun,
   extractionRunToRow,
-  readExtractedDocumentIds,
   readRunAuditInfos,
+  readRunDocumentCoverage,
   readRunSchemaVersions,
 } from '../../../../src/features/extraction/runRepository';
 
@@ -223,7 +223,7 @@ describe('readRunAuditInfos', () => {
   });
 });
 
-describe('readExtractedDocumentIds', () => {
+describe('readRunDocumentCoverage', () => {
   function readDeps(values: string[][]): { fetch: jest.Mock; getAccessToken: jest.Mock } {
     return {
       fetch: jest.fn().mockResolvedValue({
@@ -236,8 +236,8 @@ describe('readExtractedDocumentIds', () => {
     };
   }
 
-  const runRow = (documentIds: string): string[] => [
-    'run-1',
+  const runRow = (runId: string, documentIds: string, status: string): string[] => [
+    runId,
     'pilot',
     '1',
     documentIds,
@@ -245,7 +245,7 @@ describe('readExtractedDocumentIds', () => {
     'gemini-test',
     '',
     'text_only',
-    'done',
+    status,
     't1',
     't2',
     '',
@@ -253,27 +253,76 @@ describe('readExtractedDocumentIds', () => {
     '',
   ];
 
-  test('全 run の document_ids（カンマ区切り）の和集合を返す', async () => {
+  test('完了行（done / partial_failure）の document_ids の和集合を extracted に返す', async () => {
     const values = [
       [...SHEET_HEADERS.ExtractionRuns],
-      runRow('doc-1,doc-2'),
-      runRow('doc-2,doc-3'),
+      runRow('run-1', 'doc-1,doc-2', 'done'),
+      runRow('run-2', 'doc-2,doc-3', 'partial_failure'),
     ];
-    const ids = await readExtractedDocumentIds('sheet-1', readDeps(values));
-    expect([...ids].sort()).toEqual(['doc-1', 'doc-2', 'doc-3']);
+    const coverage = await readRunDocumentCoverage('sheet-1', readDeps(values));
+    expect([...coverage.extracted].sort()).toEqual(['doc-1', 'doc-2', 'doc-3']);
+    expect(coverage.interrupted.size).toBe(0);
   });
 
-  test('run 0 件は空集合、document_ids 欠落行（ラグ配列）は無視する', async () => {
-    expect((await readExtractedDocumentIds('sheet-1', readDeps([[...SHEET_HEADERS.ExtractionRuns]]))).size).toBe(0);
-    const ids = await readExtractedDocumentIds(
+  test('running 行のみの run（2 行プロトコルの中断）は抽出済みに数えず interrupted に返す', async () => {
+    const values = [
+      [...SHEET_HEADERS.ExtractionRuns],
+      runRow('run-1', 'doc-1,doc-2', 'running'),
+    ];
+    const coverage = await readRunDocumentCoverage('sheet-1', readDeps(values));
+    expect(coverage.extracted.size).toBe(0);
+    expect([...coverage.interrupted].sort()).toEqual(['doc-1', 'doc-2']);
+  });
+
+  test('running 行 + 完了行が揃った run は完了扱い（interrupted に出ない）', async () => {
+    const values = [
+      [...SHEET_HEADERS.ExtractionRuns],
+      runRow('run-1', 'doc-1,doc-2', 'running'),
+      runRow('run-1', 'doc-1,doc-2', 'done'),
+    ];
+    const coverage = await readRunDocumentCoverage('sheet-1', readDeps(values));
+    expect([...coverage.extracted].sort()).toEqual(['doc-1', 'doc-2']);
+    expect(coverage.interrupted.size).toBe(0);
+  });
+
+  test('中断 run の文献でも、別の完了 run で抽出済みなら interrupted から除く', async () => {
+    const values = [
+      [...SHEET_HEADERS.ExtractionRuns],
+      runRow('run-1', 'doc-1,doc-2', 'running'),
+      runRow('run-2', 'doc-1', 'done'),
+    ];
+    const coverage = await readRunDocumentCoverage('sheet-1', readDeps(values));
+    expect([...coverage.extracted]).toEqual(['doc-1']);
+    expect([...coverage.interrupted]).toEqual(['doc-2']);
+  });
+
+  test('run 0 件は両方空集合、document_ids 欠落行（ラグ配列）は無視する', async () => {
+    const empty = await readRunDocumentCoverage(
+      'sheet-1',
+      readDeps([[...SHEET_HEADERS.ExtractionRuns]]),
+    );
+    expect(empty.extracted.size).toBe(0);
+    expect(empty.interrupted.size).toBe(0);
+    const ragged = await readRunDocumentCoverage(
       'sheet-1',
       readDeps([[...SHEET_HEADERS.ExtractionRuns], ['run-1', 'pilot', '1']]),
     );
-    expect(ids.size).toBe(0);
+    expect(ragged.extracted.size).toBe(0);
+    expect(ragged.interrupted.size).toBe(0);
+  });
+
+  test('run_id / document_ids が null セルの完了行も安全に読む', async () => {
+    const values = [
+      [...SHEET_HEADERS.ExtractionRuns],
+      [null, 'pilot', '1', null, 'gemini', 'gemini-test', '', 'text_only', 'done'] as unknown as string[],
+    ];
+    const coverage = await readRunDocumentCoverage('sheet-1', readDeps(values));
+    expect(coverage.extracted.size).toBe(0);
+    expect(coverage.interrupted.size).toBe(0);
   });
 
   test('ヘッダ行なしはエラー（readRunSchemaVersions と同じ前処理）', async () => {
-    await expect(readExtractedDocumentIds('sheet-1', readDeps([]))).rejects.toThrow(
+    await expect(readRunDocumentCoverage('sheet-1', readDeps([]))).rejects.toThrow(
       'ExtractionRuns タブにヘッダ行がありません',
     );
   });

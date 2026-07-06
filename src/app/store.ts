@@ -127,8 +127,13 @@ export interface ExtractState {
   /** 既定選択を一度だけ行うためのフラグ（ユーザーの選択解除を上書きしない） */
   selectionInitialized: boolean;
   model: string;
-  /** ExtractionRuns 由来の抽出済み document_id。null = 未読込（画面表示時に読み込む） */
+  /** ExtractionRuns 由来の抽出済み document_id（完了行のみ）。null = 未読込（画面表示時に読み込む） */
   extractedDocumentIds: string[] | null;
+  /**
+   * 中断された run（running 行のみで完了行がない）に含まれ、まだ再抽出されていない
+   * document_id。中断バナーの素材（extractedDocumentIds と同時に読み込む）
+   */
+  interruptedDocumentIds: string[] | null;
   loading: boolean;
   loadError: string | null;
   /** 実行確認カード（#extract-confirm）を表示中か */
@@ -308,6 +313,7 @@ export function createInitialState(): AppState {
       selectionInitialized: false,
       model: '',
       extractedDocumentIds: null,
+      interruptedDocumentIds: null,
       loading: false,
       loadError: null,
       confirming: false,

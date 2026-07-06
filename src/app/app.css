@@ -704,7 +704,8 @@
 
 /* --- #/extract（S7）------------------------------------------------------ */
 
-.extract__pilot-warning {
+.extract__pilot-warning,
+.extract__interrupted-warning {
   background: var(--color-warning-bg);
   border: 1px solid var(--color-warning-border);
   border-radius: 8px;

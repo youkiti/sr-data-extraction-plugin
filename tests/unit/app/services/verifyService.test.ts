@@ -260,15 +260,33 @@ beforeEach(() => {
 
 describe('latestRunEvidenceByDocument', () => {
   test('document ごとに最後に現れた run の Evidence だけを残す', () => {
-    const map = latestRunEvidenceByDocument([
-      makeEvidence({ evidenceId: 'a', runId: 'run-1' }),
-      makeEvidence({ evidenceId: 'b', documentId: 'doc-2', runId: 'run-1' }),
-      makeEvidence({ evidenceId: 'c', runId: 'run-2' }), // doc-1 の新しい run
-      makeEvidence({ evidenceId: 'd', runId: 'run-2', fieldId: 'f-2' }),
-    ]);
+    const map = latestRunEvidenceByDocument(
+      [
+        makeEvidence({ evidenceId: 'a', runId: 'run-1' }),
+        makeEvidence({ evidenceId: 'b', documentId: 'doc-2', runId: 'run-1' }),
+        makeEvidence({ evidenceId: 'c', runId: 'run-2' }), // doc-1 の新しい run
+        makeEvidence({ evidenceId: 'd', runId: 'run-2', fieldId: 'f-2' }),
+      ],
+      new Set(['run-1', 'run-2']),
+    );
     expect(map.get('doc-1')?.runId).toBe('run-2');
     expect(map.get('doc-1')?.evidence.map((item) => item.evidenceId)).toEqual(['c', 'd']);
     expect(map.get('doc-2')?.runId).toBe('run-1');
+  });
+
+  test('ExtractionRuns に無い run の Evidence（孤児）は対象外とし、既知 run の最新を採る', () => {
+    const map = latestRunEvidenceByDocument(
+      [
+        makeEvidence({ evidenceId: 'a', runId: 'run-1' }),
+        makeEvidence({ evidenceId: 'b', runId: 'run-orphan' }), // 中断実行の孤児（最後に現れる）
+        makeEvidence({ evidenceId: 'c', documentId: 'doc-2', runId: 'run-orphan' }),
+      ],
+      new Set(['run-1']),
+    );
+    // doc-1 は孤児を無視して既知の run-1 を表示、doc-2 は孤児しかないため未抽出扱い
+    expect(map.get('doc-1')?.runId).toBe('run-1');
+    expect(map.get('doc-1')?.evidence.map((item) => item.evidenceId)).toEqual(['a']);
+    expect(map.has('doc-2')).toBe(false);
   });
 });
 
@@ -329,13 +347,12 @@ describe('loadVerifyTargets', () => {
     expect(readEvidenceRowsMock).toHaveBeenCalledTimes(1);
   });
 
-  test('ExtractionRuns に無い run_id は不整合エラー', async () => {
+  test('ExtractionRuns に無い run_id（孤児 Evidence）はエラーにせず未抽出として除外する', async () => {
     const store = makeStore({ documents: [makeDocument()] });
     readRunSchemaVersionsMock.mockResolvedValue(new Map());
     await loadVerifyTargets(store, makeDeps());
-    expect(store.getState().verify.loadError).toContain(
-      'ExtractionRuns に run_id run-1 がありません',
-    );
+    expect(store.getState().verify.loadError).toBeNull();
+    expect(store.getState().verify.targets).toHaveLength(0);
     expect(store.getState().verify.loading).toBe(false);
   });
 
