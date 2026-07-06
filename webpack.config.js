@@ -4,7 +4,14 @@
 // - manifest.json の __OAUTH_CLIENT_ID__ を .env の値で置換。dev ビルドは拡張名に (dev) を付与
 require('dotenv').config();
 const path = require('path');
+const webpack = require('webpack');
 const CopyWebpackPlugin = require('copy-webpack-plugin');
+
+// ビルド日（ローカル時刻の YYYY-MM-DD）。アプリ名の下に表示する
+const now = new Date();
+const buildDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(
+  now.getDate(),
+).padStart(2, '0')}`;
 
 module.exports = (_env, argv) => {
   const isProduction = argv && argv.mode === 'production';
@@ -51,6 +58,9 @@ module.exports = (_env, argv) => {
       ],
     },
     plugins: [
+      new webpack.DefinePlugin({
+        __BUILD_DATE__: JSON.stringify(buildDate),
+      }),
       new CopyWebpackPlugin({
         patterns: [
           {

@@ -54,7 +54,25 @@ export interface VerificationPanelHandle {
   root: HTMLElement;
   /** 指定 entity のタブへ切替え、先頭セルへスクロール・フォーカスする（?entity= ディープリンク） */
   focusEntity(entityKey: string): void;
+  /** 現在フォーカス中のセルを可視域へスクロールする（新規パネルの初期表示用） */
+  scrollFocusedIntoView(): void;
   dispose(): void;
+}
+
+/** cells 中の startIndex 以降で最初の未判定セル。末尾まで無ければ先頭へ回り込む。全て判定済みなら null */
+function nextUndecidedKey(cells: readonly VerificationCell[], startIndex: number): string | null {
+  for (let offset = 0; offset < cells.length; offset++) {
+    const cell = cells[(startIndex + offset) % cells.length] as VerificationCell;
+    if (cell.state.status === 'unverified') {
+      return cell.cellKey;
+    }
+  }
+  return null;
+}
+
+/** 初期・タブ切替時のフォーカス先。最初の未判定セル → 無ければ先頭セル → それも無ければ null */
+function initialFocusKey(cells: readonly VerificationCell[]): string | null {
+  return nextUndecidedKey(cells, 0) ?? cells[0]?.cellKey ?? null;
 }
 
 export function createVerificationPanel(
@@ -218,7 +236,7 @@ export function createVerificationPanel(
     // ロック中タブの排他は verificationForm 側が担う（disabled ボタンにはリスナを付けない）
     onSelectTab(tab) {
       activeTab = tab;
-      focusedCellKey = currentTabModel().cells[0]?.cellKey ?? null;
+      focusedCellKey = initialFocusKey(currentTabModel().cells);
       editing = null;
       refreshForm();
       syncViewer();
@@ -325,6 +343,8 @@ export function createVerificationPanel(
   function refreshForm(): void {
     const doc = root.ownerDocument;
     const hadFocus = root.contains(doc.activeElement);
+    // フォームペイン全体を作り直すためスクロール位置が 0 へクランプされる。退避して復元する
+    const savedScrollTop = formPane.scrollTop;
     const model: VerificationFormModel = {
       tabs,
       activeTab,
@@ -345,8 +365,12 @@ export function createVerificationPanel(
       progress: verificationProgress(data.fields, data.evidence, ownDecisions),
     };
     formPane.replaceChildren(renderVerificationForm(model, handlers));
+    formPane.scrollTop = savedScrollTop;
     if (hadFocus && focusedCellKey !== null && editing === null && !tabLocked(activeTab)) {
-      findCellElement(focusedCellKey).focus();
+      // 復元したスクロール位置を尊重しつつ（preventScroll）、フォーカスセルが画面外なら最小移動で見せる
+      const element = findCellElement(focusedCellKey);
+      element.focus({ preventScroll: true });
+      element.scrollIntoView?.({ block: 'nearest' });
     }
   }
 
@@ -428,9 +452,24 @@ export function createVerificationPanel(
       note: null,
     };
     ownDecisions.push(decision);
-    focusedCellKey = cell.cellKey;
+    // 判定後は次の未判定セルへ自動遷移する（j キーの手動送りを不要に）。
+    // 全セル判定済み・undo（取り消し直後に同じセルで再判定するため）は現在セルに留まる
+    let movedTo: string | null = null;
+    if (action !== 'undo') {
+      const cells = currentTabModel().cells;
+      const currentIndex = cells.findIndex((candidate) => candidate.cellKey === cell.cellKey);
+      movedTo = nextUndecidedKey(cells, currentIndex + 1);
+    }
+    focusedCellKey = movedTo ?? cell.cellKey;
     refreshForm();
     syncViewer();
+    if (movedTo !== null) {
+      // PDF ハイライトも遷移先へ追従（f キーと同じ体験）+ セル DOM を可視化・フォーカス
+      viewer?.focusHighlight(movedTo);
+      const element = findCellElement(movedTo);
+      element.scrollIntoView?.({ block: 'nearest' });
+      element.focus();
+    }
     options.onDecision(decision);
   }
 
@@ -511,13 +550,19 @@ export function createVerificationPanel(
   const ownerDoc = root.ownerDocument;
   ownerDoc.addEventListener('keydown', handleKeydown);
 
-  focusedCellKey = currentTabModel().cells[0]?.cellKey ?? null;
+  focusedCellKey = initialFocusKey(currentTabModel().cells);
   refreshForm();
   syncViewer();
 
   return {
     root,
     focusEntity,
+    scrollFocusedIntoView() {
+      const element = [...formPane.querySelectorAll<HTMLElement>('.verify__cell')].find(
+        (node) => node.dataset['cellKey'] === focusedCellKey,
+      );
+      element?.scrollIntoView?.({ block: 'nearest' });
+    },
     dispose() {
       ownerDoc.removeEventListener('keydown', handleKeydown);
     },
@@ -541,15 +586,21 @@ let cachedPanel: {
  * focusEntityKey は値が変わったときだけ focusEntity を呼ぶ（ストア再描画では発火しない）
  */
 export function renderCachedVerificationPanel(options: VerificationPanelOptions): HTMLElement {
+  const focusEntityKey = options.focusEntityKey ?? null;
   if (cachedPanel === null || cachedPanel.data !== options.data) {
     cachedPanel?.handle.dispose();
-    cachedPanel = {
-      data: options.data,
-      handle: createVerificationPanel(options),
-      appliedFocusEntity: null,
-    };
+    const handle = createVerificationPanel(options);
+    cachedPanel = { data: options.data, handle, appliedFocusEntity: null };
+    if (focusEntityKey === null) {
+      // ?entity= 指定時は下の focusEntity 適用に任せる。未指定時のみ初期フォーカスセルを可視化する。
+      // render 時点ではパネルが DOM 未接続のため、接続後（microtask）にスクロールする
+      queueMicrotask(() => {
+        if (cachedPanel?.handle === handle) {
+          handle.scrollFocusedIntoView();
+        }
+      });
+    }
   }
-  const focusEntityKey = options.focusEntityKey ?? null;
   if (focusEntityKey !== cachedPanel.appliedFocusEntity) {
     cachedPanel.appliedFocusEntity = focusEntityKey;
     if (focusEntityKey !== null) {

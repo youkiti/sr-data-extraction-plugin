@@ -1,0 +1,20 @@
+{
+  "name": "extraction-benchmark",
+  "private": true,
+  "version": "0.1.0",
+  "description": "抽出精度ベンチマーク（README.md 参照。Q8 既定モデル確定）",
+  "type": "module",
+  "scripts": {
+    "extract-text": "tsx src/extractText.ts",
+    "run": "tsx src/runner.ts",
+    "score": "tsx src/score.ts",
+    "validate-gold": "tsx src/validateGold.ts",
+    "smoke": "tsx src/smoke.ts"
+  },
+  "devDependencies": {
+    "dotenv": "^17.4.2",
+    "pdfjs-dist": "^6.1.200",
+    "tsx": "^4.22.4",
+    "typescript": "^6.0.3"
+  }
+}

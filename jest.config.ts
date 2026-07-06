@@ -6,6 +6,9 @@ import type { Config } from 'jest';
 
 const config: Config = {
   testEnvironment: 'jsdom',
+  // ビルド時に webpack DefinePlugin が注入する __BUILD_DATE__ をテストにも与える
+  // （build-info.ts が参照。値は任意の固定日でよい）
+  globals: { __BUILD_DATE__: '2026-07-06' },
   roots: ['<rootDir>/src', '<rootDir>/tests'],
   testMatch: ['**/*.test.ts'],
   testPathIgnorePatterns: ['/node_modules/', '<rootDir>/tests/e2e/'],

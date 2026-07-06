@@ -233,10 +233,9 @@ test('未実行: 未抽出の既定選択 + 抽出済みバッジ + コスト概
   await expect(page.locator('.extract__doc-extracted')).toHaveText('抽出済み');
   await expect(page.locator('.extract__doc-note')).toContainText('テキスト層なし');
 
-  // コスト概算（単価表にないモデル → 概算不可）。モデルは S6/S5 未入力のため手入力
-  await page.locator('#extract-model').fill('gemini-test');
-  await page.locator('#extract-model').dispatchEvent('change');
-  await expect(page.locator('#extract-estimate')).toContainText('概算不可（単価表にないモデル）');
+  // コスト概算。モデルは S6/S5 未入力のためプルダウンから選択（単価表のモデル → 金額表示）
+  await page.locator('#extract-model').selectOption('gemini-2.0-flash');
+  await expect(page.locator('#extract-estimate')).toContainText('コスト概算: $');
   await expect(page.locator('#extract-estimate')).toContainText('1 バッチ');
 
   // API キー未設定 → 確認カードを出さずインラインエラー（ui-states.md §3）

@@ -79,6 +79,33 @@ export async function ensureChildFolder(
 }
 
 /**
+ * ファイルを指定フォルダへ移動する（Drive API files.update の parents 操作）。
+ *
+ * Sheets API の spreadsheets.create はスプレッドシートを必ずマイドライブ直下に
+ * 作るため、プロジェクトフォルダ配下へ収めるにはこの移動が必要。現在の親
+ * （通常は root）を removeParents で外し、`parentId` を addParents で付け替える。
+ * drive.file スコープでも、当該ファイルを本アプリが作成していれば操作できる。
+ */
+export async function moveFileToFolder(
+  fileId: string,
+  parentId: string,
+  deps: GoogleApiDeps
+): Promise<void> {
+  // 現在の親を取得してから付け替える（Drive は単一親モデルのため removeParents が要る）
+  const getUrl = `${METADATA_API}/${encodeURIComponent(fileId)}?fields=parents`;
+  const getRes = await googleFetch(getUrl, { method: 'GET' }, deps);
+  const { parents } = (await getRes.json()) as { parents?: string[] };
+  const removeParents = (parents ?? []).join(',');
+
+  const params = new URLSearchParams({ addParents: parentId, fields: 'id,parents' });
+  if (removeParents) {
+    params.set('removeParents', removeParents);
+  }
+  const url = `${METADATA_API}/${encodeURIComponent(fileId)}?${params.toString()}`;
+  await googleFetch(url, { method: 'PATCH' }, deps);
+}
+
+/**
  * プレーンテキストや JSON をファイルとして指定フォルダにアップロードする。
  * multipart upload を手動で組み立てる（追加依存不要）。
  */

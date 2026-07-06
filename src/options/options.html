@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>SR データ抽出 — 設定</title>
+    <title>SR Data Extraction Plugin — 設定</title>
     <link rel="stylesheet" href="../styles/tokens.css" />
     <link rel="stylesheet" href="../styles/globals.css" />
     <link rel="stylesheet" href="options.css" />
@@ -24,6 +24,22 @@
         </div>
       </section>
       <section class="options__section">
+        <h2>OpenRouter API キー（BYOK）</h2>
+        <p class="options__help">
+          OpenRouter 経由のモデル（qwen / deepseek 等）を使う場合に設定します。キーは
+          <a href="https://openrouter.ai/settings/keys" target="_blank" rel="noreferrer"
+            >openrouter.ai/settings/keys</a
+          >
+          で取得できます。この端末の chrome.storage にのみ保存されます。
+        </p>
+        <p id="openrouter-status" class="options__status">読み込み中…</p>
+        <div class="options__row">
+          <label for="openrouter-api-key">OpenRouter API キー</label>
+          <input id="openrouter-api-key" type="password" autocomplete="off" />
+          <button id="save-openrouter-key" type="button">保存</button>
+        </div>
+      </section>
+      <section class="options__section">
         <h2>既定モデル</h2>
         <p class="options__help">
           S5 スキーマ画面の初期値になります。単価表にないモデルはコスト概算が表示されません。
@@ -31,14 +47,7 @@
         <p id="default-model-status" class="options__status">読み込み中…</p>
         <div class="options__row">
           <label for="default-model">既定モデル</label>
-          <input
-            id="default-model"
-            type="text"
-            list="default-model-candidates"
-            autocomplete="off"
-            placeholder="例: gemini-2.5-pro"
-          />
-          <datalist id="default-model-candidates"></datalist>
+          <span id="default-model-container"></span>
           <button id="save-default-model" type="button">保存</button>
         </div>
       </section>

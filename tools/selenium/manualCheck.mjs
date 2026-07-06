@@ -19,8 +19,15 @@
 // エッジ:   node tools/selenium/manualCheck.mjs cancel
 // 通し確認: node tools/selenium/manualCheck.mjs options protocol schema pilot extract verify dashboard export offline
 //   （§2 の S4→S10。ユーザー操作が要る箇所は Enter ではなく DOM の状態変化で自動検知する）
+//
+// ストア掲載用スクショ（1280×800 ちょうどで docs/store/screenshots/ へ保存）:
+//   node tools/selenium/manualCheck.mjs --shots picker schema pilot dashboard export
+//   → s3-documents / s5-schema / s8-verify-highlight / s9-dashboard / s10-export の 5 枚
+// クリーンプロファイルでの dist smoke（別プロファイルで通す）:
+//   node tools/selenium/manualCheck.mjs --profile .selenium-profile-clean prepare
+//   node tools/selenium/manualCheck.mjs --profile .selenium-profile-clean login project ...
 import { createHash } from 'node:crypto';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import readline from 'node:readline';
@@ -29,8 +36,13 @@ import chrome from 'selenium-webdriver/chrome.js';
 
 const ROOT = path.resolve(new URL('../..', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1'));
 const DIST_DIR = path.join(ROOT, 'dist');
-const PROFILE_DIR = path.join(ROOT, '.selenium-profile');
+// 専用プロファイルの場所。--profile で差し替える（クリーンプロファイル smoke 用）ため let
+let PROFILE_DIR = path.join(ROOT, '.selenium-profile');
 const PICKER_ORIGIN = 'https://youkiti.github.io';
+// ストア掲載用スクショの保存先。--shots のときだけ書き出す
+const SHOTS_DIR = path.join(ROOT, 'docs', 'store', 'screenshots');
+// --shots が付いたか（main で設定）
+let shotsEnabled = false;
 
 // ---------------------------------------------------------------------------
 // ユーティリティ
@@ -59,6 +71,47 @@ function pause(message) {
   });
 }
 
+/** `--key value` / `--key=value` 形式のオプション値を取り出す（無ければ null） */
+function readOptionValue(argv, key) {
+  for (let i = 0; i < argv.length; i++) {
+    if (argv[i] === key) {
+      return argv[i + 1] ?? null;
+    }
+    if (argv[i].startsWith(`${key}=`)) {
+      return argv[i].slice(key.length + 1);
+    }
+  }
+  return null;
+}
+
+/**
+ * ストア掲載用スクショを 1280×800 ちょうどで撮る（--shots のときだけ動く）。
+ * ブラウザのツールバー分だけビューポートが縮む問題を避けるため、CDP で
+ * レイアウトビューポートを 1280×800 に上書きしてから Page.captureScreenshot し、
+ * 撮影後に override を解除して操作を続けられるようにする。
+ */
+async function shot(driver, name) {
+  if (!shotsEnabled) {
+    return;
+  }
+  await driver.sendDevToolsCommand('Emulation.setDeviceMetricsOverride', {
+    width: 1280,
+    height: 800,
+    deviceScaleFactor: 1,
+    mobile: false,
+  });
+  try {
+    const result = await driver.sendAndGetDevToolsCommand('Page.captureScreenshot', {
+      format: 'png',
+    });
+    mkdirSync(SHOTS_DIR, { recursive: true });
+    writeFileSync(path.join(SHOTS_DIR, `${name}.png`), result.data, 'base64');
+    ok(`スクショ保存: docs/store/screenshots/${name}.png（1280×800）`);
+  } finally {
+    await driver.sendDevToolsCommand('Emulation.clearDeviceMetricsOverride', {});
+  }
+}
+
 /** manifest.json の key（固定公開鍵）から拡張 ID を導出する（SHA-256 先頭 16 バイト → a-p） */
 function computeExtensionId() {
   const manifestPath = existsSync(path.join(DIST_DIR, 'manifest.json'))
@@ -81,6 +134,8 @@ const OPTIONS_URL = `chrome-extension://${EXTENSION_ID}/options/options.html`;
 
 // S5 ドラフトで使う既定モデル（pricing.ts に単価があるもの）
 const DEFAULT_MODEL = 'gemini-3.5-flash';
+// モデルセレクタの「その他（直接入力）」option 値（src/app/ui/modelSelect.ts と同期）
+const MODEL_SELECT_OTHER = '__other__';
 // LLM 実弾（ドラフト / 抽出）の完了待ち上限
 const LLM_TIMEOUT = 15 * 60 * 1000;
 // ユーザー操作（キー入力・エディタ確認・判定など）の待ち上限
@@ -152,6 +207,40 @@ async function setValue(driver, element, value) {
     element,
     value,
   );
+}
+
+/**
+ * モデルセレクタ（src/app/ui/modelSelect.ts の共有ウィジェット）の現在値を返す。
+ * 「その他（直接入力）」選択中は隣のテキスト入力 `#{id}-custom` の値を返す
+ */
+async function readModelValue(driver, selectId) {
+  const select = await driver.findElement(By.css(`#${selectId}`));
+  const value = (await select.getAttribute('value')) ?? '';
+  if (value !== MODEL_SELECT_OTHER) {
+    return value;
+  }
+  const custom = await driver.findElement(By.css(`#${selectId}-custom`));
+  return ((await custom.getAttribute('value')) ?? '').trim();
+}
+
+/**
+ * モデルセレクタへ値を設定する。単価表カタログの option があれば直接選択し、
+ * なければ「その他（直接入力）」へ切り替えてテキスト入力へ流し込む
+ * （どちらも change 発火でウィジェットの onChange → state 更新まで届かせる）
+ */
+async function selectModel(driver, selectId, model) {
+  const select = await driver.findElement(By.css(`#${selectId}`));
+  const hasOption = await driver.executeScript(
+    'return Array.from(arguments[0].options).some((o) => o.value === arguments[1]);',
+    select,
+    model,
+  );
+  if (hasOption) {
+    await setValue(driver, select, model);
+    return;
+  }
+  await setValue(driver, select, MODEL_SELECT_OTHER);
+  await setValue(driver, await driver.findElement(By.css(`#${selectId}-custom`)), model);
 }
 
 /** いずれかのセレクタが表示されるまで待ち、一致したセレクタ文字列を返す */
@@ -238,18 +327,21 @@ async function waitForEstimate(driver, estimateSelector, docsSelector, maxSelect
  * beforeHandles に無い新規タブのうち、URL が prefix で始まるものが開くのを待って
  * そのハンドルを返す（切替えた状態で返る）。複数の新規タブが開いても（ユーザーの
  * 先回り操作などで想定外のタブが混ざっても）目的のタブだけを拾う。
- * フォーカス移動を避けるため、切替えは「未確認の新規ハンドルが現れたとき」だけ行う
+ *
+ * 新規タブ（chrome.tabs.create）は about:blank で現れてから目的 URL へ遷移する
+ * ことがあるため、一度見たハンドルでも prefix に一致するまで毎回見直す。
+ * 「初回の一度きり」で確定すると blank の瞬間に拾って取りこぼし、目的タブが
+ * 開いているのにタイムアウトする（メインビュー / Picker 検知の flaky の原因）。
  */
 async function waitForWindowWithUrl(driver, beforeHandles, prefix, timeoutMs, what) {
-  const checked = new Set(beforeHandles);
+  const before = new Set(beforeHandles);
   let found = null;
   await driver.wait(
     async () => {
       for (const handle of await driver.getAllWindowHandles()) {
-        if (checked.has(handle)) {
+        if (before.has(handle)) {
           continue;
         }
-        checked.add(handle);
         try {
           await driver.switchTo().window(handle);
           if ((await driver.getCurrentUrl()).startsWith(prefix)) {
@@ -424,7 +516,7 @@ async function scenePicker(driver) {
   log('\n[picker] Picker 正常系 + 取り込み（手順書 §1-1 #4〜9）');
   const started = await runPickerRound(
     driver,
-    'Picker で著作権フリーの PDF を 1〜2 本選択してください',
+    'Picker で PDF を 1〜2 本選択してください',
   );
   if (!started) {
     ng('取り込みが始まりませんでした（キャンセル or 選択が伝わっていない）');
@@ -470,6 +562,7 @@ async function scenePicker(driver) {
   for (const row of tableRows) {
     ok(`一覧: ${row.filename} / text_status = ${row.badge}`);
   }
+  await shot(driver, 's3-documents');
   log('  → 手順書 §1-2 の裏取り（Sheets の Documents タブ / Drive の documents/ + extracted_texts/）は目視で確認してください');
 }
 
@@ -537,9 +630,15 @@ async function sceneHome(driver) {
 // ---------------------------------------------------------------------------
 
 async function sceneOptions(driver) {
-  log('\n[options] Gemini API キーの保存（手順書 §2 #1）');
+  log('\n[options] Gemini API キーの保存 + 既定モデル設定（手順書 §2 #1）');
   await driver.get(OPTIONS_URL);
   await driver.wait(until.elementLocated(By.css('#options-status')), 10000);
+  await ensureGeminiKey(driver);
+  await ensureDefaultModel(driver);
+}
+
+/** Gemini API キーの保存（未設定なら手入力を促す） */
+async function ensureGeminiKey(driver) {
   // 初期判定（「読み込み中…」→「Gemini: 保存済み / 未設定」）を待つ
   await driver.wait(async () => {
     const text = await textOf(driver, '#options-status');
@@ -547,7 +646,7 @@ async function sceneOptions(driver) {
   }, 15000, 'Options の状態が確定しません');
   const status = await textOf(driver, '#options-status');
   if (status.includes('保存済み')) {
-    ok(`既に保存済みです（${status}）`);
+    ok(`Gemini キーは既に保存済みです（${status}）`);
     return;
   }
   log('\n>>> 開いた Options 画面で Gemini API キーを入力し「保存」を押してください');
@@ -557,6 +656,32 @@ async function sceneOptions(driver) {
     return text.includes('保存しました');
   }, USER_ACTION_TIMEOUT, 'API キーが保存されません');
   ok('Gemini API キーを保存しました');
+}
+
+/**
+ * 既定モデル設定を DEFAULT_MODEL で保存する（S11 / PR #5）。
+ * この値は S5 スキーマ画面のモデル入力へ注入されるため、sceneSchema の prefill 検証と対になる
+ */
+async function ensureDefaultModel(driver) {
+  log('\n[options] 既定モデルの保存（S11。#/schema への注入を後段で検証）');
+  // 初期判定（HTML 既定「読み込み中…」→ bootstrap の「既定モデル: 保存済み / 未設定」）を待つ
+  await driver.wait(async () => {
+    const text = await textOf(driver, '#default-model-status');
+    return text !== '' && !text.includes('読み込み中');
+  }, 15000, '既定モデルの状態が確定しません');
+  const current = await readModelValue(driver, 'default-model');
+  const status = await textOf(driver, '#default-model-status');
+  if (current === DEFAULT_MODEL && status.includes('保存済み')) {
+    ok(`既定モデルは既に ${DEFAULT_MODEL} で保存済みです`);
+    return;
+  }
+  await selectModel(driver, 'default-model', DEFAULT_MODEL);
+  await driver.findElement(By.css('#save-default-model')).click();
+  await driver.wait(async () => {
+    const text = await textOf(driver, '#default-model-status');
+    return text.includes('保存しました');
+  }, 15000, '既定モデルが保存されません');
+  ok(`既定モデルを ${DEFAULT_MODEL} で保存しました`);
 }
 
 async function sceneProtocol(driver) {
@@ -607,10 +732,24 @@ async function sceneSchema(driver) {
     throw new Error('schema 失敗');
   }
   if (state === '#schema-confirmed') {
+    // 確定済みプロジェクトでは下書きフォームが出ず、既定モデルの prefill を観測できない。
+    // prefill 検証には project シーンで新規プロジェクトを作り直す必要がある
+    log('  ※ 確定済みのため既定モデル prefill 検証はスキップ（新規プロジェクトで下書きフォームを出すこと）');
     ok(`既に確定済み: ${await textOf(driver, '#schema-current-meta')}`);
+    await shot(driver, 's5-schema');
     return;
   }
   if (state === '#schema-draft-form') {
+    // S11 / PR #5 の検証: Options の既定モデルが #schema-model に prefill されているか。
+    // schemaService.loadSchema は schema.model が空のときだけ既定モデルで埋めるため、
+    // 未入力状態のこの下書きフォームでは DEFAULT_MODEL が入っているはず
+    const prefilled = await readModelValue(driver, 'schema-model');
+    if (prefilled === DEFAULT_MODEL) {
+      ok(`既定モデルの prefill を確認: #schema-model = ${prefilled}`);
+    } else {
+      ng(`既定モデルが prefill されていません: #schema-model = "${prefilled}"（期待: ${DEFAULT_MODEL}）`);
+      throw new Error('schema 失敗（既定モデル prefill）');
+    }
     // サンプル文献を先頭から最大 2 本選択（no_text_layer は disabled）
     const selector = '#schema-sample-list input[type="checkbox"]';
     const boxes = await readCheckboxStates(driver, selector);
@@ -627,7 +766,7 @@ async function sceneSchema(driver) {
       throw new Error('schema 失敗');
     }
     ok(`サンプル ${selected} 本を選択`);
-    await setValue(driver, await driver.findElement(By.css('#schema-model')), DEFAULT_MODEL);
+    await selectModel(driver, 'schema-model', DEFAULT_MODEL);
     await driver.findElement(By.css('#schema-draft-run')).click();
     log(`  ドラフト生成中（${DEFAULT_MODEL} 実弾。数十秒〜数分かかります）…`);
     const result = await waitForAnyVisible(
@@ -642,6 +781,7 @@ async function sceneSchema(driver) {
     }
     const rows = await driver.findElements(By.css('#schema-editor-table tbody tr'));
     ok(`ドラフト完了: ${rows.length} 行の項目案`);
+    await shot(driver, 's5-schema');
   }
   log('\n>>> エディタの内容を確認し（必要なら修正して）「版として確定」を押してください');
   log('>>> （確定の完了を自動検知します）');
@@ -689,9 +829,8 @@ async function scenePilot(driver) {
     // 文献 + スキーマの読込完了 → 既定選択の適用をコスト概算の実値化で待つ
     await waitForEstimate(driver, '#pilot-estimate', '#pilot-documents input[type="checkbox"]', 3);
     ok(`コスト概算: ${await textOf(driver, '#pilot-estimate')}`);
-    const modelInput = await driver.findElement(By.css('#pilot-model'));
-    if (((await modelInput.getAttribute('value')) ?? '').trim() === '') {
-      await setValue(driver, modelInput, DEFAULT_MODEL);
+    if ((await readModelValue(driver, 'pilot-model')) === '') {
+      await selectModel(driver, 'pilot-model', DEFAULT_MODEL);
     }
     await driver.findElement(By.css('#pilot-run')).click();
     log('  パイロット抽出を実行中（Gemini 実弾。数分かかります）…');
@@ -726,6 +865,7 @@ async function scenePilot(driver) {
   const highlights = await driver.findElements(By.css('.pdf-viewer__hl'));
   const chips = await driver.findElements(By.css('.verify__chip'));
   ok(`ハイライト ${highlights.length} 個 / 検証セル ${chips.length} 件`);
+  await shot(driver, 's8-verify-highlight');
   log('\n>>> ハイライトが根拠箇所に出ているか目視で確認し、承認 / 修正 / 棄却 / 未報告 の判定を');
   log('>>> 各 1 回以上行ってください（キーボード a / e / x / n。z の取り消し確認は任意）');
   log('>>> （4 種類の判定チップが揃うのを自動検知します）');
@@ -782,9 +922,8 @@ async function sceneExtract(driver) {
     ng('選択できる文献がありません');
     throw new Error('extract 失敗');
   }
-  const modelInput = await driver.findElement(By.css('#extract-model'));
-  if (((await modelInput.getAttribute('value')) ?? '').trim() === '') {
-    await setValue(driver, modelInput, DEFAULT_MODEL);
+  if ((await readModelValue(driver, 'extract-model')) === '') {
+    await selectModel(driver, 'extract-model', DEFAULT_MODEL);
   }
   // スキーマ読込の完了をコスト概算の実値化で待つ
   await waitForEstimate(driver, '#extract-estimate', selector, 1);
@@ -904,6 +1043,7 @@ async function sceneDashboard(driver) {
   ok(`サマリ: ${(await textOf(driver, '#dashboard-summary')).replace(/\s+/g, ' ')}`);
   const rows = await driver.findElements(By.css('#dashboard-matrix tbody tr'));
   ok(`マトリクス: ${rows.length} 行`);
+  await shot(driver, 's9-dashboard');
   const links = await driver.findElements(By.css('.dashboard__cell-link'));
   if (links.length === 0) {
     ng('セルリンクがありません（全セル 0 件）');
@@ -959,6 +1099,12 @@ async function sceneExport(driver) {
   }
   // study_wide で生成（未検証セルが残っていれば警告 → 中止 → 続行 の両経路を通す）
   await driver.findElement(By.css('#export-format input[value=study_wide]')).click();
+  await driver.wait(
+    async () => (await findVisible(driver, '#export-summary')) !== null,
+    15000,
+    'study_wide のサマリが表示されません',
+  );
+  await shot(driver, 's10-export');
   const generate = await driver.findElement(By.css('#export-generate'));
   if (!(await generate.isEnabled())) {
     ng('生成ボタンが無効です（データ行 0 件）');
@@ -1088,7 +1234,23 @@ async function main() {
   // --auto: stdin を使わない（別プロセスからの起動用）。失敗時は一時停止せず
   // スクリーンショット + DOM を .selenium-profile/ へ保存して終了する
   const auto = rawArgs.includes('--auto');
-  const args = rawArgs.filter((a) => !a.startsWith('--'));
+  // --shots: 各シーンの要所でストア掲載用スクショ（1280×800）を撮る
+  shotsEnabled = rawArgs.includes('--shots');
+  // --profile <dir>|--profile=<dir>: 専用プロファイルの場所を差し替える
+  // （クリーンプロファイルでの dist smoke に使う。相対指定は ROOT 起点）
+  const profileArg = readOptionValue(rawArgs, '--profile');
+  if (profileArg !== null && profileArg !== '') {
+    PROFILE_DIR = path.isAbsolute(profileArg) ? profileArg : path.join(ROOT, profileArg);
+  }
+  // 位置引数（シーン名）から、フラグと `--profile` の値を除外する
+  const consumed = new Set();
+  for (let i = 0; i < rawArgs.length; i++) {
+    if (rawArgs[i] === '--profile') {
+      consumed.add(i);
+      consumed.add(i + 1);
+    }
+  }
+  const args = rawArgs.filter((a, i) => !a.startsWith('--') && !consumed.has(i));
   const names = args.length > 0 ? args : ['login', 'project', 'picker', 'home'];
   for (const name of names) {
     if (!(name in SCENES)) {
@@ -1101,8 +1263,16 @@ async function main() {
     process.exit(1);
   }
   const distManifest = JSON.parse(readFileSync(path.join(DIST_DIR, 'manifest.json'), 'utf8'));
-  if (distManifest.oauth2?.client_id?.includes('__OAUTH_CLIENT_ID__')) {
-    console.error('dist/manifest.json の client_id が未設定です。.env を設定して npm run dev し直してください');
+  const distClientId = distManifest.oauth2?.client_id ?? '';
+  if (distClientId === '' || distClientId.includes('__OAUTH_CLIENT_ID__')) {
+    // 本番ビルド（npm run build）は LOCAL_OAUTH_CLIENT_ID を注入しないため
+    // client_id が空の dist になり、Chrome が「Invalid value for 'oauth2.client_id'」で
+    // 拡張を読み込めなくなる。実機確認は必ず npm run dev で dist を作り直すこと
+    console.error(
+      'dist/manifest.json の client_id が空/未設定です。' +
+        'npm run build（本番ビルド）で上書きされた可能性があります。' +
+        '.env に LOCAL_OAUTH_CLIENT_ID を用意して npm run dev で dist を作り直してください',
+    );
     process.exit(1);
   }
 

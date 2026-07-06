@@ -81,6 +81,11 @@ describe('createProject', () => {
     );
     expect(headerCalls).toHaveLength(SHEET_TABS.length);
 
+    // スプレッドシートをプロジェクトフォルダ配下へ移動（addParents に トップフォルダ ID）
+    const moveCall = calls.find((c) => c.url.includes('addParents='));
+    expect(moveCall?.url).toContain('/drive/v3/files/SID?');
+    expect(decodeURIComponent(moveCall?.url ?? '')).toContain('addParents=folder-1');
+
     // Meta タブへ 1 行追記
     const appendCall = calls.find((c) => c.url.includes(':append'));
     expect(appendCall?.url).toContain('/values/Meta!A1:append');

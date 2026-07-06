@@ -10,7 +10,8 @@ playwright-report/
 
 # Selenium 実機確認の専用 Chrome プロファイル（tools/selenium/manualCheck.mjs。
 # Google ログイン状態と手動読込した拡張が永続化されるため共有しない）
-.selenium-profile/
+# --profile で作る別プロファイル（例: .selenium-profile-clean）もまとめて除外
+.selenium-profile*/
 
 # 環境変数（OAUTH_CLIENT_ID 等）
 .env
@@ -18,6 +19,11 @@ playwright-report/
 # E2E / anchoring 用の実論文 PDF fixture
 # 再取得方法は tests/fixtures/pdf/README.md を参照（fetch-pdfs.ps1 で一括取得）
 tests/fixtures/pdf/*.pdf
+
+# 実データ抽出ベンチマーク（不眠 SR の人手 gold・原論文 PDF を再利用）。
+# ライセンス／公開可否の判断が難しいため、生データ・gold・textlayer・runs を含め
+# ディレクトリ丸ごとコミットしない（experiments/extraction-benchmark-real/README.md 参照）。
+experiments/extraction-benchmark-real/
 
 # anchor-spike の MV3 ハーネスへコピーする vendor / fixture（再現手順は REPORT.md 参照）
 experiments/anchor-spike/mv3-harness/pdf.min.mjs

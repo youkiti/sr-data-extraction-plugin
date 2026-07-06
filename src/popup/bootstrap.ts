@@ -5,6 +5,7 @@
 // 開くので、独立した「メインビューを開く」ボタンは持たない（sr-query-builder と同一）。
 // すべての deps を引数注入するので OAuth 無しでテスト可能。
 import { createChromeGoogleApiDeps } from '../app/services/factories';
+import { BUILD_DATE } from '../build-info';
 import { createNewProject, loadExistingProject } from '../app/services/projectService';
 import type { ProjectRef } from '../domain/project';
 import {
@@ -132,6 +133,11 @@ export async function bootstrapPopup(doc: Document, deps: PopupDeps): Promise<vo
   const els = collectElements(doc);
   if (!els) {
     return;
+  }
+  // アプリ名の下にビルド日を表示する（要素が無い環境では何もしない）
+  const buildDateEl = doc.getElementById('popup-build-date');
+  if (buildDateEl) {
+    buildDateEl.textContent = `build ${BUILD_DATE}`;
   }
   bindLoginButton(doc, els, deps);
   bindLogoutButton(doc, els, deps);

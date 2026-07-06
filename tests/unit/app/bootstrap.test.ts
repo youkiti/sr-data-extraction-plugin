@@ -1,7 +1,8 @@
 // メインビュー起動配線のテスト。hashchange の発火タイミングを決定的に制御するため、
 // 実 window ではなくスタブ（location / addEventListener のみ実装）を注入する
 import { installChromeMock, type ChromeMock } from '../../setup/chrome-mock';
-import { bootstrapApp, seedState, type AppDeps } from '../../../src/app/bootstrap';
+import { bootstrapApp, createChromeAppDeps, seedState, type AppDeps } from '../../../src/app/bootstrap';
+import { BUILD_DATE } from '../../../src/build-info';
 
 // bootstrap → lib/pdf/loadPdf 経由で pdfjs-dist（ESM 専用）が require されるのを防ぐ
 // （loadPdf 自体の挙動は tests/unit/lib/pdf/loadPdf.test.ts で検証済み）
@@ -67,6 +68,17 @@ function createWindowStub(preloaded?: Partial<AppState>): WindowStub {
 }
 
 const asWindow = (stub: WindowStub): Window => stub as unknown as Window;
+
+describe('createChromeAppDeps', () => {
+  test('loadApiKey はプロバイダ別に secretsStore のキーを引く', async () => {
+    const chromeMock = installChromeMock();
+    chromeMock.storage.local.data['secrets.geminiApiKey'] = 'g-key';
+    chromeMock.storage.local.data['secrets.openRouterApiKey'] = 'or-key';
+    const deps = createChromeAppDeps();
+    await expect(deps.loadApiKey('gemini')).resolves.toBe('g-key');
+    await expect(deps.loadApiKey('openrouter')).resolves.toBe('or-key');
+  });
+});
 
 const APP_TEMPLATE = `
   <div class="app">
@@ -273,6 +285,14 @@ describe('bootstrapApp', () => {
   test('必須要素が欠けている場合は null を返して何もしない', async () => {
     document.body.innerHTML = '<p>壊れた DOM</p>';
     await expect(bootstrapApp(asWindow(createWindowStub()))).resolves.toBeNull();
+  });
+
+  test('アプリ名の下にビルド日を表示する', async () => {
+    const buildDateEl = document.createElement('p');
+    buildDateEl.id = 'app-build-date';
+    document.querySelector('.app__header')?.appendChild(buildDateEl);
+    await bootstrapApp(asWindow(createWindowStub()));
+    expect(document.getElementById('app-build-date')?.textContent).toBe(`build ${BUILD_DATE}`);
   });
 
   test('プロジェクト未選択（状態 A）: 未選択メッセージ + Popup を開く導線', async () => {
@@ -888,11 +908,11 @@ describe('bootstrapApp: #/pilot', () => {
     checkbox.dispatchEvent(new Event('change'));
     expect(store?.getState().pilot.selectedDocumentIds).toEqual([]);
 
-    // モデル変更の配線
-    const model = document.getElementById('pilot-model') as HTMLInputElement;
-    model.value = 'gemini-test';
+    // モデル変更の配線（プルダウン → store）
+    const model = document.getElementById('pilot-model') as HTMLSelectElement;
+    model.value = 'gemini-2.0-flash';
     model.dispatchEvent(new Event('change'));
-    expect(store?.getState().pilot.model).toBe('gemini-test');
+    expect(store?.getState().pilot.model).toBe('gemini-2.0-flash');
 
     // 実行の配線（API キー未設定 → インラインエラー）
     const box = document.querySelector(
@@ -1139,11 +1159,11 @@ describe('bootstrapApp: #/extract', () => {
     checkbox.checked = true;
     checkbox.dispatchEvent(new Event('change'));
 
-    // モデル変更の配線
-    const model = document.getElementById('extract-model') as HTMLInputElement;
-    model.value = 'gemini-test';
+    // モデル変更の配線（プルダウン → store）
+    const model = document.getElementById('extract-model') as HTMLSelectElement;
+    model.value = 'gemini-2.0-flash';
     model.dispatchEvent(new Event('change'));
-    expect(store?.getState().extract.model).toBe('gemini-test');
+    expect(store?.getState().extract.model).toBe('gemini-2.0-flash');
 
     // 実行 → 確認カード → キャンセルの配線
     (document.getElementById('extract-run') as HTMLButtonElement).click();

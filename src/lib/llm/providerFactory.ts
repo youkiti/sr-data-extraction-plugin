@@ -1,11 +1,11 @@
 // Config に応じて LLMProvider のインスタンスを返すファクトリ
-// （sr-query-builder の lib/llm/providerFactory.ts を流用。本拡張向けの調整 2 点）:
+// （sr-query-builder の lib/llm/providerFactory.ts を流用。本拡張向けの調整）:
 // - 既定モデルは抽出精度ベンチマークで確定するまで固定しない（requirements.md Q8）ため
 //   model は必須（移植元の DEFAULT_MODEL フォールバックを持たない）
-// - OpenRouter は P1（requirements.md §7）。プロバイダ解決だけ先行し、生成は未対応エラー
 import type { LlmProviderId } from '../../domain/llmApiLog';
 import { GeminiProvider } from './GeminiProvider';
 import type { LLMProvider } from './LLMProvider';
+import { OpenRouterProvider } from './OpenRouterProvider';
 
 export interface ProviderConfig {
   /** 省略時は model から自動解決 */
@@ -26,7 +26,11 @@ export function resolveProviderId(modelId: string): LlmProviderId {
 export function createProvider(config: ProviderConfig): LLMProvider {
   const provider = config.provider ?? resolveProviderId(config.model);
   if (provider === 'openrouter') {
-    throw new Error('OpenRouter プロバイダは P1 で対応予定です（MVP は Gemini のみ）');
+    return new OpenRouterProvider({
+      apiKey: config.apiKey,
+      model: config.model,
+      fetch: config.fetch,
+    });
   }
   return new GeminiProvider({
     apiKey: config.apiKey,

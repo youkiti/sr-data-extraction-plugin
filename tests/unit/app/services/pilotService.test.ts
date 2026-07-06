@@ -357,7 +357,7 @@ describe('runPilot: 事前バリデーション', () => {
       pilot: { selectedDocumentIds: ['doc-1'], model: '' },
     });
     await runPilot(noModel, makeDeps());
-    expect(noModel.getState().pilot.runError).toContain('モデル名を入力してください');
+    expect(noModel.getState().pilot.runError).toContain('モデルを選択してください');
 
     const noKey = makeStore({
       fields: [makeField()],

@@ -8,8 +8,10 @@ import { readDocuments } from '../../features/documents/documentRepository';
 import { makeLoadDocumentPages } from '../../features/documents/loadDocumentPages';
 import { buildAiAnnotationRows } from '../../features/extraction/aiAnnotationRows';
 import { ensureChildFolder } from '../../lib/google/drive';
+import type { LlmProviderId } from '../../domain/llmApiLog';
 import type { LLMProvider } from '../../lib/llm/LLMProvider';
-import type { ProviderConfig } from '../../lib/llm/providerFactory';
+import { missingApiKeyMessage } from '../../lib/llm/modelCatalog';
+import { resolveProviderId, type ProviderConfig } from '../../lib/llm/providerFactory';
 import { nowIso8601 } from '../../utils/iso8601';
 import type { PilotState, Store } from '../store';
 import { showToast } from '../ui/toast';
@@ -24,8 +26,8 @@ import {
 } from './verificationService';
 
 export interface PilotServiceDeps extends VerificationDeps {
-  /** BYOK の Gemini API キーを解決する（既定は lib/storage/secretsStore.loadGeminiApiKey） */
-  loadApiKey: () => Promise<string | null>;
+  /** BYOK の API キーをプロバイダ別に解決する（既定は lib/storage/secretsStore の各 load 関数） */
+  loadApiKey: (provider: LlmProviderId) => Promise<string | null>;
   /** provider 生成（実行時は lib/llm/providerFactory.createProvider。テストは fake を注入） */
   buildProvider: (config: ProviderConfig) => LLMProvider;
 }
@@ -113,14 +115,12 @@ export async function runPilot(store: Store, deps: PilotServiceDeps): Promise<vo
     return;
   }
   if (model === '') {
-    patchPilot(store, { runError: 'モデル名を入力してください（例: gemini-2.5-flash）' });
+    patchPilot(store, { runError: 'モデルを選択してください（「その他」で直接入力も可）' });
     return;
   }
-  const apiKey = await deps.loadApiKey();
+  const apiKey = await deps.loadApiKey(resolveProviderId(model));
   if (apiKey === null) {
-    patchPilot(store, {
-      runError: 'Gemini API キーが未設定です。設定画面（Options）で保存してください',
-    });
+    patchPilot(store, { runError: missingApiKeyMessage(resolveProviderId(model)) });
     return;
   }
 

@@ -1,0 +1,146 @@
+{
+  "schema_version": 1,
+  "note": "抽出精度ベンチマーク用 20 項目スキーマ（README §6.2）。f01〜f15 は anchor-spike/schema/mini-schema.json をそのまま含める（スパイクとの比較可能性を保つため文言不変）。f16〜f20 は表由来項目と not_reported の多様性を増やす追加分。",
+  "fields": [
+    {
+      "field_id": "f01_study_design",
+      "field_name": "study_design",
+      "entity_level": "study",
+      "data_type": "text",
+      "extraction_instruction": "Study design as described by the authors (e.g. randomized controlled trial; note parallel/crossover, blinding label if part of the design description)."
+    },
+    {
+      "field_id": "f02_country",
+      "field_name": "country",
+      "entity_level": "study",
+      "data_type": "text",
+      "extraction_instruction": "Country or countries where the study was conducted."
+    },
+    {
+      "field_id": "f03_sample_size_total",
+      "field_name": "sample_size_total",
+      "entity_level": "study",
+      "data_type": "integer",
+      "extraction_instruction": "Total number of participants randomized (not screened, not analyzed)."
+    },
+    {
+      "field_id": "f04_population",
+      "field_name": "population",
+      "entity_level": "study",
+      "data_type": "text",
+      "extraction_instruction": "Short description of the study population / key eligibility criteria."
+    },
+    {
+      "field_id": "f05_randomization_method",
+      "field_name": "randomization_method",
+      "entity_level": "study",
+      "data_type": "text",
+      "extraction_instruction": "How the random allocation sequence was generated (e.g. computer-generated, block randomization)."
+    },
+    {
+      "field_id": "f06_blinding",
+      "field_name": "blinding",
+      "entity_level": "study",
+      "data_type": "text",
+      "extraction_instruction": "Who was blinded (participants, personnel, outcome assessors), or state that the trial was open-label."
+    },
+    {
+      "field_id": "f07_registration_id",
+      "field_name": "registration_id",
+      "entity_level": "study",
+      "data_type": "text",
+      "extraction_instruction": "Trial registration identifier (e.g. NCT number, IRCT number)."
+    },
+    {
+      "field_id": "f08_primary_outcome_definition",
+      "field_name": "primary_outcome_definition",
+      "entity_level": "study",
+      "data_type": "text",
+      "extraction_instruction": "Definition of the primary outcome, including time point of assessment if reported."
+    },
+    {
+      "field_id": "f09_arm_label",
+      "field_name": "arm_label",
+      "entity_level": "arm",
+      "data_type": "text",
+      "extraction_instruction": "Name of this study arm as used by the authors (e.g. thermotherapy group, control group)."
+    },
+    {
+      "field_id": "f10_arm_n_randomized",
+      "field_name": "arm_n_randomized",
+      "entity_level": "arm",
+      "data_type": "integer",
+      "extraction_instruction": "Number of participants randomized to this arm."
+    },
+    {
+      "field_id": "f11_intervention_description",
+      "field_name": "intervention_description",
+      "entity_level": "arm",
+      "data_type": "text",
+      "extraction_instruction": "What participants in this arm received (agent, dose, route, frequency, duration; or the comparator condition)."
+    },
+    {
+      "field_id": "f12_primary_outcome_result_arm",
+      "field_name": "primary_outcome_result_arm",
+      "entity_level": "outcome_result",
+      "data_type": "text",
+      "extraction_instruction": "Result of the primary outcome in this arm exactly as reported (e.g. n/N (%), mean ± SD). Prefer the results table if reported there."
+    },
+    {
+      "field_id": "f13_ae_any_arm",
+      "field_name": "ae_any_arm",
+      "entity_level": "outcome_result",
+      "data_type": "text",
+      "extraction_instruction": "Number (%) of participants with at least one adverse event in this arm, as reported. Prefer the results/AE table if reported there."
+    },
+    {
+      "field_id": "f14_primary_outcome_effect_estimate",
+      "field_name": "primary_outcome_effect_estimate",
+      "entity_level": "outcome_result",
+      "data_type": "text",
+      "extraction_instruction": "Between-group effect estimate for the primary outcome with 95% CI, exactly as reported (e.g. risk difference, mean difference)."
+    },
+    {
+      "field_id": "f15_primary_outcome_p_value",
+      "field_name": "primary_outcome_p_value",
+      "entity_level": "outcome_result",
+      "data_type": "text",
+      "extraction_instruction": "P value for the between-group comparison of the primary outcome, as reported."
+    },
+    {
+      "field_id": "f16_arm_mean_age",
+      "field_name": "arm_mean_age",
+      "entity_level": "arm",
+      "data_type": "text",
+      "extraction_instruction": "Mean (or median) age of participants in this arm, as reported in the baseline table."
+    },
+    {
+      "field_id": "f17_arm_percent_female",
+      "field_name": "arm_percent_female",
+      "entity_level": "arm",
+      "data_type": "text",
+      "extraction_instruction": "Percentage (or number) of female participants in this arm, from the baseline table."
+    },
+    {
+      "field_id": "f18_follow_up_duration",
+      "field_name": "follow_up_duration",
+      "entity_level": "study",
+      "data_type": "text",
+      "extraction_instruction": "Length of follow-up / study duration, as reported in the text."
+    },
+    {
+      "field_id": "f19_arm_n_analyzed",
+      "field_name": "arm_n_analyzed",
+      "entity_level": "arm",
+      "data_type": "integer",
+      "extraction_instruction": "Number of participants analyzed in this arm (analysis set, not the number randomized)."
+    },
+    {
+      "field_id": "f20_funding_source",
+      "field_name": "funding_source",
+      "entity_level": "study",
+      "data_type": "text",
+      "extraction_instruction": "Source(s) of study funding."
+    }
+  ]
+}

@@ -5,6 +5,7 @@ import type { DocumentRecord } from '../../domain/document';
 import type { ExtractDocRow, ExtractDocStatus } from '../../features/extraction/docProgress';
 import { planRun } from '../../features/extraction/planRun';
 import { el } from '../ui/dom';
+import { createModelSelect } from '../ui/modelSelect';
 import type { AppState } from '../store';
 import type { ViewContext } from './types';
 
@@ -116,17 +117,14 @@ function renderEstimate(state: AppState): HTMLElement {
 }
 
 function renderSetup(state: AppState, ctx: ViewContext): HTMLElement {
-  const modelInput = el('input', {
+  const modelSelect = createModelSelect(document, {
     id: 'extract-model',
+    ariaLabel: 'モデル名（requested_model）',
+    value: state.extract.model,
+    placeholderLabel: '選択してください',
+    onChange: (value) => ctx.extract.onChangeModel(value),
     className: 'extract__model-input',
-    attributes: {
-      type: 'text',
-      placeholder: '例: gemini-2.5-flash',
-      'aria-label': 'モデル名（requested_model）',
-    },
   });
-  modelInput.value = state.extract.model;
-  modelInput.addEventListener('change', () => ctx.extract.onChangeModel(modelInput.value));
 
   const runButton = el('button', {
     id: 'extract-run',
@@ -142,7 +140,7 @@ function renderSetup(state: AppState, ctx: ViewContext): HTMLElement {
     renderDocumentSelector(state, ctx),
     el('div', { className: 'extract__model' }, [
       el('label', { text: 'モデル: ', attributes: { for: 'extract-model' } }),
-      modelInput,
+      modelSelect,
     ]),
     renderEstimate(state),
   ];

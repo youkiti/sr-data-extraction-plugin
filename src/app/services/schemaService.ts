@@ -4,6 +4,7 @@
 // 全呼び出しを LLMApiLog + Drive（logs/llm/）に残す
 import type { Protocol } from '../../domain/protocol';
 import type { DocumentRecord } from '../../domain/document';
+import type { LlmProviderId } from '../../domain/llmApiLog';
 import { readDocuments } from '../../features/documents/documentRepository';
 import {
   makeLoadDocumentPages,
@@ -32,17 +33,18 @@ import type { GoogleApiDeps } from '../../lib/google/types';
 import { appendLlmApiLog } from '../../lib/llm/apiLogRepository';
 import { withLogging } from '../../lib/llm/apiLogger';
 import type { LLMProvider } from '../../lib/llm/LLMProvider';
-import type { ProviderConfig } from '../../lib/llm/providerFactory';
+import { missingApiKeyMessage } from '../../lib/llm/modelCatalog';
+import { resolveProviderId, type ProviderConfig } from '../../lib/llm/providerFactory';
 import { withRetry } from '../../lib/llm/retry';
-import { loadDefaultModel } from '../../lib/storage/settingsStore';
+import { FACTORY_DEFAULT_MODEL, loadDefaultModel } from '../../lib/storage/settingsStore';
 import type { SchemaState, Store } from '../store';
 import { showToast } from '../ui/toast';
 
 export interface SchemaServiceDeps {
   google: GoogleApiDeps;
   profile: ProfileDeps;
-  /** BYOK の Gemini API キーを解決する（既定は lib/storage/secretsStore.loadGeminiApiKey） */
-  loadApiKey: () => Promise<string | null>;
+  /** BYOK の API キーをプロバイダ別に解決する（既定は lib/storage/secretsStore の各 load 関数） */
+  loadApiKey: (provider: LlmProviderId) => Promise<string | null>;
   /** provider 生成（実行時は lib/llm/providerFactory.createProvider。テストは fake を注入） */
   buildProvider: (config: ProviderConfig) => LLMProvider;
   /** Options の既定モデル設定を解決する（未指定は lib/storage/settingsStore.loadDefaultModel） */
@@ -108,12 +110,13 @@ export async function loadSchema(
             deps.google,
           );
     // 既定モデルの注入（S11。ui-states.md §2「既定モデル」）:
-    // ユーザーが画面で入力済みの値は上書きせず、空のときだけ Options の設定値で埋める
+    // ユーザーが画面で入力済みの値は上書きせず、空のときだけ埋める。
+    // 優先順位: Options の設定値 → 工場出荷の既定モデル（FACTORY_DEFAULT_MODEL。Q8 = 抽出精度ベンチで確定）。
     const currentModel = store.getState().schema.model;
     const model =
       currentModel !== ''
         ? currentModel
-        : ((await (deps.loadDefaultModel ?? loadDefaultModel)()) ?? '');
+        : ((await (deps.loadDefaultModel ?? loadDefaultModel)()) ?? FACTORY_DEFAULT_MODEL);
     const after = store.getState();
     store.setState({
       schema: { ...after.schema, loading: false, loadError: null, versions, currentFields, model },
@@ -141,7 +144,7 @@ export function toggleSampleDocument(store: Store, documentId: string, selected:
   patchSchema(store, { selectedDocumentIds: [...current, documentId] });
 }
 
-/** ドラフトフォーム: requested_model の変更（既定モデルは Q8 確定まで固定しない） */
+/** ドラフトフォーム: requested_model の変更（未設定時の初期値は FACTORY_DEFAULT_MODEL = gemini-3.5-flash） */
 export function setDraftModel(store: Store, model: string): void {
   patchSchema(store, { model: model.trim() });
 }
@@ -200,14 +203,12 @@ export async function runDraftSchema(store: Store, deps: SchemaServiceDeps): Pro
     return;
   }
   if (model === '') {
-    patchSchema(store, { draftError: 'モデル名を入力してください（例: gemini-2.5-flash）' });
+    patchSchema(store, { draftError: 'モデルを選択してください（「その他」で直接入力も可）' });
     return;
   }
-  const apiKey = await deps.loadApiKey();
+  const apiKey = await deps.loadApiKey(resolveProviderId(model));
   if (apiKey === null) {
-    patchSchema(store, {
-      draftError: 'Gemini API キーが未設定です。設定画面（Options）で保存してください',
-    });
+    patchSchema(store, { draftError: missingApiKeyMessage(resolveProviderId(model)) });
     return;
   }
 

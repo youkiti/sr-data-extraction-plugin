@@ -350,7 +350,7 @@ describe('requestExtractRun / cancelExtractConfirm', () => {
       extract: { selectedDocumentIds: ['doc-1'], model: '' },
     });
     await requestExtractRun(noModel, makeDeps());
-    expect(noModel.getState().extract.runError).toContain('モデル名を入力してください');
+    expect(noModel.getState().extract.runError).toContain('モデルを選択してください');
 
     const noKey = makeStore({
       fields: [makeField()],

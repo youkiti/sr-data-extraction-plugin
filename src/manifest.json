@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAzKSdBoVdOneWU2ydnQ0BFHXLxMxi/jnztinS0gNlCixLnl6X1paQvPisQ0xJnHCI+Zt9Io1kLygEjT1eEStmSxQhf4Ddd+ADA4WFxiRCjmdhLx4nuhrqL12hQ+DV1hiOSadYjZoHA5xZM+FEL+ziAhk8FCVzHln8odK8EFPXRpekJ+uOmHZ7Mr4sXNV8Ue6J7y9upN+0a3CzD3EA8RVgTdFJVkLvP24iLl3tvb5uJchZyIsu8nqWrHSw0TRxFmld4p5u87g4nQxD5Jxy4+1eE5jq3riOq1DxG+565+PYJj8iRfkxyktXeadhfihvYuY/obBVxjC1PNrbsK1b0MqYxQIDAQAB",
-  "name": "SR Data Extraction",
+  "name": "SR Data Extraction Plugin",
   "description": "__MSG_appDescription__",
   "default_locale": "ja",
   "version": "0.1.0",
@@ -30,7 +30,8 @@
   "host_permissions": [
     "https://sheets.googleapis.com/*",
     "https://www.googleapis.com/*",
-    "https://generativelanguage.googleapis.com/*"
+    "https://generativelanguage.googleapis.com/*",
+    "https://openrouter.ai/*"
   ],
   "oauth2": {
     "client_id": "__OAUTH_CLIENT_ID__",
