@@ -1263,8 +1263,16 @@ async function main() {
     process.exit(1);
   }
   const distManifest = JSON.parse(readFileSync(path.join(DIST_DIR, 'manifest.json'), 'utf8'));
-  if (distManifest.oauth2?.client_id?.includes('__OAUTH_CLIENT_ID__')) {
-    console.error('dist/manifest.json の client_id が未設定です。.env を設定して npm run dev し直してください');
+  const distClientId = distManifest.oauth2?.client_id ?? '';
+  if (distClientId === '' || distClientId.includes('__OAUTH_CLIENT_ID__')) {
+    // 本番ビルド（npm run build）は LOCAL_OAUTH_CLIENT_ID を注入しないため
+    // client_id が空の dist になり、Chrome が「Invalid value for 'oauth2.client_id'」で
+    // 拡張を読み込めなくなる。実機確認は必ず npm run dev で dist を作り直すこと
+    console.error(
+      'dist/manifest.json の client_id が空/未設定です。' +
+        'npm run build（本番ビルド）で上書きされた可能性があります。' +
+        '.env に LOCAL_OAUTH_CLIENT_ID を用意して npm run dev で dist を作り直してください',
+    );
     process.exit(1);
   }
 
