@@ -36,7 +36,7 @@ import type { LLMProvider } from '../../lib/llm/LLMProvider';
 import { missingApiKeyMessage } from '../../lib/llm/modelCatalog';
 import { resolveProviderId, type ProviderConfig } from '../../lib/llm/providerFactory';
 import { withRetry } from '../../lib/llm/retry';
-import { loadDefaultModel } from '../../lib/storage/settingsStore';
+import { FACTORY_DEFAULT_MODEL, loadDefaultModel } from '../../lib/storage/settingsStore';
 import type { SchemaState, Store } from '../store';
 import { showToast } from '../ui/toast';
 
@@ -110,12 +110,13 @@ export async function loadSchema(
             deps.google,
           );
     // 既定モデルの注入（S11。ui-states.md §2「既定モデル」）:
-    // ユーザーが画面で入力済みの値は上書きせず、空のときだけ Options の設定値で埋める
+    // ユーザーが画面で入力済みの値は上書きせず、空のときだけ埋める。
+    // 優先順位: Options の設定値 → 工場出荷の既定モデル（FACTORY_DEFAULT_MODEL。Q8 = 抽出精度ベンチで確定）。
     const currentModel = store.getState().schema.model;
     const model =
       currentModel !== ''
         ? currentModel
-        : ((await (deps.loadDefaultModel ?? loadDefaultModel)()) ?? '');
+        : ((await (deps.loadDefaultModel ?? loadDefaultModel)()) ?? FACTORY_DEFAULT_MODEL);
     const after = store.getState();
     store.setState({
       schema: { ...after.schema, loading: false, loadError: null, versions, currentFields, model },
@@ -143,7 +144,7 @@ export function toggleSampleDocument(store: Store, documentId: string, selected:
   patchSchema(store, { selectedDocumentIds: [...current, documentId] });
 }
 
-/** ドラフトフォーム: requested_model の変更（既定モデルは Q8 確定まで固定しない） */
+/** ドラフトフォーム: requested_model の変更（未設定時の初期値は FACTORY_DEFAULT_MODEL = gemini-3.5-flash） */
 export function setDraftModel(store: Store, model: string): void {
   patchSchema(store, { model: model.trim() });
 }
