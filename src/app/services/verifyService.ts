@@ -46,17 +46,22 @@ async function resolveDocuments(
 
 /**
  * document ごとに「表示する run」の Evidence を選ぶ。
- * Evidence はシート行順（= 追記順）なので、その document で最後に現れた run_id が最新 run
+ * Evidence はシート行順（= 追記順）なので、その document で最後に現れた run_id が最新 run。
+ * ExtractionRuns に記録がない run（2 行プロトコル導入前に中断した実行の孤児 Evidence）は
+ * スキーマ版を解決できないため対象外とし、既知 run の中の最新を採る（1 件もなければ
+ * その document は「未抽出」扱い = 一覧に出ない。S7 の既定選択で再抽出できる）
  */
 export function latestRunEvidenceByDocument(
   evidence: readonly Evidence[],
+  knownRunIds: ReadonlySet<string>,
 ): Map<string, { runId: string; evidence: Evidence[] }> {
+  const known = evidence.filter((item) => knownRunIds.has(item.runId));
   const latestRun = new Map<string, string>();
-  for (const item of evidence) {
+  for (const item of known) {
     latestRun.set(item.documentId, item.runId);
   }
   const result = new Map<string, { runId: string; evidence: Evidence[] }>();
-  for (const item of evidence) {
+  for (const item of known) {
     if (latestRun.get(item.documentId) !== item.runId) {
       continue;
     }
@@ -89,20 +94,16 @@ export async function readVerifyTargetMaterials(
   const allDecisions = await readAllDecisions(spreadsheetId, deps.google);
   const annotator = (await getCurrentUserEmail(deps.profile)) ?? '';
 
-  const byDocument = latestRunEvidenceByDocument(allEvidence);
+  const byDocument = latestRunEvidenceByDocument(allEvidence, new Set(runVersions.keys()));
   const fieldsByVersion = new Map<number, SchemaField[]>();
   const materials: VerifyTargetMaterial[] = [];
   for (const document of documents) {
     const entry = byDocument.get(document.documentId);
     if (entry === undefined) {
-      continue; // Evidence なし = まだ AI 抽出していない文献は一覧に出さない
+      continue; // Evidence なし（孤児 Evidence のみ含む）= 未抽出の文献は一覧に出さない
     }
-    const schemaVersion = runVersions.get(entry.runId);
-    if (schemaVersion === undefined) {
-      throw new Error(
-        `ExtractionRuns に run_id ${entry.runId} がありません（Evidence と実行記録が不整合です）`,
-      );
-    }
+    // latestRunEvidenceByDocument が既知 run に絞っているため必ず解決できる
+    const schemaVersion = runVersions.get(entry.runId) as number;
     let fields = fieldsByVersion.get(schemaVersion);
     if (fields === undefined) {
       fields = await getSchemaFieldsByVersion(spreadsheetId, schemaVersion, deps.google);

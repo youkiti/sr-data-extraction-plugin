@@ -238,6 +238,39 @@ describe('未実行（setup）', () => {
     expect(ok.root.querySelector('#extract-pilot-warning')).toBeNull();
   });
 
+  test('中断 run の残り文献があるときは中断バナー（再抽出済みは数えず、実行中は出さない）', () => {
+    const interrupted = render(
+      makeState({ extract: { interruptedDocumentIds: ['doc-1', 'doc-2'] } }),
+    );
+    expect(
+      interrupted.root.querySelector('#extract-interrupted-warning')?.textContent,
+    ).toContain('前回の抽出が途中で中断されています（未完了 2 件）');
+
+    // 別 run で再抽出済みの文献は未完了に数えない
+    const partiallyRecovered = render(
+      makeState({
+        extract: { interruptedDocumentIds: ['doc-1', 'doc-2'], extractedDocumentIds: ['doc-1'] },
+      }),
+    );
+    expect(
+      partiallyRecovered.root.querySelector('#extract-interrupted-warning')?.textContent,
+    ).toContain('未完了 1 件');
+
+    // 全件再抽出済みならバナーは消える
+    const recovered = render(
+      makeState({
+        extract: { interruptedDocumentIds: ['doc-1'], extractedDocumentIds: ['doc-1'] },
+      }),
+    );
+    expect(recovered.root.querySelector('#extract-interrupted-warning')).toBeNull();
+
+    // 実行中（再開の実行を開始した後）は出さない
+    const running = render(
+      makeState({ extract: { interruptedDocumentIds: ['doc-1'], running: true } }),
+    );
+    expect(running.root.querySelector('#extract-interrupted-warning')).toBeNull();
+  });
+
   test('文献 0 件は案内文', () => {
     const { root } = render(makeState({ documents: [] }));
     expect(root.querySelector('#extract-documents-empty')?.textContent).toContain(

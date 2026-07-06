@@ -718,7 +718,8 @@ describe('bootstrapApp: 進捗カウントの起動時読込', () => {
             { values: [['doc-1'], ['doc-2']] }, // Documents
             { values: [['1']] }, // Protocol
             { values: [['1']] }, // SchemaVersions
-            { values: [['pilot']] }, // ExtractionRuns run_type
+            // ExtractionRuns run_type〜status（完了行のみ pilot に数える）
+            { values: [['pilot', '1', 'doc-1', 'gemini', 'gemini-test', '', 'text_only', 'done']] },
             { values: [['ev-1'], ['ev-2'], ['ev-3']] }, // Evidence
             { values: [['doc-1']] }, // StudyData
             { values: [['r-1']] }, // ResultsData

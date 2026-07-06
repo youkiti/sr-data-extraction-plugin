@@ -148,7 +148,26 @@ describe('runExtraction', () => {
       tokensOut: 200,
       costEstimate: outcome.plan.costEstimateUsd,
     });
-    expect(mockedAppendRun).toHaveBeenCalledWith('sid', outcome.run, GOOGLE);
+    // 2 行プロトコル: running 行 → 完了行の順に 2 回追記する
+    expect(mockedAppendRun).toHaveBeenCalledTimes(2);
+    expect(mockedAppendRun).toHaveBeenNthCalledWith(
+      1,
+      'sid',
+      {
+        ...outcome.run,
+        modelVersion: null,
+        status: 'running',
+        finishedAt: null,
+        tokensIn: null,
+        tokensOut: null,
+      },
+      GOOGLE,
+    );
+    expect(mockedAppendRun).toHaveBeenNthCalledWith(2, 'sid', outcome.run, GOOGLE);
+    // running 行は Evidence 追記より先（孤児 Evidence を生まない不変条件）
+    expect(mockedAppendRun.mock.invocationCallOrder[0]).toBeLessThan(
+      mockedAppendEvidence.mock.invocationCallOrder[0] as number,
+    );
 
     // Evidence はアンカリング確定済みで追記される
     expect(mockedAppendEvidence).toHaveBeenCalledTimes(1);
@@ -236,6 +255,6 @@ describe('runExtraction', () => {
     expect(outcome.run.provider).toBe('gemini');
     expect(outcome.run.runId).toMatch(/^[0-9a-f]{8}-/); // 既定 UUID 発番
     expect(outcome.run.tokensIn).toBeNull();
-    expect(mockedAppendRun).toHaveBeenCalledTimes(1);
+    expect(mockedAppendRun).toHaveBeenCalledTimes(2); // running 行 + 完了行
   });
 });

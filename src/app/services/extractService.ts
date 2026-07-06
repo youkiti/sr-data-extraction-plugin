@@ -13,7 +13,7 @@ import {
   type ExtractDocRow,
 } from '../../features/extraction/docProgress';
 import { planRun } from '../../features/extraction/planRun';
-import { readExtractedDocumentIds } from '../../features/extraction/runRepository';
+import { readRunDocumentCoverage } from '../../features/extraction/runRepository';
 import { ensureChildFolder } from '../../lib/google/drive';
 import type { GoogleApiDeps } from '../../lib/google/types';
 import { missingApiKeyMessage } from '../../lib/llm/modelCatalog';
@@ -47,8 +47,9 @@ async function resolveDocuments(
 }
 
 /**
- * 抽出済み document_id（ExtractionRuns 全 run の和集合）を読み込む。
- * 既定選択（未抽出の全件）とチェックリストの「抽出済み」バッジの素材
+ * ExtractionRuns の document カバレッジ（抽出済み = 完了行のみ / 中断 run の残り）を読み込む。
+ * 既定選択（未抽出の全件）・チェックリストの「抽出済み」バッジ・中断バナーの素材。
+ * 中断 run の文献は抽出済みに数えないため、既定選択に含まれてそのまま再開できる
  */
 export async function loadExtractTargets(
   store: Store,
@@ -65,8 +66,12 @@ export async function loadExtractTargets(
   }
   patchExtract(store, { loading: true, loadError: null });
   try {
-    const ids = await readExtractedDocumentIds(project.spreadsheetId, deps.google);
-    patchExtract(store, { loading: false, extractedDocumentIds: [...ids] });
+    const coverage = await readRunDocumentCoverage(project.spreadsheetId, deps.google);
+    patchExtract(store, {
+      loading: false,
+      extractedDocumentIds: [...coverage.extracted],
+      interruptedDocumentIds: [...coverage.interrupted],
+    });
   } catch (err) {
     patchExtract(store, { loading: false, loadError: toMessage(err) });
   }

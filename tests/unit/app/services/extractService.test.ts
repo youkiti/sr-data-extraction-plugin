@@ -17,7 +17,7 @@ import type { Evidence } from '../../../../src/domain/evidence';
 import type { ExtractionRun } from '../../../../src/domain/extractionRun';
 import type { SchemaField } from '../../../../src/domain/schemaField';
 import { readDocuments } from '../../../../src/features/documents/documentRepository';
-import { readExtractedDocumentIds } from '../../../../src/features/extraction/runRepository';
+import { readRunDocumentCoverage } from '../../../../src/features/extraction/runRepository';
 import { ensureChildFolder } from '../../../../src/lib/google/drive';
 
 jest.mock('../../../../src/app/services/extractionService', () => ({
@@ -30,7 +30,7 @@ jest.mock('../../../../src/features/documents/documentRepository', () => ({
   readDocuments: jest.fn(),
 }));
 jest.mock('../../../../src/features/extraction/runRepository', () => ({
-  readExtractedDocumentIds: jest.fn(),
+  readRunDocumentCoverage: jest.fn(),
 }));
 jest.mock('../../../../src/lib/google/drive', () => ({
   ensureChildFolder: jest.fn(),
@@ -39,8 +39,8 @@ jest.mock('../../../../src/lib/google/drive', () => ({
 const runExtractionMock = runExtraction as jest.MockedFunction<typeof runExtraction>;
 const resolveProtocolMock = resolveProtocol as jest.MockedFunction<typeof resolveProtocol>;
 const readDocumentsMock = readDocuments as jest.MockedFunction<typeof readDocuments>;
-const readExtractedIdsMock = readExtractedDocumentIds as jest.MockedFunction<
-  typeof readExtractedDocumentIds
+const readCoverageMock = readRunDocumentCoverage as jest.MockedFunction<
+  typeof readRunDocumentCoverage
 >;
 const ensureChildFolderMock = ensureChildFolder as jest.MockedFunction<typeof ensureChildFolder>;
 
@@ -205,34 +205,38 @@ beforeEach(() => {
     id: `${name}-id`,
     webViewLink: `https://drive.example/${name}`,
   }));
-  readExtractedIdsMock.mockResolvedValue(new Set());
+  readCoverageMock.mockResolvedValue({ extracted: new Set(), interrupted: new Set() });
 });
 
 describe('loadExtractTargets', () => {
-  test('ExtractionRuns の抽出済み document_id を読み込む', async () => {
-    readExtractedIdsMock.mockResolvedValue(new Set(['doc-1']));
+  test('ExtractionRuns のカバレッジ（抽出済み + 中断 run の残り）を読み込む', async () => {
+    readCoverageMock.mockResolvedValue({
+      extracted: new Set(['doc-1']),
+      interrupted: new Set(['doc-2']),
+    });
     const store = makeStore({});
     await loadExtractTargets(store, makeDeps());
     expect(store.getState().extract.extractedDocumentIds).toEqual(['doc-1']);
+    expect(store.getState().extract.interruptedDocumentIds).toEqual(['doc-2']);
     expect(store.getState().extract.loading).toBe(false);
   });
 
   test('プロジェクト未選択・読込中は何もしない', async () => {
     await loadExtractTargets(makeStore({ withProject: false }), makeDeps());
     await loadExtractTargets(makeStore({ extract: { loading: true } }), makeDeps());
-    expect(readExtractedIdsMock).not.toHaveBeenCalled();
+    expect(readCoverageMock).not.toHaveBeenCalled();
   });
 
   test('読込済みは no-op、force 指定で再読込する', async () => {
     const store = makeStore({ extract: { extractedDocumentIds: [] } });
     await loadExtractTargets(store, makeDeps());
-    expect(readExtractedIdsMock).not.toHaveBeenCalled();
+    expect(readCoverageMock).not.toHaveBeenCalled();
     await loadExtractTargets(store, makeDeps(), { force: true });
-    expect(readExtractedIdsMock).toHaveBeenCalledTimes(1);
+    expect(readCoverageMock).toHaveBeenCalledTimes(1);
   });
 
   test('読込失敗は loadError に理由を入れる', async () => {
-    readExtractedIdsMock.mockRejectedValue(new Error('boom'));
+    readCoverageMock.mockRejectedValue(new Error('boom'));
     const store = makeStore({});
     await loadExtractTargets(store, makeDeps());
     expect(store.getState().extract.loadError).toBe('boom');

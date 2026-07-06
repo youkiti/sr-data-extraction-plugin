@@ -1,6 +1,9 @@
 // 抽出実行（S6 パイロット / S7 一括 / 再抽出）のサービス層。
-// planRun → executeRun（Evidence 追記込み）→ ai annotator 行への転記 →
-// ExtractionRuns 追記、までを 1 関数に束ねる（requirements.md §4.3 / architecture.md §2）。
+// planRun → ExtractionRuns へ running 行を先行追記 → executeRun（Evidence 追記込み）→
+// ai annotator 行への転記 → ExtractionRuns へ完了行を追記、までを 1 関数に束ねる
+// （requirements.md §4.3 / architecture.md §2）。
+// running 行を Evidence より先に書くことで「Evidence の run_id は必ず ExtractionRuns で
+// 解決できる」不変条件を守る（途中で実行が死んでも running 行が残り、中断として検出できる）。
 // LLM 呼び出しは withRetry(withLogging(createProvider(...))) で包み、
 // 全呼び出し（リトライの各試行を含む）を LLMApiLog + Drive（logs/llm/）に残す
 import type { ExtractionRun, RunType } from '../../domain/extractionRun';
@@ -76,8 +79,9 @@ export interface RunExtractionOutcome {
 }
 
 /**
- * 一括抽出を実行する。完了時に確定 status（done / partial_failure）で
- * ExtractionRuns へ 1 行追記し、Evidence の値を `ai` annotator 行へ転記する。
+ * 一括抽出を実行する。開始時に status='running'、完了時に確定 status
+ * （done / partial_failure）の 2 行を同じ run_id で ExtractionRuns へ追記し
+ * （2 行プロトコル。§4.3）、Evidence の値を `ai` annotator 行へ転記する。
  *
  * 事前のコスト概算だけが必要な場合（実行確認 UI）は planRun を直接使う。
  * 本関数は内部で再計画するため、確認画面の概算と実行時の計画は同一入力なら一致する
@@ -129,6 +133,34 @@ export async function runExtraction(
 
   const runId = uuid();
   const startedAt = now();
+  // 実際に実行対象となる文献（スキップ分は含めない。plan.skippedDocuments で追跡可能）
+  const documentIds = [...new Set(plan.batches.map((batch) => batch.documentId))];
+  const runBase = {
+    runId,
+    runType: params.runType,
+    schemaVersion: plan.schemaVersion,
+    documentIds,
+    provider: baseProvider.providerId,
+    requestedModel: params.model,
+    inputMode: 'text_only' as const, // MVP は text_only のみ（pdf_native は ※Q3）
+    startedAt,
+    costEstimate: plan.costEstimateUsd,
+  };
+  // running 行の先行追記（2 行プロトコルの 1 行目）。この追記が失敗したら
+  // Evidence を 1 行も書かずに中断するため、孤児 Evidence は生まれない
+  await appendExtractionRun(
+    params.spreadsheetId,
+    {
+      ...runBase,
+      modelVersion: null,
+      status: 'running',
+      finishedAt: null,
+      tokensIn: null,
+      tokensOut: null,
+    },
+    deps.google,
+  );
+
   const result = await executeRun(
     { runId, plan, fields: params.fields, protocolContext: params.protocolContext },
     {
@@ -151,22 +183,14 @@ export async function runExtraction(
     newUuid: deps.newUuid,
   });
 
+  // 完了行の追記（2 行プロトコルの 2 行目。読み手はこの行の有無で完了 / 中断を判別する）
   const run: ExtractionRun = {
-    runId,
-    runType: params.runType,
-    schemaVersion: plan.schemaVersion,
-    // 実際に実行対象となった文献（スキップ分は含めない。plan.skippedDocuments で追跡可能）
-    documentIds: [...new Set(plan.batches.map((batch) => batch.documentId))],
-    provider: baseProvider.providerId,
-    requestedModel: params.model,
+    ...runBase,
     modelVersion: result.modelVersion,
-    inputMode: 'text_only', // MVP は text_only のみ（pdf_native は ※Q3）
     status: result.status,
-    startedAt,
     finishedAt: now(),
     tokensIn: result.tokensIn,
     tokensOut: result.tokensOut,
-    costEstimate: plan.costEstimateUsd,
   };
   await appendExtractionRun(params.spreadsheetId, run, deps.google);
 

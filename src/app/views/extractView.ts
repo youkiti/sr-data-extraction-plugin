@@ -378,6 +378,22 @@ export function renderExtractView(state: AppState, ctx: ViewContext): HTMLElemen
     );
   }
 
+  // 中断された run の残り文献（再抽出済みは除く）。未抽出扱いのため既定選択に含まれている
+  const extractedSet = new Set(extract.extractedDocumentIds);
+  const interruptedRemaining = (extract.interruptedDocumentIds ?? []).filter(
+    (id) => !extractedSet.has(id),
+  );
+  if (interruptedRemaining.length > 0 && !extract.running) {
+    children.push(
+      el('p', {
+        id: 'extract-interrupted-warning',
+        className: 'extract__interrupted-warning',
+        attributes: { role: 'status' },
+        text: `前回の抽出が途中で中断されています（未完了 ${interruptedRemaining.length} 件）。未完了の文献は対象の既定選択に含まれているため、そのまま実行すると再開できます。`,
+      }),
+    );
+  }
+
   if (extract.running) {
     children.push(renderProgress(state, ctx));
   } else {
