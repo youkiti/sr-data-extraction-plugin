@@ -324,23 +324,42 @@ describe('判定操作', () => {
     panel.dispose();
   });
 
-  test('キーボード: a / n / z（undo は取り消し値を積む）', () => {
+  test('キーボード: a で次の未判定セルへ自動遷移し、n は遷移先セルに効く', () => {
     const { panel, onDecision } = createPanel();
     pressKey('z'); // 履歴なし → 無害
     expect(onDecision).not.toHaveBeenCalled();
+    // 先頭 f-total を accept → 次の未判定 f-country へフォーカスが移る（j キー不要）
     pressKey('a');
     expect(onDecision).toHaveBeenLastCalledWith(
-      expect.objectContaining({ action: 'accept', value: '12' }),
+      expect.objectContaining({ fieldId: 'f-total', action: 'accept', value: '12' }),
     );
+    expect(cellEl(panel.root, KEY_COUNTRY)?.classList.contains('verify__cell--focused')).toBe(true);
+    // n は遷移先の f-country に効く
     pressKey('n');
     expect(onDecision).toHaveBeenLastCalledWith(
-      expect.objectContaining({ action: 'not_reported', value: 'NR' }),
+      expect.objectContaining({ fieldId: 'f-country', action: 'not_reported', value: 'NR' }),
     );
-    pressKey('z'); // not_reported を取り消し → accept の値へ戻す
+    panel.dispose();
+  });
+
+  test('単一セルタブ: 全セル判定済みなら留まり、undo は同じセルで前の値へ戻す', () => {
+    const { panel, onDecision } = createPanel();
+    // arm タブ（単一セル f-arm-n。群構成は確定済み）へ切替
+    panel.root.querySelectorAll<HTMLButtonElement>('.verify__tab')[1]?.click();
+    expect(cellEl(panel.root, KEY_ARM)?.classList.contains('verify__cell--focused')).toBe(true);
+    pressKey('a'); // accept → 他に未判定セルなし → 留まる
     expect(onDecision).toHaveBeenLastCalledWith(
-      expect.objectContaining({ action: 'undo', value: '12' }),
+      expect.objectContaining({ fieldId: 'f-arm-n', action: 'accept', value: '50' }),
     );
-    expect(chipOf(panel.root, KEY_TOTAL)).toBe('承認');
+    expect(cellEl(panel.root, KEY_ARM)?.classList.contains('verify__cell--focused')).toBe(true);
+    pressKey('n'); // not_reported → 留まる
+    expect(cellEl(panel.root, KEY_ARM)?.classList.contains('verify__cell--focused')).toBe(true);
+    pressKey('z'); // undo → accept の値 '50' へ戻す・留まる
+    expect(onDecision).toHaveBeenLastCalledWith(
+      expect.objectContaining({ action: 'undo', value: '50' }),
+    );
+    expect(chipOf(panel.root, KEY_ARM)).toBe('承認');
+    expect(cellEl(panel.root, KEY_ARM)?.classList.contains('verify__cell--focused')).toBe(true);
     panel.dispose();
   });
 
@@ -496,7 +515,7 @@ describe('フォーカス移動と双方向ジャンプ', () => {
     panel.dispose();
   });
 
-  test('タブの手動切替は先頭セルへフォーカスし直す', () => {
+  test('タブの手動切替は最初の未判定セルへフォーカスし直す', () => {
     const { panel } = createPanel();
     const tabs = panel.root.querySelectorAll<HTMLButtonElement>('.verify__tab');
     tabs[1]?.click();
@@ -557,6 +576,73 @@ describe('フォーカス移動と双方向ジャンプ', () => {
   });
 });
 
+describe('自動遷移・初期フォーカス・スクロール保持（UX 改善）', () => {
+  test('初期フォーカスは最初の未判定セル（判定済みセルをスキップ）', () => {
+    const { panel } = createPanel({
+      decisions: [makeDecision({ fieldId: 'f-total', value: '12' })], // f-total 承認済み
+    });
+    expect(cellEl(panel.root, KEY_COUNTRY)?.classList.contains('verify__cell--focused')).toBe(true);
+    expect(cellEl(panel.root, KEY_TOTAL)?.classList.contains('verify__cell--focused')).toBe(false);
+    panel.dispose();
+  });
+
+  test('判定後は判定済みセルをスキップして次の未判定セルへ遷移する', () => {
+    const { panel } = createPanel({
+      decisions: [makeDecision({ fieldId: 'f-country', value: 'Japan' })], // f-country 承認済み
+    });
+    // 初期フォーカス = 未判定の先頭 f-total
+    expect(cellEl(panel.root, KEY_TOTAL)?.classList.contains('verify__cell--focused')).toBe(true);
+    pressKey('a'); // f-total を accept → f-country（判定済み）をスキップして f-blank へ
+    expect(cellEl(panel.root, KEY_BLANK)?.classList.contains('verify__cell--focused')).toBe(true);
+    panel.dispose();
+  });
+
+  test('undo は他に未判定セルがあっても同じセルに留まる（取り消し直後の再判定用）', () => {
+    const { panel } = createPanel({
+      decisions: [makeDecision({ fieldId: 'f-total', value: '12' })], // f-total 承認済み
+    });
+    // 初期フォーカスは f-country（f-total 判定済み）→ k で f-total へ
+    pressKey('k');
+    expect(cellEl(panel.root, KEY_TOTAL)?.classList.contains('verify__cell--focused')).toBe(true);
+    pressKey('z'); // undo f-total → 未判定 f-country / f-blank があっても f-total に留まる
+    expect(cellEl(panel.root, KEY_TOTAL)?.classList.contains('verify__cell--focused')).toBe(true);
+    panel.dispose();
+  });
+
+  test('refreshForm はスクロール位置を保持する（判定後に先頭へ飛ばない）', () => {
+    const { panel } = createPanel();
+    const formPane = panel.root.querySelector<HTMLElement>('.verify__pane--form')!;
+    let scrollTop = 0;
+    Object.defineProperty(formPane, 'scrollTop', {
+      configurable: true,
+      get: () => scrollTop,
+      set: (value: number) => {
+        scrollTop = value;
+      },
+    });
+    formPane.scrollTop = 120; // ユーザーが下方へスクロール
+    pressKey('a'); // 判定で refreshForm が走ってもスクロール位置は維持される
+    expect(formPane.scrollTop).toBe(120);
+    panel.dispose();
+  });
+
+  test('判定後の自動遷移で遷移先セルへ scrollIntoView + フォーカスする', () => {
+    const scrollIntoView = jest.fn();
+    (HTMLElement.prototype as unknown as { scrollIntoView: unknown }).scrollIntoView =
+      scrollIntoView;
+    try {
+      const { panel } = createPanel();
+      cellEl(panel.root, KEY_TOTAL)?.focus(); // f-total にフォーカス
+      pressKey('a'); // accept → f-country へ自動遷移
+      expect(document.activeElement).toBe(cellEl(panel.root, KEY_COUNTRY));
+      expect(scrollIntoView).toHaveBeenCalled();
+      panel.dispose();
+    } finally {
+      delete (HTMLElement.prototype as unknown as { scrollIntoView?: unknown }).scrollIntoView;
+    }
+  });
+});
+
 describe('キーボードガード', () => {
   test('修飾キー付き・入力フィールド・未知キーは無視する', () => {
     const { panel, onDecision } = createPanel();
@@ -586,15 +672,32 @@ describe('キーボードガード', () => {
     expect(onDecision).not.toHaveBeenCalled();
   });
 
-  test('フォーカス復元: フォーム内にフォーカスがあるときだけ再描画後に戻す', () => {
-    const { panel, onDecision } = createPanel();
-    cellEl(panel.root, KEY_TOTAL)?.focus();
-    pressKey('a');
-    expect(onDecision).toHaveBeenCalledTimes(1);
+  test('undo のフォーカス復元: フォーム内フォーカス時は同じセルへ戻す', () => {
+    const { panel, onDecision } = createPanel({
+      decisions: [makeDecision({ fieldId: 'f-total', value: '12' })], // f-total 承認済み（undo 可能）
+    });
+    // 初期フォーカスは未判定の f-country。k で判定済み f-total へ移動しフォーカス
+    pressKey('k');
     expect((document.activeElement as HTMLElement | null)?.dataset['cellKey']).toBe(KEY_TOTAL);
-    // フォーカスが外（body）にあるときは奪わない
-    (document.activeElement as HTMLElement | null)?.blur();
-    pressKey('n');
+    pressKey('z'); // undo f-total（同セルに留まる）→ hadFocus true でフォーカス復元
+    expect(onDecision).toHaveBeenLastCalledWith(expect.objectContaining({ action: 'undo' }));
+    expect((document.activeElement as HTMLElement | null)?.dataset['cellKey']).toBe(KEY_TOTAL);
+    panel.dispose();
+  });
+
+  test('undo のフォーカス復元: body にフォーカスがなければ奪わない', () => {
+    const { panel, onDecision } = createPanel({
+      decisions: [
+        makeDecision({ fieldId: 'f-total', value: '12' }),
+        makeDecision({ fieldId: 'f-country', value: 'Japan' }),
+        makeDecision({ fieldId: 'f-blank', value: 'RCT' }),
+      ],
+    });
+    // 全 study セル判定済み → 初期フォーカスは先頭 f-total（DOM フォーカスは未設定 = body）
+    expect(document.activeElement).toBe(document.body);
+    expect(cellEl(panel.root, KEY_TOTAL)?.classList.contains('verify__cell--focused')).toBe(true);
+    pressKey('z'); // undo f-total → 留まる・body のまま（フォーカスを奪わない）
+    expect(onDecision).toHaveBeenLastCalledWith(expect.objectContaining({ action: 'undo' }));
     expect(document.activeElement).toBe(document.body);
     panel.dispose();
   });
@@ -858,6 +961,37 @@ describe('renderCachedVerificationPanel', () => {
   test('disposeVerificationPanelCache は空でも安全', () => {
     disposeVerificationPanelCache();
     disposeVerificationPanelCache();
+  });
+
+  test('新規パネル生成直後に初期フォーカスセルを scrollIntoView する', async () => {
+    const scrollIntoView = jest.fn();
+    (HTMLElement.prototype as unknown as { scrollIntoView: unknown }).scrollIntoView =
+      scrollIntoView;
+    try {
+      const root = renderCachedVerificationPanel({
+        data: makeData(),
+        onDecision: jest.fn(),
+        now: () => 't',
+        renderPage,
+      });
+      document.body.replaceChildren(root);
+      await Promise.resolve(); // 接続後の microtask を待つ
+      expect(scrollIntoView).toHaveBeenCalled();
+    } finally {
+      delete (HTMLElement.prototype as unknown as { scrollIntoView?: unknown }).scrollIntoView;
+    }
+  });
+
+  test('新規パネル: 項目のないデータでもスクロール処理は無害（フォーカスセルなし）', async () => {
+    const root = renderCachedVerificationPanel({
+      data: makeData({ fields: [], evidence: [] }),
+      onDecision: jest.fn(),
+      now: () => 't',
+      renderPage,
+    });
+    document.body.replaceChildren(root);
+    await Promise.resolve();
+    expect(root.querySelector('.verify__cell')).toBeNull();
   });
 });
 

@@ -1117,16 +1117,58 @@
   flex-wrap: wrap;
 }
 
+/* 判定ボタンは対応する状態チップ（上記 .verify__chip--*）と同じ色系統に揃え、
+   ボタン ↔ チップの色対応で判定の意味が一目でわかるようにする */
 .verify__action--accept {
   background: #e6f4ea;
   border-color: #34a853;
   color: #0d652d;
 }
 
+/* edit の文字色はチップ（#b06000）と同系統の琥珀だが、ボタンは通常ウェイトのため
+   AA 4.5:1 を満たすよう #965200 まで濃くする */
+.verify__action--edit {
+  background: #fef7e0;
+  border-color: #fbbc04;
+  color: #965200;
+}
+
 .verify__action--reject {
   background: #fce8e6;
   border-color: #ea4335;
   color: #a50e0e;
+}
+
+.verify__action--not-reported {
+  background: #f1f3f4;
+  border-color: #bdc1c6;
+  color: #3c4043;
+}
+
+.verify__action--undo {
+  background: #fff;
+  border-color: #dadce0;
+  color: #5f6368;
+}
+
+.verify__action--accept:hover:not(:disabled) {
+  background: #ceead6;
+}
+
+.verify__action--edit:hover:not(:disabled) {
+  background: #feefc3;
+}
+
+.verify__action--reject:hover:not(:disabled) {
+  background: #fad2cf;
+}
+
+.verify__action--not-reported:hover:not(:disabled) {
+  background: #e8eaed;
+}
+
+.verify__action--undo:hover:not(:disabled) {
+  background: #f1f3f4;
 }
 
 .verify__edit-input {

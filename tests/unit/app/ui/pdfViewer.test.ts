@@ -98,6 +98,31 @@ describe('createPdfViewer', () => {
     expect(wrap?.style.width).toBe('918px');
   });
 
+  test('ズーム選択肢に 175% / 200% があり、scale 2 でオーバーレイ座標が 2 倍になる', async () => {
+    const renderPage = jest.fn().mockResolvedValue({ width: 612, height: 792 });
+    const viewer = createPdfViewer({ document: makeDocument(), pages: PAGES, renderPage });
+    viewer.setHighlights([makeHighlight()], null);
+    const zoom = viewer.root.querySelector<HTMLSelectElement>('.pdf-viewer__zoom')!;
+    expect([...zoom.options].map((option) => option.value)).toEqual([
+      '0.75', '1', '1.25', '1.5', '1.75', '2',
+    ]);
+    const labels = [...zoom.options].map((option) => option.textContent);
+    expect(labels).toContain('175%');
+    expect(labels).toContain('200%');
+    zoom.value = '2';
+    zoom.dispatchEvent(new Event('change'));
+    await flush();
+    const rect = viewer.root.querySelector<HTMLElement>('.pdf-viewer__hl');
+    expect(rect?.style.left).toBe('20px'); // 10 * 2
+    // top = (792 - 700 - 10) * 2 = 164
+    expect(rect?.style.top).toBe('164px');
+    expect(rect?.style.width).toBe('100px'); // 50 * 2
+    expect(rect?.style.height).toBe('20px'); // 10 * 2
+    const wrap = viewer.root.querySelector<HTMLElement>('.pdf-viewer__page');
+    expect(wrap?.style.width).toBe('1224px'); // 612 * 2
+    expect(wrap?.style.height).toBe('1584px'); // 792 * 2
+  });
+
   test('ハイライト: 現在ページの矩形だけを描画し、クリックでコールバックが飛ぶ', async () => {
     const onHighlightClick = jest.fn();
     const renderPage = jest.fn().mockResolvedValue({ width: 612, height: 792 });
