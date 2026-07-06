@@ -110,8 +110,8 @@ export async function readRunAuditInfos(
 /** 完了行の status（2 行プロトコルの 2 行目）。running 行しかない run は中断とみなす */
 const COMPLETED_STATUSES: ReadonlySet<string> = new Set(['done', 'partial_failure']);
 
-/** document_ids 列（4 列目）のカンマ区切りを分解する（§3.2） */
-function parseDocumentIds(cell: string | null): string[] {
+/** document_ids 列（4 列目）のカンマ区切りを分解する（§3.2）。ラグ配列の欠落セルは空扱い */
+function parseDocumentIds(cell: string | null | undefined): string[] {
   return (cell ?? '').split(',').filter((id) => id !== '');
 }
 
