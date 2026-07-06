@@ -11,6 +11,10 @@ export type ExtractDocStatus = 'queued' | 'running' | 'done' | 'failed';
 export interface ExtractDocRow {
   documentId: string;
   status: ExtractDocStatus;
+  /** 処理済みバッチ数（実行中の「バッチ n/m」表示の素材。失敗バッチも数える） */
+  completedBatches: number;
+  /** 計画上の総バッチ数（計画から除外された document は 0） */
+  totalBatches: number;
   /** failed のときの内訳（reason + detail）。それ以外は null */
   detail: string | null;
 }
@@ -49,22 +53,28 @@ export function createDocProgressTracker(
     }
   }
   const completed = new Map<string, number>();
-  const statuses = new Map<string, ExtractDocRow>();
+  const statuses = new Map<string, Pick<ExtractDocRow, 'status' | 'detail'>>();
   for (const documentId of documentIds) {
     statuses.set(
       documentId,
       totals.get(documentId) === 0
         ? {
-            documentId,
             status: 'failed',
             detail: '抽出計画から除外されました（テキスト層がない可能性があります）',
           }
-        : { documentId, status: 'queued', detail: null },
+        : { status: 'queued', detail: null },
     );
   }
 
   return {
-    rows: () => documentIds.map((documentId) => statuses.get(documentId) as ExtractDocRow),
+    rows: () =>
+      documentIds.map((documentId) => ({
+        documentId,
+        // 追跡対象の status / 総バッチ数はコンストラクタで必ずセット済み
+        ...(statuses.get(documentId) as Pick<ExtractDocRow, 'status' | 'detail'>),
+        completedBatches: completed.get(documentId) ?? 0,
+        totalBatches: totals.get(documentId) as number,
+      })),
     onProgress(progress) {
       const row = statuses.get(progress.documentId);
       if (row === undefined) {
@@ -77,14 +87,12 @@ export function createDocProgressTracker(
       }
       if (progress.failure !== null) {
         statuses.set(progress.documentId, {
-          documentId: progress.documentId,
           status: 'failed',
           detail: describeBatchFailure(progress.failure),
         });
         return;
       }
       statuses.set(progress.documentId, {
-        documentId: progress.documentId,
         // 追跡対象の総バッチ数はコンストラクタで必ずセット済み
         status: done >= (totals.get(progress.documentId) as number) ? 'done' : 'running',
         detail: null,

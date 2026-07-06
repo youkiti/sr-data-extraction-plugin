@@ -836,6 +836,29 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  padding: 2px 8px;
+  border-left: 3px solid transparent;
+}
+
+/* いま処理中の行を目立たせる（リスト内の現在位置） */
+.extract__doc-row--running {
+  border-left-color: var(--color-primary);
+  background: var(--color-surface);
+}
+
+.extract__doc-batches {
+  color: var(--color-text-muted);
+  font-size: 13px;
+}
+
+.extract__doc-summary {
+  margin: 8px 0 0;
+  font-weight: 700;
+}
+
+.extract__current-doc {
+  margin: 2px 0 0;
+  color: var(--color-text-muted);
 }
 
 .extract__doc-status {

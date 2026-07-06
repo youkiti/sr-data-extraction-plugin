@@ -1204,7 +1204,15 @@ describe('bootstrapApp: #/extract', () => {
           tokensOut: null,
           costEstimate: null,
         },
-        docRows: [{ documentId: 'doc-1', status: 'failed', detail: 'api_error（500）' }],
+        docRows: [
+          {
+            documentId: 'doc-1',
+            status: 'failed',
+            completedBatches: 1,
+            totalBatches: 1,
+            detail: 'api_error（500）',
+          },
+        ],
       } as Partial<AppState['extract']>),
     );
     const { deps, fetchMock } = createFakeDeps([[...SHEET_HEADERS.ExtractionRuns]]);

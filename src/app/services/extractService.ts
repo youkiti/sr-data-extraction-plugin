@@ -326,7 +326,8 @@ export async function retryExtractDocument(
     });
   };
   patchExtract(store, { retryingDocumentId: documentId, runError: null });
-  replaceRow({ documentId, status: 'running', detail: null });
+  // 再計画前のプレースホルダ（バッチ数はまだ不明 = 0/0。onDocRows が実数で置き換える）
+  replaceRow({ documentId, status: 'running', completedBatches: 0, totalBatches: 0, detail: null });
   try {
     const documents = await resolveDocuments(store, deps.google, project.spreadsheetId);
     const target = documents.find((doc) => doc.documentId === documentId);
@@ -358,7 +359,13 @@ export async function retryExtractDocument(
         : '再試行が部分的に失敗しました。失敗の内訳を確認してください',
     );
   } catch (err) {
-    replaceRow({ documentId, status: 'failed', detail: toMessage(err) });
+    replaceRow({
+      documentId,
+      status: 'failed',
+      completedBatches: 0,
+      totalBatches: 0,
+      detail: toMessage(err),
+    });
     patchExtract(store, { retryingDocumentId: null, runError: toMessage(err) });
   }
 }
