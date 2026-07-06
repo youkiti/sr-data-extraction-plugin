@@ -73,6 +73,7 @@ import {
 import { createChromeGoogleApiDeps } from './services/factories';
 import { loadCurrentProject } from '../features/project/projectStore';
 import { extractDocxText } from '../lib/docx/extractDocxText';
+import { BUILD_DATE } from '../build-info';
 import { createChromeProfileDeps } from '../lib/google/identity';
 import { createChromePickerDeps } from '../lib/google/picker';
 import { createProvider } from '../lib/llm/providerFactory';
@@ -148,6 +149,12 @@ export async function bootstrapApp(
   const openPopupButton = doc.getElementById('app-open-popup');
   if (!statusEl || !contextEl || !navEl || !contentEl || !titleButton || !openPopupButton) {
     return null;
+  }
+
+  // アプリ名の下にビルド日を表示する（要素が無い環境では何もしない）
+  const buildDateEl = doc.getElementById('app-build-date');
+  if (buildDateEl) {
+    buildDateEl.textContent = `build ${BUILD_DATE}`;
   }
 
   const store = createStore(await seedState(win));

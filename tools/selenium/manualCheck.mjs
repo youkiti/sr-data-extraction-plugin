@@ -19,8 +19,15 @@
 // エッジ:   node tools/selenium/manualCheck.mjs cancel
 // 通し確認: node tools/selenium/manualCheck.mjs options protocol schema pilot extract verify dashboard export offline
 //   （§2 の S4→S10。ユーザー操作が要る箇所は Enter ではなく DOM の状態変化で自動検知する）
+//
+// ストア掲載用スクショ（1280×800 ちょうどで docs/store/screenshots/ へ保存）:
+//   node tools/selenium/manualCheck.mjs --shots picker schema pilot dashboard export
+//   → s3-documents / s5-schema / s8-verify-highlight / s9-dashboard / s10-export の 5 枚
+// クリーンプロファイルでの dist smoke（別プロファイルで通す）:
+//   node tools/selenium/manualCheck.mjs --profile .selenium-profile-clean prepare
+//   node tools/selenium/manualCheck.mjs --profile .selenium-profile-clean login project ...
 import { createHash } from 'node:crypto';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import readline from 'node:readline';
@@ -29,8 +36,13 @@ import chrome from 'selenium-webdriver/chrome.js';
 
 const ROOT = path.resolve(new URL('../..', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1'));
 const DIST_DIR = path.join(ROOT, 'dist');
-const PROFILE_DIR = path.join(ROOT, '.selenium-profile');
+// 専用プロファイルの場所。--profile で差し替える（クリーンプロファイル smoke 用）ため let
+let PROFILE_DIR = path.join(ROOT, '.selenium-profile');
 const PICKER_ORIGIN = 'https://youkiti.github.io';
+// ストア掲載用スクショの保存先。--shots のときだけ書き出す
+const SHOTS_DIR = path.join(ROOT, 'docs', 'store', 'screenshots');
+// --shots が付いたか（main で設定）
+let shotsEnabled = false;
 
 // ---------------------------------------------------------------------------
 // ユーティリティ
@@ -57,6 +69,47 @@ function pause(message) {
       resolve();
     });
   });
+}
+
+/** `--key value` / `--key=value` 形式のオプション値を取り出す（無ければ null） */
+function readOptionValue(argv, key) {
+  for (let i = 0; i < argv.length; i++) {
+    if (argv[i] === key) {
+      return argv[i + 1] ?? null;
+    }
+    if (argv[i].startsWith(`${key}=`)) {
+      return argv[i].slice(key.length + 1);
+    }
+  }
+  return null;
+}
+
+/**
+ * ストア掲載用スクショを 1280×800 ちょうどで撮る（--shots のときだけ動く）。
+ * ブラウザのツールバー分だけビューポートが縮む問題を避けるため、CDP で
+ * レイアウトビューポートを 1280×800 に上書きしてから Page.captureScreenshot し、
+ * 撮影後に override を解除して操作を続けられるようにする。
+ */
+async function shot(driver, name) {
+  if (!shotsEnabled) {
+    return;
+  }
+  await driver.sendDevToolsCommand('Emulation.setDeviceMetricsOverride', {
+    width: 1280,
+    height: 800,
+    deviceScaleFactor: 1,
+    mobile: false,
+  });
+  try {
+    const result = await driver.sendAndGetDevToolsCommand('Page.captureScreenshot', {
+      format: 'png',
+    });
+    mkdirSync(SHOTS_DIR, { recursive: true });
+    writeFileSync(path.join(SHOTS_DIR, `${name}.png`), result.data, 'base64');
+    ok(`スクショ保存: docs/store/screenshots/${name}.png（1280×800）`);
+  } finally {
+    await driver.sendDevToolsCommand('Emulation.clearDeviceMetricsOverride', {});
+  }
 }
 
 /** manifest.json の key（固定公開鍵）から拡張 ID を導出する（SHA-256 先頭 16 バイト → a-p） */
@@ -274,18 +327,21 @@ async function waitForEstimate(driver, estimateSelector, docsSelector, maxSelect
  * beforeHandles に無い新規タブのうち、URL が prefix で始まるものが開くのを待って
  * そのハンドルを返す（切替えた状態で返る）。複数の新規タブが開いても（ユーザーの
  * 先回り操作などで想定外のタブが混ざっても）目的のタブだけを拾う。
- * フォーカス移動を避けるため、切替えは「未確認の新規ハンドルが現れたとき」だけ行う
+ *
+ * 新規タブ（chrome.tabs.create）は about:blank で現れてから目的 URL へ遷移する
+ * ことがあるため、一度見たハンドルでも prefix に一致するまで毎回見直す。
+ * 「初回の一度きり」で確定すると blank の瞬間に拾って取りこぼし、目的タブが
+ * 開いているのにタイムアウトする（メインビュー / Picker 検知の flaky の原因）。
  */
 async function waitForWindowWithUrl(driver, beforeHandles, prefix, timeoutMs, what) {
-  const checked = new Set(beforeHandles);
+  const before = new Set(beforeHandles);
   let found = null;
   await driver.wait(
     async () => {
       for (const handle of await driver.getAllWindowHandles()) {
-        if (checked.has(handle)) {
+        if (before.has(handle)) {
           continue;
         }
-        checked.add(handle);
         try {
           await driver.switchTo().window(handle);
           if ((await driver.getCurrentUrl()).startsWith(prefix)) {
@@ -506,6 +562,7 @@ async function scenePicker(driver) {
   for (const row of tableRows) {
     ok(`一覧: ${row.filename} / text_status = ${row.badge}`);
   }
+  await shot(driver, 's3-documents');
   log('  → 手順書 §1-2 の裏取り（Sheets の Documents タブ / Drive の documents/ + extracted_texts/）は目視で確認してください');
 }
 
@@ -679,6 +736,7 @@ async function sceneSchema(driver) {
     // prefill 検証には project シーンで新規プロジェクトを作り直す必要がある
     log('  ※ 確定済みのため既定モデル prefill 検証はスキップ（新規プロジェクトで下書きフォームを出すこと）');
     ok(`既に確定済み: ${await textOf(driver, '#schema-current-meta')}`);
+    await shot(driver, 's5-schema');
     return;
   }
   if (state === '#schema-draft-form') {
@@ -723,6 +781,7 @@ async function sceneSchema(driver) {
     }
     const rows = await driver.findElements(By.css('#schema-editor-table tbody tr'));
     ok(`ドラフト完了: ${rows.length} 行の項目案`);
+    await shot(driver, 's5-schema');
   }
   log('\n>>> エディタの内容を確認し（必要なら修正して）「版として確定」を押してください');
   log('>>> （確定の完了を自動検知します）');
@@ -806,6 +865,7 @@ async function scenePilot(driver) {
   const highlights = await driver.findElements(By.css('.pdf-viewer__hl'));
   const chips = await driver.findElements(By.css('.verify__chip'));
   ok(`ハイライト ${highlights.length} 個 / 検証セル ${chips.length} 件`);
+  await shot(driver, 's8-verify-highlight');
   log('\n>>> ハイライトが根拠箇所に出ているか目視で確認し、承認 / 修正 / 棄却 / 未報告 の判定を');
   log('>>> 各 1 回以上行ってください（キーボード a / e / x / n。z の取り消し確認は任意）');
   log('>>> （4 種類の判定チップが揃うのを自動検知します）');
@@ -983,6 +1043,7 @@ async function sceneDashboard(driver) {
   ok(`サマリ: ${(await textOf(driver, '#dashboard-summary')).replace(/\s+/g, ' ')}`);
   const rows = await driver.findElements(By.css('#dashboard-matrix tbody tr'));
   ok(`マトリクス: ${rows.length} 行`);
+  await shot(driver, 's9-dashboard');
   const links = await driver.findElements(By.css('.dashboard__cell-link'));
   if (links.length === 0) {
     ng('セルリンクがありません（全セル 0 件）');
@@ -1038,6 +1099,12 @@ async function sceneExport(driver) {
   }
   // study_wide で生成（未検証セルが残っていれば警告 → 中止 → 続行 の両経路を通す）
   await driver.findElement(By.css('#export-format input[value=study_wide]')).click();
+  await driver.wait(
+    async () => (await findVisible(driver, '#export-summary')) !== null,
+    15000,
+    'study_wide のサマリが表示されません',
+  );
+  await shot(driver, 's10-export');
   const generate = await driver.findElement(By.css('#export-generate'));
   if (!(await generate.isEnabled())) {
     ng('生成ボタンが無効です（データ行 0 件）');
@@ -1167,7 +1234,23 @@ async function main() {
   // --auto: stdin を使わない（別プロセスからの起動用）。失敗時は一時停止せず
   // スクリーンショット + DOM を .selenium-profile/ へ保存して終了する
   const auto = rawArgs.includes('--auto');
-  const args = rawArgs.filter((a) => !a.startsWith('--'));
+  // --shots: 各シーンの要所でストア掲載用スクショ（1280×800）を撮る
+  shotsEnabled = rawArgs.includes('--shots');
+  // --profile <dir>|--profile=<dir>: 専用プロファイルの場所を差し替える
+  // （クリーンプロファイルでの dist smoke に使う。相対指定は ROOT 起点）
+  const profileArg = readOptionValue(rawArgs, '--profile');
+  if (profileArg !== null && profileArg !== '') {
+    PROFILE_DIR = path.isAbsolute(profileArg) ? profileArg : path.join(ROOT, profileArg);
+  }
+  // 位置引数（シーン名）から、フラグと `--profile` の値を除外する
+  const consumed = new Set();
+  for (let i = 0; i < rawArgs.length; i++) {
+    if (rawArgs[i] === '--profile') {
+      consumed.add(i);
+      consumed.add(i + 1);
+    }
+  }
+  const args = rawArgs.filter((a, i) => !a.startsWith('--') && !consumed.has(i));
   const names = args.length > 0 ? args : ['login', 'project', 'picker', 'home'];
   for (const name of names) {
     if (!(name in SCENES)) {

@@ -22,7 +22,7 @@
 | B | CI-2 | Playwright E2E を GitHub Actions へ追加 | なし | 小（半日） |
 | C | S11 Options 拡充 | 既定モデル設定の追加 | なし | 中（1〜2 日） |
 | D | 抽出精度ベンチマーク（Q8） | `experiments/` でモデル比較 → 既定モデル確定 | C があると楽 | 大（数日 + 判断） |
-| E | リリース準備 | README 仕上げ・Store 提出物・アルファ配布 | D の結果を反映 | 中 |
+| E | リリース準備 | README 仕上げ・Store 提出物・限定公開配布 | D の結果を反映 | 中 |
 
 A・B・C は互いに独立なので並行可。D はベンチマーク結果の判断（採用基準）が入るため、**実行前に必ずユーザー承認を取る**チェックポイントがある。
 
@@ -188,28 +188,36 @@ tiab-review の `experiments/` 運用を踏襲する（tiab-review-plugin/AGENTS
 
 ---
 
-## タスク E: リリース準備（アルファ配布 → Chrome Web Store）
+## タスク E: リリース準備（Chrome Web Store 限定公開 → 公開）
 
 ### 目的
 
-requirements.md §6（非機能要件）と §7（リリース計画 MVP 行）の「配る」部分。参照実装は **sr-query-builder のアルファ配布運用**（[sr-query-builder-plugin/CLAUDE.md](../sr-query-builder-plugin/CLAUDE.md) — サブモジュール内の記述を最優先）。
+requirements.md §6（非機能要件）と §7（リリース計画 MVP 行）の「配る」部分。
+
+**配布方式（2026-07-06 決定）**: zip の GitHub Releases 配布は行わず、アルファ配布から **Chrome Web Store の限定公開（unlisted）** を使う。参照実装 sr-query-builder は zip アルファ配布運用だが、この点は踏襲しない。理由:
+
+- 拡張 ID が Store 版と一本化され、OAuth クライアント設定を 2 系統面倒見なくて済む
+- テスターに「解凍 → デベロッパーモード → パッケージ化されていない拡張を読み込む」という開発者向け手順を踏ませない（デベロッパーモード拡張は起動時警告も出続ける）
+- バグ修正が Store の自動更新で行き渡る（zip は再ダウンロード依頼が必要）
+
+トレードオフは初回審査の待ち時間のみ。審査待ちの間にテストが必要な場合は、開発者向け手順（README の開発セットアップ節）どおり `dist/` を直接読み込めばよい。
 
 ### チェックリスト
 
-1. **README 仕上げ**: データフロー図・funding 表記（KAKENHI 25K13585）は済んでいる。残り: 開発ステータス更新（タスク A）、スクリーンショット（S3 / S8 / S9 あたり）、ユーザー向けセットアップ手順（開発者向けと分離）。
+1. **README 仕上げ**: データフロー図・funding 表記（KAKENHI 25K13585）・開発ステータス（タスク A）は済んでいる。残り: スクリーンショット（S3 / S8 / S9 あたり）、ユーザー向けセットアップ手順（開発者向けと分離。**Store のリンクからインストール → API キー設定 → OAuth 同意**の流れで書く。限定公開の間はリンクを知っている人だけがインストールできる旨を注記）。
 2. **本番ビルド確認**: `npm run build` が通り、`dist/` を chrome://extensions で読み込んで S1→S10 が動くこと（manual-testing.md のシナリオを smoke として流用）。
 3. **manifest 最終確認**: version・description（日本語）・permissions が requirements.md §6 の説明（`spreadsheets` + `drive.file` のみ）と一致すること。余計な permission が残っていたら報告。
-4. **アルファ配布**: sr-query-builder の運用に倣う（zip を GitHub Releases へ。手順・注意書きのトンマナはサブモジュール参照）。
-5. **Chrome Web Store 提出物**（MVP リリース時）:
+4. **Chrome Web Store 提出物**（`docs/store/` を新設してまとめる）:
    - プライバシーポリシー（README のデータフロー節を独立ページ化。「外部サーバーなし・PDF の外部送信は LLM API のみ」）
-   - permissions の使用理由説明文（審査フォーム用。日本語 + 英語）
+   - permissions の使用理由説明文（審査フォーム用。日本語 + 英語。`host_permissions` の `openrouter.ai` / Gemini API も含める）
    - ストア用アイコン・スクリーンショット
-   - ※ Store 公開の可否・タイミングはユーザー判断。提出物の準備までがこのタスク。
+5. **限定公開で提出 → テスター配布**: 審査通過後、限定公開リンクをテスターへ配布し、クリーンな Chrome プロファイルで通しが動くことを確認する。
+   - ※ 公開（検索可能化）への切替の可否・タイミングはユーザー判断。このタスクは限定公開での配布確認まで。
 
 ### 完了条件
 
-- [ ] GitHub Releases にアルファ zip が上がり、クリーンな Chrome プロファイルでインストール → プロジェクト作成 → 抽出 → エクスポートまで通る
 - [ ] Store 提出物一式が `docs/store/`（新設）にまとまっている
+- [ ] Chrome Web Store に限定公開で掲載され、クリーンな Chrome プロファイルでインストール → プロジェクト作成 → 抽出 → エクスポートまで通る
 
 ---
 

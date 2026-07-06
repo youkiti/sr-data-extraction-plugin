@@ -5,6 +5,7 @@ import {
   ensureRootFolder,
   getFileBinary,
   getFileText,
+  moveFileToFolder,
   uploadTextFile,
 } from '../../../../src/lib/google/drive';
 
@@ -153,6 +154,37 @@ describe('ensureRootFolder', () => {
     expect(createBody.name).toBe('SR Data Extraction');
     expect(createBody.parents).toBeUndefined();
     expect(createBody.folderColorRgb).toBe('#e9318f');
+  });
+});
+
+describe('moveFileToFolder', () => {
+  test('現在の親を removeParents に、移動先を addParents に指定する', async () => {
+    const fetch = jest
+      .fn()
+      .mockResolvedValueOnce(okJson({ parents: ['root'] }))
+      .mockResolvedValueOnce(okJson({ id: 'SID', parents: ['DEST'] }));
+    const deps = { fetch, getAccessToken: jest.fn().mockResolvedValue('t') };
+    await moveFileToFolder('SID', 'DEST', deps);
+    expect(fetch).toHaveBeenCalledTimes(2);
+    const [getUrl] = fetch.mock.calls[0] as [string, RequestInit];
+    expect(getUrl).toContain('/drive/v3/files/SID?fields=parents');
+    const [patchUrl, patchInit] = fetch.mock.calls[1] as [string, RequestInit];
+    expect(patchInit.method).toBe('PATCH');
+    const decoded = decodeURIComponent(patchUrl);
+    expect(decoded).toContain('addParents=DEST');
+    expect(decoded).toContain('removeParents=root');
+  });
+
+  test('親が無ければ removeParents を付けない', async () => {
+    const fetch = jest
+      .fn()
+      .mockResolvedValueOnce(okJson({}))
+      .mockResolvedValueOnce(okJson({ id: 'SID' }));
+    const deps = { fetch, getAccessToken: jest.fn().mockResolvedValue('t') };
+    await moveFileToFolder('SID', 'DEST', deps);
+    const [patchUrl] = fetch.mock.calls[1] as [string, RequestInit];
+    expect(patchUrl).not.toContain('removeParents');
+    expect(decodeURIComponent(patchUrl)).toContain('addParents=DEST');
   });
 });
 

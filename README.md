@@ -38,9 +38,22 @@ flowchart LR
 - OAuth スコープは `spreadsheets` と `drive.file` のみ。`drive.file` により、アクセスできるのは**ユーザーが Picker で明示的に選択したファイルと拡張が作成したファイルだけ**です（Drive 全体を読むスコープは要求しません）
 - 学術研究目的のデータ抽出（テキスト・データマイニング）は著作権法上の権利制限規定（30 条の 4 等）の範囲内であり適法との整理です。PDF が外部へ送信されるのは LLM API への抽出リクエストのみです（詳細: [docs/requirements.md §1.5](docs/requirements.md)）
 
+## 利用者向けセットアップ
+
+ふだんの利用にビルドや開発ツールは不要です。Chrome ウェブストアからインストールして、ご自身の Google アカウントと LLM API キーを設定するだけで使えます。
+
+1. **インストール**: Chrome ウェブストアの掲載ページ（**限定公開のため、配布されたリンクを知っている人のみインストールできます** — リンクは配布者から受け取ってください）を開き、「Chrome に追加」を押します。
+   - ※ 一般公開前は、開発者から共有された限定公開リンクからのみインストールできます。
+2. **LLM API キーの設定**: 拡張のオプション画面を開き、ご自身の **Gemini API キー**（または OpenRouter API キー）を保存します。キーはブラウザ内にのみ保存され、外部の開発者サーバーへは送信されません（BYOK）。
+   - Gemini API キーは Google AI Studio（<https://aistudio.google.com/apikey>）で取得できます。
+3. **Google アカウント連携（OAuth 同意）**: ポップアップから「ログイン」を押し、Google の同意画面で **Sheets** と **Drive（選択したファイルのみ）** へのアクセスを許可します。要求されるスコープは `spreadsheets` と `drive.file` の 2 つだけです（Drive 全体は読みません。詳細は[データフロー](#データフローサーバーレス構成)）。
+4. これでプロジェクト作成 → PDF 取り込み → スキーマ作成 → AI 抽出 → 検証 → CSV エクスポートまで一通り使えます。
+
+> プライバシーの詳細は [docs/store/privacy-policy.md](docs/store/privacy-policy.md) を参照してください。
+
 ## 開発セットアップ
 
-Node.js ≥ 18 が必要です。
+以下はソースからビルドして動かす開発者向けの手順です。ふだんの利用には不要です。Node.js ≥ 18 が必要です。
 
 ```bash
 git clone https://github.com/youkiti/sr-data-extraction-plugin

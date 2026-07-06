@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>SR データ抽出 — メインビュー</title>
+    <title>SR Data Extraction Plugin — メインビュー</title>
     <link rel="stylesheet" href="../styles/tokens.css" />
     <link rel="stylesheet" href="../styles/globals.css" />
     <link rel="stylesheet" href="app.css" />
@@ -11,9 +11,12 @@
   <body>
     <div class="app">
       <header class="app__header">
-        <h1 class="app__title-heading">
-          <button id="app-title" class="app__title" type="button">SR データ抽出</button>
-        </h1>
+        <div class="app__brand">
+          <h1 class="app__title-heading">
+            <button id="app-title" class="app__title" type="button">SR Data Extraction Plugin</button>
+          </h1>
+          <p id="app-build-date" class="app__build-date"></p>
+        </div>
         <p id="app-status" class="app__status">読み込み中…</p>
         <button id="app-open-popup" type="button" hidden>プロジェクト選択（Popup）を開く</button>
         <p id="app-context" class="app__context" aria-live="polite">起動中</p>

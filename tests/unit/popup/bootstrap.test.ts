@@ -5,6 +5,7 @@ import {
   createChromePopupDeps,
   type PopupDeps,
 } from '../../../src/popup/bootstrap';
+import { BUILD_DATE } from '../../../src/build-info';
 import { CURRENT_SCHEMA_VERSION } from '../../../src/domain/project';
 import { SHEET_HEADERS } from '../../../src/domain/sheetsSchema';
 import {
@@ -111,6 +112,14 @@ describe('bootstrapPopup', () => {
   test('必須要素が欠けている場合は何もしない', async () => {
     document.body.innerHTML = '<p>壊れた DOM</p>';
     await expect(bootstrapPopup(document, makeDeps())).resolves.toBeUndefined();
+  });
+
+  test('アプリ名の下にビルド日を表示する', async () => {
+    const buildDateEl = document.createElement('p');
+    buildDateEl.id = 'popup-build-date';
+    document.querySelector('.popup')?.prepend(buildDateEl);
+    await bootstrapPopup(document, makeDeps({ isAuthenticated: jest.fn(async () => false) }));
+    expect(el('popup-build-date').textContent).toBe(`build ${BUILD_DATE}`);
   });
 
   test('状態 A: 未ログインならログインセクションのみ表示', async () => {

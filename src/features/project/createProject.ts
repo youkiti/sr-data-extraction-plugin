@@ -4,6 +4,7 @@ import { SHEET_HEADERS, SHEET_TABS } from '../../domain/sheetsSchema';
 import {
   createFolder,
   ensureRootFolder,
+  moveFileToFolder,
   type DriveFileRef,
 } from '../../lib/google/drive';
 import {
@@ -24,11 +25,11 @@ import { generateUuid, shortUuid } from '../../utils/uuid';
  * 3. サブフォルダ（documents / extracted_texts / raw_protocols / logs/llm）作成
  * 4. スプレッドシート作成（13 タブを一括初期化）
  * 5. 各タブのヘッダ行書き込み
- * 6. Meta タブに 1 行追記
+ * 6. スプレッドシートをプロジェクトフォルダ配下へ移動（Drive files.update の parents 操作）
+ * 7. Meta タブに 1 行追記
  *
- * スプレッドシートのプロジェクトフォルダ配下への移動は sr-query-builder と同様に
- * 省略する（Drive API files.update の parents 操作が必要。Meta タブの
- * drive_folder_id で紐づけできるため MVP では行わない）。
+ * スプレッドシートは Sheets API の spreadsheets.create が必ずマイドライブ直下に作るため、
+ * 作成後に moveFileToFolder でプロジェクトフォルダ（driveFolder）へ移す。
  */
 
 /** ルートフォルダはアプリの正式名称で作る */
@@ -89,6 +90,9 @@ export async function createProject(
   for (const tab of SHEET_TABS) {
     await writeHeaderRow(spreadsheet.spreadsheetId, tab, SHEET_HEADERS[tab], deps);
   }
+
+  // spreadsheets.create はマイドライブ直下に作るため、プロジェクトフォルダ配下へ移す
+  await moveFileToFolder(spreadsheet.spreadsheetId, driveFolder.id, deps);
 
   const meta: ProjectMeta = {
     projectId,

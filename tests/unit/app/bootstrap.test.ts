@@ -2,6 +2,7 @@
 // 実 window ではなくスタブ（location / addEventListener のみ実装）を注入する
 import { installChromeMock, type ChromeMock } from '../../setup/chrome-mock';
 import { bootstrapApp, createChromeAppDeps, seedState, type AppDeps } from '../../../src/app/bootstrap';
+import { BUILD_DATE } from '../../../src/build-info';
 
 // bootstrap → lib/pdf/loadPdf 経由で pdfjs-dist（ESM 専用）が require されるのを防ぐ
 // （loadPdf 自体の挙動は tests/unit/lib/pdf/loadPdf.test.ts で検証済み）
@@ -284,6 +285,14 @@ describe('bootstrapApp', () => {
   test('必須要素が欠けている場合は null を返して何もしない', async () => {
     document.body.innerHTML = '<p>壊れた DOM</p>';
     await expect(bootstrapApp(asWindow(createWindowStub()))).resolves.toBeNull();
+  });
+
+  test('アプリ名の下にビルド日を表示する', async () => {
+    const buildDateEl = document.createElement('p');
+    buildDateEl.id = 'app-build-date';
+    document.querySelector('.app__header')?.appendChild(buildDateEl);
+    await bootstrapApp(asWindow(createWindowStub()));
+    expect(document.getElementById('app-build-date')?.textContent).toBe(`build ${BUILD_DATE}`);
   });
 
   test('プロジェクト未選択（状態 A）: 未選択メッセージ + Popup を開く導線', async () => {

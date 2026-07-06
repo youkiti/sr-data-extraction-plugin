@@ -4,7 +4,7 @@ MV3 の remote hosted code 制約により、Google Picker（`apis.google.com/js
 読み込めない。そのため [picker.html](picker.html) を **HTTPS でホストして新規タブで開く**方式を採る
 （プロトコルの正典は [src/lib/google/picker.ts](../src/lib/google/picker.ts) 冒頭コメント）。
 
-## デプロイ手順（アルファ配布時）
+## デプロイ手順（初回セットアップ時）
 
 1. GCP コンソールで **Google Picker API** を有効化し、ブラウザ用 API キーを発行する
 2. `picker.html` 内の `__PICKER_API_KEY__`（API キー）と `__PICKER_APP_ID__`（GCP プロジェクト番号）を実値に書き換える
