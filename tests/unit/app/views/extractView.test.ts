@@ -4,6 +4,7 @@ import { createInitialState, type AppState, type ExtractState } from '../../../.
 import type { DocumentRecord } from '../../../../src/domain/document';
 import type { ExtractionRun } from '../../../../src/domain/extractionRun';
 import type { SchemaField } from '../../../../src/domain/schemaField';
+import type { ExtractDocRow } from '../../../../src/features/extraction/docProgress';
 import { planRun } from '../../../../src/features/extraction/planRun';
 
 jest.mock('../../../../src/features/extraction/planRun', () => {
@@ -138,6 +139,12 @@ function makeRun(overrides: Partial<ExtractionRun> = {}): ExtractionRun {
     costEstimate: null,
     ...overrides,
   };
+}
+
+function makeDocRow(
+  overrides: Partial<ExtractDocRow> & Pick<ExtractDocRow, 'documentId' | 'status'>,
+): ExtractDocRow {
+  return { completedBatches: 0, totalBatches: 1, detail: null, ...overrides };
 }
 
 function makeState(
@@ -358,6 +365,8 @@ describe('実行中', () => {
     expect(preparing.root.querySelector('.extract__progress-text')?.textContent).toBe(
       '実行準備中…',
     );
+    // docRows 未着（準備中）は文献サマリも出さない
+    expect(preparing.root.querySelector('#extract-doc-summary')).toBeNull();
     expect(preparing.root.querySelector('#extract-run')).toBeNull();
 
     const { root } = render(
@@ -372,25 +381,104 @@ describe('実行中', () => {
             failure: null,
           },
           docRows: [
-            { documentId: 'doc-1', status: 'running', detail: null },
-            { documentId: 'doc-x', status: 'queued', detail: null },
+            makeDocRow({
+              documentId: 'doc-1',
+              status: 'running',
+              completedBatches: 1,
+              totalBatches: 2,
+            }),
+            makeDocRow({ documentId: 'doc-x', status: 'queued', totalBatches: 2 }),
           ],
         },
       }),
     );
-    expect(root.querySelector('.extract__progress-text')?.textContent).toBe('1 / 4 バッチ完了');
+    expect(root.querySelector('.extract__progress-text')?.textContent).toBe(
+      '1 / 4 バッチ完了（25%）',
+    );
     const bar = root.querySelector<HTMLProgressElement>('#extract-progress');
     expect(bar?.max).toBe(4);
     expect(bar?.value).toBe(1);
+
+    // 全体の中の現在位置: 文献サマリ + 処理中の文献（i 本目 + 文献内バッチ進捗）
+    expect(root.querySelector('#extract-doc-summary')?.textContent).toBe('文献: 完了 0 / 全 2 本');
+    expect(root.querySelector('#extract-current-doc')?.textContent).toBe(
+      '処理中: Smith 2020（1 本目・バッチ 1/2）',
+    );
 
     const rows = root.querySelectorAll('#extract-doc-list .extract__doc-row');
     expect(rows).toHaveLength(2);
     expect(rows[0]?.textContent).toContain('実行中');
     expect(rows[0]?.textContent).toContain('Smith 2020'); // study_label 解決
+    expect(rows[0]?.classList.contains('extract__doc-row--running')).toBe(true);
+    expect(rows[0]?.querySelector('.extract__doc-batches')?.textContent).toBe('バッチ 1/2');
     expect(rows[1]?.textContent).toContain('待機中');
     expect(rows[1]?.textContent).toContain('doc-x'); // 未知 document は id 表示
+    expect(rows[1]?.querySelector('.extract__doc-batches')).toBeNull(); // 待機中は併記しない
     // 実行中は再試行ボタンを出さない
     expect(root.querySelector('.extract__retry')).toBeNull();
+  });
+
+  test('失敗行があれば文献サマリに失敗数を併記し、running 行がなければ処理中は出さない', () => {
+    const { root } = render(
+      makeState({
+        extract: {
+          running: true,
+          progress: {
+            totalBatches: 4,
+            completedBatches: 2,
+            documentId: 'doc-2',
+            section: null,
+            failure: null,
+          },
+          docRows: [
+            makeDocRow({
+              documentId: 'doc-1',
+              status: 'done',
+              completedBatches: 1,
+              totalBatches: 1,
+            }),
+            makeDocRow({
+              documentId: 'doc-2',
+              status: 'failed',
+              completedBatches: 1,
+              detail: 'api_error（500）',
+            }),
+            makeDocRow({ documentId: 'doc-3', status: 'queued', totalBatches: 2 }),
+          ],
+        },
+      }),
+    );
+    expect(root.querySelector('#extract-doc-summary')?.textContent).toBe(
+      '文献: 完了 1 / 失敗 1 / 全 3 本',
+    );
+    expect(root.querySelector('#extract-current-doc')).toBeNull();
+  });
+
+  test('総バッチ数 0 の progress は 0% 表示、総数 0 の running 行はバッチ併記なし（再試行プレースホルダ）', () => {
+    const { root } = render(
+      makeState({
+        extract: {
+          running: true,
+          progress: {
+            totalBatches: 0,
+            completedBatches: 0,
+            documentId: 'doc-1',
+            section: null,
+            failure: null,
+          },
+          docRows: [
+            makeDocRow({ documentId: 'doc-1', status: 'running', totalBatches: 0 }),
+          ],
+        },
+      }),
+    );
+    expect(root.querySelector('.extract__progress-text')?.textContent).toBe(
+      '0 / 0 バッチ完了（0%）',
+    );
+    expect(root.querySelector('.extract__doc-batches')).toBeNull();
+    expect(root.querySelector('#extract-current-doc')?.textContent).toBe(
+      '処理中: Smith 2020（1 本目・バッチ 0/0）',
+    );
   });
 });
 
@@ -400,7 +488,7 @@ describe('完了サマリ', () => {
       makeState({
         extract: {
           run: makeRun(),
-          docRows: [{ documentId: 'doc-1', status: 'done', detail: null }],
+          docRows: [makeDocRow({ documentId: 'doc-1', status: 'done' })],
           rejectedCount: 2,
         },
       }),
@@ -420,7 +508,7 @@ describe('完了サマリ', () => {
       makeState({
         extract: {
           run: makeRun(),
-          docRows: [{ documentId: 'doc-1', status: 'done', detail: null }],
+          docRows: [makeDocRow({ documentId: 'doc-1', status: 'done' })],
           rejectedCount: 0,
         },
       }),
@@ -434,8 +522,8 @@ describe('完了サマリ', () => {
         extract: {
           run: makeRun({ status: 'partial_failure' }),
           docRows: [
-            { documentId: 'doc-1', status: 'done', detail: null },
-            { documentId: 'doc-2', status: 'failed', detail: 'api_error（500）' },
+            makeDocRow({ documentId: 'doc-1', status: 'done' }),
+            makeDocRow({ documentId: 'doc-2', status: 'failed', detail: 'api_error（500）' }),
           ],
           rejectedCount: 1,
         },
@@ -458,8 +546,8 @@ describe('完了サマリ', () => {
         extract: {
           run: makeRun({ status: 'partial_failure' }),
           docRows: [
-            { documentId: 'doc-1', status: 'running', detail: null },
-            { documentId: 'doc-2', status: 'failed', detail: 'api_error（500）' },
+            makeDocRow({ documentId: 'doc-1', status: 'running' }),
+            makeDocRow({ documentId: 'doc-2', status: 'failed', detail: 'api_error（500）' }),
           ],
           retryingDocumentId: 'doc-1',
         },

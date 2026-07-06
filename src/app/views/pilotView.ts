@@ -151,7 +151,12 @@ function renderProgress(state: AppState): HTMLElement {
   if (progress !== null) {
     bar.max = progress.totalBatches;
     bar.value = progress.completedBatches;
-    text = `${progress.completedBatches} / ${progress.totalBatches} バッチ完了（直近: ${progress.documentId}${progress.section === null ? '' : ` / ${progress.section}`}）`;
+    const percent =
+      progress.totalBatches > 0
+        ? Math.floor((progress.completedBatches / progress.totalBatches) * 100)
+        : 0;
+    const label = studyLabelOf(state.documents.records, progress.documentId);
+    text = `${progress.completedBatches} / ${progress.totalBatches} バッチ完了（${percent}% / 直近: ${label}${progress.section === null ? '' : ` / ${progress.section}`}）`;
   }
   return el('section', { className: 'pilot__running', attributes: { 'aria-live': 'polite' } }, [
     el('h3', { text: '抽出を実行しています…' }),

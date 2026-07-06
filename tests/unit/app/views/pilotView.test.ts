@@ -313,8 +313,9 @@ describe('実行中', () => {
         },
       }),
     );
+    // % を併記し、document は study_label で表示する
     expect(noSection.root.querySelector('.pilot__progress-text')?.textContent).toBe(
-      '1 / 4 バッチ完了（直近: doc-1）',
+      '1 / 4 バッチ完了（25% / 直近: Smith 2020）',
     );
     const bar = noSection.root.querySelector<HTMLProgressElement>('#pilot-progress');
     expect(bar?.max).toBe(4);
@@ -335,7 +336,20 @@ describe('実行中', () => {
       }),
     );
     expect(withSection.root.querySelector('.pilot__progress-text')?.textContent).toContain(
-      'doc-1 / methods',
+      'Smith 2020 / methods',
+    );
+
+    // 未知 document は id 表示 / 総バッチ数 0 は 0% 表示
+    const unknownDoc = render(
+      makeState({
+        pilot: {
+          running: true,
+          progress: { totalBatches: 0, completedBatches: 0, documentId: 'doc-x', section: null, failure: null },
+        },
+      }),
+    );
+    expect(unknownDoc.root.querySelector('.pilot__progress-text')?.textContent).toBe(
+      '0 / 0 バッチ完了（0% / 直近: doc-x）',
     );
   });
 });

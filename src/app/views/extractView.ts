@@ -206,6 +206,15 @@ function renderDocRows(state: AppState, ctx: ViewContext, withRetry: boolean): H
         text: studyLabelOf(state.documents.records, row.documentId),
       }),
     ];
+    // 実行中の行には document 内のバッチ進捗を併記する（全体の中の現在位置をわかりやすく）
+    if (row.status === 'running' && row.totalBatches > 0) {
+      parts.push(
+        el('span', {
+          className: 'extract__doc-batches',
+          text: `バッチ ${row.completedBatches}/${row.totalBatches}`,
+        }),
+      );
+    }
     if (row.detail !== null) {
       parts.push(el('span', { className: 'extract__doc-detail', text: row.detail }));
     }
@@ -219,9 +228,45 @@ function renderDocRows(state: AppState, ctx: ViewContext, withRetry: boolean): H
       retryButton.addEventListener('click', () => ctx.extract.onRetryDocument(row.documentId));
       parts.push(retryButton);
     }
-    return el('li', { className: 'extract__doc-row' }, parts);
+    return el('li', { className: `extract__doc-row extract__doc-row--${row.status}` }, parts);
   });
   return el('ul', { id: 'extract-doc-list', className: 'extract__doc-list' }, items);
+}
+
+/**
+ * 実行中ヘッダの文献単位サマリ + 現在処理中の文献（全体の中の現在位置）。
+ * docRows が空（実行準備中）のときは何も出さない
+ */
+function renderRunPosition(state: AppState): HTMLElement[] {
+  const rows = state.extract.docRows;
+  if (rows.length === 0) {
+    return [];
+  }
+  const doneCount = rows.filter((row) => row.status === 'done').length;
+  const failedCount = rows.filter((row) => row.status === 'failed').length;
+  const summaryParts = [`文献: 完了 ${doneCount}`];
+  if (failedCount > 0) {
+    summaryParts.push(`失敗 ${failedCount}`);
+  }
+  const lines = [
+    el('p', {
+      id: 'extract-doc-summary',
+      className: 'extract__doc-summary',
+      text: `${summaryParts.join(' / ')} / 全 ${rows.length} 本`,
+    }),
+  ];
+  const runningIndex = rows.findIndex((row) => row.status === 'running');
+  if (runningIndex >= 0) {
+    const running = rows[runningIndex] as ExtractDocRow;
+    lines.push(
+      el('p', {
+        id: 'extract-current-doc',
+        className: 'extract__current-doc',
+        text: `処理中: ${studyLabelOf(state.documents.records, running.documentId)}（${runningIndex + 1} 本目・バッチ ${running.completedBatches}/${running.totalBatches}）`,
+      }),
+    );
+  }
+  return lines;
 }
 
 function renderProgress(state: AppState, ctx: ViewContext): HTMLElement {
@@ -231,12 +276,17 @@ function renderProgress(state: AppState, ctx: ViewContext): HTMLElement {
   if (progress !== null) {
     bar.max = progress.totalBatches;
     bar.value = progress.completedBatches;
-    text = `${progress.completedBatches} / ${progress.totalBatches} バッチ完了`;
+    const percent =
+      progress.totalBatches > 0
+        ? Math.floor((progress.completedBatches / progress.totalBatches) * 100)
+        : 0;
+    text = `${progress.completedBatches} / ${progress.totalBatches} バッチ完了（${percent}%）`;
   }
   return el('section', { className: 'extract__running', attributes: { 'aria-live': 'polite' } }, [
     el('h3', { text: '抽出を実行しています…' }),
     bar,
     el('p', { className: 'extract__progress-text', text }),
+    ...renderRunPosition(state),
     renderDocRows(state, ctx, false),
   ]);
 }

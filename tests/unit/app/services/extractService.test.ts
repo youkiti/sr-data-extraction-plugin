@@ -428,7 +428,7 @@ describe('runExtract', () => {
     expect(state.extract.extractedDocumentIds).toEqual(['doc-1']);
     // 進捗イベントなしでは初期化直後の待機中のまま（実運用では executeRun が全バッチを通知する）
     expect(state.extract.docRows).toEqual([
-      { documentId: 'doc-1', status: 'queued', detail: null },
+      { documentId: 'doc-1', status: 'queued', completedBatches: 0, totalBatches: 1, detail: null },
     ]);
   });
 
@@ -472,8 +472,14 @@ describe('runExtract', () => {
     });
     await runExtract(store, makeDeps());
     expect(observedRows).toEqual([
-      { documentId: 'doc-1', status: 'done', detail: null },
-      { documentId: 'doc-2', status: 'failed', detail: 'api_error（500）' },
+      { documentId: 'doc-1', status: 'done', completedBatches: 1, totalBatches: 1, detail: null },
+      {
+        documentId: 'doc-2',
+        status: 'failed',
+        completedBatches: 1,
+        totalBatches: 1,
+        detail: 'api_error（500）',
+      },
     ]);
     expect(store.getState().extract.progress).toBeNull();
     expect(store.getState().extract.docRows).toHaveLength(2);
@@ -520,8 +526,14 @@ describe('retryExtractDocument', () => {
         extractedDocumentIds: ['doc-1'],
         run: makeRun({ status: 'partial_failure' }),
         docRows: [
-          { documentId: 'doc-1', status: 'done', detail: null },
-          { documentId: 'doc-2', status: 'failed', detail: 'api_error（500）' },
+          { documentId: 'doc-1', status: 'done', completedBatches: 1, totalBatches: 1, detail: null },
+          {
+            documentId: 'doc-2',
+            status: 'failed',
+            completedBatches: 1,
+            totalBatches: 1,
+            detail: 'api_error（500）',
+          },
         ],
         rejectedCount: 1,
       },
@@ -574,8 +586,8 @@ describe('retryExtractDocument', () => {
     const state = store.getState();
     expect(state.extract.retryingDocumentId).toBeNull();
     expect(state.extract.docRows).toEqual([
-      { documentId: 'doc-1', status: 'done', detail: null },
-      { documentId: 'doc-2', status: 'done', detail: null },
+      { documentId: 'doc-1', status: 'done', completedBatches: 1, totalBatches: 1, detail: null },
+      { documentId: 'doc-2', status: 'done', completedBatches: 1, totalBatches: 1, detail: null },
     ]);
     expect(state.extract.extractedDocumentIds?.sort()).toEqual(['doc-1', 'doc-2']);
     expect(state.counts).toMatchObject({ evidenceRows: 1, dataRows: 1 });
@@ -609,6 +621,8 @@ describe('retryExtractDocument', () => {
     expect(failing.getState().extract.docRows[1]).toEqual({
       documentId: 'doc-2',
       status: 'failed',
+      completedBatches: 0,
+      totalBatches: 0,
       detail: 'boom',
     });
     expect(failing.getState().extract.retryingDocumentId).toBeNull();
