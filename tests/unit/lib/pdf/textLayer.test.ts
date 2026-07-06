@@ -12,14 +12,18 @@ interface FakeItem {
   hasEOL?: boolean;
 }
 
-function makeDoc(pagesItems: FakeItem[][]): { doc: PdfDocumentLike; cleanups: jest.Mock[] } {
+function makeDoc(
+  pagesItems: FakeItem[][],
+  rotates: Array<number | undefined> = [],
+): { doc: PdfDocumentLike; cleanups: jest.Mock[] } {
   const cleanups: jest.Mock[] = [];
-  const pages: PdfPageLike[] = pagesItems.map((items) => {
+  const pages: PdfPageLike[] = pagesItems.map((items, index) => {
     const cleanup = jest.fn();
     cleanups.push(cleanup);
     return {
       getViewport: () => ({ width: 612, height: 792 }),
       getTextContent: async () => ({ items }),
+      rotate: rotates[index],
       cleanup,
     };
   });
@@ -47,6 +51,14 @@ describe('extractTextLayerPages', () => {
     expect(pages[0]?.items.map((item) => item.charStart)).toEqual([0, 11, 24]);
     expect(pages[0]?.width).toBe(612);
     expect(pages[0]?.height).toBe(792);
+    // rotate を持たない fake ページは回転なし扱い
+    expect(pages[0]?.rotation).toBe(0);
+  });
+
+  test('ページの /Rotate を [0, 360) の 90 度倍数へ正規化して記録する', async () => {
+    const { doc } = makeDoc([[{ str: 'a' }], [{ str: 'b' }], [{ str: 'c' }]], [90, -90, 360]);
+    const pages = await extractTextLayerPages(doc);
+    expect(pages.map((page) => page.rotation)).toEqual([90, 270, 0]);
   });
 
   test('str を持たない item（TextMarkedContent）はスキップし、欠落プロパティは既定値で埋める', async () => {

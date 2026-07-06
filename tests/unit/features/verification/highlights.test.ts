@@ -14,6 +14,7 @@ function buildPage(page: number, text: string): TextLayerPage {
     text,
     width: 612,
     height: 792,
+    rotation: 0,
     items: [
       {
         charStart: 0,

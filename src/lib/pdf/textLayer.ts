@@ -1,7 +1,12 @@
 // PDF ドキュメント → ページ別テキスト + span 座標（domain/textLayer.ts の TextLayerPage）。
 // experiments/anchor-spike/src/extract-text.ts の抽出ロジックを正式化したもの。
 // pdfjs-dist へ直接依存せず構造的な最小型で受けるため、テストは fake ドキュメントで完結する
-import type { PdfTransform, TextLayerItem, TextLayerPage } from '../../domain/textLayer';
+import type {
+  PageRotation,
+  PdfTransform,
+  TextLayerItem,
+  TextLayerPage,
+} from '../../domain/textLayer';
 
 /** pdfjs の TextItem のうち本モジュールが読む部分（TextMarkedContent は str を持たない） */
 interface PdfTextItemLike {
@@ -17,7 +22,14 @@ interface PdfTextItemLike {
 export interface PdfPageLike {
   getViewport(options: { scale: number }): { width: number; height: number };
   getTextContent(): Promise<{ items: PdfTextItemLike[] }>;
+  /** ページの /Rotate（pdfjs が 90 度の倍数へ正規化済み。fake ページは省略可） */
+  rotate?: number;
   cleanup(): void;
+}
+
+/** /Rotate を [0, 360) の 90 度倍数へ正規化する（pdfjs の PDFPageProxy.rotate は負値もありうる） */
+function normalizeRotation(rotate: number): PageRotation {
+  return ((((rotate % 360) + 360) % 360) as PageRotation);
 }
 
 export interface PdfDocumentLike {
@@ -55,7 +67,14 @@ export async function extractTextLayerPages(doc: PdfDocumentLike): Promise<TextL
         text += '\n';
       }
     }
-    pages.push({ page: p, text, width: viewport.width, height: viewport.height, items });
+    pages.push({
+      page: p,
+      text,
+      width: viewport.width,
+      height: viewport.height,
+      rotation: normalizeRotation(page.rotate ?? 0),
+      items,
+    });
     page.cleanup();
   }
   return pages;

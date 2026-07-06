@@ -11,6 +11,7 @@ function buildPage(page: number, text: string): TextLayerPage {
     text,
     width: 612,
     height: 792,
+    rotation: 0,
     items: [
       {
         charStart: 0,
@@ -121,6 +122,50 @@ describe('createPdfViewer', () => {
     const wrap = viewer.root.querySelector<HTMLElement>('.pdf-viewer__page');
     expect(wrap?.style.width).toBe('1224px'); // 612 * 2
     expect(wrap?.style.height).toBe('1584px'); // 792 * 2
+  });
+
+  test('回転ページ（/Rotate 90）はハイライトを回転込みの表示座標に置く', async () => {
+    const rotatedPage: TextLayerPage = {
+      page: 1,
+      text: 'alpha',
+      width: 792, // 表示寸法（縦置き 612x792 の 90 度回転）
+      height: 612,
+      rotation: 90,
+      items: [
+        {
+          charStart: 0,
+          str: 'alpha',
+          transform: [0, 10, -10, 0, 110, 200],
+          width: 50,
+          height: 10,
+          hasEOL: false,
+        },
+      ],
+    };
+    const renderPage = jest.fn().mockResolvedValue({ width: 792, height: 612 });
+    const viewer = createPdfViewer({
+      document: makeDocument(1),
+      pages: [rotatedPage],
+      renderPage,
+    });
+    viewer.setHighlights(
+      [
+        makeHighlight({
+          occurrence: { page: 1, rects: [{ itemIndex: 0, x: 100, y: 200, width: 10, height: 50 }] },
+        }),
+      ],
+      null,
+    );
+    const rect = viewer.root.querySelector<HTMLElement>('.pdf-viewer__hl');
+    // left = 生 y / top = 生 x、幅と高さは入れ替わる
+    expect(rect?.style.left).toBe('200px');
+    expect(rect?.style.top).toBe('100px');
+    expect(rect?.style.width).toBe('50px');
+    expect(rect?.style.height).toBe('10px');
+    const wrap = viewer.root.querySelector<HTMLElement>('.pdf-viewer__page');
+    expect(wrap?.style.width).toBe('792px');
+    expect(wrap?.style.height).toBe('612px');
+    await flush();
   });
 
   test('ハイライト: 現在ページの矩形だけを描画し、クリックでコールバックが飛ぶ', async () => {
