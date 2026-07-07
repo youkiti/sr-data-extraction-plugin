@@ -78,7 +78,7 @@ spec が正。実装が追いついていない箇所は以下のとおり（実
 
 ## 3. App / メインビュー (`src/app/app.html`)
 
-共通レイアウト: `header.app__header`（タイトル + `#app-status` + `#app-context`〔`aria-live="polite"`〕）+ `aside.app__sidebar` + `section#app-content`。ルート遷移のスクリーンリーダ通知は `#app-context` の更新で検証する。
+共通レイアウト: `header.app__header`（タイトル + `#app-status` + 設定への歯車リンク `#app-open-options`〔`../options/options.html` への同一タブ遷移。`aria-label="設定を開く"`〕+ `#app-context`〔`aria-live="polite"`〕）+ `aside.app__sidebar` + `section#app-content`。プロジェクト選択済みの `#app-status` はプロジェクト名自体が S1 プロジェクト選択ページへの同一タブ遷移リンク（`title="別のプロジェクトを開く"`）。ルート遷移のスクリーンリーダ通知は `#app-context` の更新で検証する。
 
 ### 状態 A: プロジェクト未選択（不正アクセス）
 

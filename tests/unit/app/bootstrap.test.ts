@@ -86,6 +86,7 @@ const APP_TEMPLATE = `
       <button id="app-title" type="button">SR データ抽出</button>
       <p id="app-status">読み込み中…</p>
       <a id="app-open-popup" href="../popup/popup.html" hidden>プロジェクト選択を開く</a>
+      <a id="app-open-options" href="../options/options.html" aria-label="設定を開く">⚙</a>
       <p id="app-context" aria-live="polite">起動中</p>
     </header>
     <ul id="app-nav"></ul>
@@ -306,11 +307,15 @@ describe('bootstrapApp', () => {
     expect(openPopup.getAttribute('href')).toBe('../popup/popup.html');
   });
 
-  test('プロジェクト選択済み: ヘッダにプロジェクト名を表示し導線は隠す', async () => {
+  test('プロジェクト選択済み: ヘッダのプロジェクト名がプロジェクト選択ページへのリンクになり、未選択導線は隠す', async () => {
     await bootstrapApp(
       asWindow(createWindowStub({ currentProject: { projectId: 'p1', spreadsheetId: 's1', driveFolderId: 'f1', name: '肺炎 SR' } })),
     );
     expect(document.getElementById('app-status')?.textContent).toBe('プロジェクト: 肺炎 SR');
+    // プロジェクト名自体が同一タブ遷移のアンカー
+    const statusLink = document.querySelector('#app-status a') as HTMLAnchorElement;
+    expect(statusLink.getAttribute('href')).toBe('../popup/popup.html');
+    expect(statusLink.title).toBe('別のプロジェクトを開く');
     expect((document.getElementById('app-open-popup') as HTMLAnchorElement).hidden).toBe(true);
   });
 

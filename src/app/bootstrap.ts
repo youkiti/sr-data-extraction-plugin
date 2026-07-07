@@ -367,7 +367,13 @@ export async function bootstrapApp(
 
   const renderHeader = (state: AppState): void => {
     if (state.currentProject) {
-      statusEl.textContent = `プロジェクト: ${state.currentProject.name}`;
+      // プロジェクト名自体をプロジェクト選択ページへの同一タブ遷移リンクにする
+      const link = doc.createElement('a');
+      link.className = 'app__status-link';
+      link.href = '../popup/popup.html';
+      link.title = '別のプロジェクトを開く';
+      link.textContent = `プロジェクト: ${state.currentProject.name}`;
+      statusEl.replaceChildren(link);
       openPopupButton.hidden = true;
     } else {
       // 状態 A（ui-states.md §3）: 未選択メッセージ + プロジェクト選択ページへ戻る導線を出す
