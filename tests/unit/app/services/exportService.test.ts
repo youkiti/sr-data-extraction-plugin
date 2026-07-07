@@ -11,6 +11,7 @@ import {
 import { createInitialState, createStore, type ExportState, type Store } from '../../../../src/app/store';
 import type { ExportFormat } from '../../../../src/domain/exportLog';
 import { readDocuments } from '../../../../src/features/documents/documentRepository';
+import { readStudies } from '../../../../src/features/documents/studyRepository';
 import {
   readResultsDataRows,
   readStudyDataSheet,
@@ -30,6 +31,11 @@ import { downloadTextFile } from '../../../../src/app/ui/download';
 
 jest.mock('../../../../src/features/documents/documentRepository', () => ({
   readDocuments: jest.fn(),
+}));
+jest.mock('../../../../src/features/documents/studyRepository', () => ({
+  // resolveActiveStudies は純粋関数なので実物を使う
+  ...jest.requireActual('../../../../src/features/documents/studyRepository'),
+  readStudies: jest.fn(),
 }));
 jest.mock('../../../../src/features/extraction/annotationRepository', () => ({
   readStudyDataSheet: jest.fn(),
@@ -69,6 +75,7 @@ jest.mock('../../../../src/utils/iso8601', () => ({
 }));
 
 const readDocumentsMock = readDocuments as jest.Mock;
+const readStudiesMock = readStudies as jest.Mock;
 const readStudyDataSheetMock = readStudyDataSheet as jest.Mock;
 const readResultsDataRowsMock = readResultsDataRows as jest.Mock;
 const readEvidenceRowsMock = readEvidenceRows as jest.Mock;
@@ -97,7 +104,7 @@ function makeBuilt(format: ExportFormat, overrides: Partial<BuiltExport> = {}): 
     header: ['a', 'b'],
     previewRows: [['1', '2']],
     rowCount: 1,
-    documentCount: 1,
+    studyCount: 1,
     unverifiedCellCount: 0,
     skippedStudyLabels: [],
     droppedRowCount: 0,
@@ -134,6 +141,7 @@ function makeStore(patch: {
 
 beforeEach(() => {
   readDocumentsMock.mockResolvedValue([]);
+  readStudiesMock.mockResolvedValue([]);
   readStudyDataSheetMock.mockResolvedValue({ fieldNames: [], rows: [] });
   readResultsDataRowsMock.mockResolvedValue([]);
   readEvidenceRowsMock.mockResolvedValue([]);
@@ -236,7 +244,7 @@ describe('requestExportGenerate', () => {
         exportId: 'uuid-1',
         format: 'study_wide',
         schemaVersion: 2,
-        documentCount: 1,
+        studyCount: 1,
         fileRef: 'https://drive/file-1',
         exportedAt: '2026-07-03T09:00:00.000Z',
         exportedBy: 'me@example.com',

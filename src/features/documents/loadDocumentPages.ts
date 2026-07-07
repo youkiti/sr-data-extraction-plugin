@@ -38,7 +38,7 @@ export function makeLoadDocumentPages(
       throw new Error(`document_id "${documentId}" が documents 一覧に見つかりません`);
     }
     if (doc.textRef === null) {
-      throw new Error(`文献 "${doc.studyLabel}" にはテキスト層がありません（text_ref なし）`);
+      throw new Error(`文献 "${doc.filename}" にはテキスト層がありません（text_ref なし）`);
     }
     const fileId = parseDriveFileId(doc.textRef);
     if (fileId === null) {

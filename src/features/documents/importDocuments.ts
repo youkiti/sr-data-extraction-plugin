@@ -2,12 +2,15 @@
 // 「documents/ へコピー（凍結スナップショット）→ テキスト層抽出 → extracted_texts/ へ保存 →
 // Documents タブへ追記」まで進めるパイプライン。Picker の起動・選択は UI（S3 画面）の責務。
 // 失敗したファイルは飛ばして残りを続行し、failures として返す（S3 の進捗行に赤バッジ表示）
-import type { DocumentRecord } from '../../domain/document';
+import { DEFAULT_DOCUMENT_ROLE, type DocumentRecord } from '../../domain/document';
+import type { StudyRecord } from '../../domain/study';
 import { copyFile, getFileBinary, uploadTextFile } from '../../lib/google/drive';
 import type { GoogleApiDeps } from '../../lib/google/types';
 import { nowIso8601 } from '../../utils/iso8601';
 import { generateUuid } from '../../utils/uuid';
+import { detectRegistrationId } from './detectRegistrationId';
 import { appendDocuments } from './documentRepository';
+import { appendStudies } from './studyRepository';
 import { extractTextLayer, type DisposablePdfDocument } from './extractTextLayer';
 
 /** Picker で選択されたファイル（UI 側が渡す） */
@@ -58,6 +61,8 @@ export interface ImportDocumentsDeps {
 }
 
 export interface ImportDocumentsResult {
+  /** Studies タブへ追記済みの自動生成 study（取り込み順。1 PDF = 1 study。§4.5） */
+  importedStudies: StudyRecord[];
   /** Documents タブへ追記済みのレコード（取り込み順） */
   imported: DocumentRecord[];
   failures: ImportFailure[];
@@ -79,6 +84,7 @@ export async function importDocuments(
   const uuid = deps.newUuid ?? generateUuid;
   const now = deps.now ?? nowIso8601;
 
+  const importedStudies: StudyRecord[] = [];
   const imported: DocumentRecord[] = [];
   const failures: ImportFailure[] = [];
 
@@ -124,12 +130,15 @@ export async function importDocuments(
     let textStatus: DocumentRecord['textStatus'];
     let pageCount: number;
     let charCount: number;
+    // 試験登録番号を抽出テキストから検出し、自動生成 study の初期値にする（§4.5）
+    let registrationId: string | null = null;
     try {
       const extracted = await extractTextLayer(pdfData, { loadPdf: deps.loadPdf });
       textStatus = extracted.textStatus;
       pageCount = extracted.pageCount;
       charCount = extracted.charCount;
       if (extracted.serializedText !== null) {
+        registrationId = detectRegistrationId(extracted.serializedText);
         const uploaded = await uploadTextFile(
           {
             name: `${documentId}.txt`,
@@ -145,9 +154,20 @@ export async function importDocuments(
       continue;
     }
 
+    // 1 PDF = 1 study を自動生成する（§4.5。グルーピングは取り込み後の S3 で行う）
+    const studyId = uuid();
+    importedStudies.push({
+      studyId,
+      studyLabel: defaultStudyLabel(selection.filename),
+      registrationId,
+      createdAt: now(),
+      createdBy: params.importedBy,
+      note: null,
+    });
     imported.push({
       documentId,
-      studyLabel: defaultStudyLabel(selection.filename),
+      studyId,
+      documentRole: DEFAULT_DOCUMENT_ROLE,
       driveFileId,
       sourceFileId: selection.sourceFileId,
       filename: selection.filename,
@@ -163,10 +183,13 @@ export async function importDocuments(
     });
   }
 
-  // 段階 3: Documents タブへ一括追記。失敗したら成功済みファイルも save 失敗として返す
-  // （Drive 上のコピー / txt は残るが、Documents に行がないため UI からは見えない = 再取り込みで回復）
+  // 段階 3: Studies → Documents の順で一括追記（Documents.study_id が必ず解決できる不変条件）。
+  // 失敗したら成功済みファイルも save 失敗として返す
+  // （Drive 上のコピー / txt・参照 0 の Studies 行は残るが、Documents に行がないため UI からは見えない
+  //   = 再取り込みで回復。参照 0 の study は非アクティブ扱いで一覧に出ない §3.2）
   if (imported.length > 0) {
     try {
+      await appendStudies(params.spreadsheetId, importedStudies, deps.google);
       await appendDocuments(params.spreadsheetId, imported, deps.google);
     } catch (err) {
       for (const doc of imported) {
@@ -177,9 +200,9 @@ export async function importDocuments(
           detail: toDetail(err),
         });
       }
-      return { imported: [], failures };
+      return { importedStudies: [], imported: [], failures };
     }
   }
 
-  return { imported, failures };
+  return { importedStudies, imported, failures };
 }

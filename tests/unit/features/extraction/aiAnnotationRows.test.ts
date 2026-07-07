@@ -28,6 +28,7 @@ function makeEvidence(overrides: Partial<Evidence> = {}): Evidence {
   return {
     evidenceId: 'ev-1',
     runId: 'run-1',
+    studyId: 'study-1',
     documentId: 'doc-1',
     fieldId: 'f-study',
     entityKey: '-',
@@ -51,12 +52,12 @@ const FIELDS: SchemaField[] = [
 ];
 
 describe('buildAiAnnotationRows', () => {
-  test('study レベルは document ごとに 1 行の StudyDataRow（wide）へまとめる', () => {
+  test('study レベルは study ごとに 1 行の StudyDataRow（wide）へまとめる', () => {
     const { studyRows, resultsRows } = buildAiAnnotationRows(
       [
         makeEvidence(),
         makeEvidence({ evidenceId: 'ev-2', fieldId: 'f-country', value: 'Japan' }),
-        makeEvidence({ evidenceId: 'ev-3', documentId: 'doc-2', value: '80' }),
+        makeEvidence({ evidenceId: 'ev-3', studyId: 'study-2', documentId: 'doc-2', value: '80' }),
       ],
       FIELDS,
       PARAMS,
@@ -64,7 +65,7 @@ describe('buildAiAnnotationRows', () => {
     expect(resultsRows).toEqual([]);
     expect(studyRows).toEqual([
       {
-        documentId: 'doc-1',
+        studyId: 'study-1',
         annotator: 'ai',
         annotatorType: 'ai',
         schemaVersion: 2,
@@ -73,7 +74,7 @@ describe('buildAiAnnotationRows', () => {
         values: { sample_size_total: '120', country: 'Japan' },
       },
       {
-        documentId: 'doc-2',
+        studyId: 'study-2',
         annotator: 'ai',
         annotatorType: 'ai',
         schemaVersion: 2,
@@ -117,7 +118,7 @@ describe('buildAiAnnotationRows', () => {
     expect(studyRows).toEqual([]);
     expect(resultsRows).toEqual([
       {
-        documentId: 'doc-1',
+        studyId: 'study-1',
         fieldId: 'f-arm-n',
         annotator: 'ai',
         annotatorType: 'ai',
@@ -129,7 +130,7 @@ describe('buildAiAnnotationRows', () => {
         updatedAt: '2026-07-02T00:00:00Z',
       },
       {
-        documentId: 'doc-1',
+        studyId: 'study-1',
         fieldId: 'f-events',
         annotator: 'ai',
         annotatorType: 'ai',

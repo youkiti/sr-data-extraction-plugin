@@ -33,7 +33,8 @@ function makeDeps(values: string[][]): MockDeps {
 function makeDocument(overrides: Partial<DocumentRecord> = {}): DocumentRecord {
   return {
     documentId: 'doc-1',
-    studyLabel: 'Smith 2020',
+    studyId: 'study-1',
+    documentRole: 'article',
     driveFileId: 'drive-1',
     sourceFileId: 'src-1',
     filename: 'smith2020.pdf',
@@ -52,7 +53,8 @@ function makeDocument(overrides: Partial<DocumentRecord> = {}): DocumentRecord {
 
 const SHEET_ROW = [
   'doc-1',
-  'Smith 2020',
+  'study-1',
+  'article',
   'drive-1',
   'src-1',
   'smith2020.pdf',
@@ -72,8 +74,10 @@ describe('documentToRow', () => {
     const row = documentToRow(makeDocument());
     expect(row).toHaveLength(HEADER.length);
     expect(row[0]).toBe('doc-1');
-    expect(row[8]).toBe('ok');
-    expect(row[13]).toBeNull();
+    expect(row[1]).toBe('study-1');
+    expect(row[2]).toBe('article');
+    expect(row[9]).toBe('ok');
+    expect(row[14]).toBeNull();
   });
 });
 
@@ -83,13 +87,13 @@ describe('readDocuments', () => {
       HEADER,
       SHEET_ROW,
       // スキャン PDF: text_ref / pmid / doi / counts 空
-      ['doc-2', 'Scan 1999', 'drive-2', 'src-2', 'scan.pdf', '', '', '', 'no_text_layer', '', '', 't1', 'me@example.com', 'memo'],
+      ['doc-2', 'study-2', 'article', 'drive-2', 'src-2', 'scan.pdf', '', '', '', 'no_text_layer', '', '', 't1', 'me@example.com', 'memo'],
     ]);
     await expect(readDocuments('sid', deps)).resolves.toEqual([
       makeDocument(),
       makeDocument({
         documentId: 'doc-2',
-        studyLabel: 'Scan 1999',
+        studyId: 'study-2',
         driveFileId: 'drive-2',
         sourceFileId: 'src-2',
         filename: 'scan.pdf',
@@ -105,8 +109,8 @@ describe('readDocuments', () => {
   });
 
   test('末尾セルが欠落したラグ行も空セル扱いで読める', async () => {
-    // imported_at 以降（12〜14 列目）が欠落した行
-    const ragged = SHEET_ROW.slice(0, 11);
+    // imported_at 以降（13〜15 列目）が欠落した行
+    const ragged = SHEET_ROW.slice(0, 12);
     const deps = makeDeps([HEADER, ragged]);
     const [doc] = await readDocuments('sid', deps);
     expect(doc).toMatchObject({ importedAt: '', importedBy: '', note: null });
@@ -117,15 +121,20 @@ describe('readDocuments', () => {
       'Documents タブにヘッダ行がありません',
     );
     await expect(readDocuments('sid', makeDeps([['document_id', 'filename']]))).rejects.toThrow(
-      '2 列目が "study_label"',
+      '2 列目が "study_id"',
+    );
+    const badRole = [...SHEET_ROW];
+    badRole[2] = 'thesis';
+    await expect(readDocuments('sid', makeDeps([HEADER, badRole]))).rejects.toThrow(
+      'Documents 2 行目: document_role "thesis" が不正です',
     );
     const badStatus = [...SHEET_ROW];
-    badStatus[8] = 'scanned';
+    badStatus[9] = 'scanned';
     await expect(readDocuments('sid', makeDeps([HEADER, badStatus]))).rejects.toThrow(
       'Documents 2 行目: text_status "scanned" が不正です',
     );
     const badCount = [...SHEET_ROW];
-    badCount[9] = 'twelve';
+    badCount[10] = 'twelve';
     await expect(readDocuments('sid', makeDeps([HEADER, badCount]))).rejects.toThrow(
       'page_count "twelve" が整数ではありません',
     );
@@ -156,13 +165,13 @@ describe('updateDocument', () => {
     const other = [...SHEET_ROW];
     other[0] = 'doc-0';
     const deps = makeDeps([HEADER, other, SHEET_ROW]);
-    await updateDocument('sid', makeDocument({ studyLabel: 'Smith 2020 (RCT)' }), deps);
+    await updateDocument('sid', makeDocument({ studyId: 'study-1-rct' }), deps);
     const put = deps.fetch.mock.calls.find(
       ([, init]) => (init as RequestInit | undefined)?.method === 'PUT',
     );
     expect(decodeURIComponent(put?.[0] as string)).toContain('Documents!A3?valueInputOption=RAW');
     const body = JSON.parse((put?.[1] as RequestInit).body as string);
-    expect(body.values[0][1]).toBe('Smith 2020 (RCT)');
+    expect(body.values[0][1]).toBe('study-1-rct');
   });
 
   test('該当行が無ければ throw', async () => {

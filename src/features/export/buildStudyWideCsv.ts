@@ -1,23 +1,25 @@
 // study_wide.csv（requirements.md §4.4）: 1 行 = 1 study。
-// StudyData の確定 annotator 行（Q6）から study_label + study レベル項目列を出力する
+// StudyData の確定 annotator 行（Q6）から study_label + study レベル項目列を出力する。
+// study_label は Studies 由来、行のキーは study_id（v0.10）。非アクティブ study は
+// exportService 側で除外し、ここへは渡さない（並び順 = study 作成順）
 import type { StudyDataRow } from '../../domain/annotation';
-import type { DocumentRecord } from '../../domain/document';
+import type { StudyRecord } from '../../domain/study';
 import type { SchemaField } from '../../domain/schemaField';
 import { buildCsv } from './csvEncode';
 import { selectFinalAnnotator } from './finalAnnotator';
 
 export interface StudyWideCsvResult {
   csv: string;
-  /** 確定 annotator 行を特定できず出力から除外した document_id */
-  skippedDocumentIds: string[];
+  /** 確定 annotator 行を特定できず出力から除外した study_id */
+  skippedStudyIds: string[];
   /** 未検証（空セル）の個数。エクスポート前の警告ダイアログ（§4.4）に使う */
   unverifiedCellCount: number;
-  /** CSV に行が出た文献数（ExportLog.document_count） */
-  documentCount: number;
+  /** CSV に行が出た study 数（ExportLog.study_count） */
+  studyCount: number;
 }
 
 export function buildStudyWideCsv(
-  documents: readonly DocumentRecord[],
+  studies: readonly StudyRecord[],
   rows: readonly StudyDataRow[],
   fields: readonly SchemaField[],
 ): StudyWideCsvResult {
@@ -27,16 +29,16 @@ export function buildStudyWideCsv(
   const header = ['study_label', ...studyFields.map((field) => field.fieldName)];
 
   const csvRows: string[][] = [];
-  const skippedDocumentIds: string[] = [];
+  const skippedStudyIds: string[] = [];
   let unverifiedCellCount = 0;
-  for (const doc of documents) {
-    const docRows = rows.filter((row) => row.documentId === doc.documentId);
-    const finalRow = selectFinalAnnotator(docRows);
+  for (const study of studies) {
+    const studyRows = rows.filter((row) => row.studyId === study.studyId);
+    const finalRow = selectFinalAnnotator(studyRows);
     if (finalRow === null) {
-      skippedDocumentIds.push(doc.documentId);
+      skippedStudyIds.push(study.studyId);
       continue;
     }
-    const line = [doc.studyLabel];
+    const line = [study.studyLabel];
     for (const field of studyFields) {
       const value = finalRow.values[field.fieldName] ?? null;
       if (value === null) {
@@ -48,8 +50,8 @@ export function buildStudyWideCsv(
   }
   return {
     csv: buildCsv(header, csvRows),
-    skippedDocumentIds,
+    skippedStudyIds,
     unverifiedCellCount,
-    documentCount: csvRows.length, // 1 行 = 1 study
+    studyCount: csvRows.length, // 1 行 = 1 study
   };
 }

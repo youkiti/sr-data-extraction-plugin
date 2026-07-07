@@ -40,9 +40,11 @@ function makeEditorRow(overrides: Record<string, unknown> = {}): Record<string, 
   };
 }
 
+// v0.10: 1 文書 = 1 study。document は study_id + document_role を持つ（study_label は Studies へ移設）
 const DOCUMENT = {
   documentId: 'doc-1',
-  studyLabel: 'Smith 2020',
+  studyId: 'study-1',
+  documentRole: 'article',
   driveFileId: 'drive-1',
   sourceFileId: 'src-1',
   filename: 'smith2020.pdf',
@@ -129,10 +131,24 @@ async function initApp(
         },
         documents: {
           records: documents,
+          studies: documents.map((doc) => ({
+            studyId: doc.studyId,
+            studyLabel: doc.filename,
+            registrationId: null,
+            createdAt: '2026-07-01T00:00:00Z',
+            createdBy: 'e2e@example.com',
+            note: null,
+          })),
+          extractedStudyIds: [],
+          ignoredCandidateKeys: [],
           loading: false,
           loadError: null,
           importing: false,
           importRows: [],
+          selectedStudyIds: [],
+          mergeDialog: null,
+          merging: false,
+          mergeError: null,
         },
         schema: schemaState,
       };

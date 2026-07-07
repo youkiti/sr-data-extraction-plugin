@@ -63,6 +63,8 @@ function makeBatch(
   overrides: Partial<PlannedBatch> & Pick<PlannedBatch, 'documentId' | 'fieldIds'>,
 ): PlannedBatch {
   return {
+    // 既定は 1 文書 = 1 study（study_id は document_id と同値）
+    studyId: overrides.documentId,
     section: null,
     tokensInEstimate: 0,
     tokensOutEstimate: 0,
@@ -264,6 +266,7 @@ describe('executeRun の正常系', () => {
       {
         evidenceId: 'ev-1',
         runId: 'run-1',
+        studyId: 'd1',
         documentId: 'd1',
         fieldId: 'f_design',
         entityKey: '-',
@@ -277,6 +280,7 @@ describe('executeRun の正常系', () => {
       {
         evidenceId: 'ev-2',
         runId: 'run-1',
+        studyId: 'd1',
         documentId: 'd1',
         fieldId: 'f_n',
         entityKey: 'arm:1',
@@ -291,6 +295,7 @@ describe('executeRun の正常系', () => {
       {
         evidenceId: 'ev-3',
         runId: 'run-1',
+        studyId: 'd1',
         documentId: 'd1',
         fieldId: 'f_design',
         entityKey: '-',

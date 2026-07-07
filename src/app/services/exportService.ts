@@ -4,6 +4,7 @@
 // 生成（未検証セル警告 → Drive `exports/` へ保存 → ExportLog 追記）を担う
 import type { ExportFormat, ExportLogEntry } from '../../domain/exportLog';
 import { readDocuments } from '../../features/documents/documentRepository';
+import { readStudies, resolveActiveStudies } from '../../features/documents/studyRepository';
 import { readResultsDataRows, readStudyDataSheet } from '../../features/extraction/annotationRepository';
 import { readEvidenceRows } from '../../features/extraction/evidenceRepository';
 import { readRunAuditInfos } from '../../features/extraction/runRepository';
@@ -65,9 +66,10 @@ export async function loadExportData(
   patchExport(store, { loading: true, loadError: null });
   try {
     const spreadsheetId = project.spreadsheetId;
-    const [documents, studySheet, resultsRows, evidences, decisions, runs, versions] =
+    const [documents, allStudies, studySheet, resultsRows, evidences, decisions, runs, versions] =
       await Promise.all([
         readDocuments(spreadsheetId, deps.google),
+        readStudies(spreadsheetId, deps.google),
         readStudyDataSheet(spreadsheetId, deps.google),
         readResultsDataRows(spreadsheetId, deps.google),
         readEvidenceRows(spreadsheetId, deps.google),
@@ -81,8 +83,10 @@ export async function loadExportData(
       throw new Error('確定済みのスキーマがありません。先にスキーマを確定してください');
     }
     const fields = await getSchemaFieldsByVersion(spreadsheetId, latest.schemaVersion, deps.google);
+    // エクスポートはアクティブ study（Documents から参照される study）のみ・作成順（§4.5）
+    const studies = resolveActiveStudies(allStudies, documents);
     const built = buildAllExports({
-      documents,
+      studies,
       studyRows: studySheet.rows,
       resultsRows,
       decisions,
@@ -128,7 +132,7 @@ async function generateExport(store: Store, deps: ExportServiceDeps): Promise<vo
       exportId: (deps.newUuid ?? generateUuid)(),
       format: target.format,
       schemaVersion,
-      documentCount: target.documentCount,
+      studyCount: target.studyCount,
       fileRef: file.webViewLink,
       exportedAt,
       exportedBy: email ?? '',

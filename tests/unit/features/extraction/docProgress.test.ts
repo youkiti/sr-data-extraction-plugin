@@ -8,6 +8,7 @@ import type { PlannedBatch } from '../../../../src/features/extraction/planRun';
 function batch(documentId: string, section: string | null = null): PlannedBatch {
   return {
     documentId,
+    studyId: documentId,
     section,
     fieldIds: ['f-1'],
     tokensInEstimate: 100,

@@ -8,19 +8,30 @@ import { createInitialState, createStore, type Store } from '../../../../src/app
 import type { DocumentRecord } from '../../../../src/domain/document';
 import type { Evidence } from '../../../../src/domain/evidence';
 import type { SchemaField } from '../../../../src/domain/schemaField';
+import type { StudyRecord } from '../../../../src/domain/study';
+import { readStudies } from '../../../../src/features/documents/studyRepository';
 
 jest.mock('../../../../src/app/services/verifyService', () => ({
   readVerifyTargetMaterials: jest.fn(),
+}));
+jest.mock('../../../../src/features/documents/studyRepository', () => ({
+  // studyLabelMap は純粋関数なので実物を使う
+  ...jest.requireActual('../../../../src/features/documents/studyRepository'),
+  readStudies: jest.fn(),
 }));
 
 const readMaterialsMock = readVerifyTargetMaterials as jest.MockedFunction<
   typeof readVerifyTargetMaterials
 >;
+const readStudiesMock = readStudies as jest.MockedFunction<typeof readStudies>;
 
 function makeDocument(overrides: Partial<DocumentRecord> = {}): DocumentRecord {
+  // フェーズ 1 は 1 文書 = 1 study。文書ごとに一意な study_id を自動採番する
+  const documentId = overrides.documentId ?? 'doc-1';
   return {
-    documentId: 'doc-1',
-    studyLabel: 'Smith 2020',
+    documentId,
+    studyId: `study-${documentId}`,
+    documentRole: 'article',
     driveFileId: 'drive-1',
     sourceFileId: 'src-1',
     filename: 'smith2020.pdf',
@@ -32,6 +43,18 @@ function makeDocument(overrides: Partial<DocumentRecord> = {}): DocumentRecord {
     charCount: 1000,
     importedAt: 't0',
     importedBy: 'me@example.com',
+    note: null,
+    ...overrides,
+  };
+}
+
+function makeStudy(overrides: Partial<StudyRecord> = {}): StudyRecord {
+  return {
+    studyId: 'study-doc-1',
+    studyLabel: 'Smith 2020',
+    registrationId: null,
+    createdAt: 't0',
+    createdBy: 'me@example.com',
     note: null,
     ...overrides,
   };
@@ -62,6 +85,7 @@ function makeEvidence(overrides: Partial<Evidence> = {}): Evidence {
   return {
     evidenceId: 'ev-1',
     runId: 'run-1',
+    studyId: 'study-doc-1',
     documentId: 'doc-1',
     fieldId: 'f-total',
     entityKey: '-',
@@ -116,6 +140,8 @@ function makeStore(patch: {
 beforeEach(() => {
   readMaterialsMock.mockReset();
   readMaterialsMock.mockResolvedValue([makeMaterial()]);
+  readStudiesMock.mockReset();
+  readStudiesMock.mockResolvedValue([makeStudy()]);
 });
 
 describe('loadDashboard', () => {
@@ -130,6 +156,13 @@ describe('loadDashboard', () => {
       documentId: 'doc-1',
       progress: { decided: 0, total: 1 },
     });
+  });
+
+  test('Studies にラベルが無い study は study_id をそのまま表示ラベルにする', async () => {
+    const store = makeStore();
+    readStudiesMock.mockResolvedValue([]); // 該当 study のラベルが引けない
+    await loadDashboard(store, makeDeps());
+    expect(store.getState().dashboard.data?.rows[0]?.studyLabel).toBe('study-doc-1');
   });
 
   test('プロジェクト未選択・読込中・読込済みはスキップし、force で再読込する', async () => {

@@ -8,7 +8,7 @@ import {
 } from '../../../../src/features/extraction/annotationRepository';
 
 const STUDY_HEADER = [
-  'document_id',
+  'study_id',
   'annotator',
   'annotator_type',
   'schema_version',
@@ -18,7 +18,7 @@ const STUDY_HEADER = [
 
 const RESULTS_HEADER = [
   'result_id',
-  'document_id',
+  'study_id',
   'field_id',
   'annotator',
   'annotator_type',
@@ -58,7 +58,7 @@ function callsOf(deps: MockDeps, method: string): [string, RequestInit][] {
 
 function makeStudyRow(overrides: Partial<StudyDataRow> = {}): StudyDataRow {
   return {
-    documentId: 'doc-1',
+    studyId: 'doc-1',
     annotator: 'ai',
     annotatorType: 'ai',
     schemaVersion: 2,
@@ -71,7 +71,7 @@ function makeStudyRow(overrides: Partial<StudyDataRow> = {}): StudyDataRow {
 
 function makeResultsRow(overrides: Partial<NewResultsDataRow> = {}): NewResultsDataRow {
   return {
-    documentId: 'doc-1',
+    studyId: 'doc-1',
     fieldId: 'f-arm-n',
     annotator: 'ai',
     annotatorType: 'ai',
@@ -97,7 +97,7 @@ describe('readStudyDataSheet', () => {
     expect(sheet.fieldNames).toEqual(['sample_size_total', 'country']);
     expect(sheet.rows).toEqual([
       {
-        documentId: 'doc-1',
+        studyId: 'doc-1',
         annotator: 'ai',
         annotatorType: 'ai',
         schemaVersion: 2,
@@ -106,7 +106,7 @@ describe('readStudyDataSheet', () => {
         values: { sample_size_total: '120', country: 'Japan' },
       },
       {
-        documentId: 'doc-1',
+        studyId: 'doc-1',
         annotator: 'a@example.com',
         annotatorType: 'human_with_ai',
         schemaVersion: 2,
@@ -124,7 +124,7 @@ describe('readStudyDataSheet', () => {
   });
 
   test('固定列の並びが崩れていれば throw', async () => {
-    const deps = makeDeps([['document_id', 'annotator_type', 'annotator']]);
+    const deps = makeDeps([['study_id', 'annotator_type', 'annotator']]);
     await expect(readStudyDataSheet('sid', deps)).rejects.toThrow('2 列目が "annotator"');
   });
 
@@ -144,7 +144,7 @@ describe('readStudyDataSheet', () => {
 });
 
 describe('upsertStudyDataRows', () => {
-  test('既存行（document_id × annotator 一致）は行番号を特定して上書きする', async () => {
+  test('既存行（study_id × annotator 一致）は行番号を特定して上書きする', async () => {
     const deps = makeDeps([
       [...STUDY_HEADER, 'sample_size_total'],
       ['doc-0', 'ai', 'ai', '1', 'run-0', 't0', '10'],
@@ -163,7 +163,7 @@ describe('upsertStudyDataRows', () => {
     const deps = makeDeps([[...STUDY_HEADER, 'sample_size_total']]);
     await upsertStudyDataRows(
       'sid',
-      [makeStudyRow(), makeStudyRow({ documentId: 'doc-2', values: {} })],
+      [makeStudyRow(), makeStudyRow({ studyId: 'doc-2', values: {} })],
       deps,
     );
     const posts = callsOf(deps, 'POST');
@@ -228,7 +228,7 @@ describe('readResultsDataRows', () => {
     await expect(readResultsDataRows('sid', deps)).resolves.toEqual([
       {
         resultId: 'r-1',
-        documentId: 'doc-1',
+        studyId: 'doc-1',
         fieldId: 'f-arm-n',
         annotator: 'ai',
         annotatorType: 'ai',
@@ -241,7 +241,7 @@ describe('readResultsDataRows', () => {
       },
       {
         resultId: 'r-2',
-        documentId: 'doc-1',
+        studyId: 'doc-1',
         fieldId: 'f-arm-n',
         annotator: 'a@example.com',
         annotatorType: 'human_with_ai',
@@ -260,7 +260,7 @@ describe('readResultsDataRows', () => {
       'ResultsData タブにヘッダ行がありません',
     );
     const bad = makeDeps([['result_id', 'field_id']]);
-    await expect(readResultsDataRows('sid', bad)).rejects.toThrow('2 列目が "document_id"');
+    await expect(readResultsDataRows('sid', bad)).rejects.toThrow('2 列目が "study_id"');
   });
 });
 

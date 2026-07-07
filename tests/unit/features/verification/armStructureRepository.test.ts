@@ -3,11 +3,11 @@ import {
   appendArmStructureVersion,
   armStructureToRow,
   latestArmStructure,
-  readArmStructuresByDocument,
+  readArmStructuresByStudy,
 } from '../../../../src/features/verification/armStructureRepository';
 
 const HEADER = [
-  'document_id',
+  'study_id',
   'version',
   'arm_key',
   'arm_name',
@@ -21,7 +21,7 @@ const ME = 'me@example.com';
 
 function makeRow(overrides: Partial<ArmStructureRow> = {}): ArmStructureRow {
   return {
-    documentId: 'doc-1',
+    studyId: 'doc-1',
     version: 1,
     armKey: 'arm:1',
     armName: '介入群',
@@ -95,13 +95,13 @@ describe('armStructureToRow', () => {
   });
 });
 
-describe('readArmStructuresByDocument', () => {
-  test('指定 document の行だけをパースして返す', async () => {
+describe('readArmStructuresByStudy', () => {
+  test('指定 study の行だけをパースして返す', async () => {
     const deps = makeDeps({
       titles: ['Meta', 'ArmStructures'],
       values: [HEADER, sheetRow(), sheetRow({ 0: 'doc-2' }), sheetRow({ 2: 'arm:2', 3: '対照群', 7: 'メモ' })],
     });
-    const rows = await readArmStructuresByDocument('sheet-1', 'doc-1', deps);
+    const rows = await readArmStructuresByStudy('sheet-1', 'doc-1', deps);
     expect(rows).toHaveLength(2);
     expect(rows[0]).toEqual(makeRow());
     expect(rows[1]).toEqual(makeRow({ armKey: 'arm:2', armName: '対照群', note: 'メモ' }));
@@ -111,19 +111,19 @@ describe('readArmStructuresByDocument', () => {
     const short = sheetRow();
     short.length = 7; // note が欠落
     const deps = makeDeps({ titles: ['ArmStructures'], values: [HEADER, short] });
-    const rows = await readArmStructuresByDocument('sheet-1', 'doc-1', deps);
+    const rows = await readArmStructuresByStudy('sheet-1', 'doc-1', deps);
     expect(rows[0]).toEqual(makeRow({ note: null }));
   });
 
   test('タブが無い旧プロジェクトは空配列（values GET は呼ばない）', async () => {
     const deps = makeDeps({ titles: ['Meta', 'Documents'] });
-    await expect(readArmStructuresByDocument('sheet-1', 'doc-1', deps)).resolves.toEqual([]);
+    await expect(readArmStructuresByStudy('sheet-1', 'doc-1', deps)).resolves.toEqual([]);
     expect(callsOf(deps, 'GET')).toHaveLength(1); // タブ名一覧のみ
   });
 
   test('ヘッダ行が無いシートはエラー', async () => {
     const deps = makeDeps({ titles: ['ArmStructures'], values: [] });
-    await expect(readArmStructuresByDocument('sheet-1', 'doc-1', deps)).rejects.toThrow(
+    await expect(readArmStructuresByStudy('sheet-1', 'doc-1', deps)).rejects.toThrow(
       'ArmStructures タブにヘッダ行がありません',
     );
   });
@@ -132,18 +132,18 @@ describe('readArmStructuresByDocument', () => {
     const badHeader = [...HEADER];
     badHeader[2] = 'wrong';
     const deps = makeDeps({ titles: ['ArmStructures'], values: [badHeader] });
-    await expect(readArmStructuresByDocument('sheet-1', 'doc-1', deps)).rejects.toThrow(
+    await expect(readArmStructuresByStudy('sheet-1', 'doc-1', deps)).rejects.toThrow(
       'ArmStructures のヘッダ 3 列目が "arm_key" ではありません',
     );
   });
 
   test('version が正の整数でない行・annotator_type が不正な行はエラー', async () => {
     const badVersion = makeDeps({ titles: ['ArmStructures'], values: [HEADER, sheetRow({ 1: '0' })] });
-    await expect(readArmStructuresByDocument('sheet-1', 'doc-1', badVersion)).rejects.toThrow(
+    await expect(readArmStructuresByStudy('sheet-1', 'doc-1', badVersion)).rejects.toThrow(
       'version "0" が正の整数ではありません',
     );
     const badType = makeDeps({ titles: ['ArmStructures'], values: [HEADER, sheetRow({ 5: 'robot' })] });
-    await expect(readArmStructuresByDocument('sheet-1', 'doc-1', badType)).rejects.toThrow(
+    await expect(readArmStructuresByStudy('sheet-1', 'doc-1', badType)).rejects.toThrow(
       'annotator_type "robot" が不正です',
     );
   });
@@ -174,7 +174,7 @@ describe('latestArmStructure', () => {
 
 describe('appendArmStructureVersion', () => {
   const INPUT = {
-    documentId: 'doc-1',
+    studyId: 'doc-1',
     arms: [
       { armKey: 'arm:1', armName: '介入群' },
       { armKey: 'arm:2', armName: '対照群' },
@@ -198,7 +198,7 @@ describe('appendArmStructureVersion', () => {
     ]);
   });
 
-  test('既存 version がある document は最大 + 1 で採番する（他 document・他 annotator は無視）', async () => {
+  test('既存 version がある study は最大 + 1 で採番する（他 study・他 annotator は無視）', async () => {
     const deps = makeDeps({
       titles: ['ArmStructures'],
       values: [

@@ -10,7 +10,7 @@ function makeDecision(overrides: Partial<Decision> = {}): Decision {
   return {
     decidedAt: '2026-07-02T10:00:00Z',
     decidedBy: 'me@example.com',
-    documentId: 'doc-1',
+    studyId: 'study-1',
     fieldId: 'f-1',
     entityKey: '-',
     annotator: 'me@example.com',

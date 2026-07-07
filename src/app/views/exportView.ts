@@ -58,7 +58,7 @@ function renderSummary(built: BuiltExport): HTMLElement {
   ];
   return el('dl', { id: 'export-summary', className: 'export__summary' }, [
     ...item('データ行数', String(built.rowCount)),
-    ...item('対象文献数', String(built.documentCount)),
+    ...item('対象 study 数', String(built.studyCount)),
     // results_long は未検証の概念がないため「—」（ui-states.md §3）
     ...item(
       '未検証セル数',

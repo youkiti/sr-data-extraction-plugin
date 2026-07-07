@@ -501,7 +501,7 @@ export function createVerificationPanel(
     const decision: Decision = {
       decidedAt: now(),
       decidedBy: data.annotator,
-      documentId: data.document.documentId,
+      studyId: data.document.studyId,
       fieldId: cell.field.fieldId,
       entityKey: cell.entityKey,
       annotator: data.annotator,

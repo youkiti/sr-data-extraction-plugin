@@ -32,7 +32,7 @@ function cellAt(row: readonly string[], index: number): string {
 /** ArmStructureRow → シート行。列順は SHEET_HEADERS.ArmStructures に対応 */
 export function armStructureToRow(row: ArmStructureRow): (string | number | null)[] {
   return [
-    row.documentId,
+    row.studyId,
     row.version,
     row.armKey,
     row.armName,
@@ -68,15 +68,15 @@ function assertHeader(header: readonly string[]): void {
   });
 }
 
-function parseRows(values: string[][], documentId: string): ArmStructureRow[] {
+function parseRows(values: string[][], studyId: string): ArmStructureRow[] {
   const rows: ArmStructureRow[] = [];
   values.slice(1).forEach((raw, i) => {
-    if (cellAt(raw, 0) !== documentId) {
+    if (cellAt(raw, 0) !== studyId) {
       return;
     }
     const context = `ArmStructures ${i + 2} 行目`;
     rows.push({
-      documentId: cellAt(raw, 0),
+      studyId: cellAt(raw, 0),
       version: parseVersion(cellAt(raw, 1), context),
       armKey: cellAt(raw, 2),
       armName: cellAt(raw, 3),
@@ -90,12 +90,12 @@ function parseRows(values: string[][], documentId: string): ArmStructureRow[] {
 }
 
 /**
- * 指定 document の群構成行をすべて読み込む（全 version・全 annotator）。
+ * 指定 study の群構成行をすべて読み込む（全 version・全 annotator）。
  * タブ自体が無い旧プロジェクトは「まだ誰も確定していない」として空配列を返す
  */
-export async function readArmStructuresByDocument(
+export async function readArmStructuresByStudy(
   spreadsheetId: string,
-  documentId: string,
+  studyId: string,
   deps: GoogleApiDeps,
 ): Promise<ArmStructureRow[]> {
   const titles = await getSheetTitles(spreadsheetId, deps);
@@ -108,7 +108,7 @@ export async function readArmStructuresByDocument(
     throw new Error('ArmStructures タブにヘッダ行がありません（プロジェクト初期化が不完全です）');
   }
   assertHeader(header);
-  return parseRows(values, documentId);
+  return parseRows(values, studyId);
 }
 
 /**
@@ -131,7 +131,7 @@ export function latestArmStructure(
 }
 
 export interface ConfirmArmStructureInput {
-  documentId: string;
+  studyId: string;
   arms: readonly { armKey: string; armName: string }[];
   annotator: string;
   annotatorType: AnnotatorType;
@@ -162,13 +162,13 @@ export async function appendArmStructureVersion(
     const header = values[0];
     if (header !== undefined) {
       assertHeader(header);
-      existing = parseRows(values, input.documentId);
+      existing = parseRows(values, input.studyId);
     }
   }
   const own = existing.filter((row) => row.annotator === input.annotator);
   const version = own.length === 0 ? 1 : Math.max(...own.map((row) => row.version)) + 1;
   const rows: ArmStructureRow[] = input.arms.map((arm) => ({
-    documentId: input.documentId,
+    studyId: input.studyId,
     version,
     armKey: arm.armKey,
     armName: arm.armName,

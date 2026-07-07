@@ -109,10 +109,11 @@ const PROJECT = {
 /** 起動時の進捗カウント読込（batchGet）を発火させないための注入（読込済み扱い） */
 const COUNTS_LOADED = { countsLoaded: true } as AppState['home'];
 
-/** Documents タブ 1 行分（SHEET_HEADERS.Documents の列順） */
+/** Documents タブ 1 行分（SHEET_HEADERS.Documents の列順。v0.10: study_id + document_role） */
 const DOC_ROW = [
   'doc-1',
-  'Smith 2020',
+  'study-1',
+  'article',
   'drive-1',
   'src-1',
   'smith2020.pdf',
@@ -126,6 +127,9 @@ const DOC_ROW = [
   'tester@example.com',
   '',
 ];
+
+/** Studies タブ 1 行分（SHEET_HEADERS.Studies の列順。v0.10 新設） */
+const STUDY_ROW = ['study-1', 'Smith 2020', '', '2026-07-02T00:00:00Z', 'tester@example.com', ''];
 
 /** Sheets API を values 応答で偽装した AppDeps（Picker / PDF は使う直前で失敗させる） */
 function createFakeDeps(values: string[][]): { deps: AppDeps; fetchMock: jest.Mock } {
@@ -164,6 +168,26 @@ function createFakeDeps(values: string[][]): { deps: AppDeps; fetchMock: jest.Mo
       throw new Error('llm not available in test');
     },
   };
+  return { deps, fetchMock };
+}
+
+/** タブ名でルーティングする fetch モック（複数タブを読む画面用。GET は /values/{tab} を照合） */
+function createTabRoutingDeps(tabValues: Record<string, string[][]>): {
+  deps: AppDeps;
+  fetchMock: jest.Mock;
+} {
+  const fetchMock = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = decodeURIComponent(String(input));
+    const method = init?.method ?? 'GET';
+    let json: unknown = {};
+    if (method === 'GET' && url.includes('/values/')) {
+      const tab = Object.keys(tabValues).find((name) => url.includes(`/values/${name}`));
+      json = { values: tab === undefined ? [] : tabValues[tab] };
+    }
+    return { ok: true, status: 200, json: async () => json, text: async () => '' };
+  });
+  const { deps } = createFakeDeps([]);
+  deps.google = { fetch: fetchMock as unknown as typeof fetch, getAccessToken: async () => 'token' };
   return { deps, fetchMock };
 }
 
@@ -387,29 +411,40 @@ describe('bootstrapApp', () => {
 
   test('#/documents 入場で一覧を読み込む（0 件 → 空状態表示）', async () => {
     const stub = createWindowStub({ currentProject: PROJECT, home: COUNTS_LOADED });
-    const { deps, fetchMock } = createFakeDeps([[...SHEET_HEADERS.Documents]]);
+    const { deps, fetchMock } = createTabRoutingDeps({
+      Documents: [[...SHEET_HEADERS.Documents]],
+      Studies: [[...SHEET_HEADERS.Studies]],
+      ExtractionRuns: [[...SHEET_HEADERS.ExtractionRuns]],
+    });
     await bootstrapApp(asWindow(stub), deps);
 
     stub.location.hash = '#/documents';
     stub.fireHashChange();
     await flush();
 
-    expect(fetchMock).toHaveBeenCalledTimes(1); // Documents タブの values GET
+    // loadDocuments は Documents / Studies / ExtractionRuns を読む（v0.10）
+    expect(fetchMock).toHaveBeenCalled();
     expect(document.getElementById('documents-empty')).not.toBeNull();
   });
 
   test('#/documents の再読み込みボタンで強制再取得する', async () => {
     const stub = createWindowStub({ currentProject: PROJECT, home: COUNTS_LOADED });
-    const { deps, fetchMock } = createFakeDeps([[...SHEET_HEADERS.Documents], DOC_ROW]);
+    const tabs = {
+      Documents: [[...SHEET_HEADERS.Documents], DOC_ROW],
+      Studies: [[...SHEET_HEADERS.Studies], STUDY_ROW],
+      ExtractionRuns: [[...SHEET_HEADERS.ExtractionRuns]],
+    };
+    const { deps, fetchMock } = createTabRoutingDeps(tabs);
     await bootstrapApp(asWindow(stub), deps);
     stub.location.hash = '#/documents';
     stub.fireHashChange();
     await flush();
-    expect(document.querySelectorAll('#documents-table tbody tr')).toHaveLength(1);
+    expect(document.querySelectorAll('.documents__study-group')).toHaveLength(1);
 
+    const before = fetchMock.mock.calls.length;
     (document.getElementById('documents-reload') as HTMLButtonElement).click();
     await flush();
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls.length).toBeGreaterThan(before);
   });
 
   test('#/documents の取り込みボタンは Picker 起動失敗をトーストで案内する', async () => {
@@ -427,23 +462,111 @@ describe('bootstrapApp', () => {
 
   test('#/documents の study_label 編集が保存まで配線されている', async () => {
     const stub = createWindowStub({ currentProject: PROJECT, home: COUNTS_LOADED });
-    const { deps, fetchMock } = createFakeDeps([[...SHEET_HEADERS.Documents], DOC_ROW]);
+    const { deps, fetchMock } = createTabRoutingDeps({
+      Documents: [[...SHEET_HEADERS.Documents], DOC_ROW],
+      Studies: [[...SHEET_HEADERS.Studies], STUDY_ROW],
+      ExtractionRuns: [[...SHEET_HEADERS.ExtractionRuns]],
+    });
     await bootstrapApp(asWindow(stub), deps);
     stub.location.hash = '#/documents';
     stub.fireHashChange();
     await flush();
 
+    const before = fetchMock.mock.calls.length;
     const input = document.querySelector('.documents__label-input') as HTMLInputElement;
     input.value = 'Smith 2020a';
     input.dispatchEvent(new Event('change'));
     await flush();
 
-    // updateDocument = 検証用 GET + 行 PUT の 2 呼び出しが追加される
-    expect(fetchMock.mock.calls.length).toBeGreaterThanOrEqual(3);
+    // updateStudy = 検証用 Studies GET + 行 PUT の 2 呼び出しが追加される（Studies 行の上書き）
+    expect(fetchMock.mock.calls.length).toBeGreaterThan(before);
     expect(toastTexts()).toContain('study_label を保存しました');
     expect(
       (document.querySelector('.documents__label-input') as HTMLInputElement).value,
     ).toBe('Smith 2020a');
+  });
+
+  test('#/documents のグルーピング操作（role / registration / 統合 / 候補）が配線されている', async () => {
+    const study1 = { studyId: 'study-1', studyLabel: 'Smith 2020', registrationId: 'NCT01234567', createdAt: 't', createdBy: 'e', note: null };
+    const study2 = { studyId: 'study-2', studyLabel: 'Jones 2021', registrationId: 'NCT01234567', createdAt: 't', createdBy: 'e', note: null };
+    const doc1 = { documentId: 'doc-1', studyId: 'study-1', documentRole: 'article' as const, driveFileId: 'd1', sourceFileId: 's1', filename: 'a.pdf', pmid: null, doi: null, textRef: 't1', textStatus: 'ok' as const, pageCount: 1, charCount: 1, importedAt: 't', importedBy: 'e', note: null };
+    const doc2 = { ...doc1, documentId: 'doc-2', studyId: 'study-2', filename: 'b.pdf' };
+    const stub = createWindowStub({
+      currentProject: PROJECT,
+      home: COUNTS_LOADED,
+      documents: {
+        records: [doc1, doc2],
+        studies: [study1, study2],
+        extractedStudyIds: [],
+        ignoredCandidateKeys: [],
+        loading: false,
+        loadError: null,
+        importing: false,
+        importRows: [],
+        selectedStudyIds: [],
+        mergeDialog: null,
+        merging: false,
+        mergeError: null,
+      },
+    } as unknown as Partial<AppState>);
+    const DOC_ROW_2 = ['doc-2', 'study-2', 'article', 'd2', 's2', 'b.pdf', '', '', 't2', 'ok', '1', '1', 't', 'e', ''];
+    const STUDY_ROW_2 = ['study-2', 'Jones 2021', 'NCT01234567', 't', 'e', ''];
+    const { deps } = createTabRoutingDeps({
+      Documents: [[...SHEET_HEADERS.Documents], DOC_ROW, DOC_ROW_2],
+      Studies: [[...SHEET_HEADERS.Studies], STUDY_ROW, STUDY_ROW_2],
+      ExtractionRuns: [[...SHEET_HEADERS.ExtractionRuns]],
+    });
+    const store = await bootstrapApp(asWindow(stub), deps);
+    stub.location.hash = '#/documents';
+    stub.fireHashChange();
+    await flush();
+
+    // 候補バナー → 統合ダイアログ（onOpenMergeCandidate）→ label / registration 入力 → キャンセル
+    (document.querySelector('.documents__candidate-merge') as HTMLButtonElement).click();
+    await flush();
+    expect(document.getElementById('merge-dialog')).not.toBeNull();
+    const label = document.getElementById('merge-label') as HTMLInputElement;
+    label.value = '統合ラベル';
+    label.dispatchEvent(new Event('input'));
+    const reg = document.getElementById('merge-registration') as HTMLInputElement;
+    reg.value = 'NCT01234567';
+    reg.dispatchEvent(new Event('input'));
+    (document.getElementById('merge-cancel') as HTMLButtonElement).click();
+    await flush();
+    expect(store?.getState().documents.mergeDialog).toBeNull();
+
+    // 候補の無視（onIgnoreCandidate）→ バナーが消える
+    (document.querySelector('.documents__candidate-ignore') as HTMLButtonElement).click();
+    await flush();
+    expect(store?.getState().documents.ignoredCandidateKeys).toEqual(['study-1|study-2']);
+    expect(document.querySelector('.documents__candidate')).toBeNull();
+
+    // document_role 変更（onSaveDocumentRole）
+    const roleSelect = document.querySelector('.documents__role-select') as HTMLSelectElement;
+    roleSelect.value = 'registration';
+    roleSelect.dispatchEvent(new Event('change'));
+    await flush();
+
+    // registration_id 編集（onSaveRegistrationId）
+    const regInput = document.querySelector('.documents__registration-input') as HTMLInputElement;
+    regInput.value = 'ISRCTN12345678';
+    regInput.dispatchEvent(new Event('change'));
+    await flush();
+
+    // study を 2 件選択（onToggleStudySelection）→ 統合ボタン（onOpenMerge）→ 確定（onConfirmMerge）。
+    // setState ごとに再描画されるためチェックボックスは毎回引き直す
+    (document.querySelectorAll('.documents__study-check')[0] as HTMLInputElement).click();
+    (document.querySelectorAll('.documents__study-check')[1] as HTMLInputElement).click();
+    await flush();
+    expect(store?.getState().documents.selectedStudyIds).toEqual(['study-1', 'study-2']);
+    (document.getElementById('documents-merge') as HTMLButtonElement).click();
+    await flush();
+    expect(document.getElementById('merge-dialog')).not.toBeNull();
+    (document.getElementById('merge-confirm') as HTMLButtonElement).click();
+    await flush();
+    await flush();
+    // 統合が走り、ダイアログは閉じる
+    expect(store?.getState().documents.mergeDialog).toBeNull();
   });
 
   test('#/protocol 入場で全 version を読み込む（0 件 → 新規フォーム表示）', async () => {
@@ -629,7 +752,8 @@ describe('bootstrapApp', () => {
         records: [
           {
             documentId: 'doc-1',
-            studyLabel: 'Smith 2020',
+            studyId: 'study-1',
+            documentRole: 'article',
             driveFileId: 'drive-1',
             sourceFileId: 'src-1',
             filename: 'smith2020.pdf',
@@ -826,7 +950,8 @@ describe('bootstrapApp: #/pilot', () => {
 
   const DOC_RECORD = {
     documentId: 'doc-1',
-    studyLabel: 'Smith 2020',
+    studyId: 'study-1',
+    documentRole: 'article' as const,
     driveFileId: 'drive-1',
     sourceFileId: 'src-1',
     filename: 'smith2020.pdf',
@@ -855,7 +980,7 @@ describe('bootstrapApp: #/pilot', () => {
     runId: 'run-1',
     runType: 'pilot' as const,
     schemaVersion: 1,
-    documentIds: ['doc-1', 'doc-x'],
+    studyIds: ['study-1', 'study-x'],
     provider: 'gemini',
     requestedModel: 'gemini-test',
     modelVersion: null,
@@ -928,17 +1053,20 @@ describe('bootstrapApp: #/pilot', () => {
     );
   });
 
-  test('#/pilot の検証セクション（文献切替 / 再試行）が配線されている', async () => {
+  test('#/pilot の検証セクション（文献切替セレクタ / 再試行）が配線されている', async () => {
     const stub = createWindowStub(
       pilotPreloaded({
         selectionInitialized: true,
         selectedDocumentIds: ['doc-1'],
         model: 'gemini-test',
-        run: RUN,
+        // run は study 単位（studyIds）。文献切替セレクタは records を study_id で引く（v0.10）
+        run: { ...RUN, studyIds: ['study-1', 'study-x'] },
         runFields: [FIELD],
         evidence: [],
-        // 再試行の対象（loadPilotVerification は文献未発見時に verifyDocumentId を変えない）
+        // 一覧に無い文献の読込失敗を残した状態（再試行の対象）。loadPilotVerification は
+        // 文献未発見時に verifyDocumentId を変えない
         verifyDocumentId: 'doc-x',
+        verifyError: '文献 doc-x が見つかりません',
       } as Partial<AppState['pilot']>),
     );
     const { deps } = createFakeDeps([[...SHEET_HEADERS.Documents]]);
@@ -947,15 +1075,15 @@ describe('bootstrapApp: #/pilot', () => {
     stub.fireHashChange();
     await flush();
 
-    // 文献切替: 一覧に無い ID → verifyError の配線を観測
+    // 文献切替セレクタは run の study に属する document（filename 表示）を並べる
     const select = document.getElementById('pilot-verify-doc') as HTMLSelectElement;
-    select.value = 'doc-x';
-    select.dispatchEvent(new Event('change'));
-    await flush();
-    expect(store?.getState().pilot.verifyError).toContain('doc-x が見つかりません');
+    expect(select.options.length).toBe(1);
+    expect(select.options[0]?.textContent).toBe('smith2020.pdf');
+    expect(select.options[0]?.value).toBe('doc-1');
+    // 読込失敗の表示
     expect(document.getElementById('pilot-verify-error')?.textContent).toContain('doc-x');
 
-    // 再試行の配線（verifyDocumentId は doc-x のまま → 再度同じエラー）
+    // 再試行の配線（verifyDocumentId は doc-x のまま → 一覧に無く再度同じエラー）
     (document.getElementById('pilot-verify-retry') as HTMLButtonElement).click();
     await flush();
     expect(store?.getState().pilot.verifyError).toContain('doc-x が見つかりません');
@@ -968,6 +1096,13 @@ describe('bootstrapApp: #/pilot', () => {
     (document.getElementById('pilot-verify-retry') as HTMLButtonElement).click();
     await flush();
     expect(store?.getState().pilot.verifyError).toBe('まだエラー');
+
+    // セレクタで実在文献へ切替（onSelectVerifyDocument）→ loadPilotVerification 起動
+    const freshSelect = document.getElementById('pilot-verify-doc') as HTMLSelectElement;
+    freshSelect.value = 'doc-1';
+    freshSelect.dispatchEvent(new Event('change'));
+    await flush();
+    expect(store?.getState().pilot.verifyDocumentId).toBe('doc-1');
   });
 
   test('#/pilot の判定保存（onDecision）と群構成確定（onArmConfirm）が配線されている', async () => {
@@ -1023,16 +1158,16 @@ describe('bootstrapApp: #/pilot', () => {
         selectionInitialized: true,
         selectedDocumentIds: ['doc-1'],
         model: 'gemini-test',
-        run: { ...RUN, documentIds: ['doc-1'] },
+        run: { ...RUN, studyIds: ['study-1'] },
         runFields: [FIELD],
         evidence: verification.evidence,
         verifyDocumentId: 'doc-1',
         verification,
       } as unknown as Partial<AppState['pilot']>),
     );
-    // StudyData ヘッダを返す fake（判定保存の upsert が読む）
+    // StudyData ヘッダを返す fake（判定保存の upsert が読む。v0.10: 先頭列は study_id）
     const { deps, fetchMock } = createFakeDeps([
-      ['document_id', 'annotator', 'annotator_type', 'schema_version', 'run_id', 'updated_at'],
+      ['study_id', 'annotator', 'annotator_type', 'schema_version', 'run_id', 'updated_at'],
     ]);
     const store = await bootstrapApp(asWindow(stub), deps);
     stub.location.hash = '#/pilot';
@@ -1061,7 +1196,7 @@ describe('bootstrapApp: #/pilot', () => {
   });
 
   test('#/pilot 入場で履歴の最新 run を自動読込する（既存データを最初からにしない）', async () => {
-    const historyRun = { ...RUN, runId: 'run-hist', documentIds: [] };
+    const historyRun = { ...RUN, runId: 'run-hist', studyIds: [] };
     const stub = createWindowStub(
       pilotPreloaded({
         selectionInitialized: true,
@@ -1085,7 +1220,7 @@ describe('bootstrapApp: #/pilot', () => {
   });
 
   test('#/pilot の履歴項目クリックで過去 run を読み込む（onSelectRun）', async () => {
-    const historyRun = { ...RUN, runId: 'run-hist', documentIds: [] };
+    const historyRun = { ...RUN, runId: 'run-hist', studyIds: [] };
     const stub = createWindowStub(
       pilotPreloaded({
         selectionInitialized: true,
@@ -1163,7 +1298,8 @@ describe('bootstrapApp: #/extract', () => {
 
   const DOC_RECORD = {
     documentId: 'doc-1',
-    studyLabel: 'Smith 2020',
+    studyId: 'study-1',
+    documentRole: 'article' as const,
     driveFileId: 'drive-1',
     sourceFileId: 'src-1',
     filename: 'smith2020.pdf',
@@ -1265,7 +1401,7 @@ describe('bootstrapApp: #/extract', () => {
           runId: 'run-1',
           runType: 'full',
           schemaVersion: 1,
-          documentIds: ['doc-1'],
+          studyIds: ['study-1'],
           provider: 'gemini',
           requestedModel: 'gemini-test',
           modelVersion: null,
@@ -1358,8 +1494,9 @@ describe('bootstrapApp: #/verify・#/dashboard', () => {
   const EVIDENCE_ROW = [
     'ev-1',
     'run-1',
-    'doc-1',
+    'study-1',
     'f-total',
+    'doc-1',
     '-',
     '120',
     'FALSE',
@@ -1372,7 +1509,7 @@ describe('bootstrapApp: #/verify・#/dashboard', () => {
     'run-1',
     'pilot',
     '1',
-    'doc-1',
+    'study-1',
     'gemini',
     'gemini-test',
     '',
@@ -1387,7 +1524,8 @@ describe('bootstrapApp: #/verify・#/dashboard', () => {
 
   const DOC_RECORD_1 = {
     documentId: 'doc-1',
-    studyLabel: 'Smith 2020',
+    studyId: 'study-1',
+    documentRole: 'article' as const,
     driveFileId: 'drive-1',
     sourceFileId: 'src-1',
     filename: 'smith2020.pdf',
@@ -1401,7 +1539,7 @@ describe('bootstrapApp: #/verify・#/dashboard', () => {
     importedBy: 'tester@example.com',
     note: null,
   };
-  const DOC_RECORD_2 = { ...DOC_RECORD_1, documentId: 'doc-2', studyLabel: 'Jones 2021' };
+  const DOC_RECORD_2 = { ...DOC_RECORD_1, documentId: 'doc-2', studyId: 'study-2' };
 
   /** タブ名で values をルーティングする Sheets/Drive スタブ */
   function createVerifyFakeDeps(
@@ -1447,7 +1585,8 @@ describe('bootstrapApp: #/verify・#/dashboard', () => {
     ExtractionRuns: [[...SHEET_HEADERS.ExtractionRuns], RUN_ROW],
     Decisions: [[...SHEET_HEADERS.Decisions]],
     SchemaFields: [[...SHEET_HEADERS.SchemaFields], FIELD_ROW],
-    StudyData: [['document_id', 'annotator', 'annotator_type', 'schema_version', 'run_id', 'updated_at']],
+    StudyData: [['study_id', 'annotator', 'annotator_type', 'schema_version', 'run_id', 'updated_at']],
+    Studies: [[...SHEET_HEADERS.Studies], STUDY_ROW],
   };
 
   test('#/verify 入場で一覧を読み込み、?doc= なしは先頭文献を開く', async () => {
@@ -1460,7 +1599,7 @@ describe('bootstrapApp: #/verify・#/dashboard', () => {
     await flush();
 
     const select = document.getElementById('verify-doc') as HTMLSelectElement;
-    expect(select.options[0]?.textContent).toBe('Smith 2020（判定済み 0 / 1）');
+    expect(select.options[0]?.textContent).toBe('smith2020.pdf（判定済み 0 / 1）');
     expect(store?.getState().verify.selectedDocumentId).toBe('doc-1');
     // ?doc= なし入場でも既定文献を URL へ書き戻す（replaceState 経由。共有・リロード可能に）
     expect(stub.history.replaceState).toHaveBeenCalledWith(null, '', '#/verify?doc=doc-1');
@@ -1501,7 +1640,7 @@ describe('bootstrapApp: #/verify・#/dashboard', () => {
       Evidence: [
         [...SHEET_HEADERS.Evidence],
         EVIDENCE_ROW,
-        ['ev-2', 'run-1', 'doc-2', 'f-total', '-', '99', 'FALSE', '', '', '', ''],
+        ['ev-2', 'run-1', 'study-2', 'f-total', 'doc-2', '-', '99', 'FALSE', '', '', '', ''],
       ],
     };
     const { deps } = createVerifyFakeDeps(tabs);
@@ -1580,7 +1719,7 @@ describe('bootstrapApp: #/verify・#/dashboard', () => {
       Evidence: [
         [...SHEET_HEADERS.Evidence],
         EVIDENCE_ROW,
-        ['ev-arm', 'run-1', 'doc-1', 'f-arm-n', 'arm:1', '50', 'FALSE', '', '', '', ''],
+        ['ev-arm', 'run-1', 'study-1', 'f-arm-n', 'doc-1', 'arm:1', '50', 'FALSE', '', '', '', ''],
       ],
     };
     const { deps, fetchMock } = createVerifyFakeDeps(tabs);
@@ -1616,12 +1755,12 @@ describe('bootstrapApp: #/verify・#/dashboard', () => {
       Evidence: [
         [...SHEET_HEADERS.Evidence],
         EVIDENCE_ROW,
-        ['ev-arm', 'run-1', 'doc-1', 'f-arm-n', 'arm:1', '50', 'FALSE', '', '', '', ''],
+        ['ev-arm', 'run-1', 'study-1', 'f-arm-n', 'doc-1', 'arm:1', '50', 'FALSE', '', '', '', ''],
       ],
       // 群構成は確定済み（未確定だとロック中タブへのディープリンクは無視される）
       ArmStructures: [
         [...SHEET_HEADERS.ArmStructures],
-        ['doc-1', '1', 'arm:1', '介入群', 'tester@example.com', 'human_with_ai', 't0', ''],
+        ['study-1', '1', 'arm:1', '介入群', 'tester@example.com', 'human_with_ai', 't0', ''],
       ],
     };
     const { deps } = createVerifyFakeDeps(tabs);
@@ -1704,7 +1843,7 @@ describe('bootstrapApp: #/export', () => {
       header: ['study_label'],
       previewRows: [['Smith 2020']],
       rowCount: 1,
-      documentCount: 1,
+      studyCount: 1,
       unverifiedCellCount: format === 'results_long' ? null : 0,
       skippedStudyLabels: [],
       droppedRowCount: 0,

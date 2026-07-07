@@ -3,13 +3,13 @@ import {
   appendDecisionRows,
   decisionToRow,
   readAllDecisions,
-  readDecisionsByDocument,
+  readDecisionsByStudy,
 } from '../../../../src/features/verification/decisionRepository';
 
 const DECISIONS_HEADER = [
   'decided_at',
   'decided_by',
-  'document_id',
+  'study_id',
   'field_id',
   'entity_key',
   'annotator',
@@ -24,7 +24,7 @@ function makeDecision(overrides: Partial<Decision> = {}): Decision {
   return {
     decidedAt: '2026-07-02T10:00:00Z',
     decidedBy: 'me@example.com',
-    documentId: 'doc-1',
+    studyId: 'doc-1',
     fieldId: 'f-1',
     entityKey: '-',
     annotator: 'me@example.com',
@@ -102,7 +102,7 @@ describe('appendDecisionRows', () => {
   });
 });
 
-describe('readDecisionsByDocument', () => {
+describe('readDecisionsByStudy', () => {
   const row = (overrides: Record<number, string> = {}): string[] => {
     const base = [
       '2026-07-02T10:00:00Z',
@@ -123,21 +123,21 @@ describe('readDecisionsByDocument', () => {
     return base;
   };
 
-  test('指定 document の行だけをパースして返す', async () => {
+  test('指定 study の行だけをパースして返す', async () => {
     const deps = makeDeps([
       DECISIONS_HEADER,
       row(),
       row({ 2: 'doc-2' }),
       row({ 8: 'undo', 9: '', 10: '' }),
     ]);
-    const decisions = await readDecisionsByDocument('sheet-1', 'doc-1', deps);
+    const decisions = await readDecisionsByStudy('sheet-1', 'doc-1', deps);
     expect(decisions).toHaveLength(2);
     expect(decisions[0]).toEqual(makeDecision({ note: 'メモ' }));
     expect(decisions[1]).toMatchObject({ action: 'undo', value: null, note: null });
   });
 
   test('ヘッダ行が無いシートはエラー', async () => {
-    await expect(readDecisionsByDocument('sheet-1', 'doc-1', makeDeps([]))).rejects.toThrow(
+    await expect(readDecisionsByStudy('sheet-1', 'doc-1', makeDeps([]))).rejects.toThrow(
       'Decisions タブにヘッダ行がありません',
     );
   });
@@ -146,27 +146,27 @@ describe('readDecisionsByDocument', () => {
     const badHeader = [...DECISIONS_HEADER];
     badHeader[3] = 'wrong';
     await expect(
-      readDecisionsByDocument('sheet-1', 'doc-1', makeDeps([badHeader])),
+      readDecisionsByStudy('sheet-1', 'doc-1', makeDeps([badHeader])),
     ).rejects.toThrow('Decisions のヘッダ 4 列目が "field_id" ではありません');
   });
 
   test('action が不正な行はエラー', async () => {
     const deps = makeDeps([DECISIONS_HEADER, row({ 8: 'approve' })]);
-    await expect(readDecisionsByDocument('sheet-1', 'doc-1', deps)).rejects.toThrow(
+    await expect(readDecisionsByStudy('sheet-1', 'doc-1', deps)).rejects.toThrow(
       'Decisions 2 行目: action "approve" が不正です',
     );
   });
 
   test('annotator_type が不正な行はエラー', async () => {
     const deps = makeDeps([DECISIONS_HEADER, row({ 6: 'robot' })]);
-    await expect(readDecisionsByDocument('sheet-1', 'doc-1', deps)).rejects.toThrow(
+    await expect(readDecisionsByStudy('sheet-1', 'doc-1', deps)).rejects.toThrow(
       'annotator_type "robot" が不正です',
     );
   });
 
   test('schema_version が整数でない行はエラー', async () => {
     const deps = makeDeps([DECISIONS_HEADER, row({ 7: 'v2' })]);
-    await expect(readDecisionsByDocument('sheet-1', 'doc-1', deps)).rejects.toThrow(
+    await expect(readDecisionsByStudy('sheet-1', 'doc-1', deps)).rejects.toThrow(
       'schema_version "v2" が整数ではありません',
     );
   });
@@ -175,13 +175,13 @@ describe('readDecisionsByDocument', () => {
     const short = row();
     short.length = 9; // value / note が欠落
     const deps = makeDeps([DECISIONS_HEADER, short]);
-    const decisions = await readDecisionsByDocument('sheet-1', 'doc-1', deps);
+    const decisions = await readDecisionsByStudy('sheet-1', 'doc-1', deps);
     expect(decisions[0]).toMatchObject({ value: null, note: null });
   });
 
-  test('readAllDecisions は document で絞らず全行を返す（S8 の進捗チップ素材）', async () => {
+  test('readAllDecisions は study で絞らず全行を返す（S8 の進捗チップ素材）', async () => {
     const deps = makeDeps([DECISIONS_HEADER, row(), row({ 2: 'doc-2' })]);
     const decisions = await readAllDecisions('sheet-1', deps);
-    expect(decisions.map((decision) => decision.documentId)).toEqual(['doc-1', 'doc-2']);
+    expect(decisions.map((decision) => decision.studyId)).toEqual(['doc-1', 'doc-2']);
   });
 });

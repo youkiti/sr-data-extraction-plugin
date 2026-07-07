@@ -1,6 +1,6 @@
 import type { ResultsDataRow, StudyDataRow } from '../../../../src/domain/annotation';
 import type { Decision } from '../../../../src/domain/decision';
-import type { DocumentRecord } from '../../../../src/domain/document';
+import type { StudyRecord } from '../../../../src/domain/study';
 import type { Evidence } from '../../../../src/domain/evidence';
 import type { SchemaField } from '../../../../src/domain/schemaField';
 import {
@@ -11,21 +11,13 @@ import {
   type ExportMaterials,
 } from '../../../../src/features/export/buildExport';
 
-function makeDocument(overrides: Partial<DocumentRecord> = {}): DocumentRecord {
+function makeStudy(overrides: Partial<StudyRecord> = {}): StudyRecord {
   return {
-    documentId: 'doc-1',
+    studyId: 'doc-1',
     studyLabel: 'Smith 2020',
-    driveFileId: 'drive-1',
-    sourceFileId: 'src-1',
-    filename: 'smith2020.pdf',
-    pmid: null,
-    doi: null,
-    textRef: 'ref',
-    textStatus: 'ok',
-    pageCount: 2,
-    charCount: 1000,
-    importedAt: 't0',
-    importedBy: 'me@example.com',
+    registrationId: null,
+    createdAt: 't0',
+    createdBy: 'me@example.com',
     note: null,
     ...overrides,
   };
@@ -54,7 +46,7 @@ function makeField(overrides: Partial<SchemaField> = {}): SchemaField {
 
 function makeStudyRow(overrides: Partial<StudyDataRow> = {}): StudyDataRow {
   return {
-    documentId: 'doc-1',
+    studyId: 'doc-1',
     annotator: 'me@example.com',
     annotatorType: 'human_with_ai',
     schemaVersion: 2,
@@ -68,7 +60,7 @@ function makeStudyRow(overrides: Partial<StudyDataRow> = {}): StudyDataRow {
 function makeResultsRow(overrides: Partial<ResultsDataRow> = {}): ResultsDataRow {
   return {
     resultId: 'r-1',
-    documentId: 'doc-1',
+    studyId: 'doc-1',
     fieldId: 'f-events',
     annotator: 'me@example.com',
     annotatorType: 'human_with_ai',
@@ -86,7 +78,7 @@ function makeDecision(overrides: Partial<Decision> = {}): Decision {
   return {
     decidedAt: 't2',
     decidedBy: 'me@example.com',
-    documentId: 'doc-1',
+    studyId: 'doc-1',
     fieldId: 'f-total',
     entityKey: '-',
     annotator: 'me@example.com',
@@ -103,6 +95,7 @@ function makeEvidence(overrides: Partial<Evidence> = {}): Evidence {
   return {
     evidenceId: 'ev-1',
     runId: 'run-1',
+    studyId: 'doc-1',
     documentId: 'doc-1',
     fieldId: 'f-total',
     entityKey: '-',
@@ -118,7 +111,7 @@ function makeEvidence(overrides: Partial<Evidence> = {}): Evidence {
 
 function makeMaterials(overrides: Partial<ExportMaterials> = {}): ExportMaterials {
   return {
-    documents: [makeDocument()],
+    studies: [makeStudy()],
     studyRows: [makeStudyRow()],
     resultsRows: [
       makeResultsRow(),
@@ -143,23 +136,23 @@ function makeMaterials(overrides: Partial<ExportMaterials> = {}): ExportMaterial
 }
 
 describe('buildExport', () => {
-  test('study_wide: ヘッダ / プレビュー行 / 行数 / 文献数 / 未検証 0 を返す', () => {
+  test('study_wide: ヘッダ / プレビュー行 / 行数 / 試験数 / 未検証 0 を返す', () => {
     const built = buildExport('study_wide', makeMaterials());
     expect(built.format).toBe('study_wide');
     expect(built.header).toEqual(['study_label', 'sample_size_total']);
     expect(built.previewRows).toEqual([['Smith 2020', '120']]);
     expect(built.rowCount).toBe(1);
-    expect(built.documentCount).toBe(1);
+    expect(built.studyCount).toBe(1);
     expect(built.unverifiedCellCount).toBe(0);
     expect(built.skippedStudyLabels).toEqual([]);
     expect(built.droppedRowCount).toBe(0);
   });
 
-  test('study_wide: 空セルは未検証として数え、確定行のない文献は study_label で列挙する', () => {
+  test('study_wide: 空セルは未検証として数え、確定行のない試験は study_label で列挙する', () => {
     const built = buildExport(
       'study_wide',
       makeMaterials({
-        documents: [makeDocument(), makeDocument({ documentId: 'doc-2', studyLabel: 'Tanaka 2021' })],
+        studies: [makeStudy(), makeStudy({ studyId: 'doc-2', studyLabel: 'Tanaka 2021' })],
         studyRows: [makeStudyRow({ values: { sample_size_total: null } })],
       }),
     );
@@ -176,7 +169,7 @@ describe('buildExport', () => {
     );
     expect(built.header[0]).toBe('study_label');
     expect(built.rowCount).toBe(1);
-    expect(built.documentCount).toBe(1);
+    expect(built.studyCount).toBe(1);
     expect(built.unverifiedCellCount).toBeNull();
     expect(built.droppedRowCount).toBe(1);
   });
@@ -185,7 +178,7 @@ describe('buildExport', () => {
     const built = buildExport('audit', makeMaterials());
     // f-total は判定あり、f-events（ev-2）は判定 0 件 → プレースホルダ 1 行
     expect(built.rowCount).toBe(2);
-    expect(built.documentCount).toBe(1);
+    expect(built.studyCount).toBe(1);
     expect(built.unverifiedCellCount).toBe(1);
     expect(built.skippedStudyLabels).toEqual([]);
   });
@@ -210,8 +203,8 @@ describe('buildAllExports', () => {
 });
 
 describe('toStudyLabels', () => {
-  test('document_id を study_label へ解決し、一覧にない id は id のまま返す', () => {
-    expect(toStudyLabels([makeDocument()], ['doc-1', 'doc-ghost'])).toEqual([
+  test('study_id を study_label へ解決し、一覧にない id は id のまま返す', () => {
+    expect(toStudyLabels([makeStudy()], ['doc-1', 'doc-ghost'])).toEqual([
       'Smith 2020',
       'doc-ghost',
     ]);

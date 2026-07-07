@@ -229,7 +229,7 @@ export async function runDraftSchema(store: Store, deps: SchemaServiceDeps): Pro
     for (const documentId of selectedDocumentIds) {
       const doc = byId.get(documentId);
       samples.push({
-        label: doc?.studyLabel ?? documentId,
+        label: doc?.filename ?? documentId,
         pages: await loadPages(documentId),
       });
     }

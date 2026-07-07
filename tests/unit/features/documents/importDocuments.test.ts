@@ -1,4 +1,5 @@
 import { appendDocuments } from '../../../../src/features/documents/documentRepository';
+import { appendStudies } from '../../../../src/features/documents/studyRepository';
 import { extractTextLayer } from '../../../../src/features/documents/extractTextLayer';
 import {
   defaultStudyLabel,
@@ -9,10 +10,12 @@ import { copyFile, getFileBinary, uploadTextFile } from '../../../../src/lib/goo
 import type { GoogleApiDeps } from '../../../../src/lib/google/types';
 
 jest.mock('../../../../src/features/documents/documentRepository');
+jest.mock('../../../../src/features/documents/studyRepository');
 jest.mock('../../../../src/features/documents/extractTextLayer');
 jest.mock('../../../../src/lib/google/drive');
 
 const mockedAppend = jest.mocked(appendDocuments);
+const mockedAppendStudies = jest.mocked(appendStudies);
 const mockedExtract = jest.mocked(extractTextLayer);
 const mockedCopy = jest.mocked(copyFile);
 const mockedBinary = jest.mocked(getFileBinary);
@@ -50,6 +53,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   // clearAllMocks は実装を戻さないため、前のテストの mockRejectedValue を明示的に上書きする
   mockedAppend.mockResolvedValue(undefined);
+  mockedAppendStudies.mockResolvedValue(undefined);
   mockedCopy.mockResolvedValue({ id: 'copy-1', webViewLink: 'https://drive/copy-1' });
   mockedBinary.mockResolvedValue(PDF_BYTES);
   mockedUpload.mockResolvedValue({ id: 'txt-1', webViewLink: 'https://drive/txt-1' });
@@ -71,7 +75,7 @@ describe('defaultStudyLabel', () => {
 });
 
 describe('importDocuments', () => {
-  test('コピー → 抽出 → txt 保存 → Documents 追記まで通し、進捗を 2 段階通知する', async () => {
+  test('コピー → 抽出 → txt 保存 → Studies → Documents 追記まで通し、1 PDF = 1 study を生成する', async () => {
     const progress: ImportProgress[] = [];
     const deps = makeDeps({ onProgress: (p) => progress.push(p) });
     const result = await importDocuments(
@@ -86,15 +90,27 @@ describe('importDocuments', () => {
     );
     expect(mockedBinary).toHaveBeenCalledWith('copy-1', GOOGLE);
     expect(mockedExtract).toHaveBeenCalledWith(PDF_BYTES, { loadPdf: deps.loadPdf });
+    // document_id = u1（txt 名）、study_id = u2
     expect(mockedUpload).toHaveBeenCalledWith(
       { name: 'u1.txt', content: 'page text', parentId: 'folder-texts' },
       GOOGLE,
     );
     expect(result.failures).toEqual([]);
+    expect(result.importedStudies).toEqual([
+      {
+        studyId: 'u2',
+        studyLabel: 'smith2020',
+        registrationId: null, // 'page text' に登録番号なし
+        createdAt: 'NOW',
+        createdBy: 'me@example.com',
+        note: null,
+      },
+    ]);
     expect(result.imported).toEqual([
       {
         documentId: 'u1',
-        studyLabel: 'smith2020',
+        studyId: 'u2',
+        documentRole: 'article',
         driveFileId: 'copy-1',
         sourceFileId: 'src-1',
         filename: 'smith2020.pdf',
@@ -109,6 +125,8 @@ describe('importDocuments', () => {
         note: null,
       },
     ]);
+    // Studies を Documents より先に追記する（study_id が必ず解決できる不変条件）
+    expect(mockedAppendStudies).toHaveBeenCalledWith('sid', result.importedStudies, GOOGLE);
     expect(mockedAppend).toHaveBeenCalledWith('sid', result.imported, GOOGLE);
     expect(progress).toEqual([
       { fileIndex: 0, totalFiles: 1, filename: 'smith2020.pdf', stage: 'copy' },
@@ -116,7 +134,22 @@ describe('importDocuments', () => {
     ]);
   });
 
-  test('no_text_layer の PDF は txt を保存せず text_ref = null で登録する（※Q7）', async () => {
+  test('抽出テキストから試験登録番号を検出して study.registration_id にする（§4.5）', async () => {
+    mockedExtract.mockResolvedValue({
+      pages: [],
+      textStatus: 'ok',
+      pageCount: 3,
+      charCount: 200,
+      serializedText: 'Registered as NCT01234567 in the trial registry.',
+    });
+    const result = await importDocuments(
+      baseParams([{ sourceFileId: 'src-1', filename: 'a.pdf' }]),
+      makeDeps(),
+    );
+    expect(result.importedStudies[0]?.registrationId).toBe('NCT01234567');
+  });
+
+  test('no_text_layer の PDF は txt を保存せず text_ref = null / 登録番号なしで登録する（※Q7）', async () => {
     mockedExtract.mockResolvedValue({
       pages: [],
       textStatus: 'no_text_layer',
@@ -135,6 +168,7 @@ describe('importDocuments', () => {
       pageCount: 5,
       charCount: 0,
     });
+    expect(result.importedStudies[0]?.registrationId).toBeNull();
   });
 
   test('コピー失敗・抽出失敗のファイルは飛ばして残りを続行する', async () => {
@@ -165,7 +199,9 @@ describe('importDocuments', () => {
     ]);
     expect(result.imported).toHaveLength(1);
     expect(result.imported[0]?.filename).toBe('c.pdf');
+    expect(result.importedStudies).toHaveLength(1);
     expect(mockedAppend).toHaveBeenCalledTimes(1);
+    expect(mockedAppendStudies).toHaveBeenCalledTimes(1);
   });
 
   test('Error 以外の throw も文字列化して failure に残す', async () => {
@@ -178,21 +214,23 @@ describe('importDocuments', () => {
       { sourceFileId: 'src-1', filename: 'a.pdf', stage: 'copy', detail: 'quota exceeded' },
     ]);
     expect(result.imported).toEqual([]);
+    expect(result.importedStudies).toEqual([]);
   });
 
-  test('Documents 追記が失敗したら成功済みファイルも save 失敗として返す', async () => {
+  test('Studies / Documents 追記が失敗したら成功済みファイルも save 失敗として返す', async () => {
     mockedAppend.mockRejectedValue(new Error('sheets down'));
     const result = await importDocuments(
       baseParams([{ sourceFileId: 'src-1', filename: 'a.pdf' }]),
       makeDeps(),
     );
     expect(result.imported).toEqual([]);
+    expect(result.importedStudies).toEqual([]);
     expect(result.failures).toEqual([
       { sourceFileId: 'src-1', filename: 'a.pdf', stage: 'save', detail: 'sheets down' },
     ]);
   });
 
-  test('全ファイル失敗なら Documents 追記を呼ばない。既定の uuid / now でも動く', async () => {
+  test('全ファイル失敗なら Studies / Documents 追記を呼ばない。既定の uuid / now でも動く', async () => {
     mockedCopy.mockRejectedValue(new Error('boom'));
     const failedAll = await importDocuments(
       baseParams([{ sourceFileId: 'src-1', filename: 'a.pdf' }]),
@@ -200,6 +238,7 @@ describe('importDocuments', () => {
     );
     expect(failedAll.imported).toEqual([]);
     expect(mockedAppend).not.toHaveBeenCalled();
+    expect(mockedAppendStudies).not.toHaveBeenCalled();
 
     mockedCopy.mockResolvedValue({ id: 'copy-1', webViewLink: 'w' });
     const ok = await importDocuments(baseParams([{ sourceFileId: 'src-1', filename: 'a.pdf' }]), {
@@ -207,6 +246,7 @@ describe('importDocuments', () => {
       loadPdf: jest.fn(),
     });
     expect(ok.imported[0]?.documentId).toMatch(/^[0-9a-f]{8}-/);
+    expect(ok.imported[0]?.studyId).toMatch(/^[0-9a-f]{8}-/);
     expect(ok.imported[0]?.importedAt).not.toBe('');
   });
 });

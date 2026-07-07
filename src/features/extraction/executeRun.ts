@@ -63,7 +63,7 @@ export interface RunProgress {
 }
 
 export interface ExecuteRunDeps {
-  /** withRetry / withLogging（purpose: extract_document）で包んだ provider を注入する */
+  /** withRetry / withLogging（purpose: extract_study）で包んだ provider を注入する */
   provider: LLMProvider;
   /** extracted_texts/{document_id}.txt を読み、ページ別テキストへ復元する */
   loadDocumentPages: (documentId: string) => Promise<ExtractDataPage[]>;
@@ -122,6 +122,7 @@ function toDetail(err: unknown): string {
 function buildEvidenceRow(
   item: ValidatedAiItem,
   runId: string,
+  studyId: string,
   documentId: string,
   normalizedPages: NormalizedPage[],
   uuid: () => string,
@@ -133,6 +134,7 @@ function buildEvidenceRow(
   return {
     evidenceId: uuid(),
     runId,
+    studyId,
     documentId,
     fieldId: item.fieldId,
     entityKey: item.entityKey,
@@ -263,7 +265,7 @@ export async function executeRun(
     }
 
     const rows = validated.items.map((item) =>
-      buildEvidenceRow(item, input.runId, batch.documentId, loaded.normalizedPages, uuid),
+      buildEvidenceRow(item, input.runId, batch.studyId, batch.documentId, loaded.normalizedPages, uuid),
     );
     if (rows.length > 0) {
       try {

@@ -277,6 +277,101 @@
   color: var(--color-text-muted);
 }
 
+/* #/documents（S3）study 単位グループ + 統合 UI（v0.10・requirements.md §4.5） */
+.documents__list {
+  margin-top: 12px;
+  display: grid;
+  gap: 16px;
+}
+
+.documents__list-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.documents__study-group {
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.documents__study-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.documents__study-field {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.documents__registration-input {
+  border: 1px solid transparent;
+  border-radius: 4px;
+  padding: 4px 6px;
+  font: inherit;
+  min-width: 140px;
+}
+
+.documents__registration-input:hover,
+.documents__registration-input:focus {
+  border-color: var(--color-border);
+  background: var(--color-bg);
+}
+
+.documents__docs-table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+.documents__docs-table th,
+.documents__docs-table td {
+  border: 1px solid var(--color-border);
+  padding: 6px 12px;
+  text-align: left;
+}
+
+/* 統合候補バナー */
+.documents__candidate {
+  border: 1px solid var(--color-warning-border);
+  background: var(--color-warning-bg);
+  border-radius: 8px;
+  padding: 12px;
+  margin-top: 12px;
+}
+
+.documents__candidate-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+/* 統合確認ダイアログ */
+.documents__merge-dialog {
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 16px;
+  margin-top: 12px;
+  display: grid;
+  gap: 8px;
+  max-width: 560px;
+}
+
+.documents__merge-warning {
+  color: var(--color-danger);
+  font-weight: 700;
+}
+
+.documents__merge-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
 /* #/protocol（S4）: 入力フォーム・読み取り専用サマリ（ui-states.md §3） */
 .protocol__form {
   display: grid;

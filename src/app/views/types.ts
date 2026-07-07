@@ -1,6 +1,7 @@
 // view が受け取る共通コンテキスト。view は render(state, ctx) の純粋関数のまま、
 // 副作用（サービス呼び出し）はコールバック経由で bootstrap へ委譲する（architecture.md §2.2）
 import type { Decision } from '../../domain/decision';
+import type { DocumentRole } from '../../domain/document';
 import type { ExportFormat } from '../../domain/exportLog';
 import type { ProtocolSubmitInput } from '../../features/protocol/submitInput';
 import type { SchemaPresetKind } from '../../features/schema/presets';
@@ -18,8 +19,28 @@ export interface DocumentsViewCallbacks {
   onImport(): void;
   /** 一覧の再読み込み（読込済みでも強制再取得） */
   onReload(): void;
-  /** study_label のインライン編集確定 */
-  onSaveStudyLabel(documentId: string, label: string): void;
+  /** study_label のインライン編集確定（Studies 行の上書き） */
+  onSaveStudyLabel(studyId: string, label: string): void;
+  /** registration_id のインライン編集確定（空は解除） */
+  onSaveRegistrationId(studyId: string, registrationId: string): void;
+  /** document_role のインライン編集確定（Documents 行の上書き） */
+  onSaveDocumentRole(documentId: string, role: DocumentRole): void;
+  /** 統合対象チェックボックスの切替 */
+  onToggleStudySelection(studyId: string, selected: boolean): void;
+  /** 選択中 study からの統合ダイアログを開く（2 件以上） */
+  onOpenMerge(): void;
+  /** 統合候補バナーからの統合ダイアログを開く */
+  onOpenMergeCandidate(studyIds: readonly string[]): void;
+  /** 統合候補を無視する（storage.local へ永続化） */
+  onIgnoreCandidate(studyIds: readonly string[]): void;
+  /** 統合ダイアログの study_label 入力 */
+  onUpdateMergeLabel(label: string): void;
+  /** 統合ダイアログの registration_id 入力 */
+  onUpdateMergeRegistration(registrationId: string): void;
+  /** 統合の確定（新 study_id 発行 + Documents 付け替え） */
+  onConfirmMerge(): void;
+  /** 統合ダイアログのキャンセル */
+  onCancelMerge(): void;
 }
 
 /** #/protocol（S4）のユーザー操作コールバック */

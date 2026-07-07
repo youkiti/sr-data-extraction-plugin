@@ -38,7 +38,7 @@ export function decisionToRow(decision: Decision): (string | number | null)[] {
   return [
     decision.decidedAt,
     decision.decidedBy,
-    decision.documentId,
+    decision.studyId,
     decision.fieldId,
     decision.entityKey,
     decision.annotator,
@@ -109,7 +109,7 @@ export async function readAllDecisions(
     return {
       decidedAt: cellAt(raw, 0),
       decidedBy: cellAt(raw, 1),
-      documentId: cellAt(raw, 2),
+      studyId: cellAt(raw, 2),
       fieldId: cellAt(raw, 3),
       entityKey: cellAt(raw, 4),
       annotator: cellAt(raw, 5),
@@ -123,13 +123,13 @@ export async function readAllDecisions(
 }
 
 /**
- * 指定 document の判定履歴を読み込む（S6 / S8 検証画面の初期状態の素材）
+ * 指定 study の判定履歴を読み込む（S6 / S8 検証画面の初期状態の素材）
  */
-export async function readDecisionsByDocument(
+export async function readDecisionsByStudy(
   spreadsheetId: string,
-  documentId: string,
+  studyId: string,
   deps: GoogleApiDeps,
 ): Promise<Decision[]> {
   const all = await readAllDecisions(spreadsheetId, deps);
-  return all.filter((decision) => decision.documentId === documentId);
+  return all.filter((decision) => decision.studyId === studyId);
 }

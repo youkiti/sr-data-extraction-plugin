@@ -1,5 +1,5 @@
 import type { Decision } from '../../../../src/domain/decision';
-import type { DocumentRecord } from '../../../../src/domain/document';
+import type { StudyRecord } from '../../../../src/domain/study';
 import type { Evidence } from '../../../../src/domain/evidence';
 import type { ExtractionRun } from '../../../../src/domain/extractionRun';
 import type { SchemaField } from '../../../../src/domain/schemaField';
@@ -15,20 +15,12 @@ const NA = AUDIT_MISSING_TOKEN;
 /** 構造的欠損の Evidence 列ブロック（8 列） */
 const NA_EVIDENCE = [NA, NA, NA, NA, NA, NA, NA, NA];
 
-const doc = (documentId: string, studyLabel: string): DocumentRecord => ({
-  documentId,
+const study = (studyId: string, studyLabel: string): StudyRecord => ({
+  studyId,
   studyLabel,
-  driveFileId: 'drive-1',
-  sourceFileId: 'src-1',
-  filename: `${documentId}.pdf`,
-  pmid: null,
-  doi: null,
-  textRef: 'https://example.com/text',
-  textStatus: 'ok',
-  pageCount: 10,
-  charCount: 1000,
-  importedAt: '2026-07-02T00:00:00Z',
-  importedBy: 'a@example.com',
+  registrationId: null,
+  createdAt: '2026-07-02T00:00:00Z',
+  createdBy: 'a@example.com',
   note: null,
 });
 
@@ -58,7 +50,7 @@ const run = (
   runId,
   runType: 'full',
   schemaVersion,
-  documentIds: ['d1'],
+  studyIds: ['d1'],
   provider: 'gemini',
   requestedModel: 'gemini-x',
   modelVersion: null,
@@ -74,14 +66,17 @@ const run = (
 const evidence = (
   evidenceId: string,
   runId: string,
-  documentId: string,
+  studyId: string,
   fieldId: string,
   entityKey: string,
   overrides: Partial<Evidence> = {},
 ): Evidence => ({
   evidenceId,
   runId,
-  documentId,
+  studyId,
+  // quote の出所文書。audit の document_id 列はこの Evidence.documentId 由来（v0.10）。
+  // study_id と別値にして「列が Evidence 由来である」ことを検証できるようにする
+  documentId: `${studyId}-doc`,
   fieldId,
   entityKey,
   value: '120',
@@ -94,7 +89,7 @@ const evidence = (
 });
 
 const decision = (
-  documentId: string,
+  studyId: string,
   fieldId: string,
   entityKey: string,
   action: Decision['action'],
@@ -103,7 +98,7 @@ const decision = (
 ): Decision => ({
   decidedAt,
   decidedBy: 'a@example.com',
-  documentId,
+  studyId,
   fieldId,
   entityKey,
   annotator: 'a@example.com',
@@ -129,7 +124,7 @@ const dataRows = (csv: string): string[][] =>
 describe('buildAuditCsv', () => {
   test('判定履歴（undo 含む）全行に schema_version 一致 run の Evidence を添付し、seq を振る', () => {
     // シナリオ: v1 で accept → undo → edit、スキーマ改訂後 v2 で accept
-    const documents = [doc('d1', 'Tanaka 2023')];
+    const studies = [study('d1', 'Tanaka 2023')];
     const fields = [field('f1', 'total_n', 1)];
     const runs = [run('run-1', 1, '2026-07-01T00:00:00Z'), run('run-2', 2, '2026-07-02T00:00:00Z')];
     const evidences = [
@@ -149,7 +144,7 @@ describe('buildAuditCsv', () => {
         note: 'Table 2 と本文で不一致、Table 2 採用',
       }),
     ];
-    const result = buildAuditCsv(documents, decisions, evidences, runs, fields);
+    const result = buildAuditCsv(studies, decisions, evidences, runs, fields);
     const rows = dataRows(result.csv);
     expect(result.csv.startsWith(`${CSV_BOM}${headerLine}\r\n`)).toBe(true);
     expect(rows).toHaveLength(4);
@@ -158,24 +153,26 @@ describe('buildAuditCsv', () => {
     expect(rows.map((row) => row[17])).toEqual(['accept', 'undo', 'edit', 'accept']);
     // v1 の判定 3 行には run-1 の Evidence、v2 の判定には run-2 の Evidence が付く
     expect(rows.map((row) => row[9])).toEqual(['e1', 'e1', 'e1', 'e2']);
+    // document_id 列は添付 Evidence.documentId 由来（study_id ではない）
+    expect(rows.map((row) => row[1])).toEqual(['d1-doc', 'd1-doc', 'd1-doc', 'd1-doc']);
     expect(rows[3]?.[5]).toBe('2'); // schema_version は判定行のもの
     expect(rows[2]?.[21]).toBe('Table 2 と本文で不一致、Table 2 採用');
     expect(result.undecidedCellCount).toBe(0);
     expect(result.droppedRowCount).toBe(0);
-    expect(result.documentCount).toBe(1);
+    expect(result.studyCount).toBe(1);
   });
 
-  test('Evidence も判定もない document は documentCount に数えない', () => {
-    const documents = [doc('d1', 'Tanaka 2023'), doc('d2', 'Suzuki 2024')];
+  test('Evidence も判定もない study は studyCount に数えない', () => {
+    const studies = [study('d1', 'Tanaka 2023'), study('d2', 'Suzuki 2024')];
     const fields = [field('f1', 'total_n', 1)];
     const runs = [run('run-1', 1, '2026-07-01T00:00:00Z')];
     const evidences = [evidence('e1', 'run-1', 'd1', 'f1', '-')];
-    const result = buildAuditCsv(documents, [], evidences, runs, fields);
-    expect(result.documentCount).toBe(1);
+    const result = buildAuditCsv(studies, [], evidences, runs, fields);
+    expect(result.studyCount).toBe(1);
   });
 
   test('判定 0 件のセルは最新 run の代表 Evidence でプレースホルダ 1 行を出す', () => {
-    const documents = [doc('d1', 'Tanaka 2023')];
+    const studies = [study('d1', 'Tanaka 2023')];
     const fields = [field('f1', 'blinding', 1)];
     const runs = [run('run-1', 1, '2026-07-01T00:00:00Z'), run('run-2', 1, '2026-07-02T00:00:00Z')];
     // 最新 run の Evidence を先頭に置く（後続の旧 Evidence が代表を上書きしないことの検証）
@@ -183,10 +180,11 @@ describe('buildAuditCsv', () => {
       evidence('e-new', 'run-2', 'd1', 'f1', '-', { value: 'double-blind' }),
       evidence('e-old', 'run-1', 'd1', 'f1', '-'),
     ];
-    const result = buildAuditCsv(documents, [], evidences, runs, fields);
+    const result = buildAuditCsv(studies, [], evidences, runs, fields);
     const rows = dataRows(result.csv);
     expect(rows).toHaveLength(1);
     expect(rows[0]?.[9]).toBe('e-new'); // 旧 run の未判定 Evidence は出さない（結合規則 3）
+    expect(rows[0]?.[1]).toBe('d1-doc'); // document_id 列は代表 Evidence.documentId 由来
     expect(rows[0]?.[5]).toBe('1'); // schema_version は代表 Evidence の run から
     expect(rows[0]?.[6]).toBe(NA); // annotator が構造的欠損 = 未検証の明示
     expect(rows[0]?.slice(16)).toEqual([NA, NA, NA, NA, NA, NA]); // 判定列ブロックも構造的欠損
@@ -194,7 +192,7 @@ describe('buildAuditCsv', () => {
   });
 
   test('同一 schema_version の run が複数あるとき started_at 最新の Evidence を添付する', () => {
-    const documents = [doc('d1', 'Tanaka 2023')];
+    const studies = [study('d1', 'Tanaka 2023')];
     const fields = [field('f1', 'total_n', 1)];
     const runs = [
       run('run-1', 1, '2026-07-01T00:00:00Z'),
@@ -205,12 +203,12 @@ describe('buildAuditCsv', () => {
       evidence('e-retry', 'run-retry', 'd1', 'f1', '-'),
     ];
     const decisions = [decision('d1', 'f1', '-', 'accept', '2026-07-01T13:00:00Z')];
-    const result = buildAuditCsv(documents, decisions, evidences, runs, fields);
+    const result = buildAuditCsv(studies, decisions, evidences, runs, fields);
     expect(dataRows(result.csv)[0]?.[9]).toBe('e-retry');
   });
 
   test('Evidence 欠損は正常: 独立抽出行への判定・schema_version 不一致は Evidence 列空', () => {
-    const documents = [doc('d1', 'Tanaka 2023')];
+    const studies = [study('d1', 'Tanaka 2023')];
     const fields = [field('f1', 'total_n', 1), field('f2', 'country', 2)];
     const runs = [run('run-1', 1, '2026-07-01T00:00:00Z')];
     // f1 には v1 の Evidence があるが判定は v2（不一致）、f2 は Evidence なし
@@ -223,16 +221,18 @@ describe('buildAuditCsv', () => {
         annotatorType: 'human_independent',
       }),
     ];
-    const result = buildAuditCsv(documents, decisions, evidences, runs, fields);
+    const result = buildAuditCsv(studies, decisions, evidences, runs, fields);
     const rows = dataRows(result.csv);
     // f1 セルには判定があるためプレースホルダは出ない（v1 Evidence は添付されず落ちる）→ 判定 2 行のみ
     expect(rows).toHaveLength(2);
     expect(rows.map((row) => row.slice(8, 16))).toEqual([NA_EVIDENCE, NA_EVIDENCE]);
+    // 添付 Evidence がない判定行は document_id 列も構造的欠損
+    expect(rows.map((row) => row[1])).toEqual([NA, NA]);
     expect(result.undecidedCellCount).toBe(0);
   });
 
   test('run 不明の Evidence は添付候補外、プレースホルダでは schema_version 空で出す', () => {
-    const documents = [doc('d1', 'Tanaka 2023')];
+    const studies = [study('d1', 'Tanaka 2023')];
     const fields = [field('f1', 'total_n', 1), field('f2', 'country', 2)];
     const runs = [run('run-null', 1, null)];
     const evidences = [
@@ -249,10 +249,12 @@ describe('buildAuditCsv', () => {
       }),
     ];
     const decisions = [decision('d1', 'f1', '-', 'accept', '2026-07-01T10:00:00Z')];
-    const result = buildAuditCsv(documents, decisions, evidences, runs, fields);
+    const result = buildAuditCsv(studies, decisions, evidences, runs, fields);
     const rows = dataRows(result.csv);
     expect(rows).toHaveLength(2);
     expect(rows[0]?.slice(8, 16)).toEqual(NA_EVIDENCE); // f1 判定行
+    expect(rows[0]?.[1]).toBe(NA); // 添付なし判定行の document_id は構造的欠損
+    expect(rows[1]?.[1]).toBe('d1-doc'); // プレースホルダは代表 Evidence.documentId
     // f2 プレースホルダ: Evidence は出すが run 由来の schema_version は不明 → 構造的欠損
     expect(rows[1]?.[5]).toBe(NA);
     expect(rows[1]?.[9]).toBe('e-orphan-2');
@@ -263,31 +265,31 @@ describe('buildAuditCsv', () => {
   });
 
   test('started_at 未記録の run は最古扱いで代表に選ばれない', () => {
-    const documents = [doc('d1', 'Tanaka 2023')];
+    const studies = [study('d1', 'Tanaka 2023')];
     const fields = [field('f1', 'total_n', 1)];
     const runs = [run('run-null', 1, null), run('run-1', 1, '2026-07-01T00:00:00Z')];
     const evidences = [
       evidence('e-null', 'run-null', 'd1', 'f1', '-'),
       evidence('e1', 'run-1', 'd1', 'f1', '-'),
     ];
-    const result = buildAuditCsv(documents, [], evidences, runs, fields);
+    const result = buildAuditCsv(studies, [], evidences, runs, fields);
     expect(dataRows(result.csv)[0]?.[9]).toBe('e1');
   });
 
   test('field_id が SchemaFields にない判定行・プレースホルダ行は除外して数える', () => {
-    const documents = [doc('d1', 'Tanaka 2023')];
+    const studies = [study('d1', 'Tanaka 2023')];
     const fields = [field('f1', 'total_n', 1)];
     const runs = [run('run-1', 1, '2026-07-01T00:00:00Z')];
     const evidences = [evidence('e1', 'run-1', 'd1', 'f-unknown-2', '-')];
     const decisions = [decision('d1', 'f-unknown', '-', 'accept', '2026-07-01T10:00:00Z')];
-    const result = buildAuditCsv(documents, decisions, evidences, runs, fields);
+    const result = buildAuditCsv(studies, decisions, evidences, runs, fields);
     expect(dataRows(result.csv)).toHaveLength(0);
     expect(result.droppedRowCount).toBe(2);
     expect(result.undecidedCellCount).toBe(0);
   });
 
   test('entity_key → field_index → annotator 順に並び、decided_at 同時刻は追記順を保つ', () => {
-    const documents = [doc('d1', 'Tanaka 2023')];
+    const studies = [study('d1', 'Tanaka 2023')];
     const fields = [field('f1', 'group_n', 1), field('f2', 'event_count', 2)];
     const runs = [run('run-1', 1, '2026-07-01T00:00:00Z')];
     const evidences = [evidence('e1', 'run-1', 'd1', 'f2', 'arm:2')]; // 未判定 → プレースホルダ
@@ -302,7 +304,7 @@ describe('buildAuditCsv', () => {
         annotator: 'b@example.com',
       }),
     ];
-    const result = buildAuditCsv(documents, decisions, evidences, runs, fields);
+    const result = buildAuditCsv(studies, decisions, evidences, runs, fields);
     const rows = dataRows(result.csv);
     // [entity_key, field_name, annotator, decision_seq]
     expect(rows.map((row) => [row[2], row[4], row[6], row[16]])).toEqual([
@@ -318,8 +320,8 @@ describe('buildAuditCsv', () => {
     expect(rows[1]?.[18]).toBe('second');
   });
 
-  test('document は取り込み順を保ち、他 document の Evidence / Decisions は混ざらない', () => {
-    const documents = [doc('d2', 'Suzuki 2024'), doc('d1', 'Tanaka 2023')];
+  test('study は取り込み順を保ち、他 study の Evidence / Decisions は混ざらない', () => {
+    const studies = [study('d2', 'Suzuki 2024'), study('d1', 'Tanaka 2023')];
     const fields = [field('f1', 'total_n', 1)];
     const runs = [run('run-1', 1, '2026-07-01T00:00:00Z')];
     const evidences = [
@@ -331,16 +333,17 @@ describe('buildAuditCsv', () => {
       decision('d1', 'f1', '-', 'accept', '2026-07-01T10:00:00Z'),
       decision('d-other', 'f1', '-', 'accept', '2026-07-01T10:00:00Z'),
     ];
-    const result = buildAuditCsv(documents, decisions, evidences, runs, fields);
+    const result = buildAuditCsv(studies, decisions, evidences, runs, fields);
     const rows = dataRows(result.csv);
     expect(rows.map((row) => row[0])).toEqual(['Suzuki 2024', 'Tanaka 2023']);
+    expect(rows.map((row) => row[1])).toEqual(['d2-doc', 'd1-doc']); // document_id は各 study の Evidence 由来
     expect(rows[0]?.[17]).toBe(NA); // d2 は未判定プレースホルダ
     expect(rows[1]?.[17]).toBe('accept');
     expect(result.undecidedCellCount).toBe(1);
   });
 
   test('データが空なら ヘッダーのみの CSV を返す', () => {
-    const result = buildAuditCsv([doc('d1', 'Tanaka 2023')], [], [], [], []);
+    const result = buildAuditCsv([study('d1', 'Tanaka 2023')], [], [], [], []);
     expect(result.csv).toBe(`${CSV_BOM}${headerLine}\r\n`);
     expect(result.undecidedCellCount).toBe(0);
     expect(result.droppedRowCount).toBe(0);

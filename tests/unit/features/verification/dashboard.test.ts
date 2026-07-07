@@ -12,7 +12,8 @@ const ME = 'me@example.com';
 function makeDocument(overrides: Partial<DocumentRecord> = {}): DocumentRecord {
   return {
     documentId: 'doc-1',
-    studyLabel: 'Smith 2020',
+    studyId: 'study-1',
+    documentRole: 'article',
     driveFileId: 'drive-1',
     sourceFileId: 'src-1',
     filename: 'smith2020.pdf',
@@ -54,6 +55,7 @@ function makeEvidence(overrides: Partial<Evidence> = {}): Evidence {
   return {
     evidenceId: 'ev-1',
     runId: 'run-1',
+    studyId: 'study-1',
     documentId: 'doc-1',
     fieldId: 'f-total',
     entityKey: '-',
@@ -71,7 +73,7 @@ function makeDecision(overrides: Partial<Decision> = {}): Decision {
   return {
     decidedAt: 't1',
     decidedBy: ME,
-    documentId: 'doc-1',
+    studyId: 'study-1',
     fieldId: 'f-total',
     entityKey: '-',
     annotator: ME,
@@ -99,6 +101,7 @@ const FIELDS: SchemaField[] = [
 function makeInput(overrides: Partial<DashboardDocumentInput> = {}): DashboardDocumentInput {
   return {
     document: makeDocument(),
+    studyLabel: 'Smith 2020',
     fields: FIELDS,
     evidence: [
       makeEvidence(),
@@ -183,7 +186,8 @@ describe('buildDashboard', () => {
 
   test('スキーマが異なる document 間では section の和集合を取り、無い section は null', () => {
     const doc2 = makeInput({
-      document: makeDocument({ documentId: 'doc-2', studyLabel: 'Jones 2021' }),
+      document: makeDocument({ documentId: 'doc-2', studyId: 'study-2' }),
+      studyLabel: 'Jones 2021',
       fields: [
         makeField({ fieldId: 'f-design', section: 'design', fieldName: 'design' }),
         makeField({ fieldId: 'f-country', fieldIndex: 2, section: 'identification', fieldName: 'country' }),

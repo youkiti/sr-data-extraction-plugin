@@ -79,7 +79,7 @@ function renderDraftForm(state: AppState, ctx: ViewContext): HTMLElement {
       checkbox.addEventListener('change', () =>
         ctx.schema.onToggleSample(doc.documentId, checkbox.checked),
       );
-      const labelChildren: (HTMLElement | string)[] = [checkbox, doc.studyLabel];
+      const labelChildren: (HTMLElement | string)[] = [checkbox, doc.filename];
       if (doc.textRef === null) {
         labelChildren.push(
           el('small', { className: 'schema__sample-note', text: 'テキスト層なしのため選択不可' }),

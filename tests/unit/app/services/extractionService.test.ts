@@ -31,7 +31,8 @@ const GOOGLE: GoogleApiDeps = {
 function makeDocument(overrides: Partial<DocumentRecord> = {}): DocumentRecord {
   return {
     documentId: 'doc-1',
-    studyLabel: 'Smith 2020',
+    studyId: 'study-1',
+    documentRole: 'article',
     driveFileId: 'drive-1',
     sourceFileId: 'src-1',
     filename: 'smith2020.pdf',
@@ -136,7 +137,7 @@ describe('runExtraction', () => {
       runId: 'u1', // 最初の uuid が run_id
       runType: 'full',
       schemaVersion: 2,
-      documentIds: ['doc-1'],
+      studyIds: ['study-1'],
       provider: 'gemini',
       requestedModel: 'gemini-2.5-flash',
       modelVersion: 'gemini-2.5-flash-001',
@@ -183,7 +184,7 @@ describe('runExtraction', () => {
       'sid',
       [
         expect.objectContaining({
-          documentId: 'doc-1',
+          studyId: 'study-1',
           annotator: 'ai',
           runId: 'u1',
           values: { sample_size_total: '120' },
@@ -221,7 +222,7 @@ describe('runExtraction', () => {
     expect(entry).toMatchObject({
       provider: 'gemini',
       model: 'gemini-2.5-flash',
-      purpose: 'extract_document',
+      purpose: 'extract_study',
       tokensIn: 1000,
       tokensOut: 200,
       error: null,

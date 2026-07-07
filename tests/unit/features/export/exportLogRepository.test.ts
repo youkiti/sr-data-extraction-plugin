@@ -9,7 +9,7 @@ function makeEntry(overrides: Partial<ExportLogEntry> = {}): ExportLogEntry {
     exportId: 'exp-1',
     format: 'study_wide',
     schemaVersion: 2,
-    documentCount: 3,
+    studyCount: 3,
     fileRef: 'https://drive.google.com/file/d/x/view',
     exportedAt: '2026-07-03T00:00:00.000Z',
     exportedBy: 'me@example.com',

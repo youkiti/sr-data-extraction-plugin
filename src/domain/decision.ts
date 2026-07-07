@@ -8,7 +8,7 @@ export interface Decision {
   decidedAt: string;
   /** 判定操作を行った人間の email */
   decidedBy: string;
-  documentId: string;
+  studyId: string;
   fieldId: string;
   entityKey: string;
   /**

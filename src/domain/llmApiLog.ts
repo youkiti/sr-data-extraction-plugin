@@ -7,7 +7,7 @@ export type LlmProviderId = 'gemini' | 'openrouter';
 export type LlmPurpose =
   | 'draft_schema'
   | 'suggest_study_label'
-  | 'extract_document'
+  | 'extract_study'
   | 'relocate_quote'
   | 'other';
 

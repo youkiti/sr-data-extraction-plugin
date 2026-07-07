@@ -29,7 +29,21 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<ExtractViewCallba
   return {
     ctx: {
       home: { onReload: jest.fn() },
-      documents: { onImport: jest.fn(), onReload: jest.fn(), onSaveStudyLabel: jest.fn() },
+      documents: {
+        onImport: jest.fn(),
+        onReload: jest.fn(),
+        onSaveStudyLabel: jest.fn(),
+        onSaveRegistrationId: jest.fn(),
+        onSaveDocumentRole: jest.fn(),
+        onToggleStudySelection: jest.fn(),
+        onOpenMerge: jest.fn(),
+        onOpenMergeCandidate: jest.fn(),
+        onIgnoreCandidate: jest.fn(),
+        onUpdateMergeLabel: jest.fn(),
+        onUpdateMergeRegistration: jest.fn(),
+        onConfirmMerge: jest.fn(),
+        onCancelMerge: jest.fn(),
+      },
       protocol: {
         onSubmit: jest.fn(),
         onStartEdit: jest.fn(),
@@ -85,7 +99,8 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<ExtractViewCallba
 function makeDocument(overrides: Partial<DocumentRecord> = {}): DocumentRecord {
   return {
     documentId: 'doc-1',
-    studyLabel: 'Smith 2020',
+    studyId: 'study-1',
+    documentRole: 'article',
     driveFileId: 'drive-1',
     sourceFileId: 'src-1',
     filename: 'smith2020.pdf',
@@ -128,7 +143,7 @@ function makeRun(overrides: Partial<ExtractionRun> = {}): ExtractionRun {
     runId: 'run-1',
     runType: 'full',
     schemaVersion: 1,
-    documentIds: ['doc-1'],
+    studyIds: ['study-1'],
     provider: 'gemini',
     requestedModel: 'gemini-test',
     modelVersion: null,
@@ -437,13 +452,13 @@ describe('実行中', () => {
     // 全体の中の現在位置: 文献サマリ + 処理中の文献（i 本目 + 文献内バッチ進捗）
     expect(root.querySelector('#extract-doc-summary')?.textContent).toBe('文献: 完了 0 / 全 2 本');
     expect(root.querySelector('#extract-current-doc')?.textContent).toBe(
-      '処理中: Smith 2020（1 本目・バッチ 1/2）',
+      '処理中: smith2020.pdf（1 本目・バッチ 1/2）',
     );
 
     const rows = root.querySelectorAll('#extract-doc-list .extract__doc-row');
     expect(rows).toHaveLength(2);
     expect(rows[0]?.textContent).toContain('実行中');
-    expect(rows[0]?.textContent).toContain('Smith 2020'); // study_label 解決
+    expect(rows[0]?.textContent).toContain('smith2020.pdf'); // ファイル名で表示（study_label は Studies へ移設・v0.10）
     expect(rows[0]?.classList.contains('extract__doc-row--running')).toBe(true);
     expect(rows[0]?.querySelector('.extract__doc-batches')?.textContent).toBe('バッチ 1/2');
     expect(rows[1]?.textContent).toContain('待機中');
@@ -512,7 +527,7 @@ describe('実行中', () => {
     );
     expect(root.querySelector('.extract__doc-batches')).toBeNull();
     expect(root.querySelector('#extract-current-doc')?.textContent).toBe(
-      '処理中: Smith 2020（1 本目・バッチ 0/0）',
+      '処理中: smith2020.pdf（1 本目・バッチ 0/0）',
     );
   });
 });

@@ -15,12 +15,12 @@ import { readStudyDataSheet, upsertResultsDataRows, upsertStudyDataRows } from '
 import {
   appendArmStructureVersion,
   latestArmStructure,
-  readArmStructuresByDocument,
+  readArmStructuresByStudy,
   type ConfirmArmStructureInput,
 } from '../../features/verification/armStructureRepository';
 import {
   appendDecisionRows,
-  readDecisionsByDocument,
+  readDecisionsByStudy,
 } from '../../features/verification/decisionRepository';
 import type { VerificationData } from '../../features/verification/types';
 import { getFileBinary } from '../../lib/google/drive';
@@ -110,13 +110,13 @@ export async function loadVerificationBundle(
 ): Promise<VerificationBundle> {
   const { spreadsheetId, document } = input;
   const annotator = (await getCurrentUserEmail(deps.profile)) ?? '';
-  const decisions = await readDecisionsByDocument(spreadsheetId, document.documentId, deps.google);
+  const decisions = await readDecisionsByStudy(spreadsheetId, document.studyId, deps.google);
   const studySheet = await readStudyDataSheet(spreadsheetId, deps.google);
   const studyValues =
     studySheet.rows.find(
-      (row) => row.documentId === document.documentId && row.annotator === annotator,
+      (row) => row.studyId === document.studyId && row.annotator === annotator,
     )?.values ?? {};
-  const armRows = await readArmStructuresByDocument(spreadsheetId, document.documentId, deps.google);
+  const armRows = await readArmStructuresByStudy(spreadsheetId, document.studyId, deps.google);
   const armStructure = latestArmStructure(armRows, annotator);
 
   let pdf: PdfViewerDocument | null = null;
@@ -163,7 +163,7 @@ export async function saveDecisionWrite(
       spreadsheetId,
       [
         {
-          documentId: decision.documentId,
+          studyId: decision.studyId,
           annotator: decision.annotator,
           annotatorType: decision.annotatorType,
           schemaVersion: decision.schemaVersion,
@@ -180,7 +180,7 @@ export async function saveDecisionWrite(
       spreadsheetId,
       [
         {
-          documentId: decision.documentId,
+          studyId: decision.studyId,
           fieldId: decision.fieldId,
           annotator: decision.annotator,
           annotatorType: decision.annotatorType,

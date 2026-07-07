@@ -4,12 +4,9 @@
 // 実行 → 一部失敗（LLM 400）→ 再試行成功 → 完了までの本流を実弾で通す
 import { expect, test, type Page } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
+import { SHEET_HEADERS } from '../../src/domain/sheetsSchema';
 
-const RUNS_HEADERS = [
-  'run_id', 'run_type', 'schema_version', 'document_ids', 'provider', 'requested_model',
-  'model_version', 'input_mode', 'status', 'started_at', 'finished_at', 'tokens_in',
-  'tokens_out', 'cost_estimate',
-];
+const RUNS_HEADERS = [...SHEET_HEADERS.ExtractionRuns];
 
 const PROTOCOL_HEADERS = [
   'version', 'framework_type', 'research_question', 'inclusion_criteria', 'exclusion_criteria',
@@ -22,18 +19,15 @@ const PROTOCOL_ROW = [
   '2026-07-01T00:00:00Z', 'e2e@example.com',
 ];
 
-const STUDY_DATA_HEADERS = [
-  'document_id', 'annotator', 'annotator_type', 'schema_version', 'run_id', 'updated_at',
-];
+const STUDY_DATA_HEADERS = [...SHEET_HEADERS.StudyData];
 
-const RESULTS_DATA_HEADERS = [
-  'result_id', 'document_id', 'field_id', 'annotator', 'annotator_type', 'schema_version',
-  'entity_key', 'run_id', 'value', 'not_reported', 'updated_at',
-];
+const RESULTS_DATA_HEADERS = [...SHEET_HEADERS.ResultsData];
 
+// v0.10: 1 文書 = 1 study。document は study_id + document_role を持つ（study_label は Studies へ移設）
 const DOC_OK = {
   documentId: 'doc-1',
-  studyLabel: 'Smith 2020',
+  studyId: 'study-1',
+  documentRole: 'article',
   driveFileId: 'drive-1',
   sourceFileId: 'src-1',
   filename: 'smith2020.pdf',
@@ -51,7 +45,7 @@ const DOC_OK = {
 const DOC_FAIL = {
   ...DOC_OK,
   documentId: 'doc-2',
-  studyLabel: 'Jones 2021',
+  studyId: 'study-2',
   driveFileId: 'drive-2',
   filename: 'jones2021.pdf',
   textRef: 'https://drive.google.com/file/d/txt-2/view',
@@ -60,7 +54,7 @@ const DOC_FAIL = {
 const DOC_NO_TEXT = {
   ...DOC_OK,
   documentId: 'doc-3',
-  studyLabel: 'Scan 2019',
+  studyId: 'study-3',
   filename: 'scan.pdf',
   textRef: null,
   textStatus: 'no_text_layer',
@@ -180,10 +174,24 @@ async function initApp(page: Page, options: InitOptions = {}): Promise<void> {
         },
         documents: {
           records: documents,
+          studies: documents.map((doc) => ({
+            studyId: doc.studyId,
+            studyLabel: doc.filename,
+            registrationId: null,
+            createdAt: '2026-07-01T00:00:00Z',
+            createdBy: 'e2e@example.com',
+            note: null,
+          })),
+          extractedStudyIds: [],
+          ignoredCandidateKeys: [],
           loading: false,
           loadError: null,
           importing: false,
           importRows: [],
+          selectedStudyIds: [],
+          mergeDialog: null,
+          merging: false,
+          mergeError: null,
         },
         schema,
         extract,
@@ -210,9 +218,11 @@ test('未実行: 未抽出の既定選択 + 抽出済みバッジ + 中断バナ
         json: {
           values: [
             RUNS_HEADERS,
-            ['run-0', 'pilot', '1', 'doc-2', 'gemini', 'gemini-test', '', 'text_only', 'done',
+            // study_ids 列（4 列目）。study-2（doc-2）は完了 run で抽出済み。
+            // study-1（doc-1）は running 行のみの中断 run → 未抽出のまま
+            ['run-0', 'pilot', '1', 'study-2', 'gemini', 'gemini-test', '', 'text_only', 'done',
               't1', 't2', '', '', ''],
-            ['run-1', 'full', '1', 'doc-1', 'gemini', 'gemini-test', '', 'text_only', 'running',
+            ['run-1', 'full', '1', 'study-1', 'gemini', 'gemini-test', '', 'text_only', 'running',
               't3', '', '', '', ''],
           ],
         },
@@ -367,7 +377,7 @@ test('実行確認 → 一部失敗 → 再試行成功 → 完了（ExtractionR
   );
   const rows = page.locator('#extract-doc-list .extract__doc-row');
   await expect(rows.nth(0)).toContainText('完了');
-  await expect(rows.nth(0)).toContainText('Smith 2020');
+  await expect(rows.nth(0)).toContainText('smith2020.pdf');
   await expect(rows.nth(1)).toContainText('失敗');
   await expect(rows.nth(1)).toContainText('api_error');
   // 2 行プロトコル: run 1 回 = running 行 + 完了行の 2 追記

@@ -7,9 +7,18 @@ import { guardRoute } from './guards';
 import { showToast } from './ui/toast';
 import type { ViewContext } from './views/types';
 import {
+  cancelMerge,
+  confirmMerge,
+  ignoreCandidate,
   importFromPicker,
   loadDocuments,
+  openMergeCandidate,
+  openMergeDialog,
+  saveDocumentRole,
+  saveRegistrationId,
   saveStudyLabel,
+  toggleStudySelection,
+  updateMergeDialog,
   type DocumentsServiceDeps,
 } from './services/documentsService';
 import {
@@ -177,8 +186,38 @@ export async function bootstrapApp(
       onReload: () => {
         void loadDocuments(store, deps, { force: true });
       },
-      onSaveStudyLabel: (documentId, label) => {
-        void saveStudyLabel(store, deps, documentId, label);
+      onSaveStudyLabel: (studyId, label) => {
+        void saveStudyLabel(store, deps, studyId, label);
+      },
+      onSaveRegistrationId: (studyId, registrationId) => {
+        void saveRegistrationId(store, deps, studyId, registrationId);
+      },
+      onSaveDocumentRole: (documentId, role) => {
+        void saveDocumentRole(store, deps, documentId, role);
+      },
+      onToggleStudySelection: (studyId, selected) => {
+        toggleStudySelection(store, studyId, selected);
+      },
+      onOpenMerge: () => {
+        openMergeDialog(store);
+      },
+      onOpenMergeCandidate: (studyIds) => {
+        openMergeCandidate(store, studyIds);
+      },
+      onIgnoreCandidate: (studyIds) => {
+        void ignoreCandidate(store, deps, studyIds);
+      },
+      onUpdateMergeLabel: (label) => {
+        updateMergeDialog(store, { label });
+      },
+      onUpdateMergeRegistration: (registrationId) => {
+        updateMergeDialog(store, { registrationId });
+      },
+      onConfirmMerge: () => {
+        void confirmMerge(store, deps);
+      },
+      onCancelMerge: () => {
+        cancelMerge(store);
       },
     },
     protocol: {

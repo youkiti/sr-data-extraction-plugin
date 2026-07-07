@@ -25,7 +25,21 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<SchemaViewCallbac
   return {
     ctx: {
       home: { onReload: jest.fn() },
-      documents: { onImport: jest.fn(), onReload: jest.fn(), onSaveStudyLabel: jest.fn() },
+      documents: {
+        onImport: jest.fn(),
+        onReload: jest.fn(),
+        onSaveStudyLabel: jest.fn(),
+        onSaveRegistrationId: jest.fn(),
+        onSaveDocumentRole: jest.fn(),
+        onToggleStudySelection: jest.fn(),
+        onOpenMerge: jest.fn(),
+        onOpenMergeCandidate: jest.fn(),
+        onIgnoreCandidate: jest.fn(),
+        onUpdateMergeLabel: jest.fn(),
+        onUpdateMergeRegistration: jest.fn(),
+        onConfirmMerge: jest.fn(),
+        onCancelMerge: jest.fn(),
+      },
       protocol: {
         onSubmit: jest.fn(),
         onStartEdit: jest.fn(),
@@ -97,7 +111,8 @@ function makeState(
 function makeDocument(overrides: Partial<DocumentRecord> = {}): DocumentRecord {
   return {
     documentId: 'doc-1',
-    studyLabel: 'Smith 2020',
+    studyId: 'study-1',
+    documentRole: 'article',
     driveFileId: 'drive-1',
     sourceFileId: 'src-1',
     filename: 'smith2020.pdf',
@@ -210,7 +225,7 @@ describe('renderSchemaView', () => {
       const { ctx, callbacks } = makeCtx();
       const docs = [
         makeDocument(),
-        makeDocument({ documentId: 'doc-2', studyLabel: 'NoText 2021', textRef: null }),
+        makeDocument({ documentId: 'doc-2', studyId: 'study-2', textRef: null }),
       ];
       const view = renderSchemaView(
         makeState({ versions: [], selectedDocumentIds: ['doc-1'] }, { documents: docs }),

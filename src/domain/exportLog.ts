@@ -7,7 +7,8 @@ export interface ExportLogEntry {
   exportId: string;
   format: ExportFormat;
   schemaVersion: number;
-  documentCount: number;
+  /** CSV に行が出た study 数（v0.10 で document_count から改名） */
+  studyCount: number;
   /** Drive に保存した CSV の URL */
   fileRef: string;
   exportedAt: string;

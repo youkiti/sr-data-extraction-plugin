@@ -74,7 +74,7 @@ describe('withLogging', () => {
     };
     const provider = makeProvider(async () => response);
     const { deps, recorded } = makeDeps();
-    const logged = withLogging(provider, 'extract_document', deps);
+    const logged = withLogging(provider, 'extract_study', deps);
 
     const result = await logged.chat([{ role: 'user', content: 'q' }]);
     expect(result).toBe(response);
@@ -90,7 +90,7 @@ describe('withLogging', () => {
     expect(entry.logId).toBe('log-1');
     expect(entry.provider).toBe('gemini');
     expect(entry.model).toBe('gemini-2.5-pro');
-    expect(entry.purpose).toBe('extract_document');
+    expect(entry.purpose).toBe('extract_study');
     expect(entry.tokensIn).toBe(5);
     expect(entry.tokensOut).toBe(7);
     // gemini-2.5-pro: 入力 $1.25 / 出力 $10.00 per 1M → 5*1.25/1e6 + 7*10/1e6
@@ -105,7 +105,7 @@ describe('withLogging', () => {
   test('promptVersion を渡すと prompt payload に記録される（§4.3 プロンプト版数）', async () => {
     const provider = makeProvider(async () => ({ text: 'ok', tokensIn: 1, tokensOut: 1, raw: {} }));
     const { deps, recorded } = makeDeps();
-    const logged = withLogging(provider, 'extract_document', { ...deps, promptVersion: 3 });
+    const logged = withLogging(provider, 'extract_study', { ...deps, promptVersion: 3 });
     await logged.chat([{ role: 'user', content: 'q' }], { temperature: 0 });
     const promptUpload = JSON.parse(recorded.uploads[0]!.content);
     expect(promptUpload).toEqual({
@@ -129,7 +129,7 @@ describe('withLogging', () => {
       throw new LlmProviderError('boom', 'gemini', 503, 'overloaded');
     });
     const { deps, recorded } = makeDeps();
-    const logged = withLogging(provider, 'extract_document', deps);
+    const logged = withLogging(provider, 'extract_study', deps);
 
     await expect(logged.chat([{ role: 'user', content: 'q' }])).rejects.toBeInstanceOf(
       LlmProviderError,

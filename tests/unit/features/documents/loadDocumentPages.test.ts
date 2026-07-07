@@ -8,7 +8,8 @@ import {
 function makeDocument(overrides: Partial<DocumentRecord> = {}): DocumentRecord {
   return {
     documentId: 'doc-1',
-    studyLabel: 'Smith 2020',
+    studyId: 'study-1',
+    documentRole: 'article',
     driveFileId: 'drive-1',
     sourceFileId: 'src-1',
     filename: 'smith2020.pdf',
@@ -73,7 +74,7 @@ describe('makeLoadDocumentPages', () => {
     const load = makeLoadDocumentPages(
       [
         makeDocument(),
-        makeDocument({ documentId: 'doc-2', textRef: null, studyLabel: 'Scan 1999' }),
+        makeDocument({ documentId: 'doc-2', studyId: 'study-2', textRef: null }),
         makeDocument({ documentId: 'doc-3', textRef: 'https://drive.google.com/open?x=1' }),
       ],
       google,

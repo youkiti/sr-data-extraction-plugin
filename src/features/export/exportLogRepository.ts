@@ -12,7 +12,7 @@ export function exportLogToRow(entry: ExportLogEntry): (string | number)[] {
     entry.exportId,
     entry.format,
     entry.schemaVersion,
-    entry.documentCount,
+    entry.studyCount,
     entry.fileRef,
     entry.exportedAt,
     entry.exportedBy,

@@ -1,5 +1,5 @@
 // StudyData / ResultsData の annotator 行 I/O（requirements.md §3.2）。
-// - 更新キー: StudyData = document_id × annotator / ResultsData = document_id × annotator × entity_key × field_id
+// - 更新キー: StudyData = study_id × annotator / ResultsData = study_id × annotator × entity_key × field_id
 // - 書き込みは既存行を検索して上書き、なければ追記（annotator 行のみ上書き可。§3.1）
 // - 同一更新キーの重複行はバリデーション違反として throw（シート側・入力側とも）
 // - StudyData の値列は動的（entity_level = study 項目の field_name）。不足列はヘッダ末尾へ
@@ -105,7 +105,7 @@ async function fetchStudySheet(
   const rows = values.slice(1).map((raw, i) => {
     const context = `StudyData ${i + 2} 行目`;
     const row: StudyDataRow = {
-      documentId: cellAt(raw, 0),
+      studyId: cellAt(raw, 0),
       annotator: cellAt(raw, 1),
       annotatorType: parseAnnotatorType(cellAt(raw, 2), context),
       schemaVersion: parseSchemaVersion(cellAt(raw, 3), context),
@@ -134,10 +134,10 @@ export async function readStudyDataSheet(
 function indexStudyRows(snapshot: StudySheetSnapshot): Map<string, number> {
   const index = new Map<string, number>();
   snapshot.rows.forEach((row, i) => {
-    const key = keyOf(row.documentId, row.annotator);
+    const key = keyOf(row.studyId, row.annotator);
     if (index.has(key)) {
       throw new Error(
-        `StudyData に同一キーの行が複数あります（document_id=${row.documentId}, annotator=${row.annotator}）`,
+        `StudyData に同一キーの行が複数あります（study_id=${row.studyId}, annotator=${row.annotator}）`,
       );
     }
     index.set(key, i + 2);
@@ -151,7 +151,7 @@ function studyRowToSheetRow(
   fieldNames: readonly string[],
 ): (string | number | null)[] {
   return [
-    row.documentId,
+    row.studyId,
     row.annotator,
     row.annotatorType,
     row.schemaVersion,
@@ -163,7 +163,7 @@ function studyRowToSheetRow(
 
 /**
  * StudyData の annotator 行を upsert する。
- * 既存行（document_id × annotator 一致）は上書き、なければ追記。
+ * 既存行（study_id × annotator 一致）は上書き、なければ追記。
  * 行の values に「ヘッダに無い field_name」があればヘッダ末尾へ列を追加する（追加のみ）
  */
 export async function upsertStudyDataRows(
@@ -180,10 +180,10 @@ export async function upsertStudyDataRows(
   // 入力側の重複キーは呼び出し契約違反
   const inputKeys = new Set<string>();
   for (const row of rows) {
-    const key = keyOf(row.documentId, row.annotator);
+    const key = keyOf(row.studyId, row.annotator);
     if (inputKeys.has(key)) {
       throw new Error(
-        `upsertStudyDataRows の入力に同一キーの行が複数あります（document_id=${row.documentId}, annotator=${row.annotator}）`,
+        `upsertStudyDataRows の入力に同一キーの行が複数あります（study_id=${row.studyId}, annotator=${row.annotator}）`,
       );
     }
     inputKeys.add(key);
@@ -205,7 +205,7 @@ export async function upsertStudyDataRows(
   const appends: (string | number | null)[][] = [];
   for (const row of rows) {
     const sheetRow = studyRowToSheetRow(row, fieldNames);
-    const rowIndex = index.get(keyOf(row.documentId, row.annotator));
+    const rowIndex = index.get(keyOf(row.studyId, row.annotator));
     if (rowIndex === undefined) {
       appends.push(sheetRow);
     } else {
@@ -243,7 +243,7 @@ async function fetchResultsSheet(
     const context = `ResultsData ${i + 2} 行目`;
     return {
       resultId: cellAt(raw, 0),
-      documentId: cellAt(raw, 1),
+      studyId: cellAt(raw, 1),
       fieldId: cellAt(raw, 2),
       annotator: cellAt(raw, 3),
       annotatorType: parseAnnotatorType(cellAt(raw, 4), context),
@@ -267,18 +267,18 @@ export async function readResultsDataRows(
 }
 
 function resultsKeyOf(row: {
-  documentId: string;
+  studyId: string;
   annotator: string;
   entityKey: string;
   fieldId: string;
 }): string {
-  return keyOf(row.documentId, row.annotator, row.entityKey, row.fieldId);
+  return keyOf(row.studyId, row.annotator, row.entityKey, row.fieldId);
 }
 
 function resultsRowToSheetRow(row: ResultsDataRow): (string | number | boolean | null)[] {
   return [
     row.resultId,
-    row.documentId,
+    row.studyId,
     row.fieldId,
     row.annotator,
     row.annotatorType,
@@ -293,7 +293,7 @@ function resultsRowToSheetRow(row: ResultsDataRow): (string | number | boolean |
 
 /**
  * ResultsData の annotator 行を upsert する。
- * 既存行（document_id × annotator × entity_key × field_id 一致)は result_id を保持したまま上書き、
+ * 既存行（study_id × annotator × entity_key × field_id 一致)は result_id を保持したまま上書き、
  * なければ result_id を採番して追記する（result_id は行識別子であり更新キーではない。§3.2）
  */
 export async function upsertResultsDataRows(
@@ -313,7 +313,7 @@ export async function upsertResultsDataRows(
     const key = resultsKeyOf(row);
     if (index.has(key)) {
       throw new Error(
-        `ResultsData に同一キーの行が複数あります（document_id=${row.documentId}, annotator=${row.annotator}, entity_key=${row.entityKey}, field_id=${row.fieldId}）`,
+        `ResultsData に同一キーの行が複数あります（study_id=${row.studyId}, annotator=${row.annotator}, entity_key=${row.entityKey}, field_id=${row.fieldId}）`,
       );
     }
     index.set(key, { rowIndex: i + 2, resultId: row.resultId });
@@ -324,7 +324,7 @@ export async function upsertResultsDataRows(
     const key = resultsKeyOf(row);
     if (inputKeys.has(key)) {
       throw new Error(
-        `upsertResultsDataRows の入力に同一キーの行が複数あります（document_id=${row.documentId}, annotator=${row.annotator}, entity_key=${row.entityKey}, field_id=${row.fieldId}）`,
+        `upsertResultsDataRows の入力に同一キーの行が複数あります（study_id=${row.studyId}, annotator=${row.annotator}, entity_key=${row.entityKey}, field_id=${row.fieldId}）`,
       );
     }
     inputKeys.add(key);

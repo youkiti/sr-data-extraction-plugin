@@ -1,5 +1,5 @@
 // StudyData（wide）/ ResultsData（long）の annotator 行に対応する型（requirements.md §3.2）
-// 二重独立抽出（Q4）は「同一 document に対する annotator 行の複数化」で表現する
+// 二重独立抽出（Q4）は「同一 study に対する annotator 行の複数化」で表現する
 
 /** AI 抽出行の annotator 値（人間は email）。モデル・実行条件は run_id から ExtractionRuns を辿る */
 export const AI_ANNOTATOR = 'ai';
@@ -14,11 +14,11 @@ export type AnnotatorType = 'ai' | 'human_with_ai' | 'human_independent' | 'cons
 export const NOT_REPORTED_TOKEN = 'NR';
 
 /**
- * StudyData（wide・study レベル）の 1 行 = 1 document × 1 annotator。
- * 更新キーは document_id × annotator（同一キーの重複行はバリデーション違反）
+ * StudyData（wide・study レベル）の 1 行 = 1 study × 1 annotator。
+ * 更新キーは study_id × annotator（同一キーの重複行はバリデーション違反）
  */
 export interface StudyDataRow {
-  documentId: string;
+  studyId: string;
   /** email または AI_ANNOTATOR */
   annotator: string;
   annotatorType: AnnotatorType;
@@ -35,12 +35,12 @@ export interface StudyDataRow {
 
 /**
  * ResultsData（long・arm / outcome_result / RoB レベル）の
- * 1 行 = 1 document × 1 annotator × 1 entity_key × 1 field。
- * 更新キーは document_id × annotator × entity_key × field_id（result_id は行識別子であり更新キーではない）
+ * 1 行 = 1 study × 1 annotator × 1 entity_key × 1 field。
+ * 更新キーは study_id × annotator × entity_key × field_id（result_id は行識別子であり更新キーではない）
  */
 export interface ResultsDataRow {
   resultId: string;
-  documentId: string;
+  studyId: string;
   fieldId: string;
   annotator: string;
   annotatorType: AnnotatorType;
