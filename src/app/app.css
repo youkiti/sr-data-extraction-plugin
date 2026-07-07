@@ -1143,15 +1143,6 @@
   cursor: pointer;
 }
 
-.verify__cell--decided .verify__chip {
-  margin-left: 0;
-  flex-shrink: 0;
-}
-
-.verify__cell--decided .verify__cell-label {
-  font-weight: 400;
-}
-
 .verify__decided-heading {
   color: var(--color-text-muted);
   font-size: 12px;
@@ -1182,6 +1173,10 @@
   font-weight: 700;
 }
 
+.verify__cell--decided .verify__cell-label {
+  font-weight: 400;
+}
+
 .verify__cell-name {
   color: var(--color-text-muted);
   font-size: 12px;
@@ -1197,6 +1192,11 @@
   font-size: 12px;
   font-weight: 700;
   border: 1px solid transparent;
+}
+
+.verify__cell--decided .verify__chip {
+  margin-left: 0;
+  flex-shrink: 0;
 }
 
 .verify__chip--unverified {
