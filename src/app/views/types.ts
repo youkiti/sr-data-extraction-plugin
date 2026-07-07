@@ -67,6 +67,10 @@ export interface PilotViewCallbacks {
   onChangeModel(model: string): void;
   /** 「パイロット抽出を実行」 */
   onRun(): void;
+  /** 過去のパイロット結果を履歴から読み込む */
+  onSelectRun(runId: string): void;
+  /** 履歴の読み込み失敗時の再読み込み */
+  onReloadHistory(): void;
   /** 埋め込み検証 UI の対象文献切替 */
   onSelectVerifyDocument(documentId: string): void;
   /** 検証データ読み込み失敗時の再試行 */

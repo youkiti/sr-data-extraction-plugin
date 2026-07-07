@@ -213,6 +213,10 @@ async function initApp(
         selectionInitialized: true,
         selectedDocumentIds: ['doc-1'],
         model: 'gemini-test',
+        // 既定は履歴読込済み扱い（ExtractionRuns への実ネットワーク読込を抑止）。
+        // 履歴復元シナリオのテストだけが history: null を渡して実読込を通す
+        history: [],
+        historyInitialized: true,
         ...(options.pilot ?? {}),
       },
       documents: options.documents ?? [DOCUMENT, NO_TEXT_DOCUMENT],
@@ -353,6 +357,95 @@ test('実行 → 完了 → 埋め込み検証 UI（ハイライト + 判定 + D
   await expect
     .poll(() => appendUrls.filter((url) => url.includes('Decisions') && url.includes(':append')).length)
     .toBeGreaterThan(0);
+
+  const results = await new AxeBuilder({ page }).analyze();
+  expect(results.violations).toEqual([]);
+});
+
+test('履歴からの復元: 過去のパイロット結果を自動読込 → 検証 UI が戻る', async ({ page }) => {
+  const EXTRACTION_RUNS_HEADERS = [
+    'run_id', 'run_type', 'schema_version', 'document_ids', 'provider', 'requested_model',
+    'model_version', 'input_mode', 'status', 'started_at', 'finished_at', 'tokens_in',
+    'tokens_out', 'cost_estimate',
+  ];
+  const RUN_ROW = [
+    'run-1', 'pilot', '1', 'doc-1', 'gemini', 'gemini-test', 'gemini-test-001', 'text_only',
+    'done', '2026-07-05T00:00:00Z', '2026-07-05T00:01:00Z', '100', '20', '0.01',
+  ];
+  const EVIDENCE_HEADERS = [
+    'evidence_id', 'run_id', 'document_id', 'field_id', 'entity_key', 'value', 'not_reported',
+    'quote', 'page', 'confidence', 'anchor_status',
+  ];
+  const EVIDENCE_ROW = ['ev-1', 'run-1', 'doc-1', 'f-total', '-', '12', 'FALSE', QUOTE, '1', 'high', 'exact'];
+  const SCHEMA_FIELDS_HEADERS = [
+    'schema_version', 'field_id', 'field_index', 'section', 'field_name', 'field_label',
+    'entity_level', 'data_type', 'unit', 'allowed_values', 'required', 'extraction_instruction',
+    'example', 'ai_generated', 'note',
+  ];
+  const SCHEMA_FIELD_ROW = [
+    '1', 'f-total', '1', 'results', 'mortality_pct', '死亡率', 'study', 'text', '', '', 'TRUE',
+    'Report overall mortality.', '', 'FALSE', '',
+  ];
+  const ARM_STRUCTURES_HEADERS = [
+    'document_id', 'version', 'arm_key', 'arm_name', 'annotator', 'annotator_type',
+    'confirmed_at', 'note',
+  ];
+
+  await page.route('https://sheets.googleapis.com/**', async (route) => {
+    const url = decodeURIComponent(route.request().url());
+    if (route.request().method() !== 'GET') {
+      await route.fulfill({ json: {} });
+      return;
+    }
+    if (url.includes('ExtractionRuns')) {
+      await route.fulfill({ json: { values: [EXTRACTION_RUNS_HEADERS, RUN_ROW] } });
+    } else if (url.includes('Evidence')) {
+      await route.fulfill({ json: { values: [EVIDENCE_HEADERS, EVIDENCE_ROW] } });
+    } else if (url.includes('SchemaFields')) {
+      await route.fulfill({ json: { values: [SCHEMA_FIELDS_HEADERS, SCHEMA_FIELD_ROW] } });
+    } else if (url.includes('Decisions')) {
+      await route.fulfill({ json: { values: [DECISIONS_HEADERS] } });
+    } else if (url.includes('StudyData')) {
+      await route.fulfill({ json: { values: [STUDY_DATA_HEADERS] } });
+    } else if (url.includes('ResultsData')) {
+      await route.fulfill({ json: { values: [RESULTS_DATA_HEADERS] } });
+    } else if (url.includes('ArmStructures')) {
+      await route.fulfill({ json: { values: [ARM_STRUCTURES_HEADERS] } });
+    } else {
+      await route.fulfill({ json: { values: [] } });
+    }
+  });
+
+  await page.route('https://www.googleapis.com/**', async (route) => {
+    const url = decodeURIComponent(route.request().url());
+    if (url.includes('/drive/v3/files/txt-1?alt=media')) {
+      await route.fulfill({ contentType: 'text/plain', body: QUOTE });
+      return;
+    }
+    if (url.includes('/drive/v3/files/drive-1?alt=media')) {
+      await route.fulfill({ contentType: 'application/pdf', body: minimalPdf(QUOTE) });
+      return;
+    }
+    if (url.includes('/drive/v3/files?q=')) {
+      const name = /name = '([^']+)'/.exec(url)?.[1] ?? 'folder';
+      await route.fulfill({
+        json: { files: [{ id: `${name}-id`, webViewLink: `https://drive.example/${name}` }] },
+      });
+      return;
+    }
+    await route.fulfill({ json: {} });
+  });
+
+  // history: null で入場 → loadPilotHistory（readPilotRuns）→ 最新 run の自動読込を通す
+  await initApp(page, { pilot: { history: null, historyInitialized: false, run: null } });
+
+  // 履歴一覧 + 自動読込で結果サマリ・検証 UI が復元される（「最初から」にならない）
+  await expect(page.locator('#pilot-run-done')).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator('#pilot-history li')).toHaveCount(1);
+  await expect(page.locator('.pilot__history-current')).toHaveText('表示中');
+  await expect(page.locator('.verify__panes')).toBeVisible();
+  await expect(page.locator('.verify__cell-label')).toHaveText('死亡率');
+  await expect(page.locator('.pdf-viewer__hl--unverified')).toHaveCount(1, { timeout: 15_000 });
 
   const results = await new AxeBuilder({ page }).analyze();
   expect(results.violations).toEqual([]);

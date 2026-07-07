@@ -109,6 +109,17 @@ export interface PilotState {
   evidence: Evidence[] | null;
   batchFailures: BatchFailure[];
   rejectedCount: number;
+  /**
+   * これまでのパイロット run（完了行のみ・新しい順）。null = 未読込（画面表示時に読み込む）。
+   * 「履歴から選択」「既存データの自動読込」の素材（S6）
+   */
+  history: ExtractionRun[] | null;
+  historyLoading: boolean;
+  historyError: string | null;
+  /** 起動後に最新 run を一度だけ自動読込するためのフラグ（selectionInitialized と同じ運用） */
+  historyInitialized: boolean;
+  /** 履歴から読み込み中の run_id（履歴項目のスピナー + 二重起動防止）。null = なし */
+  loadingRunId: string | null;
   /** 埋め込み検証 UI で表示中の文献 */
   verifyDocumentId: string | null;
   verification: VerificationData | null;
@@ -301,6 +312,11 @@ export function createInitialState(): AppState {
       evidence: null,
       batchFailures: [],
       rejectedCount: 0,
+      history: null,
+      historyLoading: false,
+      historyError: null,
+      historyInitialized: false,
+      loadingRunId: null,
       verifyDocumentId: null,
       verification: null,
       verifyLoading: false,

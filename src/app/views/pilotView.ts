@@ -122,7 +122,12 @@ function renderSetup(state: AppState, ctx: ViewContext): HTMLElement {
   runButton.addEventListener('click', () => ctx.pilot.onRun());
 
   const children: HTMLElement[] = [
-    el('h3', { text: '対象文献（2〜3 本を推奨）' }),
+    el('h3', { text: '新規パイロット' }),
+    el('p', {
+      className: 'pilot__setup-lead',
+      text: '新しく 2〜3 本の論文でパイロット抽出を実行します。',
+    }),
+    el('h4', { text: '対象文献（2〜3 本を推奨）' }),
     renderDocumentSelector(state, ctx),
     el('div', { className: 'pilot__model' }, [
       el('label', { text: 'モデル: ', attributes: { for: 'pilot-model' } }),
@@ -180,6 +185,12 @@ function renderRunSummary(run: ExtractionRun, state: AppState): HTMLElement {
     );
     if (rejectedCount > 0) {
       failureItems.push(el('li', { text: `応答要素の破棄: ${rejectedCount} 件` }));
+    }
+    // 履歴から読み込んだ run は内訳を再構成できないため、空のときは案内を出す
+    if (failureItems.length === 0) {
+      failureItems.push(
+        el('li', { text: '失敗の内訳は保存されていません（履歴から読み込んだ実行）。' }),
+      );
     }
     children.push(
       el('div', { id: 'pilot-partial-failure', className: 'pilot__partial-failure' }, [
@@ -261,6 +272,93 @@ function renderVerification(run: ExtractionRun, state: AppState, ctx: ViewContex
   return el('section', { className: 'pilot__verify' }, children);
 }
 
+/** 完了 run の status を履歴・サマリで日本語表示するラベル */
+const RUN_STATUS_LABEL: Record<string, string> = {
+  done: '完了',
+  partial_failure: '一部失敗',
+};
+
+/**
+ * 過去のパイロット結果の履歴セクション（S6）。読み込み中 / 失敗（再読み込み）/ 一覧を出す。
+ * 履歴が空・未読込のときは null を返し、初回ユーザー（過去 run なし）には出さない
+ */
+function renderHistory(state: AppState, ctx: ViewContext): HTMLElement | null {
+  const { history, historyLoading, historyError, loadingRunId, run } = state.pilot;
+  if (historyLoading) {
+    return el('section', { className: 'pilot__history' }, [
+      el('h3', { text: '過去のパイロット結果' }),
+      el('p', {
+        id: 'pilot-history-loading',
+        text: '過去のパイロット結果を読み込んでいます…',
+      }),
+    ]);
+  }
+  if (historyError !== null) {
+    const reload = el('button', {
+      id: 'pilot-history-reload',
+      text: '再読み込み',
+      attributes: { type: 'button' },
+    });
+    reload.addEventListener('click', () => ctx.pilot.onReloadHistory());
+    return el('section', { className: 'pilot__history' }, [
+      el('h3', { text: '過去のパイロット結果' }),
+      el('p', {
+        id: 'pilot-history-error',
+        className: 'pilot__error',
+        attributes: { role: 'alert' },
+        text: `過去のパイロット結果を読み込めませんでした: ${historyError}`,
+      }),
+      reload,
+    ]);
+  }
+  if (history === null || history.length === 0) {
+    return null;
+  }
+  const items = history.map((entry) => {
+    const isCurrent = run?.runId === entry.runId;
+    const when = entry.finishedAt ?? entry.startedAt ?? '(日時不明)';
+    const statusLabel = RUN_STATUS_LABEL[entry.status] ?? entry.status;
+    const open = el(
+      'button',
+      { className: 'pilot__history-open', attributes: { type: 'button' } },
+      [
+        el('span', { className: 'pilot__history-when', text: when }),
+        el('span', { className: 'pilot__history-model', text: entry.requestedModel }),
+        el('span', {
+          className: 'pilot__history-docs',
+          text: `${entry.documentIds.length} 文献`,
+        }),
+        el('span', {
+          className: `pilot__history-status pilot__history-status--${entry.status}`,
+          text: statusLabel,
+        }),
+      ],
+    );
+    // 読み込み中はすべて無効化（二重起動防止）。表示中の run は選び直せない
+    open.disabled = loadingRunId !== null || isCurrent;
+    open.addEventListener('click', () => ctx.pilot.onSelectRun(entry.runId));
+    const parts: HTMLElement[] = [open];
+    if (isCurrent) {
+      parts.push(el('span', { className: 'pilot__history-current', text: '表示中' }));
+    } else if (loadingRunId === entry.runId) {
+      parts.push(el('span', { className: 'pilot__history-note', text: '読み込み中…' }));
+    }
+    const item = el('li', { className: 'pilot__history-item' }, parts);
+    if (isCurrent) {
+      item.setAttribute('aria-current', 'true');
+    }
+    return item;
+  });
+  return el('section', { className: 'pilot__history' }, [
+    el('h3', { text: '過去のパイロット結果' }),
+    el('p', {
+      className: 'pilot__history-lead',
+      text: '過去の結果を読み込んで検証を続けられます。新しく試すときは下の「新規パイロット」から実行してください。',
+    }),
+    el('ul', { id: 'pilot-history', className: 'pilot__history-list' }, items),
+  ]);
+}
+
 export function renderPilotView(state: AppState, ctx: ViewContext): HTMLElement {
   const children: HTMLElement[] = [
     el('h2', { text: 'パイロット抽出' }),
@@ -271,14 +369,20 @@ export function renderPilotView(state: AppState, ctx: ViewContext): HTMLElement 
   ];
   if (state.pilot.running) {
     children.push(renderProgress(state));
-  } else {
-    children.push(renderSetup(state, ctx));
+    return el('section', { className: 'view view--pilot' }, children);
   }
-  if (state.pilot.run !== null && !state.pilot.running) {
+  const history = renderHistory(state, ctx);
+  if (history !== null) {
+    children.push(history);
+  }
+  // 読み込み済みの結果（履歴の自動 / 手動読込 or 実行直後）を履歴の直下に出す
+  if (state.pilot.run !== null) {
     children.push(
       renderRunSummary(state.pilot.run, state),
       renderVerification(state.pilot.run, state, ctx),
     );
   }
+  // 新規実行フォームは常に末尾に置く（「新規に実行もできる」）
+  children.push(renderSetup(state, ctx));
   return el('section', { className: 'view view--pilot' }, children);
 }

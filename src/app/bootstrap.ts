@@ -35,7 +35,10 @@ import {
   type SchemaServiceDeps,
 } from './services/schemaService';
 import {
+  autoLoadLatestPilotRun,
   initPilotSelection,
+  loadPilotHistory,
+  loadPilotRun,
   loadPilotVerification,
   persistPilotArmConfirmation,
   persistPilotDecision,
@@ -240,6 +243,14 @@ export async function bootstrapApp(
       onRun: () => {
         void runPilot(store, deps);
       },
+      onSelectRun: (runId) => {
+        void loadPilotRun(store, deps, runId);
+      },
+      onReloadHistory: () => {
+        void loadPilotHistory(store, deps, { force: true }).then(() =>
+          autoLoadLatestPilotRun(store, deps),
+        );
+      },
       onSelectVerifyDocument: (documentId) => {
         void loadPilotVerification(store, deps, documentId);
       },
@@ -443,9 +454,15 @@ export async function bootstrapApp(
       void loadProtocols(store, deps);
     }
     if (currentHash === '#/pilot') {
-      // 文献 + スキーマの読込後に既定選択（テキスト層ありの先頭 3 本）を一度だけ適用する
-      void Promise.all([loadDocuments(store, deps), loadSchema(store, deps)]).then(() => {
+      // 文献 + スキーマ + パイロット履歴の読込後に、既定選択（テキスト層ありの先頭 3 本）を
+      // 一度だけ適用し、既存のパイロット結果があれば最新 run を一度だけ自動読込する
+      void Promise.all([
+        loadDocuments(store, deps),
+        loadSchema(store, deps),
+        loadPilotHistory(store, deps),
+      ]).then(() => {
         initPilotSelection(store);
+        void autoLoadLatestPilotRun(store, deps);
       });
     }
     if (currentHash === '#/extract') {

@@ -32,6 +32,8 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<PilotViewCallback
     onToggleDocument: jest.fn(),
     onChangeModel: jest.fn(),
     onRun: jest.fn(),
+    onSelectRun: jest.fn(),
+    onReloadHistory: jest.fn(),
     onSelectVerifyDocument: jest.fn(),
     onRetryVerifyLoad: jest.fn(),
     onDecision: jest.fn(),
@@ -457,5 +459,111 @@ describe('完了（サマリ + 埋め込み検証）', () => {
     const { root } = render(makeState());
     expect(root.querySelector('.pilot__summary')).toBeNull();
     expect(root.querySelector('.pilot__verify')).toBeNull();
+  });
+
+  test('partial_failure で内訳が空（履歴読込）なら案内文を 1 行出す', () => {
+    const { root } = render(
+      makeState({
+        pilot: { run: makeRun({ status: 'partial_failure' }), batchFailures: [], rejectedCount: 0 },
+      }),
+    );
+    const items = root.querySelectorAll('#pilot-partial-failure li');
+    expect(items).toHaveLength(1);
+    expect(items[0]?.textContent).toContain('失敗の内訳は保存されていません');
+  });
+});
+
+describe('過去のパイロット結果（履歴）', () => {
+  test('履歴未読込・空のときはセクションを出さない', () => {
+    expect(render(makeState()).root.querySelector('.pilot__history')).toBeNull();
+    const empty = render(makeState({ pilot: { history: [] } }));
+    expect(empty.root.querySelector('.pilot__history')).toBeNull();
+  });
+
+  test('読み込み中の表示', () => {
+    const { root } = render(makeState({ pilot: { historyLoading: true } }));
+    expect(root.querySelector('#pilot-history-loading')).not.toBeNull();
+  });
+
+  test('読み込み失敗 + 再読み込みの配線', () => {
+    const { root, callbacks } = render(makeState({ pilot: { historyError: '403' } }));
+    expect(root.querySelector('#pilot-history-error')?.textContent).toContain('403');
+    root.querySelector<HTMLButtonElement>('#pilot-history-reload')?.click();
+    expect(callbacks.onReloadHistory).toHaveBeenCalled();
+  });
+
+  test('履歴一覧: 日時 / モデル / 文献数 / status ラベル + 選択の配線', () => {
+    const { root, callbacks } = render(
+      makeState({
+        pilot: {
+          history: [
+            makeRun({
+              runId: 'run-2',
+              requestedModel: 'gemini-2.5-pro',
+              documentIds: ['d1', 'd2'],
+              finishedAt: 't-b',
+              status: 'partial_failure',
+            }),
+            makeRun({ runId: 'run-1', finishedAt: null, startedAt: 't-a', status: 'done' }),
+          ],
+        },
+      }),
+    );
+    const items = root.querySelectorAll('#pilot-history li');
+    expect(items).toHaveLength(2);
+    expect(items[0]?.querySelector('.pilot__history-when')?.textContent).toBe('t-b');
+    expect(items[0]?.querySelector('.pilot__history-model')?.textContent).toBe('gemini-2.5-pro');
+    expect(items[0]?.querySelector('.pilot__history-docs')?.textContent).toBe('2 文献');
+    expect(items[0]?.querySelector('.pilot__history-status')?.textContent).toBe('一部失敗');
+    // finished_at が無ければ started_at にフォールバック
+    expect(items[1]?.querySelector('.pilot__history-when')?.textContent).toBe('t-a');
+    expect(items[1]?.querySelector('.pilot__history-status')?.textContent).toBe('完了');
+
+    root.querySelectorAll<HTMLButtonElement>('.pilot__history-open')[0]?.click();
+    expect(callbacks.onSelectRun).toHaveBeenCalledWith('run-2');
+  });
+
+  test('日時が全く無い run は「(日時不明)」、未知 status はそのまま出す', () => {
+    const { root } = render(
+      makeState({
+        pilot: {
+          history: [makeRun({ startedAt: null, finishedAt: null, status: 'running' })],
+        },
+      }),
+    );
+    expect(root.querySelector('.pilot__history-when')?.textContent).toBe('(日時不明)');
+    expect(root.querySelector('.pilot__history-status')?.textContent).toBe('running');
+  });
+
+  test('表示中の run は無効化 + 「表示中」+ aria-current', () => {
+    const current = makeRun({ runId: 'run-1' });
+    const { root } = render(makeState({ pilot: { history: [current], run: current } }));
+    const item = root.querySelector('#pilot-history li');
+    expect(item?.getAttribute('aria-current')).toBe('true');
+    expect(item?.querySelector<HTMLButtonElement>('.pilot__history-open')?.disabled).toBe(true);
+    expect(item?.querySelector('.pilot__history-current')?.textContent).toBe('表示中');
+  });
+
+  test('読み込み中は全項目を無効化し、対象行に「読み込み中…」を出す', () => {
+    const { root } = render(
+      makeState({
+        pilot: {
+          history: [makeRun({ runId: 'run-1' }), makeRun({ runId: 'run-2' })],
+          loadingRunId: 'run-1',
+        },
+      }),
+    );
+    const buttons = root.querySelectorAll<HTMLButtonElement>('.pilot__history-open');
+    expect(buttons[0]?.disabled).toBe(true);
+    expect(buttons[1]?.disabled).toBe(true);
+    expect(root.querySelector('.pilot__history-note')?.textContent).toBe('読み込み中…');
+  });
+
+  test('新規実行フォームは「新規パイロット」見出しで出す', () => {
+    const { root } = render(makeState({ pilot: { history: [makeRun()] } }));
+    const headings = Array.from(root.querySelectorAll('h3')).map((h) => h.textContent);
+    expect(headings).toContain('過去のパイロット結果');
+    expect(headings).toContain('新規パイロット');
+    expect(root.querySelector('.pilot__setup')).not.toBeNull();
   });
 });

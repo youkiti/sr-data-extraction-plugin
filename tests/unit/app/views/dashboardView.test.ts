@@ -33,6 +33,8 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<DashboardViewCall
         onToggleDocument: jest.fn(),
         onChangeModel: jest.fn(),
         onRun: jest.fn(),
+        onSelectRun: jest.fn(),
+        onReloadHistory: jest.fn(),
         onSelectVerifyDocument: jest.fn(),
         onRetryVerifyLoad: jest.fn(),
         onDecision: jest.fn(),

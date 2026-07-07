@@ -4,7 +4,14 @@
 //   2. 実行完了時に確定 status（done / partial_failure）の行を同じ run_id で追記
 // 読み手は run_id ごとに「完了行があるか」で完了 / 中断を判別する。
 // 実行中の細かい進捗は UI（S7 の進捗バー）で in-memory 管理し、シートには残さない
-import type { ExtractionRun, RunAuditInfo } from '../../domain/extractionRun';
+import type { LlmProviderId } from '../../domain/llmApiLog';
+import type {
+  ExtractionRun,
+  InputMode,
+  RunAuditInfo,
+  RunStatus,
+  RunType,
+} from '../../domain/extractionRun';
 import { SHEET_HEADERS } from '../../domain/sheetsSchema';
 import { appendRow, getSheetValues } from '../../lib/google/sheets';
 import type { GoogleApiDeps } from '../../lib/google/types';
@@ -157,4 +164,95 @@ export async function readRunDocumentCoverage(
     }
   }
   return { extracted, interrupted };
+}
+
+function emptyToNull(cell: string | null | undefined): string | null {
+  const value = cell ?? '';
+  return value === '' ? null : value;
+}
+
+/** 必須の整数セル（schema_version 等）。空セルは Number('') = 0 と誤読しないよう明示的に不正扱い */
+function parseRequiredInteger(cell: string | null | undefined, context: string, label: string): number {
+  const raw = cell ?? '';
+  const value = raw === '' ? Number.NaN : Number(raw);
+  if (!Number.isInteger(value)) {
+    throw new Error(`${context}: ${label} "${raw}" が整数ではありません`);
+  }
+  return value;
+}
+
+/** null 許容の整数セル（tokens_in / tokens_out）。空セルは null */
+function parseNullableInteger(cell: string | null | undefined, context: string, label: string): number | null {
+  const raw = cell ?? '';
+  if (raw === '') {
+    return null;
+  }
+  const value = Number(raw);
+  if (!Number.isInteger(value)) {
+    throw new Error(`${context}: ${label} "${raw}" が整数ではありません`);
+  }
+  return value;
+}
+
+/** null 許容の数値セル（cost_estimate は小数）。空セルは null */
+function parseNullableNumber(cell: string | null | undefined, context: string, label: string): number | null {
+  const raw = cell ?? '';
+  if (raw === '') {
+    return null;
+  }
+  const value = Number(raw);
+  if (!Number.isFinite(value)) {
+    throw new Error(`${context}: ${label} "${raw}" が数値ではありません`);
+  }
+  return value;
+}
+
+/**
+ * ExtractionRuns の 1 行を ExtractionRun へパースする（列順は SHEET_HEADERS.ExtractionRuns）。
+ * 列挙型（run_type / provider / input_mode / status）は自プロジェクトが書いた値のため
+ * 検証せずキャストで受ける（数値列のみ厳格に検証する。readRun* の他関数と同じ規約）
+ */
+function rowToExtractionRun(raw: (string | null)[], rowIndex: number): ExtractionRun {
+  const context = `ExtractionRuns ${rowIndex + 2} 行目`;
+  return {
+    runId: raw[0] ?? '',
+    // run_type / status は readPilotRuns が 'pilot' + 完了行を確認済みのため非 null が保証される
+    runType: raw[1] as RunType,
+    schemaVersion: parseRequiredInteger(raw[2], context, 'schema_version'),
+    documentIds: parseDocumentIds(raw[3]),
+    provider: (raw[4] ?? '') as LlmProviderId,
+    requestedModel: raw[5] ?? '',
+    modelVersion: emptyToNull(raw[6]),
+    inputMode: (raw[7] ?? '') as InputMode,
+    status: raw[8] as RunStatus,
+    startedAt: emptyToNull(raw[9]),
+    finishedAt: emptyToNull(raw[10]),
+    tokensIn: parseNullableInteger(raw[11], context, 'tokens_in'),
+    tokensOut: parseNullableInteger(raw[12], context, 'tokens_out'),
+    costEstimate: parseNullableNumber(raw[13], context, 'cost_estimate'),
+  };
+}
+
+/**
+ * これまでのパイロット run（run_type='pilot' の完了行）を新しい順で返す（S6 の履歴読込）。
+ * 2 行プロトコルの完了行（done / partial_failure）だけを対象にし、running 行のみの中断 run は
+ * 含めない（Evidence が揃っている保証がないため。readRunDocumentCoverage と同じ完了判定）。
+ * シート追記順の逆順 = 実行の新しい順で返す
+ */
+export async function readPilotRuns(
+  spreadsheetId: string,
+  deps: GoogleApiDeps,
+): Promise<ExtractionRun[]> {
+  const rows = await readRunRows(spreadsheetId, deps);
+  const runs: ExtractionRun[] = [];
+  rows.forEach((raw, i) => {
+    if ((raw[1] ?? '') !== 'pilot') {
+      return;
+    }
+    if (!COMPLETED_STATUSES.has(raw[8] ?? '')) {
+      return;
+    }
+    runs.push(rowToExtractionRun(raw, i));
+  });
+  return runs.reverse();
 }
