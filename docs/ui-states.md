@@ -34,9 +34,9 @@ spec が正。実装が追いついていない箇所は以下のとおり（実
 - `chrome.*` API が未注入でも HTML 単体が読める（Playwright の `file://` + `addInitScript` 前提）
 - ステータス領域（`#popup-status` / `#options-status` / `#app-status`）は空文字にしない
 
-## 1. Popup (`src/popup/popup.html`)
+## 1. プロジェクト選択 S1 (`src/popup/popup.html`)
 
-sr-query-builder の Popup と同一パターン（未ログイン / ログイン済 ×最近のプロジェクト 0 / N 件、ログイン処理中、ログイン失敗。状態 A〜D とエッジ E-Popup-1〜4 は sr-query-builder の [docs/ui-states.md §1](../sr-query-builder-plugin/docs/ui-states.md) を参照）。相違点のみ記す：
+拡張アイコンのクリック時にアンカー型ポップアップとしては表示せず、新規タブのフルページとして開く（manifest に `default_popup` なし。service worker の `action.onClicked` がプロジェクト未選択時にこのページを、選択済み時はメインビューを開く）。画面の状態は sr-query-builder の Popup と同一パターン（未ログイン / ログイン済 ×最近のプロジェクト 0 / N 件、ログイン処理中、ログイン失敗。状態 A〜D とエッジ E-Popup-1〜4 は sr-query-builder の [docs/ui-states.md §1](../sr-query-builder-plugin/docs/ui-states.md) を参照）。相違点のみ記す：
 
 - 新規作成フォームの説明文は「データ抽出プロジェクトを作成します（スプレッドシート + Drive フォルダを生成）。」
 - 既存 ID で開く場合、`Meta` タブの検証に加えて **`Documents` / `SchemaFields` タブの存在**を確認し、欠けていれば `#popup-open-error` に「sr-data-extraction のプロジェクトではありません（Documents / SchemaFields タブが見つかりません）」
