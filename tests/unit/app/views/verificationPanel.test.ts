@@ -187,7 +187,8 @@ function createPanel(overrides: Partial<VerificationData> = {}, options: Partial
   const panel = createVerificationPanel({
     data: makeData(overrides),
     onDecision,
-    now: () => 't-now',
+    // preload 判定（decidedAt 't0'）より後にソートされる時刻にする（'t-now' は '-' < '0' で 't0' より前になる）
+    now: () => 't1',
     renderPage,
     ...options,
   });
@@ -290,7 +291,7 @@ describe('判定操作', () => {
       ?.querySelector<HTMLButtonElement>('.verify__action--accept')
       ?.click();
     expect(onDecision).toHaveBeenCalledWith({
-      decidedAt: 't-now',
+      decidedAt: 't1',
       decidedBy: ME,
       documentId: 'doc-1',
       fieldId: 'f-total',
