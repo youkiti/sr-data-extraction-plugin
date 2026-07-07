@@ -55,6 +55,27 @@
   color: var(--color-text-muted);
 }
 
+/* プロジェクト名 = プロジェクト選択ページへの同一タブ遷移リンク */
+.app__status-link {
+  color: inherit;
+}
+
+.app__status-link:hover {
+  color: var(--color-primary);
+}
+
+/* 設定（options.html）への同一タブ遷移。歯車 1 文字がリンク本体のため aria-label を持つ */
+.app__options-link {
+  font-size: 18px;
+  line-height: 1;
+  color: var(--color-text-muted);
+  text-decoration: none;
+}
+
+.app__options-link:hover {
+  color: var(--color-primary);
+}
+
 .app__context {
   margin: 0 0 0 auto;
   color: var(--color-text-muted);

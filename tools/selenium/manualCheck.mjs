@@ -472,11 +472,15 @@ async function sceneProject(driver) {
     now.getDate(),
   ).padStart(2, '0')}-${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}`;
   const title = `実機確認 ${stamp}`;
-  const before = await driver.getAllWindowHandles();
   await driver.findElement(By.css('#popup-create-title')).sendKeys(title);
   await driver.findElement(By.css('#popup-create-form button[type=submit]')).click();
   log(`  「${title}」を作成中（Sheets 13 タブ + Drive フォルダ生成。1 分程度かかります）…`);
-  await waitForWindowWithUrl(driver, before, APP_URL, 3 * 60 * 1000, 'メインビュー');
+  // プロジェクト選択後は同一タブのままメインビューへ遷移する（chrome.tabs.update）
+  await driver.wait(
+    async () => (await driver.getCurrentUrl()).startsWith(APP_URL),
+    3 * 60 * 1000,
+    'メインビューへ遷移しません',
+  );
   await driver.wait(async () => {
     const status = await driver.findElement(By.css('#app-status')).getText();
     return status.includes('プロジェクト:');

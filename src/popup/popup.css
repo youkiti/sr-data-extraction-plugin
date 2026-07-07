@@ -1,6 +1,7 @@
-/* Popup（S1）のレイアウト */
+/* プロジェクト選択 S1 のレイアウト（新規タブのフルページ表示。カード幅で中央寄せ） */
 .popup {
   width: 320px;
+  margin: 32px auto;
   padding: 16px;
   display: flex;
   flex-direction: column;
