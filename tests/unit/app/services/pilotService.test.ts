@@ -1,5 +1,8 @@
 import {
+  autoLoadLatestPilotRun,
   initPilotSelection,
+  loadPilotHistory,
+  loadPilotRun,
   loadPilotVerification,
   persistPilotArmConfirmation,
   persistPilotDecision,
@@ -18,6 +21,9 @@ import type { Evidence } from '../../../../src/domain/evidence';
 import type { ExtractionRun } from '../../../../src/domain/extractionRun';
 import type { SchemaField } from '../../../../src/domain/schemaField';
 import { readDocuments } from '../../../../src/features/documents/documentRepository';
+import { readEvidenceRows } from '../../../../src/features/extraction/evidenceRepository';
+import { readPilotRuns } from '../../../../src/features/extraction/runRepository';
+import { getSchemaFieldsByVersion } from '../../../../src/features/schema/schemaRepository';
 import type { DisposablePdfDocument } from '../../../../src/features/documents/extractTextLayer';
 import {
   readStudyDataSheet,
@@ -32,6 +38,7 @@ import {
   appendDecisionRows,
   readDecisionsByDocument,
 } from '../../../../src/features/verification/decisionRepository';
+import type { VerificationData } from '../../../../src/features/verification/types';
 import { ensureChildFolder, getFileBinary } from '../../../../src/lib/google/drive';
 import { getCurrentUserEmail } from '../../../../src/lib/google/identity';
 import type { OfflineQueue } from '../../../../src/lib/storage/offlineQueue';
@@ -44,6 +51,15 @@ jest.mock('../../../../src/app/services/schemaService', () => ({
 }));
 jest.mock('../../../../src/features/documents/documentRepository', () => ({
   readDocuments: jest.fn(),
+}));
+jest.mock('../../../../src/features/extraction/evidenceRepository', () => ({
+  readEvidenceRows: jest.fn(),
+}));
+jest.mock('../../../../src/features/extraction/runRepository', () => ({
+  readPilotRuns: jest.fn(),
+}));
+jest.mock('../../../../src/features/schema/schemaRepository', () => ({
+  getSchemaFieldsByVersion: jest.fn(),
 }));
 jest.mock('../../../../src/features/extraction/annotationRepository', () => ({
   readStudyDataSheet: jest.fn(),
@@ -71,6 +87,11 @@ jest.mock('../../../../src/lib/google/identity', () => ({
 const runExtractionMock = runExtraction as jest.MockedFunction<typeof runExtraction>;
 const resolveProtocolMock = resolveProtocol as jest.MockedFunction<typeof resolveProtocol>;
 const readDocumentsMock = readDocuments as jest.MockedFunction<typeof readDocuments>;
+const readEvidenceRowsMock = readEvidenceRows as jest.MockedFunction<typeof readEvidenceRows>;
+const readPilotRunsMock = readPilotRuns as jest.MockedFunction<typeof readPilotRuns>;
+const getSchemaFieldsByVersionMock = getSchemaFieldsByVersion as jest.MockedFunction<
+  typeof getSchemaFieldsByVersion
+>;
 const readStudyDataSheetMock = readStudyDataSheet as jest.MockedFunction<typeof readStudyDataSheet>;
 const upsertStudyMock = upsertStudyDataRows as jest.MockedFunction<typeof upsertStudyDataRows>;
 const upsertResultsMock = upsertResultsDataRows as jest.MockedFunction<
@@ -466,6 +487,32 @@ describe('runPilot: 実行', () => {
     await runPilot(store, makeDeps());
     expect(store.getState().pilot.batchFailures).toHaveLength(1);
     expect(store.getState().pilot.run?.status).toBe('partial_failure');
+  });
+
+  test('完了した run を履歴の先頭へ足し、historyInitialized を立てる', async () => {
+    const existing = makeRun({ runId: 'run-0' });
+    const store = makeStore({
+      documents: [makeDocument()],
+      fields: [makeField()],
+      pilot: {
+        selectedDocumentIds: ['doc-1'],
+        model: 'gemini-test',
+        history: [existing],
+        historyInitialized: false,
+      },
+    });
+    runExtractionMock.mockResolvedValue(makeOutcome());
+    await runPilot(store, makeDeps());
+    const { pilot } = store.getState();
+    expect(pilot.history?.map((run) => run.runId)).toEqual(['run-1', 'run-0']);
+    expect(pilot.historyInitialized).toBe(true);
+  });
+
+  test('履歴未読込（null）のときは新 run だけの履歴になる', async () => {
+    const store = makeReadyStore();
+    runExtractionMock.mockResolvedValue(makeOutcome());
+    await runPilot(store, makeDeps());
+    expect(store.getState().pilot.history?.map((run) => run.runId)).toEqual(['run-1']);
   });
 
   test('文献一覧が未読込なら readDocuments で解決する', async () => {
@@ -889,5 +936,157 @@ describe('persistPilotArmConfirmation', () => {
       version: 2,
       arms: [{ armKey: 'arm:1', armName: '介入群' }],
     });
+  });
+});
+
+describe('loadPilotHistory', () => {
+  test('履歴を読み込んで history へ格納する', async () => {
+    const store = makeStore({});
+    readPilotRunsMock.mockResolvedValue([makeRun({ runId: 'run-1' })]);
+    await loadPilotHistory(store, makeDeps());
+    expect(readPilotRunsMock).toHaveBeenCalledWith('sheet-1', expect.anything());
+    expect(store.getState().pilot.history?.map((run) => run.runId)).toEqual(['run-1']);
+    expect(store.getState().pilot.historyLoading).toBe(false);
+  });
+
+  test('プロジェクト未選択 / 読込中は何もしない', async () => {
+    await loadPilotHistory(makeStore({ withProject: false }), makeDeps());
+    await loadPilotHistory(makeStore({ pilot: { historyLoading: true } }), makeDeps());
+    expect(readPilotRunsMock).not.toHaveBeenCalled();
+  });
+
+  test('読込済み（history 非 null）は force がなければ再読込しない', async () => {
+    const store = makeStore({ pilot: { history: [] } });
+    await loadPilotHistory(store, makeDeps());
+    expect(readPilotRunsMock).not.toHaveBeenCalled();
+    readPilotRunsMock.mockResolvedValue([makeRun()]);
+    await loadPilotHistory(store, makeDeps(), { force: true });
+    expect(readPilotRunsMock).toHaveBeenCalledTimes(1);
+    expect(store.getState().pilot.history).toHaveLength(1);
+  });
+
+  test('読み込み失敗は historyError に落とす', async () => {
+    const store = makeStore({});
+    readPilotRunsMock.mockRejectedValue(new Error('403'));
+    await loadPilotHistory(store, makeDeps());
+    expect(store.getState().pilot.historyError).toBe('403');
+    expect(store.getState().pilot.historyLoading).toBe(false);
+  });
+});
+
+describe('loadPilotRun', () => {
+  const HIST_RUN = makeRun({ runId: 'run-1', documentIds: ['doc-1'], schemaVersion: 1 });
+
+  function makeHistoryStore(pilot: Partial<ReturnType<typeof createInitialState>['pilot']> = {}): Store {
+    return makeStore({ documents: [makeDocument()], pilot: { history: [HIST_RUN], ...pilot } });
+  }
+
+  test('プロジェクト未選択 / 実行中 / 別 run 読込中は何もしない', async () => {
+    await loadPilotRun(makeStore({ withProject: false, pilot: { history: [HIST_RUN] } }), makeDeps(), 'run-1');
+    await loadPilotRun(makeHistoryStore({ running: true }), makeDeps(), 'run-1');
+    await loadPilotRun(makeHistoryStore({ loadingRunId: 'other' }), makeDeps(), 'run-1');
+    expect(readEvidenceRowsMock).not.toHaveBeenCalled();
+  });
+
+  test('履歴に無い run_id は historyError（読込は起こさない）', async () => {
+    const store = makeHistoryStore();
+    await loadPilotRun(store, makeDeps(), 'ghost');
+    expect(store.getState().pilot.historyError).toContain('run ghost が履歴に見つかりません');
+    expect(readEvidenceRowsMock).not.toHaveBeenCalled();
+  });
+
+  test('Evidence を当該 run で絞り、schema 項目を解決して検証を開く', async () => {
+    const store = makeHistoryStore();
+    readEvidenceRowsMock.mockResolvedValue([
+      makeEvidence({ evidenceId: 'ev-1', runId: 'run-1' }),
+      makeEvidence({ evidenceId: 'ev-2', runId: 'run-other' }),
+    ]);
+    getSchemaFieldsByVersionMock.mockResolvedValue([makeField()]);
+    await loadPilotRun(store, makeDeps(), 'run-1');
+    const { pilot } = store.getState();
+    expect(getSchemaFieldsByVersionMock).toHaveBeenCalledWith('sheet-1', 1, expect.anything());
+    expect(pilot.run?.runId).toBe('run-1');
+    expect(pilot.runFields).toEqual([makeField()]);
+    expect(pilot.evidence?.map((item) => item.evidenceId)).toEqual(['ev-1']);
+    expect(pilot.loadingRunId).toBeNull();
+    expect(pilot.batchFailures).toEqual([]);
+    expect(pilot.verifyDocumentId).toBe('doc-1');
+    expect(pilot.verification).not.toBeNull();
+  });
+
+  test('documentIds が空の run は検証読み込みをスキップする', async () => {
+    const emptyRun = makeRun({ runId: 'run-empty', documentIds: [] });
+    const store = makeStore({ documents: [makeDocument()], pilot: { history: [emptyRun] } });
+    readEvidenceRowsMock.mockResolvedValue([]);
+    getSchemaFieldsByVersionMock.mockResolvedValue([]);
+    await loadPilotRun(store, makeDeps(), 'run-empty');
+    expect(store.getState().pilot.run?.runId).toBe('run-empty');
+    expect(store.getState().pilot.verification).toBeNull();
+    expect(readDecisionsMock).not.toHaveBeenCalled();
+  });
+
+  test('読み込み失敗は historyError に落とし loadingRunId を戻す', async () => {
+    const store = makeHistoryStore();
+    readEvidenceRowsMock.mockRejectedValue(new Error('Evidence 読込失敗'));
+    await loadPilotRun(store, makeDeps(), 'run-1');
+    expect(store.getState().pilot.historyError).toBe('Evidence 読込失敗');
+    expect(store.getState().pilot.loadingRunId).toBeNull();
+  });
+
+  test('読み込み前に表示中 PDF を破棄する（disposePdf）', async () => {
+    const disposePdf = jest.fn().mockResolvedValue(undefined);
+    const store = makeHistoryStore({
+      verification: { disposePdf } as unknown as VerificationData,
+    });
+    readEvidenceRowsMock.mockResolvedValue([]);
+    getSchemaFieldsByVersionMock.mockResolvedValue([makeField()]);
+    await loadPilotRun(store, makeDeps(), 'run-1');
+    expect(disposePdf).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('autoLoadLatestPilotRun', () => {
+  const LATEST = makeRun({ runId: 'run-1', documentIds: ['doc-1'] });
+
+  test('historyInitialized 済み / history 未読込は何もしない', async () => {
+    const initialized = makeStore({
+      documents: [makeDocument()],
+      pilot: { history: [LATEST], historyInitialized: true },
+    });
+    await autoLoadLatestPilotRun(initialized, makeDeps());
+    expect(readEvidenceRowsMock).not.toHaveBeenCalled();
+
+    const unloaded = makeStore({ documents: [makeDocument()], pilot: { history: null } });
+    await autoLoadLatestPilotRun(unloaded, makeDeps());
+    expect(unloaded.getState().pilot.historyInitialized).toBe(false);
+    expect(readEvidenceRowsMock).not.toHaveBeenCalled();
+  });
+
+  test('空の履歴は初期化フラグだけ立てて読み込まない', async () => {
+    const store = makeStore({ documents: [makeDocument()], pilot: { history: [] } });
+    await autoLoadLatestPilotRun(store, makeDeps());
+    expect(store.getState().pilot.historyInitialized).toBe(true);
+    expect(readEvidenceRowsMock).not.toHaveBeenCalled();
+  });
+
+  test('既に run を持つときは初期化だけで上書きしない', async () => {
+    const store = makeStore({
+      documents: [makeDocument()],
+      pilot: { history: [LATEST], run: makeRun({ runId: 'session-run' }) },
+    });
+    await autoLoadLatestPilotRun(store, makeDeps());
+    expect(store.getState().pilot.historyInitialized).toBe(true);
+    expect(store.getState().pilot.run?.runId).toBe('session-run');
+    expect(readEvidenceRowsMock).not.toHaveBeenCalled();
+  });
+
+  test('最新 run を自動読込する', async () => {
+    const store = makeStore({ documents: [makeDocument()], pilot: { history: [LATEST] } });
+    readEvidenceRowsMock.mockResolvedValue([makeEvidence({ runId: 'run-1' })]);
+    getSchemaFieldsByVersionMock.mockResolvedValue([makeField()]);
+    await autoLoadLatestPilotRun(store, makeDeps());
+    expect(store.getState().pilot.historyInitialized).toBe(true);
+    expect(store.getState().pilot.run?.runId).toBe('run-1');
+    expect(readEvidenceRowsMock).toHaveBeenCalled();
   });
 });

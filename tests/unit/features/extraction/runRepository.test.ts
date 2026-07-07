@@ -3,6 +3,7 @@ import { SHEET_HEADERS } from '../../../../src/domain/sheetsSchema';
 import {
   appendExtractionRun,
   extractionRunToRow,
+  readPilotRuns,
   readRunAuditInfos,
   readRunDocumentCoverage,
   readRunSchemaVersions,
@@ -323,6 +324,203 @@ describe('readRunDocumentCoverage', () => {
 
   test('ヘッダ行なしはエラー（readRunSchemaVersions と同じ前処理）', async () => {
     await expect(readRunDocumentCoverage('sheet-1', readDeps([]))).rejects.toThrow(
+      'ExtractionRuns タブにヘッダ行がありません',
+    );
+  });
+});
+
+describe('readPilotRuns', () => {
+  function readDeps(values: (string | null)[][]): { fetch: jest.Mock; getAccessToken: jest.Mock } {
+    return {
+      fetch: jest.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({ values }),
+        text: async () => '',
+      } as Response),
+      getAccessToken: jest.fn().mockResolvedValue('token'),
+    };
+  }
+
+  const pilotRow = (
+    o: Partial<{
+      runId: string;
+      runType: string;
+      schemaVersion: string;
+      documentIds: string;
+      provider: string;
+      requestedModel: string;
+      modelVersion: string;
+      inputMode: string;
+      status: string;
+      startedAt: string;
+      finishedAt: string;
+      tokensIn: string;
+      tokensOut: string;
+      costEstimate: string;
+    }> = {},
+  ): string[] => [
+    o.runId ?? 'run-1',
+    o.runType ?? 'pilot',
+    o.schemaVersion ?? '1',
+    o.documentIds ?? 'doc-1,doc-2',
+    o.provider ?? 'gemini',
+    o.requestedModel ?? 'gemini-test',
+    o.modelVersion ?? '',
+    o.inputMode ?? 'text_only',
+    o.status ?? 'done',
+    o.startedAt ?? 't1',
+    o.finishedAt ?? 't2',
+    o.tokensIn ?? '',
+    o.tokensOut ?? '',
+    o.costEstimate ?? '',
+  ];
+
+  test('run_type=pilot の完了行のみを新しい順で返す（full / running 行は除外）', async () => {
+    const values = [
+      [...SHEET_HEADERS.ExtractionRuns],
+      pilotRow({ runId: 'p1', status: 'done' }),
+      pilotRow({ runId: 'f1', runType: 'full', status: 'done' }), // pilot 以外は除外
+      pilotRow({ runId: 'p2', status: 'running' }), // 完了行がない中断 run は除外
+      pilotRow({ runId: 'p2', status: 'partial_failure' }), // p2 の完了行
+    ];
+    const runs = await readPilotRuns('sheet-1', readDeps(values));
+    expect(runs.map((run) => run.runId)).toEqual(['p2', 'p1']); // 追記順の逆 = 新しい順
+    expect(runs[0]?.status).toBe('partial_failure');
+  });
+
+  test('全列を ExtractionRun へパースする（数値・null 許容列を含む）', async () => {
+    const values = [
+      [...SHEET_HEADERS.ExtractionRuns],
+      pilotRow({
+        schemaVersion: '3',
+        documentIds: 'd1,d2',
+        modelVersion: 'gemini-test-001',
+        tokensIn: '100',
+        tokensOut: '50',
+        costEstimate: '0.02',
+      }),
+    ];
+    const runs = await readPilotRuns('sheet-1', readDeps(values));
+    expect(runs[0]).toEqual({
+      runId: 'run-1',
+      runType: 'pilot',
+      schemaVersion: 3,
+      documentIds: ['d1', 'd2'],
+      provider: 'gemini',
+      requestedModel: 'gemini-test',
+      modelVersion: 'gemini-test-001',
+      inputMode: 'text_only',
+      status: 'done',
+      startedAt: 't1',
+      finishedAt: 't2',
+      tokensIn: 100,
+      tokensOut: 50,
+      costEstimate: 0.02,
+    });
+  });
+
+  test('null 許容列（model_version / started_at / finished_at / tokens / cost）の空セルは null', async () => {
+    const values = [[...SHEET_HEADERS.ExtractionRuns], pilotRow({ startedAt: '', finishedAt: '' })];
+    const runs = await readPilotRuns('sheet-1', readDeps(values));
+    expect(runs[0]).toMatchObject({
+      modelVersion: null,
+      startedAt: null,
+      finishedAt: null,
+      tokensIn: null,
+      tokensOut: null,
+      costEstimate: null,
+    });
+  });
+
+  test('status 以降が欠落したラグ配列は null 列として安全に読む', async () => {
+    // status（9 列目）までを持つ行。started_at 以降のセルは配列から欠落
+    const short = pilotRow().slice(0, 9);
+    const values = [[...SHEET_HEADERS.ExtractionRuns], short];
+    const runs = await readPilotRuns('sheet-1', readDeps(values));
+    expect(runs[0]).toMatchObject({
+      status: 'done',
+      startedAt: null,
+      finishedAt: null,
+      tokensIn: null,
+      tokensOut: null,
+      costEstimate: null,
+    });
+  });
+
+  test('数値列の非数値はエラー（schema_version / tokens_in / tokens_out / cost_estimate）', async () => {
+    await expect(
+      readPilotRuns('sheet-1', readDeps([[...SHEET_HEADERS.ExtractionRuns], pilotRow({ schemaVersion: 'x' })])),
+    ).rejects.toThrow('ExtractionRuns 2 行目: schema_version "x" が整数ではありません');
+    await expect(
+      readPilotRuns('sheet-1', readDeps([[...SHEET_HEADERS.ExtractionRuns], pilotRow({ tokensIn: 'x' })])),
+    ).rejects.toThrow('ExtractionRuns 2 行目: tokens_in "x" が整数ではありません');
+    await expect(
+      readPilotRuns('sheet-1', readDeps([[...SHEET_HEADERS.ExtractionRuns], pilotRow({ tokensOut: '1.5' })])),
+    ).rejects.toThrow('ExtractionRuns 2 行目: tokens_out "1.5" が整数ではありません');
+    await expect(
+      readPilotRuns('sheet-1', readDeps([[...SHEET_HEADERS.ExtractionRuns], pilotRow({ costEstimate: 'x' })])),
+    ).rejects.toThrow('ExtractionRuns 2 行目: cost_estimate "x" が数値ではありません');
+  });
+
+  test('run_type / status が null セルの行は除外する', async () => {
+    const values: (string | null)[][] = [
+      [...SHEET_HEADERS.ExtractionRuns],
+      [null, 'pilot', '1', 'doc-1', 'gemini', 'gemini-test', '', 'text_only', 'done'], // null runId の完了 pilot → 含む
+      [null, null, '1', 'doc-1'], // run_type null → 除外
+      ['r', 'pilot', '1', 'doc-1', 'gemini', 'gemini-test', '', 'text_only', null], // status null → 除外
+    ];
+    const runs = await readPilotRuns('sheet-1', readDeps(values));
+    expect(runs).toHaveLength(1);
+    expect(runs[0]).toMatchObject({ runId: '', provider: 'gemini' });
+  });
+
+  test('null セルの完了 pilot 行は空文字 / null 列として安全に読む', async () => {
+    const nullRow: (string | null)[] = [
+      null,
+      'pilot',
+      '1',
+      null,
+      null,
+      null,
+      null,
+      null,
+      'done',
+      null,
+      null,
+      null,
+      null,
+      null,
+    ];
+    const runs = await readPilotRuns('sheet-1', readDeps([[...SHEET_HEADERS.ExtractionRuns], nullRow]));
+    expect(runs[0]).toEqual({
+      runId: '',
+      runType: 'pilot',
+      schemaVersion: 1,
+      documentIds: [],
+      provider: '',
+      requestedModel: '',
+      modelVersion: null,
+      inputMode: '',
+      status: 'done',
+      startedAt: null,
+      finishedAt: null,
+      tokensIn: null,
+      tokensOut: null,
+      costEstimate: null,
+    });
+  });
+
+  test('schema_version が null セルの完了 pilot 行はエラー', async () => {
+    const nullSv: (string | null)[] = ['r', 'pilot', null, 'doc-1', 'gemini', 'gemini-test', '', 'text_only', 'done'];
+    await expect(
+      readPilotRuns('sheet-1', readDeps([[...SHEET_HEADERS.ExtractionRuns], nullSv])),
+    ).rejects.toThrow('ExtractionRuns 2 行目: schema_version "" が整数ではありません');
+  });
+
+  test('run 0 件は空配列、ヘッダ行なしはエラー', async () => {
+    expect(await readPilotRuns('sheet-1', readDeps([[...SHEET_HEADERS.ExtractionRuns]]))).toEqual([]);
+    await expect(readPilotRuns('sheet-1', readDeps([]))).rejects.toThrow(
       'ExtractionRuns タブにヘッダ行がありません',
     );
   });

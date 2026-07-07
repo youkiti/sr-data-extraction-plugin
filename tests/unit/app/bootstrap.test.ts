@@ -1059,6 +1059,78 @@ describe('bootstrapApp: #/pilot', () => {
     await flush();
     expect(urls().some((url) => url.includes('ArmStructures!A1:append'))).toBe(true);
   });
+
+  test('#/pilot 入場で履歴の最新 run を自動読込する（既存データを最初からにしない）', async () => {
+    const historyRun = { ...RUN, runId: 'run-hist', documentIds: [] };
+    const stub = createWindowStub(
+      pilotPreloaded({
+        selectionInitialized: true,
+        selectedDocumentIds: ['doc-1'],
+        model: 'gemini-test',
+        history: [historyRun],
+        historyInitialized: false,
+        run: null,
+      } as unknown as Partial<AppState['pilot']>),
+    );
+    // Evidence ヘッダを返す fake（自動読込は Evidence + SchemaFields を読む）
+    const { deps } = createFakeDeps([[...SHEET_HEADERS.Evidence]]);
+    const store = await bootstrapApp(asWindow(stub), deps);
+    stub.location.hash = '#/pilot';
+    stub.fireHashChange();
+    await flush();
+    await flush();
+    await flush();
+    expect(store?.getState().pilot.run?.runId).toBe('run-hist');
+    expect(store?.getState().pilot.historyInitialized).toBe(true);
+  });
+
+  test('#/pilot の履歴項目クリックで過去 run を読み込む（onSelectRun）', async () => {
+    const historyRun = { ...RUN, runId: 'run-hist', documentIds: [] };
+    const stub = createWindowStub(
+      pilotPreloaded({
+        selectionInitialized: true,
+        selectedDocumentIds: ['doc-1'],
+        model: 'gemini-test',
+        history: [historyRun],
+        historyInitialized: true, // 自動読込は抑止し、クリック経路のみ観測する
+        run: null,
+      } as unknown as Partial<AppState['pilot']>),
+    );
+    const { deps } = createFakeDeps([[...SHEET_HEADERS.Evidence]]);
+    const store = await bootstrapApp(asWindow(stub), deps);
+    stub.location.hash = '#/pilot';
+    stub.fireHashChange();
+    await flush();
+    (document.querySelector('.pilot__history-open') as HTMLButtonElement).click();
+    await flush();
+    await flush();
+    expect(store?.getState().pilot.run?.runId).toBe('run-hist');
+  });
+
+  test('#/pilot の履歴読み込み失敗 → 再読み込みの配線（onReloadHistory）', async () => {
+    const stub = createWindowStub(
+      pilotPreloaded({
+        selectionInitialized: true,
+        selectedDocumentIds: ['doc-1'],
+        model: 'gemini-test',
+        history: [],
+        historyInitialized: true,
+        historyError: 'boom',
+      } as unknown as Partial<AppState['pilot']>),
+    );
+    // ExtractionRuns ヘッダを返す fake（再読み込みは readPilotRuns が読む）
+    const { deps } = createFakeDeps([[...SHEET_HEADERS.ExtractionRuns]]);
+    const store = await bootstrapApp(asWindow(stub), deps);
+    stub.location.hash = '#/pilot';
+    stub.fireHashChange();
+    await flush();
+    expect(document.getElementById('pilot-history-error')?.textContent).toContain('boom');
+    (document.getElementById('pilot-history-reload') as HTMLButtonElement).click();
+    await flush();
+    await flush();
+    expect(store?.getState().pilot.historyError).toBeNull();
+    expect(store?.getState().pilot.history).toEqual([]);
+  });
 });
 
 // ---------------------------------------------------------------------------

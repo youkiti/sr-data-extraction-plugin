@@ -7,6 +7,9 @@ import type { SchemaField } from '../../domain/schemaField';
 import { readDocuments } from '../../features/documents/documentRepository';
 import { makeLoadDocumentPages } from '../../features/documents/loadDocumentPages';
 import { buildAiAnnotationRows } from '../../features/extraction/aiAnnotationRows';
+import { readEvidenceRows } from '../../features/extraction/evidenceRepository';
+import { readPilotRuns } from '../../features/extraction/runRepository';
+import { getSchemaFieldsByVersion } from '../../features/schema/schemaRepository';
 import { ensureChildFolder } from '../../lib/google/drive';
 import type { LlmProviderId } from '../../domain/llmApiLog';
 import type { LLMProvider } from '../../lib/llm/LLMProvider';
@@ -179,6 +182,9 @@ export async function runPilot(store: Store, deps: PilotServiceDeps): Promise<vo
         evidence: outcome.result.evidence,
         batchFailures: outcome.result.batchFailures,
         rejectedCount: outcome.result.rejectedItems.length,
+        // 完了した run を履歴の先頭（最新）へ足し、自動読込済み扱いにする
+        history: [outcome.run, ...(after.pilot.history ?? [])],
+        historyInitialized: true,
       },
     });
     showToast(
@@ -192,6 +198,112 @@ export async function runPilot(store: Store, deps: PilotServiceDeps): Promise<vo
     }
   } catch (err) {
     patchPilot(store, { running: false, progress: null, runError: toMessage(err) });
+  }
+}
+
+/**
+ * これまでのパイロット結果の履歴を読み込む（S6 初回表示 + エラー再読込）。
+ * 読込済み（history 非 null）は force 指定がない限り no-op（他サービスの load* と同じ規約）
+ */
+export async function loadPilotHistory(
+  store: Store,
+  deps: PilotServiceDeps,
+  options: { force?: boolean } = {},
+): Promise<void> {
+  const state = store.getState();
+  const project = state.currentProject;
+  if (!project || state.pilot.historyLoading) {
+    return;
+  }
+  if (state.pilot.history !== null && options.force !== true) {
+    return;
+  }
+  patchPilot(store, { historyLoading: true, historyError: null });
+  try {
+    const history = await readPilotRuns(project.spreadsheetId, deps.google);
+    patchPilot(store, { historyLoading: false, history });
+  } catch (err) {
+    patchPilot(store, { historyLoading: false, historyError: toMessage(err) });
+  }
+}
+
+/**
+ * 起動後に最新のパイロット結果を一度だけ自動読込する（既存データがあれば「最初から」にしない）。
+ * 履歴未読込・読込失敗（history === null）のときは初期化フラグを立てず、再読込でやり直せるようにする。
+ * このセッションで既に run を持っている（実行直後など）ときは上書きしない
+ */
+export async function autoLoadLatestPilotRun(
+  store: Store,
+  deps: PilotServiceDeps,
+): Promise<void> {
+  const { pilot } = store.getState();
+  if (pilot.historyInitialized || pilot.history === null) {
+    return;
+  }
+  patchPilot(store, { historyInitialized: true });
+  const latest = pilot.history[0];
+  if (latest === undefined || pilot.run !== null) {
+    return;
+  }
+  await loadPilotRun(store, deps, latest.runId);
+}
+
+/**
+ * 履歴の特定 run を読み込んで結果サマリ + 埋め込み検証 UI を復元する（S6「履歴から選択」）。
+ * Evidence を当該 run で絞り、run の schema_version の項目を解決してから最初の文献の検証を開く
+ */
+export async function loadPilotRun(
+  store: Store,
+  deps: PilotServiceDeps,
+  runId: string,
+): Promise<void> {
+  const state = store.getState();
+  const project = state.currentProject;
+  if (!project || state.pilot.running || state.pilot.loadingRunId !== null) {
+    return;
+  }
+  const run = state.pilot.history?.find((candidate) => candidate.runId === runId);
+  if (run === undefined) {
+    patchPilot(store, { historyError: `run ${runId} が履歴に見つかりません` });
+    return;
+  }
+  // 表示中の PDF を破棄してから読み込む（pdfjs のメモリ解放）
+  await state.pilot.verification?.disposePdf?.();
+  patchPilot(store, {
+    loadingRunId: runId,
+    historyError: null,
+    runError: null,
+    run: null,
+    runFields: null,
+    evidence: null,
+    // 履歴 run はバッチ失敗の内訳を再構成できないため空にする（サマリは run.status で表示）
+    batchFailures: [],
+    rejectedCount: 0,
+    verifyDocumentId: null,
+    verification: null,
+    verifyLoading: false,
+    verifyError: null,
+    studyValues: null,
+  });
+  try {
+    const allEvidence = await readEvidenceRows(project.spreadsheetId, deps.google);
+    const fields = await getSchemaFieldsByVersion(
+      project.spreadsheetId,
+      run.schemaVersion,
+      deps.google,
+    );
+    patchPilot(store, {
+      loadingRunId: null,
+      run,
+      runFields: fields,
+      evidence: allEvidence.filter((item) => item.runId === runId),
+    });
+    const firstDocumentId = run.documentIds[0];
+    if (firstDocumentId !== undefined) {
+      await loadPilotVerification(store, deps, firstDocumentId);
+    }
+  } catch (err) {
+    patchPilot(store, { loadingRunId: null, historyError: toMessage(err) });
   }
 }
 
