@@ -370,9 +370,9 @@ export async function bootstrapApp(
       statusEl.textContent = `プロジェクト: ${state.currentProject.name}`;
       openPopupButton.hidden = true;
     } else {
-      // 状態 A（ui-states.md §3）: 未選択メッセージ + Popup へ戻る導線を出す
+      // 状態 A（ui-states.md §3）: 未選択メッセージ + プロジェクト選択ページへ戻る導線を出す
       statusEl.textContent =
-        'プロジェクトが選択されていません。Popup からプロジェクトを選択してください。';
+        'プロジェクトが選択されていません。「プロジェクト選択を開く」から選択してください。';
       openPopupButton.hidden = false;
     }
   };
@@ -475,9 +475,8 @@ export async function bootstrapApp(
   titleButton.addEventListener('click', () => {
     win.location.hash = '#/home';
   });
-  openPopupButton.addEventListener('click', () => {
-    void chrome.tabs.create({ url: chrome.runtime.getURL('popup/popup.html') });
-  });
+  // #app-open-popup はプロジェクト選択ページ（popup.html）への同一タブ遷移アンカー
+  // （app.html 側の href="../popup/popup.html"）。JS の配線は不要
   win.addEventListener('hashchange', handleHashChange);
   store.subscribe((state) => {
     renderHeader(state);

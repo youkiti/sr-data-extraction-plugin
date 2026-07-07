@@ -356,10 +356,10 @@ describe('createChromePopupDeps', () => {
     chromeMock = installChromeMock();
   });
 
-  test('openAppTab / openOptions は拡張内 URL を新規タブで開く', () => {
+  test('openAppTab は同一タブでメインビューへ遷移し、openOptions は新規タブで開く', () => {
     const deps = createChromePopupDeps();
     deps.openAppTab();
-    expect(chromeMock.tabs.create).toHaveBeenCalledWith({
+    expect(chromeMock.tabs.update).toHaveBeenCalledWith({
       url: 'chrome-extension://test-extension-id/app/app.html',
     });
     deps.openOptions();

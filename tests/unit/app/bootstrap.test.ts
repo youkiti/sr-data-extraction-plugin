@@ -85,7 +85,7 @@ const APP_TEMPLATE = `
     <header class="app__header">
       <button id="app-title" type="button">SR データ抽出</button>
       <p id="app-status">読み込み中…</p>
-      <button id="app-open-popup" type="button" hidden>プロジェクト選択（Popup）を開く</button>
+      <a id="app-open-popup" href="../popup/popup.html" hidden>プロジェクト選択を開く</a>
       <p id="app-context" aria-live="polite">起動中</p>
     </header>
     <ul id="app-nav"></ul>
@@ -295,18 +295,15 @@ describe('bootstrapApp', () => {
     expect(document.getElementById('app-build-date')?.textContent).toBe(`build ${BUILD_DATE}`);
   });
 
-  test('プロジェクト未選択（状態 A）: 未選択メッセージ + Popup を開く導線', async () => {
+  test('プロジェクト未選択（状態 A）: 未選択メッセージ + プロジェクト選択ページへの同一タブ導線', async () => {
     await bootstrapApp(asWindow(createWindowStub()));
     expect(document.getElementById('app-status')?.textContent).toContain(
       'プロジェクトが選択されていません',
     );
-    const openPopup = document.getElementById('app-open-popup') as HTMLButtonElement;
+    const openPopup = document.getElementById('app-open-popup') as HTMLAnchorElement;
     expect(openPopup.hidden).toBe(false);
-
-    openPopup.click();
-    expect(chrome.tabs.create).toHaveBeenCalledWith({
-      url: 'chrome-extension://test-extension-id/popup/popup.html',
-    });
+    // 同一タブ遷移のアンカー（新規タブは開かない）
+    expect(openPopup.getAttribute('href')).toBe('../popup/popup.html');
   });
 
   test('プロジェクト選択済み: ヘッダにプロジェクト名を表示し導線は隠す', async () => {
@@ -314,7 +311,7 @@ describe('bootstrapApp', () => {
       asWindow(createWindowStub({ currentProject: { projectId: 'p1', spreadsheetId: 's1', driveFolderId: 'f1', name: '肺炎 SR' } })),
     );
     expect(document.getElementById('app-status')?.textContent).toBe('プロジェクト: 肺炎 SR');
-    expect((document.getElementById('app-open-popup') as HTMLButtonElement).hidden).toBe(true);
+    expect((document.getElementById('app-open-popup') as HTMLAnchorElement).hidden).toBe(true);
   });
 
   test('初期表示は #/home（サイドバー 9 項目 + aria-current + スクリーンリーダ通知）', async () => {

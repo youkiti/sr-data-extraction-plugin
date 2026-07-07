@@ -4,7 +4,7 @@
 // 拡張アイコンのクリックはポップアップを出さず、その場で新規タブを開く:
 // - プロジェクト選択済み → メインビュー（app/app.html）
 // - 未選択（初回起動・ログアウト後）→ S1 プロジェクト選択ページ（popup/popup.html。
-//   メインビューの「プロジェクト選択（Popup）を開く」ボタンと同じフルページ表示）
+//   メインビューの「プロジェクト選択を開く」導線と同じフルページ表示）
 import { loadCurrentProject } from '../features/project/projectStore';
 import type { ProjectRef } from '../domain/project';
 

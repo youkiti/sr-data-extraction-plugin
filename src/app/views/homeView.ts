@@ -17,6 +17,14 @@ export function renderHomeView(state: AppState, ctx: ViewContext): HTMLElement {
   const children: Array<HTMLElement | string> = [
     el('h2', { text: 'プロジェクト概要' }),
     el('p', { className: 'view__lead', text: `プロジェクト: ${projectName}` }),
+    // プロジェクト切替: S1 プロジェクト選択ページへ同一タブで遷移する（新規タブは開かない）
+    el('p', {}, [
+      el('a', {
+        id: 'home-switch-project',
+        text: '別のプロジェクトを開く',
+        attributes: { href: '../popup/popup.html' },
+      }),
+    ]),
   ];
 
   if (home.countsLoading) {

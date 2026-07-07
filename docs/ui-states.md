@@ -42,7 +42,7 @@ spec が正。実装が追いついていない箇所は以下のとおり（実
 - 既存 ID で開く場合、`Meta` タブの検証に加えて **`Documents` / `SchemaFields` タブの存在**を確認し、欠けていれば `#popup-open-error` に「sr-data-extraction のプロジェクトではありません（Documents / SchemaFields タブが見つかりません）」
 - 存在しないスプレッドシート ID（404）は「スプレッドシートが見つかりません。ID を確認してください」
 - 設定画面はハッシュルートではなく独立ページのため、`#open-options` は `options/options.html` を新規タブで開く
-- プロジェクト選択（作成 / 既存 ID / 履歴クリック）成功で直ちにメインビュータブを開く。独立した「メインビューを開く」ボタンは持たない（スケルトン段階の `#open-app` ボタンは廃止）
+- プロジェクト選択（作成 / 既存 ID / 履歴クリック）成功で直ちに同一タブのままメインビューへ遷移する（`chrome.tabs.update`。S1 はフルページ表示のためタブを増やさない）。独立した「メインビューを開く」ボタンは持たない（スケルトン段階の `#open-app` ボタンは廃止）
 
 ## 2. Options (`src/options/options.html`)
 
@@ -82,7 +82,7 @@ spec が正。実装が追いついていない箇所は以下のとおり（実
 
 ### 状態 A: プロジェクト未選択（不正アクセス）
 
-- `currentProject` が無い状態で `app.html` を直接開いた場合、`#app-status` に未選択メッセージ + ポップアップへ戻る導線が 1 つ以上
+- `currentProject` が無い状態で `app.html` を直接開いた場合、`#app-status` に未選択メッセージ + プロジェクト選択ページへ戻る導線が 1 つ以上（`#app-open-popup` = `../popup/popup.html` への同一タブ遷移アンカー）
 
 ### 状態 B: ガード未充足
 
@@ -94,7 +94,7 @@ spec が正。実装が追いついていない箇所は以下のとおり（実
 |---|---|---|
 | `#/home` | 読み込み中 | `#home-counts-loading`「進捗を読み込んでいます…」（起動時に Sheets の 7 範囲を `values:batchGet` 1 呼び出しで読む間。プロジェクト名は常時表示）。プロジェクト未選択時は読込自体を行わない（状態 A のまま） |
 | | 読み込み失敗 | `#home-counts-error`「進捗を読み込めませんでした: {理由}」（`role="alert"`）+ 再読み込み `#home-counts-reload`（force 再取得）。失敗中のガードはシード値（全 0 = 全ステップディム）のまま |
-| | 通常 | プロジェクトメタ + 進捗サマリ（文献数 / プロトコル版数 / 確定スキーマ版数 / Evidence 行数 / データ行数）。0 文献でも崩れない。カウントの内訳: documents = `Documents` 行数 / protocolVersions = `Protocol` 行数 / schemaVersions = `SchemaVersions` 行数 / pilotRuns = `ExtractionRuns` の `run_type = pilot` 行数 / evidenceRows = `Evidence` 行数 / dataRows = `StudyData` + `ResultsData` 行数。読込成功後は各画面の操作（取り込み / 保存 / 確定 / run 完了）が増分更新する。E2E seam: `__E2E_PRELOADED_STATE__` に `counts` があれば読込済みとして扱い batchGet を行わない |
+| | 通常 | プロジェクトメタ + プロジェクト切替リンク `#home-switch-project`「別のプロジェクトを開く」（S1 プロジェクト選択ページへの同一タブ遷移アンカー。全状態で常設）+ 進捗サマリ（文献数 / プロトコル版数 / 確定スキーマ版数 / Evidence 行数 / データ行数）。0 文献でも崩れない。カウントの内訳: documents = `Documents` 行数 / protocolVersions = `Protocol` 行数 / schemaVersions = `SchemaVersions` 行数 / pilotRuns = `ExtractionRuns` の `run_type = pilot` 行数 / evidenceRows = `Evidence` 行数 / dataRows = `StudyData` + `ResultsData` 行数。読込成功後は各画面の操作（取り込み / 保存 / 確定 / run 完了）が増分更新する。E2E seam: `__E2E_PRELOADED_STATE__` に `counts` があれば読込済みとして扱い batchGet を行わない |
 | `#/documents` | 読み込み中 | `#documents-loading`「一覧を読み込んでいます…」（初回表示時に Documents タブを自動読込。再読み込みボタンで強制再取得） |
 | | 読み込み失敗 | `#documents-load-error`「一覧を読み込めませんでした: {理由}」（赤系）。再読み込みボタンで復帰 |
 | | 空 | 「Drive から PDF を取り込む」ボタン + 空状態説明（`#documents-empty`）+ 画面上部に「取り込んだ PDF が外部へ送信されるのは LLM API への抽出リクエストのみです」の注意書き（常時表示） |

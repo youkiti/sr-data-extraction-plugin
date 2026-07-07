@@ -22,7 +22,7 @@ import {
 import type { GoogleApiDeps } from '../lib/google/types';
 
 export interface PopupDeps {
-  /** メインビュー（app.html）を新規タブで開く */
+  /** メインビュー（app.html）へ遷移する（S1 はフルページ表示のため同一タブを書き換える） */
   openAppTab: () => void;
   /** 設定画面（options.html）を開く */
   openOptions: () => void;
@@ -46,7 +46,9 @@ export function createChromePopupDeps(): PopupDeps {
   const auth = createChromeAuthDeps();
   return {
     openAppTab: () => {
-      void chrome.tabs.create({ url: chrome.runtime.getURL('app/app.html') });
+      // S1 は新規タブのフルページとして開かれるため、選択後は同一タブのまま
+      // メインビューへ遷移する（タブを増やさない）
+      void chrome.tabs.update({ url: chrome.runtime.getURL('app/app.html') });
     },
     openOptions: () => {
       void chrome.tabs.create({ url: chrome.runtime.getURL('options/options.html') });

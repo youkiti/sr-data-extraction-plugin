@@ -21,6 +21,7 @@ export interface ChromeMock {
   };
   tabs: {
     create: jest.Mock;
+    update: jest.Mock;
     remove: jest.Mock;
     onRemoved: { addListener: jest.Mock; removeListener: jest.Mock };
   };
@@ -55,6 +56,7 @@ export function installChromeMock(): ChromeMock {
     },
     tabs: {
       create: jest.fn(async () => ({})),
+      update: jest.fn(async () => ({})),
       remove: jest.fn(async () => undefined),
       onRemoved: { addListener: jest.fn(), removeListener: jest.fn() },
     },

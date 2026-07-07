@@ -37,6 +37,15 @@ describe('renderHomeView', () => {
     expect(renderHomeView(state, ctx).textContent).toContain('プロジェクト: 未選択');
   });
 
+  test('プロジェクト切替リンク: S1 プロジェクト選択ページへ同一タブで遷移するアンカーを常設する', () => {
+    const { ctx } = makeCtx();
+    const link = renderHomeView(makeState(), ctx).querySelector('#home-switch-project');
+    expect(link?.textContent).toBe('別のプロジェクトを開く');
+    // 相対 href の通常アンカー = 同一タブ遷移（target/_blank や tabs.create を使わない）
+    expect(link?.getAttribute('href')).toBe('../popup/popup.html');
+    expect(link?.getAttribute('target')).toBeNull();
+  });
+
   test('読み込み中: #home-counts-loading を出し、サマリは出さない', () => {
     const { ctx } = makeCtx();
     const view = renderHomeView(makeState({ countsLoading: true }), ctx);
