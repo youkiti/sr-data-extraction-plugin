@@ -6,6 +6,7 @@ import {
   buildTabModel,
   entityInstances,
   entityKeyLabel,
+  splitDecidedCells,
 } from '../../../../src/features/verification/cells';
 import { cellKeyOf } from '../../../../src/features/verification/cellState';
 
@@ -157,5 +158,47 @@ describe('buildTabModel', () => {
     const model = buildTabModel('arm', fields, [], []);
     expect(model.groups).toEqual([]);
     expect(model.cells).toEqual([]);
+  });
+});
+
+describe('splitDecidedCells', () => {
+  const fields = [
+    makeField({ fieldId: 'f-1', fieldIndex: 1, section: 'methods' }),
+    makeField({ fieldId: 'f-2', fieldIndex: 2, section: 'methods', fieldName: 'country' }),
+    makeField({ fieldId: 'f-3', fieldIndex: 3, section: 'results', fieldName: 'n_events' }),
+  ];
+
+  test('判定済みセルをグループ見出し付きで分離し、未判定はグループに残す', () => {
+    const model = buildTabModel('study', fields, [], [makeDecision({ fieldId: 'f-2' })]);
+    const { activeGroups, decided } = splitDecidedCells(model.groups, null);
+    expect(activeGroups.map((g) => g.heading)).toEqual(['methods', 'results']);
+    expect(activeGroups[0]?.cells.map((c) => c.field.fieldId)).toEqual(['f-1']);
+    expect(decided).toHaveLength(1);
+    expect(decided[0]?.cell.field.fieldId).toBe('f-2');
+    expect(decided[0]?.heading).toBe('methods');
+  });
+
+  test('直近判定（recentDecidedKey）のセルは元のグループへ残す', () => {
+    const model = buildTabModel('study', fields, [], [makeDecision({ fieldId: 'f-2' })]);
+    const recentKey = cellKeyOf('f-2', '-');
+    const { activeGroups, decided } = splitDecidedCells(model.groups, recentKey);
+    expect(activeGroups[0]?.cells.map((c) => c.field.fieldId)).toEqual(['f-1', 'f-2']);
+    expect(decided).toEqual([]);
+  });
+
+  test('全セルが判定済みになったグループは activeGroups から消える', () => {
+    const model = buildTabModel(
+      'study',
+      fields,
+      [],
+      [makeDecision({ fieldId: 'f-1' }), makeDecision({ fieldId: 'f-2' })],
+    );
+    const { activeGroups, decided } = splitDecidedCells(model.groups, null);
+    expect(activeGroups.map((g) => g.heading)).toEqual(['results']);
+    expect(decided.map((entry) => entry.cell.field.fieldId)).toEqual(['f-1', 'f-2']);
+  });
+
+  test('グループが空なら両方とも空を返す', () => {
+    expect(splitDecidedCells([], null)).toEqual({ activeGroups: [], decided: [] });
   });
 });

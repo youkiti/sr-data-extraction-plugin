@@ -112,6 +112,47 @@ export function entityInstances(
   return [...keys].sort((a, b) => a.localeCompare(b));
 }
 
+/** 判定済みブロックへ送るセル（所属グループの見出しを文脈表示用に併記） */
+export interface DecidedEntry {
+  cell: VerificationCell;
+  heading: string;
+}
+
+export interface DecidedSplit {
+  /** 未判定（+ 直近判定 1 件）だけを残したグループ。空になったグループは除外 */
+  activeGroups: CellGroup[];
+  /** 下部「判定済み」ブロックへ送るセル（スキーマ順） */
+  decided: DecidedEntry[];
+}
+
+/**
+ * 判定済みセルを下部ブロックへ分離する（ui-states.md §3 `#/verify`）。
+ * 一番上が常に「今判断すべき変数」になるよう、未判定セルを上に残す。
+ * recentDecidedKey（直近判定の 1 件）は判定直後の見直し・戻す (z) のために
+ * 元の位置へ残し、次の判定で判定済みブロックへ送る
+ */
+export function splitDecidedCells(
+  groups: readonly CellGroup[],
+  recentDecidedKey: string | null,
+): DecidedSplit {
+  const activeGroups: CellGroup[] = [];
+  const decided: DecidedEntry[] = [];
+  for (const group of groups) {
+    const active: VerificationCell[] = [];
+    for (const cell of group.cells) {
+      if (cell.state.status === 'unverified' || cell.cellKey === recentDecidedKey) {
+        active.push(cell);
+      } else {
+        decided.push({ cell, heading: group.heading });
+      }
+    }
+    if (active.length > 0) {
+      activeGroups.push({ heading: group.heading, cells: active });
+    }
+  }
+  return { activeGroups, decided };
+}
+
 /**
  * タブのセルモデルを構築する。decisions は「自分の annotator 行への判定」だけを
  * 渡すこと（他 annotator の判定を混ぜると状態導出が濁る）
