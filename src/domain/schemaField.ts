@@ -1,6 +1,6 @@
 // SchemaFields タブに対応する型（requirements.md §3.2）。1 行 = 1 抽出項目 ×（schema_version）
 
-/** エンティティ階層（requirements.md §3.3）。rob_domain は P1 */
+/** エンティティ階層（requirements.md §3.3）。rob_domain は RoB テンプレート（S5 プリセット）の入口のみ */
 export type EntityLevel = 'study' | 'arm' | 'outcome_result' | 'rob_domain';
 
 export type FieldDataType = 'text' | 'integer' | 'float' | 'boolean' | 'enum' | 'date';

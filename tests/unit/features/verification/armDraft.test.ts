@@ -3,6 +3,7 @@ import type { SchemaField } from '../../../../src/domain/schemaField';
 import {
   armNameField,
   draftArms,
+  isArmDependentLevel,
   needsArmConfirmation,
 } from '../../../../src/features/verification/armDraft';
 
@@ -43,6 +44,15 @@ function makeEvidence(overrides: Partial<Evidence> = {}): Evidence {
     ...overrides,
   };
 }
+
+describe('isArmDependentLevel', () => {
+  test('arm / outcome_result のみ群構成の確定に依存する（study / rob_domain は非依存）', () => {
+    expect(isArmDependentLevel('arm')).toBe(true);
+    expect(isArmDependentLevel('outcome_result')).toBe(true);
+    expect(isArmDependentLevel('study')).toBe(false);
+    expect(isArmDependentLevel('rob_domain')).toBe(false);
+  });
+});
 
 describe('needsArmConfirmation', () => {
   test('arm または outcome_result レベル項目があれば true', () => {

@@ -12,6 +12,7 @@ import {
   type VerificationCell,
 } from '../../features/verification/cells';
 import type { CellStatus } from '../../features/verification/cellState';
+import { isArmDependentLevel } from '../../features/verification/armDraft';
 import type { VerificationProgress } from '../../features/verification/progress';
 import { el } from '../ui/dom';
 
@@ -48,7 +49,7 @@ export interface VerificationFormModel {
   canSearchText: boolean;
   /** 群構成確定カード。null = 群構成が不要なスキーマ（arm / outcome_result 項目なし） */
   armCard: ArmCardModel | null;
-  /** true のとき study 以外のタブをディムし、該当タブの本文を確定案内に差し替える */
+  /** true のとき arm / outcome_result タブをディムし、該当タブの本文を確定案内に差し替える */
   armLocked: boolean;
   /** 全 entity タブ横断の判定進捗（判定のたびに更新。「どこまでやったか」の可視化） */
   progress: VerificationProgress;
@@ -402,8 +403,9 @@ function renderTabs(model: VerificationFormModel, handlers: VerificationFormHand
     if (tab === model.activeTab) {
       button.classList.add('verify__tab--active');
     }
-    if (model.armLocked && tab !== 'study') {
-      // arm 未確定のうちは arm / outcome_result（/ rob_domain）タブをディム（ui-states.md §3）
+    if (model.armLocked && isArmDependentLevel(tab)) {
+      // arm 未確定のうちは arm / outcome_result タブだけをディム（ui-states.md §3。
+      // rob_domain は群構成に依存しないためロックしない）
       button.disabled = true;
       button.classList.add('verify__tab--locked');
       button.setAttribute('aria-disabled', 'true');
@@ -527,7 +529,7 @@ export function renderVerificationForm(
   if (model.armCard !== null) {
     children.push(renderArmCard(model.armCard, handlers));
   }
-  if (model.armLocked && model.activeTab !== 'study') {
+  if (model.armLocked && isArmDependentLevel(model.activeTab)) {
     // study 項目のないスキーマではロック対象タブが初期表示になりうる。本文を確定案内に差し替える
     children.push(
       el('p', {

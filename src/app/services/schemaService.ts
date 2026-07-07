@@ -24,7 +24,7 @@ import {
   listSchemaVersions,
 } from '../../features/schema/schemaRepository';
 import { saveSchemaVersion } from '../../features/schema/saveSchemaVersion';
-import { OUTCOME_TEMPLATES, type OutcomePresetKind } from '../../features/schema/presets/outcomeTemplates';
+import { SCHEMA_PRESETS, type SchemaPresetKind } from '../../features/schema/presets';
 import type { SchemaEditorRow } from '../../features/schema/types';
 import { validateEditorRows } from '../../features/schema/validateField';
 import { ensureChildFolder, getFileText, uploadTextFile } from '../../lib/google/drive';
@@ -323,13 +323,13 @@ export function removeEditorRow(store: Store, index: number): void {
   });
 }
 
-/** エディタ: 二値 / 連続アウトカムのプリセット挿入（requirements.md §3.3） */
-export function insertOutcomePreset(store: Store, kind: OutcomePresetKind): void {
+/** エディタ: プリセット挿入（二値 / 連続アウトカム・RoB 2 / ROBINS-I。requirements.md §3.3） */
+export function insertSchemaPreset(store: Store, kind: SchemaPresetKind): void {
   const rows = store.getState().schema.editorRows;
   if (rows === null) {
     return;
   }
-  const next = [...rows, ...OUTCOME_TEMPLATES[kind].map((row) => ({ ...row }))];
+  const next = [...rows, ...SCHEMA_PRESETS[kind].map((row) => ({ ...row }))];
   patchSchema(store, {
     editorRows: next,
     editorOrigin: 'user_edit',

@@ -1,7 +1,7 @@
 // 群構成確定カードの AI ドラフト導出（requirements.md §4.2 / ui-states.md §3 `#/verify`）。
 // Evidence の entity_key と arm 名フィールドの値から「確定前の初期値」を組み立てる純粋ロジック
 import type { Evidence } from '../../domain/evidence';
-import type { SchemaField } from '../../domain/schemaField';
+import type { EntityLevel, SchemaField } from '../../domain/schemaField';
 import { parseEntityKey } from '../../utils/entityKey';
 import { cellKeyOf } from './cellState';
 import { entityKeyLabel } from './cells';
@@ -12,13 +12,20 @@ export interface DraftArm {
 }
 
 /**
+ * 群構成の確定に依存する entity レベルか。ディム対象のタブはこのレベルに限る —
+ * study は 1 document 固定、rob_domain はテンプレートの固定ドメインで完結するため、
+ * どちらも arm 未確定のまま検証できる（requirements.md §3.3 v0.9）
+ */
+export function isArmDependentLevel(level: EntityLevel): boolean {
+  return level === 'arm' || level === 'outcome_result';
+}
+
+/**
  * 群構成の確定が必要なスキーマか（arm / outcome_result レベル項目が 1 つでもあるか）。
  * false のときは確定カードを出さない（ディム対象のタブも存在しない）
  */
 export function needsArmConfirmation(fields: readonly SchemaField[]): boolean {
-  return fields.some(
-    (field) => field.entityLevel === 'arm' || field.entityLevel === 'outcome_result',
-  );
+  return fields.some((field) => isArmDependentLevel(field.entityLevel));
 }
 
 /**

@@ -298,6 +298,18 @@ function renderEditor(
     attributes: { type: 'button' },
   });
   presetContinuous.addEventListener('click', () => ctx.schema.onInsertPreset('continuous'));
+  const presetRob2 = el('button', {
+    id: 'schema-preset-rob2',
+    text: 'RoB 2 テンプレートを挿入',
+    attributes: { type: 'button' },
+  });
+  presetRob2.addEventListener('click', () => ctx.schema.onInsertPreset('rob2'));
+  const presetRobinsI = el('button', {
+    id: 'schema-preset-robins-i',
+    text: 'ROBINS-I テンプレートを挿入',
+    attributes: { type: 'button' },
+  });
+  presetRobinsI.addEventListener('click', () => ctx.schema.onInsertPreset('robins_i'));
 
   const errorItems = schema.editorErrors.map((error) =>
     el('li', {
@@ -347,6 +359,8 @@ function renderEditor(
       addRowButton,
       presetBinary,
       presetContinuous,
+      presetRob2,
+      presetRobinsI,
     ]),
     dataTypeHelp,
     el('div', { className: 'schema__table-wrap' }, [table]),

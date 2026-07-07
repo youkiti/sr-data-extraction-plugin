@@ -924,6 +924,54 @@ describe('群構成の確定ゲート（arm 未確定時。ui-states.md §3 `#/v
     panel.dispose();
   });
 
+  test('rob_domain タブは arm 未確定でもロックされず判定できる（群構成に依存しない）', () => {
+    const robField = makeField({
+      fieldId: 'f-rob',
+      fieldIndex: 5,
+      section: 'risk_of_bias',
+      fieldName: 'rob2_judgement',
+      fieldLabel: 'RoB 2 判定（ドメイン別）',
+      entityLevel: 'rob_domain',
+      dataType: 'enum',
+      allowedValues: 'low|some_concerns|high',
+    });
+    const { panel, onDecision } = createPanel({
+      armStructure: null,
+      fields: [...FIELDS, robField],
+      evidence: [
+        ...EVIDENCE,
+        makeEvidence({
+          evidenceId: 'ev-rob',
+          fieldId: 'f-rob',
+          entityKey: 'rob:d1_randomization',
+          value: 'low',
+          quote: null,
+          anchorStatus: null,
+        }),
+      ],
+    });
+    const tabs = [...panel.root.querySelectorAll<HTMLButtonElement>('.verify__tab')];
+    expect(tabs.find((tab) => tab.textContent === '群（arm）')?.disabled).toBe(true);
+    const robTab = tabs.find((tab) => tab.textContent === 'RoB');
+    expect(robTab?.disabled).toBe(false);
+    robTab?.click();
+    // ドメインごとのインスタンスグループが描画され、ロック案内は出ない
+    expect(panel.root.querySelector('.verify__group-heading')?.textContent).toBe(
+      'RoB: d1_randomization',
+    );
+    expect(panel.root.querySelector('.verify__locked-note')).toBeNull();
+    // 判定操作も通常どおり通る
+    pressKey('a');
+    expect(onDecision).toHaveBeenCalledWith(
+      expect.objectContaining({
+        fieldId: 'f-rob',
+        entityKey: 'rob:d1_randomization',
+        action: 'accept',
+      }),
+    );
+    panel.dispose();
+  });
+
   test('study 項目なしスキーマは初期表示から確定案内になり、キー操作は無害', () => {
     const armOnly = [
       makeField({ fieldId: 'f-arm-n', fieldName: 'arm_n', fieldLabel: '群の N', entityLevel: 'arm' }),
