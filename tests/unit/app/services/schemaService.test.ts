@@ -3,7 +3,7 @@ import {
   cancelEditor,
   confirmSchema,
   emptyEditorRow,
-  insertOutcomePreset,
+  insertSchemaPreset,
   loadSchema,
   removeEditorRow,
   runDraftSchema,
@@ -547,11 +547,11 @@ describe('エディタ操作', () => {
     expect(store.getState().schema.editorRows?.[0]?.fieldName).toBe('study_design');
   });
 
-  test('addEditorRow / removeEditorRow / insertOutcomePreset（エディタ未表示は no-op）', () => {
+  test('addEditorRow / removeEditorRow / insertSchemaPreset（エディタ未表示は no-op）', () => {
     const store = makeStore();
     addEditorRow(store);
     removeEditorRow(store, 0);
-    insertOutcomePreset(store, 'binary');
+    insertSchemaPreset(store, 'binary');
     expect(store.getState().schema.editorRows).toBeNull();
 
     store.setState({ schema: { ...store.getState().schema, editorRows: [makeEditorRow()] } });
@@ -564,9 +564,16 @@ describe('エディタ操作', () => {
     expect(store.getState().schema.editorRows).toHaveLength(1);
     expect(store.getState().schema.editorErrors).toEqual([]);
 
-    insertOutcomePreset(store, 'continuous');
+    insertSchemaPreset(store, 'continuous');
     expect(store.getState().schema.editorRows).toHaveLength(4);
     expect(store.getState().schema.editorOrigin).toBe('user_edit');
+
+    // RoB テンプレートも同じ挿入経路（判定 + 根拠の 2 行が末尾に付く）
+    insertSchemaPreset(store, 'rob2');
+    expect(store.getState().schema.editorRows).toHaveLength(6);
+    expect(store.getState().schema.editorRows?.[4]?.fieldName).toBe('rob2_judgement');
+    expect(store.getState().schema.editorRows?.[5]?.entityLevel).toBe('rob_domain');
+    expect(store.getState().schema.editorErrors).toEqual([]);
   });
 
   test('startEditorFromCurrent: 現行版の項目を fieldId 維持で引き継ぐ（未読込は no-op）', () => {

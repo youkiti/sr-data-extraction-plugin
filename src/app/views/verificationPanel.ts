@@ -13,7 +13,12 @@ import type { ConfirmedArmStructure } from '../../domain/armStructure';
 import type { Decision, DecisionAction } from '../../domain/decision';
 import type { Evidence } from '../../domain/evidence';
 import type { EntityLevel } from '../../domain/schemaField';
-import { draftArms, needsArmConfirmation, type DraftArm } from '../../features/verification/armDraft';
+import {
+  draftArms,
+  isArmDependentLevel,
+  needsArmConfirmation,
+  type DraftArm,
+} from '../../features/verification/armDraft';
 import {
   availableTabs,
   buildTabModel,
@@ -117,7 +122,8 @@ export function createVerificationPanel(
       : draftArms(data.fields, data.evidence);
   let armError: string | null = null;
   const armLocked = (): boolean => armRequired && armStructure === null;
-  const tabLocked = (tab: EntityLevel): boolean => armLocked() && tab !== 'study';
+  // ロックは群構成に依存するタブだけ（study / rob_domain は arm 未確定でも検証できる）
+  const tabLocked = (tab: EntityLevel): boolean => armLocked() && isArmDependentLevel(tab);
 
   const tabs = availableTabs(data.fields);
   let activeTab: EntityLevel = tabs.find((tab) => !tabLocked(tab)) ?? tabs[0] ?? 'study';

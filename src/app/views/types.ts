@@ -3,7 +3,7 @@
 import type { Decision } from '../../domain/decision';
 import type { ExportFormat } from '../../domain/exportLog';
 import type { ProtocolSubmitInput } from '../../features/protocol/submitInput';
-import type { OutcomePresetKind } from '../../features/schema/presets/outcomeTemplates';
+import type { SchemaPresetKind } from '../../features/schema/presets';
 import type { SchemaEditorRow } from '../../features/schema/types';
 
 /** #/home のユーザー操作コールバック */
@@ -50,8 +50,8 @@ export interface SchemaViewCallbacks {
   onEditRow(index: number, patch: Partial<SchemaEditorRow>): void;
   onAddRow(): void;
   onRemoveRow(index: number): void;
-  /** 二値 / 連続アウトカムのプリセット挿入 */
-  onInsertPreset(kind: OutcomePresetKind): void;
+  /** プリセット挿入（二値 / 連続アウトカム・RoB 2 / ROBINS-I） */
+  onInsertPreset(kind: SchemaPresetKind): void;
   /** 「版として確定」（note = 改訂理由） */
   onConfirm(note: string): void;
   onCancelEditor(): void;

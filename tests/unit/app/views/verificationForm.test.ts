@@ -577,6 +577,39 @@ describe('renderVerificationForm: 群構成確定カード（ui-states.md §3 `#
     expect(handlers.onArmCancelRevise).toHaveBeenCalled();
   });
 
+  test('arm 未確定でも rob_domain タブはディムしない（群構成に依存しない）', () => {
+    const { root, handlers } = render(
+      makeModel([makeCell()], {
+        tabs: ['study', 'arm', 'rob_domain'],
+        armCard: editingCard,
+        armLocked: true,
+      }),
+    );
+    const tabs = root.querySelectorAll<HTMLButtonElement>('.verify__tab');
+    expect(tabs[1]?.disabled).toBe(true); // arm はディム
+    expect(tabs[2]?.disabled).toBe(false); // RoB は操作可
+    expect(tabs[2]?.classList.contains('verify__tab--locked')).toBe(false);
+    tabs[2]?.click();
+    expect(handlers.onSelectTab).toHaveBeenCalledWith('rob_domain');
+  });
+
+  test('arm 未確定で rob_domain タブが表示中でも本文は確定案内に差し替えない', () => {
+    const robCell = makeCell({
+      field: makeField({ fieldId: 'f-rob', section: 'risk_of_bias', entityLevel: 'rob_domain' }),
+      entityKey: 'rob:d1_randomization',
+    });
+    const { root } = render(
+      makeModel([robCell], {
+        tabs: ['arm', 'rob_domain'],
+        activeTab: 'rob_domain',
+        armCard: editingCard,
+        armLocked: true,
+      }),
+    );
+    expect(root.querySelector('.verify__locked-note')).toBeNull();
+    expect(root.querySelector('.verify__cell')).not.toBeNull();
+  });
+
   test('ロック中にロック対象タブが表示中なら本文を確定案内に差し替える（study 項目なしスキーマ）', () => {
     const armCell = makeCell({
       field: makeField({ fieldId: 'f-arm', entityLevel: 'arm' }),

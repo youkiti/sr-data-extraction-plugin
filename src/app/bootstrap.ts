@@ -24,7 +24,7 @@ import {
   addEditorRow,
   cancelEditor,
   confirmSchema,
-  insertOutcomePreset,
+  insertSchemaPreset,
   loadSchema,
   removeEditorRow,
   runDraftSchema,
@@ -221,7 +221,7 @@ export async function bootstrapApp(
         removeEditorRow(store, index);
       },
       onInsertPreset: (kind) => {
-        insertOutcomePreset(store, kind);
+        insertSchemaPreset(store, kind);
       },
       onConfirm: (note) => {
         void confirmSchema(store, deps, note);

@@ -190,6 +190,16 @@ test('エディタ: 行操作と検証エラー表示、確定ボタンの無効
   await page.locator('#schema-preset-binary').click();
   await expect(page.locator('#schema-editor-table tbody tr')).toHaveCount(3);
 
+  // RoB 2 テンプレート挿入（判定 + 根拠の 2 行。entity_level は rob_domain）
+  await page.locator('#schema-preset-rob2').click();
+  await expect(page.locator('#schema-editor-table tbody tr')).toHaveCount(5);
+  await expect(page.locator('input[aria-label="4 行目の field_name"]')).toHaveValue(
+    'rob2_judgement',
+  );
+  await expect(page.locator('select[aria-label="4 行目の entity_level"]')).toHaveValue(
+    'rob_domain',
+  );
+
   // キャンセルでドラフト前へ戻る
   await page.locator('#schema-editor-cancel').click();
   await expect(page.locator('#schema-draft-form')).toBeVisible();
