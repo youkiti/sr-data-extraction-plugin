@@ -19,10 +19,17 @@ describe('createInitialState', () => {
       },
       documents: {
         records: null,
+        studies: null,
+        extractedStudyIds: [],
+        ignoredCandidateKeys: [],
         loading: false,
         loadError: null,
         importing: false,
         importRows: [],
+        selectedStudyIds: [],
+        mergeDialog: null,
+        merging: false,
+        mergeError: null,
       },
       protocol: {
         records: null,

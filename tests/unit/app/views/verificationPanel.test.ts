@@ -39,7 +39,8 @@ function buildPage(page: number, text: string): TextLayerPage {
 function makeDocumentRecord(overrides: Partial<DocumentRecord> = {}): DocumentRecord {
   return {
     documentId: 'doc-1',
-    studyLabel: 'Smith 2020',
+    studyId: 'study-1',
+    documentRole: 'article',
     driveFileId: 'drive-1',
     sourceFileId: 'src-1',
     filename: 'smith2020.pdf',
@@ -81,6 +82,7 @@ function makeEvidence(overrides: Partial<Evidence> = {}): Evidence {
   return {
     evidenceId: 'ev-1',
     runId: 'run-1',
+    studyId: 'study-1',
     documentId: 'doc-1',
     fieldId: 'f-total',
     entityKey: '-',
@@ -150,7 +152,7 @@ function makeDecision(overrides: Partial<Decision> = {}): Decision {
   return {
     decidedAt: 't0',
     decidedBy: ME,
-    documentId: 'doc-1',
+    studyId: 'study-1',
     fieldId: 'f-country',
     entityKey: '-',
     annotator: ME,
@@ -293,7 +295,7 @@ describe('判定操作', () => {
     expect(onDecision).toHaveBeenCalledWith({
       decidedAt: 't1',
       decidedBy: ME,
-      documentId: 'doc-1',
+      studyId: 'study-1',
       fieldId: 'f-total',
       entityKey: '-',
       annotator: ME,

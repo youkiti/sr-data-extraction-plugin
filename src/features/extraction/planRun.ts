@@ -64,7 +64,10 @@ export interface SkippedDocument {
 
 /** 1 行 = 1 API 呼び出しの計画 */
 export interface PlannedBatch {
+  /** 抽出元の文書（本文ロード・アンカリング・Evidence.document_id の対象）。フェーズ 1 は 1 study = 1 文書 */
   documentId: string;
+  /** 抽出単位である study（Evidence.study_id・ExtractionRuns.study_ids の素材）。document から解決 */
+  studyId: string;
   /** section 単位分割時の section 名。スキーマ全項目一括なら null */
   section: string | null;
   /** 当該バッチで抽出する項目（fieldIndex 順） */
@@ -208,6 +211,7 @@ export function planRun(input: PlanRunInput): RunPlan {
     if (withinBudget(fullEstimate, budget)) {
       batches.push({
         documentId: doc.documentId,
+        studyId: doc.studyId,
         section: null,
         fieldIds: allFieldIds,
         tokensInEstimate: fullEstimate.tokensIn,
@@ -221,6 +225,7 @@ export function planRun(input: PlanRunInput): RunPlan {
       const estimate = estimateBatch(doc, sectionFields, protocolChars);
       batches.push({
         documentId: doc.documentId,
+        studyId: doc.studyId,
         section,
         fieldIds: sectionFields.map((field) => field.fieldId),
         tokensInEstimate: estimate.tokensIn,

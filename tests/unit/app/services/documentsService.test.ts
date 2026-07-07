@@ -1,38 +1,76 @@
-// documentsService のテスト。lib/google / features/documents はモジュールモックで置き換え、
-// ストア（AppState.documents / counts）の遷移とトースト文言を検証する
+// documentsService（S3 グルーピング）のテスト。lib/google / features/documents の I/O は
+// モジュールモックで置き換え、studyRepository の純粋関数（resolveActiveStudies / studyLabelMap）は
+// requireActual で本物を使う。ストア遷移とトースト文言を検証する
 import { createInitialState, createStore, type Store } from '../../../../src/app/store';
 import {
+  activeStudyGroups,
+  cancelMerge,
+  confirmMerge,
+  ignoreCandidate,
+  ignoredCandidatesKey,
   importFromPicker,
   loadDocuments,
+  openMergeCandidate,
+  openMergeDialog,
+  saveDocumentRole,
+  saveRegistrationId,
   saveStudyLabel,
+  toggleStudySelection,
+  updateMergeDialog,
+  visibleMergeCandidates,
   type DocumentsServiceDeps,
 } from '../../../../src/app/services/documentsService';
 import type { DocumentRecord } from '../../../../src/domain/document';
+import type { StudyRecord } from '../../../../src/domain/study';
 import { readDocuments, updateDocument } from '../../../../src/features/documents/documentRepository';
 import { importDocuments } from '../../../../src/features/documents/importDocuments';
+import {
+  appendStudies,
+  readStudies,
+  updateStudy,
+} from '../../../../src/features/documents/studyRepository';
+import { readRunStudyCoverage } from '../../../../src/features/extraction/runRepository';
 import { ensureChildFolder } from '../../../../src/lib/google/drive';
 import { getCurrentUserEmail } from '../../../../src/lib/google/identity';
 import { openPdfPicker } from '../../../../src/lib/google/picker';
+import { getLocal, setLocal } from '../../../../src/lib/storage/chromeStorage';
 
 jest.mock('../../../../src/features/documents/documentRepository');
 jest.mock('../../../../src/features/documents/importDocuments');
+jest.mock('../../../../src/features/documents/studyRepository', () => {
+  const actual = jest.requireActual('../../../../src/features/documents/studyRepository');
+  return {
+    __esModule: true,
+    ...actual,
+    readStudies: jest.fn(),
+    appendStudies: jest.fn(),
+    updateStudy: jest.fn(),
+  };
+});
+jest.mock('../../../../src/features/extraction/runRepository');
 jest.mock('../../../../src/lib/google/drive');
 jest.mock('../../../../src/lib/google/identity');
 jest.mock('../../../../src/lib/google/picker');
+jest.mock('../../../../src/lib/storage/chromeStorage');
 
-const mockReadDocuments = readDocuments as jest.MockedFunction<typeof readDocuments>;
-const mockUpdateDocument = updateDocument as jest.MockedFunction<typeof updateDocument>;
-const mockImportDocuments = importDocuments as jest.MockedFunction<typeof importDocuments>;
-const mockEnsureChildFolder = ensureChildFolder as jest.MockedFunction<typeof ensureChildFolder>;
-const mockGetCurrentUserEmail = getCurrentUserEmail as jest.MockedFunction<
-  typeof getCurrentUserEmail
->;
-const mockOpenPdfPicker = openPdfPicker as jest.MockedFunction<typeof openPdfPicker>;
+const mockReadDocuments = jest.mocked(readDocuments);
+const mockUpdateDocument = jest.mocked(updateDocument);
+const mockImportDocuments = jest.mocked(importDocuments);
+const mockReadStudies = jest.mocked(readStudies);
+const mockAppendStudies = jest.mocked(appendStudies);
+const mockUpdateStudy = jest.mocked(updateStudy);
+const mockReadCoverage = jest.mocked(readRunStudyCoverage);
+const mockEnsureChildFolder = jest.mocked(ensureChildFolder);
+const mockGetCurrentUserEmail = jest.mocked(getCurrentUserEmail);
+const mockOpenPdfPicker = jest.mocked(openPdfPicker);
+const mockGetLocal = jest.mocked(getLocal);
+const mockSetLocal = jest.mocked(setLocal);
 
 function makeDoc(overrides: Partial<DocumentRecord> = {}): DocumentRecord {
   return {
     documentId: 'doc-1',
-    studyLabel: 'Smith 2020',
+    studyId: 'study-1',
+    documentRole: 'article',
     driveFileId: 'drive-1',
     sourceFileId: 'src-1',
     filename: 'smith2020.pdf',
@@ -44,6 +82,18 @@ function makeDoc(overrides: Partial<DocumentRecord> = {}): DocumentRecord {
     charCount: 20000,
     importedAt: '2026-07-02T00:00:00Z',
     importedBy: 'tester@example.com',
+    note: null,
+    ...overrides,
+  };
+}
+
+function makeStudy(overrides: Partial<StudyRecord> = {}): StudyRecord {
+  return {
+    studyId: 'study-1',
+    studyLabel: 'Smith 2020',
+    registrationId: null,
+    createdAt: 't1',
+    createdBy: 'tester@example.com',
     note: null,
     ...overrides,
   };
@@ -63,6 +113,8 @@ function makeDeps(): DocumentsServiceDeps {
       addTabRemovedListener: jest.fn(),
     },
     loadPdf: jest.fn(),
+    newUuid: () => 'study-new',
+    now: () => 'NOW',
   };
 }
 
@@ -79,171 +131,112 @@ function makeStore(withProject = true): Store {
   return createStore(initial);
 }
 
+function setDocs(store: Store, patch: Partial<ReturnType<Store['getState']>['documents']>): void {
+  store.setState({ documents: { ...store.getState().documents, ...patch } });
+}
+
 function toastTexts(): string[] {
   return Array.from(document.querySelectorAll('.toast')).map((node) => node.textContent ?? '');
 }
 
 beforeEach(() => {
+  jest.clearAllMocks();
   document.body.innerHTML = '';
   mockGetCurrentUserEmail.mockResolvedValue('tester@example.com');
   mockEnsureChildFolder.mockImplementation(async (name) => ({
     id: `${name}-folder-id`,
     webViewLink: `https://drive.google.com/${name}`,
   }));
+  mockReadCoverage.mockResolvedValue({ extracted: new Set(), interrupted: new Set() });
+  mockGetLocal.mockResolvedValue(undefined);
+  mockSetLocal.mockResolvedValue(undefined);
 });
 
 describe('loadDocuments', () => {
-  test('プロジェクト未選択なら何もしない', async () => {
-    const store = makeStore(false);
+  test('プロジェクト未選択 / 読込中は no-op、records ありは force のみ', async () => {
+    await loadDocuments(makeStore(false), makeDeps());
+    expect(mockReadDocuments).not.toHaveBeenCalled();
+
+    const loadingStore = makeStore();
+    setDocs(loadingStore, { loading: true });
+    await loadDocuments(loadingStore, makeDeps());
+    expect(mockReadDocuments).not.toHaveBeenCalled();
+
+    const store = makeStore();
+    setDocs(store, { records: [] });
     await loadDocuments(store, makeDeps());
     expect(mockReadDocuments).not.toHaveBeenCalled();
   });
 
-  test('読込中なら二重読込しない', async () => {
+  test('成功で documents / studies / extractedStudyIds / ignoredCandidateKeys を読み込む', async () => {
     const store = makeStore();
-    store.setState({ documents: { ...store.getState().documents, loading: true } });
+    mockReadDocuments.mockResolvedValue([makeDoc(), makeDoc({ documentId: 'doc-2', studyId: 'study-2' })]);
+    mockReadStudies.mockResolvedValue([makeStudy(), makeStudy({ studyId: 'study-2' })]);
+    mockReadCoverage.mockResolvedValue({ extracted: new Set(['study-1']), interrupted: new Set() });
+    mockGetLocal.mockResolvedValue(['a|b']);
+
     await loadDocuments(store, makeDeps());
-    expect(mockReadDocuments).not.toHaveBeenCalled();
-  });
 
-  test('読込済み（records あり）は force 指定時のみ再読込する', async () => {
-    const store = makeStore();
-    store.setState({ documents: { ...store.getState().documents, records: [] } });
-    await loadDocuments(store, makeDeps());
-    expect(mockReadDocuments).not.toHaveBeenCalled();
-
-    mockReadDocuments.mockResolvedValue([makeDoc()]);
-    await loadDocuments(store, makeDeps(), { force: true });
-    expect(mockReadDocuments).toHaveBeenCalledWith('sheet-1', expect.anything());
-    expect(store.getState().documents.records).toHaveLength(1);
-  });
-
-  test('成功で records と counts.documents を更新し loading を解除する', async () => {
-    const store = makeStore();
-    mockReadDocuments.mockResolvedValue([makeDoc(), makeDoc({ documentId: 'doc-2' })]);
-    const promise = loadDocuments(store, makeDeps());
-    expect(store.getState().documents.loading).toBe(true);
-    await promise;
     const state = store.getState();
-    expect(state.documents.loading).toBe(false);
     expect(state.documents.records).toHaveLength(2);
+    expect(state.documents.studies).toHaveLength(2);
+    expect(state.documents.extractedStudyIds).toEqual(['study-1']);
+    expect(state.documents.ignoredCandidateKeys).toEqual(['a|b']);
     expect(state.counts.documents).toBe(2);
+    expect(mockGetLocal).toHaveBeenCalledWith(ignoredCandidatesKey('sheet-1'));
   });
 
-  test('失敗で loadError を設定する（Error 以外の throw も文字列化）', async () => {
+  test('無視候補が未保存なら空配列で初期化する', async () => {
+    const store = makeStore();
+    mockReadDocuments.mockResolvedValue([]);
+    mockReadStudies.mockResolvedValue([]);
+    await loadDocuments(store, makeDeps());
+    expect(store.getState().documents.ignoredCandidateKeys).toEqual([]);
+  });
+
+  test('失敗で loadError（Error 以外の throw も文字列化）', async () => {
     const store = makeStore();
     mockReadDocuments.mockRejectedValue(new Error('boom'));
     await loadDocuments(store, makeDeps());
     expect(store.getState().documents.loadError).toBe('boom');
 
-    mockReadDocuments.mockRejectedValue('string-error');
+    mockReadDocuments.mockRejectedValue('str');
     await loadDocuments(store, makeDeps(), { force: true });
-    expect(store.getState().documents.loadError).toBe('string-error');
+    expect(store.getState().documents.loadError).toBe('str');
   });
 });
 
 describe('importFromPicker', () => {
-  const selections = [
-    { sourceFileId: 'src-1', filename: 'a.pdf' },
-    { sourceFileId: 'src-2', filename: 'b.pdf' },
-  ];
-
   test('プロジェクト未選択 / 取り込み中は Picker を開かない', async () => {
     await importFromPicker(makeStore(false), makeDeps());
-    expect(mockOpenPdfPicker).not.toHaveBeenCalled();
-
     const store = makeStore();
-    store.setState({ documents: { ...store.getState().documents, importing: true } });
+    setDocs(store, { importing: true });
     await importFromPicker(store, makeDeps());
     expect(mockOpenPdfPicker).not.toHaveBeenCalled();
   });
 
-  test('Picker の起動失敗はトースト案内のみ', async () => {
+  test('Picker 起動失敗はトースト案内 / キャンセル・空は no-op', async () => {
     mockOpenPdfPicker.mockRejectedValue(new Error('no token'));
-    const store = makeStore();
-    await importFromPicker(store, makeDeps());
+    await importFromPicker(makeStore(), makeDeps());
     expect(toastTexts()).toContain('Drive Picker を開けませんでした: no token');
-    expect(store.getState().documents.importing).toBe(false);
-  });
 
-  test('キャンセル（null）と空選択は何もしない', async () => {
-    const store = makeStore();
     mockOpenPdfPicker.mockResolvedValue(null);
-    await importFromPicker(store, makeDeps());
+    await importFromPicker(makeStore(), makeDeps());
     mockOpenPdfPicker.mockResolvedValue([]);
-    await importFromPicker(store, makeDeps());
+    await importFromPicker(makeStore(), makeDeps());
     expect(mockEnsureChildFolder).not.toHaveBeenCalled();
-    expect(store.getState().documents.importRows).toHaveLength(0);
   });
 
-  test('選択 → サブフォルダ解決 → importDocuments → 進捗行と一覧・counts へ反映（部分失敗あり）', async () => {
+  test('取り込み成功で records / studies を追加し done トースト', async () => {
     const store = makeStore();
-    store.setState({
-      documents: { ...store.getState().documents, records: [makeDoc({ documentId: 'doc-0' })] },
-      counts: { ...store.getState().counts, documents: 1 },
-    });
-    mockOpenPdfPicker.mockResolvedValue(selections);
-
-    const progressSnapshots: string[][] = [];
-    mockImportDocuments.mockImplementation(async (params, deps) => {
-      expect(params).toMatchObject({
-        spreadsheetId: 'sheet-1',
-        documentsFolderId: 'documents-folder-id',
-        extractedTextsFolderId: 'extracted_texts-folder-id',
-        selections,
-        importedBy: 'tester@example.com',
-      });
-      // 2 段階進捗を通知し、ストアの進捗行が追随することを検証する
-      deps.onProgress?.({ fileIndex: 0, totalFiles: 2, filename: 'a.pdf', stage: 'copy' });
-      progressSnapshots.push(store.getState().documents.importRows.map((row) => row.status));
-      deps.onProgress?.({ fileIndex: 0, totalFiles: 2, filename: 'a.pdf', stage: 'extract' });
-      deps.onProgress?.({ fileIndex: 1, totalFiles: 2, filename: 'b.pdf', stage: 'copy' });
-      progressSnapshots.push(store.getState().documents.importRows.map((row) => row.status));
-      return {
-        imported: [makeDoc({ documentId: 'doc-1', sourceFileId: 'src-1', filename: 'a.pdf' })],
-        failures: [
-          { sourceFileId: 'src-2', filename: 'b.pdf', stage: 'extract', detail: 'parse error' },
-        ],
-      };
-    });
-
-    await importFromPicker(store, makeDeps());
-
-    expect(mockEnsureChildFolder).toHaveBeenCalledWith('documents', 'folder-1', expect.anything());
-    expect(mockEnsureChildFolder).toHaveBeenCalledWith(
-      'extracted_texts',
-      'folder-1',
-      expect.anything(),
-    );
-    expect(progressSnapshots).toEqual([
-      ['copy', 'queued'],
-      ['extract', 'copy'],
-    ]);
-
-    const state = store.getState();
-    expect(state.documents.importing).toBe(false);
-    expect(state.documents.importRows).toEqual([
-      { sourceFileId: 'src-1', filename: 'a.pdf', status: 'done', detail: null },
-      {
-        sourceFileId: 'src-2',
-        filename: 'b.pdf',
-        status: 'failed',
-        detail: 'テキスト抽出に失敗: parse error',
-      },
-    ]);
-    expect(state.documents.records?.map((doc) => doc.documentId)).toEqual(['doc-0', 'doc-1']);
-    expect(state.counts.documents).toBe(2);
-    expect(toastTexts()).toContain('1 件取り込み、1 件失敗しました');
-  });
-
-  test('全件成功のトースト + 一覧未読込（records null）でも取り込み分だけで一覧を作る', async () => {
-    const store = makeStore();
+    setDocs(store, { records: [makeDoc({ documentId: 'doc-0', studyId: 'study-0' })], studies: [makeStudy({ studyId: 'study-0' })] });
+    store.setState({ counts: { ...store.getState().counts, documents: 1 } });
     mockOpenPdfPicker.mockResolvedValue([{ sourceFileId: 'src-1', filename: 'a.pdf' }]);
-    mockGetCurrentUserEmail.mockResolvedValue(null); // importedBy 空文字のフォールバック
-    mockImportDocuments.mockImplementation(async (params) => {
-      expect(params.importedBy).toBe('');
+    mockImportDocuments.mockImplementation(async (_params, deps) => {
+      deps.onProgress?.({ fileIndex: 0, totalFiles: 1, filename: 'a.pdf', stage: 'copy' });
       return {
-        imported: [makeDoc({ documentId: 'doc-1', sourceFileId: 'src-1', filename: 'a.pdf' })],
+        importedStudies: [makeStudy({ studyId: 'study-1' })],
+        imported: [makeDoc({ documentId: 'doc-1', studyId: 'study-1' })],
         failures: [],
       };
     });
@@ -251,101 +244,403 @@ describe('importFromPicker', () => {
     await importFromPicker(store, makeDeps());
 
     const state = store.getState();
-    expect(state.documents.records?.map((doc) => doc.documentId)).toEqual(['doc-1']);
-    expect(state.counts.documents).toBe(1);
-    expect(state.documents.importRows[0]?.status).toBe('done');
+    expect(state.documents.records?.map((d) => d.documentId)).toEqual(['doc-0', 'doc-1']);
+    expect(state.documents.studies?.map((s) => s.studyId)).toEqual(['study-0', 'study-1']);
+    expect(state.counts.documents).toBe(2);
     expect(toastTexts()).toContain('1 件の PDF を取り込みました');
   });
 
-  test('サブフォルダ解決の失敗で全行 failed + トースト', async () => {
+  test('部分失敗のトーストと failed 進捗行（records/studies 未読込でも成立）', async () => {
     const store = makeStore();
-    mockOpenPdfPicker.mockResolvedValue(selections);
-    mockEnsureChildFolder.mockRejectedValue(new Error('drive down'));
+    mockGetCurrentUserEmail.mockResolvedValue(null);
+    mockOpenPdfPicker.mockResolvedValue([
+      { sourceFileId: 'src-1', filename: 'a.pdf' },
+      { sourceFileId: 'src-2', filename: 'b.pdf' },
+    ]);
+    mockImportDocuments.mockImplementation(async (_params, deps) => {
+      // fileIndex 0 の進捗通知で、2 行のうち 1 行目のみ差し替え（他行は据え置きの分岐）
+      deps.onProgress?.({ fileIndex: 0, totalFiles: 2, filename: 'a.pdf', stage: 'copy' });
+      return {
+        importedStudies: [makeStudy({ studyId: 'study-1' })],
+        imported: [makeDoc({ documentId: 'doc-1', studyId: 'study-1' })],
+        failures: [{ sourceFileId: 'src-2', filename: 'b.pdf', stage: 'extract', detail: 'parse' }],
+      };
+    });
 
     await importFromPicker(store, makeDeps());
 
-    const state = store.getState();
-    expect(state.documents.importing).toBe(false);
-    expect(state.documents.importRows.map((row) => row.status)).toEqual(['failed', 'failed']);
-    expect(state.documents.importRows[0]?.detail).toBe('drive down');
+    const rows = store.getState().documents.importRows;
+    expect(rows[0]?.status).toBe('done');
+    expect(rows[1]).toMatchObject({ status: 'failed', detail: 'テキスト抽出に失敗: parse' });
+    expect(toastTexts()).toContain('1 件取り込み、1 件失敗しました');
+  });
+
+  test('フォルダ解決失敗で全行 failed + トースト', async () => {
+    const store = makeStore();
+    mockOpenPdfPicker.mockResolvedValue([{ sourceFileId: 'src-1', filename: 'a.pdf' }]);
+    mockEnsureChildFolder.mockRejectedValue(new Error('drive down'));
+    await importFromPicker(store, makeDeps());
+    expect(store.getState().documents.importRows[0]?.status).toBe('failed');
     expect(toastTexts()).toContain('取り込みに失敗しました: drive down');
   });
 });
 
-describe('saveStudyLabel', () => {
-  test('プロジェクト未選択 / 一覧未読込 / 対象行なしは何もしない', async () => {
-    await saveStudyLabel(makeStore(false), makeDeps(), 'doc-1', 'X');
-
-    const noRecords = makeStore();
-    await saveStudyLabel(noRecords, makeDeps(), 'doc-1', 'X');
-
+describe('saveStudyLabel / saveRegistrationId', () => {
+  function withStudies(): Store {
     const store = makeStore();
-    store.setState({ documents: { ...store.getState().documents, records: [makeDoc()] } });
-    await saveStudyLabel(store, makeDeps(), 'unknown-id', 'X');
+    // 2 件にして map の「非対象行は据え置き」分岐も通す
+    setDocs(store, {
+      studies: [makeStudy(), makeStudy({ studyId: 'study-2', studyLabel: 'Jones 2021' })],
+      records: [makeDoc()],
+    });
+    return store;
+  }
 
-    expect(mockUpdateDocument).not.toHaveBeenCalled();
+  test('未選択 / 対象なしは no-op', async () => {
+    await saveStudyLabel(makeStore(false), makeDeps(), 'study-1', 'X');
+    await saveStudyLabel(makeStore(), makeDeps(), 'unknown', 'X');
+    expect(mockUpdateStudy).not.toHaveBeenCalled();
   });
 
-  test('空文字は保存せず案内し、再描画（listener 通知）で入力値を戻す', async () => {
-    const store = makeStore();
-    store.setState({ documents: { ...store.getState().documents, records: [makeDoc()] } });
+  test('空文字は保存せず案内し再描画で戻す', async () => {
+    const store = withStudies();
     const listener = jest.fn();
     store.subscribe(listener);
-
-    await saveStudyLabel(store, makeDeps(), 'doc-1', '   ');
-
-    expect(mockUpdateDocument).not.toHaveBeenCalled();
+    await saveStudyLabel(store, makeDeps(), 'study-1', '   ');
+    expect(mockUpdateStudy).not.toHaveBeenCalled();
     expect(toastTexts()).toContain('study_label は空にできません');
     expect(listener).toHaveBeenCalled();
   });
 
-  test('trim 後に変更がなければ API を呼ばず再描画のみ', async () => {
-    const store = makeStore();
-    store.setState({ documents: { ...store.getState().documents, records: [makeDoc()] } });
-    const listener = jest.fn();
-    store.subscribe(listener);
-
-    await saveStudyLabel(store, makeDeps(), 'doc-1', '  Smith 2020  ');
-
-    expect(mockUpdateDocument).not.toHaveBeenCalled();
-    expect(listener).toHaveBeenCalled();
+  test('変更なしは再描画のみ', async () => {
+    const store = withStudies();
+    await saveStudyLabel(store, makeDeps(), 'study-1', '  Smith 2020  ');
+    expect(mockUpdateStudy).not.toHaveBeenCalled();
     expect(toastTexts()).toHaveLength(0);
   });
 
-  test('成功で該当行のみ更新しトーストを出す', async () => {
-    const store = makeStore();
-    store.setState({
-      documents: {
-        ...store.getState().documents,
-        records: [makeDoc(), makeDoc({ documentId: 'doc-2', studyLabel: 'Jones 2021' })],
-      },
-    });
-    mockUpdateDocument.mockResolvedValue(undefined);
-
-    await saveStudyLabel(store, makeDeps(), 'doc-1', ' Smith 2020a ');
-
-    expect(mockUpdateDocument).toHaveBeenCalledWith(
+  test('成功で Studies を上書きしトースト', async () => {
+    const store = withStudies();
+    mockUpdateStudy.mockResolvedValue(undefined);
+    await saveStudyLabel(store, makeDeps(), 'study-1', ' Smith 2020a ');
+    expect(mockUpdateStudy).toHaveBeenCalledWith(
       'sheet-1',
-      expect.objectContaining({ documentId: 'doc-1', studyLabel: 'Smith 2020a' }),
+      expect.objectContaining({ studyId: 'study-1', studyLabel: 'Smith 2020a' }),
       expect.anything(),
     );
-    const records = store.getState().documents.records;
-    expect(records?.[0]?.studyLabel).toBe('Smith 2020a');
-    expect(records?.[1]?.studyLabel).toBe('Jones 2021');
+    expect(store.getState().documents.studies?.[0]?.studyLabel).toBe('Smith 2020a');
     expect(toastTexts()).toContain('study_label を保存しました');
   });
 
-  test('失敗でトースト + 再描画（値は元のまま）', async () => {
-    const store = makeStore();
-    store.setState({ documents: { ...store.getState().documents, records: [makeDoc()] } });
-    mockUpdateDocument.mockRejectedValue(new Error('offline'));
-    const listener = jest.fn();
-    store.subscribe(listener);
-
-    await saveStudyLabel(store, makeDeps(), 'doc-1', 'New Label');
-
+  test('失敗でトースト + 再描画（元の値のまま）', async () => {
+    const store = withStudies();
+    mockUpdateStudy.mockRejectedValue(new Error('offline'));
+    await saveStudyLabel(store, makeDeps(), 'study-1', 'New');
     expect(toastTexts()).toContain('study_label の保存に失敗しました: offline');
-    expect(store.getState().documents.records?.[0]?.studyLabel).toBe('Smith 2020');
-    expect(listener).toHaveBeenCalled();
+    expect(store.getState().documents.studies?.[0]?.studyLabel).toBe('Smith 2020');
+  });
+
+  test('registration_id: 未選択 no-op / 変更なし / 空は null 解除 / 成功', async () => {
+    await saveRegistrationId(makeStore(false), makeDeps(), 'study-1', 'X');
+
+    const same = withStudies(); // registrationId null
+    await saveRegistrationId(same, makeDeps(), 'study-1', '  ');
+    expect(mockUpdateStudy).not.toHaveBeenCalled();
+
+    const store = withStudies();
+    mockUpdateStudy.mockResolvedValue(undefined);
+    await saveRegistrationId(store, makeDeps(), 'study-1', ' NCT01234567 ');
+    expect(mockUpdateStudy).toHaveBeenCalledWith(
+      'sheet-1',
+      expect.objectContaining({ registrationId: 'NCT01234567' }),
+      expect.anything(),
+    );
+    expect(store.getState().documents.studies?.[0]?.registrationId).toBe('NCT01234567');
+  });
+});
+
+describe('saveDocumentRole', () => {
+  function withDocs(): Store {
+    const store = makeStore();
+    setDocs(store, {
+      records: [makeDoc(), makeDoc({ documentId: 'doc-2', studyId: 'study-2' })],
+      studies: [makeStudy()],
+    });
+    return store;
+  }
+
+  test('未選択 / 対象なし / 同一 role は no-op（再描画のみ）', async () => {
+    await saveDocumentRole(makeStore(false), makeDeps(), 'doc-1', 'protocol');
+    const store = withDocs();
+    await saveDocumentRole(store, makeDeps(), 'doc-1', 'article'); // 同一
+    expect(mockUpdateDocument).not.toHaveBeenCalled();
+  });
+
+  test('成功で Documents を上書き', async () => {
+    const store = withDocs();
+    mockUpdateDocument.mockResolvedValue(undefined);
+    await saveDocumentRole(store, makeDeps(), 'doc-1', 'registration');
+    expect(mockUpdateDocument).toHaveBeenCalledWith(
+      'sheet-1',
+      expect.objectContaining({ documentId: 'doc-1', documentRole: 'registration' }),
+      expect.anything(),
+    );
+    expect(store.getState().documents.records?.[0]?.documentRole).toBe('registration');
+    expect(toastTexts()).toContain('document_role を保存しました');
+  });
+
+  test('失敗でトースト + 再描画', async () => {
+    const store = withDocs();
+    mockUpdateDocument.mockRejectedValue(new Error('nope'));
+    await saveDocumentRole(store, makeDeps(), 'doc-1', 'abstract');
+    expect(toastTexts()).toContain('document_role の保存に失敗しました: nope');
+    expect(store.getState().documents.records?.[0]?.documentRole).toBe('article');
+  });
+});
+
+describe('toggleStudySelection', () => {
+  test('追加 / 重複追加は無視 / 解除', () => {
+    const store = makeStore();
+    toggleStudySelection(store, 'study-1', true);
+    toggleStudySelection(store, 'study-1', true); // 重複
+    expect(store.getState().documents.selectedStudyIds).toEqual(['study-1']);
+    toggleStudySelection(store, 'study-1', false);
+    expect(store.getState().documents.selectedStudyIds).toEqual([]);
+  });
+});
+
+describe('merge dialog', () => {
+  function withTwoStudies(extracted: string[] = []): Store {
+    const store = makeStore();
+    setDocs(store, {
+      studies: [
+        makeStudy({ studyId: 'study-1', studyLabel: 'Smith 2020', registrationId: 'NCT01234567' }),
+        makeStudy({ studyId: 'study-2', studyLabel: 'Smith 2020 reg' }),
+      ],
+      records: [makeDoc({ studyId: 'study-1' }), makeDoc({ documentId: 'doc-2', studyId: 'study-2' })],
+      extractedStudyIds: extracted,
+    });
+    return store;
+  }
+
+  test('選択 2 件未満はトーストのみ', () => {
+    const store = withTwoStudies();
+    setDocs(store, { selectedStudyIds: ['study-1'] });
+    openMergeDialog(store);
+    expect(store.getState().documents.mergeDialog).toBeNull();
+    expect(toastTexts()).toContain('統合するには 2 件以上の試験を選択してください');
+  });
+
+  test('studies 未読込（null）で選択があってもダイアログは開かない', () => {
+    const store = makeStore();
+    setDocs(store, { studies: null, selectedStudyIds: ['study-1', 'study-2'] });
+    openMergeDialog(store);
+    expect(store.getState().documents.mergeDialog).toBeNull();
+  });
+
+  test('選択 2 件で既定値を埋めたダイアログを開く（抽出済みは警告フラグ）', () => {
+    const store = withTwoStudies(['study-1']);
+    setDocs(store, { selectedStudyIds: ['study-2', 'study-1'] });
+    openMergeDialog(store);
+    const dialog = store.getState().documents.mergeDialog;
+    expect(dialog).toEqual({
+      studyIds: ['study-1', 'study-2'],
+      label: 'Smith 2020',
+      registrationId: 'NCT01234567',
+      hasExtractedData: true,
+    });
+  });
+
+  test('候補バナー経由でも開ける（registration_id null は空文字に）', () => {
+    const store = withTwoStudies();
+    // study-1 の registration を消して null→'' 分岐を通す
+    setDocs(store, {
+      studies: [makeStudy({ studyId: 'study-1' }), makeStudy({ studyId: 'study-2' })],
+    });
+    openMergeCandidate(store, ['study-1', 'study-2']);
+    expect(store.getState().documents.mergeDialog?.registrationId).toBe('');
+    expect(store.getState().documents.mergeDialog?.hasExtractedData).toBe(false);
+  });
+
+  test('updateMergeDialog は dialog が無ければ no-op / あれば patch', () => {
+    const store = withTwoStudies();
+    updateMergeDialog(store, { label: 'X' });
+    expect(store.getState().documents.mergeDialog).toBeNull();
+    setDocs(store, { selectedStudyIds: ['study-1', 'study-2'] });
+    openMergeDialog(store);
+    updateMergeDialog(store, { label: '統合ラベル' });
+    expect(store.getState().documents.mergeDialog?.label).toBe('統合ラベル');
+  });
+
+  test('cancelMerge で閉じる', () => {
+    const store = withTwoStudies();
+    setDocs(store, { selectedStudyIds: ['study-1', 'study-2'] });
+    openMergeDialog(store);
+    cancelMerge(store);
+    expect(store.getState().documents.mergeDialog).toBeNull();
+  });
+});
+
+describe('confirmMerge', () => {
+  function ready(): Store {
+    const store = makeStore();
+    setDocs(store, {
+      studies: [makeStudy({ studyId: 'study-1' }), makeStudy({ studyId: 'study-2' })],
+      records: [makeDoc({ documentId: 'doc-1', studyId: 'study-1' }), makeDoc({ documentId: 'doc-2', studyId: 'study-2' })],
+      mergeDialog: {
+        studyIds: ['study-1', 'study-2'],
+        label: '統合後',
+        registrationId: 'NCT01234567',
+        hasExtractedData: false,
+      },
+    });
+    return store;
+  }
+
+  test('未選択 / dialog なし / merging 中は no-op', async () => {
+    await confirmMerge(makeStore(false), makeDeps());
+    await confirmMerge(makeStore(), makeDeps()); // dialog null
+    const merging = ready();
+    setDocs(merging, { merging: true });
+    await confirmMerge(merging, makeDeps());
+    expect(mockAppendStudies).not.toHaveBeenCalled();
+  });
+
+  test('成功で新 study 追記 + 文書付け替え + 再読込', async () => {
+    const store = ready();
+    mockAppendStudies.mockResolvedValue(undefined);
+    mockUpdateDocument.mockResolvedValue(undefined);
+    // confirm 後の loadDocuments(force) が読む値
+    mockReadDocuments.mockResolvedValue([
+      makeDoc({ documentId: 'doc-1', studyId: 'study-new' }),
+      makeDoc({ documentId: 'doc-2', studyId: 'study-new' }),
+    ]);
+    mockReadStudies.mockResolvedValue([makeStudy({ studyId: 'study-new', studyLabel: '統合後' })]);
+
+    await confirmMerge(store, makeDeps());
+
+    expect(mockAppendStudies).toHaveBeenCalledWith(
+      'sheet-1',
+      [expect.objectContaining({ studyId: 'study-new', studyLabel: '統合後', registrationId: 'NCT01234567' })],
+      expect.anything(),
+    );
+    expect(mockUpdateDocument).toHaveBeenCalledTimes(2);
+    expect(mockUpdateDocument).toHaveBeenCalledWith(
+      'sheet-1',
+      expect.objectContaining({ documentId: 'doc-1', studyId: 'study-new' }),
+      expect.anything(),
+    );
+    const state = store.getState();
+    expect(state.documents.mergeDialog).toBeNull();
+    expect(state.documents.selectedStudyIds).toEqual([]);
+    expect(state.documents.studies?.map((s) => s.studyId)).toEqual(['study-new']);
+    expect(toastTexts()).toContain('試験を統合しました（統合後の試験は未抽出に戻ります）');
+  });
+
+  test('label / registration 空欄は既定 / null を採用する', async () => {
+    const store = ready();
+    setDocs(store, {
+      mergeDialog: { studyIds: ['study-1', 'study-2'], label: '   ', registrationId: '  ', hasExtractedData: false },
+    });
+    mockAppendStudies.mockResolvedValue(undefined);
+    mockUpdateDocument.mockResolvedValue(undefined);
+    mockReadDocuments.mockResolvedValue([]);
+    mockReadStudies.mockResolvedValue([]);
+    await confirmMerge(store, makeDeps());
+    expect(mockAppendStudies).toHaveBeenCalledWith(
+      'sheet-1',
+      [expect.objectContaining({ studyLabel: 'Smith 2020', registrationId: null })],
+      expect.anything(),
+    );
+  });
+
+  test('失敗で mergeError + トースト', async () => {
+    const store = ready();
+    mockAppendStudies.mockRejectedValue(new Error('sheets down'));
+    await confirmMerge(store, makeDeps());
+    expect(store.getState().documents.merging).toBe(false);
+    expect(store.getState().documents.mergeError).toBe('sheets down');
+    expect(toastTexts()).toContain('統合に失敗しました: sheets down');
+  });
+
+  test('studies 未読込（null）は mergeStudies が弾いて mergeError にする', async () => {
+    const store = ready();
+    setDocs(store, { studies: null });
+    await confirmMerge(store, makeDeps());
+    expect(store.getState().documents.mergeError).not.toBeNull();
+    expect(mockAppendStudies).not.toHaveBeenCalled();
+  });
+
+  test('records 未読込 / email 取得不可 / uuid・now 未注入でも既定で動く', async () => {
+    const store = ready();
+    setDocs(store, { records: null }); // 付け替え対象 0 件（records ?? [] の null 側）
+    mockGetCurrentUserEmail.mockResolvedValue(null); // createdBy ?? '' の null 側
+    mockAppendStudies.mockResolvedValue(undefined);
+    mockReadDocuments.mockResolvedValue([]);
+    mockReadStudies.mockResolvedValue([]);
+    await confirmMerge(store, { ...makeDeps(), newUuid: undefined, now: undefined });
+    expect(mockAppendStudies).toHaveBeenCalledTimes(1);
+    expect(mockUpdateDocument).not.toHaveBeenCalled();
+    const appended = mockAppendStudies.mock.calls[0]?.[1] as readonly StudyRecord[];
+    expect(appended[0]?.createdBy).toBe('');
+    expect(appended[0]?.createdAt).not.toBe('');
+  });
+});
+
+describe('ignoreCandidate', () => {
+  test('未選択は no-op', async () => {
+    await ignoreCandidate(makeStore(false), makeDeps(), ['study-1', 'study-2']);
+    expect(mockSetLocal).not.toHaveBeenCalled();
+  });
+
+  test('新規なら追加して storage.local に永続化 / 既存キーは no-op', async () => {
+    const store = makeStore();
+    await ignoreCandidate(store, makeDeps(), ['study-2', 'study-1']);
+    expect(store.getState().documents.ignoredCandidateKeys).toEqual(['study-1|study-2']);
+    expect(mockSetLocal).toHaveBeenCalledWith(ignoredCandidatesKey('sheet-1'), ['study-1|study-2']);
+
+    mockSetLocal.mockClear();
+    await ignoreCandidate(store, makeDeps(), ['study-1', 'study-2']); // 既存
+    expect(mockSetLocal).not.toHaveBeenCalled();
+  });
+
+  test('永続化失敗はトーストのみ（state は反映済み）', async () => {
+    const store = makeStore();
+    mockSetLocal.mockRejectedValue(new Error('quota'));
+    await ignoreCandidate(store, makeDeps(), ['study-1', 'study-2']);
+    expect(store.getState().documents.ignoredCandidateKeys).toEqual(['study-1|study-2']);
+    expect(toastTexts()).toContain('統合候補の無視を保存できませんでした: quota');
+  });
+});
+
+describe('activeStudyGroups / visibleMergeCandidates', () => {
+  test('アクティブ study と配下文書を作成順で返す', () => {
+    const groups = activeStudyGroups(
+      [makeStudy({ studyId: 'study-1' }), makeStudy({ studyId: 'study-2' }), makeStudy({ studyId: 'study-3' })],
+      [makeDoc({ documentId: 'd1', studyId: 'study-1' }), makeDoc({ documentId: 'd3', studyId: 'study-3' })],
+    );
+    expect(groups.map((g) => g.study.studyId)).toEqual(['study-1', 'study-3']);
+    expect(groups[0]?.documents.map((d) => d.documentId)).toEqual(['d1']);
+  });
+
+  test('登録番号一致の候補を返し、無視キーは除外する', () => {
+    const store = makeStore();
+    setDocs(store, {
+      studies: [
+        makeStudy({ studyId: 'study-1', registrationId: 'NCT01234567' }),
+        makeStudy({ studyId: 'study-2', registrationId: 'NCT01234567' }),
+      ],
+      records: [makeDoc({ studyId: 'study-1' }), makeDoc({ documentId: 'doc-2', studyId: 'study-2' })],
+    });
+    expect(visibleMergeCandidates(store.getState().documents)).toEqual([
+      { registrationId: 'NCT01234567', studyIds: ['study-1', 'study-2'] },
+    ]);
+
+    setDocs(store, { ignoredCandidateKeys: ['study-1|study-2'] });
+    expect(visibleMergeCandidates(store.getState().documents)).toEqual([]);
+  });
+
+  test('studies / records 未読込（null）でも空配列を返す', () => {
+    expect(visibleMergeCandidates(createInitialState().documents)).toEqual([]);
   });
 });

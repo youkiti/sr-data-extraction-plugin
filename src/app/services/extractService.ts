@@ -1,8 +1,9 @@
 // #/extract（S7）のサービス層。
-// - 対象読み込み: ExtractionRuns から抽出済み document を引き、「未抽出の全件」を既定選択にする
+// - 対象読み込み: ExtractionRuns から抽出済み study を引き、その study に属する document を
+//   「抽出済み」とみなして「未抽出の全件」を既定選択にする（フェーズ 1 は 1 study = 1 文書）
 // - 一括実行: extractionService.runExtraction（runType = 'full'）を配線し、
 //   document 単位の進捗（features/extraction/docProgress）へ畳み込む
-// - 失敗文献の再試行: runType = 'single_document' で当該 1 本のみ再実行する
+// - 失敗文献の再試行: runType = 'single_study' で当該 1 本のみ再実行する
 import type { DocumentRecord } from '../../domain/document';
 import type { SchemaField } from '../../domain/schemaField';
 import { readDocuments } from '../../features/documents/documentRepository';
@@ -13,7 +14,7 @@ import {
   type ExtractDocRow,
 } from '../../features/extraction/docProgress';
 import { planRun } from '../../features/extraction/planRun';
-import { readRunDocumentCoverage } from '../../features/extraction/runRepository';
+import { readRunStudyCoverage } from '../../features/extraction/runRepository';
 import { ensureChildFolder } from '../../lib/google/drive';
 import type { GoogleApiDeps } from '../../lib/google/types';
 import { missingApiKeyMessage } from '../../lib/llm/modelCatalog';
@@ -47,9 +48,11 @@ async function resolveDocuments(
 }
 
 /**
- * ExtractionRuns の document カバレッジ（抽出済み = 完了行のみ / 中断 run の残り）を読み込む。
- * 既定選択（未抽出の全件）・チェックリストの「抽出済み」バッジ・中断バナーの素材。
- * 中断 run の文献は抽出済みに数えないため、既定選択に含まれてそのまま再開できる
+ * ExtractionRuns の study カバレッジ（抽出済み = 完了行のみ / 中断 run の残り）を読み込み、
+ * 所属 document へ写像する。既定選択（未抽出の全件）・「抽出済み」バッジ・中断バナーの素材。
+ * カバレッジは study_ids で記録されるため、documents を突き合わせて document 単位へ落とす
+ * （フェーズ 1 は 1 study = 1 文書）。中断 run の study は抽出済みに数えないため、
+ * その document が既定選択に含まれてそのまま再開できる
  */
 export async function loadExtractTargets(
   store: Store,
@@ -66,11 +69,16 @@ export async function loadExtractTargets(
   }
   patchExtract(store, { loading: true, loadError: null });
   try {
-    const coverage = await readRunDocumentCoverage(project.spreadsheetId, deps.google);
+    const coverage = await readRunStudyCoverage(project.spreadsheetId, deps.google);
+    const documents = await resolveDocuments(store, deps.google, project.spreadsheetId);
     patchExtract(store, {
       loading: false,
-      extractedDocumentIds: [...coverage.extracted],
-      interruptedDocumentIds: [...coverage.interrupted],
+      extractedDocumentIds: documents
+        .filter((doc) => coverage.extracted.has(doc.studyId))
+        .map((doc) => doc.documentId),
+      interruptedDocumentIds: documents
+        .filter((doc) => coverage.interrupted.has(doc.studyId))
+        .map((doc) => doc.documentId),
     });
   } catch (err) {
     patchExtract(store, { loading: false, loadError: toMessage(err) });
@@ -159,7 +167,7 @@ async function performRun(
   params: {
     spreadsheetId: string;
     driveFolderId: string;
-    runType: 'full' | 'single_document';
+    runType: 'full' | 'single_study';
     targets: readonly DocumentRecord[];
     fields: readonly SchemaField[];
     model: string;
@@ -226,10 +234,11 @@ async function performRun(
       dataRows: after.counts.dataRows + transfer.studyRows.length + transfer.resultsRows.length,
     },
   });
-  // 実行済み run に含まれた document は以後「抽出済み」（既定選択・バッジの素材を更新）
+  // 実行済み run の対象 document は以後「抽出済み」（既定選択・バッジの素材を更新）。
+  // run は study_ids で記録されるが、フェーズ 1 は 1 study = 1 文書なので targets の document を数える
   const extracted = new Set(after.extract.extractedDocumentIds ?? []);
-  for (const documentId of outcome.run.documentIds) {
-    extracted.add(documentId);
+  for (const doc of params.targets) {
+    extracted.add(doc.documentId);
   }
   patchExtract(store, { extractedDocumentIds: [...extracted] });
   return outcome;
@@ -298,7 +307,7 @@ export async function runExtract(store: Store, deps: ExtractServiceDeps): Promis
 }
 
 /**
- * 失敗した文献 1 本を再抽出する（run_type = 'single_document'。ui-states.md §3 の「再試行」）。
+ * 失敗した文献 1 本を再抽出する（run_type = 'single_study'。ui-states.md §3 の「再試行」）。
  * 対象行だけを実行中表示に差し替え、完了後にその行の結果で置き換える
  */
 export async function retryExtractDocument(
@@ -342,7 +351,7 @@ export async function retryExtractDocument(
     const outcome = await performRun(store, deps, {
       spreadsheetId: project.spreadsheetId,
       driveFolderId: project.driveFolderId,
-      runType: 'single_document',
+      runType: 'single_study',
       targets: [target],
       fields,
       model: state.extract.model,

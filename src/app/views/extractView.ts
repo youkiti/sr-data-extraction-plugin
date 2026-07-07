@@ -16,8 +16,9 @@ const STATUS_LABELS: Readonly<Record<ExtractDocStatus, string>> = {
   failed: '失敗',
 };
 
-function studyLabelOf(records: readonly DocumentRecord[] | null, documentId: string): string {
-  return records?.find((doc) => doc.documentId === documentId)?.studyLabel ?? documentId;
+/** 文献の表示ラベル（filename）。study_label は Studies へ移設（v0.10）のため一覧はファイル名で表示する */
+function docLabelOf(records: readonly DocumentRecord[] | null, documentId: string): string {
+  return records?.find((doc) => doc.documentId === documentId)?.filename ?? documentId;
 }
 
 /**
@@ -46,8 +47,7 @@ function renderDocumentSelector(state: AppState, ctx: ViewContext): HTMLElement 
     );
     const parts: Array<HTMLElement | string> = [
       checkbox,
-      el('span', { className: 'extract__doc-label', text: doc.studyLabel }),
-      el('span', { className: 'extract__doc-filename', text: doc.filename }),
+      el('span', { className: 'extract__doc-label', text: doc.filename }),
     ];
     if (extracted.has(doc.documentId)) {
       parts.push(el('span', { className: 'extract__doc-extracted', text: '抽出済み' }));
@@ -203,7 +203,7 @@ function renderDocRows(state: AppState, ctx: ViewContext, withRetry: boolean): H
       }),
       el('span', {
         className: 'extract__doc-label',
-        text: studyLabelOf(state.documents.records, row.documentId),
+        text: docLabelOf(state.documents.records, row.documentId),
       }),
     ];
     // 実行中の行には document 内のバッチ進捗を併記する（全体の中の現在位置をわかりやすく）
@@ -262,7 +262,7 @@ function renderRunPosition(state: AppState): HTMLElement[] {
       el('p', {
         id: 'extract-current-doc',
         className: 'extract__current-doc',
-        text: `処理中: ${studyLabelOf(state.documents.records, running.documentId)}（${runningIndex + 1} 本目・バッチ ${running.completedBatches}/${running.totalBatches}）`,
+        text: `処理中: ${docLabelOf(state.documents.records, running.documentId)}（${runningIndex + 1} 本目・バッチ ${running.completedBatches}/${running.totalBatches}）`,
       }),
     );
   }

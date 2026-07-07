@@ -40,7 +40,9 @@ function makeField(
 
 function makeDocument(overrides: Partial<DocumentRecord> & { documentId: string }): DocumentRecord {
   return {
-    studyLabel: 'Smith 2020',
+    // 既定は 1 文書 = 1 study（study_id は document_id と同値）
+    studyId: overrides.documentId,
+    documentRole: 'article',
     driveFileId: 'drive-1',
     sourceFileId: 'source-1',
     filename: 'smith2020.pdf',
@@ -108,6 +110,7 @@ describe('planRun のバッチ分割', () => {
     expect(plan.batches).toHaveLength(1);
     expect(plan.batches[0]).toEqual({
       documentId: 'd1',
+      studyId: 'd1',
       section: null,
       fieldIds: ['f_design'],
       tokensInEstimate: expectedTokensIn(4_000, STUDY_FIELD_CHARS),

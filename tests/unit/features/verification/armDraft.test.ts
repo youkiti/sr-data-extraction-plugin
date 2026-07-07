@@ -32,6 +32,7 @@ function makeEvidence(overrides: Partial<Evidence> = {}): Evidence {
   return {
     evidenceId: 'ev-1',
     runId: 'run-1',
+    studyId: 'study-1',
     documentId: 'doc-1',
     fieldId: 'f-1',
     entityKey: '-',

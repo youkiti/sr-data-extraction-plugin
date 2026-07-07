@@ -192,9 +192,15 @@ export async function runPilot(store: Store, deps: PilotServiceDeps): Promise<vo
         ? `パイロット抽出が完了しました（Evidence ${outcome.result.evidence.length} 件）`
         : 'パイロット抽出が部分的に失敗しました。失敗の内訳を確認してください',
     );
-    const firstDocumentId = outcome.run.documentIds[0];
-    if (firstDocumentId !== undefined) {
-      await loadPilotVerification(store, deps, firstDocumentId);
+    // run は study 単位（studyIds）。フェーズ 1 は 1 study = 1 文書なので、最初の抽出 study の
+    // 文献を検証 UI に開く（targets から study_id で引く）
+    const firstStudyId = outcome.run.studyIds[0];
+    const firstDocument =
+      firstStudyId === undefined
+        ? undefined
+        : targets.find((doc) => doc.studyId === firstStudyId);
+    if (firstDocument !== undefined) {
+      await loadPilotVerification(store, deps, firstDocument.documentId);
     }
   } catch (err) {
     patchPilot(store, { running: false, progress: null, runError: toMessage(err) });
@@ -298,9 +304,15 @@ export async function loadPilotRun(
       runFields: fields,
       evidence: allEvidence.filter((item) => item.runId === runId),
     });
-    const firstDocumentId = run.documentIds[0];
-    if (firstDocumentId !== undefined) {
-      await loadPilotVerification(store, deps, firstDocumentId);
+    // run は study 単位（studyIds）。フェーズ 1 は 1 study = 1 文書なので study_id から文献を引く
+    const firstStudyId = run.studyIds[0];
+    const documents = await resolveDocuments(store, deps, project.spreadsheetId);
+    const firstDocument =
+      firstStudyId === undefined
+        ? undefined
+        : documents.find((doc) => doc.studyId === firstStudyId);
+    if (firstDocument !== undefined) {
+      await loadPilotVerification(store, deps, firstDocument.documentId);
     }
   } catch (err) {
     patchPilot(store, { loadingRunId: null, historyError: toMessage(err) });
@@ -416,7 +428,7 @@ export async function persistPilotArmConfirmation(
   await persistArmConfirmation(
     project.spreadsheetId,
     {
-      documentId: verification.document.documentId,
+      studyId: verification.document.studyId,
       arms,
       annotator: verification.annotator,
       annotatorType: 'human_with_ai',

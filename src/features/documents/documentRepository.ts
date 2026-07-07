@@ -1,7 +1,8 @@
 // Documents タブ I/O（requirements.md §3.2）。
-// Documents は追記型タブには含まれない（§3.1）ため、取り込み後の study_label / note の
-// 編集（S3 一覧のインライン編集）用に document_id をキーとした行上書きも提供する
-import type { DocumentRecord, TextStatus } from '../../domain/document';
+// Documents は追記型タブには含まれない（§3.1）ため、取り込み後の study_id / document_role / note の
+// 編集（S3 一覧のインライン編集・グルーピング）用に document_id をキーとした行上書きも提供する
+import type { DocumentRecord, DocumentRole, TextStatus } from '../../domain/document';
+import { DOCUMENT_ROLE_ORDER } from '../../domain/document';
 import { SHEET_HEADERS } from '../../domain/sheetsSchema';
 import { appendRows, getSheetValues, updateRow } from '../../lib/google/sheets';
 import type { GoogleApiDeps } from '../../lib/google/types';
@@ -25,6 +26,13 @@ function parseTextStatus(value: string, context: string): TextStatus {
   throw new Error(`${context}: text_status "${value}" が不正です`);
 }
 
+function parseDocumentRole(value: string, context: string): DocumentRole {
+  if ((DOCUMENT_ROLE_ORDER as readonly string[]).includes(value)) {
+    return value as DocumentRole;
+  }
+  throw new Error(`${context}: document_role "${value}" が不正です`);
+}
+
 function parseNullableInt(value: string, label: string, context: string): number | null {
   if (value === '') {
     return null;
@@ -40,7 +48,8 @@ function parseNullableInt(value: string, label: string, context: string): number
 export function documentToRow(doc: DocumentRecord): (string | number | null)[] {
   return [
     doc.documentId,
-    doc.studyLabel,
+    doc.studyId,
+    doc.documentRole,
     doc.driveFileId,
     doc.sourceFileId,
     doc.filename,
@@ -85,19 +94,20 @@ async function fetchDocuments(
     const context = `Documents ${i + 2} 行目`;
     const doc: DocumentRecord = {
       documentId: cellAt(raw, 0),
-      studyLabel: cellAt(raw, 1),
-      driveFileId: cellAt(raw, 2),
-      sourceFileId: cellAt(raw, 3),
-      filename: cellAt(raw, 4),
-      pmid: emptyToNull(cellAt(raw, 5)),
-      doi: emptyToNull(cellAt(raw, 6)),
-      textRef: emptyToNull(cellAt(raw, 7)),
-      textStatus: parseTextStatus(cellAt(raw, 8), context),
-      pageCount: parseNullableInt(cellAt(raw, 9), 'page_count', context),
-      charCount: parseNullableInt(cellAt(raw, 10), 'char_count', context),
-      importedAt: cellAt(raw, 11),
-      importedBy: cellAt(raw, 12),
-      note: emptyToNull(cellAt(raw, 13)),
+      studyId: cellAt(raw, 1),
+      documentRole: parseDocumentRole(cellAt(raw, 2), context),
+      driveFileId: cellAt(raw, 3),
+      sourceFileId: cellAt(raw, 4),
+      filename: cellAt(raw, 5),
+      pmid: emptyToNull(cellAt(raw, 6)),
+      doi: emptyToNull(cellAt(raw, 7)),
+      textRef: emptyToNull(cellAt(raw, 8)),
+      textStatus: parseTextStatus(cellAt(raw, 9), context),
+      pageCount: parseNullableInt(cellAt(raw, 10), 'page_count', context),
+      charCount: parseNullableInt(cellAt(raw, 11), 'char_count', context),
+      importedAt: cellAt(raw, 12),
+      importedBy: cellAt(raw, 13),
+      note: emptyToNull(cellAt(raw, 14)),
     };
     if (rowIndexById.has(doc.documentId)) {
       throw new Error(`Documents に同一 document_id の行が複数あります（${doc.documentId}）`);

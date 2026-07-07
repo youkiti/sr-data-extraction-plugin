@@ -36,8 +36,7 @@ function renderDocumentSelector(state: AppState, ctx: ViewContext): HTMLElement 
     );
     const parts: Array<HTMLElement | string> = [
       checkbox,
-      el('span', { className: 'pilot__doc-label', text: doc.studyLabel }),
-      el('span', { className: 'pilot__doc-filename', text: doc.filename }),
+      el('span', { className: 'pilot__doc-label', text: doc.filename }),
     ];
     if (doc.textStatus === 'no_text_layer') {
       parts.push(
@@ -160,7 +159,7 @@ function renderProgress(state: AppState): HTMLElement {
       progress.totalBatches > 0
         ? Math.floor((progress.completedBatches / progress.totalBatches) * 100)
         : 0;
-    const label = studyLabelOf(state.documents.records, progress.documentId);
+    const label = docLabelOf(state.documents.records, progress.documentId);
     text = `${progress.completedBatches} / ${progress.totalBatches} バッチ完了（${percent}% / 直近: ${label}${progress.section === null ? '' : ` / ${progress.section}`}）`;
   }
   return el('section', { className: 'pilot__running', attributes: { 'aria-live': 'polite' } }, [
@@ -170,8 +169,9 @@ function renderProgress(state: AppState): HTMLElement {
   ]);
 }
 
-function studyLabelOf(records: readonly DocumentRecord[] | null, documentId: string): string {
-  return records?.find((doc) => doc.documentId === documentId)?.studyLabel ?? documentId;
+/** 文献の表示ラベル（filename）。study_label は Studies へ移設（v0.10）のため一覧はファイル名で表示する */
+function docLabelOf(records: readonly DocumentRecord[] | null, documentId: string): string {
+  return records?.find((doc) => doc.documentId === documentId)?.filename ?? documentId;
 }
 
 function renderRunSummary(run: ExtractionRun, state: AppState): HTMLElement {
@@ -224,10 +224,13 @@ function renderVerification(run: ExtractionRun, state: AppState, ctx: ViewContex
     id: 'pilot-verify-doc',
     attributes: { 'aria-label': '検証する文献' },
   });
-  for (const documentId of run.documentIds) {
+  // run は study 単位（studyIds）。フェーズ 1 は 1 study = 1 文書なので study_id から文献を引く
+  const runStudyIds = new Set(run.studyIds);
+  const verifyDocs = (state.documents.records ?? []).filter((doc) => runStudyIds.has(doc.studyId));
+  for (const doc of verifyDocs) {
     const option = el('option', {
-      text: studyLabelOf(state.documents.records, documentId),
-      attributes: { value: documentId },
+      text: doc.filename,
+      attributes: { value: doc.documentId },
     });
     select.append(option);
   }
@@ -326,7 +329,7 @@ function renderHistory(state: AppState, ctx: ViewContext): HTMLElement | null {
         el('span', { className: 'pilot__history-model', text: entry.requestedModel }),
         el('span', {
           className: 'pilot__history-docs',
-          text: `${entry.documentIds.length} 文献`,
+          text: `${entry.studyIds.length} 試験`,
         }),
         el('span', {
           className: `pilot__history-status pilot__history-status--${entry.status}`,

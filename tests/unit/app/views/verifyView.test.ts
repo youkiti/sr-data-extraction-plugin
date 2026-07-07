@@ -16,7 +16,21 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<VerifyViewCallbac
   return {
     ctx: {
       home: { onReload: jest.fn() },
-      documents: { onImport: jest.fn(), onReload: jest.fn(), onSaveStudyLabel: jest.fn() },
+      documents: {
+        onImport: jest.fn(),
+        onReload: jest.fn(),
+        onSaveStudyLabel: jest.fn(),
+        onSaveRegistrationId: jest.fn(),
+        onSaveDocumentRole: jest.fn(),
+        onToggleStudySelection: jest.fn(),
+        onOpenMerge: jest.fn(),
+        onOpenMergeCandidate: jest.fn(),
+        onIgnoreCandidate: jest.fn(),
+        onUpdateMergeLabel: jest.fn(),
+        onUpdateMergeRegistration: jest.fn(),
+        onConfirmMerge: jest.fn(),
+        onCancelMerge: jest.fn(),
+      },
       protocol: {
         onSubmit: jest.fn(),
         onStartEdit: jest.fn(),
@@ -75,7 +89,8 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<VerifyViewCallbac
 function makeDocument(overrides: Partial<DocumentRecord> = {}): DocumentRecord {
   return {
     documentId: 'doc-1',
-    studyLabel: 'Smith 2020',
+    studyId: 'study-1',
+    documentRole: 'article',
     driveFileId: 'drive-1',
     sourceFileId: 'src-1',
     filename: 'smith2020.pdf',
@@ -201,15 +216,16 @@ describe('renderVerifyView', () => {
     const targets = [
       makeTarget(),
       makeTarget({
-        document: makeDocument({ documentId: 'doc-2', studyLabel: 'Jones 2021' }),
+        document: makeDocument({ documentId: 'doc-2', studyId: 'study-2', filename: 'jones2021.pdf' }),
         progress: { decided: 0, total: 2 },
       }),
     ];
     const root = render(makeState({ targets, selectedDocumentId: 'doc-2' }), ctx);
     const select = root.querySelector('#verify-doc') as HTMLSelectElement;
+    // セレクタのラベルはファイル名（study_label は Studies へ移設・v0.10）
     expect([...select.options].map((option) => option.textContent)).toEqual([
-      'Smith 2020（判定済み 1 / 4）',
-      'Jones 2021（判定済み 0 / 2）',
+      'smith2020.pdf（判定済み 1 / 4）',
+      'jones2021.pdf（判定済み 0 / 2）',
     ]);
     expect(select.value).toBe('doc-2');
     select.value = 'doc-1';
@@ -252,7 +268,7 @@ describe('renderVerifyView', () => {
     // 判定（Evidence なしセルの未報告）が onDecision へ委譲される
     (root.querySelector('.verify__action--not-reported') as HTMLButtonElement).click();
     expect(callbacks.onDecision).toHaveBeenCalledWith(
-      expect.objectContaining({ action: 'not_reported', documentId: 'doc-1' }),
+      expect.objectContaining({ action: 'not_reported', studyId: 'study-1' }),
     );
   });
 
@@ -268,6 +284,7 @@ describe('renderVerifyView', () => {
         {
           evidenceId: 'ev-arm',
           runId: 'run-1',
+          studyId: 'study-1',
           documentId: 'doc-1',
           fieldId: 'f-arm-n',
           entityKey: 'arm:1',
@@ -307,6 +324,7 @@ describe('renderVerifyView', () => {
         {
           evidenceId: 'ev-arm',
           runId: 'run-1',
+          studyId: 'study-1',
           documentId: 'doc-1',
           fieldId: 'f-arm-n',
           entityKey: 'arm:1',

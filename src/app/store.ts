@@ -1,6 +1,7 @@
 // メインビューの中央ストア（単方向フロー）。view は render(state) の純粋関数とし、
 // 状態変更は必ず setState 経由で行う（architecture.md §2.2）
 import type { DocumentRecord } from '../domain/document';
+import type { StudyRecord } from '../domain/study';
 import type { Evidence } from '../domain/evidence';
 import type { ExportFormat } from '../domain/exportLog';
 import type { ExtractionRun } from '../domain/extractionRun';
@@ -40,15 +41,39 @@ export interface ImportRow {
   detail: string | null;
 }
 
+/** 統合ダイアログ（S3 グルーピング。§4.5）の状態 */
+export interface MergeDialogState {
+  /** 統合する study_id（2 件以上） */
+  studyIds: string[];
+  /** 統合後の study_label（編集可・既定 = 最初に取り込まれた study の値） */
+  label: string;
+  /** 統合後の registration_id（編集可） */
+  registrationId: string;
+  /** 対象 study のいずれかに抽出済みデータ（完了 run）があるか（警告文言の出し分け・§4.5） */
+  hasExtractedData: boolean;
+}
+
 /** #/documents（S3）の画面状態 */
 export interface DocumentsState {
   /** Documents タブの一覧。null = 未読込（画面表示時に読み込む） */
   records: DocumentRecord[] | null;
+  /** Studies タブの一覧（作成順）。null = 未読込。グループ表示・統合の素材（§4.5） */
+  studies: StudyRecord[] | null;
+  /** 完了 run で抽出済みの study_id（統合時の「未抽出に戻る」警告の素材） */
+  extractedStudyIds: string[];
+  /** 無視した統合候補ペアのキー（storage.local から復元。再提案を抑止する §4.5） */
+  ignoredCandidateKeys: string[];
   loading: boolean;
   loadError: string | null;
   importing: boolean;
   /** 直近の取り込みの進捗行（次の取り込み開始まで残す） */
   importRows: ImportRow[];
+  /** 統合のために選択中の study_id（2 件以上でダイアログを開ける） */
+  selectedStudyIds: string[];
+  /** 統合確認ダイアログ。null = 非表示 */
+  mergeDialog: MergeDialogState | null;
+  merging: boolean;
+  mergeError: string | null;
 }
 
 /** #/protocol（S4）の画面状態 */
@@ -270,10 +295,17 @@ export function createInitialState(): AppState {
     },
     documents: {
       records: null,
+      studies: null,
+      extractedStudyIds: [],
+      ignoredCandidateKeys: [],
       loading: false,
       loadError: null,
       importing: false,
       importRows: [],
+      selectedStudyIds: [],
+      mergeDialog: null,
+      merging: false,
+      mergeError: null,
     },
     protocol: {
       records: null,

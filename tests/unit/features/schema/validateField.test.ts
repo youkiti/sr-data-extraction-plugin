@@ -30,7 +30,7 @@ describe('validateEditorRows', () => {
       makeRow({ fieldName: '' }),
       makeRow({ fieldName: 'SampleSize' }),
       makeRow({ fieldName: '1st_outcome' }),
-      makeRow({ fieldName: 'document_id' }),
+      makeRow({ fieldName: 'study_id' }),
     ]);
     expect(errors.map((e) => [e.index, e.column])).toEqual([
       [0, 'fieldName'],

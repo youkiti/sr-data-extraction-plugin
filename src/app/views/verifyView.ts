@@ -10,7 +10,7 @@ import { renderCachedVerificationPanel } from './verificationPanel';
 
 function selectorLabel(target: VerifyTarget): string {
   const { progress } = target;
-  return `${target.document.studyLabel}（判定済み ${progress.decided} / ${progress.total}）`;
+  return `${target.document.filename}（判定済み ${progress.decided} / ${progress.total}）`;
 }
 
 function renderSelector(state: AppState, ctx: ViewContext, targets: readonly VerifyTarget[]): HTMLElement {
@@ -111,7 +111,7 @@ export function renderVerifyView(state: AppState, ctx: ViewContext): HTMLElement
       // 見出し階層を h2 → h3 → h4（パネル内の群構成・グループ見出し）とつなぐ
       el('h3', {
         className: 'verify__doc-title',
-        text: verify.verification.document.studyLabel,
+        text: verify.verification.document.filename,
       }),
       renderCachedVerificationPanel({
         data: verify.verification,

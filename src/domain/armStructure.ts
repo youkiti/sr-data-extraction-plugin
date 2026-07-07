@@ -5,8 +5,8 @@ import type { AnnotatorType } from './annotation';
 
 /** ArmStructures の 1 行（1 arm） */
 export interface ArmStructureRow {
-  documentId: string;
-  /** document × annotator ごとに 1 から採番。確定・改訂のたびに +1 */
+  studyId: string;
+  /** study × annotator ごとに 1 から採番。確定・改訂のたびに +1 */
   version: number;
   /** `arm:1` 形式。ResultsData / Evidence の entity_key との join キー */
   armKey: string;

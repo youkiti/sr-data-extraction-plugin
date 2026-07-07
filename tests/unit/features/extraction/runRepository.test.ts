@@ -5,7 +5,7 @@ import {
   extractionRunToRow,
   readPilotRuns,
   readRunAuditInfos,
-  readRunDocumentCoverage,
+  readRunStudyCoverage,
   readRunSchemaVersions,
 } from '../../../../src/features/extraction/runRepository';
 
@@ -14,7 +14,7 @@ function makeRun(overrides: Partial<ExtractionRun> = {}): ExtractionRun {
     runId: 'run-1',
     runType: 'full',
     schemaVersion: 2,
-    documentIds: ['doc-1', 'doc-2'],
+    studyIds: ['doc-1', 'doc-2'],
     provider: 'gemini',
     requestedModel: 'gemini-2.5-flash',
     modelVersion: 'gemini-2.5-flash-001',
@@ -30,7 +30,7 @@ function makeRun(overrides: Partial<ExtractionRun> = {}): ExtractionRun {
 }
 
 describe('extractionRunToRow', () => {
-  test('SHEET_HEADERS.ExtractionRuns の列順に対応し、document_ids はカンマ区切り', () => {
+  test('SHEET_HEADERS.ExtractionRuns の列順に対応し、study_ids はカンマ区切り', () => {
     expect(extractionRunToRow(makeRun())).toEqual([
       'run-1',
       'full',
@@ -224,7 +224,7 @@ describe('readRunAuditInfos', () => {
   });
 });
 
-describe('readRunDocumentCoverage', () => {
+describe('readRunStudyCoverage', () => {
   function readDeps(values: string[][]): { fetch: jest.Mock; getAccessToken: jest.Mock } {
     return {
       fetch: jest.fn().mockResolvedValue({
@@ -237,11 +237,11 @@ describe('readRunDocumentCoverage', () => {
     };
   }
 
-  const runRow = (runId: string, documentIds: string, status: string): string[] => [
+  const runRow = (runId: string, studyIds: string, status: string): string[] => [
     runId,
     'pilot',
     '1',
-    documentIds,
+    studyIds,
     'gemini',
     'gemini-test',
     '',
@@ -254,13 +254,13 @@ describe('readRunDocumentCoverage', () => {
     '',
   ];
 
-  test('完了行（done / partial_failure）の document_ids の和集合を extracted に返す', async () => {
+  test('完了行（done / partial_failure）の study_ids の和集合を extracted に返す', async () => {
     const values = [
       [...SHEET_HEADERS.ExtractionRuns],
       runRow('run-1', 'doc-1,doc-2', 'done'),
       runRow('run-2', 'doc-2,doc-3', 'partial_failure'),
     ];
-    const coverage = await readRunDocumentCoverage('sheet-1', readDeps(values));
+    const coverage = await readRunStudyCoverage('sheet-1', readDeps(values));
     expect([...coverage.extracted].sort()).toEqual(['doc-1', 'doc-2', 'doc-3']);
     expect(coverage.interrupted.size).toBe(0);
   });
@@ -270,7 +270,7 @@ describe('readRunDocumentCoverage', () => {
       [...SHEET_HEADERS.ExtractionRuns],
       runRow('run-1', 'doc-1,doc-2', 'running'),
     ];
-    const coverage = await readRunDocumentCoverage('sheet-1', readDeps(values));
+    const coverage = await readRunStudyCoverage('sheet-1', readDeps(values));
     expect(coverage.extracted.size).toBe(0);
     expect([...coverage.interrupted].sort()).toEqual(['doc-1', 'doc-2']);
   });
@@ -281,7 +281,7 @@ describe('readRunDocumentCoverage', () => {
       runRow('run-1', 'doc-1,doc-2', 'running'),
       runRow('run-1', 'doc-1,doc-2', 'done'),
     ];
-    const coverage = await readRunDocumentCoverage('sheet-1', readDeps(values));
+    const coverage = await readRunStudyCoverage('sheet-1', readDeps(values));
     expect([...coverage.extracted].sort()).toEqual(['doc-1', 'doc-2']);
     expect(coverage.interrupted.size).toBe(0);
   });
@@ -292,19 +292,19 @@ describe('readRunDocumentCoverage', () => {
       runRow('run-1', 'doc-1,doc-2', 'running'),
       runRow('run-2', 'doc-1', 'done'),
     ];
-    const coverage = await readRunDocumentCoverage('sheet-1', readDeps(values));
+    const coverage = await readRunStudyCoverage('sheet-1', readDeps(values));
     expect([...coverage.extracted]).toEqual(['doc-1']);
     expect([...coverage.interrupted]).toEqual(['doc-2']);
   });
 
-  test('run 0 件は両方空集合、document_ids 欠落行（ラグ配列）は無視する', async () => {
-    const empty = await readRunDocumentCoverage(
+  test('run 0 件は両方空集合、study_ids 欠落行（ラグ配列）は無視する', async () => {
+    const empty = await readRunStudyCoverage(
       'sheet-1',
       readDeps([[...SHEET_HEADERS.ExtractionRuns]]),
     );
     expect(empty.extracted.size).toBe(0);
     expect(empty.interrupted.size).toBe(0);
-    const ragged = await readRunDocumentCoverage(
+    const ragged = await readRunStudyCoverage(
       'sheet-1',
       readDeps([[...SHEET_HEADERS.ExtractionRuns], ['run-1', 'pilot', '1']]),
     );
@@ -312,18 +312,18 @@ describe('readRunDocumentCoverage', () => {
     expect(ragged.interrupted.size).toBe(0);
   });
 
-  test('run_id / document_ids が null セルの完了行も安全に読む', async () => {
+  test('run_id / study_ids が null セルの完了行も安全に読む', async () => {
     const values = [
       [...SHEET_HEADERS.ExtractionRuns],
       [null, 'pilot', '1', null, 'gemini', 'gemini-test', '', 'text_only', 'done'] as unknown as string[],
     ];
-    const coverage = await readRunDocumentCoverage('sheet-1', readDeps(values));
+    const coverage = await readRunStudyCoverage('sheet-1', readDeps(values));
     expect(coverage.extracted.size).toBe(0);
     expect(coverage.interrupted.size).toBe(0);
   });
 
   test('ヘッダ行なしはエラー（readRunSchemaVersions と同じ前処理）', async () => {
-    await expect(readRunDocumentCoverage('sheet-1', readDeps([]))).rejects.toThrow(
+    await expect(readRunStudyCoverage('sheet-1', readDeps([]))).rejects.toThrow(
       'ExtractionRuns タブにヘッダ行がありません',
     );
   });
@@ -347,7 +347,7 @@ describe('readPilotRuns', () => {
       runId: string;
       runType: string;
       schemaVersion: string;
-      documentIds: string;
+      studyIds: string;
       provider: string;
       requestedModel: string;
       modelVersion: string;
@@ -363,7 +363,7 @@ describe('readPilotRuns', () => {
     o.runId ?? 'run-1',
     o.runType ?? 'pilot',
     o.schemaVersion ?? '1',
-    o.documentIds ?? 'doc-1,doc-2',
+    o.studyIds ?? 'doc-1,doc-2',
     o.provider ?? 'gemini',
     o.requestedModel ?? 'gemini-test',
     o.modelVersion ?? '',
@@ -394,7 +394,7 @@ describe('readPilotRuns', () => {
       [...SHEET_HEADERS.ExtractionRuns],
       pilotRow({
         schemaVersion: '3',
-        documentIds: 'd1,d2',
+        studyIds: 'd1,d2',
         modelVersion: 'gemini-test-001',
         tokensIn: '100',
         tokensOut: '50',
@@ -406,7 +406,7 @@ describe('readPilotRuns', () => {
       runId: 'run-1',
       runType: 'pilot',
       schemaVersion: 3,
-      documentIds: ['d1', 'd2'],
+      studyIds: ['d1', 'd2'],
       provider: 'gemini',
       requestedModel: 'gemini-test',
       modelVersion: 'gemini-test-001',
@@ -497,7 +497,7 @@ describe('readPilotRuns', () => {
       runId: '',
       runType: 'pilot',
       schemaVersion: 1,
-      documentIds: [],
+      studyIds: [],
       provider: '',
       requestedModel: '',
       modelVersion: null,

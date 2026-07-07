@@ -1,9 +1,12 @@
-// Google Sheets の 13 タブ定義（requirements.md §3.2）。実 I/O は lib/google/sheets.ts 側で行う。
-// Meta / Protocol / LLMApiLog は sr-query-builder のスキーマを流用（ProtocolBlocks は持たない）
+// Google Sheets の 14 タブ定義（requirements.md §3.2 v0.10）。実 I/O は lib/google/sheets.ts 側で行う。
+// Meta / Protocol / LLMApiLog は sr-query-builder のスキーマを流用（ProtocolBlocks は持たない）。
+// v0.10 で study / document を分離: Studies を新設し、データ行のキーを document_id → study_id へ改名。
+// Evidence だけは quote の出所を特定するため document_id を保持したまま study_id を併記する
 
 export const SHEET_TABS = [
   'Meta',
   'Protocol',
+  'Studies',
   'Documents',
   'SchemaVersions',
   'SchemaFields',
@@ -24,7 +27,7 @@ export type SheetTabName = (typeof SHEET_TABS)[number];
  * field_name 列を動的に追加する（追加のみ。削除・改名はしない。改名は field_id で追跡）
  */
 export const STUDY_DATA_FIXED_HEADERS = [
-  'document_id',
+  'study_id',
   'annotator',
   'annotator_type',
   'schema_version',
@@ -63,9 +66,18 @@ export const SHEET_HEADERS: Record<SheetTabName, readonly string[]> = {
     'created_at',
     'created_by',
   ],
+  Studies: [
+    'study_id',
+    'study_label',
+    'registration_id',
+    'created_at',
+    'created_by',
+    'note',
+  ],
   Documents: [
     'document_id',
-    'study_label',
+    'study_id',
+    'document_role',
     'drive_file_id',
     'source_file_id',
     'filename',
@@ -109,7 +121,7 @@ export const SHEET_HEADERS: Record<SheetTabName, readonly string[]> = {
     'run_id',
     'run_type',
     'schema_version',
-    'document_ids',
+    'study_ids',
     'provider',
     'requested_model',
     'model_version',
@@ -124,7 +136,7 @@ export const SHEET_HEADERS: Record<SheetTabName, readonly string[]> = {
   StudyData: STUDY_DATA_FIXED_HEADERS,
   ResultsData: [
     'result_id',
-    'document_id',
+    'study_id',
     'field_id',
     'annotator',
     'annotator_type',
@@ -136,7 +148,7 @@ export const SHEET_HEADERS: Record<SheetTabName, readonly string[]> = {
     'updated_at',
   ],
   ArmStructures: [
-    'document_id',
+    'study_id',
     'version',
     'arm_key',
     'arm_name',
@@ -148,8 +160,9 @@ export const SHEET_HEADERS: Record<SheetTabName, readonly string[]> = {
   Evidence: [
     'evidence_id',
     'run_id',
-    'document_id',
+    'study_id',
     'field_id',
+    'document_id',
     'entity_key',
     'value',
     'not_reported',
@@ -161,7 +174,7 @@ export const SHEET_HEADERS: Record<SheetTabName, readonly string[]> = {
   Decisions: [
     'decided_at',
     'decided_by',
-    'document_id',
+    'study_id',
     'field_id',
     'entity_key',
     'annotator',
@@ -190,7 +203,7 @@ export const SHEET_HEADERS: Record<SheetTabName, readonly string[]> = {
     'export_id',
     'format',
     'schema_version',
-    'document_count',
+    'study_count',
     'file_ref',
     'exported_at',
     'exported_by',

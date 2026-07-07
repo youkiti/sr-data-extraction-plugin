@@ -17,7 +17,7 @@ import type { Evidence } from '../../../../src/domain/evidence';
 import type { ExtractionRun } from '../../../../src/domain/extractionRun';
 import type { SchemaField } from '../../../../src/domain/schemaField';
 import { readDocuments } from '../../../../src/features/documents/documentRepository';
-import { readRunDocumentCoverage } from '../../../../src/features/extraction/runRepository';
+import { readRunStudyCoverage } from '../../../../src/features/extraction/runRepository';
 import { ensureChildFolder } from '../../../../src/lib/google/drive';
 
 jest.mock('../../../../src/app/services/extractionService', () => ({
@@ -30,7 +30,7 @@ jest.mock('../../../../src/features/documents/documentRepository', () => ({
   readDocuments: jest.fn(),
 }));
 jest.mock('../../../../src/features/extraction/runRepository', () => ({
-  readRunDocumentCoverage: jest.fn(),
+  readRunStudyCoverage: jest.fn(),
 }));
 jest.mock('../../../../src/lib/google/drive', () => ({
   ensureChildFolder: jest.fn(),
@@ -39,15 +39,18 @@ jest.mock('../../../../src/lib/google/drive', () => ({
 const runExtractionMock = runExtraction as jest.MockedFunction<typeof runExtraction>;
 const resolveProtocolMock = resolveProtocol as jest.MockedFunction<typeof resolveProtocol>;
 const readDocumentsMock = readDocuments as jest.MockedFunction<typeof readDocuments>;
-const readCoverageMock = readRunDocumentCoverage as jest.MockedFunction<
-  typeof readRunDocumentCoverage
+const readCoverageMock = readRunStudyCoverage as jest.MockedFunction<
+  typeof readRunStudyCoverage
 >;
 const ensureChildFolderMock = ensureChildFolder as jest.MockedFunction<typeof ensureChildFolder>;
 
 function makeDocument(overrides: Partial<DocumentRecord> = {}): DocumentRecord {
+  // フェーズ 1 は 1 文書 = 1 study。文書ごとに一意な study_id を自動採番する
+  const documentId = overrides.documentId ?? 'doc-1';
   return {
-    documentId: 'doc-1',
-    studyLabel: 'Smith 2020',
+    documentId,
+    studyId: `study-${documentId}`,
+    documentRole: 'article',
     driveFileId: 'drive-1',
     sourceFileId: 'src-1',
     filename: 'smith2020.pdf',
@@ -89,6 +92,7 @@ function makeEvidence(overrides: Partial<Evidence> = {}): Evidence {
   return {
     evidenceId: 'ev-1',
     runId: 'run-1',
+    studyId: 'study-doc-1',
     documentId: 'doc-1',
     fieldId: 'f-total',
     entityKey: '-',
@@ -107,7 +111,7 @@ function makeRun(overrides: Partial<ExtractionRun> = {}): ExtractionRun {
     runId: 'run-1',
     runType: 'full',
     schemaVersion: 1,
-    documentIds: ['doc-1'],
+    studyIds: ['study-doc-1'],
     provider: 'gemini',
     requestedModel: 'gemini-test',
     modelVersion: 'gemini-test-001',
@@ -125,14 +129,14 @@ function makeRun(overrides: Partial<ExtractionRun> = {}): ExtractionRun {
 function makeOutcome(
   overrides: {
     status?: 'done' | 'partial_failure';
-    documentIds?: string[];
+    studyIds?: string[];
     evidence?: Evidence[];
     rejectedItems?: unknown[];
   } = {},
 ) {
   const status = overrides.status ?? 'done';
   return {
-    run: makeRun({ status, documentIds: overrides.documentIds ?? ['doc-1'] }),
+    run: makeRun({ status, studyIds: overrides.studyIds ?? ['study-doc-1'] }),
     plan: {
       schemaVersion: 1,
       model: 'gemini-test',
@@ -206,15 +210,19 @@ beforeEach(() => {
     webViewLink: `https://drive.example/${name}`,
   }));
   readCoverageMock.mockResolvedValue({ extracted: new Set(), interrupted: new Set() });
+  readDocumentsMock.mockResolvedValue([]);
 });
 
 describe('loadExtractTargets', () => {
-  test('ExtractionRuns のカバレッジ（抽出済み + 中断 run の残り）を読み込む', async () => {
+  test('ExtractionRuns の study カバレッジを document へ写像する（抽出済み + 中断 run の残り）', async () => {
+    // カバレッジは study_id で返るため、documents を study_id で突き合わせて document 単位へ落とす
     readCoverageMock.mockResolvedValue({
-      extracted: new Set(['doc-1']),
-      interrupted: new Set(['doc-2']),
+      extracted: new Set(['study-doc-1']),
+      interrupted: new Set(['study-doc-2']),
     });
-    const store = makeStore({});
+    const store = makeStore({
+      documents: [makeDocument({ documentId: 'doc-1' }), makeDocument({ documentId: 'doc-2' })],
+    });
     await loadExtractTargets(store, makeDeps());
     expect(store.getState().extract.extractedDocumentIds).toEqual(['doc-1']);
     expect(store.getState().extract.interruptedDocumentIds).toEqual(['doc-2']);
@@ -472,7 +480,7 @@ describe('runExtract', () => {
         failure: { documentId: 'doc-2', section: null, reason: 'api_error', detail: '500' },
       });
       observedRows = store.getState().extract.docRows;
-      return makeOutcome({ status: 'partial_failure', documentIds: ['doc-1', 'doc-2'] });
+      return makeOutcome({ status: 'partial_failure', studyIds: ['study-doc-1', 'study-doc-2'] });
     });
     await runExtract(store, makeDeps());
     expect(observedRows).toEqual([
@@ -567,7 +575,7 @@ describe('retryExtractDocument', () => {
     expect(runExtractionMock).not.toHaveBeenCalled();
   });
 
-  test('single_document run で再実行し、成功で対象行を完了に置き換える', async () => {
+  test('single_study run で再実行し、成功で対象行を完了に置き換える', async () => {
     const store = makeFailedStore();
     runExtractionMock.mockImplementation(async (params) => {
       params.onProgress?.({
@@ -577,14 +585,14 @@ describe('retryExtractDocument', () => {
         section: null,
         failure: null,
       });
-      return makeOutcome({ documentIds: ['doc-2'] });
+      return makeOutcome({ studyIds: ['study-doc-2'] });
     });
     await retryExtractDocument(store, makeDeps(), 'doc-2');
 
     const [params] = runExtractionMock.mock.calls[0] as unknown as [
       Parameters<typeof runExtraction>[0],
     ];
-    expect(params.runType).toBe('single_document');
+    expect(params.runType).toBe('single_study');
     expect(params.documents.map((doc) => doc.documentId)).toEqual(['doc-2']);
 
     const state = store.getState();
@@ -603,7 +611,7 @@ describe('retryExtractDocument', () => {
     runExtractionMock.mockImplementation(async () => {
       // 実行中（進捗イベント前）のスナップショット: 計画時の待機中は「実行中」へ読み替えられている
       observedRows = store.getState().extract.docRows;
-      return makeOutcome({ status: 'partial_failure', documentIds: ['doc-2'], rejectedItems: [{}] });
+      return makeOutcome({ status: 'partial_failure', studyIds: ['study-doc-2'], rejectedItems: [{}] });
     });
     await retryExtractDocument(store, makeDeps(), 'doc-2');
     expect((observedRows as { status: string }[])[1]?.status).toBe('running');

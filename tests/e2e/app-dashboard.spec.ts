@@ -4,8 +4,14 @@
 // `#/verify?doc=&entity=` へ → ?entity= ディープリンクの着地（タブ切替 + セルフォーカス）まで通す
 import { expect, test, type Page } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
+import { SHEET_HEADERS } from '../../src/domain/sheetsSchema';
 
 const QUOTE = 'Mortality was 12 percent';
+
+// Studies タブ（v0.10）。study_label は Documents から移設され、ダッシュボードのラベルは Studies 由来
+const STUDIES_HEADERS = [...SHEET_HEADERS.Studies];
+const STUDY_ROW_1 = ['study-1', 'Smith 2020', '', '2026-07-01T00:00:00Z', 'e2e@example.com', ''];
+const STUDY_ROW_2 = ['study-2', 'Jones 2021', '', '2026-07-01T00:00:00Z', 'e2e@example.com', ''];
 
 const SCHEMA_FIELDS_HEADERS = [
   'schema_version', 'field_id', 'field_index', 'section', 'field_name', 'field_label',
@@ -23,45 +29,32 @@ const ARM_FIELD_ROW = [
   'TRUE', '群別 N を抽出', '', 'FALSE', '',
 ];
 
-const EVIDENCE_HEADERS = [
-  'evidence_id', 'run_id', 'document_id', 'field_id', 'entity_key', 'value', 'not_reported',
-  'quote', 'page', 'confidence', 'anchor_status',
-];
+const EVIDENCE_HEADERS = [...SHEET_HEADERS.Evidence];
 
+// Evidence は study_id（col 3）+ document_id（col 5）。1 文書 = 1 study。
 // doc-1: study（exact）+ arm（not_reported・アンカリング対象外）/ doc-2: study（failed）
-const EVIDENCE_ROW_1 = ['ev-1', 'run-1', 'doc-1', 'f-total', '-', '12', 'FALSE', QUOTE, '1', 'high', 'exact'];
-const EVIDENCE_ROW_2 = ['ev-2', 'run-1', 'doc-2', 'f-total', '-', '9', 'FALSE', 'nowhere', '1', 'low', 'failed'];
-const ARM_EVIDENCE_ROW = ['ev-3', 'run-1', 'doc-1', 'f-arm-n', 'arm:1', '', 'TRUE', '', '', '', ''];
+const EVIDENCE_ROW_1 = ['ev-1', 'run-1', 'study-1', 'f-total', 'doc-1', '-', '12', 'FALSE', QUOTE, '1', 'high', 'exact'];
+const EVIDENCE_ROW_2 = ['ev-2', 'run-1', 'study-2', 'f-total', 'doc-2', '-', '9', 'FALSE', 'nowhere', '1', 'low', 'failed'];
+const ARM_EVIDENCE_ROW = ['ev-3', 'run-1', 'study-1', 'f-arm-n', 'doc-1', 'arm:1', '', 'TRUE', '', '', '', ''];
 
-const RUNS_HEADERS = [
-  'run_id', 'run_type', 'schema_version', 'document_ids', 'provider', 'requested_model',
-  'model_version', 'input_mode', 'status', 'started_at', 'finished_at', 'tokens_in',
-  'tokens_out', 'cost_estimate',
-];
+const RUNS_HEADERS = [...SHEET_HEADERS.ExtractionRuns];
 
 const RUN_ROW = [
-  'run-1', 'full', '1', 'doc-1,doc-2', 'gemini', 'gemini-test', '', 'text_only', 'done',
+  'run-1', 'full', '1', 'study-1,study-2', 'gemini', 'gemini-test', '', 'text_only', 'done',
   't1', 't2', '', '', '',
 ];
 
-const DECISIONS_HEADERS = [
-  'decided_at', 'decided_by', 'document_id', 'field_id', 'entity_key', 'annotator',
-  'annotator_type', 'schema_version', 'action', 'value', 'note',
-];
+const DECISIONS_HEADERS = [...SHEET_HEADERS.Decisions];
 
-const ARM_STRUCTURES_HEADERS = [
-  'document_id', 'version', 'arm_key', 'arm_name', 'annotator', 'annotator_type',
-  'confirmed_at', 'note',
-];
+const ARM_STRUCTURES_HEADERS = [...SHEET_HEADERS.ArmStructures];
 
-// ?entity= ディープリンクの着地先タブは群構成確定済みでないとロックされる（ui-states.md §3）
+// ?entity= ディープリンクの着地先タブは群構成確定済みでないとロックされる（ui-states.md §3）。
+// ArmStructures は study_id キー（v0.10）
 const ARM_STRUCTURE_ROW = [
-  'doc-1', '1', 'arm:1', '介入群', 'e2e@example.com', 'human_with_ai', 't0', '',
+  'study-1', '1', 'arm:1', '介入群', 'e2e@example.com', 'human_with_ai', 't0', '',
 ];
 
-const STUDY_DATA_HEADERS = [
-  'document_id', 'annotator', 'annotator_type', 'schema_version', 'run_id', 'updated_at',
-];
+const STUDY_DATA_HEADERS = [...SHEET_HEADERS.StudyData];
 
 /** テキスト層つきの最小 1 ページ PDF（app-verify.spec.ts と同じ手組み構成） */
 function minimalPdf(text: string): Buffer {
@@ -105,6 +98,8 @@ async function setupRoutes(page: Page): Promise<void> {
         });
       } else if (url.includes('/values/ExtractionRuns')) {
         await route.fulfill({ json: { values: [RUNS_HEADERS, RUN_ROW] } });
+      } else if (url.includes('/values/Studies')) {
+        await route.fulfill({ json: { values: [STUDIES_HEADERS, STUDY_ROW_1, STUDY_ROW_2] } });
       } else if (url.includes('/values/Decisions')) {
         await route.fulfill({ json: { values: [DECISIONS_HEADERS] } });
       } else if (url.includes('/values/StudyData')) {
@@ -184,7 +179,8 @@ async function initApp(page: Page, hash: string): Promise<void> {
         records: [
           {
             documentId: 'doc-1',
-            studyLabel: 'Smith 2020',
+            studyId: 'study-1',
+            documentRole: 'article',
             driveFileId: 'drive-1',
             sourceFileId: 'src-1',
             filename: 'smith2020.pdf',
@@ -200,7 +196,8 @@ async function initApp(page: Page, hash: string): Promise<void> {
           },
           {
             documentId: 'doc-2',
-            studyLabel: 'Jones 2021',
+            studyId: 'study-2',
+            documentRole: 'article',
             driveFileId: 'drive-2',
             sourceFileId: 'src-2',
             filename: 'jones2021.pdf',
@@ -215,10 +212,34 @@ async function initApp(page: Page, hash: string): Promise<void> {
             note: null,
           },
         ],
+        studies: [
+          {
+            studyId: 'study-1',
+            studyLabel: 'Smith 2020',
+            registrationId: null,
+            createdAt: '2026-07-01T00:00:00Z',
+            createdBy: 'e2e@example.com',
+            note: null,
+          },
+          {
+            studyId: 'study-2',
+            studyLabel: 'Jones 2021',
+            registrationId: null,
+            createdAt: '2026-07-01T00:00:00Z',
+            createdBy: 'e2e@example.com',
+            note: null,
+          },
+        ],
+        extractedStudyIds: [],
+        ignoredCandidateKeys: [],
         loading: false,
         loadError: null,
         importing: false,
         importRows: [],
+        selectedStudyIds: [],
+        mergeDialog: null,
+        merging: false,
+        mergeError: null,
       },
     };
   });

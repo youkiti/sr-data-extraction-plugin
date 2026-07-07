@@ -2,7 +2,7 @@
 // 1 行 = 1 判定イベント（undo 含む）に「その判定が見ていた Evidence」を横持ちで添付し、
 // 判定が 0 件のセルは代表 Evidence（最新 run）+ 判定列空のプレースホルダ行で未検証を明示する
 import type { Decision } from '../../domain/decision';
-import type { DocumentRecord } from '../../domain/document';
+import type { StudyRecord } from '../../domain/study';
 import type { Evidence } from '../../domain/evidence';
 import type { RunAuditInfo } from '../../domain/extractionRun';
 import type { SchemaField } from '../../domain/schemaField';
@@ -51,11 +51,11 @@ export interface AuditCsvResult {
   undecidedCellCount: number;
   /** field_id が SchemaFields に見つからず出力から除外した行数（判定行 + プレースホルダ行） */
   droppedRowCount: number;
-  /** CSV に行が出た文献数（ExportLog.document_count） */
-  documentCount: number;
+  /** CSV に行が出た study 数（ExportLog.study_count） */
+  studyCount: number;
 }
 
-/** ソートと行内容をまとめた中間表現。sortKey は document 内で一意（結合規則 4 の並び順を単一文字列比較に落とす） */
+/** ソートと行内容をまとめた中間表現。sortKey は study 内で一意（結合規則 4 の並び順を単一文字列比較に落とす） */
 interface AuditItem {
   sortKey: string;
   row: string[];
@@ -65,7 +65,7 @@ interface AuditItem {
 const pad = (n: number): string => String(n).padStart(6, '0');
 
 export function buildAuditCsv(
-  documents: readonly DocumentRecord[],
+  studies: readonly StudyRecord[],
   decisions: readonly Decision[],
   evidences: readonly Evidence[],
   runs: readonly RunAuditInfo[],
@@ -99,12 +99,12 @@ export function buildAuditCsv(
   const csvRows: string[][] = [];
   let undecidedCellCount = 0;
   let droppedRowCount = 0;
-  let documentCount = 0;
+  let studyCount = 0;
 
-  for (const doc of documents) {
+  for (const study of studies) {
     const evidenceByCell = new Map<string, Evidence[]>();
     for (const evidence of evidences) {
-      if (evidence.documentId !== doc.documentId) {
+      if (evidence.studyId !== study.studyId) {
         continue;
       }
       const key = cellKey(evidence.fieldId, evidence.entityKey);
@@ -120,7 +120,7 @@ export function buildAuditCsv(
     const decidedCells = new Set<string>();
     const byCellAnnotator = new Map<string, Decision[]>();
     for (const decision of decisions) {
-      if (decision.documentId !== doc.documentId) {
+      if (decision.studyId !== study.studyId) {
         continue;
       }
       const cell = cellKey(decision.fieldId, decision.entityKey);
@@ -154,8 +154,9 @@ export function buildAuditCsv(
           // entity_key → field_index → annotator（annotator_type・seq で一意化）
           sortKey: `${decision.entityKey}${SEP}${pad(field.fieldIndex)}${SEP}${decision.annotator}${SEP}${decision.annotatorType}${SEP}${pad(seq)}`,
           row: [
-            doc.studyLabel,
-            doc.documentId,
+            study.studyLabel,
+            // document_id は quote の出所文書（Evidence 由来）。添付 Evidence がなければ構造的欠損（§4.4 v0.10）
+            attached === null ? AUDIT_MISSING_TOKEN : attached.documentId,
             decision.entityKey,
             decision.fieldId,
             field.fieldName,
@@ -191,8 +192,9 @@ export function buildAuditCsv(
         // プレースホルダ（sortKey の annotator 部は空）は同一セルの判定行より前に並ぶ（判定行とはセルが重ならないため実害なし）
         sortKey: `${representative.entityKey}${SEP}${pad(field.fieldIndex)}${SEP}${SEP}${SEP}${pad(0)}`,
         row: [
-          doc.studyLabel,
-          doc.documentId,
+          study.studyLabel,
+          // document_id は代表 Evidence（quote の出所文書）由来（§4.4 v0.10）
+          representative.documentId,
           representative.entityKey,
           representative.fieldId,
           field.fieldName,
@@ -210,15 +212,15 @@ export function buildAuditCsv(
       });
     }
 
-    // 結合規則 4: entity_key → field_index → annotator → decision_seq の順（document は取り込み順のまま）
-    // sortKey は document 内で一意なので等値分岐は不要
+    // 結合規則 4: entity_key → field_index → annotator → decision_seq の順（study は作成順のまま）
+    // sortKey は study 内で一意なので等値分岐は不要
     items.sort((a, b) => (a.sortKey < b.sortKey ? -1 : 1));
     if (items.length > 0) {
-      documentCount++;
+      studyCount++;
     }
     for (const item of items) {
       csvRows.push(item.row);
     }
   }
-  return { csv: buildCsv(AUDIT_HEADER, csvRows), undecidedCellCount, droppedRowCount, documentCount };
+  return { csv: buildCsv(AUDIT_HEADER, csvRows), undecidedCellCount, droppedRowCount, studyCount };
 }

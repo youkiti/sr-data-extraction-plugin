@@ -32,11 +32,11 @@ import {
 } from '../../../../src/features/extraction/annotationRepository';
 import {
   appendArmStructureVersion,
-  readArmStructuresByDocument,
+  readArmStructuresByStudy,
 } from '../../../../src/features/verification/armStructureRepository';
 import {
   appendDecisionRows,
-  readDecisionsByDocument,
+  readDecisionsByStudy,
 } from '../../../../src/features/verification/decisionRepository';
 import type { VerificationData } from '../../../../src/features/verification/types';
 import { ensureChildFolder, getFileBinary } from '../../../../src/lib/google/drive';
@@ -68,13 +68,13 @@ jest.mock('../../../../src/features/extraction/annotationRepository', () => ({
 }));
 jest.mock('../../../../src/features/verification/decisionRepository', () => ({
   appendDecisionRows: jest.fn(),
-  readDecisionsByDocument: jest.fn(),
+  readDecisionsByStudy: jest.fn(),
 }));
 jest.mock('../../../../src/features/verification/armStructureRepository', () => ({
   // latestArmStructure は純粋関数なので実物を使う
   ...jest.requireActual('../../../../src/features/verification/armStructureRepository'),
   appendArmStructureVersion: jest.fn(),
-  readArmStructuresByDocument: jest.fn(),
+  readArmStructuresByStudy: jest.fn(),
 }));
 jest.mock('../../../../src/lib/google/drive', () => ({
   ensureChildFolder: jest.fn(),
@@ -98,14 +98,14 @@ const upsertResultsMock = upsertResultsDataRows as jest.MockedFunction<
   typeof upsertResultsDataRows
 >;
 const appendDecisionsMock = appendDecisionRows as jest.MockedFunction<typeof appendDecisionRows>;
-const readDecisionsMock = readDecisionsByDocument as jest.MockedFunction<
-  typeof readDecisionsByDocument
+const readDecisionsMock = readDecisionsByStudy as jest.MockedFunction<
+  typeof readDecisionsByStudy
 >;
 const appendArmVersionMock = appendArmStructureVersion as jest.MockedFunction<
   typeof appendArmStructureVersion
 >;
-const readArmStructuresMock = readArmStructuresByDocument as jest.MockedFunction<
-  typeof readArmStructuresByDocument
+const readArmStructuresMock = readArmStructuresByStudy as jest.MockedFunction<
+  typeof readArmStructuresByStudy
 >;
 const ensureChildFolderMock = ensureChildFolder as jest.MockedFunction<typeof ensureChildFolder>;
 const getFileBinaryMock = getFileBinary as jest.MockedFunction<typeof getFileBinary>;
@@ -116,9 +116,12 @@ const getCurrentUserEmailMock = getCurrentUserEmail as jest.MockedFunction<
 const ME = 'me@example.com';
 
 function makeDocument(overrides: Partial<DocumentRecord> = {}): DocumentRecord {
+  // フェーズ 1 は 1 文書 = 1 study。文書ごとに一意な study_id を自動採番する
+  const documentId = overrides.documentId ?? 'doc-1';
   return {
-    documentId: 'doc-1',
-    studyLabel: 'Smith 2020',
+    documentId,
+    studyId: `study-${documentId}`,
+    documentRole: 'article',
     driveFileId: 'drive-1',
     sourceFileId: 'src-1',
     filename: 'smith2020.pdf',
@@ -160,6 +163,7 @@ function makeEvidence(overrides: Partial<Evidence> = {}): Evidence {
   return {
     evidenceId: 'ev-1',
     runId: 'run-1',
+    studyId: 'study-doc-1',
     documentId: 'doc-1',
     fieldId: 'f-total',
     entityKey: '-',
@@ -178,7 +182,7 @@ function makeRun(overrides: Partial<ExtractionRun> = {}): ExtractionRun {
     runId: 'run-1',
     runType: 'pilot',
     schemaVersion: 1,
-    documentIds: ['doc-1'],
+    studyIds: ['study-doc-1'],
     provider: 'gemini',
     requestedModel: 'gemini-test',
     modelVersion: 'gemini-test-001',
@@ -197,7 +201,7 @@ function makeDecision(overrides: Partial<Decision> = {}): Decision {
   return {
     decidedAt: 't-now',
     decidedBy: ME,
-    documentId: 'doc-1',
+    studyId: 'study-doc-1',
     fieldId: 'f-total',
     entityKey: '-',
     annotator: ME,
@@ -399,11 +403,11 @@ describe('runPilot: 実行', () => {
   }
 
   function makeOutcome(
-    overrides: { status?: 'done' | 'partial_failure'; documentIds?: string[]; evidence?: Evidence[] } = {},
+    overrides: { status?: 'done' | 'partial_failure'; studyIds?: string[]; evidence?: Evidence[] } = {},
   ) {
     const status = overrides.status ?? 'done';
     return {
-      run: makeRun({ status, documentIds: overrides.documentIds ?? ['doc-1'] }),
+      run: makeRun({ status, studyIds: overrides.studyIds ?? ['study-doc-1'] }),
       plan: {
         schemaVersion: 1,
         model: 'gemini-test',
@@ -528,9 +532,9 @@ describe('runPilot: 実行', () => {
     expect(store.getState().pilot.run).not.toBeNull();
   });
 
-  test('抽出対象が空（documentIds なし）なら検証読み込みをスキップする', async () => {
+  test('抽出対象が空（studyIds なし）なら検証読み込みをスキップする', async () => {
     const store = makeReadyStore();
-    runExtractionMock.mockResolvedValue(makeOutcome({ documentIds: [], evidence: [] }));
+    runExtractionMock.mockResolvedValue(makeOutcome({ studyIds: [], evidence: [] }));
     await runPilot(store, makeDeps());
     expect(store.getState().pilot.verification).toBeNull();
     expect(readDecisionsMock).not.toHaveBeenCalled();
@@ -570,9 +574,12 @@ describe('loadPilotVerification', () => {
       documents: [makeDocument(), makeDocument({ documentId: 'doc-2', driveFileId: 'drive-2' })],
       fields: [makeField()],
       pilot: {
-        run: makeRun({ documentIds: ['doc-1', 'doc-2'] }),
+        run: makeRun({ studyIds: ['study-doc-1', 'study-doc-2'] }),
         runFields: [makeField()],
-        evidence: [makeEvidence(), makeEvidence({ evidenceId: 'ev-2', documentId: 'doc-2' })],
+        evidence: [
+          makeEvidence(),
+          makeEvidence({ evidenceId: 'ev-2', studyId: 'study-doc-2', documentId: 'doc-2' }),
+        ],
       },
     });
   }
@@ -595,7 +602,7 @@ describe('loadPilotVerification', () => {
       fieldNames: ['sample_size_total'],
       rows: [
         {
-          documentId: 'doc-1',
+          studyId: 'study-doc-1',
           annotator: ME,
           annotatorType: 'human_with_ai',
           schemaVersion: 1,
@@ -688,7 +695,7 @@ describe('persistPilotDecision', () => {
       'sheet-1',
       [
         {
-          documentId: 'doc-1',
+          studyId: 'study-doc-1',
           annotator: ME,
           annotatorType: 'human_with_ai',
           schemaVersion: 1,
@@ -722,7 +729,7 @@ describe('persistPilotDecision', () => {
       'sheet-1',
       [
         expect.objectContaining({
-          documentId: 'doc-1',
+          studyId: 'study-doc-1',
           fieldId: 'f-arm-n',
           entityKey: 'arm:1',
           value: null,
@@ -855,7 +862,7 @@ describe('persistPilotArmConfirmation', () => {
     expect(appendArmVersionMock).toHaveBeenCalledWith(
       'sheet-1',
       {
-        documentId: 'doc-1',
+        studyId: 'study-doc-1',
         arms: [{ armKey: 'arm:1', armName: '介入群' }],
         annotator: ME,
         annotatorType: 'human_with_ai',
@@ -901,7 +908,7 @@ describe('persistPilotArmConfirmation', () => {
     const store = makeVerificationStore();
     readArmStructuresMock.mockResolvedValue([
       {
-        documentId: 'doc-1',
+        studyId: 'study-doc-1',
         version: 1,
         armKey: 'arm:1',
         armName: '旧名',
@@ -911,7 +918,7 @@ describe('persistPilotArmConfirmation', () => {
         note: null,
       },
       {
-        documentId: 'doc-1',
+        studyId: 'study-doc-1',
         version: 2,
         armKey: 'arm:1',
         armName: '介入群',
@@ -921,7 +928,7 @@ describe('persistPilotArmConfirmation', () => {
         note: null,
       },
       {
-        documentId: 'doc-1',
+        studyId: 'study-doc-1',
         version: 9,
         armKey: 'arm:1',
         armName: '他人の確定',
@@ -975,7 +982,7 @@ describe('loadPilotHistory', () => {
 });
 
 describe('loadPilotRun', () => {
-  const HIST_RUN = makeRun({ runId: 'run-1', documentIds: ['doc-1'], schemaVersion: 1 });
+  const HIST_RUN = makeRun({ runId: 'run-1', studyIds: ['study-doc-1'], schemaVersion: 1 });
 
   function makeHistoryStore(pilot: Partial<ReturnType<typeof createInitialState>['pilot']> = {}): Store {
     return makeStore({ documents: [makeDocument()], pilot: { history: [HIST_RUN], ...pilot } });
@@ -1014,8 +1021,8 @@ describe('loadPilotRun', () => {
     expect(pilot.verification).not.toBeNull();
   });
 
-  test('documentIds が空の run は検証読み込みをスキップする', async () => {
-    const emptyRun = makeRun({ runId: 'run-empty', documentIds: [] });
+  test('studyIds が空の run は検証読み込みをスキップする', async () => {
+    const emptyRun = makeRun({ runId: 'run-empty', studyIds: [] });
     const store = makeStore({ documents: [makeDocument()], pilot: { history: [emptyRun] } });
     readEvidenceRowsMock.mockResolvedValue([]);
     getSchemaFieldsByVersionMock.mockResolvedValue([]);
@@ -1046,7 +1053,7 @@ describe('loadPilotRun', () => {
 });
 
 describe('autoLoadLatestPilotRun', () => {
-  const LATEST = makeRun({ runId: 'run-1', documentIds: ['doc-1'] });
+  const LATEST = makeRun({ runId: 'run-1', studyIds: ['study-doc-1'] });
 
   test('historyInitialized 済み / history 未読込は何もしない', async () => {
     const initialized = makeStore({

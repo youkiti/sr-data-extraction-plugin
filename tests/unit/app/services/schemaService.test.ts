@@ -153,9 +153,12 @@ function makeProtocol(overrides: Partial<Protocol> = {}): Protocol {
 }
 
 function makeDocument(overrides: Partial<DocumentRecord> = {}): DocumentRecord {
+  // フェーズ 1 は 1 文書 = 1 study。文書ごとに一意な study_id を自動採番する
+  const documentId = overrides.documentId ?? 'doc-1';
   return {
-    documentId: 'doc-1',
-    studyLabel: 'Smith 2020',
+    documentId,
+    studyId: `study-${documentId}`,
+    documentRole: 'article',
     driveFileId: 'drive-1',
     sourceFileId: 'src-1',
     filename: 'smith2020.pdf',
@@ -388,7 +391,8 @@ describe('runDraftSchema', () => {
     const [messages, options] = chatMock.mock.calls[0] ?? [];
     expect(messages?.[0]?.role).toBe('system');
     expect(messages?.[1]?.content).toContain('P: 成人肺炎');
-    expect(messages?.[1]?.content).toContain('## Sample article: Smith 2020');
+    // サンプル論文の見出しは filename 表示（v0.10。study_label は Studies へ移設された）
+    expect(messages?.[1]?.content).toContain('## Sample article: smith2020.pdf');
     expect(messages?.[1]?.content).toContain('[PAGE 2]\n2 ページ目の本文');
     expect(options?.responseFormat).toBe('json');
 
@@ -460,7 +464,7 @@ describe('runDraftSchema', () => {
     expect(store.getState().schema.draftError).toContain('本文を取得できません');
   });
 
-  test('選択 ID が文献一覧に無いときは study_label 解決を ID に倒し、読み込み失敗を表示する', async () => {
+  test('選択 ID が文献一覧に無いときは filename 解決を ID に倒し、読み込み失敗を表示する', async () => {
     const store = makeStore();
     store.setState({
       protocol: { ...store.getState().protocol, records: [makeProtocol()] },

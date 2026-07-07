@@ -42,7 +42,21 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<PilotViewCallback
   return {
     ctx: {
       home: { onReload: jest.fn() },
-      documents: { onImport: jest.fn(), onReload: jest.fn(), onSaveStudyLabel: jest.fn() },
+      documents: {
+        onImport: jest.fn(),
+        onReload: jest.fn(),
+        onSaveStudyLabel: jest.fn(),
+        onSaveRegistrationId: jest.fn(),
+        onSaveDocumentRole: jest.fn(),
+        onToggleStudySelection: jest.fn(),
+        onOpenMerge: jest.fn(),
+        onOpenMergeCandidate: jest.fn(),
+        onIgnoreCandidate: jest.fn(),
+        onUpdateMergeLabel: jest.fn(),
+        onUpdateMergeRegistration: jest.fn(),
+        onConfirmMerge: jest.fn(),
+        onCancelMerge: jest.fn(),
+      },
       protocol: {
         onSubmit: jest.fn(),
         onStartEdit: jest.fn(),
@@ -96,7 +110,8 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<PilotViewCallback
 function makeDocument(overrides: Partial<DocumentRecord> = {}): DocumentRecord {
   return {
     documentId: 'doc-1',
-    studyLabel: 'Smith 2020',
+    studyId: 'study-1',
+    documentRole: 'article',
     driveFileId: 'drive-1',
     sourceFileId: 'src-1',
     filename: 'smith2020.pdf',
@@ -139,7 +154,7 @@ function makeRun(overrides: Partial<ExtractionRun> = {}): ExtractionRun {
     runId: 'run-1',
     runType: 'pilot',
     schemaVersion: 1,
-    documentIds: ['doc-1'],
+    studyIds: ['study-1'],
     provider: 'gemini',
     requestedModel: 'gemini-test',
     modelVersion: null,
@@ -315,9 +330,9 @@ describe('実行中', () => {
         },
       }),
     );
-    // % を併記し、document は study_label で表示する
+    // % を併記し、document はファイル名で表示する（study_label は Studies へ移設・v0.10）
     expect(noSection.root.querySelector('.pilot__progress-text')?.textContent).toBe(
-      '1 / 4 バッチ完了（25% / 直近: Smith 2020）',
+      '1 / 4 バッチ完了（25% / 直近: smith2020.pdf）',
     );
     const bar = noSection.root.querySelector<HTMLProgressElement>('#pilot-progress');
     expect(bar?.max).toBe(4);
@@ -338,7 +353,7 @@ describe('実行中', () => {
       }),
     );
     expect(withSection.root.querySelector('.pilot__progress-text')?.textContent).toContain(
-      'Smith 2020 / methods',
+      'smith2020.pdf / methods',
     );
 
     // 未知 document は id 表示 / 総バッチ数 0 は 0% 表示
@@ -395,33 +410,39 @@ describe('完了（サマリ + 埋め込み検証）', () => {
     expect(noRejected.root.querySelectorAll('#pilot-partial-failure li')).toHaveLength(2);
   });
 
-  test('検証文献セレクタ: study_label 解決（一覧なしは ID のまま）と切替', () => {
+  test('検証文献セレクタ: run.studyIds から records を引いてファイル名で列挙・切替', () => {
     const { root, callbacks } = render(
       makeState({
+        documents: [
+          makeDocument(),
+          makeDocument({ documentId: 'doc-9', studyId: 'study-9', filename: 'jones2021.pdf' }),
+        ],
         pilot: {
-          run: makeRun({ documentIds: ['doc-1', 'doc-9'] }),
+          run: makeRun({ studyIds: ['study-1', 'study-9'] }),
           verifyDocumentId: 'doc-1',
         },
       }),
     );
     const select = root.querySelector<HTMLSelectElement>('#pilot-verify-doc');
     const options = select?.querySelectorAll('option');
-    expect(options?.[0]?.textContent).toBe('Smith 2020');
-    expect(options?.[1]?.textContent).toBe('doc-9'); // 一覧に無い ID はそのまま
+    // option text = doc.filename、value = document_id（study_label は Studies へ移設・v0.10）
+    expect(options?.[0]?.textContent).toBe('smith2020.pdf');
+    expect(options?.[1]?.textContent).toBe('jones2021.pdf');
     expect(select?.value).toBe('doc-1');
     select!.value = 'doc-9';
     select!.dispatchEvent(new Event('change'));
     expect(callbacks.onSelectVerifyDocument).toHaveBeenCalledWith('doc-9');
   });
 
-  test('文献一覧が null でもセレクタは ID で出す。verifyDocumentId 未設定でも安全', () => {
+  test('文献一覧が null ならセレクタは空（option なし）。verifyDocumentId 未設定でも安全', () => {
     const { root } = render(
       makeState({
         documents: null,
         pilot: { run: makeRun(), verifyDocumentId: null },
       }),
     );
-    expect(root.querySelector('#pilot-verify-doc option')?.textContent).toBe('doc-1');
+    expect(root.querySelector('#pilot-verify-doc')).not.toBeNull();
+    expect(root.querySelector('#pilot-verify-doc option')).toBeNull();
   });
 
   test('オフラインキュー件数のチップ', () => {
@@ -492,7 +513,7 @@ describe('過去のパイロット結果（履歴）', () => {
     expect(callbacks.onReloadHistory).toHaveBeenCalled();
   });
 
-  test('履歴一覧: 日時 / モデル / 文献数 / status ラベル + 選択の配線', () => {
+  test('履歴一覧: 日時 / モデル / 試験数 / status ラベル + 選択の配線', () => {
     const { root, callbacks } = render(
       makeState({
         pilot: {
@@ -500,7 +521,7 @@ describe('過去のパイロット結果（履歴）', () => {
             makeRun({
               runId: 'run-2',
               requestedModel: 'gemini-2.5-pro',
-              documentIds: ['d1', 'd2'],
+              studyIds: ['d1', 'd2'],
               finishedAt: 't-b',
               status: 'partial_failure',
             }),
@@ -513,7 +534,7 @@ describe('過去のパイロット結果（履歴）', () => {
     expect(items).toHaveLength(2);
     expect(items[0]?.querySelector('.pilot__history-when')?.textContent).toBe('t-b');
     expect(items[0]?.querySelector('.pilot__history-model')?.textContent).toBe('gemini-2.5-pro');
-    expect(items[0]?.querySelector('.pilot__history-docs')?.textContent).toBe('2 文献');
+    expect(items[0]?.querySelector('.pilot__history-docs')?.textContent).toBe('2 試験');
     expect(items[0]?.querySelector('.pilot__history-status')?.textContent).toBe('一部失敗');
     // finished_at が無ければ started_at にフォールバック
     expect(items[1]?.querySelector('.pilot__history-when')?.textContent).toBe('t-a');

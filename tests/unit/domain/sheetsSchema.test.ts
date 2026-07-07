@@ -7,10 +7,11 @@ import {
 } from '../../../src/domain/sheetsSchema';
 
 describe('SHEET_TABS', () => {
-  test('requirements.md §3.2 の 13 タブを定義順に持つ', () => {
+  test('requirements.md §3.2 の 14 タブを定義順に持つ', () => {
     expect(SHEET_TABS).toEqual([
       'Meta',
       'Protocol',
+      'Studies',
       'Documents',
       'SchemaVersions',
       'SchemaFields',
@@ -52,7 +53,8 @@ describe('SHEET_HEADERS', () => {
   test('Documents は取り込みメタデータ（凍結スナップショット + テキスト層状態）を持つ', () => {
     expect(SHEET_HEADERS.Documents).toEqual([
       'document_id',
-      'study_label',
+      'study_id',
+      'document_role',
       'drive_file_id',
       'source_file_id',
       'filename',
@@ -68,12 +70,23 @@ describe('SHEET_HEADERS', () => {
     ]);
   });
 
+  test('Studies は試験メタデータ（study_label + 登録 ID）を持つ', () => {
+    expect(SHEET_HEADERS.Studies).toEqual([
+      'study_id',
+      'study_label',
+      'registration_id',
+      'created_at',
+      'created_by',
+      'note',
+    ]);
+  });
+
   test('StudyData は固定列のみ（値列は動的生成）', () => {
     expect(SHEET_HEADERS.StudyData).toEqual(STUDY_DATA_FIXED_HEADERS);
   });
 
-  test('ResultsData は long の更新キー 4 列（document_id × annotator × entity_key × field_id）を含む', () => {
-    for (const key of ['document_id', 'annotator', 'entity_key', 'field_id']) {
+  test('ResultsData は long の更新キー 4 列（study_id × annotator × entity_key × field_id）を含む', () => {
+    for (const key of ['study_id', 'annotator', 'entity_key', 'field_id']) {
       expect(SHEET_HEADERS.ResultsData).toContain(key);
     }
     expect(SHEET_HEADERS.ResultsData[0]).toBe('result_id');
@@ -93,7 +106,7 @@ describe('SHEET_HEADERS', () => {
 
   test('ArmStructures は群構成の確定行（version + arm_key + arm_name + annotator）を持つ', () => {
     expect(SHEET_HEADERS.ArmStructures).toEqual([
-      'document_id',
+      'study_id',
       'version',
       'arm_key',
       'arm_name',

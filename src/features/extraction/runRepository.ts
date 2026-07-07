@@ -24,7 +24,7 @@ export function extractionRunToRow(run: ExtractionRun): (string | number | null)
     run.runId,
     run.runType,
     run.schemaVersion,
-    run.documentIds.join(','), // シート上はカンマ区切り（§3.2）
+    run.studyIds.join(','), // シート上はカンマ区切り（§3.2）
     run.provider,
     run.requestedModel,
     run.modelVersion,
@@ -117,37 +117,37 @@ export async function readRunAuditInfos(
 /** 完了行の status（2 行プロトコルの 2 行目）。running 行しかない run は中断とみなす */
 const COMPLETED_STATUSES: ReadonlySet<string> = new Set(['done', 'partial_failure']);
 
-/** document_ids 列（4 列目）のカンマ区切りを分解する（§3.2）。ラグ配列の欠落セルは空扱い */
-function parseDocumentIds(cell: string | null | undefined): string[] {
+/** study_ids 列（4 列目）のカンマ区切りを分解する（§3.2）。ラグ配列の欠落セルは空扱い */
+function parseStudyIds(cell: string | null | undefined): string[] {
   return (cell ?? '').split(',').filter((id) => id !== '');
 }
 
-export interface RunDocumentCoverage {
-  /** 完了行を持つ run で抽出済みの document_id 集合（S7 既定選択 = 未抽出の全件の素材） */
+export interface RunStudyCoverage {
+  /** 完了行を持つ run で抽出済みの study_id 集合（S7 既定選択 = 未抽出の全件の素材） */
   extracted: Set<string>;
   /**
    * 中断された run（running 行のみで完了行がない）に含まれ、かつその後の run でも
-   * 抽出されていない document_id 集合（S7 の中断バナーの素材）
+   * 抽出されていない study_id 集合（S7 の中断バナーの素材）
    */
   interrupted: Set<string>;
 }
 
 /**
- * これまでの run（pilot / full / single_document すべて）の document カバレッジを返す。
+ * これまでの run（pilot / full / single_study すべて）の study カバレッジを返す。
  * 抽出済みに数えるのは完了行のみ。中断 run の文献は「未抽出」に戻るため、
  * S7 の既定選択（未抽出の全件）がそのまま再開手段になる
  */
-export async function readRunDocumentCoverage(
+export async function readRunStudyCoverage(
   spreadsheetId: string,
   deps: GoogleApiDeps,
-): Promise<RunDocumentCoverage> {
+): Promise<RunStudyCoverage> {
   const rows = await readRunRows(spreadsheetId, deps);
   const extracted = new Set<string>();
   const completedRunIds = new Set<string>();
   for (const raw of rows) {
     if (COMPLETED_STATUSES.has(raw[8] ?? '')) {
       completedRunIds.add(raw[0] ?? '');
-      for (const id of parseDocumentIds(raw[3])) {
+      for (const id of parseStudyIds(raw[3])) {
         extracted.add(id);
       }
     }
@@ -157,7 +157,7 @@ export async function readRunDocumentCoverage(
     if (completedRunIds.has(raw[0] ?? '')) {
       continue;
     }
-    for (const id of parseDocumentIds(raw[3])) {
+    for (const id of parseStudyIds(raw[3])) {
       if (!extracted.has(id)) {
         interrupted.add(id);
       }
@@ -219,7 +219,7 @@ function rowToExtractionRun(raw: (string | null)[], rowIndex: number): Extractio
     // run_type / status は readPilotRuns が 'pilot' + 完了行を確認済みのため非 null が保証される
     runType: raw[1] as RunType,
     schemaVersion: parseRequiredInteger(raw[2], context, 'schema_version'),
-    documentIds: parseDocumentIds(raw[3]),
+    studyIds: parseStudyIds(raw[3]),
     provider: (raw[4] ?? '') as LlmProviderId,
     requestedModel: raw[5] ?? '',
     modelVersion: emptyToNull(raw[6]),
@@ -236,7 +236,7 @@ function rowToExtractionRun(raw: (string | null)[], rowIndex: number): Extractio
 /**
  * これまでのパイロット run（run_type='pilot' の完了行）を新しい順で返す（S6 の履歴読込）。
  * 2 行プロトコルの完了行（done / partial_failure）だけを対象にし、running 行のみの中断 run は
- * 含めない（Evidence が揃っている保証がないため。readRunDocumentCoverage と同じ完了判定）。
+ * 含めない（Evidence が揃っている保証がないため。readRunStudyCoverage と同じ完了判定）。
  * シート追記順の逆順 = 実行の新しい順で返す
  */
 export async function readPilotRuns(

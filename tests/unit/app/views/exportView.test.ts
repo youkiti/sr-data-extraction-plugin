@@ -16,7 +16,21 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<ExportViewCallbac
   return {
     ctx: {
       home: { onReload: jest.fn() },
-      documents: { onImport: jest.fn(), onReload: jest.fn(), onSaveStudyLabel: jest.fn() },
+      documents: {
+        onImport: jest.fn(),
+        onReload: jest.fn(),
+        onSaveStudyLabel: jest.fn(),
+        onSaveRegistrationId: jest.fn(),
+        onSaveDocumentRole: jest.fn(),
+        onToggleStudySelection: jest.fn(),
+        onOpenMerge: jest.fn(),
+        onOpenMergeCandidate: jest.fn(),
+        onIgnoreCandidate: jest.fn(),
+        onUpdateMergeLabel: jest.fn(),
+        onUpdateMergeRegistration: jest.fn(),
+        onConfirmMerge: jest.fn(),
+        onCancelMerge: jest.fn(),
+      },
       protocol: {
         onSubmit: jest.fn(),
         onStartEdit: jest.fn(),
@@ -77,7 +91,7 @@ function makeBuilt(format: ExportFormat, overrides: Partial<BuiltExport> = {}): 
     header: ['study_label', 'total_n'],
     previewRows: [['Smith 2020', '120']],
     rowCount: 1,
-    documentCount: 1,
+    studyCount: 1,
     unverifiedCellCount: 0,
     skippedStudyLabels: [],
     droppedRowCount: 0,
@@ -135,7 +149,7 @@ describe('renderExportView', () => {
 
     const summary = view.querySelector('#export-summary');
     expect(summary?.textContent).toContain('データ行数');
-    expect(summary?.textContent).toContain('対象文献数');
+    expect(summary?.textContent).toContain('対象 study 数');
     expect(summary?.textContent).toContain('未検証セル数');
 
     const preview = view.querySelector('#export-preview');

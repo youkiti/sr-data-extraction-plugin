@@ -4,7 +4,21 @@ import type { ViewContext } from '../../../src/app/views/types';
 
 const stubCtx: ViewContext = {
   home: { onReload: jest.fn() },
-  documents: { onImport: jest.fn(), onReload: jest.fn(), onSaveStudyLabel: jest.fn() },
+  documents: {
+    onImport: jest.fn(),
+    onReload: jest.fn(),
+    onSaveStudyLabel: jest.fn(),
+    onSaveRegistrationId: jest.fn(),
+    onSaveDocumentRole: jest.fn(),
+    onToggleStudySelection: jest.fn(),
+    onOpenMerge: jest.fn(),
+    onOpenMergeCandidate: jest.fn(),
+    onIgnoreCandidate: jest.fn(),
+    onUpdateMergeLabel: jest.fn(),
+    onUpdateMergeRegistration: jest.fn(),
+    onConfirmMerge: jest.fn(),
+    onCancelMerge: jest.fn(),
+  },
   protocol: {
     onSubmit: jest.fn(),
     onStartEdit: jest.fn(),

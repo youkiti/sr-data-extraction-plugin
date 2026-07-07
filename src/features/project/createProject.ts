@@ -23,7 +23,7 @@ import { generateUuid, shortUuid } from '../../utils/uuid';
  * 1. project_id（UUID v4）発行
  * 2. Drive トップフォルダ作成（`マイドライブ/SR Data Extraction/{title}_{id_short}/`）
  * 3. サブフォルダ（documents / extracted_texts / raw_protocols / logs/llm）作成
- * 4. スプレッドシート作成（13 タブを一括初期化）
+ * 4. スプレッドシート作成（14 タブを一括初期化。v0.10 で Studies を追加）
  * 5. 各タブのヘッダ行書き込み
  * 6. スプレッドシートをプロジェクトフォルダ配下へ移動（Drive files.update の parents 操作）
  * 7. Meta タブに 1 行追記

@@ -111,7 +111,7 @@ export async function runExtraction(
     model: params.model,
   });
   const provider = withRetry(
-    withLogging(baseProvider, 'extract_document', {
+    withLogging(baseProvider, 'extract_study', {
       uploadJson: async ({ filename, content }) => {
         const file = await uploadTextFile(
           {
@@ -133,13 +133,14 @@ export async function runExtraction(
 
   const runId = uuid();
   const startedAt = now();
-  // 実際に実行対象となる文献（スキップ分は含めない。plan.skippedDocuments で追跡可能）
-  const documentIds = [...new Set(plan.batches.map((batch) => batch.documentId))];
+  // 実際に実行対象となる study（スキップ分は含めない。plan.skippedDocuments で追跡可能）。
+  // フェーズ 1 は 1 study = 1 文書のため batch.studyId は文書ごとに 1 件
+  const studyIds = [...new Set(plan.batches.map((batch) => batch.studyId))];
   const runBase = {
     runId,
     runType: params.runType,
     schemaVersion: plan.schemaVersion,
-    documentIds,
+    studyIds,
     provider: baseProvider.providerId,
     requestedModel: params.model,
     inputMode: 'text_only' as const, // MVP は text_only のみ（pdf_native は ※Q3）

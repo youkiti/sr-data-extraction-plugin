@@ -4,23 +4,27 @@
 // および未検証セル残存時の警告ダイアログ（中止 / 続行）まで実弾で通す
 import { expect, test, type Page } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
+import { SHEET_HEADERS } from '../../src/domain/sheetsSchema';
 
-const DOCUMENTS_HEADERS = [
-  'document_id', 'study_label', 'drive_file_id', 'source_file_id', 'filename', 'pmid', 'doi',
-  'text_ref', 'text_status', 'page_count', 'char_count', 'imported_at', 'imported_by', 'note',
-];
+// v0.10: Documents は study_id + document_role を持ち、study_label は Studies へ移設
+const DOCUMENTS_HEADERS = [...SHEET_HEADERS.Documents];
 
 const DOC_ROW_1 = [
-  'doc-1', 'Smith 2020', 'drive-1', 'src-1', 'smith2020.pdf', '', '',
+  'doc-1', 'study-1', 'article', 'drive-1', 'src-1', 'smith2020.pdf', '', '',
   'https://drive.google.com/file/d/txt-1/view', 'ok', '1', '4000',
   '2026-07-01T00:00:00Z', 'e2e@example.com', '',
 ];
 
 const DOC_ROW_2 = [
-  'doc-2', 'Jones 2021', 'drive-2', 'src-2', 'jones2021.pdf', '', '',
+  'doc-2', 'study-2', 'article', 'drive-2', 'src-2', 'jones2021.pdf', '', '',
   'https://drive.google.com/file/d/txt-2/view', 'ok', '1', '4000',
   '2026-07-01T00:00:00Z', 'e2e@example.com', '',
 ];
+
+// Studies タブ（v0.10）。エクスポートの study_label はここ由来
+const STUDIES_HEADERS = [...SHEET_HEADERS.Studies];
+const STUDY_META_ROW_1 = ['study-1', 'Smith 2020', '', '2026-07-01T00:00:00Z', 'e2e@example.com', ''];
+const STUDY_META_ROW_2 = ['study-2', 'Jones 2021', '', '2026-07-01T00:00:00Z', 'e2e@example.com', ''];
 
 const SCHEMA_VERSIONS_HEADERS = [
   'schema_version', 'parent_version', 'protocol_version', 'created_by_type', 'created_at',
@@ -45,42 +49,28 @@ const ARM_FIELD_ROW = [
   'TRUE', '群別 N を抽出', '', 'FALSE', '',
 ];
 
-const STUDY_DATA_HEADERS = [
-  'document_id', 'annotator', 'annotator_type', 'schema_version', 'run_id', 'updated_at',
-  'mortality_pct',
-];
+const STUDY_DATA_HEADERS = [...SHEET_HEADERS.StudyData, 'mortality_pct'];
 
-const RESULTS_DATA_HEADERS = [
-  'result_id', 'document_id', 'field_id', 'annotator', 'annotator_type', 'schema_version',
-  'entity_key', 'run_id', 'value', 'not_reported', 'updated_at',
-];
+const RESULTS_DATA_HEADERS = [...SHEET_HEADERS.ResultsData];
 
-const EVIDENCE_HEADERS = [
-  'evidence_id', 'run_id', 'document_id', 'field_id', 'entity_key', 'value', 'not_reported',
-  'quote', 'page', 'confidence', 'anchor_status',
-];
+const EVIDENCE_HEADERS = [...SHEET_HEADERS.Evidence];
 
-const EVIDENCE_ROW_1 = ['ev-1', 'run-1', 'doc-1', 'f-total', '-', '12', 'FALSE', 'Mortality was 12 percent', '1', 'high', 'exact'];
-const EVIDENCE_ROW_2 = ['ev-2', 'run-1', 'doc-2', 'f-total', '-', '9', 'FALSE', 'nowhere', '1', 'low', 'failed'];
+// Evidence は study_id（col 3）+ document_id（col 5）
+const EVIDENCE_ROW_1 = ['ev-1', 'run-1', 'study-1', 'f-total', 'doc-1', '-', '12', 'FALSE', 'Mortality was 12 percent', '1', 'high', 'exact'];
+const EVIDENCE_ROW_2 = ['ev-2', 'run-1', 'study-2', 'f-total', 'doc-2', '-', '9', 'FALSE', 'nowhere', '1', 'low', 'failed'];
 
-const RUNS_HEADERS = [
-  'run_id', 'run_type', 'schema_version', 'document_ids', 'provider', 'requested_model',
-  'model_version', 'input_mode', 'status', 'started_at', 'finished_at', 'tokens_in',
-  'tokens_out', 'cost_estimate',
-];
+const RUNS_HEADERS = [...SHEET_HEADERS.ExtractionRuns];
 
 const RUN_ROW = [
-  'run-1', 'full', '1', 'doc-1,doc-2', 'gemini', 'gemini-test', '', 'text_only', 'done',
+  'run-1', 'full', '1', 'study-1,study-2', 'gemini', 'gemini-test', '', 'text_only', 'done',
   't1', 't2', '', '', '',
 ];
 
-const DECISIONS_HEADERS = [
-  'decided_at', 'decided_by', 'document_id', 'field_id', 'entity_key', 'annotator',
-  'annotator_type', 'schema_version', 'action', 'value', 'note',
-];
+const DECISIONS_HEADERS = [...SHEET_HEADERS.Decisions];
 
+// Decisions は study_id キー（3 列目）
 const DECISION_ROW = [
-  '2026-07-02T00:00:00Z', 'e2e@example.com', 'doc-1', 'f-total', '-', 'e2e@example.com',
+  '2026-07-02T00:00:00Z', 'e2e@example.com', 'study-1', 'f-total', '-', 'e2e@example.com',
   'human_with_ai', '1', 'accept', '12', '',
 ];
 
@@ -95,8 +85,9 @@ interface CapturedWrites {
  */
 async function setupRoutes(page: Page, options: { unverifiedStudy?: boolean } = {}): Promise<CapturedWrites> {
   const captured: CapturedWrites = { exportLogBodies: [], uploadCount: 0 };
+  // StudyData の 1 列目は study_id（v0.10）。study-1 の確定 annotator 行
   const studyRow = [
-    'doc-1', 'e2e@example.com', 'human_with_ai', '1', '', '2026-07-02T00:00:00Z',
+    'study-1', 'e2e@example.com', 'human_with_ai', '1', '', '2026-07-02T00:00:00Z',
     options.unverifiedStudy === true ? '' : '12',
   ];
 
@@ -105,6 +96,8 @@ async function setupRoutes(page: Page, options: { unverifiedStudy?: boolean } = 
     if (route.request().method() === 'GET') {
       if (url.includes('/values/Documents')) {
         await route.fulfill({ json: { values: [DOCUMENTS_HEADERS, DOC_ROW_1, DOC_ROW_2] } });
+      } else if (url.includes('/values/Studies')) {
+        await route.fulfill({ json: { values: [STUDIES_HEADERS, STUDY_META_ROW_1, STUDY_META_ROW_2] } });
       } else if (url.includes('/values/StudyData')) {
         await route.fulfill({ json: { values: [STUDY_DATA_HEADERS, studyRow] } });
       } else if (url.includes('/values/ResultsData')) {

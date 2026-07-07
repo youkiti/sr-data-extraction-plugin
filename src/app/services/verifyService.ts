@@ -110,8 +110,7 @@ export async function readVerifyTargetMaterials(
       fieldsByVersion.set(schemaVersion, fields);
     }
     const ownDecisions = allDecisions.filter(
-      (decision) =>
-        decision.documentId === document.documentId && decision.annotator === annotator,
+      (decision) => decision.studyId === document.studyId && decision.annotator === annotator,
     );
     materials.push({
       target: {
@@ -215,7 +214,7 @@ export async function persistVerifyDecision(
     return;
   }
   const target = state.verify.targets?.find(
-    (candidate) => candidate.document.documentId === decision.documentId,
+    (candidate) => candidate.document.studyId === decision.studyId,
   );
   const field = target?.fields.find((candidate) => candidate.fieldId === decision.fieldId);
   if (field === undefined) {
@@ -258,7 +257,7 @@ export async function persistVerifyArmConfirmation(
   await persistArmConfirmation(
     project.spreadsheetId,
     {
-      documentId: verification.document.documentId,
+      studyId: verification.document.studyId,
       arms,
       annotator: verification.annotator,
       annotatorType: 'human_with_ai',

@@ -37,7 +37,21 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<ProtocolViewCallb
   return {
     ctx: {
       home: { onReload: jest.fn() },
-      documents: { onImport: jest.fn(), onReload: jest.fn(), onSaveStudyLabel: jest.fn() },
+      documents: {
+        onImport: jest.fn(),
+        onReload: jest.fn(),
+        onSaveStudyLabel: jest.fn(),
+        onSaveRegistrationId: jest.fn(),
+        onSaveDocumentRole: jest.fn(),
+        onToggleStudySelection: jest.fn(),
+        onOpenMerge: jest.fn(),
+        onOpenMergeCandidate: jest.fn(),
+        onIgnoreCandidate: jest.fn(),
+        onUpdateMergeLabel: jest.fn(),
+        onUpdateMergeRegistration: jest.fn(),
+        onConfirmMerge: jest.fn(),
+        onCancelMerge: jest.fn(),
+      },
       protocol: callbacks,
       schema: {
         onReload: jest.fn(),

@@ -49,6 +49,8 @@ export interface DashboardData {
 /** 1 document ぶんの集計素材（verifyService の検証対象と同じ束 + 自分の判定） */
 export interface DashboardDocumentInput {
   document: DocumentRecord;
+  /** 表示ラベル（Studies 由来。呼び出し側が document.studyId から解決する。v0.10） */
+  studyLabel: string;
   fields: readonly SchemaField[];
   evidence: readonly Evidence[];
   /** 自分の annotator 行への判定のみ（cells.ts と同じ契約） */
@@ -99,7 +101,7 @@ function buildRow(input: DashboardDocumentInput, sections: readonly string[]): D
   const anchored = input.evidence.filter((item) => item.anchorStatus !== null);
   return {
     documentId: input.document.documentId,
-    studyLabel: input.document.studyLabel,
+    studyLabel: input.studyLabel,
     cells: sections.map((section) => bySection.get(section) ?? null),
     progress: { decided, total },
     anchor: {

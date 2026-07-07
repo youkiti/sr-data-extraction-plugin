@@ -26,12 +26,12 @@ import { readRunSchemaVersions } from '../../../../src/features/extraction/runRe
 import { getSchemaFieldsByVersion } from '../../../../src/features/schema/schemaRepository';
 import {
   appendArmStructureVersion,
-  readArmStructuresByDocument,
+  readArmStructuresByStudy,
 } from '../../../../src/features/verification/armStructureRepository';
 import {
   appendDecisionRows,
   readAllDecisions,
-  readDecisionsByDocument,
+  readDecisionsByStudy,
 } from '../../../../src/features/verification/decisionRepository';
 import { getFileBinary } from '../../../../src/lib/google/drive';
 import { getCurrentUserEmail } from '../../../../src/lib/google/identity';
@@ -57,12 +57,12 @@ jest.mock('../../../../src/features/schema/schemaRepository', () => ({
 jest.mock('../../../../src/features/verification/decisionRepository', () => ({
   appendDecisionRows: jest.fn(),
   readAllDecisions: jest.fn(),
-  readDecisionsByDocument: jest.fn(),
+  readDecisionsByStudy: jest.fn(),
 }));
 jest.mock('../../../../src/features/verification/armStructureRepository', () => ({
   ...jest.requireActual('../../../../src/features/verification/armStructureRepository'),
   appendArmStructureVersion: jest.fn(),
-  readArmStructuresByDocument: jest.fn(),
+  readArmStructuresByStudy: jest.fn(),
 }));
 jest.mock('../../../../src/lib/google/drive', () => ({
   getFileBinary: jest.fn(),
@@ -84,14 +84,14 @@ const getSchemaFieldsMock = getSchemaFieldsByVersion as jest.MockedFunction<
 >;
 const appendDecisionsMock = appendDecisionRows as jest.MockedFunction<typeof appendDecisionRows>;
 const readAllDecisionsMock = readAllDecisions as jest.MockedFunction<typeof readAllDecisions>;
-const readDecisionsMock = readDecisionsByDocument as jest.MockedFunction<
-  typeof readDecisionsByDocument
+const readDecisionsMock = readDecisionsByStudy as jest.MockedFunction<
+  typeof readDecisionsByStudy
 >;
 const appendArmVersionMock = appendArmStructureVersion as jest.MockedFunction<
   typeof appendArmStructureVersion
 >;
-const readArmStructuresMock = readArmStructuresByDocument as jest.MockedFunction<
-  typeof readArmStructuresByDocument
+const readArmStructuresMock = readArmStructuresByStudy as jest.MockedFunction<
+  typeof readArmStructuresByStudy
 >;
 const getFileBinaryMock = getFileBinary as jest.MockedFunction<typeof getFileBinary>;
 const getCurrentUserEmailMock = getCurrentUserEmail as jest.MockedFunction<
@@ -101,9 +101,12 @@ const getCurrentUserEmailMock = getCurrentUserEmail as jest.MockedFunction<
 const ME = 'me@example.com';
 
 function makeDocument(overrides: Partial<DocumentRecord> = {}): DocumentRecord {
+  // フェーズ 1 は 1 文書 = 1 study。文書ごとに一意な study_id を自動採番する
+  const documentId = overrides.documentId ?? 'doc-1';
   return {
-    documentId: 'doc-1',
-    studyLabel: 'Smith 2020',
+    documentId,
+    studyId: `study-${documentId}`,
+    documentRole: 'article',
     driveFileId: 'drive-1',
     sourceFileId: 'src-1',
     filename: 'smith2020.pdf',
@@ -145,6 +148,7 @@ function makeEvidence(overrides: Partial<Evidence> = {}): Evidence {
   return {
     evidenceId: 'ev-1',
     runId: 'run-1',
+    studyId: 'study-doc-1',
     documentId: 'doc-1',
     fieldId: 'f-total',
     entityKey: '-',
@@ -162,7 +166,7 @@ function makeDecision(overrides: Partial<Decision> = {}): Decision {
   return {
     decidedAt: 't-now',
     decidedBy: ME,
-    documentId: 'doc-1',
+    studyId: 'study-doc-1',
     fieldId: 'f-total',
     entityKey: '-',
     annotator: ME,
@@ -297,7 +301,7 @@ describe('loadVerifyTargets', () => {
     });
     readAllDecisionsMock.mockResolvedValue([
       makeDecision(),
-      makeDecision({ documentId: 'doc-other' }), // 他文献の判定は数えない
+      makeDecision({ studyId: 'study-doc-other' }), // 他 study の判定は数えない
       makeDecision({ annotator: 'other@example.com', fieldId: 'f-x' }), // 他人の判定は数えない
     ]);
     await loadVerifyTargets(store, makeDeps());
@@ -379,7 +383,7 @@ describe('openVerifyDocument', () => {
       fieldNames: ['sample_size_total'],
       rows: [
         {
-          documentId: 'doc-1',
+          studyId: 'study-doc-1',
           annotator: ME,
           annotatorType: 'human_with_ai',
           schemaVersion: 1,
@@ -474,7 +478,7 @@ describe('persistVerifyDecision', () => {
       'sheet-1',
       [
         expect.objectContaining({
-          documentId: 'doc-1',
+          studyId: 'study-doc-1',
           annotator: ME,
           values: { country: 'Japan', sample_size_total: '120' },
         }),
@@ -552,7 +556,7 @@ describe('persistVerifyArmConfirmation', () => {
     expect(appendArmVersionMock).toHaveBeenCalledWith(
       'sheet-1',
       {
-        documentId: 'doc-1',
+        studyId: 'study-doc-1',
         arms: [{ armKey: 'arm:1', armName: '介入群' }],
         annotator: ME,
         annotatorType: 'human_with_ai',

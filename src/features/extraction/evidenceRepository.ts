@@ -17,8 +17,9 @@ export function evidenceToRow(evidence: Evidence): (string | number | boolean | 
   return [
     evidence.evidenceId,
     evidence.runId,
-    evidence.documentId,
+    evidence.studyId,
     evidence.fieldId,
+    evidence.documentId,
     evidence.entityKey,
     evidence.value,
     evidence.notReported,
@@ -111,15 +112,16 @@ export async function readEvidenceRows(
     return {
       evidenceId: cellAt(raw, 0),
       runId: cellAt(raw, 1),
-      documentId: cellAt(raw, 2),
+      studyId: cellAt(raw, 2),
       fieldId: cellAt(raw, 3),
-      entityKey: cellAt(raw, 4),
-      value: emptyToNull(cellAt(raw, 5)),
-      notReported: parseBool(cellAt(raw, 6)),
-      quote: emptyToNull(cellAt(raw, 7)),
-      page: parsePage(cellAt(raw, 8), context),
-      confidence: parseConfidence(cellAt(raw, 9), context),
-      anchorStatus: parseAnchorStatus(cellAt(raw, 10), context),
+      documentId: cellAt(raw, 4),
+      entityKey: cellAt(raw, 5),
+      value: emptyToNull(cellAt(raw, 6)),
+      notReported: parseBool(cellAt(raw, 7)),
+      quote: emptyToNull(cellAt(raw, 8)),
+      page: parsePage(cellAt(raw, 9), context),
+      confidence: parseConfidence(cellAt(raw, 10), context),
+      anchorStatus: parseAnchorStatus(cellAt(raw, 11), context),
     };
   });
 }
