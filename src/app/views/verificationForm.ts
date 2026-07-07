@@ -5,7 +5,12 @@
 // - anchor_status = failed / ハイライト再特定不能: quote 全文 + 「本文内を検索」フォールバック
 import type { EntityLevel } from '../../domain/schemaField';
 import { NOT_REPORTED_TOKEN } from '../../domain/annotation';
-import type { TabModel, VerificationCell } from '../../features/verification/cells';
+import {
+  splitDecidedCells,
+  type DecidedEntry,
+  type TabModel,
+  type VerificationCell,
+} from '../../features/verification/cells';
 import type { CellStatus } from '../../features/verification/cellState';
 import type { VerificationProgress } from '../../features/verification/progress';
 import { el } from '../ui/dom';
@@ -34,6 +39,10 @@ export interface VerificationFormModel {
   focusedCellKey: string | null;
   /** 値入力中のセル（edit = AI 値の修正 / reject = 棄却して手入力） */
   editing: { cellKey: string; action: 'edit' | 'reject' } | null;
+  /** 直近判定の 1 件（判定済みブロックへ送らず元の位置に残す。見直し・戻す (z) 用） */
+  recentDecidedKey: string | null;
+  /** 判定済みブロック内で展開表示中のセル。null = すべてコンパクト表示 */
+  expandedDecidedKey: string | null;
   highlightInfo: ReadonlyMap<string, CellHighlightInfo>;
   /** テキスト層があるとき true（false なら「本文内を検索」を出さない。ui-states.md §3） */
   canSearchText: boolean;
@@ -60,6 +69,10 @@ export interface VerificationFormHandlers {
   onSearchQuote(quote: string): void;
   /** 「他 n 箇所に一致」の切替 */
   onCycleMatch(cellKey: string): void;
+  /** 判定済みブロックのコンパクト行クリック → 展開（フォーカスも移す） */
+  onExpandDecided(cellKey: string): void;
+  /** 展開中カードの「たたむ」 */
+  onCollapseDecided(): void;
   /** 群構成カード: 名称の編集確定（change 単位） */
   onArmNameChange(index: number, name: string): void;
   onArmAddRow(): void;
@@ -259,11 +272,22 @@ function renderCell(
   model: VerificationFormModel,
   handlers: VerificationFormHandlers,
 ): HTMLElement {
-  const header = el('div', { className: 'verify__cell-header' }, [
+  const headerChildren: HTMLElement[] = [
     el('span', { className: 'verify__cell-label', text: cell.field.fieldLabel }),
     el('code', { className: 'verify__cell-name', text: cell.field.fieldName }),
     renderStatusChip(cell.state.status),
-  ]);
+  ];
+  if (cell.cellKey === model.expandedDecidedKey) {
+    // 判定済みブロック内の展開カードにだけ「たたむ」を出す
+    const collapseButton = el('button', {
+      className: 'verify__decided-collapse',
+      text: 'たたむ',
+      attributes: { type: 'button' },
+    });
+    collapseButton.addEventListener('click', () => handlers.onCollapseDecided());
+    headerChildren.push(collapseButton);
+  }
+  const header = el('div', { className: 'verify__cell-header' }, headerChildren);
   const children: HTMLElement[] = [header, renderAiSummary(cell)];
   if (cell.state.status !== 'unverified') {
     children.push(
@@ -293,6 +317,49 @@ function renderCell(
     }
   });
   return node;
+}
+
+/**
+ * 判定済みブロックの 1 行。コンパクト表示（チップ + ラベル + 確定値の 1 行）が既定で、
+ * クリックで展開（expandedDecidedKey）→ 通常カード + たたむボタンに切り替わる
+ */
+function renderDecidedRow(
+  entry: DecidedEntry,
+  model: VerificationFormModel,
+  handlers: VerificationFormHandlers,
+): HTMLElement {
+  const { cell } = entry;
+  // 展開中 or 値入力中（キーボード e / x で編集を始めた場合）は通常カードで描画する
+  if (cell.cellKey === model.expandedDecidedKey || cell.cellKey === model.editing?.cellKey) {
+    return renderCell(cell, model, handlers);
+  }
+  const children: HTMLElement[] = [
+    renderStatusChip(cell.state.status),
+    el('span', { className: 'verify__cell-label', text: cell.field.fieldLabel }),
+  ];
+  if (entry.heading !== '') {
+    children.push(el('span', { className: 'verify__decided-heading', text: entry.heading }));
+  }
+  children.push(
+    el('span', {
+      className: 'verify__decided-value',
+      text: `確定値: ${cell.state.value ?? '（空）'}`,
+    }),
+  );
+  const row = el(
+    'button',
+    {
+      className: 'verify__cell verify__cell--decided',
+      attributes: { type: 'button', title: 'クリックで詳細を表示' },
+    },
+    children,
+  );
+  row.dataset['cellKey'] = cell.cellKey;
+  if (cell.cellKey === model.focusedCellKey) {
+    row.classList.add('verify__cell--focused');
+  }
+  row.addEventListener('click', () => handlers.onExpandDecided(cell.cellKey));
+  return row;
 }
 
 /**
@@ -478,11 +545,25 @@ export function renderVerificationForm(
       }),
     );
   }
-  for (const group of model.tabModel.groups) {
+  // 未判定（+ 直近判定 1 件）を上に、判定済みを下部ブロックへ送る。
+  // 一番上が常に「今判断すべき変数」になる（ui-states.md §3 `#/verify`）
+  const { activeGroups, decided } = splitDecidedCells(
+    model.tabModel.groups,
+    model.recentDecidedKey,
+  );
+  for (const group of activeGroups) {
     children.push(
       el('section', { className: 'verify__group' }, [
         el('h4', { className: 'verify__group-heading', text: group.heading }),
         ...group.cells.map((cell) => renderCell(cell, model, handlers)),
+      ]),
+    );
+  }
+  if (decided.length > 0) {
+    children.push(
+      el('section', { className: 'verify__group verify__group--decided' }, [
+        el('h4', { className: 'verify__group-heading', text: `判定済み（${decided.length}）` }),
+        ...decided.map((entry) => renderDecidedRow(entry, model, handlers)),
       ]),
     );
   }

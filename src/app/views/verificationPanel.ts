@@ -14,8 +14,19 @@ import type { Decision, DecisionAction } from '../../domain/decision';
 import type { Evidence } from '../../domain/evidence';
 import type { EntityLevel } from '../../domain/schemaField';
 import { draftArms, needsArmConfirmation, type DraftArm } from '../../features/verification/armDraft';
-import { availableTabs, buildTabModel, type TabModel, type VerificationCell } from '../../features/verification/cells';
-import { cellKeyOf, deriveCellStates, undoRevertValue } from '../../features/verification/cellState';
+import {
+  availableTabs,
+  buildTabModel,
+  splitDecidedCells,
+  type TabModel,
+  type VerificationCell,
+} from '../../features/verification/cells';
+import {
+  cellKeyOf,
+  deriveCellStates,
+  undoRevertValue,
+  type CellState,
+} from '../../features/verification/cellState';
 import {
   buildDocumentHighlights,
   type EvidenceHighlight,
@@ -112,9 +123,19 @@ export function createVerificationPanel(
   let activeTab: EntityLevel = tabs.find((tab) => !tabLocked(tab)) ?? tabs[0] ?? 'study';
   let focusedCellKey: string | null = null;
   let editing: { cellKey: string; action: 'edit' | 'reject' } | null = null;
+  // 判定済みブロック（ui-states.md §3）: 直近判定の 1 件だけ元の位置へ残し、
+  // それ以外の判定済みセルは下部ブロックへ送る。展開中セルは通常カードで描画する
+  let recentDecidedKey: string | null = null;
+  let expandedDecidedKey: string | null = null;
 
   const currentTabModel = (): TabModel =>
     buildTabModel(activeTab, data.fields, data.evidence, ownDecisions);
+
+  /** 現在タブの表示順のセル（未判定 + 直近判定 → 判定済みブロック）。j / k の移動順 */
+  const displayCells = (): VerificationCell[] => {
+    const { activeGroups, decided } = splitDecidedCells(currentTabModel().groups, recentDecidedKey);
+    return [...activeGroups.flatMap((group) => group.cells), ...decided.map((entry) => entry.cell)];
+  };
 
   // --- 左ペイン（PDF ビューア） -------------------------------------------
   let viewer: PdfViewerHandle | null = null;
@@ -293,6 +314,21 @@ export function createVerificationPanel(
       syncViewer();
       viewer?.focusHighlight(cellKey);
     },
+    onExpandDecided(cellKey) {
+      // コンパクト行は判定操作ボタンを含まないため、click 発火後の再構築で安全に展開できる
+      expandedDecidedKey = cellKey;
+      focusedCellKey = cellKey;
+      refreshForm();
+      syncViewer();
+      viewer?.focusHighlight(cellKey);
+      const element = findCellElement(cellKey);
+      element.scrollIntoView?.({ block: 'nearest' });
+      element.focus();
+    },
+    onCollapseDecided() {
+      expandedDecidedKey = null;
+      refreshForm();
+    },
     onArmNameChange(index, name) {
       // フォームは armRows から描画され、change は同一描画世代の index しか渡さない
       (armRows[index] as DraftArm).armName = name;
@@ -351,6 +387,8 @@ export function createVerificationPanel(
       tabModel: currentTabModel(),
       focusedCellKey,
       editing,
+      recentDecidedKey,
+      expandedDecidedKey,
       highlightInfo: highlightInfo(),
       canSearchText: data.textPages.some((page) => page.text !== ''),
       armCard: armRequired
@@ -391,9 +429,25 @@ export function createVerificationPanel(
       return;
     }
     focusedCellKey = cellKey;
+    // 判定済みブロックのコンパクト行へ着地するとき（ビューアクリック / j・k / ディープリンク）は
+    // 展開して通常カードを見せる。コンパクト行は focusin リスナを持たないため、
+    // ここでの再構築が click をキャンセルする経路は通常カードの focusin だけに限られ、
+    // その場合は下の else（クラス切替のみ）を通る
+    const target = buildTabModel(tab, data.fields, data.evidence, ownDecisions).cells.find(
+      (cell) => cell.cellKey === cellKey,
+    ) as VerificationCell;
+    const expand =
+      target.state.status !== 'unverified' &&
+      cellKey !== recentDecidedKey &&
+      expandedDecidedKey !== cellKey;
+    if (expand) {
+      expandedDecidedKey = cellKey;
+    }
     if (tab !== activeTab) {
       activeTab = tab;
       editing = null;
+      refreshForm();
+    } else if (expand) {
       refreshForm();
     } else {
       applyFocusClasses();
@@ -452,6 +506,17 @@ export function createVerificationPanel(
       note: null,
     };
     ownDecisions.push(decision);
+    // 判定済みブロックの制御: 直近判定の 1 件だけ元の位置へ残す（見直し・戻す (z) 用）。
+    // undo でセルがまだ判定済みのまま（判定が積み重なっている）なら展開を維持して連続 undo を可能にする
+    if (action === 'undo') {
+      recentDecidedKey = null;
+      // undo を積んだ直後のため、このセルの状態エントリは必ず存在する
+      const state = deriveCellStates(ownDecisions).get(cell.cellKey) as CellState;
+      expandedDecidedKey = state.status === 'unverified' ? null : cell.cellKey;
+    } else {
+      recentDecidedKey = cell.cellKey;
+      expandedDecidedKey = null;
+    }
     // 判定後は次の未判定セルへ自動遷移する（j キーの手動送りを不要に）。
     // 全セル判定済み・undo（取り消し直後に同じセルで再判定するため）は現在セルに留まる
     let movedTo: string | null = null;
@@ -474,7 +539,8 @@ export function createVerificationPanel(
   }
 
   function moveFocus(delta: number): void {
-    const cells = currentTabModel().cells;
+    // 表示順（未判定 + 直近判定 → 判定済みブロック）で移動する
+    const cells = displayCells();
     if (cells.length === 0) {
       return;
     }

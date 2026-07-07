@@ -1124,6 +1124,45 @@
   outline: 2px solid var(--color-primary);
 }
 
+/* 判定済みブロック（未判定を上に残し、判定済みは下部へコンパクト表示） */
+.verify__group--decided {
+  margin-top: 16px;
+  padding-top: 8px;
+  border-top: 2px solid var(--color-border);
+}
+
+.verify__cell--decided {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 12px;
+  font: inherit;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+}
+
+.verify__decided-heading {
+  color: var(--color-text-muted);
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.verify__decided-value {
+  margin-left: auto;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.verify__decided-collapse {
+  margin-left: 8px;
+  font-size: 12px;
+}
+
 .verify__cell-header {
   display: flex;
   align-items: center;
@@ -1132,6 +1171,10 @@
 
 .verify__cell-label {
   font-weight: 700;
+}
+
+.verify__cell--decided .verify__cell-label {
+  font-weight: 400;
 }
 
 .verify__cell-name {
@@ -1149,6 +1192,11 @@
   font-size: 12px;
   font-weight: 700;
   border: 1px solid transparent;
+}
+
+.verify__cell--decided .verify__chip {
+  margin-left: 0;
+  flex-shrink: 0;
 }
 
 .verify__chip--unverified {

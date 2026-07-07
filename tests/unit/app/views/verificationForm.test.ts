@@ -73,6 +73,8 @@ function makeHandlers(): jest.Mocked<VerificationFormHandlers> {
     onJump: jest.fn(),
     onSearchQuote: jest.fn(),
     onCycleMatch: jest.fn(),
+    onExpandDecided: jest.fn(),
+    onCollapseDecided: jest.fn(),
     onArmNameChange: jest.fn(),
     onArmAddRow: jest.fn(),
     onArmRemoveRow: jest.fn(),
@@ -96,6 +98,8 @@ function makeModel(
     tabModel,
     focusedCellKey: null,
     editing: null,
+    recentDecidedKey: null,
+    expandedDecidedKey: null,
     highlightInfo: new Map<string, CellHighlightInfo>(),
     canSearchText: true,
     armCard: null,
@@ -244,28 +248,24 @@ describe('renderVerificationForm', () => {
     expect(root.querySelector('.verify__quote')).toBeNull();
   });
 
-  test('判定チップと確定値: 未検証はチップのみ、判定済みは確定値も出す', () => {
+  test('判定チップと確定値: 未検証はチップのみ、直近判定セルは元の位置に確定値付きで残る', () => {
     const accepted: CellState = {
       status: 'accept',
       value: '120',
       stack: [],
     };
-    const rejected: CellState = { status: 'reject', value: null, stack: [] };
+    const acceptedCell = makeCell({ field: makeField({ fieldId: 'f-2' }), state: accepted });
     const { root } = render(
-      makeModel([
-        makeCell(),
-        makeCell({ field: makeField({ fieldId: 'f-2' }), state: accepted }),
-        makeCell({ field: makeField({ fieldId: 'f-3' }), state: rejected }),
-      ]),
+      makeModel([makeCell(), acceptedCell], { recentDecidedKey: acceptedCell.cellKey }),
     );
     const chips = root.querySelectorAll('.verify__chip');
     expect(chips[0]?.textContent).toBe('未検証');
     expect(chips[1]?.textContent).toBe('承認');
-    expect(chips[2]?.textContent).toBe('棄却');
     const values = root.querySelectorAll('.verify__current-value');
-    expect(values).toHaveLength(2);
+    expect(values).toHaveLength(1);
     expect(values[0]?.textContent).toBe('確定値: 120');
-    expect(values[1]?.textContent).toBe('確定値: （空）');
+    // 直近判定の 1 件は判定済みブロックへ送らない
+    expect(root.querySelector('.verify__group--decided')).toBeNull();
   });
 
   test('判定操作ボタンがハンドラを呼ぶ（undo は履歴が空なら無効）', () => {
@@ -283,7 +283,7 @@ describe('renderVerificationForm', () => {
     expect(undo?.disabled).toBe(true);
   });
 
-  test('履歴があるセルの undo は有効でハンドラを呼ぶ', () => {
+  test('履歴があるセル（直近判定）の undo は有効でハンドラを呼ぶ', () => {
     const cell = makeCell({
       state: {
         status: 'accept',
@@ -305,7 +305,7 @@ describe('renderVerificationForm', () => {
         ],
       },
     });
-    const { root, handlers } = render(makeModel([cell]));
+    const { root, handlers } = render(makeModel([cell], { recentDecidedKey: cell.cellKey }));
     const undo = root.querySelector<HTMLButtonElement>('.verify__action--undo');
     expect(undo?.disabled).toBe(false);
     undo?.click();
@@ -387,6 +387,97 @@ describe('renderVerificationForm', () => {
     expect(handlers.onFocusCell).toHaveBeenCalledWith(other.cellKey);
     cellEls[0]?.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
     expect(handlers.onFocusCell).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('renderVerificationForm: 判定済みブロック（未判定を上・判定済みを下部へ）', () => {
+  const accepted: CellState = { status: 'accept', value: '120', stack: [] };
+
+  function makeDecidedModel(overrides: Partial<VerificationFormModel> = {}): {
+    unverified: VerificationCell;
+    decided: VerificationCell;
+    model: VerificationFormModel;
+  } {
+    const decided = makeCell({ field: makeField({ fieldId: 'f-2' }), state: accepted });
+    const unverified = makeCell();
+    return { unverified, decided, model: makeModel([unverified, decided], overrides) };
+  }
+
+  test('判定済みセルはコンパクト行として下部ブロックへ移り、未判定が先頭に残る', () => {
+    const { root, handlers } = render(makeDecidedModel().model);
+    const decidedSection = root.querySelector('.verify__group--decided');
+    expect(decidedSection?.querySelector('.verify__group-heading')?.textContent).toBe(
+      '判定済み（1）',
+    );
+    const row = decidedSection?.querySelector<HTMLButtonElement>('.verify__cell--decided');
+    expect(row?.textContent).toContain('総サンプルサイズ');
+    expect(row?.textContent).toContain('methods'); // グループ見出しを文脈として併記
+    expect(row?.querySelector('.verify__decided-value')?.textContent).toBe('確定値: 120');
+    // コンパクト行には判定操作ボタンを出さない
+    expect(row?.querySelector('.verify__actions')).toBeNull();
+    // 先頭（上のグループ）は未判定セルだけ
+    const firstGroup = root.querySelector('.verify__group:not(.verify__group--decided)');
+    expect(firstGroup?.querySelectorAll('.verify__cell')).toHaveLength(1);
+    // クリックで展開ハンドラを呼ぶ
+    row?.click();
+    const { decided } = makeDecidedModel();
+    expect(handlers.onExpandDecided).toHaveBeenCalledWith(decided.cellKey);
+  });
+
+  test('確定値が null のコンパクト行は「（空）」、フォーカス中は --focused が付く', () => {
+    const rejected = makeCell({
+      field: makeField({ fieldId: 'f-2' }),
+      state: { status: 'reject', value: null, stack: [] },
+    });
+    const { root } = render(
+      makeModel([makeCell(), rejected], { focusedCellKey: rejected.cellKey }),
+    );
+    const row = root.querySelector<HTMLButtonElement>('.verify__cell--decided');
+    expect(row?.querySelector('.verify__decided-value')?.textContent).toBe('確定値: （空）');
+    expect(row?.classList.contains('verify__cell--focused')).toBe(true);
+  });
+
+  test('グループ見出しが空のコンパクト行は見出しを併記しない', () => {
+    const decided = makeCell({ field: makeField({ fieldId: 'f-2', section: '' }), state: accepted });
+    const unverified = makeCell();
+    const model = makeModel([unverified], {});
+    model.tabModel = {
+      groups: [
+        { heading: 'methods', cells: [unverified] },
+        { heading: '', cells: [decided] },
+      ],
+      cells: [unverified, decided],
+    };
+    const { root } = render(model);
+    expect(root.querySelector('.verify__cell--decided .verify__decided-heading')).toBeNull();
+  });
+
+  test('展開中の判定済みセルは通常カード + たたむボタンで描画される', () => {
+    const { decided, model } = makeDecidedModel();
+    model.expandedDecidedKey = decided.cellKey;
+    const { root, handlers } = render(model);
+    const section = root.querySelector('.verify__group--decided');
+    expect(section?.querySelector('.verify__cell--decided')).toBeNull();
+    expect(section?.querySelector('.verify__actions')).not.toBeNull();
+    expect(section?.querySelector('.verify__current-value')?.textContent).toBe('確定値: 120');
+    const collapse = section?.querySelector<HTMLButtonElement>('.verify__decided-collapse');
+    expect(collapse?.textContent).toBe('たたむ');
+    collapse?.click();
+    expect(handlers.onCollapseDecided).toHaveBeenCalled();
+  });
+
+  test('値入力中の判定済みセルは展開されエディタを出す（キーボード e / x 経由）', () => {
+    const { decided, model } = makeDecidedModel();
+    model.editing = { cellKey: decided.cellKey, action: 'edit' };
+    const { root } = render(model);
+    expect(root.querySelector('.verify__group--decided .verify__edit-input')).not.toBeNull();
+  });
+
+  test('未判定セルしか無いグループが空になったら丸ごと消える（全件判定済み）', () => {
+    const decided = makeCell({ state: accepted });
+    const { root } = render(makeModel([decided]));
+    expect(root.querySelector('.verify__group:not(.verify__group--decided)')).toBeNull();
+    expect(root.querySelector('.verify__group--decided')).not.toBeNull();
   });
 });
 
