@@ -5,6 +5,12 @@ import type { Decision } from '../../domain/decision';
 import type { DocumentRecord } from '../../domain/document';
 import type { SchemaField } from '../../domain/schemaField';
 import { readDocuments } from '../../features/documents/documentRepository';
+import { readStudies } from '../../features/documents/studyRepository';
+import {
+  buildStudySelection,
+  documentsForStudies,
+  type StudySelectionItem,
+} from '../../features/documents/studySelection';
 import { makeLoadDocumentPages } from '../../features/documents/loadDocumentPages';
 import { buildAiAnnotationRows } from '../../features/extraction/aiAnnotationRows';
 import { readEvidenceRows } from '../../features/extraction/evidenceRepository';
@@ -46,40 +52,45 @@ function patchPilot(store: Store, patch: Partial<PilotState>): void {
 }
 
 /**
- * 初回表示時の既定選択: テキスト層のある文献の先頭 3 本（ui-states.md §3「既定 2〜3 本」）。
+ * 初回表示時の既定選択: テキスト層のある study の先頭 3 件（ui-states.md §3「既定 2〜3 本」・v0.10）。
  * モデル名は S5 のドラフトフォームの入力があれば引き継ぐ。一度初期化したら再実行しない
  */
 export function initPilotSelection(store: Store): void {
   const state = store.getState();
-  if (state.pilot.selectionInitialized || state.documents.records === null) {
+  if (
+    state.pilot.selectionInitialized ||
+    state.documents.records === null ||
+    state.documents.studies === null
+  ) {
     return;
   }
-  const defaults = state.documents.records
-    .filter((doc) => doc.textStatus !== 'no_text_layer')
+  // ガードで documents.records / studies は非 null
+  const defaults = buildStudySelection(state.documents.studies, state.documents.records)
+    .filter((item) => item.hasTextLayer)
     .slice(0, 3)
-    .map((doc) => doc.documentId);
+    .map((item) => item.study.studyId);
   patchPilot(store, {
     selectionInitialized: true,
-    selectedDocumentIds: defaults,
+    selectedStudyIds: defaults,
     model: state.pilot.model === '' ? state.schema.model : state.pilot.model,
   });
 }
 
-/** 対象文献チェックボックスの切替（最大 3 本。超過は無視して案内） */
-export function togglePilotDocument(store: Store, documentId: string, selected: boolean): void {
-  const current = store.getState().pilot.selectedDocumentIds;
+/** 対象 study チェックボックスの切替（最大 3 study。超過は無視して案内） */
+export function togglePilotStudy(store: Store, studyId: string, selected: boolean): void {
+  const current = store.getState().pilot.selectedStudyIds;
   if (!selected) {
-    patchPilot(store, { selectedDocumentIds: current.filter((id) => id !== documentId) });
+    patchPilot(store, { selectedStudyIds: current.filter((id) => id !== studyId) });
     return;
   }
-  if (current.includes(documentId)) {
+  if (current.includes(studyId)) {
     return;
   }
   if (current.length >= 3) {
-    showToast('パイロット対象は 3 本までです');
+    showToast('パイロット対象は 3 study までです');
     return;
   }
-  patchPilot(store, { selectedDocumentIds: [...current, documentId] });
+  patchPilot(store, { selectedStudyIds: [...current, studyId] });
 }
 
 export function setPilotModel(store: Store, model: string): void {
@@ -94,6 +105,18 @@ async function resolveDocuments(
 ): Promise<readonly DocumentRecord[]> {
   const cached = store.getState().documents.records;
   return cached ?? (await readDocuments(spreadsheetId, deps.google));
+}
+
+/** Studies 一覧を解決する（documents スライスに読込済みならそれを使う） */
+async function resolveStudies(
+  store: Store,
+  deps: PilotServiceDeps,
+  spreadsheetId: string,
+): Promise<StudySelectionItem[]> {
+  const cachedStudies = store.getState().documents.studies;
+  const studies = cachedStudies ?? (await readStudies(spreadsheetId, deps.google));
+  const records = await resolveDocuments(store, deps, spreadsheetId);
+  return buildStudySelection(studies, records);
 }
 
 /**
@@ -113,9 +136,9 @@ export async function runPilot(store: Store, deps: PilotServiceDeps): Promise<vo
     });
     return;
   }
-  const { selectedDocumentIds, model } = state.pilot;
-  if (selectedDocumentIds.length < 1 || selectedDocumentIds.length > 3) {
-    patchPilot(store, { runError: '対象文献を 1〜3 本選択してください' });
+  const { selectedStudyIds, model } = state.pilot;
+  if (selectedStudyIds.length < 1 || selectedStudyIds.length > 3) {
+    patchPilot(store, { runError: '対象 study を 1〜3 件選択してください' });
     return;
   }
   if (model === '') {
@@ -130,8 +153,9 @@ export async function runPilot(store: Store, deps: PilotServiceDeps): Promise<vo
 
   patchPilot(store, { running: true, runError: null, progress: null });
   try {
-    const documents = await resolveDocuments(store, deps, project.spreadsheetId);
-    const targets = documents.filter((doc) => selectedDocumentIds.includes(doc.documentId));
+    // 選択 study の全文書を連結対象にする（study 単位抽出。§4.3）
+    const selection = await resolveStudies(store, deps, project.spreadsheetId);
+    const targets = documentsForStudies(selection, selectedStudyIds);
     const { text: protocolContext } = await resolveProtocol(store, deps, project.spreadsheetId);
 
     // logs/llm フォルダを名前で解決（プロジェクト生成時に作成済み。Meta はトップフォルダ ID のみ保持）
@@ -193,8 +217,8 @@ export async function runPilot(store: Store, deps: PilotServiceDeps): Promise<vo
         ? `パイロット抽出が完了しました（Evidence ${outcome.result.evidence.length} 件）`
         : 'パイロット抽出が部分的に失敗しました。失敗の内訳を確認してください',
     );
-    // run は study 単位（studyIds）。フェーズ 1 は 1 study = 1 文書なので、最初の抽出 study の
-    // 文献を検証 UI に開く（targets から study_id で引く）
+    // 最初の抽出 study の先頭文書（role 順で article）を検証 UI に開く。
+    // 複数文書ビューアは Phase 3 で対応するため、Phase 2 は study の代表 1 文書を表示する
     const firstStudyId = outcome.run.studyIds[0];
     const firstDocument =
       firstStudyId === undefined
@@ -305,7 +329,7 @@ export async function loadPilotRun(
       runFields: fields,
       evidence: allEvidence.filter((item) => item.runId === runId),
     });
-    // run は study 単位（studyIds）。フェーズ 1 は 1 study = 1 文書なので study_id から文献を引く
+    // run は study 単位（studyIds）。study の代表 1 文書を検証 UI に開く（複数文書は Phase 3）
     const firstStudyId = run.studyIds[0];
     const documents = await resolveDocuments(store, deps, project.spreadsheetId);
     const firstDocument =

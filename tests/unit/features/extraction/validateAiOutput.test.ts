@@ -46,22 +46,23 @@ const FIELDS: SchemaField[] = [
   }),
 ];
 
-/** 1 要素だけを検証するヘルパ（既定は矛盾のない study レベル text 項目） */
-function runOne(element: Record<string, unknown>) {
+/** 1 要素だけを検証するヘルパ（既定は矛盾のない study レベル text 項目・文書 1 件） */
+function runOne(element: Record<string, unknown>, documentCount = 1) {
   return validateAiOutput(
     [{ field_id: 'f_design', entity_key: '-', not_reported: false, ...element }],
     FIELDS,
+    documentCount,
   );
 }
 
 describe('validateAiOutput', () => {
   describe('応答全体の形式', () => {
     it.each([null, {}, 'text', 42])('配列でない応答 %p は AiOutputFormatError', (raw) => {
-      expect(() => validateAiOutput(raw, FIELDS)).toThrow(AiOutputFormatError);
+      expect(() => validateAiOutput(raw, FIELDS, 1)).toThrow(AiOutputFormatError);
     });
 
     it('空配列は空の結果を返す', () => {
-      expect(validateAiOutput([], FIELDS)).toEqual({ items: [], rejected: [] });
+      expect(validateAiOutput([], FIELDS, 1)).toEqual({ items: [], rejected: [] });
     });
   });
 
@@ -69,7 +70,7 @@ describe('validateAiOutput', () => {
     const raw = JSON.parse(
       readFileSync(resolve(__dirname, '../../../fixtures/ai-output/extract-data-response.json'), 'utf8'),
     ) as unknown;
-    const result = validateAiOutput(raw, FIELDS);
+    const result = validateAiOutput(raw, FIELDS, 1);
 
     it('妥当な 6 要素が items、不正な 3 要素が rejected になる', () => {
       expect(result.items).toHaveLength(6);
@@ -84,6 +85,8 @@ describe('validateAiOutput', () => {
         notReported: false,
         quote: 'In this randomized controlled trial, we enrolled adults with hypertension.',
         page: 1,
+        // document_index 欠落 + 文書 1 件なので既定で 1 に解決される
+        documentIndex: 1,
         confidence: 'high',
         forcedLowReasons: [],
       });
@@ -148,7 +151,7 @@ describe('validateAiOutput', () => {
 
   describe('要素の形状検証（zod）', () => {
     it('オブジェクトでない要素は invalid_shape（パスなし issue のメッセージ整形）', () => {
-      const { rejected } = validateAiOutput(['oops'], FIELDS);
+      const { rejected } = validateAiOutput(['oops'], FIELDS, 1);
       expect(rejected).toEqual([
         expect.objectContaining({ index: 0, reason: 'invalid_shape', raw: 'oops' }),
       ]);
@@ -217,6 +220,7 @@ describe('validateAiOutput', () => {
       const { rejected } = validateAiOutput(
         [{ field_id: 'f_arm_n', entity_key: 'bogus', value: '10', not_reported: false }],
         FIELDS,
+        1,
       );
       expect(rejected[0]?.reason).toBe('entity_key_mismatch');
     });
@@ -225,6 +229,7 @@ describe('validateAiOutput', () => {
       const { rejected } = validateAiOutput(
         [{ field_id: 'f_arm_n', entity_key: '-', value: '10', not_reported: false }],
         FIELDS,
+        1,
       );
       expect(rejected[0]?.reason).toBe('entity_key_mismatch');
     });
@@ -252,6 +257,7 @@ describe('validateAiOutput', () => {
           },
         ],
         FIELDS,
+        1,
       );
       expect(items[0]?.forcedLowReasons).toEqual([]);
     });
@@ -294,6 +300,55 @@ describe('validateAiOutput', () => {
     it('複数数値の一部だけ quote に無い場合も矛盾とする', () => {
       const { items } = runOne({ value: '64/128', quote: 'sixty-four of 128 participants' });
       expect(items[0]?.forcedLowReasons).toEqual(['number_not_in_quote']);
+    });
+  });
+
+  describe('document_index の検証・解決（v0.10）', () => {
+    const QUOTE = 'A randomized controlled trial of 120 patients.';
+
+    it('quote があり範囲内の document_index はそのまま解決する', () => {
+      const { items } = runOne({ quote: QUOTE, document_index: 2 }, 3);
+      expect(items[0]?.documentIndex).toBe(2);
+    });
+
+    it('quote があるのに document_index が欠落・文書が複数なら破棄する', () => {
+      const { items, rejected } = runOne({ quote: QUOTE }, 2);
+      expect(items).toHaveLength(0);
+      expect(rejected[0]).toMatchObject({ reason: 'invalid_document_index' });
+      expect(rejected[0]?.detail).toContain('2');
+    });
+
+    it('quote があり document_index が範囲外なら破棄する', () => {
+      const { rejected } = runOne({ quote: QUOTE, document_index: 5 }, 2);
+      expect(rejected[0]?.reason).toBe('invalid_document_index');
+    });
+
+    it('quote があり document_index 欠落でも文書 1 件なら 1 に解決する', () => {
+      const { items, rejected } = runOne({ quote: QUOTE }, 1);
+      expect(rejected).toEqual([]);
+      expect(items[0]?.documentIndex).toBe(1);
+    });
+
+    it('not_reported=true（quote なし）は document_index 不要で 1 に帰属する', () => {
+      const { items, rejected } = runOne(
+        { value: null, not_reported: true, quote: null, document_index: null },
+        3,
+      );
+      expect(rejected).toEqual([]);
+      expect(items[0]?.documentIndex).toBe(1);
+    });
+
+    it('quote なしで範囲内の document_index が来ればそれを尊重する', () => {
+      const { items } = runOne(
+        { value: null, not_reported: true, quote: null, document_index: 2 },
+        3,
+      );
+      expect(items[0]?.documentIndex).toBe(2);
+    });
+
+    it('非整数の document_index は zod で null へ落ち、quote 複数文書なら破棄する', () => {
+      const { rejected } = runOne({ quote: QUOTE, document_index: 1.5 }, 2);
+      expect(rejected[0]?.reason).toBe('invalid_document_index');
     });
   });
 });

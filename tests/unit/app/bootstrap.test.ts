@@ -968,6 +968,15 @@ describe('bootstrapApp: #/pilot', () => {
     note: null,
   };
 
+  const STUDY_RECORD = {
+    studyId: 'study-1',
+    studyLabel: 'Smith 2020',
+    registrationId: null,
+    createdAt: 't0',
+    createdBy: 'tester@example.com',
+    note: null,
+  };
+
   const SCHEMA_VERSION_ROW = {
     schemaVersion: 1,
     parentVersion: null,
@@ -999,7 +1008,10 @@ describe('bootstrapApp: #/pilot', () => {
     return {
       currentProject: PROJECT,
       counts: { schemaVersions: 1, documents: 1 } as AppState['counts'],
-      documents: { records: [DOC_RECORD] } as unknown as AppState['documents'],
+      documents: {
+        records: [DOC_RECORD],
+        studies: [STUDY_RECORD],
+      } as unknown as AppState['documents'],
       schema: {
         versions: [SCHEMA_VERSION_ROW],
         currentFields: [FIELD],
@@ -1024,8 +1036,8 @@ describe('bootstrapApp: #/pilot', () => {
     stub.fireHashChange();
     await flush();
 
-    // 既定選択（テキスト層ありの先頭 = doc-1）
-    expect(store?.getState().pilot.selectedDocumentIds).toEqual(['doc-1']);
+    // 既定選択（テキスト層ありの先頭 = study-1）
+    expect(store?.getState().pilot.selectedStudyIds).toEqual(['study-1']);
     const checkbox = document.querySelector(
       '#pilot-documents input[type="checkbox"]',
     ) as HTMLInputElement;
@@ -1034,7 +1046,7 @@ describe('bootstrapApp: #/pilot', () => {
     // 選択解除の配線
     checkbox.checked = false;
     checkbox.dispatchEvent(new Event('change'));
-    expect(store?.getState().pilot.selectedDocumentIds).toEqual([]);
+    expect(store?.getState().pilot.selectedStudyIds).toEqual([]);
 
     // モデル変更の配線（プルダウン → store）
     const model = document.getElementById('pilot-model') as HTMLSelectElement;
@@ -1059,7 +1071,7 @@ describe('bootstrapApp: #/pilot', () => {
     const stub = createWindowStub(
       pilotPreloaded({
         selectionInitialized: true,
-        selectedDocumentIds: ['doc-1'],
+        selectedStudyIds: ['study-1'],
         model: 'gemini-test',
         // run は study 単位（studyIds）。文献切替セレクタは records を study_id で引く（v0.10）
         run: { ...RUN, studyIds: ['study-1', 'study-x'] },
@@ -1167,7 +1179,7 @@ describe('bootstrapApp: #/pilot', () => {
     const stub = createWindowStub(
       pilotPreloaded({
         selectionInitialized: true,
-        selectedDocumentIds: ['doc-1'],
+        selectedStudyIds: ['study-1'],
         model: 'gemini-test',
         run: { ...RUN, studyIds: ['study-1'] },
         runFields: [FIELD],
@@ -1225,7 +1237,7 @@ describe('bootstrapApp: #/pilot', () => {
     const stub = createWindowStub(
       pilotPreloaded({
         selectionInitialized: true,
-        selectedDocumentIds: ['doc-1'],
+        selectedStudyIds: ['study-1'],
         model: 'gemini-test',
         history: [historyRun],
         historyInitialized: false,
@@ -1249,7 +1261,7 @@ describe('bootstrapApp: #/pilot', () => {
     const stub = createWindowStub(
       pilotPreloaded({
         selectionInitialized: true,
-        selectedDocumentIds: ['doc-1'],
+        selectedStudyIds: ['study-1'],
         model: 'gemini-test',
         history: [historyRun],
         historyInitialized: true, // 自動読込は抑止し、クリック経路のみ観測する
@@ -1271,7 +1283,7 @@ describe('bootstrapApp: #/pilot', () => {
     const stub = createWindowStub(
       pilotPreloaded({
         selectionInitialized: true,
-        selectedDocumentIds: ['doc-1'],
+        selectedStudyIds: ['study-1'],
         model: 'gemini-test',
         history: [],
         historyInitialized: true,
@@ -1339,11 +1351,23 @@ describe('bootstrapApp: #/extract', () => {
     note: null,
   };
 
+  const STUDY_RECORD = {
+    studyId: 'study-1',
+    studyLabel: 'Smith 2020',
+    registrationId: null,
+    createdAt: 't0',
+    createdBy: 'tester@example.com',
+    note: null,
+  };
+
   function extractPreloaded(extractPatch: Partial<AppState['extract']> = {}): Partial<AppState> {
     return {
       currentProject: PROJECT,
       counts: { schemaVersions: 1, documents: 1, pilotRuns: 1 } as AppState['counts'],
-      documents: { records: [DOC_RECORD] } as unknown as AppState['documents'],
+      documents: {
+        records: [DOC_RECORD],
+        studies: [STUDY_RECORD],
+      } as unknown as AppState['documents'],
       schema: {
         versions: [
           {
@@ -1379,17 +1403,17 @@ describe('bootstrapApp: #/extract', () => {
     stub.fireHashChange();
     await flush();
 
-    // ExtractionRuns を読んで既定選択（未抽出の全件 = doc-1）
+    // ExtractionRuns を読んで既定選択（未抽出の全 study = study-1）
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(store?.getState().extract.selectedDocumentIds).toEqual(['doc-1']);
+    expect(store?.getState().extract.selectedStudyIds).toEqual(['study-1']);
 
     // 選択解除 / 再選択の配線
     const checkbox = document.querySelector(
-      '#extract-documents input[type="checkbox"]',
+      '#extract-studies input[type="checkbox"]',
     ) as HTMLInputElement;
     checkbox.checked = false;
     checkbox.dispatchEvent(new Event('change'));
-    expect(store?.getState().extract.selectedDocumentIds).toEqual([]);
+    expect(store?.getState().extract.selectedStudyIds).toEqual([]);
     checkbox.checked = true;
     checkbox.dispatchEvent(new Event('change'));
 
@@ -1419,9 +1443,9 @@ describe('bootstrapApp: #/extract', () => {
     const stub = createWindowStub(
       extractPreloaded({
         selectionInitialized: true,
-        selectedDocumentIds: ['doc-1'],
+        selectedStudyIds: ['study-1'],
         model: 'gemini-test',
-        extractedDocumentIds: ['doc-1'],
+        extractedStudyIds: ['study-1'],
         run: {
           runId: 'run-1',
           runType: 'full',
@@ -1438,9 +1462,9 @@ describe('bootstrapApp: #/extract', () => {
           tokensOut: null,
           costEstimate: null,
         },
-        docRows: [
+        studyRows: [
           {
-            documentId: 'doc-1',
+            studyId: 'study-1',
             status: 'failed',
             completedBatches: 1,
             totalBatches: 1,

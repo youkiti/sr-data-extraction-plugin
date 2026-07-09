@@ -1,11 +1,13 @@
-// 一括抽出（S7）の実行計画: document × スキーマのバッチ分割 + トークン / コスト概算
-// - requirements.md §4.3: 1 API 呼び出し = 1 document ×（スキーマ全項目 or section 単位分割。
-//   どちらの粒度にするかをトークン概算で判断するのが本モジュールの責務）
+// 一括抽出（S7）の実行計画: study × スキーマのバッチ分割 + トークン / コスト概算
+// - requirements.md §4.3（v0.10）: 1 API 呼び出し = 1 study ×（スキーマ全項目 or section 単位分割。
+//   どちらの粒度にするかをトークン概算で判断するのが本モジュールの責務）。study の全文書を
+//   ロール付き区切りで連結して 1 回で抽出するため、分割閾値は study の全文書合計トークンで評価する
 // - 概算値は実行前の確認 UI（S7 のコスト概算表示）と ExtractionRuns.cost_estimate の素材。
 //   実測 tokens_in / tokens_out は実行後に executeRun が LLMApiLog / ExtractionRuns へ記録する
-// - MVP は text_only モードのみ（pdf_native ※Q3 のトークン計算は lib/llm 移植時に別途対応）
+// - MVP は text_only モードのみ（pdf_native ※Q3 のトークン計算は lib/llm 移植時に別途対応）。
+//   text_only では text_status = no_text_layer の文書を連結から除外する（当該文書由来の根拠は得られない）
 // - 実行（API 呼び出し・進捗・partial_failure）は executeRun の責務。ここは純粋関数のみ
-import type { DocumentRecord } from '../../domain/document';
+import { DOCUMENT_ROLE_ORDER, type DocumentRecord } from '../../domain/document';
 import type { EntityLevel, SchemaField } from '../../domain/schemaField';
 import { estimateCostUsd } from '../../lib/llm/pricing';
 import { EXTRACT_DATA_SYSTEM_PROMPT } from './skills/extractData';
@@ -24,6 +26,9 @@ export const FIELD_PROMPT_OVERHEAD_CHARS = 120;
 
 /** 応答 JSON の 1 要素あたり文字数概算（固定キー + value + quote ≤300 文字の中間値） */
 export const OUTPUT_CHARS_PER_ITEM = 300;
+
+/** 文書 1 件ぶんの連結見出し（`=== Document i/N [role] filename ===`）の文字数概算 */
+export const DOCUMENT_SEPARATOR_CHARS = 60;
 
 /** Documents.char_count 欠損時のフォールバック: 1 ページあたり文字数の目安 */
 export const FALLBACK_CHARS_PER_PAGE = 3_000;
@@ -62,12 +67,16 @@ export interface SkippedDocument {
   reason: 'no_text_layer';
 }
 
-/** 1 行 = 1 API 呼び出しの計画 */
+/** 1 行 = 1 API 呼び出しの計画（1 study） */
 export interface PlannedBatch {
-  /** 抽出元の文書（本文ロード・アンカリング・Evidence.document_id の対象）。フェーズ 1 は 1 study = 1 文書 */
-  documentId: string;
-  /** 抽出単位である study（Evidence.study_id・ExtractionRuns.study_ids の素材）。document から解決 */
+  /** 抽出単位である study（Evidence.study_id・ExtractionRuns.study_ids の素材） */
   studyId: string;
+  /**
+   * プロンプトへ連結する文書の順序リスト（本文ロード・アンカリング・Evidence.document_id の対象）。
+   * 並びは role 固定順（DOCUMENT_ROLE_ORDER）→ 取り込み順で、AI 応答の document_index（1 始まり）に対応する。
+   * text_only では no_text_layer 文書を除外済みのため、最低 1 件は含む
+   */
+  documentIds: readonly string[];
   /** section 単位分割時の section 名。スキーマ全項目一括なら null */
   section: string | null;
   /** 当該バッチで抽出する項目（fieldIndex 順） */
@@ -132,22 +141,60 @@ interface BatchEstimate {
   tokensOut: number;
 }
 
-/** 1 バッチ（1 document × 項目集合）の入出力トークン概算 */
+/** 1 バッチ（1 study の全文書連結 × 項目集合）の入出力トークン概算 */
 function estimateBatch(
-  doc: DocumentRecord,
+  docs: readonly DocumentRecord[],
   fields: readonly SchemaField[],
   protocolChars: number,
 ): BatchEstimate {
+  const bodyChars = docs.reduce(
+    (sum, doc) => sum + DOCUMENT_SEPARATOR_CHARS + documentChars(doc),
+    0,
+  );
   const promptChars =
     PROMPT_SCAFFOLD_CHARS +
     protocolChars +
     fields.reduce((sum, field) => sum + fieldPromptChars(field), 0) +
-    documentChars(doc);
+    bodyChars;
   const items = fields.reduce((sum, field) => sum + ENTITY_INSTANCE_ESTIMATE[field.entityLevel], 0);
   return {
     tokensIn: Math.ceil(promptChars / APPROX_CHARS_PER_TOKEN),
     tokensOut: Math.ceil((items * OUTPUT_CHARS_PER_ITEM) / APPROX_CHARS_PER_TOKEN),
   };
+}
+
+/**
+ * 文書を study ごとにグルーピングする（study の初出順を保つ）。
+ * 各 study 内は role 固定順（DOCUMENT_ROLE_ORDER）→ 取り込み順（入力配列順）で並べる。
+ * この並びが AI 応答の document_index（1 始まり）の基準になる
+ */
+function groupDocumentsByStudy(
+  documents: readonly DocumentRecord[],
+): Map<string, DocumentRecord[]> {
+  const roleRank = new Map(DOCUMENT_ROLE_ORDER.map((role, index) => [role, index]));
+  const groups = new Map<string, { doc: DocumentRecord; order: number }[]>();
+  documents.forEach((doc, order) => {
+    const group = groups.get(doc.studyId);
+    if (group === undefined) {
+      groups.set(doc.studyId, [{ doc, order }]);
+    } else {
+      group.push({ doc, order });
+    }
+  });
+  const ordered = new Map<string, DocumentRecord[]>();
+  for (const [studyId, entries] of groups) {
+    entries.sort((a, b) => {
+      // 未知ロールは末尾へ（roleRank に無い = 想定外だが安全側）
+      const rankA = roleRank.get(a.doc.documentRole) ?? DOCUMENT_ROLE_ORDER.length;
+      const rankB = roleRank.get(b.doc.documentRole) ?? DOCUMENT_ROLE_ORDER.length;
+      return rankA !== rankB ? rankA - rankB : a.order - b.order;
+    });
+    ordered.set(
+      studyId,
+      entries.map((entry) => entry.doc),
+    );
+  }
+  return ordered;
 }
 
 function withinBudget(estimate: BatchEstimate, budget: RunTokenBudget): boolean {
@@ -198,20 +245,30 @@ export function planRun(input: PlanRunInput): RunPlan {
   const skippedDocuments: SkippedDocument[] = [];
   let unknownCharCountDocs = 0;
 
-  for (const doc of input.documents) {
-    if (doc.textStatus === 'no_text_layer') {
-      skippedDocuments.push({ documentId: doc.documentId, reason: 'no_text_layer' });
+  for (const [studyId, docs] of groupDocumentsByStudy(input.documents)) {
+    // text_only では no_text_layer 文書を連結から除外する（§4.3）。除外は SkippedDocument で追跡する
+    const usable: DocumentRecord[] = [];
+    for (const doc of docs) {
+      if (doc.textStatus === 'no_text_layer') {
+        skippedDocuments.push({ documentId: doc.documentId, reason: 'no_text_layer' });
+        continue;
+      }
+      usable.push(doc);
+      if (doc.charCount === null) {
+        unknownCharCountDocs += 1;
+      }
+    }
+    // 全文書がテキスト層なしの study はバッチを作らない（studyProgress 側で「除外」表示になる）
+    if (usable.length === 0) {
       continue;
     }
-    if (doc.charCount === null) {
-      unknownCharCountDocs += 1;
-    }
+    const documentIds = usable.map((doc) => doc.documentId);
 
-    const fullEstimate = estimateBatch(doc, sortedFields, protocolChars);
+    const fullEstimate = estimateBatch(usable, sortedFields, protocolChars);
     if (withinBudget(fullEstimate, budget)) {
       batches.push({
-        documentId: doc.documentId,
-        studyId: doc.studyId,
+        studyId,
+        documentIds,
         section: null,
         fieldIds: allFieldIds,
         tokensInEstimate: fullEstimate.tokensIn,
@@ -222,10 +279,10 @@ export function planRun(input: PlanRunInput): RunPlan {
     }
 
     for (const [section, sectionFields] of groupBySection(sortedFields)) {
-      const estimate = estimateBatch(doc, sectionFields, protocolChars);
+      const estimate = estimateBatch(usable, sectionFields, protocolChars);
       batches.push({
-        documentId: doc.documentId,
-        studyId: doc.studyId,
+        studyId,
+        documentIds,
         section,
         fieldIds: sectionFields.map((field) => field.fieldId),
         tokensInEstimate: estimate.tokensIn,

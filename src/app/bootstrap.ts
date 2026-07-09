@@ -54,7 +54,7 @@ import {
   persistPilotInstanceDeclarations,
   runPilot,
   setPilotModel,
-  togglePilotDocument,
+  togglePilotStudy,
   type PilotServiceDeps,
 } from './services/pilotService';
 import {
@@ -62,10 +62,10 @@ import {
   initExtractSelection,
   loadExtractTargets,
   requestExtractRun,
-  retryExtractDocument,
+  retryExtractStudy,
   runExtract,
   setExtractModel,
-  toggleExtractDocument,
+  toggleExtractStudy,
 } from './services/extractService';
 import {
   loadVerifyTargets,
@@ -275,8 +275,8 @@ export async function bootstrapApp(
       },
     },
     pilot: {
-      onToggleDocument: (documentId, selected) => {
-        togglePilotDocument(store, documentId, selected);
+      onToggleStudy: (studyId, selected) => {
+        togglePilotStudy(store, studyId, selected);
       },
       onChangeModel: (model) => {
         setPilotModel(store, model);
@@ -312,8 +312,8 @@ export async function bootstrapApp(
       },
     },
     extract: {
-      onToggleDocument: (documentId, selected) => {
-        toggleExtractDocument(store, documentId, selected);
+      onToggleStudy: (studyId, selected) => {
+        toggleExtractStudy(store, studyId, selected);
       },
       onChangeModel: (model) => {
         setExtractModel(store, model);
@@ -327,8 +327,8 @@ export async function bootstrapApp(
       onCancelConfirm: () => {
         cancelExtractConfirm(store);
       },
-      onRetryDocument: (documentId) => {
-        void retryExtractDocument(store, deps, documentId);
+      onRetryStudy: (studyId) => {
+        void retryExtractStudy(store, deps, studyId);
       },
       onReloadTargets: () => {
         void loadDocuments(store, deps, { force: true });

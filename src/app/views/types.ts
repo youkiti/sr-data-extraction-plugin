@@ -82,8 +82,8 @@ export interface SchemaViewCallbacks {
 
 /** #/pilot（S6）のユーザー操作コールバック */
 export interface PilotViewCallbacks {
-  /** 対象文献チェックボックスの切替（最大 3 本） */
-  onToggleDocument(documentId: string, selected: boolean): void;
+  /** 対象 study チェックボックスの切替（最大 3 study） */
+  onToggleStudy(studyId: string, selected: boolean): void;
   /** requested_model の変更 */
   onChangeModel(model: string): void;
   /** 「パイロット抽出を実行」 */
@@ -106,8 +106,8 @@ export interface PilotViewCallbacks {
 
 /** #/extract（S7）のユーザー操作コールバック */
 export interface ExtractViewCallbacks {
-  /** 対象文献チェックボックスの切替（上限なし） */
-  onToggleDocument(documentId: string, selected: boolean): void;
+  /** 対象 study チェックボックスの切替（上限なし） */
+  onToggleStudy(studyId: string, selected: boolean): void;
   /** requested_model の変更 */
   onChangeModel(model: string): void;
   /** 「一括抽出を実行」: 検証 → 実行確認カードを開く */
@@ -116,9 +116,9 @@ export interface ExtractViewCallbacks {
   onConfirmRun(): void;
   /** 確認カードのキャンセル */
   onCancelConfirm(): void;
-  /** 失敗した文献 1 本の再試行（run_type = single_document） */
-  onRetryDocument(documentId: string): void;
-  /** 読み込み失敗時の再読み込み（文献一覧 + 抽出済み document を強制再取得） */
+  /** 失敗した study 1 件の再試行（run_type = single_study） */
+  onRetryStudy(studyId: string): void;
+  /** 読み込み失敗時の再読み込み（文献一覧 + 抽出済み study を強制再取得） */
   onReloadTargets(): void;
 }
 

@@ -7,6 +7,7 @@ import type { SchemaField } from '../../../../src/domain/schemaField';
 import {
   APPROX_CHARS_PER_TOKEN,
   DEFAULT_RUN_TOKEN_BUDGET,
+  DOCUMENT_SEPARATOR_CHARS,
   ENTITY_INSTANCE_ESTIMATE,
   FALLBACK_CHARS_PER_PAGE,
   FALLBACK_DOCUMENT_CHARS,
@@ -62,10 +63,19 @@ function makeDocument(overrides: Partial<DocumentRecord> & { documentId: string 
 // fieldId 'f_design'（8 文字）+ fieldName 'study_design'（12 文字）。補助情報なし
 const STUDY_FIELD = makeField({ fieldId: 'f_design', fieldName: 'study_design' });
 
-/** テスト側で期待値を組み立てるための最小ミラー（1 バッチの入力トークン） */
-function expectedTokensIn(docChars: number, fieldChars: number, protocolChars = 0): number {
+/**
+ * テスト側で期待値を組み立てるための最小ミラー（1 バッチの入力トークン）。
+ * v0.10: 連結する各文書に見出し（DOCUMENT_SEPARATOR_CHARS）が付く。docChars は文書別の本文文字数の配列
+ */
+function expectedTokensIn(
+  docCharsList: number | number[],
+  fieldChars: number,
+  protocolChars = 0,
+): number {
+  const list = Array.isArray(docCharsList) ? docCharsList : [docCharsList];
+  const bodyChars = list.reduce((sum, chars) => sum + DOCUMENT_SEPARATOR_CHARS + chars, 0);
   return Math.ceil(
-    (PROMPT_SCAFFOLD_CHARS + protocolChars + fieldChars + docChars) / APPROX_CHARS_PER_TOKEN,
+    (PROMPT_SCAFFOLD_CHARS + protocolChars + fieldChars + bodyChars) / APPROX_CHARS_PER_TOKEN,
   );
 }
 
@@ -109,8 +119,8 @@ describe('planRun のバッチ分割', () => {
     expect(plan.model).toBe('gemini-2.5-pro');
     expect(plan.batches).toHaveLength(1);
     expect(plan.batches[0]).toEqual({
-      documentId: 'd1',
       studyId: 'd1',
+      documentIds: ['d1'],
       section: null,
       fieldIds: ['f_design'],
       tokensInEstimate: expectedTokensIn(4_000, STUDY_FIELD_CHARS),
@@ -145,13 +155,15 @@ describe('planRun のバッチ分割', () => {
     });
     expect(plan.batches).toHaveLength(2);
     expect(plan.batches[0]).toMatchObject({
-      documentId: 'd1',
+      studyId: 'd1',
+      documentIds: ['d1'],
       section: 'methods',
       fieldIds: ['f_m1', 'f_m2'],
       overBudget: false,
     });
     expect(plan.batches[1]).toMatchObject({
-      documentId: 'd1',
+      studyId: 'd1',
+      documentIds: ['d1'],
       section: 'outcomes',
       fieldIds: ['f_o1'],
       overBudget: false,
@@ -289,6 +301,112 @@ describe('planRun のトークン概算', () => {
   });
 });
 
+describe('planRun の study 単位グルーピング（v0.10）', () => {
+  it('同一 study の複数文書は 1 バッチに連結し、documentIds は role 固定順 → 取り込み順', () => {
+    // 取り込み順は registration(order0) → article(order1) だが、role 順で article が先に来る
+    const plan = planRun({
+      documents: [
+        makeDocument({
+          documentId: 'reg',
+          studyId: 's1',
+          documentRole: 'registration',
+          charCount: 1_000,
+        }),
+        makeDocument({
+          documentId: 'art',
+          studyId: 's1',
+          documentRole: 'article',
+          charCount: 2_000,
+        }),
+      ],
+      fields: [STUDY_FIELD],
+      model: 'gemini-2.5-pro',
+    });
+    expect(plan.batches).toHaveLength(1);
+    expect(plan.batches[0]?.studyId).toBe('s1');
+    expect(plan.batches[0]?.documentIds).toEqual(['art', 'reg']);
+    // 入力トークンは 2 文書の本文 + 見出しの合計
+    expect(plan.batches[0]?.tokensInEstimate).toBe(
+      expectedTokensIn([2_000, 1_000], STUDY_FIELD_CHARS),
+    );
+  });
+
+  it('study 内の no_text_layer 文書は連結から除外し、残りで抽出する', () => {
+    const plan = planRun({
+      documents: [
+        makeDocument({ documentId: 'art', studyId: 's1', documentRole: 'article', charCount: 2_000 }),
+        makeDocument({
+          documentId: 'scan',
+          studyId: 's1',
+          documentRole: 'supplement',
+          textStatus: 'no_text_layer',
+          textRef: null,
+        }),
+      ],
+      fields: [STUDY_FIELD],
+      model: 'gemini-2.5-pro',
+    });
+    expect(plan.batches).toHaveLength(1);
+    expect(plan.batches[0]?.documentIds).toEqual(['art']);
+    expect(plan.skippedDocuments).toEqual([{ documentId: 'scan', reason: 'no_text_layer' }]);
+    expect(plan.batches[0]?.tokensInEstimate).toBe(expectedTokensIn([2_000], STUDY_FIELD_CHARS));
+  });
+
+  it('全文書が no_text_layer の study はバッチを作らない', () => {
+    const plan = planRun({
+      documents: [
+        makeDocument({ documentId: 'a', studyId: 's1', textStatus: 'no_text_layer', textRef: null }),
+        makeDocument({ documentId: 'b', studyId: 's2', charCount: 3_000 }),
+      ],
+      fields: [STUDY_FIELD],
+      model: 'gemini-2.5-pro',
+    });
+    expect(plan.batches).toHaveLength(1);
+    expect(plan.batches[0]?.studyId).toBe('s2');
+    expect(plan.skippedDocuments).toEqual([{ documentId: 'a', reason: 'no_text_layer' }]);
+  });
+
+  it('DOCUMENT_ROLE_ORDER に無いロールは末尾へ並べる（未知が先・防御的フォールバック）', () => {
+    const plan = planRun({
+      documents: [
+        makeDocument({
+          documentId: 'unknown',
+          studyId: 's1',
+          documentRole: 'weird' as DocumentRecord['documentRole'],
+          charCount: 1_000,
+        }),
+        makeDocument({ documentId: 'art', studyId: 's1', documentRole: 'article', charCount: 2_000 }),
+      ],
+      fields: [STUDY_FIELD],
+      model: 'gemini-2.5-pro',
+    });
+    expect(plan.batches[0]?.documentIds).toEqual(['art', 'unknown']);
+  });
+
+  it('未知ロールが複数あっても末尾へ取り込み順で並べる（比較の全方向を網羅）', () => {
+    const plan = planRun({
+      documents: [
+        makeDocument({ documentId: 'art', studyId: 's1', documentRole: 'article', charCount: 2_000 }),
+        makeDocument({
+          documentId: 'wa',
+          studyId: 's1',
+          documentRole: 'weird-a' as DocumentRecord['documentRole'],
+          charCount: 1_000,
+        }),
+        makeDocument({
+          documentId: 'wb',
+          studyId: 's1',
+          documentRole: 'weird-b' as DocumentRecord['documentRole'],
+          charCount: 1_000,
+        }),
+      ],
+      fields: [STUDY_FIELD],
+      model: 'gemini-2.5-pro',
+    });
+    expect(plan.batches[0]?.documentIds).toEqual(['art', 'wa', 'wb']);
+  });
+});
+
 describe('planRun のコスト概算と対象外文献', () => {
   it('単価表にあるモデルは合計トークンからコストを概算する', () => {
     const plan = planRun({
@@ -322,7 +440,8 @@ describe('planRun のコスト概算と対象外文献', () => {
       model: 'gemini-2.5-pro',
     });
     expect(plan.batches).toHaveLength(1);
-    expect(plan.batches[0]?.documentId).toBe('d1');
+    expect(plan.batches[0]?.studyId).toBe('d1');
+    expect(plan.batches[0]?.documentIds).toEqual(['d1']);
     expect(plan.skippedDocuments).toEqual([{ documentId: 'd2', reason: 'no_text_layer' }]);
     expect(plan.warnings).toEqual([
       'テキスト層がない文献 1 件は今回の抽出対象外です（text_only モードでは抽出できません）',

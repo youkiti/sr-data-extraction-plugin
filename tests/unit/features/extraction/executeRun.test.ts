@@ -1,7 +1,9 @@
 // executeRun（一括抽出の実行）の単体テスト
 // - 正常系: プロンプト構築 → 構造化出力要求 → 応答検証 → アンカリング → Evidence 追記
+// - 複数文書（v0.10）: study の全文書を連結し、document_index が指す文書でアンカリング・Evidence.document_id を決定
 // - partial_failure: バッチ失敗 4 種（load / api / format / save）と要素破棄の記録
 // - 集計: 実測トークンの合算（null 許容）、modelVersion の採用、進捗通知
+import type { DocumentRecord } from '../../../../src/domain/document';
 import type { Evidence } from '../../../../src/domain/evidence';
 import type { SchemaField } from '../../../../src/domain/schemaField';
 import {
@@ -9,6 +11,7 @@ import {
   MAX_FAILURE_DETAIL_BODY_CHARS,
   executeRun,
   type ExecuteRunDeps,
+  type ExecuteRunInput,
   type RunProgress,
 } from '../../../../src/features/extraction/executeRun';
 import type { PlannedBatch, RunPlan } from '../../../../src/features/extraction/planRun';
@@ -61,12 +64,36 @@ const PAGES: ExtractDataPage[] = [
   { page: 2, text: 'Sixty patients received the intervention and 60 received placebo.' },
 ];
 
+function makeDocument(
+  documentId: string,
+  overrides: Partial<DocumentRecord> = {},
+): DocumentRecord {
+  return {
+    documentId,
+    studyId: documentId,
+    documentRole: 'article',
+    driveFileId: `drive-${documentId}`,
+    sourceFileId: `src-${documentId}`,
+    filename: `${documentId}.pdf`,
+    pmid: null,
+    doi: null,
+    textRef: 'https://drive.example/text.txt',
+    textStatus: 'ok',
+    pageCount: 2,
+    charCount: 100,
+    importedAt: '2026-07-01T00:00:00Z',
+    importedBy: 'tester@example.com',
+    note: null,
+    ...overrides,
+  };
+}
+
 function makeBatch(
-  overrides: Partial<PlannedBatch> & Pick<PlannedBatch, 'documentId' | 'fieldIds'>,
+  overrides: Partial<PlannedBatch> & Pick<PlannedBatch, 'studyId' | 'fieldIds'>,
 ): PlannedBatch {
   return {
-    // 既定は 1 文書 = 1 study（study_id は document_id と同値）
-    studyId: overrides.documentId,
+    // 既定は 1 study = 1 文書（document_id は study_id と同値）
+    documentIds: [overrides.studyId],
     section: null,
     tokensInEstimate: 0,
     tokensOutEstimate: 0,
@@ -86,6 +113,28 @@ function makePlan(batches: PlannedBatch[]): RunPlan {
     costEstimateUsd: 0,
     warnings: [],
   };
+}
+
+/** plan の全 documentIds から DocumentRecord を自動生成する（override が無ければ 1 doc = 1 study） */
+function documentsForPlan(plan: RunPlan): DocumentRecord[] {
+  const ids = new Set<string>();
+  for (const batch of plan.batches) {
+    for (const id of batch.documentIds) {
+      ids.add(id);
+    }
+  }
+  return [...ids].map((id) => makeDocument(id));
+}
+
+/** executeRun のラッパ。documents 未指定なら plan から自動導出して渡す */
+function execute(
+  input: Omit<ExecuteRunInput, 'documents'> & { documents?: readonly DocumentRecord[] },
+  deps: ExecuteRunDeps,
+) {
+  return executeRun(
+    { ...input, documents: input.documents ?? documentsForPlan(input.plan) },
+    deps,
+  );
 }
 
 function chatResponse(
@@ -175,6 +224,7 @@ const DESIGN_ITEM = {
   not_reported: false,
   quote: 'randomized controlled trial',
   page: 1,
+  document_index: 1,
   confidence: 'high',
 };
 const ARM_ITEM = {
@@ -184,6 +234,7 @@ const ARM_ITEM = {
   not_reported: false,
   quote: 'Sixty patients received the intervention and 60 received placebo.',
   page: 2,
+  document_index: 1,
   confidence: 'medium',
 };
 const NOT_REPORTED_ITEM = {
@@ -193,6 +244,7 @@ const NOT_REPORTED_ITEM = {
   not_reported: true,
   quote: null,
   page: null,
+  document_index: null,
   confidence: null,
 };
 
@@ -202,10 +254,10 @@ describe('executeRun の入力検証', () => {
     const { deps } = makeDeps(provider);
     const v2Field = makeField({ fieldId: 'f_x', fieldName: 'x', schemaVersion: 2 });
     await expect(
-      executeRun(
+      execute(
         {
           runId: 'run-1',
-          plan: makePlan([makeBatch({ documentId: 'd1', fieldIds: ['f_design'] })]),
+          plan: makePlan([makeBatch({ studyId: 'd1', fieldIds: ['f_design'] })]),
           fields: [STUDY_FIELD, v2Field],
         },
         deps,
@@ -217,15 +269,33 @@ describe('executeRun の入力検証', () => {
     const { provider } = providerOf([]);
     const { deps } = makeDeps(provider);
     await expect(
-      executeRun(
+      execute(
         {
           runId: 'run-1',
-          plan: makePlan([makeBatch({ documentId: 'd1', fieldIds: ['f_missing'] })]),
+          plan: makePlan([makeBatch({ studyId: 'd1', fieldIds: ['f_missing'] })]),
           fields: FIELDS,
         },
         deps,
       ),
     ).rejects.toThrow('field_id "f_missing" が fields に見つかりません');
+  });
+
+  test('plan の documentIds に documents で解決できない ID があれば投げる', async () => {
+    const { provider } = providerOf([]);
+    const { deps } = makeDeps(provider);
+    await expect(
+      executeRun(
+        {
+          runId: 'run-1',
+          plan: makePlan([
+            makeBatch({ studyId: 's1', documentIds: ['ghost'], fieldIds: ['f_design'] }),
+          ]),
+          fields: FIELDS,
+          documents: [makeDocument('other')],
+        },
+        deps,
+      ),
+    ).rejects.toThrow('document_id "ghost" が documents に見つかりません');
   });
 });
 
@@ -239,10 +309,10 @@ describe('executeRun の正常系', () => {
       }),
     ]);
     const { deps, saved, progress } = makeDeps(provider);
-    const result = await executeRun(
+    const result = await execute(
       {
         runId: 'run-1',
-        plan: makePlan([makeBatch({ documentId: 'd1', fieldIds: ['f_design', 'f_n'] })]),
+        plan: makePlan([makeBatch({ studyId: 'd1', fieldIds: ['f_design', 'f_n'] })]),
         fields: FIELDS,
         protocolContext: 'RQ: PROTO-CTX',
       },
@@ -257,6 +327,8 @@ describe('executeRun の正常系', () => {
     expect(userMessage?.content).toContain('RQ: PROTO-CTX');
     expect(userMessage?.content).toContain('field_id: f_design');
     expect(userMessage?.content).toContain('[PAGE 2]');
+    // 単一文書の連結見出し
+    expect(userMessage?.content).toContain('=== Document 1/1 [article] d1.pdf ===');
     expect(calls[0]!.options).toEqual({
       temperature: EXTRACT_DATA_TEMPERATURE,
       responseSchema: EXTRACT_DATA_RESPONSE_SCHEMA,
@@ -316,8 +388,63 @@ describe('executeRun の正常系', () => {
     expect(result.rejectedItems).toHaveLength(0);
     expect(result.batchFailures).toHaveLength(0);
     expect(progress).toEqual([
-      { totalBatches: 1, completedBatches: 1, documentId: 'd1', section: null, failure: null },
+      { totalBatches: 1, completedBatches: 1, studyId: 'd1', section: null, failure: null },
     ]);
+  });
+
+  test('複数文書 study: document_index が指す文書でアンカリングし Evidence.document_id に記録する', async () => {
+    // 同一 study の 2 文書。document_index 2（登録）由来の quote は登録 PDF でアンカリングされる
+    const REG_PAGES: ExtractDataPage[] = [{ page: 1, text: 'Registered as NCT01234567 on 2019-01-01.' }];
+    const artItem = { ...DESIGN_ITEM, document_index: 1 };
+    const regItem = {
+      field_id: 'f_n',
+      entity_key: 'arm:1',
+      value: 'NCT01234567',
+      not_reported: false,
+      quote: 'Registered as NCT01234567',
+      page: 1,
+      document_index: 2,
+      confidence: 'high',
+    };
+    const { provider, calls } = providerOf([chatResponse([artItem, regItem])]);
+    const { deps, saved } = makeDeps(provider);
+    deps.loadDocumentPages = jest.fn(async (id: string) => (id === 'reg' ? REG_PAGES : PAGES));
+
+    const result = await executeRun(
+      {
+        runId: 'run-1',
+        plan: makePlan([
+          makeBatch({ studyId: 's1', documentIds: ['art', 'reg'], fieldIds: ['f_design', 'f_n'] }),
+        ]),
+        fields: FIELDS,
+        documents: [
+          makeDocument('art', { studyId: 's1', documentRole: 'article', filename: 'main.pdf' }),
+          makeDocument('reg', {
+            studyId: 's1',
+            documentRole: 'registration',
+            filename: 'NCT01.pdf',
+          }),
+        ],
+      },
+      deps,
+    );
+
+    // プロンプトに 2 文書がロール付きで連結される
+    const userContent = calls[0]!.messages[1]!.content;
+    expect(userContent).toContain('=== Document 1/2 [article] main.pdf ===');
+    expect(userContent).toContain('=== Document 2/2 [registration] NCT01.pdf ===');
+
+    // article 由来 → document_id = 'art' / exact、登録由来 → document_id = 'reg' / 登録本文で exact
+    expect(result.evidence).toEqual([
+      expect.objectContaining({ studyId: 's1', documentId: 'art', anchorStatus: 'exact' }),
+      expect.objectContaining({
+        studyId: 's1',
+        documentId: 'reg',
+        value: 'NCT01234567',
+        anchorStatus: 'exact',
+      }),
+    ]);
+    expect(saved).toHaveLength(1);
   });
 
   test('本文に見つからない quote は anchor_status = failed で保存する', async () => {
@@ -328,10 +455,10 @@ describe('executeRun の正常系', () => {
     };
     const { provider } = providerOf([chatResponse([missingQuoteItem])]);
     const { deps } = makeDeps(provider);
-    const result = await executeRun(
+    const result = await execute(
       {
         runId: 'run-1',
-        plan: makePlan([makeBatch({ documentId: 'd1', fieldIds: ['f_design'] })]),
+        plan: makePlan([makeBatch({ studyId: 'd1', fieldIds: ['f_design'] })]),
         fields: FIELDS,
       },
       deps,
@@ -343,7 +470,7 @@ describe('executeRun の正常系', () => {
   test('バッチ 0 件の plan は何もせず done を返す', async () => {
     const { provider, calls } = providerOf([]);
     const { deps, progress } = makeDeps(provider);
-    const result = await executeRun(
+    const result = await execute(
       { runId: 'run-1', plan: makePlan([]), fields: FIELDS },
       deps,
     );
@@ -363,10 +490,10 @@ describe('executeRun の正常系', () => {
 
   test('newUuid / onProgress を省略しても既定実装で動く', async () => {
     const { provider } = providerOf([chatResponse([DESIGN_ITEM])]);
-    const result = await executeRun(
+    const result = await execute(
       {
         runId: 'run-1',
-        plan: makePlan([makeBatch({ documentId: 'd1', fieldIds: ['f_design'] })]),
+        plan: makePlan([makeBatch({ studyId: 'd1', fieldIds: ['f_design'] })]),
         fields: FIELDS,
       },
       {
@@ -387,12 +514,10 @@ describe('executeRun の partial_failure', () => {
     const unknownItem = { ...DESIGN_ITEM, field_id: 'f_ghost' };
     const { provider } = providerOf([chatResponse([unknownItem, DESIGN_ITEM])]);
     const { deps, saved } = makeDeps(provider);
-    const result = await executeRun(
+    const result = await execute(
       {
         runId: 'run-1',
-        plan: makePlan([
-          makeBatch({ documentId: 'd1', section: 'methods', fieldIds: ['f_design'] }),
-        ]),
+        plan: makePlan([makeBatch({ studyId: 'd1', section: 'methods', fieldIds: ['f_design'] })]),
         fields: FIELDS,
       },
       deps,
@@ -400,7 +525,7 @@ describe('executeRun の partial_failure', () => {
     expect(result.status).toBe('partial_failure');
     expect(result.rejectedItems).toEqual([
       expect.objectContaining({
-        documentId: 'd1',
+        studyId: 'd1',
         section: 'methods',
         index: 0,
         reason: 'unknown_field_id',
@@ -415,10 +540,10 @@ describe('executeRun の partial_failure', () => {
     const unknownItem = { ...DESIGN_ITEM, field_id: 'f_ghost' };
     const { provider } = providerOf([chatResponse([unknownItem])]);
     const { deps, saved } = makeDeps(provider);
-    const result = await executeRun(
+    const result = await execute(
       {
         runId: 'run-1',
-        plan: makePlan([makeBatch({ documentId: 'd1', fieldIds: ['f_design'] })]),
+        plan: makePlan([makeBatch({ studyId: 'd1', fieldIds: ['f_design'] })]),
         fields: FIELDS,
       },
       deps,
@@ -434,12 +559,12 @@ describe('executeRun の partial_failure', () => {
       chatResponse([ARM_ITEM], { tokensIn: 10, tokensOut: 20 }),
     ]);
     const { deps, saved, progress, loadPages } = makeDeps(provider);
-    const result = await executeRun(
+    const result = await execute(
       {
         runId: 'run-1',
         plan: makePlan([
-          makeBatch({ documentId: 'd1', section: 'methods', fieldIds: ['f_design'] }),
-          makeBatch({ documentId: 'd1', section: 'population', fieldIds: ['f_n'] }),
+          makeBatch({ studyId: 'd1', section: 'methods', fieldIds: ['f_design'] }),
+          makeBatch({ studyId: 'd1', section: 'population', fieldIds: ['f_n'] }),
         ]),
         fields: FIELDS,
       },
@@ -447,7 +572,7 @@ describe('executeRun の partial_failure', () => {
     );
     expect(result.status).toBe('partial_failure');
     expect(result.batchFailures).toEqual([
-      { documentId: 'd1', section: 'methods', reason: 'api_error', detail: 'boom' },
+      { studyId: 'd1', section: 'methods', reason: 'api_error', detail: 'boom' },
     ]);
     expect(result.evidence).toHaveLength(1);
     expect(result.evidence[0]?.fieldId).toBe('f_n');
@@ -460,11 +585,11 @@ describe('executeRun の partial_failure', () => {
       {
         totalBatches: 2,
         completedBatches: 1,
-        documentId: 'd1',
+        studyId: 'd1',
         section: 'methods',
-        failure: { documentId: 'd1', section: 'methods', reason: 'api_error', detail: 'boom' },
+        failure: { studyId: 'd1', section: 'methods', reason: 'api_error', detail: 'boom' },
       },
-      { totalBatches: 2, completedBatches: 2, documentId: 'd1', section: 'population', failure: null },
+      { totalBatches: 2, completedBatches: 2, studyId: 'd1', section: 'population', failure: null },
     ]);
   });
 
@@ -473,17 +598,17 @@ describe('executeRun の partial_failure', () => {
       new LlmProviderError('Gemini API failed: HTTP 400', 'gemini', 400, 'input token count exceeds the maximum'),
     ]);
     const { deps } = makeDeps(provider);
-    const result = await executeRun(
+    const result = await execute(
       {
         runId: 'run-1',
-        plan: makePlan([makeBatch({ documentId: 'd1', fieldIds: ['f_design'] })]),
+        plan: makePlan([makeBatch({ studyId: 'd1', fieldIds: ['f_design'] })]),
         fields: FIELDS,
       },
       deps,
     );
     expect(result.batchFailures).toEqual([
       {
-        documentId: 'd1',
+        studyId: 'd1',
         section: null,
         reason: 'api_error',
         detail: 'Gemini API failed: HTTP 400: input token count exceeds the maximum',
@@ -497,10 +622,10 @@ describe('executeRun の partial_failure', () => {
       new LlmProviderError('Gemini API failed: HTTP 400', 'gemini', 400, body),
     ]);
     const { deps } = makeDeps(provider);
-    const result = await executeRun(
+    const result = await execute(
       {
         runId: 'run-1',
-        plan: makePlan([makeBatch({ documentId: 'd1', fieldIds: ['f_design'] })]),
+        plan: makePlan([makeBatch({ studyId: 'd1', fieldIds: ['f_design'] })]),
         fields: FIELDS,
       },
       deps,
@@ -517,10 +642,10 @@ describe('executeRun の partial_failure', () => {
       new LlmProviderError('Gemini API failed: HTTP 401', 'gemini', 401, '  '),
     ]);
     const { deps } = makeDeps(provider);
-    const result = await executeRun(
+    const result = await execute(
       {
         runId: 'run-1',
-        plan: makePlan([makeBatch({ documentId: 'd1', fieldIds: ['f_design'] })]),
+        plan: makePlan([makeBatch({ studyId: 'd1', fieldIds: ['f_design'] })]),
         fields: FIELDS,
       },
       deps,
@@ -531,16 +656,16 @@ describe('executeRun の partial_failure', () => {
   test('Error 以外の例外も文字列化して記録する', async () => {
     const { provider } = providerOf(['throw-string']);
     const { deps } = makeDeps(provider);
-    const result = await executeRun(
+    const result = await execute(
       {
         runId: 'run-1',
-        plan: makePlan([makeBatch({ documentId: 'd1', fieldIds: ['f_design'] })]),
+        plan: makePlan([makeBatch({ studyId: 'd1', fieldIds: ['f_design'] })]),
         fields: FIELDS,
       },
       deps,
     );
     expect(result.batchFailures).toEqual([
-      { documentId: 'd1', section: null, reason: 'api_error', detail: 'oops' },
+      { studyId: 'd1', section: null, reason: 'api_error', detail: 'oops' },
     ]);
   });
 
@@ -549,10 +674,10 @@ describe('executeRun の partial_failure', () => {
       { text: 'これは JSON ではありません', tokensIn: 5, tokensOut: 5, raw: {} },
     ]);
     const { deps } = makeDeps(provider);
-    const result = await executeRun(
+    const result = await execute(
       {
         runId: 'run-1',
-        plan: makePlan([makeBatch({ documentId: 'd1', fieldIds: ['f_design'] })]),
+        plan: makePlan([makeBatch({ studyId: 'd1', fieldIds: ['f_design'] })]),
         fields: FIELDS,
       },
       deps,
@@ -564,16 +689,16 @@ describe('executeRun の partial_failure', () => {
     expect(result.tokensIn).toBe(5);
   });
 
-  test('本文ロード失敗は同一 document の全バッチを load_failed にする（ロードは 1 回だけ）', async () => {
+  test('本文ロード失敗は同一 study の全バッチを load_failed にする（ロードは 1 回だけ）', async () => {
     const { provider, calls } = providerOf([]);
     const { deps, loadPages } = makeDeps(provider);
     loadPages.mockRejectedValue(new Error('drive down'));
-    const result = await executeRun(
+    const result = await execute(
       {
         runId: 'run-1',
         plan: makePlan([
-          makeBatch({ documentId: 'd1', section: 'methods', fieldIds: ['f_design'] }),
-          makeBatch({ documentId: 'd1', section: 'population', fieldIds: ['f_n'] }),
+          makeBatch({ studyId: 'd1', section: 'methods', fieldIds: ['f_design'] }),
+          makeBatch({ studyId: 'd1', section: 'population', fieldIds: ['f_n'] }),
         ]),
         fields: FIELDS,
       },
@@ -581,10 +706,28 @@ describe('executeRun の partial_failure', () => {
     );
     expect(result.status).toBe('partial_failure');
     expect(result.batchFailures).toEqual([
-      { documentId: 'd1', section: 'methods', reason: 'load_failed', detail: 'drive down' },
-      { documentId: 'd1', section: 'population', reason: 'load_failed', detail: 'drive down' },
+      { studyId: 'd1', section: 'methods', reason: 'load_failed', detail: 'drive down' },
+      { studyId: 'd1', section: 'population', reason: 'load_failed', detail: 'drive down' },
     ]);
     expect(loadPages).toHaveBeenCalledTimes(1);
+    expect(calls).toHaveLength(0);
+  });
+
+  test('documentIds が空のバッチは load_failed（既定文言）にする', async () => {
+    const { provider, calls } = providerOf([]);
+    const { deps } = makeDeps(provider);
+    const result = await executeRun(
+      {
+        runId: 'run-1',
+        plan: makePlan([makeBatch({ studyId: 's1', documentIds: [], fieldIds: ['f_design'] })]),
+        fields: FIELDS,
+        documents: [],
+      },
+      deps,
+    );
+    expect(result.batchFailures).toEqual([
+      { studyId: 's1', section: null, reason: 'load_failed', detail: '本文を取得できる文書がありません' },
+    ]);
     expect(calls).toHaveLength(0);
   });
 
@@ -592,10 +735,10 @@ describe('executeRun の partial_failure', () => {
     const { provider } = providerOf([]);
     const { deps, loadPages } = makeDeps(provider);
     loadPages.mockResolvedValue([]);
-    const result = await executeRun(
+    const result = await execute(
       {
         runId: 'run-1',
-        plan: makePlan([makeBatch({ documentId: 'd1', fieldIds: ['f_design'] })]),
+        plan: makePlan([makeBatch({ studyId: 'd1', fieldIds: ['f_design'] })]),
         fields: FIELDS,
       },
       deps,
@@ -606,23 +749,54 @@ describe('executeRun の partial_failure', () => {
     });
   });
 
+  test('複数文書 study で一部の文書だけロードできれば残りで抽出を続行する', async () => {
+    // art はロード成功・reg は失敗 → reg を除いた 1 文書で抽出（document_index は詰め直される）
+    const item = { ...DESIGN_ITEM, document_index: 1 };
+    const { provider, calls } = providerOf([chatResponse([item])]);
+    const { deps } = makeDeps(provider);
+    deps.loadDocumentPages = jest.fn(async (id: string) => {
+      if (id === 'reg') {
+        throw new Error('reg down');
+      }
+      return PAGES;
+    });
+    const result = await executeRun(
+      {
+        runId: 'run-1',
+        plan: makePlan([
+          makeBatch({ studyId: 's1', documentIds: ['art', 'reg'], fieldIds: ['f_design'] }),
+        ]),
+        fields: FIELDS,
+        documents: [
+          makeDocument('art', { studyId: 's1', filename: 'main.pdf' }),
+          makeDocument('reg', { studyId: 's1', documentRole: 'registration' }),
+        ],
+      },
+      deps,
+    );
+    // 1 文書だけ連結される（Document 1/1）
+    expect(calls[0]!.messages[1]!.content).toContain('=== Document 1/1 [article] main.pdf ===');
+    expect(result.status).toBe('done');
+    expect(result.evidence[0]?.documentId).toBe('art');
+  });
+
   test('Evidence 追記の失敗は save_failed とし、その行は結果に含めない', async () => {
     const { provider } = providerOf([chatResponse([DESIGN_ITEM])]);
     const { deps } = makeDeps(provider);
     deps.appendEvidence = async () => {
       throw new Error('sheets quota');
     };
-    const result = await executeRun(
+    const result = await execute(
       {
         runId: 'run-1',
-        plan: makePlan([makeBatch({ documentId: 'd1', fieldIds: ['f_design'] })]),
+        plan: makePlan([makeBatch({ studyId: 'd1', fieldIds: ['f_design'] })]),
         fields: FIELDS,
       },
       deps,
     );
     expect(result.status).toBe('partial_failure');
     expect(result.batchFailures).toEqual([
-      { documentId: 'd1', section: null, reason: 'save_failed', detail: 'sheets quota' },
+      { studyId: 'd1', section: null, reason: 'save_failed', detail: 'sheets quota' },
     ]);
     expect(result.evidence).toHaveLength(0);
   });
@@ -632,10 +806,10 @@ describe('executeRun の実測集計', () => {
   test('トークンが一度も取れなければ null のまま返す', async () => {
     const { provider } = providerOf([chatResponse([DESIGN_ITEM])]);
     const { deps } = makeDeps(provider);
-    const result = await executeRun(
+    const result = await execute(
       {
         runId: 'run-1',
-        plan: makePlan([makeBatch({ documentId: 'd1', fieldIds: ['f_design'] })]),
+        plan: makePlan([makeBatch({ studyId: 'd1', fieldIds: ['f_design'] })]),
         fields: FIELDS,
       },
       deps,
@@ -652,13 +826,13 @@ describe('executeRun の実測集計', () => {
       chatResponse([ARM_ITEM], { tokensIn: 50, tokensOut: 10 }),
     ]);
     const { deps, loadPages } = makeDeps(provider);
-    const result = await executeRun(
+    const result = await execute(
       {
         runId: 'run-1',
         plan: makePlan([
-          makeBatch({ documentId: 'd1', fieldIds: ['f_design'] }),
-          makeBatch({ documentId: 'd2', fieldIds: ['f_n'] }),
-          makeBatch({ documentId: 'd3', fieldIds: ['f_n'] }),
+          makeBatch({ studyId: 'd1', fieldIds: ['f_design'] }),
+          makeBatch({ studyId: 'd2', fieldIds: ['f_n'] }),
+          makeBatch({ studyId: 'd3', fieldIds: ['f_n'] }),
         ]),
         fields: FIELDS,
       },
@@ -678,14 +852,14 @@ describe('executeRun の実測集計', () => {
       chatResponse([ARM_ITEM], { raw: { modelVersion: 'gemini-2.5-pro-999' } }),
     ]);
     const { deps } = makeDeps(provider);
-    const result = await executeRun(
+    const result = await execute(
       {
         runId: 'run-1',
         plan: makePlan([
-          makeBatch({ documentId: 'd1', fieldIds: ['f_design'] }),
-          makeBatch({ documentId: 'd2', fieldIds: ['f_n'] }),
-          makeBatch({ documentId: 'd3', fieldIds: ['f_n'] }),
-          makeBatch({ documentId: 'd4', fieldIds: ['f_n'] }),
+          makeBatch({ studyId: 'd1', fieldIds: ['f_design'] }),
+          makeBatch({ studyId: 'd2', fieldIds: ['f_n'] }),
+          makeBatch({ studyId: 'd3', fieldIds: ['f_n'] }),
+          makeBatch({ studyId: 'd4', fieldIds: ['f_n'] }),
         ]),
         fields: FIELDS,
       },
@@ -697,10 +871,10 @@ describe('executeRun の実測集計', () => {
   test('raw が null の応答でも落ちない', async () => {
     const { provider } = providerOf([chatResponse([DESIGN_ITEM], { raw: null })]);
     const { deps } = makeDeps(provider);
-    const result = await executeRun(
+    const result = await execute(
       {
         runId: 'run-1',
-        plan: makePlan([makeBatch({ documentId: 'd1', fieldIds: ['f_design'] })]),
+        plan: makePlan([makeBatch({ studyId: 'd1', fieldIds: ['f_design'] })]),
         fields: FIELDS,
       },
       deps,

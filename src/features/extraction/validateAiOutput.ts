@@ -2,10 +2,12 @@
 // 1) zod による要素単位の形状検証。不正要素は破棄し、partial_failure の素材として返す
 // 2) field_id が当該 schema_version の SchemaFields に存在しない要素は破棄（§4.3）
 // 3) entity_key が field の entity_level と整合しない要素も同様に破棄
-// 4) 値と quote の矛盾（quote 欠落 / 値中の数値が quote に無い / not_reported なのに値あり）は
+// 4) document_index（v0.10）: quote があるのに欠落・範囲外の要素は破棄（field_id 不明と同じ扱い）。
+//    not_reported=true の要素は document_index 不要。1..documentCount の値へ解決して返す
+// 5) 値と quote の矛盾（quote 欠落 / 値中の数値が quote に無い / not_reported なのに値あり）は
 //    confidence=low を強制する（破棄はしない — S8 の人間検証で拾わせるため）
 //
-// 突合キーになる field_id / entity_key / value / not_reported は厳格に検証し、
+// 突合キーになる field_id / entity_key / value / not_reported / document_index は厳格に検証し、
 // 補助ヒントの page / confidence は寛容にパースして不正値を null へ落とす
 import { z } from 'zod';
 import type { Confidence } from '../../domain/evidence';
@@ -22,7 +24,11 @@ export type ForcedLowReason =
   | 'number_not_in_quote' // 値に含まれる数値が quote 内に見つからない
   | 'value_with_not_reported'; // not_reported=true なのに値がある
 
-export type RejectReason = 'invalid_shape' | 'unknown_field_id' | 'entity_key_mismatch';
+export type RejectReason =
+  | 'invalid_shape'
+  | 'unknown_field_id'
+  | 'entity_key_mismatch'
+  | 'invalid_document_index';
 
 /** 検証を通過した 1 要素。Evidence への追記と ai annotator 行への転記の素材 */
 export interface ValidatedAiItem {
@@ -32,6 +38,11 @@ export interface ValidatedAiItem {
   notReported: boolean;
   quote: string | null;
   page: number | null;
+  /**
+   * quote の出所文書の 1 始まり番号（1..documentCount へ解決済み）。
+   * executeRun がこの index でバッチの documentIds を引き、Evidence.document_id とアンカリング対象を決める
+   */
+  documentIndex: number;
   confidence: Confidence | null;
   /** 空配列 = 強制なし。非空なら confidence は 'low' に強制済み */
   forcedLowReasons: ForcedLowReason[];
@@ -82,6 +93,9 @@ const aiOutputItemSchema = z.object({
     .nullish()
     .transform((v) => v ?? false),
   page: z.number().int().min(1).nullable().catch(null),
+  // 範囲（1..documentCount）の検証は破棄対象なので catch では潰さず、後段で明示的に判定する。
+  // 整数でない・0 以下などの形式不正だけを null へ落とす
+  document_index: z.number().int().min(1).nullable().catch(null),
   quote: quoteSchema,
   confidence: z.enum(['high', 'medium', 'low']).nullable().catch(null),
 });
@@ -131,14 +145,37 @@ function detectContradictions(item: ParsedAiItem): ForcedLowReason[] {
 }
 
 /**
+ * quote の出所文書番号（document_index）を 1..documentCount へ解決する。
+ * - quote あり: 欠落・範囲外なら null を返す（呼び出し側で破棄）。ただし文書が 1 件だけなら
+ *   出所は一意なので欠落は 1 と解決する（範囲外は他文書を指すため破棄する）
+ * - quote なし（not_reported 等）: document_index は不要。既定で 1（先頭 = 主文書）へ帰属させる
+ */
+function resolveDocumentIndex(
+  raw: number | null,
+  hasQuote: boolean,
+  documentCount: number,
+): number | null {
+  const inRange = raw !== null && raw >= 1 && raw <= documentCount;
+  if (!hasQuote) {
+    return inRange ? raw : 1;
+  }
+  if (raw === null) {
+    return documentCount === 1 ? 1 : null;
+  }
+  return inRange ? raw : null;
+}
+
+/**
  * AI 応答（JSON パース済み）を検証する。
  *
  * @param raw   LLM 応答の JSON（構造化出力）。配列でなければ AiOutputFormatError
  * @param fields 当該 schema_version の SchemaFields（呼び出し側で版を絞って渡す）
+ * @param documentCount 当該バッチでプロンプトに連結した文書数（document_index の範囲検証。1 以上）
  */
 export function validateAiOutput(
   raw: unknown,
   fields: readonly SchemaField[],
+  documentCount: number,
 ): ValidateAiOutputResult {
   if (!Array.isArray(raw)) {
     throw new AiOutputFormatError('AI 応答が配列ではありません（構造化出力の形式不正）');
@@ -182,6 +219,21 @@ export function validateAiOutput(
       }
       entityKey = parsed.data.entity_key;
     }
+    // document_index（v0.10）: quote があるのに欠落・範囲外なら破棄（field_id 不明と同じ扱い）
+    const documentIndex = resolveDocumentIndex(
+      parsed.data.document_index,
+      parsed.data.quote !== null,
+      documentCount,
+    );
+    if (documentIndex === null) {
+      rejected.push({
+        index,
+        reason: 'invalid_document_index',
+        detail: `document_index "${String(parsed.data.document_index)}" が文書数（${documentCount}）と整合しません（quote があるのに欠落・範囲外）`,
+        raw: element,
+      });
+      return;
+    }
     const forcedLowReasons = detectContradictions(parsed.data);
     items.push({
       fieldId: parsed.data.field_id,
@@ -190,6 +242,7 @@ export function validateAiOutput(
       notReported: parsed.data.not_reported,
       quote: parsed.data.quote,
       page: parsed.data.page,
+      documentIndex,
       confidence: forcedLowReasons.length > 0 ? 'low' : parsed.data.confidence,
       forcedLowReasons,
     });

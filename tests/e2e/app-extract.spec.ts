@@ -242,14 +242,17 @@ test('未実行: 未抽出の既定選択 + 抽出済みバッジ + 中断バナ
     '前回の抽出が途中で中断されています（未完了 1 件）',
   );
 
-  // 既定選択 = 未抽出の全件（doc-1 のみ）。抽出済みバッジ + no_text_layer は選択不可
-  await expect(page.locator('#extract-documents li')).toHaveCount(3);
-  const checkboxes = page.locator('#extract-documents input[type="checkbox"]');
+  // 既定選択 = 未抽出の全 study（study-1 のみ）。抽出済みバッジ + no_text_layer は選択不可
+  await expect(page.locator('#extract-studies > li')).toHaveCount(3);
+  const checkboxes = page.locator('#extract-studies input[type="checkbox"]');
   await expect(checkboxes.nth(0)).toBeChecked();
   await expect(checkboxes.nth(1)).not.toBeChecked();
   await expect(checkboxes.nth(2)).toBeDisabled();
   await expect(page.locator('.extract__doc-extracted')).toHaveText('抽出済み');
-  await expect(page.locator('.extract__doc-note')).toContainText('テキスト層なし');
+  // テキスト層のある文書が無い study は選択不可の注記が出る
+  await expect(page.locator('.extract__doc-note').first()).toContainText(
+    'テキスト層のある文書がありません',
+  );
 
   // コスト概算。モデルは S6/S5 未入力のためプルダウンから選択（単価表のモデル → 金額表示）
   await page.locator('#extract-model').selectOption('gemini-2.0-flash');
@@ -351,16 +354,16 @@ test('実行確認 → 一部失敗 → 再試行成功 → 完了（ExtractionR
     apiKey: 'e2e-api-key',
     extract: {
       selectionInitialized: true,
-      selectedDocumentIds: ['doc-1', 'doc-2'],
+      selectedStudyIds: ['study-1', 'study-2'],
       model: 'gemini-test',
-      extractedDocumentIds: [],
+      extractedStudyIds: [],
     },
   });
 
   // 実行 → 確認カード（確認を経ずに実行は始まらない）
   await page.locator('#extract-run').click();
   await expect(page.locator('#extract-confirm')).toContainText(
-    '対象 2 件をモデル gemini-test で抽出します。',
+    '対象 2 試験をモデル gemini-test で抽出します。',
   );
   expect(appendUrls.filter((url) => url.includes('ExtractionRuns'))).toHaveLength(0);
 
@@ -370,12 +373,12 @@ test('実行確認 → 一部失敗 → 再試行成功 → 完了（ExtractionR
   await page.locator('#extract-run').click();
   await page.locator('#extract-confirm-run').click();
 
-  // 完了（partial_failure）: 黄バナー + document 進捗リスト（完了 / 失敗）+ 再試行
+  // 完了（partial_failure）: 黄バナー + study 進捗リスト（完了 / 失敗）+ 再試行
   await expect(page.locator('#extract-partial-failure')).toContainText(
-    '1 件の文献で失敗しました。再試行できます',
+    '1 件の試験で失敗しました。再試行できます',
     { timeout: 15_000 },
   );
-  const rows = page.locator('#extract-doc-list .extract__doc-row');
+  const rows = page.locator('#extract-study-list .extract__doc-row');
   await expect(rows.nth(0)).toContainText('完了');
   await expect(rows.nth(0)).toContainText('smith2020.pdf');
   await expect(rows.nth(1)).toContainText('失敗');

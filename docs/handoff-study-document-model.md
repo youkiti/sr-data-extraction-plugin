@@ -102,12 +102,14 @@ requirements.md §4.5 のとおり。状態は先に [ui-states.md](ui-states.md
 | `features/extraction/docProgress.ts` | document 単位進捗 → study 単位進捗へ改名・畳み込み変更（`studyProgress.ts` にリネーム推奨） |
 | `app/services/extractService.ts` / `pilotService.ts` | 対象選択・既定選択（未抽出の全 study）・失敗 study の再試行（`run_type='single_study'`）・S6 既定選択 = テキスト層あり先頭 3 study。コスト概算は study 合計トークンで |
 
-**受け入れ条件**:
+**受け入れ条件**（2026-07-09 実装完了・実機テスト前）:
 
-- [ ] 2 文書の study で抽出 → Evidence の各行に正しい document_id が入り、登録 PDF 由来の quote は登録 PDF 側でアンカリングされる
-- [ ] document_index 欠落応答（jest でモック）→ 要素破棄 + partial_failure 記録
-- [ ] text_only run で no_text_layer 文書が連結から除外され、UI にその旨が出る
-- [ ] `tests/e2e/app-extract.spec.ts` / `app-pilot.spec.ts` を study 単位に更新して通す
+- [x] 2 文書の study で抽出 → Evidence の各行に正しい document_id が入り、登録 PDF 由来の quote は登録 PDF 側でアンカリングされる（executeRun.test.ts「複数文書 study」）
+- [x] document_index 欠落応答（jest でモック）→ 要素破棄 + partial_failure 記録（validateAiOutput.test.ts「document_index の検証・解決」）
+- [x] text_only run で no_text_layer 文書が連結から除外され、UI にその旨が出る（planRun.test.ts / extractView.test.ts）
+- [x] `tests/e2e/app-extract.spec.ts` / `app-pilot.spec.ts` を study 単位に更新して通す（全 48 E2E green）
+
+**実機テストの残り**（このフェーズで唯一未実施）: 実 Google アカウントで「2 文書を統合した study → 抽出 → Evidence に 2 文書ぶんの出所 document_id → 検証で各 quote がハイライト」を 1 回通す。複数文書の検証ビューア切替は Phase 3 のため、Phase 2 の実機確認は「抽出が study 単位で走り Evidence.document_id が正しい」ところまで。
 
 ---
 

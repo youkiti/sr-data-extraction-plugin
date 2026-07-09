@@ -221,7 +221,7 @@ async function initApp(
     {
       pilot: {
         selectionInitialized: true,
-        selectedDocumentIds: ['doc-1'],
+        selectedStudyIds: ['study-1'],
         model: 'gemini-test',
         // 既定は履歴読込済み扱い（ExtractionRuns への実ネットワーク読込を抑止）。
         // 履歴復元シナリオのテストだけが history: null を渡して実読込を通す
@@ -239,11 +239,13 @@ async function initApp(
 test('未実行: 文献セレクタ（no_text_layer は選択不可）+ コスト概算 + API キー未設定エラー', async ({ page }) => {
   await initApp(page);
 
-  await expect(page.locator('#pilot-documents li')).toHaveCount(2);
+  await expect(page.locator('#pilot-documents > li')).toHaveCount(2);
   const checkboxes = page.locator('#pilot-documents input[type="checkbox"]');
   await expect(checkboxes.nth(0)).toBeChecked();
   await expect(checkboxes.nth(1)).toBeDisabled();
-  await expect(page.locator('.pilot__doc-note')).toContainText('テキスト層なし');
+  await expect(page.locator('.pilot__doc-note').first()).toContainText(
+    'テキスト層のある文書がありません',
+  );
 
   // 注入した非カタログモデル（gemini-test）は「その他（直接入力）」+ テキスト充填で復元される
   await expect(page.locator('#pilot-model')).toHaveValue('__other__');
