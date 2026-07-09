@@ -4,6 +4,12 @@
 // 検証 UI は S8 と同じ verificationPanel を埋め込む（requirements.md §4.1 S6）
 import type { DocumentRecord } from '../../domain/document';
 import type { ExtractionRun } from '../../domain/extractionRun';
+import {
+  buildStudySelection,
+  documentsForStudies,
+  type StudySelectionItem,
+} from '../../features/documents/studySelection';
+import { studyLabelMap } from '../../features/documents/studyRepository';
 import { planRun } from '../../features/extraction/planRun';
 import { el } from '../ui/dom';
 import { createModelSelect } from '../ui/modelSelect';
@@ -11,8 +17,26 @@ import type { AppState } from '../store';
 import type { ViewContext } from './types';
 import { renderCachedVerificationPanel } from './verificationPanel';
 
-function renderDocumentSelector(state: AppState, ctx: ViewContext): HTMLElement {
-  const { records, loading, loadError } = state.documents;
+const DOCUMENT_ROLE_LABELS: Readonly<Record<DocumentRecord['documentRole'], string>> = {
+  article: '本論文',
+  registration: '試験登録',
+  protocol: 'プロトコル',
+  abstract: '抄録',
+  supplement: '付録',
+  other: 'その他',
+};
+
+/** 現在の documents / studies スライスから study 選択モデルを組む */
+function selectionOf(state: AppState): StudySelectionItem[] {
+  const { records, studies } = state.documents;
+  if (records === null || studies === null) {
+    return [];
+  }
+  return buildStudySelection(studies, records);
+}
+
+function renderStudySelector(state: AppState, ctx: ViewContext): HTMLElement {
+  const { records, studies, loading, loadError } = state.documents;
   if (loadError !== null) {
     return el('p', {
       id: 'pilot-documents-error',
@@ -20,53 +44,67 @@ function renderDocumentSelector(state: AppState, ctx: ViewContext): HTMLElement 
       text: `文献一覧を読み込めませんでした: ${loadError}`,
     });
   }
-  if (records === null || loading) {
+  if (records === null || studies === null || loading) {
     return el('p', { id: 'pilot-documents-loading', text: '文献一覧を読み込んでいます…' });
   }
-  const items = records.map((doc) => {
+  const items = selectionOf(state).map((item) => {
+    const studyId = item.study.studyId;
     const checkbox = el('input', {
-      attributes: { type: 'checkbox', 'aria-label': `${doc.filename} を対象にする` },
+      attributes: { type: 'checkbox', 'aria-label': `${item.study.studyLabel} を対象にする` },
     });
-    checkbox.checked = state.pilot.selectedDocumentIds.includes(doc.documentId);
-    // MVP は text_only モード固定のため、テキスト層なしは選択不可（pdf_native は P1。※Q7）
-    // （実行中は renderSetup 自体を描画しないので running での無効化は不要）
-    checkbox.disabled = doc.textStatus === 'no_text_layer';
+    checkbox.checked = state.pilot.selectedStudyIds.includes(studyId);
+    // MVP は text_only モード固定のため、テキスト層のある文書が無い study は選択不可（※Q7）
+    checkbox.disabled = !item.hasTextLayer;
     checkbox.addEventListener('change', () =>
-      ctx.pilot.onToggleDocument(doc.documentId, checkbox.checked),
+      ctx.pilot.onToggleStudy(studyId, checkbox.checked),
     );
-    const parts: Array<HTMLElement | string> = [
+    const head: Array<HTMLElement | string> = [
       checkbox,
-      el('span', { className: 'pilot__doc-label', text: doc.filename }),
+      el('span', { className: 'pilot__doc-label', text: item.study.studyLabel }),
     ];
-    if (doc.textStatus === 'no_text_layer') {
-      parts.push(
+    if (!item.hasTextLayer) {
+      head.push(
         el('small', {
           className: 'pilot__doc-note',
-          text: 'テキスト層なし（pdf_native モード時のみ選択可・P1）',
+          text: 'テキスト層のある文書がありません（pdf_native モード時のみ選択可・P1）',
         }),
       );
     }
+    const docList = el(
+      'ul',
+      { className: 'pilot__study-docs' },
+      item.documents.map((doc) =>
+        el('li', { className: 'pilot__study-doc' }, [
+          el('span', {
+            className: 'pilot__doc-role',
+            text: DOCUMENT_ROLE_LABELS[doc.documentRole],
+          }),
+          el('span', { className: 'pilot__doc-filename', text: doc.filename }),
+          ...(doc.textStatus === 'no_text_layer'
+            ? [el('small', { className: 'pilot__doc-note', text: 'テキスト層なし' })]
+            : []),
+        ]),
+      ),
+    );
     return el('li', { className: 'pilot__doc-item' }, [
-      el('label', { className: 'pilot__doc-choice' }, parts),
+      el('label', { className: 'pilot__doc-choice' }, head),
+      docList,
     ]);
   });
   if (items.length === 0) {
-    return el('p', { id: 'pilot-documents-empty', text: 'まだ文献がありません。先に #/documents で取り込んでください。' });
+    return el('p', { id: 'pilot-documents-empty', text: 'まだ試験がありません。先に #/documents で取り込んでください。' });
   }
   return el('ul', { id: 'pilot-documents', className: 'pilot__docs' }, items);
 }
 
 function renderEstimate(state: AppState): HTMLElement {
   const fields = state.schema.currentFields;
-  const records = state.documents.records ?? [];
-  const selected = records.filter((doc) =>
-    state.pilot.selectedDocumentIds.includes(doc.documentId),
-  );
+  const selected = documentsForStudies(selectionOf(state), state.pilot.selectedStudyIds);
   if (fields === null || fields.length === 0 || selected.length === 0) {
     return el('p', {
       id: 'pilot-estimate',
       className: 'pilot__estimate',
-      text: 'コスト概算: 対象文献を選択すると表示されます',
+      text: 'コスト概算: 対象 study を選択すると表示されます',
     });
   }
   try {
@@ -126,8 +164,8 @@ function renderSetup(state: AppState, ctx: ViewContext): HTMLElement {
       className: 'pilot__setup-lead',
       text: '新しく 2〜3 本の論文でパイロット抽出を実行します。',
     }),
-    el('h4', { text: '対象文献（2〜3 本を推奨）' }),
-    renderDocumentSelector(state, ctx),
+    el('h4', { text: '対象試験（2〜3 件を推奨）' }),
+    renderStudySelector(state, ctx),
     el('div', { className: 'pilot__model' }, [
       el('label', { text: 'モデル: ', attributes: { for: 'pilot-model' } }),
       modelSelect,
@@ -159,7 +197,7 @@ function renderProgress(state: AppState): HTMLElement {
       progress.totalBatches > 0
         ? Math.floor((progress.completedBatches / progress.totalBatches) * 100)
         : 0;
-    const label = docLabelOf(state.documents.records, progress.documentId);
+    const label = studyLabelOf(state, progress.studyId);
     text = `${progress.completedBatches} / ${progress.totalBatches} バッチ完了（${percent}% / 直近: ${label}${progress.section === null ? '' : ` / ${progress.section}`}）`;
   }
   return el('section', { className: 'pilot__running', attributes: { 'aria-live': 'polite' } }, [
@@ -169,9 +207,9 @@ function renderProgress(state: AppState): HTMLElement {
   ]);
 }
 
-/** 文献の表示ラベル（filename）。study_label は Studies へ移設（v0.10）のため一覧はファイル名で表示する */
-function docLabelOf(records: readonly DocumentRecord[] | null, documentId: string): string {
-  return records?.find((doc) => doc.documentId === documentId)?.filename ?? documentId;
+/** study の表示ラベル（study_label）。見つからなければ study_id */
+function studyLabelOf(state: AppState, studyId: string): string {
+  return studyLabelMap(state.documents.studies ?? []).get(studyId) ?? studyId;
 }
 
 function renderRunSummary(run: ExtractionRun, state: AppState): HTMLElement {
@@ -180,7 +218,7 @@ function renderRunSummary(run: ExtractionRun, state: AppState): HTMLElement {
   if (run.status === 'partial_failure') {
     const failureItems = batchFailures.map((failure) =>
       el('li', {
-        text: `${failure.documentId}${failure.section === null ? '' : ` / ${failure.section}`}: ${failure.reason}（${failure.detail}）`,
+        text: `${studyLabelOf(state, failure.studyId)}${failure.section === null ? '' : ` / ${failure.section}`}: ${failure.reason}（${failure.detail}）`,
       }),
     );
     if (rejectedCount > 0) {

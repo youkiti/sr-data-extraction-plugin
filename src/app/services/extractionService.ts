@@ -133,8 +133,9 @@ export async function runExtraction(
 
   const runId = uuid();
   const startedAt = now();
-  // 実際に実行対象となる study（スキップ分は含めない。plan.skippedDocuments で追跡可能）。
-  // フェーズ 1 は 1 study = 1 文書のため batch.studyId は文書ごとに 1 件
+  // 実際に実行対象となる study（全文書テキスト層なしで除外された study は含めない。
+  // 除外文書は plan.skippedDocuments で追跡可能）。1 バッチ = 1 study だが section 分割で
+  // 同一 study が複数バッチになりうるため一意化する
   const studyIds = [...new Set(plan.batches.map((batch) => batch.studyId))];
   const runBase = {
     runId,
@@ -163,7 +164,13 @@ export async function runExtraction(
   );
 
   const result = await executeRun(
-    { runId, plan, fields: params.fields, protocolContext: params.protocolContext },
+    {
+      runId,
+      plan,
+      fields: params.fields,
+      documents: params.documents,
+      protocolContext: params.protocolContext,
+    },
     {
       provider,
       loadDocumentPages: deps.loadDocumentPages,

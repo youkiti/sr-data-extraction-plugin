@@ -3,10 +3,10 @@ import {
   initExtractSelection,
   loadExtractTargets,
   requestExtractRun,
-  retryExtractDocument,
+  retryExtractStudy,
   runExtract,
   setExtractModel,
-  toggleExtractDocument,
+  toggleExtractStudy,
   type ExtractServiceDeps,
 } from '../../../../src/app/services/extractService';
 import { runExtraction } from '../../../../src/app/services/extractionService';
@@ -16,7 +16,9 @@ import type { DocumentRecord } from '../../../../src/domain/document';
 import type { Evidence } from '../../../../src/domain/evidence';
 import type { ExtractionRun } from '../../../../src/domain/extractionRun';
 import type { SchemaField } from '../../../../src/domain/schemaField';
+import type { StudyRecord } from '../../../../src/domain/study';
 import { readDocuments } from '../../../../src/features/documents/documentRepository';
+import { readStudies } from '../../../../src/features/documents/studyRepository';
 import { readRunStudyCoverage } from '../../../../src/features/extraction/runRepository';
 import { ensureChildFolder } from '../../../../src/lib/google/drive';
 
@@ -29,6 +31,10 @@ jest.mock('../../../../src/app/services/schemaService', () => ({
 jest.mock('../../../../src/features/documents/documentRepository', () => ({
   readDocuments: jest.fn(),
 }));
+jest.mock('../../../../src/features/documents/studyRepository', () => ({
+  ...jest.requireActual('../../../../src/features/documents/studyRepository'),
+  readStudies: jest.fn(),
+}));
 jest.mock('../../../../src/features/extraction/runRepository', () => ({
   readRunStudyCoverage: jest.fn(),
 }));
@@ -39,17 +45,20 @@ jest.mock('../../../../src/lib/google/drive', () => ({
 const runExtractionMock = runExtraction as jest.MockedFunction<typeof runExtraction>;
 const resolveProtocolMock = resolveProtocol as jest.MockedFunction<typeof resolveProtocol>;
 const readDocumentsMock = readDocuments as jest.MockedFunction<typeof readDocuments>;
-const readCoverageMock = readRunStudyCoverage as jest.MockedFunction<
-  typeof readRunStudyCoverage
->;
+const readStudiesMock = readStudies as jest.MockedFunction<typeof readStudies>;
+const readCoverageMock = readRunStudyCoverage as jest.MockedFunction<typeof readRunStudyCoverage>;
 const ensureChildFolderMock = ensureChildFolder as jest.MockedFunction<typeof ensureChildFolder>;
 
+/** doc-1 → study-doc-1（1 文書 = 1 study の既定） */
+function studyIdOf(documentId: string): string {
+  return `study-${documentId}`;
+}
+
 function makeDocument(overrides: Partial<DocumentRecord> = {}): DocumentRecord {
-  // フェーズ 1 は 1 文書 = 1 study。文書ごとに一意な study_id を自動採番する
   const documentId = overrides.documentId ?? 'doc-1';
   return {
     documentId,
-    studyId: `study-${documentId}`,
+    studyId: studyIdOf(documentId),
     documentRole: 'article',
     driveFileId: 'drive-1',
     sourceFileId: 'src-1',
@@ -65,6 +74,24 @@ function makeDocument(overrides: Partial<DocumentRecord> = {}): DocumentRecord {
     note: null,
     ...overrides,
   };
+}
+
+function makeStudy(studyId: string, overrides: Partial<StudyRecord> = {}): StudyRecord {
+  return {
+    studyId,
+    studyLabel: `label-${studyId}`,
+    registrationId: null,
+    createdAt: 't0',
+    createdBy: 'me@example.com',
+    note: null,
+    ...overrides,
+  };
+}
+
+/** documents から一意 study を導出する（テスト用の既定 studies） */
+function studiesFor(documents: readonly DocumentRecord[]): StudyRecord[] {
+  const ids = [...new Set(documents.map((d) => d.studyId))];
+  return ids.map((id) => makeStudy(id));
 }
 
 function makeField(overrides: Partial<SchemaField> = {}): SchemaField {
@@ -175,6 +202,7 @@ function makeDeps(overrides: Partial<ExtractServiceDeps> = {}): ExtractServiceDe
 function makeStore(patch: {
   withProject?: boolean;
   documents?: DocumentRecord[] | null;
+  studies?: StudyRecord[] | null;
   fields?: SchemaField[] | null;
   pilotModel?: string;
   schemaModel?: string;
@@ -189,7 +217,10 @@ function makeStore(patch: {
       name: 'テスト SR',
     };
   }
-  state.documents = { ...state.documents, records: patch.documents ?? null };
+  const records = patch.documents ?? null;
+  const studies =
+    patch.studies !== undefined ? patch.studies : records === null ? null : studiesFor(records);
+  state.documents = { ...state.documents, records, studies };
   state.schema = {
     ...state.schema,
     currentFields: patch.fields ?? null,
@@ -211,11 +242,11 @@ beforeEach(() => {
   }));
   readCoverageMock.mockResolvedValue({ extracted: new Set(), interrupted: new Set() });
   readDocumentsMock.mockResolvedValue([]);
+  readStudiesMock.mockResolvedValue([]);
 });
 
 describe('loadExtractTargets', () => {
-  test('ExtractionRuns の study カバレッジを document へ写像する（抽出済み + 中断 run の残り）', async () => {
-    // カバレッジは study_id で返るため、documents を study_id で突き合わせて document 単位へ落とす
+  test('ExtractionRuns の study カバレッジをそのまま抽出済み / 中断 study にする', async () => {
     readCoverageMock.mockResolvedValue({
       extracted: new Set(['study-doc-1']),
       interrupted: new Set(['study-doc-2']),
@@ -224,8 +255,8 @@ describe('loadExtractTargets', () => {
       documents: [makeDocument({ documentId: 'doc-1' }), makeDocument({ documentId: 'doc-2' })],
     });
     await loadExtractTargets(store, makeDeps());
-    expect(store.getState().extract.extractedDocumentIds).toEqual(['doc-1']);
-    expect(store.getState().extract.interruptedDocumentIds).toEqual(['doc-2']);
+    expect(store.getState().extract.extractedStudyIds).toEqual(['study-doc-1']);
+    expect(store.getState().extract.interruptedStudyIds).toEqual(['study-doc-2']);
     expect(store.getState().extract.loading).toBe(false);
   });
 
@@ -236,11 +267,20 @@ describe('loadExtractTargets', () => {
   });
 
   test('読込済みは no-op、force 指定で再読込する', async () => {
-    const store = makeStore({ extract: { extractedDocumentIds: [] } });
+    const store = makeStore({ extract: { extractedStudyIds: [] } });
     await loadExtractTargets(store, makeDeps());
     expect(readCoverageMock).not.toHaveBeenCalled();
     await loadExtractTargets(store, makeDeps(), { force: true });
     expect(readCoverageMock).toHaveBeenCalledTimes(1);
+  });
+
+  test('documents / studies 未読込なら読み込んで documents スライスへ反映する', async () => {
+    readDocumentsMock.mockResolvedValue([makeDocument()]);
+    readStudiesMock.mockResolvedValue([makeStudy('study-doc-1')]);
+    const store = makeStore({ documents: null });
+    await loadExtractTargets(store, makeDeps());
+    expect(store.getState().documents.records?.map((d) => d.documentId)).toEqual(['doc-1']);
+    expect(store.getState().documents.studies?.map((s) => s.studyId)).toEqual(['study-doc-1']);
   });
 
   test('読込失敗は loadError に理由を入れる', async () => {
@@ -253,7 +293,7 @@ describe('loadExtractTargets', () => {
 });
 
 describe('initExtractSelection', () => {
-  test('テキスト層があり未抽出の全件を既定選択し、S6 のモデル入力を引き継ぐ', () => {
+  test('テキスト層があり未抽出の全 study を既定選択し、S6 のモデル入力を引き継ぐ', () => {
     const docs = [
       makeDocument({ documentId: 'd1' }),
       makeDocument({ documentId: 'd2', textStatus: 'no_text_layer' }),
@@ -263,10 +303,10 @@ describe('initExtractSelection', () => {
     const store = makeStore({
       documents: docs,
       pilotModel: 'gemini-from-s6',
-      extract: { extractedDocumentIds: ['d3'] },
+      extract: { extractedStudyIds: [studyIdOf('d3')] },
     });
     initExtractSelection(store);
-    expect(store.getState().extract.selectedDocumentIds).toEqual(['d1', 'd4']);
+    expect(store.getState().extract.selectedStudyIds).toEqual([studyIdOf('d1'), studyIdOf('d4')]);
     expect(store.getState().extract.model).toBe('gemini-from-s6');
     expect(store.getState().extract.selectionInitialized).toBe(true);
   });
@@ -274,7 +314,7 @@ describe('initExtractSelection', () => {
   test('S6 のモデル入力がなければ S5 を引き継ぎ、ユーザー入力済みは上書きしない', () => {
     const base = {
       documents: [makeDocument()],
-      extract: { extractedDocumentIds: [] as string[] },
+      extract: { extractedStudyIds: [] as string[] },
     };
     const fromSchema = makeStore({ ...base, schemaModel: 'gemini-from-s5' });
     initExtractSelection(fromSchema);
@@ -292,12 +332,12 @@ describe('initExtractSelection', () => {
   test('初期化済み・文献未読込・抽出済み未読込のときは何もしない', () => {
     const initialized = makeStore({
       documents: [makeDocument()],
-      extract: { selectionInitialized: true, extractedDocumentIds: [] },
+      extract: { selectionInitialized: true, extractedStudyIds: [] },
     });
     initExtractSelection(initialized);
-    expect(initialized.getState().extract.selectedDocumentIds).toEqual([]);
+    expect(initialized.getState().extract.selectedStudyIds).toEqual([]);
 
-    const noDocs = makeStore({ documents: null, extract: { extractedDocumentIds: [] } });
+    const noDocs = makeStore({ documents: null, extract: { extractedStudyIds: [] } });
     initExtractSelection(noDocs);
     expect(noDocs.getState().extract.selectionInitialized).toBe(false);
 
@@ -307,15 +347,15 @@ describe('initExtractSelection', () => {
   });
 });
 
-describe('toggleExtractDocument / setExtractModel', () => {
+describe('toggleExtractStudy / setExtractModel', () => {
   test('選択・重複追加・解除（上限なし）', () => {
-    const store = makeStore({ extract: { selectedDocumentIds: ['d1', 'd2', 'd3'] } });
-    toggleExtractDocument(store, 'd4', true);
-    expect(store.getState().extract.selectedDocumentIds).toEqual(['d1', 'd2', 'd3', 'd4']);
-    toggleExtractDocument(store, 'd4', true); // 重複は無視
-    expect(store.getState().extract.selectedDocumentIds).toEqual(['d1', 'd2', 'd3', 'd4']);
-    toggleExtractDocument(store, 'd2', false);
-    expect(store.getState().extract.selectedDocumentIds).toEqual(['d1', 'd3', 'd4']);
+    const store = makeStore({ extract: { selectedStudyIds: ['s1', 's2', 's3'] } });
+    toggleExtractStudy(store, 's4', true);
+    expect(store.getState().extract.selectedStudyIds).toEqual(['s1', 's2', 's3', 's4']);
+    toggleExtractStudy(store, 's4', true); // 重複は無視
+    expect(store.getState().extract.selectedStudyIds).toEqual(['s1', 's2', 's3', 's4']);
+    toggleExtractStudy(store, 's2', false);
+    expect(store.getState().extract.selectedStudyIds).toEqual(['s1', 's3', 's4']);
   });
 
   test('モデル名は trim して保存する', () => {
@@ -329,7 +369,7 @@ describe('requestExtractRun / cancelExtractConfirm', () => {
   test('検証を通れば確認カードを開く（runError はクリア）', async () => {
     const store = makeStore({
       fields: [makeField()],
-      extract: { selectedDocumentIds: ['doc-1'], model: 'gemini-test', runError: '前回のエラー' },
+      extract: { selectedStudyIds: ['study-doc-1'], model: 'gemini-test', runError: '前回のエラー' },
     });
     await requestExtractRun(store, makeDeps());
     expect(store.getState().extract.confirming).toBe(true);
@@ -341,32 +381,32 @@ describe('requestExtractRun / cancelExtractConfirm', () => {
     await requestExtractRun(running, makeDeps());
     expect(running.getState().extract.confirming).toBe(false);
 
-    const retrying = makeStore({ extract: { retryingDocumentId: 'doc-1' } });
+    const retrying = makeStore({ extract: { retryingStudyId: 'study-doc-1' } });
     await requestExtractRun(retrying, makeDeps());
     expect(retrying.getState().extract.confirming).toBe(false);
   });
 
-  test('スキーマ未読込（null / 空）・対象 0 本・モデル未入力・API キー未設定はインラインエラー', async () => {
+  test('スキーマ未読込（null / 空）・対象 0 件・モデル未入力・API キー未設定はインラインエラー', async () => {
     for (const fields of [null, [] as SchemaField[]]) {
       const store = makeStore({ fields });
       await requestExtractRun(store, makeDeps());
       expect(store.getState().extract.runError).toContain('確定済みスキーマを読み込めていません');
     }
 
-    const noSelection = makeStore({ fields: [makeField()], extract: { selectedDocumentIds: [] } });
+    const noSelection = makeStore({ fields: [makeField()], extract: { selectedStudyIds: [] } });
     await requestExtractRun(noSelection, makeDeps());
-    expect(noSelection.getState().extract.runError).toContain('対象文献を 1 本以上');
+    expect(noSelection.getState().extract.runError).toContain('対象 study を 1 件以上');
 
     const noModel = makeStore({
       fields: [makeField()],
-      extract: { selectedDocumentIds: ['doc-1'], model: '' },
+      extract: { selectedStudyIds: ['study-doc-1'], model: '' },
     });
     await requestExtractRun(noModel, makeDeps());
     expect(noModel.getState().extract.runError).toContain('モデルを選択してください');
 
     const noKey = makeStore({
       fields: [makeField()],
-      extract: { selectedDocumentIds: ['doc-1'], model: 'gemini-test' },
+      extract: { selectedStudyIds: ['study-doc-1'], model: 'gemini-test' },
     });
     await requestExtractRun(noKey, makeDeps({ loadApiKey: jest.fn().mockResolvedValue(null) }));
     expect(noKey.getState().extract.runError).toContain('Gemini API キーが未設定です');
@@ -381,15 +421,17 @@ describe('requestExtractRun / cancelExtractConfirm', () => {
 });
 
 describe('runExtract', () => {
-  function makeReadyStore(extra: Partial<ReturnType<typeof createInitialState>['extract']> = {}): Store {
+  function makeReadyStore(
+    extra: Partial<ReturnType<typeof createInitialState>['extract']> = {},
+  ): Store {
     return makeStore({
       documents: [makeDocument(), makeDocument({ documentId: 'doc-2' })],
       fields: [makeField()],
       extract: {
-        selectedDocumentIds: ['doc-1'],
+        selectedStudyIds: ['study-doc-1'],
         model: 'gemini-test',
         confirming: true,
-        extractedDocumentIds: [],
+        extractedStudyIds: [],
         ...extra,
       },
     });
@@ -399,7 +441,7 @@ describe('runExtract', () => {
     await runExtract(makeStore({ withProject: false }), makeDeps());
     await runExtract(makeStore({ fields: [makeField()], extract: { running: true } }), makeDeps());
     await runExtract(
-      makeStore({ fields: [makeField()], extract: { retryingDocumentId: 'doc-1' } }),
+      makeStore({ fields: [makeField()], extract: { retryingStudyId: 'study-doc-1' } }),
       makeDeps(),
     );
     await runExtract(makeStore({ fields: null }), makeDeps());
@@ -430,6 +472,7 @@ describe('runExtract', () => {
       model: 'gemini-test',
       protocolContext: 'PROTOCOL TEXT',
     });
+    // 選択 study（study-doc-1）配下の文書だけが対象
     expect(params.documents.map((doc) => doc.documentId)).toEqual(['doc-1']);
 
     const state = store.getState();
@@ -437,56 +480,69 @@ describe('runExtract', () => {
     expect(state.extract.running).toBe(false);
     expect(state.extract.confirming).toBe(false);
     expect(state.extract.run?.runId).toBe('run-1');
-    expect(state.extract.extractedDocumentIds).toEqual(['doc-1']);
+    expect(state.extract.extractedStudyIds).toEqual(['study-doc-1']);
     // 進捗イベントなしでは初期化直後の待機中のまま（実運用では executeRun が全バッチを通知する）
-    expect(state.extract.docRows).toEqual([
-      { documentId: 'doc-1', status: 'queued', completedBatches: 0, totalBatches: 1, detail: null },
+    expect(state.extract.studyRows).toEqual([
+      {
+        studyId: 'study-doc-1',
+        status: 'queued',
+        completedBatches: 0,
+        totalBatches: 1,
+        detail: null,
+      },
     ]);
   });
 
-  test('documents 未読込なら readDocuments で解決する', async () => {
+  test('documents 未読込なら readDocuments / readStudies で解決する', async () => {
     const store = makeStore({
       documents: null,
       fields: [makeField()],
       extract: {
-        selectedDocumentIds: ['doc-1'],
+        selectedStudyIds: ['study-doc-1'],
         model: 'gemini-test',
-        extractedDocumentIds: null,
+        extractedStudyIds: null,
       },
     });
     readDocumentsMock.mockResolvedValue([makeDocument()]);
+    readStudiesMock.mockResolvedValue([makeStudy('study-doc-1')]);
     runExtractionMock.mockResolvedValue(makeOutcome());
     await runExtract(store, makeDeps());
     expect(readDocumentsMock).toHaveBeenCalledWith('sheet-1', expect.anything());
     expect(store.getState().extract.run?.runId).toBe('run-1');
   });
 
-  test('進捗コールバックが progress と docRows を更新し、失敗バッチは failed 行になる', async () => {
-    const store = makeReadyStore({ selectedDocumentIds: ['doc-1', 'doc-2'] });
+  test('進捗コールバックが progress と studyRows を更新し、失敗バッチは failed 行になる', async () => {
+    const store = makeReadyStore({ selectedStudyIds: ['study-doc-1', 'study-doc-2'] });
     let observedRows: unknown = null;
     runExtractionMock.mockImplementation(async (params) => {
       params.onProgress?.({
         totalBatches: 2,
         completedBatches: 1,
-        documentId: 'doc-1',
+        studyId: 'study-doc-1',
         section: null,
         failure: null,
       });
       params.onProgress?.({
         totalBatches: 2,
         completedBatches: 2,
-        documentId: 'doc-2',
+        studyId: 'study-doc-2',
         section: null,
-        failure: { documentId: 'doc-2', section: null, reason: 'api_error', detail: '500' },
+        failure: { studyId: 'study-doc-2', section: null, reason: 'api_error', detail: '500' },
       });
-      observedRows = store.getState().extract.docRows;
+      observedRows = store.getState().extract.studyRows;
       return makeOutcome({ status: 'partial_failure', studyIds: ['study-doc-1', 'study-doc-2'] });
     });
     await runExtract(store, makeDeps());
     expect(observedRows).toEqual([
-      { documentId: 'doc-1', status: 'done', completedBatches: 1, totalBatches: 1, detail: null },
       {
-        documentId: 'doc-2',
+        studyId: 'study-doc-1',
+        status: 'done',
+        completedBatches: 1,
+        totalBatches: 1,
+        detail: null,
+      },
+      {
+        studyId: 'study-doc-2',
         status: 'failed',
         completedBatches: 1,
         totalBatches: 1,
@@ -494,7 +550,7 @@ describe('runExtract', () => {
       },
     ]);
     expect(store.getState().extract.progress).toBeNull();
-    expect(store.getState().extract.docRows).toHaveLength(2);
+    expect(store.getState().extract.studyRows).toHaveLength(2);
   });
 
   test('応答要素の破棄件数を rejectedCount に反映する', async () => {
@@ -527,20 +583,26 @@ describe('runExtract', () => {
   });
 });
 
-describe('retryExtractDocument', () => {
+describe('retryExtractStudy', () => {
   function makeFailedStore(): Store {
     return makeStore({
       documents: [makeDocument(), makeDocument({ documentId: 'doc-2' })],
       fields: [makeField()],
       extract: {
-        selectedDocumentIds: ['doc-1', 'doc-2'],
+        selectedStudyIds: ['study-doc-1', 'study-doc-2'],
         model: 'gemini-test',
-        extractedDocumentIds: ['doc-1'],
+        extractedStudyIds: ['study-doc-1'],
         run: makeRun({ status: 'partial_failure' }),
-        docRows: [
-          { documentId: 'doc-1', status: 'done', completedBatches: 1, totalBatches: 1, detail: null },
+        studyRows: [
           {
-            documentId: 'doc-2',
+            studyId: 'study-doc-1',
+            status: 'done',
+            completedBatches: 1,
+            totalBatches: 1,
+            detail: null,
+          },
+          {
+            studyId: 'study-doc-2',
             status: 'failed',
             completedBatches: 1,
             totalBatches: 1,
@@ -553,24 +615,28 @@ describe('retryExtractDocument', () => {
   }
 
   test('プロジェクト未選択・実行中・再試行中・スキーマ未読込は何もしない', async () => {
-    await retryExtractDocument(makeStore({ withProject: false }), makeDeps(), 'doc-2');
-    await retryExtractDocument(
+    await retryExtractStudy(makeStore({ withProject: false }), makeDeps(), 'study-doc-2');
+    await retryExtractStudy(
       makeStore({ fields: [makeField()], extract: { running: true } }),
       makeDeps(),
-      'doc-2',
+      'study-doc-2',
     );
-    await retryExtractDocument(
-      makeStore({ fields: [makeField()], extract: { retryingDocumentId: 'doc-1' } }),
+    await retryExtractStudy(
+      makeStore({ fields: [makeField()], extract: { retryingStudyId: 'study-doc-1' } }),
       makeDeps(),
-      'doc-2',
+      'study-doc-2',
     );
-    await retryExtractDocument(makeStore({ fields: null }), makeDeps(), 'doc-2');
+    await retryExtractStudy(makeStore({ fields: null }), makeDeps(), 'study-doc-2');
     expect(runExtractionMock).not.toHaveBeenCalled();
   });
 
   test('API キー未設定はインラインエラー', async () => {
     const store = makeFailedStore();
-    await retryExtractDocument(store, makeDeps({ loadApiKey: jest.fn().mockResolvedValue(null) }), 'doc-2');
+    await retryExtractStudy(
+      store,
+      makeDeps({ loadApiKey: jest.fn().mockResolvedValue(null) }),
+      'study-doc-2',
+    );
     expect(store.getState().extract.runError).toContain('Gemini API キーが未設定です');
     expect(runExtractionMock).not.toHaveBeenCalled();
   });
@@ -581,13 +647,13 @@ describe('retryExtractDocument', () => {
       params.onProgress?.({
         totalBatches: 1,
         completedBatches: 1,
-        documentId: 'doc-2',
+        studyId: 'study-doc-2',
         section: null,
         failure: null,
       });
       return makeOutcome({ studyIds: ['study-doc-2'] });
     });
-    await retryExtractDocument(store, makeDeps(), 'doc-2');
+    await retryExtractStudy(store, makeDeps(), 'study-doc-2');
 
     const [params] = runExtractionMock.mock.calls[0] as unknown as [
       Parameters<typeof runExtraction>[0],
@@ -596,12 +662,24 @@ describe('retryExtractDocument', () => {
     expect(params.documents.map((doc) => doc.documentId)).toEqual(['doc-2']);
 
     const state = store.getState();
-    expect(state.extract.retryingDocumentId).toBeNull();
-    expect(state.extract.docRows).toEqual([
-      { documentId: 'doc-1', status: 'done', completedBatches: 1, totalBatches: 1, detail: null },
-      { documentId: 'doc-2', status: 'done', completedBatches: 1, totalBatches: 1, detail: null },
+    expect(state.extract.retryingStudyId).toBeNull();
+    expect(state.extract.studyRows).toEqual([
+      {
+        studyId: 'study-doc-1',
+        status: 'done',
+        completedBatches: 1,
+        totalBatches: 1,
+        detail: null,
+      },
+      {
+        studyId: 'study-doc-2',
+        status: 'done',
+        completedBatches: 1,
+        totalBatches: 1,
+        detail: null,
+      },
     ]);
-    expect(state.extract.extractedDocumentIds?.sort()).toEqual(['doc-1', 'doc-2']);
+    expect(state.extract.extractedStudyIds?.sort()).toEqual(['study-doc-1', 'study-doc-2']);
     expect(state.counts).toMatchObject({ evidenceRows: 1, dataRows: 1 });
   });
 
@@ -609,34 +687,40 @@ describe('retryExtractDocument', () => {
     const store = makeFailedStore();
     let observedRows: unknown = null;
     runExtractionMock.mockImplementation(async () => {
-      // 実行中（進捗イベント前）のスナップショット: 計画時の待機中は「実行中」へ読み替えられている
-      observedRows = store.getState().extract.docRows;
-      return makeOutcome({ status: 'partial_failure', studyIds: ['study-doc-2'], rejectedItems: [{}] });
+      observedRows = store.getState().extract.studyRows;
+      return makeOutcome({
+        status: 'partial_failure',
+        studyIds: ['study-doc-2'],
+        rejectedItems: [{}],
+      });
     });
-    await retryExtractDocument(store, makeDeps(), 'doc-2');
+    await retryExtractStudy(store, makeDeps(), 'study-doc-2');
     expect((observedRows as { status: string }[])[1]?.status).toBe('running');
     expect(store.getState().extract.rejectedCount).toBe(2);
   });
 
-  test('文献が見つからない・実行例外は対象行を失敗に戻して runError を出す', async () => {
+  test('study が見つからない・実行例外は対象行を失敗に戻して runError を出す', async () => {
     const missing = makeFailedStore();
     readDocumentsMock.mockResolvedValue([]);
-    missing.setState({ documents: { ...missing.getState().documents, records: null } });
-    await retryExtractDocument(missing, makeDeps(), 'doc-2');
-    expect(missing.getState().extract.runError).toContain('doc-2 が見つかりません');
-    expect(missing.getState().extract.docRows[1]).toMatchObject({ status: 'failed' });
-    expect(missing.getState().extract.retryingDocumentId).toBeNull();
+    readStudiesMock.mockResolvedValue([]);
+    missing.setState({
+      documents: { ...missing.getState().documents, records: null, studies: null },
+    });
+    await retryExtractStudy(missing, makeDeps(), 'study-doc-2');
+    expect(missing.getState().extract.runError).toContain('study-doc-2 の文書が見つかりません');
+    expect(missing.getState().extract.studyRows[1]).toMatchObject({ status: 'failed' });
+    expect(missing.getState().extract.retryingStudyId).toBeNull();
 
     const failing = makeFailedStore();
     runExtractionMock.mockRejectedValue(new Error('boom'));
-    await retryExtractDocument(failing, makeDeps(), 'doc-2');
-    expect(failing.getState().extract.docRows[1]).toEqual({
-      documentId: 'doc-2',
+    await retryExtractStudy(failing, makeDeps(), 'study-doc-2');
+    expect(failing.getState().extract.studyRows[1]).toEqual({
+      studyId: 'study-doc-2',
       status: 'failed',
       completedBatches: 0,
       totalBatches: 0,
       detail: 'boom',
     });
-    expect(failing.getState().extract.retryingDocumentId).toBeNull();
+    expect(failing.getState().extract.retryingStudyId).toBeNull();
   });
 });

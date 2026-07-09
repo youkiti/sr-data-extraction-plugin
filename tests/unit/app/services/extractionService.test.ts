@@ -213,7 +213,7 @@ describe('runExtraction', () => {
     expect(promptCall?.parentId).toBe('folder-logs');
     expect(promptCall?.mimeType).toBe('application/json');
     expect(promptCall?.name).toMatch(/\.prompt\.json$/);
-    expect(JSON.parse(promptCall?.content ?? '{}').promptVersion).toBe(1); // EXTRACT_DATA_PROMPT_VERSION
+    expect(JSON.parse(promptCall?.content ?? '{}').promptVersion).toBe(2); // EXTRACT_DATA_PROMPT_VERSION
     expect(mockedUpload.mock.calls[1]?.[0].name).toMatch(/\.response\.json$/);
 
     expect(mockedAppendLog).toHaveBeenCalledTimes(1);
@@ -251,7 +251,7 @@ describe('runExtraction', () => {
     });
     expect(outcome.run.status).toBe('partial_failure');
     expect(outcome.result.batchFailures).toEqual([
-      { documentId: 'doc-1', section: null, reason: 'load_failed', detail: 'drive down' },
+      { studyId: 'study-1', section: null, reason: 'load_failed', detail: 'drive down' },
     ]);
     expect(outcome.run.provider).toBe('gemini');
     expect(outcome.run.runId).toMatch(/^[0-9a-f]{8}-/); // 既定 UUID 発番

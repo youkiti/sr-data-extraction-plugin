@@ -964,6 +964,54 @@
   color: var(--color-text-muted);
 }
 
+/* study 単位の対象選択（v0.10 フェーズ 2） */
+.extract__studies {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.extract__study-choice {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.extract__study-label {
+  font-weight: 700;
+}
+
+.extract__study-docs,
+.pilot__study-docs {
+  list-style: none;
+  margin: 4px 0 0 26px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.extract__study-doc,
+.pilot__study-doc {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.extract__doc-role,
+.pilot__doc-role {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  padding: 1px 8px;
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
 .extract__model {
   margin-bottom: 12px;
 }

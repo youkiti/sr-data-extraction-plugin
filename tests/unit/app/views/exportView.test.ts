@@ -52,7 +52,7 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<ExportViewCallbac
         onStartNewVersion: jest.fn(),
       },
       pilot: {
-        onToggleDocument: jest.fn(),
+        onToggleStudy: jest.fn(),
         onChangeModel: jest.fn(),
         onRun: jest.fn(),
         onSelectRun: jest.fn(),
@@ -63,12 +63,12 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<ExportViewCallbac
         onArmConfirm: jest.fn(),
       },
       extract: {
-        onToggleDocument: jest.fn(),
+        onToggleStudy: jest.fn(),
         onChangeModel: jest.fn(),
         onRequestRun: jest.fn(),
         onConfirmRun: jest.fn(),
         onCancelConfirm: jest.fn(),
-        onRetryDocument: jest.fn(),
+        onRetryStudy: jest.fn(),
         onReloadTargets: jest.fn(),
       },
       verify: {

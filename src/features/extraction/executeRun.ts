@@ -7,6 +7,7 @@
 // - ExtractionRuns 行の作成・status/tokens の書き込み、ai annotator 行への転記（§4.3）は
 //   呼び出し側（サービス層）の責務。本関数は素材（ExecuteRunResult）を返すだけ
 import type { NormalizedPage } from '../../domain/anchor';
+import type { DocumentRecord } from '../../domain/document';
 import type { Evidence } from '../../domain/evidence';
 import type { RunStatus } from '../../domain/extractionRun';
 import type { SchemaField } from '../../domain/schemaField';
@@ -21,6 +22,7 @@ import {
   EXTRACT_DATA_SYSTEM_PROMPT,
   buildExtractDataUserPrompt,
   parseExtractDataResponse,
+  type ExtractDataDocument,
   type ExtractDataPage,
 } from './skills/extractData';
 import type {
@@ -40,7 +42,8 @@ export type BatchFailureReason =
 
 /** バッチ単位の失敗。partial_failure の内訳として UI / ログに出す */
 export interface BatchFailure {
-  documentId: string;
+  /** 失敗した抽出単位である study（バッチ = 1 study） */
+  studyId: string;
   section: string | null;
   reason: BatchFailureReason;
   detail: string;
@@ -48,7 +51,7 @@ export interface BatchFailure {
 
 /** validateAiOutput が破棄した要素に、どのバッチ由来かを付与したもの */
 export interface RejectedBatchItem extends RejectedAiItem {
-  documentId: string;
+  studyId: string;
   section: string | null;
 }
 
@@ -56,10 +59,10 @@ export interface RunProgress {
   totalBatches: number;
   /** 処理済みバッチ数（失敗したバッチも数える） */
   completedBatches: number;
-  /** 直近に処理したバッチ */
-  documentId: string;
+  /** 直近に処理したバッチの study */
+  studyId: string;
   section: string | null;
-  /** 直近のバッチが失敗していればその内訳（S7 の document 単位進捗リストの素材）。成功なら null */
+  /** 直近のバッチが失敗していればその内訳（S7 の study 単位進捗リストの素材）。成功なら null */
   failure: BatchFailure | null;
 }
 
@@ -82,6 +85,12 @@ export interface ExecuteRunInput {
   plan: RunPlan;
   /** 当該 schema_version の抽出項目（plan.batches の fieldIds をここから解決する） */
   fields: readonly SchemaField[];
+  /**
+   * 抽出対象の文書メタ（plan.batches の documentIds をここから role / filename へ解決し、
+   * プロンプトの連結見出し `=== Document i/N [role] filename ===` に使う）。
+   * plan に現れる全 document_id を含むこと
+   */
+  documents: readonly DocumentRecord[];
   /** planRun へ渡したものと同じ補助コンテキスト */
   protocolContext?: string | null;
 }
@@ -167,10 +176,19 @@ function buildEvidenceRow(
   };
 }
 
-/** 文献本文のロード結果（document 単位で 1 回だけロードし、バッチ間で使い回す） */
+/** 文献本文のロード結果（document 単位で 1 回だけロードし、study / バッチ間で使い回す） */
 type LoadedDocument =
   | { kind: 'ok'; pages: ExtractDataPage[]; normalizedPages: NormalizedPage[] }
   | { kind: 'error'; detail: string };
+
+/** 連結対象として実際にロードできた 1 文書（document_index 順に並ぶ） */
+interface ResolvedDocument {
+  documentId: string;
+  role: ExtractDataDocument['role'];
+  filename: string;
+  pages: ExtractDataPage[];
+  normalizedPages: NormalizedPage[];
+}
 
 export async function executeRun(
   input: ExecuteRunInput,
@@ -181,10 +199,16 @@ export async function executeRun(
     throw new Error('executeRun に plan と異なる schema_version の項目が渡されています');
   }
   const fieldById = new Map(input.fields.map((field) => [field.fieldId, field]));
+  const documentById = new Map(input.documents.map((doc) => [doc.documentId, doc]));
   for (const batch of input.plan.batches) {
     for (const fieldId of batch.fieldIds) {
       if (!fieldById.has(fieldId)) {
         throw new Error(`plan の field_id "${fieldId}" が fields に見つかりません`);
+      }
+    }
+    for (const documentId of batch.documentIds) {
+      if (!documentById.has(documentId)) {
+        throw new Error(`plan の document_id "${documentId}" が documents に見つかりません`);
       }
     }
   }
@@ -199,9 +223,36 @@ export async function executeRun(
   let modelVersion: string | null = null;
   let completedBatches = 0;
 
+  /** 1 文書を（未ロードなら）ロードしてキャッシュする */
+  const loadDocument = async (documentId: string): Promise<LoadedDocument> => {
+    const cached = loadedDocuments.get(documentId);
+    if (cached !== undefined) {
+      return cached;
+    }
+    let loaded: LoadedDocument;
+    try {
+      const pages = await deps.loadDocumentPages(documentId);
+      loaded =
+        pages.length === 0
+          ? { kind: 'error', detail: '本文ページが 0 件です（extracted_texts の取得結果が空）' }
+          : {
+              kind: 'ok',
+              pages,
+              normalizedPages: pages.map((page) => ({
+                page: page.page,
+                text: normalizeText(page.text),
+              })),
+            };
+    } catch (err) {
+      loaded = { kind: 'error', detail: toDetail(err) };
+    }
+    loadedDocuments.set(documentId, loaded);
+    return loaded;
+  };
+
   const failBatch = (batch: PlannedBatch, reason: BatchFailureReason, detail: string): BatchFailure => {
     const failure: BatchFailure = {
-      documentId: batch.documentId,
+      studyId: batch.studyId,
       section: batch.section,
       reason,
       detail,
@@ -214,46 +265,53 @@ export async function executeRun(
     deps.onProgress?.({
       totalBatches: input.plan.batches.length,
       completedBatches,
-      documentId: batch.documentId,
+      studyId: batch.studyId,
       section: batch.section,
       failure,
     });
   };
 
   for (const batch of input.plan.batches) {
-    let loaded = loadedDocuments.get(batch.documentId);
-    if (loaded === undefined) {
-      try {
-        const pages = await deps.loadDocumentPages(batch.documentId);
-        loaded =
-          pages.length === 0
-            ? { kind: 'error', detail: '本文ページが 0 件です（extracted_texts の取得結果が空）' }
-            : {
-                kind: 'ok',
-                pages,
-                normalizedPages: pages.map((page) => ({
-                  page: page.page,
-                  text: normalizeText(page.text),
-                })),
-              };
-      } catch (err) {
-        loaded = { kind: 'error', detail: toDetail(err) };
+    // study の全文書を document_index 順にロードする。ロードできた文書だけを連結対象にし、
+    // その順序が document_index（1 始まり）になる。1 件もロードできなければバッチ失敗
+    const resolved: ResolvedDocument[] = [];
+    let firstLoadError: string | null = null;
+    for (const documentId of batch.documentIds) {
+      const loaded = await loadDocument(documentId);
+      if (loaded.kind === 'ok') {
+        const doc = documentById.get(documentId) as DocumentRecord;
+        resolved.push({
+          documentId,
+          role: doc.documentRole,
+          filename: doc.filename,
+          pages: loaded.pages,
+          normalizedPages: loaded.normalizedPages,
+        });
+      } else {
+        firstLoadError ??= loaded.detail;
       }
-      loadedDocuments.set(batch.documentId, loaded);
     }
-    if (loaded.kind === 'error') {
-      reportProgress(batch, failBatch(batch, 'load_failed', loaded.detail));
+    if (resolved.length === 0) {
+      reportProgress(
+        batch,
+        failBatch(batch, 'load_failed', firstLoadError ?? '本文を取得できる文書がありません'),
+      );
       continue;
     }
 
     const batchFields = batch.fieldIds.map((fieldId) => fieldById.get(fieldId) as SchemaField);
+    const promptDocuments: ExtractDataDocument[] = resolved.map((doc) => ({
+      role: doc.role,
+      filename: doc.filename,
+      pages: doc.pages,
+    }));
     const messages: ChatMessage[] = [
       { role: 'system', content: EXTRACT_DATA_SYSTEM_PROMPT },
       {
         role: 'user',
         content: buildExtractDataUserPrompt({
           fields: batchFields,
-          pages: loaded.pages,
+          documents: promptDocuments,
           protocolContext: input.protocolContext,
         }),
       },
@@ -275,18 +333,27 @@ export async function executeRun(
 
     let validated: ValidateAiOutputResult;
     try {
-      validated = parseExtractDataResponse(response.text, batchFields);
+      validated = parseExtractDataResponse(response.text, batchFields, resolved.length);
     } catch (err) {
       reportProgress(batch, failBatch(batch, 'format_error', toDetail(err)));
       continue;
     }
     for (const item of validated.rejected) {
-      rejectedItems.push({ ...item, documentId: batch.documentId, section: batch.section });
+      rejectedItems.push({ ...item, studyId: batch.studyId, section: batch.section });
     }
 
-    const rows = validated.items.map((item) =>
-      buildEvidenceRow(item, input.runId, batch.studyId, batch.documentId, loaded.normalizedPages, uuid),
-    );
+    // document_index（1..resolved.length）が指す文書でアンカリングし、その documentId を Evidence に書く
+    const rows = validated.items.map((item) => {
+      const target = resolved[item.documentIndex - 1] as ResolvedDocument;
+      return buildEvidenceRow(
+        item,
+        input.runId,
+        batch.studyId,
+        target.documentId,
+        target.normalizedPages,
+        uuid,
+      );
+    });
     if (rows.length > 0) {
       try {
         await deps.appendEvidence(rows);

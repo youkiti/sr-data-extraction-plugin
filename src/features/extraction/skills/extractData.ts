@@ -4,6 +4,7 @@
 // - 抽出対象論文は英語を主想定のため、プロンプト本文は英語（requirements.md §6）
 // - LLM 呼び出し自体は executeRun 側の責務（lib/llm 移植後に配線）。ここは
 //   「プロンプト構築 → 構造化出力スキーマ → 応答パース（validateAiOutput へ委譲）」の純粋関数のみ
+import type { DocumentRole } from '../../../domain/document';
 import type { EntityLevel, SchemaField } from '../../../domain/schemaField';
 import {
   AiOutputFormatError,
@@ -14,8 +15,11 @@ import {
 /** LLMApiLog.purpose と対応づける skill 識別子 */
 export const EXTRACT_DATA_SKILL_NAME = 'extract-data';
 
-/** プロンプト版数。プロンプト文言・スキーマを変えたら必ずインクリメントする */
-export const EXTRACT_DATA_PROMPT_VERSION = 1;
+/**
+ * プロンプト版数。プロンプト文言・スキーマを変えたら必ずインクリメントする。
+ * v2（2026-07）: 複数文書の連結入力 + document_index を導入（v0.10 study / document モデル）
+ */
+export const EXTRACT_DATA_PROMPT_VERSION = 2;
 
 /** text_only モードで LLM へ渡すページ別本文（extracted_texts/{id}.txt 由来） */
 export interface ExtractDataPage {
@@ -24,11 +28,27 @@ export interface ExtractDataPage {
   text: string;
 }
 
+/**
+ * プロンプトへ連結する 1 文書（v0.10）。並び順（配列の添字 + 1）が document_index になる。
+ * 同一 study の全文書をロール付き区切りで連結して 1 回で抽出する（§4.3）
+ */
+export interface ExtractDataDocument {
+  /** 見出しに出すロール（DOCUMENT_ROLE_ORDER 順に並べるのは planRun / executeRun の責務） */
+  role: DocumentRole;
+  /** 見出しに出すファイル名（可読性のみ。突合には使わない） */
+  filename: string;
+  /** 当該文書の本文（ページ順） */
+  pages: readonly ExtractDataPage[];
+}
+
 export interface ExtractDataPromptInput {
   /** 当該バッチで抽出する項目（同一 schema_version。分割は planRun の責務） */
   fields: readonly SchemaField[];
-  /** 論文本文（ページ順）。pdf_native モード（※Q3）は lib/llm 移植時に別途対応 */
-  pages: readonly ExtractDataPage[];
+  /**
+   * 同一 study の文書（document_index 順）。1 件でも複数でも可。
+   * pdf_native モード（※Q3）は lib/llm 移植時に別途対応
+   */
+  documents: readonly ExtractDataDocument[];
   /** RQ・PICO 等の要約。項目の解釈を安定させる補助コンテキスト（省略可） */
   protocolContext?: string | null;
 }
@@ -40,13 +60,17 @@ export interface ExtractDataPromptInput {
  */
 export const EXTRACT_DATA_SYSTEM_PROMPT = `
 You are a meticulous data extraction assistant for a systematic review.
-Extract the requested fields from the research article and return ONLY a JSON array — no markdown fences, no commentary.
+Extract the requested fields from the provided documents and return ONLY a JSON array — no markdown fences, no commentary.
+
+The documents (see "## Documents") all report the SAME trial (e.g. the main article, its trial registration, a protocol paper, a conference abstract). Read them together as one study.
 
 Rules:
-- "quote": copy the supporting passage VERBATIM from the article text — character for character, exactly as it appears (including line-break artifacts), no paraphrasing, no ellipsis. At most 300 characters; choose the shortest passage that contains the reported value. Highlighting in the PDF viewer depends on an exact match.
-- Never infer, compute, or guess values that are not explicitly stated. If the article does not report a field, return the item with "not_reported": true, "value": null and "quote": null.
-- "value": report exactly as written in the article. Do not convert units, do not round, do not translate.
-- "page": the 1-indexed page number where the quote appears. Page boundaries are marked as [PAGE n] in the article text.
+- "quote": copy the supporting passage VERBATIM from the document text — character for character, exactly as it appears (including line-break artifacts), no paraphrasing, no ellipsis. At most 300 characters; choose the shortest passage that contains the reported value. Highlighting in the PDF viewer depends on an exact match.
+- Never infer, compute, or guess values that are not explicitly stated. If NO document reports a field, return the item with "not_reported": true, "value": null, "quote": null and "document_index": null.
+- "value": report exactly as written in the document. Do not convert units, do not round, do not translate.
+- "document_index": the 1-based number of the document (from the "=== Document i/N ... ===" headers) that your quote and page refer to. REQUIRED whenever "quote" is provided; set it to null only when "not_reported" is true.
+- "page": the 1-indexed page number within THAT document where the quote appears. Page boundaries are marked as [PAGE n] within each document.
+- When documents disagree on a value, prefer the main article, lower your "confidence", and take the quote from the document you actually read the value from.
 - "confidence": self-assess each item as "high", "medium" or "low".
 - "field_id" is the matching key: echo it exactly as listed. Never invent field_ids.
 - Return one item for EVERY listed field and EVERY entity instance it applies to (see the entity_key rules).
@@ -87,16 +111,27 @@ function renderField(field: SchemaField): string {
   return lines.join('\n');
 }
 
+/** 1 文書ぶんの連結ブロック（`=== Document i/N [role] filename ===` + ページ本文） */
+function renderDocument(doc: ExtractDataDocument, index: number, total: number): string {
+  const header = `=== Document ${index}/${total} [${doc.role}] ${doc.filename} ===`;
+  const body = doc.pages.map((page) => `[PAGE ${page.page}]\n${page.text}`).join('\n\n');
+  return `${header}\n\n${body}`;
+}
+
 /**
  * ユーザープロンプトを組み立てる。
- * fields は fieldIndex 順に並べ、entity_key 規約は当該バッチに現れる entity_level のぶんだけ提示する
+ * fields は fieldIndex 順に並べ、entity_key 規約は当該バッチに現れる entity_level のぶんだけ提示する。
+ * 文書は入力順（= document_index 順）にロール付き区切りで連結する（§4.3 v0.10）
  */
 export function buildExtractDataUserPrompt(input: ExtractDataPromptInput): string {
   if (input.fields.length === 0) {
     throw new Error('extract-data skill に抽出項目が 1 件も渡されていません');
   }
-  if (input.pages.length === 0) {
-    throw new Error('extract-data skill に本文ページが 1 件も渡されていません');
+  if (input.documents.length === 0) {
+    throw new Error('extract-data skill に文書が 1 件も渡されていません');
+  }
+  if (input.documents.some((doc) => doc.pages.length === 0)) {
+    throw new Error('extract-data skill に本文ページが 1 件も無い文書が含まれています');
   }
   const sections: string[] = [];
 
@@ -114,14 +149,21 @@ export function buildExtractDataUserPrompt(input: ExtractDataPromptInput): strin
   );
   sections.push(`## entity_key rules\n\n${rules.join('\n')}`);
 
-  const body = input.pages.map((page) => `[PAGE ${page.page}]\n${page.text}`).join('\n\n');
-  sections.push(`## Article text\n\n${body}`);
+  const total = input.documents.length;
+  const intro =
+    total === 1
+      ? 'One document is provided.'
+      : `${total} documents from the same trial are provided, in this order. Use "document_index" to say which one each quote comes from.`;
+  const body = input.documents
+    .map((doc, i) => renderDocument(doc, i + 1, total))
+    .join('\n\n');
+  sections.push(`## Documents\n\n${intro}\n\n${body}`);
 
   sections.push(
     `## Output format\n\nReturn a JSON array. Each element must be:\n` +
       `{ "field_id": "<as listed>", "entity_key": "<per the rules>", "value": "<as reported>" | null, ` +
       `"not_reported": true | false, "quote": "<verbatim, <=300 chars>" | null, "page": <1-indexed> | null, ` +
-      `"confidence": "high" | "medium" | "low" }`,
+      `"document_index": <1..${total}> | null, "confidence": "high" | "medium" | "low" }`,
   );
 
   return sections.join('\n\n');
@@ -143,9 +185,19 @@ export const EXTRACT_DATA_RESPONSE_SCHEMA: Record<string, unknown> = {
       not_reported: { type: 'boolean' },
       quote: { type: ['string', 'null'] },
       page: { type: ['integer', 'null'] },
+      document_index: { type: ['integer', 'null'] },
       confidence: { type: ['string', 'null'], enum: ['high', 'medium', 'low', null] },
     },
-    required: ['field_id', 'entity_key', 'value', 'not_reported', 'quote', 'page', 'confidence'],
+    required: [
+      'field_id',
+      'entity_key',
+      'value',
+      'not_reported',
+      'quote',
+      'page',
+      'document_index',
+      'confidence',
+    ],
     additionalProperties: false,
   },
 };
@@ -158,12 +210,15 @@ function stripJsonFence(text: string): string {
 }
 
 /**
- * LLM 応答テキストをパースして validateAiOutput（zod 検証 + confidence=low 強制）へ委譲する。
- * JSON としてパースできない応答は AiOutputFormatError（バッチ全体の失敗として executeRun が扱う）
+ * LLM 応答テキストをパースして validateAiOutput（zod 検証 + confidence=low 強制 + document_index 検証）へ
+ * 委譲する。JSON としてパースできない応答は AiOutputFormatError（バッチ全体の失敗として executeRun が扱う）。
+ *
+ * @param documentCount 当該バッチでプロンプトに連結した文書数（document_index の範囲検証に使う）
  */
 export function parseExtractDataResponse(
   text: string,
   fields: readonly SchemaField[],
+  documentCount: number,
 ): ValidateAiOutputResult {
   let raw: unknown;
   try {
@@ -171,5 +226,5 @@ export function parseExtractDataResponse(
   } catch (error) {
     throw new AiOutputFormatError(`AI 応答が JSON としてパースできません: ${String(error)}`);
   }
-  return validateAiOutput(raw, fields);
+  return validateAiOutput(raw, fields, documentCount);
 }

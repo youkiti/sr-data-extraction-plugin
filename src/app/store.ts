@@ -11,7 +11,7 @@ import type { Protocol } from '../domain/protocol';
 import type { SchemaField } from '../domain/schemaField';
 import type { SchemaVersion } from '../domain/schemaVersion';
 import type { BatchFailure, RunProgress } from '../features/extraction/executeRun';
-import type { ExtractDocRow } from '../features/extraction/docProgress';
+import type { ExtractStudyRow } from '../features/extraction/studyProgress';
 import type { ProgressCounts } from '../features/project/progressCounts';
 import type { DashboardData } from '../features/verification/dashboard';
 import type { SchemaEditorRow } from '../features/schema/types';
@@ -118,8 +118,8 @@ export interface SchemaState {
 
 /** #/pilot（S6）の画面状態。run の結果と埋め込み検証 UI の素材はタブのセッション内で保持する */
 export interface PilotState {
-  /** 対象文献の選択。初回表示時にテキスト層ありの先頭 3 本を既定選択する（ui-states.md §3） */
-  selectedDocumentIds: string[];
+  /** 対象 study の選択。初回表示時にテキスト層ありの先頭 3 study を既定選択する（ui-states.md §3・v0.10） */
+  selectedStudyIds: string[];
   /** 既定選択を一度だけ行うためのフラグ（ユーザーの選択解除を上書きしない） */
   selectionInitialized: boolean;
   model: string;
@@ -158,33 +158,33 @@ export interface PilotState {
 
 /** #/extract（S7）の画面状態。run の結果はタブのセッション内で保持する */
 export interface ExtractState {
-  /** 対象文献の選択。初回表示時に「未抽出の全件」を既定選択する（ui-states.md §3） */
-  selectedDocumentIds: string[];
+  /** 対象 study の選択。初回表示時に「未抽出の全件」を既定選択する（ui-states.md §3・v0.10） */
+  selectedStudyIds: string[];
   /** 既定選択を一度だけ行うためのフラグ（ユーザーの選択解除を上書きしない） */
   selectionInitialized: boolean;
   model: string;
-  /** ExtractionRuns 由来の抽出済み document_id（完了行のみ）。null = 未読込（画面表示時に読み込む） */
-  extractedDocumentIds: string[] | null;
+  /** ExtractionRuns 由来の抽出済み study_id（完了行のみ）。null = 未読込（画面表示時に読み込む） */
+  extractedStudyIds: string[] | null;
   /**
    * 中断された run（running 行のみで完了行がない）に含まれ、まだ再抽出されていない
-   * document_id。中断バナーの素材（extractedDocumentIds と同時に読み込む）
+   * study_id。中断バナーの素材（extractedStudyIds と同時に読み込む）
    */
-  interruptedDocumentIds: string[] | null;
+  interruptedStudyIds: string[] | null;
   loading: boolean;
   loadError: string | null;
   /** 実行確認カード（#extract-confirm）を表示中か */
   confirming: boolean;
   running: boolean;
-  /** 実行中〜完了後の document 単位進捗（1 行 = 1 document） */
-  docRows: ExtractDocRow[];
+  /** 実行中〜完了後の study 単位進捗（1 行 = 1 study） */
+  studyRows: ExtractStudyRow[];
   progress: RunProgress | null;
   runError: string | null;
   /** 直近の full run（完了後にサマリ + 検証導線を出す） */
   run: ExtractionRun | null;
   /** 直近 run の応答要素の破棄件数（partial_failure バナーに併記） */
   rejectedCount: number;
-  /** 再試行（single_document run）実行中の document_id。null = なし */
-  retryingDocumentId: string | null;
+  /** 再試行（single_study run）実行中の study_id。null = なし */
+  retryingStudyId: string | null;
 }
 
 /** #/verify（S8）の一覧 1 文献ぶんの検証素材（Evidence がある document のみ） */
@@ -333,7 +333,7 @@ export function createInitialState(): AppState {
       confirming: false,
     },
     pilot: {
-      selectedDocumentIds: [],
+      selectedStudyIds: [],
       selectionInitialized: false,
       model: '',
       running: false,
@@ -357,21 +357,21 @@ export function createInitialState(): AppState {
       queuedDecisions: 0,
     },
     extract: {
-      selectedDocumentIds: [],
+      selectedStudyIds: [],
       selectionInitialized: false,
       model: '',
-      extractedDocumentIds: null,
-      interruptedDocumentIds: null,
+      extractedStudyIds: null,
+      interruptedStudyIds: null,
       loading: false,
       loadError: null,
       confirming: false,
       running: false,
-      docRows: [],
+      studyRows: [],
       progress: null,
       runError: null,
       run: null,
       rejectedCount: 0,
-      retryingDocumentId: null,
+      retryingStudyId: null,
     },
     verify: {
       targets: null,

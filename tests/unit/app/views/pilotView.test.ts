@@ -5,6 +5,7 @@ import { createInitialState, type AppState, type PilotState } from '../../../../
 import type { DocumentRecord } from '../../../../src/domain/document';
 import type { ExtractionRun } from '../../../../src/domain/extractionRun';
 import type { SchemaField } from '../../../../src/domain/schemaField';
+import type { StudyRecord } from '../../../../src/domain/study';
 import { planRun } from '../../../../src/features/extraction/planRun';
 import type { VerificationData } from '../../../../src/features/verification/types';
 
@@ -29,7 +30,7 @@ const planRunMock = planRun as jest.MockedFunction<typeof planRun>;
 
 function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<PilotViewCallbacks> } {
   const callbacks = {
-    onToggleDocument: jest.fn(),
+    onToggleStudy: jest.fn(),
     onChangeModel: jest.fn(),
     onRun: jest.fn(),
     onSelectRun: jest.fn(),
@@ -80,12 +81,12 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<PilotViewCallback
       },
       pilot: callbacks,
       extract: {
-        onToggleDocument: jest.fn(),
+        onToggleStudy: jest.fn(),
         onChangeModel: jest.fn(),
         onRequestRun: jest.fn(),
         onConfirmRun: jest.fn(),
         onCancelConfirm: jest.fn(),
-        onRetryDocument: jest.fn(),
+        onRetryStudy: jest.fn(),
         onReloadTargets: jest.fn(),
       },
       verify: {
@@ -170,8 +171,24 @@ function makeRun(overrides: Partial<ExtractionRun> = {}): ExtractionRun {
   };
 }
 
+function makeStudy(studyId: string, label = `試験-${studyId}`): StudyRecord {
+  return {
+    studyId,
+    studyLabel: label,
+    registrationId: null,
+    createdAt: 't0',
+    createdBy: 'me',
+    note: null,
+  };
+}
+
+function studiesFor(documents: readonly DocumentRecord[]): StudyRecord[] {
+  return [...new Set(documents.map((d) => d.studyId))].map((id) => makeStudy(id));
+}
+
 function makeState(options: {
   documents?: DocumentRecord[] | null;
+  studies?: StudyRecord[] | null;
   documentsLoading?: boolean;
   documentsError?: string | null;
   fields?: SchemaField[] | null;
@@ -184,9 +201,17 @@ function makeState(options: {
     driveFolderId: 'f1',
     name: 'テスト SR',
   };
+  const records = options.documents === undefined ? [makeDocument()] : options.documents;
+  const studies =
+    options.studies !== undefined
+      ? options.studies
+      : records === null
+        ? null
+        : studiesFor(records);
   state.documents = {
     ...state.documents,
-    records: options.documents === undefined ? [makeDocument()] : options.documents,
+    records,
+    studies,
     loading: options.documentsLoading ?? false,
     loadError: options.documentsError ?? null,
   };
@@ -196,7 +221,7 @@ function makeState(options: {
   };
   state.pilot = {
     ...state.pilot,
-    selectedDocumentIds: ['doc-1'],
+    selectedStudyIds: ['study-1'],
     model: 'gemini-test',
     ...(options.pilot ?? {}),
   };
@@ -224,12 +249,17 @@ describe('未実行（setup）', () => {
     expect(empty.root.querySelector('#pilot-documents-empty')).not.toBeNull();
   });
 
-  test('文献セレクタ: 選択状態・no_text_layer の無効化と注記・切替コールバック', () => {
+  test('study セレクタ: 選択状態・テキスト層なし study の無効化と注記・切替コールバック', () => {
     const { root, callbacks } = render(
       makeState({
         documents: [
-          makeDocument(),
-          makeDocument({ documentId: 'doc-2', filename: 'b.pdf', textStatus: 'no_text_layer' }),
+          makeDocument({ documentId: 'doc-1', studyId: 'study-1' }),
+          makeDocument({
+            documentId: 'doc-2',
+            studyId: 'study-2',
+            filename: 'b.pdf',
+            textStatus: 'no_text_layer',
+          }),
         ],
       }),
     );
@@ -237,10 +267,10 @@ describe('未実行（setup）', () => {
     expect(boxes[0]?.checked).toBe(true);
     expect(boxes[1]?.checked).toBe(false);
     expect(boxes[1]?.disabled).toBe(true);
-    expect(root.querySelector('.pilot__doc-note')?.textContent).toContain('テキスト層なし');
+    expect(root.querySelector('.pilot__doc-note')?.textContent).toContain('テキスト層のある文書がありません');
     boxes[0]!.checked = false;
     boxes[0]!.dispatchEvent(new Event('change'));
-    expect(callbacks.onToggleDocument).toHaveBeenCalledWith('doc-1', false);
+    expect(callbacks.onToggleStudy).toHaveBeenCalledWith('study-1', false);
   });
 
   test('モデル選択の変更と実行ボタン', () => {
@@ -254,17 +284,17 @@ describe('未実行（setup）', () => {
   });
 
   test('コスト概算: 未選択・スキーマ未読込では案内文', () => {
-    const noSelection = render(makeState({ pilot: { selectedDocumentIds: [] } }));
+    const noSelection = render(makeState({ pilot: { selectedStudyIds: [] } }));
     expect(noSelection.root.querySelector('#pilot-estimate')?.textContent).toContain(
-      '対象文献を選択すると表示されます',
+      '対象 study を選択すると表示されます',
     );
     const noFields = render(makeState({ fields: null }));
     expect(noFields.root.querySelector('#pilot-estimate')?.textContent).toContain(
-      '対象文献を選択すると表示されます',
+      '対象 study を選択すると表示されます',
     );
     const emptyFields = render(makeState({ fields: [] }));
     expect(emptyFields.root.querySelector('#pilot-estimate')?.textContent).toContain(
-      '対象文献を選択すると表示されます',
+      '対象 study を選択すると表示されます',
     );
   });
 
@@ -280,10 +310,10 @@ describe('未実行（setup）', () => {
     const { root } = render(
       makeState({
         documents: [
-          makeDocument(),
-          makeDocument({ documentId: 'doc-2', textStatus: 'no_text_layer' }),
+          makeDocument({ documentId: 'doc-1', studyId: 'study-1' }),
+          makeDocument({ documentId: 'doc-2', studyId: 'study-2', textStatus: 'no_text_layer' }),
         ],
-        pilot: { selectedDocumentIds: ['doc-1', 'doc-2'], model: 'gemini-2.5-pro' },
+        pilot: { selectedStudyIds: ['study-1', 'study-2'], model: 'gemini-2.5-pro' },
       }),
     );
     const estimate = root.querySelector('#pilot-estimate');
@@ -327,13 +357,13 @@ describe('実行中', () => {
       makeState({
         pilot: {
           running: true,
-          progress: { totalBatches: 4, completedBatches: 1, documentId: 'doc-1', section: null, failure: null },
+          progress: { totalBatches: 4, completedBatches: 1, studyId: 'study-1', section: null, failure: null },
         },
       }),
     );
-    // % を併記し、document はファイル名で表示する（study_label は Studies へ移設・v0.10）
+    // % を併記し、study は study_label で表示する（v0.10）
     expect(noSection.root.querySelector('.pilot__progress-text')?.textContent).toBe(
-      '1 / 4 バッチ完了（25% / 直近: smith2020.pdf）',
+      '1 / 4 バッチ完了（25% / 直近: 試験-study-1）',
     );
     const bar = noSection.root.querySelector<HTMLProgressElement>('#pilot-progress');
     expect(bar?.max).toBe(4);
@@ -346,7 +376,7 @@ describe('実行中', () => {
           progress: {
             totalBatches: 4,
             completedBatches: 2,
-            documentId: 'doc-1',
+            studyId: 'study-1',
             section: 'methods',
             failure: null,
           },
@@ -354,20 +384,21 @@ describe('実行中', () => {
       }),
     );
     expect(withSection.root.querySelector('.pilot__progress-text')?.textContent).toContain(
-      'smith2020.pdf / methods',
+      '試験-study-1 / methods',
     );
 
-    // 未知 document は id 表示 / 総バッチ数 0 は 0% 表示
-    const unknownDoc = render(
+    // Studies 未読込（null）+ 未知 study は id 表示 / 総バッチ数 0 は 0% 表示
+    const unknownStudy = render(
       makeState({
+        studies: null,
         pilot: {
           running: true,
-          progress: { totalBatches: 0, completedBatches: 0, documentId: 'doc-x', section: null, failure: null },
+          progress: { totalBatches: 0, completedBatches: 0, studyId: 'study-x', section: null, failure: null },
         },
       }),
     );
-    expect(unknownDoc.root.querySelector('.pilot__progress-text')?.textContent).toBe(
-      '0 / 0 バッチ完了（0% / 直近: doc-x）',
+    expect(unknownStudy.root.querySelector('.pilot__progress-text')?.textContent).toBe(
+      '0 / 0 バッチ完了（0% / 直近: study-x）',
     );
   });
 });
@@ -385,8 +416,8 @@ describe('完了（サマリ + 埋め込み検証）', () => {
 
   test('partial_failure は失敗の内訳（破棄件数あり / なし）', () => {
     const failures = [
-      { documentId: 'doc-1', section: 'results', reason: 'api_error' as const, detail: '500' },
-      { documentId: 'doc-1', section: null, reason: 'format_error' as const, detail: 'JSON' },
+      { studyId: 'study-1', section: 'results', reason: 'api_error' as const, detail: '500' },
+      { studyId: 'study-1', section: null, reason: 'format_error' as const, detail: 'JSON' },
     ];
     const withRejected = render(
       makeState({
@@ -399,8 +430,8 @@ describe('完了（サマリ + 埋め込み検証）', () => {
     );
     const items = withRejected.root.querySelectorAll('#pilot-partial-failure li');
     expect(items).toHaveLength(3);
-    expect(items[0]?.textContent).toBe('doc-1 / results: api_error（500）');
-    expect(items[1]?.textContent).toBe('doc-1: format_error（JSON）');
+    expect(items[0]?.textContent).toBe('試験-study-1 / results: api_error（500）');
+    expect(items[1]?.textContent).toBe('試験-study-1: format_error（JSON）');
     expect(items[2]?.textContent).toBe('応答要素の破棄: 2 件');
 
     const noRejected = render(

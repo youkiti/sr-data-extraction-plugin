@@ -9,7 +9,7 @@ import {
   persistPilotInstanceDeclarations,
   runPilot,
   setPilotModel,
-  togglePilotDocument,
+  togglePilotStudy,
   type PilotServiceDeps,
 } from '../../../../src/app/services/pilotService';
 import type { QueuedDecisionWrite } from '../../../../src/app/services/verificationService';
@@ -21,7 +21,9 @@ import type { DocumentRecord } from '../../../../src/domain/document';
 import type { Evidence } from '../../../../src/domain/evidence';
 import type { ExtractionRun } from '../../../../src/domain/extractionRun';
 import type { SchemaField } from '../../../../src/domain/schemaField';
+import type { StudyRecord } from '../../../../src/domain/study';
 import { readDocuments } from '../../../../src/features/documents/documentRepository';
+import { readStudies } from '../../../../src/features/documents/studyRepository';
 import { readEvidenceRows } from '../../../../src/features/extraction/evidenceRepository';
 import { readPilotRuns } from '../../../../src/features/extraction/runRepository';
 import { getSchemaFieldsByVersion } from '../../../../src/features/schema/schemaRepository';
@@ -52,6 +54,11 @@ jest.mock('../../../../src/app/services/schemaService', () => ({
 }));
 jest.mock('../../../../src/features/documents/documentRepository', () => ({
   readDocuments: jest.fn(),
+}));
+jest.mock('../../../../src/features/documents/studyRepository', () => ({
+  // resolveActiveStudies / studyLabelMap は純粋関数なので実物を使う
+  ...jest.requireActual('../../../../src/features/documents/studyRepository'),
+  readStudies: jest.fn(),
 }));
 jest.mock('../../../../src/features/extraction/evidenceRepository', () => ({
   readEvidenceRows: jest.fn(),
@@ -88,6 +95,7 @@ jest.mock('../../../../src/lib/google/identity', () => ({
 const runExtractionMock = runExtraction as jest.MockedFunction<typeof runExtraction>;
 const resolveProtocolMock = resolveProtocol as jest.MockedFunction<typeof resolveProtocol>;
 const readDocumentsMock = readDocuments as jest.MockedFunction<typeof readDocuments>;
+const readStudiesMock = readStudies as jest.MockedFunction<typeof readStudies>;
 const readEvidenceRowsMock = readEvidenceRows as jest.MockedFunction<typeof readEvidenceRows>;
 const readPilotRunsMock = readPilotRuns as jest.MockedFunction<typeof readPilotRuns>;
 const getSchemaFieldsByVersionMock = getSchemaFieldsByVersion as jest.MockedFunction<
@@ -252,9 +260,23 @@ function makeDeps(overrides: Partial<PilotServiceDeps> = {}): PilotServiceDeps {
   };
 }
 
+/** documents から一意 study を導出する（テスト用の既定 studies） */
+function studiesFor(documents: readonly DocumentRecord[]): StudyRecord[] {
+  const ids = [...new Set(documents.map((d) => d.studyId))];
+  return ids.map((studyId) => ({
+    studyId,
+    studyLabel: `label-${studyId}`,
+    registrationId: null,
+    createdAt: 't0',
+    createdBy: ME,
+    note: null,
+  }));
+}
+
 function makeStore(patch: {
   withProject?: boolean;
   documents?: DocumentRecord[] | null;
+  studies?: StudyRecord[] | null;
   fields?: SchemaField[] | null;
   pilot?: Partial<ReturnType<typeof createInitialState>['pilot']>;
   schemaModel?: string;
@@ -268,7 +290,10 @@ function makeStore(patch: {
       name: 'テスト SR',
     };
   }
-  state.documents = { ...state.documents, records: patch.documents ?? null };
+  const records = patch.documents ?? null;
+  const studies =
+    patch.studies !== undefined ? patch.studies : records === null ? null : studiesFor(records);
+  state.documents = { ...state.documents, records, studies };
   state.schema = {
     ...state.schema,
     currentFields: patch.fields ?? null,
@@ -288,6 +313,7 @@ beforeEach(() => {
     webViewLink: `https://drive.example/${name}`,
   }));
   readDecisionsMock.mockResolvedValue([]);
+  readStudiesMock.mockResolvedValue([]);
   readStudyDataSheetMock.mockResolvedValue({ fieldNames: [], rows: [] });
   readArmStructuresMock.mockResolvedValue([]);
   getFileBinaryMock.mockResolvedValue(new ArrayBuffer(8));
@@ -295,7 +321,7 @@ beforeEach(() => {
 });
 
 describe('initPilotSelection', () => {
-  test('テキスト層のある先頭 3 本を既定選択し、S5 のモデル入力を引き継ぐ', () => {
+  test('テキスト層のある先頭 3 study を既定選択し、S5 のモデル入力を引き継ぐ', () => {
     const docs = [
       makeDocument({ documentId: 'd1' }),
       makeDocument({ documentId: 'd2', textStatus: 'no_text_layer' }),
@@ -305,7 +331,7 @@ describe('initPilotSelection', () => {
     ];
     const store = makeStore({ documents: docs, schemaModel: 'gemini-from-s5' });
     initPilotSelection(store);
-    expect(store.getState().pilot.selectedDocumentIds).toEqual(['d1', 'd3', 'd4']);
+    expect(store.getState().pilot.selectedStudyIds).toEqual(['study-d1', 'study-d3', 'study-d4']);
     expect(store.getState().pilot.model).toBe('gemini-from-s5');
     expect(store.getState().pilot.selectionInitialized).toBe(true);
   });
@@ -313,10 +339,10 @@ describe('initPilotSelection', () => {
   test('既に初期化済み・文献未読込のときは何もしない', () => {
     const initializedStore = makeStore({
       documents: [makeDocument()],
-      pilot: { selectionInitialized: true, selectedDocumentIds: [] },
+      pilot: { selectionInitialized: true, selectedStudyIds: [] },
     });
     initPilotSelection(initializedStore);
-    expect(initializedStore.getState().pilot.selectedDocumentIds).toEqual([]);
+    expect(initializedStore.getState().pilot.selectedStudyIds).toEqual([]);
 
     const unloadedStore = makeStore({ documents: null });
     initPilotSelection(unloadedStore);
@@ -334,17 +360,17 @@ describe('initPilotSelection', () => {
   });
 });
 
-describe('togglePilotDocument / setPilotModel', () => {
-  test('選択・解除・重複追加・4 本目の拒否', () => {
-    const store = makeStore({ pilot: { selectedDocumentIds: ['d1', 'd2'] } });
-    togglePilotDocument(store, 'd3', true);
-    expect(store.getState().pilot.selectedDocumentIds).toEqual(['d1', 'd2', 'd3']);
-    togglePilotDocument(store, 'd3', true); // 重複は無視
-    expect(store.getState().pilot.selectedDocumentIds).toEqual(['d1', 'd2', 'd3']);
-    togglePilotDocument(store, 'd4', true); // 4 本目はトーストで拒否
-    expect(store.getState().pilot.selectedDocumentIds).toEqual(['d1', 'd2', 'd3']);
-    togglePilotDocument(store, 'd2', false);
-    expect(store.getState().pilot.selectedDocumentIds).toEqual(['d1', 'd3']);
+describe('togglePilotStudy / setPilotModel', () => {
+  test('選択・解除・重複追加・4 件目の拒否', () => {
+    const store = makeStore({ pilot: { selectedStudyIds: ['s1', 's2'] } });
+    togglePilotStudy(store, 's3', true);
+    expect(store.getState().pilot.selectedStudyIds).toEqual(['s1', 's2', 's3']);
+    togglePilotStudy(store, 's3', true); // 重複は無視
+    expect(store.getState().pilot.selectedStudyIds).toEqual(['s1', 's2', 's3']);
+    togglePilotStudy(store, 's4', true); // 4 件目はトーストで拒否
+    expect(store.getState().pilot.selectedStudyIds).toEqual(['s1', 's2', 's3']);
+    togglePilotStudy(store, 's2', false);
+    expect(store.getState().pilot.selectedStudyIds).toEqual(['s1', 's3']);
   });
 
   test('モデル名は trim して保存する', () => {
@@ -374,20 +400,22 @@ describe('runPilot: 事前バリデーション', () => {
   });
 
   test('対象 0 本・モデル未入力・API キー未設定はエラー文言を出す', async () => {
-    const noSelection = makeStore({ fields: [makeField()], pilot: { selectedDocumentIds: [] } });
+    const noSelection = makeStore({ fields: [makeField()], pilot: { selectedStudyIds: [] } });
     await runPilot(noSelection, makeDeps());
-    expect(noSelection.getState().pilot.runError).toContain('対象文献を 1〜3 本');
+    expect(noSelection.getState().pilot.runError).toContain('対象 study を 1〜3 件');
 
     const noModel = makeStore({
       fields: [makeField()],
-      pilot: { selectedDocumentIds: ['doc-1'], model: '' },
+      documents: [makeDocument()],
+      pilot: { selectedStudyIds: ['study-doc-1'], model: '' },
     });
     await runPilot(noModel, makeDeps());
     expect(noModel.getState().pilot.runError).toContain('モデルを選択してください');
 
     const noKey = makeStore({
       fields: [makeField()],
-      pilot: { selectedDocumentIds: ['doc-1'], model: 'gemini-test' },
+      documents: [makeDocument()],
+      pilot: { selectedStudyIds: ['study-doc-1'], model: 'gemini-test' },
     });
     await runPilot(noKey, makeDeps({ loadApiKey: jest.fn().mockResolvedValue(null) }));
     expect(noKey.getState().pilot.runError).toContain('Gemini API キーが未設定です');
@@ -399,7 +427,7 @@ describe('runPilot: 実行', () => {
     return makeStore({
       documents: [makeDocument(), makeDocument({ documentId: 'doc-2' })],
       fields: [makeField()],
-      pilot: { selectedDocumentIds: ['doc-1'], model: 'gemini-test' },
+      pilot: { selectedStudyIds: ['study-doc-1'], model: 'gemini-test' },
     });
   }
 
@@ -426,7 +454,7 @@ describe('runPilot: 実行', () => {
         rejectedItems: [],
         batchFailures:
           status === 'partial_failure'
-            ? [{ documentId: 'doc-1', section: null, reason: 'api_error' as const, detail: '500' }]
+            ? [{ studyId: 'study-doc-1', section: null, reason: 'api_error' as const, detail: '500' }]
             : [],
         tokensIn: 100,
         tokensOut: 50,
@@ -471,7 +499,7 @@ describe('runPilot: 実行', () => {
     const store = makeReadyStore();
     let observed: unknown = null;
     runExtractionMock.mockImplementation(async (params) => {
-      params.onProgress?.({ totalBatches: 2, completedBatches: 1, documentId: 'doc-1', section: null, failure: null });
+      params.onProgress?.({ totalBatches: 2, completedBatches: 1, studyId: 'study-doc-1', section: null, failure: null });
       observed = store.getState().pilot.progress;
       return makeOutcome();
     });
@@ -479,7 +507,7 @@ describe('runPilot: 実行', () => {
     expect(observed).toEqual({
       totalBatches: 2,
       completedBatches: 1,
-      documentId: 'doc-1',
+      studyId: 'study-doc-1',
       section: null,
       failure: null,
     });
@@ -500,7 +528,7 @@ describe('runPilot: 実行', () => {
       documents: [makeDocument()],
       fields: [makeField()],
       pilot: {
-        selectedDocumentIds: ['doc-1'],
+        selectedStudyIds: ['study-doc-1'],
         model: 'gemini-test',
         history: [existing],
         historyInitialized: false,
@@ -520,16 +548,28 @@ describe('runPilot: 実行', () => {
     expect(store.getState().pilot.history?.map((run) => run.runId)).toEqual(['run-1']);
   });
 
-  test('文献一覧が未読込なら readDocuments で解決する', async () => {
+  test('documents / studies が未読込なら readDocuments / readStudies で解決する', async () => {
     const store = makeStore({
       documents: null,
+      studies: null,
       fields: [makeField()],
-      pilot: { selectedDocumentIds: ['doc-1'], model: 'gemini-test' },
+      pilot: { selectedStudyIds: ['study-doc-1'], model: 'gemini-test' },
     });
     readDocumentsMock.mockResolvedValue([makeDocument()]);
+    readStudiesMock.mockResolvedValue([
+      {
+        studyId: 'study-doc-1',
+        studyLabel: 'label',
+        registrationId: null,
+        createdAt: 't0',
+        createdBy: ME,
+        note: null,
+      },
+    ]);
     runExtractionMock.mockResolvedValue(makeOutcome());
     await runPilot(store, makeDeps());
     expect(readDocumentsMock).toHaveBeenCalledWith('sheet-1', expect.anything());
+    expect(readStudiesMock).toHaveBeenCalledWith('sheet-1', expect.anything());
     expect(store.getState().pilot.run).not.toBeNull();
   });
 
