@@ -14,6 +14,20 @@
 
 「AI 事前抽出 + 人間検証」を方法論的に妥当な形（監査証跡・automation bias 対策込み）で完遂できることを狙っています。
 
+## 画面イメージ
+
+取り込み → スキーマ設計 → 検証 → 進捗ダッシュボードの流れです（画像はテスト用データで、実データは含みません）。
+
+| S3 文献取り込み | S5 スキーマ設計 |
+|---|---|
+| [![S3 文献取り込み](docs/store/screenshots/s3-documents.png)](docs/store/screenshots/s3-documents.png) | [![S5 スキーマ設計](docs/store/screenshots/s5-schema.png)](docs/store/screenshots/s5-schema.png) |
+| Google Drive Picker で採用論文 PDF（フォルダ単位も可）を取り込み、テキスト層を抽出。 | AI がプロトコルからコーディングシートをドラフトし、表形式エディタで確定。 |
+
+| S8 検証（根拠ハイライト） | S9 ダッシュボード |
+|---|---|
+| [![S8 検証](docs/store/screenshots/s8-verify-highlight.png)](docs/store/screenshots/s8-verify-highlight.png) | [![S9 ダッシュボード](docs/store/screenshots/s9-dashboard.png)](docs/store/screenshots/s9-dashboard.png) |
+| PDF ビューア上で AI の根拠 quote をハイライトし、accept / edit / reject / not_reported で判定。 | study × section の検証進捗・AI 採用率・anchor 失敗率・not_reported 率を俯瞰。 |
+
 ## データフロー（サーバーレス構成）
 
 外部サーバーは存在しません。データはユーザー自身の Google Drive / Sheets と、ユーザーが自分の API キーで契約する LLM API（BYOK）の間でのみ流通します。

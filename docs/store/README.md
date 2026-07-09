@@ -8,7 +8,7 @@
 |---|---|---|
 | [privacy-policy.md](privacy-policy.md) | プライバシーポリシー（審査必須。公開 URL が要る → 下記参照） | ✅ 原稿完成 |
 | [permissions-justification.md](permissions-justification.md) | 各権限の使用理由（審査フォームへ貼り付け。日英併記） | ✅ 原稿完成 |
-| （スクリーンショット） | ストア掲載画像（1280×800 または 640×400、最低 1 枚） | ⬜ 未取得（下記「必要な画像」） |
+| [screenshots/](screenshots/) | ストア掲載画像（1280×800、最低 1 枚） | ◐ 4 枚取得済み（S3 / S5 / S8 / S9）・S10 は任意で追加可（下記「必要な画像」） |
 
 ## ストア掲載メタ情報（登録フォームへ入力）
 
@@ -20,15 +20,27 @@
 - **公開範囲**: 限定公開（unlisted）— リンクを知っている人のみインストール可
 - **プライバシーポリシー URL**: privacy-policy.md を公開ページ化して指定する。案: GitHub のファイル URL（`https://github.com/youkiti/sr-data-extraction-plugin/blob/master/docs/store/privacy-policy.md`）をそのまま指定するか、既存の GitHub Pages（`youkiti.github.io`）配下へ HTML 化して置く。
 
-## 必要な画像（未取得 — 実機での取得が必要）
+## 必要な画像
 
 Chrome ウェブストアの掲載に必要な画像。**スクリーンショットは実データを含めない**（テスト用プロジェクトで撮る）。
 
-| 画像 | 仕様 | 推奨内容 |
+| 画像 | 仕様 | 状態 |
 |---|---|---|
-| ストアアイコン | 128×128 PNG | 既存の [src/icons/icon128.png](../../src/icons/icon128.png) を流用可 |
-| スクリーンショット | 1280×800 または 640×400、最低 1 枚（最大 5 枚） | S3 ドキュメント取り込み / S5 スキーマ / S8 検証（ハイライト付き PDF）/ S9 ダッシュボード / S10 エクスポート |
-| 小型プロモタイル（任意） | 440×280 PNG | 限定公開では必須ではない |
+| ストアアイコン | 128×128 PNG | ✅ 既存の [src/icons/icon128.png](../../src/icons/icon128.png) を流用可 |
+| スクリーンショット | 1280×800、最低 1 枚（最大 5 枚） | ◐ [screenshots/](screenshots/) に 4 枚あり（下表）。S10 エクスポートは任意で追加 |
+| 小型プロモタイル（任意） | 440×280 PNG | ⬜ 限定公開では必須ではない |
+
+### 取得済みスクリーンショット（[screenshots/](screenshots/)）
+
+| ファイル | 画面 | 取得方法 |
+|---|---|---|
+| `s3-documents.png` | S3 文献取り込み | 実機（テスト用プロジェクト、2026-07-06） |
+| `s5-schema.png` | S5 スキーマ設計 | 実機（テスト用プロジェクト、2026-07-06） |
+| `s8-verify-highlight.png` | S8 検証（根拠ハイライト。パイロット埋め込み検証 UI） | 実機（テスト用プロジェクト、2026-07-06） |
+| `s9-dashboard.png` | S9 ダッシュボード | Playwright E2E ハーネス（スタブ状態・実データ非含有、2026-07-09） |
+
+- いずれも 1280×800・実データ非含有。ストア掲載時はこの中から選ぶ（4〜5 枚全掲載でも可）。
+- `s9-dashboard.png` は実 Google 認証を要さない E2E ハーネス（[app-dashboard.spec.ts](../../tests/e2e/app-dashboard.spec.ts) と同じ stub 状態）で描画したもの。実機（Selenium ハーネス `--shots dashboard`）で撮り直しても内容は同等。
 
 ### スクリーンショットの撮り方（Selenium ハーネス）
 
@@ -52,13 +64,14 @@ node tools/selenium/manualCheck.mjs --profile .selenium-profile-clean login proj
 
 ## 提出前チェック（タスク E チェックリストの実行記録）
 
-- [x] 本番ビルド `npm run build` が通る（2026-07-06 確認。PDF.js バンドルサイズの performance 警告のみ）
+- [x] 本番ビルド `npm run build` が通る（**2026-07-09 再確認**・現行 HEAD。成果物 = manifest / background / app / options / popup / icons / pdf.worker / _locales すべて emit。PDF.js バンドルサイズの performance 警告のみ）
 - [x] manifest の permissions / OAuth スコープが requirements.md §6 と一致（→ [manifest レビュー結果](#manifest-レビュー結果)）
 - [x] プライバシーポリシー原稿
 - [x] 権限の使用理由原稿（日英）
-- [ ] スクリーンショット取得（実機・要ユーザー作業）
-- [ ] `npm run build` の `dist/` をクリーンな Chrome プロファイルで読み込み S1→S10 smoke（manual-testing.md 流用・要ユーザー作業）
-- [ ] Chrome ウェブストア デベロッパーアカウントで限定公開提出（要ユーザー作業）
+- [x] Playwright E2E スモーク（**2026-07-09**・`npm run test:e2e` 49 passed）。`dist/` をスタブ Chrome へ読み込み S1（popup）〜S10（export）+ Options を全ルート駆動 + axe。実 Google 認証を要さない範囲での S1→S10 通し確認に相当
+- [x] スクリーンショット取得（S3 / S5 / S8 は実機・S9 は E2E ハーネス。→ [取得済みスクリーンショット](#取得済みスクリーンショットscreenshots)）
+- [ ] **実 Google 認証つきのクリーンな Chrome プロファイルで dist smoke**（プロジェクト作成 → 抽出 → エクスポート。OAuth 同意含む・**要ユーザー作業**。この環境には実 Google 認証情報がないため未実施）
+- [ ] Chrome ウェブストア デベロッパーアカウントで限定公開提出（**要ユーザー作業**）
 
 ## manifest レビュー結果
 
@@ -67,6 +80,7 @@ node tools/selenium/manualCheck.mjs --profile .selenium-profile-clean login proj
 - **OAuth スコープ**: `spreadsheets` + `drive.file` のみ。requirements.md §6 と一致。✅
 - **permissions**: `identity` / `identity.email` / `storage` / `tabs` — いずれも [permissions-justification.md](permissions-justification.md) で説明済み。余計な権限なし。✅
 - **host_permissions**: Sheets / Google APIs / Gemini / OpenRouter の 4 つ。すべて BYOK の API 通信 or Google API で正当。✅
+- **`oauth2.client_id`（提出前に必須の確認）**: `src/manifest.json` は `__OAUTH_CLIENT_ID__` プレースホルダを持ち、webpack が `.env` の `OAUTH_CLIENT_ID` で置換する（[webpack.config.js](../../webpack.config.js) L19・L26）。**`.env` 未設定でビルドすると `client_id` が空文字になり OAuth が機能しない**。提出用パッケージのビルド前に、GCP で発行した Chrome アプリ種別の OAuth クライアント ID を `.env` の `OAUTH_CLIENT_ID` に設定すること（CI / この環境のビルドは空のまま = スモーク用途。⚠️ 要ユーザー作業）。
 - **`key` フィールドの扱い（提出前に確認）**: manifest 先頭の `"key"` は拡張 ID を固定するためのもの。**この `key` を提出パッケージにも残すのが推奨**。理由は、拡張 ID = OAuth クライアントの許可対象なので、`key` を残して dev と Store で拡張 ID を一本化すれば、OAuth クライアント設定を 2 系統面倒見なくて済む（remaining-work-plan.md タスク E の採用理由そのもの）。
   - Picker への影響は**なし**: picker.html は接続元の拡張 ID を URL パラメータ `extension_id` から動的に受け取る（[hosted/picker.html](../../hosted/picker.html) L46）ため、拡張 ID が変わっても `externally_connectable.matches`（`youkiti.github.io`）さえ合っていれば動く。
   - **提出前の要確認事項**: GCP の OAuth クライアント（Chrome アプリ種別）の「アプリケーション ID」が、この `key` から導出される拡張 ID と一致していること。一致していないと OAuth 同意画面が拒否される。ストア掲載後に表示される実際の拡張 ID とも突き合わせる。

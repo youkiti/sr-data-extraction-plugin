@@ -549,9 +549,17 @@ export async function bootstrapApp(
   // （app.html 側の href="../popup/popup.html"）。JS の配線は不要
   win.addEventListener('hashchange', handleHashChange);
   store.subscribe((state) => {
+    // ストア更新の再描画は route 全体を replaceChildren で作り直すため、ページ全体
+    // （documentElement）のスクロール位置が一旦 0 へクランプされる。ナビゲーション
+    // （hashchange）と違い同一画面の部分更新なので、退避して復元する（例: パイロットの
+    // 論文チェック・モデル選択・判定操作のたびに一覧の先頭へ戻ってしまうのを防ぐ）
+    const scrollTop = doc.documentElement.scrollTop;
+    const scrollLeft = doc.documentElement.scrollLeft;
     renderHeader(state);
     renderNav(state);
     renderRoute();
+    doc.documentElement.scrollTop = scrollTop;
+    doc.documentElement.scrollLeft = scrollLeft;
   });
 
   renderHeader(store.getState());
