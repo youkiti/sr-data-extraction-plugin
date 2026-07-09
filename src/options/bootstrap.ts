@@ -5,6 +5,8 @@ import { createModelSelect } from '../app/ui/modelSelect';
 import {
   loadGeminiApiKey,
   loadOpenRouterApiKey,
+  looksLikeGeminiApiKey,
+  looksLikeOpenRouterApiKey,
   saveGeminiApiKey,
   saveOpenRouterApiKey,
 } from '../lib/storage/secretsStore';
@@ -25,6 +27,8 @@ async function bootstrapApiKeySection(
   providerLabel: string,
   load: () => Promise<string | null>,
   save: (key: string) => Promise<void>,
+  // 別プロバイダのキーを取り違えて入力したときの警告文言を返す（確信できるときのみ非 null）
+  foreignKeyWarning: (key: string) => string | null,
 ): Promise<void> {
   const input = doc.getElementById(ids.input) as HTMLInputElement | null;
   const saveButton = doc.getElementById(ids.saveButton) as HTMLButtonElement | null;
@@ -35,7 +39,14 @@ async function bootstrapApiKeySection(
 
   const setStatus = makeSetStatus(statusEl);
 
+  // 保存済みのときは平文キーを再表示せず、placeholder で「保存済み」を示す。
+  // 未設定のときは入力を促す既定文言に戻す
+  const setSavedPlaceholder = (saved: boolean): void => {
+    input.placeholder = saved ? '保存済み（変更する場合のみ入力）' : 'API キーを入力';
+  };
+
   const savedKey = await load();
+  setSavedPlaceholder(savedKey !== null);
   setStatus(`${providerLabel}: ${savedKey ? '保存済み' : '未設定'}`, false);
 
   const handleSave = async (): Promise<void> => {
@@ -44,10 +55,16 @@ async function bootstrapApiKeySection(
       setStatus('API キーが空のため保存しませんでした。', true);
       return;
     }
+    const warning = foreignKeyWarning(value);
+    if (warning !== null) {
+      setStatus(warning, true);
+      return;
+    }
     saveButton.disabled = true;
     try {
       await save(value);
       input.value = '';
+      setSavedPlaceholder(true);
       setStatus('保存しました。', false);
     } catch {
       setStatus('保存に失敗しました。もう一度お試しください。', true);
@@ -118,6 +135,10 @@ export async function bootstrapOptions(doc: Document): Promise<void> {
     'Gemini',
     loadGeminiApiKey,
     saveGeminiApiKey,
+    (key) =>
+      looksLikeOpenRouterApiKey(key)
+        ? 'OpenRouter のキー（sk-or- で始まる）のようです。Gemini キーはここへ、OpenRouter キーは下の欄へ入力してください。'
+        : null,
   );
   await bootstrapApiKeySection(
     doc,
@@ -125,6 +146,10 @@ export async function bootstrapOptions(doc: Document): Promise<void> {
     'OpenRouter',
     loadOpenRouterApiKey,
     saveOpenRouterApiKey,
+    (key) =>
+      looksLikeGeminiApiKey(key)
+        ? 'Gemini のキー（AIza で始まる）のようです。OpenRouter キーはここへ、Gemini キーは上の欄へ入力してください。'
+        : null,
   );
   await bootstrapDefaultModelSection(doc);
 }

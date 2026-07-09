@@ -5,6 +5,21 @@ import { getLocal, removeLocal, setLocal } from './chromeStorage';
 const GEMINI_API_KEY_STORAGE_KEY = 'secrets.geminiApiKey';
 const OPENROUTER_API_KEY_STORAGE_KEY = 'secrets.openRouterApiKey';
 
+// 既知の API キー プレフィックス（プロバイダの取り違え検出用）。
+// 形式変更で正規キーを弾かないよう、確信できる場合だけ判定に使う（取りこぼし優先）
+const GEMINI_API_KEY_PREFIX = 'AIza';
+const OPENROUTER_API_KEY_PREFIX = 'sk-or-';
+
+/** 明らかに Gemini（Google AI）のキー形式か（`AIza` 始まり）。誤入力検出専用 */
+export function looksLikeGeminiApiKey(key: string): boolean {
+  return key.startsWith(GEMINI_API_KEY_PREFIX);
+}
+
+/** 明らかに OpenRouter のキー形式か（`sk-or-` 始まり）。誤入力検出専用 */
+export function looksLikeOpenRouterApiKey(key: string): boolean {
+  return key.startsWith(OPENROUTER_API_KEY_PREFIX);
+}
+
 export async function loadGeminiApiKey(): Promise<string | null> {
   return (await getLocal<string>(GEMINI_API_KEY_STORAGE_KEY)) ?? null;
 }

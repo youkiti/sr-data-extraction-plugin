@@ -51,6 +51,8 @@ spec が正。実装が追いついていない箇所は以下のとおり（実
 - **可視**: Gemini API キー入力（`type="password"` + `autocomplete="off"`）/ 保存ボタン / OpenRouter API キー入力（`#openrouter-api-key`。Gemini と同じトンマナ + 取得先リンク <https://openrouter.ai/settings/keys>）/ 保存ボタン `#save-openrouter-key` / 既定モデルセレクタ（下記「既定モデル」参照）/ 表示言語セレクタ（MVP は ja 固定・ディム）
 - **`#options-status`**: `Gemini: 保存済み|未設定` 形式 / **`#openrouter-status`**: `OpenRouter: 保存済み|未設定` 形式
 - キーは `trim()` して保存、空文字は保存抑止（sr-query-builder で target のまま残った教訓を最初から実装する）
+- **入力欄の placeholder で保存状態を可視化**（平文キーは再表示しない）: 保存済み → `保存済み（変更する場合のみ入力）` / 未設定 → `API キーを入力`。保存成功時に入力欄をクリアしたうえで placeholder を「保存済み」に切り替える
+- **プロバイダ取り違えの検出**（確信できるときのみ弾く。取りこぼし優先で正規キーは弾かない）: Gemini 欄に `sk-or-` 始まり（OpenRouter キー）→ 保存抑止 + 赤系メッセージで別欄へ誘導 / OpenRouter 欄に `AIza` 始まり（Gemini キー）→ 同様に抑止。判定は `looksLikeGeminiApiKey` / `looksLikeOpenRouterApiKey`（`src/lib/storage/secretsStore.ts`）
 
 ### 状態 B: 保存実行中 / 完了 / 失敗
 

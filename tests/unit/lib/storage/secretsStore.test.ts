@@ -4,6 +4,8 @@ import {
   clearOpenRouterApiKey,
   loadGeminiApiKey,
   loadOpenRouterApiKey,
+  looksLikeGeminiApiKey,
+  looksLikeOpenRouterApiKey,
   saveGeminiApiKey,
   saveOpenRouterApiKey,
 } from '../../../../src/lib/storage/secretsStore';
@@ -50,5 +52,17 @@ describe('secretsStore', () => {
     await clearOpenRouterApiKey();
     await expect(loadOpenRouterApiKey()).resolves.toBeNull();
     await expect(loadGeminiApiKey()).resolves.toBe('AIzaSyTESTKEY');
+  });
+
+  test('looksLikeGeminiApiKey: AIza 始まりのみ true', () => {
+    expect(looksLikeGeminiApiKey('AIzaSyTESTKEY')).toBe(true);
+    expect(looksLikeGeminiApiKey('sk-or-TESTKEY')).toBe(false);
+    expect(looksLikeGeminiApiKey('other')).toBe(false);
+  });
+
+  test('looksLikeOpenRouterApiKey: sk-or- 始まりのみ true', () => {
+    expect(looksLikeOpenRouterApiKey('sk-or-TESTKEY')).toBe(true);
+    expect(looksLikeOpenRouterApiKey('AIzaSyTESTKEY')).toBe(false);
+    expect(looksLikeOpenRouterApiKey('sk-TESTKEY')).toBe(false);
   });
 });
