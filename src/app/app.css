@@ -1599,7 +1599,7 @@
   margin: 6px 0 0;
 }
 
-@media (max-width: 760px) {
+@media (width <= 760px) {
   .verify__outcome-fields {
     grid-template-columns: 1fr;
   }
