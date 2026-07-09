@@ -14,6 +14,7 @@ import {
 import {
   importDocuments,
   type ImportDocumentsResult,
+  type ImportSelection,
   type ImportStage,
 } from '../../features/documents/importDocuments';
 import type { DisposablePdfDocument } from '../../features/documents/extractTextLayer';
@@ -24,8 +25,13 @@ import {
   updateStudy,
 } from '../../features/documents/studyRepository';
 import { readRunStudyCoverage } from '../../features/extraction/runRepository';
-import { ensureChildFolder } from '../../lib/google/drive';
-import { openPdfPicker, type PickerDeps } from '../../lib/google/picker';
+import { ensureChildFolder, listFolderPdfs } from '../../lib/google/drive';
+import {
+  FOLDER_MIME_TYPE,
+  openPdfPicker,
+  type PickerDeps,
+  type PickerSelection,
+} from '../../lib/google/picker';
 import { getCurrentUserEmail, type ProfileDeps } from '../../lib/google/identity';
 import type { GoogleApiDeps } from '../../lib/google/types';
 import { getLocal, setLocal } from '../../lib/storage/chromeStorage';
@@ -124,7 +130,39 @@ function finalizeImportRows(rows: ImportRow[], result: ImportDocumentsResult): I
 }
 
 /**
+ * Picker の選択（ファイル + フォルダ混在）を取り込み対象の PDF 一覧へ展開する。
+ * フォルダは直下 PDF を列挙して個別選択ファイルと結合し、sourceFileId で重複排除する
+ * （同じ PDF が個別選択とフォルダ配下で二重に来ても 1 回だけ取り込む）。
+ * 列挙失敗は例外を投げる（呼び出し側で中断）
+ */
+async function expandSelections(
+  selections: readonly PickerSelection[],
+  deps: DocumentsServiceDeps,
+): Promise<ImportSelection[]> {
+  const files: ImportSelection[] = [];
+  for (const selection of selections) {
+    if (selection.mimeType === FOLDER_MIME_TYPE) {
+      const pdfs = await listFolderPdfs(selection.sourceFileId, deps.google);
+      for (const pdf of pdfs) {
+        files.push({ sourceFileId: pdf.id, filename: pdf.name });
+      }
+    } else {
+      files.push({ sourceFileId: selection.sourceFileId, filename: selection.filename });
+    }
+  }
+  const seen = new Set<string>();
+  return files.filter((file) => {
+    if (seen.has(file.sourceFileId)) {
+      return false;
+    }
+    seen.add(file.sourceFileId);
+    return true;
+  });
+}
+
+/**
  * Drive Picker を開いて選択された PDF を取り込む（S3 の中核フロー）。
+ * ファイルに加えてフォルダも選択でき、フォルダは直下 PDF を列挙して一括取り込みする。
  * 1 PDF = 1 study を自動生成する（§4.5）。Picker キャンセルは何もしない。
  * ファイル単位の失敗は進捗行へ赤バッジ表示し、成功分は一覧へ反映する
  */
@@ -149,7 +187,26 @@ export async function importFromPicker(
     return;
   }
 
-  let rows: ImportRow[] = selections.map((selection) => ({
+  // フォルダ選択を直下 PDF へ展開する（列挙に数秒かかりうるため先に importing を立てる）
+  patchDocuments(store, { importing: true });
+  if (selections.some((selection) => selection.mimeType === FOLDER_MIME_TYPE)) {
+    showToast('フォルダを展開中…');
+  }
+  let fileSelections: ImportSelection[];
+  try {
+    fileSelections = await expandSelections(selections, deps);
+  } catch (err) {
+    patchDocuments(store, { importing: false });
+    showToast(`フォルダの読み込みに失敗しました: ${toMessage(err)}`);
+    return;
+  }
+  if (fileSelections.length === 0) {
+    patchDocuments(store, { importing: false });
+    showToast('選択したフォルダに PDF が見つかりませんでした');
+    return;
+  }
+
+  let rows: ImportRow[] = fileSelections.map((selection) => ({
     sourceFileId: selection.sourceFileId,
     filename: selection.filename,
     status: 'queued',
@@ -176,7 +233,7 @@ export async function importFromPicker(
         spreadsheetId: project.spreadsheetId,
         documentsFolderId: documentsFolder.id,
         extractedTextsFolderId: extractedTextsFolder.id,
-        selections,
+        selections: fileSelections,
         importedBy,
       },
       {

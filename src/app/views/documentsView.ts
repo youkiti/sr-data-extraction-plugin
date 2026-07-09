@@ -296,7 +296,7 @@ function renderList(state: AppState, ctx: ViewContext): HTMLElement {
   if (groups.length === 0) {
     return el('p', {
       id: 'documents-empty',
-      text: 'まだ文献がありません。「Drive から PDF を取り込む」から採用論文の PDF を選択してください。',
+      text: 'まだ文献がありません。「Drive から PDF / フォルダを取り込む」から採用論文の PDF またはフォルダを選択してください。',
     });
   }
   const mergeButton = el('button', {
@@ -321,7 +321,7 @@ export function renderDocumentsView(state: AppState, ctx: ViewContext): HTMLElem
   const importButton = el('button', {
     id: 'documents-import',
     className: 'documents__import',
-    text: 'Drive から PDF を取り込む',
+    text: 'Drive から PDF / フォルダを取り込む',
     attributes: { type: 'button' },
   });
   importButton.disabled = importing || !hasProject;
@@ -343,7 +343,7 @@ export function renderDocumentsView(state: AppState, ctx: ViewContext): HTMLElem
     }),
     el('p', {
       className: 'view__lead',
-      text: 'Google Drive Picker で採用論文の PDF を選択し、テキスト層を抽出します。同一試験の複数文書は取り込み後に「統合」でまとめられます。',
+      text: 'Google Drive Picker で採用論文の PDF を選択し、テキスト層を抽出します。フォルダを選ぶと直下の PDF をまとめて取り込みます。同一試験の複数文書は取り込み後に「統合」でまとめられます。',
     }),
     el('div', { className: 'documents__actions' }, [importButton, reloadButton]),
   ];

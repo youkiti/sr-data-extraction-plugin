@@ -7,14 +7,24 @@
 //   1. 拡張がタブを開く（URL フラグメントで extension_id を渡す。トークンは URL に載せない）
 //   2. ページが { kind: 'ready' } を chrome.runtime.sendMessage(extensionId, ...) で送る
 //      → 拡張は sendResponse({ token }) で OAuth トークンを返す（原則 5: URL / ログへ出さない）
-//   3. ユーザーが PDF を選択 → ページが { kind: 'picked', files } を送る（キャンセルは 'cancelled'）
+//   3. ユーザーが PDF / フォルダを選択 → ページが { kind: 'picked', files } を送る（キャンセルは 'cancelled'）
+//      files[].mimeType でフォルダ（FOLDER_MIME_TYPE）とファイルを見分ける。フォルダは呼び出し側
+//      （documentsService）が直下 PDF を列挙して取り込む
 //   4. 拡張がタブを閉じ、選択結果を返す。ユーザーがタブを直接閉じた場合はキャンセル扱い
 import type { GoogleApiDeps } from './types';
 
-/** Picker で選択された PDF（features/documents/importDocuments の ImportSelection と同形） */
+/** Drive のフォルダを表す mimeType（Picker のフォルダ選択の判定に使う） */
+export const FOLDER_MIME_TYPE = 'application/vnd.google-apps.folder';
+
+/**
+ * Picker で選択された項目。PDF なら importDocuments の ImportSelection と同形。
+ * mimeType が FOLDER_MIME_TYPE のときはフォルダで、呼び出し側が直下 PDF を展開する。
+ * （旧デプロイのホストページは mimeType を送らないため optional。欠落時はファイル扱い）
+ */
 export interface PickerSelection {
   sourceFileId: string;
   filename: string;
+  mimeType?: string;
 }
 
 /** ホスト済みページ ⇔ 拡張のメッセージが名乗る source 識別子 */
@@ -86,6 +96,7 @@ export function createChromePickerDeps(google: GoogleApiDeps): PickerDeps {
 interface PickedFileShape {
   id: string;
   name: string;
+  mimeType?: string;
 }
 
 /** ページからのメッセージを堅く検証する（外部オリジン由来のため信用しない） */
@@ -115,7 +126,9 @@ function parsePickerMessage(
       if (typeof file.id !== 'string' || file.id === '' || typeof file.name !== 'string') {
         return null;
       }
-      files.push({ id: file.id, name: file.name });
+      // mimeType は旧ホストページでは欠落しうる。string 以外は無視（ファイル扱い）
+      const mimeType = typeof file.mimeType === 'string' ? file.mimeType : undefined;
+      files.push({ id: file.id, name: file.name, mimeType });
     }
     return { kind: 'picked', files };
   }
@@ -170,7 +183,11 @@ export async function openPdfPicker(deps: PickerDeps): Promise<PickerSelection[]
           return;
         }
         settle(
-          parsed.files.map((file) => ({ sourceFileId: file.id, filename: file.name })),
+          parsed.files.map((file) => ({
+            sourceFileId: file.id,
+            filename: file.name,
+            mimeType: file.mimeType,
+          })),
           true,
         );
       },

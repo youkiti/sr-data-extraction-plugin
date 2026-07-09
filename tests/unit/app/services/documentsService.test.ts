@@ -30,9 +30,9 @@ import {
   updateStudy,
 } from '../../../../src/features/documents/studyRepository';
 import { readRunStudyCoverage } from '../../../../src/features/extraction/runRepository';
-import { ensureChildFolder } from '../../../../src/lib/google/drive';
+import { ensureChildFolder, listFolderPdfs } from '../../../../src/lib/google/drive';
 import { getCurrentUserEmail } from '../../../../src/lib/google/identity';
-import { openPdfPicker } from '../../../../src/lib/google/picker';
+import { FOLDER_MIME_TYPE, openPdfPicker } from '../../../../src/lib/google/picker';
 import { getLocal, setLocal } from '../../../../src/lib/storage/chromeStorage';
 
 jest.mock('../../../../src/features/documents/documentRepository');
@@ -61,6 +61,7 @@ const mockAppendStudies = jest.mocked(appendStudies);
 const mockUpdateStudy = jest.mocked(updateStudy);
 const mockReadCoverage = jest.mocked(readRunStudyCoverage);
 const mockEnsureChildFolder = jest.mocked(ensureChildFolder);
+const mockListFolderPdfs = jest.mocked(listFolderPdfs);
 const mockGetCurrentUserEmail = jest.mocked(getCurrentUserEmail);
 const mockOpenPdfPicker = jest.mocked(openPdfPicker);
 const mockGetLocal = jest.mocked(getLocal);
@@ -282,6 +283,76 @@ describe('importFromPicker', () => {
     await importFromPicker(store, makeDeps());
     expect(store.getState().documents.importRows[0]?.status).toBe('failed');
     expect(toastTexts()).toContain('取り込みに失敗しました: drive down');
+  });
+
+  test('フォルダ選択は直下 PDF を列挙して展開し「展開中」トーストを出す', async () => {
+    const store = makeStore();
+    mockOpenPdfPicker.mockResolvedValue([
+      { sourceFileId: 'folder-1', filename: 'fulltext', mimeType: FOLDER_MIME_TYPE },
+    ]);
+    mockListFolderPdfs.mockResolvedValue([
+      { id: 'src-1', name: 'a.pdf' },
+      { id: 'src-2', name: 'b.pdf' },
+    ]);
+    mockImportDocuments.mockResolvedValue({ importedStudies: [], imported: [], failures: [] });
+
+    await importFromPicker(store, makeDeps());
+
+    expect(mockListFolderPdfs).toHaveBeenCalledWith('folder-1', expect.anything());
+    expect(mockImportDocuments.mock.calls[0]?.[0].selections).toEqual([
+      { sourceFileId: 'src-1', filename: 'a.pdf' },
+      { sourceFileId: 'src-2', filename: 'b.pdf' },
+    ]);
+    expect(toastTexts()).toContain('フォルダを展開中…');
+  });
+
+  test('ファイルとフォルダ混在は結合し sourceFileId で重複排除する', async () => {
+    const store = makeStore();
+    mockOpenPdfPicker.mockResolvedValue([
+      { sourceFileId: 'src-1', filename: 'a.pdf', mimeType: 'application/pdf' },
+      { sourceFileId: 'folder-1', filename: 'fulltext', mimeType: FOLDER_MIME_TYPE },
+    ]);
+    // フォルダ内に個別選択と同じ src-1 が含まれる → 1 回だけ取り込む
+    mockListFolderPdfs.mockResolvedValue([
+      { id: 'src-1', name: 'a.pdf' },
+      { id: 'src-3', name: 'c.pdf' },
+    ]);
+    mockImportDocuments.mockResolvedValue({ importedStudies: [], imported: [], failures: [] });
+
+    await importFromPicker(store, makeDeps());
+
+    expect(mockImportDocuments.mock.calls[0]?.[0].selections).toEqual([
+      { sourceFileId: 'src-1', filename: 'a.pdf' },
+      { sourceFileId: 'src-3', filename: 'c.pdf' },
+    ]);
+  });
+
+  test('PDF なしフォルダはトースト案内して取り込まない（importing を戻す）', async () => {
+    const store = makeStore();
+    mockOpenPdfPicker.mockResolvedValue([
+      { sourceFileId: 'folder-1', filename: 'empty', mimeType: FOLDER_MIME_TYPE },
+    ]);
+    mockListFolderPdfs.mockResolvedValue([]);
+
+    await importFromPicker(store, makeDeps());
+
+    expect(mockImportDocuments).not.toHaveBeenCalled();
+    expect(store.getState().documents.importing).toBe(false);
+    expect(toastTexts()).toContain('選択したフォルダに PDF が見つかりませんでした');
+  });
+
+  test('フォルダ列挙失敗はトースト案内して中断する', async () => {
+    const store = makeStore();
+    mockOpenPdfPicker.mockResolvedValue([
+      { sourceFileId: 'folder-1', filename: 'fulltext', mimeType: FOLDER_MIME_TYPE },
+    ]);
+    mockListFolderPdfs.mockRejectedValue(new Error('list failed'));
+
+    await importFromPicker(store, makeDeps());
+
+    expect(mockImportDocuments).not.toHaveBeenCalled();
+    expect(store.getState().documents.importing).toBe(false);
+    expect(toastTexts()).toContain('フォルダの読み込みに失敗しました: list failed');
   });
 });
 

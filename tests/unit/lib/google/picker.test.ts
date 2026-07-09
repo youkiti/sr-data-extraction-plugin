@@ -100,6 +100,50 @@ describe('openPdfPicker', () => {
     expect(fake.unsubscribeTab).toHaveBeenCalled();
   });
 
+  test('picked の mimeType を素通しする（フォルダ + ファイル混在）', async () => {
+    const fake = createFakeDeps();
+    const promise = openPdfPicker(fake.deps);
+    await flushMicrotasks();
+    fake.emitMessage(
+      {
+        source: PICKER_MESSAGE_SOURCE,
+        kind: 'picked',
+        files: [
+          { id: 'folder-1', name: 'fulltext', mimeType: 'application/vnd.google-apps.folder' },
+          { id: 'file-1', name: 'a.pdf', mimeType: 'application/pdf' },
+        ],
+      },
+      77,
+      jest.fn(),
+    );
+    await expect(promise).resolves.toEqual([
+      {
+        sourceFileId: 'folder-1',
+        filename: 'fulltext',
+        mimeType: 'application/vnd.google-apps.folder',
+      },
+      { sourceFileId: 'file-1', filename: 'a.pdf', mimeType: 'application/pdf' },
+    ]);
+  });
+
+  test('mimeType が文字列でない要素はファイル扱いにする（mimeType 欠落＝undefined）', async () => {
+    const fake = createFakeDeps();
+    const promise = openPdfPicker(fake.deps);
+    await flushMicrotasks();
+    fake.emitMessage(
+      {
+        source: PICKER_MESSAGE_SOURCE,
+        kind: 'picked',
+        files: [{ id: 'file-1', name: 'a.pdf', mimeType: 42 }],
+      },
+      77,
+      jest.fn(),
+    );
+    const result = await promise;
+    expect(result).toEqual([{ sourceFileId: 'file-1', filename: 'a.pdf' }]);
+    expect(result?.[0]?.mimeType).toBeUndefined();
+  });
+
   test('cancelled で null を返しタブを閉じる', async () => {
     const fake = createFakeDeps();
     const promise = openPdfPicker(fake.deps);
