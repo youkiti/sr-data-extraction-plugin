@@ -148,6 +148,54 @@
   color: var(--color-text-muted);
 }
 
+/* 設定（#/options）: options.html と同じ節スタイルをアプリ内でも使う（settingsSections.ts 共通） */
+.settings__header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.settings__body {
+  max-width: 640px;
+}
+
+.options__section {
+  margin-top: 24px;
+  padding: 16px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+}
+
+.options__section h2 {
+  margin-top: 0;
+  font-size: 15px;
+}
+
+.options__help {
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.options__status {
+  color: var(--color-text-muted);
+}
+
+.options__status--error {
+  color: var(--color-danger);
+}
+
+.options__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.options__row input {
+  flex: 1;
+}
+
 .home__summary {
   display: grid;
   grid-template-columns: max-content max-content;

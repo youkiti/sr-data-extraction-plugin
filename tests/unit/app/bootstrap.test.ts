@@ -86,7 +86,7 @@ const APP_TEMPLATE = `
       <button id="app-title" type="button">SR データ抽出</button>
       <p id="app-status">読み込み中…</p>
       <a id="app-open-popup" href="../popup/popup.html" hidden>プロジェクト選択を開く</a>
-      <a id="app-open-options" href="../options/options.html" aria-label="設定を開く">⚙</a>
+      <a id="app-open-options" href="#/options" aria-label="設定を開く">⚙</a>
       <p id="app-context" aria-live="polite">起動中</p>
     </header>
     <ul id="app-nav"></ul>
@@ -378,6 +378,22 @@ describe('bootstrapApp', () => {
     expect(document.querySelector('#app-nav a[aria-current="page"]')?.getAttribute('href')).toBe(
       '#/documents',
     );
+  });
+
+  test('設定ルート #/options はサイドバー外だがアプリ内（同一タブ）で表示できる', async () => {
+    const stub = createWindowStub();
+    await bootstrapApp(asWindow(stub));
+    stub.location.hash = '#/options';
+    stub.fireHashChange();
+    // 設定画面がコンテンツ領域に組み上がる（別ページ・別タブへ飛ばさない）
+    expect(document.getElementById('app-content')?.querySelector('#gemini-api-key')).not.toBeNull();
+    expect(document.getElementById('app-context')?.textContent).toBe('設定 画面を表示しています');
+    // ステップナビは 9 項目のまま（設定はナビに出さない）
+    expect(document.querySelectorAll('#app-nav a')).toHaveLength(9);
+    // 戻る導線は #/home へのハッシュリンク
+    expect(
+      document.querySelector('#app-content .settings__back')?.getAttribute('href'),
+    ).toBe('#/home');
   });
 
   test('ガード未充足ルートへの直接遷移はトースト + 直前ルートへ戻す', async () => {
