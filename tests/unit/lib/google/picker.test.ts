@@ -141,7 +141,7 @@ describe('openPdfPicker', () => {
     );
     const result = await promise;
     expect(result).toEqual([{ sourceFileId: 'file-1', filename: 'a.pdf' }]);
-    expect(result?.[0].mimeType).toBeUndefined();
+    expect(result?.[0]?.mimeType).toBeUndefined();
   });
 
   test('cancelled で null を返しタブを閉じる', async () => {
