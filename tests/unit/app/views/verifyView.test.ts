@@ -4,11 +4,12 @@ import { createInitialState, type AppState, type VerifyTarget } from '../../../.
 import type { ViewContext, VerifyViewCallbacks } from '../../../../src/app/views/types';
 import type { DocumentRecord } from '../../../../src/domain/document';
 import type { SchemaField } from '../../../../src/domain/schemaField';
+import type { StudyRecord } from '../../../../src/domain/study';
 import type { VerificationData } from '../../../../src/features/verification/types';
 
 function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<VerifyViewCallbacks> } {
   const callbacks = {
-    onSelectDocument: jest.fn(),
+    onSelectStudy: jest.fn(),
     onRetryLoad: jest.fn(),
     onDecision: jest.fn(),
     onArmConfirm: jest.fn(),
@@ -58,7 +59,7 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<VerifyViewCallbac
         onRun: jest.fn(),
         onSelectRun: jest.fn(),
         onReloadHistory: jest.fn(),
-        onSelectVerifyDocument: jest.fn(),
+        onSelectVerifyStudy: jest.fn(),
         onRetryVerifyLoad: jest.fn(),
         onDecision: jest.fn(),
         onArmConfirm: jest.fn(),
@@ -108,6 +109,18 @@ function makeDocument(overrides: Partial<DocumentRecord> = {}): DocumentRecord {
   };
 }
 
+function makeStudy(overrides: Partial<StudyRecord> = {}): StudyRecord {
+  return {
+    studyId: 'study-1',
+    studyLabel: 'Smith 2020',
+    registrationId: null,
+    createdAt: 't0',
+    createdBy: 'me@example.com',
+    note: null,
+    ...overrides,
+  };
+}
+
 function makeField(overrides: Partial<SchemaField> = {}): SchemaField {
   return {
     schemaVersion: 1,
@@ -131,7 +144,8 @@ function makeField(overrides: Partial<SchemaField> = {}): SchemaField {
 
 function makeTarget(overrides: Partial<VerifyTarget> = {}): VerifyTarget {
   return {
-    document: makeDocument(),
+    study: makeStudy(),
+    documents: [makeDocument()],
     evidence: [],
     fields: [makeField()],
     schemaVersion: 1,
@@ -142,16 +156,14 @@ function makeTarget(overrides: Partial<VerifyTarget> = {}): VerifyTarget {
 
 function makeVerification(): VerificationData {
   return {
-    document: makeDocument(),
+    study: makeStudy(),
+    documents: [{ document: makeDocument(), pdf: null, pdfError: 'テストでは PDF なし', textPages: [] }],
     fields: [makeField()],
     evidence: [],
     decisions: [],
     annotator: 'me@example.com',
     schemaVersion: 1,
     armStructure: null,
-    pdf: null,
-    pdfError: 'テストでは PDF なし',
-    textPages: [],
   };
 }
 
@@ -191,7 +203,7 @@ describe('renderVerifyView', () => {
     const { ctx } = makeCtx();
     const root = render(makeState({ targets: [makeTarget()], loading: true }), ctx);
     expect(root.querySelector('#verify-loading')).not.toBeNull();
-    expect(root.querySelector('#verify-doc')).toBeNull();
+    expect(root.querySelector('#verify-study')).toBeNull();
   });
 
   test('一覧読み込み失敗は #verify-error + 再試行', () => {
@@ -204,11 +216,11 @@ describe('renderVerifyView', () => {
     expect(callbacks.onRetryLoad).toHaveBeenCalled();
   });
 
-  test('抽出済み文献が 0 件なら空状態', () => {
+  test('抽出済み研究が 0 件なら空状態', () => {
     const { ctx } = makeCtx();
     const root = render(makeState({ targets: [] }), ctx);
     expect(root.querySelector('#verify-empty')?.textContent).toContain(
-      'AI 抽出済みの文献がありません',
+      'AI 抽出済みの研究がありません',
     );
   });
 
@@ -217,21 +229,22 @@ describe('renderVerifyView', () => {
     const targets = [
       makeTarget(),
       makeTarget({
-        document: makeDocument({ documentId: 'doc-2', studyId: 'study-2', filename: 'jones2021.pdf' }),
+        study: makeStudy({ studyId: 'study-2', studyLabel: 'Jones 2021' }),
+        documents: [makeDocument({ documentId: 'doc-2', studyId: 'study-2', filename: 'jones2021.pdf' })],
         progress: { decided: 0, total: 2, byTab: [] },
       }),
     ];
-    const root = render(makeState({ targets, selectedDocumentId: 'doc-2' }), ctx);
-    const select = root.querySelector('#verify-doc') as HTMLSelectElement;
-    // セレクタのラベルはファイル名（study_label は Studies へ移設・v0.10）
+    const root = render(makeState({ targets, selectedStudyId: 'study-2' }), ctx);
+    const select = root.querySelector('#verify-study') as HTMLSelectElement;
+    // セレクタのラベルは study_label（Studies 由来・v0.10 フェーズ 3）
     expect([...select.options].map((option) => option.textContent)).toEqual([
-      'smith2020.pdf（判定済み 1 / 4）',
-      'jones2021.pdf（判定済み 0 / 2）',
+      'Smith 2020（判定済み 1 / 4）',
+      'Jones 2021（判定済み 0 / 2）',
     ]);
-    expect(select.value).toBe('doc-2');
-    select.value = 'doc-1';
+    expect(select.value).toBe('study-2');
+    select.value = 'study-1';
     select.dispatchEvent(new Event('change'));
-    expect(callbacks.onSelectDocument).toHaveBeenCalledWith('doc-1');
+    expect(callbacks.onSelectStudy).toHaveBeenCalledWith('study-1');
   });
 
   test('検証データ読み込み中は #verify-doc-loading、オフラインキューは #verify-queued', () => {
@@ -244,14 +257,14 @@ describe('renderVerifyView', () => {
     expect(root.querySelector('#verify-queued')?.textContent).toBe('オフライン: 2 件キュー中');
   });
 
-  test('?doc= 不正などの verifyError はセレクタと併せて表示する', () => {
+  test('?study= 不正などの verifyError はセレクタと併せて表示する', () => {
     const { ctx } = makeCtx();
     const root = render(
-      makeState({ targets: [makeTarget()], verifyError: '文献 doc-9 が見つかりません' }),
+      makeState({ targets: [makeTarget()], verifyError: 'study study-9 が見つかりません' }),
       ctx,
     );
-    expect(root.querySelector('#verify-doc')).not.toBeNull();
-    expect(root.querySelector('#verify-error')?.textContent).toContain('doc-9');
+    expect(root.querySelector('#verify-study')).not.toBeNull();
+    expect(root.querySelector('#verify-error')?.textContent).toContain('study-9');
   });
 
   test('検証データ読込済みなら 2 ペインパネルを埋め込み、判定がコールバックへ届く', () => {
@@ -260,7 +273,7 @@ describe('renderVerifyView', () => {
     const root = render(
       makeState({
         targets: [makeTarget()],
-        selectedDocumentId: 'doc-1',
+        selectedStudyId: 'study-1',
         verification,
       }),
       ctx,
@@ -303,7 +316,7 @@ describe('renderVerifyView', () => {
     const root = render(
       makeState({
         targets: [makeTarget()],
-        selectedDocumentId: 'doc-1',
+        selectedStudyId: 'study-1',
         verification,
         deepLinkEntityKey: 'arm:1',
       }),
@@ -339,7 +352,7 @@ describe('renderVerifyView', () => {
       ],
     };
     const root = render(
-      makeState({ targets: [makeTarget()], selectedDocumentId: 'doc-1', verification }),
+      makeState({ targets: [makeTarget()], selectedStudyId: 'study-1', verification }),
       ctx,
     );
     const input = root.querySelector('.verify__arm-name') as HTMLInputElement;
@@ -365,7 +378,7 @@ describe('renderVerifyView', () => {
       armStructure: { version: 1, arms: [{ armKey: 'arm:1', armName: '介入群' }] },
     };
     const root = render(
-      makeState({ targets: [makeTarget()], selectedDocumentId: 'doc-1', verification }),
+      makeState({ targets: [makeTarget()], selectedStudyId: 'study-1', verification }),
       ctx,
     );
     (root.querySelector('#verify-outcome-add-button') as HTMLButtonElement).click();

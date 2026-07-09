@@ -1,34 +1,12 @@
 import {
   buildDashboard,
-  type DashboardDocumentInput,
+  type DashboardStudyInput,
 } from '../../../../src/features/verification/dashboard';
 import type { Decision } from '../../../../src/domain/decision';
-import type { DocumentRecord } from '../../../../src/domain/document';
 import type { Evidence } from '../../../../src/domain/evidence';
 import type { SchemaField } from '../../../../src/domain/schemaField';
 
 const ME = 'me@example.com';
-
-function makeDocument(overrides: Partial<DocumentRecord> = {}): DocumentRecord {
-  return {
-    documentId: 'doc-1',
-    studyId: 'study-1',
-    documentRole: 'article',
-    driveFileId: 'drive-1',
-    sourceFileId: 'src-1',
-    filename: 'smith2020.pdf',
-    pmid: null,
-    doi: null,
-    textRef: 'ref',
-    textStatus: 'ok',
-    pageCount: 2,
-    charCount: 1000,
-    importedAt: 't0',
-    importedBy: ME,
-    note: null,
-    ...overrides,
-  };
-}
 
 function makeField(overrides: Partial<SchemaField> = {}): SchemaField {
   return {
@@ -98,9 +76,9 @@ const FIELDS: SchemaField[] = [
   }),
 ];
 
-function makeInput(overrides: Partial<DashboardDocumentInput> = {}): DashboardDocumentInput {
+function makeInput(overrides: Partial<DashboardStudyInput> = {}): DashboardStudyInput {
   return {
-    document: makeDocument(),
+    studyId: 'study-1',
     studyLabel: 'Smith 2020',
     fields: FIELDS,
     evidence: [
@@ -251,9 +229,9 @@ describe('buildDashboard', () => {
     });
   });
 
-  test('スキーマが異なる document 間では section の和集合を取り、無い section は null', () => {
+  test('スキーマが異なる study 間では section の和集合を取り、無い section は null', () => {
     const doc2 = makeInput({
-      document: makeDocument({ documentId: 'doc-2', studyId: 'study-2' }),
+      studyId: 'study-2',
       studyLabel: 'Jones 2021',
       fields: [
         makeField({ fieldId: 'f-design', section: 'design', fieldName: 'design' }),

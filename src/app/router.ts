@@ -43,7 +43,7 @@ export const ROUTES: RouteDefinition[] = [
 ];
 
 /**
- * location.hash をルートへ正規化する。クエリ（#/verify?doc=... 等）は切り落とし、
+ * location.hash をルートへ正規化する。クエリ（#/verify?study=... 等）は切り落とし、
  * 未知のハッシュ・空文字は #/home へ倒す
  */
 export function normalizeHash(rawHash: string): RouteHash {
@@ -66,13 +66,13 @@ function queryParamOf(rawHash: string, name: string): string | null {
   return value === null || value === '' ? null : value;
 }
 
-/** `#/verify?doc={document_id}` の doc クエリを取り出す（ui-flow.md §3） */
-export function docQueryOf(rawHash: string): string | null {
-  return queryParamOf(rawHash, 'doc');
+/** `#/verify?study={study_id}` の study クエリを取り出す（ui-flow.md §3。v0.10 フェーズ 3） */
+export function studyQueryOf(rawHash: string): string | null {
+  return queryParamOf(rawHash, 'study');
 }
 
 /**
- * `#/verify?doc=...&entity={entity_key}` の entity クエリを取り出す（ui-flow.md §3 の
+ * `#/verify?study=...&entity={entity_key}` の entity クエリを取り出す（ui-flow.md §3 の
  * セル単位ディープリンク。S9 ダッシュボードのセルクリックが遷移元）
  */
 export function entityQueryOf(rawHash: string): string | null {

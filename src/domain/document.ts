@@ -35,6 +35,16 @@ export const DOCUMENT_ROLE_ORDER: readonly DocumentRole[] = [
 /** 取り込み時の既定ロール */
 export const DEFAULT_DOCUMENT_ROLE: DocumentRole = 'article';
 
+/** role の日本語表示ラベル（検証の文書切替タブなど UI 共通。§3.2） */
+export const DOCUMENT_ROLE_LABELS: Record<DocumentRole, string> = {
+  article: '本論文',
+  registration: '試験登録',
+  protocol: 'プロトコル',
+  abstract: '学会抄録',
+  supplement: '付録・補遺',
+  other: 'その他',
+};
+
 /** 1 行 = 1 文書（PDF）。試験への所属は study_id で表す */
 export interface DocumentRecord {
   documentId: string;

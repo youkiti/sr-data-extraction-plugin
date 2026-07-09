@@ -20,9 +20,9 @@ spec が正。実装が追いついていない箇所は以下のとおり（実
 | §3 `#/protocol` | ✅ 実装済み（プロジェクト未選択 / 読み込み中 / 失敗 / 新規フォーム / 読み取り専用 + 版切替 / 再入力フォーム。2026-07-02） |
 | §3 `#/schema` | ✅ 実装済み（ドラフト前 / 生成中 / 編集中 / 確定済みの 4 状態 + 読み込み中 / 失敗。2026-07-02） |
 | §3 `#/pilot` | ✅ 実装済み（未実行 / 実行中 / 完了 + 埋め込み検証 UI + 群構成の確定カード〔S8 と共有〕。2026-07-02） |
-| §3 `#/verify` | ✅ 実装済み（一覧読み込み中 / 失敗 / 通常〔進捗チップ + ?doc= 同期〕/ 文献切替 / 群構成の確定〔未確定タブディム → 確定 → `ArmStructures` 追記〕/ `?entity=` ディープリンク〔S9 と同時実装。2026-07-02〕） |
+| §3 `#/verify` | ✅ 実装済み（一覧読み込み中 / 失敗 / 通常〔進捗チップ + ?study= 同期〕/ study 切替 / 複数文書の文書切替タブ + 出所 PDF 自動切替〔v0.10 フェーズ 3 = 2026-07-09〕/ 群構成の確定〔未確定タブディム → 確定 → `ArmStructures` 追記〕/ `?entity=` ディープリンク〔S9 と同時実装。2026-07-02〕） |
 | §3 `#/extract` | ✅ 実装済み（読み込み中 / 失敗 / 未実行〔未抽出の既定選択 + 抽出済みバッジ + コスト概算 + 中断バナー = 2026-07-06〕/ 実行確認カード / 実行中〔**study 単位**進捗リスト〕/ 完了〔done / partial_failure + 再試行 = single_study run〕。2026-07-02。v0.10 フェーズ 2 で document 単位 → study 単位へ更新 = 2026-07-09） |
-| §3 `#/dashboard` | ✅ 実装済み（読み込み中 / 失敗 / 0 件 / 通常〔サマリ + document × section マトリクス + セルの `?doc=&entity=` ディープリンク〕。2026-07-02） |
+| §3 `#/dashboard` | ✅ 実装済み（読み込み中 / 失敗 / 0 件 / 通常〔サマリ + study × section マトリクス + セルの `?study=&entity=` ディープリンク〕。2026-07-02。v0.10 フェーズ 3 で study 単位へ = 2026-07-09） |
 | §3 `#/export` | ✅ 実装済み（読み込み中 / 失敗 / 通常〔形式選択 + サマリ + プレビュー + 除外警告〕/ 未検証セル警告ダイアログ / 生成中 / 失敗 / 生成完了〔Drive `exports/` 保存 + `ExportLog` 追記 + ローカル保存〕。2026-07-03） |
 | §4 キーボードショートカット | ✅ 検証パネル（`verificationPanel`）に実装済み。spec の「`#/verify` のみで有効」は「**検証パネルが表示されている画面**（`#/verify` と `#/pilot` の埋め込み）で有効」に読み替える（パネルの DOM 接続中のみ反応・入力フォーカス中は判定キー無効） |
 
@@ -127,24 +127,24 @@ spec が正。実装が追いついていない箇所は以下のとおり（実
 | | 実行中 | 全体進捗 `#extract-progress`（`<progress>` + 「n / m バッチ完了（p%）」）+ study 単位サマリ `#extract-doc-summary`（「試験: 完了 x / 失敗 y / 全 N 件」。失敗 0 件なら失敗は出さない）+ 処理中の試験 `#extract-current-doc`（「処理中: study_label（i 件目・バッチ c/t）」。running 行がない瞬間は出さない）+ **study 単位**の進捗リスト `#extract-study-list`（1 行 = 1 study: study_label + 状態バッジ 待機中 `queued` / 実行中 `running` / 完了 `done` / 失敗 `failed`。実行中行は `.extract__doc-row--running` で強調し「バッチ c/t」を併記、失敗行はバッチ失敗の内訳を併記）。setup は出さない |
 | | 完了（done） | `#extract-run-done`「一括抽出が完了しました。」+ 進捗リスト（全行 完了）+ 「検証へ進む」`#extract-verify-link`（`#/verify` へのリンク）。setup も再表示し、続けて再実行できる（既抽出バッジは実行結果で更新） |
 | | 完了（partial_failure） | 上部に黄バナー `#extract-partial-failure`「{n} 件の文献で失敗しました。再試行できます」+ 応答要素の破棄があれば件数を併記。失敗行に「再試行」`.extract__retry`（`run_type = single_document` で当該 1 本のみ再実行。再試行中は他の再試行・実行ボタンを無効化）。成功分の検証へは `#extract-verify-link` から進める |
-| `#/verify` | 一覧読み込み中 | `#verify-loading`「検証対象を読み込んでいます…」。Evidence がある document 一覧 + Decisions を読む間 |
+| `#/verify` | 一覧読み込み中 | `#verify-loading`「検証対象を読み込んでいます…」。Evidence がある study 一覧 + Decisions を読む間 |
 | | 一覧読み込み失敗 | `#verify-error`（メッセージ）+ 再試行 `#verify-retry` |
-| | 通常 | document セレクタ `#verify-doc`（Evidence がある document のみ列挙。各行に進捗チップ「判定済み n / 総セル m」）+ 選択中文献の見出し（h3 = study_label。見出し階層 h2 → h3 → h4 を保つ）+ 2 ペイン検証パネル（`#/pilot` 埋め込みと同一コンポーネント）。URL は `#/verify?doc={document_id}` と同期する — セレクタ切替で hash を書き換え、直リンク・リロードで該当文献を復元 |
-| | `?entity=` ディープリンク | `#/verify?doc={document_id}&entity={entity_key}`（S9 ダッシュボードのセルクリック）で該当 entity のタブへ切替 + 先頭セルへスクロール・フォーカス（[ui-flow.md §3](ui-flow.md)）。存在しない entity_key・群構成未確定でロック中のタブに属する entity は無視（通常表示のまま）。セレクタでの文献切替は `?doc=` のみ書き戻す（entity は引き継がない） |
-| | `?doc=` が不正 | 存在しない document_id は `#verify-error`「文献 {id} が見つかりません」+ セレクタから選び直せる |
-| | 文献切替中 | `#verify-doc-loading`（検証データ束の読み込み。前の文献の PDF は破棄してから読む） |
+| | 通常 | study セレクタ `#verify-study`（Evidence がある study のみ列挙。各行に進捗チップ「判定済み n / 総セル m」）+ 選択中 study の見出し（h3 = study_label。見出し階層 h2 → h3 → h4 を保つ）+ 2 ペイン検証パネル（`#/pilot` 埋め込みと同一コンポーネント）。URL は `#/verify?study={study_id}` と同期する — セレクタ切替で hash を書き換え、直リンク・リロードで該当 study を復元。study が複数文書のときは左ペイン上部に**文書切替タブ** `.verify__doc-tabs`（role バッジ + ファイル名。既定は role 固定順の先頭）。項目フォーカス / 根拠クリック / 判定後の自動送り時に `Evidence.document_id` の文書へ自動切替（`setDocument` で描画競合の連番ガードを維持） |
+| | `?entity=` ディープリンク | `#/verify?study={study_id}&entity={entity_key}`（S9 ダッシュボードのセルクリック）で該当 entity のタブへ切替 + 先頭セルへスクロール・フォーカス（[ui-flow.md §3](ui-flow.md)）。存在しない entity_key・群構成未確定でロック中のタブに属する entity は無視（通常表示のまま）。セレクタでの study 切替は `?study=` のみ書き戻す（entity は引き継がない） |
+| | `?study=` が不正 | 存在しない study_id は `#verify-error`「study {id} が見つかりません」+ セレクタから選び直せる |
+| | study 切替中 | `#verify-doc-loading`（検証データ束の読み込み。前の study の全文書 PDF は破棄してから読む） |
 | | 群構成が未確定 | **arm / outcome_result タブがディム（`aria-disabled`）+ 「まず群構成を確定してください」**（rob_domain タブは群構成に依存しないためディムしない）。群構成確定カード `#verify-arm-card` を表示: AI ドラフトの arm 一覧（`arm_key` + 名称入力。初期値 = Evidence の arm 名フィールド値）+ 行の追加 / 削除 + 「群構成を確定」`#verify-arm-confirm`。名称が空の行があるうちは確定不可（インラインエラー `#verify-arm-error`）。arm / outcome_result レベル項目が 1 つもないスキーマ（= 群構成が要らない）ではカード自体を出さない（ディム対象タブも存在しない） |
 | | 群構成が確定済み | カードは要約表示「群構成: n 群（version v）」+ 「改訂」`#verify-arm-revise` で再編集 → 確定で `ArmStructures` へ新 version を追記（監査証跡）。arm / outcome_result タブが有効化される。arm タブは `ArmStructures` の全 arm をインスタンス源に含め、AI Evidence がない arm でも `AI 抽出なし（手入力のみ）` の空セルを表示する |
 | | outcome_result 追加 | 群構成が確定済み、かつ outcome_result 項目があるとき、アウトカムタブ上部に `#verify-outcome-add` を表示する。`#verify-outcome-key` は既存 `outcome_<n>` の次番号を既定値にし、`#verify-outcome-time` は任意。`#verify-outcome-add-button` で `outcome:<key>\|arm:<n>`（time 入力ありは `\|time:<time>` 付き）を確定 arm 全体に作り、`Decisions` へ予約 `field_id=__entity_instance__` の宣言イベントを追記する。追加直後は該当 outcome × arm の全 field が空セルとして表示され、進捗分母にも含まれる。既存キーと衝突、`:` / `\|` を含むキー、確定 arm なし、arm_key 不正の場合は保存せず `#verify-outcome-error`（`role="alert"`）を表示する |
 | | 幽霊セルの進捗 | 非 study タブの「インスタンス × field」直積で生じる Evidence なしセルは、検証進捗・ダッシュボード・エクスポート警告の総セル数に含める。これは AI 未抽出セルも人間が `edit` / `reject` / `not_reported` で明示判定するためで、未判定のままなら残数として表示する |
 | | anchor failed 項目 | フォーム側に quote 全文 + 「本文内を検索」ボタン。ハイライトは描画しない |
-| | `no_text_layer` document | PDF は表示するがハイライトなし。全項目が quote 全文 + ページヒント表示。「本文内を検索」ボタンは出さない（テキスト層がないため）。上部に「この PDF はテキスト層がないためハイライト検証は使えません」バナー |
+| | `no_text_layer` document | 表示中文書がテキスト層なしのとき、PDF は表示するがハイライトなし。全項目が quote 全文 + ページヒント表示。「本文内を検索」ボタンは出さない（テキスト層がないため）。左ペインに「この PDF はテキスト層がないためハイライト検証は使えません」バナー（文書切替タブで別文書に移ると表示中文書に応じて出し分け） |
 | | 複数一致 | 「他 n 箇所に一致」リンク。クリックでハイライト切替 + PDF スクロール |
 | | 保存失敗（オフライン） | 判定チップは楽観更新しつつ、`#verify-queued`「オフライン: N 件キュー中」。復帰後の再送成功でキュー表示が消える |
-| `#/dashboard` | 読み込み中 | `#dashboard-loading`「進捗を読み込んでいます…」（Evidence がある document 一覧 + Decisions を読む間。初回表示時に自動読込） |
+| `#/dashboard` | 読み込み中 | `#dashboard-loading`「進捗を読み込んでいます…」（Evidence がある study 一覧 + Decisions を読む間。初回表示時に自動読込） |
 | | 読み込み失敗 | `#dashboard-load-error`「進捗を読み込めませんでした: {理由}」（`role="alert"`）+ 再読み込み `#dashboard-reload` |
-| | 0 件 | `#dashboard-empty`「まだ抽出がありません。」+ `#/extract` への導線リンク（AI 抽出済み document が 0 本のとき。ガードなしで遷移できるルートのための空状態） |
-| | 通常 | サマリ `#dashboard-summary`（検証進捗 = 判定済み n / 総セル m + %、**AI 採用率 = accept n / 判定済みセル m + %**〔人が無修正で承認した割合。分母 = 判定済みセル〕、**AI 精度内訳** = 承認 / 修正 / 棄却 / 報告なしの件数〔人の判定 = AI 出力への変更を種別集計。undo 反映後の現在セル状態基準〕、anchor 失敗率 = failed n / アンカリング対象 m + %〔分母 = `anchor_status` 非 null の Evidence〕、not_reported 率 = n / Evidence 総数 m + %。分母 0 は「—」）+ マトリクス `#dashboard-matrix`（`<table>`。1 行 = 1 document〔`<th scope="row">` = study_label〕× 列 = section〔スキーマ登場順の和集合〕。セル = 「判定済み n / m」のリンク → `#/verify?doc={document_id}&entity={entity_key}`〔entity = セクション先頭セルの entity_key。セル単位ディープリンク — ui-flow.md §3〕。当該 document のスキーマにない section / セル 0 件は「—」でリンクなし）+ 行末に document 別の **AI 採用率**〔`title` に精度内訳〕・anchor 失敗率・not_reported 率列。進捗・rate・精度の集計は自分の annotator 行基準（検証画面の進捗チップと同じセルモデル） |
+| | 0 件 | `#dashboard-empty`「まだ抽出がありません。」+ `#/extract` への導線リンク（AI 抽出済み study が 0 件のとき。ガードなしで遷移できるルートのための空状態） |
+| | 通常 | サマリ `#dashboard-summary`（検証進捗 = 判定済み n / 総セル m + %、**AI 採用率 = accept n / 判定済みセル m + %**〔人が無修正で承認した割合。分母 = 判定済みセル〕、**AI 精度内訳** = 承認 / 修正 / 棄却 / 報告なしの件数〔人の判定 = AI 出力への変更を種別集計。undo 反映後の現在セル状態基準〕、anchor 失敗率 = failed n / アンカリング対象 m + %〔分母 = `anchor_status` 非 null の Evidence〕、not_reported 率 = n / Evidence 総数 m + %。分母 0 は「—」）+ マトリクス `#dashboard-matrix`（`<table>`。1 行 = 1 study〔`<th scope="row">` = study_label〕× 列 = section〔スキーマ登場順の和集合〕。セル = 「判定済み n / m」のリンク → `#/verify?study={study_id}&entity={entity_key}`〔entity = セクション先頭セルの entity_key。セル単位ディープリンク — ui-flow.md §3〕。当該 study のスキーマにない section / セル 0 件は「—」でリンクなし）+ 行末に study 別の **AI 採用率**〔`title` に精度内訳〕・anchor 失敗率・not_reported 率列。study の Evidence は配下の全文書ぶんを合算する。進捗・rate・精度の集計は自分の annotator 行基準（検証画面の進捗チップと同じセルモデル） |
 | `#/export` | 読み込み中 | `#export-loading`「エクスポート素材を読み込んでいます…」（Documents / StudyData / ResultsData / Evidence / Decisions / ExtractionRuns / 最新版 SchemaFields を読み、3 形式の CSV をメモリ上で構築する間。初回表示時に自動読込） |
 | | 読み込み失敗 | `#export-load-error`「エクスポート素材を読み込めませんでした: {理由}」（`role="alert"`）+ 再読み込み `#export-reload`。確定済みスキーマが 1 版もない場合もこの状態（ガード `dataRows ≥ 1` を満たす以上通常は起きない防御） |
 | | 通常 | 形式選択ラジオ `#export-format`（study_wide / results_long / audit。各形式に 1 行の用途説明）+ 選択形式のサマリ `#export-summary`（`<dl>`: データ行数 / 対象文献数〔= CSV に行が出た文献数。`ExportLog.document_count` と同値〕/ 未検証セル数〔study_wide = 確定 annotator 行の空セル数・audit = 判定 0 件セルのプレースホルダ行数・results_long は概念がなく「—」〕）+ 除外警告（確定 annotator を特定できず除外した文献 `#export-skipped`〔study_label 列挙。0 件なら非表示〕/ field_id 不整合で除外した行数 `#export-dropped`〔0 件なら非表示〕）+ プレビュー `#export-preview`（`<table>`: ヘッダ + 先頭 10 データ行。11 行以上は「…他 {n} 行」注記 `#export-preview-more`）+ 生成ボタン `#export-generate`「CSV を生成して Drive に保存」。**データ行 0 件の形式は生成ボタンを無効化** + 案内文。形式切替でサマリ・プレビュー・警告が追随する |

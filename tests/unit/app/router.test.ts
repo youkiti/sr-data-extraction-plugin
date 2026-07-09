@@ -1,4 +1,4 @@
-import { ROUTES, docQueryOf, entityQueryOf, findRoute, normalizeHash } from '../../../src/app/router';
+import { ROUTES, studyQueryOf, entityQueryOf, findRoute, normalizeHash } from '../../../src/app/router';
 import { createInitialState } from '../../../src/app/store';
 import type { ViewContext } from '../../../src/app/views/types';
 
@@ -45,7 +45,7 @@ const stubCtx: ViewContext = {
     onRun: jest.fn(),
     onSelectRun: jest.fn(),
     onReloadHistory: jest.fn(),
-    onSelectVerifyDocument: jest.fn(),
+    onSelectVerifyStudy: jest.fn(),
     onRetryVerifyLoad: jest.fn(),
     onDecision: jest.fn(),
     onArmConfirm: jest.fn(),
@@ -60,7 +60,7 @@ const stubCtx: ViewContext = {
     onReloadTargets: jest.fn(),
   },
   verify: {
-    onSelectDocument: jest.fn(),
+    onSelectStudy: jest.fn(),
     onRetryLoad: jest.fn(),
     onDecision: jest.fn(),
     onArmConfirm: jest.fn(),
@@ -97,16 +97,16 @@ describe('findRoute', () => {
   });
 });
 
-describe('docQueryOf', () => {
-  test('#/verify?doc=... の doc を取り出す（URL エンコードも復元）', () => {
-    expect(docQueryOf('#/verify?doc=doc-1')).toBe('doc-1');
-    expect(docQueryOf('#/verify?doc=doc%20x&other=1')).toBe('doc x');
+describe('studyQueryOf', () => {
+  test('#/verify?study=... の study を取り出す（URL エンコードも復元）', () => {
+    expect(studyQueryOf('#/verify?study=study-1')).toBe('study-1');
+    expect(studyQueryOf('#/verify?study=study%20x&other=1')).toBe('study x');
   });
 
-  test('クエリなし・doc なし・空値は null', () => {
-    expect(docQueryOf('#/verify')).toBeNull();
-    expect(docQueryOf('#/verify?entity=arm:1')).toBeNull();
-    expect(docQueryOf('#/verify?doc=')).toBeNull();
+  test('クエリなし・study なし・空値は null', () => {
+    expect(studyQueryOf('#/verify')).toBeNull();
+    expect(studyQueryOf('#/verify?entity=arm:1')).toBeNull();
+    expect(studyQueryOf('#/verify?study=')).toBeNull();
   });
 });
 

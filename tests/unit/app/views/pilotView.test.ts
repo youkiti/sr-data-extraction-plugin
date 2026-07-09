@@ -35,7 +35,7 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<PilotViewCallback
     onRun: jest.fn(),
     onSelectRun: jest.fn(),
     onReloadHistory: jest.fn(),
-    onSelectVerifyDocument: jest.fn(),
+    onSelectVerifyStudy: jest.fn(),
     onRetryVerifyLoad: jest.fn(),
     onDecision: jest.fn(),
     onArmConfirm: jest.fn(),
@@ -90,7 +90,7 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<PilotViewCallback
         onReloadTargets: jest.fn(),
       },
       verify: {
-        onSelectDocument: jest.fn(),
+        onSelectStudy: jest.fn(),
         onRetryLoad: jest.fn(),
         onDecision: jest.fn(),
         onArmConfirm: jest.fn(),
@@ -442,7 +442,7 @@ describe('完了（サマリ + 埋め込み検証）', () => {
     expect(noRejected.root.querySelectorAll('#pilot-partial-failure li')).toHaveLength(2);
   });
 
-  test('検証文献セレクタ: run.studyIds から records を引いてファイル名で列挙・切替', () => {
+  test('検証研究セレクタ: run.studyIds から studies を引いて study_label で列挙・切替', () => {
     const { root, callbacks } = render(
       makeState({
         documents: [
@@ -451,30 +451,31 @@ describe('完了（サマリ + 埋め込み検証）', () => {
         ],
         pilot: {
           run: makeRun({ studyIds: ['study-1', 'study-9'] }),
-          verifyDocumentId: 'doc-1',
+          verifyStudyId: 'study-1',
         },
       }),
     );
-    const select = root.querySelector<HTMLSelectElement>('#pilot-verify-doc');
+    const select = root.querySelector<HTMLSelectElement>('#pilot-verify-study');
     const options = select?.querySelectorAll('option');
-    // option text = doc.filename、value = document_id（study_label は Studies へ移設・v0.10）
-    expect(options?.[0]?.textContent).toBe('smith2020.pdf');
-    expect(options?.[1]?.textContent).toBe('jones2021.pdf');
-    expect(select?.value).toBe('doc-1');
-    select!.value = 'doc-9';
+    // option text = study_label（Studies 由来）、value = study_id（v0.10 フェーズ 3）
+    expect(options?.[0]?.textContent).toBe('試験-study-1');
+    expect(options?.[1]?.textContent).toBe('試験-study-9');
+    expect(select?.value).toBe('study-1');
+    select!.value = 'study-9';
     select!.dispatchEvent(new Event('change'));
-    expect(callbacks.onSelectVerifyDocument).toHaveBeenCalledWith('doc-9');
+    expect(callbacks.onSelectVerifyStudy).toHaveBeenCalledWith('study-9');
   });
 
-  test('文献一覧が null ならセレクタは空（option なし）。verifyDocumentId 未設定でも安全', () => {
+  test('研究一覧が null ならセレクタは空（option なし）。verifyStudyId 未設定でも安全', () => {
     const { root } = render(
       makeState({
         documents: null,
-        pilot: { run: makeRun(), verifyDocumentId: null },
+        studies: null,
+        pilot: { run: makeRun(), verifyStudyId: null },
       }),
     );
-    expect(root.querySelector('#pilot-verify-doc')).not.toBeNull();
-    expect(root.querySelector('#pilot-verify-doc option')).toBeNull();
+    expect(root.querySelector('#pilot-verify-study')).not.toBeNull();
+    expect(root.querySelector('#pilot-verify-study option')).toBeNull();
   });
 
   test('オフラインキュー件数のチップ', () => {

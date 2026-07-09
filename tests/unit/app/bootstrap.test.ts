@@ -1067,20 +1067,20 @@ describe('bootstrapApp: #/pilot', () => {
     );
   });
 
-  test('#/pilot の検証セクション（文献切替セレクタ / 再試行）が配線されている', async () => {
+  test('#/pilot の検証セクション（study 切替セレクタ / 再試行）が配線されている', async () => {
     const stub = createWindowStub(
       pilotPreloaded({
         selectionInitialized: true,
         selectedStudyIds: ['study-1'],
         model: 'gemini-test',
-        // run は study 単位（studyIds）。文献切替セレクタは records を study_id で引く（v0.10）
+        // run は study 単位（studyIds）。study 切替セレクタは studies を study_id で引く（v0.10）
         run: { ...RUN, studyIds: ['study-1', 'study-x'] },
         runFields: [FIELD],
         evidence: [],
-        // 一覧に無い文献の読込失敗を残した状態（再試行の対象）。loadPilotVerification は
-        // 文献未発見時に verifyDocumentId を変えない
-        verifyDocumentId: 'doc-x',
-        verifyError: '文献 doc-x が見つかりません',
+        // 一覧に無い study の読込失敗を残した状態（再試行の対象）。loadPilotVerification は
+        // study 未発見時に verifyStudyId を変えない
+        verifyStudyId: 'study-x',
+        verifyError: 'study study-x が見つかりません',
       } as Partial<AppState['pilot']>),
     );
     const { deps } = createFakeDeps([[...SHEET_HEADERS.Documents]]);
@@ -1089,34 +1089,34 @@ describe('bootstrapApp: #/pilot', () => {
     stub.fireHashChange();
     await flush();
 
-    // 文献切替セレクタは run の study に属する document（filename 表示）を並べる
-    const select = document.getElementById('pilot-verify-doc') as HTMLSelectElement;
+    // study 切替セレクタは run の study を study_label 表示で並べる
+    const select = document.getElementById('pilot-verify-study') as HTMLSelectElement;
     expect(select.options.length).toBe(1);
-    expect(select.options[0]?.textContent).toBe('smith2020.pdf');
-    expect(select.options[0]?.value).toBe('doc-1');
+    expect(select.options[0]?.textContent).toBe('Smith 2020');
+    expect(select.options[0]?.value).toBe('study-1');
     // 読込失敗の表示
-    expect(document.getElementById('pilot-verify-error')?.textContent).toContain('doc-x');
+    expect(document.getElementById('pilot-verify-error')?.textContent).toContain('study-x');
 
-    // 再試行の配線（verifyDocumentId は doc-x のまま → 一覧に無く再度同じエラー）
+    // 再試行の配線（verifyStudyId は study-x のまま → 一覧に無く再度同じエラー）
     (document.getElementById('pilot-verify-retry') as HTMLButtonElement).click();
     await flush();
-    expect(store?.getState().pilot.verifyError).toContain('doc-x が見つかりません');
+    expect(store?.getState().pilot.verifyError).toContain('study-x が見つかりません');
 
-    // verifyDocumentId が無いときの再試行は何もしない
+    // verifyStudyId が無いときの再試行は何もしない
     const current = store?.getState();
     store?.setState({
-      pilot: { ...(current as AppState).pilot, verifyDocumentId: null, verifyError: 'まだエラー' },
+      pilot: { ...(current as AppState).pilot, verifyStudyId: null, verifyError: 'まだエラー' },
     });
     (document.getElementById('pilot-verify-retry') as HTMLButtonElement).click();
     await flush();
     expect(store?.getState().pilot.verifyError).toBe('まだエラー');
 
-    // セレクタで実在文献へ切替（onSelectVerifyDocument）→ loadPilotVerification 起動
-    const freshSelect = document.getElementById('pilot-verify-doc') as HTMLSelectElement;
-    freshSelect.value = 'doc-1';
+    // セレクタで実在 study へ切替（onSelectVerifyStudy）→ loadPilotVerification 起動
+    const freshSelect = document.getElementById('pilot-verify-study') as HTMLSelectElement;
+    freshSelect.value = 'study-1';
     freshSelect.dispatchEvent(new Event('change'));
     await flush();
-    expect(store?.getState().pilot.verifyDocumentId).toBe('doc-1');
+    expect(store?.getState().pilot.verifyStudyId).toBe('study-1');
   });
 
   test('#/pilot の判定保存（onDecision）と群構成確定（onArmConfirm）が配線されている', async () => {
@@ -1138,12 +1138,14 @@ describe('bootstrapApp: #/pilot', () => {
       entityLevel: 'outcome_result' as const,
     };
     const verification = {
-      document: DOC_RECORD,
+      study: STUDY_RECORD,
+      documents: [{ document: DOC_RECORD, pdf: null, pdfError: 'テストでは PDF なし', textPages: [] }],
       fields: [FIELD, ARM_FIELD, OUTCOME_FIELD],
       evidence: [
         {
           evidenceId: 'ev-1',
           runId: 'run-1',
+          studyId: 'study-1',
           documentId: 'doc-1',
           fieldId: 'f-total',
           entityKey: '-',
@@ -1157,6 +1159,7 @@ describe('bootstrapApp: #/pilot', () => {
         {
           evidenceId: 'ev-arm',
           runId: 'run-1',
+          studyId: 'study-1',
           documentId: 'doc-1',
           fieldId: 'f-arm-n',
           entityKey: 'arm:1',
@@ -1172,9 +1175,6 @@ describe('bootstrapApp: #/pilot', () => {
       annotator: 'tester@example.com',
       schemaVersion: 1,
       armStructure: null,
-      pdf: null,
-      pdfError: 'テストでは PDF なし',
-      textPages: [],
     };
     const stub = createWindowStub(
       pilotPreloaded({
@@ -1184,7 +1184,7 @@ describe('bootstrapApp: #/pilot', () => {
         run: { ...RUN, studyIds: ['study-1'] },
         runFields: [FIELD],
         evidence: verification.evidence,
-        verifyDocumentId: 'doc-1',
+        verifyStudyId: 'study-1',
         verification,
       } as unknown as Partial<AppState['pilot']>),
     );
@@ -1655,7 +1655,7 @@ describe('bootstrapApp: #/verify・#/dashboard', () => {
     Studies: [[...SHEET_HEADERS.Studies], STUDY_ROW],
   };
 
-  test('#/verify 入場で一覧を読み込み、?doc= なしは先頭文献を開く', async () => {
+  test('#/verify 入場で一覧を読み込み、?study= なしは先頭 study を開く', async () => {
     const stub = createWindowStub(verifyPreloaded());
     const { deps } = createVerifyFakeDeps(BASE_TABS);
     const store = await bootstrapApp(asWindow(stub), deps);
@@ -1664,12 +1664,12 @@ describe('bootstrapApp: #/verify・#/dashboard', () => {
     await flush();
     await flush();
 
-    const select = document.getElementById('verify-doc') as HTMLSelectElement;
-    expect(select.options[0]?.textContent).toBe('smith2020.pdf（判定済み 0 / 1）');
-    expect(store?.getState().verify.selectedDocumentId).toBe('doc-1');
-    // ?doc= なし入場でも既定文献を URL へ書き戻す（replaceState 経由。共有・リロード可能に）
-    expect(stub.history.replaceState).toHaveBeenCalledWith(null, '', '#/verify?doc=doc-1');
-    expect(stub.location.hash).toBe('#/verify?doc=doc-1');
+    const select = document.getElementById('verify-study') as HTMLSelectElement;
+    expect(select.options[0]?.textContent).toBe('Smith 2020（判定済み 0 / 1）');
+    expect(store?.getState().verify.selectedStudyId).toBe('study-1');
+    // ?study= なし入場でも既定 study を URL へ書き戻す（replaceState 経由。共有・リロード可能に）
+    expect(stub.history.replaceState).toHaveBeenCalledWith(null, '', '#/verify?study=study-1');
+    expect(stub.location.hash).toBe('#/verify?study=study-1');
     // PDF はスタブで開けない → pdfError 側のペインでフォームは使える
     expect(document.querySelector('.verify__panes')).not.toBeNull();
     expect(document.querySelector('.verify__pdf-error')).not.toBeNull();
@@ -1685,7 +1685,7 @@ describe('bootstrapApp: #/verify・#/dashboard', () => {
     expect(decisionsReads()).toBe(before);
   });
 
-  test('?entity= だけの入場は既定文献を補い ?entity= を保って書き戻す', async () => {
+  test('?entity= だけの入場は既定 study を補い ?entity= を保って書き戻す', async () => {
     const stub = createWindowStub(verifyPreloaded());
     const { deps } = createVerifyFakeDeps(BASE_TABS);
     const store = await bootstrapApp(asWindow(stub), deps);
@@ -1693,16 +1693,25 @@ describe('bootstrapApp: #/verify・#/dashboard', () => {
     stub.fireHashChange();
     await flush();
     await flush();
-    expect(store?.getState().verify.selectedDocumentId).toBe('doc-1');
-    // doc は既定で補い、セル単位ディープリンクの entity は維持する
-    expect(stub.history.replaceState).toHaveBeenCalledWith(null, '', '#/verify?doc=doc-1&entity=-');
-    expect(stub.location.hash).toBe('#/verify?doc=doc-1&entity=-');
+    expect(store?.getState().verify.selectedStudyId).toBe('study-1');
+    // study は既定で補い、セル単位ディープリンクの entity は維持する
+    expect(stub.history.replaceState).toHaveBeenCalledWith(
+      null,
+      '',
+      '#/verify?study=study-1&entity=-',
+    );
+    expect(stub.location.hash).toBe('#/verify?study=study-1&entity=-');
   });
 
-  test('セレクタ切替は hash 書き換え → ?doc= の文献を開く（直リンクと同経路）', async () => {
+  test('セレクタ切替は hash 書き換え → ?study= の study を開く（直リンクと同経路）', async () => {
     const stub = createWindowStub(verifyPreloaded([DOC_RECORD_1, DOC_RECORD_2]));
     const tabs = {
       ...BASE_TABS,
+      Studies: [
+        [...SHEET_HEADERS.Studies],
+        STUDY_ROW,
+        ['study-2', 'Jones 2021', '', 't0', 'tester@example.com', ''],
+      ],
       Evidence: [
         [...SHEET_HEADERS.Evidence],
         EVIDENCE_ROW,
@@ -1715,29 +1724,29 @@ describe('bootstrapApp: #/verify・#/dashboard', () => {
     stub.fireHashChange();
     await flush();
     await flush();
-    expect(store?.getState().verify.selectedDocumentId).toBe('doc-1');
+    expect(store?.getState().verify.selectedStudyId).toBe('study-1');
 
-    const select = document.getElementById('verify-doc') as HTMLSelectElement;
-    select.value = 'doc-2';
+    const select = document.getElementById('verify-study') as HTMLSelectElement;
+    select.value = 'study-2';
     select.dispatchEvent(new Event('change'));
-    expect(stub.location.hash).toBe('#/verify?doc=doc-2');
+    expect(stub.location.hash).toBe('#/verify?study=study-2');
     stub.fireHashChange();
     await flush();
     await flush();
-    expect(store?.getState().verify.selectedDocumentId).toBe('doc-2');
+    expect(store?.getState().verify.selectedStudyId).toBe('study-2');
   });
 
-  test('?doc= が存在しない文献なら #verify-error を出し、選び直せる', async () => {
+  test('?study= が存在しない study なら #verify-error を出し、選び直せる', async () => {
     const stub = createWindowStub(verifyPreloaded());
     const { deps } = createVerifyFakeDeps(BASE_TABS);
     const store = await bootstrapApp(asWindow(stub), deps);
-    stub.location.hash = '#/verify?doc=doc-9';
+    stub.location.hash = '#/verify?study=study-9';
     stub.fireHashChange();
     await flush();
     await flush();
-    expect(store?.getState().verify.verifyError).toContain('doc-9 が見つかりません');
-    expect(document.getElementById('verify-error')?.textContent).toContain('doc-9');
-    expect(document.getElementById('verify-doc')).not.toBeNull();
+    expect(store?.getState().verify.verifyError).toContain('study-9 が見つかりません');
+    expect(document.getElementById('verify-error')?.textContent).toContain('study-9');
+    expect(document.getElementById('verify-study')).not.toBeNull();
   });
 
   test('一覧読み込み失敗は #verify-error + 再試行が force 再読込につながる', async () => {
@@ -1764,11 +1773,11 @@ describe('bootstrapApp: #/verify・#/dashboard', () => {
     const stub = createWindowStub(verifyPreloaded());
     const { deps, fetchMock } = createVerifyFakeDeps(BASE_TABS, { failStudyData: true });
     const store = await bootstrapApp(asWindow(stub), deps);
-    stub.location.hash = '#/verify?doc=doc-1';
+    stub.location.hash = '#/verify?study=study-1';
     stub.fireHashChange();
     await flush();
     await flush();
-    expect(store?.getState().verify.selectedDocumentId).toBe('doc-1');
+    expect(store?.getState().verify.selectedStudyId).toBe('study-1');
     expect(store?.getState().verify.verifyError).toContain('HTTP 500');
 
     const callsBefore = fetchMock.mock.calls.length;
@@ -1846,7 +1855,7 @@ describe('bootstrapApp: #/verify・#/dashboard', () => {
     };
     const { deps } = createVerifyFakeDeps(tabs);
     const store = await bootstrapApp(asWindow(stub), deps);
-    stub.location.hash = '#/verify?doc=doc-1&entity=arm:1';
+    stub.location.hash = '#/verify?study=study-1&entity=arm:1';
     stub.fireHashChange();
     await flush();
     await flush();
@@ -1858,7 +1867,7 @@ describe('bootstrapApp: #/verify・#/dashboard', () => {
     expect(focused.querySelector('.verify__cell-label')?.textContent).toBe('群の N');
   });
 
-  test('#/dashboard 入場で集計を読み込み、セルが ?doc=&entity= ディープリンクを持つ', async () => {
+  test('#/dashboard 入場で集計を読み込み、セルが ?study=&entity= ディープリンクを持つ', async () => {
     const stub = createWindowStub(verifyPreloaded());
     const { deps, fetchMock } = createVerifyFakeDeps(BASE_TABS);
     const store = await bootstrapApp(asWindow(stub), deps);
@@ -1870,7 +1879,7 @@ describe('bootstrapApp: #/verify・#/dashboard', () => {
     expect(store?.getState().dashboard.data?.rows).toHaveLength(1);
     expect(document.querySelector('#dashboard-summary')?.textContent).toContain('検証進捗');
     const link = document.querySelector('#dashboard-matrix a');
-    expect(link?.getAttribute('href')).toBe('#/verify?doc=doc-1&entity=-');
+    expect(link?.getAttribute('href')).toBe('#/verify?study=study-1&entity=-');
 
     // 同じ状態での再 hashchange は再読込しない（読込済みガード）
     const callsBefore = fetchMock.mock.calls.length;

@@ -11,6 +11,7 @@
 import { NOT_REPORTED_TOKEN } from '../../domain/annotation';
 import type { ConfirmedArmStructure } from '../../domain/armStructure';
 import type { Decision, DecisionAction } from '../../domain/decision';
+import { DOCUMENT_ROLE_LABELS } from '../../domain/document';
 import type { Evidence } from '../../domain/evidence';
 import type { EntityLevel } from '../../domain/schemaField';
 import {
@@ -34,13 +35,16 @@ import {
   type CellState,
 } from '../../features/verification/cellState';
 import {
-  buildDocumentHighlights,
+  buildStudyHighlights,
   type EvidenceHighlight,
   type HighlightOccurrence,
 } from '../../features/verification/highlights';
 import { buildOutcomeDeclarationDecisions } from '../../features/verification/instanceDeclarations';
 import { verificationProgress } from '../../features/verification/progress';
-import type { VerificationData } from '../../features/verification/types';
+import type {
+  VerificationData,
+  VerificationDocumentView,
+} from '../../features/verification/types';
 import type { renderPdfPageToCanvas } from '../../lib/pdf/renderPage';
 import { nowIso8601 } from '../../utils/iso8601';
 import { nextOutcomeId } from '../../utils/entityKey';
@@ -107,7 +111,7 @@ export function createVerificationPanel(
   const ownDecisions: Decision[] = data.decisions.filter(
     (decision) => decision.annotator === data.annotator,
   );
-  const highlights = buildDocumentHighlights(data.evidence, data.textPages);
+  const highlights = buildStudyHighlights(data.documents, data.evidence);
   const highlightByCell = new Map(highlights.map((h) => [h.cellKey, h]));
   const evidenceByCell = new Map<string, Evidence>(
     data.evidence.map((item) => [cellKeyOf(item.fieldId, item.entityKey), item]),
@@ -153,42 +157,133 @@ export function createVerificationPanel(
     return [...activeGroups.flatMap((group) => group.cells), ...decided.map((entry) => entry.cell)];
   };
 
-  // --- 左ペイン（PDF ビューア） -------------------------------------------
+  // --- 左ペイン（PDF ビューア + 文書切替タブ。v0.10 フェーズ 3） ----------
+  // study 配下の文書は role 固定順に並ぶ。ビューアは 1 つだけ作り、setDocument で切替える
+  // （描画競合の連番ガードを維持）。表示中文書に PDF がなければエラーカードへ差し替える
+  let activeDocumentId = (data.documents[0] as VerificationDocumentView).document.documentId;
+
+  const activeDocument = (): VerificationDocumentView =>
+    data.documents.find(
+      (view) => view.document.documentId === activeDocumentId,
+    ) as VerificationDocumentView;
+
+  const firstWithPdf = data.documents.find((view) => view.pdf !== null) ?? null;
   let viewer: PdfViewerHandle | null = null;
-  const leftPane = el('div', { className: 'verify__pane verify__pane--pdf' });
-  if (data.pdf !== null) {
+  let viewerDocId: string | null = null;
+  if (firstWithPdf !== null) {
     viewer = createPdfViewer({
-      document: data.pdf,
-      pages: data.textPages,
+      // firstWithPdf.pdf は非 null（find 条件）
+      document: firstWithPdf.pdf as NonNullable<VerificationDocumentView['pdf']>,
+      pages: firstWithPdf.textPages,
       onHighlightClick: (id) => focusCell(id, { jump: false, domFocus: true }),
       renderPage: options.renderPage,
     });
-    leftPane.append(viewer.root);
-  } else {
-    // ui-states.md §6: 原本が開けないときは再取り込み導線を出す（フォーム側の検証は続行可能）
-    const link = el('a', { text: '文献取り込み画面を開く', attributes: { href: '#/documents' } });
-    leftPane.append(
-      el('div', { className: 'verify__pdf-error', attributes: { role: 'alert' } }, [
-        el('p', { text: `PDF を開けません: ${data.pdfError ?? '原因不明'}` }),
-        link,
-      ]),
+    viewerDocId = firstWithPdf.document.documentId;
+  }
+
+  // 文書切替タブ（2 文書以上のときだけ出す）。role バッジ + ファイル名
+  const docTabButtons = new Map<string, HTMLButtonElement>();
+  let docTabsBar: HTMLElement | null = null;
+  if (data.documents.length > 1) {
+    const buttons = data.documents.map((view) => {
+      const button = el('button', {
+        className: 'verify__doc-tab',
+        attributes: {
+          type: 'button',
+          role: 'tab',
+          title: view.document.filename,
+        },
+      }) as HTMLButtonElement;
+      button.append(
+        el('span', {
+          className: `verify__doc-role verify__doc-role--${view.document.documentRole}`,
+          text: DOCUMENT_ROLE_LABELS[view.document.documentRole],
+        }),
+        el('span', { className: 'verify__doc-filename', text: view.document.filename }),
+      );
+      button.addEventListener('click', () => setActiveDocument(view.document.documentId));
+      docTabButtons.set(view.document.documentId, button);
+      return button;
+    });
+    docTabsBar = el(
+      'div',
+      { className: 'verify__doc-tabs', attributes: { role: 'tablist', 'aria-label': '文書切替' } },
+      buttons,
     );
+  }
+
+  const noTextBanner = el('p', {
+    className: 'verify__banner',
+    text: 'この PDF はテキスト層がないためハイライト検証は使えません（quote 全文とページヒントで検証してください）',
+  });
+  const viewerBody = el('div', { className: 'verify__pdf-body' });
+  const leftChildren: HTMLElement[] = [];
+  if (docTabsBar !== null) {
+    leftChildren.push(docTabsBar);
+  }
+  leftChildren.push(noTextBanner, viewerBody);
+  const leftPane = el('div', { className: 'verify__pane verify__pane--pdf' }, leftChildren);
+
+  /** 表示中文書に PDF がないときのエラーカード（再取り込み導線。ui-states.md §6） */
+  function pdfErrorCard(view: VerificationDocumentView): HTMLElement {
+    const link = el('a', { text: '文献取り込み画面を開く', attributes: { href: '#/documents' } });
+    return el('div', { className: 'verify__pdf-error', attributes: { role: 'alert' } }, [
+      el('p', { text: `PDF を開けません: ${view.pdfError ?? '原因不明'}` }),
+      link,
+    ]);
+  }
+
+  /** 表示中文書に合わせて左ペイン（タブ強調 / バナー / ビューア本体）を描き直す */
+  function renderActiveDocument(): void {
+    const view = activeDocument();
+    for (const [id, button] of docTabButtons) {
+      const active = id === activeDocumentId;
+      button.classList.toggle('verify__doc-tab--active', active);
+      button.setAttribute('aria-selected', String(active));
+    }
+    noTextBanner.hidden = view.document.textStatus !== 'no_text_layer';
+    if (view.pdf !== null && viewer !== null) {
+      if (viewerDocId !== view.document.documentId) {
+        viewer.setDocument(view.pdf, view.textPages);
+        viewerDocId = view.document.documentId;
+      }
+      viewerBody.replaceChildren(viewer.root);
+    } else {
+      viewerBody.replaceChildren(pdfErrorCard(view));
+    }
+  }
+
+  /** 表示中文書を切替える（タブクリック / 別文書由来のセルへのフォーカス） */
+  function setActiveDocument(documentId: string): void {
+    if (documentId === activeDocumentId) {
+      return;
+    }
+    activeDocumentId = documentId;
+    renderActiveDocument();
+    syncViewer();
+  }
+
+  /**
+   * セルの Evidence の出所文書へ表示を切替える（Evidence なしの手入力セルは現状維持）。
+   * 出所文書が study の documents に無い場合（データ不整合の防御）は切替えない
+   */
+  function ensureActiveDocumentForCell(cellKey: string): void {
+    const evidence = evidenceByCell.get(cellKey);
+    if (
+      evidence !== undefined &&
+      evidence.documentId !== activeDocumentId &&
+      data.documents.some((view) => view.document.documentId === evidence.documentId)
+    ) {
+      setActiveDocument(evidence.documentId);
+    }
   }
 
   // --- 右ペイン（フォーム） -----------------------------------------------
   const formPane = el('div', { className: 'verify__pane verify__pane--form' });
 
-  const children: HTMLElement[] = [];
-  if (data.document.textStatus === 'no_text_layer') {
-    children.push(
-      el('p', {
-        className: 'verify__banner',
-        text: 'この PDF はテキスト層がないためハイライト検証は使えません（quote 全文とページヒントで検証してください）',
-      }),
-    );
-  }
-  children.push(el('div', { className: 'verify__panes' }, [leftPane, formPane]));
-  const root = el('div', { className: 'verify' }, children);
+  const root = el('div', { className: 'verify' }, [
+    el('div', { className: 'verify__panes' }, [leftPane, formPane]),
+  ]);
 
   function highlightInfo(): Map<string, CellHighlightInfo> {
     const info = new Map<string, CellHighlightInfo>();
@@ -203,22 +298,25 @@ export function createVerificationPanel(
 
   function viewerHighlights(): ViewerHighlight[] {
     const states = deriveCellStates(ownDecisions);
-    return highlights.map((highlight) => {
-      const [fieldId] = JSON.parse(highlight.cellKey) as [string, string];
-      const status = states.get(highlight.cellKey)?.status ?? 'unverified';
-      // ハイライトは evidence 由来のため対応する Evidence が必ず存在する
-      const confidence = (evidenceByCell.get(highlight.cellKey) as Evidence).confidence;
-      const index = matchSelection.get(highlight.cellKey) ?? highlight.selectedIndex;
-      return {
-        id: highlight.cellKey,
-        label: fieldLabelById.get(fieldId) ?? fieldId,
-        // 色分け: 検証済み = 緑 / low confidence = 橙 / 未検証 = 黄（requirements.md §5-4）
-        kind:
-          status !== 'unverified' ? 'verified' : confidence === 'low' ? 'low' : 'unverified',
-        // index は occurrences 長の剰余で更新されるため必ず範囲内（0 件は除外済み）
-        occurrence: highlight.occurrences[index] as HighlightOccurrence,
-      };
-    });
+    // ビューアは表示中文書のページしか描かないため、その文書由来のハイライトだけ渡す
+    return highlights
+      .filter((highlight) => highlight.documentId === activeDocumentId)
+      .map((highlight) => {
+        const [fieldId] = JSON.parse(highlight.cellKey) as [string, string];
+        const status = states.get(highlight.cellKey)?.status ?? 'unverified';
+        // ハイライトは evidence 由来のため対応する Evidence が必ず存在する
+        const confidence = (evidenceByCell.get(highlight.cellKey) as Evidence).confidence;
+        const index = matchSelection.get(highlight.cellKey) ?? highlight.selectedIndex;
+        return {
+          id: highlight.cellKey,
+          label: fieldLabelById.get(fieldId) ?? fieldId,
+          // 色分け: 検証済み = 緑 / low confidence = 橙 / 未検証 = 黄（requirements.md §5-4）
+          kind:
+            status !== 'unverified' ? 'verified' : confidence === 'low' ? 'low' : 'unverified',
+          // index は occurrences 長の剰余で更新されるため必ず範囲内（0 件は除外済み）
+          occurrence: highlight.occurrences[index] as HighlightOccurrence,
+        };
+      });
   }
 
   function syncViewer(): void {
@@ -337,6 +435,7 @@ export function createVerificationPanel(
       expandedDecidedKey = cellKey;
       focusedCellKey = cellKey;
       refreshForm();
+      ensureActiveDocumentForCell(cellKey);
       syncViewer();
       viewer?.focusHighlight(cellKey);
       const element = findCellElement(cellKey);
@@ -412,7 +511,7 @@ export function createVerificationPanel(
       let declarations: Decision[];
       try {
         declarations = buildOutcomeDeclarationDecisions({
-          studyId: data.document.studyId,
+          studyId: data.study.studyId,
           outcomeId,
           time: time === '' ? null : time,
           arms: (armStructure as ConfirmedArmStructure).arms,
@@ -466,7 +565,9 @@ export function createVerificationPanel(
       recentDecidedKey,
       expandedDecidedKey,
       highlightInfo: highlightInfo(),
-      canSearchText: data.textPages.some((page) => page.text !== ''),
+      // 「本文内を検索」は表示中文書に対して走る。フォーカスは出所文書へ切替わるため、
+      // 表示中文書のテキスト層有無で出し分ける（v0.10 フェーズ 3）
+      canSearchText: activeDocument().textPages.some((page) => page.text !== ''),
       armCard: armRequired
         ? {
             editing: armEditing,
@@ -532,6 +633,8 @@ export function createVerificationPanel(
     } else {
       applyFocusClasses();
     }
+    // 別文書由来のセルなら出所 PDF へ自動切替してからハイライトへ（v0.10 フェーズ 3）
+    ensureActiveDocumentForCell(cellKey);
     syncViewer();
     if (behavior.jump) {
       // 項目フォーカス → 該当ハイライトへスクロール + 強調（requirements.md §4.2）
@@ -577,7 +680,7 @@ export function createVerificationPanel(
     const decision: Decision = {
       decidedAt: now(),
       decidedBy: data.annotator,
-      studyId: data.document.studyId,
+      studyId: data.study.studyId,
       fieldId: cell.field.fieldId,
       entityKey: cell.entityKey,
       annotator: data.annotator,
@@ -611,7 +714,9 @@ export function createVerificationPanel(
     refreshForm();
     syncViewer();
     if (movedTo !== null) {
-      // PDF ハイライトも遷移先へ追従（f キーと同じ体験）+ セル DOM を可視化・フォーカス
+      // PDF ハイライトも遷移先へ追従（f キーと同じ体験）+ セル DOM を可視化・フォーカス。
+      // 遷移先が別文書由来なら出所 PDF へ切替えてから（v0.10 フェーズ 3）
+      ensureActiveDocumentForCell(movedTo);
       viewer?.focusHighlight(movedTo);
       const element = findCellElement(movedTo);
       element.scrollIntoView?.({ block: 'nearest' });
@@ -699,6 +804,11 @@ export function createVerificationPanel(
   ownerDoc.addEventListener('keydown', handleKeydown);
 
   focusedCellKey = initialFocusKey(currentTabModel().cells);
+  // 初期フォーカスセルの出所文書を表示（study の先頭は通常 article。別文書なら切替）
+  if (focusedCellKey !== null) {
+    ensureActiveDocumentForCell(focusedCellKey);
+  }
+  renderActiveDocument();
   refreshForm();
   syncViewer();
 

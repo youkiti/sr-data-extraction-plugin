@@ -9,21 +9,14 @@ import type { DocumentRecord } from '../../../../src/domain/document';
 import type { Evidence } from '../../../../src/domain/evidence';
 import type { SchemaField } from '../../../../src/domain/schemaField';
 import type { StudyRecord } from '../../../../src/domain/study';
-import { readStudies } from '../../../../src/features/documents/studyRepository';
 
 jest.mock('../../../../src/app/services/verifyService', () => ({
   readVerifyTargetMaterials: jest.fn(),
-}));
-jest.mock('../../../../src/features/documents/studyRepository', () => ({
-  // studyLabelMap は純粋関数なので実物を使う
-  ...jest.requireActual('../../../../src/features/documents/studyRepository'),
-  readStudies: jest.fn(),
 }));
 
 const readMaterialsMock = readVerifyTargetMaterials as jest.MockedFunction<
   typeof readVerifyTargetMaterials
 >;
-const readStudiesMock = readStudies as jest.MockedFunction<typeof readStudies>;
 
 function makeDocument(overrides: Partial<DocumentRecord> = {}): DocumentRecord {
   // フェーズ 1 は 1 文書 = 1 study。文書ごとに一意な study_id を自動採番する
@@ -102,7 +95,8 @@ function makeEvidence(overrides: Partial<Evidence> = {}): Evidence {
 function makeMaterial(): VerifyTargetMaterial {
   return {
     target: {
-      document: makeDocument(),
+      study: makeStudy(),
+      documents: [makeDocument()],
       evidence: [makeEvidence()],
       fields: [makeField()],
       schemaVersion: 1,
@@ -141,8 +135,6 @@ function makeStore(patch: {
 beforeEach(() => {
   readMaterialsMock.mockReset();
   readMaterialsMock.mockResolvedValue([makeMaterial()]);
-  readStudiesMock.mockReset();
-  readStudiesMock.mockResolvedValue([makeStudy()]);
 });
 
 describe('loadDashboard', () => {
@@ -154,16 +146,10 @@ describe('loadDashboard', () => {
     expect(dashboard.loading).toBe(false);
     expect(dashboard.data?.sections).toEqual(['methods']);
     expect(dashboard.data?.rows[0]).toMatchObject({
-      documentId: 'doc-1',
+      studyId: 'study-doc-1',
+      studyLabel: 'Smith 2020',
       progress: { decided: 0, total: 1 },
     });
-  });
-
-  test('Studies にラベルが無い study は study_id をそのまま表示ラベルにする', async () => {
-    const store = makeStore();
-    readStudiesMock.mockResolvedValue([]); // 該当 study のラベルが引けない
-    await loadDashboard(store, makeDeps());
-    expect(store.getState().dashboard.data?.rows[0]?.studyLabel).toBe('study-doc-1');
   });
 
   test('プロジェクト未選択・読込中・読込済みはスキップし、force で再読込する', async () => {

@@ -8,9 +8,13 @@ import type { Decision } from '../../../../src/domain/decision';
 import type { DocumentRecord } from '../../../../src/domain/document';
 import type { Evidence } from '../../../../src/domain/evidence';
 import type { SchemaField } from '../../../../src/domain/schemaField';
+import type { StudyRecord } from '../../../../src/domain/study';
 import type { TextLayerPage } from '../../../../src/domain/textLayer';
 import { cellKeyOf } from '../../../../src/features/verification/cellState';
-import type { VerificationData } from '../../../../src/features/verification/types';
+import type {
+  VerificationData,
+  VerificationDocumentView,
+} from '../../../../src/features/verification/types';
 import type {
   PdfViewerDocument,
   RenderablePdfPage,
@@ -52,6 +56,18 @@ function makeDocumentRecord(overrides: Partial<DocumentRecord> = {}): DocumentRe
     charCount: 1000,
     importedAt: 't0',
     importedBy: 'me@example.com',
+    note: null,
+    ...overrides,
+  };
+}
+
+function makeStudy(overrides: Partial<StudyRecord> = {}): StudyRecord {
+  return {
+    studyId: 'study-1',
+    studyLabel: 'Smith 2020',
+    registrationId: null,
+    createdAt: 't0',
+    createdBy: 'me@example.com',
     note: null,
     ...overrides,
   };
@@ -165,16 +181,24 @@ function makeDecision(overrides: Partial<Decision> = {}): Decision {
   };
 }
 
-function makeData(overrides: Partial<VerificationData> = {}): VerificationData {
+/**
+ * verificationPanel のテスト用データ生成。単一文書を既定とし、単一文書の便宜プロパティ
+ * （document / pdf / pdfError / textPages）を渡すと 1 文書ぶんの documents 配列へ畳み込む。
+ * 複数文書は documents を直接渡す
+ */
+interface PanelDataOverrides
+  extends Partial<Omit<VerificationData, 'study' | 'documents'>> {
+  study?: StudyRecord;
+  documents?: readonly VerificationDocumentView[];
+  document?: DocumentRecord;
+  pdf?: PdfViewerDocument | null;
+  pdfError?: string | null;
+  textPages?: readonly TextLayerPage[];
+}
+
+function makeDocumentView(overrides: Partial<VerificationDocumentView> = {}): VerificationDocumentView {
   return {
     document: makeDocumentRecord(),
-    fields: FIELDS,
-    evidence: EVIDENCE,
-    decisions: [],
-    annotator: ME,
-    schemaVersion: 1,
-    // 既定は確定済み（群構成ゲートの挙動は専用 describe で null にして検証する）
-    armStructure: { version: 1, arms: [{ armKey: 'arm:1', armName: '介入群' }] },
     pdf: makePdf(),
     pdfError: null,
     textPages: PAGES,
@@ -182,9 +206,34 @@ function makeData(overrides: Partial<VerificationData> = {}): VerificationData {
   };
 }
 
+function makeData(overrides: PanelDataOverrides = {}): VerificationData {
+  const { study, documents, document, pdf, pdfError, textPages, ...rest } = overrides;
+  return {
+    study: study ?? makeStudy(),
+    documents:
+      documents ??
+      [
+        {
+          document: document ?? makeDocumentRecord(),
+          pdf: pdf === undefined ? makePdf() : pdf,
+          pdfError: pdfError ?? null,
+          textPages: textPages ?? PAGES,
+        },
+      ],
+    fields: FIELDS,
+    evidence: EVIDENCE,
+    decisions: [],
+    annotator: ME,
+    schemaVersion: 1,
+    // 既定は確定済み（群構成ゲートの挙動は専用 describe で null にして検証する）
+    armStructure: { version: 1, arms: [{ armKey: 'arm:1', armName: '介入群' }] },
+    ...rest,
+  };
+}
+
 const renderPage = () => Promise.resolve({ width: 612, height: 792 });
 
-function createPanel(overrides: Partial<VerificationData> = {}, options: Partial<VerificationPanelOptions> = {}) {
+function createPanel(overrides: PanelDataOverrides = {}, options: Partial<VerificationPanelOptions> = {}) {
   const onDecision = jest.fn();
   const panel = createVerificationPanel({
     data: makeData(overrides),
@@ -242,15 +291,20 @@ describe('createVerificationPanel: 構造', () => {
     panel.dispose();
   });
 
-  test('テキスト層なし文献はバナーを出す', () => {
+  test('テキスト層なし文献はバナーを出す（テキスト層ありは hidden）', () => {
     const { panel } = createPanel({
       document: makeDocumentRecord({ textStatus: 'no_text_layer' }),
       textPages: [],
     });
-    expect(panel.root.querySelector('.verify__banner')?.textContent).toContain(
-      'テキスト層がないためハイライト検証は使えません',
-    );
+    const banner = panel.root.querySelector<HTMLElement>('.verify__banner');
+    expect(banner?.hidden).toBe(false);
+    expect(banner?.textContent).toContain('テキスト層がないためハイライト検証は使えません');
     panel.dispose();
+
+    // テキスト層ありの文書ではバナー要素は存在するが hidden
+    const ok = createPanel();
+    expect(ok.panel.root.querySelector<HTMLElement>('.verify__banner')?.hidden).toBe(true);
+    ok.panel.dispose();
   });
 
   test('PDF が開けないときはエラー + 再取り込み導線を出し、フォームは使える', () => {
@@ -282,6 +336,160 @@ describe('createVerificationPanel: 構造', () => {
     pressKey('j');
     pressKey('a');
     expect(onDecision).not.toHaveBeenCalled();
+    panel.dispose();
+  });
+});
+
+describe('createVerificationPanel: 複数文書ビューア（v0.10 フェーズ 3）', () => {
+  const DOC2_PAGES = [buildPage(1, 'registration enrolled 200 participants total')];
+
+  function doc2View(overrides: Partial<VerificationDocumentView> = {}): VerificationDocumentView {
+    return makeDocumentView({
+      document: makeDocumentRecord({
+        documentId: 'doc-2',
+        documentRole: 'registration',
+        filename: 'nct01.pdf',
+      }),
+      textPages: DOC2_PAGES,
+      ...overrides,
+    });
+  }
+
+  /** study レベルのみのスキーマ + f-total(doc-1) / f-country(doc-2) の Evidence */
+  function studyFields(): SchemaField[] {
+    return [
+      makeField(),
+      makeField({ fieldId: 'f-country', fieldIndex: 2, fieldName: 'country', fieldLabel: '国' }),
+    ];
+  }
+
+  function twoDocEvidence(): Evidence[] {
+    return [
+      makeEvidence(), // f-total, doc-1
+      makeEvidence({
+        evidenceId: 'ev-c',
+        fieldId: 'f-country',
+        value: '200',
+        quote: 'enrolled 200 participants',
+        documentId: 'doc-2',
+        page: 1,
+        anchorStatus: 'exact',
+      }),
+    ];
+  }
+
+  function makeTwoDocPanel(overrides: PanelDataOverrides = {}) {
+    const panel = createVerificationPanel({
+      data: makeData({
+        documents: [makeDocumentView(), doc2View()],
+        fields: studyFields(),
+        evidence: twoDocEvidence(),
+        armStructure: null,
+        ...overrides,
+      }),
+      onDecision: jest.fn(),
+      now: () => 't1',
+      renderPage,
+    });
+    document.body.replaceChildren(panel.root);
+    return panel;
+  }
+
+  function docTabs(root: HTMLElement): HTMLButtonElement[] {
+    return [...root.querySelectorAll<HTMLButtonElement>('.verify__doc-tabs .verify__doc-tab')];
+  }
+
+  test('2 文書は role バッジ + ファイル名の切替タブを出し、先頭が active', () => {
+    const panel = makeTwoDocPanel();
+    const tabs = docTabs(panel.root);
+    expect(tabs).toHaveLength(2);
+    expect(tabs[0]?.classList.contains('verify__doc-tab--active')).toBe(true);
+    expect(tabs[0]?.querySelector('.verify__doc-role')?.textContent).toBe('本論文');
+    expect(tabs[1]?.querySelector('.verify__doc-role')?.textContent).toBe('試験登録');
+    expect(tabs[1]?.textContent).toContain('nct01.pdf');
+    // active タブの再クリックは何も変えない（setActiveDocument の早期 return）
+    tabs[0]?.click();
+    expect(tabs[0]?.classList.contains('verify__doc-tab--active')).toBe(true);
+    panel.dispose();
+  });
+
+  test('タブクリックで表示文書を切替える（active クラスが移動）', () => {
+    const panel = makeTwoDocPanel();
+    const tabs = docTabs(panel.root);
+    tabs[1]?.click();
+    expect(tabs[1]?.classList.contains('verify__doc-tab--active')).toBe(true);
+    expect(tabs[0]?.classList.contains('verify__doc-tab--active')).toBe(false);
+    panel.dispose();
+  });
+
+  test('別文書由来のセルへフォーカスすると出所 PDF へ自動切替する', () => {
+    const panel = makeTwoDocPanel();
+    const tabs = docTabs(panel.root);
+    // 初期フォーカスは f-total（doc-1）。f-country（doc-2）へフォーカスすると doc-2 が active に
+    const countryCell = cellEl(panel.root, cellKeyOf('f-country', '-'));
+    countryCell?.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
+    expect(tabs[1]?.classList.contains('verify__doc-tab--active')).toBe(true);
+    panel.dispose();
+  });
+
+  test('判定後の自動送りで遷移先が別文書なら PDF も切替える', () => {
+    const panel = makeTwoDocPanel();
+    const tabs = docTabs(panel.root);
+    // f-total（doc-1）を承認 → 次の未判定 f-country（doc-2）へ移り、PDF も doc-2 へ
+    cellEl(panel.root, cellKeyOf('f-total', '-'))
+      ?.querySelector<HTMLButtonElement>('.verify__action--accept')
+      ?.click();
+    expect(tabs[1]?.classList.contains('verify__doc-tab--active')).toBe(true);
+    panel.dispose();
+  });
+
+  test('初期フォーカスセルの出所が先頭以外の文書なら初期表示でその文書を開く', () => {
+    // Evidence が doc-2 のみ・初期フォーカス = その項目 → 初期 active は doc-2
+    const panel = makeTwoDocPanel({
+      fields: [makeField()],
+      evidence: [makeEvidence({ documentId: 'doc-2', quote: 'enrolled 200 participants', page: 1 })],
+    });
+    const tabs = docTabs(panel.root);
+    expect(tabs[1]?.classList.contains('verify__doc-tab--active')).toBe(true);
+    panel.dispose();
+  });
+
+  test('先頭文書の PDF が開けなくてもタブ切替で他文書のビューアを表示できる', () => {
+    const panel = makeTwoDocPanel({
+      documents: [makeDocumentView({ pdf: null, pdfError: '取得失敗' }), doc2View()],
+    });
+    // 初期 active（doc-1）は PDF エラーカード
+    expect(panel.root.querySelector('.verify__pdf-body .verify__pdf-error')?.textContent).toContain(
+      '取得失敗',
+    );
+    // doc-2 へ切替えるとビューアが出る
+    docTabs(panel.root)[1]?.click();
+    expect(panel.root.querySelector('.verify__pdf-body .pdf-viewer')).not.toBeNull();
+    panel.dispose();
+  });
+
+  test('全文書の PDF が開けないときはビューアなしでも判定できる', () => {
+    const onDecision = jest.fn();
+    const panel = createVerificationPanel({
+      data: makeData({
+        documents: [
+          makeDocumentView({ pdf: null, pdfError: 'x' }),
+          doc2View({ pdf: null, pdfError: 'y' }),
+        ],
+        fields: studyFields(),
+        evidence: twoDocEvidence(),
+        armStructure: null,
+      }),
+      onDecision,
+      now: () => 't1',
+      renderPage,
+    });
+    document.body.replaceChildren(panel.root);
+    expect(panel.root.querySelector('.verify__pdf-body .pdf-viewer')).toBeNull();
+    cellEl(panel.root, cellKeyOf('f-total', '-'))
+      ?.querySelector<HTMLButtonElement>('.verify__action--accept')
+      ?.click();
+    expect(onDecision).toHaveBeenCalledTimes(1);
     panel.dispose();
   });
 });

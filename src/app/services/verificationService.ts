@@ -10,6 +10,7 @@ import type { Decision } from '../../domain/decision';
 import type { DocumentRecord } from '../../domain/document';
 import type { Evidence } from '../../domain/evidence';
 import type { EntityLevel, SchemaField } from '../../domain/schemaField';
+import type { StudyRecord } from '../../domain/study';
 import type { DisposablePdfDocument } from '../../features/documents/extractTextLayer';
 import { readStudyDataSheet, upsertResultsDataRows, upsertStudyDataRows } from '../../features/extraction/annotationRepository';
 import {
@@ -23,7 +24,10 @@ import {
   readDecisionsByStudy,
 } from '../../features/verification/decisionRepository';
 import { isEntityInstanceDeclaration } from '../../features/verification/instanceDeclarations';
-import type { VerificationData } from '../../features/verification/types';
+import type {
+  VerificationData,
+  VerificationDocumentView,
+} from '../../features/verification/types';
 import { getFileBinary } from '../../lib/google/drive';
 import { getCurrentUserEmail, type ProfileDeps } from '../../lib/google/identity';
 import type { GoogleApiDeps } from '../../lib/google/types';
@@ -87,10 +91,13 @@ function toViewerDocument(pdf: DisposablePdfDocument): PdfViewerDocument {
 
 export interface VerificationBundleInput {
   spreadsheetId: string;
-  document: DocumentRecord;
+  /** 検証単位の study（Studies 由来） */
+  study: StudyRecord;
+  /** study 配下の文書（role 固定順 → 取り込み順。呼び出し側が並べて渡す） */
+  documents: readonly DocumentRecord[];
   /** 表示する run のスキーマ項目（呼び出し側が版を解決して渡す） */
   fields: readonly SchemaField[];
-  /** 当該 document の AI 根拠（表示する run のもの） */
+  /** study の全文書ぶんの AI 根拠（表示する run のもの。各行は document_id で出所を持つ） */
   evidence: readonly Evidence[];
   schemaVersion: number;
 }
@@ -102,51 +109,75 @@ export interface VerificationBundle {
 }
 
 /**
- * 検証パネルへ流し込むデータ束を読み込む（S6 / S8 共通）。
- * PDF の読み込み失敗は throw せず pdfError として持ち、フォーム側の検証は続行できる
+ * 1 文書ぶんのビューア素材（PDF + テキスト層）を読み込む。
+ * PDF の読み込み失敗は throw せず pdfError として持つ（フォーム側の検証は続行できる）。
+ * 破棄用の disposable も返す（成功時のみ非 null）
+ */
+async function loadDocumentView(
+  document: DocumentRecord,
+  deps: VerificationDeps,
+): Promise<{ view: VerificationDocumentView; disposable: DisposablePdfDocument | null }> {
+  let pdf: PdfViewerDocument | null = null;
+  let pdfError: string | null = null;
+  let textPages: VerificationDocumentView['textPages'] = [];
+  let disposable: DisposablePdfDocument | null = null;
+  try {
+    const binary = await getFileBinary(document.driveFileId, deps.google);
+    const disp = await deps.loadPdf(binary);
+    textPages = await extractTextLayerPages(disp);
+    pdf = toViewerDocument(disp);
+    disposable = disp;
+  } catch (err) {
+    pdfError = toMessage(err);
+  }
+  return { view: { document, pdf, pdfError, textPages }, disposable };
+}
+
+/**
+ * 検証パネルへ流し込むデータ束を読み込む（S6 / S8 共通。v0.10 フェーズ 3 = study 単位）。
+ * study 配下の全文書の PDF・テキスト層を読み込む（テキスト層抽出は PDF バイナリ全体を要するため、
+ * 遅延読込しても実質的な節約がなく、study 単位で先読みする）。PDF 読み込み失敗は文書ごとに
+ * pdfError として持ち、他文書の表示・フォーム側の検証は続行できる
  */
 export async function loadVerificationBundle(
   input: VerificationBundleInput,
   deps: VerificationDeps,
 ): Promise<VerificationBundle> {
-  const { spreadsheetId, document } = input;
+  const { spreadsheetId, study } = input;
   const annotator = (await getCurrentUserEmail(deps.profile)) ?? '';
-  const decisions = await readDecisionsByStudy(spreadsheetId, document.studyId, deps.google);
+  const decisions = await readDecisionsByStudy(spreadsheetId, study.studyId, deps.google);
   const studySheet = await readStudyDataSheet(spreadsheetId, deps.google);
   const studyValues =
     studySheet.rows.find(
-      (row) => row.studyId === document.studyId && row.annotator === annotator,
+      (row) => row.studyId === study.studyId && row.annotator === annotator,
     )?.values ?? {};
-  const armRows = await readArmStructuresByStudy(spreadsheetId, document.studyId, deps.google);
+  const armRows = await readArmStructuresByStudy(spreadsheetId, study.studyId, deps.google);
   const armStructure = latestArmStructure(armRows, annotator);
 
-  let pdf: PdfViewerDocument | null = null;
-  let pdfError: string | null = null;
-  let textPages: VerificationData['textPages'] = [];
-  let disposePdf: VerificationData['disposePdf'];
-  try {
-    const binary = await getFileBinary(document.driveFileId, deps.google);
-    const disposable = await deps.loadPdf(binary);
-    textPages = await extractTextLayerPages(disposable);
-    pdf = toViewerDocument(disposable);
-    disposePdf = async () => {
-      await disposable.destroy();
-    };
-  } catch (err) {
-    pdfError = toMessage(err);
+  const documents: VerificationDocumentView[] = [];
+  const disposables: DisposablePdfDocument[] = [];
+  for (const document of input.documents) {
+    const loaded = await loadDocumentView(document, deps);
+    documents.push(loaded.view);
+    if (loaded.disposable !== null) {
+      disposables.push(loaded.disposable);
+    }
   }
+  const disposePdf: VerificationData['disposePdf'] = async () => {
+    for (const disposable of disposables) {
+      await disposable.destroy();
+    }
+  };
 
   const verification: VerificationData = {
-    document,
+    study,
+    documents,
     fields: input.fields,
     evidence: input.evidence,
     decisions,
     annotator,
     schemaVersion: input.schemaVersion,
     armStructure,
-    pdf,
-    pdfError,
-    textPages,
     disposePdf,
   };
   return { verification, studyValues };

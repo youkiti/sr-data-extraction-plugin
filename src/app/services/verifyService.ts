@@ -1,14 +1,17 @@
-// #/verify（S8 単独画面）のサービス層。
-// - 検証対象一覧の読み込み: Evidence がある document を列挙し、表示 run（最新 run）の
+// #/verify（S8 単独画面）のサービス層（v0.10 フェーズ 3 = study 単位）。
+// - 検証対象一覧の読み込み: Evidence がある study を列挙し、表示 run（最新 run）の
 //   Evidence・スキーマ項目・進捗チップ（判定済み n / 総セル m）を組み立てる
-// - 文献の選択（?doc= 直リンク / セレクタ切替）: verificationService.loadVerificationBundle
+// - study の選択（?study= 直リンク / セレクタ切替）: verificationService.loadVerificationBundle
 // - 判定・群構成確定の永続化: verificationService へ委譲
 import type { Decision } from '../../domain/decision';
 import type { DocumentRecord } from '../../domain/document';
 import type { Evidence } from '../../domain/evidence';
+import type { StudyRecord } from '../../domain/study';
 import type { ConfirmedArmStructure } from '../../domain/armStructure';
 import type { SchemaField } from '../../domain/schemaField';
 import { readDocuments } from '../../features/documents/documentRepository';
+import { readStudies } from '../../features/documents/studyRepository';
+import { buildStudySelection } from '../../features/documents/studySelection';
 import { readEvidenceRows } from '../../features/extraction/evidenceRepository';
 import { readRunSchemaVersions } from '../../features/extraction/runRepository';
 import { getSchemaFieldsByVersion } from '../../features/schema/schemaRepository';
@@ -50,35 +53,45 @@ async function resolveDocuments(
   return cached ?? (await readDocuments(spreadsheetId, deps.google));
 }
 
+/** Studies 一覧を解決する（documents スライスに読込済みならそれを使う） */
+async function resolveStudies(
+  store: Store,
+  deps: VerificationDeps,
+  spreadsheetId: string,
+): Promise<readonly StudyRecord[]> {
+  const cached = store.getState().documents.studies;
+  return cached ?? (await readStudies(spreadsheetId, deps.google));
+}
+
 /**
- * document ごとに「表示する run」の Evidence を選ぶ。
- * Evidence はシート行順（= 追記順）なので、その document で最後に現れた run_id が最新 run。
+ * study ごとに「表示する run」の Evidence を選ぶ（v0.10: 抽出単位は study）。
+ * Evidence はシート行順（= 追記順）なので、その study で最後に現れた run_id が最新 run。
  * ExtractionRuns に記録がない run（2 行プロトコル導入前に中断した実行の孤児 Evidence）は
  * スキーマ版を解決できないため対象外とし、既知 run の中の最新を採る（1 件もなければ
- * その document は「未抽出」扱い = 一覧に出ない。S7 の既定選択で再抽出できる）
+ * その study は「未抽出」扱い = 一覧に出ない。S7 の既定選択で再抽出できる）
  */
-export function latestRunEvidenceByDocument(
+export function latestRunEvidenceByStudy(
   evidence: readonly Evidence[],
   knownRunIds: ReadonlySet<string>,
 ): Map<string, { runId: string; evidence: Evidence[] }> {
   const known = evidence.filter((item) => knownRunIds.has(item.runId));
   const latestRun = new Map<string, string>();
   for (const item of known) {
-    latestRun.set(item.documentId, item.runId);
+    latestRun.set(item.studyId, item.runId);
   }
   const result = new Map<string, { runId: string; evidence: Evidence[] }>();
   for (const item of known) {
-    if (latestRun.get(item.documentId) !== item.runId) {
+    if (latestRun.get(item.studyId) !== item.runId) {
       continue;
     }
-    const entry = result.get(item.documentId) ?? { runId: item.runId, evidence: [] };
+    const entry = result.get(item.studyId) ?? { runId: item.runId, evidence: [] };
     entry.evidence.push(item);
-    result.set(item.documentId, entry);
+    result.set(item.studyId, entry);
   }
   return result;
 }
 
-/** 検証対象 1 文献ぶんの素材（一覧 = target、ダッシュボード集計は ownDecisions も使う） */
+/** 検証対象 1 study ぶんの素材（一覧 = target、ダッシュボード集計は ownDecisions も使う） */
 export interface VerifyTargetMaterial {
   target: VerifyTarget;
   /** 自分の annotator 行への判定のみ（cells.ts と同じ契約） */
@@ -88,8 +101,9 @@ export interface VerifyTargetMaterial {
 }
 
 /**
- * Evidence がある document の検証素材一式を読み込む（S8 一覧と S9 ダッシュボードの共通素材）。
- * 進捗の分母・分子はセルモデル（features/verification/progress.ts）で数える
+ * Evidence がある study の検証素材一式を読み込む（S8 一覧と S9 ダッシュボードの共通素材）。
+ * 進捗の分母・分子はセルモデル（features/verification/progress.ts）で数える。
+ * study 内の文書は role 固定順 → 取り込み順で並べ、Evidence は全文書ぶんを渡す
  */
 export async function readVerifyTargetMaterials(
   store: Store,
@@ -97,21 +111,23 @@ export async function readVerifyTargetMaterials(
   spreadsheetId: string,
 ): Promise<VerifyTargetMaterial[]> {
   const documents = await resolveDocuments(store, deps, spreadsheetId);
+  const studies = await resolveStudies(store, deps, spreadsheetId);
   const allEvidence = await readEvidenceRows(spreadsheetId, deps.google);
   const runVersions = await readRunSchemaVersions(spreadsheetId, deps.google);
   const allDecisions = await readAllDecisions(spreadsheetId, deps.google);
   const allArmRows = await readAllArmStructures(spreadsheetId, deps.google);
   const annotator = (await getCurrentUserEmail(deps.profile)) ?? '';
 
-  const byDocument = latestRunEvidenceByDocument(allEvidence, new Set(runVersions.keys()));
+  const byStudy = latestRunEvidenceByStudy(allEvidence, new Set(runVersions.keys()));
   const fieldsByVersion = new Map<number, SchemaField[]>();
   const materials: VerifyTargetMaterial[] = [];
-  for (const document of documents) {
-    const entry = byDocument.get(document.documentId);
+  // アクティブ study を作成順で。配下文書は role 固定順 → 取り込み順（buildStudySelection）
+  for (const item of buildStudySelection(studies, documents)) {
+    const entry = byStudy.get(item.study.studyId);
     if (entry === undefined) {
-      continue; // Evidence なし（孤児 Evidence のみ含む）= 未抽出の文献は一覧に出さない
+      continue; // Evidence なし（孤児 Evidence のみ含む）= 未抽出の study は一覧に出さない
     }
-    // latestRunEvidenceByDocument が既知 run に絞っているため必ず解決できる
+    // latestRunEvidenceByStudy が既知 run に絞っているため必ず解決できる
     const schemaVersion = runVersions.get(entry.runId) as number;
     let fields = fieldsByVersion.get(schemaVersion);
     if (fields === undefined) {
@@ -119,15 +135,16 @@ export async function readVerifyTargetMaterials(
       fieldsByVersion.set(schemaVersion, fields);
     }
     const ownDecisions = allDecisions.filter(
-      (decision) => decision.studyId === document.studyId && decision.annotator === annotator,
+      (decision) => decision.studyId === item.study.studyId && decision.annotator === annotator,
     );
     const armStructure = latestArmStructure(
-      allArmRows.filter((row) => row.studyId === document.studyId),
+      allArmRows.filter((row) => row.studyId === item.study.studyId),
       annotator,
     );
     materials.push({
       target: {
-        document,
+        study: item.study,
+        documents: item.documents,
         evidence: entry.evidence,
         fields,
         schemaVersion,
@@ -164,13 +181,13 @@ export async function loadVerifyTargets(
 }
 
 /**
- * 文献を選択して検証データ束を読み込む（?doc= 直リンク / セレクタ切替の両方が通る経路）。
- * 存在しない document_id は verifyError にして一覧から選び直せる状態を保つ
+ * study を選択して検証データ束を読み込む（?study= 直リンク / セレクタ切替の両方が通る経路）。
+ * 存在しない study_id は verifyError にして一覧から選び直せる状態を保つ
  */
-export async function openVerifyDocument(
+export async function openVerifyStudy(
   store: Store,
   deps: VerificationDeps,
-  documentId: string,
+  studyId: string,
 ): Promise<void> {
   const state = store.getState();
   const project = state.currentProject;
@@ -178,17 +195,17 @@ export async function openVerifyDocument(
   if (!project || targets === null || state.verify.verifyLoading) {
     return;
   }
-  const target = targets.find((candidate) => candidate.document.documentId === documentId);
+  const target = targets.find((candidate) => candidate.study.studyId === studyId);
   if (target === undefined) {
-    patchVerify(store, { verifyError: `文献 ${documentId} が見つかりません` });
+    patchVerify(store, { verifyError: `study ${studyId} が見つかりません` });
     return;
   }
-  // 前の文献の PDF を破棄してから読み込む（pdfjs のメモリ解放）
+  // 前の study の PDF を破棄してから読み込む（pdfjs のメモリ解放）
   await state.verify.verification?.disposePdf?.();
   patchVerify(store, {
     verifyLoading: true,
     verifyError: null,
-    selectedDocumentId: documentId,
+    selectedStudyId: studyId,
     verification: null,
     studyValues: null,
   });
@@ -196,7 +213,8 @@ export async function openVerifyDocument(
     const bundle = await loadVerificationBundle(
       {
         spreadsheetId: project.spreadsheetId,
-        document: target.document,
+        study: target.study,
+        documents: target.documents,
         fields: target.fields,
         evidence: target.evidence,
         schemaVersion: target.schemaVersion,
@@ -228,7 +246,7 @@ export async function persistVerifyDecision(
     return;
   }
   const target = state.verify.targets?.find(
-    (candidate) => candidate.document.studyId === decision.studyId,
+    (candidate) => candidate.study.studyId === decision.studyId,
   );
   const field = target?.fields.find((candidate) => candidate.fieldId === decision.fieldId);
   if (field === undefined) {
@@ -271,7 +289,7 @@ export async function persistVerifyArmConfirmation(
   await persistArmConfirmation(
     project.spreadsheetId,
     {
-      studyId: verification.document.studyId,
+      studyId: verification.study.studyId,
       arms,
       annotator: verification.annotator,
       annotatorType: 'human_with_ai',
