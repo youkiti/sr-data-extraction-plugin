@@ -24,6 +24,7 @@ import {
   loadVerificationBundle,
   persistArmConfirmation,
   persistDecisionWrite,
+  persistInstanceDeclarations,
   type QueuedDecisionWrite,
   type VerificationDeps,
 } from './verificationService';
@@ -436,4 +437,20 @@ export async function persistPilotArmConfirmation(
     },
     deps,
   );
+}
+
+/**
+ * 埋め込み検証パネルで人間が追加した entity インスタンスを Decisions へ追記する。
+ * ResultsData は各セルの判定時に保存する。
+ */
+export async function persistPilotInstanceDeclarations(
+  store: Store,
+  deps: PilotServiceDeps,
+  decisions: readonly Decision[],
+): Promise<void> {
+  const project = store.getState().currentProject;
+  if (!project) {
+    return;
+  }
+  await persistInstanceDeclarations(project.spreadsheetId, decisions, deps);
 }

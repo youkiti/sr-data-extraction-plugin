@@ -4,6 +4,7 @@
 import type { Decision } from '../../domain/decision';
 import type { DocumentRecord } from '../../domain/document';
 import type { Evidence } from '../../domain/evidence';
+import type { ConfirmedArmStructure } from '../../domain/armStructure';
 import type { SchemaField } from '../../domain/schemaField';
 import { availableTabs, buildTabModel, type VerificationCell } from './cells';
 
@@ -55,12 +56,17 @@ export interface DashboardDocumentInput {
   evidence: readonly Evidence[];
   /** 自分の annotator 行への判定のみ（cells.ts と同じ契約） */
   ownDecisions: readonly Decision[];
+  /** 自分が確定した群構成。確定 arm 由来の空セルも分母へ含める */
+  armStructure?: ConfirmedArmStructure | null;
 }
 
 /** 検証フォームと同じ順（タブ順 → グループ順）で全セルを連結する */
 function orderedCells(input: DashboardDocumentInput): VerificationCell[] {
   return availableTabs(input.fields).flatMap(
-    (tab) => buildTabModel(tab, input.fields, input.evidence, input.ownDecisions).cells,
+    (tab) =>
+      buildTabModel(tab, input.fields, input.evidence, input.ownDecisions, {
+        armStructure: input.armStructure ?? null,
+      }).cells,
   );
 }
 

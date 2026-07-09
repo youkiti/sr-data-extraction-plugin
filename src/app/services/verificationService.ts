@@ -22,6 +22,7 @@ import {
   appendDecisionRows,
   readDecisionsByStudy,
 } from '../../features/verification/decisionRepository';
+import { isEntityInstanceDeclaration } from '../../features/verification/instanceDeclarations';
 import type { VerificationData } from '../../features/verification/types';
 import { getFileBinary } from '../../lib/google/drive';
 import { getCurrentUserEmail, type ProfileDeps } from '../../lib/google/identity';
@@ -158,6 +159,9 @@ export async function saveDecisionWrite(
   deps: VerificationDeps,
 ): Promise<void> {
   const { decision } = write;
+  if (isEntityInstanceDeclaration(decision)) {
+    throw new Error('インスタンス宣言イベントは通常の判定保存経路では保存できません');
+  }
   if (write.studyValues !== null) {
     await upsertStudyDataRows(
       spreadsheetId,
@@ -242,5 +246,27 @@ export async function persistArmConfirmation(
   } catch (err) {
     showToast(`群構成の保存に失敗しました: ${toMessage(err)}`);
     return null;
+  }
+}
+
+/**
+ * 人間が追加した entity インスタンス宣言を Decisions へ追記する。
+ * セル判定ではないため StudyData / ResultsData の annotator 行は更新しない。
+ */
+export async function persistInstanceDeclarations(
+  spreadsheetId: string,
+  decisions: readonly Decision[],
+  deps: VerificationDeps,
+): Promise<void> {
+  if (decisions.length === 0) {
+    return;
+  }
+  if (decisions.some((decision) => !isEntityInstanceDeclaration(decision))) {
+    throw new Error('インスタンス宣言ではない Decision が含まれています');
+  }
+  try {
+    await appendDecisionRows(spreadsheetId, decisions, deps.google);
+  } catch (err) {
+    showToast(`インスタンス宣言の保存に失敗しました: ${toMessage(err)}`);
   }
 }

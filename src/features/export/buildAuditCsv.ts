@@ -6,6 +6,7 @@ import type { StudyRecord } from '../../domain/study';
 import type { Evidence } from '../../domain/evidence';
 import type { RunAuditInfo } from '../../domain/extractionRun';
 import type { SchemaField } from '../../domain/schemaField';
+import { isEntityInstanceDeclaration } from '../verification/instanceDeclarations';
 import { buildCsv } from './csvEncode';
 
 export const AUDIT_HEADER = [
@@ -121,6 +122,9 @@ export function buildAuditCsv(
     const byCellAnnotator = new Map<string, Decision[]>();
     for (const decision of decisions) {
       if (decision.studyId !== study.studyId) {
+        continue;
+      }
+      if (isEntityInstanceDeclaration(decision)) {
         continue;
       }
       const cell = cellKey(decision.fieldId, decision.entityKey);

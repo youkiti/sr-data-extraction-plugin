@@ -105,6 +105,63 @@ describe('entityInstances', () => {
     const decisions = [makeDecision({ entityKey: 'arm:1' }), makeDecision({ entityKey: '-' })];
     expect(entityInstances('arm', evidence, decisions)).toEqual(['arm:1', 'arm:2']);
   });
+
+  test('arm は ArmStructures の確定 arm もインスタンス源に含める', () => {
+    expect(
+      entityInstances('arm', [], [], {
+        armStructure: {
+          version: 1,
+          arms: [
+            { armKey: 'arm:2', armName: '対照群' },
+            { armKey: 'arm:1', armName: '介入群' },
+            { armKey: 'bad', armName: '不正キー' },
+          ],
+        },
+      }),
+    ).toEqual(['arm:1', 'arm:2']);
+  });
+
+  test('outcome_result は既存 outcome を確定 arm 全体へ展開する', () => {
+    const evidence = [
+      makeEvidence({ fieldId: 'f-o', entityKey: 'outcome:mortality|arm:1|time:30d' }),
+    ];
+    expect(
+      entityInstances('outcome_result', evidence, [], {
+        armStructure: {
+          version: 1,
+          arms: [
+            { armKey: 'arm:1', armName: '介入群' },
+            { armKey: 'arm:2', armName: '対照群' },
+          ],
+        },
+      }),
+    ).toEqual(['outcome:mortality|arm:1|time:30d', 'outcome:mortality|arm:2|time:30d']);
+  });
+
+  test('outcome_result は群構成未確定なら既存キーだけ返す', () => {
+    const evidence = [makeEvidence({ entityKey: 'outcome:mortality|arm:1' })];
+    expect(entityInstances('outcome_result', evidence, [])).toEqual([
+      'outcome:mortality|arm:1',
+    ]);
+  });
+
+  test('outcome_result は有効な arm が無い群構成では展開しない', () => {
+    const evidence = [makeEvidence({ entityKey: 'outcome:mortality|arm:1' })];
+    expect(
+      entityInstances('outcome_result', evidence, [], {
+        armStructure: { version: 1, arms: [{ armKey: 'bad', armName: '不正キー' }] },
+      }),
+    ).toEqual(['outcome:mortality|arm:1']);
+  });
+
+  test('outcome_result は arm を持たないキーを確定 arm へ展開しない', () => {
+    const evidence = [makeEvidence({ entityKey: 'outcome:mortality|time:30d' })];
+    expect(
+      entityInstances('outcome_result', evidence, [], {
+        armStructure: { version: 1, arms: [{ armKey: 'arm:1', armName: '介入群' }] },
+      }),
+    ).toEqual(['outcome:mortality|time:30d']);
+  });
 });
 
 describe('buildTabModel', () => {
@@ -159,6 +216,40 @@ describe('buildTabModel', () => {
     const model = buildTabModel('arm', fields, [], []);
     expect(model.groups).toEqual([]);
     expect(model.cells).toEqual([]);
+  });
+
+  test('確定 arm 由来のセルは Evidence なしの未検証セルとして作る', () => {
+    const fields = [makeField({ fieldId: 'f-a', entityLevel: 'arm' })];
+    const model = buildTabModel('arm', fields, [], [], {
+      armStructure: { version: 1, arms: [{ armKey: 'arm:1', armName: '介入群' }] },
+    });
+    expect(model.groups.map((group) => group.heading)).toEqual(['群 1']);
+    expect(model.cells[0]).toMatchObject({
+      field: expect.objectContaining({ fieldId: 'f-a' }),
+      entityKey: 'arm:1',
+      evidence: null,
+      state: { status: 'unverified', value: null, stack: [] },
+    });
+  });
+
+  test('outcome タブは AI が出した outcome を未抽出 arm にも展開する', () => {
+    const fields = [
+      makeField({ fieldId: 'f-o', entityLevel: 'outcome_result', fieldName: 'event_count' }),
+    ];
+    const evidence = [makeEvidence({ fieldId: 'f-o', entityKey: 'outcome:death|arm:1' })];
+    const model = buildTabModel('outcome_result', fields, evidence, [], {
+      armStructure: {
+        version: 1,
+        arms: [
+          { armKey: 'arm:1', armName: '介入群' },
+          { armKey: 'arm:2', armName: '対照群' },
+        ],
+      },
+    });
+    expect(model.cells.map((cell) => [cell.entityKey, cell.evidence?.evidenceId ?? null])).toEqual([
+      ['outcome:death|arm:1', 'ev-1'],
+      ['outcome:death|arm:2', null],
+    ]);
   });
 });
 

@@ -12,6 +12,7 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<VerifyViewCallbac
     onRetryLoad: jest.fn(),
     onDecision: jest.fn(),
     onArmConfirm: jest.fn(),
+    onInstanceDeclare: jest.fn(),
   };
   return {
     ctx: {
@@ -346,5 +347,33 @@ describe('renderVerifyView', () => {
     input.dispatchEvent(new Event('change'));
     (root.querySelector('#verify-arm-confirm') as HTMLButtonElement).click();
     expect(callbacks.onArmConfirm).toHaveBeenCalledWith([{ armKey: 'arm:1', armName: '介入群' }]);
+  });
+
+  test('アウトカム追加宣言が onInstanceDeclare へ委譲される', () => {
+    const { ctx, callbacks } = makeCtx();
+    const outcomeField = makeField({
+      fieldId: 'f-out-event',
+      fieldIndex: 2,
+      section: 'outcomes',
+      fieldName: 'event_count',
+      fieldLabel: 'イベント数',
+      entityLevel: 'outcome_result',
+    });
+    const verification: VerificationData = {
+      ...makeVerification(),
+      fields: [outcomeField],
+      armStructure: { version: 1, arms: [{ armKey: 'arm:1', armName: '介入群' }] },
+    };
+    const root = render(
+      makeState({ targets: [makeTarget()], selectedDocumentId: 'doc-1', verification }),
+      ctx,
+    );
+    (root.querySelector('#verify-outcome-add-button') as HTMLButtonElement).click();
+    expect(callbacks.onInstanceDeclare).toHaveBeenCalledWith([
+      expect.objectContaining({
+        fieldId: '__entity_instance__',
+        entityKey: 'outcome:outcome_1|arm:1',
+      }),
+    ]);
   });
 });

@@ -3,6 +3,7 @@ import {
   appendArmStructureVersion,
   armStructureToRow,
   latestArmStructure,
+  readAllArmStructures,
   readArmStructuresByStudy,
 } from '../../../../src/features/verification/armStructureRepository';
 
@@ -145,6 +146,31 @@ describe('readArmStructuresByStudy', () => {
     const badType = makeDeps({ titles: ['ArmStructures'], values: [HEADER, sheetRow({ 5: 'robot' })] });
     await expect(readArmStructuresByStudy('sheet-1', 'doc-1', badType)).rejects.toThrow(
       'annotator_type "robot" が不正です',
+    );
+  });
+});
+
+describe('readAllArmStructures', () => {
+  test('全 study の行をパースして返す', async () => {
+    const deps = makeDeps({
+      titles: ['ArmStructures'],
+      values: [HEADER, sheetRow(), sheetRow({ 0: 'doc-2', 2: 'arm:2', 3: '対照群' })],
+    });
+    await expect(readAllArmStructures('sheet-1', deps)).resolves.toEqual([
+      makeRow(),
+      makeRow({ studyId: 'doc-2', armKey: 'arm:2', armName: '対照群' }),
+    ]);
+  });
+
+  test('タブが無い旧プロジェクトは空配列', async () => {
+    const deps = makeDeps({ titles: ['Meta'] });
+    await expect(readAllArmStructures('sheet-1', deps)).resolves.toEqual([]);
+  });
+
+  test('タブがあるのにヘッダ行が無い場合はエラー', async () => {
+    const deps = makeDeps({ titles: ['ArmStructures'], values: [] });
+    await expect(readAllArmStructures('sheet-1', deps)).rejects.toThrow(
+      'ArmStructures タブにヘッダ行がありません',
     );
   });
 });

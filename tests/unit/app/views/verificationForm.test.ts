@@ -82,6 +82,9 @@ function makeHandlers(): jest.Mocked<VerificationFormHandlers> {
     onArmConfirm: jest.fn(),
     onArmRevise: jest.fn(),
     onArmCancelRevise: jest.fn(),
+    onOutcomeKeyChange: jest.fn(),
+    onOutcomeTimeChange: jest.fn(),
+    onOutcomeAdd: jest.fn(),
   };
 }
 
@@ -104,6 +107,7 @@ function makeModel(
     highlightInfo: new Map<string, CellHighlightInfo>(),
     canSearchText: true,
     armCard: null,
+    outcomeAdd: null,
     armLocked: false,
     progress: {
       decided: 0,
@@ -661,5 +665,53 @@ describe('renderVerificationForm: 群構成確定カード（ui-states.md §3 `#
     );
     expect(root.querySelector('.verify__cell')).toBeNull();
     expect(root.querySelector('.verify__shortcut-note')).toBeNull();
+  });
+});
+
+describe('renderVerificationForm: アウトカム追加フォーム', () => {
+  test('outcome_result タブで入力欄・追加ボタンを描画し、変更と追加をハンドラへ渡す', () => {
+    const { root, handlers } = render(
+      makeModel([], {
+        tabs: ['outcome_result'],
+        activeTab: 'outcome_result',
+        outcomeAdd: { outcomeKey: 'outcome_3', time: '30d', error: null },
+        progress: {
+          decided: 0,
+          total: 0,
+          byTab: [{ tab: 'outcome_result', decided: 0, total: 0 }],
+        },
+      }),
+    );
+    const card = root.querySelector('#verify-outcome-add');
+    expect(card).not.toBeNull();
+    const key = root.querySelector<HTMLInputElement>('#verify-outcome-key');
+    const time = root.querySelector<HTMLInputElement>('#verify-outcome-time');
+    expect(key?.value).toBe('outcome_3');
+    expect(time?.value).toBe('30d');
+    key!.value = 'mortality';
+    key!.dispatchEvent(new Event('change'));
+    expect(handlers.onOutcomeKeyChange).toHaveBeenCalledWith('mortality');
+    time!.value = '12w';
+    time!.dispatchEvent(new Event('change'));
+    expect(handlers.onOutcomeTimeChange).toHaveBeenCalledWith('12w');
+    root.querySelector<HTMLButtonElement>('#verify-outcome-add-button')?.click();
+    expect(handlers.onOutcomeAdd).toHaveBeenCalled();
+  });
+
+  test('アウトカム追加エラーは role=alert で出す', () => {
+    const { root } = render(
+      makeModel([], {
+        tabs: ['outcome_result'],
+        activeTab: 'outcome_result',
+        outcomeAdd: {
+          outcomeKey: 'outcome_1',
+          time: '',
+          error: 'entity_key outcome:outcome_1|arm:1 は既に存在します',
+        },
+      }),
+    );
+    const error = root.querySelector('#verify-outcome-error');
+    expect(error?.getAttribute('role')).toBe('alert');
+    expect(error?.textContent).toContain('既に存在します');
   });
 });

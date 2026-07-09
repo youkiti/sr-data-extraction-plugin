@@ -33,6 +33,12 @@ export interface ArmCardModel {
   error: string | null;
 }
 
+export interface OutcomeAddModel {
+  outcomeKey: string;
+  time: string;
+  error: string | null;
+}
+
 export interface VerificationFormModel {
   tabs: EntityLevel[];
   activeTab: EntityLevel;
@@ -49,6 +55,8 @@ export interface VerificationFormModel {
   canSearchText: boolean;
   /** 群構成確定カード。null = 群構成が不要なスキーマ（arm / outcome_result 項目なし） */
   armCard: ArmCardModel | null;
+  /** outcome_result タブで、人間が見落としアウトカムを追加するフォーム */
+  outcomeAdd: OutcomeAddModel | null;
   /** true のとき arm / outcome_result タブをディムし、該当タブの本文を確定案内に差し替える */
   armLocked: boolean;
   /** 全 entity タブ横断の判定進捗（判定のたびに更新。「どこまでやったか」の可視化） */
@@ -84,6 +92,9 @@ export interface VerificationFormHandlers {
   onArmRevise(): void;
   /** 改訂のキャンセル（確定済みがあるときだけ出る） */
   onArmCancelRevise(): void;
+  onOutcomeKeyChange(value: string): void;
+  onOutcomeTimeChange(value: string): void;
+  onOutcomeAdd(): void;
 }
 
 const TAB_LABELS: Record<EntityLevel, string> = {
@@ -537,6 +548,61 @@ function renderArmCard(card: ArmCardModel, handlers: VerificationFormHandlers): 
   return el('section', { id: 'verify-arm-card', className: 'verify__arm-card' }, children);
 }
 
+function renderOutcomeAdd(
+  model: OutcomeAddModel,
+  handlers: VerificationFormHandlers,
+): HTMLElement {
+  const keyInput = el('input', {
+    id: 'verify-outcome-key',
+    className: 'verify__outcome-key',
+    attributes: { type: 'text' },
+  });
+  keyInput.value = model.outcomeKey;
+  keyInput.addEventListener('change', () => handlers.onOutcomeKeyChange(keyInput.value));
+
+  const timeInput = el('input', {
+    id: 'verify-outcome-time',
+    className: 'verify__outcome-time',
+    attributes: { type: 'text' },
+  });
+  timeInput.value = model.time;
+  timeInput.addEventListener('change', () => handlers.onOutcomeTimeChange(timeInput.value));
+
+  const addButton = el('button', {
+    id: 'verify-outcome-add-button',
+    className: 'verify__outcome-add-button',
+    text: 'アウトカムを追加',
+    attributes: { type: 'button' },
+  });
+  addButton.addEventListener('click', () => handlers.onOutcomeAdd());
+
+  const children: HTMLElement[] = [
+    el('h4', { className: 'verify__outcome-heading', text: 'アウトカムを追加' }),
+    el('div', { className: 'verify__outcome-fields' }, [
+      el('label', { className: 'verify__outcome-field', attributes: { for: 'verify-outcome-key' } }, [
+        'アウトカムキー',
+        keyInput,
+      ]),
+      el('label', { className: 'verify__outcome-field', attributes: { for: 'verify-outcome-time' } }, [
+        '時点（任意）',
+        timeInput,
+      ]),
+      addButton,
+    ]),
+  ];
+  if (model.error !== null) {
+    children.push(
+      el('p', {
+        id: 'verify-outcome-error',
+        className: 'verify__outcome-error',
+        attributes: { role: 'alert' },
+        text: model.error,
+      }),
+    );
+  }
+  return el('section', { id: 'verify-outcome-add', className: 'verify__outcome-add' }, children);
+}
+
 export function renderVerificationForm(
   model: VerificationFormModel,
   handlers: VerificationFormHandlers,
@@ -547,6 +613,9 @@ export function renderVerificationForm(
   ];
   if (model.armCard !== null) {
     children.push(renderArmCard(model.armCard, handlers));
+  }
+  if (model.outcomeAdd !== null) {
+    children.push(renderOutcomeAdd(model.outcomeAdd, handlers));
   }
   if (model.armLocked && isArmDependentLevel(model.activeTab)) {
     // study 項目のないスキーマではロック対象タブが初期表示になりうる。本文を確定案内に差し替える

@@ -68,12 +68,9 @@ function assertHeader(header: readonly string[]): void {
   });
 }
 
-function parseRows(values: string[][], studyId: string): ArmStructureRow[] {
+function parseAllRows(values: string[][]): ArmStructureRow[] {
   const rows: ArmStructureRow[] = [];
   values.slice(1).forEach((raw, i) => {
-    if (cellAt(raw, 0) !== studyId) {
-      return;
-    }
     const context = `ArmStructures ${i + 2} 行目`;
     rows.push({
       studyId: cellAt(raw, 0),
@@ -87,6 +84,31 @@ function parseRows(values: string[][], studyId: string): ArmStructureRow[] {
     });
   });
   return rows;
+}
+
+function parseRows(values: string[][], studyId: string): ArmStructureRow[] {
+  return parseAllRows(values).filter((row) => row.studyId === studyId);
+}
+
+/**
+ * ArmStructures タブの全行を読み込む（進捗一覧 / ダッシュボード用）。
+ * タブ自体が無い旧プロジェクトは「まだ誰も確定していない」として空配列を返す
+ */
+export async function readAllArmStructures(
+  spreadsheetId: string,
+  deps: GoogleApiDeps,
+): Promise<ArmStructureRow[]> {
+  const titles = await getSheetTitles(spreadsheetId, deps);
+  if (!titles.includes(ARM_STRUCTURES_TAB)) {
+    return [];
+  }
+  const values = await getSheetValues(spreadsheetId, ARM_STRUCTURES_TAB, deps);
+  const header = values[0];
+  if (header === undefined) {
+    throw new Error('ArmStructures タブにヘッダ行がありません（プロジェクト初期化が不完全です）');
+  }
+  assertHeader(header);
+  return parseAllRows(values);
 }
 
 /**

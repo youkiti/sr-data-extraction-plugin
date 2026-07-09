@@ -50,6 +50,25 @@ export function makeRobDomainEntityKey(domain: string): string {
   return `rob:${domain}`;
 }
 
+/**
+ * 既存 outcome_result キーを見て、人手追加フォームの既定 outcome id を採番する。
+ * `outcome_1` / `outcome_2` ... だけを数え、ユーザー定義の可読キーはそのまま残す。
+ */
+export function nextOutcomeId(existingKeys: Iterable<string>): string {
+  let max = 0;
+  for (const key of existingKeys) {
+    const parsed = parseEntityKey(key);
+    if (parsed?.level !== 'outcome_result') {
+      continue;
+    }
+    const match = /^outcome_(\d+)$/.exec(parsed.outcome);
+    if (match !== null) {
+      max = Math.max(max, Number(match[1]));
+    }
+  }
+  return `outcome_${max + 1}`;
+}
+
 /** entity_key 文字列を判別可能な構造に戻す。形式不正は null */
 export function parseEntityKey(key: string): ParsedEntityKey | null {
   if (key === STUDY_ENTITY_KEY) {

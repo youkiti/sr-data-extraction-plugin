@@ -6,11 +6,16 @@
 import type { Decision } from '../../domain/decision';
 import type { DocumentRecord } from '../../domain/document';
 import type { Evidence } from '../../domain/evidence';
+import type { ConfirmedArmStructure } from '../../domain/armStructure';
 import type { SchemaField } from '../../domain/schemaField';
 import { readDocuments } from '../../features/documents/documentRepository';
 import { readEvidenceRows } from '../../features/extraction/evidenceRepository';
 import { readRunSchemaVersions } from '../../features/extraction/runRepository';
 import { getSchemaFieldsByVersion } from '../../features/schema/schemaRepository';
+import {
+  latestArmStructure,
+  readAllArmStructures,
+} from '../../features/verification/armStructureRepository';
 import { readAllDecisions } from '../../features/verification/decisionRepository';
 import { verificationProgress } from '../../features/verification/progress';
 import { getCurrentUserEmail } from '../../lib/google/identity';
@@ -21,6 +26,7 @@ import {
   loadVerificationBundle,
   persistArmConfirmation,
   persistDecisionWrite,
+  persistInstanceDeclarations,
   type QueuedDecisionWrite,
   type VerificationDeps,
 } from './verificationService';
@@ -77,6 +83,8 @@ export interface VerifyTargetMaterial {
   target: VerifyTarget;
   /** 自分の annotator 行への判定のみ（cells.ts と同じ契約） */
   ownDecisions: Decision[];
+  /** 自分が確定した群構成。未確定なら null */
+  armStructure: ConfirmedArmStructure | null;
 }
 
 /**
@@ -92,6 +100,7 @@ export async function readVerifyTargetMaterials(
   const allEvidence = await readEvidenceRows(spreadsheetId, deps.google);
   const runVersions = await readRunSchemaVersions(spreadsheetId, deps.google);
   const allDecisions = await readAllDecisions(spreadsheetId, deps.google);
+  const allArmRows = await readAllArmStructures(spreadsheetId, deps.google);
   const annotator = (await getCurrentUserEmail(deps.profile)) ?? '';
 
   const byDocument = latestRunEvidenceByDocument(allEvidence, new Set(runVersions.keys()));
@@ -112,15 +121,20 @@ export async function readVerifyTargetMaterials(
     const ownDecisions = allDecisions.filter(
       (decision) => decision.studyId === document.studyId && decision.annotator === annotator,
     );
+    const armStructure = latestArmStructure(
+      allArmRows.filter((row) => row.studyId === document.studyId),
+      annotator,
+    );
     materials.push({
       target: {
         document,
         evidence: entry.evidence,
         fields,
         schemaVersion,
-        progress: verificationProgress(fields, entry.evidence, ownDecisions),
+        progress: verificationProgress(fields, entry.evidence, ownDecisions, { armStructure }),
       },
       ownDecisions,
+      armStructure,
     });
   }
   return materials;
@@ -265,4 +279,20 @@ export async function persistVerifyArmConfirmation(
     },
     deps,
   );
+}
+
+/**
+ * outcome_result などの「人間が追加した entity インスタンス」を Decisions へ追記する。
+ * ResultsData は実際のセル判定時に upsert される。
+ */
+export async function persistVerifyInstanceDeclarations(
+  store: Store,
+  deps: VerificationDeps,
+  decisions: readonly Decision[],
+): Promise<void> {
+  const project = store.getState().currentProject;
+  if (!project) {
+    return;
+  }
+  await persistInstanceDeclarations(project.spreadsheetId, decisions, deps);
 }

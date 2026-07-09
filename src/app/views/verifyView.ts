@@ -117,6 +117,7 @@ export function renderVerifyView(state: AppState, ctx: ViewContext): HTMLElement
         data: verify.verification,
         onDecision: (decision) => ctx.verify.onDecision(decision),
         onArmConfirm: (arms) => ctx.verify.onArmConfirm(arms),
+        onInstanceDeclare: (decisions) => ctx.verify.onInstanceDeclare?.(decisions),
         focusEntityKey: verify.deepLinkEntityKey,
       }),
     );

@@ -106,9 +106,10 @@ function makeMaterial(): VerifyTargetMaterial {
       evidence: [makeEvidence()],
       fields: [makeField()],
       schemaVersion: 1,
-      progress: { decided: 0, total: 1 },
+      progress: { decided: 0, total: 1, byTab: [{ tab: 'study', decided: 0, total: 1 }] },
     },
     ownDecisions: [],
+    armStructure: null,
   };
 }
 

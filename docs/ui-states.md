@@ -132,7 +132,9 @@ spec が正。実装が追いついていない箇所は以下のとおり（実
 | | `?doc=` が不正 | 存在しない document_id は `#verify-error`「文献 {id} が見つかりません」+ セレクタから選び直せる |
 | | 文献切替中 | `#verify-doc-loading`（検証データ束の読み込み。前の文献の PDF は破棄してから読む） |
 | | 群構成が未確定 | **arm / outcome_result タブがディム（`aria-disabled`）+ 「まず群構成を確定してください」**（rob_domain タブは群構成に依存しないためディムしない）。群構成確定カード `#verify-arm-card` を表示: AI ドラフトの arm 一覧（`arm_key` + 名称入力。初期値 = Evidence の arm 名フィールド値）+ 行の追加 / 削除 + 「群構成を確定」`#verify-arm-confirm`。名称が空の行があるうちは確定不可（インラインエラー `#verify-arm-error`）。arm / outcome_result レベル項目が 1 つもないスキーマ（= 群構成が要らない）ではカード自体を出さない（ディム対象タブも存在しない） |
-| | 群構成が確定済み | カードは要約表示「群構成: n 群（version v）」+ 「改訂」`#verify-arm-revise` で再編集 → 確定で `ArmStructures` へ新 version を追記（監査証跡）。arm / outcome_result タブが有効化される |
+| | 群構成が確定済み | カードは要約表示「群構成: n 群（version v）」+ 「改訂」`#verify-arm-revise` で再編集 → 確定で `ArmStructures` へ新 version を追記（監査証跡）。arm / outcome_result タブが有効化される。arm タブは `ArmStructures` の全 arm をインスタンス源に含め、AI Evidence がない arm でも `AI 抽出なし（手入力のみ）` の空セルを表示する |
+| | outcome_result 追加 | 群構成が確定済み、かつ outcome_result 項目があるとき、アウトカムタブ上部に `#verify-outcome-add` を表示する。`#verify-outcome-key` は既存 `outcome_<n>` の次番号を既定値にし、`#verify-outcome-time` は任意。`#verify-outcome-add-button` で `outcome:<key>\|arm:<n>`（time 入力ありは `\|time:<time>` 付き）を確定 arm 全体に作り、`Decisions` へ予約 `field_id=__entity_instance__` の宣言イベントを追記する。追加直後は該当 outcome × arm の全 field が空セルとして表示され、進捗分母にも含まれる。既存キーと衝突、`:` / `\|` を含むキー、確定 arm なし、arm_key 不正の場合は保存せず `#verify-outcome-error`（`role="alert"`）を表示する |
+| | 幽霊セルの進捗 | 非 study タブの「インスタンス × field」直積で生じる Evidence なしセルは、検証進捗・ダッシュボード・エクスポート警告の総セル数に含める。これは AI 未抽出セルも人間が `edit` / `reject` / `not_reported` で明示判定するためで、未判定のままなら残数として表示する |
 | | anchor failed 項目 | フォーム側に quote 全文 + 「本文内を検索」ボタン。ハイライトは描画しない |
 | | `no_text_layer` document | PDF は表示するがハイライトなし。全項目が quote 全文 + ページヒント表示。「本文内を検索」ボタンは出さない（テキスト層がないため）。上部に「この PDF はテキスト層がないためハイライト検証は使えません」バナー |
 | | 複数一致 | 「他 n 箇所に一致」リンク。クリックでハイライト切替 + PDF スクロール |

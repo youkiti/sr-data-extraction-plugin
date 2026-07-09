@@ -1116,9 +1116,18 @@ describe('bootstrapApp: #/pilot', () => {
       fieldLabel: '群の N',
       entityLevel: 'arm' as const,
     };
+    const OUTCOME_FIELD = {
+      ...FIELD,
+      fieldId: 'f-out-event',
+      fieldIndex: 3,
+      section: 'outcomes',
+      fieldName: 'event_count',
+      fieldLabel: 'イベント数',
+      entityLevel: 'outcome_result' as const,
+    };
     const verification = {
       document: DOC_RECORD,
-      fields: [FIELD, ARM_FIELD],
+      fields: [FIELD, ARM_FIELD, OUTCOME_FIELD],
       evidence: [
         {
           evidenceId: 'ev-1',
@@ -1195,6 +1204,20 @@ describe('bootstrapApp: #/pilot', () => {
     await flush();
     await flush();
     expect(urls().some((url) => url.includes('ArmStructures!A1:append'))).toBe(true);
+
+    // アウトカム追加 → 予約 Decision の追記まで配線されている
+    const decisionAppendCount = () =>
+      urls().filter((url) => url.includes('Decisions') && url.includes(':append')).length;
+    const beforeOutcomeAdd = decisionAppendCount();
+    const outcomeTab = [...document.querySelectorAll<HTMLButtonElement>('.verify__tab')].find(
+      (button) => button.textContent === 'アウトカム',
+    );
+    expect(outcomeTab).toBeDefined();
+    outcomeTab!.click();
+    (document.getElementById('verify-outcome-add-button') as HTMLButtonElement).click();
+    await flush();
+    await flush();
+    expect(decisionAppendCount()).toBeGreaterThan(beforeOutcomeAdd);
   });
 
   test('#/pilot 入場で履歴の最新 run を自動読込する（既存データを最初からにしない）', async () => {
@@ -1493,6 +1516,23 @@ describe('bootstrapApp: #/verify・#/dashboard', () => {
     'FALSE',
     '',
   ];
+  const OUTCOME_FIELD_ROW = [
+    '1',
+    'f-out-event',
+    '3',
+    'outcomes',
+    'event_count',
+    'イベント数',
+    'outcome_result',
+    'integer',
+    '',
+    '',
+    'TRUE',
+    'イベント数を抽出',
+    '',
+    'FALSE',
+    '',
+  ];
   const EVIDENCE_ROW = [
     'ev-1',
     'run-1',
@@ -1717,7 +1757,7 @@ describe('bootstrapApp: #/verify・#/dashboard', () => {
     const stub = createWindowStub(verifyPreloaded());
     const tabs = {
       ...BASE_TABS,
-      SchemaFields: [[...SHEET_HEADERS.SchemaFields], FIELD_ROW, ARM_FIELD_ROW],
+      SchemaFields: [[...SHEET_HEADERS.SchemaFields], FIELD_ROW, ARM_FIELD_ROW, OUTCOME_FIELD_ROW],
       Evidence: [
         [...SHEET_HEADERS.Evidence],
         EVIDENCE_ROW,
@@ -1731,6 +1771,14 @@ describe('bootstrapApp: #/verify・#/dashboard', () => {
     await flush();
     await flush();
 
+    const urls = () => fetchMock.mock.calls.map((call) => decodeURIComponent(String(call[0])));
+
+    // 判定（study セルの承認）→ StudyData upsert + Decisions 追記
+    (document.querySelector('.verify__action--accept') as HTMLButtonElement).click();
+    await flush();
+    await flush();
+    expect(urls().some((url) => url.includes('Decisions') && url.includes(':append'))).toBe(true);
+
     // 群構成の確定 → ArmStructures タブ作成（旧プロジェクト）+ 追記
     const nameInput = document.querySelector('.verify__arm-name') as HTMLInputElement;
     nameInput.value = '介入群';
@@ -1738,15 +1786,22 @@ describe('bootstrapApp: #/verify・#/dashboard', () => {
     (document.getElementById('verify-arm-confirm') as HTMLButtonElement).click();
     await flush();
     await flush();
-    const urls = () => fetchMock.mock.calls.map((call) => decodeURIComponent(String(call[0])));
     expect(urls().some((url) => url.includes(':batchUpdate'))).toBe(true);
     expect(urls().some((url) => url.includes('ArmStructures!A1:append'))).toBe(true);
 
-    // 判定（study セルの承認）→ StudyData upsert + Decisions 追記
-    (document.querySelector('.verify__action--accept') as HTMLButtonElement).click();
+    // アウトカム追加 → 予約 Decision の追記まで配線されている
+    const decisionAppendCount = () =>
+      urls().filter((url) => url.includes('Decisions') && url.includes(':append')).length;
+    const beforeOutcomeAdd = decisionAppendCount();
+    const outcomeTab = [...document.querySelectorAll<HTMLButtonElement>('.verify__tab')].find(
+      (button) => button.textContent === 'アウトカム',
+    );
+    expect(outcomeTab).toBeDefined();
+    outcomeTab!.click();
+    (document.getElementById('verify-outcome-add-button') as HTMLButtonElement).click();
     await flush();
     await flush();
-    expect(urls().some((url) => url.includes('Decisions') && url.includes(':append'))).toBe(true);
+    expect(decisionAppendCount()).toBeGreaterThan(beforeOutcomeAdd);
   });
 
   test('?entity= ディープリンクは verify スライスへ写り、該当タブへ切替える', async () => {

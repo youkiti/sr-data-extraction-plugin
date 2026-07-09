@@ -101,6 +101,36 @@ describe('verificationProgress', () => {
     });
   });
 
+  test('ArmStructures 由来の Evidence なしセルも分母に含める', () => {
+    const fields = [
+      makeField({ fieldId: 'f-arm', fieldIndex: 1, fieldName: 'arm_n', entityLevel: 'arm' }),
+      makeField({
+        fieldId: 'f-out',
+        fieldIndex: 2,
+        fieldName: 'event_count',
+        entityLevel: 'outcome_result',
+      }),
+    ];
+    const evidence = [makeEvidence({ fieldId: 'f-out', entityKey: 'outcome:death|arm:1' })];
+    const progress = verificationProgress(fields, evidence, [], {
+      armStructure: {
+        version: 1,
+        arms: [
+          { armKey: 'arm:1', armName: '介入群' },
+          { armKey: 'arm:2', armName: '対照群' },
+        ],
+      },
+    });
+    expect(progress).toEqual({
+      decided: 0,
+      total: 4,
+      byTab: [
+        { tab: 'arm', decided: 0, total: 2 },
+        { tab: 'outcome_result', decided: 0, total: 2 },
+      ],
+    });
+  });
+
   test('項目なしスキーマは 0 / 0（byTab も空）', () => {
     expect(verificationProgress([], [], [])).toEqual({ decided: 0, total: 0, byTab: [] });
   });

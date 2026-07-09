@@ -269,6 +269,7 @@ function renderVerification(run: ExtractionRun, state: AppState, ctx: ViewContex
         data: state.pilot.verification,
         onDecision: (decision) => ctx.pilot.onDecision(decision),
         onArmConfirm: (arms) => ctx.pilot.onArmConfirm(arms),
+        onInstanceDeclare: (decisions) => ctx.pilot.onInstanceDeclare?.(decisions),
       }),
     );
   }

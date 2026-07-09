@@ -5,8 +5,9 @@
 // を組み立てる。1 セル = 1 field × 1 entity_key（+ 対応する Evidence と判定状態）
 import type { Decision } from '../../domain/decision';
 import type { Evidence } from '../../domain/evidence';
+import type { ConfirmedArmStructure } from '../../domain/armStructure';
 import type { EntityLevel, SchemaField } from '../../domain/schemaField';
-import { parseEntityKey, STUDY_ENTITY_KEY } from '../../utils/entityKey';
+import { makeOutcomeEntityKey, parseEntityKey, STUDY_ENTITY_KEY } from '../../utils/entityKey';
 import { cellKeyOf, deriveCellStates, emptyCellState, type CellState } from './cellState';
 
 export interface VerificationCell {
@@ -28,6 +29,11 @@ export interface TabModel {
   groups: CellGroup[];
   /** 全グループの連結（j / k のフォーカス移動順） */
   cells: VerificationCell[];
+}
+
+export interface TabModelOptions {
+  /** 人間が確定した arm 集合。AI Evidence がない arm / outcome の空セル生成に使う */
+  armStructure?: ConfirmedArmStructure | null;
 }
 
 /** entity タブの表示順（ui-flow.md §3。rob_domain は P1 だがデータ構造は対応済み） */
@@ -97,6 +103,7 @@ export function entityInstances(
   level: EntityLevel,
   evidence: readonly Evidence[],
   decisions: readonly Decision[],
+  options: TabModelOptions = {},
 ): string[] {
   const keys = new Set<string>();
   for (const item of evidence) {
@@ -109,7 +116,56 @@ export function entityInstances(
       keys.add(decision.entityKey);
     }
   }
+  if (level === 'arm') {
+    for (const arm of options.armStructure?.arms ?? []) {
+      if (parseEntityKey(arm.armKey)?.level === 'arm') {
+        keys.add(arm.armKey);
+      }
+    }
+  } else if (level === 'outcome_result' && options.armStructure !== null) {
+    for (const entityKey of expandOutcomeInstances([...keys], options.armStructure ?? null)) {
+      keys.add(entityKey);
+    }
+  }
   return [...keys].sort((a, b) => a.localeCompare(b));
+}
+
+/**
+ * 既存 outcome が一部 arm だけに出ている場合も、確定 arm 全体へ展開する。
+ * `outcome:x|arm:1|time:30d` があり arm:1 / arm:2 が確定済みなら、
+ * arm:2 の空セルも作る。arm を持たない outcome キーは意味を変えないため展開しない。
+ */
+function expandOutcomeInstances(
+  explicitKeys: readonly string[],
+  armStructure: ConfirmedArmStructure | null,
+): string[] {
+  if (armStructure === null) {
+    return [];
+  }
+  const armValues = armStructure.arms
+    .map((arm) => parseEntityKey(arm.armKey))
+    .filter((parsed): parsed is { level: 'arm'; arm: string } => parsed?.level === 'arm')
+    .map((parsed) => parsed.arm);
+  if (armValues.length === 0) {
+    return [];
+  }
+  const expanded: string[] = [];
+  for (const key of explicitKeys) {
+    const parsed = parseEntityKey(key);
+    if (parsed?.level !== 'outcome_result' || parsed.arm === null) {
+      continue;
+    }
+    for (const arm of armValues) {
+      expanded.push(
+        makeOutcomeEntityKey({
+          outcome: parsed.outcome,
+          arm,
+          time: parsed.time ?? undefined,
+        }),
+      );
+    }
+  }
+  return expanded;
 }
 
 /** 判定済みブロックへ送るセル（所属グループの見出しを文脈表示用に併記） */
@@ -162,6 +218,7 @@ export function buildTabModel(
   fields: readonly SchemaField[],
   evidence: readonly Evidence[],
   decisions: readonly Decision[],
+  options: TabModelOptions = {},
 ): TabModel {
   const tabFields = fields
     .filter((field) => field.entityLevel === tab)
@@ -182,7 +239,7 @@ export function buildTabModel(
       }
     }
   } else {
-    for (const entityKey of entityInstances(tab, evidence, decisions)) {
+    for (const entityKey of entityInstances(tab, evidence, decisions, options)) {
       groups.push({
         heading: entityKeyLabel(entityKey),
         cells: tabFields.map((field) => makeCell(field, entityKey, evidenceIndex, states)),

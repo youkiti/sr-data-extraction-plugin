@@ -4,6 +4,7 @@ import {
   openVerifyDocument,
   persistVerifyArmConfirmation,
   persistVerifyDecision,
+  persistVerifyInstanceDeclarations,
 } from '../../../../src/app/services/verifyService';
 import type {
   QueuedDecisionWrite,
@@ -26,6 +27,7 @@ import { readRunSchemaVersions } from '../../../../src/features/extraction/runRe
 import { getSchemaFieldsByVersion } from '../../../../src/features/schema/schemaRepository';
 import {
   appendArmStructureVersion,
+  readAllArmStructures,
   readArmStructuresByStudy,
 } from '../../../../src/features/verification/armStructureRepository';
 import {
@@ -62,6 +64,7 @@ jest.mock('../../../../src/features/verification/decisionRepository', () => ({
 jest.mock('../../../../src/features/verification/armStructureRepository', () => ({
   ...jest.requireActual('../../../../src/features/verification/armStructureRepository'),
   appendArmStructureVersion: jest.fn(),
+  readAllArmStructures: jest.fn(),
   readArmStructuresByStudy: jest.fn(),
 }));
 jest.mock('../../../../src/lib/google/drive', () => ({
@@ -89,6 +92,9 @@ const readDecisionsMock = readDecisionsByStudy as jest.MockedFunction<
 >;
 const appendArmVersionMock = appendArmStructureVersion as jest.MockedFunction<
   typeof appendArmStructureVersion
+>;
+const readAllArmStructuresMock = readAllArmStructures as jest.MockedFunction<
+  typeof readAllArmStructures
 >;
 const readArmStructuresMock = readArmStructuresByStudy as jest.MockedFunction<
   typeof readArmStructuresByStudy
@@ -256,6 +262,7 @@ beforeEach(() => {
   readAllDecisionsMock.mockResolvedValue([]);
   readDecisionsMock.mockResolvedValue([]);
   readStudyDataSheetMock.mockResolvedValue({ fieldNames: [], rows: [] });
+  readAllArmStructuresMock.mockResolvedValue([]);
   readArmStructuresMock.mockResolvedValue([]);
   getSchemaFieldsMock.mockResolvedValue([makeField()]);
   getCurrentUserEmailMock.mockResolvedValue(ME);
@@ -376,6 +383,32 @@ describe('loadVerifyTargets', () => {
       decided: 0,
       total: 1,
       byTab: [{ tab: 'study', decided: 0, total: 1 }],
+    });
+  });
+
+  test('ArmStructures の確定 arm を進捗分母に含める', async () => {
+    const store = makeStore({ documents: [makeDocument()] });
+    getSchemaFieldsMock.mockResolvedValue([
+      makeField({ fieldId: 'f-arm', fieldName: 'arm_n', entityLevel: 'arm' }),
+    ]);
+    readEvidenceRowsMock.mockResolvedValue([makeEvidence({ fieldId: 'f-total' })]);
+    readAllArmStructuresMock.mockResolvedValue([
+      {
+        studyId: 'study-doc-1',
+        version: 1,
+        armKey: 'arm:1',
+        armName: '介入群',
+        annotator: ME,
+        annotatorType: 'human_with_ai',
+        confirmedAt: 't0',
+        note: null,
+      },
+    ]);
+    await loadVerifyTargets(store, makeDeps());
+    expect(store.getState().verify.targets?.[0]?.progress).toEqual({
+      decided: 0,
+      total: 1,
+      byTab: [{ tab: 'arm', decided: 0, total: 1 }],
     });
   });
 });
@@ -584,5 +617,29 @@ describe('persistVerifyArmConfirmation', () => {
     await persistVerifyArmConfirmation(makeStore({ withProject: false }), makeDeps(), []);
     await persistVerifyArmConfirmation(makeStore({}), makeDeps(), []);
     expect(appendArmVersionMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('persistVerifyInstanceDeclarations', () => {
+  test('予約 Decision を Decisions へ追記する', async () => {
+    const store = makeStore({});
+    const decision = makeDecision({
+      fieldId: '__entity_instance__',
+      entityKey: 'outcome:mortality|arm:1',
+      action: 'edit',
+      value: 'outcome:mortality|arm:1',
+      note: 'outcome_instance_declared',
+    });
+    await persistVerifyInstanceDeclarations(store, makeDeps(), [decision]);
+    expect(appendDecisionsMock).toHaveBeenCalledWith('sheet-1', [decision], expect.anything());
+    expect(upsertResultsMock).not.toHaveBeenCalled();
+    expect(upsertStudyMock).not.toHaveBeenCalled();
+  });
+
+  test('プロジェクト未選択なら何もしない', async () => {
+    await persistVerifyInstanceDeclarations(makeStore({ withProject: false }), makeDeps(), [
+      makeDecision({ fieldId: '__entity_instance__' }),
+    ]);
+    expect(appendDecisionsMock).not.toHaveBeenCalled();
   });
 });

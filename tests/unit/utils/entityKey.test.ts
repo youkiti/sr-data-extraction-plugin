@@ -3,6 +3,7 @@ import {
   makeArmEntityKey,
   makeOutcomeEntityKey,
   makeRobDomainEntityKey,
+  nextOutcomeId,
   parseEntityKey,
 } from '../../../src/utils/entityKey';
 
@@ -48,6 +49,24 @@ describe('makeRobDomainEntityKey', () => {
 
   test('不正な値を拒否する', () => {
     expect(() => makeRobDomainEntityKey('d|1')).toThrow('entity_key');
+  });
+});
+
+describe('nextOutcomeId', () => {
+  test('既存 outcome_<n> の最大 + 1 を返す', () => {
+    expect(
+      nextOutcomeId([
+        'outcome:outcome_1|arm:1',
+        'outcome:mortality|arm:1',
+        'outcome:outcome_4|arm:2|time:30d',
+        'arm:1',
+        'broken',
+      ]),
+    ).toBe('outcome_5');
+  });
+
+  test('番号付き outcome が無ければ outcome_1', () => {
+    expect(nextOutcomeId(['outcome:mortality|arm:1'])).toBe('outcome_1');
   });
 });
 

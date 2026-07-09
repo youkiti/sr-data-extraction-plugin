@@ -508,13 +508,15 @@ describe('フォーカス移動と双方向ジャンプ', () => {
     panel.dispose();
   });
 
-  test('インスタンスが無いタブへ切り替えるとフォーカスは無しになる', () => {
+  test('arm Evidence が無くても確定 arm から空セルを作る', () => {
     const { panel, onDecision } = createPanel({
-      evidence: [makeEvidence()], // arm の Evidence なし → arm タブは空
+      evidence: [makeEvidence()],
     });
     panel.root.querySelectorAll<HTMLButtonElement>('.verify__tab')[1]?.click();
-    expect(panel.root.querySelector('.verify__empty')).not.toBeNull();
-    pressKey('a'); // フォーカスなし → 無害
+    expect(panel.root.querySelector('.verify__empty')).toBeNull();
+    expect(panel.root.querySelector('.verify__ai--none')?.textContent).toContain('AI 抽出なし');
+    expect(cellEl(panel.root, KEY_ARM)?.classList.contains('verify__cell--focused')).toBe(true);
+    pressKey('a'); // Evidence なしなので accept は無害
     expect(onDecision).not.toHaveBeenCalled();
     panel.dispose();
   });
@@ -1031,6 +1033,105 @@ describe('群構成の確定ゲート（arm 未確定時。ui-states.md §3 `#/v
       evidence: [makeEvidence()],
     });
     expect(panel.root.querySelector('#verify-arm-card')).toBeNull();
+    panel.dispose();
+  });
+});
+
+describe('outcome_result インスタンス追加', () => {
+  const outcomeField = makeField({
+    fieldId: 'f-out-event',
+    fieldIndex: 5,
+    section: 'outcomes',
+    fieldName: 'event_count',
+    fieldLabel: 'イベント数',
+    entityLevel: 'outcome_result',
+  });
+
+  function openOutcomePanel(options: Partial<VerificationPanelOptions> = {}) {
+    const onInstanceDeclare = jest.fn();
+    const created = createPanel(
+      { fields: [...FIELDS, outcomeField] },
+      { onInstanceDeclare, ...options },
+    );
+    [...created.panel.root.querySelectorAll<HTMLButtonElement>('.verify__tab')]
+      .find((button) => button.textContent === 'アウトカム')
+      ?.click();
+    return { ...created, onInstanceDeclare };
+  }
+
+  test('アウトカムキーと時点から確定 arm 全体の宣言イベントを作り、空セルを表示する', () => {
+    const { panel, onInstanceDeclare } = openOutcomePanel();
+    expect(panel.root.querySelector('#verify-outcome-add')).not.toBeNull();
+    const key = panel.root.querySelector<HTMLInputElement>('#verify-outcome-key');
+    const time = panel.root.querySelector<HTMLInputElement>('#verify-outcome-time');
+    expect(key?.value).toBe('outcome_1');
+    key!.value = 'mortality';
+    key!.dispatchEvent(new Event('change'));
+    time!.value = '30d';
+    time!.dispatchEvent(new Event('change'));
+    panel.root.querySelector<HTMLButtonElement>('#verify-outcome-add-button')?.click();
+
+    expect(onInstanceDeclare).toHaveBeenCalledWith([
+      expect.objectContaining({
+        decidedAt: 't1',
+        decidedBy: ME,
+        studyId: 'study-1',
+        fieldId: '__entity_instance__',
+        entityKey: 'outcome:mortality|arm:1|time:30d',
+        annotator: ME,
+        annotatorType: 'human_with_ai',
+        schemaVersion: 1,
+        action: 'edit',
+        value: 'outcome:mortality|arm:1|time:30d',
+        note: 'outcome_instance_declared',
+      }),
+    ]);
+    const cell = cellEl(panel.root, cellKeyOf('f-out-event', 'outcome:mortality|arm:1|time:30d'));
+    expect(cell).not.toBeNull();
+    expect(cell?.textContent).toContain('AI 抽出なし');
+    expect(cell?.classList.contains('verify__cell--focused')).toBe(true);
+    expect(panel.root.querySelector<HTMLInputElement>('#verify-outcome-key')?.value).toBe(
+      'outcome_1',
+    ); // mortality は番号付きではないので次の既定も outcome_1
+    panel.dispose();
+  });
+
+  test('既存キーとの衝突は保存せずエラー表示する', () => {
+    const { panel, onInstanceDeclare } = openOutcomePanel();
+    panel.root.querySelector<HTMLButtonElement>('#verify-outcome-add-button')?.click();
+    expect(onInstanceDeclare).toHaveBeenCalledTimes(1);
+    const key = panel.root.querySelector<HTMLInputElement>('#verify-outcome-key');
+    key!.value = 'outcome_1';
+    key!.dispatchEvent(new Event('change'));
+    panel.root.querySelector<HTMLButtonElement>('#verify-outcome-add-button')?.click();
+    expect(onInstanceDeclare).toHaveBeenCalledTimes(1);
+    expect(panel.root.querySelector('#verify-outcome-error')?.textContent).toContain(
+      '既に存在します',
+    );
+    panel.dispose();
+  });
+
+  test('不正な entity_key セグメントは保存せずエラー表示する', () => {
+    const { panel, onInstanceDeclare } = openOutcomePanel();
+    const key = panel.root.querySelector<HTMLInputElement>('#verify-outcome-key');
+    key!.value = 'bad:key';
+    key!.dispatchEvent(new Event('change'));
+    panel.root.querySelector<HTMLButtonElement>('#verify-outcome-add-button')?.click();
+    expect(onInstanceDeclare).not.toHaveBeenCalled();
+    expect(panel.root.querySelector('#verify-outcome-error')?.textContent).toContain('entity_key');
+    panel.dispose();
+  });
+
+  test('空のアウトカムキーは保存せずエラー表示する', () => {
+    const { panel, onInstanceDeclare } = openOutcomePanel();
+    const key = panel.root.querySelector<HTMLInputElement>('#verify-outcome-key');
+    key!.value = '   ';
+    key!.dispatchEvent(new Event('change'));
+    panel.root.querySelector<HTMLButtonElement>('#verify-outcome-add-button')?.click();
+    expect(onInstanceDeclare).not.toHaveBeenCalled();
+    expect(panel.root.querySelector('#verify-outcome-error')?.textContent).toContain(
+      'アウトカムキー',
+    );
     panel.dispose();
   });
 });

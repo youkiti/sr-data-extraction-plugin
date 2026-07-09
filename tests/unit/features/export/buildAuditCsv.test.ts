@@ -8,6 +8,10 @@ import {
   AUDIT_MISSING_TOKEN,
   buildAuditCsv,
 } from '../../../../src/features/export/buildAuditCsv';
+import {
+  ENTITY_INSTANCE_DECLARATION_FIELD_ID,
+  OUTCOME_INSTANCE_DECLARATION_NOTE,
+} from '../../../../src/features/verification/instanceDeclarations';
 import { CSV_BOM } from '../../../../src/features/export/csvEncode';
 
 /** 構造的欠損トークン（可読性のための短縮名） */
@@ -286,6 +290,32 @@ describe('buildAuditCsv', () => {
     expect(dataRows(result.csv)).toHaveLength(0);
     expect(result.droppedRowCount).toBe(2);
     expect(result.undecidedCellCount).toBe(0);
+  });
+
+  test('インスタンス宣言イベントは audit.csv の判定行から除外し、droppedRowCount にも数えない', () => {
+    const studies = [study('d1', 'Tanaka 2023')];
+    const fields = [field('f1', 'event_count', 1)];
+    const result = buildAuditCsv(
+      studies,
+      [
+        decision(
+          'd1',
+          ENTITY_INSTANCE_DECLARATION_FIELD_ID,
+          'outcome:mortality|arm:1',
+          'edit',
+          '2026-07-01T10:00:00Z',
+          {
+            value: 'outcome:mortality|arm:1',
+            note: OUTCOME_INSTANCE_DECLARATION_NOTE,
+          },
+        ),
+      ],
+      [],
+      [],
+      fields,
+    );
+    expect(dataRows(result.csv)).toHaveLength(0);
+    expect(result.droppedRowCount).toBe(0);
   });
 
   test('entity_key → field_index → annotator 順に並び、decided_at 同時刻は追記順を保つ', () => {

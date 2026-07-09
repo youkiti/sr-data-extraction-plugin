@@ -51,6 +51,7 @@ import {
   loadPilotVerification,
   persistPilotArmConfirmation,
   persistPilotDecision,
+  persistPilotInstanceDeclarations,
   runPilot,
   setPilotModel,
   togglePilotDocument,
@@ -71,6 +72,7 @@ import {
   openVerifyDocument,
   persistVerifyArmConfirmation,
   persistVerifyDecision,
+  persistVerifyInstanceDeclarations,
 } from './services/verifyService';
 import { loadDashboard } from './services/dashboardService';
 import { loadProgressCounts } from './services/homeService';
@@ -305,6 +307,9 @@ export async function bootstrapApp(
       onArmConfirm: (arms) => {
         void persistPilotArmConfirmation(store, deps, arms);
       },
+      onInstanceDeclare: (decisions) => {
+        void persistPilotInstanceDeclarations(store, deps, decisions);
+      },
     },
     extract: {
       onToggleDocument: (documentId, selected) => {
@@ -343,6 +348,9 @@ export async function bootstrapApp(
       },
       onArmConfirm: (arms) => {
         void persistVerifyArmConfirmation(store, deps, arms);
+      },
+      onInstanceDeclare: (decisions) => {
+        void persistVerifyInstanceDeclarations(store, deps, decisions);
       },
     },
     dashboard: {

@@ -2,6 +2,7 @@
 // セルモデル（cells.ts）を entity タブ横断で数え、判定済み（unverified 以外）を分子にする
 import type { Decision } from '../../domain/decision';
 import type { Evidence } from '../../domain/evidence';
+import type { ConfirmedArmStructure } from '../../domain/armStructure';
 import type { EntityLevel, SchemaField } from '../../domain/schemaField';
 import { availableTabs, buildTabModel } from './cells';
 
@@ -33,12 +34,13 @@ export function verificationProgress(
   fields: readonly SchemaField[],
   evidence: readonly Evidence[],
   ownDecisions: readonly Decision[],
+  options: { armStructure?: ConfirmedArmStructure | null } = {},
 ): VerificationProgress {
   const byTab: TabProgress[] = [];
   let decided = 0;
   let total = 0;
   for (const tab of availableTabs(fields)) {
-    const model = buildTabModel(tab, fields, evidence, ownDecisions);
+    const model = buildTabModel(tab, fields, evidence, ownDecisions, options);
     const tabTotal = model.cells.length;
     const tabDecided = model.cells.filter((cell) => cell.state.status !== 'unverified').length;
     byTab.push({ tab, decided: tabDecided, total: tabTotal });

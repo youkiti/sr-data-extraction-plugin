@@ -184,6 +184,23 @@ describe('buildDashboard', () => {
     });
   });
 
+  test('armStructure があれば Evidence なし arm も section の分母に含める', () => {
+    const data = buildDashboard([
+      makeInput({
+        evidence: [makeEvidence()],
+        ownDecisions: [],
+        armStructure: { version: 1, arms: [{ armKey: 'arm:1', armName: '介入群' }] },
+      }),
+    ]);
+    expect(data.rows[0]?.cells[2]).toEqual({
+      section: 'outcomes',
+      decided: 0,
+      total: 1,
+      entityKey: 'arm:1',
+    });
+    expect(data.totals.progress).toEqual({ decided: 0, total: 3 });
+  });
+
   test('スキーマが異なる document 間では section の和集合を取り、無い section は null', () => {
     const doc2 = makeInput({
       document: makeDocument({ documentId: 'doc-2', studyId: 'study-2' }),

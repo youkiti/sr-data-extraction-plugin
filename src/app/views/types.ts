@@ -100,6 +100,8 @@ export interface PilotViewCallbacks {
   onDecision(decision: Decision): void;
   /** 群構成の確定・改訂（ArmStructures へ新 version を追記） */
   onArmConfirm(arms: readonly { armKey: string; armName: string }[]): void;
+  /** 人間が追加した entity インスタンス宣言（Decisions へ追記） */
+  onInstanceDeclare?(decisions: readonly Decision[]): void;
 }
 
 /** #/extract（S7）のユーザー操作コールバック */
@@ -130,6 +132,8 @@ export interface VerifyViewCallbacks {
   onDecision(decision: Decision): void;
   /** 群構成の確定・改訂（ArmStructures へ新 version を追記） */
   onArmConfirm(arms: readonly { armKey: string; armName: string }[]): void;
+  /** 人間が追加した entity インスタンス宣言（Decisions へ追記） */
+  onInstanceDeclare?(decisions: readonly Decision[]): void;
 }
 
 /** #/dashboard（S9）のユーザー操作コールバック（セルクリックはハッシュ遷移のためここに持たない） */

@@ -6,6 +6,7 @@ import {
   loadPilotVerification,
   persistPilotArmConfirmation,
   persistPilotDecision,
+  persistPilotInstanceDeclarations,
   runPilot,
   setPilotModel,
   togglePilotDocument,
@@ -943,6 +944,28 @@ describe('persistPilotArmConfirmation', () => {
       version: 2,
       arms: [{ armKey: 'arm:1', armName: '介入群' }],
     });
+  });
+});
+
+describe('persistPilotInstanceDeclarations', () => {
+  test('予約 Decision を Decisions へ追記し、ResultsData は更新しない', async () => {
+    const decision = makeDecision({
+      fieldId: '__entity_instance__',
+      entityKey: 'outcome:mortality|arm:1',
+      action: 'edit',
+      value: 'outcome:mortality|arm:1',
+      note: 'outcome_instance_declared',
+    });
+    await persistPilotInstanceDeclarations(makeStore({}), makeDeps(), [decision]);
+    expect(appendDecisionsMock).toHaveBeenCalledWith('sheet-1', [decision], expect.anything());
+    expect(upsertResultsMock).not.toHaveBeenCalled();
+  });
+
+  test('プロジェクト未選択なら何もしない', async () => {
+    await persistPilotInstanceDeclarations(makeStore({ withProject: false }), makeDeps(), [
+      makeDecision({ fieldId: '__entity_instance__' }),
+    ]);
+    expect(appendDecisionsMock).not.toHaveBeenCalled();
   });
 });
 

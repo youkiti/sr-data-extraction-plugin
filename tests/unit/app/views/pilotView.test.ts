@@ -38,6 +38,7 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<PilotViewCallback
     onRetryVerifyLoad: jest.fn(),
     onDecision: jest.fn(),
     onArmConfirm: jest.fn(),
+    onInstanceDeclare: jest.fn(),
   };
   return {
     ctx: {
@@ -474,6 +475,9 @@ describe('完了（サマリ + 埋め込み検証）', () => {
     const decision = { fieldId: 'f-1' } as never;
     options?.onDecision(decision);
     expect(ok.callbacks.onDecision).toHaveBeenCalledWith(decision);
+    const declarations = [{ fieldId: '__entity_instance__' }] as never;
+    options?.onInstanceDeclare?.(declarations);
+    expect(ok.callbacks.onInstanceDeclare).toHaveBeenCalledWith(declarations);
   });
 
   test('run が無ければサマリ・検証セクションは出さない', () => {

@@ -22,6 +22,7 @@ import {
 import {
   availableTabs,
   buildTabModel,
+  entityInstances,
   splitDecidedCells,
   type TabModel,
   type VerificationCell,
@@ -37,10 +38,12 @@ import {
   type EvidenceHighlight,
   type HighlightOccurrence,
 } from '../../features/verification/highlights';
+import { buildOutcomeDeclarationDecisions } from '../../features/verification/instanceDeclarations';
 import { verificationProgress } from '../../features/verification/progress';
 import type { VerificationData } from '../../features/verification/types';
 import type { renderPdfPageToCanvas } from '../../lib/pdf/renderPage';
 import { nowIso8601 } from '../../utils/iso8601';
+import { nextOutcomeId } from '../../utils/entityKey';
 import { el } from '../ui/dom';
 import { createPdfViewer, type PdfViewerHandle, type ViewerHighlight } from '../ui/pdfViewer';
 import {
@@ -56,6 +59,8 @@ export interface VerificationPanelOptions {
   onDecision: (decision: Decision) => void;
   /** 群構成の確定・改訂ごとに呼ばれる（ArmStructures への追記はサービス層の責務） */
   onArmConfirm?: (arms: readonly DraftArm[]) => void;
+  /** AI が作らなかった entity インスタンスの宣言（Decisions 追記）はサービス層の責務 */
+  onInstanceDeclare?: (decisions: readonly Decision[]) => void;
   /**
    * URL クエリ ?entity= のセル単位ディープリンク（ui-flow.md §3。S9 ダッシュボードのセルクリック）。
    * renderCachedVerificationPanel が値の変化を検知して focusEntity を呼ぶ
@@ -129,13 +134,18 @@ export function createVerificationPanel(
   let activeTab: EntityLevel = tabs.find((tab) => !tabLocked(tab)) ?? tabs[0] ?? 'study';
   let focusedCellKey: string | null = null;
   let editing: { cellKey: string; action: 'edit' | 'reject' } | null = null;
+  let outcomeKeyDraft = nextOutcomeId(
+    entityInstances('outcome_result', data.evidence, ownDecisions, { armStructure }),
+  );
+  let outcomeTimeDraft = '';
+  let outcomeError: string | null = null;
   // 判定済みブロック（ui-states.md §3）: 直近判定の 1 件だけ元の位置へ残し、
   // それ以外の判定済みセルは下部ブロックへ送る。展開中セルは通常カードで描画する
   let recentDecidedKey: string | null = null;
   let expandedDecidedKey: string | null = null;
 
   const currentTabModel = (): TabModel =>
-    buildTabModel(activeTab, data.fields, data.evidence, ownDecisions);
+    buildTabModel(activeTab, data.fields, data.evidence, ownDecisions, { armStructure });
 
   /** 現在タブの表示順のセル（未判定 + 直近判定 → 判定済みブロック）。j / k の移動順 */
   const displayCells = (): VerificationCell[] => {
@@ -239,7 +249,9 @@ export function createVerificationPanel(
   /** cellKey がどのタブに属するか（ビューアクリック時のタブ切替に使う） */
   function tabOfCell(cellKey: string): EntityLevel | null {
     for (const tab of tabs) {
-      const model = buildTabModel(tab, data.fields, data.evidence, ownDecisions);
+      const model = buildTabModel(tab, data.fields, data.evidence, ownDecisions, {
+        armStructure,
+      });
       if (model.cells.some((cell) => cell.cellKey === cellKey)) {
         return tab;
       }
@@ -364,6 +376,7 @@ export function createVerificationPanel(
       armRows = trimmed.map((arm) => ({ ...arm }));
       armEditing = false;
       armError = null;
+      outcomeError = null;
       refreshForm();
       options.onArmConfirm?.(trimmed);
     },
@@ -379,6 +392,63 @@ export function createVerificationPanel(
       armEditing = false;
       armError = null;
       refreshForm();
+    },
+    onOutcomeKeyChange(value) {
+      outcomeKeyDraft = value;
+      outcomeError = null;
+    },
+    onOutcomeTimeChange(value) {
+      outcomeTimeDraft = value;
+      outcomeError = null;
+    },
+    onOutcomeAdd() {
+      const outcomeId = outcomeKeyDraft.trim();
+      const time = outcomeTimeDraft.trim();
+      if (outcomeId === '') {
+        outcomeError = 'アウトカムキーを入力してください';
+        refreshForm();
+        return;
+      }
+      let declarations: Decision[];
+      try {
+        declarations = buildOutcomeDeclarationDecisions({
+          studyId: data.document.studyId,
+          outcomeId,
+          time: time === '' ? null : time,
+          arms: (armStructure as ConfirmedArmStructure).arms,
+          annotator: data.annotator,
+          schemaVersion: data.schemaVersion,
+          decidedAt: now(),
+        });
+      } catch (err) {
+        outcomeError = String(err);
+        refreshForm();
+        return;
+      }
+      const existing = new Set(
+        entityInstances('outcome_result', data.evidence, ownDecisions, { armStructure }),
+      );
+      const duplicate = declarations.find((decision) => existing.has(decision.entityKey));
+      if (duplicate !== undefined) {
+        outcomeError = `entity_key ${duplicate.entityKey} は既に存在します`;
+        refreshForm();
+        return;
+      }
+      ownDecisions.push(...declarations);
+      outcomeKeyDraft = nextOutcomeId(
+        entityInstances('outcome_result', data.evidence, ownDecisions, { armStructure }),
+      );
+      outcomeTimeDraft = '';
+      outcomeError = null;
+      activeTab = 'outcome_result';
+      const firstEntityKey = declarations[0]!.entityKey;
+      const nextModel = currentTabModel();
+      // 宣言を ownDecisions に追加済みなので、直後のセルモデルには必ず同じ entity_key が現れる
+      focusedCellKey = nextModel.cells.find((cell) => cell.entityKey === firstEntityKey)!.cellKey;
+      editing = null;
+      refreshForm();
+      syncViewer();
+      options.onInstanceDeclare?.(declarations);
     },
   };
 
@@ -405,8 +475,12 @@ export function createVerificationPanel(
             error: armError,
           }
         : null,
+      outcomeAdd:
+        activeTab === 'outcome_result' && armStructure !== null
+          ? { outcomeKey: outcomeKeyDraft, time: outcomeTimeDraft, error: outcomeError }
+          : null,
       armLocked: armLocked(),
-      progress: verificationProgress(data.fields, data.evidence, ownDecisions),
+      progress: verificationProgress(data.fields, data.evidence, ownDecisions, { armStructure }),
     };
     formPane.replaceChildren(renderVerificationForm(model, handlers));
     formPane.scrollTop = savedScrollTop;
@@ -439,9 +513,9 @@ export function createVerificationPanel(
     // 展開して通常カードを見せる。コンパクト行は focusin リスナを持たないため、
     // ここでの再構築が click をキャンセルする経路は通常カードの focusin だけに限られ、
     // その場合は下の else（クラス切替のみ）を通る
-    const target = buildTabModel(tab, data.fields, data.evidence, ownDecisions).cells.find(
-      (cell) => cell.cellKey === cellKey,
-    ) as VerificationCell;
+    const target = buildTabModel(tab, data.fields, data.evidence, ownDecisions, {
+      armStructure,
+    }).cells.find((cell) => cell.cellKey === cellKey) as VerificationCell;
     const expand =
       target.state.status !== 'unverified' &&
       cellKey !== recentDecidedKey &&
@@ -480,7 +554,9 @@ export function createVerificationPanel(
       if (tabLocked(tab)) {
         continue;
       }
-      const model = buildTabModel(tab, data.fields, data.evidence, ownDecisions);
+      const model = buildTabModel(tab, data.fields, data.evidence, ownDecisions, {
+        armStructure,
+      });
       const cell = model.cells.find((candidate) => candidate.entityKey === entityKey);
       if (cell === undefined) {
         continue;

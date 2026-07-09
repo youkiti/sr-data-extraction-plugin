@@ -29,6 +29,11 @@ const ARM_FIELD_ROW = [
   'TRUE', '群別 N を抽出', '', 'FALSE', '',
 ];
 
+const OUTCOME_FIELD_ROW = [
+  '1', 'f-out-event', '3', 'outcomes', 'event_count', 'イベント数', 'outcome_result', 'integer',
+  '', '', 'TRUE', 'イベント数を抽出', '', 'FALSE', '',
+];
+
 const EVIDENCE_HEADERS = [...SHEET_HEADERS.Evidence];
 
 // Evidence は study_id（col 3）+ document_id（col 5）の 2 キー構成。1 文書 = 1 study
@@ -338,7 +343,7 @@ test('回転ページ（/Rotate 90 の表ページ）でもハイライトが本
 
 test('?doc= 直リンク + 群構成の確定: タブディム → 確定 → ArmStructures 追記 → arm タブ有効', async ({ page }) => {
   const appendUrls = await setupRoutes(page, {
-    schemaRows: [STUDY_FIELD_ROW, ARM_FIELD_ROW],
+    schemaRows: [STUDY_FIELD_ROW, ARM_FIELD_ROW, OUTCOME_FIELD_ROW],
     evidenceRows: [EVIDENCE_ROW_1, EVIDENCE_ROW_2, ARM_EVIDENCE_ROW],
   });
   await initApp(page, '#/verify?doc=doc-1');
@@ -371,6 +376,27 @@ test('?doc= 直リンク + 群構成の確定: タブディム → 確定 → Ar
   await armTab.click();
   await expect(page.locator('.verify__group-heading')).toHaveText('群 1');
   await expect(page.locator('.verify__cell-label')).toHaveText('群の N');
+
+  // outcome タブへ切替 → 人手で見落としアウトカムを宣言し、Evidence なしセルを表示
+  const outcomeTab = page.locator('.verify__tab', { hasText: 'アウトカム' });
+  await expect(outcomeTab).toBeEnabled();
+  await outcomeTab.click();
+  await expect(page.locator('#verify-outcome-add')).toBeVisible();
+  await page.locator('#verify-outcome-key').fill('mortality_extra');
+  await page.locator('#verify-outcome-time').fill('30d');
+  const decisionsBefore = appendUrls.filter(
+    (url) => url.includes('Decisions') && url.includes(':append'),
+  ).length;
+  await page.locator('#verify-outcome-add-button').click();
+  await expect(page.locator('.verify__group-heading')).toHaveText('mortality_extra / 群 1 / 30d');
+  await expect(page.locator('.verify__cell-label')).toHaveText('イベント数');
+  await expect(page.locator('.verify__cell')).toContainText('AI 抽出なし');
+  await expect
+    .poll(
+      () =>
+        appendUrls.filter((url) => url.includes('Decisions') && url.includes(':append')).length,
+    )
+    .toBeGreaterThan(decisionsBefore);
 
   const results = await new AxeBuilder({ page }).analyze();
   expect(results.violations).toEqual([]);
