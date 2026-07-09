@@ -356,16 +356,18 @@ describe('createChromePopupDeps', () => {
     chromeMock = installChromeMock();
   });
 
-  test('openAppTab は同一タブでメインビューへ遷移し、openOptions は新規タブで開く', () => {
+  test('openAppTab / openOptions とも同一タブでメインビューへ遷移する（別タブを開かない）', () => {
     const deps = createChromePopupDeps();
     deps.openAppTab();
     expect(chromeMock.tabs.update).toHaveBeenCalledWith({
       url: 'chrome-extension://test-extension-id/app/app.html',
     });
     deps.openOptions();
-    expect(chromeMock.tabs.create).toHaveBeenCalledWith({
-      url: 'chrome-extension://test-extension-id/options/options.html',
+    // 設定はアプリ内 #/options へ同一タブ遷移（tabs.create を使わない）
+    expect(chromeMock.tabs.update).toHaveBeenCalledWith({
+      url: 'chrome-extension://test-extension-id/app/app.html#/options',
     });
+    expect(chromeMock.tabs.create).not.toHaveBeenCalled();
   });
 
   test('isAuthenticated: トークン取得成功で true（interactive=false）', async () => {

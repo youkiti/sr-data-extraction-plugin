@@ -89,11 +89,19 @@ describe('normalizeHash', () => {
     expect(normalizeHash('#/unknown')).toBe('#/home');
     expect(normalizeHash('')).toBe('#/home');
   });
+
+  test('設定ルート #/options も正規化対象（ステップナビ外だが解決できる）', () => {
+    expect(normalizeHash('#/options')).toBe('#/options');
+  });
 });
 
 describe('findRoute', () => {
   test('ハッシュに対応するルート定義を返す', () => {
     expect(findRoute('#/schema').label).toBe('スキーマ');
+  });
+
+  test('設定ルート #/options を解決する', () => {
+    expect(findRoute('#/options').label).toBe('設定');
   });
 });
 

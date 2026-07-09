@@ -22,7 +22,7 @@ function makeSetStatus(statusEl: HTMLElement): (text: string, isError: boolean) 
 
 /** API キー節の共通配線（Gemini / OpenRouter で鏡写し。必須要素が欠けている場合は何もしない） */
 async function bootstrapApiKeySection(
-  doc: Document,
+  root: ParentNode,
   ids: { input: string; saveButton: string; status: string },
   providerLabel: string,
   load: () => Promise<string | null>,
@@ -30,9 +30,9 @@ async function bootstrapApiKeySection(
   // 別プロバイダのキーを取り違えて入力したときの警告文言を返す（確信できるときのみ非 null）
   foreignKeyWarning: (key: string) => string | null,
 ): Promise<void> {
-  const input = doc.getElementById(ids.input) as HTMLInputElement | null;
-  const saveButton = doc.getElementById(ids.saveButton) as HTMLButtonElement | null;
-  const statusEl = doc.getElementById(ids.status);
+  const input = root.querySelector<HTMLInputElement>(`#${ids.input}`);
+  const saveButton = root.querySelector<HTMLButtonElement>(`#${ids.saveButton}`);
+  const statusEl = root.querySelector<HTMLElement>(`#${ids.status}`);
   if (!input || !saveButton || !statusEl) {
     return;
   }
@@ -84,15 +84,18 @@ async function bootstrapApiKeySection(
  * #default-model-container へ生成する。保存値は S5 スキーマ画面のモデル入力の
  * 初期値になる（schemaService.loadSchema が注入）
  */
-async function bootstrapDefaultModelSection(doc: Document): Promise<void> {
-  const container = doc.getElementById('default-model-container');
-  const saveButton = doc.getElementById('save-default-model') as HTMLButtonElement | null;
-  const statusEl = doc.getElementById('default-model-status');
+async function bootstrapDefaultModelSection(root: ParentNode): Promise<void> {
+  const container = root.querySelector<HTMLElement>('#default-model-container');
+  const saveButton = root.querySelector<HTMLButtonElement>('#save-default-model');
+  const statusEl = root.querySelector<HTMLElement>('#default-model-status');
   if (!container || !saveButton || !statusEl) {
     return;
   }
 
   const setStatus = makeSetStatus(statusEl);
+  // createModelSelect は要素生成に Document が要る。root が Document ならそれ自身、
+  // 要素（アプリ内 #/options の未 attach コンテナ）なら ownerDocument を使う
+  const doc = container.ownerDocument;
 
   const savedModel = await loadDefaultModel();
   // セレクタの選択値（その他は trim したテキスト）。保存ボタンがこれを永続化する
@@ -128,9 +131,13 @@ async function bootstrapDefaultModelSection(doc: Document): Promise<void> {
   });
 }
 
-export async function bootstrapOptions(doc: Document): Promise<void> {
+/**
+ * 設定本文の配線。root は options.html の `document` でも、アプリ内 #/options が
+ * 生成した（未 attach でよい）コンテナ要素でもよい（querySelector で解決するため）。
+ */
+export async function bootstrapOptions(root: ParentNode): Promise<void> {
   await bootstrapApiKeySection(
-    doc,
+    root,
     { input: 'gemini-api-key', saveButton: 'save-keys', status: 'options-status' },
     'Gemini',
     loadGeminiApiKey,
@@ -141,7 +148,7 @@ export async function bootstrapOptions(doc: Document): Promise<void> {
         : null,
   );
   await bootstrapApiKeySection(
-    doc,
+    root,
     { input: 'openrouter-api-key', saveButton: 'save-openrouter-key', status: 'openrouter-status' },
     'OpenRouter',
     loadOpenRouterApiKey,
@@ -151,5 +158,5 @@ export async function bootstrapOptions(doc: Document): Promise<void> {
         ? 'Gemini のキー（AIza で始まる）のようです。OpenRouter キーはここへ、Gemini キーは上の欄へ入力してください。'
         : null,
   );
-  await bootstrapDefaultModelSection(doc);
+  await bootstrapDefaultModelSection(root);
 }

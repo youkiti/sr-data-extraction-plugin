@@ -11,6 +11,7 @@ import { renderExtractView } from './views/extractView';
 import { renderVerifyView } from './views/verifyView';
 import { renderDashboardView } from './views/dashboardView';
 import { renderExportView } from './views/exportView';
+import { renderSettingsView } from './views/settingsView';
 
 export type RouteHash =
   | '#/home'
@@ -21,7 +22,8 @@ export type RouteHash =
   | '#/extract'
   | '#/verify'
   | '#/dashboard'
-  | '#/export';
+  | '#/export'
+  | '#/options';
 
 export interface RouteDefinition {
   hash: RouteHash;
@@ -43,18 +45,32 @@ export const ROUTES: RouteDefinition[] = [
 ];
 
 /**
+ * 設定ルート。ステップナビ（ROUTES）とは別建てで、サイドバーには出さず、
+ * ヘッダの歯車リンク（app.html の #/options）とプロジェクト選択ページの「設定を開く」から入る。
+ * ガードは常に許可（guards.ts の default）
+ */
+export const SETTINGS_ROUTE: RouteDefinition = {
+  hash: '#/options',
+  label: '設定',
+  render: renderSettingsView,
+};
+
+/** ステップナビ 9 ルート + 設定ルート（正規化・解決の対象。ナビ描画は ROUTES のみ使う） */
+const ALL_ROUTES: RouteDefinition[] = [...ROUTES, SETTINGS_ROUTE];
+
+/**
  * location.hash をルートへ正規化する。クエリ（#/verify?study=... 等）は切り落とし、
  * 未知のハッシュ・空文字は #/home へ倒す
  */
 export function normalizeHash(rawHash: string): RouteHash {
   const base = rawHash.split('?')[0];
-  const matched = ROUTES.find((route) => route.hash === base);
+  const matched = ALL_ROUTES.find((route) => route.hash === base);
   return matched ? matched.hash : '#/home';
 }
 
 export function findRoute(hash: RouteHash): RouteDefinition {
   // normalizeHash 済みのハッシュのみ渡される前提のため必ず見つかる
-  return ROUTES.find((route) => route.hash === hash) as RouteDefinition;
+  return ALL_ROUTES.find((route) => route.hash === hash) as RouteDefinition;
 }
 
 function queryParamOf(rawHash: string, name: string): string | null {
