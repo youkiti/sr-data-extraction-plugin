@@ -6,6 +6,7 @@ import type { Evidence } from '../../../../src/domain/evidence';
 import type { SchemaField } from '../../../../src/domain/schemaField';
 import {
   EXTRACT_DATA_TEMPERATURE,
+  MAX_FAILURE_DETAIL_BODY_CHARS,
   executeRun,
   type ExecuteRunDeps,
   type RunProgress,
@@ -16,6 +17,7 @@ import {
   EXTRACT_DATA_SYSTEM_PROMPT,
   type ExtractDataPage,
 } from '../../../../src/features/extraction/skills/extractData';
+import { LlmProviderError } from '../../../../src/lib/llm/LLMProvider';
 import type {
   ChatMessage,
   ChatOptions,
@@ -464,6 +466,66 @@ describe('executeRun の partial_failure', () => {
       },
       { totalBatches: 2, completedBatches: 2, documentId: 'd1', section: 'population', failure: null },
     ]);
+  });
+
+  test('LlmProviderError はプロバイダ応答本文を detail に含める', async () => {
+    const { provider } = providerOf([
+      new LlmProviderError('Gemini API failed: HTTP 400', 'gemini', 400, 'input token count exceeds the maximum'),
+    ]);
+    const { deps } = makeDeps(provider);
+    const result = await executeRun(
+      {
+        runId: 'run-1',
+        plan: makePlan([makeBatch({ documentId: 'd1', fieldIds: ['f_design'] })]),
+        fields: FIELDS,
+      },
+      deps,
+    );
+    expect(result.batchFailures).toEqual([
+      {
+        documentId: 'd1',
+        section: null,
+        reason: 'api_error',
+        detail: 'Gemini API failed: HTTP 400: input token count exceeds the maximum',
+      },
+    ]);
+  });
+
+  test('LlmProviderError の応答本文が長い場合は責め切る', async () => {
+    const body = 'x'.repeat(MAX_FAILURE_DETAIL_BODY_CHARS + 50);
+    const { provider } = providerOf([
+      new LlmProviderError('Gemini API failed: HTTP 400', 'gemini', 400, body),
+    ]);
+    const { deps } = makeDeps(provider);
+    const result = await executeRun(
+      {
+        runId: 'run-1',
+        plan: makePlan([makeBatch({ documentId: 'd1', fieldIds: ['f_design'] })]),
+        fields: FIELDS,
+      },
+      deps,
+    );
+    const detail = result.batchFailures[0]?.detail ?? '';
+    expect(detail.endsWith('…')).toBe(true);
+    expect(detail).toBe(
+      `Gemini API failed: HTTP 400: ${'x'.repeat(MAX_FAILURE_DETAIL_BODY_CHARS - 1)}…`,
+    );
+  });
+
+  test('LlmProviderError の応答本文が空なら message のみを detail にする', async () => {
+    const { provider } = providerOf([
+      new LlmProviderError('Gemini API failed: HTTP 401', 'gemini', 401, '  '),
+    ]);
+    const { deps } = makeDeps(provider);
+    const result = await executeRun(
+      {
+        runId: 'run-1',
+        plan: makePlan([makeBatch({ documentId: 'd1', fieldIds: ['f_design'] })]),
+        fields: FIELDS,
+      },
+      deps,
+    );
+    expect(result.batchFailures[0]?.detail).toBe('Gemini API failed: HTTP 401');
   });
 
   test('Error 以外の例外も文字列化して記録する', async () => {

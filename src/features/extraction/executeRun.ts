@@ -10,6 +10,7 @@ import type { NormalizedPage } from '../../domain/anchor';
 import type { Evidence } from '../../domain/evidence';
 import type { RunStatus } from '../../domain/extractionRun';
 import type { SchemaField } from '../../domain/schemaField';
+import { LlmProviderError } from '../../lib/llm/LLMProvider';
 import type { ChatMessage, ChatResponse, LLMProvider } from '../../lib/llm/LLMProvider';
 import { generateUuid } from '../../utils/uuid';
 import { anchorQuote } from '../anchoring/anchorQuote';
@@ -114,7 +115,26 @@ function extractModelVersion(raw: unknown): string | null {
   return typeof value === 'string' ? value : null;
 }
 
+/** partial_failure の detail に載せるプロバイダ応答本文の最大長（UI / Sheets 表示用に責め切り） */
+export const MAX_FAILURE_DETAIL_BODY_CHARS = 500;
+
+/**
+ * バッチ失敗の detail 文字列。LlmProviderError なら Gemini が返した本文
+ * （例: HTTP 400 の `INVALID_ARGUMENT` 理由）も含める。本文は表示用に責め切る
+ * （完全な本文は withLogging が LLMApiLog / Drive の response.json に残す）
+ */
 function toDetail(err: unknown): string {
+  if (err instanceof LlmProviderError) {
+    const body = err.responseBody.trim();
+    if (body.length === 0) {
+      return err.message;
+    }
+    const truncated =
+      body.length > MAX_FAILURE_DETAIL_BODY_CHARS
+        ? `${body.slice(0, MAX_FAILURE_DETAIL_BODY_CHARS - 1)}…`
+        : body;
+    return `${err.message}: ${truncated}`;
+  }
   return err instanceof Error ? err.message : String(err);
 }
 

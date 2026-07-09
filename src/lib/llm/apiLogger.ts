@@ -121,7 +121,10 @@ export function withLogging(
 
 function formatError(err: unknown): string {
   if (err instanceof LlmProviderError) {
-    return `${err.message} (status=${err.status ?? 'n/a'})`;
+    // 監査ログには責め切らずプロバイダ応答本文を丸ごと残す（400 の具体的理由の一次資料）
+    const base = `${err.message} (status=${err.status ?? 'n/a'})`;
+    const body = err.responseBody.trim();
+    return body.length > 0 ? `${base}: ${body}` : base;
   }
   if (err instanceof Error) {
     return err.message;

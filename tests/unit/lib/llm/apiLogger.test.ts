@@ -136,9 +136,11 @@ describe('withLogging', () => {
     );
     expect(recorded.entries).toHaveLength(1);
     expect(recorded.entries[0]?.error).toContain('status=503');
+    // プロバイダ応答本文（400 等の具体的理由の一次資料）を丸ごと残す
+    expect(recorded.entries[0]?.error).toContain('overloaded');
     expect(recorded.entries[0]?.tokensIn).toBeNull();
     const responseUpload = JSON.parse(recorded.uploads[1]!.content);
-    expect(responseUpload).toEqual({ error: expect.stringContaining('status=503') });
+    expect(responseUpload).toEqual({ error: expect.stringContaining('overloaded') });
   });
 
   test('LlmProviderError の status=null は n/a として記録される', async () => {

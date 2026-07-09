@@ -62,15 +62,17 @@ describe('bootstrapOptions', () => {
     await expect(bootstrapOptions(document)).resolves.toBeUndefined();
   });
 
-  test('状態 A: 未設定なら「Gemini: 未設定」', async () => {
+  test('状態 A: 未設定なら「Gemini: 未設定」+ 入力を促す placeholder', async () => {
     await bootstrapOptions(document);
     expect(statusEl().textContent).toBe('Gemini: 未設定');
+    expect(inputEl().placeholder).toBe('API キーを入力');
   });
 
-  test('状態 A: 保存済みなら「Gemini: 保存済み」', async () => {
+  test('状態 A: 保存済みなら「Gemini: 保存済み」+ 保存済み placeholder', async () => {
     chromeMock.storage.local.data['secrets.geminiApiKey'] = 'AIzaSySAVED';
     await bootstrapOptions(document);
     expect(statusEl().textContent).toBe('Gemini: 保存済み');
+    expect(inputEl().placeholder).toBe('保存済み（変更する場合のみ入力）');
   });
 
   test('空文字（空白のみ）は保存を抑止しエラー表示する', async () => {
@@ -83,6 +85,19 @@ describe('bootstrapOptions', () => {
     expect(chromeMock.storage.local.set).not.toHaveBeenCalled();
   });
 
+  test('OpenRouter キー（sk-or-）を Gemini 欄に入れたら弾いて保存しない', async () => {
+    await bootstrapOptions(document);
+    inputEl().value = 'sk-or-WRONGFIELD';
+    saveButton().click();
+    await flush();
+    expect(statusEl().textContent).toBe(
+      'OpenRouter のキー（sk-or- で始まる）のようです。Gemini キーはここへ、OpenRouter キーは下の欄へ入力してください。',
+    );
+    expect(statusEl().classList.contains('options__status--error')).toBe(true);
+    expect(chromeMock.storage.local.set).not.toHaveBeenCalled();
+    expect(inputEl().value).toBe('sk-or-WRONGFIELD');
+  });
+
   test('状態 B: trim して保存し、完了メッセージを出して入力欄をクリアする', async () => {
     await bootstrapOptions(document);
     inputEl().value = '  AIzaSyNEWKEY  ';
@@ -92,6 +107,7 @@ describe('bootstrapOptions', () => {
     expect(statusEl().textContent).toBe('保存しました。');
     expect(statusEl().classList.contains('options__status--error')).toBe(false);
     expect(inputEl().value).toBe('');
+    expect(inputEl().placeholder).toBe('保存済み（変更する場合のみ入力）');
     expect(saveButton().disabled).toBe(false);
   });
 
@@ -153,6 +169,19 @@ describe('bootstrapOptions（OpenRouter API キー節。Gemini と鏡写し）',
     document.body.innerHTML = OPTIONS_TEMPLATE;
     await bootstrapOptions(document);
     expect(orStatusEl().textContent).toBe('OpenRouter: 保存済み');
+  });
+
+  test('Gemini キー（AIza）を OpenRouter 欄に入れたら弾いて保存しない', async () => {
+    await bootstrapOptions(document);
+    orInputEl().value = 'AIzaSyWRONGFIELD';
+    orSaveButton().click();
+    await flush();
+    expect(orStatusEl().textContent).toBe(
+      'Gemini のキー（AIza で始まる）のようです。OpenRouter キーはここへ、Gemini キーは上の欄へ入力してください。',
+    );
+    expect(orStatusEl().classList.contains('options__status--error')).toBe(true);
+    expect(chromeMock.storage.local.set).not.toHaveBeenCalled();
+    expect(orInputEl().value).toBe('AIzaSyWRONGFIELD');
   });
 
   test('trim して保存し、完了メッセージを出して入力欄をクリアする', async () => {
