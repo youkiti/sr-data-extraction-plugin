@@ -3,6 +3,7 @@
 // セルクリックは `#/verify?doc={document_id}&entity={entity_key}` へのハッシュ遷移
 // （ui-flow.md §3 のセル単位ディープリンク）で、コールバックを介さない
 import type {
+  AccuracyBreakdown,
   DashboardData,
   DashboardRow,
   DashboardSectionCell,
@@ -25,6 +26,16 @@ function verifyHref(documentId: string, entityKey: string): string {
   return `#/verify?doc=${encodeURIComponent(documentId)}&entity=${encodeURIComponent(entityKey)}`;
 }
 
+/** AI 採用率（人が無修正で承認した割合）= accept / decided。判定 0 件は「—」 */
+export function acceptRateText(accuracy: AccuracyBreakdown): string {
+  return rateText({ numerator: accuracy.accept, denominator: accuracy.decided });
+}
+
+/** AI 精度の内訳（承認 / 修正 / 棄却 / 報告なし）を人向け文字列に */
+export function accuracyBreakdownText(accuracy: AccuracyBreakdown): string {
+  return `承認 ${accuracy.accept}・修正 ${accuracy.edit}・棄却 ${accuracy.reject}・報告なし ${accuracy.notReported}`;
+}
+
 function renderSummary(data: DashboardData): HTMLElement {
   const { totals } = data;
   const item = (label: string, value: string): HTMLElement[] => [
@@ -33,6 +44,8 @@ function renderSummary(data: DashboardData): HTMLElement {
   ];
   return el('dl', { id: 'dashboard-summary', className: 'dashboard__summary' }, [
     ...item('検証進捗', rateText({ numerator: totals.progress.decided, denominator: totals.progress.total })),
+    ...item('AI 採用率（人が無修正で承認）', acceptRateText(totals.accuracy)),
+    ...item('AI 精度内訳', accuracyBreakdownText(totals.accuracy)),
     ...item('anchor 失敗率', rateText(totals.anchor)),
     ...item('not_reported 率', rateText(totals.notReported)),
   ]);
@@ -62,6 +75,7 @@ function renderMatrix(data: DashboardData): HTMLElement {
   const headRow = el('tr', {}, [
     el('th', { text: '文献', attributes: { scope: 'col' } }),
     ...data.sections.map((section) => el('th', { text: section, attributes: { scope: 'col' } })),
+    el('th', { text: 'AI 採用率', attributes: { scope: 'col' } }),
     el('th', { text: 'anchor 失敗率', attributes: { scope: 'col' } }),
     el('th', { text: 'not_reported 率', attributes: { scope: 'col' } }),
   ]);
@@ -73,6 +87,11 @@ function renderMatrix(data: DashboardData): HTMLElement {
         attributes: { scope: 'row' },
       }),
       ...row.cells.map((cell) => renderSectionCell(row, cell)),
+      el('td', {
+        className: 'dashboard__rate',
+        text: acceptRateText(row.accuracy),
+        attributes: { title: accuracyBreakdownText(row.accuracy) },
+      }),
       el('td', { className: 'dashboard__rate', text: rateText(row.anchor) }),
       el('td', { className: 'dashboard__rate', text: rateText(row.notReported) }),
     ]),
@@ -92,7 +111,7 @@ export function renderDashboardView(state: AppState, ctx: ViewContext): HTMLElem
     el('h2', { text: 'ダッシュボード' }),
     el('p', {
       className: 'view__lead',
-      text: '検証の進捗マトリクス、anchor 失敗率、not_reported 率を可視化します。',
+      text: '検証の進捗マトリクス、AI 採用率（人の判定から算出）、anchor 失敗率、not_reported 率を可視化します。',
     }),
   ];
   const dashboard = state.dashboard;

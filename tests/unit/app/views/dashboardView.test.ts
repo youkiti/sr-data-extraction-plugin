@@ -95,6 +95,7 @@ function makeData(overrides: Partial<DashboardData> = {}): DashboardData {
           { section: 'outcomes', decided: 0, total: 3, entityKey: 'arm:1' },
         ],
         progress: { decided: 1, total: 5 },
+        accuracy: { accept: 1, edit: 0, reject: 0, notReported: 0, decided: 1 },
         anchor: { numerator: 1, denominator: 4 },
         notReported: { numerator: 0, denominator: 5 },
       },
@@ -103,12 +104,14 @@ function makeData(overrides: Partial<DashboardData> = {}): DashboardData {
         studyLabel: 'Jones 2021',
         cells: [null, { section: 'outcomes', decided: 0, total: 0, entityKey: null }],
         progress: { decided: 0, total: 0 },
+        accuracy: { accept: 0, edit: 0, reject: 0, notReported: 0, decided: 0 },
         anchor: { numerator: 0, denominator: 0 },
         notReported: { numerator: 0, denominator: 0 },
       },
     ],
     totals: {
       progress: { decided: 1, total: 5 },
+      accuracy: { accept: 1, edit: 0, reject: 0, notReported: 0, decided: 1 },
       anchor: { numerator: 1, denominator: 4 },
       notReported: { numerator: 0, denominator: 5 },
     },
@@ -173,6 +176,10 @@ describe('renderDashboardView', () => {
     const summary = root.querySelector('#dashboard-summary');
     expect(summary?.textContent).toContain('検証進捗');
     expect(summary?.textContent).toContain('1 / 5（20%）');
+    expect(summary?.textContent).toContain('AI 採用率（人が無修正で承認）');
+    expect(summary?.textContent).toContain('1 / 1（100%）');
+    expect(summary?.textContent).toContain('AI 精度内訳');
+    expect(summary?.textContent).toContain('承認 1・修正 0・棄却 0・報告なし 0');
     expect(summary?.textContent).toContain('anchor 失敗率');
     expect(summary?.textContent).toContain('1 / 4（25%）');
     expect(summary?.textContent).toContain('not_reported 率');
@@ -184,7 +191,14 @@ describe('renderDashboardView', () => {
     const root = renderDashboardView(makeState({ data: makeData() }), ctx);
     const matrix = root.querySelector('#dashboard-matrix') as HTMLTableElement;
     const headers = [...matrix.querySelectorAll('thead th')].map((th) => th.textContent);
-    expect(headers).toEqual(['文献', 'methods', 'outcomes', 'anchor 失敗率', 'not_reported 率']);
+    expect(headers).toEqual([
+      '文献',
+      'methods',
+      'outcomes',
+      'AI 採用率',
+      'anchor 失敗率',
+      'not_reported 率',
+    ]);
 
     const row1 = matrix.querySelectorAll('tbody tr')[0] as HTMLTableRowElement;
     expect(row1.querySelector('th')?.textContent).toBe('Smith 2020（1 / 5）');
@@ -195,6 +209,10 @@ describe('renderDashboardView', () => {
     expect(links[0]?.getAttribute('aria-label')).toBe(
       'Smith 2020 の methods を検証（判定済み 1 / 2）',
     );
+    // AI 採用率セル = accept / decided、内訳を title に持つ
+    const rateCells = [...row1.querySelectorAll('td.dashboard__rate')];
+    expect(rateCells[0]?.textContent).toBe('1 / 1（100%）');
+    expect(rateCells[0]?.getAttribute('title')).toBe('承認 1・修正 0・棄却 0・報告なし 0');
   });
 
   test('通常: スキーマに無い section とセル 0 件は「—」でリンクなし、率の分母 0 も「—」', () => {
@@ -203,7 +221,8 @@ describe('renderDashboardView', () => {
     const row2 = root.querySelectorAll('#dashboard-matrix tbody tr')[1] as HTMLTableRowElement;
     expect(row2.querySelectorAll('a')).toHaveLength(0);
     const cells = [...row2.querySelectorAll('td')].map((td) => td.textContent);
-    expect(cells).toEqual(['—', '—', '—', '—']);
+    // methods(—) / outcomes(—) / AI 採用率(—) / anchor(—) / not_reported(—)
+    expect(cells).toEqual(['—', '—', '—', '—', '—']);
     // 空白入り document_id の行見出し（リンクは無いが表示は保つ）
     expect(row2.querySelector('th')?.textContent).toBe('Jones 2021（0 / 0）');
   });
