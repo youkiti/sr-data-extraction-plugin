@@ -18,6 +18,17 @@ interface DriveListResponse {
   files?: DriveFileRef[];
 }
 
+/** listFolderPdfs が返すフォルダ直下の PDF（Picker の PickerSelection と同形） */
+export interface DrivePdfEntry {
+  id: string;
+  name: string;
+}
+
+interface DrivePdfListResponse {
+  files?: DrivePdfEntry[];
+  nextPageToken?: string;
+}
+
 export interface CreateFolderOptions {
   /**
    * フォルダ色（例: '#e9318f'）。Drive のパレット外の色は最も近いパレット色に
@@ -189,6 +200,44 @@ export async function getFileBinary(fileId: string, deps: GoogleApiDeps): Promis
   const url = `${METADATA_API}/${encodeURIComponent(fileId)}?alt=media`;
   const res = await googleFetch(url, { method: 'GET' }, deps);
   return await res.arrayBuffer();
+}
+
+/**
+ * 指定フォルダの直下にある PDF を全件列挙する（フォルダ単位の文献取り込み。S3）。
+ * drive.file スコープでも、ユーザーが Picker で選択したフォルダの配下は列挙できる。
+ * 再帰はしない（直下のみ）。nextPageToken をたどって全ページを結合する。
+ */
+export async function listFolderPdfs(
+  folderId: string,
+  deps: GoogleApiDeps
+): Promise<DrivePdfEntry[]> {
+  const escapedId = folderId.replace(/'/g, "\\'");
+  const query = [
+    `'${escapedId}' in parents`,
+    `mimeType='application/pdf'`,
+    'trashed=false',
+  ].join(' and ');
+  const entries: DrivePdfEntry[] = [];
+  let pageToken: string | undefined;
+  do {
+    const params = new URLSearchParams({
+      q: query,
+      fields: 'nextPageToken,files(id,name)',
+      pageSize: '1000',
+      orderBy: 'name',
+    });
+    if (pageToken) {
+      params.set('pageToken', pageToken);
+    }
+    const url = `${METADATA_API}?${params.toString()}`;
+    const res = await googleFetch(url, { method: 'GET' }, deps);
+    const body = (await res.json()) as DrivePdfListResponse;
+    for (const file of body.files ?? []) {
+      entries.push({ id: file.id, name: file.name });
+    }
+    pageToken = body.nextPageToken;
+  } while (pageToken);
+  return entries;
 }
 
 /**

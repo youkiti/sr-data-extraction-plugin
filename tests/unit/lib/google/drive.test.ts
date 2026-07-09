@@ -5,6 +5,7 @@ import {
   ensureRootFolder,
   getFileBinary,
   getFileText,
+  listFolderPdfs,
   moveFileToFolder,
   uploadTextFile,
 } from '../../../../src/lib/google/drive';
@@ -212,6 +213,56 @@ describe('getFileBinary', () => {
     await expect(getFileBinary('FILE-id', deps)).resolves.toBe(bytes);
     const [url] = fetch.mock.calls[0];
     expect(url).toContain('/drive/v3/files/FILE-id?alt=media');
+  });
+});
+
+describe('listFolderPdfs', () => {
+  test('PDF フィルタ + 直下フォルダのクエリを組み立てる（単一ページ）', async () => {
+    const fetch = jest
+      .fn()
+      .mockResolvedValueOnce(
+        okJson({
+          files: [
+            { id: 'p1', name: 'a.pdf' },
+            { id: 'p2', name: 'b.pdf' },
+          ],
+        }),
+      );
+    const deps = { fetch, getAccessToken: jest.fn().mockResolvedValue('t') };
+    await expect(listFolderPdfs('FOLDER', deps)).resolves.toEqual([
+      { id: 'p1', name: 'a.pdf' },
+      { id: 'p2', name: 'b.pdf' },
+    ]);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    const [url] = fetch.mock.calls[0] as [string, RequestInit];
+    // URLSearchParams はスペースを + で符号化するため空白へ戻してから検証する
+    const decoded = decodeURIComponent(url).replace(/\+/g, ' ');
+    expect(decoded).toContain("'FOLDER' in parents");
+    expect(decoded).toContain("mimeType='application/pdf'");
+    expect(decoded).toContain('trashed=false');
+    expect(decoded).toContain('pageSize=1000');
+    expect(decoded).toContain('orderBy=name');
+    expect(url).not.toContain('pageToken');
+  });
+
+  test('nextPageToken をたどって全ページを結合する', async () => {
+    const fetch = jest
+      .fn()
+      .mockResolvedValueOnce(okJson({ files: [{ id: 'p1', name: 'a.pdf' }], nextPageToken: 'T2' }))
+      .mockResolvedValueOnce(okJson({ files: [{ id: 'p2', name: 'b.pdf' }] }));
+    const deps = { fetch, getAccessToken: jest.fn().mockResolvedValue('t') };
+    await expect(listFolderPdfs('FOLDER', deps)).resolves.toEqual([
+      { id: 'p1', name: 'a.pdf' },
+      { id: 'p2', name: 'b.pdf' },
+    ]);
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(fetch.mock.calls[1][0]).toContain('pageToken=T2');
+  });
+
+  test('files 欠落は空配列として扱う', async () => {
+    const fetch = jest.fn().mockResolvedValueOnce(okJson({}));
+    const deps = { fetch, getAccessToken: jest.fn().mockResolvedValue('t') };
+    await expect(listFolderPdfs('EMPTY', deps)).resolves.toEqual([]);
   });
 });
 
