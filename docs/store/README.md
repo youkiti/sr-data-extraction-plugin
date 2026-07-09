@@ -70,8 +70,9 @@ node tools/selenium/manualCheck.mjs --profile .selenium-profile-clean login proj
 - [x] 権限の使用理由原稿（日英）
 - [x] Playwright E2E スモーク（**2026-07-09**・`npm run test:e2e` 49 passed）。`dist/` をスタブ Chrome へ読み込み S1（popup）〜S10（export）+ Options を全ルート駆動 + axe。実 Google 認証を要さない範囲での S1→S10 通し確認に相当
 - [x] スクリーンショット取得（S3 / S5 / S8 は実機・S9 は E2E ハーネス。→ [取得済みスクリーンショット](#取得済みスクリーンショットscreenshots)）
-- [ ] **実 Google 認証つきのクリーンな Chrome プロファイルで dist smoke**（プロジェクト作成 → 抽出 → エクスポート。OAuth 同意含む・**要ユーザー作業**。この環境には実 Google 認証情報がないため未実施）
-- [ ] Chrome ウェブストア デベロッパーアカウントで限定公開提出（**要ユーザー作業**）
+- [x] **実 Google 認証つきのクリーンな Chrome プロファイルで dist smoke**（**2026-07-10 実施**。`.env` に `OAUTH_CLIENT_ID` を設定した本番ビルドで通過）
+- [x] Chrome ウェブストア デベロッパーアカウントで限定公開提出（**2026-07-10 提出・審査待ち**。zip 作成手順は [.claude/skills/release-build/SKILL.md](../../.claude/skills/release-build/SKILL.md)。プライバシーポリシー URL は GitHub ファイル URL 方式を採用）
+- [ ] 審査通過後: 掲載ページの拡張 ID が `ibpbkgffgkmdmflamhadbcfjgfljjgip` と一致することを確認 → 限定公開リンクをテスターへ配布して通し確認（タスク E 完了条件）
 
 ## manifest レビュー結果
 
@@ -81,6 +82,6 @@ node tools/selenium/manualCheck.mjs --profile .selenium-profile-clean login proj
 - **permissions**: `identity` / `identity.email` / `storage` / `tabs` — いずれも [permissions-justification.md](permissions-justification.md) で説明済み。余計な権限なし。✅
 - **host_permissions**: Sheets / Google APIs / Gemini / OpenRouter の 4 つ。すべて BYOK の API 通信 or Google API で正当。✅
 - **`oauth2.client_id`（提出前に必須の確認）**: `src/manifest.json` は `__OAUTH_CLIENT_ID__` プレースホルダを持ち、webpack が `.env` の `OAUTH_CLIENT_ID` で置換する（[webpack.config.js](../../webpack.config.js) L19・L26）。**`.env` 未設定でビルドすると `client_id` が空文字になり OAuth が機能しない**。提出用パッケージのビルド前に、GCP で発行した Chrome アプリ種別の OAuth クライアント ID を `.env` の `OAUTH_CLIENT_ID` に設定すること（CI / この環境のビルドは空のまま = スモーク用途。⚠️ 要ユーザー作業）。
-- **`key` フィールドの扱い（提出前に確認）**: manifest 先頭の `"key"` は拡張 ID を固定するためのもの。**この `key` を提出パッケージにも残すのが推奨**。理由は、拡張 ID = OAuth クライアントの許可対象なので、`key` を残して dev と Store で拡張 ID を一本化すれば、OAuth クライアント設定を 2 系統面倒見なくて済む（remaining-work-plan.md タスク E の採用理由そのもの）。
+- **`key` フィールドの扱い（2026-07-10 の初回提出で確定）**: **Chrome Web Store は manifest に `key` フィールドがあるとアップロードを拒否する**（「マニフェストでは key フィールドを使用できません」）。正しい手順は「提出用 zip では manifest から `key` を除去し、**初回アップロードのみ**対応する秘密鍵を `key.pem` として zip ルートに同梱する」— Store が key.pem から同じ拡張 ID（`ibpbkgffgkmdmflamhadbcfjgfljjgip`）を導出するため、dev と Store の ID 一本化（remaining-work-plan.md タスク E の採用理由）はこの方式で達成される。`src/manifest.json` の `key` は dev（未パック読込）用に残したまま、提出時だけステージングで除去する。手順は [.claude/skills/release-build/SKILL.md](../../.claude/skills/release-build/SKILL.md) に定型化済み。2 回目以降の更新 zip に key.pem は不要（ID はアイテムに固定済み）。秘密鍵の置き場所はリポジトリ外（コミット禁止）。
   - Picker への影響は**なし**: picker.html は接続元の拡張 ID を URL パラメータ `extension_id` から動的に受け取る（[hosted/picker.html](../../hosted/picker.html) L46）ため、拡張 ID が変わっても `externally_connectable.matches`（`youkiti.github.io`）さえ合っていれば動く。
   - **提出前の要確認事項**: GCP の OAuth クライアント（Chrome アプリ種別）の「アプリケーション ID」が、この `key` から導出される拡張 ID と一致していること。一致していないと OAuth 同意画面が拒否される。ストア掲載後に表示される実際の拡張 ID とも突き合わせる。

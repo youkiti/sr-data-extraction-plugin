@@ -4,6 +4,15 @@
 - **用途**: Chrome ウェブストアのアイテム登録時、各権限に求められる「使用理由（justification）」欄へそのまま貼り付けるための原稿。日本語と英語を併記します。
 - **正典**: 権限の一覧は [src/manifest.json](../../src/manifest.json)、データフローは [privacy-policy.md](privacy-policy.md) を参照。
 
+## 単一用途（Single purpose）
+
+- **JA**: 本拡張の単一の用途は、システマティックレビュー（SR）の「データ抽出」工程の支援です。ユーザー自身の Google Drive 上の採用論文 PDF から、ユーザー自身の API キー（BYOK）で AI が研究データを事前抽出し、各値の根拠箇所（verbatim quote）を PDF ビューア上にハイライト表示します。人間がそれを承認・修正・棄却して最終確定し、結果と監査証跡をユーザー自身の Google Sheets に保存、CSV としてエクスポートします。すべての機能（PDF 取り込み、抽出スキーマ設計、AI 抽出、検証 UI、進捗ダッシュボード、CSV エクスポート）はこの単一のワークフローを構成する段階であり、これ以外の用途（ブラウジング支援、他サイトの改変等）はありません。
+- **EN**: The single purpose of this extension is to support the data-extraction step of systematic reviews (SR). Using the user's own API key (BYOK), AI pre-extracts study data from the user's included-study PDFs stored in their own Google Drive, attaching a verbatim quote for each value, which is highlighted in a built-in PDF viewer. The user then accepts, edits, or rejects each value, and the results with a full audit trail are saved to the user's own Google Sheets and exported as CSV. Every feature (PDF import, extraction-schema design, AI extraction, verification UI, progress dashboard, CSV export) is a stage of this single workflow; the extension does nothing else (no browsing assistance, no modification of other sites).
+
+## リモートコード使用の申告
+
+「リモートコードを使用していますか」→ **いいえ**。全 script は拡張パッケージ内のローカルバンドルのみ（PDF.js worker も同梱・CDN 不使用・CSP は MV3 既定）。Google Picker の JS は `https://youkiti.github.io/picker.html` という通常の Web ページ側で実行され、拡張パッケージ外（→ 上記 externally_connectable の説明）。
+
 ## permissions
 
 ### `identity` / `identity.email`
