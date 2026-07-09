@@ -105,7 +105,11 @@ function makeModel(
     canSearchText: true,
     armCard: null,
     armLocked: false,
-    progress: { decided: 0, total: cells.length },
+    progress: {
+      decided: 0,
+      total: cells.length,
+      byTab: [{ tab: 'study', decided: 0, total: cells.length }],
+    },
     ...overrides,
   };
 }
@@ -137,30 +141,58 @@ describe('renderVerificationForm', () => {
     );
   });
 
-  test('判定進捗バーを描画する（判定済み / 総数 + 残り）', () => {
+  test('進捗バーは現在タブぶんを数え、全体合算を副表示に併記する', () => {
     const { root } = render(
-      makeModel([makeCell()], { progress: { decided: 3, total: 10 } }),
+      makeModel([makeCell()], {
+        activeTab: 'study',
+        // Study タブは 3 / 6、全体（Study + アウトカム）は 3 / 10
+        progress: {
+          decided: 3,
+          total: 10,
+          byTab: [
+            { tab: 'study', decided: 3, total: 6 },
+            { tab: 'outcome_result', decided: 0, total: 4 },
+          ],
+        },
+      }),
     );
     const progress = root.querySelector('#verify-progress');
     expect(progress?.getAttribute('role')).toBe('status');
     expect(progress?.getAttribute('aria-live')).toBe('polite');
+    // 主表示 = 現在タブ（Study）ぶん。「残り24が謎」の混乱を避ける
     expect(root.querySelector('.verify__progress-text')?.textContent).toBe(
-      '判定済み 3 / 10（残り 7）',
+      'Study: 判定済み 3 / 6（残り 3）',
     );
+    // 副表示 = 全 entity タブ合算
+    expect(root.querySelector('.verify__progress-overall')?.textContent).toBe(
+      '全体: 判定済み 3 / 10（残り 7）',
+    );
+    // バーは現在タブぶん
     const bar = root.querySelector<HTMLProgressElement>('.verify__progress-bar');
     expect(bar?.getAttribute('value')).toBe('3');
-    expect(bar?.getAttribute('max')).toBe('10');
+    expect(bar?.getAttribute('max')).toBe('6');
   });
 
-  test('全件判定済みは「すべて判定済み」、総数 0 は対象なしを出す', () => {
-    const done = render(makeModel([makeCell()], { progress: { decided: 5, total: 5 } }));
-    expect(done.root.querySelector('.verify__progress-text')?.textContent).toBe(
-      '判定済み 5 / 5（すべて判定済み）',
+  test('タブが 1 枚だけなら全体合算の副表示は出さない', () => {
+    const { root } = render(
+      makeModel([makeCell()], {
+        activeTab: 'study',
+        progress: { decided: 5, total: 5, byTab: [{ tab: 'study', decided: 5, total: 5 }] },
+      }),
     );
+    // 全件判定済みは「すべて判定済み」
+    expect(root.querySelector('.verify__progress-text')?.textContent).toBe(
+      'Study: 判定済み 5 / 5（すべて判定済み）',
+    );
+    // タブが 1 枚なので副表示は冗長 → 出さない
+    expect(root.querySelector('.verify__progress-overall')).toBeNull();
+  });
+
+  test('現在タブにセルが無いときは「このタブに判定対象の項目がありません」', () => {
     // 総数 0 でも progress の max は 1 に落として不定表示を避ける
-    const none = render(makeModel([], { progress: { decided: 0, total: 0 } }));
+    const none = render(makeModel([], { progress: { decided: 0, total: 0, byTab: [] } }));
     expect(none.root.querySelector('.verify__progress-text')?.textContent).toBe(
-      '判定対象の項目がありません',
+      'このタブに判定対象の項目がありません',
     );
     expect(none.root.querySelector<HTMLProgressElement>('.verify__progress-bar')?.getAttribute('max')).toBe('1');
   });

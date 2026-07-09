@@ -363,25 +363,41 @@ function renderDecidedRow(
   return row;
 }
 
-/**
- * 判定進捗バー（全 entity タブ横断）。判定のたびに refreshForm で作り直され、
- * 「判定済み N / 総数 M」と充填バーが即時に更新される（automation bias 対策 UI の一部）
- */
-function renderProgress(progress: VerificationProgress): HTMLElement {
-  const { decided, total } = progress;
+/** 「判定済み N / M（残り R）」の定型文（R=0 は「すべて判定済み」） */
+function progressText(decided: number, total: number): string {
   const remaining = Math.max(total - decided, 0);
+  return `判定済み ${decided} / ${total}${remaining > 0 ? `（残り ${remaining}）` : '（すべて判定済み）'}`;
+}
+
+/**
+ * 判定進捗バー。バーと主表示は「今見ているタブ」ぶんを数える（映っていないタブのセルまで
+ * 残数に混ぜて混乱するのを避ける）。全 entity タブの合算は副表示で併記する。
+ * 判定のたびに refreshForm で作り直され即時更新される（automation bias 対策 UI の一部）
+ */
+function renderProgress(progress: VerificationProgress, activeTab: EntityLevel): HTMLElement {
+  const tab = progress.byTab.find((entry) => entry.tab === activeTab) ?? { decided: 0, total: 0 };
   const text = el('span', {
     className: 'verify__progress-text',
     text:
-      total === 0
-        ? '判定対象の項目がありません'
-        : `判定済み ${decided} / ${total}${remaining > 0 ? `（残り ${remaining}）` : '（すべて判定済み）'}`,
+      tab.total === 0
+        ? 'このタブに判定対象の項目がありません'
+        : `${TAB_LABELS[activeTab]}: ${progressText(tab.decided, tab.total)}`,
   });
   const bar = el('progress', {
     className: 'verify__progress-bar',
     // max=0 は無効なので、総数 0 のときはバーを不定表示にしない（value/max とも 1）
-    attributes: { value: String(decided), max: String(Math.max(total, 1)) },
+    attributes: { value: String(tab.decided), max: String(Math.max(tab.total, 1)) },
   });
+  const children: HTMLElement[] = [text, bar];
+  // タブが 2 枚以上あるときだけ全体合算を併記する（1 枚ならタブ表示と同値で冗長）
+  if (progress.byTab.length > 1) {
+    children.push(
+      el('span', {
+        className: 'verify__progress-overall',
+        text: `全体: ${progressText(progress.decided, progress.total)}`,
+      }),
+    );
+  }
   return el(
     'div',
     {
@@ -389,7 +405,7 @@ function renderProgress(progress: VerificationProgress): HTMLElement {
       className: 'verify__progress',
       attributes: { role: 'status', 'aria-live': 'polite' },
     },
-    [text, bar],
+    children,
   );
 }
 
@@ -525,7 +541,10 @@ export function renderVerificationForm(
   model: VerificationFormModel,
   handlers: VerificationFormHandlers,
 ): HTMLElement {
-  const children: HTMLElement[] = [renderTabs(model, handlers), renderProgress(model.progress)];
+  const children: HTMLElement[] = [
+    renderTabs(model, handlers),
+    renderProgress(model.progress, model.activeTab),
+  ];
   if (model.armCard !== null) {
     children.push(renderArmCard(model.armCard, handlers));
   }

@@ -78,7 +78,14 @@ describe('verificationProgress', () => {
       makeDecision(),
       makeDecision({ fieldId: 'f-arm', entityKey: 'arm:1', value: '50' }),
     ]);
-    expect(progress).toEqual({ decided: 2, total: 4 });
+    expect(progress).toEqual({
+      decided: 2,
+      total: 4,
+      byTab: [
+        { tab: 'study', decided: 1, total: 2 },
+        { tab: 'arm', decided: 1, total: 2 },
+      ],
+    });
   });
 
   test('undo で未検証へ戻したセルは判定済みに数えない', () => {
@@ -87,10 +94,14 @@ describe('verificationProgress', () => {
       [makeEvidence()],
       [makeDecision(), makeDecision({ decidedAt: 't2', action: 'undo', value: null })],
     );
-    expect(progress).toEqual({ decided: 0, total: 1 });
+    expect(progress).toEqual({
+      decided: 0,
+      total: 1,
+      byTab: [{ tab: 'study', decided: 0, total: 1 }],
+    });
   });
 
-  test('項目なしスキーマは 0 / 0', () => {
-    expect(verificationProgress([], [], [])).toEqual({ decided: 0, total: 0 });
+  test('項目なしスキーマは 0 / 0（byTab も空）', () => {
+    expect(verificationProgress([], [], [])).toEqual({ decided: 0, total: 0, byTab: [] });
   });
 });

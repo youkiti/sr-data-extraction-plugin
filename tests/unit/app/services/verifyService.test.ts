@@ -226,7 +226,7 @@ function makeTarget(overrides: Partial<VerifyTarget> = {}): VerifyTarget {
     evidence: [makeEvidence()],
     fields: [makeField()],
     schemaVersion: 1,
-    progress: { decided: 0, total: 1 },
+    progress: { decided: 0, total: 1, byTab: [] },
     ...overrides,
   };
 }
@@ -372,7 +372,11 @@ describe('loadVerifyTargets', () => {
     getCurrentUserEmailMock.mockResolvedValue(null);
     readAllDecisionsMock.mockResolvedValue([makeDecision()]); // ME の判定は数えない
     await loadVerifyTargets(store, makeDeps());
-    expect(store.getState().verify.targets?.[0]?.progress).toEqual({ decided: 0, total: 1 });
+    expect(store.getState().verify.targets?.[0]?.progress).toEqual({
+      decided: 0,
+      total: 1,
+      byTab: [{ tab: 'study', decided: 0, total: 1 }],
+    });
   });
 });
 

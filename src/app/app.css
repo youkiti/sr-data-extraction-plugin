@@ -1182,6 +1182,13 @@
   white-space: nowrap;
 }
 
+/* 全 entity タブ合算の副表示（現在タブの進捗より控えめに） */
+.verify__progress-overall {
+  font-size: 12px;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+
 .verify__progress-bar {
   flex: 1;
   height: 10px;

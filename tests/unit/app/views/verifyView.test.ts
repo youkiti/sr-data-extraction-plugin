@@ -134,7 +134,7 @@ function makeTarget(overrides: Partial<VerifyTarget> = {}): VerifyTarget {
     evidence: [],
     fields: [makeField()],
     schemaVersion: 1,
-    progress: { decided: 1, total: 4 },
+    progress: { decided: 1, total: 4, byTab: [] },
     ...overrides,
   };
 }
@@ -217,7 +217,7 @@ describe('renderVerifyView', () => {
       makeTarget(),
       makeTarget({
         document: makeDocument({ documentId: 'doc-2', studyId: 'study-2', filename: 'jones2021.pdf' }),
-        progress: { decided: 0, total: 2 },
+        progress: { decided: 0, total: 2, byTab: [] },
       }),
     ];
     const root = render(makeState({ targets, selectedDocumentId: 'doc-2' }), ctx);
