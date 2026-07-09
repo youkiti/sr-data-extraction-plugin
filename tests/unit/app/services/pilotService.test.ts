@@ -487,12 +487,12 @@ describe('runPilot: 実行', () => {
     expect(state.pilot.run?.runId).toBe('run-1');
     expect(state.pilot.runFields).toEqual([makeField()]);
     expect(state.pilot.evidence).toEqual([makeEvidence()]);
-    // 完了後に最初の文献の検証データが読み込まれる
-    expect(state.pilot.verifyDocumentId).toBe('doc-1');
+    // 完了後に最初の study の検証データが読み込まれる（配下の全文書を連結表示）
+    expect(state.pilot.verifyStudyId).toBe('study-doc-1');
     expect(state.pilot.verification).not.toBeNull();
     expect(state.pilot.verification?.annotator).toBe(ME);
-    expect(state.pilot.verification?.pdf).not.toBeNull();
-    expect(state.pilot.verification?.textPages).toHaveLength(1);
+    expect(state.pilot.verification?.documents[0]?.pdf).not.toBeNull();
+    expect(state.pilot.verification?.documents[0]?.textPages).toHaveLength(1);
   });
 
   test('進捗コールバックが pilot.progress を更新する', async () => {
@@ -626,18 +626,18 @@ describe('loadPilotVerification', () => {
   }
 
   test('run 未実行・プロジェクト未選択のときは何もしない', async () => {
-    await loadPilotVerification(makeStore({ withProject: false }), makeDeps(), 'doc-1');
-    await loadPilotVerification(makeStore({}), makeDeps(), 'doc-1');
+    await loadPilotVerification(makeStore({ withProject: false }), makeDeps(), 'study-doc-1');
+    await loadPilotVerification(makeStore({}), makeDeps(), 'study-doc-1');
     expect(readDecisionsMock).not.toHaveBeenCalled();
   });
 
-  test('文献が見つからないときは verifyError', async () => {
+  test('study が見つからないときは verifyError', async () => {
     const store = makeRanStore();
-    await loadPilotVerification(store, makeDeps(), 'doc-9');
-    expect(store.getState().pilot.verifyError).toContain('doc-9 が見つかりません');
+    await loadPilotVerification(store, makeDeps(), 'study-9');
+    expect(store.getState().pilot.verifyError).toContain('study-9 が見つかりません');
   });
 
-  test('検証データ束を組み立てる（当該文献の Evidence だけ / StudyData の自分の行）', async () => {
+  test('検証データ束を組み立てる（当該 study の Evidence だけ / StudyData の自分の行）', async () => {
     const store = makeRanStore();
     readStudyDataSheetMock.mockResolvedValue({
       fieldNames: ['sample_size_total'],
@@ -653,20 +653,21 @@ describe('loadPilotVerification', () => {
         },
       ],
     });
-    await loadPilotVerification(store, makeDeps(), 'doc-1');
+    await loadPilotVerification(store, makeDeps(), 'study-doc-1');
     const { pilot } = store.getState();
     expect(pilot.verifyLoading).toBe(false);
     expect(pilot.verification?.evidence.map((item) => item.evidenceId)).toEqual(['ev-1']);
+    expect(pilot.verification?.documents.map((doc) => doc.document.documentId)).toEqual(['doc-1']);
     expect(pilot.studyValues).toEqual({ sample_size_total: '100' });
-    expect(pilot.verification?.pdfError).toBeNull();
+    expect(pilot.verification?.documents[0]?.pdfError).toBeNull();
     // ビューア用ドキュメントは元 PDF のページをそのまま返す
-    await expect(pilot.verification?.pdf?.getPage(1)).resolves.toBeDefined();
+    await expect(pilot.verification?.documents[0]?.pdf?.getPage(1)).resolves.toBeDefined();
   });
 
   test('自分の StudyData 行が無ければ空 values から始める。email 不明は空文字 annotator', async () => {
     const store = makeRanStore();
     getCurrentUserEmailMock.mockResolvedValue(null);
-    await loadPilotVerification(store, makeDeps(), 'doc-1');
+    await loadPilotVerification(store, makeDeps(), 'study-doc-1');
     expect(store.getState().pilot.studyValues).toEqual({});
     expect(store.getState().pilot.verification?.annotator).toBe('');
   });
@@ -674,31 +675,31 @@ describe('loadPilotVerification', () => {
   test('PDF の読み込み失敗は pdfError に留め、フォーム検証は続行できる', async () => {
     const store = makeRanStore();
     getFileBinaryMock.mockRejectedValue(new Error('404 not found'));
-    await loadPilotVerification(store, makeDeps(), 'doc-1');
+    await loadPilotVerification(store, makeDeps(), 'study-doc-1');
     const { verification } = store.getState().pilot;
-    expect(verification?.pdf).toBeNull();
-    expect(verification?.pdfError).toBe('404 not found');
-    expect(verification?.textPages).toEqual([]);
+    expect(verification?.documents[0]?.pdf).toBeNull();
+    expect(verification?.documents[0]?.pdfError).toBe('404 not found');
+    expect(verification?.documents[0]?.textPages).toEqual([]);
     expect(store.getState().pilot.verifyError).toBeNull();
   });
 
   test('Decisions の読み込み失敗は verifyError', async () => {
     const store = makeRanStore();
     readDecisionsMock.mockRejectedValue(new Error('権限がありません'));
-    await loadPilotVerification(store, makeDeps(), 'doc-1');
+    await loadPilotVerification(store, makeDeps(), 'study-doc-1');
     expect(store.getState().pilot.verifyError).toBe('権限がありません');
     expect(store.getState().pilot.verifyLoading).toBe(false);
   });
 
-  test('文献切替時は前の PDF を破棄する（disposePdf）', async () => {
+  test('study 切替時は前の PDF を破棄する（disposePdf）', async () => {
     const store = makeRanStore();
     const pdf = makePdf();
     const deps = makeDeps({ loadPdf: jest.fn().mockResolvedValue(pdf) });
-    await loadPilotVerification(store, deps, 'doc-1');
+    await loadPilotVerification(store, deps, 'study-doc-1');
     expect(pdf.destroy).not.toHaveBeenCalled();
-    await loadPilotVerification(store, deps, 'doc-2');
+    await loadPilotVerification(store, deps, 'study-doc-2');
     expect(pdf.destroy).toHaveBeenCalledTimes(1);
-    expect(store.getState().pilot.verifyDocumentId).toBe('doc-2');
+    expect(store.getState().pilot.verifyStudyId).toBe('study-doc-2');
   });
 });
 
@@ -894,7 +895,7 @@ describe('persistPilotArmConfirmation', () => {
   test('検証データ表示中は ArmStructures へ新 version を追記する', async () => {
     const store = makeVerificationStore();
     const deps = makeDeps();
-    await loadPilotVerification(store, deps, 'doc-1');
+    await loadPilotVerification(store, deps, 'study-doc-1');
     appendArmVersionMock.mockResolvedValue({
       version: 1,
       arms: [{ armKey: 'arm:1', armName: '介入群' }],
@@ -916,7 +917,7 @@ describe('persistPilotArmConfirmation', () => {
   test('now 未注入は既定の nowIso8601 で確定時刻を作る', async () => {
     const store = makeVerificationStore();
     const deps = makeDeps({ now: undefined });
-    await loadPilotVerification(store, deps, 'doc-1');
+    await loadPilotVerification(store, deps, 'study-doc-1');
     appendArmVersionMock.mockResolvedValue({ version: 1, arms: [] });
     await persistPilotArmConfirmation(store, deps, [{ armKey: 'arm:1', armName: 'A' }]);
     const input = appendArmVersionMock.mock.calls.at(-1)?.[1];
@@ -926,7 +927,7 @@ describe('persistPilotArmConfirmation', () => {
   test('保存失敗はトーストのみで throw しない', async () => {
     const store = makeVerificationStore();
     const deps = makeDeps();
-    await loadPilotVerification(store, deps, 'doc-1');
+    await loadPilotVerification(store, deps, 'study-doc-1');
     appendArmVersionMock.mockRejectedValue(new Error('offline'));
     await expect(
       persistPilotArmConfirmation(store, deps, [{ armKey: 'arm:1', armName: 'A' }]),
@@ -979,7 +980,7 @@ describe('persistPilotArmConfirmation', () => {
         note: null,
       },
     ]);
-    await loadPilotVerification(store, makeDeps(), 'doc-1');
+    await loadPilotVerification(store, makeDeps(), 'study-doc-1');
     expect(store.getState().pilot.verification?.armStructure).toEqual({
       version: 2,
       arms: [{ armKey: 'arm:1', armName: '介入群' }],
@@ -1080,7 +1081,7 @@ describe('loadPilotRun', () => {
     expect(pilot.evidence?.map((item) => item.evidenceId)).toEqual(['ev-1']);
     expect(pilot.loadingRunId).toBeNull();
     expect(pilot.batchFailures).toEqual([]);
-    expect(pilot.verifyDocumentId).toBe('doc-1');
+    expect(pilot.verifyStudyId).toBe('study-doc-1');
     expect(pilot.verification).not.toBeNull();
   });
 

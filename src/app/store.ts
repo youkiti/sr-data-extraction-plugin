@@ -145,8 +145,8 @@ export interface PilotState {
   historyInitialized: boolean;
   /** 履歴から読み込み中の run_id（履歴項目のスピナー + 二重起動防止）。null = なし */
   loadingRunId: string | null;
-  /** 埋め込み検証 UI で表示中の文献 */
-  verifyDocumentId: string | null;
+  /** 埋め込み検証 UI で表示中の study */
+  verifyStudyId: string | null;
   verification: VerificationData | null;
   verifyLoading: boolean;
   verifyError: string | null;
@@ -187,10 +187,12 @@ export interface ExtractState {
   retryingStudyId: string | null;
 }
 
-/** #/verify（S8）の一覧 1 文献ぶんの検証素材（Evidence がある document のみ） */
+/** #/verify（S8）の一覧 1 study ぶんの検証素材（Evidence がある study のみ。v0.10 フェーズ 3） */
 export interface VerifyTarget {
-  document: DocumentRecord;
-  /** 表示する run（当該 document の最新 run）の Evidence */
+  study: StudyRecord;
+  /** study 配下の文書（role 固定順 → 取り込み順） */
+  documents: DocumentRecord[];
+  /** 表示する run（当該 study の最新 run）の全文書ぶんの Evidence */
   evidence: Evidence[];
   /** 表示する run の schema_version の全項目 */
   fields: SchemaField[];
@@ -205,8 +207,8 @@ export interface VerifyState {
   targets: VerifyTarget[] | null;
   loading: boolean;
   loadError: string | null;
-  /** 表示中の文献（URL クエリ ?doc= と同期する） */
-  selectedDocumentId: string | null;
+  /** 表示中の study（URL クエリ ?study= と同期する） */
+  selectedStudyId: string | null;
   /** URL クエリ ?entity= のセル単位ディープリンク（S9 ダッシュボードのセルクリック）。null = なし */
   deepLinkEntityKey: string | null;
   verification: VerificationData | null;
@@ -349,7 +351,7 @@ export function createInitialState(): AppState {
       historyError: null,
       historyInitialized: false,
       loadingRunId: null,
-      verifyDocumentId: null,
+      verifyStudyId: null,
       verification: null,
       verifyLoading: false,
       verifyError: null,
@@ -377,7 +379,7 @@ export function createInitialState(): AppState {
       targets: null,
       loading: false,
       loadError: null,
-      selectedDocumentId: null,
+      selectedStudyId: null,
       deepLinkEntityKey: null,
       verification: null,
       verifyLoading: false,

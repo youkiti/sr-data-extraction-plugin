@@ -217,15 +217,10 @@ export async function runPilot(store: Store, deps: PilotServiceDeps): Promise<vo
         ? `パイロット抽出が完了しました（Evidence ${outcome.result.evidence.length} 件）`
         : 'パイロット抽出が部分的に失敗しました。失敗の内訳を確認してください',
     );
-    // 最初の抽出 study の先頭文書（role 順で article）を検証 UI に開く。
-    // 複数文書ビューアは Phase 3 で対応するため、Phase 2 は study の代表 1 文書を表示する
+    // 最初の抽出 study を検証 UI に開く（配下の全文書を連結表示。v0.10 フェーズ 3）
     const firstStudyId = outcome.run.studyIds[0];
-    const firstDocument =
-      firstStudyId === undefined
-        ? undefined
-        : targets.find((doc) => doc.studyId === firstStudyId);
-    if (firstDocument !== undefined) {
-      await loadPilotVerification(store, deps, firstDocument.documentId);
+    if (firstStudyId !== undefined) {
+      await loadPilotVerification(store, deps, firstStudyId);
     }
   } catch (err) {
     patchPilot(store, { running: false, progress: null, runError: toMessage(err) });
@@ -310,7 +305,7 @@ export async function loadPilotRun(
     // 履歴 run はバッチ失敗の内訳を再構成できないため空にする（サマリは run.status で表示）
     batchFailures: [],
     rejectedCount: 0,
-    verifyDocumentId: null,
+    verifyStudyId: null,
     verification: null,
     verifyLoading: false,
     verifyError: null,
@@ -329,15 +324,10 @@ export async function loadPilotRun(
       runFields: fields,
       evidence: allEvidence.filter((item) => item.runId === runId),
     });
-    // run は study 単位（studyIds）。study の代表 1 文書を検証 UI に開く（複数文書は Phase 3）
+    // run は study 単位（studyIds）。最初の study を検証 UI に開く（配下の全文書を連結表示）
     const firstStudyId = run.studyIds[0];
-    const documents = await resolveDocuments(store, deps, project.spreadsheetId);
-    const firstDocument =
-      firstStudyId === undefined
-        ? undefined
-        : documents.find((doc) => doc.studyId === firstStudyId);
-    if (firstDocument !== undefined) {
-      await loadPilotVerification(store, deps, firstDocument.documentId);
+    if (firstStudyId !== undefined) {
+      await loadPilotVerification(store, deps, firstStudyId);
     }
   } catch (err) {
     patchPilot(store, { loadingRunId: null, historyError: toMessage(err) });
@@ -345,13 +335,14 @@ export async function loadPilotRun(
 }
 
 /**
- * 埋め込み検証 UI のデータ束を読み込む（文献切替を含む）。
+ * 埋め込み検証 UI のデータ束を読み込む（study 切替を含む。v0.10 フェーズ 3 = study 単位）。
+ * study 配下の全文書を連結して開き、根拠クリックで出所 PDF へ切替わる。
  * PDF の読み込み失敗は verifyError にせず pdfError として持ち、フォーム側の検証は続行できる
  */
 export async function loadPilotVerification(
   store: Store,
   deps: PilotServiceDeps,
-  documentId: string,
+  studyId: string,
 ): Promise<void> {
   const state = store.getState();
   const project = state.currentProject;
@@ -359,18 +350,18 @@ export async function loadPilotVerification(
   if (!project || run === null || runFields === null || evidence === null) {
     return;
   }
-  const documents = await resolveDocuments(store, deps, project.spreadsheetId);
-  const document = documents.find((doc) => doc.documentId === documentId);
-  if (document === undefined) {
-    patchPilot(store, { verifyError: `文献 ${documentId} が見つかりません` });
+  const selection = await resolveStudies(store, deps, project.spreadsheetId);
+  const item = selection.find((candidate) => candidate.study.studyId === studyId);
+  if (item === undefined) {
+    patchPilot(store, { verifyError: `study ${studyId} が見つかりません` });
     return;
   }
-  // 前の文献の PDF を破棄してから読み込む（pdfjs のメモリ解放）
+  // 前の study の PDF を破棄してから読み込む（pdfjs のメモリ解放）
   await store.getState().pilot.verification?.disposePdf?.();
   patchPilot(store, {
     verifyLoading: true,
     verifyError: null,
-    verifyDocumentId: documentId,
+    verifyStudyId: studyId,
     verification: null,
     studyValues: null,
   });
@@ -378,9 +369,10 @@ export async function loadPilotVerification(
     const bundle = await loadVerificationBundle(
       {
         spreadsheetId: project.spreadsheetId,
-        document,
+        study: item.study,
+        documents: item.documents,
         fields: runFields,
-        evidence: evidence.filter((item) => item.documentId === documentId),
+        evidence: evidence.filter((row) => row.studyId === studyId),
         schemaVersion: run.schemaVersion,
       },
       deps,
@@ -453,7 +445,7 @@ export async function persistPilotArmConfirmation(
   await persistArmConfirmation(
     project.spreadsheetId,
     {
-      studyId: verification.document.studyId,
+      studyId: verification.study.studyId,
       arms,
       annotator: verification.annotator,
       annotatorType: 'human_with_ai',

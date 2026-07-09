@@ -72,7 +72,7 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<ProtocolViewCallb
         onRun: jest.fn(),
         onSelectRun: jest.fn(),
         onReloadHistory: jest.fn(),
-        onSelectVerifyDocument: jest.fn(),
+        onSelectVerifyStudy: jest.fn(),
         onRetryVerifyLoad: jest.fn(),
         onDecision: jest.fn(),
         onArmConfirm: jest.fn(),
@@ -87,7 +87,7 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<ProtocolViewCallb
         onReloadTargets: jest.fn(),
       },
       verify: {
-        onSelectDocument: jest.fn(),
+        onSelectStudy: jest.fn(),
         onRetryLoad: jest.fn(),
         onDecision: jest.fn(),
         onArmConfirm: jest.fn(),

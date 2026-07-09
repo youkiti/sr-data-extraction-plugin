@@ -49,7 +49,7 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<DashboardViewCall
         onRun: jest.fn(),
         onSelectRun: jest.fn(),
         onReloadHistory: jest.fn(),
-        onSelectVerifyDocument: jest.fn(),
+        onSelectVerifyStudy: jest.fn(),
         onRetryVerifyLoad: jest.fn(),
         onDecision: jest.fn(),
         onArmConfirm: jest.fn(),
@@ -64,7 +64,7 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<DashboardViewCall
         onReloadTargets: jest.fn(),
       },
       verify: {
-        onSelectDocument: jest.fn(),
+        onSelectStudy: jest.fn(),
         onRetryLoad: jest.fn(),
         onDecision: jest.fn(),
         onArmConfirm: jest.fn(),
@@ -88,7 +88,7 @@ function makeData(overrides: Partial<DashboardData> = {}): DashboardData {
     sections: ['methods', 'outcomes'],
     rows: [
       {
-        documentId: 'doc-1',
+        studyId: 'study-1',
         studyLabel: 'Smith 2020',
         cells: [
           { section: 'methods', decided: 1, total: 2, entityKey: '-' },
@@ -100,7 +100,7 @@ function makeData(overrides: Partial<DashboardData> = {}): DashboardData {
         notReported: { numerator: 0, denominator: 5 },
       },
       {
-        documentId: 'doc 2', // URL エンコード確認用の空白入り ID
+        studyId: 'study 2', // URL エンコード確認用の空白入り ID
         studyLabel: 'Jones 2021',
         cells: [null, { section: 'outcomes', decided: 0, total: 0, entityKey: null }],
         progress: { decided: 0, total: 0 },
@@ -192,7 +192,7 @@ describe('renderDashboardView', () => {
     const matrix = root.querySelector('#dashboard-matrix') as HTMLTableElement;
     const headers = [...matrix.querySelectorAll('thead th')].map((th) => th.textContent);
     expect(headers).toEqual([
-      '文献',
+      '研究',
       'methods',
       'outcomes',
       'AI 採用率',
@@ -204,8 +204,8 @@ describe('renderDashboardView', () => {
     expect(row1.querySelector('th')?.textContent).toBe('Smith 2020（1 / 5）');
     const links = [...row1.querySelectorAll('a')];
     expect(links.map((a) => a.textContent)).toEqual(['1 / 2', '0 / 3']);
-    expect(links[0]?.getAttribute('href')).toBe('#/verify?doc=doc-1&entity=-');
-    expect(links[1]?.getAttribute('href')).toBe('#/verify?doc=doc-1&entity=arm%3A1');
+    expect(links[0]?.getAttribute('href')).toBe('#/verify?study=study-1&entity=-');
+    expect(links[1]?.getAttribute('href')).toBe('#/verify?study=study-1&entity=arm%3A1');
     expect(links[0]?.getAttribute('aria-label')).toBe(
       'Smith 2020 の methods を検証（判定済み 1 / 2）',
     );

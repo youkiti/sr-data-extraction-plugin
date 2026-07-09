@@ -1,6 +1,6 @@
-// #/dashboard: ダッシュボード（S9 / ui-states.md §3）。
-// 状態: 読み込み中 / 読み込み失敗 / 0 件 / 通常（サマリ + document × section マトリクス）。
-// セルクリックは `#/verify?doc={document_id}&entity={entity_key}` へのハッシュ遷移
+// #/dashboard: ダッシュボード（S9 / ui-states.md §3。v0.10 フェーズ 3 = study 単位）。
+// 状態: 読み込み中 / 読み込み失敗 / 0 件 / 通常（サマリ + study × section マトリクス）。
+// セルクリックは `#/verify?study={study_id}&entity={entity_key}` へのハッシュ遷移
 // （ui-flow.md §3 のセル単位ディープリンク）で、コールバックを介さない
 import type {
   AccuracyBreakdown,
@@ -22,8 +22,8 @@ export function rateText(rate: RateCount): string {
   return `${rate.numerator} / ${rate.denominator}（${percent}%）`;
 }
 
-function verifyHref(documentId: string, entityKey: string): string {
-  return `#/verify?doc=${encodeURIComponent(documentId)}&entity=${encodeURIComponent(entityKey)}`;
+function verifyHref(studyId: string, entityKey: string): string {
+  return `#/verify?study=${encodeURIComponent(studyId)}&entity=${encodeURIComponent(entityKey)}`;
 }
 
 /** AI 採用率（人が無修正で承認した割合）= accept / decided。判定 0 件は「—」 */
@@ -54,7 +54,7 @@ function renderSummary(data: DashboardData): HTMLElement {
 function renderSectionCell(row: DashboardRow, cell: DashboardSectionCell | null): HTMLElement {
   const td = el('td', { className: 'dashboard__cell' });
   if (cell === null || cell.entityKey === null) {
-    // 当該 document のスキーマにない section / セル 0 件はリンクなし
+    // 当該 study のスキーマにない section / セル 0 件はリンクなし
     td.textContent = '—';
     return td;
   }
@@ -63,7 +63,7 @@ function renderSectionCell(row: DashboardRow, cell: DashboardSectionCell | null)
       className: 'dashboard__cell-link',
       text: `${cell.decided} / ${cell.total}`,
       attributes: {
-        href: verifyHref(row.documentId, cell.entityKey),
+        href: verifyHref(row.studyId, cell.entityKey),
         'aria-label': `${row.studyLabel} の ${cell.section} を検証（判定済み ${cell.decided} / ${cell.total}）`,
       },
     }),
@@ -73,7 +73,7 @@ function renderSectionCell(row: DashboardRow, cell: DashboardSectionCell | null)
 
 function renderMatrix(data: DashboardData): HTMLElement {
   const headRow = el('tr', {}, [
-    el('th', { text: '文献', attributes: { scope: 'col' } }),
+    el('th', { text: '研究', attributes: { scope: 'col' } }),
     ...data.sections.map((section) => el('th', { text: section, attributes: { scope: 'col' } })),
     el('th', { text: 'AI 採用率', attributes: { scope: 'col' } }),
     el('th', { text: 'anchor 失敗率', attributes: { scope: 'col' } }),
@@ -99,7 +99,7 @@ function renderMatrix(data: DashboardData): HTMLElement {
   return el('table', { id: 'dashboard-matrix', className: 'dashboard__matrix' }, [
     el('caption', {
       className: 'dashboard__matrix-caption',
-      text: 'document × section の検証進捗（セル = 判定済み / 総セル。クリックで検証画面へ）',
+      text: 'study × section の検証進捗（セル = 判定済み / 総セル。クリックで検証画面へ）',
     }),
     el('thead', {}, [headRow]),
     el('tbody', {}, bodyRows),

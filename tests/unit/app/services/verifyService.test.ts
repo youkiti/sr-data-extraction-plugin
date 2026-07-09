@@ -1,7 +1,7 @@
 import {
-  latestRunEvidenceByDocument,
+  latestRunEvidenceByStudy,
   loadVerifyTargets,
-  openVerifyDocument,
+  openVerifyStudy,
   persistVerifyArmConfirmation,
   persistVerifyDecision,
   persistVerifyInstanceDeclarations,
@@ -15,7 +15,9 @@ import type { Decision } from '../../../../src/domain/decision';
 import type { DocumentRecord } from '../../../../src/domain/document';
 import type { Evidence } from '../../../../src/domain/evidence';
 import type { SchemaField } from '../../../../src/domain/schemaField';
+import type { StudyRecord } from '../../../../src/domain/study';
 import { readDocuments } from '../../../../src/features/documents/documentRepository';
+import { readStudies } from '../../../../src/features/documents/studyRepository';
 import type { DisposablePdfDocument } from '../../../../src/features/documents/extractTextLayer';
 import {
   readStudyDataSheet,
@@ -41,6 +43,11 @@ import type { OfflineQueue } from '../../../../src/lib/storage/offlineQueue';
 
 jest.mock('../../../../src/features/documents/documentRepository', () => ({
   readDocuments: jest.fn(),
+}));
+jest.mock('../../../../src/features/documents/studyRepository', () => ({
+  // resolveActiveStudies は純粋関数なので実物を使う（buildStudySelection が依存する）
+  ...jest.requireActual('../../../../src/features/documents/studyRepository'),
+  readStudies: jest.fn(),
 }));
 jest.mock('../../../../src/features/extraction/annotationRepository', () => ({
   readStudyDataSheet: jest.fn(),
@@ -75,6 +82,7 @@ jest.mock('../../../../src/lib/google/identity', () => ({
 }));
 
 const readDocumentsMock = readDocuments as jest.MockedFunction<typeof readDocuments>;
+const readStudiesMock = readStudies as jest.MockedFunction<typeof readStudies>;
 const readStudyDataSheetMock = readStudyDataSheet as jest.MockedFunction<typeof readStudyDataSheet>;
 const upsertStudyMock = upsertStudyDataRows as jest.MockedFunction<typeof upsertStudyDataRows>;
 const upsertResultsMock = upsertResultsDataRows as jest.MockedFunction<typeof upsertResultsDataRows>;
@@ -127,6 +135,23 @@ function makeDocument(overrides: Partial<DocumentRecord> = {}): DocumentRecord {
     note: null,
     ...overrides,
   };
+}
+
+function makeStudy(overrides: Partial<StudyRecord> = {}): StudyRecord {
+  return {
+    studyId: 'study-doc-1',
+    studyLabel: 'Smith 2020',
+    registrationId: null,
+    createdAt: 't0',
+    createdBy: ME,
+    note: null,
+    ...overrides,
+  };
+}
+
+/** documents から一意 study_id を作成順に拾って Studies 行を作る（1 文書 = 1 study） */
+function studiesFor(documents: readonly DocumentRecord[]): StudyRecord[] {
+  return [...new Set(documents.map((doc) => doc.studyId))].map((studyId) => makeStudy({ studyId }));
 }
 
 function makeField(overrides: Partial<SchemaField> = {}): SchemaField {
@@ -228,7 +253,8 @@ function makeDeps(overrides: Partial<VerificationDeps> = {}): VerificationDeps {
 
 function makeTarget(overrides: Partial<VerifyTarget> = {}): VerifyTarget {
   return {
-    document: makeDocument(),
+    study: makeStudy(),
+    documents: [makeDocument()],
     evidence: [makeEvidence()],
     fields: [makeField()],
     schemaVersion: 1,
@@ -240,6 +266,7 @@ function makeTarget(overrides: Partial<VerifyTarget> = {}): VerifyTarget {
 function makeStore(patch: {
   withProject?: boolean;
   documents?: DocumentRecord[] | null;
+  studies?: StudyRecord[] | null;
   verify?: Partial<ReturnType<typeof createInitialState>['verify']>;
 }): Store {
   const state = createInitialState();
@@ -251,7 +278,12 @@ function makeStore(patch: {
       name: 'テスト SR',
     };
   }
-  state.documents = { ...state.documents, records: patch.documents ?? null };
+  const records = patch.documents ?? null;
+  // studies 未指定なら documents から導出してキャッシュ（readStudies を呼ばない）。
+  // documents が null のときは studies も null（readStudies 経路のテスト用）
+  const studies =
+    patch.studies !== undefined ? patch.studies : records === null ? null : studiesFor(records);
+  state.documents = { ...state.documents, records, studies };
   state.verify = { ...state.verify, ...(patch.verify ?? {}) };
   return createStore(state);
 }
@@ -267,42 +299,43 @@ beforeEach(() => {
   getSchemaFieldsMock.mockResolvedValue([makeField()]);
   getCurrentUserEmailMock.mockResolvedValue(ME);
   getFileBinaryMock.mockResolvedValue(new ArrayBuffer(8));
+  readStudiesMock.mockResolvedValue([makeStudy()]);
 });
 
-describe('latestRunEvidenceByDocument', () => {
-  test('document ごとに最後に現れた run の Evidence だけを残す', () => {
-    const map = latestRunEvidenceByDocument(
+describe('latestRunEvidenceByStudy', () => {
+  test('study ごとに最後に現れた run の Evidence だけを残す', () => {
+    const map = latestRunEvidenceByStudy(
       [
-        makeEvidence({ evidenceId: 'a', runId: 'run-1' }),
-        makeEvidence({ evidenceId: 'b', documentId: 'doc-2', runId: 'run-1' }),
-        makeEvidence({ evidenceId: 'c', runId: 'run-2' }), // doc-1 の新しい run
-        makeEvidence({ evidenceId: 'd', runId: 'run-2', fieldId: 'f-2' }),
+        makeEvidence({ evidenceId: 'a', studyId: 'study-1', runId: 'run-1' }),
+        makeEvidence({ evidenceId: 'b', studyId: 'study-2', runId: 'run-1' }),
+        makeEvidence({ evidenceId: 'c', studyId: 'study-1', runId: 'run-2' }), // study-1 の新しい run
+        makeEvidence({ evidenceId: 'd', studyId: 'study-1', runId: 'run-2', fieldId: 'f-2' }),
       ],
       new Set(['run-1', 'run-2']),
     );
-    expect(map.get('doc-1')?.runId).toBe('run-2');
-    expect(map.get('doc-1')?.evidence.map((item) => item.evidenceId)).toEqual(['c', 'd']);
-    expect(map.get('doc-2')?.runId).toBe('run-1');
+    expect(map.get('study-1')?.runId).toBe('run-2');
+    expect(map.get('study-1')?.evidence.map((item) => item.evidenceId)).toEqual(['c', 'd']);
+    expect(map.get('study-2')?.runId).toBe('run-1');
   });
 
   test('ExtractionRuns に無い run の Evidence（孤児）は対象外とし、既知 run の最新を採る', () => {
-    const map = latestRunEvidenceByDocument(
+    const map = latestRunEvidenceByStudy(
       [
-        makeEvidence({ evidenceId: 'a', runId: 'run-1' }),
-        makeEvidence({ evidenceId: 'b', runId: 'run-orphan' }), // 中断実行の孤児（最後に現れる）
-        makeEvidence({ evidenceId: 'c', documentId: 'doc-2', runId: 'run-orphan' }),
+        makeEvidence({ evidenceId: 'a', studyId: 'study-1', runId: 'run-1' }),
+        makeEvidence({ evidenceId: 'b', studyId: 'study-1', runId: 'run-orphan' }), // 中断の孤児（最後に現れる）
+        makeEvidence({ evidenceId: 'c', studyId: 'study-2', runId: 'run-orphan' }),
       ],
       new Set(['run-1']),
     );
-    // doc-1 は孤児を無視して既知の run-1 を表示、doc-2 は孤児しかないため未抽出扱い
-    expect(map.get('doc-1')?.runId).toBe('run-1');
-    expect(map.get('doc-1')?.evidence.map((item) => item.evidenceId)).toEqual(['a']);
-    expect(map.has('doc-2')).toBe(false);
+    // study-1 は孤児を無視して既知の run-1 を表示、study-2 は孤児しかないため未抽出扱い
+    expect(map.get('study-1')?.runId).toBe('run-1');
+    expect(map.get('study-1')?.evidence.map((item) => item.evidenceId)).toEqual(['a']);
+    expect(map.has('study-2')).toBe(false);
   });
 });
 
 describe('loadVerifyTargets', () => {
-  test('Evidence がある document を進捗チップ付きで組み立てる（Evidence なし文献は除外）', async () => {
+  test('Evidence がある study を進捗チップ付きで組み立てる（Evidence なし study は除外）', async () => {
     const store = makeStore({
       documents: [makeDocument(), makeDocument({ documentId: 'doc-no-evidence' })],
     });
@@ -319,7 +352,8 @@ describe('loadVerifyTargets', () => {
       schemaVersion: 1,
       progress: { decided: 1, total: 1 },
     });
-    expect(verify.targets?.[0]?.document.documentId).toBe('doc-1');
+    expect(verify.targets?.[0]?.study.studyId).toBe('study-doc-1');
+    expect(verify.targets?.[0]?.documents.map((doc) => doc.documentId)).toEqual(['doc-1']);
   });
 
   test('同じ schema_version の fields 読み出しはキャッシュする', async () => {
@@ -328,7 +362,7 @@ describe('loadVerifyTargets', () => {
     });
     readEvidenceRowsMock.mockResolvedValue([
       makeEvidence(),
-      makeEvidence({ evidenceId: 'ev-2', documentId: 'doc-2' }),
+      makeEvidence({ evidenceId: 'ev-2', studyId: 'study-doc-2', documentId: 'doc-2' }),
     ]);
     await loadVerifyTargets(store, makeDeps());
     expect(getSchemaFieldsMock).toHaveBeenCalledTimes(1);
@@ -413,8 +447,8 @@ describe('loadVerifyTargets', () => {
   });
 });
 
-describe('openVerifyDocument', () => {
-  test('検証データ束を読み込み、selectedDocumentId と studyValues を反映する', async () => {
+describe('openVerifyStudy', () => {
+  test('検証データ束を読み込み、selectedStudyId と studyValues を反映する', async () => {
     const store = makeStore({ verify: { targets: [makeTarget()] } });
     readStudyDataSheetMock.mockResolvedValue({
       fieldNames: ['sample_size_total'],
@@ -430,55 +464,61 @@ describe('openVerifyDocument', () => {
         },
       ],
     });
-    await openVerifyDocument(store, makeDeps(), 'doc-1');
+    await openVerifyStudy(store, makeDeps(), 'study-doc-1');
     const { verify } = store.getState();
-    expect(verify.selectedDocumentId).toBe('doc-1');
+    expect(verify.selectedStudyId).toBe('study-doc-1');
     expect(verify.verifyLoading).toBe(false);
     expect(verify.verification?.annotator).toBe(ME);
     expect(verify.verification?.armStructure).toBeNull();
+    expect(verify.verification?.documents.map((doc) => doc.document.documentId)).toEqual(['doc-1']);
     expect(verify.studyValues).toEqual({ sample_size_total: '100' });
   });
 
-  test('一覧に無い document_id は verifyError にして選び直せる', async () => {
+  test('一覧に無い study_id は verifyError にして選び直せる', async () => {
     const store = makeStore({ verify: { targets: [makeTarget()] } });
-    await openVerifyDocument(store, makeDeps(), 'doc-9');
-    expect(store.getState().verify.verifyError).toContain('doc-9 が見つかりません');
+    await openVerifyStudy(store, makeDeps(), 'study-9');
+    expect(store.getState().verify.verifyError).toContain('study-9 が見つかりません');
     expect(readDecisionsMock).not.toHaveBeenCalled();
   });
 
   test('プロジェクト未選択・一覧未読込・読込中はスキップする', async () => {
-    await openVerifyDocument(makeStore({ withProject: false }), makeDeps(), 'doc-1');
-    await openVerifyDocument(makeStore({}), makeDeps(), 'doc-1');
-    await openVerifyDocument(
+    await openVerifyStudy(makeStore({ withProject: false }), makeDeps(), 'study-doc-1');
+    await openVerifyStudy(makeStore({}), makeDeps(), 'study-doc-1');
+    await openVerifyStudy(
       makeStore({ verify: { targets: [makeTarget()], verifyLoading: true } }),
       makeDeps(),
-      'doc-1',
+      'study-doc-1',
     );
     expect(readDecisionsMock).not.toHaveBeenCalled();
   });
 
-  test('文献切替時は前の PDF を破棄する', async () => {
+  test('study 切替時は前の PDF を破棄する', async () => {
     const store = makeStore({
       verify: {
         targets: [
           makeTarget(),
-          makeTarget({ document: makeDocument({ documentId: 'doc-2', driveFileId: 'drive-2' }) }),
+          makeTarget({
+            study: makeStudy({ studyId: 'study-doc-2' }),
+            documents: [
+              makeDocument({ documentId: 'doc-2', studyId: 'study-doc-2', driveFileId: 'drive-2' }),
+            ],
+          }),
         ],
       },
     });
     const pdf = makePdf();
     const deps = makeDeps({ loadPdf: jest.fn().mockResolvedValue(pdf) });
-    await openVerifyDocument(store, deps, 'doc-1');
+    await openVerifyStudy(store, deps, 'study-doc-1');
     expect(pdf.destroy).not.toHaveBeenCalled();
-    await openVerifyDocument(store, deps, 'doc-2');
+    await openVerifyStudy(store, deps, 'study-doc-2');
     expect(pdf.destroy).toHaveBeenCalledTimes(1);
-    expect(store.getState().verify.selectedDocumentId).toBe('doc-2');
+    expect(store.getState().verify.selectedStudyId).toBe('study-doc-2');
   });
 
   test('読み込み失敗は verifyError に落ちる', async () => {
     const store = makeStore({ verify: { targets: [makeTarget()] } });
     readDecisionsMock.mockRejectedValue(new Error('権限がありません'));
-    await openVerifyDocument(store, makeDeps(), 'doc-1');
+    await openVerifyStudy(store, makeDeps(), 'study-doc-1');
     expect(store.getState().verify.verifyError).toBe('権限がありません');
     expect(store.getState().verify.verifyLoading).toBe(false);
   });
@@ -489,7 +529,7 @@ describe('persistVerifyDecision', () => {
     return makeStore({
       verify: {
         targets: [makeTarget({ fields })],
-        selectedDocumentId: 'doc-1',
+        selectedStudyId: 'study-doc-1',
         studyValues: { country: 'Japan' },
       },
     });
@@ -550,7 +590,7 @@ describe('persistVerifyDecision', () => {
 
   test('studyValues 未読込（null）でも当該項目だけのスナップショットで保存する', async () => {
     const store = makeStore({
-      verify: { targets: [makeTarget()], selectedDocumentId: 'doc-1', studyValues: null },
+      verify: { targets: [makeTarget()], selectedStudyId: 'study-doc-1', studyValues: null },
     });
     await persistVerifyDecision(store, makeDeps(), makeDecision());
     expect(upsertStudyMock).toHaveBeenCalledWith(
@@ -581,11 +621,11 @@ describe('persistVerifyDecision', () => {
 describe('persistVerifyArmConfirmation', () => {
   async function makeShowingStore(): Promise<Store> {
     const store = makeStore({ verify: { targets: [makeTarget()] } });
-    await openVerifyDocument(store, makeDeps(), 'doc-1');
+    await openVerifyStudy(store, makeDeps(), 'study-doc-1');
     return store;
   }
 
-  test('表示中文献の群構成を ArmStructures へ追記する', async () => {
+  test('表示中 study の群構成を ArmStructures へ追記する', async () => {
     const store = await makeShowingStore();
     const deps = makeDeps();
     appendArmVersionMock.mockResolvedValue({ version: 1, arms: [] });

@@ -44,6 +44,11 @@ export interface PdfViewerHandle {
   focusHighlight(id: string): void;
   /** テキスト検索。同じクエリの再実行は次の一致へ送る（anchor failed のフォールバック） */
   search(query: string): void;
+  /**
+   * 表示中の文書を差し替える（v0.10: study 内の別 PDF へ切替）。ページは 1 に戻し、
+   * 検索状態はクリアする。連番ガード（renderSeq）は維持され、旧文書の遅延描画は破棄される
+   */
+  setDocument(document: PdfViewerDocument, pages: readonly TextLayerPage[]): void;
   getCurrentPage(): number;
 }
 
@@ -51,7 +56,9 @@ const ZOOM_LEVELS = ['0.75', '1', '1.25', '1.5', '1.75', '2'] as const;
 
 export function createPdfViewer(options: PdfViewerOptions): PdfViewerHandle {
   const renderPage = options.renderPage ?? renderPdfPageToCanvas;
-  const numPages = options.document.numPages;
+  let document = options.document;
+  let pages = options.pages;
+  let numPages = document.numPages;
 
   let currentPage = 1;
   let scale = 1;
@@ -119,7 +126,7 @@ export function createPdfViewer(options: PdfViewerOptions): PdfViewerHandle {
 
   /** 現在ページのテキスト層（テキスト層が無いページ番号は canvas 描画後の寸法に任せる） */
   function currentTextLayerPage(): TextLayerPage | null {
-    return options.pages.find((candidate) => candidate.page === currentPage) ?? null;
+    return pages.find((candidate) => candidate.page === currentPage) ?? null;
   }
 
   function rectStyle(
@@ -180,7 +187,7 @@ export function createPdfViewer(options: PdfViewerOptions): PdfViewerHandle {
     const seq = ++renderSeq;
     void (async () => {
       try {
-        const page = await options.document.getPage(currentPage);
+        const page = await document.getPage(currentPage);
         await renderPage(page, canvas, scale);
         if (seq === renderSeq) {
           errorEl.hidden = true;
@@ -222,7 +229,7 @@ export function createPdfViewer(options: PdfViewerOptions): PdfViewerHandle {
       searchIndex = (searchIndex + 1) % searchHits.length;
     } else {
       searchQuery = trimmed;
-      searchHits = searchPages(trimmed, options.pages);
+      searchHits = searchPages(trimmed, pages);
       searchIndex = 0;
     }
     const hit = searchHits[searchIndex];
@@ -263,6 +270,20 @@ export function createPdfViewer(options: PdfViewerOptions): PdfViewerHandle {
     search(query) {
       searchInput.value = query;
       runSearch(query);
+    },
+    setDocument(nextDocument, nextPages) {
+      document = nextDocument;
+      pages = nextPages;
+      numPages = nextDocument.numPages;
+      currentPage = 1;
+      // 文書切替で検索状態はリセット（旧文書のヒットは無意味）
+      searchQuery = '';
+      searchHits = [];
+      searchIndex = 0;
+      searchInput.value = '';
+      searchStatus.textContent = '';
+      // update() → redrawCanvas() が renderSeq を進めるため、旧文書の遅延描画はここで無効化される
+      update();
     },
   };
 }

@@ -68,14 +68,14 @@ flowchart TD
 
 ## 3. 検証画面（`#/verify`）の内部構造
 
-[requirements.md §4.2](requirements.md) の 2 ペイン構成。URL は `#/verify?doc={document_id}&entity={entity_key}` で状態を保持し、ダッシュボードからの直接ジャンプを可能にする（`?doc=` は S8、`?entity=` は S9 ダッシュボードと同時に実装済み。2026-07-02）。
+[requirements.md §4.2](requirements.md) の 2 ペイン構成。URL は `#/verify?study={study_id}&entity={entity_key}` で状態を保持し、ダッシュボードからの直接ジャンプを可能にする（`?study=` は S8、`?entity=` は S9 ダッシュボードと同時に実装済み。2026-07-02。v0.10 フェーズ 3 で `?doc=` → `?study=` へ移行 = 2026-07-09）。study が複数の PDF を持つ場合は左ペイン上部に**文書切替タブ**（role バッジ + ファイル名）が出て、根拠クリック / 項目フォーカス時に `Evidence.document_id` が指す出所 PDF へ自動で切り替わる。
 
 ```mermaid
 flowchart LR
     subgraph Verify["#/verify"]
-        DocSel[document セレクタ<br/>+ 進捗チップ] --> Panes
+        DocSel[study セレクタ<br/>+ 進捗チップ] --> Panes
         subgraph Panes[2 ペイン]
-            PDF["左: PDF.js ビューア<br/>ページ送り / ズーム / テキスト検索<br/>根拠ハイライト（色 = status）"]
+            PDF["左: 文書切替タブ + PDF.js ビューア<br/>ページ送り / ズーム / テキスト検索<br/>根拠ハイライト（色 = status）"]
             Form["右: 抽出フォーム<br/>section グループ + entity タブ<br/>（study / arm / outcome）"]
         end
         PDF <-->|双方向ジャンプ| Form

@@ -259,24 +259,29 @@ function renderVerification(run: ExtractionRun, state: AppState, ctx: ViewContex
   const children: HTMLElement[] = [el('h3', { text: '検証（S8 と同じ操作）' })];
 
   const select = el('select', {
-    id: 'pilot-verify-doc',
-    attributes: { 'aria-label': '検証する文献' },
+    id: 'pilot-verify-study',
+    attributes: { 'aria-label': '検証する研究' },
   });
-  // run は study 単位（studyIds）。フェーズ 1 は 1 study = 1 文書なので study_id から文献を引く
+  // run は study 単位（studyIds）。配下の全文書を連結表示するため study を選ぶ（v0.10 フェーズ 3）
   const runStudyIds = new Set(run.studyIds);
-  const verifyDocs = (state.documents.records ?? []).filter((doc) => runStudyIds.has(doc.studyId));
-  for (const doc of verifyDocs) {
+  const verifyStudies = (state.documents.studies ?? []).filter((study) =>
+    runStudyIds.has(study.studyId),
+  );
+  for (const study of verifyStudies) {
     const option = el('option', {
-      text: doc.filename,
-      attributes: { value: doc.documentId },
+      text: study.studyLabel,
+      attributes: { value: study.studyId },
     });
     select.append(option);
   }
-  if (state.pilot.verifyDocumentId !== null) {
-    select.value = state.pilot.verifyDocumentId;
+  if (state.pilot.verifyStudyId !== null) {
+    select.value = state.pilot.verifyStudyId;
   }
-  select.addEventListener('change', () => ctx.pilot.onSelectVerifyDocument(select.value));
-  const header: HTMLElement[] = [el('label', { text: '文献: ', attributes: { for: 'pilot-verify-doc' } }), select];
+  select.addEventListener('change', () => ctx.pilot.onSelectVerifyStudy(select.value));
+  const header: HTMLElement[] = [
+    el('label', { text: '研究: ', attributes: { for: 'pilot-verify-study' } }),
+    select,
+  ];
   if (state.pilot.queuedDecisions > 0) {
     header.push(
       el('span', {

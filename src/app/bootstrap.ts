@@ -2,7 +2,7 @@
 // E2E seam（test-strategy.md §2.1）: window.__E2E_PRELOADED_STATE__ があれば
 // ストアのシードへ上書きマージする（本番動作には影響しない）
 import { createInitialState, createStore, type AppState, type Store, type VerifyTarget } from './store';
-import { docQueryOf, entityQueryOf, findRoute, normalizeHash, ROUTES, type RouteHash } from './router';
+import { studyQueryOf, entityQueryOf, findRoute, normalizeHash, ROUTES, type RouteHash } from './router';
 import { guardRoute } from './guards';
 import { showToast } from './ui/toast';
 import type { ViewContext } from './views/types';
@@ -69,7 +69,7 @@ import {
 } from './services/extractService';
 import {
   loadVerifyTargets,
-  openVerifyDocument,
+  openVerifyStudy,
   persistVerifyArmConfirmation,
   persistVerifyDecision,
   persistVerifyInstanceDeclarations,
@@ -292,13 +292,13 @@ export async function bootstrapApp(
           autoLoadLatestPilotRun(store, deps),
         );
       },
-      onSelectVerifyDocument: (documentId) => {
-        void loadPilotVerification(store, deps, documentId);
+      onSelectVerifyStudy: (studyId) => {
+        void loadPilotVerification(store, deps, studyId);
       },
       onRetryVerifyLoad: () => {
-        const documentId = store.getState().pilot.verifyDocumentId;
-        if (documentId !== null) {
-          void loadPilotVerification(store, deps, documentId);
+        const studyId = store.getState().pilot.verifyStudyId;
+        if (studyId !== null) {
+          void loadPilotVerification(store, deps, studyId);
         }
       },
       onDecision: (decision) => {
@@ -336,9 +336,9 @@ export async function bootstrapApp(
       },
     },
     verify: {
-      onSelectDocument: (documentId) => {
+      onSelectStudy: (studyId) => {
         // hash 書き換え → hashchange → syncVerifyRoute の一本道（直リンクと同じ経路を通す）
-        win.location.hash = `#/verify?doc=${encodeURIComponent(documentId)}`;
+        win.location.hash = `#/verify?study=${encodeURIComponent(studyId)}`;
       },
       onRetryLoad: () => {
         void loadVerifyTargets(store, deps, { force: true }).then(() => syncVerifyRoute());
@@ -381,7 +381,7 @@ export async function bootstrapApp(
   };
 
   /**
-   * #/verify の表示同期: 一覧を読み込み、?doc=（なければ選択済み or 先頭）を開く。
+   * #/verify の表示同期: 一覧を読み込み、?study=（なければ選択済み or 先頭）を開く。
    * セレクタ切替も hash 書き換え経由でここへ合流する（ui-states.md §3 の URL 同期）。
    * ?entity=（S9 ダッシュボードのセル単位ディープリンク）は verify スライスへ写し、
    * 検証パネルが該当タブへの切替 + 先頭セルへのスクロール・フォーカスとして消費する
@@ -400,25 +400,25 @@ export async function bootstrapApp(
       return;
     }
     const desired =
-      docQueryOf(win.location.hash) ??
-      verify.selectedDocumentId ??
-      (targets[0] as VerifyTarget).document.documentId;
-    // 読み込み中の再入は openVerifyDocument 側の verifyLoading ガードが弾く
+      studyQueryOf(win.location.hash) ??
+      verify.selectedStudyId ??
+      (targets[0] as VerifyTarget).study.studyId;
+    // 読み込み中の再入は openVerifyStudy 側の verifyLoading ガードが弾く
     const alreadyShown =
-      desired === verify.selectedDocumentId &&
+      desired === verify.selectedStudyId &&
       (verify.verification !== null || verify.verifyError !== null);
     if (!alreadyShown) {
-      await openVerifyDocument(store, deps, desired);
+      await openVerifyStudy(store, deps, desired);
     }
-    // 初回入場（?doc= 無し）は既定文献を URL へ書き戻し、リロード・共有・戻る操作で
-    // 同じ文献へ着地できるようにする。replaceState は hashchange を発火しないため
+    // 初回入場（?study= 無し）は既定 study を URL へ書き戻し、リロード・共有・戻る操作で
+    // 同じ study へ着地できるようにする。replaceState は hashchange を発火しないため
     // 再入ループにならず履歴も汚さない（セル単位ディープリンクの ?entity= は保つ）
-    if (docQueryOf(win.location.hash) === null) {
+    if (studyQueryOf(win.location.hash) === null) {
       const entityQuery = entity !== null ? `&entity=${encodeURIComponent(entity)}` : '';
       win.history.replaceState(
         null,
         '',
-        `#/verify?doc=${encodeURIComponent(desired)}${entityQuery}`,
+        `#/verify?study=${encodeURIComponent(desired)}${entityQuery}`,
       );
     }
   };

@@ -92,8 +92,8 @@ export interface PilotViewCallbacks {
   onSelectRun(runId: string): void;
   /** 履歴の読み込み失敗時の再読み込み */
   onReloadHistory(): void;
-  /** 埋め込み検証 UI の対象文献切替 */
-  onSelectVerifyDocument(documentId: string): void;
+  /** 埋め込み検証 UI の対象 study 切替 */
+  onSelectVerifyStudy(studyId: string): void;
   /** 検証データ読み込み失敗時の再試行 */
   onRetryVerifyLoad(): void;
   /** 検証パネルの判定 1 操作（annotator 行の更新 + Decisions 追記） */
@@ -124,8 +124,8 @@ export interface ExtractViewCallbacks {
 
 /** #/verify（S8）のユーザー操作コールバック */
 export interface VerifyViewCallbacks {
-  /** document セレクタの切替（URL ?doc= と同期する） */
-  onSelectDocument(documentId: string): void;
+  /** study セレクタの切替（URL ?study= と同期する） */
+  onSelectStudy(studyId: string): void;
   /** 一覧読み込み失敗時の再試行 */
   onRetryLoad(): void;
   /** 検証パネルの判定 1 操作（annotator 行の更新 + Decisions 追記） */

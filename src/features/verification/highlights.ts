@@ -6,6 +6,7 @@
 import type { Evidence } from '../../domain/evidence';
 import type { AnchorStatus, CharRange } from '../../domain/anchor';
 import type { TextLayerPage } from '../../domain/textLayer';
+import type { VerificationDocumentView } from './types';
 import { highlightMap, type HighlightRect } from '../anchoring/highlightMap';
 import { locateQuoteRange } from '../anchoring/locateQuote';
 import {
@@ -23,6 +24,8 @@ export interface HighlightOccurrence {
 
 export interface EvidenceHighlight {
   evidenceId: string;
+  /** quote の出所文書（v0.10: study 内の複数文書を跨ぐため、どの PDF のハイライトかを持つ） */
+  documentId: string;
   /** 対応する検証セル（fieldId × entityKey）。フォーム側との双方向ジャンプに使う */
   cellKey: string;
   status: Exclude<AnchorStatus, 'failed'>;
@@ -95,11 +98,13 @@ function nearestIndex(occurrences: readonly HighlightOccurrence[], aiPage: numbe
 }
 
 /**
- * document の全 Evidence をハイライトへ変換する。
+ * 1 document の Evidence をハイライトへ変換する。
  * anchor_status = failed / quote なし / ページ上に再特定できないものは含めない
- * （フォーム側の quote 全文 + 検索フォールバック UI に委ねる。ui-states.md §3）
+ * （フォーム側の quote 全文 + 検索フォールバック UI に委ねる。ui-states.md §3）。
+ * evidence はこの document（documentId）由来のものだけを渡すこと
  */
 export function buildDocumentHighlights(
+  documentId: string,
   evidence: readonly Evidence[],
   pages: readonly TextLayerPage[],
 ): EvidenceHighlight[] {
@@ -136,6 +141,7 @@ export function buildDocumentHighlights(
     }
     highlights.push({
       evidenceId: item.evidenceId,
+      documentId,
       cellKey: cellKeyOf(item.fieldId, item.entityKey),
       status: item.anchorStatus,
       occurrences,
@@ -143,6 +149,24 @@ export function buildDocumentHighlights(
     });
   }
   return highlights;
+}
+
+/**
+ * study 配下の全文書の Evidence をハイライトへ変換する（v0.10 フェーズ 3）。
+ * 各文書の Evidence（document_id 一致）をその文書のテキスト層に対してアンカリングし、
+ * documentId で出所を持たせる。表示順は documents の並び（role 固定順 → 取り込み順）
+ */
+export function buildStudyHighlights(
+  documents: readonly VerificationDocumentView[],
+  evidence: readonly Evidence[],
+): EvidenceHighlight[] {
+  return documents.flatMap((view) =>
+    buildDocumentHighlights(
+      view.document.documentId,
+      evidence.filter((item) => item.documentId === view.document.documentId),
+      view.textPages,
+    ),
+  );
 }
 
 /**

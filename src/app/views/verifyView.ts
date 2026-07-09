@@ -1,6 +1,6 @@
-// #/verify: 検証（S8・中核画面 / ui-states.md §3）。
-// 状態: 一覧読み込み中 / 一覧読み込み失敗 / 空 / 通常（document セレクタ + 2 ペイン検証パネル）。
-// 文献の切替は URL クエリ ?doc= と同期する（セレクタ変更 → hash 書き換え → サービス層が読込）。
+// #/verify: 検証（S8・中核画面 / ui-states.md §3。v0.10 フェーズ 3 = study 単位）。
+// 状態: 一覧読み込み中 / 一覧読み込み失敗 / 空 / 通常（study セレクタ + 2 ペイン検証パネル）。
+// study の切替は URL クエリ ?study= と同期する（セレクタ変更 → hash 書き換え → サービス層が読込）。
 // ?entity=（S9 ダッシュボードのセル単位ディープリンク）は該当タブへの切替 + 先頭セルへの
 // スクロール・フォーカスとしてパネルへ渡す。2 ペイン本体は #/pilot と同じ verificationPanel を使う
 import { el } from '../ui/dom';
@@ -10,29 +10,29 @@ import { renderCachedVerificationPanel } from './verificationPanel';
 
 function selectorLabel(target: VerifyTarget): string {
   const { progress } = target;
-  return `${target.document.filename}（判定済み ${progress.decided} / ${progress.total}）`;
+  return `${target.study.studyLabel}（判定済み ${progress.decided} / ${progress.total}）`;
 }
 
 function renderSelector(state: AppState, ctx: ViewContext, targets: readonly VerifyTarget[]): HTMLElement {
   const select = el('select', {
-    id: 'verify-doc',
-    attributes: { 'aria-label': '検証する文献' },
+    id: 'verify-study',
+    attributes: { 'aria-label': '検証する研究' },
   });
   for (const target of targets) {
     select.append(
       el('option', {
         text: selectorLabel(target),
-        attributes: { value: target.document.documentId },
+        attributes: { value: target.study.studyId },
       }),
     );
   }
-  if (state.verify.selectedDocumentId !== null) {
-    select.value = state.verify.selectedDocumentId;
+  if (state.verify.selectedStudyId !== null) {
+    select.value = state.verify.selectedStudyId;
   }
-  select.addEventListener('change', () => ctx.verify.onSelectDocument(select.value));
+  select.addEventListener('change', () => ctx.verify.onSelectStudy(select.value));
 
   const children: HTMLElement[] = [
-    el('label', { text: '文献: ', attributes: { for: 'verify-doc' } }),
+    el('label', { text: '研究: ', attributes: { for: 'verify-study' } }),
     select,
   ];
   if (state.verify.queuedDecisions > 0) {
@@ -86,7 +86,7 @@ export function renderVerifyView(state: AppState, ctx: ViewContext): HTMLElement
     children.push(
       el('p', {
         id: 'verify-empty',
-        text: 'AI 抽出済みの文献がありません。先に #/pilot または #/extract で抽出してください。',
+        text: 'AI 抽出済みの研究がありません。先に #/pilot または #/extract で抽出してください。',
       }),
     );
     return el('section', { className: 'view view--verify' }, children);
@@ -111,7 +111,7 @@ export function renderVerifyView(state: AppState, ctx: ViewContext): HTMLElement
       // 見出し階層を h2 → h3 → h4（パネル内の群構成・グループ見出し）とつなぐ
       el('h3', {
         className: 'verify__doc-title',
-        text: verify.verification.document.filename,
+        text: verify.verification.study.studyLabel,
       }),
       renderCachedVerificationPanel({
         data: verify.verification,

@@ -1,8 +1,8 @@
-// S9 ダッシュボードの集計（requirements.md §4.1 S9 / ui-states.md §3 `#/dashboard`）。
-// document × section の検証進捗マトリクスと、anchor 失敗率・not_reported 率を組み立てる。
+// S9 ダッシュボードの集計（requirements.md §4.1 S9 / ui-states.md §3 `#/dashboard`。
+// v0.10 フェーズ 3 = study 単位）。study × section の検証進捗マトリクスと、anchor 失敗率・
+// not_reported 率を組み立てる。1 study の Evidence は配下の全文書ぶんを合算する。
 // 進捗はセルモデル（cells.ts）基準 = 検証画面の進捗チップと同じ数え方（自分の判定のみ）
 import type { Decision } from '../../domain/decision';
-import type { DocumentRecord } from '../../domain/document';
 import type { Evidence } from '../../domain/evidence';
 import type { ConfirmedArmStructure } from '../../domain/armStructure';
 import type { SchemaField } from '../../domain/schemaField';
@@ -32,7 +32,7 @@ export interface AccuracyBreakdown {
   decided: number;
 }
 
-/** マトリクス 1 セル = 1 document × 1 section の進捗 */
+/** マトリクス 1 セル = 1 study × 1 section の進捗 */
 export interface DashboardSectionCell {
   section: string;
   decided: number;
@@ -41,11 +41,11 @@ export interface DashboardSectionCell {
   entityKey: string | null;
 }
 
-/** マトリクス 1 行 = 1 document */
+/** マトリクス 1 行 = 1 study */
 export interface DashboardRow {
-  documentId: string;
+  studyId: string;
   studyLabel: string;
-  /** DashboardData.sections と同順。当該 document のスキーマにない section は null */
+  /** DashboardData.sections と同順。当該 study のスキーマにない section は null */
   cells: (DashboardSectionCell | null)[];
   progress: { decided: number; total: number };
   /** AI 精度の内訳（判定済みセルを人の判定種別で分類） */
@@ -68,12 +68,13 @@ export interface DashboardData {
   };
 }
 
-/** 1 document ぶんの集計素材（verifyService の検証対象と同じ束 + 自分の判定） */
-export interface DashboardDocumentInput {
-  document: DocumentRecord;
-  /** 表示ラベル（Studies 由来。呼び出し側が document.studyId から解決する。v0.10） */
+/** 1 study ぶんの集計素材（verifyService の検証対象と同じ束 + 自分の判定） */
+export interface DashboardStudyInput {
+  studyId: string;
+  /** 表示ラベル（Studies 由来） */
   studyLabel: string;
   fields: readonly SchemaField[];
+  /** study 配下の全文書ぶんの Evidence */
   evidence: readonly Evidence[];
   /** 自分の annotator 行への判定のみ（cells.ts と同じ契約） */
   ownDecisions: readonly Decision[];
@@ -82,7 +83,7 @@ export interface DashboardDocumentInput {
 }
 
 /** 検証フォームと同じ順（タブ順 → グループ順）で全セルを連結する */
-function orderedCells(input: DashboardDocumentInput): VerificationCell[] {
+function orderedCells(input: DashboardStudyInput): VerificationCell[] {
   return availableTabs(input.fields).flatMap(
     (tab) =>
       buildTabModel(tab, input.fields, input.evidence, input.ownDecisions, {
@@ -91,7 +92,7 @@ function orderedCells(input: DashboardDocumentInput): VerificationCell[] {
   );
 }
 
-/** 当該 document のスキーマに登場する section（タブ順 → field_index 順の初出順） */
+/** 当該 study のスキーマに登場する section（タブ順 → field_index 順の初出順） */
 function documentSections(fields: readonly SchemaField[]): string[] {
   const sections: string[] = [];
   for (const tab of availableTabs(fields)) {
@@ -107,7 +108,7 @@ function documentSections(fields: readonly SchemaField[]): string[] {
   return sections;
 }
 
-function buildRow(input: DashboardDocumentInput, sections: readonly string[]): DashboardRow {
+function buildRow(input: DashboardStudyInput, sections: readonly string[]): DashboardRow {
   const own = documentSections(input.fields);
   const bySection = new Map<string, DashboardSectionCell>(
     own.map((section) => [section, { section, decided: 0, total: 0, entityKey: null }]),
@@ -142,7 +143,7 @@ function buildRow(input: DashboardDocumentInput, sections: readonly string[]): D
   }
   const anchored = input.evidence.filter((item) => item.anchorStatus !== null);
   return {
-    documentId: input.document.documentId,
+    studyId: input.studyId,
     studyLabel: input.studyLabel,
     cells: sections.map((section) => bySection.get(section) ?? null),
     progress: { decided, total },
@@ -160,9 +161,9 @@ function buildRow(input: DashboardDocumentInput, sections: readonly string[]): D
 
 /**
  * ダッシュボードの表示データを組み立てる。
- * inputs は Evidence がある document のみ（verifyService の検証対象一覧と同じ母集団）
+ * inputs は Evidence がある study のみ（verifyService の検証対象一覧と同じ母集団）
  */
-export function buildDashboard(inputs: readonly DashboardDocumentInput[]): DashboardData {
+export function buildDashboard(inputs: readonly DashboardStudyInput[]): DashboardData {
   const sections: string[] = [];
   for (const input of inputs) {
     for (const section of documentSections(input.fields)) {
