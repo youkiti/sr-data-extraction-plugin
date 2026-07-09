@@ -71,7 +71,10 @@
         var driveView = new google.picker.DocsView(google.picker.ViewId.DOCS)
           .setMimeTypes('application/pdf')
           .setIncludeFolders(true);
-        var starredView = new google.picker.DocsView()
+        // スター付きは ViewId.PDFS を使う。DocsView() を引数なしで作ると ViewId が
+        // 既定の DOCS になり driveView と衝突し、Picker のタブ選択インジケータ（青線）が
+        // 同一 ViewId の最後の addView（＝スター付き）へ張り付いたまま追従しなくなる。
+        var starredView = new google.picker.DocsView(google.picker.ViewId.PDFS)
           .setStarred(true)
           .setMimeTypes('application/pdf');
         // ラベル未指定だと DocsView 既定の「Google ドライブ」表示になり
