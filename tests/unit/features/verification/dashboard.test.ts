@@ -127,6 +127,7 @@ describe('buildDashboard', () => {
     expect(data.rows).toEqual([]);
     expect(data.totals).toEqual({
       progress: { decided: 0, total: 0 },
+      accuracy: { accept: 0, edit: 0, reject: 0, notReported: 0, decided: 0 },
       anchor: { numerator: 0, denominator: 0 },
       notReported: { numerator: 0, denominator: 0 },
     });
@@ -199,6 +200,55 @@ describe('buildDashboard', () => {
       entityKey: 'arm:1',
     });
     expect(data.totals.progress).toEqual({ decided: 0, total: 3 });
+  });
+
+  test('AI 精度は判定済みセルを人の判定種別で分類する（undo 反映後の現在状態基準）', () => {
+    const data = buildDashboard([
+      makeInput({
+        ownDecisions: [
+          makeDecision(), // f-total を accept
+          makeDecision({ fieldId: 'f-country', action: 'edit', value: 'Japan' }),
+          makeDecision({
+            fieldId: 'f-arm-n',
+            entityKey: 'arm:1',
+            action: 'not_reported',
+            value: null,
+          }),
+        ],
+      }),
+    ]);
+    expect(data.rows[0]?.accuracy).toEqual({
+      accept: 1,
+      edit: 1,
+      reject: 0,
+      notReported: 1,
+      decided: 3,
+    });
+    expect(data.totals.accuracy).toEqual({
+      accept: 1,
+      edit: 1,
+      reject: 0,
+      notReported: 1,
+      decided: 3,
+    });
+  });
+
+  test('undo で取り消したセルは AI 精度の母数から外れる', () => {
+    const data = buildDashboard([
+      makeInput({
+        ownDecisions: [
+          makeDecision({ decidedAt: 't1', action: 'reject', value: null }),
+          makeDecision({ decidedAt: 't2', action: 'undo', value: null }),
+        ],
+      }),
+    ]);
+    expect(data.rows[0]?.accuracy).toEqual({
+      accept: 0,
+      edit: 0,
+      reject: 0,
+      notReported: 0,
+      decided: 0,
+    });
   });
 
   test('スキーマが異なる document 間では section の和集合を取り、無い section は null', () => {

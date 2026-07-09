@@ -14,6 +14,24 @@ export interface RateCount {
   denominator: number;
 }
 
+/**
+ * AI 精度の内訳（人の判定 = AI 出力への変更）。undo 反映後の現在セル状態基準で、
+ * 判定済みセルを人の判定種別で分類する。未検証セルは母数に含めない。
+ * - accept: AI 値を無修正で承認（AI 正解）
+ * - edit: 人が AI 値を書き換え（AI 不正確）
+ * - reject: 棄却（AI 誤り）
+ * - notReported: 人が「報告なし」と判定（AI の過剰抽出）
+ * 採用率 = accept / decided（率表示は view 側）
+ */
+export interface AccuracyBreakdown {
+  accept: number;
+  edit: number;
+  reject: number;
+  notReported: number;
+  /** = accept + edit + reject + notReported（判定済みセル数） */
+  decided: number;
+}
+
 /** マトリクス 1 セル = 1 document × 1 section の進捗 */
 export interface DashboardSectionCell {
   section: string;
@@ -30,6 +48,8 @@ export interface DashboardRow {
   /** DashboardData.sections と同順。当該 document のスキーマにない section は null */
   cells: (DashboardSectionCell | null)[];
   progress: { decided: number; total: number };
+  /** AI 精度の内訳（判定済みセルを人の判定種別で分類） */
+  accuracy: AccuracyBreakdown;
   /** anchor 失敗率: 分子 = anchor_status = failed、分母 = anchor_status 非 null（アンカリング対象） */
   anchor: RateCount;
   /** not_reported 率: 分子 = not_reported = TRUE、分母 = Evidence 総数 */
@@ -42,6 +62,7 @@ export interface DashboardData {
   rows: DashboardRow[];
   totals: {
     progress: { decided: number; total: number };
+    accuracy: AccuracyBreakdown;
     anchor: RateCount;
     notReported: RateCount;
   };
@@ -93,15 +114,30 @@ function buildRow(input: DashboardDocumentInput, sections: readonly string[]): D
   );
   let decided = 0;
   let total = 0;
+  const accuracy: AccuracyBreakdown = {
+    accept: 0,
+    edit: 0,
+    reject: 0,
+    notReported: 0,
+    decided: 0,
+  };
   for (const cell of orderedCells(input)) {
     // セルはスキーマ項目から作られるため、その section は必ず bySection に存在する
     const entry = bySection.get(cell.field.section) as DashboardSectionCell;
     entry.total += 1;
     entry.entityKey = entry.entityKey ?? cell.entityKey;
     total += 1;
-    if (cell.state.status !== 'unverified') {
+    const status = cell.state.status;
+    if (status !== 'unverified') {
       entry.decided += 1;
       decided += 1;
+      accuracy.decided += 1;
+      if (status === 'not_reported') {
+        accuracy.notReported += 1;
+      } else {
+        // status は accept / edit / reject のいずれか
+        accuracy[status] += 1;
+      }
     }
   }
   const anchored = input.evidence.filter((item) => item.anchorStatus !== null);
@@ -110,6 +146,7 @@ function buildRow(input: DashboardDocumentInput, sections: readonly string[]): D
     studyLabel: input.studyLabel,
     cells: sections.map((section) => bySection.get(section) ?? null),
     progress: { decided, total },
+    accuracy,
     anchor: {
       numerator: anchored.filter((item) => item.anchorStatus === 'failed').length,
       denominator: anchored.length,
@@ -139,6 +176,13 @@ export function buildDashboard(inputs: readonly DashboardDocumentInput[]): Dashb
     progress: {
       decided: rows.reduce((sum, row) => sum + row.progress.decided, 0),
       total: rows.reduce((sum, row) => sum + row.progress.total, 0),
+    },
+    accuracy: {
+      accept: rows.reduce((sum, row) => sum + row.accuracy.accept, 0),
+      edit: rows.reduce((sum, row) => sum + row.accuracy.edit, 0),
+      reject: rows.reduce((sum, row) => sum + row.accuracy.reject, 0),
+      notReported: rows.reduce((sum, row) => sum + row.accuracy.notReported, 0),
+      decided: rows.reduce((sum, row) => sum + row.accuracy.decided, 0),
     },
     anchor: {
       numerator: rows.reduce((sum, row) => sum + row.anchor.numerator, 0),

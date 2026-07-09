@@ -180,6 +180,7 @@ describe('loadDashboard', () => {
           rows: [],
           totals: {
             progress: { decided: 0, total: 0 },
+            accuracy: { accept: 0, edit: 0, reject: 0, notReported: 0, decided: 0 },
             anchor: { numerator: 0, denominator: 0 },
             notReported: { numerator: 0, denominator: 0 },
           },
