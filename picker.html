@@ -26,7 +26,7 @@
     </style>
   </head>
   <body>
-    <h1>Drive から PDF を選択</h1>
+    <h1>Drive から PDF / フォルダを選択</h1>
     <p id="status">読み込み中…</p>
     <script>
       // デプロイ時に実値へ書き換える（API キーはブラウザキー = 公開前提の値）
@@ -54,7 +54,13 @@
           var action = data[google.picker.Response.ACTION];
           if (action === google.picker.Action.PICKED) {
             var files = data[google.picker.Response.DOCUMENTS].map(function (doc) {
-              return { id: doc[google.picker.Document.ID], name: doc[google.picker.Document.NAME] };
+              // mimeType はフォルダ（application/vnd.google-apps.folder）判定に使う。
+              // 拡張はフォルダなら直下 PDF を列挙して取り込む（lib/google/picker.ts / documentsService）
+              return {
+                id: doc[google.picker.Document.ID],
+                name: doc[google.picker.Document.NAME],
+                mimeType: doc[google.picker.Document.MIME_TYPE],
+              };
             });
             send({ source: MESSAGE_SOURCE, kind: 'picked', files: files });
             statusEl.textContent = '選択を拡張へ送信しました。このタブは自動的に閉じます。';
@@ -67,10 +73,13 @@
       function showPicker(token) {
         // ビューは addView した分だけ左側のタブになる（先頭が既定タブ）。
         // 既定タブ = 最近使用したファイル、
-        // 補助タブ = マイドライブ（PDF フィルタ + フォルダ階層）/ スター付き（PDF フィルタ）
+        // 補助タブ = マイドライブ（PDF フィルタ + フォルダ階層 + フォルダ選択可）/ スター付き（PDF フィルタ）
+        // setSelectFolderEnabled(true): フォルダそのものを選択可にする。フォルダを選ぶと拡張が
+        // その直下 PDF を列挙して一括取り込みする（drive.file スコープでも選択フォルダ配下は列挙可）。
         var driveView = new google.picker.DocsView(google.picker.ViewId.DOCS)
           .setMimeTypes('application/pdf')
-          .setIncludeFolders(true);
+          .setIncludeFolders(true)
+          .setSelectFolderEnabled(true);
         // スター付きは ViewId.PDFS を使う。DocsView() を引数なしで作ると ViewId が
         // 既定の DOCS になり driveView と衝突し、Picker のタブ選択インジケータ（青線）が
         // 同一 ViewId の最後の addView（＝スター付き）へ張り付いたまま追従しなくなる。
@@ -90,11 +99,11 @@
           .addView(google.picker.ViewId.RECENTLY_PICKED)
           .addView(driveView)
           .addView(starredView)
-          .setTitle('取り込む PDF を選択')
+          .setTitle('取り込む PDF またはフォルダを選択')
           .setCallback(onPickerAction())
           .build()
           .setVisible(true);
-        statusEl.textContent = 'PDF を選択してください。';
+        statusEl.textContent = 'PDF またはフォルダを選択してください。';
       }
 
       function onApiLoaded() {
