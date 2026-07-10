@@ -16,4 +16,9 @@ describe('LlmProviderError', () => {
     const err = new LlmProviderError('network', 'gemini', null, '');
     expect(err.status).toBeNull();
   });
+
+  test('retryAfterMs は既定 null、指定すれば保持する', () => {
+    expect(new LlmProviderError('boom', 'gemini', 429, 'x').retryAfterMs).toBeNull();
+    expect(new LlmProviderError('boom', 'gemini', 429, 'x', 5000).retryAfterMs).toBe(5000);
+  });
 });

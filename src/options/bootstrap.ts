@@ -3,6 +3,11 @@
 // 既定モデルの空は「未設定に戻す」・保存中はボタン無効化）
 import { createModelSelect } from '../app/ui/modelSelect';
 import {
+  getRateLimitTier,
+  isRateLimitTierId,
+  type RateLimitTierId,
+} from '../lib/llm/rateLimitPolicy';
+import {
   loadGeminiApiKey,
   loadOpenRouterApiKey,
   looksLikeGeminiApiKey,
@@ -10,7 +15,14 @@ import {
   saveGeminiApiKey,
   saveOpenRouterApiKey,
 } from '../lib/storage/secretsStore';
-import { loadDefaultModel, saveDefaultModel } from '../lib/storage/settingsStore';
+import {
+  loadDefaultModel,
+  loadRateLimitCustomRpm,
+  loadRateLimitTier,
+  saveDefaultModel,
+  saveRateLimitCustomRpm,
+  saveRateLimitTier,
+} from '../lib/storage/settingsStore';
 
 /** ステータス要素へ文言 + 通常 / エラー系の色分けを反映する */
 function makeSetStatus(statusEl: HTMLElement): (text: string, isError: boolean) => void {
@@ -132,6 +144,73 @@ async function bootstrapDefaultModelSection(root: ParentNode): Promise<void> {
 }
 
 /**
+ * レート制限 tier 節の配線（必須要素が欠けている場合は何もしない）。
+ * tier セレクタ + カスタム RPM 入力を読み込み、保存する。カスタム tier のときだけ
+ * RPM 入力を表示する。保存値は抽出のスロットル + リトライ強度を決める
+ * （docs/ui-states.md §2「レート制限」）
+ */
+async function bootstrapRateLimitSection(root: ParentNode): Promise<void> {
+  const select = root.querySelector<HTMLSelectElement>('#rate-limit-tier');
+  const customRow = root.querySelector<HTMLElement>('#rate-limit-custom-row');
+  const customInput = root.querySelector<HTMLInputElement>('#rate-limit-custom-rpm');
+  const descEl = root.querySelector<HTMLElement>('#rate-limit-tier-desc');
+  const saveButton = root.querySelector<HTMLButtonElement>('#save-rate-limit');
+  const statusEl = root.querySelector<HTMLElement>('#rate-limit-status');
+  if (!select || !customRow || !customInput || !descEl || !saveButton || !statusEl) {
+    return;
+  }
+
+  const setStatus = makeSetStatus(statusEl);
+
+  // 選択中の tier ID（select の値が不正なら既定へ倒す。syncTierUi と保存で共有）
+  const currentTierId = (): RateLimitTierId =>
+    isRateLimitTierId(select.value) ? select.value : 'gemini_free';
+
+  // 選択 tier に応じて説明文とカスタム RPM 入力の表示を切り替える
+  const syncTierUi = (): void => {
+    const tier = getRateLimitTier(currentTierId());
+    descEl.textContent = tier.description;
+    customRow.hidden = !tier.editableRpm;
+  };
+
+  const savedTier = await loadRateLimitTier();
+  const savedRpm = await loadRateLimitCustomRpm();
+  select.value = savedTier;
+  if (savedRpm !== null) {
+    customInput.value = String(savedRpm);
+  }
+  syncTierUi();
+  setStatus(`レート制限: ${getRateLimitTier(savedTier).label}`, false);
+
+  select.addEventListener('change', syncTierUi);
+
+  const handleSave = async (): Promise<void> => {
+    const tierId = currentTierId();
+    // カスタム tier で RPM が空・不正なら保存しない（プリセット既定へ戻すのは明示削除扱い）
+    const rpmRaw = customInput.value.trim();
+    const rpm = rpmRaw === '' ? Number.NaN : Number(rpmRaw);
+    if (getRateLimitTier(tierId).editableRpm && (!Number.isFinite(rpm) || rpm <= 0)) {
+      setStatus('RPM は 1 以上の数値を入力してください。', true);
+      return;
+    }
+    saveButton.disabled = true;
+    try {
+      await saveRateLimitTier(tierId);
+      await saveRateLimitCustomRpm(rpm);
+      setStatus('保存しました。', false);
+    } catch {
+      setStatus('保存に失敗しました。もう一度お試しください。', true);
+    } finally {
+      saveButton.disabled = false;
+    }
+  };
+
+  saveButton.addEventListener('click', () => {
+    void handleSave();
+  });
+}
+
+/**
  * 設定本文の配線。root は options.html の `document` でも、アプリ内 #/options が
  * 生成した（未 attach でよい）コンテナ要素でもよい（querySelector で解決するため）。
  */
@@ -159,4 +238,5 @@ export async function bootstrapOptions(root: ParentNode): Promise<void> {
         : null,
   );
   await bootstrapDefaultModelSection(root);
+  await bootstrapRateLimitSection(root);
 }

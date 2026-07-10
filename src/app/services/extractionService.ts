@@ -32,7 +32,12 @@ import { appendLlmApiLog } from '../../lib/llm/apiLogRepository';
 import { withLogging } from '../../lib/llm/apiLogger';
 import type { LLMProvider } from '../../lib/llm/LLMProvider';
 import { createProvider, type ProviderConfig } from '../../lib/llm/providerFactory';
-import { withRetry } from '../../lib/llm/retry';
+import {
+  applyRateLimitPolicy,
+  UNLIMITED_POLICY,
+  type RateLimitClockDeps,
+  type RateLimitPolicy,
+} from '../../lib/llm/rateLimitPolicy';
 import { nowIso8601 } from '../../utils/iso8601';
 import { generateUuid } from '../../utils/uuid';
 
@@ -47,6 +52,14 @@ export interface ExtractionServiceDeps {
   loadDocumentPages: (documentId: string) => Promise<ExtractDataPage[]>;
   /** テスト時に差し替え可能な provider 生成（既定は lib/llm/providerFactory.createProvider） */
   buildProvider?: (config: ProviderConfig) => LLMProvider;
+  /**
+   * 実効レート制限ポリシー（429 対策のスロットル + リトライ）を解決する。
+   * 未注入なら UNLIMITED_POLICY（従来挙動: スロットル無し・リトライのみ）。
+   * 本番は bootstrap が settingsStore.resolveRateLimitPolicy を注入する
+   */
+  resolveRateLimitPolicy?: () => Promise<RateLimitPolicy>;
+  /** テスト時に throttle / retry のタイマーを仮想クロックへ差し替える */
+  rateLimitClock?: RateLimitClockDeps;
   /** テスト時に差し替え可能な UUID 発番 / 現在時刻 */
   newUuid?: () => string;
   now?: () => string;
@@ -110,7 +123,11 @@ export async function runExtraction(
     apiKey: deps.apiKey,
     model: params.model,
   });
-  const provider = withRetry(
+  // 429 対策: レート制限ポリシーに従い withRetry(withThrottle(withLogging(...))) で包む。
+  // throttle が RPM 間隔でバッチ連射を間引き、retry が 429/5xx を（サーバ提示の retryDelay も
+  // 尊重して）指数バックオフで再送する（docs/requirements.md §4.3）
+  const policy = await (deps.resolveRateLimitPolicy ?? (async () => UNLIMITED_POLICY))();
+  const provider = applyRateLimitPolicy(
     withLogging(baseProvider, 'extract_study', {
       uploadJson: async ({ filename, content }) => {
         const file = await uploadTextFile(
@@ -129,6 +146,8 @@ export async function runExtraction(
       newUuid: deps.newUuid,
       now: deps.now,
     }),
+    policy,
+    deps.rateLimitClock,
   );
 
   const runId = uuid();

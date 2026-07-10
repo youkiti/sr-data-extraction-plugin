@@ -5,6 +5,7 @@ import {
   type ChatResponse,
   type LLMProvider,
 } from './LLMProvider';
+import { parseRetryAfterMs } from './retry';
 
 /**
  * OpenRouter（OpenAI 互換 REST API）向け実装
@@ -74,7 +75,8 @@ export class OpenRouterProvider implements LLMProvider {
         `OpenRouter API failed: HTTP ${res.status}`,
         this.providerId,
         res.status,
-        text
+        text,
+        parseRetryAfterMs(res.headers.get('retry-after'))
       );
     }
     const json = (await res.json()) as OpenRouterResponse;

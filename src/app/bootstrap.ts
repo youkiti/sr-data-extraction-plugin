@@ -93,6 +93,7 @@ import { createChromePickerDeps } from '../lib/google/picker';
 import { createProvider } from '../lib/llm/providerFactory';
 import { loadDisposablePdf } from '../lib/pdf/loadPdf';
 import { loadGeminiApiKey, loadOpenRouterApiKey } from '../lib/storage/secretsStore';
+import { resolveRateLimitPolicy } from '../lib/storage/settingsStore';
 
 declare global {
   interface Window {
@@ -146,6 +147,7 @@ export function createChromeAppDeps(): AppDeps {
     loadApiKey: (provider) =>
       provider === 'openrouter' ? loadOpenRouterApiKey() : loadGeminiApiKey(),
     buildProvider: createProvider,
+    resolveRateLimitPolicy,
   };
 }
 

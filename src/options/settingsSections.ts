@@ -2,9 +2,10 @@
 // options.html（独立ページ）とアプリ内 #/options（settingsView）の双方から使う
 // 単一の正典（ID は bootstrapOptions が querySelector で解決する）。
 import { el } from '../app/ui/dom';
+import { RATE_LIMIT_TIERS } from '../lib/llm/rateLimitPolicy';
 
 /**
- * 設定本文の各節（Gemini / OpenRouter / 既定モデル / 表示言語）を組み立てて返す。
+ * 設定本文の各節（Gemini / OpenRouter / 既定モデル / レート制限 / 表示言語）を組み立てて返す。
  * 配線（読み込み・保存）は bootstrapOptions が担い、ここは静的な DOM のみを作る。
  */
 export function buildSettingsSections(): HTMLElement {
@@ -81,6 +82,47 @@ export function buildSettingsSections(): HTMLElement {
     ]),
   ]);
   body.append(modelSection);
+
+  // レート制限 tier（一括抽出の 429 対策。スロットル間隔 + リトライの強さを決める）
+  const tierSelect = el('select', {
+    id: 'rate-limit-tier',
+    attributes: { 'aria-label': 'レート制限 tier' },
+  }) as HTMLSelectElement;
+  for (const tier of RATE_LIMIT_TIERS) {
+    tierSelect.append(el('option', { text: tier.label, attributes: { value: tier.id } }));
+  }
+  const rateLimitSection = el('section', { className: 'options__section' }, [
+    el('h2', { text: 'レート制限（一括抽出の 429 対策）' }),
+    el('p', {
+      className: 'options__help',
+      text: '一括抽出で多数の論文を連続処理すると、API の 1 分あたりリクエスト上限に達して 429（Too Many Requests）が出ることがあります。お使いのプラン（tier）を選ぶと、リクエスト間隔と再試行を自動調整します。無料枠は間隔を広めに取ります。',
+    }),
+    el('p', {
+      id: 'rate-limit-tier-desc',
+      className: 'options__help',
+      text: '',
+    }),
+    el('p', { id: 'rate-limit-status', className: 'options__status', text: '読み込み中…' }),
+    el('div', { className: 'options__row' }, [
+      el('label', { text: 'プラン（tier）', attributes: { for: 'rate-limit-tier' } }),
+      tierSelect,
+    ]),
+    // カスタム tier のときだけ表示する RPM 入力（1 分あたりの最大リクエスト数）
+    el('div', { id: 'rate-limit-custom-row', className: 'options__row', attributes: { hidden: 'true' } }, [
+      el('label', {
+        text: '1 分あたりの最大リクエスト数（RPM）',
+        attributes: { for: 'rate-limit-custom-rpm' },
+      }),
+      el('input', {
+        id: 'rate-limit-custom-rpm',
+        attributes: { type: 'number', min: '1', step: '1', inputmode: 'numeric' },
+      }),
+    ]),
+    el('div', { className: 'options__row' }, [
+      el('button', { id: 'save-rate-limit', text: '保存', attributes: { type: 'button' } }),
+    ]),
+  ]);
+  body.append(rateLimitSection);
 
   // 表示言語（MVP は ja 固定）
   const languageSelect = el('select', {
