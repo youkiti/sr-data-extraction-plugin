@@ -46,9 +46,9 @@ flowchart LR
 flowchart TD
     Home["#/home<br/>プロジェクト概要（進捗サマリ）"] --> Documents["#/documents<br/>文献取り込み（S3）"]
     Documents --> Protocol["#/protocol<br/>プロトコル入力（S4）"]
-    Protocol --> Schema["#/schema<br/>スキーマデザイン（S5）"]
+    Protocol --> Schema["#/schema<br/>表のデザイン（S5）"]
     Schema --> Pilot["#/pilot<br/>パイロット抽出（S6）"]
-    Pilot -->|スキーマを改訂して再パイロット| Schema
+    Pilot -->|表のデザインを改訂して再パイロット| Schema
     Pilot --> Extract["#/extract<br/>一括抽出（S7）"]
     Extract --> Verify["#/verify<br/>検証（S8・中核画面）"]
     Verify --> Dashboard["#/dashboard<br/>ダッシュボード（S9）"]
@@ -64,8 +64,8 @@ flowchart TD
 | `#/home` | プロジェクト概要 | プロジェクト名・文献数・現在の Protocol / Schema version・検証進捗の表示。各ステップへ移動 | `Meta` / `Documents` / `SchemaVersions` / `StudyData` / `ResultsData`（集計のみ） |
 | `#/documents` | 文献取り込み（S3） | Drive Picker 起動 → PDF コピー + テキスト層抽出。画面上部に PDF の外部送信先（LLM API のみ）の注意書きを常時表示。文献一覧に `text_status`（`ok` / `partial` / `no_text_layer`）バッジと study_label（AI 提案・編集可）を表示 | `Documents` 追記 |
 | `#/protocol` | プロトコル入力（S4） | 手入力 / `.md` / `.docx`。sr-query-builder の protocol 画面 UI を移植（再訪時の分岐は 新規フォーム / 読み取り専用 + 版切替 / 再入力フォーム の 3 モード。本拡張は LLM 抽出を挟まず送信 = 即保存のため「未保存下書き復元」モードは持たない）。md / docx の抽出テキストは Drive `raw_protocols/` へ退避 | `Protocol` 追記 |
-| `#/schema` | スキーマデザイン（S5） | `draft-schema` skill 実行（プロトコル + サンプル論文 1〜3 本）→ 表形式エディタで項目の追加 / 削除 / 型変更 / `extraction_instruction` 編集 → 版として確定。版履歴の閲覧・過去版からの派生もここ | `SchemaVersions` / `SchemaFields` 追記, `LLMApiLog` |
-| `#/pilot` | パイロット抽出（S6） | 対象 2〜3 本を選択 → `extract-data` skill 実行 → S8 と同じ検証 UI（埋め込み）で確認 → 「スキーマを改訂して再パイロット」導線 | `ExtractionRuns`（`pilot`）/ `Evidence` / `StudyData` / `ResultsData` |
+| `#/schema` | 表のデザイン（S5） | `draft-schema` skill 実行（プロトコル + サンプル論文 1〜3 本）→ 表形式エディタで項目の追加 / 削除 / 型変更 / `extraction_instruction` 編集 → 版として確定。版履歴の閲覧・過去版からの派生もここ | `SchemaVersions` / `SchemaFields` 追記, `LLMApiLog` |
+| `#/pilot` | パイロット抽出（S6） | 対象 2〜3 本を選択 → `extract-data` skill 実行 → S8 と同じ検証 UI（埋め込み）で確認 → 「表のデザインを改訂して再パイロット」導線 | `ExtractionRuns`（`pilot`）/ `Evidence` / `StudyData` / `ResultsData` |
 | `#/extract` | 一括抽出（S7） | 対象文献選択（既定: 未抽出の全件）、モデル選択、**コスト概算表示 → 実行確認**、進捗バー、失敗文献のリトライ | `ExtractionRuns`（`full` / `single_document`）/ `Evidence` / `StudyData` / `ResultsData`, `LLMApiLog` |
 | `#/verify` | 検証（S8） | §3 参照。document 選択 → 2 ペイン検証 | `StudyData` / `ResultsData`（自分の annotator 行の更新）+ `Decisions` 追記 + `ArmStructures` 追記（群構成の確定） |
 | `#/dashboard` | ダッシュボード（S9） | document × section の検証進捗マトリクス、anchor 失敗率、not_reported 率。セルクリックで `#/verify` の該当 document / section へ | `StudyData` / `ResultsData` / `Evidence` / `Documents`（読み取りのみ） |

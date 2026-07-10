@@ -247,7 +247,7 @@ function renderRunSummary(run: ExtractionRun, state: AppState): HTMLElement {
       el('a', {
         id: 'pilot-revise-schema',
         className: 'pilot__revise-link',
-        text: 'スキーマを改訂して再パイロット',
+        text: '表のデザインを改訂して再パイロット',
         attributes: { href: '#/schema' },
       }),
     ]),
@@ -411,7 +411,7 @@ export function renderPilotView(state: AppState, ctx: ViewContext): HTMLElement 
     el('h2', { text: 'パイロット抽出' }),
     el('p', {
       className: 'view__lead',
-      text: '2〜3 本の論文で AI 抽出を試行し、検証結果をもとにスキーマを改訂します。',
+      text: '2〜3 本の論文で AI 抽出を試行し、検証結果をもとに表のデザインを改訂します。',
     }),
   ];
   if (state.pilot.running) {

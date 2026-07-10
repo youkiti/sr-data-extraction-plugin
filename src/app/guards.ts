@@ -27,13 +27,13 @@ export function guardRoute(hash: string, state: AppState): GuardResult {
       if (counts.schemaVersions < 1 || counts.documents < 1) {
         return {
           allowed: false,
-          message: '確定済みスキーマと取り込み済み文献（1 本以上）が必要です',
+          message: '確定済みの表のデザインと取り込み済み文献（1 本以上）が必要です',
         };
       }
       return { allowed: true };
     case '#/extract':
       if (counts.schemaVersions < 1) {
-        return { allowed: false, message: '確定済みスキーマが必要です' };
+        return { allowed: false, message: '確定済みの表のデザインが必要です' };
       }
       if (counts.pilotRuns < 1) {
         return { allowed: true, warning: 'パイロット抽出を推奨します' };

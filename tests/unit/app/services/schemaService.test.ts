@@ -691,7 +691,7 @@ describe('confirmSchema', () => {
     expect(schema.currentFields).toBe(savedFields);
     expect(schema.editorRows).toBeNull();
     expect(counts.schemaVersions).toBe(2);
-    expect(toastTexts().some((text) => text.includes('スキーマ v2 を確定'))).toBe(true);
+    expect(toastTexts().some((text) => text.includes('表のデザイン v2 を確定'))).toBe(true);
   });
 
   test('note 空文字は null・versions 未読込は初版（parent null）として確定する', async () => {
