@@ -5,6 +5,9 @@
 //   描画完了を待たずにハイライトが出る（PDF ユーザー空間 → CSS 左上原点への写像は
 //   ページ回転込みで toDisplayRect が行う）
 // - ハイライト矩形はクリック可能（フォーム側への双方向ジャンプ。ui-flow.md §3）
+// - 描画タスクの実キャンセル（issue #28 案3）: renderSeq の連番ガードは「結果を無視する」だけで
+//   pdfjs の描画自体は走り続けていた。ページ送り・ズーム変更・setDocument の直前に、
+//   進行中の RenderTask（renderPdfPageToCanvas が返す cancel()）を明示的にキャンセルする
 import type { TextLayerPage } from '../../domain/textLayer';
 import {
   renderPdfPageToCanvas,
@@ -68,6 +71,8 @@ export function createPdfViewer(options: PdfViewerOptions): PdfViewerHandle {
   let searchHits: HighlightOccurrence[] = [];
   let searchIndex = 0;
   let renderSeq = 0;
+  /** 進行中の pdfjs RenderTask（新しい描画開始前・setDocument 時にキャンセルする） */
+  let currentRenderTask: { cancel(): void } | null = null;
 
   // --- ツールバー ---------------------------------------------------------
   const prevButton = el('button', {
@@ -185,10 +190,23 @@ export function createPdfViewer(options: PdfViewerOptions): PdfViewerHandle {
 
   function redrawCanvas(): void {
     const seq = ++renderSeq;
+    // 直前の描画（別ページ・別文書向け）はもう不要なのでキャンセルする。連番ガードと併用のため、
+    // キャンセルに伴う rejection（pdfjs の RenderingCancelledException）は下の catch で
+    // seq 不一致として無視される
+    currentRenderTask?.cancel();
+    currentRenderTask = null;
     void (async () => {
       try {
         const page = await document.getPage(currentPage);
-        await renderPage(page, canvas, scale);
+        const { promise, cancel } = renderPage(page, canvas, scale);
+        if (seq === renderSeq) {
+          currentRenderTask = { cancel };
+        } else {
+          // document.getPage を待つ間に、より新しい描画が始まっていた。
+          // 開始してしまった描画タスクはすぐキャンセルする（currentRenderTask は上書きしない）
+          cancel();
+        }
+        await promise;
         if (seq === renderSeq) {
           errorEl.hidden = true;
         }
@@ -196,6 +214,10 @@ export function createPdfViewer(options: PdfViewerOptions): PdfViewerHandle {
         if (seq === renderSeq) {
           errorEl.textContent = `PDF を表示できません: ${err instanceof Error ? err.message : String(err)}`;
           errorEl.hidden = false;
+        }
+      } finally {
+        if (seq === renderSeq) {
+          currentRenderTask = null;
         }
       }
     })();

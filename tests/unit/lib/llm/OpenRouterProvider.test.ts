@@ -11,13 +11,14 @@ function jsonResponse(body: unknown, status = 200): Response {
   } as Response;
 }
 
-function errorResponse(status: number, body = 'err'): Response {
+function errorResponse(status: number, body = 'err', retryAfter: string | null = null): Response {
   return {
     ok: false,
     status,
     json: async () => ({}),
     text: async () => body,
-  } as Response;
+    headers: { get: (name: string) => (name.toLowerCase() === 'retry-after' ? retryAfter : null) },
+  } as unknown as Response;
 }
 
 function chatCompletion(
@@ -137,6 +138,15 @@ describe('OpenRouterProvider.chat', () => {
     }
   });
 
+  test('429 の Retry-After ヘッダ（秒）を retryAfterMs に載せる', async () => {
+    const fetch = jest.fn().mockResolvedValue(errorResponse(429, 'slow down', '12'));
+    const provider = new OpenRouterProvider({ apiKey: 'k', model: 'm/x', fetch });
+    await expect(provider.chat([{ role: 'user', content: 'q' }])).rejects.toMatchObject({
+      status: 429,
+      retryAfterMs: 12_000,
+    });
+  });
+
   test('エラー応答の text() が失敗しても responseBody は空文字で例外を投げる', async () => {
     const fetch = jest.fn().mockResolvedValue({
       ok: false,
@@ -145,6 +155,7 @@ describe('OpenRouterProvider.chat', () => {
       text: async () => {
         throw new Error('body unavailable');
       },
+      headers: { get: () => null },
     } as unknown as Response);
     const provider = new OpenRouterProvider({ apiKey: 'k', model: 'm/x', fetch });
     try {

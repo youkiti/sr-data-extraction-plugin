@@ -442,6 +442,22 @@ describe('runDraftSchema', () => {
     });
   });
 
+  test('resolveRateLimitPolicy 注入時もドラフトが成立する（429 対策ポリシー経路）', async () => {
+    const store = makeStore();
+    seedForDraft(store);
+    const resolveRateLimitPolicy = jest.fn().mockResolvedValue({
+      requestsPerMinute: 8,
+      maxAttempts: 5,
+      baseDelayMs: 2_000,
+      maxDelayMs: 60_000,
+    });
+    const { deps, chatMock } = makeDeps({ resolveRateLimitPolicy });
+    await runDraftSchema(store, deps);
+    expect(resolveRateLimitPolicy).toHaveBeenCalledTimes(1);
+    expect(chatMock).toHaveBeenCalledTimes(1);
+    expect(store.getState().schema.editorRows).toHaveLength(1);
+  });
+
   test('スライス未読込でも Protocol / Documents を Sheets から解決する', async () => {
     const store = makeStore();
     store.setState({

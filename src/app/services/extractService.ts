@@ -243,6 +243,7 @@ async function performRun(
       endpoint: params.providerConfig.endpoint,
       loadDocumentPages: makeLoadDocumentPages(params.targets, deps.google),
       buildProvider: deps.buildProvider,
+      resolveRateLimitPolicy: deps.resolveRateLimitPolicy,
       newUuid: deps.newUuid,
       now: deps.now,
     },

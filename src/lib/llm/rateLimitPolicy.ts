@@ -1,0 +1,272 @@
+// レート制限ポリシー（一括抽出の 429 対策。docs/requirements.md §4.3）。
+// 対策は 2 本立て:
+//   A. バッチ間スロットル（withThrottle）: 1 分あたりリクエスト数（RPM）から最小リクエスト間隔を
+//      導き、executeRun のバッチ連射がプロバイダの RPM を超えないようにする
+//   B. リトライ強化（withRetry）: 429/5xx を指数バックオフで再試行し、サーバ提示の retryDelay /
+//      Retry-After を尊重する。tier ごとに試行回数・バックオフ上限を変える
+//
+// tier は「利用者のアカウントが属する課金帯」を表す。RPM はモデルによっても変わるため、
+// プリセット値は各 tier で常用しうる最も制約の強いモデルを想定した保守的な目安であり、
+// 「カスタム」で実際の RPM に合わせて上書きできる（docs/ui-states.md §2「レート制限」）。
+//
+// Sheets 書き込みの 429 対策（executeRun.ts の Evidence フラッシュ間隔）も本ポリシーに相乗り
+// させる: `flushEveryNStudies` は tier ごとに決め打ちし、custom tier だけは maxConcurrency
+// （書き込み集中の実ドライバ）から逆算する（docs/handoff-20260710-sheets-write-batching.md）。
+import { withRetry } from './retry';
+import { withThrottle } from './throttle';
+import type { LLMProvider } from './LLMProvider';
+
+/** 抽出・ドラフトの LLM 呼び出しに適用するレート制限ポリシー */
+export interface RateLimitPolicy {
+  /** 1 分あたりの最大リクエスト数。null / 0 以下 = スロットルしない */
+  requestsPerMinute: number | null;
+  /** withRetry の最大試行回数（初回を含む） */
+  maxAttempts: number;
+  /** バックオフの基準待ち時間（ms） */
+  baseDelayMs: number;
+  /** バックオフ上限（ms）。サーバ提示の retryDelay もこの上限で頭打ちにする */
+  maxDelayMs: number;
+  /**
+   * executeRun のバッチ（= 1 study）を同時に何本まで走らせるか（スループット対策）。
+   * 1 = 従来どおり逐次（既定）。2 以上で並行実行する。スロットル（withThrottle）は
+   * リクエスト間隔だけを保証し同時実行数は絞らないため、並行数はここで別に制御する
+   * （docs/handoff-20260710-throughput.md §3）。
+   */
+  maxConcurrency: number;
+  /**
+   * Evidence の Sheets 書き込みを何 study ごとにまとめて appendEvidence するか
+   * （Sheets 書き込みクォータ 60 回/分/ユーザーへの 429 対策。executeRun.ts の
+   * flushEveryNStudies へそのまま渡す）。tier が大きいほど並列数・RPM が大きくなり
+   * 書き込みも集中しやすいため、tier ごとに大きめの値を割り当てる
+   * （docs/handoff-20260710-sheets-write-batching.md）。
+   */
+  flushEveryNStudies: number;
+}
+
+/** maxConcurrency の既定値。従来挙動（逐次）を保つため 1 */
+export const DEFAULT_MAX_CONCURRENCY = 1;
+
+export type RateLimitTierId =
+  | 'gemini_free'
+  | 'gemini_tier1'
+  | 'gemini_tier2'
+  | 'gemini_tier3'
+  | 'custom'
+  | 'unlimited';
+
+/** Options のプルダウン 1 項目 */
+export interface RateLimitTier {
+  id: RateLimitTierId;
+  label: string;
+  /** UI の補足説明 */
+  description: string;
+  policy: RateLimitPolicy;
+  /** カスタム tier のみ RPM を手入力させる */
+  editableRpm: boolean;
+  /** カスタム tier のみ同時実行数を手入力させる（並列化のスループット実験用） */
+  editableConcurrency: boolean;
+}
+
+/**
+ * スロットルしない既定ポリシー。サービス層が resolveRateLimitPolicy 未注入のときの
+ * フォールバック（＝従来挙動: リトライのみ・スロットル無し）でもある。
+ * 「制限なし」tier の実体でもある
+ */
+export const UNLIMITED_POLICY: RateLimitPolicy = {
+  requestsPerMinute: null,
+  maxAttempts: 3,
+  baseDelayMs: 1_000,
+  maxDelayMs: 15_000,
+  maxConcurrency: DEFAULT_MAX_CONCURRENCY,
+  flushEveryNStudies: 15,
+};
+
+/** 未設定時の既定 tier。多くの利用者が該当する無料枠を安全側の既定にする */
+export const DEFAULT_RATE_LIMIT_TIER_ID: RateLimitTierId = 'gemini_free';
+
+/** カスタム tier の RPM 初期値（Options 未入力時のプレースホルダ相当） */
+export const DEFAULT_CUSTOM_RPM = 30;
+
+/**
+ * tier プリセット（プルダウンの表示順）。RPM は保守的な目安で、実測に合わせて
+ * 「カスタム」で上書きできる。無料枠は 429 が出やすいため試行回数・バックオフ上限を厚くする
+ */
+export const RATE_LIMIT_TIERS: readonly RateLimitTier[] = [
+  {
+    id: 'gemini_free',
+    label: 'Gemini 無料枠（Free）',
+    description: '無料枠は 1 分あたりのリクエスト数が少なく 429 が出やすいため、間隔を広めに取ります。',
+    policy: {
+      requestsPerMinute: 8,
+      maxAttempts: 5,
+      baseDelayMs: 2_000,
+      maxDelayMs: 60_000,
+      maxConcurrency: DEFAULT_MAX_CONCURRENCY,
+      flushEveryNStudies: 5,
+    },
+    editableRpm: false,
+    editableConcurrency: false,
+  },
+  {
+    id: 'gemini_tier1',
+    label: 'Gemini Tier 1（従量課金）',
+    description: '支払い設定済みの Tier 1。無料枠より大幅に緩い上限を想定します。',
+    policy: {
+      requestsPerMinute: 120,
+      maxAttempts: 5,
+      baseDelayMs: 1_000,
+      maxDelayMs: 30_000,
+      maxConcurrency: DEFAULT_MAX_CONCURRENCY,
+      flushEveryNStudies: 8,
+    },
+    editableRpm: false,
+    editableConcurrency: false,
+  },
+  {
+    id: 'gemini_tier2',
+    label: 'Gemini Tier 2',
+    description: '累計課金額の条件を満たした Tier 2。',
+    policy: {
+      requestsPerMinute: 900,
+      maxAttempts: 4,
+      baseDelayMs: 1_000,
+      maxDelayMs: 20_000,
+      maxConcurrency: DEFAULT_MAX_CONCURRENCY,
+      flushEveryNStudies: 12,
+    },
+    editableRpm: false,
+    editableConcurrency: false,
+  },
+  {
+    id: 'gemini_tier3',
+    label: 'Gemini Tier 3',
+    description: '最上位 Tier 3。',
+    policy: {
+      requestsPerMinute: 1_800,
+      maxAttempts: 4,
+      baseDelayMs: 1_000,
+      maxDelayMs: 20_000,
+      maxConcurrency: DEFAULT_MAX_CONCURRENCY,
+      flushEveryNStudies: 15,
+    },
+    editableRpm: false,
+    editableConcurrency: false,
+  },
+  {
+    id: 'custom',
+    label: 'カスタム（RPM を手動指定）',
+    description: 'OpenRouter や上記に当てはまらない場合に、実際の 1 分あたりリクエスト数を入力します。同時実行数を上げるとスループットが上がりますが、429 / TPM に当たる場合は下げてください。',
+    policy: {
+      requestsPerMinute: DEFAULT_CUSTOM_RPM,
+      maxAttempts: 5,
+      baseDelayMs: 2_000,
+      maxDelayMs: 60_000,
+      maxConcurrency: DEFAULT_MAX_CONCURRENCY,
+      // 同時実行数を指定しない（= 既定 1）ときのベース値。指定時は resolvePolicyForTier が
+      // maxConcurrency から上書きする
+      flushEveryNStudies: 5,
+    },
+    editableRpm: true,
+    editableConcurrency: true,
+  },
+  {
+    id: 'unlimited',
+    label: '制限なし（スロットルしない）',
+    description: 'サーバ側で十分な上限がある場合のみ。バッチ間の待ち時間を入れません。',
+    policy: UNLIMITED_POLICY,
+    editableRpm: false,
+    editableConcurrency: false,
+  },
+];
+
+const TIER_BY_ID = new Map(RATE_LIMIT_TIERS.map((tier) => [tier.id, tier]));
+
+/** 文字列が既知の tier ID か（storage 復元時のガード） */
+export function isRateLimitTierId(value: unknown): value is RateLimitTierId {
+  return typeof value === 'string' && TIER_BY_ID.has(value as RateLimitTierId);
+}
+
+/** tier 定義を引く（未知 ID は既定 tier へフォールバック） */
+export function getRateLimitTier(id: RateLimitTierId): RateLimitTier {
+  return TIER_BY_ID.get(id) ?? (TIER_BY_ID.get(DEFAULT_RATE_LIMIT_TIER_ID) as RateLimitTier);
+}
+
+/** 正の有限数のみ Math.floor して採用し、それ以外は null（＝プリセット既定へフォールバック） */
+function positiveInt(value: number | null): number | null {
+  return value !== null && Number.isFinite(value) && value > 0 ? Math.floor(value) : null;
+}
+
+/** value を四捨五入したうえで [min, max] にクランプする */
+function clampRound(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, Math.round(value)));
+}
+
+/**
+ * tier ID（+ カスタム RPM / 同時実行数）から実効ポリシーを解決する。
+ * カスタム tier のときだけ customRpm / customConcurrency でプリセット値を上書きする（正の整数のみ採用）。
+ * さらに customConcurrency が有効な正の整数のときは、並列数（= 書き込み集中の実ドライバ）から
+ * flushEveryNStudies を `clamp(round(maxConcurrency × 2), 5, 15)` で逆算して上書きする
+ * （custom で並列数を指定しない場合はプリセット既定の 5 のまま。
+ * docs/handoff-20260710-sheets-write-batching.md）
+ */
+export function resolvePolicyForTier(
+  id: RateLimitTierId,
+  customRpm: number | null = null,
+  customConcurrency: number | null = null,
+): RateLimitPolicy {
+  const tier = getRateLimitTier(id);
+  let policy = tier.policy;
+  const rpm = positiveInt(customRpm);
+  if (tier.editableRpm && rpm !== null) {
+    policy = { ...policy, requestsPerMinute: rpm };
+  }
+  const concurrency = positiveInt(customConcurrency);
+  if (tier.editableConcurrency && concurrency !== null) {
+    policy = {
+      ...policy,
+      maxConcurrency: concurrency,
+      flushEveryNStudies: clampRound(concurrency * 2, 5, 15),
+    };
+  }
+  return policy;
+}
+
+/**
+ * ポリシーの RPM からバッチ間の最小リクエスト間隔（ms）を導く。
+ * RPM 未設定・0 以下なら null（スロットルしない）
+ */
+export function throttleIntervalMs(policy: RateLimitPolicy): number | null {
+  if (policy.requestsPerMinute === null || policy.requestsPerMinute <= 0) {
+    return null;
+  }
+  return Math.ceil(60_000 / policy.requestsPerMinute);
+}
+
+/** applyRateLimitPolicy のタイマー注入（テストで仮想クロックへ差し替える） */
+export interface RateLimitClockDeps {
+  sleep?: (ms: number) => Promise<void>;
+  now?: () => number;
+}
+
+/**
+ * provider をポリシーに従って包む: `withRetry(withThrottle(provider))`。
+ * throttle を retry の内側に置くことで、初回だけでなくリトライの各再送も RPM 間隔で間引く。
+ * provider は通常 withLogging 済みのものを渡す（全試行をログに残すため）
+ */
+export function applyRateLimitPolicy(
+  provider: LLMProvider,
+  policy: RateLimitPolicy,
+  clock: RateLimitClockDeps = {},
+): LLMProvider {
+  const interval = throttleIntervalMs(policy);
+  const throttled =
+    interval === null
+      ? provider
+      : withThrottle(provider, { minIntervalMs: interval, sleep: clock.sleep, now: clock.now });
+  return withRetry(throttled, {
+    maxAttempts: policy.maxAttempts,
+    baseDelayMs: policy.baseDelayMs,
+    maxDelayMs: policy.maxDelayMs,
+    sleep: clock.sleep,
+  });
+}

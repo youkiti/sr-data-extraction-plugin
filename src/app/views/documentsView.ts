@@ -2,6 +2,7 @@
 // PDF の外部送信先（LLM API のみ）の注意書きは常時表示（requirements.md §1.5）。
 // v0.10: study 単位のグループ表示（配下文書に role バッジ + text_status）、study_label /
 // registration_id / role のインライン編集、統合候補バナー、統合ダイアログ（§4.5）。
+// ローカル取り込み（D&D + ファイル選択ダイアログ）を Drive Picker に加えて提供する。
 // 状態: 読み込み中 / 失敗 / 空 / 取り込み中（進捗行）/ 一覧（試験ごとのグループ）
 import {
   DOCUMENT_ROLE_ORDER,
@@ -35,6 +36,88 @@ const ROLE_LABELS: Record<DocumentRole, string> = {
   supplement: '付録・補遺',
   other: 'その他',
 };
+
+/** ローカル選択ボタン + 隠しファイル入力（ボタン click で input を open）。ドロップゾーン内に置く */
+function renderLocalImportControls(
+  ctx: ViewContext,
+  disabled: boolean,
+): { button: HTMLButtonElement; input: HTMLInputElement } {
+  const input = el('input', {
+    id: 'documents-file-input',
+    className: 'documents__file-input',
+    attributes: { type: 'file', accept: 'application/pdf', multiple: 'true' },
+  }) as HTMLInputElement;
+  input.hidden = true;
+  input.addEventListener('change', () => {
+    const files = Array.from(input.files ?? []);
+    input.value = ''; // 同じファイルを連続選択できるようリセット
+    if (files.length > 0) {
+      ctx.documents.onImportFiles(files);
+    }
+  });
+
+  const button = el('button', {
+    id: 'documents-local-import',
+    className: 'documents__local-import',
+    text: '💻 PC からファイルを選択',
+    attributes: { type: 'button' },
+  });
+  button.disabled = disabled;
+  button.addEventListener('click', () => input.click());
+
+  return { button, input };
+}
+
+/**
+ * ローカル PDF のドロップゾーン（D&D）。標準的なアップロード UI として、案内文 +「または」+
+ * 「PC からファイルを選択」ボタン + 隠し input を内側に集約する（ボタン click と D&D は干渉しない）。
+ * ハイライト（dragover/dragenter で付与、dragleave / drop で解除）は次回 render でリセットされる
+ * transient DOM 状態で、view の純粋 render 原則は崩さない。
+ * disabled 中は preventDefault のみ行いドロップを無視する（importing || !hasProject）
+ */
+function renderDropzone(ctx: ViewContext, disabled: boolean): HTMLElement {
+  const { button, input } = renderLocalImportControls(ctx, disabled);
+  const zone = el('div', { id: 'documents-dropzone', className: 'documents__dropzone' }, [
+    el('p', { className: 'documents__dropzone-prompt', text: 'PDF をここにドラッグ&ドロップ' }),
+    el('p', { className: 'documents__dropzone-or', text: 'または' }),
+    button,
+    input,
+  ]);
+  if (disabled) {
+    zone.classList.add('documents__dropzone--disabled');
+  }
+  const highlight = (): void => {
+    if (!disabled) {
+      zone.classList.add('documents__dropzone--dragover');
+    }
+  };
+  const unhighlight = (): void => {
+    zone.classList.remove('documents__dropzone--dragover');
+  };
+  zone.addEventListener('dragover', (event) => {
+    event.preventDefault();
+    highlight();
+  });
+  zone.addEventListener('dragenter', (event) => {
+    event.preventDefault();
+    highlight();
+  });
+  zone.addEventListener('dragleave', () => {
+    unhighlight();
+  });
+  zone.addEventListener('drop', (event) => {
+    event.preventDefault();
+    unhighlight();
+    if (disabled) {
+      return;
+    }
+    const files = Array.from(event.dataTransfer?.files ?? []);
+    if (files.length > 0) {
+      ctx.documents.onImportFiles(files);
+    }
+  });
+  return zone;
+}
 
 function renderProgress(rows: ImportRow[]): HTMLElement {
   const items = rows.map((row) => {
@@ -318,21 +401,24 @@ export function renderDocumentsView(state: AppState, ctx: ViewContext): HTMLElem
   const { importing, importRows, mergeDialog } = state.documents;
   const hasProject = state.currentProject !== null;
 
+  const disabled = importing || !hasProject;
+
   const importButton = el('button', {
     id: 'documents-import',
     className: 'documents__import',
-    text: 'Drive から PDF / フォルダを取り込む',
+    text: 'Drive から PDF / フォルダを選択',
     attributes: { type: 'button' },
   });
-  importButton.disabled = importing || !hasProject;
+  importButton.disabled = disabled;
   importButton.addEventListener('click', () => ctx.documents.onImport());
 
   const reloadButton = el('button', {
     id: 'documents-reload',
+    className: 'documents__reload',
     text: '一覧を再読み込み',
     attributes: { type: 'button' },
   });
-  reloadButton.disabled = importing || !hasProject;
+  reloadButton.disabled = disabled;
   reloadButton.addEventListener('click', () => ctx.documents.onReload());
 
   const children: HTMLElement[] = [
@@ -343,9 +429,10 @@ export function renderDocumentsView(state: AppState, ctx: ViewContext): HTMLElem
     }),
     el('p', {
       className: 'view__lead',
-      text: 'Google Drive Picker で採用論文の PDF を選択し、テキスト層を抽出します。フォルダを選ぶと直下の PDF をまとめて取り込みます。同一試験の複数文書は取り込み後に「統合」でまとめられます。',
+      text: '採用論文の PDF を取り込みます。Drive から選択するか、この PC から PDF をドラッグ&ドロップ / ファイル選択できます。フォルダを選ぶと直下の PDF をまとめて取り込み、同一試験の複数文書は取り込み後に「統合」でまとめられます。',
     }),
     el('div', { className: 'documents__actions' }, [importButton, reloadButton]),
+    renderDropzone(ctx, disabled),
   ];
   if (importRows.length > 0) {
     children.push(renderProgress(importRows));

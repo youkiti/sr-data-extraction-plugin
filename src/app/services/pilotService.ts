@@ -24,6 +24,7 @@ import {
   type ProviderConfig,
   type ProviderResolutionDeps,
 } from '../../lib/llm/providerFactory';
+import type { RateLimitPolicy } from '../../lib/llm/rateLimitPolicy';
 import { nowIso8601 } from '../../utils/iso8601';
 import type { PilotState, Store } from '../store';
 import { showToast } from '../ui/toast';
@@ -41,6 +42,8 @@ import {
 export interface PilotServiceDeps extends VerificationDeps, ProviderResolutionDeps {
   /** provider 生成（実行時は lib/llm/providerFactory.createProvider。テストは fake を注入） */
   buildProvider: (config: ProviderConfig) => LLMProvider;
+  /** 実効レート制限ポリシー（429 対策）を解決する。runExtraction へそのまま渡す */
+  resolveRateLimitPolicy?: () => Promise<RateLimitPolicy>;
 }
 
 function toMessage(err: unknown): string {
@@ -181,6 +184,7 @@ export async function runPilot(store: Store, deps: PilotServiceDeps): Promise<vo
         endpoint: providerResolution.config.endpoint,
         loadDocumentPages: makeLoadDocumentPages(targets, deps.google),
         buildProvider: deps.buildProvider,
+        resolveRateLimitPolicy: deps.resolveRateLimitPolicy,
         newUuid: deps.newUuid,
         now: deps.now,
       },

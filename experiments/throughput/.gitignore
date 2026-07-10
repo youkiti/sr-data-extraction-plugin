@@ -1,0 +1,4 @@
+# 実データ（Sheets から落とした CSV / labels）は追跡しない。スクリプトと sample-*, README は追跡する。
+data/
+*.local.csv
+*.local.json

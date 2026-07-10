@@ -3,6 +3,7 @@
 // v0.10 で study / document を分離: 取り込みは 1 PDF = 1 study 自動生成、S3 で後から統合する（§4.5）。
 // view は render(state) の純粋関数のまま、コールバック経由でここを呼ぶ（architecture.md §2.2）
 import type { DocumentRecord, DocumentRole } from '../../domain/document';
+import type { ProjectRef } from '../../domain/project';
 import type { StudyRecord } from '../../domain/study';
 import { readDocuments, updateDocument } from '../../features/documents/documentRepository';
 import {
@@ -117,7 +118,7 @@ export async function loadDocuments(
 /** 取り込み結果を進捗行へ反映する（成功 = done / 失敗 = 段階 + 理由付きの failed） */
 function finalizeImportRows(rows: ImportRow[], result: ImportDocumentsResult): ImportRow[] {
   return rows.map((row) => {
-    const failure = result.failures.find((f) => f.sourceFileId === row.sourceFileId);
+    const failure = result.failures.find((f) => f.key === row.key);
     if (failure) {
       return {
         ...row,
@@ -131,7 +132,7 @@ function finalizeImportRows(rows: ImportRow[], result: ImportDocumentsResult): I
 
 /**
  * Picker の選択（ファイル + フォルダ混在）を取り込み対象の PDF 一覧へ展開する。
- * フォルダは直下 PDF を列挙して個別選択ファイルと結合し、sourceFileId で重複排除する
+ * フォルダは直下 PDF を列挙して個別選択ファイルと結合し、sourceFileId（= key）で重複排除する
  * （同じ PDF が個別選択とフォルダ配下で二重に来ても 1 回だけ取り込む）。
  * 列挙失敗は例外を投げる（呼び出し側で中断）
  */
@@ -144,70 +145,46 @@ async function expandSelections(
     if (selection.mimeType === FOLDER_MIME_TYPE) {
       const pdfs = await listFolderPdfs(selection.sourceFileId, deps.google);
       for (const pdf of pdfs) {
-        files.push({ sourceFileId: pdf.id, filename: pdf.name });
+        files.push({
+          key: pdf.id,
+          filename: pdf.name,
+          sourceFileId: pdf.id,
+          source: { kind: 'drive', fileId: pdf.id },
+        });
       }
     } else {
-      files.push({ sourceFileId: selection.sourceFileId, filename: selection.filename });
+      files.push({
+        key: selection.sourceFileId,
+        filename: selection.filename,
+        sourceFileId: selection.sourceFileId,
+        source: { kind: 'drive', fileId: selection.sourceFileId },
+      });
     }
   }
   const seen = new Set<string>();
   return files.filter((file) => {
-    if (seen.has(file.sourceFileId)) {
+    if (seen.has(file.key)) {
       return false;
     }
-    seen.add(file.sourceFileId);
+    seen.add(file.key);
     return true;
   });
 }
 
 /**
- * Drive Picker を開いて選択された PDF を取り込む（S3 の中核フロー）。
- * ファイルに加えてフォルダも選択でき、フォルダは直下 PDF を列挙して一括取り込みする。
- * 1 PDF = 1 study を自動生成する（§4.5）。Picker キャンセルは何もしない。
- * ファイル単位の失敗は進捗行へ赤バッジ表示し、成功分は一覧へ反映する
+ * 展開済みの取り込み対象を実際に実行する（Drive Picker 経路・ローカル D&D / ファイル選択
+ * 経路で共通）。進捗行の初期化 → documents/extracted_texts フォルダ解決 → importDocuments
+ * 呼び出し → 結果を records/studies へ反映 → トースト、まで面倒を見る。
+ * importing フラグを既に立てているかどうかは呼び出し側の責務（本関数は立て直すだけ）
  */
-export async function importFromPicker(
+async function runImportSelections(
   store: Store,
   deps: DocumentsServiceDeps,
+  project: ProjectRef,
+  fileSelections: readonly ImportSelection[],
 ): Promise<void> {
-  const state = store.getState();
-  const project = state.currentProject;
-  if (!project || state.documents.importing) {
-    return;
-  }
-
-  let selections: Awaited<ReturnType<typeof openPdfPicker>>;
-  try {
-    selections = await openPdfPicker(deps.picker);
-  } catch (err) {
-    showToast(`Drive Picker を開けませんでした: ${toMessage(err)}`);
-    return;
-  }
-  if (selections === null || selections.length === 0) {
-    return;
-  }
-
-  // フォルダ選択を直下 PDF へ展開する（列挙に数秒かかりうるため先に importing を立てる）
-  patchDocuments(store, { importing: true });
-  if (selections.some((selection) => selection.mimeType === FOLDER_MIME_TYPE)) {
-    showToast('フォルダを展開中…');
-  }
-  let fileSelections: ImportSelection[];
-  try {
-    fileSelections = await expandSelections(selections, deps);
-  } catch (err) {
-    patchDocuments(store, { importing: false });
-    showToast(`フォルダの読み込みに失敗しました: ${toMessage(err)}`);
-    return;
-  }
-  if (fileSelections.length === 0) {
-    patchDocuments(store, { importing: false });
-    showToast('選択したフォルダに PDF が見つかりませんでした');
-    return;
-  }
-
   let rows: ImportRow[] = fileSelections.map((selection) => ({
-    sourceFileId: selection.sourceFileId,
+    key: selection.key,
     filename: selection.filename,
     status: 'queued',
     detail: null,
@@ -274,6 +251,117 @@ export async function importFromPicker(
     patchDocuments(store, { importing: false, importRows: rows });
     showToast(`取り込みに失敗しました: ${toMessage(err)}`);
   }
+}
+
+/**
+ * Drive Picker を開いて選択された PDF を取り込む（S3 の中核フロー）。
+ * ファイルに加えてフォルダも選択でき、フォルダは直下 PDF を列挙して一括取り込みする。
+ * 1 PDF = 1 study を自動生成する（§4.5）。Picker キャンセルは何もしない。
+ * ファイル単位の失敗は進捗行へ赤バッジ表示し、成功分は一覧へ反映する
+ */
+export async function importFromPicker(
+  store: Store,
+  deps: DocumentsServiceDeps,
+): Promise<void> {
+  const state = store.getState();
+  const project = state.currentProject;
+  if (!project || state.documents.importing) {
+    return;
+  }
+
+  let selections: Awaited<ReturnType<typeof openPdfPicker>>;
+  try {
+    selections = await openPdfPicker(deps.picker);
+  } catch (err) {
+    showToast(`Drive Picker を開けませんでした: ${toMessage(err)}`);
+    return;
+  }
+  if (selections === null || selections.length === 0) {
+    return;
+  }
+
+  // フォルダ選択を直下 PDF へ展開する（列挙に数秒かかりうるため先に importing を立てる）
+  patchDocuments(store, { importing: true });
+  if (selections.some((selection) => selection.mimeType === FOLDER_MIME_TYPE)) {
+    showToast('フォルダを展開中…');
+  }
+  let fileSelections: ImportSelection[];
+  try {
+    fileSelections = await expandSelections(selections, deps);
+  } catch (err) {
+    patchDocuments(store, { importing: false });
+    showToast(`フォルダの読み込みに失敗しました: ${toMessage(err)}`);
+    return;
+  }
+  if (fileSelections.length === 0) {
+    patchDocuments(store, { importing: false });
+    showToast('選択したフォルダに PDF が見つかりませんでした');
+    return;
+  }
+
+  await runImportSelections(store, deps, project, fileSelections);
+}
+
+/** ローカルファイルの重複排除キー（filename + size。§ 補足: クロスセッションの重複警告は対象外） */
+function localFileKey(file: File): string {
+  return `local:${file.name}:${file.size}`;
+}
+
+/** application/pdf の MIME か .pdf 拡張子かで PDF 判定する（ローカル D&D はドラッグ元により MIME が空のことがある） */
+function isPdfFile(file: File): boolean {
+  return file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
+}
+
+/**
+ * ローカル PDF（D&D / ファイル選択ダイアログ）を取り込む（S3。Drive Picker 経路の追加手段）。
+ * 出所 Drive ファイルが無いため、コピー段は importDocuments 側で documents/ への新規
+ * アップロード（uploadBinaryFile）に切り替わる。重複排除は filename + size でバッチ内のみ判定する
+ * （確定した方針。クロスセッションの重複警告は Documents にサイズ列が無いため対象外）
+ */
+export async function importFromFiles(
+  store: Store,
+  deps: DocumentsServiceDeps,
+  files: readonly File[],
+): Promise<void> {
+  const state = store.getState();
+  const project = state.currentProject;
+  if (!project || state.documents.importing) {
+    return;
+  }
+
+  const pdfFiles = files.filter(isPdfFile);
+  const excludedCount = files.length - pdfFiles.length;
+
+  const seen = new Set<string>();
+  const targets = pdfFiles.filter((file) => {
+    const key = localFileKey(file);
+    if (seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
+
+  if (targets.length === 0) {
+    if (excludedCount > 0) {
+      showToast('PDF ファイルが選択されていません');
+    }
+    return;
+  }
+  if (excludedCount > 0) {
+    showToast(`PDF 以外の ${excludedCount} 件を除外しました`);
+  }
+
+  const fileSelections: ImportSelection[] = await Promise.all(
+    targets.map(async (file) => ({
+      key: localFileKey(file),
+      filename: file.name,
+      sourceFileId: null,
+      source: { kind: 'local' as const, data: await file.arrayBuffer() },
+    })),
+  );
+
+  await runImportSelections(store, deps, project, fileSelections);
 }
 
 /** 対象 study を find するヘルパ（未読込・未選択なら null） */

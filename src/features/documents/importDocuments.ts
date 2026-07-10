@@ -1,10 +1,11 @@
-// 文献取り込み（S3 / requirements.md ※Q9）: Picker で選択済みの PDF を
-// 「documents/ へコピー（凍結スナップショット）→ テキスト層抽出 → extracted_texts/ へ保存 →
-// Documents タブへ追記」まで進めるパイプライン。Picker の起動・選択は UI（S3 画面）の責務。
+// 文献取り込み（S3 / requirements.md ※Q9）: Picker で選択済みの PDF、または D&D /
+// ファイル選択で渡されたローカル PDF を「documents/ へコピー・アップロード（凍結スナップショット）
+// → テキスト層抽出 → extracted_texts/ へ保存 → Documents タブへ追記」まで進めるパイプライン。
+// Picker / ローカル選択の起動は UI（S3 画面）の責務。
 // 失敗したファイルは飛ばして残りを続行し、failures として返す（S3 の進捗行に赤バッジ表示）
 import { DEFAULT_DOCUMENT_ROLE, type DocumentRecord } from '../../domain/document';
 import type { StudyRecord } from '../../domain/study';
-import { copyFile, getFileBinary, uploadTextFile } from '../../lib/google/drive';
+import { copyFile, getFileBinary, uploadBinaryFile, uploadTextFile } from '../../lib/google/drive';
 import type { GoogleApiDeps } from '../../lib/google/types';
 import { nowIso8601 } from '../../utils/iso8601';
 import { generateUuid } from '../../utils/uuid';
@@ -13,19 +14,27 @@ import { appendDocuments } from './documentRepository';
 import { appendStudies } from './studyRepository';
 import { extractTextLayer, type DisposablePdfDocument } from './extractTextLayer';
 
-/** Picker で選択されたファイル（UI 側が渡す） */
+/**
+ * 取り込み対象 1 ファイル（Picker 選択 / ローカル D&D・ファイル選択の両対応）。
+ * バイト取得元が違うだけで以降（テキスト抽出・study 生成・保存）は共通のため union で吸収する
+ */
 export interface ImportSelection {
-  sourceFileId: string;
+  /** 進捗行・重複排除のキー（Drive = sourceFileId / ローカル = `local:{filename}:{size}`） */
+  key: string;
   filename: string;
+  /** Documents.source_file_id。ローカル取り込みは出所 Drive ファイルが無いため null */
+  sourceFileId: string | null;
+  source: { kind: 'drive'; fileId: string } | { kind: 'local'; data: ArrayBuffer };
 }
 
 export type ImportStage =
-  | 'copy' // documents/ へのコピー + 実体ダウンロード
+  | 'copy' // documents/ へのコピー（Drive）または新規アップロード（ローカル）+ 実体ダウンロード
   | 'extract' // テキスト層抽出 + extracted_texts/ への保存
   | 'save'; // Documents タブへの追記
 
 export interface ImportFailure {
-  sourceFileId: string;
+  /** 進捗行との突き合わせキー（ImportSelection.key と同値） */
+  key: string;
   filename: string;
   stage: ImportStage;
   detail: string;
@@ -86,12 +95,14 @@ export async function importDocuments(
 
   const importedStudies: StudyRecord[] = [];
   const imported: DocumentRecord[] = [];
+  // imported と同じ添字で進捗キーを持つ（DocumentRecord は key を持たないため段階 3 の失敗記録に使う）
+  const importedKeys: string[] = [];
   const failures: ImportFailure[] = [];
 
   for (const [fileIndex, selection] of params.selections.entries()) {
     const fail = (stage: ImportStage, err: unknown): void => {
       failures.push({
-        sourceFileId: selection.sourceFileId,
+        key: selection.key,
         filename: selection.filename,
         stage,
         detail: toDetail(err),
@@ -106,18 +117,28 @@ export async function importDocuments(
       });
     };
 
-    // 段階 1: documents/ へコピーし、以後はコピー（凍結スナップショット）だけを参照する
+    // 段階 1: documents/ へコピー（Drive）または新規アップロード（ローカル）し、
+    // 以後はその結果（凍結スナップショット）だけを参照する
     notify('copy');
     let driveFileId: string;
     let pdfData: ArrayBuffer;
     try {
-      const copied = await copyFile(
-        selection.sourceFileId,
-        { name: selection.filename, parentId: params.documentsFolderId },
-        deps.google,
-      );
-      driveFileId = copied.id;
-      pdfData = await getFileBinary(copied.id, deps.google);
+      if (selection.source.kind === 'drive') {
+        const copied = await copyFile(
+          selection.source.fileId,
+          { name: selection.filename, parentId: params.documentsFolderId },
+          deps.google,
+        );
+        driveFileId = copied.id;
+        pdfData = await getFileBinary(copied.id, deps.google);
+      } else {
+        pdfData = selection.source.data;
+        const uploaded = await uploadBinaryFile(
+          { name: selection.filename, data: pdfData, parentId: params.documentsFolderId },
+          deps.google,
+        );
+        driveFileId = uploaded.id;
+      }
     } catch (err) {
       fail('copy', err);
       continue;
@@ -181,6 +202,7 @@ export async function importDocuments(
       importedBy: params.importedBy,
       note: null,
     });
+    importedKeys.push(selection.key);
   }
 
   // 段階 3: Studies → Documents の順で一括追記（Documents.study_id が必ず解決できる不変条件）。
@@ -192,14 +214,14 @@ export async function importDocuments(
       await appendStudies(params.spreadsheetId, importedStudies, deps.google);
       await appendDocuments(params.spreadsheetId, imported, deps.google);
     } catch (err) {
-      for (const doc of imported) {
+      imported.forEach((doc, i) => {
         failures.push({
-          sourceFileId: doc.sourceFileId,
+          key: importedKeys[i] as string,
           filename: doc.filename,
           stage: 'save',
           detail: toDetail(err),
         });
-      }
+      });
       return { importedStudies: [], imported: [], failures };
     }
   }

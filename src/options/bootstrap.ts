@@ -5,6 +5,11 @@ import { createModelSelect } from '../app/ui/modelSelect';
 import type { LlmProviderId } from '../domain/llmApiLog';
 import { createProvider, resolveProviderId } from '../lib/llm/providerFactory';
 import {
+  getRateLimitTier,
+  isRateLimitTierId,
+  type RateLimitTierId,
+} from '../lib/llm/rateLimitPolicy';
+import {
   loadGeminiApiKey,
   loadOpenAiCompatibleApiKey,
   loadOpenRouterApiKey,
@@ -20,9 +25,15 @@ import {
   isLoopbackEndpoint,
   loadDefaultModel,
   loadLlmConnectionSettings,
+  loadRateLimitCustomConcurrency,
+  loadRateLimitCustomRpm,
+  loadRateLimitTier,
   normalizeOpenAiCompatibleEndpoint,
   saveDefaultModel,
   saveLlmConnectionSettings,
+  saveRateLimitCustomConcurrency,
+  saveRateLimitCustomRpm,
+  saveRateLimitTier,
 } from '../lib/storage/settingsStore';
 
 /** ステータス要素へ文言 + 通常 / エラー系の色分けを反映する */
@@ -291,6 +302,101 @@ async function bootstrapLlmConnectionSection(root: ParentNode): Promise<void> {
 }
 
 /**
+ * レート制限 tier 節の配線（必須要素が欠けている場合は何もしない）。
+ * tier セレクタ + カスタム RPM 入力を読み込み、保存する。カスタム tier のときだけ
+ * RPM 入力を表示する。保存値は抽出のスロットル + リトライ強度を決める
+ * （docs/ui-states.md §2「レート制限」）
+ */
+async function bootstrapRateLimitSection(root: ParentNode): Promise<void> {
+  const select = root.querySelector<HTMLSelectElement>('#rate-limit-tier');
+  const customRow = root.querySelector<HTMLElement>('#rate-limit-custom-row');
+  const customInput = root.querySelector<HTMLInputElement>('#rate-limit-custom-rpm');
+  const concurrencyRow = root.querySelector<HTMLElement>('#rate-limit-concurrency-row');
+  const concurrencyInput = root.querySelector<HTMLInputElement>('#rate-limit-concurrency');
+  const descEl = root.querySelector<HTMLElement>('#rate-limit-tier-desc');
+  const saveButton = root.querySelector<HTMLButtonElement>('#save-rate-limit');
+  const statusEl = root.querySelector<HTMLElement>('#rate-limit-status');
+  if (
+    !select ||
+    !customRow ||
+    !customInput ||
+    !concurrencyRow ||
+    !concurrencyInput ||
+    !descEl ||
+    !saveButton ||
+    !statusEl
+  ) {
+    return;
+  }
+
+  const setStatus = makeSetStatus(statusEl);
+
+  // 選択中の tier ID（select の値が不正なら既定へ倒す。syncTierUi と保存で共有）
+  const currentTierId = (): RateLimitTierId =>
+    isRateLimitTierId(select.value) ? select.value : 'gemini_free';
+
+  // 選択 tier に応じて説明文とカスタム RPM / 同時実行数入力の表示を切り替える
+  const syncTierUi = (): void => {
+    const tier = getRateLimitTier(currentTierId());
+    descEl.textContent = tier.description;
+    customRow.hidden = !tier.editableRpm;
+    concurrencyRow.hidden = !tier.editableConcurrency;
+  };
+
+  const savedTier = await loadRateLimitTier();
+  const savedRpm = await loadRateLimitCustomRpm();
+  const savedConcurrency = await loadRateLimitCustomConcurrency();
+  select.value = savedTier;
+  if (savedRpm !== null) {
+    customInput.value = String(savedRpm);
+  }
+  if (savedConcurrency !== null) {
+    concurrencyInput.value = String(savedConcurrency);
+  }
+  syncTierUi();
+  setStatus(`レート制限: ${getRateLimitTier(savedTier).label}`, false);
+
+  select.addEventListener('change', syncTierUi);
+
+  const handleSave = async (): Promise<void> => {
+    const tierId = currentTierId();
+    // カスタム tier で RPM が空・不正なら保存しない（プリセット既定へ戻すのは明示削除扱い）
+    const rpmRaw = customInput.value.trim();
+    const rpm = rpmRaw === '' ? Number.NaN : Number(rpmRaw);
+    if (getRateLimitTier(tierId).editableRpm && (!Number.isFinite(rpm) || rpm <= 0)) {
+      setStatus('RPM は 1 以上の数値を入力してください。', true);
+      return;
+    }
+    // 同時実行数は任意（空 = プリセット既定 = 逐次）。入力があるときだけ 1 以上を要求する
+    const concurrencyRaw = concurrencyInput.value.trim();
+    const concurrency = concurrencyRaw === '' ? Number.NaN : Number(concurrencyRaw);
+    if (
+      getRateLimitTier(tierId).editableConcurrency &&
+      concurrencyRaw !== '' &&
+      (!Number.isFinite(concurrency) || concurrency <= 0)
+    ) {
+      setStatus('同時実行数は 1 以上の数値を入力してください。', true);
+      return;
+    }
+    saveButton.disabled = true;
+    try {
+      await saveRateLimitTier(tierId);
+      await saveRateLimitCustomRpm(rpm);
+      await saveRateLimitCustomConcurrency(concurrency);
+      setStatus('保存しました。', false);
+    } catch {
+      setStatus('保存に失敗しました。もう一度お試しください。', true);
+    } finally {
+      saveButton.disabled = false;
+    }
+  };
+
+  saveButton.addEventListener('click', () => {
+    void handleSave();
+  });
+}
+
+/**
  * 設定本文の配線。root は options.html の `document` でも、アプリ内 #/options が
  * 生成した（未 attach でよい）コンテナ要素でもよい（querySelector で解決するため）。
  */
@@ -319,4 +425,5 @@ export async function bootstrapOptions(root: ParentNode): Promise<void> {
   );
   await bootstrapLlmConnectionSection(root);
   await bootstrapDefaultModelSection(root);
+  await bootstrapRateLimitSection(root);
 }

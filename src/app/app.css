@@ -220,6 +220,7 @@
 .documents__actions {
   display: flex;
   gap: 12px;
+  align-items: center;
   margin: 16px 0;
 }
 
@@ -240,6 +241,70 @@
 
 .documents__import:hover:enabled {
   background: var(--color-primary-hover);
+}
+
+/* 再読み込みは取り込み操作から視覚的に分離するため右寄せ */
+.documents__reload {
+  margin-left: auto;
+}
+
+/* ローカル取り込み: ドロップゾーン（主役）に案内文 + ボタン + 隠し input を集約する */
+.documents__dropzone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0 16px;
+  padding: 32px 24px;
+  border: 2px dashed var(--color-border);
+  border-radius: 8px;
+  text-align: center;
+  color: var(--color-text-muted);
+}
+
+.documents__dropzone-prompt {
+  margin: 0;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.documents__dropzone-or {
+  margin: 0;
+  color: var(--color-text-muted);
+}
+
+.documents__local-import {
+  background: var(--color-surface);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 8px 16px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.documents__local-import:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.documents__local-import:hover:enabled {
+  background: var(--color-bg);
+}
+
+.documents__file-input {
+  /* input[type=file] 本体は非表示にし、ボタン click で開く */
+  display: none;
+}
+
+.documents__dropzone--dragover {
+  border-color: var(--color-primary);
+  background: var(--color-highlight-verified);
+  color: var(--color-text);
+}
+
+.documents__dropzone--disabled {
+  opacity: 0.55;
 }
 
 .documents__progress {
@@ -1254,6 +1319,16 @@
   color: var(--color-danger);
 }
 
+.verify__pdf-retry {
+  margin: 8px 0;
+}
+
+/* PDF 遅延ロード中のプレースホルダ（issue #28 案3: 表示中の文書だけを読み込む） */
+.verify__pdf-loading {
+  padding: 16px;
+  color: var(--color-text-muted);
+}
+
 /* 文書切替タブ（v0.10 フェーズ 3: study 内の複数 PDF を切替える） */
 .verify__doc-tabs {
   display: flex;
@@ -1307,6 +1382,46 @@
 .verify__pdf-body > * {
   flex: 1 1 auto;
   min-width: 0;
+}
+
+/* 左ペイン表示切替（PDF / 抽出テキスト。issue #28 案2: 表・段組み・脚注は PDF でしか
+   確認できないため置き換えではなく切替） */
+.verify__view-toggle {
+  display: flex;
+  gap: 4px;
+  padding: 6px;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+
+.verify__view-toggle-btn {
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-bg);
+
+  /* グローバル button の白文字（on-primary）を淡背景用に戻す（コントラスト 4.5:1 以上） */
+  color: var(--color-text);
+  padding: 3px 10px;
+  font-size: 12px;
+}
+
+.verify__view-toggle-btn--active {
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+}
+
+.verify__view-toggle-note {
+  margin: 0;
+  padding: 4px 10px;
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.verify__text-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
 }
 
 .verify__tabs {
@@ -1863,6 +1978,58 @@
 .pdf-viewer__error {
   color: var(--color-danger);
   padding: 8px;
+}
+
+/* --- 抽出テキストビュー（issue #28 案2。pdf-viewer の兄弟コンポーネント） -------- */
+
+.text-viewer {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.text-viewer__body {
+  overflow: auto;
+  padding: 12px;
+}
+
+.text-viewer__empty {
+  color: var(--color-text-muted);
+}
+
+.text-viewer__doc-label {
+  margin: 0 0 4px;
+  font-weight: 700;
+}
+
+.text-viewer__page {
+  margin: 0 0 8px;
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.text-viewer__snippet {
+  margin: 0;
+  line-height: 1.7;
+  white-space: pre-wrap;
+}
+
+.text-viewer__mark {
+  border-radius: 2px;
+  background: var(--color-highlight-unverified);
+  color: inherit;
+  padding: 0 2px;
+}
+
+.text-viewer__unresolved-note {
+  color: var(--color-danger);
+}
+
+.text-viewer__quote-full {
+  margin: 8px 0 0;
+  padding-left: 10px;
+  border-left: 3px solid var(--color-border);
+  color: var(--color-text-muted);
 }
 
 /* --- #/dashboard（S9）---------------------------------------------------- */

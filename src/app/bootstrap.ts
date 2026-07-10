@@ -10,6 +10,7 @@ import {
   cancelMerge,
   confirmMerge,
   ignoreCandidate,
+  importFromFiles,
   importFromPicker,
   loadDocuments,
   openMergeCandidate,
@@ -97,7 +98,10 @@ import {
   loadOpenAiCompatibleApiKey,
   loadOpenRouterApiKey,
 } from '../lib/storage/secretsStore';
-import { loadLlmConnectionSettings } from '../lib/storage/settingsStore';
+import {
+  loadLlmConnectionSettings,
+  resolveRateLimitPolicy,
+} from '../lib/storage/settingsStore';
 
 declare global {
   interface Window {
@@ -159,6 +163,7 @@ export function createChromeAppDeps(): AppDeps {
     },
     loadLlmConnectionSettings,
     buildProvider: createProvider,
+    resolveRateLimitPolicy,
   };
 }
 
@@ -197,6 +202,9 @@ export async function bootstrapApp(
     documents: {
       onImport: () => {
         void importFromPicker(store, deps);
+      },
+      onImportFiles: (files) => {
+        void importFromFiles(store, deps, files);
       },
       onReload: () => {
         void loadDocuments(store, deps, { force: true });

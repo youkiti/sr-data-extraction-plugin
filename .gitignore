@@ -15,6 +15,7 @@ playwright-report/
 
 # 環境変数（OAUTH_CLIENT_ID 等）
 .env
+*.pem
 
 # E2E / anchoring 用の実論文 PDF fixture
 # 再取得方法は tests/fixtures/pdf/README.md を参照（fetch-pdfs.ps1 で一括取得）

@@ -1,6 +1,6 @@
 // #/schema（S5）のサービス層。features/schema + lib/llm を 1 段抽象化し、
 // 画面状態（AppState.schema）の遷移を一手に引き受ける（architecture.md §2.2）。
-// LLM 呼び出しは extractionService と同じく withRetry(withLogging(createProvider(...))) で包み、
+// LLM 呼び出しは extractionService と同じくレート制限ポリシーとログ記録で包み、
 // 全呼び出しを LLMApiLog + Drive（logs/llm/）に残す
 import type { Protocol } from '../../domain/protocol';
 import type { DocumentRecord } from '../../domain/document';
@@ -38,7 +38,11 @@ import {
   type ProviderConfig,
   type ProviderResolutionDeps,
 } from '../../lib/llm/providerFactory';
-import { withRetry } from '../../lib/llm/retry';
+import {
+  applyRateLimitPolicy,
+  UNLIMITED_POLICY,
+  type RateLimitPolicy,
+} from '../../lib/llm/rateLimitPolicy';
 import { FACTORY_DEFAULT_MODEL, loadDefaultModel } from '../../lib/storage/settingsStore';
 import type { SchemaState, Store } from '../store';
 import { showToast } from '../ui/toast';
@@ -48,6 +52,11 @@ export interface SchemaServiceDeps extends ProviderResolutionDeps {
   profile: ProfileDeps;
   /** provider 生成（実行時は lib/llm/providerFactory.createProvider。テストは fake を注入） */
   buildProvider: (config: ProviderConfig) => LLMProvider;
+  /**
+   * 実効レート制限ポリシー（429 対策）を解決する。未注入なら UNLIMITED_POLICY。
+   * 本番は bootstrap が settingsStore.resolveRateLimitPolicy を注入する
+   */
+  resolveRateLimitPolicy?: () => Promise<RateLimitPolicy>;
   /** Options の既定モデル設定を解決する（未指定は lib/storage/settingsStore.loadDefaultModel） */
   loadDefaultModel?: () => Promise<string | null>;
   newUuid?: () => string;
@@ -240,7 +249,10 @@ export async function runDraftSchema(store: Store, deps: SchemaServiceDeps): Pro
     const llmFolder = await ensureChildFolder('llm', logsFolder.id, deps.google);
 
     const baseProvider = deps.buildProvider(providerResolution.config);
-    const provider = withRetry(
+    // 429 対策のレート制限ポリシーを適用（draft は 1 リクエストなのでスロットルより
+    // リトライ強化が効く。extractionService と同じ経路。docs/requirements.md §4.3）
+    const policy = await (deps.resolveRateLimitPolicy ?? (async () => UNLIMITED_POLICY))();
+    const provider = applyRateLimitPolicy(
       withLogging(baseProvider, 'draft_schema', {
         uploadJson: async ({ filename, content }) => {
           const file = await uploadTextFile(
@@ -254,6 +266,7 @@ export async function runDraftSchema(store: Store, deps: SchemaServiceDeps): Pro
         newUuid: deps.newUuid,
         now: deps.now,
       }),
+      policy,
     );
 
     const response = await provider.chat(

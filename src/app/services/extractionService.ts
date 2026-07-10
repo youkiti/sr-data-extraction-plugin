@@ -6,6 +6,11 @@
 // 解決できる」不変条件を守る（途中で実行が死んでも running 行が残り、中断として検出できる）。
 // LLM 呼び出しは withRetry(withLogging(createProvider(...))) で包み、
 // 全呼び出し（リトライの各試行を含む）を LLMApiLog + Drive（logs/llm/）に残す
+// Evidence の Sheets 書き込みは executeRun 側で N study ごと（+ 行数キャップ）にまとめられる
+// （429 対策）。flushEveryNStudies は本サービス層から executeRun へ注入する。
+// 値は tier 連動（レート制限ポリシーの flushEveryNStudies）を優先し、
+// 未解決時のみ DEFAULT_FLUSH_EVERY_N_STUDIES へフォールバックする
+// （docs/handoff-20260710-sheets-write-batching.md）
 import type { ExtractionRun, RunType } from '../../domain/extractionRun';
 import type { LlmProviderId } from '../../domain/llmApiLog';
 import type { DocumentRecord } from '../../domain/document';
@@ -17,6 +22,7 @@ import {
 } from '../../features/extraction/annotationRepository';
 import { appendEvidenceRows } from '../../features/extraction/evidenceRepository';
 import {
+  DEFAULT_FLUSH_EVERY_N_STUDIES,
   executeRun,
   type ExecuteRunResult,
   type RunProgress,
@@ -33,7 +39,12 @@ import { appendLlmApiLog } from '../../lib/llm/apiLogRepository';
 import { withLogging } from '../../lib/llm/apiLogger';
 import type { LLMProvider } from '../../lib/llm/LLMProvider';
 import { createProvider, type ProviderConfig } from '../../lib/llm/providerFactory';
-import { withRetry } from '../../lib/llm/retry';
+import {
+  applyRateLimitPolicy,
+  UNLIMITED_POLICY,
+  type RateLimitClockDeps,
+  type RateLimitPolicy,
+} from '../../lib/llm/rateLimitPolicy';
 import { nowIso8601 } from '../../utils/iso8601';
 import { generateUuid } from '../../utils/uuid';
 
@@ -52,9 +63,25 @@ export interface ExtractionServiceDeps {
   loadDocumentPages: (documentId: string) => Promise<ExtractDataPage[]>;
   /** テスト時に差し替え可能な provider 生成（既定は lib/llm/providerFactory.createProvider） */
   buildProvider?: (config: ProviderConfig) => LLMProvider;
+  /**
+   * 実効レート制限ポリシー（429 対策のスロットル + リトライ）を解決する。
+   * 未注入なら UNLIMITED_POLICY（従来挙動: スロットル無し・リトライのみ）。
+   * 本番は bootstrap が settingsStore.resolveRateLimitPolicy を注入する
+   */
+  resolveRateLimitPolicy?: () => Promise<RateLimitPolicy>;
+  /** テスト時に throttle / retry のタイマーを仮想クロックへ差し替える */
+  rateLimitClock?: RateLimitClockDeps;
   /** テスト時に差し替え可能な UUID 発番 / 現在時刻 */
   newUuid?: () => string;
   now?: () => string;
+  /**
+   * Evidence の書き込みを何 study ごとにまとめて Sheets へ appendEvidence するか
+   * （429 対策。省略時は resolveRateLimitPolicy が解決した RateLimitPolicy.flushEveryNStudies
+   * （tier 連動）を使い、それも無ければ DEFAULT_FLUSH_EVERY_N_STUDIES = 5。
+   * ここで明示注入すればどちらより優先される（主にテスト用）。executeRun.ts へそのまま渡す。
+   * docs/handoff-20260710-sheets-write-batching.md）
+   */
+  flushEveryNStudies?: number;
 }
 
 export interface RunExtractionParams {
@@ -117,7 +144,11 @@ export async function runExtraction(
     provider: deps.provider,
     endpoint: deps.endpoint,
   });
-  const provider = withRetry(
+  // 429 対策: レート制限ポリシーに従い withRetry(withThrottle(withLogging(...))) で包む。
+  // throttle が RPM 間隔でバッチ連射を間引き、retry が 429/5xx を（サーバ提示の retryDelay も
+  // 尊重して）指数バックオフで再送する（docs/requirements.md §4.3）
+  const policy = await (deps.resolveRateLimitPolicy ?? (async () => UNLIMITED_POLICY))();
+  const provider = applyRateLimitPolicy(
     withLogging(baseProvider, 'extract_study', {
       uploadJson: async ({ filename, content }) => {
         const file = await uploadTextFile(
@@ -136,6 +167,8 @@ export async function runExtraction(
       newUuid: deps.newUuid,
       now: deps.now,
     }),
+    policy,
+    deps.rateLimitClock,
   );
 
   const runId = uuid();
@@ -184,6 +217,12 @@ export async function runExtraction(
       appendEvidence: (rows) => appendEvidenceRows(params.spreadsheetId, rows, deps.google),
       newUuid: deps.newUuid,
       onProgress: params.onProgress,
+      // 並列化のスループット対策: ポリシーの同時実行数でバッチを並行させる（既定 1 = 逐次）
+      maxConcurrency: policy.maxConcurrency,
+      // Sheets 書き込みの 429 対策: N study ごと + 全 study 完了時にまとめて appendEvidence する。
+      // 優先順は 明示注入（deps.flushEveryNStudies）> tier のポリシー値 > 最終フォールバック
+      flushEveryNStudies:
+        deps.flushEveryNStudies ?? policy.flushEveryNStudies ?? DEFAULT_FLUSH_EVERY_N_STUDIES,
     },
   );
 
