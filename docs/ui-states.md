@@ -13,7 +13,7 @@ spec が正。実装が追いついていない箇所は以下のとおり（実
 | 章 | 実装状況 |
 |---|---|
 | §1 Popup | ✅ 実装済み（未ログイン / ログイン済 ×最近 0・N 件 / ログイン処理中・失敗 / 新規作成 / 既存 ID 検証。2026-07-02） |
-| §2 Options | ✅ 状態 A / B とも実装済み（Gemini キーの trim 保存・空文字抑止・保存中無効化・完了/失敗表示）。既定モデル（保存 / 空文字で解除 / S5 への注入）も実装済み（2026-07-03）。OpenRouter キー節 + 既定モデルの select 化（モデルセレクタ共通ウィジェット）は 2026-07-04 実装 |
+| §2 Options | ✅ 状態 A / B とも実装済み（Gemini キーの trim 保存・空文字抑止・保存中無効化・完了/失敗表示）。既定モデル（保存 / 空文字で解除 / S5 への注入）も実装済み（2026-07-03）。OpenRouter キー節 + 既定モデルの select 化（モデルセレクタ共通ウィジェット）は 2026-07-04 実装。レート制限 tier 節（一括抽出の 429 対策 = スロットル + リトライ強化）は 2026-07-10 実装 |
 | §3 App 共通レイアウト・状態 A / B | ✅ 実装済み（ヘッダ / サイドバー / ガードのディム表示 + トースト / `#app-context` 通知） |
 | §3 `#/home` | ✅ 実装済み（起動時に Sheets から進捗カウントを読込〔`values:batchGet` 1 呼び出し〕。読み込み中 / 失敗 + 再読み込み / 通常サマリ。ガードのディム判定も同カウントで実データ化。2026-07-03） |
 | §3 `#/documents` | ✅ 実装済み（読み込み中 / 失敗 / 空 / 取り込み中の進捗行。2026-07-02）。**v0.10 グルーピング UI 実装済み**（2026-07-07: study 単位グループ表示 + study_label / registration_id / document_role インライン編集 + 統合ダイアログ + 統合候補バナー）。Drive Picker のホスト済みページは GitHub Pages へデプロイ済み（[hosted/README.md](../hosted/README.md)）で、2026-07-03 の実機通し確認（[manual-testing.md](manual-testing.md) §1）で Picker の動作を確認済み |
@@ -77,6 +77,21 @@ spec が正。実装が追いついていない箇所は以下のとおり（実
 | 保存中 | `#save-default-model.disabled = true` |
 | 保存完了 | セレクタの値（その他は trim したテキスト）を保存 → `保存しました。`。**空（プレースホルダ選択 or その他の空文字）は「未設定に戻す」**（`settings.defaultModel` を削除）→ `未設定に戻しました。`（API キーと違い空での解除を許す） |
 | 保存失敗 | 赤系メッセージ `保存に失敗しました。もう一度お試しください。` + ボタン復帰 |
+
+### レート制限（一括抽出の 429 対策。docs/requirements.md §4.3）
+
+一括抽出（S6 パイロット / S7 一括）で多数の study を連続処理すると、LLM API の 1 分あたりリクエスト上限（RPM）に達して HTTP 429（Too Many Requests）が出うる。対策は 2 本立て（`src/lib/llm/rateLimitPolicy.ts`）: **A. バッチ間スロットル**（`withThrottle`。RPM から最小リクエスト間隔 = `ceil(60000/RPM)` を導き、`executeRun` のバッチ連射を平準化）+ **B. リトライ強化**（`withRetry`。429/5xx を指数バックオフで再試行し、サーバ提示の `Retry-After` ヘッダ / 本文 `RetryInfo.retryDelay` を尊重、tier ごとに試行回数・バックオフ上限を変える）。合成は `withRetry(withThrottle(withLogging(provider)))`。
+
+保存キーは `settings.rateLimitTier`（tier ID）+ `settings.rateLimitCustomRpm`（カスタム tier の RPM。正の整数のみ・非正で削除）。`resolveRateLimitPolicy()` が実効ポリシーへ解決し、bootstrap が抽出・ドラフトのサービス層へ注入する（未注入時は `UNLIMITED_POLICY` = スロットル無し・リトライのみ = 従来挙動）。tier プリセット: 無料枠 `gemini_free`（既定・RPM 8）/ `gemini_tier1`（120）/ `gemini_tier2`（900）/ `gemini_tier3`（1800）/ `custom`（RPM 手入力）/ `unlimited`（スロットルしない）。RPM は保守的な目安で、実測に合わせ `custom` で上書きできる。
+
+| 状態 | 受入基準 |
+|---|---|
+| 未設定 | `#rate-limit-status` = `レート制限: Gemini 無料枠（Free）`（既定 tier）。セレクタ `#rate-limit-tier` は `gemini_free` を選択。カスタム RPM 行 `#rate-limit-custom-row` は非表示。説明文 `#rate-limit-tier-desc` に選択 tier の補足 |
+| 保存済み | 保存 tier を `#rate-limit-tier` で復元。`custom` のときだけ `#rate-limit-custom-row` を表示し `#rate-limit-custom-rpm` に保存 RPM を充填 |
+| tier 変更 | `change` で説明文とカスタム RPM 行の表示を同期（`custom` のみ RPM 入力を表示）。不正な select 値は既定 `gemini_free` へ倒す |
+| 保存完了 | 非 custom = tier を保存しカスタム RPM キーを削除 / custom = tier + RPM（1 以上の整数）を保存 → `保存しました。` |
+| 保存不可 | custom で RPM が空・0 以下・非数値なら保存せず `RPM は 1 以上の数値を入力してください。`（赤系） |
+| 保存中 / 失敗 | `#save-rate-limit.disabled = true` / 赤系 `保存に失敗しました。もう一度お試しください。` + ボタン復帰 |
 
 ## 3. App / メインビュー (`src/app/app.html`)
 

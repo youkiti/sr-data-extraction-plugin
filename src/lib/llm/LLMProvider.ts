@@ -52,17 +52,25 @@ export class LlmProviderError extends Error {
   readonly providerId: LlmProviderId;
   readonly status: number | null;
   readonly responseBody: string;
+  /**
+   * サーバが `Retry-After` ヘッダで提示した再送までの待ち時間（ms）。
+   * 取得できない・ヘッダ無しは null。429 のバックオフで withRetry が尊重する
+   * （本文の RetryInfo よりヘッダを優先する）
+   */
+  readonly retryAfterMs: number | null;
 
   constructor(
     message: string,
     providerId: LlmProviderId,
     status: number | null,
     responseBody: string,
+    retryAfterMs: number | null = null,
   ) {
     super(message);
     this.name = 'LlmProviderError';
     this.providerId = providerId;
     this.status = status;
     this.responseBody = responseBody;
+    this.retryAfterMs = retryAfterMs;
   }
 }

@@ -21,6 +21,7 @@ import type { LlmProviderId } from '../../domain/llmApiLog';
 import type { LLMProvider } from '../../lib/llm/LLMProvider';
 import { missingApiKeyMessage } from '../../lib/llm/modelCatalog';
 import { resolveProviderId, type ProviderConfig } from '../../lib/llm/providerFactory';
+import type { RateLimitPolicy } from '../../lib/llm/rateLimitPolicy';
 import { nowIso8601 } from '../../utils/iso8601';
 import type { PilotState, Store } from '../store';
 import { showToast } from '../ui/toast';
@@ -40,6 +41,8 @@ export interface PilotServiceDeps extends VerificationDeps {
   loadApiKey: (provider: LlmProviderId) => Promise<string | null>;
   /** provider 生成（実行時は lib/llm/providerFactory.createProvider。テストは fake を注入） */
   buildProvider: (config: ProviderConfig) => LLMProvider;
+  /** 実効レート制限ポリシー（429 対策）を解決する。runExtraction へそのまま渡す */
+  resolveRateLimitPolicy?: () => Promise<RateLimitPolicy>;
 }
 
 function toMessage(err: unknown): string {
@@ -178,6 +181,7 @@ export async function runPilot(store: Store, deps: PilotServiceDeps): Promise<vo
         apiKey,
         loadDocumentPages: makeLoadDocumentPages(targets, deps.google),
         buildProvider: deps.buildProvider,
+        resolveRateLimitPolicy: deps.resolveRateLimitPolicy,
         newUuid: deps.newUuid,
         now: deps.now,
       },

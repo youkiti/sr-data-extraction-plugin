@@ -258,4 +258,42 @@ describe('runExtraction', () => {
     expect(outcome.run.tokensIn).toBeNull();
     expect(mockedAppendRun).toHaveBeenCalledTimes(2); // running 行 + 完了行
   });
+
+  test('resolveRateLimitPolicy 注入時: バッチ間を RPM 間隔でスロットルする（429 対策 A）', async () => {
+    const chat = jest.fn().mockResolvedValue(AI_RESPONSE);
+    const deps = makeDeps(chat);
+    // 2 study = 2 バッチ。RPM=30 → 2000ms 間隔。仮想クロックで実待ちを回避
+    const waits: number[] = [];
+    const clock = { now: 0 };
+    const outcome = await runExtraction(
+      {
+        ...baseParams(),
+        documents: [
+          makeDocument({ documentId: 'doc-1', studyId: 'study-1' }),
+          makeDocument({ documentId: 'doc-2', studyId: 'study-2', filename: 'jones2021.pdf' }),
+        ],
+      },
+      {
+        ...deps,
+        resolveRateLimitPolicy: async () => ({
+          requestsPerMinute: 30,
+          maxAttempts: 3,
+          baseDelayMs: 1_000,
+          maxDelayMs: 60_000,
+        }),
+        rateLimitClock: {
+          now: () => clock.now,
+          sleep: (ms) => {
+            waits.push(ms);
+            clock.now += ms;
+            return Promise.resolve();
+          },
+        },
+      },
+    );
+    expect(chat).toHaveBeenCalledTimes(2);
+    // 初回は待たず 2 バッチ目で 1 間隔（2000ms）だけスロットルする
+    expect(waits).toEqual([2_000]);
+    expect(outcome.run.status).toBe('done');
+  });
 });

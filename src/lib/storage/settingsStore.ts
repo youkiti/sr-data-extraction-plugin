@@ -1,8 +1,17 @@
 // アプリ設定（秘密情報でない値）の保存・読み出し。
 // 秘密情報（API キー等）は lib/storage/secretsStore に置き、こちらへは足さない
+import {
+  DEFAULT_RATE_LIMIT_TIER_ID,
+  isRateLimitTierId,
+  resolvePolicyForTier,
+  type RateLimitPolicy,
+  type RateLimitTierId,
+} from '../llm/rateLimitPolicy';
 import { getLocal, removeLocal, setLocal } from './chromeStorage';
 
 const DEFAULT_MODEL_STORAGE_KEY = 'settings.defaultModel';
+const RATE_LIMIT_TIER_STORAGE_KEY = 'settings.rateLimitTier';
+const RATE_LIMIT_CUSTOM_RPM_STORAGE_KEY = 'settings.rateLimitCustomRpm';
 
 /**
  * 工場出荷の既定モデル。ユーザーが Options で既定モデルを未設定のとき、S5 スキーマ画面の
@@ -30,4 +39,42 @@ export async function saveDefaultModel(model: string): Promise<void> {
     return;
   }
   await setLocal(DEFAULT_MODEL_STORAGE_KEY, trimmed);
+}
+
+/**
+ * レート制限 tier を読み出す（未設定・不正値は既定 = gemini_free）。
+ * 一括抽出の 429 対策（スロットル + リトライ）のポリシーを決める（docs/ui-states.md §2「レート制限」）
+ */
+export async function loadRateLimitTier(): Promise<RateLimitTierId> {
+  const stored = await getLocal<string>(RATE_LIMIT_TIER_STORAGE_KEY);
+  return isRateLimitTierId(stored) ? stored : DEFAULT_RATE_LIMIT_TIER_ID;
+}
+
+/** レート制限 tier を保存する */
+export async function saveRateLimitTier(tier: RateLimitTierId): Promise<void> {
+  await setLocal(RATE_LIMIT_TIER_STORAGE_KEY, tier);
+}
+
+/** カスタム tier の RPM を読み出す（未設定・不正値は null） */
+export async function loadRateLimitCustomRpm(): Promise<number | null> {
+  const stored = await getLocal<number>(RATE_LIMIT_CUSTOM_RPM_STORAGE_KEY);
+  return typeof stored === 'number' && Number.isFinite(stored) && stored > 0 ? stored : null;
+}
+
+/**
+ * カスタム tier の RPM を保存する。正の整数のみ採用し、それ以外は保存キーを削除する
+ * （＝カスタム tier でも RPM 未設定 → プリセット既定へフォールバック）
+ */
+export async function saveRateLimitCustomRpm(rpm: number): Promise<void> {
+  if (!Number.isFinite(rpm) || rpm <= 0) {
+    await removeLocal(RATE_LIMIT_CUSTOM_RPM_STORAGE_KEY);
+    return;
+  }
+  await setLocal(RATE_LIMIT_CUSTOM_RPM_STORAGE_KEY, Math.floor(rpm));
+}
+
+/** 保存済みの tier + カスタム RPM から実効レート制限ポリシーを解決する（サービス層が注入して使う） */
+export async function resolveRateLimitPolicy(): Promise<RateLimitPolicy> {
+  const [tier, customRpm] = await Promise.all([loadRateLimitTier(), loadRateLimitCustomRpm()]);
+  return resolvePolicyForTier(tier, customRpm);
 }
