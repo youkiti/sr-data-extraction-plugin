@@ -1,0 +1,5 @@
+run_id,run_type,schema_version,study_ids,provider,requested_model,model_version,input_mode,status,started_at,finished_at,tokens_in,tokens_out,cost_estimate
+run-seq,full,1,"[""s1"",""s2"",""s3""]",gemini,gemini-3.5-flash,,text_only,running,2026-07-10T12:00:00Z,,,,0.03
+run-seq,full,1,"[""s1"",""s2"",""s3""]",gemini,gemini-3.5-flash,gemini-3.5-flash-001,text_only,done,2026-07-10T12:00:00Z,2026-07-10T12:01:00Z,36000,2400,0.03
+run-par4,full,1,"[""s4"",""s5"",""s6""]",gemini,gemini-3.5-flash,,text_only,running,2026-07-10T12:05:00Z,,,,0.03
+run-par4,full,1,"[""s4"",""s5"",""s6""]",gemini,gemini-3.5-flash,gemini-3.5-flash-001,text_only,partial_failure,2026-07-10T12:05:00Z,2026-07-10T12:05:20Z,48800,3280,0.04
