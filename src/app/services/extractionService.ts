@@ -6,6 +6,11 @@
 // 解決できる」不変条件を守る（途中で実行が死んでも running 行が残り、中断として検出できる）。
 // LLM 呼び出しは withRetry(withLogging(createProvider(...))) で包み、
 // 全呼び出し（リトライの各試行を含む）を LLMApiLog + Drive（logs/llm/）に残す
+// Evidence の Sheets 書き込みは executeRun 側で N study ごと（+ 行数キャップ）にまとめられる
+// （429 対策）。flushEveryNStudies は本サービス層から executeRun へ注入する。
+// 値は tier 連動（レート制限ポリシーの flushEveryNStudies）を優先し、
+// 未解決時のみ DEFAULT_FLUSH_EVERY_N_STUDIES へフォールバックする
+// （docs/handoff-20260710-sheets-write-batching.md）
 import type { ExtractionRun, RunType } from '../../domain/extractionRun';
 import type { DocumentRecord } from '../../domain/document';
 import type { SchemaField } from '../../domain/schemaField';
@@ -16,6 +21,7 @@ import {
 } from '../../features/extraction/annotationRepository';
 import { appendEvidenceRows } from '../../features/extraction/evidenceRepository';
 import {
+  DEFAULT_FLUSH_EVERY_N_STUDIES,
   executeRun,
   type ExecuteRunResult,
   type RunProgress,
@@ -63,6 +69,14 @@ export interface ExtractionServiceDeps {
   /** テスト時に差し替え可能な UUID 発番 / 現在時刻 */
   newUuid?: () => string;
   now?: () => string;
+  /**
+   * Evidence の書き込みを何 study ごとにまとめて Sheets へ appendEvidence するか
+   * （429 対策。省略時は resolveRateLimitPolicy が解決した RateLimitPolicy.flushEveryNStudies
+   * （tier 連動）を使い、それも無ければ DEFAULT_FLUSH_EVERY_N_STUDIES = 5。
+   * ここで明示注入すればどちらより優先される（主にテスト用）。executeRun.ts へそのまま渡す。
+   * docs/handoff-20260710-sheets-write-batching.md）
+   */
+  flushEveryNStudies?: number;
 }
 
 export interface RunExtractionParams {
@@ -198,6 +212,10 @@ export async function runExtraction(
       onProgress: params.onProgress,
       // 並列化のスループット対策: ポリシーの同時実行数でバッチを並行させる（既定 1 = 逐次）
       maxConcurrency: policy.maxConcurrency,
+      // Sheets 書き込みの 429 対策: N study ごと + 全 study 完了時にまとめて appendEvidence する。
+      // 優先順は 明示注入（deps.flushEveryNStudies）> tier のポリシー値 > 最終フォールバック
+      flushEveryNStudies:
+        deps.flushEveryNStudies ?? policy.flushEveryNStudies ?? DEFAULT_FLUSH_EVERY_N_STUDIES,
     },
   );
 

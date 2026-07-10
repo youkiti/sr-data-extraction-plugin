@@ -53,6 +53,16 @@ describe('tier カタログ', () => {
       expect(tier.editableConcurrency).toBe(tier.id === 'custom');
     }
   });
+
+  test('flushEveryNStudies は tier ごとに固定値を持つ（Sheets 書き込み 429 対策の tier 連動）', () => {
+    expect(getRateLimitTier('gemini_free').policy.flushEveryNStudies).toBe(5);
+    expect(getRateLimitTier('gemini_tier1').policy.flushEveryNStudies).toBe(8);
+    expect(getRateLimitTier('gemini_tier2').policy.flushEveryNStudies).toBe(12);
+    expect(getRateLimitTier('gemini_tier3').policy.flushEveryNStudies).toBe(15);
+    // custom はベース値（並列数未指定時に使う値）
+    expect(getRateLimitTier('custom').policy.flushEveryNStudies).toBe(5);
+    expect(UNLIMITED_POLICY.flushEveryNStudies).toBe(15);
+  });
 });
 
 describe('isRateLimitTierId', () => {
@@ -123,6 +133,31 @@ describe('resolvePolicyForTier', () => {
     expect(policy.requestsPerMinute).toBe(50);
     expect(policy.maxConcurrency).toBe(3);
   });
+
+  test('カスタム tier で concurrency を指定すると flushEveryNStudies を clamp(round(concurrency×2), 5, 15) で上書きする', () => {
+    // round(1*2)=2 → 下限 5 に張り付く
+    expect(resolvePolicyForTier('custom', null, 1).flushEveryNStudies).toBe(5);
+    // round(3*2)=6 → クランプなし
+    expect(resolvePolicyForTier('custom', null, 3).flushEveryNStudies).toBe(6);
+    // round(4*2)=8 → クランプなし
+    expect(resolvePolicyForTier('custom', null, 4).flushEveryNStudies).toBe(8);
+    // round(10*2)=20 → 上限 15 に張り付く
+    expect(resolvePolicyForTier('custom', null, 10).flushEveryNStudies).toBe(15);
+    // 小数の concurrency は positiveInt で floor されてから 2 倍される（4.9→4→8）
+    expect(resolvePolicyForTier('custom', null, 4.9).flushEveryNStudies).toBe(8);
+  });
+
+  test('カスタム tier で concurrency が null / 非正なら flushEveryNStudies はベース値（5）のまま', () => {
+    expect(resolvePolicyForTier('custom', null, null).flushEveryNStudies).toBe(5);
+    expect(resolvePolicyForTier('custom', null, 0).flushEveryNStudies).toBe(5);
+    expect(resolvePolicyForTier('custom', null, -2).flushEveryNStudies).toBe(5);
+    expect(resolvePolicyForTier('custom', null, Number.NaN).flushEveryNStudies).toBe(5);
+  });
+
+  test('非カスタム tier は concurrency 指定があっても flushEveryNStudies を上書きしない（プリセット値のまま）', () => {
+    expect(resolvePolicyForTier('gemini_tier3', null, 8).flushEveryNStudies).toBe(15);
+    expect(resolvePolicyForTier('gemini_free', null, 8).flushEveryNStudies).toBe(5);
+  });
 });
 
 describe('throttleIntervalMs', () => {
@@ -178,6 +213,7 @@ describe('applyRateLimitPolicy', () => {
       baseDelayMs: 1_000,
       maxDelayMs: 60_000,
       maxConcurrency: 1,
+      flushEveryNStudies: 5,
     };
     const wrapped = applyRateLimitPolicy(provider, policy, { sleep, now });
 

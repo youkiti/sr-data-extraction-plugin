@@ -8,6 +8,10 @@
 // tier は「利用者のアカウントが属する課金帯」を表す。RPM はモデルによっても変わるため、
 // プリセット値は各 tier で常用しうる最も制約の強いモデルを想定した保守的な目安であり、
 // 「カスタム」で実際の RPM に合わせて上書きできる（docs/ui-states.md §2「レート制限」）。
+//
+// Sheets 書き込みの 429 対策（executeRun.ts の Evidence フラッシュ間隔）も本ポリシーに相乗り
+// させる: `flushEveryNStudies` は tier ごとに決め打ちし、custom tier だけは maxConcurrency
+// （書き込み集中の実ドライバ）から逆算する（docs/handoff-20260710-sheets-write-batching.md）。
 import { withRetry } from './retry';
 import { withThrottle } from './throttle';
 import type { LLMProvider } from './LLMProvider';
@@ -29,6 +33,14 @@ export interface RateLimitPolicy {
    * （docs/handoff-20260710-throughput.md §3）。
    */
   maxConcurrency: number;
+  /**
+   * Evidence の Sheets 書き込みを何 study ごとにまとめて appendEvidence するか
+   * （Sheets 書き込みクォータ 60 回/分/ユーザーへの 429 対策。executeRun.ts の
+   * flushEveryNStudies へそのまま渡す）。tier が大きいほど並列数・RPM が大きくなり
+   * 書き込みも集中しやすいため、tier ごとに大きめの値を割り当てる
+   * （docs/handoff-20260710-sheets-write-batching.md）。
+   */
+  flushEveryNStudies: number;
 }
 
 /** maxConcurrency の既定値。従来挙動（逐次）を保つため 1 */
@@ -66,6 +78,7 @@ export const UNLIMITED_POLICY: RateLimitPolicy = {
   baseDelayMs: 1_000,
   maxDelayMs: 15_000,
   maxConcurrency: DEFAULT_MAX_CONCURRENCY,
+  flushEveryNStudies: 15,
 };
 
 /** 未設定時の既定 tier。多くの利用者が該当する無料枠を安全側の既定にする */
@@ -89,6 +102,7 @@ export const RATE_LIMIT_TIERS: readonly RateLimitTier[] = [
       baseDelayMs: 2_000,
       maxDelayMs: 60_000,
       maxConcurrency: DEFAULT_MAX_CONCURRENCY,
+      flushEveryNStudies: 5,
     },
     editableRpm: false,
     editableConcurrency: false,
@@ -103,6 +117,7 @@ export const RATE_LIMIT_TIERS: readonly RateLimitTier[] = [
       baseDelayMs: 1_000,
       maxDelayMs: 30_000,
       maxConcurrency: DEFAULT_MAX_CONCURRENCY,
+      flushEveryNStudies: 8,
     },
     editableRpm: false,
     editableConcurrency: false,
@@ -117,6 +132,7 @@ export const RATE_LIMIT_TIERS: readonly RateLimitTier[] = [
       baseDelayMs: 1_000,
       maxDelayMs: 20_000,
       maxConcurrency: DEFAULT_MAX_CONCURRENCY,
+      flushEveryNStudies: 12,
     },
     editableRpm: false,
     editableConcurrency: false,
@@ -131,6 +147,7 @@ export const RATE_LIMIT_TIERS: readonly RateLimitTier[] = [
       baseDelayMs: 1_000,
       maxDelayMs: 20_000,
       maxConcurrency: DEFAULT_MAX_CONCURRENCY,
+      flushEveryNStudies: 15,
     },
     editableRpm: false,
     editableConcurrency: false,
@@ -145,6 +162,9 @@ export const RATE_LIMIT_TIERS: readonly RateLimitTier[] = [
       baseDelayMs: 2_000,
       maxDelayMs: 60_000,
       maxConcurrency: DEFAULT_MAX_CONCURRENCY,
+      // 同時実行数を指定しない（= 既定 1）ときのベース値。指定時は resolvePolicyForTier が
+      // maxConcurrency から上書きする
+      flushEveryNStudies: 5,
     },
     editableRpm: true,
     editableConcurrency: true,
@@ -176,9 +196,18 @@ function positiveInt(value: number | null): number | null {
   return value !== null && Number.isFinite(value) && value > 0 ? Math.floor(value) : null;
 }
 
+/** value を四捨五入したうえで [min, max] にクランプする */
+function clampRound(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, Math.round(value)));
+}
+
 /**
  * tier ID（+ カスタム RPM / 同時実行数）から実効ポリシーを解決する。
- * カスタム tier のときだけ customRpm / customConcurrency でプリセット値を上書きする（正の整数のみ採用）
+ * カスタム tier のときだけ customRpm / customConcurrency でプリセット値を上書きする（正の整数のみ採用）。
+ * さらに customConcurrency が有効な正の整数のときは、並列数（= 書き込み集中の実ドライバ）から
+ * flushEveryNStudies を `clamp(round(maxConcurrency × 2), 5, 15)` で逆算して上書きする
+ * （custom で並列数を指定しない場合はプリセット既定の 5 のまま。
+ * docs/handoff-20260710-sheets-write-batching.md）
  */
 export function resolvePolicyForTier(
   id: RateLimitTierId,
@@ -193,7 +222,11 @@ export function resolvePolicyForTier(
   }
   const concurrency = positiveInt(customConcurrency);
   if (tier.editableConcurrency && concurrency !== null) {
-    policy = { ...policy, maxConcurrency: concurrency };
+    policy = {
+      ...policy,
+      maxConcurrency: concurrency,
+      flushEveryNStudies: clampRound(concurrency * 2, 5, 15),
+    };
   }
   return policy;
 }
