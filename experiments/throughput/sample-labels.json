@@ -1,0 +1,4 @@
+{
+  "run-seq": "concurrency=1",
+  "run-par4": "concurrency=4"
+}
