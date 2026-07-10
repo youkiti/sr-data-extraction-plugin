@@ -3,6 +3,16 @@
 // 再特定して矩形化する（normalizeTextWithMap → locateQuoteRange → toRawRange → highlightMap）。
 // exact / normalized は全ページの全出現を列挙し、「他 n 箇所に一致」の切替（§5-3）に使う。
 // fuzzy は anchor 済みページ内の最良一致 1 件のみ
+//
+// issue #28 案3: PDF（textPages/items 付き）は表示中の 1 文書しか読み込まないため、
+// 再特定は 2 段に分ける。
+// (1) テキストのみの再特定（buildDocumentTextMatches / buildStudyTextMatches）: extracted_texts
+//     の軽量ページ（{page, text}）に対して行い、matchCount・選択出現・ページ番号だけを持つ
+//     （rects なし）。study の全文書ぶんを bundle 組み立て時に一度だけ計算でき、PDF の
+//     ロード状態に関係なく一貫した matchCount / ページ表示ができる
+// (2) 矩形の実体化（buildDocumentHighlights）: 対象文書の PDF が読み込まれ TextLayerPage
+//     （items 付き）が揃ってから、そのページのテキストに対して行う。extracted_texts と
+//     PDF テキスト層は同じ抽出結果由来のため、同じ quote に対して両者の出現順序・件数は一致する
 import type { Evidence } from '../../domain/evidence';
 import type { AnchorStatus, CharRange } from '../../domain/anchor';
 import type { TextLayerPage } from '../../domain/textLayer';
@@ -176,20 +186,88 @@ export function buildDocumentHighlights(
   return highlights;
 }
 
+/** テキストのみで再特定した 1 件ぶんの出現位置（rects なし。PDF 未読込でも計算できる） */
+export interface EvidenceTextMatch {
+  evidenceId: string;
+  /** quote の出所文書 */
+  documentId: string;
+  /** 対応する検証セル（fieldId × entityKey） */
+  cellKey: string;
+  status: Exclude<AnchorStatus, 'failed'>;
+  /** 出現位置（ページ昇順）。exact / normalized は複数になりうる */
+  occurrences: Array<{ page: number; range: CharRange }>;
+  /** 既定で選択する出現（ai_page に最も近いページ。§5-3） */
+  selectedIndex: number;
+}
+
 /**
- * study 配下の全文書の Evidence をハイライトへ変換する（v0.10 フェーズ 3）。
- * 各文書の Evidence（document_id 一致）をその文書のテキスト層に対してアンカリングし、
- * documentId で出所を持たせる。表示順は documents の並び（role 固定順 → 取り込み順）
+ * 1 document の Evidence をテキストのみで再特定する（rects 化しない版の buildDocumentHighlights）。
+ * extracted_texts の軽量ページ（{page, text}）に対して行うため、PDF が未読込でも計算できる。
+ * 除外条件（quote なし / anchor_status なし・failed / 正規化後空 / 見つからない）は
+ * buildDocumentHighlights と同一
  */
-export function buildStudyHighlights(
+export function buildDocumentTextMatches<P extends { page: number; text: string }>(
+  documentId: string,
+  evidence: readonly Evidence[],
+  pages: readonly P[],
+): EvidenceTextMatch[] {
+  const entries = buildNormalizedPages(pages);
+  const matches: EvidenceTextMatch[] = [];
+  for (const item of evidence) {
+    if (
+      item.quote === null ||
+      item.anchorStatus === null ||
+      item.anchorStatus === 'failed'
+    ) {
+      continue;
+    }
+    const normalizedQuote = normalizeTextWithMap(item.quote).text;
+    if (normalizedQuote === '') {
+      continue;
+    }
+    let occurrences: Array<{ page: number; range: CharRange }>;
+    if (item.anchorStatus === 'fuzzy') {
+      const entry = entries.find((candidate) => candidate.page.page === item.page);
+      if (entry === undefined) {
+        continue;
+      }
+      // fuzzy + 非空 quote では locateQuoteRange は必ず範囲を返す（null は failed / 空 quote のみ）
+      const range = locateQuoteRange(normalizedQuote, entry.map.text, 'fuzzy') as CharRange;
+      const rawRange = toRawRange(entry.map, range);
+      occurrences = rawRange === null ? [] : [{ page: entry.page.page, range: rawRange }];
+    } else {
+      occurrences = collectRawOccurrences(normalizedQuote, entries);
+    }
+    if (occurrences.length === 0) {
+      continue;
+    }
+    matches.push({
+      evidenceId: item.evidenceId,
+      documentId,
+      cellKey: cellKeyOf(item.fieldId, item.entityKey),
+      status: item.anchorStatus,
+      occurrences,
+      selectedIndex: nearestIndex(occurrences, item.page),
+    });
+  }
+  return matches;
+}
+
+/**
+ * study 配下の全文書の Evidence をテキストのみで再特定する（v0.10 フェーズ 3 + issue #28 案3）。
+ * 各文書の Evidence（document_id 一致）をその文書の extracted_texts に対してアンカリングし、
+ * documentId で出所を持たせる。表示順は documents の並び（role 固定順 → 取り込み順）。
+ * PDF の読み込み状態に関係なく計算できるため、bundle 組み立て時に一度だけ計算すればよい
+ */
+export function buildStudyTextMatches(
   documents: readonly VerificationDocumentView[],
   evidence: readonly Evidence[],
-): EvidenceHighlight[] {
+): EvidenceTextMatch[] {
   return documents.flatMap((view) =>
-    buildDocumentHighlights(
+    buildDocumentTextMatches(
       view.document.documentId,
       evidence.filter((item) => item.documentId === view.document.documentId),
-      view.textPages,
+      view.extractedPages,
     ),
   );
 }

@@ -86,12 +86,28 @@ function minimalPdf(text: string, options: { rotated?: boolean } = {}): Buffer {
   return Buffer.from(pdf, 'latin1');
 }
 
-/** Sheets / Drive の stub を配線し、書き込み URL を appendUrls へ記録する */
+/** Sheets / Drive の stub を配線した結果（書き込み URL・PDF バイナリの実 fetch 記録） */
+interface RouteRecorder {
+  appendUrls: string[];
+  /**
+   * `alt=media` で実際に PDF バイナリとして fetch された driveFileId の記録（fetch 順）。
+   * 「表示していない文書の PDF を読まない」（issue #28 案3）の実弾検証に使う
+   */
+  pdfFetchIds: string[];
+}
+
+/**
+ * Sheets / Drive の stub を配線する。
+ * Drive の `alt=media` は文書の driveFileId（PDF 本体）と textRef のファイル ID（extracted_texts
+ * の .txt）を区別して応答する（textRef は常に `txt-{documentId}` 形式。docRecord 参照）。
+ * PDF 本体の fetch だけ pdfFetchIds へ記録する
+ */
 async function setupRoutes(
   page: Page,
   options: { schemaRows: string[][]; evidenceRows: string[][]; rotatedPdf?: boolean },
-): Promise<string[]> {
+): Promise<RouteRecorder> {
   const appendUrls: string[] = [];
+  const pdfFetchIds: string[] = [];
 
   await page.route('https://sheets.googleapis.com/**', async (route) => {
     const url = decodeURIComponent(route.request().url());
@@ -126,6 +142,18 @@ async function setupRoutes(
   await page.route('https://www.googleapis.com/**', async (route) => {
     const url = decodeURIComponent(route.request().url());
     if (url.includes('alt=media')) {
+      // extracted_texts（.txt）: docRecord の textRef は常に `txt-{documentId}` 形式のファイル ID
+      const textMatch = /\/files\/txt-[^?]+\?alt=media/.exec(url);
+      if (textMatch !== null) {
+        // PDF 本体と同じ本文（QUOTE）を返す = 実 PDF の text 層と同一内容という前提を再現する
+        await route.fulfill({ contentType: 'text/plain', body: QUOTE });
+        return;
+      }
+      // PDF 本体: driveFileId は `drive-{n}` 形式
+      const pdfMatch = /\/files\/(drive-[^?]+)\?alt=media/.exec(url);
+      if (pdfMatch?.[1] !== undefined) {
+        pdfFetchIds.push(pdfMatch[1]);
+      }
       await route.fulfill({
         contentType: 'application/pdf',
         body: minimalPdf(QUOTE, { rotated: options.rotatedPdf }),
@@ -135,7 +163,7 @@ async function setupRoutes(
     await route.fulfill({ json: {} });
   });
 
-  return appendUrls;
+  return { appendUrls, pdfFetchIds };
 }
 
 /** 取り込み文書レコードの雛形（E2E 用の最小フィールド） */
@@ -279,7 +307,7 @@ async function initApp(
 }
 
 test('一覧 + 検証フロー: 進捗チップ → ハイライト → 承認 → Decisions 追記 → セレクタ切替の hash 同期', async ({ page }) => {
-  const appendUrls = await setupRoutes(page, {
+  const { appendUrls } = await setupRoutes(page, {
     schemaRows: [STUDY_FIELD_ROW],
     evidenceRows: [EVIDENCE_ROW_1, EVIDENCE_ROW_2],
   });
@@ -362,7 +390,7 @@ test('回転ページ（/Rotate 90 の表ページ）でもハイライトが本
 });
 
 test('?study= 直リンク + 群構成の確定: タブディム → 確定 → ArmStructures 追記 → arm タブ有効', async ({ page }) => {
-  const appendUrls = await setupRoutes(page, {
+  const { appendUrls } = await setupRoutes(page, {
     schemaRows: [STUDY_FIELD_ROW, ARM_FIELD_ROW, OUTCOME_FIELD_ROW],
     evidenceRows: [EVIDENCE_ROW_1, EVIDENCE_ROW_2, ARM_EVIDENCE_ROW],
   });
@@ -499,4 +527,32 @@ test('複数文書 study: 文書切替タブ + 別文書由来のセルへフォ
 
   const results = await new AxeBuilder({ page }).analyze();
   expect(results.violations).toEqual([]);
+});
+
+test('複数文書 study: 初期表示では 2 文書目の PDF バイナリを fetch せず、タブ切替で初めて fetch される（issue #28 案3）', async ({
+  page,
+}) => {
+  const { pdfFetchIds } = await setupRoutes(page, {
+    schemaRows: [STUDY_FIELD_ROW, STUDY_FIELD_ROW_2],
+    evidenceRows: [
+      EVIDENCE_ROW_1,
+      ['ev-1b', 'run-1', 'study-1', 'f-country', 'doc-1b', '-', 'Japan', 'FALSE', QUOTE, '1', 'high', 'exact'],
+      EVIDENCE_ROW_2,
+    ],
+  });
+  await initApp(page, '#/verify?study=study-1', multiDocDocuments());
+
+  // 初期表示（本論文 doc-1 が active）: 本論文の PDF（drive-1）だけが fetch され、
+  // 試験登録（doc-1b・drive-1b）はまだ fetch されない
+  const docTabs = page.locator('.verify__doc-tabs .verify__doc-tab');
+  await expect(docTabs).toHaveCount(2, { timeout: 15_000 });
+  await expect(page.locator('.pdf-viewer__page-indicator')).toBeVisible({ timeout: 15_000 });
+  expect(pdfFetchIds).toContain('drive-1');
+  expect(pdfFetchIds).not.toContain('drive-1b');
+
+  // 試験登録タブへ切替えると、そのときになって初めて drive-1b が fetch される
+  await docTabs.nth(1).click();
+  await expect
+    .poll(() => pdfFetchIds.includes('drive-1b'), { timeout: 15_000 })
+    .toBe(true);
 });

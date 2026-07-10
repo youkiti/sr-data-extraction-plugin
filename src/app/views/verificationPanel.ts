@@ -35,14 +35,17 @@ import {
   type CellState,
 } from '../../features/verification/cellState';
 import {
-  buildStudyHighlights,
+  buildDocumentHighlights,
+  buildStudyTextMatches,
   type EvidenceHighlight,
+  type EvidenceTextMatch,
   type HighlightOccurrence,
 } from '../../features/verification/highlights';
 import { buildOutcomeDeclarationDecisions } from '../../features/verification/instanceDeclarations';
 import { verificationProgress } from '../../features/verification/progress';
 import { findQuoteContext } from '../../features/verification/textContext';
 import type {
+  LoadedPdfView,
   VerificationData,
   VerificationDocumentView,
 } from '../../features/verification/types';
@@ -113,8 +116,10 @@ export function createVerificationPanel(
   const ownDecisions: Decision[] = data.decisions.filter(
     (decision) => decision.annotator === data.annotator,
   );
-  const highlights = buildStudyHighlights(data.documents, data.evidence);
-  const highlightByCell = new Map(highlights.map((h) => [h.cellKey, h]));
+  // テキストのみで再特定した出現位置（rects なし。study 全文書ぶんを一度だけ計算し、
+  // PDF のロード状態に関係なく matchCount / ページ表示に使う。issue #28 案3）
+  const textMatches = buildStudyTextMatches(data.documents, data.evidence);
+  const textMatchByCell = new Map(textMatches.map((m) => [m.cellKey, m]));
   const evidenceByCell = new Map<string, Evidence>(
     data.evidence.map((item) => [cellKeyOf(item.fieldId, item.entityKey), item]),
   );
@@ -159,9 +164,10 @@ export function createVerificationPanel(
     return [...activeGroups.flatMap((group) => group.cells), ...decided.map((entry) => entry.cell)];
   };
 
-  // --- 左ペイン（PDF ビューア + 文書切替タブ。v0.10 フェーズ 3） ----------
+  // --- 左ペイン（PDF ビューア + 文書切替タブ。v0.10 フェーズ 3 + issue #28 案3） -----
   // study 配下の文書は role 固定順に並ぶ。ビューアは 1 つだけ作り、setDocument で切替える
-  // （描画競合の連番ガードを維持）。表示中文書に PDF がなければエラーカードへ差し替える
+  // （描画競合の連番ガードを維持）。PDF は表示中の文書だけを data.loadPdfView で遅延読込し、
+  // 解決するまでは読み込み中プレースホルダを出す（表示していない文書の PDF は読まない）
   let activeDocumentId = (data.documents[0] as VerificationDocumentView).document.documentId;
 
   const activeDocument = (): VerificationDocumentView =>
@@ -169,18 +175,41 @@ export function createVerificationPanel(
       (view) => view.document.documentId === activeDocumentId,
     ) as VerificationDocumentView;
 
-  const firstWithPdf = data.documents.find((view) => view.pdf !== null) ?? null;
   let viewer: PdfViewerHandle | null = null;
   let viewerDocId: string | null = null;
-  if (firstWithPdf !== null) {
-    viewer = createPdfViewer({
-      // firstWithPdf.pdf は非 null（find 条件）
-      document: firstWithPdf.pdf as NonNullable<VerificationDocumentView['pdf']>,
-      pages: firstWithPdf.textPages,
-      onHighlightClick: (id) => focusCell(id, { jump: false, domFocus: true }),
-      renderPage: options.renderPage,
+  /**
+   * documentId ごとの矩形ハイライト（rects 実体化済み）。対象文書の textPages がロードされた
+   * 時点で不変なので、applyLoadedPdf で 1 回だけ計算してメモ化する（syncViewer は判定・
+   * フォーカス移動のたびに走るため、毎回のアンカリング再計算は性能退行になる）。
+   * retry による読み直しも applyLoadedPdf を通るため、そのときはキャッシュが差し替わる
+   */
+  const rectHighlightsByDoc = new Map<string, EvidenceHighlight[]>();
+  /** 現在進行中のロードを無効化するための連番（文書切替のたびに進める） */
+  let docLoadSeq = 0;
+  /**
+   * ロード解決後に一度だけ適用するハイライトジャンプ（f キー / 項目フォーカスの最中に
+   * 文書切替が発生したときの「保留ジャンプ」。適用したら null に戻す）
+   */
+  let pendingJumpCellKey: string | null = null;
+
+  function renderPdfLoadingPlaceholder(): HTMLElement {
+    return el('p', {
+      className: 'verify__pdf-loading',
+      attributes: { role: 'status', 'aria-live': 'polite' },
+      text: 'PDF を読み込んでいます…',
     });
-    viewerDocId = firstWithPdf.document.documentId;
+  }
+
+  /**
+   * 表示中文書の PDF がロード済み（viewer が当該文書を指している）ならその場でハイライトへ
+   * ジャンプし、ロード中・未着手なら「保留ジャンプ」として予約する（ロード解決後に 1 回だけ適用）
+   */
+  function focusHighlightNowOrPending(cellKey: string): void {
+    if (viewer !== null && viewerDocId === activeDocumentId) {
+      viewer.focusHighlight(cellKey);
+    } else {
+      pendingJumpCellKey = cellKey;
+    }
   }
 
   // 文書切替タブ（2 文書以上のときだけ出す）。role バッジ + ファイル名
@@ -225,7 +254,7 @@ export function createVerificationPanel(
   const textViewer = createTextViewer();
 
   function activeDocumentHasText(): boolean {
-    return activeDocument().textPages.some((page) => page.text !== '');
+    return activeDocument().extractedPages.some((page) => page.text !== '');
   }
 
   const pdfModeButton = el('button', {
@@ -257,13 +286,113 @@ export function createVerificationPanel(
   leftChildren.push(viewToggleBar, textModeNote, noTextBanner, viewerBody, textViewerBody);
   const leftPane = el('div', { className: 'verify__pane verify__pane--pdf' }, leftChildren);
 
-  /** 表示中文書に PDF がないときのエラーカード（再取り込み導線。ui-states.md §6） */
-  function pdfErrorCard(view: VerificationDocumentView): HTMLElement {
+  /**
+   * 表示中文書に PDF がないときのエラーカード（再試行 + 再取り込み導線。ui-states.md §6）。
+   * 再試行ボタンはキャッシュされた失敗結果を捨てて読み直す（features/verification/pdfViewCache.retry）
+   */
+  function pdfErrorCard(documentId: string, message: string | null): HTMLElement {
+    const retryButton = el('button', {
+      className: 'verify__pdf-retry',
+      text: '再試行',
+      attributes: { type: 'button' },
+    }) as HTMLButtonElement;
+    retryButton.addEventListener('click', () => {
+      void retryActiveDocumentPdf(documentId);
+    });
     const link = el('a', { text: '文献取り込み画面を開く', attributes: { href: '#/documents' } });
     return el('div', { className: 'verify__pdf-error', attributes: { role: 'alert' } }, [
-      el('p', { text: `PDF を開けません: ${view.pdfError ?? '原因不明'}` }),
+      el('p', { text: `PDF を開けません: ${message ?? '原因不明'}` }),
+      retryButton,
       link,
     ]);
+  }
+
+  /**
+   * 表示中文書（documentId）の PDF ビューア素材をロードして反映する。呼び出し側は
+   * 連番ガード（seq）済みであること。成功時は viewer を生成 / 差し替え、失敗時はエラーカードを出す
+   */
+  function applyLoadedPdf(documentId: string, loaded: LoadedPdfView): void {
+    // 矩形ハイライトは textPages が確定したこの時点で 1 回だけ実体化してメモ化する
+    // （retry の読み直しでもここを通り、当該文書のキャッシュが差し替わる）
+    rectHighlightsByDoc.set(
+      documentId,
+      loaded.pdf === null
+        ? []
+        : buildDocumentHighlights(
+            documentId,
+            data.evidence.filter((item) => item.documentId === documentId),
+            loaded.textPages,
+          ),
+    );
+    if (loaded.pdf !== null) {
+      if (viewer === null) {
+        viewer = createPdfViewer({
+          document: loaded.pdf,
+          pages: loaded.textPages,
+          onHighlightClick: (id) => focusCell(id, { jump: false, domFocus: true }),
+          renderPage: options.renderPage,
+        });
+      } else if (viewerDocId !== documentId) {
+        viewer.setDocument(loaded.pdf, loaded.textPages);
+      }
+      viewerDocId = documentId;
+      viewerBody.replaceChildren(viewer.root);
+    } else {
+      viewerBody.replaceChildren(pdfErrorCard(documentId, loaded.pdfError));
+    }
+    syncViewer();
+    // 保留ジャンプ（ロード中に f キー等でジャンプ要求があった場合）を 1 回だけ適用する
+    if (pendingJumpCellKey !== null) {
+      const cellKey = pendingJumpCellKey;
+      pendingJumpCellKey = null;
+      if (viewer !== null && viewerDocId === documentId) {
+        viewer.focusHighlight(cellKey);
+      }
+    }
+  }
+
+  function toErrorMessage(err: unknown): string {
+    return err instanceof Error ? err.message : String(err);
+  }
+
+  /**
+   * 表示中文書の PDF を遅延読込する（読み込み中プレースホルダ → 解決で viewer / エラーカード）。
+   * 解決前に別文書へ切替わっていたら結果は破棄する（連番ガード。issue #28 案3の受入基準）
+   */
+  function loadActiveDocumentPdf(): void {
+    const documentId = activeDocumentId;
+    const seq = ++docLoadSeq;
+    viewerBody.replaceChildren(renderPdfLoadingPlaceholder());
+    data.loadPdfView(documentId).then(
+      (loaded) => {
+        if (seq === docLoadSeq) {
+          applyLoadedPdf(documentId, loaded);
+        }
+      },
+      (err: unknown) => {
+        if (seq === docLoadSeq) {
+          applyLoadedPdf(documentId, { pdf: null, pdfError: toErrorMessage(err), textPages: [] });
+        }
+      },
+    );
+  }
+
+  /** PDF 読込失敗からの再試行（キャッシュを捨てて読み直す）。表示が切り替わっていたら何もしない */
+  async function retryActiveDocumentPdf(documentId: string): Promise<void> {
+    if (documentId !== activeDocumentId) {
+      return;
+    }
+    const seq = ++docLoadSeq;
+    viewerBody.replaceChildren(renderPdfLoadingPlaceholder());
+    let loaded: LoadedPdfView;
+    try {
+      loaded = await data.retryPdfView(documentId);
+    } catch (err) {
+      loaded = { pdf: null, pdfError: toErrorMessage(err), textPages: [] };
+    }
+    if (seq === docLoadSeq) {
+      applyLoadedPdf(documentId, loaded);
+    }
   }
 
   /**
@@ -298,8 +427,11 @@ export function createVerificationPanel(
   pdfModeButton.addEventListener('click', () => setViewMode('pdf'));
   textModeButton.addEventListener('click', () => setViewMode('text'));
 
-  /** 表示中文書に合わせて左ペイン（タブ強調 / バナー / ビューア本体）を描き直す */
-  function renderActiveDocument(): void {
+  /**
+   * 表示中文書に合わせて左ペインのタブ強調 / バナー / 表示切替を描き直す（PDF 本体は含まない）。
+   * PDF ペインの内容（読み込み中 / viewer / エラーカード）は loadActiveDocumentPdf が非同期に描く
+   */
+  function renderActiveDocumentChrome(): void {
     const view = activeDocument();
     for (const [id, button] of docTabButtons) {
       const active = id === activeDocumentId;
@@ -307,34 +439,26 @@ export function createVerificationPanel(
       button.setAttribute('aria-selected', String(active));
     }
     noTextBanner.hidden = view.document.textStatus !== 'no_text_layer';
-    if (view.pdf !== null && viewer !== null) {
-      if (viewerDocId !== view.document.documentId) {
-        viewer.setDocument(view.pdf, view.textPages);
-        viewerDocId = view.document.documentId;
-      }
-      viewerBody.replaceChildren(viewer.root);
-    } else {
-      viewerBody.replaceChildren(pdfErrorCard(view));
-    }
     applyViewMode();
   }
 
-  /** 表示中文書を切替える（タブクリック / 別文書由来のセルへのフォーカス） */
+  /** 表示中文書を切替える（タブクリック / 別文書由来のセルへのフォーカス）。PDF は遅延読込する */
   function setActiveDocument(documentId: string): void {
     if (documentId === activeDocumentId) {
       return;
     }
     activeDocumentId = documentId;
-    renderActiveDocument();
-    syncViewer();
+    renderActiveDocumentChrome();
+    loadActiveDocumentPdf();
     syncTextViewer();
   }
 
   /**
    * セルの Evidence の出所文書へ表示を切替える（Evidence なしの手入力セルは現状維持）。
-   * 出所文書が study の documents に無い場合（データ不整合の防御）は切替えない
+   * 出所文書が study の documents に無い場合（データ不整合の防御）は切替えない。
+   * 切替えを実行したら true を返す（初期マウント時の二重ロード回避に使う）
    */
-  function ensureActiveDocumentForCell(cellKey: string): void {
+  function ensureActiveDocumentForCell(cellKey: string): boolean {
     const evidence = evidenceByCell.get(cellKey);
     if (
       evidence !== undefined &&
@@ -342,7 +466,9 @@ export function createVerificationPanel(
       data.documents.some((view) => view.document.documentId === evidence.documentId)
     ) {
       setActiveDocument(evidence.documentId);
+      return true;
     }
+    return false;
   }
 
   // --- 右ペイン（フォーム） -----------------------------------------------
@@ -352,42 +478,61 @@ export function createVerificationPanel(
     el('div', { className: 'verify__panes' }, [leftPane, formPane]),
   ]);
 
+  /**
+   * matchCount / 選択出現は「テキストのみの再特定」（textMatches）を唯一の情報源にする。
+   * PDF のロード状態に関係なく一貫した表示になる（issue #28 案3）
+   */
   function highlightInfo(): Map<string, CellHighlightInfo> {
     const info = new Map<string, CellHighlightInfo>();
-    for (const highlight of highlights) {
-      info.set(highlight.cellKey, {
-        matchCount: highlight.occurrences.length,
-        matchIndex: matchSelection.get(highlight.cellKey) ?? highlight.selectedIndex,
+    for (const match of textMatches) {
+      info.set(match.cellKey, {
+        matchCount: match.occurrences.length,
+        matchIndex: matchSelection.get(match.cellKey) ?? match.selectedIndex,
       });
     }
     return info;
   }
 
+  /**
+   * ビューアの矩形ハイライト（applyLoadedPdf がメモ化済みのものを読むだけ）。
+   * 呼び出しは syncViewer 経由に限られ、そのガード（viewerDocId === activeDocumentId）が
+   * 成り立つのは applyLoadedPdf でメモを書いた後だけなので、メモは必ず存在する（不変条件）。
+   * states / kind / 選択出現の反映は呼び出しごとに行う（判定・切替で変わるため）
+   */
   function viewerHighlights(): ViewerHighlight[] {
+    const docHighlights = rectHighlightsByDoc.get(activeDocumentId) as EvidenceHighlight[];
     const states = deriveCellStates(ownDecisions);
-    // ビューアは表示中文書のページしか描かないため、その文書由来のハイライトだけ渡す
-    return highlights
-      .filter((highlight) => highlight.documentId === activeDocumentId)
-      .map((highlight) => {
-        const [fieldId] = JSON.parse(highlight.cellKey) as [string, string];
-        const status = states.get(highlight.cellKey)?.status ?? 'unverified';
-        // ハイライトは evidence 由来のため対応する Evidence が必ず存在する
-        const confidence = (evidenceByCell.get(highlight.cellKey) as Evidence).confidence;
-        const index = matchSelection.get(highlight.cellKey) ?? highlight.selectedIndex;
-        return {
-          id: highlight.cellKey,
-          label: fieldLabelById.get(fieldId) ?? fieldId,
-          // 色分け: 検証済み = 緑 / low confidence = 橙 / 未検証 = 黄（requirements.md §5-4）
-          kind:
-            status !== 'unverified' ? 'verified' : confidence === 'low' ? 'low' : 'unverified',
-          // index は occurrences 長の剰余で更新されるため必ず範囲内（0 件は除外済み）
-          occurrence: highlight.occurrences[index] as HighlightOccurrence,
-        };
-      });
+    return docHighlights.map((highlight) => {
+      const [fieldId] = JSON.parse(highlight.cellKey) as [string, string];
+      const status = states.get(highlight.cellKey)?.status ?? 'unverified';
+      // ハイライトは evidence 由来のため対応する Evidence が必ず存在する
+      const confidence = (evidenceByCell.get(highlight.cellKey) as Evidence).confidence;
+      const selected = matchSelection.get(highlight.cellKey) ?? highlight.selectedIndex;
+      // matchSelection の剰余はテキストマッチ（extracted_texts 由来）の件数で取られている。
+      // extracted_texts と PDF テキスト層は同一系で通常一致するが、万一件数がズレた場合
+      // （取り込み後に Drive 上の PDF が差し替えられた等）の undefined 参照を防ぐため、
+      // rect 側の occurrences 長でもクランプする（0 件は buildDocumentHighlights が除外済み）
+      const index = selected % highlight.occurrences.length;
+      return {
+        id: highlight.cellKey,
+        label: fieldLabelById.get(fieldId) ?? fieldId,
+        // 色分け: 検証済み = 緑 / low confidence = 橙 / 未検証 = 黄（requirements.md §5-4）
+        kind:
+          status !== 'unverified' ? 'verified' : confidence === 'low' ? 'low' : 'unverified',
+        occurrence: highlight.occurrences[index] as HighlightOccurrence,
+      };
+    });
   }
 
+  /**
+   * viewer インスタンスが表示中文書を指しているときだけハイライトを反映する。
+   * 文書切替直後で viewer がまだ旧文書（または未生成）を指している間は何もしない
+   * （applyLoadedPdf が新文書のロード解決後にあらためて呼ぶ）
+   */
   function syncViewer(): void {
-    viewer?.setHighlights(viewerHighlights(), focusedCellKey);
+    if (viewer !== null && viewerDocId === activeDocumentId) {
+      viewer.setHighlights(viewerHighlights(), focusedCellKey);
+    }
   }
 
   /** 文書のファイル名 + role ラベル（抽出テキストビューの出所文書表示。issue #28 案2） */
@@ -419,7 +564,7 @@ export function createVerificationPanel(
       return;
     }
     const documentLabel = documentLabelOf(view);
-    const context = findQuoteContext(evidence, view.textPages);
+    const context = findQuoteContext(evidence, view.extractedPages);
     const snippet: TextViewerSnippet =
       context === null
         ? { documentLabel, quote: evidence.quote, located: null }
@@ -534,20 +679,20 @@ export function createVerificationPanel(
       if (viewMode === 'text') {
         syncTextViewer(cellKey);
       } else {
-        viewer?.focusHighlight(cellKey);
+        focusHighlightNowOrPending(cellKey);
       }
     },
     onSearchQuote(quote) {
       viewer?.search(quote);
     },
     onCycleMatch(cellKey) {
-      // 切替ボタンは matchCount > 1 のセルにしか出ないため、対応するハイライトが必ず存在する
-      const highlight = highlightByCell.get(cellKey) as EvidenceHighlight;
-      const current = matchSelection.get(cellKey) ?? highlight.selectedIndex;
-      matchSelection.set(cellKey, (current + 1) % highlight.occurrences.length);
+      // 切替ボタンは matchCount > 1 のセルにしか出ないため、対応するテキストマッチが必ず存在する
+      const match = textMatchByCell.get(cellKey) as EvidenceTextMatch;
+      const current = matchSelection.get(cellKey) ?? match.selectedIndex;
+      matchSelection.set(cellKey, (current + 1) % match.occurrences.length);
       refreshForm();
       syncViewer();
-      viewer?.focusHighlight(cellKey);
+      focusHighlightNowOrPending(cellKey);
       syncTextViewer(cellKey);
     },
     onExpandDecided(cellKey) {
@@ -557,7 +702,7 @@ export function createVerificationPanel(
       refreshForm();
       ensureActiveDocumentForCell(cellKey);
       syncViewer();
-      viewer?.focusHighlight(cellKey);
+      focusHighlightNowOrPending(cellKey);
       syncTextViewer();
       const element = findCellElement(cellKey);
       element.scrollIntoView?.({ block: 'nearest' });
@@ -688,8 +833,8 @@ export function createVerificationPanel(
       expandedDecidedKey,
       highlightInfo: highlightInfo(),
       // 「本文内を検索」は表示中文書に対して走る。フォーカスは出所文書へ切替わるため、
-      // 表示中文書のテキスト層有無で出し分ける（v0.10 フェーズ 3）
-      canSearchText: activeDocument().textPages.some((page) => page.text !== ''),
+      // 表示中文書のテキスト層有無で出し分ける（v0.10 フェーズ 3。extracted_texts 基準）
+      canSearchText: activeDocument().extractedPages.some((page) => page.text !== ''),
       armCard: armRequired
         ? {
             editing: armEditing,
@@ -761,7 +906,7 @@ export function createVerificationPanel(
     syncTextViewer();
     if (behavior.jump) {
       // 項目フォーカス → 該当ハイライトへスクロール + 強調（requirements.md §4.2）
-      viewer?.focusHighlight(cellKey);
+      focusHighlightNowOrPending(cellKey);
     }
     if (behavior.domFocus) {
       const element = findCellElement(cellKey);
@@ -841,7 +986,7 @@ export function createVerificationPanel(
       // PDF ハイライトも遷移先へ追従（f キーと同じ体験）+ セル DOM を可視化・フォーカス。
       // 遷移先が別文書由来なら出所 PDF へ切替えてから（v0.10 フェーズ 3）
       ensureActiveDocumentForCell(movedTo);
-      viewer?.focusHighlight(movedTo);
+      focusHighlightNowOrPending(movedTo);
       const element = findCellElement(movedTo);
       element.scrollIntoView?.({ block: 'nearest' });
       element.focus();
@@ -928,11 +1073,15 @@ export function createVerificationPanel(
   ownerDoc.addEventListener('keydown', handleKeydown);
 
   focusedCellKey = initialFocusKey(currentTabModel().cells);
-  // 初期フォーカスセルの出所文書を表示（study の先頭は通常 article。別文書なら切替）
-  if (focusedCellKey !== null) {
-    ensureActiveDocumentForCell(focusedCellKey);
+  // 初期フォーカスセルの出所文書を表示（study の先頭は通常 article。別文書なら切替）。
+  // ensureActiveDocumentForCell が切替えた場合はその中で PDF ロードも始まっているため、
+  // ここでの初期ロードは二重に始めない
+  const switchedInitially =
+    focusedCellKey !== null && ensureActiveDocumentForCell(focusedCellKey);
+  if (!switchedInitially) {
+    renderActiveDocumentChrome();
+    loadActiveDocumentPdf();
   }
-  renderActiveDocument();
   refreshForm();
   syncViewer();
   syncTextViewer();

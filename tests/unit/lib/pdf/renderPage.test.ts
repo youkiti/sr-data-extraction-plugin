@@ -4,24 +4,26 @@ import {
   type RenderablePdfPage,
 } from '../../../../src/lib/pdf/renderPage';
 
-function makePage(): { page: RenderablePdfPage; render: jest.Mock } {
-  const render = jest.fn().mockReturnValue({ promise: Promise.resolve() });
+function makePage(): { page: RenderablePdfPage; render: jest.Mock; cancel: jest.Mock } {
+  const cancel = jest.fn();
+  const render = jest.fn().mockReturnValue({ promise: Promise.resolve(), cancel });
   const page: RenderablePdfPage = {
     getViewport: ({ scale }) => ({ width: 612.5 * scale, height: 792.25 * scale }),
     render,
   };
-  return { page, render };
+  return { page, render, cancel };
 }
 
 describe('renderPdfPageToCanvas', () => {
   test('dpr=1 は従来同等: canvas 内部解像度と CSS 表示寸法が scale 基準で一致する', async () => {
     const { page, render } = makePage();
     const canvas = document.createElement('canvas');
-    const size = await renderPdfPageToCanvas(page, canvas, 2, { devicePixelRatio: 1 });
+    const { promise } = renderPdfPageToCanvas(page, canvas, 2, { devicePixelRatio: 1 });
     expect(canvas.width).toBe(1225); // floor(612.5 * 2)
     expect(canvas.height).toBe(1584); // floor(792.25 * 2)
     expect(canvas.style.width).toBe('1225px');
     expect(canvas.style.height).toBe('1584.5px');
+    const size = await promise;
     expect(size).toEqual({ width: 1225, height: 1584.5 });
     expect(render).toHaveBeenCalledWith({
       canvas,
@@ -32,10 +34,11 @@ describe('renderPdfPageToCanvas', () => {
   test('dpr=2: canvas 内部解像度は 2 倍に、CSS 表示寸法は scale 基準のまま据え置く', async () => {
     const { page, render } = makePage();
     const canvas = document.createElement('canvas');
-    const size = await renderPdfPageToCanvas(page, canvas, 1, { devicePixelRatio: 2 });
+    const { promise } = renderPdfPageToCanvas(page, canvas, 1, { devicePixelRatio: 2 });
     // CSS 表示寸法（scale=1 基準。ハイライトオーバーレイとの位置整合のため不変）
     expect(canvas.style.width).toBe('612.5px');
     expect(canvas.style.height).toBe('792.25px');
+    const size = await promise;
     expect(size).toEqual({ width: 612.5, height: 792.25 });
     // 内部解像度は devicePixelRatio 分（scale(1) * outputScale(2)）
     expect(canvas.width).toBe(1225); // floor(612.5 * 2)
@@ -53,7 +56,7 @@ describe('renderPdfPageToCanvas', () => {
       render,
     };
     const canvas = document.createElement('canvas');
-    const size = await renderPdfPageToCanvas(page, canvas, 1, {
+    const { promise } = renderPdfPageToCanvas(page, canvas, 1, {
       devicePixelRatio: 4,
       maxTotalPixels: 4_000_000,
     });
@@ -63,7 +66,7 @@ describe('renderPdfPageToCanvas', () => {
     // CSS 表示寸法は scale 基準のまま変化しない
     expect(canvas.style.width).toBe('1000px');
     expect(canvas.style.height).toBe('1000px');
-    expect(size).toEqual({ width: 1000, height: 1000 });
+    expect(await promise).toEqual({ width: 1000, height: 1000 });
   });
 
   test('outputScale は 1 未満にならない（CSS 解像度そのものが上限超のケースでも従来品質を維持）', async () => {
@@ -73,13 +76,13 @@ describe('renderPdfPageToCanvas', () => {
       render,
     };
     const canvas = document.createElement('canvas');
-    const size = await renderPdfPageToCanvas(page, canvas, 1, {
+    const { promise } = renderPdfPageToCanvas(page, canvas, 1, {
       devicePixelRatio: 1,
       maxTotalPixels: 1000, // 5000 * 5000 = 25,000,000 は dpr=1 でも上限を超える
     });
     expect(canvas.width).toBe(5000);
     expect(canvas.height).toBe(5000);
-    expect(size).toEqual({ width: 5000, height: 5000 });
+    expect(await promise).toEqual({ width: 5000, height: 5000 });
   });
 
   test('options 省略時は globalThis.devicePixelRatio が使われる', async () => {
@@ -88,11 +91,11 @@ describe('renderPdfPageToCanvas', () => {
     try {
       const { page } = makePage();
       const canvas = document.createElement('canvas');
-      const size = await renderPdfPageToCanvas(page, canvas, 1);
+      const { promise } = renderPdfPageToCanvas(page, canvas, 1);
       expect(canvas.width).toBe(Math.floor(612.5 * 3));
       expect(canvas.height).toBe(Math.floor(792.25 * 3));
       expect(canvas.style.width).toBe('612.5px');
-      expect(size).toEqual({ width: 612.5, height: 792.25 });
+      expect(await promise).toEqual({ width: 612.5, height: 792.25 });
     } finally {
       if (originalDescriptor === undefined) {
         delete (globalThis as { devicePixelRatio?: number }).devicePixelRatio;
@@ -108,10 +111,10 @@ describe('renderPdfPageToCanvas', () => {
     try {
       const { page } = makePage();
       const canvas = document.createElement('canvas');
-      const size = await renderPdfPageToCanvas(page, canvas, 2);
+      const { promise } = renderPdfPageToCanvas(page, canvas, 2);
       expect(canvas.width).toBe(1225); // floor(612.5 * 2) = dpr フォールバック 1 相当
       expect(canvas.height).toBe(1584);
-      expect(size).toEqual({ width: 1225, height: 1584.5 });
+      expect(await promise).toEqual({ width: 1225, height: 1584.5 });
     } finally {
       if (originalDescriptor !== undefined) {
         Object.defineProperty(globalThis, 'devicePixelRatio', originalDescriptor);
@@ -129,8 +132,30 @@ describe('renderPdfPageToCanvas', () => {
       getViewport: ({ scale }) => ({ width: 100 * scale, height: 100 * scale }),
       render,
     };
-    await expect(
-      renderPdfPageToCanvas(page, document.createElement('canvas'), 1, { devicePixelRatio: 1 }),
-    ).rejects.toThrow('render 失敗');
+    const { promise } = renderPdfPageToCanvas(page, document.createElement('canvas'), 1, {
+      devicePixelRatio: 1,
+    });
+    await expect(promise).rejects.toThrow('render 失敗');
+  });
+
+  describe('cancel()', () => {
+    test('pdfjs の RenderTask.cancel() を呼び出す', () => {
+      const { page, cancel } = makePage();
+      const canvas = document.createElement('canvas');
+      const { cancel: cancelRender } = renderPdfPageToCanvas(page, canvas, 1);
+      expect(cancel).not.toHaveBeenCalled();
+      cancelRender();
+      expect(cancel).toHaveBeenCalledTimes(1);
+    });
+
+    test('render() の戻り値に cancel が無い fake ページでも安全（no-op）', () => {
+      const render = jest.fn().mockReturnValue({ promise: Promise.resolve() });
+      const page: RenderablePdfPage = {
+        getViewport: ({ scale }) => ({ width: 100 * scale, height: 100 * scale }),
+        render,
+      };
+      const { cancel } = renderPdfPageToCanvas(page, document.createElement('canvas'), 1);
+      expect(() => cancel()).not.toThrow();
+    });
   });
 });

@@ -1254,6 +1254,16 @@
   color: var(--color-danger);
 }
 
+.verify__pdf-retry {
+  margin: 8px 0;
+}
+
+/* PDF 遅延ロード中のプレースホルダ（issue #28 案3: 表示中の文書だけを読み込む） */
+.verify__pdf-loading {
+  padding: 16px;
+  color: var(--color-text-muted);
+}
+
 /* 文書切替タブ（v0.10 フェーズ 3: study 内の複数 PDF を切替える） */
 .verify__doc-tabs {
   display: flex;
