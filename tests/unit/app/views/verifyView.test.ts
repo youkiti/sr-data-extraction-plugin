@@ -157,7 +157,9 @@ function makeTarget(overrides: Partial<VerifyTarget> = {}): VerifyTarget {
 function makeVerification(): VerificationData {
   return {
     study: makeStudy(),
-    documents: [{ document: makeDocument(), pdf: null, pdfError: 'テストでは PDF なし', textPages: [] }],
+    documents: [{ document: makeDocument(), extractedPages: [], extractedTextError: null }],
+    loadPdfView: async () => ({ pdf: null, pdfError: 'テストでは PDF なし', textPages: [] }),
+    retryPdfView: async () => ({ pdf: null, pdfError: 'テストでは PDF なし', textPages: [] }),
     fields: [makeField()],
     evidence: [],
     decisions: [],

@@ -3,6 +3,7 @@ import type { TextLayerPage } from '../../../../src/domain/textLayer';
 import type {
   PdfViewerDocument,
   RenderablePdfPage,
+  RenderPdfPageResult,
 } from '../../../../src/lib/pdf/renderPage';
 
 function buildPage(page: number, text: string): TextLayerPage {
@@ -45,6 +46,25 @@ function makeHighlight(overrides: Partial<ViewerHighlight> = {}): ViewerHighligh
   };
 }
 
+/**
+ * renderPage の fake。renderPdfPageToCanvas と同じ戻り値の形（{ promise, cancel }）を
+ * 同期的に返す。cancel 呼び出しの検査用に生成した cancel モックを cancels に積む
+ */
+function makeRenderPage(
+  impl: () => Promise<{ width: number; height: number }> = async () => ({
+    width: 612,
+    height: 792,
+  }),
+): { renderPage: jest.Mock; cancels: jest.Mock[] } {
+  const cancels: jest.Mock[] = [];
+  const renderPage = jest.fn((): RenderPdfPageResult => {
+    const cancel = jest.fn();
+    cancels.push(cancel);
+    return { promise: impl(), cancel };
+  });
+  return { renderPage, cancels };
+}
+
 const flush = async (): Promise<void> => {
   await Promise.resolve();
   await Promise.resolve();
@@ -53,7 +73,7 @@ const flush = async (): Promise<void> => {
 
 describe('createPdfViewer', () => {
   test('初期表示: 1 ページ目・前へは無効・ページ表示・canvas 描画', async () => {
-    const renderPage = jest.fn().mockResolvedValue({ width: 612, height: 792 });
+    const { renderPage } = makeRenderPage();
     const viewer = createPdfViewer({ document: makeDocument(), pages: PAGES, renderPage });
     await flush();
     expect(viewer.getCurrentPage()).toBe(1);
@@ -70,7 +90,7 @@ describe('createPdfViewer', () => {
   });
 
   test('ページ送り: 次へ / 前へで移動し、端では無効化される', async () => {
-    const renderPage = jest.fn().mockResolvedValue({ width: 612, height: 792 });
+    const { renderPage } = makeRenderPage();
     const viewer = createPdfViewer({ document: makeDocument(), pages: PAGES, renderPage });
     const next = viewer.root.querySelector<HTMLButtonElement>('.pdf-viewer__next');
     next?.click();
@@ -82,7 +102,7 @@ describe('createPdfViewer', () => {
   });
 
   test('ズーム変更でオーバーレイとページラッパの寸法が変わる', async () => {
-    const renderPage = jest.fn().mockResolvedValue({ width: 612, height: 792 });
+    const { renderPage } = makeRenderPage();
     const viewer = createPdfViewer({ document: makeDocument(), pages: PAGES, renderPage });
     viewer.setHighlights([makeHighlight()], null);
     const zoom = viewer.root.querySelector<HTMLSelectElement>('.pdf-viewer__zoom');
@@ -100,7 +120,7 @@ describe('createPdfViewer', () => {
   });
 
   test('ズーム選択肢に 175% / 200% があり、scale 2 でオーバーレイ座標が 2 倍になる', async () => {
-    const renderPage = jest.fn().mockResolvedValue({ width: 612, height: 792 });
+    const { renderPage } = makeRenderPage();
     const viewer = createPdfViewer({ document: makeDocument(), pages: PAGES, renderPage });
     viewer.setHighlights([makeHighlight()], null);
     const zoom = viewer.root.querySelector<HTMLSelectElement>('.pdf-viewer__zoom')!;
@@ -142,7 +162,7 @@ describe('createPdfViewer', () => {
         },
       ],
     };
-    const renderPage = jest.fn().mockResolvedValue({ width: 792, height: 612 });
+    const { renderPage } = makeRenderPage();
     const viewer = createPdfViewer({
       document: makeDocument(1),
       pages: [rotatedPage],
@@ -170,7 +190,7 @@ describe('createPdfViewer', () => {
 
   test('ハイライト: 現在ページの矩形だけを描画し、クリックでコールバックが飛ぶ', async () => {
     const onHighlightClick = jest.fn();
-    const renderPage = jest.fn().mockResolvedValue({ width: 612, height: 792 });
+    const { renderPage } = makeRenderPage();
     const viewer = createPdfViewer({
       document: makeDocument(),
       pages: PAGES,
@@ -198,7 +218,7 @@ describe('createPdfViewer', () => {
   });
 
   test('focusHighlight は該当ページへ移動して強調する。未知 id は無視', async () => {
-    const renderPage = jest.fn().mockResolvedValue({ width: 612, height: 792 });
+    const { renderPage } = makeRenderPage();
     const viewer = createPdfViewer({ document: makeDocument(), pages: PAGES, renderPage });
     viewer.setHighlights(
       [
@@ -222,7 +242,7 @@ describe('createPdfViewer', () => {
   });
 
   test('テキスト検索: 一致へ移動し、同じクエリの再実行で次の一致へ循環する', async () => {
-    const renderPage = jest.fn().mockResolvedValue({ width: 612, height: 792 });
+    const { renderPage } = makeRenderPage();
     const viewer = createPdfViewer({ document: makeDocument(), pages: PAGES, renderPage });
     const input = viewer.root.querySelector<HTMLInputElement>('.pdf-viewer__search-input');
     const button = viewer.root.querySelector<HTMLButtonElement>('.pdf-viewer__search-button');
@@ -248,7 +268,7 @@ describe('createPdfViewer', () => {
   });
 
   test('検索: 新しいクエリでリセット・不一致はメッセージ・空クエリは何もしない', async () => {
-    const renderPage = jest.fn().mockResolvedValue({ width: 612, height: 792 });
+    const { renderPage } = makeRenderPage();
     const viewer = createPdfViewer({ document: makeDocument(), pages: PAGES, renderPage });
     const input = viewer.root.querySelector<HTMLInputElement>('.pdf-viewer__search-input');
     const status = viewer.root.querySelector('.pdf-viewer__search-status');
@@ -268,7 +288,7 @@ describe('createPdfViewer', () => {
   });
 
   test('search() API はツールバーの入力へクエリを反映して検索する', async () => {
-    const renderPage = jest.fn().mockResolvedValue({ width: 612, height: 792 });
+    const { renderPage } = makeRenderPage();
     const viewer = createPdfViewer({ document: makeDocument(), pages: PAGES, renderPage });
     viewer.search('gamma alpha');
     expect(
@@ -282,10 +302,14 @@ describe('createPdfViewer', () => {
   });
 
   test('canvas 描画の失敗はエラー表示になり、成功で消える', async () => {
-    const renderPage = jest
-      .fn()
-      .mockRejectedValueOnce(new Error('worker 起動失敗'))
-      .mockResolvedValue({ width: 612, height: 792 });
+    let call = 0;
+    const { renderPage } = makeRenderPage(async () => {
+      call += 1;
+      if (call === 1) {
+        throw new Error('worker 起動失敗');
+      }
+      return { width: 612, height: 792 };
+    });
     const viewer = createPdfViewer({ document: makeDocument(), pages: PAGES, renderPage });
     await flush();
     const error = viewer.root.querySelector<HTMLElement>('.pdf-viewer__error');
@@ -303,7 +327,7 @@ describe('createPdfViewer', () => {
   });
 
   test('Error 以外の throw も文字列化して表示する', async () => {
-    const renderPage = jest.fn().mockRejectedValue('壊れた PDF');
+    const { renderPage } = makeRenderPage(() => Promise.reject('壊れた PDF'));
     const viewer = createPdfViewer({ document: makeDocument(), pages: PAGES, renderPage });
     await flush();
     expect(viewer.root.querySelector('.pdf-viewer__error')?.textContent).toBe(
@@ -313,15 +337,18 @@ describe('createPdfViewer', () => {
 
   test('描画競合: 古い描画の完了・失敗は最新の表示を上書きしない', async () => {
     const resolvers: Array<{ resolve: () => void; reject: (err: Error) => void }> = [];
-    const renderPage = jest.fn().mockImplementation(
-      () =>
-        new Promise<{ width: number; height: number }>((resolve, reject) => {
-          resolvers.push({
-            resolve: () => resolve({ width: 612, height: 792 }),
-            reject,
-          });
-        }),
-    );
+    const cancels: jest.Mock[] = [];
+    const renderPage = jest.fn().mockImplementation(() => {
+      const cancel = jest.fn();
+      cancels.push(cancel);
+      const promise = new Promise<{ width: number; height: number }>((resolve, reject) => {
+        resolvers.push({
+          resolve: () => resolve({ width: 612, height: 792 }),
+          reject,
+        });
+      });
+      return { promise, cancel };
+    });
     const viewer = createPdfViewer({ document: makeDocument(3), pages: PAGES, renderPage });
     const next = viewer.root.querySelector<HTMLButtonElement>('.pdf-viewer__next');
     next?.click(); // 2 ページ目（描画 2 件目）
@@ -343,7 +370,7 @@ describe('createPdfViewer', () => {
   });
 
   test('テキスト層に無いページはオーバーレイを描かない（canvas 描画に任せる）', async () => {
-    const renderPage = jest.fn().mockResolvedValue({ width: 612, height: 792 });
+    const { renderPage } = makeRenderPage();
     const viewer = createPdfViewer({
       document: makeDocument(3),
       pages: PAGES, // 3 ページ目のテキスト層なし
@@ -356,5 +383,120 @@ describe('createPdfViewer', () => {
     expect(viewer.getCurrentPage()).toBe(3);
     expect(viewer.root.querySelectorAll('.pdf-viewer__hl')).toHaveLength(0);
     await flush();
+  });
+
+  describe('描画タスクの実キャンセル（issue #28 案3）', () => {
+    /** render() が保留のまま（未解決）の renderPage fake。描画中に次の操作が来る状況を再現する */
+    function makePendingRenderPage(): {
+      renderPage: jest.Mock;
+      cancels: jest.Mock[];
+      resolvers: Array<(v: { width: number; height: number }) => void>;
+    } {
+      const cancels: jest.Mock[] = [];
+      const resolvers: Array<(v: { width: number; height: number }) => void> = [];
+      const renderPage = jest.fn((): RenderPdfPageResult => {
+        const cancel = jest.fn();
+        cancels.push(cancel);
+        const promise = new Promise<{ width: number; height: number }>((resolve) => {
+          resolvers.push(resolve);
+        });
+        return { promise, cancel };
+      });
+      return { renderPage, cancels, resolvers };
+    }
+
+    test('前ページの描画が完了する前にページ送りすると RenderTask を cancel する', async () => {
+      const { renderPage, cancels, resolvers } = makePendingRenderPage();
+      const viewer = createPdfViewer({ document: makeDocument(), pages: PAGES, renderPage });
+      await flush(); // 1 ページ目の render() 呼び出しまで進める（promise は未解決のまま）
+      expect(cancels[0]).not.toHaveBeenCalled();
+      viewer.root.querySelector<HTMLButtonElement>('.pdf-viewer__next')?.click();
+      expect(cancels[0]).toHaveBeenCalledTimes(1);
+      resolvers.forEach((resolve) => resolve({ width: 612, height: 792 }));
+      await flush();
+    });
+
+    test('前文書の描画が完了する前に setDocument すると RenderTask を cancel する', async () => {
+      const { renderPage, cancels, resolvers } = makePendingRenderPage();
+      const viewer = createPdfViewer({ document: makeDocument(), pages: PAGES, renderPage });
+      await flush();
+      viewer.setDocument(makeDocument(1), PAGES);
+      expect(cancels[0]).toHaveBeenCalledTimes(1);
+      resolvers.forEach((resolve) => resolve({ width: 612, height: 792 }));
+      await flush();
+    });
+
+    test('前の描画が完了する前にズーム変更すると RenderTask を cancel する', async () => {
+      const { renderPage, cancels, resolvers } = makePendingRenderPage();
+      const viewer = createPdfViewer({ document: makeDocument(), pages: PAGES, renderPage });
+      await flush();
+      const zoom = viewer.root.querySelector<HTMLSelectElement>('.pdf-viewer__zoom')!;
+      zoom.value = '1.5';
+      zoom.dispatchEvent(new Event('change'));
+      expect(cancels[0]).toHaveBeenCalledTimes(1);
+      resolvers.forEach((resolve) => resolve({ width: 612, height: 792 }));
+      await flush();
+    });
+
+    test('完了済みの描画には cancel を呼ばない（キャンセル対象が無ければ何もしない）', async () => {
+      const { renderPage, cancels } = makeRenderPage();
+      const viewer = createPdfViewer({ document: makeDocument(), pages: PAGES, renderPage });
+      await flush(); // render() の promise が解決済み → currentRenderTask は既に null
+      viewer.root.querySelector<HTMLButtonElement>('.pdf-viewer__next')?.click();
+      expect(cancels[0]).not.toHaveBeenCalled();
+      await flush();
+    });
+
+    test('キャンセルに伴う rejection（RenderingCancelledException 相当）はエラー表示にしない', async () => {
+      const rejecters: Array<(err: Error) => void> = [];
+      const renderPage = jest.fn().mockImplementation(() => {
+        const cancel = jest.fn(() => {
+          rejecters[rejecters.length - 1]?.(new Error('RenderingCancelledException'));
+        });
+        const promise = new Promise<{ width: number; height: number }>((_resolve, reject) => {
+          rejecters.push(reject);
+        });
+        return { promise, cancel };
+      });
+      const viewer = createPdfViewer({ document: makeDocument(), pages: PAGES, renderPage });
+      await flush();
+      // 次ページへの遷移で 1 ページ目の RenderTask がキャンセル → reject されるが、
+      // 連番ガードにより無視され、2 ページ目の描画だけが有効になる
+      viewer.root.querySelector<HTMLButtonElement>('.pdf-viewer__next')?.click();
+      await flush();
+      expect(viewer.root.querySelector<HTMLElement>('.pdf-viewer__error')?.hidden).toBe(true);
+    });
+
+    test('document.getPage 待ちの間に追い越された描画は、render() 呼び出し後すぐキャンセルされる', async () => {
+      const page: RenderablePdfPage = {
+        getViewport: ({ scale }) => ({ width: 612 * scale, height: 792 * scale }),
+        render: () => ({ promise: Promise.resolve() }),
+      };
+      const getPageResolvers: Array<() => void> = [];
+      const doc: PdfViewerDocument = {
+        numPages: 2,
+        getPage: jest.fn().mockImplementation(
+          () =>
+            new Promise<RenderablePdfPage>((resolve) => {
+              getPageResolvers.push(() => resolve(page));
+            }),
+        ),
+      };
+      const { renderPage, cancels } = makeRenderPage();
+      const viewer = createPdfViewer({ document: doc, pages: PAGES, renderPage });
+      // 初回描画（1 ページ目）は getPage 待ちのまま。ページ送りで 2 件目の getPage 呼び出しを積む
+      viewer.root.querySelector<HTMLButtonElement>('.pdf-viewer__next')?.click();
+      expect(getPageResolvers).toHaveLength(2);
+      // 1 件目（古い・1 ページ目向け）を先に解決すると render() は呼ばれるが、即座にキャンセルされる
+      getPageResolvers[0]?.();
+      await flush();
+      expect(renderPage).toHaveBeenCalledTimes(1);
+      expect(cancels[0]).toHaveBeenCalledTimes(1);
+      // 2 件目（最新・2 ページ目向け）を解決すると render が呼ばれ、キャンセルされない
+      getPageResolvers[1]?.();
+      await flush();
+      expect(renderPage).toHaveBeenCalledTimes(2);
+      expect(cancels[1]).not.toHaveBeenCalled();
+    });
   });
 });

@@ -1155,7 +1155,9 @@ describe('bootstrapApp: #/pilot', () => {
     };
     const verification = {
       study: STUDY_RECORD,
-      documents: [{ document: DOC_RECORD, pdf: null, pdfError: 'テストでは PDF なし', textPages: [] }],
+      documents: [{ document: DOC_RECORD, extractedPages: [], extractedTextError: null }],
+      loadPdfView: async () => ({ pdf: null, pdfError: 'テストでは PDF なし', textPages: [] }),
+      retryPdfView: async () => ({ pdf: null, pdfError: 'テストでは PDF なし', textPages: [] }),
       fields: [FIELD, ARM_FIELD, OUTCOME_FIELD],
       evidence: [
         {
