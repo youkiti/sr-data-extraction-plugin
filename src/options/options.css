@@ -5,6 +5,19 @@
   padding: 24px;
 }
 
+/* スタンドアロン設定ページのみの見出し行（「アプリを開く」導線。issue #31 B-2） */
+.options__header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.options__open-app {
+  font-size: 13px;
+  white-space: nowrap;
+}
+
 .options__status {
   color: var(--color-text-muted);
 }

@@ -390,10 +390,34 @@ describe('bootstrapApp', () => {
     expect(document.getElementById('app-context')?.textContent).toBe('設定 画面を表示しています');
     // ステップナビは 9 項目のまま（設定はナビに出さない）
     expect(document.querySelectorAll('#app-nav a')).toHaveLength(9);
-    // 戻る導線は #/home へのハッシュリンク
+    // 戻る導線は #/home へのハッシュリンク（直前ルートの記録が無いため）
     expect(
       document.querySelector('#app-content .settings__back')?.getAttribute('href'),
     ).toBe('#/home');
+    // 「アプリを開く」はスタンドアロン options.html 専用の導線（アプリ内には出さない）
+    expect(document.getElementById('options-open-app')).toBeNull();
+  });
+
+  test('#/options への遷移は直前ルートを記録し、戻る導線がそこへ向く（B. 設定画面の「戻る」改善）', async () => {
+    const stub = createWindowStub();
+    await bootstrapApp(asWindow(stub));
+    // #/home → #/documents → #/options と遷移すると、記録されるのは直前の #/documents
+    stub.location.hash = '#/documents';
+    stub.fireHashChange();
+    stub.location.hash = '#/options';
+    stub.fireHashChange();
+    expect(
+      document.querySelector('#app-content .settings__back')?.getAttribute('href'),
+    ).toBe('#/documents');
+    expect(document.querySelector('#app-content .settings__back')?.textContent).toBe(
+      '← 前の画面へ戻る',
+    );
+
+    // #/options 表示中の再描画（別スライスの更新）では記録が上書きされない
+    stub.fireHashChange();
+    expect(
+      document.querySelector('#app-content .settings__back')?.getAttribute('href'),
+    ).toBe('#/documents');
   });
 
   test('ガード未充足ルートへの直接遷移はトースト + 直前ルートへ戻す', async () => {

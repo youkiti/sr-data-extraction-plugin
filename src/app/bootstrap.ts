@@ -491,6 +491,11 @@ export async function bootstrapApp(
     if (guard.warning) {
       showToast(guard.warning, doc);
     }
+    // #/options へ入る直前のルートを記録する（B. 設定画面の「戻る」改善）。
+    // #/options 自体への遷移でのみ更新し、それ以外のステップ間遷移では触らない
+    if (target === '#/options' && currentHash !== '#/options') {
+      store.setState({ settingsReturnHash: currentHash });
+    }
     currentHash = target;
     renderRoute();
     renderNav(store.getState());
