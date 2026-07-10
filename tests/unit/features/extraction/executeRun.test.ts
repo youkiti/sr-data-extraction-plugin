@@ -7,6 +7,8 @@ import type { DocumentRecord } from '../../../../src/domain/document';
 import type { Evidence } from '../../../../src/domain/evidence';
 import type { SchemaField } from '../../../../src/domain/schemaField';
 import {
+  DEFAULT_FLUSH_EVERY_N_STUDIES,
+  DEFAULT_MAX_ROWS_PER_FLUSH,
   EXTRACT_DATA_TEMPERATURE,
   MAX_FAILURE_DETAIL_BODY_CHARS,
   executeRun,
@@ -183,6 +185,54 @@ function providerOf(results: Array<ChatResponse | Error | 'throw-string'>): {
       },
     },
   };
+}
+
+/** 手動リリース式の provider。in-flight 数のピークを観測してからバッチを解放する
+ *（並行実行テスト・バッチ化の二重フラッシュ防止テストの両方で使う） */
+function gatedProvider(): {
+  provider: LLMProvider;
+  peak: () => number;
+  releaseAll: () => void;
+} {
+  let active = 0;
+  let peak = 0;
+  const releasers: Array<() => void> = [];
+  return {
+    peak: () => peak,
+    releaseAll: () => {
+      releasers.splice(0).forEach((release) => {
+        release();
+      });
+    },
+    provider: {
+      providerId: 'gemini',
+      model: 'm',
+      chat: async () => {
+        active += 1;
+        peak = Math.max(peak, active);
+        await new Promise<void>((resolve) => {
+          releasers.push(() => {
+            active -= 1;
+            resolve();
+          });
+        });
+        return chatResponse([DESIGN_ITEM], { tokensIn: 10, tokensOut: 5 });
+      },
+    },
+  };
+}
+
+/** run が完了するまで、待機中の chat を順次解放しながらマクロタスクを回す */
+async function drain(runPromise: Promise<unknown>, releaseAll: () => void): Promise<void> {
+  let done = false;
+  void runPromise.then(() => {
+    done = true;
+  });
+  while (!done) {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    releaseAll();
+  }
+  await runPromise;
 }
 
 /** 進捗・Evidence 追記を記録する標準 deps。個別テストで上書きする */
@@ -803,53 +853,6 @@ describe('executeRun の partial_failure', () => {
 });
 
 describe('executeRun の並行実行（maxConcurrency）', () => {
-  /** 手動リリース式の provider。in-flight 数のピークを観測してからバッチを解放する */
-  function gatedProvider(): {
-    provider: LLMProvider;
-    peak: () => number;
-    releaseAll: () => void;
-  } {
-    let active = 0;
-    let peak = 0;
-    const releasers: Array<() => void> = [];
-    return {
-      peak: () => peak,
-      releaseAll: () => {
-        releasers.splice(0).forEach((release) => {
-          release();
-        });
-      },
-      provider: {
-        providerId: 'gemini',
-        model: 'm',
-        chat: async () => {
-          active += 1;
-          peak = Math.max(peak, active);
-          await new Promise<void>((resolve) => {
-            releasers.push(() => {
-              active -= 1;
-              resolve();
-            });
-          });
-          return chatResponse([DESIGN_ITEM], { tokensIn: 10, tokensOut: 5 });
-        },
-      },
-    };
-  }
-
-  /** run が完了するまで、待機中の chat を順次解放しながらマクロタスクを回す */
-  async function drain(runPromise: Promise<unknown>, releaseAll: () => void): Promise<void> {
-    let done = false;
-    void runPromise.then(() => {
-      done = true;
-    });
-    while (!done) {
-      await new Promise((resolve) => setTimeout(resolve, 0));
-      releaseAll();
-    }
-    await runPromise;
-  }
-
   const fourStudies = () =>
     makePlan([
       makeBatch({ studyId: 'd1', fieldIds: ['f_design'] }),
@@ -912,6 +915,193 @@ describe('executeRun の並行実行（maxConcurrency）', () => {
     );
     expect(loadPages).toHaveBeenCalledTimes(1);
     expect(result.evidence).toHaveLength(2);
+  });
+});
+
+describe('executeRun の Evidence 書き込みバッチ化（429 対策）', () => {
+  const studiesPlan = (studyIds: readonly string[]): RunPlan =>
+    makePlan(studyIds.map((id) => makeBatch({ studyId: id, fieldIds: ['f_design'] })));
+
+  test('study 数が既定値（DEFAULT_FLUSH_EVERY_N_STUDIES=5）ちょうどなら、実行中に 1 回だけフラッシュする', async () => {
+    expect(DEFAULT_FLUSH_EVERY_N_STUDIES).toBe(5);
+    const { provider } = providerOf(Array.from({ length: 5 }, () => chatResponse([DESIGN_ITEM])));
+    // deps.flushEveryNStudies は指定しない = 既定値が使われる
+    const { deps } = makeDeps(provider);
+    const appendCalls: Evidence[][] = [];
+    deps.appendEvidence = async (rows) => {
+      appendCalls.push([...rows]);
+    };
+    const result = await execute(
+      { runId: 'run-1', plan: studiesPlan(['d1', 'd2', 'd3', 'd4', 'd5']), fields: FIELDS },
+      deps,
+    );
+
+    expect(appendCalls).toHaveLength(1);
+    expect(appendCalls[0]).toHaveLength(5);
+    expect(result.evidence).toHaveLength(5);
+    expect(result.status).toBe('done');
+  });
+
+  test('flushEveryNStudies ごとに appendEvidence を分割して呼び、端数は全 study 完了時にまとめて書く', async () => {
+    const { provider } = providerOf(Array.from({ length: 7 }, () => chatResponse([DESIGN_ITEM])));
+    const { deps, progress } = makeDeps(provider);
+    deps.flushEveryNStudies = 3;
+    const appendCalls: Evidence[][] = [];
+    deps.appendEvidence = async (rows) => {
+      appendCalls.push([...rows]);
+    };
+    const result = await execute(
+      {
+        runId: 'run-1',
+        plan: studiesPlan(['d1', 'd2', 'd3', 'd4', 'd5', 'd6', 'd7']),
+        fields: FIELDS,
+      },
+      deps,
+    );
+
+    // 7 study を 3 件ずつ分割 → [3, 3, 1]（最後の端数は全 study 完了時のフラッシュで書く）
+    expect(appendCalls.map((rows) => rows.length)).toEqual([3, 3, 1]);
+    expect(result.evidence).toHaveLength(7);
+    expect(result.status).toBe('done');
+    expect(progress).toHaveLength(7);
+    expect(progress.every((p) => p.failure === null)).toBe(true);
+  });
+
+  test('フラッシュ失敗時は、そのフラッシュに含まれる study を全部 save_failed にし、他のフラッシュの成否には影響しない', async () => {
+    const { provider } = providerOf(Array.from({ length: 4 }, () => chatResponse([DESIGN_ITEM])));
+    const { deps } = makeDeps(provider);
+    deps.flushEveryNStudies = 2;
+    const appendCalls: Evidence[][] = [];
+    deps.appendEvidence = async (rows) => {
+      appendCalls.push([...rows]);
+      if (appendCalls.length === 2) {
+        // 2 回目（d3, d4 ぶん）のフラッシュだけ失敗させる
+        throw new Error('sheets quota (2nd flush)');
+      }
+    };
+    const result = await execute(
+      { runId: 'run-1', plan: studiesPlan(['d1', 'd2', 'd3', 'd4']), fields: FIELDS },
+      deps,
+    );
+
+    expect(result.status).toBe('partial_failure');
+    // d1, d2 は 1 回目のフラッシュで保存済み。d3, d4 は保存されない（結果に含めない）
+    expect(result.evidence).toHaveLength(2);
+    expect(new Set(result.evidence.map((e) => e.studyId))).toEqual(new Set(['d1', 'd2']));
+    expect(result.batchFailures).toEqual([
+      { studyId: 'd3', section: null, reason: 'save_failed', detail: 'sheets quota (2nd flush)' },
+      { studyId: 'd4', section: null, reason: 'save_failed', detail: 'sheets quota (2nd flush)' },
+    ]);
+  });
+
+  test('並行実行でも二重フラッシュしない: フラッシュ中に他バッチが閾値へ達しても、フラッシュ完了後にまとめて処理する', async () => {
+    const { provider } = providerOf(Array.from({ length: 6 }, () => chatResponse([DESIGN_ITEM])));
+    const { deps } = makeDeps(provider);
+    deps.maxConcurrency = 6;
+    deps.flushEveryNStudies = 3;
+    const appendCalls: Evidence[][] = [];
+    let releaseFirstFlush: (() => void) | undefined;
+    deps.appendEvidence = async (rows) => {
+      appendCalls.push([...rows]);
+      if (appendCalls.length === 1) {
+        // 1 回目のフラッシュだけ完了を止める。この間に d4〜d6 も閾値（3 件）に達するが、
+        // flushPromise が埋まっているので二重には走らないはず
+        await new Promise<void>((resolve) => {
+          releaseFirstFlush = resolve;
+        });
+      }
+    };
+    const runPromise = execute(
+      { runId: 'run-1', plan: studiesPlan(['d1', 'd2', 'd3', 'd4', 'd5', 'd6']), fields: FIELDS },
+      deps,
+    );
+
+    // d1〜d6 の push が出そろい、1 回目のフラッシュが appendEvidence 内でブロックされるまで待つ
+    while (releaseFirstFlush === undefined) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    // この時点でフラッシュは 1 回しか走っていない（二重フラッシュしていないことの確認）
+    expect(appendCalls).toHaveLength(1);
+    expect(appendCalls[0]).toHaveLength(3);
+
+    (releaseFirstFlush as () => void)();
+    const result = await runPromise;
+
+    expect(appendCalls).toHaveLength(2);
+    expect(appendCalls[1]).toHaveLength(3);
+    expect(result.evidence).toHaveLength(6);
+    expect(result.status).toBe('done');
+  });
+
+  test('flushEveryNStudies に 0 以下や小数を渡しても 1 以上の整数に丸める', async () => {
+    const { provider } = providerOf(Array.from({ length: 3 }, () => chatResponse([DESIGN_ITEM])));
+    const { deps } = makeDeps(provider);
+    deps.flushEveryNStudies = 0; // floor(0)=0 → max(1,0)=1 に丸められる
+    const appendCalls: Evidence[][] = [];
+    deps.appendEvidence = async (rows) => {
+      appendCalls.push([...rows]);
+    };
+    const result = await execute(
+      { runId: 'run-1', plan: studiesPlan(['d1', 'd2', 'd3']), fields: FIELDS },
+      deps,
+    );
+
+    // 1 study ごとに毎回フラッシュする（バッチ化を無効にした従来相当の挙動）
+    expect(appendCalls.map((rows) => rows.length)).toEqual([1, 1, 1]);
+    expect(result.evidence).toHaveLength(3);
+  });
+
+  test('DEFAULT_MAX_ROWS_PER_FLUSH は 500', () => {
+    expect(DEFAULT_MAX_ROWS_PER_FLUSH).toBe(500);
+  });
+
+  test('study 数が閾値未満でも、バッファの総行数が maxRowsPerFlush 以上になればフラッシュする（行キャップ）', async () => {
+    // 1 バッチ（= 1 study）で 2 行返す応答を 2 バッチぶん用意する
+    const twoItemsResponse = chatResponse([DESIGN_ITEM, ARM_ITEM]);
+    const { provider } = providerOf([twoItemsResponse, twoItemsResponse]);
+    const { deps } = makeDeps(provider);
+    deps.flushEveryNStudies = 10; // study 数条件では発火しない大きさにする
+    deps.maxRowsPerFlush = 3; // 2 study 目の push で累計 4 行 >= 3 に達して発火する
+    const appendCalls: Evidence[][] = [];
+    deps.appendEvidence = async (rows) => {
+      appendCalls.push([...rows]);
+    };
+    const result = await execute(
+      {
+        runId: 'run-1',
+        plan: makePlan([
+          makeBatch({ studyId: 'd1', fieldIds: ['f_design', 'f_n'] }),
+          makeBatch({ studyId: 'd2', fieldIds: ['f_design', 'f_n'] }),
+        ]),
+        fields: FIELDS,
+      },
+      deps,
+    );
+
+    // study 数（2）は flushEveryNStudies（10）未満だが、行数（4）が maxRowsPerFlush（3）以上になり発火する
+    expect(appendCalls).toHaveLength(1);
+    expect(appendCalls[0]).toHaveLength(4);
+    expect(result.evidence).toHaveLength(4);
+    expect(result.status).toBe('done');
+  });
+
+  test('maxRowsPerFlush に 0 以下や小数を渡しても 1 以上の整数に丸める', async () => {
+    const { provider } = providerOf(Array.from({ length: 3 }, () => chatResponse([DESIGN_ITEM])));
+    const { deps } = makeDeps(provider);
+    deps.flushEveryNStudies = 10; // 行キャップだけで発火することを確認するため大きめにする
+    deps.maxRowsPerFlush = 0; // floor(0)=0 → max(1,0)=1 に丸められる
+    const appendCalls: Evidence[][] = [];
+    deps.appendEvidence = async (rows) => {
+      appendCalls.push([...rows]);
+    };
+    const result = await execute(
+      { runId: 'run-1', plan: studiesPlan(['d1', 'd2', 'd3']), fields: FIELDS },
+      deps,
+    );
+
+    // 1 行たまるたびに毎回フラッシュする
+    expect(appendCalls.map((rows) => rows.length)).toEqual([1, 1, 1]);
+    expect(result.evidence).toHaveLength(3);
   });
 });
 

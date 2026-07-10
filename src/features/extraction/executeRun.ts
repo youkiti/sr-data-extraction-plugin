@@ -6,6 +6,11 @@
 //   の rejected）はどちらも partial_failure。失敗したバッチを飛ばして残りは続行する
 // - ExtractionRuns 行の作成・status/tokens の書き込み、ai annotator 行への転記（§4.3）は
 //   呼び出し側（サービス層）の責務。本関数は素材（ExecuteRunResult）を返すだけ
+// - Evidence の Sheets 書き込みは「バッチごとに即書き」ではなく、メモリバッファに貯めて
+//   flushEveryNStudies（tier 連動。既定 5）study ごと **または** maxRowsPerFlush（既定 500）行
+//   ごと（安全弁）＋ 全 study 完了時にまとめて appendEvidence する
+//   （Sheets の書き込みクォータ 60 回/分/ユーザーに対する 429 対策。
+//   docs/handoff-20260710-sheets-write-batching.md）
 import type { NormalizedPage } from '../../domain/anchor';
 import type { DocumentRecord } from '../../domain/document';
 import type { Evidence } from '../../domain/evidence';
@@ -71,7 +76,11 @@ export interface ExecuteRunDeps {
   provider: LLMProvider;
   /** extracted_texts/{document_id}.txt を読み、ページ別テキストへ復元する */
   loadDocumentPages: (documentId: string) => Promise<ExtractDataPage[]>;
-  /** Evidence タブへの追記（追記型・上書き禁止）。バッチ単位で呼ばれる */
+  /**
+   * Evidence タブへの追記（追記型・上書き禁止）。バッチごとではなく、
+   * flushEveryNStudies study ぶん貯まったタイミング（+ 全 study 完了時）でまとめて呼ばれる
+   * （429 対策。docs/handoff-20260710-sheets-write-batching.md）
+   */
   appendEvidence: (rows: readonly Evidence[]) => Promise<void>;
   /** テスト時に差し替え可能な UUID 発番（evidence_id） */
   newUuid?: () => string;
@@ -83,7 +92,26 @@ export interface ExecuteRunDeps {
    * （docs/handoff-20260710-throughput.md §3）。
    */
   maxConcurrency?: number;
+  /**
+   * Evidence の書き込みを何 study ごとにまとめて appendEvidence するか（429 対策。
+   * 既定 DEFAULT_FLUSH_EVERY_N_STUDIES = 5）。0 以下・小数を渡しても 1 以上の整数へ丸める
+   * （docs/handoff-20260710-sheets-write-batching.md）
+   */
+  flushEveryNStudies?: number;
+  /**
+   * 1 回のフラッシュに書く Evidence 行数の上限（429 対策の安全弁。既定
+   * DEFAULT_MAX_ROWS_PER_FLUSH = 500）。0 以下・小数を渡しても 1 以上の整数へ丸める。
+   * flushEveryNStudies（study 数）だけだと 1 study あたりの抽出項目が多い場合にバッファが
+   * 際限なく育ちうるため、行数でも発火条件を持たせる（docs/handoff-20260710-sheets-write-batching.md）
+   */
+  maxRowsPerFlush?: number;
 }
+
+/** flushEveryNStudies 省略時の既定値。extractionService.ts の既定注入にも使う */
+export const DEFAULT_FLUSH_EVERY_N_STUDIES = 5;
+
+/** maxRowsPerFlush 省略時の既定値 */
+export const DEFAULT_MAX_ROWS_PER_FLUSH = 500;
 
 export interface ExecuteRunInput {
   /** 呼び出し側が発番した ExtractionRuns.run_id */
@@ -196,6 +224,13 @@ interface ResolvedDocument {
   normalizedPages: NormalizedPage[];
 }
 
+/** フラッシュ待ちの Evidence バッファ 1 件（生成元バッチのメタ情報を持たせ、
+ *  フラッシュ失敗時にどのバッチを save_failed にすべきか分かるようにする） */
+interface PendingFlushItem {
+  batch: PlannedBatch;
+  rows: Evidence[];
+}
+
 /**
  * items を最大 limit 本まで同時に worker へ流すワーカープール。
  * limit=1 なら 1 本のワーカーが index 順に逐次処理する（＝ for...of と同一挙動）。
@@ -303,6 +338,94 @@ export async function executeRun(
     });
   };
 
+  // Evidence 書き込みのバッファ + フラッシュ（429 対策。バッチごとに即書きせず、
+  // flushEveryNStudies study 分たまるか全 study 完了時にまとめて deps.appendEvidence する）。
+  // 0 以下・小数を渡されても 1 以上の整数に丸める（maxConcurrency の丸めと同じ考え方）
+  const flushEveryNStudies = Math.max(
+    1,
+    Math.floor(deps.flushEveryNStudies ?? DEFAULT_FLUSH_EVERY_N_STUDIES),
+  );
+  // 1 フラッシュあたりの行数上限（安全弁）。同じく 1 以上の整数に丸める
+  const maxRowsPerFlush = Math.max(
+    1,
+    Math.floor(deps.maxRowsPerFlush ?? DEFAULT_MAX_ROWS_PER_FLUSH),
+  );
+  let buffer: PendingFlushItem[] = [];
+  // 「フラッシュ中」を示すガード。null 以外なら誰かが既にフラッシュを実行中
+  let flushPromise: Promise<void> | null = null;
+
+  const distinctStudyCount = (items: readonly PendingFlushItem[]): number =>
+    new Set(items.map((item) => item.batch.studyId)).size;
+  const totalRowCount = (items: readonly PendingFlushItem[]): number =>
+    items.reduce((sum, item) => sum + item.rows.length, 0);
+
+  /**
+   * バッファの中身を実際に Sheets へ書く。
+   * 成功: rows を evidence へ積み、含まれる全バッチを成功として reportProgress する。
+   * 失敗: 握りつぶさず、含まれる全バッチを save_failed の BatchFailure として記録・報告する
+   *（S7 の再試行で拾えるようにする。automation bias 対策 = 保存できていないのに「済み」に見せない）
+   */
+  const performFlush = async (items: readonly PendingFlushItem[]): Promise<void> => {
+    const rows = items.flatMap((item) => item.rows);
+    try {
+      await deps.appendEvidence(rows);
+    } catch (err) {
+      const detail = toDetail(err);
+      for (const item of items) {
+        reportProgress(item.batch, failBatch(item.batch, 'save_failed', detail));
+      }
+      return;
+    }
+    evidence.push(...rows);
+    for (const item of items) {
+      reportProgress(item.batch);
+    }
+  };
+
+  /**
+   * 閾値（flushEveryNStudies 件の study、または maxRowsPerFlush 行のどちらか先に達した方）に
+   * 達していればバッファを drain してフラッシュする。既に他の呼び出しがフラッシュ中なら何もしない
+   * （このタイミングで貯まっている分は、後続バッチの push が次回の閾値判定を行うか、全バッチ完了後の
+   * flushRemaining で拾われる）。
+   *
+   * 行数キャップは「発火トリガー」であって、1 フラッシュを厳密に maxRowsPerFlush 行以下へ
+   * 分割するものではない（1 study が maxRowsPerFlush 行を超えていても、その study 単位では
+   * 割らない）。push のたびに毎回この条件を再評価するため、バッファは
+   * 「キャップ + 直近に push された 1 study ぶん」程度で頭打ちになる
+   *
+   * 二重フラッシュ防止: 「flushPromise の確認 → buffer の drain → flushPromise のセット」は
+   * 途中に await を挟まない同期区間で完結する（JS はシングルスレッドなので、この区間の途中に
+   * 他の呼び出しが割り込むことはない）。そのため、複数バッチが同時に閾値到達を検知しても、
+   * 実際に drain してフラッシュを開始できるのは必ず 1 呼び出しだけになる
+   */
+  const maybeFlush = async (): Promise<void> => {
+    const thresholdReached =
+      distinctStudyCount(buffer) >= flushEveryNStudies || totalRowCount(buffer) >= maxRowsPerFlush;
+    if (flushPromise !== null || !thresholdReached) {
+      return;
+    }
+    const toFlush = buffer;
+    buffer = [];
+    const promise = performFlush(toFlush).finally(() => {
+      flushPromise = null;
+    });
+    flushPromise = promise;
+    await promise;
+  };
+
+  /**
+   * 全バッチ処理後の締めのフラッシュ（「全 study 完了時にまとめて書く」）。
+   * processBatch は毎回 maybeFlush を await してから返るため（下記）、ここに来る時点で
+   * 進行中のフラッシュは存在しない。閾値未満のまま run が終わった端数だけをここで書く
+   */
+  const flushRemaining = async (): Promise<void> => {
+    if (buffer.length > 0) {
+      const toFlush = buffer;
+      buffer = [];
+      await performFlush(toFlush);
+    }
+  };
+
   // 1 バッチ（= 1 study）の処理。共有アキュムレータ（evidence / tokens など）を書き込むが、
   // JS は単一スレッドなので各 await 間の同期ブロックは競合しない。加算・push は可換で、
   // 並行実行でも順不同なだけで結果は同値になる（modelVersion は「最初に取れた値」の非決定はあるが許容）
@@ -393,21 +516,23 @@ export async function executeRun(
         uuid,
       );
     });
-    if (rows.length > 0) {
-      try {
-        await deps.appendEvidence(rows);
-      } catch (err) {
-        reportProgress(batch, failBatch(batch, 'save_failed', toDetail(err)));
-        return;
-      }
-      evidence.push(...rows);
+    if (rows.length === 0) {
+      // 保存する行が無ければバッファに積まず、その場で成功として報告する
+      reportProgress(batch);
+      return;
     }
-    reportProgress(batch);
+    // 実際の Sheets 書き込みはバッファへ貯めてまとめて行う（429 対策）。
+    // 成功/失敗の reportProgress はフラッシュ確定後に行う（「保存できた」ことの通知にするため。
+    // フラッシュ失敗時に「成功」を報告してしまうと study 単位進捗が誤って done になる）
+    buffer.push({ batch, rows });
+    await maybeFlush();
   };
 
   // maxConcurrency=1 なら逐次（従来と同一挙動 = 回帰の砦）、2 以上でバッチを並行実行する
   const concurrency = Math.max(1, Math.floor(deps.maxConcurrency ?? 1));
   await runWithConcurrency(input.plan.batches, concurrency, processBatch);
+  // 全バッチ処理後、閾値未満のまま残っていた分をまとめて書く（全 study 完了時のフラッシュ）
+  await flushRemaining();
 
   return {
     runId: input.runId,
