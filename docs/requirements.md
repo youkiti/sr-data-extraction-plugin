@@ -92,7 +92,7 @@ tiab-review-plugin / sr-query-builder-plugin の構成に準拠。
 | PDF 描画 | `pdfjs-dist`（PDF.js）: canvas 描画 + テキスト層 + ハイライトオーバーレイ |
 | docx パース | `mammoth.js`（プロトコル入力用） |
 | LLM（MVP） | Gemini API（工場出荷の既定モデル = `gemini-3.5-flash`。実データ抽出ベンチマークで確定 ※Q8。tiab-review の固定バージョン ID 方針を踏襲） |
-| LLM（MVP 追加） | OpenRouter（OpenAI 互換 API。`OpenRouterProvider` を sr-query-builder から移植・2026-07-04）+ 利用者指定の OpenAI 互換 Chat Completions API（Issue #27。完全な HTTPS URL、Bearer 認証、JSON Schema 対応を接続テストで確認）。モデルセレクタの「その他（直接入力）」で任意モデル ID を指定可。カスタムモデルの一覧管理 UI は P1 |
+| LLM（MVP 追加） | OpenRouter（OpenAI 互換 API。`OpenRouterProvider` を sr-query-builder から移植・2026-07-04）+ 利用者指定の OpenAI 互換 Chat Completions API（Issue #27。HTTPS を原則とし、HTTP は `localhost` / `127.0.0.1` / `[::1]` のみ許可。非標準ポート、loopback の認証なし接続、構造化出力の互換性フォールバックに対応）。モデルセレクタの「その他（直接入力）」で任意モデル ID を指定可。カスタムモデルの一覧管理 UI は P1 |
 | Node.js | ≥ 18 |
 
 ### 2.1 OAuth スコープ
@@ -113,7 +113,7 @@ https://www.googleapis.com/auth/drive.file     # Drive Picker で選択したフ
   - `https://www.googleapis.com/*`
   - `https://generativelanguage.googleapis.com/*`（Gemini）
   - `https://openrouter.ai/*`（OpenRouter）
-- `optional_host_permissions`: `https://*/*`。OpenAI 互換 API の設定保存時に、入力された origin だけを `chrome.permissions.request` で利用者へ提示・要求する
+- `optional_host_permissions`: `https://*/*`、`http://localhost/*`、`http://127.0.0.1/*`、`http://[::1]/*`。OpenAI 互換 API の設定保存時に、入力 URL の scheme + hostname pattern だけを `chrome.permissions.request` で利用者へ提示・要求する。権限 pattern はポートを含めず、実際の API リクエスト URLでは入力されたポートとパスを維持する
 - `action.default_popup`: `popup.html`
 - PDF.js の worker は拡張パッケージに同梱（CDN 参照不可、CSP 準拠）
 - **Drive Picker は MV3 の remote hosted code 制約により拡張ページ内で動かせない**ため、

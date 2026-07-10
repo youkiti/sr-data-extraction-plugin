@@ -393,7 +393,7 @@ describe('bootstrapOptions（LLM 接続先。Issue #27）', () => {
     expect(provider().value).toBe('gemini');
     expect(fields().hidden).toBe(true);
     expect(connectionStatus().textContent).toBe('未保存（モデル名から自動判定）');
-    expect(key().placeholder).toBe('API キーを入力');
+    expect(key().placeholder).toBe('API キー（loopback は任意）');
   });
 
   test('保存済みの OpenAI 互換設定とキー状態を復元し、モデル名より優先して表示する', async () => {
@@ -450,6 +450,24 @@ describe('bootstrapOptions（LLM 接続先。Issue #27）', () => {
     save().click();
     await flush();
     await flush();
+    expect(connectionStatus().textContent).toBe('保存しました。');
+  });
+
+  test('loopback HTTP はポートを除いた権限を要求し、API キーなしで保存できる', async () => {
+    await bootstrapOptions(document);
+    provider().value = 'openai_compatible';
+    provider().dispatchEvent(new Event('change'));
+    endpoint().value = 'http://localhost:11434/v1/chat/completions';
+    save().click();
+    await flush();
+    await flush();
+    expect(chromeMock.permissions.request).toHaveBeenCalledWith({
+      origins: ['http://localhost/*'],
+    });
+    expect(chromeMock.storage.local.data['settings.openAiCompatibleEndpoint']).toBe(
+      'http://localhost:11434/v1/chat/completions',
+    );
+    expect(chromeMock.storage.local.data['secrets.openAiCompatibleApiKey']).toBeUndefined();
     expect(connectionStatus().textContent).toBe('保存しました。');
   });
 

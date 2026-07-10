@@ -3,7 +3,10 @@
 // - 既定モデルは抽出精度ベンチマークで確定するまで固定しない（requirements.md Q8）ため
 //   model は必須（移植元の DEFAULT_MODEL フォールバックを持たない）
 import type { LlmProviderId } from '../../domain/llmApiLog';
-import type { LlmConnectionSettings } from '../storage/settingsStore';
+import {
+  isLoopbackEndpoint,
+  type LlmConnectionSettings,
+} from '../storage/settingsStore';
 import { GeminiProvider } from './GeminiProvider';
 import type { LLMProvider } from './LLMProvider';
 import { OpenAICompatibleProvider } from './OpenAICompatibleProvider';
@@ -27,7 +30,7 @@ export interface ProviderResolutionDeps {
 
 export interface ProviderResolution {
   provider: LlmProviderId;
-  /** null は選択した接続方式の API キーが未設定 */
+  /** null は選択した接続方式で必須の API キーが未設定。loopback HTTP は空キーを許可する */
   config: ProviderConfig | null;
 }
 
@@ -76,18 +79,19 @@ export async function resolveProviderConfig(
     : { provider: null, openAiCompatibleEndpoint: null };
   const provider = settings.provider ?? resolveProviderId(model);
   const apiKey = await deps.loadApiKey(provider);
+  const endpoint =
+    provider === 'openai_compatible' ? settings.openAiCompatibleEndpoint : null;
+  const allowsEmptyApiKey = endpoint !== null && isLoopbackEndpoint(endpoint);
   return {
     provider,
     config:
-      apiKey === null
+      apiKey === null && !allowsEmptyApiKey
         ? null
         : {
             provider,
-            apiKey,
+            apiKey: apiKey ?? '',
             model,
-            ...(provider === 'openai_compatible' && settings.openAiCompatibleEndpoint !== null
-              ? { endpoint: settings.openAiCompatibleEndpoint }
-              : {}),
+            ...(endpoint !== null ? { endpoint } : {}),
           },
   };
 }

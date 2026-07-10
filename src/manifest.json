@@ -32,7 +32,12 @@
     "https://generativelanguage.googleapis.com/*",
     "https://openrouter.ai/*"
   ],
-  "optional_host_permissions": ["https://*/*"],
+  "optional_host_permissions": [
+    "https://*/*",
+    "http://localhost/*",
+    "http://127.0.0.1/*",
+    "http://[::1]/*"
+  ],
   "oauth2": {
     "client_id": "__OAUTH_CLIENT_ID__",
     "scopes": [

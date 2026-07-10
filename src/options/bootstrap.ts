@@ -17,6 +17,7 @@ import {
 import { requestEndpointPermission } from '../lib/storage/hostPermission';
 import {
   FACTORY_DEFAULT_MODEL,
+  isLoopbackEndpoint,
   loadDefaultModel,
   loadLlmConnectionSettings,
   normalizeOpenAiCompatibleEndpoint,
@@ -192,7 +193,7 @@ async function bootstrapLlmConnectionSection(root: ParentNode): Promise<void> {
   const savedCustomKey = await loadOpenAiCompatibleApiKey();
   apiKeyInput.placeholder = savedCustomKey
     ? '保存済み（変更する場合のみ入力）'
-    : 'API キーを入力';
+    : 'API キー（loopback は任意）';
 
   const renderProvider = (): void => {
     customFields.hidden = selectedProvider(providerSelect) !== 'openai_compatible';
@@ -222,10 +223,10 @@ async function bootstrapLlmConnectionSection(root: ParentNode): Promise<void> {
     const endpoint = normalizeOpenAiCompatibleEndpoint(endpointInput.value);
     const enteredKey = apiKeyInput.value.trim();
     const apiKey = enteredKey || (await loadOpenAiCompatibleApiKey());
-    if (apiKey === null) {
+    if (apiKey === null && !isLoopbackEndpoint(endpoint)) {
       throw new Error('OpenAI 互換 API キーが未設定です');
     }
-    return { provider, endpoint, apiKey, model };
+    return { provider, endpoint, apiKey: apiKey ?? '', model };
   };
 
   saveButton.addEventListener('click', () => {

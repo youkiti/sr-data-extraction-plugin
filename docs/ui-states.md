@@ -84,14 +84,22 @@ spec が正。実装が追いついていない箇所は以下のとおり（実
 
 | 状態 | 受入基準 |
 |---|---|
-| 通常 | `#llm-provider` で Gemini / OpenRouter / OpenAI 互換 API を選択できる。OpenAI 互換 API 選択時だけ `#openai-compatible-endpoint`（完全な HTTPS URL）と `#openai-compatible-api-key`（password）を表示する |
+| 通常 | `#llm-provider` で Gemini / OpenRouter / OpenAI 互換 API を選択できる。OpenAI 互換 API 選択時だけ `#openai-compatible-endpoint`（完全 URL）と `#openai-compatible-api-key`（password）を表示する。API キーは loopback HTTP のときだけ任意とする |
 | 読み込み済み | 保存済みの接続方式とエンドポイントを復元する。API キーの平文は復元せず、保存済みなら placeholder で示す |
-| 保存 | `#save-llm-connection.disabled = true`。OpenAI 互換 API は URL を検証し、入力 origin の `https://origin/*` を `chrome.permissions.request` で利用者へ確認してから保存する。権限拒否時は保存しない |
+| 保存 | `#save-llm-connection.disabled = true`。OpenAI 互換 API は URL を検証し、入力 URL の scheme + hostname pattern を `chrome.permissions.request` で利用者へ確認してから保存する。実際の API リクエストでは入力 URL のポートとパスを維持する。権限拒否時は保存しない |
 | 保存完了 | `#llm-connection-status` = `保存しました。`。OpenAI 互換 API のキー入力はクリアし、placeholder を保存済みへ切り替える |
 | 保存失敗 | URL 不正、API キー未設定、権限拒否、storage 失敗の理由を赤系メッセージで表示し、ボタンを復帰する |
-| 接続テスト | `#test-llm-connection.disabled = true`。現在の入力値と既定モデルを使い、Bearer 認証 + `response_format.type = json_schema` の最小リクエストを送る。JSON Schema に従う応答を確認できれば `接続テストに成功しました。`、それ以外は理由を赤系で表示する |
+| 接続テスト | `#test-llm-connection.disabled = true`。現在の入力値と既定モデルを使い、`json_schema + strict`、`json_schema`、`json_object` の順で最小リクエストを送る。互換性エラー時だけ次の方式へフォールバックし、JSON 応答を確認できれば `接続テストに成功しました。`、それ以外は理由を赤系で表示する |
+| 接続方式切替 | Gemini または OpenRouter を保存したときは `settings.openAiCompatibleEndpoint` を削除する。OpenAI 互換 API キーは秘密情報として別管理し、接続方式の切り替えだけでは削除しない |
 
-OpenAI 互換 API の URL は HTTPS のみを受け付け、userinfo、query、fragment を拒否する。接続先へ論文本文と抽出プロンプトが送信される旨を設定画面に表示する。任意ヘッダー、Bearer 以外の認証、Chat Completions 以外の API 形式は対象外とする。
+OpenAI 互換 API の URL は HTTPS を原則とし、HTTP は hostname が `localhost`、`127.0.0.1`、`[::1]` のいずれかと完全一致する場合だけ受け付ける。
+非標準ポートは HTTPS と loopback HTTP の双方で許可する。
+userinfo、query、fragment は拒否する。
+loopback HTTP で API キーが空の場合は Authorization ヘッダーを送らず、リモート HTTPS では API キーを必須とする。
+構造化出力のフォールバックは接続テストだけでなく、スキーマ生成、パイロット抽出、本番抽出へ共通適用する。
+`json_object` へフォールバックした場合も既存の JSON パースと出力検証を維持する。
+接続先へ論文本文と抽出プロンプトが送信される旨を設定画面に表示する。
+任意ヘッダー、Bearer 以外の認証、Chat Completions 以外の API 形式は対象外とする。
 
 ## 3. App / メインビュー (`src/app/app.html`)
 

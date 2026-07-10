@@ -110,6 +110,27 @@ test('OpenAI 互換 API: 接続先の保存と JSON Schema 接続テスト', asy
   await expect(page.locator('#openai-compatible-api-key')).toHaveValue('');
 });
 
+test('OpenAI 互換 API: loopback HTTP は API キーなしで保存・接続できる', async ({ page }) => {
+  await page.addInitScript(chromeStub({ seedModel: false }));
+  await page.route('http://localhost:11434/v1/chat/completions', async (route) => {
+    expect(route.request().headers()['authorization']).toBeUndefined();
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ choices: [{ message: { content: '{"ok":true}' } }] }),
+    });
+  });
+  await page.goto('/options/options.html');
+  await page.locator('#llm-provider').selectOption('openai_compatible');
+  await page
+    .locator('#openai-compatible-endpoint')
+    .fill('http://localhost:11434/v1/chat/completions');
+  await page.locator('#test-llm-connection').click();
+  await expect(page.locator('#llm-connection-status')).toHaveText('接続テストに成功しました。');
+  await page.locator('#save-llm-connection').click();
+  await expect(page.locator('#llm-connection-status')).toHaveText('保存しました。');
+});
+
 test('アクセシビリティ違反がない（axe）', async ({ page }) => {
   await page.addInitScript(chromeStub({ seedModel: true }));
   await page.goto('/options/options.html');

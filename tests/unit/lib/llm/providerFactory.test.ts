@@ -115,6 +115,26 @@ describe('resolveProviderConfig', () => {
     ).resolves.toEqual({ provider: 'gemini', config: null });
   });
 
+  test('loopback の OpenAI 互換 API はキーなしで config を解決する', async () => {
+    await expect(
+      resolveProviderConfig('local-model', {
+        loadApiKey: async () => null,
+        loadLlmConnectionSettings: async () => ({
+          provider: 'openai_compatible',
+          openAiCompatibleEndpoint: 'http://localhost:11434/v1/chat/completions',
+        }),
+      }),
+    ).resolves.toEqual({
+      provider: 'openai_compatible',
+      config: {
+        provider: 'openai_compatible',
+        apiKey: '',
+        model: 'local-model',
+        endpoint: 'http://localhost:11434/v1/chat/completions',
+      },
+    });
+  });
+
   test('OpenAI 互換 endpoint が null なら endpoint を config に足さない', async () => {
     await expect(
       resolveProviderConfig('m', {

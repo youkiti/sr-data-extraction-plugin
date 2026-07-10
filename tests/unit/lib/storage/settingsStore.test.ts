@@ -2,6 +2,7 @@ import { installChromeMock, type ChromeMock } from '../../../setup/chrome-mock';
 import {
   loadDefaultModel,
   loadLlmConnectionSettings,
+  isLoopbackEndpoint,
   normalizeOpenAiCompatibleEndpoint,
   saveDefaultModel,
   saveLlmConnectionSettings,
@@ -55,9 +56,14 @@ describe('settingsStore', () => {
     });
   });
 
-  test('LLM 接続設定: Gemini / OpenRouter は endpoint なしで保存できる', async () => {
+  test('LLM 接続設定: Gemini / OpenRouter は endpoint を削除して保存できる', async () => {
+    chromeMock.storage.local.data['settings.openAiCompatibleEndpoint'] =
+      'https://old.example/v1/chat/completions';
     await saveLlmConnectionSettings({ provider: 'gemini' });
     await expect(loadLlmConnectionSettings()).resolves.toMatchObject({ provider: 'gemini' });
+    expect(chromeMock.storage.local.remove).toHaveBeenCalledWith(
+      'settings.openAiCompatibleEndpoint',
+    );
     await saveLlmConnectionSettings({ provider: 'openrouter' });
     await expect(loadLlmConnectionSettings()).resolves.toMatchObject({ provider: 'openrouter' });
   });
@@ -78,6 +84,9 @@ describe('settingsStore', () => {
     ['', '有効な API エンドポイント'],
     ['not-a-url', '有効な API エンドポイント'],
     ['http://llm.example/v1/chat/completions', 'HTTPS'],
+    ['http://localhost.example.com/v1/chat/completions', 'HTTPS'],
+    ['http://192.168.1.10:11434/v1/chat/completions', 'HTTPS'],
+    ['http://127.0.0.2:11434/v1/chat/completions', 'HTTPS'],
     ['https://user:pass@llm.example/v1/chat/completions', '認証情報'],
     ['https://llm.example/v1/chat/completions?q=1', 'クエリ文字列'],
     ['https://llm.example/v1/chat/completions#x', 'クエリ文字列'],
@@ -89,5 +98,20 @@ describe('settingsStore', () => {
     expect(normalizeOpenAiCompatibleEndpoint(' https://llm.example/v1/chat/completions ')).toBe(
       'https://llm.example/v1/chat/completions',
     );
+  });
+
+  test.each([
+    'http://localhost:11434/v1/chat/completions',
+    'http://127.0.0.1:1234/v1/chat/completions',
+    'http://[::1]:8080/v1/chat/completions',
+  ])('OpenAI 互換 URL は完全一致の loopback HTTP を許可する: %s', (value) => {
+    expect(normalizeOpenAiCompatibleEndpoint(value)).toBe(value);
+    expect(isLoopbackEndpoint(value)).toBe(true);
+  });
+
+  test('HTTPS は非標準ポートを許可し、loopback HTTP とは判定しない', () => {
+    const value = 'https://llm.example:8443/v1/chat/completions';
+    expect(normalizeOpenAiCompatibleEndpoint(value)).toBe(value);
+    expect(isLoopbackEndpoint(value)).toBe(false);
   });
 });

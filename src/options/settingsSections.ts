@@ -100,6 +100,10 @@ export function buildSettingsSections(): HTMLElement {
         id: 'openai-compatible-api-key',
         attributes: { type: 'password', autocomplete: 'off' },
       }),
+      el('span', {
+        className: 'options__help',
+        text: 'localhost、127.0.0.1、[::1] への接続では省略できます。',
+      }),
     ]),
   ]);
   customFields.hidden = true;
@@ -107,7 +111,7 @@ export function buildSettingsSections(): HTMLElement {
     el('h2', { text: 'LLM 接続先' }),
     el('p', {
       className: 'options__help',
-      text: '保存した接続方式はモデル名より優先されます。OpenAI 互換 API は HTTPS、Bearer 認証、JSON Schema 対応が必要です。',
+      text: '保存した接続方式はモデル名より優先されます。HTTP は localhost、127.0.0.1、[::1] だけ許可します。別マシン上の API は HTTPS 化してください。',
     }),
     el('p', {
       id: 'llm-connection-status',

@@ -86,6 +86,98 @@ describe('OpenAICompatibleProvider', () => {
     expect(secondBody).toEqual({ model: 'm', messages: [] });
   });
 
+  test('loopback の空 API キーでは Authorization ヘッダーを送らない', async () => {
+    const fetchMock = jest.fn().mockResolvedValue(response({}));
+    const provider = new OpenAICompatibleProvider({
+      apiKey: '   ',
+      model: 'local-model',
+      endpoint: 'http://localhost:11434/v1/chat/completions',
+      fetch: fetchMock,
+    });
+    await provider.chat([]);
+    expect((fetchMock.mock.calls[0]?.[1] as RequestInit).headers).toEqual({
+      'Content-Type': 'application/json',
+    });
+  });
+
+  test('strict 非対応時は strict なしへフォールバックし、成功方式を再利用する', async () => {
+    const fetchMock = jest
+      .fn()
+      .mockResolvedValueOnce(response({ error: 'strict is unsupported' }, false, 400))
+      .mockResolvedValue(response({ choices: [{ message: { content: '{"ok":true}' } }] }));
+    const provider = new OpenAICompatibleProvider({
+      apiKey: 'k',
+      model: 'm',
+      endpoint: 'https://llm.example/v1/chat/completions',
+      fetch: fetchMock,
+    });
+    const schema = { type: 'object' };
+    await provider.chat([], { responseSchema: schema });
+    await provider.chat([], { responseSchema: schema });
+
+    const bodies = fetchMock.mock.calls.map((call) =>
+      JSON.parse((call[1] as RequestInit).body as string),
+    );
+    expect(bodies[0].response_format.json_schema).toEqual({
+      name: 'response',
+      strict: true,
+      schema,
+    });
+    expect(bodies[1].response_format.json_schema).toEqual({ name: 'response', schema });
+    expect(bodies[2].response_format.json_schema).toEqual({ name: 'response', schema });
+  });
+
+  test('json_schema 非対応時は json_object までフォールバックする', async () => {
+    const fetchMock = jest
+      .fn()
+      .mockResolvedValueOnce(response({ error: 'strict unsupported' }, false, 400))
+      .mockResolvedValueOnce(response({ error: 'json_schema unsupported' }, false, 422))
+      .mockResolvedValueOnce(
+        response({ choices: [{ message: { content: '{"ok":true}' } }] }),
+      );
+    const provider = new OpenAICompatibleProvider({
+      apiKey: 'k',
+      model: 'm',
+      endpoint: 'https://llm.example/v1/chat/completions',
+      fetch: fetchMock,
+    });
+    await provider.chat([], { responseSchema: { type: 'object' } });
+    const body = JSON.parse((fetchMock.mock.calls[2]?.[1] as RequestInit).body as string);
+    expect(body.response_format).toEqual({ type: 'json_object' });
+  });
+
+  test('json_object も非対応なら最後の LlmProviderError を返す', async () => {
+    const fetchMock = jest
+      .fn()
+      .mockResolvedValueOnce(response({ error: 'strict unsupported' }, false, 400))
+      .mockResolvedValueOnce(response({ error: 'json_schema unsupported' }, false, 400))
+      .mockResolvedValueOnce(response({ error: 'response_format unsupported' }, false, 400));
+    const provider = new OpenAICompatibleProvider({
+      apiKey: 'k',
+      model: 'm',
+      endpoint: 'https://llm.example/v1/chat/completions',
+      fetch: fetchMock,
+    });
+    await expect(provider.chat([], { responseSchema: { type: 'object' } })).rejects.toMatchObject({
+      status: 400,
+      responseBody: '{"error":"response_format unsupported"}',
+    });
+  });
+
+  test('構造化出力と無関係な 400 はフォールバックしない', async () => {
+    const fetchMock = jest.fn().mockResolvedValue(response({ error: 'model not found' }, false, 400));
+    const provider = new OpenAICompatibleProvider({
+      apiKey: 'k',
+      model: 'missing',
+      endpoint: 'https://llm.example/v1/chat/completions',
+      fetch: fetchMock,
+    });
+    await expect(provider.chat([], { responseSchema: { type: 'object' } })).rejects.toMatchObject({
+      status: 400,
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   test('HTTP エラーを LlmProviderError にする', async () => {
     const fetchMock = jest.fn().mockResolvedValue(response({ error: 'bad' }, false, 401));
     const provider = new OpenAICompatibleProvider({

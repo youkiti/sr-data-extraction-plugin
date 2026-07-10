@@ -6,6 +6,7 @@ import type { LlmProviderId } from '../../domain/llmApiLog';
 const DEFAULT_MODEL_STORAGE_KEY = 'settings.defaultModel';
 const LLM_PROVIDER_STORAGE_KEY = 'settings.llmProvider';
 const OPENAI_COMPATIBLE_ENDPOINT_STORAGE_KEY = 'settings.openAiCompatibleEndpoint';
+const HTTP_LOOPBACK_HOSTNAMES: ReadonlySet<string> = new Set(['localhost', '127.0.0.1', '[::1]']);
 
 export interface LlmConnectionSettings {
   /** null は既存環境。モデル ID による従来判定へフォールバックする */
@@ -56,8 +57,11 @@ export function normalizeOpenAiCompatibleEndpoint(endpoint: string): string {
   } catch {
     throw new Error('有効な API エンドポイント URL を入力してください');
   }
-  if (url.protocol !== 'https:') {
-    throw new Error('API エンドポイントは HTTPS で指定してください');
+  const isLoopbackHttp = url.protocol === 'http:' && HTTP_LOOPBACK_HOSTNAMES.has(url.hostname);
+  if (url.protocol !== 'https:' && !isLoopbackHttp) {
+    throw new Error(
+      'API エンドポイントは HTTPS、または localhost / 127.0.0.1 / [::1] の HTTP で指定してください',
+    );
   }
   if (url.username !== '' || url.password !== '') {
     throw new Error('API エンドポイントに認証情報を含めないでください');
@@ -66,6 +70,12 @@ export function normalizeOpenAiCompatibleEndpoint(endpoint: string): string {
     throw new Error('API エンドポイントにクエリ文字列やフラグメントを含めないでください');
   }
   return url.toString();
+}
+
+/** 認証なし HTTP を許可できる、完全一致の loopback URL か */
+export function isLoopbackEndpoint(endpoint: string): boolean {
+  const url = new URL(normalizeOpenAiCompatibleEndpoint(endpoint));
+  return url.protocol === 'http:' && HTTP_LOOPBACK_HOSTNAMES.has(url.hostname);
 }
 
 /** 接続方式と OpenAI 互換 API の URL を読み出す */
@@ -97,5 +107,7 @@ export async function saveLlmConnectionSettings(settings: {
   await setLocal(LLM_PROVIDER_STORAGE_KEY, settings.provider);
   if (endpoint !== null) {
     await setLocal(OPENAI_COMPATIBLE_ENDPOINT_STORAGE_KEY, endpoint);
+  } else {
+    await removeLocal(OPENAI_COMPATIBLE_ENDPOINT_STORAGE_KEY);
   }
 }
