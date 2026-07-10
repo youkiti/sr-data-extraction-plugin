@@ -1935,6 +1935,11 @@
   margin: 0 auto;
   background: #fff;
   box-shadow: 0 1px 4px rgb(0 0 0 / 20%);
+
+  /* ハイライトの mix-blend-mode: multiply がページ外の背景（.pdf-viewer__scroller の
+     グレー地）と意図せず合成されないよう、新しいスタッキングコンテキストで遮断する
+     （issue #31 C. ハイライトの乗算合成） */
+  isolation: isolate;
 }
 
 .pdf-viewer__canvas {
@@ -1952,6 +1957,10 @@
   padding: 0;
   border-radius: 2px;
   cursor: pointer;
+
+  /* 塗りを下地の文字と乗算合成し、濃い色でも文字が透けて読めるようにする
+     （issue #31 C. ハイライトで文字が見えなくなる問題の根治） */
+  mix-blend-mode: multiply;
 }
 
 .pdf-viewer__hl--verified {
@@ -1968,11 +1977,15 @@
 
 .pdf-viewer__hl--search {
   background: rgb(66 133 244 / 35%);
+  outline: 1px dashed var(--color-highlight-active-border);
   cursor: default;
 }
 
+/* kind 別クラス（verified / unverified / low）より後ろに定義し、選択中は塗り・枠とも
+   青で上書きする（issue #31 D. 選択中ハイライトを青に + 検索ヒットとの区別） */
 .pdf-viewer__hl--active {
-  outline: 2px solid var(--color-primary);
+  background: var(--color-highlight-active);
+  outline: 2px solid var(--color-highlight-active-border);
 }
 
 .pdf-viewer__error {
