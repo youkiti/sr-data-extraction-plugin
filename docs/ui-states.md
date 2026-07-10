@@ -41,7 +41,7 @@ spec が正。実装が追いついていない箇所は以下のとおり（実
 - 新規作成フォームの説明文は「データ抽出プロジェクトを作成します（スプレッドシート + Drive フォルダを生成）。」
 - 既存 ID で開く場合、`Meta` タブの検証に加えて **`Documents` / `SchemaFields` タブの存在**を確認し、欠けていれば `#popup-open-error` に「sr-data-extraction のプロジェクトではありません（Documents / SchemaFields タブが見つかりません）」
 - 存在しないスプレッドシート ID（404）は「スプレッドシートが見つかりません。ID を確認してください」
-- 設定画面はハッシュルートではなく独立ページのため、`#open-options` は `options/options.html` を新規タブで開く
+- 設定は `#open-options` からアプリ内ルート `app/app.html#/options` へ同一タブで遷移する（`chrome.tabs.update`。独立ページ `options/options.html` は拡張管理画面の「オプション」からのみ開く）
 - プロジェクト選択（作成 / 既存 ID / 履歴クリック）成功で直ちに同一タブのままメインビューへ遷移する（`chrome.tabs.update`。S1 はフルページ表示のためタブを増やさない）。独立した「メインビューを開く」ボタンは持たない（スケルトン段階の `#open-app` ボタンは廃止）
 
 ## 2. Options (`src/options/options.html`)
@@ -49,6 +49,7 @@ spec が正。実装が追いついていない箇所は以下のとおり（実
 ### 状態 A: 通常表示
 
 - **可視**: Gemini API キー入力（`type="password"` + `autocomplete="off"`）/ 保存ボタン / OpenRouter API キー入力（`#openrouter-api-key`。Gemini と同じトンマナ + 取得先リンク <https://openrouter.ai/settings/keys>）/ 保存ボタン `#save-openrouter-key` / 既定モデルセレクタ（下記「既定モデル」参照）/ 表示言語セレクタ（MVP は ja 固定・ディム）
+- **「アプリを開く」リンク `#options-open-app`**（スタンドアロン options.html のみ。見出し行の右側から `../app/app.html` へ同一タブ遷移。アプリ内 `#/options` はサイドバーと「← 前の画面へ戻る」= `#/options` 進入直前のルート・無ければ `#/home` を持つため、このリンクは出さない — issue #31 B）
 - **`#options-status`**: `Gemini: 保存済み|未設定` 形式 / **`#openrouter-status`**: `OpenRouter: 保存済み|未設定` 形式
 - キーは `trim()` して保存、空文字は保存抑止（sr-query-builder で target のまま残った教訓を最初から実装する）
 - **入力欄の placeholder で保存状態を可視化**（平文キーは再表示しない）: 保存済み → `保存済み（変更する場合のみ入力）` / 未設定 → `API キーを入力`。保存成功時に入力欄をクリアしたうえで placeholder を「保存済み」に切り替える
@@ -128,7 +129,8 @@ spec が正。実装が追いついていない箇所は以下のとおり（実
 | | 読み取り専用（1 版以上） | `#protocol-summary`（版 / 入力形式 / 本文 / 元ファイルの Drive リンク / 作成日時・者）+ 版切替 select（2 版以上のとき）+ 古い版選択時は `#protocol-old-note`。「新しい版を入力」で再入力フォームへ |
 | | 再入力フォーム | 送信ボタンは「新しい版として保存」+ キャンセルで読み取り専用へ復帰。保存は常に追記（上書きなし） |
 | | ※移植メモ | sr-query-builder の「未保存下書き復元」モードは、本拡張では送信 = 即保存（LLM 抽出 → blocks 承認の 2 段階が無い）ため存在しない |
-| `#/schema` | ドラフト前 | 「AI に表のデザインをドラフトさせる」ボタン + サンプル論文セレクタ（1〜3 本。テキスト層なしは選択不可）+ モデルセレクタ `#schema-model`（`requested_model`。§2「モデルセレクタ」の共通ウィジェット。プレースホルダ「選択してください」。既定モデルは Q8 確定まで固定しない）。プロトコル未入力ならガード。選択 0 本 / モデル未選択 / 選択モデルのプロバイダ（Gemini / OpenRouter）の API キー未設定は `#schema-draft-error` にインラインエラー |
+| `#/schema` | 全状態共通 | 見出し「表のデザイン」直下に解説リード（`view__lead`）「抽出したい項目のリストをこのページで作成します。スプレッドシートでいえば 1 行目の見出し（列の名前）にあたります。例:「著者名」「出版年」「対象患者数」など。これを設計する工程を表のデザインと呼んでいます。」を常時表示（プロジェクト未選択時も。issue #31 ①） |
+| | ドラフト前 | 「AI に表のデザインをドラフトさせる」ボタン + サンプル論文セレクタ（1〜3 本。テキスト層なしは選択不可）+ モデルセレクタ `#schema-model`（`requested_model`。§2「モデルセレクタ」の共通ウィジェット。プレースホルダ「選択してください」。既定モデルは Q8 確定まで固定しない）。プロトコル未入力ならガード。選択 0 本 / モデル未選択 / 選択モデルのプロバイダ（Gemini / OpenRouter）の API キー未設定は `#schema-draft-error` にインラインエラー |
 | | ドラフト生成中 | 進捗表示 + 経過時間。**LLM コスト集計の再描画で表示が消えない**（sr-query-builder `draftRun` の教訓を踏襲し store で管理） |
 | | 編集中 | 表形式エディタ。行ごとに `field_name`（snake_case バリデーション、重複・StudyData 固定列衝突エラー）/ `data_type` / `entity_level` / `extraction_instruction`（必須）ほか全列を編集可。エラーは一覧 + 該当セルの `aria-invalid` で表示し、ある間は確定不可。プリセット挿入（requirements.md §3.3。二値 `#schema-preset-binary` / 連続 `#schema-preset-continuous` / RoB 2 `#schema-preset-rob2` / ROBINS-I `#schema-preset-robins-i`）と行の追加 / 削除。ボタン下に `data_type` の凡例 `#schema-datatype-help`（text / integer / float / boolean / enum / date の説明 + 例。enum は許容値列の | 区切り指定を案内）。未確定変更がある間「版として確定」ボタンが強調 |
 | | 確定済み | 現行版の読み取り専用サマリ（メタ + 項目テーブル）+ 「新しい版を作る」導線（現行版の field_id を維持してエディタへ）+ 版履歴リスト（2 版以上のとき） |

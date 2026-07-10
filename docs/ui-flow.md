@@ -30,7 +30,8 @@ flowchart LR
     Open --> Main[メインビュー /app.html]
 
     Main -->|ヘッダ歯車（同一タブ）| Options["設定 #/options（アプリ内） / options.html（管理画面）"]
-    Options -->|ホームへ戻る| Main
+    Options -->|前の画面へ戻る（直前ルート・無ければホーム）| Main
+    Options -->|アプリを開く（options.html のみ）| Main
     Manage([拡張管理画面]) --> Options
     Options -->|API キー保存| Storage[(chrome.storage)]
     Main -->|認証エラー時に誘導| Options

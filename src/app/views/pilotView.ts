@@ -1,6 +1,6 @@
 // #/pilot: パイロット抽出（S6 / ui-states.md §3）。
 // 状態: 未実行（対象文献セレクタ + コスト概算 + 実行）/ 実行中（進捗バー）/
-// 完了（結果サマリ + 埋め込み検証 UI + 「スキーマを改訂して再パイロット」導線）。
+// 完了（結果サマリ + 埋め込み検証 UI + 「表のデザインを改訂して再パイロット」導線）。
 // 検証 UI は S8 と同じ verificationPanel を埋め込む（requirements.md §4.1 S6）
 import type { DocumentRecord } from '../../domain/document';
 import type { ExtractionRun } from '../../domain/extractionRun';
@@ -241,7 +241,7 @@ function renderRunSummary(run: ExtractionRun, state: AppState): HTMLElement {
       el('p', { id: 'pilot-run-done', className: 'pilot__run-done', text: '抽出が完了しました。' }),
     );
   }
-  // 「スキーマを改訂して再パイロット」導線は完了後は常に可視（ui-states.md §3）
+  // 「表のデザインを改訂して再パイロット」導線は完了後は常に可視（ui-states.md §3）
   children.push(
     el('p', {}, [
       el('a', {

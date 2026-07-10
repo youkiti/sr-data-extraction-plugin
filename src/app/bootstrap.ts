@@ -492,11 +492,14 @@ export async function bootstrapApp(
       showToast(guard.warning, doc);
     }
     // #/options へ入る直前のルートを記録する（B. 設定画面の「戻る」改善）。
-    // #/options 自体への遷移でのみ更新し、それ以外のステップ間遷移では触らない
-    if (target === '#/options' && currentHash !== '#/options') {
-      store.setState({ settingsReturnHash: currentHash });
-    }
+    // #/options 自体への遷移でのみ更新し、それ以外のステップ間遷移では触らない。
+    // setState は購読経由で全再描画を同期発火するため、currentHash を先に新ルートへ
+    // 進めてから記録する — 逆順だと退出元ビューの無駄な再構築が 1 回走る
+    const previous = currentHash;
     currentHash = target;
+    if (target === '#/options' && previous !== '#/options') {
+      store.setState({ settingsReturnHash: previous });
+    }
     renderRoute();
     renderNav(store.getState());
     if (currentHash === '#/home') {

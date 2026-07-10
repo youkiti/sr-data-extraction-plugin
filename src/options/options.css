@@ -5,14 +5,8 @@
   padding: 24px;
 }
 
-/* スタンドアロン設定ページのみの見出し行（「アプリを開く」導線。issue #31 B-2） */
-.options__header {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 16px;
-}
-
+/* 見出し行 .options__header のレイアウトはアプリ内 #/options の .settings__header と
+   共通のため globals.css にある。「アプリを開く」導線（issue #31 B-2）の字面だけここで持つ */
 .options__open-app {
   font-size: 13px;
   white-space: nowrap;

@@ -148,14 +148,8 @@
   color: var(--color-text-muted);
 }
 
-/* 設定（#/options）: options.html と同じ節スタイルをアプリ内でも使う（settingsSections.ts 共通） */
-.settings__header {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 16px;
-}
-
+/* 設定（#/options）: options.html と同じ節スタイルをアプリ内でも使う（settingsSections.ts 共通）。
+   見出し行 .settings__header は options.html の .options__header と共通のため globals.css にある */
 .settings__body {
   max-width: 640px;
 }
@@ -1957,35 +1951,59 @@
   padding: 0;
   border-radius: 2px;
   cursor: pointer;
+  background: none;
+}
 
-  /* 塗りを下地の文字と乗算合成し、濃い色でも文字が透けて読めるようにする
-     （issue #31 C. ハイライトで文字が見えなくなる問題の根治） */
+/* globals.css の button:hover（緑塗り。詳細度 0,2,1）がクラス指定に勝つため、
+   ハイライトのボタン本体は hover 中も透明を明示的に維持する */
+.pdf-viewer__hl:hover:not(:disabled) {
+  background: none;
+}
+
+/* 塗りは擬似要素へ分離して下地の文字と乗算合成し、濃い色でも文字が透けて読める
+   ようにする（issue #31 C. ハイライトで文字が見えなくなる問題の根治）。
+   multiply をボタン本体に掛けると選択枠・フォーカスリングまで合成対象になり、
+   暗地（反転表ヘッダ・暗い図版）上で枠ごと黒に潰れて不可視になるため、
+   枠はボタン本体（通常合成）に残し塗りだけを乗算する */
+.pdf-viewer__hl::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
   mix-blend-mode: multiply;
 }
 
-.pdf-viewer__hl--verified {
+.pdf-viewer__hl--verified::before {
   background: var(--color-highlight-verified);
 }
 
-.pdf-viewer__hl--unverified {
+.pdf-viewer__hl--unverified::before {
   background: var(--color-highlight-unverified);
 }
 
-.pdf-viewer__hl--low {
+.pdf-viewer__hl--low::before {
   background: var(--color-highlight-low-confidence);
 }
 
 .pdf-viewer__hl--search {
-  background: rgb(66 133 244 / 35%);
   outline: 1px dashed var(--color-highlight-active-border);
   cursor: default;
 }
 
-/* kind 別クラス（verified / unverified / low）より後ろに定義し、選択中は塗り・枠とも
-   青で上書きする（issue #31 D. 選択中ハイライトを青に + 検索ヒットとの区別） */
-.pdf-viewer__hl--active {
+.pdf-viewer__hl--search::before {
   background: var(--color-highlight-active);
+}
+
+/* 選択中は塗り・枠とも青で上書きする（issue #31 D. 選択中ハイライトを青に + 検索
+   ヒットとの区別）。kind 別クラスとの優先は定義順ではなくセレクタ詳細度（0,2,0）で
+   符号化し、将来のルール並べ替えで壊れないようにする */
+.pdf-viewer__hl.pdf-viewer__hl--active {
   outline: 2px solid var(--color-highlight-active-border);
+}
+
+.pdf-viewer__hl.pdf-viewer__hl--active::before {
+  background: var(--color-highlight-active);
 }
 
 .pdf-viewer__error {
@@ -2029,7 +2047,10 @@
 
 .text-viewer__mark {
   border-radius: 2px;
-  background: var(--color-highlight-unverified);
+
+  /* text ビューは常に「選択中セル」の根拠を表示するコンポーネントのため、
+     PDF モードの「選択中 = 青」と色を揃える（issue #31 D） */
+  background: var(--color-highlight-active);
   color: inherit;
   padding: 0 2px;
 }
