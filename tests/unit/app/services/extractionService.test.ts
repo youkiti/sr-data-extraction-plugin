@@ -280,6 +280,7 @@ describe('runExtraction', () => {
           maxAttempts: 3,
           baseDelayMs: 1_000,
           maxDelayMs: 60_000,
+          maxConcurrency: 1,
         }),
         rateLimitClock: {
           now: () => clock.now,

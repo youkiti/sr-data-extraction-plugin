@@ -118,6 +118,17 @@ export function buildSettingsSections(): HTMLElement {
         attributes: { type: 'number', min: '1', step: '1', inputmode: 'numeric' },
       }),
     ]),
+    // カスタム tier のときだけ表示する同時実行数入力（並列化のスループット対策。1 = 逐次）
+    el('div', { id: 'rate-limit-concurrency-row', className: 'options__row', attributes: { hidden: 'true' } }, [
+      el('label', {
+        text: '同時実行数（1 = 逐次。上げると速いが 429 / TPM に注意）',
+        attributes: { for: 'rate-limit-concurrency' },
+      }),
+      el('input', {
+        id: 'rate-limit-concurrency',
+        attributes: { type: 'number', min: '1', step: '1', inputmode: 'numeric', placeholder: '1' },
+      }),
+    ]),
     el('div', { className: 'options__row' }, [
       el('button', { id: 'save-rate-limit', text: '保存', attributes: { type: 'button' } }),
     ]),

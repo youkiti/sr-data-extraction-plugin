@@ -802,6 +802,119 @@ describe('executeRun の partial_failure', () => {
   });
 });
 
+describe('executeRun の並行実行（maxConcurrency）', () => {
+  /** 手動リリース式の provider。in-flight 数のピークを観測してからバッチを解放する */
+  function gatedProvider(): {
+    provider: LLMProvider;
+    peak: () => number;
+    releaseAll: () => void;
+  } {
+    let active = 0;
+    let peak = 0;
+    const releasers: Array<() => void> = [];
+    return {
+      peak: () => peak,
+      releaseAll: () => {
+        releasers.splice(0).forEach((release) => {
+          release();
+        });
+      },
+      provider: {
+        providerId: 'gemini',
+        model: 'm',
+        chat: async () => {
+          active += 1;
+          peak = Math.max(peak, active);
+          await new Promise<void>((resolve) => {
+            releasers.push(() => {
+              active -= 1;
+              resolve();
+            });
+          });
+          return chatResponse([DESIGN_ITEM], { tokensIn: 10, tokensOut: 5 });
+        },
+      },
+    };
+  }
+
+  /** run が完了するまで、待機中の chat を順次解放しながらマクロタスクを回す */
+  async function drain(runPromise: Promise<unknown>, releaseAll: () => void): Promise<void> {
+    let done = false;
+    void runPromise.then(() => {
+      done = true;
+    });
+    while (!done) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      releaseAll();
+    }
+    await runPromise;
+  }
+
+  const fourStudies = () =>
+    makePlan([
+      makeBatch({ studyId: 'd1', fieldIds: ['f_design'] }),
+      makeBatch({ studyId: 'd2', fieldIds: ['f_design'] }),
+      makeBatch({ studyId: 'd3', fieldIds: ['f_design'] }),
+      makeBatch({ studyId: 'd4', fieldIds: ['f_design'] }),
+    ]);
+
+  test('maxConcurrency=2 は同時実行を 2 本までに抑える', async () => {
+    const { provider, peak, releaseAll } = gatedProvider();
+    const { deps } = makeDeps(provider);
+    deps.maxConcurrency = 2;
+    const runPromise = execute({ runId: 'run-1', plan: fourStudies(), fields: FIELDS }, deps);
+    await drain(runPromise, releaseAll);
+    const result = await runPromise;
+    expect(peak()).toBe(2);
+    expect(result.evidence).toHaveLength(4);
+    expect(result.status).toBe('done');
+    // トークンは順不同でも合算は同値（可換）
+    expect(result.tokensIn).toBe(40);
+    expect(result.tokensOut).toBe(20);
+    expect(new Set(result.evidence.map((e) => e.studyId))).toEqual(
+      new Set(['d1', 'd2', 'd3', 'd4']),
+    );
+  });
+
+  test('maxConcurrency=1（既定相当）は逐次で 1 本ずつ', async () => {
+    const { provider, peak, releaseAll } = gatedProvider();
+    const { deps } = makeDeps(provider);
+    deps.maxConcurrency = 1;
+    const runPromise = execute({ runId: 'run-1', plan: fourStudies(), fields: FIELDS }, deps);
+    await drain(runPromise, releaseAll);
+    expect(peak()).toBe(1);
+  });
+
+  test('maxConcurrency=0 以下は 1（逐次）に丸める', async () => {
+    const { provider, peak, releaseAll } = gatedProvider();
+    const { deps } = makeDeps(provider);
+    deps.maxConcurrency = 0;
+    const runPromise = execute({ runId: 'run-1', plan: fourStudies(), fields: FIELDS }, deps);
+    await drain(runPromise, releaseAll);
+    expect(peak()).toBe(1);
+  });
+
+  test('並行実行でも同一 document は 1 回だけロードする（Promise キャッシュ）', async () => {
+    // 同一 study の 2 バッチ（section 分割）が同時に同じ document を miss しても loadPages は 1 回
+    const { provider } = providerOf([chatResponse([DESIGN_ITEM]), chatResponse([DESIGN_ITEM])]);
+    const { deps, loadPages } = makeDeps(provider);
+    deps.maxConcurrency = 2;
+    const result = await execute(
+      {
+        runId: 'run-1',
+        plan: makePlan([
+          makeBatch({ studyId: 'd1', section: 'methods', fieldIds: ['f_design'] }),
+          makeBatch({ studyId: 'd1', section: 'population', fieldIds: ['f_design'] }),
+        ]),
+        fields: FIELDS,
+      },
+      deps,
+    );
+    expect(loadPages).toHaveBeenCalledTimes(1);
+    expect(result.evidence).toHaveLength(2);
+  });
+});
+
 describe('executeRun の実測集計', () => {
   test('トークンが一度も取れなければ null のまま返す', async () => {
     const { provider } = providerOf([chatResponse([DESIGN_ITEM])]);

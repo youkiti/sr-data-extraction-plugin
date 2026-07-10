@@ -12,6 +12,7 @@ import { getLocal, removeLocal, setLocal } from './chromeStorage';
 const DEFAULT_MODEL_STORAGE_KEY = 'settings.defaultModel';
 const RATE_LIMIT_TIER_STORAGE_KEY = 'settings.rateLimitTier';
 const RATE_LIMIT_CUSTOM_RPM_STORAGE_KEY = 'settings.rateLimitCustomRpm';
+const RATE_LIMIT_CUSTOM_CONCURRENCY_STORAGE_KEY = 'settings.rateLimitCustomConcurrency';
 
 /**
  * 工場出荷の既定モデル。ユーザーが Options で既定モデルを未設定のとき、S5 スキーマ画面の
@@ -73,8 +74,34 @@ export async function saveRateLimitCustomRpm(rpm: number): Promise<void> {
   await setLocal(RATE_LIMIT_CUSTOM_RPM_STORAGE_KEY, Math.floor(rpm));
 }
 
-/** 保存済みの tier + カスタム RPM から実効レート制限ポリシーを解決する（サービス層が注入して使う） */
+/** カスタム tier の同時実行数を読み出す（未設定・不正値は null = 逐次） */
+export async function loadRateLimitCustomConcurrency(): Promise<number | null> {
+  const stored = await getLocal<number>(RATE_LIMIT_CUSTOM_CONCURRENCY_STORAGE_KEY);
+  return typeof stored === 'number' && Number.isFinite(stored) && stored > 0 ? stored : null;
+}
+
+/**
+ * カスタム tier の同時実行数を保存する。正の整数のみ採用し、それ以外は保存キーを削除する
+ * （＝未設定 → プリセット既定 = 逐次へフォールバック）。並列化のスループット実験用
+ * （docs/handoff-20260710-throughput.md）
+ */
+export async function saveRateLimitCustomConcurrency(concurrency: number): Promise<void> {
+  if (!Number.isFinite(concurrency) || concurrency <= 0) {
+    await removeLocal(RATE_LIMIT_CUSTOM_CONCURRENCY_STORAGE_KEY);
+    return;
+  }
+  await setLocal(RATE_LIMIT_CUSTOM_CONCURRENCY_STORAGE_KEY, Math.floor(concurrency));
+}
+
+/**
+ * 保存済みの tier + カスタム RPM + カスタム同時実行数から実効レート制限ポリシーを解決する
+ * （サービス層が注入して使う）
+ */
 export async function resolveRateLimitPolicy(): Promise<RateLimitPolicy> {
-  const [tier, customRpm] = await Promise.all([loadRateLimitTier(), loadRateLimitCustomRpm()]);
-  return resolvePolicyForTier(tier, customRpm);
+  const [tier, customRpm, customConcurrency] = await Promise.all([
+    loadRateLimitTier(),
+    loadRateLimitCustomRpm(),
+    loadRateLimitCustomConcurrency(),
+  ]);
+  return resolvePolicyForTier(tier, customRpm, customConcurrency);
 }

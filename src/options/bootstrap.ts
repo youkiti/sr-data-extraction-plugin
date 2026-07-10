@@ -17,9 +17,11 @@ import {
 } from '../lib/storage/secretsStore';
 import {
   loadDefaultModel,
+  loadRateLimitCustomConcurrency,
   loadRateLimitCustomRpm,
   loadRateLimitTier,
   saveDefaultModel,
+  saveRateLimitCustomConcurrency,
   saveRateLimitCustomRpm,
   saveRateLimitTier,
 } from '../lib/storage/settingsStore';
@@ -153,10 +155,21 @@ async function bootstrapRateLimitSection(root: ParentNode): Promise<void> {
   const select = root.querySelector<HTMLSelectElement>('#rate-limit-tier');
   const customRow = root.querySelector<HTMLElement>('#rate-limit-custom-row');
   const customInput = root.querySelector<HTMLInputElement>('#rate-limit-custom-rpm');
+  const concurrencyRow = root.querySelector<HTMLElement>('#rate-limit-concurrency-row');
+  const concurrencyInput = root.querySelector<HTMLInputElement>('#rate-limit-concurrency');
   const descEl = root.querySelector<HTMLElement>('#rate-limit-tier-desc');
   const saveButton = root.querySelector<HTMLButtonElement>('#save-rate-limit');
   const statusEl = root.querySelector<HTMLElement>('#rate-limit-status');
-  if (!select || !customRow || !customInput || !descEl || !saveButton || !statusEl) {
+  if (
+    !select ||
+    !customRow ||
+    !customInput ||
+    !concurrencyRow ||
+    !concurrencyInput ||
+    !descEl ||
+    !saveButton ||
+    !statusEl
+  ) {
     return;
   }
 
@@ -166,18 +179,23 @@ async function bootstrapRateLimitSection(root: ParentNode): Promise<void> {
   const currentTierId = (): RateLimitTierId =>
     isRateLimitTierId(select.value) ? select.value : 'gemini_free';
 
-  // 選択 tier に応じて説明文とカスタム RPM 入力の表示を切り替える
+  // 選択 tier に応じて説明文とカスタム RPM / 同時実行数入力の表示を切り替える
   const syncTierUi = (): void => {
     const tier = getRateLimitTier(currentTierId());
     descEl.textContent = tier.description;
     customRow.hidden = !tier.editableRpm;
+    concurrencyRow.hidden = !tier.editableConcurrency;
   };
 
   const savedTier = await loadRateLimitTier();
   const savedRpm = await loadRateLimitCustomRpm();
+  const savedConcurrency = await loadRateLimitCustomConcurrency();
   select.value = savedTier;
   if (savedRpm !== null) {
     customInput.value = String(savedRpm);
+  }
+  if (savedConcurrency !== null) {
+    concurrencyInput.value = String(savedConcurrency);
   }
   syncTierUi();
   setStatus(`レート制限: ${getRateLimitTier(savedTier).label}`, false);
@@ -193,10 +211,22 @@ async function bootstrapRateLimitSection(root: ParentNode): Promise<void> {
       setStatus('RPM は 1 以上の数値を入力してください。', true);
       return;
     }
+    // 同時実行数は任意（空 = プリセット既定 = 逐次）。入力があるときだけ 1 以上を要求する
+    const concurrencyRaw = concurrencyInput.value.trim();
+    const concurrency = concurrencyRaw === '' ? Number.NaN : Number(concurrencyRaw);
+    if (
+      getRateLimitTier(tierId).editableConcurrency &&
+      concurrencyRaw !== '' &&
+      (!Number.isFinite(concurrency) || concurrency <= 0)
+    ) {
+      setStatus('同時実行数は 1 以上の数値を入力してください。', true);
+      return;
+    }
     saveButton.disabled = true;
     try {
       await saveRateLimitTier(tierId);
       await saveRateLimitCustomRpm(rpm);
+      await saveRateLimitCustomConcurrency(concurrency);
       setStatus('保存しました。', false);
     } catch {
       setStatus('保存に失敗しました。もう一度お試しください。', true);

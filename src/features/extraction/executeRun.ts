@@ -77,6 +77,12 @@ export interface ExecuteRunDeps {
   newUuid?: () => string;
   /** バッチ処理のたびに呼ばれる進捗通知（S7 の進捗表示用） */
   onProgress?: (progress: RunProgress) => void;
+  /**
+   * バッチ（= 1 study）を同時に何本まで走らせるか（スループット対策。既定 1 = 逐次）。
+   * RateLimitPolicy.maxConcurrency をサービス層が渡す。2 以上で並行実行する
+   * （docs/handoff-20260710-throughput.md §3）。
+   */
+  maxConcurrency?: number;
 }
 
 export interface ExecuteRunInput {
@@ -190,6 +196,30 @@ interface ResolvedDocument {
   normalizedPages: NormalizedPage[];
 }
 
+/**
+ * items を最大 limit 本まで同時に worker へ流すワーカープール。
+ * limit=1 なら 1 本のワーカーが index 順に逐次処理する（＝ for...of と同一挙動）。
+ * worker は失敗も自身で握りつぶす前提（processBatch はバッチ失敗として記録し throw しない）。
+ */
+async function runWithConcurrency<T>(
+  items: readonly T[],
+  limit: number,
+  worker: (item: T) => Promise<void>,
+): Promise<void> {
+  let nextIndex = 0;
+  const runners = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    for (;;) {
+      const index = nextIndex;
+      nextIndex += 1;
+      if (index >= items.length) {
+        return;
+      }
+      await worker(items[index] as T);
+    }
+  });
+  await Promise.all(runners);
+}
+
 export async function executeRun(
   input: ExecuteRunInput,
   deps: ExecuteRunDeps,
@@ -217,23 +247,24 @@ export async function executeRun(
   const evidence: Evidence[] = [];
   const rejectedItems: RejectedBatchItem[] = [];
   const batchFailures: BatchFailure[] = [];
-  const loadedDocuments = new Map<string, LoadedDocument>();
+  // 進行中の Promise をキャッシュする（値ではなく Promise を持つことで、並行実行時に
+  // 同一 document を複数バッチが同時に miss しても loadDocumentPages を 1 回に抑える）
+  const loadedDocuments = new Map<string, Promise<LoadedDocument>>();
   let tokensIn: number | null = null;
   let tokensOut: number | null = null;
   let modelVersion: string | null = null;
   let completedBatches = 0;
 
-  /** 1 文書を（未ロードなら）ロードしてキャッシュする */
-  const loadDocument = async (documentId: string): Promise<LoadedDocument> => {
+  /** 1 文書を（未ロードなら）ロードしてキャッシュする。同一 document は 1 回だけロードする */
+  const loadDocument = (documentId: string): Promise<LoadedDocument> => {
     const cached = loadedDocuments.get(documentId);
     if (cached !== undefined) {
       return cached;
     }
-    let loaded: LoadedDocument;
-    try {
-      const pages = await deps.loadDocumentPages(documentId);
-      loaded =
-        pages.length === 0
+    const loading = (async (): Promise<LoadedDocument> => {
+      try {
+        const pages = await deps.loadDocumentPages(documentId);
+        return pages.length === 0
           ? { kind: 'error', detail: '本文ページが 0 件です（extracted_texts の取得結果が空）' }
           : {
               kind: 'ok',
@@ -243,11 +274,12 @@ export async function executeRun(
                 text: normalizeText(page.text),
               })),
             };
-    } catch (err) {
-      loaded = { kind: 'error', detail: toDetail(err) };
-    }
-    loadedDocuments.set(documentId, loaded);
-    return loaded;
+      } catch (err) {
+        return { kind: 'error', detail: toDetail(err) };
+      }
+    })();
+    loadedDocuments.set(documentId, loading);
+    return loading;
   };
 
   const failBatch = (batch: PlannedBatch, reason: BatchFailureReason, detail: string): BatchFailure => {
@@ -271,13 +303,20 @@ export async function executeRun(
     });
   };
 
-  for (const batch of input.plan.batches) {
+  // 1 バッチ（= 1 study）の処理。共有アキュムレータ（evidence / tokens など）を書き込むが、
+  // JS は単一スレッドなので各 await 間の同期ブロックは競合しない。加算・push は可換で、
+  // 並行実行でも順不同なだけで結果は同値になる（modelVersion は「最初に取れた値」の非決定はあるが許容）
+  const processBatch = async (batch: PlannedBatch): Promise<void> => {
     // study の全文書を document_index 順にロードする。ロードできた文書だけを連結対象にし、
     // その順序が document_index（1 始まり）になる。1 件もロードできなければバッチ失敗
     const resolved: ResolvedDocument[] = [];
     let firstLoadError: string | null = null;
-    for (const documentId of batch.documentIds) {
-      const loaded = await loadDocument(documentId);
+    // 並行 miss を Promise キャッシュへ集約するため、全文書のロードを先にまとめて起票する
+    const loadedList = await Promise.all(
+      batch.documentIds.map((documentId) => loadDocument(documentId)),
+    );
+    batch.documentIds.forEach((documentId, index) => {
+      const loaded = loadedList[index] as LoadedDocument;
       if (loaded.kind === 'ok') {
         const doc = documentById.get(documentId) as DocumentRecord;
         resolved.push({
@@ -290,13 +329,13 @@ export async function executeRun(
       } else {
         firstLoadError ??= loaded.detail;
       }
-    }
+    });
     if (resolved.length === 0) {
       reportProgress(
         batch,
         failBatch(batch, 'load_failed', firstLoadError ?? '本文を取得できる文書がありません'),
       );
-      continue;
+      return;
     }
 
     const batchFields = batch.fieldIds.map((fieldId) => fieldById.get(fieldId) as SchemaField);
@@ -325,7 +364,7 @@ export async function executeRun(
       });
     } catch (err) {
       reportProgress(batch, failBatch(batch, 'api_error', toDetail(err)));
-      continue;
+      return;
     }
     tokensIn = addTokens(tokensIn, response.tokensIn);
     tokensOut = addTokens(tokensOut, response.tokensOut);
@@ -336,7 +375,7 @@ export async function executeRun(
       validated = parseExtractDataResponse(response.text, batchFields, resolved.length);
     } catch (err) {
       reportProgress(batch, failBatch(batch, 'format_error', toDetail(err)));
-      continue;
+      return;
     }
     for (const item of validated.rejected) {
       rejectedItems.push({ ...item, studyId: batch.studyId, section: batch.section });
@@ -359,12 +398,16 @@ export async function executeRun(
         await deps.appendEvidence(rows);
       } catch (err) {
         reportProgress(batch, failBatch(batch, 'save_failed', toDetail(err)));
-        continue;
+        return;
       }
       evidence.push(...rows);
     }
     reportProgress(batch);
-  }
+  };
+
+  // maxConcurrency=1 なら逐次（従来と同一挙動 = 回帰の砦）、2 以上でバッチを並行実行する
+  const concurrency = Math.max(1, Math.floor(deps.maxConcurrency ?? 1));
+  await runWithConcurrency(input.plan.batches, concurrency, processBatch);
 
   return {
     runId: input.runId,

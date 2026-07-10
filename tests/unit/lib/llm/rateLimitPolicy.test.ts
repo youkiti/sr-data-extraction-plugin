@@ -7,6 +7,7 @@ import {
 import {
   applyRateLimitPolicy,
   DEFAULT_CUSTOM_RPM,
+  DEFAULT_MAX_CONCURRENCY,
   DEFAULT_RATE_LIMIT_TIER_ID,
   getRateLimitTier,
   isRateLimitTierId,
@@ -43,6 +44,13 @@ describe('tier カタログ', () => {
       } else {
         expect(tier.policy.requestsPerMinute).toBeGreaterThan(0);
       }
+    }
+  });
+
+  test('全プリセットの既定 maxConcurrency は 1（逐次。回帰の砦）で editableConcurrency は custom のみ', () => {
+    for (const tier of RATE_LIMIT_TIERS) {
+      expect(tier.policy.maxConcurrency).toBe(DEFAULT_MAX_CONCURRENCY);
+      expect(tier.editableConcurrency).toBe(tier.id === 'custom');
     }
   });
 });
@@ -88,6 +96,32 @@ describe('resolvePolicyForTier', () => {
     expect(resolvePolicyForTier('custom', 0).requestsPerMinute).toBe(DEFAULT_CUSTOM_RPM);
     expect(resolvePolicyForTier('custom', -3).requestsPerMinute).toBe(DEFAULT_CUSTOM_RPM);
     expect(resolvePolicyForTier('custom', Number.NaN).requestsPerMinute).toBe(DEFAULT_CUSTOM_RPM);
+  });
+
+  test('カスタム tier は正の整数 concurrency で上書きする（小数は切り捨て）', () => {
+    expect(resolvePolicyForTier('custom', null, 4).maxConcurrency).toBe(4);
+    expect(resolvePolicyForTier('custom', null, 4.9).maxConcurrency).toBe(4);
+  });
+
+  test('カスタム tier で concurrency が null / 非正なら プリセット既定（1）のまま', () => {
+    expect(resolvePolicyForTier('custom', null, null).maxConcurrency).toBe(DEFAULT_MAX_CONCURRENCY);
+    expect(resolvePolicyForTier('custom', null, 0).maxConcurrency).toBe(DEFAULT_MAX_CONCURRENCY);
+    expect(resolvePolicyForTier('custom', null, -2).maxConcurrency).toBe(DEFAULT_MAX_CONCURRENCY);
+    expect(resolvePolicyForTier('custom', null, Number.NaN).maxConcurrency).toBe(
+      DEFAULT_MAX_CONCURRENCY,
+    );
+  });
+
+  test('非カスタム tier は concurrency 指定を無視する', () => {
+    expect(resolvePolicyForTier('gemini_tier3', null, 8).maxConcurrency).toBe(
+      DEFAULT_MAX_CONCURRENCY,
+    );
+  });
+
+  test('RPM と concurrency を同時に上書きできる', () => {
+    const policy = resolvePolicyForTier('custom', 50, 3);
+    expect(policy.requestsPerMinute).toBe(50);
+    expect(policy.maxConcurrency).toBe(3);
   });
 });
 
@@ -143,6 +177,7 @@ describe('applyRateLimitPolicy', () => {
       maxAttempts: 3,
       baseDelayMs: 1_000,
       maxDelayMs: 60_000,
+      maxConcurrency: 1,
     };
     const wrapped = applyRateLimitPolicy(provider, policy, { sleep, now });
 

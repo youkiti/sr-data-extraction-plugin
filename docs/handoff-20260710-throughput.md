@@ -1,6 +1,13 @@
 # ハンドオフ: 一括抽出のスループット実験（Tier 3 の高速化 / 並列実行の可否）
 
-2026-07-10 起票。前提ブランチ `fix/extraction-rate-limit-tiers-2`（429 対策 = レート制限 tier。docs/requirements.md §4.3 / docs/ui-states.md §2「レート制限」）。
+2026-07-10 起票。前提ブランチ `fix/extraction-rate-limit-tiers-2`（429 対策 = レート制限 tier。docs/requirements.md §4.3 / docs/ui-states.md §2「レート制限」）。**実機テスト完了 → PR #30**。
+
+> **2026-07-10 追記（実装ステータス）**: 並列化のコード足場（実験 2 の §3.1）を実装済み（ブランチ `feat/extraction-parallel`。`fix/extraction-rate-limit-tiers-2` 上に構築）。
+> - `RateLimitPolicy.maxConcurrency` を追加（`src/lib/llm/rateLimitPolicy.ts`）。**全 tier プリセット既定 = 1（逐次 = 従来と同一挙動 = 回帰の砦）**。`custom` tier のみ Options で 2 以上に設定でき、スループット実験に使う。
+> - `executeRun` を逐次 `for...of` → **同時実行数上限つきワーカープール `runWithConcurrency`** へ置換（`maxConcurrency=1` は 1 本のワーカーが index 順に逐次処理 = 従来と同一）。`loadDocument` を**値キャッシュ → Promise キャッシュ**へ変更し、並行 miss でも同一文書のロードを 1 回に抑える。共有アキュムレータ（evidence / tokens / modelVersion）は可換なので順不同でも同値。
+> - サービス層は `policy.maxConcurrency` を executeRun へ渡すだけ（`extractionService.ts`）。pilot / extract は resolveRateLimitPolicy 経由で自動的に効く。
+> - 設定: `settings.rateLimitCustomConcurrency`（settingsStore）+ Options の custom 節に同時実行数入力（`#rate-limit-concurrency`）。
+> - jest 1527 green・カバレッジ 100%・tsc / eslint / webpack / E2E 50 green。**実機での並列スループット実測（同時実行数 1→2→4→8）と 429/TPM/Sheets クォータの観察はこれから**（下記 §4 の手順）。
 
 ## 0. TL;DR
 

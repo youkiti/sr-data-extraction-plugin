@@ -2,10 +2,12 @@ import { installChromeMock, type ChromeMock } from '../../../setup/chrome-mock';
 import { getRateLimitTier } from '../../../../src/lib/llm/rateLimitPolicy';
 import {
   loadDefaultModel,
+  loadRateLimitCustomConcurrency,
   loadRateLimitCustomRpm,
   loadRateLimitTier,
   resolveRateLimitPolicy,
   saveDefaultModel,
+  saveRateLimitCustomConcurrency,
   saveRateLimitCustomRpm,
   saveRateLimitTier,
 } from '../../../../src/lib/storage/settingsStore';
@@ -87,6 +89,33 @@ describe('settingsStore レート制限 tier', () => {
     await saveRateLimitCustomRpm(77);
     const policy = await resolveRateLimitPolicy();
     expect(policy.requestsPerMinute).toBe(77);
+  });
+
+  test('カスタム同時実行数: 正の整数のみ保存、それ以外はキー削除', async () => {
+    await saveRateLimitCustomConcurrency(4);
+    await expect(loadRateLimitCustomConcurrency()).resolves.toBe(4);
+    // 小数は切り捨て
+    await saveRateLimitCustomConcurrency(4.9);
+    await expect(loadRateLimitCustomConcurrency()).resolves.toBe(4);
+    // 非正 / NaN は削除
+    const mock = installChromeMock();
+    mock.storage.local.data['settings.rateLimitCustomConcurrency'] = 3;
+    await saveRateLimitCustomConcurrency(0);
+    expect(mock.storage.local.remove).toHaveBeenCalledWith('settings.rateLimitCustomConcurrency');
+    await expect(loadRateLimitCustomConcurrency()).resolves.toBeNull();
+  });
+
+  test('カスタム同時実行数: 保存済みが非正・非数値なら null', async () => {
+    const mock = installChromeMock();
+    mock.storage.local.data['settings.rateLimitCustomConcurrency'] = -1;
+    await expect(loadRateLimitCustomConcurrency()).resolves.toBeNull();
+  });
+
+  test('resolveRateLimitPolicy: カスタム tier は保存 concurrency で上書きする', async () => {
+    await saveRateLimitTier('custom');
+    await saveRateLimitCustomConcurrency(3);
+    const policy = await resolveRateLimitPolicy();
+    expect(policy.maxConcurrency).toBe(3);
   });
 
   test('resolveRateLimitPolicy: 未設定は既定（gemini_free）', async () => {
