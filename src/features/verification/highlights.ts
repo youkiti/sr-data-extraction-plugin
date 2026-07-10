@@ -35,13 +35,45 @@ export interface EvidenceHighlight {
   selectedIndex: number;
 }
 
-interface NormalizedPageEntry {
-  page: TextLayerPage;
+/**
+ * ページ本文 + 正規化写像の組。P は既定で TextLayerPage だが、抽出テキスト表示
+ * （features/verification/textContext.ts）は items/width 等を持たない構造的サブセット
+ * （{ page, text }）でも動くよう総称化してある（重複実装しないための共通化）
+ */
+export interface NormalizedPageEntry<P extends { page: number; text: string } = TextLayerPage> {
+  page: P;
   map: NormalizedTextMap;
 }
 
-function buildNormalizedPages(pages: readonly TextLayerPage[]): NormalizedPageEntry[] {
+export function buildNormalizedPages<P extends { page: number; text: string }>(
+  pages: readonly P[],
+): NormalizedPageEntry<P>[] {
   return pages.map((page) => ({ page, map: normalizeTextWithMap(page.text) }));
+}
+
+/**
+ * 正規化テキスト上の全出現を [start, end) の生テキスト範囲として列挙する（ページ横断・出現順）。
+ * quote の前後文脈抽出（textContext.ts の findQuoteContext）とも共有する indexOf ベースの機構
+ */
+export function collectRawOccurrences<P extends { page: number; text: string }>(
+  normalizedQuery: string,
+  entries: readonly NormalizedPageEntry<P>[],
+): Array<{ page: number; range: CharRange }> {
+  const occurrences: Array<{ page: number; range: CharRange }> = [];
+  for (const entry of entries) {
+    let from = 0;
+    let idx: number;
+    while ((idx = entry.map.text.indexOf(normalizedQuery, from)) !== -1) {
+      // indexOf の一致範囲（非空・テキスト内）は常に元テキストへ写像できる
+      const range = toRawRange(entry.map, {
+        start: idx,
+        end: idx + normalizedQuery.length,
+      }) as CharRange;
+      occurrences.push({ page: entry.page.page, range });
+      from = idx + 1;
+    }
+  }
+  return occurrences;
 }
 
 /** 正規化テキスト上の範囲を元テキストへ写像し、span 矩形へ変換する。写像不能は null */
@@ -61,35 +93,28 @@ function collectOccurrences(
   normalizedQuote: string,
   entries: readonly NormalizedPageEntry[],
 ): HighlightOccurrence[] {
-  const occurrences: HighlightOccurrence[] = [];
-  for (const entry of entries) {
-    let from = 0;
-    let idx: number;
-    while ((idx = entry.map.text.indexOf(normalizedQuote, from)) !== -1) {
-      // indexOf の一致範囲（非空・テキスト内）は常に元テキストへ写像できる
-      const rawRange = toRawRange(entry.map, {
-        start: idx,
-        end: idx + normalizedQuote.length,
-      }) as CharRange;
-      occurrences.push({
-        page: entry.page.page,
-        rects: highlightMap(entry.page.items, rawRange),
-      });
-      from = idx + 1;
-    }
-  }
-  return occurrences;
+  const entryByPage = new Map(entries.map((entry) => [entry.page.page, entry]));
+  return collectRawOccurrences(normalizedQuote, entries).map(({ page, range }) => ({
+    page,
+    rects: highlightMap((entryByPage.get(page) as NormalizedPageEntry).page.items, range),
+  }));
 }
 
-/** ai_page に最も近い出現を既定表示にする（同距離は先勝ち = ページ昇順の先頭） */
-function nearestIndex(occurrences: readonly HighlightOccurrence[], aiPage: number | null): number {
+/**
+ * ai_page に最も近い要素の index を返す（同距離は先勝ち = 昇順の先頭）。
+ * textContext.ts の quote 前後文脈抽出でも同じ規則を使う（P は `page` を持つ要素なら何でもよい）
+ */
+export function nearestIndex<T extends { page: number }>(
+  occurrences: readonly T[],
+  aiPage: number | null,
+): number {
   if (aiPage === null) {
     return 0;
   }
   let best = 0;
   for (let i = 1; i < occurrences.length; i++) {
-    const currentDistance = Math.abs((occurrences[i] as HighlightOccurrence).page - aiPage);
-    const bestDistance = Math.abs((occurrences[best] as HighlightOccurrence).page - aiPage);
+    const currentDistance = Math.abs((occurrences[i] as T).page - aiPage);
+    const bestDistance = Math.abs((occurrences[best] as T).page - aiPage);
     if (currentDistance < bestDistance) {
       best = i;
     }

@@ -41,6 +41,7 @@ import {
 } from '../../features/verification/highlights';
 import { buildOutcomeDeclarationDecisions } from '../../features/verification/instanceDeclarations';
 import { verificationProgress } from '../../features/verification/progress';
+import { findQuoteContext } from '../../features/verification/textContext';
 import type {
   VerificationData,
   VerificationDocumentView,
@@ -50,6 +51,7 @@ import { nowIso8601 } from '../../utils/iso8601';
 import { nextOutcomeId } from '../../utils/entityKey';
 import { el } from '../ui/dom';
 import { createPdfViewer, type PdfViewerHandle, type ViewerHighlight } from '../ui/pdfViewer';
+import { createTextViewer, type TextViewerSnippet } from '../ui/textViewer';
 import {
   renderVerificationForm,
   type CellHighlightInfo,
@@ -216,12 +218,43 @@ export function createVerificationPanel(
     className: 'verify__banner',
     text: 'この PDF はテキスト層がないためハイライト検証は使えません（quote 全文とページヒントで検証してください）',
   });
+
+  // --- 左ペイン表示切替（PDF / 抽出テキスト。issue #28 案2） --------------
+  // 表・段組み・脚注は PDF でしか確認できないため置き換えではなく切替。既定は PDF
+  let viewMode: 'pdf' | 'text' = 'pdf';
+  const textViewer = createTextViewer();
+
+  function activeDocumentHasText(): boolean {
+    return activeDocument().textPages.some((page) => page.text !== '');
+  }
+
+  const pdfModeButton = el('button', {
+    className: 'verify__view-toggle-btn',
+    text: 'PDF',
+    attributes: { type: 'button', 'aria-pressed': 'true' },
+  }) as HTMLButtonElement;
+  const textModeButton = el('button', {
+    className: 'verify__view-toggle-btn',
+    text: '抽出テキスト',
+    attributes: { type: 'button', 'aria-pressed': 'false' },
+  }) as HTMLButtonElement;
+  const viewToggleBar = el(
+    'div',
+    { className: 'verify__view-toggle', attributes: { role: 'group', 'aria-label': '左ペインの表示切替' } },
+    [pdfModeButton, textModeButton],
+  );
+  const textModeNote = el('p', {
+    className: 'verify__view-toggle-note',
+    text: 'この文書には抽出テキストがありません（no_text_layer、または抽出に失敗しています）',
+  });
+
   const viewerBody = el('div', { className: 'verify__pdf-body' });
+  const textViewerBody = el('div', { className: 'verify__text-body' }, [textViewer.root]);
   const leftChildren: HTMLElement[] = [];
   if (docTabsBar !== null) {
     leftChildren.push(docTabsBar);
   }
-  leftChildren.push(noTextBanner, viewerBody);
+  leftChildren.push(viewToggleBar, textModeNote, noTextBanner, viewerBody, textViewerBody);
   const leftPane = el('div', { className: 'verify__pane verify__pane--pdf' }, leftChildren);
 
   /** 表示中文書に PDF がないときのエラーカード（再取り込み導線。ui-states.md §6） */
@@ -232,6 +265,38 @@ export function createVerificationPanel(
       link,
     ]);
   }
+
+  /**
+   * 表示切替ボタン + 各ペインの表示 / 非表示を現在の viewMode へ合わせる。
+   * 表示中文書に抽出テキストが無ければテキストモードから自動で PDF モードへ戻す
+   * （issue #28 案2 の受入基準: 抽出テキストがない文書では PDF 表示だけを利用できる）
+   */
+  function applyViewMode(): void {
+    const hasText = activeDocumentHasText();
+    if (viewMode === 'text' && !hasText) {
+      viewMode = 'pdf';
+    }
+    pdfModeButton.classList.toggle('verify__view-toggle-btn--active', viewMode === 'pdf');
+    pdfModeButton.setAttribute('aria-pressed', String(viewMode === 'pdf'));
+    textModeButton.classList.toggle('verify__view-toggle-btn--active', viewMode === 'text');
+    textModeButton.setAttribute('aria-pressed', String(viewMode === 'text'));
+    textModeButton.disabled = !hasText;
+    textModeButton.title = hasText ? '' : 'この文書には抽出テキストがありません';
+    textModeNote.hidden = hasText;
+    viewerBody.hidden = viewMode !== 'pdf';
+    textViewerBody.hidden = viewMode !== 'text';
+  }
+
+  function setViewMode(mode: 'pdf' | 'text'): void {
+    if (mode === viewMode) {
+      return;
+    }
+    viewMode = mode;
+    applyViewMode();
+  }
+
+  pdfModeButton.addEventListener('click', () => setViewMode('pdf'));
+  textModeButton.addEventListener('click', () => setViewMode('text'));
 
   /** 表示中文書に合わせて左ペイン（タブ強調 / バナー / ビューア本体）を描き直す */
   function renderActiveDocument(): void {
@@ -251,6 +316,7 @@ export function createVerificationPanel(
     } else {
       viewerBody.replaceChildren(pdfErrorCard(view));
     }
+    applyViewMode();
   }
 
   /** 表示中文書を切替える（タブクリック / 別文書由来のセルへのフォーカス） */
@@ -261,6 +327,7 @@ export function createVerificationPanel(
     activeDocumentId = documentId;
     renderActiveDocument();
     syncViewer();
+    syncTextViewer();
   }
 
   /**
@@ -323,6 +390,51 @@ export function createVerificationPanel(
     viewer?.setHighlights(viewerHighlights(), focusedCellKey);
   }
 
+  /** 文書のファイル名 + role ラベル（抽出テキストビューの出所文書表示。issue #28 案2） */
+  function documentLabelOf(view: VerificationDocumentView): string {
+    return `${view.document.filename}（${DOCUMENT_ROLE_LABELS[view.document.documentRole]}）`;
+  }
+
+  /**
+   * 抽出テキストビューの表示を差し替える。既定は現在フォーカス中のセル（focusedCellKey）だが、
+   * 「ハイライトへ移動」ボタン / f キー（onJump）は、フォーカスを動かさず指定セルの根拠だけを
+   * 表示するため cellKey を明示的に渡せる（PDF モードの viewer.focusHighlight と同じ位置付け）
+   */
+  function syncTextViewer(cellKey: string | null = focusedCellKey): void {
+    if (cellKey === null) {
+      textViewer.setSnippet(null);
+      return;
+    }
+    const evidence = evidenceByCell.get(cellKey);
+    if (evidence === undefined || evidence.quote === null) {
+      textViewer.setSnippet(null);
+      return;
+    }
+    const view = data.documents.find(
+      (candidate) => candidate.document.documentId === evidence.documentId,
+    );
+    if (view === undefined) {
+      // データ不整合の防御（quote の出所文書が study の documents に無い）
+      textViewer.setSnippet(null);
+      return;
+    }
+    const documentLabel = documentLabelOf(view);
+    const context = findQuoteContext(evidence, view.textPages);
+    const snippet: TextViewerSnippet =
+      context === null
+        ? { documentLabel, quote: evidence.quote, located: null }
+        : {
+            documentLabel,
+            quote: context.snippet.quote,
+            located: {
+              page: context.page,
+              before: context.snippet.before,
+              after: context.snippet.after,
+            },
+          };
+    textViewer.setSnippet(snippet);
+  }
+
   /** セルの DOM を引く。呼び出し側は描画済みの現在タブの cellKey のみ渡す（不変条件） */
   function findCellElement(cellKey: string): HTMLElement {
     return [...formPane.querySelectorAll<HTMLElement>('.verify__cell')].find(
@@ -377,6 +489,7 @@ export function createVerificationPanel(
       editing = null;
       refreshForm();
       syncViewer();
+      syncTextViewer();
     },
     onFocusCell(cellKey) {
       focusCell(cellKey, { jump: true, domFocus: false });
@@ -416,7 +529,13 @@ export function createVerificationPanel(
       commit(cell, 'undo', undoRevertValue(cell.state));
     },
     onJump(cellKey) {
-      viewer?.focusHighlight(cellKey);
+      // f キー / 「ハイライトへ移動」: PDF モードはページジャンプ、テキストモードは
+      // 当該セルの根拠へスニペットを差し替える（フォーカスは動かさない。issue #28 案2）
+      if (viewMode === 'text') {
+        syncTextViewer(cellKey);
+      } else {
+        viewer?.focusHighlight(cellKey);
+      }
     },
     onSearchQuote(quote) {
       viewer?.search(quote);
@@ -429,6 +548,7 @@ export function createVerificationPanel(
       refreshForm();
       syncViewer();
       viewer?.focusHighlight(cellKey);
+      syncTextViewer(cellKey);
     },
     onExpandDecided(cellKey) {
       // コンパクト行は判定操作ボタンを含まないため、click 発火後の再構築で安全に展開できる
@@ -438,6 +558,7 @@ export function createVerificationPanel(
       ensureActiveDocumentForCell(cellKey);
       syncViewer();
       viewer?.focusHighlight(cellKey);
+      syncTextViewer();
       const element = findCellElement(cellKey);
       element.scrollIntoView?.({ block: 'nearest' });
       element.focus();
@@ -547,6 +668,7 @@ export function createVerificationPanel(
       editing = null;
       refreshForm();
       syncViewer();
+      syncTextViewer();
       options.onInstanceDeclare?.(declarations);
     },
   };
@@ -636,6 +758,7 @@ export function createVerificationPanel(
     // 別文書由来のセルなら出所 PDF へ自動切替してからハイライトへ（v0.10 フェーズ 3）
     ensureActiveDocumentForCell(cellKey);
     syncViewer();
+    syncTextViewer();
     if (behavior.jump) {
       // 項目フォーカス → 該当ハイライトへスクロール + 強調（requirements.md §4.2）
       viewer?.focusHighlight(cellKey);
@@ -713,6 +836,7 @@ export function createVerificationPanel(
     focusedCellKey = movedTo ?? cell.cellKey;
     refreshForm();
     syncViewer();
+    syncTextViewer();
     if (movedTo !== null) {
       // PDF ハイライトも遷移先へ追従（f キーと同じ体験）+ セル DOM を可視化・フォーカス。
       // 遷移先が別文書由来なら出所 PDF へ切替えてから（v0.10 フェーズ 3）
@@ -811,6 +935,7 @@ export function createVerificationPanel(
   renderActiveDocument();
   refreshForm();
   syncViewer();
+  syncTextViewer();
 
   return {
     root,

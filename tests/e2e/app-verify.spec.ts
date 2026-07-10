@@ -422,6 +422,46 @@ test('?study= 直リンク + 群構成の確定: タブディム → 確定 → 
   expect(results.violations).toEqual([]);
 });
 
+test('左ペイン表示切替: 抽出テキストへ切替 → 出所文書 / ページ番号 / mark 強調の文脈 → 根拠クリックでスニペットが変わる', async ({
+  page,
+}) => {
+  // f-country の quote は同一 PDF 本文（QUOTE）の部分文字列にして、1 ページ PDF のままでも
+  // クリックで異なるスニペットが表示されることを確認できるようにする
+  const COUNTRY_EVIDENCE_ROW = [
+    'ev-1c', 'run-1', 'study-1', 'f-country', 'doc-1', '-', 'Japan', 'FALSE', '12 percent', '1', 'high', 'exact',
+  ];
+  await setupRoutes(page, {
+    schemaRows: [STUDY_FIELD_ROW, STUDY_FIELD_ROW_2],
+    evidenceRows: [EVIDENCE_ROW_1, COUNTRY_EVIDENCE_ROW],
+  });
+  await initApp(page, '#/verify?study=study-1');
+
+  await expect(page.locator('.verify__panes')).toBeVisible({ timeout: 15_000 });
+  // f-country の quote（'12 percent'）は f-total の quote の部分文字列のため、page 1 に
+  // 2 件のハイライトが出る（死亡率の全文 + 国の部分文字列）
+  await expect(page.locator('.pdf-viewer__hl--unverified')).toHaveCount(2, { timeout: 15_000 });
+
+  // 抽出テキストへ切替
+  const textModeButton = page.locator('.verify__view-toggle-btn', { hasText: '抽出テキスト' });
+  await textModeButton.click();
+  await expect(textModeButton).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('.verify__pdf-body')).toBeHidden();
+  await expect(page.locator('.verify__text-body')).toBeVisible();
+
+  // 初期フォーカス（死亡率）の出所文書 / ページ番号 / mark 強調 + 前後文脈
+  await expect(page.locator('.text-viewer__doc-label')).toContainText('smith2020.pdf');
+  await expect(page.locator('.text-viewer__doc-label')).toContainText('本論文');
+  await expect(page.locator('.text-viewer__page')).toHaveText('1 ページ');
+  await expect(page.locator('mark.text-viewer__mark')).toHaveText(QUOTE);
+
+  // 別セル（国）へフォーカス → 同じ PDF 本文の別範囲（部分文字列）のスニペットへ差し替わる
+  await page.locator('.verify__cell', { hasText: '国' }).click();
+  await expect(page.locator('mark.text-viewer__mark')).toHaveText('12 percent');
+
+  const results = await new AxeBuilder({ page }).analyze();
+  expect(results.violations).toEqual([]);
+});
+
 test('複数文書 study: 文書切替タブ + 別文書由来のセルへフォーカスで出所 PDF へ自動切替', async ({
   page,
 }) => {

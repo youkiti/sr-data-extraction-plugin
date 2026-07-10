@@ -1309,6 +1309,46 @@
   min-width: 0;
 }
 
+/* 左ペイン表示切替（PDF / 抽出テキスト。issue #28 案2: 表・段組み・脚注は PDF でしか
+   確認できないため置き換えではなく切替） */
+.verify__view-toggle {
+  display: flex;
+  gap: 4px;
+  padding: 6px;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+
+.verify__view-toggle-btn {
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-bg);
+
+  /* グローバル button の白文字（on-primary）を淡背景用に戻す（コントラスト 4.5:1 以上） */
+  color: var(--color-text);
+  padding: 3px 10px;
+  font-size: 12px;
+}
+
+.verify__view-toggle-btn--active {
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+}
+
+.verify__view-toggle-note {
+  margin: 0;
+  padding: 4px 10px;
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.verify__text-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+
 .verify__tabs {
   display: flex;
   gap: 4px;
@@ -1863,6 +1903,58 @@
 .pdf-viewer__error {
   color: var(--color-danger);
   padding: 8px;
+}
+
+/* --- 抽出テキストビュー（issue #28 案2。pdf-viewer の兄弟コンポーネント） -------- */
+
+.text-viewer {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.text-viewer__body {
+  overflow: auto;
+  padding: 12px;
+}
+
+.text-viewer__empty {
+  color: var(--color-text-muted);
+}
+
+.text-viewer__doc-label {
+  margin: 0 0 4px;
+  font-weight: 700;
+}
+
+.text-viewer__page {
+  margin: 0 0 8px;
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.text-viewer__snippet {
+  margin: 0;
+  line-height: 1.7;
+  white-space: pre-wrap;
+}
+
+.text-viewer__mark {
+  border-radius: 2px;
+  background: var(--color-highlight-unverified);
+  color: inherit;
+  padding: 0 2px;
+}
+
+.text-viewer__unresolved-note {
+  color: var(--color-danger);
+}
+
+.text-viewer__quote-full {
+  margin: 8px 0 0;
+  padding-left: 10px;
+  border-left: 3px solid var(--color-border);
+  color: var(--color-text-muted);
 }
 
 /* --- #/dashboard（S9）---------------------------------------------------- */

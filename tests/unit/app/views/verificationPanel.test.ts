@@ -494,6 +494,177 @@ describe('createVerificationPanel: 複数文書ビューア（v0.10 フェーズ
   });
 });
 
+describe('左ペイン表示切替（PDF / 抽出テキスト。issue #28 案2）', () => {
+  function toggleButtons(root: HTMLElement): { pdf: HTMLButtonElement; text: HTMLButtonElement } {
+    const buttons = [...root.querySelectorAll<HTMLButtonElement>('.verify__view-toggle-btn')];
+    return { pdf: buttons[0] as HTMLButtonElement, text: buttons[1] as HTMLButtonElement };
+  }
+
+  test('既定は PDF モード（抽出テキストは非表示）', () => {
+    const { panel } = createPanel();
+    const { pdf, text } = toggleButtons(panel.root);
+    expect(pdf.getAttribute('aria-pressed')).toBe('true');
+    expect(text.getAttribute('aria-pressed')).toBe('false');
+    expect(panel.root.querySelector<HTMLElement>('.verify__pdf-body')?.hidden).toBe(false);
+    expect(panel.root.querySelector<HTMLElement>('.verify__text-body')?.hidden).toBe(true);
+    panel.dispose();
+  });
+
+  test('抽出テキストへ切替: 出所文書 / ページ番号 / mark 強調 + 前後文脈を表示する', () => {
+    const { panel } = createPanel();
+    toggleButtons(panel.root).text.click();
+    expect(toggleButtons(panel.root).text.getAttribute('aria-pressed')).toBe('true');
+    expect(panel.root.querySelector<HTMLElement>('.verify__pdf-body')?.hidden).toBe(true);
+    expect(panel.root.querySelector<HTMLElement>('.verify__text-body')?.hidden).toBe(false);
+    expect(panel.root.querySelector('.text-viewer__doc-label')?.textContent).toBe(
+      'smith2020.pdf（本論文）',
+    );
+    expect(panel.root.querySelector('.text-viewer__page')?.textContent).toBe('1 ページ');
+    expect(panel.root.querySelector('mark.text-viewer__mark')?.textContent).toBe(
+      'mortality was 12 percent',
+    );
+    panel.dispose();
+  });
+
+  test('PDF ボタンへ戻すと元に戻り、同モードの再クリックは無害', () => {
+    const { panel } = createPanel();
+    const { pdf, text } = toggleButtons(panel.root);
+    text.click();
+    pdf.click();
+    expect(panel.root.querySelector<HTMLElement>('.verify__pdf-body')?.hidden).toBe(false);
+    expect(panel.root.querySelector<HTMLElement>('.verify__text-body')?.hidden).toBe(true);
+    pdf.click();
+    expect(pdf.getAttribute('aria-pressed')).toBe('true');
+    panel.dispose();
+  });
+
+  test('AI 抽出なしセル（Evidence なし）へフォーカス中は根拠未選択の案内になる', () => {
+    const { panel } = createPanel();
+    toggleButtons(panel.root).text.click();
+    pressKey('j');
+    pressKey('j'); // f-blank（Evidence なし）へ
+    expect(panel.root.querySelector('.text-viewer__empty')).not.toBeNull();
+    expect(panel.root.querySelector('.text-viewer__doc-label')).toBeNull();
+    panel.dispose();
+  });
+
+  test('anchor 失敗など再特定不能な quote は quote 全文 + 案内を表示する', () => {
+    const { panel } = createPanel();
+    toggleButtons(panel.root).text.click();
+    pressKey('j'); // f-country（anchor failed）
+    expect(panel.root.querySelector('.text-viewer__unresolved-note')?.textContent).toContain(
+      '再特定できません',
+    );
+    expect(panel.root.querySelector('.text-viewer__quote-full')?.textContent).toBe(
+      'nowhere to be found',
+    );
+    panel.dispose();
+  });
+
+  test('quote の出所文書が study の documents に無い場合は根拠未選択表示になる（データ不整合の防御）', () => {
+    const { panel } = createPanel({ evidence: [makeEvidence({ documentId: 'doc-ghost' })] });
+    toggleButtons(panel.root).text.click();
+    expect(panel.root.querySelector('.text-viewer__empty')).not.toBeNull();
+    panel.dispose();
+  });
+
+  test('テキスト層がない文書では抽出テキストボタンが無効化 + 案内が出る', () => {
+    const { panel } = createPanel({
+      document: makeDocumentRecord({ textStatus: 'no_text_layer' }),
+      textPages: [],
+    });
+    const { text } = toggleButtons(panel.root);
+    expect(text.disabled).toBe(true);
+    expect(text.title).not.toBe('');
+    expect(panel.root.querySelector<HTMLElement>('.verify__view-toggle-note')?.hidden).toBe(false);
+    panel.dispose();
+  });
+
+  test('テキストモード中にテキスト層のない文書へ自動切替すると PDF モードへ戻る', () => {
+    const docWithText = makeDocumentView();
+    const docNoText = makeDocumentView({
+      document: makeDocumentRecord({ documentId: 'doc-2', filename: 'jones2021.pdf' }),
+      textPages: [],
+    });
+    const evidenceOnDoc2 = makeEvidence({
+      evidenceId: 'ev-doc2',
+      fieldId: 'f-country',
+      documentId: 'doc-2',
+      value: 'Japan',
+      quote: null,
+      anchorStatus: null,
+      confidence: null,
+    });
+    const panel = createVerificationPanel({
+      data: makeData({
+        documents: [docWithText, docNoText],
+        fields: [
+          makeField(),
+          makeField({ fieldId: 'f-country', fieldIndex: 2, fieldName: 'country', fieldLabel: '国' }),
+        ],
+        evidence: [makeEvidence(), evidenceOnDoc2],
+      }),
+      onDecision: jest.fn(),
+      now: () => 't1',
+      renderPage,
+    });
+    document.body.replaceChildren(panel.root);
+    const { pdf, text } = toggleButtons(panel.root);
+    text.click(); // doc-1 はテキストあり → テキストモードへ
+    expect(text.getAttribute('aria-pressed')).toBe('true');
+    // f-country（doc-2・テキストなし）へフォーカス → 出所 PDF へ自動切替 + モードも PDF へ自動で戻る
+    pressKey('j');
+    expect(pdf.getAttribute('aria-pressed')).toBe('true');
+    expect(text.disabled).toBe(true);
+    expect(panel.root.querySelector<HTMLElement>('.verify__text-body')?.hidden).toBe(true);
+    panel.dispose();
+  });
+
+  test('根拠クリック（ハイライトへ移動）は、フォーカスを動かさずスニペットだけ差し替える', () => {
+    const secondField = makeField({
+      fieldId: 'f-second',
+      fieldIndex: 2,
+      fieldName: 'second',
+      fieldLabel: '2 つ目',
+    });
+    const secondEvidence = makeEvidence({
+      evidenceId: 'ev-second',
+      fieldId: 'f-second',
+      quote: 'in total',
+      page: 1,
+    });
+    const { panel } = createPanel({
+      fields: [makeField(), secondField],
+      evidence: [makeEvidence(), secondEvidence],
+    });
+    toggleButtons(panel.root).text.click();
+    // 初期フォーカスは f-total（先頭の未判定セル）
+    expect(cellEl(panel.root, KEY_TOTAL)?.classList.contains('verify__cell--focused')).toBe(true);
+    expect(panel.root.querySelector('mark.text-viewer__mark')?.textContent).toBe(
+      'mortality was 12 percent',
+    );
+    const secondCell = cellEl(panel.root, cellKeyOf('f-second', '-'));
+    secondCell?.querySelector<HTMLButtonElement>('.verify__quote-jump')?.click();
+    // フォーカスは f-total のまま、スニペットだけ 2 つ目の quote へ差し替わる
+    expect(cellEl(panel.root, KEY_TOTAL)?.classList.contains('verify__cell--focused')).toBe(true);
+    expect(panel.root.querySelector('mark.text-viewer__mark')?.textContent).toBe('in total');
+    panel.dispose();
+  });
+
+  test('f キー（根拠へジャンプ）はテキストモードでは PDF を操作せずスニペットのまま', () => {
+    const { panel } = createPanel();
+    toggleButtons(panel.root).text.click();
+    pressKey('f');
+    expect(panel.root.querySelector('.pdf-viewer__page-indicator')?.textContent).toBe(
+      '1 / 2 ページ',
+    );
+    expect(panel.root.querySelector('mark.text-viewer__mark')?.textContent).toBe(
+      'mortality was 12 percent',
+    );
+    panel.dispose();
+  });
+});
+
 describe('判定操作', () => {
   test('承認ボタン: AI 値で accept を確定し、チップとハイライト色が更新される', () => {
     const { panel, onDecision } = createPanel();
