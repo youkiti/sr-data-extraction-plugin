@@ -462,6 +462,22 @@ describe('bootstrapApp', () => {
     expect(toastTexts()).toContain('Drive Picker を開けませんでした: picker offline');
   });
 
+  test('#/documents のローカルファイル入力は importFromFiles へ配線されている（非 PDF 除外のトースト経路）', async () => {
+    const stub = createWindowStub({ currentProject: PROJECT, home: COUNTS_LOADED });
+    const { deps } = createFakeDeps([[...SHEET_HEADERS.Documents]]);
+    await bootstrapApp(asWindow(stub), deps);
+    stub.location.hash = '#/documents';
+    stub.fireHashChange();
+    await flush();
+
+    const input = document.getElementById('documents-file-input') as HTMLInputElement;
+    const file = new File(['x'], 'notes.txt', { type: 'text/plain' });
+    Object.defineProperty(input, 'files', { value: [file], configurable: true });
+    input.dispatchEvent(new Event('change'));
+    await flush();
+    expect(toastTexts()).toContain('PDF ファイルが選択されていません');
+  });
+
   test('#/documents の study_label 編集が保存まで配線されている', async () => {
     const stub = createWindowStub({ currentProject: PROJECT, home: COUNTS_LOADED });
     const { deps, fetchMock } = createTabRoutingDeps({

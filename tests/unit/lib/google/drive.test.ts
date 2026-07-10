@@ -7,6 +7,7 @@ import {
   getFileText,
   listFolderPdfs,
   moveFileToFolder,
+  uploadBinaryFile,
   uploadTextFile,
 } from '../../../../src/lib/google/drive';
 
@@ -26,6 +27,30 @@ function okText(body: string): Response {
     json: async () => ({}),
     text: async () => body,
   } as Response;
+}
+
+/**
+ * jsdom の Blob には text()/arrayBuffer() が無い（jsdom の File が text()/arrayBuffer() を
+ * 持たないのと同じ制約）ため、Blob コンストラクタを差し替えて渡された parts を直接検証する。
+ */
+async function captureBlobParts<T>(
+  run: () => Promise<T>,
+): Promise<{ result: T; parts: BlobPart[] }> {
+  const holder: { parts: BlobPart[] } = { parts: [] };
+  const OriginalBlob = globalThis.Blob;
+  class SpyBlob extends OriginalBlob {
+    constructor(parts: BlobPart[] = [], options?: BlobPropertyBag) {
+      super(parts, options);
+      holder.parts = parts;
+    }
+  }
+  (globalThis as unknown as { Blob: typeof Blob }).Blob = SpyBlob as unknown as typeof Blob;
+  try {
+    const result = await run();
+    return { result, parts: holder.parts };
+  } finally {
+    (globalThis as unknown as { Blob: typeof Blob }).Blob = OriginalBlob;
+  }
 }
 
 describe('createFolder', () => {
@@ -88,6 +113,59 @@ describe('uploadTextFile', () => {
     await uploadTextFile({ name: 'note.txt', content: 'hi', parentId: 'P' }, deps);
     const body = (fetch.mock.calls[0][1] as RequestInit).body as string;
     expect(body).toContain('text/plain; charset=UTF-8');
+  });
+});
+
+describe('uploadBinaryFile', () => {
+  test('multipart/related の Blob 本文に metadata + バイナリを乗せる', async () => {
+    const fetch = jest
+      .fn()
+      .mockResolvedValue(okJson({ id: 'file-2', webViewLink: 'https://drive/z' }));
+    const deps = { fetch, getAccessToken: jest.fn().mockResolvedValue('t') };
+    const data = new Uint8Array([1, 2, 3]).buffer;
+    const { result, parts } = await captureBlobParts(() =>
+      uploadBinaryFile({ name: 'smith2020.pdf', data, parentId: 'DOCS' }, deps),
+    );
+    expect(result).toEqual({ id: 'file-2', webViewLink: 'https://drive/z' });
+    const [url, init] = fetch.mock.calls[0];
+    expect(url).toContain('/upload/drive/v3/files?uploadType=multipart');
+    const initArg = init as RequestInit;
+    expect((initArg.headers as Headers).get('Content-Type')).toMatch(
+      /^multipart\/related; boundary=/,
+    );
+    expect(initArg.body).toBeInstanceOf(Blob);
+    // parts = [boundary+json ヘッダ, metadata 文字列, boundary+バイナリヘッダ, data, 終端boundary]
+    expect(parts[0]).toContain('Content-Type: application/json; charset=UTF-8');
+    expect(parts[1]).toBe(JSON.stringify({ name: 'smith2020.pdf', parents: ['DOCS'] }));
+    expect(parts[2]).toContain('Content-Type: application/pdf');
+    expect(parts[3]).toBe(data);
+    expect(parts[4]).toContain('--');
+  });
+
+  test('mimeType 未指定なら application/pdf', async () => {
+    const fetch = jest.fn().mockResolvedValue(okJson({ id: 'f', webViewLink: '' }));
+    const deps = { fetch, getAccessToken: jest.fn().mockResolvedValue('t') };
+    const { parts } = await captureBlobParts(() =>
+      uploadBinaryFile({ name: 'a.pdf', data: new Uint8Array([1]).buffer, parentId: 'P' }, deps),
+    );
+    expect(parts[2]).toContain('Content-Type: application/pdf');
+  });
+
+  test('mimeType を指定すればそれを使う', async () => {
+    const fetch = jest.fn().mockResolvedValue(okJson({ id: 'f', webViewLink: '' }));
+    const deps = { fetch, getAccessToken: jest.fn().mockResolvedValue('t') };
+    const { parts } = await captureBlobParts(() =>
+      uploadBinaryFile(
+        {
+          name: 'a.bin',
+          data: new Uint8Array([1]).buffer,
+          parentId: 'P',
+          mimeType: 'application/octet-stream',
+        },
+        deps,
+      ),
+    );
+    expect(parts[2]).toContain('Content-Type: application/octet-stream');
   });
 });
 

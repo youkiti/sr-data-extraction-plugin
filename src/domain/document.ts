@@ -54,8 +54,11 @@ export interface DocumentRecord {
   documentRole: DocumentRole;
   /** documents/ 配下のプロジェクト内コピー（凍結スナップショット ※Q9）。表示・抽出・監査はこちらを参照 */
   driveFileId: string;
-  /** Picker で選択した元 PDF（出所の記録用。原本が動いても動作に影響しない） */
-  sourceFileId: string;
+  /**
+   * Picker で選択した元 PDF（出所の記録用。原本が動いても動作に影響しない）。
+   * ローカル取り込み（D&D / ファイル選択）は出所 Drive ファイルが無いため null
+   */
+  sourceFileId: string | null;
   filename: string;
   pmid: string | null;
   doi: string | null;

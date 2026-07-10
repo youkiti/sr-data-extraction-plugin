@@ -10,6 +10,7 @@ import {
   cancelMerge,
   confirmMerge,
   ignoreCandidate,
+  importFromFiles,
   importFromPicker,
   loadDocuments,
   openMergeCandidate,
@@ -184,6 +185,9 @@ export async function bootstrapApp(
     documents: {
       onImport: () => {
         void importFromPicker(store, deps);
+      },
+      onImportFiles: (files) => {
+        void importFromFiles(store, deps, files);
       },
       onReload: () => {
         void loadDocuments(store, deps, { force: true });

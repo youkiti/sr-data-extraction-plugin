@@ -17,6 +17,8 @@ export interface HomeViewCallbacks {
 export interface DocumentsViewCallbacks {
   /** 「Drive から PDF を取り込む」: Picker 起動 → importDocuments */
   onImport(): void;
+  /** ローカル PDF の取り込み（D&D / ファイル選択ダイアログ経由） */
+  onImportFiles(files: File[]): void;
   /** 一覧の再読み込み（読込済みでも強制再取得） */
   onReload(): void;
   /** study_label のインライン編集確定（Studies 行の上書き） */
