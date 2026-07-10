@@ -379,7 +379,7 @@ function renderList(state: AppState, ctx: ViewContext): HTMLElement {
   if (groups.length === 0) {
     return el('p', {
       id: 'documents-empty',
-      text: 'まだ文献がありません。「Drive から PDF / フォルダを取り込む」から採用論文の PDF またはフォルダを選択してください。',
+      text: 'まだ文献がありません。上の「Drive から PDF / フォルダを選択」、またはこの PC からのドラッグ&ドロップ / ファイル選択で採用論文の PDF を取り込んでください。',
     });
   }
   const mergeButton = el('button', {
