@@ -1,5 +1,5 @@
-// Options（S11）smoke: API キー（Gemini / OpenRouter）/ 既定モデルセレクタの
-// 未設定・保存済み表示 + 保存フロー + axe。
+// Options（S11）smoke: API キー（Gemini / OpenRouter / OpenAI 互換 API）/ 接続方式 /
+// 既定モデルセレクタの未設定・保存済み表示 + 保存フロー + axe。
 // chrome.storage はスタブ（docs/test-strategy.md §2.1 の chrome スタブ seam）
 import { expect, test } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
@@ -17,6 +17,7 @@ function chromeStub(options: { seedModel: boolean }): string {
             remove: async (key) => { delete data[key]; },
           },
         },
+        permissions: { request: async () => true },
         runtime: { getURL: (p) => '/' + p, lastError: undefined },
       };
     })();
@@ -82,6 +83,31 @@ test('保存済み: 既定モデルをセレクタで復元する（マスク不
   await page.goto('/options/options.html');
   await expect(page.locator('#default-model-status')).toHaveText('既定モデル: 保存済み');
   await expect(page.locator('#default-model')).toHaveValue('gemini-2.0-flash');
+});
+
+test('OpenAI 互換 API: 接続先の保存と JSON Schema 接続テスト', async ({ page }) => {
+  await page.addInitScript(chromeStub({ seedModel: false }));
+  await page.route('https://llm.example/v1/chat/completions', async (route) => {
+    const body = route.request().postDataJSON() as { response_format?: { type?: string } };
+    expect(body.response_format?.type).toBe('json_schema');
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ choices: [{ message: { content: '{"ok":true}' } }] }),
+    });
+  });
+  await page.goto('/options/options.html');
+  await page.locator('#llm-provider').selectOption('openai_compatible');
+  await expect(page.locator('#openai-compatible-fields')).toBeVisible();
+  await page.locator('#openai-compatible-endpoint').fill(
+    'https://llm.example/v1/chat/completions',
+  );
+  await page.locator('#openai-compatible-api-key').fill('custom-key');
+  await page.locator('#test-llm-connection').click();
+  await expect(page.locator('#llm-connection-status')).toHaveText('接続テストに成功しました。');
+  await page.locator('#save-llm-connection').click();
+  await expect(page.locator('#llm-connection-status')).toHaveText('保存しました。');
+  await expect(page.locator('#openai-compatible-api-key')).toHaveValue('');
 });
 
 test('アクセシビリティ違反がない（axe）', async ({ page }) => {

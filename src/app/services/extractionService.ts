@@ -7,6 +7,7 @@
 // LLM 呼び出しは withRetry(withLogging(createProvider(...))) で包み、
 // 全呼び出し（リトライの各試行を含む）を LLMApiLog + Drive（logs/llm/）に残す
 import type { ExtractionRun, RunType } from '../../domain/extractionRun';
+import type { LlmProviderId } from '../../domain/llmApiLog';
 import type { DocumentRecord } from '../../domain/document';
 import type { SchemaField } from '../../domain/schemaField';
 import { buildAiAnnotationRows } from '../../features/extraction/aiAnnotationRows';
@@ -40,6 +41,10 @@ export interface ExtractionServiceDeps {
   google: GoogleApiDeps;
   /** BYOK の API キー（secretsStore から呼び出し側が解決して渡す） */
   apiKey: string;
+  /** 明示設定時の接続方式。未指定は従来どおりモデル ID から解決 */
+  provider?: LlmProviderId;
+  /** OpenAI 互換 API の完全 URL */
+  endpoint?: string;
   /**
    * extracted_texts/{document_id}.txt を読み、ページ別テキストへ復元する。
    * テキストファイルの保存形式は S3（文献取り込み）実装側で確定するため、ここでは注入に留める
@@ -109,6 +114,8 @@ export async function runExtraction(
   const baseProvider = (deps.buildProvider ?? createProvider)({
     apiKey: deps.apiKey,
     model: params.model,
+    provider: deps.provider,
+    endpoint: deps.endpoint,
   });
   const provider = withRetry(
     withLogging(baseProvider, 'extract_study', {

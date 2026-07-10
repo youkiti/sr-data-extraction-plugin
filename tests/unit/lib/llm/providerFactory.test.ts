@@ -1,8 +1,13 @@
 // createProvider / resolveProviderId の単体テスト
 // （sr-query-builder から流用。本拡張の調整: model 必須）
 import { GeminiProvider } from '../../../../src/lib/llm/GeminiProvider';
+import { OpenAICompatibleProvider } from '../../../../src/lib/llm/OpenAICompatibleProvider';
 import { OpenRouterProvider } from '../../../../src/lib/llm/OpenRouterProvider';
-import { createProvider, resolveProviderId } from '../../../../src/lib/llm/providerFactory';
+import {
+  createProvider,
+  resolveProviderConfig,
+  resolveProviderId,
+} from '../../../../src/lib/llm/providerFactory';
 
 describe('resolveProviderId', () => {
   test('org/model 形式（/ を含む）は openrouter と解決する', () => {
@@ -47,5 +52,81 @@ describe('createProvider', () => {
     const fetchMock = jest.fn() as unknown as typeof fetch;
     const provider = createProvider({ apiKey: 'k', model: 'gemini-2.5-pro', fetch: fetchMock });
     expect(provider.model).toBe('gemini-2.5-pro');
+  });
+
+  test('OpenAI 互換 API は明示 provider と endpoint で生成する', () => {
+    const provider = createProvider({
+      provider: 'openai_compatible',
+      apiKey: 'k',
+      model: 'org/model',
+      endpoint: 'https://llm.example/v1/chat/completions',
+    });
+    expect(provider).toBeInstanceOf(OpenAICompatibleProvider);
+    expect(provider.providerId).toBe('openai_compatible');
+    expect(provider.model).toBe('org/model');
+  });
+
+  test('OpenAI 互換 API の endpoint 欠落は拒否する', () => {
+    expect(() =>
+      createProvider({ provider: 'openai_compatible', apiKey: 'k', model: 'm' }),
+    ).toThrow('エンドポイントが未設定');
+  });
+});
+
+describe('resolveProviderConfig', () => {
+  test('接続設定未注入はモデル ID による従来判定を使う', async () => {
+    const loadApiKey = jest.fn().mockResolvedValue('key');
+    await expect(resolveProviderConfig('org/model', { loadApiKey })).resolves.toEqual({
+      provider: 'openrouter',
+      config: { provider: 'openrouter', apiKey: 'key', model: 'org/model' },
+    });
+    expect(loadApiKey).toHaveBeenCalledWith('openrouter');
+  });
+
+  test('保存済み接続方式はスラッシュを含むモデル名より優先する', async () => {
+    await expect(
+      resolveProviderConfig('org/model', {
+        loadApiKey: async () => 'custom-key',
+        loadLlmConnectionSettings: async () => ({
+          provider: 'openai_compatible',
+          openAiCompatibleEndpoint: 'https://llm.example/v1/chat/completions',
+        }),
+      }),
+    ).resolves.toEqual({
+      provider: 'openai_compatible',
+      config: {
+        provider: 'openai_compatible',
+        apiKey: 'custom-key',
+        model: 'org/model',
+        endpoint: 'https://llm.example/v1/chat/completions',
+      },
+    });
+  });
+
+  test('選択した接続方式の API キーが無ければ config は null', async () => {
+    await expect(
+      resolveProviderConfig('gemini-model', {
+        loadApiKey: async () => null,
+        loadLlmConnectionSettings: async () => ({
+          provider: 'gemini',
+          openAiCompatibleEndpoint: null,
+        }),
+      }),
+    ).resolves.toEqual({ provider: 'gemini', config: null });
+  });
+
+  test('OpenAI 互換 endpoint が null なら endpoint を config に足さない', async () => {
+    await expect(
+      resolveProviderConfig('m', {
+        loadApiKey: async () => 'k',
+        loadLlmConnectionSettings: async () => ({
+          provider: 'openai_compatible',
+          openAiCompatibleEndpoint: null,
+        }),
+      }),
+    ).resolves.toEqual({
+      provider: 'openai_compatible',
+      config: { provider: 'openai_compatible', apiKey: 'k', model: 'm' },
+    });
   });
 });

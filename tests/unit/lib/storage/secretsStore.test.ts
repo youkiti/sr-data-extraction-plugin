@@ -1,12 +1,15 @@
 import { installChromeMock } from '../../../setup/chrome-mock';
 import {
   clearGeminiApiKey,
+  clearOpenAiCompatibleApiKey,
   clearOpenRouterApiKey,
   loadGeminiApiKey,
+  loadOpenAiCompatibleApiKey,
   loadOpenRouterApiKey,
   looksLikeGeminiApiKey,
   looksLikeOpenRouterApiKey,
   saveGeminiApiKey,
+  saveOpenAiCompatibleApiKey,
   saveOpenRouterApiKey,
 } from '../../../../src/lib/storage/secretsStore';
 
@@ -64,5 +67,17 @@ describe('secretsStore', () => {
     expect(looksLikeOpenRouterApiKey('sk-or-TESTKEY')).toBe(true);
     expect(looksLikeOpenRouterApiKey('AIzaSyTESTKEY')).toBe(false);
     expect(looksLikeOpenRouterApiKey('sk-TESTKEY')).toBe(false);
+  });
+
+  test('OpenAI 互換 API キー: 独立して trim 保存・削除できる', async () => {
+    await expect(loadOpenAiCompatibleApiKey()).resolves.toBeNull();
+    await saveOpenAiCompatibleApiKey('  custom-secret  ');
+    await expect(loadOpenAiCompatibleApiKey()).resolves.toBe('custom-secret');
+    await clearOpenAiCompatibleApiKey();
+    await expect(loadOpenAiCompatibleApiKey()).resolves.toBeNull();
+  });
+
+  test('OpenAI 互換 API キー: 空文字を拒否する', async () => {
+    await expect(saveOpenAiCompatibleApiKey('   ')).rejects.toThrow('空の API キー');
   });
 });

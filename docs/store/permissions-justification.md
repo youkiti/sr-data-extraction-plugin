@@ -47,6 +47,11 @@
 - **JA**: LLM プロバイダとして OpenRouter を選んだユーザーが、自分の OpenRouter API キー（BYOK）で抽出リクエストを送信するために使用します。
 - **EN**: Used to send extraction requests to OpenRouter with the user's own OpenRouter API key (BYOK), for users who choose OpenRouter as their LLM provider.
 
+### Optional host permission `https://*/*`
+
+- **JA**: 利用者が OpenAI 互換 API の完全 URL を設定した場合に限り、その接続先 origin へ論文本文と抽出プロンプトを送信するために使用します。拡張は設定保存時に `chrome.permissions.request` で当該 origin のみを提示し、利用者が許可した接続先だけへ通信します。任意の Web サイトを閲覧・変更する用途には使用しません。
+- **EN**: Used only when the user configures a complete OpenAI-compatible API URL. At save time, the extension calls `chrome.permissions.request` for that specific origin and sends article text and extraction prompts only to origins the user explicitly permits. It is not used to read or modify arbitrary websites.
+
 ## externally_connectable — `https://youkiti.github.io/*`
 
 - **JA**: Manifest V3 のリモートコード制約により、Google Picker（ファイル選択 UI）を拡張内から直接ロードできません。GitHub Pages 上にホストした `picker.html` を経由し、`externally_connectable` で当該ページから拡張へ選択結果を受け取るために使用します。

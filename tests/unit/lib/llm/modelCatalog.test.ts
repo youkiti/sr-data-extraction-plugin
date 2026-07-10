@@ -41,5 +41,8 @@ describe('missingApiKeyMessage', () => {
     expect(missingApiKeyMessage('openrouter')).toBe(
       'OpenRouter API キーが未設定です。設定画面（Options）で保存してください',
     );
+    expect(missingApiKeyMessage('openai_compatible')).toBe(
+      'OpenAI 互換 API キーが未設定です。設定画面（Options）で保存してください',
+    );
   });
 });

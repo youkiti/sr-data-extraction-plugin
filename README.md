@@ -58,7 +58,7 @@ flowchart LR
 
 1. **インストール**: Chrome ウェブストアの掲載ページ（**限定公開のため、配布されたリンクを知っている人のみインストールできます** — リンクは配布者から受け取ってください）を開き、「Chrome に追加」を押します。
    - ※ 一般公開前は、開発者から共有された限定公開リンクからのみインストールできます。
-2. **LLM API キーの設定**: 拡張のオプション画面を開き、ご自身の **Gemini API キー**（または OpenRouter API キー）を保存します。キーはブラウザ内にのみ保存され、外部の開発者サーバーへは送信されません（BYOK）。
+2. **LLM 接続の設定**: 拡張のオプション画面を開き、ご自身の **Gemini API キー**、OpenRouter API キー、または OpenAI 互換 Chat Completions API の完全な HTTPS URL + API キーを保存します。OpenAI 互換 API では接続先 origin の Chrome 権限を確認し、JSON Schema の接続テストを実行できます。キーはブラウザ内にのみ保存され、外部の開発者サーバーへは送信されません（BYOK）。
    - Gemini API キーは Google AI Studio（<https://aistudio.google.com/apikey>）で取得できます。
 3. **Google アカウント連携（OAuth 同意）**: ポップアップから「ログイン」を押し、Google の同意画面で **Sheets** と **Drive（選択したファイルのみ）** へのアクセスを許可します。要求されるスコープは `spreadsheets` と `drive.file` の 2 つだけです（Drive 全体は読みません。詳細は[データフロー](#データフローサーバーレス構成)）。
 4. これでプロジェクト作成 → PDF 取り込み → スキーマ作成 → AI 抽出 → 検証 → CSV エクスポートまで一通り使えます。

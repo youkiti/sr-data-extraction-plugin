@@ -13,7 +13,7 @@ spec が正。実装が追いついていない箇所は以下のとおり（実
 | 章 | 実装状況 |
 |---|---|
 | §1 Popup | ✅ 実装済み（未ログイン / ログイン済 ×最近 0・N 件 / ログイン処理中・失敗 / 新規作成 / 既存 ID 検証。2026-07-02） |
-| §2 Options | ✅ 状態 A / B とも実装済み（Gemini キーの trim 保存・空文字抑止・保存中無効化・完了/失敗表示）。既定モデル（保存 / 空文字で解除 / S5 への注入）も実装済み（2026-07-03）。OpenRouter キー節 + 既定モデルの select 化（モデルセレクタ共通ウィジェット）は 2026-07-04 実装 |
+| §2 Options | ✅ 状態 A / B とも実装済み（Gemini キーの trim 保存・空文字抑止・保存中無効化・完了/失敗表示）。既定モデル（保存 / 空文字で解除 / S5 への注入）も実装済み（2026-07-03）。OpenRouter キー節 + 既定モデルの select 化（モデルセレクタ共通ウィジェット）は 2026-07-04 実装。OpenAI 互換 API の接続方式・エンドポイント・API キー・接続テストは Issue #27 の target spec として下記に追加 |
 | §3 App 共通レイアウト・状態 A / B | ✅ 実装済み（ヘッダ / サイドバー / ガードのディム表示 + トースト / `#app-context` 通知） |
 | §3 `#/home` | ✅ 実装済み（起動時に Sheets から進捗カウントを読込〔`values:batchGet` 1 呼び出し〕。読み込み中 / 失敗 + 再読み込み / 通常サマリ。ガードのディム判定も同カウントで実データ化。2026-07-03） |
 | §3 `#/documents` | ✅ 実装済み（読み込み中 / 失敗 / 空 / 取り込み中の進捗行。2026-07-02）。**v0.10 グルーピング UI 実装済み**（2026-07-07: study 単位グループ表示 + study_label / registration_id / document_role インライン編集 + 統合ダイアログ + 統合候補バナー）。Drive Picker のホスト済みページは GitHub Pages へデプロイ済み（[hosted/README.md](../hosted/README.md)）で、2026-07-03 の実機通し確認（[manual-testing.md](manual-testing.md) §1）で Picker の動作を確認済み |
@@ -77,6 +77,21 @@ spec が正。実装が追いついていない箇所は以下のとおり（実
 | 保存中 | `#save-default-model.disabled = true` |
 | 保存完了 | セレクタの値（その他は trim したテキスト）を保存 → `保存しました。`。**空（プレースホルダ選択 or その他の空文字）は「未設定に戻す」**（`settings.defaultModel` を削除）→ `未設定に戻しました。`（API キーと違い空での解除を許す） |
 | 保存失敗 | 赤系メッセージ `保存に失敗しました。もう一度お試しください。` + ボタン復帰 |
+
+### LLM 接続先（Issue #27）
+
+接続方式は `gemini` / `openrouter` / `openai_compatible` の 3 種。保存キーは `settings.llmProvider`、OpenAI 互換 API の完全 URL は `settings.openAiCompatibleEndpoint`、API キーは `secrets.openAiCompatibleApiKey` とする。接続方式が未保存の既存環境だけは後方互換としてモデル ID の `/` の有無から Gemini / OpenRouter を解決し、接続方式を一度保存した後はモデル ID より設定値を優先する。
+
+| 状態 | 受入基準 |
+|---|---|
+| 通常 | `#llm-provider` で Gemini / OpenRouter / OpenAI 互換 API を選択できる。OpenAI 互換 API 選択時だけ `#openai-compatible-endpoint`（完全な HTTPS URL）と `#openai-compatible-api-key`（password）を表示する |
+| 読み込み済み | 保存済みの接続方式とエンドポイントを復元する。API キーの平文は復元せず、保存済みなら placeholder で示す |
+| 保存 | `#save-llm-connection.disabled = true`。OpenAI 互換 API は URL を検証し、入力 origin の `https://origin/*` を `chrome.permissions.request` で利用者へ確認してから保存する。権限拒否時は保存しない |
+| 保存完了 | `#llm-connection-status` = `保存しました。`。OpenAI 互換 API のキー入力はクリアし、placeholder を保存済みへ切り替える |
+| 保存失敗 | URL 不正、API キー未設定、権限拒否、storage 失敗の理由を赤系メッセージで表示し、ボタンを復帰する |
+| 接続テスト | `#test-llm-connection.disabled = true`。現在の入力値と既定モデルを使い、Bearer 認証 + `response_format.type = json_schema` の最小リクエストを送る。JSON Schema に従う応答を確認できれば `接続テストに成功しました。`、それ以外は理由を赤系で表示する |
+
+OpenAI 互換 API の URL は HTTPS のみを受け付け、userinfo、query、fragment を拒否する。接続先へ論文本文と抽出プロンプトが送信される旨を設定画面に表示する。任意ヘッダー、Bearer 以外の認証、Chat Completions 以外の API 形式は対象外とする。
 
 ## 3. App / メインビュー (`src/app/app.html`)
 

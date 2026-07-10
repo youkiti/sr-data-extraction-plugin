@@ -4,7 +4,6 @@
 // 全呼び出しを LLMApiLog + Drive（logs/llm/）に残す
 import type { Protocol } from '../../domain/protocol';
 import type { DocumentRecord } from '../../domain/document';
-import type { LlmProviderId } from '../../domain/llmApiLog';
 import { readDocuments } from '../../features/documents/documentRepository';
 import {
   makeLoadDocumentPages,
@@ -34,17 +33,19 @@ import { appendLlmApiLog } from '../../lib/llm/apiLogRepository';
 import { withLogging } from '../../lib/llm/apiLogger';
 import type { LLMProvider } from '../../lib/llm/LLMProvider';
 import { missingApiKeyMessage } from '../../lib/llm/modelCatalog';
-import { resolveProviderId, type ProviderConfig } from '../../lib/llm/providerFactory';
+import {
+  resolveProviderConfig,
+  type ProviderConfig,
+  type ProviderResolutionDeps,
+} from '../../lib/llm/providerFactory';
 import { withRetry } from '../../lib/llm/retry';
 import { FACTORY_DEFAULT_MODEL, loadDefaultModel } from '../../lib/storage/settingsStore';
 import type { SchemaState, Store } from '../store';
 import { showToast } from '../ui/toast';
 
-export interface SchemaServiceDeps {
+export interface SchemaServiceDeps extends ProviderResolutionDeps {
   google: GoogleApiDeps;
   profile: ProfileDeps;
-  /** BYOK の API キーをプロバイダ別に解決する（既定は lib/storage/secretsStore の各 load 関数） */
-  loadApiKey: (provider: LlmProviderId) => Promise<string | null>;
   /** provider 生成（実行時は lib/llm/providerFactory.createProvider。テストは fake を注入） */
   buildProvider: (config: ProviderConfig) => LLMProvider;
   /** Options の既定モデル設定を解決する（未指定は lib/storage/settingsStore.loadDefaultModel） */
@@ -206,9 +207,9 @@ export async function runDraftSchema(store: Store, deps: SchemaServiceDeps): Pro
     patchSchema(store, { draftError: 'モデルを選択してください（「その他」で直接入力も可）' });
     return;
   }
-  const apiKey = await deps.loadApiKey(resolveProviderId(model));
-  if (apiKey === null) {
-    patchSchema(store, { draftError: missingApiKeyMessage(resolveProviderId(model)) });
+  const providerResolution = await resolveProviderConfig(model, deps);
+  if (providerResolution.config === null) {
+    patchSchema(store, { draftError: missingApiKeyMessage(providerResolution.provider) });
     return;
   }
 
@@ -238,7 +239,7 @@ export async function runDraftSchema(store: Store, deps: SchemaServiceDeps): Pro
     const logsFolder = await ensureChildFolder('logs', project.driveFolderId, deps.google);
     const llmFolder = await ensureChildFolder('llm', logsFolder.id, deps.google);
 
-    const baseProvider = deps.buildProvider({ apiKey, model });
+    const baseProvider = deps.buildProvider(providerResolution.config);
     const provider = withRetry(
       withLogging(baseProvider, 'draft_schema', {
         uploadJson: async ({ filename, content }) => {

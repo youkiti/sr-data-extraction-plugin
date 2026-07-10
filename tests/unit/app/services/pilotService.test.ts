@@ -495,6 +495,27 @@ describe('runPilot: 実行', () => {
     expect(state.pilot.verification?.documents[0]?.textPages).toHaveLength(1);
   });
 
+  test('保存した OpenAI 互換接続をパイロット抽出へ渡す', async () => {
+    const store = makeReadyStore();
+    runExtractionMock.mockResolvedValue(makeOutcome());
+    await runPilot(
+      store,
+      makeDeps({
+        loadLlmConnectionSettings: async () => ({
+          provider: 'openai_compatible',
+          openAiCompatibleEndpoint: 'https://llm.example/v1/chat/completions',
+        }),
+        loadApiKey: jest.fn().mockResolvedValue('custom-key'),
+      }),
+    );
+    const runDeps = runExtractionMock.mock.calls[0]?.[1];
+    expect(runDeps).toMatchObject({
+      apiKey: 'custom-key',
+      provider: 'openai_compatible',
+      endpoint: 'https://llm.example/v1/chat/completions',
+    });
+  });
+
   test('進捗コールバックが pilot.progress を更新する', async () => {
     const store = makeReadyStore();
     let observed: unknown = null;

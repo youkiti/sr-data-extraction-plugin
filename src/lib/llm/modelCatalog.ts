@@ -31,6 +31,11 @@ export function isCatalogModel(model: string): boolean {
 
 /** API キー未設定エラーの共通文言（S5 / S6 / S7 のサービス層で共用） */
 export function missingApiKeyMessage(provider: LlmProviderId): string {
-  const label = provider === 'openrouter' ? 'OpenRouter' : 'Gemini';
+  const label =
+    provider === 'openrouter'
+      ? 'OpenRouter'
+      : provider === 'openai_compatible'
+        ? 'OpenAI 互換'
+        : 'Gemini';
   return `${label} API キーが未設定です。設定画面（Options）で保存してください`;
 }
