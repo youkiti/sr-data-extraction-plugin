@@ -10,6 +10,7 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<DashboardViewCall
       home: { onReload: jest.fn() },
       documents: {
         onImport: jest.fn(),
+        onImportFiles: jest.fn(),
         onReload: jest.fn(),
         onSaveStudyLabel: jest.fn(),
         onSaveRegistrationId: jest.fn(),

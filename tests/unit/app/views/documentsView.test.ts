@@ -43,6 +43,7 @@ function makeDoc(overrides: Partial<DocumentRecord> = {}): DocumentRecord {
 function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<DocumentsViewCallbacks> } {
   const callbacks: jest.Mocked<DocumentsViewCallbacks> = {
     onImport: jest.fn(),
+    onImportFiles: jest.fn(),
     onReload: jest.fn(),
     onSaveStudyLabel: jest.fn(),
     onSaveRegistrationId: jest.fn(),
@@ -160,6 +161,10 @@ describe('renderDocumentsView', () => {
     );
     expect((view.querySelector('#documents-import') as HTMLButtonElement).disabled).toBe(true);
     expect((view.querySelector('#documents-reload') as HTMLButtonElement).disabled).toBe(true);
+    expect((view.querySelector('#documents-local-import') as HTMLButtonElement).disabled).toBe(true);
+    expect(
+      view.querySelector('#documents-dropzone')?.classList.contains('documents__dropzone--disabled'),
+    ).toBe(true);
     expect(view.querySelector('#documents-loading')).toBeNull();
     expect(view.querySelector('#documents-list')).toBeNull();
     expect(view.querySelector('.documents__candidate')).toBeNull();
@@ -213,24 +218,150 @@ describe('renderDocumentsView', () => {
     expect(callbacks.onReload).toHaveBeenCalledTimes(1);
   });
 
+  test('ローカル選択ボタンは隠しファイル入力を開き、input change で onImportFiles を呼ぶ', () => {
+    const { ctx, callbacks } = makeCtx();
+    const view = mount(renderDocumentsView(makeState({ records: [], studies: [] }), ctx));
+
+    const input = view.querySelector('#documents-file-input') as HTMLInputElement;
+    expect(input.hidden).toBe(true);
+    expect(input.getAttribute('accept')).toBe('application/pdf');
+    expect(input.multiple).toBe(true);
+
+    const localButton = view.querySelector('#documents-local-import') as HTMLButtonElement;
+    // ローカルであることを明示する文言（絵文字つき）
+    expect(localButton.textContent).toBe('💻 PC からファイルを選択');
+    const clickSpy = jest.spyOn(input, 'click');
+    localButton.click();
+    expect(clickSpy).toHaveBeenCalledTimes(1);
+
+    const file = new File(['x'], 'a.pdf', { type: 'application/pdf' });
+    Object.defineProperty(input, 'files', { value: [file], configurable: true });
+    input.dispatchEvent(new Event('change'));
+    expect(callbacks.onImportFiles).toHaveBeenCalledWith([file]);
+    // 同じファイルを連続選択できるよう input.value をリセットする
+    expect(input.value).toBe('');
+  });
+
+  test('input change でファイルが 0 件なら onImportFiles を呼ばない', () => {
+    const { ctx, callbacks } = makeCtx();
+    const view = mount(renderDocumentsView(makeState({ records: [], studies: [] }), ctx));
+    const input = view.querySelector('#documents-file-input') as HTMLInputElement;
+    Object.defineProperty(input, 'files', { value: [], configurable: true });
+    input.dispatchEvent(new Event('change'));
+    expect(callbacks.onImportFiles).not.toHaveBeenCalled();
+  });
+
+  test('input change で files が null（未選択キャンセル）でも例外にならず呼ばない', () => {
+    const { ctx, callbacks } = makeCtx();
+    const view = mount(renderDocumentsView(makeState({ records: [], studies: [] }), ctx));
+    const input = view.querySelector('#documents-file-input') as HTMLInputElement;
+    Object.defineProperty(input, 'files', { value: null, configurable: true });
+    input.dispatchEvent(new Event('change'));
+    expect(callbacks.onImportFiles).not.toHaveBeenCalled();
+  });
+
+  test('ドロップゾーン: dragover/dragenter は preventDefault + ハイライト、dragleave で解除', () => {
+    const { ctx } = makeCtx();
+    const view = mount(renderDocumentsView(makeState({ records: [], studies: [] }), ctx));
+    const zone = view.querySelector('#documents-dropzone') as HTMLElement;
+    expect(zone.querySelector('.documents__dropzone-prompt')?.textContent).toBe(
+      'PDF をここにドラッグ&ドロップ',
+    );
+    expect(zone.querySelector('.documents__dropzone-or')?.textContent).toBe('または');
+    // ドロップゾーン内にローカル選択ボタン + 隠し input を集約する
+    expect(zone.querySelector('#documents-local-import')).not.toBeNull();
+    expect(zone.querySelector('#documents-file-input')).not.toBeNull();
+
+    const overEvent = new Event('dragover', { cancelable: true });
+    zone.dispatchEvent(overEvent);
+    expect(overEvent.defaultPrevented).toBe(true);
+    expect(zone.classList.contains('documents__dropzone--dragover')).toBe(true);
+
+    zone.dispatchEvent(new Event('dragleave'));
+    expect(zone.classList.contains('documents__dropzone--dragover')).toBe(false);
+
+    const enterEvent = new Event('dragenter', { cancelable: true });
+    zone.dispatchEvent(enterEvent);
+    expect(enterEvent.defaultPrevented).toBe(true);
+    expect(zone.classList.contains('documents__dropzone--dragover')).toBe(true);
+  });
+
+  test('ドロップゾーン: disabled 中の dragover/dragenter はハイライトしない（preventDefault のみ）', () => {
+    const { ctx } = makeCtx();
+    const view = mount(renderDocumentsView(makeState({ importing: true }), ctx));
+    const zone = view.querySelector('#documents-dropzone') as HTMLElement;
+
+    const overEvent = new Event('dragover', { cancelable: true });
+    zone.dispatchEvent(overEvent);
+    expect(overEvent.defaultPrevented).toBe(true);
+    expect(zone.classList.contains('documents__dropzone--dragover')).toBe(false);
+
+    const enterEvent = new Event('dragenter', { cancelable: true });
+    zone.dispatchEvent(enterEvent);
+    expect(zone.classList.contains('documents__dropzone--dragover')).toBe(false);
+  });
+
+  test('ドロップゾーン: dataTransfer が無い drop（ブラウザ既定動作以外の発火）は無視する', () => {
+    const { ctx, callbacks } = makeCtx();
+    const view = mount(renderDocumentsView(makeState({ records: [], studies: [] }), ctx));
+    const zone = view.querySelector('#documents-dropzone') as HTMLElement;
+
+    const dropEvent = new Event('drop', { cancelable: true });
+    zone.dispatchEvent(dropEvent);
+
+    expect(dropEvent.defaultPrevented).toBe(true);
+    expect(callbacks.onImportFiles).not.toHaveBeenCalled();
+  });
+
+  test('ドロップゾーン: drop で dataTransfer.files を onImportFiles へ渡し preventDefault する', () => {
+    const { ctx, callbacks } = makeCtx();
+    const view = mount(renderDocumentsView(makeState({ records: [], studies: [] }), ctx));
+    const zone = view.querySelector('#documents-dropzone') as HTMLElement;
+
+    const file = new File(['x'], 'dropped.pdf', { type: 'application/pdf' });
+    const dropEvent = new Event('drop', { cancelable: true });
+    Object.defineProperty(dropEvent, 'dataTransfer', { value: { files: [file] } });
+    zone.dispatchEvent(dropEvent);
+
+    expect(dropEvent.defaultPrevented).toBe(true);
+    expect(callbacks.onImportFiles).toHaveBeenCalledWith([file]);
+    expect(zone.classList.contains('documents__dropzone--dragover')).toBe(false);
+  });
+
+  test('ドロップゾーン: importing || !hasProject の間は disabled クラス + ドロップ無視', () => {
+    const { ctx, callbacks } = makeCtx();
+    const view = mount(renderDocumentsView(makeState({ importing: true }), ctx));
+    const zone = view.querySelector('#documents-dropzone') as HTMLElement;
+    expect(zone.classList.contains('documents__dropzone--disabled')).toBe(true);
+
+    const file = new File(['x'], 'dropped.pdf', { type: 'application/pdf' });
+    const dropEvent = new Event('drop', { cancelable: true });
+    Object.defineProperty(dropEvent, 'dataTransfer', { value: { files: [file] } });
+    zone.dispatchEvent(dropEvent);
+
+    expect(dropEvent.defaultPrevented).toBe(true); // ブラウザ既定動作（ファイルを開く）だけは常に防ぐ
+    expect(callbacks.onImportFiles).not.toHaveBeenCalled();
+  });
+
   test('取り込み中はボタンを無効化し、進捗行を 2 段階表示する', () => {
     const { ctx } = makeCtx();
     const view = renderDocumentsView(
       makeState({
         importing: true,
         importRows: [
-          { sourceFileId: 's1', filename: 'a.pdf', status: 'copy', detail: null },
-          { sourceFileId: 's2', filename: 'b.pdf', status: 'extract', detail: null },
-          { sourceFileId: 's3', filename: 'c.pdf', status: 'queued', detail: null },
-          { sourceFileId: 's4', filename: 'd.pdf', status: 'done', detail: null },
-          { sourceFileId: 's5', filename: 'e.pdf', status: 'failed', detail: 'コピーに失敗: x' },
-          { sourceFileId: 's6', filename: 'f.pdf', status: 'failed', detail: null },
+          { key: 's1', filename: 'a.pdf', status: 'copy', detail: null },
+          { key: 's2', filename: 'b.pdf', status: 'extract', detail: null },
+          { key: 's3', filename: 'c.pdf', status: 'queued', detail: null },
+          { key: 's4', filename: 'd.pdf', status: 'done', detail: null },
+          { key: 's5', filename: 'e.pdf', status: 'failed', detail: 'コピーに失敗: x' },
+          { key: 's6', filename: 'f.pdf', status: 'failed', detail: null },
         ],
       }),
       ctx,
     );
     expect((view.querySelector('#documents-import') as HTMLButtonElement).disabled).toBe(true);
     expect((view.querySelector('#documents-reload') as HTMLButtonElement).disabled).toBe(true);
+    expect((view.querySelector('#documents-local-import') as HTMLButtonElement).disabled).toBe(true);
     const rows = Array.from(view.querySelectorAll('#documents-progress li'));
     expect(rows.map((row) => row.textContent)).toEqual([
       'a.pdfコピー中…',

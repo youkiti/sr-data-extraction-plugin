@@ -34,7 +34,8 @@ export interface HomeState {
 export type ImportRowStatus = 'queued' | 'copy' | 'extract' | 'done' | 'failed';
 
 export interface ImportRow {
-  sourceFileId: string;
+  /** 進捗行の突き合わせキー（Drive/ローカル共通。features/documents/importDocuments.ts の ImportSelection.key） */
+  key: string;
   filename: string;
   status: ImportRowStatus;
   /** failed のときの詳細（失敗段階 + 理由）。それ以外は null */

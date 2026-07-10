@@ -157,6 +157,46 @@ export async function uploadTextFile(
 }
 
 /**
+ * バイナリ（PDF 等）をファイルとして指定フォルダにアップロードする（ローカル取り込み・S3）。
+ * uploadTextFile と同じ multipart/related 手組みだが、文字列連結では PDF のバイトを壊すため
+ * body を Blob で組み立てる（Blob は文字列パートとバイナリパートを跨いで連結できる）。
+ */
+export async function uploadBinaryFile(
+  params: {
+    name: string;
+    data: ArrayBuffer;
+    parentId: string;
+    mimeType?: string;
+  },
+  deps: GoogleApiDeps
+): Promise<DriveFileRef> {
+  const mimeType = params.mimeType ?? 'application/pdf';
+  const metadata = {
+    name: params.name,
+    parents: [params.parentId],
+  };
+  const boundary = `boundary-${Math.random().toString(36).slice(2)}`;
+  const body = new Blob([
+    `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n`,
+    JSON.stringify(metadata),
+    `\r\n--${boundary}\r\nContent-Type: ${mimeType}\r\n\r\n`,
+    params.data,
+    `\r\n--${boundary}--`,
+  ]);
+  const url = `${UPLOAD_API}?uploadType=multipart&fields=id,webViewLink`;
+  const res = await googleFetch(
+    url,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': `multipart/related; boundary=${boundary}` },
+      body,
+    },
+    deps
+  );
+  return (await res.json()) as DriveFileRef;
+}
+
+/**
  * My Drive ルート直下で指定名のフォルダを探し、なければ新規作成して返す。
  * 複数回プロジェクト作成しても sr-data-extraction フォルダが増殖しない。
  */

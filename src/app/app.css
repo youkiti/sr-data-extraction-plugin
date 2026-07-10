@@ -220,6 +220,7 @@
 .documents__actions {
   display: flex;
   gap: 12px;
+  align-items: center;
   margin: 16px 0;
 }
 
@@ -240,6 +241,70 @@
 
 .documents__import:hover:enabled {
   background: var(--color-primary-hover);
+}
+
+/* 再読み込みは取り込み操作から視覚的に分離するため右寄せ */
+.documents__reload {
+  margin-left: auto;
+}
+
+/* ローカル取り込み: ドロップゾーン（主役）に案内文 + ボタン + 隠し input を集約する */
+.documents__dropzone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0 16px;
+  padding: 32px 24px;
+  border: 2px dashed var(--color-border);
+  border-radius: 8px;
+  text-align: center;
+  color: var(--color-text-muted);
+}
+
+.documents__dropzone-prompt {
+  margin: 0;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.documents__dropzone-or {
+  margin: 0;
+  color: var(--color-text-muted);
+}
+
+.documents__local-import {
+  background: var(--color-surface);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 8px 16px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.documents__local-import:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.documents__local-import:hover:enabled {
+  background: var(--color-bg);
+}
+
+.documents__file-input {
+  /* input[type=file] 本体は非表示にし、ボタン click で開く */
+  display: none;
+}
+
+.documents__dropzone--dragover {
+  border-color: var(--color-primary);
+  background: var(--color-highlight-verified);
+  color: var(--color-text);
+}
+
+.documents__dropzone--disabled {
+  opacity: 0.55;
 }
 
 .documents__progress {
