@@ -82,15 +82,17 @@ spec が正。実装が追いついていない箇所は以下のとおり（実
 
 一括抽出（S6 パイロット / S7 一括）で多数の study を連続処理すると、LLM API の 1 分あたりリクエスト上限（RPM）に達して HTTP 429（Too Many Requests）が出うる。対策は 2 本立て（`src/lib/llm/rateLimitPolicy.ts`）: **A. バッチ間スロットル**（`withThrottle`。RPM から最小リクエスト間隔 = `ceil(60000/RPM)` を導き、`executeRun` のバッチ連射を平準化）+ **B. リトライ強化**（`withRetry`。429/5xx を指数バックオフで再試行し、サーバ提示の `Retry-After` ヘッダ / 本文 `RetryInfo.retryDelay` を尊重、tier ごとに試行回数・バックオフ上限を変える）。合成は `withRetry(withThrottle(withLogging(provider)))`。
 
-保存キーは `settings.rateLimitTier`（tier ID）+ `settings.rateLimitCustomRpm`（カスタム tier の RPM。正の整数のみ・非正で削除）。`resolveRateLimitPolicy()` が実効ポリシーへ解決し、bootstrap が抽出・ドラフトのサービス層へ注入する（未注入時は `UNLIMITED_POLICY` = スロットル無し・リトライのみ = 従来挙動）。tier プリセット: 無料枠 `gemini_free`（既定・RPM 8）/ `gemini_tier1`（120）/ `gemini_tier2`（900）/ `gemini_tier3`（1800）/ `custom`（RPM 手入力）/ `unlimited`（スロットルしない）。RPM は保守的な目安で、実測に合わせ `custom` で上書きできる。
+スループット対策として **C. バッチ並行実行** も持つ（2026-07-10。docs/handoff-20260710-throughput.md）: `RateLimitPolicy.maxConcurrency` で `executeRun` のバッチ（= 1 study）を同時に走らせる本数を決める。スロットル（A）は間隔だけを保証し同時実行数を絞らないため、並行数はこの値で別に制御する。**既定は全 tier で 1（＝逐次。従来と同一挙動 = 回帰の砦）**で、`custom` tier のときだけ Options で 2 以上に上げてスループット実験できる（`gemini-tier3` 等のプリセットの実値は実測後に確定する）。
+
+保存キーは `settings.rateLimitTier`（tier ID）+ `settings.rateLimitCustomRpm`（カスタム tier の RPM。正の整数のみ・非正で削除）+ `settings.rateLimitCustomConcurrency`（カスタム tier の同時実行数。正の整数のみ・非正/未入力で削除 = 逐次）。`resolveRateLimitPolicy()` が実効ポリシーへ解決し、bootstrap が抽出・ドラフトのサービス層へ注入する（未注入時は `UNLIMITED_POLICY` = スロットル無し・リトライのみ・逐次 = 従来挙動）。tier プリセット: 無料枠 `gemini_free`（既定・RPM 8）/ `gemini_tier1`（120）/ `gemini_tier2`（900）/ `gemini_tier3`（1800）/ `custom`（RPM + 同時実行数を手入力）/ `unlimited`（スロットルしない）。RPM は保守的な目安で、実測に合わせ `custom` で上書きできる。
 
 | 状態 | 受入基準 |
 |---|---|
-| 未設定 | `#rate-limit-status` = `レート制限: Gemini 無料枠（Free）`（既定 tier）。セレクタ `#rate-limit-tier` は `gemini_free` を選択。カスタム RPM 行 `#rate-limit-custom-row` は非表示。説明文 `#rate-limit-tier-desc` に選択 tier の補足 |
-| 保存済み | 保存 tier を `#rate-limit-tier` で復元。`custom` のときだけ `#rate-limit-custom-row` を表示し `#rate-limit-custom-rpm` に保存 RPM を充填 |
-| tier 変更 | `change` で説明文とカスタム RPM 行の表示を同期（`custom` のみ RPM 入力を表示）。不正な select 値は既定 `gemini_free` へ倒す |
-| 保存完了 | 非 custom = tier を保存しカスタム RPM キーを削除 / custom = tier + RPM（1 以上の整数）を保存 → `保存しました。` |
-| 保存不可 | custom で RPM が空・0 以下・非数値なら保存せず `RPM は 1 以上の数値を入力してください。`（赤系） |
+| 未設定 | `#rate-limit-status` = `レート制限: Gemini 無料枠（Free）`（既定 tier）。セレクタ `#rate-limit-tier` は `gemini_free` を選択。カスタム RPM 行 `#rate-limit-custom-row` / 同時実行数行 `#rate-limit-concurrency-row` は非表示。説明文 `#rate-limit-tier-desc` に選択 tier の補足 |
+| 保存済み | 保存 tier を `#rate-limit-tier` で復元。`custom` のときだけ `#rate-limit-custom-row` / `#rate-limit-concurrency-row` を表示し `#rate-limit-custom-rpm` に保存 RPM・`#rate-limit-concurrency` に保存同時実行数を充填 |
+| tier 変更 | `change` で説明文と RPM / 同時実行数行の表示を同期（`custom` のみ両入力を表示）。不正な select 値は既定 `gemini_free` へ倒す |
+| 保存完了 | 非 custom = tier を保存しカスタム RPM / 同時実行数キーを削除 / custom = tier + RPM（1 以上の整数）+ 同時実行数（任意。空なら削除 = 逐次）を保存 → `保存しました。` |
+| 保存不可 | custom で RPM が空・0 以下・非数値なら `RPM は 1 以上の数値を入力してください。` / 同時実行数が入力ありで 0 以下・非数値なら `同時実行数は 1 以上の数値を入力してください。`（いずれも赤系・保存しない） |
 | 保存中 / 失敗 | `#save-rate-limit.disabled = true` / 赤系 `保存に失敗しました。もう一度お試しください。` + ボタン復帰 |
 
 ## 3. App / メインビュー (`src/app/app.html`)

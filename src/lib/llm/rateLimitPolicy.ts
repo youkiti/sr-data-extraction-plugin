@@ -22,7 +22,17 @@ export interface RateLimitPolicy {
   baseDelayMs: number;
   /** バックオフ上限（ms）。サーバ提示の retryDelay もこの上限で頭打ちにする */
   maxDelayMs: number;
+  /**
+   * executeRun のバッチ（= 1 study）を同時に何本まで走らせるか（スループット対策）。
+   * 1 = 従来どおり逐次（既定）。2 以上で並行実行する。スロットル（withThrottle）は
+   * リクエスト間隔だけを保証し同時実行数は絞らないため、並行数はここで別に制御する
+   * （docs/handoff-20260710-throughput.md §3）。
+   */
+  maxConcurrency: number;
 }
+
+/** maxConcurrency の既定値。従来挙動（逐次）を保つため 1 */
+export const DEFAULT_MAX_CONCURRENCY = 1;
 
 export type RateLimitTierId =
   | 'gemini_free'
@@ -41,6 +51,8 @@ export interface RateLimitTier {
   policy: RateLimitPolicy;
   /** カスタム tier のみ RPM を手入力させる */
   editableRpm: boolean;
+  /** カスタム tier のみ同時実行数を手入力させる（並列化のスループット実験用） */
+  editableConcurrency: boolean;
 }
 
 /**
@@ -53,6 +65,7 @@ export const UNLIMITED_POLICY: RateLimitPolicy = {
   maxAttempts: 3,
   baseDelayMs: 1_000,
   maxDelayMs: 15_000,
+  maxConcurrency: DEFAULT_MAX_CONCURRENCY,
 };
 
 /** 未設定時の既定 tier。多くの利用者が該当する無料枠を安全側の既定にする */
@@ -70,41 +83,71 @@ export const RATE_LIMIT_TIERS: readonly RateLimitTier[] = [
     id: 'gemini_free',
     label: 'Gemini 無料枠（Free）',
     description: '無料枠は 1 分あたりのリクエスト数が少なく 429 が出やすいため、間隔を広めに取ります。',
-    policy: { requestsPerMinute: 8, maxAttempts: 5, baseDelayMs: 2_000, maxDelayMs: 60_000 },
+    policy: {
+      requestsPerMinute: 8,
+      maxAttempts: 5,
+      baseDelayMs: 2_000,
+      maxDelayMs: 60_000,
+      maxConcurrency: DEFAULT_MAX_CONCURRENCY,
+    },
     editableRpm: false,
+    editableConcurrency: false,
   },
   {
     id: 'gemini_tier1',
     label: 'Gemini Tier 1（従量課金）',
     description: '支払い設定済みの Tier 1。無料枠より大幅に緩い上限を想定します。',
-    policy: { requestsPerMinute: 120, maxAttempts: 5, baseDelayMs: 1_000, maxDelayMs: 30_000 },
+    policy: {
+      requestsPerMinute: 120,
+      maxAttempts: 5,
+      baseDelayMs: 1_000,
+      maxDelayMs: 30_000,
+      maxConcurrency: DEFAULT_MAX_CONCURRENCY,
+    },
     editableRpm: false,
+    editableConcurrency: false,
   },
   {
     id: 'gemini_tier2',
     label: 'Gemini Tier 2',
     description: '累計課金額の条件を満たした Tier 2。',
-    policy: { requestsPerMinute: 900, maxAttempts: 4, baseDelayMs: 1_000, maxDelayMs: 20_000 },
+    policy: {
+      requestsPerMinute: 900,
+      maxAttempts: 4,
+      baseDelayMs: 1_000,
+      maxDelayMs: 20_000,
+      maxConcurrency: DEFAULT_MAX_CONCURRENCY,
+    },
     editableRpm: false,
+    editableConcurrency: false,
   },
   {
     id: 'gemini_tier3',
     label: 'Gemini Tier 3',
     description: '最上位 Tier 3。',
-    policy: { requestsPerMinute: 1_800, maxAttempts: 4, baseDelayMs: 1_000, maxDelayMs: 20_000 },
+    policy: {
+      requestsPerMinute: 1_800,
+      maxAttempts: 4,
+      baseDelayMs: 1_000,
+      maxDelayMs: 20_000,
+      maxConcurrency: DEFAULT_MAX_CONCURRENCY,
+    },
     editableRpm: false,
+    editableConcurrency: false,
   },
   {
     id: 'custom',
     label: 'カスタム（RPM を手動指定）',
-    description: 'OpenRouter や上記に当てはまらない場合に、実際の 1 分あたりリクエスト数を入力します。',
+    description: 'OpenRouter や上記に当てはまらない場合に、実際の 1 分あたりリクエスト数を入力します。同時実行数を上げるとスループットが上がりますが、429 / TPM に当たる場合は下げてください。',
     policy: {
       requestsPerMinute: DEFAULT_CUSTOM_RPM,
       maxAttempts: 5,
       baseDelayMs: 2_000,
       maxDelayMs: 60_000,
+      maxConcurrency: DEFAULT_MAX_CONCURRENCY,
     },
     editableRpm: true,
+    editableConcurrency: true,
   },
   {
     id: 'unlimited',
@@ -112,6 +155,7 @@ export const RATE_LIMIT_TIERS: readonly RateLimitTier[] = [
     description: 'サーバ側で十分な上限がある場合のみ。バッチ間の待ち時間を入れません。',
     policy: UNLIMITED_POLICY,
     editableRpm: false,
+    editableConcurrency: false,
   },
 ];
 
@@ -127,19 +171,31 @@ export function getRateLimitTier(id: RateLimitTierId): RateLimitTier {
   return TIER_BY_ID.get(id) ?? (TIER_BY_ID.get(DEFAULT_RATE_LIMIT_TIER_ID) as RateLimitTier);
 }
 
+/** 正の有限数のみ Math.floor して採用し、それ以外は null（＝プリセット既定へフォールバック） */
+function positiveInt(value: number | null): number | null {
+  return value !== null && Number.isFinite(value) && value > 0 ? Math.floor(value) : null;
+}
+
 /**
- * tier ID（+ カスタム RPM）から実効ポリシーを解決する。
- * カスタム tier のときだけ customRpm でプリセットの RPM を上書きする（正の整数のみ採用）
+ * tier ID（+ カスタム RPM / 同時実行数）から実効ポリシーを解決する。
+ * カスタム tier のときだけ customRpm / customConcurrency でプリセット値を上書きする（正の整数のみ採用）
  */
 export function resolvePolicyForTier(
   id: RateLimitTierId,
   customRpm: number | null = null,
+  customConcurrency: number | null = null,
 ): RateLimitPolicy {
   const tier = getRateLimitTier(id);
-  if (tier.editableRpm && customRpm !== null && Number.isFinite(customRpm) && customRpm > 0) {
-    return { ...tier.policy, requestsPerMinute: Math.floor(customRpm) };
+  let policy = tier.policy;
+  const rpm = positiveInt(customRpm);
+  if (tier.editableRpm && rpm !== null) {
+    policy = { ...policy, requestsPerMinute: rpm };
   }
-  return tier.policy;
+  const concurrency = positiveInt(customConcurrency);
+  if (tier.editableConcurrency && concurrency !== null) {
+    policy = { ...policy, maxConcurrency: concurrency };
+  }
+  return policy;
 }
 
 /**

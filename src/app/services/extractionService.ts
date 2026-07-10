@@ -196,6 +196,8 @@ export async function runExtraction(
       appendEvidence: (rows) => appendEvidenceRows(params.spreadsheetId, rows, deps.google),
       newUuid: deps.newUuid,
       onProgress: params.onProgress,
+      // 並列化のスループット対策: ポリシーの同時実行数でバッチを並行させる（既定 1 = 逐次）
+      maxConcurrency: policy.maxConcurrency,
     },
   );
 
