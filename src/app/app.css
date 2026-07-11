@@ -1629,11 +1629,13 @@
   border-color: #ea4335;
 }
 
+/* 「未報告」チップは「未検証」（上記 .verify__chip--unverified）の灰色と紛らわしいため、
+   issue #49 で紫系トークンへ分離した（tokens.css 参照） */
 .verify__chip--not-reported,
 .verify__chip--not_reported {
-  background: #e8eaed;
-  color: #3c4043;
-  border-color: #bdc1c6;
+  background: var(--color-status-not-reported-bg);
+  color: var(--color-status-not-reported-text);
+  border-color: var(--color-status-not-reported-border);
 }
 
 .verify__ai {
@@ -1717,9 +1719,9 @@
 }
 
 .verify__action--not-reported {
-  background: #f1f3f4;
-  border-color: #bdc1c6;
-  color: #3c4043;
+  background: var(--color-status-not-reported-bg);
+  border-color: var(--color-status-not-reported-border);
+  color: var(--color-status-not-reported-text);
 }
 
 .verify__action--undo {
@@ -1741,7 +1743,7 @@
 }
 
 .verify__action--not-reported:hover:not(:disabled) {
-  background: #e8eaed;
+  background: var(--color-status-not-reported-bg-hover);
 }
 
 .verify__action--undo:hover:not(:disabled) {
