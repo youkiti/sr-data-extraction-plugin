@@ -1,6 +1,7 @@
 // AI が生成しなかった entity インスタンスを人間が宣言する監査イベント。
 // 通常のセル判定と同じ Decisions タブに追記するが、予約 field_id で区別し、
 // StudyData / ResultsData の annotator 行は更新しない。
+import type { AnnotatorType } from '../../domain/annotation';
 import type { Decision } from '../../domain/decision';
 import { makeOutcomeEntityKey, parseEntityKey } from '../../utils/entityKey';
 
@@ -17,6 +18,8 @@ export interface OutcomeDeclarationInput {
   time: string | null;
   arms: readonly ArmKeyRef[];
   annotator: string;
+  /** 判定を書き込む annotator_type（呼び出し側が bundle から渡す。design §5.2） */
+  annotatorType: AnnotatorType;
   schemaVersion: number;
   decidedAt: string;
 }
@@ -62,7 +65,7 @@ export function buildOutcomeDeclarationDecisions(input: OutcomeDeclarationInput)
     fieldId: ENTITY_INSTANCE_DECLARATION_FIELD_ID,
     entityKey,
     annotator: input.annotator,
-    annotatorType: 'human_with_ai',
+    annotatorType: input.annotatorType,
     schemaVersion: input.schemaVersion,
     action: 'edit',
     value: entityKey,

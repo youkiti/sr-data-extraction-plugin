@@ -212,6 +212,51 @@ describe('renderVerificationForm', () => {
     expect(root.querySelector('.verify__quote')).toBeNull();
   });
 
+  test('独立入力モード（mode: independent）は quote / AI 値 / 承認・棄却を出さず、抽出指示を代わりに出す（design §5.2）', () => {
+    const cell = makeCell(); // evidence あり（quote / AI 値つき）でもモードゲートで隠れることを確認する
+    const { root } = render(makeModel([cell], { mode: 'independent' }));
+    expect(root.querySelector('.verify__quote')).toBeNull();
+    expect(root.querySelector('.verify__ai')).toBeNull();
+    expect(root.querySelector('.verify__ai--none')).toBeNull();
+    expect(root.querySelector('.verify__instruction')?.textContent).toBe('総 N を抽出');
+    expect(root.querySelector('.verify__action--accept')).toBeNull();
+    expect(root.querySelector('.verify__action--reject')).toBeNull();
+    const actions = [...root.querySelectorAll<HTMLButtonElement>('.verify__action')];
+    expect(actions.map((button) => button.textContent)).toEqual(['入力 (e)', '未報告 (n)', '戻す (z)']);
+  });
+
+  test('独立入力モードの入力エディタは AI 値を初期値にせず空欄から始まり、確定ボタンは「入力して確定」', () => {
+    const cell = makeCell();
+    const { root, handlers } = render(
+      makeModel([cell], { mode: 'independent', editing: { cellKey: cell.cellKey, action: 'edit' } }),
+    );
+    const input = root.querySelector<HTMLInputElement>('.verify__edit-input');
+    expect(input?.value).toBe(''); // AI 値 '120' を流用しない
+    expect(root.querySelector('.verify__edit-confirm')?.textContent).toBe('入力して確定');
+    input!.value = '99';
+    root.querySelector<HTMLButtonElement>('.verify__edit-confirm')?.click();
+    expect(handlers.onConfirmEdit).toHaveBeenCalledWith(cell.cellKey, 'edit', '99');
+  });
+
+  test('独立入力モードの群構成カードは AI ドラフトではなく自分で確定する案内文言になる（design §5.3）', () => {
+    const { root } = render(
+      makeModel([makeCell()], {
+        mode: 'independent',
+        armCard: {
+          editing: true,
+          rows: [],
+          confirmedVersion: null,
+          error: null,
+          mode: 'independent',
+        },
+        armLocked: true,
+      }),
+    );
+    expect(root.querySelector('.verify__arm-lead')?.textContent).toBe(
+      'まず群構成を確定してください（群を追加して名称・数を自分で確定します）',
+    );
+  });
+
   test('AI 値・confidence・anchor_status のバッジを表示する', () => {
     const { root } = render(makeModel([makeCell()]));
     expect(root.querySelector('.verify__ai-value')?.textContent).toBe('120');

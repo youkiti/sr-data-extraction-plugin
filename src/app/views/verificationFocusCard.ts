@@ -41,6 +41,11 @@ export interface VerificationFocusCardModel {
   canSearchText: boolean;
   /** 直近判定セル（無ければ null）。ユニットをまたいで表示する固定バー用 */
   recentCell: VerificationCell | null;
+  /**
+   * 検証パネルの入力モード（独立二重レビュー機能。design §5.2）。省略時は 'review'。
+   * 詳細ストリップ（renderCell）へそのまま渡す
+   */
+  mode?: 'review' | 'independent';
 }
 
 /**
@@ -170,6 +175,7 @@ function renderDetailStrip(
     expandedDecidedKey: null,
     highlightInfo: model.highlightInfo,
     canSearchText: model.canSearchText,
+    mode: model.mode,
   };
   return el('div', { id: 'verify-focus-detail', className: 'focus-card__detail' }, [
     renderCell(cell, cellCardModel, handlers),

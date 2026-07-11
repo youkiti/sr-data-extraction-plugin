@@ -27,9 +27,44 @@ import {
   requestExportGenerate,
   selectExportFormat,
 } from '../../../src/app/services/exportService';
+// #/adjudicate（S12）の配線テストもサービス呼び出しの委譲だけを見る（実処理は adjudicationService.test.ts）
+jest.mock('../../../src/app/services/adjudicationService', () => ({
+  loadAdjudicateTargets: jest.fn(),
+  openAdjudicateStudy: jest.fn(),
+  backToAdjudicateList: jest.fn(),
+  updateAdjudicateArmDraftRow: jest.fn(),
+  addAdjudicateArmDraftRow: jest.fn(),
+  removeAdjudicateArmDraftRow: jest.fn(),
+  confirmAdjudicateArms: jest.fn(),
+  acceptAllMatchingCells: jest.fn(),
+  adjudicateCellChoice: jest.fn(),
+  adjudicateCellCustomValue: jest.fn(),
+  adjudicateCellNotReported: jest.fn(),
+  skipAdjudicateCell: jest.fn(),
+  unskipAdjudicateCell: jest.fn(),
+  undoAdjudicateCell: jest.fn(),
+  setAdjudicateMismatchOnlyFilter: jest.fn(),
+}));
+import {
+  acceptAllMatchingCells,
+  addAdjudicateArmDraftRow,
+  adjudicateCellChoice,
+  adjudicateCellCustomValue,
+  adjudicateCellNotReported,
+  backToAdjudicateList,
+  confirmAdjudicateArms,
+  loadAdjudicateTargets,
+  openAdjudicateStudy,
+  removeAdjudicateArmDraftRow,
+  setAdjudicateMismatchOnlyFilter,
+  skipAdjudicateCell,
+  undoAdjudicateCell,
+  unskipAdjudicateCell,
+  updateAdjudicateArmDraftRow,
+} from '../../../src/app/services/adjudicationService';
 import type { BuiltExport } from '../../../src/features/export/buildExport';
 import type { ExportFormat } from '../../../src/domain/exportLog';
-import type { AppState } from '../../../src/app/store';
+import { createInitialState, type AdjudicateWorking, type AppState } from '../../../src/app/store';
 import { SHEET_HEADERS } from '../../../src/domain/sheetsSchema';
 import { CURRENT_PROJECT_STORAGE_KEY } from '../../../src/features/project/projectStore';
 
@@ -349,12 +384,12 @@ describe('bootstrapApp', () => {
     expect((document.getElementById('app-open-popup') as HTMLAnchorElement).hidden).toBe(true);
   });
 
-  test('初期表示は #/home（サイドバー 9 項目 + aria-current + スクリーンリーダ通知）', async () => {
+  test('初期表示は #/home（サイドバー 10 項目 + aria-current + スクリーンリーダ通知）', async () => {
     await bootstrapApp(asWindow(createWindowStub()));
     expect(document.getElementById('app-content')?.textContent).toContain('プロジェクト概要');
     expect(document.getElementById('app-context')?.textContent).toBe('Home 画面を表示しています');
     const links = document.querySelectorAll('#app-nav a');
-    expect(links).toHaveLength(9);
+    expect(links).toHaveLength(10);
     expect(document.querySelector('#app-nav a[aria-current="page"]')?.getAttribute('href')).toBe(
       '#/home',
     );
@@ -394,8 +429,8 @@ describe('bootstrapApp', () => {
     // 設定画面がコンテンツ領域に組み上がる（別ページ・別タブへ飛ばさない）
     expect(document.getElementById('app-content')?.querySelector('#gemini-api-key')).not.toBeNull();
     expect(document.getElementById('app-context')?.textContent).toBe('設定 画面を表示しています');
-    // ステップナビは 9 項目のまま（設定はナビに出さない）
-    expect(document.querySelectorAll('#app-nav a')).toHaveLength(9);
+    // ステップナビは 10 項目のまま（設定はナビに出さない）
+    expect(document.querySelectorAll('#app-nav a')).toHaveLength(10);
     // 戻る導線は #/home へのハッシュリンク（直前ルートの記録が無いため）
     expect(
       document.querySelector('#app-content .settings__back')?.getAttribute('href'),
@@ -868,11 +903,27 @@ describe('bootstrapApp', () => {
     const store = await bootstrapApp(asWindow(stub));
     expect(store).not.toBeNull();
 
-    store?.setState({ currentProject: { projectId: 'p9', spreadsheetId: 's9', driveFolderId: 'f9', name: '追加プロジェクト' } });
+    // 盲検のフェイルクローズにより「プロジェクトあり + ロール未解決」はブロック画面になるため、
+    // プロジェクトとロール（解決済み owner）を同時に注入して再描画の配線を確認する
+    const current = store?.getState();
+    store?.setState({
+      currentProject: { projectId: 'p9', spreadsheetId: 's9', driveFolderId: 'f9', name: '追加プロジェクト' },
+      role: { ...(current as AppState).role, role: 'owner' },
+    });
     expect(document.getElementById('app-status')?.textContent).toBe(
       'プロジェクト: 追加プロジェクト',
     );
     expect(document.getElementById('app-content')?.textContent).toContain('追加プロジェクト');
+  });
+
+  test('プロジェクトが選択されたのにロール未解決の間はブロック画面になる（盲検のフェイルクローズ）', async () => {
+    const stub = createWindowStub();
+    const store = await bootstrapApp(asWindow(stub));
+
+    // ロールを注入せずにプロジェクトだけを与える → 確認中プレースホルダ + ナビ非表示
+    store?.setState({ currentProject: PROJECT });
+    expect(document.getElementById('app-role-resolving')).not.toBeNull();
+    expect(document.querySelectorAll('#app-nav a')).toHaveLength(0);
   });
 });
 
@@ -2127,5 +2178,682 @@ describe('bootstrapApp: #/export', () => {
     );
     (document.getElementById('export-reload') as HTMLButtonElement).click();
     expect(loadExportDataMock).toHaveBeenCalledWith(store, deps, { force: true });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// `#/adjudicate`（S12。独立二重レビュー機能 §6・§9 PR3）の配線
+// ---------------------------------------------------------------------------
+
+describe('bootstrapApp: #/adjudicate', () => {
+  const loadAdjudicateTargetsMock = loadAdjudicateTargets as jest.Mock;
+  const openAdjudicateStudyMock = openAdjudicateStudy as jest.Mock;
+  const backToAdjudicateListMock = backToAdjudicateList as jest.Mock;
+  const updateAdjudicateArmDraftRowMock = updateAdjudicateArmDraftRow as jest.Mock;
+  const addAdjudicateArmDraftRowMock = addAdjudicateArmDraftRow as jest.Mock;
+  const removeAdjudicateArmDraftRowMock = removeAdjudicateArmDraftRow as jest.Mock;
+  const confirmAdjudicateArmsMock = confirmAdjudicateArms as jest.Mock;
+  const acceptAllMatchingCellsMock = acceptAllMatchingCells as jest.Mock;
+  const adjudicateCellChoiceMock = adjudicateCellChoice as jest.Mock;
+  const adjudicateCellCustomValueMock = adjudicateCellCustomValue as jest.Mock;
+  const adjudicateCellNotReportedMock = adjudicateCellNotReported as jest.Mock;
+  const skipAdjudicateCellMock = skipAdjudicateCell as jest.Mock;
+  const unskipAdjudicateCellMock = unskipAdjudicateCell as jest.Mock;
+  const undoAdjudicateCellMock = undoAdjudicateCell as jest.Mock;
+  const setAdjudicateMismatchOnlyFilterMock = setAdjudicateMismatchOnlyFilter as jest.Mock;
+
+  beforeEach(() => {
+    installChromeMock();
+    document.body.innerHTML = APP_TEMPLATE;
+  });
+
+  const CELL = {
+    cellKey: JSON.stringify(['f-1', '-']),
+    field: {
+      schemaVersion: 1,
+      fieldId: 'f-1',
+      fieldIndex: 1,
+      section: 'population',
+      fieldName: 'sample_size',
+      fieldLabel: '総サンプルサイズ',
+      entityLevel: 'study' as const,
+      dataType: 'text' as const,
+      unit: null,
+      allowedValues: null,
+      required: false,
+      extractionInstruction: '',
+      example: null,
+      aiGenerated: false,
+      note: null,
+    },
+    entityKey: '-',
+    valueA: '120',
+    valueB: '130',
+    schemaVersionA: 1,
+    schemaVersionB: 1,
+    matches: false,
+    schemaVersionMismatch: false,
+  };
+
+  function makeWorking(): AdjudicateWorking {
+    return {
+      study: { studyId: 'study-1', studyLabel: 'Smith 2020', registrationId: null, createdAt: 't0', createdBy: 'o@example.com', note: null },
+      documents: [],
+      annotatorA: 'a@example.com',
+      annotatorB: 'b@example.com',
+      fields: [CELL.field],
+      schemaVersion: 1,
+      armsA: [],
+      armsB: [],
+      needsArmConfirmation: false,
+      armsMatched: true,
+      consensusArmStructure: null,
+      armDraft: [],
+      cells: [CELL],
+      consensusDecisions: [],
+      skippedCellKeys: [],
+      loadPdfView: jest.fn().mockResolvedValue({ pdf: null, pdfError: 'テストでは PDF なし', textPages: [] }),
+      retryPdfView: jest.fn().mockResolvedValue({ pdf: null, pdfError: 'テストでは PDF なし', textPages: [] }),
+      disposePdf: jest.fn().mockResolvedValue(undefined),
+    };
+  }
+
+  test('#/adjudicate 入場で一覧読込を起動する', async () => {
+    const stub = createWindowStub({ currentProject: PROJECT, home: COUNTS_LOADED });
+    const { deps } = createFakeDeps([]);
+    const store = await bootstrapApp(asWindow(stub), deps);
+    stub.location.hash = '#/adjudicate';
+    stub.fireHashChange();
+    await flush();
+    expect(loadAdjudicateTargetsMock).toHaveBeenCalledWith(store, deps);
+  });
+
+  test('?study= 付きで入場すると openAdjudicateStudy を呼ぶ（選択済みと同じなら呼ばない）', async () => {
+    const stub = createWindowStub({
+      currentProject: PROJECT,
+      home: COUNTS_LOADED,
+      adjudicate: { ...createInitialState().adjudicate, rows: [] },
+    });
+    const { deps } = createFakeDeps([]);
+    const store = await bootstrapApp(asWindow(stub), deps);
+    stub.location.hash = '#/adjudicate?study=study-1';
+    stub.fireHashChange();
+    await flush();
+    expect(openAdjudicateStudyMock).toHaveBeenCalledWith(store, deps, 'study-1');
+
+    // 同じ study が選択済みなら再度は呼ばない
+    store?.setState({ adjudicate: { ...store.getState().adjudicate, selectedStudyId: 'study-1' } });
+    openAdjudicateStudyMock.mockClear();
+    stub.fireHashChange();
+    await flush();
+    expect(openAdjudicateStudyMock).not.toHaveBeenCalled();
+  });
+
+  test('一覧の再試行ボタンは force 再取得を委譲する', async () => {
+    const stub = createWindowStub({
+      currentProject: PROJECT,
+      home: COUNTS_LOADED,
+      adjudicate: { ...createInitialState().adjudicate, loadError: '権限がありません' },
+    });
+    const { deps } = createFakeDeps([]);
+    await bootstrapApp(asWindow(stub), deps);
+    stub.location.hash = '#/adjudicate';
+    stub.fireHashChange();
+    expect(document.getElementById('adjudicate-error')?.textContent).toContain('権限がありません');
+    (document.getElementById('adjudicate-retry') as HTMLButtonElement).click();
+    expect(loadAdjudicateTargetsMock).toHaveBeenCalledWith(expect.anything(), deps, { force: true });
+  });
+
+  test('一覧の「裁定を開始」は ?study= 付きハッシュへ遷移する', async () => {
+    const stub = createWindowStub({
+      currentProject: PROJECT,
+      home: COUNTS_LOADED,
+      adjudicate: {
+        ...createInitialState().adjudicate,
+        rows: [
+          {
+            study: { studyId: 'study-9', studyLabel: 'S9', registrationId: null, createdAt: 't0', createdBy: 'o@example.com', note: null },
+            pair: { kind: 'ready', annotatorA: 'a@example.com', annotatorB: 'b@example.com' },
+            gate: {
+              progressA: { annotator: 'a@example.com', decided: 1, total: 1, complete: true },
+              progressB: { annotator: 'b@example.com', decided: 1, total: 1, complete: true },
+              ready: true,
+            },
+          },
+        ],
+      },
+    });
+    const { deps } = createFakeDeps([]);
+    await bootstrapApp(asWindow(stub), deps);
+    stub.location.hash = '#/adjudicate';
+    stub.fireHashChange();
+    (document.querySelector('.adjudicate__open-button') as HTMLButtonElement).click();
+    expect(stub.location.hash).toBe('#/adjudicate?study=study-9');
+  });
+
+  test('裁定中画面の各操作をサービスへ委譲する', async () => {
+    const stub = createWindowStub({
+      currentProject: PROJECT,
+      home: COUNTS_LOADED,
+      adjudicate: {
+        ...createInitialState().adjudicate,
+        rows: [],
+        working: makeWorking(),
+      },
+    });
+    const { deps } = createFakeDeps([]);
+    const store = await bootstrapApp(asWindow(stub), deps);
+    stub.location.hash = '#/adjudicate';
+    stub.fireHashChange();
+
+    (document.getElementById('adjudicate-back') as HTMLButtonElement).click();
+    expect(backToAdjudicateListMock).toHaveBeenCalledWith(store);
+    expect(stub.location.hash).toBe('#/adjudicate');
+
+    (document.getElementById('adjudicate-accept-all') as HTMLButtonElement).click();
+    expect(acceptAllMatchingCellsMock).toHaveBeenCalledWith(store, deps);
+
+    (document.querySelector('.adjudicate__action--choose-a') as HTMLButtonElement).click();
+    expect(adjudicateCellChoiceMock).toHaveBeenCalledWith(store, deps, CELL.cellKey, 'A');
+    (document.querySelector('.adjudicate__action--choose-b') as HTMLButtonElement).click();
+    expect(adjudicateCellChoiceMock).toHaveBeenCalledWith(store, deps, CELL.cellKey, 'B');
+
+    const customInput = document.querySelector('.adjudicate__custom-input') as HTMLInputElement;
+    customInput.value = '第 3 の値';
+    (document.querySelector('.adjudicate__action--custom') as HTMLButtonElement).click();
+    expect(adjudicateCellCustomValueMock).toHaveBeenCalledWith(store, deps, CELL.cellKey, '第 3 の値');
+
+    (document.querySelector('.adjudicate__action--not-reported') as HTMLButtonElement).click();
+    expect(adjudicateCellNotReportedMock).toHaveBeenCalledWith(store, deps, CELL.cellKey);
+
+    (document.querySelector('.adjudicate__action--skip') as HTMLButtonElement).click();
+    expect(skipAdjudicateCellMock).toHaveBeenCalledWith(store, CELL.cellKey);
+
+    const filterCheckbox = document.getElementById('adjudicate-filter-mismatch') as HTMLInputElement;
+    filterCheckbox.checked = false;
+    filterCheckbox.dispatchEvent(new Event('change'));
+    expect(setAdjudicateMismatchOnlyFilterMock).toHaveBeenCalledWith(store, false);
+  });
+
+  test('裁定済み・スキップ済みセルの取り消し操作をサービスへ委譲する', async () => {
+    const workingWithDecision: AdjudicateWorking = {
+      ...makeWorking(),
+      consensusDecisions: [
+        {
+          decidedAt: 't1',
+          decidedBy: 'judge@example.com',
+          studyId: 'study-1',
+          fieldId: 'f-1',
+          entityKey: '-',
+          annotator: 'consensus',
+          annotatorType: 'consensus',
+          schemaVersion: 1,
+          action: 'edit',
+          value: '120',
+          note: null,
+        },
+      ],
+    };
+    const stub = createWindowStub({
+      currentProject: PROJECT,
+      home: COUNTS_LOADED,
+      adjudicate: {
+        ...createInitialState().adjudicate,
+        rows: [],
+        working: workingWithDecision,
+      },
+    });
+    const { deps } = createFakeDeps([]);
+    const store = await bootstrapApp(asWindow(stub), deps);
+    stub.location.hash = '#/adjudicate';
+    stub.fireHashChange();
+
+    (document.querySelector('.adjudicate__action--undo') as HTMLButtonElement).click();
+    expect(undoAdjudicateCellMock).toHaveBeenCalledWith(store, deps, CELL.cellKey);
+  });
+
+  test('スキップ済みセルの「スキップを取り消す」操作をサービスへ委譲する', async () => {
+    const workingSkipped: AdjudicateWorking = { ...makeWorking(), skippedCellKeys: [CELL.cellKey] };
+    const stub = createWindowStub({
+      currentProject: PROJECT,
+      home: COUNTS_LOADED,
+      adjudicate: { ...createInitialState().adjudicate, rows: [], working: workingSkipped },
+    });
+    const { deps } = createFakeDeps([]);
+    const store = await bootstrapApp(asWindow(stub), deps);
+    stub.location.hash = '#/adjudicate';
+    stub.fireHashChange();
+
+    (document.querySelector('.adjudicate__action--unskip') as HTMLButtonElement).click();
+    expect(unskipAdjudicateCellMock).toHaveBeenCalledWith(store, CELL.cellKey);
+  });
+
+  test('群構成の編集・確定操作をサービスへ委譲する', async () => {
+    const workingNeedsArm: AdjudicateWorking = {
+      ...makeWorking(),
+      needsArmConfirmation: true,
+      armsMatched: false,
+      armsA: [{ armKey: 'arm:1', armName: '介入群' }],
+      armsB: [{ armKey: 'arm:1', armName: '対照群' }],
+      armDraft: [{ armKey: 'arm:1', armName: '介入群' }],
+    };
+    const stub = createWindowStub({
+      currentProject: PROJECT,
+      home: COUNTS_LOADED,
+      adjudicate: {
+        ...createInitialState().adjudicate,
+        rows: [],
+        working: workingNeedsArm,
+      },
+    });
+    const { deps } = createFakeDeps([]);
+    const store = await bootstrapApp(asWindow(stub), deps);
+    stub.location.hash = '#/adjudicate';
+    stub.fireHashChange();
+
+    const input = document.querySelector('.adjudicate__arm-draft-input') as HTMLInputElement;
+    input.value = '新名称';
+    input.dispatchEvent(new Event('change'));
+    expect(updateAdjudicateArmDraftRowMock).toHaveBeenCalledWith(store, 0, '新名称');
+
+    (document.getElementById('adjudicate-arm-add') as HTMLButtonElement).click();
+    expect(addAdjudicateArmDraftRowMock).toHaveBeenCalledWith(store);
+
+    (document.querySelector('.adjudicate__arm-draft-remove') as HTMLButtonElement).click();
+    expect(removeAdjudicateArmDraftRowMock).toHaveBeenCalledWith(store, 0);
+
+    (document.getElementById('adjudicate-arm-confirm') as HTMLButtonElement).click();
+    expect(confirmAdjudicateArmsMock).toHaveBeenCalledWith(store, deps, workingNeedsArm.armDraft);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 独立二重レビュー機能（ロール解決 + reviewer シェル制限 + オンボーディング）
+// docs/design-independent-dual-review.md §1・§3・§3.1・§7
+// ---------------------------------------------------------------------------
+
+describe('bootstrapApp: 独立二重レビュー機能', () => {
+  beforeEach(() => {
+    installChromeMock();
+    document.body.innerHTML = APP_TEMPLATE;
+  });
+
+  test('unregistered ロール: 全画面ブロックを表示し、ナビは出さない', async () => {
+    const stub = createWindowStub({
+      currentProject: PROJECT,
+      home: COUNTS_LOADED,
+      role: {
+        role: 'unregistered',
+        resolving: false,
+        error: null,
+        folderAccessGranted: false,
+        folderAccessChecking: false,
+        folderAccessError: null,
+      },
+    });
+    const { deps } = createFakeDeps([]);
+    await bootstrapApp(asWindow(stub), deps);
+
+    expect(document.getElementById('app-role-blocked')).not.toBeNull();
+    expect(document.getElementById('app-role-blocked')?.textContent).toContain(
+      'このプロジェクトのレビュアーとして登録されていません',
+    );
+    expect(document.getElementById('app-context')?.textContent).toBe('アクセスできません');
+    expect(document.querySelectorAll('#app-nav a')).toHaveLength(0);
+  });
+
+  test('reviewer_with_ai ロール: ナビは Home / 検証のみ + フォルダアクセス付与ボタンが配線されている', async () => {
+    const stub = createWindowStub({
+      currentProject: PROJECT,
+      home: COUNTS_LOADED,
+      counts: { evidenceRows: 1 } as AppState['counts'],
+      role: {
+        role: 'reviewer_with_ai',
+        resolving: false,
+        error: null,
+        folderAccessGranted: false,
+        folderAccessChecking: false,
+        folderAccessError: null,
+      },
+    });
+    const { deps } = createFakeDeps([]); // picker.getAccessToken は 'picker offline' で reject する既定
+    await bootstrapApp(asWindow(stub), deps);
+
+    // サイドバー: Home と検証だけ（文献取り込み等は非表示）
+    const links = Array.from(document.querySelectorAll('#app-nav a')).map((a) =>
+      a.getAttribute('href'),
+    );
+    expect(links).toEqual(['#/home', '#/verify']);
+
+    // 縮退版 Home（進捗カウントは出さない）+ フォルダアクセス付与ボタンの配線
+    expect(document.querySelector('.home__summary')).toBeNull();
+    (document.getElementById('home-grant-folder-access') as HTMLButtonElement).click();
+    await flush();
+    expect(toastTexts()).toContain('Drive Picker を開けませんでした: picker offline');
+  });
+
+  test('reviewer_independent ロールで #/verify 以外へ直接遷移するとトースト + #/home へ戻される', async () => {
+    const stub = createWindowStub({
+      currentProject: PROJECT,
+      home: COUNTS_LOADED,
+      role: {
+        role: 'reviewer_independent',
+        resolving: false,
+        error: null,
+        folderAccessGranted: true,
+        folderAccessChecking: false,
+        folderAccessError: null,
+      },
+    });
+    const { deps } = createFakeDeps([]);
+    const stubWindow = asWindow(stub);
+    await bootstrapApp(stubWindow, deps);
+    stub.location.hash = '#/documents';
+    stub.fireHashChange();
+    expect(toastTexts()).toContain('このプロジェクトではレビュアー権限のため利用できません');
+    expect(stub.location.hash).toBe('#/home');
+  });
+
+  test('owner のレビュアー管理カード（追加 / モード変更確認 / 解除 / 再読み込み）が配線されている', async () => {
+    const stub = createWindowStub({
+      currentProject: PROJECT,
+      home: COUNTS_LOADED,
+      reviewers: {
+        assignments: [
+          {
+            email: 'r1@example.com',
+            role: 'reviewer',
+            reviewMode: 'with_ai',
+            assignedBy: 'tester@example.com',
+            assignedAt: 't0',
+          },
+        ],
+        loading: false,
+        loadError: null,
+        saving: false,
+        saveError: null,
+        confirmingChange: null,
+      } as AppState['reviewers'],
+    });
+    const { deps, fetchMock } = createFakeDeps([[...SHEET_HEADERS.Reviewers]]);
+    await bootstrapApp(asWindow(stub), deps);
+
+    // 新規追加（onAddReviewer）
+    const email = document.getElementById('reviewer-email') as HTMLInputElement;
+    email.value = 'r2@example.com';
+    (document.getElementById('reviewer-add-form') as HTMLFormElement).dispatchEvent(
+      new Event('submit', { cancelable: true }),
+    );
+    await flush();
+    expect(toastTexts()).toContain(
+      'r2@example.com を登録し、シート（編集可）とフォルダ（閲覧）を共有しました',
+    );
+    expect(document.querySelectorAll('#home-reviewers-list tbody tr')).toHaveLength(2);
+
+    // 依頼文コピー（onCopyInvite → copyReviewInvite → navigator.clipboard）
+    const writeText = jest.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    (document.querySelector('.reviewers__invite') as HTMLButtonElement).click();
+    await flush();
+    expect(writeText).toHaveBeenCalledTimes(1);
+    expect(toastTexts()).toContain('レビュー依頼文をコピーしました');
+
+    // 既存 reviewer の review_mode だけを変える送信はモード変更確認ダイアログへ（onAddReviewer → confirmingChange）
+    const email2 = document.getElementById('reviewer-email') as HTMLInputElement;
+    email2.value = 'r1@example.com';
+    const mode = document.getElementById('reviewer-mode') as HTMLSelectElement;
+    mode.value = 'independent';
+    (document.getElementById('reviewer-add-form') as HTMLFormElement).dispatchEvent(
+      new Event('submit', { cancelable: true }),
+    );
+    await flush();
+    expect(document.getElementById('reviewer-mode-confirm')).not.toBeNull();
+
+    // キャンセル（onCancelReviewerChange）
+    (document.getElementById('reviewer-mode-confirm-cancel') as HTMLButtonElement).click();
+    expect(document.getElementById('reviewer-mode-confirm')).toBeNull();
+
+    // 再送信 → 確認 → 続行（onConfirmReviewerChange）
+    const email3 = document.getElementById('reviewer-email') as HTMLInputElement;
+    email3.value = 'r1@example.com';
+    const mode3 = document.getElementById('reviewer-mode') as HTMLSelectElement;
+    mode3.value = 'independent';
+    (document.getElementById('reviewer-add-form') as HTMLFormElement).dispatchEvent(
+      new Event('submit', { cancelable: true }),
+    );
+    (document.getElementById('reviewer-mode-confirm-ok') as HTMLButtonElement).click();
+    await flush();
+    expect(toastTexts()).toContain(
+      'r1@example.com を登録し、シート（編集可）とフォルダ（閲覧）を共有しました',
+    );
+
+    // 解除（onRevokeReviewer）
+    const revokeButtons = document.querySelectorAll('.reviewers__revoke');
+    (revokeButtons[0] as HTMLButtonElement).click();
+    await flush();
+    expect(toastTexts()).toContain('r1@example.com の登録を解除しました');
+    // fetchMock は上記一連の POST（タブ作成 + 追記）を記録している
+    expect(fetchMock).toHaveBeenCalled();
+  });
+
+  test('owner のレビュアー一覧読込失敗（起動時の自動読込）は #home-reviewers-reload の force 再取得で復帰する（onReloadReviewers）', async () => {
+    const stub = createWindowStub({
+      currentProject: PROJECT,
+      home: COUNTS_LOADED,
+      // 既定（E2E seam）は「読込済み（0 件）」扱いで自動読込を抑止するため、ここでは明示的に
+      // 未読込（null）へ戻して起動時の自動読込（loadReviewers）を実際に走らせる
+      reviewers: {
+        assignments: null,
+        loading: false,
+        loadError: null,
+        saving: false,
+        saveError: null,
+        confirmingChange: null,
+      } as AppState['reviewers'],
+    });
+    let call = 0;
+    const fetchMock = jest.fn(async () => {
+      call += 1;
+      if (call === 1) {
+        return { ok: false, status: 500, json: async () => ({}), text: async () => 'boom' };
+      }
+      return { ok: true, status: 200, json: async () => ({ sheets: [] }), text: async () => '' };
+    });
+    const deps: AppDeps = {
+      ...createFakeDeps([]).deps,
+      google: { fetch: fetchMock as unknown as typeof fetch, getAccessToken: async () => 'token' },
+    };
+    await bootstrapApp(asWindow(stub), deps);
+    await flush();
+    expect(document.getElementById('home-reviewers-error')?.textContent).toContain(
+      'Google API failed: HTTP 500',
+    );
+    (document.getElementById('home-reviewers-reload') as HTMLButtonElement).click();
+    await flush();
+    expect(document.getElementById('home-reviewers-error')).toBeNull();
+    expect(document.getElementById('home-reviewers-empty')).not.toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ロール解決の初期化順序とフェイルクローズ（盲検ガード。design §1・§3）
+// - 初期ルーティングはロール確定後に行う（ロール確定前にルートローダを発火させない）
+// - ロール解決失敗はフェイルクローズ（エラー画面 + 再試行のみ。owner へフォールバックしない）
+// - ロールがセッション中に変わったら現在ルートを再ガードして退避する
+// ---------------------------------------------------------------------------
+
+describe('bootstrapApp: ロール解決の初期化順序とフェイルクローズ（盲検ガード）', () => {
+  const loadExportDataMock = loadExportData as jest.Mock;
+  let chromeMock: ChromeMock;
+
+  beforeEach(() => {
+    chromeMock = installChromeMock();
+    document.body.innerHTML = APP_TEMPLATE;
+  });
+
+  /**
+   * ロール解決（Meta / Reviewers 読み出し）を実弾で通す Sheets fetch スタブ。
+   * failuresBeforeSuccess で先頭 n 回の fetch を HTTP 500 にし、gate で全 fetch を保留できる
+   */
+  function createRoleDeps(options: {
+    email: string;
+    reviewersRows?: string[][];
+    failuresBeforeSuccess?: number;
+    gate?: Promise<void>;
+  }): { deps: AppDeps; fetchMock: jest.Mock } {
+    let failures = options.failuresBeforeSuccess ?? 0;
+    const fetchMock = jest.fn(async (input: RequestInfo | URL) => {
+      if (options.gate) {
+        await options.gate;
+      }
+      const url = decodeURIComponent(String(input));
+      if (failures > 0) {
+        failures -= 1;
+        return { ok: false, status: 500, json: async () => ({}), text: async () => 'boom' };
+      }
+      let json: unknown = { values: [] };
+      if (url.includes('fields=sheets.properties.title')) {
+        json = {
+          sheets: ['Meta', 'Documents', 'SchemaFields', 'Reviewers'].map((title) => ({
+            properties: { title },
+          })),
+        };
+      } else if (url.includes('/values/Meta')) {
+        // schema_version は CURRENT_SCHEMA_VERSION（'1.0'）と一致させる（loadProjectMeta の検証）
+        json = {
+          values: [
+            [...SHEET_HEADERS.Meta],
+            ['p1', 'テスト SR', 'sheet-1', 'folder-1', '1.0', 't0', 'owner@example.com'],
+          ],
+        };
+      } else if (url.includes('/values/Reviewers')) {
+        json = { values: [[...SHEET_HEADERS.Reviewers], ...(options.reviewersRows ?? [])] };
+      } else if (url.includes('/values:batchGet')) {
+        json = { valueRanges: [] };
+      }
+      return { ok: true, status: 200, json: async () => json, text: async () => '' };
+    });
+    const { deps } = createFakeDeps([]);
+    deps.google = { fetch: fetchMock as unknown as typeof fetch, getAccessToken: async () => 'token' };
+    deps.profile = { getProfileUserInfo: async () => ({ email: options.email, id: 'uid' }) };
+    return { deps, fetchMock };
+  }
+
+  /** fetch 履歴に batchGet（進捗カウント読込）が含まれるか */
+  function calledBatchGet(fetchMock: jest.Mock): boolean {
+    return fetchMock.mock.calls.some((call) => String(call[0]).includes('batchGet'));
+  }
+
+  test('ロール確定前は初期ルーティングを行わず、reviewer の #/export 直リンクは #/home へ退避する', async () => {
+    chromeMock.storage.local.data[CURRENT_PROJECT_STORAGE_KEY] = PROJECT;
+    const stub = createWindowStub();
+    stub.location.hash = '#/export';
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const { deps, fetchMock } = createRoleDeps({
+      email: 'reviewer@example.com',
+      reviewersRows: [['reviewer@example.com', 'reviewer', 'with_ai', 'owner@example.com', 't0']],
+      gate,
+    });
+
+    const boot = bootstrapApp(asWindow(stub), deps);
+    await flush();
+    // ロール確定前（盲検のフェイルクローズ）: プレースホルダ + ナビ非表示 + #/export のローダ未発火
+    expect(document.getElementById('app-role-resolving')).not.toBeNull();
+    expect(document.querySelectorAll('#app-nav a')).toHaveLength(0);
+    expect(loadExportDataMock).not.toHaveBeenCalled();
+
+    release();
+    await boot;
+    await flush();
+    // reviewer_with_ai と解決 → #/export は不許可 → トーストで #/home へ退避し、ローダは最後まで発火しない
+    expect(toastTexts()).toContain('このプロジェクトではレビュアー権限のため利用できません');
+    expect(stub.location.hash).toBe('#/home');
+    expect(loadExportDataMock).not.toHaveBeenCalled();
+    expect(document.getElementById('app-role-resolving')).toBeNull();
+    expect(document.getElementById('app-content')?.textContent).toContain('プロジェクト概要');
+    expect(document.querySelectorAll('#app-nav a')).toHaveLength(2);
+    // reviewer には進捗カウント（batchGet）も読ませない（滑り込みの防止）
+    expect(calledBatchGet(fetchMock)).toBe(false);
+  });
+
+  test('ロール解決失敗はフェイルクローズ（エラー画面 + ナビ非表示 + ローダ不発火）。再試行で復帰する', async () => {
+    chromeMock.storage.local.data[CURRENT_PROJECT_STORAGE_KEY] = PROJECT;
+    const stub = createWindowStub();
+    const { deps, fetchMock } = createRoleDeps({
+      email: 'owner@example.com',
+      failuresBeforeSuccess: 1,
+    });
+    await bootstrapApp(asWindow(stub), deps);
+    await flush();
+
+    // 一時的な読込エラーで owner UI を開放しない（フェイルクローズ）
+    expect(document.getElementById('app-role-error')?.textContent).toContain(
+      'ロールを確認できませんでした',
+    );
+    expect(document.getElementById('app-context')?.textContent).toBe('ロールを確認できませんでした');
+    expect(document.querySelectorAll('#app-nav a')).toHaveLength(0);
+    expect(calledBatchGet(fetchMock)).toBe(false);
+
+    // 再試行 → owner と解決 → 通常の Home + ナビ 10 項目 + 進捗カウント読込
+    (document.getElementById('app-role-retry') as HTMLButtonElement).click();
+    await flush();
+    await flush();
+    expect(document.getElementById('app-role-error')).toBeNull();
+    expect(document.getElementById('app-content')?.textContent).toContain('プロジェクト概要');
+    expect(document.querySelectorAll('#app-nav a')).toHaveLength(10);
+    expect(calledBatchGet(fetchMock)).toBe(true);
+  });
+
+  test('再試行も失敗したらエラー画面のまま（フェイルクローズ維持）、その後の再試行で復帰する', async () => {
+    chromeMock.storage.local.data[CURRENT_PROJECT_STORAGE_KEY] = PROJECT;
+    const stub = createWindowStub();
+    const { deps, fetchMock } = createRoleDeps({
+      email: 'owner@example.com',
+      failuresBeforeSuccess: 2,
+    });
+    await bootstrapApp(asWindow(stub), deps);
+    await flush();
+    expect(document.getElementById('app-role-error')).not.toBeNull();
+
+    // 1 回目の再試行も失敗 → エラー画面を維持し、ルートローダは発火しない
+    (document.getElementById('app-role-retry') as HTMLButtonElement).click();
+    await flush();
+    expect(document.getElementById('app-role-error')).not.toBeNull();
+    expect(calledBatchGet(fetchMock)).toBe(false);
+
+    // 2 回目の再試行で復帰
+    (document.getElementById('app-role-retry') as HTMLButtonElement).click();
+    await flush();
+    await flush();
+    expect(document.getElementById('app-role-error')).toBeNull();
+    expect(document.getElementById('app-content')?.textContent).toContain('プロジェクト概要');
+  });
+
+  test('ロールがセッション中に変わったら現在ルートを再ガードし、不許可なら #/home へ退避する（防御の多重化）', async () => {
+    const stub = createWindowStub({
+      currentProject: PROJECT,
+      counts: { dataRows: 1 } as AppState['counts'],
+    });
+    const { deps } = createFakeDeps([]);
+    const store = await bootstrapApp(asWindow(stub), deps);
+    stub.location.hash = '#/export';
+    stub.fireHashChange();
+    expect(document.getElementById('app-context')?.textContent).toBe(
+      'エクスポート 画面を表示しています',
+    );
+
+    // ロールが reviewer へ変わる → 現在ルート（#/export）が不許可になり #/home へ退避する
+    const current = store?.getState();
+    store?.setState({
+      role: { ...(current as AppState).role, role: 'reviewer_with_ai', folderAccessGranted: true },
+    });
+    expect(toastTexts()).toContain('このプロジェクトではレビュアー権限のため利用できません');
+    expect(stub.location.hash).toBe('#/home');
+    // 退避後の再描画はレビュアー向けの縮退版 Home
+    expect(document.getElementById('app-content')?.textContent).toContain('プロジェクト概要');
+    expect(document.querySelectorAll('#app-nav a')).toHaveLength(2);
   });
 });

@@ -81,4 +81,97 @@ describe('guardRoute', () => {
       expect(guardRoute('#/export', stateWith({ dataRows: 1 }))).toEqual({ allowed: true });
     });
   });
+
+  describe('reviewer 系ロールのナビ制限（docs/design-independent-dual-review.md §3.1）', () => {
+    test.each([
+      'reviewer_with_ai',
+      'reviewer_independent',
+      'adjudicator',
+    ] as const)('%s は #/home と #/verify 以外へ遷移できない', (role) => {
+      const state = stateWith({ evidenceRows: 1 });
+      state.role = { ...state.role, folderAccessGranted: true };
+      for (const hash of ['#/documents', '#/protocol', '#/schema', '#/pilot', '#/extract', '#/dashboard', '#/export']) {
+        expect(guardRoute(hash, state, role)).toEqual({
+          allowed: false,
+          message: 'このプロジェクトではレビュアー権限のため利用できません',
+        });
+      }
+    });
+
+    test('reviewer 系ロールでも #/home は常に許可', () => {
+      const state = createInitialState();
+      expect(guardRoute('#/home', state, 'reviewer_with_ai')).toEqual({ allowed: true });
+    });
+
+    test('owner は制限なし（既定値と同じ）', () => {
+      const state = stateWith({ evidenceRows: 1 });
+      expect(guardRoute('#/documents', state, 'owner')).toEqual({ allowed: true });
+    });
+
+    test('role 省略時は owner 相当（ロール未解決の間は制限しない）', () => {
+      const state = stateWith({ evidenceRows: 1 });
+      expect(guardRoute('#/schema', state)).toEqual({
+        allowed: false,
+        message: 'プロトコルを先に入力してください',
+      });
+    });
+  });
+
+  describe('#/adjudicate（S12。owner / adjudicator のみ許可・counts は問わない）', () => {
+    test.each(['owner', 'adjudicator'] as const)('%s は counts に関わらず許可される', (role) => {
+      expect(guardRoute('#/adjudicate', createInitialState(), role)).toEqual({ allowed: true });
+    });
+
+    test.each(['reviewer_with_ai', 'reviewer_independent'] as const)(
+      '%s は不可（裁定権限メッセージ）',
+      (role) => {
+        expect(guardRoute('#/adjudicate', createInitialState(), role)).toEqual({
+          allowed: false,
+          message: 'このプロジェクトでは裁定権限のため利用できません',
+        });
+      },
+    );
+  });
+
+  describe('#/verify のフォルダアクセス付与ゲート（§7.2）', () => {
+    test('reviewer 系ロールで未付与なら不可（Evidence があっても）', () => {
+      const state = stateWith({ evidenceRows: 1 });
+      expect(state.role.folderAccessGranted).toBe(false);
+      expect(guardRoute('#/verify', state, 'reviewer_with_ai')).toEqual({
+        allowed: false,
+        message: 'プロジェクトフォルダへのアクセス付与が必要です（Home から付与してください）',
+      });
+    });
+
+    test('reviewer 系ロールで付与済みなら許可される（counts は問わない）', () => {
+      const state = stateWith({ evidenceRows: 1 });
+      state.role = { ...state.role, folderAccessGranted: true };
+      expect(guardRoute('#/verify', state, 'reviewer_with_ai')).toEqual({ allowed: true });
+    });
+
+    test('バグ修正: reviewer 系ロールは counts が全 0 でもフォルダアクセス付与済みなら許可される（本番の永久ブロック回避）', () => {
+      // reviewer 系ロールは loadProgressCounts を読まない（盲検）ため state.counts は
+      // 常に初期値 0 のまま。counts ベースの判定を課すと folderAccess を付与しても
+      // 永久に #/verify へ入れなくなる（監査で発見した実バグ）
+      const state = createInitialState();
+      expect(state.counts).toEqual({
+        documents: 0,
+        protocolVersions: 0,
+        schemaVersions: 0,
+        pilotRuns: 0,
+        evidenceRows: 0,
+        dataRows: 0,
+      });
+      state.role = { ...state.role, folderAccessGranted: true };
+      expect(guardRoute('#/verify', state, 'reviewer_with_ai')).toEqual({ allowed: true });
+      expect(guardRoute('#/verify', state, 'reviewer_independent')).toEqual({ allowed: true });
+      expect(guardRoute('#/verify', state, 'adjudicator')).toEqual({ allowed: true });
+    });
+
+    test('owner はフォルダアクセス未付与でも #/verify に到達できる', () => {
+      const state = stateWith({ evidenceRows: 1 });
+      expect(state.role.folderAccessGranted).toBe(false);
+      expect(guardRoute('#/verify', state, 'owner')).toEqual({ allowed: true });
+    });
+  });
 });

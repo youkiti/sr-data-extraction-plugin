@@ -3,6 +3,7 @@
 // - 検証データ束の組み立て / 判定・群構成の永続化は S8 と共有の verificationService へ委譲する
 import type { Decision } from '../../domain/decision';
 import type { DocumentRecord } from '../../domain/document';
+import { annotatorTypeForRole } from '../../domain/reviewer';
 import type { SchemaField } from '../../domain/schemaField';
 import { readDocuments } from '../../features/documents/documentRepository';
 import { readStudies } from '../../features/documents/studyRepository';
@@ -383,6 +384,7 @@ export async function loadPilotVerification(
         fields: runFields,
         evidence: evidence.filter((row) => row.studyId === studyId),
         schemaVersion: run.schemaVersion,
+        annotatorType: annotatorTypeForRole(state.role.role ?? 'owner'),
       },
       deps,
     );
@@ -471,7 +473,7 @@ export async function persistPilotArmConfirmation(
       studyId: verification.study.studyId,
       arms,
       annotator: verification.annotator,
-      annotatorType: 'human_with_ai',
+      annotatorType: verification.annotatorType,
       confirmedAt: (deps.now ?? nowIso8601)(),
     },
     deps,

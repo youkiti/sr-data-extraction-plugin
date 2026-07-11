@@ -226,6 +226,110 @@
   color: var(--color-danger);
 }
 
+/* Home: 独立二重レビュー機能（owner のレビュアー管理カード / reviewer のフォルダアクセス付与ステップ。
+   docs/design-independent-dual-review.md §7・§8.1） */
+.home__reviewers {
+  margin-top: 24px;
+  padding: 16px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  max-width: 640px;
+}
+
+.home__folder-access {
+  margin-top: 16px;
+  padding: 16px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  max-width: 560px;
+}
+
+.reviewers__table {
+  border-collapse: collapse;
+  margin: 8px 0 16px;
+  width: 100%;
+}
+
+.reviewers__table th,
+.reviewers__table td {
+  border: 1px solid var(--color-border);
+  padding: 6px 12px;
+  text-align: left;
+}
+
+.reviewers__actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.reviewers__icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  background: none;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.reviewers__icon-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.reviewers__icon-button:hover:not(:disabled) {
+  background: var(--color-surface);
+  border-color: var(--color-text-muted);
+}
+
+.reviewers__revoke:hover:not(:disabled) {
+  color: var(--color-danger);
+  border-color: var(--color-danger);
+}
+
+.reviewers__form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.reviewers__form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--color-text-muted);
+}
+
+.reviewers__confirm {
+  border: 1px solid var(--color-danger);
+  border-radius: 8px;
+  padding: 16px;
+  margin-top: 12px;
+  display: grid;
+  gap: 8px;
+  max-width: 560px;
+}
+
+.reviewers__confirm-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+/* 未登録（unregistered）の全画面ブロック（design §1） */
+.view--role-blocked {
+  max-width: 560px;
+}
+
 /* #/documents（S3）: 取り込み操作・進捗行・一覧（ui-states.md §3） */
 .documents__actions {
   display: flex;
@@ -1635,7 +1739,10 @@
 
 .verify__chip--edit {
   background: #fef7e0;
-  color: #b06000;
+
+  /* #b06000 は axe（独立入力モードは唯一の値入力操作が edit のため必ず露出する）で
+     WCAG AA コントラスト不足（4.33 : 1）を検出。#8a4b00 へ濃色化して 6.35 : 1 を確保する */
+  color: #8a4b00;
   border-color: #fbbc04;
 }
 
@@ -1654,6 +1761,13 @@
 
 .verify__ai {
   margin: 6px 0;
+}
+
+/* 独立入力モード（design §5.2）: AI 値の代わりに出す抽出指示（AI 出力ではないため表示可） */
+.verify__instruction {
+  margin: 6px 0;
+  color: var(--color-text-muted);
+  font-size: 13px;
 }
 
 .verify__ai--none {
@@ -2464,4 +2578,324 @@
 .export__result a {
   color: var(--color-primary);
   text-decoration: underline;
+}
+
+/* --- 裁定（S12 `#/adjudicate`）------------------------------------------ */
+
+.adjudicate__error {
+  color: var(--color-danger);
+}
+
+.adjudicate__list {
+  border-collapse: collapse;
+  margin: 8px 0 16px;
+  width: 100%;
+}
+
+.adjudicate__list th,
+.adjudicate__list td {
+  border: 1px solid var(--color-border);
+  padding: 6px 12px;
+  text-align: left;
+}
+
+.adjudicate__list-row--dimmed {
+  color: var(--color-text-muted);
+}
+
+.adjudicate__working-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.adjudicate__arm-card {
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface);
+  padding: 12px 16px;
+  margin: 12px 0;
+}
+
+.adjudicate__arm-compare {
+  display: flex;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+
+.adjudicate__arm-list h5 {
+  margin: 0 0 4px;
+}
+
+.adjudicate__arm-match-note {
+  color: var(--color-primary);
+  font-weight: 700;
+}
+
+.adjudicate__arm-mismatch-note {
+  color: var(--color-danger);
+}
+
+.adjudicate__arm-draft-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 6px;
+  align-items: center;
+}
+
+.adjudicate__arm-draft-input {
+  flex: 1 1 240px;
+}
+
+.adjudicate__panes {
+  display: flex;
+  gap: 12px;
+  align-items: stretch;
+  min-height: 480px;
+}
+
+.adjudicate__pane--pdf {
+  flex: 1 1 560px;
+  min-width: 480px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.adjudicate__pane--cells {
+  flex: 1 1 560px;
+  min-width: 360px;
+  max-height: 75vh;
+  overflow-y: auto;
+}
+
+.adjudicate__pdf-pane {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.adjudicate__pdf-body {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.adjudicate__pdf-body > * {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.adjudicate__pdf-loading,
+.adjudicate__pdf-error {
+  padding: 16px;
+}
+
+.adjudicate__pdf-error {
+  color: var(--color-danger);
+}
+
+.adjudicate__doc-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 6px;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+
+.adjudicate__doc-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 240px;
+  padding: 3px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.adjudicate__doc-tab--active {
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+}
+
+.adjudicate__doc-role {
+  flex: none;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  padding: 1px 6px;
+  font-size: 11px;
+}
+
+.adjudicate__doc-filename {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.adjudicate__cells-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+.adjudicate__filter-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.adjudicate__cells {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+.adjudicate__cells th,
+.adjudicate__cells td {
+  border: 1px solid var(--color-border);
+  padding: 6px 10px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.adjudicate__cell-label {
+  font-weight: 700;
+  margin-right: 6px;
+}
+
+.adjudicate__badge {
+  display: inline-block;
+  margin-left: 4px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  border: 1px solid var(--color-warning-border);
+  background: var(--color-warning-bg);
+  color: var(--color-danger);
+}
+
+.adjudicate__chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  border: 1px solid transparent;
+}
+
+.adjudicate__chip--match,
+.adjudicate__chip--accept {
+  background: #e6f4ea;
+  color: #137333;
+  border-color: #34a853;
+}
+
+.adjudicate__chip--mismatch,
+.adjudicate__chip--reject {
+  background: #fce8e6;
+  color: #c5221f;
+  border-color: #ea4335;
+}
+
+.adjudicate__chip--edit {
+  background: #fef7e0;
+  color: #8a4b00;
+  border-color: #fbbc04;
+}
+
+.adjudicate__chip--not_reported,
+.adjudicate__chip--skipped {
+  background: #e8eaed;
+  color: #3c4043;
+  border-color: #bdc1c6;
+}
+
+.adjudicate__cell-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.adjudicate__custom-input {
+  flex: 1 1 120px;
+  min-width: 100px;
+}
+
+.adjudicate__current-value {
+  color: var(--color-text-muted);
+  font-size: 13px;
+}
+
+.adjudicate__locked-note {
+  color: var(--color-text-muted);
+  font-size: 13px;
+}
+
+/* 裁定アクションボタンは対応する状態チップ（上記 .adjudicate__chip--*）と同じ色系統に揃える
+   （verify__action と同じ考え方。ボタン ↔ チップの色対応で操作の意味が一目でわかるようにする） */
+.adjudicate__action--choose-a {
+  background: #e8f0fe;
+  border-color: #4285f4;
+  color: #174ea6;
+}
+
+.adjudicate__action--choose-b {
+  background: #f3e8fd;
+  border-color: #a142f4;
+  color: #681da8;
+}
+
+.adjudicate__action--custom {
+  background: #fef7e0;
+  border-color: #fbbc04;
+  color: #965200;
+}
+
+.adjudicate__action--not-reported {
+  background: #f1f3f4;
+  border-color: #bdc1c6;
+  color: #3c4043;
+}
+
+.adjudicate__action--skip,
+.adjudicate__action--undo,
+.adjudicate__action--unskip {
+  background: #fff;
+  border-color: #dadce0;
+  color: #5f6368;
+}
+
+.adjudicate__action--choose-a:hover:not(:disabled) {
+  background: #d2e3fc;
+}
+
+.adjudicate__action--choose-b:hover:not(:disabled) {
+  background: #e9d2fb;
+}
+
+.adjudicate__action--custom:hover:not(:disabled) {
+  background: #feefc3;
+}
+
+.adjudicate__action--not-reported:hover:not(:disabled) {
+  background: #e8eaed;
+}
+
+.adjudicate__action--skip:hover:not(:disabled),
+.adjudicate__action--undo:hover:not(:disabled),
+.adjudicate__action--unskip:hover:not(:disabled) {
+  background: #f1f3f4;
 }

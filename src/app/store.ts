@@ -1,10 +1,17 @@
 // メインビューの中央ストア（単方向フロー）。view は render(state) の純粋関数とし、
 // 状態変更は必ず setState 経由で行う（architecture.md §2.2）
+import type { ConfirmedArmStructure } from '../domain/armStructure';
+import type { Decision } from '../domain/decision';
 import type { DocumentRecord } from '../domain/document';
 import type { StudyRecord } from '../domain/study';
 import type { Evidence } from '../domain/evidence';
 import type { ExportFormat } from '../domain/exportLog';
 import type { ExtractionRun } from '../domain/extractionRun';
+import type { ProjectRole, ReviewerAssignment, ReviewerRole, ReviewMode } from '../domain/reviewer';
+import type { AnnotatorPairResolution } from '../features/adjudication/pairResolution';
+import type { StudyGate } from '../features/adjudication/gate';
+import type { AdjudicationCell } from '../features/adjudication/cellMatch';
+import type { DraftArmRow } from '../features/adjudication/armMatch';
 import type { BuiltExport } from '../features/export/buildExport';
 import type { ProjectRef } from '../domain/project';
 import type { Protocol } from '../domain/protocol';
@@ -14,6 +21,7 @@ import type { BatchFailure, RunProgress } from '../features/extraction/executeRu
 import type { ExtractStudyRow } from '../features/extraction/studyProgress';
 import type { ProgressCounts } from '../features/project/progressCounts';
 import type { DashboardData } from '../features/verification/dashboard';
+import type { LoadedPdfView } from '../features/verification/pdfViewCache';
 import type { SchemaEditorRow } from '../features/schema/types';
 import type { FieldValidationError } from '../features/schema/validateField';
 import type { VerificationProgress } from '../features/verification/progress';
@@ -30,6 +38,45 @@ export interface HomeState {
   countsLoaded: boolean;
   countsLoading: boolean;
   countsError: string | null;
+}
+
+/**
+ * プロジェクトに対する実効ロールの解決状態（独立二重レビュー機能。
+ * docs/design-independent-dual-review.md §1・§3.1）。bootstrap の起動シーケンスで
+ * プロジェクト読込後に 1 回解決する（roleService.loadRole）。role = null は未解決（起動直後 /
+ * プロジェクト未選択）を表し、ガード・ナビ描画は既定で 'owner' 相当（制限なし）として扱う
+ */
+export interface RoleState {
+  role: ProjectRole | null;
+  resolving: boolean;
+  /** ロール解決自体の失敗（ネットワーク等）。unregistered はエラーではなくロール値で表現する */
+  error: string | null;
+  /**
+   * reviewer 系ロールのプロジェクトフォルダアクセス付与済みか（§7.2）。owner は不要なため
+   * 常に true 扱いにする。付与前は #/verify 入場をガードで塞ぐ
+   */
+  folderAccessGranted: boolean;
+  folderAccessChecking: boolean;
+  folderAccessError: string | null;
+}
+
+/** owner の「レビュアー管理」カード（Home。§7.1・§2.1）が使う入力 1 件分 */
+export interface ReviewerFormInput {
+  email: string;
+  role: ReviewerRole;
+  reviewMode: ReviewMode | null;
+}
+
+/** owner の「レビュアー管理」カードの状態 */
+export interface ReviewersState {
+  /** email ごとに畳み込んだ現在の登録状態（revoked 含む）。null = 未読込 */
+  assignments: ReviewerAssignment[] | null;
+  loading: boolean;
+  loadError: string | null;
+  saving: boolean;
+  saveError: string | null;
+  /** モード変更確認ダイアログ（既存 reviewer のモードを変える送信時に表示）。null = 非表示 */
+  confirmingChange: ReviewerFormInput | null;
 }
 
 /** 取り込み進捗 1 行の段階（ui-states.md §3「コピー → テキスト抽出の 2 段階表示」+ 前後の状態） */
@@ -259,6 +306,68 @@ export interface ExportState {
   result: ExportResultInfo | null;
 }
 
+/** `#/adjudicate`（S12。docs/design-independent-dual-review.md §6）一覧 1 study ぶんの行 */
+export interface AdjudicateStudyRow {
+  study: StudyRecord;
+  pair: AnnotatorPairResolution;
+  /** pair.kind === 'ready' のときのみ非 null */
+  gate: StudyGate | null;
+}
+
+/**
+ * 裁定中の 1 study ぶんの作業データ（study 切替のたびに作り直す）。
+ * PDF ビューア素材は VerificationData と同様に遅延読込のフックとして持つ
+ * （features/verification/pdfViewCache の LRU キャッシュを内部に閉じ込める）
+ */
+export interface AdjudicateWorking {
+  study: StudyRecord;
+  /** study 配下の文書（role 固定順 → 取り込み順） */
+  documents: DocumentRecord[];
+  annotatorA: string;
+  annotatorB: string;
+  /** 突き合わせに使う表のデザイン（最新確定版）の全項目 */
+  fields: SchemaField[];
+  schemaVersion: number;
+  armsA: readonly { armKey: string; armName: string }[];
+  armsB: readonly { armKey: string; armName: string }[];
+  /** 群構成が必要なスキーマか（arm / outcome_result 項目の有無） */
+  needsArmConfirmation: boolean;
+  /** 本数・名称が位置対応で完全一致するか（§6.2） */
+  armsMatched: boolean;
+  /** 確定済みの consensus 群構成。null = 未確定（arm / outcome_result セルはロック） */
+  consensusArmStructure: ConfirmedArmStructure | null;
+  /** 群構成確定カードの編集用ドラフト（未確定時のみ画面が使う） */
+  armDraft: DraftArmRow[];
+  /** 両 annotator の現在値を突き合わせたセル一覧（study 切替時に 1 度だけ計算するスナップショット） */
+  cells: AdjudicationCell[];
+  /** consensus 自身の判定履歴（study 内）。セルの裁定状態はこれを畳み込んで導出する */
+  consensusDecisions: Decision[];
+  /** スキップしたセル（セッション内のみ。永続化しない。key = cellKeyOf(fieldId, entityKey)） */
+  skippedCellKeys: string[];
+  /** documentId 1 件ぶんの PDF ビューア素材を遅延読込する（features/verification/pdfViewCache 経由） */
+  loadPdfView(documentId: string): Promise<LoadedPdfView>;
+  retryPdfView(documentId: string): Promise<LoadedPdfView>;
+  disposePdf(): Promise<void>;
+}
+
+/** `#/adjudicate`（S12）の画面状態 */
+export interface AdjudicateState {
+  /** study 一覧（ゲート付き）。null = 未読込 */
+  rows: AdjudicateStudyRow[] | null;
+  loading: boolean;
+  loadError: string | null;
+  /** URL クエリ ?study= と同期する選択中 study */
+  selectedStudyId: string | null;
+  working: AdjudicateWorking | null;
+  workingLoading: boolean;
+  /** 一覧に戻らず画面内に表示するエラー（対象外 study の選択・裁定不可等） */
+  workingError: string | null;
+  /** 書き込み中フラグ（二重送信防止。失敗はトーストのみで状態維持） */
+  saving: boolean;
+  /** セル一覧の「不一致のみ」フィルタ（既定 ON。§6.4） */
+  mismatchOnlyFilter: boolean;
+}
+
 /** #/dashboard（S9）の画面状態 */
 export interface DashboardState {
   /** 集計結果。null = 未読込（画面表示時に読み込む） */
@@ -271,6 +380,10 @@ export interface AppState {
   currentProject: ProjectRef | null;
   counts: ProgressCounts;
   home: HomeState;
+  /** プロジェクトに対する実効ロールの解決状態（独立二重レビュー機能） */
+  role: RoleState;
+  /** owner の「レビュアー管理」カード（Home）の状態 */
+  reviewers: ReviewersState;
   documents: DocumentsState;
   protocol: ProtocolState;
   schema: SchemaState;
@@ -279,6 +392,8 @@ export interface AppState {
   verify: VerifyState;
   dashboard: DashboardState;
   export: ExportState;
+  /** `#/adjudicate`（S12）の画面状態 */
+  adjudicate: AdjudicateState;
   /**
    * #/options へ入る直前のルート（settingsView の「戻る」リンク先）。
    * bootstrap の handleHashChange が #/options 遷移時にのみ更新する。null = 記録なし
@@ -310,6 +425,22 @@ export function createInitialState(): AppState {
       countsLoaded: false,
       countsLoading: false,
       countsError: null,
+    },
+    role: {
+      role: null,
+      resolving: false,
+      error: null,
+      folderAccessGranted: false,
+      folderAccessChecking: false,
+      folderAccessError: null,
+    },
+    reviewers: {
+      assignments: null,
+      loading: false,
+      loadError: null,
+      saving: false,
+      saveError: null,
+      confirmingChange: null,
     },
     documents: {
       records: null,
@@ -409,6 +540,17 @@ export function createInitialState(): AppState {
       data: null,
       loading: false,
       loadError: null,
+    },
+    adjudicate: {
+      rows: null,
+      loading: false,
+      loadError: null,
+      selectedStudyId: null,
+      working: null,
+      workingLoading: false,
+      workingError: null,
+      saving: false,
+      mismatchOnlyFilter: true,
     },
     export: {
       format: 'study_wide',

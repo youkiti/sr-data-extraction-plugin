@@ -25,6 +25,12 @@ export interface CellCardModel {
   highlightInfo: ReadonlyMap<string, CellHighlightInfo>;
   /** テキスト層があるとき true（false なら「本文内を検索」を出さない） */
   canSearchText: boolean;
+  /**
+   * 検証パネルの入力モード（独立二重レビュー機能。design §5.2）。省略時は 'review'。
+   * 'independent'（reviewer_independent）は Evidence quote・ハイライト・AI 値の表示・
+   * accept / reject 操作を描画しない（AI 抽出を一切見せない盲検レビュー）
+   */
+  mode?: 'review' | 'independent';
 }
 
 /** renderCell が実際に呼び出す最小のハンドラ集合 */
@@ -91,6 +97,17 @@ function renderAiSummary(cell: VerificationCell): HTMLElement {
   return el('p', { className: 'verify__ai' }, [el('span', { text: 'AI: ' }), ...parts]);
 }
 
+/**
+ * 独立入力モードで AI 値の代わりに出す抽出指示（design §5.2: 「フィールドのラベル +
+ * extraction_instruction（何を抽出するかの定義はスキーマ由来であり AI 出力ではないため表示可）」）
+ */
+function renderExtractionInstruction(cell: VerificationCell): HTMLElement {
+  return el('p', {
+    className: 'verify__instruction',
+    text: cell.field.extractionInstruction,
+  });
+}
+
 function renderQuote(
   cell: VerificationCell,
   model: CellCardModel,
@@ -144,6 +161,7 @@ function renderEditor(
   cell: VerificationCell,
   action: 'edit' | 'reject',
   handlers: CellCardHandlers,
+  mode: 'review' | 'independent',
 ): HTMLElement {
   const input = el('input', {
     className: 'verify__edit-input',
@@ -152,13 +170,17 @@ function renderEditor(
       'aria-label': `${cell.field.fieldLabel} の値`,
     },
   });
-  // edit は現在値（未検証なら AI 値）から修正し、reject は白紙から手入力する（§4.2）
+  // edit は現在値（未検証なら AI 値）から修正し、reject は白紙から手入力する（§4.2）。
+  // 独立入力モードは AI 値を一切見せないため、確定値が無ければ空欄から始める（design §5.2）
   if (action === 'edit') {
-    input.value = cell.state.value ?? cell.evidence?.value ?? '';
+    const aiValue = mode === 'independent' ? undefined : cell.evidence?.value;
+    input.value = cell.state.value ?? aiValue ?? '';
   }
+  // 独立入力モードは「AI 値の修正」ではなく「自分で値を入力する」ため文言を言い換える
+  // （reject は独立入力モードでは到達しない操作。renderActions が棄却ボタンを出さない）
   const confirmButton = el('button', {
     className: 'verify__edit-confirm',
-    text: action === 'edit' ? '修正して確定' : '棄却して確定',
+    text: mode === 'independent' ? '入力して確定' : action === 'edit' ? '修正して確定' : '棄却して確定',
     attributes: { type: 'button' },
   });
   confirmButton.addEventListener('click', () =>
@@ -180,7 +202,52 @@ function renderEditor(
   return el('div', { className: 'verify__editor' }, [input, confirmButton, cancelButton]);
 }
 
-function renderActions(cell: VerificationCell, handlers: CellCardHandlers): HTMLElement {
+/** 独立入力モードの「入力 (e)」ボタン（承認・棄却は AI 値が無いため出さない。design §5.2） */
+function renderEditButton(cell: VerificationCell, handlers: CellCardHandlers, label: string): HTMLElement {
+  const edit = el('button', {
+    className: 'verify__action verify__action--edit',
+    text: label,
+    attributes: { type: 'button' },
+  });
+  edit.addEventListener('click', () => handlers.onStartEdit(cell.cellKey, 'edit'));
+  return edit;
+}
+
+function renderNotReportedButton(cell: VerificationCell, handlers: CellCardHandlers): HTMLElement {
+  const notReported = el('button', {
+    className: 'verify__action verify__action--not-reported',
+    text: '未報告 (n)',
+    attributes: { type: 'button' },
+  });
+  notReported.addEventListener('click', () => handlers.onNotReported(cell.cellKey));
+  return notReported;
+}
+
+function renderUndoButton(cell: VerificationCell, handlers: CellCardHandlers): HTMLElement {
+  const undo = el('button', {
+    className: 'verify__action verify__action--undo',
+    text: '戻す (z)',
+    attributes: { type: 'button' },
+  });
+  undo.disabled = cell.state.stack.length === 0;
+  undo.addEventListener('click', () => handlers.onUndo(cell.cellKey));
+  return undo;
+}
+
+function renderActions(
+  cell: VerificationCell,
+  handlers: CellCardHandlers,
+  mode: 'review' | 'independent',
+): HTMLElement {
+  if (mode === 'independent') {
+    // 独立入力モード（design §5.2）: 承認 / 棄却は AI 値が無いため出さない。
+    // 「入力」「未報告」「戻す」の 3 操作のみ（キーボード a / x の無効化はパネル側で行う）
+    return el('div', { className: 'verify__actions' }, [
+      renderEditButton(cell, handlers, '入力 (e)'),
+      renderNotReportedButton(cell, handlers),
+      renderUndoButton(cell, handlers),
+    ]);
+  }
   const accept = el('button', {
     className: 'verify__action verify__action--accept',
     text: '承認 (a)',
@@ -189,13 +256,6 @@ function renderActions(cell: VerificationCell, handlers: CellCardHandlers): HTML
   accept.disabled = cell.evidence === null;
   accept.addEventListener('click', () => handlers.onAccept(cell.cellKey));
 
-  const edit = el('button', {
-    className: 'verify__action verify__action--edit',
-    text: '修正 (e)',
-    attributes: { type: 'button' },
-  });
-  edit.addEventListener('click', () => handlers.onStartEdit(cell.cellKey, 'edit'));
-
   const reject = el('button', {
     className: 'verify__action verify__action--reject',
     text: '棄却 (x)',
@@ -203,22 +263,13 @@ function renderActions(cell: VerificationCell, handlers: CellCardHandlers): HTML
   });
   reject.addEventListener('click', () => handlers.onStartEdit(cell.cellKey, 'reject'));
 
-  const notReported = el('button', {
-    className: 'verify__action verify__action--not-reported',
-    text: '未報告 (n)',
-    attributes: { type: 'button' },
-  });
-  notReported.addEventListener('click', () => handlers.onNotReported(cell.cellKey));
-
-  const undo = el('button', {
-    className: 'verify__action verify__action--undo',
-    text: '戻す (z)',
-    attributes: { type: 'button' },
-  });
-  undo.disabled = cell.state.stack.length === 0;
-  undo.addEventListener('click', () => handlers.onUndo(cell.cellKey));
-
-  return el('div', { className: 'verify__actions' }, [accept, edit, reject, notReported, undo]);
+  return el('div', { className: 'verify__actions' }, [
+    accept,
+    renderEditButton(cell, handlers, '修正 (e)'),
+    reject,
+    renderNotReportedButton(cell, handlers),
+    renderUndoButton(cell, handlers),
+  ]);
 }
 
 /**
@@ -247,7 +298,14 @@ export function renderCell(
     headerChildren.push(collapseButton);
   }
   const header = el('div', { className: 'verify__cell-header' }, headerChildren);
-  const children: HTMLElement[] = [header, renderAiSummary(cell)];
+  const mode = model.mode ?? 'review';
+  // 独立入力モード（design §5.2）: AI 値・quote・ハイライトは一切描画しない
+  // （出所文書の分岐に依らず、mode で明示的にゲートする）。代わりにスキーマ由来の
+  // extraction_instruction を出す（AI 出力ではないため表示してよい）
+  const children: HTMLElement[] = [
+    header,
+    mode === 'independent' ? renderExtractionInstruction(cell) : renderAiSummary(cell),
+  ];
   if (cell.state.status !== 'unverified') {
     children.push(
       el('p', {
@@ -256,14 +314,14 @@ export function renderCell(
       }),
     );
   }
-  const quote = renderQuote(cell, model, handlers);
+  const quote = mode === 'independent' ? null : renderQuote(cell, model, handlers);
   if (quote !== null) {
     children.push(quote);
   }
   if (model.editing !== null && model.editing.cellKey === cell.cellKey) {
-    children.push(renderEditor(cell, model.editing.action, handlers));
+    children.push(renderEditor(cell, model.editing.action, handlers, mode));
   } else {
-    children.push(renderActions(cell, handlers));
+    children.push(renderActions(cell, handlers, mode));
   }
   const node = el('div', { className: 'verify__cell', attributes: { tabindex: '-1' } }, children);
   node.dataset['cellKey'] = cell.cellKey;

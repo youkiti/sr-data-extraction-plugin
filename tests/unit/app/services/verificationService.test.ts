@@ -113,6 +113,7 @@ function makeBundleInput(overrides: Partial<VerificationBundleInput> = {}): Veri
     fields: [],
     evidence: [],
     schemaVersion: 1,
+    annotatorType: 'human_with_ai',
     ...overrides,
   };
 }
@@ -156,6 +157,14 @@ beforeEach(() => {
 });
 
 describe('loadVerificationBundle', () => {
+  test('annotatorType は呼び出し側の入力をそのまま束へ渡す（独立二重レビュー機能 §5.2）', async () => {
+    const { verification } = await loadVerificationBundle(
+      makeBundleInput({ annotatorType: 'human_independent' }),
+      makeDeps(),
+    );
+    expect(verification.annotatorType).toBe('human_independent');
+  });
+
   test('PDF バイナリを 1 件も読まず、extracted_texts だけを先読みする（issue #28 案3）', async () => {
     getFileTextMock.mockResolvedValue('page one\fpage two');
     const { verification } = await loadVerificationBundle(makeBundleInput(), makeDeps());

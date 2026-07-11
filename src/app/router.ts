@@ -11,6 +11,7 @@ import { renderExtractView } from './views/extractView';
 import { renderVerifyView } from './views/verifyView';
 import { renderDashboardView } from './views/dashboardView';
 import { renderExportView } from './views/exportView';
+import { renderAdjudicateView } from './views/adjudicateView';
 import { renderSettingsView } from './views/settingsView';
 
 export type RouteHash =
@@ -23,6 +24,7 @@ export type RouteHash =
   | '#/verify'
   | '#/dashboard'
   | '#/export'
+  | '#/adjudicate'
   | '#/options';
 
 export interface RouteDefinition {
@@ -42,6 +44,7 @@ export const ROUTES: RouteDefinition[] = [
   { hash: '#/verify', label: '検証', render: renderVerifyView },
   { hash: '#/dashboard', label: 'ダッシュボード', render: renderDashboardView },
   { hash: '#/export', label: 'エクスポート', render: renderExportView },
+  { hash: '#/adjudicate', label: '裁定', render: renderAdjudicateView },
 ];
 
 /**

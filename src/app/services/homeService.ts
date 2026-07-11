@@ -1,6 +1,9 @@
 // #/home + ガードの進捗カウント読込サービス。
 // 起動時（bootstrap）に 1 回読み込み、以後は各画面の操作が counts を増分更新する。
-// 読込失敗時は #/home の再読み込みボタン（force）で再取得できる
+// 読込失敗時は #/home の再読み込みボタン（force）で再取得できる。
+// 独立二重レビュー機能（docs/design-independent-dual-review.md §3）: reviewer 系ロールには
+// 進捗カウント（Decisions 総数等の間接的な進捗情報）を見せないため、ロールが解決済みで
+// owner でないと分かっている間はそもそも読み込まない
 import { readProgressCounts } from '../../features/project/progressCounts';
 import type { GoogleApiDeps } from '../../lib/google/types';
 import type { HomeState, Store } from '../store';
@@ -30,6 +33,9 @@ export async function loadProgressCounts(
   const state = store.getState();
   const project = state.currentProject;
   if (!project || state.home.countsLoading) {
+    return;
+  }
+  if (state.role.role !== null && state.role.role !== 'owner') {
     return;
   }
   if (state.home.countsLoaded && options.force !== true) {

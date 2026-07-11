@@ -1,6 +1,7 @@
 import { installChromeMock } from '../../../setup/chrome-mock';
 import {
   createNewProject,
+  extractSpreadsheetId,
   loadExistingProject,
 } from '../../../../src/app/services/projectService';
 import { CURRENT_SCHEMA_VERSION } from '../../../../src/domain/project';
@@ -103,5 +104,38 @@ describe('loadExistingProject', () => {
       name: '既存 SR',
     });
     await expect(loadCurrentProject()).resolves.toEqual(ref);
+  });
+
+  test('スプレッドシート URL を貼っても ID を抽出して開ける', async () => {
+    const ref = await loadExistingProject(
+      'https://docs.google.com/spreadsheets/d/SID-9/edit#gid=0',
+      { google: makeGoogle(), profile },
+    );
+    expect(ref.spreadsheetId).toBe('SID-9');
+  });
+});
+
+describe('extractSpreadsheetId', () => {
+  test('スプレッドシート URL から ID を抽出する', () => {
+    expect(extractSpreadsheetId('https://docs.google.com/spreadsheets/d/1AbC-_9/edit')).toBe(
+      '1AbC-_9',
+    );
+  });
+
+  test('/edit#gid やクエリ付き URL でも ID だけを取り出す', () => {
+    expect(
+      extractSpreadsheetId('https://docs.google.com/spreadsheets/d/1AbC-_9/edit#gid=123'),
+    ).toBe('1AbC-_9');
+    expect(
+      extractSpreadsheetId('https://docs.google.com/spreadsheets/d/1AbC-_9/edit?usp=sharing'),
+    ).toBe('1AbC-_9');
+  });
+
+  test('ID 直打ちは前後空白を除いてそのまま返す', () => {
+    expect(extractSpreadsheetId('  1AbC-_9  ')).toBe('1AbC-_9');
+  });
+
+  test('/spreadsheets/d/ を含まない文字列はそのまま（trim のみ）返す', () => {
+    expect(extractSpreadsheetId(' not-a-url ')).toBe('not-a-url');
   });
 });

@@ -60,6 +60,20 @@ describe('loadProgressCounts', () => {
     expect(readCountsMock).not.toHaveBeenCalled();
   });
 
+  test('reviewer 系ロールが解決済みなら何もしない（Decisions 総数等を見せない。design §3）', async () => {
+    const store = makeStore();
+    store.setState({ role: { ...store.getState().role, role: 'reviewer_with_ai' } });
+    await loadProgressCounts(store, deps);
+    expect(readCountsMock).not.toHaveBeenCalled();
+  });
+
+  test('ロール未解決（role=null）なら通常どおり読み込む（owner 相当の既定挙動）', async () => {
+    readCountsMock.mockResolvedValue(COUNTS);
+    const store = makeStore();
+    await loadProgressCounts(store, deps);
+    expect(readCountsMock).toHaveBeenCalled();
+  });
+
   test('読込済みなら no-op、force で強制再取得する', async () => {
     readCountsMock.mockResolvedValue(COUNTS);
     const store = makeStore();

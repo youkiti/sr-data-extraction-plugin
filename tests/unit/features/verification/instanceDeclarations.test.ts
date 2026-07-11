@@ -52,6 +52,7 @@ describe('buildOutcomeDeclarationDecisions', () => {
       time: null,
       arms: [{ armKey: 'arm:1' }],
       annotator: 'me@example.com',
+      annotatorType: 'human_with_ai',
       schemaVersion: 3,
       decidedAt: '2026-07-09T00:00:00Z',
     });
@@ -72,5 +73,19 @@ describe('buildOutcomeDeclarationDecisions', () => {
     ]);
     expect(isEntityInstanceDeclaration(decisions[0]!)).toBe(true);
     expect(isEntityInstanceDeclaration({ ...decisions[0]!, fieldId: 'f-1' })).toBe(false);
+  });
+
+  test('annotatorType は呼び出し側の入力をそのまま使う（独立入力モード §5.2）', () => {
+    const decisions = buildOutcomeDeclarationDecisions({
+      studyId: 'study-1',
+      outcomeId: 'mortality',
+      time: null,
+      arms: [{ armKey: 'arm:1' }],
+      annotator: 'reviewer@example.com',
+      annotatorType: 'human_independent',
+      schemaVersion: 3,
+      decidedAt: '2026-07-09T00:00:00Z',
+    });
+    expect(decisions[0]?.annotatorType).toBe('human_independent');
   });
 });

@@ -1,0 +1,316 @@
+// `#/adjudicate`（S12。docs/design-independent-dual-review.md §6・§9 PR3）のルート別 E2E。
+// owner 視点で、2 名の human annotator（reviewer-a / reviewer-b）分のデータを seam で注入し:
+//   ① study 一覧のゲート（未完了 study のディム表示。値・判定内訳は見せない）
+//   ② 群構成一致の「このまま採用」1 クリック → ArmStructures へ annotator='consensus' で追記
+//   ③ 一致セルの一括採用 → StudyData / ResultsData / Decisions へ annotator='consensus' で追記
+//   ④ 不一致セルの個別裁定（A を採用）→ StudyData 追記 + Decisions（action='edit'）追記
+//   ⑤ axe
+// を実弾（Sheets stub への書き込み URL・body の検証）で確認する。
+// PDF 参照ペインは簡略版（PDF 表示 + テキスト検索のみ。Evidence ハイライトは省略）のため、
+// 実 PDF 配信は canvas 描画の疎通確認のみに使う（他 spec と同じ最小 PDF ヘルパ）
+import { expect, test, type Page } from '@playwright/test';
+import AxeBuilder from '@axe-core/playwright';
+import { SHEET_HEADERS, SHEET_TABS } from '../../src/domain/sheetsSchema';
+
+const PROJECT = {
+  projectId: 'e2e-project',
+  spreadsheetId: 'e2e-sheet',
+  driveFolderId: 'e2e-folder',
+  name: 'E2E プロジェクト',
+};
+
+const OWNER = 'owner@example.com';
+const REVIEWER_A = 'reviewer-a@example.com';
+const REVIEWER_B = 'reviewer-b@example.com';
+
+/** app 実行に必要な最小 chrome API モック（Picker 関連の外部メッセージングは含めない） */
+async function installChromeStub(page: Page, email: string): Promise<void> {
+  await page.addInitScript((userEmail) => {
+    const win = window as unknown as Record<string, unknown>;
+    win.chrome = {
+      storage: {
+        local: {
+          get: async () => ({}),
+          set: async () => undefined,
+          remove: async () => undefined,
+        },
+      },
+      runtime: { id: 'e2e-extension-id', getURL: (p: string) => `/${p}` },
+      tabs: { create: async () => ({ id: 1 }) },
+      identity: {
+        getAuthToken: (_opts: unknown, cb: (token?: string) => void) => {
+          cb('e2e-token');
+        },
+        removeCachedAuthToken: (_details: unknown, cb: () => void) => {
+          cb();
+        },
+        getProfileUserInfo: (_opts: unknown, cb: (info: unknown) => void) => {
+          cb({ email: userEmail, id: '1' });
+        },
+      },
+    };
+  }, email);
+}
+
+/** テキスト層つきの最小 1 ページ PDF（他 spec と同じ手組み構成） */
+function minimalPdf(text: string): Buffer {
+  const content = `BT /F1 12 Tf 72 720 Td (${text}) Tj ET`;
+  const objects = [
+    '',
+    '1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n',
+    '2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n',
+    '3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>\nendobj\n',
+    `4 0 obj\n<< /Length ${content.length} >>\nstream\n${content}\nendstream\nendobj\n`,
+    '5 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n',
+  ];
+  let pdf = '%PDF-1.4\n';
+  const offsets: number[] = [0];
+  for (let i = 1; i < objects.length; i++) {
+    offsets[i] = pdf.length;
+    pdf += objects[i];
+  }
+  const xrefStart = pdf.length;
+  pdf += `xref\n0 ${objects.length}\n0000000000 65535 f \n`;
+  for (let i = 1; i < objects.length; i++) {
+    pdf += `${String(offsets[i]).padStart(10, '0')} 00000 n \n`;
+  }
+  pdf += `trailer\n<< /Size ${objects.length} /Root 1 0 R >>\nstartxref\n${xrefStart}\n%%EOF`;
+  return Buffer.from(pdf, 'latin1');
+}
+
+const SCHEMA_VERSIONS_HEADERS = [...SHEET_HEADERS.SchemaVersions];
+const SCHEMA_VERSION_ROW = ['1', '', '1', 'ai_draft', 't0', OWNER, ''];
+
+const SCHEMA_FIELDS_HEADERS = [
+  'schema_version', 'field_id', 'field_index', 'section', 'field_name', 'field_label',
+  'entity_level', 'data_type', 'unit', 'allowed_values', 'required', 'extraction_instruction',
+  'example', 'ai_generated', 'note',
+];
+// study レベル 2 項目（mortality_pct = 一致・mean_age = 不一致）+ arm レベル 1 項目（arm_name = 一致）
+const FIELD_MORTALITY = ['1', 'f-mortality', '1', 'results', 'mortality_pct', '死亡率', 'study', 'text', '', '', 'FALSE', '死亡率を抽出', '', 'FALSE', ''];
+const FIELD_AGE = ['1', 'f-age', '2', 'population', 'mean_age', '平均年齢', 'study', 'text', '', '', 'FALSE', '平均年齢を抽出', '', 'FALSE', ''];
+const FIELD_ARM = ['1', 'f-arm', '3', 'arms', 'arm_name', '群名', 'arm', 'text', '', '', 'FALSE', '群名を抽出', '', 'FALSE', ''];
+
+const STUDY_DATA_HEADERS = [...SHEET_HEADERS.StudyData, 'mortality_pct', 'mean_age'];
+// study-1: 両者そろい、mortality は一致・age は不一致 → ゲート ready
+const STUDY_DATA_ROW_A1 = ['study-1', REVIEWER_A, 'human_with_ai', '1', '', 't0', '12', '45'];
+const STUDY_DATA_ROW_B1 = ['study-1', REVIEWER_B, 'human_with_ai', '1', '', 't0', '12', '50'];
+// study-2: reviewer-a のみ → pair=waiting（両者の検証完了待ち）
+const STUDY_DATA_ROW_A2 = ['study-2', REVIEWER_A, 'human_with_ai', '1', '', 't0', '', ''];
+
+const RESULTS_DATA_HEADERS = [...SHEET_HEADERS.ResultsData];
+const RESULTS_ROW_A = ['r-a', 'study-1', 'f-arm', REVIEWER_A, 'human_with_ai', '1', 'arm:1', '', '介入群', 'FALSE', 't0'];
+const RESULTS_ROW_B = ['r-b', 'study-1', 'f-arm', REVIEWER_B, 'human_with_ai', '1', 'arm:1', '', '介入群', 'FALSE', 't0'];
+
+const ARM_STRUCTURES_HEADERS = [...SHEET_HEADERS.ArmStructures];
+const ARM_ROW_A = ['study-1', '1', 'arm:1', '介入群', REVIEWER_A, 'human_with_ai', 't0', ''];
+const ARM_ROW_B = ['study-1', '1', 'arm:1', '介入群', REVIEWER_B, 'human_with_ai', 't0', ''];
+
+const DECISIONS_HEADERS = [...SHEET_HEADERS.Decisions];
+function decisionRow(
+  fieldId: string,
+  entityKey: string,
+  annotator: string,
+  action: string,
+  value: string,
+): string[] {
+  return ['t0', annotator, 'study-1', fieldId, entityKey, annotator, 'human_with_ai', '1', action, value, ''];
+}
+// study-1 の両者が study レベル 2 項目 + arm レベル 1 項目をすべて判定済み（ゲート 100%）
+const STUDY1_DECISIONS = [
+  decisionRow('f-mortality', '-', REVIEWER_A, 'accept', '12'),
+  decisionRow('f-mortality', '-', REVIEWER_B, 'accept', '12'),
+  decisionRow('f-age', '-', REVIEWER_A, 'accept', '45'),
+  decisionRow('f-age', '-', REVIEWER_B, 'edit', '50'),
+  decisionRow('f-arm', 'arm:1', REVIEWER_A, 'accept', '介入群'),
+  decisionRow('f-arm', 'arm:1', REVIEWER_B, 'accept', '介入群'),
+];
+
+interface RouteRecorder {
+  /** POST（append）の書き込み URL + body */
+  appends: { url: string; body: Record<string, unknown> }[];
+}
+
+async function setupRoutes(page: Page): Promise<RouteRecorder> {
+  const appends: { url: string; body: Record<string, unknown> }[] = [];
+
+  await page.route('https://sheets.googleapis.com/**', async (route) => {
+    const url = decodeURIComponent(route.request().url());
+    const method = route.request().method();
+    if (method === 'GET') {
+      if (url.includes('fields=sheets.properties.title')) {
+        await route.fulfill({ json: { sheets: SHEET_TABS.map((title) => ({ properties: { title } })) } });
+      } else if (url.includes('/values/SchemaVersions')) {
+        await route.fulfill({ json: { values: [SCHEMA_VERSIONS_HEADERS, SCHEMA_VERSION_ROW] } });
+      } else if (url.includes('/values/SchemaFields')) {
+        await route.fulfill({ json: { values: [SCHEMA_FIELDS_HEADERS, FIELD_MORTALITY, FIELD_AGE, FIELD_ARM] } });
+      } else if (url.includes('/values/StudyData')) {
+        await route.fulfill({ json: { values: [STUDY_DATA_HEADERS, STUDY_DATA_ROW_A1, STUDY_DATA_ROW_B1, STUDY_DATA_ROW_A2] } });
+      } else if (url.includes('/values/ResultsData')) {
+        await route.fulfill({ json: { values: [RESULTS_DATA_HEADERS, RESULTS_ROW_A, RESULTS_ROW_B] } });
+      } else if (url.includes('/values/ArmStructures')) {
+        await route.fulfill({ json: { values: [ARM_STRUCTURES_HEADERS, ARM_ROW_A, ARM_ROW_B] } });
+      } else if (url.includes('/values/Decisions')) {
+        await route.fulfill({ json: { values: [DECISIONS_HEADERS, ...STUDY1_DECISIONS] } });
+      } else {
+        await route.fulfill({ json: { values: [] } });
+      }
+      return;
+    }
+    if (url.includes(':append')) {
+      const postData = route.request().postData() ?? '{}';
+      appends.push({ url, body: JSON.parse(postData) as Record<string, unknown> });
+    }
+    await route.fulfill({ json: {} });
+  });
+
+  await page.route('https://www.googleapis.com/**', async (route) => {
+    const url = decodeURIComponent(route.request().url());
+    if (url.includes('alt=media')) {
+      await route.fulfill({ contentType: 'application/pdf', body: minimalPdf('Smith 2020') });
+      return;
+    }
+    await route.fulfill({ json: {} });
+  });
+
+  return { appends };
+}
+
+function docRecord(documentId: string, studyId: string, driveFileId: string, filename: string): Record<string, unknown> {
+  return {
+    documentId,
+    studyId,
+    documentRole: 'article',
+    driveFileId,
+    sourceFileId: `src-${documentId}`,
+    filename,
+    pmid: null,
+    doi: null,
+    textRef: null,
+    textStatus: 'ok',
+    pageCount: 1,
+    charCount: 100,
+    importedAt: '2026-07-01T00:00:00Z',
+    importedBy: OWNER,
+    note: null,
+  };
+}
+
+function studyRecord(studyId: string, studyLabel: string): Record<string, unknown> {
+  return { studyId, studyLabel, registrationId: null, createdAt: '2026-07-01T00:00:00Z', createdBy: OWNER, note: null };
+}
+
+function documentsSlice(): Record<string, unknown> {
+  return {
+    records: [docRecord('doc-1', 'study-1', 'drive-1', 'smith2020.pdf'), docRecord('doc-2', 'study-2', 'drive-2', 'jones2021.pdf')],
+    studies: [studyRecord('study-1', 'Smith 2020'), studyRecord('study-2', 'Jones 2021')],
+    extractedStudyIds: [],
+    ignoredCandidateKeys: [],
+    loading: false,
+    loadError: null,
+    importing: false,
+    importRows: [],
+    selectedStudyIds: [],
+    mergeDialog: null,
+    merging: false,
+    mergeError: null,
+  };
+}
+
+async function initApp(page: Page): Promise<void> {
+  await installChromeStub(page, OWNER);
+  await page.addInitScript(
+    (data: { project: typeof PROJECT; documents: Record<string, unknown> }) => {
+      const win = window as unknown as Record<string, unknown>;
+      win.__E2E_PRELOADED_STATE__ = {
+        currentProject: data.project,
+        // owner として振る舞う（role 省略時の既定。§1）。counts は home 集計の噪音を避けるため読込済み扱いにする
+        home: { countsLoaded: true, countsLoading: false, countsError: null },
+        documents: data.documents,
+      };
+    },
+    { project: PROJECT, documents: documentsSlice() },
+  );
+  await page.goto('/app/app.html#/adjudicate');
+}
+
+test('study 一覧のゲート → 群構成の一致採用 → 一致セル一括採用 → 個別裁定（A 採用）まで実弾検証 + axe', async ({ page }) => {
+  const { appends } = await setupRoutes(page);
+  await initApp(page);
+
+  // ① study 一覧: study-1 は「裁定を開始」可、study-2 は両者の検証完了待ちでディム + ボタン無し
+  await expect(page.locator('#adjudicate-list')).toBeVisible({ timeout: 15_000 });
+  const rows = page.locator('#adjudicate-list tbody tr');
+  await expect(rows).toHaveCount(2);
+  const study2Row = page.locator('tr', { hasText: 'Jones 2021' });
+  await expect(study2Row).toHaveClass(/adjudicate__list-row--dimmed/);
+  await expect(study2Row).toContainText('両者の検証完了待ちです');
+  await expect(study2Row.locator('button')).toHaveCount(0);
+  const study1Row = page.locator('tr[data-study-id="study-1"]');
+  await expect(study1Row).not.toHaveClass(/adjudicate__list-row--dimmed/);
+  await expect(study1Row).toContainText(`A（${REVIEWER_A}）: 3/3`);
+  await expect(study1Row).toContainText(`B（${REVIEWER_B}）: 3/3`);
+
+  // study-1 を開く
+  await study1Row.locator('.adjudicate__open-button').click();
+  await expect(page).toHaveURL(/#\/adjudicate\?study=study-1$/);
+  await expect(page.locator('#adjudicate-working')).toBeVisible();
+
+  // ② 群構成: 一致しているので「このまま採用」1 クリックで確定
+  await expect(page.locator('#adjudicate-arm-card')).toContainText('一致しています');
+  await page.locator('#adjudicate-arm-adopt').click();
+  await expect
+    .poll(() => appends.filter((a) => a.url.includes('ArmStructures') && a.url.includes(':append')).length)
+    .toBeGreaterThan(0);
+  const armAppend = appends.find((a) => a.url.includes('ArmStructures'));
+  const armValues = armAppend?.body['values'] as unknown[][];
+  expect(armValues[0]).toEqual(['study-1', 1, 'arm:1', '介入群', 'consensus', 'consensus', expect.any(String), expect.any(String)]);
+  await expect(page.locator('#adjudicate-arm-card')).toContainText('確定済み');
+
+  // ③ 一致セルの一括採用（study レベル mortality_pct + arm レベル arm_name の 2 セル）
+  await expect(page.locator('#adjudicate-summary')).toContainText('一致 2 件 / 不一致 1 件');
+  await page.locator('#adjudicate-accept-all').click();
+  await expect
+    .poll(() => appends.filter((a) => a.url.includes('StudyData') && a.url.includes(':append')).length)
+    .toBeGreaterThan(0);
+  await expect
+    .poll(() => appends.filter((a) => a.url.includes('ResultsData') && a.url.includes(':append')).length)
+    .toBeGreaterThan(0);
+  const studyDataAppend = appends.find((a) => a.url.includes('StudyData'));
+  const studyDataRow = (studyDataAppend?.body['values'] as unknown[][])[0] as unknown[];
+  expect(studyDataRow.slice(0, 3)).toEqual(['study-1', 'consensus', 'consensus']);
+  expect(studyDataRow).toContain('12'); // mortality_pct の一致値
+  const resultsDataAppend = appends.find((a) => a.url.includes('ResultsData'));
+  const resultsDataRow = (resultsDataAppend?.body['values'] as unknown[][])[0] as unknown[];
+  expect(resultsDataRow).toEqual(
+    // run_id は null → 空文字に変換されて送信される（appendRows の既存挙動）
+    expect.arrayContaining(['study-1', 'f-arm', 'consensus', 'consensus', 1, 'arm:1', '', '介入群', false]),
+  );
+  const decisionsAppendsAfterBulk = appends.filter((a) => a.url.includes('Decisions') && a.url.includes(':append'));
+  expect(decisionsAppendsAfterBulk.length).toBeGreaterThan(0);
+  const bulkDecisionRows = decisionsAppendsAfterBulk[0]?.body['values'] as unknown[][];
+  expect(bulkDecisionRows).toHaveLength(2); // mortality + arm_name の 2 件
+  expect(bulkDecisionRows.every((row) => row[5] === 'consensus' && row[8] === 'accept')).toBe(true);
+
+  // ④ 不一致セル（mean_age）の個別裁定: 既定「不一致のみ」フィルタで唯一表示されているセル
+  await expect(page.locator('.adjudicate__cell-row--mismatch')).toHaveCount(1);
+  await expect(page.locator('.adjudicate__cell-row--mismatch')).toContainText('平均年齢');
+  const decisionsAppendCountBeforeChoice = appends.filter((a) => a.url.includes('Decisions') && a.url.includes(':append')).length;
+  await page.locator('.adjudicate__action--choose-a').click();
+  await expect
+    .poll(() => appends.filter((a) => a.url.includes('Decisions') && a.url.includes(':append')).length)
+    .toBeGreaterThan(decisionsAppendCountBeforeChoice);
+  await expect(page.locator('.adjudicate__cell-row--edit')).toContainText('確定値: 45');
+  const lastStudyDataAppend = appends.filter((a) => a.url.includes('StudyData') && a.url.includes(':append')).slice(-1)[0];
+  const lastStudyDataRow = (lastStudyDataAppend?.body['values'] as unknown[][])[0] as unknown[];
+  expect(lastStudyDataRow).toContain('45');
+  const lastDecisionAppend = appends.filter((a) => a.url.includes('Decisions') && a.url.includes(':append')).slice(-1)[0];
+  const lastDecisionRows = lastDecisionAppend?.body['values'] as unknown[][];
+  expect(lastDecisionRows[0]?.[8]).toBe('edit');
+  expect(lastDecisionRows[0]?.[5]).toBe('consensus');
+  expect(lastDecisionRows[0]?.[1]).toBe(OWNER); // decided_by = 裁定者
+
+  // ⑤ axe
+  const results = await new AxeBuilder({ page }).analyze();
+  expect(results.violations).toEqual([]);
+});

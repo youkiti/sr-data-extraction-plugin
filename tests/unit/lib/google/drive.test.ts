@@ -7,6 +7,7 @@ import {
   getFileText,
   listFolderPdfs,
   moveFileToFolder,
+  shareFileWithUser,
   uploadBinaryFile,
   uploadTextFile,
 } from '../../../../src/lib/google/drive';
@@ -357,5 +358,33 @@ describe('copyFile', () => {
     expect((init as RequestInit).method).toBe('POST');
     const body = JSON.parse((init as RequestInit).body as string);
     expect(body).toEqual({ name: 'smith2020.pdf', parents: ['DOCS'] });
+  });
+});
+
+describe('shareFileWithUser', () => {
+  test('permissions.create を writer/type=user で投げる（既定は通知メールなし）', async () => {
+    const fetch = jest.fn().mockResolvedValue(okJson({ id: 'perm-1' }));
+    const deps = { fetch, getAccessToken: jest.fn().mockResolvedValue('t') };
+    await shareFileWithUser('SHEET-1', 'r1@example.com', 'writer', deps);
+    const [url, init] = fetch.mock.calls[0];
+    expect(url).toContain('/drive/v3/files/SHEET-1/permissions');
+    expect(url).toContain('sendNotificationEmail=false');
+    expect((init as RequestInit).method).toBe('POST');
+    expect(JSON.parse((init as RequestInit).body as string)).toEqual({
+      role: 'writer',
+      type: 'user',
+      emailAddress: 'r1@example.com',
+    });
+  });
+
+  test('sendNotificationEmail=true を指定すると通知ありで共有する', async () => {
+    const fetch = jest.fn().mockResolvedValue(okJson({ id: 'perm-2' }));
+    const deps = { fetch, getAccessToken: jest.fn().mockResolvedValue('t') };
+    await shareFileWithUser('FOLDER-1', 'r2@example.com', 'reader', deps, {
+      sendNotificationEmail: true,
+    });
+    const [url] = fetch.mock.calls[0];
+    expect(url).toContain('/drive/v3/files/FOLDER-1/permissions');
+    expect(url).toContain('sendNotificationEmail=true');
   });
 });
