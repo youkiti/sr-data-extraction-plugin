@@ -22,6 +22,7 @@ import type { LLMProvider } from '../../lib/llm/LLMProvider';
 import { missingApiKeyMessage } from '../../lib/llm/modelCatalog';
 import { resolveProviderId, type ProviderConfig } from '../../lib/llm/providerFactory';
 import type { RateLimitPolicy } from '../../lib/llm/rateLimitPolicy';
+import type { VerifyLayoutMode } from '../../lib/storage/settingsStore';
 import { nowIso8601 } from '../../utils/iso8601';
 import type { PilotState, Store } from '../store';
 import { showToast } from '../ui/toast';
@@ -32,6 +33,7 @@ import {
   persistArmConfirmation,
   persistDecisionWrite,
   persistInstanceDeclarations,
+  persistVerifyLayoutMode,
   type QueuedDecisionWrite,
   type VerificationDeps,
 } from './verificationService';
@@ -385,10 +387,24 @@ export async function loadPilotVerification(
       verifyLoading: false,
       verification: bundle.verification,
       studyValues: bundle.studyValues,
+      layoutMode: bundle.layoutMode,
     });
   } catch (err) {
     patchPilot(store, { verifyLoading: false, verifyError: toMessage(err) });
   }
+}
+
+/**
+ * 検証パネルのレイアウトモードを切替える（`#verify-layout-toggle`。パネル側は楽観反映済み）。
+ * store へ反映しつつ settingsStore へ永続化する（S6 / S8 で設定を共有）
+ */
+export async function setPilotLayoutMode(
+  store: Store,
+  deps: PilotServiceDeps,
+  mode: VerifyLayoutMode,
+): Promise<void> {
+  patchPilot(store, { layoutMode: mode });
+  await persistVerifyLayoutMode(mode, deps);
 }
 
 /**

@@ -35,6 +35,14 @@ import {
   type CellState,
 } from '../../features/verification/cellState';
 import {
+  buildFocusUnits,
+  nextPendingCellInUnit,
+  nextPendingUnit,
+  unitOfCell,
+  unitProgress,
+  type FocusUnit,
+} from '../../features/verification/focusUnits';
+import {
   buildDocumentHighlights,
   buildStudyTextMatches,
   type EvidenceHighlight,
@@ -49,12 +57,14 @@ import type {
   VerificationData,
   VerificationDocumentView,
 } from '../../features/verification/types';
+import type { VerifyLayoutMode } from '../../lib/storage/settingsStore';
 import type { renderPdfPageToCanvas } from '../../lib/pdf/renderPage';
 import { nowIso8601 } from '../../utils/iso8601';
 import { nextOutcomeId } from '../../utils/entityKey';
 import { el } from '../ui/dom';
 import { createPdfViewer, type PdfViewerHandle, type ViewerHighlight } from '../ui/pdfViewer';
 import { createTextViewer, type TextViewerSnippet } from '../ui/textViewer';
+import type { VerificationFocusCardModel } from './verificationFocusCard';
 import {
   renderVerificationForm,
   type CellHighlightInfo,
@@ -75,6 +85,13 @@ export interface VerificationPanelOptions {
    * renderCachedVerificationPanel が値の変化を検知して focusEntity を呼ぶ
    */
   focusEntityKey?: string | null;
+  /**
+   * レイアウトモードの初期表示（issue #38。未指定は 'focus'）。読込はサービス層が
+   * 検証データ束の読込時に settingsStore から行う（S6 / S8 で設定を共有）
+   */
+  layoutMode?: VerifyLayoutMode;
+  /** トグル操作（`#verify-layout-toggle`）のたびに呼ばれる。永続化はサービス層の責務 */
+  onLayoutModeChange?: (mode: VerifyLayoutMode) => void;
   now?: () => string;
   /** テスト差し替え用（pdfViewer へ渡す） */
   renderPage?: typeof renderPdfPageToCanvas;
@@ -103,6 +120,78 @@ function nextUndecidedKey(cells: readonly VerificationCell[], startIndex: number
 /** 初期・タブ切替時のフォーカス先。最初の未判定セル → 無ければ先頭セル → それも無ければ null */
 function initialFocusKey(cells: readonly VerificationCell[]): string | null {
   return nextUndecidedKey(cells, 0) ?? cells[0]?.cellKey ?? null;
+}
+
+/**
+ * ユニット内の最初のセル（null をスキップした先頭）。ユニットが空なら null（実データでは
+ * 起こらない防御パス）。export はテスト専用（locateCellInUnit と同じ理由）
+ */
+export function firstCellKeyOfUnit(unit: FocusUnit): string | null {
+  for (const row of unit.rows) {
+    for (const cell of row.cells) {
+      if (cell !== null) {
+        return cell.cellKey;
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * フォーカスモードの初期 / タブ切替時のフォーカス先: 未判定セルを含む最初のユニットの
+ * 最初の未判定セル → 全て判定済みなら先頭ユニットの先頭セル → ユニットが無ければ null
+ */
+function initialFocusKeyForUnits(units: readonly FocusUnit[]): string | null {
+  const unit = nextPendingUnit(units, null) ?? units[0] ?? null;
+  if (unit === null) {
+    return null;
+  }
+  return nextPendingCellInUnit(unit, null) ?? firstCellKeyOfUnit(unit);
+}
+
+/**
+ * ユニット内でのセル位置（行 / 列インデックス）。見つからなければ null。
+ * export はテスト専用（null セルを含むユニットは buildFocusUnits の防御パスでしか
+ * 生成されず実データでは再現できないため、focusUnits.test.ts と同様に手組みの
+ * FocusUnit を使って直接検証する）
+ */
+export function locateCellInUnit(unit: FocusUnit, cellKey: string): { row: number; col: number } | null {
+  for (let row = 0; row < unit.rows.length; row++) {
+    const cells = (unit.rows[row] as FocusUnit['rows'][number]).cells;
+    for (let col = 0; col < cells.length; col++) {
+      if (cells[col]?.cellKey === cellKey) {
+        return { row, col };
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * from の位置から axis 方向へ delta 分だけ移動し、null セルはスキップする（行 / 列とも同様に扱う。
+ * ui-flow.md §7）。範囲外に出たら null（呼び出し側は現在位置に留まる = 「端で停止」）。
+ * export はテスト専用（locateCellInUnit と同じ理由）
+ */
+export function stepUnitPosition(
+  unit: FocusUnit,
+  from: { row: number; col: number },
+  axis: 'row' | 'col',
+  delta: number,
+): string | null {
+  let row = from.row;
+  let col = from.col;
+  for (;;) {
+    row += axis === 'row' ? delta : 0;
+    col += axis === 'col' ? delta : 0;
+    const rowCells = unit.rows[row]?.cells;
+    if (row < 0 || row >= unit.rows.length || rowCells === undefined || col < 0 || col >= rowCells.length) {
+      return null;
+    }
+    const cell = rowCells[col] ?? null;
+    if (cell !== null) {
+      return cell.cellKey;
+    }
+  }
 }
 
 export function createVerificationPanel(
@@ -143,6 +232,9 @@ export function createVerificationPanel(
 
   const tabs = availableTabs(data.fields);
   let activeTab: EntityLevel = tabs.find((tab) => !tabLocked(tab)) ?? tabs[0] ?? 'study';
+  // --- レイアウトモード（フォーカス / リスト。issue #38） ------------------
+  // 既定はフォーカス。初期値はサービス層が settingsStore から読んで options 経由で渡す
+  let layoutMode: VerifyLayoutMode = options.layoutMode ?? 'focus';
   let focusedCellKey: string | null = null;
   let editing: { cellKey: string; action: 'edit' | 'reject' } | null = null;
   let outcomeKeyDraft = nextOutcomeId(
@@ -158,11 +250,119 @@ export function createVerificationPanel(
   const currentTabModel = (): TabModel =>
     buildTabModel(activeTab, data.fields, data.evidence, ownDecisions, { armStructure });
 
-  /** 現在タブの表示順のセル（未判定 + 直近判定 → 判定済みブロック）。j / k の移動順 */
+  /** 現在タブの表示順のセル（未判定 + 直近判定 → 判定済みブロック）。j / k の移動順（リストモード） */
   const displayCells = (): VerificationCell[] => {
     const { activeGroups, decided } = splitDecidedCells(currentTabModel().groups, recentDecidedKey);
     return [...activeGroups.flatMap((group) => group.cells), ...decided.map((entry) => entry.cell)];
   };
+
+  // --- フォーカスモード（issue #38）: ユニット単位のナビゲーション -------------
+  /** 指定タブのユニット列を組み立てる（focusUnits.buildFocusUnits を現在の armStructure で呼ぶ） */
+  const focusUnitsOf = (tab: EntityLevel): FocusUnit[] =>
+    buildFocusUnits(tab, buildTabModel(tab, data.fields, data.evidence, ownDecisions, { armStructure }), {
+      armStructure,
+    });
+
+  /**
+   * 初期・タブ切替時のフォーカス先をレイアウトモードに応じて解決する。
+   * list: 最初の未判定セル（表示順）。focus: 最初の未判定ユニットの最初の未判定セル
+   */
+  function computeInitialFocusKey(tab: EntityLevel): string | null {
+    if (layoutMode === 'list') {
+      return initialFocusKey(
+        buildTabModel(tab, data.fields, data.evidence, ownDecisions, { armStructure }).cells,
+      );
+    }
+    return initialFocusKeyForUnits(focusUnitsOf(tab));
+  }
+
+  /**
+   * フォーカスモードの詳細描画素材を組み立てる（refreshForm から呼ぶ）。
+   * 現在ユニットは focusedCellKey から導出する（別個のユニット状態を持たない）。
+   * cells が 0 件、または解決できないときは null（呼び出し側は空メッセージのみを出す）
+   */
+  function buildFocusCardModel(): VerificationFocusCardModel | null {
+    const tabModel = currentTabModel();
+    if (tabModel.cells.length === 0) {
+      return null;
+    }
+    // tabModel.cells が 1 件以上あれば focusedCellKey は必ず非 null（computeInitialFocusKey /
+    // focusCell が activeTab と同期して設定する）で、buildFocusUnits は必ず 1 件以上のユニットを
+    // 作る（各タブビルダーは model.groups と 1:1 対応するため。focusUnits.ts の各 build*Units 参照）
+    const units = focusUnitsOf(activeTab);
+    const unit = unitOfCell(units, focusedCellKey as string) as FocusUnit;
+    const unitIndex = units.findIndex((candidate) => candidate.unitKey === unit.unitKey) + 1;
+    const remainingUnits = units.filter((candidate) => {
+      const progress = unitProgress(candidate);
+      return progress.decided < progress.total;
+    }).length;
+    const recentCell =
+      recentDecidedKey === null
+        ? null
+        : (tabModel.cells.find((cell) => cell.cellKey === recentDecidedKey) ?? null);
+    return {
+      unit,
+      unitIndex,
+      totalUnits: units.length,
+      remainingUnits,
+      focusedCellKey,
+      editing,
+      highlightInfo: highlightInfo(),
+      canSearchText: activeDocument().extractedPages.some((page) => page.text !== ''),
+      recentCell,
+    };
+  }
+
+  /**
+   * フォーカスモードのユニット内移動（j/k = 行、h/l = 列）。同じ列 / 行を維持し、
+   * null セルはスキップ・端で停止する（ui-flow.md §7）
+   */
+  function moveFocusInUnit(axis: 'row' | 'col', delta: number): void {
+    if (focusedCellKey === null) {
+      return;
+    }
+    // 呼び出し時点の focusedCellKey は必ず現在タブのユニット内に存在する（不変条件。
+    // computeInitialFocusKey / focusCell が activeTab と同期して設定するため。
+    // buildFocusUnits は実データでは cell を取りこぼさない ── focusUnits.ts 冒頭のコメント参照）
+    const unit = unitOfCell(focusUnitsOf(activeTab), focusedCellKey) as FocusUnit;
+    const position = locateCellInUnit(unit, focusedCellKey) as { row: number; col: number };
+    const nextKey = stepUnitPosition(unit, position, axis, delta);
+    if (nextKey !== null) {
+      focusCell(nextKey, { jump: true, domFocus: true });
+    }
+  }
+
+  /**
+   * フォーカスモードのユニット送り（Shift+J / Shift+K）。判定状況に関係なく隣接ユニットへ移動し、
+   * 着地はそのユニットの最初の未判定セル → 無ければ先頭セル。端では停止する（折り返さない）
+   */
+  function moveToAdjacentUnit(delta: number): void {
+    const units = focusUnitsOf(activeTab);
+    const currentUnit = focusedCellKey === null ? null : unitOfCell(units, focusedCellKey);
+    const currentIndex =
+      currentUnit === null ? -1 : units.findIndex((candidate) => candidate.unitKey === currentUnit.unitKey);
+    const unit = units[currentIndex + delta];
+    if (unit === undefined) {
+      return;
+    }
+    // 実データでは全ユニットが 1 件以上の非 null セルを持つため、いずれかは必ず見つかる
+    const cellKey = nextPendingCellInUnit(unit, null) ?? (firstCellKeyOfUnit(unit) as string);
+    focusCell(cellKey, { jump: true, domFocus: true });
+  }
+
+  /**
+   * レイアウトモードを切替える（`#verify-layout-toggle`）。フォーカス中セルはそのまま保つ
+   * （両モードとも同じ cellKey 概念のため、切替で作業位置を失わせない）。
+   * パネルインスタンスは作り直さず、内部の再描画だけで即時反映する。
+   * 呼び出し元（renderLayoutToggle）は常に現在モードの反対を渡すため、同値ガードは持たない
+   */
+  function setLayoutMode(mode: VerifyLayoutMode): void {
+    layoutMode = mode;
+    refreshForm();
+    syncViewer();
+    syncTextViewer();
+    options.onLayoutModeChange?.(mode);
+  }
 
   // --- 左ペイン（PDF ビューア + 文書切替タブ。v0.10 フェーズ 3 + issue #28 案3） -----
   // study 配下の文書は role 固定順に並ぶ。ビューアは 1 つだけ作り、setDocument で切替える
@@ -630,7 +830,7 @@ export function createVerificationPanel(
     // ロック中タブの排他は verificationForm 側が担う（disabled ボタンにはリスナを付けない）
     onSelectTab(tab) {
       activeTab = tab;
-      focusedCellKey = initialFocusKey(currentTabModel().cells);
+      focusedCellKey = computeInitialFocusKey(tab);
       editing = null;
       refreshForm();
       syncViewer();
@@ -816,6 +1016,9 @@ export function createVerificationPanel(
       syncTextViewer();
       options.onInstanceDeclare?.(declarations);
     },
+    onToggleLayoutMode(mode) {
+      setLayoutMode(mode);
+    },
   };
 
   function refreshForm(): void {
@@ -849,6 +1052,8 @@ export function createVerificationPanel(
           : null,
       armLocked: armLocked(),
       progress: verificationProgress(data.fields, data.evidence, ownDecisions, { armStructure }),
+      layoutMode,
+      focusCard: layoutMode === 'focus' ? buildFocusCardModel() : null,
     };
     formPane.replaceChildren(renderVerificationForm(model, handlers));
     formPane.scrollTop = savedScrollTop;
@@ -880,11 +1085,12 @@ export function createVerificationPanel(
     // 判定済みブロックのコンパクト行へ着地するとき（ビューアクリック / j・k / ディープリンク）は
     // 展開して通常カードを見せる。コンパクト行は focusin リスナを持たないため、
     // ここでの再構築が click をキャンセルする経路は通常カードの focusin だけに限られ、
-    // その場合は下の else（クラス切替のみ）を通る
+    // その場合は下の else（クラス切替のみ）を通る。判定済みブロックはリストモード限定の概念
     const target = buildTabModel(tab, data.fields, data.evidence, ownDecisions, {
       armStructure,
     }).cells.find((cell) => cell.cellKey === cellKey) as VerificationCell;
     const expand =
+      layoutMode === 'list' &&
       target.state.status !== 'unverified' &&
       cellKey !== recentDecidedKey &&
       expandedDecidedKey !== cellKey;
@@ -895,7 +1101,9 @@ export function createVerificationPanel(
       activeTab = tab;
       editing = null;
       refreshForm();
-    } else if (expand) {
+    } else if (layoutMode === 'focus' || expand) {
+      // フォーカスモードは常に単一の詳細ストリップを再構築する必要があるため、
+      // クラス切替（applyFocusClasses）だけでは新しいセルの内容を描けない
       refreshForm();
     } else {
       applyFocusClasses();
@@ -974,9 +1182,21 @@ export function createVerificationPanel(
     // 全セル判定済み・undo（取り消し直後に同じセルで再判定するため）は現在セルに留まる
     let movedTo: string | null = null;
     if (action !== 'undo') {
-      const cells = currentTabModel().cells;
-      const currentIndex = cells.findIndex((candidate) => candidate.cellKey === cell.cellKey);
-      movedTo = nextUndecidedKey(cells, currentIndex + 1);
+      if (layoutMode === 'focus') {
+        // 同一ユニット内の次の未判定セル → 無ければ次の未判定ユニットの最初の未判定セル。
+        // cell は判定直前までフォーカスされていたセルのため、必ずどこかのユニットに属する
+        const units = focusUnitsOf(activeTab);
+        const currentUnit = unitOfCell(units, cell.cellKey) as FocusUnit;
+        movedTo = nextPendingCellInUnit(currentUnit, cell.cellKey);
+        if (movedTo === null) {
+          const nextUnit = nextPendingUnit(units, currentUnit.unitKey);
+          movedTo = nextUnit === null ? null : nextPendingCellInUnit(nextUnit, null);
+        }
+      } else {
+        const cells = currentTabModel().cells;
+        const currentIndex = cells.findIndex((candidate) => candidate.cellKey === cell.cellKey);
+        movedTo = nextUndecidedKey(cells, currentIndex + 1);
+      }
     }
     focusedCellKey = movedTo ?? cell.cellKey;
     refreshForm();
@@ -1011,7 +1231,7 @@ export function createVerificationPanel(
     if (!root.isConnected || editing !== null || tabLocked(activeTab)) {
       return;
     }
-    if (event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) {
+    if (event.ctrlKey || event.metaKey || event.altKey) {
       return;
     }
     const target = event.target;
@@ -1022,16 +1242,47 @@ export function createVerificationPanel(
     ) {
       return;
     }
+    if (event.shiftKey) {
+      // フォーカスモードの Shift+J / Shift+K（前後ユニットへ移動）だけを許可する。
+      // それ以外の Shift 併用（誤爆防止）は無視する
+      if (layoutMode === 'focus' && (event.key === 'J' || event.key === 'K')) {
+        event.preventDefault();
+        moveToAdjacentUnit(event.key === 'J' ? 1 : -1);
+      }
+      return;
+    }
     switch (event.key) {
       case 'j':
       case 'ArrowDown':
         event.preventDefault();
-        moveFocus(1);
+        if (layoutMode === 'focus') {
+          moveFocusInUnit('row', 1);
+        } else {
+          moveFocus(1);
+        }
         return;
       case 'k':
       case 'ArrowUp':
         event.preventDefault();
-        moveFocus(-1);
+        if (layoutMode === 'focus') {
+          moveFocusInUnit('row', -1);
+        } else {
+          moveFocus(-1);
+        }
+        return;
+      case 'h':
+      case 'ArrowLeft':
+        if (layoutMode === 'focus') {
+          event.preventDefault();
+          moveFocusInUnit('col', -1);
+        }
+        return;
+      case 'l':
+      case 'ArrowRight':
+        if (layoutMode === 'focus') {
+          event.preventDefault();
+          moveFocusInUnit('col', 1);
+        }
         return;
       default:
         break;
@@ -1058,7 +1309,9 @@ export function createVerificationPanel(
         break;
       case 'z':
         event.preventDefault();
-        handlers.onUndo(focusedCellKey);
+        // フォーカスモードは直近判定セルへ z を効かせる（ユニットをまたいでも undo できる）。
+        // リストモードは従来どおりフォーカス中セルへ
+        handlers.onUndo(layoutMode === 'focus' ? (recentDecidedKey ?? focusedCellKey) : focusedCellKey);
         break;
       case 'f':
         event.preventDefault();
@@ -1072,7 +1325,7 @@ export function createVerificationPanel(
   const ownerDoc = root.ownerDocument;
   ownerDoc.addEventListener('keydown', handleKeydown);
 
-  focusedCellKey = initialFocusKey(currentTabModel().cells);
+  focusedCellKey = computeInitialFocusKey(activeTab);
   // 初期フォーカスセルの出所文書を表示（study の先頭は通常 article。別文書なら切替）。
   // ensureActiveDocumentForCell が切替えた場合はその中で PDF ロードも始まっているため、
   // ここでの初期ロードは二重に始めない

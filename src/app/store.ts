@@ -18,6 +18,7 @@ import type { SchemaEditorRow } from '../features/schema/types';
 import type { FieldValidationError } from '../features/schema/validateField';
 import type { VerificationProgress } from '../features/verification/progress';
 import type { VerificationData } from '../features/verification/types';
+import type { VerifyLayoutMode } from '../lib/storage/settingsStore';
 import type { RouteHash } from './router';
 
 // 定義は features/project/progressCounts.ts（Sheets 読み出しと同居）。従来の import 先を維持する
@@ -156,6 +157,11 @@ export interface PilotState {
   studyValues: Record<string, string | null> | null;
   /** オフラインキューへ退避した判定書き込みの件数 */
   queuedDecisions: number;
+  /**
+   * 検証パネルのレイアウトモード（フォーカス / リスト。issue #38）。settingsStore 由来で
+   * 検証データ束の読込時に読み直す（S6 / S8 で共有する設定）。既定は 'focus'
+   */
+  layoutMode: VerifyLayoutMode;
 }
 
 /** #/extract（S7）の画面状態。run の結果はタブのセッション内で保持する */
@@ -220,6 +226,8 @@ export interface VerifyState {
   studyValues: Record<string, string | null> | null;
   /** オフラインキューへ退避した判定書き込みの件数 */
   queuedDecisions: number;
+  /** 検証パネルのレイアウトモード（issue #38）。settingsStore 由来。既定は 'focus' */
+  layoutMode: VerifyLayoutMode;
 }
 
 /** #/export（S10）の直近の生成結果（結果カードの素材。次の生成開始まで残す） */
@@ -365,6 +373,7 @@ export function createInitialState(): AppState {
       verifyError: null,
       studyValues: null,
       queuedDecisions: 0,
+      layoutMode: 'focus',
     },
     extract: {
       selectedStudyIds: [],
@@ -394,6 +403,7 @@ export function createInitialState(): AppState {
       verifyError: null,
       studyValues: null,
       queuedDecisions: 0,
+      layoutMode: 'focus',
     },
     dashboard: {
       data: null,

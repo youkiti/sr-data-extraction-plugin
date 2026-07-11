@@ -1418,10 +1418,33 @@
   overflow: auto;
 }
 
+/* タブ行 + レイアウトトグル（issue #38: フォーカス / リスト） */
+.verify__form-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
 .verify__tabs {
   display: flex;
   gap: 4px;
-  margin-bottom: 8px;
+}
+
+.verify__layout-toggle {
+  flex: none;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-bg);
+  color: var(--color-text);
+  padding: 4px 10px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.verify__layout-toggle:hover:not(:disabled) {
+  background: var(--color-surface);
 }
 
 /* 判定進捗（判定のたびに即時更新。「どこまでやったか」の可視化） */
@@ -1863,6 +1886,153 @@
   .verify__outcome-fields {
     grid-template-columns: 1fr;
   }
+}
+
+/* --- フォーカスモード（issue #38: マトリクスカード型フォーカスモード） --------
+   構成: ユニットヘッダ（位置 + 見出し）→ マトリクス（コンパクトな一覧性）→
+   要約行（任意）→ 詳細ストリップ（判定操作は常に同じ位置 = カード高さの急変を防ぐ）→
+   直近判定バー（固定表示）。一括承認ボタンは置かない（automation bias 対策。ui-states.md §4） */
+
+.focus-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.focus-card__header {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.focus-card__position {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.focus-card__heading {
+  margin: 0;
+}
+
+.focus-card__matrix {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.focus-card__matrix th,
+.focus-card__matrix td {
+  border: 1px solid var(--color-border);
+  padding: 4px 6px;
+  text-align: left;
+}
+
+.focus-card__matrix-colhead {
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  font-weight: 600;
+}
+
+.focus-card__matrix-cell {
+  padding: 3px;
+}
+
+.focus-card__matrix-cell--empty {
+  color: var(--color-text-muted);
+  text-align: center;
+  padding: 4px 6px;
+}
+
+.focus-card__matrix-btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  width: 100%;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-bg);
+  color: var(--color-text);
+  padding: 4px 8px;
+  font-size: 13px;
+  text-align: left;
+}
+
+.focus-card__matrix-btn:hover:not(:disabled) {
+  background: var(--color-surface);
+}
+
+.focus-card__matrix-btn--focused {
+  outline: 2px solid var(--color-primary);
+  border-color: var(--color-primary);
+}
+
+.focus-card__matrix-value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.focus-card__summary {
+  margin: 0;
+  padding: 6px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  font-size: 13px;
+}
+
+/* 詳細ストリップ: verificationCellCard.renderCell の .verify__cell をそのまま内包する
+   （高さは判定のたびに大きく変わらないよう、中身の構造自体は常に同じ = リストモードの
+   1 カードぶんの高さに揃う） */
+.focus-card__detail {
+  min-height: 0;
+}
+
+.focus-card__detail-empty {
+  color: var(--color-text-muted);
+  padding: 12px;
+  border: 1px dashed var(--color-border);
+  border-radius: 8px;
+}
+
+.focus-card__recent {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 6px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface);
+  font-size: 13px;
+}
+
+.focus-card__recent-label-lead {
+  color: var(--color-text-muted);
+}
+
+.focus-card__recent-label {
+  font-weight: 600;
+}
+
+.focus-card__recent-value {
+  color: var(--color-text-muted);
+}
+
+.focus-card__recent-undo {
+  margin-left: auto;
+  background: #fff;
+  border-color: #dadce0;
+  color: #5f6368;
+}
+
+.focus-card__recent-undo:hover:not(:disabled) {
+  background: #f1f3f4;
 }
 
 /* --- #/verify 単独画面（document セレクタまわり） ------------------------- */
