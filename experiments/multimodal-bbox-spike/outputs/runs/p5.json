@@ -1,0 +1,172 @@
+{
+ "runId": "p5",
+ "model": "gemini-3.5-flash",
+ "page": 5,
+ "requestedItems": [
+  {
+   "label": "item1_percent",
+   "description": "Table 2 の Item No. 1「Allowing families to hold their dying or dead infant」行の % 列の値（98 のはず）"
+  },
+  {
+   "label": "item7_percent",
+   "description": "Table 2 の Item No. 7「Discussing autopsy or organ donation with families of dying infants」行の % 列の値（45 のはず）"
+  },
+  {
+   "label": "mean_comfort_score",
+   "description": "本文（Table 2 の下の段落）中の \"mean score\" の数値（4.13 のはず）"
+  }
+ ],
+ "executedAt": "2026-07-11T09:07:25.657Z",
+ "elapsedMs": 7535,
+ "usedResponseSchema": true,
+ "usageMetadata": {
+  "promptTokenCount": 1492,
+  "candidatesTokenCount": 221,
+  "totalTokenCount": 2789,
+  "promptTokensDetails": [
+   {
+    "modality": "IMAGE",
+    "tokenCount": 1092
+   },
+   {
+    "modality": "TEXT",
+    "tokenCount": 400
+   }
+  ],
+  "thoughtsTokenCount": 1076,
+  "serviceTier": "standard"
+ },
+ "parseError": null,
+ "rowCount": 3,
+ "discardedRowCount": 0,
+ "rows": [
+  {
+   "label": "item1_percent",
+   "value": "98",
+   "quote": "98",
+   "page": 5,
+   "box_2d": [
+    121,
+    855,
+    132,
+    872
+   ]
+  },
+  {
+   "label": "item7_percent",
+   "value": "45",
+   "quote": "45",
+   "page": 5,
+   "box_2d": [
+    370,
+    855,
+    381,
+    872
+   ]
+  },
+  {
+   "label": "mean_comfort_score",
+   "value": "4.13",
+   "quote": "4.13",
+   "page": 5,
+   "box_2d": [
+    743,
+    565,
+    754,
+    597
+   ]
+  }
+ ],
+ "request": {
+  "contents": [
+   {
+    "role": "user",
+    "parts": [
+     {
+      "text": "あなたはこの論文ページ画像（ページ 5）から、指定された項目の値を探し、それぞれの値が書かれている領域を bounding box として返すタスクを行う。\n\nbox_2d の形式は [ymin, xmin, ymax, xmax] とする。画像の左上を原点 (0,0) とし、各座標は画像の高さ・幅に対して 0〜1000 に正規化した整数値で表す（ymin/ymax が縦方向、xmin/xmax が横方向）。box は対象の文言・数値だけを過不足なく囲む最小の矩形にすること。\n\n項目一覧:\n- label=\"item1_percent\": Table 2 の Item No. 1「Allowing families to hold their dying or dead infant」行の % 列の値（98 のはず）\n- label=\"item7_percent\": Table 2 の Item No. 7「Discussing autopsy or organ donation with families of dying infants」行の % 列の値（45 のはず）\n- label=\"mean_comfort_score\": 本文（Table 2 の下の段落）中の \"mean score\" の数値（4.13 のはず）\n\n各項目について、次のフィールドを持つ JSON オブジェクトを1つずつ、項目と同じ順序で返すこと:\n- \"label\": 上記の label をそのまま\n- \"value\": 抽出した値（数値や固有名詞はそのまま、単位や%記号は付けない）\n- \"quote\": box の中に実際に見える文言をそのまま（言い換えない）\n- \"page\": 5\n- \"box_2d\": [ymin, xmin, ymax, xmax]\n\n出力は上記オブジェクトの配列のみ。項目が画像内に見つからない場合も box_2d には最も近いと思われる位置を返すこと（省略しない）。"
+     },
+     {
+      "inline_data": {
+       "mime_type": "image/png",
+       "data": "<omitted: base64 image>"
+      }
+     }
+    ]
+   }
+  ],
+  "generationConfig": {
+   "temperature": 0,
+   "responseMimeType": "application/json",
+   "responseSchema": {
+    "type": "ARRAY",
+    "items": {
+     "type": "OBJECT",
+     "properties": {
+      "label": {
+       "type": "STRING"
+      },
+      "value": {
+       "type": "STRING"
+      },
+      "quote": {
+       "type": "STRING"
+      },
+      "page": {
+       "type": "INTEGER"
+      },
+      "box_2d": {
+       "type": "ARRAY",
+       "items": {
+        "type": "INTEGER"
+       }
+      }
+     },
+     "required": [
+      "label",
+      "value",
+      "quote",
+      "page",
+      "box_2d"
+     ]
+    }
+   }
+  },
+  "note": "API キーは x-goog-api-key ヘッダで送信（本ファイルには含めていない）"
+ },
+ "rawResponse": {
+  "candidates": [
+   {
+    "content": {
+     "parts": [
+      {
+       "text": "[\n  {\n    \"label\": \"item1_percent\",\n    \"value\": \"98\",\n    \"quote\": \"98\",\n    \"page\": 5,\n    \"box_2d\": [121, 855, 132, 872]\n  },\n  {\n    \"label\": \"item7_percent\",\n    \"value\": \"45\",\n    \"quote\": \"45\",\n    \"page\": 5,\n    \"box_2d\": [370, 855, 381, 872]\n  },\n  {\n    \"label\": \"mean_comfort_score\",\n    \"value\": \"4.13\",\n    \"quote\": \"4.13\",\n    \"page\": 5,\n    \"box_2d\": [743, 565, 754, 597]\n  }\n]",
+       "thoughtSignature": "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"
+      }
+     ],
+     "role": "model"
+    },
+    "finishReason": "STOP",
+    "index": 0
+   }
+  ],
+  "usageMetadata": {
+   "promptTokenCount": 1492,
+   "candidatesTokenCount": 221,
+   "totalTokenCount": 2789,
+   "promptTokensDetails": [
+    {
+     "modality": "IMAGE",
+     "tokenCount": 1092
+    },
+    {
+     "modality": "TEXT",
+     "tokenCount": 400
+    }
+   ],
+   "thoughtsTokenCount": 1076,
+   "serviceTier": "standard"
+  },
+  "modelVersion": "gemini-3.5-flash",
+  "responseId": "zwdSar69OsDB0-kP2Yfx8Q4"
+ }
+}

@@ -2,7 +2,10 @@ import { runExtraction } from '../../../../src/app/services/extractionService';
 import type { DocumentRecord } from '../../../../src/domain/document';
 import type { SchemaField } from '../../../../src/domain/schemaField';
 import { upsertResultsDataRows, upsertStudyDataRows } from '../../../../src/features/extraction/annotationRepository';
-import { appendEvidenceRows } from '../../../../src/features/extraction/evidenceRepository';
+import {
+  appendEvidenceRows,
+  ensureEvidenceBboxColumns,
+} from '../../../../src/features/extraction/evidenceRepository';
 import { appendExtractionRun } from '../../../../src/features/extraction/runRepository';
 import type { ExtractDataPage } from '../../../../src/features/extraction/skills/extractData';
 import { uploadTextFile } from '../../../../src/lib/google/drive';
@@ -20,6 +23,7 @@ jest.mock('../../../../src/lib/llm/apiLogRepository');
 const mockedUpload = jest.mocked(uploadTextFile);
 const mockedAppendLog = jest.mocked(appendLlmApiLog);
 const mockedAppendEvidence = jest.mocked(appendEvidenceRows);
+const mockedEnsureBboxColumns = jest.mocked(ensureEvidenceBboxColumns);
 const mockedUpsertStudy = jest.mocked(upsertStudyDataRows);
 const mockedUpsertResults = jest.mocked(upsertResultsDataRows);
 const mockedAppendRun = jest.mocked(appendExtractionRun);
@@ -91,7 +95,7 @@ const AI_RESPONSE: ChatResponse = {
 };
 
 function makeProvider(chat: jest.Mock): LLMProvider {
-  return { providerId: 'gemini', model: 'gemini-2.5-flash', chat };
+  return { providerId: 'gemini', model: 'gemini-2.5-flash', supportsImageInput: true, chat };
 }
 
 function makeDeps(chat: jest.Mock) {
@@ -100,6 +104,7 @@ function makeDeps(chat: jest.Mock) {
     google: GOOGLE,
     apiKey: 'KEY',
     loadDocumentPages: jest.fn().mockResolvedValue(PAGES),
+    loadDocumentPageImages: jest.fn().mockResolvedValue([]),
     buildProvider: jest.fn().mockReturnValue(makeProvider(chat)),
     newUuid: () => `u${++uuidCount}`,
     now: () => 'NOW',
@@ -170,6 +175,12 @@ describe('runExtraction', () => {
     expect(mockedAppendRun.mock.invocationCallOrder[0]).toBeLessThan(
       mockedAppendEvidence.mock.invocationCallOrder[0] as number,
     );
+    // Evidence タブのヘッダ拡張（bbox 5 列。既存プロジェクトの後方互換移行）は
+    // running 行の追記よりも先に行う（§7.4 PR3。怠ると旧ヘッダのまま列がずれた行を書いてしまう）
+    expect(mockedEnsureBboxColumns).toHaveBeenCalledWith('sid', GOOGLE);
+    expect(mockedEnsureBboxColumns.mock.invocationCallOrder[0]).toBeLessThan(
+      mockedAppendRun.mock.invocationCallOrder[0] as number,
+    );
 
     // Evidence はアンカリング確定済みで追記される
     expect(mockedAppendEvidence).toHaveBeenCalledTimes(1);
@@ -214,7 +225,7 @@ describe('runExtraction', () => {
     expect(promptCall?.parentId).toBe('folder-logs');
     expect(promptCall?.mimeType).toBe('application/json');
     expect(promptCall?.name).toMatch(/\.prompt\.json$/);
-    expect(JSON.parse(promptCall?.content ?? '{}').promptVersion).toBe(2); // EXTRACT_DATA_PROMPT_VERSION
+    expect(JSON.parse(promptCall?.content ?? '{}').promptVersion).toBe(4); // EXTRACT_DATA_PROMPT_VERSION
     expect(mockedUpload.mock.calls[1]?.[0].name).toMatch(/\.response\.json$/);
 
     expect(mockedAppendLog).toHaveBeenCalledTimes(1);
@@ -230,16 +241,24 @@ describe('runExtraction', () => {
     });
   });
 
-  test('全文献がテキスト層なしなら実行前に throw する', async () => {
-    const chat = jest.fn();
-    await expect(
-      runExtraction(
-        { ...baseParams(), documents: [makeDocument({ textStatus: 'no_text_layer' })] },
-        makeDeps(chat),
-      ),
-    ).rejects.toThrow('抽出できる文献がありません');
-    expect(chat).not.toHaveBeenCalled();
-    expect(mockedAppendRun).not.toHaveBeenCalled();
+  test('全文献がテキスト層なしでも「対象外」にはせず、pdf_native（画像入力）として実行する', async () => {
+    const chat = jest.fn().mockResolvedValue(AI_RESPONSE);
+    const deps = makeDeps(chat);
+    const loadImages = jest.fn().mockResolvedValue([
+      { page: 1, mimeType: 'image/png', dataBase64: 'QUJD' },
+    ]);
+    const outcome = await runExtraction(
+      {
+        ...baseParams(),
+        documents: [makeDocument({ textStatus: 'no_text_layer', textRef: null, pageCount: 2 })],
+      },
+      { ...deps, loadDocumentPageImages: loadImages },
+    );
+    expect(outcome.run.inputMode).toBe('pdf_native');
+    expect(loadImages).toHaveBeenCalledWith('doc-1');
+    // 画像入力の文書にはテキスト層が無いためアンカリングできず null のまま保存する
+    expect(outcome.result.evidence[0]?.anchorStatus).toBeNull();
+    expect(mockedAppendRun).toHaveBeenCalledTimes(2);
   });
 
   test('省略可能な依存（buildProvider / newUuid / now）は既定実装で動く', async () => {
@@ -249,6 +268,7 @@ describe('runExtraction', () => {
       google: GOOGLE,
       apiKey: 'KEY',
       loadDocumentPages: jest.fn().mockRejectedValue(new Error('drive down')),
+      loadDocumentPageImages: jest.fn().mockResolvedValue([]),
     });
     expect(outcome.run.status).toBe('partial_failure');
     expect(outcome.result.batchFailures).toEqual([

@@ -1,5 +1,6 @@
 import {
   LlmProviderError,
+  toOpenAiContent,
   type ChatMessage,
   type ChatOptions,
   type ChatResponse,
@@ -46,6 +47,9 @@ function isStructuredOutputCompatibilityError(status: number, responseBody: stri
 export class OpenAICompatibleProvider implements LLMProvider {
   readonly providerId = 'openai_compatible' as const;
   readonly model: string;
+  // OpenAI 互換の image_url をパススルーするだけなので画像対応を宣言する。
+  // モデルがマルチモーダル非対応の場合は API 側が 4xx を返し、LlmProviderError として表面化する
+  readonly supportsImageInput = true;
   private readonly apiKey: string;
   private readonly endpoint: string;
   private readonly fetchImpl: typeof fetch | undefined;
@@ -115,7 +119,7 @@ export class OpenAICompatibleProvider implements LLMProvider {
       model: this.model,
       messages: messages.map((message) => ({
         role: message.role === 'model' ? 'assistant' : message.role,
-        content: message.content,
+        content: toOpenAiContent(message.content),
       })),
     };
     if (options.temperature !== undefined) {

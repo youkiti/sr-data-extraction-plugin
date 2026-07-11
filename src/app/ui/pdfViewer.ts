@@ -148,7 +148,19 @@ export function createPdfViewer(options: PdfViewerOptions): PdfViewerHandle {
     node: HTMLElement,
     page: TextLayerPage,
     rect: { x: number; y: number; width: number; height: number },
+    space: 'user' | 'display' = 'user',
   ): void {
+    if (space === 'display') {
+      // bbox 由来（handoff-scanned-pdf-native-highlight.md §7.4 PR3）: 矩形は既に
+      // 回転適用後の表示フレーム座標（scale 1）なので toDisplayRect を通さない
+      // （通すと二重回転になる。§7.3 / features/verification/highlights.ts の bboxToDisplayRect 参照）。
+      // scale の拡縮だけ適用する
+      node.style.left = `${rect.x * scale}px`;
+      node.style.top = `${rect.y * scale}px`;
+      node.style.width = `${rect.width * scale}px`;
+      node.style.height = `${rect.height * scale}px`;
+      return;
+    }
     // 矩形は回転前のユーザー空間なので、ページ回転込みで表示座標へ写像してから拡縮する
     const display = toDisplayRect(rect, page);
     node.style.left = `${display.left * scale}px`;
@@ -177,7 +189,7 @@ export function createPdfViewer(options: PdfViewerOptions): PdfViewerHandle {
         if (highlight.id === activeId) {
           node.classList.add('pdf-viewer__hl--active');
         }
-        rectStyle(node, page, rect);
+        rectStyle(node, page, rect, highlight.occurrence.space ?? 'user');
         node.addEventListener('click', () => options.onHighlightClick?.(highlight.id));
         overlay.append(node);
       }

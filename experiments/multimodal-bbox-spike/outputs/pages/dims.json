@@ -1,0 +1,66 @@
+{
+ "pdfjsVersion": "6.1.200",
+ "renderScale": 2,
+ "pages": [
+  {
+   "page": 1,
+   "widthPt": 579,
+   "heightPt": 812,
+   "rotation": 0
+  },
+  {
+   "page": 2,
+   "widthPt": 579,
+   "heightPt": 812,
+   "rotation": 0
+  },
+  {
+   "page": 3,
+   "widthPt": 579,
+   "heightPt": 812,
+   "rotation": 0
+  },
+  {
+   "page": 4,
+   "widthPt": 579,
+   "heightPt": 812,
+   "rotation": 0
+  },
+  {
+   "page": 5,
+   "widthPt": 579,
+   "heightPt": 812,
+   "rotation": 0
+  },
+  {
+   "page": 6,
+   "widthPt": 579,
+   "heightPt": 812,
+   "rotation": 0
+  },
+  {
+   "page": 7,
+   "widthPt": 578,
+   "heightPt": 805,
+   "rotation": 0
+  },
+  {
+   "page": 8,
+   "widthPt": 567,
+   "heightPt": 804,
+   "rotation": 0
+  },
+  {
+   "page": 9,
+   "widthPt": 579,
+   "heightPt": 812,
+   "rotation": 0
+  },
+  {
+   "page": 10,
+   "widthPt": 571,
+   "heightPt": 806,
+   "rotation": 0
+  }
+ ]
+}

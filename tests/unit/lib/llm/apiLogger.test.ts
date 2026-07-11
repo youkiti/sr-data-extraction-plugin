@@ -1,9 +1,10 @@
 // withLogging（LLMApiLog + Drive 保存ラッパ）の単体テスト
 // （sr-query-builder から流用。purpose は本拡張の enum、promptVersion 記録のテストを追加）
 import type { LlmApiLogEntry } from '../../../../src/domain/llmApiLog';
-import { buildPromptSummary, withLogging } from '../../../../src/lib/llm/apiLogger';
+import { buildPromptSummary, redactMessagesForLog, withLogging } from '../../../../src/lib/llm/apiLogger';
 import {
   LlmProviderError,
+  type ChatMessage,
   type ChatResponse,
   type LLMProvider,
 } from '../../../../src/lib/llm/LLMProvider';
@@ -12,6 +13,7 @@ function makeProvider(impl: LLMProvider['chat']): LLMProvider {
   return {
     providerId: 'gemini',
     model: 'gemini-2.5-pro',
+    supportsImageInput: true,
     chat: impl,
   };
 }
@@ -61,6 +63,54 @@ describe('buildPromptSummary', () => {
     const summary = buildPromptSummary([{ role: 'user', content: long }]);
     expect(summary).toHaveLength(500);
     expect(summary.endsWith('…')).toBe(true);
+  });
+
+  test('パート配列 content は chatContentToText で平坦化される（image は [image mimeType] プレースホルダ）', () => {
+    const messages: ChatMessage[] = [
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: 'この画像を見て' },
+          { type: 'image', mimeType: 'image/png', dataBase64: 'aGVsbG8=' },
+        ],
+      },
+    ];
+    expect(buildPromptSummary(messages)).toBe('[user] この画像を見て[image image/png]');
+  });
+});
+
+describe('redactMessagesForLog', () => {
+  test('image パートの dataBase64 を長さ付きの伏字へ置換し、base64 本体は 1 文字も残さない', () => {
+    const base64 = 'QQ=='.repeat(100_000); // 数十万文字級の base64（画像想定）
+    const messages: ChatMessage[] = [
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: '見て' },
+          { type: 'image', mimeType: 'image/png', dataBase64: base64 },
+        ],
+      },
+    ];
+    const redacted = redactMessagesForLog(messages) as Array<{
+      role: string;
+      content: Array<Record<string, unknown>>;
+    }>;
+    const imagePart = redacted[0]?.content[1] as { dataBase64: string };
+    expect(imagePart.dataBase64).toBe(`<image image/png ${base64.length} chars redacted>`);
+    expect(imagePart.dataBase64).not.toContain(base64);
+    // JSON.stringify した全体にも base64 本体が含まれないこと
+    expect(JSON.stringify(redacted)).not.toContain(base64);
+  });
+
+  test('文字列 content・text パートは無改変', () => {
+    const messages: ChatMessage[] = [
+      { role: 'system', content: 'sys' },
+      { role: 'user', content: [{ type: 'text', text: 'plain text part' }] },
+    ];
+    expect(redactMessagesForLog(messages)).toEqual([
+      { role: 'system', content: 'sys' },
+      { role: 'user', content: [{ type: 'text', text: 'plain text part' }] },
+    ]);
   });
 });
 
@@ -179,6 +229,7 @@ describe('withLogging', () => {
     const provider: LLMProvider = {
       providerId: 'gemini',
       model: 'unknown-model-x',
+      supportsImageInput: true,
       chat: async () => ({ text: 'ok', tokensIn: 100, tokensOut: 50, raw: {} }),
     };
     const { deps, recorded } = makeDeps();
@@ -214,5 +265,31 @@ describe('withLogging', () => {
     await expect(logged.chat([{ role: 'user', content: 'q' }])).resolves.toMatchObject({
       text: 'ok',
     });
+  });
+
+  test('supportsImageInput を元プロバイダから引き継ぐ', async () => {
+    const provider = makeProvider(async () => ({ text: 'ok', tokensIn: 1, tokensOut: 1, raw: {} }));
+    const { deps } = makeDeps();
+    const logged = withLogging(provider, 'other', deps);
+    expect(logged.supportsImageInput).toBe(true);
+  });
+
+  test('画像パートを含む prompt を保存するとき、Drive へ保存する JSON から base64 本体が除かれる', async () => {
+    const base64 = 'QQ=='.repeat(100_000);
+    const provider = makeProvider(async () => ({ text: 'ok', tokensIn: 1, tokensOut: 1, raw: {} }));
+    const { deps, recorded } = makeDeps();
+    const logged = withLogging(provider, 'other', deps);
+    await logged.chat([
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: 'この画像を見て' },
+          { type: 'image', mimeType: 'image/png', dataBase64: base64 },
+        ],
+      },
+    ]);
+    const promptUpload = recorded.uploads[0]!.content;
+    expect(promptUpload).not.toContain(base64);
+    expect(promptUpload).toContain(`<image image/png ${base64.length} chars redacted>`);
   });
 });

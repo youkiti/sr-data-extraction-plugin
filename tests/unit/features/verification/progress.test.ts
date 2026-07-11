@@ -40,6 +40,8 @@ function makeEvidence(overrides: Partial<Evidence> = {}): Evidence {
     page: null,
     confidence: null,
     anchorStatus: null,
+    bboxPage: null,
+    bbox: null,
     ...overrides,
   };
 }

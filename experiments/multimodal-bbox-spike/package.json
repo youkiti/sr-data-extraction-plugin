@@ -1,0 +1,24 @@
+{
+  "name": "multimodal-bbox-spike",
+  "private": true,
+  "version": "0.1.0",
+  "description": "マルチモーダル Gemini による bounding box 抽出 技術スパイク（PLAN.md 参照）",
+  "type": "module",
+  "scripts": {
+    "render": "tsx src/render-pages.ts",
+    "bbox": "tsx src/run-bbox.ts",
+    "overlay": "tsx src/overlay.ts",
+    "report": "tsx src/report.ts",
+    "bbox:blind": "tsx src/run-bbox-blind.ts",
+    "overlay:blind": "tsx src/overlay-blind.ts",
+    "rotate:check": "tsx src/rotate-check.ts"
+  },
+  "devDependencies": {
+    "@napi-rs/canvas": "^1.0.2",
+    "@types/node": "^26.1.1",
+    "dotenv": "^17.4.2",
+    "pdfjs-dist": "^6.1.200",
+    "tsx": "^4.22.4",
+    "typescript": "^6.0.3"
+  }
+}

@@ -1,5 +1,6 @@
 import {
   LlmProviderError,
+  toOpenAiContent,
   type ChatMessage,
   type ChatOptions,
   type ChatResponse,
@@ -47,6 +48,9 @@ interface OpenRouterResponse {
 export class OpenRouterProvider implements LLMProvider {
   readonly providerId = 'openrouter' as const;
   readonly model: string;
+  // OpenAI 互換の image_url をパススルーするだけなので画像対応を宣言する。
+  // モデルがマルチモーダル非対応の場合は API 側が 4xx を返し、LlmProviderError として表面化する
+  readonly supportsImageInput = true;
   private readonly apiKey: string;
   private readonly fetchImpl: typeof fetch | undefined;
 
@@ -95,7 +99,7 @@ export class OpenRouterProvider implements LLMProvider {
   ): Record<string, unknown> {
     const mapped = messages.map((m) => ({
       role: m.role === 'model' ? 'assistant' : m.role,
-      content: m.content,
+      content: toOpenAiContent(m.content),
     }));
 
     const body: Record<string, unknown> = {

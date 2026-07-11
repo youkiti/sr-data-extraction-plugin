@@ -2,7 +2,8 @@
 
 /**
  * テキスト層の抽出状態。
- * no_text_layer はスキャン PDF で、pdf_native モードでのみ抽出可・アンカリング / ハイライト不可（※Q7）
+ * no_text_layer はスキャン PDF で、pdf_native モード（ページ画像添付）で抽出。アンカリングは
+ * 不可だが、Gemini 系 run では AI 推定の bbox ハイライトを表示できる（※Q7 改訂）
  */
 export type TextStatus = 'ok' | 'partial' | 'no_text_layer';
 

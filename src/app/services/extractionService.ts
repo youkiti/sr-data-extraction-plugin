@@ -20,7 +20,10 @@ import {
   upsertResultsDataRows,
   upsertStudyDataRows,
 } from '../../features/extraction/annotationRepository';
-import { appendEvidenceRows } from '../../features/extraction/evidenceRepository';
+import {
+  appendEvidenceRows,
+  ensureEvidenceBboxColumns,
+} from '../../features/extraction/evidenceRepository';
 import {
   DEFAULT_FLUSH_EVERY_N_STUDIES,
   executeRun,
@@ -31,6 +34,7 @@ import { planRun, type RunPlan, type RunTokenBudget } from '../../features/extra
 import { appendExtractionRun } from '../../features/extraction/runRepository';
 import {
   EXTRACT_DATA_PROMPT_VERSION,
+  type ExtractDataImagePage,
   type ExtractDataPage,
 } from '../../features/extraction/skills/extractData';
 import { uploadTextFile } from '../../lib/google/drive';
@@ -61,6 +65,13 @@ export interface ExtractionServiceDeps {
    * テキストファイルの保存形式は S3（文献取り込み）実装側で確定するため、ここでは注入に留める
    */
   loadDocumentPages: (documentId: string) => Promise<ExtractDataPage[]>;
+  /**
+   * no_text_layer 文書のページ画像を読み込む（pdf_native。
+   * handoff-scanned-pdf-native-highlight.md §7.4 PR2）。呼び出し側（pilotService /
+   * extractService）が features/documents/loadDocumentPageImages.ts の
+   * makeLoadDocumentPageImages で注入する。テキストのみの対象文献では executeRun 側が呼ばない
+   */
+  loadDocumentPageImages: (documentId: string) => Promise<ExtractDataImagePage[]>;
   /** テスト時に差し替え可能な provider 生成（既定は lib/llm/providerFactory.createProvider） */
   buildProvider?: (config: ProviderConfig) => LLMProvider;
   /**
@@ -89,7 +100,10 @@ export interface RunExtractionParams {
   /** logs/llm フォルダの Drive ID（LLMApiLog のフル payload 保存先） */
   logsLlmFolderId: string;
   runType: RunType;
-  /** 抽出対象の文献（テキスト層なしは planRun がスキップし warnings に出す） */
+  /**
+   * 抽出対象の文献（テキスト層なしは pdf_native の画像入力として扱われる。
+   * §7.4 PR2。除外はされず、その旨は plan.warnings に出る）
+   */
   documents: readonly DocumentRecord[];
   /** 当該 schema_version の抽出項目 */
   fields: readonly SchemaField[];
@@ -104,7 +118,7 @@ export interface RunExtractionParams {
 export interface RunExtractionOutcome {
   /** ExtractionRuns へ追記済みの行 */
   run: ExtractionRun;
-  /** 実行に使った計画（コスト概算・スキップ文献・warnings を含む） */
+  /** 実行に使った計画（コスト概算・入力形式・warnings を含む） */
   plan: RunPlan;
   /** バッチ失敗・要素破棄の内訳と保存済み Evidence（S7 の結果表示用） */
   result: ExecuteRunResult;
@@ -125,6 +139,9 @@ export async function runExtraction(
   const uuid = deps.newUuid ?? generateUuid;
   const now = deps.now ?? nowIso8601;
 
+  // no_text_layer 文書も pdf_native（画像入力）としてバッチ化されるため、
+  // documents / fields が 1 件以上であれば plan.batches は必ず 1 件以上になる
+  // （空ならその時点で planRun 自身が throw する。§7.4 PR2 で「全文献対象外」の分岐は解消済み）
   const plan = planRun({
     documents: params.documents,
     fields: params.fields,
@@ -132,11 +149,6 @@ export async function runExtraction(
     protocolContext: params.protocolContext,
     budget: params.budget,
   });
-  if (plan.batches.length === 0) {
-    throw new Error(
-      '抽出できる文献がありません（対象文献がすべてテキスト層なしでスキップされました）',
-    );
-  }
 
   const baseProvider = (deps.buildProvider ?? createProvider)({
     apiKey: deps.apiKey,
@@ -173,9 +185,9 @@ export async function runExtraction(
 
   const runId = uuid();
   const startedAt = now();
-  // 実際に実行対象となる study（全文書テキスト層なしで除外された study は含めない。
-  // 除外文書は plan.skippedDocuments で追跡可能）。1 バッチ = 1 study だが section 分割で
-  // 同一 study が複数バッチになりうるため一意化する
+  // 実際に実行対象となる study（1 バッチ = 1 study だが section 分割で同一 study が
+  // 複数バッチになりうるため一意化する）。no_text_layer 文書もページ画像で抽出対象になる
+  // ため除外されない（pdf_native。handoff-scanned-pdf-native-highlight.md §7.4 PR2）
   const studyIds = [...new Set(plan.batches.map((batch) => batch.studyId))];
   const runBase = {
     runId,
@@ -184,10 +196,16 @@ export async function runExtraction(
     studyIds,
     provider: baseProvider.providerId,
     requestedModel: params.model,
-    inputMode: 'text_only' as const, // MVP は text_only のみ（pdf_native は ※Q3）
+    // planRun が判定した入力形式（image 文書を含めば pdf_native。§7.4 PR2）
+    inputMode: plan.inputMode,
     startedAt,
     costEstimate: plan.costEstimateUsd,
   };
+  // Evidence タブのヘッダを bbox 5 列込みへ拡張する（既存プロジェクトの後方互換移行。
+  // §7.4 PR3）。running 行より前に行う: これを怠ると旧ヘッダ（12 列）のまま
+  // appendEvidenceRows が 17 列を追記してしまい、列がずれた壊れた行になる
+  await ensureEvidenceBboxColumns(params.spreadsheetId, deps.google);
+
   // running 行の先行追記（2 行プロトコルの 1 行目）。この追記が失敗したら
   // Evidence を 1 行も書かずに中断するため、孤児 Evidence は生まれない
   await appendExtractionRun(
@@ -214,6 +232,7 @@ export async function runExtraction(
     {
       provider,
       loadDocumentPages: deps.loadDocumentPages,
+      loadDocumentPageImages: deps.loadDocumentPageImages,
       appendEvidence: (rows) => appendEvidenceRows(params.spreadsheetId, rows, deps.google),
       newUuid: deps.newUuid,
       onProgress: params.onProgress,

@@ -41,6 +41,13 @@ const EVIDENCE_ROW_1 = ['ev-1', 'run-1', 'study-1', 'f-total', 'doc-1', '-', '12
 const EVIDENCE_ROW_2 = ['ev-2', 'run-1', 'study-2', 'f-total', 'doc-2', '-', '9', 'FALSE', '', '', '', ''];
 const ARM_EVIDENCE_ROW = ['ev-3', 'run-1', 'study-1', 'f-arm-n', 'doc-1', 'arm:1', '50', 'FALSE', '', '', '', ''];
 
+// §7.4 PR4: no_text_layer 文書（bbox ハイライト）の Evidence 行。17 列（bbox 5 列込み）。
+// anchor_status は空（pdf_native 経路はアンカリングしない）。bbox は 100/80/180/850（ymin/xmin/ymax/xmax）
+const SCAN_EVIDENCE_ROW = [
+  'ev-scan-1', 'run-1', 'study-scan', 'f-total', 'doc-scan', '-', '12', 'FALSE', QUOTE, '1', 'high', '',
+  '1', '100', '80', '180', '850',
+];
+
 const RUNS_HEADERS = [...SHEET_HEADERS.ExtractionRuns];
 
 const RUN_ROW = [
@@ -55,14 +62,11 @@ const STUDY_DATA_HEADERS = [...SHEET_HEADERS.StudyData];
 const RESULTS_DATA_HEADERS = [...SHEET_HEADERS.ResultsData];
 
 /**
- * テキスト層つきの最小 1 ページ PDF（app-pilot.spec.ts と同じ手組み構成）。
- * rotated 指定時は /Rotate 90 のページに 90 度回転したテキスト（表ページの典型）を置く
+ * 最小 1 ページ PDF の共通ビルダー（オブジェクト構造は固定・content stream だけ差し替える）。
+ * minimalPdf（テキスト描画）と noTextPdf（矩形塗りのみ・§7.4 PR4 の bbox テスト用）が共有する
  */
-function minimalPdf(text: string, options: { rotated?: boolean } = {}): Buffer {
-  const content = options.rotated
-    ? `BT /F1 12 Tf 0 1 -1 0 100 72 Tm (${text}) Tj ET`
-    : `BT /F1 12 Tf 72 720 Td (${text}) Tj ET`;
-  const rotateEntry = options.rotated ? ' /Rotate 90' : '';
+function buildOnePagePdf(content: string, rotated: boolean): Buffer {
+  const rotateEntry = rotated ? ' /Rotate 90' : '';
   const objects = [
     '',
     '1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n',
@@ -86,6 +90,26 @@ function minimalPdf(text: string, options: { rotated?: boolean } = {}): Buffer {
   return Buffer.from(pdf, 'latin1');
 }
 
+/**
+ * テキスト層つきの最小 1 ページ PDF（app-pilot.spec.ts と同じ手組み構成）。
+ * rotated 指定時は /Rotate 90 のページに 90 度回転したテキスト（表ページの典型）を置く
+ */
+function minimalPdf(text: string, options: { rotated?: boolean } = {}): Buffer {
+  const content = options.rotated
+    ? `BT /F1 12 Tf 0 1 -1 0 100 72 Tm (${text}) Tj ET`
+    : `BT /F1 12 Tf 72 720 Td (${text}) Tj ET`;
+  return buildOnePagePdf(content, options.rotated ?? false);
+}
+
+/**
+ * テキスト層なしの最小 1 ページ PDF（矩形塗りのみ・BT/ET を含めない。§7.4 PR4 の
+ * bbox 座標ハイライト実弾テスト用。スキャン PDF を模す — pdfjs のテキスト抽出は
+ * 0 件になるが、ページ寸法（MediaBox 612×792・回転 0）は通常どおり読める）
+ */
+function noTextPdf(): Buffer {
+  return buildOnePagePdf('0.85 0.85 0.85 rg 100 600 300 80 re f', false);
+}
+
 /** Sheets / Drive の stub を配線した結果（書き込み URL・PDF バイナリの実 fetch 記録） */
 interface RouteRecorder {
   appendUrls: string[];
@@ -104,7 +128,13 @@ interface RouteRecorder {
  */
 async function setupRoutes(
   page: Page,
-  options: { schemaRows: string[][]; evidenceRows: string[][]; rotatedPdf?: boolean },
+  options: {
+    schemaRows: string[][];
+    evidenceRows: string[][];
+    rotatedPdf?: boolean;
+    /** PDF 本体の差し替え（§7.4 PR4: テキスト層なし PDF の bbox テスト用）。省略時は minimalPdf */
+    pdfBuilder?: () => Buffer;
+  },
 ): Promise<RouteRecorder> {
   const appendUrls: string[] = [];
   const pdfFetchIds: string[] = [];
@@ -156,7 +186,7 @@ async function setupRoutes(
       }
       await route.fulfill({
         contentType: 'application/pdf',
-        body: minimalPdf(QUOTE, { rotated: options.rotatedPdf }),
+        body: options.pdfBuilder ? options.pdfBuilder() : minimalPdf(QUOTE, { rotated: options.rotatedPdf }),
       });
       return;
     }
@@ -166,13 +196,18 @@ async function setupRoutes(
   return { appendUrls, pdfFetchIds };
 }
 
-/** 取り込み文書レコードの雛形（E2E 用の最小フィールド） */
+/**
+ * 取り込み文書レコードの雛形（E2E 用の最小フィールド）。
+ * overrides で個別フィールドを上書きできる（§7.4 PR4: no_text_layer 文書は
+ * textStatus / textRef を上書きして使う）
+ */
 function docRecord(
   documentId: string,
   studyId: string,
   role: string,
   driveFileId: string,
   filename: string,
+  overrides: Record<string, unknown> = {},
 ): Record<string, unknown> {
   return {
     documentId,
@@ -190,6 +225,7 @@ function docRecord(
     importedAt: '2026-07-01T00:00:00Z',
     importedBy: 'e2e@example.com',
     note: null,
+    ...overrides,
   };
 }
 
@@ -244,6 +280,23 @@ function multiDocDocuments(): Record<string, unknown> {
       docRecord('doc-2', 'study-2', 'article', 'drive-2', 'jones2021.pdf'),
     ],
     [studyRecord('study-1', 'Smith 2020'), studyRecord('study-2', 'Jones 2021')],
+  );
+}
+
+/**
+ * §7.4 PR4: テキスト層なし（scan）study が 1 件だけの構成。
+ * textStatus='no_text_layer' / textRef=null（no_text_layer の文書は text_ref を持たない。
+ * requirements.md §3.2）
+ */
+function scanStudyDocuments(): Record<string, unknown> {
+  return documentsSlice(
+    [
+      docRecord('doc-scan', 'study-scan', 'article', 'drive-scan', 'scan.pdf', {
+        textStatus: 'no_text_layer',
+        textRef: null,
+      }),
+    ],
+    [studyRecord('study-scan', 'Scan 2026')],
   );
 }
 
@@ -637,4 +690,59 @@ test('複数文書 study: 初期表示では 2 文書目の PDF バイナリを 
   await expect
     .poll(() => pdfFetchIds.includes('drive-1b'), { timeout: 15_000 })
     .toBe(true);
+});
+
+test('スキャン PDF（no_text_layer）: AI 推定 bbox ハイライト → クリックでセルフォーカス → 承認 → Decisions 追記（§7.4 PR4）', async ({
+  page,
+}) => {
+  const { appendUrls } = await setupRoutes(page, {
+    schemaRows: [STUDY_FIELD_ROW],
+    evidenceRows: [SCAN_EVIDENCE_ROW],
+    pdfBuilder: noTextPdf,
+  });
+  await initApp(page, '#/verify?study=study-scan', scanStudyDocuments());
+
+  await expect(page.locator('.verify__panes')).toBeVisible({ timeout: 15_000 });
+
+  // (a) no_text_layer + bbox あり: バナーは「AI が推定した座標ハイライト」文言になる
+  await expect(page.locator('.verify__banner')).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator('.verify__banner')).toContainText('AI が推定した座標ハイライト');
+
+  // (b) PDF canvas 描画後、bbox 由来のハイライトが 1 件現れ、座標は
+  // bboxToDisplayRect（xmin=80/ymin=100/ymax=180/xmax=850・ページ 612×792・scale 1）の
+  // 計算値と一致する（許容誤差 ±1px）
+  const highlight = page.locator('.pdf-viewer__hl');
+  await expect(highlight).toHaveCount(1, { timeout: 15_000 });
+  const box = await highlight.evaluate((node) => {
+    const style = (node as HTMLElement).style;
+    return {
+      left: parseFloat(style.left),
+      top: parseFloat(style.top),
+      width: parseFloat(style.width),
+      height: parseFloat(style.height),
+    };
+  });
+  expect(Math.abs(box.left - 48.96)).toBeLessThan(1);
+  expect(Math.abs(box.top - 79.2)).toBeLessThan(1);
+  expect(Math.abs(box.width - 471.24)).toBeLessThan(1);
+  expect(Math.abs(box.height - 63.36)).toBeLessThan(1);
+
+  // (d) セルカードに「ハイライトへ移動」が出る（「ハイライト位置を特定できません」は出ない）
+  await expect(page.locator('#verify-focus-detail .verify__quote-jump')).toBeVisible();
+  await expect(page.locator('#verify-focus-detail .verify__quote-unanchored')).toHaveCount(0);
+
+  // (c) ハイライトをクリック → 対応セル（死亡率）がフォーカスされる
+  await highlight.click();
+  await expect(page.locator('#verify-focus-detail .verify__cell-label')).toHaveText('死亡率');
+
+  // (e) 承認 → Decisions への append が記録される
+  await page.locator('#verify-focus-detail .verify__action--accept').click();
+  await expect(page.locator('#verify-focus-detail .verify__chip')).toHaveText('承認');
+  await expect
+    .poll(() => appendUrls.filter((url) => url.includes('Decisions') && url.includes(':append')).length)
+    .toBeGreaterThan(0);
+
+  // (f) axe 違反 0
+  const results = await new AxeBuilder({ page }).analyze();
+  expect(results.violations).toEqual([]);
 });

@@ -26,6 +26,11 @@ export const AUDIT_HEADER = [
   'page',
   'confidence',
   'anchor_status',
+  'bbox_page',
+  'bbox_ymin',
+  'bbox_xmin',
+  'bbox_ymax',
+  'bbox_xmax',
   'decision_seq',
   'action',
   'decision_value',
@@ -40,8 +45,8 @@ export const AUDIT_HEADER = [
  */
 export const AUDIT_MISSING_TOKEN = '.';
 
-/** Evidence 列 8 個。添付 Evidence がない判定行（結合規則 2）は全て構造的欠損 */
-const MISSING_EVIDENCE_COLUMNS = Array.from({ length: 8 }, () => AUDIT_MISSING_TOKEN);
+/** Evidence 列 13 個（bbox 5 列込み。§7.4 PR3）。添付 Evidence がない判定行（結合規則 2）は全て構造的欠損 */
+const MISSING_EVIDENCE_COLUMNS = Array.from({ length: 13 }, () => AUDIT_MISSING_TOKEN);
 
 /** 複合キーの区切り。NUL は値（entity_key・annotator 等）に現れない */
 const SEP = String.fromCharCode(0);
@@ -94,6 +99,11 @@ export function buildAuditCsv(
     evidence.page === null ? '' : String(evidence.page),
     evidence.confidence ?? '',
     evidence.anchorStatus ?? '',
+    evidence.bboxPage === null ? '' : String(evidence.bboxPage),
+    evidence.bbox === null ? '' : String(evidence.bbox.ymin),
+    evidence.bbox === null ? '' : String(evidence.bbox.xmin),
+    evidence.bbox === null ? '' : String(evidence.bbox.ymax),
+    evidence.bbox === null ? '' : String(evidence.bbox.xmax),
   ];
   const cellKey = (fieldId: string, entityKey: string): string => `${fieldId}${SEP}${entityKey}`;
 

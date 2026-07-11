@@ -232,6 +232,78 @@ describe('GeminiProvider.chat', () => {
     expect(provider.providerId).toBe('gemini');
   });
 
+  test('supportsImageInput は true（Gemini はネイティブ対応）', () => {
+    const provider = new GeminiProvider({ apiKey: 'k' });
+    expect(provider.supportsImageInput).toBe(true);
+  });
+
+  test('パート配列 content（text + image）は parts へ inlineData で写す', async () => {
+    const fetch = jest
+      .fn()
+      .mockResolvedValue(jsonResponse({ candidates: [{ content: { parts: [{ text: 'ok' }] } }] }));
+    const provider = new GeminiProvider({ apiKey: 'k', fetch });
+    await provider.chat([
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: 'この画像の項目を抽出して' },
+          { type: 'image', mimeType: 'image/png', dataBase64: 'aGVsbG8=' },
+        ],
+      },
+    ]);
+    const body = JSON.parse((fetch.mock.calls[0][1] as RequestInit).body as string);
+    expect(body.contents).toEqual([
+      {
+        role: 'user',
+        parts: [
+          { text: 'この画像の項目を抽出して' },
+          { inlineData: { mimeType: 'image/png', data: 'aGVsbG8=' } },
+        ],
+      },
+    ]);
+  });
+
+  test('system メッセージがパート配列でも text パートのみ systemInstruction に採用し、image は無視する', async () => {
+    const fetch = jest
+      .fn()
+      .mockResolvedValue(jsonResponse({ candidates: [{ content: { parts: [{ text: 'ok' }] } }] }));
+    const provider = new GeminiProvider({ apiKey: 'k', fetch });
+    await provider.chat([
+      {
+        role: 'system',
+        content: [
+          { type: 'text', text: 'あなたは抽出アシスタントです。' },
+          { type: 'image', mimeType: 'image/png', dataBase64: 'ZGF0YQ==' },
+          { type: 'text', text: '厳密に抽出すること。' },
+        ],
+      },
+      { role: 'user', content: 'q' },
+    ]);
+    const body = JSON.parse((fetch.mock.calls[0][1] as RequestInit).body as string);
+    // image パートは無視され、text パートのみ連結される（[image ...] プレースホルダも混入しない）
+    expect(body.systemInstruction).toEqual({
+      parts: [{ text: 'あなたは抽出アシスタントです。厳密に抽出すること。' }],
+    });
+  });
+
+  test('文字列 content のパスは配列対応を追加しても出力が完全一致する', async () => {
+    const fetch = jest
+      .fn()
+      .mockResolvedValue(jsonResponse({ candidates: [{ content: { parts: [{ text: 'ok' }] } }] }));
+    const provider = new GeminiProvider({ apiKey: 'k', fetch });
+    await provider.chat([
+      { role: 'system', content: 'You are helpful.' },
+      { role: 'user', content: 'q' },
+      { role: 'model', content: 'a' },
+    ]);
+    const body = JSON.parse((fetch.mock.calls[0][1] as RequestInit).body as string);
+    expect(body.systemInstruction).toEqual({ parts: [{ text: 'You are helpful.' }] });
+    expect(body.contents).toEqual([
+      { role: 'user', parts: [{ text: 'q' }] },
+      { role: 'model', parts: [{ text: 'a' }] },
+    ]);
+  });
+
   test('fetch 未注入なら globalThis.fetch にフォールバックする', async () => {
     const stub = jest
       .fn()

@@ -25,7 +25,7 @@ const IMPORT_ROW_LABELS: Record<ImportRowStatus, string> = {
 };
 
 const TEXT_STATUS_NOTES: Partial<Record<TextStatus, string>> = {
-  no_text_layer: 'pdf_native 抽出のみ・ハイライト不可',
+  no_text_layer: 'pdf_native 抽出・ハイライトは AI 推定（bbox）',
 };
 
 const ROLE_LABELS: Record<DocumentRole, string> = {

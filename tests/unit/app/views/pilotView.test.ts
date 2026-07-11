@@ -279,7 +279,7 @@ describe('未実行（setup）', () => {
     expect(empty.root.querySelector('#pilot-documents-empty')).not.toBeNull();
   });
 
-  test('study セレクタ: 選択状態・テキスト層なし study の無効化と注記・切替コールバック', () => {
+  test('study セレクタ: 選択状態・テキスト層なし study も選択可（pdf_native 注記）・切替コールバック', () => {
     const { root, callbacks } = render(
       makeState({
         documents: [
@@ -296,11 +296,17 @@ describe('未実行（setup）', () => {
     const boxes = root.querySelectorAll<HTMLInputElement>('#pilot-documents input');
     expect(boxes[0]?.checked).toBe(true);
     expect(boxes[1]?.checked).toBe(false);
-    expect(boxes[1]?.disabled).toBe(true);
-    expect(root.querySelector('.pilot__doc-note')?.textContent).toContain('テキスト層のある文書がありません');
+    // pdf_native 対応によりテキスト層なし study も選択可（無効化しない）
+    expect(boxes[1]?.disabled).toBe(false);
+    expect(root.querySelector('.pilot__doc-note')?.textContent).toContain(
+      'テキスト層なし: ページ画像を LLM へ送信して抽出します',
+    );
     boxes[0]!.checked = false;
     boxes[0]!.dispatchEvent(new Event('change'));
     expect(callbacks.onToggleStudy).toHaveBeenCalledWith('study-1', false);
+    boxes[1]!.checked = true;
+    boxes[1]!.dispatchEvent(new Event('change'));
+    expect(callbacks.onToggleStudy).toHaveBeenCalledWith('study-2', true);
   });
 
   test('モデル選択の変更と実行ボタン', () => {

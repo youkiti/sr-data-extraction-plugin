@@ -10,6 +10,7 @@ import { nowIso8601 } from '../../utils/iso8601';
 import { generateUuid } from '../../utils/uuid';
 import {
   LlmProviderError,
+  chatContentToText,
   type ChatMessage,
   type ChatOptions,
   type ChatResponse,
@@ -38,7 +39,7 @@ const PROMPT_SUMMARY_LENGTH = 500;
 
 export function buildPromptSummary(messages: readonly ChatMessage[]): string {
   const text = messages
-    .map((m) => `[${m.role}] ${m.content}`)
+    .map((m) => `[${m.role}] ${chatContentToText(m.content)}`)
     .join('\n')
     .replace(/\s+/g, ' ')
     .trim();
@@ -46,6 +47,30 @@ export function buildPromptSummary(messages: readonly ChatMessage[]): string {
     return text;
   }
   return `${text.slice(0, PROMPT_SUMMARY_LENGTH - 1)}…`;
+}
+
+/**
+ * Drive へ保存する prompt payload 用に、画像パートの base64 本体を伏字へ置き換えたメッセージ列を作る。
+ * 1 リクエストで画像を複数枚送ると payload が数 MB に膨らみログ肥大の原因になるため、
+ * base64 文字列は 1 文字も残さず長さだけを記録する（handoff-scanned-pdf-native-highlight.md §7.4 PR1-4）。
+ * 文字列 content・text パートは無改変。
+ */
+export function redactMessagesForLog(messages: readonly ChatMessage[]): unknown {
+  return messages.map((m) => ({
+    ...m,
+    content:
+      typeof m.content === 'string'
+        ? m.content
+        : m.content.map((part) =>
+            part.type === 'image'
+              ? {
+                  type: 'image' as const,
+                  mimeType: part.mimeType,
+                  dataBase64: `<image ${part.mimeType} ${part.dataBase64.length} chars redacted>`,
+                }
+              : part,
+          ),
+  }));
 }
 
 /**
@@ -63,6 +88,7 @@ export function withLogging(
   return {
     providerId: provider.providerId,
     model: provider.model,
+    supportsImageInput: provider.supportsImageInput,
     chat: async (messages: readonly ChatMessage[], options?: ChatOptions) => {
       const logId = uuid();
       const startedAt = now();
@@ -80,7 +106,11 @@ export function withLogging(
         const promptUpload = await deps.uploadJson({
           filename: `${logId}.prompt.json`,
           content: JSON.stringify(
-            { promptVersion: deps.promptVersion ?? null, messages, options },
+            {
+              promptVersion: deps.promptVersion ?? null,
+              messages: redactMessagesForLog(messages),
+              options,
+            },
             null,
             2,
           ),

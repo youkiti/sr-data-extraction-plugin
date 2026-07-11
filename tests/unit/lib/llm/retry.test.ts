@@ -29,6 +29,7 @@ function buildProvider(results: Array<ChatResponse | Error>): {
     provider: {
       providerId: 'gemini',
       model: 'gemini-test',
+      supportsImageInput: true,
       chat: async () => {
         const next = results[count];
         count += 1;
@@ -56,11 +57,12 @@ describe('withRetry', () => {
     expect(calls()).toBe(1);
   });
 
-  test('providerId / model を元プロバイダから引き継ぐ', () => {
+  test('providerId / model / supportsImageInput を元プロバイダから引き継ぐ', () => {
     const { provider } = buildProvider([]);
     const wrapped = withRetry(provider);
     expect(wrapped.providerId).toBe('gemini');
     expect(wrapped.model).toBe('gemini-test');
+    expect(wrapped.supportsImageInput).toBe(true);
   });
 
   test.each([...RETRYABLE_STATUSES])('HTTP %i は再試行して成功すれば返す', async (status) => {

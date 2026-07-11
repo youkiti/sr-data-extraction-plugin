@@ -6,6 +6,7 @@ import type { SchemaField } from '../../../../src/domain/schemaField';
 import {
   AiOutputFormatError,
   validateAiOutput,
+  validateBox,
 } from '../../../../src/features/extraction/validateAiOutput';
 
 function makeField(
@@ -89,6 +90,8 @@ describe('validateAiOutput', () => {
         documentIndex: 1,
         confidence: 'high',
         forcedLowReasons: [],
+        // box_2d を含まない応答（requestBox=false 相当）は box: null
+        box: null,
       });
       // 数値の value は文字列化して保持
       expect(result.items[1]).toMatchObject({ value: '128', confidence: 'high', forcedLowReasons: [] });
@@ -349,6 +352,63 @@ describe('validateAiOutput', () => {
     it('非整数の document_index は zod で null へ落ち、quote 複数文書なら破棄する', () => {
       const { rejected } = runOne({ quote: QUOTE, document_index: 1.5 }, 2);
       expect(rejected[0]?.reason).toBe('invalid_document_index');
+    });
+  });
+
+  describe('validateBox（box_2d の検証。handoff-scanned-pdf-native-highlight.md §7.2）', () => {
+    it.each([
+      ['正常な 4 要素', [100, 200, 300, 400], { ymin: 100, xmin: 200, ymax: 300, xmax: 400 }],
+      [
+        '5 要素で末尾が 4 番目と同値なら先頭 4 要素へ復元',
+        [100, 200, 300, 400, 400],
+        { ymin: 100, xmin: 200, ymax: 300, xmax: 400 },
+      ],
+      ['5 要素で末尾が非重複なら null', [100, 200, 300, 400, 999], null],
+      ['3 要素は null', [100, 200, 300], null],
+      ['6 要素は null', [100, 200, 300, 400, 500, 600], null],
+      ['範囲外（負数）は null', [-1, 200, 300, 400], null],
+      ['範囲外（1000 超）は null', [100, 200, 300, 1001], null],
+      ['順序逆（ymin>ymax）は null', [500, 200, 300, 400], null],
+      ['順序逆（xmin>xmax）は null', [100, 500, 300, 400], null],
+      ['非整数（小数）は null', [100.5, 200, 300, 400], null],
+      ['非整数（NaN）は null', [Number.NaN, 200, 300, 400], null],
+      ['非整数（文字列混入）は null', [100, '200', 300, 400], null],
+      ['境界値 0/1000 は許容', [0, 0, 1000, 1000], { ymin: 0, xmin: 0, ymax: 1000, xmax: 1000 }],
+      ['ymin=ymax・xmin=xmax（点）は許容', [100, 100, 100, 100], { ymin: 100, xmin: 100, ymax: 100, xmax: 100 }],
+    ])('%s', (_label, raw, expected) => {
+      expect(validateBox(raw)).toEqual(expected);
+    });
+
+    it.each([
+      ['配列でない（オブジェクト）', { ymin: 1 }],
+      ['配列でない（文字列）', '[1,2,3,4]'],
+      ['null', null],
+      ['undefined', undefined],
+    ])('%s は null', (_label, raw) => {
+      expect(validateBox(raw)).toBeNull();
+    });
+  });
+
+  describe('box_2d の要素検証への組み込み（§7.4 PR3）', () => {
+    it('妥当な box_2d は item.box に反映される', () => {
+      const { items } = runOne({ box_2d: [100, 200, 300, 400] });
+      expect(items[0]?.box).toEqual({ ymin: 100, xmin: 200, ymax: 300, xmax: 400 });
+    });
+
+    it('壊れた box_2d は破棄せず box のみ null に落とす（他フィールドは正常に処理される）', () => {
+      const { items, rejected } = runOne({
+        value: 'randomized controlled trial',
+        quote: 'a randomized controlled trial',
+        box_2d: [500, 200, 300, 400], // ymin > ymax の不正値
+      });
+      expect(rejected).toEqual([]);
+      expect(items[0]?.box).toBeNull();
+      expect(items[0]?.value).toBe('randomized controlled trial');
+    });
+
+    it('box_2d 欠落は null', () => {
+      const { items } = runOne({});
+      expect(items[0]?.box).toBeNull();
     });
   });
 });

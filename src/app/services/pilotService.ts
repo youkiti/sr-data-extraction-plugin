@@ -13,6 +13,7 @@ import {
   type StudySelectionItem,
 } from '../../features/documents/studySelection';
 import { makeLoadDocumentPages } from '../../features/documents/loadDocumentPages';
+import { makeLoadDocumentPageImages } from '../../features/documents/loadDocumentPageImages';
 import { buildAiAnnotationRows } from '../../features/extraction/aiAnnotationRows';
 import { readEvidenceRows } from '../../features/extraction/evidenceRepository';
 import { readPilotRuns } from '../../features/extraction/runRepository';
@@ -186,6 +187,7 @@ export async function runPilot(store: Store, deps: PilotServiceDeps): Promise<vo
         provider: providerResolution.config.provider,
         endpoint: providerResolution.config.endpoint,
         loadDocumentPages: makeLoadDocumentPages(targets, deps.google),
+        loadDocumentPageImages: makeLoadDocumentPageImages(targets, deps.google),
         buildProvider: deps.buildProvider,
         resolveRateLimitPolicy: deps.resolveRateLimitPolicy,
         newUuid: deps.newUuid,

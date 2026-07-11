@@ -23,11 +23,12 @@ import { anchorQuote } from '../anchoring/anchorQuote';
 import { normalizeText } from '../anchoring/normalizeText';
 import type { PlannedBatch, RunPlan } from './planRun';
 import {
-  EXTRACT_DATA_RESPONSE_SCHEMA,
-  EXTRACT_DATA_SYSTEM_PROMPT,
-  buildExtractDataUserPrompt,
+  buildExtractDataSystemPrompt,
+  buildExtractDataUserContent,
+  extractDataResponseSchema,
   parseExtractDataResponse,
   type ExtractDataDocument,
+  type ExtractDataImagePage,
   type ExtractDataPage,
 } from './skills/extractData';
 import type {
@@ -76,6 +77,12 @@ export interface ExecuteRunDeps {
   provider: LLMProvider;
   /** extracted_texts/{document_id}.txt を読み、ページ別テキストへ復元する */
   loadDocumentPages: (documentId: string) => Promise<ExtractDataPage[]>;
+  /**
+   * no_text_layer 文書のページ画像を読み込む（pdf_native。
+   * handoff-scanned-pdf-native-highlight.md §7.4 PR2）。
+   * plan のいずれかのバッチが画像入力の文書を含むときのみ必須（冒頭の契約検証で確認する）
+   */
+  loadDocumentPageImages?: (documentId: string) => Promise<ExtractDataImagePage[]>;
   /**
    * Evidence タブへの追記（追記型・上書き禁止）。バッチごとではなく、
    * flushEveryNStudies study ぶん貯まったタイミング（+ 全 study 完了時）でまとめて呼ばれる
@@ -181,19 +188,30 @@ function toDetail(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-/** 検証済み要素 → Evidence 行。quote があればこの時点でアンカリングを確定する（§5） */
+/**
+ * 検証済み要素 → Evidence 行。quote があればこの時点でアンカリングを確定する（§5）。
+ * normalizedPages が null（= document_index が画像入力の文書を指す。pdf_native）のときは
+ * アンカリング対象がそもそも無い（テキスト層が無い）ため anchorStatus は null のまま保存する。
+ *
+ * bbox（§7.4 PR3）は quote/anchorStatus とは別軸: 出所文書が画像入力（pdf_native）で、
+ * かつ box_2d の検証（validateBox）を通過し、かつ page ヒントがあるときだけ書く。
+ * それ以外（テキスト文書由来・box 欠落・box 不正・page 欠落）は両方 null に落とす
+ * （bbox は機械検証できないため、他条件は緩めず厳格に AND を取る）
+ */
 function buildEvidenceRow(
   item: ValidatedAiItem,
   runId: string,
   studyId: string,
   documentId: string,
-  normalizedPages: NormalizedPage[],
+  normalizedPages: NormalizedPage[] | null,
+  targetIsImage: boolean,
   uuid: () => string,
 ): Evidence {
   const anchorStatus =
-    item.quote === null
+    item.quote === null || normalizedPages === null
       ? null
       : anchorQuote(normalizeText(item.quote), normalizedPages, item.page).status;
+  const hasBbox = targetIsImage && item.box !== null && item.page !== null;
   return {
     evidenceId: uuid(),
     runId,
@@ -207,22 +225,38 @@ function buildEvidenceRow(
     page: item.page,
     confidence: item.confidence,
     anchorStatus,
+    bboxPage: hasBbox ? item.page : null,
+    bbox: hasBbox ? item.box : null,
   };
 }
 
-/** 文献本文のロード結果（document 単位で 1 回だけロードし、study / バッチ間で使い回す） */
+/**
+ * 文献のロード結果（document 単位で 1 回だけロードし、study / バッチ間で使い回す）。
+ * text_status = no_text_layer の文書はページ画像（pdf_native）としてロードするため、
+ * 本文ページの代わりに imagePages を持つ（normalizedPages が無い = アンカリング不可）
+ */
 type LoadedDocument =
-  | { kind: 'ok'; pages: ExtractDataPage[]; normalizedPages: NormalizedPage[] }
+  | { kind: 'ok'; mode: 'text'; pages: ExtractDataPage[]; normalizedPages: NormalizedPage[] }
+  | { kind: 'ok'; mode: 'image'; imagePages: ExtractDataImagePage[] }
   | { kind: 'error'; detail: string };
 
 /** 連結対象として実際にロードできた 1 文書（document_index 順に並ぶ） */
-interface ResolvedDocument {
-  documentId: string;
-  role: ExtractDataDocument['role'];
-  filename: string;
-  pages: ExtractDataPage[];
-  normalizedPages: NormalizedPage[];
-}
+type ResolvedDocument =
+  | {
+      documentId: string;
+      role: ExtractDataDocument['role'];
+      filename: string;
+      mode: 'text';
+      pages: ExtractDataPage[];
+      normalizedPages: NormalizedPage[];
+    }
+  | {
+      documentId: string;
+      role: ExtractDataDocument['role'];
+      filename: string;
+      mode: 'image';
+      imagePages: ExtractDataImagePage[];
+    };
 
 /** フラッシュ待ちの Evidence バッファ 1 件（生成元バッチのメタ情報を持たせ、
  *  フラッシュ失敗時にどのバッチを save_failed にすべきか分かるようにする） */
@@ -277,6 +311,13 @@ export async function executeRun(
       }
     }
   }
+  // 契約検証: 画像入力（pdf_native）の文書を含む plan には loadDocumentPageImages が必須
+  const hasImageDocuments = input.plan.batches.some((batch) => batch.imageDocumentIds.length > 0);
+  if (hasImageDocuments && deps.loadDocumentPageImages === undefined) {
+    throw new Error(
+      'plan に画像入力（pdf_native）の文書が含まれていますが loadDocumentPageImages が注入されていません',
+    );
+  }
 
   const uuid = deps.newUuid ?? generateUuid;
   const evidence: Evidence[] = [];
@@ -290,19 +331,39 @@ export async function executeRun(
   let modelVersion: string | null = null;
   let completedBatches = 0;
 
-  /** 1 文書を（未ロードなら）ロードしてキャッシュする。同一 document は 1 回だけロードする */
+  /**
+   * 1 文書を（未ロードなら）ロードしてキャッシュする。同一 document は 1 回だけロードする。
+   * text_status = no_text_layer の文書はページ画像（pdf_native）としてロードする。
+   * loadDocumentPageImages の cast は安全: 画像文書を含む plan には冒頭の契約検証で
+   * loadDocumentPageImages の注入を保証済み（このヘルパはその documentId に対してしか呼ばれない）
+   */
   const loadDocument = (documentId: string): Promise<LoadedDocument> => {
     const cached = loadedDocuments.get(documentId);
     if (cached !== undefined) {
       return cached;
     }
+    const doc = documentById.get(documentId) as DocumentRecord;
+    const isImage = doc.textStatus === 'no_text_layer';
     const loading = (async (): Promise<LoadedDocument> => {
       try {
+        if (isImage) {
+          const loadImages = deps.loadDocumentPageImages as NonNullable<
+            ExecuteRunDeps['loadDocumentPageImages']
+          >;
+          const imagePages = await loadImages(documentId);
+          return imagePages.length === 0
+            ? {
+                kind: 'error',
+                detail: 'ページ画像が 0 件です（loadDocumentPageImages の取得結果が空）',
+              }
+            : { kind: 'ok', mode: 'image', imagePages };
+        }
         const pages = await deps.loadDocumentPages(documentId);
         return pages.length === 0
           ? { kind: 'error', detail: '本文ページが 0 件です（extracted_texts の取得結果が空）' }
           : {
               kind: 'ok',
+              mode: 'text',
               pages,
               normalizedPages: pages.map((page) => ({
                 page: page.page,
@@ -442,13 +503,24 @@ export async function executeRun(
       const loaded = loadedList[index] as LoadedDocument;
       if (loaded.kind === 'ok') {
         const doc = documentById.get(documentId) as DocumentRecord;
-        resolved.push({
-          documentId,
-          role: doc.documentRole,
-          filename: doc.filename,
-          pages: loaded.pages,
-          normalizedPages: loaded.normalizedPages,
-        });
+        if (loaded.mode === 'image') {
+          resolved.push({
+            documentId,
+            role: doc.documentRole,
+            filename: doc.filename,
+            mode: 'image',
+            imagePages: loaded.imagePages,
+          });
+        } else {
+          resolved.push({
+            documentId,
+            role: doc.documentRole,
+            filename: doc.filename,
+            mode: 'text',
+            pages: loaded.pages,
+            normalizedPages: loaded.normalizedPages,
+          });
+        }
       } else {
         firstLoadError ??= loaded.detail;
       }
@@ -462,19 +534,25 @@ export async function executeRun(
     }
 
     const batchFields = batch.fieldIds.map((fieldId) => fieldById.get(fieldId) as SchemaField);
-    const promptDocuments: ExtractDataDocument[] = resolved.map((doc) => ({
-      role: doc.role,
-      filename: doc.filename,
-      pages: doc.pages,
-    }));
+    const promptDocuments: ExtractDataDocument[] = resolved.map((doc) =>
+      doc.mode === 'image'
+        ? { role: doc.role, filename: doc.filename, mode: 'image', imagePages: doc.imagePages }
+        : { role: doc.role, filename: doc.filename, mode: 'text', pages: doc.pages },
+    );
+    // box_2d（bbox）は Gemini 系 provider ＋ 画像入力文書を含むバッチのときだけ要求する
+    // （handoff-scanned-pdf-native-highlight.md §7.4 PR3。OpenRouter 等の他 provider は
+    // box grounding の可否が不明なため初期対象に含めない）
+    const requestBox =
+      deps.provider.providerId === 'gemini' && resolved.some((doc) => doc.mode === 'image');
     const messages: ChatMessage[] = [
-      { role: 'system', content: EXTRACT_DATA_SYSTEM_PROMPT },
+      { role: 'system', content: buildExtractDataSystemPrompt(requestBox) },
       {
         role: 'user',
-        content: buildExtractDataUserPrompt({
+        content: buildExtractDataUserContent({
           fields: batchFields,
           documents: promptDocuments,
           protocolContext: input.protocolContext,
+          requestBox,
         }),
       },
     ];
@@ -483,7 +561,7 @@ export async function executeRun(
     try {
       response = await deps.provider.chat(messages, {
         temperature: EXTRACT_DATA_TEMPERATURE,
-        responseSchema: EXTRACT_DATA_RESPONSE_SCHEMA,
+        responseSchema: extractDataResponseSchema(requestBox),
       });
     } catch (err) {
       reportProgress(batch, failBatch(batch, 'api_error', toDetail(err)));
@@ -504,7 +582,8 @@ export async function executeRun(
       rejectedItems.push({ ...item, studyId: batch.studyId, section: batch.section });
     }
 
-    // document_index（1..resolved.length）が指す文書でアンカリングし、その documentId を Evidence に書く
+    // document_index（1..resolved.length）が指す文書でアンカリングし、その documentId を Evidence に書く。
+    // 画像入力（pdf_native）の文書にはテキスト層が無いため normalizedPages が無く、anchorStatus は null になる
     const rows = validated.items.map((item) => {
       const target = resolved[item.documentIndex - 1] as ResolvedDocument;
       return buildEvidenceRow(
@@ -512,7 +591,8 @@ export async function executeRun(
         input.runId,
         batch.studyId,
         target.documentId,
-        target.normalizedPages,
+        target.mode === 'text' ? target.normalizedPages : null,
+        target.mode === 'image',
         uuid,
       );
     });

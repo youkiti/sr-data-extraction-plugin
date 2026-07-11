@@ -189,7 +189,12 @@ function makeDeps(overrides: Partial<SchemaServiceDeps> = {}): {
     google: { fetch: jest.fn() as unknown as typeof fetch, getAccessToken: async () => 't' },
     profile: { getProfileUserInfo: async () => ({ email: 'tester@example.com', id: 'uid' }) },
     loadApiKey: async () => 'api-key',
-    buildProvider: (config) => ({ providerId: 'gemini', model: config.model, chat: chatMock }),
+    buildProvider: (config) => ({
+      providerId: 'gemini',
+      model: config.model,
+      supportsImageInput: true,
+      chat: chatMock,
+    }),
     newUuid: () => 'log-uuid',
     now: () => '2026-07-02T01:00:00Z',
     ...overrides,
@@ -430,6 +435,7 @@ describe('runDraftSchema', () => {
     deps.buildProvider = jest.fn((config) => ({
       providerId: 'openai_compatible',
       model: config.model,
+      supportsImageInput: true,
       chat: chatMock,
     }));
     await runDraftSchema(store, deps);

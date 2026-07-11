@@ -32,6 +32,14 @@ export const MODEL_PRICING: Readonly<Record<string, ModelPricing>> = {
 };
 
 /**
+ * ページ画像 1 枚あたりの入力トークン概算（pdf_native / no_text_layer 文書のページ画像添付。
+ * handoff-scanned-pdf-native-highlight.md §7.4 PR2）。
+ * スパイク実測（experiments/multimodal-bbox-spike/REPORT.md）で 1,000〜1,100 tokens/ページだった
+ * うち保守的に高めの側を採用する。
+ */
+export const APPROX_IMAGE_TOKENS_PER_PAGE = 1_100;
+
+/**
  * tokens_in / tokens_out からモデル単価で概算コスト（USD）を計算する。
  * - 単価表に無いモデル、またはトークン数が両方とも null の場合は null を返す。
  * - 片方のトークン数だけ取れている場合は、取れている側のみで概算する。

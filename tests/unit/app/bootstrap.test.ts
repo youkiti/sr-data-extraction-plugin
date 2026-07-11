@@ -1270,6 +1270,8 @@ describe('bootstrapApp: #/pilot', () => {
           page: null,
           confidence: null,
           anchorStatus: null,
+          bboxPage: null,
+          bbox: null,
         },
         {
           evidenceId: 'ev-arm',
@@ -1284,6 +1286,8 @@ describe('bootstrapApp: #/pilot', () => {
           page: null,
           confidence: null,
           anchorStatus: null,
+          bboxPage: null,
+          bbox: null,
         },
       ],
       decisions: [],

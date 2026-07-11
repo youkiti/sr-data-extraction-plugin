@@ -452,9 +452,22 @@ export function createVerificationPanel(
     );
   }
 
+  // no_text_layer バナーの 2 種類の文言（§7.4 PR4）。bbox を持つ Evidence が 1 件でもある
+  // 文書は「AI 推定ハイライトを表示中」、無ければ従来どおり「ハイライト検証は使えません」
+  const NO_TEXT_LAYER_BANNER_TEXT =
+    'この PDF はテキスト層がないためハイライト検証は使えません（quote 全文とページヒントで検証してください）';
+  const NO_TEXT_LAYER_BBOX_BANNER_TEXT =
+    'この PDF はテキスト層がありません。AI が推定した座標ハイライト（bbox）を表示しています。位置は機械検証できないため、必ず quote 全文と照らして検証してください';
+  // bbox を持つ Evidence の出所文書 ID 集合（バナー出し分けに使う。study 全体で 1 回だけ計算する）
+  const documentsWithBbox = new Set(
+    data.evidence
+      .filter((item) => item.bbox !== null && item.bboxPage !== null)
+      .map((item) => item.documentId),
+  );
+
   const noTextBanner = el('p', {
     className: 'verify__banner',
-    text: 'この PDF はテキスト層がないためハイライト検証は使えません（quote 全文とページヒントで検証してください）',
+    text: NO_TEXT_LAYER_BANNER_TEXT,
   });
 
   // --- 左ペイン表示切替（PDF / 抽出テキスト。issue #28 案2） --------------
@@ -647,7 +660,13 @@ export function createVerificationPanel(
       button.classList.toggle('verify__doc-tab--active', active);
       button.setAttribute('aria-selected', String(active));
     }
-    noTextBanner.hidden = view.document.textStatus !== 'no_text_layer';
+    const isNoTextLayer = view.document.textStatus === 'no_text_layer';
+    noTextBanner.hidden = !isNoTextLayer;
+    if (isNoTextLayer) {
+      noTextBanner.textContent = documentsWithBbox.has(view.document.documentId)
+        ? NO_TEXT_LAYER_BBOX_BANNER_TEXT
+        : NO_TEXT_LAYER_BANNER_TEXT;
+    }
     applyViewMode();
   }
 
@@ -689,7 +708,14 @@ export function createVerificationPanel(
 
   /**
    * matchCount / 選択出現は「テキストのみの再特定」（textMatches）を唯一の情報源にする。
-   * PDF のロード状態に関係なく一貫した表示になる（issue #28 案3）
+   * PDF のロード状態に関係なく一貫した表示になる（issue #28 案3）。
+   *
+   * bbox セル（no_text_layer 文書の pdf_native run）の一致件数表示・フォーカス連動は
+   * Evidence 自体を情報源にする（§7.4 PR4）— textMatches は extracted_texts 基準のため
+   * テキスト層が無ければ 0 件のままだが、PDF ロード前でも件数表示を一貫させたい。
+   * textMatch が既にある cellKey はアンカリング経由の一致を優先し、bbox 情報で上書きしない
+   * （bbox とテキストアンカリングは別軸で両方持つ Evidence は通常ないが、防御的に優先順位を固定する）。
+   * bbox は常に 1 出現（切替の概念が無い）ため matchIndex は常に 0
    */
   function highlightInfo(): Map<string, CellHighlightInfo> {
     if (panelMode === 'independent') {
@@ -702,6 +728,15 @@ export function createVerificationPanel(
         matchCount: match.occurrences.length,
         matchIndex: matchSelection.get(match.cellKey) ?? match.selectedIndex,
       });
+    }
+    for (const item of data.evidence) {
+      if (item.bbox === null || item.bboxPage === null) {
+        continue;
+      }
+      const cellKey = cellKeyOf(item.fieldId, item.entityKey);
+      if (!info.has(cellKey)) {
+        info.set(cellKey, { matchCount: 1, matchIndex: 0 });
+      }
     }
     return info;
   }

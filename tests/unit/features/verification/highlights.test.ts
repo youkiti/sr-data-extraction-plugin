@@ -4,6 +4,7 @@ import type { Evidence } from '../../../../src/domain/evidence';
 import type { TextLayerPage } from '../../../../src/domain/textLayer';
 import { cellKeyOf } from '../../../../src/features/verification/cellState';
 import {
+  bboxToDisplayRect,
   buildDocumentHighlights,
   buildDocumentTextMatches,
   buildStudyTextMatches,
@@ -46,6 +47,8 @@ function makeEvidence(overrides: Partial<Evidence> = {}): Evidence {
     page: 1,
     confidence: 'high',
     anchorStatus: 'exact',
+    bboxPage: null,
+    bbox: null,
     ...overrides,
   };
 }
@@ -135,11 +138,108 @@ describe('buildDocumentHighlights', () => {
 
   test('normalized はハイフネーションを跨いで一致する（正規化の共有）', () => {
     const hyphenPages = [buildPage(1, 'the exam-\nple text')];
-    const [highlight] = buildDocumentHighlights('doc-1', 
+    const [highlight] = buildDocumentHighlights('doc-1',
       [makeEvidence({ quote: 'example text', page: 1, anchorStatus: 'normalized' })],
       hyphenPages,
     );
     expect(highlight?.occurrences).toHaveLength(1);
+  });
+
+  test('アンカリング経路の Evidence は source: "anchor"（§7.4 PR3 の回帰確認）', () => {
+    const [highlight] = buildDocumentHighlights('doc-1', [makeEvidence({ page: 2 })], pages);
+    expect(highlight?.source).toBe('anchor');
+    expect(highlight?.status).toBe('exact');
+    // アンカリング経路の矩形は 'user' 空間（省略時の既定。toDisplayRect で写像する前提）
+    expect(highlight?.occurrences[0]?.space).toBeUndefined();
+  });
+});
+
+describe('bboxToDisplayRect（§7.3 案(i): box → 表示フレーム矩形へ直接変換）', () => {
+  test('0-1000 正規化の bbox をページ表示寸法（scale 1）へ写像する', () => {
+    expect(
+      bboxToDisplayRect(
+        { ymin: 100, xmin: 200, ymax: 300, xmax: 400 },
+        { width: 612, height: 792 },
+      ),
+    ).toEqual({ itemIndex: -1, x: 122.4, y: 79.2, width: 122.4, height: 158.4 });
+  });
+
+  test('全面 bbox（0,0,1000,1000）はページ全体を覆う矩形になる', () => {
+    expect(
+      bboxToDisplayRect({ ymin: 0, xmin: 0, ymax: 1000, xmax: 1000 }, { width: 600, height: 800 }),
+    ).toEqual({ itemIndex: -1, x: 0, y: 0, width: 600, height: 800 });
+  });
+});
+
+describe('buildDocumentHighlights の bbox 経路（pdf_native の box_2d。§7.4 PR3）', () => {
+  const pages = [
+    buildPage(1, 'in this trial mortality was 12 percent overall'),
+    buildPage(2, 'we repeat: mortality was 12 percent in both arms'),
+  ];
+
+  test('bbox / bboxPage がある Evidence は bbox 経路（source/status/space/selectedIndex）で生成する', () => {
+    const [highlight] = buildDocumentHighlights(
+      'doc-1',
+      [
+        makeEvidence({
+          anchorStatus: null,
+          bboxPage: 1,
+          bbox: { ymin: 100, xmin: 200, ymax: 300, xmax: 400 },
+        }),
+      ],
+      pages,
+    );
+    expect(highlight).toEqual({
+      evidenceId: 'ev-1',
+      documentId: 'doc-1',
+      cellKey: cellKeyOf('f-1', '-'),
+      status: null,
+      source: 'bbox',
+      occurrences: [
+        {
+          page: 1,
+          rects: [bboxToDisplayRect({ ymin: 100, xmin: 200, ymax: 300, xmax: 400 }, pages[0]!)],
+          space: 'display',
+        },
+      ],
+      selectedIndex: 0,
+    });
+  });
+
+  test('bboxPage が指すページが pages に無ければ skip する', () => {
+    expect(
+      buildDocumentHighlights(
+        'doc-1',
+        [
+          makeEvidence({
+            anchorStatus: null,
+            bboxPage: 5,
+            bbox: { ymin: 100, xmin: 200, ymax: 300, xmax: 400 },
+          }),
+        ],
+        pages,
+      ),
+    ).toEqual([]);
+  });
+
+  test('bbox 経路はテキスト層アンカリング（quote 再特定）より先に判定される', () => {
+    // quote / anchorStatus がテキスト層アンカリング的に有効に見えても、bbox があれば bbox 経路を使う
+    const [highlight] = buildDocumentHighlights(
+      'doc-1',
+      [
+        makeEvidence({
+          quote: 'mortality was 12 percent',
+          anchorStatus: 'exact',
+          page: 1,
+          bboxPage: 2,
+          bbox: { ymin: 0, xmin: 0, ymax: 100, xmax: 100 },
+        }),
+      ],
+      pages,
+    );
+    expect(highlight?.source).toBe('bbox');
+    expect(highlight?.occurrences).toHaveLength(1);
+    expect(highlight?.occurrences[0]?.page).toBe(2);
   });
 });
 

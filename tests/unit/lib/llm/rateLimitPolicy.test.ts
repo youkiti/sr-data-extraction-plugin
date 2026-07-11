@@ -185,6 +185,7 @@ describe('applyRateLimitPolicy', () => {
       provider: {
         providerId: 'gemini',
         model: 'm',
+        supportsImageInput: true,
         chat: async () => {
           callTimes.push(clock.now);
           const next = results[i];

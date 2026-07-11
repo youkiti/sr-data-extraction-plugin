@@ -1,0 +1,19 @@
+# 著作物（「Reproduced with permission」複写スタンプ付きスキャン論文）の再配布回避。
+# 入力 PDF と全ページ再現画像（overlay 含む）はコミットしない。
+# TDM（解析目的の利用）は権利制限内だが、全ページ画像の公開リポジトリへの
+# コミットは公衆送信=再配布になりうるためローカル保持にとどめる（Fable 監査 §5 指摘）。
+# overlay は目視証跡としてローカルに残せば足りる。
+inputs/*.pdf
+outputs/pages/*.png
+outputs/overlays/*.png
+
+# 2026-07-11 追試（難条件での再検証）分の生成画像も同じ理由で非コミット
+outputs/overlays-blind/*.png
+outputs/rotate-check/*.png
+
+# 依存（自前 install 分）
+node_modules/
+
+# コミット可: PLAN.md / REPORT.md / src/ / outputs/runs/*.json（quote 断片のみ）/
+#            outputs/report-summary.json / outputs/pages/dims.json /
+#            outputs/runs-blind/*.json（quote 断片のみ）/ outputs/rotate-check/result.json

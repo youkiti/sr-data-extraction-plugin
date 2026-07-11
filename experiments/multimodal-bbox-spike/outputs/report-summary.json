@@ -1,0 +1,160 @@
+{
+ "generatedAt": "2026-07-11T09:09:49.776Z",
+ "runCount": 3,
+ "totalTokens": 8216,
+ "totalElapsedMs": 21027,
+ "items": [
+  {
+   "page": 1,
+   "label": "title",
+   "value": "NEONATAL STAFF AND ADVANCED PRACTICE NURSES'\nPERCEPTIONS OF BEREAVEMENT/END-OF-LIFE CARE OF\nFAMILIES OF CRITICALLY ILL AND/OR DYING INFANTS",
+   "hasBox": true,
+   "boxRecovered": false,
+   "box_2d_normalized": [
+    102,
+    79,
+    175,
+    854
+   ],
+   "box_pt": {
+    "x": 45.741,
+    "y": 669.9,
+    "width": 448.725,
+    "height": 59.275999999999996
+   }
+  },
+  {
+   "page": 1,
+   "label": "first_author",
+   "value": "Arthur J. Engler",
+   "hasBox": true,
+   "boxRecovered": true,
+   "box_2d_normalized": [
+    201,
+    98,
+    213,
+    201
+   ],
+   "box_pt": {
+    "x": 56.742000000000004,
+    "y": 639.044,
+    "width": 59.63699999999999,
+    "height": 9.744
+   }
+  },
+  {
+   "page": 1,
+   "label": "final_response_rate",
+   "value": "52",
+   "hasBox": true,
+   "boxRecovered": true,
+   "box_2d_normalized": [
+    434,
+    399,
+    448,
+    429
+   ],
+   "box_pt": {
+    "x": 231.02100000000002,
+    "y": 448.22400000000005,
+    "width": 17.37,
+    "height": 11.368
+   }
+  },
+  {
+   "page": 4,
+   "label": "comfort_final_cronbach_alpha",
+   "value": ".95",
+   "hasBox": true,
+   "boxRecovered": false,
+   "box_2d_normalized": [
+    161,
+    867,
+    171,
+    883
+   ],
+   "box_pt": {
+    "x": 501.993,
+    "y": 673.1479999999999,
+    "width": 9.264,
+    "height": 8.120000000000001
+   }
+  },
+  {
+   "page": 4,
+   "label": "total_no_of_items",
+   "value": "55",
+   "hasBox": true,
+   "boxRecovered": false,
+   "box_2d_normalized": [
+    197,
+    788,
+    206,
+    802
+   ],
+   "box_pt": {
+    "x": 456.252,
+    "y": 644.7280000000001,
+    "width": 8.106,
+    "height": 7.308
+   }
+  },
+  {
+   "page": 5,
+   "label": "item1_percent",
+   "value": "98",
+   "hasBox": true,
+   "boxRecovered": false,
+   "box_2d_normalized": [
+    121,
+    855,
+    132,
+    872
+   ],
+   "box_pt": {
+    "x": 495.045,
+    "y": 704.816,
+    "width": 9.843,
+    "height": 8.931999999999999
+   }
+  },
+  {
+   "page": 5,
+   "label": "item7_percent",
+   "value": "45",
+   "hasBox": true,
+   "boxRecovered": false,
+   "box_2d_normalized": [
+    370,
+    855,
+    381,
+    872
+   ],
+   "box_pt": {
+    "x": 495.045,
+    "y": 502.628,
+    "width": 9.843,
+    "height": 8.931999999999999
+   }
+  },
+  {
+   "page": 5,
+   "label": "mean_comfort_score",
+   "value": "4.13",
+   "hasBox": true,
+   "boxRecovered": false,
+   "box_2d_normalized": [
+    743,
+    565,
+    754,
+    597
+   ],
+   "box_pt": {
+    "x": 327.135,
+    "y": 199.752,
+    "width": 18.528,
+    "height": 8.931999999999999
+   }
+  }
+ ]
+}

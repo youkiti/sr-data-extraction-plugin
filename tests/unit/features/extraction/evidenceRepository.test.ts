@@ -1,10 +1,14 @@
 import type { Evidence } from '../../../../src/domain/evidence';
 import {
   appendEvidenceRows,
+  ensureEvidenceBboxColumns,
   evidenceToRow,
   readEvidenceRows,
 } from '../../../../src/features/extraction/evidenceRepository';
 import { SHEET_HEADERS } from '../../../../src/domain/sheetsSchema';
+
+/** 旧ヘッダ（bbox 列導入前）の 12 列 */
+const LEGACY_HEADER = SHEET_HEADERS.Evidence.slice(0, 12);
 
 function makeEvidence(overrides: Partial<Evidence> = {}): Evidence {
   return {
@@ -20,6 +24,8 @@ function makeEvidence(overrides: Partial<Evidence> = {}): Evidence {
     page: 3,
     confidence: 'high',
     anchorStatus: 'exact',
+    bboxPage: null,
+    bbox: null,
     ...overrides,
   };
 }
@@ -37,7 +43,7 @@ function deps(): { fetch: jest.Mock; getAccessToken: jest.Mock } {
 }
 
 describe('evidenceToRow', () => {
-  test('SHEET_HEADERS.Evidence の列順に対応する', () => {
+  test('SHEET_HEADERS.Evidence の列順に対応する（bbox 5 列込みで 17 セル）', () => {
     expect(evidenceToRow(makeEvidence())).toEqual([
       'ev-1',
       'run-1',
@@ -51,6 +57,11 @@ describe('evidenceToRow', () => {
       3,
       'high',
       'exact',
+      null,
+      null,
+      null,
+      null,
+      null,
     ]);
   });
 
@@ -66,7 +77,54 @@ describe('evidenceToRow', () => {
           anchorStatus: null,
         }),
       ),
-    ).toEqual(['ev-1', 'run-1', 'study-1', 'f-1', 'doc-1', '-', null, true, null, null, null, null]);
+    ).toEqual([
+      'ev-1',
+      'run-1',
+      'study-1',
+      'f-1',
+      'doc-1',
+      '-',
+      null,
+      true,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+    ]);
+  });
+
+  test('bbox 込みの Evidence は末尾 5 セルへ bboxPage + 4 座標を書く（§7.4 PR3）', () => {
+    expect(
+      evidenceToRow(
+        makeEvidence({
+          bboxPage: 2,
+          bbox: { ymin: 100, xmin: 200, ymax: 300, xmax: 400 },
+        }),
+      ),
+    ).toEqual([
+      'ev-1',
+      'run-1',
+      'study-1',
+      'f-1',
+      'doc-1',
+      '-',
+      '120',
+      false,
+      'total of 120 patients',
+      3,
+      'high',
+      'exact',
+      2,
+      100,
+      200,
+      300,
+      400,
+    ]);
   });
 });
 
@@ -156,6 +214,80 @@ describe('readEvidenceRows', () => {
     );
   });
 
+  test('旧 12 列ヘッダ（bbox 列なし）は許容し、bbox は null として読む（既存プロジェクトの後方互換）', async () => {
+    const rows = await readEvidenceRows(
+      'sheet-1',
+      readDeps([LEGACY_HEADER, sheetRow()]),
+    );
+    expect(rows[0]).toEqual(makeEvidence());
+  });
+
+  test('17 列ヘッダ + bbox セルが埋まった行を往復できる（§7.4 PR3）', async () => {
+    const rows = await readEvidenceRows(
+      'sheet-1',
+      readDeps([
+        [...SHEET_HEADERS.Evidence],
+        sheetRow({ 12: '2', 13: '100', 14: '200', 15: '300', 16: '400' }),
+      ]),
+    );
+    expect(rows[0]).toEqual(
+      makeEvidence({ bboxPage: 2, bbox: { ymin: 100, xmin: 200, ymax: 300, xmax: 400 } }),
+    );
+  });
+
+  test('13 列目以降（bbox 列）の名前不一致はエラー', async () => {
+    const badHeader = [...SHEET_HEADERS.Evidence];
+    badHeader[13] = 'wrong';
+    await expect(
+      readEvidenceRows('sheet-1', readDeps([badHeader, sheetRow()])),
+    ).rejects.toThrow('Evidence のヘッダ 14 列目が "bbox_ymin" ではありません');
+  });
+
+  test('bbox セルが一部だけ埋まっている行はエラー', async () => {
+    await expect(
+      readEvidenceRows(
+        'sheet-1',
+        readDeps([[...SHEET_HEADERS.Evidence], sheetRow({ 12: '2' })]),
+      ),
+    ).rejects.toThrow('bbox 列（bbox_page/bbox_ymin/bbox_xmin/bbox_ymax/bbox_xmax）が一部だけ埋まっています');
+  });
+
+  test('bbox 座標の順序が逆（ymin>ymax）はエラー', async () => {
+    await expect(
+      readEvidenceRows(
+        'sheet-1',
+        readDeps([
+          [...SHEET_HEADERS.Evidence],
+          sheetRow({ 12: '2', 13: '500', 14: '200', 15: '300', 16: '400' }),
+        ]),
+      ),
+    ).rejects.toThrow('bbox の座標順序が不正です');
+  });
+
+  test('bbox_page が正の整数でない（0 以下・非整数）はエラー', async () => {
+    await expect(
+      readEvidenceRows(
+        'sheet-1',
+        readDeps([
+          [...SHEET_HEADERS.Evidence],
+          sheetRow({ 12: '0', 13: '100', 14: '200', 15: '300', 16: '400' }),
+        ]),
+      ),
+    ).rejects.toThrow('bbox_page "0" が正の整数ではありません');
+  });
+
+  test('bbox 座標が範囲外（1000 超）はエラー', async () => {
+    await expect(
+      readEvidenceRows(
+        'sheet-1',
+        readDeps([
+          [...SHEET_HEADERS.Evidence],
+          sheetRow({ 12: '2', 13: '100', 14: '200', 15: '300', 16: '1001' }),
+        ]),
+      ),
+    ).rejects.toThrow('bbox_xmax "1001" が 0-1000 の整数ではありません');
+  });
+
   test('page / confidence / anchor_status の不正値はエラー', async () => {
     await expect(
       readEvidenceRows('sheet-1', readDeps([[...SHEET_HEADERS.Evidence], sheetRow({ 9: 'p3' })])),
@@ -179,5 +311,67 @@ describe('readEvidenceRows', () => {
       confidence: null,
       anchorStatus: null,
     });
+  });
+});
+
+describe('ensureEvidenceBboxColumns', () => {
+  /** getBatchValues（GET .../values:batchGet）と updateRow（PUT .../values/Evidence!A1）を
+   *  method で出し分けるモック fetch。headerRow が undefined ならヘッダ行なし（空シート）を模す */
+  function bboxDeps(headerRow: string[] | undefined): {
+    fetch: jest.Mock;
+    getAccessToken: jest.Mock;
+  } {
+    const fetch = jest.fn(async (_url: string, init?: RequestInit) => {
+      const method = init?.method ?? 'GET';
+      if (method === 'GET') {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            valueRanges: headerRow === undefined ? [] : [{ values: [headerRow] }],
+          }),
+          text: async () => '',
+        } as Response;
+      }
+      // updateRow（ヘッダ拡張の PUT）
+      return { ok: true, status: 200, json: async () => ({}), text: async () => '' } as Response;
+    });
+    return { fetch, getAccessToken: jest.fn().mockResolvedValue('token') };
+  }
+
+  test('旧 12 列ヘッダはフルヘッダ（17 列）へ拡張する（PUT）', async () => {
+    const d = bboxDeps([...LEGACY_HEADER]);
+    await ensureEvidenceBboxColumns('sid', d);
+    const putCall = d.fetch.mock.calls.find(([, init]) => (init as RequestInit)?.method === 'PUT');
+    expect(putCall).toBeDefined();
+    const [url, init] = putCall as [string, RequestInit];
+    expect(decodeURIComponent(url)).toContain('/sid/values/Evidence!A1');
+    const body = JSON.parse(init.body as string) as { values: string[][] };
+    expect(body.values).toEqual([[...SHEET_HEADERS.Evidence]]);
+  });
+
+  test('既に 17 列（拡張済み）なら no-op（PUT を呼ばない）', async () => {
+    const d = bboxDeps([...SHEET_HEADERS.Evidence]);
+    await ensureEvidenceBboxColumns('sid', d);
+    const putCall = d.fetch.mock.calls.find(([, init]) => (init as RequestInit)?.method === 'PUT');
+    expect(putCall).toBeUndefined();
+  });
+
+  test('先頭 12 列が SHEET_HEADERS.Evidence と不一致なら throw し、PUT は呼ばない（壊れたプロジェクトへの書き込み防止）', async () => {
+    const badHeader = [...LEGACY_HEADER];
+    badHeader[2] = 'wrong'; // study_id のはずが不一致
+    const d = bboxDeps(badHeader);
+    await expect(ensureEvidenceBboxColumns('sid', d)).rejects.toThrow(
+      'Evidence のヘッダ 3 列目が "study_id" ではありません',
+    );
+    const putCall = d.fetch.mock.calls.find(([, init]) => (init as RequestInit)?.method === 'PUT');
+    expect(putCall).toBeUndefined();
+  });
+
+  test('ヘッダ行が無い（空シート）場合も列不一致として throw する', async () => {
+    const d = bboxDeps(undefined);
+    await expect(ensureEvidenceBboxColumns('sid', d)).rejects.toThrow(
+      'Evidence のヘッダ 1 列目が "evidence_id" ではありません',
+    );
   });
 });

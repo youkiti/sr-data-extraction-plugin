@@ -178,6 +178,61 @@ describe('OpenAICompatibleProvider', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  test('supportsImageInput は true（OpenAI 互換の image_url をパススルーする）', () => {
+    const provider = new OpenAICompatibleProvider({
+      apiKey: 'k',
+      model: 'm',
+      endpoint: 'https://llm.example/v1/chat/completions',
+    });
+    expect(provider.supportsImageInput).toBe(true);
+  });
+
+  test('パート配列 content（text + image）は OpenAI 互換の image_url data URL に写す', async () => {
+    const fetchMock = jest.fn().mockResolvedValue(
+      response({ choices: [{ message: { content: 'ok' } }] }),
+    );
+    const provider = new OpenAICompatibleProvider({
+      apiKey: 'k',
+      model: 'm',
+      endpoint: 'https://llm.example/v1/chat/completions',
+      fetch: fetchMock,
+    });
+    await provider.chat([
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: 'この画像を見て' },
+          { type: 'image', mimeType: 'image/jpeg', dataBase64: 'Zm9v' },
+        ],
+      },
+    ]);
+    const body = JSON.parse((fetchMock.mock.calls[0]?.[1] as RequestInit).body as string);
+    expect(body.messages).toEqual([
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: 'この画像を見て' },
+          { type: 'image_url', image_url: { url: 'data:image/jpeg;base64,Zm9v' } },
+        ],
+      },
+    ]);
+  });
+
+  test('文字列 content のパスは配列対応を追加しても出力が完全一致する', async () => {
+    const fetchMock = jest.fn().mockResolvedValue(
+      response({ choices: [{ message: { content: 'ok' } }] }),
+    );
+    const provider = new OpenAICompatibleProvider({
+      apiKey: 'k',
+      model: 'm',
+      endpoint: 'https://llm.example/v1/chat/completions',
+      fetch: fetchMock,
+    });
+    await provider.chat([{ role: 'user', content: 'q' }]);
+    const body = JSON.parse((fetchMock.mock.calls[0]?.[1] as RequestInit).body as string);
+    expect(body.messages).toEqual([{ role: 'user', content: 'q' }]);
+  });
+
   test('HTTP エラーを LlmProviderError にする', async () => {
     const fetchMock = jest.fn().mockResolvedValue(response({ error: 'bad' }, false, 401));
     const provider = new OpenAICompatibleProvider({

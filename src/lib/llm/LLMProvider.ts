@@ -1,11 +1,63 @@
 // 全 LLM プロバイダ共通の低レベル I/F（sr-query-builder の lib/llm/LLMProvider.ts を流用）。
 // 「skill と provider を直交させる」方針に従い、ここでは `chat(messages, options) -> response`
 // だけを公開する。skill 側のロジックは features/*/skills/* に持つ（architecture.md §2）
+//
+// マルチモーダル対応（handoff-scanned-pdf-native-highlight.md §7.4 PR1）: `content` は
+// 文字列（従来どおり）に加えて「テキスト + 画像パート」の配列も受け付ける。この PR は
+// 型の土台と各プロバイダの写像だけを整備し、UI からはまだ画像パートを送らない。
 import type { LlmProviderId } from '../../domain/llmApiLog';
+
+/** テキスト + 画像を混在させられる `ChatMessage.content` の 1 パート */
+export type ChatContentPart =
+  | { type: 'text'; text: string }
+  | { type: 'image'; mimeType: string; dataBase64: string };
 
 export interface ChatMessage {
   role: 'system' | 'user' | 'model';
-  content: string;
+  /**
+   * 文字列（従来どおり）か、テキスト/画像パートの配列。
+   * 配列を渡すのは画像を含めたいときのみ想定し、文字列パスの既存挙動は変えない。
+   */
+  content: string | readonly ChatContentPart[];
+}
+
+/**
+ * `ChatMessage.content` をテキストへ平坦化する（apiLogger のプレビュー等、
+ * テキストとしての要約が欲しい箇所で使う共有ヘルパ）。
+ * 文字列はそのまま、配列は text パートを連結し、image パートは
+ * `[image ${mimeType}]` というプレースホルダ文字列として埋め込む（base64 本体は含めない）。
+ */
+export function chatContentToText(content: ChatMessage['content']): string {
+  if (typeof content === 'string') {
+    return content;
+  }
+  return content
+    .map((part) => (part.type === 'text' ? part.text : `[image ${part.mimeType}]`))
+    .join('');
+}
+
+/** メッセージ列のいずれかに画像パートが含まれるか（後続 PR で provider 可否判定に使う） */
+export function hasImagePart(messages: readonly ChatMessage[]): boolean {
+  return messages.some(
+    (m) => Array.isArray(m.content) && m.content.some((part) => part.type === 'image'),
+  );
+}
+
+/**
+ * OpenAI 互換 API（OpenRouter / OpenAICompatibleProvider）向けの `content` 写像。
+ * 文字列はそのまま通し（現状の body 形を 1 バイトも変えない）、配列は
+ * `{ type: 'text' }` / `{ type: 'image_url', image_url: { url: data URL } }` へ写す。
+ * 2 プロバイダで重複させないよう、ここに 1 箇所だけ定義する。
+ */
+export function toOpenAiContent(content: ChatMessage['content']): unknown {
+  if (typeof content === 'string') {
+    return content;
+  }
+  return content.map((part) =>
+    part.type === 'text'
+      ? { type: 'text', text: part.text }
+      : { type: 'image_url', image_url: { url: `data:${part.mimeType};base64,${part.dataBase64}` } },
+  );
 }
 
 export type ResponseFormat = 'text' | 'json';
@@ -44,6 +96,14 @@ export interface ChatResponse {
 export interface LLMProvider {
   readonly providerId: LlmProviderId;
   readonly model: string;
+  /**
+   * 画像パート（`ChatContentPart` の `type: 'image'`）を送れるか。
+   * 必須フィールドにしているのは意図的: withRetry / withThrottle / withLogging 等の
+   * ラッパが LLMProvider を新しく組み立てる箇所で、このフィールドの伝播漏れを
+   * コンパイルエラーとして検出させるため（実行時まで気付かないと画像対応 provider を
+   * ラップした瞬間に非対応扱いへ後退してしまう）
+   */
+  readonly supportsImageInput: boolean;
   chat(messages: readonly ChatMessage[], options?: ChatOptions): Promise<ChatResponse>;
 }
 

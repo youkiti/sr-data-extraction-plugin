@@ -151,7 +151,7 @@ test('一覧: study 単位グループと role セレクト・text_status バッ
   await expect(page.locator('.documents__badge--ok')).toHaveText('ok');
   await expect(page.locator('.documents__badge--partial')).toHaveText('partial');
   await expect(page.locator('.documents__badge--no_text_layer')).toHaveText('no_text_layer');
-  await expect(page.locator('.documents__badge-note')).toHaveText('pdf_native 抽出のみ・ハイライト不可');
+  await expect(page.locator('.documents__badge-note')).toHaveText('pdf_native 抽出・ハイライトは AI 推定（bbox）');
   await expect(page.locator('.view__notice')).toContainText('取り込んだ PDF が外部へ送信されるのは LLM API への抽出リクエストのみです');
   // 選択 0 件では統合ボタンは無効
   await expect(page.locator('#documents-merge')).toBeDisabled();

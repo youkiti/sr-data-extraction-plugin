@@ -6,6 +6,7 @@
 //   「プロンプト構築 → 構造化出力スキーマ → 応答パース（validateAiOutput へ委譲）」の純粋関数のみ
 import type { DocumentRole } from '../../../domain/document';
 import type { EntityLevel, SchemaField } from '../../../domain/schemaField';
+import type { ChatContentPart } from '../../../lib/llm/LLMProvider';
 import {
   AiOutputFormatError,
   validateAiOutput,
@@ -18,8 +19,14 @@ export const EXTRACT_DATA_SKILL_NAME = 'extract-data';
 /**
  * プロンプト版数。プロンプト文言・スキーマを変えたら必ずインクリメントする。
  * v2（2026-07）: 複数文書の連結入力 + document_index を導入（v0.10 study / document モデル）
+ * v3（2026-07-11）: pdf_native 入力（no_text_layer 文書のページ画像添付）に対応。
+ *   システムプロンプトへスキャン文書向けの quote/page 規約を追記
+ *   （handoff-scanned-pdf-native-highlight.md §7.4 PR2）
+ * v4（2026-07-11）: box_2d（quote の bounding box）の取得に対応。requestBox=true 時のみ
+ *   システムプロンプト / ユーザープロンプト / 応答スキーマへ box ルールを追加する
+ *   （requestBox=false の経路は 1 文字も変わらない。handoff-scanned-pdf-native-highlight.md §7.4 PR3）
  */
-export const EXTRACT_DATA_PROMPT_VERSION = 2;
+export const EXTRACT_DATA_PROMPT_VERSION = 4;
 
 /** text_only モードで LLM へ渡すページ別本文（extracted_texts/{id}.txt 由来） */
 export interface ExtractDataPage {
@@ -29,28 +36,58 @@ export interface ExtractDataPage {
 }
 
 /**
- * プロンプトへ連結する 1 文書（v0.10）。並び順（配列の添字 + 1）が document_index になる。
- * 同一 study の全文書をロール付き区切りで連結して 1 回で抽出する（§4.3）
+ * pdf_native モードで LLM へ添付するページ画像。
+ * 型は features/documents/loadDocumentPageImages.ts の DocumentPageImage と同一形
+ * （こちらは skill 側の呼称。定義の正典はローダ側で、ここは import して使う）
  */
-export interface ExtractDataDocument {
-  /** 見出しに出すロール（DOCUMENT_ROLE_ORDER 順に並べるのは planRun / executeRun の責務） */
-  role: DocumentRole;
-  /** 見出しに出すファイル名（可読性のみ。突合には使わない） */
-  filename: string;
-  /** 当該文書の本文（ページ順） */
-  pages: readonly ExtractDataPage[];
+export interface ExtractDataImagePage {
+  /** 1-indexed ページ番号。画像ラベル `[Document i/N page p]` の p になる */
+  page: number;
+  mimeType: string;
+  dataBase64: string;
 }
+
+/**
+ * プロンプトへ連結する 1 文書（v0.10）。並び順（配列の添字 + 1）が document_index になる。
+ * 同一 study の全文書をロール付き区切りで連結して 1 回で抽出する（§4.3）。
+ * text_status = no_text_layer の文書は mode: 'image'（本文の代わりにページ画像を添付する
+ * pdf_native 入力。handoff-scanned-pdf-native-highlight.md §7.4 PR2）
+ */
+export type ExtractDataDocument =
+  | {
+      /** 見出しに出すロール（DOCUMENT_ROLE_ORDER 順に並べるのは planRun / executeRun の責務） */
+      role: DocumentRole;
+      /** 見出しに出すファイル名（可読性のみ。突合には使わない） */
+      filename: string;
+      mode: 'text';
+      /** 当該文書の本文（ページ順） */
+      pages: readonly ExtractDataPage[];
+    }
+  | {
+      role: DocumentRole;
+      filename: string;
+      mode: 'image';
+      /** 当該文書のページ画像（ページ順） */
+      imagePages: readonly ExtractDataImagePage[];
+    };
 
 export interface ExtractDataPromptInput {
   /** 当該バッチで抽出する項目（同一 schema_version。分割は planRun の責務） */
   fields: readonly SchemaField[];
   /**
    * 同一 study の文書（document_index 順）。1 件でも複数でも可。
-   * pdf_native モード（※Q3）は lib/llm 移植時に別途対応
+   * mode: 'image' の文書はプロンプト本文には注記だけを出し、実ページ画像は
+   * buildExtractDataUserContent が ChatContentPart[] の画像パートとして別途添付する
    */
   documents: readonly ExtractDataDocument[];
   /** RQ・PICO 等の要約。項目の解釈を安定させる補助コンテキスト（省略可） */
   protocolContext?: string | null;
+  /**
+   * box_2d（quote の bounding box）の取得を要求するか。省略時 false。
+   * true にできるのは「Gemini 系 provider」かつ「バッチに画像文書を含む」ときだけ
+   * （判定は executeRun 側の責務。handoff-scanned-pdf-native-highlight.md §7.4 PR3）
+   */
+  requestBox?: boolean;
 }
 
 /**
@@ -70,11 +107,34 @@ Rules:
 - "value": report exactly as written in the document. Do not convert units, do not round, do not translate.
 - "document_index": the 1-based number of the document (from the "=== Document i/N ... ===" headers) that your quote and page refer to. REQUIRED whenever "quote" is provided; set it to null only when "not_reported" is true.
 - "page": the 1-indexed page number within THAT document where the quote appears. Page boundaries are marked as [PAGE n] within each document.
+- For a scanned document with no text layer (its "=== Document i/N ..." note says so): its pages are attached as images after this prompt, each labeled "Document i/N page p". "quote" must be a verbatim transcription of the text actually visible in that page image (character for character, no paraphrasing), and "page" must be the p shown in that image's label.
 - When documents disagree on a value, prefer the main article, lower your "confidence", and take the quote from the document you actually read the value from.
 - "confidence": self-assess each item as "high", "medium" or "low".
 - "field_id" is the matching key: echo it exactly as listed. Never invent field_ids.
 - Return one item for EVERY listed field and EVERY entity instance it applies to (see the entity_key rules).
 `.trim();
+
+/**
+ * box_2d（quote の bounding box）の追加ルール。requestBox=true のときだけ
+ * システムプロンプトの末尾に足す（handoff-scanned-pdf-native-highlight.md §7.2）。
+ * 幻覚 box 防止のため「位置特定できたときだけ返す・最も近い box を推測するのは禁止」を明記する
+ */
+const EXTRACT_DATA_BOX_RULES = `
+Additional rule about "box_2d" (bounding box), for scanned documents only (those attached as page images):
+- For an item whose quote comes from a scanned document, try to visually locate that exact quote in its page image. If — and only if — you can actually see and pinpoint it, return "box_2d": [ymin, xmin, ymax, xmax], 4 integers normalized to 0-1000 against that page image's height/width, with the origin at the image's top-left corner.
+- If you cannot pinpoint the quote's location in the image, or the quote comes from a text (non-image) document, return "box_2d": null.
+- NEVER guess or return the "closest" or "most likely" box when you are not sure of the exact location. A missing box (null) is always preferable to a wrong one — downstream highlighting trusts this box completely and cannot verify it.
+`.trim();
+
+/**
+ * システムプロンプトを組み立てる。requestBox=false は EXTRACT_DATA_SYSTEM_PROMPT と
+ * 完全一致（text_only 経路は 1 文字も変えない）。true のときだけ box ルールを末尾に追記する
+ */
+export function buildExtractDataSystemPrompt(requestBox: boolean): string {
+  return requestBox
+    ? `${EXTRACT_DATA_SYSTEM_PROMPT}\n\n${EXTRACT_DATA_BOX_RULES}`
+    : EXTRACT_DATA_SYSTEM_PROMPT;
+}
 
 /** entity_key の構成規約（requirements.md §3.3 / utils/entityKey.ts と同一規則） */
 const ENTITY_KEY_RULES: Record<EntityLevel, string> = {
@@ -111,9 +171,20 @@ function renderField(field: SchemaField): string {
   return lines.join('\n');
 }
 
-/** 1 文書ぶんの連結ブロック（`=== Document i/N [role] filename ===` + ページ本文） */
+/**
+ * 1 文書ぶんの連結ブロック（`=== Document i/N [role] filename ===` + ページ本文）。
+ * mode: 'image' の文書は本文の代わりに画像添付の注記だけを出す。実ページ画像は
+ * buildExtractDataUserContent がこのプロンプトの後ろへ ChatContentPart[] として添付する
+ */
 function renderDocument(doc: ExtractDataDocument, index: number, total: number): string {
   const header = `=== Document ${index}/${total} [${doc.role}] ${doc.filename} ===`;
+  if (doc.mode === 'image') {
+    return (
+      `${header}\n\n` +
+      'This document is a scanned PDF with no text layer. Its pages are attached as images ' +
+      `after this prompt, labeled "Document ${index}/${total} page p".`
+    );
+  }
   const body = doc.pages.map((page) => `[PAGE ${page.page}]\n${page.text}`).join('\n\n');
   return `${header}\n\n${body}`;
 }
@@ -130,8 +201,11 @@ export function buildExtractDataUserPrompt(input: ExtractDataPromptInput): strin
   if (input.documents.length === 0) {
     throw new Error('extract-data skill に文書が 1 件も渡されていません');
   }
-  if (input.documents.some((doc) => doc.pages.length === 0)) {
+  if (input.documents.some((doc) => doc.mode === 'text' && doc.pages.length === 0)) {
     throw new Error('extract-data skill に本文ページが 1 件も無い文書が含まれています');
+  }
+  if (input.documents.some((doc) => doc.mode === 'image' && doc.imagePages.length === 0)) {
+    throw new Error('extract-data skill にページ画像が 1 件も無い文書が含まれています');
   }
   const sections: string[] = [];
 
@@ -159,14 +233,46 @@ export function buildExtractDataUserPrompt(input: ExtractDataPromptInput): strin
     .join('\n\n');
   sections.push(`## Documents\n\n${intro}\n\n${body}`);
 
-  sections.push(
-    `## Output format\n\nReturn a JSON array. Each element must be:\n` +
-      `{ "field_id": "<as listed>", "entity_key": "<per the rules>", "value": "<as reported>" | null, ` +
-      `"not_reported": true | false, "quote": "<verbatim, <=300 chars>" | null, "page": <1-indexed> | null, ` +
-      `"document_index": <1..${total}> | null, "confidence": "high" | "medium" | "low" }`,
-  );
+  const outputFormatFields =
+    `{ "field_id": "<as listed>", "entity_key": "<per the rules>", "value": "<as reported>" | null, ` +
+    `"not_reported": true | false, "quote": "<verbatim, <=300 chars>" | null, "page": <1-indexed> | null, ` +
+    `"document_index": <1..${total}> | null, "confidence": "high" | "medium" | "low"` +
+    (input.requestBox === true ? `, "box_2d": [ymin, xmin, ymax, xmax] | null` : '') +
+    ' }';
+  sections.push(`## Output format\n\nReturn a JSON array. Each element must be:\n${outputFormatFields}`);
 
   return sections.join('\n\n');
+}
+
+/**
+ * ユーザープロンプトを LLMProvider へそのまま渡せる形（string | ChatContentPart[]）に組み立てる。
+ * - 画像文書（mode: 'image'）が 1 件も無ければ buildExtractDataUserPrompt の文字列をそのまま返す
+ *   （text_only の既存経路と完全一致。呼び出し側はどちらの戻り値も ChatMessage.content にそのまま渡せる）
+ * - 画像文書があれば、プロンプト本文の text パートに続けて「文書順 → ページ順」で
+ *   画像パートを並べる。各画像の直前に `[Document i/N page p]` のラベル（text パート）を置く
+ *   （画像だけでは LLM がどの文書 / ページの画像かを見失うため。i/N/p は実際の値に展開する）
+ */
+export function buildExtractDataUserContent(
+  input: ExtractDataPromptInput,
+): string | ChatContentPart[] {
+  const promptText = buildExtractDataUserPrompt(input);
+  const hasImageDocument = input.documents.some((doc) => doc.mode === 'image');
+  if (!hasImageDocument) {
+    return promptText;
+  }
+  const total = input.documents.length;
+  const parts: ChatContentPart[] = [{ type: 'text', text: promptText }];
+  input.documents.forEach((doc, i) => {
+    if (doc.mode !== 'image') {
+      return;
+    }
+    const docIndex = i + 1;
+    for (const image of doc.imagePages) {
+      parts.push({ type: 'text', text: `[Document ${docIndex}/${total} page ${image.page}]` });
+      parts.push({ type: 'image', mimeType: image.mimeType, dataBase64: image.dataBase64 });
+    }
+  });
+  return parts;
 }
 
 /**
@@ -201,6 +307,37 @@ export const EXTRACT_DATA_RESPONSE_SCHEMA: Record<string, unknown> = {
     additionalProperties: false,
   },
 };
+
+/**
+ * 構造化出力スキーマを requestBox に応じて組み立てる。
+ * false（既定）は EXTRACT_DATA_RESPONSE_SCHEMA をそのまま返す（既存定数は変更しない）。
+ * true は items.properties に box_2d（4 要素固定長の配列 | null）を追加した**新しいオブジェクト**を
+ * 返す（GeminiProvider.toGeminiSchema は minItems/maxItems をパススルー済みのため方言変換は不要）
+ */
+export function extractDataResponseSchema(requestBox: boolean): Record<string, unknown> {
+  if (!requestBox) {
+    return EXTRACT_DATA_RESPONSE_SCHEMA;
+  }
+  const baseItems = EXTRACT_DATA_RESPONSE_SCHEMA['items'] as Record<string, unknown>;
+  const baseProperties = baseItems['properties'] as Record<string, unknown>;
+  const baseRequired = baseItems['required'] as string[];
+  return {
+    ...EXTRACT_DATA_RESPONSE_SCHEMA,
+    items: {
+      ...baseItems,
+      properties: {
+        ...baseProperties,
+        box_2d: {
+          type: ['array', 'null'],
+          items: { type: 'integer' },
+          minItems: 4,
+          maxItems: 4,
+        },
+      },
+      required: [...baseRequired, 'box_2d'],
+    },
+  };
+}
 
 /** 構造化出力を要求しても markdown フェンスで包むモデルがあるため防御的に剥がす */
 function stripJsonFence(text: string): string {

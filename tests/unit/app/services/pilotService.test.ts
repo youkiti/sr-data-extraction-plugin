@@ -47,6 +47,13 @@ import { ensureChildFolder, getFileBinary, getFileText } from '../../../../src/l
 import { getCurrentUserEmail } from '../../../../src/lib/google/identity';
 import type { OfflineQueue } from '../../../../src/lib/storage/offlineQueue';
 
+// pilotService → makeLoadDocumentPageImages → lib/pdf/loadPdf 経由で
+// pdfjs-dist（ESM 専用）が require されるのを防ぐ（bootstrap.test.ts と同じ対策。
+// loadDocumentPageImages 自体の挙動は tests/unit/features/documents/loadDocumentPageImages.test.ts で検証済み）
+jest.mock('pdfjs-dist', () => ({
+  GlobalWorkerOptions: { workerSrc: '' },
+  getDocument: jest.fn(),
+}));
 jest.mock('../../../../src/app/services/extractionService', () => ({
   runExtraction: jest.fn(),
 }));
@@ -185,6 +192,8 @@ function makeEvidence(overrides: Partial<Evidence> = {}): Evidence {
     page: 1,
     confidence: 'high',
     anchorStatus: 'exact',
+    bboxPage: null,
+    bbox: null,
     ...overrides,
   };
 }
@@ -445,7 +454,7 @@ describe('runPilot: 実行', () => {
         schemaVersion: 1,
         model: 'gemini-test',
         batches: [],
-        skippedDocuments: [],
+        inputMode: 'text_only' as const,
         tokensInEstimate: 100,
         tokensOutEstimate: 10,
         costEstimateUsd: 0.01,
@@ -484,6 +493,10 @@ describe('runPilot: 実行', () => {
       protocolContext: 'PROTOCOL TEXT',
     });
     expect(params.documents.map((doc) => doc.documentId)).toEqual(['doc-1']);
+    // pdf_native（handoff-scanned-pdf-native-highlight.md §7.4 PR2）経路のため
+    // loadDocumentPageImages も executeRun へ渡せるよう runExtraction へ注入する
+    const runDeps = runExtractionMock.mock.calls[0]?.[1];
+    expect(typeof runDeps?.loadDocumentPageImages).toBe('function');
 
     const state = store.getState();
     expect(state.counts).toMatchObject({ pilotRuns: 1, evidenceRows: 1, dataRows: 1 });

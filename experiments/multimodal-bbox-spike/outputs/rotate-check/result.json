@@ -1,0 +1,62 @@
+{
+ "pdfjsVersion": "6.1.200",
+ "page": 5,
+ "rotationApplied": 90,
+ "renderScale": 2,
+ "unrotatedPtDims": {
+  "W_pt": 579,
+  "H_pt": 812
+ },
+ "rotatedDisplayPxDims": {
+  "W_disp": 1624,
+  "H_disp": 1158
+ },
+ "geminiItem": {
+  "label": "item1_percent",
+  "description": "Table 2 の Item No. 1「Allowing families to hold their dying or dead infant」行の % 列の値（98）"
+ },
+ "geminiBox2dNormalized": [
+  134,
+  868,
+  147,
+  878
+ ],
+ "geminiValue": "98",
+ "geminiQuote": "98",
+ "candidateI_direct": {
+  "formula": "left=xmin/1000*W_disp, top=ymin/1000*H_disp (toDisplayRectを通さない)",
+  "rectPx": {
+   "left": 1409.632,
+   "top": 155.172,
+   "width": 16.240000000000002,
+   "height": 15.053999999999998
+  }
+ },
+ "candidateII_viewportRect": {
+  "formula": "UserSpaceRect(box_2dを未回転W_pt/H_pt基準とみなす) -> toDisplayRect(rotation=90) -> スケール変換",
+  "userSpaceRectPt": {
+   "x": 502.572,
+   "width": 5.79,
+   "y": 692.636,
+   "height": 10.556
+  },
+  "displayRectPt_beforeScale": {
+   "left": 692.636,
+   "top": 502.572,
+   "width": 10.556,
+   "height": 5.79
+  },
+  "scale": {
+   "scaleX": 2,
+   "scaleY": 2
+  },
+  "rectPx": {
+   "left": 1385.272,
+   "top": 1005.144,
+   "width": 21.112,
+   "height": 11.58
+  }
+ },
+ "elapsedMs": 14549,
+ "note": "API キーは x-goog-api-key ヘッダで送信（本ファイルには含めていない）。判定（どちらが命中か）はオーケストレータが overlay-both.png を目視して行う"
+}
