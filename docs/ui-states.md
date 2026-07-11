@@ -25,6 +25,7 @@ spec が正。実装が追いついていない箇所は以下のとおり（実
 | §3 `#/dashboard` | ✅ 実装済み（読み込み中 / 失敗 / 0 件 / 通常〔サマリ + study × section マトリクス + セルの `?study=&entity=` ディープリンク〕。2026-07-02。v0.10 フェーズ 3 で study 単位へ = 2026-07-09） |
 | §3 `#/export` | ✅ 実装済み（読み込み中 / 失敗 / 通常〔形式選択 + サマリ + プレビュー + 除外警告〕/ 未検証セル警告ダイアログ / 生成中 / 失敗 / 生成完了〔Drive `exports/` 保存 + `ExportLog` 追記 + ローカル保存〕。2026-07-03） |
 | §4 キーボードショートカット | ✅ 検証パネル（`verificationPanel`）に実装済み。spec の「`#/verify` のみで有効」は「**検証パネルが表示されている画面**（`#/verify` と `#/pilot` の埋め込み）で有効」に読み替える（パネルの DOM 接続中のみ反応・入力フォーカス中は判定キー無効） |
+| 独立二重レビュー（issue #44・v0.11） | ✅ 実装済み（2026-07-11）。`Reviewers` タブ + ロール解決（フェイルクローズ）+ reviewer 系シェル制限 + reviewer オンボーディング（フォルダアクセス付与）+ owner のレビュアー管理カード（Home）+ `#/verify` 独立入力モード + `#/adjudicate`（S12・裁定画面）。jest 144 suites / 2042 tests green・カバレッジ 100%・E2E 64 本（`app-reviewer.spec.ts` 5 / `app-independent.spec.ts` 2 / `app-adjudicate.spec.ts` ほか）green。**2 アカウントでの実機通し確認は未実施**（[docs/design-independent-dual-review.md](design-independent-dual-review.md) §13 参照） |
 
 ## 0. 共通レイヤ
 
@@ -108,13 +109,25 @@ spec が正。実装が追いついていない箇所は以下のとおり（実
 
 - サイドバーの未充足ステップ（[ui-flow.md §4](ui-flow.md)）はディム表示。クリック時はトーストで前提条件を案内し、遷移しない
 
+### 状態 C: ロール未確定（v0.11・独立二重レビュー機能 issue #44）
+
+プロジェクト選択済みでログイン email のロール（`owner` / `reviewer_with_ai` / `reviewer_independent` / `adjudicator` / `unregistered`）が確定していない間は、盲検のフェイルクローズとしてナビ（サイドバー）を出さず、以下のいずれかの全画面ブロックのみを表示する（ルートのローダも発火しない）。プロジェクト未選択の間はこの判定自体を行わない（状態 A のまま）。
+
+| 状態 | 可視要素 / 受入基準 |
+|---|---|
+| 解決中 | `#app-role-resolving`「このプロジェクトでのロールを確認しています…」 |
+| 解決失敗 | `#app-role-error`「このプロジェクトでのロールを確認できませんでした: {理由}」（`role="alert"`）+ 「盲検保護のため、ロールを確認できるまで画面を表示しません。」+ 再試行 `#app-role-retry`（一時的なエラーで owner 側の UI へフォールバックしない） |
+| 未登録（`unregistered`） | `#app-role-blocked`「このプロジェクトのレビュアーとして登録されていません。プロジェクトのオーナーに登録を依頼してください。」（`role="alert"`） |
+
 ### 各ルートの主要状態
 
 | ルート | 状態 | 可視要素 / 受入基準 |
 |---|---|---|
 | `#/home` | 読み込み中 | `#home-counts-loading`「進捗を読み込んでいます…」（起動時に Sheets の 7 範囲を `values:batchGet` 1 呼び出しで読む間。プロジェクト名は常時表示）。プロジェクト未選択時は読込自体を行わない（状態 A のまま） |
 | | 読み込み失敗 | `#home-counts-error`「進捗を読み込めませんでした: {理由}」（`role="alert"`）+ 再読み込み `#home-counts-reload`（force 再取得）。失敗中のガードはシード値（全 0 = 全ステップディム）のまま |
-| | 通常 | プロジェクトメタ + プロジェクト切替リンク `#home-switch-project`「別のプロジェクトを開く」（S1 プロジェクト選択ページへの同一タブ遷移アンカー。全状態で常設）+ 進捗サマリ（文献数 / プロトコル版数 / 表のデザインの確定版数 / Evidence 行数 / データ行数）。0 文献でも崩れない。カウントの内訳: documents = `Documents` 行数 / protocolVersions = `Protocol` 行数 / schemaVersions = `SchemaVersions` 行数 / pilotRuns = `ExtractionRuns` の `run_type = pilot` 行数 / evidenceRows = `Evidence` 行数 / dataRows = `StudyData` + `ResultsData` 行数。読込成功後は各画面の操作（取り込み / 保存 / 確定 / run 完了）が増分更新する。E2E seam: `__E2E_PRELOADED_STATE__` に `counts` があれば読込済みとして扱い batchGet を行わない |
+| | 通常（owner） | プロジェクトメタ + プロジェクト切替リンク `#home-switch-project`「別のプロジェクトを開く」（S1 プロジェクト選択ページへの同一タブ遷移アンカー。全状態で常設）+ 進捗サマリ（文献数 / プロトコル版数 / 表のデザインの確定版数 / Evidence 行数 / データ行数）。0 文献でも崩れない。カウントの内訳: documents = `Documents` 行数 / protocolVersions = `Protocol` 行数 / schemaVersions = `SchemaVersions` 行数 / pilotRuns = `ExtractionRuns` の `run_type = pilot` 行数 / evidenceRows = `Evidence` 行数 / dataRows = `StudyData` + `ResultsData` 行数。読込成功後は各画面の操作（取り込み / 保存 / 確定 / run 完了）が増分更新する。E2E seam: `__E2E_PRELOADED_STATE__` に `counts` があれば読込済みとして扱い batchGet を行わない |
+| | owner のレビュアー管理カード（v0.11） | `#home-reviewers`。読み込み中 `#home-reviewers-loading` / 失敗 `#home-reviewers-reload` + `#home-reviewers-error`（`role="alert"`）/ 空 `#home-reviewers-empty`「まだレビュアーが登録されていません。」/ 一覧 `#home-reviewers-list`（email・role・review_mode・解除ボタン `.reviewers__revoke`〔`revoked` 行は disabled〕）+ 追加フォーム `#reviewer-add-form`（email・role セレクタ `#reviewer-role`・review_mode セレクタ `#reviewer-mode`〔role='adjudicator' の間は disabled〕・送信 `#reviewer-add-submit`）。既存 reviewer のモード変更送信時は警告ダイアログ `#reviewer-mode-confirm`（`role="alertdialog"`。「変更する」`#reviewer-mode-confirm-ok` / 「キャンセル」`#reviewer-mode-confirm-cancel`）を経由してから追記。保存失敗は `#home-reviewers-save-error`（`role="alert"`） |
+| | reviewer 系の縮退版 Home（v0.11） | `reviewer_with_ai` / `reviewer_independent` / `adjudicator` は進捗カウントを一切読み込まず、プロジェクト名 + プロジェクト切替リンクのみを表示。フォルダアクセス未付与のうちは `#home-folder-access`（案内文 + 「プロジェクトフォルダへのアクセスを付与」`#home-grant-folder-access`。確認中は `#home-folder-access-checking`「確認しています…」でボタン disabled、失敗は `#home-folder-access-error`〔`role="alert"`〕）。付与済みは `#home-folder-access-granted`「プロジェクトフォルダへのアクセスは付与済みです。」+ 「検証を開始する」`#home-go-verify`（`#/verify` リンク） |
 | `#/documents` | 読み込み中 | `#documents-loading`「一覧を読み込んでいます…」（初回表示時に Documents タブを自動読込。再読み込みボタンで強制再取得） |
 | | 読み込み失敗 | `#documents-load-error`「一覧を読み込めませんでした: {理由}」（赤系）。再読み込みボタンで復帰 |
 | | 空 | 「Drive から PDF / フォルダを取り込む」ボタン + 空状態説明（`#documents-empty`）+ 画面上部に「取り込んだ PDF が外部へ送信されるのは LLM API への抽出リクエストのみです」の注意書き（常時表示） |
@@ -148,6 +161,7 @@ spec が正。実装が追いついていない箇所は以下のとおり（実
 | | 完了（partial_failure） | 上部に黄バナー `#extract-partial-failure`「{n} 件の文献で失敗しました。再試行できます」+ 応答要素の破棄があれば件数を併記。失敗行に「再試行」`.extract__retry`（`run_type = single_document` で当該 1 本のみ再実行。再試行中は他の再試行・実行ボタンを無効化）。成功分の検証へは `#extract-verify-link` から進める |
 | `#/verify` | 一覧読み込み中 | `#verify-loading`「検証対象を読み込んでいます…」。Evidence がある study 一覧 + Decisions を読む間 |
 | | 一覧読み込み失敗 | `#verify-error`（メッセージ）+ 再試行 `#verify-retry` |
+| | 独立入力モードの differences（v0.11・`reviewer_independent`。`annotator_type = human_independent`） | 対象一覧は `Evidence` 非依存（`Studies` × 最新確定スキーマ）で AI 抽出の実施状況を出さない。セルカードは quote・ハイライト・「他 n 箇所に一致」・AI 値のプレフィル・anchor failed バナーを描画せず、フィールドラベル + `extraction_instruction`（AI 抽出指示文。スキーマ由来のため表示可）を代わりに表示。判定操作は「入力して確定」（値入力 → `edit`）/ `not_reported` / `undo` の 3 種のみ（`accept` / `reject` は出さず、キーボード `a` / `x` も無効）。群構成カードの初期文言は「AI ドラフトを初期値に」ではなく「群を追加して名称・数を自分で確定します」に差し替え、AI ドラフトの arm 一覧は出さない（空行から追加）。それ以外（PDF ビューア・フォーカス / リストのレイアウト切替・キーボード j/k/h/l 等の移動）は mode① と共通 |
 | | 通常 | study セレクタ `#verify-study`（Evidence がある study のみ列挙。各行に進捗チップ「判定済み n / 総セル m」）+ 選択中 study の見出し（h3 = study_label。見出し階層 h2 → h3 → h4 を保つ）+ 2 ペイン検証パネル（`#/pilot` 埋め込みと同一コンポーネント）。URL は `#/verify?study={study_id}` と同期する — セレクタ切替で hash を書き換え、直リンク・リロードで該当 study を復元。study が複数文書のときは左ペイン上部に**文書切替タブ** `.verify__doc-tabs`（role バッジ + ファイル名。既定は role 固定順の先頭）。項目フォーカス / 根拠クリック / 判定後の自動送り時に `Evidence.document_id` の文書へ自動切替（`setDocument` で描画競合の連番ガードを維持） |
 | | レイアウトモード（issue #38） | 右ペイン（フォーム）はタブ行の隣に切替トグル `#verify-layout-toggle` を持ち、**フォーカス / リスト** の 2 レイアウトを切替える。**既定はフォーカス**。トグルはボタン 1 個で切替先ラベルを表示（フォーカス表示中は「リスト表示に切替」）。設定は `settings.verifyLayoutMode`（`lib/storage/settingsStore`）に永続化し、検証データ束の読込のたびに読み直すため **S6 パイロット埋め込み / S8 `#/verify` 単独画面で共有**する。タブ行・判定進捗バー・群構成確定カード・outcome_result 追加フォーム・ロック中タブのディムはモードに関わらず共通。**フォーカスモード**時は「グループ一覧 + 判定済みブロック」の領域が下記のマトリクスカード `#verify-focus-card` に差し替わる（**リストモード時**は本節の他の行が示す従来の 1 セル 1 カード表示のまま）：<br>1. ユニットヘッダ `#verify-focus-position`「ユニット n / m（残り r）」+ 見出し（`entity_level` ごとの検証ユニット = study は section、arm/outcome_result はインスタンス横結合、rob_domain はドメインインスタンス）<br>2. マトリクス `#verify-focus-matrix`（`<table>`。列ヘッダ = ユニットの列〔study/rob_domain は固定 1 列、arm/outcome_result は群〕、行ヘッダ = フィールドラベル。セルは表示値〔判定確定値 > AI 値 > 「—」〕+ 判定チップのボタン。クリックでそのセルへフォーカス。存在しないセル（null）は「—」のプレーン表示）<br>3. プリセット要約行（outcome_result の連続 / 二値プリセット認識時のみ）<br>4. 詳細ストリップ `#verify-focus-detail`（フォーカス中セル 1 件を通常のセルカードで表示。quote・判定操作・編集入力・anchor failed の本文内検索・複数一致切替・ハイライトへ移動が全部そのまま使える。カードの高さは判定のたびに大きく変わらない）<br>5. 直近判定バー `#verify-focus-recent`（直近判定 1 件をユニットをまたいで固定表示。「戻す (z)」ボタン）<br>**一括承認ボタンは置かない**（automation bias 対策: accept にも 1 操作必須という原則をフォーカスモードでも維持するため） |
 | | PDF 読み込み中（issue #28 案3） | 検証データ束の組み立て（Decisions / StudyData / ArmStructures + 全文書ぶんの `extracted_texts`）は PDF バイナリを 1 件も読まない。左ペインの PDF は**表示中の 1 文書だけ**を遅延読込し、解決するまで `.verify__pdf-loading`「PDF を読み込んでいます…」を表示する（右ペインのフォーム・判定操作・matchCount 表示は extracted_texts 基準のため PDF 読み込み中でも即使える）。直近 3 件（`PDF_CACHE_SIZE`）の PDF だけを保持する LRU キャッシュ（`features/verification/pdfViewCache`）を介するため、表示していない文書・4 件目以降にあふれた文書は都度読み直しになる。読み込みに失敗すると `.verify__pdf-error` + 「再試行」ボタン（キャッシュを捨てて読み直す）。高速な文書切替・ズーム変更では常に最新の要求だけが表示に反映される（連番ガード + pdfjs `RenderTask.cancel()`） |
@@ -175,6 +189,14 @@ spec が正。実装が追いついていない箇所は以下のとおり（実
 | | 生成中 | `#export-generating`「CSV を生成して Drive に保存しています…」+ 生成ボタン・形式ラジオを無効化 |
 | | 生成失敗 | `#export-generate-error`「エクスポートに失敗しました: {理由}」（`role="alert"`）。生成ボタンは復帰し再試行できる |
 | | 生成完了 | 結果カード `#export-result`: 「{filename} を Drive に保存しました（ExportLog に記録済み）」+ Drive リンク `#export-result-link`（`webViewLink`。`target="_blank"`）+ ローカル保存 `#export-download`（Blob ダウンロード）。形式を切り替えて続けて生成できる（結果カードは次の生成開始まで残す）。Drive 保存先は プロジェクトフォルダ直下の `exports/`（初回生成時に作成）、ファイル名は `{format}_{YYYYMMDD-HHMMSS}.csv` |
+| `#/adjudicate`（S12・v0.11。owner / adjudicator のみ到達可能） | 読み込み中 | `#adjudicate-loading`「裁定対象を読み込んでいます…」（human annotator 2 名の検証状況を読む間） |
+| | 読み込み失敗 | `#adjudicate-error`（`role="alert"`）+ 再試行 `#adjudicate-retry` |
+| | 一覧（空） | `#adjudicate-empty`「裁定対象となる研究がありません。#/documents で文献を取り込み、2 名のレビュアーによる検証が完了すると一覧に表示されます。」 |
+| | 一覧（study ごと・ゲート付き） | `#adjudicate-list`（`<table>`。1 行 = 1 study）。対象 annotator が 2 名確定していない行（両者の検証待ち・annotator を一意に特定できない）は `.adjudicate__list-row--dimmed` で「両者の検証完了待ちです」/「対象 annotator を特定できません」を表示し裁定を開始できない。ゲート達成行のみ両者の完了状況「A（email）: n/m・B（email）: n/m」+ 「裁定を開始」ボタン（**内訳は完了状況の件数のみ。値・判定内容は一覧では見せない = 盲検の継続**） |
+| | 群構成の突き合わせ（裁定中・`adjudicate-arm-card`） | 未確定のとき: 両者の最新 `ArmStructures` を「A」「B」の 2 列で列挙（位置対応）。本数・名称が一致 → 一致注記 + 「このまま採用」`#adjudicate-arm-adopt`。不一致 → 警告文（`role="alert"`）+ 編集フォーム（群ごとの名称入力 + 削除、「群を追加」`#adjudicate-arm-add`、「確定」`#adjudicate-arm-confirm`）。確定済みのときはカードが要約表示（確定した群名一覧）に変わる。arm / outcome_result レベルのセルは群構成確定までロック（`.adjudicate__locked-note`「群構成の確定が必要です」）。`rob_domain` と study レベルのセルは群構成未確定でも裁定可 |
+| | セル一覧（裁定中・`adjudicate-cells`） | 「不一致のみ表示」チェックボックス `#adjudicate-filter-mismatch`（既定 ON = 不一致のみ表示）+ 「一致セルを一括採用」`#adjudicate-accept-all` + サマリ `#adjudicate-summary`「一致 n 件 / 不一致 m 件」。表示するセルが 0 件（フィルタ適用時）は `#adjudicate-cells-empty`。各セル行 = 区分（section / entity ラベル）/ 項目（`schema_version` 不一致は警告バッジ併記）/ A の値 / B の値 / 状態チップ（一致 / 不一致 / 裁定済み〔採用・編集・棄却・未報告〕/ スキップ）/ 裁定操作。未裁定セルの操作は「A を採用」`.adjudicate__action--choose-a` / 「B を採用」`.adjudicate__action--choose-b` / 第 3 の値入力 + 「入力して確定」`.adjudicate__action--custom` / 「未報告」`.adjudicate__action--not-reported` / 「スキップ」`.adjudicate__action--skip`。裁定済みセルは確定値表示 + 「取り消し」（undo）。スキップ済みセルは「スキップを取り消す」 |
+| | PDF 参照ペイン（v1 簡略版） | 表示 + ページ送り / ズーム / テキスト検索のみ（`app/views/adjudicatePdfPane.ts`）。Evidence ハイライトの再特定・`Decisions.note` の表示は行わない（盲検解除後の工程のため実装コストを抑えた v1 の割り切り） |
+| | 書き込み | 裁定操作は consensus 行（`StudyData` / `ResultsData`）の upsert + `Decisions` 追記（`decided_by` = 裁定者）。失敗時はトースト表示のみ（**オフラインキューへの退避なし = v1 の簡略化**） |
 
 ## 4. キーボードショートカット・検証パネルのフォーカス挙動
 
