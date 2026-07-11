@@ -64,8 +64,8 @@ function renderStudySelector(state: AppState, ctx: ViewContext): HTMLElement {
       attributes: { type: 'checkbox', 'aria-label': `${item.study.studyLabel} を対象にする` },
     });
     checkbox.checked = state.extract.selectedStudyIds.includes(studyId);
-    // MVP は text_only モード固定のため、テキスト層のある文書が無い study は選択不可（※Q7）
-    checkbox.disabled = !item.hasTextLayer;
+    // pdf_native 対応（handoff-scanned-pdf-native-highlight.md §7.4 PR2）により
+    // テキスト層が無い study もページ画像で抽出できるため、選択を制限しない
     checkbox.addEventListener('change', () => ctx.extract.onToggleStudy(studyId, checkbox.checked));
     const head: Array<HTMLElement | string> = [
       checkbox,
@@ -78,7 +78,7 @@ function renderStudySelector(state: AppState, ctx: ViewContext): HTMLElement {
       head.push(
         el('small', {
           className: 'extract__doc-note',
-          text: 'テキスト層のある文書がありません（pdf_native モード時のみ選択可・P1）',
+          text: 'テキスト層なし: ページ画像を LLM へ送信して抽出します（ハイライトなし・コスト増）',
         }),
       );
     }

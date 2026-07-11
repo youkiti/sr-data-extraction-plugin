@@ -1,5 +1,5 @@
 // モデル別単価表と概算コスト計算の単体テスト（sr-query-builder から流用）
-import { estimateCostUsd, MODEL_PRICING } from '../../../../src/lib/llm/pricing';
+import { APPROX_IMAGE_TOKENS_PER_PAGE, estimateCostUsd, MODEL_PRICING } from '../../../../src/lib/llm/pricing';
 
 describe('estimateCostUsd', () => {
   it('gemini-2.5-pro は入力 $1.25 / 出力 $10.00 per 1M で概算する', () => {
@@ -39,5 +39,9 @@ describe('estimateCostUsd', () => {
       inputPerMillion: 1.25,
       outputPerMillion: 10.0,
     });
+  });
+
+  it('画像 1 ページあたりの概算トークン単価（pdf_native）は 1,100', () => {
+    expect(APPROX_IMAGE_TOKENS_PER_PAGE).toBe(1_100);
   });
 });

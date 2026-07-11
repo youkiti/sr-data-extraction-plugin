@@ -22,6 +22,13 @@ import { readStudies } from '../../../../src/features/documents/studyRepository'
 import { readRunStudyCoverage } from '../../../../src/features/extraction/runRepository';
 import { ensureChildFolder } from '../../../../src/lib/google/drive';
 
+// extractService → makeLoadDocumentPageImages → lib/pdf/loadPdf 経由で
+// pdfjs-dist（ESM 専用）が require されるのを防ぐ（bootstrap.test.ts と同じ対策。
+// loadDocumentPageImages 自体の挙動は tests/unit/features/documents/loadDocumentPageImages.test.ts で検証済み）
+jest.mock('pdfjs-dist', () => ({
+  GlobalWorkerOptions: { workerSrc: '' },
+  getDocument: jest.fn(),
+}));
 jest.mock('../../../../src/app/services/extractionService', () => ({
   runExtraction: jest.fn(),
 }));
@@ -168,7 +175,7 @@ function makeOutcome(
       schemaVersion: 1,
       model: 'gemini-test',
       batches: [],
-      skippedDocuments: [],
+      inputMode: 'text_only' as const,
       tokensInEstimate: 100,
       tokensOutEstimate: 10,
       costEstimateUsd: 0.01,
@@ -293,7 +300,7 @@ describe('loadExtractTargets', () => {
 });
 
 describe('initExtractSelection', () => {
-  test('テキスト層があり未抽出の全 study を既定選択し、S6 のモデル入力を引き継ぐ', () => {
+  test('未抽出の全 study を既定選択し（テキスト層なしも pdf_native で選択対象）、S6 のモデル入力を引き継ぐ', () => {
     const docs = [
       makeDocument({ documentId: 'd1' }),
       makeDocument({ documentId: 'd2', textStatus: 'no_text_layer' }),
@@ -306,7 +313,12 @@ describe('initExtractSelection', () => {
       extract: { extractedStudyIds: [studyIdOf('d3')] },
     });
     initExtractSelection(store);
-    expect(store.getState().extract.selectedStudyIds).toEqual([studyIdOf('d1'), studyIdOf('d4')]);
+    // d3（抽出済み）だけが既定選択から外れる。d2（テキスト層なし）も pdf_native で抽出できるため含む
+    expect(store.getState().extract.selectedStudyIds).toEqual([
+      studyIdOf('d1'),
+      studyIdOf('d2'),
+      studyIdOf('d4'),
+    ]);
     expect(store.getState().extract.model).toBe('gemini-from-s6');
     expect(store.getState().extract.selectionInitialized).toBe(true);
   });
@@ -474,6 +486,10 @@ describe('runExtract', () => {
     });
     // 選択 study（study-doc-1）配下の文書だけが対象
     expect(params.documents.map((doc) => doc.documentId)).toEqual(['doc-1']);
+    // pdf_native（handoff-scanned-pdf-native-highlight.md §7.4 PR2）経路のため
+    // loadDocumentPageImages も executeRun へ渡せるよう runExtraction へ注入する
+    const runDeps = runExtractionMock.mock.calls[0]?.[1];
+    expect(typeof runDeps?.loadDocumentPageImages).toBe('function');
 
     const state = store.getState();
     expect(state.counts).toMatchObject({ evidenceRows: 1, dataRows: 1 });

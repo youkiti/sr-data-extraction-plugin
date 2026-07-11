@@ -4,12 +4,16 @@
 //   ロール付き区切りで連結して 1 回で抽出するため、分割閾値は study の全文書合計トークンで評価する
 // - 概算値は実行前の確認 UI（S7 のコスト概算表示）と ExtractionRuns.cost_estimate の素材。
 //   実測 tokens_in / tokens_out は実行後に executeRun が LLMApiLog / ExtractionRuns へ記録する
-// - MVP は text_only モードのみ（pdf_native ※Q3 のトークン計算は lib/llm 移植時に別途対応）。
-//   text_only では text_status = no_text_layer の文書を連結から除外する（当該文書由来の根拠は得られない）
+// - text_status = no_text_layer の文書は除外せず、ページ画像を LLM へ添付する pdf_native 入力として
+//   扱う（handoff-scanned-pdf-native-highlight.md §7.4 PR2。requirements.md Q7 の実装）。
+//   study 内に text / image の文書が混在してもバッチは 1 本のまま（executeRun が文書ごとに
+//   入力形式を出し分ける）。トークン概算はテキスト文書ぶん（文字数 ÷ 4）と画像文書ぶん
+//   （ページ数 × 画像トークン単価）を別建てで計算してから合算する
 // - 実行（API 呼び出し・進捗・partial_failure）は executeRun の責務。ここは純粋関数のみ
 import { DOCUMENT_ROLE_ORDER, type DocumentRecord } from '../../domain/document';
+import type { InputMode } from '../../domain/extractionRun';
 import type { EntityLevel, SchemaField } from '../../domain/schemaField';
-import { estimateCostUsd } from '../../lib/llm/pricing';
+import { APPROX_IMAGE_TOKENS_PER_PAGE, estimateCostUsd } from '../../lib/llm/pricing';
 import { EXTRACT_DATA_SYSTEM_PROMPT } from './skills/extractData';
 
 /** 英語論文テキストの 1 トークンあたり文字数の目安（概算専用） */
@@ -37,6 +41,12 @@ export const FALLBACK_CHARS_PER_PAGE = 3_000;
 export const FALLBACK_DOCUMENT_CHARS = 30_000;
 
 /**
+ * page_count 欠損時のフォールバック: 1 論文あたりページ数の目安（画像文書のトークン概算に使う）。
+ * FALLBACK_DOCUMENT_CHARS / FALLBACK_CHARS_PER_PAGE と前提を揃えた値（= 10）
+ */
+export const FALLBACK_DOCUMENT_PAGES = FALLBACK_DOCUMENT_CHARS / FALLBACK_CHARS_PER_PAGE;
+
+/**
  * entity_level ごとの「1 項目が生む応答要素数」の目安（概算専用）。
  * arm は 2 群比較、outcome_result は 2 群 × 2 時点相当を仮定する
  */
@@ -60,13 +70,6 @@ export const DEFAULT_RUN_TOKEN_BUDGET: RunTokenBudget = {
   maxOutputTokensPerCall: 8_000,
 };
 
-/** 計画から除外した文献とその理由 */
-export interface SkippedDocument {
-  documentId: string;
-  /** text_only モードではテキスト層がない PDF を抽出できない（※Q7） */
-  reason: 'no_text_layer';
-}
-
 /** 1 行 = 1 API 呼び出しの計画（1 study） */
 export interface PlannedBatch {
   /** 抽出単位である study（Evidence.study_id・ExtractionRuns.study_ids の素材） */
@@ -74,9 +77,14 @@ export interface PlannedBatch {
   /**
    * プロンプトへ連結する文書の順序リスト（本文ロード・アンカリング・Evidence.document_id の対象）。
    * 並びは role 固定順（DOCUMENT_ROLE_ORDER）→ 取り込み順で、AI 応答の document_index（1 始まり）に対応する。
-   * text_only では no_text_layer 文書を除外済みのため、最低 1 件は含む
+   * text_status に関わらず study の全文書を含む（no_text_layer の文書は imageDocumentIds 側にも載る）
    */
   documentIds: readonly string[];
+  /**
+   * documentIds のうち text_status = no_text_layer でページ画像として送る文書（pdf_native）。
+   * documentIds の部分集合・同順。0 件なら全文書がテキスト入力（text_only）
+   */
+  imageDocumentIds: readonly string[];
   /** section 単位分割時の section 名。スキーマ全項目一括なら null */
   section: string | null;
   /** 当該バッチで抽出する項目（fieldIndex 順） */
@@ -91,7 +99,11 @@ export interface RunPlan {
   schemaVersion: number;
   model: string;
   batches: PlannedBatch[];
-  skippedDocuments: SkippedDocument[];
+  /**
+   * いずれかのバッチに画像入力の文書があれば 'pdf_native'、無ければ 'text_only'
+   * （ExtractionRuns.input_mode の素材。requirements.md Q3 / handoff-scanned-pdf-native-highlight.md §7.4）
+   */
+  inputMode: InputMode;
   /** 全バッチ合計（ExtractionRuns.cost_estimate と S7 表示の素材） */
   tokensInEstimate: number;
   tokensOutEstimate: number;
@@ -112,6 +124,11 @@ export interface PlanRunInput {
   budget?: Partial<RunTokenBudget>;
 }
 
+/** text_status = no_text_layer の文書はページ画像として送る（pdf_native。requirements.md Q7） */
+function isImageDocument(doc: DocumentRecord): boolean {
+  return doc.textStatus === 'no_text_layer';
+}
+
 /** 本文の文字数。char_count 欠損時は page_count × 目安、それも無ければ既定値 */
 function documentChars(doc: DocumentRecord): number {
   if (doc.charCount !== null) {
@@ -121,6 +138,12 @@ function documentChars(doc: DocumentRecord): number {
     return doc.pageCount * FALLBACK_CHARS_PER_PAGE;
   }
   return FALLBACK_DOCUMENT_CHARS;
+}
+
+/** 画像文書 1 件ぶんの入力トークン概算: ページ数（page_count 欠損時は既定値）× 画像トークン単価 + 連結見出しぶん */
+function imageDocumentTokens(doc: DocumentRecord): number {
+  const pages = doc.pageCount ?? FALLBACK_DOCUMENT_PAGES;
+  return pages * APPROX_IMAGE_TOKENS_PER_PAGE + DOCUMENT_SEPARATOR_CHARS / APPROX_CHARS_PER_TOKEN;
 }
 
 /** 1 項目の定義ブロックの文字数概算（renderField の可変部 + 固定行ぶん） */
@@ -141,13 +164,19 @@ interface BatchEstimate {
   tokensOut: number;
 }
 
-/** 1 バッチ（1 study の全文書連結 × 項目集合）の入出力トークン概算 */
+/**
+ * 1 バッチ（1 study の全文書連結 × 項目集合）の入出力トークン概算。
+ * テキスト文書は文字数 ÷ 4 の目安（従来どおり）、画像文書はページ数 × 画像トークン単価で
+ * 別建てに計算してから合算する（画像文書が無ければ従来と完全に同じ数値になる）
+ */
 function estimateBatch(
   docs: readonly DocumentRecord[],
   fields: readonly SchemaField[],
   protocolChars: number,
 ): BatchEstimate {
-  const bodyChars = docs.reduce(
+  const textDocs = docs.filter((doc) => !isImageDocument(doc));
+  const imageDocs = docs.filter(isImageDocument);
+  const textBodyChars = textDocs.reduce(
     (sum, doc) => sum + DOCUMENT_SEPARATOR_CHARS + documentChars(doc),
     0,
   );
@@ -155,10 +184,11 @@ function estimateBatch(
     PROMPT_SCAFFOLD_CHARS +
     protocolChars +
     fields.reduce((sum, field) => sum + fieldPromptChars(field), 0) +
-    bodyChars;
+    textBodyChars;
   const items = fields.reduce((sum, field) => sum + ENTITY_INSTANCE_ESTIMATE[field.entityLevel], 0);
+  const imageTokens = imageDocs.reduce((sum, doc) => sum + imageDocumentTokens(doc), 0);
   return {
-    tokensIn: Math.ceil(promptChars / APPROX_CHARS_PER_TOKEN),
+    tokensIn: Math.ceil(promptChars / APPROX_CHARS_PER_TOKEN) + imageTokens,
     tokensOut: Math.ceil((items * OUTPUT_CHARS_PER_ITEM) / APPROX_CHARS_PER_TOKEN),
   };
 }
@@ -242,33 +272,27 @@ export function planRun(input: PlanRunInput): RunPlan {
   const allFieldIds = sortedFields.map((field) => field.fieldId);
 
   const batches: PlannedBatch[] = [];
-  const skippedDocuments: SkippedDocument[] = [];
+  const imageDocumentIds = new Set<string>();
   let unknownCharCountDocs = 0;
 
   for (const [studyId, docs] of groupDocumentsByStudy(input.documents)) {
-    // text_only では no_text_layer 文書を連結から除外する（§4.3）。除外は SkippedDocument で追跡する
-    const usable: DocumentRecord[] = [];
+    const documentIds = docs.map((doc) => doc.documentId);
+    const batchImageDocumentIds = docs.filter(isImageDocument).map((doc) => doc.documentId);
+    for (const id of batchImageDocumentIds) {
+      imageDocumentIds.add(id);
+    }
     for (const doc of docs) {
-      if (doc.textStatus === 'no_text_layer') {
-        skippedDocuments.push({ documentId: doc.documentId, reason: 'no_text_layer' });
-        continue;
-      }
-      usable.push(doc);
-      if (doc.charCount === null) {
+      if (!isImageDocument(doc) && doc.charCount === null) {
         unknownCharCountDocs += 1;
       }
     }
-    // 全文書がテキスト層なしの study はバッチを作らない（studyProgress 側で「除外」表示になる）
-    if (usable.length === 0) {
-      continue;
-    }
-    const documentIds = usable.map((doc) => doc.documentId);
 
-    const fullEstimate = estimateBatch(usable, sortedFields, protocolChars);
+    const fullEstimate = estimateBatch(docs, sortedFields, protocolChars);
     if (withinBudget(fullEstimate, budget)) {
       batches.push({
         studyId,
         documentIds,
+        imageDocumentIds: batchImageDocumentIds,
         section: null,
         fieldIds: allFieldIds,
         tokensInEstimate: fullEstimate.tokensIn,
@@ -279,10 +303,11 @@ export function planRun(input: PlanRunInput): RunPlan {
     }
 
     for (const [section, sectionFields] of groupBySection(sortedFields)) {
-      const estimate = estimateBatch(usable, sectionFields, protocolChars);
+      const estimate = estimateBatch(docs, sectionFields, protocolChars);
       batches.push({
         studyId,
         documentIds,
+        imageDocumentIds: batchImageDocumentIds,
         section,
         fieldIds: sectionFields.map((field) => field.fieldId),
         tokensInEstimate: estimate.tokensIn,
@@ -295,11 +320,12 @@ export function planRun(input: PlanRunInput): RunPlan {
   const tokensInEstimate = batches.reduce((sum, batch) => sum + batch.tokensInEstimate, 0);
   const tokensOutEstimate = batches.reduce((sum, batch) => sum + batch.tokensOutEstimate, 0);
   const costEstimateUsd = estimateCostUsd(input.model, tokensInEstimate, tokensOutEstimate);
+  const inputMode: InputMode = imageDocumentIds.size > 0 ? 'pdf_native' : 'text_only';
 
   const warnings: string[] = [];
-  if (skippedDocuments.length > 0) {
+  if (imageDocumentIds.size > 0) {
     warnings.push(
-      `テキスト層がない文献 ${skippedDocuments.length} 件は今回の抽出対象外です（text_only モードでは抽出できません）`,
+      `テキスト層がない文献 ${imageDocumentIds.size} 件はページ画像として LLM へ送信します（pdf_native。画像トークンぶんコストが増えます）`,
     );
   }
   if (unknownCharCountDocs > 0) {
@@ -319,7 +345,7 @@ export function planRun(input: PlanRunInput): RunPlan {
     schemaVersion,
     model: input.model,
     batches,
-    skippedDocuments,
+    inputMode,
     tokensInEstimate,
     tokensOutEstimate,
     costEstimateUsd,

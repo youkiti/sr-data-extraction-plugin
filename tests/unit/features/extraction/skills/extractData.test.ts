@@ -1,9 +1,13 @@
 // extract-data skill（プロンプト管理）の単体テスト
 // - プロンプト構築: 項目定義の条件付き行・entity_key 規約の出し分け・複数文書のロール付き連結
+// - pdf_native: 画像文書（mode: 'image'）のプロンプト注記 + buildExtractDataUserContent の
+//   画像パート構築（handoff-scanned-pdf-native-highlight.md §7.4 PR2）
 // - 応答パース: フェンス剥がし + JSON 不正の AiOutputFormatError + validateAiOutput への委譲（document_index 込み）
 import type { DocumentRole } from '../../../../../src/domain/document';
 import type { SchemaField } from '../../../../../src/domain/schemaField';
+import type { ChatContentPart } from '../../../../../src/lib/llm/LLMProvider';
 import {
+  buildExtractDataUserContent,
   buildExtractDataUserPrompt,
   parseExtractDataResponse,
   EXTRACT_DATA_PROMPT_VERSION,
@@ -11,6 +15,7 @@ import {
   EXTRACT_DATA_SKILL_NAME,
   EXTRACT_DATA_SYSTEM_PROMPT,
   type ExtractDataDocument,
+  type ExtractDataImagePage,
 } from '../../../../../src/features/extraction/skills/extractData';
 import { AiOutputFormatError } from '../../../../../src/features/extraction/validateAiOutput';
 
@@ -46,8 +51,33 @@ const PAGES = [
   { page: 2, text: 'Mortality at 30 days was 12% vs 18%.' },
 ];
 
-function makeDoc(overrides: Partial<ExtractDataDocument> = {}): ExtractDataDocument {
-  return { role: 'article' as DocumentRole, filename: 'smith2020.pdf', pages: PAGES, ...overrides };
+function makeDoc(
+  overrides: Partial<{ role: DocumentRole; filename: string; pages: typeof PAGES }> = {},
+): ExtractDataDocument {
+  return {
+    role: 'article' as DocumentRole,
+    filename: 'smith2020.pdf',
+    mode: 'text',
+    pages: PAGES,
+    ...overrides,
+  };
+}
+
+const IMAGE_PAGES: ExtractDataImagePage[] = [
+  { page: 1, mimeType: 'image/png', dataBase64: 'QUJD' },
+  { page: 2, mimeType: 'image/png', dataBase64: 'REVG' },
+];
+
+function makeImageDoc(
+  overrides: Partial<{ role: DocumentRole; filename: string; imagePages: ExtractDataImagePage[] }> = {},
+): ExtractDataDocument {
+  return {
+    role: 'supplement' as DocumentRole,
+    filename: 'scan.pdf',
+    mode: 'image',
+    imagePages: IMAGE_PAGES,
+    ...overrides,
+  };
 }
 
 const DOCS = [makeDoc()];
@@ -55,8 +85,8 @@ const DOCS = [makeDoc()];
 describe('extract-data skill 定数', () => {
   it('skill 名とプロンプト版数を公開する（LLMApiLog 記録用）', () => {
     expect(EXTRACT_DATA_SKILL_NAME).toBe('extract-data');
-    // v2: 複数文書連結 + document_index を導入
-    expect(EXTRACT_DATA_PROMPT_VERSION).toBe(2);
+    // v3: pdf_native 入力（no_text_layer 文書のページ画像添付）に対応
+    expect(EXTRACT_DATA_PROMPT_VERSION).toBe(3);
   });
 
   it('システムプロンプトに verbatim quote の規約（300 文字上限）と document_index の規約を含む', () => {
@@ -65,6 +95,11 @@ describe('extract-data skill 定数', () => {
     expect(EXTRACT_DATA_SYSTEM_PROMPT).toContain('"not_reported": true');
     expect(EXTRACT_DATA_SYSTEM_PROMPT).toContain('"document_index"');
     expect(EXTRACT_DATA_SYSTEM_PROMPT).toContain('SAME trial');
+  });
+
+  it('システムプロンプトにスキャン文書（画像添付）向けの quote / page 規約を含む', () => {
+    expect(EXTRACT_DATA_SYSTEM_PROMPT).toContain('scanned document with no text layer');
+    expect(EXTRACT_DATA_SYSTEM_PROMPT).toContain('verbatim transcription');
   });
 
   it('構造化出力スキーマは応答 8 キー（document_index 込み）すべてを required にする', () => {
@@ -102,6 +137,27 @@ describe('buildExtractDataUserPrompt', () => {
         documents: [makeDoc({ pages: [] })],
       }),
     ).toThrow('本文ページが 1 件も無い文書');
+  });
+
+  it('ページ画像が 1 件も無い画像文書が含まれると投げる（pdf_native）', () => {
+    expect(() =>
+      buildExtractDataUserPrompt({
+        fields: [STUDY_FIELD],
+        documents: [makeImageDoc({ imagePages: [] })],
+      }),
+    ).toThrow('ページ画像が 1 件も無い文書');
+  });
+
+  it('画像文書（mode: image）は本文の代わりに画像添付の注記を出す（pdf_native）', () => {
+    const prompt = buildExtractDataUserPrompt({
+      fields: [STUDY_FIELD],
+      documents: [makeImageDoc()],
+    });
+    expect(prompt).toContain('=== Document 1/1 [supplement] scan.pdf ===');
+    expect(prompt).toContain('scanned PDF with no text layer');
+    expect(prompt).toContain('Document 1/1 page p');
+    // 画像文書には本文（[PAGE n]）を出さない
+    expect(prompt).not.toContain('[PAGE');
   });
 
   it('study 項目のみの最小構成: field_id・study 規約・ページマーカー・出力形式を含む', () => {
@@ -224,6 +280,55 @@ describe('buildExtractDataUserPrompt', () => {
     expect(prompt).toContain('- outcome_result level:');
     expect(prompt).toContain('- rob_domain level:');
     expect(prompt.indexOf('- arm level:')).toBeLessThan(prompt.indexOf('- outcome_result level:'));
+  });
+});
+
+describe('buildExtractDataUserContent（pdf_native）', () => {
+  it('画像文書が 1 件も無ければ buildExtractDataUserPrompt の文字列と完全一致する（既存テスト保護）', () => {
+    const input = { fields: [STUDY_FIELD], documents: DOCS };
+    expect(buildExtractDataUserContent(input)).toBe(buildExtractDataUserPrompt(input));
+  });
+
+  it('画像文書があれば [テキスト本文, ラベル, 画像, ラベル, 画像, ...] の配列を返す', () => {
+    const content = buildExtractDataUserContent({
+      fields: [STUDY_FIELD],
+      documents: [makeDoc(), makeImageDoc()],
+    });
+    expect(Array.isArray(content)).toBe(true);
+    const parts = content as ChatContentPart[];
+    expect(parts[0]).toMatchObject({ type: 'text' });
+    expect((parts[0] as { text: string }).text).toBe(
+      buildExtractDataUserPrompt({ fields: [STUDY_FIELD], documents: [makeDoc(), makeImageDoc()] }),
+    );
+    // 画像は文書順 → ページ順。各画像の直前にラベル（実際の document_index / total / page 番号）
+    expect(parts.slice(1)).toEqual([
+      { type: 'text', text: '[Document 2/2 page 1]' },
+      { type: 'image', mimeType: 'image/png', dataBase64: 'QUJD' },
+      { type: 'text', text: '[Document 2/2 page 2]' },
+      { type: 'image', mimeType: 'image/png', dataBase64: 'REVG' },
+    ]);
+  });
+
+  it('複数の画像文書がある場合、文書順（document_index）→ ページ順で画像パートを並べる', () => {
+    const secondImageDoc = makeImageDoc({
+      role: 'other',
+      filename: 'scan2.pdf',
+      imagePages: [{ page: 1, mimeType: 'image/png', dataBase64: 'WFla' }],
+    });
+    const content = buildExtractDataUserContent({
+      fields: [STUDY_FIELD],
+      documents: [makeImageDoc(), secondImageDoc],
+    });
+    const parts = content as ChatContentPart[];
+    // 1 番目の text パートはプロンプト本文。以降は 1 番目の画像文書のページ → 2 番目の画像文書のページ
+    expect(parts.slice(1)).toEqual([
+      { type: 'text', text: '[Document 1/2 page 1]' },
+      { type: 'image', mimeType: 'image/png', dataBase64: 'QUJD' },
+      { type: 'text', text: '[Document 1/2 page 2]' },
+      { type: 'image', mimeType: 'image/png', dataBase64: 'REVG' },
+      { type: 'text', text: '[Document 2/2 page 1]' },
+      { type: 'image', mimeType: 'image/png', dataBase64: 'WFla' },
+    ]);
   });
 });
 

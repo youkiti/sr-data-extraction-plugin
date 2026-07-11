@@ -6,6 +6,7 @@
 //   「プロンプト構築 → 構造化出力スキーマ → 応答パース（validateAiOutput へ委譲）」の純粋関数のみ
 import type { DocumentRole } from '../../../domain/document';
 import type { EntityLevel, SchemaField } from '../../../domain/schemaField';
+import type { ChatContentPart } from '../../../lib/llm/LLMProvider';
 import {
   AiOutputFormatError,
   validateAiOutput,
@@ -18,8 +19,11 @@ export const EXTRACT_DATA_SKILL_NAME = 'extract-data';
 /**
  * プロンプト版数。プロンプト文言・スキーマを変えたら必ずインクリメントする。
  * v2（2026-07）: 複数文書の連結入力 + document_index を導入（v0.10 study / document モデル）
+ * v3（2026-07-11）: pdf_native 入力（no_text_layer 文書のページ画像添付）に対応。
+ *   システムプロンプトへスキャン文書向けの quote/page 規約を追記
+ *   （handoff-scanned-pdf-native-highlight.md §7.4 PR2）
  */
-export const EXTRACT_DATA_PROMPT_VERSION = 2;
+export const EXTRACT_DATA_PROMPT_VERSION = 3;
 
 /** text_only モードで LLM へ渡すページ別本文（extracted_texts/{id}.txt 由来） */
 export interface ExtractDataPage {
@@ -29,24 +33,48 @@ export interface ExtractDataPage {
 }
 
 /**
- * プロンプトへ連結する 1 文書（v0.10）。並び順（配列の添字 + 1）が document_index になる。
- * 同一 study の全文書をロール付き区切りで連結して 1 回で抽出する（§4.3）
+ * pdf_native モードで LLM へ添付するページ画像。
+ * 型は features/documents/loadDocumentPageImages.ts の DocumentPageImage と同一形
+ * （こちらは skill 側の呼称。定義の正典はローダ側で、ここは import して使う）
  */
-export interface ExtractDataDocument {
-  /** 見出しに出すロール（DOCUMENT_ROLE_ORDER 順に並べるのは planRun / executeRun の責務） */
-  role: DocumentRole;
-  /** 見出しに出すファイル名（可読性のみ。突合には使わない） */
-  filename: string;
-  /** 当該文書の本文（ページ順） */
-  pages: readonly ExtractDataPage[];
+export interface ExtractDataImagePage {
+  /** 1-indexed ページ番号。画像ラベル `[Document i/N page p]` の p になる */
+  page: number;
+  mimeType: string;
+  dataBase64: string;
 }
+
+/**
+ * プロンプトへ連結する 1 文書（v0.10）。並び順（配列の添字 + 1）が document_index になる。
+ * 同一 study の全文書をロール付き区切りで連結して 1 回で抽出する（§4.3）。
+ * text_status = no_text_layer の文書は mode: 'image'（本文の代わりにページ画像を添付する
+ * pdf_native 入力。handoff-scanned-pdf-native-highlight.md §7.4 PR2）
+ */
+export type ExtractDataDocument =
+  | {
+      /** 見出しに出すロール（DOCUMENT_ROLE_ORDER 順に並べるのは planRun / executeRun の責務） */
+      role: DocumentRole;
+      /** 見出しに出すファイル名（可読性のみ。突合には使わない） */
+      filename: string;
+      mode: 'text';
+      /** 当該文書の本文（ページ順） */
+      pages: readonly ExtractDataPage[];
+    }
+  | {
+      role: DocumentRole;
+      filename: string;
+      mode: 'image';
+      /** 当該文書のページ画像（ページ順） */
+      imagePages: readonly ExtractDataImagePage[];
+    };
 
 export interface ExtractDataPromptInput {
   /** 当該バッチで抽出する項目（同一 schema_version。分割は planRun の責務） */
   fields: readonly SchemaField[];
   /**
    * 同一 study の文書（document_index 順）。1 件でも複数でも可。
-   * pdf_native モード（※Q3）は lib/llm 移植時に別途対応
+   * mode: 'image' の文書はプロンプト本文には注記だけを出し、実ページ画像は
+   * buildExtractDataUserContent が ChatContentPart[] の画像パートとして別途添付する
    */
   documents: readonly ExtractDataDocument[];
   /** RQ・PICO 等の要約。項目の解釈を安定させる補助コンテキスト（省略可） */
@@ -70,6 +98,7 @@ Rules:
 - "value": report exactly as written in the document. Do not convert units, do not round, do not translate.
 - "document_index": the 1-based number of the document (from the "=== Document i/N ... ===" headers) that your quote and page refer to. REQUIRED whenever "quote" is provided; set it to null only when "not_reported" is true.
 - "page": the 1-indexed page number within THAT document where the quote appears. Page boundaries are marked as [PAGE n] within each document.
+- For a scanned document with no text layer (its "=== Document i/N ..." note says so): its pages are attached as images after this prompt, each labeled "Document i/N page p". "quote" must be a verbatim transcription of the text actually visible in that page image (character for character, no paraphrasing), and "page" must be the p shown in that image's label.
 - When documents disagree on a value, prefer the main article, lower your "confidence", and take the quote from the document you actually read the value from.
 - "confidence": self-assess each item as "high", "medium" or "low".
 - "field_id" is the matching key: echo it exactly as listed. Never invent field_ids.
@@ -111,9 +140,20 @@ function renderField(field: SchemaField): string {
   return lines.join('\n');
 }
 
-/** 1 文書ぶんの連結ブロック（`=== Document i/N [role] filename ===` + ページ本文） */
+/**
+ * 1 文書ぶんの連結ブロック（`=== Document i/N [role] filename ===` + ページ本文）。
+ * mode: 'image' の文書は本文の代わりに画像添付の注記だけを出す。実ページ画像は
+ * buildExtractDataUserContent がこのプロンプトの後ろへ ChatContentPart[] として添付する
+ */
 function renderDocument(doc: ExtractDataDocument, index: number, total: number): string {
   const header = `=== Document ${index}/${total} [${doc.role}] ${doc.filename} ===`;
+  if (doc.mode === 'image') {
+    return (
+      `${header}\n\n` +
+      'This document is a scanned PDF with no text layer. Its pages are attached as images ' +
+      `after this prompt, labeled "Document ${index}/${total} page p".`
+    );
+  }
   const body = doc.pages.map((page) => `[PAGE ${page.page}]\n${page.text}`).join('\n\n');
   return `${header}\n\n${body}`;
 }
@@ -130,8 +170,11 @@ export function buildExtractDataUserPrompt(input: ExtractDataPromptInput): strin
   if (input.documents.length === 0) {
     throw new Error('extract-data skill に文書が 1 件も渡されていません');
   }
-  if (input.documents.some((doc) => doc.pages.length === 0)) {
+  if (input.documents.some((doc) => doc.mode === 'text' && doc.pages.length === 0)) {
     throw new Error('extract-data skill に本文ページが 1 件も無い文書が含まれています');
+  }
+  if (input.documents.some((doc) => doc.mode === 'image' && doc.imagePages.length === 0)) {
+    throw new Error('extract-data skill にページ画像が 1 件も無い文書が含まれています');
   }
   const sections: string[] = [];
 
@@ -167,6 +210,37 @@ export function buildExtractDataUserPrompt(input: ExtractDataPromptInput): strin
   );
 
   return sections.join('\n\n');
+}
+
+/**
+ * ユーザープロンプトを LLMProvider へそのまま渡せる形（string | ChatContentPart[]）に組み立てる。
+ * - 画像文書（mode: 'image'）が 1 件も無ければ buildExtractDataUserPrompt の文字列をそのまま返す
+ *   （text_only の既存経路と完全一致。呼び出し側はどちらの戻り値も ChatMessage.content にそのまま渡せる）
+ * - 画像文書があれば、プロンプト本文の text パートに続けて「文書順 → ページ順」で
+ *   画像パートを並べる。各画像の直前に `[Document i/N page p]` のラベル（text パート）を置く
+ *   （画像だけでは LLM がどの文書 / ページの画像かを見失うため。i/N/p は実際の値に展開する）
+ */
+export function buildExtractDataUserContent(
+  input: ExtractDataPromptInput,
+): string | ChatContentPart[] {
+  const promptText = buildExtractDataUserPrompt(input);
+  const hasImageDocument = input.documents.some((doc) => doc.mode === 'image');
+  if (!hasImageDocument) {
+    return promptText;
+  }
+  const total = input.documents.length;
+  const parts: ChatContentPart[] = [{ type: 'text', text: promptText }];
+  input.documents.forEach((doc, i) => {
+    if (doc.mode !== 'image') {
+      return;
+    }
+    const docIndex = i + 1;
+    for (const image of doc.imagePages) {
+      parts.push({ type: 'text', text: `[Document ${docIndex}/${total} page ${image.page}]` });
+      parts.push({ type: 'image', mimeType: image.mimeType, dataBase64: image.dataBase64 });
+    }
+  });
+  return parts;
 }
 
 /**

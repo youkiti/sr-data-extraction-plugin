@@ -13,6 +13,7 @@ import {
   documentsForStudies,
 } from '../../features/documents/studySelection';
 import { makeLoadDocumentPages } from '../../features/documents/loadDocumentPages';
+import { makeLoadDocumentPageImages } from '../../features/documents/loadDocumentPageImages';
 import { buildAiAnnotationRows } from '../../features/extraction/aiAnnotationRows';
 import {
   createStudyProgressTracker,
@@ -109,7 +110,9 @@ export async function loadExtractTargets(
 }
 
 /**
- * 初回表示時の既定選択: テキスト層があり、かつまだ一度も抽出されていない全 study（ui-states.md §3）。
+ * 初回表示時の既定選択: まだ一度も抽出されていない全 study（ui-states.md §3）。
+ * pdf_native 対応（handoff-scanned-pdf-native-highlight.md §7.4 PR2）によりテキスト層が無い
+ * study もページ画像で抽出できるため、hasTextLayer では絞り込まない。
  * モデル名は S6 / S5 の入力があれば引き継ぐ。一度初期化したら再実行しない
  */
 export function initExtractSelection(store: Store): void {
@@ -126,7 +129,7 @@ export function initExtractSelection(store: Store): void {
   const extracted = new Set(extract.extractedStudyIds);
   // ガードで documents.records / studies は非 null
   const defaults = buildStudySelection(documents.studies, documents.records)
-    .filter((item) => item.hasTextLayer && !extracted.has(item.study.studyId))
+    .filter((item) => !extracted.has(item.study.studyId))
     .map((item) => item.study.studyId);
   patchExtract(store, {
     selectionInitialized: true,
@@ -242,6 +245,7 @@ async function performRun(
       provider: params.providerConfig.provider,
       endpoint: params.providerConfig.endpoint,
       loadDocumentPages: makeLoadDocumentPages(params.targets, deps.google),
+      loadDocumentPageImages: makeLoadDocumentPageImages(params.targets, deps.google),
       buildProvider: deps.buildProvider,
       resolveRateLimitPolicy: deps.resolveRateLimitPolicy,
       newUuid: deps.newUuid,

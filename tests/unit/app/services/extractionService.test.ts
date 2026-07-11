@@ -100,6 +100,7 @@ function makeDeps(chat: jest.Mock) {
     google: GOOGLE,
     apiKey: 'KEY',
     loadDocumentPages: jest.fn().mockResolvedValue(PAGES),
+    loadDocumentPageImages: jest.fn().mockResolvedValue([]),
     buildProvider: jest.fn().mockReturnValue(makeProvider(chat)),
     newUuid: () => `u${++uuidCount}`,
     now: () => 'NOW',
@@ -214,7 +215,7 @@ describe('runExtraction', () => {
     expect(promptCall?.parentId).toBe('folder-logs');
     expect(promptCall?.mimeType).toBe('application/json');
     expect(promptCall?.name).toMatch(/\.prompt\.json$/);
-    expect(JSON.parse(promptCall?.content ?? '{}').promptVersion).toBe(2); // EXTRACT_DATA_PROMPT_VERSION
+    expect(JSON.parse(promptCall?.content ?? '{}').promptVersion).toBe(3); // EXTRACT_DATA_PROMPT_VERSION
     expect(mockedUpload.mock.calls[1]?.[0].name).toMatch(/\.response\.json$/);
 
     expect(mockedAppendLog).toHaveBeenCalledTimes(1);
@@ -230,16 +231,24 @@ describe('runExtraction', () => {
     });
   });
 
-  test('全文献がテキスト層なしなら実行前に throw する', async () => {
-    const chat = jest.fn();
-    await expect(
-      runExtraction(
-        { ...baseParams(), documents: [makeDocument({ textStatus: 'no_text_layer' })] },
-        makeDeps(chat),
-      ),
-    ).rejects.toThrow('抽出できる文献がありません');
-    expect(chat).not.toHaveBeenCalled();
-    expect(mockedAppendRun).not.toHaveBeenCalled();
+  test('全文献がテキスト層なしでも「対象外」にはせず、pdf_native（画像入力）として実行する', async () => {
+    const chat = jest.fn().mockResolvedValue(AI_RESPONSE);
+    const deps = makeDeps(chat);
+    const loadImages = jest.fn().mockResolvedValue([
+      { page: 1, mimeType: 'image/png', dataBase64: 'QUJD' },
+    ]);
+    const outcome = await runExtraction(
+      {
+        ...baseParams(),
+        documents: [makeDocument({ textStatus: 'no_text_layer', textRef: null, pageCount: 2 })],
+      },
+      { ...deps, loadDocumentPageImages: loadImages },
+    );
+    expect(outcome.run.inputMode).toBe('pdf_native');
+    expect(loadImages).toHaveBeenCalledWith('doc-1');
+    // 画像入力の文書にはテキスト層が無いためアンカリングできず null のまま保存する
+    expect(outcome.result.evidence[0]?.anchorStatus).toBeNull();
+    expect(mockedAppendRun).toHaveBeenCalledTimes(2);
   });
 
   test('省略可能な依存（buildProvider / newUuid / now）は既定実装で動く', async () => {
@@ -249,6 +258,7 @@ describe('runExtraction', () => {
       google: GOOGLE,
       apiKey: 'KEY',
       loadDocumentPages: jest.fn().mockRejectedValue(new Error('drive down')),
+      loadDocumentPageImages: jest.fn().mockResolvedValue([]),
     });
     expect(outcome.run.status).toBe('partial_failure');
     expect(outcome.result.batchFailures).toEqual([

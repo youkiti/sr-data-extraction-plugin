@@ -325,7 +325,7 @@ describe('未実行（setup）', () => {
     );
   });
 
-  test('チェックリスト: 選択状態・抽出済みバッジ・テキスト層なし study は選択不可 + 切替コールバック', () => {
+  test('チェックリスト: 選択状態・抽出済みバッジ・テキスト層なし study も選択可（pdf_native 注記） + 切替コールバック', () => {
     const docs = [
       makeDocument({ documentId: 'doc-1', studyId: 'study-1' }),
       makeDocument({ documentId: 'doc-2', studyId: 'study-2', filename: 'done.pdf' }),
@@ -345,14 +345,21 @@ describe('未実行（setup）', () => {
     expect(checkboxes).toHaveLength(3);
     expect(checkboxes[0]?.checked).toBe(true);
     expect(checkboxes[1]?.checked).toBe(false);
-    expect(checkboxes[2]?.disabled).toBe(true);
+    // pdf_native 対応によりテキスト層なし study も選択可（無効化しない）
+    expect(checkboxes[2]?.disabled).toBe(false);
     expect(root.querySelectorAll('.extract__doc-extracted')).toHaveLength(1);
+    expect(root.querySelector('.extract__doc-note')?.textContent).toContain(
+      'テキスト層なし: ページ画像を LLM へ送信して抽出します',
+    );
     // 配下文書のロール + ファイル名を表示
     expect(root.querySelector('.extract__doc-filename')?.textContent).toBe('smith2020.pdf');
     expect(root.querySelector('.extract__doc-role')?.textContent).toBe('本論文');
 
     checkboxes[1]!.click();
     expect(callbacks.onToggleStudy).toHaveBeenCalledWith('study-2', true);
+
+    checkboxes[2]!.click();
+    expect(callbacks.onToggleStudy).toHaveBeenCalledWith('study-3', true);
   });
 
   test('モデル変更・実行ボタンのコールバック + インラインエラー表示', () => {
@@ -392,8 +399,9 @@ describe('未実行（setup）', () => {
     );
     const estimate = root.querySelector('#extract-estimate');
     expect(estimate?.textContent).toContain('概算不可（単価表にないモデル）');
-    expect(estimate?.textContent).toContain('1 バッチ');
-    expect(estimate?.textContent).toContain('注意:'); // no_text_layer スキップの warning
+    // テキスト層なし study も pdf_native の画像入力バッチとして計画に含まれる（2 study = 2 バッチ）
+    expect(estimate?.textContent).toContain('2 バッチ');
+    expect(estimate?.textContent).toContain('注意:'); // pdf_native（画像入力）の warning
     expect(estimate?.textContent).toContain('プロトコル本文ぶんは概算に含まれません');
   });
 

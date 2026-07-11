@@ -2,6 +2,9 @@
 // - バッチ分割: スキーマ全項目 1 バッチ ⇔ トークン予算超過時の section 単位分割
 // - トークン概算: 文字数 ÷ 4 の目安、char_count 欠損時のフォールバック、entity_level 別の応答要素数
 // - コスト概算: lib/llm/pricing の単価表との結線、未知モデルは null + 警告
+// - pdf_native（handoff-scanned-pdf-native-highlight.md §7.4 PR2）: no_text_layer 文書は除外せず
+//   画像入力（imageDocumentIds）としてバッチへ含める。トークン概算はテキスト文書ぶん（文字数 ÷ 4）と
+//   画像文書ぶん（ページ数 × 画像トークン単価）を別建てで計算してから合算する
 import type { DocumentRecord } from '../../../../src/domain/document';
 import type { SchemaField } from '../../../../src/domain/schemaField';
 import {
@@ -11,12 +14,13 @@ import {
   ENTITY_INSTANCE_ESTIMATE,
   FALLBACK_CHARS_PER_PAGE,
   FALLBACK_DOCUMENT_CHARS,
+  FALLBACK_DOCUMENT_PAGES,
   FIELD_PROMPT_OVERHEAD_CHARS,
   OUTPUT_CHARS_PER_ITEM,
   PROMPT_SCAFFOLD_CHARS,
   planRun,
 } from '../../../../src/features/extraction/planRun';
-import { estimateCostUsd } from '../../../../src/lib/llm/pricing';
+import { APPROX_IMAGE_TOKENS_PER_PAGE, estimateCostUsd } from '../../../../src/lib/llm/pricing';
 
 function makeField(
   overrides: Pick<SchemaField, 'fieldId' | 'fieldName'> & Partial<SchemaField>,
@@ -64,8 +68,9 @@ function makeDocument(overrides: Partial<DocumentRecord> & { documentId: string 
 const STUDY_FIELD = makeField({ fieldId: 'f_design', fieldName: 'study_design' });
 
 /**
- * テスト側で期待値を組み立てるための最小ミラー（1 バッチの入力トークン）。
- * v0.10: 連結する各文書に見出し（DOCUMENT_SEPARATOR_CHARS）が付く。docChars は文書別の本文文字数の配列
+ * テスト側で期待値を組み立てるための最小ミラー（1 バッチの入力トークン。テキスト文書ぶん）。
+ * v0.10: 連結する各文書に見出し（DOCUMENT_SEPARATOR_CHARS）が付く。docChars は文書別の本文文字数の配列。
+ * 画像文書ぶんは expectedImageTokens で別建てに計算し、この関数の戻り値へ加算する
  */
 function expectedTokensIn(
   docCharsList: number | number[],
@@ -77,6 +82,11 @@ function expectedTokensIn(
   return Math.ceil(
     (PROMPT_SCAFFOLD_CHARS + protocolChars + fieldChars + bodyChars) / APPROX_CHARS_PER_TOKEN,
   );
+}
+
+/** 画像文書 1 件ぶんの入力トークン期待値（pdf_native）: ページ数 × 単価 + 見出しぶん */
+function expectedImageTokens(pages: number): number {
+  return pages * APPROX_IMAGE_TOKENS_PER_PAGE + DOCUMENT_SEPARATOR_CHARS / APPROX_CHARS_PER_TOKEN;
 }
 
 const STUDY_FIELD_CHARS = FIELD_PROMPT_OVERHEAD_CHARS + 'f_design'.length + 'study_design'.length;
@@ -121,13 +131,14 @@ describe('planRun のバッチ分割', () => {
     expect(plan.batches[0]).toEqual({
       studyId: 'd1',
       documentIds: ['d1'],
+      imageDocumentIds: [],
       section: null,
       fieldIds: ['f_design'],
       tokensInEstimate: expectedTokensIn(4_000, STUDY_FIELD_CHARS),
       tokensOutEstimate: STUDY_TOKENS_OUT,
       overBudget: false,
     });
-    expect(plan.skippedDocuments).toHaveLength(0);
+    expect(plan.inputMode).toBe('text_only');
     expect(plan.warnings).toHaveLength(0);
   });
 
@@ -325,13 +336,14 @@ describe('planRun の study 単位グルーピング（v0.10）', () => {
     expect(plan.batches).toHaveLength(1);
     expect(plan.batches[0]?.studyId).toBe('s1');
     expect(plan.batches[0]?.documentIds).toEqual(['art', 'reg']);
+    expect(plan.batches[0]?.imageDocumentIds).toEqual([]);
     // 入力トークンは 2 文書の本文 + 見出しの合計
     expect(plan.batches[0]?.tokensInEstimate).toBe(
       expectedTokensIn([2_000, 1_000], STUDY_FIELD_CHARS),
     );
   });
 
-  it('study 内の no_text_layer 文書は連結から除外し、残りで抽出する', () => {
+  it('study 内の no_text_layer 文書は除外せず、画像入力（imageDocumentIds）として連結する（pdf_native）', () => {
     const plan = planRun({
       documents: [
         makeDocument({ documentId: 'art', studyId: 's1', documentRole: 'article', charCount: 2_000 }),
@@ -341,29 +353,47 @@ describe('planRun の study 単位グルーピング（v0.10）', () => {
           documentRole: 'supplement',
           textStatus: 'no_text_layer',
           textRef: null,
+          pageCount: 3,
         }),
       ],
       fields: [STUDY_FIELD],
       model: 'gemini-2.5-pro',
     });
     expect(plan.batches).toHaveLength(1);
-    expect(plan.batches[0]?.documentIds).toEqual(['art']);
-    expect(plan.skippedDocuments).toEqual([{ documentId: 'scan', reason: 'no_text_layer' }]);
-    expect(plan.batches[0]?.tokensInEstimate).toBe(expectedTokensIn([2_000], STUDY_FIELD_CHARS));
+    // documentIds は role 固定順（article → supplement）のまま no_text_layer 文書も含む
+    expect(plan.batches[0]?.documentIds).toEqual(['art', 'scan']);
+    expect(plan.batches[0]?.imageDocumentIds).toEqual(['scan']);
+    expect(plan.inputMode).toBe('pdf_native');
+    // テキスト文書ぶん（本文 2,000 文字）と画像文書ぶん（3 ページ）を別建てで合算する
+    expect(plan.batches[0]?.tokensInEstimate).toBe(
+      expectedTokensIn([2_000], STUDY_FIELD_CHARS) + expectedImageTokens(3),
+    );
   });
 
-  it('全文書が no_text_layer の study はバッチを作らない', () => {
+  it('全文書が no_text_layer の study も除外せず、画像入力のみのバッチを作る', () => {
     const plan = planRun({
       documents: [
-        makeDocument({ documentId: 'a', studyId: 's1', textStatus: 'no_text_layer', textRef: null }),
+        makeDocument({
+          documentId: 'a',
+          studyId: 's1',
+          textStatus: 'no_text_layer',
+          textRef: null,
+          pageCount: 2,
+        }),
         makeDocument({ documentId: 'b', studyId: 's2', charCount: 3_000 }),
       ],
       fields: [STUDY_FIELD],
       model: 'gemini-2.5-pro',
     });
-    expect(plan.batches).toHaveLength(1);
-    expect(plan.batches[0]?.studyId).toBe('s2');
-    expect(plan.skippedDocuments).toEqual([{ documentId: 'a', reason: 'no_text_layer' }]);
+    expect(plan.batches).toHaveLength(2);
+    const s1Batch = plan.batches.find((batch) => batch.studyId === 's1');
+    const s2Batch = plan.batches.find((batch) => batch.studyId === 's2');
+    expect(s1Batch?.documentIds).toEqual(['a']);
+    expect(s1Batch?.imageDocumentIds).toEqual(['a']);
+    expect(s1Batch?.tokensInEstimate).toBe(expectedTokensIn([], STUDY_FIELD_CHARS) + expectedImageTokens(2));
+    expect(s2Batch?.documentIds).toEqual(['b']);
+    expect(s2Batch?.imageDocumentIds).toEqual([]);
+    expect(plan.inputMode).toBe('pdf_native');
   });
 
   it('DOCUMENT_ROLE_ORDER に無いロールは末尾へ並べる（未知が先・防御的フォールバック）', () => {
@@ -407,7 +437,75 @@ describe('planRun の study 単位グルーピング（v0.10）', () => {
   });
 });
 
-describe('planRun のコスト概算と対象外文献', () => {
+describe('planRun の画像文書のトークン概算（pdf_native）', () => {
+  it('FALLBACK_DOCUMENT_PAGES は FALLBACK_DOCUMENT_CHARS / FALLBACK_CHARS_PER_PAGE（= 10）', () => {
+    expect(FALLBACK_DOCUMENT_PAGES).toBe(10);
+    expect(FALLBACK_DOCUMENT_PAGES).toBe(FALLBACK_DOCUMENT_CHARS / FALLBACK_CHARS_PER_PAGE);
+  });
+
+  it('page_count がある画像文書はページ数 × APPROX_IMAGE_TOKENS_PER_PAGE + 見出しぶんで概算する', () => {
+    const plan = planRun({
+      documents: [
+        makeDocument({
+          documentId: 'd1',
+          textStatus: 'no_text_layer',
+          textRef: null,
+          pageCount: 7,
+          charCount: null,
+        }),
+      ],
+      fields: [STUDY_FIELD],
+      model: 'gemini-2.5-pro',
+    });
+    expect(plan.batches[0]?.tokensInEstimate).toBe(
+      expectedTokensIn([], STUDY_FIELD_CHARS) + expectedImageTokens(7),
+    );
+    // 画像文書は char_count を使わないため「文字数が未取得」の警告は出さない
+    expect(plan.warnings).not.toContain('文字数が未取得の文献 1 件は既定値で概算しています');
+  });
+
+  it('page_count 欠損の画像文書は FALLBACK_DOCUMENT_PAGES で概算する', () => {
+    const plan = planRun({
+      documents: [
+        makeDocument({
+          documentId: 'd1',
+          textStatus: 'no_text_layer',
+          textRef: null,
+          pageCount: null,
+          charCount: null,
+        }),
+      ],
+      fields: [STUDY_FIELD],
+      model: 'gemini-2.5-pro',
+    });
+    expect(plan.batches[0]?.tokensInEstimate).toBe(
+      expectedTokensIn([], STUDY_FIELD_CHARS) + expectedImageTokens(FALLBACK_DOCUMENT_PAGES),
+    );
+  });
+
+  it('study 内で text + image が混在する場合、テキスト分と画像分を別建てで合算する', () => {
+    const plan = planRun({
+      documents: [
+        makeDocument({ documentId: 'art', studyId: 's1', documentRole: 'article', charCount: 5_000 }),
+        makeDocument({
+          documentId: 'scan',
+          studyId: 's1',
+          documentRole: 'supplement',
+          textStatus: 'no_text_layer',
+          textRef: null,
+          pageCount: 4,
+        }),
+      ],
+      fields: [STUDY_FIELD],
+      model: 'gemini-2.5-pro',
+    });
+    expect(plan.batches[0]?.tokensInEstimate).toBe(
+      expectedTokensIn([5_000], STUDY_FIELD_CHARS) + expectedImageTokens(4),
+    );
+  });
+});
+
+describe('planRun のコスト概算と画像入力（pdf_native）の警告', () => {
   it('単価表にあるモデルは合計トークンからコストを概算する', () => {
     const plan = planRun({
       documents: [makeDocument({ documentId: 'd1' })],
@@ -430,34 +528,59 @@ describe('planRun のコスト概算と対象外文献', () => {
     expect(plan.warnings).toEqual(['モデル「unknown-model」は単価表に無いためコストを概算できません']);
   });
 
-  it('テキスト層がない文献は skippedDocuments に回して警告する', () => {
+  it('画像入力が無ければ inputMode は text_only で pdf_native の警告も出さない', () => {
+    const plan = planRun({
+      documents: [makeDocument({ documentId: 'd1' })],
+      fields: [STUDY_FIELD],
+      model: 'gemini-2.5-pro',
+    });
+    expect(plan.inputMode).toBe('text_only');
+    expect(plan.warnings).toHaveLength(0);
+  });
+
+  it('テキスト層がない文献は画像入力として含め、pdf_native の警告を出す（対象外にはしない）', () => {
     const plan = planRun({
       documents: [
         makeDocument({ documentId: 'd1' }),
-        makeDocument({ documentId: 'd2', textStatus: 'no_text_layer', textRef: null }),
+        makeDocument({
+          documentId: 'd2',
+          textStatus: 'no_text_layer',
+          textRef: null,
+          pageCount: 4,
+        }),
+      ],
+      fields: [STUDY_FIELD],
+      model: 'gemini-2.5-pro',
+    });
+    expect(plan.batches).toHaveLength(2);
+    expect(plan.batches.find((b) => b.studyId === 'd1')?.imageDocumentIds).toEqual([]);
+    expect(plan.batches.find((b) => b.studyId === 'd2')?.imageDocumentIds).toEqual(['d2']);
+    expect(plan.inputMode).toBe('pdf_native');
+    expect(plan.warnings).toEqual([
+      'テキスト層がない文献 1 件はページ画像として LLM へ送信します（pdf_native。画像トークンぶんコストが増えます）',
+    ]);
+  });
+
+  it('全文献が no_text_layer でも「対象外」にはせず、1 study 1 バッチとして画像入力で計画する', () => {
+    const plan = planRun({
+      documents: [
+        makeDocument({
+          documentId: 'd1',
+          textStatus: 'no_text_layer',
+          textRef: null,
+          pageCount: 5,
+        }),
       ],
       fields: [STUDY_FIELD],
       model: 'gemini-2.5-pro',
     });
     expect(plan.batches).toHaveLength(1);
-    expect(plan.batches[0]?.studyId).toBe('d1');
-    expect(plan.batches[0]?.documentIds).toEqual(['d1']);
-    expect(plan.skippedDocuments).toEqual([{ documentId: 'd2', reason: 'no_text_layer' }]);
+    expect(plan.batches[0]?.imageDocumentIds).toEqual(['d1']);
+    expect(plan.tokensInEstimate).toBeGreaterThan(0);
+    expect(plan.inputMode).toBe('pdf_native');
     expect(plan.warnings).toEqual([
-      'テキスト層がない文献 1 件は今回の抽出対象外です（text_only モードでは抽出できません）',
+      'テキスト層がない文献 1 件はページ画像として LLM へ送信します（pdf_native。画像トークンぶんコストが増えます）',
     ]);
-  });
-
-  it('全文献が対象外ならバッチ 0 件・トークン 0 で返す', () => {
-    const plan = planRun({
-      documents: [makeDocument({ documentId: 'd1', textStatus: 'no_text_layer', textRef: null })],
-      fields: [STUDY_FIELD],
-      model: 'gemini-2.5-pro',
-    });
-    expect(plan.batches).toHaveLength(0);
-    expect(plan.tokensInEstimate).toBe(0);
-    expect(plan.tokensOutEstimate).toBe(0);
-    expect(plan.costEstimateUsd).toBe(0);
   });
 });
 

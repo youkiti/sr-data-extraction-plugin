@@ -236,15 +236,18 @@ async function initApp(
   await page.goto('/app/app.html#/pilot');
 }
 
-test('未実行: 文献セレクタ（no_text_layer は選択不可）+ コスト概算 + API キー未設定エラー', async ({ page }) => {
+test('未実行: 文献セレクタ（no_text_layer は既定選択されないが選択可）+ コスト概算 + API キー未設定エラー', async ({ page }) => {
   await initApp(page);
 
   await expect(page.locator('#pilot-documents > li')).toHaveCount(2);
   const checkboxes = page.locator('#pilot-documents input[type="checkbox"]');
   await expect(checkboxes.nth(0)).toBeChecked();
-  await expect(checkboxes.nth(1)).toBeDisabled();
+  // パイロットの既定選択はテキスト層あり優先のまま（変更なし）だが、
+  // pdf_native 対応によりテキスト層なし study も手動選択できる（無効化しない）
+  await expect(checkboxes.nth(1)).not.toBeChecked();
+  await expect(checkboxes.nth(1)).toBeEnabled();
   await expect(page.locator('.pilot__doc-note').first()).toContainText(
-    'テキスト層のある文書がありません',
+    'テキスト層なし: ページ画像を LLM へ送信して抽出します',
   );
 
   // 注入した非カタログモデル（gemini-test）は「その他（直接入力）」+ テキスト充填で復元される

@@ -242,22 +242,25 @@ test('未実行: 未抽出の既定選択 + 抽出済みバッジ + 中断バナ
     '前回の抽出が途中で中断されています（未完了 1 件）',
   );
 
-  // 既定選択 = 未抽出の全 study（study-1 のみ）。抽出済みバッジ + no_text_layer は選択不可
+  // 既定選択 = 未抽出の全 study（study-1・study-3）。抽出済みバッジ + no_text_layer も
+  // pdf_native で選択可（handoff-scanned-pdf-native-highlight.md §7.4 PR2）
   await expect(page.locator('#extract-studies > li')).toHaveCount(3);
   const checkboxes = page.locator('#extract-studies input[type="checkbox"]');
   await expect(checkboxes.nth(0)).toBeChecked();
   await expect(checkboxes.nth(1)).not.toBeChecked();
-  await expect(checkboxes.nth(2)).toBeDisabled();
+  await expect(checkboxes.nth(2)).toBeChecked();
+  await expect(checkboxes.nth(2)).toBeEnabled();
   await expect(page.locator('.extract__doc-extracted')).toHaveText('抽出済み');
-  // テキスト層のある文書が無い study は選択不可の注記が出る
+  // テキスト層が無い study は選択できるが pdf_native（画像送信）の注記が出る
   await expect(page.locator('.extract__doc-note').first()).toContainText(
-    'テキスト層のある文書がありません',
+    'テキスト層なし: ページ画像を LLM へ送信して抽出します',
   );
 
-  // コスト概算。モデルは S6/S5 未入力のためプルダウンから選択（単価表のモデル → 金額表示）
+  // コスト概算。モデルは S6/S5 未入力のためプルダウンから選択（単価表のモデル → 金額表示）。
+  // 既定選択が study-1（text_only）+ study-3（pdf_native）の 2 study = 2 バッチ
   await page.locator('#extract-model').selectOption('gemini-2.0-flash');
   await expect(page.locator('#extract-estimate')).toContainText('コスト概算: $');
-  await expect(page.locator('#extract-estimate')).toContainText('1 バッチ');
+  await expect(page.locator('#extract-estimate')).toContainText('2 バッチ');
 
   // API キー未設定 → 確認カードを出さずインラインエラー（ui-states.md §3）
   await page.locator('#extract-run').click();

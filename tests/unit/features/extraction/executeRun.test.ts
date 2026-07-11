@@ -20,10 +20,12 @@ import type { PlannedBatch, RunPlan } from '../../../../src/features/extraction/
 import {
   EXTRACT_DATA_RESPONSE_SCHEMA,
   EXTRACT_DATA_SYSTEM_PROMPT,
+  type ExtractDataImagePage,
   type ExtractDataPage,
 } from '../../../../src/features/extraction/skills/extractData';
 import { LlmProviderError } from '../../../../src/lib/llm/LLMProvider';
 import type {
+  ChatContentPart,
   ChatMessage,
   ChatOptions,
   ChatResponse,
@@ -96,6 +98,7 @@ function makeBatch(
   return {
     // 既定は 1 study = 1 文書（document_id は study_id と同値）
     documentIds: [overrides.studyId],
+    imageDocumentIds: [],
     section: null,
     tokensInEstimate: 0,
     tokensOutEstimate: 0,
@@ -109,7 +112,7 @@ function makePlan(batches: PlannedBatch[]): RunPlan {
     schemaVersion: 1,
     model: 'gemini-2.5-pro',
     batches,
-    skippedDocuments: [],
+    inputMode: 'text_only',
     tokensInEstimate: 0,
     tokensOutEstimate: 0,
     costEstimateUsd: 0,
@@ -851,6 +854,207 @@ describe('executeRun の partial_failure', () => {
       { studyId: 'd1', section: null, reason: 'save_failed', detail: 'sheets quota' },
     ]);
     expect(result.evidence).toHaveLength(0);
+  });
+});
+
+describe('executeRun の画像入力（pdf_native。handoff-scanned-pdf-native-highlight.md §7.4 PR2）', () => {
+  const IMAGE_PAGES: ExtractDataImagePage[] = [
+    { page: 1, mimeType: 'image/png', dataBase64: 'QUJD' },
+  ];
+
+  test('画像文書（no_text_layer）は loadDocumentPageImages でロードし、画像パート付きでプロンプトを送る（anchorStatus は null）', async () => {
+    const { provider, calls } = providerOf([chatResponse([DESIGN_ITEM])]);
+    const { deps } = makeDeps(provider);
+    const loadImages = jest.fn().mockResolvedValue(IMAGE_PAGES);
+    deps.loadDocumentPageImages = loadImages;
+    const result = await executeRun(
+      {
+        runId: 'run-1',
+        plan: makePlan([
+          makeBatch({
+            studyId: 'd1',
+            documentIds: ['d1'],
+            imageDocumentIds: ['d1'],
+            fieldIds: ['f_design'],
+          }),
+        ]),
+        fields: FIELDS,
+        documents: [makeDocument('d1', { textStatus: 'no_text_layer', textRef: null })],
+      },
+      deps,
+    );
+
+    expect(loadImages).toHaveBeenCalledWith('d1');
+    const userContent = calls[0]!.messages[1]!.content;
+    expect(Array.isArray(userContent)).toBe(true);
+    const parts = userContent as ChatContentPart[];
+    expect(parts[0]).toMatchObject({ type: 'text' });
+    expect((parts[0] as { text: string }).text).toContain('scanned PDF with no text layer');
+    expect(parts.slice(1)).toEqual([
+      { type: 'text', text: '[Document 1/1 page 1]' },
+      { type: 'image', mimeType: 'image/png', dataBase64: 'QUJD' },
+    ]);
+    expect(result.status).toBe('done');
+    expect(result.evidence[0]?.anchorStatus).toBeNull();
+  });
+
+  test('画像入力（pdf_native）のバッチがあるのに loadDocumentPageImages 未注入なら実行前に throw する', async () => {
+    const { provider } = providerOf([]);
+    const { deps } = makeDeps(provider); // loadDocumentPageImages 未設定
+    await expect(
+      executeRun(
+        {
+          runId: 'run-1',
+          plan: makePlan([
+            makeBatch({
+              studyId: 'd1',
+              documentIds: ['d1'],
+              imageDocumentIds: ['d1'],
+              fieldIds: ['f_design'],
+            }),
+          ]),
+          fields: FIELDS,
+          documents: [makeDocument('d1', { textStatus: 'no_text_layer', textRef: null })],
+        },
+        deps,
+      ),
+    ).rejects.toThrow('loadDocumentPageImages');
+  });
+
+  test('画像のロード失敗は load_failed として記録する', async () => {
+    const { provider } = providerOf([]);
+    const { deps } = makeDeps(provider);
+    deps.loadDocumentPageImages = jest.fn().mockRejectedValue(new Error('drive down'));
+    const result = await executeRun(
+      {
+        runId: 'run-1',
+        plan: makePlan([
+          makeBatch({
+            studyId: 'd1',
+            documentIds: ['d1'],
+            imageDocumentIds: ['d1'],
+            fieldIds: ['f_design'],
+          }),
+        ]),
+        fields: FIELDS,
+        documents: [makeDocument('d1', { textStatus: 'no_text_layer', textRef: null })],
+      },
+      deps,
+    );
+    expect(result.batchFailures).toEqual([
+      { studyId: 'd1', section: null, reason: 'load_failed', detail: 'drive down' },
+    ]);
+  });
+
+  test('画像が 0 件の文書は load_failed（本文と同趣旨のメッセージ）', async () => {
+    const { provider } = providerOf([]);
+    const { deps } = makeDeps(provider);
+    deps.loadDocumentPageImages = jest.fn().mockResolvedValue([]);
+    const result = await executeRun(
+      {
+        runId: 'run-1',
+        plan: makePlan([
+          makeBatch({
+            studyId: 'd1',
+            documentIds: ['d1'],
+            imageDocumentIds: ['d1'],
+            fieldIds: ['f_design'],
+          }),
+        ]),
+        fields: FIELDS,
+        documents: [makeDocument('d1', { textStatus: 'no_text_layer', textRef: null })],
+      },
+      deps,
+    );
+    expect(result.batchFailures[0]).toMatchObject({
+      reason: 'load_failed',
+      detail: expect.stringContaining('ページ画像が 0 件'),
+    });
+  });
+
+  test('同一画像文書は複数バッチにまたがっても 1 回だけロードする（Promise キャッシュ）', async () => {
+    const { provider } = providerOf([chatResponse([DESIGN_ITEM]), chatResponse([DESIGN_ITEM])]);
+    const { deps } = makeDeps(provider);
+    const loadImages = jest.fn().mockResolvedValue(IMAGE_PAGES);
+    deps.loadDocumentPageImages = loadImages;
+    const result = await executeRun(
+      {
+        runId: 'run-1',
+        plan: makePlan([
+          makeBatch({
+            studyId: 'd1',
+            section: 'methods',
+            documentIds: ['d1'],
+            imageDocumentIds: ['d1'],
+            fieldIds: ['f_design'],
+          }),
+          makeBatch({
+            studyId: 'd1',
+            section: 'population',
+            documentIds: ['d1'],
+            imageDocumentIds: ['d1'],
+            fieldIds: ['f_design'],
+          }),
+        ]),
+        fields: FIELDS,
+        documents: [makeDocument('d1', { textStatus: 'no_text_layer', textRef: null })],
+      },
+      deps,
+    );
+    expect(loadImages).toHaveBeenCalledTimes(1);
+    expect(result.evidence).toHaveLength(2);
+  });
+
+  test('複数文書 study に text と image が混在する場合、document_index ごとに入力形式を出し分ける', async () => {
+    const artItem = { ...DESIGN_ITEM, document_index: 1 };
+    const scanItem = {
+      field_id: 'f_n',
+      entity_key: 'arm:1',
+      value: '60',
+      not_reported: false,
+      quote: 'irrelevant for image doc',
+      page: 1,
+      document_index: 2,
+      confidence: 'medium',
+    };
+    const { provider, calls } = providerOf([chatResponse([artItem, scanItem])]);
+    const { deps } = makeDeps(provider);
+    deps.loadDocumentPageImages = jest.fn().mockResolvedValue(IMAGE_PAGES);
+    const result = await executeRun(
+      {
+        runId: 'run-1',
+        plan: makePlan([
+          makeBatch({
+            studyId: 's1',
+            documentIds: ['art', 'scan'],
+            imageDocumentIds: ['scan'],
+            fieldIds: ['f_design', 'f_n'],
+          }),
+        ]),
+        fields: FIELDS,
+        documents: [
+          makeDocument('art', { studyId: 's1', documentRole: 'article', filename: 'main.pdf' }),
+          makeDocument('scan', {
+            studyId: 's1',
+            documentRole: 'supplement',
+            filename: 'scan.pdf',
+            textStatus: 'no_text_layer',
+            textRef: null,
+          }),
+        ],
+      },
+      deps,
+    );
+
+    const userContent = calls[0]!.messages[1]!.content as ChatContentPart[];
+    expect(Array.isArray(userContent)).toBe(true);
+    const promptText = (userContent[0] as { text: string }).text;
+    expect(promptText).toContain('=== Document 1/2 [article] main.pdf ===');
+    expect(promptText).toContain('=== Document 2/2 [supplement] scan.pdf ===');
+    expect(result.evidence).toEqual([
+      expect.objectContaining({ documentId: 'art', anchorStatus: 'exact' }),
+      expect.objectContaining({ documentId: 'scan', value: '60', anchorStatus: null }),
+    ]);
   });
 });
 
