@@ -1266,6 +1266,44 @@ describe('bootstrapApp: #/pilot', () => {
     expect(decisionAppendCount()).toBeGreaterThan(beforeOutcomeAdd);
   });
 
+  test('#/pilot のレイアウトモードトグルが onChangeLayoutMode（setPilotLayoutMode）に配線されている', async () => {
+    const verification = {
+      study: STUDY_RECORD,
+      documents: [{ document: DOC_RECORD, extractedPages: [], extractedTextError: null }],
+      loadPdfView: async () => ({ pdf: null, pdfError: 'テストでは PDF なし', textPages: [] }),
+      retryPdfView: async () => ({ pdf: null, pdfError: 'テストでは PDF なし', textPages: [] }),
+      fields: [FIELD],
+      evidence: [],
+      decisions: [],
+      annotator: 'tester@example.com',
+      schemaVersion: 1,
+      armStructure: null,
+    };
+    const stub = createWindowStub(
+      pilotPreloaded({
+        selectionInitialized: true,
+        selectedStudyIds: ['study-1'],
+        model: 'gemini-test',
+        run: { ...RUN, studyIds: ['study-1'] },
+        runFields: [FIELD],
+        evidence: [],
+        verifyStudyId: 'study-1',
+        verification,
+      } as unknown as Partial<AppState['pilot']>),
+    );
+    const { deps } = createFakeDeps([[...SHEET_HEADERS.Documents]]);
+    const store = await bootstrapApp(asWindow(stub), deps);
+    stub.location.hash = '#/pilot';
+    stub.fireHashChange();
+    await flush();
+
+    const toggle = document.getElementById('verify-layout-toggle') as HTMLButtonElement;
+    expect(toggle.textContent).toBe('リスト表示に切替'); // 既定 focus
+    toggle.click();
+    await flush();
+    expect(store?.getState().pilot.layoutMode).toBe('list');
+  });
+
   test('#/pilot 入場で履歴の最新 run を自動読込する（既存データを最初からにしない）', async () => {
     const historyRun = { ...RUN, runId: 'run-hist', studyIds: [] };
     const stub = createWindowStub(
@@ -1707,6 +1745,13 @@ describe('bootstrapApp: #/verify・#/dashboard', () => {
     // PDF はスタブで開けない → pdfError 側のペインでフォームは使える
     expect(document.querySelector('.verify__panes')).not.toBeNull();
     expect(document.querySelector('.verify__pdf-error')).not.toBeNull();
+
+    // レイアウトモードトグルが onChangeLayoutMode（setVerifyLayoutMode）に配線されている（issue #38）
+    const toggle = document.getElementById('verify-layout-toggle') as HTMLButtonElement;
+    expect(toggle.textContent).toBe('リスト表示に切替'); // 既定 focus
+    toggle.click();
+    await flush();
+    expect(store?.getState().verify.layoutMode).toBe('list');
 
     // 同じ状態での再 hashchange は再読込しない（alreadyShown）
     const decisionsReads = () =>

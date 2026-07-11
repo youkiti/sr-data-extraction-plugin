@@ -22,6 +22,7 @@ import {
 import { readAllDecisions } from '../../features/verification/decisionRepository';
 import { verificationProgress } from '../../features/verification/progress';
 import { getCurrentUserEmail } from '../../lib/google/identity';
+import type { VerifyLayoutMode } from '../../lib/storage/settingsStore';
 import { nowIso8601 } from '../../utils/iso8601';
 import type { Store, VerifyState, VerifyTarget } from '../store';
 import { showToast } from '../ui/toast';
@@ -30,6 +31,7 @@ import {
   persistArmConfirmation,
   persistDecisionWrite,
   persistInstanceDeclarations,
+  persistVerifyLayoutMode,
   type QueuedDecisionWrite,
   type VerificationDeps,
 } from './verificationService';
@@ -225,10 +227,24 @@ export async function openVerifyStudy(
       verifyLoading: false,
       verification: bundle.verification,
       studyValues: bundle.studyValues,
+      layoutMode: bundle.layoutMode,
     });
   } catch (err) {
     patchVerify(store, { verifyLoading: false, verifyError: toMessage(err) });
   }
+}
+
+/**
+ * 検証パネルのレイアウトモードを切替える（`#verify-layout-toggle`。パネル側は楽観反映済み）。
+ * store へ反映しつつ settingsStore へ永続化する（S6 / S8 で設定を共有）
+ */
+export async function setVerifyLayoutMode(
+  store: Store,
+  deps: VerificationDeps,
+  mode: VerifyLayoutMode,
+): Promise<void> {
+  patchVerify(store, { layoutMode: mode });
+  await persistVerifyLayoutMode(mode, deps);
 }
 
 /**

@@ -8,6 +8,7 @@ import {
   persistPilotDecision,
   persistPilotInstanceDeclarations,
   runPilot,
+  setPilotLayoutMode,
   setPilotModel,
   togglePilotStudy,
   type PilotServiceDeps,
@@ -673,6 +674,8 @@ describe('loadPilotVerification', () => {
     expect(loaded?.pdfError).toBeNull();
     // ビューア用ドキュメントは元 PDF のページをそのまま返す
     await expect(loaded?.pdf?.getPage(1)).resolves.toBeDefined();
+    // レイアウトモードは検証データ束の読込時に settingsStore から読む（issue #38。未設定は既定 focus）
+    expect(pilot.layoutMode).toBe('focus');
   });
 
   test('自分の StudyData 行が無ければ空 values から始める。email 不明は空文字 annotator', async () => {
@@ -714,6 +717,16 @@ describe('loadPilotVerification', () => {
     await loadPilotVerification(store, deps, 'study-doc-2');
     expect(pdf.destroy).toHaveBeenCalledTimes(1);
     expect(store.getState().pilot.verifyStudyId).toBe('study-doc-2');
+  });
+});
+
+describe('setPilotLayoutMode（issue #38）', () => {
+  test('pilot.layoutMode を楽観反映し、settingsStore（deps 注入）へ永続化する', async () => {
+    const store = makeStore({});
+    const saveVerifyLayoutMode = jest.fn().mockResolvedValue(undefined);
+    await setPilotLayoutMode(store, makeDeps({ saveVerifyLayoutMode }), 'list');
+    expect(store.getState().pilot.layoutMode).toBe('list');
+    expect(saveVerifyLayoutMode).toHaveBeenCalledWith('list');
   });
 });
 

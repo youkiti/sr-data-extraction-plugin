@@ -5,11 +5,13 @@ import {
   loadRateLimitCustomConcurrency,
   loadRateLimitCustomRpm,
   loadRateLimitTier,
+  loadVerifyLayoutMode,
   resolveRateLimitPolicy,
   saveDefaultModel,
   saveRateLimitCustomConcurrency,
   saveRateLimitCustomRpm,
   saveRateLimitTier,
+  saveVerifyLayoutMode,
 } from '../../../../src/lib/storage/settingsStore';
 
 describe('settingsStore', () => {
@@ -120,5 +122,28 @@ describe('settingsStore レート制限 tier', () => {
 
   test('resolveRateLimitPolicy: 未設定は既定（gemini_free）', async () => {
     await expect(resolveRateLimitPolicy()).resolves.toEqual(getRateLimitTier('gemini_free').policy);
+  });
+});
+
+describe('settingsStore 検証パネルのレイアウトモード（issue #38）', () => {
+  beforeEach(() => {
+    installChromeMock();
+  });
+
+  test('未設定なら既定 focus', async () => {
+    await expect(loadVerifyLayoutMode()).resolves.toBe('focus');
+  });
+
+  test('不正な保存値は既定 focus へフォールバック', async () => {
+    const mock = installChromeMock();
+    mock.storage.local.data['settings.verifyLayoutMode'] = 'grid';
+    await expect(loadVerifyLayoutMode()).resolves.toBe('focus');
+  });
+
+  test('保存して読み出せる', async () => {
+    await saveVerifyLayoutMode('list');
+    await expect(loadVerifyLayoutMode()).resolves.toBe('list');
+    await saveVerifyLayoutMode('focus');
+    await expect(loadVerifyLayoutMode()).resolves.toBe('focus');
   });
 });

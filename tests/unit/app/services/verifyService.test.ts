@@ -5,6 +5,7 @@ import {
   persistVerifyArmConfirmation,
   persistVerifyDecision,
   persistVerifyInstanceDeclarations,
+  setVerifyLayoutMode,
 } from '../../../../src/app/services/verifyService';
 import type {
   QueuedDecisionWrite,
@@ -478,6 +479,8 @@ describe('openVerifyStudy', () => {
     // bundle 組み立て時点では PDF を 1 件も読まない（issue #28 案3）。extracted_texts のみ先読み
     expect(getFileBinaryMock).not.toHaveBeenCalled();
     expect(getFileTextMock).toHaveBeenCalled();
+    // レイアウトモードは検証データ束の読込時に settingsStore から読む（issue #38。未設定は既定 focus）
+    expect(verify.layoutMode).toBe('focus');
   });
 
   test('extracted_texts を全文書ぶん先読みし、ページ別テキストへ復元する', async () => {
@@ -738,5 +741,15 @@ describe('persistVerifyInstanceDeclarations', () => {
       makeDecision({ fieldId: '__entity_instance__' }),
     ]);
     expect(appendDecisionsMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('setVerifyLayoutMode（issue #38）', () => {
+  test('verify.layoutMode を楽観反映し、settingsStore（deps 注入）へ永続化する', async () => {
+    const store = makeStore({});
+    const saveVerifyLayoutMode = jest.fn().mockResolvedValue(undefined);
+    await setVerifyLayoutMode(store, makeDeps({ saveVerifyLayoutMode }), 'list');
+    expect(store.getState().verify.layoutMode).toBe('list');
+    expect(saveVerifyLayoutMode).toHaveBeenCalledWith('list');
   });
 });

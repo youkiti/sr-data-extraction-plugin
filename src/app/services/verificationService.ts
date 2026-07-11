@@ -38,6 +38,11 @@ import { getFileText } from '../../lib/google/drive';
 import { getCurrentUserEmail, type ProfileDeps } from '../../lib/google/identity';
 import type { GoogleApiDeps } from '../../lib/google/types';
 import { createOfflineQueue, type OfflineQueue } from '../../lib/storage/offlineQueue';
+import {
+  loadVerifyLayoutMode,
+  saveVerifyLayoutMode,
+  type VerifyLayoutMode,
+} from '../../lib/storage/settingsStore';
 import { showToast } from '../ui/toast';
 
 /** 検証基盤の共有依存（pilotService / verifyService の deps はこれを拡張する） */
@@ -50,6 +55,9 @@ export interface VerificationDeps {
   decisionQueue?: OfflineQueue<QueuedDecisionWrite>;
   newUuid?: () => string;
   now?: () => string;
+  /** 検証パネルのレイアウトモード設定の読み書き（省略時は lib/storage/settingsStore の実装。issue #38） */
+  loadVerifyLayoutMode?: () => Promise<VerifyLayoutMode>;
+  saveVerifyLayoutMode?: (mode: VerifyLayoutMode) => Promise<void>;
 }
 
 /**
@@ -102,6 +110,11 @@ export interface VerificationBundle {
   verification: VerificationData;
   /** 自分の StudyData 行の values 全量（判定時のスナップショット更新用） */
   studyValues: Record<string, string | null>;
+  /**
+   * 検証パネルのレイアウトモードの初期表示（issue #38）。settingsStore から「検証データ束の
+   * 読込時」に読む — study 切替のたびに読み直すことで、他画面での切替を常に最新反映する
+   */
+  layoutMode: VerifyLayoutMode;
 }
 
 /**
@@ -203,7 +216,19 @@ export async function loadVerificationBundle(
     retryPdfView,
     disposePdf,
   };
-  return { verification, studyValues };
+  const layoutMode = await (deps.loadVerifyLayoutMode ?? loadVerifyLayoutMode)();
+  return { verification, studyValues, layoutMode };
+}
+
+/**
+ * 検証パネルのレイアウトモードを永続化する（トグル操作 `#verify-layout-toggle` のたびに呼ぶ）。
+ * S6 / S8 共通の永続化経路（呼び出し側は自分のスライスの layoutMode を楽観反映してから呼ぶ）
+ */
+export async function persistVerifyLayoutMode(
+  mode: VerifyLayoutMode,
+  deps: VerificationDeps,
+): Promise<void> {
+  await (deps.saveVerifyLayoutMode ?? saveVerifyLayoutMode)(mode);
 }
 
 /** 判定書き込みの実体（オフライン再送でも同じ経路を通す）。annotator 行 → Decisions の順 */

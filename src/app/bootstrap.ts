@@ -54,6 +54,7 @@ import {
   persistPilotDecision,
   persistPilotInstanceDeclarations,
   runPilot,
+  setPilotLayoutMode,
   setPilotModel,
   togglePilotStudy,
   type PilotServiceDeps,
@@ -74,6 +75,7 @@ import {
   persistVerifyArmConfirmation,
   persistVerifyDecision,
   persistVerifyInstanceDeclarations,
+  setVerifyLayoutMode,
 } from './services/verifyService';
 import { loadDashboard } from './services/dashboardService';
 import { loadProgressCounts } from './services/homeService';
@@ -316,6 +318,9 @@ export async function bootstrapApp(
       onInstanceDeclare: (decisions) => {
         void persistPilotInstanceDeclarations(store, deps, decisions);
       },
+      onChangeLayoutMode: (mode) => {
+        void setPilotLayoutMode(store, deps, mode);
+      },
     },
     extract: {
       onToggleStudy: (studyId, selected) => {
@@ -357,6 +362,9 @@ export async function bootstrapApp(
       },
       onInstanceDeclare: (decisions) => {
         void persistVerifyInstanceDeclarations(store, deps, decisions);
+      },
+      onChangeLayoutMode: (mode) => {
+        void setVerifyLayoutMode(store, deps, mode);
       },
     },
     dashboard: {

@@ -79,6 +79,7 @@ describe('createInitialState', () => {
         verifyError: null,
         studyValues: null,
         queuedDecisions: 0,
+        layoutMode: 'focus',
       },
       extract: {
         selectedStudyIds: [],
@@ -108,6 +109,7 @@ describe('createInitialState', () => {
         verifyError: null,
         studyValues: null,
         queuedDecisions: 0,
+        layoutMode: 'focus',
       },
       dashboard: {
         data: null,

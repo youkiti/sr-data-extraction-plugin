@@ -13,6 +13,14 @@ const DEFAULT_MODEL_STORAGE_KEY = 'settings.defaultModel';
 const RATE_LIMIT_TIER_STORAGE_KEY = 'settings.rateLimitTier';
 const RATE_LIMIT_CUSTOM_RPM_STORAGE_KEY = 'settings.rateLimitCustomRpm';
 const RATE_LIMIT_CUSTOM_CONCURRENCY_STORAGE_KEY = 'settings.rateLimitCustomConcurrency';
+const VERIFY_LAYOUT_MODE_STORAGE_KEY = 'settings.verifyLayoutMode';
+
+/** 検証パネル（S6 埋め込み / S8 単独）のレイアウトモード（issue #38）。既定はフォーカス */
+export type VerifyLayoutMode = 'focus' | 'list';
+
+function isVerifyLayoutMode(value: unknown): value is VerifyLayoutMode {
+  return value === 'focus' || value === 'list';
+}
 
 /**
  * 工場出荷の既定モデル。ユーザーが Options で既定モデルを未設定のとき、S5 スキーマ画面の
@@ -91,6 +99,21 @@ export async function saveRateLimitCustomConcurrency(concurrency: number): Promi
     return;
   }
   await setLocal(RATE_LIMIT_CUSTOM_CONCURRENCY_STORAGE_KEY, Math.floor(concurrency));
+}
+
+/**
+ * 検証パネルのレイアウトモードを読み出す（未設定・不正値は既定 = focus）。
+ * issue #38: マトリクスカード型フォーカスモードを既定化。S6 / S8 で設定を共有する
+ * （verificationService.loadVerificationBundle が「検証データ束の読込時」に読む）
+ */
+export async function loadVerifyLayoutMode(): Promise<VerifyLayoutMode> {
+  const stored = await getLocal<string>(VERIFY_LAYOUT_MODE_STORAGE_KEY);
+  return isVerifyLayoutMode(stored) ? stored : 'focus';
+}
+
+/** 検証パネルのレイアウトモードを保存する（トグル操作のたびに即時永続化） */
+export async function saveVerifyLayoutMode(mode: VerifyLayoutMode): Promise<void> {
+  await setLocal(VERIFY_LAYOUT_MODE_STORAGE_KEY, mode);
 }
 
 /**
