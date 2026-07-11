@@ -585,14 +585,14 @@ describe('エディタ操作', () => {
     expect(store.getState().schema.editorErrors).toEqual([]);
 
     insertSchemaPreset(store, 'continuous');
-    expect(store.getState().schema.editorRows).toHaveLength(8);
+    expect(store.getState().schema.editorRows).toHaveLength(13);
     expect(store.getState().schema.editorOrigin).toBe('user_edit');
 
     // RoB テンプレートも同じ挿入経路（判定 + 根拠の 2 行が末尾に付く）
     insertSchemaPreset(store, 'rob2');
-    expect(store.getState().schema.editorRows).toHaveLength(10);
-    expect(store.getState().schema.editorRows?.[8]?.fieldName).toBe('rob2_judgement');
-    expect(store.getState().schema.editorRows?.[9]?.entityLevel).toBe('rob_domain');
+    expect(store.getState().schema.editorRows).toHaveLength(15);
+    expect(store.getState().schema.editorRows?.[13]?.fieldName).toBe('rob2_judgement');
+    expect(store.getState().schema.editorRows?.[14]?.entityLevel).toBe('rob_domain');
     expect(store.getState().schema.editorErrors).toEqual([]);
   });
 
