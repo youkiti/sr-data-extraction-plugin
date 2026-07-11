@@ -12,7 +12,7 @@
 
 1. **利用者のブラウザ**（本拡張の実行環境）
 2. **利用者の Google アカウント**（Google Sheets = プロジェクト DB、Google Drive = PDF・抽出テキスト・ログの実体）
-3. **利用者が自分の API キー（BYOK: Bring Your Own Key）で契約する LLM API**（Gemini API または OpenRouter）
+3. **利用者が自分の API キー（BYOK: Bring Your Own Key）で契約または指定する LLM API**（Gemini API、OpenRouter、利用者指定の OpenAI 互換 API）
 
 ## 取り扱うデータと送信先
 
@@ -20,7 +20,7 @@
 |---|---|---|
 | 採用論文 PDF・そこから抽出したテキスト | 利用者の Google Drive | ファイル実体の保管 |
 | 抽出スキーマ・抽出結果・判定履歴・監査証跡 | 利用者の Google Sheets | プロジェクト DB |
-| 論文本文 + 抽出プロンプト | 利用者が契約する LLM API（Gemini / OpenRouter）**のみ** | AI によるデータ抽出。PDF 本文が外部へ送信されるのはこの経路だけです |
+| 論文本文 + 抽出プロンプト | 利用者が設定した LLM API（Gemini / OpenRouter / OpenAI 互換 API）**のみ** | AI によるデータ抽出。本文が外部へ送信されるのはこの経路だけです |
 | Google OAuth トークン | 利用者のブラウザ内（`chrome.storage`）| Google API 認証。開発者へは送信されません |
 | LLM API キー | 利用者のブラウザ内（`chrome.storage.local`）| LLM API 認証。開発者へは送信されません |
 
@@ -35,7 +35,7 @@
 
 ## LLM API への送信について
 
-AI 抽出を実行すると、対象論文の本文テキストと抽出指示プロンプトが、利用者が設定した LLM API（Gemini API または OpenRouter）へ送信されます。送信先の LLM プロバイダによるデータの取り扱いは、各プロバイダの利用規約・プライバシーポリシーに従います。本拡張はプロバイダを仲介せず、利用者のブラウザから直接 API を呼び出します。
+AI 抽出を実行すると、対象論文の本文テキストと抽出指示プロンプトが、利用者が設定した LLM API（Gemini API、OpenRouter、または利用者指定の OpenAI 互換 API）へ送信されます。送信先によるデータの取り扱いは、その運営者の利用規約・プライバシーポリシーに従います。本拡張はプロバイダを仲介せず、利用者のブラウザから直接 API を呼び出します。OpenAI 互換 API を指定する場合、本拡張は保存前に接続先の scheme + hostname pattern を表示し、Chrome の実行時ホスト権限を利用者へ要求します。HTTP は `localhost`、`127.0.0.1`、`[::1]` に限って許可します。loopback HTTP の通信は暗号化されません。
 
 学術研究目的のデータ抽出（テキスト・データマイニング）は、日本の著作権法上の権利制限規定（第 30 条の 4 等）の範囲内であるとの整理に基づいています。
 

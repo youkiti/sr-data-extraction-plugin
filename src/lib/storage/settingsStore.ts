@@ -8,8 +8,12 @@ import {
   type RateLimitTierId,
 } from '../llm/rateLimitPolicy';
 import { getLocal, removeLocal, setLocal } from './chromeStorage';
+import type { LlmProviderId } from '../../domain/llmApiLog';
 
 const DEFAULT_MODEL_STORAGE_KEY = 'settings.defaultModel';
+const LLM_PROVIDER_STORAGE_KEY = 'settings.llmProvider';
+const OPENAI_COMPATIBLE_ENDPOINT_STORAGE_KEY = 'settings.openAiCompatibleEndpoint';
+const HTTP_LOOPBACK_HOSTNAMES: ReadonlySet<string> = new Set(['localhost', '127.0.0.1', '[::1]']);
 const RATE_LIMIT_TIER_STORAGE_KEY = 'settings.rateLimitTier';
 const RATE_LIMIT_CUSTOM_RPM_STORAGE_KEY = 'settings.rateLimitCustomRpm';
 const RATE_LIMIT_CUSTOM_CONCURRENCY_STORAGE_KEY = 'settings.rateLimitCustomConcurrency';
@@ -21,6 +25,18 @@ export type VerifyLayoutMode = 'focus' | 'list';
 function isVerifyLayoutMode(value: unknown): value is VerifyLayoutMode {
   return value === 'focus' || value === 'list';
 }
+
+export interface LlmConnectionSettings {
+  /** null は既存環境。モデル ID による従来判定へフォールバックする */
+  provider: LlmProviderId | null;
+  openAiCompatibleEndpoint: string | null;
+}
+
+const LLM_PROVIDERS: ReadonlySet<string> = new Set([
+  'gemini',
+  'openrouter',
+  'openai_compatible',
+]);
 
 /**
  * 工場出荷の既定モデル。ユーザーが Options で既定モデルを未設定のとき、S5 スキーマ画面の
@@ -48,6 +64,70 @@ export async function saveDefaultModel(model: string): Promise<void> {
     return;
   }
   await setLocal(DEFAULT_MODEL_STORAGE_KEY, trimmed);
+}
+
+/** OpenAI 互換 Chat Completions の完全 URL を検証・正規化する */
+export function normalizeOpenAiCompatibleEndpoint(endpoint: string): string {
+  const trimmed = endpoint.trim();
+  let url: URL;
+  try {
+    url = new URL(trimmed);
+  } catch {
+    throw new Error('有効な API エンドポイント URL を入力してください');
+  }
+  const isLoopbackHttp = url.protocol === 'http:' && HTTP_LOOPBACK_HOSTNAMES.has(url.hostname);
+  if (url.protocol !== 'https:' && !isLoopbackHttp) {
+    throw new Error(
+      'API エンドポイントは HTTPS、または localhost / 127.0.0.1 / [::1] の HTTP で指定してください',
+    );
+  }
+  if (url.username !== '' || url.password !== '') {
+    throw new Error('API エンドポイントに認証情報を含めないでください');
+  }
+  if (url.search !== '' || url.hash !== '') {
+    throw new Error('API エンドポイントにクエリ文字列やフラグメントを含めないでください');
+  }
+  return url.toString();
+}
+
+/** 認証なし HTTP を許可できる、完全一致の loopback URL か */
+export function isLoopbackEndpoint(endpoint: string): boolean {
+  const url = new URL(normalizeOpenAiCompatibleEndpoint(endpoint));
+  return url.protocol === 'http:' && HTTP_LOOPBACK_HOSTNAMES.has(url.hostname);
+}
+
+/** 接続方式と OpenAI 互換 API の URL を読み出す */
+export async function loadLlmConnectionSettings(): Promise<LlmConnectionSettings> {
+  const rawProvider = await getLocal<string>(LLM_PROVIDER_STORAGE_KEY);
+  const provider =
+    rawProvider !== undefined && LLM_PROVIDERS.has(rawProvider)
+      ? (rawProvider as LlmProviderId)
+      : null;
+  const endpoint = await getLocal<string>(OPENAI_COMPATIBLE_ENDPOINT_STORAGE_KEY);
+  return {
+    provider,
+    openAiCompatibleEndpoint: endpoint?.trim() ? endpoint : null,
+  };
+}
+
+/** 接続方式を保存する。OpenAI 互換 API では検証済みの完全 URL も必須 */
+export async function saveLlmConnectionSettings(settings: {
+  provider: LlmProviderId;
+  openAiCompatibleEndpoint?: string | null;
+}): Promise<void> {
+  if (!LLM_PROVIDERS.has(settings.provider)) {
+    throw new Error('未対応の LLM 接続方式です');
+  }
+  const endpoint =
+    settings.provider === 'openai_compatible'
+      ? normalizeOpenAiCompatibleEndpoint(settings.openAiCompatibleEndpoint ?? '')
+      : null;
+  await setLocal(LLM_PROVIDER_STORAGE_KEY, settings.provider);
+  if (endpoint !== null) {
+    await setLocal(OPENAI_COMPATIBLE_ENDPOINT_STORAGE_KEY, endpoint);
+  } else {
+    await removeLocal(OPENAI_COMPATIBLE_ENDPOINT_STORAGE_KEY);
+  }
 }
 
 /**

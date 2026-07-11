@@ -47,3 +47,13 @@
 .options__row input {
   flex: 1;
 }
+
+.options__row + .options__row {
+  margin-top: 8px;
+}
+
+.options__actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}

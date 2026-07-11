@@ -30,6 +30,9 @@ export interface ChromeMock {
     removeCachedAuthToken: jest.Mock;
     getProfileUserInfo: jest.Mock;
   };
+  permissions: {
+    request: jest.Mock;
+  };
 }
 
 export function installChromeMock(): ChromeMock {
@@ -79,6 +82,9 @@ export function installChromeMock(): ChromeMock {
           cb({ email: 'tester@example.com', id: 'uid-1' });
         },
       ),
+    },
+    permissions: {
+      request: jest.fn(async () => true),
     },
   };
   (globalThis as Record<string, unknown>).chrome = mock;

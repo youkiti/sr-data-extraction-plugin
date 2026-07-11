@@ -1,8 +1,8 @@
 // LLMApiLog タブに対応する型。sr-query-builder のスキーマを流用し、
 // purpose enum のみ本拡張の用途に置き換える（requirements.md §3.2）
 
-/** MVP は Gemini のみ。OpenRouter は P1（LLMProvider 抽象経由で追加） */
-export type LlmProviderId = 'gemini' | 'openrouter';
+/** LLMApiLog / ExtractionRuns に記録する接続方式 */
+export type LlmProviderId = 'gemini' | 'openrouter' | 'openai_compatible';
 
 export type LlmPurpose =
   | 'draft_schema'

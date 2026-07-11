@@ -12,6 +12,7 @@
 // 未解決時のみ DEFAULT_FLUSH_EVERY_N_STUDIES へフォールバックする
 // （docs/handoff-20260710-sheets-write-batching.md）
 import type { ExtractionRun, RunType } from '../../domain/extractionRun';
+import type { LlmProviderId } from '../../domain/llmApiLog';
 import type { DocumentRecord } from '../../domain/document';
 import type { SchemaField } from '../../domain/schemaField';
 import { buildAiAnnotationRows } from '../../features/extraction/aiAnnotationRows';
@@ -51,6 +52,10 @@ export interface ExtractionServiceDeps {
   google: GoogleApiDeps;
   /** BYOK の API キー（secretsStore から呼び出し側が解決して渡す） */
   apiKey: string;
+  /** 明示設定時の接続方式。未指定は従来どおりモデル ID から解決 */
+  provider?: LlmProviderId;
+  /** OpenAI 互換 API の完全 URL */
+  endpoint?: string;
   /**
    * extracted_texts/{document_id}.txt を読み、ページ別テキストへ復元する。
    * テキストファイルの保存形式は S3（文献取り込み）実装側で確定するため、ここでは注入に留める
@@ -136,6 +141,8 @@ export async function runExtraction(
   const baseProvider = (deps.buildProvider ?? createProvider)({
     apiKey: deps.apiKey,
     model: params.model,
+    provider: deps.provider,
+    endpoint: deps.endpoint,
   });
   // 429 対策: レート制限ポリシーに従い withRetry(withThrottle(withLogging(...))) で包む。
   // throttle が RPM 間隔でバッチ連射を間引き、retry が 429/5xx を（サーバ提示の retryDelay も

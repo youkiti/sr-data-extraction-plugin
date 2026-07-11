@@ -493,6 +493,27 @@ describe('runExtract', () => {
     ]);
   });
 
+  test('保存した OpenAI 互換接続を本番抽出へ渡す', async () => {
+    const store = makeReadyStore();
+    runExtractionMock.mockResolvedValue(makeOutcome());
+    await runExtract(
+      store,
+      makeDeps({
+        loadLlmConnectionSettings: async () => ({
+          provider: 'openai_compatible',
+          openAiCompatibleEndpoint: 'https://llm.example/v1/chat/completions',
+        }),
+        loadApiKey: jest.fn().mockResolvedValue('custom-key'),
+      }),
+    );
+    const runDeps = runExtractionMock.mock.calls[0]?.[1];
+    expect(runDeps).toMatchObject({
+      apiKey: 'custom-key',
+      provider: 'openai_compatible',
+      endpoint: 'https://llm.example/v1/chat/completions',
+    });
+  });
+
   test('documents 未読込なら readDocuments / readStudies で解決する', async () => {
     const store = makeStore({
       documents: null,
