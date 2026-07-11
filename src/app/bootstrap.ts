@@ -99,6 +99,7 @@ import {
 import {
   cancelReviewerChange,
   confirmReviewerChange,
+  copyReviewInvite,
   loadReviewers,
   requestAddReviewer,
   revokeReviewer,
@@ -343,6 +344,9 @@ export async function bootstrapApp(
       },
       onRevokeReviewer: (email) => {
         void revokeReviewer(store, deps, email);
+      },
+      onCopyInvite: (email) => {
+        void copyReviewInvite(store, deps, email);
       },
     },
     documents: {

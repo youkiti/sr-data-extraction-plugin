@@ -452,6 +452,9 @@ test('owner のレビュアー管理カードで追加すると Reviewers タブ
   await expect(page.locator('#home-reviewers-list tbody tr')).toHaveCount(1);
   await expect(page.locator('#home-reviewers-list tbody tr')).toContainText('reviewer@example.com');
   await expect(page.locator('#home-reviewers-list tbody tr')).toContainText('② AI 抜きでレビュー');
+  // 操作列: 依頼文コピー（コピーアイコン）+ 解除（ごみ箱アイコン）の 2 ボタン
+  await expect(page.locator('#home-reviewers-list .reviewers__invite svg')).toHaveCount(1);
+  await expect(page.locator('#home-reviewers-list .reviewers__revoke svg')).toHaveCount(1);
 
   const results = await new AxeBuilder({ page }).analyze();
   expect(results.violations).toEqual([]);

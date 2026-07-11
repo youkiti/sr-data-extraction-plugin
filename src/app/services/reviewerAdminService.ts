@@ -36,6 +36,8 @@ export interface ReviewerAdminServiceDeps {
     email: string,
     google: GoogleApiDeps,
   ) => Promise<void>;
+  /** クリップボードへの書き込み。既定は navigator.clipboard.writeText。テストは fake を注入する */
+  writeClipboard?: (text: string) => Promise<void>;
 }
 
 /**
@@ -220,4 +222,66 @@ export async function revokeReviewer(
   email: string,
 ): Promise<void> {
   await submitReviewerAssignment(store, deps, { email, role: 'revoked', reviewMode: null });
+}
+
+export interface ReviewInviteInput {
+  projectName: string;
+  spreadsheetId: string;
+  reviewerEmail: string;
+  /** 未登録・adjudicator 等でモードが無いときは null（AI 結果レビューとして案内する） */
+  reviewMode: ReviewMode | null;
+}
+
+/**
+ * レビュー相手へそのまま送れる依頼文を組み立てる（owner がコピーして共有ツールで渡す想定）。
+ * スプレッドシート URL（ID 直打ちでも URL でも Popup が受ける）+ 参加手順 + レビュー方式を含む。
+ */
+export function buildReviewInvite(input: ReviewInviteInput): string {
+  const url = `https://docs.google.com/spreadsheets/d/${input.spreadsheetId}/edit`;
+  const modeNote =
+    input.reviewMode === 'independent'
+      ? 'レビュー方式: AI 抜きの独立入力（AI の抽出結果・根拠は表示されません。PDF を読んでご自身で値を入力してください）'
+      : 'レビュー方式: AI の結果をレビュー（AI が抽出した各項目を accept / edit / reject / not_reported で判定してください）';
+  return [
+    `${input.reviewerEmail} さん`,
+    '',
+    `系統的レビューのデータ抽出「${input.projectName}」の第 2 レビュアーをお願いします。以下の手順で参加してください。`,
+    '',
+    '1. Chrome 拡張「SR Data Extraction Plugin」をインストールし、ご自身の Google アカウントでログイン',
+    '2. 拡張アイコン →「スプレッドシート ID / URL で開く」に次を貼り付けて開く:',
+    `   ${url}`,
+    '3. Home の「プロジェクトフォルダへのアクセスを付与」で、共有されたプロジェクトフォルダを選択',
+    '4.「検証」画面で担当ぶんを判定してください',
+    '',
+    modeNote,
+  ].join('\n');
+}
+
+/**
+ * 対象レビュアーへの依頼文を組み立ててクリップボードへコピーする（レビュアー管理カードの
+ * コピーボタン）。currentProject 未選択なら no-op。コピー成否はトーストで知らせる。
+ */
+export async function copyReviewInvite(
+  store: Store,
+  deps: ReviewerAdminServiceDeps,
+  email: string,
+): Promise<void> {
+  const project = store.getState().currentProject;
+  if (!project) {
+    return;
+  }
+  const assignment = latestReviewerAssignment(store.getState().reviewers.assignments ?? [], email);
+  const text = buildReviewInvite({
+    projectName: project.name,
+    spreadsheetId: project.spreadsheetId,
+    reviewerEmail: email,
+    reviewMode: assignment?.reviewMode ?? null,
+  });
+  const write = deps.writeClipboard ?? ((value: string) => navigator.clipboard.writeText(value));
+  try {
+    await write(text);
+    showToast('レビュー依頼文をコピーしました');
+  } catch (err) {
+    showToast(`コピーに失敗しました: ${toMessage(err)}`);
+  }
 }

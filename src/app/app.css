@@ -243,17 +243,39 @@
   text-align: left;
 }
 
-.reviewers__revoke {
+.reviewers__actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.reviewers__icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
   background: none;
   border: 1px solid var(--color-border);
   border-radius: 4px;
-  padding: 2px 10px;
+  color: var(--color-text);
   cursor: pointer;
 }
 
-.reviewers__revoke:disabled {
+.reviewers__icon-button:disabled {
   opacity: 0.55;
   cursor: not-allowed;
+}
+
+.reviewers__icon-button:hover:not(:disabled) {
+  background: var(--color-surface);
+  border-color: var(--color-text-muted);
+}
+
+.reviewers__revoke:hover:not(:disabled) {
+  color: var(--color-danger);
+  border-color: var(--color-danger);
 }
 
 .reviewers__form {

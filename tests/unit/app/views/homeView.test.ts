@@ -12,6 +12,7 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<HomeViewCallbacks
     onConfirmReviewerChange: jest.fn(),
     onCancelReviewerChange: jest.fn(),
     onRevokeReviewer: jest.fn(),
+    onCopyInvite: jest.fn(),
   };
   return { ctx: { home: callbacks } as unknown as ViewContext, callbacks };
 }
@@ -139,8 +140,18 @@ describe('renderHomeView（owner のレビュアー管理カード。docs/design
     expect(rows[1]?.textContent).toContain('裁定者');
     expect(rows[1]?.textContent).toContain('–'); // adjudicator に review_mode 表示なし
 
-    (rows[0]?.querySelector('.reviewers__revoke') as HTMLButtonElement).click();
+    // 操作列: 解除（ごみ箱アイコン）+ 依頼文コピー（コピーアイコン）。いずれも SVG アイコン
+    const revokeBtn = rows[0]?.querySelector('.reviewers__revoke') as HTMLButtonElement;
+    expect(revokeBtn.getAttribute('aria-label')).toBe('r1@example.com を解除');
+    expect(revokeBtn.querySelector('svg')).not.toBeNull();
+    revokeBtn.click();
     expect(callbacks.onRevokeReviewer).toHaveBeenCalledWith('r1@example.com');
+
+    const copyBtn = rows[0]?.querySelector('.reviewers__invite') as HTMLButtonElement;
+    expect(copyBtn.getAttribute('aria-label')).toBe('r1@example.com へのレビュー依頼文をコピー');
+    expect(copyBtn.querySelector('svg')).not.toBeNull();
+    copyBtn.click();
+    expect(callbacks.onCopyInvite).toHaveBeenCalledWith('r1@example.com');
   });
 
   test('解除済み行は解除ボタンを無効化する', () => {

@@ -52,6 +52,7 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<PilotViewCallback
     onConfirmReviewerChange: jest.fn(),
     onCancelReviewerChange: jest.fn(),
     onRevokeReviewer: jest.fn(),
+    onCopyInvite: jest.fn(),
   },
       documents: {
         onImport: jest.fn(),

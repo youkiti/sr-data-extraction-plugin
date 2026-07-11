@@ -2590,6 +2590,14 @@ describe('bootstrapApp: 独立二重レビュー機能', () => {
     );
     expect(document.querySelectorAll('#home-reviewers-list tbody tr')).toHaveLength(2);
 
+    // 依頼文コピー（onCopyInvite → copyReviewInvite → navigator.clipboard）
+    const writeText = jest.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    (document.querySelector('.reviewers__invite') as HTMLButtonElement).click();
+    await flush();
+    expect(writeText).toHaveBeenCalledTimes(1);
+    expect(toastTexts()).toContain('レビュー依頼文をコピーしました');
+
     // 既存 reviewer の review_mode だけを変える送信はモード変更確認ダイアログへ（onAddReviewer → confirmingChange）
     const email2 = document.getElementById('reviewer-email') as HTMLInputElement;
     email2.value = 'r1@example.com';

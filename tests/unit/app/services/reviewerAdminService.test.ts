@@ -1,12 +1,15 @@
 import {
+  buildReviewInvite,
   cancelReviewerChange,
   confirmReviewerChange,
+  copyReviewInvite,
   loadReviewers,
   requestAddReviewer,
   revokeReviewer,
   type ReviewerAdminServiceDeps,
 } from '../../../../src/app/services/reviewerAdminService';
 import { createInitialState, createStore, type Store } from '../../../../src/app/store';
+import type { ReviewerAssignment } from '../../../../src/domain/reviewer';
 import {
   appendReviewerAssignment,
   readReviewerAssignments,
@@ -340,6 +343,97 @@ describe('レビュアー追加時の Drive 自動共有', () => {
       type: 'user',
       emailAddress: 'r1@example.com',
     });
+  });
+});
+
+describe('buildReviewInvite', () => {
+  test('with_ai は URL・参加手順・AI 結果レビューの案内を含む', () => {
+    const text = buildReviewInvite({
+      projectName: 'テスト SR',
+      spreadsheetId: 'sheet-1',
+      reviewerEmail: 'r1@example.com',
+      reviewMode: 'with_ai',
+    });
+    expect(text).toContain('r1@example.com さん');
+    expect(text).toContain('テスト SR');
+    expect(text).toContain('https://docs.google.com/spreadsheets/d/sheet-1/edit');
+    expect(text).toContain('AI の結果をレビュー');
+  });
+
+  test('independent は AI 抜きの独立入力を案内する', () => {
+    const text = buildReviewInvite({
+      projectName: 'テスト SR',
+      spreadsheetId: 'sheet-1',
+      reviewerEmail: 'r1@example.com',
+      reviewMode: 'independent',
+    });
+    expect(text).toContain('AI 抜きの独立入力');
+  });
+
+  test('reviewMode が null なら AI 結果レビュー扱いで案内する', () => {
+    const text = buildReviewInvite({
+      projectName: 'テスト SR',
+      spreadsheetId: 'sheet-1',
+      reviewerEmail: 'r1@example.com',
+      reviewMode: null,
+    });
+    expect(text).toContain('AI の結果をレビュー');
+  });
+});
+
+describe('copyReviewInvite', () => {
+  function storeWith(assignments: ReviewerAssignment[]): Store {
+    const state = createInitialState();
+    state.currentProject = PROJECT;
+    state.reviewers.assignments = assignments;
+    return createStore(state);
+  }
+
+  test('依頼文を組み立ててクリップボードへ書き込む（登録モードを反映）', async () => {
+    const writeClipboard = jest.fn().mockResolvedValue(undefined);
+    const store = storeWith([
+      { email: 'r1@example.com', role: 'reviewer', reviewMode: 'independent', assignedBy: 'o', assignedAt: 't' },
+    ]);
+    await copyReviewInvite(store, { ...deps, writeClipboard }, 'r1@example.com');
+    expect(writeClipboard).toHaveBeenCalledTimes(1);
+    const text = writeClipboard.mock.calls[0][0] as string;
+    expect(text).toContain('https://docs.google.com/spreadsheets/d/sheet-1/edit');
+    expect(text).toContain('AI 抜きの独立入力');
+  });
+
+  test('プロジェクト未選択なら何もしない', async () => {
+    const writeClipboard = jest.fn().mockResolvedValue(undefined);
+    const store = makeStore(false);
+    await copyReviewInvite(store, { ...deps, writeClipboard }, 'r1@example.com');
+    expect(writeClipboard).not.toHaveBeenCalled();
+  });
+
+  test('assignments 未初期化（null）でもコピーできる（モードは null 扱い）', async () => {
+    const writeClipboard = jest.fn().mockResolvedValue(undefined);
+    const store = makeStore(); // currentProject あり・reviewers.assignments は初期値 null
+    await copyReviewInvite(store, { ...deps, writeClipboard }, 'r1@example.com');
+    expect(writeClipboard).toHaveBeenCalledTimes(1);
+    expect(writeClipboard.mock.calls[0][0] as string).toContain('AI の結果をレビュー');
+  });
+
+  test('コピー失敗（reject）でも例外を投げない', async () => {
+    const writeClipboard = jest.fn().mockRejectedValue(new Error('denied'));
+    const store = storeWith([]);
+    await expect(
+      copyReviewInvite(store, { ...deps, writeClipboard }, 'unknown@example.com'),
+    ).resolves.toBeUndefined();
+  });
+
+  test('writeClipboard 未注入なら navigator.clipboard を使う', async () => {
+    const writeText = jest.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText },
+      configurable: true,
+    });
+    const store = storeWith([]);
+    const depsNoClipboard: ReviewerAdminServiceDeps = { google: deps.google, profile: deps.profile };
+    await copyReviewInvite(store, depsNoClipboard, 'r1@example.com');
+    expect(writeText).toHaveBeenCalledTimes(1);
   });
 });
 

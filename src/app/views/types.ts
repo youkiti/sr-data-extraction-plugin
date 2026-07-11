@@ -25,6 +25,8 @@ export interface HomeViewCallbacks {
   onCancelReviewerChange(): void;
   /** owner: レビュアーの登録解除（revoked 行の追記） */
   onRevokeReviewer(email: string): void;
+  /** owner: レビュー相手への依頼文をクリップボードへコピー */
+  onCopyInvite(email: string): void;
 }
 
 /** #/documents（S3）のユーザー操作コールバック */

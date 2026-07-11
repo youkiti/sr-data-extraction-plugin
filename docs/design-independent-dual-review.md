@@ -169,14 +169,14 @@ RoB タブ（`rob_domain`）と study タブは群構成に依存しないため
 
 1. アプリ側の登録: email + role + review_mode を入力 → `Reviewers` へ追記
 2. **Drive の自動共有（2026-07-11 改訂）**: 登録確定と同時に、アプリがスプレッドシート（**編集者** = 判定行・Decisions の書き込みに必要）とプロジェクトフォルダ（**閲覧者** = PDF 読み取り）を対象 email へ共有する（Drive `permissions.create`）。**追加スコープは不要** — `drive.file` スコープでも「アプリが作成・操作したファイル」には権限付与でき（tiab-review-plugin の `addPermission` が同方式で実運用済み）、本アプリのフォルダは `createFolder`、スプレッドシートは `moveFileToFolder` でいずれもアプリが Drive 操作済みのため対象になる。共有失敗（クロスドメイン制限等）は登録行を残したまま警告トーストで手動共有を案内する縮退動作
-3. 招待情報（スプレッドシート ID）をコピーして reviewer へ渡す
+3. 招待情報を reviewer へ渡す: 各レビュアー行の操作列にある**コピーボタン**（コピーアイコン）で、参加手順 + スプレッドシート URL + レビュー方式を含む依頼文（`buildReviewInvite`）をクリップボードへコピーし、そのまま送れる。行の削除（登録解除）は同じ操作列の**ごみ箱アイコン**
 
 > 旧設計（〜2026-07-11）は「Drive 共有 API には追加スコープが要るためアプリからは行わず案内のみ」としていたが、これは誤りで `drive.file` で共有可能なため自動共有へ変更した（§13）。
 
 ### 7.2 reviewer 側: 初回オンボーディング
 
 1. 拡張をインストール → 自分の Google アカウントでログイン
-2. Popup の「既存 ID」でスプレッドシート ID を入力 → `loadExistingProject` が Meta を読む（Sheets API はフル `spreadsheets` スコープのため共有シートは ID で開ける）
+2. Popup の「スプレッドシート ID / URL で開く」に ID **または共有 URL**（`https://docs.google.com/spreadsheets/d/{ID}/edit…`）を貼る → `extractSpreadsheetId` が URL から ID を取り出し `loadExistingProject` が Meta を読む（Sheets API はフル `spreadsheets` スコープのため共有シートは ID で開ける）
 3. ロール解決 → reviewer と判明
 4. **フォルダアクセス付与ステップ**: `drive.file` スコープでは他人が作成したファイルのバイナリを読めないため、Picker でプロジェクトフォルダを選択して本アプリに権限を付与する（S3 フォルダ取り込みと同じ Picker 経路を流用した専用画面を Home に出す。PDF が読めるようになるまで検証入場をブロック）
 

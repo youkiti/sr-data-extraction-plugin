@@ -6,7 +6,7 @@
 // - reviewer 系（reviewer_with_ai / reviewer_independent / adjudicator）: 縮退版 Home
 //   （プロジェクト名 + フォルダアクセス付与ステップ + 検証への導線のみ。進捗カウントは見せない §3）
 import type { ReviewerAssignment, ReviewerRole, ReviewMode } from '../../domain/reviewer';
-import { el } from '../ui/dom';
+import { el, svgIcon } from '../ui/dom';
 import type { AppState, ReviewerFormInput } from '../store';
 import type { ViewContext } from './types';
 
@@ -28,20 +28,49 @@ function summaryItems(label: string, value: number): HTMLElement[] {
   ];
 }
 
+// feather 風アイコン（path のみ）。svgIcon で SVG 化する
+const COPY_ICON = [
+  'M9 11a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-9a2 2 0 0 1-2-2z',
+  'M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1',
+];
+const TRASH_ICON = [
+  'M3 6h18',
+  'M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2',
+  'M10 11v6',
+  'M14 11v6',
+];
+
 function renderReviewerRow(row: ReviewerAssignment, ctx: ViewContext): HTMLElement {
   const modeText = row.role === 'reviewer' && row.reviewMode !== null ? MODE_LABELS[row.reviewMode] : '–';
+  // ごみ箱アイコン = 登録解除（削除）
   const revoke = el('button', {
-    className: 'reviewers__revoke',
-    text: '解除',
-    attributes: { type: 'button', 'aria-label': `${row.email} を解除` },
+    className: 'reviewers__revoke reviewers__icon-button',
+    attributes: {
+      type: 'button',
+      'aria-label': `${row.email} を解除`,
+      title: '解除（削除）',
+    },
   }) as HTMLButtonElement;
+  revoke.append(svgIcon(TRASH_ICON));
   revoke.disabled = row.role === 'revoked';
   revoke.addEventListener('click', () => ctx.home.onRevokeReviewer(row.email));
+  // コピーアイコン = レビュー依頼文をクリップボードへ（操作の右側）
+  const copyInvite = el('button', {
+    className: 'reviewers__invite reviewers__icon-button',
+    attributes: {
+      type: 'button',
+      'aria-label': `${row.email} へのレビュー依頼文をコピー`,
+      title: 'レビュー依頼文をコピー',
+    },
+  }) as HTMLButtonElement;
+  copyInvite.append(svgIcon(COPY_ICON));
+  copyInvite.disabled = row.role === 'revoked';
+  copyInvite.addEventListener('click', () => ctx.home.onCopyInvite(row.email));
   return el('tr', { className: 'reviewers__row' }, [
     el('td', { text: row.email }),
     el('td', { text: ROLE_LABELS[row.role] }),
     el('td', { text: modeText }),
-    el('td', {}, [revoke]),
+    el('td', { className: 'reviewers__actions' }, [revoke, copyInvite]),
   ]);
 }
 
