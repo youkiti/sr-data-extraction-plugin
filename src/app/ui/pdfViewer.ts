@@ -118,9 +118,11 @@ export function createPdfViewer(options: PdfViewerOptions): PdfViewerHandle {
   // スクロール領域はキーボードで到達可能にする（axe: scrollable-region-focusable。
   // 兄弟ペイン（判定・セル一覧）が短いレイアウトだと本領域が縦にあふれ、tabindex 無しでは
   // キーボード操作でスクロールできなくなる。#/adjudicate のセル一覧が短くなる構成で顕在化した）
+  // role='group' は aria-label を許容する（role なしの div では axe: aria-prohibited-attr に
+  // なる）。focusable なスクロール領域に表示名を与えつつ landmark ノイズを避ける最小構成
   const scroller = el('div', {
     className: 'pdf-viewer__scroller',
-    attributes: { tabindex: '0', 'aria-label': 'PDF 表示領域' },
+    attributes: { role: 'group', tabindex: '0', 'aria-label': 'PDF 表示領域' },
   }, [errorEl, pageWrap]);
   const root = el('div', { className: 'pdf-viewer' }, [
     el('div', { className: 'pdf-viewer__toolbar' }, [
