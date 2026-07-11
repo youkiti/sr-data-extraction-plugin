@@ -122,7 +122,7 @@ describe('saveSchemaVersion', () => {
         },
         { google },
       ),
-    ).rejects.toThrow('スキーマ項目が 1 件もありません');
+    ).rejects.toThrow('表のデザイン項目が 1 件もありません');
   });
 
   test('検証エラーがあると SchemaValidationError（追記しない）', async () => {

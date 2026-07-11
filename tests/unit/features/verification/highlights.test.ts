@@ -5,7 +5,8 @@ import type { TextLayerPage } from '../../../../src/domain/textLayer';
 import { cellKeyOf } from '../../../../src/features/verification/cellState';
 import {
   buildDocumentHighlights,
-  buildStudyHighlights,
+  buildDocumentTextMatches,
+  buildStudyTextMatches,
   searchPages,
 } from '../../../../src/features/verification/highlights';
 import type { VerificationDocumentView } from '../../../../src/features/verification/types';
@@ -142,7 +143,90 @@ describe('buildDocumentHighlights', () => {
   });
 });
 
-describe('buildStudyHighlights', () => {
+describe('buildDocumentTextMatches', () => {
+  const pages = [
+    buildPage(1, 'in this trial mortality was 12 percent overall'),
+    buildPage(2, 'we repeat: mortality was 12 percent in both arms'),
+  ];
+
+  test('矩形なしで出現位置（page + range）だけを返す（rects 実体化前でも計算できる）', () => {
+    const [match] = buildDocumentTextMatches('doc-1', [makeEvidence({ page: 2 })], pages);
+    expect(match).toBeDefined();
+    expect(match?.cellKey).toBe(cellKeyOf('f-1', '-'));
+    expect(match?.documentId).toBe('doc-1');
+    expect(match?.occurrences).toEqual([
+      { page: 1, range: { start: 14, end: 38 } },
+      { page: 2, range: { start: 11, end: 35 } },
+    ]);
+    expect(match?.selectedIndex).toBe(1);
+  });
+
+  test('quote なし / anchor_status なし / failed は含めない', () => {
+    expect(
+      buildDocumentTextMatches(
+        'doc-1',
+        [
+          makeEvidence({ quote: null }),
+          makeEvidence({ anchorStatus: null }),
+          makeEvidence({ anchorStatus: 'failed' }),
+        ],
+        pages,
+      ),
+    ).toEqual([]);
+  });
+
+  test('どのページにも見つからない quote は含めない', () => {
+    expect(
+      buildDocumentTextMatches(
+        'doc-1',
+        [makeEvidence({ quote: 'not in the document at all' })],
+        pages,
+      ),
+    ).toEqual([]);
+  });
+
+  test('正規化で空になる quote（空白のみ）は含めない', () => {
+    expect(buildDocumentTextMatches('doc-1', [makeEvidence({ quote: '   ' })], pages)).toEqual([]);
+  });
+
+  test('fuzzy は anchor 済みページ内の最良一致 1 件だけを返す', () => {
+    const [match] = buildDocumentTextMatches(
+      'doc-1',
+      [makeEvidence({ quote: 'mortality was 12 pircent', page: 2, anchorStatus: 'fuzzy' })],
+      pages,
+    );
+    expect(match?.occurrences).toHaveLength(1);
+    expect(match?.occurrences[0]?.page).toBe(2);
+  });
+
+  test('fuzzy でページ番号が見つからない場合は含めない', () => {
+    expect(
+      buildDocumentTextMatches('doc-1', [makeEvidence({ page: 9, anchorStatus: 'fuzzy' })], pages),
+    ).toEqual([]);
+  });
+
+  test('fuzzy でページ本文が空（写像不能）の場合は含めない', () => {
+    expect(
+      buildDocumentTextMatches(
+        'doc-1',
+        [makeEvidence({ page: 1, anchorStatus: 'fuzzy' })],
+        [buildPage(1, '')],
+      ),
+    ).toEqual([]);
+  });
+
+  test('同じ quote に対する出現件数・ページ順序は buildDocumentHighlights（rects 実体化）と一致する', () => {
+    const evidence = [makeEvidence({ page: 2 })];
+    const matches = buildDocumentTextMatches('doc-1', evidence, pages);
+    const highlights = buildDocumentHighlights('doc-1', evidence, pages);
+    expect(matches[0]?.occurrences.map((o) => o.page)).toEqual(
+      highlights[0]?.occurrences.map((o) => o.page),
+    );
+    expect(matches[0]?.selectedIndex).toBe(highlights[0]?.selectedIndex);
+  });
+});
+
+describe('buildStudyTextMatches', () => {
   function makeDocument(documentId: string): DocumentRecord {
     return {
       documentId,
@@ -166,13 +250,12 @@ describe('buildStudyHighlights', () => {
   function makeView(documentId: string, text: string): VerificationDocumentView {
     return {
       document: makeDocument(documentId),
-      pdf: null,
-      pdfError: null,
-      textPages: [buildPage(1, text)],
+      extractedPages: [{ page: 1, text }],
+      extractedTextError: null,
     };
   }
 
-  test('文書ごとに自 document の Evidence だけをその文書のテキストへアンカリングする', () => {
+  test('文書ごとに自 document の Evidence だけをその文書の extracted_texts へアンカリングする', () => {
     const documents = [
       makeView('doc-1', 'mortality was 12 percent in the article'),
       makeView('doc-2', 'registration says mortality was 12 percent too'),
@@ -186,16 +269,16 @@ describe('buildStudyHighlights', () => {
         quote: 'mortality was 12 percent',
       }),
     ];
-    const highlights = buildStudyHighlights(documents, evidence);
-    expect(highlights.map((h) => h.documentId)).toEqual(['doc-1', 'doc-2']);
-    expect(highlights.every((h) => h.occurrences.length > 0)).toBe(true);
+    const matches = buildStudyTextMatches(documents, evidence);
+    expect(matches.map((m) => m.documentId)).toEqual(['doc-1', 'doc-2']);
+    expect(matches.every((m) => m.occurrences.length > 0)).toBe(true);
   });
 
   test('別文書由来の Evidence は当該文書のテキストでアンカリングしない', () => {
     const documents = [makeView('doc-1', 'nothing relevant here')];
     // documentId が documents に無い Evidence は対象文書がないため無視される
     const evidence = [makeEvidence({ documentId: 'doc-2', quote: 'mortality was 12 percent' })];
-    expect(buildStudyHighlights(documents, evidence)).toEqual([]);
+    expect(buildStudyTextMatches(documents, evidence)).toEqual([]);
   });
 });
 

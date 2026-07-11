@@ -10,6 +10,7 @@ import {
   cancelMerge,
   confirmMerge,
   ignoreCandidate,
+  importFromFiles,
   importFromPicker,
   loadDocuments,
   openMergeCandidate,
@@ -53,6 +54,7 @@ import {
   persistPilotDecision,
   persistPilotInstanceDeclarations,
   runPilot,
+  setPilotLayoutMode,
   setPilotModel,
   togglePilotStudy,
   type PilotServiceDeps,
@@ -73,6 +75,7 @@ import {
   persistVerifyArmConfirmation,
   persistVerifyDecision,
   persistVerifyInstanceDeclarations,
+  setVerifyLayoutMode,
 } from './services/verifyService';
 import { loadDashboard } from './services/dashboardService';
 import { loadProgressCounts } from './services/homeService';
@@ -93,6 +96,7 @@ import { createChromePickerDeps } from '../lib/google/picker';
 import { createProvider } from '../lib/llm/providerFactory';
 import { loadDisposablePdf } from '../lib/pdf/loadPdf';
 import { loadGeminiApiKey, loadOpenRouterApiKey } from '../lib/storage/secretsStore';
+import { resolveRateLimitPolicy } from '../lib/storage/settingsStore';
 
 declare global {
   interface Window {
@@ -146,6 +150,7 @@ export function createChromeAppDeps(): AppDeps {
     loadApiKey: (provider) =>
       provider === 'openrouter' ? loadOpenRouterApiKey() : loadGeminiApiKey(),
     buildProvider: createProvider,
+    resolveRateLimitPolicy,
   };
 }
 
@@ -184,6 +189,9 @@ export async function bootstrapApp(
     documents: {
       onImport: () => {
         void importFromPicker(store, deps);
+      },
+      onImportFiles: (files) => {
+        void importFromFiles(store, deps, files);
       },
       onReload: () => {
         void loadDocuments(store, deps, { force: true });
@@ -310,6 +318,9 @@ export async function bootstrapApp(
       onInstanceDeclare: (decisions) => {
         void persistPilotInstanceDeclarations(store, deps, decisions);
       },
+      onChangeLayoutMode: (mode) => {
+        void setPilotLayoutMode(store, deps, mode);
+      },
     },
     extract: {
       onToggleStudy: (studyId, selected) => {
@@ -351,6 +362,9 @@ export async function bootstrapApp(
       },
       onInstanceDeclare: (decisions) => {
         void persistVerifyInstanceDeclarations(store, deps, decisions);
+      },
+      onChangeLayoutMode: (mode) => {
+        void setVerifyLayoutMode(store, deps, mode);
       },
     },
     dashboard: {
@@ -485,7 +499,15 @@ export async function bootstrapApp(
     if (guard.warning) {
       showToast(guard.warning, doc);
     }
+    // #/options へ入る直前のルートを記録する（B. 設定画面の「戻る」改善）。
+    // #/options 自体への遷移でのみ更新し、それ以外のステップ間遷移では触らない。
+    // setState は購読経由で全再描画を同期発火するため、currentHash を先に新ルートへ
+    // 進めてから記録する — 逆順だと退出元ビューの無駄な再構築が 1 回走る
+    const previous = currentHash;
     currentHash = target;
+    if (target === '#/options' && previous !== '#/options') {
+      store.setState({ settingsReturnHash: previous });
+    }
     renderRoute();
     renderNav(store.getState());
     if (currentHash === '#/home') {

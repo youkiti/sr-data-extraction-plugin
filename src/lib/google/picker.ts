@@ -17,7 +17,8 @@ import type { GoogleApiDeps } from './types';
 export const FOLDER_MIME_TYPE = 'application/vnd.google-apps.folder';
 
 /**
- * Picker で選択された項目。PDF なら importDocuments の ImportSelection と同形。
+ * Picker で選択された項目。documentsService.expandSelections が importDocuments の
+ * ImportSelection（Drive/ローカル共通形）へ変換する。
  * mimeType が FOLDER_MIME_TYPE のときはフォルダで、呼び出し側が直下 PDF を展開する。
  * （旧デプロイのホストページは mimeType を送らないため optional。欠落時はファイル扱い）
  */

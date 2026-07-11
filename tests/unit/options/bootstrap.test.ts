@@ -35,6 +35,40 @@ const OPTIONS_TEMPLATE_WITH_MODEL = `
   </main>
 `;
 
+/** レート制限 tier 節を含むテンプレート（options.html「レート制限」と同じ要素構成） */
+const OPTIONS_TEMPLATE_WITH_RATE_LIMIT = `
+  <main class="options">
+    <p id="options-status">読み込み中…</p>
+    <label for="gemini-api-key">Gemini API キー</label>
+    <input id="gemini-api-key" type="password" autocomplete="off" />
+    <button id="save-keys" type="button">保存</button>
+    <p id="openrouter-status">読み込み中…</p>
+    <label for="openrouter-api-key">OpenRouter API キー</label>
+    <input id="openrouter-api-key" type="password" autocomplete="off" />
+    <button id="save-openrouter-key" type="button">保存</button>
+    <p id="rate-limit-tier-desc" class="options__help"></p>
+    <p id="rate-limit-status">読み込み中…</p>
+    <label for="rate-limit-tier">プラン（tier）</label>
+    <select id="rate-limit-tier" aria-label="レート制限 tier">
+      <option value="gemini_free">Gemini 無料枠（Free）</option>
+      <option value="gemini_tier1">Gemini Tier 1（従量課金）</option>
+      <option value="gemini_tier2">Gemini Tier 2</option>
+      <option value="gemini_tier3">Gemini Tier 3</option>
+      <option value="custom">カスタム（RPM を手動指定）</option>
+      <option value="unlimited">制限なし（スロットルしない）</option>
+    </select>
+    <div id="rate-limit-custom-row" class="options__row" hidden>
+      <label for="rate-limit-custom-rpm">1 分あたりの最大リクエスト数（RPM）</label>
+      <input id="rate-limit-custom-rpm" type="number" min="1" step="1" />
+    </div>
+    <div id="rate-limit-concurrency-row" class="options__row" hidden>
+      <label for="rate-limit-concurrency">同時実行数</label>
+      <input id="rate-limit-concurrency" type="number" min="1" step="1" placeholder="1" />
+    </div>
+    <button id="save-rate-limit" type="button">保存</button>
+  </main>
+`;
+
 const flush = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
 
 function statusEl(): HTMLElement {
@@ -351,5 +385,181 @@ describe('bootstrapOptions（既定モデル。docs/ui-states.md §2「既定モ
     expect(modelStatusEl().textContent).toBe('保存に失敗しました。もう一度お試しください。');
     expect(modelStatusEl().classList.contains('options__status--error')).toBe(true);
     expect(modelSaveButton().disabled).toBe(false);
+  });
+});
+
+describe('bootstrapOptions（レート制限 tier。docs/ui-states.md §2「レート制限」）', () => {
+  let chromeMock: ChromeMock;
+
+  function tierSelectEl(): HTMLSelectElement {
+    return document.getElementById('rate-limit-tier') as HTMLSelectElement;
+  }
+  function customRowEl(): HTMLElement {
+    return document.getElementById('rate-limit-custom-row') as HTMLElement;
+  }
+  function customRpmEl(): HTMLInputElement {
+    return document.getElementById('rate-limit-custom-rpm') as HTMLInputElement;
+  }
+  function concurrencyRowEl(): HTMLElement {
+    return document.getElementById('rate-limit-concurrency-row') as HTMLElement;
+  }
+  function concurrencyEl(): HTMLInputElement {
+    return document.getElementById('rate-limit-concurrency') as HTMLInputElement;
+  }
+  function descEl(): HTMLElement {
+    return document.getElementById('rate-limit-tier-desc') as HTMLElement;
+  }
+  function rlStatusEl(): HTMLElement {
+    return document.getElementById('rate-limit-status') as HTMLElement;
+  }
+  function rlSaveButton(): HTMLButtonElement {
+    return document.getElementById('save-rate-limit') as HTMLButtonElement;
+  }
+
+  beforeEach(() => {
+    chromeMock = installChromeMock();
+    document.body.innerHTML = OPTIONS_TEMPLATE_WITH_RATE_LIMIT;
+  });
+
+  test('要素が欠けている場合は他節だけ配線する（レート制限節は何もしない）', async () => {
+    document.body.innerHTML = OPTIONS_TEMPLATE;
+    await bootstrapOptions(document);
+    expect(statusEl().textContent).toBe('Gemini: 未設定');
+    expect(document.getElementById('rate-limit-status')).toBeNull();
+  });
+
+  test('未設定なら既定 tier（gemini_free）を選択し、カスタム RPM 入力は隠す', async () => {
+    await bootstrapOptions(document);
+    expect(tierSelectEl().value).toBe('gemini_free');
+    expect(rlStatusEl().textContent).toBe('レート制限: Gemini 無料枠（Free）');
+    expect(customRowEl().hidden).toBe(true);
+    expect(descEl().textContent).toContain('無料枠');
+  });
+
+  test('保存済み（カスタム tier + RPM）なら custom を選択し RPM 入力を表示・充填する', async () => {
+    chromeMock.storage.local.data['settings.rateLimitTier'] = 'custom';
+    chromeMock.storage.local.data['settings.rateLimitCustomRpm'] = 45;
+    await bootstrapOptions(document);
+    expect(tierSelectEl().value).toBe('custom');
+    expect(customRowEl().hidden).toBe(false);
+    expect(customRpmEl().value).toBe('45');
+  });
+
+  test('tier を custom へ変更すると RPM / 同時実行数入力が現れ、非 custom へ戻すと隠れる', async () => {
+    await bootstrapOptions(document);
+    tierSelectEl().value = 'custom';
+    tierSelectEl().dispatchEvent(new Event('change'));
+    expect(customRowEl().hidden).toBe(false);
+    expect(concurrencyRowEl().hidden).toBe(false);
+    tierSelectEl().value = 'gemini_tier2';
+    tierSelectEl().dispatchEvent(new Event('change'));
+    expect(customRowEl().hidden).toBe(true);
+    expect(concurrencyRowEl().hidden).toBe(true);
+  });
+
+  test('保存済み同時実行数は入力に充填する', async () => {
+    chromeMock.storage.local.data['settings.rateLimitTier'] = 'custom';
+    chromeMock.storage.local.data['settings.rateLimitCustomConcurrency'] = 4;
+    await bootstrapOptions(document);
+    expect(concurrencyRowEl().hidden).toBe(false);
+    expect(concurrencyEl().value).toBe('4');
+  });
+
+  test('custom tier + RPM + 同時実行数を保存する', async () => {
+    await bootstrapOptions(document);
+    tierSelectEl().value = 'custom';
+    tierSelectEl().dispatchEvent(new Event('change'));
+    customRpmEl().value = '60';
+    concurrencyEl().value = '3';
+    rlSaveButton().click();
+    await flush();
+    expect(chromeMock.storage.local.data['settings.rateLimitCustomRpm']).toBe(60);
+    expect(chromeMock.storage.local.data['settings.rateLimitCustomConcurrency']).toBe(3);
+    expect(rlStatusEl().textContent).toBe('保存しました。');
+  });
+
+  test('custom tier で同時実行数が空なら省略保存（キー削除）でエラーにしない', async () => {
+    await bootstrapOptions(document);
+    tierSelectEl().value = 'custom';
+    tierSelectEl().dispatchEvent(new Event('change'));
+    customRpmEl().value = '60';
+    concurrencyEl().value = '   ';
+    rlSaveButton().click();
+    await flush();
+    expect(chromeMock.storage.local.remove).toHaveBeenCalledWith(
+      'settings.rateLimitCustomConcurrency',
+    );
+    expect(rlStatusEl().textContent).toBe('保存しました。');
+  });
+
+  test('custom tier で同時実行数が非正なら保存せずエラー表示する', async () => {
+    await bootstrapOptions(document);
+    tierSelectEl().value = 'custom';
+    tierSelectEl().dispatchEvent(new Event('change'));
+    customRpmEl().value = '60';
+    concurrencyEl().value = '0';
+    rlSaveButton().click();
+    await flush();
+    expect(rlStatusEl().textContent).toBe('同時実行数は 1 以上の数値を入力してください。');
+    expect(rlStatusEl().classList.contains('options__status--error')).toBe(true);
+    expect(chromeMock.storage.local.set).not.toHaveBeenCalled();
+  });
+
+  test('非 custom tier を保存すると tier を書き、カスタム RPM キーは削除する', async () => {
+    await bootstrapOptions(document);
+    tierSelectEl().value = 'gemini_tier1';
+    tierSelectEl().dispatchEvent(new Event('change'));
+    rlSaveButton().click();
+    await flush();
+    expect(chromeMock.storage.local.data['settings.rateLimitTier']).toBe('gemini_tier1');
+    expect(chromeMock.storage.local.remove).toHaveBeenCalledWith('settings.rateLimitCustomRpm');
+    expect(rlStatusEl().textContent).toBe('保存しました。');
+    expect(rlSaveButton().disabled).toBe(false);
+  });
+
+  test('custom tier + 有効な RPM を保存する', async () => {
+    await bootstrapOptions(document);
+    tierSelectEl().value = 'custom';
+    tierSelectEl().dispatchEvent(new Event('change'));
+    customRpmEl().value = '60';
+    rlSaveButton().click();
+    await flush();
+    expect(chromeMock.storage.local.data['settings.rateLimitTier']).toBe('custom');
+    expect(chromeMock.storage.local.data['settings.rateLimitCustomRpm']).toBe(60);
+    expect(rlStatusEl().textContent).toBe('保存しました。');
+  });
+
+  test('custom tier で RPM が空・不正なら保存せずエラー表示する', async () => {
+    await bootstrapOptions(document);
+    tierSelectEl().value = 'custom';
+    tierSelectEl().dispatchEvent(new Event('change'));
+    customRpmEl().value = '   ';
+    rlSaveButton().click();
+    await flush();
+    expect(rlStatusEl().textContent).toBe('RPM は 1 以上の数値を入力してください。');
+    expect(rlStatusEl().classList.contains('options__status--error')).toBe(true);
+    expect(chromeMock.storage.local.set).not.toHaveBeenCalled();
+  });
+
+  test('select の値が不正な場合は既定 tier（gemini_free）へ倒す', async () => {
+    await bootstrapOptions(document);
+    // 存在しない値をセットすると DOM 上は '' になり、isRateLimitTierId=false
+    tierSelectEl().value = 'nonexistent';
+    tierSelectEl().dispatchEvent(new Event('change'));
+    expect(descEl().textContent).toContain('無料枠'); // gemini_free の説明
+    rlSaveButton().click();
+    await flush();
+    expect(chromeMock.storage.local.data['settings.rateLimitTier']).toBe('gemini_free');
+  });
+
+  test('保存失敗時は赤系メッセージ + ボタン復帰', async () => {
+    await bootstrapOptions(document);
+    chromeMock.storage.local.set.mockRejectedValueOnce(new Error('quota exceeded'));
+    tierSelectEl().value = 'gemini_tier1';
+    tierSelectEl().dispatchEvent(new Event('change'));
+    rlSaveButton().click();
+    await flush();
+    expect(rlStatusEl().textContent).toBe('保存に失敗しました。もう一度お試しください。');
+    expect(rlSaveButton().disabled).toBe(false);
   });
 });

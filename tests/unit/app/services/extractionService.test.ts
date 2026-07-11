@@ -9,6 +9,7 @@ import { uploadTextFile } from '../../../../src/lib/google/drive';
 import type { GoogleApiDeps } from '../../../../src/lib/google/types';
 import { appendLlmApiLog } from '../../../../src/lib/llm/apiLogRepository';
 import type { ChatResponse, LLMProvider } from '../../../../src/lib/llm/LLMProvider';
+import type { RateLimitPolicy } from '../../../../src/lib/llm/rateLimitPolicy';
 
 jest.mock('../../../../src/features/extraction/annotationRepository');
 jest.mock('../../../../src/features/extraction/evidenceRepository');
@@ -257,5 +258,173 @@ describe('runExtraction', () => {
     expect(outcome.run.runId).toMatch(/^[0-9a-f]{8}-/); // 既定 UUID 発番
     expect(outcome.run.tokensIn).toBeNull();
     expect(mockedAppendRun).toHaveBeenCalledTimes(2); // running 行 + 完了行
+  });
+
+  test('resolveRateLimitPolicy 注入時: バッチ間を RPM 間隔でスロットルする（429 対策 A）', async () => {
+    const chat = jest.fn().mockResolvedValue(AI_RESPONSE);
+    const deps = makeDeps(chat);
+    // 2 study = 2 バッチ。RPM=30 → 2000ms 間隔。仮想クロックで実待ちを回避
+    const waits: number[] = [];
+    const clock = { now: 0 };
+    const outcome = await runExtraction(
+      {
+        ...baseParams(),
+        documents: [
+          makeDocument({ documentId: 'doc-1', studyId: 'study-1' }),
+          makeDocument({ documentId: 'doc-2', studyId: 'study-2', filename: 'jones2021.pdf' }),
+        ],
+      },
+      {
+        ...deps,
+        resolveRateLimitPolicy: async () => ({
+          requestsPerMinute: 30,
+          maxAttempts: 3,
+          baseDelayMs: 1_000,
+          maxDelayMs: 60_000,
+          maxConcurrency: 1,
+          flushEveryNStudies: 5,
+        }),
+        rateLimitClock: {
+          now: () => clock.now,
+          sleep: (ms) => {
+            waits.push(ms);
+            clock.now += ms;
+            return Promise.resolve();
+          },
+        },
+      },
+    );
+    expect(chat).toHaveBeenCalledTimes(2);
+    // 初回は待たず 2 バッチ目で 1 間隔（2000ms）だけスロットルする
+    expect(waits).toEqual([2_000]);
+    expect(outcome.run.status).toBe('done');
+  });
+
+  test('flushEveryNStudies 省略 + resolveRateLimitPolicy 未注入時: UNLIMITED ポリシー値が executeRun へ注入され、2 study なら 1 回にまとまって appendEvidenceRows が呼ばれる（429 対策）', async () => {
+    const chat = jest.fn().mockResolvedValue(AI_RESPONSE);
+    const deps = makeDeps(chat);
+    const outcome = await runExtraction(
+      {
+        ...baseParams(),
+        documents: [
+          makeDocument({ documentId: 'doc-1', studyId: 'study-1' }),
+          makeDocument({ documentId: 'doc-2', studyId: 'study-2', filename: 'jones2021.pdf' }),
+        ],
+      },
+      deps, // flushEveryNStudies は指定しない
+    );
+    expect(outcome.result.status).toBe('done');
+    expect(mockedAppendEvidence).toHaveBeenCalledTimes(1);
+    const [, rows] = mockedAppendEvidence.mock.calls[0] as unknown as [string, unknown[]];
+    expect(rows).toHaveLength(2);
+  });
+
+  test('flushEveryNStudies 注入: 指定した study 数ごとに appendEvidenceRows を分割して呼ぶ（429 対策）', async () => {
+    const chat = jest.fn().mockResolvedValue(AI_RESPONSE);
+    const deps = makeDeps(chat);
+    const outcome = await runExtraction(
+      {
+        ...baseParams(),
+        documents: [
+          makeDocument({ documentId: 'doc-1', studyId: 'study-1' }),
+          makeDocument({ documentId: 'doc-2', studyId: 'study-2', filename: 'jones2021.pdf' }),
+        ],
+      },
+      { ...deps, flushEveryNStudies: 1 },
+    );
+    expect(outcome.result.status).toBe('done');
+    // flushEveryNStudies=1 なら study ごとに appendEvidenceRows が呼ばれる（従来相当の挙動）
+    expect(mockedAppendEvidence).toHaveBeenCalledTimes(2);
+  });
+
+  test('flushEveryNStudies は tier 連動ポリシーの値を deps 明示指定より優先度低く使う（429 対策・tier 連動）', async () => {
+    const chat = jest.fn().mockResolvedValue(AI_RESPONSE);
+    const deps = makeDeps(chat);
+    // 2 study だが resolveRateLimitPolicy が flushEveryNStudies=1 の tier を返す
+    // → deps.flushEveryNStudies 未指定でも policy の値（1）が使われ、study ごとに分割される
+    const outcome = await runExtraction(
+      {
+        ...baseParams(),
+        documents: [
+          makeDocument({ documentId: 'doc-1', studyId: 'study-1' }),
+          makeDocument({ documentId: 'doc-2', studyId: 'study-2', filename: 'jones2021.pdf' }),
+        ],
+      },
+      {
+        ...deps,
+        resolveRateLimitPolicy: async () => ({
+          requestsPerMinute: null,
+          maxAttempts: 3,
+          baseDelayMs: 1_000,
+          maxDelayMs: 15_000,
+          maxConcurrency: 1,
+          flushEveryNStudies: 1,
+        }),
+      },
+    );
+    expect(outcome.result.status).toBe('done');
+    expect(mockedAppendEvidence).toHaveBeenCalledTimes(2);
+  });
+
+  test('flushEveryNStudies: deps 明示指定は policy の値より優先する（429 対策）', async () => {
+    const chat = jest.fn().mockResolvedValue(AI_RESPONSE);
+    const deps = makeDeps(chat);
+    // policy は flushEveryNStudies=1（study ごとに分割）だが、deps.flushEveryNStudies=2 を
+    // 明示注入しているので 2 study が 1 回にまとまる
+    const outcome = await runExtraction(
+      {
+        ...baseParams(),
+        documents: [
+          makeDocument({ documentId: 'doc-1', studyId: 'study-1' }),
+          makeDocument({ documentId: 'doc-2', studyId: 'study-2', filename: 'jones2021.pdf' }),
+        ],
+      },
+      {
+        ...deps,
+        flushEveryNStudies: 2,
+        resolveRateLimitPolicy: async () => ({
+          requestsPerMinute: null,
+          maxAttempts: 3,
+          baseDelayMs: 1_000,
+          maxDelayMs: 15_000,
+          maxConcurrency: 1,
+          flushEveryNStudies: 1,
+        }),
+      },
+    );
+    expect(outcome.result.status).toBe('done');
+    expect(mockedAppendEvidence).toHaveBeenCalledTimes(1);
+  });
+
+  test('flushEveryNStudies: deps・policy のどちらにも値が無ければ DEFAULT_FLUSH_EVERY_N_STUDIES（5）へフォールバックする', async () => {
+    const chat = jest.fn().mockResolvedValue(AI_RESPONSE);
+    const deps = makeDeps(chat);
+    const documents = Array.from({ length: 6 }, (_, i) =>
+      makeDocument({
+        documentId: `doc-${i + 1}`,
+        studyId: `study-${i + 1}`,
+        filename: `s${i + 1}.pdf`,
+      }),
+    );
+    // resolveRateLimitPolicy が（本来ありえないが）flushEveryNStudies を欠いたポリシーを返す
+    // ケースを型キャストで意図的に再現し、DEFAULT_FLUSH_EVERY_N_STUDIES への 2 段目フォールバックを検証する
+    const policyWithoutFlush = {
+      requestsPerMinute: null,
+      maxAttempts: 3,
+      baseDelayMs: 1_000,
+      maxDelayMs: 15_000,
+      maxConcurrency: 1,
+    } as unknown as RateLimitPolicy;
+    const outcome = await runExtraction(
+      { ...baseParams(), documents },
+      { ...deps, resolveRateLimitPolicy: async () => policyWithoutFlush },
+    );
+    expect(outcome.result.status).toBe('done');
+    // DEFAULT_FLUSH_EVERY_N_STUDIES=5 なら 6 study は [5, 1] に分割される
+    expect(mockedAppendEvidence).toHaveBeenCalledTimes(2);
+    const rowCounts = mockedAppendEvidence.mock.calls.map(
+      ([, rows]) => (rows as unknown[]).length,
+    );
+    expect(rowCounts).toEqual([5, 1]);
   });
 });

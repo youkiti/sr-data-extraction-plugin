@@ -13,7 +13,7 @@ spec が正。実装が追いついていない箇所は以下のとおり（実
 | 章 | 実装状況 |
 |---|---|
 | §1 Popup | ✅ 実装済み（未ログイン / ログイン済 ×最近 0・N 件 / ログイン処理中・失敗 / 新規作成 / 既存 ID 検証。2026-07-02） |
-| §2 Options | ✅ 状態 A / B とも実装済み（Gemini キーの trim 保存・空文字抑止・保存中無効化・完了/失敗表示）。既定モデル（保存 / 空文字で解除 / S5 への注入）も実装済み（2026-07-03）。OpenRouter キー節 + 既定モデルの select 化（モデルセレクタ共通ウィジェット）は 2026-07-04 実装 |
+| §2 Options | ✅ 状態 A / B とも実装済み（Gemini キーの trim 保存・空文字抑止・保存中無効化・完了/失敗表示）。既定モデル（保存 / 空文字で解除 / S5 への注入）も実装済み（2026-07-03）。OpenRouter キー節 + 既定モデルの select 化（モデルセレクタ共通ウィジェット）は 2026-07-04 実装。レート制限 tier 節（一括抽出の 429 対策 = スロットル + リトライ強化）は 2026-07-10 実装 |
 | §3 App 共通レイアウト・状態 A / B | ✅ 実装済み（ヘッダ / サイドバー / ガードのディム表示 + トースト / `#app-context` 通知） |
 | §3 `#/home` | ✅ 実装済み（起動時に Sheets から進捗カウントを読込〔`values:batchGet` 1 呼び出し〕。読み込み中 / 失敗 + 再読み込み / 通常サマリ。ガードのディム判定も同カウントで実データ化。2026-07-03） |
 | §3 `#/documents` | ✅ 実装済み（読み込み中 / 失敗 / 空 / 取り込み中の進捗行。2026-07-02）。**v0.10 グルーピング UI 実装済み**（2026-07-07: study 単位グループ表示 + study_label / registration_id / document_role インライン編集 + 統合ダイアログ + 統合候補バナー）。Drive Picker のホスト済みページは GitHub Pages へデプロイ済み（[hosted/README.md](../hosted/README.md)）で、2026-07-03 の実機通し確認（[manual-testing.md](manual-testing.md) §1）で Picker の動作を確認済み |
@@ -41,7 +41,7 @@ spec が正。実装が追いついていない箇所は以下のとおり（実
 - 新規作成フォームの説明文は「データ抽出プロジェクトを作成します（スプレッドシート + Drive フォルダを生成）。」
 - 既存 ID で開く場合、`Meta` タブの検証に加えて **`Documents` / `SchemaFields` タブの存在**を確認し、欠けていれば `#popup-open-error` に「sr-data-extraction のプロジェクトではありません（Documents / SchemaFields タブが見つかりません）」
 - 存在しないスプレッドシート ID（404）は「スプレッドシートが見つかりません。ID を確認してください」
-- 設定画面はハッシュルートではなく独立ページのため、`#open-options` は `options/options.html` を新規タブで開く
+- 設定は `#open-options` からアプリ内ルート `app/app.html#/options` へ同一タブで遷移する（`chrome.tabs.update`。独立ページ `options/options.html` は拡張管理画面の「オプション」からのみ開く）
 - プロジェクト選択（作成 / 既存 ID / 履歴クリック）成功で直ちに同一タブのままメインビューへ遷移する（`chrome.tabs.update`。S1 はフルページ表示のためタブを増やさない）。独立した「メインビューを開く」ボタンは持たない（スケルトン段階の `#open-app` ボタンは廃止）
 
 ## 2. Options (`src/options/options.html`)
@@ -49,6 +49,7 @@ spec が正。実装が追いついていない箇所は以下のとおり（実
 ### 状態 A: 通常表示
 
 - **可視**: Gemini API キー入力（`type="password"` + `autocomplete="off"`）/ 保存ボタン / OpenRouter API キー入力（`#openrouter-api-key`。Gemini と同じトンマナ + 取得先リンク <https://openrouter.ai/settings/keys>）/ 保存ボタン `#save-openrouter-key` / 既定モデルセレクタ（下記「既定モデル」参照）/ 表示言語セレクタ（MVP は ja 固定・ディム）
+- **「アプリを開く」リンク `#options-open-app`**（スタンドアロン options.html のみ。見出し行の右側から `../app/app.html` へ同一タブ遷移。アプリ内 `#/options` はサイドバーと「← 前の画面へ戻る」= `#/options` 進入直前のルート・無ければ `#/home` を持つため、このリンクは出さない — issue #31 B）
 - **`#options-status`**: `Gemini: 保存済み|未設定` 形式 / **`#openrouter-status`**: `OpenRouter: 保存済み|未設定` 形式
 - キーは `trim()` して保存、空文字は保存抑止（sr-query-builder で target のまま残った教訓を最初から実装する）
 - **入力欄の placeholder で保存状態を可視化**（平文キーは再表示しない）: 保存済み → `保存済み（変更する場合のみ入力）` / 未設定 → `API キーを入力`。保存成功時に入力欄をクリアしたうえで placeholder を「保存済み」に切り替える
@@ -78,6 +79,23 @@ spec が正。実装が追いついていない箇所は以下のとおり（実
 | 保存完了 | セレクタの値（その他は trim したテキスト）を保存 → `保存しました。`。**空（プレースホルダ選択 or その他の空文字）は「未設定に戻す」**（`settings.defaultModel` を削除）→ `未設定に戻しました。`（API キーと違い空での解除を許す） |
 | 保存失敗 | 赤系メッセージ `保存に失敗しました。もう一度お試しください。` + ボタン復帰 |
 
+### レート制限（一括抽出の 429 対策。docs/requirements.md §4.3）
+
+一括抽出（S6 パイロット / S7 一括）で多数の study を連続処理すると、LLM API の 1 分あたりリクエスト上限（RPM）に達して HTTP 429（Too Many Requests）が出うる。対策は 2 本立て（`src/lib/llm/rateLimitPolicy.ts`）: **A. バッチ間スロットル**（`withThrottle`。RPM から最小リクエスト間隔 = `ceil(60000/RPM)` を導き、`executeRun` のバッチ連射を平準化）+ **B. リトライ強化**（`withRetry`。429/5xx を指数バックオフで再試行し、サーバ提示の `Retry-After` ヘッダ / 本文 `RetryInfo.retryDelay` を尊重、tier ごとに試行回数・バックオフ上限を変える）。合成は `withRetry(withThrottle(withLogging(provider)))`。
+
+スループット対策として **C. バッチ並行実行** も持つ（2026-07-10。docs/handoff-20260710-throughput.md）: `RateLimitPolicy.maxConcurrency` で `executeRun` のバッチ（= 1 study）を同時に走らせる本数を決める。スロットル（A）は間隔だけを保証し同時実行数を絞らないため、並行数はこの値で別に制御する。**既定は全 tier で 1（＝逐次。従来と同一挙動 = 回帰の砦）**で、`custom` tier のときだけ Options で 2 以上に上げてスループット実験できる（`gemini-tier3` 等のプリセットの実値は実測後に確定する）。
+
+保存キーは `settings.rateLimitTier`（tier ID）+ `settings.rateLimitCustomRpm`（カスタム tier の RPM。正の整数のみ・非正で削除）+ `settings.rateLimitCustomConcurrency`（カスタム tier の同時実行数。正の整数のみ・非正/未入力で削除 = 逐次）。`resolveRateLimitPolicy()` が実効ポリシーへ解決し、bootstrap が抽出・ドラフトのサービス層へ注入する（未注入時は `UNLIMITED_POLICY` = スロットル無し・リトライのみ・逐次 = 従来挙動）。tier プリセット: 無料枠 `gemini_free`（既定・RPM 8）/ `gemini_tier1`（120）/ `gemini_tier2`（900）/ `gemini_tier3`（1800）/ `custom`（RPM + 同時実行数を手入力）/ `unlimited`（スロットルしない）。RPM は保守的な目安で、実測に合わせ `custom` で上書きできる。
+
+| 状態 | 受入基準 |
+|---|---|
+| 未設定 | `#rate-limit-status` = `レート制限: Gemini 無料枠（Free）`（既定 tier）。セレクタ `#rate-limit-tier` は `gemini_free` を選択。カスタム RPM 行 `#rate-limit-custom-row` / 同時実行数行 `#rate-limit-concurrency-row` は非表示。説明文 `#rate-limit-tier-desc` に選択 tier の補足 |
+| 保存済み | 保存 tier を `#rate-limit-tier` で復元。`custom` のときだけ `#rate-limit-custom-row` / `#rate-limit-concurrency-row` を表示し `#rate-limit-custom-rpm` に保存 RPM・`#rate-limit-concurrency` に保存同時実行数を充填 |
+| tier 変更 | `change` で説明文と RPM / 同時実行数行の表示を同期（`custom` のみ両入力を表示）。不正な select 値は既定 `gemini_free` へ倒す |
+| 保存完了 | 非 custom = tier を保存しカスタム RPM / 同時実行数キーを削除 / custom = tier + RPM（1 以上の整数）+ 同時実行数（任意。空なら削除 = 逐次）を保存 → `保存しました。` |
+| 保存不可 | custom で RPM が空・0 以下・非数値なら `RPM は 1 以上の数値を入力してください。` / 同時実行数が入力ありで 0 以下・非数値なら `同時実行数は 1 以上の数値を入力してください。`（いずれも赤系・保存しない） |
+| 保存中 / 失敗 | `#save-rate-limit.disabled = true` / 赤系 `保存に失敗しました。もう一度お試しください。` + ボタン復帰 |
+
 ## 3. App / メインビュー (`src/app/app.html`)
 
 共通レイアウト: `header.app__header`（タイトル + `#app-status` + 設定への歯車リンク `#app-open-options`〔`../options/options.html` への同一タブ遷移。`aria-label="設定を開く"`〕+ `#app-context`〔`aria-live="polite"`〕）+ `aside.app__sidebar` + `section#app-content`。プロジェクト選択済みの `#app-status` はプロジェクト名自体が S1 プロジェクト選択ページへの同一タブ遷移リンク（`title="別のプロジェクトを開く"`）。ルート遷移のスクリーンリーダ通知は `#app-context` の更新で検証する。
@@ -96,7 +114,7 @@ spec が正。実装が追いついていない箇所は以下のとおり（実
 |---|---|---|
 | `#/home` | 読み込み中 | `#home-counts-loading`「進捗を読み込んでいます…」（起動時に Sheets の 7 範囲を `values:batchGet` 1 呼び出しで読む間。プロジェクト名は常時表示）。プロジェクト未選択時は読込自体を行わない（状態 A のまま） |
 | | 読み込み失敗 | `#home-counts-error`「進捗を読み込めませんでした: {理由}」（`role="alert"`）+ 再読み込み `#home-counts-reload`（force 再取得）。失敗中のガードはシード値（全 0 = 全ステップディム）のまま |
-| | 通常 | プロジェクトメタ + プロジェクト切替リンク `#home-switch-project`「別のプロジェクトを開く」（S1 プロジェクト選択ページへの同一タブ遷移アンカー。全状態で常設）+ 進捗サマリ（文献数 / プロトコル版数 / 確定スキーマ版数 / Evidence 行数 / データ行数）。0 文献でも崩れない。カウントの内訳: documents = `Documents` 行数 / protocolVersions = `Protocol` 行数 / schemaVersions = `SchemaVersions` 行数 / pilotRuns = `ExtractionRuns` の `run_type = pilot` 行数 / evidenceRows = `Evidence` 行数 / dataRows = `StudyData` + `ResultsData` 行数。読込成功後は各画面の操作（取り込み / 保存 / 確定 / run 完了）が増分更新する。E2E seam: `__E2E_PRELOADED_STATE__` に `counts` があれば読込済みとして扱い batchGet を行わない |
+| | 通常 | プロジェクトメタ + プロジェクト切替リンク `#home-switch-project`「別のプロジェクトを開く」（S1 プロジェクト選択ページへの同一タブ遷移アンカー。全状態で常設）+ 進捗サマリ（文献数 / プロトコル版数 / 表のデザインの確定版数 / Evidence 行数 / データ行数）。0 文献でも崩れない。カウントの内訳: documents = `Documents` 行数 / protocolVersions = `Protocol` 行数 / schemaVersions = `SchemaVersions` 行数 / pilotRuns = `ExtractionRuns` の `run_type = pilot` 行数 / evidenceRows = `Evidence` 行数 / dataRows = `StudyData` + `ResultsData` 行数。読込成功後は各画面の操作（取り込み / 保存 / 確定 / run 完了）が増分更新する。E2E seam: `__E2E_PRELOADED_STATE__` に `counts` があれば読込済みとして扱い batchGet を行わない |
 | `#/documents` | 読み込み中 | `#documents-loading`「一覧を読み込んでいます…」（初回表示時に Documents タブを自動読込。再読み込みボタンで強制再取得） |
 | | 読み込み失敗 | `#documents-load-error`「一覧を読み込めませんでした: {理由}」（赤系）。再読み込みボタンで復帰 |
 | | 空 | 「Drive から PDF / フォルダを取り込む」ボタン + 空状態説明（`#documents-empty`）+ 画面上部に「取り込んだ PDF が外部へ送信されるのは LLM API への抽出リクエストのみです」の注意書き（常時表示） |
@@ -111,14 +129,15 @@ spec が正。実装が追いついていない箇所は以下のとおり（実
 | | 読み取り専用（1 版以上） | `#protocol-summary`（版 / 入力形式 / 本文 / 元ファイルの Drive リンク / 作成日時・者）+ 版切替 select（2 版以上のとき）+ 古い版選択時は `#protocol-old-note`。「新しい版を入力」で再入力フォームへ |
 | | 再入力フォーム | 送信ボタンは「新しい版として保存」+ キャンセルで読み取り専用へ復帰。保存は常に追記（上書きなし） |
 | | ※移植メモ | sr-query-builder の「未保存下書き復元」モードは、本拡張では送信 = 即保存（LLM 抽出 → blocks 承認の 2 段階が無い）ため存在しない |
-| `#/schema` | ドラフト前 | 「AI にスキーマをドラフトさせる」ボタン + サンプル論文セレクタ（1〜3 本。テキスト層なしは選択不可）+ モデルセレクタ `#schema-model`（`requested_model`。§2「モデルセレクタ」の共通ウィジェット。プレースホルダ「選択してください」。既定モデルは Q8 確定まで固定しない）。プロトコル未入力ならガード。選択 0 本 / モデル未選択 / 選択モデルのプロバイダ（Gemini / OpenRouter）の API キー未設定は `#schema-draft-error` にインラインエラー |
+| `#/schema` | 全状態共通 | 見出し「表のデザイン」直下に解説リード（`view__lead`）「抽出したい項目のリストをこのページで作成します。スプレッドシートでいえば 1 行目の見出し（列の名前）にあたります。例:「著者名」「出版年」「対象患者数」など。これを設計する工程を表のデザインと呼んでいます。」を常時表示（プロジェクト未選択時も。issue #31 ①） |
+| | ドラフト前 | 「AI に表のデザインをドラフトさせる」ボタン + サンプル論文セレクタ（1〜3 本。テキスト層なしは選択不可）+ モデルセレクタ `#schema-model`（`requested_model`。§2「モデルセレクタ」の共通ウィジェット。プレースホルダ「選択してください」。既定モデルは Q8 確定まで固定しない）。プロトコル未入力ならガード。選択 0 本 / モデル未選択 / 選択モデルのプロバイダ（Gemini / OpenRouter）の API キー未設定は `#schema-draft-error` にインラインエラー |
 | | ドラフト生成中 | 進捗表示 + 経過時間。**LLM コスト集計の再描画で表示が消えない**（sr-query-builder `draftRun` の教訓を踏襲し store で管理） |
 | | 編集中 | 表形式エディタ。行ごとに `field_name`（snake_case バリデーション、重複・StudyData 固定列衝突エラー）/ `data_type` / `entity_level` / `extraction_instruction`（必須）ほか全列を編集可。エラーは一覧 + 該当セルの `aria-invalid` で表示し、ある間は確定不可。プリセット挿入（requirements.md §3.3。二値 `#schema-preset-binary` / 連続 `#schema-preset-continuous` / RoB 2 `#schema-preset-rob2` / ROBINS-I `#schema-preset-robins-i`）と行の追加 / 削除。ボタン下に `data_type` の凡例 `#schema-datatype-help`（text / integer / float / boolean / enum / date の説明 + 例。enum は許容値列の | 区切り指定を案内）。未確定変更がある間「版として確定」ボタンが強調 |
 | | 確定済み | 現行版の読み取り専用サマリ（メタ + 項目テーブル）+ 「新しい版を作る」導線（現行版の field_id を維持してエディタへ）+ 版履歴リスト（2 版以上のとき） |
 | `#/pilot` | 履歴・復元 | 入場時に過去のパイロット run（`ExtractionRuns` の `run_type='pilot'` 完了行のみ）を新しい順で読み込み、`#pilot-history` に列挙（各項目 = 日時 / モデル / 文献数 / status バッジ「完了」「一部失敗」）。読み込み中 `#pilot-history-loading` / 失敗 `#pilot-history-error` + 再読み込み `#pilot-history-reload`。**既存データがあれば起動後に最新 run を一度だけ自動読込**（Evidence を run で絞り + 版別 SchemaFields を解決 → 下の「完了」状態へ復元）し、パイロット済みなら「最初から」にしない。履歴項目クリックで別の run を読み込み（読み込み中は全項目を無効化・対象行に「読み込み中…」、表示中の run は無効化 + 「表示中」+ `aria-current`）。過去 run が無ければ（`history=[]`）履歴セクションは出さない。履歴から読み込んだ run は partial_failure の内訳を再構成できないため案内文のみ |
 | | 未実行（新規パイロット） | 画面末尾の `.pilot__setup`（h3「新規パイロット」）。対象 **study** セレクタ `#pilot-documents`（既定 = テキスト層のある文書を含む先頭 3 study。各 study は study_label + 配下文書のロール + ファイル名を副次リスト表示。テキスト層のある文書が無い study はチェック不可 + 「pdf_native モード時のみ選択可・P1」注記。v0.10 フェーズ 2）+ モデルセレクタ `#pilot-model`（§2「モデルセレクタ」の共通ウィジェット。プレースホルダ「選択してください」）+ コスト概算 `#pilot-estimate`（選択 0 本は案内文 / 単価表にないモデルは「概算不可」/ planRun の warnings を列挙。プロトコル本文ぶんは含まない旨を注記）+ 実行ボタン `#pilot-run`。選択 0 本 / モデル未選択 / 選択モデルのプロバイダの API キー未設定は `#pilot-run-error` にインラインエラー |
 | | 実行中 | `#pilot-progress`（`<progress>` + 「n / m バッチ完了（p% / 直近: study_label / section）」。document は study_label で表示し、未解決なら id にフォールバック）。履歴・setup は出さない |
-| | 完了 | done は `#pilot-run-done`、partial_failure は `#pilot-partial-failure`（バッチ失敗の内訳 + 応答要素の破棄件数。履歴読込 run で内訳が無ければ案内文 1 行）。「スキーマを改訂して再パイロット」`#pilot-revise-schema`（`#/schema` へのリンク）は完了後常に可視。検証文献セレクタ `#pilot-verify-doc` + 埋め込み検証パネル（下記 `#/verify` の 2 ペインと同一コンポーネント）。検証データの読み込み中 `#pilot-verify-loading` / 失敗 `#pilot-verify-error` + 再試行 `#pilot-verify-retry`。新規実行後は完了 run を履歴の先頭へ追加する |
+| | 完了 | done は `#pilot-run-done`、partial_failure は `#pilot-partial-failure`（バッチ失敗の内訳 + 応答要素の破棄件数。履歴読込 run で内訳が無ければ案内文 1 行）。「表のデザインを改訂して再パイロット」`#pilot-revise-schema`（`#/schema` へのリンク）は完了後常に可視。検証文献セレクタ `#pilot-verify-doc` + 埋め込み検証パネル（下記 `#/verify` の 2 ペインと同一コンポーネント）。検証データの読み込み中 `#pilot-verify-loading` / 失敗 `#pilot-verify-error` + 再試行 `#pilot-verify-retry`。新規実行後は完了 run を履歴の先頭へ追加する |
 | | 保存失敗（オフライン） | 判定はパネル内で楽観更新しつつ `#pilot-queued`「オフライン: N 件キュー中」。復帰後の保存成功時に自動再送（`lib/storage/offlineQueue` の 'decisions' キュー） |
 | `#/extract` | 読み込み中 | `#extract-loading`「抽出対象を読み込んでいます…」（文献一覧 + `ExtractionRuns` の既抽出 document を読む間） |
 | | 読み込み失敗 | `#extract-load-error`（理由）+ 再読み込み `#extract-reload` |
@@ -130,15 +149,19 @@ spec が正。実装が追いついていない箇所は以下のとおり（実
 | `#/verify` | 一覧読み込み中 | `#verify-loading`「検証対象を読み込んでいます…」。Evidence がある study 一覧 + Decisions を読む間 |
 | | 一覧読み込み失敗 | `#verify-error`（メッセージ）+ 再試行 `#verify-retry` |
 | | 通常 | study セレクタ `#verify-study`（Evidence がある study のみ列挙。各行に進捗チップ「判定済み n / 総セル m」）+ 選択中 study の見出し（h3 = study_label。見出し階層 h2 → h3 → h4 を保つ）+ 2 ペイン検証パネル（`#/pilot` 埋め込みと同一コンポーネント）。URL は `#/verify?study={study_id}` と同期する — セレクタ切替で hash を書き換え、直リンク・リロードで該当 study を復元。study が複数文書のときは左ペイン上部に**文書切替タブ** `.verify__doc-tabs`（role バッジ + ファイル名。既定は role 固定順の先頭）。項目フォーカス / 根拠クリック / 判定後の自動送り時に `Evidence.document_id` の文書へ自動切替（`setDocument` で描画競合の連番ガードを維持） |
+| | レイアウトモード（issue #38） | 右ペイン（フォーム）はタブ行の隣に切替トグル `#verify-layout-toggle` を持ち、**フォーカス / リスト** の 2 レイアウトを切替える。**既定はフォーカス**。トグルはボタン 1 個で切替先ラベルを表示（フォーカス表示中は「リスト表示に切替」）。設定は `settings.verifyLayoutMode`（`lib/storage/settingsStore`）に永続化し、検証データ束の読込のたびに読み直すため **S6 パイロット埋め込み / S8 `#/verify` 単独画面で共有**する。タブ行・判定進捗バー・群構成確定カード・outcome_result 追加フォーム・ロック中タブのディムはモードに関わらず共通。**フォーカスモード**時は「グループ一覧 + 判定済みブロック」の領域が下記のマトリクスカード `#verify-focus-card` に差し替わる（**リストモード時**は本節の他の行が示す従来の 1 セル 1 カード表示のまま）：<br>1. ユニットヘッダ `#verify-focus-position`「ユニット n / m（残り r）」+ 見出し（`entity_level` ごとの検証ユニット = study は section、arm/outcome_result はインスタンス横結合、rob_domain はドメインインスタンス）<br>2. マトリクス `#verify-focus-matrix`（`<table>`。列ヘッダ = ユニットの列〔study/rob_domain は固定 1 列、arm/outcome_result は群〕、行ヘッダ = フィールドラベル。セルは表示値〔判定確定値 > AI 値 > 「—」〕+ 判定チップのボタン。クリックでそのセルへフォーカス。存在しないセル（null）は「—」のプレーン表示）<br>3. プリセット要約行（outcome_result の連続 / 二値プリセット認識時のみ）<br>4. 詳細ストリップ `#verify-focus-detail`（フォーカス中セル 1 件を通常のセルカードで表示。quote・判定操作・編集入力・anchor failed の本文内検索・複数一致切替・ハイライトへ移動が全部そのまま使える。カードの高さは判定のたびに大きく変わらない）<br>5. 直近判定バー `#verify-focus-recent`（直近判定 1 件をユニットをまたいで固定表示。「戻す (z)」ボタン）<br>**一括承認ボタンは置かない**（automation bias 対策: accept にも 1 操作必須という原則をフォーカスモードでも維持するため） |
+| | PDF 読み込み中（issue #28 案3） | 検証データ束の組み立て（Decisions / StudyData / ArmStructures + 全文書ぶんの `extracted_texts`）は PDF バイナリを 1 件も読まない。左ペインの PDF は**表示中の 1 文書だけ**を遅延読込し、解決するまで `.verify__pdf-loading`「PDF を読み込んでいます…」を表示する（右ペインのフォーム・判定操作・matchCount 表示は extracted_texts 基準のため PDF 読み込み中でも即使える）。直近 3 件（`PDF_CACHE_SIZE`）の PDF だけを保持する LRU キャッシュ（`features/verification/pdfViewCache`）を介するため、表示していない文書・4 件目以降にあふれた文書は都度読み直しになる。読み込みに失敗すると `.verify__pdf-error` + 「再試行」ボタン（キャッシュを捨てて読み直す）。高速な文書切替・ズーム変更では常に最新の要求だけが表示に反映される（連番ガード + pdfjs `RenderTask.cancel()`） |
 | | `?entity=` ディープリンク | `#/verify?study={study_id}&entity={entity_key}`（S9 ダッシュボードのセルクリック）で該当 entity のタブへ切替 + 先頭セルへスクロール・フォーカス（[ui-flow.md §3](ui-flow.md)）。存在しない entity_key・群構成未確定でロック中のタブに属する entity は無視（通常表示のまま）。セレクタでの study 切替は `?study=` のみ書き戻す（entity は引き継がない） |
 | | `?study=` が不正 | 存在しない study_id は `#verify-error`「study {id} が見つかりません」+ セレクタから選び直せる |
-| | study 切替中 | `#verify-doc-loading`（検証データ束の読み込み。前の study の全文書 PDF は破棄してから読む） |
+| | study 切替中 | `#verify-doc-loading`（検証データ束の読み込み。前の study の PDF キャッシュは丸ごと破棄してから読む） |
 | | 群構成が未確定 | **arm / outcome_result タブがディム（`aria-disabled`）+ 「まず群構成を確定してください」**（rob_domain タブは群構成に依存しないためディムしない）。群構成確定カード `#verify-arm-card` を表示: AI ドラフトの arm 一覧（`arm_key` + 名称入力。初期値 = Evidence の arm 名フィールド値）+ 行の追加 / 削除 + 「群構成を確定」`#verify-arm-confirm`。名称が空の行があるうちは確定不可（インラインエラー `#verify-arm-error`）。arm / outcome_result レベル項目が 1 つもないスキーマ（= 群構成が要らない）ではカード自体を出さない（ディム対象タブも存在しない） |
 | | 群構成が確定済み | カードは要約表示「群構成: n 群（version v）」+ 「改訂」`#verify-arm-revise` で再編集 → 確定で `ArmStructures` へ新 version を追記（監査証跡）。arm / outcome_result タブが有効化される。arm タブは `ArmStructures` の全 arm をインスタンス源に含め、AI Evidence がない arm でも `AI 抽出なし（手入力のみ）` の空セルを表示する |
 | | outcome_result 追加 | 群構成が確定済み、かつ outcome_result 項目があるとき、アウトカムタブ上部に `#verify-outcome-add` を表示する。`#verify-outcome-key` は既存 `outcome_<n>` の次番号を既定値にし、`#verify-outcome-time` は任意。`#verify-outcome-add-button` で `outcome:<key>\|arm:<n>`（time 入力ありは `\|time:<time>` 付き）を確定 arm 全体に作り、`Decisions` へ予約 `field_id=__entity_instance__` の宣言イベントを追記する。追加直後は該当 outcome × arm の全 field が空セルとして表示され、進捗分母にも含まれる。既存キーと衝突、`:` / `\|` を含むキー、確定 arm なし、arm_key 不正の場合は保存せず `#verify-outcome-error`（`role="alert"`）を表示する |
 | | 幽霊セルの進捗 | 非 study タブの「インスタンス × field」直積で生じる Evidence なしセルは、検証進捗・ダッシュボード・エクスポート警告の総セル数に含める。これは AI 未抽出セルも人間が `edit` / `reject` / `not_reported` で明示判定するためで、未判定のままなら残数として表示する |
 | | anchor failed 項目 | フォーム側に quote 全文 + 「本文内を検索」ボタン。ハイライトは描画しない |
 | | `no_text_layer` document | 表示中文書がテキスト層なしのとき、PDF は表示するがハイライトなし。全項目が quote 全文 + ページヒント表示。「本文内を検索」ボタンは出さない（テキスト層がないため）。左ペインに「この PDF はテキスト層がないためハイライト検証は使えません」バナー（文書切替タブで別文書に移ると表示中文書に応じて出し分け） |
+| | 左ペイン表示切替（PDF / 抽出テキスト。issue #28 案2） | 左ペイン上部に `.verify__view-toggle`（「PDF」/「抽出テキスト」ボタン。`aria-pressed` で状態表示）。パネル単位の状態で既定は PDF。表・段組み・脚注は PDF でしか確認できないため置き換えではなく切替。項目フォーカス / 根拠クリック（「ハイライトへ移動」・f キー）/ 判定自動送りのたびに、PDF モードは従来どおりページジャンプ、テキストモードは抽出テキストビュー（下記）のスニペットを当該 Evidence の文脈へ差し替える。文書自動切替（`Evidence.document_id` への切替）は両モードで従来どおり機能する。表示中文書に抽出テキストが無い（`no_text_layer` / 抽出失敗で全ページ空文字）ときは「抽出テキスト」ボタンを disabled（ツールチップ + 近傍注記で理由を表示）にし、テキストモード中にそのような文書へ自動切替した場合は PDF モードへ自動で戻す |
+| | 抽出テキストビュー | 3 状態: (1) 根拠未選択（項目未選択、または AI 抽出のない項目にフォーカス中） — 案内文言のみ。(2) スニペット表示 — 出所文書（ファイル名 + role）/ ページ番号 / 引用前後の文脈（前後 400 字。`features/verification/textContext.ts`。ページ境界をまたいで連結しない）+ 引用箇所を `<mark>` で強調。(3) 再特定不能（quote が抽出テキスト上で見つからない） — 引用全文 + 「抽出テキスト上に根拠箇所を再特定できません」の案内 |
 | | 複数一致 | 「他 n 箇所に一致」リンク。クリックでハイライト切替 + PDF スクロール |
 | | 保存失敗（オフライン） | 判定チップは楽観更新しつつ、`#verify-queued`「オフライン: N 件キュー中」。復帰後の再送成功でキュー表示が消える |
 | `#/dashboard` | 読み込み中 | `#dashboard-loading`「進捗を読み込んでいます…」（Evidence がある study 一覧 + Decisions を読む間。初回表示時に自動読込） |
@@ -155,16 +178,35 @@ spec が正。実装が追いついていない箇所は以下のとおり（実
 
 ## 4. キーボードショートカット・検証パネルのフォーカス挙動
 
-[ui-flow.md §7](ui-flow.md) のキー操作は `#/verify` がアクティブな時のみ反応する。入力フィールドにフォーカスがある間は判定キー（`a` / `x` / `n`）を発火させない（`e` で入った編集中に `a` と打って accept 誤爆しないこと）。
+[ui-flow.md §7](ui-flow.md) のキー操作は `#/verify` がアクティブな時のみ反応する。入力フィールドにフォーカスがある間は判定キー（`a` / `x` / `n`）を発火させない（`e` で入った編集中に `a` と打って accept 誤爆しないこと）。キー割当・「今判断すべき変数」を上に出す考え方はレイアウトモード共通だが、`j` / `k` / `h` / `l` の意味と `z` の対象セルはモードによって異なる（下記）。
 
-検証パネル（S6 / S8 共有）のフォーカスとスクロールは automation bias 対策と作業効率のため次のように振る舞う（一番上が常に「今判断すべき変数」になるよう、判定済みセルは下部ブロックへ送る）：
+**既定はフォーカスモード**（issue #38。`#verify-layout-toggle` でリストモードへ切替可・設定は S6 / S8 で共有）。**一括承認ボタンは置かない**（automation bias 対策: accept にも 1 操作必須という原則をユニット単位のマトリクス表示でも崩さない）。
+
+### リストモード時
+
+判定済みセルはタブ末尾へ送り、未判定セルが常に上に残る 1 セル 1 カードの一覧表示（現行の従来 UI）：
 
 - **初期フォーカス = 最初の未判定セル**: 画面を開いた直後・タブ切替時のフォーカスは、そのタブで最初の未判定（`unverified`）セルへ当てる。判定済みセルから作業が始まらないようにする。全セル判定済みならタブ先頭セル、セルが無ければフォーカスなし
 - **判定済みブロック**: 未判定セルはスキーマ順のまま上に残し、判定済みセルはタブ末尾の「判定済み（n）」セクション `.verify__group--decided` へ移す。判定済みセルはコンパクト行（判定チップ + 項目ラベル + グループ見出し + 確定値の 1 行 `.verify__cell--decided`。判定操作ボタンなし）で表示し、クリックまたは `j` / `k` での着地で通常カードに展開（「たたむ」`.verify__decided-collapse` でコンパクトへ戻す）。所属グループの全セルが判定済みになったらグループ見出しごと上から消える
 - **直近判定の 1 件は元の位置に残す**: 判定直後の見直し・`z`（戻す）のため、最後に判定したセルだけは判定済みブロックへ送らず元の位置に通常カードのまま残す。次の判定で入れ替わりに判定済みブロックへ移る
 - **判定後の自動遷移**: `a` / `e` / `x` / `n` の判定確定後、現在セルの次以降（末尾まで無ければ先頭へ回り込む）で最初の未判定セルへフォーカスを自動的に移す（`j` の手動送りが不要）。判定済みセルはスキップする。全セル判定済みなら現在セルに留まる。PDF ハイライトも遷移先へ追従する
 - **`z`（戻す）は留まる**: undo は取り消し直後に同じセルで再判定するため、フォーカスを動かさない。取り消しでセルが未検証へ戻ると元のスキーマ順の位置（上のブロック）へ戻る
+- **`j` / `k` / `↑` / `↓`**: 表示順（未判定 + 直近判定 → 判定済みブロック）で 1 セルずつ移動する
+- **`h` / `l` / `←` / `→`**: リストモードでは無効（フォーカスモード専用キー）
 - **スクロール位置の保持**: 判定のたびにフォームペインを作り直すが、スクロール位置を退避・復元して先頭へ飛ばさない。遷移先セルが画面外のときだけ最小移動で見せる
+
+### フォーカスモード時
+
+「検証ユニット」（マトリクスカード 1 枚。§3 `#/verify` の「レイアウトモード」行を参照）単位で移動する：
+
+- **初期フォーカス = 最初の未判定ユニットの最初の未判定セル**: 画面を開いた直後・タブ切替時は、未判定セルを含む最初のユニットの、行優先で最初の未判定セルへ当てる。全ユニット判定済みなら先頭ユニットの先頭セル、ユニットが無ければフォーカスなし
+- **判定後の自動遷移**: 判定確定後は同一ユニット内の次の未判定セル（行優先・折り返しなし）→ 無ければ次の未判定ユニットの最初の未判定セル（末尾まで無ければ先頭ユニットへ回り込む）→ それも無ければ現在セルに留まる
+- **`j` / `k` / `↑` / `↓`**: ユニット内の**行**移動（同じ列を維持。端で停止。null セル〔存在しないセル〕はスキップ）
+- **`h` / `l` / `←` / `→`**: ユニット内の**列**移動（同じ行を維持。端で停止。null セルはスキップ）
+- **`Shift+J` / `Shift+K`**: **前後のユニットへ移動**（判定状況に関係なく移動し、着地はそのユニットの最初の未判定セル → 無ければ先頭セル）。端では停止する（折り返さない）
+- **`z`（戻す）は直近判定セルへ効く**: リストモードと異なり、フォーカス中セルではなく**直近判定セル**（`#verify-focus-recent` に固定表示）の undo を行う。ユニットをまたいでも効く。直近判定が無ければフォーカス中セルへの undo（無害）
+- **`a` / `e` / `x` / `n` / `f`**: 現行どおりフォーカス中セルへ作用する
+- 詳細ストリップ（マトリクス下の判定操作カード）は常に同じ構造で表示するため、判定のたびにカードの高さが大きく変わらない
 
 ## 5. レビュー時のチェックリスト（人 + AI 共通）
 

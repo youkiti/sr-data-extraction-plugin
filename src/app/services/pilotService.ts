@@ -21,6 +21,8 @@ import type { LlmProviderId } from '../../domain/llmApiLog';
 import type { LLMProvider } from '../../lib/llm/LLMProvider';
 import { missingApiKeyMessage } from '../../lib/llm/modelCatalog';
 import { resolveProviderId, type ProviderConfig } from '../../lib/llm/providerFactory';
+import type { RateLimitPolicy } from '../../lib/llm/rateLimitPolicy';
+import type { VerifyLayoutMode } from '../../lib/storage/settingsStore';
 import { nowIso8601 } from '../../utils/iso8601';
 import type { PilotState, Store } from '../store';
 import { showToast } from '../ui/toast';
@@ -31,6 +33,7 @@ import {
   persistArmConfirmation,
   persistDecisionWrite,
   persistInstanceDeclarations,
+  persistVerifyLayoutMode,
   type QueuedDecisionWrite,
   type VerificationDeps,
 } from './verificationService';
@@ -40,6 +43,8 @@ export interface PilotServiceDeps extends VerificationDeps {
   loadApiKey: (provider: LlmProviderId) => Promise<string | null>;
   /** provider 生成（実行時は lib/llm/providerFactory.createProvider。テストは fake を注入） */
   buildProvider: (config: ProviderConfig) => LLMProvider;
+  /** 実効レート制限ポリシー（429 対策）を解決する。runExtraction へそのまま渡す */
+  resolveRateLimitPolicy?: () => Promise<RateLimitPolicy>;
 }
 
 function toMessage(err: unknown): string {
@@ -132,7 +137,7 @@ export async function runPilot(store: Store, deps: PilotServiceDeps): Promise<vo
   const fields = state.schema.currentFields;
   if (fields === null || fields.length === 0) {
     patchPilot(store, {
-      runError: '確定済みスキーマを読み込めていません。#/schema で確定・再読込してください',
+      runError: '確定済みの表のデザインを読み込めていません。表のデザイン画面で確定・再読込してください',
     });
     return;
   }
@@ -178,6 +183,7 @@ export async function runPilot(store: Store, deps: PilotServiceDeps): Promise<vo
         apiKey,
         loadDocumentPages: makeLoadDocumentPages(targets, deps.google),
         buildProvider: deps.buildProvider,
+        resolveRateLimitPolicy: deps.resolveRateLimitPolicy,
         newUuid: deps.newUuid,
         now: deps.now,
       },
@@ -381,10 +387,24 @@ export async function loadPilotVerification(
       verifyLoading: false,
       verification: bundle.verification,
       studyValues: bundle.studyValues,
+      layoutMode: bundle.layoutMode,
     });
   } catch (err) {
     patchPilot(store, { verifyLoading: false, verifyError: toMessage(err) });
   }
+}
+
+/**
+ * 検証パネルのレイアウトモードを切替える（`#verify-layout-toggle`。パネル側は楽観反映済み）。
+ * store へ反映しつつ settingsStore へ永続化する（S6 / S8 で設定を共有）
+ */
+export async function setPilotLayoutMode(
+  store: Store,
+  deps: PilotServiceDeps,
+  mode: VerifyLayoutMode,
+): Promise<void> {
+  patchPilot(store, { layoutMode: mode });
+  await persistVerifyLayoutMode(mode, deps);
 }
 
 /**
@@ -405,7 +425,7 @@ export async function persistPilotDecision(
     (candidate: SchemaField) => candidate.fieldId === decision.fieldId,
   );
   if (field === undefined) {
-    showToast(`判定を保存できません: field_id ${decision.fieldId} がスキーマにありません`);
+    showToast(`判定を保存できません: field_id ${decision.fieldId} が表のデザインにありません`);
     return;
   }
   let studyValues: Record<string, string | null> | null = null;

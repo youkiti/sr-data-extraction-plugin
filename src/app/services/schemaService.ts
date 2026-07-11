@@ -35,7 +35,11 @@ import { withLogging } from '../../lib/llm/apiLogger';
 import type { LLMProvider } from '../../lib/llm/LLMProvider';
 import { missingApiKeyMessage } from '../../lib/llm/modelCatalog';
 import { resolveProviderId, type ProviderConfig } from '../../lib/llm/providerFactory';
-import { withRetry } from '../../lib/llm/retry';
+import {
+  applyRateLimitPolicy,
+  UNLIMITED_POLICY,
+  type RateLimitPolicy,
+} from '../../lib/llm/rateLimitPolicy';
 import { FACTORY_DEFAULT_MODEL, loadDefaultModel } from '../../lib/storage/settingsStore';
 import type { SchemaState, Store } from '../store';
 import { showToast } from '../ui/toast';
@@ -47,6 +51,11 @@ export interface SchemaServiceDeps {
   loadApiKey: (provider: LlmProviderId) => Promise<string | null>;
   /** provider 生成（実行時は lib/llm/providerFactory.createProvider。テストは fake を注入） */
   buildProvider: (config: ProviderConfig) => LLMProvider;
+  /**
+   * 実効レート制限ポリシー（429 対策）を解決する。未注入なら UNLIMITED_POLICY。
+   * 本番は bootstrap が settingsStore.resolveRateLimitPolicy を注入する
+   */
+  resolveRateLimitPolicy?: () => Promise<RateLimitPolicy>;
   /** Options の既定モデル設定を解決する（未指定は lib/storage/settingsStore.loadDefaultModel） */
   loadDefaultModel?: () => Promise<string | null>;
   newUuid?: () => string;
@@ -239,7 +248,10 @@ export async function runDraftSchema(store: Store, deps: SchemaServiceDeps): Pro
     const llmFolder = await ensureChildFolder('llm', logsFolder.id, deps.google);
 
     const baseProvider = deps.buildProvider({ apiKey, model });
-    const provider = withRetry(
+    // 429 対策のレート制限ポリシーを適用（draft は 1 リクエストなのでスロットルより
+    // リトライ強化が効く。extractionService と同じ経路。docs/requirements.md §4.3）
+    const policy = await (deps.resolveRateLimitPolicy ?? (async () => UNLIMITED_POLICY))();
+    const provider = applyRateLimitPolicy(
       withLogging(baseProvider, 'draft_schema', {
         uploadJson: async ({ filename, content }) => {
           const file = await uploadTextFile(
@@ -253,6 +265,7 @@ export async function runDraftSchema(store: Store, deps: SchemaServiceDeps): Pro
         newUuid: deps.newUuid,
         now: deps.now,
       }),
+      policy,
     );
 
     const response = await provider.chat(
@@ -388,7 +401,7 @@ export async function confirmSchema(
   if (rows.length === 0 || errors.length > 0) {
     patchSchema(store, {
       editorErrors: errors,
-      draftError: rows.length === 0 ? 'スキーマ項目が 1 件もありません' : null,
+      draftError: rows.length === 0 ? '表のデザイン項目が 1 件もありません' : null,
     });
     return;
   }
@@ -423,7 +436,7 @@ export async function confirmSchema(
       },
       counts: { ...after.counts, schemaVersions: versions.length },
     });
-    showToast(`スキーマ v${version.schemaVersion} を確定しました（${fields.length} 項目）`);
+    showToast(`表のデザイン v${version.schemaVersion} を確定しました（${fields.length} 項目）`);
   } catch (err) {
     patchSchema(store, { confirming: false, draftError: toMessage(err) });
   }

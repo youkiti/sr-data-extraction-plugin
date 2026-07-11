@@ -8,6 +8,7 @@ import {
   persistPilotDecision,
   persistPilotInstanceDeclarations,
   runPilot,
+  setPilotLayoutMode,
   setPilotModel,
   togglePilotStudy,
   type PilotServiceDeps,
@@ -42,7 +43,7 @@ import {
   readDecisionsByStudy,
 } from '../../../../src/features/verification/decisionRepository';
 import type { VerificationData } from '../../../../src/features/verification/types';
-import { ensureChildFolder, getFileBinary } from '../../../../src/lib/google/drive';
+import { ensureChildFolder, getFileBinary, getFileText } from '../../../../src/lib/google/drive';
 import { getCurrentUserEmail } from '../../../../src/lib/google/identity';
 import type { OfflineQueue } from '../../../../src/lib/storage/offlineQueue';
 
@@ -87,6 +88,7 @@ jest.mock('../../../../src/features/verification/armStructureRepository', () => 
 jest.mock('../../../../src/lib/google/drive', () => ({
   ensureChildFolder: jest.fn(),
   getFileBinary: jest.fn(),
+  getFileText: jest.fn(),
 }));
 jest.mock('../../../../src/lib/google/identity', () => ({
   getCurrentUserEmail: jest.fn(),
@@ -118,6 +120,7 @@ const readArmStructuresMock = readArmStructuresByStudy as jest.MockedFunction<
 >;
 const ensureChildFolderMock = ensureChildFolder as jest.MockedFunction<typeof ensureChildFolder>;
 const getFileBinaryMock = getFileBinary as jest.MockedFunction<typeof getFileBinary>;
+const getFileTextMock = getFileText as jest.MockedFunction<typeof getFileText>;
 const getCurrentUserEmailMock = getCurrentUserEmail as jest.MockedFunction<
   typeof getCurrentUserEmail
 >;
@@ -317,6 +320,7 @@ beforeEach(() => {
   readStudyDataSheetMock.mockResolvedValue({ fieldNames: [], rows: [] });
   readArmStructuresMock.mockResolvedValue([]);
   getFileBinaryMock.mockResolvedValue(new ArrayBuffer(8));
+  getFileTextMock.mockResolvedValue('');
   getCurrentUserEmailMock.mockResolvedValue(ME);
 });
 
@@ -395,7 +399,7 @@ describe('runPilot: 事前バリデーション', () => {
     for (const fields of [null, [] as SchemaField[]]) {
       const store = makeStore({ fields });
       await runPilot(store, makeDeps());
-      expect(store.getState().pilot.runError).toContain('確定済みスキーマを読み込めていません');
+      expect(store.getState().pilot.runError).toContain('確定済みの表のデザインを読み込めていません');
     }
   });
 
@@ -491,8 +495,13 @@ describe('runPilot: 実行', () => {
     expect(state.pilot.verifyStudyId).toBe('study-doc-1');
     expect(state.pilot.verification).not.toBeNull();
     expect(state.pilot.verification?.annotator).toBe(ME);
-    expect(state.pilot.verification?.documents[0]?.pdf).not.toBeNull();
-    expect(state.pilot.verification?.documents[0]?.textPages).toHaveLength(1);
+    // v0.10 study/document モデル: 文書の軽量素材（extractedPages）は bundle 組み立て時に持つ。
+    // PDF バイナリは読まれておらず（issue #28 案3）、loadPdfView を呼んで初めて取得できる
+    expect(state.pilot.verification?.documents[0]?.extractedPages).toEqual([]);
+    expect(getFileBinaryMock).not.toHaveBeenCalled();
+    const loaded = await state.pilot.verification?.loadPdfView('doc-1');
+    expect(loaded?.pdf).not.toBeNull();
+    expect(getFileBinaryMock).toHaveBeenCalledTimes(1);
   });
 
   test('進捗コールバックが pilot.progress を更新する', async () => {
@@ -659,9 +668,14 @@ describe('loadPilotVerification', () => {
     expect(pilot.verification?.evidence.map((item) => item.evidenceId)).toEqual(['ev-1']);
     expect(pilot.verification?.documents.map((doc) => doc.document.documentId)).toEqual(['doc-1']);
     expect(pilot.studyValues).toEqual({ sample_size_total: '100' });
-    expect(pilot.verification?.documents[0]?.pdfError).toBeNull();
+    // bundle 組み立て時点では PDF を読まない（issue #28 案3）。loadPdfView で初めて取得できる
+    expect(getFileBinaryMock).not.toHaveBeenCalled();
+    const loaded = await pilot.verification?.loadPdfView('doc-1');
+    expect(loaded?.pdfError).toBeNull();
     // ビューア用ドキュメントは元 PDF のページをそのまま返す
-    await expect(pilot.verification?.documents[0]?.pdf?.getPage(1)).resolves.toBeDefined();
+    await expect(loaded?.pdf?.getPage(1)).resolves.toBeDefined();
+    // レイアウトモードは検証データ束の読込時に settingsStore から読む（issue #38。未設定は既定 focus）
+    expect(pilot.layoutMode).toBe('focus');
   });
 
   test('自分の StudyData 行が無ければ空 values から始める。email 不明は空文字 annotator', async () => {
@@ -677,9 +691,10 @@ describe('loadPilotVerification', () => {
     getFileBinaryMock.mockRejectedValue(new Error('404 not found'));
     await loadPilotVerification(store, makeDeps(), 'study-doc-1');
     const { verification } = store.getState().pilot;
-    expect(verification?.documents[0]?.pdf).toBeNull();
-    expect(verification?.documents[0]?.pdfError).toBe('404 not found');
-    expect(verification?.documents[0]?.textPages).toEqual([]);
+    const loaded = await verification?.loadPdfView('doc-1');
+    expect(loaded?.pdf).toBeNull();
+    expect(loaded?.pdfError).toBe('404 not found');
+    expect(loaded?.textPages).toEqual([]);
     expect(store.getState().pilot.verifyError).toBeNull();
   });
 
@@ -696,10 +711,22 @@ describe('loadPilotVerification', () => {
     const pdf = makePdf();
     const deps = makeDeps({ loadPdf: jest.fn().mockResolvedValue(pdf) });
     await loadPilotVerification(store, deps, 'study-doc-1');
+    // 表示中文書の PDF を読み込む（bundle 組み立て自体は PDF を読まないため明示的に読み込む）
+    await store.getState().pilot.verification?.loadPdfView('doc-1');
     expect(pdf.destroy).not.toHaveBeenCalled();
     await loadPilotVerification(store, deps, 'study-doc-2');
     expect(pdf.destroy).toHaveBeenCalledTimes(1);
     expect(store.getState().pilot.verifyStudyId).toBe('study-doc-2');
+  });
+});
+
+describe('setPilotLayoutMode（issue #38）', () => {
+  test('pilot.layoutMode を楽観反映し、settingsStore（deps 注入）へ永続化する', async () => {
+    const store = makeStore({});
+    const saveVerifyLayoutMode = jest.fn().mockResolvedValue(undefined);
+    await setPilotLayoutMode(store, makeDeps({ saveVerifyLayoutMode }), 'list');
+    expect(store.getState().pilot.layoutMode).toBe('list');
+    expect(saveVerifyLayoutMode).toHaveBeenCalledWith('list');
   });
 });
 

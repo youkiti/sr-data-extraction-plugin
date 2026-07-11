@@ -39,6 +39,7 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<PilotViewCallback
     onRetryVerifyLoad: jest.fn(),
     onDecision: jest.fn(),
     onArmConfirm: jest.fn(),
+    onChangeLayoutMode: jest.fn(),
     onInstanceDeclare: jest.fn(),
   };
   return {
@@ -46,6 +47,7 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<PilotViewCallback
       home: { onReload: jest.fn() },
       documents: {
         onImport: jest.fn(),
+        onImportFiles: jest.fn(),
         onReload: jest.fn(),
         onSaveStudyLabel: jest.fn(),
         onSaveRegistrationId: jest.fn(),
@@ -94,6 +96,7 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<PilotViewCallback
         onRetryLoad: jest.fn(),
         onDecision: jest.fn(),
         onArmConfirm: jest.fn(),
+        onChangeLayoutMode: jest.fn(),
       },
       dashboard: { onReload: jest.fn() },
       export: {
@@ -499,10 +502,16 @@ describe('完了（サマリ + 埋め込み検証）', () => {
     expect(failed.callbacks.onRetryVerifyLoad).toHaveBeenCalled();
 
     const verification = makeVerification();
-    const ok = render(makeState({ pilot: { run: makeRun(), verification } }));
+    const ok = render(
+      makeState({ pilot: { run: makeRun(), verification, layoutMode: 'list' } }),
+    );
     expect(ok.root.querySelector('.verify')).not.toBeNull();
     const options = renderPanelMock.mock.calls[0]?.[0];
     expect(options?.data).toBe(verification);
+    // レイアウトモードは pilot スライスから渡り、トグルは ctx.pilot.onChangeLayoutMode へ委譲される（issue #38）
+    expect(options?.layoutMode).toBe('list');
+    options?.onLayoutModeChange?.('focus');
+    expect(ok.callbacks.onChangeLayoutMode).toHaveBeenCalledWith('focus');
     // onDecision は ctx.pilot.onDecision へ委譲される
     const decision = { fieldId: 'f-1' } as never;
     options?.onDecision(decision);

@@ -15,6 +15,7 @@ playwright-report/
 
 # 環境変数（OAUTH_CLIENT_ID 等）
 .env
+*.pem
 
 # Chrome 拡張の署名鍵（安定した拡張 ID を保つ秘密鍵。絶対にコミットしない）
 *.pem

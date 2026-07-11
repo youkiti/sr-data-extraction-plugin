@@ -12,13 +12,14 @@ function jsonResponse(body: unknown, status = 200): Response {
   } as Response;
 }
 
-function errorResponse(status: number, body = 'err'): Response {
+function errorResponse(status: number, body = 'err', retryAfter: string | null = null): Response {
   return {
     ok: false,
     status,
     json: async () => ({}),
     text: async () => body,
-  } as Response;
+    headers: { get: (name: string) => (name.toLowerCase() === 'retry-after' ? retryAfter : null) },
+  } as unknown as Response;
 }
 
 describe('GeminiProvider.chat', () => {
@@ -189,6 +190,24 @@ describe('GeminiProvider.chat', () => {
     }
   });
 
+  test('429 の Retry-After ヘッダ（秒）を retryAfterMs に載せる', async () => {
+    const fetch = jest.fn().mockResolvedValue(errorResponse(429, 'rate limit', '30'));
+    const provider = new GeminiProvider({ apiKey: 'k', fetch });
+    await expect(provider.chat([{ role: 'user', content: 'q' }])).rejects.toMatchObject({
+      status: 429,
+      retryAfterMs: 30_000,
+    });
+  });
+
+  test('Retry-After ヘッダが無ければ retryAfterMs は null', async () => {
+    const fetch = jest.fn().mockResolvedValue(errorResponse(500, 'boom'));
+    const provider = new GeminiProvider({ apiKey: 'k', fetch });
+    await expect(provider.chat([{ role: 'user', content: 'q' }])).rejects.toMatchObject({
+      status: 500,
+      retryAfterMs: null,
+    });
+  });
+
   test('text() が失敗しても空文字で吸収して LlmProviderError を投げる', async () => {
     const failingRes = {
       ok: false,
@@ -197,7 +216,8 @@ describe('GeminiProvider.chat', () => {
       text: async (): Promise<string> => {
         throw new Error('net');
       },
-    } as Response;
+      headers: { get: () => null },
+    } as unknown as Response;
     const fetch = jest.fn().mockResolvedValue(failingRes);
     const provider = new GeminiProvider({ apiKey: 'k', fetch });
     await expect(provider.chat([{ role: 'user', content: 'q' }])).rejects.toMatchObject({

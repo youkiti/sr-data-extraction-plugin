@@ -13,6 +13,7 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<VerifyViewCallbac
     onRetryLoad: jest.fn(),
     onDecision: jest.fn(),
     onArmConfirm: jest.fn(),
+    onChangeLayoutMode: jest.fn(),
     onInstanceDeclare: jest.fn(),
   };
   return {
@@ -20,6 +21,7 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<VerifyViewCallbac
       home: { onReload: jest.fn() },
       documents: {
         onImport: jest.fn(),
+        onImportFiles: jest.fn(),
         onReload: jest.fn(),
         onSaveStudyLabel: jest.fn(),
         onSaveRegistrationId: jest.fn(),
@@ -63,6 +65,7 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<VerifyViewCallbac
         onRetryVerifyLoad: jest.fn(),
         onDecision: jest.fn(),
         onArmConfirm: jest.fn(),
+        onChangeLayoutMode: jest.fn(),
       },
       extract: {
         onToggleStudy: jest.fn(),
@@ -157,7 +160,9 @@ function makeTarget(overrides: Partial<VerifyTarget> = {}): VerifyTarget {
 function makeVerification(): VerificationData {
   return {
     study: makeStudy(),
-    documents: [{ document: makeDocument(), pdf: null, pdfError: 'テストでは PDF なし', textPages: [] }],
+    documents: [{ document: makeDocument(), extractedPages: [], extractedTextError: null }],
+    loadPdfView: async () => ({ pdf: null, pdfError: 'テストでは PDF なし', textPages: [] }),
+    retryPdfView: async () => ({ pdf: null, pdfError: 'テストでは PDF なし', textPages: [] }),
     fields: [makeField()],
     evidence: [],
     decisions: [],
@@ -284,6 +289,24 @@ describe('renderVerifyView', () => {
     expect(callbacks.onDecision).toHaveBeenCalledWith(
       expect.objectContaining({ action: 'not_reported', studyId: 'study-1' }),
     );
+  });
+
+  test('レイアウトモードは verify スライスからパネルへ渡り、トグルが onChangeLayoutMode へ委譲される（issue #38）', () => {
+    const { ctx, callbacks } = makeCtx();
+    const verification = makeVerification();
+    const root = render(
+      makeState({
+        targets: [makeTarget()],
+        selectedStudyId: 'study-1',
+        verification,
+        layoutMode: 'list',
+      }),
+      ctx,
+    );
+    const toggle = root.querySelector<HTMLButtonElement>('#verify-layout-toggle');
+    expect(toggle?.textContent).toBe('フォーカス表示に切替'); // list スライス値がパネルへ渡っている
+    toggle?.click();
+    expect(callbacks.onChangeLayoutMode).toHaveBeenCalledWith('focus');
   });
 
   test('deepLinkEntityKey（?entity=）がパネルへ渡り、該当タブへ切替える', async () => {

@@ -8,6 +8,7 @@ import {
   confirmMerge,
   ignoreCandidate,
   ignoredCandidatesKey,
+  importFromFiles,
   importFromPicker,
   loadDocuments,
   openMergeCandidate,
@@ -264,7 +265,7 @@ describe('importFromPicker', () => {
       return {
         importedStudies: [makeStudy({ studyId: 'study-1' })],
         imported: [makeDoc({ documentId: 'doc-1', studyId: 'study-1' })],
-        failures: [{ sourceFileId: 'src-2', filename: 'b.pdf', stage: 'extract', detail: 'parse' }],
+        failures: [{ key: 'src-2', filename: 'b.pdf', stage: 'extract', detail: 'parse' }],
       };
     });
 
@@ -300,13 +301,13 @@ describe('importFromPicker', () => {
 
     expect(mockListFolderPdfs).toHaveBeenCalledWith('folder-1', expect.anything());
     expect(mockImportDocuments.mock.calls[0]?.[0].selections).toEqual([
-      { sourceFileId: 'src-1', filename: 'a.pdf' },
-      { sourceFileId: 'src-2', filename: 'b.pdf' },
+      { key: 'src-1', filename: 'a.pdf', sourceFileId: 'src-1', source: { kind: 'drive', fileId: 'src-1' } },
+      { key: 'src-2', filename: 'b.pdf', sourceFileId: 'src-2', source: { kind: 'drive', fileId: 'src-2' } },
     ]);
     expect(toastTexts()).toContain('フォルダを展開中…');
   });
 
-  test('ファイルとフォルダ混在は結合し sourceFileId で重複排除する', async () => {
+  test('ファイルとフォルダ混在は結合し key（= sourceFileId）で重複排除する', async () => {
     const store = makeStore();
     mockOpenPdfPicker.mockResolvedValue([
       { sourceFileId: 'src-1', filename: 'a.pdf', mimeType: 'application/pdf' },
@@ -322,8 +323,8 @@ describe('importFromPicker', () => {
     await importFromPicker(store, makeDeps());
 
     expect(mockImportDocuments.mock.calls[0]?.[0].selections).toEqual([
-      { sourceFileId: 'src-1', filename: 'a.pdf' },
-      { sourceFileId: 'src-3', filename: 'c.pdf' },
+      { key: 'src-1', filename: 'a.pdf', sourceFileId: 'src-1', source: { kind: 'drive', fileId: 'src-1' } },
+      { key: 'src-3', filename: 'c.pdf', sourceFileId: 'src-3', source: { kind: 'drive', fileId: 'src-3' } },
     ]);
   });
 
@@ -353,6 +354,114 @@ describe('importFromPicker', () => {
     expect(mockImportDocuments).not.toHaveBeenCalled();
     expect(store.getState().documents.importing).toBe(false);
     expect(toastTexts()).toContain('フォルダの読み込みに失敗しました: list failed');
+  });
+});
+
+/** jsdom の File には arrayBuffer() が無いため補って生成する（protocolView.test.ts と同じ手法） */
+function makeFakeFile(name: string, size: number, type = 'application/pdf'): File {
+  const file = new File([new Uint8Array(size)], name, { type });
+  Object.defineProperty(file, 'arrayBuffer', { value: async () => new ArrayBuffer(size) });
+  return file;
+}
+
+describe('importFromFiles', () => {
+  test('プロジェクト未選択 / 取り込み中は importDocuments を呼ばない', async () => {
+    await importFromFiles(makeStore(false), makeDeps(), [makeFakeFile('a.pdf', 10)]);
+    expect(mockImportDocuments).not.toHaveBeenCalled();
+
+    const store = makeStore();
+    setDocs(store, { importing: true });
+    await importFromFiles(store, makeDeps(), [makeFakeFile('a.pdf', 10)]);
+    expect(mockImportDocuments).not.toHaveBeenCalled();
+  });
+
+  test('PDF 以外を除外してトースト、残りは source.kind=local で取り込む', async () => {
+    const store = makeStore();
+    mockImportDocuments.mockResolvedValue({ importedStudies: [], imported: [], failures: [] });
+    const pdf = makeFakeFile('a.pdf', 10);
+    const txt = makeFakeFile('notes.txt', 5, 'text/plain');
+
+    await importFromFiles(store, makeDeps(), [pdf, txt]);
+
+    expect(mockImportDocuments).toHaveBeenCalledTimes(1);
+    const selections = mockImportDocuments.mock.calls[0]?.[0].selections;
+    expect(selections).toEqual([
+      {
+        key: 'local:a.pdf:10',
+        filename: 'a.pdf',
+        sourceFileId: null,
+        source: { kind: 'local', data: expect.any(ArrayBuffer) },
+      },
+    ]);
+    expect(toastTexts()).toContain('PDF 以外の 1 件を除外しました');
+  });
+
+  test('MIME 未設定でも .pdf 拡張子なら PDF 扱いする', async () => {
+    const store = makeStore();
+    mockImportDocuments.mockResolvedValue({ importedStudies: [], imported: [], failures: [] });
+    await importFromFiles(store, makeDeps(), [makeFakeFile('scan.pdf', 10, '')]);
+    expect(mockImportDocuments).toHaveBeenCalledTimes(1);
+  });
+
+  test('filename + size が同一のファイルはバッチ内で重複排除する（サイズ違いは別物）', async () => {
+    const store = makeStore();
+    mockImportDocuments.mockResolvedValue({ importedStudies: [], imported: [], failures: [] });
+    const a = makeFakeFile('a.pdf', 10);
+    const aDup = makeFakeFile('a.pdf', 10);
+    const aOtherSize = makeFakeFile('a.pdf', 20);
+
+    await importFromFiles(store, makeDeps(), [a, aDup, aOtherSize]);
+
+    const selections = mockImportDocuments.mock.calls[0]?.[0]?.selections ?? [];
+    expect(selections.map((s) => s.key)).toEqual(['local:a.pdf:10', 'local:a.pdf:20']);
+  });
+
+  test('PDF が 0 件なら取り込まずトースト案内する（importing は立たない）', async () => {
+    const store = makeStore();
+    await importFromFiles(store, makeDeps(), [makeFakeFile('notes.txt', 5, 'text/plain')]);
+    expect(mockImportDocuments).not.toHaveBeenCalled();
+    expect(store.getState().documents.importing).toBe(false);
+    expect(toastTexts()).toContain('PDF ファイルが選択されていません');
+  });
+
+  test('files が空配列（除外なし）なら 0 件案内トーストも出さない', async () => {
+    const store = makeStore();
+    await importFromFiles(store, makeDeps(), []);
+    expect(mockImportDocuments).not.toHaveBeenCalled();
+    expect(toastTexts()).toHaveLength(0);
+  });
+
+  test('成功で records / studies を追加し done トースト', async () => {
+    const store = makeStore();
+    mockImportDocuments.mockImplementation(async (_params, deps) => {
+      deps.onProgress?.({ fileIndex: 0, totalFiles: 1, filename: 'a.pdf', stage: 'copy' });
+      return {
+        importedStudies: [makeStudy({ studyId: 'study-1' })],
+        imported: [makeDoc({ documentId: 'doc-1', studyId: 'study-1', sourceFileId: null })],
+        failures: [],
+      };
+    });
+
+    await importFromFiles(store, makeDeps(), [makeFakeFile('a.pdf', 10)]);
+
+    const state = store.getState();
+    expect(state.documents.records?.map((d) => d.documentId)).toEqual(['doc-1']);
+    expect(state.documents.studies?.map((s) => s.studyId)).toEqual(['study-1']);
+    expect(toastTexts()).toContain('1 件の PDF を取り込みました');
+  });
+
+  test('失敗混在は key 突き合わせで failed 進捗行になる', async () => {
+    const store = makeStore();
+    mockImportDocuments.mockResolvedValue({
+      importedStudies: [],
+      imported: [],
+      failures: [{ key: 'local:a.pdf:10', filename: 'a.pdf', stage: 'copy', detail: 'quota' }],
+    });
+
+    await importFromFiles(store, makeDeps(), [makeFakeFile('a.pdf', 10)]);
+
+    const rows = store.getState().documents.importRows;
+    expect(rows[0]).toMatchObject({ status: 'failed', detail: 'コピーに失敗: quota' });
   });
 });
 

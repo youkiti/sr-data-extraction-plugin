@@ -5,6 +5,7 @@ import {
   persistVerifyArmConfirmation,
   persistVerifyDecision,
   persistVerifyInstanceDeclarations,
+  setVerifyLayoutMode,
 } from '../../../../src/app/services/verifyService';
 import type {
   QueuedDecisionWrite,
@@ -37,7 +38,7 @@ import {
   readAllDecisions,
   readDecisionsByStudy,
 } from '../../../../src/features/verification/decisionRepository';
-import { getFileBinary } from '../../../../src/lib/google/drive';
+import { getFileBinary, getFileText } from '../../../../src/lib/google/drive';
 import { getCurrentUserEmail } from '../../../../src/lib/google/identity';
 import type { OfflineQueue } from '../../../../src/lib/storage/offlineQueue';
 
@@ -76,6 +77,7 @@ jest.mock('../../../../src/features/verification/armStructureRepository', () => 
 }));
 jest.mock('../../../../src/lib/google/drive', () => ({
   getFileBinary: jest.fn(),
+  getFileText: jest.fn(),
 }));
 jest.mock('../../../../src/lib/google/identity', () => ({
   getCurrentUserEmail: jest.fn(),
@@ -108,6 +110,7 @@ const readArmStructuresMock = readArmStructuresByStudy as jest.MockedFunction<
   typeof readArmStructuresByStudy
 >;
 const getFileBinaryMock = getFileBinary as jest.MockedFunction<typeof getFileBinary>;
+const getFileTextMock = getFileText as jest.MockedFunction<typeof getFileText>;
 const getCurrentUserEmailMock = getCurrentUserEmail as jest.MockedFunction<
   typeof getCurrentUserEmail
 >;
@@ -299,6 +302,7 @@ beforeEach(() => {
   getSchemaFieldsMock.mockResolvedValue([makeField()]);
   getCurrentUserEmailMock.mockResolvedValue(ME);
   getFileBinaryMock.mockResolvedValue(new ArrayBuffer(8));
+  getFileTextMock.mockResolvedValue('');
   readStudiesMock.mockResolvedValue([makeStudy()]);
 });
 
@@ -472,6 +476,60 @@ describe('openVerifyStudy', () => {
     expect(verify.verification?.armStructure).toBeNull();
     expect(verify.verification?.documents.map((doc) => doc.document.documentId)).toEqual(['doc-1']);
     expect(verify.studyValues).toEqual({ sample_size_total: '100' });
+    // bundle 組み立て時点では PDF を 1 件も読まない（issue #28 案3）。extracted_texts のみ先読み
+    expect(getFileBinaryMock).not.toHaveBeenCalled();
+    expect(getFileTextMock).toHaveBeenCalled();
+    // レイアウトモードは検証データ束の読込時に settingsStore から読む（issue #38。未設定は既定 focus）
+    expect(verify.layoutMode).toBe('focus');
+  });
+
+  test('extracted_texts を全文書ぶん先読みし、ページ別テキストへ復元する', async () => {
+    const store = makeStore({ verify: { targets: [makeTarget()] } });
+    getFileTextMock.mockResolvedValue('page one\fpage two');
+    await openVerifyStudy(store, makeDeps(), 'study-doc-1');
+    const { verification } = store.getState().verify;
+    expect(getFileTextMock).toHaveBeenCalledWith('txt-1', expect.anything());
+    expect(verification?.documents[0]?.extractedPages).toEqual([
+      { page: 1, text: 'page one' },
+      { page: 2, text: 'page two' },
+    ]);
+  });
+
+  test('textRef が null（no_text_layer）の文書は extracted_texts を読まず空配列にする', async () => {
+    const doc = makeDocument({ textRef: null, textStatus: 'no_text_layer' });
+    const store = makeStore({
+      documents: [doc],
+      verify: { targets: [makeTarget({ documents: [doc] })] },
+    });
+    await openVerifyStudy(store, makeDeps(), 'study-doc-1');
+    const { verification } = store.getState().verify;
+    expect(getFileTextMock).not.toHaveBeenCalled();
+    expect(verification?.documents[0]?.extractedPages).toEqual([]);
+    expect(verification?.documents[0]?.extractedTextError).toBeNull();
+  });
+
+  test('extracted_texts の読込失敗は空配列 + extractedTextError に留め、bundle 全体は失敗させない', async () => {
+    const store = makeStore({ verify: { targets: [makeTarget()] } });
+    getFileTextMock.mockRejectedValue(new Error('403 forbidden'));
+    await openVerifyStudy(store, makeDeps(), 'study-doc-1');
+    const { verify } = store.getState();
+    expect(verify.verifyError).toBeNull();
+    expect(verify.verification?.documents[0]?.extractedPages).toEqual([]);
+    expect(verify.verification?.documents[0]?.extractedTextError).toBe('403 forbidden');
+  });
+
+  test('loadPdfView / retryPdfView は同じ documentId への複数回呼び出しでも Drive を都度読まない', async () => {
+    const store = makeStore({ verify: { targets: [makeTarget()] } });
+    await openVerifyStudy(store, makeDeps(), 'study-doc-1');
+    const { verification } = store.getState().verify;
+    await verification?.loadPdfView('doc-1');
+    await verification?.loadPdfView('doc-1');
+    expect(getFileBinaryMock).toHaveBeenCalledTimes(1);
+    getFileBinaryMock.mockRejectedValueOnce(new Error('一時的なエラー'));
+    // retryPdfView はキャッシュを無視して読み直す
+    const retried = await verification?.retryPdfView('doc-1');
+    expect(retried?.pdfError).toBe('一時的なエラー');
+    expect(getFileBinaryMock).toHaveBeenCalledTimes(2);
   });
 
   test('一覧に無い study_id は verifyError にして選び直せる', async () => {
@@ -509,6 +567,8 @@ describe('openVerifyStudy', () => {
     const pdf = makePdf();
     const deps = makeDeps({ loadPdf: jest.fn().mockResolvedValue(pdf) });
     await openVerifyStudy(store, deps, 'study-doc-1');
+    // 表示中文書の PDF を読み込む（loadVerificationBundle 自体は PDF を読まないため明示的に読み込む）
+    await store.getState().verify.verification?.loadPdfView('doc-1');
     expect(pdf.destroy).not.toHaveBeenCalled();
     await openVerifyStudy(store, deps, 'study-doc-2');
     expect(pdf.destroy).toHaveBeenCalledTimes(1);
@@ -681,5 +741,15 @@ describe('persistVerifyInstanceDeclarations', () => {
       makeDecision({ fieldId: '__entity_instance__' }),
     ]);
     expect(appendDecisionsMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('setVerifyLayoutMode（issue #38）', () => {
+  test('verify.layoutMode を楽観反映し、settingsStore（deps 注入）へ永続化する', async () => {
+    const store = makeStore({});
+    const saveVerifyLayoutMode = jest.fn().mockResolvedValue(undefined);
+    await setVerifyLayoutMode(store, makeDeps({ saveVerifyLayoutMode }), 'list');
+    expect(store.getState().verify.layoutMode).toBe('list');
+    expect(saveVerifyLayoutMode).toHaveBeenCalledWith('list');
   });
 });

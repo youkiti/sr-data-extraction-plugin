@@ -419,7 +419,7 @@ export function renderExtractView(state: AppState, ctx: ViewContext): HTMLElemen
       el('p', {
         id: 'extract-pilot-warning',
         className: 'extract__pilot-warning',
-        text: 'パイロット抽出を推奨します（スキーマの妥当性を 2〜3 本で確認してから一括抽出してください）',
+        text: 'パイロット抽出を推奨します（表のデザインの妥当性を 2〜3 本で確認してから一括抽出してください）',
       }),
     );
   }

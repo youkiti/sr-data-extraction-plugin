@@ -4,7 +4,12 @@ import {
   type ChatResponse,
   type LLMProvider,
 } from '../../../../src/lib/llm/LLMProvider';
-import { RETRYABLE_STATUSES, withRetry } from '../../../../src/lib/llm/retry';
+import {
+  parseRetryAfterMs,
+  parseServerRetryDelayMs,
+  RETRYABLE_STATUSES,
+  withRetry,
+} from '../../../../src/lib/llm/retry';
 
 function okResponse(text = 'ok'): ChatResponse {
   return { text, tokensIn: 1, tokensOut: 1, raw: {} };
@@ -126,5 +131,113 @@ describe('withRetry', () => {
     const res = await wrapped.chat([{ role: 'user', content: 'hi' }]);
     expect(res.text).toBe('ok');
     expect(calls()).toBe(2);
+  });
+
+  test('サーバ提示の retryDelay（本文 RetryInfo）がバックオフより長ければそちらを待つ', async () => {
+    const delays: number[] = [];
+    const err = new LlmProviderError(
+      'Gemini API failed: HTTP 429',
+      'gemini',
+      429,
+      '{"error":{"details":[{"@type":"type.googleapis.com/google.rpc.RetryInfo","retryDelay":"42s"}]}}',
+    );
+    const { provider } = buildProvider([err, okResponse()]);
+    const wrapped = withRetry(provider, {
+      baseDelayMs: 1_000,
+      sleep: (ms) => {
+        delays.push(ms);
+        return Promise.resolve();
+      },
+    });
+    await wrapped.chat([{ role: 'user', content: 'hi' }]);
+    expect(delays).toEqual([42_000]);
+  });
+
+  test('Retry-After ヘッダ由来（retryAfterMs）はバックオフより優先される', async () => {
+    const delays: number[] = [];
+    const err = new LlmProviderError('HTTP 429', 'gemini', 429, '', 8_000);
+    const { provider } = buildProvider([err, okResponse()]);
+    const wrapped = withRetry(provider, {
+      baseDelayMs: 1_000,
+      sleep: (ms) => {
+        delays.push(ms);
+        return Promise.resolve();
+      },
+    });
+    await wrapped.chat([{ role: 'user', content: 'hi' }]);
+    expect(delays).toEqual([8_000]);
+  });
+
+  test('maxDelayMs でサーバ提示・指数バックオフの両方を頭打ちにする', async () => {
+    const delays: number[] = [];
+    const err = new LlmProviderError('HTTP 429', 'gemini', 429, '', 999_000);
+    const { provider } = buildProvider([err, err, okResponse()]);
+    const wrapped = withRetry(provider, {
+      baseDelayMs: 1_000,
+      maxDelayMs: 5_000,
+      sleep: (ms) => {
+        delays.push(ms);
+        return Promise.resolve();
+      },
+    });
+    await wrapped.chat([{ role: 'user', content: 'hi' }]);
+    expect(delays).toEqual([5_000, 5_000]);
+  });
+});
+
+describe('parseRetryAfterMs', () => {
+  test('null / 空文字は null', () => {
+    expect(parseRetryAfterMs(null)).toBeNull();
+    expect(parseRetryAfterMs('   ')).toBeNull();
+  });
+
+  test('数値は秒として ms へ換算する（負値は 0）', () => {
+    expect(parseRetryAfterMs('30')).toBe(30_000);
+    expect(parseRetryAfterMs('1.5')).toBe(1_500);
+    expect(parseRetryAfterMs('-5')).toBe(0);
+  });
+
+  test('HTTP-date は現在時刻との差分（過去日付は 0）', () => {
+    const now = (): number => Date.parse('2026-07-10T00:00:00Z');
+    expect(parseRetryAfterMs('Fri, 10 Jul 2026 00:00:10 GMT', now)).toBe(10_000);
+    expect(parseRetryAfterMs('Fri, 10 Jul 2026 00:00:00 GMT', now)).toBe(0);
+    // 過去日付
+    expect(parseRetryAfterMs('Thu, 09 Jul 2026 00:00:00 GMT', now)).toBe(0);
+  });
+
+  test('解釈できない文字列は null', () => {
+    expect(parseRetryAfterMs('not-a-date')).toBeNull();
+  });
+
+  test('now 未指定でも既定（Date.now）で HTTP-date を処理できる', () => {
+    const future = new Date(Date.now() + 5_000).toUTCString();
+    const ms = parseRetryAfterMs(future);
+    expect(ms).not.toBeNull();
+    expect(ms as number).toBeGreaterThan(0);
+  });
+});
+
+describe('parseServerRetryDelayMs', () => {
+  test('LlmProviderError 以外は null', () => {
+    expect(parseServerRetryDelayMs(new Error('x'))).toBeNull();
+    expect(parseServerRetryDelayMs('oops')).toBeNull();
+  });
+
+  test('retryAfterMs があれば最優先で採用する', () => {
+    const err = new LlmProviderError('x', 'gemini', 429, '{"retryDelay":"9s"}', 3_000);
+    expect(parseServerRetryDelayMs(err)).toBe(3_000);
+  });
+
+  test('本文の RetryInfo retryDelay（整数・小数秒）を拾う', () => {
+    expect(
+      parseServerRetryDelayMs(new LlmProviderError('x', 'gemini', 429, '"retryDelay": "42s"')),
+    ).toBe(42_000);
+    expect(
+      parseServerRetryDelayMs(new LlmProviderError('x', 'gemini', 429, '"retryDelay":"1.5s"')),
+    ).toBe(1_500);
+  });
+
+  test('retryDelay も retryAfterMs も無ければ null', () => {
+    expect(parseServerRetryDelayMs(new LlmProviderError('x', 'gemini', 429, 'no hint'))).toBeNull();
   });
 });

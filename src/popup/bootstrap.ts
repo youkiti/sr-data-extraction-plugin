@@ -24,7 +24,7 @@ import type { GoogleApiDeps } from '../lib/google/types';
 export interface PopupDeps {
   /** メインビュー（app.html）へ遷移する（S1 はフルページ表示のため同一タブを書き換える） */
   openAppTab: () => void;
-  /** 設定画面（options.html）を開く */
+  /** 設定画面を開く（アプリ内 #/options へ同一タブ遷移） */
   openOptions: () => void;
   /** Sheets / Drive API 呼び出し用の依存 */
   google: GoogleApiDeps;
@@ -51,7 +51,9 @@ export function createChromePopupDeps(): PopupDeps {
       void chrome.tabs.update({ url: chrome.runtime.getURL('app/app.html') });
     },
     openOptions: () => {
-      void chrome.tabs.create({ url: chrome.runtime.getURL('options/options.html') });
+      // 設定はアプリ内 #/options として同一タブで開く（別タブを増やさない）。
+      // メインビューのサイドバー・歯車リンクから各作業画面へ行き来できる
+      void chrome.tabs.update({ url: chrome.runtime.getURL('app/app.html#/options') });
     },
     google: createChromeGoogleApiDeps(auth),
     profile: createChromeProfileDeps(),

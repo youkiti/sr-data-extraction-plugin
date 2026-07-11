@@ -80,7 +80,7 @@ export async function loadExportData(
     const latest = versions[0]; // listSchemaVersions は降順
     if (latest === undefined) {
       // ガード（dataRows ≥ 1）を満たす以上、通常は起きない防御
-      throw new Error('確定済みのスキーマがありません。先にスキーマを確定してください');
+      throw new Error('確定済みの表のデザインがありません。先に表のデザインを確定してください');
     }
     const fields = await getSchemaFieldsByVersion(spreadsheetId, latest.schemaVersion, deps.google);
     // エクスポートはアクティブ study（Documents から参照される study）のみ・作成順（§4.5）
