@@ -13,6 +13,13 @@
   --color-warning-bg: #fff6dd;
   --color-warning-border: #e2c765;
 
+  /* 「未報告」判定チップ（issue #49: 「未検証」の灰色と紛らわしいため紫系へ分離。
+     選択中ハイライト（下記 --color-highlight-active）が青系のため、混同回避で紫を採用） */
+  --color-status-not-reported-bg: #f3e5f5;
+  --color-status-not-reported-bg-hover: #e1bee7;
+  --color-status-not-reported-text: #7b1fa2;
+  --color-status-not-reported-border: #ab47bc;
+
   /* quote ハイライト（検証済み = 緑系 / 未検証 = 黄系 / low confidence = 橙系）。
      alpha は .pdf-viewer__hl の mix-blend-mode: multiply を前提に据え置き（issue #31 C）
      — 乗算合成により濃さに関わらず下地の文字が構造的に読めるため、透過率の調整は不要 */
