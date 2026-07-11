@@ -2,7 +2,9 @@
 
 システマティックレビュー（SR）／スコーピングレビューの**データ抽出工程**を支援する、MIT ライセンスの OSS Chrome 拡張です。SR ツール群 3 部作（[sr-query-builder](https://github.com/youkiti/sr-query-builder-plugin) → [tiab-review](https://github.com/youkiti/tiab-review-plugin) → 本拡張）の 3 作目にあたります。
 
-> **開発ステータス**: MVP 機能実装済み（S1〜S10。実機通し確認は 2026-07-03 完了）・リリース準備中。正典ドキュメントは [docs/requirements.md](docs/requirements.md) を起点に、残タスクは [docs/remaining-work-plan.md](docs/remaining-work-plan.md) を参照してください。
+> **開発ステータス**: Chrome ウェブストアで **v0.1.0 を一般公開しました**（2026-07-12）。MVP 機能実装済み（S1〜S10。実機通し確認は 2026-07-03 完了）。正典ドキュメントは [docs/requirements.md](docs/requirements.md) を起点に、残タスクは [docs/remaining-work-plan.md](docs/remaining-work-plan.md) を参照してください。
+
+> **📦 インストール**: [Chrome ウェブストアの掲載ページ](https://chromewebstore.google.com/detail/sr-data-extraction-plugin/ibpbkgffgkmdmflamhadbcfjgfljjgip)から「Chrome に追加」でインストールできます。
 
 ## なにをするツールか
 
@@ -56,8 +58,7 @@ flowchart LR
 
 ふだんの利用にビルドや開発ツールは不要です。Chrome ウェブストアからインストールして、ご自身の Google アカウントと LLM API キーを設定するだけで使えます。
 
-1. **インストール**: Chrome ウェブストアの掲載ページ（**限定公開のため、配布されたリンクを知っている人のみインストールできます** — リンクは配布者から受け取ってください）を開き、「Chrome に追加」を押します。
-   - ※ 一般公開前は、開発者から共有された限定公開リンクからのみインストールできます。
+1. **インストール**: [Chrome ウェブストアの掲載ページ](https://chromewebstore.google.com/detail/sr-data-extraction-plugin/ibpbkgffgkmdmflamhadbcfjgfljjgip)を開き、「Chrome に追加」を押します（一般公開中のため、ストア検索・リンクのどちらからでもインストールできます）。
 2. **LLM 接続の設定**: 拡張のオプション画面を開き、ご自身の **Gemini API キー**、OpenRouter API キー、または OpenAI 互換 Chat Completions API の完全 URL + API キーを保存します。OpenAI 互換 API は HTTPS に加え、`http://localhost`、`http://127.0.0.1`、`http://[::1]` のローカル LLM に対応します。loopback 接続では API キーを省略できます。別マシン上の HTTP API は直接接続せず、[Tailscale Serve](https://tailscale.com/docs/features/tailscale-serve) または [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/) などで HTTPS 化してください。接続先の Chrome 権限を確認し、構造化出力の接続テストを実行できます。キーはブラウザ内にのみ保存され、外部の開発者サーバーへは送信されません（BYOK）。
    - Gemini API キーは Google AI Studio（<https://aistudio.google.com/apikey>）で取得できます。
 3. **Google アカウント連携（OAuth 同意）**: ポップアップから「ログイン」を押し、Google の同意画面で **Sheets** と **Drive（選択したファイルのみ）** へのアクセスを許可します。要求されるスコープは `spreadsheets` と `drive.file` の 2 つだけです（Drive 全体は読みません。詳細は[データフロー](#データフローサーバーレス構成)）。

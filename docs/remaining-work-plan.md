@@ -22,7 +22,7 @@
 | B | CI-2 | Playwright E2E を GitHub Actions へ追加 | なし | 小（半日） |
 | C | S11 Options 拡充 | 既定モデル設定の追加 | なし | 中（1〜2 日） |
 | D | 抽出精度ベンチマーク（Q8） | `experiments/` でモデル比較 → 既定モデル確定 | C があると楽 | 大（数日 + 判断） |
-| E | リリース準備 | README 仕上げ・Store 提出物・限定公開配布 | D の結果を反映 | 中 |
+| E | リリース準備 | README 仕上げ・Store 提出物・Store 公開 | D の結果を反映 | ✅ 完了（2026-07-12。v0.1.0 一般公開） |
 
 A・B・C は互いに独立なので並行可。D はベンチマーク結果の判断（採用基準）が入るため、**実行前に必ずユーザー承認を取る**チェックポイントがある。
 
@@ -188,7 +188,9 @@ tiab-review の `experiments/` 運用を踏襲する（tiab-review-plugin/AGENTS
 
 ---
 
-## タスク E: リリース準備（Chrome Web Store 限定公開 → 公開）
+## タスク E: リリース準備（Chrome ウェブストア公開）
+
+> ✅ **完了（2026-07-12）**: Chrome ウェブストアで **v0.1.0 を一般公開**（[掲載ページ](https://chromewebstore.google.com/detail/sr-data-extraction-plugin/ibpbkgffgkmdmflamhadbcfjgfljjgip)）。当初は限定公開（unlisted）でのテスター配布を計画していたが（下記 2026-07-06 決定）、最終的に一般公開＝検索可能で掲載した。以下の本文は計画時の記録として残す。提出・審査の実施記録は [docs/store/README.md](store/README.md) の「提出前チェック」を参照。
 
 ### 目的
 
