@@ -64,16 +64,32 @@
   color: var(--color-primary);
 }
 
-/* 設定（options.html）への同一タブ遷移。歯車 1 文字がリンク本体のため aria-label を持つ */
+/* 設定（options.html）への同一タブ遷移。issue #50: 歯車 1 文字だと視認しにくいため
+   アイコン＋「設定」ラベル常時表示のボタン状にする（歯車は装飾扱いで aria-hidden、
+   リンク本体の aria-label で読み上げ文言を確定） */
 .app__options-link {
-  font-size: 18px;
-  line-height: 1;
-  color: var(--color-text-muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-size: 14px;
+  font-weight: 700;
   text-decoration: none;
 }
 
+.app__options-icon {
+  font-size: 18px;
+  line-height: 1;
+}
+
 .app__options-link:hover {
-  color: var(--color-primary);
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: var(--color-on-primary);
 }
 
 .app__context {
