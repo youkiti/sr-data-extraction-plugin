@@ -38,3 +38,15 @@ export type ProjectRole =
   | 'reviewer_independent'
   | 'adjudicator'
   | 'unregistered';
+
+/**
+ * 検証パネル（verificationPanel）が annotator 行 / Decisions へ書き込む annotator_type を
+ * ロールから導出する（docs/design-independent-dual-review.md §5.2）。
+ * `reviewer_independent` だけが独立入力モード（human_independent）で、それ以外
+ * （owner / reviewer_with_ai / adjudicator）は従来どおり human_with_ai として扱う
+ * （adjudicator 自身の検証行為は with_ai 相当。consensus 行は裁定画面 `#/adjudicate`〔PR3〕の
+ * 別経路で書く）。`unregistered` は呼び出し前にガードで弾かれるため実際には渡らない
+ */
+export function annotatorTypeForRole(role: ProjectRole): 'human_with_ai' | 'human_independent' {
+  return role === 'reviewer_independent' ? 'human_independent' : 'human_with_ai';
+}

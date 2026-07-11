@@ -1,11 +1,14 @@
 // #/verify（S8 単独画面）のサービス層（v0.10 フェーズ 3 = study 単位）。
 // - 検証対象一覧の読み込み: Evidence がある study を列挙し、表示 run（最新 run）の
-//   Evidence・スキーマ項目・進捗チップ（判定済み n / 総セル m）を組み立てる
+//   Evidence・スキーマ項目・進捗チップ（判定済み n / 総セル m）を組み立てる。
+//   ただし独立入力モード（reviewer_independent。design §5.1）は Evidence / ExtractionRuns を
+//   一切読まず、Studies × 最新確定スキーマから対象一覧を組む（readIndependentVerifyTargetMaterials）
 // - study の選択（?study= 直リンク / セレクタ切替）: verificationService.loadVerificationBundle
 // - 判定・群構成確定の永続化: verificationService へ委譲
 import type { Decision } from '../../domain/decision';
 import type { DocumentRecord } from '../../domain/document';
 import type { Evidence } from '../../domain/evidence';
+import { annotatorTypeForRole } from '../../domain/reviewer';
 import type { StudyRecord } from '../../domain/study';
 import type { ConfirmedArmStructure } from '../../domain/armStructure';
 import type { SchemaField } from '../../domain/schemaField';
@@ -14,7 +17,7 @@ import { readStudies } from '../../features/documents/studyRepository';
 import { buildStudySelection } from '../../features/documents/studySelection';
 import { readEvidenceRows } from '../../features/extraction/evidenceRepository';
 import { readRunSchemaVersions } from '../../features/extraction/runRepository';
-import { getSchemaFieldsByVersion } from '../../features/schema/schemaRepository';
+import { getSchemaFieldsByVersion, listSchemaVersions } from '../../features/schema/schemaRepository';
 import {
   latestArmStructure,
   readAllArmStructures,
@@ -103,15 +106,71 @@ export interface VerifyTargetMaterial {
 }
 
 /**
+ * 独立入力モード（reviewer_independent）の検証対象素材（design §5.1）。
+ * Evidence / ExtractionRuns を一切読まず、Studies（アクティブ study 全件）× 最新確定
+ * SchemaVersions から一覧を組む（AI 抽出の有無・実施状況を見せない = Q-a）。
+ * 確定済みスキーマが 1 つも無ければ空配列（画面側が「オーナーがスキーマを確定するまで…」の
+ * 空状態メッセージを出す）
+ */
+async function readIndependentVerifyTargetMaterials(
+  store: Store,
+  deps: VerificationDeps,
+  spreadsheetId: string,
+): Promise<VerifyTargetMaterial[]> {
+  const documents = await resolveDocuments(store, deps, spreadsheetId);
+  const studies = await resolveStudies(store, deps, spreadsheetId);
+  const versions = await listSchemaVersions(spreadsheetId, deps.google);
+  const latest = versions[0];
+  if (latest === undefined) {
+    return [];
+  }
+  const fields = await getSchemaFieldsByVersion(spreadsheetId, latest.schemaVersion, deps.google);
+  const allDecisions = await readAllDecisions(spreadsheetId, deps.google);
+  const allArmRows = await readAllArmStructures(spreadsheetId, deps.google);
+  const annotator = (await getCurrentUserEmail(deps.profile)) ?? '';
+
+  const materials: VerifyTargetMaterial[] = [];
+  for (const item of buildStudySelection(studies, documents)) {
+    const ownDecisions = allDecisions.filter(
+      (decision) => decision.studyId === item.study.studyId && decision.annotator === annotator,
+    );
+    const armStructure = latestArmStructure(
+      allArmRows.filter((row) => row.studyId === item.study.studyId),
+      annotator,
+    );
+    materials.push({
+      target: {
+        study: item.study,
+        documents: item.documents,
+        evidence: [],
+        fields,
+        schemaVersion: latest.schemaVersion,
+        progress: verificationProgress(fields, [], ownDecisions, { armStructure }),
+      },
+      ownDecisions,
+      armStructure,
+    });
+  }
+  return materials;
+}
+
+/**
  * Evidence がある study の検証素材一式を読み込む（S8 一覧と S9 ダッシュボードの共通素材）。
  * 進捗の分母・分子はセルモデル（features/verification/progress.ts）で数える。
- * study 内の文書は role 固定順 → 取り込み順で並べ、Evidence は全文書ぶんを渡す
+ * study 内の文書は role 固定順 → 取り込み順で並べ、Evidence は全文書ぶんを渡す。
+ *
+ * 独立入力モード（role='reviewer_independent'）は Evidence 非依存の別経路
+ * （readIndependentVerifyTargetMaterials）へ委譲する（design §5.1）
  */
 export async function readVerifyTargetMaterials(
   store: Store,
   deps: VerificationDeps,
   spreadsheetId: string,
 ): Promise<VerifyTargetMaterial[]> {
+  const role = store.getState().role.role ?? 'owner';
+  if (role === 'reviewer_independent') {
+    return readIndependentVerifyTargetMaterials(store, deps, spreadsheetId);
+  }
   const documents = await resolveDocuments(store, deps, spreadsheetId);
   const studies = await resolveStudies(store, deps, spreadsheetId);
   const allEvidence = await readEvidenceRows(spreadsheetId, deps.google);
@@ -220,6 +279,7 @@ export async function openVerifyStudy(
         fields: target.fields,
         evidence: target.evidence,
         schemaVersion: target.schemaVersion,
+        annotatorType: annotatorTypeForRole(state.role.role ?? 'owner'),
       },
       deps,
     );
@@ -308,7 +368,7 @@ export async function persistVerifyArmConfirmation(
       studyId: verification.study.studyId,
       arms,
       annotator: verification.annotator,
-      annotatorType: 'human_with_ai',
+      annotatorType: verification.annotatorType,
       confirmedAt: (deps.now ?? nowIso8601)(),
     },
     deps,

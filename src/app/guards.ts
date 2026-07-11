@@ -53,11 +53,22 @@ export function guardRoute(hash: string, state: AppState, role: ProjectRole = 'o
       }
       return { allowed: true };
     case '#/verify':
-      if (role !== 'owner' && !state.role.folderAccessGranted) {
-        return {
-          allowed: false,
-          message: 'プロジェクトフォルダへのアクセス付与が必要です（Home から付与してください）',
-        };
+      if (role !== 'owner') {
+        // reviewer 系ロールは盲検のため loadProgressCounts を読み込まず、state.counts は
+        // 常に初期値（全 0）のまま変化しない。設計（design §3.1）は mode② の入場ガードを
+        // 「schemaVersions ≥ 1 かつ studies ≥ 1」へ差し替えるとしているが、reviewer_with_ai の
+        // 「evidenceRows ≥ 1」も含め counts に依拠する判定は reviewer には常に false になり、
+        // フォルダアクセスを付与していても #/verify へ永久に入れなくなるバグになる（監査で発覚）。
+        // そのため reviewer 系ロールは counts ベースの判定を一切行わず、フォルダアクセス付与の
+        // みをゲートにする。「AI 抽出が未実施」「確定スキーマが無い」は検証画面（verifyService の
+        // 読込結果）内の空状態表示に譲る（意図的な設計からの逸脱。実装指示に基づく）
+        if (!state.role.folderAccessGranted) {
+          return {
+            allowed: false,
+            message: 'プロジェクトフォルダへのアクセス付与が必要です（Home から付与してください）',
+          };
+        }
+        return { allowed: true };
       }
       if (counts.evidenceRows < 1) {
         return { allowed: false, message: 'AI 抽出が未実施です。先に抽出を実行してください' };

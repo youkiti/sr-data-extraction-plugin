@@ -51,8 +51,14 @@ export interface VerificationData {
   evidence: readonly Evidence[];
   /** 当該 study の判定履歴（全 annotator。パネル側で自分の行に絞る） */
   decisions: readonly Decision[];
-  /** 自分（判定者）の email。human_with_ai 行の annotator になる */
+  /** 自分（判定者）の email。annotator 行の annotator になる */
   annotator: string;
+  /**
+   * 判定を書き込む annotator_type（独立二重レビュー機能。design §5.2）。
+   * ロールから導出する（`domain/reviewer.ts` の `annotatorTypeForRole`）。
+   * `human_independent` のときパネルは独立入力モード（panelMode）で描画する
+   */
+  annotatorType: 'human_with_ai' | 'human_independent';
   schemaVersion: number;
   /**
    * 自分が確定した群構成（ArmStructures の最新 version）。null = 未確定で、

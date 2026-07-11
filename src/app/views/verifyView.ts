@@ -48,11 +48,16 @@ function renderSelector(state: AppState, ctx: ViewContext, targets: readonly Ver
 }
 
 export function renderVerifyView(state: AppState, ctx: ViewContext): HTMLElement {
+  // 独立入力モード（reviewer_independent。design §5）は AI 抽出を一切見せない盲検レビューのため、
+  // 冒頭の説明文・空状態メッセージを AI 抽出前提の文言から入れ替える
+  const independent = state.role.role === 'reviewer_independent';
   const children: HTMLElement[] = [
     el('h2', { text: '検証' }),
     el('p', {
       className: 'view__lead',
-      text: 'PDF 上の根拠ハイライトを見ながら、AI 抽出値を accept / edit / reject / not_reported で判定します。',
+      text: independent
+        ? 'PDF を確認しながら、値を入力（edit）/ not_reported で判定します（AI 抽出は行われません）。'
+        : 'PDF 上の根拠ハイライトを見ながら、AI 抽出値を accept / edit / reject / not_reported で判定します。',
     }),
   ];
   const verify = state.verify;
@@ -82,11 +87,14 @@ export function renderVerifyView(state: AppState, ctx: ViewContext): HTMLElement
   }
 
   if (verify.targets.length === 0) {
-    // ガード（Evidence ≥ 1 行）通過後に消えた場合の防御（別端末での作業直後など）
+    // 独立入力モードは「確定済みスキーマが無い」「Studies が 0 件」のいずれでも一覧が空になる
+    // （design §5.1）。AI 抽出の有無を前提にした案内は出さない
     children.push(
       el('p', {
         id: 'verify-empty',
-        text: 'AI 抽出済みの研究がありません。先に #/pilot または #/extract で抽出してください。',
+        text: independent
+          ? 'オーナーが表のデザイン（スキーマ）を確定するまで、独立レビューは開始できません。プロジェクトのオーナーに確認してください。'
+          : 'AI 抽出済みの研究がありません。先に #/pilot または #/extract で抽出してください。',
       }),
     );
     return el('section', { className: 'view view--verify' }, children);

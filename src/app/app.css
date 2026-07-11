@@ -1701,7 +1701,10 @@
 
 .verify__chip--edit {
   background: #fef7e0;
-  color: #b06000;
+
+  /* #b06000 は axe（独立入力モードは唯一の値入力操作が edit のため必ず露出する）で
+     WCAG AA コントラスト不足（4.33 : 1）を検出。#8a4b00 へ濃色化して 6.35 : 1 を確保する */
+  color: #8a4b00;
   border-color: #fbbc04;
 }
 
@@ -1720,6 +1723,13 @@
 
 .verify__ai {
   margin: 6px 0;
+}
+
+/* 独立入力モード（design §5.2）: AI 値の代わりに出す抽出指示（AI 出力ではないため表示可） */
+.verify__instruction {
+  margin: 6px 0;
+  color: var(--color-text-muted);
+  font-size: 13px;
 }
 
 .verify__ai--none {

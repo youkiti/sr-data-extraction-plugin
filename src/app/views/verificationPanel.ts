@@ -199,6 +199,11 @@ export function createVerificationPanel(
 ): VerificationPanelHandle {
   const { data } = options;
   const now = options.now ?? nowIso8601;
+  // 独立入力モード（独立二重レビュー機能。design §5.2）: data.annotatorType から導出する
+  // （panelMode は annotatorType の派生であり、パネル外から直接指定はしない）。
+  // Evidence quote・ハイライト・AI 値・accept/reject 操作を一切描画しない
+  const panelMode: 'review' | 'independent' =
+    data.annotatorType === 'human_independent' ? 'independent' : 'review';
 
   // --- パネル内状態 -------------------------------------------------------
   // 判定は自分の annotator 行への操作だけを畳み込む（他 annotator の判定は状態に影響しない）
@@ -310,6 +315,7 @@ export function createVerificationPanel(
       highlightInfo: highlightInfo(),
       canSearchText: activeDocument().extractedPages.some((page) => page.text !== ''),
       recentCell,
+      mode: panelMode,
     };
   }
 
@@ -683,6 +689,10 @@ export function createVerificationPanel(
    * PDF のロード状態に関係なく一貫した表示になる（issue #28 案3）
    */
   function highlightInfo(): Map<string, CellHighlightInfo> {
+    if (panelMode === 'independent') {
+      // 独立入力モードは「他 n 箇所に一致」等の AI 根拠由来の情報を一切出さない（design §5.2）
+      return new Map();
+    }
     const info = new Map<string, CellHighlightInfo>();
     for (const match of textMatches) {
       info.set(match.cellKey, {
@@ -700,6 +710,10 @@ export function createVerificationPanel(
    * states / kind / 選択出現の反映は呼び出しごとに行う（判定・切替で変わるため）
    */
   function viewerHighlights(): ViewerHighlight[] {
+    if (panelMode === 'independent') {
+      // 独立入力モードは PDF 上の根拠ハイライトを一切描画しない（design §5.2）
+      return [];
+    }
     const docHighlights = rectHighlightsByDoc.get(activeDocumentId) as EvidenceHighlight[];
     const states = deriveCellStates(ownDecisions);
     return docHighlights.map((highlight) => {
@@ -982,6 +996,7 @@ export function createVerificationPanel(
           time: time === '' ? null : time,
           arms: (armStructure as ConfirmedArmStructure).arms,
           annotator: data.annotator,
+          annotatorType: data.annotatorType,
           schemaVersion: data.schemaVersion,
           decidedAt: now(),
         });
@@ -1044,6 +1059,7 @@ export function createVerificationPanel(
             rows: armRows,
             confirmedVersion: armStructure?.version ?? null,
             error: armError,
+            mode: panelMode,
           }
         : null,
       outcomeAdd:
@@ -1054,6 +1070,7 @@ export function createVerificationPanel(
       progress: verificationProgress(data.fields, data.evidence, ownDecisions, { armStructure }),
       layoutMode,
       focusCard: layoutMode === 'focus' ? buildFocusCardModel() : null,
+      mode: panelMode,
     };
     formPane.replaceChildren(renderVerificationForm(model, handlers));
     formPane.scrollTop = savedScrollTop;
@@ -1160,7 +1177,7 @@ export function createVerificationPanel(
       fieldId: cell.field.fieldId,
       entityKey: cell.entityKey,
       annotator: data.annotator,
-      annotatorType: 'human_with_ai',
+      annotatorType: data.annotatorType,
       schemaVersion: data.schemaVersion,
       action,
       value,
@@ -1293,7 +1310,10 @@ export function createVerificationPanel(
     switch (event.key) {
       case 'a':
         event.preventDefault();
-        handlers.onAccept(focusedCellKey);
+        // 独立入力モードは AI 値が無いため承認を無効化する（design §5.2）
+        if (panelMode !== 'independent') {
+          handlers.onAccept(focusedCellKey);
+        }
         break;
       case 'e':
         event.preventDefault();
@@ -1301,7 +1321,10 @@ export function createVerificationPanel(
         break;
       case 'x':
         event.preventDefault();
-        handlers.onStartEdit(focusedCellKey, 'reject');
+        // 独立入力モードは AI 値が無いため棄却を無効化する（design §5.2）
+        if (panelMode !== 'independent') {
+          handlers.onStartEdit(focusedCellKey, 'reject');
+        }
         break;
       case 'n':
         event.preventDefault();

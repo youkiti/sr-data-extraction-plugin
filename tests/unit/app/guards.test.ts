@@ -127,10 +127,29 @@ describe('guardRoute', () => {
       });
     });
 
-    test('reviewer 系ロールで付与済みなら通常の Evidence ガードへ進む', () => {
+    test('reviewer 系ロールで付与済みなら許可される（counts は問わない）', () => {
       const state = stateWith({ evidenceRows: 1 });
       state.role = { ...state.role, folderAccessGranted: true };
       expect(guardRoute('#/verify', state, 'reviewer_with_ai')).toEqual({ allowed: true });
+    });
+
+    test('バグ修正: reviewer 系ロールは counts が全 0 でもフォルダアクセス付与済みなら許可される（本番の永久ブロック回避）', () => {
+      // reviewer 系ロールは loadProgressCounts を読まない（盲検）ため state.counts は
+      // 常に初期値 0 のまま。counts ベースの判定を課すと folderAccess を付与しても
+      // 永久に #/verify へ入れなくなる（監査で発見した実バグ）
+      const state = createInitialState();
+      expect(state.counts).toEqual({
+        documents: 0,
+        protocolVersions: 0,
+        schemaVersions: 0,
+        pilotRuns: 0,
+        evidenceRows: 0,
+        dataRows: 0,
+      });
+      state.role = { ...state.role, folderAccessGranted: true };
+      expect(guardRoute('#/verify', state, 'reviewer_with_ai')).toEqual({ allowed: true });
+      expect(guardRoute('#/verify', state, 'reviewer_independent')).toEqual({ allowed: true });
+      expect(guardRoute('#/verify', state, 'adjudicator')).toEqual({ allowed: true });
     });
 
     test('owner はフォルダアクセス未付与でも #/verify に到達できる', () => {
