@@ -98,7 +98,7 @@ describe('normalizeHash', () => {
 
 describe('findRoute', () => {
   test('ハッシュに対応するルート定義を返す', () => {
-    expect(findRoute('#/schema').label).toBe('スキーマ');
+    expect(findRoute('#/schema').label).toBe('表のデザイン');
   });
 
   test('設定ルート #/options を解決する', () => {

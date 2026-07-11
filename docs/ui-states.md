@@ -41,7 +41,7 @@ spec が正。実装が追いついていない箇所は以下のとおり（実
 - 新規作成フォームの説明文は「データ抽出プロジェクトを作成します（スプレッドシート + Drive フォルダを生成）。」
 - 既存 ID で開く場合、`Meta` タブの検証に加えて **`Documents` / `SchemaFields` タブの存在**を確認し、欠けていれば `#popup-open-error` に「sr-data-extraction のプロジェクトではありません（Documents / SchemaFields タブが見つかりません）」
 - 存在しないスプレッドシート ID（404）は「スプレッドシートが見つかりません。ID を確認してください」
-- 設定画面はハッシュルートではなく独立ページのため、`#open-options` は `options/options.html` を新規タブで開く
+- 設定は `#open-options` からアプリ内ルート `app/app.html#/options` へ同一タブで遷移する（`chrome.tabs.update`。独立ページ `options/options.html` は拡張管理画面の「オプション」からのみ開く）
 - プロジェクト選択（作成 / 既存 ID / 履歴クリック）成功で直ちに同一タブのままメインビューへ遷移する（`chrome.tabs.update`。S1 はフルページ表示のためタブを増やさない）。独立した「メインビューを開く」ボタンは持たない（スケルトン段階の `#open-app` ボタンは廃止）
 
 ## 2. Options (`src/options/options.html`)
@@ -49,6 +49,7 @@ spec が正。実装が追いついていない箇所は以下のとおり（実
 ### 状態 A: 通常表示
 
 - **可視**: Gemini API キー入力（`type="password"` + `autocomplete="off"`）/ 保存ボタン / OpenRouter API キー入力（`#openrouter-api-key`。Gemini と同じトンマナ + 取得先リンク <https://openrouter.ai/settings/keys>）/ 保存ボタン `#save-openrouter-key` / 既定モデルセレクタ（下記「既定モデル」参照）/ 表示言語セレクタ（MVP は ja 固定・ディム）
+- **「アプリを開く」リンク `#options-open-app`**（スタンドアロン options.html のみ。見出し行の右側から `../app/app.html` へ同一タブ遷移。アプリ内 `#/options` はサイドバーと「← 前の画面へ戻る」= `#/options` 進入直前のルート・無ければ `#/home` を持つため、このリンクは出さない — issue #31 B）
 - **`#options-status`**: `Gemini: 保存済み|未設定` 形式 / **`#openrouter-status`**: `OpenRouter: 保存済み|未設定` 形式
 - キーは `trim()` して保存、空文字は保存抑止（sr-query-builder で target のまま残った教訓を最初から実装する）
 - **入力欄の placeholder で保存状態を可視化**（平文キーは再表示しない）: 保存済み → `保存済み（変更する場合のみ入力）` / 未設定 → `API キーを入力`。保存成功時に入力欄をクリアしたうえで placeholder を「保存済み」に切り替える
@@ -113,7 +114,7 @@ spec が正。実装が追いついていない箇所は以下のとおり（実
 |---|---|---|
 | `#/home` | 読み込み中 | `#home-counts-loading`「進捗を読み込んでいます…」（起動時に Sheets の 7 範囲を `values:batchGet` 1 呼び出しで読む間。プロジェクト名は常時表示）。プロジェクト未選択時は読込自体を行わない（状態 A のまま） |
 | | 読み込み失敗 | `#home-counts-error`「進捗を読み込めませんでした: {理由}」（`role="alert"`）+ 再読み込み `#home-counts-reload`（force 再取得）。失敗中のガードはシード値（全 0 = 全ステップディム）のまま |
-| | 通常 | プロジェクトメタ + プロジェクト切替リンク `#home-switch-project`「別のプロジェクトを開く」（S1 プロジェクト選択ページへの同一タブ遷移アンカー。全状態で常設）+ 進捗サマリ（文献数 / プロトコル版数 / 確定スキーマ版数 / Evidence 行数 / データ行数）。0 文献でも崩れない。カウントの内訳: documents = `Documents` 行数 / protocolVersions = `Protocol` 行数 / schemaVersions = `SchemaVersions` 行数 / pilotRuns = `ExtractionRuns` の `run_type = pilot` 行数 / evidenceRows = `Evidence` 行数 / dataRows = `StudyData` + `ResultsData` 行数。読込成功後は各画面の操作（取り込み / 保存 / 確定 / run 完了）が増分更新する。E2E seam: `__E2E_PRELOADED_STATE__` に `counts` があれば読込済みとして扱い batchGet を行わない |
+| | 通常 | プロジェクトメタ + プロジェクト切替リンク `#home-switch-project`「別のプロジェクトを開く」（S1 プロジェクト選択ページへの同一タブ遷移アンカー。全状態で常設）+ 進捗サマリ（文献数 / プロトコル版数 / 表のデザインの確定版数 / Evidence 行数 / データ行数）。0 文献でも崩れない。カウントの内訳: documents = `Documents` 行数 / protocolVersions = `Protocol` 行数 / schemaVersions = `SchemaVersions` 行数 / pilotRuns = `ExtractionRuns` の `run_type = pilot` 行数 / evidenceRows = `Evidence` 行数 / dataRows = `StudyData` + `ResultsData` 行数。読込成功後は各画面の操作（取り込み / 保存 / 確定 / run 完了）が増分更新する。E2E seam: `__E2E_PRELOADED_STATE__` に `counts` があれば読込済みとして扱い batchGet を行わない |
 | `#/documents` | 読み込み中 | `#documents-loading`「一覧を読み込んでいます…」（初回表示時に Documents タブを自動読込。再読み込みボタンで強制再取得） |
 | | 読み込み失敗 | `#documents-load-error`「一覧を読み込めませんでした: {理由}」（赤系）。再読み込みボタンで復帰 |
 | | 空 | 「Drive から PDF / フォルダを取り込む」ボタン + 空状態説明（`#documents-empty`）+ 画面上部に「取り込んだ PDF が外部へ送信されるのは LLM API への抽出リクエストのみです」の注意書き（常時表示） |
@@ -128,14 +129,15 @@ spec が正。実装が追いついていない箇所は以下のとおり（実
 | | 読み取り専用（1 版以上） | `#protocol-summary`（版 / 入力形式 / 本文 / 元ファイルの Drive リンク / 作成日時・者）+ 版切替 select（2 版以上のとき）+ 古い版選択時は `#protocol-old-note`。「新しい版を入力」で再入力フォームへ |
 | | 再入力フォーム | 送信ボタンは「新しい版として保存」+ キャンセルで読み取り専用へ復帰。保存は常に追記（上書きなし） |
 | | ※移植メモ | sr-query-builder の「未保存下書き復元」モードは、本拡張では送信 = 即保存（LLM 抽出 → blocks 承認の 2 段階が無い）ため存在しない |
-| `#/schema` | ドラフト前 | 「AI にスキーマをドラフトさせる」ボタン + サンプル論文セレクタ（1〜3 本。テキスト層なしは選択不可）+ モデルセレクタ `#schema-model`（`requested_model`。§2「モデルセレクタ」の共通ウィジェット。プレースホルダ「選択してください」。既定モデルは Q8 確定まで固定しない）。プロトコル未入力ならガード。選択 0 本 / モデル未選択 / 選択モデルのプロバイダ（Gemini / OpenRouter）の API キー未設定は `#schema-draft-error` にインラインエラー |
+| `#/schema` | 全状態共通 | 見出し「表のデザイン」直下に解説リード（`view__lead`）「抽出したい項目のリストをこのページで作成します。スプレッドシートでいえば 1 行目の見出し（列の名前）にあたります。例:「著者名」「出版年」「対象患者数」など。これを設計する工程を表のデザインと呼んでいます。」を常時表示（プロジェクト未選択時も。issue #31 ①） |
+| | ドラフト前 | 「AI に表のデザインをドラフトさせる」ボタン + サンプル論文セレクタ（1〜3 本。テキスト層なしは選択不可）+ モデルセレクタ `#schema-model`（`requested_model`。§2「モデルセレクタ」の共通ウィジェット。プレースホルダ「選択してください」。既定モデルは Q8 確定まで固定しない）。プロトコル未入力ならガード。選択 0 本 / モデル未選択 / 選択モデルのプロバイダ（Gemini / OpenRouter）の API キー未設定は `#schema-draft-error` にインラインエラー |
 | | ドラフト生成中 | 進捗表示 + 経過時間。**LLM コスト集計の再描画で表示が消えない**（sr-query-builder `draftRun` の教訓を踏襲し store で管理） |
 | | 編集中 | 表形式エディタ。行ごとに `field_name`（snake_case バリデーション、重複・StudyData 固定列衝突エラー）/ `data_type` / `entity_level` / `extraction_instruction`（必須）ほか全列を編集可。エラーは一覧 + 該当セルの `aria-invalid` で表示し、ある間は確定不可。プリセット挿入（requirements.md §3.3。二値 `#schema-preset-binary` / 連続 `#schema-preset-continuous` / RoB 2 `#schema-preset-rob2` / ROBINS-I `#schema-preset-robins-i`）と行の追加 / 削除。ボタン下に `data_type` の凡例 `#schema-datatype-help`（text / integer / float / boolean / enum / date の説明 + 例。enum は許容値列の | 区切り指定を案内）。未確定変更がある間「版として確定」ボタンが強調 |
 | | 確定済み | 現行版の読み取り専用サマリ（メタ + 項目テーブル）+ 「新しい版を作る」導線（現行版の field_id を維持してエディタへ）+ 版履歴リスト（2 版以上のとき） |
 | `#/pilot` | 履歴・復元 | 入場時に過去のパイロット run（`ExtractionRuns` の `run_type='pilot'` 完了行のみ）を新しい順で読み込み、`#pilot-history` に列挙（各項目 = 日時 / モデル / 文献数 / status バッジ「完了」「一部失敗」）。読み込み中 `#pilot-history-loading` / 失敗 `#pilot-history-error` + 再読み込み `#pilot-history-reload`。**既存データがあれば起動後に最新 run を一度だけ自動読込**（Evidence を run で絞り + 版別 SchemaFields を解決 → 下の「完了」状態へ復元）し、パイロット済みなら「最初から」にしない。履歴項目クリックで別の run を読み込み（読み込み中は全項目を無効化・対象行に「読み込み中…」、表示中の run は無効化 + 「表示中」+ `aria-current`）。過去 run が無ければ（`history=[]`）履歴セクションは出さない。履歴から読み込んだ run は partial_failure の内訳を再構成できないため案内文のみ |
 | | 未実行（新規パイロット） | 画面末尾の `.pilot__setup`（h3「新規パイロット」）。対象 **study** セレクタ `#pilot-documents`（既定 = テキスト層のある文書を含む先頭 3 study。各 study は study_label + 配下文書のロール + ファイル名を副次リスト表示。テキスト層のある文書が無い study はチェック不可 + 「pdf_native モード時のみ選択可・P1」注記。v0.10 フェーズ 2）+ モデルセレクタ `#pilot-model`（§2「モデルセレクタ」の共通ウィジェット。プレースホルダ「選択してください」）+ コスト概算 `#pilot-estimate`（選択 0 本は案内文 / 単価表にないモデルは「概算不可」/ planRun の warnings を列挙。プロトコル本文ぶんは含まない旨を注記）+ 実行ボタン `#pilot-run`。選択 0 本 / モデル未選択 / 選択モデルのプロバイダの API キー未設定は `#pilot-run-error` にインラインエラー |
 | | 実行中 | `#pilot-progress`（`<progress>` + 「n / m バッチ完了（p% / 直近: study_label / section）」。document は study_label で表示し、未解決なら id にフォールバック）。履歴・setup は出さない |
-| | 完了 | done は `#pilot-run-done`、partial_failure は `#pilot-partial-failure`（バッチ失敗の内訳 + 応答要素の破棄件数。履歴読込 run で内訳が無ければ案内文 1 行）。「スキーマを改訂して再パイロット」`#pilot-revise-schema`（`#/schema` へのリンク）は完了後常に可視。検証文献セレクタ `#pilot-verify-doc` + 埋め込み検証パネル（下記 `#/verify` の 2 ペインと同一コンポーネント）。検証データの読み込み中 `#pilot-verify-loading` / 失敗 `#pilot-verify-error` + 再試行 `#pilot-verify-retry`。新規実行後は完了 run を履歴の先頭へ追加する |
+| | 完了 | done は `#pilot-run-done`、partial_failure は `#pilot-partial-failure`（バッチ失敗の内訳 + 応答要素の破棄件数。履歴読込 run で内訳が無ければ案内文 1 行）。「表のデザインを改訂して再パイロット」`#pilot-revise-schema`（`#/schema` へのリンク）は完了後常に可視。検証文献セレクタ `#pilot-verify-doc` + 埋め込み検証パネル（下記 `#/verify` の 2 ペインと同一コンポーネント）。検証データの読み込み中 `#pilot-verify-loading` / 失敗 `#pilot-verify-error` + 再試行 `#pilot-verify-retry`。新規実行後は完了 run を履歴の先頭へ追加する |
 | | 保存失敗（オフライン） | 判定はパネル内で楽観更新しつつ `#pilot-queued`「オフライン: N 件キュー中」。復帰後の保存成功時に自動再送（`lib/storage/offlineQueue` の 'decisions' キュー） |
 | `#/extract` | 読み込み中 | `#extract-loading`「抽出対象を読み込んでいます…」（文献一覧 + `ExtractionRuns` の既抽出 document を読む間） |
 | | 読み込み失敗 | `#extract-load-error`（理由）+ 再読み込み `#extract-reload` |

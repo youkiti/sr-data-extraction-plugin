@@ -18,12 +18,13 @@ describe('renderSettingsView', () => {
     chromeMock = installChromeMock();
   });
 
-  test('見出し + ホームへ戻るハッシュリンク + 設定各節を組み立てる', () => {
+  test('見出し + 戻るハッシュリンク（記録なしは #/home）+ 設定各節を組み立てる', () => {
     const view = renderSettingsView(createInitialState(), stubCtx);
     expect(view.querySelector('h2')?.textContent).toBe('設定');
 
     const back = view.querySelector('.settings__back');
-    // 別ページ・別タブではなく同一タブ内のハッシュ遷移で #/home へ戻る
+    // 別ページ・別タブではなく同一タブ内のハッシュ遷移で戻る。記録が無いので #/home
+    expect(back?.textContent).toBe('← 前の画面へ戻る');
     expect(back?.getAttribute('href')).toBe('#/home');
 
     // options.html と同じ ID の各節が存在する
@@ -31,6 +32,14 @@ describe('renderSettingsView', () => {
     expect(view.querySelector('#openrouter-api-key')).not.toBeNull();
     expect(view.querySelector('#default-model-container')).not.toBeNull();
     expect(view.querySelector('#ui-language')).not.toBeNull();
+  });
+
+  test('settingsReturnHash が記録されていればその画面へ戻る', () => {
+    const state = { ...createInitialState(), settingsReturnHash: '#/pilot' as const };
+    const view = renderSettingsView(state, stubCtx);
+    const back = view.querySelector('.settings__back');
+    expect(back?.textContent).toBe('← 前の画面へ戻る');
+    expect(back?.getAttribute('href')).toBe('#/pilot');
   });
 
   test('未 attach のコンテナでも bootstrapOptions が配線される（未設定表示 + モデルセレクタ生成）', async () => {

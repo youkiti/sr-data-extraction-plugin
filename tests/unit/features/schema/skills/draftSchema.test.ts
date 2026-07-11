@@ -90,7 +90,7 @@ describe('parseDraftSchemaResponse', () => {
   test('形式違反（enum 外の entity_level・空配列）は DraftSchemaFormatError', () => {
     const bad = [{ ...DRAFTED_ITEM, entity_level: 'rob_domain' }];
     expect(() => parseDraftSchemaResponse(JSON.stringify(bad))).toThrow(
-      'スキーマドラフトの形式に合いません',
+      '表のデザインドラフトの形式に合いません',
     );
     expect(() => parseDraftSchemaResponse('[]')).toThrow(DraftSchemaFormatError);
   });

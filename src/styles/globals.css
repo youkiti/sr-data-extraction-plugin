@@ -42,6 +42,17 @@ select {
   background: var(--color-surface);
 }
 
+/* 設定画面の見出し行。アプリ内 #/options（.settings__header = 見出し + 「← 前の画面へ戻る」）と
+   スタンドアロン options.html（.options__header = 見出し + 「アプリを開く」）で同一レイアウトを
+   共有するため、両ページが読み込む本ファイルで 1 箇所管理する */
+.settings__header,
+.options__header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+}
+
 .toast-container {
   position: fixed;
   right: 16px;

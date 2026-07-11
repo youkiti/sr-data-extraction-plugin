@@ -7,17 +7,19 @@ import { el } from '../ui/dom';
 import type { AppState } from '../store';
 import type { ViewContext } from './types';
 
-export function renderSettingsView(_state: AppState, _ctx: ViewContext): HTMLElement {
+export function renderSettingsView(state: AppState, _ctx: ViewContext): HTMLElement {
   const container = el('section', { className: 'view view--settings' });
 
+  // 戻る導線（サイドバーからも各画面へ行けるが、明示的な「戻る」を置く）。
+  // #/options へ入る直前のルート（bootstrap が記録）があればそこへ、無ければ #/home へ
+  // 戻る（直接 #/options を開いた場合など。ハッシュリンクなので同一タブ内で遷移する）
+  const returnHash = state.settingsReturnHash ?? '#/home';
   const header = el('div', { className: 'settings__header' }, [
     el('h2', { text: '設定' }),
-    // 戻る導線（サイドバーからも各画面へ行けるが、明示的な「戻る」を置く）。
-    // ハッシュリンクなので同一タブ内で #/home へ遷移する
     el('a', {
       className: 'settings__back',
-      text: '← ホームへ戻る',
-      attributes: { href: '#/home' },
+      text: '← 前の画面へ戻る',
+      attributes: { href: returnHash },
     }),
   ]);
   container.append(header);

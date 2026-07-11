@@ -390,7 +390,7 @@ describe('requestExtractRun / cancelExtractConfirm', () => {
     for (const fields of [null, [] as SchemaField[]]) {
       const store = makeStore({ fields });
       await requestExtractRun(store, makeDeps());
-      expect(store.getState().extract.runError).toContain('確定済みスキーマを読み込めていません');
+      expect(store.getState().extract.runError).toContain('確定済みの表のデザインを読み込めていません');
     }
 
     const noSelection = makeStore({ fields: [makeField()], extract: { selectedStudyIds: [] } });

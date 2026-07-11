@@ -55,7 +55,7 @@ export async function saveSchemaVersion(
   deps: SaveSchemaVersionDeps,
 ): Promise<SaveSchemaVersionResult> {
   if (params.rows.length === 0) {
-    throw new SchemaValidationError('スキーマ項目が 1 件もありません');
+    throw new SchemaValidationError('表のデザイン項目が 1 件もありません');
   }
   const validationErrors = validateEditorRows(params.rows);
   if (validationErrors.length > 0) {
@@ -64,7 +64,7 @@ export async function saveSchemaVersion(
       .map((error) => error.message)
       .join('');
     throw new SchemaValidationError(
-      `スキーマにエラーが ${validationErrors.length} 件あります（先頭: ${first}）`,
+      `表のデザインにエラーが ${validationErrors.length} 件あります（先頭: ${first}）`,
     );
   }
 

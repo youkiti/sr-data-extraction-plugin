@@ -67,7 +67,7 @@ export interface SchemaViewCallbacks {
   onToggleSample(documentId: string, selected: boolean): void;
   /** requested_model の変更 */
   onChangeModel(model: string): void;
-  /** 「AI にスキーマをドラフトさせる」 */
+  /** 「AI に表のデザインをドラフトさせる」 */
   onRunDraft(): void;
   /** エディタ行の編集確定（change イベント単位） */
   onEditRow(index: number, patch: Partial<SchemaEditorRow>): void;

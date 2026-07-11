@@ -398,7 +398,7 @@ describe('runPilot: 事前バリデーション', () => {
     for (const fields of [null, [] as SchemaField[]]) {
       const store = makeStore({ fields });
       await runPilot(store, makeDeps());
-      expect(store.getState().pilot.runError).toContain('確定済みスキーマを読み込めていません');
+      expect(store.getState().pilot.runError).toContain('確定済みの表のデザインを読み込めていません');
     }
   });
 
