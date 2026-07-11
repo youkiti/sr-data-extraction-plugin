@@ -8,7 +8,10 @@
     "render": "tsx src/render-pages.ts",
     "bbox": "tsx src/run-bbox.ts",
     "overlay": "tsx src/overlay.ts",
-    "report": "tsx src/report.ts"
+    "report": "tsx src/report.ts",
+    "bbox:blind": "tsx src/run-bbox-blind.ts",
+    "overlay:blind": "tsx src/overlay-blind.ts",
+    "rotate:check": "tsx src/rotate-check.ts"
   },
   "devDependencies": {
     "@napi-rs/canvas": "^1.0.2",

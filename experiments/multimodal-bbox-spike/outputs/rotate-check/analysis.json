@@ -1,0 +1,35 @@
+{
+ "purpose": "入力boxが正しいと仮定した場合の案(i)/案(ii)の理論的正否を、Geminiの実測とは独立に机上検算したもの（Gemini自身の回転画像上でのbox_2d読み取り精度の癖と、写像式そのものの正否を切り分けるため）",
+ "step1_userSpaceFromUnrotatedRun": {
+  "x": 495.045,
+  "xEnd": 504.888,
+  "yBottom": 704.816,
+  "yTop": 713.748
+ },
+ "step2_correctRotatedPx_independentCheck": {
+  "left": 1409.632,
+  "right": 1427.496,
+  "top": 990.09,
+  "bottom": 1009.776
+ },
+ "step2_note": "この位置をoverlayで目視確認 -> item1の実際の98の直上にタイトに一致（outputs/rotate-check/_predicted相当、目視確認のみでファイルは残していない）",
+ "step3_hypotheticalCorrectBox2d": {
+  "ymin": 855,
+  "xmin": 868,
+  "ymax": 872,
+  "xmax": 879
+ },
+ "step4_candidateI_result": {
+  "left": 1409.632,
+  "top": 990.09,
+  "width": 17.863999999999997,
+  "height": 19.686
+ },
+ "step4_candidateII_result": {
+  "left": 207.872,
+  "top": 1005.144,
+  "width": 27.608,
+  "height": 12.738
+ },
+ "conclusion": "仮に box_2d が正しく取れていた場合でも、案(ii)（UserSpaceRect->toDisplayRect(90)素通し）は左右(X)が大きくズレる = 二重回転が数学的に確認された。案(i)（表示フレームへ直接）が正しい。"
+}

@@ -7,8 +7,13 @@ inputs/*.pdf
 outputs/pages/*.png
 outputs/overlays/*.png
 
+# 2026-07-11 追試（難条件での再検証）分の生成画像も同じ理由で非コミット
+outputs/overlays-blind/*.png
+outputs/rotate-check/*.png
+
 # 依存（自前 install 分）
 node_modules/
 
 # コミット可: PLAN.md / REPORT.md / src/ / outputs/runs/*.json（quote 断片のみ）/
-#            outputs/report-summary.json / outputs/pages/dims.json
+#            outputs/report-summary.json / outputs/pages/dims.json /
+#            outputs/runs-blind/*.json（quote 断片のみ）/ outputs/rotate-check/result.json

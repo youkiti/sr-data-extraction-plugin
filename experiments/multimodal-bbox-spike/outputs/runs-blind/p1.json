@@ -1,0 +1,178 @@
+{
+ "runId": "p1",
+ "model": "gemini-3.5-flash",
+ "page": 1,
+ "requestedItems": [
+  {
+   "label": "title",
+   "description": "論文タイトル（見出し全文。レイアウト上の大文字表記のまま）"
+  },
+  {
+   "label": "first_author",
+   "description": "筆頭著者名（著者一覧の先頭の人物。氏名のみ、資格略称 RNC/DNSc/APRN 等は含めない）"
+  },
+  {
+   "label": "final_response_rate",
+   "description": "抄録 RESULTS 内の \"The final response rate was ...\" に続く割合の値"
+  }
+ ],
+ "executedAt": "2026-07-11T11:16:36.228Z",
+ "elapsedMs": 6808,
+ "usedResponseSchema": true,
+ "usageMetadata": {
+  "promptTokenCount": 1486,
+  "candidatesTokenCount": 327,
+  "totalTokenCount": 2809,
+  "promptTokensDetails": [
+   {
+    "modality": "TEXT",
+    "tokenCount": 394
+   },
+   {
+    "modality": "IMAGE",
+    "tokenCount": 1092
+   }
+  ],
+  "thoughtsTokenCount": 996,
+  "serviceTier": "standard"
+ },
+ "parseError": null,
+ "rowCount": 3,
+ "discardedRowCount": 0,
+ "rows": [
+  {
+   "label": "title",
+   "value": "NEONATAL STAFF AND ADVANCED PRACTICE NURSES' PERCEPTIONS OF BEREAVEMENT/END-OF-LIFE CARE OF FAMILIES OF CRITICALLY ILL AND/OR DYING INFANTS",
+   "quote": "NEONATAL STAFF AND ADVANCED PRACTICE NURSES'\nPERCEPTIONS OF BEREAVEMENT/END-OF-LIFE CARE OF\nFAMILIES OF CRITICALLY ILL AND/OR DYING INFANTS",
+   "page": 1,
+   "box_2d": [
+    102,
+    79,
+    173,
+    850
+   ],
+   "valueCorrect": true,
+   "valueJudgeDetail": "完全一致"
+  },
+  {
+   "label": "first_author",
+   "value": "Arthur J. Engler",
+   "quote": "Arthur J. Engler",
+   "page": 1,
+   "box_2d": [
+    201,
+    98,
+    213,
+    205
+   ],
+   "valueCorrect": true,
+   "valueJudgeDetail": "完全一致"
+  },
+  {
+   "label": "final_response_rate",
+   "value": "52",
+   "quote": "52%",
+   "page": 1,
+   "box_2d": [
+    435,
+    348,
+    448,
+    377
+   ],
+   "valueCorrect": true,
+   "valueJudgeDetail": "完全一致"
+  }
+ ],
+ "request": {
+  "contents": [
+   {
+    "role": "user",
+    "parts": [
+     {
+      "text": "あなたはこの論文ページ画像（ページ 1）から、指定された項目の値を実際に読み取り、それぞれの値が書かれている領域を bounding box として返すタスクを行う。値はこちらから与えないので、画像から自分で探して読み取ること。\n\nbox_2d の形式は [ymin, xmin, ymax, xmax] とする。画像の左上を原点 (0,0) とし、各座標は画像の高さ・幅に対して 0〜1000 に正規化した整数値で表す（ymin/ymax が縦方向、xmin/xmax が横方向）。box は対象の文言・数値だけを過不足なく囲む最小の矩形にすること。\n\n項目一覧:\n- label=\"title\": 論文タイトル（見出し全文。レイアウト上の大文字表記のまま）\n- label=\"first_author\": 筆頭著者名（著者一覧の先頭の人物。氏名のみ、資格略称 RNC/DNSc/APRN 等は含めない）\n- label=\"final_response_rate\": 抄録 RESULTS 内の \"The final response rate was ...\" に続く割合の値\n\n各項目について、次のフィールドを持つ JSON オブジェクトを1つずつ、項目と同じ順序で返すこと:\n- \"label\": 上記の label をそのまま\n- \"value\": 画像から実際に読み取った値（数値や固有名詞はそのまま、単位や%記号は付けない）\n- \"quote\": box の中に実際に見える文言をそのまま（言い換えない）\n- \"page\": 1\n- \"box_2d\": [ymin, xmin, ymax, xmax]\n\n出力は上記オブジェクトの配列のみ。項目が画像内に見つからない場合も box_2d には最も近いと思われる位置を返すこと（省略しない）。"
+     },
+     {
+      "inline_data": {
+       "mime_type": "image/png",
+       "data": "<omitted: base64 image>"
+      }
+     }
+    ]
+   }
+  ],
+  "generationConfig": {
+   "temperature": 0,
+   "responseMimeType": "application/json",
+   "responseSchema": {
+    "type": "ARRAY",
+    "items": {
+     "type": "OBJECT",
+     "properties": {
+      "label": {
+       "type": "STRING"
+      },
+      "value": {
+       "type": "STRING"
+      },
+      "quote": {
+       "type": "STRING"
+      },
+      "page": {
+       "type": "INTEGER"
+      },
+      "box_2d": {
+       "type": "ARRAY",
+       "items": {
+        "type": "INTEGER"
+       }
+      }
+     },
+     "required": [
+      "label",
+      "value",
+      "quote",
+      "page",
+      "box_2d"
+     ]
+    }
+   }
+  },
+  "note": "API キーは x-goog-api-key ヘッダで送信（本ファイルには含めていない）。gold 正解値はプロンプトに含まれない"
+ },
+ "rawResponse": {
+  "candidates": [
+   {
+    "content": {
+     "parts": [
+      {
+       "text": "[\n  {\n    \"label\": \"title\",\n    \"value\": \"NEONATAL STAFF AND ADVANCED PRACTICE NURSES' PERCEPTIONS OF BEREAVEMENT/END-OF-LIFE CARE OF FAMILIES OF CRITICALLY ILL AND/OR DYING INFANTS\",\n    \"quote\": \"NEONATAL STAFF AND ADVANCED PRACTICE NURSES'\\nPERCEPTIONS OF BEREAVEMENT/END-OF-LIFE CARE OF\\nFAMILIES OF CRITICALLY ILL AND/OR DYING INFANTS\",\n    \"page\": 1,\n    \"box_2d\": [\n      102,\n      79,\n      173,\n      850\n    ]\n  },\n  {\n    \"label\": \"first_author\",\n    \"value\": \"Arthur J. Engler\",\n    \"quote\": \"Arthur J. Engler\",\n    \"page\": 1,\n    \"box_2d\": [\n      201,\n      98,\n      213,\n      205\n    ]\n  },\n  {\n    \"label\": \"final_response_rate\",\n    \"value\": \"52\",\n    \"quote\": \"52%\",\n    \"page\": 1,\n    \"box_2d\": [\n      435,\n      348,\n      448,\n      377\n    ]\n  }\n]",
+       "thoughtSignature": "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"
+      }
+     ],
+     "role": "model"
+    },
+    "finishReason": "STOP",
+    "index": 0
+   }
+  ],
+  "usageMetadata": {
+   "promptTokenCount": 1486,
+   "candidatesTokenCount": 327,
+   "totalTokenCount": 2809,
+   "promptTokensDetails": [
+    {
+     "modality": "TEXT",
+     "tokenCount": 394
+    },
+    {
+     "modality": "IMAGE",
+     "tokenCount": 1092
+    }
+   ],
+   "thoughtsTokenCount": 996,
+   "serviceTier": "standard"
+  },
+  "modelVersion": "gemini-3.5-flash",
+  "responseId": "DiZSapC3DMGzvr0Ppbni8Ak"
+ }
+}

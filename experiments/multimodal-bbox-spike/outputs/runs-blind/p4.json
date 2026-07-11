@@ -1,0 +1,160 @@
+{
+ "runId": "p4",
+ "model": "gemini-3.5-flash",
+ "page": 4,
+ "requestedItems": [
+  {
+   "label": "comfort_final_cronbach_alpha",
+   "description": "Table 1（Reliability data）の Comfort 行・Final sample (N=190) 列の Cronbach α 値"
+  },
+  {
+   "label": "total_no_of_items",
+   "description": "Table 1（Reliability data）の Total 行・Final sample (N=190) 列の No. of items 値"
+  }
+ ],
+ "executedAt": "2026-07-11T11:16:45.235Z",
+ "elapsedMs": 6993,
+ "usedResponseSchema": true,
+ "usageMetadata": {
+  "promptTokenCount": 1473,
+  "candidatesTokenCount": 166,
+  "totalTokenCount": 2998,
+  "promptTokensDetails": [
+   {
+    "modality": "IMAGE",
+    "tokenCount": 1092
+   },
+   {
+    "modality": "TEXT",
+    "tokenCount": 381
+   }
+  ],
+  "thoughtsTokenCount": 1359,
+  "serviceTier": "standard"
+ },
+ "parseError": null,
+ "rowCount": 2,
+ "discardedRowCount": 0,
+ "rows": [
+  {
+   "label": "comfort_final_cronbach_alpha",
+   "value": ".95",
+   "quote": ".95",
+   "page": 4,
+   "box_2d": [
+    161,
+    863,
+    171,
+    882
+   ],
+   "valueCorrect": true,
+   "valueJudgeDetail": "完全一致"
+  },
+  {
+   "label": "total_no_of_items",
+   "value": "55",
+   "quote": "55",
+   "page": 4,
+   "box_2d": [
+    197,
+    787,
+    207,
+    802
+   ],
+   "valueCorrect": true,
+   "valueJudgeDetail": "完全一致"
+  }
+ ],
+ "request": {
+  "contents": [
+   {
+    "role": "user",
+    "parts": [
+     {
+      "text": "あなたはこの論文ページ画像（ページ 4）から、指定された項目の値を実際に読み取り、それぞれの値が書かれている領域を bounding box として返すタスクを行う。値はこちらから与えないので、画像から自分で探して読み取ること。\n\nbox_2d の形式は [ymin, xmin, ymax, xmax] とする。画像の左上を原点 (0,0) とし、各座標は画像の高さ・幅に対して 0〜1000 に正規化した整数値で表す（ymin/ymax が縦方向、xmin/xmax が横方向）。box は対象の文言・数値だけを過不足なく囲む最小の矩形にすること。\n\n項目一覧:\n- label=\"comfort_final_cronbach_alpha\": Table 1（Reliability data）の Comfort 行・Final sample (N=190) 列の Cronbach α 値\n- label=\"total_no_of_items\": Table 1（Reliability data）の Total 行・Final sample (N=190) 列の No. of items 値\n\n各項目について、次のフィールドを持つ JSON オブジェクトを1つずつ、項目と同じ順序で返すこと:\n- \"label\": 上記の label をそのまま\n- \"value\": 画像から実際に読み取った値（数値や固有名詞はそのまま、単位や%記号は付けない）\n- \"quote\": box の中に実際に見える文言をそのまま（言い換えない）\n- \"page\": 4\n- \"box_2d\": [ymin, xmin, ymax, xmax]\n\n出力は上記オブジェクトの配列のみ。項目が画像内に見つからない場合も box_2d には最も近いと思われる位置を返すこと（省略しない）。"
+     },
+     {
+      "inline_data": {
+       "mime_type": "image/png",
+       "data": "<omitted: base64 image>"
+      }
+     }
+    ]
+   }
+  ],
+  "generationConfig": {
+   "temperature": 0,
+   "responseMimeType": "application/json",
+   "responseSchema": {
+    "type": "ARRAY",
+    "items": {
+     "type": "OBJECT",
+     "properties": {
+      "label": {
+       "type": "STRING"
+      },
+      "value": {
+       "type": "STRING"
+      },
+      "quote": {
+       "type": "STRING"
+      },
+      "page": {
+       "type": "INTEGER"
+      },
+      "box_2d": {
+       "type": "ARRAY",
+       "items": {
+        "type": "INTEGER"
+       }
+      }
+     },
+     "required": [
+      "label",
+      "value",
+      "quote",
+      "page",
+      "box_2d"
+     ]
+    }
+   }
+  },
+  "note": "API キーは x-goog-api-key ヘッダで送信（本ファイルには含めていない）。gold 正解値はプロンプトに含まれない"
+ },
+ "rawResponse": {
+  "candidates": [
+   {
+    "content": {
+     "parts": [
+      {
+       "text": "[\n  {\n    \"label\": \"comfort_final_cronbach_alpha\",\n    \"value\": \".95\",\n    \"quote\": \".95\",\n    \"page\": 4,\n    \"box_2d\": [\n      161,\n      863,\n      171,\n      882\n    ]\n  },\n  {\n    \"label\": \"total_no_of_items\",\n    \"value\": \"55\",\n    \"quote\": \"55\",\n    \"page\": 4,\n    \"box_2d\": [\n      197,\n      787,\n      207,\n      802\n    ]\n  }\n]",
+       "thoughtSignature": "EvQUCvEUARFNMg+WFLnJcr3JfBHEUGK54xMZA4tnW2zzPGOvKe0Os3SDHEUFQrBiiIVynRGRDk4Qwy7nwLPTTaf6fguuEDuYG66VECHafILRVMiEw3+p62V9bCbg56edRJvZiW8TqSB/3y0XYc30SbvCiyf2vHnRamEtQR3T/raFQb5rcGZ8AmNrXF1l8P5oIdu+fyPHp4WAHlY3M8IokbSgoiryA6Elwniq5UYA4DLlSeZBgcfTEtZtglZvQxcUgGlpG00rktPrLIODHHOASnyC7LBCPHYvp+tanH6On1/4rYKziphYfOzaHtTSynq8ka592sKquzmYyXjcFqnNBlL4N0/axH+8cwF6oxNs0/NFVZwRSWYNsiYkyJx6fqC76V2Jnf/LzkYtG4m7BD/OGUGWJU9sHkLqQyMPIti8OGzUj61SkITMyHswJm0PNAY89iMJMCmQj3x9KZPgrQJJi7T92VxF7SvYlQLqf3JTBCGn9I+bjlGiGovv904ICvh8QbIwuh9r2O8u+a71DBuDhjLas8usup1GPAhCMccdyLXi0u9+QW/vyba/etBKHC6vwwSMCSr7Z/USPS/Mdx1PJEH+pbLI+0+6p18ZQ6VaTKhgsRO75XoF8/qed6QMOLoTIozyv0nQkpadBzf5PqAN9cnCcc+PFtn84Z1aBiBwSLgRB7eg1ktNOs6XcCTWd+BpIRdSsq1f/v21J4h3OsjBSqOQ7gqew+UbGY7G8H4eMAZUK+aeKKD1/wXZKbw0qEKMrE9N14X4cGS2stuuJ2BAhQ0hBBKoJMft/jfjRBgReLLAZpbAAFNZivOzBSUHvDlA51imQ9Jl/t43e9owmiwYKE3I8w8EvEqdaNjL167jhm0Y+nMzepzUdY3gCpSTWOEr3YlxvCt/yyERmaiMS0V2X2NQi5jj+ZhsGcvJr/qZaLx4zjgzdJ/J/oFayLXMJqSH+rG60eRWCCQqdU7L+FI97x7lB/WuhEoKnqnyrTw4LSWzAZAvxEFCaE9V+v+PBaPU0Vxk+mKwy7lXKGvQE2mpgh1uJ/GmHAgmszU/1eMlGdz9mA+Ka2t0rmKVKLcvfNuQ80oXmymonWbnEF7plxXw1mEaAWZOQT4z0CWIP8Hm3UYBQ8LrMsIWDFMqOwTu3rC7AWWr2Kin/Ld9JMMQDFTW81gZ7nmrqqIyXr/LbflZEu3JS+vua4Qj2m6uMm2ClY7Y3o28R1IdaOpneUX/rLdfdwhg98ygf7OIP7/jTMikN3hZSkSBqEFyr3YyyywGQlItWo3yMJGEqukFBM1ryHotXxaQaWyIup56XCYvRLoM96V7n29jOO0uSXy2xynytLKNNTqZHKkAFQEDr6rQXc7Y3roKGcCu4G/sF1wmjfqtI/9l6O+0EQBueCnuwsDbAdHcXMzF/VovFDs7uKKXVLJ4Kww7lO9aDrJOIa8QW3ONYbLL6mwTKYZLpR4aKozr9NQoKXiV6v/mziEAvwUxbpeYd+KrM2hrIRNdL7o15qYaxiW4qucZv+hgTotBJu8AjRXqKcGUC7Z7dvjZrN3OVoRp7WSUKbDroOOi5Nw5hAwaoeqkZoWy/OfDOmvY4xqI6mCnUcYQX2qQOpmQNKBfG9P1ldHhNWl8aXqRllugRvB1mbz5Fp0JAfzmtd6s56tAH9k3hgWksVHAMk6Z/h/F8PXD4QXgnPeQFS/wITaRbiyGJyJNetrRfgxsiaP6OITGkNU7LBKbjLaIvPOxoP2GXHd8OXtVjVZr2F+0eBW4+kboWN0f17lysSYiF3o6mkULjbHR47u0w3RhelDsQAQojMuDJUFm5IOQwrQVRPmnEhXftHPu/5N+jfEBLUadBUfqLPvPJ+vt9JkzOIoke1O+NVoVNo7p5wRj5E5n0jylsd8gIYCNnub4PyU/cfB4WWfNbXs+4xqc86XkUKwIAkRY8UeTzgxS4eQrOYp6/MDlXUJDixHOnjPZf5LvUZdNXQL9+zZSBY5XfPobcqWc+eS7IlDLa+t/Id68O8EiLXxPHrArs4HFDxfQ9QLtnIsNtNdNpse1dV1CUfWFw5tmsZgRvsIpxv/QKdwflj2aX5k9YnYVa42/5ga2b7AnUiilhTy78lvbMv6lL1wtkepWi/4LJ80mBNAtIjtkj3LxnGhx080W+yCa7ObxSzvBGO26IulzM/0mwD1ZAkTs81tEj7k3hKij9U5OgmdLhpk3G/cWVwvhNV+pWac0ZcOCsokH7rWDIoPOOCGj03MPpt289pV7kjlqmJpnJZLy6KHd2Ad0/YcQGc68GlOwHo/3HnUNwnZxCjHFa7b3fPSbqbYT0rpVeERrMlxDwjvWiMkzWlZwLdkeiabA8znnJCbN6s4Z+ucOPAi+2MsawLWHahabup2z8Xqz3cS6enXpNk5UxacOZZU4R/fDt1jJ65zJz9WM3HjBKwCe7Es7euM9qJDiQcQrDMGKgr9WlukIsA6Txo1SBDU6hW8VXOARB8E0gAj4hH3A5sHqzb5mRvlgfd/j3HE3uo2CdSj8gYwGAnJgdzl0Dmrnce/uQwQITXrmMwNIz8+n7Hr41ZWNMBixJ7Llhe9ZQruE+1bKBupkHXAPOihEpa8zNccDPNX747E9XsY7yqn53VbwI8ap9/3o3VEbgfbUY2bd4fAbH40ZUPd6MOxc+KdtscKDlnaDizNBJ/N94iaM4mEHfW8x4eWsU2RTFGXP/I3SEPn+XqkSGzcoRMqJA11pWv9vz1Vt6yvG4EZmCHDK+8SVEjOa0t4ZLDAZgS1RBU+iYL28X7gEEATAHWsokmSZz2yl2szPJRqDAE9etp6hqEhd7YdAvXDSR5/gNWov0D8hJ7c7+dputaXjSQT7aK8iWHr94Nsnp16NkVCHT6VF31evBTwKfQrpgjsPMErv7TXtyNdA4hWvvp9ygBw0OGxzKMG1FFsPVZBf40yuj/yTP13WPkZfpxvuzJEN/UFhLI2OOdidnEbvZ7JXs7ViREHzaWZLZwNK7MMLs8AJKvN7GiUN1+457k2tXAyNn7UFNv5ibHIMujrUthY9M9bPvfd7ZyBcf6GibcfT/w1WkziImFgyEMwQ0PggADyifnemChqxYC5eI+OpX1jTYWUDlkdktRMouMelFAWzA+cmqYNsSLEB0hENwEqEkOk3PlP7Faii+t913rhjtPsnqFTkiHBPMYhq17nC3aItJdA59fwO9qspI36ylvuUbynT5rDIgpoNxc4xbo4ovFCYQayt/CZRVtoaeCzcKPGfwIjDfOb3cRpfjjTtuBGHJ08DaU3YJVSWnGibO9GfGr4uqoDnwlxHLsb9U1BfeLzaV3hDRiRHyqqaJDeD8tgnwVw15Brr8chwHaVd26CrJneIXLtJ2jlsC8F2Rit3qIMxwM4SVU6jcQs6C+ZtT3hLvdOxxrMtJCLkC3Jl5s9PKbIzjOOdQgOU1nxjXBzNp2y6aNgtJ1JhEmUVh1OwXzKcai4HmIA2iQmEAjGYMZXEE5g0dh4YO4PFfT7Vt1Fxwfk/PCAbNXYZS+ujQ89NF93DOBCawX8pP7cRowcTSz5EILLwlnwr5DGv0mof0G++0KhG"
+      }
+     ],
+     "role": "model"
+    },
+    "finishReason": "STOP",
+    "index": 0
+   }
+  ],
+  "usageMetadata": {
+   "promptTokenCount": 1473,
+   "candidatesTokenCount": 166,
+   "totalTokenCount": 2998,
+   "promptTokensDetails": [
+    {
+     "modality": "IMAGE",
+     "tokenCount": 1092
+    },
+    {
+     "modality": "TEXT",
+     "tokenCount": 381
+    }
+   ],
+   "thoughtsTokenCount": 1359,
+   "serviceTier": "standard"
+  },
+  "modelVersion": "gemini-3.5-flash",
+  "responseId": "FiZSap78GOjhvr0Pqcmv4Qk"
+ }
+}

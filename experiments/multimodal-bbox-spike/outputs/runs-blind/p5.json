@@ -1,0 +1,178 @@
+{
+ "runId": "p5",
+ "model": "gemini-3.5-flash",
+ "page": 5,
+ "requestedItems": [
+  {
+   "label": "item1_percent",
+   "description": "Table 2 の Item No. 1「Allowing families to hold their dying or dead infant」行の % 列の値"
+  },
+  {
+   "label": "item7_percent",
+   "description": "Table 2 の Item No. 7「Discussing autopsy or organ donation with families of dying infants」行の % 列の値"
+  },
+  {
+   "label": "mean_comfort_score",
+   "description": "本文（Table 2 の下の段落）中の \"mean score\" に続く数値"
+  }
+ ],
+ "executedAt": "2026-07-11T11:16:54.361Z",
+ "elapsedMs": 7099,
+ "usedResponseSchema": true,
+ "usageMetadata": {
+  "promptTokenCount": 1493,
+  "candidatesTokenCount": 244,
+  "totalTokenCount": 2960,
+  "promptTokensDetails": [
+   {
+    "modality": "IMAGE",
+    "tokenCount": 1092
+   },
+   {
+    "modality": "TEXT",
+    "tokenCount": 401
+   }
+  ],
+  "thoughtsTokenCount": 1223,
+  "serviceTier": "standard"
+ },
+ "parseError": null,
+ "rowCount": 3,
+ "discardedRowCount": 0,
+ "rows": [
+  {
+   "label": "item1_percent",
+   "value": "98",
+   "quote": "98",
+   "page": 5,
+   "box_2d": [
+    121,
+    853,
+    131,
+    1000
+   ],
+   "valueCorrect": true,
+   "valueJudgeDetail": "完全一致"
+  },
+  {
+   "label": "item7_percent",
+   "value": "45",
+   "quote": "45",
+   "page": 5,
+   "box_2d": [
+    370,
+    853,
+    379,
+    1000
+   ],
+   "valueCorrect": true,
+   "valueJudgeDetail": "完全一致"
+  },
+  {
+   "label": "mean_comfort_score",
+   "value": "4.13",
+   "quote": "4.13",
+   "page": 5,
+   "box_2d": [
+    741,
+    561,
+    754,
+    594
+   ],
+   "valueCorrect": true,
+   "valueJudgeDetail": "完全一致"
+  }
+ ],
+ "request": {
+  "contents": [
+   {
+    "role": "user",
+    "parts": [
+     {
+      "text": "あなたはこの論文ページ画像（ページ 5）から、指定された項目の値を実際に読み取り、それぞれの値が書かれている領域を bounding box として返すタスクを行う。値はこちらから与えないので、画像から自分で探して読み取ること。\n\nbox_2d の形式は [ymin, xmin, ymax, xmax] とする。画像の左上を原点 (0,0) とし、各座標は画像の高さ・幅に対して 0〜1000 に正規化した整数値で表す（ymin/ymax が縦方向、xmin/xmax が横方向）。box は対象の文言・数値だけを過不足なく囲む最小の矩形にすること。\n\n項目一覧:\n- label=\"item1_percent\": Table 2 の Item No. 1「Allowing families to hold their dying or dead infant」行の % 列の値\n- label=\"item7_percent\": Table 2 の Item No. 7「Discussing autopsy or organ donation with families of dying infants」行の % 列の値\n- label=\"mean_comfort_score\": 本文（Table 2 の下の段落）中の \"mean score\" に続く数値\n\n各項目について、次のフィールドを持つ JSON オブジェクトを1つずつ、項目と同じ順序で返すこと:\n- \"label\": 上記の label をそのまま\n- \"value\": 画像から実際に読み取った値（数値や固有名詞はそのまま、単位や%記号は付けない）\n- \"quote\": box の中に実際に見える文言をそのまま（言い換えない）\n- \"page\": 5\n- \"box_2d\": [ymin, xmin, ymax, xmax]\n\n出力は上記オブジェクトの配列のみ。項目が画像内に見つからない場合も box_2d には最も近いと思われる位置を返すこと（省略しない）。"
+     },
+     {
+      "inline_data": {
+       "mime_type": "image/png",
+       "data": "<omitted: base64 image>"
+      }
+     }
+    ]
+   }
+  ],
+  "generationConfig": {
+   "temperature": 0,
+   "responseMimeType": "application/json",
+   "responseSchema": {
+    "type": "ARRAY",
+    "items": {
+     "type": "OBJECT",
+     "properties": {
+      "label": {
+       "type": "STRING"
+      },
+      "value": {
+       "type": "STRING"
+      },
+      "quote": {
+       "type": "STRING"
+      },
+      "page": {
+       "type": "INTEGER"
+      },
+      "box_2d": {
+       "type": "ARRAY",
+       "items": {
+        "type": "INTEGER"
+       }
+      }
+     },
+     "required": [
+      "label",
+      "value",
+      "quote",
+      "page",
+      "box_2d"
+     ]
+    }
+   }
+  },
+  "note": "API キーは x-goog-api-key ヘッダで送信（本ファイルには含めていない）。gold 正解値はプロンプトに含まれない"
+ },
+ "rawResponse": {
+  "candidates": [
+   {
+    "content": {
+     "parts": [
+      {
+       "text": "[\n  {\n    \"label\": \"item1_percent\",\n    \"value\": \"98\",\n    \"quote\": \"98\",\n    \"page\": 5,\n    \"box_2d\": [\n      121,\n      853,\n      131,\n      1000\n    ]\n  },\n  {\n    \"label\": \"item7_percent\",\n    \"value\": \"45\",\n    \"quote\": \"45\",\n    \"page\": 5,\n    \"box_2d\": [\n      370,\n      853,\n      379,\n      1000\n    ]\n  },\n  {\n    \"label\": \"mean_comfort_score\",\n    \"value\": \"4.13\",\n    \"quote\": \"4.13\",\n    \"page\": 5,\n    \"box_2d\": [\n      741,\n      561,\n      754,\n      594\n    ]\n  }\n]",
+       "thoughtSignature": "EpgXCpUXARFNMg+WR7O8wfars7ArK0dWAiYCpS1XPoET4ZWuMvDxEUrUxvrBZMYMoHNYGKYrHgObQTxpii/XJ0jk+uymkE7OQpMoJoFz4FV5NArOItoMBNUe0eTT1SbovGdJj8LDXRX8TJ9rbu8GnQcvKT4a92wE+gxXoIAAQvkkMWFYEUTheIrD3kDa9/Pf7mnBfKiTSpwKUyEbVBLD1ZBI+KVIAPxZfQN0PnDnNxeRfehVEUimko6X4hxp8/g/MGDnTaitdz1OxRK7CV8moqNjC0e13+ndpNFJZmN+9aXLEXtqHv9Bj75Jh9bpqJGy2nvk+i5TF0BbhW2fBugyZ1qIPZcgq/WihJRDoPj+FYxqAJtZ9WkQCmH1a6Kd5ZdV9J/PwR1CNHXxI+nJCIHLwQQOIy46o15nuIseZzLhvzix0YkahaxDP4Ox2KaJKEkk6PLRdzgbO0suK+s4g5Fcho0iyhPBuEcJ2eM9+TjU740HjYo3+h1Ke7klpf/nv/KANbk216Ezi2cLpkswjMFWXYy+9OeYPEkc9M895+7opqzCSyuDkii8rchYCD4piA8ofV2jTVDHI/E+PETIBarxgbSQZCp9aUUJp3rBWgbHw5R3rpfI85XUAzlE/BaMTi/krJVgbMLlrPFrqv6jvCJyhwBE/nZaJio6kMoN0+hF2U546lpzBp9ybFx0ZY60lQ7BL0cA6BWziHjPtXnntv/gL7wr5qcZsZdvZbNvulEzodgYh+t1uJwDd1MwrBEszAzDJib1wfLbuz/kiF2ByNVBoHwYD6P5jWpC1UkBH+6b/Vn5kts3Uz6Xov82au4kgGtVeJc33E8JJBfe8s3sf28I8TDEYDpvsH3KIgwKfRs6+gUqrvc00mfRyT0VAIxQzOCwNCgfTiymKQMIP7SfbbQd3npI8i2U3V/SRSAl6RRfEHb1HMEtIoZSXlVf7Mw40fdoCHQrXddOjdjJLZkkaKghkVG1DiDQ+vFcl1QFUSYqSpQGov3FkewTzjjq7uwdBfRCUeWhFT3yT+/RAFor/UMN7HHG9CMhS3+3OMy2nbjxsSxnjqu7JejFqmjW2DeMvM7VhH/uJfQlLMY47pvliSWR4kbt/Cos49AZVTF4zrjqWbMn7tB5nzEQYURoV57YTOn9zN8r+OuyxPrC7pJ/Fts9ulQGLsUKuZ/f7io06A8BM3U7+om7zNHhcKC0w6Sl/vdCSseBb4Yxv0LvxITrw4AWyFy5hJenbn27KXP80sIh7ktO4Iit3nniPIww/n+NA6TTu1Y1B3yHev685cvGOqn4B4kV2D6eXvKugN52W/WY0RKsJyJGyoEnfAf1CzLY3TCNeiuIEu5u8gRvGO9k1GGsoYCikKCdbgHl/idRiQkJ/DvthYmqT6FEHmkAAFp1y1/j//8G6jK2xIL4X+g/fTK5IIvp1fG/459GcdDlEk7ehB7OWRyUQuIDgUAQTab7G+aVpXcKn2+U3OnyXHvBjoT2h3v+g1AlWd923fMLRTT1YgjfvTGnbQ5Xzk7SczMSgAkYrIJKPgVLZtrfmmXBF/oDrnte35e9hT5D5BNlnQ0oQrFVm5pGtUYmNqsKiYscgsLDVQjfHXBRCGTUwF3VqJ6qy4s/E2EXwdFxPJDniRgtOovi3UeJryawEMTzqewAeQgsFFn12tNpobx2FDehA13BSSYYbdxNYXRm9ynaz4ZEH0KHcBrLAZ7AHOI5+m0IkUvq2ha/fyHthKo4fYrjI/MV7gLVt6QO5KqtyXHKPBFZnioMy4mAcOjtVbO4eY/YnNZRe1VeIEnnqJG+Q3MPXVzvknV0avAApwYYEUitZ0km9pfZadt8FO8HC9gl4YeXlraHbEVhboIKkZ3N5r0IpSyc+88LoDAVUt+EXOows0neuRCWx9TR0IEI/s0fkufVxJBWTC4d47bYo48sMp19FnROafc7T+t0oIyHFDVZ1yyIn1YvoqhExVQ70RiUXLdlObaueVHXjTv/qYC48UcRNeurTxFuyd+UllKYmV5A5tYeruL/fP912Fisy0UMNa96CxXBc0Oz0LJBKbBQJ3uExz5COQB7J6/H60/eIuaZDMdNqN9PskkdPKm3eUVTgn1zRZxKCSPdRGM56LvOx5NIX1HvBQFQETlVJR2eGfSFxrPr+mXdOYhWnxYH0VDC3gcFhelwoqEaMLlnlijIgzvuEqyQ0AOTL6769tyh2GfJW4ZqQbbeVve0UHrU5kH7fiY0TPZlm9a/rYs2FmswUtXV4D+7LWFOJi9aUXTNw4qZ2zIP99efpYs7ev5rpvEtqK65pMsZxX8e5GcdVy+YQKAmg5Ddg53Bw4DhRgCuFyOrfNlNou8dWZ6vlgE4L25HhkjgH/mTxyq0Oypcbde9I0+CZ+IjdO3KxCv6b7HsNB1fepzHFlVUaC+SssbQokW+XMxZuuJct3XFqaYkZSJb7Fnr6A5nacnBuXitnDRxOW40omn3gLlYG/53fvIFTRPjQzJ/YCN0MAARpy5S963Nl4WfwXmB9bkTx5wa2J/rTTEZPiaxKRbShGmERlb2aPlsglSSzWSJ6pN1fwodlvZfoMj85m20jORhivC+jCpiKTx3S4tvVChst+8DekrxzBXl2UKWD4qZ8Vc8MIgaR11o53Al5RkOTD7+9Yz32hgscu4Z+eD3ekthh5TgzLTQpKZco5iO15NuFFVmSPW66dhA3GPwOcGYPpFv0kpc4WtHxCl2AxL/itEi/l+QsoHEDKpa2WrjlAVCfnsYZIU4jIkkcIxhKj/7n+ayFggQQTHDCei9NRfllN9sq7Hkc9aR7t8CuyS3FbcjN49R2SXEAL9qJS3Ll+SQYlDSH18w0up8LD7GFVPnOgYwFqx8/sknwC/Hr0/IcaN+QUFJr/H827AH7Gi9uWiH4i07FtwBCsnLV/Jleq+g2PMZJmZvkTIjianaNEySBbVbAUB+vfUHVfGyqxxmkPzKR1fipWzRg9sqtEauBEEbHPkIX912EKV06GzVeOOH2gxgx95xNoN+2u+AfkQLm0I9a9n77HzKSA58tE/uHj4Foqo0ZuaDEsoVjEM+0HEiLeZ+eDVGw2KzbHOp85hmTEGIPilqHC6RhdE9hM8uPFhkS++DKhr4UTtYmXda3DFjq2ig39CReBPkdR6B+My/JxH5IYDZxFCnfvJ4BHLa2McXgtp+aMsbpQhAiwZGbAIPPtlLqqBFFxgWvpQSC5EHM3sm/EOuNjCsJ2GfRHv6vzHz8F8bK0ORpFbGakJVfFkYOhFZYrZM79d9oVIIOJy5LDZqUS6kj0a1lwU9Heco/N+zjgGFwxnrjr4wglxURNhwF9tZcpZxy4CnSdly3rFOTV3z4wYVNP3hbxca0Focz5n7ZR7CInOa0G56huH3hdt6eXItqMR5dzagSX7lhIge81N+Y6YIhvLpHuQrJi0qZfx/n+49q8bSBxXZ6fSkbJ2TVi6tgPJ++iSz4T8sy4nxbJ6XcvZBwi5fOtiFmdfRwlTbVsvmKUSsGCkx9chrsm36t5ji1tfdHwz9hkvEXbzWRhltz7mFsp9ZQ+z+ejduiEIoPlKG9nnCX5/Uf9WE9q3HckemskUAV9UdQFbgdTacED180fs/a//3y54LJV9boieuGRMHZUEtRbsKFtGhWYQTS2DNaVz8UxrFuUCsJgeGYlsfUI6qSfoWeMLnb4Gi7ahqol+S3UgXgBJ+f5BYJ7iIKvp/MxCctdxQbcJyYkKwUBhsXkXjSZyNVkOeU2W9LTyC7ihGXiSIBimSJrEGnFLd6xQxylRAKl/073oleV5WZZ6l5RG/fy84HAX3axsZI/u1jB7vMRJTkeQ6eZSkC4K+uKYtZjYOvxgzIrihiBpCnRbnASJQKw9FTOmghflou2NstPsSk1GHY3hh2bU/N3HpXkOdPyLJRGHCkirhWFCXN3ozCZeemKmrp0A3J8mJ5F+ZckbZrbUHNVX2O465OQ=="
+      }
+     ],
+     "role": "model"
+    },
+    "finishReason": "STOP",
+    "index": 0
+   }
+  ],
+  "usageMetadata": {
+   "promptTokenCount": 1493,
+   "candidatesTokenCount": 244,
+   "totalTokenCount": 2960,
+   "promptTokensDetails": [
+    {
+     "modality": "IMAGE",
+     "tokenCount": 1092
+    },
+    {
+     "modality": "TEXT",
+     "tokenCount": 401
+    }
+   ],
+   "thoughtsTokenCount": 1223,
+   "serviceTier": "standard"
+  },
+  "modelVersion": "gemini-3.5-flash",
+  "responseId": "HyZSauibFZPhvr0P7d-v0Ag"
+ }
+}
