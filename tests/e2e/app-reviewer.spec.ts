@@ -105,6 +105,57 @@ test.describe('reviewer ロールのシェル制限（design §3・§3.1）', ()
     expect(results.violations).toEqual([]);
   });
 
+  test('reviewer が #/export を直リンクで開くと #/home へ退避される（直リンクの盲検ガード）', async ({ page }) => {
+    await installChromeStub(page, 'reviewer@example.com');
+    await page.route('https://sheets.googleapis.com/**', async (route) => {
+      await route.fulfill({ json: { values: [] } });
+    });
+    await page.route('https://www.googleapis.com/**', async (route) => {
+      await route.fulfill({ json: {} });
+    });
+    await page.addInitScript(() => {
+      const win = window as unknown as Record<string, unknown>;
+      win.__E2E_PRELOADED_STATE__ = {
+        currentProject: {
+          projectId: 'e2e-project',
+          spreadsheetId: 'e2e-sheet',
+          driveFolderId: 'e2e-folder',
+          name: 'E2E プロジェクト',
+        },
+        // dataRows ≥ 1 = owner なら #/export に入れる counts（ロール制限だけで弾かれることを確認する）
+        counts: {
+          documents: 1,
+          protocolVersions: 1,
+          schemaVersions: 1,
+          pilotRuns: 1,
+          evidenceRows: 1,
+          dataRows: 5,
+        },
+        role: {
+          role: 'reviewer_with_ai',
+          resolving: false,
+          error: null,
+          folderAccessGranted: true,
+          folderAccessChecking: false,
+          folderAccessError: null,
+        },
+      };
+    });
+    await page.goto('/app/app.html#/export');
+
+    // ガードがトーストで案内し #/home へ退避する（エクスポート画面は一度も描画されない）
+    await expect(page.locator('.toast')).toContainText(
+      'このプロジェクトではレビュアー権限のため利用できません',
+    );
+    await expect(page).toHaveURL(/#\/home$/);
+    await expect(page.locator('.view--export')).toHaveCount(0);
+    await expect(page.locator('#home-go-verify')).toBeVisible();
+    const navHrefs = await page.locator('#app-nav a').evaluateAll((els) =>
+      els.map((el) => el.getAttribute('href')),
+    );
+    expect(navHrefs).toEqual(['#/home', '#/verify']);
+  });
+
   test('unregistered ロール: 全画面ブロックを表示し、ナビを出さない', async ({ page }) => {
     await installChromeStub(page, 'stranger@example.com');
     await page.route('**/*', async (route) => {

@@ -862,11 +862,27 @@ describe('bootstrapApp', () => {
     const store = await bootstrapApp(asWindow(stub));
     expect(store).not.toBeNull();
 
-    store?.setState({ currentProject: { projectId: 'p9', spreadsheetId: 's9', driveFolderId: 'f9', name: '追加プロジェクト' } });
+    // 盲検のフェイルクローズにより「プロジェクトあり + ロール未解決」はブロック画面になるため、
+    // プロジェクトとロール（解決済み owner）を同時に注入して再描画の配線を確認する
+    const current = store?.getState();
+    store?.setState({
+      currentProject: { projectId: 'p9', spreadsheetId: 's9', driveFolderId: 'f9', name: '追加プロジェクト' },
+      role: { ...(current as AppState).role, role: 'owner' },
+    });
     expect(document.getElementById('app-status')?.textContent).toBe(
       'プロジェクト: 追加プロジェクト',
     );
     expect(document.getElementById('app-content')?.textContent).toContain('追加プロジェクト');
+  });
+
+  test('プロジェクトが選択されたのにロール未解決の間はブロック画面になる（盲検のフェイルクローズ）', async () => {
+    const stub = createWindowStub();
+    const store = await bootstrapApp(asWindow(stub));
+
+    // ロールを注入せずにプロジェクトだけを与える → 確認中プレースホルダ + ナビ非表示
+    store?.setState({ currentProject: PROJECT });
+    expect(document.getElementById('app-role-resolving')).not.toBeNull();
+    expect(document.querySelectorAll('#app-nav a')).toHaveLength(0);
   });
 });
 
@@ -2317,5 +2333,188 @@ describe('bootstrapApp: 独立二重レビュー機能', () => {
     await flush();
     expect(document.getElementById('home-reviewers-error')).toBeNull();
     expect(document.getElementById('home-reviewers-empty')).not.toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ロール解決の初期化順序とフェイルクローズ（盲検ガード。design §1・§3）
+// - 初期ルーティングはロール確定後に行う（ロール確定前にルートローダを発火させない）
+// - ロール解決失敗はフェイルクローズ（エラー画面 + 再試行のみ。owner へフォールバックしない）
+// - ロールがセッション中に変わったら現在ルートを再ガードして退避する
+// ---------------------------------------------------------------------------
+
+describe('bootstrapApp: ロール解決の初期化順序とフェイルクローズ（盲検ガード）', () => {
+  const loadExportDataMock = loadExportData as jest.Mock;
+  let chromeMock: ChromeMock;
+
+  beforeEach(() => {
+    chromeMock = installChromeMock();
+    document.body.innerHTML = APP_TEMPLATE;
+  });
+
+  /**
+   * ロール解決（Meta / Reviewers 読み出し）を実弾で通す Sheets fetch スタブ。
+   * failuresBeforeSuccess で先頭 n 回の fetch を HTTP 500 にし、gate で全 fetch を保留できる
+   */
+  function createRoleDeps(options: {
+    email: string;
+    reviewersRows?: string[][];
+    failuresBeforeSuccess?: number;
+    gate?: Promise<void>;
+  }): { deps: AppDeps; fetchMock: jest.Mock } {
+    let failures = options.failuresBeforeSuccess ?? 0;
+    const fetchMock = jest.fn(async (input: RequestInfo | URL) => {
+      if (options.gate) {
+        await options.gate;
+      }
+      const url = decodeURIComponent(String(input));
+      if (failures > 0) {
+        failures -= 1;
+        return { ok: false, status: 500, json: async () => ({}), text: async () => 'boom' };
+      }
+      let json: unknown = { values: [] };
+      if (url.includes('fields=sheets.properties.title')) {
+        json = {
+          sheets: ['Meta', 'Documents', 'SchemaFields', 'Reviewers'].map((title) => ({
+            properties: { title },
+          })),
+        };
+      } else if (url.includes('/values/Meta')) {
+        // schema_version は CURRENT_SCHEMA_VERSION（'1.0'）と一致させる（loadProjectMeta の検証）
+        json = {
+          values: [
+            [...SHEET_HEADERS.Meta],
+            ['p1', 'テスト SR', 'sheet-1', 'folder-1', '1.0', 't0', 'owner@example.com'],
+          ],
+        };
+      } else if (url.includes('/values/Reviewers')) {
+        json = { values: [[...SHEET_HEADERS.Reviewers], ...(options.reviewersRows ?? [])] };
+      } else if (url.includes('/values:batchGet')) {
+        json = { valueRanges: [] };
+      }
+      return { ok: true, status: 200, json: async () => json, text: async () => '' };
+    });
+    const { deps } = createFakeDeps([]);
+    deps.google = { fetch: fetchMock as unknown as typeof fetch, getAccessToken: async () => 'token' };
+    deps.profile = { getProfileUserInfo: async () => ({ email: options.email, id: 'uid' }) };
+    return { deps, fetchMock };
+  }
+
+  /** fetch 履歴に batchGet（進捗カウント読込）が含まれるか */
+  function calledBatchGet(fetchMock: jest.Mock): boolean {
+    return fetchMock.mock.calls.some((call) => String(call[0]).includes('batchGet'));
+  }
+
+  test('ロール確定前は初期ルーティングを行わず、reviewer の #/export 直リンクは #/home へ退避する', async () => {
+    chromeMock.storage.local.data[CURRENT_PROJECT_STORAGE_KEY] = PROJECT;
+    const stub = createWindowStub();
+    stub.location.hash = '#/export';
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const { deps, fetchMock } = createRoleDeps({
+      email: 'reviewer@example.com',
+      reviewersRows: [['reviewer@example.com', 'reviewer', 'with_ai', 'owner@example.com', 't0']],
+      gate,
+    });
+
+    const boot = bootstrapApp(asWindow(stub), deps);
+    await flush();
+    // ロール確定前（盲検のフェイルクローズ）: プレースホルダ + ナビ非表示 + #/export のローダ未発火
+    expect(document.getElementById('app-role-resolving')).not.toBeNull();
+    expect(document.querySelectorAll('#app-nav a')).toHaveLength(0);
+    expect(loadExportDataMock).not.toHaveBeenCalled();
+
+    release();
+    await boot;
+    await flush();
+    // reviewer_with_ai と解決 → #/export は不許可 → トーストで #/home へ退避し、ローダは最後まで発火しない
+    expect(toastTexts()).toContain('このプロジェクトではレビュアー権限のため利用できません');
+    expect(stub.location.hash).toBe('#/home');
+    expect(loadExportDataMock).not.toHaveBeenCalled();
+    expect(document.getElementById('app-role-resolving')).toBeNull();
+    expect(document.getElementById('app-content')?.textContent).toContain('プロジェクト概要');
+    expect(document.querySelectorAll('#app-nav a')).toHaveLength(2);
+    // reviewer には進捗カウント（batchGet）も読ませない（滑り込みの防止）
+    expect(calledBatchGet(fetchMock)).toBe(false);
+  });
+
+  test('ロール解決失敗はフェイルクローズ（エラー画面 + ナビ非表示 + ローダ不発火）。再試行で復帰する', async () => {
+    chromeMock.storage.local.data[CURRENT_PROJECT_STORAGE_KEY] = PROJECT;
+    const stub = createWindowStub();
+    const { deps, fetchMock } = createRoleDeps({
+      email: 'owner@example.com',
+      failuresBeforeSuccess: 1,
+    });
+    await bootstrapApp(asWindow(stub), deps);
+    await flush();
+
+    // 一時的な読込エラーで owner UI を開放しない（フェイルクローズ）
+    expect(document.getElementById('app-role-error')?.textContent).toContain(
+      'ロールを確認できませんでした',
+    );
+    expect(document.getElementById('app-context')?.textContent).toBe('ロールを確認できませんでした');
+    expect(document.querySelectorAll('#app-nav a')).toHaveLength(0);
+    expect(calledBatchGet(fetchMock)).toBe(false);
+
+    // 再試行 → owner と解決 → 通常の Home + ナビ 9 項目 + 進捗カウント読込
+    (document.getElementById('app-role-retry') as HTMLButtonElement).click();
+    await flush();
+    await flush();
+    expect(document.getElementById('app-role-error')).toBeNull();
+    expect(document.getElementById('app-content')?.textContent).toContain('プロジェクト概要');
+    expect(document.querySelectorAll('#app-nav a')).toHaveLength(9);
+    expect(calledBatchGet(fetchMock)).toBe(true);
+  });
+
+  test('再試行も失敗したらエラー画面のまま（フェイルクローズ維持）、その後の再試行で復帰する', async () => {
+    chromeMock.storage.local.data[CURRENT_PROJECT_STORAGE_KEY] = PROJECT;
+    const stub = createWindowStub();
+    const { deps, fetchMock } = createRoleDeps({
+      email: 'owner@example.com',
+      failuresBeforeSuccess: 2,
+    });
+    await bootstrapApp(asWindow(stub), deps);
+    await flush();
+    expect(document.getElementById('app-role-error')).not.toBeNull();
+
+    // 1 回目の再試行も失敗 → エラー画面を維持し、ルートローダは発火しない
+    (document.getElementById('app-role-retry') as HTMLButtonElement).click();
+    await flush();
+    expect(document.getElementById('app-role-error')).not.toBeNull();
+    expect(calledBatchGet(fetchMock)).toBe(false);
+
+    // 2 回目の再試行で復帰
+    (document.getElementById('app-role-retry') as HTMLButtonElement).click();
+    await flush();
+    await flush();
+    expect(document.getElementById('app-role-error')).toBeNull();
+    expect(document.getElementById('app-content')?.textContent).toContain('プロジェクト概要');
+  });
+
+  test('ロールがセッション中に変わったら現在ルートを再ガードし、不許可なら #/home へ退避する（防御の多重化）', async () => {
+    const stub = createWindowStub({
+      currentProject: PROJECT,
+      counts: { dataRows: 1 } as AppState['counts'],
+    });
+    const { deps } = createFakeDeps([]);
+    const store = await bootstrapApp(asWindow(stub), deps);
+    stub.location.hash = '#/export';
+    stub.fireHashChange();
+    expect(document.getElementById('app-context')?.textContent).toBe(
+      'エクスポート 画面を表示しています',
+    );
+
+    // ロールが reviewer へ変わる → 現在ルート（#/export）が不許可になり #/home へ退避する
+    const current = store?.getState();
+    store?.setState({
+      role: { ...(current as AppState).role, role: 'reviewer_with_ai', folderAccessGranted: true },
+    });
+    expect(toastTexts()).toContain('このプロジェクトではレビュアー権限のため利用できません');
+    expect(stub.location.hash).toBe('#/home');
+    // 退避後の再描画はレビュアー向けの縮退版 Home
+    expect(document.getElementById('app-content')?.textContent).toContain('プロジェクト概要');
+    expect(document.querySelectorAll('#app-nav a')).toHaveLength(2);
   });
 });

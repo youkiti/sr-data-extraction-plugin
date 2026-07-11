@@ -114,9 +114,41 @@ declare global {
   }
 }
 
-/** role.role は未解決の間 null。ガード・ナビ描画は既定で 'owner'（制限なし）として扱う */
+/**
+ * 解決済みロール。プロジェクト選択済みでロール未確定（null）の間は roleBlockOf が先に
+ * 全画面ブロックするため、null がここまで来るのはプロジェクト未選択セッションだけ
+ * = 従来どおり 'owner'（制限なし）として扱う
+ */
 function roleOf(state: AppState): ProjectRole {
   return state.role.role ?? 'owner';
+}
+
+/** プロジェクト選択済みセッションでロールが確定していない間の全画面ブロック種別 */
+type RoleBlock =
+  | { kind: 'resolving' }
+  | { kind: 'error'; message: string }
+  | { kind: 'unregistered' };
+
+/**
+ * 盲検のフェイルクローズ判定（docs/design-independent-dual-review.md §3）。
+ * プロジェクト選択済みなのにロールが確定していない（解決待ち / 解決失敗 / 未登録）間は、
+ * reviewer かもしれないセッションへ owner 向けの UI・データ読込を開放しない（null = 通常表示）。
+ * 一時的な読込エラーで owner 側へフォールバックしない = フェイルクローズがこの関数の要点
+ */
+function roleBlockOf(state: AppState): RoleBlock | null {
+  if (state.currentProject === null) {
+    return null; // プロジェクト未選択に盲検対象のデータはない（各ローダも project なしで no-op）
+  }
+  if (state.role.role === 'unregistered') {
+    return { kind: 'unregistered' };
+  }
+  if (state.role.error !== null) {
+    return { kind: 'error', message: state.role.error };
+  }
+  if (state.role.role === null) {
+    return { kind: 'resolving' };
+  }
+  return null;
 }
 
 /**
@@ -131,6 +163,35 @@ function renderUnregisteredBlock(): HTMLElement {
       attributes: { role: 'alert' },
       text: 'このプロジェクトのレビュアーとして登録されていません。プロジェクトのオーナーに登録を依頼してください。',
     }),
+  ]);
+}
+
+/** ロール解決待ちのプレースホルダ（盲検のフェイルクローズ: 確定前はどのルートも描画しない） */
+function renderRoleResolvingBlock(): HTMLElement {
+  return el('section', { id: 'app-role-resolving', className: 'view view--role-blocked' }, [
+    el('p', { text: 'このプロジェクトでのロールを確認しています…' }),
+  ]);
+}
+
+/**
+ * ロール解決失敗の全画面ブロック。盲検のフェイルクローズ: 一時的な読込エラーで reviewer に
+ * owner 向け UI（全ナビ + エクスポート等）を開放しないため、確認できるまで再試行のみを提供する
+ */
+function renderRoleErrorBlock(message: string, onRetry: () => void): HTMLElement {
+  const retry = el('button', {
+    id: 'app-role-retry',
+    text: '再試行',
+    attributes: { type: 'button' },
+  });
+  retry.addEventListener('click', onRetry);
+  return el('section', { id: 'app-role-error', className: 'view view--role-blocked' }, [
+    el('h2', { text: 'ロールを確認できませんでした' }),
+    el('p', {
+      attributes: { role: 'alert' },
+      text: `このプロジェクトでのロールを確認できませんでした: ${message}`,
+    }),
+    el('p', { text: '盲検保護のため、ロールを確認できるまで画面を表示しません。' }),
+    retry,
   ]);
 }
 
@@ -223,6 +284,8 @@ export async function bootstrapApp(
 
   const store = createStore(await seedState(win));
   let currentHash: RouteHash = '#/home';
+  // 防御の多重化: 直近にガード評価したロール（ロールが確定・変化したときだけ現在ルートを再ガードする）
+  let lastGuardedRole: ProjectRole | null = null;
 
   // view のユーザー操作をサービス層へ委譲するコンテキスト（views/types.ts）
   const viewContext: ViewContext = {
@@ -519,12 +582,12 @@ export async function bootstrapApp(
   };
 
   const renderNav = (state: AppState): void => {
-    const role = roleOf(state);
-    if (role === 'unregistered') {
-      // 未登録は全画面ブロック（renderRoute）のみを見せ、ナビ自体を出さない
+    // 盲検のフェイルクローズ: ロール未確定・解決失敗・未登録の間はナビ自体を出さない
+    if (roleBlockOf(state) !== null) {
       navEl.replaceChildren();
       return;
     }
+    const role = roleOf(state);
     // reviewer 系ロールは Home と検証だけを表示する（ディムではなく非表示。design §3・§3.1）
     const visibleRoutes =
       role === 'owner'
@@ -558,10 +621,19 @@ export async function bootstrapApp(
 
   const renderRoute = (): void => {
     const state = store.getState();
-    if (roleOf(state) === 'unregistered') {
-      // 未登録は全画面エラーで以降の読み込みを中断する（design §1）
-      contentEl.replaceChildren(renderUnregisteredBlock());
-      contextEl.textContent = 'アクセスできません';
+    const block = roleBlockOf(state);
+    if (block !== null) {
+      // 盲検のフェイルクローズ: ロールが確定するまでどのルートも描画しない（design §1・§3）
+      if (block.kind === 'unregistered') {
+        contentEl.replaceChildren(renderUnregisteredBlock());
+        contextEl.textContent = 'アクセスできません';
+      } else if (block.kind === 'error') {
+        contentEl.replaceChildren(renderRoleErrorBlock(block.message, retryRole));
+        contextEl.textContent = 'ロールを確認できませんでした';
+      } else {
+        contentEl.replaceChildren(renderRoleResolvingBlock());
+        contextEl.textContent = 'ロールを確認しています';
+      }
       return;
     }
     const route = findRoute(currentHash);
@@ -570,6 +642,12 @@ export async function bootstrapApp(
   };
 
   const handleHashChange = (): void => {
+    // 盲検のフェイルクローズ: ロール未確定・解決失敗・未登録の間はルート処理（ローダ発火）を行わない
+    if (roleBlockOf(store.getState()) !== null) {
+      renderRoute();
+      renderNav(store.getState());
+      return;
+    }
     const target = normalizeHash(win.location.hash);
     const guard = guardRoute(target, store.getState(), roleOf(store.getState()));
     if (!guard.allowed) {
@@ -648,6 +726,28 @@ export async function bootstrapApp(
     }
   };
 
+  /**
+   * 初期ルーティング + 進捗カウントの起動時読込（ロール確定後 / 再試行成功後の合流点）。
+   * counts の読込は loadProgressCounts 側でも no-op 判定される（プロジェクト未選択 /
+   * countsLoaded / reviewer 系ロール）
+   */
+  const startRouting = (): void => {
+    handleHashChange();
+    // 盲検のフェイルクローズ: ロールを確認できないまま counts（Decisions 総数等）を読まない
+    if (roleBlockOf(store.getState()) === null) {
+      void loadProgressCounts(store, deps);
+    }
+  };
+
+  /** ロール解決失敗画面の「再試行」。解決できたら初期ルーティングをやり直す */
+  const retryRole = (): void => {
+    void loadRole(store, deps).then(() => {
+      if (roleBlockOf(store.getState()) === null) {
+        startRouting();
+      }
+    });
+  };
+
   titleButton.addEventListener('click', () => {
     win.location.hash = '#/home';
   });
@@ -655,6 +755,19 @@ export async function bootstrapApp(
   // （app.html 側の href="../popup/popup.html"）。JS の配線は不要
   win.addEventListener('hashchange', handleHashChange);
   store.subscribe((state) => {
+    // 防御の多重化（盲検のフェイルクローズ）: ロールが確定・変化したタイミングで現在ルートを
+    // 再ガードし、不許可になっていたら描画前に #/home へ退避する（セッション中のロール変化への備え）
+    const block = roleBlockOf(state);
+    const effectiveRole = block === null ? roleOf(state) : null;
+    if (effectiveRole !== null && effectiveRole !== lastGuardedRole) {
+      lastGuardedRole = effectiveRole;
+      const guard = guardRoute(currentHash, state, effectiveRole);
+      if (!guard.allowed) {
+        showToast(guard.message, doc);
+        currentHash = '#/home';
+        win.location.hash = '#/home';
+      }
+    }
     // ストア更新の再描画は route 全体を replaceChildren で作り直すため、ページ全体
     // （documentElement）のスクロール位置が一旦 0 へクランプされる。ナビゲーション
     // （hashchange）と違い同一画面の部分更新なので、退避して復元する（例: パイロットの
@@ -669,13 +782,15 @@ export async function bootstrapApp(
   });
 
   renderHeader(store.getState());
-  handleHashChange();
-  // ガード・#/home サマリの進捗カウントを起動時に読み込む（プロジェクト未選択 /
-  // E2E seam で counts 注入済み（countsLoaded）なら loadProgressCounts 側で no-op）
-  void loadProgressCounts(store, deps);
-  // プロジェクトに対する実効ロールを解決する（起動シーケンスで 1 回。design §1）。
-  // 解決済み（E2E seam で owner 注入済み等）なら loadRole 側で no-op。解決後は
-  // store.subscribe がナビ / 内容（unregistered の全画面ブロック等）を追従させる
-  void loadRole(store, deps);
+  // 盲検のフェイルクローズ: プロジェクト選択済みの実セッションでは、ロールを解決し終える
+  // まで初期ルーティング（ルートローダ発火）を行わない — reviewer の直リンクで owner 向けの
+  // データ（エクスポートの audit プレビュー・進捗カウント等）が読み込まれるのを防ぐ。
+  // E2E seam でロール注入済み / プロジェクト未選択なら待ちは発生しない
+  if (roleBlockOf(store.getState())?.kind === 'resolving') {
+    renderNav(store.getState());
+    renderRoute();
+    await loadRole(store, deps);
+  }
+  startRouting();
   return store;
 }
