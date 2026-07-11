@@ -1,0 +1,156 @@
+{
+ "runId": "p4",
+ "model": "gemini-3.5-flash",
+ "page": 4,
+ "requestedItems": [
+  {
+   "label": "comfort_final_cronbach_alpha",
+   "description": "Table 1（Reliability data）の Comfort 行・Final sample (N=190) 列の Cronbach α 値（.95 のはず）"
+  },
+  {
+   "label": "total_no_of_items",
+   "description": "Table 1（Reliability data）の Total 行・Final sample (N=190) 列の No. of items 値（55 のはず）"
+  }
+ ],
+ "executedAt": "2026-07-11T09:07:16.101Z",
+ "elapsedMs": 8284,
+ "usedResponseSchema": true,
+ "usageMetadata": {
+  "promptTokenCount": 1466,
+  "candidatesTokenCount": 119,
+  "totalTokenCount": 3061,
+  "promptTokensDetails": [
+   {
+    "modality": "TEXT",
+    "tokenCount": 374
+   },
+   {
+    "modality": "IMAGE",
+    "tokenCount": 1092
+   }
+  ],
+  "thoughtsTokenCount": 1476,
+  "serviceTier": "standard"
+ },
+ "parseError": null,
+ "rowCount": 2,
+ "discardedRowCount": 0,
+ "rows": [
+  {
+   "label": "comfort_final_cronbach_alpha",
+   "value": ".95",
+   "quote": ".95",
+   "page": 4,
+   "box_2d": [
+    161,
+    867,
+    171,
+    883
+   ]
+  },
+  {
+   "label": "total_no_of_items",
+   "value": "55",
+   "quote": "55",
+   "page": 4,
+   "box_2d": [
+    197,
+    788,
+    206,
+    802
+   ]
+  }
+ ],
+ "request": {
+  "contents": [
+   {
+    "role": "user",
+    "parts": [
+     {
+      "text": "あなたはこの論文ページ画像（ページ 4）から、指定された項目の値を探し、それぞれの値が書かれている領域を bounding box として返すタスクを行う。\n\nbox_2d の形式は [ymin, xmin, ymax, xmax] とする。画像の左上を原点 (0,0) とし、各座標は画像の高さ・幅に対して 0〜1000 に正規化した整数値で表す（ymin/ymax が縦方向、xmin/xmax が横方向）。box は対象の文言・数値だけを過不足なく囲む最小の矩形にすること。\n\n項目一覧:\n- label=\"comfort_final_cronbach_alpha\": Table 1（Reliability data）の Comfort 行・Final sample (N=190) 列の Cronbach α 値（.95 のはず）\n- label=\"total_no_of_items\": Table 1（Reliability data）の Total 行・Final sample (N=190) 列の No. of items 値（55 のはず）\n\n各項目について、次のフィールドを持つ JSON オブジェクトを1つずつ、項目と同じ順序で返すこと:\n- \"label\": 上記の label をそのまま\n- \"value\": 抽出した値（数値や固有名詞はそのまま、単位や%記号は付けない）\n- \"quote\": box の中に実際に見える文言をそのまま（言い換えない）\n- \"page\": 4\n- \"box_2d\": [ymin, xmin, ymax, xmax]\n\n出力は上記オブジェクトの配列のみ。項目が画像内に見つからない場合も box_2d には最も近いと思われる位置を返すこと（省略しない）。"
+     },
+     {
+      "inline_data": {
+       "mime_type": "image/png",
+       "data": "<omitted: base64 image>"
+      }
+     }
+    ]
+   }
+  ],
+  "generationConfig": {
+   "temperature": 0,
+   "responseMimeType": "application/json",
+   "responseSchema": {
+    "type": "ARRAY",
+    "items": {
+     "type": "OBJECT",
+     "properties": {
+      "label": {
+       "type": "STRING"
+      },
+      "value": {
+       "type": "STRING"
+      },
+      "quote": {
+       "type": "STRING"
+      },
+      "page": {
+       "type": "INTEGER"
+      },
+      "box_2d": {
+       "type": "ARRAY",
+       "items": {
+        "type": "INTEGER"
+       }
+      }
+     },
+     "required": [
+      "label",
+      "value",
+      "quote",
+      "page",
+      "box_2d"
+     ]
+    }
+   }
+  },
+  "note": "API キーは x-goog-api-key ヘッダで送信（本ファイルには含めていない）"
+ },
+ "rawResponse": {
+  "candidates": [
+   {
+    "content": {
+     "parts": [
+      {
+       "text": "[{\"label\": \"comfort_final_cronbach_alpha\", \"value\": \".95\", \"quote\": \".95\", \"page\": 4, \"box_2d\": [161, 867, 171, 883]}, {\"label\": \"total_no_of_items\", \"value\": \"55\", \"quote\": \"55\", \"page\": 4, \"box_2d\": [197, 788, 206, 802]}]",
+       "thoughtSignature": "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"
+      }
+     ],
+     "role": "model"
+    },
+    "finishReason": "STOP",
+    "index": 0
+   }
+  ],
+  "usageMetadata": {
+   "promptTokenCount": 1466,
+   "candidatesTokenCount": 119,
+   "totalTokenCount": 3061,
+   "promptTokensDetails": [
+    {
+     "modality": "TEXT",
+     "tokenCount": 374
+    },
+    {
+     "modality": "IMAGE",
+     "tokenCount": 1092
+    }
+   ],
+   "thoughtsTokenCount": 1476,
+   "serviceTier": "standard"
+  },
+  "modelVersion": "gemini-3.5-flash",
+  "responseId": "xQdSasuHJvn72roPtYb68Ac"
+ }
+}
