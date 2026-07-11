@@ -14,6 +14,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | [docs/architecture.md](docs/architecture.md) | `src/` 構成案・ビルド・テスト方針（実装着手時に承認を取る起案） |
 | [docs/ui-states.md](docs/ui-states.md) | UI 状態マトリクス（target spec。**スケルトン段階の実装状況は冒頭の drift 注記を参照**） |
 | [docs/test-strategy.md](docs/test-strategy.md) | テスト戦略。jest 100% + Playwright の流用構成・E2E seam（worker 解決 / 状態注入）・PDF fixture 2 層運用・フェーズ計画・CI 段階導入 |
+| [docs/status-and-roadmap-20260711.md](docs/status-and-roadmap-20260711.md) | 現状整理とロードマップ（2026-07-11 スナップショット）。もとの計画の振り返り・実装済み一覧・残タスク（計画済み）・機能追加の提案（未合意） |
 
 次のステップ: **S1〜S10 の実機通し確認は 2026-07-03 に完了**（Selenium 半自動ハーネス `tools/selenium/manualCheck.mjs` の login〜export/offline シーンで実施）。Picker（§1）・キャンセル系エッジ（§1-3 #1〜3）・S4 プロトコル 〜 S10 エクスポート（§2 #1〜#10）+ Sheets / Drive の裏取りまで OK。通し確認中に実機バグ 2 件を発見・修正済み: (1) study レベル `entity_key` の全破棄 → `validateAiOutput` で `-` へ正規化、(2) 検証パネルの判定進捗が不可視 → 判定進捗バーを追加。§1-3 #4（スキャン PDF `no_text_layer` の確認）も 2026-07-03 に完了し、**§1〜§2 の全マニュアルテストが完了**した — [docs/manual-testing.md](docs/manual-testing.md) §3 の結果メモ参照。テストは jest（カバレッジ 100% 強制）+ Playwright E2E + CI-1 / CI-2（E2E ジョブ。2026-07-03 導入）が稼働済みのため、作業原則 7・8 は**有効**。残実装は [docs/remaining-work-plan.md](docs/remaining-work-plan.md) で管理：タスク A（ドキュメント整合）・B（CI-2）・C（S11 既定モデル設定）は 2026-07-03 完了、タスク D（抽出精度ベンチマーク Q8）は実データベンチ（`experiments/extraction-benchmark-real`、2026-07-06 実行・非公開 gitignore）で **`gemini-3.5-flash` を工場出荷既定に確定**（`FACTORY_DEFAULT_MODEL`。事前登録ベンチ `experiments/extraction-benchmark/` は別建てで凍結保持）。残るは**タスク E（リリース準備）**。
 
