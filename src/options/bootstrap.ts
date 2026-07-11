@@ -3,6 +3,11 @@
 // 既定モデルの空は「未設定に戻す」・保存中はボタン無効化）
 import { createModelSelect } from '../app/ui/modelSelect';
 import {
+  getRateLimitTier,
+  isRateLimitTierId,
+  type RateLimitTierId,
+} from '../lib/llm/rateLimitPolicy';
+import {
   loadGeminiApiKey,
   loadOpenRouterApiKey,
   looksLikeGeminiApiKey,
@@ -10,7 +15,16 @@ import {
   saveGeminiApiKey,
   saveOpenRouterApiKey,
 } from '../lib/storage/secretsStore';
-import { loadDefaultModel, saveDefaultModel } from '../lib/storage/settingsStore';
+import {
+  loadDefaultModel,
+  loadRateLimitCustomConcurrency,
+  loadRateLimitCustomRpm,
+  loadRateLimitTier,
+  saveDefaultModel,
+  saveRateLimitCustomConcurrency,
+  saveRateLimitCustomRpm,
+  saveRateLimitTier,
+} from '../lib/storage/settingsStore';
 
 /** ステータス要素へ文言 + 通常 / エラー系の色分けを反映する */
 function makeSetStatus(statusEl: HTMLElement): (text: string, isError: boolean) => void {
@@ -22,7 +36,7 @@ function makeSetStatus(statusEl: HTMLElement): (text: string, isError: boolean) 
 
 /** API キー節の共通配線（Gemini / OpenRouter で鏡写し。必須要素が欠けている場合は何もしない） */
 async function bootstrapApiKeySection(
-  doc: Document,
+  root: ParentNode,
   ids: { input: string; saveButton: string; status: string },
   providerLabel: string,
   load: () => Promise<string | null>,
@@ -30,9 +44,9 @@ async function bootstrapApiKeySection(
   // 別プロバイダのキーを取り違えて入力したときの警告文言を返す（確信できるときのみ非 null）
   foreignKeyWarning: (key: string) => string | null,
 ): Promise<void> {
-  const input = doc.getElementById(ids.input) as HTMLInputElement | null;
-  const saveButton = doc.getElementById(ids.saveButton) as HTMLButtonElement | null;
-  const statusEl = doc.getElementById(ids.status);
+  const input = root.querySelector<HTMLInputElement>(`#${ids.input}`);
+  const saveButton = root.querySelector<HTMLButtonElement>(`#${ids.saveButton}`);
+  const statusEl = root.querySelector<HTMLElement>(`#${ids.status}`);
   if (!input || !saveButton || !statusEl) {
     return;
   }
@@ -84,15 +98,18 @@ async function bootstrapApiKeySection(
  * #default-model-container へ生成する。保存値は S5 スキーマ画面のモデル入力の
  * 初期値になる（schemaService.loadSchema が注入）
  */
-async function bootstrapDefaultModelSection(doc: Document): Promise<void> {
-  const container = doc.getElementById('default-model-container');
-  const saveButton = doc.getElementById('save-default-model') as HTMLButtonElement | null;
-  const statusEl = doc.getElementById('default-model-status');
+async function bootstrapDefaultModelSection(root: ParentNode): Promise<void> {
+  const container = root.querySelector<HTMLElement>('#default-model-container');
+  const saveButton = root.querySelector<HTMLButtonElement>('#save-default-model');
+  const statusEl = root.querySelector<HTMLElement>('#default-model-status');
   if (!container || !saveButton || !statusEl) {
     return;
   }
 
   const setStatus = makeSetStatus(statusEl);
+  // createModelSelect は要素生成に Document が要る。root が Document ならそれ自身、
+  // 要素（アプリ内 #/options の未 attach コンテナ）なら ownerDocument を使う
+  const doc = container.ownerDocument;
 
   const savedModel = await loadDefaultModel();
   // セレクタの選択値（その他は trim したテキスト）。保存ボタンがこれを永続化する
@@ -128,9 +145,108 @@ async function bootstrapDefaultModelSection(doc: Document): Promise<void> {
   });
 }
 
-export async function bootstrapOptions(doc: Document): Promise<void> {
+/**
+ * レート制限 tier 節の配線（必須要素が欠けている場合は何もしない）。
+ * tier セレクタ + カスタム RPM 入力を読み込み、保存する。カスタム tier のときだけ
+ * RPM 入力を表示する。保存値は抽出のスロットル + リトライ強度を決める
+ * （docs/ui-states.md §2「レート制限」）
+ */
+async function bootstrapRateLimitSection(root: ParentNode): Promise<void> {
+  const select = root.querySelector<HTMLSelectElement>('#rate-limit-tier');
+  const customRow = root.querySelector<HTMLElement>('#rate-limit-custom-row');
+  const customInput = root.querySelector<HTMLInputElement>('#rate-limit-custom-rpm');
+  const concurrencyRow = root.querySelector<HTMLElement>('#rate-limit-concurrency-row');
+  const concurrencyInput = root.querySelector<HTMLInputElement>('#rate-limit-concurrency');
+  const descEl = root.querySelector<HTMLElement>('#rate-limit-tier-desc');
+  const saveButton = root.querySelector<HTMLButtonElement>('#save-rate-limit');
+  const statusEl = root.querySelector<HTMLElement>('#rate-limit-status');
+  if (
+    !select ||
+    !customRow ||
+    !customInput ||
+    !concurrencyRow ||
+    !concurrencyInput ||
+    !descEl ||
+    !saveButton ||
+    !statusEl
+  ) {
+    return;
+  }
+
+  const setStatus = makeSetStatus(statusEl);
+
+  // 選択中の tier ID（select の値が不正なら既定へ倒す。syncTierUi と保存で共有）
+  const currentTierId = (): RateLimitTierId =>
+    isRateLimitTierId(select.value) ? select.value : 'gemini_free';
+
+  // 選択 tier に応じて説明文とカスタム RPM / 同時実行数入力の表示を切り替える
+  const syncTierUi = (): void => {
+    const tier = getRateLimitTier(currentTierId());
+    descEl.textContent = tier.description;
+    customRow.hidden = !tier.editableRpm;
+    concurrencyRow.hidden = !tier.editableConcurrency;
+  };
+
+  const savedTier = await loadRateLimitTier();
+  const savedRpm = await loadRateLimitCustomRpm();
+  const savedConcurrency = await loadRateLimitCustomConcurrency();
+  select.value = savedTier;
+  if (savedRpm !== null) {
+    customInput.value = String(savedRpm);
+  }
+  if (savedConcurrency !== null) {
+    concurrencyInput.value = String(savedConcurrency);
+  }
+  syncTierUi();
+  setStatus(`レート制限: ${getRateLimitTier(savedTier).label}`, false);
+
+  select.addEventListener('change', syncTierUi);
+
+  const handleSave = async (): Promise<void> => {
+    const tierId = currentTierId();
+    // カスタム tier で RPM が空・不正なら保存しない（プリセット既定へ戻すのは明示削除扱い）
+    const rpmRaw = customInput.value.trim();
+    const rpm = rpmRaw === '' ? Number.NaN : Number(rpmRaw);
+    if (getRateLimitTier(tierId).editableRpm && (!Number.isFinite(rpm) || rpm <= 0)) {
+      setStatus('RPM は 1 以上の数値を入力してください。', true);
+      return;
+    }
+    // 同時実行数は任意（空 = プリセット既定 = 逐次）。入力があるときだけ 1 以上を要求する
+    const concurrencyRaw = concurrencyInput.value.trim();
+    const concurrency = concurrencyRaw === '' ? Number.NaN : Number(concurrencyRaw);
+    if (
+      getRateLimitTier(tierId).editableConcurrency &&
+      concurrencyRaw !== '' &&
+      (!Number.isFinite(concurrency) || concurrency <= 0)
+    ) {
+      setStatus('同時実行数は 1 以上の数値を入力してください。', true);
+      return;
+    }
+    saveButton.disabled = true;
+    try {
+      await saveRateLimitTier(tierId);
+      await saveRateLimitCustomRpm(rpm);
+      await saveRateLimitCustomConcurrency(concurrency);
+      setStatus('保存しました。', false);
+    } catch {
+      setStatus('保存に失敗しました。もう一度お試しください。', true);
+    } finally {
+      saveButton.disabled = false;
+    }
+  };
+
+  saveButton.addEventListener('click', () => {
+    void handleSave();
+  });
+}
+
+/**
+ * 設定本文の配線。root は options.html の `document` でも、アプリ内 #/options が
+ * 生成した（未 attach でよい）コンテナ要素でもよい（querySelector で解決するため）。
+ */
+export async function bootstrapOptions(root: ParentNode): Promise<void> {
   await bootstrapApiKeySection(
-    doc,
+    root,
     { input: 'gemini-api-key', saveButton: 'save-keys', status: 'options-status' },
     'Gemini',
     loadGeminiApiKey,
@@ -141,7 +257,7 @@ export async function bootstrapOptions(doc: Document): Promise<void> {
         : null,
   );
   await bootstrapApiKeySection(
-    doc,
+    root,
     { input: 'openrouter-api-key', saveButton: 'save-openrouter-key', status: 'openrouter-status' },
     'OpenRouter',
     loadOpenRouterApiKey,
@@ -151,5 +267,6 @@ export async function bootstrapOptions(doc: Document): Promise<void> {
         ? 'Gemini のキー（AIza で始まる）のようです。OpenRouter キーはここへ、Gemini キーは上の欄へ入力してください。'
         : null,
   );
-  await bootstrapDefaultModelSection(doc);
+  await bootstrapDefaultModelSection(root);
+  await bootstrapRateLimitSection(root);
 }

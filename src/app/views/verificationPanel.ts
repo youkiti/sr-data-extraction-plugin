@@ -35,21 +35,36 @@ import {
   type CellState,
 } from '../../features/verification/cellState';
 import {
-  buildStudyHighlights,
+  buildFocusUnits,
+  nextPendingCellInUnit,
+  nextPendingUnit,
+  unitOfCell,
+  unitProgress,
+  type FocusUnit,
+} from '../../features/verification/focusUnits';
+import {
+  buildDocumentHighlights,
+  buildStudyTextMatches,
   type EvidenceHighlight,
+  type EvidenceTextMatch,
   type HighlightOccurrence,
 } from '../../features/verification/highlights';
 import { buildOutcomeDeclarationDecisions } from '../../features/verification/instanceDeclarations';
 import { verificationProgress } from '../../features/verification/progress';
+import { findQuoteContext } from '../../features/verification/textContext';
 import type {
+  LoadedPdfView,
   VerificationData,
   VerificationDocumentView,
 } from '../../features/verification/types';
+import type { VerifyLayoutMode } from '../../lib/storage/settingsStore';
 import type { renderPdfPageToCanvas } from '../../lib/pdf/renderPage';
 import { nowIso8601 } from '../../utils/iso8601';
 import { nextOutcomeId } from '../../utils/entityKey';
 import { el } from '../ui/dom';
 import { createPdfViewer, type PdfViewerHandle, type ViewerHighlight } from '../ui/pdfViewer';
+import { createTextViewer, type TextViewerSnippet } from '../ui/textViewer';
+import type { VerificationFocusCardModel } from './verificationFocusCard';
 import {
   renderVerificationForm,
   type CellHighlightInfo,
@@ -70,6 +85,13 @@ export interface VerificationPanelOptions {
    * renderCachedVerificationPanel が値の変化を検知して focusEntity を呼ぶ
    */
   focusEntityKey?: string | null;
+  /**
+   * レイアウトモードの初期表示（issue #38。未指定は 'focus'）。読込はサービス層が
+   * 検証データ束の読込時に settingsStore から行う（S6 / S8 で設定を共有）
+   */
+  layoutMode?: VerifyLayoutMode;
+  /** トグル操作（`#verify-layout-toggle`）のたびに呼ばれる。永続化はサービス層の責務 */
+  onLayoutModeChange?: (mode: VerifyLayoutMode) => void;
   now?: () => string;
   /** テスト差し替え用（pdfViewer へ渡す） */
   renderPage?: typeof renderPdfPageToCanvas;
@@ -100,6 +122,78 @@ function initialFocusKey(cells: readonly VerificationCell[]): string | null {
   return nextUndecidedKey(cells, 0) ?? cells[0]?.cellKey ?? null;
 }
 
+/**
+ * ユニット内の最初のセル（null をスキップした先頭）。ユニットが空なら null（実データでは
+ * 起こらない防御パス）。export はテスト専用（locateCellInUnit と同じ理由）
+ */
+export function firstCellKeyOfUnit(unit: FocusUnit): string | null {
+  for (const row of unit.rows) {
+    for (const cell of row.cells) {
+      if (cell !== null) {
+        return cell.cellKey;
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * フォーカスモードの初期 / タブ切替時のフォーカス先: 未判定セルを含む最初のユニットの
+ * 最初の未判定セル → 全て判定済みなら先頭ユニットの先頭セル → ユニットが無ければ null
+ */
+function initialFocusKeyForUnits(units: readonly FocusUnit[]): string | null {
+  const unit = nextPendingUnit(units, null) ?? units[0] ?? null;
+  if (unit === null) {
+    return null;
+  }
+  return nextPendingCellInUnit(unit, null) ?? firstCellKeyOfUnit(unit);
+}
+
+/**
+ * ユニット内でのセル位置（行 / 列インデックス）。見つからなければ null。
+ * export はテスト専用（null セルを含むユニットは buildFocusUnits の防御パスでしか
+ * 生成されず実データでは再現できないため、focusUnits.test.ts と同様に手組みの
+ * FocusUnit を使って直接検証する）
+ */
+export function locateCellInUnit(unit: FocusUnit, cellKey: string): { row: number; col: number } | null {
+  for (let row = 0; row < unit.rows.length; row++) {
+    const cells = (unit.rows[row] as FocusUnit['rows'][number]).cells;
+    for (let col = 0; col < cells.length; col++) {
+      if (cells[col]?.cellKey === cellKey) {
+        return { row, col };
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * from の位置から axis 方向へ delta 分だけ移動し、null セルはスキップする（行 / 列とも同様に扱う。
+ * ui-flow.md §7）。範囲外に出たら null（呼び出し側は現在位置に留まる = 「端で停止」）。
+ * export はテスト専用（locateCellInUnit と同じ理由）
+ */
+export function stepUnitPosition(
+  unit: FocusUnit,
+  from: { row: number; col: number },
+  axis: 'row' | 'col',
+  delta: number,
+): string | null {
+  let row = from.row;
+  let col = from.col;
+  for (;;) {
+    row += axis === 'row' ? delta : 0;
+    col += axis === 'col' ? delta : 0;
+    const rowCells = unit.rows[row]?.cells;
+    if (row < 0 || row >= unit.rows.length || rowCells === undefined || col < 0 || col >= rowCells.length) {
+      return null;
+    }
+    const cell = rowCells[col] ?? null;
+    if (cell !== null) {
+      return cell.cellKey;
+    }
+  }
+}
+
 export function createVerificationPanel(
   options: VerificationPanelOptions,
 ): VerificationPanelHandle {
@@ -111,8 +205,10 @@ export function createVerificationPanel(
   const ownDecisions: Decision[] = data.decisions.filter(
     (decision) => decision.annotator === data.annotator,
   );
-  const highlights = buildStudyHighlights(data.documents, data.evidence);
-  const highlightByCell = new Map(highlights.map((h) => [h.cellKey, h]));
+  // テキストのみで再特定した出現位置（rects なし。study 全文書ぶんを一度だけ計算し、
+  // PDF のロード状態に関係なく matchCount / ページ表示に使う。issue #28 案3）
+  const textMatches = buildStudyTextMatches(data.documents, data.evidence);
+  const textMatchByCell = new Map(textMatches.map((m) => [m.cellKey, m]));
   const evidenceByCell = new Map<string, Evidence>(
     data.evidence.map((item) => [cellKeyOf(item.fieldId, item.entityKey), item]),
   );
@@ -136,6 +232,9 @@ export function createVerificationPanel(
 
   const tabs = availableTabs(data.fields);
   let activeTab: EntityLevel = tabs.find((tab) => !tabLocked(tab)) ?? tabs[0] ?? 'study';
+  // --- レイアウトモード（フォーカス / リスト。issue #38） ------------------
+  // 既定はフォーカス。初期値はサービス層が settingsStore から読んで options 経由で渡す
+  let layoutMode: VerifyLayoutMode = options.layoutMode ?? 'focus';
   let focusedCellKey: string | null = null;
   let editing: { cellKey: string; action: 'edit' | 'reject' } | null = null;
   let outcomeKeyDraft = nextOutcomeId(
@@ -151,15 +250,124 @@ export function createVerificationPanel(
   const currentTabModel = (): TabModel =>
     buildTabModel(activeTab, data.fields, data.evidence, ownDecisions, { armStructure });
 
-  /** 現在タブの表示順のセル（未判定 + 直近判定 → 判定済みブロック）。j / k の移動順 */
+  /** 現在タブの表示順のセル（未判定 + 直近判定 → 判定済みブロック）。j / k の移動順（リストモード） */
   const displayCells = (): VerificationCell[] => {
     const { activeGroups, decided } = splitDecidedCells(currentTabModel().groups, recentDecidedKey);
     return [...activeGroups.flatMap((group) => group.cells), ...decided.map((entry) => entry.cell)];
   };
 
-  // --- 左ペイン（PDF ビューア + 文書切替タブ。v0.10 フェーズ 3） ----------
+  // --- フォーカスモード（issue #38）: ユニット単位のナビゲーション -------------
+  /** 指定タブのユニット列を組み立てる（focusUnits.buildFocusUnits を現在の armStructure で呼ぶ） */
+  const focusUnitsOf = (tab: EntityLevel): FocusUnit[] =>
+    buildFocusUnits(tab, buildTabModel(tab, data.fields, data.evidence, ownDecisions, { armStructure }), {
+      armStructure,
+    });
+
+  /**
+   * 初期・タブ切替時のフォーカス先をレイアウトモードに応じて解決する。
+   * list: 最初の未判定セル（表示順）。focus: 最初の未判定ユニットの最初の未判定セル
+   */
+  function computeInitialFocusKey(tab: EntityLevel): string | null {
+    if (layoutMode === 'list') {
+      return initialFocusKey(
+        buildTabModel(tab, data.fields, data.evidence, ownDecisions, { armStructure }).cells,
+      );
+    }
+    return initialFocusKeyForUnits(focusUnitsOf(tab));
+  }
+
+  /**
+   * フォーカスモードの詳細描画素材を組み立てる（refreshForm から呼ぶ）。
+   * 現在ユニットは focusedCellKey から導出する（別個のユニット状態を持たない）。
+   * cells が 0 件、または解決できないときは null（呼び出し側は空メッセージのみを出す）
+   */
+  function buildFocusCardModel(): VerificationFocusCardModel | null {
+    const tabModel = currentTabModel();
+    if (tabModel.cells.length === 0) {
+      return null;
+    }
+    // tabModel.cells が 1 件以上あれば focusedCellKey は必ず非 null（computeInitialFocusKey /
+    // focusCell が activeTab と同期して設定する）で、buildFocusUnits は必ず 1 件以上のユニットを
+    // 作る（各タブビルダーは model.groups と 1:1 対応するため。focusUnits.ts の各 build*Units 参照）
+    const units = focusUnitsOf(activeTab);
+    const unit = unitOfCell(units, focusedCellKey as string) as FocusUnit;
+    const unitIndex = units.findIndex((candidate) => candidate.unitKey === unit.unitKey) + 1;
+    const remainingUnits = units.filter((candidate) => {
+      const progress = unitProgress(candidate);
+      return progress.decided < progress.total;
+    }).length;
+    const recentCell =
+      recentDecidedKey === null
+        ? null
+        : (tabModel.cells.find((cell) => cell.cellKey === recentDecidedKey) ?? null);
+    return {
+      unit,
+      unitIndex,
+      totalUnits: units.length,
+      remainingUnits,
+      focusedCellKey,
+      editing,
+      highlightInfo: highlightInfo(),
+      canSearchText: activeDocument().extractedPages.some((page) => page.text !== ''),
+      recentCell,
+    };
+  }
+
+  /**
+   * フォーカスモードのユニット内移動（j/k = 行、h/l = 列）。同じ列 / 行を維持し、
+   * null セルはスキップ・端で停止する（ui-flow.md §7）
+   */
+  function moveFocusInUnit(axis: 'row' | 'col', delta: number): void {
+    if (focusedCellKey === null) {
+      return;
+    }
+    // 呼び出し時点の focusedCellKey は必ず現在タブのユニット内に存在する（不変条件。
+    // computeInitialFocusKey / focusCell が activeTab と同期して設定するため。
+    // buildFocusUnits は実データでは cell を取りこぼさない ── focusUnits.ts 冒頭のコメント参照）
+    const unit = unitOfCell(focusUnitsOf(activeTab), focusedCellKey) as FocusUnit;
+    const position = locateCellInUnit(unit, focusedCellKey) as { row: number; col: number };
+    const nextKey = stepUnitPosition(unit, position, axis, delta);
+    if (nextKey !== null) {
+      focusCell(nextKey, { jump: true, domFocus: true });
+    }
+  }
+
+  /**
+   * フォーカスモードのユニット送り（Shift+J / Shift+K）。判定状況に関係なく隣接ユニットへ移動し、
+   * 着地はそのユニットの最初の未判定セル → 無ければ先頭セル。端では停止する（折り返さない）
+   */
+  function moveToAdjacentUnit(delta: number): void {
+    const units = focusUnitsOf(activeTab);
+    const currentUnit = focusedCellKey === null ? null : unitOfCell(units, focusedCellKey);
+    const currentIndex =
+      currentUnit === null ? -1 : units.findIndex((candidate) => candidate.unitKey === currentUnit.unitKey);
+    const unit = units[currentIndex + delta];
+    if (unit === undefined) {
+      return;
+    }
+    // 実データでは全ユニットが 1 件以上の非 null セルを持つため、いずれかは必ず見つかる
+    const cellKey = nextPendingCellInUnit(unit, null) ?? (firstCellKeyOfUnit(unit) as string);
+    focusCell(cellKey, { jump: true, domFocus: true });
+  }
+
+  /**
+   * レイアウトモードを切替える（`#verify-layout-toggle`）。フォーカス中セルはそのまま保つ
+   * （両モードとも同じ cellKey 概念のため、切替で作業位置を失わせない）。
+   * パネルインスタンスは作り直さず、内部の再描画だけで即時反映する。
+   * 呼び出し元（renderLayoutToggle）は常に現在モードの反対を渡すため、同値ガードは持たない
+   */
+  function setLayoutMode(mode: VerifyLayoutMode): void {
+    layoutMode = mode;
+    refreshForm();
+    syncViewer();
+    syncTextViewer();
+    options.onLayoutModeChange?.(mode);
+  }
+
+  // --- 左ペイン（PDF ビューア + 文書切替タブ。v0.10 フェーズ 3 + issue #28 案3） -----
   // study 配下の文書は role 固定順に並ぶ。ビューアは 1 つだけ作り、setDocument で切替える
-  // （描画競合の連番ガードを維持）。表示中文書に PDF がなければエラーカードへ差し替える
+  // （描画競合の連番ガードを維持）。PDF は表示中の文書だけを data.loadPdfView で遅延読込し、
+  // 解決するまでは読み込み中プレースホルダを出す（表示していない文書の PDF は読まない）
   let activeDocumentId = (data.documents[0] as VerificationDocumentView).document.documentId;
 
   const activeDocument = (): VerificationDocumentView =>
@@ -167,18 +375,41 @@ export function createVerificationPanel(
       (view) => view.document.documentId === activeDocumentId,
     ) as VerificationDocumentView;
 
-  const firstWithPdf = data.documents.find((view) => view.pdf !== null) ?? null;
   let viewer: PdfViewerHandle | null = null;
   let viewerDocId: string | null = null;
-  if (firstWithPdf !== null) {
-    viewer = createPdfViewer({
-      // firstWithPdf.pdf は非 null（find 条件）
-      document: firstWithPdf.pdf as NonNullable<VerificationDocumentView['pdf']>,
-      pages: firstWithPdf.textPages,
-      onHighlightClick: (id) => focusCell(id, { jump: false, domFocus: true }),
-      renderPage: options.renderPage,
+  /**
+   * documentId ごとの矩形ハイライト（rects 実体化済み）。対象文書の textPages がロードされた
+   * 時点で不変なので、applyLoadedPdf で 1 回だけ計算してメモ化する（syncViewer は判定・
+   * フォーカス移動のたびに走るため、毎回のアンカリング再計算は性能退行になる）。
+   * retry による読み直しも applyLoadedPdf を通るため、そのときはキャッシュが差し替わる
+   */
+  const rectHighlightsByDoc = new Map<string, EvidenceHighlight[]>();
+  /** 現在進行中のロードを無効化するための連番（文書切替のたびに進める） */
+  let docLoadSeq = 0;
+  /**
+   * ロード解決後に一度だけ適用するハイライトジャンプ（f キー / 項目フォーカスの最中に
+   * 文書切替が発生したときの「保留ジャンプ」。適用したら null に戻す）
+   */
+  let pendingJumpCellKey: string | null = null;
+
+  function renderPdfLoadingPlaceholder(): HTMLElement {
+    return el('p', {
+      className: 'verify__pdf-loading',
+      attributes: { role: 'status', 'aria-live': 'polite' },
+      text: 'PDF を読み込んでいます…',
     });
-    viewerDocId = firstWithPdf.document.documentId;
+  }
+
+  /**
+   * 表示中文書の PDF がロード済み（viewer が当該文書を指している）ならその場でハイライトへ
+   * ジャンプし、ロード中・未着手なら「保留ジャンプ」として予約する（ロード解決後に 1 回だけ適用）
+   */
+  function focusHighlightNowOrPending(cellKey: string): void {
+    if (viewer !== null && viewerDocId === activeDocumentId) {
+      viewer.focusHighlight(cellKey);
+    } else {
+      pendingJumpCellKey = cellKey;
+    }
   }
 
   // 文書切替タブ（2 文書以上のときだけ出す）。role バッジ + ファイル名
@@ -216,25 +447,191 @@ export function createVerificationPanel(
     className: 'verify__banner',
     text: 'この PDF はテキスト層がないためハイライト検証は使えません（quote 全文とページヒントで検証してください）',
   });
+
+  // --- 左ペイン表示切替（PDF / 抽出テキスト。issue #28 案2） --------------
+  // 表・段組み・脚注は PDF でしか確認できないため置き換えではなく切替。既定は PDF
+  let viewMode: 'pdf' | 'text' = 'pdf';
+  const textViewer = createTextViewer();
+
+  function activeDocumentHasText(): boolean {
+    return activeDocument().extractedPages.some((page) => page.text !== '');
+  }
+
+  const pdfModeButton = el('button', {
+    className: 'verify__view-toggle-btn',
+    text: 'PDF',
+    attributes: { type: 'button', 'aria-pressed': 'true' },
+  }) as HTMLButtonElement;
+  const textModeButton = el('button', {
+    className: 'verify__view-toggle-btn',
+    text: '抽出テキスト',
+    attributes: { type: 'button', 'aria-pressed': 'false' },
+  }) as HTMLButtonElement;
+  const viewToggleBar = el(
+    'div',
+    { className: 'verify__view-toggle', attributes: { role: 'group', 'aria-label': '左ペインの表示切替' } },
+    [pdfModeButton, textModeButton],
+  );
+  const textModeNote = el('p', {
+    className: 'verify__view-toggle-note',
+    text: 'この文書には抽出テキストがありません（no_text_layer、または抽出に失敗しています）',
+  });
+
   const viewerBody = el('div', { className: 'verify__pdf-body' });
+  const textViewerBody = el('div', { className: 'verify__text-body' }, [textViewer.root]);
   const leftChildren: HTMLElement[] = [];
   if (docTabsBar !== null) {
     leftChildren.push(docTabsBar);
   }
-  leftChildren.push(noTextBanner, viewerBody);
+  leftChildren.push(viewToggleBar, textModeNote, noTextBanner, viewerBody, textViewerBody);
   const leftPane = el('div', { className: 'verify__pane verify__pane--pdf' }, leftChildren);
 
-  /** 表示中文書に PDF がないときのエラーカード（再取り込み導線。ui-states.md §6） */
-  function pdfErrorCard(view: VerificationDocumentView): HTMLElement {
+  /**
+   * 表示中文書に PDF がないときのエラーカード（再試行 + 再取り込み導線。ui-states.md §6）。
+   * 再試行ボタンはキャッシュされた失敗結果を捨てて読み直す（features/verification/pdfViewCache.retry）
+   */
+  function pdfErrorCard(documentId: string, message: string | null): HTMLElement {
+    const retryButton = el('button', {
+      className: 'verify__pdf-retry',
+      text: '再試行',
+      attributes: { type: 'button' },
+    }) as HTMLButtonElement;
+    retryButton.addEventListener('click', () => {
+      void retryActiveDocumentPdf(documentId);
+    });
     const link = el('a', { text: '文献取り込み画面を開く', attributes: { href: '#/documents' } });
     return el('div', { className: 'verify__pdf-error', attributes: { role: 'alert' } }, [
-      el('p', { text: `PDF を開けません: ${view.pdfError ?? '原因不明'}` }),
+      el('p', { text: `PDF を開けません: ${message ?? '原因不明'}` }),
+      retryButton,
       link,
     ]);
   }
 
-  /** 表示中文書に合わせて左ペイン（タブ強調 / バナー / ビューア本体）を描き直す */
-  function renderActiveDocument(): void {
+  /**
+   * 表示中文書（documentId）の PDF ビューア素材をロードして反映する。呼び出し側は
+   * 連番ガード（seq）済みであること。成功時は viewer を生成 / 差し替え、失敗時はエラーカードを出す
+   */
+  function applyLoadedPdf(documentId: string, loaded: LoadedPdfView): void {
+    // 矩形ハイライトは textPages が確定したこの時点で 1 回だけ実体化してメモ化する
+    // （retry の読み直しでもここを通り、当該文書のキャッシュが差し替わる）
+    rectHighlightsByDoc.set(
+      documentId,
+      loaded.pdf === null
+        ? []
+        : buildDocumentHighlights(
+            documentId,
+            data.evidence.filter((item) => item.documentId === documentId),
+            loaded.textPages,
+          ),
+    );
+    if (loaded.pdf !== null) {
+      if (viewer === null) {
+        viewer = createPdfViewer({
+          document: loaded.pdf,
+          pages: loaded.textPages,
+          onHighlightClick: (id) => focusCell(id, { jump: false, domFocus: true }),
+          renderPage: options.renderPage,
+        });
+      } else if (viewerDocId !== documentId) {
+        viewer.setDocument(loaded.pdf, loaded.textPages);
+      }
+      viewerDocId = documentId;
+      viewerBody.replaceChildren(viewer.root);
+    } else {
+      viewerBody.replaceChildren(pdfErrorCard(documentId, loaded.pdfError));
+    }
+    syncViewer();
+    // 保留ジャンプ（ロード中に f キー等でジャンプ要求があった場合）を 1 回だけ適用する
+    if (pendingJumpCellKey !== null) {
+      const cellKey = pendingJumpCellKey;
+      pendingJumpCellKey = null;
+      if (viewer !== null && viewerDocId === documentId) {
+        viewer.focusHighlight(cellKey);
+      }
+    }
+  }
+
+  function toErrorMessage(err: unknown): string {
+    return err instanceof Error ? err.message : String(err);
+  }
+
+  /**
+   * 表示中文書の PDF を遅延読込する（読み込み中プレースホルダ → 解決で viewer / エラーカード）。
+   * 解決前に別文書へ切替わっていたら結果は破棄する（連番ガード。issue #28 案3の受入基準）
+   */
+  function loadActiveDocumentPdf(): void {
+    const documentId = activeDocumentId;
+    const seq = ++docLoadSeq;
+    viewerBody.replaceChildren(renderPdfLoadingPlaceholder());
+    data.loadPdfView(documentId).then(
+      (loaded) => {
+        if (seq === docLoadSeq) {
+          applyLoadedPdf(documentId, loaded);
+        }
+      },
+      (err: unknown) => {
+        if (seq === docLoadSeq) {
+          applyLoadedPdf(documentId, { pdf: null, pdfError: toErrorMessage(err), textPages: [] });
+        }
+      },
+    );
+  }
+
+  /** PDF 読込失敗からの再試行（キャッシュを捨てて読み直す）。表示が切り替わっていたら何もしない */
+  async function retryActiveDocumentPdf(documentId: string): Promise<void> {
+    if (documentId !== activeDocumentId) {
+      return;
+    }
+    const seq = ++docLoadSeq;
+    viewerBody.replaceChildren(renderPdfLoadingPlaceholder());
+    let loaded: LoadedPdfView;
+    try {
+      loaded = await data.retryPdfView(documentId);
+    } catch (err) {
+      loaded = { pdf: null, pdfError: toErrorMessage(err), textPages: [] };
+    }
+    if (seq === docLoadSeq) {
+      applyLoadedPdf(documentId, loaded);
+    }
+  }
+
+  /**
+   * 表示切替ボタン + 各ペインの表示 / 非表示を現在の viewMode へ合わせる。
+   * 表示中文書に抽出テキストが無ければテキストモードから自動で PDF モードへ戻す
+   * （issue #28 案2 の受入基準: 抽出テキストがない文書では PDF 表示だけを利用できる）
+   */
+  function applyViewMode(): void {
+    const hasText = activeDocumentHasText();
+    if (viewMode === 'text' && !hasText) {
+      viewMode = 'pdf';
+    }
+    pdfModeButton.classList.toggle('verify__view-toggle-btn--active', viewMode === 'pdf');
+    pdfModeButton.setAttribute('aria-pressed', String(viewMode === 'pdf'));
+    textModeButton.classList.toggle('verify__view-toggle-btn--active', viewMode === 'text');
+    textModeButton.setAttribute('aria-pressed', String(viewMode === 'text'));
+    textModeButton.disabled = !hasText;
+    textModeButton.title = hasText ? '' : 'この文書には抽出テキストがありません';
+    textModeNote.hidden = hasText;
+    viewerBody.hidden = viewMode !== 'pdf';
+    textViewerBody.hidden = viewMode !== 'text';
+  }
+
+  function setViewMode(mode: 'pdf' | 'text'): void {
+    if (mode === viewMode) {
+      return;
+    }
+    viewMode = mode;
+    applyViewMode();
+  }
+
+  pdfModeButton.addEventListener('click', () => setViewMode('pdf'));
+  textModeButton.addEventListener('click', () => setViewMode('text'));
+
+  /**
+   * 表示中文書に合わせて左ペインのタブ強調 / バナー / 表示切替を描き直す（PDF 本体は含まない）。
+   * PDF ペインの内容（読み込み中 / viewer / エラーカード）は loadActiveDocumentPdf が非同期に描く
+   */
+  function renderActiveDocumentChrome(): void {
     const view = activeDocument();
     for (const [id, button] of docTabButtons) {
       const active = id === activeDocumentId;
@@ -242,32 +639,26 @@ export function createVerificationPanel(
       button.setAttribute('aria-selected', String(active));
     }
     noTextBanner.hidden = view.document.textStatus !== 'no_text_layer';
-    if (view.pdf !== null && viewer !== null) {
-      if (viewerDocId !== view.document.documentId) {
-        viewer.setDocument(view.pdf, view.textPages);
-        viewerDocId = view.document.documentId;
-      }
-      viewerBody.replaceChildren(viewer.root);
-    } else {
-      viewerBody.replaceChildren(pdfErrorCard(view));
-    }
+    applyViewMode();
   }
 
-  /** 表示中文書を切替える（タブクリック / 別文書由来のセルへのフォーカス） */
+  /** 表示中文書を切替える（タブクリック / 別文書由来のセルへのフォーカス）。PDF は遅延読込する */
   function setActiveDocument(documentId: string): void {
     if (documentId === activeDocumentId) {
       return;
     }
     activeDocumentId = documentId;
-    renderActiveDocument();
-    syncViewer();
+    renderActiveDocumentChrome();
+    loadActiveDocumentPdf();
+    syncTextViewer();
   }
 
   /**
    * セルの Evidence の出所文書へ表示を切替える（Evidence なしの手入力セルは現状維持）。
-   * 出所文書が study の documents に無い場合（データ不整合の防御）は切替えない
+   * 出所文書が study の documents に無い場合（データ不整合の防御）は切替えない。
+   * 切替えを実行したら true を返す（初期マウント時の二重ロード回避に使う）
    */
-  function ensureActiveDocumentForCell(cellKey: string): void {
+  function ensureActiveDocumentForCell(cellKey: string): boolean {
     const evidence = evidenceByCell.get(cellKey);
     if (
       evidence !== undefined &&
@@ -275,7 +666,9 @@ export function createVerificationPanel(
       data.documents.some((view) => view.document.documentId === evidence.documentId)
     ) {
       setActiveDocument(evidence.documentId);
+      return true;
     }
+    return false;
   }
 
   // --- 右ペイン（フォーム） -----------------------------------------------
@@ -285,42 +678,106 @@ export function createVerificationPanel(
     el('div', { className: 'verify__panes' }, [leftPane, formPane]),
   ]);
 
+  /**
+   * matchCount / 選択出現は「テキストのみの再特定」（textMatches）を唯一の情報源にする。
+   * PDF のロード状態に関係なく一貫した表示になる（issue #28 案3）
+   */
   function highlightInfo(): Map<string, CellHighlightInfo> {
     const info = new Map<string, CellHighlightInfo>();
-    for (const highlight of highlights) {
-      info.set(highlight.cellKey, {
-        matchCount: highlight.occurrences.length,
-        matchIndex: matchSelection.get(highlight.cellKey) ?? highlight.selectedIndex,
+    for (const match of textMatches) {
+      info.set(match.cellKey, {
+        matchCount: match.occurrences.length,
+        matchIndex: matchSelection.get(match.cellKey) ?? match.selectedIndex,
       });
     }
     return info;
   }
 
+  /**
+   * ビューアの矩形ハイライト（applyLoadedPdf がメモ化済みのものを読むだけ）。
+   * 呼び出しは syncViewer 経由に限られ、そのガード（viewerDocId === activeDocumentId）が
+   * 成り立つのは applyLoadedPdf でメモを書いた後だけなので、メモは必ず存在する（不変条件）。
+   * states / kind / 選択出現の反映は呼び出しごとに行う（判定・切替で変わるため）
+   */
   function viewerHighlights(): ViewerHighlight[] {
+    const docHighlights = rectHighlightsByDoc.get(activeDocumentId) as EvidenceHighlight[];
     const states = deriveCellStates(ownDecisions);
-    // ビューアは表示中文書のページしか描かないため、その文書由来のハイライトだけ渡す
-    return highlights
-      .filter((highlight) => highlight.documentId === activeDocumentId)
-      .map((highlight) => {
-        const [fieldId] = JSON.parse(highlight.cellKey) as [string, string];
-        const status = states.get(highlight.cellKey)?.status ?? 'unverified';
-        // ハイライトは evidence 由来のため対応する Evidence が必ず存在する
-        const confidence = (evidenceByCell.get(highlight.cellKey) as Evidence).confidence;
-        const index = matchSelection.get(highlight.cellKey) ?? highlight.selectedIndex;
-        return {
-          id: highlight.cellKey,
-          label: fieldLabelById.get(fieldId) ?? fieldId,
-          // 色分け: 検証済み = 緑 / low confidence = 橙 / 未検証 = 黄（requirements.md §5-4）
-          kind:
-            status !== 'unverified' ? 'verified' : confidence === 'low' ? 'low' : 'unverified',
-          // index は occurrences 長の剰余で更新されるため必ず範囲内（0 件は除外済み）
-          occurrence: highlight.occurrences[index] as HighlightOccurrence,
-        };
-      });
+    return docHighlights.map((highlight) => {
+      const [fieldId] = JSON.parse(highlight.cellKey) as [string, string];
+      const status = states.get(highlight.cellKey)?.status ?? 'unverified';
+      // ハイライトは evidence 由来のため対応する Evidence が必ず存在する
+      const confidence = (evidenceByCell.get(highlight.cellKey) as Evidence).confidence;
+      const selected = matchSelection.get(highlight.cellKey) ?? highlight.selectedIndex;
+      // matchSelection の剰余はテキストマッチ（extracted_texts 由来）の件数で取られている。
+      // extracted_texts と PDF テキスト層は同一系で通常一致するが、万一件数がズレた場合
+      // （取り込み後に Drive 上の PDF が差し替えられた等）の undefined 参照を防ぐため、
+      // rect 側の occurrences 長でもクランプする（0 件は buildDocumentHighlights が除外済み）
+      const index = selected % highlight.occurrences.length;
+      return {
+        id: highlight.cellKey,
+        label: fieldLabelById.get(fieldId) ?? fieldId,
+        // 色分け: 検証済み = 緑 / low confidence = 橙 / 未検証 = 黄（requirements.md §5-4）
+        kind:
+          status !== 'unverified' ? 'verified' : confidence === 'low' ? 'low' : 'unverified',
+        occurrence: highlight.occurrences[index] as HighlightOccurrence,
+      };
+    });
   }
 
+  /**
+   * viewer インスタンスが表示中文書を指しているときだけハイライトを反映する。
+   * 文書切替直後で viewer がまだ旧文書（または未生成）を指している間は何もしない
+   * （applyLoadedPdf が新文書のロード解決後にあらためて呼ぶ）
+   */
   function syncViewer(): void {
-    viewer?.setHighlights(viewerHighlights(), focusedCellKey);
+    if (viewer !== null && viewerDocId === activeDocumentId) {
+      viewer.setHighlights(viewerHighlights(), focusedCellKey);
+    }
+  }
+
+  /** 文書のファイル名 + role ラベル（抽出テキストビューの出所文書表示。issue #28 案2） */
+  function documentLabelOf(view: VerificationDocumentView): string {
+    return `${view.document.filename}（${DOCUMENT_ROLE_LABELS[view.document.documentRole]}）`;
+  }
+
+  /**
+   * 抽出テキストビューの表示を差し替える。既定は現在フォーカス中のセル（focusedCellKey）だが、
+   * 「ハイライトへ移動」ボタン / f キー（onJump）は、フォーカスを動かさず指定セルの根拠だけを
+   * 表示するため cellKey を明示的に渡せる（PDF モードの viewer.focusHighlight と同じ位置付け）
+   */
+  function syncTextViewer(cellKey: string | null = focusedCellKey): void {
+    if (cellKey === null) {
+      textViewer.setSnippet(null);
+      return;
+    }
+    const evidence = evidenceByCell.get(cellKey);
+    if (evidence === undefined || evidence.quote === null) {
+      textViewer.setSnippet(null);
+      return;
+    }
+    const view = data.documents.find(
+      (candidate) => candidate.document.documentId === evidence.documentId,
+    );
+    if (view === undefined) {
+      // データ不整合の防御（quote の出所文書が study の documents に無い）
+      textViewer.setSnippet(null);
+      return;
+    }
+    const documentLabel = documentLabelOf(view);
+    const context = findQuoteContext(evidence, view.extractedPages);
+    const snippet: TextViewerSnippet =
+      context === null
+        ? { documentLabel, quote: evidence.quote, located: null }
+        : {
+            documentLabel,
+            quote: context.snippet.quote,
+            located: {
+              page: context.page,
+              before: context.snippet.before,
+              after: context.snippet.after,
+            },
+          };
+    textViewer.setSnippet(snippet);
   }
 
   /** セルの DOM を引く。呼び出し側は描画済みの現在タブの cellKey のみ渡す（不変条件） */
@@ -373,10 +830,11 @@ export function createVerificationPanel(
     // ロック中タブの排他は verificationForm 側が担う（disabled ボタンにはリスナを付けない）
     onSelectTab(tab) {
       activeTab = tab;
-      focusedCellKey = initialFocusKey(currentTabModel().cells);
+      focusedCellKey = computeInitialFocusKey(tab);
       editing = null;
       refreshForm();
       syncViewer();
+      syncTextViewer();
     },
     onFocusCell(cellKey) {
       focusCell(cellKey, { jump: true, domFocus: false });
@@ -416,19 +874,26 @@ export function createVerificationPanel(
       commit(cell, 'undo', undoRevertValue(cell.state));
     },
     onJump(cellKey) {
-      viewer?.focusHighlight(cellKey);
+      // f キー / 「ハイライトへ移動」: PDF モードはページジャンプ、テキストモードは
+      // 当該セルの根拠へスニペットを差し替える（フォーカスは動かさない。issue #28 案2）
+      if (viewMode === 'text') {
+        syncTextViewer(cellKey);
+      } else {
+        focusHighlightNowOrPending(cellKey);
+      }
     },
     onSearchQuote(quote) {
       viewer?.search(quote);
     },
     onCycleMatch(cellKey) {
-      // 切替ボタンは matchCount > 1 のセルにしか出ないため、対応するハイライトが必ず存在する
-      const highlight = highlightByCell.get(cellKey) as EvidenceHighlight;
-      const current = matchSelection.get(cellKey) ?? highlight.selectedIndex;
-      matchSelection.set(cellKey, (current + 1) % highlight.occurrences.length);
+      // 切替ボタンは matchCount > 1 のセルにしか出ないため、対応するテキストマッチが必ず存在する
+      const match = textMatchByCell.get(cellKey) as EvidenceTextMatch;
+      const current = matchSelection.get(cellKey) ?? match.selectedIndex;
+      matchSelection.set(cellKey, (current + 1) % match.occurrences.length);
       refreshForm();
       syncViewer();
-      viewer?.focusHighlight(cellKey);
+      focusHighlightNowOrPending(cellKey);
+      syncTextViewer(cellKey);
     },
     onExpandDecided(cellKey) {
       // コンパクト行は判定操作ボタンを含まないため、click 発火後の再構築で安全に展開できる
@@ -437,7 +902,8 @@ export function createVerificationPanel(
       refreshForm();
       ensureActiveDocumentForCell(cellKey);
       syncViewer();
-      viewer?.focusHighlight(cellKey);
+      focusHighlightNowOrPending(cellKey);
+      syncTextViewer();
       const element = findCellElement(cellKey);
       element.scrollIntoView?.({ block: 'nearest' });
       element.focus();
@@ -547,7 +1013,11 @@ export function createVerificationPanel(
       editing = null;
       refreshForm();
       syncViewer();
+      syncTextViewer();
       options.onInstanceDeclare?.(declarations);
+    },
+    onToggleLayoutMode(mode) {
+      setLayoutMode(mode);
     },
   };
 
@@ -566,8 +1036,8 @@ export function createVerificationPanel(
       expandedDecidedKey,
       highlightInfo: highlightInfo(),
       // 「本文内を検索」は表示中文書に対して走る。フォーカスは出所文書へ切替わるため、
-      // 表示中文書のテキスト層有無で出し分ける（v0.10 フェーズ 3）
-      canSearchText: activeDocument().textPages.some((page) => page.text !== ''),
+      // 表示中文書のテキスト層有無で出し分ける（v0.10 フェーズ 3。extracted_texts 基準）
+      canSearchText: activeDocument().extractedPages.some((page) => page.text !== ''),
       armCard: armRequired
         ? {
             editing: armEditing,
@@ -582,6 +1052,8 @@ export function createVerificationPanel(
           : null,
       armLocked: armLocked(),
       progress: verificationProgress(data.fields, data.evidence, ownDecisions, { armStructure }),
+      layoutMode,
+      focusCard: layoutMode === 'focus' ? buildFocusCardModel() : null,
     };
     formPane.replaceChildren(renderVerificationForm(model, handlers));
     formPane.scrollTop = savedScrollTop;
@@ -613,11 +1085,12 @@ export function createVerificationPanel(
     // 判定済みブロックのコンパクト行へ着地するとき（ビューアクリック / j・k / ディープリンク）は
     // 展開して通常カードを見せる。コンパクト行は focusin リスナを持たないため、
     // ここでの再構築が click をキャンセルする経路は通常カードの focusin だけに限られ、
-    // その場合は下の else（クラス切替のみ）を通る
+    // その場合は下の else（クラス切替のみ）を通る。判定済みブロックはリストモード限定の概念
     const target = buildTabModel(tab, data.fields, data.evidence, ownDecisions, {
       armStructure,
     }).cells.find((cell) => cell.cellKey === cellKey) as VerificationCell;
     const expand =
+      layoutMode === 'list' &&
       target.state.status !== 'unverified' &&
       cellKey !== recentDecidedKey &&
       expandedDecidedKey !== cellKey;
@@ -628,7 +1101,9 @@ export function createVerificationPanel(
       activeTab = tab;
       editing = null;
       refreshForm();
-    } else if (expand) {
+    } else if (layoutMode === 'focus' || expand) {
+      // フォーカスモードは常に単一の詳細ストリップを再構築する必要があるため、
+      // クラス切替（applyFocusClasses）だけでは新しいセルの内容を描けない
       refreshForm();
     } else {
       applyFocusClasses();
@@ -636,9 +1111,10 @@ export function createVerificationPanel(
     // 別文書由来のセルなら出所 PDF へ自動切替してからハイライトへ（v0.10 フェーズ 3）
     ensureActiveDocumentForCell(cellKey);
     syncViewer();
+    syncTextViewer();
     if (behavior.jump) {
       // 項目フォーカス → 該当ハイライトへスクロール + 強調（requirements.md §4.2）
-      viewer?.focusHighlight(cellKey);
+      focusHighlightNowOrPending(cellKey);
     }
     if (behavior.domFocus) {
       const element = findCellElement(cellKey);
@@ -706,18 +1182,31 @@ export function createVerificationPanel(
     // 全セル判定済み・undo（取り消し直後に同じセルで再判定するため）は現在セルに留まる
     let movedTo: string | null = null;
     if (action !== 'undo') {
-      const cells = currentTabModel().cells;
-      const currentIndex = cells.findIndex((candidate) => candidate.cellKey === cell.cellKey);
-      movedTo = nextUndecidedKey(cells, currentIndex + 1);
+      if (layoutMode === 'focus') {
+        // 同一ユニット内の次の未判定セル → 無ければ次の未判定ユニットの最初の未判定セル。
+        // cell は判定直前までフォーカスされていたセルのため、必ずどこかのユニットに属する
+        const units = focusUnitsOf(activeTab);
+        const currentUnit = unitOfCell(units, cell.cellKey) as FocusUnit;
+        movedTo = nextPendingCellInUnit(currentUnit, cell.cellKey);
+        if (movedTo === null) {
+          const nextUnit = nextPendingUnit(units, currentUnit.unitKey);
+          movedTo = nextUnit === null ? null : nextPendingCellInUnit(nextUnit, null);
+        }
+      } else {
+        const cells = currentTabModel().cells;
+        const currentIndex = cells.findIndex((candidate) => candidate.cellKey === cell.cellKey);
+        movedTo = nextUndecidedKey(cells, currentIndex + 1);
+      }
     }
     focusedCellKey = movedTo ?? cell.cellKey;
     refreshForm();
     syncViewer();
+    syncTextViewer();
     if (movedTo !== null) {
       // PDF ハイライトも遷移先へ追従（f キーと同じ体験）+ セル DOM を可視化・フォーカス。
       // 遷移先が別文書由来なら出所 PDF へ切替えてから（v0.10 フェーズ 3）
       ensureActiveDocumentForCell(movedTo);
-      viewer?.focusHighlight(movedTo);
+      focusHighlightNowOrPending(movedTo);
       const element = findCellElement(movedTo);
       element.scrollIntoView?.({ block: 'nearest' });
       element.focus();
@@ -742,7 +1231,7 @@ export function createVerificationPanel(
     if (!root.isConnected || editing !== null || tabLocked(activeTab)) {
       return;
     }
-    if (event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) {
+    if (event.ctrlKey || event.metaKey || event.altKey) {
       return;
     }
     const target = event.target;
@@ -753,16 +1242,47 @@ export function createVerificationPanel(
     ) {
       return;
     }
+    if (event.shiftKey) {
+      // フォーカスモードの Shift+J / Shift+K（前後ユニットへ移動）だけを許可する。
+      // それ以外の Shift 併用（誤爆防止）は無視する
+      if (layoutMode === 'focus' && (event.key === 'J' || event.key === 'K')) {
+        event.preventDefault();
+        moveToAdjacentUnit(event.key === 'J' ? 1 : -1);
+      }
+      return;
+    }
     switch (event.key) {
       case 'j':
       case 'ArrowDown':
         event.preventDefault();
-        moveFocus(1);
+        if (layoutMode === 'focus') {
+          moveFocusInUnit('row', 1);
+        } else {
+          moveFocus(1);
+        }
         return;
       case 'k':
       case 'ArrowUp':
         event.preventDefault();
-        moveFocus(-1);
+        if (layoutMode === 'focus') {
+          moveFocusInUnit('row', -1);
+        } else {
+          moveFocus(-1);
+        }
+        return;
+      case 'h':
+      case 'ArrowLeft':
+        if (layoutMode === 'focus') {
+          event.preventDefault();
+          moveFocusInUnit('col', -1);
+        }
+        return;
+      case 'l':
+      case 'ArrowRight':
+        if (layoutMode === 'focus') {
+          event.preventDefault();
+          moveFocusInUnit('col', 1);
+        }
         return;
       default:
         break;
@@ -789,7 +1309,9 @@ export function createVerificationPanel(
         break;
       case 'z':
         event.preventDefault();
-        handlers.onUndo(focusedCellKey);
+        // フォーカスモードは直近判定セルへ z を効かせる（ユニットをまたいでも undo できる）。
+        // リストモードは従来どおりフォーカス中セルへ
+        handlers.onUndo(layoutMode === 'focus' ? (recentDecidedKey ?? focusedCellKey) : focusedCellKey);
         break;
       case 'f':
         event.preventDefault();
@@ -803,14 +1325,19 @@ export function createVerificationPanel(
   const ownerDoc = root.ownerDocument;
   ownerDoc.addEventListener('keydown', handleKeydown);
 
-  focusedCellKey = initialFocusKey(currentTabModel().cells);
-  // 初期フォーカスセルの出所文書を表示（study の先頭は通常 article。別文書なら切替）
-  if (focusedCellKey !== null) {
-    ensureActiveDocumentForCell(focusedCellKey);
+  focusedCellKey = computeInitialFocusKey(activeTab);
+  // 初期フォーカスセルの出所文書を表示（study の先頭は通常 article。別文書なら切替）。
+  // ensureActiveDocumentForCell が切替えた場合はその中で PDF ロードも始まっているため、
+  // ここでの初期ロードは二重に始めない
+  const switchedInitially =
+    focusedCellKey !== null && ensureActiveDocumentForCell(focusedCellKey);
+  if (!switchedInitially) {
+    renderActiveDocumentChrome();
+    loadActiveDocumentPdf();
   }
-  renderActiveDocument();
   refreshForm();
   syncViewer();
+  syncTextViewer();
 
   return {
     root,

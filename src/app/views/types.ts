@@ -6,6 +6,7 @@ import type { ExportFormat } from '../../domain/exportLog';
 import type { ProtocolSubmitInput } from '../../features/protocol/submitInput';
 import type { SchemaPresetKind } from '../../features/schema/presets';
 import type { SchemaEditorRow } from '../../features/schema/types';
+import type { VerifyLayoutMode } from '../../lib/storage/settingsStore';
 
 /** #/home のユーザー操作コールバック */
 export interface HomeViewCallbacks {
@@ -17,6 +18,8 @@ export interface HomeViewCallbacks {
 export interface DocumentsViewCallbacks {
   /** 「Drive から PDF を取り込む」: Picker 起動 → importDocuments */
   onImport(): void;
+  /** ローカル PDF の取り込み（D&D / ファイル選択ダイアログ経由） */
+  onImportFiles(files: File[]): void;
   /** 一覧の再読み込み（読込済みでも強制再取得） */
   onReload(): void;
   /** study_label のインライン編集確定（Studies 行の上書き） */
@@ -65,7 +68,7 @@ export interface SchemaViewCallbacks {
   onToggleSample(documentId: string, selected: boolean): void;
   /** requested_model の変更 */
   onChangeModel(model: string): void;
-  /** 「AI にスキーマをドラフトさせる」 */
+  /** 「AI に表のデザインをドラフトさせる」 */
   onRunDraft(): void;
   /** エディタ行の編集確定（change イベント単位） */
   onEditRow(index: number, patch: Partial<SchemaEditorRow>): void;
@@ -102,6 +105,8 @@ export interface PilotViewCallbacks {
   onArmConfirm(arms: readonly { armKey: string; armName: string }[]): void;
   /** 人間が追加した entity インスタンス宣言（Decisions へ追記） */
   onInstanceDeclare?(decisions: readonly Decision[]): void;
+  /** 検証パネルのレイアウトモード切替（フォーカス ⇄ リスト。issue #38）の永続化 */
+  onChangeLayoutMode(mode: VerifyLayoutMode): void;
 }
 
 /** #/extract（S7）のユーザー操作コールバック */
@@ -134,6 +139,8 @@ export interface VerifyViewCallbacks {
   onArmConfirm(arms: readonly { armKey: string; armName: string }[]): void;
   /** 人間が追加した entity インスタンス宣言（Decisions へ追記） */
   onInstanceDeclare?(decisions: readonly Decision[]): void;
+  /** 検証パネルのレイアウトモード切替（フォーカス ⇄ リスト。issue #38）の永続化 */
+  onChangeLayoutMode(mode: VerifyLayoutMode): void;
 }
 
 /** #/dashboard（S9）のユーザー操作コールバック（セルクリックはハッシュ遷移のためここに持たない） */

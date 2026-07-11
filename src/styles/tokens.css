@@ -13,9 +13,15 @@
   --color-warning-bg: #fff6dd;
   --color-warning-border: #e2c765;
 
-  /* quote ハイライト（検証済み = 緑系 / 未検証 = 黄系 / low confidence = 橙系） */
+  /* quote ハイライト（検証済み = 緑系 / 未検証 = 黄系 / low confidence = 橙系）。
+     alpha は .pdf-viewer__hl の mix-blend-mode: multiply を前提に据え置き（issue #31 C）
+     — 乗算合成により濃さに関わらず下地の文字が構造的に読めるため、透過率の調整は不要 */
   --color-highlight-verified: rgb(46 160 100 / 35%);
   --color-highlight-unverified: rgb(255 214 79 / 40%);
   --color-highlight-low-confidence: rgb(255 152 0 / 40%);
+
+  /* 選択中ハイライト（塗り + 実線枠）。検索ヒットは同色の破線枠で区別する（issue #31 D） */
+  --color-highlight-active: rgb(26 115 232 / 35%);
+  --color-highlight-active-border: #1a73e8;
   --font-family-base: "Hiragino Sans", "Noto Sans JP", "Yu Gothic UI", sans-serif;
 }

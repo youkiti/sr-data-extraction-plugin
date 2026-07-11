@@ -1,6 +1,6 @@
 {
   "name": "sr-data-extraction-plugin",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "SR のデータ抽出工程を支援する Chrome 拡張（AI 事前抽出 + 人間検証 + 監査証跡）",
   "license": "MIT",

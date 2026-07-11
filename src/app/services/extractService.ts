@@ -159,7 +159,7 @@ export async function requestExtractRun(store: Store, deps: ExtractServiceDeps):
   }
   if (schema.currentFields === null || schema.currentFields.length === 0) {
     patchExtract(store, {
-      runError: '確定済みスキーマを読み込めていません。#/schema で確定・再読込してください',
+      runError: '確定済みの表のデザインを読み込めていません。表のデザイン画面で確定・再読込してください',
     });
     return;
   }
@@ -237,6 +237,7 @@ async function performRun(
       apiKey: params.apiKey,
       loadDocumentPages: makeLoadDocumentPages(params.targets, deps.google),
       buildProvider: deps.buildProvider,
+      resolveRateLimitPolicy: deps.resolveRateLimitPolicy,
       newUuid: deps.newUuid,
       now: deps.now,
     },

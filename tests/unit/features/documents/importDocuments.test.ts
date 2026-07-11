@@ -5,8 +5,9 @@ import {
   defaultStudyLabel,
   importDocuments,
   type ImportProgress,
+  type ImportSelection,
 } from '../../../../src/features/documents/importDocuments';
-import { copyFile, getFileBinary, uploadTextFile } from '../../../../src/lib/google/drive';
+import { copyFile, getFileBinary, uploadBinaryFile, uploadTextFile } from '../../../../src/lib/google/drive';
 import type { GoogleApiDeps } from '../../../../src/lib/google/types';
 
 jest.mock('../../../../src/features/documents/documentRepository');
@@ -20,6 +21,7 @@ const mockedExtract = jest.mocked(extractTextLayer);
 const mockedCopy = jest.mocked(copyFile);
 const mockedBinary = jest.mocked(getFileBinary);
 const mockedUpload = jest.mocked(uploadTextFile);
+const mockedUploadBinary = jest.mocked(uploadBinaryFile);
 
 const GOOGLE: GoogleApiDeps = {
   fetch: jest.fn(),
@@ -39,7 +41,27 @@ function makeDeps(overrides: Partial<Parameters<typeof importDocuments>[1]> = {}
   };
 }
 
-function baseParams(selections: { sourceFileId: string; filename: string }[]) {
+/** Drive Picker 経由の選択（従来の経路） */
+function driveSelection(sourceFileId: string, filename: string): ImportSelection {
+  return {
+    key: sourceFileId,
+    filename,
+    sourceFileId,
+    source: { kind: 'drive', fileId: sourceFileId },
+  };
+}
+
+/** ローカル D&D / ファイル選択経由の選択（source_file_id なし） */
+function localSelection(filename: string, data: ArrayBuffer = PDF_BYTES): ImportSelection {
+  return {
+    key: `local:${filename}:${data.byteLength}`,
+    filename,
+    sourceFileId: null,
+    source: { kind: 'local', data },
+  };
+}
+
+function baseParams(selections: ImportSelection[]) {
   return {
     spreadsheetId: 'sid',
     documentsFolderId: 'folder-docs',
@@ -57,6 +79,7 @@ beforeEach(() => {
   mockedCopy.mockResolvedValue({ id: 'copy-1', webViewLink: 'https://drive/copy-1' });
   mockedBinary.mockResolvedValue(PDF_BYTES);
   mockedUpload.mockResolvedValue({ id: 'txt-1', webViewLink: 'https://drive/txt-1' });
+  mockedUploadBinary.mockResolvedValue({ id: 'upload-1', webViewLink: 'https://drive/upload-1' });
   mockedExtract.mockResolvedValue({
     pages: [],
     textStatus: 'ok',
@@ -74,12 +97,12 @@ describe('defaultStudyLabel', () => {
   });
 });
 
-describe('importDocuments', () => {
+describe('importDocuments（Drive Picker 経由）', () => {
   test('コピー → 抽出 → txt 保存 → Studies → Documents 追記まで通し、1 PDF = 1 study を生成する', async () => {
     const progress: ImportProgress[] = [];
     const deps = makeDeps({ onProgress: (p) => progress.push(p) });
     const result = await importDocuments(
-      baseParams([{ sourceFileId: 'src-1', filename: 'smith2020.pdf' }]),
+      baseParams([driveSelection('src-1', 'smith2020.pdf')]),
       deps,
     );
 
@@ -89,6 +112,7 @@ describe('importDocuments', () => {
       GOOGLE,
     );
     expect(mockedBinary).toHaveBeenCalledWith('copy-1', GOOGLE);
+    expect(mockedUploadBinary).not.toHaveBeenCalled();
     expect(mockedExtract).toHaveBeenCalledWith(PDF_BYTES, { loadPdf: deps.loadPdf });
     // document_id = u1（txt 名）、study_id = u2
     expect(mockedUpload).toHaveBeenCalledWith(
@@ -143,7 +167,7 @@ describe('importDocuments', () => {
       serializedText: 'Registered as NCT01234567 in the trial registry.',
     });
     const result = await importDocuments(
-      baseParams([{ sourceFileId: 'src-1', filename: 'a.pdf' }]),
+      baseParams([driveSelection('src-1', 'a.pdf')]),
       makeDeps(),
     );
     expect(result.importedStudies[0]?.registrationId).toBe('NCT01234567');
@@ -158,7 +182,7 @@ describe('importDocuments', () => {
       serializedText: null,
     });
     const result = await importDocuments(
-      baseParams([{ sourceFileId: 'src-1', filename: 'scan.pdf' }]),
+      baseParams([driveSelection('src-1', 'scan.pdf')]),
       makeDeps(),
     );
     expect(mockedUpload).not.toHaveBeenCalled();
@@ -187,15 +211,15 @@ describe('importDocuments', () => {
       });
     const result = await importDocuments(
       baseParams([
-        { sourceFileId: 'src-1', filename: 'a.pdf' },
-        { sourceFileId: 'src-2', filename: 'b.pdf' },
-        { sourceFileId: 'src-3', filename: 'c.pdf' },
+        driveSelection('src-1', 'a.pdf'),
+        driveSelection('src-2', 'b.pdf'),
+        driveSelection('src-3', 'c.pdf'),
       ]),
       makeDeps(),
     );
     expect(result.failures).toEqual([
-      { sourceFileId: 'src-1', filename: 'a.pdf', stage: 'copy', detail: 'copy boom' },
-      { sourceFileId: 'src-2', filename: 'b.pdf', stage: 'extract', detail: 'broken pdf' },
+      { key: 'src-1', filename: 'a.pdf', stage: 'copy', detail: 'copy boom' },
+      { key: 'src-2', filename: 'b.pdf', stage: 'extract', detail: 'broken pdf' },
     ]);
     expect(result.imported).toHaveLength(1);
     expect(result.imported[0]?.filename).toBe('c.pdf');
@@ -207,11 +231,11 @@ describe('importDocuments', () => {
   test('Error 以外の throw も文字列化して failure に残す', async () => {
     mockedCopy.mockRejectedValue('quota exceeded');
     const result = await importDocuments(
-      baseParams([{ sourceFileId: 'src-1', filename: 'a.pdf' }]),
+      baseParams([driveSelection('src-1', 'a.pdf')]),
       makeDeps(),
     );
     expect(result.failures).toEqual([
-      { sourceFileId: 'src-1', filename: 'a.pdf', stage: 'copy', detail: 'quota exceeded' },
+      { key: 'src-1', filename: 'a.pdf', stage: 'copy', detail: 'quota exceeded' },
     ]);
     expect(result.imported).toEqual([]);
     expect(result.importedStudies).toEqual([]);
@@ -220,20 +244,20 @@ describe('importDocuments', () => {
   test('Studies / Documents 追記が失敗したら成功済みファイルも save 失敗として返す', async () => {
     mockedAppend.mockRejectedValue(new Error('sheets down'));
     const result = await importDocuments(
-      baseParams([{ sourceFileId: 'src-1', filename: 'a.pdf' }]),
+      baseParams([driveSelection('src-1', 'a.pdf')]),
       makeDeps(),
     );
     expect(result.imported).toEqual([]);
     expect(result.importedStudies).toEqual([]);
     expect(result.failures).toEqual([
-      { sourceFileId: 'src-1', filename: 'a.pdf', stage: 'save', detail: 'sheets down' },
+      { key: 'src-1', filename: 'a.pdf', stage: 'save', detail: 'sheets down' },
     ]);
   });
 
   test('全ファイル失敗なら Studies / Documents 追記を呼ばない。既定の uuid / now でも動く', async () => {
     mockedCopy.mockRejectedValue(new Error('boom'));
     const failedAll = await importDocuments(
-      baseParams([{ sourceFileId: 'src-1', filename: 'a.pdf' }]),
+      baseParams([driveSelection('src-1', 'a.pdf')]),
       { google: GOOGLE, loadPdf: jest.fn() },
     );
     expect(failedAll.imported).toEqual([]);
@@ -241,12 +265,61 @@ describe('importDocuments', () => {
     expect(mockedAppendStudies).not.toHaveBeenCalled();
 
     mockedCopy.mockResolvedValue({ id: 'copy-1', webViewLink: 'w' });
-    const ok = await importDocuments(baseParams([{ sourceFileId: 'src-1', filename: 'a.pdf' }]), {
+    const ok = await importDocuments(baseParams([driveSelection('src-1', 'a.pdf')]), {
       google: GOOGLE,
       loadPdf: jest.fn(),
     });
     expect(ok.imported[0]?.documentId).toMatch(/^[0-9a-f]{8}-/);
     expect(ok.imported[0]?.studyId).toMatch(/^[0-9a-f]{8}-/);
     expect(ok.imported[0]?.importedAt).not.toBe('');
+  });
+});
+
+describe('importDocuments（ローカル D&D / ファイル選択経由）', () => {
+  test('copyFile / getFileBinary は使わず uploadBinaryFile で documents/ へ新規アップロードする', async () => {
+    const deps = makeDeps();
+    const localData = new Uint8Array([9, 9, 9]).buffer;
+    const result = await importDocuments(
+      baseParams([localSelection('local.pdf', localData)]),
+      deps,
+    );
+
+    expect(mockedCopy).not.toHaveBeenCalled();
+    expect(mockedBinary).not.toHaveBeenCalled();
+    expect(mockedUploadBinary).toHaveBeenCalledWith(
+      { name: 'local.pdf', data: localData, parentId: 'folder-docs' },
+      GOOGLE,
+    );
+    // アンカリング・テキスト抽出は uploadBinaryFile が返した実体でなく手元データをそのまま使う
+    expect(mockedExtract).toHaveBeenCalledWith(localData, { loadPdf: deps.loadPdf });
+    expect(result.imported[0]).toMatchObject({
+      driveFileId: 'upload-1',
+      sourceFileId: null,
+      filename: 'local.pdf',
+    });
+    expect(result.failures).toEqual([]);
+  });
+
+  test('アップロード失敗は copy 段の failure として記録される（sourceFileId は無いため key で一致）', async () => {
+    mockedUploadBinary.mockRejectedValue(new Error('upload boom'));
+    const result = await importDocuments(
+      baseParams([localSelection('local.pdf')]),
+      makeDeps(),
+    );
+    expect(result.failures).toEqual([
+      { key: `local:local.pdf:${PDF_BYTES.byteLength}`, filename: 'local.pdf', stage: 'copy', detail: 'upload boom' },
+    ]);
+    expect(result.imported).toEqual([]);
+    expect(mockedExtract).not.toHaveBeenCalled();
+  });
+
+  test('Drive 経由とローカル経由が混在しても両方取り込める', async () => {
+    const result = await importDocuments(
+      baseParams([driveSelection('src-1', 'a.pdf'), localSelection('b.pdf')]),
+      makeDeps(),
+    );
+    expect(result.imported).toHaveLength(2);
+    expect(result.imported[0]).toMatchObject({ sourceFileId: 'src-1', driveFileId: 'copy-1' });
+    expect(result.imported[1]).toMatchObject({ sourceFileId: null, driveFileId: 'upload-1' });
   });
 });

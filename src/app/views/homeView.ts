@@ -50,7 +50,7 @@ export function renderHomeView(state: AppState, ctx: ViewContext): HTMLElement {
       el('dl', { className: 'home__summary' }, [
         ...summaryItems('文献数', counts.documents),
         ...summaryItems('プロトコル版数', counts.protocolVersions),
-        ...summaryItems('確定スキーマ版数', counts.schemaVersions),
+        ...summaryItems('表のデザインの確定版数', counts.schemaVersions),
         ...summaryItems('AI 抽出済み Evidence 行数', counts.evidenceRows),
         ...summaryItems('データ行数（StudyData + ResultsData）', counts.dataRows),
       ]),

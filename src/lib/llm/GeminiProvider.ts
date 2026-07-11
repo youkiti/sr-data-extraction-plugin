@@ -15,6 +15,7 @@ import {
   type JsonSchema,
   type LLMProvider,
 } from './LLMProvider';
+import { parseRetryAfterMs } from './retry';
 
 export interface GeminiProviderOptions {
   apiKey: string;
@@ -71,6 +72,7 @@ export class GeminiProvider implements LLMProvider {
         this.providerId,
         res.status,
         text,
+        parseRetryAfterMs(res.headers.get('retry-after')),
       );
     }
     const json = (await res.json()) as GeminiResponse;

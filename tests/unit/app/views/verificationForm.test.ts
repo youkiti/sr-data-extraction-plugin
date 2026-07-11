@@ -4,6 +4,7 @@ import {
   type VerificationFormHandlers,
   type VerificationFormModel,
 } from '../../../../src/app/views/verificationForm';
+import type { VerificationFocusCardModel } from '../../../../src/app/views/verificationFocusCard';
 import type { Evidence } from '../../../../src/domain/evidence';
 import type { SchemaField } from '../../../../src/domain/schemaField';
 import type { TabModel, VerificationCell } from '../../../../src/features/verification/cells';
@@ -85,6 +86,7 @@ function makeHandlers(): jest.Mocked<VerificationFormHandlers> {
     onOutcomeKeyChange: jest.fn(),
     onOutcomeTimeChange: jest.fn(),
     onOutcomeAdd: jest.fn(),
+    onToggleLayoutMode: jest.fn(),
   };
 }
 
@@ -114,6 +116,8 @@ function makeModel(
       total: cells.length,
       byTab: [{ tab: 'study', decided: 0, total: cells.length }],
     },
+    layoutMode: 'list',
+    focusCard: null,
     ...overrides,
   };
 }
@@ -713,5 +717,65 @@ describe('renderVerificationForm: アウトカム追加フォーム', () => {
     const error = root.querySelector('#verify-outcome-error');
     expect(error?.getAttribute('role')).toBe('alert');
     expect(error?.textContent).toContain('既に存在します');
+  });
+});
+
+describe('renderVerificationForm: レイアウトモード（issue #38）', () => {
+  function makeFocusCard(): VerificationFocusCardModel {
+    const cell = makeCell();
+    return {
+      unit: {
+        unitKey: 'study|methods',
+        heading: 'methods',
+        columns: [{ entityKey: '-', label: 'Study' }],
+        rows: [{ field: cell.field, cells: [cell] }],
+        summary: null,
+      },
+      unitIndex: 1,
+      totalUnits: 1,
+      remainingUnits: 1,
+      focusedCellKey: cell.cellKey,
+      editing: null,
+      highlightInfo: new Map(),
+      canSearchText: true,
+      recentCell: null,
+    };
+  }
+
+  test('トグルボタンは現在のモードに応じて切替先ラベル・aria-pressed を出し、ハンドラを呼ぶ', () => {
+    const { root, handlers } = render(makeModel([makeCell()], { layoutMode: 'focus', focusCard: makeFocusCard() }));
+    const toggle = root.querySelector<HTMLButtonElement>('#verify-layout-toggle');
+    expect(toggle?.textContent).toBe('リスト表示に切替');
+    expect(toggle?.getAttribute('aria-pressed')).toBe('true');
+    toggle?.click();
+    expect(handlers.onToggleLayoutMode).toHaveBeenCalledWith('list');
+  });
+
+  test('リストモードのトグルは「フォーカス表示に切替」を出す', () => {
+    const { root, handlers } = render(makeModel([makeCell()], { layoutMode: 'list' }));
+    const toggle = root.querySelector<HTMLButtonElement>('#verify-layout-toggle');
+    expect(toggle?.textContent).toBe('フォーカス表示に切替');
+    expect(toggle?.getAttribute('aria-pressed')).toBe('false');
+    toggle?.click();
+    expect(handlers.onToggleLayoutMode).toHaveBeenCalledWith('focus');
+  });
+
+  test('focus モードは focusCard をフォーカスカードへ委譲し、リストモードの群・判定済みブロックは出さない', () => {
+    const { root } = render(makeModel([makeCell()], { layoutMode: 'focus', focusCard: makeFocusCard() }));
+    expect(root.querySelector('#verify-focus-card')).not.toBeNull();
+    expect(root.querySelector('.verify__group')).toBeNull();
+    expect(root.querySelector('.verify__group--decided')).toBeNull();
+  });
+
+  test('focusCard が null（防御）のときはフォーカスカードを描画せずショートカット注記のみ出す', () => {
+    const { root } = render(makeModel([makeCell()], { layoutMode: 'focus', focusCard: null }));
+    expect(root.querySelector('#verify-focus-card')).toBeNull();
+    expect(root.querySelector('.verify__shortcut-note')).not.toBeNull();
+  });
+
+  test('focus モードでセルが 0 件のタブは空メッセージのみ（フォーカスカードを組まない）', () => {
+    const { root } = render(makeModel([], { layoutMode: 'focus', focusCard: null }));
+    expect(root.querySelector('.verify__empty')).not.toBeNull();
+    expect(root.querySelector('#verify-focus-card')).toBeNull();
   });
 });

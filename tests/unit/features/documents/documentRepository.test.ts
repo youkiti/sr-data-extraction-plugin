@@ -79,6 +79,11 @@ describe('documentToRow', () => {
     expect(row[9]).toBe('ok');
     expect(row[14]).toBeNull();
   });
+
+  test('sourceFileId が null（ローカル取り込み）の行は空文字で書く', () => {
+    const row = documentToRow(makeDocument({ sourceFileId: null }));
+    expect(row[4]).toBe('');
+  });
 });
 
 describe('readDocuments', () => {
@@ -106,6 +111,14 @@ describe('readDocuments', () => {
         note: 'memo',
       }),
     ]);
+  });
+
+  test('source_file_id が空セル（ローカル取り込み）は null に戻す', async () => {
+    const localRow = [...SHEET_ROW];
+    localRow[4] = '';
+    const deps = makeDeps([HEADER, localRow]);
+    const [doc] = await readDocuments('sid', deps);
+    expect(doc?.sourceFileId).toBeNull();
   });
 
   test('末尾セルが欠落したラグ行も空セル扱いで読める', async () => {

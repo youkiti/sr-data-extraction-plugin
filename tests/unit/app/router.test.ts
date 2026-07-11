@@ -6,6 +6,7 @@ const stubCtx: ViewContext = {
   home: { onReload: jest.fn() },
   documents: {
     onImport: jest.fn(),
+    onImportFiles: jest.fn(),
     onReload: jest.fn(),
     onSaveStudyLabel: jest.fn(),
     onSaveRegistrationId: jest.fn(),
@@ -49,6 +50,7 @@ const stubCtx: ViewContext = {
     onRetryVerifyLoad: jest.fn(),
     onDecision: jest.fn(),
     onArmConfirm: jest.fn(),
+    onChangeLayoutMode: jest.fn(),
   },
   extract: {
     onToggleStudy: jest.fn(),
@@ -64,6 +66,7 @@ const stubCtx: ViewContext = {
     onRetryLoad: jest.fn(),
     onDecision: jest.fn(),
     onArmConfirm: jest.fn(),
+    onChangeLayoutMode: jest.fn(),
   },
   dashboard: { onReload: jest.fn() },
   export: {
@@ -89,11 +92,19 @@ describe('normalizeHash', () => {
     expect(normalizeHash('#/unknown')).toBe('#/home');
     expect(normalizeHash('')).toBe('#/home');
   });
+
+  test('設定ルート #/options も正規化対象（ステップナビ外だが解決できる）', () => {
+    expect(normalizeHash('#/options')).toBe('#/options');
+  });
 });
 
 describe('findRoute', () => {
   test('ハッシュに対応するルート定義を返す', () => {
-    expect(findRoute('#/schema').label).toBe('スキーマ');
+    expect(findRoute('#/schema').label).toBe('表のデザイン');
+  });
+
+  test('設定ルート #/options を解決する', () => {
+    expect(findRoute('#/options').label).toBe('設定');
   });
 });
 

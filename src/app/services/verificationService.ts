@@ -1,6 +1,8 @@
 // S6（#/pilot 埋め込み）と S8（#/verify 単独）で共有する検証サービス基盤。
 // - 検証データ束（VerificationData）の組み立て: Decisions / StudyData / ArmStructures +
-//   PDF（バイナリ → pdfjs → テキスト層）の読み込み
+//   extracted_texts（軽量な .txt。study 全文書ぶんを先読み）。
+//   PDF バイナリはここでは 1 件も読まない（issue #28 案3）— VerificationData.loadPdfView
+//   が表示中の文書だけを遅延読込する（features/verification/pdfViewCache が LRU キャッシュ）
 // - 判定の永続化: 自分の annotator 行（StudyData / ResultsData）の upsert + Decisions 追記。
 //   失敗時はオフラインキュー（lib/storage/offlineQueue の 'decisions'）へ退避し、成功時に再送する
 // - 群構成確定の永続化: ArmStructures へ新 version を追記（キュー退避なし。失敗はトーストで通知）
@@ -12,6 +14,8 @@ import type { Evidence } from '../../domain/evidence';
 import type { EntityLevel, SchemaField } from '../../domain/schemaField';
 import type { StudyRecord } from '../../domain/study';
 import type { DisposablePdfDocument } from '../../features/documents/extractTextLayer';
+import { parseExtractedText } from '../../features/documents/extractedText';
+import { parseDriveFileId } from '../../features/documents/loadDocumentPages';
 import { readStudyDataSheet, upsertResultsDataRows, upsertStudyDataRows } from '../../features/extraction/annotationRepository';
 import {
   appendArmStructureVersion,
@@ -24,16 +28,21 @@ import {
   readDecisionsByStudy,
 } from '../../features/verification/decisionRepository';
 import { isEntityInstanceDeclaration } from '../../features/verification/instanceDeclarations';
+import { createPdfViewCache } from '../../features/verification/pdfViewCache';
 import type {
+  ExtractedPage,
   VerificationData,
   VerificationDocumentView,
 } from '../../features/verification/types';
-import { getFileBinary } from '../../lib/google/drive';
+import { getFileText } from '../../lib/google/drive';
 import { getCurrentUserEmail, type ProfileDeps } from '../../lib/google/identity';
 import type { GoogleApiDeps } from '../../lib/google/types';
-import type { PdfViewerDocument, RenderablePdfPage } from '../../lib/pdf/renderPage';
-import { extractTextLayerPages } from '../../lib/pdf/textLayer';
 import { createOfflineQueue, type OfflineQueue } from '../../lib/storage/offlineQueue';
+import {
+  loadVerifyLayoutMode,
+  saveVerifyLayoutMode,
+  type VerifyLayoutMode,
+} from '../../lib/storage/settingsStore';
 import { showToast } from '../ui/toast';
 
 /** 検証基盤の共有依存（pilotService / verifyService の deps はこれを拡張する） */
@@ -46,6 +55,9 @@ export interface VerificationDeps {
   decisionQueue?: OfflineQueue<QueuedDecisionWrite>;
   newUuid?: () => string;
   now?: () => string;
+  /** 検証パネルのレイアウトモード設定の読み書き（省略時は lib/storage/settingsStore の実装。issue #38） */
+  loadVerifyLayoutMode?: () => Promise<VerifyLayoutMode>;
+  saveVerifyLayoutMode?: (mode: VerifyLayoutMode) => Promise<void>;
 }
 
 /**
@@ -81,14 +93,6 @@ function toMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-/** DisposablePdfDocument → ビューア用の最小形。render の viewport 型は実体が同一のため安全 */
-function toViewerDocument(pdf: DisposablePdfDocument): PdfViewerDocument {
-  return {
-    numPages: pdf.numPages,
-    getPage: (pageNumber) => pdf.getPage(pageNumber) as unknown as Promise<RenderablePdfPage>,
-  };
-}
-
 export interface VerificationBundleInput {
   spreadsheetId: string;
   /** 検証単位の study（Studies 由来） */
@@ -106,38 +110,46 @@ export interface VerificationBundle {
   verification: VerificationData;
   /** 自分の StudyData 行の values 全量（判定時のスナップショット更新用） */
   studyValues: Record<string, string | null>;
+  /**
+   * 検証パネルのレイアウトモードの初期表示（issue #38）。settingsStore から「検証データ束の
+   * 読込時」に読む — study 切替のたびに読み直すことで、他画面での切替を常に最新反映する
+   */
+  layoutMode: VerifyLayoutMode;
 }
 
 /**
- * 1 文書ぶんのビューア素材（PDF + テキスト層）を読み込む。
- * PDF の読み込み失敗は throw せず pdfError として持つ（フォーム側の検証は続行できる）。
- * 破棄用の disposable も返す（成功時のみ非 null）
+ * 1 文書ぶんの extracted_texts（Drive の .txt）を読み込む。document.textRef が null
+ * （no_text_layer）は失敗ではなく空配列とし、読み込み失敗は extractedTextError へ持つ
+ * （throw しない。bundle 全体を失敗させないため）
  */
-async function loadDocumentView(
+async function loadExtractedPages(
   document: DocumentRecord,
   deps: VerificationDeps,
-): Promise<{ view: VerificationDocumentView; disposable: DisposablePdfDocument | null }> {
-  let pdf: PdfViewerDocument | null = null;
-  let pdfError: string | null = null;
-  let textPages: VerificationDocumentView['textPages'] = [];
-  let disposable: DisposablePdfDocument | null = null;
-  try {
-    const binary = await getFileBinary(document.driveFileId, deps.google);
-    const disp = await deps.loadPdf(binary);
-    textPages = await extractTextLayerPages(disp);
-    pdf = toViewerDocument(disp);
-    disposable = disp;
-  } catch (err) {
-    pdfError = toMessage(err);
+): Promise<{ extractedPages: readonly ExtractedPage[]; extractedTextError: string | null }> {
+  if (document.textRef === null) {
+    return { extractedPages: [], extractedTextError: null };
   }
-  return { view: { document, pdf, pdfError, textPages }, disposable };
+  const fileId = parseDriveFileId(document.textRef);
+  if (fileId === null) {
+    return {
+      extractedPages: [],
+      extractedTextError: `text_ref からファイル ID を解決できません: ${document.textRef}`,
+    };
+  }
+  try {
+    const content = await getFileText(fileId, deps.google);
+    return { extractedPages: parseExtractedText(content), extractedTextError: null };
+  } catch (err) {
+    return { extractedPages: [], extractedTextError: toMessage(err) };
+  }
 }
 
 /**
  * 検証パネルへ流し込むデータ束を読み込む（S6 / S8 共通。v0.10 フェーズ 3 = study 単位）。
- * study 配下の全文書の PDF・テキスト層を読み込む（テキスト層抽出は PDF バイナリ全体を要するため、
- * 遅延読込しても実質的な節約がなく、study 単位で先読みする）。PDF 読み込み失敗は文書ごとに
- * pdfError として持ち、他文書の表示・フォーム側の検証は続行できる
+ * 読み込むのは Decisions / StudyData / ArmStructures + study 配下の全文書ぶんの
+ * extracted_texts（軽量な .txt）のみ — PDF バイナリは 1 件も読まない（issue #28 案3）。
+ * PDF は `VerificationData.loadPdfView` を通じて表示中の文書だけを遅延読込する
+ * （features/verification/pdfViewCache が documentId 単位で LRU キャッシュする）
  */
 export async function loadVerificationBundle(
   input: VerificationBundleInput,
@@ -155,19 +167,41 @@ export async function loadVerificationBundle(
   const armStructure = latestArmStructure(armRows, annotator);
 
   const documents: VerificationDocumentView[] = [];
-  const disposables: DisposablePdfDocument[] = [];
+  const driveFileIdByDocument = new Map<string, string>();
   for (const document of input.documents) {
-    const loaded = await loadDocumentView(document, deps);
-    documents.push(loaded.view);
-    if (loaded.disposable !== null) {
-      disposables.push(loaded.disposable);
-    }
+    const { extractedPages, extractedTextError } = await loadExtractedPages(document, deps);
+    documents.push({ document, extractedPages, extractedTextError });
+    driveFileIdByDocument.set(document.documentId, document.driveFileId);
   }
-  const disposePdf: VerificationData['disposePdf'] = async () => {
-    for (const disposable of disposables) {
-      await disposable.destroy();
+
+  // PDF は表示中の文書だけを遅延読込する（LRU キャッシュは bundle ＝ study 切替の単位で持つ）
+  const pdfCache = createPdfViewCache({ google: deps.google, loadPdf: deps.loadPdf });
+  function resolveDriveFileId(documentId: string): string | null {
+    return driveFileIdByDocument.get(documentId) ?? null;
+  }
+  const loadPdfView: VerificationData['loadPdfView'] = async (documentId) => {
+    const driveFileId = resolveDriveFileId(documentId);
+    if (driveFileId === null) {
+      return {
+        pdf: null,
+        pdfError: `document_id "${documentId}" が study 配下の文書に見つかりません`,
+        textPages: [],
+      };
     }
+    return pdfCache.load(documentId, driveFileId);
   };
+  const retryPdfView: VerificationData['retryPdfView'] = async (documentId) => {
+    const driveFileId = resolveDriveFileId(documentId);
+    if (driveFileId === null) {
+      return {
+        pdf: null,
+        pdfError: `document_id "${documentId}" が study 配下の文書に見つかりません`,
+        textPages: [],
+      };
+    }
+    return pdfCache.retry(documentId, driveFileId);
+  };
+  const disposePdf: VerificationData['disposePdf'] = () => pdfCache.disposeAll();
 
   const verification: VerificationData = {
     study,
@@ -178,9 +212,23 @@ export async function loadVerificationBundle(
     annotator,
     schemaVersion: input.schemaVersion,
     armStructure,
+    loadPdfView,
+    retryPdfView,
     disposePdf,
   };
-  return { verification, studyValues };
+  const layoutMode = await (deps.loadVerifyLayoutMode ?? loadVerifyLayoutMode)();
+  return { verification, studyValues, layoutMode };
+}
+
+/**
+ * 検証パネルのレイアウトモードを永続化する（トグル操作 `#verify-layout-toggle` のたびに呼ぶ）。
+ * S6 / S8 共通の永続化経路（呼び出し側は自分のスライスの layoutMode を楽観反映してから呼ぶ）
+ */
+export async function persistVerifyLayoutMode(
+  mode: VerifyLayoutMode,
+  deps: VerificationDeps,
+): Promise<void> {
+  await (deps.saveVerifyLayoutMode ?? saveVerifyLayoutMode)(mode);
 }
 
 /** 判定書き込みの実体（オフライン再送でも同じ経路を通す）。annotator 行 → Decisions の順 */

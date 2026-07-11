@@ -20,6 +20,8 @@ export interface RetryOptions {
   maxAttempts?: number;
   /** バックオフの基準待ち時間（ms）。試行 n 回目の失敗後に baseDelayMs * 2^(n-1) 待つ。既定 1000 */
   baseDelayMs?: number;
+  /** バックオフ上限（ms）。指数バックオフもサーバ提示の retryDelay もこの上限で頭打ち。既定 上限なし */
+  maxDelayMs?: number;
   /** テスト時に差し替え可能な sleep 実装 */
   sleep?: (ms: number) => Promise<void>;
   /** 再試行可否の判定。既定は LlmProviderError かつ status が RETRYABLE_STATUSES */
@@ -36,9 +38,58 @@ function defaultSleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/**
+ * HTTP `Retry-After` ヘッダを ms へ解釈する（provider が 4xx/5xx 応答から抽出して
+ * LlmProviderError.retryAfterMs へ載せるためのユーティリティ）。
+ * - 数値は「秒」（RFC 7231）として ms へ換算
+ * - HTTP-date は現在時刻との差分（過去日付は 0）
+ * - 解釈不能・null は null
+ */
+export function parseRetryAfterMs(
+  headerValue: string | null,
+  now: () => number = () => Date.now(),
+): number | null {
+  if (headerValue === null) {
+    return null;
+  }
+  const trimmed = headerValue.trim();
+  if (trimmed === '') {
+    return null;
+  }
+  const seconds = Number(trimmed);
+  if (Number.isFinite(seconds)) {
+    return Math.max(0, Math.ceil(seconds * 1000));
+  }
+  const dateMs = Date.parse(trimmed);
+  if (!Number.isNaN(dateMs)) {
+    return Math.max(0, dateMs - now());
+  }
+  return null;
+}
+
+/**
+ * サーバが提示した再送待ち時間（ms）。Retry-After ヘッダ（retryAfterMs）を最優先し、
+ * 無ければ本文の gRPC RetryInfo（`"retryDelay": "42s"`。Gemini の 429 応答が使う）を拾う。
+ * 提示が無ければ null
+ */
+export function parseServerRetryDelayMs(err: unknown): number | null {
+  if (!(err instanceof LlmProviderError)) {
+    return null;
+  }
+  if (err.retryAfterMs !== null) {
+    return err.retryAfterMs;
+  }
+  const match = /"retryDelay"\s*:\s*"(\d+(?:\.\d+)?)s"/.exec(err.responseBody);
+  if (match) {
+    return Math.ceil(Number.parseFloat(match[1] as string) * 1000);
+  }
+  return null;
+}
+
 export function withRetry(provider: LLMProvider, options: RetryOptions = {}): LLMProvider {
   const maxAttempts = options.maxAttempts ?? 3;
   const baseDelayMs = options.baseDelayMs ?? 1000;
+  const maxDelayMs = options.maxDelayMs ?? Number.POSITIVE_INFINITY;
   const sleep = options.sleep ?? defaultSleep;
   const isRetryable = options.isRetryable ?? defaultIsRetryable;
 
@@ -53,7 +104,11 @@ export function withRetry(provider: LLMProvider, options: RetryOptions = {}): LL
           if (attempt >= maxAttempts || !isRetryable(err)) {
             throw err;
           }
-          await sleep(baseDelayMs * 2 ** (attempt - 1));
+          // 指数バックオフとサーバ提示の retryDelay の大きい方を採用し、上限で頭打ちにする。
+          // 429 でサーバが「n 秒待て」と言う場合、それより短い再送は無駄なので尊重する
+          const backoff = baseDelayMs * 2 ** (attempt - 1);
+          const serverDelay = parseServerRetryDelayMs(err) ?? 0;
+          await sleep(Math.min(maxDelayMs, Math.max(backoff, serverDelay)));
         }
       }
     },

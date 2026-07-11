@@ -10,6 +10,7 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<DashboardViewCall
       home: { onReload: jest.fn() },
       documents: {
         onImport: jest.fn(),
+        onImportFiles: jest.fn(),
         onReload: jest.fn(),
         onSaveStudyLabel: jest.fn(),
         onSaveRegistrationId: jest.fn(),
@@ -53,6 +54,7 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<DashboardViewCall
         onRetryVerifyLoad: jest.fn(),
         onDecision: jest.fn(),
         onArmConfirm: jest.fn(),
+        onChangeLayoutMode: jest.fn(),
       },
       extract: {
         onToggleStudy: jest.fn(),
@@ -68,6 +70,7 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<DashboardViewCall
         onRetryLoad: jest.fn(),
         onDecision: jest.fn(),
         onArmConfirm: jest.fn(),
+        onChangeLayoutMode: jest.fn(),
       },
       dashboard: callbacks,
       export: {

@@ -352,11 +352,12 @@ test('実行 → 完了 → 埋め込み検証 UI（ハイライト + 判定 + D
   await expect(page.locator('#pilot-run-done')).toBeVisible({ timeout: 15_000 });
   await expect(page.locator('#pilot-revise-schema')).toHaveAttribute('href', '#/schema');
 
-  // 埋め込み検証 UI: 2 ペイン + タブ + セル + 未検証チップ
+  // 埋め込み検証 UI: 2 ペイン + タブ + セル + 未検証チップ（フォーカスモードの詳細ストリップに
+  // スコープする。判定チップは matrix ボタン / 詳細ストリップの 2 箇所に出るため）
   await expect(page.locator('.verify__panes')).toBeVisible();
   await expect(page.locator('.verify__tab--active')).toHaveText('Study');
   await expect(page.locator('.verify__cell-label')).toHaveText('死亡率');
-  await expect(page.locator('.verify__chip')).toHaveText('未検証');
+  await expect(page.locator('#verify-focus-detail .verify__chip')).toHaveText('未検証');
 
   // PDF ビューア: canvas 描画 + quote ハイライト（overlay DOM の存在で検証。test-strategy.md §2.2）
   await expect(page.locator('.pdf-viewer__page-indicator')).toHaveText('1 / 1 ページ');
@@ -364,7 +365,7 @@ test('実行 → 完了 → 埋め込み検証 UI（ハイライト + 判定 + D
 
   // 判定: 承認 → チップ更新 + ハイライトが検証済み色 + Decisions 追記
   await page.locator('.verify__action--accept').click();
-  await expect(page.locator('.verify__chip')).toHaveText('承認');
+  await expect(page.locator('#verify-focus-detail .verify__chip')).toHaveText('承認');
   await expect(page.locator('.pdf-viewer__hl--verified')).toHaveCount(1);
   await expect
     .poll(() => appendUrls.filter((url) => url.includes('Decisions') && url.includes(':append')).length)
