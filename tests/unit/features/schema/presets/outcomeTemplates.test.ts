@@ -23,12 +23,33 @@ describe('outcomeTemplates', () => {
     }
   });
 
-  test('連続: mean / sd / n の 3 項目', () => {
+  test('連続: mean / sd / se / ci 3 種 / n の 7 項目（issue #43: SD 未報告時の SE・CI 構造化）', () => {
     expect(OUTCOME_TEMPLATE_CONTINUOUS.map((row) => row.fieldName)).toEqual([
       'outcome_mean',
       'outcome_sd',
+      'outcome_se',
+      'outcome_ci_lower',
+      'outcome_ci_upper',
+      'outcome_ci_level',
       'outcome_n',
     ]);
+  });
+
+  test('連続: SE / CI の代替散布度 4 項目は float・required=false（該当報告時のみ）', () => {
+    const optionalNames = ['outcome_se', 'outcome_ci_lower', 'outcome_ci_upper', 'outcome_ci_level'];
+    for (const row of OUTCOME_TEMPLATE_CONTINUOUS) {
+      if (optionalNames.includes(row.fieldName)) {
+        expect(row).toMatchObject({ dataType: 'float', required: false });
+      } else {
+        expect(row.required).toBe(true);
+      }
+    }
+  });
+
+  test('連続: outcome_sd は SD 換算を禁じ SE / CI 項目へ誘導する指示を持つ', () => {
+    const sdRow = OUTCOME_TEMPLATE_CONTINUOUS.find((row) => row.fieldName === 'outcome_sd');
+    expect(sdRow?.extractionInstruction).toContain('Never compute SD from SE or CI');
+    expect(sdRow?.extractionInstruction).toContain('outcome_ci_lower');
   });
 
   test('プリセット単体はエディタ検証を通る（挿入後の重複はエディタ側で検出）', () => {
