@@ -1449,7 +1449,7 @@
   white-space: nowrap;
 }
 
-.verify__layout-toggle:hover {
+.verify__layout-toggle:hover:not(:disabled) {
   background: var(--color-surface);
 }
 
@@ -1967,7 +1967,7 @@
   text-align: left;
 }
 
-.focus-card__matrix-btn:hover {
+.focus-card__matrix-btn:hover:not(:disabled) {
   background: var(--color-surface);
 }
 
