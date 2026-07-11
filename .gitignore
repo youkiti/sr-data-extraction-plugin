@@ -17,6 +17,9 @@ playwright-report/
 .env
 *.pem
 
+# Chrome 拡張の署名鍵（安定した拡張 ID を保つ秘密鍵。絶対にコミットしない）
+*.pem
+
 # E2E / anchoring 用の実論文 PDF fixture
 # 再取得方法は tests/fixtures/pdf/README.md を参照（fetch-pdfs.ps1 で一括取得）
 tests/fixtures/pdf/*.pdf
