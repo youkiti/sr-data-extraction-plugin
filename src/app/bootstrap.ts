@@ -80,6 +80,14 @@ import {
 import { loadDashboard } from './services/dashboardService';
 import { loadProgressCounts } from './services/homeService';
 import {
+  cancelReviewerChange,
+  confirmReviewerChange,
+  loadReviewers,
+  requestAddReviewer,
+  revokeReviewer,
+} from './services/reviewerAdminService';
+import { grantFolderAccess, loadRole } from './services/roleService';
+import {
   cancelExportWarning,
   confirmExportGenerate,
   downloadExportResult,
@@ -88,6 +96,7 @@ import {
   selectExportFormat,
 } from './services/exportService';
 import { createChromeGoogleApiDeps } from './services/factories';
+import type { ProjectRole } from '../domain/reviewer';
 import { loadCurrentProject } from '../features/project/projectStore';
 import { extractDocxText } from '../lib/docx/extractDocxText';
 import { BUILD_DATE } from '../build-info';
@@ -97,11 +106,32 @@ import { createProvider } from '../lib/llm/providerFactory';
 import { loadDisposablePdf } from '../lib/pdf/loadPdf';
 import { loadGeminiApiKey, loadOpenRouterApiKey } from '../lib/storage/secretsStore';
 import { resolveRateLimitPolicy } from '../lib/storage/settingsStore';
+import { el } from './ui/dom';
 
 declare global {
   interface Window {
     __E2E_PRELOADED_STATE__?: Partial<AppState>;
   }
+}
+
+/** role.role は未解決の間 null。ガード・ナビ描画は既定で 'owner'（制限なし）として扱う */
+function roleOf(state: AppState): ProjectRole {
+  return state.role.role ?? 'owner';
+}
+
+/**
+ * 未登録（unregistered）の全画面ブロック（docs/design-independent-dual-review.md §1）。
+ * 共有はされているが Reviewers にも Meta.created_by にも一致しない場合に、
+ * 以降の読み込みを中断してこれだけを表示する
+ */
+function renderUnregisteredBlock(): HTMLElement {
+  return el('section', { id: 'app-role-blocked', className: 'view view--role-blocked' }, [
+    el('h2', { text: 'アクセスできません' }),
+    el('p', {
+      attributes: { role: 'alert' },
+      text: 'このプロジェクトのレビュアーとして登録されていません。プロジェクトのオーナーに登録を依頼してください。',
+    }),
+  ]);
 }
 
 export async function seedState(win: Window): Promise<AppState> {
@@ -112,6 +142,19 @@ export async function seedState(win: Window): Promise<AppState> {
   }
   const preloaded = win.__E2E_PRELOADED_STATE__;
   if (preloaded) {
+    // ロールは通常メインビュー起動時に Sheets を読んで解決する（roleService.loadRole）。
+    // E2E / 単体テストの既定は「プロジェクトが選択済みなら owner 視点で完結させる」
+    // （home.countsLoaded と同じ考え方の seam）。reviewer シナリオを検証する spec は
+    // role を明示注入して上書きする（下の `...(preloaded.role ?? {})` が勝つ）
+    const mergedProject = preloaded.currentProject !== undefined ? preloaded.currentProject : state.currentProject;
+    const defaultRole: AppState['role'] =
+      mergedProject !== null
+        ? { ...state.role, role: 'owner', resolving: false, error: null, folderAccessGranted: true }
+        : state.role;
+    // レビュアー一覧も同じ考え方: 明示注入が無ければ「読込済み（0 件）」として扱い、
+    // #/home 入場時の自動読込（owner のレビュアー管理カード）を抑止する
+    const defaultReviewers: AppState['reviewers'] =
+      mergedProject !== null ? { ...state.reviewers, assignments: [] } : state.reviewers;
     return {
       ...state,
       ...preloaded,
@@ -122,6 +165,8 @@ export async function seedState(win: Window): Promise<AppState> {
         countsLoaded: preloaded.counts !== undefined,
         ...(preloaded.home ?? {}),
       },
+      role: { ...defaultRole, ...(preloaded.role ?? {}) },
+      reviewers: { ...defaultReviewers, ...(preloaded.reviewers ?? {}) },
       documents: { ...state.documents, ...(preloaded.documents ?? {}) },
       protocol: { ...state.protocol, ...(preloaded.protocol ?? {}) },
       schema: { ...state.schema, ...(preloaded.schema ?? {}) },
@@ -184,6 +229,24 @@ export async function bootstrapApp(
     home: {
       onReload: () => {
         void loadProgressCounts(store, deps, { force: true });
+      },
+      onGrantFolderAccess: () => {
+        void grantFolderAccess(store, deps);
+      },
+      onReloadReviewers: () => {
+        void loadReviewers(store, deps, { force: true });
+      },
+      onAddReviewer: (input) => {
+        void requestAddReviewer(store, deps, input);
+      },
+      onConfirmReviewerChange: () => {
+        void confirmReviewerChange(store, deps);
+      },
+      onCancelReviewerChange: () => {
+        cancelReviewerChange(store);
+      },
+      onRevokeReviewer: (email) => {
+        void revokeReviewer(store, deps, email);
       },
     },
     documents: {
@@ -456,8 +519,19 @@ export async function bootstrapApp(
   };
 
   const renderNav = (state: AppState): void => {
-    const items = ROUTES.map((route) => {
-      const guard = guardRoute(route.hash, state);
+    const role = roleOf(state);
+    if (role === 'unregistered') {
+      // 未登録は全画面ブロック（renderRoute）のみを見せ、ナビ自体を出さない
+      navEl.replaceChildren();
+      return;
+    }
+    // reviewer 系ロールは Home と検証だけを表示する（ディムではなく非表示。design §3・§3.1）
+    const visibleRoutes =
+      role === 'owner'
+        ? ROUTES
+        : ROUTES.filter((route) => route.hash === '#/home' || route.hash === '#/verify');
+    const items = visibleRoutes.map((route) => {
+      const guard = guardRoute(route.hash, state, role);
       const link = doc.createElement('a');
       link.href = route.hash;
       link.textContent = route.label;
@@ -483,14 +557,21 @@ export async function bootstrapApp(
   };
 
   const renderRoute = (): void => {
+    const state = store.getState();
+    if (roleOf(state) === 'unregistered') {
+      // 未登録は全画面エラーで以降の読み込みを中断する（design §1）
+      contentEl.replaceChildren(renderUnregisteredBlock());
+      contextEl.textContent = 'アクセスできません';
+      return;
+    }
     const route = findRoute(currentHash);
-    contentEl.replaceChildren(route.render(store.getState(), viewContext));
+    contentEl.replaceChildren(route.render(state, viewContext));
     contextEl.textContent = `${route.label} 画面を表示しています`;
   };
 
   const handleHashChange = (): void => {
     const target = normalizeHash(win.location.hash);
-    const guard = guardRoute(target, store.getState());
+    const guard = guardRoute(target, store.getState(), roleOf(store.getState()));
     if (!guard.allowed) {
       showToast(guard.message, doc);
       win.location.hash = currentHash;
@@ -511,8 +592,11 @@ export async function bootstrapApp(
     renderRoute();
     renderNav(store.getState());
     if (currentHash === '#/home') {
-      // 起動時に読めなかった場合の再入場リトライ（読込済みなら loadProgressCounts 側で no-op）
+      // 起動時に読めなかった場合の再入場リトライ（読込済みなら loadProgressCounts 側で no-op。
+      // reviewer 系ロールには homeService 側のガードで呼ばれない）
       void loadProgressCounts(store, deps);
+      // owner のレビュアー管理カード（reviewer 系ロールには reviewerAdminService 側のガードでも守る）
+      void loadReviewers(store, deps);
     }
     if (currentHash === '#/documents') {
       // 初回表示時に一覧を読み込む（読込済みなら loadDocuments 側で no-op）
@@ -589,5 +673,9 @@ export async function bootstrapApp(
   // ガード・#/home サマリの進捗カウントを起動時に読み込む（プロジェクト未選択 /
   // E2E seam で counts 注入済み（countsLoaded）なら loadProgressCounts 側で no-op）
   void loadProgressCounts(store, deps);
+  // プロジェクトに対する実効ロールを解決する（起動シーケンスで 1 回。design §1）。
+  // 解決済み（E2E seam で owner 注入済み等）なら loadRole 側で no-op。解決後は
+  // store.subscribe がナビ / 内容（unregistered の全画面ブロック等）を追従させる
+  void loadRole(store, deps);
   return store;
 }

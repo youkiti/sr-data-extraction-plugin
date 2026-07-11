@@ -210,6 +210,88 @@
   color: var(--color-danger);
 }
 
+/* Home: 独立二重レビュー機能（owner のレビュアー管理カード / reviewer のフォルダアクセス付与ステップ。
+   docs/design-independent-dual-review.md §7・§8.1） */
+.home__reviewers {
+  margin-top: 24px;
+  padding: 16px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  max-width: 640px;
+}
+
+.home__folder-access {
+  margin-top: 16px;
+  padding: 16px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  max-width: 560px;
+}
+
+.reviewers__table {
+  border-collapse: collapse;
+  margin: 8px 0 16px;
+  width: 100%;
+}
+
+.reviewers__table th,
+.reviewers__table td {
+  border: 1px solid var(--color-border);
+  padding: 6px 12px;
+  text-align: left;
+}
+
+.reviewers__revoke {
+  background: none;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  padding: 2px 10px;
+  cursor: pointer;
+}
+
+.reviewers__revoke:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.reviewers__form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.reviewers__form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--color-text-muted);
+}
+
+.reviewers__confirm {
+  border: 1px solid var(--color-danger);
+  border-radius: 8px;
+  padding: 16px;
+  margin-top: 12px;
+  display: grid;
+  gap: 8px;
+  max-width: 560px;
+}
+
+.reviewers__confirm-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+/* 未登録（unregistered）の全画面ブロック（design §1） */
+.view--role-blocked {
+  max-width: 560px;
+}
+
 /* #/documents（S3）: 取り込み操作・進捗行・一覧（ui-states.md §3） */
 .documents__actions {
   display: flex;

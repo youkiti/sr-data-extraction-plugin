@@ -2123,3 +2123,199 @@ describe('bootstrapApp: #/export', () => {
     expect(loadExportDataMock).toHaveBeenCalledWith(store, deps, { force: true });
   });
 });
+
+// ---------------------------------------------------------------------------
+// 独立二重レビュー機能（ロール解決 + reviewer シェル制限 + オンボーディング）
+// docs/design-independent-dual-review.md §1・§3・§3.1・§7
+// ---------------------------------------------------------------------------
+
+describe('bootstrapApp: 独立二重レビュー機能', () => {
+  beforeEach(() => {
+    installChromeMock();
+    document.body.innerHTML = APP_TEMPLATE;
+  });
+
+  test('unregistered ロール: 全画面ブロックを表示し、ナビは出さない', async () => {
+    const stub = createWindowStub({
+      currentProject: PROJECT,
+      home: COUNTS_LOADED,
+      role: {
+        role: 'unregistered',
+        resolving: false,
+        error: null,
+        folderAccessGranted: false,
+        folderAccessChecking: false,
+        folderAccessError: null,
+      },
+    });
+    const { deps } = createFakeDeps([]);
+    await bootstrapApp(asWindow(stub), deps);
+
+    expect(document.getElementById('app-role-blocked')).not.toBeNull();
+    expect(document.getElementById('app-role-blocked')?.textContent).toContain(
+      'このプロジェクトのレビュアーとして登録されていません',
+    );
+    expect(document.getElementById('app-context')?.textContent).toBe('アクセスできません');
+    expect(document.querySelectorAll('#app-nav a')).toHaveLength(0);
+  });
+
+  test('reviewer_with_ai ロール: ナビは Home / 検証のみ + フォルダアクセス付与ボタンが配線されている', async () => {
+    const stub = createWindowStub({
+      currentProject: PROJECT,
+      home: COUNTS_LOADED,
+      counts: { evidenceRows: 1 } as AppState['counts'],
+      role: {
+        role: 'reviewer_with_ai',
+        resolving: false,
+        error: null,
+        folderAccessGranted: false,
+        folderAccessChecking: false,
+        folderAccessError: null,
+      },
+    });
+    const { deps } = createFakeDeps([]); // picker.getAccessToken は 'picker offline' で reject する既定
+    await bootstrapApp(asWindow(stub), deps);
+
+    // サイドバー: Home と検証だけ（文献取り込み等は非表示）
+    const links = Array.from(document.querySelectorAll('#app-nav a')).map((a) =>
+      a.getAttribute('href'),
+    );
+    expect(links).toEqual(['#/home', '#/verify']);
+
+    // 縮退版 Home（進捗カウントは出さない）+ フォルダアクセス付与ボタンの配線
+    expect(document.querySelector('.home__summary')).toBeNull();
+    (document.getElementById('home-grant-folder-access') as HTMLButtonElement).click();
+    await flush();
+    expect(toastTexts()).toContain('Drive Picker を開けませんでした: picker offline');
+  });
+
+  test('reviewer_independent ロールで #/verify 以外へ直接遷移するとトースト + #/home へ戻される', async () => {
+    const stub = createWindowStub({
+      currentProject: PROJECT,
+      home: COUNTS_LOADED,
+      role: {
+        role: 'reviewer_independent',
+        resolving: false,
+        error: null,
+        folderAccessGranted: true,
+        folderAccessChecking: false,
+        folderAccessError: null,
+      },
+    });
+    const { deps } = createFakeDeps([]);
+    const stubWindow = asWindow(stub);
+    await bootstrapApp(stubWindow, deps);
+    stub.location.hash = '#/documents';
+    stub.fireHashChange();
+    expect(toastTexts()).toContain('このプロジェクトではレビュアー権限のため利用できません');
+    expect(stub.location.hash).toBe('#/home');
+  });
+
+  test('owner のレビュアー管理カード（追加 / モード変更確認 / 解除 / 再読み込み）が配線されている', async () => {
+    const stub = createWindowStub({
+      currentProject: PROJECT,
+      home: COUNTS_LOADED,
+      reviewers: {
+        assignments: [
+          {
+            email: 'r1@example.com',
+            role: 'reviewer',
+            reviewMode: 'with_ai',
+            assignedBy: 'tester@example.com',
+            assignedAt: 't0',
+          },
+        ],
+        loading: false,
+        loadError: null,
+        saving: false,
+        saveError: null,
+        confirmingChange: null,
+      } as AppState['reviewers'],
+    });
+    const { deps, fetchMock } = createFakeDeps([[...SHEET_HEADERS.Reviewers]]);
+    await bootstrapApp(asWindow(stub), deps);
+
+    // 新規追加（onAddReviewer）
+    const email = document.getElementById('reviewer-email') as HTMLInputElement;
+    email.value = 'r2@example.com';
+    (document.getElementById('reviewer-add-form') as HTMLFormElement).dispatchEvent(
+      new Event('submit', { cancelable: true }),
+    );
+    await flush();
+    expect(toastTexts()).toContain('r2@example.com を登録しました');
+    expect(document.querySelectorAll('#home-reviewers-list tbody tr')).toHaveLength(2);
+
+    // 既存 reviewer の review_mode だけを変える送信はモード変更確認ダイアログへ（onAddReviewer → confirmingChange）
+    const email2 = document.getElementById('reviewer-email') as HTMLInputElement;
+    email2.value = 'r1@example.com';
+    const mode = document.getElementById('reviewer-mode') as HTMLSelectElement;
+    mode.value = 'independent';
+    (document.getElementById('reviewer-add-form') as HTMLFormElement).dispatchEvent(
+      new Event('submit', { cancelable: true }),
+    );
+    await flush();
+    expect(document.getElementById('reviewer-mode-confirm')).not.toBeNull();
+
+    // キャンセル（onCancelReviewerChange）
+    (document.getElementById('reviewer-mode-confirm-cancel') as HTMLButtonElement).click();
+    expect(document.getElementById('reviewer-mode-confirm')).toBeNull();
+
+    // 再送信 → 確認 → 続行（onConfirmReviewerChange）
+    const email3 = document.getElementById('reviewer-email') as HTMLInputElement;
+    email3.value = 'r1@example.com';
+    const mode3 = document.getElementById('reviewer-mode') as HTMLSelectElement;
+    mode3.value = 'independent';
+    (document.getElementById('reviewer-add-form') as HTMLFormElement).dispatchEvent(
+      new Event('submit', { cancelable: true }),
+    );
+    (document.getElementById('reviewer-mode-confirm-ok') as HTMLButtonElement).click();
+    await flush();
+    expect(toastTexts()).toContain('r1@example.com を登録しました');
+
+    // 解除（onRevokeReviewer）
+    const revokeButtons = document.querySelectorAll('.reviewers__revoke');
+    (revokeButtons[0] as HTMLButtonElement).click();
+    await flush();
+    expect(toastTexts()).toContain('r1@example.com の登録を解除しました');
+    // fetchMock は上記一連の POST（タブ作成 + 追記）を記録している
+    expect(fetchMock).toHaveBeenCalled();
+  });
+
+  test('owner のレビュアー一覧読込失敗（起動時の自動読込）は #home-reviewers-reload の force 再取得で復帰する（onReloadReviewers）', async () => {
+    const stub = createWindowStub({
+      currentProject: PROJECT,
+      home: COUNTS_LOADED,
+      // 既定（E2E seam）は「読込済み（0 件）」扱いで自動読込を抑止するため、ここでは明示的に
+      // 未読込（null）へ戻して起動時の自動読込（loadReviewers）を実際に走らせる
+      reviewers: {
+        assignments: null,
+        loading: false,
+        loadError: null,
+        saving: false,
+        saveError: null,
+        confirmingChange: null,
+      } as AppState['reviewers'],
+    });
+    let call = 0;
+    const fetchMock = jest.fn(async () => {
+      call += 1;
+      if (call === 1) {
+        return { ok: false, status: 500, json: async () => ({}), text: async () => 'boom' };
+      }
+      return { ok: true, status: 200, json: async () => ({ sheets: [] }), text: async () => '' };
+    });
+    const deps: AppDeps = {
+      ...createFakeDeps([]).deps,
+      google: { fetch: fetchMock as unknown as typeof fetch, getAccessToken: async () => 'token' },
+    };
+    await bootstrapApp(asWindow(stub), deps);
+    await flush();
+    expect(document.getElementById('home-reviewers-error')?.textContent).toContain(
+      'Google API failed: HTTP 500',
+    );
+    (document.getElementById('home-reviewers-reload') as HTMLButtonElement).click();
+    await flush();
+    expect(document.getElementById('home-reviewers-error')).toBeNull();
+    expect(document.getElementById('home-reviewers-empty')).not.toBeNull();
+  });
+});

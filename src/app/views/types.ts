@@ -3,15 +3,28 @@
 import type { Decision } from '../../domain/decision';
 import type { DocumentRole } from '../../domain/document';
 import type { ExportFormat } from '../../domain/exportLog';
+import type { ReviewMode } from '../../domain/reviewer';
 import type { ProtocolSubmitInput } from '../../features/protocol/submitInput';
 import type { SchemaPresetKind } from '../../features/schema/presets';
 import type { SchemaEditorRow } from '../../features/schema/types';
 import type { VerifyLayoutMode } from '../../lib/storage/settingsStore';
 
-/** #/home のユーザー操作コールバック */
+/** #/home のユーザー操作コールバック（owner のレビュアー管理カード + reviewer の縮退版 Home を含む） */
 export interface HomeViewCallbacks {
-  /** 進捗カウント読込失敗時の再読み込み（force 再取得） */
+  /** 進捗カウント読込失敗時の再読み込み（force 再取得。owner のみ） */
   onReload(): void;
+  /** reviewer 系: プロジェクトフォルダへのアクセス付与（Picker → 到達性確認。§7.2） */
+  onGrantFolderAccess(): void;
+  /** owner: レビュアー一覧の再読み込み */
+  onReloadReviewers(): void;
+  /** owner: レビュアー追加フォームの送信（既存 reviewer のモード変更は確認ダイアログを挟む） */
+  onAddReviewer(input: { email: string; role: 'reviewer' | 'adjudicator'; reviewMode: ReviewMode }): void;
+  /** owner: モード変更確認ダイアログの「続行」 */
+  onConfirmReviewerChange(): void;
+  /** owner: モード変更確認ダイアログの「キャンセル」 */
+  onCancelReviewerChange(): void;
+  /** owner: レビュアーの登録解除（revoked 行の追記） */
+  onRevokeReviewer(email: string): void;
 }
 
 /** #/documents（S3）のユーザー操作コールバック */

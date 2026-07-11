@@ -3,7 +3,15 @@ import { createInitialState } from '../../../src/app/store';
 import type { ViewContext } from '../../../src/app/views/types';
 
 const stubCtx: ViewContext = {
-  home: { onReload: jest.fn() },
+  home: {
+    onReload: jest.fn(),
+    onGrantFolderAccess: jest.fn(),
+    onReloadReviewers: jest.fn(),
+    onAddReviewer: jest.fn(),
+    onConfirmReviewerChange: jest.fn(),
+    onCancelReviewerChange: jest.fn(),
+    onRevokeReviewer: jest.fn(),
+  },
   documents: {
     onImport: jest.fn(),
     onImportFiles: jest.fn(),

@@ -81,4 +81,62 @@ describe('guardRoute', () => {
       expect(guardRoute('#/export', stateWith({ dataRows: 1 }))).toEqual({ allowed: true });
     });
   });
+
+  describe('reviewer 系ロールのナビ制限（docs/design-independent-dual-review.md §3.1）', () => {
+    test.each([
+      'reviewer_with_ai',
+      'reviewer_independent',
+      'adjudicator',
+    ] as const)('%s は #/home と #/verify 以外へ遷移できない', (role) => {
+      const state = stateWith({ evidenceRows: 1 });
+      state.role = { ...state.role, folderAccessGranted: true };
+      for (const hash of ['#/documents', '#/protocol', '#/schema', '#/pilot', '#/extract', '#/dashboard', '#/export']) {
+        expect(guardRoute(hash, state, role)).toEqual({
+          allowed: false,
+          message: 'このプロジェクトではレビュアー権限のため利用できません',
+        });
+      }
+    });
+
+    test('reviewer 系ロールでも #/home は常に許可', () => {
+      const state = createInitialState();
+      expect(guardRoute('#/home', state, 'reviewer_with_ai')).toEqual({ allowed: true });
+    });
+
+    test('owner は制限なし（既定値と同じ）', () => {
+      const state = stateWith({ evidenceRows: 1 });
+      expect(guardRoute('#/documents', state, 'owner')).toEqual({ allowed: true });
+    });
+
+    test('role 省略時は owner 相当（ロール未解決の間は制限しない）', () => {
+      const state = stateWith({ evidenceRows: 1 });
+      expect(guardRoute('#/schema', state)).toEqual({
+        allowed: false,
+        message: 'プロトコルを先に入力してください',
+      });
+    });
+  });
+
+  describe('#/verify のフォルダアクセス付与ゲート（§7.2）', () => {
+    test('reviewer 系ロールで未付与なら不可（Evidence があっても）', () => {
+      const state = stateWith({ evidenceRows: 1 });
+      expect(state.role.folderAccessGranted).toBe(false);
+      expect(guardRoute('#/verify', state, 'reviewer_with_ai')).toEqual({
+        allowed: false,
+        message: 'プロジェクトフォルダへのアクセス付与が必要です（Home から付与してください）',
+      });
+    });
+
+    test('reviewer 系ロールで付与済みなら通常の Evidence ガードへ進む', () => {
+      const state = stateWith({ evidenceRows: 1 });
+      state.role = { ...state.role, folderAccessGranted: true };
+      expect(guardRoute('#/verify', state, 'reviewer_with_ai')).toEqual({ allowed: true });
+    });
+
+    test('owner はフォルダアクセス未付与でも #/verify に到達できる', () => {
+      const state = stateWith({ evidenceRows: 1 });
+      expect(state.role.folderAccessGranted).toBe(false);
+      expect(guardRoute('#/verify', state, 'owner')).toEqual({ allowed: true });
+    });
+  });
 });

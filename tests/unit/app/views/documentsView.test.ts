@@ -59,7 +59,15 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<DocumentsViewCall
   };
   return {
     ctx: {
-      home: { onReload: jest.fn() },
+      home: {
+    onReload: jest.fn(),
+    onGrantFolderAccess: jest.fn(),
+    onReloadReviewers: jest.fn(),
+    onAddReviewer: jest.fn(),
+    onConfirmReviewerChange: jest.fn(),
+    onCancelReviewerChange: jest.fn(),
+    onRevokeReviewer: jest.fn(),
+  },
       documents: callbacks,
       protocol: {
         onSubmit: jest.fn(),
