@@ -148,14 +148,8 @@
   color: var(--color-text-muted);
 }
 
-/* 設定（#/options）: options.html と同じ節スタイルをアプリ内でも使う（settingsSections.ts 共通） */
-.settings__header {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 16px;
-}
-
+/* 設定（#/options）: options.html と同じ節スタイルをアプリ内でも使う（settingsSections.ts 共通）。
+   見出し行 .settings__header は options.html の .options__header と共通のため globals.css にある */
 .settings__body {
   max-width: 640px;
 }
@@ -1424,10 +1418,33 @@
   overflow: auto;
 }
 
+/* タブ行 + レイアウトトグル（issue #38: フォーカス / リスト） */
+.verify__form-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
 .verify__tabs {
   display: flex;
   gap: 4px;
-  margin-bottom: 8px;
+}
+
+.verify__layout-toggle {
+  flex: none;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-bg);
+  color: var(--color-text);
+  padding: 4px 10px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.verify__layout-toggle:hover:not(:disabled) {
+  background: var(--color-surface);
 }
 
 /* 判定進捗（判定のたびに即時更新。「どこまでやったか」の可視化） */
@@ -1871,6 +1888,153 @@
   }
 }
 
+/* --- フォーカスモード（issue #38: マトリクスカード型フォーカスモード） --------
+   構成: ユニットヘッダ（位置 + 見出し）→ マトリクス（コンパクトな一覧性）→
+   要約行（任意）→ 詳細ストリップ（判定操作は常に同じ位置 = カード高さの急変を防ぐ）→
+   直近判定バー（固定表示）。一括承認ボタンは置かない（automation bias 対策。ui-states.md §4） */
+
+.focus-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.focus-card__header {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.focus-card__position {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.focus-card__heading {
+  margin: 0;
+}
+
+.focus-card__matrix {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.focus-card__matrix th,
+.focus-card__matrix td {
+  border: 1px solid var(--color-border);
+  padding: 4px 6px;
+  text-align: left;
+}
+
+.focus-card__matrix-colhead {
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  font-weight: 600;
+}
+
+.focus-card__matrix-cell {
+  padding: 3px;
+}
+
+.focus-card__matrix-cell--empty {
+  color: var(--color-text-muted);
+  text-align: center;
+  padding: 4px 6px;
+}
+
+.focus-card__matrix-btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  width: 100%;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-bg);
+  color: var(--color-text);
+  padding: 4px 8px;
+  font-size: 13px;
+  text-align: left;
+}
+
+.focus-card__matrix-btn:hover:not(:disabled) {
+  background: var(--color-surface);
+}
+
+.focus-card__matrix-btn--focused {
+  outline: 2px solid var(--color-primary);
+  border-color: var(--color-primary);
+}
+
+.focus-card__matrix-value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.focus-card__summary {
+  margin: 0;
+  padding: 6px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  font-size: 13px;
+}
+
+/* 詳細ストリップ: verificationCellCard.renderCell の .verify__cell をそのまま内包する
+   （高さは判定のたびに大きく変わらないよう、中身の構造自体は常に同じ = リストモードの
+   1 カードぶんの高さに揃う） */
+.focus-card__detail {
+  min-height: 0;
+}
+
+.focus-card__detail-empty {
+  color: var(--color-text-muted);
+  padding: 12px;
+  border: 1px dashed var(--color-border);
+  border-radius: 8px;
+}
+
+.focus-card__recent {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 6px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface);
+  font-size: 13px;
+}
+
+.focus-card__recent-label-lead {
+  color: var(--color-text-muted);
+}
+
+.focus-card__recent-label {
+  font-weight: 600;
+}
+
+.focus-card__recent-value {
+  color: var(--color-text-muted);
+}
+
+.focus-card__recent-undo {
+  margin-left: auto;
+  background: #fff;
+  border-color: #dadce0;
+  color: #5f6368;
+}
+
+.focus-card__recent-undo:hover:not(:disabled) {
+  background: #f1f3f4;
+}
+
 /* --- #/verify 単独画面（document セレクタまわり） ------------------------- */
 
 .verify__doc-header {
@@ -1935,6 +2099,11 @@
   margin: 0 auto;
   background: #fff;
   box-shadow: 0 1px 4px rgb(0 0 0 / 20%);
+
+  /* ハイライトの mix-blend-mode: multiply がページ外の背景（.pdf-viewer__scroller の
+     グレー地）と意図せず合成されないよう、新しいスタッキングコンテキストで遮断する
+     （issue #31 C. ハイライトの乗算合成） */
+  isolation: isolate;
 }
 
 .pdf-viewer__canvas {
@@ -1952,27 +2121,59 @@
   padding: 0;
   border-radius: 2px;
   cursor: pointer;
+  background: none;
 }
 
-.pdf-viewer__hl--verified {
+/* globals.css の button:hover（緑塗り。詳細度 0,2,1）がクラス指定に勝つため、
+   ハイライトのボタン本体は hover 中も透明を明示的に維持する */
+.pdf-viewer__hl:hover:not(:disabled) {
+  background: none;
+}
+
+/* 塗りは擬似要素へ分離して下地の文字と乗算合成し、濃い色でも文字が透けて読める
+   ようにする（issue #31 C. ハイライトで文字が見えなくなる問題の根治）。
+   multiply をボタン本体に掛けると選択枠・フォーカスリングまで合成対象になり、
+   暗地（反転表ヘッダ・暗い図版）上で枠ごと黒に潰れて不可視になるため、
+   枠はボタン本体（通常合成）に残し塗りだけを乗算する */
+.pdf-viewer__hl::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  mix-blend-mode: multiply;
+}
+
+.pdf-viewer__hl--verified::before {
   background: var(--color-highlight-verified);
 }
 
-.pdf-viewer__hl--unverified {
+.pdf-viewer__hl--unverified::before {
   background: var(--color-highlight-unverified);
 }
 
-.pdf-viewer__hl--low {
+.pdf-viewer__hl--low::before {
   background: var(--color-highlight-low-confidence);
 }
 
 .pdf-viewer__hl--search {
-  background: rgb(66 133 244 / 35%);
+  outline: 1px dashed var(--color-highlight-active-border);
   cursor: default;
 }
 
-.pdf-viewer__hl--active {
-  outline: 2px solid var(--color-primary);
+.pdf-viewer__hl--search::before {
+  background: var(--color-highlight-active);
+}
+
+/* 選択中は塗り・枠とも青で上書きする（issue #31 D. 選択中ハイライトを青に + 検索
+   ヒットとの区別）。kind 別クラスとの優先は定義順ではなくセレクタ詳細度（0,2,0）で
+   符号化し、将来のルール並べ替えで壊れないようにする */
+.pdf-viewer__hl.pdf-viewer__hl--active {
+  outline: 2px solid var(--color-highlight-active-border);
+}
+
+.pdf-viewer__hl.pdf-viewer__hl--active::before {
+  background: var(--color-highlight-active);
 }
 
 .pdf-viewer__error {
@@ -2016,7 +2217,10 @@
 
 .text-viewer__mark {
   border-radius: 2px;
-  background: var(--color-highlight-unverified);
+
+  /* text ビューは常に「選択中セル」の根拠を表示するコンポーネントのため、
+     PDF モードの「選択中 = 青」と色を揃える（issue #31 D） */
+  background: var(--color-highlight-active);
   color: inherit;
   padding: 0 2px;
 }

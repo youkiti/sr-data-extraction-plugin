@@ -138,3 +138,11 @@ test('アクセシビリティ違反がない（axe）', async ({ page }) => {
   const results = await new AxeBuilder({ page }).analyze();
   expect(results.violations).toEqual([]);
 });
+
+test('スタンドアロン設定ページに「アプリを開く」導線がある（B-2）', async ({ page }) => {
+  await page.addInitScript(chromeStub({ seedModel: false }));
+  await page.goto('/options/options.html');
+  const openApp = page.locator('#options-open-app');
+  await expect(openApp).toHaveText('アプリを開く');
+  await expect(openApp).toHaveAttribute('href', '../app/app.html');
+});

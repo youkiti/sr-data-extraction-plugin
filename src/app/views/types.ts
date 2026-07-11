@@ -6,6 +6,7 @@ import type { ExportFormat } from '../../domain/exportLog';
 import type { ProtocolSubmitInput } from '../../features/protocol/submitInput';
 import type { SchemaPresetKind } from '../../features/schema/presets';
 import type { SchemaEditorRow } from '../../features/schema/types';
+import type { VerifyLayoutMode } from '../../lib/storage/settingsStore';
 
 /** #/home のユーザー操作コールバック */
 export interface HomeViewCallbacks {
@@ -67,7 +68,7 @@ export interface SchemaViewCallbacks {
   onToggleSample(documentId: string, selected: boolean): void;
   /** requested_model の変更 */
   onChangeModel(model: string): void;
-  /** 「AI にスキーマをドラフトさせる」 */
+  /** 「AI に表のデザインをドラフトさせる」 */
   onRunDraft(): void;
   /** エディタ行の編集確定（change イベント単位） */
   onEditRow(index: number, patch: Partial<SchemaEditorRow>): void;
@@ -104,6 +105,8 @@ export interface PilotViewCallbacks {
   onArmConfirm(arms: readonly { armKey: string; armName: string }[]): void;
   /** 人間が追加した entity インスタンス宣言（Decisions へ追記） */
   onInstanceDeclare?(decisions: readonly Decision[]): void;
+  /** 検証パネルのレイアウトモード切替（フォーカス ⇄ リスト。issue #38）の永続化 */
+  onChangeLayoutMode(mode: VerifyLayoutMode): void;
 }
 
 /** #/extract（S7）のユーザー操作コールバック */
@@ -136,6 +139,8 @@ export interface VerifyViewCallbacks {
   onArmConfirm(arms: readonly { armKey: string; armName: string }[]): void;
   /** 人間が追加した entity インスタンス宣言（Decisions へ追記） */
   onInstanceDeclare?(decisions: readonly Decision[]): void;
+  /** 検証パネルのレイアウトモード切替（フォーカス ⇄ リスト。issue #38）の永続化 */
+  onChangeLayoutMode(mode: VerifyLayoutMode): void;
 }
 
 /** #/dashboard（S9）のユーザー操作コールバック（セルクリックはハッシュ遷移のためここに持たない） */

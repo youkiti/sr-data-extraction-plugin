@@ -59,6 +59,7 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<SchemaViewCallbac
         onRetryVerifyLoad: jest.fn(),
         onDecision: jest.fn(),
         onArmConfirm: jest.fn(),
+        onChangeLayoutMode: jest.fn(),
       },
       extract: {
         onToggleStudy: jest.fn(),
@@ -74,6 +75,7 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<SchemaViewCallbac
         onRetryLoad: jest.fn(),
         onDecision: jest.fn(),
         onArmConfirm: jest.fn(),
+        onChangeLayoutMode: jest.fn(),
       },
       dashboard: { onReload: jest.fn() },
       export: {
@@ -187,9 +189,13 @@ describe('renderSchemaView', () => {
   test('プロジェクト未選択: 見出しと案内のみ', () => {
     const { ctx } = makeCtx();
     const view = renderSchemaView(makeState({}, { withProject: false }), ctx);
-    expect(view.querySelector('h2')?.textContent).toBe('スキーマデザイン');
+    expect(view.querySelector('h2')?.textContent).toBe('表のデザイン');
     expect(view.querySelector('#schema-no-project')).not.toBeNull();
     expect(view.querySelector('#schema-draft-form')).toBeNull();
+    // 見出し直下の説明文はプロジェクト未選択時も常時表示（issue #31）
+    expect(view.querySelector('h2 + .view__lead')?.textContent).toContain(
+      'これを設計する工程を表のデザインと呼んでいます。',
+    );
   });
 
   test('読み込み中（versions = null / loading）: ローディング表示', () => {
@@ -277,7 +283,7 @@ describe('renderSchemaView', () => {
       ctx,
     );
     expect(view.querySelector('#schema-draft-progress')?.textContent).toBe(
-      'AI がスキーマをドラフトしています…（12 秒経過）',
+      'AI が表のデザインをドラフトしています…（12 秒経過）',
     );
   });
 

@@ -4,6 +4,7 @@ import type { StudyRecord } from '../../../../src/domain/study';
 import {
   loadVerificationBundle,
   persistInstanceDeclarations,
+  persistVerifyLayoutMode,
   saveDecisionWrite,
   type VerificationBundleInput,
   type QueuedDecisionWrite,
@@ -228,6 +229,21 @@ describe('loadVerificationBundle', () => {
     expect(retried.pdfError).toContain('doc-ghost');
   });
 
+  test('layoutMode は settingsStore（chrome.storage.local）から読む（未設定は既定 focus）', async () => {
+    const { layoutMode } = await loadVerificationBundle(makeBundleInput(), makeDeps());
+    expect(layoutMode).toBe('focus');
+  });
+
+  test('layoutMode は deps.loadVerifyLayoutMode を注入すればそちらを使う', async () => {
+    const loadVerifyLayoutMode = jest.fn().mockResolvedValue('list');
+    const { layoutMode } = await loadVerificationBundle(
+      makeBundleInput(),
+      makeDeps({ loadVerifyLayoutMode }),
+    );
+    expect(layoutMode).toBe('list');
+    expect(loadVerifyLayoutMode).toHaveBeenCalledTimes(1);
+  });
+
   test('disposePdf は loadPdfView でキャッシュされた PDF をすべて破棄する', async () => {
     const destroy = jest.fn().mockResolvedValue(undefined);
     const deps = makeDeps({
@@ -246,6 +262,20 @@ describe('loadVerificationBundle', () => {
     expect(destroy).not.toHaveBeenCalled();
     await verification.disposePdf?.();
     expect(destroy).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('persistVerifyLayoutMode', () => {
+  test('deps.saveVerifyLayoutMode を注入すればそちらへ保存する', async () => {
+    const saveVerifyLayoutMode = jest.fn().mockResolvedValue(undefined);
+    await persistVerifyLayoutMode('list', makeDeps({ saveVerifyLayoutMode }));
+    expect(saveVerifyLayoutMode).toHaveBeenCalledWith('list');
+  });
+
+  test('未注入なら settingsStore（chrome.storage.local）へ保存する', async () => {
+    await persistVerifyLayoutMode('list', makeDeps());
+    const { loadVerifyLayoutMode } = await import('../../../../src/lib/storage/settingsStore');
+    await expect(loadVerifyLayoutMode()).resolves.toBe('list');
   });
 });
 

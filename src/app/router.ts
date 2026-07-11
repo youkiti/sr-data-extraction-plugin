@@ -36,7 +36,7 @@ export const ROUTES: RouteDefinition[] = [
   { hash: '#/home', label: 'Home', render: renderHomeView },
   { hash: '#/documents', label: '文献取り込み', render: renderDocumentsView },
   { hash: '#/protocol', label: 'プロトコル', render: renderProtocolView },
-  { hash: '#/schema', label: 'スキーマ', render: renderSchemaView },
+  { hash: '#/schema', label: '表のデザイン', render: renderSchemaView },
   { hash: '#/pilot', label: 'パイロット抽出', render: renderPilotView },
   { hash: '#/extract', label: '一括抽出', render: renderExtractView },
   { hash: '#/verify', label: '検証', render: renderVerifyView },

@@ -119,6 +119,8 @@ export function renderVerifyView(state: AppState, ctx: ViewContext): HTMLElement
         onArmConfirm: (arms) => ctx.verify.onArmConfirm(arms),
         onInstanceDeclare: (decisions) => ctx.verify.onInstanceDeclare?.(decisions),
         focusEntityKey: verify.deepLinkEntityKey,
+        layoutMode: verify.layoutMode,
+        onLayoutModeChange: (mode) => ctx.verify.onChangeLayoutMode(mode),
       }),
     );
   }

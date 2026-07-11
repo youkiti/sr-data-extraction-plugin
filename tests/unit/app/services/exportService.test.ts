@@ -194,7 +194,7 @@ describe('loadExportData', () => {
     const store = makeStore();
     await loadExportData(store, makeDeps());
     expect(store.getState().export.loadError).toBe(
-      '確定済みのスキーマがありません。先にスキーマを確定してください',
+      '確定済みの表のデザインがありません。先に表のデザインを確定してください',
     );
   });
 

@@ -402,7 +402,7 @@ export async function confirmSchema(
   if (rows.length === 0 || errors.length > 0) {
     patchSchema(store, {
       editorErrors: errors,
-      draftError: rows.length === 0 ? 'スキーマ項目が 1 件もありません' : null,
+      draftError: rows.length === 0 ? '表のデザイン項目が 1 件もありません' : null,
     });
     return;
   }
@@ -437,7 +437,7 @@ export async function confirmSchema(
       },
       counts: { ...after.counts, schemaVersions: versions.length },
     });
-    showToast(`スキーマ v${version.schemaVersion} を確定しました（${fields.length} 項目）`);
+    showToast(`表のデザイン v${version.schemaVersion} を確定しました（${fields.length} 項目）`);
   } catch (err) {
     patchSchema(store, { confirming: false, draftError: toMessage(err) });
   }

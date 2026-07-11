@@ -160,7 +160,7 @@ export function parseDraftSchemaResponse(text: string): SchemaEditorRow[] {
   const result = draftedArraySchema.safeParse(raw);
   if (!result.success) {
     throw new DraftSchemaFormatError(
-      `AI 応答がスキーマドラフトの形式に合いません: ${result.error.issues
+      `AI 応答が表のデザインドラフトの形式に合いません: ${result.error.issues
         .map((issue) => `${issue.path.join('.')}: ${issue.message}`)
         .join(' / ')}`,
     );

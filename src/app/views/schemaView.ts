@@ -55,7 +55,7 @@ function renderDraftForm(state: AppState, ctx: ViewContext): HTMLElement {
   const { selectedDocumentIds, model, draftError } = state.schema;
 
   const children: HTMLElement[] = [
-    el('h3', { text: 'AI にスキーマをドラフトさせる' }),
+    el('h3', { text: 'AI に表のデザインをドラフトさせる' }),
     el('p', {
       className: 'view__lead',
       text: 'プロトコルとサンプル論文（1〜3 本）から抽出項目のドラフトを生成します。生成後に表形式エディタで確認・編集してから版として確定します。',
@@ -122,7 +122,7 @@ function renderDraftForm(state: AppState, ctx: ViewContext): HTMLElement {
   const runButton = el('button', {
     id: 'schema-draft-run',
     className: 'schema__primary',
-    text: 'AI にスキーマをドラフトさせる',
+    text: 'AI に表のデザインをドラフトさせる',
     attributes: { type: 'button' },
   });
   runButton.addEventListener('click', () => ctx.schema.onRunDraft());
@@ -136,7 +136,7 @@ function renderDraftProgress(schema: SchemaState): HTMLElement {
   return el('p', {
     id: 'schema-draft-progress',
     className: 'schema__status',
-    text: `AI がスキーマをドラフトしています…（${schema.draftElapsedSeconds} 秒経過）`,
+    text: `AI が表のデザインをドラフトしています…（${schema.draftElapsedSeconds} 秒経過）`,
     attributes: { role: 'status' },
   });
 }
@@ -354,7 +354,7 @@ function renderEditor(
   ]);
 
   const children: HTMLElement[] = [
-    el('h3', { text: `スキーマ編集（${rows.length} 項目）` }),
+    el('h3', { text: `表のデザイン編集（${rows.length} 項目）` }),
     el('div', { className: 'schema__editor-actions' }, [
       addRowButton,
       presetBinary,
@@ -467,13 +467,13 @@ function renderBody(state: AppState, ctx: ViewContext): HTMLElement {
       el('p', {
         id: 'schema-load-error',
         className: 'schema__error',
-        text: `スキーマを読み込めませんでした: ${schema.loadError}`,
+        text: `表のデザインを読み込めませんでした: ${schema.loadError}`,
       }),
       el('div', { className: 'schema__actions' }, [reloadButton(ctx)]),
     ]);
   }
   if (schema.versions === null || schema.loading) {
-    return el('p', { id: 'schema-loading', text: 'スキーマを読み込んでいます…' });
+    return el('p', { id: 'schema-loading', text: '表のデザインを読み込んでいます…' });
   }
   if (schema.drafting) {
     return renderDraftProgress(schema);
@@ -489,7 +489,16 @@ function renderBody(state: AppState, ctx: ViewContext): HTMLElement {
 }
 
 export function renderSchemaView(state: AppState, ctx: ViewContext): HTMLElement {
-  const children: HTMLElement[] = [el('h2', { text: 'スキーマデザイン' })];
+  const children: HTMLElement[] = [
+    el('h2', { text: '表のデザイン' }),
+    el('p', {
+      className: 'view__lead',
+      text:
+        '抽出したい項目のリストをこのページで作成します。スプレッドシートでいえば 1 行目の見出し' +
+        '（列の名前）にあたります。例:「著者名」「出版年」「対象患者数」など。これを設計する工程を' +
+        '表のデザインと呼んでいます。',
+    }),
+  ];
   if (state.currentProject === null) {
     children.push(
       el('p', {
