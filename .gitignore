@@ -33,6 +33,7 @@ experiments/extraction-benchmark-real/
 experiments/anchor-spike/mv3-harness/pdf.min.mjs
 experiments/anchor-spike/mv3-harness/pdf.worker.min.mjs
 experiments/anchor-spike/mv3-harness/udca.pdf
+experiments/multimodal-bbox-spike
 
 # OS / エディタ
 .DS_Store
