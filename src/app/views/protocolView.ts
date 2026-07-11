@@ -286,7 +286,7 @@ export function renderProtocolView(state: AppState, ctx: ViewContext): HTMLEleme
     children.push(
       el('p', {
         className: 'view__lead',
-        text: '研究プロトコル（RQ・組入 / 除外基準など）を登録します。手入力または .md / .docx ファイルを取り込み、スキーマ設計（AI ドラフト）が本文を参照します。保存は常に新しい版として追記され、過去の版は保持されます。',
+        text: '研究プロトコル（RQ・組入 / 除外基準など）を登録します。手入力または .md / .docx ファイルを取り込み、表のデザイン（AI ドラフト）が本文を参照します。保存は常に新しい版として追記され、過去の版は保持されます。',
       }),
       renderBody(state, ctx),
     );

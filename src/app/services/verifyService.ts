@@ -266,7 +266,7 @@ export async function persistVerifyDecision(
   );
   const field = target?.fields.find((candidate) => candidate.fieldId === decision.fieldId);
   if (field === undefined) {
-    showToast(`判定を保存できません: field_id ${decision.fieldId} がスキーマにありません`);
+    showToast(`判定を保存できません: field_id ${decision.fieldId} が表のデザインにありません`);
     return;
   }
   let studyValues: Record<string, string | null> | null = null;

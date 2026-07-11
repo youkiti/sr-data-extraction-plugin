@@ -127,6 +127,7 @@ describe('createInitialState', () => {
         generateError: null,
         result: null,
       },
+      settingsReturnHash: null,
     });
   });
 });

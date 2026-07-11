@@ -83,7 +83,7 @@ function renderExclusionNotes(built: BuiltExport): HTMLElement[] {
       el('p', {
         id: 'export-dropped',
         className: 'export__exclusion',
-        text: `field_id がスキーマに見つからないため除外した行: ${built.droppedRowCount} 行`,
+        text: `field_id が表のデザインに見つからないため除外した行: ${built.droppedRowCount} 行`,
       }),
     );
   }

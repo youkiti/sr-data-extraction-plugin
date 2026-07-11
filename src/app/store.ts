@@ -19,6 +19,7 @@ import type { FieldValidationError } from '../features/schema/validateField';
 import type { VerificationProgress } from '../features/verification/progress';
 import type { VerificationData } from '../features/verification/types';
 import type { VerifyLayoutMode } from '../lib/storage/settingsStore';
+import type { RouteHash } from './router';
 
 // 定義は features/project/progressCounts.ts（Sheets 読み出しと同居）。従来の import 先を維持する
 export type { ProgressCounts };
@@ -278,6 +279,12 @@ export interface AppState {
   verify: VerifyState;
   dashboard: DashboardState;
   export: ExportState;
+  /**
+   * #/options へ入る直前のルート（settingsView の「戻る」リンク先）。
+   * bootstrap の handleHashChange が #/options 遷移時にのみ更新する。null = 記録なし
+   * （直接 #/options を開いた等）で #/home へ戻す（B. 設定画面の「戻る」改善）
+   */
+  settingsReturnHash: RouteHash | null;
 }
 
 export type StateListener = (state: AppState) => void;
@@ -414,6 +421,7 @@ export function createInitialState(): AppState {
       generateError: null,
       result: null,
     },
+    settingsReturnHash: null,
   };
 }
 

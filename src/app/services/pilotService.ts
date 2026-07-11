@@ -137,7 +137,7 @@ export async function runPilot(store: Store, deps: PilotServiceDeps): Promise<vo
   const fields = state.schema.currentFields;
   if (fields === null || fields.length === 0) {
     patchPilot(store, {
-      runError: '確定済みスキーマを読み込めていません。#/schema で確定・再読込してください',
+      runError: '確定済みの表のデザインを読み込めていません。表のデザイン画面で確定・再読込してください',
     });
     return;
   }
@@ -425,7 +425,7 @@ export async function persistPilotDecision(
     (candidate: SchemaField) => candidate.fieldId === decision.fieldId,
   );
   if (field === undefined) {
-    showToast(`判定を保存できません: field_id ${decision.fieldId} がスキーマにありません`);
+    showToast(`判定を保存できません: field_id ${decision.fieldId} が表のデザインにありません`);
     return;
   }
   let studyValues: Record<string, string | null> | null = null;
