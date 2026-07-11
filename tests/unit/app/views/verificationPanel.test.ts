@@ -47,6 +47,11 @@ function buildPage(page: number, text: string): TextLayerPage {
   };
 }
 
+/** テキスト層のないページ（scan 文書。text/items は空だが幾何情報は持つ。§7.4 PR4 の bbox テスト用） */
+function buildBlankPage(page: number): TextLayerPage {
+  return { page, text: '', width: 612, height: 792, rotation: 0, items: [] };
+}
+
 function makeDocumentRecord(overrides: Partial<DocumentRecord> = {}): DocumentRecord {
   return {
     documentId: 'doc-1',
@@ -436,6 +441,41 @@ describe('createVerificationPanel: 構造', () => {
     const ok = await createPanel();
     expect(ok.panel.root.querySelector<HTMLElement>('.verify__banner')?.hidden).toBe(true);
     ok.panel.dispose();
+  });
+
+  test('no_text_layer × bbox あり: バナーが AI 推定ハイライト文言になり、bbox セルは「ハイライトへ移動」が有効（§7.4 PR4）', async () => {
+    const bboxEvidence = makeEvidence({
+      anchorStatus: null,
+      bboxPage: 1,
+      bbox: { ymin: 100, xmin: 80, ymax: 180, xmax: 850 },
+    });
+    const { panel } = await createPanel({
+      document: makeDocumentRecord({ textStatus: 'no_text_layer' }),
+      textPages: [buildBlankPage(1)],
+      evidence: [bboxEvidence],
+    });
+    const banner = panel.root.querySelector<HTMLElement>('.verify__banner');
+    expect(banner?.hidden).toBe(false);
+    expect(banner?.textContent).toContain('AI が推定した座標ハイライト');
+
+    const quote = cellEl(panel.root, KEY_TOTAL)?.querySelector('.verify__quote');
+    expect(quote?.querySelector('.verify__quote-jump')).not.toBeNull();
+    expect(quote?.querySelector('.verify__quote-unanchored')).toBeNull();
+    // bbox は常に 1 出現のため「他 n 箇所に一致」の切替ボタンは出さない
+    expect(quote?.querySelector('.verify__quote-cycle')).toBeNull();
+    // rects もメモ化される（applyLoadedPdf 経由の buildDocumentHighlights bbox 分岐）
+    expect(panel.root.querySelectorAll('.pdf-viewer__hl')).toHaveLength(1);
+    panel.dispose();
+  });
+
+  test('bbox とテキストマッチの両方を持つセルは、テキストマッチの一致件数を優先する（上書きしない。§7.4 PR4）', async () => {
+    const both = makeEvidence({ bboxPage: 1, bbox: { ymin: 100, xmin: 80, ymax: 180, xmax: 850 } });
+    const { panel } = await createPanel({ evidence: [both, ...EVIDENCE.slice(1)] });
+    const cycleButton = cellEl(panel.root, KEY_TOTAL)?.querySelector('.verify__quote-cycle');
+    // ev-1 は 2 ページに出現するテキストマッチ（既定の EVIDENCE 構成）→ bbox の matchCount=1 では
+    // 上書きされず「他 1 箇所に一致（1 / 2）」のまま
+    expect(cycleButton?.textContent).toContain('他 1 箇所に一致（1 / 2）');
+    panel.dispose();
   });
 
   test('PDF が開けないときはエラー + 再取り込み導線を出し、フォームは使える', async () => {

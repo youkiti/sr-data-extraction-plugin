@@ -452,7 +452,7 @@ describe('renderDocumentsView', () => {
     );
     expect(view.querySelectorAll('.documents__badge-note')).toHaveLength(1);
     expect(view.querySelector('.documents__badge-note')?.textContent).toBe(
-      'pdf_native 抽出のみ・ハイライト不可',
+      'pdf_native 抽出・ハイライトは AI 推定（bbox）',
     );
 
     // ページ数（数値 / null → –）
