@@ -179,7 +179,7 @@ SR では 1 つの試験（trial）が複数の報告文書を持ちうる（本
 | filename | string | ✓ | |
 | pmid / doi | string | | 任意。tiab-review 引き継ぎ時は自動転記（※Q2） |
 | text_ref | string(url) | ✓* | `extracted_texts/{document_id}.txt` の Drive URL。**`text_status = no_text_layer` の場合のみ空**（テキスト層がなく抽出テキストが存在しないため。空ファイルは作らない） |
-| text_status | enum | ✓ | `ok` / `partial`（一部ページ抽出不可）/ `no_text_layer`（スキャン PDF。`pdf_native` モードでのみ抽出可、アンカリング / ハイライト不可 ※Q7） |
+| text_status | enum | ✓ | `ok` / `partial`（一部ページ抽出不可）/ `no_text_layer`（スキャン PDF。`pdf_native` モードでのみ抽出可、アンカリング / ハイライト不可 ※Q7）。判定は各ページ実質 30 字以上で「テキストあり」とするが、**全ページの過半数に繰り返す定型行（複写スタンプ・走りヘッダ / フッタ）は本文から除外してから数える**（例: 全ページ上下に "Reproduced with permission of the copyright owner..." が本物のテキストとして載るスキャン論文 PDF を、正しく `no_text_layer` と判定するため） |
 | page_count / char_count | int | | |
 | imported_at / imported_by | iso8601 / email | ✓ | |
 | note | string | | |
