@@ -1,7 +1,10 @@
-// Google Sheets の 14 タブ定義（requirements.md §3.2 v0.10）。実 I/O は lib/google/sheets.ts 側で行う。
+// Google Sheets の 15 タブ定義（requirements.md §3.2 v0.10 + 独立二重レビュー機能の Reviewers タブ）。
+// 実 I/O は lib/google/sheets.ts 側で行う。
 // Meta / Protocol / LLMApiLog は sr-query-builder のスキーマを流用（ProtocolBlocks は持たない）。
 // v0.10 で study / document を分離: Studies を新設し、データ行のキーを document_id → study_id へ改名。
-// Evidence だけは quote の出所を特定するため document_id を保持したまま study_id を併記する
+// Evidence だけは quote の出所を特定するため document_id を保持したまま study_id を併記する。
+// Reviewers は独立二重レビュー機能（docs/design-independent-dual-review.md §2.1）でロール割り当てを
+// 追記する置き場。旧プロジェクトにはタブが無いため、書き込み時に自動作成する（reviewerRepository.ts）
 
 export const SHEET_TABS = [
   'Meta',
@@ -18,6 +21,7 @@ export const SHEET_TABS = [
   'Decisions',
   'LLMApiLog',
   'ExportLog',
+  'Reviewers',
 ] as const;
 
 export type SheetTabName = (typeof SHEET_TABS)[number];
@@ -215,6 +219,7 @@ export const SHEET_HEADERS: Record<SheetTabName, readonly string[]> = {
     'exported_at',
     'exported_by',
   ],
+  Reviewers: ['email', 'role', 'review_mode', 'assigned_by', 'assigned_at'],
 };
 
 /**

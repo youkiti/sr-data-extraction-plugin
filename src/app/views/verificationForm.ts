@@ -37,6 +37,12 @@ export interface ArmCardModel {
   /** 確定済み version。null = 未確定 */
   confirmedVersion: number | null;
   error: string | null;
+  /**
+   * 検証パネルの入力モード（独立二重レビュー機能。design §5.2・§5.3）。省略時は 'review'。
+   * 'independent' は初期行を AI ドラフトではなく空行にする案内文言へ差し替える
+   * （行自体は armDraft が Evidence 非依存で自然に空を返すため、ここでは文言だけ変える）
+   */
+  mode?: 'review' | 'independent';
 }
 
 export interface OutcomeAddModel {
@@ -75,6 +81,11 @@ export interface VerificationFormModel {
    * （このときは空メッセージのみを表示する）
    */
   focusCard: VerificationFocusCardModel | null;
+  /**
+   * 検証パネルの入力モード（独立二重レビュー機能。design §5.2）。省略時は 'review'。
+   * セルカード（verificationCellCard.renderCell）の描画を差し替える
+   */
+  mode?: 'review' | 'independent';
 }
 
 export interface VerificationFormHandlers {
@@ -312,7 +323,10 @@ function renderArmCardEditor(
     children.push(
       el('p', {
         className: 'verify__arm-lead',
-        text: 'まず群構成を確定してください（AI ドラフトを初期値に、群の名称・数を確定します）',
+        text:
+          card.mode === 'independent'
+            ? 'まず群構成を確定してください（群を追加して名称・数を自分で確定します）'
+            : 'まず群構成を確定してください（AI ドラフトを初期値に、群の名称・数を確定します）',
       }),
     );
   }

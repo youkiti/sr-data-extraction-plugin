@@ -37,7 +37,7 @@ test('app.html が開いて #/home が描画される', async ({ page }) => {
   await page.goto('/app/app.html#/home');
   await expect(page.locator('#app-status')).toHaveText('プロジェクト: E2E プロジェクト');
   await expect(page.locator('#app-content h2')).toHaveText('プロジェクト概要');
-  await expect(page.locator('#app-nav a')).toHaveCount(9);
+  await expect(page.locator('#app-nav a')).toHaveCount(10);
   await expect(page.locator('#app-context')).toHaveText('Home 画面を表示しています');
 });
 

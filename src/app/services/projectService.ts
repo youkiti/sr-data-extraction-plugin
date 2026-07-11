@@ -39,11 +39,22 @@ export async function createNewProject(
  *   （loadProjectMeta が ProjectSchemaError を throw）
  * - 通れば currentProject / recentProjects を更新
  */
+/**
+ * 入力からスプレッドシート ID を取り出す。Google Sheets の共有 URL
+ * （`https://docs.google.com/spreadsheets/d/{ID}/edit#gid=0` など）を貼っても
+ * `/spreadsheets/d/{ID}` 部分から ID を抽出する。ID 直打ちは前後空白を除いてそのまま返す。
+ */
+export function extractSpreadsheetId(input: string): string {
+  const trimmed = input.trim();
+  const id = trimmed.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/)?.[1];
+  return id ?? trimmed;
+}
+
 export async function loadExistingProject(
   spreadsheetId: string,
   deps: ProjectServiceDeps
 ): Promise<ProjectRef> {
-  const trimmed = spreadsheetId.trim();
+  const trimmed = extractSpreadsheetId(spreadsheetId);
   if (trimmed === '') {
     throw new Error('スプレッドシート ID は必須です');
   }

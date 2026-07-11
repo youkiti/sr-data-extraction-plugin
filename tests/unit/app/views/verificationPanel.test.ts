@@ -286,6 +286,9 @@ function makeData(overrides: PanelDataOverrides = {}): VerificationData {
     evidence: EVIDENCE,
     decisions: [],
     annotator: ME,
+    // 既定はレビューモード（human_with_ai）。独立入力モードの挙動は専用 describe で
+    // annotatorType: 'human_independent' を明示して検証する
+    annotatorType: 'human_with_ai',
     schemaVersion: 1,
     // 既定は確定済み（群構成ゲートの挙動は専用 describe で null にして検証する）
     armStructure: { version: 1, arms: [{ armKey: 'arm:1', armName: '介入群' }] },
@@ -1928,6 +1931,84 @@ describe('outcome_result インスタンス追加', () => {
     expect(panel.root.querySelector('#verify-outcome-error')?.textContent).toContain(
       'アウトカムキー',
     );
+    panel.dispose();
+  });
+});
+
+describe('独立入力モード（design §5.2。annotatorType = human_independent の panelMode）', () => {
+  test('Evidence quote・AI 値・ハイライトを描画せず、代わりに抽出指示を出す（evidence があっても隠す）', async () => {
+    const { panel } = await createPanel({ annotatorType: 'human_independent' });
+    // evidence は既定（EVIDENCE）のままだが、mode ゲートにより一切表示されない（防御的な検証）
+    expect(panel.root.querySelector('.verify__quote')).toBeNull();
+    expect(panel.root.querySelector('.verify__ai')).toBeNull();
+    expect(panel.root.querySelector('.verify__ai--none')).toBeNull();
+    expect(cellEl(panel.root, KEY_TOTAL)?.querySelector('.verify__instruction')?.textContent).toBe(
+      '総 N を抽出',
+    );
+    expect(panel.root.querySelectorAll('.pdf-viewer__hl')).toHaveLength(0);
+    panel.dispose();
+  });
+
+  test('操作は入力 (e) / 未報告 (n) / 戻す (z) の 3 つのみで、承認・棄却ボタンは出さない', async () => {
+    const { panel } = await createPanel({ annotatorType: 'human_independent' });
+    const actions = [
+      ...(cellEl(panel.root, KEY_TOTAL)?.querySelectorAll<HTMLButtonElement>('.verify__action') ?? []),
+    ];
+    expect(actions.map((button) => button.textContent)).toEqual(['入力 (e)', '未報告 (n)', '戻す (z)']);
+    expect(cellEl(panel.root, KEY_TOTAL)?.querySelector('.verify__action--accept')).toBeNull();
+    expect(cellEl(panel.root, KEY_TOTAL)?.querySelector('.verify__action--reject')).toBeNull();
+    panel.dispose();
+  });
+
+  test('キーボード a / x は無効化され、判定も編集開始も起きない（e / n / z は従来どおり）', async () => {
+    const { panel, onDecision } = await createPanel({ annotatorType: 'human_independent' });
+    pressKey('a');
+    expect(onDecision).not.toHaveBeenCalled();
+    pressKey('x');
+    expect(panel.root.querySelector('.verify__editor')).toBeNull();
+    panel.dispose();
+  });
+
+  test('入力 (e) は AI 値を初期値にせず空欄から始まり、確定で human_independent の Decision を書く', async () => {
+    const { panel, onDecision } = await createPanel({ annotatorType: 'human_independent' });
+    cellEl(panel.root, KEY_TOTAL)
+      ?.querySelector<HTMLButtonElement>('.verify__action--edit')
+      ?.click();
+    const input = panel.root.querySelector<HTMLInputElement>('.verify__edit-input');
+    // 既定の EVIDENCE は f-total に AI 値 '12' を持つが、独立入力モードでは初期値へ流用しない
+    expect(input?.value).toBe('');
+    expect(panel.root.querySelector('.verify__edit-confirm')?.textContent).toBe('入力して確定');
+    input!.value = '42';
+    panel.root.querySelector<HTMLButtonElement>('.verify__edit-confirm')?.click();
+    expect(onDecision).toHaveBeenCalledWith(
+      expect.objectContaining({ annotatorType: 'human_independent', action: 'edit', value: '42' }),
+    );
+    panel.dispose();
+  });
+
+  test('未報告 (n) で human_independent の Decision を書く', async () => {
+    const { panel, onDecision } = await createPanel({ annotatorType: 'human_independent' });
+    cellEl(panel.root, KEY_TOTAL)
+      ?.querySelector<HTMLButtonElement>('.verify__action--not-reported')
+      ?.click();
+    expect(onDecision).toHaveBeenCalledWith(
+      expect.objectContaining({ annotatorType: 'human_independent', action: 'not_reported' }),
+    );
+    panel.dispose();
+  });
+
+  test('群構成カードは AI ドラフトではなく空行から始まり、独立モード向けの案内文言になる（design §5.3）', async () => {
+    const { panel } = await createPanel({
+      annotatorType: 'human_independent',
+      fields: FIELDS,
+      evidence: [],
+      armStructure: null,
+    });
+    const card = panel.root.querySelector('#verify-arm-card');
+    expect(card?.querySelector('.verify__arm-lead')?.textContent).toContain(
+      '群を追加して名称・数を自分で確定します',
+    );
+    expect(card?.querySelectorAll('.verify__arm-row')).toHaveLength(0);
     panel.dispose();
   });
 });

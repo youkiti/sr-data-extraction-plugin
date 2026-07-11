@@ -104,6 +104,8 @@ export interface VerificationBundleInput {
   /** study の全文書ぶんの AI 根拠（表示する run のもの。各行は document_id で出所を持つ） */
   evidence: readonly Evidence[];
   schemaVersion: number;
+  /** 判定を書き込む annotator_type（呼び出し側がロールから導出して渡す。design §5.2） */
+  annotatorType: 'human_with_ai' | 'human_independent';
 }
 
 export interface VerificationBundle {
@@ -210,6 +212,7 @@ export async function loadVerificationBundle(
     evidence: input.evidence,
     decisions,
     annotator,
+    annotatorType: input.annotatorType,
     schemaVersion: input.schemaVersion,
     armStructure,
     loadPdfView,

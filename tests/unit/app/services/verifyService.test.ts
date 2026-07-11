@@ -5,6 +5,7 @@ import {
   persistVerifyArmConfirmation,
   persistVerifyDecision,
   persistVerifyInstanceDeclarations,
+  readVerifyTargetMaterials,
   setVerifyLayoutMode,
 } from '../../../../src/app/services/verifyService';
 import type {
@@ -16,6 +17,7 @@ import type { Decision } from '../../../../src/domain/decision';
 import type { DocumentRecord } from '../../../../src/domain/document';
 import type { Evidence } from '../../../../src/domain/evidence';
 import type { SchemaField } from '../../../../src/domain/schemaField';
+import type { SchemaVersion } from '../../../../src/domain/schemaVersion';
 import type { StudyRecord } from '../../../../src/domain/study';
 import { readDocuments } from '../../../../src/features/documents/documentRepository';
 import { readStudies } from '../../../../src/features/documents/studyRepository';
@@ -27,7 +29,10 @@ import {
 } from '../../../../src/features/extraction/annotationRepository';
 import { readEvidenceRows } from '../../../../src/features/extraction/evidenceRepository';
 import { readRunSchemaVersions } from '../../../../src/features/extraction/runRepository';
-import { getSchemaFieldsByVersion } from '../../../../src/features/schema/schemaRepository';
+import {
+  getSchemaFieldsByVersion,
+  listSchemaVersions,
+} from '../../../../src/features/schema/schemaRepository';
 import {
   appendArmStructureVersion,
   readAllArmStructures,
@@ -63,6 +68,7 @@ jest.mock('../../../../src/features/extraction/runRepository', () => ({
 }));
 jest.mock('../../../../src/features/schema/schemaRepository', () => ({
   getSchemaFieldsByVersion: jest.fn(),
+  listSchemaVersions: jest.fn(),
 }));
 jest.mock('../../../../src/features/verification/decisionRepository', () => ({
   appendDecisionRows: jest.fn(),
@@ -95,6 +101,7 @@ const readRunSchemaVersionsMock = readRunSchemaVersions as jest.MockedFunction<
 const getSchemaFieldsMock = getSchemaFieldsByVersion as jest.MockedFunction<
   typeof getSchemaFieldsByVersion
 >;
+const listSchemaVersionsMock = listSchemaVersions as jest.MockedFunction<typeof listSchemaVersions>;
 const appendDecisionsMock = appendDecisionRows as jest.MockedFunction<typeof appendDecisionRows>;
 const readAllDecisionsMock = readAllDecisions as jest.MockedFunction<typeof readAllDecisions>;
 const readDecisionsMock = readDecisionsByStudy as jest.MockedFunction<
@@ -198,6 +205,19 @@ function makeEvidence(overrides: Partial<Evidence> = {}): Evidence {
   };
 }
 
+function makeSchemaVersion(overrides: Partial<SchemaVersion> = {}): SchemaVersion {
+  return {
+    schemaVersion: 1,
+    parentVersion: null,
+    protocolVersion: 1,
+    createdByType: 'ai_draft',
+    createdAt: 't0',
+    createdBy: ME,
+    note: null,
+    ...overrides,
+  };
+}
+
 function makeDecision(overrides: Partial<Decision> = {}): Decision {
   return {
     decidedAt: 't-now',
@@ -273,6 +293,7 @@ function makeStore(patch: {
   documents?: DocumentRecord[] | null;
   studies?: StudyRecord[] | null;
   verify?: Partial<ReturnType<typeof createInitialState>['verify']>;
+  role?: ReturnType<typeof createInitialState>['role']['role'];
 }): Store {
   const state = createInitialState();
   if (patch.withProject !== false) {
@@ -290,6 +311,9 @@ function makeStore(patch: {
     patch.studies !== undefined ? patch.studies : records === null ? null : studiesFor(records);
   state.documents = { ...state.documents, records, studies };
   state.verify = { ...state.verify, ...(patch.verify ?? {}) };
+  if (patch.role !== undefined) {
+    state.role = { ...state.role, role: patch.role };
+  }
   return createStore(state);
 }
 
@@ -302,6 +326,7 @@ beforeEach(() => {
   readAllArmStructuresMock.mockResolvedValue([]);
   readArmStructuresMock.mockResolvedValue([]);
   getSchemaFieldsMock.mockResolvedValue([makeField()]);
+  listSchemaVersionsMock.mockResolvedValue([]);
   getCurrentUserEmailMock.mockResolvedValue(ME);
   getFileBinaryMock.mockResolvedValue(new ArrayBuffer(8));
   getFileTextMock.mockResolvedValue('');
@@ -453,6 +478,99 @@ describe('loadVerifyTargets', () => {
   });
 });
 
+describe('readVerifyTargetMaterials: 独立入力モード（reviewer_independent。design §5.1）', () => {
+  test('Evidence / ExtractionRuns を読まず、Studies × 最新確定スキーマから対象一覧を組む', async () => {
+    const store = makeStore({ documents: [makeDocument()], role: 'reviewer_independent' });
+    listSchemaVersionsMock.mockResolvedValue([
+      makeSchemaVersion({ schemaVersion: 2 }),
+      makeSchemaVersion({ schemaVersion: 1 }),
+    ]);
+    const materials = await readVerifyTargetMaterials(store, makeDeps(), 'sheet-1');
+    expect(readEvidenceRowsMock).not.toHaveBeenCalled();
+    expect(readRunSchemaVersionsMock).not.toHaveBeenCalled();
+    // 最新版（先頭行）で解決する
+    expect(getSchemaFieldsMock).toHaveBeenCalledWith('sheet-1', 2, expect.anything());
+    expect(materials).toHaveLength(1);
+    expect(materials[0]?.target.evidence).toEqual([]);
+    expect(materials[0]?.target.schemaVersion).toBe(2);
+    expect(materials[0]?.target.study.studyId).toBe('study-doc-1');
+  });
+
+  test('確定済みスキーマが 1 つも無ければ空配列（画面側が空状態メッセージを出す）', async () => {
+    const store = makeStore({ documents: [makeDocument()], role: 'reviewer_independent' });
+    listSchemaVersionsMock.mockResolvedValue([]);
+    const materials = await readVerifyTargetMaterials(store, makeDeps(), 'sheet-1');
+    expect(materials).toEqual([]);
+    expect(getSchemaFieldsMock).not.toHaveBeenCalled();
+  });
+
+  test('アクティブ study が 0 件（Studies 未参照）なら空配列', async () => {
+    const store = makeStore({ documents: [], role: 'reviewer_independent' });
+    listSchemaVersionsMock.mockResolvedValue([makeSchemaVersion()]);
+    const materials = await readVerifyTargetMaterials(store, makeDeps(), 'sheet-1');
+    expect(materials).toEqual([]);
+  });
+
+  test('自分の判定・確定済み群構成を進捗へ反映する', async () => {
+    const store = makeStore({ documents: [makeDocument()], role: 'reviewer_independent' });
+    listSchemaVersionsMock.mockResolvedValue([makeSchemaVersion()]);
+    readAllDecisionsMock.mockResolvedValue([makeDecision()]);
+    readAllArmStructuresMock.mockResolvedValue([
+      {
+        studyId: 'study-doc-1',
+        version: 1,
+        armKey: 'arm:1',
+        armName: '介入群',
+        annotator: ME,
+        annotatorType: 'human_independent',
+        confirmedAt: 't0',
+        note: null,
+      },
+      // 他 study の行は自分の study の armStructure に混ざらないことを確認する
+      {
+        studyId: 'study-doc-other',
+        version: 1,
+        armKey: 'arm:1',
+        armName: '他 study の群',
+        annotator: ME,
+        annotatorType: 'human_independent',
+        confirmedAt: 't0',
+        note: null,
+      },
+    ]);
+    const materials = await readVerifyTargetMaterials(store, makeDeps(), 'sheet-1');
+    expect(materials[0]?.target.progress).toEqual({
+      decided: 1,
+      total: 1,
+      byTab: [{ tab: 'study', decided: 1, total: 1 }],
+    });
+    expect(materials[0]?.armStructure).toEqual({
+      version: 1,
+      arms: [{ armKey: 'arm:1', armName: '介入群' }],
+    });
+  });
+
+  test('owner / reviewer_with_ai は従来どおり Evidence 起点（role 省略時は owner）', async () => {
+    const store = makeStore({ documents: [makeDocument()] });
+    await readVerifyTargetMaterials(store, makeDeps(), 'sheet-1');
+    expect(readEvidenceRowsMock).toHaveBeenCalled();
+    expect(listSchemaVersionsMock).not.toHaveBeenCalled();
+  });
+
+  test('email 不明（null）は空文字 annotator として進捗を数える', async () => {
+    const store = makeStore({ documents: [makeDocument()], role: 'reviewer_independent' });
+    listSchemaVersionsMock.mockResolvedValue([makeSchemaVersion()]);
+    getCurrentUserEmailMock.mockResolvedValue(null);
+    readAllDecisionsMock.mockResolvedValue([makeDecision()]); // ME の判定は数えない
+    const materials = await readVerifyTargetMaterials(store, makeDeps(), 'sheet-1');
+    expect(materials[0]?.target.progress).toEqual({
+      decided: 0,
+      total: 1,
+      byTab: [{ tab: 'study', decided: 0, total: 1 }],
+    });
+  });
+});
+
 describe('openVerifyStudy', () => {
   test('検証データ束を読み込み、selectedStudyId と studyValues を反映する', async () => {
     const store = makeStore({ verify: { targets: [makeTarget()] } });
@@ -583,6 +701,21 @@ describe('openVerifyStudy', () => {
     await openVerifyStudy(store, makeDeps(), 'study-doc-1');
     expect(store.getState().verify.verifyError).toBe('権限がありません');
     expect(store.getState().verify.verifyLoading).toBe(false);
+  });
+
+  test('role=reviewer_independent は annotatorType=human_independent の束を組み立てる（独立入力モード §5.2）', async () => {
+    const store = makeStore({
+      verify: { targets: [makeTarget()] },
+      role: 'reviewer_independent',
+    });
+    await openVerifyStudy(store, makeDeps(), 'study-doc-1');
+    expect(store.getState().verify.verification?.annotatorType).toBe('human_independent');
+  });
+
+  test('role 省略（owner 相当）は annotatorType=human_with_ai の束を組み立てる', async () => {
+    const store = makeStore({ verify: { targets: [makeTarget()] } });
+    await openVerifyStudy(store, makeDeps(), 'study-doc-1');
+    expect(store.getState().verify.verification?.annotatorType).toBe('human_with_ai');
   });
 });
 
@@ -719,6 +852,19 @@ describe('persistVerifyArmConfirmation', () => {
     await persistVerifyArmConfirmation(makeStore({ withProject: false }), makeDeps(), []);
     await persistVerifyArmConfirmation(makeStore({}), makeDeps(), []);
     expect(appendArmVersionMock).not.toHaveBeenCalled();
+  });
+
+  test('独立入力モード（reviewer_independent）は annotatorType=human_independent で追記する（design §5.3）', async () => {
+    const store = makeStore({ verify: { targets: [makeTarget()] }, role: 'reviewer_independent' });
+    await openVerifyStudy(store, makeDeps(), 'study-doc-1');
+    const deps = makeDeps();
+    appendArmVersionMock.mockResolvedValue({ version: 1, arms: [] });
+    await persistVerifyArmConfirmation(store, deps, [{ armKey: 'arm:1', armName: '介入群' }]);
+    expect(appendArmVersionMock).toHaveBeenCalledWith(
+      'sheet-1',
+      expect.objectContaining({ annotatorType: 'human_independent' }),
+      deps.google,
+    );
   });
 });
 

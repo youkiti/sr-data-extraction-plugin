@@ -39,6 +39,18 @@ flowchart LR
 
 - プロジェクト作成ウィザード（S2）はスプレッドシート + Drive フォルダ（`documents/` / `extracted_texts/` / `raw_protocols/` / `logs/llm/`）を生成する。tiab-review 引き継ぎ（Q2）は P1 のため、MVP のウィザードは「新規作成」のみ
 
+### reviewer オンボーディング（v0.11・独立二重レビュー機能 issue #44）
+
+第 2 の human reviewer が初めてプロジェクトへ参加する経路（owner が Google 側の共有 + `Reviewers` への登録を済ませたあと）:
+
+1. 拡張をインストールし、自分の Google アカウントでログイン
+2. Popup（S1）の「既存 ID」でスプレッドシート ID を入力して開く
+3. メインビュー起動時にロールを解決（下記「ロール別ナビゲーション」）→ reviewer / adjudicator と判明
+4. Home（縮退版）の「プロジェクトフォルダへのアクセスを付与」ボタンで Picker を開きプロジェクトフォルダ（または個別ファイル）を選択 → `extracted_texts` の 1 件試し読みで到達性を確認 → `chrome.storage.local` にフラグを保存
+5. フォルダアクセス付与が済むと `#/verify` に入場できる（未付与のうちはガードでブロック）
+
+owner 側の登録手順（レビュアー管理カード）・盲検の担保範囲・裁定 `#/adjudicate` の詳細は [docs/design-independent-dual-review.md](design-independent-dual-review.md) を参照。
+
 ## 2. メインビュー内ルーティング
 
 メインビューはシングルページアプリ。左サイドバーのステップナビと右ペインの作業エリアで構成。ハッシュルーティング（`#/documents` 等）で各ステップへ遷移する。
@@ -71,6 +83,23 @@ flowchart TD
 | `#/verify` | 検証（S8） | §3 参照。document 選択 → 2 ペイン検証 | `StudyData` / `ResultsData`（自分の annotator 行の更新）+ `Decisions` 追記 + `ArmStructures` 追記（群構成の確定） |
 | `#/dashboard` | ダッシュボード（S9） | document × section の検証進捗マトリクス、anchor 失敗率、not_reported 率。セルクリックで `#/verify` の該当 document / section へ | `StudyData` / `ResultsData` / `Evidence` / `Documents`（読み取りのみ） |
 | `#/export` | エクスポート（S10） | 形式選択（study_wide / results_long / audit）、プレビュー、CSV 生成 + Drive 保存 + ダウンロード。未検証セル残存時は警告ダイアログ | `ExportLog` 追記 |
+| `#/adjudicate` | 裁定（S12・v0.11） | owner / adjudicator のみ。human annotator 2 名の検証が揃った study を選択 → 群構成の突き合わせ → セル一覧（一致は一括採用・不一致は個別裁定）→ `consensus` 確定 | `ArmStructures` / `StudyData` / `ResultsData`（consensus 版の追記）+ `Decisions` 追記 |
+
+### ロール別ナビゲーション（v0.11・独立二重レビュー機能 issue #44）
+
+メインビュー起動時にログイン email のロール（`owner` / `reviewer_with_ai` / `reviewer_independent` / `adjudicator` / `unregistered`）を 1 回解決し、ロールに応じてサイドバーに出すルートを制限する（ディムではなく非表示）:
+
+| ロール | 見えるルート |
+|---|---|
+| `owner` | 全ルート（`#/adjudicate` 含む。owner は既定で adjudicator を兼務） |
+| `reviewer_with_ai` / `reviewer_independent` | `#/home`（縮退版）+ `#/verify` のみ |
+| `adjudicator` | `#/home`（縮退版）+ `#/verify` + `#/adjudicate` |
+
+**ロール解決のフェイルクローズ**: プロジェクト選択済みでロールが未確定（解決中・解決失敗・`Meta.created_by` にも `Reviewers` にも一致しない未登録）の間は、owner 向けの UI・データ読込を一切開放せず、以下の全画面ブロックだけを表示する（ルートのローダ自体も発火しない）:
+
+- 解決中: 「このプロジェクトでのロールを確認しています…」
+- 解決失敗: 「このプロジェクトでのロールを確認できませんでした: {理由}」+ 再試行ボタン（一時的なエラーで owner 側へフォールバックしない）
+- 未登録（`unregistered`）: 「このプロジェクトのレビュアーとして登録されていません。プロジェクトのオーナーに登録を依頼してください。」
 
 ## 3. 検証画面（`#/verify`）の内部構造
 
@@ -104,9 +133,10 @@ flowchart LR
 | `→ #/schema` | `Protocol` に少なくとも 1 行存在 | サイドバーでディム、クリック時はトーストで誘導 |
 | `→ #/pilot` | 確定済み `schema_version` ≥ 1 **かつ** document ≥ 1（`no_text_layer` の document は `pdf_native` モードでのみ抽出対象 ※requirements.md Q7） | 同上 |
 | `→ #/extract` | 確定済み `schema_version` ≥ 1 | パイロット未実施の場合は警告バナー（「パイロット抽出を推奨します」）を出すが遷移は許可 |
-| `→ #/verify` | `Evidence` に少なくとも 1 行存在（AI 抽出実施済み） | サイドバーでディム |
+| `→ #/verify` | `owner`: `Evidence` に少なくとも 1 行存在（AI 抽出実施済み）。**reviewer 系ロール（v0.11）**: counts を見ずフォルダアクセス付与済みのみを条件にする（盲検のため counts ベースの判定は行わない。「AI 抽出未実施」「確定スキーマ無し」は画面内の空状態表示に譲る） | サイドバーでディム。未充足時はトーストで案内 |
 | `→ #/dashboard` | なし（0 件でも空状態 UI） | — |
 | `→ #/export` | `StudyData` / `ResultsData` に少なくとも 1 行存在 | サイドバーでディム。未検証セル残存はガードではなく警告ダイアログで扱う |
+| `→ #/adjudicate`（v0.11） | `owner` / `adjudicator` ロールのみ。counts による入場条件はなし（対象 study が無ければ画面内の空状態で案内） | それ以外のロールはナビ自体に表示されない |
 
 ## 5. グローバル UI 要素
 
@@ -154,7 +184,7 @@ flowchart LR
 ## 8. 実装フェーズで詰めるもの
 
 - 検証画面 2 ペインの最小幅・分割比率（PDF ビューアは最小 600px 幅を想定。メインビューは最小幅 1280px）
-- PDF ビューアのズーム段階は 75 / 100 / 125 / 150 / 175 / 200%（既定 100%）。スクロールで拡大表示を閲覧する
+- PDF ビューアのズーム段階は 75 / 100 / 125 / 150 / 175 / 200 / 250 / 300%（既定 100%）。スクロールで拡大表示を閲覧する（issue #51: #/pilot 埋め込み・#/verify 単独の両方で共有）
 - PDF.js ビューアの仮想化（100 ページ超の PDF でのページ描画戦略）
 - entity タブ（arm / outcome）のインスタンス追加・削除 UI の詳細
 - ハイライト色のトークン定義（検証済み = 緑系 / 未検証 = 黄系 / low confidence = 橙系。[requirements.md §5](requirements.md)）

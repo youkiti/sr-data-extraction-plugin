@@ -59,7 +59,16 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<DocumentsViewCall
   };
   return {
     ctx: {
-      home: { onReload: jest.fn() },
+      home: {
+    onReload: jest.fn(),
+    onGrantFolderAccess: jest.fn(),
+    onReloadReviewers: jest.fn(),
+    onAddReviewer: jest.fn(),
+    onConfirmReviewerChange: jest.fn(),
+    onCancelReviewerChange: jest.fn(),
+    onRevokeReviewer: jest.fn(),
+    onCopyInvite: jest.fn(),
+  },
       documents: callbacks,
       protocol: {
         onSubmit: jest.fn(),
@@ -117,6 +126,24 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<DocumentsViewCall
         onCancelGenerate: jest.fn(),
         onDownload: jest.fn(),
         onReload: jest.fn(),
+      },
+      adjudicate: {
+        onSelectStudy: jest.fn(),
+        onBackToList: jest.fn(),
+        onRetryLoad: jest.fn(),
+        onArmDraftChange: jest.fn(),
+        onArmDraftAdd: jest.fn(),
+        onArmDraftRemove: jest.fn(),
+        onConfirmArms: jest.fn(),
+        onAcceptAllMatches: jest.fn(),
+        onChooseA: jest.fn(),
+        onChooseB: jest.fn(),
+        onCustomValue: jest.fn(),
+        onNotReported: jest.fn(),
+        onSkip: jest.fn(),
+        onUnskip: jest.fn(),
+        onUndo: jest.fn(),
+        onToggleMismatchOnly: jest.fn(),
       },
     },
     callbacks,

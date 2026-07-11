@@ -55,7 +55,9 @@ export interface PdfViewerHandle {
   getCurrentPage(): number;
 }
 
-const ZOOM_LEVELS = ['0.75', '1', '1.25', '1.5', '1.75', '2'] as const;
+// issue #51: 小さい画面でも文字を追えるよう、上限を 200% → 300% まで広げる
+// （#/pilot 埋め込み・#/verify 単独の両方でこの一覧を共有する）
+const ZOOM_LEVELS = ['0.75', '1', '1.25', '1.5', '1.75', '2', '2.5', '3'] as const;
 
 export function createPdfViewer(options: PdfViewerOptions): PdfViewerHandle {
   const renderPage = options.renderPage ?? renderPdfPageToCanvas;
@@ -115,7 +117,15 @@ export function createPdfViewer(options: PdfViewerOptions): PdfViewerHandle {
   const pageWrap = el('div', { className: 'pdf-viewer__page' }, [canvas, overlay]);
   const errorEl = el('p', { className: 'pdf-viewer__error', attributes: { role: 'alert' } });
   errorEl.hidden = true;
-  const scroller = el('div', { className: 'pdf-viewer__scroller' }, [errorEl, pageWrap]);
+  // スクロール領域はキーボードで到達可能にする（axe: scrollable-region-focusable。
+  // 兄弟ペイン（判定・セル一覧）が短いレイアウトだと本領域が縦にあふれ、tabindex 無しでは
+  // キーボード操作でスクロールできなくなる。#/adjudicate のセル一覧が短くなる構成で顕在化した）
+  // role='group' は aria-label を許容する（role なしの div では axe: aria-prohibited-attr に
+  // なる）。focusable なスクロール領域に表示名を与えつつ landmark ノイズを避ける最小構成
+  const scroller = el('div', {
+    className: 'pdf-viewer__scroller',
+    attributes: { role: 'group', tabindex: '0', 'aria-label': 'PDF 表示領域' },
+  }, [errorEl, pageWrap]);
   const root = el('div', { className: 'pdf-viewer' }, [
     el('div', { className: 'pdf-viewer__toolbar' }, [
       prevButton,

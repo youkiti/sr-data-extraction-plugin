@@ -7,7 +7,7 @@ import {
 } from '../../../src/domain/sheetsSchema';
 
 describe('SHEET_TABS', () => {
-  test('requirements.md §3.2 の 14 タブを定義順に持つ', () => {
+  test('requirements.md §3.2 + 独立二重レビュー機能の 15 タブを定義順に持つ', () => {
     expect(SHEET_TABS).toEqual([
       'Meta',
       'Protocol',
@@ -23,6 +23,7 @@ describe('SHEET_TABS', () => {
       'Decisions',
       'LLMApiLog',
       'ExportLog',
+      'Reviewers',
     ]);
   });
 
@@ -114,6 +115,16 @@ describe('SHEET_HEADERS', () => {
       'annotator_type',
       'confirmed_at',
       'note',
+    ]);
+  });
+
+  test('Reviewers はロール割り当て（email + role + review_mode + assigned_by/at）を持つ', () => {
+    expect(SHEET_HEADERS.Reviewers).toEqual([
+      'email',
+      'role',
+      'review_mode',
+      'assigned_by',
+      'assigned_at',
     ]);
   });
 });

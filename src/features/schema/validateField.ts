@@ -46,7 +46,9 @@ export function validateEditorRows(rows: readonly SchemaEditorRow[]): FieldValid
       errors.push({
         index,
         column: 'fieldName',
-        message: `"${name}" は StudyData の固定列名のため使えません`,
+        message:
+          `"${name}" はシステムが使う StudyData の固定列名のため項目名に使えません。` +
+          `別名（例: "${name}_reported"）へ変更してください`,
       });
       // 空でない name は直前のループで必ずカウント済み
     } else if ((nameCounts.get(name) as number) > 1) {

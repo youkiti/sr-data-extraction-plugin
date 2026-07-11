@@ -18,7 +18,16 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<VerifyViewCallbac
   };
   return {
     ctx: {
-      home: { onReload: jest.fn() },
+      home: {
+    onReload: jest.fn(),
+    onGrantFolderAccess: jest.fn(),
+    onReloadReviewers: jest.fn(),
+    onAddReviewer: jest.fn(),
+    onConfirmReviewerChange: jest.fn(),
+    onCancelReviewerChange: jest.fn(),
+    onRevokeReviewer: jest.fn(),
+    onCopyInvite: jest.fn(),
+  },
       documents: {
         onImport: jest.fn(),
         onImportFiles: jest.fn(),
@@ -85,6 +94,24 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<VerifyViewCallbac
         onCancelGenerate: jest.fn(),
         onDownload: jest.fn(),
         onReload: jest.fn(),
+      },
+      adjudicate: {
+        onSelectStudy: jest.fn(),
+        onBackToList: jest.fn(),
+        onRetryLoad: jest.fn(),
+        onArmDraftChange: jest.fn(),
+        onArmDraftAdd: jest.fn(),
+        onArmDraftRemove: jest.fn(),
+        onConfirmArms: jest.fn(),
+        onAcceptAllMatches: jest.fn(),
+        onChooseA: jest.fn(),
+        onChooseB: jest.fn(),
+        onCustomValue: jest.fn(),
+        onNotReported: jest.fn(),
+        onSkip: jest.fn(),
+        onUnskip: jest.fn(),
+        onUndo: jest.fn(),
+        onToggleMismatchOnly: jest.fn(),
       },
     },
     callbacks,
@@ -167,12 +194,16 @@ function makeVerification(): VerificationData {
     evidence: [],
     decisions: [],
     annotator: 'me@example.com',
+    annotatorType: 'human_with_ai',
     schemaVersion: 1,
     armStructure: null,
   };
 }
 
-function makeState(patch: Partial<AppState['verify']> = {}): AppState {
+function makeState(
+  patch: Partial<AppState['verify']> = {},
+  options: { role?: AppState['role']['role'] } = {},
+): AppState {
   const state = createInitialState();
   state.currentProject = {
     projectId: 'p1',
@@ -181,6 +212,9 @@ function makeState(patch: Partial<AppState['verify']> = {}): AppState {
     name: 'テスト SR',
   };
   state.verify = { ...state.verify, ...patch };
+  if (options.role !== undefined) {
+    state.role = { ...state.role, role: options.role };
+  }
   return state;
 }
 
@@ -227,6 +261,24 @@ describe('renderVerifyView', () => {
     expect(root.querySelector('#verify-empty')?.textContent).toContain(
       'AI 抽出済みの研究がありません',
     );
+  });
+
+  test('独立入力モード（reviewer_independent）: 対象 0 件は AI 抽出前提ではない空状態メッセージ', () => {
+    const { ctx } = makeCtx();
+    const root = render(
+      makeState({ targets: [] }, { role: 'reviewer_independent' }),
+      ctx,
+    );
+    expect(root.querySelector('#verify-empty')?.textContent).toContain(
+      'オーナーが表のデザイン（スキーマ）を確定するまで',
+    );
+    expect(root.querySelector('#verify-empty')?.textContent).not.toContain('AI 抽出');
+  });
+
+  test('独立入力モード（reviewer_independent）: 冒頭の説明文が AI 抽出前提ではない文言になる', () => {
+    const { ctx } = makeCtx();
+    const root = render(makeState({}, { role: 'reviewer_independent' }), ctx);
+    expect(root.querySelector('.view__lead')?.textContent).toContain('AI 抽出は行われません');
   });
 
   test('通常: セレクタに進捗チップ付きの選択肢を出し、切替でコールバックを呼ぶ', () => {

@@ -3,7 +3,16 @@ import { createInitialState } from '../../../src/app/store';
 import type { ViewContext } from '../../../src/app/views/types';
 
 const stubCtx: ViewContext = {
-  home: { onReload: jest.fn() },
+  home: {
+    onReload: jest.fn(),
+    onGrantFolderAccess: jest.fn(),
+    onReloadReviewers: jest.fn(),
+    onAddReviewer: jest.fn(),
+    onConfirmReviewerChange: jest.fn(),
+    onCancelReviewerChange: jest.fn(),
+    onRevokeReviewer: jest.fn(),
+    onCopyInvite: jest.fn(),
+  },
   documents: {
     onImport: jest.fn(),
     onImportFiles: jest.fn(),
@@ -77,6 +86,24 @@ const stubCtx: ViewContext = {
     onDownload: jest.fn(),
     onReload: jest.fn(),
   },
+  adjudicate: {
+    onSelectStudy: jest.fn(),
+    onBackToList: jest.fn(),
+    onRetryLoad: jest.fn(),
+    onArmDraftChange: jest.fn(),
+    onArmDraftAdd: jest.fn(),
+    onArmDraftRemove: jest.fn(),
+    onConfirmArms: jest.fn(),
+    onAcceptAllMatches: jest.fn(),
+    onChooseA: jest.fn(),
+    onChooseB: jest.fn(),
+    onCustomValue: jest.fn(),
+    onNotReported: jest.fn(),
+    onSkip: jest.fn(),
+    onUnskip: jest.fn(),
+    onUndo: jest.fn(),
+    onToggleMismatchOnly: jest.fn(),
+  },
 };
 
 describe('normalizeHash', () => {
@@ -136,7 +163,7 @@ describe('entityQueryOf', () => {
 });
 
 describe('ROUTES', () => {
-  test('ui-flow.md §2 の 9 ルートを順序どおり定義する', () => {
+  test('ui-flow.md §2 の 9 ルート + 裁定（S12・独立二重レビュー機能）を順序どおり定義する', () => {
     expect(ROUTES.map((route) => route.hash)).toEqual([
       '#/home',
       '#/documents',
@@ -147,6 +174,7 @@ describe('ROUTES', () => {
       '#/verify',
       '#/dashboard',
       '#/export',
+      '#/adjudicate',
     ]);
   });
 
