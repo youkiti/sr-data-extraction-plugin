@@ -40,7 +40,10 @@ describe('validateEditorRows', () => {
     ]);
     expect(errors[0]?.message).toBe('field_name は必須です');
     expect(errors[1]?.message).toContain('snake_case');
-    expect(errors[3]?.message).toContain('StudyData の固定列名');
+    expect(errors[3]?.message).toBe(
+      '"study_id" はシステムが使う StudyData の固定列名のため項目名に使えません。' +
+        '別名（例: "study_id_reported"）へ変更してください',
+    );
   });
 
   test('field_name の行間重複を両方の行で検出する', () => {
