@@ -22,8 +22,11 @@ export const EXTRACT_DATA_SKILL_NAME = 'extract-data';
  * v3（2026-07-11）: pdf_native 入力（no_text_layer 文書のページ画像添付）に対応。
  *   システムプロンプトへスキャン文書向けの quote/page 規約を追記
  *   （handoff-scanned-pdf-native-highlight.md §7.4 PR2）
+ * v4（2026-07-11）: box_2d（quote の bounding box）の取得に対応。requestBox=true 時のみ
+ *   システムプロンプト / ユーザープロンプト / 応答スキーマへ box ルールを追加する
+ *   （requestBox=false の経路は 1 文字も変わらない。handoff-scanned-pdf-native-highlight.md §7.4 PR3）
  */
-export const EXTRACT_DATA_PROMPT_VERSION = 3;
+export const EXTRACT_DATA_PROMPT_VERSION = 4;
 
 /** text_only モードで LLM へ渡すページ別本文（extracted_texts/{id}.txt 由来） */
 export interface ExtractDataPage {
@@ -79,6 +82,12 @@ export interface ExtractDataPromptInput {
   documents: readonly ExtractDataDocument[];
   /** RQ・PICO 等の要約。項目の解釈を安定させる補助コンテキスト（省略可） */
   protocolContext?: string | null;
+  /**
+   * box_2d（quote の bounding box）の取得を要求するか。省略時 false。
+   * true にできるのは「Gemini 系 provider」かつ「バッチに画像文書を含む」ときだけ
+   * （判定は executeRun 側の責務。handoff-scanned-pdf-native-highlight.md §7.4 PR3）
+   */
+  requestBox?: boolean;
 }
 
 /**
@@ -104,6 +113,28 @@ Rules:
 - "field_id" is the matching key: echo it exactly as listed. Never invent field_ids.
 - Return one item for EVERY listed field and EVERY entity instance it applies to (see the entity_key rules).
 `.trim();
+
+/**
+ * box_2d（quote の bounding box）の追加ルール。requestBox=true のときだけ
+ * システムプロンプトの末尾に足す（handoff-scanned-pdf-native-highlight.md §7.2）。
+ * 幻覚 box 防止のため「位置特定できたときだけ返す・最も近い box を推測するのは禁止」を明記する
+ */
+const EXTRACT_DATA_BOX_RULES = `
+Additional rule about "box_2d" (bounding box), for scanned documents only (those attached as page images):
+- For an item whose quote comes from a scanned document, try to visually locate that exact quote in its page image. If — and only if — you can actually see and pinpoint it, return "box_2d": [ymin, xmin, ymax, xmax], 4 integers normalized to 0-1000 against that page image's height/width, with the origin at the image's top-left corner.
+- If you cannot pinpoint the quote's location in the image, or the quote comes from a text (non-image) document, return "box_2d": null.
+- NEVER guess or return the "closest" or "most likely" box when you are not sure of the exact location. A missing box (null) is always preferable to a wrong one — downstream highlighting trusts this box completely and cannot verify it.
+`.trim();
+
+/**
+ * システムプロンプトを組み立てる。requestBox=false は EXTRACT_DATA_SYSTEM_PROMPT と
+ * 完全一致（text_only 経路は 1 文字も変えない）。true のときだけ box ルールを末尾に追記する
+ */
+export function buildExtractDataSystemPrompt(requestBox: boolean): string {
+  return requestBox
+    ? `${EXTRACT_DATA_SYSTEM_PROMPT}\n\n${EXTRACT_DATA_BOX_RULES}`
+    : EXTRACT_DATA_SYSTEM_PROMPT;
+}
 
 /** entity_key の構成規約（requirements.md §3.3 / utils/entityKey.ts と同一規則） */
 const ENTITY_KEY_RULES: Record<EntityLevel, string> = {
@@ -202,12 +233,13 @@ export function buildExtractDataUserPrompt(input: ExtractDataPromptInput): strin
     .join('\n\n');
   sections.push(`## Documents\n\n${intro}\n\n${body}`);
 
-  sections.push(
-    `## Output format\n\nReturn a JSON array. Each element must be:\n` +
-      `{ "field_id": "<as listed>", "entity_key": "<per the rules>", "value": "<as reported>" | null, ` +
-      `"not_reported": true | false, "quote": "<verbatim, <=300 chars>" | null, "page": <1-indexed> | null, ` +
-      `"document_index": <1..${total}> | null, "confidence": "high" | "medium" | "low" }`,
-  );
+  const outputFormatFields =
+    `{ "field_id": "<as listed>", "entity_key": "<per the rules>", "value": "<as reported>" | null, ` +
+    `"not_reported": true | false, "quote": "<verbatim, <=300 chars>" | null, "page": <1-indexed> | null, ` +
+    `"document_index": <1..${total}> | null, "confidence": "high" | "medium" | "low"` +
+    (input.requestBox === true ? `, "box_2d": [ymin, xmin, ymax, xmax] | null` : '') +
+    ' }';
+  sections.push(`## Output format\n\nReturn a JSON array. Each element must be:\n${outputFormatFields}`);
 
   return sections.join('\n\n');
 }
@@ -275,6 +307,37 @@ export const EXTRACT_DATA_RESPONSE_SCHEMA: Record<string, unknown> = {
     additionalProperties: false,
   },
 };
+
+/**
+ * 構造化出力スキーマを requestBox に応じて組み立てる。
+ * false（既定）は EXTRACT_DATA_RESPONSE_SCHEMA をそのまま返す（既存定数は変更しない）。
+ * true は items.properties に box_2d（4 要素固定長の配列 | null）を追加した**新しいオブジェクト**を
+ * 返す（GeminiProvider.toGeminiSchema は minItems/maxItems をパススルー済みのため方言変換は不要）
+ */
+export function extractDataResponseSchema(requestBox: boolean): Record<string, unknown> {
+  if (!requestBox) {
+    return EXTRACT_DATA_RESPONSE_SCHEMA;
+  }
+  const baseItems = EXTRACT_DATA_RESPONSE_SCHEMA['items'] as Record<string, unknown>;
+  const baseProperties = baseItems['properties'] as Record<string, unknown>;
+  const baseRequired = baseItems['required'] as string[];
+  return {
+    ...EXTRACT_DATA_RESPONSE_SCHEMA,
+    items: {
+      ...baseItems,
+      properties: {
+        ...baseProperties,
+        box_2d: {
+          type: ['array', 'null'],
+          items: { type: 'integer' },
+          minItems: 4,
+          maxItems: 4,
+        },
+      },
+      required: [...baseRequired, 'box_2d'],
+    },
+  };
+}
 
 /** 構造化出力を要求しても markdown フェンスで包むモデルがあるため防御的に剥がす */
 function stripJsonFence(text: string): string {

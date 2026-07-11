@@ -284,6 +284,12 @@ test('実行確認 → 一部失敗 → 再試行成功 → 完了（ExtractionR
         await route.fulfill({ json: { values: [STUDY_DATA_HEADERS] } });
       } else if (url.includes('ResultsData')) {
         await route.fulfill({ json: { values: [RESULTS_DATA_HEADERS] } });
+      } else if (url.includes('values:batchGet') && url.includes('Evidence')) {
+        // Evidence タブのヘッダ拡張チェック（ensureEvidenceBboxColumns。§7.4 PR3）。
+        // 既にフルヘッダ（bbox 5 列込み）が書かれている想定にして拡張 PUT を no-op にする
+        await route.fulfill({
+          json: { valueRanges: [{ values: [[...SHEET_HEADERS.Evidence]] }] },
+        });
       } else {
         await route.fulfill({ json: { values: [] } });
       }

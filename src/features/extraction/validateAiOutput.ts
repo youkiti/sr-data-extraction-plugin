@@ -6,11 +6,13 @@
 //    not_reported=true の要素は document_index 不要。1..documentCount の値へ解決して返す
 // 5) 値と quote の矛盾（quote 欠落 / 値中の数値が quote に無い / not_reported なのに値あり）は
 //    confidence=low を強制する（破棄はしない — S8 の人間検証で拾わせるため）
+// 6) box_2d（bbox。§7.4 PR3）: 壊れていても要素は破棄せず bbox のみ null に落とす
+//    （anchor_status とは別軸で機械検証不能なため、他フィールドの信頼性に影響させない）
 //
 // 突合キーになる field_id / entity_key / value / not_reported / document_index は厳格に検証し、
-// 補助ヒントの page / confidence は寛容にパースして不正値を null へ落とす
+// 補助ヒントの page / confidence / box_2d は寛容にパースして不正値を null へ落とす
 import { z } from 'zod';
-import type { Confidence } from '../../domain/evidence';
+import type { Confidence, EvidenceBbox } from '../../domain/evidence';
 import type { SchemaField } from '../../domain/schemaField';
 import { parseEntityKey, STUDY_ENTITY_KEY } from '../../utils/entityKey';
 import { normalizeText } from '../anchoring/normalizeText';
@@ -46,6 +48,8 @@ export interface ValidatedAiItem {
   confidence: Confidence | null;
   /** 空配列 = 強制なし。非空なら confidence は 'low' に強制済み */
   forcedLowReasons: ForcedLowReason[];
+  /** box_2d の検証結果（validateBox）。欠落・壊れている場合は null（要素自体は破棄しない） */
+  box: EvidenceBbox | null;
 }
 
 /** 破棄した要素。呼び出し側（executeRun）が partial_failure として記録する */
@@ -98,6 +102,9 @@ const aiOutputItemSchema = z.object({
   document_index: z.number().int().min(1).nullable().catch(null),
   quote: quoteSchema,
   confidence: z.enum(['high', 'medium', 'low']).nullable().catch(null),
+  // box_2d（bbox。requestBox=true のときだけモデルが返す）は形は問わず素通しし、
+  // validateBox() が別途厳密に検証する（壊れていても要素自体は破棄しない。§7.4 PR3）
+  box_2d: z.unknown().nullish(),
 });
 
 type ParsedAiItem = z.infer<typeof aiOutputItemSchema>;
@@ -163,6 +170,50 @@ function resolveDocumentIndex(
     return documentCount === 1 ? 1 : null;
   }
   return inRange ? raw : null;
+}
+
+/** 0–1000 の整数か（validateBox の各座標検証で使う） */
+function isValidCoordinate(value: unknown): value is number {
+  return Number.isInteger(value) && (value as number) >= 0 && (value as number) <= 1000;
+}
+
+/**
+ * AI 応答の box_2d を検証する（handoff-scanned-pdf-native-highlight.md §7.2・スパイク §3）。
+ * - 配列でない・長さが 4 未満 or 6 以上 → null
+ * - 長さ 5 で末尾要素が 4 番目の要素と同値なら先頭 4 要素へ復元する
+ *   （responseSchema で minItems/maxItems=4 を指定しても実測 8 件中 2 件が末尾重複の
+ *   5 要素で返ってきた実績があるため。それ以外の長さ 5 は復元できず null）
+ * - 復元後の 4 要素は全て整数かつ 0–1000 の範囲内であること。外れれば null
+ * - ymin <= ymax かつ xmin <= xmax（順序が逆なら壊れた box とみなし null）
+ * - 上記を満たせば { ymin, xmin, ymax, xmax } を返す
+ *
+ * 壊れた box は「行ごと破棄」ではなく「bbox のみ null」に落とす（呼び出し側の責務）
+ */
+export function validateBox(raw: unknown): EvidenceBbox | null {
+  if (!Array.isArray(raw)) {
+    return null;
+  }
+  let restored: unknown[];
+  if (raw.length === 4) {
+    restored = raw;
+  } else if (raw.length === 5 && raw[4] === raw[3]) {
+    restored = raw.slice(0, 4);
+  } else {
+    return null;
+  }
+  const [ymin, xmin, ymax, xmax] = restored;
+  if (
+    !isValidCoordinate(ymin) ||
+    !isValidCoordinate(xmin) ||
+    !isValidCoordinate(ymax) ||
+    !isValidCoordinate(xmax)
+  ) {
+    return null;
+  }
+  if (ymin > ymax || xmin > xmax) {
+    return null;
+  }
+  return { ymin, xmin, ymax, xmax };
 }
 
 /**
@@ -245,6 +296,7 @@ export function validateAiOutput(
       documentIndex,
       confidence: forcedLowReasons.length > 0 ? 'low' : parsed.data.confidence,
       forcedLowReasons,
+      box: validateBox(parsed.data.box_2d),
     });
   });
   return { items, rejected };

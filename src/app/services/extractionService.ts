@@ -20,7 +20,10 @@ import {
   upsertResultsDataRows,
   upsertStudyDataRows,
 } from '../../features/extraction/annotationRepository';
-import { appendEvidenceRows } from '../../features/extraction/evidenceRepository';
+import {
+  appendEvidenceRows,
+  ensureEvidenceBboxColumns,
+} from '../../features/extraction/evidenceRepository';
 import {
   DEFAULT_FLUSH_EVERY_N_STUDIES,
   executeRun,
@@ -198,6 +201,11 @@ export async function runExtraction(
     startedAt,
     costEstimate: plan.costEstimateUsd,
   };
+  // Evidence タブのヘッダを bbox 5 列込みへ拡張する（既存プロジェクトの後方互換移行。
+  // §7.4 PR3）。running 行より前に行う: これを怠ると旧ヘッダ（12 列）のまま
+  // appendEvidenceRows が 17 列を追記してしまい、列がずれた壊れた行になる
+  await ensureEvidenceBboxColumns(params.spreadsheetId, deps.google);
+
   // running 行の先行追記（2 行プロトコルの 1 行目）。この追記が失敗したら
   // Evidence を 1 行も書かずに中断するため、孤児 Evidence は生まれない
   await appendExtractionRun(

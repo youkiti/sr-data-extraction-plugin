@@ -2,7 +2,10 @@ import { runExtraction } from '../../../../src/app/services/extractionService';
 import type { DocumentRecord } from '../../../../src/domain/document';
 import type { SchemaField } from '../../../../src/domain/schemaField';
 import { upsertResultsDataRows, upsertStudyDataRows } from '../../../../src/features/extraction/annotationRepository';
-import { appendEvidenceRows } from '../../../../src/features/extraction/evidenceRepository';
+import {
+  appendEvidenceRows,
+  ensureEvidenceBboxColumns,
+} from '../../../../src/features/extraction/evidenceRepository';
 import { appendExtractionRun } from '../../../../src/features/extraction/runRepository';
 import type { ExtractDataPage } from '../../../../src/features/extraction/skills/extractData';
 import { uploadTextFile } from '../../../../src/lib/google/drive';
@@ -20,6 +23,7 @@ jest.mock('../../../../src/lib/llm/apiLogRepository');
 const mockedUpload = jest.mocked(uploadTextFile);
 const mockedAppendLog = jest.mocked(appendLlmApiLog);
 const mockedAppendEvidence = jest.mocked(appendEvidenceRows);
+const mockedEnsureBboxColumns = jest.mocked(ensureEvidenceBboxColumns);
 const mockedUpsertStudy = jest.mocked(upsertStudyDataRows);
 const mockedUpsertResults = jest.mocked(upsertResultsDataRows);
 const mockedAppendRun = jest.mocked(appendExtractionRun);
@@ -171,6 +175,12 @@ describe('runExtraction', () => {
     expect(mockedAppendRun.mock.invocationCallOrder[0]).toBeLessThan(
       mockedAppendEvidence.mock.invocationCallOrder[0] as number,
     );
+    // Evidence タブのヘッダ拡張（bbox 5 列。既存プロジェクトの後方互換移行）は
+    // running 行の追記よりも先に行う（§7.4 PR3。怠ると旧ヘッダのまま列がずれた行を書いてしまう）
+    expect(mockedEnsureBboxColumns).toHaveBeenCalledWith('sid', GOOGLE);
+    expect(mockedEnsureBboxColumns.mock.invocationCallOrder[0]).toBeLessThan(
+      mockedAppendRun.mock.invocationCallOrder[0] as number,
+    );
 
     // Evidence はアンカリング確定済みで追記される
     expect(mockedAppendEvidence).toHaveBeenCalledTimes(1);
@@ -215,7 +225,7 @@ describe('runExtraction', () => {
     expect(promptCall?.parentId).toBe('folder-logs');
     expect(promptCall?.mimeType).toBe('application/json');
     expect(promptCall?.name).toMatch(/\.prompt\.json$/);
-    expect(JSON.parse(promptCall?.content ?? '{}').promptVersion).toBe(3); // EXTRACT_DATA_PROMPT_VERSION
+    expect(JSON.parse(promptCall?.content ?? '{}').promptVersion).toBe(4); // EXTRACT_DATA_PROMPT_VERSION
     expect(mockedUpload.mock.calls[1]?.[0].name).toMatch(/\.response\.json$/);
 
     expect(mockedAppendLog).toHaveBeenCalledTimes(1);

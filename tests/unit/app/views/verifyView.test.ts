@@ -331,6 +331,8 @@ describe('renderVerifyView', () => {
           page: null,
           confidence: null,
           anchorStatus: null,
+          bboxPage: null,
+          bbox: null,
         },
       ],
       // ディープリンク先の arm タブが使えるよう群構成は確定済みにする
@@ -371,6 +373,8 @@ describe('renderVerifyView', () => {
           page: null,
           confidence: null,
           anchorStatus: null,
+          bboxPage: null,
+          bbox: null,
         },
       ],
     };

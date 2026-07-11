@@ -405,6 +405,8 @@ describe('executeRun の正常系', () => {
         page: 1,
         confidence: 'high',
         anchorStatus: 'exact',
+        bboxPage: null,
+        bbox: null,
       },
       {
         evidenceId: 'ev-2',
@@ -419,6 +421,8 @@ describe('executeRun の正常系', () => {
         page: 2,
         confidence: 'medium',
         anchorStatus: 'exact',
+        bboxPage: null,
+        bbox: null,
       },
       // quote が無い要素（not_reported）はアンカリング対象外
       {
@@ -434,6 +438,8 @@ describe('executeRun の正常系', () => {
         page: null,
         confidence: null,
         anchorStatus: null,
+        bboxPage: null,
+        bbox: null,
       },
     ]);
     expect(saved).toEqual([result.evidence]);
@@ -1054,6 +1060,173 @@ describe('executeRun の画像入力（pdf_native。handoff-scanned-pdf-native-h
     expect(result.evidence).toEqual([
       expect.objectContaining({ documentId: 'art', anchorStatus: 'exact' }),
       expect.objectContaining({ documentId: 'scan', value: '60', anchorStatus: null }),
+    ]);
+  });
+});
+
+describe('executeRun の box_2d（bbox）。handoff-scanned-pdf-native-highlight.md §7.4 PR3', () => {
+  const IMAGE_PAGES: ExtractDataImagePage[] = [
+    { page: 1, mimeType: 'image/png', dataBase64: 'QUJD' },
+  ];
+  const SCAN_ITEM_WITH_BOX = {
+    field_id: 'f_design',
+    entity_key: '-',
+    value: 'randomized controlled trial',
+    not_reported: false,
+    quote: 'randomized controlled trial',
+    page: 1,
+    document_index: 1,
+    confidence: 'high',
+    box_2d: [100, 200, 300, 400],
+  };
+
+  test('gemini + 画像文書を含むバッチ: requestBox=true でスキーマ/システムプロンプトに box ルールを載せ、bbox を Evidence へ書く', async () => {
+    const { provider, calls } = providerOf([chatResponse([SCAN_ITEM_WITH_BOX])]);
+    const { deps } = makeDeps(provider); // providerOf の既定 providerId は 'gemini'
+    deps.loadDocumentPageImages = jest.fn().mockResolvedValue(IMAGE_PAGES);
+    const result = await executeRun(
+      {
+        runId: 'run-1',
+        plan: makePlan([
+          makeBatch({
+            studyId: 'd1',
+            documentIds: ['d1'],
+            imageDocumentIds: ['d1'],
+            fieldIds: ['f_design'],
+          }),
+        ]),
+        fields: FIELDS,
+        documents: [makeDocument('d1', { textStatus: 'no_text_layer', textRef: null })],
+      },
+      deps,
+    );
+
+    // システムプロンプト・応答スキーマの両方に box ルールが乗る
+    const [systemMessage] = calls[0]!.messages;
+    expect((systemMessage as { content: string }).content).toContain('box_2d');
+    expect(calls[0]!.options?.responseSchema).not.toBe(EXTRACT_DATA_RESPONSE_SCHEMA);
+    const schemaItems = calls[0]!.options?.responseSchema?.['items'] as Record<string, unknown>;
+    expect((schemaItems['properties'] as Record<string, unknown>)['box_2d']).toBeDefined();
+
+    expect(result.evidence[0]).toMatchObject({
+      bboxPage: 1,
+      bbox: { ymin: 100, xmin: 200, ymax: 300, xmax: 400 },
+    });
+  });
+
+  test('gemini でもテキストのみのバッチ: requestBox=false（既存 EXTRACT_DATA_RESPONSE_SCHEMA をそのまま使う）', async () => {
+    const { provider, calls } = providerOf([chatResponse([DESIGN_ITEM])]);
+    const { deps } = makeDeps(provider);
+    const result = await execute(
+      {
+        runId: 'run-1',
+        plan: makePlan([makeBatch({ studyId: 'd1', fieldIds: ['f_design'] })]),
+        fields: FIELDS,
+      },
+      deps,
+    );
+    const [systemMessage] = calls[0]!.messages;
+    expect((systemMessage as { content: string }).content).not.toContain('box_2d');
+    expect(calls[0]!.options?.responseSchema).toBe(EXTRACT_DATA_RESPONSE_SCHEMA);
+    expect(result.evidence[0]).toMatchObject({ bboxPage: null, bbox: null });
+  });
+
+  test('非 gemini provider + 画像文書: requestBox=false のまま実行し、bbox は常に null', async () => {
+    const { provider, calls } = providerOf([chatResponse([DESIGN_ITEM])]);
+    // providerId を openrouter へ差し替える（box grounding の可否が未確認のため初期対象外。§7.0）
+    const nonGeminiProvider: LLMProvider = { ...provider, providerId: 'openrouter' };
+    const { deps } = makeDeps(nonGeminiProvider);
+    deps.loadDocumentPageImages = jest.fn().mockResolvedValue(IMAGE_PAGES);
+    const result = await executeRun(
+      {
+        runId: 'run-1',
+        plan: makePlan([
+          makeBatch({
+            studyId: 'd1',
+            documentIds: ['d1'],
+            imageDocumentIds: ['d1'],
+            fieldIds: ['f_design'],
+          }),
+        ]),
+        fields: FIELDS,
+        documents: [makeDocument('d1', { textStatus: 'no_text_layer', textRef: null })],
+      },
+      deps,
+    );
+    const [systemMessage] = calls[0]!.messages;
+    expect((systemMessage as { content: string }).content).not.toContain('box_2d');
+    expect(calls[0]!.options?.responseSchema).toBe(EXTRACT_DATA_RESPONSE_SCHEMA);
+    expect(result.evidence[0]).toMatchObject({ bboxPage: null, bbox: null });
+  });
+
+  test('box はあるが page が null: bbox は書かない（page 起点で bboxPage を決めるため）', async () => {
+    const { provider } = providerOf([chatResponse([{ ...SCAN_ITEM_WITH_BOX, page: null }])]);
+    const { deps } = makeDeps(provider);
+    deps.loadDocumentPageImages = jest.fn().mockResolvedValue(IMAGE_PAGES);
+    const result = await executeRun(
+      {
+        runId: 'run-1',
+        plan: makePlan([
+          makeBatch({
+            studyId: 'd1',
+            documentIds: ['d1'],
+            imageDocumentIds: ['d1'],
+            fieldIds: ['f_design'],
+          }),
+        ]),
+        fields: FIELDS,
+        documents: [makeDocument('d1', { textStatus: 'no_text_layer', textRef: null })],
+      },
+      deps,
+    );
+    expect(result.evidence[0]).toMatchObject({ page: null, bboxPage: null, bbox: null });
+  });
+
+  test('text 文書由来の box_2d は無視する（出所文書が画像でなければ bbox を書かない）', async () => {
+    // 混在 study（art=text, scan=image）。document_index=1（art）を指す要素に box_2d が
+    // 付いていても、出所文書がテキストなので bbox は書かない（幻覚・混線防止）
+    const artItemWithBox = { ...DESIGN_ITEM, document_index: 1, box_2d: [1, 2, 3, 4] };
+    const scanItem = {
+      field_id: 'f_n',
+      entity_key: 'arm:1',
+      value: '60',
+      not_reported: false,
+      quote: 'irrelevant for image doc',
+      page: 1,
+      document_index: 2,
+      confidence: 'medium',
+    };
+    const { provider } = providerOf([chatResponse([artItemWithBox, scanItem])]);
+    const { deps } = makeDeps(provider);
+    deps.loadDocumentPageImages = jest.fn().mockResolvedValue(IMAGE_PAGES);
+    const result = await executeRun(
+      {
+        runId: 'run-1',
+        plan: makePlan([
+          makeBatch({
+            studyId: 's1',
+            documentIds: ['art', 'scan'],
+            imageDocumentIds: ['scan'],
+            fieldIds: ['f_design', 'f_n'],
+          }),
+        ]),
+        fields: FIELDS,
+        documents: [
+          makeDocument('art', { studyId: 's1', documentRole: 'article', filename: 'main.pdf' }),
+          makeDocument('scan', {
+            studyId: 's1',
+            documentRole: 'supplement',
+            filename: 'scan.pdf',
+            textStatus: 'no_text_layer',
+            textRef: null,
+          }),
+        ],
+      },
+      deps,
+    );
+    expect(result.evidence).toEqual([
+      expect.objectContaining({ documentId: 'art', bboxPage: null, bbox: null }),
+      expect.objectContaining({ documentId: 'scan', bboxPage: null, bbox: null }),
     ]);
   });
 });

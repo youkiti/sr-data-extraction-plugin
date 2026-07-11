@@ -13,7 +13,7 @@
 // (2) 矩形の実体化（buildDocumentHighlights）: 対象文書の PDF が読み込まれ TextLayerPage
 //     （items 付き）が揃ってから、そのページのテキストに対して行う。extracted_texts と
 //     PDF テキスト層は同じ抽出結果由来のため、同じ quote に対して両者の出現順序・件数は一致する
-import type { Evidence } from '../../domain/evidence';
+import type { Evidence, EvidenceBbox } from '../../domain/evidence';
 import type { AnchorStatus, CharRange } from '../../domain/anchor';
 import type { TextLayerPage } from '../../domain/textLayer';
 import type { VerificationDocumentView } from './types';
@@ -30,6 +30,13 @@ import { cellKeyOf } from './cellState';
 export interface HighlightOccurrence {
   page: number;
   rects: HighlightRect[];
+  /**
+   * 矩形の座標空間。省略時 'user'（従来どおりの PDF ユーザー空間。描画側が toDisplayRect で
+   * 回転込みの表示座標へ写す）。'display' は bbox 由来（§7.3）で、**既に回転適用後の
+   * 表示フレーム座標（scale 1）** になっているため、描画側は toDisplayRect を通してはならない
+   * （通すと二重回転になる。handoff-scanned-pdf-native-highlight.md §7.3）
+   */
+  space?: 'user' | 'display';
 }
 
 export interface EvidenceHighlight {
@@ -38,11 +45,40 @@ export interface EvidenceHighlight {
   documentId: string;
   /** 対応する検証セル（fieldId × entityKey）。フォーム側との双方向ジャンプに使う */
   cellKey: string;
-  status: Exclude<AnchorStatus, 'failed'>;
+  /** bbox 由来（source: 'bbox'）は機械検証不能のため anchor_status を持たず null */
+  status: Exclude<AnchorStatus, 'failed'> | null;
   /** 出現位置（ページ昇順）。exact / normalized は複数になりうる */
   occurrences: HighlightOccurrence[];
   /** 既定で表示する出現（ai_page に最も近いページ。§5-3） */
   selectedIndex: number;
+  /** 座標源: 'anchor' = テキスト層アンカリング（従来）/ 'bbox' = box_2d（§7.4 PR3） */
+  source: 'anchor' | 'bbox';
+}
+
+/**
+ * box を表示フレーム矩形（'display' 空間。scale 1）へ変換する（§7.3 案(i)「表示フレームへ直接」）。
+ *
+ * box_2d はモデルに見せたページ画像（= 回転適用後の描画フレーム）の座標系で返ってくる。
+ * 回転 0 のページはユーザー空間と表示フレームが一致するため一見どちらでも writable に見えるが、
+ * 回転ページ（/Rotate 90 等）ではユーザー空間 ≠ 表示フレームであり、
+ * 「回転 0 のユーザー空間矩形を組み立てて toDisplayRect(rotation) に通す」（案(ii)）は
+ * 表示フレーム座標を未回転ユーザー空間と誤解して**二重に回転**させてしまう
+ * （スパイク REPORT §10 の追試で 1200px 超のズレを実測・案(ii)は禁止）。
+ * そのため bbox は常にこの関数で表示フレームへ直接変換し、pdfViewer 側は
+ * `space: 'display'` の矩形に toDisplayRect を通さない（§7.3 / app/ui/pdfViewer.ts）
+ */
+export function bboxToDisplayRect(
+  bbox: EvidenceBbox,
+  dims: { width: number; height: number },
+): HighlightRect {
+  return {
+    // テキスト層 item 由来ではないため itemIndex は意味を持たない（デバッグ用の -1 を置く）
+    itemIndex: -1,
+    x: (bbox.xmin / 1000) * dims.width,
+    y: (bbox.ymin / 1000) * dims.height,
+    width: ((bbox.xmax - bbox.xmin) / 1000) * dims.width,
+    height: ((bbox.ymax - bbox.ymin) / 1000) * dims.height,
+  };
 }
 
 /**
@@ -146,6 +182,28 @@ export function buildDocumentHighlights(
   const entries = buildNormalizedPages(pages);
   const highlights: EvidenceHighlight[] = [];
   for (const item of evidence) {
+    // bbox 経路（pdf_native の box_2d。§7.4 PR3）を先に判定する。テキスト層アンカリングとは
+    // 独立の別軸なので、bbox があればそちらを優先し、無ければ従来のアンカリング経路へ進む
+    if (item.bbox !== null && item.bboxPage !== null) {
+      const page = pages.find((candidate) => candidate.page === item.bboxPage);
+      if (page === undefined) {
+        // bbox が指すページ自体が無い（想定外だが安全側に倒して skip。フォーム側の
+        // quote 全文表示 + 本文検索フォールバックに委ねる）
+        continue;
+      }
+      highlights.push({
+        evidenceId: item.evidenceId,
+        documentId,
+        cellKey: cellKeyOf(item.fieldId, item.entityKey),
+        status: null,
+        source: 'bbox',
+        occurrences: [
+          { page: item.bboxPage, rects: [bboxToDisplayRect(item.bbox, page)], space: 'display' },
+        ],
+        selectedIndex: 0,
+      });
+      continue;
+    }
     if (
       item.quote === null ||
       item.anchorStatus === null ||
@@ -179,6 +237,7 @@ export function buildDocumentHighlights(
       documentId,
       cellKey: cellKeyOf(item.fieldId, item.entityKey),
       status: item.anchorStatus,
+      source: 'anchor',
       occurrences,
       selectedIndex: nearestIndex(occurrences, item.page),
     });

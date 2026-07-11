@@ -188,6 +188,55 @@ describe('createPdfViewer', () => {
     await flush();
   });
 
+  test('bbox 由来（space: "display"）の矩形は回転ページでも toDisplayRect を通さない（§7.4 PR3・二重回転防止）', async () => {
+    // 前テストと同じ回転 90 度ページ。'user' 空間の矩形は toDisplayRect(90°) で
+    // { left: y, top: x, width: height, height: width } に写像されるが、
+    // 'display' 空間（bbox 由来）は写像を通さずそのまま scale だけを掛けるはず
+    const rotatedPage: TextLayerPage = {
+      page: 1,
+      text: 'alpha',
+      width: 792,
+      height: 612,
+      rotation: 90,
+      items: [
+        {
+          charStart: 0,
+          str: 'alpha',
+          transform: [0, 10, -10, 0, 110, 200],
+          width: 50,
+          height: 10,
+          hasEOL: false,
+        },
+      ],
+    };
+    const { renderPage } = makeRenderPage();
+    const viewer = createPdfViewer({
+      document: makeDocument(1),
+      pages: [rotatedPage],
+      renderPage,
+    });
+    viewer.setHighlights(
+      [
+        makeHighlight({
+          occurrence: {
+            page: 1,
+            rects: [{ itemIndex: -1, x: 50, y: 20, width: 30, height: 40 }],
+            space: 'display',
+          },
+        }),
+      ],
+      null,
+    );
+    const rect = viewer.root.querySelector<HTMLElement>('.pdf-viewer__hl');
+    // toDisplayRect(90°) を通していれば { left: 20, top: 50, width: 40, height: 30 } になるはずだが、
+    // 'display' 空間はそのまま（scale=1 なので無変換）で配置される
+    expect(rect?.style.left).toBe('50px');
+    expect(rect?.style.top).toBe('20px');
+    expect(rect?.style.width).toBe('30px');
+    expect(rect?.style.height).toBe('40px');
+    await flush();
+  });
+
   test('ハイライト: 現在ページの矩形だけを描画し、クリックでコールバックが飛ぶ', async () => {
     const onHighlightClick = jest.fn();
     const { renderPage } = makeRenderPage();

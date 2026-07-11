@@ -16,8 +16,8 @@ import { CSV_BOM } from '../../../../src/features/export/csvEncode';
 
 /** 構造的欠損トークン（可読性のための短縮名） */
 const NA = AUDIT_MISSING_TOKEN;
-/** 構造的欠損の Evidence 列ブロック（8 列） */
-const NA_EVIDENCE = [NA, NA, NA, NA, NA, NA, NA, NA];
+/** 構造的欠損の Evidence 列ブロック（run_id〜anchor_status の 8 列 + bbox 5 列 = 13 列。§7.4 PR3） */
+const NA_EVIDENCE = [NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA];
 
 const study = (studyId: string, studyLabel: string): StudyRecord => ({
   studyId,
@@ -89,6 +89,8 @@ const evidence = (
   page: 3,
   confidence: 'high',
   anchorStatus: 'exact',
+  bboxPage: null,
+  bbox: null,
   ...overrides,
 });
 
@@ -152,15 +154,15 @@ describe('buildAuditCsv', () => {
     const rows = dataRows(result.csv);
     expect(result.csv.startsWith(`${CSV_BOM}${headerLine}\r\n`)).toBe(true);
     expect(rows).toHaveLength(4);
-    // seq は decided_at 昇順の連番
-    expect(rows.map((row) => row[16])).toEqual(['1', '2', '3', '4']);
-    expect(rows.map((row) => row[17])).toEqual(['accept', 'undo', 'edit', 'accept']);
+    // seq は decided_at 昇順の連番（bbox 5 列の追加で decision_seq は 16 → 21 列目へ移動）
+    expect(rows.map((row) => row[21])).toEqual(['1', '2', '3', '4']);
+    expect(rows.map((row) => row[22])).toEqual(['accept', 'undo', 'edit', 'accept']);
     // v1 の判定 3 行には run-1 の Evidence、v2 の判定には run-2 の Evidence が付く
     expect(rows.map((row) => row[9])).toEqual(['e1', 'e1', 'e1', 'e2']);
     // document_id 列は添付 Evidence.documentId 由来（study_id ではない）
     expect(rows.map((row) => row[1])).toEqual(['d1-doc', 'd1-doc', 'd1-doc', 'd1-doc']);
     expect(rows[3]?.[5]).toBe('2'); // schema_version は判定行のもの
-    expect(rows[2]?.[21]).toBe('Table 2 と本文で不一致、Table 2 採用');
+    expect(rows[2]?.[26]).toBe('Table 2 と本文で不一致、Table 2 採用');
     expect(result.undecidedCellCount).toBe(0);
     expect(result.droppedRowCount).toBe(0);
     expect(result.studyCount).toBe(1);
@@ -191,7 +193,8 @@ describe('buildAuditCsv', () => {
     expect(rows[0]?.[1]).toBe('d1-doc'); // document_id 列は代表 Evidence.documentId 由来
     expect(rows[0]?.[5]).toBe('1'); // schema_version は代表 Evidence の run から
     expect(rows[0]?.[6]).toBe(NA); // annotator が構造的欠損 = 未検証の明示
-    expect(rows[0]?.slice(16)).toEqual([NA, NA, NA, NA, NA, NA]); // 判定列ブロックも構造的欠損
+    // 判定列ブロック（decision_seq〜note）も構造的欠損。bbox 5 列の追加で開始位置が 16 → 21 に移動
+    expect(rows[0]?.slice(21)).toEqual([NA, NA, NA, NA, NA, NA]);
     expect(result.undecidedCellCount).toBe(1);
   });
 
@@ -229,7 +232,7 @@ describe('buildAuditCsv', () => {
     const rows = dataRows(result.csv);
     // f1 セルには判定があるためプレースホルダは出ない（v1 Evidence は添付されず落ちる）→ 判定 2 行のみ
     expect(rows).toHaveLength(2);
-    expect(rows.map((row) => row.slice(8, 16))).toEqual([NA_EVIDENCE, NA_EVIDENCE]);
+    expect(rows.map((row) => row.slice(8, 21))).toEqual([NA_EVIDENCE, NA_EVIDENCE]);
     // 添付 Evidence がない判定行は document_id 列も構造的欠損
     expect(rows.map((row) => row[1])).toEqual([NA, NA]);
     expect(result.undecidedCellCount).toBe(0);
@@ -256,7 +259,7 @@ describe('buildAuditCsv', () => {
     const result = buildAuditCsv(studies, decisions, evidences, runs, fields);
     const rows = dataRows(result.csv);
     expect(rows).toHaveLength(2);
-    expect(rows[0]?.slice(8, 16)).toEqual(NA_EVIDENCE); // f1 判定行
+    expect(rows[0]?.slice(8, 21)).toEqual(NA_EVIDENCE); // f1 判定行
     expect(rows[0]?.[1]).toBe(NA); // 添付なし判定行の document_id は構造的欠損
     expect(rows[1]?.[1]).toBe('d1-doc'); // プレースホルダは代表 Evidence.documentId
     // f2 プレースホルダ: Evidence は出すが run 由来の schema_version は不明 → 構造的欠損
@@ -336,8 +339,8 @@ describe('buildAuditCsv', () => {
     ];
     const result = buildAuditCsv(studies, decisions, evidences, runs, fields);
     const rows = dataRows(result.csv);
-    // [entity_key, field_name, annotator, decision_seq]
-    expect(rows.map((row) => [row[2], row[4], row[6], row[16]])).toEqual([
+    // [entity_key, field_name, annotator, decision_seq]（bbox 5 列の追加で decision_seq は 16 → 21 列目）
+    expect(rows.map((row) => [row[2], row[4], row[6], row[21]])).toEqual([
       ['arm:1', 'group_n', 'a@example.com', '1'],
       ['arm:1', 'group_n', 'a@example.com', '2'],
       ['arm:1', 'group_n', 'b@example.com', '1'],
@@ -346,8 +349,8 @@ describe('buildAuditCsv', () => {
       ['arm:2', 'group_n', 'a@example.com', '1'],
       ['arm:2', 'event_count', NA, NA], // プレースホルダは annotator / seq が構造的欠損
     ]);
-    expect(rows[0]?.[18]).toBe('first');
-    expect(rows[1]?.[18]).toBe('second');
+    expect(rows[0]?.[23]).toBe('first');
+    expect(rows[1]?.[23]).toBe('second');
   });
 
   test('study は取り込み順を保ち、他 study の Evidence / Decisions は混ざらない', () => {
@@ -367,8 +370,9 @@ describe('buildAuditCsv', () => {
     const rows = dataRows(result.csv);
     expect(rows.map((row) => row[0])).toEqual(['Suzuki 2024', 'Tanaka 2023']);
     expect(rows.map((row) => row[1])).toEqual(['d2-doc', 'd1-doc']); // document_id は各 study の Evidence 由来
-    expect(rows[0]?.[17]).toBe(NA); // d2 は未判定プレースホルダ
-    expect(rows[1]?.[17]).toBe('accept');
+    // action 列は bbox 5 列の追加で 17 → 22 列目へ移動
+    expect(rows[0]?.[22]).toBe(NA); // d2 は未判定プレースホルダ
+    expect(rows[1]?.[22]).toBe('accept');
     expect(result.undecidedCellCount).toBe(1);
   });
 
@@ -377,5 +381,32 @@ describe('buildAuditCsv', () => {
     expect(result.csv).toBe(`${CSV_BOM}${headerLine}\r\n`);
     expect(result.undecidedCellCount).toBe(0);
     expect(result.droppedRowCount).toBe(0);
+  });
+
+  test('bbox 列（bbox_page/bbox_ymin/bbox_xmin/bbox_ymax/bbox_xmax）を末尾に出力する（§7.4 PR3）', () => {
+    const studies = [study('d1', 'Tanaka 2023')];
+    const fields = [field('f1', 'total_n', 1)];
+    const runs = [run('run-1', 1, '2026-07-01T00:00:00Z')];
+    const evidences = [
+      evidence('e1', 'run-1', 'd1', 'f1', '-', {
+        bboxPage: 2,
+        bbox: { ymin: 100, xmin: 200, ymax: 300, xmax: 400 },
+      }),
+    ];
+    const result = buildAuditCsv(studies, [], evidences, runs, fields);
+    const rows = dataRows(result.csv);
+    expect(rows).toHaveLength(1); // 未判定のプレースホルダ 1 行
+    // bbox 5 列は quote(12)/page(13)/confidence(14)/anchor_status(15) の直後（16-20）
+    expect(rows[0]?.slice(16, 21)).toEqual(['2', '100', '200', '300', '400']);
+  });
+
+  test('bbox が無い Evidence は bbox 列を空文字で出力する', () => {
+    const studies = [study('d1', 'Tanaka 2023')];
+    const fields = [field('f1', 'total_n', 1)];
+    const runs = [run('run-1', 1, '2026-07-01T00:00:00Z')];
+    const evidences = [evidence('e1', 'run-1', 'd1', 'f1', '-')]; // bboxPage/bbox は既定 null
+    const result = buildAuditCsv(studies, [], evidences, runs, fields);
+    const rows = dataRows(result.csv);
+    expect(rows[0]?.slice(16, 21)).toEqual(['', '', '', '', '']);
   });
 });

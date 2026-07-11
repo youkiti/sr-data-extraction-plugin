@@ -170,6 +170,13 @@ export const SHEET_HEADERS: Record<SheetTabName, readonly string[]> = {
     'page',
     'confidence',
     'anchor_status',
+    // pdf_native（画像入力）の box_2d 由来（handoff-scanned-pdf-native-highlight.md §7.4 PR3）。
+    // 既存プロジェクトはこの 5 列を持たないため、末尾に追加し読み書き側で後方互換を取る
+    'bbox_page',
+    'bbox_ymin',
+    'bbox_xmin',
+    'bbox_ymax',
+    'bbox_xmax',
   ],
   Decisions: [
     'decided_at',

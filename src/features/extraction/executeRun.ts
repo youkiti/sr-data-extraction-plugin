@@ -23,9 +23,9 @@ import { anchorQuote } from '../anchoring/anchorQuote';
 import { normalizeText } from '../anchoring/normalizeText';
 import type { PlannedBatch, RunPlan } from './planRun';
 import {
-  EXTRACT_DATA_RESPONSE_SCHEMA,
-  EXTRACT_DATA_SYSTEM_PROMPT,
+  buildExtractDataSystemPrompt,
   buildExtractDataUserContent,
+  extractDataResponseSchema,
   parseExtractDataResponse,
   type ExtractDataDocument,
   type ExtractDataImagePage,
@@ -191,7 +191,12 @@ function toDetail(err: unknown): string {
 /**
  * 検証済み要素 → Evidence 行。quote があればこの時点でアンカリングを確定する（§5）。
  * normalizedPages が null（= document_index が画像入力の文書を指す。pdf_native）のときは
- * アンカリング対象がそもそも無い（テキスト層が無い）ため anchorStatus は null のまま保存する
+ * アンカリング対象がそもそも無い（テキスト層が無い）ため anchorStatus は null のまま保存する。
+ *
+ * bbox（§7.4 PR3）は quote/anchorStatus とは別軸: 出所文書が画像入力（pdf_native）で、
+ * かつ box_2d の検証（validateBox）を通過し、かつ page ヒントがあるときだけ書く。
+ * それ以外（テキスト文書由来・box 欠落・box 不正・page 欠落）は両方 null に落とす
+ * （bbox は機械検証できないため、他条件は緩めず厳格に AND を取る）
  */
 function buildEvidenceRow(
   item: ValidatedAiItem,
@@ -199,12 +204,14 @@ function buildEvidenceRow(
   studyId: string,
   documentId: string,
   normalizedPages: NormalizedPage[] | null,
+  targetIsImage: boolean,
   uuid: () => string,
 ): Evidence {
   const anchorStatus =
     item.quote === null || normalizedPages === null
       ? null
       : anchorQuote(normalizeText(item.quote), normalizedPages, item.page).status;
+  const hasBbox = targetIsImage && item.box !== null && item.page !== null;
   return {
     evidenceId: uuid(),
     runId,
@@ -218,6 +225,8 @@ function buildEvidenceRow(
     page: item.page,
     confidence: item.confidence,
     anchorStatus,
+    bboxPage: hasBbox ? item.page : null,
+    bbox: hasBbox ? item.box : null,
   };
 }
 
@@ -530,14 +539,20 @@ export async function executeRun(
         ? { role: doc.role, filename: doc.filename, mode: 'image', imagePages: doc.imagePages }
         : { role: doc.role, filename: doc.filename, mode: 'text', pages: doc.pages },
     );
+    // box_2d（bbox）は Gemini 系 provider ＋ 画像入力文書を含むバッチのときだけ要求する
+    // （handoff-scanned-pdf-native-highlight.md §7.4 PR3。OpenRouter 等の他 provider は
+    // box grounding の可否が不明なため初期対象に含めない）
+    const requestBox =
+      deps.provider.providerId === 'gemini' && resolved.some((doc) => doc.mode === 'image');
     const messages: ChatMessage[] = [
-      { role: 'system', content: EXTRACT_DATA_SYSTEM_PROMPT },
+      { role: 'system', content: buildExtractDataSystemPrompt(requestBox) },
       {
         role: 'user',
         content: buildExtractDataUserContent({
           fields: batchFields,
           documents: promptDocuments,
           protocolContext: input.protocolContext,
+          requestBox,
         }),
       },
     ];
@@ -546,7 +561,7 @@ export async function executeRun(
     try {
       response = await deps.provider.chat(messages, {
         temperature: EXTRACT_DATA_TEMPERATURE,
-        responseSchema: EXTRACT_DATA_RESPONSE_SCHEMA,
+        responseSchema: extractDataResponseSchema(requestBox),
       });
     } catch (err) {
       reportProgress(batch, failBatch(batch, 'api_error', toDetail(err)));
@@ -577,6 +592,7 @@ export async function executeRun(
         batch.studyId,
         target.documentId,
         target.mode === 'text' ? target.normalizedPages : null,
+        target.mode === 'image',
         uuid,
       );
     });

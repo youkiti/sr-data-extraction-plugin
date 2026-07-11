@@ -7,8 +7,10 @@ import type { DocumentRole } from '../../../../../src/domain/document';
 import type { SchemaField } from '../../../../../src/domain/schemaField';
 import type { ChatContentPart } from '../../../../../src/lib/llm/LLMProvider';
 import {
+  buildExtractDataSystemPrompt,
   buildExtractDataUserContent,
   buildExtractDataUserPrompt,
+  extractDataResponseSchema,
   parseExtractDataResponse,
   EXTRACT_DATA_PROMPT_VERSION,
   EXTRACT_DATA_RESPONSE_SCHEMA,
@@ -85,8 +87,8 @@ const DOCS = [makeDoc()];
 describe('extract-data skill 定数', () => {
   it('skill 名とプロンプト版数を公開する（LLMApiLog 記録用）', () => {
     expect(EXTRACT_DATA_SKILL_NAME).toBe('extract-data');
-    // v3: pdf_native 入力（no_text_layer 文書のページ画像添付）に対応
-    expect(EXTRACT_DATA_PROMPT_VERSION).toBe(3);
+    // v4: box_2d（bbox）の取得に対応（requestBox=true 時のみ）
+    expect(EXTRACT_DATA_PROMPT_VERSION).toBe(4);
   });
 
   it('システムプロンプトに verbatim quote の規約（300 文字上限）と document_index の規約を含む', () => {
@@ -114,6 +116,56 @@ describe('extract-data skill 定数', () => {
       'document_index',
       'confidence',
     ]);
+  });
+});
+
+describe('buildExtractDataSystemPrompt（box_2d ルール。§7.4 PR3）', () => {
+  it('requestBox=false は EXTRACT_DATA_SYSTEM_PROMPT と完全一致する（text_only 経路は 1 文字も変えない）', () => {
+    expect(buildExtractDataSystemPrompt(false)).toBe(EXTRACT_DATA_SYSTEM_PROMPT);
+  });
+
+  it('requestBox=true は box ルールを末尾に追記する', () => {
+    const prompt = buildExtractDataSystemPrompt(true);
+    expect(prompt.startsWith(EXTRACT_DATA_SYSTEM_PROMPT)).toBe(true);
+    expect(prompt).toContain('box_2d');
+    expect(prompt).toContain('scanned document');
+    // 幻覚 box 防止: 位置特定できたときだけ返す・最も近い box の推測は禁止、を明示する
+    expect(prompt).toContain('only if');
+    expect(prompt).toMatch(/NEVER guess/);
+  });
+});
+
+describe('extractDataResponseSchema（box_2d 込みスキーマ。§7.4 PR3）', () => {
+  it('requestBox=false は EXTRACT_DATA_RESPONSE_SCHEMA をそのまま返す', () => {
+    expect(extractDataResponseSchema(false)).toBe(EXTRACT_DATA_RESPONSE_SCHEMA);
+  });
+
+  it('requestBox=true は box_2d（4 要素固定長配列 | null）を追加した新オブジェクトを返す', () => {
+    const schema = extractDataResponseSchema(true);
+    expect(schema).not.toBe(EXTRACT_DATA_RESPONSE_SCHEMA); // 既存定数は変更しない
+    const items = schema['items'] as Record<string, unknown>;
+    const properties = items['properties'] as Record<string, unknown>;
+    expect(properties['box_2d']).toEqual({
+      type: ['array', 'null'],
+      items: { type: 'integer' },
+      minItems: 4,
+      maxItems: 4,
+    });
+    expect(items['required']).toEqual([
+      'field_id',
+      'entity_key',
+      'value',
+      'not_reported',
+      'quote',
+      'page',
+      'document_index',
+      'confidence',
+      'box_2d',
+    ]);
+    // 既存定数は 1 文字も変わっていない（副作用のない純粋関数であること）
+    expect(EXTRACT_DATA_RESPONSE_SCHEMA['items']).not.toHaveProperty(
+      'properties.box_2d',
+    );
   });
 });
 
@@ -184,6 +236,17 @@ describe('buildExtractDataUserPrompt', () => {
     expect(prompt).not.toContain('- rob_domain level:');
     // protocolContext 未指定ならセクションごと省略
     expect(prompt).not.toContain('## Protocol context');
+    // requestBox 未指定（既定 false）は出力形式に box_2d を出さない
+    expect(prompt).not.toContain('box_2d');
+  });
+
+  it('requestBox=true は出力形式の要素定義に box_2d を追記する（§7.4 PR3）', () => {
+    const prompt = buildExtractDataUserPrompt({
+      fields: [STUDY_FIELD],
+      documents: DOCS,
+      requestBox: true,
+    });
+    expect(prompt).toContain('"box_2d": [ymin, xmin, ymax, xmax] | null');
   });
 
   it('複数文書はロール付きの区切りで document_index 順に連結する', () => {
