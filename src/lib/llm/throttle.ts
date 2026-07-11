@@ -36,6 +36,7 @@ export function withThrottle(provider: LLMProvider, options: ThrottleOptions): L
   return {
     providerId: provider.providerId,
     model: provider.model,
+    supportsImageInput: provider.supportsImageInput,
     chat: async (messages: readonly ChatMessage[], opts?: ChatOptions): Promise<ChatResponse> => {
       const current = now();
       const scheduledAt = Math.max(current, nextAllowedAt);

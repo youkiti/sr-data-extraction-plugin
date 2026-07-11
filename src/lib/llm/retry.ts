@@ -96,6 +96,7 @@ export function withRetry(provider: LLMProvider, options: RetryOptions = {}): LL
   return {
     providerId: provider.providerId,
     model: provider.model,
+    supportsImageInput: provider.supportsImageInput,
     chat: async (messages: readonly ChatMessage[], opts?: ChatOptions): Promise<ChatResponse> => {
       for (let attempt = 1; ; attempt += 1) {
         try {

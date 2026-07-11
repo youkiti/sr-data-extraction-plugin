@@ -196,6 +196,43 @@ describe('OpenRouterProvider.chat', () => {
     expect(r.text).toBe('');
   });
 
+  test('supportsImageInput は true（OpenAI 互換の image_url をパススルーする）', () => {
+    const provider = new OpenRouterProvider({ apiKey: 'k', model: 'm/x' });
+    expect(provider.supportsImageInput).toBe(true);
+  });
+
+  test('パート配列 content（text + image）は OpenAI 互換の image_url data URL に写す', async () => {
+    const fetch = jest.fn().mockResolvedValue(jsonResponse(chatCompletion('ok')));
+    const provider = new OpenRouterProvider({ apiKey: 'k', model: 'm/x', fetch });
+    await provider.chat([
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: 'この画像を見て' },
+          { type: 'image', mimeType: 'image/png', dataBase64: 'aGVsbG8=' },
+        ],
+      },
+    ]);
+    const body = JSON.parse((fetch.mock.calls[0][1] as RequestInit).body as string);
+    expect(body.messages).toEqual([
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: 'この画像を見て' },
+          { type: 'image_url', image_url: { url: 'data:image/png;base64,aGVsbG8=' } },
+        ],
+      },
+    ]);
+  });
+
+  test('文字列 content のパスは配列対応を追加しても出力が完全一致する', async () => {
+    const fetch = jest.fn().mockResolvedValue(jsonResponse(chatCompletion('ok')));
+    const provider = new OpenRouterProvider({ apiKey: 'k', model: 'm/x', fetch });
+    await provider.chat([{ role: 'user', content: 'q' }]);
+    const body = JSON.parse((fetch.mock.calls[0][1] as RequestInit).body as string);
+    expect(body.messages).toEqual([{ role: 'user', content: 'q' }]);
+  });
+
   test('fetch 未注入なら globalThis.fetch にフォールバックする', async () => {
     const stub = jest.fn().mockResolvedValue(jsonResponse(chatCompletion('ok')));
     const original = (globalThis as { fetch?: typeof fetch }).fetch;

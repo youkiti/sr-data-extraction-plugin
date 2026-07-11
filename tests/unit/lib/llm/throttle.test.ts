@@ -17,6 +17,7 @@ function providerRecording(clock: { now: number }): {
     provider: {
       providerId: 'gemini',
       model: 'gemini-test',
+      supportsImageInput: true,
       chat: async () => {
         callTimes.push(clock.now);
         return okResponse();
@@ -43,12 +44,13 @@ function virtualClock(): {
 }
 
 describe('withThrottle', () => {
-  test('providerId / model を引き継ぐ', () => {
+  test('providerId / model / supportsImageInput を引き継ぐ', () => {
     const { clock } = virtualClock();
     const { provider } = providerRecording(clock);
     const wrapped = withThrottle(provider, { minIntervalMs: 100 });
     expect(wrapped.providerId).toBe('gemini');
     expect(wrapped.model).toBe('gemini-test');
+    expect(wrapped.supportsImageInput).toBe(true);
   });
 
   test('初回は待たず、以降は最小間隔を空けて発火する', async () => {

@@ -45,6 +45,8 @@ interface GeminiResponse {
 export class GeminiProvider implements LLMProvider {
   readonly providerId = 'gemini' as const;
   readonly model: string;
+  /** Gemini はネイティブに画像入力（inlineData）へ対応する */
+  readonly supportsImageInput = true;
   private readonly apiKey: string;
   private readonly fetchImpl: typeof fetch | undefined;
 
@@ -89,12 +91,14 @@ export class GeminiProvider implements LLMProvider {
     messages: readonly ChatMessage[],
     options: ChatOptions,
   ): Record<string, unknown> {
-    const systemTexts = messages.filter((m) => m.role === 'system').map((m) => m.content);
+    const systemTexts = messages
+      .filter((m) => m.role === 'system')
+      .map((m) => systemMessageText(m.content));
     const conversational = messages.filter((m) => m.role !== 'system');
 
     const contents = conversational.map((m) => ({
       role: m.role === 'model' ? 'model' : 'user',
-      parts: [{ text: m.content }],
+      parts: toGeminiParts(m.content),
     }));
 
     const generationConfig: Record<string, unknown> = {};
@@ -122,6 +126,39 @@ export class GeminiProvider implements LLMProvider {
     }
     return body;
   }
+}
+
+/**
+ * `systemInstruction` はテキスト専用の欄のため、system メッセージの content が
+ * パート配列でも text パートだけを拾って連結する（image パートは無視）。
+ * `chatContentToText` を使うと image パートが `[image ...]` のプレースホルダ文字列として
+ * 混ざってしまい、それをそのまま API へ送ることになるため、ここでは直接パートを絞り込む。
+ */
+function systemMessageText(content: ChatMessage['content']): string {
+  if (typeof content === 'string') {
+    return content;
+  }
+  return content
+    .filter((part) => part.type === 'text')
+    .map((part) => part.text)
+    .join('');
+}
+
+/**
+ * 会話メッセージの content を Gemini の `parts` へ写す。
+ * 文字列は従来どおり単一の `{ text }`、パート配列は text → `{ text }` /
+ * image → `{ inlineData: { mimeType, data } }`（実測済みの Gemini 方言。
+ * experiments/multimodal-bbox-spike/src/run-bbox.ts のスパイクで動作確認済み）へ写す。
+ */
+function toGeminiParts(content: ChatMessage['content']): Array<Record<string, unknown>> {
+  if (typeof content === 'string') {
+    return [{ text: content }];
+  }
+  return content.map((part) =>
+    part.type === 'text'
+      ? { text: part.text }
+      : { inlineData: { mimeType: part.mimeType, data: part.dataBase64 } },
+  );
 }
 
 function extractText(json: GeminiResponse): string {

@@ -168,6 +168,7 @@ function providerOf(results: Array<ChatResponse | Error | 'throw-string'>): {
     provider: {
       providerId: 'gemini',
       model: 'gemini-2.5-pro',
+      supportsImageInput: true,
       chat: async (messages, options) => {
         calls.push({ messages, options });
         const next = results[calls.length - 1];
@@ -207,6 +208,7 @@ function gatedProvider(): {
     provider: {
       providerId: 'gemini',
       model: 'm',
+      supportsImageInput: true,
       chat: async () => {
         active += 1;
         peak = Math.max(peak, active);

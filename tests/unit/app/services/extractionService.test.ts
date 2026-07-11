@@ -91,7 +91,7 @@ const AI_RESPONSE: ChatResponse = {
 };
 
 function makeProvider(chat: jest.Mock): LLMProvider {
-  return { providerId: 'gemini', model: 'gemini-2.5-flash', chat };
+  return { providerId: 'gemini', model: 'gemini-2.5-flash', supportsImageInput: true, chat };
 }
 
 function makeDeps(chat: jest.Mock) {
