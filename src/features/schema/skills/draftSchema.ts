@@ -5,6 +5,7 @@
 // - 抽出対象論文は英語を主想定のため、プロンプト本文は英語（requirements.md §6）
 import { z } from 'zod';
 import type { EntityLevel, FieldDataType } from '../../../domain/schemaField';
+import { STUDY_DATA_FIXED_HEADERS } from '../../../domain/sheetsSchema';
 import type { SchemaEditorRow } from '../types';
 
 /** LLMApiLog.purpose（draft_schema）と対応づける skill 識別子 */
@@ -146,6 +147,36 @@ function stripJsonFence(text: string): string {
 }
 
 /**
+ * StudyData の固定列（domain/sheetsSchema.ts。validateField.ts の RESERVED_FIELD_NAMES と
+ * 同一リストを共有）。AI が "study_id" のような固定列名をそのまま field_name として
+ * 提案してしまい、保存時のバリデーションで手戻りが発生する事象（issue #48）を防ぐため、
+ * ドラフトのパース段階で衝突しない名前へ自動リネームする
+ */
+const RESERVED_FIELD_NAMES = new Set<string>(STUDY_DATA_FIXED_HEADERS);
+
+/**
+ * field_name が StudyData の固定列名と衝突する行を自動リネームする。
+ * 命名規則: "<name>_reported" を第一候補とし、既存の field_name（他の衝突リネーム結果を
+ * 含む）とさらに重複する場合は "<name>_reported_2"、"_3" ... と連番で一意になるまで試す
+ */
+function resolveReservedFieldNameCollisions(rows: SchemaEditorRow[]): SchemaEditorRow[] {
+  const usedNames = new Set(rows.map((row) => row.fieldName));
+  return rows.map((row) => {
+    if (!RESERVED_FIELD_NAMES.has(row.fieldName)) {
+      return row;
+    }
+    let candidate = `${row.fieldName}_reported`;
+    let suffix = 2;
+    while (usedNames.has(candidate)) {
+      candidate = `${row.fieldName}_reported_${suffix}`;
+      suffix += 1;
+    }
+    usedNames.add(candidate);
+    return { ...row, fieldName: candidate };
+  });
+}
+
+/**
  * LLM 応答テキストをパースしてスキーマエディタの行（SchemaEditorRow）へ変換する。
  * fieldId は null（確定時に採番）・aiGenerated は true 固定。
  * JSON / 形式エラーは DraftSchemaFormatError
@@ -165,7 +196,7 @@ export function parseDraftSchemaResponse(text: string): SchemaEditorRow[] {
         .join(' / ')}`,
     );
   }
-  return result.data.map((item) => ({
+  const rows = result.data.map((item) => ({
     fieldId: null,
     section: item.section,
     fieldName: item.field_name,
@@ -180,4 +211,5 @@ export function parseDraftSchemaResponse(text: string): SchemaEditorRow[] {
     aiGenerated: true,
     note: null,
   }));
+  return resolveReservedFieldNameCollisions(rows);
 }

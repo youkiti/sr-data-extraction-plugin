@@ -94,6 +94,42 @@ describe('parseDraftSchemaResponse', () => {
     );
     expect(() => parseDraftSchemaResponse('[]')).toThrow(DraftSchemaFormatError);
   });
+
+  // issue #48: AI が StudyData の固定列名（study_id 等）をそのまま field_name に
+  // 提案してしまい、保存時のバリデーションで手戻りが発生する事象への対処
+  test('StudyData 固定列名と衝突しない field_name は変更しない', () => {
+    const rows = parseDraftSchemaResponse(JSON.stringify([DRAFTED_ITEM]));
+    expect(rows[0]?.fieldName).toBe('sample_size_total');
+  });
+
+  test('StudyData 固定列名（study_id）と衝突する field_name は "_reported" を付けて自動リネームする', () => {
+    const items = [{ ...DRAFTED_ITEM, field_name: 'study_id' }];
+    const rows = parseDraftSchemaResponse(JSON.stringify(items));
+    expect(rows[0]?.fieldName).toBe('study_id_reported');
+  });
+
+  test('リネーム先が他の行の field_name と重複する場合は連番を振って一意にする', () => {
+    const items = [
+      { ...DRAFTED_ITEM, field_name: 'study_id' },
+      { ...DRAFTED_ITEM, field_name: 'study_id' },
+      { ...DRAFTED_ITEM, field_name: 'study_id' },
+    ];
+    const rows = parseDraftSchemaResponse(JSON.stringify(items));
+    expect(rows.map((row) => row.fieldName)).toEqual([
+      'study_id_reported',
+      'study_id_reported_2',
+      'study_id_reported_3',
+    ]);
+  });
+
+  test('リネーム先が既存の field_name（AI が既に提案済み）と重複する場合も連番を振る', () => {
+    const items = [
+      { ...DRAFTED_ITEM, field_name: 'study_id' },
+      { ...DRAFTED_ITEM, field_name: 'study_id_reported' },
+    ];
+    const rows = parseDraftSchemaResponse(JSON.stringify(items));
+    expect(rows.map((row) => row.fieldName)).toEqual(['study_id_reported_2', 'study_id_reported']);
+  });
 });
 
 describe('定数', () => {
