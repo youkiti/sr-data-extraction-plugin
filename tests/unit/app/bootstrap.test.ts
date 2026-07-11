@@ -1389,6 +1389,87 @@ describe('bootstrapApp: #/pilot', () => {
     expect(store?.getState().pilot.layoutMode).toBe('list');
   });
 
+  test('#/pilot の保存競合検出バナー（issue #64）の「再読み込み」は埋め込み検証を読み直す', async () => {
+    const verification = {
+      study: STUDY_RECORD,
+      documents: [{ document: DOC_RECORD, extractedPages: [], extractedTextError: null }],
+      loadPdfView: async () => ({ pdf: null, pdfError: 'テストでは PDF なし', textPages: [] }),
+      retryPdfView: async () => ({ pdf: null, pdfError: 'テストでは PDF なし', textPages: [] }),
+      fields: [FIELD],
+      evidence: [],
+      decisions: [],
+      annotator: 'tester@example.com',
+      schemaVersion: 1,
+      armStructure: null,
+    };
+    const stub = createWindowStub(
+      pilotPreloaded({
+        selectionInitialized: true,
+        selectedStudyIds: ['study-1'],
+        model: 'gemini-test',
+        run: { ...RUN, studyIds: ['study-1'] },
+        runFields: [FIELD],
+        evidence: [],
+        verifyStudyId: 'study-1',
+        verification,
+        conflictMessage: '読み込み後に別の場所で更新されています。再読み込みしてから判定し直してください',
+      } as unknown as Partial<AppState['pilot']>),
+    );
+    const { deps, fetchMock } = createFakeDeps([[...SHEET_HEADERS.Documents]]);
+    await bootstrapApp(asWindow(stub), deps);
+    stub.location.hash = '#/pilot';
+    stub.fireHashChange();
+    await flush();
+
+    expect(document.getElementById('verify-conflict-warning')?.textContent).toContain(
+      '読み込み後に別の場所で更新されています',
+    );
+    const callsBefore = fetchMock.mock.calls.length;
+    (document.getElementById('verify-conflict-reload') as HTMLButtonElement).click();
+    await flush();
+    await flush();
+    // onReloadVerification → loadPilotVerification が再度データ束を読みに行く
+    expect(fetchMock.mock.calls.length).toBeGreaterThan(callsBefore);
+  });
+
+  test('#/pilot の保存競合検出バナーの「再読み込み」は verifyStudyId が無ければ何もしない', async () => {
+    const verification = {
+      study: STUDY_RECORD,
+      documents: [{ document: DOC_RECORD, extractedPages: [], extractedTextError: null }],
+      loadPdfView: async () => ({ pdf: null, pdfError: 'テストでは PDF なし', textPages: [] }),
+      retryPdfView: async () => ({ pdf: null, pdfError: 'テストでは PDF なし', textPages: [] }),
+      fields: [FIELD],
+      evidence: [],
+      decisions: [],
+      annotator: 'tester@example.com',
+      schemaVersion: 1,
+      armStructure: null,
+    };
+    const stub = createWindowStub(
+      pilotPreloaded({
+        selectionInitialized: true,
+        selectedStudyIds: ['study-1'],
+        model: 'gemini-test',
+        run: { ...RUN, studyIds: ['study-1'] },
+        runFields: [FIELD],
+        evidence: [],
+        verifyStudyId: null,
+        verification,
+        conflictMessage: '読み込み後に別の場所で更新されています。再読み込みしてから判定し直してください',
+      } as unknown as Partial<AppState['pilot']>),
+    );
+    const { deps, fetchMock } = createFakeDeps([[...SHEET_HEADERS.Documents]]);
+    await bootstrapApp(asWindow(stub), deps);
+    stub.location.hash = '#/pilot';
+    stub.fireHashChange();
+    await flush();
+
+    const callsBefore = fetchMock.mock.calls.length;
+    (document.getElementById('verify-conflict-reload') as HTMLButtonElement).click();
+    await flush();
+    expect(fetchMock.mock.calls.length).toBe(callsBefore);
+  });
+
   test('#/pilot 入場で履歴の最新 run を自動読込する（既存データを最初からにしない）', async () => {
     const historyRun = { ...RUN, runId: 'run-hist', studyIds: [] };
     const stub = createWindowStub(
@@ -1809,6 +1890,8 @@ describe('bootstrapApp: #/verify・#/dashboard', () => {
     Decisions: [[...SHEET_HEADERS.Decisions]],
     SchemaFields: [[...SHEET_HEADERS.SchemaFields], FIELD_ROW],
     StudyData: [['study_id', 'annotator', 'annotator_type', 'schema_version', 'run_id', 'updated_at']],
+    // 楽観ロックの期待値取得（issue #64）のため loadVerificationBundle が ResultsData も読む
+    ResultsData: [[...SHEET_HEADERS.ResultsData]],
     Studies: [[...SHEET_HEADERS.Studies], STUDY_ROW],
   };
 
@@ -1847,6 +1930,64 @@ describe('bootstrapApp: #/verify・#/dashboard', () => {
     stub.fireHashChange();
     await flush();
     expect(decisionsReads()).toBe(before);
+  });
+
+  test('保存の競合検出バナー（issue #64）の「再読み込み」は表示中 study を読み直す', async () => {
+    const stub = createWindowStub(verifyPreloaded());
+    const { deps, fetchMock } = createVerifyFakeDeps(BASE_TABS);
+    const store = await bootstrapApp(asWindow(stub), deps);
+    stub.location.hash = '#/verify';
+    stub.fireHashChange();
+    await flush();
+    await flush();
+    expect(store?.getState().verify.selectedStudyId).toBe('study-1');
+
+    // 検出ロジック自体は verificationService.test.ts で検証済み。ここではバナー表示 →
+    // 再読み込みボタンの配線（onReloadVerification → openVerifyStudy）だけを確認する
+    store?.setState({
+      verify: {
+        ...(store.getState() as AppState).verify,
+        conflictMessage: '読み込み後に別の場所で更新されています。再読み込みしてから判定し直してください',
+      },
+    });
+    await flush();
+    expect(document.getElementById('verify-conflict-warning')?.textContent).toContain(
+      '読み込み後に別の場所で更新されています',
+    );
+
+    const callsBefore = fetchMock.mock.calls.length;
+    (document.getElementById('verify-conflict-reload') as HTMLButtonElement).click();
+    await flush();
+    await flush();
+    expect(fetchMock.mock.calls.length).toBeGreaterThan(callsBefore);
+    expect(store?.getState().verify.conflictMessage).toBeNull();
+    expect(document.getElementById('verify-conflict-warning')).toBeNull();
+  });
+
+  test('保存の競合検出バナーの「再読み込み」は selectedStudyId が無ければ何もしない', async () => {
+    const stub = createWindowStub(verifyPreloaded());
+    const { deps, fetchMock } = createVerifyFakeDeps(BASE_TABS);
+    const store = await bootstrapApp(asWindow(stub), deps);
+    stub.location.hash = '#/verify';
+    stub.fireHashChange();
+    await flush();
+    await flush();
+
+    // 通常は起こらない防御的なケース（selectedStudyId が無いのに verification は残っている）を
+    // 直接注入して「何もしない」分岐を確認する
+    store?.setState({
+      verify: {
+        ...(store.getState() as AppState).verify,
+        selectedStudyId: null,
+        conflictMessage: '読み込み後に別の場所で更新されています。再読み込みしてから判定し直してください',
+      },
+    });
+    await flush();
+
+    const callsBefore = fetchMock.mock.calls.length;
+    (document.getElementById('verify-conflict-reload') as HTMLButtonElement).click();
+    await flush();
+    expect(fetchMock.mock.calls.length).toBe(callsBefore);
   });
 
   test('?entity= だけの入場は既定 study を補い ?entity= を保って書き戻す', async () => {

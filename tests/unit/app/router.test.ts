@@ -60,6 +60,7 @@ const stubCtx: ViewContext = {
     onDecision: jest.fn(),
     onArmConfirm: jest.fn(),
     onChangeLayoutMode: jest.fn(),
+    onReloadVerification: jest.fn(),
   },
   extract: {
     onToggleStudy: jest.fn(),
@@ -76,6 +77,7 @@ const stubCtx: ViewContext = {
     onDecision: jest.fn(),
     onArmConfirm: jest.fn(),
     onChangeLayoutMode: jest.fn(),
+    onReloadVerification: jest.fn(),
   },
   dashboard: { onReload: jest.fn() },
   export: {

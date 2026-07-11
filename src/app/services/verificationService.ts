@@ -6,6 +6,10 @@
 // - 判定の永続化: 自分の annotator 行（StudyData / ResultsData）の upsert + Decisions 追記。
 //   失敗時はオフラインキュー（lib/storage/offlineQueue の 'decisions'）へ退避し、成功時に再送する
 // - 群構成確定の永続化: ArmStructures へ新 version を追記（キュー退避なし。失敗はトーストで通知）
+// - annotator 行 upsert の楽観ロック（issue #64）: 独立二重レビューで同一 annotator が
+//   2 コンテキスト（別タブ・別端末）から書くと後勝ち上書きが起きうるため、行の updated_at を
+//   バージョントークンとして期待値検証する。競合検出時はキュー退避せず conflict を返す
+//   （キューは「オフライン」を扱うためのものであり、競合をキューに入れても解決しない）
 import { NOT_REPORTED_TOKEN } from '../../domain/annotation';
 import type { ConfirmedArmStructure } from '../../domain/armStructure';
 import type { Decision } from '../../domain/decision';
@@ -16,7 +20,13 @@ import type { StudyRecord } from '../../domain/study';
 import type { DisposablePdfDocument } from '../../features/documents/extractTextLayer';
 import { parseExtractedText } from '../../features/documents/extractedText';
 import { parseDriveFileId } from '../../features/documents/loadDocumentPages';
-import { readStudyDataSheet, upsertResultsDataRows, upsertStudyDataRows } from '../../features/extraction/annotationRepository';
+import {
+  AnnotationConflictError,
+  readResultsDataRows,
+  readStudyDataSheet,
+  upsertResultsDataRows,
+  upsertStudyDataRows,
+} from '../../features/extraction/annotationRepository';
 import {
   appendArmStructureVersion,
   latestArmStructure,
@@ -93,6 +103,14 @@ function toMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
+/**
+ * ResultsData の楽観ロック用トークンマップ（VerificationBundle.resultsRowUpdatedAt）のセルキー。
+ * entity_key × field_id の組を JSON 配列でキー化する（区切り文字より安全。issue #64）
+ */
+export function resultsCellKeyOf(entityKey: string, fieldId: string): string {
+  return JSON.stringify([entityKey, fieldId]);
+}
+
 export interface VerificationBundleInput {
   spreadsheetId: string;
   /** 検証単位の study（Studies 由来） */
@@ -117,6 +135,16 @@ export interface VerificationBundle {
    * 読込時」に読む — study 切替のたびに読み直すことで、他画面での切替を常に最新反映する
    */
   layoutMode: VerifyLayoutMode;
+  /**
+   * 自分の StudyData 行の読込時 updated_at（楽観ロックの期待値。issue #64）。
+   * 行が無ければ null（= 次の保存は「行がまだ無い」ことを期待する）
+   */
+  studyRowUpdatedAt: string | null;
+  /**
+   * 自分の ResultsData 行のセルキー（resultsCellKeyOf）別 updated_at（楽観ロックの期待値）。
+   * 該当行が無いセルはキー自体を持たない
+   */
+  resultsRowUpdatedAt: Record<string, string>;
 }
 
 /**
@@ -161,10 +189,22 @@ export async function loadVerificationBundle(
   const annotator = (await getCurrentUserEmail(deps.profile)) ?? '';
   const decisions = await readDecisionsByStudy(spreadsheetId, study.studyId, deps.google);
   const studySheet = await readStudyDataSheet(spreadsheetId, deps.google);
-  const studyValues =
-    studySheet.rows.find(
-      (row) => row.studyId === study.studyId && row.annotator === annotator,
-    )?.values ?? {};
+  const myStudyRow = studySheet.rows.find(
+    (row) => row.studyId === study.studyId && row.annotator === annotator,
+  );
+  const studyValues = myStudyRow?.values ?? {};
+  const studyRowUpdatedAt = myStudyRow?.updatedAt ?? null;
+
+  // 自分の ResultsData 行の updated_at を楽観ロックの期待値として捕捉する（issue #64）。
+  // このためだけに 1 GET 増えるが、トークン（updated_at）を得るには読み直すしかない
+  const resultsRows = await readResultsDataRows(spreadsheetId, deps.google);
+  const resultsRowUpdatedAt: Record<string, string> = {};
+  for (const row of resultsRows) {
+    if (row.studyId === study.studyId && row.annotator === annotator) {
+      resultsRowUpdatedAt[resultsCellKeyOf(row.entityKey, row.fieldId)] = row.updatedAt;
+    }
+  }
+
   const armRows = await readArmStructuresByStudy(spreadsheetId, study.studyId, deps.google);
   const armStructure = latestArmStructure(armRows, annotator);
 
@@ -220,7 +260,7 @@ export async function loadVerificationBundle(
     disposePdf,
   };
   const layoutMode = await (deps.loadVerifyLayoutMode ?? loadVerifyLayoutMode)();
-  return { verification, studyValues, layoutMode };
+  return { verification, studyValues, layoutMode, studyRowUpdatedAt, resultsRowUpdatedAt };
 }
 
 /**
@@ -234,11 +274,16 @@ export async function persistVerifyLayoutMode(
   await (deps.saveVerifyLayoutMode ?? saveVerifyLayoutMode)(mode);
 }
 
-/** 判定書き込みの実体（オフライン再送でも同じ経路を通す）。annotator 行 → Decisions の順 */
+/**
+ * 判定書き込みの実体（オフライン再送でも同じ経路を通す）。annotator 行 → Decisions の順。
+ * expectedUpdatedAt（省略可。issue #64）は annotator 行 upsert の楽観ロック期待値へそのまま
+ * 引き渡す。省略（undefined）はチェックなし
+ */
 export async function saveDecisionWrite(
   spreadsheetId: string,
   write: QueuedDecisionWrite,
   deps: VerificationDeps,
+  expectedUpdatedAt?: string | null,
 ): Promise<void> {
   const { decision } = write;
   if (isEntityInstanceDeclaration(decision)) {
@@ -256,6 +301,7 @@ export async function saveDecisionWrite(
           runId: null,
           updatedAt: decision.decidedAt,
           values: write.studyValues,
+          expectedUpdatedAt,
         },
       ],
       deps.google,
@@ -276,6 +322,7 @@ export async function saveDecisionWrite(
           value: notReported ? null : decision.value,
           notReported,
           updatedAt: decision.decidedAt,
+          expectedUpdatedAt,
         },
       ],
       deps.google,
@@ -287,30 +334,67 @@ export async function saveDecisionWrite(
 
 export type PersistDecisionResult =
   | { status: 'queued' }
-  | { status: 'saved'; remainingCount: number };
+  | { status: 'conflict'; message: string }
+  | { status: 'saved'; remainingCount: number; written: QueuedDecisionWrite[] };
 
 /**
  * 検証パネルの判定 1 操作を永続化する（requirements.md §4.2「判定ごとに即時書き込み」）。
  * パネル側は楽観更新済みのため、失敗時はオフラインキューへ退避して後で再送する。
- * 保存が通ったら過去の退避分も再送する（tiab-review と同じ復帰動作）
+ * 保存が通ったら過去の退避分も再送する（tiab-review と同じ復帰動作）。
+ *
+ * expectedUpdatedAt（省略可。issue #64）は即時保存にのみ適用する楽観ロックの期待値。
+ * 即時保存が AnnotationConflictError で失敗した場合はキューへ退避せず（トーストも出さず）
+ * conflict を返す — 呼び出し側が再読み込み導線（バナー）を出す。それ以外の失敗は従来どおり
+ * キュー退避する。再送（flush のコールバック）は expectedUpdatedAt を渡さない
+ * （後勝ち冪等のまま。再送をブロックするとオフライン中のデータが宙に浮いてしまうため）
  */
 export async function persistDecisionWrite(
   spreadsheetId: string,
   write: QueuedDecisionWrite,
   deps: VerificationDeps,
+  expectedUpdatedAt?: string | null,
 ): Promise<PersistDecisionResult> {
   const queue = deps.decisionQueue ?? sharedDecisionQueue;
   try {
-    await saveDecisionWrite(spreadsheetId, write, deps);
-  } catch {
+    await saveDecisionWrite(spreadsheetId, write, deps, expectedUpdatedAt);
+  } catch (err) {
+    if (err instanceof AnnotationConflictError) {
+      return { status: 'conflict', message: err.message };
+    }
     await queue.enqueue(spreadsheetId, write.decision.annotator, write);
     showToast('保存に失敗したため、判定をオフラインキューへ退避しました（復帰後に再送されます）');
     return { status: 'queued' };
   }
-  const result = await queue.flush(spreadsheetId, write.decision.annotator, (item) =>
-    saveDecisionWrite(spreadsheetId, item, deps),
-  );
-  return { status: 'saved', remainingCount: result.remainingCount };
+  const written: QueuedDecisionWrite[] = [write];
+  const result = await queue.flush(spreadsheetId, write.decision.annotator, async (item) => {
+    await saveDecisionWrite(spreadsheetId, item, deps);
+    written.push(item);
+  });
+  return { status: 'saved', remainingCount: result.remainingCount, written };
+}
+
+/**
+ * 保存済みの書き込み（即時保存 + 再送成功分）を、次回保存の楽観ロック期待値へ畳み込む。
+ * written は行へ書き込んだ順（先頭 = 即時保存、以降 = flush の再送分が decidedAt 昇順）で
+ * 並ぶため、即時保存より古い decidedAt の再送が後から同じ行へ updated_at を書き戻すことが
+ * ある。「最後に行へ書かれた値」を追うことで、次回保存が偽陽性の競合にならないようにする
+ * （issue #64）。入力を破壊せず新オブジェクトを返す
+ */
+export function foldDecisionWriteTokens(
+  written: readonly QueuedDecisionWrite[],
+  tokens: { studyRowUpdatedAt: string | null; resultsRowUpdatedAt: Record<string, string> },
+): { studyRowUpdatedAt: string | null; resultsRowUpdatedAt: Record<string, string> } {
+  let studyRowUpdatedAt = tokens.studyRowUpdatedAt;
+  const resultsRowUpdatedAt = { ...tokens.resultsRowUpdatedAt };
+  for (const item of written) {
+    if (item.entityLevel === 'study') {
+      studyRowUpdatedAt = item.decision.decidedAt;
+    } else {
+      resultsRowUpdatedAt[resultsCellKeyOf(item.decision.entityKey, item.decision.fieldId)] =
+        item.decision.decidedAt;
+    }
+  }
+  return { studyRowUpdatedAt, resultsRowUpdatedAt };
 }
 
 /**

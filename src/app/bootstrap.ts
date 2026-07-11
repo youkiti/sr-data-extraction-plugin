@@ -484,6 +484,13 @@ export async function bootstrapApp(
       onChangeLayoutMode: (mode) => {
         void setPilotLayoutMode(store, deps, mode);
       },
+      onReloadVerification: () => {
+        // 保存の競合検出バナー（issue #64）の「再読み込み」: 埋め込み検証中の study を読み直す
+        const studyId = store.getState().pilot.verifyStudyId;
+        if (studyId !== null) {
+          void loadPilotVerification(store, deps, studyId);
+        }
+      },
     },
     extract: {
       onToggleStudy: (studyId, selected) => {
@@ -528,6 +535,13 @@ export async function bootstrapApp(
       },
       onChangeLayoutMode: (mode) => {
         void setVerifyLayoutMode(store, deps, mode);
+      },
+      onReloadVerification: () => {
+        // 保存の競合検出バナー（issue #64）の「再読み込み」: 表示中 study を読み直す
+        const studyId = store.getState().verify.selectedStudyId;
+        if (studyId !== null) {
+          void openVerifyStudy(store, deps, studyId);
+        }
       },
     },
     dashboard: {

@@ -96,6 +96,9 @@ describe('createInitialState', () => {
         studyValues: null,
         queuedDecisions: 0,
         layoutMode: 'focus',
+        studyRowUpdatedAt: null,
+        resultsRowUpdatedAt: {},
+        conflictMessage: null,
       },
       extract: {
         selectedStudyIds: [],
@@ -126,6 +129,9 @@ describe('createInitialState', () => {
         studyValues: null,
         queuedDecisions: 0,
         layoutMode: 'focus',
+        studyRowUpdatedAt: null,
+        resultsRowUpdatedAt: {},
+        conflictMessage: null,
       },
       dashboard: {
         data: null,

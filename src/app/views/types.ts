@@ -122,6 +122,8 @@ export interface PilotViewCallbacks {
   onInstanceDeclare?(decisions: readonly Decision[]): void;
   /** 検証パネルのレイアウトモード切替（フォーカス ⇄ リスト。issue #38）の永続化 */
   onChangeLayoutMode(mode: VerifyLayoutMode): void;
+  /** 保存の競合検出バナー（issue #64）の「再読み込み」: 埋め込み検証データ束を読み直す */
+  onReloadVerification(): void;
 }
 
 /** #/extract（S7）のユーザー操作コールバック */
@@ -156,6 +158,8 @@ export interface VerifyViewCallbacks {
   onInstanceDeclare?(decisions: readonly Decision[]): void;
   /** 検証パネルのレイアウトモード切替（フォーカス ⇄ リスト。issue #38）の永続化 */
   onChangeLayoutMode(mode: VerifyLayoutMode): void;
+  /** 保存の競合検出バナー（issue #64）の「再読み込み」: 表示中 study を読み直す */
+  onReloadVerification(): void;
 }
 
 /** #/dashboard（S9）のユーザー操作コールバック（セルクリックはハッシュ遷移のためここに持たない） */

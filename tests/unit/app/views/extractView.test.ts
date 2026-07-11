@@ -86,6 +86,7 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<ExtractViewCallba
         onDecision: jest.fn(),
         onArmConfirm: jest.fn(),
         onChangeLayoutMode: jest.fn(),
+        onReloadVerification: jest.fn(),
       },
       extract: callbacks,
       verify: {
@@ -94,6 +95,7 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<ExtractViewCallba
         onDecision: jest.fn(),
         onArmConfirm: jest.fn(),
         onChangeLayoutMode: jest.fn(),
+        onReloadVerification: jest.fn(),
       },
       dashboard: { onReload: jest.fn() },
       export: {
