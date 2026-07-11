@@ -23,7 +23,10 @@ import { readRunStudyCoverage } from '../../features/extraction/runRepository';
 import { ensureChildFolder } from '../../lib/google/drive';
 import type { GoogleApiDeps } from '../../lib/google/types';
 import { missingApiKeyMessage } from '../../lib/llm/modelCatalog';
-import { resolveProviderId } from '../../lib/llm/providerFactory';
+import {
+  resolveProviderConfig,
+  type ProviderConfig,
+} from '../../lib/llm/providerFactory';
 import { nowIso8601 } from '../../utils/iso8601';
 import type { ExtractState, Store } from '../store';
 import { showToast } from '../ui/toast';
@@ -171,8 +174,9 @@ export async function requestExtractRun(store: Store, deps: ExtractServiceDeps):
     patchExtract(store, { runError: 'モデルを選択してください（「その他」で直接入力も可）' });
     return;
   }
-  if ((await deps.loadApiKey(resolveProviderId(extract.model))) === null) {
-    patchExtract(store, { runError: missingApiKeyMessage(resolveProviderId(extract.model)) });
+  const providerResolution = await resolveProviderConfig(extract.model, deps);
+  if (providerResolution.config === null) {
+    patchExtract(store, { runError: missingApiKeyMessage(providerResolution.provider) });
     return;
   }
   patchExtract(store, { runError: null, confirming: true });
@@ -196,7 +200,7 @@ async function performRun(
     targets: readonly DocumentRecord[];
     fields: readonly SchemaField[];
     model: string;
-    apiKey: string;
+    providerConfig: ProviderConfig;
     onStudyRows: (rows: ExtractStudyRow[]) => void;
   },
 ): Promise<RunExtractionOutcome> {
@@ -234,7 +238,9 @@ async function performRun(
     },
     {
       google: deps.google,
-      apiKey: params.apiKey,
+      apiKey: params.providerConfig.apiKey,
+      provider: params.providerConfig.provider,
+      endpoint: params.providerConfig.endpoint,
       loadDocumentPages: makeLoadDocumentPages(params.targets, deps.google),
       buildProvider: deps.buildProvider,
       resolveRateLimitPolicy: deps.resolveRateLimitPolicy,
@@ -281,11 +287,11 @@ export async function runExtract(store: Store, deps: ExtractServiceDeps): Promis
   ) {
     return;
   }
-  const apiKey = await deps.loadApiKey(resolveProviderId(state.extract.model));
-  if (apiKey === null) {
+  const providerResolution = await resolveProviderConfig(state.extract.model, deps);
+  if (providerResolution.config === null) {
     patchExtract(store, {
       confirming: false,
-      runError: missingApiKeyMessage(resolveProviderId(state.extract.model)),
+      runError: missingApiKeyMessage(providerResolution.provider),
     });
     return;
   }
@@ -311,7 +317,7 @@ export async function runExtract(store: Store, deps: ExtractServiceDeps): Promis
       targets,
       fields,
       model: state.extract.model,
-      apiKey,
+      providerConfig: providerResolution.config,
       onStudyRows: (rows) => patchExtract(store, { studyRows: rows }),
     });
     patchExtract(store, {
@@ -350,9 +356,9 @@ export async function retryExtractStudy(
   ) {
     return;
   }
-  const apiKey = await deps.loadApiKey(resolveProviderId(state.extract.model));
-  if (apiKey === null) {
-    patchExtract(store, { runError: missingApiKeyMessage(resolveProviderId(state.extract.model)) });
+  const providerResolution = await resolveProviderConfig(state.extract.model, deps);
+  if (providerResolution.config === null) {
+    patchExtract(store, { runError: missingApiKeyMessage(providerResolution.provider) });
     return;
   }
   // 対象行を差し替えるヘルパ（他の行の結果表示は維持する）
@@ -381,7 +387,7 @@ export async function retryExtractStudy(
       targets,
       fields,
       model: state.extract.model,
-      apiKey,
+      providerConfig: providerResolution.config,
       onStudyRows: (rows) => {
         // 単一 study run（studyIds = [studyId]）なので必ず 1 行。
         // 計画時の queued は行差し替えでは「実行中」として見せる

@@ -4,6 +4,7 @@ import { getLocal, removeLocal, setLocal } from './chromeStorage';
 
 const GEMINI_API_KEY_STORAGE_KEY = 'secrets.geminiApiKey';
 const OPENROUTER_API_KEY_STORAGE_KEY = 'secrets.openRouterApiKey';
+const OPENAI_COMPATIBLE_API_KEY_STORAGE_KEY = 'secrets.openAiCompatibleApiKey';
 
 // 既知の API キー プレフィックス（プロバイダの取り違え検出用）。
 // 形式変更で正規キーを弾かないよう、確信できる場合だけ判定に使う（取りこぼし優先）
@@ -52,4 +53,21 @@ export async function saveOpenRouterApiKey(key: string): Promise<void> {
 
 export async function clearOpenRouterApiKey(): Promise<void> {
   await removeLocal(OPENROUTER_API_KEY_STORAGE_KEY);
+}
+
+export async function loadOpenAiCompatibleApiKey(): Promise<string | null> {
+  return (await getLocal<string>(OPENAI_COMPATIBLE_API_KEY_STORAGE_KEY)) ?? null;
+}
+
+/** trim して保存する。認証方式は Bearer 固定で、キー形式自体は制限しない */
+export async function saveOpenAiCompatibleApiKey(key: string): Promise<void> {
+  const trimmed = key.trim();
+  if (trimmed === '') {
+    throw new Error('空の API キーは保存できません');
+  }
+  await setLocal(OPENAI_COMPATIBLE_API_KEY_STORAGE_KEY, trimmed);
+}
+
+export async function clearOpenAiCompatibleApiKey(): Promise<void> {
+  await removeLocal(OPENAI_COMPATIBLE_API_KEY_STORAGE_KEY);
 }

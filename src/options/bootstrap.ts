@@ -2,6 +2,8 @@
 // 状態仕様は docs/ui-states.md §2（trim 保存・API キーの空文字は保存抑止・
 // 既定モデルの空は「未設定に戻す」・保存中はボタン無効化）
 import { createModelSelect } from '../app/ui/modelSelect';
+import type { LlmProviderId } from '../domain/llmApiLog';
+import { createProvider, resolveProviderId } from '../lib/llm/providerFactory';
 import {
   getRateLimitTier,
   isRateLimitTierId,
@@ -9,18 +11,26 @@ import {
 } from '../lib/llm/rateLimitPolicy';
 import {
   loadGeminiApiKey,
+  loadOpenAiCompatibleApiKey,
   loadOpenRouterApiKey,
   looksLikeGeminiApiKey,
   looksLikeOpenRouterApiKey,
   saveGeminiApiKey,
+  saveOpenAiCompatibleApiKey,
   saveOpenRouterApiKey,
 } from '../lib/storage/secretsStore';
+import { requestEndpointPermission } from '../lib/storage/hostPermission';
 import {
+  FACTORY_DEFAULT_MODEL,
+  isLoopbackEndpoint,
   loadDefaultModel,
+  loadLlmConnectionSettings,
   loadRateLimitCustomConcurrency,
   loadRateLimitCustomRpm,
   loadRateLimitTier,
+  normalizeOpenAiCompatibleEndpoint,
   saveDefaultModel,
+  saveLlmConnectionSettings,
   saveRateLimitCustomConcurrency,
   saveRateLimitCustomRpm,
   saveRateLimitTier,
@@ -142,6 +152,152 @@ async function bootstrapDefaultModelSection(root: ParentNode): Promise<void> {
 
   saveButton.addEventListener('click', () => {
     void handleSave();
+  });
+}
+
+const CONNECTION_TEST_SCHEMA = {
+  type: 'object',
+  properties: { ok: { type: 'boolean' } },
+  required: ['ok'],
+  additionalProperties: false,
+};
+
+function selectedProvider(select: HTMLSelectElement): LlmProviderId {
+  const value = select.value;
+  return value === 'openrouter' || value === 'openai_compatible' ? value : 'gemini';
+}
+
+async function loadKeyForProvider(
+  provider: Exclude<LlmProviderId, 'openai_compatible'>,
+): Promise<string | null> {
+  if (provider === 'openrouter') {
+    return loadOpenRouterApiKey();
+  }
+  return loadGeminiApiKey();
+}
+
+/** LLM 接続先の保存と構造化出力の接続テストを配線する */
+async function bootstrapLlmConnectionSection(root: ParentNode): Promise<void> {
+  const providerSelect = root.querySelector<HTMLSelectElement>('#llm-provider');
+  const customFields = root.querySelector<HTMLElement>('#openai-compatible-fields');
+  const endpointInput = root.querySelector<HTMLInputElement>('#openai-compatible-endpoint');
+  const apiKeyInput = root.querySelector<HTMLInputElement>('#openai-compatible-api-key');
+  const saveButton = root.querySelector<HTMLButtonElement>('#save-llm-connection');
+  const testButton = root.querySelector<HTMLButtonElement>('#test-llm-connection');
+  const statusEl = root.querySelector<HTMLElement>('#llm-connection-status');
+  if (
+    !providerSelect ||
+    !customFields ||
+    !endpointInput ||
+    !apiKeyInput ||
+    !saveButton ||
+    !testButton ||
+    !statusEl
+  ) {
+    return;
+  }
+  const setStatus = makeSetStatus(statusEl);
+  const settings = await loadLlmConnectionSettings();
+  const defaultModel = (await loadDefaultModel()) ?? FACTORY_DEFAULT_MODEL;
+  providerSelect.value = settings.provider ?? resolveProviderId(defaultModel);
+  endpointInput.value = settings.openAiCompatibleEndpoint ?? '';
+  const savedCustomKey = await loadOpenAiCompatibleApiKey();
+  apiKeyInput.placeholder = savedCustomKey
+    ? '保存済み（変更する場合のみ入力）'
+    : 'API キー（loopback は任意）';
+
+  const renderProvider = (): void => {
+    customFields.hidden = selectedProvider(providerSelect) !== 'openai_compatible';
+  };
+  renderProvider();
+  providerSelect.addEventListener('change', renderProvider);
+  setStatus(
+    settings.provider === null ? '未保存（モデル名から自動判定）' : '接続設定: 保存済み',
+    false,
+  );
+
+  const resolveFormConfig = async (): Promise<{
+    provider: LlmProviderId;
+    endpoint?: string;
+    apiKey: string;
+    model: string;
+  }> => {
+    const provider = selectedProvider(providerSelect);
+    const model = (await loadDefaultModel()) ?? FACTORY_DEFAULT_MODEL;
+    if (provider !== 'openai_compatible') {
+      const apiKey = await loadKeyForProvider(provider);
+      if (apiKey === null) {
+        throw new Error(`${provider === 'gemini' ? 'Gemini' : 'OpenRouter'} API キーが未設定です`);
+      }
+      return { provider, apiKey, model };
+    }
+    const endpoint = normalizeOpenAiCompatibleEndpoint(endpointInput.value);
+    const enteredKey = apiKeyInput.value.trim();
+    const apiKey = enteredKey || (await loadOpenAiCompatibleApiKey());
+    if (apiKey === null && !isLoopbackEndpoint(endpoint)) {
+      throw new Error('OpenAI 互換 API キーが未設定です');
+    }
+    return { provider, endpoint, apiKey: apiKey ?? '', model };
+  };
+
+  saveButton.addEventListener('click', () => {
+    void (async () => {
+      saveButton.disabled = true;
+      try {
+        const config = await resolveFormConfig();
+        if (
+          config.provider === 'openai_compatible' &&
+          !(await requestEndpointPermission(config.endpoint as string))
+        ) {
+          throw new Error('接続先へのアクセスが許可されませんでした');
+        }
+        if (config.provider === 'openai_compatible' && apiKeyInput.value.trim() !== '') {
+          await saveOpenAiCompatibleApiKey(apiKeyInput.value);
+          apiKeyInput.value = '';
+          apiKeyInput.placeholder = '保存済み（変更する場合のみ入力）';
+        }
+        await saveLlmConnectionSettings({
+          provider: config.provider,
+          openAiCompatibleEndpoint: config.endpoint ?? null,
+        });
+        setStatus('保存しました。', false);
+      } catch (err) {
+        setStatus(err instanceof Error ? err.message : String(err), true);
+      } finally {
+        saveButton.disabled = false;
+      }
+    })();
+  });
+
+  testButton.addEventListener('click', () => {
+    void (async () => {
+      testButton.disabled = true;
+      try {
+        const config = await resolveFormConfig();
+        if (
+          config.provider === 'openai_compatible' &&
+          !(await requestEndpointPermission(config.endpoint as string))
+        ) {
+          throw new Error('接続先へのアクセスが許可されませんでした');
+        }
+        const response = await createProvider(config).chat(
+          [
+            { role: 'system', content: 'Return JSON matching the supplied schema.' },
+            { role: 'user', content: 'Return {"ok":true}.' },
+          ],
+          { responseSchema: CONNECTION_TEST_SCHEMA, maxOutputTokens: 64, temperature: 0 },
+        );
+        const parsed = JSON.parse(response.text) as { ok?: unknown };
+        if (parsed.ok !== true) {
+          throw new Error('JSON Schema に従う応答を確認できませんでした');
+        }
+        setStatus('接続テストに成功しました。', false);
+      } catch (err) {
+        setStatus(`接続テストに失敗しました: ${err instanceof Error ? err.message : String(err)}`, true);
+      } finally {
+        testButton.disabled = false;
+      }
+    })();
   });
 }
 
@@ -267,6 +423,7 @@ export async function bootstrapOptions(root: ParentNode): Promise<void> {
         ? 'Gemini のキー（AIza で始まる）のようです。OpenRouter キーはここへ、Gemini キーは上の欄へ入力してください。'
         : null,
   );
+  await bootstrapLlmConnectionSection(root);
   await bootstrapDefaultModelSection(root);
   await bootstrapRateLimitSection(root);
 }

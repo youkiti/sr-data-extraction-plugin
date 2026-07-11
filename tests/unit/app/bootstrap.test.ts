@@ -74,9 +74,15 @@ describe('createChromeAppDeps', () => {
     const chromeMock = installChromeMock();
     chromeMock.storage.local.data['secrets.geminiApiKey'] = 'g-key';
     chromeMock.storage.local.data['secrets.openRouterApiKey'] = 'or-key';
+    chromeMock.storage.local.data['secrets.openAiCompatibleApiKey'] = 'custom-key';
     const deps = createChromeAppDeps();
     await expect(deps.loadApiKey('gemini')).resolves.toBe('g-key');
     await expect(deps.loadApiKey('openrouter')).resolves.toBe('or-key');
+    await expect(deps.loadApiKey('openai_compatible')).resolves.toBe('custom-key');
+    await expect(deps.loadLlmConnectionSettings?.()).resolves.toEqual({
+      provider: null,
+      openAiCompatibleEndpoint: null,
+    });
   });
 });
 

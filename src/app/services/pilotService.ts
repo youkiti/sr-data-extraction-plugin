@@ -17,10 +17,13 @@ import { readEvidenceRows } from '../../features/extraction/evidenceRepository';
 import { readPilotRuns } from '../../features/extraction/runRepository';
 import { getSchemaFieldsByVersion } from '../../features/schema/schemaRepository';
 import { ensureChildFolder } from '../../lib/google/drive';
-import type { LlmProviderId } from '../../domain/llmApiLog';
 import type { LLMProvider } from '../../lib/llm/LLMProvider';
 import { missingApiKeyMessage } from '../../lib/llm/modelCatalog';
-import { resolveProviderId, type ProviderConfig } from '../../lib/llm/providerFactory';
+import {
+  resolveProviderConfig,
+  type ProviderConfig,
+  type ProviderResolutionDeps,
+} from '../../lib/llm/providerFactory';
 import type { RateLimitPolicy } from '../../lib/llm/rateLimitPolicy';
 import type { VerifyLayoutMode } from '../../lib/storage/settingsStore';
 import { nowIso8601 } from '../../utils/iso8601';
@@ -38,9 +41,7 @@ import {
   type VerificationDeps,
 } from './verificationService';
 
-export interface PilotServiceDeps extends VerificationDeps {
-  /** BYOK の API キーをプロバイダ別に解決する（既定は lib/storage/secretsStore の各 load 関数） */
-  loadApiKey: (provider: LlmProviderId) => Promise<string | null>;
+export interface PilotServiceDeps extends VerificationDeps, ProviderResolutionDeps {
   /** provider 生成（実行時は lib/llm/providerFactory.createProvider。テストは fake を注入） */
   buildProvider: (config: ProviderConfig) => LLMProvider;
   /** 実効レート制限ポリシー（429 対策）を解決する。runExtraction へそのまま渡す */
@@ -150,9 +151,9 @@ export async function runPilot(store: Store, deps: PilotServiceDeps): Promise<vo
     patchPilot(store, { runError: 'モデルを選択してください（「その他」で直接入力も可）' });
     return;
   }
-  const apiKey = await deps.loadApiKey(resolveProviderId(model));
-  if (apiKey === null) {
-    patchPilot(store, { runError: missingApiKeyMessage(resolveProviderId(model)) });
+  const providerResolution = await resolveProviderConfig(model, deps);
+  if (providerResolution.config === null) {
+    patchPilot(store, { runError: missingApiKeyMessage(providerResolution.provider) });
     return;
   }
 
@@ -180,7 +181,9 @@ export async function runPilot(store: Store, deps: PilotServiceDeps): Promise<vo
       },
       {
         google: deps.google,
-        apiKey,
+        apiKey: providerResolution.config.apiKey,
+        provider: providerResolution.config.provider,
+        endpoint: providerResolution.config.endpoint,
         loadDocumentPages: makeLoadDocumentPages(targets, deps.google),
         buildProvider: deps.buildProvider,
         resolveRateLimitPolicy: deps.resolveRateLimitPolicy,
