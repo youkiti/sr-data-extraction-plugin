@@ -2585,7 +2585,9 @@ describe('bootstrapApp: 独立二重レビュー機能', () => {
       new Event('submit', { cancelable: true }),
     );
     await flush();
-    expect(toastTexts()).toContain('r2@example.com を登録しました');
+    expect(toastTexts()).toContain(
+      'r2@example.com を登録し、シート（編集可）とフォルダ（閲覧）を共有しました',
+    );
     expect(document.querySelectorAll('#home-reviewers-list tbody tr')).toHaveLength(2);
 
     // 既存 reviewer の review_mode だけを変える送信はモード変更確認ダイアログへ（onAddReviewer → confirmingChange）
@@ -2613,7 +2615,9 @@ describe('bootstrapApp: 独立二重レビュー機能', () => {
     );
     (document.getElementById('reviewer-mode-confirm-ok') as HTMLButtonElement).click();
     await flush();
-    expect(toastTexts()).toContain('r1@example.com を登録しました');
+    expect(toastTexts()).toContain(
+      'r1@example.com を登録し、シート（編集可）とフォルダ（閲覧）を共有しました',
+    );
 
     // 解除（onRevokeReviewer）
     const revokeButtons = document.querySelectorAll('.reviewers__revoke');

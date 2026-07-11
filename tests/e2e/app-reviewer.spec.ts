@@ -409,6 +409,14 @@ test('owner のレビュアー管理カードで追加すると Reviewers タブ
     appendUrls.push(url);
     await route.fulfill({ json: {} });
   });
+  // 追加時の Drive 自動共有（permissions.create）を捕捉する。未 route だと実ネットワークへ出る
+  const sharePermissions: Array<{ fileId: string; body: string }> = [];
+  await page.route('https://www.googleapis.com/drive/v3/files/**', async (route) => {
+    const url = decodeURIComponent(route.request().url());
+    const fileId = url.match(/\/files\/([^/?]+)\/permissions/)?.[1] ?? '';
+    sharePermissions.push({ fileId, body: route.request().postData() ?? '' });
+    await route.fulfill({ json: { id: 'perm' } });
+  });
   await page.addInitScript((project) => {
     const win = window as unknown as Record<string, unknown>;
     win.__E2E_PRELOADED_STATE__ = { currentProject: project };
@@ -427,11 +435,20 @@ test('owner のレビュアー管理カードで追加すると Reviewers タブ
   await page.locator('#reviewer-mode').selectOption('independent');
   await page.locator('#reviewer-add-submit').click();
 
-  await expect(page.locator('.toast')).toContainText('reviewer@example.com を登録しました');
+  await expect(page.locator('.toast')).toContainText(
+    'reviewer@example.com を登録し、シート（編集可）とフォルダ（閲覧）を共有しました',
+  );
   // タブ作成（旧プロジェクト）+ Reviewers への実追記まで実弾で確認する
   await expect.poll(() => batchUpdateBodies.some((body) => body.includes('"Reviewers"'))).toBe(true);
   const reviewersAppend = appendUrls.filter((url) => url.includes('Reviewers') && url.includes(':append'));
   expect(reviewersAppend.length).toBeGreaterThan(0);
+  // Drive 自動共有: スプレッドシート=編集者 / プロジェクトフォルダ=閲覧者 で permissions.create される
+  await expect.poll(() => sharePermissions.length).toBe(2);
+  const sheetShare = sharePermissions.find((p) => p.fileId === 'e2e-sheet');
+  const folderShare = sharePermissions.find((p) => p.fileId === 'e2e-folder');
+  expect(sheetShare?.body).toContain('"role":"writer"');
+  expect(sheetShare?.body).toContain('"emailAddress":"reviewer@example.com"');
+  expect(folderShare?.body).toContain('"role":"reader"');
   await expect(page.locator('#home-reviewers-list tbody tr')).toHaveCount(1);
   await expect(page.locator('#home-reviewers-list tbody tr')).toContainText('reviewer@example.com');
   await expect(page.locator('#home-reviewers-list tbody tr')).toContainText('② AI 抜きでレビュー');

@@ -133,7 +133,7 @@ function renderReviewerAdminCard(state: AppState, ctx: ViewContext): HTMLElement
     el('h3', { text: 'レビュアー管理' }),
     el('p', {
       className: 'view__notice',
-      text: 'スプレッドシートとプロジェクトフォルダの共有は Google Drive 側で行ってください。ここでは役割の登録のみを行います。',
+      text: '追加すると、対象アカウントへスプレッドシート（編集可）とプロジェクトフォルダ（閲覧）を自動で共有します。共有に失敗した場合は登録だけ残し、手動共有の案内を表示します。',
     }),
   ];
   if (reviewers.loading) {

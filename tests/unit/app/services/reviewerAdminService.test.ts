@@ -32,10 +32,13 @@ const PROJECT = {
   name: 'テスト SR',
 };
 
+const shareProjectWithReviewerMock = jest.fn();
+
 const deps: ReviewerAdminServiceDeps = {
   google: { fetch: jest.fn(), getAccessToken: jest.fn() },
   profile: { getProfileUserInfo: async () => ({ email: 'owner@example.com', id: 'uid' }) },
   now: () => 't-now',
+  shareProjectWithReviewer: shareProjectWithReviewerMock,
 };
 
 function makeStore(withProject = true): Store {
@@ -49,6 +52,7 @@ function makeStore(withProject = true): Store {
 beforeEach(() => {
   jest.clearAllMocks();
   appendReviewerAssignmentMock.mockResolvedValue(undefined);
+  shareProjectWithReviewerMock.mockResolvedValue(undefined);
 });
 
 describe('loadReviewers', () => {
@@ -266,6 +270,76 @@ describe('revokeReviewer', () => {
       expect.objectContaining({ email: 'r1@example.com', role: 'revoked', reviewMode: null }),
       deps.google,
     );
+  });
+});
+
+describe('レビュアー追加時の Drive 自動共有', () => {
+  const addInput = {
+    email: 'r1@example.com',
+    role: 'reviewer' as const,
+    reviewMode: 'independent' as const,
+  };
+
+  test('追加確定でシート（編集可）とフォルダ（閲覧）を対象 email へ共有する', async () => {
+    const store = makeStore();
+    await requestAddReviewer(store, deps, { ...addInput, email: '  r1@example.com  ' });
+    expect(shareProjectWithReviewerMock).toHaveBeenCalledTimes(1);
+    expect(shareProjectWithReviewerMock).toHaveBeenCalledWith(
+      { spreadsheetId: 'sheet-1', driveFolderId: 'folder-1' },
+      'r1@example.com',
+      deps.google,
+    );
+    expect(store.getState().reviewers.assignments).toEqual([
+      expect.objectContaining({ email: 'r1@example.com', role: 'reviewer', reviewMode: 'independent' }),
+    ]);
+    expect(store.getState().reviewers.saveError).toBeNull();
+  });
+
+  test('解除（revoked）では自動共有しない', async () => {
+    const store = makeStore();
+    await revokeReviewer(store, deps, 'r1@example.com');
+    expect(shareProjectWithReviewerMock).not.toHaveBeenCalled();
+  });
+
+  test('共有が失敗しても登録は残し、saveError は立てない（警告に縮退）', async () => {
+    shareProjectWithReviewerMock.mockRejectedValue(new Error('403 cross-domain'));
+    const store = makeStore();
+    await requestAddReviewer(store, deps, addInput);
+    expect(store.getState().reviewers.assignments).toEqual([
+      expect.objectContaining({ email: 'r1@example.com' }),
+    ]);
+    expect(store.getState().reviewers.saveError).toBeNull();
+    expect(store.getState().reviewers.saving).toBe(false);
+  });
+
+  test('未注入なら既定実装が permissions.create を 2 本（シート=writer / フォルダ=reader）投げる', async () => {
+    const fetch = jest
+      .fn()
+      .mockResolvedValue({ ok: true, status: 200, json: async () => ({ id: 'perm' }) } as Response);
+    const depsDefault: ReviewerAdminServiceDeps = {
+      google: { fetch, getAccessToken: jest.fn().mockResolvedValue('t') },
+      profile: deps.profile,
+      now: deps.now,
+    };
+    const store = makeStore();
+    await requestAddReviewer(store, depsDefault, addInput);
+    expect(fetch).toHaveBeenCalledTimes(2);
+    const [sheetUrl, sheetInit] = fetch.mock.calls[0];
+    expect(sheetUrl).toContain('/drive/v3/files/sheet-1/permissions');
+    expect(sheetUrl).toContain('sendNotificationEmail=true');
+    expect(JSON.parse((sheetInit as RequestInit).body as string)).toEqual({
+      role: 'writer',
+      type: 'user',
+      emailAddress: 'r1@example.com',
+    });
+    const [folderUrl, folderInit] = fetch.mock.calls[1];
+    expect(folderUrl).toContain('/drive/v3/files/folder-1/permissions');
+    expect(folderUrl).toContain('sendNotificationEmail=false');
+    expect(JSON.parse((folderInit as RequestInit).body as string)).toEqual({
+      role: 'reader',
+      type: 'user',
+      emailAddress: 'r1@example.com',
+    });
   });
 });
 

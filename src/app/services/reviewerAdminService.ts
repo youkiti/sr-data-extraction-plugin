@@ -1,6 +1,8 @@
 // owner の「レビュアー管理」カード（Home）のサービス層（docs/design-independent-dual-review.md §7.1）。
 // 登録済み一覧の読込 + 追加（モード変更は確認ダイアログを挟む）+ 解除（revoked 行の追記）を担う。
-// Google 側の共有（スプレッドシート / フォルダ）はアプリからは行わず、案内文言のみ（§7.1 手順 1）
+// 追加・モード変更の確定時には、スプレッドシート（編集可）とプロジェクトフォルダ（閲覧）を
+// 対象 email へ自動共有する（drive.file スコープで permissions.create。tiab-review と同方式）。
+// 共有失敗は登録行を残したまま警告に縮退する。解除では自動アンシェアはしない（破壊的操作のため）
 import type { ReviewerAssignment, ReviewerRole, ReviewMode } from '../../domain/reviewer';
 import {
   appendReviewerAssignment,
@@ -8,16 +10,48 @@ import {
   latestReviewerAssignment,
   readReviewerAssignments,
 } from '../../features/project/reviewerRepository';
+import { shareFileWithUser } from '../../lib/google/drive';
 import { getCurrentUserEmail, type ProfileDeps } from '../../lib/google/identity';
 import type { GoogleApiDeps } from '../../lib/google/types';
 import { nowIso8601 } from '../../utils/iso8601';
 import type { ReviewersState, Store } from '../store';
 import { showToast } from '../ui/toast';
 
+/** 追加時に共有する対象（currentProject から取り出す最小情報） */
+export interface ShareableProject {
+  spreadsheetId: string;
+  driveFolderId: string;
+}
+
 export interface ReviewerAdminServiceDeps {
   google: GoogleApiDeps;
   profile: ProfileDeps;
   now?: () => string;
+  /**
+   * レビュアー追加時にプロジェクトのシート（編集可）とフォルダ（閲覧）を email へ共有する。
+   * 既定は lib/google/drive の shareFileWithUser を使う実装。テストは fake を注入する
+   */
+  shareProjectWithReviewer?: (
+    project: ShareableProject,
+    email: string,
+    google: GoogleApiDeps,
+  ) => Promise<void>;
+}
+
+/**
+ * 既定の共有実装。スプレッドシートは編集者（判定行・Decisions を書き込むため）、
+ * プロジェクトフォルダは閲覧者（PDF を読むため）で共有する。シートのみ通知メールを送り、
+ * レビュアーが対象を見つけやすくする（フォルダはシート配下扱いで通知は重複させない）。
+ */
+async function defaultShareProjectWithReviewer(
+  project: ShareableProject,
+  email: string,
+  google: GoogleApiDeps,
+): Promise<void> {
+  await shareFileWithUser(project.spreadsheetId, email, 'writer', google, {
+    sendNotificationEmail: true,
+  });
+  await shareFileWithUser(project.driveFolderId, email, 'reader', google);
 }
 
 /** 追加フォームが送信する入力（email + role + review_mode）。review_mode は role='reviewer' のときのみ使う */
@@ -152,11 +186,27 @@ async function submitReviewerAssignment(
       saving: false,
       assignments: foldReviewerAssignments([...current, row]),
     });
-    showToast(
-      input.role === 'revoked'
-        ? `${input.email} の登録を解除しました`
-        : `${input.email} を登録しました`,
-    );
+    if (input.role === 'revoked') {
+      // 解除は行追記のみ（他人の Drive アクセスを消す自動アンシェアはしない）
+      showToast(`${input.email} の登録を解除しました`);
+      return;
+    }
+    // 役割登録が成功した後で Drive を自動共有する。共有失敗は登録を巻き戻さず警告に縮退する
+    const share = deps.shareProjectWithReviewer ?? defaultShareProjectWithReviewer;
+    try {
+      await share(
+        { spreadsheetId: project.spreadsheetId, driveFolderId: project.driveFolderId },
+        input.email,
+        deps.google,
+      );
+      showToast(`${input.email} を登録し、シート（編集可）とフォルダ（閲覧）を共有しました`);
+    } catch (shareErr) {
+      showToast(
+        `${input.email} を登録しました。ただし自動共有に失敗したため、Google Drive で手動共有してください（${toMessage(
+          shareErr,
+        )}）`,
+      );
+    }
   } catch (err) {
     patchReviewers(store, { saving: false, saveError: toMessage(err) });
     showToast(`保存に失敗しました: ${toMessage(err)}`);

@@ -302,3 +302,44 @@ export async function copyFile(
   );
   return (await res.json()) as DriveFileRef;
 }
+
+/** Drive 権限のロール（本アプリで使うのは reader / writer のみ） */
+export type DrivePermissionRole = 'reader' | 'writer';
+
+export interface ShareFileOptions {
+  /** 共有先へ Google の通知メールを送るか（既定 false）。相手が対象を見つけやすくしたいときだけ true */
+  sendNotificationEmail?: boolean;
+}
+
+/**
+ * ファイル / フォルダを指定ユーザー（email）へ共有する（Drive permissions.create）。
+ *
+ * `drive.file` スコープでも「アプリが作成・操作したファイル」には権限付与が可能
+ * （tiab-review-plugin の addPermission と同方式）。本アプリのプロジェクトフォルダは
+ * createFolder で、スプレッドシートは moveFileToFolder で、いずれもアプリが Drive 操作
+ * 済みのため対象になる。フォルダを共有すると配下ファイルへ継承される。
+ *
+ * 冪等性: 既に同じユーザーへ共有済みでも Drive は成功応答（ロールを更新）を返すため、
+ * 再登録でも安全に呼べる。
+ */
+export async function shareFileWithUser(
+  fileId: string,
+  email: string,
+  role: DrivePermissionRole,
+  deps: GoogleApiDeps,
+  options: ShareFileOptions = {}
+): Promise<void> {
+  const sendNotificationEmail = options.sendNotificationEmail ?? false;
+  const url = `${METADATA_API}/${encodeURIComponent(fileId)}/permissions?sendNotificationEmail=${String(
+    sendNotificationEmail
+  )}&fields=id`;
+  await googleFetch(
+    url,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ role, type: 'user', emailAddress: email }),
+    },
+    deps
+  );
+}
