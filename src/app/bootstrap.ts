@@ -121,8 +121,15 @@ import { createChromeProfileDeps } from '../lib/google/identity';
 import { createChromePickerDeps } from '../lib/google/picker';
 import { createProvider } from '../lib/llm/providerFactory';
 import { loadDisposablePdf } from '../lib/pdf/loadPdf';
-import { loadGeminiApiKey, loadOpenRouterApiKey } from '../lib/storage/secretsStore';
-import { resolveRateLimitPolicy } from '../lib/storage/settingsStore';
+import {
+  loadGeminiApiKey,
+  loadOpenAiCompatibleApiKey,
+  loadOpenRouterApiKey,
+} from '../lib/storage/secretsStore';
+import {
+  loadLlmConnectionSettings,
+  resolveRateLimitPolicy,
+} from '../lib/storage/settingsStore';
 import { el } from './ui/dom';
 
 declare global {
@@ -271,8 +278,16 @@ export function createChromeAppDeps(): AppDeps {
     picker: createChromePickerDeps(google),
     loadPdf: loadDisposablePdf,
     extractDocxText,
-    loadApiKey: (provider) =>
-      provider === 'openrouter' ? loadOpenRouterApiKey() : loadGeminiApiKey(),
+    loadApiKey: (provider) => {
+      if (provider === 'openrouter') {
+        return loadOpenRouterApiKey();
+      }
+      if (provider === 'openai_compatible') {
+        return loadOpenAiCompatibleApiKey();
+      }
+      return loadGeminiApiKey();
+    },
+    loadLlmConnectionSettings,
     buildProvider: createProvider,
     resolveRateLimitPolicy,
   };

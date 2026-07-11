@@ -418,6 +418,30 @@ describe('runDraftSchema', () => {
     expect(toastTexts().some((text) => text.includes('1 項目をドラフト'))).toBe(true);
   });
 
+  test('保存した OpenAI 互換接続はスラッシュなしモデルでも provider 設定を優先する', async () => {
+    const store = makeStore();
+    seedForDraft(store);
+    const { deps, chatMock } = makeDeps();
+    deps.loadLlmConnectionSettings = async () => ({
+      provider: 'openai_compatible',
+      openAiCompatibleEndpoint: 'https://llm.example/v1/chat/completions',
+    });
+    deps.loadApiKey = jest.fn().mockResolvedValue('custom-key');
+    deps.buildProvider = jest.fn((config) => ({
+      providerId: 'openai_compatible',
+      model: config.model,
+      chat: chatMock,
+    }));
+    await runDraftSchema(store, deps);
+    expect(deps.loadApiKey).toHaveBeenCalledWith('openai_compatible');
+    expect(deps.buildProvider).toHaveBeenCalledWith({
+      provider: 'openai_compatible',
+      apiKey: 'custom-key',
+      model: 'gemini-test',
+      endpoint: 'https://llm.example/v1/chat/completions',
+    });
+  });
+
   test('resolveRateLimitPolicy 注入時もドラフトが成立する（429 対策ポリシー経路）', async () => {
     const store = makeStore();
     seedForDraft(store);
@@ -585,14 +609,14 @@ describe('エディタ操作', () => {
     expect(store.getState().schema.editorErrors).toEqual([]);
 
     insertSchemaPreset(store, 'continuous');
-    expect(store.getState().schema.editorRows).toHaveLength(4);
+    expect(store.getState().schema.editorRows).toHaveLength(13);
     expect(store.getState().schema.editorOrigin).toBe('user_edit');
 
     // RoB テンプレートも同じ挿入経路（判定 + 根拠の 2 行が末尾に付く）
     insertSchemaPreset(store, 'rob2');
-    expect(store.getState().schema.editorRows).toHaveLength(6);
-    expect(store.getState().schema.editorRows?.[4]?.fieldName).toBe('rob2_judgement');
-    expect(store.getState().schema.editorRows?.[5]?.entityLevel).toBe('rob_domain');
+    expect(store.getState().schema.editorRows).toHaveLength(15);
+    expect(store.getState().schema.editorRows?.[13]?.fieldName).toBe('rob2_judgement');
+    expect(store.getState().schema.editorRows?.[14]?.entityLevel).toBe('rob_domain');
     expect(store.getState().schema.editorErrors).toEqual([]);
   });
 

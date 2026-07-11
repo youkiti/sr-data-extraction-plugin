@@ -103,7 +103,7 @@ src/
 │   │   ├── importDocuments.ts     # Picker 選択 → documents/ へコピー（Q9）→ テキスト抽出 → Documents 追記
 │   │   ├── extractTextLayer.ts    # PDF バイト列 → テキスト層 + text_status + extracted_texts 本文
 │   │   ├── extractedText.ts       # extracted_texts/{id}.txt の形式（form feed 区切り）の serialize / parse
-│   │   ├── detectTextStatus.ts    # ok / partial / no_text_layer 判定
+│   │   ├── detectTextStatus.ts    # ok / partial / no_text_layer 判定（全ページ反復の定型行=複写スタンプ等を除外して数える）
 │   │   ├── loadDocumentPages.ts   # text_ref → ページ別テキスト復元（extractionService へ注入）
 │   │   └── documentRepository.ts
 │   ├── protocol/                  # sr-query-builder から移植（parseManual / parseMarkdown / parseDocx /

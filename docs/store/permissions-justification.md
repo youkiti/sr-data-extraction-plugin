@@ -47,6 +47,12 @@
 - **JA**: LLM プロバイダとして OpenRouter を選んだユーザーが、自分の OpenRouter API キー（BYOK）で抽出リクエストを送信するために使用します。
 - **EN**: Used to send extraction requests to OpenRouter with the user's own OpenRouter API key (BYOK), for users who choose OpenRouter as their LLM provider.
 
+### Optional host permissions for user-configured LLM APIs
+
+- **対象**: `https://*/*`、`http://localhost/*`、`http://127.0.0.1/*`、`http://[::1]/*`
+- **JA**: 利用者が OpenAI 互換 API の完全 URL を設定した場合に限り、その接続先へ論文本文と抽出プロンプトを送信するために使用します。拡張は設定保存時に `chrome.permissions.request` で入力 URL の scheme + hostname pattern だけを提示し、利用者が許可した接続先だけへ通信します。Chrome の host permission はポート単位に限定できないため、権限 pattern はポートを含みませんが、API リクエストは利用者が入力したポートとパスだけへ送信します。HTTP は loopback hostname との完全一致だけを許可し、LAN 内 IP を含む外部ホストの HTTP は拒否します。任意の Web サイトを閲覧または変更する用途には使用しません。
+- **EN**: Used only when the user configures a complete OpenAI-compatible API URL. At save time, the extension calls `chrome.permissions.request` for the URL's scheme-and-hostname pattern and sends article text and extraction prompts only to a destination explicitly permitted by the user. Chrome host permissions are not restricted to one port, so the permission pattern omits the port while API requests preserve the exact port and path entered by the user. Plain HTTP is accepted only for exact loopback hostnames; HTTP destinations on LAN or remote hosts are rejected. The permission is not used to read or modify arbitrary websites.
+
 ## externally_connectable — `https://youkiti.github.io/*`
 
 - **JA**: Manifest V3 のリモートコード制約により、Google Picker（ファイル選択 UI）を拡張内から直接ロードできません。GitHub Pages 上にホストした `picker.html` を経由し、`externally_connectable` で当該ページから拡張へ選択結果を受け取るために使用します。
