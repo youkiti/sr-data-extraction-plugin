@@ -119,17 +119,19 @@ describe('createPdfViewer', () => {
     expect(wrap?.style.width).toBe('918px');
   });
 
-  test('ズーム選択肢に 175% / 200% があり、scale 2 でオーバーレイ座標が 2 倍になる', async () => {
+  test('ズーム選択肢に 175% / 200% / 300% があり、scale 2 でオーバーレイ座標が 2 倍になる（issue #51）', async () => {
     const { renderPage } = makeRenderPage();
     const viewer = createPdfViewer({ document: makeDocument(), pages: PAGES, renderPage });
     viewer.setHighlights([makeHighlight()], null);
     const zoom = viewer.root.querySelector<HTMLSelectElement>('.pdf-viewer__zoom')!;
     expect([...zoom.options].map((option) => option.value)).toEqual([
-      '0.75', '1', '1.25', '1.5', '1.75', '2',
+      '0.75', '1', '1.25', '1.5', '1.75', '2', '2.5', '3',
     ]);
     const labels = [...zoom.options].map((option) => option.textContent);
     expect(labels).toContain('175%');
     expect(labels).toContain('200%');
+    // issue #51: 小さい画面でも読めるよう 300% まで拡大できる
+    expect(labels).toContain('300%');
     zoom.value = '2';
     zoom.dispatchEvent(new Event('change'));
     await flush();

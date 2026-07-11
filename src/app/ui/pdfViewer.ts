@@ -55,7 +55,9 @@ export interface PdfViewerHandle {
   getCurrentPage(): number;
 }
 
-const ZOOM_LEVELS = ['0.75', '1', '1.25', '1.5', '1.75', '2'] as const;
+// issue #51: 小さい画面でも文字を追えるよう、上限を 200% → 300% まで広げる
+// （#/pilot 埋め込み・#/verify 単独の両方でこの一覧を共有する）
+const ZOOM_LEVELS = ['0.75', '1', '1.25', '1.5', '1.75', '2', '2.5', '3'] as const;
 
 export function createPdfViewer(options: PdfViewerOptions): PdfViewerHandle {
   const renderPage = options.renderPage ?? renderPdfPageToCanvas;

@@ -101,7 +101,10 @@ export interface VerificationPanelHandle {
   root: HTMLElement;
   /** 指定 entity のタブへ切替え、先頭セルへスクロール・フォーカスする（?entity= ディープリンク） */
   focusEntity(entityKey: string): void;
-  /** 現在フォーカス中のセルを可視域へスクロールする（新規パネルの初期表示用） */
+  /**
+   * パネル全体（PDF ペインのツールバー＝ズームコントロール含む）とフォーカス中セルを
+   * 可視域へスクロールする（新規パネルの初期表示用。issue #51）
+   */
   scrollFocusedIntoView(): void;
   dispose(): void;
 }
@@ -1343,6 +1346,12 @@ export function createVerificationPanel(
     root,
     focusEntity,
     scrollFocusedIntoView() {
+      // issue #51: #/pilot 埋め込み文脈ではパネルの手前に「過去のパイロット結果」「抽出が
+      // 完了しました」等のコンテンツが並び、#/verify 単独画面よりスクロール距離が長くなりがち。
+      // フォーカス中セル（フォームペイン側）だけを可視化すると、PDF ペインのツールバー
+      // （ズームコントロール含む）が画面外に残ったままになり得るため、まずパネル全体の
+      // 先頭（= 両ペインのツールバー行）を画面内へ入れてから、フォーカス中セルを微調整する
+      root.scrollIntoView?.({ block: 'start' });
       const element = [...formPane.querySelectorAll<HTMLElement>('.verify__cell')].find(
         (node) => node.dataset['cellKey'] === focusedCellKey,
       );
