@@ -415,11 +415,11 @@ test('owner のレビュアー管理カードで追加すると Reviewers タブ
   }, PROJECT);
   await page.goto('/app/app.html#/home');
 
-  // owner は全ルート + レビュアー管理カードが見える
+  // owner は全ルート（裁定含む）+ レビュアー管理カードが見える
   const navHrefs = await page.locator('#app-nav a').evaluateAll((els) =>
     els.map((el) => el.getAttribute('href')),
   );
-  expect(navHrefs.length).toBe(9);
+  expect(navHrefs.length).toBe(10);
   await expect(page.locator('#home-reviewers')).toBeVisible();
 
   await page.locator('#reviewer-email').fill('reviewer@example.com');

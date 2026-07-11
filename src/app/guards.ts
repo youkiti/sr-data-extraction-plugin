@@ -20,13 +20,20 @@ export type GuardResult =
  * role は省略時 'owner'（未解決 = null のあいだも制限なしとして扱う。roleService.loadRole が
  * 解決するまでの一時的な状態で、既存の owner 専用プロジェクトの挙動を変えないための既定値）。
  *
- * reviewer 系ロール（reviewer_with_ai / reviewer_independent / adjudicator。adjudicator は
- * #/adjudicate 未実装のフェーズ 1 では reviewer と同じ扱い）は #/home と #/verify 以外へ
- * 遷移できない（盲検の漏えい面遮断。design §3.1）。#/verify は加えてフォルダアクセス付与
- * （§7.2）を要求する
+ * reviewer 系ロール（reviewer_with_ai / reviewer_independent / adjudicator）は #/home と
+ * #/verify 以外へ遷移できない（盲検の漏えい面遮断。design §3.1）。#/verify は加えてフォルダ
+ * アクセス付与（§7.2）を要求する。
+ *
+ * `#/adjudicate`（S12。裁定は盲検解除後の工程）は owner / adjudicator のみ許可し、counts に
+ * よる入場条件は課さない（design §6.1・§9 PR3。対象が無ければ画面内の空状態で案内する）
  */
 export function guardRoute(hash: string, state: AppState, role: ProjectRole = 'owner'): GuardResult {
   const { counts } = state;
+  if (hash === '#/adjudicate') {
+    return role === 'owner' || role === 'adjudicator'
+      ? { allowed: true }
+      : { allowed: false, message: 'このプロジェクトでは裁定権限のため利用できません' };
+  }
   if (role !== 'owner' && hash !== '#/home' && hash !== '#/verify') {
     return { allowed: false, message: 'このプロジェクトではレビュアー権限のため利用できません' };
   }

@@ -132,6 +132,17 @@ describe('createInitialState', () => {
         loading: false,
         loadError: null,
       },
+      adjudicate: {
+        rows: null,
+        loading: false,
+        loadError: null,
+        selectedStudyId: null,
+        working: null,
+        workingLoading: false,
+        workingError: null,
+        saving: false,
+        mismatchOnlyFilter: true,
+      },
       export: {
         format: 'study_wide',
         built: null,

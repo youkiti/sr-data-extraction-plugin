@@ -80,6 +80,23 @@ import {
 import { loadDashboard } from './services/dashboardService';
 import { loadProgressCounts } from './services/homeService';
 import {
+  acceptAllMatchingCells,
+  addAdjudicateArmDraftRow,
+  adjudicateCellChoice,
+  adjudicateCellCustomValue,
+  adjudicateCellNotReported,
+  backToAdjudicateList,
+  confirmAdjudicateArms,
+  loadAdjudicateTargets,
+  openAdjudicateStudy,
+  removeAdjudicateArmDraftRow,
+  setAdjudicateMismatchOnlyFilter,
+  skipAdjudicateCell,
+  undoAdjudicateCell,
+  unskipAdjudicateCell,
+  updateAdjudicateArmDraftRow,
+} from './services/adjudicationService';
+import {
   cancelReviewerChange,
   confirmReviewerChange,
   loadReviewers,
@@ -236,6 +253,7 @@ export async function seedState(win: Window): Promise<AppState> {
       verify: { ...state.verify, ...(preloaded.verify ?? {}) },
       dashboard: { ...state.dashboard, ...(preloaded.dashboard ?? {}) },
       export: { ...state.export, ...(preloaded.export ?? {}) },
+      adjudicate: { ...state.adjudicate, ...(preloaded.adjudicate ?? {}) },
     };
   }
   return state;
@@ -518,6 +536,58 @@ export async function bootstrapApp(
         void loadExportData(store, deps, { force: true });
       },
     },
+    adjudicate: {
+      onSelectStudy: (studyId) => {
+        // hash 書き換え → hashchange → syncAdjudicateRoute の一本道（#/verify と同じ経路）
+        win.location.hash = `#/adjudicate?study=${encodeURIComponent(studyId)}`;
+      },
+      onBackToList: () => {
+        backToAdjudicateList(store);
+        win.location.hash = '#/adjudicate';
+      },
+      onRetryLoad: () => {
+        void loadAdjudicateTargets(store, deps, { force: true });
+      },
+      onArmDraftChange: (index, armName) => {
+        updateAdjudicateArmDraftRow(store, index, armName);
+      },
+      onArmDraftAdd: () => {
+        addAdjudicateArmDraftRow(store);
+      },
+      onArmDraftRemove: (index) => {
+        removeAdjudicateArmDraftRow(store, index);
+      },
+      onConfirmArms: (arms) => {
+        void confirmAdjudicateArms(store, deps, arms);
+      },
+      onAcceptAllMatches: () => {
+        void acceptAllMatchingCells(store, deps);
+      },
+      onChooseA: (cellKey) => {
+        void adjudicateCellChoice(store, deps, cellKey, 'A');
+      },
+      onChooseB: (cellKey) => {
+        void adjudicateCellChoice(store, deps, cellKey, 'B');
+      },
+      onCustomValue: (cellKey, value) => {
+        void adjudicateCellCustomValue(store, deps, cellKey, value);
+      },
+      onNotReported: (cellKey) => {
+        void adjudicateCellNotReported(store, deps, cellKey);
+      },
+      onSkip: (cellKey) => {
+        skipAdjudicateCell(store, cellKey);
+      },
+      onUnskip: (cellKey) => {
+        unskipAdjudicateCell(store, cellKey);
+      },
+      onUndo: (cellKey) => {
+        void undoAdjudicateCell(store, deps, cellKey);
+      },
+      onToggleMismatchOnly: (value) => {
+        setAdjudicateMismatchOnlyFilter(store, value);
+      },
+    },
   };
 
   /**
@@ -563,6 +633,20 @@ export async function bootstrapApp(
     }
   };
 
+  /**
+   * `#/adjudicate` の表示同期: study 一覧を読み込み、`?study=` があれば裁定作業データを開く
+   * （openAdjudicateStudy 側がペア未確定・ゲート未達を検知して workingError へ案内文言を入れる）。
+   * `?study=` が無い場合は一覧表示のまま留まる（#/verify と異なり「先頭 study を自動選択」はしない
+   * — 一覧のゲート状況を見て裁定者が選ぶのが自然な導線のため）
+   */
+  const syncAdjudicateRoute = async (): Promise<void> => {
+    await loadAdjudicateTargets(store, deps);
+    const desired = studyQueryOf(win.location.hash);
+    if (desired !== null && desired !== store.getState().adjudicate.selectedStudyId) {
+      await openAdjudicateStudy(store, deps, desired);
+    }
+  };
+
   const renderHeader = (state: AppState): void => {
     if (state.currentProject) {
       // プロジェクト名自体をプロジェクト選択ページへの同一タブ遷移リンクにする
@@ -588,11 +672,18 @@ export async function bootstrapApp(
       return;
     }
     const role = roleOf(state);
-    // reviewer 系ロールは Home と検証だけを表示する（ディムではなく非表示。design §3・§3.1）
-    const visibleRoutes =
-      role === 'owner'
-        ? ROUTES
-        : ROUTES.filter((route) => route.hash === '#/home' || route.hash === '#/verify');
+    // reviewer 系ロールは Home と検証だけを表示する（ディムではなく非表示。design §3・§3.1）。
+    // adjudicator はこれに加えて #/adjudicate も表示する（owner は既定で adjudicator を兼務するため
+    // ROUTES 全件に #/adjudicate が含まれる）
+    const visibleRoutes = ROUTES.filter((route) => {
+      if (role === 'owner') {
+        return true;
+      }
+      if (route.hash === '#/home' || route.hash === '#/verify') {
+        return true;
+      }
+      return route.hash === '#/adjudicate' && role === 'adjudicator';
+    });
     const items = visibleRoutes.map((route) => {
       const guard = guardRoute(route.hash, state, role);
       const link = doc.createElement('a');
@@ -723,6 +814,10 @@ export async function bootstrapApp(
     if (currentHash === '#/export') {
       // 初回表示時に素材を読み込んで 3 形式の CSV を構築（読込済みなら loadExportData 側で no-op）
       void loadExportData(store, deps);
+    }
+    if (currentHash === '#/adjudicate') {
+      // 一覧読込 → ?study=（あれば）の裁定データ読込。セレクタ切替も同じ経路
+      void syncAdjudicateRoute();
     }
   };
 

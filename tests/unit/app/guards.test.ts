@@ -117,6 +117,22 @@ describe('guardRoute', () => {
     });
   });
 
+  describe('#/adjudicate（S12。owner / adjudicator のみ許可・counts は問わない）', () => {
+    test.each(['owner', 'adjudicator'] as const)('%s は counts に関わらず許可される', (role) => {
+      expect(guardRoute('#/adjudicate', createInitialState(), role)).toEqual({ allowed: true });
+    });
+
+    test.each(['reviewer_with_ai', 'reviewer_independent'] as const)(
+      '%s は不可（裁定権限メッセージ）',
+      (role) => {
+        expect(guardRoute('#/adjudicate', createInitialState(), role)).toEqual({
+          allowed: false,
+          message: 'このプロジェクトでは裁定権限のため利用できません',
+        });
+      },
+    );
+  });
+
   describe('#/verify のフォルダアクセス付与ゲート（§7.2）', () => {
     test('reviewer 系ロールで未付与なら不可（Evidence があっても）', () => {
       const state = stateWith({ evidenceRows: 1 });

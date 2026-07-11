@@ -162,6 +162,37 @@ export interface DashboardViewCallbacks {
   onReload(): void;
 }
 
+/** `#/adjudicate`（S12）のユーザー操作コールバック */
+export interface AdjudicateViewCallbacks {
+  /** 一覧からの study 選択（URL ?study= と同期する） */
+  onSelectStudy(studyId: string): void;
+  /** 裁定中画面の「一覧に戻る」 */
+  onBackToList(): void;
+  /** 一覧の読み込み失敗時の再読み込み */
+  onRetryLoad(): void;
+  /** 群構成確定カードのドラフト編集 */
+  onArmDraftChange(index: number, armName: string): void;
+  onArmDraftAdd(): void;
+  onArmDraftRemove(index: number): void;
+  /** 群構成の確定（「このまま採用」/ 編集後の「確定」の両方から呼ぶ） */
+  onConfirmArms(arms: readonly { armKey: string; armName: string }[]): void;
+  /** 「一致セルを一括採用」 */
+  onAcceptAllMatches(): void;
+  /** セル単位の裁定: A / B の採用 */
+  onChooseA(cellKey: string): void;
+  onChooseB(cellKey: string): void;
+  /** 第 3 の値を入力して確定 */
+  onCustomValue(cellKey: string, value: string): void;
+  onNotReported(cellKey: string): void;
+  /** スキップ（consensus セルを作らない） / その取り消し */
+  onSkip(cellKey: string): void;
+  onUnskip(cellKey: string): void;
+  /** 裁定済みセルの取り消し（undo） */
+  onUndo(cellKey: string): void;
+  /** セル一覧の「不一致のみ」フィルタ切替 */
+  onToggleMismatchOnly(value: boolean): void;
+}
+
 /** #/export（S10）のユーザー操作コールバック */
 export interface ExportViewCallbacks {
   /** 形式選択ラジオの切替（サマリ・プレビューが追随する） */
@@ -188,4 +219,5 @@ export interface ViewContext {
   verify: VerifyViewCallbacks;
   dashboard: DashboardViewCallbacks;
   export: ExportViewCallbacks;
+  adjudicate: AdjudicateViewCallbacks;
 }
