@@ -87,8 +87,9 @@ const DOCS = [makeDoc()];
 describe('extract-data skill 定数', () => {
   it('skill 名とプロンプト版数を公開する（LLMApiLog 記録用）', () => {
     expect(EXTRACT_DATA_SKILL_NAME).toBe('extract-data');
-    // v4: box_2d（bbox）の取得に対応（requestBox=true 時のみ）
-    expect(EXTRACT_DATA_PROMPT_VERSION).toBe(4);
+    // v5: セクション順を protocol → documents → fields → 規約 → 出力形式 へ並び替え、
+    // 画像パートを Documents 直後へ移動（暗黙 prefix キャッシュ対応。issue #89）
+    expect(EXTRACT_DATA_PROMPT_VERSION).toBe(5);
   });
 
   it('システムプロンプトに verbatim quote の規約（300 文字上限）と document_index の規約を含む', () => {
@@ -291,7 +292,42 @@ describe('buildExtractDataUserPrompt', () => {
       protocolContext: 'RQ: Does drug X reduce mortality?',
     });
     expect(prompt).toContain('## Protocol context\n\nRQ: Does drug X reduce mortality?');
+    // protocol は Documents より前（さらに Fields より前）
+    expect(prompt.indexOf('## Protocol context')).toBeLessThan(prompt.indexOf('## Documents'));
     expect(prompt.indexOf('## Protocol context')).toBeLessThan(prompt.indexOf('## Fields to extract'));
+  });
+
+  it('セクションは protocol → documents → fields → entity_key rules → 出力形式 の順に並ぶ（issue #89: 暗黙 prefix キャッシュ対応）', () => {
+    const prompt = buildExtractDataUserPrompt({
+      fields: [STUDY_FIELD],
+      documents: DOCS,
+      protocolContext: 'RQ: Does drug X reduce mortality?',
+    });
+    const protocolPos = prompt.indexOf('## Protocol context');
+    const documentsPos = prompt.indexOf('## Documents');
+    const fieldsPos = prompt.indexOf('## Fields to extract');
+    const rulesPos = prompt.indexOf('## entity_key rules');
+    const outputPos = prompt.indexOf('## Output format');
+    expect(protocolPos).toBeGreaterThan(-1);
+    expect(documentsPos).toBeGreaterThan(-1);
+    expect(fieldsPos).toBeGreaterThan(-1);
+    expect(rulesPos).toBeGreaterThan(-1);
+    expect(outputPos).toBeGreaterThan(-1);
+    expect(protocolPos).toBeLessThan(documentsPos);
+    expect(documentsPos).toBeLessThan(fieldsPos);
+    expect(fieldsPos).toBeLessThan(rulesPos);
+    expect(rulesPos).toBeLessThan(outputPos);
+  });
+
+  it('protocolContext が無いバッチでも documents → fields → entity_key rules → 出力形式 の順は保たれる', () => {
+    const prompt = buildExtractDataUserPrompt({ fields: [STUDY_FIELD], documents: DOCS });
+    const documentsPos = prompt.indexOf('## Documents');
+    const fieldsPos = prompt.indexOf('## Fields to extract');
+    const rulesPos = prompt.indexOf('## entity_key rules');
+    const outputPos = prompt.indexOf('## Output format');
+    expect(documentsPos).toBeLessThan(fieldsPos);
+    expect(fieldsPos).toBeLessThan(rulesPos);
+    expect(rulesPos).toBeLessThan(outputPos);
   });
 
   it('protocolContext が空白のみなら省略する', () => {
@@ -352,24 +388,36 @@ describe('buildExtractDataUserContent（pdf_native）', () => {
     expect(buildExtractDataUserContent(input)).toBe(buildExtractDataUserPrompt(input));
   });
 
-  it('画像文書があれば [テキスト本文, ラベル, 画像, ラベル, 画像, ...] の配列を返す', () => {
-    const content = buildExtractDataUserContent({
-      fields: [STUDY_FIELD],
-      documents: [makeDoc(), makeImageDoc()],
-    });
+  it('画像文書があれば [prefix 本文, ラベル, 画像, ラベル, 画像, ..., suffix 本文] の配列を返す（issue #89: 画像は Documents 直後 = fields より前）', () => {
+    const input = { fields: [STUDY_FIELD], documents: [makeDoc(), makeImageDoc()] };
+    const content = buildExtractDataUserContent(input);
     expect(Array.isArray(content)).toBe(true);
     const parts = content as ChatContentPart[];
+
+    // 先頭は prefix（Documents までを含む text パート）
     expect(parts[0]).toMatchObject({ type: 'text' });
-    expect((parts[0] as { text: string }).text).toBe(
-      buildExtractDataUserPrompt({ fields: [STUDY_FIELD], documents: [makeDoc(), makeImageDoc()] }),
-    );
+    const prefixText = (parts[0] as { text: string }).text;
+    expect(prefixText).toContain('## Documents');
+    expect(prefixText).not.toContain('## Fields to extract');
+
     // 画像は文書順 → ページ順。各画像の直前にラベル（実際の document_index / total / page 番号）
-    expect(parts.slice(1)).toEqual([
+    expect(parts.slice(1, -1)).toEqual([
       { type: 'text', text: '[Document 2/2 page 1]' },
       { type: 'image', mimeType: 'image/png', dataBase64: 'QUJD' },
       { type: 'text', text: '[Document 2/2 page 2]' },
       { type: 'image', mimeType: 'image/png', dataBase64: 'REVG' },
     ]);
+
+    // 末尾は suffix（Fields to extract 以降を含む text パート）
+    const suffixPart = parts[parts.length - 1];
+    expect(suffixPart).toMatchObject({ type: 'text' });
+    const suffixText = (suffixPart as { text: string }).text;
+    expect(suffixText).toContain('## Fields to extract');
+    expect(suffixText).toContain('## Output format');
+    expect(suffixText).not.toContain('## Documents');
+
+    // 不変条件: prefix + '\n\n' + suffix は buildExtractDataUserPrompt の全文と一致する
+    expect(`${prefixText}\n\n${suffixText}`).toBe(buildExtractDataUserPrompt(input));
   });
 
   it('複数の画像文書がある場合、文書順（document_index）→ ページ順で画像パートを並べる', () => {
@@ -378,13 +426,12 @@ describe('buildExtractDataUserContent（pdf_native）', () => {
       filename: 'scan2.pdf',
       imagePages: [{ page: 1, mimeType: 'image/png', dataBase64: 'WFla' }],
     });
-    const content = buildExtractDataUserContent({
-      fields: [STUDY_FIELD],
-      documents: [makeImageDoc(), secondImageDoc],
-    });
+    const input = { fields: [STUDY_FIELD], documents: [makeImageDoc(), secondImageDoc] };
+    const content = buildExtractDataUserContent(input);
     const parts = content as ChatContentPart[];
-    // 1 番目の text パートはプロンプト本文。以降は 1 番目の画像文書のページ → 2 番目の画像文書のページ
-    expect(parts.slice(1)).toEqual([
+    // 1 番目の text パートは prefix（Documents までの本文）、最後は suffix（Fields 以降の本文）。
+    // 間は 1 番目の画像文書のページ → 2 番目の画像文書のページ
+    expect(parts.slice(1, -1)).toEqual([
       { type: 'text', text: '[Document 1/2 page 1]' },
       { type: 'image', mimeType: 'image/png', dataBase64: 'QUJD' },
       { type: 'text', text: '[Document 1/2 page 2]' },
@@ -392,6 +439,10 @@ describe('buildExtractDataUserContent（pdf_native）', () => {
       { type: 'text', text: '[Document 2/2 page 1]' },
       { type: 'image', mimeType: 'image/png', dataBase64: 'WFla' },
     ]);
+    // 不変条件は複数画像文書でも成り立つ
+    const prefixText = (parts[0] as { text: string }).text;
+    const suffixText = (parts[parts.length - 1] as { text: string }).text;
+    expect(`${prefixText}\n\n${suffixText}`).toBe(buildExtractDataUserPrompt(input));
   });
 });
 

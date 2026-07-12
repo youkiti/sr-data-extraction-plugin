@@ -896,10 +896,13 @@ describe('executeRun の画像入力（pdf_native。handoff-scanned-pdf-native-h
     const parts = userContent as ChatContentPart[];
     expect(parts[0]).toMatchObject({ type: 'text' });
     expect((parts[0] as { text: string }).text).toContain('scanned PDF with no text layer');
-    expect(parts.slice(1)).toEqual([
+    // 画像は Documents 直後（fields より前）に来る。末尾は suffix（Fields to extract 以降）の text パート
+    expect(parts.slice(1, -1)).toEqual([
       { type: 'text', text: '[Document 1/1 page 1]' },
       { type: 'image', mimeType: 'image/png', dataBase64: 'QUJD' },
     ]);
+    expect(parts[parts.length - 1]).toMatchObject({ type: 'text' });
+    expect((parts[parts.length - 1] as { text: string }).text).toContain('## Fields to extract');
     expect(result.status).toBe('done');
     expect(result.evidence[0]?.anchorStatus).toBeNull();
   });
