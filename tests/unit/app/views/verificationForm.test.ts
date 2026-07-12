@@ -120,6 +120,7 @@ function makeModel(
     },
     layoutMode: 'list',
     focusCard: null,
+    consistencyWarnings: new Map<string, string[]>(),
     ...overrides,
   };
 }
@@ -287,6 +288,29 @@ describe('renderVerificationForm', () => {
     expect(values[0]?.textContent).toBe('未報告（NR）');
     expect(values[1]?.textContent).toBe('（値なし）');
     expect(root.querySelectorAll('.verify__badge')).toHaveLength(2); // f-2 はバッジなし
+  });
+
+  test('整合性チェック警告（issue #65）: 該当セルに警告一覧を表示し、複数セルにまたがる場合は最初の 1 件だけに id を付ける', () => {
+    const cellA = makeCell({ field: makeField({ fieldId: 'f-a', fieldName: 'outcome_events' }) });
+    const cellB = makeCell({ field: makeField({ fieldId: 'f-b', fieldName: 'outcome_total' }) });
+    const message = 'イベント数 (12) が解析対象数 (10) を超えています';
+    const warnings = new Map<string, string[]>([
+      [cellA.cellKey, [message]],
+      [cellB.cellKey, [message]],
+    ]);
+    const { root } = render(makeModel([cellA, cellB], { consistencyWarnings: warnings }));
+    const blocks = root.querySelectorAll('.verify__consistency-warnings');
+    expect(blocks).toHaveLength(2);
+    expect(blocks[0]?.getAttribute('role')).toBe('note');
+    expect(blocks[0]?.textContent).toContain(message);
+    expect(blocks[0]?.id).toBe('verify-consistency-warning');
+    expect(blocks[1]?.id).toBe('');
+    expect(root.querySelectorAll('#verify-consistency-warning')).toHaveLength(1);
+  });
+
+  test('整合性チェック警告が無いセルには警告ブロックを描画しない', () => {
+    const { root } = render(makeModel([makeCell()]));
+    expect(root.querySelector('.verify__consistency-warnings')).toBeNull();
   });
 
   test('アンカー済み quote はジャンプボタン、複数一致なら切替ボタンを出す', () => {
@@ -786,6 +810,7 @@ describe('renderVerificationForm: レイアウトモード（issue #38）', () =
       highlightInfo: new Map(),
       canSearchText: true,
       recentCell: null,
+      consistencyWarnings: new Map<string, string[]>(),
     };
   }
 

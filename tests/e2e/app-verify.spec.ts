@@ -799,3 +799,65 @@ test('保存の競合検出（issue #64・楽観ロック）: 判定操作が競
   await expect(page.locator('#verify-conflict-warning')).toHaveCount(0);
   await expect(page.locator('.verify__panes')).toBeVisible({ timeout: 15_000 });
 });
+
+test('決定論的な数値整合性チェック（issue #65）: events > total で ⚠ バッジ + 警告文 → 修正で解消すると消える', async ({
+  page,
+}) => {
+  // 二値プリセット項目（outcome_events / outcome_total）のみのスキーマ。outcome_result 項目が
+  // あるスキーマは arm 未確定のうちアウトカムタブがディムされる（群構成確定が先に必要）
+  const EVENTS_FIELD_ROW = [
+    '1', 'f-out-events', '1', 'outcomes', 'outcome_events', 'イベント数（群別）', 'outcome_result',
+    'integer', '', '', 'TRUE', 'Number of participants with the outcome event in this arm.', '', 'FALSE', '',
+  ];
+  const TOTAL_FIELD_ROW = [
+    '1', 'f-out-total', '2', 'outcomes', 'outcome_total', '解析対象数（群別）', 'outcome_result',
+    'integer', '', '', 'TRUE', 'Number of participants analysed for this outcome in this arm.', '', 'FALSE', '',
+  ];
+  // outcome_result レベルの entity_key 形式（requirements.md §3.3）: `outcome:<id>|arm:<n>`
+  const OUTCOME_ENTITY_KEY = 'outcome:mortality|arm:1';
+  const EVENTS_EVIDENCE_ROW = [
+    'ev-events', 'run-1', 'study-1', 'f-out-events', 'doc-1', OUTCOME_ENTITY_KEY, '13', 'FALSE', QUOTE, '1', 'high', 'exact',
+  ];
+  const TOTAL_EVIDENCE_ROW = [
+    'ev-total', 'run-1', 'study-1', 'f-out-total', 'doc-1', OUTCOME_ENTITY_KEY, '10', 'FALSE', QUOTE, '1', 'high', 'exact',
+  ];
+  const { appendUrls } = await setupRoutes(page, {
+    schemaRows: [EVENTS_FIELD_ROW, TOTAL_FIELD_ROW],
+    evidenceRows: [EVENTS_EVIDENCE_ROW, TOTAL_EVIDENCE_ROW],
+  });
+  await initApp(page, '#/verify?study=study-1');
+
+  await expect(page.locator('.verify__panes')).toBeVisible({ timeout: 15_000 });
+
+  // 群構成の確定（AI ドラフトは Evidence の entity_key から arm:1 を検出済み）
+  await expect(page.locator('.verify__arm-key')).toHaveText('arm:1');
+  await page.locator('.verify__arm-name').fill('介入群');
+  await page.locator('#verify-arm-confirm').click();
+
+  // events(13) > total(10) は決定論的な数値整合性チェック（LLM 非依存）の違反 →
+  // マトリクスの関与セル両方（イベント数・解析対象数）に ⚠ バッジが付く
+  const matrixButtons = page.locator('#verify-focus-matrix .focus-card__matrix-btn');
+  await expect(matrixButtons).toHaveCount(2, { timeout: 15_000 });
+  await expect(page.locator('.verify__consistency-badge')).toHaveCount(2);
+  await expect(matrixButtons.nth(0)).toHaveAttribute('title', /を超えています/);
+
+  // 詳細ストリップ（初期フォーカス = イベント数）に警告メッセージ一覧を表示する
+  await expect(page.locator('#verify-focus-detail .verify__cell-label')).toHaveText('イベント数（群別）');
+  await expect(page.locator('#verify-consistency-warning')).toContainText(
+    'イベント数（群別） (13) が解析対象数（群別） (10) を超えています',
+  );
+
+  const results = await new AxeBuilder({ page }).analyze();
+  expect(results.violations).toEqual([]);
+
+  // 判定操作は増えない・ブロックしない（情報提示のみ）: 修正で矛盾を解消すると
+  // セル状態変更の再描画経路でバッジ・警告が再計算されて消える
+  await page.locator('#verify-focus-detail .verify__action--edit').click();
+  await page.locator('#verify-focus-detail .verify__edit-input').fill('5');
+  await page.locator('#verify-focus-detail .verify__edit-confirm').click();
+  await expect(page.locator('.verify__consistency-badge')).toHaveCount(0);
+  await expect(page.locator('.verify__consistency-warnings')).toHaveCount(0);
+  await expect
+    .poll(() => appendUrls.filter((url) => url.includes('Decisions') && url.includes(':append')).length)
+    .toBeGreaterThan(0);
+});

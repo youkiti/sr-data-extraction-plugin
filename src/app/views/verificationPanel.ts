@@ -34,6 +34,7 @@ import {
   undoRevertValue,
   type CellState,
 } from '../../features/verification/cellState';
+import { collectConsistencyWarnings } from '../../features/verification/consistencyChecks';
 import {
   buildFocusUnits,
   nextPendingCellInUnit,
@@ -319,6 +320,7 @@ export function createVerificationPanel(
       canSearchText: activeDocument().extractedPages.some((page) => page.text !== ''),
       recentCell,
       mode: panelMode,
+      consistencyWarnings: collectConsistencyWarnings(tabModel),
     };
   }
 
@@ -1079,10 +1081,11 @@ export function createVerificationPanel(
     const hadFocus = root.contains(doc.activeElement);
     // フォームペイン全体を作り直すためスクロール位置が 0 へクランプされる。退避して復元する
     const savedScrollTop = formPane.scrollTop;
+    const tabModel = currentTabModel();
     const model: VerificationFormModel = {
       tabs,
       activeTab,
-      tabModel: currentTabModel(),
+      tabModel,
       focusedCellKey,
       editing,
       recentDecidedKey,
@@ -1109,6 +1112,9 @@ export function createVerificationPanel(
       layoutMode,
       focusCard: layoutMode === 'focus' ? buildFocusCardModel() : null,
       mode: panelMode,
+      // 決定論的な数値整合性チェック（issue #65）: 判定・編集のたびに refreshForm が
+      // 呼ばれるためここで再計算する（古い警告のキャッシュ持ち越しを防ぐ）
+      consistencyWarnings: collectConsistencyWarnings(tabModel),
     };
     formPane.replaceChildren(renderVerificationForm(model, handlers));
     formPane.scrollTop = savedScrollTop;

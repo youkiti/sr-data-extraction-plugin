@@ -86,6 +86,12 @@ export interface VerificationFormModel {
    * セルカード（verificationCellCard.renderCell）の描画を差し替える
    */
   mode?: 'review' | 'independent';
+  /**
+   * 決定論的な数値整合性チェック（issue #65）の警告。cellKey → メッセージ一覧。
+   * verificationPanel が現在タブの TabModel から collectConsistencyWarnings で再計算する
+   * （判定・編集のたびに refreshForm 経由で作り直されるため古い警告が残らない）
+   */
+  consistencyWarnings: ReadonlyMap<string, string[]>;
 }
 
 export interface VerificationFormHandlers {
@@ -437,6 +443,22 @@ function shortcutNoteText(layoutMode: 'focus' | 'list'): string {
     : 'ショートカット: a 承認 / e 修正 / x 棄却 / n 未報告 / z 戻す / j・k 項目移動 / f ハイライトへ';
 }
 
+/**
+ * フォームのルート要素を組み立てる（`verify__form` 直下は呼び出しごとに分岐が異なるため、
+ * 4 箇所の return を 1 箇所へ集約する）。整合性チェック警告ブロック
+ * （`.verify__consistency-warnings`。verificationCellCard.renderCell が付与）は
+ * リストモードで同時に複数セルへ表示されうるため、id 重複を避けて最初の 1 件にだけ
+ * `verify-consistency-warning` を付ける（E2E から一意に特定するため。他は class のみで検索可能）
+ */
+function finalizeForm(children: HTMLElement[]): HTMLElement {
+  const root = el('div', { className: 'verify__form' }, children);
+  const firstWarningBlock = root.querySelector('.verify__consistency-warnings');
+  if (firstWarningBlock !== null) {
+    firstWarningBlock.id = 'verify-consistency-warning';
+  }
+  return root;
+}
+
 export function renderVerificationForm(
   model: VerificationFormModel,
   handlers: VerificationFormHandlers,
@@ -462,7 +484,7 @@ export function renderVerificationForm(
         text: 'まず群構成を確定してください',
       }),
     );
-    return el('div', { className: 'verify__form' }, children);
+    return finalizeForm(children);
   }
   if (model.tabModel.cells.length === 0) {
     children.push(
@@ -472,7 +494,7 @@ export function renderVerificationForm(
       }),
     );
     children.push(el('p', { className: 'verify__shortcut-note', text: shortcutNoteText(model.layoutMode) }));
-    return el('div', { className: 'verify__form' }, children);
+    return finalizeForm(children);
   }
   if (model.layoutMode === 'focus') {
     // フォーカスモード（issue #38）: ユニット単位のマトリクスカードへ委譲する。
@@ -482,7 +504,7 @@ export function renderVerificationForm(
       children.push(renderVerificationFocusCard(model.focusCard, handlers));
     }
     children.push(el('p', { className: 'verify__shortcut-note', text: shortcutNoteText('focus') }));
-    return el('div', { className: 'verify__form' }, children);
+    return finalizeForm(children);
   }
   // 未判定（+ 直近判定 1 件）を上に、判定済みを下部ブロックへ送る。
   // 一番上が常に「今判断すべき変数」になる（ui-states.md §3 `#/verify`）
@@ -512,5 +534,5 @@ export function renderVerificationForm(
       text: shortcutNoteText('list'),
     }),
   );
-  return el('div', { className: 'verify__form' }, children);
+  return finalizeForm(children);
 }
