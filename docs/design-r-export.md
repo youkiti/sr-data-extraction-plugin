@@ -1,8 +1,8 @@
 # R 解析対応 CSV エクスポート 設計書（issue #60・確定版）
 
-- **作成日**: 2026-07-12 / **ステータス**: **確定・PR-A（core）実装済み**。builder 純関数群 + golden fixture + jest テストまで完了。S10 UI 配線（Drive への複数ファイル出力・`ExportLog` 拡張・生成完了カードの案内文）は **PR-B のスコープ**で本 PR には含まない
+- **作成日**: 2026-07-12 / **ステータス**: **確定・PR-A（core）+ PR-B（S10 UI 配線）実装済み**。builder 純関数群 + golden fixture + jest テストに加え、Drive への複数ファイル出力・`ExportLog` 追記・生成完了カードの案内文まで実装済み（PR-B の追加判断は §13）
 - **対象 issue**: [#60 feat: R解析対応に向けたCSVエクスポート設計を確定する](https://github.com/youkiti/sr-data-extraction-plugin/issues/60)
-- **前提**: issue #60 の設計ドラフト（コメント）と、オーナーとの合意メモ 2 件（2026-07-12）で D-1〜D-6 が確定済み。本書はその確定内容をそのまま実装可能な契約へ落とし込み、実装時に追加で必要になった判断（§7）を明記する
+- **前提**: issue #60 の設計ドラフト（コメント）と、オーナーとの合意メモ 2 件（2026-07-12）で D-1〜D-6 が確定済み。本書はその確定内容をそのまま実装可能な契約へ落とし込み、実装時に追加で必要になった判断（§7・§13）を明記する
 
 ## 0. 背景と方針（再掲）
 
@@ -275,11 +275,52 @@ src/features/export/
     issues.ts                    export_issues.csv の行型 + 横断チェック（§4.5）
 ```
 
-## 12. スコープ外（PR-B 以降）
+## 12. スコープ外（PR-B 以降。§13 に実装済みのものを除く）
 
-- S10 UI への「R セット」形式追加（Drive `exports/rset_{YYYYMMDD-HHMMSS}/` への複数ファイル保存・`ExportLog` 拡張）
-- 生成完了カードの UTF-8（BOM なし）案内文（D-6 の初心者向け説明）
 - `robvis` 互換出力（`rob.csv` からの派生。エクスポートオプション化は別途）
 - `reported_unit`（[#76](https://github.com/youkiti/sr-data-extraction-plugin/issues/76)）
 - `analysis_role`（感度分析共変量タグ付け。P2 の便利機能として保留）
 - signaling question（`sq_id`）: [#61](https://github.com/youkiti/sr-data-extraction-plugin/issues/61) 実装後に `rob.csv` へ配線
+
+## 13. PR-B（S10 UI 配線）実装時の追加判断
+
+PR-A では明記されていなかった、または PR-A のコード上の状態と本書の確定内容（D-6 等）が食い違っていた点を、PR-B の実装を通して確定させた。
+
+### 13.1 `buildCsv` の BOM を外し、既存 3 形式は呼び出し側で前置する形に修正
+
+PR-A 時点の `csvEncode.ts` の `buildCsv` は既存 3 形式・R セットの両方に無条件で BOM を付与しており、D-6「R セットは BOM なし」を満たしていなかった（`buildRSet.test.ts` にも「全 CSV ファイルは UTF-8 BOM 付きヘッダーで始まる」という、D-6 と矛盾するテストが存在した）。PR-B で `buildCsv` 自体を BOM なしの共通実装に変更し、Excel との相性を優先する既存 3 形式（`buildStudyWideCsv.ts` / `buildResultsLongCsv.ts` / `buildAuditCsv.ts`）だけが `CSV_BOM` を個別に前置する形へ修正した。R セット側（`rset/build*Csv.ts`）は元から `buildCsv` をそのまま使っていたため、コード変更は不要だった。既存 3 形式の出力（BOM の有無・内容）は変わらない。関連テスト（`csvEncode.test.ts` / rset 各 builder のヘッダーのみケース / `buildRSet.test.ts`）を D-6 に合わせて更新した。
+
+### 13.2 `review_mode` の導出規則（`rset/reviewMode.ts`）
+
+`export_manifest.json` の `review_mode` は、Reviewers タブの「割り当て」ではなく、実際にエクスポートされる `StudyData` / `ResultsData` の `annotator_type` 集合から決定的に導出する（`deriveReviewMode`）。R 利用者が「このデータセットに実際に含まれている検証体制」を機械的に読み取れるようにするため、割り当て済みだが実施未了のレビュー体制ではなく、データそのものを見る。優先順位（強い体制を優先）:
+
+1. `consensus` 行が 1 件でもあれば `dual_consensus`（二重独立検証を経て裁定済み。S12 裁定機能）
+2. `human_independent` 行があれば `dual_independent`（独立入力は完了しているが未裁定、または裁定機能を使わない運用）
+3. `human_with_ai` 行があれば `single_with_ai`（単一レビュアーが AI 支援で検証。モード①）
+4. いずれも無ければ `no_human_verification`（AI 抽出のみ。人間の検証行が 1 件もない）
+
+### 13.3 `ExportLog` への表現（新規列は追加しない）
+
+R セットは 8 ファイルを 1 回で生成するため、既存 `ExportLog` の 1 行 1 URL 前提（`file_ref`）とそのままでは噛み合わない。D-1 の「既存形式への変更は最小限」という方針を汲み、**既存列のみで表現し新規列は追加しない**：
+
+- `format`: `'r_set'`
+- `file_ref`: 8 ファイルの保存先サブフォルダ（`exports/rset_{YYYYMMDD-HHMMSS}/`）の Drive `webViewLink`。個々のファイルの URL は記録しないが、フォルダを開けば全ファイルにアクセスできるため実用上十分と判断した
+- `study_count`: `tab1.csv` の行数（確定 annotator を特定できた study 数）。`tab1.csv` は study 単位 1 行の表のため、既存 3 形式の `study_count`（CSV に行が出た study 数）と同じ意味になる
+
+### 13.4 Drive 保存構成・ExportLog 追記の順序
+
+生成時（`exportService.generateRSetExport`）:
+
+1. `export_manifest.json` の `exported_at` / `app_version` / `review_mode` をこの時点で解決してから `buildRSet()` を実行する（画面表示中のプレビュー用ビルドとは別に、保存直前に正確な時刻で作り直す。`app_version` は Methods 文案カード（issue #67）と同じ `getToolVersion` seam を再利用し、`chrome.runtime.getManifest().version` が取れない環境では空文字にフォールバックする）
+2. プロジェクトフォルダ直下 `exports/` を `ensureChildFolder` で確保（既存 3 形式と共有）
+3. その配下に `rset_{YYYYMMDD-HHMMSS}/` を `ensureChildFolder` で作成
+4. 8 ファイルを `uploadTextFile` で順に保存（CSV は `text/csv`、`export_manifest.json` は `application/json`）
+5. `ExportLog` に 1 行追記（§13.3）
+
+### 13.5 ローカル保存（zip 化しない）
+
+生成完了カードの「ローカル保存」は、8 ファイルを `app/ui/download.ts` の `downloadTextFile` で個別に `<a download>` クリックする素朴な実装。zip 化はブラウザ拡張の制約（zip 生成ライブラリの追加は過剰）と要望文面（「zip 化はしない」）の両方から見送った。
+
+### 13.6 生成完了カードの UTF-8（BOM なし）案内文（D-6 の初心者向け説明）
+
+R セットの生成完了カード（`#export-rset-result`）に、CSV が UTF-8 BOM なしで保存される旨と、Excel で開く際の対処（「データ > テキストまたは CSV から」で文字コード UTF-8 指定）・R の `readr::read_csv()` はそのまま読めることを案内する固定文を表示する（`RSET_UTF8_NOTE`。`app/views/exportView.ts`）。

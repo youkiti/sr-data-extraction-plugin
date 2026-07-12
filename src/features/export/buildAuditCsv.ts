@@ -7,7 +7,7 @@ import type { Evidence } from '../../domain/evidence';
 import type { RunAuditInfo } from '../../domain/extractionRun';
 import type { SchemaField } from '../../domain/schemaField';
 import { isEntityInstanceDeclaration } from '../verification/instanceDeclarations';
-import { buildCsv } from './csvEncode';
+import { buildCsv, CSV_BOM } from './csvEncode';
 
 export const AUDIT_HEADER = [
   'study_label',
@@ -239,5 +239,11 @@ export function buildAuditCsv(
       csvRows.push(item.row);
     }
   }
-  return { csv: buildCsv(AUDIT_HEADER, csvRows), undecidedCellCount, droppedRowCount, studyCount };
+  return {
+    // Excel との相性優先で BOM を前置(buildCsv 自体は BOM なし。R セットとの違いは csvEncode.ts 参照)
+    csv: CSV_BOM + buildCsv(AUDIT_HEADER, csvRows),
+    undecidedCellCount,
+    droppedRowCount,
+    studyCount,
+  };
 }

@@ -12,8 +12,15 @@ import { buildResultsLongCsv } from './buildResultsLongCsv';
 import { buildStudyWideCsv } from './buildStudyWideCsv';
 import { parseCsv } from './parseCsv';
 
+/**
+ * このモジュール（buildExport.ts）が扱う「単一 CSV を返す」従来 3 形式。
+ * `r_set`（issue #60）は 8 ファイルを返す別オーケストレータ（rset/buildRSet.ts）が担当し、
+ * ここでは扱わない
+ */
+export type ClassicExportFormat = Exclude<ExportFormat, 'r_set'>;
+
 /** 形式選択ラジオの表示順（ui-states.md §3 `#/export`） */
-export const EXPORT_FORMATS: readonly ExportFormat[] = ['study_wide', 'results_long', 'audit'];
+export const EXPORT_FORMATS: readonly ClassicExportFormat[] = ['study_wide', 'results_long', 'audit'];
 
 /** プレビューに出すデータ行の上限（ui-states.md §3: 先頭 10 行） */
 export const PREVIEW_ROW_LIMIT = 10;
@@ -33,7 +40,7 @@ export interface ExportMaterials {
 
 /** 1 形式ぶんの構築結果（サマリ・警告ダイアログ・プレビュー・ExportLog の素材） */
 export interface BuiltExport {
-  format: ExportFormat;
+  format: ClassicExportFormat;
   csv: string;
   /** CSV のヘッダ列名 */
   header: string[];
@@ -57,7 +64,7 @@ export interface BuiltExport {
 
 /** builder 固有の結果を BuiltExport へ正規化する共通仕上げ */
 function finish(
-  format: ExportFormat,
+  format: ClassicExportFormat,
   csv: string,
   studyCount: number,
   unverifiedCellCount: number | null,
@@ -88,7 +95,7 @@ export function toStudyLabels(
   return studyIds.map((id) => labelById.get(id) ?? id);
 }
 
-export function buildExport(format: ExportFormat, materials: ExportMaterials): BuiltExport {
+export function buildExport(format: ClassicExportFormat, materials: ExportMaterials): BuiltExport {
   const { studies, fields } = materials;
   switch (format) {
     case 'study_wide': {
@@ -127,7 +134,9 @@ export function buildExport(format: ExportFormat, materials: ExportMaterials): B
 }
 
 /** 3 形式まとめて構築する（読み込み 1 回で形式切替を即時にするため） */
-export function buildAllExports(materials: ExportMaterials): Record<ExportFormat, BuiltExport> {
+export function buildAllExports(
+  materials: ExportMaterials,
+): Record<ClassicExportFormat, BuiltExport> {
   return {
     study_wide: buildExport('study_wide', materials),
     results_long: buildExport('results_long', materials),

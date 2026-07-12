@@ -72,8 +72,7 @@ import {
   unskipAdjudicateCell,
   updateAdjudicateArmDraftRow,
 } from '../../../src/app/services/adjudicationService';
-import type { BuiltExport } from '../../../src/features/export/buildExport';
-import type { ExportFormat } from '../../../src/domain/exportLog';
+import type { BuiltExport, ClassicExportFormat } from '../../../src/features/export/buildExport';
 import { createInitialState, type AdjudicateWorking, type AppState } from '../../../src/app/store';
 import { SHEET_HEADERS } from '../../../src/domain/sheetsSchema';
 import { CURRENT_PROJECT_STORAGE_KEY } from '../../../src/features/project/projectStore';
@@ -2244,7 +2243,7 @@ describe('bootstrapApp: #/export', () => {
     document.body.innerHTML = APP_TEMPLATE;
   });
 
-  function makeBuilt(format: ExportFormat): BuiltExport {
+  function makeBuilt(format: ClassicExportFormat): BuiltExport {
     return {
       format,
       csv: 'csv',

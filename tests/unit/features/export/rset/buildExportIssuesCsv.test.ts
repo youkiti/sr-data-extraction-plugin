@@ -1,11 +1,10 @@
-import { CSV_BOM } from '../../../../../src/features/export/csvEncode';
 import { buildExportIssuesCsv } from '../../../../../src/features/export/rset/buildExportIssuesCsv';
 import { EXPORT_ISSUES_HEADER } from '../../../../../src/features/export/rset/issues';
 
 describe('buildExportIssuesCsv', () => {
   test('issue が無ければヘッダーのみ', () => {
     const result = buildExportIssuesCsv([]);
-    expect(result.csv).toBe(`${CSV_BOM}${EXPORT_ISSUES_HEADER.join(',')}\r\n`);
+    expect(result.csv).toBe(`${EXPORT_ISSUES_HEADER.join(',')}\r\n`);
     expect(result.rowCount).toBe(0);
   });
 

@@ -1,5 +1,4 @@
 import { NOT_REPORTED_TOKEN } from '../../../../../src/domain/annotation';
-import { CSV_BOM } from '../../../../../src/features/export/csvEncode';
 import { parseCsv } from '../../../../../src/features/export/parseCsv';
 import { buildMaCsv } from '../../../../../src/features/export/rset/buildMaCsv';
 import { ENTITY_INSTANCE_DECLARATION_FIELD_ID } from '../../../../../src/features/verification/instanceDeclarations';
@@ -28,8 +27,8 @@ function row(overrides: Parameters<typeof makeResultsDataRow>[0]) {
 describe('buildMaCsv', () => {
   test('study が無ければヘッダーのみ', () => {
     const result = buildMaCsv([], [], [], [], [], []);
-    expect(result.csv).toBe(`${CSV_BOM}${result.header.join(',')}\r\n`);
-    expect(result.statusCsv).toBe(`${CSV_BOM}${result.header.join(',')}\r\n`);
+    expect(result.csv).toBe(`${result.header.join(',')}\r\n`);
+    expect(result.statusCsv).toBe(`${result.header.join(',')}\r\n`);
     expect(result.rowCount).toBe(0);
   });
 

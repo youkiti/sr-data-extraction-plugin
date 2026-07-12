@@ -155,6 +155,8 @@ describe('createInitialState', () => {
       export: {
         format: 'study_wide',
         built: null,
+        rSetMaterials: null,
+        rSet: null,
         schemaVersion: null,
         loading: false,
         loadError: null,
@@ -162,6 +164,7 @@ describe('createInitialState', () => {
         generating: false,
         generateError: null,
         result: null,
+        rSetResult: null,
         methodsFacts: null,
         methodsLanguage: 'en',
         methodsWorkflow: 'single',

@@ -2,7 +2,11 @@
 // 受け入れ条件の 8 シナリオ（①study_label 重複〜⑧未知 field_id）を一括検証する
 import { CSV_BOM } from '../../../../../src/features/export/csvEncode';
 import { parseCsv } from '../../../../../src/features/export/parseCsv';
-import { buildRSet } from '../../../../../src/features/export/rset/buildRSet';
+import {
+  buildRSet,
+  countRSetUnverifiedCells,
+  rSetDataRowCount,
+} from '../../../../../src/features/export/rset/buildRSet';
 import { EXPORT_FORMAT_VERSION, FINAL_ANNOTATOR_RULE_DESCRIPTION } from '../../../../../src/features/export/rset/buildExportManifest';
 import { MANIFEST_META, MATERIALS, SPECIAL_CHAR_VALUE } from './__fixtures__/scenario';
 
@@ -167,10 +171,12 @@ describe('buildRSet', () => {
     expect(issuesSummary.unverified_cell).toBeGreaterThanOrEqual(1);
   });
 
-  test('全 CSV ファイルは UTF-8 BOM 付きヘッダーで始まる', () => {
+  // R セットは既存 3 形式と異なり BOM を付けない（issue #60 design-r-export.md D-6:
+  // R の readr::read_csv() 等との相性を優先。Excel 向けの読み方は生成完了カードの案内文で補う）
+  test('全 CSV ファイルは UTF-8 BOM なしヘッダーで始まる', () => {
     for (const file of built.files) {
       if (file.name.endsWith('.csv')) {
-        expect(file.content.startsWith(CSV_BOM)).toBe(true);
+        expect(file.content.startsWith(CSV_BOM)).toBe(false);
       }
     }
   });
@@ -189,5 +195,41 @@ describe('buildRSet', () => {
       'rob2_judgement',
       'rob2_support',
     ]);
+  });
+});
+
+describe('rSetDataRowCount', () => {
+  test('tab1 / ma / rob の rowCount 合計を返す（dictionary / issues / manifest は含めない）', () => {
+    const built = buildRSet(MATERIALS, MANIFEST_META);
+    const tab1 = built.files.find((file) => file.name === 'tab1.csv')?.rowCount ?? 0;
+    const ma = built.files.find((file) => file.name === 'ma.csv')?.rowCount ?? 0;
+    const rob = built.files.find((file) => file.name === 'rob.csv')?.rowCount ?? 0;
+    expect(rSetDataRowCount(built)).toBe(tab1 + ma + rob);
+    expect(rSetDataRowCount(built)).toBeGreaterThan(0);
+  });
+
+  test('データ行が 1 件もなければ 0', () => {
+    const empty = buildRSet(
+      { ...MATERIALS, studies: [], studyRows: [], resultsRows: [] },
+      MANIFEST_META,
+    );
+    expect(rSetDataRowCount(empty)).toBe(0);
+  });
+});
+
+describe('countRSetUnverifiedCells', () => {
+  test('export_issues の unverified_cell 件数を数える', () => {
+    const built = buildRSet(MATERIALS, MANIFEST_META);
+    const expected = built.issues.filter((issue) => issue.issueType === 'unverified_cell').length;
+    expect(countRSetUnverifiedCells(built)).toBe(expected);
+    expect(countRSetUnverifiedCells(built)).toBeGreaterThan(0);
+  });
+
+  test('unverified_cell が無ければ 0', () => {
+    const empty = buildRSet(
+      { ...MATERIALS, studies: [], studyRows: [], resultsRows: [] },
+      MANIFEST_META,
+    );
+    expect(countRSetUnverifiedCells(empty)).toBe(0);
   });
 });

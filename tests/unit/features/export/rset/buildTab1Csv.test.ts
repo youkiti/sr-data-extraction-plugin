@@ -1,5 +1,4 @@
 import { NOT_REPORTED_TOKEN } from '../../../../../src/domain/annotation';
-import { CSV_BOM } from '../../../../../src/features/export/csvEncode';
 import { parseCsv } from '../../../../../src/features/export/parseCsv';
 import { buildTab1Csv } from '../../../../../src/features/export/rset/buildTab1Csv';
 import { makeEvidence, makeField, makeStudy, makeStudyDataRow } from './testHelpers';
@@ -7,8 +6,8 @@ import { makeEvidence, makeField, makeStudy, makeStudyDataRow } from './testHelp
 describe('buildTab1Csv', () => {
   test('study が無ければヘッダーのみ', () => {
     const result = buildTab1Csv([], [], [], [], []);
-    expect(result.csv).toBe(`${CSV_BOM}${result.header.join(',')}\r\n`);
-    expect(result.statusCsv).toBe(`${CSV_BOM}${result.header.join(',')}\r\n`);
+    expect(result.csv).toBe(`${result.header.join(',')}\r\n`);
+    expect(result.statusCsv).toBe(`${result.header.join(',')}\r\n`);
     expect(result.rowCount).toBe(0);
     expect(result.issues).toEqual([]);
   });

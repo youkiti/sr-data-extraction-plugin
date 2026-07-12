@@ -1,4 +1,3 @@
-import { CSV_BOM } from '../../../../../src/features/export/csvEncode';
 import { parseCsv } from '../../../../../src/features/export/parseCsv';
 import {
   buildDataDictionaryCsv,
@@ -9,7 +8,7 @@ import { makeField } from './testHelpers';
 describe('buildDataDictionaryCsv', () => {
   test('項目が無ければヘッダーのみ', () => {
     const result = buildDataDictionaryCsv([]);
-    expect(result.csv).toBe(`${CSV_BOM}${DATA_DICTIONARY_HEADER.join(',')}\r\n`);
+    expect(result.csv).toBe(`${DATA_DICTIONARY_HEADER.join(',')}\r\n`);
     expect(result.rowCount).toBe(0);
   });
 

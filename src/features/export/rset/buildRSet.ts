@@ -104,3 +104,21 @@ export function buildRSet(materials: RSetMaterials, meta: RSetManifestMeta): Bui
 
   return { files, issues: allIssues, manifest };
 }
+
+/** データ行を持つ CSV（tab1 / ma / rob。dictionary / issues / manifest は常に出力されるため対象外） */
+const DATA_FILE_NAMES = new Set(['tab1.csv', 'ma.csv', 'rob.csv']);
+
+/**
+ * 「生成できるデータ行があるか」の判定材料（S10 の生成ボタン無効化ゲート。
+ * 既存 3 形式の `BuiltExport.rowCount === 0` ゲートに相当する R セット版）
+ */
+export function rSetDataRowCount(built: BuiltRSet): number {
+  return built.files
+    .filter((file) => DATA_FILE_NAMES.has(file.name))
+    .reduce((sum, file) => sum + file.rowCount, 0);
+}
+
+/** 未検証セル残存の警告ダイアログの n（export_issues.csv の unverified_cell 件数） */
+export function countRSetUnverifiedCells(built: BuiltRSet): number {
+  return built.issues.filter((issue) => issue.issueType === 'unverified_cell').length;
+}

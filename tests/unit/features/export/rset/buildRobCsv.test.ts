@@ -1,4 +1,3 @@
-import { CSV_BOM } from '../../../../../src/features/export/csvEncode';
 import { parseCsv } from '../../../../../src/features/export/parseCsv';
 import { buildRobCsv, ROB_HEADER } from '../../../../../src/features/export/rset/buildRobCsv';
 import { makeEvidence, makeField, makeResultsDataRow, makeStudy } from './testHelpers';
@@ -22,7 +21,7 @@ const rob2Fields = [
 describe('buildRobCsv', () => {
   test('RoB テンプレートがスキーマに無ければヘッダーのみ', () => {
     const result = buildRobCsv([makeStudy()], [], [], []);
-    expect(result.csv).toBe(`${CSV_BOM}${ROB_HEADER.join(',')}\r\n`);
+    expect(result.csv).toBe(`${ROB_HEADER.join(',')}\r\n`);
     expect(result.rowCount).toBe(0);
     expect(result.issues).toEqual([]);
   });

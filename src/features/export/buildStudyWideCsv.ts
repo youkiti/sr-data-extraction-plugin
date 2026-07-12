@@ -5,7 +5,7 @@
 import type { StudyDataRow } from '../../domain/annotation';
 import type { StudyRecord } from '../../domain/study';
 import type { SchemaField } from '../../domain/schemaField';
-import { buildCsv } from './csvEncode';
+import { buildCsv, CSV_BOM } from './csvEncode';
 import { selectFinalAnnotator } from './finalAnnotator';
 
 export interface StudyWideCsvResult {
@@ -49,7 +49,8 @@ export function buildStudyWideCsv(
     csvRows.push(line);
   }
   return {
-    csv: buildCsv(header, csvRows),
+    // Excel との相性優先で BOM を前置（buildCsv 自体は BOM なし。R セットとの違いは csvEncode.ts 参照）
+    csv: CSV_BOM + buildCsv(header, csvRows),
     skippedStudyIds,
     unverifiedCellCount,
     studyCount: csvRows.length, // 1 行 = 1 study

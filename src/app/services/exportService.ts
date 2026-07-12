@@ -13,7 +13,7 @@ import { readResultsDataRows, readStudyDataSheet } from '../../features/extracti
 import { readEvidenceRows } from '../../features/extraction/evidenceRepository';
 import { readMethodsRunFacts, readRunAuditInfos } from '../../features/extraction/runRepository';
 import type { MethodsRunFact } from '../../features/extraction/runRepository';
-import { buildAllExports } from '../../features/export/buildExport';
+import { buildAllExports, type ClassicExportFormat } from '../../features/export/buildExport';
 import { appendExportLog } from '../../features/export/exportLogRepository';
 import {
   buildMethodsText,
@@ -21,8 +21,18 @@ import {
   type MethodsLanguage,
   type MethodsWorkflow,
 } from '../../features/export/methodsBoilerplate';
+import {
+  buildRSet,
+  countRSetUnverifiedCells,
+  rSetDataRowCount,
+  type RSetFile,
+  type RSetManifestMeta,
+  type RSetMaterials,
+} from '../../features/export/rset/buildRSet';
+import { deriveReviewMode } from '../../features/export/rset/reviewMode';
 import { listSchemaVersions, getSchemaFieldsByVersion } from '../../features/schema/schemaRepository';
 import { readAllDecisions } from '../../features/verification/decisionRepository';
+import { readAllArmStructures } from '../../features/verification/armStructureRepository';
 import { ensureChildFolder, uploadTextFile } from '../../lib/google/drive';
 import { getCurrentUserEmail, type ProfileDeps } from '../../lib/google/identity';
 import type { GoogleApiDeps } from '../../lib/google/types';
@@ -31,6 +41,9 @@ import { generateUuid } from '../../utils/uuid';
 import { downloadTextFile } from '../ui/download';
 import { showToast } from '../ui/toast';
 import type { ExportState, Store } from '../store';
+
+/** Drive のプロジェクトフォルダ直下・`exports/` 配下に作る R セット保存先サブフォルダの接頭辞 */
+export const RSET_FOLDER_PREFIX = 'rset_';
 
 /** Drive のプロジェクトフォルダ直下に作る CSV 保存先フォルダ名 */
 export const EXPORTS_FOLDER_NAME = 'exports';
@@ -174,6 +187,7 @@ export async function loadExportData(
       resultsRows,
       evidences,
       decisions,
+      armStructureRows,
       runs,
       versions,
       methodsRunFacts,
@@ -184,6 +198,7 @@ export async function loadExportData(
       readResultsDataRows(spreadsheetId, deps.google),
       readEvidenceRows(spreadsheetId, deps.google),
       readAllDecisions(spreadsheetId, deps.google),
+      readAllArmStructures(spreadsheetId, deps.google),
       readRunAuditInfos(spreadsheetId, deps.google),
       listSchemaVersions(spreadsheetId, deps.google),
       readMethodsRunFacts(spreadsheetId, deps.google),
@@ -207,9 +222,31 @@ export async function loadExportData(
     });
     const toolVersion = (deps.getToolVersion ?? defaultGetToolVersion)();
     const methodsFacts = buildMethodsFacts(documents, methodsRunFacts, toolVersion);
+
+    // R セット（issue #60）。素材は generateExport が正確な exported_at で再構築できるよう保持し、
+    // ここでの構築結果はサマリ・プレビュー表示専用（rSetMaterials 参照。design-r-export.md §13）
+    const rSetMaterials: RSetMaterials = {
+      studies,
+      studyRows: studySheet.rows,
+      resultsRows,
+      decisions,
+      evidences,
+      armStructureRows,
+      documentStudyIds: documents.map((document) => document.studyId),
+      fields,
+    };
+    const rSetMeta: RSetManifestMeta = {
+      exportedAt: (deps.now ?? nowIso8601)(),
+      appVersion: toolVersion ?? '',
+      reviewMode: deriveReviewMode(studySheet.rows, resultsRows),
+    };
+    const rSet = buildRSet(rSetMaterials, rSetMeta);
+
     patchExport(store, {
       loading: false,
       built,
+      rSetMaterials,
+      rSet,
       schemaVersion: latest.schemaVersion,
       methodsFacts,
     });
@@ -226,8 +263,8 @@ export function selectExportFormat(store: Store, format: ExportFormat): void {
   patchExport(store, { format });
 }
 
-/** CSV を生成して Drive `exports/` へ保存し、ExportLog に 1 行追記する */
-async function generateExport(store: Store, deps: ExportServiceDeps): Promise<void> {
+/** CSV を生成して Drive `exports/` へ保存し、ExportLog に 1 行追記する（従来 3 形式） */
+async function generateClassicExport(store: Store, deps: ExportServiceDeps): Promise<void> {
   const state = store.getState();
   const project = state.currentProject;
   const built = state.export.built;
@@ -235,8 +272,10 @@ async function generateExport(store: Store, deps: ExportServiceDeps): Promise<vo
   if (!project || built === null || schemaVersion === null) {
     return;
   }
-  const target = built[state.export.format];
-  patchExport(store, { generating: true, generateError: null, result: null });
+  // 呼び出し元の generateExport（dispatcher）が format !== 'r_set' のときだけこの関数を呼ぶため、
+  // ここでは常に ClassicExportFormat（built のキー）として扱ってよい
+  const target = built[state.export.format as ClassicExportFormat];
+  patchExport(store, { generating: true, generateError: null, result: null, rSetResult: null });
   try {
     const folder = await ensureChildFolder(EXPORTS_FOLDER_NAME, project.driveFolderId, deps.google);
     const exportedAt = (deps.now ?? nowIso8601)();
@@ -273,13 +312,99 @@ async function generateExport(store: Store, deps: ExportServiceDeps): Promise<vo
 }
 
 /**
+ * R セット（issue #60）を生成して Drive `exports/rset_{YYYYMMDD-HHMMSS}/` へ 8 ファイル保存し、
+ * ExportLog に 1 行追記する。export_manifest.json の exported_at / app_version / review_mode は
+ * ここで解決してから rSetMaterials を再構築する（読込時の rSet はプレビュー専用で、
+ * 実際に保存する内容は生成時点の正確な時刻で作り直す。design-r-export.md §13）
+ */
+async function generateRSetExport(store: Store, deps: ExportServiceDeps): Promise<void> {
+  const state = store.getState();
+  const project = state.currentProject;
+  const materials = state.export.rSetMaterials;
+  const schemaVersion = state.export.schemaVersion;
+  if (!project || materials === null || schemaVersion === null) {
+    return;
+  }
+  patchExport(store, { generating: true, generateError: null, result: null, rSetResult: null });
+  try {
+    const exportedAt = (deps.now ?? nowIso8601)();
+    const appVersion = (deps.getToolVersion ?? defaultGetToolVersion)() ?? '';
+    const reviewMode = deriveReviewMode(materials.studyRows, materials.resultsRows);
+    const built = buildRSet(materials, { exportedAt, appVersion, reviewMode });
+
+    const exportsFolder = await ensureChildFolder(EXPORTS_FOLDER_NAME, project.driveFolderId, deps.google);
+    const folderName = `${RSET_FOLDER_PREFIX}${timestampForFilename(exportedAt)}`;
+    const folder = await ensureChildFolder(folderName, exportsFolder.id, deps.google);
+    for (const file of built.files) {
+      await uploadTextFile(
+        {
+          name: file.name,
+          content: file.content,
+          parentId: folder.id,
+          mimeType: file.name.endsWith('.json') ? 'application/json' : 'text/csv',
+        },
+        deps.google,
+      );
+    }
+
+    const email = await getCurrentUserEmail(deps.profile);
+    // ExportLog は既存列のみで表現する（design-r-export.md §13）: file_ref は 8 ファイルの
+    // 保存先サブフォルダの webViewLink、study_count は tab1.csv の行数（確定 annotator を
+    // 特定できた study 数。tab1.csv は study 単位 1 行の表のため既存形式の study_count と同じ意味になる。
+    // buildRSet は必ず tab1.csv を含む配列を返すため as キャストで扱う）
+    const tab1RowCount = (built.files.find((file) => file.name === 'tab1.csv') as RSetFile).rowCount;
+    const entry: ExportLogEntry = {
+      exportId: (deps.newUuid ?? generateUuid)(),
+      format: 'r_set',
+      schemaVersion,
+      studyCount: tab1RowCount,
+      fileRef: folder.webViewLink,
+      exportedAt,
+      exportedBy: email ?? '',
+    };
+    await appendExportLog(project.spreadsheetId, entry, deps.google);
+    patchExport(store, {
+      generating: false,
+      rSet: built,
+      rSetResult: { folderRef: folder.webViewLink, folderName, exportedAt, built },
+    });
+  } catch (err) {
+    patchExport(store, { generating: false, generateError: toMessage(err) });
+  }
+}
+
+/** 選択中の形式に応じて分岐する（従来 3 形式 / R セット） */
+async function generateExport(store: Store, deps: ExportServiceDeps): Promise<void> {
+  if (store.getState().export.format === 'r_set') {
+    await generateRSetExport(store, deps);
+  } else {
+    await generateClassicExport(store, deps);
+  }
+}
+
+/**
  * 「CSV を生成して Drive に保存」: 選択形式の未検証セルが残っていれば警告ダイアログを開き、
  * なければ即生成する（ui-states.md §3: 続行を経ずに生成は始まらない）
  */
 export async function requestExportGenerate(store: Store, deps: ExportServiceDeps): Promise<void> {
   const state = store.getState();
+  if (state.export.generating || state.export.confirmingWarning) {
+    return;
+  }
+  if (state.export.format === 'r_set') {
+    const rSet = state.export.rSet;
+    if (rSet === null || rSetDataRowCount(rSet) === 0) {
+      return; // データ行 0 件はボタンを無効化しているが、防御として no-op
+    }
+    if (countRSetUnverifiedCells(rSet) > 0) {
+      patchExport(store, { confirmingWarning: true });
+      return;
+    }
+    await generateExport(store, deps);
+    return;
+  }
   const built = state.export.built;
-  if (built === null || state.export.generating || state.export.confirmingWarning) {
+  if (built === null) {
     return;
   }
   const target = built[state.export.format];
@@ -312,7 +437,19 @@ export function downloadExportResult(
   store: Store,
   download: typeof downloadTextFile = downloadTextFile,
 ): void {
-  const result = store.getState().export.result;
+  const state = store.getState().export;
+  if (state.format === 'r_set') {
+    const rSetResult = state.rSetResult;
+    if (rSetResult === null) {
+      return;
+    }
+    // zip 化はしない（要望どおり 8 ファイルを個別ダウンロード）
+    for (const file of rSetResult.built.files) {
+      download(file.name, file.content, file.name.endsWith('.json') ? 'application/json' : 'text/csv');
+    }
+    return;
+  }
+  const result = state.result;
   if (result === null) {
     return;
   }
