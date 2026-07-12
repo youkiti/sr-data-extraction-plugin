@@ -157,8 +157,12 @@ function pickLatestRunId(
  * （issue #80 案 A: run 単位のフィールド選択に対応した合成ビュー）。
  *
  * 規約:
- * - 完了 run（readCompletedRunMetas の戻り値）のみを対象にし、ExtractionRuns に無い
- *   run_id の Evidence（孤児。中断 run や旧プロトコル以前の実行）は現行どおり除外する
+ * - 完了 run（readCompletedRunMetas の戻り値）のみを対象にする。ExtractionRuns に無い
+ *   run_id の Evidence（孤児。旧プロトコル以前の実行）の除外は従来どおり。一方、running 行
+ *   しかない中断 run の flush 済み Evidence は、従来（latestRunEvidenceByStudy + 全 run 対象の
+ *   readRunSchemaVersions）は S8/S9 に表示されていたが、issue #80 で意図的に除外へ厳格化した
+ *   （S7 のカバレッジ判定「中断 run の study は未抽出に戻る」と表示を一致させる。
+ *   再抽出が完了するまで S8/S9 には出ない）
  * - study の schema_version は「その study を含む最新の完了 run」の版を採用する
  *   （サブセット run でも最新ならその版。fields リスト解決に使う）
  * - field_id ごとに「fieldIds が null（= 全項目）または当該 field_id を含む、その study の

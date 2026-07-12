@@ -78,6 +78,7 @@ M1〜M4 のうち、**ローカルの jest / Playwright だけでは完了確認
 | #68 | 実機（実 tiab-review Sheet + 実データ） | tiab の Sheet 直読み・include 抽出・取り込み PDF との DOI / PMID 突き合わせ |
 | #69 | 実 API（実 Sheets・数万行） | 一括 append で 429 / リクエストサイズ超過が実際に出るか（ローカルはコード確認 + チャンク実装まで。**バグ発見自体は 2026-07-12 のローカル負荷試験で完了**、実 API 再現は未） |
 | #61 | 実 API（実 LLM） | signaling question を全出力させたときに出力トークン制約へ当たるか → 1 study 複数回コール（キャッシュあり）の要否判断 |
+| #80 | 実 API（実 Sheets・既存プロジェクト） | `ExtractionRuns` が旧 14 列ヘッダの既存プロジェクトで抽出を実行し、`ensureRunFieldIdsColumn` がヘッダを `field_ids` 込みの 15 列へ自動拡張すること（E2E はモックが最初からフルヘッダを返すため PUT 経路は unit テストのみ）。あわせてサブセット抽出 → S8 で「対象外 field は過去 run の値が残る」合成表示の目視確認 |
 
 **ローカルで完了確認できる（実機不要）**: #64 楽観ロック（2 コンテキストは jest で再現）・#65 数値整合性・#66 κ・#67 Methods カード（unit + E2E、#67 は軽い smoke 程度）・#60 CSV 契約（golden fixture + R 読み戻し確認。R は手作業だが拡張の実機は不要）。
 

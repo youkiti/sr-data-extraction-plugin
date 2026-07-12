@@ -534,6 +534,8 @@ describe('composeEvidenceByStudy（issue #80: run 単位のフィールド選択
   test('running 行のみ（未完了）の run は対象外（readCompletedRunMetas が完了行しか返さない前提）', () => {
     // readCompletedRunMetas は完了行のみを返すため、completedRuns に running 専用の run は
     // 現れない。その状態で当該 run_id の Evidence が来た場合は孤児と同じ扱いになることを確認する
+    // （従来は中断 run の flush 済み Evidence も S8/S9 に表示されていたが、issue #80 で
+    // 意図的に除外へ厳格化した。composeEvidenceByStudy の doc コメント参照）
     const byStudy = composeEvidenceByStudy(
       [makeEvidence({ evidenceId: 'a', studyId: 'study-1', runId: 'run-running-only' })],
       [], // 完了 run が 1 件も無い
