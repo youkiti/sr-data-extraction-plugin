@@ -7,6 +7,7 @@ import {
   type AppState,
 } from '../../../../src/app/store';
 import type { AdjudicateViewCallbacks, ViewContext } from '../../../../src/app/views/types';
+import type { AgreementReport } from '../../../../src/features/adjudication/agreement';
 import type { AdjudicationCell } from '../../../../src/features/adjudication/cellMatch';
 import type { SchemaField } from '../../../../src/domain/schemaField';
 import type { StudyRecord } from '../../../../src/domain/study';
@@ -29,6 +30,8 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<AdjudicateViewCal
     onUnskip: jest.fn(),
     onUndo: jest.fn(),
     onToggleMismatchOnly: jest.fn(),
+    onLoadAgreement: jest.fn(),
+    onDownloadAgreementCsv: jest.fn(),
   };
   return {
     ctx: {
@@ -89,6 +92,7 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<AdjudicateViewCal
         onDecision: jest.fn(),
         onArmConfirm: jest.fn(),
         onChangeLayoutMode: jest.fn(),
+        onReloadVerification: jest.fn(),
       },
       extract: {
         onToggleStudy: jest.fn(),
@@ -105,6 +109,7 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<AdjudicateViewCal
         onDecision: jest.fn(),
         onArmConfirm: jest.fn(),
         onChangeLayoutMode: jest.fn(),
+        onReloadVerification: jest.fn(),
       },
       dashboard: { onReload: jest.fn() },
       export: {
@@ -114,6 +119,9 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<AdjudicateViewCal
         onCancelGenerate: jest.fn(),
         onDownload: jest.fn(),
         onReload: jest.fn(),
+        onChangeMethodsLanguage: jest.fn(),
+        onChangeMethodsWorkflow: jest.fn(),
+        onCopyMethods: jest.fn(),
       },
       adjudicate: callbacks,
     },
@@ -202,6 +210,36 @@ function makeWorking(overrides: Partial<AdjudicateWorking> = {}): AdjudicateWork
     loadPdfView: jest.fn().mockResolvedValue({ pdf: null, pdfError: 'テストでは PDF なし', textPages: [] }),
     retryPdfView: jest.fn().mockResolvedValue({ pdf: null, pdfError: 'テストでは PDF なし', textPages: [] }),
     disposePdf: jest.fn().mockResolvedValue(undefined),
+    ...overrides,
+  };
+}
+
+function makeAgreementReport(overrides: Partial<AgreementReport> = {}): AgreementReport {
+  return {
+    studyCount: 1,
+    fields: [
+      {
+        fieldId: 'f-1',
+        fieldName: 'sample_size',
+        fieldLabel: '総サンプルサイズ',
+        pairCount: 10,
+        agreementCount: 8,
+        agreementRate: 0.8,
+        kappa: 0.6,
+      },
+    ],
+    overall: { pairCount: 10, agreementCount: 8, agreementRate: 0.8, kappa: 0.6 },
+    disagreements: [
+      {
+        studyId: 'study-1',
+        studyLabel: 'Smith 2020',
+        entityKey: '-',
+        fieldId: 'f-1',
+        fieldLabel: '総サンプルサイズ',
+        valueA: '120',
+        valueB: '130',
+      },
+    ],
     ...overrides,
   };
 }
@@ -569,5 +607,147 @@ describe('renderAdjudicateView: 裁定中（working）', () => {
     );
     expect(root.querySelector('.adjudicate__locked-note')).toBeNull();
     expect(root.querySelector('.adjudicate__action--choose-a')).not.toBeNull();
+  });
+});
+
+describe('renderAdjudicateView: レビュアー間一致度カード（issue #66）', () => {
+  test('未計算: 説明文 + 「一致度を計算」ボタンを出し、クリックで onLoadAgreement を呼ぶ', () => {
+    const { ctx, callbacks } = makeCtx();
+    const root = render(makeState({ rows: [makeRow()] }), ctx);
+    expect(root.querySelector('#adjudicate-agreement-card')).not.toBeNull();
+    expect(root.querySelector('#agreement-load')).not.toBeNull();
+    expect(root.querySelector('#agreement-table')).toBeNull();
+    (root.querySelector('#agreement-load') as HTMLButtonElement).click();
+    expect(callbacks.onLoadAgreement).toHaveBeenCalledTimes(1);
+  });
+
+  test('計算中: ローディング文言のみ表示しボタンは出さない', () => {
+    const { ctx } = makeCtx();
+    const root = render(makeState({ rows: [makeRow()], agreementLoading: true }), ctx);
+    expect(root.querySelector('#agreement-loading')).not.toBeNull();
+    expect(root.querySelector('#agreement-load')).toBeNull();
+  });
+
+  test('失敗: role="alert" のエラー文言 + 再試行用の「一致度を計算」ボタンを出す', () => {
+    const { ctx, callbacks } = makeCtx();
+    const root = render(makeState({ rows: [makeRow()], agreementError: 'network boom' }), ctx);
+    const error = root.querySelector('#agreement-error');
+    expect(error?.getAttribute('role')).toBe('alert');
+    expect(error?.textContent).toContain('network boom');
+    (root.querySelector('#agreement-load') as HTMLButtonElement).click();
+    expect(callbacks.onLoadAgreement).toHaveBeenCalledTimes(1);
+  });
+
+  test('対象なし: 計算済み（studyCount=0）はエラー扱いにせず role="alert" を付けない', () => {
+    const { ctx } = makeCtx();
+    const emptyReport = makeAgreementReport({ studyCount: 0, fields: [], overall: { pairCount: 0, agreementCount: 0, agreementRate: null, kappa: null }, disagreements: [] });
+    const root = render(makeState({ rows: [makeRow()], agreement: emptyReport }), ctx);
+    const notice = root.querySelector('#agreement-error');
+    expect(notice).not.toBeNull();
+    expect(notice?.hasAttribute('role')).toBe(false);
+    expect(root.querySelector('#agreement-table')).toBeNull();
+  });
+
+  test('表示: サマリ・項目別テーブル・不一致一覧・CSV ボタンを表示する', () => {
+    const { ctx, callbacks } = makeCtx();
+    const root = render(makeState({ rows: [makeRow()], agreement: makeAgreementReport() }), ctx);
+    expect(root.querySelector('#agreement-summary-line')?.textContent).toBe(
+      '対象研究 1 件・全体一致率 80.0%・全体 κ 0.60',
+    );
+    const fieldRow = root.querySelector('#agreement-table tbody tr');
+    expect(fieldRow?.textContent).toContain('総サンプルサイズ');
+    expect(fieldRow?.textContent).toContain('10');
+    expect(fieldRow?.textContent).toContain('8 (80.0%)');
+    expect(fieldRow?.textContent).toContain('0.60');
+
+    const disagreementRow = root.querySelector('#agreement-disagreements tbody tr');
+    expect(disagreementRow?.textContent).toContain('Smith 2020');
+    expect(disagreementRow?.textContent).toContain('120');
+    expect(disagreementRow?.textContent).toContain('130');
+
+    (root.querySelector('#agreement-csv-summary') as HTMLButtonElement).click();
+    expect(callbacks.onDownloadAgreementCsv).toHaveBeenCalledWith('summary');
+    (root.querySelector('#agreement-csv-disagreements') as HTMLButtonElement).click();
+    expect(callbacks.onDownloadAgreementCsv).toHaveBeenCalledWith('disagreements');
+  });
+
+  test('κ が null の項目は「—」表示（一致率が算出できる場合）', () => {
+    const { ctx } = makeCtx();
+    const report = makeAgreementReport({
+      fields: [
+        {
+          fieldId: 'f-1',
+          fieldName: 'sample_size',
+          fieldLabel: '総サンプルサイズ',
+          pairCount: 3,
+          agreementCount: 3,
+          agreementRate: 1,
+          kappa: null,
+        },
+      ],
+    });
+    const root = render(makeState({ rows: [makeRow()], agreement: report }), ctx);
+    const fieldRow = root.querySelector('#agreement-table tbody tr');
+    expect(fieldRow?.textContent).toContain('—');
+  });
+
+  test('対象セル 0 件の項目は一致率・κ とも「—」表示', () => {
+    const { ctx } = makeCtx();
+    const report = makeAgreementReport({
+      fields: [
+        {
+          fieldId: 'f-2',
+          fieldName: 'unused',
+          fieldLabel: '未使用項目',
+          pairCount: 0,
+          agreementCount: 0,
+          agreementRate: null,
+          kappa: null,
+        },
+      ],
+    });
+    const root = render(makeState({ rows: [makeRow()], agreement: report }), ctx);
+    const fieldRow = root.querySelector('#agreement-table tbody tr');
+    expect(fieldRow?.textContent).toContain('0 (—)');
+    expect(fieldRow?.textContent).toContain('—');
+  });
+
+  test('不一致セルが 0 件のときは一覧の代わりに空メッセージを出す', () => {
+    const { ctx } = makeCtx();
+    const report = makeAgreementReport({ disagreements: [] });
+    const root = render(makeState({ rows: [makeRow()], agreement: report }), ctx);
+    expect(root.querySelector('#agreement-disagreements-empty')).not.toBeNull();
+    expect(root.querySelector('#agreement-disagreements')).toBeNull();
+  });
+
+  test('未入力の値は「未入力」と表示する（A 側・B 側どちらも）', () => {
+    const { ctx } = makeCtx();
+    const report = makeAgreementReport({
+      disagreements: [
+        {
+          studyId: 'study-1',
+          studyLabel: 'Smith 2020',
+          entityKey: 'arm:1',
+          fieldId: 'f-arm',
+          fieldLabel: '群名',
+          valueA: null,
+          valueB: '介入群',
+        },
+        {
+          studyId: 'study-1',
+          studyLabel: 'Smith 2020',
+          entityKey: 'arm:2',
+          fieldId: 'f-arm',
+          fieldLabel: '群名',
+          valueA: '対照群',
+          valueB: null,
+        },
+      ],
+    });
+    const root = render(makeState({ rows: [makeRow()], agreement: report }), ctx);
+    const rows = root.querySelectorAll('#agreement-disagreements tbody tr');
+    expect(rows).toHaveLength(2);
+    expect(rows[0]?.textContent).toContain('未入力');
+    expect(rows[1]?.textContent).toContain('未入力');
   });
 });

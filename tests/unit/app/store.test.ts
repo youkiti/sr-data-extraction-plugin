@@ -96,6 +96,9 @@ describe('createInitialState', () => {
         studyValues: null,
         queuedDecisions: 0,
         layoutMode: 'focus',
+        studyRowUpdatedAt: null,
+        resultsRowUpdatedAt: {},
+        conflictMessage: null,
       },
       extract: {
         selectedStudyIds: [],
@@ -126,6 +129,9 @@ describe('createInitialState', () => {
         studyValues: null,
         queuedDecisions: 0,
         layoutMode: 'focus',
+        studyRowUpdatedAt: null,
+        resultsRowUpdatedAt: {},
+        conflictMessage: null,
       },
       dashboard: {
         data: null,
@@ -142,6 +148,9 @@ describe('createInitialState', () => {
         workingError: null,
         saving: false,
         mismatchOnlyFilter: true,
+        agreement: null,
+        agreementLoading: false,
+        agreementError: null,
       },
       export: {
         format: 'study_wide',
@@ -153,6 +162,9 @@ describe('createInitialState', () => {
         generating: false,
         generateError: null,
         result: null,
+        methodsFacts: null,
+        methodsLanguage: 'en',
+        methodsWorkflow: 'single',
       },
       settingsReturnHash: null,
     });

@@ -12,7 +12,13 @@ import type { AnnotatorPairResolution } from '../features/adjudication/pairResol
 import type { StudyGate } from '../features/adjudication/gate';
 import type { AdjudicationCell } from '../features/adjudication/cellMatch';
 import type { DraftArmRow } from '../features/adjudication/armMatch';
+import type { AgreementReport } from '../features/adjudication/agreement';
 import type { BuiltExport } from '../features/export/buildExport';
+import type {
+  MethodsFacts,
+  MethodsLanguage,
+  MethodsWorkflow,
+} from '../features/export/methodsBoilerplate';
 import type { ProjectRef } from '../domain/project';
 import type { Protocol } from '../domain/protocol';
 import type { SchemaField } from '../domain/schemaField';
@@ -209,6 +215,12 @@ export interface PilotState {
    * 検証データ束の読込時に読み直す（S6 / S8 で共有する設定）。既定は 'focus'
    */
   layoutMode: VerifyLayoutMode;
+  /** 自分の StudyData 行の updated_at（楽観ロックの期待値。issue #64） */
+  studyRowUpdatedAt: string | null;
+  /** 自分の ResultsData 行のセルキー別 updated_at（楽観ロックの期待値。issue #64） */
+  resultsRowUpdatedAt: Record<string, string>;
+  /** 保存の競合検出バナー（#verify-conflict-warning）の文言。null = 非表示（issue #64） */
+  conflictMessage: string | null;
 }
 
 /** #/extract（S7）の画面状態。run の結果はタブのセッション内で保持する */
@@ -275,6 +287,12 @@ export interface VerifyState {
   queuedDecisions: number;
   /** 検証パネルのレイアウトモード（issue #38）。settingsStore 由来。既定は 'focus' */
   layoutMode: VerifyLayoutMode;
+  /** 自分の StudyData 行の updated_at（楽観ロックの期待値。issue #64） */
+  studyRowUpdatedAt: string | null;
+  /** 自分の ResultsData 行のセルキー別 updated_at（楽観ロックの期待値。issue #64） */
+  resultsRowUpdatedAt: Record<string, string>;
+  /** 保存の競合検出バナー（#verify-conflict-warning）の文言。null = 非表示（issue #64） */
+  conflictMessage: string | null;
 }
 
 /** #/export（S10）の直近の生成結果（結果カードの素材。次の生成開始まで残す） */
@@ -304,6 +322,12 @@ export interface ExportState {
   generating: boolean;
   generateError: string | null;
   result: ExportResultInfo | null;
+  /** Methods 文案カード（docs/methods-boilerplate.md）の実績値。null = 未読込（loadExportData 成功時に設定） */
+  methodsFacts: MethodsFacts | null;
+  /** Methods 文案カードの言語タブ。既定 English（§4: 投稿論文の主想定言語） */
+  methodsLanguage: MethodsLanguage;
+  /** Methods 文案カードのワークフロートグル。既定 単一レビュアー（§4） */
+  methodsWorkflow: MethodsWorkflow;
 }
 
 /** `#/adjudicate`（S12。docs/design-independent-dual-review.md §6）一覧 1 study ぶんの行 */
@@ -366,6 +390,16 @@ export interface AdjudicateState {
   saving: boolean;
   /** セル一覧の「不一致のみ」フィルタ（既定 ON。§6.4） */
   mismatchOnlyFilter: boolean;
+  /**
+   * レビュアー間一致度レポート（issue #66）。null = 未計算（画面入場時には自動読込しない
+   * オンデマンド計算。Sheets 読み出しを増やさないため）。読込成功時は対象が 0 件でも
+   * 空のレポート（studyCount=0）を入れる = 「対象なし」は agreementError ではなく
+   * この空レポートで表現する
+   */
+  agreement: AgreementReport | null;
+  agreementLoading: boolean;
+  /** 読み込み失敗時の案内文言（role="alert" で表示）。対象なしはここではなく agreement 側で表す */
+  agreementError: string | null;
 }
 
 /** #/dashboard（S9）の画面状態 */
@@ -505,6 +539,9 @@ export function createInitialState(): AppState {
       studyValues: null,
       queuedDecisions: 0,
       layoutMode: 'focus',
+      studyRowUpdatedAt: null,
+      resultsRowUpdatedAt: {},
+      conflictMessage: null,
     },
     extract: {
       selectedStudyIds: [],
@@ -535,6 +572,9 @@ export function createInitialState(): AppState {
       studyValues: null,
       queuedDecisions: 0,
       layoutMode: 'focus',
+      studyRowUpdatedAt: null,
+      resultsRowUpdatedAt: {},
+      conflictMessage: null,
     },
     dashboard: {
       data: null,
@@ -551,6 +591,9 @@ export function createInitialState(): AppState {
       workingError: null,
       saving: false,
       mismatchOnlyFilter: true,
+      agreement: null,
+      agreementLoading: false,
+      agreementError: null,
     },
     export: {
       format: 'study_wide',
@@ -562,6 +605,9 @@ export function createInitialState(): AppState {
       generating: false,
       generateError: null,
       result: null,
+      methodsFacts: null,
+      methodsLanguage: 'en',
+      methodsWorkflow: 'single',
     },
     settingsReturnHash: null,
   };

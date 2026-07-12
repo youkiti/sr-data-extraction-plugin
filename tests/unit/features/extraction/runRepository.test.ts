@@ -3,6 +3,7 @@ import { SHEET_HEADERS } from '../../../../src/domain/sheetsSchema';
 import {
   appendExtractionRun,
   extractionRunToRow,
+  readMethodsRunFacts,
   readPilotRuns,
   readRunAuditInfos,
   readRunStudyCoverage,
@@ -521,6 +522,116 @@ describe('readPilotRuns', () => {
   test('run 0 件は空配列、ヘッダ行なしはエラー', async () => {
     expect(await readPilotRuns('sheet-1', readDeps([[...SHEET_HEADERS.ExtractionRuns]]))).toEqual([]);
     await expect(readPilotRuns('sheet-1', readDeps([]))).rejects.toThrow(
+      'ExtractionRuns タブにヘッダ行がありません',
+    );
+  });
+});
+
+describe('readMethodsRunFacts', () => {
+  function readDeps(values: (string | null)[][]): { fetch: jest.Mock; getAccessToken: jest.Mock } {
+    return {
+      fetch: jest.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({ values }),
+        text: async () => '',
+      } as Response),
+      getAccessToken: jest.fn().mockResolvedValue('token'),
+    };
+  }
+
+  const row = (
+    o: Partial<{
+      runId: string;
+      runType: string;
+      schemaVersion: string;
+      studyIds: string;
+      provider: string;
+      requestedModel: string;
+      modelVersion: string;
+      inputMode: string;
+      status: string;
+    }> = {},
+  ): string[] => [
+    o.runId ?? 'run-1',
+    o.runType ?? 'full',
+    o.schemaVersion ?? '1',
+    o.studyIds ?? 'study-1,study-2',
+    o.provider ?? 'gemini',
+    o.requestedModel ?? 'gemini-test',
+    o.modelVersion ?? 'gemini-test-001',
+    o.inputMode ?? 'text_only',
+    o.status ?? 'done',
+  ];
+
+  test('完了行（done / partial_failure）のみ拾い、running 行は除外する', async () => {
+    const values = [
+      [...SHEET_HEADERS.ExtractionRuns],
+      row({ runId: 'r1', status: 'done' }),
+      row({ runId: 'r2', status: 'running' }),
+      row({ runId: 'r3', status: 'partial_failure' }),
+    ];
+    const facts = await readMethodsRunFacts('sheet-1', readDeps(values));
+    expect(facts).toHaveLength(2);
+  });
+
+  test('新しい順（シート追記順の逆）で返す', async () => {
+    const values = [
+      [...SHEET_HEADERS.ExtractionRuns],
+      row({ runId: 'r1', modelVersion: 'model-1' }),
+      row({ runId: 'r2', modelVersion: 'model-2' }),
+    ];
+    const facts = await readMethodsRunFacts('sheet-1', readDeps(values));
+    expect(facts.map((f) => f.modelVersion)).toEqual(['model-2', 'model-1']);
+  });
+
+  test('runType / provider / modelVersion / studyIds をパースする', async () => {
+    const values = [
+      [...SHEET_HEADERS.ExtractionRuns],
+      row({
+        runType: 'pilot',
+        provider: 'openrouter',
+        modelVersion: 'gpt-test',
+        studyIds: 'study-a,study-b',
+      }),
+    ];
+    const facts = await readMethodsRunFacts('sheet-1', readDeps(values));
+    expect(facts[0]).toEqual({
+      runType: 'pilot',
+      provider: 'openrouter',
+      modelVersion: 'gpt-test',
+      studyIds: ['study-a', 'study-b'],
+    });
+  });
+
+  test('model_version 空セルは null、study_ids 空セルは空配列', async () => {
+    const values = [
+      [...SHEET_HEADERS.ExtractionRuns],
+      row({ modelVersion: '', studyIds: '' }),
+    ];
+    const facts = await readMethodsRunFacts('sheet-1', readDeps(values));
+    expect(facts[0]).toMatchObject({ modelVersion: null, studyIds: [] });
+  });
+
+  test('status が完了扱いの行で run_type / provider が null セルでも空文字列として安全に読む', async () => {
+    const sparse: (string | null)[] = ['r1', null, '1', 'study-1', null, 'model', 'v1', 'text_only', 'done'];
+    const values = [[...SHEET_HEADERS.ExtractionRuns], sparse];
+    const facts = await readMethodsRunFacts('sheet-1', readDeps(values));
+    expect(facts[0]).toMatchObject({ runType: '', provider: '' });
+  });
+
+  test('status セル自体が null（未完了扱い）の行は除外する', async () => {
+    const sparse: (string | null)[] = ['r1', 'full', '1', 'study-1', 'gemini', 'model', 'v1', 'text_only', null];
+    const values = [[...SHEET_HEADERS.ExtractionRuns], sparse];
+    const facts = await readMethodsRunFacts('sheet-1', readDeps(values));
+    expect(facts).toHaveLength(0);
+  });
+
+  test('run 0 件は空配列、ヘッダ行なしはエラー', async () => {
+    expect(
+      await readMethodsRunFacts('sheet-1', readDeps([[...SHEET_HEADERS.ExtractionRuns]])),
+    ).toEqual([]);
+    await expect(readMethodsRunFacts('sheet-1', readDeps([]))).rejects.toThrow(
       'ExtractionRuns タブにヘッダ行がありません',
     );
   });

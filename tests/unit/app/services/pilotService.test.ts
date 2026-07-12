@@ -13,7 +13,10 @@ import {
   togglePilotStudy,
   type PilotServiceDeps,
 } from '../../../../src/app/services/pilotService';
-import type { QueuedDecisionWrite } from '../../../../src/app/services/verificationService';
+import {
+  resultsCellKeyOf,
+  type QueuedDecisionWrite,
+} from '../../../../src/app/services/verificationService';
 import { runExtraction } from '../../../../src/app/services/extractionService';
 import { resolveProtocol } from '../../../../src/app/services/schemaService';
 import { createInitialState, createStore, type Store } from '../../../../src/app/store';
@@ -30,6 +33,8 @@ import { readPilotRuns } from '../../../../src/features/extraction/runRepository
 import { getSchemaFieldsByVersion } from '../../../../src/features/schema/schemaRepository';
 import type { DisposablePdfDocument } from '../../../../src/features/documents/extractTextLayer';
 import {
+  AnnotationConflictError,
+  readResultsDataRows,
   readStudyDataSheet,
   upsertResultsDataRows,
   upsertStudyDataRows,
@@ -78,6 +83,8 @@ jest.mock('../../../../src/features/schema/schemaRepository', () => ({
   getSchemaFieldsByVersion: jest.fn(),
 }));
 jest.mock('../../../../src/features/extraction/annotationRepository', () => ({
+  ...jest.requireActual('../../../../src/features/extraction/annotationRepository'),
+  readResultsDataRows: jest.fn(),
   readStudyDataSheet: jest.fn(),
   upsertResultsDataRows: jest.fn(),
   upsertStudyDataRows: jest.fn(),
@@ -111,6 +118,7 @@ const getSchemaFieldsByVersionMock = getSchemaFieldsByVersion as jest.MockedFunc
   typeof getSchemaFieldsByVersion
 >;
 const readStudyDataSheetMock = readStudyDataSheet as jest.MockedFunction<typeof readStudyDataSheet>;
+const readResultsDataRowsMock = readResultsDataRows as jest.MockedFunction<typeof readResultsDataRows>;
 const upsertStudyMock = upsertStudyDataRows as jest.MockedFunction<typeof upsertStudyDataRows>;
 const upsertResultsMock = upsertResultsDataRows as jest.MockedFunction<
   typeof upsertResultsDataRows
@@ -327,6 +335,7 @@ beforeEach(() => {
   readDecisionsMock.mockResolvedValue([]);
   readStudiesMock.mockResolvedValue([]);
   readStudyDataSheetMock.mockResolvedValue({ fieldNames: [], rows: [] });
+  readResultsDataRowsMock.mockResolvedValue([]);
   readArmStructuresMock.mockResolvedValue([]);
   getFileBinaryMock.mockResolvedValue(new ArrayBuffer(8));
   getFileTextMock.mockResolvedValue('');
@@ -710,6 +719,25 @@ describe('loadPilotVerification', () => {
     await expect(loaded?.pdf?.getPage(1)).resolves.toBeDefined();
     // レイアウトモードは検証データ束の読込時に settingsStore から読む（issue #38。未設定は既定 focus）
     expect(pilot.layoutMode).toBe('focus');
+    // 楽観ロックのトークン（issue #64）は bundle の値をそのまま反映する
+    expect(pilot.studyRowUpdatedAt).toBe('t0');
+  });
+
+  test('データ束読込のたびに楽観ロックのトークン・競合バナーをリセットしてから読み直す（issue #64）', async () => {
+    const store = makeRanStore();
+    store.setState({
+      pilot: {
+        ...store.getState().pilot,
+        studyRowUpdatedAt: 'stale',
+        resultsRowUpdatedAt: { stale: 'stale' },
+        conflictMessage: '前回の競合メッセージ',
+      },
+    });
+    await loadPilotVerification(store, makeDeps(), 'study-doc-1');
+    const { pilot } = store.getState();
+    expect(pilot.conflictMessage).toBeNull();
+    expect(pilot.studyRowUpdatedAt).toBeNull(); // 自分の行が無いので null
+    expect(pilot.resultsRowUpdatedAt).toEqual({});
   });
 
   test('自分の StudyData 行が無ければ空 values から始める。email 不明は空文字 annotator', async () => {
@@ -805,6 +833,8 @@ describe('persistPilotDecision', () => {
           runId: null,
           updatedAt: 't-now',
           values: { country: 'Japan', sample_size_total: '120' },
+          // pilot.studyRowUpdatedAt 未設定（既定 null）＝「行がまだ無い」ことを期待する（issue #64）
+          expectedUpdatedAt: null,
         },
       ],
       deps.google,
@@ -920,6 +950,116 @@ describe('persistPilotDecision', () => {
     await persistPilotDecision(store, deps, makeDecision());
     expect(appendDecisionsMock).toHaveBeenCalledTimes(1);
     expect(store.getState().pilot.queuedDecisions).toBe(0);
+  });
+
+  describe('楽観ロック（issue #64）', () => {
+    test('study 項目は pilot.studyRowUpdatedAt を期待値として upsert へ渡す', async () => {
+      const store = makeStore({
+        fields: [makeField()],
+        pilot: {
+          run: makeRun(),
+          runFields: [makeField()],
+          evidence: [],
+          studyValues: { country: 'Japan' },
+          studyRowUpdatedAt: 't-study-0',
+        },
+      });
+      await persistPilotDecision(store, makeDeps(), makeDecision());
+      expect(upsertStudyMock).toHaveBeenCalledWith(
+        'sheet-1',
+        [expect.objectContaining({ expectedUpdatedAt: 't-study-0' })],
+        expect.anything(),
+      );
+    });
+
+    test('非 study 項目は resultsRowUpdatedAt のセルキーから期待値を解決する（無ければ null）', async () => {
+      const armField = makeField({ fieldId: 'f-arm-n', fieldName: 'arm_n', entityLevel: 'arm' });
+      const store = makeStore({
+        fields: [armField],
+        pilot: {
+          run: makeRun(),
+          runFields: [armField],
+          evidence: [],
+          resultsRowUpdatedAt: { [resultsCellKeyOf('arm:1', 'f-arm-n')]: 't-cell-0' },
+        },
+      });
+      await persistPilotDecision(
+        store,
+        makeDeps(),
+        makeDecision({ fieldId: 'f-arm-n', entityKey: 'arm:1', value: '50' }),
+      );
+      expect(upsertResultsMock).toHaveBeenCalledWith(
+        'sheet-1',
+        [expect.objectContaining({ expectedUpdatedAt: 't-cell-0' })],
+        expect.anything(),
+        expect.anything(),
+      );
+
+      await persistPilotDecision(
+        store,
+        makeDeps(),
+        makeDecision({ fieldId: 'f-arm-n', entityKey: 'arm:2', value: '60' }),
+      );
+      expect(upsertResultsMock).toHaveBeenLastCalledWith(
+        'sheet-1',
+        [expect.objectContaining({ expectedUpdatedAt: null })],
+        expect.anything(),
+        expect.anything(),
+      );
+    });
+
+    test('AnnotationConflictError（楽観ロック競合）はキューへ退避せず conflictMessage を立てる', async () => {
+      const store = makeVerifyingStore();
+      const conflict = new AnnotationConflictError({
+        tab: 'StudyData',
+        studyId: 'study-doc-1',
+        annotator: ME,
+        entityKey: null,
+        fieldId: null,
+        expectedUpdatedAt: 't-old',
+        actualUpdatedAt: 't-new',
+      });
+      upsertStudyMock.mockRejectedValueOnce(conflict);
+      const deps = makeDeps();
+      await persistPilotDecision(store, deps, makeDecision());
+      expect(store.getState().pilot.conflictMessage).toBe(conflict.message);
+      expect(store.getState().pilot.queuedDecisions).toBe(0);
+      expect(deps.decisionQueue?.enqueue).not.toHaveBeenCalled();
+    });
+
+    test('保存成功時は studyRowUpdatedAt を進める（study 項目）', async () => {
+      const store = makeStore({
+        fields: [makeField()],
+        pilot: {
+          run: makeRun(),
+          runFields: [makeField()],
+          evidence: [],
+          studyValues: { country: 'Japan' },
+          studyRowUpdatedAt: 't-study-0',
+        },
+      });
+      const decision = makeDecision({ decidedAt: 't-study-1' });
+      await persistPilotDecision(store, makeDeps(), decision);
+      expect(store.getState().pilot.studyRowUpdatedAt).toBe('t-study-1');
+    });
+
+    test('保存成功時は resultsRowUpdatedAt のセルキーを進める（非 study 項目）', async () => {
+      const armField = makeField({ fieldId: 'f-arm-n', fieldName: 'arm_n', entityLevel: 'arm' });
+      const store = makeStore({
+        fields: [armField],
+        pilot: { run: makeRun(), runFields: [armField], evidence: [] },
+      });
+      const decision = makeDecision({
+        fieldId: 'f-arm-n',
+        entityKey: 'arm:1',
+        value: '50',
+        decidedAt: 't-cell-1',
+      });
+      await persistPilotDecision(store, makeDeps(), decision);
+      expect(store.getState().pilot.resultsRowUpdatedAt).toEqual({
+        [resultsCellKeyOf('arm:1', 'f-arm-n')]: 't-cell-1',
+      });
+    });
   });
 });
 

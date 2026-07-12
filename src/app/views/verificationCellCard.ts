@@ -31,6 +31,11 @@ export interface CellCardModel {
    * accept / reject 操作を描画しない（AI 抽出を一切見せない盲検レビュー）
    */
   mode?: 'review' | 'independent';
+  /**
+   * 決定論的な数値整合性チェック（issue #65）の警告。cellKey → メッセージ一覧。
+   * verificationPanel が judgment/state 変更のたびに collectConsistencyWarnings で再計算する
+   */
+  consistencyWarnings: ReadonlyMap<string, string[]>;
 }
 
 /** renderCell が実際に呼び出す最小のハンドラ集合 */
@@ -95,6 +100,22 @@ function renderAiSummary(cell: VerificationCell): HTMLElement {
     );
   }
   return el('p', { className: 'verify__ai' }, [el('span', { text: 'AI: ' }), ...parts]);
+}
+
+/**
+ * 決定論的な数値整合性チェック（issue #65）の警告一覧。LLM を使わない第 3 の独立検証系であり、
+ * 判定操作は増やさない情報提示のみ。該当メッセージが無ければ null（描画しない）
+ */
+function renderConsistencyWarnings(cell: VerificationCell, model: CellCardModel): HTMLElement | null {
+  const messages = model.consistencyWarnings.get(cell.cellKey);
+  if (messages === undefined || messages.length === 0) {
+    return null;
+  }
+  return el(
+    'div',
+    { className: 'verify__consistency-warnings', attributes: { role: 'note' } },
+    messages.map((message) => el('p', { className: 'verify__consistency-warning', text: `⚠ ${message}` })),
+  );
 }
 
 /**
@@ -306,6 +327,10 @@ export function renderCell(
     header,
     mode === 'independent' ? renderExtractionInstruction(cell) : renderAiSummary(cell),
   ];
+  const consistencyWarnings = renderConsistencyWarnings(cell, model);
+  if (consistencyWarnings !== null) {
+    children.push(consistencyWarnings);
+  }
   if (cell.state.status !== 'unverified') {
     children.push(
       el('p', {

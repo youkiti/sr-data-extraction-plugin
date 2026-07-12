@@ -4,6 +4,7 @@ import type { Decision } from '../../domain/decision';
 import type { DocumentRole } from '../../domain/document';
 import type { ExportFormat } from '../../domain/exportLog';
 import type { ReviewMode } from '../../domain/reviewer';
+import type { MethodsLanguage, MethodsWorkflow } from '../../features/export/methodsBoilerplate';
 import type { ProtocolSubmitInput } from '../../features/protocol/submitInput';
 import type { SchemaPresetKind } from '../../features/schema/presets';
 import type { SchemaEditorRow } from '../../features/schema/types';
@@ -122,6 +123,8 @@ export interface PilotViewCallbacks {
   onInstanceDeclare?(decisions: readonly Decision[]): void;
   /** 検証パネルのレイアウトモード切替（フォーカス ⇄ リスト。issue #38）の永続化 */
   onChangeLayoutMode(mode: VerifyLayoutMode): void;
+  /** 保存の競合検出バナー（issue #64）の「再読み込み」: 埋め込み検証データ束を読み直す */
+  onReloadVerification(): void;
 }
 
 /** #/extract（S7）のユーザー操作コールバック */
@@ -156,6 +159,8 @@ export interface VerifyViewCallbacks {
   onInstanceDeclare?(decisions: readonly Decision[]): void;
   /** 検証パネルのレイアウトモード切替（フォーカス ⇄ リスト。issue #38）の永続化 */
   onChangeLayoutMode(mode: VerifyLayoutMode): void;
+  /** 保存の競合検出バナー（issue #64）の「再読み込み」: 表示中 study を読み直す */
+  onReloadVerification(): void;
 }
 
 /** #/dashboard（S9）のユーザー操作コールバック（セルクリックはハッシュ遷移のためここに持たない） */
@@ -193,6 +198,10 @@ export interface AdjudicateViewCallbacks {
   onUndo(cellKey: string): void;
   /** セル一覧の「不一致のみ」フィルタ切替 */
   onToggleMismatchOnly(value: boolean): void;
+  /** レビュアー間一致度レポートの読み込み（オンデマンド計算。issue #66） */
+  onLoadAgreement(): void;
+  /** 一致度レポートの CSV ダウンロード（項目別サマリ / 不一致一覧） */
+  onDownloadAgreementCsv(kind: 'summary' | 'disagreements'): void;
 }
 
 /** #/export（S10）のユーザー操作コールバック */
@@ -209,6 +218,12 @@ export interface ExportViewCallbacks {
   onDownload(): void;
   /** 読み込み失敗時の再読み込み（強制再取得） */
   onReload(): void;
+  /** Methods 文案カード（issue #67）: 言語タブ切替 */
+  onChangeMethodsLanguage(language: MethodsLanguage): void;
+  /** Methods 文案カード: ワークフロートグル切替 */
+  onChangeMethodsWorkflow(workflow: MethodsWorkflow): void;
+  /** Methods 文案カード: 「コピー」ボタン */
+  onCopyMethods(): void;
 }
 
 export interface ViewContext {

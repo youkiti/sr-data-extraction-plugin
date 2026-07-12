@@ -1,8 +1,13 @@
 // #/export: エクスポート（S10 / ui-states.md §3）。
-// 状態: 読み込み中 / 読み込み失敗 / 通常（形式選択 + サマリ + プレビュー + 生成ボタン）
-// + 未検証セル警告ダイアログ / 生成中 / 生成失敗 / 生成完了カード
+// 状態: 読み込み中 / 読み込み失敗 / 通常（形式選択 + サマリ + プレビュー + 生成ボタン
+// + 論文 Methods 記載例カード）+ 未検証セル警告ダイアログ / 生成中 / 生成失敗 / 生成完了カード
 import type { ExportFormat } from '../../domain/exportLog';
 import type { BuiltExport } from '../../features/export/buildExport';
+import {
+  buildMethodsText,
+  type MethodsLanguage,
+  type MethodsWorkflow,
+} from '../../features/export/methodsBoilerplate';
 import { el } from '../ui/dom';
 import type { AppState, ExportState } from '../store';
 import type { ViewContext } from './types';
@@ -153,6 +158,118 @@ function renderWarningDialog(ctx: ViewContext, built: BuiltExport): HTMLElement 
   );
 }
 
+/** 言語タブ 1 個（English / 日本語） */
+function renderMethodsLangTab(
+  id: string,
+  label: string,
+  language: MethodsLanguage,
+  current: MethodsLanguage,
+  ctx: ViewContext,
+): HTMLButtonElement {
+  const button = el('button', {
+    id,
+    className: 'export__methods-tab',
+    text: label,
+    attributes: { type: 'button', 'aria-pressed': String(language === current) },
+  }) as HTMLButtonElement;
+  button.addEventListener('click', () => ctx.export.onChangeMethodsLanguage(language));
+  return button;
+}
+
+/** ワークフロートグル 1 個（単一レビュアー / 二重独立） */
+function renderMethodsWorkflowTab(
+  id: string,
+  label: string,
+  workflow: MethodsWorkflow,
+  current: MethodsWorkflow,
+  ctx: ViewContext,
+): HTMLButtonElement {
+  const button = el('button', {
+    id,
+    className: 'export__methods-tab',
+    text: label,
+    attributes: { type: 'button', 'aria-pressed': String(workflow === current) },
+  }) as HTMLButtonElement;
+  button.addEventListener('click', () => ctx.export.onChangeMethodsWorkflow(workflow));
+  return button;
+}
+
+/**
+ * 論文 Methods 記載例カード（S10。docs/methods-boilerplate.md §4、issue #67）。
+ * methodsFacts が未読込（loadExportData がまだ実行されていない防御）なら描画しない
+ */
+function renderMethodsCard(exportState: ExportState, ctx: ViewContext): HTMLElement | null {
+  const facts = exportState.methodsFacts;
+  if (facts === null) {
+    return null;
+  }
+  const { text, unresolved } = buildMethodsText(
+    exportState.methodsLanguage,
+    exportState.methodsWorkflow,
+    facts,
+  );
+
+  const langGroup = el(
+    'div',
+    { className: 'export__methods-tabs', attributes: { role: 'group', 'aria-label': '言語' } },
+    [
+      renderMethodsLangTab('methods-lang-en', 'English', 'en', exportState.methodsLanguage, ctx),
+      renderMethodsLangTab('methods-lang-ja', '日本語', 'ja', exportState.methodsLanguage, ctx),
+    ],
+  );
+  const workflowGroup = el(
+    'div',
+    { className: 'export__methods-tabs', attributes: { role: 'group', 'aria-label': 'ワークフロー' } },
+    [
+      renderMethodsWorkflowTab(
+        'methods-workflow-single',
+        '単一レビュアー',
+        'single',
+        exportState.methodsWorkflow,
+        ctx,
+      ),
+      renderMethodsWorkflowTab(
+        'methods-workflow-dual',
+        '二重独立',
+        'dual',
+        exportState.methodsWorkflow,
+        ctx,
+      ),
+    ],
+  );
+
+  const textArea = el('textarea', {
+    id: 'methods-text',
+    className: 'export__methods-text',
+    attributes: { readonly: 'readonly', rows: '8', 'aria-label': '論文 Methods 記載例' },
+  });
+  textArea.value = text;
+
+  const copyButton = el('button', {
+    id: 'methods-copy',
+    text: 'コピー',
+    attributes: { type: 'button' },
+  });
+  copyButton.addEventListener('click', () => ctx.export.onCopyMethods());
+
+  const children: HTMLElement[] = [
+    el('h3', { text: '論文 Methods 記載例' }),
+    el('div', { className: 'export__methods-controls' }, [langGroup, workflowGroup]),
+    textArea,
+    copyButton,
+  ];
+  if (unresolved.length > 0) {
+    children.push(
+      el('p', {
+        id: 'methods-unresolved-note',
+        className: 'export__methods-note',
+        text: '{{ }} の箇所はご自身の情報に置き換えてください',
+      }),
+    );
+  }
+  return el('section', { id: 'export-methods', className: 'export__methods' }, children);
+}
+
 function renderResultCard(exportState: ExportState, ctx: ViewContext): HTMLElement {
   const result = exportState.result as NonNullable<ExportState['result']>;
   const downloadButton = el('button', {
@@ -207,7 +324,12 @@ export function renderExportView(state: AppState, ctx: ViewContext): HTMLElement
   }
 
   const built = exportState.built[exportState.format];
-  children.push(renderFormatSelector(exportState, ctx), renderSummary(built));
+  children.push(renderFormatSelector(exportState, ctx));
+  const methodsCard = renderMethodsCard(exportState, ctx);
+  if (methodsCard !== null) {
+    children.push(methodsCard);
+  }
+  children.push(renderSummary(built));
   children.push(...renderExclusionNotes(built));
   children.push(...renderPreview(built));
 

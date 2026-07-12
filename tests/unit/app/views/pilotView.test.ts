@@ -40,6 +40,7 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<PilotViewCallback
     onDecision: jest.fn(),
     onArmConfirm: jest.fn(),
     onChangeLayoutMode: jest.fn(),
+    onReloadVerification: jest.fn(),
     onInstanceDeclare: jest.fn(),
   };
   return {
@@ -106,6 +107,7 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<PilotViewCallback
         onDecision: jest.fn(),
         onArmConfirm: jest.fn(),
         onChangeLayoutMode: jest.fn(),
+        onReloadVerification: jest.fn(),
       },
       dashboard: { onReload: jest.fn() },
       export: {
@@ -115,6 +117,9 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<PilotViewCallback
         onCancelGenerate: jest.fn(),
         onDownload: jest.fn(),
         onReload: jest.fn(),
+        onChangeMethodsLanguage: jest.fn(),
+        onChangeMethodsWorkflow: jest.fn(),
+        onCopyMethods: jest.fn(),
       },
       adjudicate: {
         onSelectStudy: jest.fn(),
@@ -133,6 +138,8 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<PilotViewCallback
         onUnskip: jest.fn(),
         onUndo: jest.fn(),
         onToggleMismatchOnly: jest.fn(),
+        onLoadAgreement: jest.fn(),
+        onDownloadAgreementCsv: jest.fn(),
       },
     },
     callbacks,
@@ -552,6 +559,30 @@ describe('完了（サマリ + 埋め込み検証）', () => {
     const declarations = [{ fieldId: '__entity_instance__' }] as never;
     options?.onInstanceDeclare?.(declarations);
     expect(ok.callbacks.onInstanceDeclare).toHaveBeenCalledWith(declarations);
+  });
+
+  test('保存の競合検出バナー（issue #64）: conflictMessage 非 null で表示し、再読み込みが onReloadVerification へ委譲される', () => {
+    const verification = makeVerification();
+    const { root, callbacks } = render(
+      makeState({
+        pilot: {
+          run: makeRun(),
+          verification,
+          conflictMessage: '読み込み後に別の場所で更新されています。再読み込みしてから判定し直してください',
+        },
+      }),
+    );
+    const banner = root.querySelector('#verify-conflict-warning');
+    expect(banner?.getAttribute('role')).toBe('alert');
+    expect(banner?.textContent).toContain('読み込み後に別の場所で更新されています');
+    (root.querySelector('#verify-conflict-reload') as HTMLButtonElement).click();
+    expect(callbacks.onReloadVerification).toHaveBeenCalledTimes(1);
+  });
+
+  test('conflictMessage が null ならバナーを表示しない', () => {
+    const verification = makeVerification();
+    const { root } = render(makeState({ pilot: { run: makeRun(), verification } }));
+    expect(root.querySelector('#verify-conflict-warning')).toBeNull();
   });
 
   test('run が無ければサマリ・検証セクションは出さない', () => {

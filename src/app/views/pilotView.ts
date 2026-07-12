@@ -14,6 +14,7 @@ import { planRun } from '../../features/extraction/planRun';
 import { el } from '../ui/dom';
 import { createModelSelect } from '../ui/modelSelect';
 import type { AppState } from '../store';
+import { renderConflictWarning } from './conflictWarning';
 import type { ViewContext } from './types';
 import { renderCachedVerificationPanel } from './verificationPanel';
 
@@ -307,6 +308,11 @@ function renderVerification(run: ExtractionRun, state: AppState, ctx: ViewContex
       retry,
     );
   } else if (state.pilot.verification !== null) {
+    if (state.pilot.conflictMessage !== null) {
+      children.push(
+        renderConflictWarning(state.pilot.conflictMessage, () => ctx.pilot.onReloadVerification()),
+      );
+    }
     children.push(
       renderCachedVerificationPanel({
         data: state.pilot.verification,

@@ -30,11 +30,13 @@ import { nowIso8601 } from '../../utils/iso8601';
 import type { Store, VerifyState, VerifyTarget } from '../store';
 import { showToast } from '../ui/toast';
 import {
+  foldDecisionWriteTokens,
   loadVerificationBundle,
   persistArmConfirmation,
   persistDecisionWrite,
   persistInstanceDeclarations,
   persistVerifyLayoutMode,
+  resultsCellKeyOf,
   type QueuedDecisionWrite,
   type VerificationDeps,
 } from './verificationService';
@@ -269,6 +271,10 @@ export async function openVerifyStudy(
     selectedStudyId: studyId,
     verification: null,
     studyValues: null,
+    // 楽観ロックのトークン・競合バナーもデータ束読込のたびにリセットする（issue #64）
+    studyRowUpdatedAt: null,
+    resultsRowUpdatedAt: {},
+    conflictMessage: null,
   });
   try {
     const bundle = await loadVerificationBundle(
@@ -288,6 +294,8 @@ export async function openVerifyStudy(
       verification: bundle.verification,
       studyValues: bundle.studyValues,
       layoutMode: bundle.layoutMode,
+      studyRowUpdatedAt: bundle.studyRowUpdatedAt,
+      resultsRowUpdatedAt: bundle.resultsRowUpdatedAt,
     });
   } catch (err) {
     patchVerify(store, { verifyLoading: false, verifyError: toMessage(err) });
@@ -340,11 +348,29 @@ export async function persistVerifyDecision(
     entityLevel: field.entityLevel,
     studyValues,
   };
-  const result = await persistDecisionWrite(project.spreadsheetId, write, deps);
+  // 楽観ロックの期待値（issue #64）: study 項目は自分の StudyData 行の updated_at、
+  // それ以外は自分の該当 ResultsData セルの updated_at（無ければ「行が無い」を期待）
+  const expectedUpdatedAt =
+    field.entityLevel === 'study'
+      ? state.verify.studyRowUpdatedAt
+      : (state.verify.resultsRowUpdatedAt[resultsCellKeyOf(decision.entityKey, decision.fieldId)] ??
+        null);
+  const result = await persistDecisionWrite(project.spreadsheetId, write, deps, expectedUpdatedAt);
   if (result.status === 'queued') {
     patchVerify(store, { queuedDecisions: store.getState().verify.queuedDecisions + 1 });
+  } else if (result.status === 'conflict') {
+    patchVerify(store, { conflictMessage: result.message });
   } else {
-    patchVerify(store, { queuedDecisions: result.remainingCount });
+    const current = store.getState().verify;
+    const folded = foldDecisionWriteTokens(result.written, {
+      studyRowUpdatedAt: current.studyRowUpdatedAt,
+      resultsRowUpdatedAt: current.resultsRowUpdatedAt,
+    });
+    patchVerify(store, {
+      queuedDecisions: result.remainingCount,
+      studyRowUpdatedAt: folded.studyRowUpdatedAt,
+      resultsRowUpdatedAt: folded.resultsRowUpdatedAt,
+    });
   }
 }
 

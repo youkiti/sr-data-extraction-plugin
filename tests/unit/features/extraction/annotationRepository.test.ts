@@ -1,10 +1,11 @@
-import type { StudyDataRow } from '../../../../src/domain/annotation';
-import type { NewResultsDataRow } from '../../../../src/features/extraction/aiAnnotationRows';
 import {
+  AnnotationConflictError,
   readResultsDataRows,
   readStudyDataSheet,
   upsertResultsDataRows,
   upsertStudyDataRows,
+  type ResultsDataUpsertRow,
+  type StudyDataUpsertRow,
 } from '../../../../src/features/extraction/annotationRepository';
 
 const STUDY_HEADER = [
@@ -56,7 +57,7 @@ function callsOf(deps: MockDeps, method: string): [string, RequestInit][] {
     .map(([url, init]) => [decodeURIComponent(String(url)), init as RequestInit]);
 }
 
-function makeStudyRow(overrides: Partial<StudyDataRow> = {}): StudyDataRow {
+function makeStudyRow(overrides: Partial<StudyDataUpsertRow> = {}): StudyDataUpsertRow {
   return {
     studyId: 'doc-1',
     annotator: 'ai',
@@ -69,7 +70,7 @@ function makeStudyRow(overrides: Partial<StudyDataRow> = {}): StudyDataRow {
   };
 }
 
-function makeResultsRow(overrides: Partial<NewResultsDataRow> = {}): NewResultsDataRow {
+function makeResultsRow(overrides: Partial<ResultsDataUpsertRow> = {}): ResultsDataUpsertRow {
   return {
     studyId: 'doc-1',
     fieldId: 'f-arm-n',
@@ -237,6 +238,98 @@ describe('upsertStudyDataRows', () => {
     const deps = makeDeps([STUDY_HEADER]);
     await upsertStudyDataRows('sid', [], deps);
     expect(deps.fetch).not.toHaveBeenCalled();
+  });
+});
+
+describe('upsertStudyDataRows: 楽観ロック（issue #64）', () => {
+  test('expectedUpdatedAt=null で行が既に存在すれば conflict（部分書き込みなし）', async () => {
+    const deps = makeDeps([STUDY_HEADER, ['doc-1', 'ai', 'ai', '1', '', 't0']]);
+    await expect(
+      upsertStudyDataRows('sid', [makeStudyRow({ expectedUpdatedAt: null })], deps),
+    ).rejects.toThrow(AnnotationConflictError);
+    expect(callsOf(deps, 'PUT')).toHaveLength(0);
+    expect(callsOf(deps, 'POST')).toHaveLength(0);
+  });
+
+  test('expectedUpdatedAt=文字列で行が無ければ conflict', async () => {
+    const deps = makeDeps([STUDY_HEADER]);
+    await expect(
+      upsertStudyDataRows('sid', [makeStudyRow({ expectedUpdatedAt: 't0' })], deps),
+    ).rejects.toThrow(AnnotationConflictError);
+    expect(callsOf(deps, 'PUT')).toHaveLength(0);
+    expect(callsOf(deps, 'POST')).toHaveLength(0);
+  });
+
+  test('updatedAt が期待値と不一致なら conflict', async () => {
+    const deps = makeDeps([STUDY_HEADER, ['doc-1', 'ai', 'ai', '1', '', 't0']]);
+    await expect(
+      upsertStudyDataRows('sid', [makeStudyRow({ expectedUpdatedAt: 't-old' })], deps),
+    ).rejects.toThrow(AnnotationConflictError);
+  });
+
+  test('updatedAt が期待値と一致すれば保存成功する', async () => {
+    const deps = makeDeps([
+      [...STUDY_HEADER, 'sample_size_total'],
+      ['doc-1', 'ai', 'ai', '1', '', 't0', '10'],
+    ]);
+    await upsertStudyDataRows('sid', [makeStudyRow({ expectedUpdatedAt: 't0' })], deps);
+    expect(callsOf(deps, 'PUT')).toHaveLength(1);
+  });
+
+  test('expectedUpdatedAt=undefined はチェックなし（従来挙動。ai 転記・consensus・キュー再送）', async () => {
+    const deps = makeDeps([
+      [...STUDY_HEADER, 'sample_size_total'],
+      ['doc-1', 'ai', 'ai', '1', '', 't-anything', '10'],
+    ]);
+    await upsertStudyDataRows('sid', [makeStudyRow()], deps); // expectedUpdatedAt 省略
+    expect(callsOf(deps, 'PUT')).toHaveLength(1);
+  });
+
+  test('複数行入力の 2 行目が競合すると PUT / POST が 1 件も飛ばない（ヘッダ追加を要する新規列があっても）', async () => {
+    const deps = makeDeps([
+      STUDY_HEADER, // sample_size_total 列はまだ無い（本来ならヘッダ追加が必要）
+      ['doc-1', 'ai', 'ai', '1', '', 't0'],
+      ['doc-2', 'ai', 'ai', '1', '', 't0'],
+    ]);
+    await expect(
+      upsertStudyDataRows(
+        'sid',
+        [
+          makeStudyRow({ studyId: 'doc-1', expectedUpdatedAt: 't0' }), // 一致
+          makeStudyRow({ studyId: 'doc-2', expectedUpdatedAt: 't-old' }), // 不一致 → conflict
+        ],
+        deps,
+      ),
+    ).rejects.toThrow(AnnotationConflictError);
+    expect(callsOf(deps, 'PUT')).toHaveLength(0);
+    expect(callsOf(deps, 'POST')).toHaveLength(0);
+  });
+
+  test('エラーオブジェクトのフィールド内容（StudyData。entity_key / field_id は null）', async () => {
+    const deps = makeDeps([STUDY_HEADER, ['doc-1', 'ai', 'ai', '1', '', 't0']]);
+    let caught: unknown;
+    try {
+      await upsertStudyDataRows('sid', [makeStudyRow({ expectedUpdatedAt: 't-old' })], deps);
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(AnnotationConflictError);
+    const conflict = caught as AnnotationConflictError;
+    expect(conflict.tab).toBe('StudyData');
+    expect(conflict.studyId).toBe('doc-1');
+    expect(conflict.annotator).toBe('ai');
+    expect(conflict.entityKey).toBeNull();
+    expect(conflict.fieldId).toBeNull();
+    expect(conflict.expectedUpdatedAt).toBe('t-old');
+    expect(conflict.actualUpdatedAt).toBe('t0');
+  });
+
+  test('expectedUpdatedAt を渡してもシート行へは書き込まれない', async () => {
+    const deps = makeDeps([[...STUDY_HEADER, 'sample_size_total']]);
+    await upsertStudyDataRows('sid', [makeStudyRow({ expectedUpdatedAt: null })], deps);
+    const posts = callsOf(deps, 'POST');
+    const body = JSON.parse(posts[0]?.[1].body as string);
+    expect(body.values).toEqual([['doc-1', 'ai', 'ai', 2, 'run-1', 't2', '120']]);
   });
 });
 
@@ -409,5 +502,101 @@ describe('upsertResultsDataRows', () => {
     const deps = makeDeps([RESULTS_HEADER]);
     await upsertResultsDataRows('sid', [], deps);
     expect(deps.fetch).not.toHaveBeenCalled();
+  });
+});
+
+describe('upsertResultsDataRows: 楽観ロック（issue #64）', () => {
+  const EXISTING_ROW = ['r-9', 'doc-1', 'f-arm-n', 'ai', 'ai', '1', 'arm:1', '', '59', 'false', 't0'];
+
+  test('expectedUpdatedAt=null で行が既に存在すれば conflict（部分書き込みなし）', async () => {
+    const deps = makeDeps([RESULTS_HEADER, EXISTING_ROW]);
+    await expect(
+      upsertResultsDataRows('sid', [makeResultsRow({ expectedUpdatedAt: null })], deps),
+    ).rejects.toThrow(AnnotationConflictError);
+    expect(callsOf(deps, 'PUT')).toHaveLength(0);
+    expect(callsOf(deps, 'POST')).toHaveLength(0);
+  });
+
+  test('expectedUpdatedAt=文字列で行が無ければ conflict', async () => {
+    const deps = makeDeps([RESULTS_HEADER]);
+    await expect(
+      upsertResultsDataRows('sid', [makeResultsRow({ expectedUpdatedAt: 't0' })], deps),
+    ).rejects.toThrow(AnnotationConflictError);
+    expect(callsOf(deps, 'PUT')).toHaveLength(0);
+    expect(callsOf(deps, 'POST')).toHaveLength(0);
+  });
+
+  test('updatedAt が期待値と不一致なら conflict', async () => {
+    const deps = makeDeps([RESULTS_HEADER, EXISTING_ROW]);
+    await expect(
+      upsertResultsDataRows('sid', [makeResultsRow({ expectedUpdatedAt: 't-old' })], deps),
+    ).rejects.toThrow(AnnotationConflictError);
+  });
+
+  test('updatedAt が期待値と一致すれば保存成功する（result_id は保持）', async () => {
+    const deps = makeDeps([RESULTS_HEADER, EXISTING_ROW]);
+    await upsertResultsDataRows('sid', [makeResultsRow({ expectedUpdatedAt: 't0' })], deps, {
+      newUuid: () => 'r-new',
+    });
+    const puts = callsOf(deps, 'PUT');
+    expect(puts).toHaveLength(1);
+    const body = JSON.parse(puts[0]?.[1].body as string);
+    expect(body.values[0][0]).toBe('r-9'); // result_id は既存を保持（新規採番は使わない）
+  });
+
+  test('expectedUpdatedAt=undefined はチェックなし（従来挙動。ai 転記・consensus・キュー再送）', async () => {
+    const deps = makeDeps([
+      RESULTS_HEADER,
+      ['r-9', 'doc-1', 'f-arm-n', 'ai', 'ai', '1', 'arm:1', '', '59', 'false', 't-anything'],
+    ]);
+    await upsertResultsDataRows('sid', [makeResultsRow()], deps); // expectedUpdatedAt 省略
+    expect(callsOf(deps, 'PUT')).toHaveLength(1);
+  });
+
+  test('複数行入力の 2 行目が競合すると PUT / POST が 1 件も飛ばない（部分書き込みなし）', async () => {
+    const deps = makeDeps([RESULTS_HEADER, EXISTING_ROW]);
+    await expect(
+      upsertResultsDataRows(
+        'sid',
+        [
+          makeResultsRow({ entityKey: 'arm:1', expectedUpdatedAt: 't0' }), // 一致
+          makeResultsRow({ entityKey: 'arm:2', expectedUpdatedAt: 't-old' }), // 行なしなのに文字列期待 → conflict
+        ],
+        deps,
+      ),
+    ).rejects.toThrow(AnnotationConflictError);
+    expect(callsOf(deps, 'PUT')).toHaveLength(0);
+    expect(callsOf(deps, 'POST')).toHaveLength(0);
+  });
+
+  test('エラーオブジェクトのフィールド内容（ResultsData。entity_key / field_id を持つ）', async () => {
+    const deps = makeDeps([RESULTS_HEADER]);
+    let caught: unknown;
+    try {
+      await upsertResultsDataRows('sid', [makeResultsRow({ expectedUpdatedAt: 't-old' })], deps);
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(AnnotationConflictError);
+    const conflict = caught as AnnotationConflictError;
+    expect(conflict.tab).toBe('ResultsData');
+    expect(conflict.studyId).toBe('doc-1');
+    expect(conflict.annotator).toBe('ai');
+    expect(conflict.entityKey).toBe('arm:1');
+    expect(conflict.fieldId).toBe('f-arm-n');
+    expect(conflict.expectedUpdatedAt).toBe('t-old');
+    expect(conflict.actualUpdatedAt).toBeNull();
+  });
+
+  test('expectedUpdatedAt を渡してもシート行へは書き込まれない', async () => {
+    const deps = makeDeps([RESULTS_HEADER]);
+    await upsertResultsDataRows('sid', [makeResultsRow({ expectedUpdatedAt: null })], deps, {
+      newUuid: () => 'r-new',
+    });
+    const posts = callsOf(deps, 'POST');
+    const body = JSON.parse(posts[0]?.[1].body as string);
+    expect(body.values).toEqual([
+      ['r-new', 'doc-1', 'f-arm-n', 'ai', 'ai', 2, 'arm:1', 'run-1', '60', false, 't2'],
+    ]);
   });
 });

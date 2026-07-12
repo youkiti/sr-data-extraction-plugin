@@ -6,6 +6,13 @@
 //   「追加のみ」行う（削除・改名はしない。§3.2）
 // - 新規行の追記は 1 回の values:append あたり DEFAULT_MAX_ROWS_PER_APPEND 行までに区切り、
 //   逐次呼び出す（Sheets API のリクエストサイズ超過・429 対策。issue #69）
+// - expectedUpdatedAt（省略可）による楽観ロック（issue #64）: 独立二重レビューで同一 annotator が
+//   2 コンテキスト（別タブ・別端末）から同じ行を書くと read-modify-write の後勝ち上書きが起きうる。
+//   行の updated_at 列をバージョントークンとして使う（新列を増やさない）。
+//   undefined = チェックなし（ai 転記・consensus・オフラインキュー再送）、
+//   null = 「行がまだ無い」ことを期待、文字列 = 既存行の updated_at との完全一致を期待。
+//   不一致は書き込み開始前（updateRow / append を 1 件も呼ぶ前）の検証パスで検出し、
+//   AnnotationConflictError を throw する（部分書き込みを起こさない）
 import type {
   AnnotatorType,
   ResultsDataRow,
@@ -37,6 +44,62 @@ const ANNOTATOR_TYPES: readonly AnnotatorType[] = [
  * ユースケース層（executeRun.ts）への逆依存を避けるためここで値を重複定義する。
  */
 export const DEFAULT_MAX_ROWS_PER_APPEND = 500;
+
+/**
+ * StudyData / ResultsData の annotator 行 upsert 時の楽観ロック競合（issue #64）。
+ * 独立二重レビューで同一 annotator が 2 コンテキスト（別タブ・別端末）から同じ行を編集すると、
+ * 読み込み時に見た版と実際のシート上の版が食い違う可能性がある。expectedUpdatedAt に
+ * 「読み込み時に見た updated_at」を渡すことで検出する
+ */
+export class AnnotationConflictError extends Error {
+  readonly tab: 'StudyData' | 'ResultsData';
+  readonly studyId: string;
+  readonly annotator: string;
+  /** ResultsData のみ非 null。StudyData は null */
+  readonly entityKey: string | null;
+  /** ResultsData のみ非 null。StudyData は null */
+  readonly fieldId: string | null;
+  readonly expectedUpdatedAt: string | null;
+  readonly actualUpdatedAt: string | null;
+
+  constructor(params: {
+    tab: 'StudyData' | 'ResultsData';
+    studyId: string;
+    annotator: string;
+    entityKey: string | null;
+    fieldId: string | null;
+    expectedUpdatedAt: string | null;
+    actualUpdatedAt: string | null;
+  }) {
+    const keyInfo =
+      params.entityKey !== null && params.fieldId !== null
+        ? `study_id=${params.studyId}, annotator=${params.annotator}, entity_key=${params.entityKey}, field_id=${params.fieldId}`
+        : `study_id=${params.studyId}, annotator=${params.annotator}`;
+    super(
+      `読み込み後に別の場所で更新されています。再読み込みしてから判定し直してください（${params.tab}: ${keyInfo}）`,
+    );
+    this.name = 'AnnotationConflictError';
+    this.tab = params.tab;
+    this.studyId = params.studyId;
+    this.annotator = params.annotator;
+    this.entityKey = params.entityKey;
+    this.fieldId = params.fieldId;
+    this.expectedUpdatedAt = params.expectedUpdatedAt;
+    this.actualUpdatedAt = params.actualUpdatedAt;
+  }
+}
+
+/** upsertStudyDataRows の入力行（expectedUpdatedAt は省略可。楽観ロックの期待値。issue #64） */
+export type StudyDataUpsertRow = StudyDataRow & {
+  /** undefined = チェックなし / null = 行がまだ無いことを期待 / 文字列 = 既存行の updated_at と一致を期待 */
+  expectedUpdatedAt?: string | null;
+};
+
+/** upsertResultsDataRows の入力行（expectedUpdatedAt は省略可。楽観ロックの期待値。issue #64） */
+export type ResultsDataUpsertRow = NewResultsDataRow & {
+  /** undefined = チェックなし / null = 行がまだ無いことを期待 / 文字列 = 既存行の updated_at と一致を期待 */
+  expectedUpdatedAt?: string | null;
+};
 
 export interface AnnotationRepositoryHelpers {
   /** テスト時に差し替え可能な UUID 発番（ResultsData の result_id 採番用） */
@@ -161,9 +224,11 @@ export async function readStudyDataSheet(
   return { fieldNames, rows };
 }
 
-/** 既存行の更新キー → シート行番号（1 始まり）。重複キーはバリデーション違反 */
-function indexStudyRows(snapshot: StudySheetSnapshot): Map<string, number> {
-  const index = new Map<string, number>();
+/** 既存行の更新キー → シート行番号（1 始まり）+ updated_at。重複キーはバリデーション違反 */
+function indexStudyRows(
+  snapshot: StudySheetSnapshot,
+): Map<string, { rowIndex: number; updatedAt: string }> {
+  const index = new Map<string, { rowIndex: number; updatedAt: string }>();
   snapshot.rows.forEach((row, i) => {
     const key = keyOf(row.studyId, row.annotator);
     if (index.has(key)) {
@@ -171,9 +236,35 @@ function indexStudyRows(snapshot: StudySheetSnapshot): Map<string, number> {
         `StudyData に同一キーの行が複数あります（study_id=${row.studyId}, annotator=${row.annotator}）`,
       );
     }
-    index.set(key, i + 2);
+    index.set(key, { rowIndex: i + 2, updatedAt: row.updatedAt });
   });
   return index;
+}
+
+/**
+ * 楽観ロックの期待値検証（issue #64）。expectedUpdatedAt が undefined の行はチェックしない。
+ * 不一致があれば AnnotationConflictError を throw する。
+ * 呼び出し側は「書き込みを 1 件も行う前」にこれを回す（部分書き込み防止）
+ */
+function checkStudyRowConflict(
+  row: StudyDataUpsertRow,
+  existing: { rowIndex: number; updatedAt: string } | undefined,
+): void {
+  if (row.expectedUpdatedAt === undefined) {
+    return;
+  }
+  const actualUpdatedAt = existing?.updatedAt ?? null;
+  if (row.expectedUpdatedAt !== actualUpdatedAt) {
+    throw new AnnotationConflictError({
+      tab: 'StudyData',
+      studyId: row.studyId,
+      annotator: row.annotator,
+      entityKey: null,
+      fieldId: null,
+      expectedUpdatedAt: row.expectedUpdatedAt,
+      actualUpdatedAt,
+    });
+  }
 }
 
 /** StudyDataRow → シート行（ヘッダ順）。values に無い列は空セル（null） */
@@ -199,7 +290,7 @@ function studyRowToSheetRow(
  */
 export async function upsertStudyDataRows(
   spreadsheetId: string,
-  rows: readonly StudyDataRow[],
+  rows: readonly StudyDataUpsertRow[],
   deps: GoogleApiDeps,
   helpers: AnnotationRepositoryHelpers = {},
 ): Promise<void> {
@@ -225,6 +316,12 @@ export async function upsertStudyDataRows(
     inputKeys.add(key);
   }
 
+  // 楽観ロックの期待値検証（issue #64）。書き込み（ヘッダ追加・updateRow・append）を
+  // 1 件も行う前に全行を検証し、不一致があれば throw する（部分書き込みを起こさない）
+  for (const row of rows) {
+    checkStudyRowConflict(row, index.get(keyOf(row.studyId, row.annotator)));
+  }
+
   // 不足列をヘッダ末尾へ追加（buildStudyDataHeader が固定列との衝突・重複を検証する）
   const fieldNames = [...snapshot.fieldNames];
   for (const row of rows) {
@@ -241,11 +338,11 @@ export async function upsertStudyDataRows(
   const appends: (string | number | null)[][] = [];
   for (const row of rows) {
     const sheetRow = studyRowToSheetRow(row, fieldNames);
-    const rowIndex = index.get(keyOf(row.studyId, row.annotator));
-    if (rowIndex === undefined) {
+    const existing = index.get(keyOf(row.studyId, row.annotator));
+    if (existing === undefined) {
       appends.push(sheetRow);
     } else {
-      await updateRow(spreadsheetId, STUDY_TAB, rowIndex, sheetRow, deps);
+      await updateRow(spreadsheetId, STUDY_TAB, existing.rowIndex, sheetRow, deps);
     }
   }
   await appendRowsInChunks(spreadsheetId, STUDY_TAB, appends, deps, maxRowsPerAppend);
@@ -311,7 +408,14 @@ function resultsKeyOf(row: {
   return keyOf(row.studyId, row.annotator, row.entityKey, row.fieldId);
 }
 
-function resultsRowToSheetRow(row: ResultsDataRow): (string | number | boolean | null)[] {
+/**
+ * expectedUpdatedAt を受け付けるのは呼び出し側が ResultsDataUpsertRow + resultId で
+ * スプレッドして渡すため（excess property を起こさないよう型を合わせる）。
+ * expectedUpdatedAt はシート行へは書かない（下記の配列に含めない）
+ */
+function resultsRowToSheetRow(
+  row: ResultsDataRow & { expectedUpdatedAt?: string | null },
+): (string | number | boolean | null)[] {
   return [
     row.resultId,
     row.studyId,
@@ -334,7 +438,7 @@ function resultsRowToSheetRow(row: ResultsDataRow): (string | number | boolean |
  */
 export async function upsertResultsDataRows(
   spreadsheetId: string,
-  rows: readonly NewResultsDataRow[],
+  rows: readonly ResultsDataUpsertRow[],
   deps: GoogleApiDeps,
   helpers: AnnotationRepositoryHelpers = {},
 ): Promise<void> {
@@ -348,7 +452,7 @@ export async function upsertResultsDataRows(
   );
   const snapshot = await fetchResultsSheet(spreadsheetId, deps);
 
-  const index = new Map<string, { rowIndex: number; resultId: string }>();
+  const index = new Map<string, { rowIndex: number; resultId: string; updatedAt: string }>();
   snapshot.rows.forEach((row, i) => {
     const key = resultsKeyOf(row);
     if (index.has(key)) {
@@ -356,7 +460,7 @@ export async function upsertResultsDataRows(
         `ResultsData に同一キーの行が複数あります（study_id=${row.studyId}, annotator=${row.annotator}, entity_key=${row.entityKey}, field_id=${row.fieldId}）`,
       );
     }
-    index.set(key, { rowIndex: i + 2, resultId: row.resultId });
+    index.set(key, { rowIndex: i + 2, resultId: row.resultId, updatedAt: row.updatedAt });
   });
 
   const inputKeys = new Set<string>();
@@ -368,6 +472,27 @@ export async function upsertResultsDataRows(
       );
     }
     inputKeys.add(key);
+  }
+
+  // 楽観ロックの期待値検証（issue #64）。書き込み（updateRow・append）を 1 件も行う前に
+  // 全行を検証し、不一致があれば throw する（部分書き込みを起こさない）
+  for (const row of rows) {
+    if (row.expectedUpdatedAt === undefined) {
+      continue;
+    }
+    const existing = index.get(resultsKeyOf(row));
+    const actualUpdatedAt = existing?.updatedAt ?? null;
+    if (row.expectedUpdatedAt !== actualUpdatedAt) {
+      throw new AnnotationConflictError({
+        tab: 'ResultsData',
+        studyId: row.studyId,
+        annotator: row.annotator,
+        entityKey: row.entityKey,
+        fieldId: row.fieldId,
+        expectedUpdatedAt: row.expectedUpdatedAt,
+        actualUpdatedAt,
+      });
+    }
   }
 
   const appends: (string | number | boolean | null)[][] = [];
