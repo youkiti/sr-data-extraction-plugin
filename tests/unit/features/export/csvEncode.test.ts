@@ -28,12 +28,15 @@ describe('encodeCsvField', () => {
 });
 
 describe('buildCsv', () => {
-  test('BOM + ヘッダー + データ行を CRLF 区切り（末尾改行あり）で組み立てる', () => {
+  // buildCsv 自体は BOM を付けない（issue #60 design-r-export.md D-6。R セットは BOM なしで
+  // 出力するため、BOM が必要な既存 3 形式は呼び出し側で CSV_BOM を前置する）
+  test('BOM なしでヘッダー + データ行を CRLF 区切り（末尾改行あり）で組み立てる', () => {
     const csv = buildCsv(['a', 'b'], [['1', 'x,y'], ['2', 'z']]);
-    expect(csv).toBe(`${CSV_BOM}a,b\r\n1,"x,y"\r\n2,z\r\n`);
+    expect(csv).toBe('a,b\r\n1,"x,y"\r\n2,z\r\n');
+    expect(csv.startsWith(CSV_BOM)).toBe(false);
   });
 
   test('データ行なしはヘッダーのみ', () => {
-    expect(buildCsv(['a', 'b'], [])).toBe(`${CSV_BOM}a,b\r\n`);
+    expect(buildCsv(['a', 'b'], [])).toBe('a,b\r\n');
   });
 });

@@ -1,9 +1,9 @@
 import { renderExportView } from '../../../../src/app/views/exportView';
 import { createInitialState, type AppState, type ExportState } from '../../../../src/app/store';
 import type { ExportViewCallbacks, ViewContext } from '../../../../src/app/views/types';
-import type { ExportFormat } from '../../../../src/domain/exportLog';
-import type { BuiltExport } from '../../../../src/features/export/buildExport';
+import type { BuiltExport, ClassicExportFormat } from '../../../../src/features/export/buildExport';
 import { buildMethodsText } from '../../../../src/features/export/methodsBoilerplate';
+import type { BuiltRSet, RSetFile } from '../../../../src/features/export/rset/buildRSet';
 
 // 実装の文言は素通しする（他テストは実際の文案を検証したいため）。
 // 「未反映プレースホルダが 0 件」という、正典の文案では実際には起こらない組み合わせだけ
@@ -134,7 +134,7 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<ExportViewCallbac
   };
 }
 
-function makeBuilt(format: ExportFormat, overrides: Partial<BuiltExport> = {}): BuiltExport {
+function makeBuilt(format: ClassicExportFormat, overrides: Partial<BuiltExport> = {}): BuiltExport {
   return {
     format,
     csv: 'csv',
@@ -150,8 +150,8 @@ function makeBuilt(format: ExportFormat, overrides: Partial<BuiltExport> = {}): 
 }
 
 function makeBuiltAll(
-  overrides: Partial<Record<ExportFormat, Partial<BuiltExport>>> = {},
-): Record<ExportFormat, BuiltExport> {
+  overrides: Partial<Record<ClassicExportFormat, Partial<BuiltExport>>> = {},
+): Record<ClassicExportFormat, BuiltExport> {
   return {
     study_wide: makeBuilt('study_wide', overrides.study_wide ?? {}),
     results_long: makeBuilt('results_long', {
@@ -159,6 +159,38 @@ function makeBuiltAll(
       ...(overrides.results_long ?? {}),
     }),
     audit: makeBuilt('audit', overrides.audit ?? {}),
+  };
+}
+
+/** R セットの 8 ファイルを最小構成で持つ fake（データ行 1 件・未検証 0 件が既定） */
+function makeRSetFile(name: string, rowCount: number, content = 'a,b\r\n1,2\r\n'): RSetFile {
+  return { name, content, rowCount };
+}
+
+function makeBuiltRSet(overrides: Partial<BuiltRSet> = {}): BuiltRSet {
+  return {
+    files: [
+      makeRSetFile('tab1.csv', 1),
+      makeRSetFile('tab1_status.csv', 1),
+      makeRSetFile('ma.csv', 1, 'outcome_id,arm_id\r\nmortality,1\r\n'),
+      makeRSetFile('ma_status.csv', 1),
+      makeRSetFile('rob.csv', 0),
+      makeRSetFile('data_dictionary.csv', 1),
+      makeRSetFile('export_issues.csv', 0),
+      makeRSetFile('export_manifest.json', 0, '{}\n'),
+    ],
+    issues: [],
+    manifest: {
+      export_format_version: '1.0',
+      schema_version: 2,
+      exported_at: '2026-07-03T09:00:00.000Z',
+      app_version: '1.2.3',
+      review_mode: 'single_with_ai',
+      final_annotator_rule: 'consensus が 1 件ならそれ、なければ唯一の human 行',
+      files: {},
+      issues_summary: {},
+    },
+    ...overrides,
   };
 }
 
@@ -194,7 +226,7 @@ describe('renderExportView', () => {
     const { ctx, callbacks } = makeCtx();
     const view = renderExportView(makeState({ built: makeBuiltAll() }), ctx);
     const radios = view.querySelectorAll<HTMLInputElement>('#export-format input[type=radio]');
-    expect(radios).toHaveLength(3);
+    expect(radios).toHaveLength(4); // study_wide / results_long / audit / r_set（issue #60）
     expect(radios[0]?.checked).toBe(true); // 既定 = study_wide
 
     const summary = view.querySelector('#export-summary');
@@ -216,6 +248,10 @@ describe('renderExportView', () => {
     (radios[2] as HTMLInputElement).checked = true;
     radios[2]?.dispatchEvent(new Event('change'));
     expect(callbacks.onSelectFormat).toHaveBeenCalledWith('audit');
+
+    (radios[3] as HTMLInputElement).checked = true;
+    radios[3]?.dispatchEvent(new Event('change'));
+    expect(callbacks.onSelectFormat).toHaveBeenCalledWith('r_set');
   });
 
   test('results_long の未検証セル数は「—」で出す', () => {
@@ -358,6 +394,137 @@ describe('renderExportView', () => {
     expect(link?.getAttribute('target')).toBe('_blank');
     expect(link?.getAttribute('rel')).toBe('noopener');
     (view.querySelector('#export-download') as HTMLButtonElement).click();
+    expect(callbacks.onDownload).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('renderExportView: R セット（issue #60）', () => {
+  function rSetState(patch: Partial<ExportState> = {}): AppState {
+    return makeState({
+      built: makeBuiltAll(),
+      format: 'r_set',
+      rSet: makeBuiltRSet(),
+      ...patch,
+    });
+  }
+
+  test('サマリ（ファイル数 / データ行数 / 未検証セル数 / export_issues 件数）+ ファイル一覧 + ma.csv プレビュー', () => {
+    const { ctx, callbacks } = makeCtx();
+    const view = renderExportView(rSetState(), ctx);
+
+    const radios = view.querySelectorAll<HTMLInputElement>('#export-format input[type=radio]');
+    expect(radios[3]?.checked).toBe(true); // r_set が選択中
+
+    const summary = view.querySelector('#export-rset-summary');
+    expect(summary?.textContent).toContain('ファイル数');
+    expect(summary?.textContent).toContain('8');
+    expect(summary?.textContent).toContain('データ行数');
+    expect(summary?.textContent).toContain('未検証セル数');
+    expect(summary?.textContent).toContain('export_issues 件数');
+
+    const fileList = view.querySelector('#export-rset-files');
+    expect(fileList?.textContent).toContain('tab1.csv: 1 行');
+    expect(fileList?.textContent).toContain('export_manifest.json');
+
+    const preview = view.querySelector('#export-rset-preview');
+    expect(preview?.querySelectorAll('th')).toHaveLength(2);
+    expect(preview?.querySelector('tbody')?.textContent).toContain('mortality');
+
+    const generate = view.querySelector('#export-generate') as HTMLButtonElement;
+    expect(generate.disabled).toBe(false);
+    expect(generate.textContent).toBe('8 ファイルを生成して Drive に保存');
+    generate.click();
+    expect(callbacks.onGenerate).toHaveBeenCalledTimes(1);
+  });
+
+  test('データ行 0 件は生成ボタン無効 + 案内文', () => {
+    const { ctx } = makeCtx();
+    const view = renderExportView(
+      rSetState({
+        rSet: makeBuiltRSet({
+          files: makeBuiltRSet().files.map((file) => ({ ...file, rowCount: 0 })),
+        }),
+      }),
+      ctx,
+    );
+    expect((view.querySelector('#export-generate') as HTMLButtonElement).disabled).toBe(true);
+    expect(view.querySelector('.export__empty-note')?.textContent).toBe(
+      'R セットで出力できるデータ行がありません。',
+    );
+  });
+
+  test('警告ダイアログ: R セット向けの補足注記付きで未検証件数を表示', () => {
+    const { ctx, callbacks } = makeCtx();
+    const view = renderExportView(
+      rSetState({
+        rSet: makeBuiltRSet({
+          issues: [
+            { issueType: 'unverified_cell', studyId: 's1', fieldId: 'f1', entityKey: 'e', detail: 'd' },
+            { issueType: 'unverified_cell', studyId: 's2', fieldId: 'f2', entityKey: 'e', detail: 'd' },
+          ],
+        }),
+        confirmingWarning: true,
+      }),
+      ctx,
+    );
+    const dialog = view.querySelector('#export-warning');
+    expect(dialog?.getAttribute('role')).toBe('alertdialog');
+    expect(view.querySelector('#export-warning-title')?.textContent).toBe(
+      '未検証の項目が 2 件あります。',
+    );
+    expect(dialog?.textContent).toContain('tab1_status.csv / ma_status.csv / rob.csv');
+    (view.querySelector('#export-warning-continue') as HTMLButtonElement).click();
+    expect(callbacks.onConfirmGenerate).toHaveBeenCalledTimes(1);
+    (view.querySelector('#export-warning-cancel') as HTMLButtonElement).click();
+    expect(callbacks.onCancelGenerate).toHaveBeenCalledTimes(1);
+  });
+
+  test('生成中: #export-generating + ラジオ・生成ボタン無効化', () => {
+    const { ctx } = makeCtx();
+    const view = renderExportView(rSetState({ generating: true }), ctx);
+    expect(view.querySelector('#export-generating')?.textContent).toBe(
+      '8 ファイルを生成して Drive に保存しています…',
+    );
+    expect((view.querySelector('#export-generate') as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  test('生成失敗: role=alert のエラー表示', () => {
+    const { ctx } = makeCtx();
+    const view = renderExportView(rSetState({ generateError: 'Drive 容量不足' }), ctx);
+    const error = view.querySelector('#export-generate-error');
+    expect(error?.getAttribute('role')).toBe('alert');
+    expect(error?.textContent).toContain('Drive 容量不足');
+  });
+
+  test('生成完了: フォルダリンク + ファイル一覧 + ローカル保存 + UTF-8 案内文', () => {
+    const { ctx, callbacks } = makeCtx();
+    const built = makeBuiltRSet();
+    const view = renderExportView(
+      rSetState({
+        rSetResult: {
+          folderRef: 'https://drive/rset-folder',
+          folderName: 'rset_20260703-090000',
+          exportedAt: '2026-07-03T09:00:00.000Z',
+          built,
+        },
+      }),
+      ctx,
+    );
+    const card = view.querySelector('#export-rset-result');
+    expect(card?.textContent).toContain(
+      'rset_20260703-090000 フォルダに 8 ファイルを Drive に保存しました（ExportLog に記録済み）。',
+    );
+    const link = view.querySelector('#export-rset-result-link');
+    expect(link?.getAttribute('href')).toBe('https://drive/rset-folder');
+    expect(link?.getAttribute('target')).toBe('_blank');
+    expect(link?.getAttribute('rel')).toBe('noopener');
+    expect(view.querySelector('#export-rset-result-files')?.textContent).toContain('ma.csv: 1 行');
+
+    const note = view.querySelector('#export-rset-utf8-note');
+    expect(note?.textContent).toContain('UTF-8（BOM なし）');
+    expect(note?.textContent).toContain('readr::read_csv()');
+
+    (view.querySelector('#export-rset-download') as HTMLButtonElement).click();
     expect(callbacks.onDownload).toHaveBeenCalledTimes(1);
   });
 });

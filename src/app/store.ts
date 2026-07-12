@@ -13,12 +13,13 @@ import type { StudyGate } from '../features/adjudication/gate';
 import type { AdjudicationCell } from '../features/adjudication/cellMatch';
 import type { DraftArmRow } from '../features/adjudication/armMatch';
 import type { AgreementReport } from '../features/adjudication/agreement';
-import type { BuiltExport } from '../features/export/buildExport';
+import type { BuiltExport, ClassicExportFormat } from '../features/export/buildExport';
 import type {
   MethodsFacts,
   MethodsLanguage,
   MethodsWorkflow,
 } from '../features/export/methodsBoilerplate';
+import type { BuiltRSet, RSetMaterials } from '../features/export/rset/buildRSet';
 import type { ProjectRef } from '../domain/project';
 import type { Protocol } from '../domain/protocol';
 import type { SchemaField } from '../domain/schemaField';
@@ -297,7 +298,7 @@ export interface VerifyState {
 
 /** #/export（S10）の直近の生成結果（結果カードの素材。次の生成開始まで残す） */
 export interface ExportResultInfo {
-  format: ExportFormat;
+  format: ClassicExportFormat;
   filename: string;
   /** Drive の webViewLink（ExportLog.file_ref と同値） */
   fileRef: string;
@@ -307,13 +308,30 @@ export interface ExportResultInfo {
   csv: string;
 }
 
+/** #/export（S10）の R セット生成完了カードの素材（issue #60。8 ファイルを保存したサブフォルダ単位） */
+export interface RSetResultInfo {
+  /** 保存先サブフォルダ（`exports/rset_{YYYYMMDD-HHMMSS}/`）の webViewLink */
+  folderRef: string;
+  folderName: string;
+  exportedAt: string;
+  /** Drive へ保存した内容と同一（ファイル一覧・行数・issues 件数・ローカル保存の素材を兼ねる） */
+  built: BuiltRSet;
+}
+
 /** #/export（S10）の画面状態 */
 export interface ExportState {
-  /** 選択中の形式 */
+  /** 選択中の形式（`r_set` を含む） */
   format: ExportFormat;
-  /** 3 形式の構築結果。null = 未読込（画面表示時に読み込む） */
-  built: Record<ExportFormat, BuiltExport> | null;
-  /** built の構築に使った最新確定版（ExportLog.schema_version） */
+  /** 従来 3 形式の構築結果。null = 未読込（画面表示時に読み込む） */
+  built: Record<ClassicExportFormat, BuiltExport> | null;
+  /**
+   * R セット（issue #60）の素材。generateExport が正確な exported_at で
+   * export_manifest.json を再構築するために保持する（built はプレビュー表示用の 1 回目の構築）
+   */
+  rSetMaterials: RSetMaterials | null;
+  /** R セットの構築結果（読込時に構築。サマリ・プレビュー表示に使う） */
+  rSet: BuiltRSet | null;
+  /** built / rSet の構築に使った最新確定版（ExportLog.schema_version） */
   schemaVersion: number | null;
   loading: boolean;
   loadError: string | null;
@@ -322,6 +340,8 @@ export interface ExportState {
   generating: boolean;
   generateError: string | null;
   result: ExportResultInfo | null;
+  /** R セットの生成完了カードの素材 */
+  rSetResult: RSetResultInfo | null;
   /** Methods 文案カード（docs/methods-boilerplate.md）の実績値。null = 未読込（loadExportData 成功時に設定） */
   methodsFacts: MethodsFacts | null;
   /** Methods 文案カードの言語タブ。既定 English（§4: 投稿論文の主想定言語） */
@@ -598,6 +618,8 @@ export function createInitialState(): AppState {
     export: {
       format: 'study_wide',
       built: null,
+      rSetMaterials: null,
+      rSet: null,
       schemaVersion: null,
       loading: false,
       loadError: null,
@@ -605,6 +627,7 @@ export function createInitialState(): AppState {
       generating: false,
       generateError: null,
       result: null,
+      rSetResult: null,
       methodsFacts: null,
       methodsLanguage: 'en',
       methodsWorkflow: 'single',
