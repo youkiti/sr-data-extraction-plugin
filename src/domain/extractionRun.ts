@@ -32,4 +32,10 @@ export interface ExtractionRun {
   tokensOut: number | null;
   /** 実行前にコスト概算を UI 表示する */
   costEstimate: number | null;
+  /**
+   * この run で対象にした field_id 群（issue #80: run 単位のフィールド選択）。
+   * シート上はカンマ区切り。**null = 全項目**（後方互換規約。空配列は使わない）。
+   * 空セル・列自体が無い旧プロジェクトの行を読むと null になる
+   */
+  fieldIds: string[] | null;
 }

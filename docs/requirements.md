@@ -237,6 +237,7 @@ AI 一括抽出の実行単位。tiab-review の `LLM_Runs` に相当。
 | status | enum | ✓ | `queued` / `running` / `done` / `partial_failure` |
 | started_at / finished_at | iso8601 | | |
 | tokens_in / tokens_out / cost_estimate | int / int / float | | 実行前にコスト概算を UI 表示 |
+| field_ids | string | | 2026-07 追加（issue #80: run 単位のフィールド選択）。対象 `field_id` をカンマ区切りで記録する。**空 = 全項目**（後方互換規約。既存プロジェクトはこの列を持たないため、書き込み前にヘッダを拡張する）。検証・ダッシュボード・エクスポートの表示は、セル（field_id 単位）ごとに「その field を対象に含む最新の完了 run」の `Evidence` を採用する合成ビューへ切り替わる（サブセット run が最新でも、対象外の field は過去 run の値が見え続ける） |
 
 #### データ本体タブの分割方針と annotator 軸（v0.4）
 

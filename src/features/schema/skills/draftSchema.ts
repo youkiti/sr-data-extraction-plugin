@@ -32,6 +32,10 @@ export interface DraftSchemaPromptInput {
  * システムプロンプト。field_name の snake_case・entity_level の 3 レベル制約・
  * enum の許容値規約は後続の抽出品質と CSV 列名に直結するため、
  * 文言を変える場合は DRAFT_SCHEMA_PROMPT_VERSION を上げる
+ *
+ * 末尾の "Propose 10-40 fields" は AI が一度に提案する項目数の目安であり、
+ * スキーマ全体の項目数上限ではない（issue #80）。ユーザーは表形式エディタで項目を
+ * 自由に追加・編集でき、SchemaFields タブ・CSV エクスポートのいずれも項目数を制限しない
  */
 export const DRAFT_SCHEMA_SYSTEM_PROMPT = `
 You are an experienced systematic review methodologist designing a data extraction schema (coding sheet).

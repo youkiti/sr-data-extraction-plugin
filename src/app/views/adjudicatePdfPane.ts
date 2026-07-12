@@ -1,8 +1,9 @@
 // PDF 参照ペイン（S12 裁定画面。docs/design-independent-dual-review.md §6.4）。
 // 検証パネルの PDF ビューア（app/ui/pdfViewer）+ 文書切替タブ（verify__doc-tabs 相当）を流用する。
 // v1（〜2026-07-11）は PDF 表示 + ページ送り / ズーム / テキスト検索のみの簡略版だったが、
-// issue #63 で working.evidence（S8/S9 と同じ latestRunEvidenceByStudy で解決した表示 run の
-// Evidence）を使った根拠ハイライトを追加した: 表示中文書の PDF が読み込まれたら
+// issue #63 で working.evidence（latestRunEvidenceByStudy で解決した study 最新 run の
+// Evidence。S8/S9 は issue #80 で field 単位合成へ移行したが裁定は補助表示のため据え置き）
+// を使った根拠ハイライトを追加した: 表示中文書の PDF が読み込まれたら
 // features/verification/highlights.ts の buildDocumentHighlights（検証画面と同じ実装）で
 // その文書ぶんの Evidence を矩形化し、セル一覧の「根拠を表示」ボタン（adjudicateView.ts）から
 // focusAdjudicateEvidence 経由で該当文書へ切替 + ハイライトへジャンプできるようにする。

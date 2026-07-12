@@ -1,4 +1,5 @@
 import {
+  composeEvidenceByStudy,
   latestRunEvidenceByStudy,
   loadVerifyTargets,
   openVerifyStudy,
@@ -34,7 +35,8 @@ import {
   upsertStudyDataRows,
 } from '../../../../src/features/extraction/annotationRepository';
 import { readEvidenceRows } from '../../../../src/features/extraction/evidenceRepository';
-import { readRunSchemaVersions } from '../../../../src/features/extraction/runRepository';
+import { readCompletedRunMetas } from '../../../../src/features/extraction/runRepository';
+import type { CompletedRunMeta } from '../../../../src/features/extraction/runRepository';
 import {
   getSchemaFieldsByVersion,
   listSchemaVersions,
@@ -72,7 +74,7 @@ jest.mock('../../../../src/features/extraction/evidenceRepository', () => ({
   readEvidenceRows: jest.fn(),
 }));
 jest.mock('../../../../src/features/extraction/runRepository', () => ({
-  readRunSchemaVersions: jest.fn(),
+  readCompletedRunMetas: jest.fn(),
 }));
 jest.mock('../../../../src/features/schema/schemaRepository', () => ({
   getSchemaFieldsByVersion: jest.fn(),
@@ -107,8 +109,8 @@ const readResultsDataRowsMock = readResultsDataRows as jest.MockedFunction<typeo
 const upsertStudyMock = upsertStudyDataRows as jest.MockedFunction<typeof upsertStudyDataRows>;
 const upsertResultsMock = upsertResultsDataRows as jest.MockedFunction<typeof upsertResultsDataRows>;
 const readEvidenceRowsMock = readEvidenceRows as jest.MockedFunction<typeof readEvidenceRows>;
-const readRunSchemaVersionsMock = readRunSchemaVersions as jest.MockedFunction<
-  typeof readRunSchemaVersions
+const readCompletedRunMetasMock = readCompletedRunMetas as jest.MockedFunction<
+  typeof readCompletedRunMetas
 >;
 const getSchemaFieldsMock = getSchemaFieldsByVersion as jest.MockedFunction<
   typeof getSchemaFieldsByVersion
@@ -215,6 +217,16 @@ function makeEvidence(overrides: Partial<Evidence> = {}): Evidence {
     bboxPage: null,
     bbox: null,
     relocatedFrom: null,
+    ...overrides,
+  };
+}
+
+function makeCompletedRunMeta(overrides: Partial<CompletedRunMeta> = {}): CompletedRunMeta {
+  return {
+    runId: 'run-1',
+    schemaVersion: 1,
+    startedAt: 't0',
+    fieldIds: null,
     ...overrides,
   };
 }
@@ -333,7 +345,7 @@ function makeStore(patch: {
 
 beforeEach(() => {
   readEvidenceRowsMock.mockResolvedValue([makeEvidence()]);
-  readRunSchemaVersionsMock.mockResolvedValue(new Map([['run-1', 1]]));
+  readCompletedRunMetasMock.mockResolvedValue([makeCompletedRunMeta()]);
   readAllDecisionsMock.mockResolvedValue([]);
   readDecisionsMock.mockResolvedValue([]);
   readStudyDataSheetMock.mockResolvedValue({ fieldNames: [], rows: [] });
@@ -377,6 +389,170 @@ describe('latestRunEvidenceByStudy', () => {
     expect(map.get('study-1')?.runId).toBe('run-1');
     expect(map.get('study-1')?.evidence.map((item) => item.evidenceId)).toEqual(['a']);
     expect(map.has('study-2')).toBe(false);
+  });
+});
+
+describe('composeEvidenceByStudy（issue #80: run 単位のフィールド選択に対応した field 単位合成ビュー）', () => {
+  test('空 field_ids（旧行）= 全項目として合成される（後方互換）', () => {
+    const byStudy = composeEvidenceByStudy(
+      [
+        makeEvidence({ evidenceId: 'a', studyId: 'study-1', runId: 'run-1', fieldId: 'f-a' }),
+        makeEvidence({ evidenceId: 'b', studyId: 'study-1', runId: 'run-1', fieldId: 'f-b' }),
+      ],
+      [makeCompletedRunMeta({ runId: 'run-1', fieldIds: null })],
+    );
+    expect(byStudy.get('study-1')?.evidence.map((item) => item.evidenceId).sort()).toEqual([
+      'a',
+      'b',
+    ]);
+  });
+
+  test('サブセット run が最新になっても、過去 run の他 field の Evidence が見え続ける', () => {
+    const byStudy = composeEvidenceByStudy(
+      [
+        // run-1（旧・全項目）: f-a, f-b
+        makeEvidence({ evidenceId: 'old-a', studyId: 'study-1', runId: 'run-1', fieldId: 'f-a', value: 'old-a' }),
+        makeEvidence({ evidenceId: 'old-b', studyId: 'study-1', runId: 'run-1', fieldId: 'f-b', value: 'old-b' }),
+        // run-2（新・f-a のみのサブセット再抽出）
+        makeEvidence({ evidenceId: 'new-a', studyId: 'study-1', runId: 'run-2', fieldId: 'f-a', value: 'new-a' }),
+      ],
+      [
+        makeCompletedRunMeta({ runId: 'run-1', startedAt: 't1', fieldIds: null }),
+        makeCompletedRunMeta({ runId: 'run-2', startedAt: 't2', fieldIds: ['f-a'] }),
+      ],
+    );
+    const entry = byStudy.get('study-1');
+    // f-b は run-2 の対象外なので run-1（過去 run）の値のまま見え続ける
+    expect(entry?.evidence.find((item) => item.fieldId === 'f-b')?.evidenceId).toBe('old-b');
+    // f-a は run-2（最新）の値に置き換わる（次のテストで詳細確認）
+    expect(entry?.evidence.find((item) => item.fieldId === 'f-a')?.evidenceId).toBe('new-a');
+    // schemaVersion / runId は「study を含む最新の完了 run」= run-2 を採用する
+    expect(entry?.runId).toBe('run-2');
+  });
+
+  test('サブセット run に含まれる field は、過去 run の値ではなく最新 run の値に置き換わる', () => {
+    const byStudy = composeEvidenceByStudy(
+      [
+        makeEvidence({ evidenceId: 'old-a', studyId: 'study-1', runId: 'run-1', fieldId: 'f-a', value: '古い値' }),
+        makeEvidence({ evidenceId: 'new-a', studyId: 'study-1', runId: 'run-2', fieldId: 'f-a', value: '新しい値' }),
+      ],
+      [
+        makeCompletedRunMeta({ runId: 'run-1', startedAt: 't1', fieldIds: null }),
+        makeCompletedRunMeta({ runId: 'run-2', startedAt: 't2', fieldIds: ['f-a'] }),
+      ],
+    );
+    const evidence = byStudy.get('study-1')?.evidence ?? [];
+    expect(evidence).toHaveLength(1);
+    expect(evidence[0]).toMatchObject({ evidenceId: 'new-a', value: '新しい値' });
+  });
+
+  test('選定 run に当該 field の Evidence が 0 件のとき、古い run へフォールバックしない', () => {
+    const byStudy = composeEvidenceByStudy(
+      [
+        // run-1（旧・全項目）: f-a に Evidence あり
+        makeEvidence({ evidenceId: 'old-a', studyId: 'study-1', runId: 'run-1', fieldId: 'f-a' }),
+        // run-2（新・f-a と f-b を対象にしたが、f-a は破棄されて 0 件。f-b のみ Evidence が残る）
+        makeEvidence({ evidenceId: 'new-b', studyId: 'study-1', runId: 'run-2', fieldId: 'f-b' }),
+      ],
+      [
+        makeCompletedRunMeta({ runId: 'run-1', startedAt: 't1', fieldIds: null }),
+        makeCompletedRunMeta({ runId: 'run-2', startedAt: 't2', fieldIds: ['f-a', 'f-b'] }),
+      ],
+    );
+    const evidence = byStudy.get('study-1')?.evidence ?? [];
+    // f-a は run-2（最新の対象 run）に 0 件のため、run-1 のフォールバックはせず出力されない
+    expect(evidence.find((item) => item.fieldId === 'f-a')).toBeUndefined();
+    expect(evidence.find((item) => item.fieldId === 'f-b')?.evidenceId).toBe('new-b');
+  });
+
+  test('ExtractionRuns に無い run_id（孤児 Evidence）は除外する', () => {
+    const byStudy = composeEvidenceByStudy(
+      [
+        makeEvidence({ evidenceId: 'a', studyId: 'study-1', runId: 'run-1' }),
+        makeEvidence({ evidenceId: 'orphan', studyId: 'study-1', runId: 'run-orphan' }),
+        makeEvidence({ evidenceId: 'b', studyId: 'study-2', runId: 'run-orphan' }),
+      ],
+      [makeCompletedRunMeta({ runId: 'run-1' })],
+    );
+    expect(byStudy.get('study-1')?.evidence.map((item) => item.evidenceId)).toEqual(['a']);
+    // study-2 は孤児 run しかないため一覧に出ない（未抽出扱い）
+    expect(byStudy.has('study-2')).toBe(false);
+  });
+
+  test('Evidence 内の run 出現順が新→旧でも、field 単位の勝者選定は started_at で正しく最新を選ぶ', () => {
+    // evidence 配列としては run-2（新）の行が先・run-1（旧）の行が後という、
+    // シート追記順とは逆の並びを渡す（孤児や再読込順の揺れを想定した頑健性の確認）
+    const byStudy = composeEvidenceByStudy(
+      [
+        makeEvidence({ evidenceId: 'new', studyId: 'study-1', runId: 'run-2', fieldId: 'f-a', value: '新しい' }),
+        makeEvidence({ evidenceId: 'old', studyId: 'study-1', runId: 'run-1', fieldId: 'f-a', value: '古い' }),
+      ],
+      [
+        makeCompletedRunMeta({ runId: 'run-1', startedAt: 't1' }),
+        makeCompletedRunMeta({ runId: 'run-2', startedAt: 't2' }),
+      ],
+    );
+    const evidence = byStudy.get('study-1')?.evidence ?? [];
+    expect(evidence).toEqual([expect.objectContaining({ evidenceId: 'new', value: '新しい' })]);
+  });
+
+  test('completedRuns の配列順が新→旧でも started_at で正しく並べ替えて最新を選ぶ', () => {
+    // 配列としては run-2（新）が先・run-1（旧）が後という、シート行順とは逆の並びを渡す
+    const byStudy = composeEvidenceByStudy(
+      [
+        makeEvidence({ evidenceId: 'old', studyId: 'study-1', runId: 'run-1', fieldId: 'f-a', value: '古い' }),
+        makeEvidence({ evidenceId: 'new', studyId: 'study-1', runId: 'run-2', fieldId: 'f-a', value: '新しい' }),
+      ],
+      [
+        makeCompletedRunMeta({ runId: 'run-2', startedAt: 't2' }),
+        makeCompletedRunMeta({ runId: 'run-1', startedAt: 't1' }),
+      ],
+    );
+    const evidence = byStudy.get('study-1')?.evidence ?? [];
+    expect(evidence).toEqual([expect.objectContaining({ evidenceId: 'new', value: '新しい' })]);
+  });
+
+  test('started_at が null・同値の run は安定ソートでシート行順を保つ', () => {
+    // 3 つの run がすべて同じ startedAt（またはいずれも null）。配列の並び順（= シート行順）が
+    // そのまま新旧順になり、末尾（配列で最後）の run が最新として選ばれる
+    const byStudy = composeEvidenceByStudy(
+      [
+        makeEvidence({ evidenceId: 'a', studyId: 'study-1', runId: 'run-1', fieldId: 'f-a', value: '1番目' }),
+        makeEvidence({ evidenceId: 'b', studyId: 'study-1', runId: 'run-2', fieldId: 'f-a', value: '2番目' }),
+        makeEvidence({ evidenceId: 'c', studyId: 'study-1', runId: 'run-3', fieldId: 'f-a', value: '3番目' }),
+      ],
+      [
+        makeCompletedRunMeta({ runId: 'run-1', startedAt: null }),
+        makeCompletedRunMeta({ runId: 'run-2', startedAt: null }),
+        makeCompletedRunMeta({ runId: 'run-3', startedAt: null }),
+      ],
+    );
+    const evidence = byStudy.get('study-1')?.evidence ?? [];
+    expect(evidence).toEqual([expect.objectContaining({ evidenceId: 'c', value: '3番目' })]);
+  });
+
+  test('running 行のみ（未完了）の run は対象外（readCompletedRunMetas が完了行しか返さない前提）', () => {
+    // readCompletedRunMetas は完了行のみを返すため、completedRuns に running 専用の run は
+    // 現れない。その状態で当該 run_id の Evidence が来た場合は孤児と同じ扱いになることを確認する
+    const byStudy = composeEvidenceByStudy(
+      [makeEvidence({ evidenceId: 'a', studyId: 'study-1', runId: 'run-running-only' })],
+      [], // 完了 run が 1 件も無い
+    );
+    expect(byStudy.size).toBe(0);
+  });
+
+  test('同一 run 内の複数エンティティ（arm 等）の Evidence はまとめて採用される', () => {
+    const byStudy = composeEvidenceByStudy(
+      [
+        makeEvidence({ evidenceId: 'arm-1', studyId: 'study-1', runId: 'run-1', fieldId: 'f-arm', entityKey: 'arm:1' }),
+        makeEvidence({ evidenceId: 'arm-2', studyId: 'study-1', runId: 'run-1', fieldId: 'f-arm', entityKey: 'arm:2' }),
+      ],
+      [makeCompletedRunMeta({ runId: 'run-1', fieldIds: ['f-arm'] })],
+    );
+    expect(byStudy.get('study-1')?.evidence.map((item) => item.evidenceId).sort()).toEqual([
+      'arm-1',
+      'arm-2',
+    ]);
   });
 });
 
@@ -440,7 +616,7 @@ describe('loadVerifyTargets', () => {
 
   test('ExtractionRuns に無い run_id（孤児 Evidence）はエラーにせず未抽出として除外する', async () => {
     const store = makeStore({ documents: [makeDocument()] });
-    readRunSchemaVersionsMock.mockResolvedValue(new Map());
+    readCompletedRunMetasMock.mockResolvedValue([]);
     await loadVerifyTargets(store, makeDeps());
     expect(store.getState().verify.loadError).toBeNull();
     expect(store.getState().verify.targets).toHaveLength(0);
@@ -502,7 +678,7 @@ describe('readVerifyTargetMaterials: 独立入力モード（reviewer_independen
     ]);
     const materials = await readVerifyTargetMaterials(store, makeDeps(), 'sheet-1');
     expect(readEvidenceRowsMock).not.toHaveBeenCalled();
-    expect(readRunSchemaVersionsMock).not.toHaveBeenCalled();
+    expect(readCompletedRunMetasMock).not.toHaveBeenCalled();
     // 最新版（先頭行）で解決する
     expect(getSchemaFieldsMock).toHaveBeenCalledWith('sheet-1', 2, expect.anything());
     expect(materials).toHaveLength(1);

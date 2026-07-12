@@ -2,13 +2,18 @@ import type { ExtractionRun } from '../../../../src/domain/extractionRun';
 import { SHEET_HEADERS } from '../../../../src/domain/sheetsSchema';
 import {
   appendExtractionRun,
+  ensureRunFieldIdsColumn,
   extractionRunToRow,
+  readCompletedRunMetas,
   readMethodsRunFacts,
   readPilotRuns,
   readRunAuditInfos,
   readRunStudyCoverage,
   readRunSchemaVersions,
 } from '../../../../src/features/extraction/runRepository';
+
+/** 旧ヘッダ（field_ids 列導入前。14 列）。ensureRunFieldIdsColumn / readRunRows の後方互換テスト用 */
+const LEGACY_RUN_HEADER = SHEET_HEADERS.ExtractionRuns.slice(0, 14);
 
 function makeRun(overrides: Partial<ExtractionRun> = {}): ExtractionRun {
   return {
@@ -26,12 +31,13 @@ function makeRun(overrides: Partial<ExtractionRun> = {}): ExtractionRun {
     tokensIn: 1000,
     tokensOut: 200,
     costEstimate: 0.01,
+    fieldIds: null,
     ...overrides,
   };
 }
 
 describe('extractionRunToRow', () => {
-  test('SHEET_HEADERS.ExtractionRuns の列順に対応し、study_ids はカンマ区切り', () => {
+  test('SHEET_HEADERS.ExtractionRuns の列順に対応し、study_ids はカンマ区切り。fieldIds=null は空文字（全項目。issue #80）', () => {
     expect(extractionRunToRow(makeRun())).toEqual([
       'run-1',
       'full',
@@ -47,7 +53,13 @@ describe('extractionRunToRow', () => {
       1000,
       200,
       0.01,
+      '', // fieldIds: null → 全項目 = 空文字
     ]);
+  });
+
+  test('fieldIds が配列のときはカンマ区切りで 15 列目に出力する（issue #80）', () => {
+    const row = extractionRunToRow(makeRun({ fieldIds: ['f-1', 'f-2'] }));
+    expect(row[14]).toBe('f-1,f-2');
   });
 
   test('null 許容列（model_version / tokens / cost 等）は null をそのまま返す', () => {
@@ -61,7 +73,7 @@ describe('extractionRunToRow', () => {
         costEstimate: null,
       }),
     );
-    expect(row.slice(6)).toEqual([null, 'text_only', 'done', null, null, null, null, null]);
+    expect(row.slice(6)).toEqual([null, 'text_only', 'done', null, null, null, null, null, '']);
   });
 });
 
@@ -359,6 +371,7 @@ describe('readPilotRuns', () => {
       tokensIn: string;
       tokensOut: string;
       costEstimate: string;
+      fieldIds: string;
     }> = {},
   ): string[] => [
     o.runId ?? 'run-1',
@@ -375,6 +388,7 @@ describe('readPilotRuns', () => {
     o.tokensIn ?? '',
     o.tokensOut ?? '',
     o.costEstimate ?? '',
+    o.fieldIds ?? '',
   ];
 
   test('run_type=pilot の完了行のみを新しい順で返す（full / running 行は除外）', async () => {
@@ -418,7 +432,17 @@ describe('readPilotRuns', () => {
       tokensIn: 100,
       tokensOut: 50,
       costEstimate: 0.02,
+      fieldIds: null, // field_ids 空セル = 全項目（issue #80）
     });
+  });
+
+  test('field_ids 列（15 列目）をカンマ分解する。空セルは null（issue #80）', async () => {
+    const values = [
+      [...SHEET_HEADERS.ExtractionRuns],
+      pilotRow({ fieldIds: 'f-1,f-2' }),
+    ];
+    const runs = await readPilotRuns('sheet-1', readDeps(values));
+    expect(runs[0]?.fieldIds).toEqual(['f-1', 'f-2']);
   });
 
   test('null 許容列（model_version / started_at / finished_at / tokens / cost）の空セルは null', async () => {
@@ -509,6 +533,7 @@ describe('readPilotRuns', () => {
       tokensIn: null,
       tokensOut: null,
       costEstimate: null,
+      fieldIds: null, // 列自体が欠落（旧プロジェクト相当）= 全項目（issue #80）
     });
   });
 
@@ -633,6 +658,232 @@ describe('readMethodsRunFacts', () => {
     ).toEqual([]);
     await expect(readMethodsRunFacts('sheet-1', readDeps([]))).rejects.toThrow(
       'ExtractionRuns タブにヘッダ行がありません',
+    );
+  });
+});
+
+describe('readRunRows の後方互換（field_ids 列。issue #80）', () => {
+  function readDeps(values: (string | null)[][]): { fetch: jest.Mock; getAccessToken: jest.Mock } {
+    return {
+      fetch: jest.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({ values }),
+        text: async () => '',
+      } as Response),
+      getAccessToken: jest.fn().mockResolvedValue('token'),
+    };
+  }
+
+  test('旧 14 列ヘッダ + 14 列データ行を読める（field_ids は全項目として解決される）', async () => {
+    const legacyRow = [
+      'run-1',
+      'pilot',
+      '1',
+      'doc-1',
+      'gemini',
+      'gemini-test',
+      '',
+      'text_only',
+      'done',
+      't1',
+      't2',
+      '',
+      '',
+      '',
+    ];
+    const metas = await readCompletedRunMetas('sheet-1', readDeps([[...LEGACY_RUN_HEADER], legacyRow]));
+    expect(metas).toEqual([{ runId: 'run-1', schemaVersion: 1, startedAt: 't1', fieldIds: null }]);
+  });
+
+  test('15 列目（field_ids）が存在するのに名前が不一致なら throw', async () => {
+    const badHeader = [...SHEET_HEADERS.ExtractionRuns];
+    badHeader[14] = 'wrong';
+    await expect(readCompletedRunMetas('sheet-1', readDeps([badHeader]))).rejects.toThrow(
+      'ExtractionRuns のヘッダ 15 列目が "field_ids" ではありません（実際: "wrong"）',
+    );
+  });
+
+  test('15 列目より後ろまで列があるのに field_ids セル自体が空（ラグ配列の穴）なら空文字扱いで不一致 throw', async () => {
+    // 16 列目（余剰列）だけ埋めて 15 列目（index 14）を穴のまま残す、壊れたヘッダ行を模す
+    const raggedHeader: string[] = [...LEGACY_RUN_HEADER];
+    raggedHeader[15] = 'extra_column';
+    await expect(readCompletedRunMetas('sheet-1', readDeps([raggedHeader]))).rejects.toThrow(
+      'ExtractionRuns のヘッダ 15 列目が "field_ids" ではありません（実際: ""）',
+    );
+  });
+});
+
+describe('readCompletedRunMetas（issue #80: field 単位合成ビューの素材）', () => {
+  function readDeps(values: (string | null)[][]): { fetch: jest.Mock; getAccessToken: jest.Mock } {
+    return {
+      fetch: jest.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({ values }),
+        text: async () => '',
+      } as Response),
+      getAccessToken: jest.fn().mockResolvedValue('token'),
+    };
+  }
+
+  const row = (
+    o: Partial<{
+      runId: string;
+      schemaVersion: string;
+      status: string;
+      startedAt: string;
+      fieldIds: string;
+    }> = {},
+  ): string[] => [
+    o.runId ?? 'run-1',
+    'pilot',
+    o.schemaVersion ?? '1',
+    'doc-1',
+    'gemini',
+    'gemini-test',
+    '',
+    'text_only',
+    o.status ?? 'done',
+    o.startedAt ?? 't1',
+    't2',
+    '',
+    '',
+    '',
+    o.fieldIds ?? '',
+  ];
+
+  test('完了行（done / partial_failure）のみ拾い、running 行は除外する', async () => {
+    const values = [
+      [...SHEET_HEADERS.ExtractionRuns],
+      row({ runId: 'r1', status: 'done' }),
+      row({ runId: 'r2', status: 'running' }),
+      row({ runId: 'r3', status: 'partial_failure' }),
+    ];
+    const metas = await readCompletedRunMetas('sheet-1', readDeps(values));
+    expect(metas.map((m) => m.runId)).toEqual(['r1', 'r3']);
+  });
+
+  test('field_ids 列をカンマ分解する。空セルは null（全項目）', async () => {
+    const values = [
+      [...SHEET_HEADERS.ExtractionRuns],
+      row({ runId: 'r1', fieldIds: 'f-1,f-2' }),
+      row({ runId: 'r2', fieldIds: '' }),
+    ];
+    const metas = await readCompletedRunMetas('sheet-1', readDeps(values));
+    expect(metas[0]).toMatchObject({ runId: 'r1', fieldIds: ['f-1', 'f-2'] });
+    expect(metas[1]).toMatchObject({ runId: 'r2', fieldIds: null });
+  });
+
+  test('シート行順（= 追記順）で返す（新しい順への並べ替えはしない）', async () => {
+    const values = [
+      [...SHEET_HEADERS.ExtractionRuns],
+      row({ runId: 'r-old', startedAt: 't1' }),
+      row({ runId: 'r-new', startedAt: 't2' }),
+    ];
+    const metas = await readCompletedRunMetas('sheet-1', readDeps(values));
+    expect(metas.map((m) => m.runId)).toEqual(['r-old', 'r-new']);
+  });
+
+  test('schema_version 非整数はエラー', async () => {
+    await expect(
+      readCompletedRunMetas('sheet-1', readDeps([[...SHEET_HEADERS.ExtractionRuns], row({ schemaVersion: 'x' })])),
+    ).rejects.toThrow('ExtractionRuns 2 行目: schema_version "x" が整数ではありません');
+  });
+
+  test('run 0 件は空配列', async () => {
+    expect(
+      await readCompletedRunMetas('sheet-1', readDeps([[...SHEET_HEADERS.ExtractionRuns]])),
+    ).toEqual([]);
+  });
+
+  test('status 列自体が欠落したラグ配列（空文字扱い）は完了行に数えず除外する', async () => {
+    const shortRow = ['run-1', 'pilot', '1', 'doc-1', 'gemini', 'gemini-test', '', 'text_only']; // status（9 列目）が無い
+    const values = [[...SHEET_HEADERS.ExtractionRuns], shortRow];
+    expect(await readCompletedRunMetas('sheet-1', readDeps(values))).toEqual([]);
+  });
+
+  test('run_id が null セルの完了行は空文字 run_id として安全に読む', async () => {
+    const nullRunId: (string | null)[] = [
+      null,
+      'pilot',
+      '1',
+      'doc-1',
+      'gemini',
+      'gemini-test',
+      '',
+      'text_only',
+      'done',
+      't1',
+      't2',
+      '',
+      '',
+      '',
+      '',
+    ];
+    const metas = await readCompletedRunMetas('sheet-1', readDeps([[...SHEET_HEADERS.ExtractionRuns], nullRunId]));
+    expect(metas).toEqual([{ runId: '', schemaVersion: 1, startedAt: 't1', fieldIds: null }]);
+  });
+});
+
+describe('ensureRunFieldIdsColumn（issue #80: 既存プロジェクトの後方互換移行）', () => {
+  /** getBatchValues（GET .../values:batchGet）と updateRow（PUT .../values/ExtractionRuns!A1）を
+   *  method で出し分けるモック fetch。headerRow が undefined ならヘッダ行なし（空シート）を模す */
+  function fieldIdsColumnDeps(headerRow: string[] | undefined): {
+    fetch: jest.Mock;
+    getAccessToken: jest.Mock;
+  } {
+    const fetch = jest.fn(async (_url: string, init?: RequestInit) => {
+      const method = init?.method ?? 'GET';
+      if (method === 'GET') {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            valueRanges: headerRow === undefined ? [] : [{ values: [headerRow] }],
+          }),
+          text: async () => '',
+        } as Response;
+      }
+      // updateRow（ヘッダ拡張の PUT）
+      return { ok: true, status: 200, json: async () => ({}), text: async () => '' } as Response;
+    });
+    return { fetch, getAccessToken: jest.fn().mockResolvedValue('token') };
+  }
+
+  test('旧 14 列ヘッダはフルヘッダ（15 列）へ拡張する（PUT）', async () => {
+    const d = fieldIdsColumnDeps([...LEGACY_RUN_HEADER]);
+    await ensureRunFieldIdsColumn('sid', d);
+    const putCall = d.fetch.mock.calls.find(([, init]) => (init as RequestInit)?.method === 'PUT');
+    expect(putCall).toBeDefined();
+    const [url, init] = putCall as [string, RequestInit];
+    expect(decodeURIComponent(url)).toContain('/sid/values/ExtractionRuns!A1');
+    const body = JSON.parse(init.body as string) as { values: string[][] };
+    expect(body.values).toEqual([[...SHEET_HEADERS.ExtractionRuns]]);
+  });
+
+  test('既に 15 列（拡張済み）なら no-op（PUT を呼ばない）', async () => {
+    const d = fieldIdsColumnDeps([...SHEET_HEADERS.ExtractionRuns]);
+    await ensureRunFieldIdsColumn('sid', d);
+    const putCall = d.fetch.mock.calls.find(([, init]) => (init as RequestInit)?.method === 'PUT');
+    expect(putCall).toBeUndefined();
+  });
+
+  test('先頭 14 列が SHEET_HEADERS.ExtractionRuns と不一致なら throw し、PUT は呼ばない（壊れたプロジェクトへの書き込み防止）', async () => {
+    const badHeader = [...LEGACY_RUN_HEADER];
+    badHeader[2] = 'wrong'; // schema_version のはずが不一致
+    const d = fieldIdsColumnDeps(badHeader);
+    await expect(ensureRunFieldIdsColumn('sid', d)).rejects.toThrow(
+      'ExtractionRuns のヘッダ 3 列目が "schema_version" ではありません',
+    );
+    const putCall = d.fetch.mock.calls.find(([, init]) => (init as RequestInit)?.method === 'PUT');
+    expect(putCall).toBeUndefined();
+  });
+
+  test('ヘッダ行が無い（空シート）場合も列不一致として throw する', async () => {
+    const d = fieldIdsColumnDeps(undefined);
+    await expect(ensureRunFieldIdsColumn('sid', d)).rejects.toThrow(
+      'ExtractionRuns のヘッダ 1 列目が "run_id" ではありません',
     );
   });
 });

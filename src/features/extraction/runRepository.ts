@@ -4,6 +4,13 @@
 //   2. 実行完了時に確定 status（done / partial_failure）の行を同じ run_id で追記
 // 読み手は run_id ごとに「完了行があるか」で完了 / 中断を判別する。
 // 実行中の細かい進捗は UI（S7 の進捗バー）で in-memory 管理し、シートには残さない
+//
+// field_ids 列（run 単位のフィールド選択。issue #80）は既存プロジェクトに存在しないことが
+// あるため、evidenceRepository の bbox 列と同じ方式で後方互換を取る:
+// - 読み出し（readRunRows）: 先頭 14 列（旧ヘッダ）は厳格一致、15 列目（field_ids）は
+//   「存在すれば」名前一致を要求し「欠けていれば」旧プロジェクトとして許容する
+// - 書き込み（ensureRunFieldIdsColumn）: 旧 14 列ヘッダのプロジェクトへは実行前に
+//   ヘッダ行を 15 列のフルヘッダへ拡張する（呼び出しは extractionService.ts の責務）
 import type { LlmProviderId } from '../../domain/llmApiLog';
 import type {
   ExtractionRun,
@@ -13,10 +20,24 @@ import type {
   RunType,
 } from '../../domain/extractionRun';
 import { SHEET_HEADERS } from '../../domain/sheetsSchema';
-import { appendRow, getSheetValues } from '../../lib/google/sheets';
+import { appendRow, getBatchValues, getSheetValues, updateRow } from '../../lib/google/sheets';
 import type { GoogleApiDeps } from '../../lib/google/types';
 
 const RUNS_TAB = 'ExtractionRuns';
+
+/** 旧ヘッダ（field_ids 列導入前）の列数。以降 field_ids 1 列 */
+const LEGACY_COLUMN_COUNT = 14;
+
+/** field_ids（null 許容の配列）をシート用のカンマ区切り文字列へ変換する。null = 全項目 → 空文字 */
+function fieldIdsToCell(fieldIds: readonly string[] | null): string {
+  return fieldIds === null ? '' : fieldIds.join(',');
+}
+
+/** field_ids 列（15 列目）をパースする。空セル・列自体の欠落（旧プロジェクト） = 全項目（null） */
+function parseFieldIds(cell: string | null | undefined): string[] | null {
+  const raw = cell ?? '';
+  return raw === '' ? null : raw.split(',').filter((id) => id !== '');
+}
 
 /** ExtractionRun → シート行。列順は SHEET_HEADERS.ExtractionRuns（domain/sheetsSchema.ts）に対応 */
 export function extractionRunToRow(run: ExtractionRun): (string | number | null)[] {
@@ -35,6 +56,7 @@ export function extractionRunToRow(run: ExtractionRun): (string | number | null)
     run.tokensIn,
     run.tokensOut,
     run.costEstimate,
+    fieldIdsToCell(run.fieldIds),
   ];
 }
 
@@ -46,7 +68,42 @@ export async function appendExtractionRun(
   await appendRow(spreadsheetId, RUNS_TAB, extractionRunToRow(run), deps);
 }
 
-/** ヘッダ行を検証してデータ行だけを返す（読み出し系の共通前処理） */
+/**
+ * ExtractionRuns タブのヘッダ行を field_ids 込みの 15 列へ拡張する（既存プロジェクトの
+ * 後方互換移行。evidenceRepository.ensureEvidenceBboxColumns と同じ方式）。
+ * - 先頭 14 列（旧ヘッダ）が SHEET_HEADERS.ExtractionRuns と食い違う場合は throw
+ *   （想定外のタブ・壊れたプロジェクトへの書き込み事故を防ぐ）
+ * - 既に 15 列以上（= 拡張済み）なら no-op
+ * - それ以外（旧 14 列のまま）はヘッダ行を SHEET_HEADERS.ExtractionRuns のフル 15 列で上書きする
+ *
+ * runExtraction が running 行の追記より前に毎回呼ぶ（extractionService.ts）。
+ * ヘッダ行だけを読むため getBatchValues で `ExtractionRuns!1:1` のみ取得する（全行 GET は避ける）
+ */
+export async function ensureRunFieldIdsColumn(
+  spreadsheetId: string,
+  deps: GoogleApiDeps,
+): Promise<void> {
+  const [headerRows] = await getBatchValues(spreadsheetId, [`${RUNS_TAB}!1:1`], deps);
+  const header = headerRows?.[0] ?? [];
+  SHEET_HEADERS.ExtractionRuns.slice(0, LEGACY_COLUMN_COUNT).forEach((name, i) => {
+    if ((header[i] ?? '') !== name) {
+      throw new Error(
+        `ExtractionRuns のヘッダ ${i + 1} 列目が "${name}" ではありません（実際: "${header[i] ?? ''}"）。field_ids 列の移行を中止します`,
+      );
+    }
+  });
+  if (header.length > LEGACY_COLUMN_COUNT) {
+    // 既に拡張済み（15 列）。no-op
+    return;
+  }
+  await updateRow(spreadsheetId, RUNS_TAB, 1, [...SHEET_HEADERS.ExtractionRuns], deps);
+}
+
+/**
+ * ヘッダ行を検証してデータ行だけを返す（読み出し系の共通前処理）。
+ * 先頭 14 列（旧ヘッダ）は厳格一致。15 列目（field_ids）は存在すれば名前一致を要求し、
+ * 欠けていれば（= 旧プロジェクト）許容する
+ */
 async function readRunRows(
   spreadsheetId: string,
   deps: GoogleApiDeps,
@@ -56,13 +113,23 @@ async function readRunRows(
   if (header === undefined) {
     throw new Error('ExtractionRuns タブにヘッダ行がありません（プロジェクト初期化が不完全です）');
   }
-  SHEET_HEADERS.ExtractionRuns.forEach((name, i) => {
+  SHEET_HEADERS.ExtractionRuns.slice(0, LEGACY_COLUMN_COUNT).forEach((name, i) => {
     if ((header[i] ?? '') !== name) {
       throw new Error(
         `ExtractionRuns のヘッダ ${i + 1} 列目が "${name}" ではありません（実際: "${header[i] ?? ''}"）`,
       );
     }
   });
+  if (header.length > LEGACY_COLUMN_COUNT) {
+    SHEET_HEADERS.ExtractionRuns.slice(LEGACY_COLUMN_COUNT).forEach((name, i) => {
+      const idx = LEGACY_COLUMN_COUNT + i;
+      if ((header[idx] ?? '') !== name) {
+        throw new Error(
+          `ExtractionRuns のヘッダ ${idx + 1} 列目が "${name}" ではありません（実際: "${header[idx] ?? ''}"）`,
+        );
+      }
+    });
+  }
   return values.slice(1);
 }
 
@@ -120,6 +187,44 @@ const COMPLETED_STATUSES: ReadonlySet<string> = new Set(['done', 'partial_failur
 /** study_ids 列（4 列目）のカンマ区切りを分解する（§3.2）。ラグ配列の欠落セルは空扱い */
 function parseStudyIds(cell: string | null | undefined): string[] {
   return (cell ?? '').split(',').filter((id) => id !== '');
+}
+
+/**
+ * field 単位合成ビュー（app/services/verifyService.ts の composeEvidenceByStudy）が使う
+ * run の最小情報（issue #80: run 単位のフィールド選択）
+ */
+export interface CompletedRunMeta {
+  runId: string;
+  schemaVersion: number;
+  startedAt: string | null;
+  /** null = 全項目（後方互換規約） */
+  fieldIds: string[] | null;
+}
+
+/**
+ * 完了行（done / partial_failure）のみを対象に、run_id / schema_version / started_at /
+ * field_ids の最小情報をシート行順（= 追記順）で返す（S8/S9 の field 単位合成ビューの素材）。
+ * 中断 run（running 行のみ）は含めない（readRunStudyCoverage と同じ完了判定）
+ */
+export async function readCompletedRunMetas(
+  spreadsheetId: string,
+  deps: GoogleApiDeps,
+): Promise<CompletedRunMeta[]> {
+  const rows = await readRunRows(spreadsheetId, deps);
+  const metas: CompletedRunMeta[] = [];
+  rows.forEach((raw, i) => {
+    if (!COMPLETED_STATUSES.has(raw[8] ?? '')) {
+      return;
+    }
+    const context = `ExtractionRuns ${i + 2} 行目`;
+    metas.push({
+      runId: raw[0] ?? '',
+      schemaVersion: parseRequiredInteger(raw[2], context, 'schema_version'),
+      startedAt: emptyToNull(raw[9]),
+      fieldIds: parseFieldIds(raw[14]),
+    });
+  });
+  return metas;
 }
 
 export interface RunStudyCoverage {
@@ -230,6 +335,7 @@ function rowToExtractionRun(raw: (string | null)[], rowIndex: number): Extractio
     tokensIn: parseNullableInteger(raw[11], context, 'tokens_in'),
     tokensOut: parseNullableInteger(raw[12], context, 'tokens_out'),
     costEstimate: parseNullableNumber(raw[13], context, 'cost_estimate'),
+    fieldIds: parseFieldIds(raw[14]),
   };
 }
 

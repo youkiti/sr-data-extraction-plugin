@@ -211,6 +211,7 @@ function makeRun(overrides: Partial<ExtractionRun> = {}): ExtractionRun {
     tokensIn: null,
     tokensOut: null,
     costEstimate: null,
+    fieldIds: null,
     ...overrides,
   };
 }

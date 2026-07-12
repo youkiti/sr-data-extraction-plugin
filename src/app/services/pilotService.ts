@@ -183,6 +183,8 @@ export async function runPilot(store: Store, deps: PilotServiceDeps): Promise<vo
         fields,
         model,
         protocolContext,
+        // フィールド選択 UI はフェーズ 2 で結線する（issue #80）。フェーズ 1 は常に全項目
+        fieldIds: null,
         onProgress: (progress) => patchPilot(store, { progress }),
       },
       {
