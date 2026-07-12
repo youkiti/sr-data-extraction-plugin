@@ -9,6 +9,7 @@ import {
 import type { AdjudicateViewCallbacks, ViewContext } from '../../../../src/app/views/types';
 import type { AgreementReport } from '../../../../src/features/adjudication/agreement';
 import type { AdjudicationCell } from '../../../../src/features/adjudication/cellMatch';
+import type { Evidence } from '../../../../src/domain/evidence';
 import type { SchemaField } from '../../../../src/domain/schemaField';
 import type { StudyRecord } from '../../../../src/domain/study';
 
@@ -173,6 +174,28 @@ function makeCell(overrides: Partial<AdjudicationCell> = {}): AdjudicationCell {
     schemaVersionB: 1,
     matches: false,
     schemaVersionMismatch: false,
+    noteA: null,
+    noteB: null,
+    ...overrides,
+  };
+}
+
+function makeEvidence(overrides: Partial<Evidence> = {}): Evidence {
+  return {
+    evidenceId: 'ev-1',
+    runId: 'run-1',
+    studyId: 'study-1',
+    documentId: 'doc-1',
+    fieldId: 'f-1',
+    entityKey: '-',
+    value: '120',
+    notReported: false,
+    quote: '合計 120 例',
+    page: 1,
+    confidence: 'high',
+    anchorStatus: 'exact',
+    bboxPage: null,
+    bbox: null,
     ...overrides,
   };
 }
@@ -206,6 +229,7 @@ function makeWorking(overrides: Partial<AdjudicateWorking> = {}): AdjudicateWork
     armDraft: [],
     cells: [makeCell()],
     consensusDecisions: [],
+    evidence: [],
     skippedCellKeys: [],
     loadPdfView: jest.fn().mockResolvedValue({ pdf: null, pdfError: 'テストでは PDF なし', textPages: [] }),
     retryPdfView: jest.fn().mockResolvedValue({ pdf: null, pdfError: 'テストでは PDF なし', textPages: [] }),
@@ -607,6 +631,101 @@ describe('renderAdjudicateView: 裁定中（working）', () => {
     );
     expect(root.querySelector('.adjudicate__locked-note')).toBeNull();
     expect(root.querySelector('.adjudicate__action--choose-a')).not.toBeNull();
+  });
+
+  // --- issue #63: PDF ペインの Evidence ハイライト + Decisions.note 表示 ------------------
+
+  test('AI 根拠（Evidence）があるセルには「根拠を表示」ボタンを出す', () => {
+    const { ctx } = makeCtx();
+    const cell = makeCell();
+    const root = render(
+      makeState({
+        rows: [makeRow()],
+        working: makeWorking({ cells: [cell], evidence: [makeEvidence()] }),
+        mismatchOnlyFilter: false,
+      }),
+      ctx,
+    );
+    const button = root.querySelector<HTMLButtonElement>('.adjudicate__evidence-button');
+    expect(button).not.toBeNull();
+    expect(button?.getAttribute('aria-label')).toBe('総サンプルサイズ の AI 根拠を PDF で表示');
+  });
+
+  test('AI 根拠（Evidence）が無いセルには「根拠を表示」ボタンを出さない（human_independent 由来等）', () => {
+    const { ctx } = makeCtx();
+    const cell = makeCell();
+    const root = render(
+      makeState({
+        rows: [makeRow()],
+        working: makeWorking({ cells: [cell], evidence: [] }),
+        mismatchOnlyFilter: false,
+      }),
+      ctx,
+    );
+    expect(root.querySelector('.adjudicate__evidence-button')).toBeNull();
+  });
+
+  test('「根拠を表示」クリックは例外を投げない（PDF ペインへの委譲。文書未読込でも安全）', () => {
+    const { ctx } = makeCtx();
+    const cell = makeCell();
+    const root = render(
+      makeState({
+        rows: [makeRow()],
+        working: makeWorking({ cells: [cell], evidence: [makeEvidence()] }),
+        mismatchOnlyFilter: false,
+      }),
+      ctx,
+    );
+    const button = root.querySelector<HTMLButtonElement>('.adjudicate__evidence-button') as HTMLButtonElement;
+    expect(() => button.click()).not.toThrow();
+  });
+
+  test('A / B の値に note があれば横に表示する（誰の note か分かる形で）', () => {
+    const { ctx } = makeCtx();
+    const cell = makeCell({ noteA: 'Table 2 を採用', noteB: null });
+    const root = render(
+      makeState({
+        rows: [makeRow()],
+        working: makeWorking({ cells: [cell] }),
+        mismatchOnlyFilter: false,
+      }),
+      ctx,
+    );
+    const notes = root.querySelectorAll('.adjudicate__cell-note');
+    expect(notes).toHaveLength(1);
+    expect(notes[0]?.textContent).toBe('A のメモ: Table 2 を採用');
+  });
+
+  test('note が両側とも無ければ note 表示を出さない', () => {
+    const { ctx } = makeCtx();
+    const cell = makeCell({ noteA: null, noteB: null });
+    const root = render(
+      makeState({
+        rows: [makeRow()],
+        working: makeWorking({ cells: [cell] }),
+        mismatchOnlyFilter: false,
+      }),
+      ctx,
+    );
+    expect(root.querySelector('.adjudicate__cell-note')).toBeNull();
+  });
+
+  test('オフラインキュー退避中（queuedWrites > 0）はバナーを表示する（issue #63）', () => {
+    const { ctx } = makeCtx();
+    const root = render(
+      makeState({ rows: [makeRow()], working: makeWorking(), queuedWrites: 2 }),
+      ctx,
+    );
+    expect(root.querySelector('#adjudicate-queued')?.textContent).toBe('オフライン: 2 件キュー中');
+  });
+
+  test('queuedWrites=0 のときはバナーを表示しない', () => {
+    const { ctx } = makeCtx();
+    const root = render(
+      makeState({ rows: [makeRow()], working: makeWorking(), queuedWrites: 0 }),
+      ctx,
+    );
+    expect(root.querySelector('#adjudicate-queued')).toBeNull();
   });
 });
 

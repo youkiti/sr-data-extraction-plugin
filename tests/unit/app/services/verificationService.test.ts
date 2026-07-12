@@ -1,18 +1,25 @@
 import type { Decision } from '../../../../src/domain/decision';
 import type { DocumentRecord } from '../../../../src/domain/document';
+import type { SchemaField } from '../../../../src/domain/schemaField';
 import type { StudyRecord } from '../../../../src/domain/study';
 import {
+  decisionWriteId,
+  decisionWriteSortKey,
   foldDecisionWriteTokens,
   loadVerificationBundle,
+  persistConsensusWrite,
   persistDecisionWrite,
   persistInstanceDeclarations,
   persistVerifyLayoutMode,
   resultsCellKeyOf,
   saveDecisionWrite,
   type VerificationBundleInput,
+  type QueuedConsensusWrite,
   type QueuedDecisionWrite,
+  type QueuedWrite,
   type VerificationDeps,
 } from '../../../../src/app/services/verificationService';
+import type { ConsensusCellWrite, ConsensusWriteParams } from '../../../../src/features/adjudication/consensusWrites';
 import {
   appendDecisionRows,
   readDecisionsByStudy,
@@ -153,10 +160,52 @@ function makeDeclaration(overrides: Partial<Decision> = {}): Decision {
   });
 }
 
-function makeQueue(): jest.Mocked<OfflineQueue<QueuedDecisionWrite>> {
+function makeQueue(): jest.Mocked<OfflineQueue<QueuedWrite>> {
   return {
     enqueue: jest.fn().mockResolvedValue(undefined),
     flush: jest.fn().mockResolvedValue({ flushedCount: 0, remainingCount: 0 }),
+  };
+}
+
+function makeField(overrides: Partial<SchemaField> = {}): SchemaField {
+  return {
+    schemaVersion: 1,
+    fieldId: 'f-1',
+    fieldIndex: 1,
+    section: 'population',
+    fieldName: 'sample_size',
+    fieldLabel: '総サンプルサイズ',
+    entityLevel: 'study',
+    dataType: 'text',
+    unit: null,
+    allowedValues: null,
+    required: false,
+    extractionInstruction: '',
+    example: null,
+    aiGenerated: false,
+    note: null,
+    ...overrides,
+  };
+}
+
+/** issue #63: S12 裁定の consensus 書き込み 1 セルぶん（features/adjudication/consensusWrites） */
+function makeConsensusWrite(overrides: Partial<ConsensusCellWrite> = {}): ConsensusCellWrite {
+  return {
+    field: makeField(),
+    entityKey: '-',
+    action: 'accept',
+    value: '120',
+    ...overrides,
+  };
+}
+
+function makeConsensusParams(overrides: Partial<ConsensusWriteParams> = {}): ConsensusWriteParams {
+  return {
+    studyId: 'study-1',
+    decidedBy: 'judge@example.com',
+    decidedAt: 't1',
+    schemaVersion: 1,
+    ...overrides,
   };
 }
 
@@ -518,6 +567,119 @@ describe('persistDecisionWrite', () => {
       expect(result.remainingCount).toBe(0);
     }
     expect(upsertStudyMock).toHaveBeenCalledTimes(2);
+  });
+
+  test('written には QueuedDecisionWrite のみを積む（同じ共有キューに S12 裁定の QueuedConsensusWrite が混在していても除外する。issue #63）', async () => {
+    const consensusItem: QueuedConsensusWrite = {
+      consensusWrites: [makeConsensusWrite()],
+      consensusParams: makeConsensusParams(),
+    };
+    const queue = makeQueue();
+    queue.flush.mockImplementation(async (_sheet, _email, save) => {
+      await save(consensusItem);
+      return { flushedCount: 1, remainingCount: 0 };
+    });
+    const write = makeWrite();
+    const result = await persistDecisionWrite('sheet-1', write, makeDeps({ decisionQueue: queue }));
+    expect(result.status).toBe('saved');
+    if (result.status === 'saved') {
+      // consensusItem は annotator 行の楽観ロック（foldDecisionWriteTokens）と無関係なので含まれない
+      expect(result.written).toEqual([write]);
+    }
+    // それでも consensusItem 自体の再送（applyConsensusWrites 相当）は実行される
+    // （study レベルの consensusWrite のため upsertStudyDataRows が即時保存 + 再送で計 2 回呼ばれる）
+    expect(upsertStudyMock).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('QueuedWrite の構造的判別（issue #63: QueuedDecisionWrite | QueuedConsensusWrite の共用体）', () => {
+  test('decisionWriteId: QueuedConsensusWrite は studyId + decidedAt から組み立てる', () => {
+    const item: QueuedConsensusWrite = {
+      consensusWrites: [makeConsensusWrite()],
+      consensusParams: makeConsensusParams({ studyId: 'study-9', decidedAt: 't9' }),
+    };
+    expect(decisionWriteId(item)).toBe('consensus|study-9|t9');
+  });
+
+  test('decisionWriteSortKey: QueuedConsensusWrite は decidedAt', () => {
+    const item: QueuedConsensusWrite = {
+      consensusWrites: [makeConsensusWrite()],
+      consensusParams: makeConsensusParams({ decidedAt: 't9' }),
+    };
+    expect(decisionWriteSortKey(item)).toBe('t9');
+  });
+
+  test('decisionWriteId / decisionWriteSortKey: QueuedDecisionWrite は従来どおり decision 由来', () => {
+    const item: QueuedDecisionWrite = {
+      decision: makeDecision({ decidedAt: 't5', fieldId: 'f-x', entityKey: 'arm:1' }),
+      fieldName: 'x',
+      entityLevel: 'arm',
+      studyValues: null,
+    };
+    expect(decisionWriteId(item)).toBe('t5|f-x|arm:1');
+    expect(decisionWriteSortKey(item)).toBe('t5');
+  });
+});
+
+describe('persistConsensusWrite（issue #63: S12 裁定の consensus 書き込みを検証側と共有する \'decisions\' キューへ退避する）', () => {
+  test('即時保存に成功すれば saved を返し、consensus 行 upsert → Decisions 追記を行う', async () => {
+    const queue = makeQueue();
+    const item: QueuedConsensusWrite = {
+      consensusWrites: [makeConsensusWrite()],
+      consensusParams: makeConsensusParams(),
+    };
+    const result = await persistConsensusWrite('sheet-1', item, makeDeps({ decisionQueue: queue }));
+    expect(result).toEqual({ status: 'saved', remainingCount: 0 });
+    expect(upsertStudyMock).toHaveBeenCalledTimes(1);
+    expect(appendDecisionRowsMock).toHaveBeenCalledTimes(1);
+    // 即時保存の成功後は同じキューに残る過去の退避分（判定・裁定どちらも）も再送する
+    expect(queue.flush).toHaveBeenCalledWith('sheet-1', 'judge@example.com', expect.any(Function));
+  });
+
+  test('即時保存が失敗すればキューへ退避し queued を返す（トースト表示）', async () => {
+    const queue = makeQueue();
+    upsertStudyMock.mockRejectedValueOnce(new Error('network error'));
+    const item: QueuedConsensusWrite = {
+      consensusWrites: [makeConsensusWrite()],
+      consensusParams: makeConsensusParams(),
+    };
+    const result = await persistConsensusWrite('sheet-1', item, makeDeps({ decisionQueue: queue }));
+    expect(result).toEqual({ status: 'queued' });
+    expect(queue.enqueue).toHaveBeenCalledWith('sheet-1', 'judge@example.com', item);
+    expect(showToastMock).toHaveBeenCalledWith(expect.stringContaining('裁定をオフラインキューへ退避'));
+  });
+
+  test('flush で QueuedDecisionWrite（検証の判定）を再送するときは saveDecisionWrite 経由になる（saveQueuedItem の分岐）', async () => {
+    const decisionItem: QueuedDecisionWrite = {
+      decision: makeDecision({ fieldId: 'f-2', entityKey: '-' }),
+      fieldName: 'sample_size_total',
+      entityLevel: 'study',
+      studyValues: { sample_size_total: '5' },
+    };
+    const queue = makeQueue();
+    queue.flush.mockImplementation(async (_sheet, _email, save) => {
+      await save(decisionItem);
+      return { flushedCount: 1, remainingCount: 0 };
+    });
+    const item: QueuedConsensusWrite = {
+      consensusWrites: [makeConsensusWrite()],
+      consensusParams: makeConsensusParams(),
+    };
+    const result = await persistConsensusWrite('sheet-1', item, makeDeps({ decisionQueue: queue }));
+    expect(result).toEqual({ status: 'saved', remainingCount: 0 });
+    // 即時保存の consensusWrite ぶん 1 回 + 再送の decisionItem ぶん 1 回 = 計 2 回
+    expect(upsertStudyMock).toHaveBeenCalledTimes(2);
+    expect(appendDecisionRowsMock).toHaveBeenCalledTimes(2);
+  });
+
+  test('decisionQueue 未注入なら検証側の判定と共有するモジュール共有キューを使う', async () => {
+    const item: QueuedConsensusWrite = {
+      consensusWrites: [makeConsensusWrite()],
+      consensusParams: makeConsensusParams(),
+    };
+    await expect(
+      persistConsensusWrite('sheet-1', item, makeDeps({ decisionQueue: undefined })),
+    ).resolves.toEqual({ status: 'saved', remainingCount: 0 });
   });
 });
 

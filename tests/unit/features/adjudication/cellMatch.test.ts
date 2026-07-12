@@ -1,7 +1,9 @@
 import { NOT_REPORTED_TOKEN } from '../../../../src/domain/annotation';
 import type { ResultsDataRow, StudyDataRow } from '../../../../src/domain/annotation';
+import type { Decision } from '../../../../src/domain/decision';
+import type { Evidence } from '../../../../src/domain/evidence';
 import type { SchemaField } from '../../../../src/domain/schemaField';
-import { buildAdjudicationCells } from '../../../../src/features/adjudication/cellMatch';
+import { buildAdjudicationCells, indexEvidenceByCellKey } from '../../../../src/features/adjudication/cellMatch';
 
 function field(overrides: Partial<SchemaField> = {}): SchemaField {
   return {
@@ -54,6 +56,43 @@ function resultsRow(overrides: Partial<ResultsDataRow> = {}): ResultsDataRow {
   };
 }
 
+function decision(overrides: Partial<Decision> = {}): Decision {
+  return {
+    decidedAt: 't1',
+    decidedBy: 'a@example.com',
+    studyId: 'study-1',
+    fieldId: 'f-study',
+    entityKey: '-',
+    annotator: 'a@example.com',
+    annotatorType: 'human_with_ai',
+    schemaVersion: 1,
+    action: 'accept',
+    value: '120',
+    note: null,
+    ...overrides,
+  };
+}
+
+function evidence(overrides: Partial<Evidence> = {}): Evidence {
+  return {
+    evidenceId: 'ev-1',
+    runId: 'run-1',
+    studyId: 'study-1',
+    fieldId: 'f-study',
+    documentId: 'doc-1',
+    entityKey: '-',
+    value: '120',
+    notReported: false,
+    quote: '合計 120 例',
+    page: 1,
+    confidence: 'high',
+    anchorStatus: 'exact',
+    bboxPage: null,
+    bbox: null,
+    ...overrides,
+  };
+}
+
 describe('buildAdjudicationCells', () => {
   test('study レベルは全項目を無条件で 1 セルとして比較する（両側とも行が無ければ両方 null = 一致）', () => {
     const cells = buildAdjudicationCells([field()], null, null, [], []);
@@ -68,6 +107,8 @@ describe('buildAdjudicationCells', () => {
         schemaVersionB: null,
         matches: true,
         schemaVersionMismatch: false,
+        noteA: null,
+        noteB: null,
       },
     ]);
   });
@@ -154,7 +195,14 @@ describe('buildAdjudicationCells', () => {
       [resultsRow({ fieldId: 'f-arm', entityKey: 'arm:1', value: '介入群' })],
     );
     expect(cells).toEqual([
-      expect.objectContaining({ entityKey: 'arm:1', valueA: '介入群', valueB: '介入群', matches: true }),
+      expect.objectContaining({
+        entityKey: 'arm:1',
+        valueA: '介入群',
+        valueB: '介入群',
+        matches: true,
+        noteA: null,
+        noteB: null,
+      }),
     ]);
   });
 
@@ -222,5 +270,96 @@ describe('buildAdjudicationCells', () => {
     const robCell = cells.find((cell) => cell.entityKey === 'rob:d1');
     expect(outcomeCell?.matches).toBe(true);
     expect(robCell?.matches).toBe(false);
+  });
+
+  describe('noteA / noteB（issue #63: 各 annotator の Decisions の直近 note を畳み込む）', () => {
+    test('decisionsA / decisionsB 省略時は両方 null', () => {
+      const cells = buildAdjudicationCells([field()], studyRow(), studyRow(), [], []);
+      expect(cells[0]?.noteA).toBeNull();
+      expect(cells[0]?.noteB).toBeNull();
+    });
+
+    test('該当セル（field_id × entity_key）の Decisions から note を採用する', () => {
+      const cells = buildAdjudicationCells(
+        [field()],
+        studyRow(),
+        studyRow(),
+        [],
+        [],
+        [decision({ note: 'A のメモ' })],
+        [decision({ note: 'B のメモ' })],
+      );
+      expect(cells[0]?.noteA).toBe('A のメモ');
+      expect(cells[0]?.noteB).toBe('B のメモ');
+    });
+
+    test('複数の Decisions がある場合は decided_at が最後（最新）の 1 件の note を採用する', () => {
+      const cells = buildAdjudicationCells(
+        [field()],
+        studyRow(),
+        studyRow(),
+        [],
+        [],
+        [
+          decision({ decidedAt: 't1', note: '古いメモ' }),
+          decision({ decidedAt: 't3', note: '最新メモ' }),
+          decision({ decidedAt: 't2', note: '中間メモ' }),
+        ],
+        [],
+      );
+      expect(cells[0]?.noteA).toBe('最新メモ');
+    });
+
+    test('最新の Decision の note が null なら null を採用する（note が消えたことを表す）', () => {
+      const cells = buildAdjudicationCells(
+        [field()],
+        studyRow(),
+        studyRow(),
+        [],
+        [],
+        [
+          decision({ decidedAt: 't1', note: '古いメモ' }),
+          decision({ decidedAt: 't2', note: null }),
+        ],
+        [],
+      );
+      expect(cells[0]?.noteA).toBeNull();
+    });
+
+    test('他セル（field_id・entity_key が異なる）の note は混入しない', () => {
+      const armField = field({ fieldId: 'f-arm', fieldName: 'arm_name', entityLevel: 'arm', fieldIndex: 1 });
+      const cells = buildAdjudicationCells(
+        [field(), armField],
+        studyRow(),
+        studyRow(),
+        [resultsRow({ fieldId: 'f-arm', entityKey: 'arm:1', value: '介入群' })],
+        [resultsRow({ fieldId: 'f-arm', entityKey: 'arm:1', value: '介入群' })],
+        [decision({ fieldId: 'f-arm', entityKey: 'arm:1', note: 'arm のメモ' })],
+        [],
+      );
+      const studyCell = cells.find((c) => c.field.fieldId === 'f-study');
+      const armCell = cells.find((c) => c.field.fieldId === 'f-arm');
+      expect(studyCell?.noteA).toBeNull();
+      expect(armCell?.noteA).toBe('arm のメモ');
+    });
+  });
+});
+
+describe('indexEvidenceByCellKey（issue #63: 裁定 PDF ペインの根拠ハイライト用の索引）', () => {
+  test('Evidence を field_id × entity_key で引けるようにする', () => {
+    const index = indexEvidenceByCellKey([evidence({ fieldId: 'f-1', entityKey: '-' })]);
+    expect(index.get(JSON.stringify(['f-1', '-']))?.evidenceId).toBe('ev-1');
+  });
+
+  test('空配列は空の索引', () => {
+    expect(indexEvidenceByCellKey([]).size).toBe(0);
+  });
+
+  test('同一セルに複数 Evidence があれば配列の後勝ち（追記順 = 新しいものを優先）', () => {
+    const index = indexEvidenceByCellKey([
+      evidence({ evidenceId: 'ev-old' }),
+      evidence({ evidenceId: 'ev-new' }),
+    ]);
+    expect(index.get(JSON.stringify(['f-study', '-']))?.evidenceId).toBe('ev-new');
   });
 });

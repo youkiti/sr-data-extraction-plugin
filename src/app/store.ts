@@ -386,6 +386,12 @@ export interface AdjudicateWorking {
   cells: AdjudicationCell[];
   /** consensus 自身の判定履歴（study 内）。セルの裁定状態はこれを畳み込んで導出する */
   consensusDecisions: Decision[];
+  /**
+   * study 配下の全文書ぶんの AI 根拠（表示する run のもの。issue #63）。
+   * 裁定 PDF ペインの根拠ハイライトの情報源。human_independent 由来のセル（AI 抽出なし）は
+   * 対応する Evidence が無い（features/adjudication/cellMatch.ts の indexEvidenceByCellKey 参照）
+   */
+  evidence: Evidence[];
   /** スキップしたセル（セッション内のみ。永続化しない。key = cellKeyOf(fieldId, entityKey)） */
   skippedCellKeys: string[];
   /** documentId 1 件ぶんの PDF ビューア素材を遅延読込する（features/verification/pdfViewCache 経由） */
@@ -408,6 +414,13 @@ export interface AdjudicateState {
   workingError: string | null;
   /** 書き込み中フラグ（二重送信防止。失敗はトーストのみで状態維持） */
   saving: boolean;
+  /**
+   * 検証側（verificationService）と共有する 'decisions' オフラインキューへ退避中の
+   * 裁定書き込み件数（issue #63）。0 より大きいと画面にオフラインバナーを出す。
+   * キューは spreadsheetId × userEmail 単位で検証・裁定の書き込みを一括管理するため、
+   * この画面以外（#/verify・#/pilot）由来の退避分も合算されうる
+   */
+  queuedWrites: number;
   /** セル一覧の「不一致のみ」フィルタ（既定 ON。§6.4） */
   mismatchOnlyFilter: boolean;
   /**
@@ -610,6 +623,7 @@ export function createInitialState(): AppState {
       workingLoading: false,
       workingError: null,
       saving: false,
+      queuedWrites: 0,
       mismatchOnlyFilter: true,
       agreement: null,
       agreementLoading: false,

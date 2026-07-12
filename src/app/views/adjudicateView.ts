@@ -3,19 +3,19 @@
 // （ゲート付き。両者の完了状況のみ表示し値・判定内訳は見せない）/ 裁定中（群構成突き合わせ →
 // セル一覧）。
 //
-// PDF 参照ペインは PDF 表示 + ページ送り / ズーム / テキスト検索のみの簡略版
-// （app/views/adjudicatePdfPane.ts）。Evidence ハイライトの再特定は行わない —
-// 裁定は盲検解除後の工程で、根拠探しは「本文を検索」で足りると判断し実装コストを抑えた
-// （設計指示 §9「実装が重い場合は v1 として PDF 表示 + テキスト検索だけでも可」に基づく簡略化。
-// 完了報告に明記する）
+// PDF 参照ペイン（app/views/adjudicatePdfPane.ts）は issue #63 で Evidence 根拠ハイライトに
+// 対応した: セル一覧の「根拠を表示」ボタン（AI 根拠があるセルのみ表示）をクリックすると、
+// 該当 Evidence の出所文書へ切替え + ハイライトへジャンプする。あわせて各レビュアーの
+// Decisions.note（あれば）を A / B の値の横に表示する。オフラインキュー退避中の裁定書き込み
+// 件数（issue #63。検証側と共有する 'decisions' キュー）はヘッダにバナー表示する
 import type { AgreementDisagreement, AgreementReport, FieldAgreement } from '../../features/adjudication/agreement';
-import type { AdjudicationCell } from '../../features/adjudication/cellMatch';
+import { indexEvidenceByCellKey, type AdjudicationCell } from '../../features/adjudication/cellMatch';
 import { entityKeyLabel } from '../../features/verification/cells';
 import { deriveCellStates, emptyCellState, type CellState } from '../../features/verification/cellState';
 import { STUDY_ENTITY_KEY } from '../../utils/entityKey';
 import type { AdjudicateStudyRow, AdjudicateWorking, AppState } from '../store';
 import { el } from '../ui/dom';
-import { renderAdjudicatePdfPane } from './adjudicatePdfPane';
+import { focusAdjudicateEvidence, renderAdjudicatePdfPane } from './adjudicatePdfPane';
 import type { ViewContext } from './types';
 
 type ChipStatus = 'match' | 'mismatch' | 'accept' | 'edit' | 'reject' | 'not_reported' | 'skipped';
@@ -194,11 +194,23 @@ function renderArmCard(working: AdjudicateWorking, ctx: ViewContext): HTMLElemen
 // 裁定中: セル一覧
 // ---------------------------------------------------------------------------
 
+/** A / B の値セルの中身（値 + note があれば note 表示。issue #63） */
+function valueCellChildren(value: string, note: string | null, side: 'A' | 'B'): Array<HTMLElement | string> {
+  const children: Array<HTMLElement | string> = [value];
+  if (note !== null) {
+    children.push(
+      el('p', { className: 'adjudicate__cell-note', text: `${side} のメモ: ${note}` }),
+    );
+  }
+  return children;
+}
+
 function renderCellRow(
   cell: AdjudicationCell,
   working: AdjudicateWorking,
   consensusStates: Map<string, CellState>,
   armLocked: boolean,
+  hasEvidence: boolean,
   ctx: ViewContext,
 ): HTMLElement {
   const consensusState = consensusStates.get(cell.cellKey) ?? emptyCellState();
@@ -217,12 +229,23 @@ function renderCellRow(
       }),
     );
   }
+  if (hasEvidence) {
+    // issue #63: AI の Evidence があるセルのみ「根拠を表示」を出す（human_independent 由来・
+    // not_reported 等で quote が無いセルはボタン無し = 従来どおりハイライト非表示）
+    const evidenceButton = el('button', {
+      className: 'adjudicate__evidence-button',
+      text: '根拠を表示',
+      attributes: { type: 'button', 'aria-label': `${cell.field.fieldLabel} の AI 根拠を PDF で表示` },
+    });
+    evidenceButton.addEventListener('click', () => focusAdjudicateEvidence(working, cell.cellKey));
+    fieldChildren.push(evidenceButton);
+  }
 
   const row: HTMLElement[] = [
     el('td', { text: heading }),
     el('td', {}, fieldChildren),
-    el('td', { text: displayValue(cell.valueA) }),
-    el('td', { text: displayValue(cell.valueB) }),
+    el('td', {}, valueCellChildren(displayValue(cell.valueA), cell.noteA, 'A')),
+    el('td', {}, valueCellChildren(displayValue(cell.valueB), cell.noteB, 'B')),
     el(
       'td',
       {},
@@ -297,6 +320,8 @@ function renderCellRow(
 
 function renderCellSection(state: AppState, ctx: ViewContext, working: AdjudicateWorking): HTMLElement {
   const consensusStates = deriveCellStates(working.consensusDecisions);
+  // issue #63: セルごとに「根拠を表示」ボタンを出すかどうかの判定に使う（AI の Evidence があるか）
+  const evidenceIndex = indexEvidenceByCellKey(working.evidence);
   const mismatchOnly = state.adjudicate.mismatchOnlyFilter;
   const armLocked = working.needsArmConfirmation && working.consensusArmStructure === null;
   const matchCount = working.cells.filter((cell) => cell.matches).length;
@@ -335,7 +360,9 @@ function renderCellSection(state: AppState, ctx: ViewContext, working: Adjudicat
           el(
             'tbody',
             {},
-            visibleCells.map((cell) => renderCellRow(cell, working, consensusStates, armLocked, ctx)),
+            visibleCells.map((cell) =>
+              renderCellRow(cell, working, consensusStates, armLocked, evidenceIndex.has(cell.cellKey), ctx),
+            ),
           ),
         ]);
 
@@ -359,10 +386,23 @@ function renderWorking(state: AppState, ctx: ViewContext, working: AdjudicateWor
   const back = el('button', { id: 'adjudicate-back', text: '一覧に戻る', attributes: { type: 'button' } });
   back.addEventListener('click', () => ctx.adjudicate.onBackToList());
 
+  const headerActions: HTMLElement[] = [];
+  if (state.adjudicate.queuedWrites > 0) {
+    // issue #63: 検証側と共有する 'decisions' オフラインキューへ退避中の裁定書き込み件数
+    headerActions.push(
+      el('span', {
+        id: 'adjudicate-queued',
+        className: 'adjudicate__queued',
+        text: `オフライン: ${state.adjudicate.queuedWrites} 件キュー中`,
+      }),
+    );
+  }
+  headerActions.push(back);
+
   const children: HTMLElement[] = [
     el('div', { className: 'adjudicate__working-header' }, [
       el('h3', { text: working.study.studyLabel }),
-      back,
+      el('div', { className: 'adjudicate__working-header-actions' }, headerActions),
     ]),
   ];
   if (working.needsArmConfirmation) {

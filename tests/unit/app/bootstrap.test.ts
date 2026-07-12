@@ -2407,6 +2407,8 @@ describe('bootstrapApp: #/adjudicate', () => {
     schemaVersionB: 1,
     matches: false,
     schemaVersionMismatch: false,
+    noteA: null,
+    noteB: null,
   };
 
   function makeWorking(): AdjudicateWorking {
@@ -2425,6 +2427,7 @@ describe('bootstrapApp: #/adjudicate', () => {
       armDraft: [],
       cells: [CELL],
       consensusDecisions: [],
+      evidence: [],
       skippedCellKeys: [],
       loadPdfView: jest.fn().mockResolvedValue({ pdf: null, pdfError: 'テストでは PDF なし', textPages: [] }),
       retryPdfView: jest.fn().mockResolvedValue({ pdf: null, pdfError: 'テストでは PDF なし', textPages: [] }),

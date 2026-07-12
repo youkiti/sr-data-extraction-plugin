@@ -38,6 +38,8 @@ function cell(overrides: Partial<AdjudicationCell> = {}): AdjudicationCell {
     schemaVersionB: 1,
     matches: true,
     schemaVersionMismatch: false,
+    noteA: null,
+    noteB: null,
     ...overrides,
   };
 }
