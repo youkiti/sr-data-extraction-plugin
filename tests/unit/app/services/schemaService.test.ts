@@ -624,6 +624,17 @@ describe('エディタ操作', () => {
     expect(store.getState().schema.editorRows?.[13]?.fieldName).toBe('rob2_judgement');
     expect(store.getState().schema.editorRows?.[14]?.entityLevel).toBe('rob_domain');
     expect(store.getState().schema.editorErrors).toEqual([]);
+
+    // RoB 2（SQ 完全版。issue #61）は判定 + 根拠 + SQ 22 問の計 24 行が末尾に付く
+    insertSchemaPreset(store, 'rob2_sq');
+    expect(store.getState().schema.editorRows).toHaveLength(39);
+    expect(store.getState().schema.editorRows?.[15]?.fieldName).toBe('rob2_judgement');
+    expect(store.getState().schema.editorRows?.[16]?.fieldName).toBe('rob2_support');
+    expect(store.getState().schema.editorRows?.[17]?.fieldName).toBe('rob2_sq1_1');
+    expect(store.getState().schema.editorRows?.[38]?.fieldName).toBe('rob2_sq5_3');
+    // 軽量版 rob2 と field_name が衝突するため、この時点ではエラーが検出される
+    // （両プリセットは排他利用が前提。robTemplates.test.ts の意図的な衝突確認と対応）
+    expect(store.getState().schema.editorErrors.length).toBeGreaterThan(0);
   });
 
   test('startEditorFromCurrent: 現行版の項目を fieldId 維持で引き継ぐ（未読込は no-op）', () => {

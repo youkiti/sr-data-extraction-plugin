@@ -1827,6 +1827,45 @@
   color: var(--color-danger);
 }
 
+/* RoB 2 signaling question からのアルゴリズム提案（issue #61）。判定操作は増やさない情報提示のみ */
+.verify__rob-algorithm {
+  margin: 6px 0;
+  font-size: 13px;
+}
+
+.verify__rob-suggestion {
+  display: inline-block;
+  margin: 2px 0;
+  padding: 1px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  background: var(--color-bg);
+}
+
+.verify__rob-mismatch-warnings {
+  margin: 6px 0;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: var(--color-warning-bg);
+  border: 1px solid var(--color-warning-border);
+  color: var(--color-danger);
+}
+
+.verify__rob-mismatch-warning {
+  margin: 0;
+}
+
+.verify__rob-unconfirmed {
+  margin: 2px 0;
+  color: var(--color-text-muted);
+}
+
+/* マトリクスボタン（focus-card__matrix-btn）の RoB 不一致バッジ。issue #65 の
+   verify__consistency-badge と同じパターン（色は継承せず --color-danger を明示） */
+.verify__rob-badge {
+  color: var(--color-danger);
+}
+
 .verify__current-value {
   margin: 4px 0;
 }
