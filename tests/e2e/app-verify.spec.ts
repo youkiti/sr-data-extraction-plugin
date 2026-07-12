@@ -481,6 +481,22 @@ test('フォーカスモード: マトリクス表示 → 判定の自動送り 
   const toggleOpenResults = await new AxeBuilder({ page }).analyze();
   expect(toggleOpenResults.violations).toEqual([]);
 
+  // ユニット送りボタン（issue #82）: Shift+J/K と同じ着地ロジックをマウスでも実行できる。
+  // 先頭ユニットのため前ボタンは disabled（折り返さない）、次ボタンは有効
+  const prevUnitButton = page.locator('.focus-card__nav--prev');
+  const nextUnitButton = page.locator('.focus-card__nav--next');
+  await expect(prevUnitButton).toBeDisabled();
+  await expect(nextUnitButton).toBeEnabled();
+  await nextUnitButton.click();
+  await expect(page.locator('#verify-focus-position')).toHaveText('ユニット 2 / 2（残り 2）');
+  await expect(page.locator('#verify-focus-detail .verify__cell-label')).toHaveText('出版年');
+  // 末尾ユニットのため次ボタンは disabled、前ボタンは有効
+  await expect(nextUnitButton).toBeDisabled();
+  await expect(prevUnitButton).toBeEnabled();
+  await prevUnitButton.click();
+  await expect(page.locator('#verify-focus-position')).toHaveText('ユニット 1 / 2（残り 2）');
+  await expect(page.locator('#verify-focus-detail .verify__cell-label')).toHaveText('死亡率');
+
   // 承認 → 同一ユニット内の次の未判定セル（国）へ自動送り。ユニット位置はまだ変わらない
   await page.locator('#verify-focus-detail .verify__action--accept').click();
   await expect(page.locator('#verify-focus-detail .verify__cell-label')).toHaveText('国');

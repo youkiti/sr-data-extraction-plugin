@@ -2128,11 +2128,36 @@
   flex-wrap: wrap;
 }
 
+.focus-card__position-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .focus-card__position {
   margin: 0;
   color: var(--color-text-muted);
   font-size: 12px;
   white-space: nowrap;
+}
+
+/* ユニット送りボタン（issue #82: Shift+J/K のマウス版）。マトリクスボタンと同じトンマナ */
+.focus-card__nav {
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-bg);
+  color: var(--color-text);
+  padding: 2px 10px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.focus-card__nav:disabled {
+  opacity: 0.5;
+}
+
+.focus-card__nav:hover:not(:disabled) {
+  background: var(--color-surface);
 }
 
 .focus-card__heading {

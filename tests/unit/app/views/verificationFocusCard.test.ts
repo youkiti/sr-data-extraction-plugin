@@ -88,6 +88,7 @@ function makeHandlers(): jest.Mocked<VerificationFocusCardHandlers> {
     onSearchQuote: jest.fn(),
     onCycleMatch: jest.fn(),
     onCollapseDecided: jest.fn(),
+    onMoveUnit: jest.fn(),
   };
 }
 
@@ -120,6 +121,36 @@ describe('renderVerificationFocusCard', () => {
     const { root } = render(makeModel({ unitIndex: 2, totalUnits: 5, remainingUnits: 3 }));
     expect(root.querySelector('#verify-focus-position')?.textContent).toBe('ユニット 2 / 5（残り 3）');
     expect(root.querySelector('.focus-card__heading')?.textContent).toBe('pain');
+  });
+
+  test('ユニットヘッダの前後移動ボタンは onMoveUnit(±1) を呼び、aria-label / title に Shift+J/K のヒントを持つ（issue #82）', () => {
+    const { root, handlers } = render(makeModel({ unitIndex: 2, totalUnits: 3, remainingUnits: 1 }));
+    const prev = root.querySelector<HTMLButtonElement>('.focus-card__nav--prev');
+    const next = root.querySelector<HTMLButtonElement>('.focus-card__nav--next');
+    expect(prev?.disabled).toBe(false);
+    expect(next?.disabled).toBe(false);
+    expect(prev?.getAttribute('aria-label')).toBe('前のユニットへ移動（Shift+K）');
+    expect(prev?.getAttribute('title')).toBe('前のユニットへ移動（Shift+K）');
+    expect(next?.getAttribute('aria-label')).toBe('次のユニットへ移動（Shift+J）');
+    expect(next?.getAttribute('title')).toBe('次のユニットへ移動（Shift+J）');
+    prev?.click();
+    expect(handlers.onMoveUnit).toHaveBeenCalledWith(-1);
+    next?.click();
+    expect(handlers.onMoveUnit).toHaveBeenCalledWith(1);
+  });
+
+  test('先頭ユニットは前ボタンが disabled、末尾ユニットは次ボタンが disabled（折り返さないキーボード挙動と一致。issue #82）', () => {
+    const first = render(makeModel({ unitIndex: 1, totalUnits: 3, remainingUnits: 2 }));
+    expect(first.root.querySelector<HTMLButtonElement>('.focus-card__nav--prev')?.disabled).toBe(true);
+    expect(first.root.querySelector<HTMLButtonElement>('.focus-card__nav--next')?.disabled).toBe(false);
+
+    const last = render(makeModel({ unitIndex: 3, totalUnits: 3, remainingUnits: 0 }));
+    expect(last.root.querySelector<HTMLButtonElement>('.focus-card__nav--prev')?.disabled).toBe(false);
+    expect(last.root.querySelector<HTMLButtonElement>('.focus-card__nav--next')?.disabled).toBe(true);
+
+    const only = render(makeModel({ unitIndex: 1, totalUnits: 1, remainingUnits: 0 }));
+    expect(only.root.querySelector<HTMLButtonElement>('.focus-card__nav--prev')?.disabled).toBe(true);
+    expect(only.root.querySelector<HTMLButtonElement>('.focus-card__nav--next')?.disabled).toBe(true);
   });
 
   test('詳細ストリップにも抽出指示の折りたたみが自動的に反映される（issue #81。verificationCellCard.renderCell を共有するため）', () => {

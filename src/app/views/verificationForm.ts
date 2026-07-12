@@ -134,6 +134,11 @@ export interface VerificationFormHandlers {
   onOutcomeAdd(): void;
   /** レイアウトモード切替（`#verify-layout-toggle`）。永続化はサービス層の責務 */
   onToggleLayoutMode(mode: 'focus' | 'list'): void;
+  /**
+   * フォーカスモードのユニット送り（issue #82。ユニットヘッダの前後ボタン）。
+   * verificationFocusCard.VerificationFocusCardHandlers へそのまま渡る
+   */
+  onMoveUnit(delta: number): void;
 }
 
 const TAB_LABELS: Record<EntityLevel, string> = {
