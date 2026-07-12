@@ -12,6 +12,7 @@
 import { NOT_REPORTED_TOKEN } from '../../domain/annotation';
 import type { VerificationCell } from '../../features/verification/cells';
 import type { FocusUnit, FocusUnitColumn, FocusUnitRow } from '../../features/verification/focusUnits';
+import type { RobAlgorithmInfo } from '../../features/verification/robAlgorithm';
 import { el } from '../ui/dom';
 import {
   renderCell,
@@ -51,6 +52,12 @@ export interface VerificationFocusCardModel {
    * マトリクスボタンのバッジ（renderMatrixDataCell）と詳細ストリップ（renderCell）の双方へ渡す
    */
   consistencyWarnings: ReadonlyMap<string, string[]>;
+  /**
+   * RoB 2 signaling question からのアルゴリズム提案（issue #61）。cellKey → 情報。
+   * マトリクスボタンの不一致バッジ（renderMatrixDataCell）と詳細ストリップ（renderCell）の
+   * 双方へ渡す
+   */
+  robAlgorithmInfo: ReadonlyMap<string, RobAlgorithmInfo>;
 }
 
 /**
@@ -96,6 +103,7 @@ function renderMatrixDataCell(
   const baseLabel = `${fieldLabel} × ${column.label}: ${value}`;
   const trailing: HTMLElement[] = [renderStatusChip(cell.state.status)];
   const attributes: Record<string, string> = { type: 'button', 'aria-label': baseLabel };
+  const titleParts: string[] = [];
   if (warnings.length > 0) {
     // 決定論的な数値整合性チェック（issue #65）: バッジ + aria-label / title に警告文を含める
     // （判定操作は増やさない情報提示のみ）
@@ -107,7 +115,24 @@ function renderMatrixDataCell(
       }),
     );
     attributes['aria-label'] = `${baseLabel}（整合性チェック警告: ${warnings.join('。')}）`;
-    attributes['title'] = warnings.join('\n');
+    titleParts.push(...warnings);
+  }
+  const robInfo = model.robAlgorithmInfo.get(cell.cellKey);
+  if (robInfo?.mismatch === true) {
+    // RoB 2 アルゴリズム提案との不一致（issue #61）: #65 と同じバッジパターンを踏襲する
+    trailing.push(
+      el('span', {
+        className: 'verify__rob-badge',
+        attributes: { 'aria-hidden': 'true' },
+        text: '⚠',
+      }),
+    );
+    const robMessage = `アルゴリズム提案 (${robInfo.suggestion}) と現在の判定 (${robInfo.currentValue}) が一致しません`;
+    attributes['aria-label'] = `${attributes['aria-label']}（RoB アルゴリズム提案との不一致: ${robMessage}）`;
+    titleParts.push(robMessage);
+  }
+  if (titleParts.length > 0) {
+    attributes['title'] = titleParts.join('\n');
   }
   const button = el(
     'button',
@@ -196,6 +221,7 @@ function renderDetailStrip(
     canSearchText: model.canSearchText,
     mode: model.mode,
     consistencyWarnings: model.consistencyWarnings,
+    robAlgorithmInfo: model.robAlgorithmInfo,
   };
   return el('div', { id: 'verify-focus-detail', className: 'focus-card__detail' }, [
     renderCell(cell, cellCardModel, handlers),

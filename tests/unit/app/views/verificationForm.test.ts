@@ -121,6 +121,7 @@ function makeModel(
     layoutMode: 'list',
     focusCard: null,
     consistencyWarnings: new Map<string, string[]>(),
+    robAlgorithmInfo: new Map(),
     ...overrides,
   };
 }
@@ -311,6 +312,53 @@ describe('renderVerificationForm', () => {
   test('整合性チェック警告が無いセルには警告ブロックを描画しない', () => {
     const { root } = render(makeModel([makeCell()]));
     expect(root.querySelector('.verify__consistency-warnings')).toBeNull();
+  });
+
+  test('RoB 2 アルゴリズム提案（issue #61）: 提案チップを表示する', () => {
+    const cell = makeCell({ field: makeField({ fieldId: 'f-judgement', fieldName: 'rob2_judgement' }) });
+    const info = new Map([
+      [cell.cellKey, { cellKey: cell.cellKey, suggestion: 'some_concerns' as const, currentValue: 'some_concerns' as const, mismatch: false, aiUnconfirmed: false }],
+    ]);
+    const { root } = render(makeModel([cell], { robAlgorithmInfo: info }));
+    expect(root.querySelector('.verify__rob-suggestion')?.textContent).toBe('アルゴリズム提案: some_concerns');
+    expect(root.querySelector('.verify__rob-mismatch-warnings')).toBeNull();
+    expect(root.querySelector('.verify__rob-unconfirmed')).toBeNull();
+  });
+
+  test('RoB 2 アルゴリズム提案が現在値と食い違う場合は警告バッジを表示し、最初の 1 件だけに id を付ける（#65 と同じパターン）', () => {
+    const cellA = makeCell({ field: makeField({ fieldId: 'f-a', fieldName: 'rob2_judgement' }) });
+    const cellB = makeCell({
+      field: makeField({ fieldId: 'f-b', fieldName: 'rob2_judgement' }),
+      entityKey: 'rob:d2_deviations',
+    });
+    const info = new Map([
+      [cellA.cellKey, { cellKey: cellA.cellKey, suggestion: 'high' as const, currentValue: 'low' as const, mismatch: true, aiUnconfirmed: false }],
+      [cellB.cellKey, { cellKey: cellB.cellKey, suggestion: 'high' as const, currentValue: 'low' as const, mismatch: true, aiUnconfirmed: false }],
+    ]);
+    const { root } = render(makeModel([cellA, cellB], { robAlgorithmInfo: info }));
+    const blocks = root.querySelectorAll('.verify__rob-mismatch-warnings');
+    expect(blocks).toHaveLength(2);
+    expect(blocks[0]?.getAttribute('role')).toBe('note');
+    expect(blocks[0]?.textContent).toContain('アルゴリズム提案 (high) と現在の判定 (low) が一致しません');
+    expect(blocks[0]?.id).toBe('verify-rob-algorithm-warning');
+    expect(blocks[1]?.id).toBe('');
+    expect(root.querySelectorAll('#verify-rob-algorithm-warning')).toHaveLength(1);
+  });
+
+  test('RoB 2 判定・未確認バッジ（issue #61 オーナー追加要件）: AI 値があり判定 0 件のときだけ表示する', () => {
+    const cell = makeCell({ field: makeField({ fieldId: 'f-judgement', fieldName: 'rob2_judgement' }) });
+    const info = new Map([
+      [cell.cellKey, { cellKey: cell.cellKey, suggestion: null, currentValue: 'low' as const, mismatch: false, aiUnconfirmed: true }],
+    ]);
+    const { root } = render(makeModel([cell], { robAlgorithmInfo: info }));
+    expect(root.querySelector('.verify__rob-unconfirmed')?.textContent).toBe(
+      'AI 判定・未確認（まだ人が確認していません）',
+    );
+  });
+
+  test('RoB 2 アルゴリズム情報が無いセル（rob_domain 以外・情報未計算）には何も描画しない', () => {
+    const { root } = render(makeModel([makeCell()]));
+    expect(root.querySelector('.verify__rob-algorithm')).toBeNull();
   });
 
   test('アンカー済み quote はジャンプボタン、複数一致なら切替ボタンを出す', () => {
@@ -811,6 +859,7 @@ describe('renderVerificationForm: レイアウトモード（issue #38）', () =
       canSearchText: true,
       recentCell: null,
       consistencyWarnings: new Map<string, string[]>(),
+      robAlgorithmInfo: new Map(),
     };
   }
 

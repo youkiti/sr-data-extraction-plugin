@@ -7,6 +7,7 @@
 import { NOT_REPORTED_TOKEN } from '../../domain/annotation';
 import type { VerificationCell } from '../../features/verification/cells';
 import type { CellStatus } from '../../features/verification/cellState';
+import type { RobAlgorithmInfo } from '../../features/verification/robAlgorithm';
 import { el } from '../ui/dom';
 
 /** セルに対応するハイライトの表示情報（0 件 = ハイライトなし → フォールバック UI） */
@@ -36,6 +37,12 @@ export interface CellCardModel {
    * verificationPanel が judgment/state 変更のたびに collectConsistencyWarnings で再計算する
    */
   consistencyWarnings: ReadonlyMap<string, string[]>;
+  /**
+   * RoB 2 signaling question からのアルゴリズム提案（issue #61）。cellKey → 情報。
+   * verificationPanel が judgment/state 変更のたびに collectRobAlgorithmInfo で再計算する。
+   * rob_domain タブの judgement セル以外は該当エントリを持たない
+   */
+  robAlgorithmInfo: ReadonlyMap<string, RobAlgorithmInfo>;
 }
 
 /** renderCell が実際に呼び出す最小のハンドラ集合 */
@@ -116,6 +123,57 @@ function renderConsistencyWarnings(cell: VerificationCell, model: CellCardModel)
     { className: 'verify__consistency-warnings', attributes: { role: 'note' } },
     messages.map((message) => el('p', { className: 'verify__consistency-warning', text: `⚠ ${message}` })),
   );
+}
+
+/**
+ * RoB 2 signaling question からのアルゴリズム提案（issue #61）。判定操作は増やさない情報提示のみ:
+ * 1. 提案チップ（suggestion があれば常に表示）
+ * 2. 不一致警告（#65 の `.verify__consistency-warnings` と同じ見た目・パターン。mismatch のときだけ）
+ * 3. AI 判定・未確認バッジ（aiUnconfirmed のときだけ。人間がまだ 1 度も判定していない AI 抽出値の明示）
+ * 該当情報が 1 つも無ければ null（描画しない）
+ */
+function renderRobAlgorithmInfo(cell: VerificationCell, model: CellCardModel): HTMLElement | null {
+  const info = model.robAlgorithmInfo.get(cell.cellKey);
+  if (info === undefined) {
+    return null;
+  }
+  const children: HTMLElement[] = [];
+  if (info.suggestion !== null) {
+    children.push(
+      el('p', {
+        className: 'verify__rob-suggestion',
+        text: `アルゴリズム提案: ${info.suggestion}`,
+      }),
+    );
+  }
+  if (info.mismatch) {
+    children.push(
+      el(
+        'div',
+        { className: 'verify__rob-mismatch-warnings', attributes: { role: 'note' } },
+        [
+          el('p', {
+            className: 'verify__rob-mismatch-warning',
+            text:
+              `⚠ アルゴリズム提案 (${info.suggestion}) と現在の判定 (${info.currentValue}) が` +
+              '一致しません',
+          }),
+        ],
+      ),
+    );
+  }
+  if (info.aiUnconfirmed) {
+    children.push(
+      el('p', {
+        className: 'verify__rob-unconfirmed',
+        text: 'AI 判定・未確認（まだ人が確認していません）',
+      }),
+    );
+  }
+  if (children.length === 0) {
+    return null;
+  }
+  return el('div', { className: 'verify__rob-algorithm' }, children);
 }
 
 /**
@@ -330,6 +388,10 @@ export function renderCell(
   const consistencyWarnings = renderConsistencyWarnings(cell, model);
   if (consistencyWarnings !== null) {
     children.push(consistencyWarnings);
+  }
+  const robAlgorithmInfo = renderRobAlgorithmInfo(cell, model);
+  if (robAlgorithmInfo !== null) {
+    children.push(robAlgorithmInfo);
   }
   if (cell.state.status !== 'unverified') {
     children.push(

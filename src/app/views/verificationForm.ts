@@ -15,6 +15,7 @@ import {
 } from '../../features/verification/cells';
 import { isArmDependentLevel } from '../../features/verification/armDraft';
 import type { VerificationProgress } from '../../features/verification/progress';
+import type { RobAlgorithmInfo } from '../../features/verification/robAlgorithm';
 import { el } from '../ui/dom';
 import {
   renderCell,
@@ -92,6 +93,11 @@ export interface VerificationFormModel {
    * （判定・編集のたびに refreshForm 経由で作り直されるため古い警告が残らない）
    */
   consistencyWarnings: ReadonlyMap<string, string[]>;
+  /**
+   * RoB 2 signaling question からのアルゴリズム提案（issue #61）。cellKey → 情報。
+   * verificationPanel が現在タブの TabModel から collectRobAlgorithmInfo で再計算する
+   */
+  robAlgorithmInfo: ReadonlyMap<string, RobAlgorithmInfo>;
 }
 
 export interface VerificationFormHandlers {
@@ -446,15 +452,20 @@ function shortcutNoteText(layoutMode: 'focus' | 'list'): string {
 /**
  * フォームのルート要素を組み立てる（`verify__form` 直下は呼び出しごとに分岐が異なるため、
  * 4 箇所の return を 1 箇所へ集約する）。整合性チェック警告ブロック
- * （`.verify__consistency-warnings`。verificationCellCard.renderCell が付与）は
- * リストモードで同時に複数セルへ表示されうるため、id 重複を避けて最初の 1 件にだけ
- * `verify-consistency-warning` を付ける（E2E から一意に特定するため。他は class のみで検索可能）
+ * （`.verify__consistency-warnings`。verificationCellCard.renderCell が付与）・
+ * RoB アルゴリズム不一致警告ブロック（`.verify__rob-mismatch-warnings`。同じく renderCell が付与。
+ * issue #61）は、いずれもリストモードで同時に複数セルへ表示されうるため、id 重複を避けて
+ * 最初の 1 件にだけ id を付ける（E2E から一意に特定するため。他は class のみで検索可能）
  */
 function finalizeForm(children: HTMLElement[]): HTMLElement {
   const root = el('div', { className: 'verify__form' }, children);
   const firstWarningBlock = root.querySelector('.verify__consistency-warnings');
   if (firstWarningBlock !== null) {
     firstWarningBlock.id = 'verify-consistency-warning';
+  }
+  const firstRobWarningBlock = root.querySelector('.verify__rob-mismatch-warnings');
+  if (firstRobWarningBlock !== null) {
+    firstRobWarningBlock.id = 'verify-rob-algorithm-warning';
   }
   return root;
 }

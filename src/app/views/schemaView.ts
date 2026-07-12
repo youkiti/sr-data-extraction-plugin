@@ -304,6 +304,12 @@ function renderEditor(
     attributes: { type: 'button' },
   });
   presetRob2.addEventListener('click', () => ctx.schema.onInsertPreset('rob2'));
+  const presetRob2Sq = el('button', {
+    id: 'schema-preset-rob2-sq',
+    text: 'RoB 2（SQ 完全版）テンプレートを挿入',
+    attributes: { type: 'button' },
+  });
+  presetRob2Sq.addEventListener('click', () => ctx.schema.onInsertPreset('rob2_sq'));
   const presetRobinsI = el('button', {
     id: 'schema-preset-robins-i',
     text: 'ROBINS-I テンプレートを挿入',
@@ -360,6 +366,7 @@ function renderEditor(
       presetBinary,
       presetContinuous,
       presetRob2,
+      presetRob2Sq,
       presetRobinsI,
     ]),
     dataTypeHelp,

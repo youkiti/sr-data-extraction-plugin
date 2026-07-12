@@ -35,6 +35,7 @@ import {
   type CellState,
 } from '../../features/verification/cellState';
 import { collectConsistencyWarnings } from '../../features/verification/consistencyChecks';
+import { collectRobAlgorithmInfo } from '../../features/verification/robAlgorithm';
 import {
   buildFocusUnits,
   nextPendingCellInUnit,
@@ -321,6 +322,7 @@ export function createVerificationPanel(
       recentCell,
       mode: panelMode,
       consistencyWarnings: collectConsistencyWarnings(tabModel),
+      robAlgorithmInfo: collectRobAlgorithmInfo(tabModel),
     };
   }
 
@@ -1115,6 +1117,8 @@ export function createVerificationPanel(
       // 決定論的な数値整合性チェック（issue #65）: 判定・編集のたびに refreshForm が
       // 呼ばれるためここで再計算する（古い警告のキャッシュ持ち越しを防ぐ）
       consistencyWarnings: collectConsistencyWarnings(tabModel),
+      // RoB 2 SQ アルゴリズム提案（issue #61）: 同じく判定・編集のたびに再計算する
+      robAlgorithmInfo: collectRobAlgorithmInfo(tabModel),
     };
     formPane.replaceChildren(renderVerificationForm(model, handlers));
     formPane.scrollTop = savedScrollTop;
