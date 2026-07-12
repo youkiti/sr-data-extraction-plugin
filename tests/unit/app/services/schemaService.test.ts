@@ -615,23 +615,24 @@ describe('エディタ操作', () => {
     expect(store.getState().schema.editorErrors).toEqual([]);
 
     insertSchemaPreset(store, 'continuous');
-    expect(store.getState().schema.editorRows).toHaveLength(13);
+    // 連続プリセットは issue #76 で outcome_unit_reported が加わり 13 項目（旧 12 + 1）
+    expect(store.getState().schema.editorRows).toHaveLength(14);
     expect(store.getState().schema.editorOrigin).toBe('user_edit');
 
     // RoB テンプレートも同じ挿入経路（判定 + 根拠の 2 行が末尾に付く）
     insertSchemaPreset(store, 'rob2');
-    expect(store.getState().schema.editorRows).toHaveLength(15);
-    expect(store.getState().schema.editorRows?.[13]?.fieldName).toBe('rob2_judgement');
-    expect(store.getState().schema.editorRows?.[14]?.entityLevel).toBe('rob_domain');
+    expect(store.getState().schema.editorRows).toHaveLength(16);
+    expect(store.getState().schema.editorRows?.[14]?.fieldName).toBe('rob2_judgement');
+    expect(store.getState().schema.editorRows?.[15]?.entityLevel).toBe('rob_domain');
     expect(store.getState().schema.editorErrors).toEqual([]);
 
     // RoB 2（SQ 完全版。issue #61）は判定 + 根拠 + SQ 22 問の計 24 行が末尾に付く
     insertSchemaPreset(store, 'rob2_sq');
-    expect(store.getState().schema.editorRows).toHaveLength(39);
-    expect(store.getState().schema.editorRows?.[15]?.fieldName).toBe('rob2_judgement');
-    expect(store.getState().schema.editorRows?.[16]?.fieldName).toBe('rob2_support');
-    expect(store.getState().schema.editorRows?.[17]?.fieldName).toBe('rob2_sq1_1');
-    expect(store.getState().schema.editorRows?.[38]?.fieldName).toBe('rob2_sq5_3');
+    expect(store.getState().schema.editorRows).toHaveLength(40);
+    expect(store.getState().schema.editorRows?.[16]?.fieldName).toBe('rob2_judgement');
+    expect(store.getState().schema.editorRows?.[17]?.fieldName).toBe('rob2_support');
+    expect(store.getState().schema.editorRows?.[18]?.fieldName).toBe('rob2_sq1_1');
+    expect(store.getState().schema.editorRows?.[39]?.fieldName).toBe('rob2_sq5_3');
     // 軽量版 rob2 と field_name が衝突するため、この時点ではエラーが検出される
     // （両プリセットは排他利用が前提。robTemplates.test.ts の意図的な衝突確認と対応）
     expect(store.getState().schema.editorErrors.length).toBeGreaterThan(0);
