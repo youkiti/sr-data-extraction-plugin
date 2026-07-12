@@ -198,6 +198,10 @@ export interface AdjudicateViewCallbacks {
   onUndo(cellKey: string): void;
   /** セル一覧の「不一致のみ」フィルタ切替 */
   onToggleMismatchOnly(value: boolean): void;
+  /** レビュアー間一致度レポートの読み込み（オンデマンド計算。issue #66） */
+  onLoadAgreement(): void;
+  /** 一致度レポートの CSV ダウンロード（項目別サマリ / 不一致一覧） */
+  onDownloadAgreementCsv(kind: 'summary' | 'disagreements'): void;
 }
 
 /** #/export（S10）のユーザー操作コールバック */

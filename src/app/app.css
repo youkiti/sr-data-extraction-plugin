@@ -3025,3 +3025,56 @@
 .adjudicate__action--unskip:hover:not(:disabled) {
   background: #f1f3f4;
 }
+
+/* --- レビュアー間一致度レポート（issue #66）------------------------------ */
+
+.adjudicate__agreement-card {
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface);
+  padding: 12px 16px;
+  margin: 16px 0;
+}
+
+.adjudicate__agreement-table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 8px 0;
+}
+
+.adjudicate__agreement-table th,
+.adjudicate__agreement-table td {
+  border: 1px solid var(--color-border);
+  padding: 6px 10px;
+  text-align: left;
+}
+
+.adjudicate__agreement-disagreements {
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.adjudicate__agreement-disagreements table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+.adjudicate__agreement-disagreements th,
+.adjudicate__agreement-disagreements td {
+  border: 1px solid var(--color-border);
+  padding: 6px 10px;
+  text-align: left;
+}
+
+.adjudicate__agreement-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 8px 0;
+}
+
+.adjudicate__agreement-note {
+  margin: 4px 0;
+  color: var(--color-text-muted);
+  font-size: 12px;
+}

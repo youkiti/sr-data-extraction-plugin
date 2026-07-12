@@ -12,6 +12,7 @@ import type { AnnotatorPairResolution } from '../features/adjudication/pairResol
 import type { StudyGate } from '../features/adjudication/gate';
 import type { AdjudicationCell } from '../features/adjudication/cellMatch';
 import type { DraftArmRow } from '../features/adjudication/armMatch';
+import type { AgreementReport } from '../features/adjudication/agreement';
 import type { BuiltExport } from '../features/export/buildExport';
 import type {
   MethodsFacts,
@@ -389,6 +390,16 @@ export interface AdjudicateState {
   saving: boolean;
   /** セル一覧の「不一致のみ」フィルタ（既定 ON。§6.4） */
   mismatchOnlyFilter: boolean;
+  /**
+   * レビュアー間一致度レポート（issue #66）。null = 未計算（画面入場時には自動読込しない
+   * オンデマンド計算。Sheets 読み出しを増やさないため）。読込成功時は対象が 0 件でも
+   * 空のレポート（studyCount=0）を入れる = 「対象なし」は agreementError ではなく
+   * この空レポートで表現する
+   */
+  agreement: AgreementReport | null;
+  agreementLoading: boolean;
+  /** 読み込み失敗時の案内文言（role="alert" で表示）。対象なしはここではなく agreement 側で表す */
+  agreementError: string | null;
 }
 
 /** #/dashboard（S9）の画面状態 */
@@ -580,6 +591,9 @@ export function createInitialState(): AppState {
       workingError: null,
       saving: false,
       mismatchOnlyFilter: true,
+      agreement: null,
+      agreementLoading: false,
+      agreementError: null,
     },
     export: {
       format: 'study_wide',

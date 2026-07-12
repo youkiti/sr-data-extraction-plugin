@@ -87,7 +87,9 @@ import {
   adjudicateCellNotReported,
   backToAdjudicateList,
   confirmAdjudicateArms,
+  downloadAgreementCsv,
   loadAdjudicateTargets,
+  loadAgreementReport,
   openAdjudicateStudy,
   removeAdjudicateArmDraftRow,
   setAdjudicateMismatchOnlyFilter,
@@ -631,6 +633,12 @@ export async function bootstrapApp(
       },
       onToggleMismatchOnly: (value) => {
         setAdjudicateMismatchOnlyFilter(store, value);
+      },
+      onLoadAgreement: () => {
+        void loadAgreementReport(store, deps);
+      },
+      onDownloadAgreementCsv: (kind) => {
+        downloadAgreementCsv(store, deps, kind);
       },
     },
   };

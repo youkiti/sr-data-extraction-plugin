@@ -50,6 +50,8 @@ jest.mock('../../../src/app/services/adjudicationService', () => ({
   unskipAdjudicateCell: jest.fn(),
   undoAdjudicateCell: jest.fn(),
   setAdjudicateMismatchOnlyFilter: jest.fn(),
+  loadAgreementReport: jest.fn(),
+  downloadAgreementCsv: jest.fn(),
 }));
 import {
   acceptAllMatchingCells,
@@ -59,7 +61,9 @@ import {
   adjudicateCellNotReported,
   backToAdjudicateList,
   confirmAdjudicateArms,
+  downloadAgreementCsv,
   loadAdjudicateTargets,
+  loadAgreementReport,
   openAdjudicateStudy,
   removeAdjudicateArmDraftRow,
   setAdjudicateMismatchOnlyFilter,
@@ -2370,6 +2374,8 @@ describe('bootstrapApp: #/adjudicate', () => {
   const unskipAdjudicateCellMock = unskipAdjudicateCell as jest.Mock;
   const undoAdjudicateCellMock = undoAdjudicateCell as jest.Mock;
   const setAdjudicateMismatchOnlyFilterMock = setAdjudicateMismatchOnlyFilter as jest.Mock;
+  const loadAgreementReportMock = loadAgreementReport as jest.Mock;
+  const downloadAgreementCsvMock = downloadAgreementCsv as jest.Mock;
 
   beforeEach(() => {
     installChromeMock();
@@ -2595,6 +2601,57 @@ describe('bootstrapApp: #/adjudicate', () => {
 
     (document.querySelector('.adjudicate__action--unskip') as HTMLButtonElement).click();
     expect(unskipAdjudicateCellMock).toHaveBeenCalledWith(store, CELL.cellKey);
+  });
+
+  test('レビュアー間一致度カードの「一致度を計算」をサービスへ委譲する', async () => {
+    const stub = createWindowStub({
+      currentProject: PROJECT,
+      home: COUNTS_LOADED,
+      adjudicate: { ...createInitialState().adjudicate, rows: [] },
+    });
+    const { deps } = createFakeDeps([]);
+    const store = await bootstrapApp(asWindow(stub), deps);
+    stub.location.hash = '#/adjudicate';
+    stub.fireHashChange();
+
+    (document.getElementById('agreement-load') as HTMLButtonElement).click();
+    expect(loadAgreementReportMock).toHaveBeenCalledWith(store, deps);
+  });
+
+  test('レビュアー間一致度カードの CSV ボタンをサービスへ委譲する', async () => {
+    const stub = createWindowStub({
+      currentProject: PROJECT,
+      home: COUNTS_LOADED,
+      adjudicate: {
+        ...createInitialState().adjudicate,
+        rows: [],
+        agreement: {
+          studyCount: 1,
+          fields: [
+            {
+              fieldId: 'f-1',
+              fieldName: 'sample_size',
+              fieldLabel: '総サンプルサイズ',
+              pairCount: 1,
+              agreementCount: 1,
+              agreementRate: 1,
+              kappa: null,
+            },
+          ],
+          overall: { pairCount: 1, agreementCount: 1, agreementRate: 1, kappa: null },
+          disagreements: [],
+        },
+      },
+    });
+    const { deps } = createFakeDeps([]);
+    const store = await bootstrapApp(asWindow(stub), deps);
+    stub.location.hash = '#/adjudicate';
+    stub.fireHashChange();
+
+    (document.getElementById('agreement-csv-summary') as HTMLButtonElement).click();
+    expect(downloadAgreementCsvMock).toHaveBeenCalledWith(store, deps, 'summary');
+    (document.getElementById('agreement-csv-disagreements') as HTMLButtonElement).click();
+    expect(downloadAgreementCsvMock).toHaveBeenCalledWith(store, deps, 'disagreements');
   });
 
   test('群構成の編集・確定操作をサービスへ委譲する', async () => {

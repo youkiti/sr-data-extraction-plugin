@@ -108,6 +108,8 @@ const stubCtx: ViewContext = {
     onUnskip: jest.fn(),
     onUndo: jest.fn(),
     onToggleMismatchOnly: jest.fn(),
+    onLoadAgreement: jest.fn(),
+    onDownloadAgreementCsv: jest.fn(),
   },
 };
 
