@@ -217,10 +217,10 @@ test('形式選択 + サマリ + プレビュー → 生成で Drive 保存 + Ex
   await expect(preview.locator('tbody')).toContainText('Smith 2020');
 
   // 形式切替: audit はプレビュー列と未検証セル数（判定 0 件セル = ev-2 の 1 件）が追随する。
-  // 列数 27 = 従来 22 列 + bbox 5 列（bbox_page/ymin/xmin/ymax/xmax。§7.4 PR3）
+  // 列数 28 = 従来 22 列 + bbox 5 列（§7.4 PR3）+ study_id 1 列（issue #60 D-1）
   await formats.locator('input[value=audit]').check();
   await expect(preview.locator('thead th').first()).toHaveText('study_label');
-  await expect(preview.locator('thead th')).toHaveCount(27);
+  await expect(preview.locator('thead th')).toHaveCount(28);
   await expect(summary).toContainText('未検証セル数');
   await formats.locator('input[value=study_wide]').check();
   await expect(preview.locator('thead th')).toHaveCount(2);

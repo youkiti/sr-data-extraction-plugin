@@ -11,6 +11,7 @@ import { buildCsv } from './csvEncode';
 
 export const AUDIT_HEADER = [
   'study_label',
+  'study_id',
   'document_id',
   'entity_key',
   'field_id',
@@ -169,6 +170,7 @@ export function buildAuditCsv(
           sortKey: `${decision.entityKey}${SEP}${pad(field.fieldIndex)}${SEP}${decision.annotator}${SEP}${decision.annotatorType}${SEP}${pad(seq)}`,
           row: [
             study.studyLabel,
+            study.studyId,
             // document_id は quote の出所文書（Evidence 由来）。添付 Evidence がなければ構造的欠損（§4.4 v0.10）
             attached === null ? AUDIT_MISSING_TOKEN : attached.documentId,
             decision.entityKey,
@@ -207,6 +209,7 @@ export function buildAuditCsv(
         sortKey: `${representative.entityKey}${SEP}${pad(field.fieldIndex)}${SEP}${SEP}${SEP}${pad(0)}`,
         row: [
           study.studyLabel,
+          study.studyId,
           // document_id は代表 Evidence（quote の出所文書）由来（§4.4 v0.10）
           representative.documentId,
           representative.entityKey,
