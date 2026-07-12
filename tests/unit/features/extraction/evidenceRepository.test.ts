@@ -2,6 +2,7 @@ import type { Evidence } from '../../../../src/domain/evidence';
 import {
   appendEvidenceRows,
   ensureEvidenceBboxColumns,
+  ensureEvidenceRelocatedFromColumn,
   evidenceToRow,
   readEvidenceRows,
 } from '../../../../src/features/extraction/evidenceRepository';
@@ -9,6 +10,8 @@ import { SHEET_HEADERS } from '../../../../src/domain/sheetsSchema';
 
 /** 旧ヘッダ（bbox 列導入前）の 12 列 */
 const LEGACY_HEADER = SHEET_HEADERS.Evidence.slice(0, 12);
+/** bbox 5 列込み・relocated_from 導入前の 17 列（issue #94 の移行元ヘッダ） */
+const BBOX_ONLY_HEADER = SHEET_HEADERS.Evidence.slice(0, 17);
 
 function makeEvidence(overrides: Partial<Evidence> = {}): Evidence {
   return {
@@ -26,6 +29,7 @@ function makeEvidence(overrides: Partial<Evidence> = {}): Evidence {
     anchorStatus: 'exact',
     bboxPage: null,
     bbox: null,
+    relocatedFrom: null,
     ...overrides,
   };
 }
@@ -43,7 +47,7 @@ function deps(): { fetch: jest.Mock; getAccessToken: jest.Mock } {
 }
 
 describe('evidenceToRow', () => {
-  test('SHEET_HEADERS.Evidence の列順に対応する（bbox 5 列込みで 17 セル）', () => {
+  test('SHEET_HEADERS.Evidence の列順に対応する（bbox 5 列 + relocated_from 込みで 18 セル）', () => {
     expect(evidenceToRow(makeEvidence())).toEqual([
       'ev-1',
       'run-1',
@@ -62,6 +66,30 @@ describe('evidenceToRow', () => {
       null,
       null,
       null,
+      null,
+    ]);
+  });
+
+  test('relocated_from（issue #94）は末尾セルへそのまま書く', () => {
+    expect(evidenceToRow(makeEvidence({ relocatedFrom: 'ev-original' }))).toEqual([
+      'ev-1',
+      'run-1',
+      'study-1',
+      'f-1',
+      'doc-1',
+      '-',
+      '120',
+      false,
+      'total of 120 patients',
+      3,
+      'high',
+      'exact',
+      null,
+      null,
+      null,
+      null,
+      null,
+      'ev-original',
     ]);
   });
 
@@ -86,6 +114,7 @@ describe('evidenceToRow', () => {
       '-',
       null,
       true,
+      null,
       null,
       null,
       null,
@@ -124,6 +153,7 @@ describe('evidenceToRow', () => {
       200,
       300,
       400,
+      null,
     ]);
   });
 });
@@ -222,7 +252,7 @@ describe('readEvidenceRows', () => {
     expect(rows[0]).toEqual(makeEvidence());
   });
 
-  test('17 列ヘッダ + bbox セルが埋まった行を往復できる（§7.4 PR3）', async () => {
+  test('フルヘッダ（18 列）+ bbox セルが埋まった行を往復できる（§7.4 PR3）', async () => {
     const rows = await readEvidenceRows(
       'sheet-1',
       readDeps([
@@ -233,6 +263,35 @@ describe('readEvidenceRows', () => {
     expect(rows[0]).toEqual(
       makeEvidence({ bboxPage: 2, bbox: { ymin: 100, xmin: 200, ymax: 300, xmax: 400 } }),
     );
+  });
+
+  test('17 列ヘッダ（bbox 拡張済み・relocated_from 未拡張）は許容し、relocated_from は null として読む（issue #94 の回帰確認）', async () => {
+    // ensureEvidenceBboxColumns だけを既に実行した既存プロジェクトを模す。
+    // 修正前は「header.length > LEGACY_COLUMN_COUNT なら拡張列 6 個すべてを検証する」実装のため、
+    // 存在しない 18 列目（relocated_from）まで検証しようとして誤って throw していた
+    const rows = await readEvidenceRows(
+      'sheet-1',
+      readDeps([[...BBOX_ONLY_HEADER], sheetRow({ 12: '2', 13: '100', 14: '200', 15: '300', 16: '400' })]),
+    );
+    expect(rows[0]).toEqual(
+      makeEvidence({ bboxPage: 2, bbox: { ymin: 100, xmin: 200, ymax: 300, xmax: 400 } }),
+    );
+  });
+
+  test('relocated_from 列（18 列目）を読む（issue #94）', async () => {
+    const rows = await readEvidenceRows(
+      'sheet-1',
+      readDeps([[...SHEET_HEADERS.Evidence], sheetRow({ 17: 'ev-original' })]),
+    );
+    expect(rows[0]).toEqual(makeEvidence({ relocatedFrom: 'ev-original' }));
+  });
+
+  test('18 列目（relocated_from）の名前不一致はエラー', async () => {
+    const badHeader = [...SHEET_HEADERS.Evidence];
+    badHeader[17] = 'wrong';
+    await expect(
+      readEvidenceRows('sheet-1', readDeps([badHeader, sheetRow()])),
+    ).rejects.toThrow('Evidence のヘッダ 18 列目が "relocated_from" ではありません');
   });
 
   test('13 列目以降（bbox 列）の名前不一致はエラー', async () => {
@@ -371,6 +430,85 @@ describe('ensureEvidenceBboxColumns', () => {
   test('ヘッダ行が無い（空シート）場合も列不一致として throw する', async () => {
     const d = bboxDeps(undefined);
     await expect(ensureEvidenceBboxColumns('sid', d)).rejects.toThrow(
+      'Evidence のヘッダ 1 列目が "evidence_id" ではありません',
+    );
+  });
+});
+
+describe('ensureEvidenceRelocatedFromColumn（issue #94）', () => {
+  /** ensureEvidenceBboxColumns のテストと同じ GET/PUT 出し分けモック */
+  function relocatedFromDeps(headerRow: string[] | undefined): {
+    fetch: jest.Mock;
+    getAccessToken: jest.Mock;
+  } {
+    const fetch = jest.fn(async (_url: string, init?: RequestInit) => {
+      const method = init?.method ?? 'GET';
+      if (method === 'GET') {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            valueRanges: headerRow === undefined ? [] : [{ values: [headerRow] }],
+          }),
+          text: async () => '',
+        } as Response;
+      }
+      return { ok: true, status: 200, json: async () => ({}), text: async () => '' } as Response;
+    });
+    return { fetch, getAccessToken: jest.fn().mockResolvedValue('token') };
+  }
+
+  test('旧 12 列ヘッダはフルヘッダ（18 列）へ拡張する（PUT）', async () => {
+    const d = relocatedFromDeps([...LEGACY_HEADER]);
+    await ensureEvidenceRelocatedFromColumn('sid', d);
+    const putCall = d.fetch.mock.calls.find(([, init]) => (init as RequestInit)?.method === 'PUT');
+    expect(putCall).toBeDefined();
+    const [url, init] = putCall as [string, RequestInit];
+    expect(decodeURIComponent(url)).toContain('/sid/values/Evidence!A1');
+    const body = JSON.parse(init.body as string) as { values: string[][] };
+    expect(body.values).toEqual([[...SHEET_HEADERS.Evidence]]);
+  });
+
+  test('17 列ヘッダ（bbox 拡張済み・relocated_from 未拡張）もフルヘッダ（18 列）へ拡張する（PUT）', async () => {
+    const d = relocatedFromDeps([...BBOX_ONLY_HEADER]);
+    await ensureEvidenceRelocatedFromColumn('sid', d);
+    const putCall = d.fetch.mock.calls.find(([, init]) => (init as RequestInit)?.method === 'PUT');
+    expect(putCall).toBeDefined();
+    const [, init] = putCall as [string, RequestInit];
+    const body = JSON.parse(init.body as string) as { values: string[][] };
+    expect(body.values).toEqual([[...SHEET_HEADERS.Evidence]]);
+  });
+
+  test('既に 18 列（拡張済み）なら no-op（PUT を呼ばない）', async () => {
+    const d = relocatedFromDeps([...SHEET_HEADERS.Evidence]);
+    await ensureEvidenceRelocatedFromColumn('sid', d);
+    const putCall = d.fetch.mock.calls.find(([, init]) => (init as RequestInit)?.method === 'PUT');
+    expect(putCall).toBeUndefined();
+  });
+
+  test('先頭 12 列が SHEET_HEADERS.Evidence と不一致なら throw し、PUT は呼ばない', async () => {
+    const badHeader = [...LEGACY_HEADER];
+    badHeader[2] = 'wrong';
+    const d = relocatedFromDeps(badHeader);
+    await expect(ensureEvidenceRelocatedFromColumn('sid', d)).rejects.toThrow(
+      'Evidence のヘッダ 3 列目が "study_id" ではありません',
+    );
+    const putCall = d.fetch.mock.calls.find(([, init]) => (init as RequestInit)?.method === 'PUT');
+    expect(putCall).toBeUndefined();
+  });
+
+  test('13 列目以降（bbox 列。存在する場合）の名前不一致は throw する', async () => {
+    const badHeader = [...BBOX_ONLY_HEADER];
+    badHeader[13] = 'wrong';
+    const d = relocatedFromDeps(badHeader);
+    await expect(ensureEvidenceRelocatedFromColumn('sid', d)).rejects.toThrow(
+      'Evidence のヘッダ 14 列目が "bbox_ymin" ではありません',
+    );
+  });
+
+  test('ヘッダ行が無い（空シート）場合も列不一致として throw する', async () => {
+    const d = relocatedFromDeps(undefined);
+    await expect(ensureEvidenceRelocatedFromColumn('sid', d)).rejects.toThrow(
       'Evidence のヘッダ 1 列目が "evidence_id" ではありません',
     );
   });

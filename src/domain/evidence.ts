@@ -49,4 +49,13 @@ export interface Evidence {
    */
   bboxPage: number | null;
   bbox: EvidenceBbox | null;
+  /**
+   * relocate-quote skill（issue #94）で再特定した行が指す、元の（アンカリング失敗）evidence_id。
+   * 通常の抽出行・独立入力の手入力行はすべて null。Evidence は追記型のため、再特定成功時は
+   * 元行を上書きせず新行を追記する。新行は run_id/study_id/field_id/entity_key/document_id を
+   * 元行と同一に保つ（cells.ts の「同一セルは後勝ち」畳み込みがそのまま新行を採用するため）。
+   * anchor_status は再アンカリングの実結果（exact/normalized/fuzzy のいずれか。failed は採用しない
+   * ため relocated_from が付く行には現れない）をそのまま持つ（§5 参照。requirements.md §3.2）
+   */
+  relocatedFrom: string | null;
 }

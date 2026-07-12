@@ -1360,6 +1360,76 @@ describe('bootstrapApp: #/pilot', () => {
     expect(decisionAppendCount()).toBeGreaterThan(beforeOutcomeAdd);
   });
 
+  test('#/pilot の「AI で再特定」（issue #94）が persistPilotRelocateQuote に配線されている', async () => {
+    // createFakeDeps の既定 loadApiKey は null（未設定）を返すため、relocateQuoteService は
+    // LLM を呼ばず missingApiKeyMessage で not_found を返す。ctx.pilot.onRelocateQuote →
+    // persistPilotRelocateQuote → relocateQuoteService.relocateQuote までの配線を
+    // 実 LLM 呼び出し無しで確認できる
+    const verification = {
+      study: STUDY_RECORD,
+      documents: [
+        {
+          document: DOC_RECORD,
+          extractedPages: [{ page: 1, text: 'a total of 120 patients were randomised' }],
+          extractedTextError: null,
+        },
+      ],
+      loadPdfView: async () => ({ pdf: null, pdfError: 'テストでは PDF なし', textPages: [] }),
+      retryPdfView: async () => ({ pdf: null, pdfError: 'テストでは PDF なし', textPages: [] }),
+      fields: [FIELD],
+      evidence: [
+        {
+          evidenceId: 'ev-1',
+          runId: 'run-1',
+          studyId: 'study-1',
+          documentId: 'doc-1',
+          fieldId: 'f-total',
+          entityKey: '-',
+          value: '120',
+          notReported: false,
+          quote: 'mistyped quote not in the text',
+          page: 1,
+          confidence: 'high',
+          anchorStatus: 'failed',
+          bboxPage: null,
+          bbox: null,
+        },
+      ],
+      decisions: [],
+      annotator: 'tester@example.com',
+      schemaVersion: 1,
+      armStructure: null,
+    };
+    const stub = createWindowStub(
+      pilotPreloaded({
+        selectionInitialized: true,
+        selectedStudyIds: ['study-1'],
+        model: 'gemini-test',
+        run: { ...RUN, studyIds: ['study-1'] },
+        runFields: [FIELD],
+        evidence: verification.evidence,
+        verifyStudyId: 'study-1',
+        verification,
+      } as unknown as Partial<AppState['pilot']>),
+    );
+    const { deps } = createFakeDeps([
+      ['study_id', 'annotator', 'annotator_type', 'schema_version', 'run_id', 'updated_at'],
+    ]);
+    await bootstrapApp(asWindow(stub), deps);
+    stub.location.hash = '#/pilot';
+    stub.fireHashChange();
+    await flush();
+
+    const relocateButton = document.querySelector<HTMLButtonElement>('.verify__quote-relocate');
+    expect(relocateButton).not.toBeNull();
+    relocateButton!.click();
+    await flush();
+    await flush();
+    expect(document.querySelector('.verify__quote-relocate-not-found')?.textContent).toBe(
+      'AI でも見つかりませんでした。本文内検索をお試しください',
+    );
+  });
+
   test('#/pilot のレイアウトモードトグルが onChangeLayoutMode（setPilotLayoutMode）に配線されている', async () => {
     const verification = {
       study: STUDY_RECORD,
@@ -2149,6 +2219,44 @@ describe('bootstrapApp: #/verify・#/dashboard', () => {
     await flush();
     await flush();
     expect(decisionAppendCount()).toBeGreaterThan(beforeOutcomeAdd);
+  });
+
+  test('#/verify の「AI で再特定」（issue #94）が persistVerifyRelocateQuote に配線されている', async () => {
+    // createFakeDeps 系の既定 fetch では Drive のテキスト取得も API キーも用意されないため、
+    // relocateQuoteService はいずれかの早期 not_found 経路（extracted_texts 空 or API キー未設定）
+    // で完了する。ここでは ctx.verify.onRelocateQuote → persistVerifyRelocateQuote →
+    // relocateQuoteService.relocateQuote までの配線が実際に呼ばれることだけを確認する
+    const stub = createWindowStub(verifyPreloaded());
+    const failedEvidenceRow = [
+      'ev-1',
+      'run-1',
+      'study-1',
+      'f-total',
+      'doc-1',
+      '-',
+      '120',
+      'FALSE',
+      'mistyped quote not present in the text',
+      '1',
+      'high',
+      'failed',
+    ];
+    const tabs = { ...BASE_TABS, Evidence: [[...SHEET_HEADERS.Evidence], failedEvidenceRow] };
+    const { deps } = createVerifyFakeDeps(tabs);
+    await bootstrapApp(asWindow(stub), deps);
+    stub.location.hash = '#/verify';
+    stub.fireHashChange();
+    await flush();
+    await flush();
+
+    const relocateButton = document.querySelector<HTMLButtonElement>('.verify__quote-relocate');
+    expect(relocateButton).not.toBeNull();
+    relocateButton!.click();
+    await flush();
+    await flush();
+    expect(document.querySelector('.verify__quote-relocate-not-found')?.textContent).toBe(
+      'AI でも見つかりませんでした。本文内検索をお試しください',
+    );
   });
 
   test('?entity= ディープリンクは verify スライスへ写り、該当タブへ切替える', async () => {

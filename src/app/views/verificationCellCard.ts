@@ -43,6 +43,19 @@ export interface CellCardModel {
    * rob_domain タブの judgement セル以外は該当エントリを持たない
    */
   robAlgorithmInfo: ReadonlyMap<string, RobAlgorithmInfo>;
+  /**
+   * relocate-quote（issue #94）: 「AI で再特定」ボタンを出すか。
+   * options.onRelocateQuote が注入されていないパネル（そもそも配線していない画面）では
+   * false になる。実際にボタンが出る条件はさらにセル側の anchor_status === 'failed' も要る
+   * （renderQuote 参照）。省略時 false（既存フィクスチャの互換のため optional）
+   */
+  canRelocateQuote?: boolean;
+  /**
+   * relocate-quote の実行状態（issue #94）。cellKey → 'running'（実行中）/
+   * 'not_found'（直近の再特定で見つからなかった）。値が無いセルは通常表示（ボタンのみ）。
+   * 省略時は空扱い（既存フィクスチャの互換のため optional）
+   */
+  relocateStatus?: ReadonlyMap<string, 'running' | 'not_found'>;
 }
 
 /** renderCell が実際に呼び出す最小のハンドラ集合 */
@@ -60,6 +73,11 @@ export interface CellCardHandlers {
   onSearchQuote(quote: string): void;
   /** 「他 n 箇所に一致」の切替 */
   onCycleMatch(cellKey: string): void;
+  /**
+   * 「AI で再特定」ボタン（anchor failed のもう一つのフォールバック。issue #94）。
+   * 実行中は呼び出し側（verificationPanel）がボタンを disabled にするため多重発火は起きない
+   */
+  onRelocateQuote(cellKey: string): void;
   /** 判定済みブロックの展開カードの「たたむ」（フォーカスモードの詳細ストリップでは発火しない） */
   onCollapseDecided(): void;
 }
@@ -248,6 +266,28 @@ function renderQuote(
       });
       searchButton.addEventListener('click', () => handlers.onSearchQuote(quoteText));
       children.push(searchButton);
+    }
+    // 「AI で再特定」（issue #94）: anchor_status が実際に 'failed' のセルにのみ出す
+    // （unanchored 分岐は理論上それ以外の理由でも通りうるため、ボタンの対象は明示的に絞る）
+    if (model.canRelocateQuote === true && evidence.anchorStatus === 'failed') {
+      const status = model.relocateStatus?.get(cell.cellKey);
+      const relocateButton = el('button', {
+        className: 'verify__quote-relocate',
+        text: status === 'running' ? 'AI で再特定中…' : 'AI で再特定',
+        attributes: { type: 'button' },
+      }) as HTMLButtonElement;
+      relocateButton.disabled = status === 'running';
+      relocateButton.addEventListener('click', () => handlers.onRelocateQuote(cell.cellKey));
+      children.push(relocateButton);
+      if (status === 'not_found') {
+        children.push(
+          el('p', {
+            className: 'verify__quote-relocate-not-found',
+            attributes: { role: 'status' },
+            text: 'AI でも見つかりませんでした。本文内検索をお試しください',
+          }),
+        );
+      }
     }
   }
   return el('div', { className: 'verify__quote' }, children);

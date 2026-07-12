@@ -1908,6 +1908,12 @@
   margin-right: 8px;
 }
 
+/* 「AI で再特定」の not_found 案内（issue #94）。verify__quote-unanchored と同系統の警告色 */
+.verify__quote-relocate-not-found {
+  margin: 4px 0 0;
+  color: var(--color-danger);
+}
+
 .verify__actions,
 .verify__editor {
   display: flex;

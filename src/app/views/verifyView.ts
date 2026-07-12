@@ -134,6 +134,7 @@ export function renderVerifyView(state: AppState, ctx: ViewContext): HTMLElement
         onDecision: (decision) => ctx.verify.onDecision(decision),
         onArmConfirm: (arms) => ctx.verify.onArmConfirm(arms),
         onInstanceDeclare: (decisions) => ctx.verify.onInstanceDeclare?.(decisions),
+        onRelocateQuote: (evidence) => ctx.verify.onRelocateQuote(evidence),
         focusEntityKey: verify.deepLinkEntityKey,
         layoutMode: verify.layoutMode,
         onLayoutModeChange: (mode) => ctx.verify.onChangeLayoutMode(mode),

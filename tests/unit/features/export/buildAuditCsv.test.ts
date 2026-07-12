@@ -91,6 +91,7 @@ const evidence = (
   anchorStatus: 'exact',
   bboxPage: null,
   bbox: null,
+  relocatedFrom: null,
   ...overrides,
 });
 
@@ -214,6 +215,26 @@ describe('buildAuditCsv', () => {
     const decisions = [decision('d1', 'f1', '-', 'accept', '2026-07-01T13:00:00Z')];
     const result = buildAuditCsv(studies, decisions, evidences, runs, fields);
     expect(dataRows(result.csv)[0]?.[10]).toBe('e-retry');
+  });
+
+  test('relocate-quote（issue #94）で同一 run_id の Evidence が追記された場合、後に追記された行を添付する', () => {
+    // relocateQuoteService は再特定した新 Evidence 行を元の失敗行と同じ run_id で追記するため、
+    // startedAtOf() は両者で同値になる（同一 run を指す）。追記順（= evidences 配列の並び）で
+    // 後ろにある行（再特定成功後の行）が「後勝ち」で採用されることを確認する
+    // （修正前の `>` 比較は同値ケースで常に先頭を残してしまう回帰があった）
+    const studies = [study('d1', 'Tanaka 2023')];
+    const fields = [field('f1', 'total_n', 1)];
+    const runs = [run('run-1', 1, '2026-07-01T00:00:00Z')];
+    const evidences = [
+      evidence('e-original', 'run-1', 'd1', 'f1', '-', { anchorStatus: 'failed', quote: null, page: null }),
+      evidence('e-relocated', 'run-1', 'd1', 'f1', '-', {
+        anchorStatus: 'fuzzy',
+        relocatedFrom: 'e-original',
+      }),
+    ];
+    const decisions = [decision('d1', 'f1', '-', 'accept', '2026-07-01T13:00:00Z')];
+    const result = buildAuditCsv(studies, decisions, evidences, runs, fields);
+    expect(dataRows(result.csv)[0]?.[10]).toBe('e-relocated');
   });
 
   test('Evidence 欠損は正常: 独立抽出行への判定・schema_version 不一致は Evidence 列空', () => {

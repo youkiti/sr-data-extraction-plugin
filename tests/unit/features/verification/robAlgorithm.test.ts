@@ -774,6 +774,7 @@ function makeEvidence(fieldId: string, entityKey: string, value: string | null):
     anchorStatus: null,
     bboxPage: null,
     bbox: null,
+    relocatedFrom: null,
   };
 }
 

@@ -53,6 +53,7 @@ import {
   persistPilotArmConfirmation,
   persistPilotDecision,
   persistPilotInstanceDeclarations,
+  persistPilotRelocateQuote,
   runPilot,
   setPilotLayoutMode,
   setPilotModel,
@@ -75,6 +76,7 @@ import {
   persistVerifyArmConfirmation,
   persistVerifyDecision,
   persistVerifyInstanceDeclarations,
+  persistVerifyRelocateQuote,
   setVerifyLayoutMode,
 } from './services/verifyService';
 import { loadDashboard } from './services/dashboardService';
@@ -486,6 +488,7 @@ export async function bootstrapApp(
       onInstanceDeclare: (decisions) => {
         void persistPilotInstanceDeclarations(store, deps, decisions);
       },
+      onRelocateQuote: (evidence) => persistPilotRelocateQuote(store, deps, evidence),
       onChangeLayoutMode: (mode) => {
         void setPilotLayoutMode(store, deps, mode);
       },
@@ -538,6 +541,7 @@ export async function bootstrapApp(
       onInstanceDeclare: (decisions) => {
         void persistVerifyInstanceDeclarations(store, deps, decisions);
       },
+      onRelocateQuote: (evidence) => persistVerifyRelocateQuote(store, deps, evidence),
       onChangeLayoutMode: (mode) => {
         void setVerifyLayoutMode(store, deps, mode);
       },

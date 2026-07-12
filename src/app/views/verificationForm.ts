@@ -98,6 +98,10 @@ export interface VerificationFormModel {
    * verificationPanel が現在タブの TabModel から collectRobAlgorithmInfo で再計算する
    */
   robAlgorithmInfo: ReadonlyMap<string, RobAlgorithmInfo>;
+  /** relocate-quote（issue #94）: 「AI で再特定」ボタンを出すか。verificationCellCard.CellCardModel 参照 */
+  canRelocateQuote?: boolean;
+  /** relocate-quote の実行状態（issue #94）。cellKey → 'running' / 'not_found' */
+  relocateStatus?: ReadonlyMap<string, 'running' | 'not_found'>;
 }
 
 export interface VerificationFormHandlers {
@@ -115,6 +119,8 @@ export interface VerificationFormHandlers {
   onSearchQuote(quote: string): void;
   /** 「他 n 箇所に一致」の切替 */
   onCycleMatch(cellKey: string): void;
+  /** 「AI で再特定」ボタン（issue #94） */
+  onRelocateQuote(cellKey: string): void;
   /** 判定済みブロックのコンパクト行クリック → 展開（フォーカスも移す） */
   onExpandDecided(cellKey: string): void;
   /** 展開中カードの「たたむ」 */
