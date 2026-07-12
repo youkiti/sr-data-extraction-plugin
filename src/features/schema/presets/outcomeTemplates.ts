@@ -44,12 +44,18 @@ export const OUTCOME_TEMPLATE_BINARY: readonly SchemaEditorRow[] = [
 ];
 
 /**
- * 連続アウトカム: 群別 mean / SD / 解析対象数 + 散布度の代替報告（SE / CI / median + IQR / range）。
+ * 連続アウトカム: 群別 mean / SD / 解析対象数 + 散布度の代替報告（SE / CI / median + IQR / range）
+ * + 報告単位の捕捉（outcome_unit_reported）。
  * SD が未報告で SE や信頼区間しか載っていない論文、median + IQR / range で報告する論文
  * （skewed data で頻出。issue #43）に対応するため、報告された統計量をそのまま構造化して
  * 抽出する（SD への換算は行わない。SE / CI は Cochrane Handbook §6.5.2 の式、
  * median 系は Wan 2014 / Luo 2018 / Shi 2020 法で解析段階に換算できるよう素材を揃える方針）。
- * mean / SD / n 以外の 9 項目は該当報告があるときだけ値が入る想定のため required = false
+ * 単位換算も同じく解析段階（R + AI 後工程）へ委ねるため、outcome_unit_reported は論文の表記
+ * どおりの単位文字列（例: mmHg, mg/dL, points）をそのまま記録するだけの項目（issue #76）。
+ * これはスキーマ定義側の期待単位（`SchemaField.unit`。data_dictionary.csv の `unit` 列）とは
+ * 別物 — 前者は「論文が実際にどの単位で報告したか」という抽出結果、後者はスキーマ設計者が
+ * 定義時に期待する単位のメモに過ぎない
+ * mean / SD / n 以外の 10 項目は該当報告があるときだけ値が入る想定のため required = false
  */
 export const OUTCOME_TEMPLATE_CONTINUOUS: readonly SchemaEditorRow[] = [
   presetRow({
@@ -59,6 +65,15 @@ export const OUTCOME_TEMPLATE_CONTINUOUS: readonly SchemaEditorRow[] = [
     extractionInstruction:
       'Mean of the outcome measure in this arm at the reported timepoint, exactly as reported (no unit conversion). If only a median is reported, mark this not_reported and use outcome_median instead.',
     example: '5.2',
+  }),
+  presetRow({
+    fieldName: 'outcome_unit_reported',
+    fieldLabel: '報告単位',
+    dataType: 'text',
+    required: false,
+    extractionInstruction:
+      'Unit of the outcome measure exactly as the paper states it (e.g. mmHg, mg/dL, points), with no conversion to another unit. Mark not_reported when the paper does not state a unit.',
+    example: 'mmHg',
   }),
   presetRow({
     fieldName: 'outcome_sd',
