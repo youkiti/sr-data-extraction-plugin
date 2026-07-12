@@ -48,6 +48,28 @@ const STUDY_FIELD = makeField({
   dataType: 'text',
 });
 
+const ARM_FIELD = makeField({
+  fieldId: 'f_arm_n',
+  fieldName: 'sample_size_arm',
+  entityLevel: 'arm',
+  dataType: 'integer',
+});
+
+const OUTCOME_FIELD = makeField({
+  fieldId: 'f_mortality',
+  fieldName: 'mortality_n',
+  entityLevel: 'outcome_result',
+  dataType: 'integer',
+});
+
+const ROB_FIELD = makeField({
+  fieldId: 'f_rob_rand',
+  fieldName: 'rob_randomization',
+  entityLevel: 'rob_domain',
+  dataType: 'enum',
+  allowedValues: 'low|some_concerns|high',
+});
+
 const PAGES = [
   { page: 1, text: 'A randomized controlled trial of 120 patients.' },
   { page: 2, text: 'Mortality at 30 days was 12% vs 18%.' },
@@ -87,9 +109,9 @@ const DOCS = [makeDoc()];
 describe('extract-data skill 定数', () => {
   it('skill 名とプロンプト版数を公開する（LLMApiLog 記録用）', () => {
     expect(EXTRACT_DATA_SKILL_NAME).toBe('extract-data');
-    // v5: セクション順を protocol → documents → fields → 規約 → 出力形式 へ並び替え、
-    // 画像パートを Documents 直後へ移動（暗黙 prefix キャッシュ対応。issue #89）
-    expect(EXTRACT_DATA_PROMPT_VERSION).toBe(5);
+    // v6: arm レベル項目を含むバッチの suffix 末尾へ completeness 強調を追記
+    // （小型モデルの arm omission 対策。issue #97）
+    expect(EXTRACT_DATA_PROMPT_VERSION).toBe(6);
   });
 
   it('システムプロンプトに verbatim quote の規約（300 文字上限）と document_index の規約を含む', () => {
@@ -380,6 +402,35 @@ describe('buildExtractDataUserPrompt', () => {
     expect(prompt).toContain('- rob_domain level:');
     expect(prompt.indexOf('- arm level:')).toBeLessThan(prompt.indexOf('- outcome_result level:'));
   });
+
+  it('arm レベル項目を含むバッチは suffix 末尾に completeness 強調セクションを追記する（issue #97: flash-lite の arm omission 対策）', () => {
+    const prompt = buildExtractDataUserPrompt({ fields: [ARM_FIELD], documents: DOCS });
+    const outputPos = prompt.indexOf('## Output format');
+    const completenessPos = prompt.indexOf('## Completeness check (arm-level fields)');
+    expect(outputPos).toBeGreaterThan(-1);
+    expect(completenessPos).toBeGreaterThan(-1);
+    // Output format セクションより後ろ = プロンプトの末尾に来る
+    expect(completenessPos).toBeGreaterThan(outputPos);
+    expect(prompt.trimEnd().endsWith('arms 2, 3, ... require the same complete set of items as arm 1.')).toBe(
+      true,
+    );
+    expect(prompt).toContain('"arm:1", "arm:2"');
+  });
+
+  it('study / outcome_result / rob_domain のみのバッチには completeness セクションを追記しない（arm 項目が無いバッチへのノイズ回避）', () => {
+    const prompt = buildExtractDataUserPrompt({
+      fields: [STUDY_FIELD, OUTCOME_FIELD, ROB_FIELD],
+      documents: DOCS,
+    });
+    expect(prompt).not.toContain('## Completeness check');
+  });
+
+  it('prefix（Protocol context + Documents）は arm レベル項目の有無に関わらず 1 文字も変わらない（issue #97: suffix 末尾追記が prefix キャッシュに影響しないことの確認）', () => {
+    const prefixOf = (prompt: string) => prompt.slice(0, prompt.indexOf('## Fields to extract'));
+    const withStudyOnly = buildExtractDataUserPrompt({ fields: [STUDY_FIELD], documents: DOCS });
+    const withArm = buildExtractDataUserPrompt({ fields: [ARM_FIELD], documents: DOCS });
+    expect(prefixOf(withArm)).toBe(prefixOf(withStudyOnly));
+  });
 });
 
 describe('buildExtractDataUserContent（pdf_native）', () => {
@@ -443,6 +494,20 @@ describe('buildExtractDataUserContent（pdf_native）', () => {
     const prefixText = (parts[0] as { text: string }).text;
     const suffixText = (parts[parts.length - 1] as { text: string }).text;
     expect(`${prefixText}\n\n${suffixText}`).toBe(buildExtractDataUserPrompt(input));
+  });
+
+  it('画像文書 + arm レベル項目のバッチでは末尾の suffix text パートに completeness セクションを含む（issue #97）', () => {
+    const input = { fields: [ARM_FIELD], documents: [makeDoc(), makeImageDoc()] };
+    const content = buildExtractDataUserContent(input) as ChatContentPart[];
+    const suffixPart = content[content.length - 1] as { type: string; text: string };
+    expect(suffixPart.type).toBe('text');
+    expect(suffixPart.text).toContain('## Completeness check (arm-level fields)');
+    expect(suffixPart.text.trimEnd().endsWith('arms 2, 3, ... require the same complete set of items as arm 1.')).toBe(
+      true,
+    );
+    // prefix（画像より前の text パート）には現れない
+    const prefixText = (content[0] as { text: string }).text;
+    expect(prefixText).not.toContain('## Completeness check');
   });
 });
 
