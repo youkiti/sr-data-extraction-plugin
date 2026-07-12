@@ -8,9 +8,13 @@ import {
   persistPilotDecision,
   persistPilotInstanceDeclarations,
   persistPilotRelocateQuote,
+  resetPilotFieldSelection,
   runPilot,
   setPilotLayoutMode,
   setPilotModel,
+  togglePilotField,
+  togglePilotFieldSection,
+  togglePilotFieldSectionCollapse,
   togglePilotStudy,
   type PilotServiceDeps,
 } from '../../../../src/app/services/pilotService';
@@ -441,6 +445,56 @@ describe('togglePilotStudy / setPilotModel', () => {
   });
 });
 
+describe('resetPilotFieldSelection / togglePilotField / togglePilotFieldSection / togglePilotFieldSectionCollapse（issue #80）', () => {
+  const fields = [
+    makeField({ fieldId: 'f-1', section: 'methods' }),
+    makeField({ fieldId: 'f-2', section: 'methods' }),
+    makeField({ fieldId: 'f-3', section: 'results' }),
+  ];
+
+  test('resetPilotFieldSelection: 選択・折りたたみを既定（全選択・全展開）へ戻す', () => {
+    const store = makeStore({
+      fields,
+      pilot: { selectedFieldIds: ['f-1'], collapsedFieldSections: ['methods'] },
+    });
+    resetPilotFieldSelection(store);
+    expect(store.getState().pilot.selectedFieldIds).toBeNull();
+    expect(store.getState().pilot.collapsedFieldSections).toEqual([]);
+  });
+
+  test('togglePilotField: 単一項目の選択解除・追加', () => {
+    const store = makeStore({ fields, pilot: { selectedFieldIds: null } });
+    togglePilotField(store, 'f-2', false);
+    expect(store.getState().pilot.selectedFieldIds?.sort()).toEqual(['f-1', 'f-3']);
+    togglePilotField(store, 'f-2', true);
+    expect(store.getState().pilot.selectedFieldIds).toBeNull();
+  });
+
+  test('togglePilotFieldSection: section 単位の全選択 / 全解除', () => {
+    const store = makeStore({ fields, pilot: { selectedFieldIds: null } });
+    togglePilotFieldSection(store, ['f-1', 'f-2'], false);
+    expect(store.getState().pilot.selectedFieldIds).toEqual(['f-3']);
+    togglePilotFieldSection(store, ['f-1', 'f-2'], true);
+    expect(store.getState().pilot.selectedFieldIds).toBeNull();
+  });
+
+  test('togglePilotFieldSectionCollapse: 折りたたみの切替', () => {
+    const store = makeStore({ fields, pilot: { collapsedFieldSections: [] } });
+    togglePilotFieldSectionCollapse(store, 'methods');
+    expect(store.getState().pilot.collapsedFieldSections).toEqual(['methods']);
+    togglePilotFieldSectionCollapse(store, 'methods');
+    expect(store.getState().pilot.collapsedFieldSections).toEqual([]);
+  });
+
+  test('togglePilotField / togglePilotFieldSection: スキーマ未読込（null）でも落ちない（防御分岐）', () => {
+    const store = makeStore({ fields: null, pilot: { selectedFieldIds: null } });
+    togglePilotField(store, 'f-1', false);
+    expect(store.getState().pilot.selectedFieldIds).toBeNull();
+    togglePilotFieldSection(store, ['f-1'], true);
+    expect(store.getState().pilot.selectedFieldIds).toBeNull();
+  });
+});
+
 describe('runPilot: 事前バリデーション', () => {
   test('プロジェクト未選択・実行中は何もしない', async () => {
     const noProject = makeStore({ withProject: false });
@@ -464,6 +518,14 @@ describe('runPilot: 事前バリデーション', () => {
     const noSelection = makeStore({ fields: [makeField()], pilot: { selectedStudyIds: [] } });
     await runPilot(noSelection, makeDeps());
     expect(noSelection.getState().pilot.runError).toContain('対象 study を 1〜3 件');
+
+    const noFieldsSelected = makeStore({
+      fields: [makeField()],
+      documents: [makeDocument()],
+      pilot: { selectedStudyIds: ['study-doc-1'], selectedFieldIds: [] },
+    });
+    await runPilot(noFieldsSelected, makeDeps());
+    expect(noFieldsSelected.getState().pilot.runError).toContain('抽出項目を 1 つ以上選択してください');
 
     const noModel = makeStore({
       fields: [makeField()],
@@ -539,6 +601,8 @@ describe('runPilot: 実行', () => {
       runType: 'pilot',
       model: 'gemini-test',
       protocolContext: 'PROTOCOL TEXT',
+      // 全選択（既定）時は fieldIds: null で渡す（issue #80）
+      fieldIds: null,
     });
     expect(params.documents.map((doc) => doc.documentId)).toEqual(['doc-1']);
     // pdf_native（handoff-scanned-pdf-native-highlight.md §7.4 PR2）経路のため
@@ -563,6 +627,24 @@ describe('runPilot: 実行', () => {
     const loaded = await state.pilot.verification?.loadPdfView('doc-1');
     expect(loaded?.pdf).not.toBeNull();
     expect(getFileBinaryMock).toHaveBeenCalledTimes(1);
+  });
+
+  test('サブセット選択時は絞った fields + 選択 field_ids を runExtraction へ渡す。埋め込み検証 UI の runFields は絞り込まない（issue #80）', async () => {
+    const fields = [makeField({ fieldId: 'f-1' }), makeField({ fieldId: 'f-2' })];
+    const store = makeStore({
+      documents: [makeDocument()],
+      fields,
+      pilot: { selectedStudyIds: ['study-doc-1'], model: 'gemini-test', selectedFieldIds: ['f-2'] },
+    });
+    runExtractionMock.mockResolvedValue(makeOutcome({ evidence: [makeEvidence({ fieldId: 'f-2' })] }));
+    await runPilot(store, makeDeps());
+    const [params] = runExtractionMock.mock.calls[0] as unknown as [
+      Parameters<typeof runExtraction>[0],
+    ];
+    expect(params.fieldIds).toEqual(['f-2']);
+    expect(params.fields.map((field) => field.fieldId)).toEqual(['f-2']);
+    // 埋め込み検証 UI（runFields）は全項目のまま。人間が未抽出項目も手動判定できるようにするため
+    expect(store.getState().pilot.runFields?.map((field) => field.fieldId)).toEqual(['f-1', 'f-2']);
   });
 
   test('保存した OpenAI 互換接続をパイロット抽出へ渡す', async () => {

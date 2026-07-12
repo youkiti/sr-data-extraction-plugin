@@ -288,6 +288,12 @@ test('実行 → 完了 → 埋め込み検証 UI（ハイライト + 判定 + D
         await route.fulfill({
           json: { valueRanges: [{ values: [[...SHEET_HEADERS.Evidence]] }] },
         });
+      } else if (url.includes('values:batchGet') && url.includes('ExtractionRuns')) {
+        // ExtractionRuns タブのヘッダ拡張チェック（ensureRunFieldIdsColumn。issue #80）。
+        // 既にフルヘッダ（field_ids 込み 15 列）が書かれている想定にして拡張 PUT を no-op にする
+        await route.fulfill({
+          json: { valueRanges: [{ values: [[...SHEET_HEADERS.ExtractionRuns]] }] },
+        });
       } else {
         await route.fulfill({ json: { values: [] } });
       }

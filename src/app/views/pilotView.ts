@@ -10,11 +10,16 @@ import {
   type StudySelectionItem,
 } from '../../features/documents/studySelection';
 import { studyLabelMap } from '../../features/documents/studyRepository';
+import {
+  filterFieldsBySelection,
+  resolveFieldIdsForRun,
+} from '../../features/extraction/fieldSelection';
 import { planRun } from '../../features/extraction/planRun';
 import { el } from '../ui/dom';
 import { createModelSelect } from '../ui/modelSelect';
 import type { AppState } from '../store';
 import { renderConflictWarning } from './conflictWarning';
+import { hasZeroFieldsSelected, renderFieldSelectionChecklist } from './fieldSelectionChecklist';
 import type { ViewContext } from './types';
 import { renderCachedVerificationPanel } from './verificationPanel';
 
@@ -108,10 +113,21 @@ function renderEstimate(state: AppState): HTMLElement {
       text: 'コスト概算: 対象 study を選択すると表示されます',
     });
   }
+  if (hasZeroFieldsSelected(state.pilot.selectedFieldIds, fields)) {
+    return el('p', {
+      id: 'pilot-estimate',
+      className: 'pilot__estimate',
+      text: 'コスト概算: 対象項目を選択すると表示されます',
+    });
+  }
+  const estimateFields = filterFieldsBySelection(
+    fields,
+    resolveFieldIdsForRun(state.pilot.selectedFieldIds),
+  );
   try {
     const plan = planRun({
       documents: selected,
-      fields,
+      fields: estimateFields,
       model: state.pilot.model === '' ? 'unknown' : state.pilot.model,
       protocolContext: null,
     });
@@ -141,6 +157,26 @@ function renderEstimate(state: AppState): HTMLElement {
   }
 }
 
+/** 抽出対象フィールドのチェックリスト（issue #80）。スキーマ未読込時は何も出さない */
+function renderFieldSelector(state: AppState, ctx: ViewContext): HTMLElement | null {
+  const fields = state.schema.currentFields;
+  if (fields === null || fields.length === 0) {
+    return null;
+  }
+  return el('div', { className: 'pilot__field-selector' }, [
+    el('h4', { text: '対象項目（既定 = 全項目）' }),
+    renderFieldSelectionChecklist({
+      idPrefix: 'pilot',
+      fields,
+      selection: state.pilot.selectedFieldIds,
+      collapsedSections: state.pilot.collapsedFieldSections,
+      onToggleField: (fieldId, selected) => ctx.pilot.onToggleField(fieldId, selected),
+      onToggleSection: (fieldIds, selected) => ctx.pilot.onToggleFieldSection(fieldIds, selected),
+      onToggleCollapse: (section) => ctx.pilot.onToggleFieldSectionCollapse(section),
+    }),
+  ]);
+}
+
 function renderSetup(state: AppState, ctx: ViewContext): HTMLElement {
   const modelSelect = createModelSelect(document, {
     id: 'pilot-model',
@@ -151,14 +187,17 @@ function renderSetup(state: AppState, ctx: ViewContext): HTMLElement {
     className: 'pilot__model-input',
   });
 
+  const fields = state.schema.currentFields ?? [];
   const runButton = el('button', {
     id: 'pilot-run',
     className: 'pilot__run',
     text: 'パイロット抽出を実行',
     attributes: { type: 'button' },
   });
+  runButton.disabled = hasZeroFieldsSelected(state.pilot.selectedFieldIds, fields);
   runButton.addEventListener('click', () => ctx.pilot.onRun());
 
+  const fieldSelector = renderFieldSelector(state, ctx);
   const children: HTMLElement[] = [
     el('h3', { text: '新規パイロット' }),
     el('p', {
@@ -167,6 +206,7 @@ function renderSetup(state: AppState, ctx: ViewContext): HTMLElement {
     }),
     el('h4', { text: '対象試験（2〜3 件を推奨）' }),
     renderStudySelector(state, ctx),
+    ...(fieldSelector === null ? [] : [fieldSelector]),
     el('div', { className: 'pilot__model' }, [
       el('label', { text: 'モデル: ', attributes: { for: 'pilot-model' } }),
       modelSelect,

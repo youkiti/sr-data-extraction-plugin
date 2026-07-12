@@ -21,6 +21,9 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<ExtractViewCallba
   const callbacks = {
     onToggleStudy: jest.fn(),
     onChangeModel: jest.fn(),
+    onToggleField: jest.fn(),
+    onToggleFieldSection: jest.fn(),
+    onToggleFieldSectionCollapse: jest.fn(),
     onRequestRun: jest.fn(),
     onConfirmRun: jest.fn(),
     onCancelConfirm: jest.fn(),
@@ -78,6 +81,9 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<ExtractViewCallba
       pilot: {
         onToggleStudy: jest.fn(),
         onChangeModel: jest.fn(),
+        onToggleField: jest.fn(),
+        onToggleFieldSection: jest.fn(),
+        onToggleFieldSectionCollapse: jest.fn(),
         onRun: jest.fn(),
         onSelectRun: jest.fn(),
         onReloadHistory: jest.fn(),
@@ -399,6 +405,58 @@ describe('未実行（setup）', () => {
     expect(callbacks.onToggleStudy).toHaveBeenCalledWith('study-3', true);
   });
 
+  test('抽出済みバッジ: サブセット run が直近なら「直近 run は n/m 項目」を添える（issue #80）', () => {
+    const docs = [makeDocument({ documentId: 'doc-1', studyId: 'study-1' })];
+    const { root } = render(
+      makeState({
+        documents: docs,
+        extract: {
+          extractedStudyIds: ['study-1'],
+          fieldSubsetBadges: { 'study-1': { selected: 2, total: 5 } },
+        },
+      }),
+    );
+    expect(root.querySelector('.extract__doc-extracted')?.textContent).toBe(
+      '抽出済み（直近 run は 2/5 項目）',
+    );
+  });
+
+  test('対象項目チェックリスト: 選択・section 全選択/全解除・折りたたみのコールバック配線（issue #80）', () => {
+    const fields = [
+      makeField({ fieldId: 'f-1', section: 'methods', fieldLabel: '対象年齢', fieldName: 'age' }),
+      makeField({ fieldId: 'f-2', section: 'results', fieldLabel: '死亡率', fieldName: 'mortality' }),
+    ];
+    const { root, callbacks } = render(makeState({ fields }));
+    expect(root.querySelector('#extract-fields')).not.toBeNull();
+
+    const checkbox = root.querySelector<HTMLInputElement>('.extract__field-checkbox');
+    checkbox!.checked = false;
+    checkbox!.dispatchEvent(new Event('change'));
+    expect(callbacks.onToggleField).toHaveBeenCalledWith('f-1', false);
+
+    root.querySelector<HTMLButtonElement>('.extract__field-section-toggle')?.click();
+    expect(callbacks.onToggleFieldSection).toHaveBeenCalledWith(['f-1'], false);
+
+    root.querySelector<HTMLButtonElement>('.extract__field-collapse')?.click();
+    expect(callbacks.onToggleFieldSectionCollapse).toHaveBeenCalledWith('methods');
+  });
+
+  test('対象項目チェックリスト: スキーマ未読込・空のときは出さない', () => {
+    for (const fields of [null, [] as SchemaField[]]) {
+      const { root } = render(makeState({ fields }));
+      expect(root.querySelector('#extract-fields')).toBeNull();
+    }
+  });
+
+  test('選択 0 件は実行ボタンを disabled にする', () => {
+    const fields = [makeField()];
+    const { root } = render(
+      makeState({ fields, extract: { selectedFieldIds: [] } }),
+    );
+    expect(root.querySelector<HTMLButtonElement>('#extract-run')?.disabled).toBe(true);
+    expect(root.querySelector('#extract-field-error')).not.toBeNull();
+  });
+
   test('モデル変更・実行ボタンのコールバック + インラインエラー表示', () => {
     const { root, callbacks } = render(
       makeState({ extract: { runError: 'モデルを選択してください（「その他」で直接入力も可）' } }),
@@ -442,6 +500,13 @@ describe('未実行（setup）', () => {
     expect(estimate?.textContent).toContain('プロトコル本文ぶんは概算に含まれません');
   });
 
+  test('コスト概算: 対象項目 0 件は案内文（issue #80）', () => {
+    const { root } = render(makeState({ extract: { selectedFieldIds: [] } }));
+    expect(root.querySelector('#extract-estimate')?.textContent).toBe(
+      'コスト概算: 対象項目を選択すると表示されます',
+    );
+  });
+
   test('単価表にあるモデルは金額を表示し、モデル未入力は unknown で概算する', () => {
     const priced = render(makeState({ extract: { model: 'gemini-2.5-pro' } }));
     expect(priced.root.querySelector('#extract-estimate')?.textContent).toMatch(
@@ -482,12 +547,27 @@ describe('実行確認カード', () => {
     const card = root.querySelector('#extract-confirm');
     expect(card?.getAttribute('role')).toBe('alertdialog');
     expect(card?.textContent).toContain('対象 1 試験をモデル gemini-test で抽出します。');
+    // 全選択時は「全項目（m）」（issue #80）
+    expect(root.querySelector('#extract-confirm-fields')?.textContent).toBe('対象項目: 全項目（1）');
     expect(root.querySelector<HTMLButtonElement>('#extract-run')?.disabled).toBe(true);
 
     root.querySelector<HTMLButtonElement>('#extract-confirm-run')?.click();
     expect(callbacks.onConfirmRun).toHaveBeenCalledTimes(1);
     root.querySelector<HTMLButtonElement>('#extract-confirm-cancel')?.click();
     expect(callbacks.onCancelConfirm).toHaveBeenCalledTimes(1);
+  });
+
+  test('サブセット選択時は「n / m」を表示する（issue #80）', () => {
+    const fields = [makeField({ fieldId: 'f-1' }), makeField({ fieldId: 'f-2' })];
+    const { root } = render(
+      makeState({ fields, extract: { confirming: true, selectedFieldIds: ['f-1'] } }),
+    );
+    expect(root.querySelector('#extract-confirm-fields')?.textContent).toBe('対象項目: 1 / 2');
+  });
+
+  test('スキーマ未読込（null）でも落ちない（防御分岐）', () => {
+    const { root } = render(makeState({ fields: null, extract: { confirming: true } }));
+    expect(root.querySelector('#extract-confirm-fields')?.textContent).toBe('対象項目: 全項目（0）');
   });
 
   test('confirming でなければカードは出さない', () => {

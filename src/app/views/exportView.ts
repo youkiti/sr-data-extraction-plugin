@@ -163,6 +163,12 @@ function renderWarningDialog(
       id: 'export-warning-title',
       text: `未検証の項目が ${unverifiedCount} 件あります。`,
     }),
+    el('p', {
+      className: 'export__warning-note',
+      text:
+        'サブセット抽出（一部項目のみを対象にした実行）が行われている場合、未検証セルの中には' +
+        '意図的に未抽出のままの項目が含まれている可能性があります。',
+    }),
   ];
   if (extraNote !== null) {
     children.push(el('p', { text: extraNote }));

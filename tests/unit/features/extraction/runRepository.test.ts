@@ -4,12 +4,14 @@ import {
   appendExtractionRun,
   ensureRunFieldIdsColumn,
   extractionRunToRow,
+  pickLatestCompletedRunByStudy,
   readCompletedRunMetas,
   readMethodsRunFacts,
   readPilotRuns,
   readRunAuditInfos,
   readRunStudyCoverage,
   readRunSchemaVersions,
+  type CompletedRunStudySummary,
 } from '../../../../src/features/extraction/runRepository';
 
 /** 旧ヘッダ（field_ids 列導入前。14 列）。ensureRunFieldIdsColumn / readRunRows の後方互換テスト用 */
@@ -339,6 +341,101 @@ describe('readRunStudyCoverage', () => {
     await expect(readRunStudyCoverage('sheet-1', readDeps([]))).rejects.toThrow(
       'ExtractionRuns タブにヘッダ行がありません',
     );
+  });
+
+  test('latestCompletedRunByStudy: study_id ごとの直近完了 run を field_ids 込みで返す（issue #80）', async () => {
+    const row = (
+      o: Partial<{ runId: string; studyIds: string; startedAt: string; fieldIds: string }> = {},
+    ): string[] => [
+      o.runId ?? 'run-1',
+      'full',
+      '1',
+      o.studyIds ?? 'study-1',
+      'gemini',
+      'gemini-test',
+      '',
+      'text_only',
+      'done',
+      o.startedAt ?? 't1',
+      't2',
+      '',
+      '',
+      '',
+      o.fieldIds ?? '',
+    ];
+    const values = [
+      [...SHEET_HEADERS.ExtractionRuns],
+      row({ runId: 'run-old', studyIds: 'study-1', startedAt: 't1', fieldIds: 'f-1,f-2' }),
+      row({ runId: 'run-new', studyIds: 'study-1,study-2', startedAt: 't2' }), // fieldIds 空 = 全項目
+    ];
+    const coverage = await readRunStudyCoverage('sheet-1', readDeps(values));
+    // study-1 は新しい run-new（全項目）が勝つ。study-2 は run-new のみ
+    expect(coverage.latestCompletedRunByStudy.get('study-1')).toMatchObject({
+      runId: 'run-new',
+      fieldIds: null,
+    });
+    expect(coverage.latestCompletedRunByStudy.get('study-2')).toMatchObject({
+      runId: 'run-new',
+      fieldIds: null,
+    });
+    expect(coverage.latestCompletedRunByStudy.has('study-3')).toBe(false);
+  });
+
+  test('running 行のみ（中断）は latestCompletedRunByStudy に含めない', async () => {
+    const values = [
+      [...SHEET_HEADERS.ExtractionRuns],
+      runRow('run-1', 'study-1', 'running'),
+    ];
+    const coverage = await readRunStudyCoverage('sheet-1', readDeps(values));
+    expect(coverage.latestCompletedRunByStudy.size).toBe(0);
+  });
+});
+
+describe('pickLatestCompletedRunByStudy（issue #80: S7 バッジ注記の素材）', () => {
+  function summary(overrides: Partial<CompletedRunStudySummary> = {}): CompletedRunStudySummary {
+    return {
+      runId: 'run-1',
+      studyIds: ['study-1'],
+      schemaVersion: 1,
+      startedAt: 't1',
+      fieldIds: null,
+      ...overrides,
+    };
+  }
+
+  test('started_at 昇順で比較し、最新（最大）の run を選ぶ（両方向の比較を通す）', () => {
+    const a = summary({ runId: 'a', startedAt: 't1' });
+    const b = summary({ runId: 'b', startedAt: 't3' });
+    const c = summary({ runId: 'c', startedAt: 't2' });
+    // 挿入順をシャッフルして両方の比較分岐（前が新しい / 前が古い）を通す
+    const result = pickLatestCompletedRunByStudy([b, a, c]);
+    expect(result.get('study-1')?.runId).toBe('b');
+  });
+
+  test('started_at が null は最古として扱う', () => {
+    const withNull = summary({ runId: 'null-run', startedAt: null });
+    const withDate = summary({ runId: 'dated-run', startedAt: 't1' });
+    const result = pickLatestCompletedRunByStudy([withDate, withNull]);
+    expect(result.get('study-1')?.runId).toBe('dated-run');
+  });
+
+  test('started_at が同値・null 同士はシート行順（安定ソート）を保ち、後方が勝つ', () => {
+    const first = summary({ runId: 'first', startedAt: null });
+    const second = summary({ runId: 'second', startedAt: null });
+    const result = pickLatestCompletedRunByStudy([first, second]);
+    expect(result.get('study-1')?.runId).toBe('second');
+  });
+
+  test('study_id ごとに独立して解決する', () => {
+    const runA = summary({ runId: 'run-a', studyIds: ['study-1'], startedAt: 't2' });
+    const runB = summary({ runId: 'run-b', studyIds: ['study-2'], startedAt: 't1' });
+    const result = pickLatestCompletedRunByStudy([runA, runB]);
+    expect(result.get('study-1')?.runId).toBe('run-a');
+    expect(result.get('study-2')?.runId).toBe('run-b');
+  });
+
+  test('summaries が空なら空 Map', () => {
+    expect(pickLatestCompletedRunByStudy([]).size).toBe(0);
   });
 });
 

@@ -227,6 +227,72 @@ export async function readCompletedRunMetas(
   return metas;
 }
 
+/**
+ * S7 の「直近 run は n/m 項目」バッジ注記の素材（issue #80）。readCompletedRunMetas と同じ
+ * 完了判定・列パースだが、study_id ごとの畳み込みに要る study_ids も併せ持つ
+ */
+export interface CompletedRunStudySummary {
+  runId: string;
+  studyIds: string[];
+  schemaVersion: number;
+  startedAt: string | null;
+  /** null = 全項目（後方互換規約） */
+  fieldIds: string[] | null;
+}
+
+/**
+ * 完了行（done / partial_failure）のみを対象に、run_id・study_ids・schema_version・
+ * started_at・field_ids をシート行順（= 追記順）で返す（S7 バッジ注記の素材の下ごしらえ。
+ * readRunStudyCoverage が読み込み済みの rows から呼ぶため fetch はしない）
+ */
+function parseCompletedRunStudySummaries(
+  rows: readonly (string | null)[][],
+): CompletedRunStudySummary[] {
+  const summaries: CompletedRunStudySummary[] = [];
+  rows.forEach((raw, i) => {
+    if (!COMPLETED_STATUSES.has(raw[8] ?? '')) {
+      return;
+    }
+    const context = `ExtractionRuns ${i + 2} 行目`;
+    summaries.push({
+      runId: raw[0] ?? '',
+      studyIds: parseStudyIds(raw[3]),
+      schemaVersion: parseRequiredInteger(raw[2], context, 'schema_version'),
+      startedAt: emptyToNull(raw[9]),
+      fieldIds: parseFieldIds(raw[14]),
+    });
+  });
+  return summaries; // シート行順。並べ替えは pickLatestCompletedRunByStudy が行う
+}
+
+/**
+ * study_id ごとに「その study を含む最新の完了 run」を選ぶ（started_at 昇順で比較。null は最古、
+ * 同値・null 同士は安定ソートによりシート行順を保つ = app/services/verifyService.ts の
+ * composeEvidenceByStudy と同じ規約）
+ */
+export function pickLatestCompletedRunByStudy(
+  summaries: readonly CompletedRunStudySummary[],
+): Map<string, CompletedRunStudySummary> {
+  const sorted = [...summaries].sort((a, b) => {
+    const ak = a.startedAt ?? '';
+    const bk = b.startedAt ?? '';
+    if (ak < bk) {
+      return -1;
+    }
+    if (ak > bk) {
+      return 1;
+    }
+    return 0; // 同値・null 同士は安定ソートによりシート行順を保つ
+  });
+  const result = new Map<string, CompletedRunStudySummary>();
+  for (const summary of sorted) {
+    for (const studyId of summary.studyIds) {
+      result.set(studyId, summary); // 昇順で上書きしていくため最後の代入が最新
+    }
+  }
+  return result;
+}
+
 export interface RunStudyCoverage {
   /** 完了行を持つ run で抽出済みの study_id 集合（S7 既定選択 = 未抽出の全件の素材） */
   extracted: Set<string>;
@@ -235,6 +301,12 @@ export interface RunStudyCoverage {
    * 抽出されていない study_id 集合（S7 の中断バナーの素材）
    */
   interrupted: Set<string>;
+  /**
+   * study_id ごとの直近完了 run（S7 の「直近 run は n/m 項目」バッジ注記の素材。issue #80）。
+   * ExtractionRuns を 1 回読むだけで extracted / interrupted と一緒に組み立てる
+   * （バッジ専用の別読み出しにすると同じタブを 2 回 GET することになるため）
+   */
+  latestCompletedRunByStudy: Map<string, CompletedRunStudySummary>;
 }
 
 /**
@@ -268,7 +340,10 @@ export async function readRunStudyCoverage(
       }
     }
   }
-  return { extracted, interrupted };
+  const latestCompletedRunByStudy = pickLatestCompletedRunByStudy(
+    parseCompletedRunStudySummaries(rows),
+  );
+  return { extracted, interrupted, latestCompletedRunByStudy };
 }
 
 function emptyToNull(cell: string | null | undefined): string | null {

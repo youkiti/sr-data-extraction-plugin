@@ -17,6 +17,14 @@ import { makeLoadDocumentPages } from '../../features/documents/loadDocumentPage
 import { makeLoadDocumentPageImages } from '../../features/documents/loadDocumentPageImages';
 import { buildAiAnnotationRows } from '../../features/extraction/aiAnnotationRows';
 import { readEvidenceRows } from '../../features/extraction/evidenceRepository';
+import {
+  filterFieldsBySelection,
+  resolveFieldIdsForRun,
+  selectedFieldCount,
+  toggleCollapsedSection,
+  toggleFieldSection,
+  toggleFieldSelection,
+} from '../../features/extraction/fieldSelection';
 import { readPilotRuns } from '../../features/extraction/runRepository';
 import { getSchemaFieldsByVersion } from '../../features/schema/schemaRepository';
 import { ensureChildFolder } from '../../lib/google/drive';
@@ -109,6 +117,49 @@ export function setPilotModel(store: Store, model: string): void {
   patchPilot(store, { model: model.trim() });
 }
 
+/**
+ * フィールド選択チェックリストを全選択へリセットする（A-4: 画面入場のたびに全選択へ戻す。
+ * storage への永続化はしない）。bootstrap の `#/pilot` ルート入場時に呼ぶ
+ */
+export function resetPilotFieldSelection(store: Store): void {
+  patchPilot(store, { selectedFieldIds: null, collapsedFieldSections: [] });
+}
+
+/** フィールドチェックリストの単一項目切替 */
+export function togglePilotField(store: Store, fieldId: string, selected: boolean): void {
+  const { schema, pilot } = store.getState();
+  const allFieldIds = (schema.currentFields ?? []).map((field) => field.fieldId);
+  patchPilot(store, {
+    selectedFieldIds: toggleFieldSelection(pilot.selectedFieldIds, allFieldIds, fieldId, selected),
+  });
+}
+
+/** section 見出しの全選択 / 全解除トグル */
+export function togglePilotFieldSection(
+  store: Store,
+  sectionFieldIds: readonly string[],
+  selected: boolean,
+): void {
+  const { schema, pilot } = store.getState();
+  const allFieldIds = (schema.currentFields ?? []).map((field) => field.fieldId);
+  patchPilot(store, {
+    selectedFieldIds: toggleFieldSection(
+      pilot.selectedFieldIds,
+      allFieldIds,
+      sectionFieldIds,
+      selected,
+    ),
+  });
+}
+
+/** section の折りたたみ切替 */
+export function togglePilotFieldSectionCollapse(store: Store, section: string): void {
+  const { pilot } = store.getState();
+  patchPilot(store, {
+    collapsedFieldSections: toggleCollapsedSection(pilot.collapsedFieldSections, section),
+  });
+}
+
 /** documents 一覧を解決する（documents スライスに読込済みならそれを使う） */
 async function resolveDocuments(
   store: Store,
@@ -148,9 +199,14 @@ export async function runPilot(store: Store, deps: PilotServiceDeps): Promise<vo
     });
     return;
   }
-  const { selectedStudyIds, model } = state.pilot;
+  const { selectedStudyIds, model, selectedFieldIds } = state.pilot;
   if (selectedStudyIds.length < 1 || selectedStudyIds.length > 3) {
     patchPilot(store, { runError: '対象 study を 1〜3 件選択してください' });
+    return;
+  }
+  const allFieldIds = fields.map((field) => field.fieldId);
+  if (selectedFieldCount(selectedFieldIds, allFieldIds) === 0) {
+    patchPilot(store, { runError: '抽出項目を 1 つ以上選択してください' });
     return;
   }
   if (model === '') {
@@ -162,6 +218,11 @@ export async function runPilot(store: Store, deps: PilotServiceDeps): Promise<vo
     patchPilot(store, { runError: missingApiKeyMessage(providerResolution.provider) });
     return;
   }
+  // 選択サブセットで fields を絞り込む（全選択時は fieldIds: null。issue #80）。
+  // 埋め込み検証 UI（runFields）は絞り込まず表のデザインの全項目のまま渡す（幽霊セルと同じ扱いで
+  // 未抽出項目も人間が手動で判定できるようにするため。絞り込むのは LLM 呼び出し側の fields のみ）
+  const fieldIds = resolveFieldIdsForRun(selectedFieldIds);
+  const extractionFields = filterFieldsBySelection(fields, fieldIds);
 
   patchPilot(store, { running: true, runError: null, progress: null });
   try {
@@ -180,11 +241,10 @@ export async function runPilot(store: Store, deps: PilotServiceDeps): Promise<vo
         logsLlmFolderId: llmFolder.id,
         runType: 'pilot',
         documents: targets,
-        fields,
+        fields: extractionFields,
         model,
         protocolContext,
-        // フィールド選択 UI はフェーズ 2 で結線する（issue #80）。フェーズ 1 は常に全項目
-        fieldIds: null,
+        fieldIds,
         onProgress: (progress) => patchPilot(store, { progress }),
       },
       {

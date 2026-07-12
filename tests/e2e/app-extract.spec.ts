@@ -109,6 +109,7 @@ interface InitOptions {
   extract?: Record<string, unknown>;
   pilotRuns?: number;
   apiKey?: string;
+  schema?: Record<string, unknown>;
 }
 
 async function initApp(page: Page, options: InitOptions = {}): Promise<void> {
@@ -202,7 +203,7 @@ async function initApp(page: Page, options: InitOptions = {}): Promise<void> {
       extract: options.extract ?? {},
       pilotRuns: options.pilotRuns ?? 1,
       apiKey: options.apiKey ?? null,
-      schema: SCHEMA_SLICE,
+      schema: options.schema ?? SCHEMA_SLICE,
     },
   );
   await page.goto('/app/app.html#/extract');
@@ -289,6 +290,12 @@ test('実行確認 → 一部失敗 → 再試行成功 → 完了（ExtractionR
         // 既にフルヘッダ（bbox 5 列込み）が書かれている想定にして拡張 PUT を no-op にする
         await route.fulfill({
           json: { valueRanges: [{ values: [[...SHEET_HEADERS.Evidence]] }] },
+        });
+      } else if (url.includes('values:batchGet') && url.includes('ExtractionRuns')) {
+        // ExtractionRuns タブのヘッダ拡張チェック（ensureRunFieldIdsColumn。issue #80）。
+        // 既にフルヘッダ（field_ids 込み 15 列）が書かれている想定にして拡張 PUT を no-op にする
+        await route.fulfill({
+          json: { valueRanges: [{ values: [[...SHEET_HEADERS.ExtractionRuns]] }] },
         });
       } else {
         await route.fulfill({ json: { values: [] } });
@@ -413,4 +420,140 @@ test('実行確認 → 一部失敗 → 再試行成功 → 完了（ExtractionR
     .poll(() => appendUrls.filter((url) => url.includes('ExtractionRuns!A1:append')).length)
     .toBe(4); // full run + single_document run × 各 2 行
   await expect(page.locator('#extract-verify-link')).toHaveAttribute('href', '#/verify');
+});
+
+test('対象項目チェックリスト: 一部解除 → 確認カードに反映 → 実行 → ExtractionRuns の field_ids 列に記録される（issue #80）', async ({ page }) => {
+  const appended: { url: string; body: unknown }[] = [];
+
+  const TWO_FIELD_SCHEMA = {
+    ...SCHEMA_SLICE,
+    currentFields: [
+      SCHEMA_SLICE.currentFields[0],
+      {
+        ...SCHEMA_SLICE.currentFields[0],
+        fieldId: 'f-age',
+        fieldIndex: 2,
+        fieldName: 'age_mean',
+        fieldLabel: '平均年齢',
+      },
+    ],
+  };
+
+  await page.route('https://sheets.googleapis.com/**', async (route) => {
+    const url = decodeURIComponent(route.request().url());
+    if (route.request().method() === 'GET') {
+      if (url.includes('Protocol')) {
+        await route.fulfill({ json: { values: [PROTOCOL_HEADERS, PROTOCOL_ROW] } });
+      } else if (url.includes('StudyData')) {
+        await route.fulfill({ json: { values: [STUDY_DATA_HEADERS] } });
+      } else if (url.includes('ResultsData')) {
+        await route.fulfill({ json: { values: [RESULTS_DATA_HEADERS] } });
+      } else if (url.includes('values:batchGet') && url.includes('Evidence')) {
+        await route.fulfill({
+          json: { valueRanges: [{ values: [[...SHEET_HEADERS.Evidence]] }] },
+        });
+      } else if (url.includes('values:batchGet') && url.includes('ExtractionRuns')) {
+        await route.fulfill({
+          json: { valueRanges: [{ values: [[...SHEET_HEADERS.ExtractionRuns]] }] },
+        });
+      } else {
+        await route.fulfill({ json: { values: [] } });
+      }
+      return;
+    }
+    appended.push({ url, body: route.request().postDataJSON() });
+    await route.fulfill({ json: {} });
+  });
+
+  await page.route('https://www.googleapis.com/**', async (route) => {
+    const url = decodeURIComponent(route.request().url());
+    if (url.includes('/upload/drive/v3/files')) {
+      await route.fulfill({ json: { id: 'log-1', webViewLink: 'https://drive.example/log-1' } });
+      return;
+    }
+    if (url.includes('/drive/v3/files?q=')) {
+      const name = /name = '([^']+)'/.exec(url)?.[1] ?? 'folder';
+      await route.fulfill({
+        json: { files: [{ id: `${name}-id`, webViewLink: `https://drive.example/${name}` }] },
+      });
+      return;
+    }
+    if (url.includes('/drive/v3/files/txt-1?alt=media')) {
+      await route.fulfill({ contentType: 'text/plain', body: 'Mortality was 12 percent' });
+      return;
+    }
+    await route.fulfill({ json: {} });
+  });
+
+  await page.route('https://generativelanguage.googleapis.com/**', async (route) => {
+    await route.fulfill({
+      json: {
+        candidates: [
+          {
+            content: {
+              parts: [
+                {
+                  text: JSON.stringify([
+                    {
+                      field_id: 'f-total',
+                      entity_key: '-',
+                      value: '12',
+                      not_reported: false,
+                      quote: 'Mortality was 12 percent',
+                      page: 1,
+                      confidence: 'high',
+                    },
+                  ]),
+                },
+              ],
+            },
+          },
+        ],
+        usageMetadata: { promptTokenCount: 100, candidatesTokenCount: 20 },
+        modelVersion: 'gemini-test-001',
+      },
+    });
+  });
+
+  await initApp(page, {
+    apiKey: 'e2e-api-key',
+    documents: [DOC_OK],
+    schema: TWO_FIELD_SCHEMA,
+    extract: {
+      selectionInitialized: true,
+      selectedStudyIds: ['study-1'],
+      model: 'gemini-test',
+      extractedStudyIds: [],
+    },
+  });
+
+  // 対象項目チェックリスト: 2 件表示（既定は全選択）→ 2 件目（平均年齢）を解除
+  const fieldCheckboxes = page.locator('.extract__field-checkbox');
+  await expect(fieldCheckboxes).toHaveCount(2);
+  await expect(fieldCheckboxes.nth(0)).toBeChecked();
+  await expect(fieldCheckboxes.nth(1)).toBeChecked();
+  await expect(page.locator('#extract-field-summary')).toHaveText('対象項目: 全項目（2）');
+  await fieldCheckboxes.nth(1).uncheck();
+  await expect(page.locator('#extract-field-summary')).toHaveText('対象項目: 1 / 2');
+
+  // 実行確認カードに選択数が反映される
+  await page.locator('#extract-run').click();
+  await expect(page.locator('#extract-confirm-fields')).toHaveText('対象項目: 1 / 2');
+
+  await page.locator('#extract-confirm-run').click();
+  await expect(page.locator('#extract-run-done')).toHaveText('一括抽出が完了しました。', {
+    timeout: 15_000,
+  });
+
+  // ExtractionRuns の running 行・完了行の両方に field_ids（f-total のみ）が記録されている
+  const runsAppends = appended.filter((entry) => entry.url.includes('ExtractionRuns!A1:append'));
+  expect(runsAppends).toHaveLength(2);
+  for (const entry of runsAppends) {
+    const values = (entry.body as { values: unknown[][] }).values;
+    const row = values[0] as unknown[];
+    expect(row[row.length - 1]).toBe('f-total');
+  }
+
+  const results = await new AxeBuilder({ page }).analyze();
+  expect(results.violations).toEqual([]);
 });

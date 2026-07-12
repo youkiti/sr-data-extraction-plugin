@@ -54,9 +54,13 @@ import {
   persistPilotDecision,
   persistPilotInstanceDeclarations,
   persistPilotRelocateQuote,
+  resetPilotFieldSelection,
   runPilot,
   setPilotLayoutMode,
   setPilotModel,
+  togglePilotField,
+  togglePilotFieldSection,
+  togglePilotFieldSectionCollapse,
   togglePilotStudy,
   type PilotServiceDeps,
 } from './services/pilotService';
@@ -65,9 +69,13 @@ import {
   initExtractSelection,
   loadExtractTargets,
   requestExtractRun,
+  resetExtractFieldSelection,
   retryExtractStudy,
   runExtract,
   setExtractModel,
+  toggleExtractField,
+  toggleExtractFieldSection,
+  toggleExtractFieldSectionCollapse,
   toggleExtractStudy,
 } from './services/extractService';
 import {
@@ -459,6 +467,15 @@ export async function bootstrapApp(
       onChangeModel: (model) => {
         setPilotModel(store, model);
       },
+      onToggleField: (fieldId, selected) => {
+        togglePilotField(store, fieldId, selected);
+      },
+      onToggleFieldSection: (fieldIds, selected) => {
+        togglePilotFieldSection(store, fieldIds, selected);
+      },
+      onToggleFieldSectionCollapse: (section) => {
+        togglePilotFieldSectionCollapse(store, section);
+      },
       onRun: () => {
         void runPilot(store, deps);
       },
@@ -507,6 +524,15 @@ export async function bootstrapApp(
       onChangeModel: (model) => {
         setExtractModel(store, model);
       },
+      onToggleField: (fieldId, selected) => {
+        toggleExtractField(store, fieldId, selected);
+      },
+      onToggleFieldSection: (fieldIds, selected) => {
+        toggleExtractFieldSection(store, fieldIds, selected);
+      },
+      onToggleFieldSectionCollapse: (section) => {
+        toggleExtractFieldSectionCollapse(store, section);
+      },
       onRequestRun: () => {
         void requestExtractRun(store, deps);
       },
@@ -522,6 +548,7 @@ export async function bootstrapApp(
       onReloadTargets: () => {
         void loadDocuments(store, deps, { force: true });
         void loadExtractTargets(store, deps, { force: true });
+        resetExtractFieldSelection(store);
       },
     },
     verify: {
@@ -839,6 +866,8 @@ export async function bootstrapApp(
       void loadProtocols(store, deps);
     }
     if (currentHash === '#/pilot') {
+      // フィールド選択チェックリスト（issue #80）は画面入場のたびに全選択へリセットする（A-4）
+      resetPilotFieldSelection(store);
       // 文献 + スキーマ + パイロット履歴の読込後に、既定選択（テキスト層ありの先頭 3 本）を
       // 一度だけ適用し、既存のパイロット結果があれば最新 run を一度だけ自動読込する
       void Promise.all([
@@ -851,6 +880,8 @@ export async function bootstrapApp(
       });
     }
     if (currentHash === '#/extract') {
+      // フィールド選択チェックリスト（issue #80）は画面入場のたびに全選択へリセットする（A-4）
+      resetExtractFieldSelection(store);
       // 文献 + スキーマ + 抽出済み document の読込後に既定選択（未抽出の全件）を一度だけ適用する
       void Promise.all([
         loadDocuments(store, deps),

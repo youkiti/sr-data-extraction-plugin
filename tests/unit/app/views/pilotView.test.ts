@@ -32,6 +32,9 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<PilotViewCallback
   const callbacks = {
     onToggleStudy: jest.fn(),
     onChangeModel: jest.fn(),
+    onToggleField: jest.fn(),
+    onToggleFieldSection: jest.fn(),
+    onToggleFieldSectionCollapse: jest.fn(),
     onRun: jest.fn(),
     onSelectRun: jest.fn(),
     onReloadHistory: jest.fn(),
@@ -96,6 +99,9 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<PilotViewCallback
       extract: {
         onToggleStudy: jest.fn(),
         onChangeModel: jest.fn(),
+        onToggleField: jest.fn(),
+        onToggleFieldSection: jest.fn(),
+        onToggleFieldSectionCollapse: jest.fn(),
         onRequestRun: jest.fn(),
         onConfirmRun: jest.fn(),
         onCancelConfirm: jest.fn(),
@@ -327,6 +333,46 @@ describe('未実行（setup）', () => {
     expect(callbacks.onChangeModel).toHaveBeenCalledWith('gemini-2.0-flash');
     root.querySelector<HTMLButtonElement>('#pilot-run')?.click();
     expect(callbacks.onRun).toHaveBeenCalled();
+  });
+
+  test('対象項目チェックリスト: 選択・section 全選択/全解除・折りたたみのコールバック配線（issue #80）', () => {
+    const fields = [
+      makeField({ fieldId: 'f-1', section: 'methods', fieldLabel: '対象年齢', fieldName: 'age' }),
+      makeField({ fieldId: 'f-2', section: 'results', fieldLabel: '死亡率', fieldName: 'mortality' }),
+    ];
+    const { root, callbacks } = render(makeState({ fields }));
+    expect(root.querySelector('#pilot-fields')).not.toBeNull();
+
+    const checkbox = root.querySelector<HTMLInputElement>('.pilot__field-checkbox');
+    checkbox!.checked = false;
+    checkbox!.dispatchEvent(new Event('change'));
+    expect(callbacks.onToggleField).toHaveBeenCalledWith('f-1', false);
+
+    root.querySelector<HTMLButtonElement>('.pilot__field-section-toggle')?.click();
+    expect(callbacks.onToggleFieldSection).toHaveBeenCalledWith(['f-1'], false);
+
+    root.querySelector<HTMLButtonElement>('.pilot__field-collapse')?.click();
+    expect(callbacks.onToggleFieldSectionCollapse).toHaveBeenCalledWith('methods');
+  });
+
+  test('対象項目チェックリスト: スキーマ未読込・空のときは出さない', () => {
+    for (const fields of [null, [] as SchemaField[]]) {
+      const { root } = render(makeState({ fields }));
+      expect(root.querySelector('#pilot-fields')).toBeNull();
+    }
+  });
+
+  test('選択 0 件は実行ボタンを disabled にする', () => {
+    const { root } = render(makeState({ pilot: { selectedFieldIds: [] } }));
+    expect(root.querySelector<HTMLButtonElement>('#pilot-run')?.disabled).toBe(true);
+    expect(root.querySelector('#pilot-field-error')).not.toBeNull();
+  });
+
+  test('コスト概算: 対象項目 0 件は案内文（issue #80）', () => {
+    const { root } = render(makeState({ pilot: { selectedFieldIds: [] } }));
+    expect(root.querySelector('#pilot-estimate')?.textContent).toBe(
+      'コスト概算: 対象項目を選択すると表示されます',
+    );
   });
 
   test('コスト概算: 未選択・スキーマ未読込では案内文', () => {

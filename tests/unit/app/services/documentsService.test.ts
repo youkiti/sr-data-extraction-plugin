@@ -149,7 +149,11 @@ beforeEach(() => {
     id: `${name}-folder-id`,
     webViewLink: `https://drive.google.com/${name}`,
   }));
-  mockReadCoverage.mockResolvedValue({ extracted: new Set(), interrupted: new Set() });
+  mockReadCoverage.mockResolvedValue({
+    extracted: new Set(),
+    interrupted: new Set(),
+    latestCompletedRunByStudy: new Map(),
+  });
   mockGetLocal.mockResolvedValue(undefined);
   mockSetLocal.mockResolvedValue(undefined);
 });
@@ -174,7 +178,11 @@ describe('loadDocuments', () => {
     const store = makeStore();
     mockReadDocuments.mockResolvedValue([makeDoc(), makeDoc({ documentId: 'doc-2', studyId: 'study-2' })]);
     mockReadStudies.mockResolvedValue([makeStudy(), makeStudy({ studyId: 'study-2' })]);
-    mockReadCoverage.mockResolvedValue({ extracted: new Set(['study-1']), interrupted: new Set() });
+    mockReadCoverage.mockResolvedValue({
+      extracted: new Set(['study-1']),
+      interrupted: new Set(),
+      latestCompletedRunByStudy: new Map(),
+    });
     mockGetLocal.mockResolvedValue(['a|b']);
 
     await loadDocuments(store, makeDeps());
