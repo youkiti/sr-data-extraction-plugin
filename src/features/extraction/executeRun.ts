@@ -227,6 +227,8 @@ function buildEvidenceRow(
     anchorStatus,
     bboxPage: hasBbox ? item.page : null,
     bbox: hasBbox ? item.box : null,
+    // 通常抽出の行は relocate-quote（issue #94）由来ではないため常に null
+    relocatedFrom: null,
   };
 }
 

@@ -42,6 +42,7 @@ function makeEvidence(overrides: Partial<Evidence> = {}): Evidence {
     anchorStatus: null,
     bboxPage: null,
     bbox: null,
+    relocatedFrom: null,
     ...overrides,
   };
 }

@@ -3,6 +3,7 @@
 // - 検証データ束の組み立て / 判定・群構成の永続化は S8 と共有の verificationService へ委譲する
 import type { Decision } from '../../domain/decision';
 import type { DocumentRecord } from '../../domain/document';
+import type { Evidence } from '../../domain/evidence';
 import { annotatorTypeForRole } from '../../domain/reviewer';
 import type { SchemaField } from '../../domain/schemaField';
 import { readDocuments } from '../../features/documents/documentRepository';
@@ -32,6 +33,7 @@ import { nowIso8601 } from '../../utils/iso8601';
 import type { PilotState, Store } from '../store';
 import { showToast } from '../ui/toast';
 import { runExtraction } from './extractionService';
+import { relocateQuote, type RelocateQuoteOutcome } from './relocateQuoteService';
 import { resolveProtocol } from './schemaService';
 import {
   foldDecisionWriteTokens,
@@ -522,4 +524,41 @@ export async function persistPilotInstanceDeclarations(
     return;
   }
   await persistInstanceDeclarations(project.spreadsheetId, decisions, deps);
+}
+
+/**
+ * 埋め込み検証パネルの「AI で再特定」ボタン（issue #94）。relocateQuoteService.relocateQuote へ
+ * 委譲する薄いラッパで、store から spreadsheetId / Drive フォルダ / 対象項目 / 出所文書の
+ * extracted_texts を解決するだけの責務を持つ（LLM 呼び出し・アンカリング・Evidence 追記の
+ * 実体は relocateQuoteService 側）。verificationPanel.ts はこの戻り値を await して
+ * ローカルの楽観反映（ハイライト差し替え・ジャンプ）を行う
+ */
+export async function persistPilotRelocateQuote(
+  store: Store,
+  deps: PilotServiceDeps,
+  evidence: Evidence,
+): Promise<RelocateQuoteOutcome> {
+  const state = store.getState();
+  const project = state.currentProject;
+  const verification = state.pilot.verification;
+  if (!project || verification === null) {
+    return { status: 'not_found', message: 'プロジェクトまたは検証データが読み込まれていません' };
+  }
+  const field = verification.fields.find((candidate) => candidate.fieldId === evidence.fieldId);
+  const documentView = verification.documents.find(
+    (view) => view.document.documentId === evidence.documentId,
+  );
+  if (field === undefined || documentView === undefined) {
+    return { status: 'not_found', message: '対象項目または出所文書が見つかりません' };
+  }
+  return relocateQuote(
+    {
+      spreadsheetId: project.spreadsheetId,
+      driveFolderId: project.driveFolderId,
+      evidence,
+      field,
+      documentPages: documentView.extractedPages,
+    },
+    deps,
+  );
 }

@@ -47,6 +47,7 @@ function makeEvidence(fieldId: string, value: string): Evidence {
     anchorStatus: null,
     bboxPage: null,
     bbox: null,
+    relocatedFrom: null,
   };
 }
 

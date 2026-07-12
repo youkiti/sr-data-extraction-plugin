@@ -7,6 +7,7 @@ import {
   persistPilotArmConfirmation,
   persistPilotDecision,
   persistPilotInstanceDeclarations,
+  persistPilotRelocateQuote,
   runPilot,
   setPilotLayoutMode,
   setPilotModel,
@@ -18,6 +19,7 @@ import {
   type QueuedDecisionWrite,
 } from '../../../../src/app/services/verificationService';
 import { runExtraction } from '../../../../src/app/services/extractionService';
+import { relocateQuote } from '../../../../src/app/services/relocateQuoteService';
 import { resolveProtocol } from '../../../../src/app/services/schemaService';
 import { createInitialState, createStore, type Store } from '../../../../src/app/store';
 import type { Decision } from '../../../../src/domain/decision';
@@ -65,6 +67,9 @@ jest.mock('../../../../src/app/services/extractionService', () => ({
 jest.mock('../../../../src/app/services/schemaService', () => ({
   resolveProtocol: jest.fn(),
 }));
+jest.mock('../../../../src/app/services/relocateQuoteService', () => ({
+  relocateQuote: jest.fn(),
+}));
 jest.mock('../../../../src/features/documents/documentRepository', () => ({
   readDocuments: jest.fn(),
 }));
@@ -110,6 +115,7 @@ jest.mock('../../../../src/lib/google/identity', () => ({
 
 const runExtractionMock = runExtraction as jest.MockedFunction<typeof runExtraction>;
 const resolveProtocolMock = resolveProtocol as jest.MockedFunction<typeof resolveProtocol>;
+const relocateQuoteMock = relocateQuote as jest.MockedFunction<typeof relocateQuote>;
 const readDocumentsMock = readDocuments as jest.MockedFunction<typeof readDocuments>;
 const readStudiesMock = readStudies as jest.MockedFunction<typeof readStudies>;
 const readEvidenceRowsMock = readEvidenceRows as jest.MockedFunction<typeof readEvidenceRows>;
@@ -202,6 +208,7 @@ function makeEvidence(overrides: Partial<Evidence> = {}): Evidence {
     anchorStatus: 'exact',
     bboxPage: null,
     bbox: null,
+    relocatedFrom: null,
     ...overrides,
   };
 }
@@ -256,6 +263,37 @@ function makePdf(): DisposablePdfDocument {
       cleanup: jest.fn(),
     }),
     destroy: jest.fn().mockResolvedValue(undefined),
+  };
+}
+
+/** persistPilotRelocateQuote のテスト用最小 VerificationData（issue #94） */
+function makeVerificationData(overrides: Partial<VerificationData> = {}): VerificationData {
+  return {
+    study: {
+      studyId: 'study-doc-1',
+      studyLabel: 'Smith 2020',
+      registrationId: null,
+      createdAt: 't0',
+      createdBy: ME,
+      note: null,
+    },
+    documents: [
+      {
+        document: makeDocument(),
+        extractedPages: [{ page: 1, text: 'a total of 120 patients' }],
+        extractedTextError: null,
+      },
+    ],
+    fields: [makeField()],
+    evidence: [makeEvidence()],
+    decisions: [],
+    annotator: ME,
+    annotatorType: 'human_with_ai',
+    schemaVersion: 1,
+    armStructure: null,
+    loadPdfView: jest.fn(),
+    retryPdfView: jest.fn(),
+    ...overrides,
   };
 }
 
@@ -1208,6 +1246,62 @@ describe('persistPilotInstanceDeclarations', () => {
       makeDecision({ fieldId: '__entity_instance__' }),
     ]);
     expect(appendDecisionsMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('persistPilotRelocateQuote（issue #94）', () => {
+  test('spreadsheetId / driveFolderId / 対象項目 / 出所文書の extracted_texts を解決して relocateQuote へ委譲する', async () => {
+    const evidence = makeEvidence({ anchorStatus: 'failed', quote: null, page: null });
+    relocateQuoteMock.mockResolvedValue({
+      status: 'relocated',
+      evidence: makeEvidence({ evidenceId: 'ev-relocated', relocatedFrom: evidence.evidenceId }),
+    });
+    const store = makeStore({ pilot: { verification: makeVerificationData({ evidence: [evidence] }) } });
+    const outcome = await persistPilotRelocateQuote(store, makeDeps(), evidence);
+    expect(outcome.status).toBe('relocated');
+    expect(relocateQuoteMock).toHaveBeenCalledWith(
+      {
+        spreadsheetId: 'sheet-1',
+        driveFolderId: 'folder-1',
+        evidence,
+        field: expect.objectContaining({ fieldId: 'f-total' }),
+        documentPages: [{ page: 1, text: 'a total of 120 patients' }],
+      },
+      expect.anything(),
+    );
+  });
+
+  test('プロジェクト未選択・検証データ未読込では relocateQuote を呼ばず not_found を返す', async () => {
+    const evidence = makeEvidence();
+    const outcome1 = await persistPilotRelocateQuote(
+      makeStore({ withProject: false }),
+      makeDeps(),
+      evidence,
+    );
+    expect(outcome1).toEqual({
+      status: 'not_found',
+      message: 'プロジェクトまたは検証データが読み込まれていません',
+    });
+    const outcome2 = await persistPilotRelocateQuote(
+      makeStore({ pilot: { verification: null } }),
+      makeDeps(),
+      evidence,
+    );
+    expect(outcome2.status).toBe('not_found');
+    expect(relocateQuoteMock).not.toHaveBeenCalled();
+  });
+
+  test('対象項目・出所文書が見つからなければ relocateQuote を呼ばず not_found を返す', async () => {
+    const evidence = makeEvidence({ fieldId: 'f-unknown' });
+    const store = makeStore({ pilot: { verification: makeVerificationData() } });
+    const outcome = await persistPilotRelocateQuote(store, makeDeps(), evidence);
+    expect(outcome).toEqual({ status: 'not_found', message: '対象項目または出所文書が見つかりません' });
+    expect(relocateQuoteMock).not.toHaveBeenCalled();
+
+    const evidence2 = makeEvidence({ documentId: 'doc-unknown' });
+    const outcome2 = await persistPilotRelocateQuote(store, makeDeps(), evidence2);
+    expect(outcome2.status).toBe('not_found');
+    expect(relocateQuoteMock).not.toHaveBeenCalled();
   });
 });
 

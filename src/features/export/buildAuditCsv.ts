@@ -82,10 +82,18 @@ export function buildAuditCsv(
   const runById = new Map(runs.map((run) => [run.runId, run]));
   // run の新旧比較キー。run 不明 / started_at 未記録は最古扱い（'' は ISO8601 より常に小さい）
   const startedAtOf = (runId: string): string => runById.get(runId)?.startedAt ?? '';
+  /**
+   * candidates は evidences（シート行順 = 追記順）由来の順序を保つため、同じ started_at
+   * （= 同一 run_id）が並ぶ場合は「後から追記された行」ほど配列の後ろに来る。relocate-quote
+   * （issue #94）で再特定した行は元の失敗行と run_id を共有する（意図的な設計。
+   * app/services/relocateQuoteService.ts 参照）ため、started_at が同値のまま後ろに追記される。
+   * `>=`（同値は後着優先）にしておかないと、常に先に追記された元の failed 行が「best」のまま
+   * 残ってしまい、audit.csv が再特定前の quote を出し続ける回帰になる
+   */
   const latestEvidence = (candidates: readonly Evidence[]): Evidence | null => {
     let best: Evidence | null = null;
     for (const candidate of candidates) {
-      if (best === null || startedAtOf(candidate.runId) > startedAtOf(best.runId)) {
+      if (best === null || startedAtOf(candidate.runId) >= startedAtOf(best.runId)) {
         best = candidate;
       }
     }

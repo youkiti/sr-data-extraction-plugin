@@ -66,6 +66,10 @@ export interface VerificationFocusCardModel {
    * 双方へ渡す
    */
   robAlgorithmInfo: ReadonlyMap<string, RobAlgorithmInfo>;
+  /** relocate-quote（issue #94）: 「AI で再特定」ボタンを出すか。詳細ストリップ（renderCell）へそのまま渡す */
+  canRelocateQuote?: boolean;
+  /** relocate-quote の実行状態（issue #94）。cellKey → 'running' / 'not_found' */
+  relocateStatus?: ReadonlyMap<string, 'running' | 'not_found'>;
 }
 
 /**
@@ -265,6 +269,8 @@ function renderDetailStrip(
     mode: model.mode,
     consistencyWarnings: model.consistencyWarnings,
     robAlgorithmInfo: model.robAlgorithmInfo,
+    canRelocateQuote: model.canRelocateQuote,
+    relocateStatus: model.relocateStatus,
   };
   return el('div', { id: 'verify-focus-detail', className: 'focus-card__detail' }, [
     renderCell(cell, cellCardModel, handlers),

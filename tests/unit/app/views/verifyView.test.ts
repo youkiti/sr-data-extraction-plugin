@@ -15,6 +15,7 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<VerifyViewCallbac
     onArmConfirm: jest.fn(),
     onChangeLayoutMode: jest.fn(),
     onReloadVerification: jest.fn(),
+    onRelocateQuote: jest.fn(),
     onInstanceDeclare: jest.fn(),
   };
   return {
@@ -77,6 +78,7 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<VerifyViewCallbac
         onArmConfirm: jest.fn(),
         onChangeLayoutMode: jest.fn(),
         onReloadVerification: jest.fn(),
+        onRelocateQuote: jest.fn(),
       },
       extract: {
         onToggleStudy: jest.fn(),
@@ -392,6 +394,7 @@ describe('renderVerifyView', () => {
           anchorStatus: null,
           bboxPage: null,
           bbox: null,
+          relocatedFrom: null,
         },
       ],
       // ディープリンク先の arm タブが使えるよう群構成は確定済みにする
@@ -434,6 +437,7 @@ describe('renderVerifyView', () => {
           anchorStatus: null,
           bboxPage: null,
           bbox: null,
+          relocatedFrom: null,
         },
       ],
     };

@@ -407,6 +407,7 @@ describe('executeRun の正常系', () => {
         anchorStatus: 'exact',
         bboxPage: null,
         bbox: null,
+        relocatedFrom: null,
       },
       {
         evidenceId: 'ev-2',
@@ -423,6 +424,7 @@ describe('executeRun の正常系', () => {
         anchorStatus: 'exact',
         bboxPage: null,
         bbox: null,
+        relocatedFrom: null,
       },
       // quote が無い要素（not_reported）はアンカリング対象外
       {
@@ -440,6 +442,7 @@ describe('executeRun の正常系', () => {
         anchorStatus: null,
         bboxPage: null,
         bbox: null,
+        relocatedFrom: null,
       },
     ]);
     expect(saved).toEqual([result.evidence]);

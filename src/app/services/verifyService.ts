@@ -40,6 +40,11 @@ import {
   type QueuedDecisionWrite,
   type VerificationDeps,
 } from './verificationService';
+import {
+  relocateQuote,
+  type RelocateQuoteDeps,
+  type RelocateQuoteOutcome,
+} from './relocateQuoteService';
 
 function toMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
@@ -415,4 +420,39 @@ export async function persistVerifyInstanceDeclarations(
     return;
   }
   await persistInstanceDeclarations(project.spreadsheetId, decisions, deps);
+}
+
+/**
+ * `#/verify` 単独画面の「AI で再特定」ボタン（issue #94）。relocateQuoteService.relocateQuote へ
+ * 委譲する薄いラッパ（pilotService.persistPilotRelocateQuote の #/verify 版）。store から
+ * spreadsheetId / Drive フォルダ / 対象項目 / 出所文書の extracted_texts を解決するだけの責務を持つ
+ */
+export async function persistVerifyRelocateQuote(
+  store: Store,
+  deps: VerificationDeps & RelocateQuoteDeps,
+  evidence: Evidence,
+): Promise<RelocateQuoteOutcome> {
+  const state = store.getState();
+  const project = state.currentProject;
+  const verification = state.verify.verification;
+  if (!project || verification === null) {
+    return { status: 'not_found', message: 'プロジェクトまたは検証データが読み込まれていません' };
+  }
+  const field = verification.fields.find((candidate) => candidate.fieldId === evidence.fieldId);
+  const documentView = verification.documents.find(
+    (view) => view.document.documentId === evidence.documentId,
+  );
+  if (field === undefined || documentView === undefined) {
+    return { status: 'not_found', message: '対象項目または出所文書が見つかりません' };
+  }
+  return relocateQuote(
+    {
+      spreadsheetId: project.spreadsheetId,
+      driveFolderId: project.driveFolderId,
+      evidence,
+      field,
+      documentPages: documentView.extractedPages,
+    },
+    deps,
+  );
 }

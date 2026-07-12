@@ -46,6 +46,7 @@ function makeEvidence(overrides: Partial<Evidence> = {}): Evidence {
     anchorStatus: 'exact',
     bboxPage: null,
     bbox: null,
+    relocatedFrom: null,
     ...overrides,
   };
 }
@@ -87,6 +88,7 @@ function makeHandlers(): jest.Mocked<VerificationFocusCardHandlers> {
     onJump: jest.fn(),
     onSearchQuote: jest.fn(),
     onCycleMatch: jest.fn(),
+    onRelocateQuote: jest.fn(),
     onCollapseDecided: jest.fn(),
     onMoveUnit: jest.fn(),
   };

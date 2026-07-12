@@ -319,6 +319,7 @@ function renderVerification(run: ExtractionRun, state: AppState, ctx: ViewContex
         onDecision: (decision) => ctx.pilot.onDecision(decision),
         onArmConfirm: (arms) => ctx.pilot.onArmConfirm(arms),
         onInstanceDeclare: (decisions) => ctx.pilot.onInstanceDeclare?.(decisions),
+        onRelocateQuote: (evidence) => ctx.pilot.onRelocateQuote(evidence),
         layoutMode: state.pilot.layoutMode,
         onLayoutModeChange: (mode) => ctx.pilot.onChangeLayoutMode(mode),
       }),

@@ -5,9 +5,11 @@ import {
   persistVerifyArmConfirmation,
   persistVerifyDecision,
   persistVerifyInstanceDeclarations,
+  persistVerifyRelocateQuote,
   readVerifyTargetMaterials,
   setVerifyLayoutMode,
 } from '../../../../src/app/services/verifyService';
+import { relocateQuote } from '../../../../src/app/services/relocateQuoteService';
 import {
   resultsCellKeyOf,
   type QueuedDecisionWrite,
@@ -23,6 +25,7 @@ import type { StudyRecord } from '../../../../src/domain/study';
 import { readDocuments } from '../../../../src/features/documents/documentRepository';
 import { readStudies } from '../../../../src/features/documents/studyRepository';
 import type { DisposablePdfDocument } from '../../../../src/features/documents/extractTextLayer';
+import type { VerificationData } from '../../../../src/features/verification/types';
 import {
   AnnotationConflictError,
   readResultsDataRows,
@@ -93,6 +96,9 @@ jest.mock('../../../../src/lib/google/drive', () => ({
 jest.mock('../../../../src/lib/google/identity', () => ({
   getCurrentUserEmail: jest.fn(),
 }));
+jest.mock('../../../../src/app/services/relocateQuoteService', () => ({
+  relocateQuote: jest.fn(),
+}));
 
 const readDocumentsMock = readDocuments as jest.MockedFunction<typeof readDocuments>;
 const readStudiesMock = readStudies as jest.MockedFunction<typeof readStudies>;
@@ -127,6 +133,7 @@ const getFileTextMock = getFileText as jest.MockedFunction<typeof getFileText>;
 const getCurrentUserEmailMock = getCurrentUserEmail as jest.MockedFunction<
   typeof getCurrentUserEmail
 >;
+const relocateQuoteMock = relocateQuote as jest.MockedFunction<typeof relocateQuote>;
 
 const ME = 'me@example.com';
 
@@ -207,6 +214,7 @@ function makeEvidence(overrides: Partial<Evidence> = {}): Evidence {
     anchorStatus: 'exact',
     bboxPage: null,
     bbox: null,
+    relocatedFrom: null,
     ...overrides,
   };
 }
@@ -1016,6 +1024,102 @@ describe('persistVerifyInstanceDeclarations', () => {
       makeDecision({ fieldId: '__entity_instance__' }),
     ]);
     expect(appendDecisionsMock).not.toHaveBeenCalled();
+  });
+});
+
+/** persistVerifyRelocateQuote のテスト用最小 VerificationData（issue #94） */
+function makeVerificationData(overrides: Partial<VerificationData> = {}): VerificationData {
+  return {
+    study: makeStudy(),
+    documents: [
+      {
+        document: makeDocument(),
+        extractedPages: [{ page: 1, text: 'a total of 120 patients' }],
+        extractedTextError: null,
+      },
+    ],
+    fields: [makeField()],
+    evidence: [makeEvidence()],
+    decisions: [],
+    annotator: ME,
+    annotatorType: 'human_with_ai',
+    schemaVersion: 1,
+    armStructure: null,
+    loadPdfView: jest.fn(),
+    retryPdfView: jest.fn(),
+    ...overrides,
+  };
+}
+
+/**
+ * persistVerifyRelocateQuote は VerificationDeps & RelocateQuoteDeps（buildProvider /
+ * loadApiKey も要る）を受け取る。他の verificationService 系関数は VerificationDeps のみで
+ * 足りるため、既存の makeDeps() は変えず、この describe 専用の拡張ヘルパを別途持つ
+ */
+function makeRelocateDeps(
+  overrides: Partial<VerificationDeps & { buildProvider: jest.Mock; loadApiKey: jest.Mock }> = {},
+): VerificationDeps & { buildProvider: jest.Mock; loadApiKey: jest.Mock } {
+  return {
+    ...makeDeps(),
+    loadApiKey: jest.fn().mockResolvedValue(null),
+    buildProvider: jest.fn(),
+    ...overrides,
+  };
+}
+
+describe('persistVerifyRelocateQuote（issue #94）', () => {
+  test('spreadsheetId / driveFolderId / 対象項目 / 出所文書の extracted_texts を解決して relocateQuote へ委譲する', async () => {
+    const evidence = makeEvidence({ anchorStatus: 'failed', quote: null, page: null });
+    relocateQuoteMock.mockResolvedValue({
+      status: 'relocated',
+      evidence: makeEvidence({ evidenceId: 'ev-relocated', relocatedFrom: evidence.evidenceId }),
+    });
+    const store = makeStore({ verify: { verification: makeVerificationData({ evidence: [evidence] }) } });
+    const outcome = await persistVerifyRelocateQuote(store, makeRelocateDeps(), evidence);
+    expect(outcome.status).toBe('relocated');
+    expect(relocateQuoteMock).toHaveBeenCalledWith(
+      {
+        spreadsheetId: 'sheet-1',
+        driveFolderId: 'folder-1',
+        evidence,
+        field: expect.objectContaining({ fieldId: 'f-total' }),
+        documentPages: [{ page: 1, text: 'a total of 120 patients' }],
+      },
+      expect.anything(),
+    );
+  });
+
+  test('プロジェクト未選択・検証データ未読込では relocateQuote を呼ばず not_found を返す', async () => {
+    const evidence = makeEvidence();
+    const outcome1 = await persistVerifyRelocateQuote(
+      makeStore({ withProject: false }),
+      makeRelocateDeps(),
+      evidence,
+    );
+    expect(outcome1).toEqual({
+      status: 'not_found',
+      message: 'プロジェクトまたは検証データが読み込まれていません',
+    });
+    const outcome2 = await persistVerifyRelocateQuote(
+      makeStore({ verify: { verification: null } }),
+      makeRelocateDeps(),
+      evidence,
+    );
+    expect(outcome2.status).toBe('not_found');
+    expect(relocateQuoteMock).not.toHaveBeenCalled();
+  });
+
+  test('対象項目・出所文書が見つからなければ relocateQuote を呼ばず not_found を返す', async () => {
+    const evidence = makeEvidence({ fieldId: 'f-unknown' });
+    const store = makeStore({ verify: { verification: makeVerificationData() } });
+    const outcome = await persistVerifyRelocateQuote(store, makeRelocateDeps(), evidence);
+    expect(outcome).toEqual({ status: 'not_found', message: '対象項目または出所文書が見つかりません' });
+    expect(relocateQuoteMock).not.toHaveBeenCalled();
+
+    const evidence2 = makeEvidence({ documentId: 'doc-unknown' });
+    const outcome2 = await persistVerifyRelocateQuote(store, makeRelocateDeps(), evidence2);
+    expect(outcome2.status).toBe('not_found');
+    expect(relocateQuoteMock).not.toHaveBeenCalled();
   });
 });
 

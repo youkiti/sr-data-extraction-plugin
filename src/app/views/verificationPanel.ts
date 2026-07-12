@@ -14,6 +14,7 @@ import type { Decision, DecisionAction } from '../../domain/decision';
 import { DOCUMENT_ROLE_LABELS } from '../../domain/document';
 import type { Evidence } from '../../domain/evidence';
 import type { EntityLevel } from '../../domain/schemaField';
+import type { TextLayerPage } from '../../domain/textLayer';
 import {
   draftArms,
   isArmDependentLevel,
@@ -66,6 +67,7 @@ import { nextOutcomeId } from '../../utils/entityKey';
 import { el } from '../ui/dom';
 import { createPdfViewer, type PdfViewerHandle, type ViewerHighlight } from '../ui/pdfViewer';
 import { createTextViewer, type TextViewerSnippet } from '../ui/textViewer';
+import type { RelocateQuoteOutcome } from '../services/relocateQuoteService';
 import type { VerificationFocusCardModel } from './verificationFocusCard';
 import {
   renderVerificationForm,
@@ -73,6 +75,8 @@ import {
   type VerificationFormHandlers,
   type VerificationFormModel,
 } from './verificationForm';
+
+export type { RelocateQuoteOutcome } from '../services/relocateQuoteService';
 
 export interface VerificationPanelOptions {
   data: VerificationData;
@@ -94,6 +98,14 @@ export interface VerificationPanelOptions {
   layoutMode?: VerifyLayoutMode;
   /** トグル操作（`#verify-layout-toggle`）のたびに呼ばれる。永続化はサービス層の責務 */
   onLayoutModeChange?: (mode: VerifyLayoutMode) => void;
+  /**
+   * 「AI で再特定」ボタン（anchor failed のフォールバック。issue #94）。他のコールバックと違い
+   * 結果を Promise で返す必要がある（実行中スピナー・成功時のハイライト即時反映・not_found の
+   * 案内メッセージをパネル自身が local overlay として持つため。judgment/群構成と同じ「サービス層は
+   * 永続化のみ・パネルが楽観反映を持つ」思想は保ちつつ、この操作だけは結果を待つ必要があるための
+   * 意図的な例外）。未注入（S12 裁定等の他画面）ではボタン自体を出さない
+   */
+  onRelocateQuote?: (evidence: Evidence) => Promise<RelocateQuoteOutcome>;
   now?: () => string;
   /** テスト差し替え用（pdfViewer へ渡す） */
   renderPage?: typeof renderPdfPageToCanvas;
@@ -209,18 +221,40 @@ export function createVerificationPanel(
   // Evidence quote・ハイライト・AI 値・accept/reject 操作を一切描画しない
   const panelMode: 'review' | 'independent' =
     data.annotatorType === 'human_independent' ? 'independent' : 'review';
+  // relocate-quote（issue #94）: options.onRelocateQuote が注入されているときだけボタンを出す
+  // （独立入力モードは quote 自体を描画しないため、ここで false でも実害はない）
+  const canRelocateQuote = options.onRelocateQuote !== undefined;
 
   // --- パネル内状態 -------------------------------------------------------
   // 判定は自分の annotator 行への操作だけを畳み込む（他 annotator の判定は状態に影響しない）
   const ownDecisions: Decision[] = data.decisions.filter(
     (decision) => decision.annotator === data.annotator,
   );
+  // relocate-quote（issue #94）で追記された Evidence（cellKey は失敗した元行と同じ）。
+  // VerificationData が保持する元の evidence（下記 baseEvidence）は判定・群構成と同じく
+  // パネル生存中は不変のスナップショットとして扱うため、ownDecisions と同じ
+  // 「ローカルへ積んで後勝ちで重ねる」流儀で別配列に持つ
+  // （cells.ts の indexEvidence は配列の後ろほど新しいとみなす後勝ち畳み込みのため、
+  // 元の evidence 配列の後ろへ連結するだけで対応する cellKey の元行を自動的に上書きできる）
+  const relocatedEvidence: Evidence[] = [];
+  /** relocate-quote の実行状態（issue #94）。cellKey → 'running' / 'not_found' */
+  const relocateStatus = new Map<string, 'running' | 'not_found'>();
+  /** VerificationData が保持する元の evidence 配列（パネル生存中は不変） */
+  const baseEvidence: readonly Evidence[] = data.evidence;
+  /** 元の evidence 配列 + relocatedEvidence（後勝ち畳み込み用に後ろへ連結）。呼び出しのたびに評価する */
+  const currentEvidence = (): readonly Evidence[] =>
+    relocatedEvidence.length === 0 ? baseEvidence : [...baseEvidence, ...relocatedEvidence];
   // テキストのみで再特定した出現位置（rects なし。study 全文書ぶんを一度だけ計算し、
-  // PDF のロード状態に関係なく matchCount / ページ表示に使う。issue #28 案3）
-  const textMatches = buildStudyTextMatches(data.documents, data.evidence);
-  const textMatchByCell = new Map(textMatches.map((m) => [m.cellKey, m]));
+  // PDF のロード状態に関係なく matchCount / ページ表示に使う。issue #28 案3）。
+  // relocate-quote 成功時は recomputeTextMatches で作り直す（let で保持）
+  let textMatches = buildStudyTextMatches(data.documents, currentEvidence());
+  let textMatchByCell = new Map(textMatches.map((m) => [m.cellKey, m]));
+  function recomputeTextMatches(): void {
+    textMatches = buildStudyTextMatches(data.documents, currentEvidence());
+    textMatchByCell = new Map(textMatches.map((m) => [m.cellKey, m]));
+  }
   const evidenceByCell = new Map<string, Evidence>(
-    data.evidence.map((item) => [cellKeyOf(item.fieldId, item.entityKey), item]),
+    currentEvidence().map((item) => [cellKeyOf(item.fieldId, item.entityKey), item]),
   );
   const fieldLabelById = new Map(data.fields.map((field) => [field.fieldId, field.fieldLabel]));
   /** 複数一致の表示中出現（cellKey → occurrences の index）。未設定は selectedIndex */
@@ -234,7 +268,7 @@ export function createVerificationPanel(
   let armRows: DraftArm[] =
     armStructure !== null
       ? armStructure.arms.map((arm) => ({ ...arm }))
-      : draftArms(data.fields, data.evidence);
+      : draftArms(data.fields, currentEvidence());
   let armError: string | null = null;
   const armLocked = (): boolean => armRequired && armStructure === null;
   // ロックは群構成に依存するタブだけ（study / rob_domain は arm 未確定でも検証できる）
@@ -248,7 +282,7 @@ export function createVerificationPanel(
   let focusedCellKey: string | null = null;
   let editing: { cellKey: string; action: 'edit' | 'reject' } | null = null;
   let outcomeKeyDraft = nextOutcomeId(
-    entityInstances('outcome_result', data.evidence, ownDecisions, { armStructure }),
+    entityInstances('outcome_result', currentEvidence(), ownDecisions, { armStructure }),
   );
   let outcomeTimeDraft = '';
   let outcomeError: string | null = null;
@@ -258,7 +292,7 @@ export function createVerificationPanel(
   let expandedDecidedKey: string | null = null;
 
   const currentTabModel = (): TabModel =>
-    buildTabModel(activeTab, data.fields, data.evidence, ownDecisions, { armStructure });
+    buildTabModel(activeTab, data.fields, currentEvidence(), ownDecisions, { armStructure });
 
   /** 現在タブの表示順のセル（未判定 + 直近判定 → 判定済みブロック）。j / k の移動順（リストモード） */
   const displayCells = (): VerificationCell[] => {
@@ -269,7 +303,7 @@ export function createVerificationPanel(
   // --- フォーカスモード（issue #38）: ユニット単位のナビゲーション -------------
   /** 指定タブのユニット列を組み立てる（focusUnits.buildFocusUnits を現在の armStructure で呼ぶ） */
   const focusUnitsOf = (tab: EntityLevel): FocusUnit[] =>
-    buildFocusUnits(tab, buildTabModel(tab, data.fields, data.evidence, ownDecisions, { armStructure }), {
+    buildFocusUnits(tab, buildTabModel(tab, data.fields, currentEvidence(), ownDecisions, { armStructure }), {
       armStructure,
     });
 
@@ -280,7 +314,7 @@ export function createVerificationPanel(
   function computeInitialFocusKey(tab: EntityLevel): string | null {
     if (layoutMode === 'list') {
       return initialFocusKey(
-        buildTabModel(tab, data.fields, data.evidence, ownDecisions, { armStructure }).cells,
+        buildTabModel(tab, data.fields, currentEvidence(), ownDecisions, { armStructure }).cells,
       );
     }
     return initialFocusKeyForUnits(focusUnitsOf(tab));
@@ -323,6 +357,8 @@ export function createVerificationPanel(
       mode: panelMode,
       consistencyWarnings: collectConsistencyWarnings(tabModel),
       robAlgorithmInfo: collectRobAlgorithmInfo(tabModel),
+      canRelocateQuote,
+      relocateStatus,
     };
   }
 
@@ -397,6 +433,13 @@ export function createVerificationPanel(
    * retry による読み直しも applyLoadedPdf を通るため、そのときはキャッシュが差し替わる
    */
   const rectHighlightsByDoc = new Map<string, EvidenceHighlight[]>();
+  /**
+   * documentId ごとのテキスト層ページ（rects 実体化に使った textPages。applyLoadedPdf で保存する）。
+   * relocate-quote（issue #94）成功時、既に表示済みの文書ならここから読み直して
+   * rectHighlightsByDoc へ新しいハイライトを追加する（PDF 未読込の文書は次回ロード時に
+   * currentEvidence() から自然に反映されるため、ここに無くても実害はない）
+   */
+  const textPagesByDoc = new Map<string, readonly TextLayerPage[]>();
   /** 現在進行中のロードを無効化するための連番（文書切替のたびに進める） */
   let docLoadSeq = 0;
   /**
@@ -464,7 +507,7 @@ export function createVerificationPanel(
     'この PDF はテキスト層がありません。AI が推定した座標ハイライト（bbox）を表示しています。位置は機械検証できないため、必ず quote 全文と照らして検証してください';
   // bbox を持つ Evidence の出所文書 ID 集合（バナー出し分けに使う。study 全体で 1 回だけ計算する）
   const documentsWithBbox = new Set(
-    data.evidence
+    currentEvidence()
       .filter((item) => item.bbox !== null && item.bboxPage !== null)
       .map((item) => item.documentId),
   );
@@ -546,10 +589,13 @@ export function createVerificationPanel(
         ? []
         : buildDocumentHighlights(
             documentId,
-            data.evidence.filter((item) => item.documentId === documentId),
+            currentEvidence().filter((item) => item.documentId === documentId),
             loaded.textPages,
           ),
     );
+    // relocate-quote（issue #94）: 表示済み文書に対する再特定成功時、この textPages から
+    // 差分ハイライトを追加できるよう保存しておく（recomputeRectHighlights 参照）
+    textPagesByDoc.set(documentId, loaded.textPages);
     if (loaded.pdf !== null) {
       if (viewer === null) {
         viewer = createPdfViewer({
@@ -579,6 +625,76 @@ export function createVerificationPanel(
 
   function toErrorMessage(err: unknown): string {
     return err instanceof Error ? err.message : String(err);
+  }
+
+  /**
+   * relocate-quote（issue #94）成功時、対象文書の PDF が既にロード済みなら
+   * rectHighlightsByDoc へ新しいハイライトを追加する（未ロードなら何もしない — 後で
+   * loadActiveDocumentPdf / applyLoadedPdf が currentEvidence() から自然に反映するため）
+   */
+  function recomputeRectHighlights(documentId: string, newRow: Evidence): void {
+    const pages = textPagesByDoc.get(documentId);
+    if (pages === undefined) {
+      return;
+    }
+    const added = buildDocumentHighlights(documentId, [newRow], pages);
+    if (added.length === 0) {
+      return;
+    }
+    // textPagesByDoc と rectHighlightsByDoc は applyLoadedPdf が常に同時にセットする
+    // （どちらか片方だけが存在する状態は無い）ため、pages が取得できた時点で
+    // rectHighlightsByDoc.get(documentId) も必ず存在する
+    const existing = rectHighlightsByDoc.get(documentId) as EvidenceHighlight[];
+    rectHighlightsByDoc.set(documentId, [...existing, ...added]);
+  }
+
+  /**
+   * 「AI で再特定」ボタン（issue #94）。options.onRelocateQuote（サービス層。
+   * relocateQuoteService.relocateQuote を包む）へ委譲し、結果を待って local overlay へ反映する。
+   * 成功: Evidence 追記済みの新行をローカルへ積み、ハイライト・quote 表示を差し替えてジャンプする。
+   * not_found: セルへ「見つかりませんでした」の案内を出し、従来の「本文内を検索」導線を残す
+   */
+  async function handleRelocateQuote(cellKey: string): Promise<void> {
+    // handlers.onRelocateQuote はボタンが canRelocateQuote（= options.onRelocateQuote が
+    // 注入済み）のときにしか描画されない（renderQuote 参照）ため、ここに来る時点で
+    // options.onRelocateQuote は必ず定義済み。多重発火だけを実行中フラグで防ぐ
+    const relocate = options.onRelocateQuote as NonNullable<VerificationPanelOptions['onRelocateQuote']>;
+    if (relocateStatus.get(cellKey) === 'running') {
+      return;
+    }
+    const evidence = evidenceByCell.get(cellKey);
+    /* istanbul ignore if -- ボタンは cell.evidence（buildTabModel が currentEvidence() から
+       導出）が非 null のセルにしか出ず、evidenceByCell も同じ currentEvidence() を単一の
+       情報源として同期更新するため、実行時にここが undefined になることはない（防御のみ） */
+    if (evidence === undefined) {
+      return;
+    }
+    relocateStatus.set(cellKey, 'running');
+    refreshForm();
+    let outcome: RelocateQuoteOutcome;
+    try {
+      outcome = await relocate(evidence);
+    } catch (err) {
+      outcome = { status: 'not_found', message: toErrorMessage(err) };
+    }
+    if (outcome.status === 'relocated') {
+      relocatedEvidence.push(outcome.evidence);
+      evidenceByCell.set(cellKeyOf(outcome.evidence.fieldId, outcome.evidence.entityKey), outcome.evidence);
+      recomputeTextMatches();
+      recomputeRectHighlights(outcome.evidence.documentId, outcome.evidence);
+      relocateStatus.delete(cellKey);
+      refreshForm();
+      syncViewer();
+      // 成功時は根拠ハイライトへジャンプする（f キー / onJump と同じ経路。issue #94）
+      if (viewMode === 'text') {
+        syncTextViewer(cellKey);
+      } else {
+        focusHighlightNowOrPending(cellKey);
+      }
+      return;
+    }
+    relocateStatus.set(cellKey, 'not_found');
+    refreshForm();
   }
 
   /**
@@ -733,7 +849,7 @@ export function createVerificationPanel(
         matchIndex: matchSelection.get(match.cellKey) ?? match.selectedIndex,
       });
     }
-    for (const item of data.evidence) {
+    for (const item of currentEvidence()) {
       if (item.bbox === null || item.bboxPage === null) {
         continue;
       }
@@ -860,7 +976,7 @@ export function createVerificationPanel(
   /** cellKey がどのタブに属するか（ビューアクリック時のタブ切替に使う） */
   function tabOfCell(cellKey: string): EntityLevel | null {
     for (const tab of tabs) {
-      const model = buildTabModel(tab, data.fields, data.evidence, ownDecisions, {
+      const model = buildTabModel(tab, data.fields, currentEvidence(), ownDecisions, {
         armStructure,
       });
       if (model.cells.some((cell) => cell.cellKey === cellKey)) {
@@ -950,6 +1066,9 @@ export function createVerificationPanel(
       syncViewer();
       focusHighlightNowOrPending(cellKey);
       syncTextViewer(cellKey);
+    },
+    onRelocateQuote(cellKey) {
+      void handleRelocateQuote(cellKey);
     },
     onExpandDecided(cellKey) {
       // コンパクト行は判定操作ボタンを含まないため、click 発火後の再構築で安全に展開できる
@@ -1048,7 +1167,7 @@ export function createVerificationPanel(
         return;
       }
       const existing = new Set(
-        entityInstances('outcome_result', data.evidence, ownDecisions, { armStructure }),
+        entityInstances('outcome_result', currentEvidence(), ownDecisions, { armStructure }),
       );
       const duplicate = declarations.find((decision) => existing.has(decision.entityKey));
       if (duplicate !== undefined) {
@@ -1058,7 +1177,7 @@ export function createVerificationPanel(
       }
       ownDecisions.push(...declarations);
       outcomeKeyDraft = nextOutcomeId(
-        entityInstances('outcome_result', data.evidence, ownDecisions, { armStructure }),
+        entityInstances('outcome_result', currentEvidence(), ownDecisions, { armStructure }),
       );
       outcomeTimeDraft = '';
       outcomeError = null;
@@ -1113,7 +1232,7 @@ export function createVerificationPanel(
           ? { outcomeKey: outcomeKeyDraft, time: outcomeTimeDraft, error: outcomeError }
           : null,
       armLocked: armLocked(),
-      progress: verificationProgress(data.fields, data.evidence, ownDecisions, { armStructure }),
+      progress: verificationProgress(data.fields, currentEvidence(), ownDecisions, { armStructure }),
       layoutMode,
       focusCard: layoutMode === 'focus' ? buildFocusCardModel() : null,
       mode: panelMode,
@@ -1122,6 +1241,9 @@ export function createVerificationPanel(
       consistencyWarnings: collectConsistencyWarnings(tabModel),
       // RoB 2 SQ アルゴリズム提案（issue #61）: 同じく判定・編集のたびに再計算する
       robAlgorithmInfo: collectRobAlgorithmInfo(tabModel),
+      // relocate-quote（issue #94）: ボタン表示可否 + セルごとの実行状態
+      canRelocateQuote,
+      relocateStatus,
     };
     formPane.replaceChildren(renderVerificationForm(model, handlers));
     formPane.scrollTop = savedScrollTop;
@@ -1154,7 +1276,7 @@ export function createVerificationPanel(
     // 展開して通常カードを見せる。コンパクト行は focusin リスナを持たないため、
     // ここでの再構築が click をキャンセルする経路は通常カードの focusin だけに限られ、
     // その場合は下の else（クラス切替のみ）を通る。判定済みブロックはリストモード限定の概念
-    const target = buildTabModel(tab, data.fields, data.evidence, ownDecisions, {
+    const target = buildTabModel(tab, data.fields, currentEvidence(), ownDecisions, {
       armStructure,
     }).cells.find((cell) => cell.cellKey === cellKey) as VerificationCell;
     const expand =
@@ -1201,7 +1323,7 @@ export function createVerificationPanel(
       if (tabLocked(tab)) {
         continue;
       }
-      const model = buildTabModel(tab, data.fields, data.evidence, ownDecisions, {
+      const model = buildTabModel(tab, data.fields, currentEvidence(), ownDecisions, {
         armStructure,
       });
       const cell = model.cells.find((candidate) => candidate.entityKey === entityKey);

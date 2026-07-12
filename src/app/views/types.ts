@@ -2,6 +2,7 @@
 // 副作用（サービス呼び出し）はコールバック経由で bootstrap へ委譲する（architecture.md §2.2）
 import type { Decision } from '../../domain/decision';
 import type { DocumentRole } from '../../domain/document';
+import type { Evidence } from '../../domain/evidence';
 import type { ExportFormat } from '../../domain/exportLog';
 import type { ReviewMode } from '../../domain/reviewer';
 import type { MethodsLanguage, MethodsWorkflow } from '../../features/export/methodsBoilerplate';
@@ -9,6 +10,7 @@ import type { ProtocolSubmitInput } from '../../features/protocol/submitInput';
 import type { SchemaPresetKind } from '../../features/schema/presets';
 import type { SchemaEditorRow } from '../../features/schema/types';
 import type { VerifyLayoutMode } from '../../lib/storage/settingsStore';
+import type { RelocateQuoteOutcome } from '../services/relocateQuoteService';
 
 /** #/home のユーザー操作コールバック（owner のレビュアー管理カード + reviewer の縮退版 Home を含む） */
 export interface HomeViewCallbacks {
@@ -125,6 +127,13 @@ export interface PilotViewCallbacks {
   onChangeLayoutMode(mode: VerifyLayoutMode): void;
   /** 保存の競合検出バナー（issue #64）の「再読み込み」: 埋め込み検証データ束を読み直す */
   onReloadVerification(): void;
+  /**
+   * 「AI で再特定」ボタン（anchor failed の quote 再特定。issue #94）。
+   * 他のコールバックと異なり結果を Promise で返す（verificationPanel.ts の
+   * VerificationPanelOptions.onRelocateQuote と同型。実行中スピナー・成功時のハイライト反映・
+   * not_found 案内をパネル自身が local overlay として持つため、この操作だけ結果を待つ必要がある）
+   */
+  onRelocateQuote(evidence: Evidence): Promise<RelocateQuoteOutcome>;
 }
 
 /** #/extract（S7）のユーザー操作コールバック */
@@ -161,6 +170,8 @@ export interface VerifyViewCallbacks {
   onChangeLayoutMode(mode: VerifyLayoutMode): void;
   /** 保存の競合検出バナー（issue #64）の「再読み込み」: 表示中 study を読み直す */
   onReloadVerification(): void;
+  /** 「AI で再特定」ボタン（anchor failed の quote 再特定。issue #94）。PilotViewCallbacks 参照 */
+  onRelocateQuote(evidence: Evidence): Promise<RelocateQuoteOutcome>;
 }
 
 /** #/dashboard（S9）のユーザー操作コールバック（セルクリックはハッシュ遷移のためここに持たない） */

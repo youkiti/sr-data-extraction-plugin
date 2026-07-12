@@ -41,6 +41,7 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<PilotViewCallback
     onArmConfirm: jest.fn(),
     onChangeLayoutMode: jest.fn(),
     onReloadVerification: jest.fn(),
+    onRelocateQuote: jest.fn(),
     onInstanceDeclare: jest.fn(),
   };
   return {
@@ -108,6 +109,7 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<PilotViewCallback
         onArmConfirm: jest.fn(),
         onChangeLayoutMode: jest.fn(),
         onReloadVerification: jest.fn(),
+        onRelocateQuote: jest.fn(),
       },
       dashboard: { onReload: jest.fn() },
       export: {

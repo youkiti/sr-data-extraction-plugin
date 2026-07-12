@@ -181,6 +181,9 @@ export const SHEET_HEADERS: Record<SheetTabName, readonly string[]> = {
     'bbox_xmin',
     'bbox_ymax',
     'bbox_xmax',
+    // relocate-quote skill（issue #94）で再特定した行の出所（元 evidence_id）。既存プロジェクトは
+    // この列を持たないため、bbox 列と同じ後方互換パターン（末尾追加・読み書き側で許容）を取る
+    'relocated_from',
   ],
   Decisions: [
     'decided_at',

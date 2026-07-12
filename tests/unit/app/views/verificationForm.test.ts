@@ -47,6 +47,7 @@ function makeEvidence(overrides: Partial<Evidence> = {}): Evidence {
     anchorStatus: 'exact',
     bboxPage: null,
     bbox: null,
+    relocatedFrom: null,
     ...overrides,
   };
 }
@@ -77,6 +78,7 @@ function makeHandlers(): jest.Mocked<VerificationFormHandlers> {
     onJump: jest.fn(),
     onSearchQuote: jest.fn(),
     onCycleMatch: jest.fn(),
+    onRelocateQuote: jest.fn(),
     onExpandDecided: jest.fn(),
     onCollapseDecided: jest.fn(),
     onArmNameChange: jest.fn(),
@@ -418,6 +420,53 @@ describe('renderVerificationForm', () => {
     const cell = makeCell({ evidence: makeEvidence({ anchorStatus: 'failed' }) });
     const { root } = render(makeModel([cell], { canSearchText: false }));
     expect(root.querySelector('.verify__quote-search')).toBeNull();
+  });
+
+  test('「AI で再特定」（issue #94）: canRelocateQuote = true かつ anchor_status = failed のときだけ出す', () => {
+    const cell = makeCell({ evidence: makeEvidence({ anchorStatus: 'failed' }) });
+    const { root, handlers } = render(makeModel([cell], { canRelocateQuote: true }));
+    const button = root.querySelector<HTMLButtonElement>('.verify__quote-relocate');
+    expect(button).not.toBeNull();
+    expect(button?.textContent).toBe('AI で再特定');
+    expect(button?.disabled).toBe(false);
+    button?.click();
+    expect(handlers.onRelocateQuote).toHaveBeenCalledWith(cell.cellKey);
+  });
+
+  test('canRelocateQuote = false（options.onRelocateQuote 未注入）では出さない', () => {
+    const cell = makeCell({ evidence: makeEvidence({ anchorStatus: 'failed' }) });
+    const { root } = render(makeModel([cell], { canRelocateQuote: false }));
+    expect(root.querySelector('.verify__quote-relocate')).toBeNull();
+  });
+
+  test('anchor_status が failed 以外（normalized 等）では canRelocateQuote = true でも出さない', () => {
+    // unanchored 分岐（highlightInfo 0 件）自体はテスト対象外のケースだが、
+    // 万一 failed 以外で unanchored 表示になっても「AI で再特定」は failed 限定にする
+    const cell = makeCell({ evidence: makeEvidence({ anchorStatus: 'normalized' }) });
+    const info = new Map([[cell.cellKey, { matchCount: 0, matchIndex: 0 }]]);
+    const { root } = render(makeModel([cell], { canRelocateQuote: true, highlightInfo: info }));
+    expect(root.querySelector('.verify__quote-relocate')).toBeNull();
+  });
+
+  test('relocateStatus = running では「AI で再特定中…」を disabled で出す', () => {
+    const cell = makeCell({ evidence: makeEvidence({ anchorStatus: 'failed' }) });
+    const status = new Map<string, 'running' | 'not_found'>([[cell.cellKey, 'running']]);
+    const { root } = render(makeModel([cell], { canRelocateQuote: true, relocateStatus: status }));
+    const button = root.querySelector<HTMLButtonElement>('.verify__quote-relocate');
+    expect(button?.textContent).toBe('AI で再特定中…');
+    expect(button?.disabled).toBe(true);
+  });
+
+  test('relocateStatus = not_found では案内メッセージを出し、ボタンは再度有効', () => {
+    const cell = makeCell({ evidence: makeEvidence({ anchorStatus: 'failed' }) });
+    const status = new Map<string, 'running' | 'not_found'>([[cell.cellKey, 'not_found']]);
+    const { root } = render(makeModel([cell], { canRelocateQuote: true, relocateStatus: status }));
+    const button = root.querySelector<HTMLButtonElement>('.verify__quote-relocate');
+    expect(button?.textContent).toBe('AI で再特定');
+    expect(button?.disabled).toBe(false);
+    expect(root.querySelector('.verify__quote-relocate-not-found')?.textContent).toBe(
+      'AI でも見つかりませんでした。本文内検索をお試しください',
+    );
   });
 
   test('quote が無い Evidence は quote ブロックを出さない', () => {
