@@ -187,6 +187,23 @@ function renderExtractionInstruction(cell: VerificationCell): HTMLElement {
   });
 }
 
+/**
+ * with_ai レビューのセルカードに追加する抽出指示の折りたたみ（issue #81）。
+ * 独立入力モードは常時表示（上の renderExtractionInstruction）のため対象外。
+ * ネイティブ `<details>`/`<summary>` を使い、既定は畳んだ状態（open 属性なし）。
+ * 開閉状態はブラウザが自前で管理するため（判定操作の handlers 経由ではない）、
+ * 再描画のたびに畳んだ状態へ戻る
+ */
+function renderExtractionInstructionToggle(cell: VerificationCell): HTMLElement {
+  return el('details', { className: 'verify__instruction-toggle' }, [
+    el('summary', { text: '指示を表示' }),
+    el('p', {
+      className: 'verify__instruction',
+      text: cell.field.extractionInstruction,
+    }),
+  ]);
+}
+
 function renderQuote(
   cell: VerificationCell,
   model: CellCardModel,
@@ -385,6 +402,11 @@ export function renderCell(
     header,
     mode === 'independent' ? renderExtractionInstruction(cell) : renderAiSummary(cell),
   ];
+  if (mode === 'review') {
+    // with_ai レビューは AI 値が主表示のため、抽出指示は既定で畳んだ折りたたみとして併記する
+    // （issue #81）。独立入力モードは既に extraction_instruction を常時表示しているため対象外
+    children.push(renderExtractionInstructionToggle(cell));
+  }
   const consistencyWarnings = renderConsistencyWarnings(cell, model);
   if (consistencyWarnings !== null) {
     children.push(consistencyWarnings);

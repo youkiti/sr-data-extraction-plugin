@@ -122,6 +122,16 @@ describe('renderVerificationFocusCard', () => {
     expect(root.querySelector('.focus-card__heading')?.textContent).toBe('pain');
   });
 
+  test('詳細ストリップにも抽出指示の折りたたみが自動的に反映される（issue #81。verificationCellCard.renderCell を共有するため）', () => {
+    const { root } = render(makeModel());
+    const detail = root.querySelector('#verify-focus-detail');
+    const details = detail?.querySelector<HTMLDetailsElement>('.verify__instruction-toggle');
+    expect(details).not.toBeNull();
+    expect(details?.open).toBe(false);
+    expect(details?.querySelector('summary')?.textContent).toBe('指示を表示');
+    expect(details?.querySelector('.verify__instruction')?.textContent).toBe('平均値を抽出');
+  });
+
   test('マトリクスは列ヘッダ・行ヘッダ・値 + 判定チップのボタンを描画する', () => {
     const { root, handlers } = render(makeModel());
     const table = root.querySelector('#verify-focus-matrix');

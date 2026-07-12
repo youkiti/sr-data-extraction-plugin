@@ -1772,6 +1772,27 @@
   font-size: 13px;
 }
 
+/* with_ai レビューのセルカードに追加する抽出指示の折りたたみ（issue #81）。
+   既定は畳んだ状態（<details> の open 属性なし）。ネイティブ要素のため開閉の
+   アクセシビリティ（キーボード操作・展開状態の AT 通知）はブラウザ任せでよい */
+.verify__instruction-toggle {
+  margin: 6px 0;
+}
+
+.verify__instruction-toggle > summary {
+  cursor: pointer;
+  color: var(--color-text-muted);
+  font-size: 13px;
+}
+
+.verify__instruction-toggle > summary:hover {
+  color: var(--color-text);
+}
+
+.verify__instruction-toggle > .verify__instruction {
+  margin: 4px 0 0;
+}
+
 .verify__ai--none {
   color: var(--color-text-muted);
 }

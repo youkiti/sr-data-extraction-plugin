@@ -469,6 +469,18 @@ test('フォーカスモード: マトリクス表示 → 判定の自動送り 
   const focusResults = await new AxeBuilder({ page }).analyze();
   expect(focusResults.violations).toEqual([]);
 
+  // 抽出指示の折りたたみ（issue #81）: with_ai レビューのセルカードは既定で畳んだ状態 →
+  // 開くと extraction_instruction を表示する（独立入力モードの常時表示とは別に追加）
+  const instructionToggle = page.locator('#verify-focus-detail .verify__instruction-toggle');
+  await expect(instructionToggle).toBeVisible();
+  await expect(instructionToggle).not.toHaveAttribute('open', '');
+  await instructionToggle.locator('summary').click();
+  await expect(instructionToggle).toHaveAttribute('open', '');
+  await expect(instructionToggle.locator('.verify__instruction')).toHaveText('Report overall mortality.');
+
+  const toggleOpenResults = await new AxeBuilder({ page }).analyze();
+  expect(toggleOpenResults.violations).toEqual([]);
+
   // 承認 → 同一ユニット内の次の未判定セル（国）へ自動送り。ユニット位置はまだ変わらない
   await page.locator('#verify-focus-detail .verify__action--accept').click();
   await expect(page.locator('#verify-focus-detail .verify__cell-label')).toHaveText('国');

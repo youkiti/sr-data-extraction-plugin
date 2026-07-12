@@ -89,6 +89,7 @@ function makeHandlers(): jest.Mocked<VerificationFormHandlers> {
     onOutcomeTimeChange: jest.fn(),
     onOutcomeAdd: jest.fn(),
     onToggleLayoutMode: jest.fn(),
+    onMoveUnit: jest.fn(),
   };
 }
 
@@ -214,6 +215,22 @@ describe('renderVerificationForm', () => {
     expect(root.querySelector('.verify__ai--none')?.textContent).toContain('AI 抽出なし');
     expect(root.querySelector<HTMLButtonElement>('.verify__action--accept')?.disabled).toBe(true);
     expect(root.querySelector('.verify__quote')).toBeNull();
+  });
+
+  test('with_ai レビューのセルカードには抽出指示の折りたたみを追加し、既定は畳んだ状態（issue #81）', () => {
+    const { root } = render(makeModel([makeCell()]));
+    const details = root.querySelector<HTMLDetailsElement>('.verify__instruction-toggle');
+    expect(details).not.toBeNull();
+    expect(details?.tagName).toBe('DETAILS');
+    expect(details?.open).toBe(false);
+    expect(details?.querySelector('summary')?.textContent).toBe('指示を表示');
+    expect(details?.querySelector('.verify__instruction')?.textContent).toBe('総 N を抽出');
+  });
+
+  test('独立入力モードは抽出指示を常時表示するため、折りたたみは出さない（issue #81。表示自体は不変更）', () => {
+    const { root } = render(makeModel([makeCell()], { mode: 'independent' }));
+    expect(root.querySelector('.verify__instruction-toggle')).toBeNull();
+    expect(root.querySelector('.verify__instruction')?.textContent).toBe('総 N を抽出');
   });
 
   test('独立入力モード（mode: independent）は quote / AI 値 / 承認・棄却を出さず、抽出指示を代わりに出す（design §5.2）', () => {
