@@ -4,6 +4,8 @@
 // - 同一更新キーの重複行はバリデーション違反として throw（シート側・入力側とも）
 // - StudyData の値列は動的（entity_level = study 項目の field_name）。不足列はヘッダ末尾へ
 //   「追加のみ」行う（削除・改名はしない。§3.2）
+// - 新規行の追記は 1 回の values:append あたり DEFAULT_MAX_ROWS_PER_APPEND 行までに区切り、
+//   逐次呼び出す（Sheets API のリクエストサイズ超過・429 対策。issue #69）
 import type {
   AnnotatorType,
   ResultsDataRow,
@@ -29,9 +31,38 @@ const ANNOTATOR_TYPES: readonly AnnotatorType[] = [
   'consensus',
 ];
 
+/**
+ * 1 回の values:append に載せる行数上限の既定値（Sheets API のリクエストサイズ超過・429 対策）。
+ * Evidence 側（executeRun.ts の DEFAULT_MAX_ROWS_PER_FLUSH）と同値だが、リポジトリ層から
+ * ユースケース層（executeRun.ts）への逆依存を避けるためここで値を重複定義する。
+ */
+export const DEFAULT_MAX_ROWS_PER_APPEND = 500;
+
 export interface AnnotationRepositoryHelpers {
   /** テスト時に差し替え可能な UUID 発番（ResultsData の result_id 採番用） */
   newUuid?: () => string;
+  /**
+   * 1 回の values:append に載せる行数上限（既定 DEFAULT_MAX_ROWS_PER_APPEND = 500）。
+   * 0 以下・小数は 1 以上の整数へ丸める
+   */
+  maxRowsPerAppend?: number;
+}
+
+/**
+ * rows を maxRowsPerAppend 行ずつに区切り、appendRows を逐次 await で呼び出す
+ * （Sheets API のリクエストサイズ超過・429 対策）。並列にしないのは行順を保存するため。
+ * 空配列はループに入らないため何も呼ばない
+ */
+async function appendRowsInChunks(
+  spreadsheetId: string,
+  tab: string,
+  rows: readonly (readonly (string | number | boolean | null)[])[],
+  deps: GoogleApiDeps,
+  maxRowsPerAppend: number,
+): Promise<void> {
+  for (let i = 0; i < rows.length; i += maxRowsPerAppend) {
+    await appendRows(spreadsheetId, tab, rows.slice(i, i + maxRowsPerAppend), deps);
+  }
 }
 
 /** Sheets の values はラグ配列（末尾の空セルが落ちる）。欠けたセルは空文字として読む */
@@ -170,10 +201,15 @@ export async function upsertStudyDataRows(
   spreadsheetId: string,
   rows: readonly StudyDataRow[],
   deps: GoogleApiDeps,
+  helpers: AnnotationRepositoryHelpers = {},
 ): Promise<void> {
   if (rows.length === 0) {
     return;
   }
+  const maxRowsPerAppend = Math.max(
+    1,
+    Math.floor(helpers.maxRowsPerAppend ?? DEFAULT_MAX_ROWS_PER_APPEND),
+  );
   const snapshot = await fetchStudySheet(spreadsheetId, deps);
   const index = indexStudyRows(snapshot);
 
@@ -212,7 +248,7 @@ export async function upsertStudyDataRows(
       await updateRow(spreadsheetId, STUDY_TAB, rowIndex, sheetRow, deps);
     }
   }
-  await appendRows(spreadsheetId, STUDY_TAB, appends, deps);
+  await appendRowsInChunks(spreadsheetId, STUDY_TAB, appends, deps, maxRowsPerAppend);
 }
 
 // ---------------------------------------------------------------------------
@@ -306,6 +342,10 @@ export async function upsertResultsDataRows(
     return;
   }
   const uuid = helpers.newUuid ?? generateUuid;
+  const maxRowsPerAppend = Math.max(
+    1,
+    Math.floor(helpers.maxRowsPerAppend ?? DEFAULT_MAX_ROWS_PER_APPEND),
+  );
   const snapshot = await fetchResultsSheet(spreadsheetId, deps);
 
   const index = new Map<string, { rowIndex: number; resultId: string }>();
@@ -345,5 +385,5 @@ export async function upsertResultsDataRows(
       );
     }
   }
-  await appendRows(spreadsheetId, RESULTS_TAB, appends, deps);
+  await appendRowsInChunks(spreadsheetId, RESULTS_TAB, appends, deps, maxRowsPerAppend);
 }

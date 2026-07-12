@@ -176,6 +176,28 @@ describe('upsertStudyDataRows', () => {
     ]);
   });
 
+  test('maxRowsPerAppend 指定時は指定行数ごとに :append を分割する（行順は入力順を保持。issue #69）', async () => {
+    const deps = makeDeps([[...STUDY_HEADER, 'sample_size_total']]);
+    const rows = Array.from({ length: 5 }, (_, i) =>
+      makeStudyRow({ studyId: `doc-${i}`, values: { sample_size_total: String(i) } }),
+    );
+    await upsertStudyDataRows('sid', rows, deps, { maxRowsPerAppend: 2 });
+    const posts = callsOf(deps, 'POST');
+    expect(posts).toHaveLength(3); // 2 行 + 2 行 + 1 行
+    const bodies = posts.map(([, init]) => JSON.parse(init.body as string).values);
+    expect(bodies).toEqual([
+      [
+        ['doc-0', 'ai', 'ai', 2, 'run-1', 't2', '0'],
+        ['doc-1', 'ai', 'ai', 2, 'run-1', 't2', '1'],
+      ],
+      [
+        ['doc-2', 'ai', 'ai', 2, 'run-1', 't2', '2'],
+        ['doc-3', 'ai', 'ai', 2, 'run-1', 't2', '3'],
+      ],
+      [['doc-4', 'ai', 'ai', 2, 'run-1', 't2', '4']],
+    ]);
+  });
+
   test('ヘッダに無い field_name はヘッダ末尾へ追加してから書き込む（追加のみ）', async () => {
     const deps = makeDeps([[...STUDY_HEADER, 'sample_size_total']]);
     await upsertStudyDataRows(
@@ -297,6 +319,66 @@ describe('upsertResultsDataRows', () => {
       ['r-a', 'doc-1', 'f-arm-n', 'ai', 'ai', 2, 'arm:1', 'run-1', '60', false, 't2'],
       ['r-b', 'doc-1', 'f-arm-n', 'ai', 'ai', 2, 'arm:2', 'run-1', '', true, 't2'],
     ]);
+  });
+
+  test('maxRowsPerAppend 指定時は指定行数ごとに :append を分割する（result_id 採番順も入力順。issue #69）', async () => {
+    const deps = makeDeps([RESULTS_HEADER]);
+    const uuids = ['r-0', 'r-1', 'r-2', 'r-3', 'r-4'];
+    const rows = Array.from({ length: 5 }, (_, i) => makeResultsRow({ entityKey: `arm:${i}` }));
+    await upsertResultsDataRows('sid', rows, deps, {
+      newUuid: () => uuids.shift() as string,
+      maxRowsPerAppend: 2,
+    });
+    const posts = callsOf(deps, 'POST');
+    expect(posts).toHaveLength(3); // 2 行 + 2 行 + 1 行
+    const bodies = posts.map(([, init]) => JSON.parse(init.body as string).values as unknown[][]);
+    // result_id（0 列目）・entity_key（6 列目）とも入力順どおりに分割されている
+    expect(bodies.map((rows) => rows.map((r) => [r[0], r[6]]))).toEqual([
+      [
+        ['r-0', 'arm:0'],
+        ['r-1', 'arm:1'],
+      ],
+      [
+        ['r-2', 'arm:2'],
+        ['r-3', 'arm:3'],
+      ],
+      [['r-4', 'arm:4']],
+    ]);
+  });
+
+  test('maxRowsPerAppend 省略時は既定 500 行ごとに分割する（issue #69）', async () => {
+    const deps = makeDeps([RESULTS_HEADER]);
+    const rows = Array.from({ length: 1250 }, (_, i) => makeResultsRow({ entityKey: `arm:${i}` }));
+    await upsertResultsDataRows('sid', rows, deps);
+    const posts = callsOf(deps, 'POST');
+    const counts = posts.map(([, init]) => (JSON.parse(init.body as string).values as unknown[]).length);
+    expect(counts).toEqual([500, 500, 250]);
+  });
+
+  test('40,000 行相当の一括抽出でも 1 回の :append が既定上限を超えない（issue #69 の受け入れ条件）', async () => {
+    const deps = makeDeps([RESULTS_HEADER]);
+    const rows = Array.from({ length: 40000 }, (_, i) => makeResultsRow({ entityKey: `arm:${i}` }));
+    await upsertResultsDataRows('sid', rows, deps);
+    const posts = callsOf(deps, 'POST');
+    expect(posts).toHaveLength(80); // 40,000 / 500
+    for (const [, init] of posts) {
+      const values = JSON.parse(init.body as string).values as unknown[];
+      expect(values.length).toBeLessThanOrEqual(500);
+    }
+  }, 15000);
+
+  test('maxRowsPerAppend の丸め: 0 以下は 1 行ずつ、小数は floor する', async () => {
+    const rows = Array.from({ length: 3 }, (_, i) => makeResultsRow({ entityKey: `arm:${i}` }));
+
+    const zeroDeps = makeDeps([RESULTS_HEADER]);
+    await upsertResultsDataRows('sid', rows, zeroDeps, { maxRowsPerAppend: 0 });
+    expect(callsOf(zeroDeps, 'POST')).toHaveLength(3); // 1 行ずつ
+
+    const floatDeps = makeDeps([RESULTS_HEADER]);
+    await upsertResultsDataRows('sid', rows, floatDeps, { maxRowsPerAppend: 2.9 });
+    const posts = callsOf(floatDeps, 'POST');
+    const counts = posts.map(([, init]) => (JSON.parse(init.body as string).values as unknown[]).length);
+    expect(counts).toEqual([2, 1]); // floor(2.9) = 2 行ずつ
   });
 
   test('helpers 省略時は既定の UUID 発番を使う', async () => {
