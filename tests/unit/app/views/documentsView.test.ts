@@ -128,6 +128,9 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<DocumentsViewCall
         onCancelGenerate: jest.fn(),
         onDownload: jest.fn(),
         onReload: jest.fn(),
+        onChangeMethodsLanguage: jest.fn(),
+        onChangeMethodsWorkflow: jest.fn(),
+        onCopyMethods: jest.fn(),
       },
       adjudicate: {
         onSelectStudy: jest.fn(),
@@ -146,6 +149,8 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<DocumentsViewCall
         onUnskip: jest.fn(),
         onUndo: jest.fn(),
         onToggleMismatchOnly: jest.fn(),
+        onLoadAgreement: jest.fn(),
+        onDownloadAgreementCsv: jest.fn(),
       },
     },
     callbacks,

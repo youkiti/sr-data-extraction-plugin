@@ -3,6 +3,19 @@ import { createInitialState, type AppState, type ExportState } from '../../../..
 import type { ExportViewCallbacks, ViewContext } from '../../../../src/app/views/types';
 import type { ExportFormat } from '../../../../src/domain/exportLog';
 import type { BuiltExport } from '../../../../src/features/export/buildExport';
+import { buildMethodsText } from '../../../../src/features/export/methodsBoilerplate';
+
+// 実装の文言は素通しする（他テストは実際の文案を検証したいため）。
+// 「未反映プレースホルダが 0 件」という、正典の文案では実際には起こらない組み合わせだけ
+// mockReturnValueOnce で差し替え、注意書き非表示の分岐（本来は将来の文案改訂向けの防御）を検証する
+jest.mock('../../../../src/features/export/methodsBoilerplate', () => ({
+  ...jest.requireActual('../../../../src/features/export/methodsBoilerplate'),
+  buildMethodsText: jest.fn(
+    jest.requireActual('../../../../src/features/export/methodsBoilerplate').buildMethodsText,
+  ),
+}));
+
+const buildMethodsTextMock = buildMethodsText as jest.Mock;
 
 function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<ExportViewCallbacks> } {
   const callbacks = {
@@ -12,6 +25,9 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<ExportViewCallbac
     onCancelGenerate: jest.fn(),
     onDownload: jest.fn(),
     onReload: jest.fn(),
+    onChangeMethodsLanguage: jest.fn(),
+    onChangeMethodsWorkflow: jest.fn(),
+    onCopyMethods: jest.fn(),
   };
   return {
     ctx: {
@@ -110,6 +126,8 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<ExportViewCallbac
         onUnskip: jest.fn(),
         onUndo: jest.fn(),
         onToggleMismatchOnly: jest.fn(),
+        onLoadAgreement: jest.fn(),
+        onDownloadAgreementCsv: jest.fn(),
       },
     },
     callbacks,
@@ -341,5 +359,88 @@ describe('renderExportView', () => {
     expect(link?.getAttribute('rel')).toBe('noopener');
     (view.querySelector('#export-download') as HTMLButtonElement).click();
     expect(callbacks.onDownload).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('renderExportView: 論文 Methods 記載例カード（issue #67）', () => {
+  const facts = {
+    toolVersion: '1.2.3',
+    modelIds: ['gemini-3.5-flash-001'],
+    providers: ['Gemini'],
+    pilotStudyCount: 3,
+    scannedDocumentCount: 0,
+  };
+
+  test('methodsFacts 未読込（null）はカード自体を出さない', () => {
+    const { ctx } = makeCtx();
+    const view = renderExportView(makeState({ built: makeBuiltAll(), methodsFacts: null }), ctx);
+    expect(view.querySelector('#export-methods')).toBeNull();
+  });
+
+  test('既定（English・単一レビュアー）の本文とコピー・未反映注意書きを表示する', () => {
+    const { ctx, callbacks } = makeCtx();
+    const view = renderExportView(makeState({ built: makeBuiltAll(), methodsFacts: facts }), ctx);
+    const textArea = view.querySelector('#methods-text') as HTMLTextAreaElement;
+    expect(textArea.value.startsWith('Data extraction. Data were extracted using')).toBe(true);
+    expect(textArea.value).toContain('gemini-3.5-flash-001');
+    expect(textArea.readOnly).toBe(true);
+
+    expect(view.querySelector('#methods-lang-en')?.getAttribute('aria-pressed')).toBe('true');
+    expect(view.querySelector('#methods-lang-ja')?.getAttribute('aria-pressed')).toBe('false');
+    expect(view.querySelector('#methods-workflow-single')?.getAttribute('aria-pressed')).toBe(
+      'true',
+    );
+    expect(view.querySelector('#methods-workflow-dual')?.getAttribute('aria-pressed')).toBe(
+      'false',
+    );
+
+    // n_sample 等が自動反映できないため注意書きが出る
+    expect(view.querySelector('#methods-unresolved-note')?.textContent).toBe(
+      '{{ }} の箇所はご自身の情報に置き換えてください',
+    );
+
+    (view.querySelector('#methods-copy') as HTMLButtonElement).click();
+    expect(callbacks.onCopyMethods).toHaveBeenCalledTimes(1);
+  });
+
+  test('言語タブ / ワークフロートグルのクリックでコールバックが呼ばれる', () => {
+    const { ctx, callbacks } = makeCtx();
+    const view = renderExportView(makeState({ built: makeBuiltAll(), methodsFacts: facts }), ctx);
+    (view.querySelector('#methods-lang-ja') as HTMLButtonElement).click();
+    expect(callbacks.onChangeMethodsLanguage).toHaveBeenCalledWith('ja');
+    (view.querySelector('#methods-workflow-dual') as HTMLButtonElement).click();
+    expect(callbacks.onChangeMethodsWorkflow).toHaveBeenCalledWith('dual');
+  });
+
+  test('日本語 + 二重独立を選択している状態を反映する', () => {
+    const { ctx } = makeCtx();
+    const view = renderExportView(
+      makeState({
+        built: makeBuiltAll(),
+        methodsFacts: facts,
+        methodsLanguage: 'ja',
+        methodsWorkflow: 'dual',
+      }),
+      ctx,
+    );
+    const textArea = view.querySelector('#methods-text') as HTMLTextAreaElement;
+    expect(textArea.value.startsWith('データ抽出. データ抽出には')).toBe(true);
+    expect(textArea.value).toContain('レビュアー 2 名（{{reviewer_initials}}）が独立に');
+    expect(view.querySelector('#methods-lang-ja')?.getAttribute('aria-pressed')).toBe('true');
+    expect(view.querySelector('#methods-workflow-dual')?.getAttribute('aria-pressed')).toBe(
+      'true',
+    );
+  });
+
+  test('未反映プレースホルダが残らない場合は注意書きを出さない', () => {
+    const { ctx } = makeCtx();
+    // 正典の文案では n_sample / reviewer_initials / supplement_ref が必ず残るため実際には
+    // 起こらない組み合わせだが、将来の文案改訂に備えた防御分岐を検証するため差し替える
+    buildMethodsTextMock.mockReturnValueOnce({ text: '差し替え済み本文', unresolved: [] });
+    const view = renderExportView(makeState({ built: makeBuiltAll(), methodsFacts: facts }), ctx);
+    expect((view.querySelector('#methods-text') as HTMLTextAreaElement).value).toBe(
+      '差し替え済み本文',
+    );
+    expect(view.querySelector('#methods-unresolved-note')).toBeNull();
   });
 });

@@ -148,6 +148,9 @@ describe('createInitialState', () => {
         workingError: null,
         saving: false,
         mismatchOnlyFilter: true,
+        agreement: null,
+        agreementLoading: false,
+        agreementError: null,
       },
       export: {
         format: 'study_wide',
@@ -159,6 +162,9 @@ describe('createInitialState', () => {
         generating: false,
         generateError: null,
         result: null,
+        methodsFacts: null,
+        methodsLanguage: 'en',
+        methodsWorkflow: 'single',
       },
       settingsReturnHash: null,
     });

@@ -7,7 +7,14 @@
 //   失敗はトースト表示のみで画面状態を維持する（v1 は offlineQueue への退避なし。§9）
 import type { ConfirmedArmStructure } from '../../domain/armStructure';
 import type { DocumentRecord } from '../../domain/document';
+import type { SchemaField } from '../../domain/schemaField';
 import type { StudyRecord } from '../../domain/study';
+import {
+  buildAgreementReport,
+  buildAgreementSummaryCsv,
+  buildAgreementDisagreementsCsv,
+  type AgreementStudyInput,
+} from '../../features/adjudication/agreement';
 import { armsMatch, buildConsensusArmDraft, type DraftArmRow } from '../../features/adjudication/armMatch';
 import { buildAdjudicationCells, type AdjudicationCell } from '../../features/adjudication/cellMatch';
 import { applyConsensusWrites } from '../../features/adjudication/consensusRepository';
@@ -42,7 +49,9 @@ import { getCurrentUserEmail, type ProfileDeps } from '../../lib/google/identity
 import type { GoogleApiDeps } from '../../lib/google/types';
 import { nowIso8601 } from '../../utils/iso8601';
 import type { AdjudicateState, AdjudicateStudyRow, AdjudicateWorking, Store } from '../store';
+import { downloadTextFile } from '../ui/download';
 import { showToast } from '../ui/toast';
+import { timestampForFilename } from './exportService';
 
 export interface AdjudicationServiceDeps {
   google: GoogleApiDeps;
@@ -519,4 +528,99 @@ export async function undoAdjudicateCell(
     return;
   }
   await applyWrites(store, deps, working, [write]);
+}
+
+// ---------------------------------------------------------------------------
+// レビュアー間一致度レポート（issue #66）。一覧画面のカードからオンデマンドで計算する
+// （画面入場時の自動読込はしない = Sheets 読み出しを増やさないため）。
+// ---------------------------------------------------------------------------
+
+/**
+ * study 単位で ready ペア（human annotator ちょうど 2 名）を解決し、
+ * features/adjudication/cellMatch.buildAdjudicationCells でセルを組み立てる。
+ * openAdjudicateStudy と同じ読み出しパターン（studies / documents / StudyData /
+ * ResultsData / Decisions / 最新確定 SchemaFields）を使う
+ */
+async function collectReadyStudyInputs(
+  store: Store,
+  deps: AdjudicationServiceDeps,
+  spreadsheetId: string,
+  fields: readonly SchemaField[],
+): Promise<AgreementStudyInput[]> {
+  const documents = await resolveDocuments(store, deps, spreadsheetId);
+  const studies = await resolveStudies(store, deps, spreadsheetId);
+  const studySheet = await readStudyDataSheet(spreadsheetId, deps.google);
+  const resultsRows = await readResultsDataRows(spreadsheetId, deps.google);
+  const decisions = await readAllDecisions(spreadsheetId, deps.google);
+
+  const inputs: AgreementStudyInput[] = [];
+  for (const item of buildStudySelection(studies, documents)) {
+    const { study } = item;
+    const pair = resolveAnnotatorPair({
+      studyId: study.studyId,
+      studyDataRows: studySheet.rows,
+      resultsDataRows: resultsRows,
+      decisions,
+    });
+    if (pair.kind !== 'ready') {
+      continue;
+    }
+    const studyDataRowA =
+      studySheet.rows.find((r) => r.studyId === study.studyId && r.annotator === pair.annotatorA) ?? null;
+    const studyDataRowB =
+      studySheet.rows.find((r) => r.studyId === study.studyId && r.annotator === pair.annotatorB) ?? null;
+    const resultsRowsA = resultsRows.filter((r) => r.studyId === study.studyId && r.annotator === pair.annotatorA);
+    const resultsRowsB = resultsRows.filter((r) => r.studyId === study.studyId && r.annotator === pair.annotatorB);
+    const cells = buildAdjudicationCells(fields, studyDataRowA, studyDataRowB, resultsRowsA, resultsRowsB);
+    inputs.push({ studyId: study.studyId, studyLabel: study.studyLabel, cells });
+  }
+  return inputs;
+}
+
+/**
+ * レビュアー間一致度レポートを読み込む（S12 一覧カードの「一致度を計算」ボタン）。
+ * 確定済みスキーマが無い・ready ペアが 0 件のときはエラーではなく、studyCount=0 の
+ * 空レポートを結果として入れる（画面側は agreement.studyCount === 0 を「対象なし」として
+ * 案内文言に切り替える。agreementError は読み込み自体の失敗〔ネットワーク等〕専用）
+ */
+export async function loadAgreementReport(store: Store, deps: AdjudicationServiceDeps): Promise<void> {
+  const state = store.getState();
+  const project = state.currentProject;
+  if (!project || state.adjudicate.agreementLoading) {
+    return;
+  }
+  patchAdjudicate(store, { agreementLoading: true, agreementError: null });
+  try {
+    const { spreadsheetId } = project;
+    const versions = await listSchemaVersions(spreadsheetId, deps.google);
+    const latest = versions[0];
+    const fields = latest === undefined ? [] : await getSchemaFieldsByVersion(spreadsheetId, latest.schemaVersion, deps.google);
+    const studyInputs = await collectReadyStudyInputs(store, deps, spreadsheetId, fields);
+    const report = buildAgreementReport(fields, studyInputs);
+    patchAdjudicate(store, { agreementLoading: false, agreement: report });
+  } catch (err) {
+    patchAdjudicate(store, { agreementLoading: false, agreementError: toMessage(err) });
+  }
+}
+
+/**
+ * 一致度レポートの CSV をローカル保存する（S10 の downloadExportResult と同じ Blob ダウンロード
+ * パターン。download 引数はテストの seam）。レポート未計算（agreement === null）は no-op
+ */
+export function downloadAgreementCsv(
+  store: Store,
+  deps: AdjudicationServiceDeps,
+  kind: 'summary' | 'disagreements',
+  download: typeof downloadTextFile = downloadTextFile,
+): void {
+  const report = store.getState().adjudicate.agreement;
+  if (report === null) {
+    return;
+  }
+  const timestamp = timestampForFilename((deps.now ?? nowIso8601)());
+  if (kind === 'summary') {
+    download(`agreement_summary_${timestamp}.csv`, buildAgreementSummaryCsv(report), 'text/csv');
+  } else {
+    download(`agreement_disagreements_${timestamp}.csv`, buildAgreementDisagreementsCsv(report), 'text/csv');
+  }
 }

@@ -18,10 +18,16 @@ jest.mock('../../../src/app/services/exportService', () => ({
   confirmExportGenerate: jest.fn(),
   cancelExportWarning: jest.fn(),
   downloadExportResult: jest.fn(),
+  changeMethodsLanguage: jest.fn(),
+  changeMethodsWorkflow: jest.fn(),
+  copyMethodsText: jest.fn(),
 }));
 import {
   cancelExportWarning,
+  changeMethodsLanguage,
+  changeMethodsWorkflow,
   confirmExportGenerate,
+  copyMethodsText,
   downloadExportResult,
   loadExportData,
   requestExportGenerate,
@@ -44,6 +50,8 @@ jest.mock('../../../src/app/services/adjudicationService', () => ({
   unskipAdjudicateCell: jest.fn(),
   undoAdjudicateCell: jest.fn(),
   setAdjudicateMismatchOnlyFilter: jest.fn(),
+  loadAgreementReport: jest.fn(),
+  downloadAgreementCsv: jest.fn(),
 }));
 import {
   acceptAllMatchingCells,
@@ -53,7 +61,9 @@ import {
   adjudicateCellNotReported,
   backToAdjudicateList,
   confirmAdjudicateArms,
+  downloadAgreementCsv,
   loadAdjudicateTargets,
+  loadAgreementReport,
   openAdjudicateStudy,
   removeAdjudicateArmDraftRow,
   setAdjudicateMismatchOnlyFilter,
@@ -2225,6 +2235,9 @@ describe('bootstrapApp: #/export', () => {
   const confirmExportGenerateMock = confirmExportGenerate as jest.Mock;
   const cancelExportWarningMock = cancelExportWarning as jest.Mock;
   const downloadExportResultMock = downloadExportResult as jest.Mock;
+  const changeMethodsLanguageMock = changeMethodsLanguage as jest.Mock;
+  const changeMethodsWorkflowMock = changeMethodsWorkflow as jest.Mock;
+  const copyMethodsTextMock = copyMethodsText as jest.Mock;
 
   beforeEach(() => {
     installChromeMock();
@@ -2269,6 +2282,13 @@ describe('bootstrapApp: #/export', () => {
           audit: makeBuilt('audit'),
         },
         schemaVersion: 2,
+        methodsFacts: {
+          toolVersion: '1.2.3',
+          modelIds: ['gemini-3.5-flash-001'],
+          providers: ['Gemini'],
+          pilotStudyCount: 3,
+          scannedDocumentCount: 0,
+        },
       }),
     );
     const { deps } = createFakeDeps([]);
@@ -2281,6 +2301,14 @@ describe('bootstrapApp: #/export', () => {
     const radios = document.querySelectorAll<HTMLInputElement>('#export-format input[type=radio]');
     (radios[2] as HTMLInputElement).dispatchEvent(new Event('change'));
     expect(selectExportFormatMock).toHaveBeenCalledWith(store, 'audit');
+
+    // Methods 文案カード（issue #67）: 言語タブ / ワークフロートグル / コピー
+    (document.getElementById('methods-lang-ja') as HTMLButtonElement).click();
+    expect(changeMethodsLanguageMock).toHaveBeenCalledWith(store, 'ja');
+    (document.getElementById('methods-workflow-dual') as HTMLButtonElement).click();
+    expect(changeMethodsWorkflowMock).toHaveBeenCalledWith(store, 'dual');
+    (document.getElementById('methods-copy') as HTMLButtonElement).click();
+    expect(copyMethodsTextMock).toHaveBeenCalledWith(store, deps);
 
     // 生成 → requestExportGenerate
     (document.getElementById('export-generate') as HTMLButtonElement).click();
@@ -2346,6 +2374,8 @@ describe('bootstrapApp: #/adjudicate', () => {
   const unskipAdjudicateCellMock = unskipAdjudicateCell as jest.Mock;
   const undoAdjudicateCellMock = undoAdjudicateCell as jest.Mock;
   const setAdjudicateMismatchOnlyFilterMock = setAdjudicateMismatchOnlyFilter as jest.Mock;
+  const loadAgreementReportMock = loadAgreementReport as jest.Mock;
+  const downloadAgreementCsvMock = downloadAgreementCsv as jest.Mock;
 
   beforeEach(() => {
     installChromeMock();
@@ -2571,6 +2601,57 @@ describe('bootstrapApp: #/adjudicate', () => {
 
     (document.querySelector('.adjudicate__action--unskip') as HTMLButtonElement).click();
     expect(unskipAdjudicateCellMock).toHaveBeenCalledWith(store, CELL.cellKey);
+  });
+
+  test('レビュアー間一致度カードの「一致度を計算」をサービスへ委譲する', async () => {
+    const stub = createWindowStub({
+      currentProject: PROJECT,
+      home: COUNTS_LOADED,
+      adjudicate: { ...createInitialState().adjudicate, rows: [] },
+    });
+    const { deps } = createFakeDeps([]);
+    const store = await bootstrapApp(asWindow(stub), deps);
+    stub.location.hash = '#/adjudicate';
+    stub.fireHashChange();
+
+    (document.getElementById('agreement-load') as HTMLButtonElement).click();
+    expect(loadAgreementReportMock).toHaveBeenCalledWith(store, deps);
+  });
+
+  test('レビュアー間一致度カードの CSV ボタンをサービスへ委譲する', async () => {
+    const stub = createWindowStub({
+      currentProject: PROJECT,
+      home: COUNTS_LOADED,
+      adjudicate: {
+        ...createInitialState().adjudicate,
+        rows: [],
+        agreement: {
+          studyCount: 1,
+          fields: [
+            {
+              fieldId: 'f-1',
+              fieldName: 'sample_size',
+              fieldLabel: '総サンプルサイズ',
+              pairCount: 1,
+              agreementCount: 1,
+              agreementRate: 1,
+              kappa: null,
+            },
+          ],
+          overall: { pairCount: 1, agreementCount: 1, agreementRate: 1, kappa: null },
+          disagreements: [],
+        },
+      },
+    });
+    const { deps } = createFakeDeps([]);
+    const store = await bootstrapApp(asWindow(stub), deps);
+    stub.location.hash = '#/adjudicate';
+    stub.fireHashChange();
+
+    (document.getElementById('agreement-csv-summary') as HTMLButtonElement).click();
+    expect(downloadAgreementCsvMock).toHaveBeenCalledWith(store, deps, 'summary');
+    (document.getElementById('agreement-csv-disagreements') as HTMLButtonElement).click();
+    expect(downloadAgreementCsvMock).toHaveBeenCalledWith(store, deps, 'disagreements');
   });
 
   test('群構成の編集・確定操作をサービスへ委譲する', async () => {

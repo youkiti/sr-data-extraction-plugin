@@ -87,6 +87,9 @@ const stubCtx: ViewContext = {
     onCancelGenerate: jest.fn(),
     onDownload: jest.fn(),
     onReload: jest.fn(),
+    onChangeMethodsLanguage: jest.fn(),
+    onChangeMethodsWorkflow: jest.fn(),
+    onCopyMethods: jest.fn(),
   },
   adjudicate: {
     onSelectStudy: jest.fn(),
@@ -105,6 +108,8 @@ const stubCtx: ViewContext = {
     onUnskip: jest.fn(),
     onUndo: jest.fn(),
     onToggleMismatchOnly: jest.fn(),
+    onLoadAgreement: jest.fn(),
+    onDownloadAgreementCsv: jest.fn(),
   },
 };
 

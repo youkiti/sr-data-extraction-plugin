@@ -87,7 +87,9 @@ import {
   adjudicateCellNotReported,
   backToAdjudicateList,
   confirmAdjudicateArms,
+  downloadAgreementCsv,
   loadAdjudicateTargets,
+  loadAgreementReport,
   openAdjudicateStudy,
   removeAdjudicateArmDraftRow,
   setAdjudicateMismatchOnlyFilter,
@@ -107,7 +109,10 @@ import {
 import { grantFolderAccess, loadRole } from './services/roleService';
 import {
   cancelExportWarning,
+  changeMethodsLanguage,
+  changeMethodsWorkflow,
   confirmExportGenerate,
+  copyMethodsText,
   downloadExportResult,
   loadExportData,
   requestExportGenerate,
@@ -568,6 +573,15 @@ export async function bootstrapApp(
       onReload: () => {
         void loadExportData(store, deps, { force: true });
       },
+      onChangeMethodsLanguage: (language) => {
+        changeMethodsLanguage(store, language);
+      },
+      onChangeMethodsWorkflow: (workflow) => {
+        changeMethodsWorkflow(store, workflow);
+      },
+      onCopyMethods: () => {
+        void copyMethodsText(store, deps);
+      },
     },
     adjudicate: {
       onSelectStudy: (studyId) => {
@@ -619,6 +633,12 @@ export async function bootstrapApp(
       },
       onToggleMismatchOnly: (value) => {
         setAdjudicateMismatchOnlyFilter(store, value);
+      },
+      onLoadAgreement: () => {
+        void loadAgreementReport(store, deps);
+      },
+      onDownloadAgreementCsv: (kind) => {
+        downloadAgreementCsv(store, deps, kind);
       },
     },
   };

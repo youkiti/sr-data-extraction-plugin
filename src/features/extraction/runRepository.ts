@@ -234,6 +234,42 @@ function rowToExtractionRun(raw: (string | null)[], rowIndex: number): Extractio
 }
 
 /**
+ * Methods 文案カード（S10。docs/methods-boilerplate.md）が使う完了 run の最小情報。
+ * run_type ごとに集計方法が異なる（full → モデル / provider 列挙、pilot → 対象 study 数）ため、
+ * 呼び出し側（exportService）で run_type ごとにフィルタして畳み込む
+ */
+export interface MethodsRunFact {
+  runType: RunType;
+  provider: LlmProviderId;
+  modelVersion: string | null;
+  studyIds: string[];
+}
+
+/**
+ * これまでの run（全 run_type）の完了行（2 行プロトコルの完了行のみ）を新しい順で返す。
+ * schema_version 等の数値検証は行わない（Methods 文案は文字列の集計のみで済むため）
+ */
+export async function readMethodsRunFacts(
+  spreadsheetId: string,
+  deps: GoogleApiDeps,
+): Promise<MethodsRunFact[]> {
+  const rows = await readRunRows(spreadsheetId, deps);
+  const facts: MethodsRunFact[] = [];
+  for (const raw of rows) {
+    if (!COMPLETED_STATUSES.has(raw[8] ?? '')) {
+      continue;
+    }
+    facts.push({
+      runType: (raw[1] ?? '') as RunType,
+      provider: (raw[4] ?? '') as LlmProviderId,
+      modelVersion: emptyToNull(raw[6]),
+      studyIds: parseStudyIds(raw[3]),
+    });
+  }
+  return facts.reverse(); // シート追記順の逆 = 新しい順
+}
+
+/**
  * これまでのパイロット run（run_type='pilot' の完了行）を新しい順で返す（S6 の履歴読込）。
  * 2 行プロトコルの完了行（done / partial_failure）だけを対象にし、running 行のみの中断 run は
  * 含めない（Evidence が揃っている保証がないため。readRunStudyCoverage と同じ完了判定）。
