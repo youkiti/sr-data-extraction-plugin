@@ -105,6 +105,9 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<ExtractViewCallba
         onCancelGenerate: jest.fn(),
         onDownload: jest.fn(),
         onReload: jest.fn(),
+        onChangeMethodsLanguage: jest.fn(),
+        onChangeMethodsWorkflow: jest.fn(),
+        onCopyMethods: jest.fn(),
       },
       adjudicate: {
         onSelectStudy: jest.fn(),

@@ -1,6 +1,9 @@
 import {
   cancelExportWarning,
+  changeMethodsLanguage,
+  changeMethodsWorkflow,
   confirmExportGenerate,
+  copyMethodsText,
   downloadExportResult,
   loadExportData,
   requestExportGenerate,
@@ -17,7 +20,7 @@ import {
   readStudyDataSheet,
 } from '../../../../src/features/extraction/annotationRepository';
 import { readEvidenceRows } from '../../../../src/features/extraction/evidenceRepository';
-import { readRunAuditInfos } from '../../../../src/features/extraction/runRepository';
+import { readMethodsRunFacts, readRunAuditInfos } from '../../../../src/features/extraction/runRepository';
 import type { BuiltExport } from '../../../../src/features/export/buildExport';
 import { appendExportLog } from '../../../../src/features/export/exportLogRepository';
 import {
@@ -28,6 +31,7 @@ import { readAllDecisions } from '../../../../src/features/verification/decision
 import { ensureChildFolder, uploadTextFile } from '../../../../src/lib/google/drive';
 import { getCurrentUserEmail } from '../../../../src/lib/google/identity';
 import { downloadTextFile } from '../../../../src/app/ui/download';
+import { installChromeMock, type ChromeMock } from '../../../setup/chrome-mock';
 
 jest.mock('../../../../src/features/documents/documentRepository', () => ({
   readDocuments: jest.fn(),
@@ -46,6 +50,7 @@ jest.mock('../../../../src/features/extraction/evidenceRepository', () => ({
 }));
 jest.mock('../../../../src/features/extraction/runRepository', () => ({
   readRunAuditInfos: jest.fn(),
+  readMethodsRunFacts: jest.fn(),
 }));
 jest.mock('../../../../src/features/export/exportLogRepository', () => ({
   appendExportLog: jest.fn(),
@@ -80,6 +85,7 @@ const readStudyDataSheetMock = readStudyDataSheet as jest.Mock;
 const readResultsDataRowsMock = readResultsDataRows as jest.Mock;
 const readEvidenceRowsMock = readEvidenceRows as jest.Mock;
 const readRunAuditInfosMock = readRunAuditInfos as jest.Mock;
+const readMethodsRunFactsMock = readMethodsRunFacts as jest.Mock;
 const readAllDecisionsMock = readAllDecisions as jest.Mock;
 const listSchemaVersionsMock = listSchemaVersions as jest.Mock;
 const getSchemaFieldsByVersionMock = getSchemaFieldsByVersion as jest.Mock;
@@ -147,6 +153,7 @@ beforeEach(() => {
   readEvidenceRowsMock.mockResolvedValue([]);
   readAllDecisionsMock.mockResolvedValue([]);
   readRunAuditInfosMock.mockResolvedValue([]);
+  readMethodsRunFactsMock.mockResolvedValue([]);
   listSchemaVersionsMock.mockResolvedValue([{ schemaVersion: 2 }]);
   getSchemaFieldsByVersionMock.mockResolvedValue([]);
   ensureChildFolderMock.mockResolvedValue({ id: 'exports-folder', webViewLink: 'https://drive/folder' });
@@ -209,6 +216,51 @@ describe('loadExportData', () => {
     readEvidenceRowsMock.mockRejectedValue('壊れた応答');
     await loadExportData(store2, makeDeps());
     expect(store2.getState().export.loadError).toBe('壊れた応答');
+  });
+
+  test('Methods 文案カードの実績値（methodsFacts）を組み立てる', async () => {
+    readDocumentsMock.mockResolvedValue([
+      { documentId: 'd1', studyId: 's1', textStatus: 'ok' },
+      { documentId: 'd2', studyId: 's2', textStatus: 'no_text_layer' },
+      { documentId: 'd3', studyId: 's3', textStatus: 'no_text_layer' },
+    ]);
+    readMethodsRunFactsMock.mockResolvedValue([
+      { runType: 'full', provider: 'gemini', modelVersion: 'gemini-3.5-flash-001', studyIds: ['s1'] },
+      { runType: 'full', provider: 'openrouter', modelVersion: 'gpt-test', studyIds: ['s2'] },
+      { runType: 'full', provider: 'openai_compatible', modelVersion: 'custom-model', studyIds: ['s3'] },
+      // full の modelVersion 重複は 1 つに畳み込む
+      { runType: 'full', provider: 'gemini', modelVersion: 'gemini-3.5-flash-001', studyIds: ['s1'] },
+      { runType: 'pilot', provider: 'gemini', modelVersion: 'gemini-3.5-flash-001', studyIds: ['s1', 's2'] },
+      { runType: 'pilot', provider: 'gemini', modelVersion: 'gemini-3.5-flash-001', studyIds: ['s3'] },
+      { runType: 'single_study', provider: 'gemini', modelVersion: 'ignored', studyIds: ['s9'] },
+    ]);
+    const store = makeStore();
+    await loadExportData(store, makeDeps({ getToolVersion: () => '1.2.3' }));
+    expect(readMethodsRunFactsMock).toHaveBeenCalledWith('sheet-1', expect.anything());
+    expect(store.getState().export.methodsFacts).toEqual({
+      toolVersion: '1.2.3',
+      modelIds: ['gemini-3.5-flash-001', 'gpt-test', 'custom-model'],
+      providers: ['Gemini', 'OpenRouter', 'OpenAI-compatible'],
+      pilotStudyCount: 3, // s1 / s2 / s3 の和集合
+      scannedDocumentCount: 2, // d2 / d3
+    });
+  });
+
+  test('getToolVersion 未指定は chrome.runtime.getManifest().version を既定で使う', async () => {
+    const chromeMock: ChromeMock = installChromeMock();
+    chromeMock.runtime.getManifest.mockReturnValue({ version: '9.9.9' });
+    const store = makeStore();
+    await loadExportData(store, makeDeps());
+    expect(store.getState().export.methodsFacts?.toolVersion).toBe('9.9.9');
+  });
+
+  test('chrome.runtime.getManifest が無い環境では tool_version は null になる', async () => {
+    const chromeMock: ChromeMock = installChromeMock();
+    // getManifest 自体が存在しない環境（jest / 一部 E2E）を模す
+    (chromeMock.runtime as unknown as Record<string, unknown>).getManifest = undefined;
+    const store = makeStore();
+    await loadExportData(store, makeDeps());
+    expect(store.getState().export.methodsFacts?.toolVersion).toBeNull();
   });
 });
 
@@ -397,5 +449,72 @@ describe('downloadExportResult', () => {
 
     downloadExportResult(makeStore(), download);
     expect(download).toHaveBeenCalledTimes(1); // 増えない
+  });
+});
+
+describe('changeMethodsLanguage / changeMethodsWorkflow', () => {
+  test('言語タブを切り替える', () => {
+    const store = makeStore();
+    expect(store.getState().export.methodsLanguage).toBe('en'); // 既定 English
+    changeMethodsLanguage(store, 'ja');
+    expect(store.getState().export.methodsLanguage).toBe('ja');
+    changeMethodsLanguage(store, 'en');
+    expect(store.getState().export.methodsLanguage).toBe('en');
+  });
+
+  test('ワークフロートグルを切り替える', () => {
+    const store = makeStore();
+    expect(store.getState().export.methodsWorkflow).toBe('single'); // 既定 単一レビュアー
+    changeMethodsWorkflow(store, 'dual');
+    expect(store.getState().export.methodsWorkflow).toBe('dual');
+    changeMethodsWorkflow(store, 'single');
+    expect(store.getState().export.methodsWorkflow).toBe('single');
+  });
+});
+
+describe('copyMethodsText', () => {
+  const facts = {
+    toolVersion: '1.2.3',
+    modelIds: ['gemini-3.5-flash-001'],
+    providers: ['Gemini'],
+    pilotStudyCount: 3,
+    scannedDocumentCount: 0,
+  };
+
+  test('現在の言語 / ワークフロー / 実績値から文案を組み立ててクリップボードへ書き込む', async () => {
+    const writeClipboard = jest.fn().mockResolvedValue(undefined);
+    const store = makeStore({
+      export: { methodsFacts: facts, methodsLanguage: 'ja', methodsWorkflow: 'dual' },
+    });
+    await copyMethodsText(store, makeDeps({ writeClipboard }));
+    expect(writeClipboard).toHaveBeenCalledTimes(1);
+    const text = writeClipboard.mock.calls[0][0] as string;
+    expect(text.startsWith('データ抽出. データ抽出には')).toBe(true);
+    expect(text).toContain('レビュアー 2 名（{{reviewer_initials}}）が独立に');
+    expect(text).toContain('gemini-3.5-flash-001');
+  });
+
+  test('methodsFacts 未読込は no-op', async () => {
+    const writeClipboard = jest.fn().mockResolvedValue(undefined);
+    const store = makeStore({ export: { methodsFacts: null } });
+    await copyMethodsText(store, makeDeps({ writeClipboard }));
+    expect(writeClipboard).not.toHaveBeenCalled();
+  });
+
+  test('コピー失敗（reject）でも例外を投げない', async () => {
+    const writeClipboard = jest.fn().mockRejectedValue(new Error('denied'));
+    const store = makeStore({ export: { methodsFacts: facts } });
+    await expect(copyMethodsText(store, makeDeps({ writeClipboard }))).resolves.toBeUndefined();
+  });
+
+  test('writeClipboard 未注入なら navigator.clipboard を使う', async () => {
+    const writeText = jest.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText },
+      configurable: true,
+    });
+    const store = makeStore({ export: { methodsFacts: facts } });
+    await copyMethodsText(store, makeDeps());
+    expect(writeText).toHaveBeenCalledTimes(1);
   });
 });

@@ -4,6 +4,7 @@ import type { Decision } from '../../domain/decision';
 import type { DocumentRole } from '../../domain/document';
 import type { ExportFormat } from '../../domain/exportLog';
 import type { ReviewMode } from '../../domain/reviewer';
+import type { MethodsLanguage, MethodsWorkflow } from '../../features/export/methodsBoilerplate';
 import type { ProtocolSubmitInput } from '../../features/protocol/submitInput';
 import type { SchemaPresetKind } from '../../features/schema/presets';
 import type { SchemaEditorRow } from '../../features/schema/types';
@@ -213,6 +214,12 @@ export interface ExportViewCallbacks {
   onDownload(): void;
   /** 読み込み失敗時の再読み込み（強制再取得） */
   onReload(): void;
+  /** Methods 文案カード（issue #67）: 言語タブ切替 */
+  onChangeMethodsLanguage(language: MethodsLanguage): void;
+  /** Methods 文案カード: ワークフロートグル切替 */
+  onChangeMethodsWorkflow(workflow: MethodsWorkflow): void;
+  /** Methods 文案カード: 「コピー」ボタン */
+  onCopyMethods(): void;
 }
 
 export interface ViewContext {

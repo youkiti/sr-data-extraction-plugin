@@ -18,10 +18,16 @@ jest.mock('../../../src/app/services/exportService', () => ({
   confirmExportGenerate: jest.fn(),
   cancelExportWarning: jest.fn(),
   downloadExportResult: jest.fn(),
+  changeMethodsLanguage: jest.fn(),
+  changeMethodsWorkflow: jest.fn(),
+  copyMethodsText: jest.fn(),
 }));
 import {
   cancelExportWarning,
+  changeMethodsLanguage,
+  changeMethodsWorkflow,
   confirmExportGenerate,
+  copyMethodsText,
   downloadExportResult,
   loadExportData,
   requestExportGenerate,
@@ -2225,6 +2231,9 @@ describe('bootstrapApp: #/export', () => {
   const confirmExportGenerateMock = confirmExportGenerate as jest.Mock;
   const cancelExportWarningMock = cancelExportWarning as jest.Mock;
   const downloadExportResultMock = downloadExportResult as jest.Mock;
+  const changeMethodsLanguageMock = changeMethodsLanguage as jest.Mock;
+  const changeMethodsWorkflowMock = changeMethodsWorkflow as jest.Mock;
+  const copyMethodsTextMock = copyMethodsText as jest.Mock;
 
   beforeEach(() => {
     installChromeMock();
@@ -2269,6 +2278,13 @@ describe('bootstrapApp: #/export', () => {
           audit: makeBuilt('audit'),
         },
         schemaVersion: 2,
+        methodsFacts: {
+          toolVersion: '1.2.3',
+          modelIds: ['gemini-3.5-flash-001'],
+          providers: ['Gemini'],
+          pilotStudyCount: 3,
+          scannedDocumentCount: 0,
+        },
       }),
     );
     const { deps } = createFakeDeps([]);
@@ -2281,6 +2297,14 @@ describe('bootstrapApp: #/export', () => {
     const radios = document.querySelectorAll<HTMLInputElement>('#export-format input[type=radio]');
     (radios[2] as HTMLInputElement).dispatchEvent(new Event('change'));
     expect(selectExportFormatMock).toHaveBeenCalledWith(store, 'audit');
+
+    // Methods 文案カード（issue #67）: 言語タブ / ワークフロートグル / コピー
+    (document.getElementById('methods-lang-ja') as HTMLButtonElement).click();
+    expect(changeMethodsLanguageMock).toHaveBeenCalledWith(store, 'ja');
+    (document.getElementById('methods-workflow-dual') as HTMLButtonElement).click();
+    expect(changeMethodsWorkflowMock).toHaveBeenCalledWith(store, 'dual');
+    (document.getElementById('methods-copy') as HTMLButtonElement).click();
+    expect(copyMethodsTextMock).toHaveBeenCalledWith(store, deps);
 
     // 生成 → requestExportGenerate
     (document.getElementById('export-generate') as HTMLButtonElement).click();

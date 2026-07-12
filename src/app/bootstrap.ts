@@ -107,7 +107,10 @@ import {
 import { grantFolderAccess, loadRole } from './services/roleService';
 import {
   cancelExportWarning,
+  changeMethodsLanguage,
+  changeMethodsWorkflow,
   confirmExportGenerate,
+  copyMethodsText,
   downloadExportResult,
   loadExportData,
   requestExportGenerate,
@@ -567,6 +570,15 @@ export async function bootstrapApp(
       },
       onReload: () => {
         void loadExportData(store, deps, { force: true });
+      },
+      onChangeMethodsLanguage: (language) => {
+        changeMethodsLanguage(store, language);
+      },
+      onChangeMethodsWorkflow: (workflow) => {
+        changeMethodsWorkflow(store, workflow);
+      },
+      onCopyMethods: () => {
+        void copyMethodsText(store, deps);
       },
     },
     adjudicate: {

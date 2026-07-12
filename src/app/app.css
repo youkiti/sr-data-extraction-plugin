@@ -2638,6 +2638,74 @@
   text-decoration: underline;
 }
 
+/* 論文 Methods 記載例カード（issue #67. docs/methods-boilerplate.md §4） */
+.export__methods {
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface);
+  padding: 12px 16px;
+  margin: 12px 0;
+  display: grid;
+  gap: 10px;
+}
+
+.export__methods h3 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.export__methods-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.export__methods-tabs {
+  display: flex;
+  gap: 4px;
+}
+
+.export__methods-tab {
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-bg);
+
+  /* グローバル button の白文字（on-primary）を淡背景用に戻す（コントラスト 4.5:1 以上） */
+  color: var(--color-text);
+  padding: 4px 10px;
+  font-size: 13px;
+}
+
+.export__methods-tab:hover:not(:disabled) {
+  background: var(--color-surface);
+}
+
+.export__methods-tab[aria-pressed='true'] {
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+}
+
+.export__methods-tab[aria-pressed='true']:hover:not(:disabled) {
+  background: var(--color-primary-hover);
+}
+
+.export__methods-text {
+  width: 100%;
+  min-height: 160px;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+  resize: vertical;
+  padding: 8px 10px;
+}
+
+.export__methods-note {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
 /* --- 裁定（S12 `#/adjudicate`）------------------------------------------ */
 
 .adjudicate__error {

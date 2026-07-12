@@ -1,15 +1,26 @@
 // #/export（S10）のサービス層。
 // 素材の読み込み（Documents / StudyData / ResultsData / Evidence / Decisions /
 // ExtractionRuns / 最新版 SchemaFields → 3 形式の CSV をメモリ上で構築）と、
-// 生成（未検証セル警告 → Drive `exports/` へ保存 → ExportLog 追記）を担う
+// 生成（未検証セル警告 → Drive `exports/` へ保存 → ExportLog 追記）を担う。
+// あわせて論文 Methods 記載例カード（docs/methods-boilerplate.md, issue #67）の実績値組み立てと
+// クリップボードコピーも担う
+import type { LlmProviderId } from '../../domain/llmApiLog';
+import type { DocumentRecord } from '../../domain/document';
 import type { ExportFormat, ExportLogEntry } from '../../domain/exportLog';
 import { readDocuments } from '../../features/documents/documentRepository';
 import { readStudies, resolveActiveStudies } from '../../features/documents/studyRepository';
 import { readResultsDataRows, readStudyDataSheet } from '../../features/extraction/annotationRepository';
 import { readEvidenceRows } from '../../features/extraction/evidenceRepository';
-import { readRunAuditInfos } from '../../features/extraction/runRepository';
+import { readMethodsRunFacts, readRunAuditInfos } from '../../features/extraction/runRepository';
+import type { MethodsRunFact } from '../../features/extraction/runRepository';
 import { buildAllExports } from '../../features/export/buildExport';
 import { appendExportLog } from '../../features/export/exportLogRepository';
+import {
+  buildMethodsText,
+  type MethodsFacts,
+  type MethodsLanguage,
+  type MethodsWorkflow,
+} from '../../features/export/methodsBoilerplate';
 import { listSchemaVersions, getSchemaFieldsByVersion } from '../../features/schema/schemaRepository';
 import { readAllDecisions } from '../../features/verification/decisionRepository';
 import { ensureChildFolder, uploadTextFile } from '../../lib/google/drive';
@@ -18,6 +29,7 @@ import type { GoogleApiDeps } from '../../lib/google/types';
 import { nowIso8601 } from '../../utils/iso8601';
 import { generateUuid } from '../../utils/uuid';
 import { downloadTextFile } from '../ui/download';
+import { showToast } from '../ui/toast';
 import type { ExportState, Store } from '../store';
 
 /** Drive のプロジェクトフォルダ直下に作る CSV 保存先フォルダ名 */
@@ -30,10 +42,99 @@ export interface ExportServiceDeps {
   newUuid?: () => string;
   /** テストで固定するための seam。未指定は現在時刻の ISO 8601 */
   now?: () => string;
+  /**
+   * Methods 文案カードの {{tool_version}} 実績値（拡張のバージョン）。
+   * 既定は chrome.runtime.getManifest().version（jest / E2E の一部環境には chrome が無いため
+   * ガードして null へフォールバックする）
+   */
+  getToolVersion?: () => string | null;
+  /** クリップボードへの書き込み。既定は navigator.clipboard.writeText。テストは fake を注入する */
+  writeClipboard?: (text: string) => Promise<void>;
 }
 
 function toMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
+}
+
+/**
+ * 既定の tool_version 取得実装。chrome 拡張ランタイム上でのみ値を返し、
+ * それ以外（jest / 一部 E2E 環境）では null（{{tool_version}} は未反映のまま残る）
+ */
+function defaultGetToolVersion(): string | null {
+  if (
+    typeof chrome !== 'undefined' &&
+    chrome.runtime &&
+    typeof chrome.runtime.getManifest === 'function'
+  ) {
+    return chrome.runtime.getManifest().version;
+  }
+  return null;
+}
+
+/** 配列の重複除去（出現順を維持） */
+function dedupe<T>(items: readonly T[]): T[] {
+  const seen = new Set<T>();
+  const result: T[] = [];
+  for (const item of items) {
+    if (!seen.has(item)) {
+      seen.add(item);
+      result.push(item);
+    }
+  }
+  return result;
+}
+
+/** provider の表示名変換（docs/methods-boilerplate.md §3: gemini → Gemini 等） */
+function providerDisplayName(provider: LlmProviderId): string {
+  if (provider === 'openrouter') {
+    return 'OpenRouter';
+  }
+  if (provider === 'openai_compatible') {
+    return 'OpenAI-compatible';
+  }
+  return 'Gemini';
+}
+
+/**
+ * ExtractionRuns の完了行実績 + Documents から Methods 文案カードの MethodsFacts を組み立てる
+ * （§3 プレースホルダ一覧: model_id / provider は run_type=full、n_pilot は run_type=pilot の
+ * 対象 study 数、n_scanned は Documents.text_status の集計）
+ */
+function buildMethodsFacts(
+  documents: readonly DocumentRecord[],
+  runFacts: readonly MethodsRunFact[],
+  toolVersion: string | null,
+): MethodsFacts {
+  const fullFacts = runFacts.filter((fact) => fact.runType === 'full');
+  const modelIds = dedupe(
+    fullFacts
+      .map((fact) => fact.modelVersion)
+      .filter((modelVersion): modelVersion is string => modelVersion !== null && modelVersion !== ''),
+  );
+  const providerIds = dedupe(
+    fullFacts
+      .map((fact) => fact.provider)
+      .filter((provider): provider is LlmProviderId => provider !== ('' as LlmProviderId)),
+  );
+  const pilotStudyIds = new Set<string>();
+  for (const fact of runFacts) {
+    if (fact.runType !== 'pilot') {
+      continue;
+    }
+    for (const studyId of fact.studyIds) {
+      pilotStudyIds.add(studyId);
+    }
+  }
+  const scannedDocumentCount = documents.filter(
+    (document) => document.textStatus === 'no_text_layer',
+  ).length;
+  return {
+    toolVersion,
+    modelIds,
+    providers: providerIds.map(providerDisplayName),
+    pilotStudyCount: pilotStudyIds.size,
+    scannedDocumentCount,
+  };
 }
 
 /** export スライスだけを差し替える setState ヘルパ（他スライスは維持） */
@@ -66,17 +167,27 @@ export async function loadExportData(
   patchExport(store, { loading: true, loadError: null });
   try {
     const spreadsheetId = project.spreadsheetId;
-    const [documents, allStudies, studySheet, resultsRows, evidences, decisions, runs, versions] =
-      await Promise.all([
-        readDocuments(spreadsheetId, deps.google),
-        readStudies(spreadsheetId, deps.google),
-        readStudyDataSheet(spreadsheetId, deps.google),
-        readResultsDataRows(spreadsheetId, deps.google),
-        readEvidenceRows(spreadsheetId, deps.google),
-        readAllDecisions(spreadsheetId, deps.google),
-        readRunAuditInfos(spreadsheetId, deps.google),
-        listSchemaVersions(spreadsheetId, deps.google),
-      ]);
+    const [
+      documents,
+      allStudies,
+      studySheet,
+      resultsRows,
+      evidences,
+      decisions,
+      runs,
+      versions,
+      methodsRunFacts,
+    ] = await Promise.all([
+      readDocuments(spreadsheetId, deps.google),
+      readStudies(spreadsheetId, deps.google),
+      readStudyDataSheet(spreadsheetId, deps.google),
+      readResultsDataRows(spreadsheetId, deps.google),
+      readEvidenceRows(spreadsheetId, deps.google),
+      readAllDecisions(spreadsheetId, deps.google),
+      readRunAuditInfos(spreadsheetId, deps.google),
+      listSchemaVersions(spreadsheetId, deps.google),
+      readMethodsRunFacts(spreadsheetId, deps.google),
+    ]);
     const latest = versions[0]; // listSchemaVersions は降順
     if (latest === undefined) {
       // ガード（dataRows ≥ 1）を満たす以上、通常は起きない防御
@@ -94,7 +205,14 @@ export async function loadExportData(
       runs,
       fields,
     });
-    patchExport(store, { loading: false, built, schemaVersion: latest.schemaVersion });
+    const toolVersion = (deps.getToolVersion ?? defaultGetToolVersion)();
+    const methodsFacts = buildMethodsFacts(documents, methodsRunFacts, toolVersion);
+    patchExport(store, {
+      loading: false,
+      built,
+      schemaVersion: latest.schemaVersion,
+      methodsFacts,
+    });
   } catch (err) {
     patchExport(store, { loading: false, loadError: toMessage(err) });
   }
@@ -199,4 +317,37 @@ export function downloadExportResult(
     return;
   }
   download(result.filename, result.csv, 'text/csv');
+}
+
+/** Methods 文案カードの言語タブ切替（English / 日本語） */
+export function changeMethodsLanguage(store: Store, language: MethodsLanguage): void {
+  patchExport(store, { methodsLanguage: language });
+}
+
+/** Methods 文案カードのワークフロートグル切替（単一レビュアー / 二重独立） */
+export function changeMethodsWorkflow(store: Store, workflow: MethodsWorkflow): void {
+  patchExport(store, { methodsWorkflow: workflow });
+}
+
+/**
+ * Methods 文案カードの「コピー」: 現在の言語 / ワークフロー / 実績値から文案を組み立てて
+ * クリップボードへ書き込む（reviewerAdminService.copyReviewInvite と同じ seam 方式）
+ */
+export async function copyMethodsText(store: Store, deps: ExportServiceDeps): Promise<void> {
+  const exportState = store.getState().export;
+  if (exportState.methodsFacts === null) {
+    return;
+  }
+  const { text } = buildMethodsText(
+    exportState.methodsLanguage,
+    exportState.methodsWorkflow,
+    exportState.methodsFacts,
+  );
+  const write = deps.writeClipboard ?? ((value: string) => navigator.clipboard.writeText(value));
+  try {
+    await write(text);
+    showToast('コピーしました');
+  } catch (err) {
+    showToast(`コピーに失敗しました: ${toMessage(err)}`);
+  }
 }

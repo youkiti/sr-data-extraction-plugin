@@ -13,6 +13,11 @@ import type { StudyGate } from '../features/adjudication/gate';
 import type { AdjudicationCell } from '../features/adjudication/cellMatch';
 import type { DraftArmRow } from '../features/adjudication/armMatch';
 import type { BuiltExport } from '../features/export/buildExport';
+import type {
+  MethodsFacts,
+  MethodsLanguage,
+  MethodsWorkflow,
+} from '../features/export/methodsBoilerplate';
 import type { ProjectRef } from '../domain/project';
 import type { Protocol } from '../domain/protocol';
 import type { SchemaField } from '../domain/schemaField';
@@ -316,6 +321,12 @@ export interface ExportState {
   generating: boolean;
   generateError: string | null;
   result: ExportResultInfo | null;
+  /** Methods 文案カード（docs/methods-boilerplate.md）の実績値。null = 未読込（loadExportData 成功時に設定） */
+  methodsFacts: MethodsFacts | null;
+  /** Methods 文案カードの言語タブ。既定 English（§4: 投稿論文の主想定言語） */
+  methodsLanguage: MethodsLanguage;
+  /** Methods 文案カードのワークフロートグル。既定 単一レビュアー（§4） */
+  methodsWorkflow: MethodsWorkflow;
 }
 
 /** `#/adjudicate`（S12。docs/design-independent-dual-review.md §6）一覧 1 study ぶんの行 */
@@ -580,6 +591,9 @@ export function createInitialState(): AppState {
       generating: false,
       generateError: null,
       result: null,
+      methodsFacts: null,
+      methodsLanguage: 'en',
+      methodsWorkflow: 'single',
     },
     settingsReturnHash: null,
   };

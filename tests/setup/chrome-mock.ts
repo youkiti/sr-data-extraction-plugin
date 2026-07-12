@@ -14,6 +14,8 @@ export interface ChromeMock {
   runtime: {
     id: string;
     getURL: jest.Mock;
+    /** exportService の tool_version 既定実装（chrome.runtime.getManifest().version）用 */
+    getManifest: jest.Mock;
     onInstalled: { addListener: jest.Mock };
     onMessageExternal: { addListener: jest.Mock; removeListener: jest.Mock };
     /** chrome.identity 系コールバック API のエラー通知。テストから直接設定する */
@@ -53,6 +55,7 @@ export function installChromeMock(): ChromeMock {
     runtime: {
       id: 'test-extension-id',
       getURL: jest.fn((path: string) => `chrome-extension://test-extension-id/${path}`),
+      getManifest: jest.fn(() => ({ version: '0.0.0-test' })),
       onInstalled: { addListener: jest.fn() },
       onMessageExternal: { addListener: jest.fn(), removeListener: jest.fn() },
       lastError: undefined,
