@@ -51,6 +51,8 @@ function cell(input: {
     schemaVersionB: 1,
     matches,
     schemaVersionMismatch: false,
+    noteA: null,
+    noteB: null,
   };
 }
 

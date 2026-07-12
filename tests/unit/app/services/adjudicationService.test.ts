@@ -25,6 +25,7 @@ import { NOT_REPORTED_TOKEN } from '../../../../src/domain/annotation';
 import type { ArmStructureRow } from '../../../../src/domain/armStructure';
 import type { Decision } from '../../../../src/domain/decision';
 import type { DocumentRecord } from '../../../../src/domain/document';
+import type { Evidence } from '../../../../src/domain/evidence';
 import type { SchemaField } from '../../../../src/domain/schemaField';
 import type { SchemaVersion } from '../../../../src/domain/schemaVersion';
 import type { StudyRecord } from '../../../../src/domain/study';
@@ -32,6 +33,8 @@ import { applyConsensusWrites } from '../../../../src/features/adjudication/cons
 import { readDocuments } from '../../../../src/features/documents/documentRepository';
 import { readStudies } from '../../../../src/features/documents/studyRepository';
 import { readResultsDataRows, readStudyDataSheet } from '../../../../src/features/extraction/annotationRepository';
+import { readEvidenceRows } from '../../../../src/features/extraction/evidenceRepository';
+import { readRunSchemaVersions } from '../../../../src/features/extraction/runRepository';
 import { getSchemaFieldsByVersion, listSchemaVersions } from '../../../../src/features/schema/schemaRepository';
 import {
   appendArmStructureVersion,
@@ -40,7 +43,9 @@ import {
 import { readAllDecisions } from '../../../../src/features/verification/decisionRepository';
 import { createPdfViewCache } from '../../../../src/features/verification/pdfViewCache';
 import { getCurrentUserEmail } from '../../../../src/lib/google/identity';
+import type { OfflineQueue } from '../../../../src/lib/storage/offlineQueue';
 import { downloadTextFile } from '../../../../src/app/ui/download';
+import type { QueuedWrite } from '../../../../src/app/services/verificationService';
 
 jest.mock('../../../../src/app/ui/download', () => ({ downloadTextFile: jest.fn() }));
 jest.mock('../../../../src/features/documents/documentRepository', () => ({ readDocuments: jest.fn() }));
@@ -53,6 +58,8 @@ jest.mock('../../../../src/features/extraction/annotationRepository', () => ({
   readStudyDataSheet: jest.fn(),
   readResultsDataRows: jest.fn(),
 }));
+jest.mock('../../../../src/features/extraction/evidenceRepository', () => ({ readEvidenceRows: jest.fn() }));
+jest.mock('../../../../src/features/extraction/runRepository', () => ({ readRunSchemaVersions: jest.fn() }));
 jest.mock('../../../../src/features/schema/schemaRepository', () => ({
   listSchemaVersions: jest.fn(),
   getSchemaFieldsByVersion: jest.fn(),
@@ -72,6 +79,8 @@ const readDocumentsMock = readDocuments as jest.MockedFunction<typeof readDocume
 const readStudiesMock = readStudies as jest.MockedFunction<typeof readStudies>;
 const readStudyDataSheetMock = readStudyDataSheet as jest.MockedFunction<typeof readStudyDataSheet>;
 const readResultsDataRowsMock = readResultsDataRows as jest.MockedFunction<typeof readResultsDataRows>;
+const readEvidenceRowsMock = readEvidenceRows as jest.MockedFunction<typeof readEvidenceRows>;
+const readRunSchemaVersionsMock = readRunSchemaVersions as jest.MockedFunction<typeof readRunSchemaVersions>;
 const listSchemaVersionsMock = listSchemaVersions as jest.MockedFunction<typeof listSchemaVersions>;
 const getSchemaFieldsMock = getSchemaFieldsByVersion as jest.MockedFunction<typeof getSchemaFieldsByVersion>;
 const readAllArmStructuresMock = readAllArmStructures as jest.MockedFunction<typeof readAllArmStructures>;
@@ -213,11 +222,40 @@ function makeArmRow(overrides: Partial<ArmStructureRow> = {}): ArmStructureRow {
   };
 }
 
+function makeEvidence(overrides: Partial<Evidence> = {}): Evidence {
+  return {
+    evidenceId: 'ev-1',
+    runId: 'run-1',
+    studyId: 'study-1',
+    fieldId: 'f-1',
+    documentId: 'doc-1',
+    entityKey: '-',
+    value: '120',
+    notReported: false,
+    quote: '合計 120 例',
+    page: 1,
+    confidence: 'high',
+    anchorStatus: 'exact',
+    bboxPage: null,
+    bbox: null,
+    ...overrides,
+  };
+}
+
+/** issue #63: adjudicationService.applyWrites が検証側と共有する 'decisions' キューのモック */
+function makeQueue(): jest.Mocked<OfflineQueue<QueuedWrite>> {
+  return {
+    enqueue: jest.fn().mockResolvedValue(undefined),
+    flush: jest.fn().mockResolvedValue({ flushedCount: 0, remainingCount: 0 }),
+  };
+}
+
 function makeDeps(overrides: Partial<AdjudicationServiceDeps> = {}): AdjudicationServiceDeps {
   return {
     google: { fetch: jest.fn(), getAccessToken: jest.fn() },
     profile: { getProfileUserInfo: jest.fn() } as unknown as AdjudicationServiceDeps['profile'],
     loadPdf: jest.fn(),
+    decisionQueue: makeQueue(),
     now: () => 't-now',
     ...overrides,
   };
@@ -261,6 +299,8 @@ beforeEach(() => {
   getCurrentUserEmailMock.mockResolvedValue(JUDGE);
   createPdfViewCacheMock.mockReturnValue(makeFakePdfCache());
   applyConsensusWritesMock.mockResolvedValue(undefined);
+  readEvidenceRowsMock.mockResolvedValue([]);
+  readRunSchemaVersionsMock.mockResolvedValue(new Map());
 });
 
 describe('loadAdjudicateTargets', () => {
@@ -461,6 +501,56 @@ describe('openAdjudicateStudy', () => {
     expect(working?.cells).toHaveLength(1);
     expect(store.getState().adjudicate.workingLoading).toBe(false);
     expect(store.getState().adjudicate.workingError).toBeNull();
+  });
+
+  test('working.evidence は表示する run（study の最新・既知 run）の Evidence のみを持つ（issue #63）', async () => {
+    const store = seedStore();
+    setupTwoAnnotatorsReady();
+    readEvidenceRowsMock.mockResolvedValue([
+      makeEvidence({ evidenceId: 'ev-old', runId: 'run-old' }), // 既知 run だが古い run（study-1 の最新は run-1）
+      makeEvidence({ evidenceId: 'ev-1', runId: 'run-1' }),
+      makeEvidence({ evidenceId: 'ev-orphan', runId: 'run-orphan', studyId: 'study-1' }), // 未知 run（孤児 Evidence）
+      makeEvidence({ evidenceId: 'ev-other-study', runId: 'run-1', studyId: 'study-2' }),
+    ]);
+    readRunSchemaVersionsMock.mockResolvedValue(
+      new Map([
+        ['run-old', 1],
+        ['run-1', 1],
+      ]),
+    );
+    await loadAdjudicateTargets(store, makeDeps());
+    await openAdjudicateStudy(store, makeDeps(), 'study-1');
+    const working = store.getState().adjudicate.working;
+    expect(working?.evidence).toEqual([makeEvidence({ evidenceId: 'ev-1', runId: 'run-1' })]);
+  });
+
+  test('working.evidence は AI 抽出が未実施（Evidence 0 件）の study では空配列（独立入力のみのペア）', async () => {
+    const store = seedStore();
+    setupTwoAnnotatorsReady();
+    await loadAdjudicateTargets(store, makeDeps());
+    await openAdjudicateStudy(store, makeDeps(), 'study-1');
+    expect(store.getState().adjudicate.working?.evidence).toEqual([]);
+  });
+
+  test('cells の noteA / noteB は各 annotator の Decisions（study 内）の直近の note を畳み込む（issue #63）', async () => {
+    const store = seedStore();
+    setupTwoAnnotatorsReady();
+    readAllDecisionsMock.mockResolvedValue([
+      ...completeDecisionsFor(A),
+      ...completeDecisionsFor(B),
+      // A の f-1 セルへの判定履歴: 古い note → 新しい note（新しい方が採用される）
+      makeDecision({ annotator: A, decidedBy: A, decidedAt: 't1', note: '古いメモ' }),
+      makeDecision({ annotator: A, decidedBy: A, decidedAt: 't2', note: 'Table 2 を採用' }),
+      // B の f-1 セルへの判定は note 無し
+      makeDecision({ annotator: B, decidedBy: B, decidedAt: 't1', note: null }),
+      // 他 study のノイズ（混入しないことを確認）
+      makeDecision({ annotator: A, decidedBy: A, studyId: 'study-2', note: '別研究のメモ' }),
+    ]);
+    await loadAdjudicateTargets(store, makeDeps());
+    await openAdjudicateStudy(store, makeDeps(), 'study-1');
+    const cell = store.getState().adjudicate.working?.cells[0];
+    expect(cell?.noteA).toBe('Table 2 を採用');
+    expect(cell?.noteB).toBeNull();
   });
 
   test('annotator に StudyData 行が無ければその側は未入力（null）として扱う', async () => {
@@ -854,13 +944,56 @@ describe('acceptAllMatchingCells', () => {
     await first;
   });
 
-  test('書き込み失敗はトーストのみ（saving は false に戻り、consensusDecisions は変化しない）', async () => {
+  test('書き込み失敗はオフラインキューへ退避し、consensusDecisions は楽観反映する（issue #63）', async () => {
     const store = seedStore();
     await openReadyStudy(store);
     applyConsensusWritesMock.mockRejectedValue(new Error('write failed'));
+    const queue = makeQueue();
+    await acceptAllMatchingCells(store, makeDeps({ decisionQueue: queue }));
+    expect(store.getState().adjudicate.saving).toBe(false);
+    // 検証パネルと同じ「キュー退避でも人間の判断は確定済み」の原則で楽観反映する
+    expect(store.getState().adjudicate.working?.consensusDecisions).toHaveLength(1);
+    expect(store.getState().adjudicate.working?.consensusDecisions[0]).toMatchObject({
+      annotator: 'consensus',
+      action: 'accept',
+    });
+    expect(store.getState().adjudicate.queuedWrites).toBe(1);
+    expect(queue.enqueue).toHaveBeenCalledTimes(1);
+    const [spreadsheetId, userEmail, item] = queue.enqueue.mock.calls[0] as unknown as [string, string, { consensusWrites: unknown[]; consensusParams: { studyId: string } }];
+    expect(spreadsheetId).toBe('sheet-1');
+    expect(userEmail).toBe(JUDGE); // decidedBy = 裁定者
+    expect(item.consensusParams.studyId).toBe('study-1');
+    expect(item.consensusWrites).toHaveLength(1);
+  });
+
+  test('キュー退避後に別の裁定操作が成功すると、キューに残っていた分もあわせて再送する', async () => {
+    const store = seedStore();
+    await openReadyStudy(store);
+    const queue = makeQueue();
+    queue.flush.mockResolvedValue({ flushedCount: 1, remainingCount: 0 });
+    await acceptAllMatchingCells(store, makeDeps({ decisionQueue: queue }));
+    expect(queue.flush).toHaveBeenCalledTimes(1);
+    expect(store.getState().adjudicate.queuedWrites).toBe(0);
+  });
+
+  test('decisionQueue 未注入なら検証側と共有するモジュール共有キューで動く（空キューの flush は no-op）', async () => {
+    const store = seedStore();
+    await openReadyStudy(store);
+    await expect(
+      acceptAllMatchingCells(store, makeDeps({ decisionQueue: undefined })),
+    ).resolves.toBeUndefined();
+    expect(store.getState().adjudicate.saving).toBe(false);
+    expect(store.getState().adjudicate.working?.consensusDecisions).toHaveLength(1);
+  });
+
+  test('想定外の例外（getCurrentUserEmail が失敗）はトーストのみで consensusDecisions は変化しない', async () => {
+    const store = seedStore();
+    await openReadyStudy(store);
+    getCurrentUserEmailMock.mockRejectedValueOnce(new Error('profile error'));
     await acceptAllMatchingCells(store, makeDeps());
     expect(store.getState().adjudicate.saving).toBe(false);
     expect(store.getState().adjudicate.working?.consensusDecisions).toHaveLength(0);
+    expect(applyConsensusWritesMock).not.toHaveBeenCalled();
   });
 
   test('保存完了までに別 study へ切り替わっていたら working を上書きしない', async () => {

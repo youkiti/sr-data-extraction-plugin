@@ -17,6 +17,8 @@ import type { DocumentRecord } from '../../domain/document';
 import type { Evidence } from '../../domain/evidence';
 import type { EntityLevel, SchemaField } from '../../domain/schemaField';
 import type { StudyRecord } from '../../domain/study';
+import { applyConsensusWrites } from '../../features/adjudication/consensusRepository';
+import type { ConsensusCellWrite, ConsensusWriteParams } from '../../features/adjudication/consensusWrites';
 import type { DisposablePdfDocument } from '../../features/documents/extractTextLayer';
 import { parseExtractedText } from '../../features/documents/extractedText';
 import { parseDriveFileId } from '../../features/documents/loadDocumentPages';
@@ -61,8 +63,12 @@ export interface VerificationDeps {
   profile: ProfileDeps;
   /** lib/pdf/loadPdf.ts（テストは fake で完結させるため注入） */
   loadPdf: (data: ArrayBuffer) => Promise<DisposablePdfDocument>;
-  /** テスト差し替え用のオフラインキュー（既定はモジュール共有の 'decisions' キュー） */
-  decisionQueue?: OfflineQueue<QueuedDecisionWrite>;
+  /**
+   * テスト差し替え用のオフラインキュー（既定はモジュール共有の 'decisions' キュー）。
+   * S12 裁定（adjudicationService.ts）の consensus 書き込みもこの同じキューへ退避する
+   * （issue #63。QueuedWrite = QueuedDecisionWrite | QueuedConsensusWrite の判別共用体）
+   */
+  decisionQueue?: OfflineQueue<QueuedWrite>;
   newUuid?: () => string;
   now?: () => string;
   /** 検証パネルのレイアウトモード設定の読み書き（省略時は lib/storage/settingsStore の実装。issue #38） */
@@ -82,18 +88,58 @@ export interface QueuedDecisionWrite {
   studyValues: Record<string, string | null> | null;
 }
 
-/** キュー項目の同定キー（同じ判定の再 enqueue は置換 = upsert になる） */
-export function decisionWriteId(item: QueuedDecisionWrite): string {
+/**
+ * S12 裁定（features/adjudication）の consensus 書き込み一式（issue #63）。
+ * `applyConsensusWrites` 1 回ぶんの引数をそのまま保持し、再送時は同じ関数を丸ごと呼び直す
+ * （冪等性は consensusRepository.ts のコメントのとおり upsert + Decisions 畳み込みで担保される）。
+ * `QueuedDecisionWrite` との判別は `.decision` の有無で行う構造的判別共用体（`kind` フィールドを
+ * 増やすと既存の `QueuedDecisionWrite` 構築箇所すべてに手を入れる必要が生じるため、既存コードを
+ * 一切変更せずに済む構造的判別を選ぶ）
+ */
+export interface QueuedConsensusWrite {
+  consensusWrites: readonly ConsensusCellWrite[];
+  consensusParams: ConsensusWriteParams;
+}
+
+/** 'decisions' キューが受け付ける項目の共用体（検証の判定 / 裁定の consensus 書き込み） */
+export type QueuedWrite = QueuedDecisionWrite | QueuedConsensusWrite;
+
+function isConsensusWrite(item: QueuedWrite): item is QueuedConsensusWrite {
+  return !('decision' in item);
+}
+
+/** キュー項目の同定キー（同じ判定 / 同じ裁定操作の再 enqueue は置換 = upsert になる） */
+export function decisionWriteId(item: QueuedWrite): string {
+  if (isConsensusWrite(item)) {
+    return `consensus|${item.consensusParams.studyId}|${item.consensusParams.decidedAt}`;
+  }
   return `${item.decision.decidedAt}|${item.decision.fieldId}|${item.decision.entityKey}`;
 }
 
-/** flush の再送順（判定した時刻の昇順） */
-export function decisionWriteSortKey(item: QueuedDecisionWrite): string {
-  return item.decision.decidedAt;
+/** flush の再送順（操作した時刻の昇順） */
+export function decisionWriteSortKey(item: QueuedWrite): string {
+  return isConsensusWrite(item) ? item.consensusParams.decidedAt : item.decision.decidedAt;
 }
 
-/** モジュール共有の判定キュー（用途名 'decisions'。spreadsheetId × userEmail で分離される） */
-export const sharedDecisionQueue = createOfflineQueue<QueuedDecisionWrite>({
+/**
+ * 項目種別に応じて実際の書き込みを行う（flush の再送・即時保存の双方から使う共通ディスパッチ）。
+ * 検証の判定は saveDecisionWrite（annotator 行 upsert → Decisions 追記）、S12 裁定の consensus
+ * 書き込みは applyConsensusWrites（consensus 行 upsert → Decisions batch 追記）へ委譲する
+ */
+async function saveQueuedItem(
+  spreadsheetId: string,
+  item: QueuedWrite,
+  deps: VerificationDeps,
+): Promise<void> {
+  if (isConsensusWrite(item)) {
+    await applyConsensusWrites(spreadsheetId, item.consensusWrites, item.consensusParams, deps.google);
+    return;
+  }
+  await saveDecisionWrite(spreadsheetId, item, deps);
+}
+
+/** モジュール共有の判定 / 裁定キュー（用途名 'decisions'。spreadsheetId × userEmail で分離される） */
+export const sharedDecisionQueue = createOfflineQueue<QueuedWrite>({
   name: 'decisions',
   getId: decisionWriteId,
   getSortKey: decisionWriteSortKey,
@@ -367,10 +413,47 @@ export async function persistDecisionWrite(
   }
   const written: QueuedDecisionWrite[] = [write];
   const result = await queue.flush(spreadsheetId, write.decision.annotator, async (item) => {
-    await saveDecisionWrite(spreadsheetId, item, deps);
-    written.push(item);
+    await saveQueuedItem(spreadsheetId, item, deps);
+    // written は楽観ロックの期待値の畳み込み（foldDecisionWriteTokens）専用のため、
+    // QueuedDecisionWrite（annotator 行の判定書き込み）のみを積む。同じキューを共有する
+    // S12 裁定の consensus 書き込み（QueuedConsensusWrite）は annotator 行の楽観ロックとは
+    // 無関係なので対象外にする（issue #63）
+    if (!isConsensusWrite(item)) {
+      written.push(item);
+    }
   });
   return { status: 'saved', remainingCount: result.remainingCount, written };
+}
+
+export type PersistConsensusResult =
+  | { status: 'queued' }
+  | { status: 'saved'; remainingCount: number };
+
+/**
+ * S12 裁定の consensus 書き込み 1 操作（一括採用 / 個別裁定 1 件ぶん）を永続化する
+ * （issue #63。persistDecisionWrite の consensus 版）。immediate 保存が失敗したら
+ * 検証側と共有する 'decisions' キューへ退避し、成功時は同キューに残る過去の退避分
+ * （判定・裁定どちらも）もあわせて再送する。楽観ロックの概念は consensus 書き込みには
+ * 無いため conflict 状態は返さない（applyConsensusWrites に expectedUpdatedAt は渡らない）
+ */
+export async function persistConsensusWrite(
+  spreadsheetId: string,
+  item: QueuedConsensusWrite,
+  deps: VerificationDeps,
+): Promise<PersistConsensusResult> {
+  const queue = deps.decisionQueue ?? sharedDecisionQueue;
+  const { decidedBy } = item.consensusParams;
+  try {
+    await applyConsensusWrites(spreadsheetId, item.consensusWrites, item.consensusParams, deps.google);
+  } catch {
+    await queue.enqueue(spreadsheetId, decidedBy, item);
+    showToast('保存に失敗したため、裁定をオフラインキューへ退避しました（復帰後に再送されます）');
+    return { status: 'queued' };
+  }
+  const result = await queue.flush(spreadsheetId, decidedBy, (queued) =>
+    saveQueuedItem(spreadsheetId, queued, deps),
+  );
+  return { status: 'saved', remainingCount: result.remainingCount };
 }
 
 /**

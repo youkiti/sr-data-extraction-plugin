@@ -1,10 +1,13 @@
 // `#/adjudicate`（S12。docs/design-independent-dual-review.md §6・§9 PR3）のサービス層。
 // - study 一覧の読込: 対象 annotator ペアの解決 + study 単位ゲート（progress 100%）
 // - study を開く: 群構成突き合わせ + セル突き合わせのスナップショットを組み立てる
+//   （表示する run の Evidence も study 単位で解決し working へ持たせる。issue #63:
+//   PDF ペインの根拠ハイライト + セル一覧の各レビュアーの note 表示に使う）
 // - 群構成の確定・改訂の永続化（annotator='consensus' の新版として追記）
 // - セルの裁定（一致一括採用 / A・B 採用 / 第 3 の値 / not_reported / undo）の永続化
 //   consensus 行 upsert → Decisions batch 追記の順で行う（features/adjudication/consensusRepository）。
-//   失敗はトースト表示のみで画面状態を維持する（v1 は offlineQueue への退避なし。§9）
+//   失敗は検証側（app/services/verificationService.ts）と共有する 'decisions' オフラインキューへ
+//   退避し、次回成功時に再送する（issue #63）
 import type { ConfirmedArmStructure } from '../../domain/armStructure';
 import type { DocumentRecord } from '../../domain/document';
 import type { SchemaField } from '../../domain/schemaField';
@@ -17,7 +20,6 @@ import {
 } from '../../features/adjudication/agreement';
 import { armsMatch, buildConsensusArmDraft, type DraftArmRow } from '../../features/adjudication/armMatch';
 import { buildAdjudicationCells, type AdjudicationCell } from '../../features/adjudication/cellMatch';
-import { applyConsensusWrites } from '../../features/adjudication/consensusRepository';
 import {
   buildBulkAcceptWrites,
   buildChoiceWrite,
@@ -35,6 +37,8 @@ import { readStudies } from '../../features/documents/studyRepository';
 import { buildStudySelection } from '../../features/documents/studySelection';
 import type { DisposablePdfDocument } from '../../features/documents/extractTextLayer';
 import { readResultsDataRows, readStudyDataSheet } from '../../features/extraction/annotationRepository';
+import { readEvidenceRows } from '../../features/extraction/evidenceRepository';
+import { readRunSchemaVersions } from '../../features/extraction/runRepository';
 import { getSchemaFieldsByVersion, listSchemaVersions } from '../../features/schema/schemaRepository';
 import {
   latestArmStructure,
@@ -47,17 +51,22 @@ import { readAllDecisions } from '../../features/verification/decisionRepository
 import { createPdfViewCache } from '../../features/verification/pdfViewCache';
 import { getCurrentUserEmail, type ProfileDeps } from '../../lib/google/identity';
 import type { GoogleApiDeps } from '../../lib/google/types';
+import type { OfflineQueue } from '../../lib/storage/offlineQueue';
 import { nowIso8601 } from '../../utils/iso8601';
 import type { AdjudicateState, AdjudicateStudyRow, AdjudicateWorking, Store } from '../store';
 import { downloadTextFile } from '../ui/download';
 import { showToast } from '../ui/toast';
 import { timestampForFilename } from './exportService';
+import { latestRunEvidenceByStudy } from './verifyService';
+import { persistConsensusWrite, type QueuedWrite } from './verificationService';
 
 export interface AdjudicationServiceDeps {
   google: GoogleApiDeps;
   profile: ProfileDeps;
   /** lib/pdf/loadPdf.ts（テストは fake で完結させるため注入） */
   loadPdf: (data: ArrayBuffer) => Promise<DisposablePdfDocument>;
+  /** テスト差し替え用のオフラインキュー（既定は検証側と共有するモジュール共有 'decisions' キュー。issue #63） */
+  decisionQueue?: OfflineQueue<QueuedWrite>;
   now?: () => string;
 }
 
@@ -215,11 +224,20 @@ export async function openAdjudicateStudy(
     const decisions = await readAllDecisions(spreadsheetId, deps.google);
     const armRows = await readAllArmStructures(spreadsheetId, deps.google);
     const studyArmRows = armRows.filter((r) => r.studyId === studyId);
+    // issue #63: PDF ペインの根拠ハイライトの情報源。表示する run（既知 run のうち study の
+    // 最新）の Evidence のみを対象にする（S8/S9 と同じ latestRunEvidenceByStudy を再利用）
+    const allEvidence = await readEvidenceRows(spreadsheetId, deps.google);
+    const runVersions = await readRunSchemaVersions(spreadsheetId, deps.google);
+    const evidenceByStudy = latestRunEvidenceByStudy(allEvidence, new Set(runVersions.keys()));
+    const studyEvidence = evidenceByStudy.get(studyId)?.evidence ?? [];
 
     const studyDataRowA = studySheet.rows.find((r) => r.studyId === studyId && r.annotator === annotatorA) ?? null;
     const studyDataRowB = studySheet.rows.find((r) => r.studyId === studyId && r.annotator === annotatorB) ?? null;
     const resultsRowsA = resultsRows.filter((r) => r.studyId === studyId && r.annotator === annotatorA);
     const resultsRowsB = resultsRows.filter((r) => r.studyId === studyId && r.annotator === annotatorB);
+    // issue #63: セル一覧の「A/B のメモ」表示に使う（各自の Decisions を noteA/noteB へ畳み込む）
+    const decisionsA = decisions.filter((d) => d.studyId === studyId && d.annotator === annotatorA);
+    const decisionsB = decisions.filter((d) => d.studyId === studyId && d.annotator === annotatorB);
     const armsA = latestArmStructure(studyArmRows, annotatorA)?.arms ?? [];
     const armsB = latestArmStructure(studyArmRows, annotatorB)?.arms ?? [];
     const consensusArmStructure = latestArmStructure(studyArmRows, 'consensus');
@@ -228,7 +246,15 @@ export async function openAdjudicateStudy(
         ? consensusArmStructure.arms.map((arm) => ({ ...arm }))
         : buildConsensusArmDraft(armsA, armsB);
 
-    const cells = buildAdjudicationCells(fields, studyDataRowA, studyDataRowB, resultsRowsA, resultsRowsB);
+    const cells = buildAdjudicationCells(
+      fields,
+      studyDataRowA,
+      studyDataRowB,
+      resultsRowsA,
+      resultsRowsB,
+      decisionsA,
+      decisionsB,
+    );
     const consensusDecisions = decisions.filter((d) => d.studyId === studyId && d.annotator === 'consensus');
 
     const pdfCache = createPdfViewCache({ google: deps.google, loadPdf: deps.loadPdf });
@@ -248,6 +274,7 @@ export async function openAdjudicateStudy(
       armDraft,
       cells,
       consensusDecisions,
+      evidence: studyEvidence,
       skippedCellKeys: [],
       loadPdfView: (documentId) => {
         const driveFileId = driveFileIdByDocument.get(documentId);
@@ -416,13 +443,23 @@ async function applyWrites(
       decidedAt,
       schemaVersion: working.schemaVersion,
     };
-    await applyConsensusWrites(project.spreadsheetId, writes, params, deps.google);
+    // 即時保存に失敗しても persistConsensusWrite が 'decisions' オフラインキューへ退避し
+    // 'queued' を返す（throw しない。issue #63）。人間の判断はこの時点で確定しているため、
+    // キュー退避でも検証パネルと同様にセル状態を楽観反映する（復帰後の再送は
+    // persistConsensusWrite 自身が次回の成功保存時にまとめて行う）
+    const result = await persistConsensusWrite(
+      project.spreadsheetId,
+      { consensusWrites: writes, consensusParams: params },
+      deps,
+    );
+    const queuedWrites =
+      result.status === 'saved' ? result.remainingCount : store.getState().adjudicate.queuedWrites + 1;
     const current = store.getState().adjudicate.working;
     if (current !== null && current.study.studyId === working.study.studyId) {
       const newDecisions = [...current.consensusDecisions, ...writes.map((write) => toConsensusDecision(write, params))];
-      patchAdjudicate(store, { saving: false, working: { ...current, consensusDecisions: newDecisions } });
+      patchAdjudicate(store, { saving: false, queuedWrites, working: { ...current, consensusDecisions: newDecisions } });
     } else {
-      patchAdjudicate(store, { saving: false });
+      patchAdjudicate(store, { saving: false, queuedWrites });
     }
   } catch (err) {
     patchAdjudicate(store, { saving: false });

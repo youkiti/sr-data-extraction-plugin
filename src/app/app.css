@@ -2911,6 +2911,52 @@
   color: var(--color-danger);
 }
 
+/* issue #63: セル一覧から PDF ペインの Evidence ハイライトへジャンプするボタン。
+   .adjudicate__action--skip 等と同じ中立系の小型ピルボタン（グローバル button:hover との
+   詳細度差でホバー時に低コントラストにならないよう、hover も明示的に上書きする） */
+.adjudicate__evidence-button {
+  display: block;
+  margin-top: 4px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  background: #fff;
+  border-color: #dadce0;
+  color: #5f6368;
+}
+
+.adjudicate__evidence-button:hover:not(:disabled) {
+  background: #f1f3f4;
+}
+
+/* issue #63: 各レビュアーの Decisions.note（あれば）を A / B の値の下に表示する */
+.adjudicate__cell-note {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+/* issue #63: study に AI 抽出の Evidence が 1 件も無い（独立入力のみ）ときの案内 */
+.adjudicate__no-evidence-note {
+  margin: 0 0 8px;
+  font-size: 13px;
+  color: var(--color-text-muted);
+}
+
+.adjudicate__working-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.adjudicate__queued {
+  background: var(--color-warning-bg);
+  border: 1px solid var(--color-warning-border);
+  border-radius: 999px;
+  padding: 2px 10px;
+  font-size: 12px;
+}
+
 .adjudicate__chip {
   display: inline-flex;
   align-items: center;
