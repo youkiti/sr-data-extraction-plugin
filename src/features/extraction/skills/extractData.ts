@@ -25,8 +25,12 @@ export const EXTRACT_DATA_SKILL_NAME = 'extract-data';
  * v4（2026-07-11）: box_2d（quote の bounding box）の取得に対応。requestBox=true 時のみ
  *   システムプロンプト / ユーザープロンプト / 応答スキーマへ box ルールを追加する
  *   （requestBox=false の経路は 1 文字も変わらない。handoff-scanned-pdf-native-highlight.md §7.4 PR3）
+ * v5（2026-07-12）: プロバイダの暗黙 prefix キャッシュ（Gemini implicit caching 等）のため
+ *   セクションを protocol → documents → fields → 規約 → 出力形式 へ並び替え、
+ *   画像パートを Documents セクション直後（fields より前）へ移動（issue #89）。
+ *   同一 study の全バッチで system + protocol + documents（+ 画像）が共有 prefix になる
  */
-export const EXTRACT_DATA_PROMPT_VERSION = 4;
+export const EXTRACT_DATA_PROMPT_VERSION = 5;
 
 /** text_only モードで LLM へ渡すページ別本文（extracted_texts/{id}.txt 由来） */
 export interface ExtractDataPage {
@@ -107,7 +111,7 @@ Rules:
 - "value": report exactly as written in the document. Do not convert units, do not round, do not translate.
 - "document_index": the 1-based number of the document (from the "=== Document i/N ... ===" headers) that your quote and page refer to. REQUIRED whenever "quote" is provided; set it to null only when "not_reported" is true.
 - "page": the 1-indexed page number within THAT document where the quote appears. Page boundaries are marked as [PAGE n] within each document.
-- For a scanned document with no text layer (its "=== Document i/N ..." note says so): its pages are attached as images after this prompt, each labeled "Document i/N page p". "quote" must be a verbatim transcription of the text actually visible in that page image (character for character, no paraphrasing), and "page" must be the p shown in that image's label.
+- For a scanned document with no text layer (its "=== Document i/N ..." note says so): its pages are attached as images right after the Documents section, each labeled "Document i/N page p". "quote" must be a verbatim transcription of the text actually visible in that page image (character for character, no paraphrasing), and "page" must be the p shown in that image's label.
 - When documents disagree on a value, prefer the main article, lower your "confidence", and take the quote from the document you actually read the value from.
 - "confidence": self-assess each item as "high", "medium" or "low".
 - "field_id" is the matching key: echo it exactly as listed. Never invent field_ids.
@@ -182,19 +186,15 @@ function renderDocument(doc: ExtractDataDocument, index: number, total: number):
     return (
       `${header}\n\n` +
       'This document is a scanned PDF with no text layer. Its pages are attached as images ' +
-      `after this prompt, labeled "Document ${index}/${total} page p".`
+      `right after this Documents section, labeled "Document ${index}/${total} page p".`
     );
   }
   const body = doc.pages.map((page) => `[PAGE ${page.page}]\n${page.text}`).join('\n\n');
   return `${header}\n\n${body}`;
 }
 
-/**
- * ユーザープロンプトを組み立てる。
- * fields は fieldIndex 順に並べ、entity_key 規約は当該バッチに現れる entity_level のぶんだけ提示する。
- * 文書は入力順（= document_index 順）にロール付き区切りで連結する（§4.3 v0.10）
- */
-export function buildExtractDataUserPrompt(input: ExtractDataPromptInput): string {
+/** buildExtractDataUserPrompt / buildExtractDataUserContent 共通の入力検証 */
+function assertValidPromptInput(input: ExtractDataPromptInput): void {
   if (input.fields.length === 0) {
     throw new Error('extract-data skill に抽出項目が 1 件も渡されていません');
   }
@@ -207,21 +207,21 @@ export function buildExtractDataUserPrompt(input: ExtractDataPromptInput): strin
   if (input.documents.some((doc) => doc.mode === 'image' && doc.imagePages.length === 0)) {
     throw new Error('extract-data skill にページ画像が 1 件も無い文書が含まれています');
   }
+}
+
+/**
+ * プロンプト前半（バッチ間で変わらない部分）のセクション群: Protocol context（省略可）→ Documents。
+ * 同一 study の全バッチ（fields だけが異なる）でここが一致するため、プロバイダの暗黙 prefix
+ * キャッシュ（Gemini implicit caching / OpenAI 系 automatic prompt caching）の対象になる（issue #89）。
+ * 文書は入力順（= document_index 順）にロール付き区切りで連結する（§4.3 v0.10）
+ */
+function buildPrefixSections(input: ExtractDataPromptInput): string[] {
   const sections: string[] = [];
 
   const protocol = input.protocolContext?.trim() ?? '';
   if (protocol !== '') {
     sections.push(`## Protocol context\n\n${protocol}`);
   }
-
-  const fields = [...input.fields].sort((a, b) => a.fieldIndex - b.fieldIndex);
-  sections.push(`## Fields to extract\n\n${fields.map(renderField).join('\n')}`);
-
-  const presentLevels = new Set(fields.map((field) => field.entityLevel));
-  const rules = ENTITY_LEVEL_ORDER.filter((level) => presentLevels.has(level)).map(
-    (level) => ENTITY_KEY_RULES[level],
-  );
-  sections.push(`## entity_key rules\n\n${rules.join('\n')}`);
 
   const total = input.documents.length;
   const intro =
@@ -233,6 +233,26 @@ export function buildExtractDataUserPrompt(input: ExtractDataPromptInput): strin
     .join('\n\n');
   sections.push(`## Documents\n\n${intro}\n\n${body}`);
 
+  return sections;
+}
+
+/**
+ * プロンプト後半（バッチごとに変わる部分）のセクション群: Fields to extract → entity_key rules → Output format。
+ * fields は fieldIndex 順に並べ、entity_key 規約は当該バッチに現れる entity_level のぶんだけ提示する
+ */
+function buildSuffixSections(input: ExtractDataPromptInput): string[] {
+  const sections: string[] = [];
+
+  const fields = [...input.fields].sort((a, b) => a.fieldIndex - b.fieldIndex);
+  sections.push(`## Fields to extract\n\n${fields.map(renderField).join('\n')}`);
+
+  const presentLevels = new Set(fields.map((field) => field.entityLevel));
+  const rules = ENTITY_LEVEL_ORDER.filter((level) => presentLevels.has(level)).map(
+    (level) => ENTITY_KEY_RULES[level],
+  );
+  sections.push(`## entity_key rules\n\n${rules.join('\n')}`);
+
+  const total = input.documents.length;
   const outputFormatFields =
     `{ "field_id": "<as listed>", "entity_key": "<per the rules>", "value": "<as reported>" | null, ` +
     `"not_reported": true | false, "quote": "<verbatim, <=300 chars>" | null, "page": <1-indexed> | null, ` +
@@ -241,27 +261,44 @@ export function buildExtractDataUserPrompt(input: ExtractDataPromptInput): strin
     ' }';
   sections.push(`## Output format\n\nReturn a JSON array. Each element must be:\n${outputFormatFields}`);
 
-  return sections.join('\n\n');
+  return sections;
+}
+
+/**
+ * ユーザープロンプトを組み立てる。セクション順は Protocol context（省略可）→ Documents →
+ * Fields to extract → entity_key rules → Output format（issue #89: buildPrefixSections /
+ * buildSuffixSections への分割は「documents（バッチ間不変）」と「fields ほか（バッチ間で変わる）」を
+ * 分け、プロバイダの暗黙 prefix キャッシュを効かせるため）。
+ * 常に `[...buildPrefixSections(input), ...buildSuffixSections(input)].join('\n\n')` と等価
+ */
+export function buildExtractDataUserPrompt(input: ExtractDataPromptInput): string {
+  assertValidPromptInput(input);
+  return [...buildPrefixSections(input), ...buildSuffixSections(input)].join('\n\n');
 }
 
 /**
  * ユーザープロンプトを LLMProvider へそのまま渡せる形（string | ChatContentPart[]）に組み立てる。
  * - 画像文書（mode: 'image'）が 1 件も無ければ buildExtractDataUserPrompt の文字列をそのまま返す
  *   （text_only の既存経路と完全一致。呼び出し側はどちらの戻り値も ChatMessage.content にそのまま渡せる）
- * - 画像文書があれば、プロンプト本文の text パートに続けて「文書順 → ページ順」で
- *   画像パートを並べる。各画像の直前に `[Document i/N page p]` のラベル（text パート）を置く
- *   （画像だけでは LLM がどの文書 / ページの画像かを見失うため。i/N/p は実際の値に展開する）
+ * - 画像文書があれば、prefix（Protocol context + Documents）の text パートに続けて
+ *   「文書順 → ページ順」で画像パートを並べ、末尾に suffix（Fields to extract 以降）の text パートを置く。
+ *   各画像の直前に `[Document i/N page p]` のラベル（text パート）を置く
+ *   （画像だけでは LLM がどの文書 / ページの画像かを見失うため。i/N/p は実際の値に展開する）。
+ *   画像がバッチ間で変わらない Documents セクション直後に来るため、fields より前にあり
+ *   prefix キャッシュの対象に含まれる（issue #89）
  */
 export function buildExtractDataUserContent(
   input: ExtractDataPromptInput,
 ): string | ChatContentPart[] {
-  const promptText = buildExtractDataUserPrompt(input);
+  assertValidPromptInput(input);
+  const prefixSections = buildPrefixSections(input);
+  const suffixSections = buildSuffixSections(input);
   const hasImageDocument = input.documents.some((doc) => doc.mode === 'image');
   if (!hasImageDocument) {
-    return promptText;
+    return [...prefixSections, ...suffixSections].join('\n\n');
   }
   const total = input.documents.length;
-  const parts: ChatContentPart[] = [{ type: 'text', text: promptText }];
+  const parts: ChatContentPart[] = [{ type: 'text', text: prefixSections.join('\n\n') }];
   input.documents.forEach((doc, i) => {
     if (doc.mode !== 'image') {
       return;
@@ -272,6 +309,7 @@ export function buildExtractDataUserContent(
       parts.push({ type: 'image', mimeType: image.mimeType, dataBase64: image.dataBase64 });
     }
   });
+  parts.push({ type: 'text', text: suffixSections.join('\n\n') });
   return parts;
 }
 
