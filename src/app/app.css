@@ -1797,6 +1797,36 @@
   color: var(--color-danger);
 }
 
+/* 決定論的な数値整合性チェック（issue #65）: セル詳細（リストモードのセルカード /
+   フォーカスモードの詳細ストリップ）の警告一覧。判定操作は増やさない情報提示のみ */
+.verify__consistency-warnings {
+  margin: 6px 0;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: var(--color-warning-bg);
+  border: 1px solid var(--color-warning-border);
+  color: var(--color-danger);
+  font-size: 13px;
+}
+
+.verify__consistency-warning {
+  margin: 2px 0;
+}
+
+.verify__consistency-warning:first-child {
+  margin-top: 0;
+}
+
+.verify__consistency-warning:last-child {
+  margin-bottom: 0;
+}
+
+/* マトリクスボタン（focus-card__matrix-btn）に付けるバッジ本体。背景色に依らず
+   十分なコントラストを保つため色は継承せず --color-danger を明示する */
+.verify__consistency-badge {
+  color: var(--color-danger);
+}
+
 .verify__current-value {
   margin: 4px 0;
 }
@@ -2100,6 +2130,15 @@
 .focus-card__matrix-btn--focused {
   outline: 2px solid var(--color-primary);
   border-color: var(--color-primary);
+}
+
+/* 判定チップ + 整合性チェックバッジ（issue #65）をまとめる末尾グループ。
+   button 自体は space-between のまま 2 子（値 / このグループ）に保つ */
+.focus-card__matrix-trailing {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
 }
 
 .focus-card__matrix-value {

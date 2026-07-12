@@ -103,6 +103,7 @@ function makeModel(overrides: Partial<VerificationFocusCardModel> = {}): Verific
     highlightInfo: new Map(),
     canSearchText: true,
     recentCell: null,
+    consistencyWarnings: new Map<string, string[]>(),
     ...overrides,
   };
 }
@@ -134,6 +135,39 @@ describe('renderVerificationFocusCard', () => {
     expect(button?.getAttribute('aria-label')).toBe('平均値 × 介入群: 5.2');
     button?.click();
     expect(handlers.onFocusCell).toHaveBeenCalledWith(cellKeyOf('f-mean', 'outcome:pain|arm:1'));
+  });
+
+  test('整合性チェック警告（issue #65）: マトリクスボタンに ⚠ バッジ + aria-label / title へ警告文を追加する', () => {
+    const cell = makeCell();
+    const unit = makeUnit();
+    const message = 'イベント数 (12) が解析対象数 (10) を超えています';
+    const warnings = new Map<string, string[]>([[cell.cellKey, [message]]]);
+    const { root } = render(makeModel({ unit, consistencyWarnings: warnings }));
+    const button = root.querySelector<HTMLButtonElement>('.focus-card__matrix-btn');
+    expect(button?.querySelector('.verify__consistency-badge')).not.toBeNull();
+    expect(button?.querySelector('.verify__consistency-badge')?.getAttribute('aria-hidden')).toBe('true');
+    expect(button?.getAttribute('aria-label')).toBe(
+      `平均値 × 介入群: 5.2（整合性チェック警告: ${message}）`,
+    );
+    expect(button?.getAttribute('title')).toBe(message);
+  });
+
+  test('整合性チェック警告が無いセルにはバッジを出さず、aria-label も従来どおり', () => {
+    const { root } = render(makeModel());
+    const button = root.querySelector<HTMLButtonElement>('.focus-card__matrix-btn');
+    expect(button?.querySelector('.verify__consistency-badge')).toBeNull();
+    expect(button?.getAttribute('aria-label')).toBe('平均値 × 介入群: 5.2');
+    expect(button?.hasAttribute('title')).toBe(false);
+  });
+
+  test('詳細ストリップにも整合性チェック警告一覧を渡す（verificationCellCard.renderCell 経由）', () => {
+    const cell = makeCell();
+    const unit = makeUnit();
+    const message = '標準誤差 (1.2) が標準偏差 (1.0) 以上です';
+    const warnings = new Map<string, string[]>([[cell.cellKey, [message]]]);
+    const { root } = render(makeModel({ unit, focusedCellKey: cell.cellKey, consistencyWarnings: warnings }));
+    const detail = root.querySelector('#verify-focus-detail');
+    expect(detail?.querySelector('.verify__consistency-warnings')?.textContent).toContain(message);
   });
 
   test('フォーカス中セルのマトリクスボタンに強調クラスが付く', () => {
