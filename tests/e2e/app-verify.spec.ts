@@ -861,3 +861,85 @@ test('決定論的な数値整合性チェック（issue #65）: events > total 
     .poll(() => appendUrls.filter((url) => url.includes('Decisions') && url.includes(':append')).length)
     .toBeGreaterThan(0);
 });
+
+test('RoB 2 SQ アルゴリズム提案（issue #61）: 提案チップ表示 → 不一致警告 → AI 判定未確認バッジ', async ({
+  page,
+}) => {
+  // Domain 1（randomization process）の SQ 3 問 + 判定の 4 項目のみのスキーマ
+  // （rob_domain 以外の項目が無いため群構成カードは出ず、rob_domain タブが唯一のタブになる）
+  const SQ1_1_FIELD_ROW = [
+    '1', 'f-sq1-1', '1', 'risk_of_bias_rob2', 'rob2_sq1_1', 'RoB2 SQ1.1', 'rob_domain',
+    'enum', '', 'y|py|pn|n|ni|na', 'FALSE', 'Was the allocation sequence random?', '', 'FALSE', '',
+  ];
+  const SQ1_2_FIELD_ROW = [
+    '1', 'f-sq1-2', '2', 'risk_of_bias_rob2', 'rob2_sq1_2', 'RoB2 SQ1.2', 'rob_domain',
+    'enum', '', 'y|py|pn|n|ni|na', 'FALSE',
+    'Was the allocation sequence concealed until participants were enrolled?', '', 'FALSE', '',
+  ];
+  const SQ1_3_FIELD_ROW = [
+    '1', 'f-sq1-3', '3', 'risk_of_bias_rob2', 'rob2_sq1_3', 'RoB2 SQ1.3', 'rob_domain',
+    'enum', '', 'y|py|pn|n|ni|na', 'FALSE',
+    'Did baseline differences suggest a problem with the randomization process?', '', 'FALSE', '',
+  ];
+  const ROB2_JUDGEMENT_FIELD_ROW = [
+    '1', 'f-rob2-judgement', '4', 'risk_of_bias_rob2', 'rob2_judgement', 'RoB2 判定', 'rob_domain',
+    'enum', '', 'low|some_concerns|high', 'TRUE', 'RoB 2 judgement for this domain.', '', 'FALSE', '',
+  ];
+  const D1_ENTITY_KEY = 'rob:d1_randomization';
+  // SQ 1.1 = y・1.2 = y・1.3 = n → アルゴリズム提案は low（judgeDomain1Randomization）。
+  // 一方 AI 自身の判定（rob2_judgement の Evidence 値）はあえて high にして不一致を再現する
+  const SQ1_1_EVIDENCE = ['ev-sq1-1', 'run-1', 'study-1', 'f-sq1-1', 'doc-1', D1_ENTITY_KEY, 'y', 'FALSE', '', '', 'high', ''];
+  const SQ1_2_EVIDENCE = ['ev-sq1-2', 'run-1', 'study-1', 'f-sq1-2', 'doc-1', D1_ENTITY_KEY, 'y', 'FALSE', '', '', 'high', ''];
+  const SQ1_3_EVIDENCE = ['ev-sq1-3', 'run-1', 'study-1', 'f-sq1-3', 'doc-1', D1_ENTITY_KEY, 'n', 'FALSE', '', '', 'high', ''];
+  const JUDGEMENT_EVIDENCE = [
+    'ev-rob2-judgement', 'run-1', 'study-1', 'f-rob2-judgement', 'doc-1', D1_ENTITY_KEY, 'high', 'FALSE', '', '', 'high', '',
+  ];
+
+  await setupRoutes(page, {
+    schemaRows: [SQ1_1_FIELD_ROW, SQ1_2_FIELD_ROW, SQ1_3_FIELD_ROW, ROB2_JUDGEMENT_FIELD_ROW],
+    evidenceRows: [SQ1_1_EVIDENCE, SQ1_2_EVIDENCE, SQ1_3_EVIDENCE, JUDGEMENT_EVIDENCE],
+  });
+  await initApp(page, '#/verify?study=study-1');
+
+  await expect(page.locator('.verify__panes')).toBeVisible({ timeout: 15_000 });
+
+  // rob_domain タブしか無いスキーマなので群構成カードは出ない（arm 依存項目が無いため）
+  await expect(page.locator('#verify-arm-card')).toHaveCount(0);
+
+  // フォーカスモードのマトリクスで RoB2 判定行を選択する
+  const matrixButtons = page.locator('#verify-focus-matrix .focus-card__matrix-btn');
+  await expect(matrixButtons).toHaveCount(4, { timeout: 15_000 });
+  const judgementRow = page.locator('#verify-focus-matrix tr', { hasText: 'RoB2 判定' });
+  await judgementRow.locator('.focus-card__matrix-btn').click();
+
+  // マトリクスボタンには RoB 不一致バッジ（issue #65 の整合性バッジと同じパターン）
+  await expect(judgementRow.locator('.verify__rob-badge')).toHaveCount(1);
+  await expect(judgementRow.locator('.focus-card__matrix-btn')).toHaveAttribute(
+    'title',
+    'アルゴリズム提案 (low) と現在の判定 (high) が一致しません',
+  );
+
+  // 詳細ストリップ: 提案チップ + 不一致警告 + AI 判定・未確認バッジ
+  await expect(page.locator('#verify-focus-detail .verify__cell-label')).toHaveText('RoB2 判定');
+  await expect(page.locator('#verify-focus-detail .verify__rob-suggestion')).toHaveText(
+    'アルゴリズム提案: low',
+  );
+  await expect(page.locator('#verify-rob-algorithm-warning')).toContainText(
+    'アルゴリズム提案 (low) と現在の判定 (high) が一致しません',
+  );
+  await expect(page.locator('#verify-focus-detail .verify__rob-unconfirmed')).toHaveText(
+    'AI 判定・未確認（まだ人が確認していません）',
+  );
+
+  const results = await new AxeBuilder({ page }).analyze();
+  expect(results.violations).toEqual([]);
+
+  // 承認すると人間の判定が付き、AI 判定・未確認バッジは消える（不一致警告は情報提示のため残る —
+  // 判定操作は増やさない・ブロックしない仕様どおり承認自体は可能）。
+  // 承認直後は同一ユニット内の次の未判定セル（SQ1.1）へ自動送りされるため、
+  // 判定行のバッジ消滅を確認するにはマトリクスから改めて判定行を選び直す
+  await page.locator('#verify-focus-detail .verify__action--accept').click();
+  await judgementRow.locator('.focus-card__matrix-btn').click();
+  await expect(page.locator('#verify-focus-detail .verify__cell-label')).toHaveText('RoB2 判定');
+  await expect(page.locator('#verify-focus-detail .verify__rob-unconfirmed')).toHaveCount(0);
+});

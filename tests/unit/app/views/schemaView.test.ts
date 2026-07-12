@@ -432,6 +432,8 @@ describe('renderSchemaView', () => {
       expect(callbacks.onInsertPreset).toHaveBeenCalledWith('continuous');
       (view.querySelector('#schema-preset-rob2') as HTMLButtonElement).click();
       expect(callbacks.onInsertPreset).toHaveBeenCalledWith('rob2');
+      (view.querySelector('#schema-preset-rob2-sq') as HTMLButtonElement).click();
+      expect(callbacks.onInsertPreset).toHaveBeenCalledWith('rob2_sq');
       (view.querySelector('#schema-preset-robins-i') as HTMLButtonElement).click();
       expect(callbacks.onInsertPreset).toHaveBeenCalledWith('robins_i');
       (view.querySelector('#schema-editor-cancel') as HTMLButtonElement).click();

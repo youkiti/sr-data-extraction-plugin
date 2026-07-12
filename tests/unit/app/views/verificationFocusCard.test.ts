@@ -104,6 +104,7 @@ function makeModel(overrides: Partial<VerificationFocusCardModel> = {}): Verific
     canSearchText: true,
     recentCell: null,
     consistencyWarnings: new Map<string, string[]>(),
+    robAlgorithmInfo: new Map(),
     ...overrides,
   };
 }
@@ -168,6 +169,50 @@ describe('renderVerificationFocusCard', () => {
     const { root } = render(makeModel({ unit, focusedCellKey: cell.cellKey, consistencyWarnings: warnings }));
     const detail = root.querySelector('#verify-focus-detail');
     expect(detail?.querySelector('.verify__consistency-warnings')?.textContent).toContain(message);
+  });
+
+  test('RoB 2 アルゴリズム提案との不一致（issue #61）: マトリクスボタンに専用バッジ + aria-label / title を追加する', () => {
+    const cell = makeCell();
+    const unit = makeUnit();
+    const robInfo = new Map([
+      [cell.cellKey, { cellKey: cell.cellKey, suggestion: 'high' as const, currentValue: 'low' as const, mismatch: true, aiUnconfirmed: false }],
+    ]);
+    const { root } = render(makeModel({ unit, robAlgorithmInfo: robInfo }));
+    const button = root.querySelector<HTMLButtonElement>('.focus-card__matrix-btn');
+    expect(button?.querySelector('.verify__rob-badge')).not.toBeNull();
+    expect(button?.getAttribute('aria-label')).toBe(
+      '平均値 × 介入群: 5.2（RoB アルゴリズム提案との不一致: アルゴリズム提案 (high) と現在の判定 (low) が一致しません）',
+    );
+    expect(button?.getAttribute('title')).toBe('アルゴリズム提案 (high) と現在の判定 (low) が一致しません');
+  });
+
+  test('RoB 2 アルゴリズム提案と現在値が一致する（mismatch=false）ときはバッジを出さない', () => {
+    const cell = makeCell();
+    const unit = makeUnit();
+    const robInfo = new Map([
+      [cell.cellKey, { cellKey: cell.cellKey, suggestion: 'low' as const, currentValue: 'low' as const, mismatch: false, aiUnconfirmed: false }],
+    ]);
+    const { root } = render(makeModel({ unit, robAlgorithmInfo: robInfo }));
+    const button = root.querySelector<HTMLButtonElement>('.focus-card__matrix-btn');
+    expect(button?.querySelector('.verify__rob-badge')).toBeNull();
+    expect(button?.getAttribute('aria-label')).toBe('平均値 × 介入群: 5.2');
+  });
+
+  test('整合性チェック違反と RoB 不一致が同一セルで重なる場合は両方のバッジを併記し、title を連結する', () => {
+    const cell = makeCell();
+    const unit = makeUnit();
+    const consistencyMessage = 'イベント数 (12) が解析対象数 (10) を超えています';
+    const consistencyWarnings = new Map<string, string[]>([[cell.cellKey, [consistencyMessage]]]);
+    const robInfo = new Map([
+      [cell.cellKey, { cellKey: cell.cellKey, suggestion: 'high' as const, currentValue: 'low' as const, mismatch: true, aiUnconfirmed: false }],
+    ]);
+    const { root } = render(makeModel({ unit, consistencyWarnings, robAlgorithmInfo: robInfo }));
+    const button = root.querySelector<HTMLButtonElement>('.focus-card__matrix-btn');
+    expect(button?.querySelector('.verify__consistency-badge')).not.toBeNull();
+    expect(button?.querySelector('.verify__rob-badge')).not.toBeNull();
+    expect(button?.getAttribute('title')).toBe(
+      `${consistencyMessage}\nアルゴリズム提案 (high) と現在の判定 (low) が一致しません`,
+    );
   });
 
   test('フォーカス中セルのマトリクスボタンに強調クラスが付く', () => {
