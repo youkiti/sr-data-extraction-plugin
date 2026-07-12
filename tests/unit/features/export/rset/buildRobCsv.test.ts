@@ -198,4 +198,57 @@ describe('buildRobCsv', () => {
     expect(records).toHaveLength(1 + 8); // ROBINS-I は 7 ドメイン + overall = 8 行
     expect(records.find((r) => r[3] === 'overall')?.[2]).toBe('robins_i');
   });
+
+  test('QUADAS-3 は risk-of-bias / applicability の 2 tool として列挙できる（issue #88）', () => {
+    const quadas3Fields = [
+      makeField({ fieldId: 'f-rob', fieldName: 'quadas3_rob_judgement', entityLevel: 'rob_domain' }),
+      makeField({ fieldId: 'f-app', fieldName: 'quadas3_applicability_judgement', entityLevel: 'rob_domain' }),
+    ];
+    const studies = [makeStudy({ studyId: 'study-1' })];
+    const resultsRows = [
+      makeResultsDataRow({
+        resultId: 'r-1',
+        studyId: 'study-1',
+        fieldId: 'f-rob',
+        entityKey: 'rob:quadas3_overall',
+        value: 'low',
+      }),
+      makeResultsDataRow({
+        resultId: 'r-2',
+        studyId: 'study-1',
+        fieldId: 'f-app',
+        entityKey: 'rob:quadas3_overall',
+        value: 'high',
+      }),
+    ];
+    const result = buildRobCsv(studies, resultsRows, [], quadas3Fields);
+    const records = parseCsv(result.csv);
+    // risk-of-bias（D1〜D4 + overall = 5 行）+ applicability（D1〜D3 + overall = 4 行）
+    expect(records).toHaveLength(1 + 5 + 4);
+    const robOverall = records.find((r) => r[2] === 'quadas3' && r[3] === 'quadas3_overall');
+    expect(robOverall?.[8]).toBe('low');
+    const applicabilityOverall = records.find(
+      (r) => r[2] === 'quadas3_applicability' && r[3] === 'quadas3_overall',
+    );
+    expect(applicabilityOverall?.[8]).toBe('high');
+  });
+
+  test('QUIPS のドメインも列挙できる（overall は無く 6 ドメインのみ・issue #88）', () => {
+    const quipsFields = [makeField({ fieldId: 'f-j', fieldName: 'quips_judgement', entityLevel: 'rob_domain' })];
+    const studies = [makeStudy({ studyId: 'study-1' })];
+    const resultsRows = [
+      makeResultsDataRow({
+        resultId: 'r-1',
+        studyId: 'study-1',
+        fieldId: 'f-j',
+        entityKey: 'rob:quips_d5_confounding',
+        value: 'moderate',
+      }),
+    ];
+    const result = buildRobCsv(studies, resultsRows, [], quipsFields);
+    const records = parseCsv(result.csv);
+    expect(records).toHaveLength(1 + 6); // QUIPS は 6 ドメインのみ（overall 無し）
+    expect(records.find((r) => r[3] === 'quips_d5_confounding')?.[8]).toBe('moderate');
+    expect(records.every((r) => r[3] !== 'overall')).toBe(true);
+  });
 });

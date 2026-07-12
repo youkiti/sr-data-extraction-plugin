@@ -216,6 +216,23 @@ test('エディタ: 行操作と検証エラー表示、確定ボタンの無効
     'rob_domain',
   );
 
+  // QUADAS-3 テンプレート挿入（issue #88。risk-of-bias 判定 + 根拠 + 適用可能性判定 + 根拠 + SQ 20 問 = 24 行）
+  await page.locator('#schema-preset-quadas3').click();
+  await expect(page.locator('#schema-editor-table tbody tr')).toHaveCount(29);
+  await expect(page.locator('input[aria-label="6 行目の field_name"]')).toHaveValue(
+    'quadas3_rob_judgement',
+  );
+  await expect(page.locator('select[aria-label="6 行目の entity_level"]')).toHaveValue(
+    'rob_domain',
+  );
+
+  // QUIPS テンプレート挿入（issue #88。判定 + 根拠 + prompting item 12 問 = 14 行。overall は無い）
+  await page.locator('#schema-preset-quips').click();
+  await expect(page.locator('#schema-editor-table tbody tr')).toHaveCount(43);
+  await expect(page.locator('input[aria-label="30 行目の field_name"]')).toHaveValue(
+    'quips_judgement',
+  );
+
   // キャンセルでドラフト前へ戻る
   await page.locator('#schema-editor-cancel').click();
   await expect(page.locator('#schema-draft-form')).toBeVisible();

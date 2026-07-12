@@ -1,8 +1,15 @@
 import {
+  QUADAS3_APPLICABILITY_DOMAINS,
+  QUADAS3_DOMAINS,
+  QUADAS3_SQ_FIELD_NAMES,
+  QUIPS_DOMAINS,
+  QUIPS_ITEM_FIELD_NAMES,
   ROB2_DOMAINS,
   ROB2_SQ_FIELD_NAMES,
   ROBINS_I_DOMAINS,
   ROBINS_I_SQ_FIELD_NAMES,
+  ROB_TEMPLATE_QUADAS3,
+  ROB_TEMPLATE_QUIPS,
   ROB_TEMPLATE_ROB2,
   ROB_TEMPLATE_ROB2_SQ,
   ROB_TEMPLATE_ROBINS_I,
@@ -101,6 +108,8 @@ describe('robTemplates', () => {
     expect(ROB_TEMPLATES.robins_i).toBe(ROB_TEMPLATE_ROBINS_I);
     expect(ROB_TEMPLATES.rob2_sq).toBe(ROB_TEMPLATE_ROB2_SQ);
     expect(ROB_TEMPLATES.robins_i_sq).toBe(ROB_TEMPLATE_ROBINS_I_SQ);
+    expect(ROB_TEMPLATES.quadas3).toBe(ROB_TEMPLATE_QUADAS3);
+    expect(ROB_TEMPLATES.quips).toBe(ROB_TEMPLATE_QUIPS);
     expect(SCHEMA_PRESETS).toEqual({ ...OUTCOME_TEMPLATES, ...ROB_TEMPLATES });
   });
 
@@ -362,6 +371,257 @@ describe('robTemplates', () => {
           expect.stringContaining('robins_i_support'),
         ]),
       );
+    });
+  });
+
+  describe('QUADAS-3（issue #61 PR3 = issue #88）', () => {
+    test('risk-of-bias 判定 + 根拠 + 適用可能性判定 + 根拠 + SQ 20 問の計 24 項目を挿入する', () => {
+      expect(ROB_TEMPLATE_QUADAS3).toHaveLength(24);
+      expect(ROB_TEMPLATE_QUADAS3[0]?.fieldName).toBe('quadas3_rob_judgement');
+      expect(ROB_TEMPLATE_QUADAS3[1]?.fieldName).toBe('quadas3_rob_support');
+      expect(ROB_TEMPLATE_QUADAS3[2]?.fieldName).toBe('quadas3_applicability_judgement');
+      expect(ROB_TEMPLATE_QUADAS3[3]?.fieldName).toBe('quadas3_applicability_support');
+      const sqFieldNames = ROB_TEMPLATE_QUADAS3.slice(4).map((row) => row.fieldName);
+      expect(sqFieldNames).toEqual([
+        'quadas3_sq1_1',
+        'quadas3_sq1_2',
+        'quadas3_sq1_3',
+        'quadas3_sq1_4',
+        'quadas3_sq2_1',
+        'quadas3_sq2_2',
+        'quadas3_sq2_3',
+        'quadas3_sq2_4',
+        'quadas3_sq3_1',
+        'quadas3_sq3_2',
+        'quadas3_sq3_3',
+        'quadas3_sq3_4',
+        'quadas3_sq3_5',
+        'quadas3_sq3_6',
+        'quadas3_sq3_7',
+        'quadas3_sq3_8',
+        'quadas3_sq4_1',
+        'quadas3_sq4_2',
+        'quadas3_sq4_3',
+        'quadas3_sq4_4',
+      ]);
+    });
+
+    test('ドメイン定義: risk-of-bias は D1〜D4 + overall / 適用可能性は D1〜D3 + overall（Analysis を除く）', () => {
+      expect(QUADAS3_DOMAINS.map((domain) => domain.id)).toEqual([
+        'quadas3_d1_participants',
+        'quadas3_d2_index_test',
+        'quadas3_d3_target_condition',
+        'quadas3_d4_analysis',
+        'quadas3_overall',
+      ]);
+      expect(QUADAS3_APPLICABILITY_DOMAINS.map((domain) => domain.id)).toEqual([
+        'quadas3_d1_participants',
+        'quadas3_d2_index_test',
+        'quadas3_d3_target_condition',
+        'quadas3_overall',
+      ]);
+    });
+
+    test('全項目が rob_domain レベル・専用セクション risk_of_bias_quadas3 に属する', () => {
+      for (const row of ROB_TEMPLATE_QUADAS3) {
+        expect(row.entityLevel).toBe('rob_domain');
+        expect(row.section).toBe('risk_of_bias_quadas3');
+        expect(row.fieldId).toBeNull();
+        expect(row.aiGenerated).toBe(false);
+      }
+    });
+
+    test('SQ 項目は enum・y|py|pn|n|ni|na・required=false', () => {
+      for (const row of ROB_TEMPLATE_QUADAS3.slice(4)) {
+        expect(row.dataType).toBe('enum');
+        expect(row.allowedValues).toBe('y|py|pn|n|ni|na');
+        expect(row.required).toBe(false);
+      }
+    });
+
+    test('risk-of-bias 判定行は low|high|insufficient_information の 3 段階 enum・必須', () => {
+      expect(ROB_TEMPLATE_QUADAS3[0]).toMatchObject({
+        dataType: 'enum',
+        allowedValues: 'low|high|insufficient_information',
+        required: true,
+      });
+      expect(ROB_TEMPLATE_QUADAS3[1]).toMatchObject({ dataType: 'text', required: false });
+    });
+
+    test('適用可能性判定行は low|high|insufficient_information の 3 段階 enum・任意', () => {
+      expect(ROB_TEMPLATE_QUADAS3[2]).toMatchObject({
+        dataType: 'enum',
+        allowedValues: 'low|high|insufficient_information',
+        required: false,
+      });
+      expect(ROB_TEMPLATE_QUADAS3[3]).toMatchObject({ dataType: 'text', required: false });
+    });
+
+    test('SQ の抽出指示に entity_key・回答コード・報告ベース限定の指示を含む', () => {
+      const sq1_1 = ROB_TEMPLATE_QUADAS3.find((row) => row.fieldName === 'quadas3_sq1_1');
+      expect(sq1_1?.extractionInstruction).toContain('rob:quadas3_d1_participants');
+      expect(sq1_1?.extractionInstruction).toContain('Was a single-gate design used?');
+      expect(sq1_1?.extractionInstruction).toContain('y (Yes)');
+      expect(sq1_1?.extractionInstruction).toContain('推測やドメイン知識での補完は禁止');
+      expect(sq1_1?.extractionInstruction).not.toContain('条件付きです');
+    });
+
+    test('条件付き SQ（しきい値を用いた場合のみ）の抽出指示は条件と na 回答の案内を含む', () => {
+      const sq2_4 = ROB_TEMPLATE_QUADAS3.find((row) => row.fieldName === 'quadas3_sq2_4');
+      expect(sq2_4?.extractionInstruction).toContain('条件付きです');
+      expect(sq2_4?.extractionInstruction).toContain('na（not applicable）と明示的に回答');
+      expect(sq2_4?.extractionInstruction).toContain('しきい値を用いた場合のみ');
+    });
+
+    test('QUADAS3_SQ_FIELD_NAMES はドメイン別の field_name 一覧を公開し、プリセットの実際の field_name と一致する', () => {
+      expect(QUADAS3_SQ_FIELD_NAMES).toEqual({
+        quadas3_d1_participants: ['quadas3_sq1_1', 'quadas3_sq1_2', 'quadas3_sq1_3', 'quadas3_sq1_4'],
+        quadas3_d2_index_test: ['quadas3_sq2_1', 'quadas3_sq2_2', 'quadas3_sq2_3', 'quadas3_sq2_4'],
+        quadas3_d3_target_condition: [
+          'quadas3_sq3_1',
+          'quadas3_sq3_2',
+          'quadas3_sq3_3',
+          'quadas3_sq3_4',
+          'quadas3_sq3_5',
+          'quadas3_sq3_6',
+          'quadas3_sq3_7',
+          'quadas3_sq3_8',
+        ],
+        quadas3_d4_analysis: ['quadas3_sq4_1', 'quadas3_sq4_2', 'quadas3_sq4_3', 'quadas3_sq4_4'],
+      });
+    });
+
+    test('全ドメインの entity_key が抽出指示に明示され、parseEntityKey で rob_domain に解決できる', () => {
+      const robInstruction = ROB_TEMPLATE_QUADAS3[0]?.extractionInstruction ?? '';
+      for (const domain of QUADAS3_DOMAINS) {
+        const entityKey = `rob:${domain.id}`;
+        expect(robInstruction).toContain(`"${entityKey}"`);
+        expect(parseEntityKey(entityKey)).toEqual({ level: 'rob_domain', domain: domain.id });
+      }
+      const applicabilityInstruction = ROB_TEMPLATE_QUADAS3[2]?.extractionInstruction ?? '';
+      for (const domain of QUADAS3_APPLICABILITY_DOMAINS) {
+        expect(applicabilityInstruction).toContain(`"rob:${domain.id}"`);
+      }
+    });
+
+    test('プリセット単体はエディタ検証を通る', () => {
+      expect(validateEditorRows(ROB_TEMPLATE_QUADAS3)).toEqual([]);
+    });
+
+    test('RoB 2 / ROBINS-I / QUIPS と同時挿入しても field_name は衝突しない', () => {
+      expect(
+        validateEditorRows([
+          ...ROB_TEMPLATE_QUADAS3,
+          ...ROB_TEMPLATE_ROB2,
+          ...ROB_TEMPLATE_ROBINS_I,
+          ...ROB_TEMPLATE_QUIPS,
+        ]),
+      ).toEqual([]);
+    });
+  });
+
+  describe('QUIPS（issue #61 PR3 = issue #88）', () => {
+    test('判定 + 根拠 + prompting item 12 問の計 14 項目を挿入する（overall は無い）', () => {
+      expect(ROB_TEMPLATE_QUIPS).toHaveLength(14);
+      expect(ROB_TEMPLATE_QUIPS[0]?.fieldName).toBe('quips_judgement');
+      expect(ROB_TEMPLATE_QUIPS[1]?.fieldName).toBe('quips_support');
+      const itemFieldNames = ROB_TEMPLATE_QUIPS.slice(2).map((row) => row.fieldName);
+      expect(itemFieldNames).toEqual([
+        'quips_pi1_1',
+        'quips_pi1_2',
+        'quips_pi2_1',
+        'quips_pi2_2',
+        'quips_pi3_1',
+        'quips_pi3_2',
+        'quips_pi4_1',
+        'quips_pi4_2',
+        'quips_pi5_1',
+        'quips_pi5_2',
+        'quips_pi6_1',
+        'quips_pi6_2',
+      ]);
+    });
+
+    test('ドメイン定義: 6 ドメイン（overall は無い）', () => {
+      expect(QUIPS_DOMAINS.map((domain) => domain.id)).toEqual([
+        'quips_d1_participation',
+        'quips_d2_attrition',
+        'quips_d3_pf_measurement',
+        'quips_d4_outcome_measurement',
+        'quips_d5_confounding',
+        'quips_d6_analysis_reporting',
+      ]);
+    });
+
+    test('全項目が rob_domain レベル・専用セクション risk_of_bias_quips に属する', () => {
+      for (const row of ROB_TEMPLATE_QUIPS) {
+        expect(row.entityLevel).toBe('rob_domain');
+        expect(row.section).toBe('risk_of_bias_quips');
+        expect(row.fieldId).toBeNull();
+        expect(row.aiGenerated).toBe(false);
+      }
+    });
+
+    test('prompting item は enum・yes|partial|no|unsure・required=false', () => {
+      for (const row of ROB_TEMPLATE_QUIPS.slice(2)) {
+        expect(row.dataType).toBe('enum');
+        expect(row.allowedValues).toBe('yes|partial|no|unsure');
+        expect(row.required).toBe(false);
+      }
+    });
+
+    test('判定行は high|moderate|low の 3 段階 enum・必須', () => {
+      expect(ROB_TEMPLATE_QUIPS[0]).toMatchObject({
+        dataType: 'enum',
+        allowedValues: 'high|moderate|low',
+        required: true,
+      });
+      expect(ROB_TEMPLATE_QUIPS[1]).toMatchObject({ dataType: 'text', required: false });
+    });
+
+    test('prompting item の抽出指示に entity_key・回答コード・報告ベース限定の指示を含む', () => {
+      const item1_1 = ROB_TEMPLATE_QUIPS.find((row) => row.fieldName === 'quips_pi1_1');
+      expect(item1_1?.extractionInstruction).toContain('rob:quips_d1_participation');
+      expect(item1_1?.extractionInstruction).toContain(
+        'There is adequate participation in the study by eligible individuals.',
+      );
+      expect(item1_1?.extractionInstruction).toContain('yes / partial / no / unsure');
+      expect(item1_1?.extractionInstruction).toContain('do not guess');
+    });
+
+    test('QUIPS_ITEM_FIELD_NAMES はドメイン別の field_name 一覧を公開し、プリセットの実際の field_name と一致する', () => {
+      expect(QUIPS_ITEM_FIELD_NAMES).toEqual({
+        quips_d1_participation: ['quips_pi1_1', 'quips_pi1_2'],
+        quips_d2_attrition: ['quips_pi2_1', 'quips_pi2_2'],
+        quips_d3_pf_measurement: ['quips_pi3_1', 'quips_pi3_2'],
+        quips_d4_outcome_measurement: ['quips_pi4_1', 'quips_pi4_2'],
+        quips_d5_confounding: ['quips_pi5_1', 'quips_pi5_2'],
+        quips_d6_analysis_reporting: ['quips_pi6_1', 'quips_pi6_2'],
+      });
+    });
+
+    test('全ドメインの entity_key が抽出指示に明示され、parseEntityKey で rob_domain に解決できる', () => {
+      const instruction = ROB_TEMPLATE_QUIPS[0]?.extractionInstruction ?? '';
+      for (const domain of QUIPS_DOMAINS) {
+        const entityKey = `rob:${domain.id}`;
+        expect(instruction).toContain(`"${entityKey}"`);
+        expect(parseEntityKey(entityKey)).toEqual({ level: 'rob_domain', domain: domain.id });
+      }
+    });
+
+    test('プリセット単体はエディタ検証を通る', () => {
+      expect(validateEditorRows(ROB_TEMPLATE_QUIPS)).toEqual([]);
+    });
+
+    test('RoB 2 / ROBINS-I / QUADAS-3 と同時挿入しても field_name は衝突しない', () => {
+      expect(
+        validateEditorRows([
+          ...ROB_TEMPLATE_QUIPS,
+          ...ROB_TEMPLATE_ROB2,
+          ...ROB_TEMPLATE_ROBINS_I,
+          ...ROB_TEMPLATE_QUADAS3,
+        ]),
+      ).toEqual([]);
     });
   });
 });

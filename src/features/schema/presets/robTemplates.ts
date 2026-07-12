@@ -785,7 +785,510 @@ export const ROB_TEMPLATE_ROBINS_I_SQ: readonly SchemaEditorRow[] = [
   ...ROBINS_I_SQ_DEFS.map(robinsISqRow),
 ];
 
-export type RobPresetKind = 'rob2' | 'robins_i' | 'rob2_sq' | 'robins_i_sq';
+// --- QUADAS-3（診断精度研究）（issue #61 PR3 = issue #88） --------------------
+//
+// --- 出典 -------------------------------------------------------------------
+// ドメイン構成・signaling question（SQ）文言・判定スケール・適用可能性（applicability）判定・
+// overall 統合規則は、いずれも QUADAS-3 開発グループが公開しているツール本体（Word 文書）から
+// 直接転記した:
+//   QUADAS-3 (v1.2). University of Bristol, Population Health Sciences.
+//   https://www.bristol.ac.uk/media-library/sites/social-community-medicine/quadas/QUADAS-3%201.2.docx
+//   （2026-07-13 取得。mammoth.js で本文を機械抽出のうえ Phase 5・6 の記載を逐語転記した）
+// あわせて、原著論文 Whiting PF et al. "QUADAS-3: A Revised Tool for the Quality Assessment of
+// Diagnostic Test Accuracy Studies." Annals of Internal Medicine（2025 年公表）が本ツールの
+// 出典である（issue #61 D-3 合意: QUADAS-3 は公開済みのため QUADAS-2 での先行実装はしない）。
+//
+// QUADAS-3 は 4 ドメイン（Participants / Index Test / Target Condition / Analysis）を SQ で評価し、
+// ドメイン別の risk-of-bias 判定（low / high / insufficient_information）を導く。このうち
+// Participants・Index Test・Target Condition の 3 ドメイン（Analysis を除く）は、レビューの
+// synthesis question に対する適用可能性（applicability）の懸念も別途判定する。
+// overall（risk of bias・applicability 双方）は「いずれかのドメインが high → 全体 high、
+// 全ドメイン low → 全体 low、high は無いが insufficient_information を含む → 全体
+// insufficient_information」という原文記載の規則があるが、issue #61 合意（#4「どちらも判定導出
+// アルゴリズムは実装しない」）は QUADAS-3 / QUIPS の判定に公式の決定木が無いことを理由にしている。
+// QUADAS-3 の overall 規則自体は文章としては単純だが、ドメイン判定そのものが「SQ に n/pn が
+// あっても low と判定してよい（レビュー担当者の裁量）」という完全に主観的な総合判断を前提として
+// おり、SQ 回答から自動導出できるのは overall のみで肝心のドメイン判定は自動化できない。
+// ドメイン判定を自動導出できない以上、overall だけを機械的に導出しても実用上の価値が薄いため、
+// robAlgorithm.ts への判定関数追加は行わない（#61 合意どおり AI 判定 + 人間検証のまま）。
+
+/** QUADAS-3 の 4 ドメイン + overall。entity_key は `rob:<domain_id>` になる */
+export const QUADAS3_DOMAINS: readonly { id: string; label: string }[] = [
+  { id: 'quadas3_d1_participants', label: 'participants' },
+  { id: 'quadas3_d2_index_test', label: 'index test' },
+  { id: 'quadas3_d3_target_condition', label: 'target condition' },
+  { id: 'quadas3_d4_analysis', label: 'analysis' },
+  { id: 'quadas3_overall', label: 'overall risk of bias / applicability' },
+];
+
+/** QUADAS-3 のうち適用可能性（applicability）も判定する 3 ドメイン + overall（Analysis を除く） */
+export const QUADAS3_APPLICABILITY_DOMAINS: readonly { id: string; label: string }[] = [
+  { id: 'quadas3_d1_participants', label: 'participants' },
+  { id: 'quadas3_d2_index_test', label: 'index test' },
+  { id: 'quadas3_d3_target_condition', label: 'target condition' },
+  { id: 'quadas3_overall', label: 'overall applicability' },
+];
+
+/** QUADAS-3 SQ 1 問ぶんの定義データ */
+interface Quadas3SqDef {
+  /** signaling question 番号（例 '2.4'）。field_name は `quadas3_sq${code.replace('.', '_')}` */
+  code: string;
+  /** 所属ドメイン（QUADAS3_DOMAINS の id と一致させる。overall に SQ は無い） */
+  domainId: string;
+  /** signaling question の英語原文 */
+  question: string;
+  /** 条件付き設問の発火条件（日本語要約）。null = 無条件設問 */
+  conditionSummary: string | null;
+}
+
+const QUADAS3_SQ_DEFS: readonly Quadas3SqDef[] = [
+  // --- Domain 1: Participants（4 問） ---
+  {
+    code: '1.1',
+    domainId: 'quadas3_d1_participants',
+    question: 'Was a single-gate design used?',
+    conditionSummary: null,
+  },
+  {
+    code: '1.2',
+    domainId: 'quadas3_d1_participants',
+    question: 'Were participants prospectively enrolled?',
+    conditionSummary: null,
+  },
+  {
+    code: '1.3',
+    domainId: 'quadas3_d1_participants',
+    question: 'Was a consecutive or random sample of participants included?',
+    conditionSummary: null,
+  },
+  {
+    code: '1.4',
+    domainId: 'quadas3_d1_participants',
+    question: 'Is the study group a representative sample of the intended-use population?',
+    conditionSummary: null,
+  },
+  // --- Domain 2: Index Test（4 問） ---
+  {
+    code: '2.1',
+    domainId: 'quadas3_d2_index_test',
+    question: 'Was the index test conducted and interpreted according to the recommended instructions?',
+    conditionSummary: null,
+  },
+  {
+    code: '2.2',
+    domainId: 'quadas3_d2_index_test',
+    question: 'Were the index test results interpreted without knowledge of the reference standard results?',
+    conditionSummary: null,
+  },
+  {
+    code: '2.3',
+    domainId: 'quadas3_d2_index_test',
+    question:
+      'Were the index test results interpreted with the same information as would be available when the ' +
+      'test is used in practice?',
+    conditionSummary: null,
+  },
+  {
+    code: '2.4',
+    domainId: 'quadas3_d2_index_test',
+    question: 'If an index test threshold was used, was it standard or pre-specified?',
+    conditionSummary: 'index test にしきい値を用いた場合のみ回答する。用いていない場合は na',
+  },
+  // --- Domain 3: Target Condition（8 問） ---
+  {
+    code: '3.1',
+    domainId: 'quadas3_d3_target_condition',
+    question: 'Does the reference standard adequately identify those with and without the target condition?',
+    conditionSummary: null,
+  },
+  {
+    code: '3.2',
+    domainId: 'quadas3_d3_target_condition',
+    question: 'Was the target condition assessed in all participants?',
+    conditionSummary: null,
+  },
+  {
+    code: '3.3',
+    domainId: 'quadas3_d3_target_condition',
+    question: 'Was the target condition assessed in the same way in all participants?',
+    conditionSummary: null,
+  },
+  {
+    code: '3.4',
+    domainId: 'quadas3_d3_target_condition',
+    question: 'Did the reference standard avoid incorporating the index test?',
+    conditionSummary: null,
+  },
+  {
+    code: '3.5',
+    domainId: 'quadas3_d3_target_condition',
+    question: 'Was the reference standard conducted and interpreted according to the recommended instructions?',
+    conditionSummary: null,
+  },
+  {
+    code: '3.6',
+    domainId: 'quadas3_d3_target_condition',
+    question: 'Were the reference standard results interpreted without knowledge of the index test results?',
+    conditionSummary: null,
+  },
+  {
+    code: '3.7',
+    domainId: 'quadas3_d3_target_condition',
+    question: 'If a reference standard threshold was used, was it standard or pre-specified?',
+    conditionSummary: 'reference standard にしきい値を用いた場合のみ回答する。用いていない場合は na',
+  },
+  {
+    code: '3.8',
+    domainId: 'quadas3_d3_target_condition',
+    question: 'Was there an appropriate time interval between index test and reference standard?',
+    conditionSummary: null,
+  },
+  // --- Domain 4: Analysis（4 問。原文の番号 4.1〜4.4 をそのまま code に用いる） ---
+  {
+    code: '4.1',
+    domainId: 'quadas3_d4_analysis',
+    question: 'Were all participants included in the analysis?',
+    conditionSummary: null,
+  },
+  {
+    code: '4.2',
+    domainId: 'quadas3_d4_analysis',
+    question: 'Were missing data handled appropriately?',
+    conditionSummary: null,
+  },
+  {
+    code: '4.3',
+    domainId: 'quadas3_d4_analysis',
+    question: 'Does the unit of analysis match the ideal test accuracy trial?',
+    conditionSummary: null,
+  },
+  {
+    code: '4.4',
+    domainId: 'quadas3_d4_analysis',
+    question: 'Were the estimates of sensitivity and specificity calculated appropriately?',
+    conditionSummary: null,
+  },
+];
+
+/** SQ の field_name（`quadas3_sq1_1` 等）。features/verification 側と共有する唯一の情報源 */
+function quadas3SqFieldName(code: string): string {
+  return `quadas3_sq${code.replace('.', '_')}`;
+}
+
+/** ドメイン id → SQ の field_name 一覧（質問番号順）。QUADAS3_SQ_DEFS から導出する */
+export const QUADAS3_SQ_FIELD_NAMES: Readonly<Record<string, readonly string[]>> = (() => {
+  const map: Record<string, string[]> = {};
+  for (const def of QUADAS3_SQ_DEFS) {
+    (map[def.domainId] ??= []).push(quadas3SqFieldName(def.code));
+  }
+  return map;
+})();
+
+const QUADAS3_SECTION = 'risk_of_bias_quadas3';
+
+function quadas3SqExtractionInstruction(def: Quadas3SqDef): string {
+  const conditionNote =
+    def.conditionSummary === null
+      ? ''
+      : ` この設問は条件付きです（${def.conditionSummary}）。条件を満たさない場合は na（not applicable）と明示的に回答してください。`;
+  return (
+    `QUADAS-3 signaling question ${def.code}: "${def.question}" ` +
+    'Answer with exactly one of: y (Yes) / py (Probably yes) / pn (Probably no) / n (No) / ' +
+    'ni (No information) / na (Not applicable). ' +
+    '記事が明示的に報告している内容のみで回答してください。推測やドメイン知識での補完は禁止します。' +
+    '該当する報告が無ければ ni（no information）と回答してください。' +
+    conditionNote +
+    ` Use entity_key "rob:${def.domainId}" for this element.`
+  );
+}
+
+function quadas3SqRow(def: Quadas3SqDef): SchemaEditorRow {
+  return presetRow({
+    section: QUADAS3_SECTION,
+    fieldName: quadas3SqFieldName(def.code),
+    fieldLabel: `QUADAS-3 SQ ${def.code}`,
+    dataType: 'enum',
+    allowedValues: 'y|py|pn|n|ni|na',
+    required: false,
+    extractionInstruction: quadas3SqExtractionInstruction(def),
+    example: null,
+  });
+}
+
+const QUADAS3_ROB_JUDGEMENT_ROW: SchemaEditorRow = presetRow({
+  section: QUADAS3_SECTION,
+  fieldName: 'quadas3_rob_judgement',
+  fieldLabel: 'QUADAS-3 risk-of-bias 判定（ドメイン別）',
+  dataType: 'enum',
+  allowedValues: 'low|high|insufficient_information',
+  required: true,
+  extractionInstruction:
+    'QUADAS-3 risk-of-bias judgement for this diagnostic test accuracy study. First answer all of this ' +
+    "domain's signaling questions (the quadas3_sq* items in the same section), then give the domain-level " +
+    'judgement. If all signaling questions for a domain are answered yes or probably yes, risk of bias can ' +
+    'be judged low. If any signaling question is answered no or probably no this flags the potential for ' +
+    'bias, but the domain can still be judged low if the issue is unlikely to have influenced the accuracy ' +
+    'estimates. Use insufficient_information only when insufficient data are reported to permit a judgement. ' +
+    `Report one element per domain using exactly these entity_keys: ${domainListing(QUADAS3_DOMAINS)}. ` +
+    'The "quadas3_overall" entity_key is the overall risk-of-bias judgement across the four domains ' +
+    '(high if any domain is high; low if all domains are low; otherwise insufficient_information). ' +
+    'Base each judgement only on what the article reports. ' +
+    'If the study is not a diagnostic test accuracy study, mark every domain (including its signaling ' +
+    'questions) as not_reported.',
+  example: 'low',
+});
+
+const QUADAS3_ROB_SUPPORT_ROW: SchemaEditorRow = presetRow({
+  section: QUADAS3_SECTION,
+  fieldName: 'quadas3_rob_support',
+  fieldLabel: 'QUADAS-3 risk-of-bias 判定根拠（ドメイン別）',
+  dataType: 'text',
+  allowedValues: null,
+  required: false,
+  extractionInstruction:
+    'Supporting statement (rationale) for the QUADAS-3 risk-of-bias judgement of this domain, grounded in a ' +
+    'verbatim quote from the article. Use the same entity_keys as quadas3_rob_judgement. If the article ' +
+    'reports nothing relevant to the domain, mark it as not_reported.',
+  example: 'Consecutive patients were prospectively enrolled from a single referral centre.',
+});
+
+const QUADAS3_APPLICABILITY_JUDGEMENT_ROW: SchemaEditorRow = presetRow({
+  section: QUADAS3_SECTION,
+  fieldName: 'quadas3_applicability_judgement',
+  fieldLabel: 'QUADAS-3 適用可能性の懸念（ドメイン別）',
+  dataType: 'enum',
+  allowedValues: 'low|high|insufficient_information',
+  required: false,
+  extractionInstruction:
+    'QUADAS-3 concern regarding applicability to the systematic review synthesis question, for this domain ' +
+    "of this diagnostic test accuracy study (only the participants, index test, and target condition " +
+    'domains are assessed for applicability; the analysis domain has no applicability judgement). ' +
+    `Report one element per domain using exactly these entity_keys: ${domainListing(QUADAS3_APPLICABILITY_DOMAINS)}. ` +
+    'The "quadas3_overall" entity_key is the overall applicability judgement across these three domains ' +
+    '(high if any domain is high; low if all domains are low; otherwise insufficient_information). ' +
+    'Base each judgement only on what the article reports. ' +
+    'If the study is not a diagnostic test accuracy study, mark every domain as not_reported.',
+  example: 'low',
+});
+
+const QUADAS3_APPLICABILITY_SUPPORT_ROW: SchemaEditorRow = presetRow({
+  section: QUADAS3_SECTION,
+  fieldName: 'quadas3_applicability_support',
+  fieldLabel: 'QUADAS-3 適用可能性の懸念の根拠（ドメイン別）',
+  dataType: 'text',
+  allowedValues: null,
+  required: false,
+  extractionInstruction:
+    'Supporting statement (rationale) for the QUADAS-3 applicability judgement of this domain, grounded in ' +
+    'a verbatim quote from the article. Use the same entity_keys as quadas3_applicability_judgement. If the ' +
+    'article reports nothing relevant to the domain, mark it as not_reported.',
+  example: 'The study population was restricted to hospitalised patients, unlike the review question population.',
+});
+
+/** QUADAS-3: ドメイン別の risk-of-bias 判定 + 根拠 + 適用可能性判定 + 根拠 + SQ 20 問（計 24 項目） */
+export const ROB_TEMPLATE_QUADAS3: readonly SchemaEditorRow[] = [
+  QUADAS3_ROB_JUDGEMENT_ROW,
+  QUADAS3_ROB_SUPPORT_ROW,
+  QUADAS3_APPLICABILITY_JUDGEMENT_ROW,
+  QUADAS3_APPLICABILITY_SUPPORT_ROW,
+  ...QUADAS3_SQ_DEFS.map(quadas3SqRow),
+];
+
+// --- QUIPS（予後研究）（issue #61 PR3 = issue #88） ----------------------------
+//
+// --- 出典 -------------------------------------------------------------------
+// ドメイン構成・prompting item・判定スケールは、Cochrane Prognosis Methods Group が公開する
+// ツール本体（Excel/PDF）から直接転記した:
+//   Hayden JA, van der Windt DA, Cartwright JL, Côté P, Bombardier C.
+//   "Assessing Bias in Studies of Prognostic Factors." Ann Intern Med. 2013;158(4):280-286.
+//   QUIPS tool（Cochrane Prognosis Methods Group 版）:
+//   https://methods.cochrane.org/sites/methods.cochrane.org.prognosis/files/uploads/QUIPS%20tool.pdf
+//   （2026-07-13 取得。pdfjs-dist で本文を機械抽出のうえ全 6 ドメインの prompting item を逐語転記した）
+//
+// QUIPS は RoB 2 / ROBINS-I / QUADAS-3 のような signaling question（Y/PY/PN/N/NI の分岐付き
+// 事実確認）ではなく、各ドメイン 3〜7 個の "prompting item"（reporting の adequacy を
+// yes/partial/no/unsure で評価する記述文）を反映材料として、レビュー担当者が最終的に
+// ドメイン判定（high/moderate/low）を主観的に下す設計（issue #61 §4「浅めの構成」の合意）。
+// 全 prompting item を項目化すると本体スキーマが肥大化するため、本実装ではドメインごとに
+// 判断の核となる 2 項目のみを抽出項目として採用する（残りの item は原典どおりコード内コメントに
+// 一覧を残し、必要になれば追加できる構造にしている）。overall（ドメイン横断の統合判定）は
+// 原典に規定が無いため実装しない（ドメイン別の 6 判定のみ）。
+// judgement 導出アルゴリズムは実装しない（issue #61 合意「公式の決定木が無い」ため）。
+
+/** QUIPS の 6 ドメイン（overall は無い）。entity_key は `rob:<domain_id>` になる */
+export const QUIPS_DOMAINS: readonly { id: string; label: string }[] = [
+  { id: 'quips_d1_participation', label: 'study participation' },
+  { id: 'quips_d2_attrition', label: 'study attrition' },
+  { id: 'quips_d3_pf_measurement', label: 'prognostic factor measurement' },
+  { id: 'quips_d4_outcome_measurement', label: 'outcome measurement' },
+  { id: 'quips_d5_confounding', label: 'study confounding' },
+  { id: 'quips_d6_analysis_reporting', label: 'statistical analysis and reporting' },
+];
+
+/** QUIPS prompting item 1 問ぶんの定義データ（ドメインごとに核となる 2 項目のみを採用） */
+interface QuipsItemDef {
+  /** item 番号（例 '3.2'）。field_name は `quips_pi${code.replace('.', '_')}` */
+  code: string;
+  /** 所属ドメイン（QUIPS_DOMAINS の id と一致させる） */
+  domainId: string;
+  /** prompting item の英語原文（原典の見出し + 記述文） */
+  statement: string;
+}
+
+const QUIPS_ITEM_DEFS: readonly QuipsItemDef[] = [
+  // --- Domain 1: Study Participation（原典は 7 項目。核となる 2 項目を採用） ---
+  {
+    code: '1.1',
+    domainId: 'quips_d1_participation',
+    statement: 'There is adequate participation in the study by eligible individuals.',
+  },
+  {
+    code: '1.2',
+    domainId: 'quips_d1_participation',
+    statement:
+      'The source population or population of interest is adequately described for key characteristics.',
+  },
+  // --- Domain 2: Study Attrition（原典は 5 項目。核となる 2 項目を採用） ---
+  {
+    code: '2.1',
+    domainId: 'quips_d2_attrition',
+    statement:
+      'Response rate (i.e., proportion of study sample completing the study and providing outcome data) is adequate.',
+  },
+  {
+    code: '2.2',
+    domainId: 'quips_d2_attrition',
+    statement: 'Reasons for loss to follow-up are provided.',
+  },
+  // --- Domain 3: Prognostic Factor Measurement（原典は 6 項目。核となる 2 項目を採用） ---
+  {
+    code: '3.1',
+    domainId: 'quips_d3_pf_measurement',
+    statement: "A clear definition or description of the prognostic factor is provided.",
+  },
+  {
+    code: '3.2',
+    domainId: 'quips_d3_pf_measurement',
+    statement:
+      'Method of prognostic factor measurement is adequately valid and reliable to limit misclassification bias.',
+  },
+  // --- Domain 4: Outcome Measurement（原典は 3 項目。核となる 2 項目を採用） ---
+  {
+    code: '4.1',
+    domainId: 'quips_d4_outcome_measurement',
+    statement:
+      'A clear definition of outcome is provided, including duration of follow-up and level and extent of ' +
+      'the outcome construct.',
+  },
+  {
+    code: '4.2',
+    domainId: 'quips_d4_outcome_measurement',
+    statement:
+      'The method of outcome measurement used is adequately valid and reliable to limit misclassification bias.',
+  },
+  // --- Domain 5: Study Confounding（原典は 7 項目。核となる 2 項目を採用） ---
+  {
+    code: '5.1',
+    domainId: 'quips_d5_confounding',
+    statement: 'All important confounders, including treatments, are measured.',
+  },
+  {
+    code: '5.2',
+    domainId: 'quips_d5_confounding',
+    statement:
+      'Important potential confounders are accounted for in the analysis (i.e., appropriate adjustment).',
+  },
+  // --- Domain 6: Statistical Analysis and Reporting（原典は 4 項目。核となる 2 項目を採用） ---
+  {
+    code: '6.1',
+    domainId: 'quips_d6_analysis_reporting',
+    statement: 'There is sufficient presentation of data to assess the adequacy of the analysis.',
+  },
+  {
+    code: '6.2',
+    domainId: 'quips_d6_analysis_reporting',
+    statement: 'There is no selective reporting of results.',
+  },
+];
+
+function quipsItemFieldName(code: string): string {
+  return `quips_pi${code.replace('.', '_')}`;
+}
+
+/** ドメイン id → prompting item の field_name 一覧。QUIPS_ITEM_DEFS から導出する */
+export const QUIPS_ITEM_FIELD_NAMES: Readonly<Record<string, readonly string[]>> = (() => {
+  const map: Record<string, string[]> = {};
+  for (const def of QUIPS_ITEM_DEFS) {
+    (map[def.domainId] ??= []).push(quipsItemFieldName(def.code));
+  }
+  return map;
+})();
+
+const QUIPS_SECTION = 'risk_of_bias_quips';
+
+function quipsItemExtractionInstruction(def: QuipsItemDef): string {
+  return (
+    `QUIPS prompting item ${def.code}: rate whether the article supports this statement — "${def.statement}" ` +
+    'Answer with exactly one of: yes / partial / no / unsure, based only on what the article explicitly ' +
+    'reports (do not guess or fill in from domain knowledge). If the article does not report enough to judge ' +
+    'this item, answer unsure. ' +
+    `Use entity_key "rob:${def.domainId}" for this element.`
+  );
+}
+
+function quipsItemRow(def: QuipsItemDef): SchemaEditorRow {
+  return presetRow({
+    section: QUIPS_SECTION,
+    fieldName: quipsItemFieldName(def.code),
+    fieldLabel: `QUIPS item ${def.code}`,
+    dataType: 'enum',
+    allowedValues: 'yes|partial|no|unsure',
+    required: false,
+    extractionInstruction: quipsItemExtractionInstruction(def),
+    example: null,
+  });
+}
+
+const QUIPS_JUDGEMENT_ROW: SchemaEditorRow = presetRow({
+  section: QUIPS_SECTION,
+  fieldName: 'quips_judgement',
+  fieldLabel: 'QUIPS 判定（ドメイン別）',
+  dataType: 'enum',
+  allowedValues: 'high|moderate|low',
+  required: true,
+  extractionInstruction:
+    'QUIPS risk-of-bias judgement for this domain of this prognostic factor study. First answer all of ' +
+    "this domain's prompting items (the quips_pi* items in the same section), then give the domain-level " +
+    'judgement (high, moderate, or low risk of bias) based on the prompting items taken together. ' +
+    `Report one element per domain using exactly these entity_keys: ${domainListing(QUIPS_DOMAINS)}. ` +
+    'Base each judgement only on what the article reports. ' +
+    'If the study is not a prognostic factor study, mark every domain (including its prompting items) as ' +
+    'not_reported.',
+  example: 'moderate',
+});
+
+const QUIPS_SUPPORT_ROW: SchemaEditorRow = presetRow({
+  section: QUIPS_SECTION,
+  fieldName: 'quips_support',
+  fieldLabel: 'QUIPS 判定根拠（ドメイン別）',
+  dataType: 'text',
+  allowedValues: null,
+  required: false,
+  extractionInstruction:
+    'Supporting statement (rationale) for the QUIPS judgement of this domain, grounded in a verbatim quote ' +
+    'from the article. Use the same entity_keys as quips_judgement. If the article reports nothing relevant ' +
+    'to the domain, mark it as not_reported.',
+  example: 'Response rate was 92% with reasons for loss to follow-up reported for all non-completers.',
+});
+
+/** QUIPS: ドメイン別の判定 + 根拠 + prompting item 12 問（計 14 項目） */
+export const ROB_TEMPLATE_QUIPS: readonly SchemaEditorRow[] = [
+  QUIPS_JUDGEMENT_ROW,
+  QUIPS_SUPPORT_ROW,
+  ...QUIPS_ITEM_DEFS.map(quipsItemRow),
+];
+
+export type RobPresetKind = 'rob2' | 'robins_i' | 'rob2_sq' | 'robins_i_sq' | 'quadas3' | 'quips';
 
 /** プリセット挿入用の一覧（UI のボタンと 1:1） */
 export const ROB_TEMPLATES: Record<RobPresetKind, readonly SchemaEditorRow[]> = {
@@ -793,4 +1296,6 @@ export const ROB_TEMPLATES: Record<RobPresetKind, readonly SchemaEditorRow[]> = 
   robins_i: ROB_TEMPLATE_ROBINS_I,
   rob2_sq: ROB_TEMPLATE_ROB2_SQ,
   robins_i_sq: ROB_TEMPLATE_ROBINS_I_SQ,
+  quadas3: ROB_TEMPLATE_QUADAS3,
+  quips: ROB_TEMPLATE_QUIPS,
 };
