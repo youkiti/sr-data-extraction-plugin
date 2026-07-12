@@ -3,7 +3,13 @@
 // （requirements.md §3.3）のため、ドメイン一覧はデータ駆動ではなくテンプレート定義から
 // 直接列挙する（＝スキーマにテンプレートが挿入されていれば、AI が抽出できていないドメインも
 // no_data 行として必ず出現する。幽霊セルの分母と同じ思想）
-import { ROB2_DOMAINS, ROBINS_I_DOMAINS } from '../../schema/presets/robTemplates';
+import {
+  QUADAS3_APPLICABILITY_DOMAINS,
+  QUADAS3_DOMAINS,
+  QUIPS_DOMAINS,
+  ROB2_DOMAINS,
+  ROBINS_I_DOMAINS,
+} from '../../schema/presets/robTemplates';
 import type { SchemaField } from '../../../domain/schemaField';
 
 export interface RobDomainDefinition {
@@ -20,8 +26,14 @@ export interface RobToolFieldSet {
 }
 
 /**
- * 判別可能な RoB ツール（v1 は robTemplates.ts の 2 種のみ）。
- * 将来カスタム名の RoB 項目を追加する場合はここへ追記する（field_name の命名規約を拡張する形）
+ * 判別可能な RoB ツール（robTemplates.ts の各プリセット。SQ 完全版は軽量版と judgement/support の
+ * field_name を共有するため、ここでの列挙は軽量版・SQ 完全版どちらの挿入でも同じ 1 エントリで拾える）。
+ * 将来カスタム名の RoB 項目を追加する場合はここへ追記する（field_name の命名規約を拡張する形）。
+ *
+ * QUADAS-3（issue #61 PR3 = issue #88）は risk-of-bias と applicability（適用可能性）という
+ * 2 系統の判定を持つが、RobToolFieldSet 自体は「1 judgement + 1 support + 1 ドメイン一覧」の
+ * 単純な形のまま拡張せず、`tool` 名を分けた 2 エントリ（`quadas3` / `quadas3_applicability`）
+ * として登録することで対応する（buildRobCsv.ts・RobToolFieldSet の型は無変更）
  */
 const ROB_TOOL_FIELD_SETS: readonly RobToolFieldSet[] = [
   {
@@ -35,6 +47,24 @@ const ROB_TOOL_FIELD_SETS: readonly RobToolFieldSet[] = [
     judgementFieldName: 'robins_i_judgement',
     supportFieldName: 'robins_i_support',
     domains: ROBINS_I_DOMAINS,
+  },
+  {
+    tool: 'quadas3',
+    judgementFieldName: 'quadas3_rob_judgement',
+    supportFieldName: 'quadas3_rob_support',
+    domains: QUADAS3_DOMAINS,
+  },
+  {
+    tool: 'quadas3_applicability',
+    judgementFieldName: 'quadas3_applicability_judgement',
+    supportFieldName: 'quadas3_applicability_support',
+    domains: QUADAS3_APPLICABILITY_DOMAINS,
+  },
+  {
+    tool: 'quips',
+    judgementFieldName: 'quips_judgement',
+    supportFieldName: 'quips_support',
+    domains: QUIPS_DOMAINS,
   },
 ];
 

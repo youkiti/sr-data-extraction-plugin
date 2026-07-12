@@ -322,6 +322,18 @@ function renderEditor(
     attributes: { type: 'button' },
   });
   presetRobinsISq.addEventListener('click', () => ctx.schema.onInsertPreset('robins_i_sq'));
+  const presetQuadas3 = el('button', {
+    id: 'schema-preset-quadas3',
+    text: 'QUADAS-3 テンプレートを挿入',
+    attributes: { type: 'button' },
+  });
+  presetQuadas3.addEventListener('click', () => ctx.schema.onInsertPreset('quadas3'));
+  const presetQuips = el('button', {
+    id: 'schema-preset-quips',
+    text: 'QUIPS テンプレートを挿入',
+    attributes: { type: 'button' },
+  });
+  presetQuips.addEventListener('click', () => ctx.schema.onInsertPreset('quips'));
 
   const errorItems = schema.editorErrors.map((error) =>
     el('li', {
@@ -375,6 +387,8 @@ function renderEditor(
       presetRob2Sq,
       presetRobinsI,
       presetRobinsISq,
+      presetQuadas3,
+      presetQuips,
     ]),
     dataTypeHelp,
     el('div', { className: 'schema__table-wrap' }, [table]),
