@@ -7,7 +7,9 @@ import {
   adjudicateCellStates,
   backToAdjudicateList,
   confirmAdjudicateArms,
+  downloadAgreementCsv,
   loadAdjudicateTargets,
+  loadAgreementReport,
   openAdjudicateStudy,
   removeAdjudicateArmDraftRow,
   setAdjudicateMismatchOnlyFilter,
@@ -38,7 +40,9 @@ import {
 import { readAllDecisions } from '../../../../src/features/verification/decisionRepository';
 import { createPdfViewCache } from '../../../../src/features/verification/pdfViewCache';
 import { getCurrentUserEmail } from '../../../../src/lib/google/identity';
+import { downloadTextFile } from '../../../../src/app/ui/download';
 
+jest.mock('../../../../src/app/ui/download', () => ({ downloadTextFile: jest.fn() }));
 jest.mock('../../../../src/features/documents/documentRepository', () => ({ readDocuments: jest.fn() }));
 jest.mock('../../../../src/features/documents/studyRepository', () => ({
   // resolveActiveStudies は純粋関数なので実物を使う（buildStudySelection が依存する）
@@ -976,5 +980,195 @@ describe('セル単位の個別裁定', () => {
     const last = store.getState().adjudicate.working?.consensusDecisions.slice(-1)[0];
     expect(last?.action).toBe('undo');
     expect(last?.value).toBeNull();
+  });
+});
+
+describe('loadAgreementReport（issue #66）', () => {
+  test('プロジェクト未選択は no-op', async () => {
+    const store = createStore();
+    await loadAgreementReport(store, makeDeps());
+    expect(readDocumentsMock).not.toHaveBeenCalled();
+    expect(store.getState().adjudicate.agreement).toBeNull();
+  });
+
+  test('ready ペアの study があれば項目単位のレポートを組み立てる', async () => {
+    const store = seedStore();
+    setupTwoAnnotatorsReady();
+    await loadAgreementReport(store, makeDeps());
+    const { agreement, agreementLoading, agreementError } = store.getState().adjudicate;
+    expect(agreementLoading).toBe(false);
+    expect(agreementError).toBeNull();
+    expect(agreement?.studyCount).toBe(1);
+    expect(agreement?.fields).toHaveLength(1);
+    // setupTwoAnnotatorsReady は A・B とも sample_size='120' なので完全一致・単一カテゴリ（κ=null）
+    expect(agreement?.fields[0]).toEqual(
+      expect.objectContaining({ fieldId: 'f-1', pairCount: 1, agreementCount: 1, agreementRate: 1, kappa: null }),
+    );
+  });
+
+  test('確定済みスキーマが無い（versions 空）は studyCount=0 の空レポート（エラーにしない）', async () => {
+    const store = seedStore();
+    readDocumentsMock.mockResolvedValue([makeDocument()]);
+    readStudiesMock.mockResolvedValue([makeStudy()]);
+    readStudyDataSheetMock.mockResolvedValue({ fieldNames: [], rows: [] });
+    readResultsDataRowsMock.mockResolvedValue([]);
+    readAllDecisionsMock.mockResolvedValue([]);
+    listSchemaVersionsMock.mockResolvedValue([]);
+    await loadAgreementReport(store, makeDeps());
+    expect(getSchemaFieldsMock).not.toHaveBeenCalled();
+    expect(store.getState().adjudicate.agreementError).toBeNull();
+    expect(store.getState().adjudicate.agreement).toEqual({
+      studyCount: 0,
+      fields: [],
+      overall: { pairCount: 0, agreementCount: 0, agreementRate: null, kappa: null },
+      disagreements: [],
+    });
+  });
+
+  test('ready ペアが 0 件（1 名以下）は studyCount=0 の空レポート（エラーにしない）', async () => {
+    const store = seedStore();
+    readDocumentsMock.mockResolvedValue([makeDocument()]);
+    readStudiesMock.mockResolvedValue([makeStudy()]);
+    readStudyDataSheetMock.mockResolvedValue({ fieldNames: [], rows: [makeStudyDataRow({ annotator: A })] });
+    readResultsDataRowsMock.mockResolvedValue([]);
+    readAllDecisionsMock.mockResolvedValue([]);
+    listSchemaVersionsMock.mockResolvedValue([makeSchemaVersion()]);
+    getSchemaFieldsMock.mockResolvedValue([makeField()]);
+    await loadAgreementReport(store, makeDeps());
+    expect(store.getState().adjudicate.agreementError).toBeNull();
+    expect(store.getState().adjudicate.agreement?.studyCount).toBe(0);
+  });
+
+  test('documents / studies が documents スライスに読込済みならそれを使う（再読込しない）', async () => {
+    const store = seedStore();
+    store.setState({
+      documents: { ...store.getState().documents, records: [makeDocument()], studies: [makeStudy()] },
+    });
+    readStudyDataSheetMock.mockResolvedValue({ fieldNames: [], rows: [] });
+    readResultsDataRowsMock.mockResolvedValue([]);
+    readAllDecisionsMock.mockResolvedValue([]);
+    listSchemaVersionsMock.mockResolvedValue([]);
+    await loadAgreementReport(store, makeDeps());
+    expect(readDocumentsMock).not.toHaveBeenCalled();
+    expect(readStudiesMock).not.toHaveBeenCalled();
+  });
+
+  test('ready ペアが ResultsData 経由でのみ解決される study は StudyData 行が無くても arm レベルのセルを組み立てる', async () => {
+    const store = seedStore();
+    const armField = makeField({ fieldId: 'f-arm', fieldName: 'arm_name', entityLevel: 'arm' });
+    readDocumentsMock.mockResolvedValue([makeDocument()]);
+    readStudiesMock.mockResolvedValue([makeStudy()]);
+    // StudyData 行は無し（studyDataRowA / studyDataRowB は ?? null のフォールバックへ）
+    readStudyDataSheetMock.mockResolvedValue({ fieldNames: [], rows: [] });
+    readResultsDataRowsMock.mockResolvedValue([
+      makeResultsRow({ fieldId: 'f-arm', annotator: A, entityKey: 'arm:1', value: '介入群' }),
+      makeResultsRow({ fieldId: 'f-arm', annotator: B, entityKey: 'arm:1', value: '対照群' }),
+    ]);
+    readAllDecisionsMock.mockResolvedValue([]);
+    listSchemaVersionsMock.mockResolvedValue([makeSchemaVersion()]);
+    getSchemaFieldsMock.mockResolvedValue([armField]);
+    await loadAgreementReport(store, makeDeps());
+    const agreement = store.getState().adjudicate.agreement;
+    expect(agreement?.studyCount).toBe(1);
+    expect(agreement?.fields[0]).toEqual(
+      expect.objectContaining({ fieldId: 'f-arm', pairCount: 1, agreementCount: 0, agreementRate: 0 }),
+    );
+  });
+
+  test('読込失敗は agreementError へ（agreement は変更しない）', async () => {
+    const store = seedStore();
+    readDocumentsMock.mockRejectedValue(new Error('boom'));
+    await loadAgreementReport(store, makeDeps());
+    expect(store.getState().adjudicate.agreementError).toBe('boom');
+    expect(store.getState().adjudicate.agreementLoading).toBe(false);
+    expect(store.getState().adjudicate.agreement).toBeNull();
+  });
+
+  test('Error インスタンスでない失敗も文字列化して agreementError へ', async () => {
+    const store = seedStore();
+    readDocumentsMock.mockRejectedValue('boom-string');
+    await loadAgreementReport(store, makeDeps());
+    expect(store.getState().adjudicate.agreementError).toBe('boom-string');
+  });
+
+  test('読込中の重複呼び出しは無視する', async () => {
+    const store = seedStore();
+    let resolveRead: (value: DocumentRecord[]) => void = () => undefined;
+    listSchemaVersionsMock.mockResolvedValue([makeSchemaVersion()]);
+    getSchemaFieldsMock.mockResolvedValue([makeField()]);
+    readDocumentsMock.mockReturnValue(
+      new Promise((resolve) => {
+        resolveRead = resolve;
+      }),
+    );
+    // 1 回目は agreementLoading=true を同期的に立ててから非同期処理に入る
+    const first = loadAgreementReport(store, makeDeps());
+    expect(store.getState().adjudicate.agreementLoading).toBe(true);
+    // 2 回目はガードにより即 no-op（readDocuments 等は一切呼ばない）
+    await loadAgreementReport(store, makeDeps());
+    expect(store.getState().adjudicate.agreementLoading).toBe(true);
+
+    resolveRead([]);
+    readStudiesMock.mockResolvedValue([]);
+    readStudyDataSheetMock.mockResolvedValue({ fieldNames: [], rows: [] });
+    readResultsDataRowsMock.mockResolvedValue([]);
+    readAllDecisionsMock.mockResolvedValue([]);
+    await first;
+    expect(readDocumentsMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('downloadAgreementCsv（issue #66）', () => {
+  test('レポート未計算（agreement === null）は no-op', () => {
+    const store = seedStore();
+    const download = jest.fn();
+    downloadAgreementCsv(store, makeDeps(), 'summary', download);
+    expect(download).not.toHaveBeenCalled();
+  });
+
+  test('summary は buildAgreementSummaryCsv の内容をタイムスタンプ付きファイル名で保存する', async () => {
+    const store = seedStore();
+    setupTwoAnnotatorsReady();
+    await loadAgreementReport(store, makeDeps());
+    const download = jest.fn();
+    downloadAgreementCsv(store, makeDeps({ now: () => '2026-07-12T03:04:05.000Z' }), 'summary', download);
+    expect(download).toHaveBeenCalledTimes(1);
+    const [filename, content, mimeType] = download.mock.calls[0] as [string, string, string];
+    expect(filename).toBe('agreement_summary_20260712-030405.csv');
+    expect(content).toContain('field_id,field_name,field_label,pair_count,agreement_count,agreement_rate,kappa');
+    expect(mimeType).toBe('text/csv');
+  });
+
+  test('disagreements は buildAgreementDisagreementsCsv の内容を保存する', async () => {
+    const store = seedStore();
+    // A・B で不一致になるよう study データを用意する
+    readDocumentsMock.mockResolvedValue([makeDocument()]);
+    readStudiesMock.mockResolvedValue([makeStudy()]);
+    readStudyDataSheetMock.mockResolvedValue({
+      fieldNames: ['sample_size'],
+      rows: [makeStudyDataRow({ annotator: A, values: { sample_size: '120' } }), makeStudyDataRow({ annotator: B, values: { sample_size: '130' } })],
+    });
+    readResultsDataRowsMock.mockResolvedValue([]);
+    readAllDecisionsMock.mockResolvedValue([]);
+    listSchemaVersionsMock.mockResolvedValue([makeSchemaVersion()]);
+    getSchemaFieldsMock.mockResolvedValue([makeField()]);
+    await loadAgreementReport(store, makeDeps());
+    const download = jest.fn();
+    downloadAgreementCsv(store, makeDeps({ now: () => '2026-07-12T03:04:05.000Z' }), 'disagreements', download);
+    const [filename, content] = download.mock.calls[0] as [string, string, string];
+    expect(filename).toBe('agreement_disagreements_20260712-030405.csv');
+    expect(content).toContain('study_id,study_label,entity_key,field_id,field_label,value_a,value_b');
+    expect(content).toContain('120');
+    expect(content).toContain('130');
+  });
+
+  test('now / download を省略すると既定実装（nowIso8601 / downloadTextFile）を使う', async () => {
+    const store = seedStore();
+    setupTwoAnnotatorsReady();
+    await loadAgreementReport(store, makeDeps());
+    downloadAgreementCsv(store, makeDeps({ now: undefined }), 'summary');
+    expect(downloadTextFile).toHaveBeenCalledTimes(1);
+    const [filename] = (downloadTextFile as jest.Mock).mock.calls[0] as [string, string, string];
+    expect(filename).toMatch(/^agreement_summary_\d{8}-\d{6}\.csv$/);
   });
 });

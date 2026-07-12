@@ -34,11 +34,13 @@ import { showToast } from '../ui/toast';
 import { runExtraction } from './extractionService';
 import { resolveProtocol } from './schemaService';
 import {
+  foldDecisionWriteTokens,
   loadVerificationBundle,
   persistArmConfirmation,
   persistDecisionWrite,
   persistInstanceDeclarations,
   persistVerifyLayoutMode,
+  resultsCellKeyOf,
   type QueuedDecisionWrite,
   type VerificationDeps,
 } from './verificationService';
@@ -376,6 +378,10 @@ export async function loadPilotVerification(
     verifyStudyId: studyId,
     verification: null,
     studyValues: null,
+    // 楽観ロックのトークン・競合バナーもデータ束読込のたびにリセットする（issue #64）
+    studyRowUpdatedAt: null,
+    resultsRowUpdatedAt: {},
+    conflictMessage: null,
   });
   try {
     const bundle = await loadVerificationBundle(
@@ -395,6 +401,8 @@ export async function loadPilotVerification(
       verification: bundle.verification,
       studyValues: bundle.studyValues,
       layoutMode: bundle.layoutMode,
+      studyRowUpdatedAt: bundle.studyRowUpdatedAt,
+      resultsRowUpdatedAt: bundle.resultsRowUpdatedAt,
     });
   } catch (err) {
     patchPilot(store, { verifyLoading: false, verifyError: toMessage(err) });
@@ -446,11 +454,29 @@ export async function persistPilotDecision(
     entityLevel: field.entityLevel,
     studyValues,
   };
-  const result = await persistDecisionWrite(project.spreadsheetId, write, deps);
+  // 楽観ロックの期待値（issue #64）: study 項目は自分の StudyData 行の updated_at、
+  // それ以外は自分の該当 ResultsData セルの updated_at（無ければ「行が無い」を期待）
+  const expectedUpdatedAt =
+    field.entityLevel === 'study'
+      ? state.pilot.studyRowUpdatedAt
+      : (state.pilot.resultsRowUpdatedAt[resultsCellKeyOf(decision.entityKey, decision.fieldId)] ??
+        null);
+  const result = await persistDecisionWrite(project.spreadsheetId, write, deps, expectedUpdatedAt);
   if (result.status === 'queued') {
     patchPilot(store, { queuedDecisions: store.getState().pilot.queuedDecisions + 1 });
+  } else if (result.status === 'conflict') {
+    patchPilot(store, { conflictMessage: result.message });
   } else {
-    patchPilot(store, { queuedDecisions: result.remainingCount });
+    const current = store.getState().pilot;
+    const folded = foldDecisionWriteTokens(result.written, {
+      studyRowUpdatedAt: current.studyRowUpdatedAt,
+      resultsRowUpdatedAt: current.resultsRowUpdatedAt,
+    });
+    patchPilot(store, {
+      queuedDecisions: result.remainingCount,
+      studyRowUpdatedAt: folded.studyRowUpdatedAt,
+      resultsRowUpdatedAt: folded.resultsRowUpdatedAt,
+    });
   }
 }
 

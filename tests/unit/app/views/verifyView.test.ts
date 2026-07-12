@@ -14,6 +14,7 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<VerifyViewCallbac
     onDecision: jest.fn(),
     onArmConfirm: jest.fn(),
     onChangeLayoutMode: jest.fn(),
+    onReloadVerification: jest.fn(),
     onInstanceDeclare: jest.fn(),
   };
   return {
@@ -75,6 +76,7 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<VerifyViewCallbac
         onDecision: jest.fn(),
         onArmConfirm: jest.fn(),
         onChangeLayoutMode: jest.fn(),
+        onReloadVerification: jest.fn(),
       },
       extract: {
         onToggleStudy: jest.fn(),
@@ -94,6 +96,9 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<VerifyViewCallbac
         onCancelGenerate: jest.fn(),
         onDownload: jest.fn(),
         onReload: jest.fn(),
+        onChangeMethodsLanguage: jest.fn(),
+        onChangeMethodsWorkflow: jest.fn(),
+        onCopyMethods: jest.fn(),
       },
       adjudicate: {
         onSelectStudy: jest.fn(),
@@ -112,6 +117,8 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<VerifyViewCallbac
         onUnskip: jest.fn(),
         onUndo: jest.fn(),
         onToggleMismatchOnly: jest.fn(),
+        onLoadAgreement: jest.fn(),
+        onDownloadAgreementCsv: jest.fn(),
       },
     },
     callbacks,
@@ -439,6 +446,35 @@ describe('renderVerifyView', () => {
     input.dispatchEvent(new Event('change'));
     (root.querySelector('#verify-arm-confirm') as HTMLButtonElement).click();
     expect(callbacks.onArmConfirm).toHaveBeenCalledWith([{ armKey: 'arm:1', armName: '介入群' }]);
+  });
+
+  test('保存の競合検出バナー（issue #64）: conflictMessage 非 null で表示し、再読み込みが onReloadVerification へ委譲される', () => {
+    const { ctx, callbacks } = makeCtx();
+    const verification = makeVerification();
+    const root = render(
+      makeState({
+        targets: [makeTarget()],
+        selectedStudyId: 'study-1',
+        verification,
+        conflictMessage: '読み込み後に別の場所で更新されています。再読み込みしてから判定し直してください',
+      }),
+      ctx,
+    );
+    const banner = root.querySelector('#verify-conflict-warning');
+    expect(banner?.getAttribute('role')).toBe('alert');
+    expect(banner?.textContent).toContain('読み込み後に別の場所で更新されています');
+    (root.querySelector('#verify-conflict-reload') as HTMLButtonElement).click();
+    expect(callbacks.onReloadVerification).toHaveBeenCalledTimes(1);
+  });
+
+  test('conflictMessage が null ならバナーを表示しない', () => {
+    const { ctx } = makeCtx();
+    const verification = makeVerification();
+    const root = render(
+      makeState({ targets: [makeTarget()], selectedStudyId: 'study-1', verification }),
+      ctx,
+    );
+    expect(root.querySelector('#verify-conflict-warning')).toBeNull();
   });
 
   test('アウトカム追加宣言が onInstanceDeclare へ委譲される', () => {

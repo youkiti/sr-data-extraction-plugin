@@ -8,6 +8,7 @@
 // 裁定は盲検解除後の工程で、根拠探しは「本文を検索」で足りると判断し実装コストを抑えた
 // （設計指示 §9「実装が重い場合は v1 として PDF 表示 + テキスト検索だけでも可」に基づく簡略化。
 // 完了報告に明記する）
+import type { AgreementDisagreement, AgreementReport, FieldAgreement } from '../../features/adjudication/agreement';
 import type { AdjudicationCell } from '../../features/adjudication/cellMatch';
 import { entityKeyLabel } from '../../features/verification/cells';
 import { deriveCellStates, emptyCellState, type CellState } from '../../features/verification/cellState';
@@ -98,7 +99,7 @@ function renderList(rows: readonly AdjudicateStudyRow[], ctx: ViewContext): HTML
       el('tr', {}, [
         el('th', { text: '研究' }),
         el('th', { text: '状況' }),
-        el('th', { text: '' }),
+        el('th', { text: '操作' }),
       ]),
     ]),
     el('tbody', {}, rows.map((row) => renderListRow(row, ctx))),
@@ -372,6 +373,154 @@ function renderWorking(state: AppState, ctx: ViewContext, working: AdjudicateWor
 }
 
 // ---------------------------------------------------------------------------
+// レビュアー間一致度レポート（issue #66。一覧画面のみ・オンデマンド計算）
+// ---------------------------------------------------------------------------
+
+/** レポートとして計算はできたが表示するものが無い（ready ペア 0 件 or 確定スキーマの項目 0 件） */
+function isAgreementReportEmpty(report: AgreementReport): boolean {
+  return report.studyCount === 0 || report.fields.length === 0;
+}
+
+function formatAgreementPercent(rate: number | null): string {
+  return rate === null ? '—' : `${(rate * 100).toFixed(1)}%`;
+}
+
+function formatKappa(kappa: number | null): string {
+  return kappa === null ? '—' : kappa.toFixed(2);
+}
+
+function renderAgreementFieldRow(field: FieldAgreement): HTMLElement {
+  return el('tr', {}, [
+    el('td', { text: field.fieldLabel }),
+    el('td', { text: String(field.pairCount) }),
+    el('td', { text: `${field.agreementCount} (${formatAgreementPercent(field.agreementRate)})` }),
+    el('td', { text: formatKappa(field.kappa) }),
+  ]);
+}
+
+function renderAgreementDisagreementRow(item: AgreementDisagreement): HTMLElement {
+  return el('tr', {}, [
+    el('td', { text: item.studyLabel }),
+    el('td', { text: item.entityKey }),
+    el('td', { text: item.fieldLabel }),
+    el('td', { text: item.valueA ?? '未入力' }),
+    el('td', { text: item.valueB ?? '未入力' }),
+  ]);
+}
+
+function renderAgreementDisagreements(disagreements: readonly AgreementDisagreement[]): HTMLElement {
+  if (disagreements.length === 0) {
+    return el('p', { id: 'agreement-disagreements-empty', text: '不一致セルはありません。' });
+  }
+  return el('div', { id: 'agreement-disagreements', className: 'adjudicate__agreement-disagreements' }, [
+    el('table', {}, [
+      el('thead', {}, [
+        el('tr', {}, [
+          el('th', { text: '研究' }),
+          el('th', { text: 'entity_key' }),
+          el('th', { text: '項目' }),
+          el('th', { text: 'A' }),
+          el('th', { text: 'B' }),
+        ]),
+      ]),
+      el('tbody', {}, disagreements.map(renderAgreementDisagreementRow)),
+    ]),
+  ]);
+}
+
+function renderAgreementResult(report: AgreementReport, ctx: ViewContext): HTMLElement {
+  const summaryCsvButton = el('button', {
+    id: 'agreement-csv-summary',
+    text: '項目別サマリを CSV 保存',
+    attributes: { type: 'button' },
+  });
+  summaryCsvButton.addEventListener('click', () => ctx.adjudicate.onDownloadAgreementCsv('summary'));
+  const disagreementsCsvButton = el('button', {
+    id: 'agreement-csv-disagreements',
+    text: '不一致一覧を CSV 保存',
+    attributes: { type: 'button' },
+  });
+  disagreementsCsvButton.addEventListener('click', () => ctx.adjudicate.onDownloadAgreementCsv('disagreements'));
+
+  return el('div', { className: 'adjudicate__agreement-result' }, [
+    el('p', {
+      id: 'agreement-summary-line',
+      text: `対象研究 ${report.studyCount} 件・全体一致率 ${formatAgreementPercent(
+        report.overall.agreementRate,
+      )}・全体 κ ${formatKappa(report.overall.kappa)}`,
+    }),
+    el('table', { id: 'agreement-table', className: 'adjudicate__agreement-table' }, [
+      el('thead', {}, [
+        el('tr', {}, [
+          el('th', { text: '項目' }),
+          el('th', { text: '対象セル' }),
+          el('th', { text: '一致 (%)' }),
+          el('th', { text: 'κ' }),
+        ]),
+      ]),
+      el('tbody', {}, report.fields.map(renderAgreementFieldRow)),
+    ]),
+    el('h4', { text: '不一致セル一覧' }),
+    renderAgreementDisagreements(report.disagreements),
+    el('div', { className: 'adjudicate__agreement-actions' }, [summaryCsvButton, disagreementsCsvButton]),
+    el('p', {
+      className: 'adjudicate__agreement-note',
+      text: '両者が入力済みのセルのみを一致率・κ の対象にしています。片側未入力のセルは不一致一覧に含みますが、統計（対象セル・一致・κ）からは除外します。',
+    }),
+    el('p', {
+      className: 'adjudicate__agreement-note',
+      text: 'κ が「—」の項目は、両者の値が単一カテゴリのみ等の理由で κ を定義できないことを示します（一致率は「—」でない限り参考にできます）。',
+    }),
+  ]);
+}
+
+function renderAgreementCard(state: AppState, ctx: ViewContext): HTMLElement {
+  const { adjudicate } = state;
+  // 一覧画面（h2 のみ）の直下に置くカードのため h3 から始める（working 側の群構成カードは
+  // h3〔study 名〕配下の h4 だが、こちらは一覧画面に h3 が無いのでカード見出し自体を h3 にする）
+  const children: HTMLElement[] = [el('h3', { text: 'レビュアー間一致度' })];
+
+  if (adjudicate.agreementLoading) {
+    children.push(el('p', { id: 'agreement-loading', text: '一致度を計算しています…' }));
+    return el('section', { id: 'adjudicate-agreement-card', className: 'adjudicate__agreement-card' }, children);
+  }
+
+  if (adjudicate.agreement !== null) {
+    if (isAgreementReportEmpty(adjudicate.agreement)) {
+      children.push(
+        el('p', {
+          id: 'agreement-error',
+          text: '一致度を計算できる対象がありません（2 名のレビュアーの検証が完了した研究 + 確定済みの表のデザインが必要です）。',
+        }),
+      );
+    } else {
+      children.push(renderAgreementResult(adjudicate.agreement, ctx));
+      return el('section', { id: 'adjudicate-agreement-card', className: 'adjudicate__agreement-card' }, children);
+    }
+  } else if (adjudicate.agreementError !== null) {
+    children.push(
+      el('p', {
+        id: 'agreement-error',
+        attributes: { role: 'alert' },
+        text: `一致度を計算できませんでした: ${adjudicate.agreementError}`,
+      }),
+    );
+  } else {
+    children.push(
+      el('p', {
+        className: 'view__lead',
+        text: '項目単位の一致率・Cohen’s κ・不一致セル一覧を計算します（2 名のレビュアーの検証が完了した研究が対象）。',
+      }),
+    );
+  }
+
+  const loadButton = el('button', { id: 'agreement-load', text: '一致度を計算', attributes: { type: 'button' } });
+  loadButton.addEventListener('click', () => ctx.adjudicate.onLoadAgreement());
+  children.push(loadButton);
+  return el('section', { id: 'adjudicate-agreement-card', className: 'adjudicate__agreement-card' }, children);
+}
+
+// ---------------------------------------------------------------------------
 
 export function renderAdjudicateView(state: AppState, ctx: ViewContext): HTMLElement {
   const { adjudicate } = state;
@@ -425,5 +574,6 @@ export function renderAdjudicateView(state: AppState, ctx: ViewContext): HTMLEle
   }
 
   children.push(renderList(adjudicate.rows, ctx));
+  children.push(renderAgreementCard(state, ctx));
   return el('section', { className: 'view view--adjudicate' }, children);
 }

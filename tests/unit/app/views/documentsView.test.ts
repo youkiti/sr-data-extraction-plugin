@@ -101,6 +101,7 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<DocumentsViewCall
         onDecision: jest.fn(),
         onArmConfirm: jest.fn(),
         onChangeLayoutMode: jest.fn(),
+        onReloadVerification: jest.fn(),
       },
       extract: {
         onToggleStudy: jest.fn(),
@@ -117,6 +118,7 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<DocumentsViewCall
         onDecision: jest.fn(),
         onArmConfirm: jest.fn(),
         onChangeLayoutMode: jest.fn(),
+        onReloadVerification: jest.fn(),
       },
       dashboard: { onReload: jest.fn() },
       export: {
@@ -126,6 +128,9 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<DocumentsViewCall
         onCancelGenerate: jest.fn(),
         onDownload: jest.fn(),
         onReload: jest.fn(),
+        onChangeMethodsLanguage: jest.fn(),
+        onChangeMethodsWorkflow: jest.fn(),
+        onCopyMethods: jest.fn(),
       },
       adjudicate: {
         onSelectStudy: jest.fn(),
@@ -144,6 +149,8 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<DocumentsViewCall
         onUnskip: jest.fn(),
         onUndo: jest.fn(),
         onToggleMismatchOnly: jest.fn(),
+        onLoadAgreement: jest.fn(),
+        onDownloadAgreementCsv: jest.fn(),
       },
     },
     callbacks,

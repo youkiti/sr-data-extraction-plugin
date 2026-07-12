@@ -1797,6 +1797,36 @@
   color: var(--color-danger);
 }
 
+/* 決定論的な数値整合性チェック（issue #65）: セル詳細（リストモードのセルカード /
+   フォーカスモードの詳細ストリップ）の警告一覧。判定操作は増やさない情報提示のみ */
+.verify__consistency-warnings {
+  margin: 6px 0;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: var(--color-warning-bg);
+  border: 1px solid var(--color-warning-border);
+  color: var(--color-danger);
+  font-size: 13px;
+}
+
+.verify__consistency-warning {
+  margin: 2px 0;
+}
+
+.verify__consistency-warning:first-child {
+  margin-top: 0;
+}
+
+.verify__consistency-warning:last-child {
+  margin-bottom: 0;
+}
+
+/* マトリクスボタン（focus-card__matrix-btn）に付けるバッジ本体。背景色に依らず
+   十分なコントラストを保つため色は継承せず --color-danger を明示する */
+.verify__consistency-badge {
+  color: var(--color-danger);
+}
+
 .verify__current-value {
   margin: 4px 0;
 }
@@ -2102,6 +2132,15 @@
   border-color: var(--color-primary);
 }
 
+/* 判定チップ + 整合性チェックバッジ（issue #65）をまとめる末尾グループ。
+   button 自体は space-between のまま 2 子（値 / このグループ）に保つ */
+.focus-card__matrix-trailing {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
 .focus-card__matrix-value {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2186,6 +2225,23 @@
 
 .verify__error {
   color: var(--color-danger);
+}
+
+/* 保存の競合検出バナー（issue #64）。#/verify 単独画面・#/pilot 埋め込み検証で共有 */
+.verify__conflict-warning {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--color-warning-bg);
+  border: 1px solid var(--color-warning-border);
+  border-radius: 8px;
+  padding: 8px 12px;
+  margin-bottom: 12px;
+}
+
+.verify__conflict-warning p {
+  margin: 0;
+  flex: 1;
 }
 
 /* --- PDF ビューア --------------------------------------------------------- */
@@ -2582,6 +2638,74 @@
   text-decoration: underline;
 }
 
+/* 論文 Methods 記載例カード（issue #67. docs/methods-boilerplate.md §4） */
+.export__methods {
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface);
+  padding: 12px 16px;
+  margin: 12px 0;
+  display: grid;
+  gap: 10px;
+}
+
+.export__methods h3 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.export__methods-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.export__methods-tabs {
+  display: flex;
+  gap: 4px;
+}
+
+.export__methods-tab {
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-bg);
+
+  /* グローバル button の白文字（on-primary）を淡背景用に戻す（コントラスト 4.5:1 以上） */
+  color: var(--color-text);
+  padding: 4px 10px;
+  font-size: 13px;
+}
+
+.export__methods-tab:hover:not(:disabled) {
+  background: var(--color-surface);
+}
+
+.export__methods-tab[aria-pressed='true'] {
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+}
+
+.export__methods-tab[aria-pressed='true']:hover:not(:disabled) {
+  background: var(--color-primary-hover);
+}
+
+.export__methods-text {
+  width: 100%;
+  min-height: 160px;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+  resize: vertical;
+  padding: 8px 10px;
+}
+
+.export__methods-note {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
 /* --- 裁定（S12 `#/adjudicate`）------------------------------------------ */
 
 .adjudicate__error {
@@ -2900,4 +3024,57 @@
 .adjudicate__action--undo:hover:not(:disabled),
 .adjudicate__action--unskip:hover:not(:disabled) {
   background: #f1f3f4;
+}
+
+/* --- レビュアー間一致度レポート（issue #66）------------------------------ */
+
+.adjudicate__agreement-card {
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface);
+  padding: 12px 16px;
+  margin: 16px 0;
+}
+
+.adjudicate__agreement-table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 8px 0;
+}
+
+.adjudicate__agreement-table th,
+.adjudicate__agreement-table td {
+  border: 1px solid var(--color-border);
+  padding: 6px 10px;
+  text-align: left;
+}
+
+.adjudicate__agreement-disagreements {
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.adjudicate__agreement-disagreements table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+.adjudicate__agreement-disagreements th,
+.adjudicate__agreement-disagreements td {
+  border: 1px solid var(--color-border);
+  padding: 6px 10px;
+  text-align: left;
+}
+
+.adjudicate__agreement-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 8px 0;
+}
+
+.adjudicate__agreement-note {
+  margin: 4px 0;
+  color: var(--color-text-muted);
+  font-size: 12px;
 }

@@ -46,6 +46,11 @@ export interface VerificationFocusCardModel {
    * 詳細ストリップ（renderCell）へそのまま渡す
    */
   mode?: 'review' | 'independent';
+  /**
+   * 決定論的な数値整合性チェック（issue #65）の警告。cellKey → メッセージ一覧。
+   * マトリクスボタンのバッジ（renderMatrixDataCell）と詳細ストリップ（renderCell）の双方へ渡す
+   */
+  consistencyWarnings: ReadonlyMap<string, string[]>;
 }
 
 /**
@@ -87,15 +92,29 @@ function renderMatrixDataCell(
     ]);
   }
   const value = displayValue(cell);
+  const warnings = model.consistencyWarnings.get(cell.cellKey) ?? [];
+  const baseLabel = `${fieldLabel} × ${column.label}: ${value}`;
+  const trailing: HTMLElement[] = [renderStatusChip(cell.state.status)];
+  const attributes: Record<string, string> = { type: 'button', 'aria-label': baseLabel };
+  if (warnings.length > 0) {
+    // 決定論的な数値整合性チェック（issue #65）: バッジ + aria-label / title に警告文を含める
+    // （判定操作は増やさない情報提示のみ）
+    trailing.push(
+      el('span', {
+        className: 'verify__consistency-badge',
+        attributes: { 'aria-hidden': 'true' },
+        text: '⚠',
+      }),
+    );
+    attributes['aria-label'] = `${baseLabel}（整合性チェック警告: ${warnings.join('。')}）`;
+    attributes['title'] = warnings.join('\n');
+  }
   const button = el(
     'button',
-    {
-      className: 'focus-card__matrix-btn',
-      attributes: { type: 'button', 'aria-label': `${fieldLabel} × ${column.label}: ${value}` },
-    },
+    { className: 'focus-card__matrix-btn', attributes },
     [
       el('span', { className: 'focus-card__matrix-value', text: value }),
-      renderStatusChip(cell.state.status),
+      el('span', { className: 'focus-card__matrix-trailing' }, trailing),
     ],
   );
   if (cell.cellKey === model.focusedCellKey) {
@@ -176,6 +195,7 @@ function renderDetailStrip(
     highlightInfo: model.highlightInfo,
     canSearchText: model.canSearchText,
     mode: model.mode,
+    consistencyWarnings: model.consistencyWarnings,
   };
   return el('div', { id: 'verify-focus-detail', className: 'focus-card__detail' }, [
     renderCell(cell, cellCardModel, handlers),

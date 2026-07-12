@@ -56,6 +56,8 @@ const ARM_STRUCTURE_ROW = [
 
 const STUDY_DATA_HEADERS = [...SHEET_HEADERS.StudyData];
 
+const RESULTS_DATA_HEADERS = [...SHEET_HEADERS.ResultsData];
+
 /** テキスト層つきの最小 1 ページ PDF（app-verify.spec.ts と同じ手組み構成） */
 function minimalPdf(text: string): Buffer {
   const content = `BT /F1 12 Tf 72 720 Td (${text}) Tj ET`;
@@ -104,6 +106,9 @@ async function setupRoutes(page: Page): Promise<void> {
         await route.fulfill({ json: { values: [DECISIONS_HEADERS] } });
       } else if (url.includes('/values/StudyData')) {
         await route.fulfill({ json: { values: [STUDY_DATA_HEADERS] } });
+      } else if (url.includes('/values/ResultsData')) {
+        // 楽観ロックの期待値取得（issue #64）のため loadVerificationBundle が ResultsData も読む
+        await route.fulfill({ json: { values: [RESULTS_DATA_HEADERS] } });
       } else if (url.includes('/values/ArmStructures')) {
         await route.fulfill({ json: { values: [ARM_STRUCTURES_HEADERS, ARM_STRUCTURE_ROW] } });
       } else if (url.includes('/values/SchemaFields')) {

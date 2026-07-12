@@ -5,6 +5,7 @@
 // スクロール・フォーカスとしてパネルへ渡す。2 ペイン本体は #/pilot と同じ verificationPanel を使う
 import { el } from '../ui/dom';
 import type { AppState, VerifyTarget } from '../store';
+import { renderConflictWarning } from './conflictWarning';
 import type { ViewContext } from './types';
 import { renderCachedVerificationPanel } from './verificationPanel';
 
@@ -121,6 +122,13 @@ export function renderVerifyView(state: AppState, ctx: ViewContext): HTMLElement
         className: 'verify__doc-title',
         text: verify.verification.study.studyLabel,
       }),
+    );
+    if (verify.conflictMessage !== null) {
+      children.push(
+        renderConflictWarning(verify.conflictMessage, () => ctx.verify.onReloadVerification()),
+      );
+    }
+    children.push(
       renderCachedVerificationPanel({
         data: verify.verification,
         onDecision: (decision) => ctx.verify.onDecision(decision),
