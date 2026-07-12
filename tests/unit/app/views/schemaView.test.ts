@@ -441,6 +441,8 @@ describe('renderSchemaView', () => {
       expect(callbacks.onInsertPreset).toHaveBeenCalledWith('rob2_sq');
       (view.querySelector('#schema-preset-robins-i') as HTMLButtonElement).click();
       expect(callbacks.onInsertPreset).toHaveBeenCalledWith('robins_i');
+      (view.querySelector('#schema-preset-robins-i-sq') as HTMLButtonElement).click();
+      expect(callbacks.onInsertPreset).toHaveBeenCalledWith('robins_i_sq');
       (view.querySelector('#schema-editor-cancel') as HTMLButtonElement).click();
       expect(callbacks.onCancelEditor).toHaveBeenCalledTimes(1);
     });

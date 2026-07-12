@@ -316,6 +316,12 @@ function renderEditor(
     attributes: { type: 'button' },
   });
   presetRobinsI.addEventListener('click', () => ctx.schema.onInsertPreset('robins_i'));
+  const presetRobinsISq = el('button', {
+    id: 'schema-preset-robins-i-sq',
+    text: 'ROBINS-I（SQ 完全版）テンプレートを挿入',
+    attributes: { type: 'button' },
+  });
+  presetRobinsISq.addEventListener('click', () => ctx.schema.onInsertPreset('robins_i_sq'));
 
   const errorItems = schema.editorErrors.map((error) =>
     el('li', {
@@ -368,6 +374,7 @@ function renderEditor(
       presetRob2,
       presetRob2Sq,
       presetRobinsI,
+      presetRobinsISq,
     ]),
     dataTypeHelp,
     el('div', { className: 'schema__table-wrap' }, [table]),
