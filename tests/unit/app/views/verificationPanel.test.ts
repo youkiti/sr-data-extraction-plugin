@@ -2214,6 +2214,25 @@ describe('createVerificationPanel: フォーカスモード（issue #38）', () 
       panel.dispose();
     });
 
+    test('前後移動ボタンのクリックでも Shift+J/K と同じユニット送りが動き、端では disabled になる（issue #82）', async () => {
+      const { panel } = await createStudyPanel();
+      const prevButton = () => panel.root.querySelector<HTMLButtonElement>('.focus-card__nav--prev');
+      const nextButton = () => panel.root.querySelector<HTMLButtonElement>('.focus-card__nav--next');
+      expect(panel.root.querySelector('#verify-focus-position')?.textContent).toContain('ユニット 1');
+      expect(prevButton()?.disabled).toBe(true); // 先頭ユニットのため折り返さない
+      expect(nextButton()?.disabled).toBe(false);
+
+      nextButton()?.click();
+      expect(panel.root.querySelector('#verify-focus-position')?.textContent).toContain('ユニット 2');
+      expect(panel.root.querySelector('.focus-card__heading')?.textContent).toBe('sec2');
+      expect(nextButton()?.disabled).toBe(true); // 末尾ユニットのため折り返さない
+      expect(prevButton()?.disabled).toBe(false);
+
+      prevButton()?.click();
+      expect(panel.root.querySelector('#verify-focus-position')?.textContent).toContain('ユニット 1');
+      panel.dispose();
+    });
+
     test('Shift+A 等の他の Shift 併用キーは無視する（誤爆防止）', async () => {
       const { panel, onDecision } = await createStudyPanel();
       pressKey('A', { shiftKey: true });

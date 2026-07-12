@@ -1076,6 +1076,9 @@ export function createVerificationPanel(
     onToggleLayoutMode(mode) {
       setLayoutMode(mode);
     },
+    onMoveUnit(delta) {
+      moveToAdjacentUnit(delta);
+    },
   };
 
   function refreshForm(): void {

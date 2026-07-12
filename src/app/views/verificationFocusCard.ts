@@ -23,7 +23,15 @@ import {
 } from './verificationCellCard';
 
 /** renderVerificationFocusCard が要求するハンドラ集合（詳細ストリップ・マトリクスの双方で使う） */
-export type VerificationFocusCardHandlers = CellCardHandlers;
+export interface VerificationFocusCardHandlers extends CellCardHandlers {
+  /**
+   * ユニット送り（前 = -1 / 次 = 1）。ユニットヘッダの前後ボタン（issue #82）が呼ぶ。
+   * verificationPanel の moveToAdjacentUnit と同じ着地ロジックを共有する（キーボード
+   * Shift+J/K のマウス版であり、判定状況に関係なく隣接ユニットへ移動し、着地はそのユニットの
+   * 最初の未判定セル → 無ければ先頭セル。端では停止＝折り返さない）
+   */
+  onMoveUnit(delta: number): void;
+}
 
 export interface VerificationFocusCardModel {
   /** 表示中のユニット（verificationPanel が focusedCellKey から解決する） */
@@ -75,13 +83,48 @@ function displayValue(cell: VerificationCell): string {
   return raw;
 }
 
-function renderUnitHeader(model: VerificationFocusCardModel): HTMLElement {
-  return el('div', { className: 'focus-card__header' }, [
+/**
+ * ユニット送りボタン（issue #82: Shift+J/K のマウス版）。端（先頭 / 末尾）では disabled にし、
+ * キーボードの「折り返さない」挙動と一致させる。aria-label / title にキーボードヒントを添える
+ */
+function renderUnitNavButton(
+  direction: 'prev' | 'next',
+  model: VerificationFocusCardModel,
+  handlers: VerificationFocusCardHandlers,
+): HTMLElement {
+  const isPrev = direction === 'prev';
+  const disabled = isPrev ? model.unitIndex <= 1 : model.unitIndex >= model.totalUnits;
+  const shortcutHint = isPrev ? 'Shift+K' : 'Shift+J';
+  const label = isPrev ? '前のユニット' : '次のユニット';
+  const button = el('button', {
+    className: `focus-card__nav focus-card__nav--${direction}`,
+    text: label,
+    attributes: {
+      type: 'button',
+      'aria-label': `${label}へ移動（${shortcutHint}）`,
+      title: `${label}へ移動（${shortcutHint}）`,
+    },
+  }) as HTMLButtonElement;
+  button.disabled = disabled;
+  button.addEventListener('click', () => handlers.onMoveUnit(isPrev ? -1 : 1));
+  return button;
+}
+
+function renderUnitHeader(
+  model: VerificationFocusCardModel,
+  handlers: VerificationFocusCardHandlers,
+): HTMLElement {
+  const positionRow = el('div', { className: 'focus-card__position-row' }, [
+    renderUnitNavButton('prev', model, handlers),
     el('p', {
       id: 'verify-focus-position',
       className: 'focus-card__position',
       text: `ユニット ${model.unitIndex} / ${model.totalUnits}（残り ${model.remainingUnits}）`,
     }),
+    renderUnitNavButton('next', model, handlers),
+  ]);
+  return el('div', { className: 'focus-card__header' }, [
+    positionRow,
     el('h4', { className: 'focus-card__heading', text: model.unit.heading }),
   ]);
 }
@@ -268,7 +311,7 @@ export function renderVerificationFocusCard(
   model: VerificationFocusCardModel,
   handlers: VerificationFocusCardHandlers,
 ): HTMLElement {
-  const children: HTMLElement[] = [renderUnitHeader(model), renderMatrix(model, handlers)];
+  const children: HTMLElement[] = [renderUnitHeader(model, handlers), renderMatrix(model, handlers)];
   if (model.unit.summary !== null) {
     children.push(
       el('p', { className: 'focus-card__summary', text: `要約: ${model.unit.summary}` }),
