@@ -7,6 +7,13 @@ import { GlobalWorkerOptions, getDocument, type PDFDocumentProxy } from 'pdfjs-d
 export const PDF_WORKER_ASSET = 'pdf.worker.min.mjs';
 
 /**
+ * 既定 CMap の同梱ディレクトリ（issue #95 層 1）。和文 PDF の CID フォント
+ * （Adobe-Japan1 等）はテキスト抽出に既定 CMap を要求し、未指定だと translateFont が
+ * 失敗して本文テキストの大半が欠落する。worker と同様に dist/ へ同梱して解決する
+ */
+export const PDF_CMAP_DIR = 'cmaps/';
+
+/**
  * 使用後に破棄できる形にした PDF ドキュメント
  * （features/documents の DisposablePdfDocument を構造的に満たす）。
  * pdfjs-dist 6.x では destroy が PDFDocumentProxy から loadingTask へ移ったため、ここで吸収する
@@ -30,7 +37,11 @@ export function configurePdfWorker(): void {
  */
 export async function loadPdf(data: ArrayBuffer): Promise<PDFDocumentProxy> {
   configurePdfWorker();
-  return getDocument({ data: new Uint8Array(data) }).promise;
+  return getDocument({
+    data: new Uint8Array(data),
+    cMapUrl: chrome.runtime.getURL(PDF_CMAP_DIR),
+    cMapPacked: true,
+  }).promise;
 }
 
 /**

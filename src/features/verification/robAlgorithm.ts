@@ -7,11 +7,9 @@
 // of bias in randomised trials." BMJ 2019;366:l4898 の付随ガイダンス（Cochrane, RoB 2
 // guidance, 2019）に基づく。
 //
-// 一次資料（cochrane.de の PDF・BMJ 誌本体・riskofbias.info・training.cochrane.org・arxiv.org
-// 等）は、本セッションの outbound egress ポリシーにより直接アクセスできなかった
-// （github.com / raw.githubusercontent.com 以外の大半のホストが 403 で遮断された。
-// /root/.ccr/README.md 参照。10 件以上のホストを試行したが成功したのは GitHub 系のみ）。
-// そのため、上記 BMJ 論文を明示的な典拠として docstring に引用しているサードパーティの OSS 実装
+// 実装当時（issue #61 PR1）は outbound egress 制限により一次資料（riskofbias.info の公式配布
+// PDF・BMJ 誌本体等）へ直接アクセスできなかったため、上記 BMJ 論文を明示的な典拠として
+// docstring に引用しているサードパーティの OSS 実装
 // （GitHub: rob-luke/risk-of-bias。取得日 2026-07-12 の main ブランチ）
 //   - risk_of_bias/frameworks/rob2/domains/_domain_1_randomization.py の _compute_judgement
 //   - risk_of_bias/frameworks/rob2/domains/_domain_2_deviations.py の _compute_judgement
@@ -19,11 +17,18 @@
 //   - risk_of_bias/frameworks/rob2/domains/_domain_4_measurement.py の _compute_judgement
 //   - risk_of_bias/frameworks/rob2/domains/_domain_5_selection.py の _compute_judgement
 //   - risk_of_bias/types/_framework_types.py の Framework.judgement（overall の統合規則）
-// を取得し、5 ドメインぶんの決定木・overall の「最悪ドメイン優先」規則をそのまま移植した。
-// 各ファイルの docstring が同一の BMJ 論文を典拠として明記しており、質問文言・条件分岐の構造も
-// 既知の RoB 2 ツール（Excel 版・riskofbias.info の cribsheet）の一般的な記述と整合する。
-// ただし一次資料との逐語照合はできていないため、**正式なガイダンス PDF 入手時に再照合すること**
-// （TODO: 原典照合待ち）。
+// から 5 ドメインぶんの決定木・overall の「最悪ドメイン優先」規則をそのまま移植した
+// （転記元の経緯として記録を残す）。
+//
+// 原典照合の記録（issue #103）: 2026-07-13 に公式一次資料（RoB 2 full guidance 2019-08-22 /
+// cribsheet 2019-08-14 / Word completion template 2019-08-22。いずれも riskofbias.info の
+// 公式配布リンク経由で取得）を入手し、`c:\tmp\rob-prespec\`（originals/ に SHA-256 記録付きの
+// SOURCES.md、extracted/ に機械抽出テキスト、詳細は同 REPORT.md）へ保全した。signaling question
+// 全 22 問の文言は公式 Word template と逐語照合し **22/22 一致・修正不要**を確認済み
+// （robTemplates.ts の出典コメント参照。「原典照合待ち」TODO は解消）。決定木（本ファイルの
+// judgeDomain1〜5）そのものは、公式ガイダンスでは流れ図（Figure 1〜5・7）として与えられており、
+// 2026-07-13 の照合は SQ 質問本文を対象としたため決定木の分岐単位の逐語照合は含まない
+// （移植元 OSS の典拠が同一の公式ガイダンスであることは確認済み）。
 //
 // --- 実装上の意図的な差分 ----------------------------------------------------
 // 移植元 Python は Domain 2（deviations）の _compute_judgement のみ「未回答（None）」の
@@ -731,6 +736,13 @@ const DOMAIN_ALGORITHMS: Readonly<Record<string, { fieldNames: readonly string[]
         answers[2] as Rob2SqAnswer | null,
       ),
   },
+  // 注意（issue #103）: この D2 決定木は effect of assignment（ITT）版の SQ 2.1〜2.7 専用。
+  // 事前設定ダイアログで adhering を選ぶと、プリセットは adhering 版 D2（SQ 2.1〜2.6。
+  // rob2_sq2_7 の行は生成されない）を挿入するため、fieldNames の rob2_sq2_7 に対応するセルが
+  // 見つからず回答が null になり、judgeDomain2Deviations 冒頭の null ガードで常に
+  // 「提案なし（null）」へ倒れる（意図した挙動 — adhering 版の 2.3〜2.6 は assignment 版と
+  // 設問内容が異なるため、assignment 用決定木を適用してはならない）。adhering 版の決定木
+  // （公式 cribsheet 2019-08-14 p.13 の流れ図）の実装は issue #103 の残課題
   d2_deviations: {
     fieldNames: ROB2_SQ_FIELD_NAMES['d2_deviations'] as readonly string[],
     judge: (answers) =>

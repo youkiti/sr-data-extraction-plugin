@@ -23,6 +23,7 @@ import {
 } from '../../../../src/app/services/documentsService';
 import type { DocumentRecord } from '../../../../src/domain/document';
 import type { StudyRecord } from '../../../../src/domain/study';
+import { dedupSelections } from '../../../../src/features/documents/dedupSelections';
 import { readDocuments, updateDocument } from '../../../../src/features/documents/documentRepository';
 import { importDocuments } from '../../../../src/features/documents/importDocuments';
 import {
@@ -36,6 +37,11 @@ import { getCurrentUserEmail } from '../../../../src/lib/google/identity';
 import { FOLDER_MIME_TYPE, openPdfPicker } from '../../../../src/lib/google/picker';
 import { getLocal, setLocal } from '../../../../src/lib/storage/chromeStorage';
 
+// dedupSelections は関数だけモックし、DUPLICATE_REASON_LABELS（表示文言）は本物を使う
+jest.mock('../../../../src/features/documents/dedupSelections', () => {
+  const actual = jest.requireActual('../../../../src/features/documents/dedupSelections');
+  return { __esModule: true, ...actual, dedupSelections: jest.fn() };
+});
 jest.mock('../../../../src/features/documents/documentRepository');
 jest.mock('../../../../src/features/documents/importDocuments');
 jest.mock('../../../../src/features/documents/studyRepository', () => {
@@ -54,6 +60,7 @@ jest.mock('../../../../src/lib/google/identity');
 jest.mock('../../../../src/lib/google/picker');
 jest.mock('../../../../src/lib/storage/chromeStorage');
 
+const mockDedupSelections = jest.mocked(dedupSelections);
 const mockReadDocuments = jest.mocked(readDocuments);
 const mockUpdateDocument = jest.mocked(updateDocument);
 const mockImportDocuments = jest.mocked(importDocuments);
@@ -145,6 +152,14 @@ beforeEach(() => {
   jest.clearAllMocks();
   document.body.innerHTML = '';
   mockGetCurrentUserEmail.mockResolvedValue('tester@example.com');
+  // 既定は素通し（重複なし）。重複スキップのシナリオは各テストで差し替える
+  mockDedupSelections.mockImplementation(async ({ selections }) => ({
+    accepted: [...selections],
+    skipped: [],
+  }));
+  // records 未読込の取り込みは readDocuments で既存一覧を読むため既定を空にする
+  // （clearAllMocks は実装を消さないので、前のテストの mockRejectedValue を残さない）
+  mockReadDocuments.mockResolvedValue([]);
   mockEnsureChildFolder.mockImplementation(async (name) => ({
     id: `${name}-folder-id`,
     webViewLink: `https://drive.google.com/${name}`,
@@ -243,7 +258,7 @@ describe('importFromPicker', () => {
     store.setState({ counts: { ...store.getState().counts, documents: 1 } });
     mockOpenPdfPicker.mockResolvedValue([{ sourceFileId: 'src-1', filename: 'a.pdf' }]);
     mockImportDocuments.mockImplementation(async (_params, deps) => {
-      deps.onProgress?.({ fileIndex: 0, totalFiles: 1, filename: 'a.pdf', stage: 'copy' });
+      deps.onProgress?.({ key: 'src-1', fileIndex: 0, totalFiles: 1, filename: 'a.pdf', stage: 'copy' });
       return {
         importedStudies: [makeStudy({ studyId: 'study-1' })],
         imported: [makeDoc({ documentId: 'doc-1', studyId: 'study-1' })],
@@ -268,8 +283,8 @@ describe('importFromPicker', () => {
       { sourceFileId: 'src-2', filename: 'b.pdf' },
     ]);
     mockImportDocuments.mockImplementation(async (_params, deps) => {
-      // fileIndex 0 の進捗通知で、2 行のうち 1 行目のみ差し替え（他行は据え置きの分岐）
-      deps.onProgress?.({ fileIndex: 0, totalFiles: 2, filename: 'a.pdf', stage: 'copy' });
+      // key='src-1' の進捗通知で、2 行のうち 1 行目のみ差し替え（他行は据え置きの分岐）
+      deps.onProgress?.({ key: 'src-1', fileIndex: 0, totalFiles: 2, filename: 'a.pdf', stage: 'copy' });
       return {
         importedStudies: [makeStudy({ studyId: 'study-1' })],
         imported: [makeDoc({ documentId: 'doc-1', studyId: 'study-1' })],
@@ -365,6 +380,136 @@ describe('importFromPicker', () => {
   });
 });
 
+describe('重複スキップ（issue #102）', () => {
+  test('スキップと取り込みの混在: スキップ行を理由付きで表示し、accepted だけ importDocuments へ渡す', async () => {
+    const store = makeStore();
+    setDocs(store, { records: [makeDoc()], studies: [makeStudy()] });
+    mockOpenPdfPicker.mockResolvedValue([
+      { sourceFileId: 'src-1', filename: 'a.pdf' },
+      { sourceFileId: 'src-2', filename: 'b.pdf' },
+    ]);
+    mockDedupSelections.mockResolvedValue({
+      accepted: [
+        {
+          key: 'src-2',
+          filename: 'b.pdf',
+          sourceFileId: 'src-2',
+          source: { kind: 'drive', fileId: 'src-2' },
+        },
+      ],
+      skipped: [{ key: 'src-1', filename: 'a.pdf', reason: 'same_source' }],
+    });
+    mockImportDocuments.mockResolvedValue({
+      importedStudies: [makeStudy({ studyId: 'study-2' })],
+      imported: [makeDoc({ documentId: 'doc-2', studyId: 'study-2', sourceFileId: 'src-2' })],
+      failures: [],
+    });
+
+    await importFromPicker(store, makeDeps());
+
+    // 判定には既存一覧と documents/ フォルダ ID を渡す
+    expect(mockDedupSelections).toHaveBeenCalledWith(
+      expect.objectContaining({
+        existingDocuments: [makeDoc()],
+        documentsFolderId: 'documents-folder-id',
+      }),
+      expect.anything(),
+    );
+    expect(mockImportDocuments.mock.calls[0]?.[0].selections.map((s) => s.key)).toEqual([
+      'src-2',
+    ]);
+    const rows = store.getState().documents.importRows;
+    expect(rows[0]).toMatchObject({ status: 'skipped', detail: '取り込み済みのためスキップ' });
+    expect(rows[1]?.status).toBe('done');
+    expect(toastTexts()).toContain('1 件取り込み、1 件スキップしました');
+  });
+
+  test('全件スキップは importDocuments を呼ばず専用トースト（same_content の文言も検証）', async () => {
+    const store = makeStore();
+    setDocs(store, { records: [makeDoc()], studies: [makeStudy()] });
+    mockOpenPdfPicker.mockResolvedValue([
+      { sourceFileId: 'src-2', filename: 'a.pdf' },
+      { sourceFileId: 'src-3', filename: 'b.pdf' },
+    ]);
+    mockDedupSelections.mockResolvedValue({
+      accepted: [],
+      skipped: [
+        { key: 'src-2', filename: 'a.pdf', reason: 'same_source' },
+        { key: 'src-3', filename: 'b.pdf', reason: 'same_content' },
+      ],
+    });
+
+    await importFromPicker(store, makeDeps());
+
+    expect(mockImportDocuments).not.toHaveBeenCalled();
+    const rows = store.getState().documents.importRows;
+    expect(rows[0]).toMatchObject({ status: 'skipped', detail: '取り込み済みのためスキップ' });
+    expect(rows[1]).toMatchObject({
+      status: 'skipped',
+      detail: '内容が同一の PDF が取り込み済みのためスキップ',
+    });
+    expect(store.getState().documents.importing).toBe(false);
+    expect(toastTexts()).toContain('取り込み済みのため 2 件をスキップしました');
+    // 既存レコードは変更しない（新規発生の防止のみ）
+    expect(store.getState().documents.records).toHaveLength(1);
+  });
+
+  test('スキップ + 失敗の混在トースト（ローカル経路でも key で突き合わせる）', async () => {
+    const store = makeStore();
+    setDocs(store, { records: [], studies: [] });
+    mockDedupSelections.mockImplementation(async ({ selections }) => ({
+      accepted: selections.filter((s) => s.key !== 'local:dup.pdf:10'),
+      skipped: [{ key: 'local:dup.pdf:10', filename: 'dup.pdf', reason: 'same_content' }],
+    }));
+    mockImportDocuments.mockResolvedValue({
+      importedStudies: [makeStudy({ studyId: 'study-1' })],
+      imported: [makeDoc({ sourceFileId: null })],
+      failures: [{ key: 'local:c.pdf:10', filename: 'c.pdf', stage: 'copy', detail: 'quota' }],
+    });
+
+    await importFromFiles(store, makeDeps(), [
+      makeFakeFile('dup.pdf', 10),
+      makeFakeFile('b.pdf', 10),
+      makeFakeFile('c.pdf', 10),
+    ]);
+
+    const rows = store.getState().documents.importRows;
+    expect(rows.map((r) => r.status)).toEqual(['skipped', 'done', 'failed']);
+    expect(toastTexts()).toContain('1 件取り込み、1 件スキップ、1 件失敗しました');
+  });
+
+  test('records 未読込なら readDocuments で既存一覧を読んでから判定する', async () => {
+    const store = makeStore();
+    mockOpenPdfPicker.mockResolvedValue([{ sourceFileId: 'src-9', filename: 'z.pdf' }]);
+    mockReadDocuments.mockResolvedValue([makeDoc()]);
+    mockImportDocuments.mockResolvedValue({ importedStudies: [], imported: [], failures: [] });
+
+    await importFromPicker(store, makeDeps());
+
+    expect(mockReadDocuments).toHaveBeenCalledWith('sheet-1', expect.anything());
+    expect(mockDedupSelections).toHaveBeenCalledWith(
+      expect.objectContaining({ existingDocuments: [makeDoc()] }),
+      expect.anything(),
+    );
+  });
+
+  test('重複判定の失敗は取り込み全体を中断する（フェイルクローズ）', async () => {
+    const store = makeStore();
+    setDocs(store, { records: [], studies: [] });
+    mockOpenPdfPicker.mockResolvedValue([{ sourceFileId: 'src-1', filename: 'a.pdf' }]);
+    mockDedupSelections.mockRejectedValue(new Error('md5 fetch down'));
+
+    await importFromPicker(store, makeDeps());
+
+    expect(mockImportDocuments).not.toHaveBeenCalled();
+    expect(store.getState().documents.importRows[0]).toMatchObject({
+      status: 'failed',
+      detail: 'md5 fetch down',
+    });
+    expect(toastTexts()).toContain('取り込みに失敗しました: md5 fetch down');
+  });
+});
+
 /** jsdom の File には arrayBuffer() が無いため補って生成する（protocolView.test.ts と同じ手法） */
 function makeFakeFile(name: string, size: number, type = 'application/pdf'): File {
   const file = new File([new Uint8Array(size)], name, { type });
@@ -442,7 +587,7 @@ describe('importFromFiles', () => {
   test('成功で records / studies を追加し done トースト', async () => {
     const store = makeStore();
     mockImportDocuments.mockImplementation(async (_params, deps) => {
-      deps.onProgress?.({ fileIndex: 0, totalFiles: 1, filename: 'a.pdf', stage: 'copy' });
+      deps.onProgress?.({ key: 'local:a.pdf:10', fileIndex: 0, totalFiles: 1, filename: 'a.pdf', stage: 'copy' });
       return {
         importedStudies: [makeStudy({ studyId: 'study-1' })],
         imported: [makeDoc({ documentId: 'doc-1', studyId: 'study-1', sourceFileId: null })],

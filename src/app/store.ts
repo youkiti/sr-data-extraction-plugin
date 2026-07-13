@@ -28,8 +28,10 @@ import type { BatchFailure, RunProgress } from '../features/extraction/executeRu
 import type { FieldSelection, FieldSubsetBadge } from '../features/extraction/fieldSelection';
 import type { ExtractStudyRow } from '../features/extraction/studyProgress';
 import type { ProgressCounts } from '../features/project/progressCounts';
+import type { TiabImportPlan } from '../features/documents/tiabReview';
 import type { DashboardData } from '../features/verification/dashboard';
 import type { LoadedPdfView } from '../features/verification/pdfViewCache';
+import type { RobPrespecDialogState } from '../features/schema/presets/robPrespec';
 import type { SchemaEditorRow } from '../features/schema/types';
 import type { FieldValidationError } from '../features/schema/validateField';
 import type { VerificationProgress } from '../features/verification/progress';
@@ -87,15 +89,15 @@ export interface ReviewersState {
   confirmingChange: ReviewerFormInput | null;
 }
 
-/** 取り込み進捗 1 行の段階（ui-states.md §3「コピー → テキスト抽出の 2 段階表示」+ 前後の状態） */
-export type ImportRowStatus = 'queued' | 'copy' | 'extract' | 'done' | 'failed';
+/** 取り込み進捗 1 行の段階（ui-states.md §3「コピー → テキスト抽出の 2 段階表示」+ 前後の状態 + 重複スキップ〔issue #102〕） */
+export type ImportRowStatus = 'queued' | 'copy' | 'extract' | 'done' | 'failed' | 'skipped';
 
 export interface ImportRow {
   /** 進捗行の突き合わせキー（Drive/ローカル共通。features/documents/importDocuments.ts の ImportSelection.key） */
   key: string;
   filename: string;
   status: ImportRowStatus;
-  /** failed のときの詳細（失敗段階 + 理由）。それ以外は null */
+  /** failed（失敗段階 + 理由）/ skipped（スキップ理由）のときの詳細。それ以外は null */
   detail: string | null;
 }
 
@@ -109,6 +111,23 @@ export interface MergeDialogState {
   registrationId: string;
   /** 対象 study のいずれかに抽出済みデータ（完了 run）があるか（警告文言の出し分け・§4.5） */
   hasExtractedData: boolean;
+}
+
+/** S3「tiab-review から採用リストを読み込む」カードの状態（issue #68・requirements.md §4.5 / ※Q2） */
+export interface TiabImportState {
+  /** カードの開閉（閉 = 導線ボタンのみ表示） */
+  open: boolean;
+  /** 直近プレビュー時の入力値（再描画でフォームを復元する） */
+  sheetInput: string;
+  /** tiab シートの読み込み + プレビュー計算中 */
+  loading: boolean;
+  error: string | null;
+  /** 反映プラン（プレビュー = そのまま実行内容）。null = 未計算 */
+  plan: TiabImportPlan | null;
+  /** 「取り込みを実行」の反映中 */
+  applying: boolean;
+  /** 直近の実行結果サマリ（次のプレビューまで残す） */
+  result: { studiesUpdated: number; documentsUpdated: number; unmatched: number } | null;
 }
 
 /** #/documents（S3）の画面状態 */
@@ -132,6 +151,8 @@ export interface DocumentsState {
   mergeDialog: MergeDialogState | null;
   merging: boolean;
   mergeError: string | null;
+  /** tiab-review 採用リスト取り込みカード（issue #68） */
+  tiabImport: TiabImportState;
 }
 
 /** #/protocol（S4）の画面状態 */
@@ -172,6 +193,8 @@ export interface SchemaState {
   /** 確定時の created_by_type（AI ドラフト直後 = ai_draft。人が触ったら user_edit） */
   editorOrigin: 'ai_draft' | 'user_edit';
   confirming: boolean;
+  /** RoB プリセット事前設定ダイアログ（issue #103。ui-states.md §3）。null = 非表示 */
+  presetDialog: RobPrespecDialogState | null;
 }
 
 /** #/pilot（S6）の画面状態。run の結果と埋め込み検証 UI の素材はタブのセッション内で保持する */
@@ -387,12 +410,24 @@ export interface ExportState {
   methodsWorkflow: MethodsWorkflow;
 }
 
+/**
+ * 3 名以上の study（pair.kind === 'selectable'）で選択できる 2 名の組（issue #63）。
+ * 一覧読込時に全組合せぶんのゲートを事前計算して持つ
+ */
+export interface AdjudicatePairOption {
+  annotatorA: string;
+  annotatorB: string;
+  gate: StudyGate;
+}
+
 /** `#/adjudicate`（S12。docs/design-independent-dual-review.md §6）一覧 1 study ぶんの行 */
 export interface AdjudicateStudyRow {
   study: StudyRecord;
   pair: AnnotatorPairResolution;
   /** pair.kind === 'ready' のときのみ非 null */
   gate: StudyGate | null;
+  /** pair.kind === 'selectable'（3 名以上。issue #63）のときのみ非 null: 選択可能な 2 名の組一覧 */
+  pairOptions: AdjudicatePairOption[] | null;
 }
 
 /**
@@ -413,7 +448,12 @@ export interface AdjudicateWorking {
   armsB: readonly { armKey: string; armName: string }[];
   /** 群構成が必要なスキーマか（arm / outcome_result 項目の有無） */
   needsArmConfirmation: boolean;
-  /** 本数・名称が位置対応で完全一致するか（§6.2） */
+  /**
+   * A の各群（index 順）に対応する B の armKey（null = 対応なし。issue #63 の並べ替えマッピング）。
+   * 既定は名称一致 → 位置対応 → 残り物同士の自動対応。consensus 群構成の確定後は変更不可
+   */
+  armMapping: (string | null)[];
+  /** マッピング適用後に本数・対応名称が完全一致するか（§6.2・§13） */
   armsMatched: boolean;
   /** 確定済みの consensus 群構成。null = 未確定（arm / outcome_result セルはロック） */
   consensusArmStructure: ConfirmedArmStructure | null;
@@ -431,6 +471,11 @@ export interface AdjudicateWorking {
   evidence: Evidence[];
   /** スキップしたセル（セッション内のみ。永続化しない。key = cellKeyOf(fieldId, entityKey)） */
   skippedCellKeys: string[];
+  /**
+   * マッピング変更時にセル突き合わせを再計算する（issue #63）。生素材（両者の行・Decisions）は
+   * クロージャに閉じ込め、remap（B の armKey → 正準 armKey 辞書）だけを受け取る
+   */
+  rebuildCells(remap: ReadonlyMap<string, string>): AdjudicationCell[];
   /** documentId 1 件ぶんの PDF ビューア素材を遅延読込する（features/verification/pdfViewCache 経由） */
   loadPdfView(documentId: string): Promise<LoadedPdfView>;
   retryPdfView(documentId: string): Promise<LoadedPdfView>;
@@ -460,6 +505,12 @@ export interface AdjudicateState {
   queuedWrites: number;
   /** セル一覧の「不一致のみ」フィルタ（既定 ON。§6.4） */
   mismatchOnlyFilter: boolean;
+  /**
+   * 3 名以上の study（selectable）で裁定者が選んだ 2 名（studyId → 組。issue #63）。
+   * セッション内のみで永続化しない。選択が pairOptions に無い（force 再読込で組が変わった等）
+   * 場合は未選択として扱う
+   */
+  pairSelections: Record<string, { annotatorA: string; annotatorB: string }>;
   /**
    * レビュアー間一致度レポート（issue #66）。null = 未計算（画面入場時には自動読込しない
    * オンデマンド計算。Sheets 読み出しを増やさないため）。読込成功時は対象が 0 件でも
@@ -559,6 +610,15 @@ export function createInitialState(): AppState {
       mergeDialog: null,
       merging: false,
       mergeError: null,
+      tiabImport: {
+        open: false,
+        sheetInput: '',
+        loading: false,
+        error: null,
+        plan: null,
+        applying: false,
+        result: null,
+      },
     },
     protocol: {
       records: null,
@@ -584,6 +644,7 @@ export function createInitialState(): AppState {
       editorErrors: [],
       editorOrigin: 'user_edit',
       confirming: false,
+      presetDialog: null,
     },
     pilot: {
       selectedStudyIds: [],
@@ -669,6 +730,7 @@ export function createInitialState(): AppState {
       saving: false,
       queuedWrites: 0,
       mismatchOnlyFilter: true,
+      pairSelections: {},
       agreement: null,
       agreementLoading: false,
       agreementError: null,

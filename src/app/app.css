@@ -620,6 +620,77 @@
   margin-top: 8px;
 }
 
+/* tiab-review 採用リスト取り込みカード（issue #68・ui-states.md §3） */
+.documents__tiab {
+  margin-top: 12px;
+}
+
+section.documents__tiab {
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 12px 16px;
+}
+
+.documents__tiab-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.documents__tiab-input {
+  flex: 1 1 320px;
+  min-width: 200px;
+}
+
+.documents__tiab-table-wrap {
+  max-height: 320px;
+  overflow: auto;
+  margin-top: 8px;
+}
+
+.documents__tiab-table {
+  border-collapse: collapse;
+}
+
+.documents__tiab-table th,
+.documents__tiab-table td {
+  border: 1px solid var(--color-border);
+  padding: 4px 8px;
+  text-align: left;
+}
+
+.documents__tiab-status {
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.documents__tiab-status--update {
+  background: var(--color-success-bg);
+  border: 1px solid var(--color-success-border);
+}
+
+.documents__tiab-status--already {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+}
+
+.documents__tiab-status--unmatched {
+  background: var(--color-warning-bg);
+  border: 1px solid var(--color-warning-border);
+}
+
+.documents__tiab-actions {
+  margin-top: 8px;
+}
+
+.documents__tiab-result {
+  margin-top: 8px;
+  font-weight: 700;
+}
+
 /* #/protocol（S4）: 入力フォーム・読み取り専用サマリ（ui-states.md §3） */
 .protocol__form {
   display: grid;
@@ -936,6 +1007,48 @@
 .schema__history-list {
   margin: 0;
   padding-left: 20px;
+}
+
+/* RoB プリセット事前設定ダイアログ（issue #103。ui-states.md §3） */
+.schema__preset-dialog {
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 16px;
+  display: grid;
+  gap: 8px;
+  max-width: 640px;
+}
+
+.schema__prespec-design {
+  margin: 0;
+  color: var(--color-text-muted);
+}
+
+.schema__prespec-field {
+  display: grid;
+  gap: 4px;
+}
+
+.schema__prespec-effect,
+.schema__prespec-deviations {
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 8px 12px;
+  display: grid;
+  gap: 4px;
+}
+
+.schema__prespec-radio,
+.schema__prespec-checkbox {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.schema__prespec-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
 }
 
 /* --- #/pilot（S6）------------------------------------------------------- */
@@ -2984,14 +3097,30 @@
   margin: 12px 0;
 }
 
-.adjudicate__arm-compare {
-  display: flex;
-  gap: 24px;
-  flex-wrap: wrap;
+/* arm 並べ替えマッピングテーブル + 3 名以上のペア選択（issue #63） */
+.adjudicate__arm-map {
+  border-collapse: collapse;
+  margin: 4px 0 8px;
 }
 
-.adjudicate__arm-list h5 {
-  margin: 0 0 4px;
+.adjudicate__arm-map th,
+.adjudicate__arm-map td {
+  border: 1px solid var(--color-border);
+  padding: 4px 10px;
+  text-align: left;
+}
+
+.adjudicate__arm-unmapped-note {
+  color: var(--color-text-muted);
+  margin: 4px 0;
+}
+
+.adjudicate__pair-select {
+  max-width: 100%;
+}
+
+.adjudicate__pair-progress {
+  margin: 4px 0 0;
 }
 
 .adjudicate__arm-match-note {

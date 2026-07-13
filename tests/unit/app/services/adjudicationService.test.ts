@@ -12,7 +12,9 @@ import {
   loadAgreementReport,
   openAdjudicateStudy,
   removeAdjudicateArmDraftRow,
+  setAdjudicateArmMapping,
   setAdjudicateMismatchOnlyFilter,
+  setAdjudicatePairSelection,
   skipAdjudicateCell,
   undoAdjudicateCell,
   unskipAdjudicateCell,
@@ -93,6 +95,7 @@ const applyConsensusWritesMock = applyConsensusWrites as jest.MockedFunction<typ
 const JUDGE = 'judge@example.com';
 const A = 'a@example.com';
 const B = 'b@example.com';
+const C = 'c@example.com';
 
 function makeDocument(overrides: Partial<DocumentRecord> = {}): DocumentRecord {
   return {
@@ -281,6 +284,59 @@ function setupTwoAnnotatorsReady(): void {
   getSchemaFieldsMock.mockResolvedValue([makeField()]);
 }
 
+/** 3 名の human annotator（A・B は検証完了、C は未完了）を持つ study のセットアップ（issue #63） */
+function setupThreeAnnotators(): void {
+  readDocumentsMock.mockResolvedValue([makeDocument()]);
+  readStudiesMock.mockResolvedValue([makeStudy()]);
+  readStudyDataSheetMock.mockResolvedValue({
+    fieldNames: ['sample_size'],
+    rows: [
+      makeStudyDataRow({ annotator: A }),
+      makeStudyDataRow({ annotator: B }),
+      makeStudyDataRow({ annotator: C }),
+    ],
+  });
+  readResultsDataRowsMock.mockResolvedValue([]);
+  readAllDecisionsMock.mockResolvedValue([...completeDecisionsFor(A), ...completeDecisionsFor(B)]);
+  readAllArmStructuresMock.mockResolvedValue([]);
+  listSchemaVersionsMock.mockResolvedValue([makeSchemaVersion()]);
+  getSchemaFieldsMock.mockResolvedValue([makeField()]);
+}
+
+/** arm 並べ替えマッピングの検証用: 群 2 本を互いに逆順で確定した 2 名のセットアップ（issue #63） */
+function setupReversedArms(): void {
+  const armFields = [
+    makeField(),
+    makeField({ fieldId: 'f-arm', fieldName: 'arm_name', fieldLabel: '群名', entityLevel: 'arm', fieldIndex: 2 }),
+  ];
+  const armComplete = (annotator: string): Decision[] => [
+    makeDecision({ annotator, decidedBy: annotator }),
+    makeDecision({ annotator, decidedBy: annotator, fieldId: 'f-arm', entityKey: 'arm:1' }),
+    makeDecision({ annotator, decidedBy: annotator, fieldId: 'f-arm', entityKey: 'arm:2' }),
+  ];
+  readDocumentsMock.mockResolvedValue([makeDocument()]);
+  readStudiesMock.mockResolvedValue([makeStudy()]);
+  readStudyDataSheetMock.mockResolvedValue({
+    fieldNames: ['sample_size'],
+    rows: [makeStudyDataRow({ annotator: A }), makeStudyDataRow({ annotator: B })],
+  });
+  readResultsDataRowsMock.mockResolvedValue([
+    makeResultsRow({ resultId: 'r-a1', fieldId: 'f-arm', annotator: A, entityKey: 'arm:1', value: 'プラセボ群' }),
+    makeResultsRow({ resultId: 'r-a2', fieldId: 'f-arm', annotator: A, entityKey: 'arm:2', value: '介入群' }),
+    makeResultsRow({ resultId: 'r-b1', fieldId: 'f-arm', annotator: B, entityKey: 'arm:1', value: '介入群' }),
+    makeResultsRow({ resultId: 'r-b2', fieldId: 'f-arm', annotator: B, entityKey: 'arm:2', value: 'プラセボ群' }),
+  ]);
+  readAllDecisionsMock.mockResolvedValue([...armComplete(A), ...armComplete(B)]);
+  readAllArmStructuresMock.mockResolvedValue([
+    makeArmRow({ annotator: A, armKey: 'arm:1', armName: 'プラセボ群' }),
+    makeArmRow({ annotator: A, armKey: 'arm:2', armName: '介入群' }),
+    makeArmRow({ annotator: B, armKey: 'arm:1', armName: '介入群' }),
+    makeArmRow({ annotator: B, armKey: 'arm:2', armName: 'プラセボ群' }),
+  ]);
+  listSchemaVersionsMock.mockResolvedValue([makeSchemaVersion()]);
+  getSchemaFieldsMock.mockResolvedValue(armFields);
+}
+
 function makeFakePdfCache(): { load: jest.Mock; retry: jest.Mock; disposeAll: jest.Mock } {
   return {
     load: jest.fn().mockResolvedValue({ pdf: null, pdfError: 'stub', textPages: [] }),
@@ -339,7 +395,9 @@ describe('loadAdjudicateTargets', () => {
     listSchemaVersionsMock.mockResolvedValue([]);
     await loadAdjudicateTargets(store, makeDeps());
     expect(getSchemaFieldsMock).not.toHaveBeenCalled();
-    expect(store.getState().adjudicate.rows).toEqual([{ study: makeStudy(), pair: { kind: 'waiting', annotators: [] }, gate: null }]);
+    expect(store.getState().adjudicate.rows).toEqual([
+      { study: makeStudy(), pair: { kind: 'waiting', annotators: [] }, gate: null, pairOptions: null },
+    ]);
   });
 
   test('human annotator が 2 名そろい・両者 100% なら ready な gate を計算する', async () => {
@@ -365,6 +423,24 @@ describe('loadAdjudicateTargets', () => {
     await loadAdjudicateTargets(store, makeDeps());
     expect(store.getState().adjudicate.rows?.[0]?.pair.kind).toBe('waiting');
     expect(store.getState().adjudicate.rows?.[0]?.gate).toBeNull();
+  });
+
+  test('3 名以上は selectable として全 2 名組合せのゲートを事前計算する（issue #63）', async () => {
+    const store = seedStore();
+    setupThreeAnnotators();
+    await loadAdjudicateTargets(store, makeDeps());
+    const row = store.getState().adjudicate.rows?.[0];
+    expect(row?.pair.kind).toBe('selectable');
+    expect(row?.gate).toBeNull();
+    expect(row?.pairOptions?.map((o) => [o.annotatorA, o.annotatorB])).toEqual([
+      [A, B],
+      [A, C],
+      [B, C],
+    ]);
+    // A・B は完了済み、C は未完了 → A×B のみ ready
+    expect(row?.pairOptions?.[0]?.gate.ready).toBe(true);
+    expect(row?.pairOptions?.[1]?.gate.ready).toBe(false);
+    expect(row?.pairOptions?.[2]?.gate.ready).toBe(false);
   });
 
   test('documents / studies が documents スライスに読込済みならそれを使う（再読込しない）', async () => {
@@ -444,25 +520,57 @@ describe('openAdjudicateStudy', () => {
     expect(store.getState().adjudicate.workingError).toContain('両者の検証完了待ち');
   });
 
-  test('pair が ambiguous の study は「対象 annotator を特定できません」', async () => {
+  test('selectable（3 名以上）で未選択のまま開くと「2 名のレビュアーを選択してください」（issue #63）', async () => {
     const store = seedStore();
-    readDocumentsMock.mockResolvedValue([makeDocument()]);
-    readStudiesMock.mockResolvedValue([makeStudy()]);
-    readStudyDataSheetMock.mockResolvedValue({
-      fieldNames: [],
-      rows: [
-        makeStudyDataRow({ annotator: 'a@example.com' }),
-        makeStudyDataRow({ annotator: 'b@example.com' }),
-        makeStudyDataRow({ annotator: 'c@example.com' }),
-      ],
-    });
-    readResultsDataRowsMock.mockResolvedValue([]);
-    readAllDecisionsMock.mockResolvedValue([]);
-    readAllArmStructuresMock.mockResolvedValue([]);
-    listSchemaVersionsMock.mockResolvedValue([]);
+    setupThreeAnnotators();
     await loadAdjudicateTargets(store, makeDeps());
     await openAdjudicateStudy(store, makeDeps(), 'study-1');
-    expect(store.getState().adjudicate.workingError).toContain('対象 annotator を特定できません');
+    expect(store.getState().adjudicate.workingError).toContain('裁定する 2 名のレビュアーを選択してください');
+  });
+
+  test('selectable: 選択が pairOptions に無い（無効な選択）も未選択と同じ案内', async () => {
+    const store = seedStore();
+    setupThreeAnnotators();
+    await loadAdjudicateTargets(store, makeDeps());
+    setAdjudicatePairSelection(store, 'study-1', { annotatorA: 'x@example.com', annotatorB: 'y@example.com' });
+    await openAdjudicateStudy(store, makeDeps(), 'study-1');
+    expect(store.getState().adjudicate.workingError).toContain('裁定する 2 名のレビュアーを選択してください');
+  });
+
+  test('selectable: pairOptions が null（想定外の不整合）でも選択案内で防御する', async () => {
+    const store = seedStore();
+    setupThreeAnnotators();
+    await loadAdjudicateTargets(store, makeDeps());
+    const rows = store.getState().adjudicate.rows ?? [];
+    store.setState({
+      adjudicate: {
+        ...store.getState().adjudicate,
+        rows: rows.map((row) => ({ ...row, pairOptions: null })),
+      },
+    });
+    await openAdjudicateStudy(store, makeDeps(), 'study-1');
+    expect(store.getState().adjudicate.workingError).toContain('裁定する 2 名のレビュアーを選択してください');
+  });
+
+  test('selectable: ゲート未達の組（C を含む）を選ぶと「まだ両者の検証が完了していない」', async () => {
+    const store = seedStore();
+    setupThreeAnnotators();
+    await loadAdjudicateTargets(store, makeDeps());
+    setAdjudicatePairSelection(store, 'study-1', { annotatorA: A, annotatorB: C });
+    await openAdjudicateStudy(store, makeDeps(), 'study-1');
+    expect(store.getState().adjudicate.workingError).toContain('まだ両者の検証が完了していない');
+  });
+
+  test('selectable: ゲート達成の組（A×B）を選ぶと選択ペアで working を組み立てる', async () => {
+    const store = seedStore();
+    setupThreeAnnotators();
+    await loadAdjudicateTargets(store, makeDeps());
+    setAdjudicatePairSelection(store, 'study-1', { annotatorA: A, annotatorB: B });
+    await openAdjudicateStudy(store, makeDeps(), 'study-1');
+    const working = store.getState().adjudicate.working;
+    expect(working?.annotatorA).toBe(A);
+    expect(working?.annotatorB).toBe(B);
+    expect(store.getState().adjudicate.workingError).toBeNull();
   });
 
   test('ゲート未達（片方だけ完了）は「まだ両者の検証が完了していない」', async () => {
@@ -761,6 +869,159 @@ describe('群構成ドラフト編集（永続化なし）', () => {
     expect(afterRemove).toHaveLength(1);
     expect(afterRemove[0]?.armName).not.toBe('新名称');
   });
+
+  test('行削除後の追加でも armKey が重複しない（最小の空き番号を採番。issue #63 の修正）', async () => {
+    const store = seedStore();
+    await openReadyStudy(store, {
+      fields: [makeField(), makeField({ fieldId: 'f-arm', fieldName: 'arm_name', entityLevel: 'arm' })],
+    });
+    addAdjudicateArmDraftRow(store); // arm:1
+    addAdjudicateArmDraftRow(store); // arm:2
+    addAdjudicateArmDraftRow(store); // arm:3
+    removeAdjudicateArmDraftRow(store, 0); // arm:2 / arm:3 が残る
+    addAdjudicateArmDraftRow(store); // 空き番号 arm:1 を再利用
+    const keys = store.getState().adjudicate.working?.armDraft.map((row) => row.armKey) ?? [];
+    expect(keys).toEqual(['arm:2', 'arm:3', 'arm:1']);
+    expect(new Set(keys).size).toBe(3);
+  });
+});
+
+describe('setAdjudicatePairSelection（issue #63）', () => {
+  test('組の選択と解除（null）が pairSelections へ反映される', () => {
+    const store = seedStore();
+    setAdjudicatePairSelection(store, 'study-1', { annotatorA: A, annotatorB: B });
+    expect(store.getState().adjudicate.pairSelections).toEqual({
+      'study-1': { annotatorA: A, annotatorB: B },
+    });
+    setAdjudicatePairSelection(store, 'study-2', { annotatorA: A, annotatorB: C });
+    setAdjudicatePairSelection(store, 'study-1', null);
+    expect(store.getState().adjudicate.pairSelections).toEqual({
+      'study-2': { annotatorA: A, annotatorB: C },
+    });
+  });
+});
+
+describe('arm 並べ替えマッピング（issue #63）', () => {
+  test('同名別順の群は既定マッピングが自動で並べ替え、セル突き合わせが正しく対応する', async () => {
+    const store = seedStore();
+    setupReversedArms();
+    await loadAdjudicateTargets(store, makeDeps());
+    await openAdjudicateStudy(store, makeDeps(), 'study-1');
+    const working = store.getState().adjudicate.working;
+    expect(working?.armMapping).toEqual(['arm:2', 'arm:1']);
+    expect(working?.armsMatched).toBe(true);
+    expect(working?.armDraft).toEqual([
+      { armKey: 'arm:1', armName: 'プラセボ群' },
+      { armKey: 'arm:2', armName: '介入群' },
+    ]);
+    // B の arm:1（介入群）は正準 arm:2 へ、arm:2（プラセボ群）は arm:1 へ写り、両セルとも一致する
+    const armCells = (working?.cells ?? []).filter((cell) => cell.field.fieldId === 'f-arm');
+    expect(armCells).toHaveLength(2);
+    expect(armCells.every((cell) => cell.matches)).toBe(true);
+  });
+
+  test('setAdjudicateArmMapping: 対応の変更が 1:1 を保ちつつセル・一致判定・ドラフトへ反映される', async () => {
+    const store = seedStore();
+    setupReversedArms();
+    await loadAdjudicateTargets(store, makeDeps());
+    await openAdjudicateStudy(store, makeDeps(), 'study-1');
+    // A[0]（プラセボ群）へ B の arm:1（介入群）を割り当てる → A[1] が持っていた arm:1 は自動解除
+    setAdjudicateArmMapping(store, 0, 'arm:1');
+    const working = store.getState().adjudicate.working;
+    expect(working?.armMapping).toEqual(['arm:1', null]);
+    expect(working?.armsMatched).toBe(false);
+    // ドラフトは A の 2 群 + B のみ群（arm:2 プラセボ群 → 新キー arm:3）
+    expect(working?.armDraft).toEqual([
+      { armKey: 'arm:1', armName: 'プラセボ群' },
+      { armKey: 'arm:2', armName: '介入群' },
+      { armKey: 'arm:3', armName: 'プラセボ群' },
+    ]);
+    // セルは study 1 + arm 3 本ぶん（arm:1 / arm:2 / arm:3）に増える
+    const armCells = (working?.cells ?? []).filter((cell) => cell.field.fieldId === 'f-arm');
+    expect(armCells.map((cell) => cell.entityKey)).toEqual(['arm:1', 'arm:2', 'arm:3']);
+  });
+
+  test('setAdjudicateArmMapping: 対応なし（null）へ戻せる', async () => {
+    const store = seedStore();
+    setupReversedArms();
+    await loadAdjudicateTargets(store, makeDeps());
+    await openAdjudicateStudy(store, makeDeps(), 'study-1');
+    setAdjudicateArmMapping(store, 0, null);
+    expect(store.getState().adjudicate.working?.armMapping).toEqual([null, 'arm:1']);
+    expect(store.getState().adjudicate.working?.armsMatched).toBe(false);
+  });
+
+  test('setAdjudicateArmMapping: working なし・範囲外 index・未知の armKey は no-op', async () => {
+    const store = seedStore();
+    expect(() => setAdjudicateArmMapping(store, 0, 'arm:1')).not.toThrow();
+
+    setupReversedArms();
+    await loadAdjudicateTargets(store, makeDeps());
+    await openAdjudicateStudy(store, makeDeps(), 'study-1');
+    const before = store.getState().adjudicate.working?.armMapping;
+    setAdjudicateArmMapping(store, -1, 'arm:1');
+    setAdjudicateArmMapping(store, 2, 'arm:1');
+    setAdjudicateArmMapping(store, 0, 'arm:9');
+    expect(store.getState().adjudicate.working?.armMapping).toEqual(before);
+  });
+
+  test('setAdjudicateArmMapping: consensus 群構成の確定後は変更不可（no-op）', async () => {
+    const store = seedStore();
+    setupReversedArms();
+    readAllArmStructuresMock.mockResolvedValue([
+      makeArmRow({ annotator: A, armKey: 'arm:1', armName: 'プラセボ群' }),
+      makeArmRow({ annotator: A, armKey: 'arm:2', armName: '介入群' }),
+      makeArmRow({ annotator: B, armKey: 'arm:1', armName: '介入群' }),
+      makeArmRow({ annotator: B, armKey: 'arm:2', armName: 'プラセボ群' }),
+      makeArmRow({ annotator: 'consensus', annotatorType: 'consensus', armKey: 'arm:1', armName: 'プラセボ群' }),
+    ]);
+    await loadAdjudicateTargets(store, makeDeps());
+    await openAdjudicateStudy(store, makeDeps(), 'study-1');
+    const before = store.getState().adjudicate.working?.armMapping;
+    setAdjudicateArmMapping(store, 0, 'arm:1');
+    expect(store.getState().adjudicate.working?.armMapping).toEqual(before);
+  });
+
+  test('確定済み consensus 版の note に辞書があれば復元してセル突き合わせへ適用する', async () => {
+    const store = seedStore();
+    setupReversedArms();
+    readAllArmStructuresMock.mockResolvedValue([
+      makeArmRow({ annotator: A, armKey: 'arm:1', armName: 'プラセボ群' }),
+      makeArmRow({ annotator: A, armKey: 'arm:2', armName: '介入群' }),
+      makeArmRow({ annotator: B, armKey: 'arm:1', armName: '介入群' }),
+      makeArmRow({ annotator: B, armKey: 'arm:2', armName: 'プラセボ群' }),
+      makeArmRow({
+        annotator: 'consensus',
+        annotatorType: 'consensus',
+        armKey: 'arm:1',
+        armName: 'プラセボ群',
+        note: '裁定者: judge@example.com / arm_mapping:{"arm:1":"arm:2","arm:2":"arm:1"}',
+      }),
+    ]);
+    await loadAdjudicateTargets(store, makeDeps());
+    await openAdjudicateStudy(store, makeDeps(), 'study-1');
+    const working = store.getState().adjudicate.working;
+    expect(working?.armMapping).toEqual(['arm:2', 'arm:1']);
+    const armCells = (working?.cells ?? []).filter((cell) => cell.field.fieldId === 'f-arm');
+    expect(armCells.every((cell) => cell.matches)).toBe(true);
+  });
+
+  test('confirmAdjudicateArms は note へ辞書を直列化して残す', async () => {
+    const store = seedStore();
+    setupReversedArms();
+    await loadAdjudicateTargets(store, makeDeps());
+    await openAdjudicateStudy(store, makeDeps(), 'study-1');
+    appendArmVersionMock.mockResolvedValue({
+      version: 1,
+      arms: [
+        { armKey: 'arm:1', armName: 'プラセボ群' },
+        { armKey: 'arm:2', armName: '介入群' },
+      ],
+    });
+    await confirmAdjudicateArms(store, makeDeps(), store.getState().adjudicate.working?.armDraft ?? []);
+    const input = appendArmVersionMock.mock.calls[0]?.[1] as { note: string | null };
+    expect(input.note).toBe(`裁定者: ${JUDGE} / arm_mapping:{"arm:2":"arm:1","arm:1":"arm:2"}`);
+  });
 });
 
 describe('confirmAdjudicateArms', () => {
@@ -801,7 +1062,8 @@ describe('confirmAdjudicateArms', () => {
     appendArmVersionMock.mockResolvedValue({ version: 1, arms: [{ armKey: 'arm:1', armName: '介入群' }] });
     await confirmAdjudicateArms(store, makeDeps({ now: undefined }), [{ armKey: 'arm:1', armName: '介入群' }]);
     const call = appendArmVersionMock.mock.calls[0]?.[1] as { note: string | null; confirmedAt: string };
-    expect(call.note).toBe('裁定者: ');
+    // arm 無しの study では辞書は空（issue #63: note には常に辞書を直列化して残す）
+    expect(call.note).toBe('裁定者:  / arm_mapping:{}');
     expect(typeof call.confirmedAt).toBe('string');
     expect(call.confirmedAt.length).toBeGreaterThan(0);
   });

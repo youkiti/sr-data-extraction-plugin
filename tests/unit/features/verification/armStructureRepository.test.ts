@@ -3,6 +3,7 @@ import {
   appendArmStructureVersion,
   armStructureToRow,
   latestArmStructure,
+  latestArmStructureNote,
   readAllArmStructures,
   readArmStructuresByStudy,
 } from '../../../../src/features/verification/armStructureRepository';
@@ -195,6 +196,22 @@ describe('latestArmStructure', () => {
   test('自分の行が無ければ null（= 未確定）', () => {
     expect(latestArmStructure([], ME)).toBeNull();
     expect(latestArmStructure([makeRow({ annotator: 'other@example.com' })], ME)).toBeNull();
+  });
+});
+
+describe('latestArmStructureNote', () => {
+  test('指定 annotator の最新 version の note を返す（issue #63: arm マッピングの復元用）', () => {
+    const rows = [
+      makeRow({ note: '旧 note' }),
+      makeRow({ version: 2, note: '最新 note' }),
+      makeRow({ version: 9, annotator: 'other@example.com', note: '他人の note' }),
+    ];
+    expect(latestArmStructureNote(rows, ME)).toBe('最新 note');
+  });
+
+  test('行が無ければ null・note が空なら null', () => {
+    expect(latestArmStructureNote([], ME)).toBeNull();
+    expect(latestArmStructureNote([makeRow({ note: null })], ME)).toBeNull();
   });
 });
 

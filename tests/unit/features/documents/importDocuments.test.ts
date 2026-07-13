@@ -153,8 +153,8 @@ describe('importDocuments（Drive Picker 経由）', () => {
     expect(mockedAppendStudies).toHaveBeenCalledWith('sid', result.importedStudies, GOOGLE);
     expect(mockedAppend).toHaveBeenCalledWith('sid', result.imported, GOOGLE);
     expect(progress).toEqual([
-      { fileIndex: 0, totalFiles: 1, filename: 'smith2020.pdf', stage: 'copy' },
-      { fileIndex: 0, totalFiles: 1, filename: 'smith2020.pdf', stage: 'extract' },
+      { key: 'src-1', fileIndex: 0, totalFiles: 1, filename: 'smith2020.pdf', stage: 'copy' },
+      { key: 'src-1', fileIndex: 0, totalFiles: 1, filename: 'smith2020.pdf', stage: 'extract' },
     ]);
   });
 

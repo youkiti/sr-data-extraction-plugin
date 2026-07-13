@@ -18,10 +18,12 @@ interface DriveListResponse {
   files?: DriveFileRef[];
 }
 
-/** listFolderPdfs が返すフォルダ直下の PDF（Picker の PickerSelection と同形） */
+/** listFolderPdfs が返すフォルダ直下の PDF（Picker の PickerSelection と同形 + 重複判定用の md5） */
 export interface DrivePdfEntry {
   id: string;
   name: string;
+  /** Drive が計算したコンテンツ MD5（重複取り込み判定。issue #102）。バイナリ以外では欠落しうる */
+  md5Checksum?: string;
 }
 
 interface DrivePdfListResponse {
@@ -262,7 +264,7 @@ export async function listFolderPdfs(
   do {
     const params = new URLSearchParams({
       q: query,
-      fields: 'nextPageToken,files(id,name)',
+      fields: 'nextPageToken,files(id,name,md5Checksum)',
       pageSize: '1000',
       orderBy: 'name',
     });
@@ -273,11 +275,27 @@ export async function listFolderPdfs(
     const res = await googleFetch(url, { method: 'GET' }, deps);
     const body = (await res.json()) as DrivePdfListResponse;
     for (const file of body.files ?? []) {
-      entries.push({ id: file.id, name: file.name });
+      entries.push({
+        id: file.id,
+        name: file.name,
+        ...(file.md5Checksum !== undefined ? { md5Checksum: file.md5Checksum } : {}),
+      });
     }
     pageToken = body.nextPageToken;
   } while (pageToken);
   return entries;
+}
+
+/**
+ * ファイルのコンテンツ MD5（`md5Checksum`）を取得する（重複取り込み判定。issue #102）。
+ * Google ドキュメント等のバイナリ実体を持たないファイルでは欠落するため null を返す。
+ * `drive.file` スコープでも、Picker でユーザーが選択したファイルのメタデータは取得できる
+ */
+export async function getFileMd5(fileId: string, deps: GoogleApiDeps): Promise<string | null> {
+  const url = `${METADATA_API}/${encodeURIComponent(fileId)}?fields=md5Checksum`;
+  const res = await googleFetch(url, { method: 'GET' }, deps);
+  const body = (await res.json()) as { md5Checksum?: string };
+  return body.md5Checksum ?? null;
 }
 
 /**

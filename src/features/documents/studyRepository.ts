@@ -6,7 +6,7 @@
 import type { DocumentRecord } from '../../domain/document';
 import type { StudyRecord } from '../../domain/study';
 import { SHEET_HEADERS } from '../../domain/sheetsSchema';
-import { appendRows, getSheetValues, updateRow } from '../../lib/google/sheets';
+import { appendRows, batchUpdateRows, getSheetValues, updateRow } from '../../lib/google/sheets';
 import type { GoogleApiDeps } from '../../lib/google/types';
 
 const STUDIES_TAB = 'Studies';
@@ -101,6 +101,29 @@ export async function updateStudy(
     throw new Error(`Studies に study_id "${study.studyId}" の行がありません`);
   }
   await updateRow(spreadsheetId, STUDIES_TAB, rowIndex, studyToRow(study), deps);
+}
+
+/**
+ * 複数の既存行（study_id 一致）をまとめて上書きする（1 read + values:batchUpdate 1 回。
+ * tiab-review 取り込みの study_label 一括反映用 issue #68）。見つからない study_id は throw。空配列は no-op
+ */
+export async function updateStudies(
+  spreadsheetId: string,
+  studies: readonly StudyRecord[],
+  deps: GoogleApiDeps,
+): Promise<void> {
+  if (studies.length === 0) {
+    return;
+  }
+  const { rowIndexById } = await fetchStudies(spreadsheetId, deps);
+  const updates = studies.map((study) => {
+    const rowIndex = rowIndexById.get(study.studyId);
+    if (rowIndex === undefined) {
+      throw new Error(`Studies に study_id "${study.studyId}" の行がありません`);
+    }
+    return { rowIndex, row: studyToRow(study) };
+  });
+  await batchUpdateRows(spreadsheetId, STUDIES_TAB, updates, deps);
 }
 
 /**

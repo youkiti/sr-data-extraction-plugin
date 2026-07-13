@@ -24,6 +24,15 @@ import {
 } from '../../features/schema/schemaRepository';
 import { saveSchemaVersion } from '../../features/schema/saveSchemaVersion';
 import { SCHEMA_PRESETS, type SchemaPresetKind } from '../../features/schema/presets';
+import {
+  buildRob2LiteRows,
+  buildRob2SqRows,
+  createRobPrespecDialogState,
+  dialogToPrespec,
+  findRob2PrespecInRows,
+  validateRobPrespecDialog,
+  type RobPrespecDialogState,
+} from '../../features/schema/presets/robPrespec';
 import type { SchemaEditorRow } from '../../features/schema/types';
 import { validateEditorRows } from '../../features/schema/validateField';
 import { ensureChildFolder, getFileText, uploadTextFile } from '../../lib/google/drive';
@@ -337,18 +346,94 @@ export function removeEditorRow(store: Store, index: number): void {
   });
 }
 
-/** エディタ: プリセット挿入（二値 / 連続アウトカム・RoB 2 / ROBINS-I。requirements.md §3.3） */
-export function insertSchemaPreset(store: Store, kind: SchemaPresetKind): void {
-  const rows = store.getState().schema.editorRows;
-  if (rows === null) {
-    return;
-  }
-  const next = [...rows, ...SCHEMA_PRESETS[kind].map((row) => ({ ...row }))];
+/**
+ * エディタ末尾へ行群を追記して再検証する（プリセット挿入・事前設定ダイアログ確定の共通処理）。
+ * 呼び出し元はいずれもエディタ表示中（editorRows !== null）でのみ到達する
+ * — insertSchemaPreset は冒頭でガード済み、ダイアログ操作はダイアログを開けた時点で
+ * エディタ表示中であり、エディタを閉じる操作（cancelEditor / confirmSchema 成功）は
+ * presetDialog も同時に閉じる。`as` は この不変条件に基づく型注釈
+ * （実行時フォールバックを作らない理由は robAlgorithm.ts の DOMAIN_ALGORITHMS コメント参照）
+ */
+function appendEditorRows(store: Store, added: readonly SchemaEditorRow[]): void {
+  const rows = store.getState().schema.editorRows as SchemaEditorRow[];
+  const next = [...rows, ...added];
   patchSchema(store, {
     editorRows: next,
     editorOrigin: 'user_edit',
     editorErrors: validateEditorRows(next),
   });
+}
+
+/**
+ * エディタ: プリセット挿入（二値 / 連続アウトカム・RoB 系。requirements.md §3.3）。
+ * RoB 2 系（rob2 / rob2_sq）は行を挿入する前に事前設定ダイアログを開く（issue #103。
+ * ROBINS-I / QUADAS-3 / QUIPS のダイアログ対応は issue #103 PR2 / PR3 のスコープ）
+ */
+export function insertSchemaPreset(store: Store, kind: SchemaPresetKind): void {
+  const rows = store.getState().schema.editorRows;
+  if (rows === null) {
+    return;
+  }
+  if (kind === 'rob2' || kind === 'rob2_sq') {
+    // 再挿入時は既存の判定行 note に保存済みの事前設定 JSON をダイアログ初期値へ復元する
+    patchSchema(store, {
+      presetDialog: createRobPrespecDialogState(kind, findRob2PrespecInRows(rows)),
+    });
+    return;
+  }
+  appendEditorRows(store, SCHEMA_PRESETS[kind].map((row) => ({ ...row })));
+}
+
+/** 事前設定ダイアログ: 入力の更新（検証エラーは入力変更でクリアする。ui-states.md §3） */
+export function updateRobPrespecDialog(
+  store: Store,
+  patch: Partial<Omit<RobPrespecDialogState, 'kind' | 'error'>>,
+): void {
+  const dialog = store.getState().schema.presetDialog;
+  if (dialog === null) {
+    return;
+  }
+  patchSchema(store, { presetDialog: { ...dialog, ...patch, error: null } });
+}
+
+/** 事前設定ダイアログ: キャンセル（挿入せず閉じる） */
+export function cancelRobPrespecDialog(store: Store): void {
+  patchSchema(store, { presetDialog: null });
+}
+
+/**
+ * 事前設定ダイアログ: 「スキップして挿入」（軽量版 rob2 のみ）。
+ * 現行テンプレートと同一の行を挿入する（回帰なし）。rob2_sq は effect of interest が
+ * SQ セット構成を決めるためスキップ不可（ボタン自体を出さない + ここでも防御する）
+ */
+export function skipRobPrespecDialog(store: Store): void {
+  const dialog = store.getState().schema.presetDialog;
+  if (dialog === null || dialog.kind !== 'rob2') {
+    return;
+  }
+  appendEditorRows(store, SCHEMA_PRESETS['rob2'].map((row) => ({ ...row })));
+  patchSchema(store, { presetDialog: null });
+}
+
+/**
+ * 事前設定ダイアログ: 「この内容で挿入」。検証 → 行生成（Review context 注入 +
+ * 判定行 note へ構造化 JSON 保存）→ エディタ末尾へ挿入して閉じる。
+ * 検証エラーはダイアログ内に表示し、挿入しない（ui-states.md §3「必須未充足」）
+ */
+export function confirmRobPrespecDialog(store: Store): void {
+  const dialog = store.getState().schema.presetDialog;
+  if (dialog === null) {
+    return;
+  }
+  const error = validateRobPrespecDialog(dialog);
+  if (error !== null) {
+    patchSchema(store, { presetDialog: { ...dialog, error } });
+    return;
+  }
+  const prespec = dialogToPrespec(dialog);
+  const added = dialog.kind === 'rob2' ? buildRob2LiteRows(prespec) : buildRob2SqRows(prespec);
+  appendEditorRows(store, added);
+  patchSchema(store, { presetDialog: null });
 }
 
 /** 確定済み画面の「新しい版を作る」: 現行版の項目をエディタへ引き継ぐ（fieldId 維持） */
@@ -378,9 +463,9 @@ export function startEditorFromCurrent(store: Store): void {
   });
 }
 
-/** エディタを閉じる（下書きは破棄） */
+/** エディタを閉じる（下書きは破棄。開いたままの事前設定ダイアログも閉じる） */
 export function cancelEditor(store: Store): void {
-  patchSchema(store, { editorRows: null, editorErrors: [], draftError: null });
+  patchSchema(store, { editorRows: null, editorErrors: [], draftError: null, presetDialog: null });
 }
 
 /**
@@ -434,6 +519,7 @@ export async function confirmSchema(
         editorRows: null,
         editorErrors: [],
         draftError: null,
+        presetDialog: null,
       },
       counts: { ...after.counts, schemaVersions: versions.length },
     });

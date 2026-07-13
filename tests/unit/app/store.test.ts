@@ -46,6 +46,15 @@ describe('createInitialState', () => {
         mergeDialog: null,
         merging: false,
         mergeError: null,
+        tiabImport: {
+          open: false,
+          sheetInput: '',
+          loading: false,
+          error: null,
+          plan: null,
+          applying: false,
+          result: null,
+        },
       },
       protocol: {
         records: null,
@@ -71,6 +80,7 @@ describe('createInitialState', () => {
         editorErrors: [],
         editorOrigin: 'user_edit',
         confirming: false,
+        presetDialog: null,
       },
       pilot: {
         selectedStudyIds: [],
@@ -156,6 +166,7 @@ describe('createInitialState', () => {
         saving: false,
         queuedWrites: 0,
         mismatchOnlyFilter: true,
+        pairSelections: {},
         agreement: null,
         agreementLoading: false,
         agreementError: null,

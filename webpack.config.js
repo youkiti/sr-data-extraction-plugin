@@ -78,6 +78,12 @@ module.exports = (_env, argv) => {
             from: 'node_modules/pdfjs-dist/build/pdf.worker.min.mjs',
             to: 'pdf.worker.min.mjs',
           },
+          {
+            // 既定 CMap（bcmap）も同梱する（issue #95: 和文 PDF の CID フォントの
+            // テキスト抽出に必要）。実行時は chrome.runtime.getURL('cmaps/') で解決する
+            from: 'node_modules/pdfjs-dist/cmaps',
+            to: 'cmaps',
+          },
         ],
       }),
     ],

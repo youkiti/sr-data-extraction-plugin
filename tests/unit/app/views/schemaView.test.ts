@@ -6,6 +6,10 @@ import { createInitialState, type AppState } from '../../../../src/app/store';
 import type { DocumentRecord } from '../../../../src/domain/document';
 import type { SchemaField } from '../../../../src/domain/schemaField';
 import type { SchemaVersion } from '../../../../src/domain/schemaVersion';
+import {
+  createRobPrespecDialogState,
+  type RobPrespecDialogState,
+} from '../../../../src/features/schema/presets/robPrespec';
 import type { SchemaEditorRow } from '../../../../src/features/schema/types';
 
 function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<SchemaViewCallbacks> } {
@@ -18,6 +22,10 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<SchemaViewCallbac
     onAddRow: jest.fn(),
     onRemoveRow: jest.fn(),
     onInsertPreset: jest.fn(),
+    onUpdatePresetDialog: jest.fn(),
+    onConfirmPresetDialog: jest.fn(),
+    onSkipPresetDialog: jest.fn(),
+    onCancelPresetDialog: jest.fn(),
     onConfirm: jest.fn(),
     onCancelEditor: jest.fn(),
     onStartNewVersion: jest.fn(),
@@ -49,6 +57,10 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<SchemaViewCallbac
         onUpdateMergeRegistration: jest.fn(),
         onConfirmMerge: jest.fn(),
         onCancelMerge: jest.fn(),
+        onTiabOpen: jest.fn(),
+        onTiabClose: jest.fn(),
+        onTiabPreview: jest.fn(),
+        onTiabApply: jest.fn(),
       },
       protocol: {
         onSubmit: jest.fn(),
@@ -111,6 +123,8 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<SchemaViewCallbac
       adjudicate: {
         onSelectStudy: jest.fn(),
         onBackToList: jest.fn(),
+        onSelectPair: jest.fn(),
+        onArmMappingChange: jest.fn(),
         onRetryLoad: jest.fn(),
         onArmDraftChange: jest.fn(),
         onArmDraftAdd: jest.fn(),
@@ -457,6 +471,150 @@ describe('renderSchemaView', () => {
       expect(callbacks.onInsertPreset).toHaveBeenCalledWith('quips');
       (view.querySelector('#schema-editor-cancel') as HTMLButtonElement).click();
       expect(callbacks.onCancelEditor).toHaveBeenCalledTimes(1);
+    });
+
+    describe('RoB プリセット事前設定ダイアログ（issue #103。ui-states.md §3）', () => {
+      function makeDialog(patch: Partial<RobPrespecDialogState> = {}): RobPrespecDialogState {
+        return { ...createRobPrespecDialogState('rob2', null), ...patch };
+      }
+
+      function renderWithDialog(
+        dialog: RobPrespecDialogState | null,
+      ): { view: HTMLElement; callbacks: jest.Mocked<SchemaViewCallbacks> } {
+        const { ctx, callbacks } = makeCtx();
+        const view = renderSchemaView(
+          makeState({ versions: [], editorRows: [makeEditorRow()], presetDialog: dialog }),
+          ctx,
+        );
+        return { view, callbacks };
+      }
+
+      test('presetDialog が null なら描画しない', () => {
+        const { view } = renderWithDialog(null);
+        expect(view.querySelector('#schema-preset-dialog')).toBeNull();
+      });
+
+      test('rob2（軽量版）: 任意の見出し・design 固定表示・「指定しない」ラジオ + スキップあり、ボタンが配線されている', () => {
+        const { view, callbacks } = renderWithDialog(makeDialog());
+        const dialog = view.querySelector('#schema-preset-dialog') as HTMLElement;
+        expect(dialog.getAttribute('role')).toBe('dialog');
+        expect(dialog.getAttribute('aria-labelledby')).toBe('schema-preset-dialog-title');
+        expect(view.querySelector('#schema-preset-dialog-title')?.textContent).toBe(
+          'RoB 2 テンプレートの事前設定（任意）',
+        );
+        expect(view.querySelector('#schema-prespec-design')?.textContent).toContain(
+          'individually-randomized parallel-group trial',
+        );
+        expect(view.querySelector('#schema-prespec-design')?.textContent).toContain('別版');
+        expect(view.querySelector('#schema-prespec-effect-none')).not.toBeNull();
+        (view.querySelector('#schema-prespec-confirm') as HTMLButtonElement).click();
+        expect(callbacks.onConfirmPresetDialog).toHaveBeenCalledTimes(1);
+        (view.querySelector('#schema-prespec-skip') as HTMLButtonElement).click();
+        expect(callbacks.onSkipPresetDialog).toHaveBeenCalledTimes(1);
+        (view.querySelector('#schema-prespec-cancel') as HTMLButtonElement).click();
+        expect(callbacks.onCancelPresetDialog).toHaveBeenCalledTimes(1);
+      });
+
+      test('rob2_sq: スキップと「指定しない」ラジオが無く、effect は必須表記', () => {
+        const { view } = renderWithDialog({
+          ...createRobPrespecDialogState('rob2_sq', null),
+        });
+        expect(view.querySelector('#schema-preset-dialog-title')?.textContent).toBe(
+          'RoB 2（SQ 完全版）の事前設定',
+        );
+        expect(view.querySelector('#schema-prespec-skip')).toBeNull();
+        expect(view.querySelector('#schema-prespec-effect-none')).toBeNull();
+        expect(view.querySelector('.schema__prespec-effect legend')?.textContent).toContain(
+          '必須',
+        );
+      });
+
+      test('テキスト入力の change が onUpdatePresetDialog に配線されている', () => {
+        const { view, callbacks } = renderWithDialog(makeDialog({ experimental: '既定値' }));
+        const experimental = view.querySelector(
+          '#schema-prespec-experimental',
+        ) as HTMLInputElement;
+        expect(experimental.value).toBe('既定値');
+        experimental.value = 'CBT-I';
+        experimental.dispatchEvent(new Event('change'));
+        expect(callbacks.onUpdatePresetDialog).toHaveBeenCalledWith({ experimental: 'CBT-I' });
+        const comparator = view.querySelector('#schema-prespec-comparator') as HTMLInputElement;
+        comparator.value = 'waitlist';
+        comparator.dispatchEvent(new Event('change'));
+        expect(callbacks.onUpdatePresetDialog).toHaveBeenCalledWith({ comparator: 'waitlist' });
+        const outcome = view.querySelector('#schema-prespec-outcome') as HTMLInputElement;
+        outcome.value = 'SOL';
+        outcome.dispatchEvent(new Event('change'));
+        expect(callbacks.onUpdatePresetDialog).toHaveBeenCalledWith({ outcome: 'SOL' });
+        const numericalResult = view.querySelector(
+          '#schema-prespec-numerical-result',
+        ) as HTMLInputElement;
+        numericalResult.value = 'Table 2';
+        numericalResult.dispatchEvent(new Event('change'));
+        expect(callbacks.onUpdatePresetDialog).toHaveBeenCalledWith({
+          numericalResult: 'Table 2',
+        });
+      });
+
+      test('effect ラジオの選択が onUpdatePresetDialog に配線されている（未選択への change は無視）', () => {
+        const { view, callbacks } = renderWithDialog(makeDialog());
+        const assignment = view.querySelector(
+          '#schema-prespec-effect-assignment',
+        ) as HTMLInputElement;
+        assignment.checked = true;
+        assignment.dispatchEvent(new Event('change'));
+        expect(callbacks.onUpdatePresetDialog).toHaveBeenCalledWith({ effect: 'assignment' });
+        const adhering = view.querySelector('#schema-prespec-effect-adhering') as HTMLInputElement;
+        adhering.checked = true;
+        adhering.dispatchEvent(new Event('change'));
+        expect(callbacks.onUpdatePresetDialog).toHaveBeenCalledWith({ effect: 'adhering' });
+        const none = view.querySelector('#schema-prespec-effect-none') as HTMLInputElement;
+        none.checked = true;
+        none.dispatchEvent(new Event('change'));
+        expect(callbacks.onUpdatePresetDialog).toHaveBeenCalledWith({ effect: null });
+        // checked = false の change（ラジオ切替の解除側）は無視する
+        callbacks.onUpdatePresetDialog.mockClear();
+        assignment.checked = false;
+        assignment.dispatchEvent(new Event('change'));
+        expect(callbacks.onUpdatePresetDialog).not.toHaveBeenCalled();
+      });
+
+      test('deviation 種別チェックは adhering 選択時のみ表示され、トグルが配線されている', () => {
+        const { view: withoutAdhering } = renderWithDialog(makeDialog({ effect: 'assignment' }));
+        expect(withoutAdhering.querySelector('#schema-prespec-deviations')).toBeNull();
+
+        const { view, callbacks } = renderWithDialog(
+          makeDialog({ effect: 'adhering', deviationTypes: ['non_protocol_interventions'] }),
+        );
+        const fieldset = view.querySelector('#schema-prespec-deviations') as HTMLElement;
+        expect(fieldset.querySelector('legend')?.textContent).toContain('最低 1 つ必須');
+        const nonProtocol = view.querySelector('#schema-prespec-dev-non-protocol') as HTMLInputElement;
+        expect(nonProtocol.checked).toBe(true);
+        nonProtocol.checked = false;
+        nonProtocol.dispatchEvent(new Event('change'));
+        expect(callbacks.onUpdatePresetDialog).toHaveBeenCalledWith({ deviationTypes: [] });
+        const nonAdherence = view.querySelector(
+          '#schema-prespec-dev-non-adherence',
+        ) as HTMLInputElement;
+        expect(nonAdherence.checked).toBe(false);
+        nonAdherence.checked = true;
+        nonAdherence.dispatchEvent(new Event('change'));
+        expect(callbacks.onUpdatePresetDialog).toHaveBeenCalledWith({
+          deviationTypes: ['non_protocol_interventions', 'non_adherence'],
+        });
+        expect(view.querySelector('#schema-prespec-dev-implementation')).not.toBeNull();
+      });
+
+      test('検証エラーは role="alert" で表示し、エラーなしなら要素を出さない', () => {
+        const { view: withoutError } = renderWithDialog(makeDialog());
+        expect(withoutError.querySelector('#schema-prespec-error')).toBeNull();
+        const { view } = renderWithDialog(
+          makeDialog({ error: 'effect of interest（assignment / adhering）を選択してください' }),
+        );
+        const error = view.querySelector('#schema-prespec-error') as HTMLElement;
+        expect(error.getAttribute('role')).toBe('alert');
+        expect(error.textContent).toContain('effect of interest');
+      });
     });
 
     test('検証エラー: エラー一覧 + 該当セルの aria-invalid + 確定ボタン無効化', () => {

@@ -23,6 +23,12 @@ import {
   type DocumentsServiceDeps,
 } from './services/documentsService';
 import {
+  applyTiabImport,
+  closeTiabImport,
+  openTiabImport,
+  previewTiabImport,
+} from './services/tiabImportService';
+import {
   cancelEditProtocol,
   loadProtocols,
   selectProtocolVersion,
@@ -33,15 +39,19 @@ import {
 import {
   addEditorRow,
   cancelEditor,
+  cancelRobPrespecDialog,
+  confirmRobPrespecDialog,
   confirmSchema,
   insertSchemaPreset,
   loadSchema,
   removeEditorRow,
   runDraftSchema,
   setDraftModel,
+  skipRobPrespecDialog,
   startEditorFromCurrent,
   toggleSampleDocument,
   updateEditorRow,
+  updateRobPrespecDialog,
   type SchemaServiceDeps,
 } from './services/schemaService';
 import {
@@ -102,7 +112,9 @@ import {
   loadAgreementReport,
   openAdjudicateStudy,
   removeAdjudicateArmDraftRow,
+  setAdjudicateArmMapping,
   setAdjudicateMismatchOnlyFilter,
+  setAdjudicatePairSelection,
   skipAdjudicateCell,
   undoAdjudicateCell,
   unskipAdjudicateCell,
@@ -407,6 +419,18 @@ export async function bootstrapApp(
       onCancelMerge: () => {
         cancelMerge(store);
       },
+      onTiabOpen: () => {
+        openTiabImport(store);
+      },
+      onTiabClose: () => {
+        closeTiabImport(store);
+      },
+      onTiabPreview: (sheetInput) => {
+        void previewTiabImport(store, deps, sheetInput);
+      },
+      onTiabApply: () => {
+        void applyTiabImport(store, deps);
+      },
     },
     protocol: {
       onSubmit: (input) => {
@@ -449,6 +473,18 @@ export async function bootstrapApp(
       },
       onInsertPreset: (kind) => {
         insertSchemaPreset(store, kind);
+      },
+      onUpdatePresetDialog: (patch) => {
+        updateRobPrespecDialog(store, patch);
+      },
+      onConfirmPresetDialog: () => {
+        confirmRobPrespecDialog(store);
+      },
+      onSkipPresetDialog: () => {
+        skipRobPrespecDialog(store);
+      },
+      onCancelPresetDialog: () => {
+        cancelRobPrespecDialog(store);
       },
       onConfirm: (note) => {
         void confirmSchema(store, deps, note);
@@ -619,12 +655,18 @@ export async function bootstrapApp(
         // hash 書き換え → hashchange → syncAdjudicateRoute の一本道（#/verify と同じ経路）
         win.location.hash = `#/adjudicate?study=${encodeURIComponent(studyId)}`;
       },
+      onSelectPair: (studyId, pair) => {
+        setAdjudicatePairSelection(store, studyId, pair);
+      },
       onBackToList: () => {
         backToAdjudicateList(store);
         win.location.hash = '#/adjudicate';
       },
       onRetryLoad: () => {
         void loadAdjudicateTargets(store, deps, { force: true });
+      },
+      onArmMappingChange: (index, bArmKey) => {
+        setAdjudicateArmMapping(store, index, bArmKey);
       },
       onArmDraftChange: (index, armName) => {
         updateAdjudicateArmDraftRow(store, index, armName);

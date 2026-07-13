@@ -11,9 +11,14 @@ import {
   type TextStatus,
 } from '../../domain/document';
 import type { StudyRecord } from '../../domain/study';
+import type {
+  TiabImportPlan,
+  TiabPlanItemStatus,
+  TiabScreeningPhase,
+} from '../../features/documents/tiabReview';
 import { activeStudyGroups, visibleMergeCandidates } from '../services/documentsService';
 import { el } from '../ui/dom';
-import type { AppState, ImportRow, ImportRowStatus, MergeDialogState } from '../store';
+import type { AppState, ImportRow, ImportRowStatus, MergeDialogState, TiabImportState } from '../store';
 import type { ViewContext } from './types';
 
 const IMPORT_ROW_LABELS: Record<ImportRowStatus, string> = {
@@ -22,6 +27,20 @@ const IMPORT_ROW_LABELS: Record<ImportRowStatus, string> = {
   extract: 'テキスト抽出中…',
   done: '完了',
   failed: '失敗',
+  skipped: 'スキップ',
+};
+
+/** include 抽出に使った相の表示名（ui-states.md §3） */
+const TIAB_PHASE_LABELS: Record<TiabScreeningPhase, string> = {
+  fulltext: '全文スクリーニング',
+  tiab: 'タイトル・抄録スクリーニング',
+};
+
+/** プレビュー行の状態バッジ文言 */
+const TIAB_STATUS_LABELS: Record<TiabPlanItemStatus, string> = {
+  update: '反映',
+  already: '適用済み',
+  unmatched: 'PDF 未取り込み',
 };
 
 const TEXT_STATUS_NOTES: Partial<Record<TextStatus, string>> = {
@@ -121,9 +140,10 @@ function renderDropzone(ctx: ViewContext, disabled: boolean): HTMLElement {
 
 function renderProgress(rows: ImportRow[]): HTMLElement {
   const items = rows.map((row) => {
+    // detail は failed（失敗段階 + 理由）と skipped（重複スキップの理由。issue #102）で非 null
     const statusText =
-      row.status === 'failed' && row.detail !== null
-        ? `${IMPORT_ROW_LABELS.failed}（${row.detail}）`
+      row.detail !== null
+        ? `${IMPORT_ROW_LABELS[row.status]}（${row.detail}）`
         : IMPORT_ROW_LABELS[row.status];
     return el('li', { className: 'documents__progress-row' }, [
       el('span', { className: 'documents__progress-filename', text: row.filename }),
@@ -259,6 +279,163 @@ function renderStudyGroup(
       docsTable,
     ],
   );
+}
+
+/** tiab プレビューの一覧テーブル + サマリ + 実行ボタン（ui-states.md §3「同・プレビュー」） */
+function renderTiabPlan(plan: TiabImportPlan, tiab: TiabImportState, ctx: ViewContext): HTMLElement[] {
+  const counts: Record<TiabPlanItemStatus, number> = { update: 0, already: 0, unmatched: 0 };
+  for (const item of plan.items) {
+    counts[item.status] += 1;
+  }
+  const children: HTMLElement[] = [
+    el('p', {
+      id: 'tiab-summary',
+      className: 'documents__tiab-summary',
+      text:
+        `最終判定 include ${plan.includeCount} 件（${TIAB_PHASE_LABELS[plan.phase]}の判定・全 ${plan.totalReferences} 件中）: ` +
+        `反映 ${counts.update} 件 / 適用済み ${counts.already} 件 / PDF 未取り込み ${counts.unmatched} 件`,
+    }),
+  ];
+  if (plan.items.length === 0) {
+    children.push(
+      el('p', {
+        id: 'tiab-plan-empty',
+        text: 'include の文献が見つかりませんでした。tiab-review 側の判定状況を確認してください。',
+      }),
+    );
+    return children;
+  }
+  const table = el('table', { id: 'tiab-plan', className: 'documents__tiab-table' }, [
+    el('thead', {}, [
+      el('tr', {}, [
+        el('th', { text: '文献' }),
+        el('th', { text: '生成 study_label' }),
+        el('th', { text: '突き合わせた PDF' }),
+        el('th', { text: '状態' }),
+      ]),
+    ]),
+    el(
+      'tbody',
+      {},
+      plan.items.map((item) =>
+        el('tr', { className: 'documents__tiab-row' }, [
+          el('td', { className: 'documents__tiab-title', text: item.title }),
+          el('td', { text: item.studyLabel }),
+          el('td', {
+            text: item.matchedFilenames.length === 0 ? '—' : item.matchedFilenames.join(', '),
+          }),
+          el('td', {}, [
+            el('span', {
+              className: `documents__tiab-status documents__tiab-status--${item.status}`,
+              text: TIAB_STATUS_LABELS[item.status],
+            }),
+          ]),
+        ]),
+      ),
+    ),
+  ]);
+  children.push(el('div', { className: 'documents__tiab-table-wrap' }, [table]));
+
+  const apply = el('button', {
+    id: 'tiab-apply',
+    className: 'documents__tiab-apply',
+    text: tiab.applying ? '反映しています…' : '取り込みを実行',
+    attributes: { type: 'button' },
+  });
+  apply.disabled =
+    tiab.applying || (plan.studyUpdates.length === 0 && plan.documentUpdates.length === 0);
+  apply.addEventListener('click', () => ctx.documents.onTiabApply());
+  children.push(el('div', { className: 'documents__tiab-actions' }, [apply]));
+  return children;
+}
+
+/**
+ * tiab-review 採用リスト取り込みカード（issue #68・requirements.md §4.5 / ※Q2）。
+ * 閉: 導線ボタンのみ。開: URL / ID 入力 + プレビュー（include 抽出 + 突き合わせ結果）+ 実行
+ */
+function renderTiabCard(state: AppState, ctx: ViewContext): HTMLElement {
+  const tiab = state.documents.tiabImport;
+  if (!tiab.open) {
+    const open = el('button', {
+      id: 'documents-tiab-open',
+      className: 'documents__tiab-open',
+      text: 'tiab-review から採用リストを読み込む',
+      attributes: { type: 'button' },
+    });
+    open.disabled = state.documents.importing;
+    open.addEventListener('click', () => ctx.documents.onTiabOpen());
+    return el('div', { className: 'documents__tiab' }, [open]);
+  }
+
+  const busy = tiab.loading || tiab.applying;
+
+  const input = el('input', {
+    id: 'tiab-sheet-input',
+    className: 'documents__tiab-input',
+    attributes: {
+      type: 'text',
+      'aria-label': 'tiab-review のスプレッドシート URL または ID',
+      placeholder: 'https://docs.google.com/spreadsheets/d/… または ID',
+    },
+  }) as HTMLInputElement;
+  input.value = tiab.sheetInput;
+
+  const preview = el('button', {
+    id: 'tiab-preview',
+    text: '読み込んでプレビュー',
+    attributes: { type: 'button' },
+  });
+  preview.disabled = busy;
+  preview.addEventListener('click', () => ctx.documents.onTiabPreview(input.value));
+
+  const close = el('button', {
+    id: 'tiab-close',
+    text: '閉じる',
+    attributes: { type: 'button' },
+  });
+  close.disabled = busy;
+  close.addEventListener('click', () => ctx.documents.onTiabClose());
+
+  const children: HTMLElement[] = [
+    el('h3', { text: 'tiab-review から採用リストを読み込む' }),
+    el('p', {
+      className: 'view__lead',
+      text:
+        'tiab-review のスプレッドシートを直読みし、最終判定 include の文献から study_label（著者 (year)）と ' +
+        'DOI / PMID を反映します。fulltext フォルダから取り込んだ PDF と突き合わせるため、先に PDF を取り込んでください。',
+    }),
+    el('div', { className: 'documents__tiab-form' }, [input, preview, close]),
+  ];
+  if (tiab.loading) {
+    children.push(el('p', { id: 'tiab-loading', text: 'tiab-review のシートを読み込んでいます…' }));
+  }
+  if (tiab.error !== null) {
+    children.push(
+      el('p', {
+        id: 'tiab-error',
+        className: 'documents__error',
+        attributes: { role: 'alert' },
+        text: tiab.error,
+      }),
+    );
+  }
+  if (tiab.plan !== null) {
+    children.push(...renderTiabPlan(tiab.plan, tiab, ctx));
+  }
+  if (tiab.result !== null) {
+    const suffix = tiab.result.unmatched > 0 ? `（PDF 未取り込み ${tiab.result.unmatched} 件）` : '';
+    children.push(
+      el('p', {
+        id: 'tiab-result',
+        className: 'documents__tiab-result',
+        attributes: { role: 'status' },
+        text:
+          `study_label ${tiab.result.studiesUpdated} 件を更新し、` +
+          `DOI / PMID を ${tiab.result.documentsUpdated} 文書に転記しました${suffix}`,
+      }),
+    );
+  }
+  return el('section', { id: 'documents-tiab', className: 'documents__tiab' }, children);
 }
 
 /** 統合候補バナー（registration_id 一致のアクティブ study が複数。§4.5） */
@@ -438,6 +615,7 @@ export function renderDocumentsView(state: AppState, ctx: ViewContext): HTMLElem
     children.push(renderProgress(importRows));
   }
   if (hasProject) {
+    children.push(renderTiabCard(state, ctx));
     children.push(...renderCandidateBanners(state, ctx));
     if (mergeDialog !== null) {
       children.push(renderMergeDialog(mergeDialog, state, ctx));

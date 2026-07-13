@@ -113,7 +113,7 @@ describe('resolveAnnotatorPair', () => {
     ).toEqual({ kind: 'waiting', annotators: ['a@example.com'] });
   });
 
-  test('3 名以上は ambiguous（email 昇順）', () => {
+  test('3 名以上は selectable（裁定者がペアを選ぶ。email 昇順）', () => {
     const result = resolveAnnotatorPair({
       studyId: 'study-1',
       studyDataRows: [
@@ -125,7 +125,7 @@ describe('resolveAnnotatorPair', () => {
       decisions: [],
     });
     expect(result).toEqual({
-      kind: 'ambiguous',
+      kind: 'selectable',
       annotators: ['a@example.com', 'b@example.com', 'c@example.com'],
     });
   });

@@ -1,4 +1,5 @@
 import {
+  buildRob2SqTemplateRows,
   QUADAS3_APPLICABILITY_DOMAINS,
   QUADAS3_DOMAINS,
   QUADAS3_SQ_FIELD_NAMES,
@@ -15,6 +16,7 @@ import {
   ROB_TEMPLATE_ROBINS_I,
   ROB_TEMPLATE_ROBINS_I_SQ,
   ROB_TEMPLATES,
+  type Rob2DeviationType,
 } from '../../../../../src/features/schema/presets/robTemplates';
 import { SCHEMA_PRESETS } from '../../../../../src/features/schema/presets';
 import { OUTCOME_TEMPLATES } from '../../../../../src/features/schema/presets/outcomeTemplates';
@@ -216,6 +218,129 @@ describe('robTemplates', () => {
           expect.stringContaining('rob2_support'),
         ]),
       );
+    });
+  });
+
+  describe('RoB 2 adhering 版 D2（issue #103 PR1）', () => {
+    const ALL_DEVIATIONS: readonly Rob2DeviationType[] = [
+      'non_protocol_interventions',
+      'implementation_failures',
+      'non_adherence',
+    ];
+
+    const instructionOf = (
+      rows: readonly { fieldName: string; extractionInstruction: string }[],
+      fieldName: string,
+    ): string => rows.find((row) => row.fieldName === fieldName)?.extractionInstruction ?? '';
+
+    test('buildRob2SqTemplateRows(assignment) は従来定数 ROB_TEMPLATE_ROB2_SQ と同一の行を生成する', () => {
+      expect(buildRob2SqTemplateRows({ effect: 'assignment' })).toEqual([...ROB_TEMPLATE_ROB2_SQ]);
+    });
+
+    test('adhering 版は判定 + 根拠 + SQ 21 問の計 23 行（D2 は 2.1〜2.6 の 6 問で 2.7 は無い）', () => {
+      const rows = buildRob2SqTemplateRows({
+        effect: 'adhering',
+        deviationTypes: ALL_DEVIATIONS,
+      });
+      expect(rows).toHaveLength(23);
+      expect(rows[0]?.fieldName).toBe('rob2_judgement');
+      expect(rows[1]?.fieldName).toBe('rob2_support');
+      const sqFieldNames = rows.slice(2).map((row) => row.fieldName);
+      expect(sqFieldNames).toEqual([
+        'rob2_sq1_1',
+        'rob2_sq1_2',
+        'rob2_sq1_3',
+        'rob2_sq2_1',
+        'rob2_sq2_2',
+        'rob2_sq2_3',
+        'rob2_sq2_4',
+        'rob2_sq2_5',
+        'rob2_sq2_6',
+        'rob2_sq3_1',
+        'rob2_sq3_2',
+        'rob2_sq3_3',
+        'rob2_sq3_4',
+        'rob2_sq4_1',
+        'rob2_sq4_2',
+        'rob2_sq4_3',
+        'rob2_sq4_4',
+        'rob2_sq4_5',
+        'rob2_sq5_1',
+        'rob2_sq5_2',
+        'rob2_sq5_3',
+      ]);
+      expect(sqFieldNames).not.toContain('rob2_sq2_7');
+    });
+
+    test('adhering 版 D2 の設問文言は公式 template（22 Aug 2019）から逐語転記されている', () => {
+      const rows = buildRob2SqTemplateRows({
+        effect: 'adhering',
+        deviationTypes: ALL_DEVIATIONS,
+      });
+      // 2.1 / 2.2 は assignment 版と共通の文言
+      expect(instructionOf(rows, 'rob2_sq2_1')).toContain(
+        'Were participants aware of their assigned intervention during the trial?',
+      );
+      expect(instructionOf(rows, 'rob2_sq2_2')).toContain(
+        "Were carers and people delivering the interventions aware of participants' assigned intervention during the trial?",
+      );
+      // 2.3〜2.6 は adhering 版固有の文言
+      expect(instructionOf(rows, 'rob2_sq2_3')).toContain(
+        'Were important non-protocol interventions balanced across intervention groups?',
+      );
+      expect(instructionOf(rows, 'rob2_sq2_4')).toContain(
+        'Were there failures in implementing the intervention that could have affected the outcome?',
+      );
+      expect(instructionOf(rows, 'rob2_sq2_5')).toContain(
+        "Was there non-adherence to the assigned intervention regimen that could have affected participants' outcomes?",
+      );
+      expect(instructionOf(rows, 'rob2_sq2_6')).toContain(
+        'Was an appropriate analysis used to estimate the effect of adhering to the intervention?',
+      );
+    });
+
+    test('全種別選択時: 2.3 は SQ 2.1/2.2 ベース・2.6 は SQ 2.3〜2.5 ベースの発火条件、2.4/2.5 は無条件', () => {
+      const rows = buildRob2SqTemplateRows({
+        effect: 'adhering',
+        deviationTypes: ALL_DEVIATIONS,
+      });
+      expect(instructionOf(rows, 'rob2_sq2_3')).toContain('2.1 または 2.2 が y / py / ni');
+      expect(instructionOf(rows, 'rob2_sq2_4')).not.toContain('条件付きです');
+      expect(instructionOf(rows, 'rob2_sq2_5')).not.toContain('条件付きです');
+      expect(instructionOf(rows, 'rob2_sq2_6')).toContain(
+        'SQ 2.3 が n / pn / ni、または SQ 2.4 か 2.5 が y / py / ni',
+      );
+    });
+
+    test('未選択の deviation 種別の設問（2.3〜2.5）は「常に na」の案内になる（原文の If applicable 規則）', () => {
+      const rows = buildRob2SqTemplateRows({
+        effect: 'adhering',
+        deviationTypes: ['non_adherence'],
+      });
+      expect(instructionOf(rows, 'rob2_sq2_3')).toContain('常に na（not applicable）と回答する');
+      expect(instructionOf(rows, 'rob2_sq2_4')).toContain('常に na（not applicable）と回答する');
+      expect(instructionOf(rows, 'rob2_sq2_5')).not.toContain('常に na');
+      // 種別によらず適用される 2.1 / 2.2 / 2.6 は影響を受けない
+      expect(instructionOf(rows, 'rob2_sq2_1')).not.toContain('常に na');
+      expect(instructionOf(rows, 'rob2_sq2_6')).not.toContain('常に na');
+    });
+
+    test('adhering 版もエディタ検証を通り、D1 / D3〜D5 の行は assignment 版と同一', () => {
+      const adhering = buildRob2SqTemplateRows({
+        effect: 'adhering',
+        deviationTypes: ALL_DEVIATIONS,
+      });
+      expect(validateEditorRows(adhering)).toEqual([]);
+      const nonD2 = (rows: readonly { fieldName: string }[]): readonly { fieldName: string }[] =>
+        rows.filter((row) => !row.fieldName.startsWith('rob2_sq2_'));
+      expect(nonD2(adhering)).toEqual(nonD2([...ROB_TEMPLATE_ROB2_SQ]));
+    });
+
+    test('生成される行は毎回新しいオブジェクト（呼び出し側の編集がテンプレートへ波及しない）', () => {
+      const first = buildRob2SqTemplateRows({ effect: 'assignment' });
+      const second = buildRob2SqTemplateRows({ effect: 'assignment' });
+      expect(first[0]).not.toBe(second[0]);
+      expect(first[2]).not.toBe(second[2]);
     });
   });
 

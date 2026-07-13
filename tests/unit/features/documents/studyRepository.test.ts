@@ -7,6 +7,7 @@ import {
   resolveActiveStudies,
   studyLabelMap,
   studyToRow,
+  updateStudies,
   updateStudy,
 } from '../../../../src/features/documents/studyRepository';
 
@@ -151,6 +152,39 @@ describe('updateStudy', () => {
     await expect(updateStudy('sid', makeStudy(), deps)).rejects.toThrow(
       'study_id "study-1" の行がありません',
     );
+  });
+});
+
+describe('updateStudies', () => {
+  test('1 read + values:batchUpdate 1 回で複数行を上書きする（issue #68）', async () => {
+    const row2 = [...ROW];
+    row2[0] = 'study-2';
+    const deps = makeDeps([HEADER, ROW, row2]);
+    await updateStudies(
+      'sid',
+      [makeStudy({ studyLabel: 'Smith (2020)' }), makeStudy({ studyId: 'study-2', studyLabel: 'Doe (2021)' })],
+      deps,
+    );
+    // 1 回目 = Studies GET（行番号解決）、2 回目 = values:batchUpdate POST
+    expect(deps.fetch).toHaveBeenCalledTimes(2);
+    const [url, init] = deps.fetch.mock.calls[1];
+    expect(url as string).toContain('/values:batchUpdate');
+    const body = JSON.parse((init as RequestInit).body as string);
+    expect(body.valueInputOption).toBe('RAW');
+    expect(body.data.map((d: { range: string }) => d.range)).toEqual(['Studies!A2', 'Studies!A3']);
+    expect(body.data[0].values[0][1]).toBe('Smith (2020)');
+    expect(body.data[1].values[0][1]).toBe('Doe (2021)');
+  });
+
+  test('該当行が無ければ throw・空配列は no-op', async () => {
+    const deps = makeDeps([HEADER]);
+    await expect(updateStudies('sid', [makeStudy()], deps)).rejects.toThrow(
+      'study_id "study-1" の行がありません',
+    );
+
+    const empty = makeDeps([HEADER]);
+    await updateStudies('sid', [], empty);
+    expect(empty.fetch).not.toHaveBeenCalled();
   });
 });
 

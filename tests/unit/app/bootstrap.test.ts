@@ -49,7 +49,9 @@ jest.mock('../../../src/app/services/adjudicationService', () => ({
   skipAdjudicateCell: jest.fn(),
   unskipAdjudicateCell: jest.fn(),
   undoAdjudicateCell: jest.fn(),
+  setAdjudicateArmMapping: jest.fn(),
   setAdjudicateMismatchOnlyFilter: jest.fn(),
+  setAdjudicatePairSelection: jest.fn(),
   loadAgreementReport: jest.fn(),
   downloadAgreementCsv: jest.fn(),
 }));
@@ -66,7 +68,9 @@ import {
   loadAgreementReport,
   openAdjudicateStudy,
   removeAdjudicateArmDraftRow,
+  setAdjudicateArmMapping,
   setAdjudicateMismatchOnlyFilter,
+  setAdjudicatePairSelection,
   skipAdjudicateCell,
   undoAdjudicateCell,
   unskipAdjudicateCell,
@@ -677,6 +681,118 @@ describe('bootstrapApp', () => {
     expect(store?.getState().documents.mergeDialog).toBeNull();
   });
 
+  test('#/documents の tiab-review 取り込み（開く / プレビュー入力エラー / 閉じる）が配線されている', async () => {
+    const stub = createWindowStub({ currentProject: PROJECT, home: COUNTS_LOADED });
+    const { deps } = createTabRoutingDeps({
+      Documents: [[...SHEET_HEADERS.Documents], DOC_ROW],
+      Studies: [[...SHEET_HEADERS.Studies], STUDY_ROW],
+      ExtractionRuns: [[...SHEET_HEADERS.ExtractionRuns]],
+    });
+    const store = await bootstrapApp(asWindow(stub), deps);
+    stub.location.hash = '#/documents';
+    stub.fireHashChange();
+    await flush();
+
+    // 開く（onTiabOpen）
+    (document.getElementById('documents-tiab-open') as HTMLButtonElement).click();
+    await flush();
+    expect(document.getElementById('documents-tiab')).not.toBeNull();
+
+    // 不正入力でプレビュー（onTiabPreview）→ インラインエラー
+    (document.getElementById('tiab-preview') as HTMLButtonElement).click();
+    await flush();
+    expect(document.getElementById('tiab-error')?.textContent).toContain(
+      'URL または ID を入力してください',
+    );
+
+    // 閉じる（onTiabClose）→ 導線ボタンへ戻る
+    (document.getElementById('tiab-close') as HTMLButtonElement).click();
+    await flush();
+    expect(store?.getState().documents.tiabImport.open).toBe(false);
+    expect(document.getElementById('documents-tiab')).toBeNull();
+    expect(document.getElementById('documents-tiab-open')).not.toBeNull();
+  });
+
+  test('#/documents の tiab-review 取り込み実行（onTiabApply）が batchUpdate まで配線されている', async () => {
+    const plan = {
+      phase: 'fulltext',
+      totalReferences: 1,
+      includeCount: 1,
+      items: [
+        {
+          refId: 'r1',
+          title: 'T1',
+          studyLabel: 'Smith (2020)',
+          status: 'update',
+          matchedFilenames: ['smith2020.pdf'],
+        },
+      ],
+      studyUpdates: [
+        {
+          studyId: 'study-1',
+          studyLabel: 'Smith (2020)',
+          registrationId: null,
+          createdAt: 't',
+          createdBy: 'e',
+          note: null,
+        },
+      ],
+      documentUpdates: [],
+    };
+    const stub = createWindowStub({
+      currentProject: PROJECT,
+      home: COUNTS_LOADED,
+      documents: {
+        records: [],
+        studies: [],
+        extractedStudyIds: [],
+        ignoredCandidateKeys: [],
+        loading: false,
+        loadError: null,
+        importing: false,
+        importRows: [],
+        selectedStudyIds: [],
+        mergeDialog: null,
+        merging: false,
+        mergeError: null,
+        tiabImport: {
+          open: true,
+          sheetInput: 'https://docs.google.com/spreadsheets/d/tiab-sheet/edit',
+          loading: false,
+          error: null,
+          plan,
+          applying: false,
+          result: null,
+        },
+      },
+    } as unknown as Partial<AppState>);
+    const { deps, fetchMock } = createTabRoutingDeps({
+      Documents: [[...SHEET_HEADERS.Documents], DOC_ROW],
+      Studies: [[...SHEET_HEADERS.Studies], STUDY_ROW],
+      ExtractionRuns: [[...SHEET_HEADERS.ExtractionRuns]],
+    });
+    const store = await bootstrapApp(asWindow(stub), deps);
+    stub.location.hash = '#/documents';
+    stub.fireHashChange();
+    await flush();
+
+    (document.getElementById('tiab-apply') as HTMLButtonElement).click();
+    await flush();
+    await flush();
+
+    // Studies GET（行番号解決）→ values:batchUpdate POST が飛ぶ
+    const batchUpdateCall = fetchMock.mock.calls.find(([input]) =>
+      String(input).includes('values:batchUpdate'),
+    );
+    expect(batchUpdateCall).toBeDefined();
+    expect(toastTexts()).toContain('tiab-review の採用リストを反映しました');
+    const tiab = store?.getState().documents.tiabImport;
+    expect(tiab?.result).toEqual({ studiesUpdated: 1, documentsUpdated: 0, unmatched: 0 });
+    expect(document.getElementById('tiab-result')?.textContent).toContain(
+      'study_label 1 件を更新し',
+    );
+  });
+
   test('#/protocol 入場で全 version を読み込む（0 件 → 新規フォーム表示）', async () => {
     const stub = createWindowStub({ currentProject: PROJECT, home: COUNTS_LOADED });
     const { deps, fetchMock } = createFakeDeps([[...SHEET_HEADERS.Protocol]]);
@@ -832,6 +948,29 @@ describe('bootstrapApp', () => {
     expect(document.getElementById('schema-confirm-error')?.textContent).toContain(
       'プロトコルが未入力',
     );
+
+    // RoB 2 系プリセットは事前設定ダイアログを開く（issue #103）。
+    // 入力更新 → 確定（Review context 注入つきで 2 行挿入）まで配線を確認する
+    (document.getElementById('schema-preset-rob2') as HTMLButtonElement).click();
+    expect(document.getElementById('schema-preset-dialog')).not.toBeNull();
+    const outcomeInput = document.getElementById('schema-prespec-outcome') as HTMLInputElement;
+    outcomeInput.value = 'mortality';
+    outcomeInput.dispatchEvent(new Event('change'));
+    (document.getElementById('schema-prespec-confirm') as HTMLButtonElement).click();
+    expect(document.getElementById('schema-preset-dialog')).toBeNull();
+    expect(document.querySelectorAll('#schema-editor-table tbody tr')).toHaveLength(5);
+
+    // スキップして挿入（軽量版のみ）とキャンセルの配線
+    // （rob2 を重ねて挿入するため field_name 重複エラーになるが、配線確認には影響しない）
+    (document.getElementById('schema-preset-rob2') as HTMLButtonElement).click();
+    (document.getElementById('schema-prespec-skip') as HTMLButtonElement).click();
+    expect(document.getElementById('schema-preset-dialog')).toBeNull();
+    expect(document.querySelectorAll('#schema-editor-table tbody tr')).toHaveLength(7);
+    (document.getElementById('schema-preset-rob2-sq') as HTMLButtonElement).click();
+    expect(document.getElementById('schema-preset-dialog')).not.toBeNull();
+    (document.getElementById('schema-prespec-cancel') as HTMLButtonElement).click();
+    expect(document.getElementById('schema-preset-dialog')).toBeNull();
+    expect(document.querySelectorAll('#schema-editor-table tbody tr')).toHaveLength(7);
 
     (document.getElementById('schema-editor-cancel') as HTMLButtonElement).click();
     expect(document.getElementById('schema-editor')).toBeNull();
@@ -2569,7 +2708,9 @@ describe('bootstrapApp: #/adjudicate', () => {
   const skipAdjudicateCellMock = skipAdjudicateCell as jest.Mock;
   const unskipAdjudicateCellMock = unskipAdjudicateCell as jest.Mock;
   const undoAdjudicateCellMock = undoAdjudicateCell as jest.Mock;
+  const setAdjudicateArmMappingMock = setAdjudicateArmMapping as jest.Mock;
   const setAdjudicateMismatchOnlyFilterMock = setAdjudicateMismatchOnlyFilter as jest.Mock;
+  const setAdjudicatePairSelectionMock = setAdjudicatePairSelection as jest.Mock;
   const loadAgreementReportMock = loadAgreementReport as jest.Mock;
   const downloadAgreementCsvMock = downloadAgreementCsv as jest.Mock;
 
@@ -2619,6 +2760,7 @@ describe('bootstrapApp: #/adjudicate', () => {
       armsA: [],
       armsB: [],
       needsArmConfirmation: false,
+      armMapping: [],
       armsMatched: true,
       consensusArmStructure: null,
       armDraft: [],
@@ -2626,6 +2768,7 @@ describe('bootstrapApp: #/adjudicate', () => {
       consensusDecisions: [],
       evidence: [],
       skippedCellKeys: [],
+      rebuildCells: jest.fn(() => []),
       loadPdfView: jest.fn().mockResolvedValue({ pdf: null, pdfError: 'テストでは PDF なし', textPages: [] }),
       retryPdfView: jest.fn().mockResolvedValue({ pdf: null, pdfError: 'テストでは PDF なし', textPages: [] }),
       disposePdf: jest.fn().mockResolvedValue(undefined),
@@ -2693,6 +2836,7 @@ describe('bootstrapApp: #/adjudicate', () => {
               progressB: { annotator: 'b@example.com', decided: 1, total: 1, complete: true },
               ready: true,
             },
+            pairOptions: null,
           },
         ],
       },
@@ -2889,6 +3033,71 @@ describe('bootstrapApp: #/adjudicate', () => {
 
     (document.getElementById('adjudicate-arm-confirm') as HTMLButtonElement).click();
     expect(confirmAdjudicateArmsMock).toHaveBeenCalledWith(store, deps, workingNeedsArm.armDraft);
+  });
+
+  test('arm 並べ替えマッピングの変更をサービスへ委譲する（issue #63）', async () => {
+    const workingNeedsArm: AdjudicateWorking = {
+      ...makeWorking(),
+      needsArmConfirmation: true,
+      armMapping: ['arm:1'],
+      armsMatched: false,
+      armsA: [{ armKey: 'arm:1', armName: '介入群' }],
+      armsB: [{ armKey: 'arm:1', armName: '対照群' }],
+      armDraft: [{ armKey: 'arm:1', armName: '介入群' }],
+    };
+    const stub = createWindowStub({
+      currentProject: PROJECT,
+      home: COUNTS_LOADED,
+      adjudicate: {
+        ...createInitialState().adjudicate,
+        rows: [],
+        working: workingNeedsArm,
+      },
+    });
+    const { deps } = createFakeDeps([]);
+    const store = await bootstrapApp(asWindow(stub), deps);
+    stub.location.hash = '#/adjudicate';
+    stub.fireHashChange();
+
+    const select = document.querySelector('.adjudicate__arm-map-select') as HTMLSelectElement;
+    select.value = '';
+    select.dispatchEvent(new Event('change'));
+    expect(setAdjudicateArmMappingMock).toHaveBeenCalledWith(store, 0, null);
+  });
+
+  test('3 名以上のペア選択をサービスへ委譲する（issue #63）', async () => {
+    const gate = {
+      progressA: { annotator: 'a@example.com', decided: 1, total: 1, complete: true },
+      progressB: { annotator: 'b@example.com', decided: 1, total: 1, complete: true },
+      ready: true,
+    };
+    const stub = createWindowStub({
+      currentProject: PROJECT,
+      home: COUNTS_LOADED,
+      adjudicate: {
+        ...createInitialState().adjudicate,
+        rows: [
+          {
+            study: { studyId: 'study-9', studyLabel: 'S9', registrationId: null, createdAt: 't0', createdBy: 'o@example.com', note: null },
+            pair: { kind: 'selectable', annotators: ['a@example.com', 'b@example.com', 'c@example.com'] },
+            gate: null,
+            pairOptions: [{ annotatorA: 'a@example.com', annotatorB: 'b@example.com', gate }],
+          },
+        ],
+      },
+    });
+    const { deps } = createFakeDeps([]);
+    const store = await bootstrapApp(asWindow(stub), deps);
+    stub.location.hash = '#/adjudicate';
+    stub.fireHashChange();
+
+    const select = document.querySelector('.adjudicate__pair-select') as HTMLSelectElement;
+    select.value = '0';
+    select.dispatchEvent(new Event('change'));
+    expect(setAdjudicatePairSelectionMock).toHaveBeenCalledWith(store, 'study-9', {
+      annotatorA: 'a@example.com',
+      annotatorB: 'b@example.com',
+    });
   });
 });
 
