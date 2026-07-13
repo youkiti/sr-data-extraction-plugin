@@ -15,6 +15,8 @@ import {
   createRobinsIPrespecDialogState,
   type RobinsIPrespecDialogState,
 } from '../../../../src/features/schema/presets/robinsIPrespec';
+import { createQuadas3PrespecDialogState } from '../../../../src/features/schema/presets/quadas3Prespec';
+import { createQuipsPrespecDialogState } from '../../../../src/features/schema/presets/quipsPrespec';
 import { setUiLanguage } from '../../../../src/lib/i18n';
 import type { SchemaEditorRow } from '../../../../src/features/schema/types';
 
@@ -749,6 +751,99 @@ describe('renderSchemaView', () => {
           const error = view.querySelector('#schema-prespec-error') as HTMLElement;
           expect(error.getAttribute('role')).toBe('alert');
           expect(error.textContent).toContain('effect of interest');
+        });
+      });
+
+      describe('QUADAS-3 / QUIPS ダイアログ（issue #103 PR3）', () => {
+        test('quadas3: 任意の見出し・スキップあり・Phase 1〜2 の 7 項目が描画され change が配線されている', () => {
+          const { view, callbacks } = renderWithDialog(createQuadas3PrespecDialogState(null));
+          expect(view.querySelector('#schema-preset-dialog-title')?.textContent).toBe(
+            'QUADAS-3 テンプレートの事前設定（任意）',
+          );
+          expect(view.querySelector('#schema-prespec-skip')).not.toBeNull();
+          for (const id of [
+            'schema-prespec-q3-population',
+            'schema-prespec-q3-index-test',
+            'schema-prespec-q3-target-condition',
+            'schema-prespec-q3-intended-use',
+            'schema-prespec-q3-test-role',
+            'schema-prespec-q3-reference-standard',
+            'schema-prespec-q3-analysis-unit',
+          ]) {
+            expect(view.querySelector(`#${id}`)).not.toBeNull();
+          }
+          const population = view.querySelector('#schema-prespec-q3-population') as HTMLInputElement;
+          population.value = 'adults';
+          population.dispatchEvent(new Event('change'));
+          expect(callbacks.onUpdatePresetDialog).toHaveBeenCalledWith({ population: 'adults' });
+          const indexTest = view.querySelector('#schema-prespec-q3-index-test') as HTMLInputElement;
+          indexTest.value = 'D-dimer';
+          indexTest.dispatchEvent(new Event('change'));
+          expect(callbacks.onUpdatePresetDialog).toHaveBeenCalledWith({ indexTest: 'D-dimer' });
+          const targetCondition = view.querySelector(
+            '#schema-prespec-q3-target-condition',
+          ) as HTMLInputElement;
+          targetCondition.value = 'DVT';
+          targetCondition.dispatchEvent(new Event('change'));
+          expect(callbacks.onUpdatePresetDialog).toHaveBeenCalledWith({ targetCondition: 'DVT' });
+          const intendedUse = view.querySelector('#schema-prespec-q3-intended-use') as HTMLInputElement;
+          intendedUse.value = 'primary care';
+          intendedUse.dispatchEvent(new Event('change'));
+          expect(callbacks.onUpdatePresetDialog).toHaveBeenCalledWith({
+            intendedUsePopulation: 'primary care',
+          });
+          const testRole = view.querySelector('#schema-prespec-q3-test-role') as HTMLInputElement;
+          testRole.value = 'triage';
+          testRole.dispatchEvent(new Event('change'));
+          expect(callbacks.onUpdatePresetDialog).toHaveBeenCalledWith({ testRole: 'triage' });
+          const referenceStandard = view.querySelector(
+            '#schema-prespec-q3-reference-standard',
+          ) as HTMLInputElement;
+          referenceStandard.value = 'ultrasonography';
+          referenceStandard.dispatchEvent(new Event('change'));
+          expect(callbacks.onUpdatePresetDialog).toHaveBeenCalledWith({
+            referenceStandard: 'ultrasonography',
+          });
+          const analysisUnit = view.querySelector('#schema-prespec-q3-analysis-unit') as HTMLInputElement;
+          analysisUnit.value = 'per patient';
+          analysisUnit.dispatchEvent(new Event('change'));
+          expect(callbacks.onUpdatePresetDialog).toHaveBeenCalledWith({ analysisUnit: 'per patient' });
+        });
+
+        test('quips: 任意の見出し・スキップあり・5 項目（LIST は textarea）が描画され change が配線されている', () => {
+          const { view, callbacks } = renderWithDialog(createQuipsPrespecDialogState(null));
+          expect(view.querySelector('#schema-preset-dialog-title')?.textContent).toBe(
+            'QUIPS テンプレートの事前設定（任意）',
+          );
+          expect(view.querySelector('#schema-prespec-skip')).not.toBeNull();
+          const population = view.querySelector('#schema-prespec-quips-population') as HTMLInputElement;
+          population.value = 'adults';
+          population.dispatchEvent(new Event('change'));
+          expect(callbacks.onUpdatePresetDialog).toHaveBeenCalledWith({ population: 'adults' });
+          const pf = view.querySelector('#schema-prespec-quips-pf') as HTMLInputElement;
+          pf.value = 'FAB';
+          pf.dispatchEvent(new Event('change'));
+          expect(callbacks.onUpdatePresetDialog).toHaveBeenCalledWith({ prognosticFactor: 'FAB' });
+          const outcome = view.querySelector('#schema-prespec-quips-outcome') as HTMLInputElement;
+          outcome.value = 'disability';
+          outcome.dispatchEvent(new Event('change'));
+          expect(callbacks.onUpdatePresetDialog).toHaveBeenCalledWith({ outcome: 'disability' });
+          const keyCharacteristics = view.querySelector(
+            '#schema-prespec-quips-key-characteristics',
+          ) as HTMLTextAreaElement;
+          keyCharacteristics.value = 'age\nsex';
+          keyCharacteristics.dispatchEvent(new Event('change'));
+          expect(callbacks.onUpdatePresetDialog).toHaveBeenCalledWith({
+            keyCharacteristics: 'age\nsex',
+          });
+          const confounders = view.querySelector(
+            '#schema-prespec-quips-confounders',
+          ) as HTMLTextAreaElement;
+          confounders.value = 'baseline severity';
+          confounders.dispatchEvent(new Event('change'));
+          expect(callbacks.onUpdatePresetDialog).toHaveBeenCalledWith({
+            importantConfounders: 'baseline severity',
+          });
         });
       });
 

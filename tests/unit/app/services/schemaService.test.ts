@@ -17,9 +17,16 @@ import {
   updateRobPrespecDialog,
   type SchemaServiceDeps,
 } from '../../../../src/app/services/schemaService';
-import { serializeRob2PrespecNote } from '../../../../src/features/schema/presets/robPrespec';
-import { serializeRobinsIPrespecNote } from '../../../../src/features/schema/presets/robinsIPrespec';
 import {
+  serializeRob2PrespecNote,
+  type RobPrespecDialogState,
+} from '../../../../src/features/schema/presets/robPrespec';
+import { serializeRobinsIPrespecNote } from '../../../../src/features/schema/presets/robinsIPrespec';
+import { serializeQuadas3PrespecNote } from '../../../../src/features/schema/presets/quadas3Prespec';
+import { serializeQuipsPrespecNote } from '../../../../src/features/schema/presets/quipsPrespec';
+import {
+  ROB_TEMPLATE_QUADAS3,
+  ROB_TEMPLATE_QUIPS,
   ROB_TEMPLATE_ROB2,
   ROB_TEMPLATE_ROBINS_I,
 } from '../../../../src/features/schema/presets/robTemplates';
@@ -719,8 +726,10 @@ describe('エディタ操作', () => {
       confirmRobPrespecDialog(store); // effect 未選択 → エラー
       expect(store.getState().schema.presetDialog?.error).toContain('effect of interest');
       updateRobPrespecDialog(store, { effect: 'assignment' });
-      expect(store.getState().schema.presetDialog?.effect).toBe('assignment');
-      expect(store.getState().schema.presetDialog?.error).toBeNull();
+      // union（PresetDialogState）のうち rob2_sq を開いていることは直前で保証済み
+      const dialog = store.getState().schema.presetDialog as RobPrespecDialogState;
+      expect(dialog.effect).toBe('assignment');
+      expect(dialog.error).toBeNull();
     });
 
     test('cancelRobPrespecDialog: 行を挿入せず閉じる', () => {
@@ -881,6 +890,104 @@ describe('エディタ操作', () => {
       expect(rows).toHaveLength(3);
       expect(rows[1]?.extractionInstruction).toContain('age; severity');
       expect(rows[1]?.note).toContain('robins_i_prespec');
+      expect(store.getState().schema.presetDialog).toBeNull();
+    });
+
+    test('insertSchemaPreset(quadas3 / quips) も行を挿入せずダイアログを開く（issue #103 PR3）', () => {
+      const store = makeEditorStore();
+      insertSchemaPreset(store, 'quadas3');
+      expect(store.getState().schema.editorRows).toHaveLength(1);
+      expect(store.getState().schema.presetDialog?.kind).toBe('quadas3');
+      cancelRobPrespecDialog(store);
+      insertSchemaPreset(store, 'quips');
+      expect(store.getState().schema.presetDialog?.kind).toBe('quips');
+      expect(store.getState().schema.editorRows).toHaveLength(1);
+    });
+
+    test('quadas3 / quips の再挿入時は判定行の note からダイアログ初期値を復元する', () => {
+      const q3Note = serializeQuadas3PrespecNote({
+        population: 'adults',
+        indexTest: null,
+        targetCondition: null,
+        intendedUsePopulation: null,
+        testRole: null,
+        referenceStandard: null,
+        analysisUnit: 'per patient',
+      });
+      const store = makeEditorStore([
+        makeEditorRow({ fieldName: 'quadas3_rob_judgement', note: q3Note }),
+      ]);
+      insertSchemaPreset(store, 'quadas3');
+      expect(store.getState().schema.presetDialog).toMatchObject({
+        kind: 'quadas3',
+        population: 'adults',
+        analysisUnit: 'per patient',
+      });
+      cancelRobPrespecDialog(store);
+
+      const quipsNote = serializeQuipsPrespecNote({
+        population: null,
+        prognosticFactor: 'FAB',
+        outcome: null,
+        keyCharacteristics: ['age', 'sex'],
+        importantConfounders: [],
+      });
+      const store2 = makeEditorStore([
+        makeEditorRow({ fieldName: 'quips_judgement', note: quipsNote }),
+      ]);
+      insertSchemaPreset(store2, 'quips');
+      expect(store2.getState().schema.presetDialog).toMatchObject({
+        kind: 'quips',
+        prognosticFactor: 'FAB',
+        keyCharacteristics: 'age\nsex',
+      });
+    });
+
+    test('skipRobPrespecDialog: quadas3 / quips も現行と同一の行を挿入して閉じる', () => {
+      const store = makeEditorStore();
+      insertSchemaPreset(store, 'quadas3');
+      skipRobPrespecDialog(store);
+      expect(store.getState().schema.presetDialog).toBeNull();
+      expect(store.getState().schema.editorRows?.slice(1)).toEqual([...ROB_TEMPLATE_QUADAS3]);
+
+      const store2 = makeEditorStore();
+      insertSchemaPreset(store2, 'quips');
+      skipRobPrespecDialog(store2);
+      expect(store2.getState().schema.editorRows?.slice(1)).toEqual([...ROB_TEMPLATE_QUIPS]);
+    });
+
+    test('confirmRobPrespecDialog: quadas3 は全項目任意（未入力の確定はスキップと同一 = 回帰なし）', () => {
+      const store = makeEditorStore();
+      insertSchemaPreset(store, 'quadas3');
+      confirmRobPrespecDialog(store);
+      expect(store.getState().schema.presetDialog).toBeNull();
+      expect(store.getState().schema.editorRows?.slice(1)).toEqual([...ROB_TEMPLATE_QUADAS3]);
+    });
+
+    test('confirmRobPrespecDialog: quadas3 の Analysis / unit は SQ 4.3 へ注入され note に保存される', () => {
+      const store = makeEditorStore();
+      insertSchemaPreset(store, 'quadas3');
+      updateRobPrespecDialog(store, { analysisUnit: 'per patient' });
+      confirmRobPrespecDialog(store);
+      const rows = store.getState().schema.editorRows ?? [];
+      const sq4_3 = rows.find((row) => row.fieldName === 'quadas3_sq4_3');
+      expect(sq4_3?.extractionInstruction).toContain(
+        'the unit of analysis of the ideal test accuracy trial is: per patient',
+      );
+      const judgement = rows.find((row) => row.fieldName === 'quadas3_rob_judgement');
+      expect(judgement?.note).toContain('quadas3_prespec');
+    });
+
+    test('confirmRobPrespecDialog: quips の LIST は対象 item へ注入され note に保存される', () => {
+      const store = makeEditorStore();
+      insertSchemaPreset(store, 'quips');
+      updateRobPrespecDialog(store, { importantConfounders: 'baseline severity' });
+      confirmRobPrespecDialog(store);
+      const rows = store.getState().schema.editorRows ?? [];
+      const item5_1 = rows.find((row) => row.fieldName === 'quips_pi5_1');
+      expect(item5_1?.extractionInstruction).toContain('baseline severity');
+      const judgement = rows.find((row) => row.fieldName === 'quips_judgement');
+      expect(judgement?.note).toContain('quips_prespec');
       expect(store.getState().schema.presetDialog).toBeNull();
     });
 
