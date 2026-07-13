@@ -7,6 +7,7 @@
 // extraction_instruction 冒頭へ read-only の「Review context:（英文サマリ）」として注入する。
 // 構造化 JSON は判定行（rob2_judgement）の note に保存し、再挿入時の初期値・監査に使う
 // （Schemas タブの既存列のみを使い、Sheets のデータモデルは変更しない — issue #103 D-1）。
+import type { MessageKey } from '../../../lib/i18n';
 import type { SchemaEditorRow } from '../types';
 import {
   buildRob2SqTemplateRows,
@@ -92,13 +93,15 @@ export function toggleDeviationType(
  * - rob2_sq: effect of interest は SQ セット構成自体を決めるため必須
  * - 両プリセット共通: adhering を選んだら deviation 種別を最低 1 つ
  *   （公式 template: "at least one must be checked"）
+ * エラーは表示用のメッセージキーで返し、サービス層が t() で現在言語に解決する
+ * （本モジュールは i18n に実行時依存しない。issue #103 PR2 で ROBINS-I と共通化した契約）
  */
-export function validateRobPrespecDialog(state: RobPrespecDialogState): string | null {
+export function validateRobPrespecDialog(state: RobPrespecDialogState): MessageKey | null {
   if (state.kind === 'rob2_sq' && state.effect === null) {
-    return 'effect of interest（assignment / adhering）を選択してください';
+    return 'schema.prespecErrEffectRequired';
   }
   if (state.effect === 'adhering' && state.deviationTypes.length === 0) {
-    return 'adhering を選ぶ場合は、扱う deviation 種別を最低 1 つチェックしてください';
+    return 'schema.prespecErrDeviationRequired';
   }
   return null;
 }

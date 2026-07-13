@@ -18,7 +18,11 @@ import {
   type SchemaServiceDeps,
 } from '../../../../src/app/services/schemaService';
 import { serializeRob2PrespecNote } from '../../../../src/features/schema/presets/robPrespec';
-import { ROB_TEMPLATE_ROB2 } from '../../../../src/features/schema/presets/robTemplates';
+import { serializeRobinsIPrespecNote } from '../../../../src/features/schema/presets/robinsIPrespec';
+import {
+  ROB_TEMPLATE_ROB2,
+  ROB_TEMPLATE_ROBINS_I,
+} from '../../../../src/features/schema/presets/robTemplates';
 import { createInitialState, createStore, type Store } from '../../../../src/app/store';
 import type { DocumentRecord } from '../../../../src/domain/document';
 import type { Protocol } from '../../../../src/domain/protocol';
@@ -785,6 +789,99 @@ describe('エディタ操作', () => {
       expect(names).toContain('rob2_sq2_6');
       expect(names).not.toContain('rob2_sq2_7');
       expect(rows[1]?.extractionInstruction).toContain("the 'per-protocol' effect");
+    });
+
+    test('insertSchemaPreset(robins_i / robins_i_sq) も行を挿入せずダイアログを開く（issue #103 PR2）', () => {
+      const store = makeEditorStore();
+      insertSchemaPreset(store, 'robins_i');
+      expect(store.getState().schema.editorRows).toHaveLength(1);
+      expect(store.getState().schema.presetDialog).toEqual({
+        kind: 'robins_i',
+        design: '',
+        participants: '',
+        experimental: '',
+        comparator: '',
+        outcome: '',
+        benefitHarm: null,
+        effect: null,
+        confoundingDomains: '',
+        coInterventions: '',
+        error: null,
+      });
+      insertSchemaPreset(store, 'robins_i_sq');
+      expect(store.getState().schema.presetDialog?.kind).toBe('robins_i_sq');
+      expect(store.getState().schema.editorRows).toHaveLength(1);
+    });
+
+    test('robins_i の再挿入時は robins_i_judgement 行の note からダイアログ初期値を復元する', () => {
+      const note = serializeRobinsIPrespecNote({
+        design: null,
+        participants: 'adults',
+        experimental: null,
+        comparator: null,
+        outcome: 'mortality',
+        benefitHarm: 'harm',
+        effect: 'starting_adhering',
+        confoundingDomains: ['age', 'severity'],
+        coInterventions: [],
+      });
+      const store = makeEditorStore([makeEditorRow({ fieldName: 'robins_i_judgement', note })]);
+      insertSchemaPreset(store, 'robins_i_sq');
+      expect(store.getState().schema.presetDialog).toMatchObject({
+        kind: 'robins_i_sq',
+        participants: 'adults',
+        outcome: 'mortality',
+        benefitHarm: 'harm',
+        effect: 'starting_adhering',
+        confoundingDomains: 'age\nseverity',
+      });
+    });
+
+    test('skipRobPrespecDialog: robins_i も現行と同一の行を挿入して閉じる（robins_i_sq は no-op）', () => {
+      const store = makeEditorStore();
+      insertSchemaPreset(store, 'robins_i_sq');
+      skipRobPrespecDialog(store); // SQ 完全版にスキップは無い
+      expect(store.getState().schema.presetDialog?.kind).toBe('robins_i_sq');
+      expect(store.getState().schema.editorRows).toHaveLength(1);
+      cancelRobPrespecDialog(store);
+
+      insertSchemaPreset(store, 'robins_i');
+      skipRobPrespecDialog(store);
+      expect(store.getState().schema.presetDialog).toBeNull();
+      expect(store.getState().schema.editorRows?.slice(1)).toEqual([...ROB_TEMPLATE_ROBINS_I]);
+    });
+
+    test('confirmRobPrespecDialog: robins_i_sq は effect 未選択で必須未充足エラー（挿入しない）', () => {
+      const store = makeEditorStore();
+      insertSchemaPreset(store, 'robins_i_sq');
+      confirmRobPrespecDialog(store);
+      expect(store.getState().schema.presetDialog?.error).toContain('effect of interest');
+      expect(store.getState().schema.editorRows).toHaveLength(1);
+    });
+
+    test('confirmRobPrespecDialog: robins_i_sq は effect で D4 の SQ セットが排他的に切り替わる', () => {
+      const store = makeEditorStore();
+      insertSchemaPreset(store, 'robins_i_sq');
+      updateRobPrespecDialog(store, { effect: 'assignment' });
+      confirmRobPrespecDialog(store);
+      const rows = store.getState().schema.editorRows ?? [];
+      expect(rows).toHaveLength(33); // 既存 1 行 + 32 行
+      const names = rows.map((row) => row.fieldName);
+      expect(names).toContain('robins_i_sq4_1');
+      expect(names).not.toContain('robins_i_sq4_3');
+      expect(rows[1]?.extractionInstruction).toContain('to assess the effect of assignment to intervention');
+    });
+
+    test('confirmRobPrespecDialog: robins_i はリスト入力を Review context と note に反映する', () => {
+      const store = makeEditorStore();
+      insertSchemaPreset(store, 'robins_i');
+      updateRobPrespecDialog(store, { confoundingDomains: 'age\nseverity' });
+      confirmRobPrespecDialog(store);
+      const rows = store.getState().schema.editorRows ?? [];
+      expect(rows).toHaveLength(3);
+      expect(rows[1]?.extractionInstruction).toContain('age; severity');
+      expect(rows[1]?.note).toContain('robins_i_prespec');
+      expect(store.getState().schema.presetDialog).toBeNull();
     });
 
     test('cancelEditor は開いたままの事前設定ダイアログも閉じる', () => {

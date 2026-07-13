@@ -289,6 +289,33 @@ export const en: Record<MessageKey, string> = {
   'schema.prespecDevNonAdherence':
     'Non-adherence to their assigned intervention by trial participants',
   'schema.prespecDeviationsLegend': 'Deviation types addressed (at least one required)',
+  'schema.prespecErrEffectRequired': 'Select the effect of interest (assignment / adhering)',
+  'schema.prespecErrDeviationRequired':
+    'When adhering is selected, check at least one deviation type to address',
+  'schema.prespecRobinsITitleSq': 'Preliminary considerations for ROBINS-I (full SQ)',
+  'schema.prespecRobinsITitle': 'Preliminary considerations for the ROBINS-I template (optional)',
+  'schema.prespecRobinsILeadSq':
+    'Items the review team decides before assessing the domains (per-study setup of the ROBINS-I tool template plus the review-protocol-stage lists). The effect of interest is required, and the Domain 4 signaling question set switches exclusively with the selection (assignment = 4.1-4.2 / starting and adhering = 4.3-4.6). The inputs are injected as an English Review context at the top of each extraction instruction.',
+  'schema.prespecRobinsILead':
+    'Items the review team decides before assessing the domains (per-study setup of the ROBINS-I tool template plus the review-protocol-stage lists). All optional. If filled in, the inputs are injected as an English Review context at the top of each extraction instruction. Skipping inserts the template as before.',
+  'schema.prespecRobinsIDesign':
+    'Design of the target trial (original options: individually randomized / cluster randomized / matched (e.g. cross-over))',
+  'schema.prespecRobinsIParticipants': 'Participants of the target trial',
+  'schema.prespecRobinsIExperimental': 'Experimental intervention of the target trial',
+  'schema.prespecRobinsIComparator': 'Comparator of the target trial',
+  'schema.prespecRobinsIOutcome': 'Outcome being assessed',
+  'schema.prespecBenefitHarmLegend':
+    'Is this outcome a proposed benefit or harm of intervention? (optional)',
+  'schema.prespecBenefitHarmBenefit': 'Benefit (proposed benefit)',
+  'schema.prespecBenefitHarmHarm': 'Harm (proposed harm)',
+  'schema.prespecRobinsIEffectAssignment': 'Effect of assignment to intervention',
+  'schema.prespecRobinsIEffectStartingAdhering': 'Effect of starting and adhering to intervention',
+  'schema.prespecRobinsIConfounders':
+    'Important confounding domains (one per line; injected as the definition of "all the important confounding domains" for SQ 1.4 / 1.7)',
+  'schema.prespecRobinsICoInterventions':
+    'Co-interventions (one per line; injected as the definition of "important co-interventions" for SQ 4.3)',
+  'schema.prespecErrRobinsIEffectRequired':
+    'Select the effect of interest (assignment / starting and adhering)',
   'schema.prespecConfirm': 'Insert with these settings',
   'schema.prespecSkip': 'Skip and insert',
   'schema.editorTitle': 'Edit the table design ({count} fields)',

@@ -6,12 +6,20 @@
 // データは AppState.schema（schemaService が更新）から描く
 import type { EntityLevel, FieldDataType, SchemaField } from '../../domain/schemaField';
 import type { SchemaVersion } from '../../domain/schemaVersion';
+import type { PresetDialogState } from '../../features/schema/presets/prespecDialog';
 import type {
   Rob2Effect,
   RobPrespecDialogState,
 } from '../../features/schema/presets/robPrespec';
 import { toggleDeviationType } from '../../features/schema/presets/robPrespec';
-import type { Rob2DeviationType } from '../../features/schema/presets/robTemplates';
+import type {
+  RobinsIBenefitHarm,
+  RobinsIPrespecDialogState,
+} from '../../features/schema/presets/robinsIPrespec';
+import type {
+  Rob2DeviationType,
+  RobinsIEffect,
+} from '../../features/schema/presets/robTemplates';
 import type { SchemaEditorRow } from '../../features/schema/types';
 import type { FieldValidationError } from '../../features/schema/validateField';
 import { t, type MessageKey } from '../../lib/i18n';
@@ -290,12 +298,120 @@ const DEVIATION_CHECKBOXES: readonly {
   },
 ];
 
+/** ダイアログ共通: テキスト入力（label + input。change で patch を送る） */
+function prespecTextField(
+  id: string,
+  label: string,
+  value: string,
+  onCommit: (value: string) => void,
+): HTMLElement {
+  const input = el('input', {
+    id,
+    attributes: { type: 'text', 'aria-label': label },
+  }) as HTMLInputElement;
+  input.value = value;
+  input.addEventListener('change', () => onCommit(input.value));
+  return el('label', { className: 'schema__prespec-field' }, [el('span', { text: label }), input]);
+}
+
+/** ダイアログ共通: 複数行リスト入力（1 行 1 項目の textarea。change で patch を送る） */
+function prespecListField(
+  id: string,
+  label: string,
+  value: string,
+  onCommit: (value: string) => void,
+): HTMLElement {
+  const input = el('textarea', {
+    id,
+    className: 'schema__prespec-list',
+    attributes: { rows: '3', 'aria-label': label },
+  }) as HTMLTextAreaElement;
+  input.value = value;
+  input.addEventListener('change', () => onCommit(input.value));
+  return el('label', { className: 'schema__prespec-field' }, [el('span', { text: label }), input]);
+}
+
+/** ダイアログ共通: ラジオ 1 個（checked のときだけ onSelect を発火する） */
+function prespecRadio(
+  id: string,
+  name: string,
+  checked: boolean,
+  label: string,
+  onSelect: () => void,
+): HTMLElement {
+  const input = el('input', { id, attributes: { type: 'radio', name } }) as HTMLInputElement;
+  input.checked = checked;
+  input.addEventListener('change', () => {
+    if (input.checked) {
+      onSelect();
+    }
+  });
+  return el('label', { className: 'schema__prespec-radio' }, [input, label]);
+}
+
+/** ダイアログ共通: 検証エラー表示 + 操作ボタン（確定 / スキップ〔軽量版のみ〕/ キャンセル）を追加する */
+function appendPrespecFooter(
+  children: HTMLElement[],
+  error: string | null,
+  showSkip: boolean,
+  ctx: ViewContext,
+): void {
+  if (error !== null) {
+    children.push(
+      el('p', {
+        id: 'schema-prespec-error',
+        className: 'schema__error',
+        attributes: { role: 'alert' },
+        text: error,
+      }),
+    );
+  }
+  const confirmButton = el('button', {
+    id: 'schema-prespec-confirm',
+    className: 'schema__primary',
+    text: t('schema.prespecConfirm'),
+    attributes: { type: 'button' },
+  });
+  confirmButton.addEventListener('click', () => ctx.schema.onConfirmPresetDialog());
+  const actions: HTMLElement[] = [confirmButton];
+  if (showSkip) {
+    const skipButton = el('button', {
+      id: 'schema-prespec-skip',
+      text: t('schema.prespecSkip'),
+      attributes: { type: 'button' },
+    });
+    skipButton.addEventListener('click', () => ctx.schema.onSkipPresetDialog());
+    actions.push(skipButton);
+  }
+  const cancelButton = el('button', {
+    id: 'schema-prespec-cancel',
+    text: t('common.cancel'),
+    attributes: { type: 'button' },
+  });
+  cancelButton.addEventListener('click', () => ctx.schema.onCancelPresetDialog());
+  actions.push(cancelButton);
+  children.push(el('div', { className: 'schema__prespec-actions' }, actions));
+}
+
+/** ダイアログ共通: role=dialog のコンテナ */
+function prespecDialogContainer(children: HTMLElement[]): HTMLElement {
+  return el(
+    'div',
+    {
+      id: 'schema-preset-dialog',
+      className: 'schema__preset-dialog',
+      attributes: { role: 'dialog', 'aria-labelledby': 'schema-preset-dialog-title' },
+    },
+    children,
+  );
+}
+
 /**
- * RoB プリセット事前設定ダイアログ（issue #103。ui-states.md §3「プリセット事前設定ダイアログ」）。
+ * RoB 2 の事前設定ダイアログ（issue #103 PR1。ui-states.md §3「プリセット事前設定ダイアログ」）。
  * rob2（軽量版）= 全項目任意 + 「スキップして挿入」あり / rob2_sq = effect of interest 必須。
- * ラベル・説明は日本語、注入される Review context は英語（robPrespec.ts が生成）
+ * ラベル・説明は表示言語（t()）、注入される Review context は英語（robPrespec.ts が生成）
  */
-function renderPresetDialog(dialog: RobPrespecDialogState, ctx: ViewContext): HTMLElement {
+function renderRob2PresetDialog(dialog: RobPrespecDialogState, ctx: ViewContext): HTMLElement {
   const isSq = dialog.kind === 'rob2_sq';
 
   const textField = (
@@ -303,32 +419,13 @@ function renderPresetDialog(dialog: RobPrespecDialogState, ctx: ViewContext): HT
     label: string,
     value: string,
     key: 'experimental' | 'comparator' | 'outcome' | 'numericalResult',
-  ): HTMLElement => {
-    const input = el('input', {
-      id,
-      attributes: { type: 'text', 'aria-label': label },
-    }) as HTMLInputElement;
-    input.value = value;
-    input.addEventListener('change', () => ctx.schema.onUpdatePresetDialog({ [key]: input.value }));
-    return el('label', { className: 'schema__prespec-field' }, [
-      el('span', { text: label }),
-      input,
-    ]);
-  };
+  ): HTMLElement =>
+    prespecTextField(id, label, value, (next) => ctx.schema.onUpdatePresetDialog({ [key]: next }));
 
-  const effectRadio = (id: string, value: Rob2Effect | null, label: string): HTMLElement => {
-    const input = el('input', {
-      id,
-      attributes: { type: 'radio', name: 'schema-prespec-effect' },
-    }) as HTMLInputElement;
-    input.checked = dialog.effect === value;
-    input.addEventListener('change', () => {
-      if (input.checked) {
-        ctx.schema.onUpdatePresetDialog({ effect: value });
-      }
-    });
-    return el('label', { className: 'schema__prespec-radio' }, [input, label]);
-  };
+  const effectRadio = (id: string, value: Rob2Effect | null, label: string): HTMLElement =>
+    prespecRadio(id, 'schema-prespec-effect', dialog.effect === value, label, () =>
+      ctx.schema.onUpdatePresetDialog({ effect: value }),
+    );
 
   const children: HTMLElement[] = [
     el('h3', {
@@ -415,52 +512,145 @@ function renderPresetDialog(dialog: RobPrespecDialogState, ctx: ViewContext): HT
     );
   }
 
-  if (dialog.error !== null) {
-    children.push(
-      el('p', {
-        id: 'schema-prespec-error',
-        className: 'schema__error',
-        attributes: { role: 'alert' },
-        text: dialog.error,
-      }),
+  appendPrespecFooter(children, dialog.error, !isSq, ctx);
+  return prespecDialogContainer(children);
+}
+
+/**
+ * ROBINS-I の事前設定ダイアログ（issue #103 PR2。ui-states.md §3「プリセット事前設定ダイアログ」）。
+ * robins_i（軽量版）= 全項目任意 + 「スキップして挿入」あり / robins_i_sq = effect of interest 必須
+ * （選択で D4 の SQ セットが排他的に切り替わる）。target trial・outcome + benefit/harm・
+ * confounding domains / co-interventions リスト（1 行 1 項目）を任意入力できる
+ */
+function renderRobinsIPresetDialog(
+  dialog: RobinsIPrespecDialogState,
+  ctx: ViewContext,
+): HTMLElement {
+  const isSq = dialog.kind === 'robins_i_sq';
+
+  const textField = (
+    id: string,
+    label: string,
+    value: string,
+    key: 'design' | 'participants' | 'experimental' | 'comparator' | 'outcome',
+  ): HTMLElement =>
+    prespecTextField(id, label, value, (next) => ctx.schema.onUpdatePresetDialog({ [key]: next }));
+
+  const effectRadio = (id: string, value: RobinsIEffect | null, label: string): HTMLElement =>
+    prespecRadio(id, 'schema-prespec-ri-effect', dialog.effect === value, label, () =>
+      ctx.schema.onUpdatePresetDialog({ effect: value }),
+    );
+
+  const benefitHarmRadio = (
+    id: string,
+    value: RobinsIBenefitHarm | null,
+    label: string,
+  ): HTMLElement =>
+    prespecRadio(id, 'schema-prespec-ri-benefit-harm', dialog.benefitHarm === value, label, () =>
+      ctx.schema.onUpdatePresetDialog({ benefitHarm: value }),
+    );
+
+  const children: HTMLElement[] = [
+    el('h3', {
+      id: 'schema-preset-dialog-title',
+      text: isSq ? t('schema.prespecRobinsITitleSq') : t('schema.prespecRobinsITitle'),
+    }),
+    el('p', {
+      className: 'view__lead',
+      text: isSq ? t('schema.prespecRobinsILeadSq') : t('schema.prespecRobinsILead'),
+    }),
+    textField('schema-prespec-ri-design', t('schema.prespecRobinsIDesign'), dialog.design, 'design'),
+    textField(
+      'schema-prespec-ri-participants',
+      t('schema.prespecRobinsIParticipants'),
+      dialog.participants,
+      'participants',
+    ),
+    textField(
+      'schema-prespec-ri-experimental',
+      t('schema.prespecRobinsIExperimental'),
+      dialog.experimental,
+      'experimental',
+    ),
+    textField(
+      'schema-prespec-ri-comparator',
+      t('schema.prespecRobinsIComparator'),
+      dialog.comparator,
+      'comparator',
+    ),
+    textField(
+      'schema-prespec-ri-outcome',
+      t('schema.prespecRobinsIOutcome'),
+      dialog.outcome,
+      'outcome',
+    ),
+    el('fieldset', { className: 'schema__prespec-effect' }, [
+      el('legend', { text: t('schema.prespecBenefitHarmLegend') }),
+      benefitHarmRadio('schema-prespec-ri-bh-none', null, t('schema.prespecEffectNone')),
+      benefitHarmRadio(
+        'schema-prespec-ri-bh-benefit',
+        'benefit',
+        t('schema.prespecBenefitHarmBenefit'),
+      ),
+      benefitHarmRadio('schema-prespec-ri-bh-harm', 'harm', t('schema.prespecBenefitHarmHarm')),
+    ]),
+  ];
+
+  const effectRadios: HTMLElement[] = [];
+  if (!isSq) {
+    effectRadios.push(
+      effectRadio('schema-prespec-ri-effect-none', null, t('schema.prespecEffectNone')),
     );
   }
-
-  const confirmButton = el('button', {
-    id: 'schema-prespec-confirm',
-    className: 'schema__primary',
-    text: t('schema.prespecConfirm'),
-    attributes: { type: 'button' },
-  });
-  confirmButton.addEventListener('click', () => ctx.schema.onConfirmPresetDialog());
-  const actions: HTMLElement[] = [confirmButton];
-  if (!isSq) {
-    const skipButton = el('button', {
-      id: 'schema-prespec-skip',
-      text: t('schema.prespecSkip'),
-      attributes: { type: 'button' },
-    });
-    skipButton.addEventListener('click', () => ctx.schema.onSkipPresetDialog());
-    actions.push(skipButton);
-  }
-  const cancelButton = el('button', {
-    id: 'schema-prespec-cancel',
-    text: t('common.cancel'),
-    attributes: { type: 'button' },
-  });
-  cancelButton.addEventListener('click', () => ctx.schema.onCancelPresetDialog());
-  actions.push(cancelButton);
-  children.push(el('div', { className: 'schema__prespec-actions' }, actions));
-
-  return el(
-    'div',
-    {
-      id: 'schema-preset-dialog',
-      className: 'schema__preset-dialog',
-      attributes: { role: 'dialog', 'aria-labelledby': 'schema-preset-dialog-title' },
-    },
-    children,
+  effectRadios.push(
+    effectRadio(
+      'schema-prespec-ri-effect-assignment',
+      'assignment',
+      t('schema.prespecRobinsIEffectAssignment'),
+    ),
+    effectRadio(
+      'schema-prespec-ri-effect-adhering',
+      'starting_adhering',
+      t('schema.prespecRobinsIEffectStartingAdhering'),
+    ),
   );
+  children.push(
+    el('fieldset', { className: 'schema__prespec-effect' }, [
+      el('legend', {
+        text: isSq
+          ? t('schema.prespecEffectLegendRequired')
+          : t('schema.prespecEffectLegendOptional'),
+      }),
+      ...effectRadios,
+    ]),
+    prespecListField(
+      'schema-prespec-ri-confounders',
+      t('schema.prespecRobinsIConfounders'),
+      dialog.confoundingDomains,
+      (next) => ctx.schema.onUpdatePresetDialog({ confoundingDomains: next }),
+    ),
+    prespecListField(
+      'schema-prespec-ri-cointerventions',
+      t('schema.prespecRobinsICoInterventions'),
+      dialog.coInterventions,
+      (next) => ctx.schema.onUpdatePresetDialog({ coInterventions: next }),
+    ),
+  );
+
+  appendPrespecFooter(children, dialog.error, !isSq, ctx);
+  return prespecDialogContainer(children);
+}
+
+/** プリセット事前設定ダイアログ（issue #103）: kind に応じてツール別レンダラへ振り分ける */
+function renderPresetDialog(dialog: PresetDialogState, ctx: ViewContext): HTMLElement {
+  switch (dialog.kind) {
+    case 'rob2':
+    case 'rob2_sq':
+      return renderRob2PresetDialog(dialog, ctx);
+    case 'robins_i':
+    case 'robins_i_sq':
+      return renderRobinsIPresetDialog(dialog, ctx);
+  }
 }
 
 /** 編集中: 表形式エディタ + 検証エラー + プリセット挿入 + 版として確定 */

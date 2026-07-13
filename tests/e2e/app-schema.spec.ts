@@ -289,6 +289,47 @@ test('RoB 2 事前設定ダイアログ: rob2_sq の必須検証と adhering の
   await expect(page.locator('#schema-editor-table tbody tr')).toHaveCount(24);
 });
 
+test('ROBINS-I 事前設定ダイアログ: robins_i_sq の必須検証と D4 排他切替（issue #103 PR2）', async ({
+  page,
+}) => {
+  await initApp(page, { ...EMPTY_SCHEMA_STATE, editorRows: [makeEditorRow()] });
+
+  await page.locator('#schema-preset-robins-i-sq').click();
+  await expect(page.locator('#schema-preset-dialog')).toBeVisible();
+  // SQ 完全版は effect が必須のためスキップボタンが無い
+  await expect(page.locator('#schema-prespec-skip')).toHaveCount(0);
+
+  // effect 未選択のまま挿入 → 必須未充足エラー（行は挿入されない）
+  await page.locator('#schema-prespec-confirm').click();
+  await expect(page.locator('#schema-prespec-error')).toContainText('effect of interest');
+  await expect(page.locator('#schema-editor-table tbody tr')).toHaveCount(1);
+
+  // starting and adhering を選び、confounders リストを入力して挿入
+  // → D4 は 4.3〜4.6 のみ（判定 + 根拠 + SQ 32 問 = 34 行）
+  await page.locator('#schema-prespec-ri-effect-adhering').check();
+  const confounders = page.locator('#schema-prespec-ri-confounders');
+  await confounders.fill('age\nseverity');
+  // change イベント（blur 時発火）による store 更新 → 再描画を待ってから確定する
+  // （再描画中に click が落ちるレースを避ける）
+  await confounders.blur();
+  await expect(page.locator('#schema-prespec-ri-confounders')).toHaveValue('age\nseverity');
+  await page.locator('#schema-prespec-confirm').click();
+  await expect(page.locator('#schema-preset-dialog')).toHaveCount(0);
+  await expect(page.locator('#schema-editor-table tbody tr')).toHaveCount(35);
+  await expect(page.locator('input[aria-label="2 行目の field_name"]')).toHaveValue(
+    'robins_i_judgement',
+  );
+  await expect(page.locator('textarea[aria-label="2 行目の抽出指示"]')).toHaveValue(
+    /^Review context/,
+  );
+
+  // 軽量版 robins_i はスキップで従来どおり 2 行（回帰なし）
+  await page.locator('#schema-preset-robins-i').click();
+  await expect(page.locator('#schema-preset-dialog')).toBeVisible();
+  await page.locator('#schema-prespec-skip').click();
+  await expect(page.locator('#schema-editor-table tbody tr')).toHaveCount(37);
+});
+
 test('版として確定が SchemaVersions + SchemaFields の追記まで到達する', async ({ page }) => {
   const appendBodies: string[] = [];
   await page.route('https://sheets.googleapis.com/**', async (route) => {
