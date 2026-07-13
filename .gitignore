@@ -15,7 +15,9 @@ playwright-report/
 
 # 環境変数（OAUTH_CLIENT_ID 等）
 .env
-*.pem
+
+# Claude Code の個人設定（権限ルール等。共有しない）
+.claude/settings.local.json
 
 # Chrome 拡張の署名鍵（安定した拡張 ID を保つ秘密鍵。絶対にコミットしない）
 *.pem
