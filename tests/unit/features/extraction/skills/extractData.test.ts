@@ -362,28 +362,10 @@ describe('buildExtractDataUserPrompt', () => {
   });
 
   it('項目は fieldIndex 順に並べ、存在する entity_level の規約を規定順で提示する', () => {
-    const outcomeField = makeField({
-      fieldId: 'f_mortality',
-      fieldName: 'mortality_n',
-      entityLevel: 'outcome_result',
-      dataType: 'integer',
-      fieldIndex: 2,
-    });
-    const armField = makeField({
-      fieldId: 'f_arm_n',
-      fieldName: 'sample_size_arm',
-      entityLevel: 'arm',
-      dataType: 'integer',
-      fieldIndex: 1,
-    });
-    const robField = makeField({
-      fieldId: 'f_rob_rand',
-      fieldName: 'rob_randomization',
-      entityLevel: 'rob_domain',
-      dataType: 'enum',
-      fieldIndex: 3,
-      allowedValues: 'low|some_concerns|high',
-    });
+    // 共通 fixture に fieldIndex だけ上書きして並び替えを検証する
+    const outcomeField = { ...OUTCOME_FIELD, fieldIndex: 2 };
+    const armField = { ...ARM_FIELD, fieldIndex: 1 };
+    const robField = { ...ROB_FIELD, fieldIndex: 3 };
     const prompt = buildExtractDataUserPrompt({
       fields: [robField, outcomeField, armField],
       documents: DOCS,
