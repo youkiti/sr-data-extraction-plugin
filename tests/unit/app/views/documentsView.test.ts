@@ -399,6 +399,7 @@ describe('renderDocumentsView', () => {
           { key: 's4', filename: 'd.pdf', status: 'done', detail: null },
           { key: 's5', filename: 'e.pdf', status: 'failed', detail: 'コピーに失敗: x' },
           { key: 's6', filename: 'f.pdf', status: 'failed', detail: null },
+          { key: 's7', filename: 'g.pdf', status: 'skipped', detail: '取り込み済みのためスキップ' },
         ],
       }),
       ctx,
@@ -414,8 +415,10 @@ describe('renderDocumentsView', () => {
       'd.pdf完了',
       'e.pdf失敗（コピーに失敗: x）',
       'f.pdf失敗',
+      'g.pdfスキップ（取り込み済みのためスキップ）',
     ]);
     expect(rows[4]?.querySelector('.documents__progress-status--failed')).not.toBeNull();
+    expect(rows[6]?.querySelector('.documents__progress-status--skipped')).not.toBeNull();
   });
 
   test('一覧: study グループごとに study_label / registration_id 入力・チェックボックス・文書行を描画する', () => {

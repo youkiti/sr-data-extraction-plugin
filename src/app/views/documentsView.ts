@@ -22,6 +22,7 @@ const IMPORT_ROW_LABELS: Record<ImportRowStatus, string> = {
   extract: 'テキスト抽出中…',
   done: '完了',
   failed: '失敗',
+  skipped: 'スキップ',
 };
 
 const TEXT_STATUS_NOTES: Partial<Record<TextStatus, string>> = {
@@ -121,9 +122,10 @@ function renderDropzone(ctx: ViewContext, disabled: boolean): HTMLElement {
 
 function renderProgress(rows: ImportRow[]): HTMLElement {
   const items = rows.map((row) => {
+    // detail は failed（失敗段階 + 理由）と skipped（重複スキップの理由。issue #102）で非 null
     const statusText =
-      row.status === 'failed' && row.detail !== null
-        ? `${IMPORT_ROW_LABELS.failed}（${row.detail}）`
+      row.detail !== null
+        ? `${IMPORT_ROW_LABELS[row.status]}（${row.detail}）`
         : IMPORT_ROW_LABELS[row.status];
     return el('li', { className: 'documents__progress-row' }, [
       el('span', { className: 'documents__progress-filename', text: row.filename }),

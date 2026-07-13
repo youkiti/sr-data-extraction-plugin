@@ -5,6 +5,10 @@
 import type { DocumentRecord, DocumentRole } from '../../domain/document';
 import type { ProjectRef } from '../../domain/project';
 import type { StudyRecord } from '../../domain/study';
+import {
+  dedupSelections,
+  DUPLICATE_REASON_LABELS,
+} from '../../features/documents/dedupSelections';
 import { readDocuments, updateDocument } from '../../features/documents/documentRepository';
 import {
   findMergeCandidates,
@@ -115,9 +119,12 @@ export async function loadDocuments(
   }
 }
 
-/** 取り込み結果を進捗行へ反映する（成功 = done / 失敗 = 段階 + 理由付きの failed） */
+/** 取り込み結果を進捗行へ反映する（成功 = done / 失敗 = 段階 + 理由付きの failed。重複スキップ行は据え置き） */
 function finalizeImportRows(rows: ImportRow[], result: ImportDocumentsResult): ImportRow[] {
   return rows.map((row) => {
+    if (row.status === 'skipped') {
+      return row;
+    }
     const failure = result.failures.find((f) => f.key === row.key);
     if (failure) {
       return {
@@ -128,6 +135,24 @@ function finalizeImportRows(rows: ImportRow[], result: ImportDocumentsResult): I
     }
     return { ...row, status: 'done', detail: null };
   });
+}
+
+/** 完了トースト文言（ui-states.md §3「重複スキップ」。従来 2 文言はスキップ 0 件時に維持） */
+function importResultToast(imported: number, skipped: number, failed: number): string {
+  if (skipped === 0 && failed === 0) {
+    return `${imported} 件の PDF を取り込みました`;
+  }
+  if (imported === 0 && failed === 0) {
+    return `取り込み済みのため ${skipped} 件をスキップしました`;
+  }
+  const parts = [`${imported} 件取り込み`];
+  if (skipped > 0) {
+    parts.push(`${skipped} 件スキップ`);
+  }
+  if (failed > 0) {
+    parts.push(`${failed} 件失敗`);
+  }
+  return `${parts.join('、')}しました`;
 }
 
 /**
@@ -190,8 +215,9 @@ async function runImportSelections(
     detail: null,
   }));
   patchDocuments(store, { importing: true, importRows: rows });
-  const setRow = (index: number, patch: Partial<ImportRow>): void => {
-    rows = rows.map((row, i) => (i === index ? { ...row, ...patch } : row));
+  // 重複スキップで importDocuments へ渡す選択が行より少なくなりうるため、行番号ではなく key で対応付ける
+  const setRowByKey = (key: string, patch: Partial<ImportRow>): void => {
+    rows = rows.map((row) => (row.key === key ? { ...row, ...patch } : row));
     patchDocuments(store, { importRows: rows });
   };
 
@@ -205,22 +231,43 @@ async function runImportSelections(
     );
     const importedBy = (await getCurrentUserEmail(deps.profile)) ?? '';
 
-    const result = await importDocuments(
+    // 重複取り込みの防止（issue #102 / §4.5）: 既存 Documents と突き合わせて重複をスキップする。
+    // records 未読込なら Sheets から読む（判定は常に保存済みの一覧に対して行う）。
+    // 判定中の API 失敗は catch へ伝播させて取り込み全体を中断する（フェイルクローズ）
+    const existingDocuments =
+      store.getState().documents.records ??
+      (await readDocuments(project.spreadsheetId, deps.google));
+    const dedup = await dedupSelections(
       {
-        spreadsheetId: project.spreadsheetId,
-        documentsFolderId: documentsFolder.id,
-        extractedTextsFolderId: extractedTextsFolder.id,
         selections: fileSelections,
-        importedBy,
+        existingDocuments,
+        documentsFolderId: documentsFolder.id,
       },
-      {
-        google: deps.google,
-        loadPdf: deps.loadPdf,
-        newUuid: deps.newUuid,
-        now: deps.now,
-        onProgress: (progress) => setRow(progress.fileIndex, { status: progress.stage }),
-      },
+      { google: deps.google },
     );
+    for (const skip of dedup.skipped) {
+      setRowByKey(skip.key, { status: 'skipped', detail: DUPLICATE_REASON_LABELS[skip.reason] });
+    }
+
+    const result: ImportDocumentsResult =
+      dedup.accepted.length === 0
+        ? { importedStudies: [], imported: [], failures: [] }
+        : await importDocuments(
+            {
+              spreadsheetId: project.spreadsheetId,
+              documentsFolderId: documentsFolder.id,
+              extractedTextsFolderId: extractedTextsFolder.id,
+              selections: dedup.accepted,
+              importedBy,
+            },
+            {
+              google: deps.google,
+              loadPdf: deps.loadPdf,
+              newUuid: deps.newUuid,
+              now: deps.now,
+              onProgress: (progress) => setRowByKey(progress.key, { status: progress.stage }),
+            },
+          );
 
     rows = finalizeImportRows(rows, result);
     const after = store.getState();
@@ -238,13 +285,9 @@ async function runImportSelections(
       },
       counts: { ...after.counts, documents: records.length },
     });
-    if (result.failures.length > 0) {
-      showToast(
-        `${result.imported.length} 件取り込み、${result.failures.length} 件失敗しました`,
-      );
-    } else {
-      showToast(`${result.imported.length} 件の PDF を取り込みました`);
-    }
+    showToast(
+      importResultToast(result.imported.length, dedup.skipped.length, result.failures.length),
+    );
   } catch (err) {
     // フォルダ解決など一括で中断する失敗（ファイル単位の失敗は importDocuments が failures で返す）
     rows = rows.map((row) => ({ ...row, status: 'failed' as const, detail: toMessage(err) }));
@@ -302,7 +345,7 @@ export async function importFromPicker(
   await runImportSelections(store, deps, project, fileSelections);
 }
 
-/** ローカルファイルの重複排除キー（filename + size。§ 補足: クロスセッションの重複警告は対象外） */
+/** ローカルファイルの進捗行キー兼バッチ内の粗い重複排除キー（filename + size。内容同一の判定は dedupSelections の MD5 が担う） */
 function localFileKey(file: File): string {
   return `local:${file.name}:${file.size}`;
 }
@@ -315,8 +358,9 @@ function isPdfFile(file: File): boolean {
 /**
  * ローカル PDF（D&D / ファイル選択ダイアログ）を取り込む（S3。Drive Picker 経路の追加手段）。
  * 出所 Drive ファイルが無いため、コピー段は importDocuments 側で documents/ への新規
- * アップロード（uploadBinaryFile）に切り替わる。重複排除は filename + size でバッチ内のみ判定する
- * （確定した方針。クロスセッションの重複警告は Documents にサイズ列が無いため対象外）
+ * アップロード（uploadBinaryFile）に切り替わる。ここでの重複排除は filename + size による
+ * バッチ内の粗い間引きのみで、クロスセッション・内容同一の判定は runImportSelections の
+ * dedupSelections（MD5 突き合わせ。issue #102）が両経路共通で行う
  */
 export async function importFromFiles(
   store: Store,
