@@ -33,7 +33,7 @@ async function initApp(page: Page, options: { seedEnglish?: boolean } = {}): Pro
           schemaVersions: 1,
           pilotRuns: 1,
           evidenceRows: 1,
-          dataRows: 0,
+          dataRows: 1,
         },
         // S3〜S9 を読込済み（空）で注入し、Sheets 読込を発火させない
         documents: { records: [], studies: [] },
@@ -41,6 +41,8 @@ async function initApp(page: Page, options: { seedEnglish?: boolean } = {}): Pro
         schema: { versions: [] },
         extract: { extractedStudyIds: [], interruptedStudyIds: [] },
         verify: { targets: [] },
+        adjudicate: { rows: [] },
+        export: { loadError: 'E2E' },
         dashboard: {
           data: {
             sections: [],
@@ -148,6 +150,29 @@ test('移行済みの S6 / S7 / S8 / S9 も en で表示される（issue #93 PR
   await page.locator('#app-nav a[href="#/dashboard"]').click();
   await expect(page.locator('#app-content h2').first()).toHaveText('Dashboard');
   await expect(page.locator('#dashboard-empty')).toContainText('No extractions yet.');
+});
+
+test('移行済みの S10 / S12 / Options 本文 / ガードトーストも en で表示される（issue #93 PR4）', async ({
+  page,
+}) => {
+  await initApp(page, { seedEnglish: true });
+
+  await page.locator('#app-nav a[href="#/export"]').click();
+  await expect(page.locator('#app-content h2').first()).toHaveText('Export');
+
+  await page.locator('#app-nav a[href="#/adjudicate"]').click();
+  await expect(page.locator('#app-content h2').first()).toHaveText('Adjudication');
+  await expect(page.locator('#adjudicate-empty')).toContainText('No studies to adjudicate.');
+  await expect(page.locator('#adjudicate-agreement-card h3')).toHaveText(
+    'Inter-reviewer agreement',
+  );
+
+  // Options 本文（API キー節・レート制限 tier ラベル）も en で構築される
+  await page.locator('#app-open-options').click();
+  await expect(page.locator('#options-status')).toHaveText('Gemini: not set');
+  await expect(
+    page.locator('#rate-limit-tier option[value="gemini_free"]'),
+  ).toHaveText('Gemini free tier (Free)');
 });
 
 test('スタンドアロン options.html も保存済み言語（en）で構築され、ja へ戻せる', async ({

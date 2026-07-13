@@ -14,19 +14,19 @@ export function buildSettingsSections(): HTMLElement {
 
   // Gemini API キー
   const geminiSection = el('section', { className: 'options__section' }, [
-    el('h2', { text: 'Gemini API キー（BYOK）' }),
+    el('h2', { text: t('options.geminiTitle') }),
     el('p', {
       className: 'options__help',
-      text: 'API キーはこの端末の chrome.storage にのみ保存され、開発者へ送信されることはありません。',
+      text: t('options.geminiHelp'),
     }),
-    el('p', { id: 'options-status', className: 'options__status', text: '読み込み中…' }),
+    el('p', { id: 'options-status', className: 'options__status', text: t('common.loading') }),
     el('div', { className: 'options__row' }, [
-      el('label', { text: 'Gemini API キー', attributes: { for: 'gemini-api-key' } }),
+      el('label', { text: t('options.geminiLabel'), attributes: { for: 'gemini-api-key' } }),
       el('input', {
         id: 'gemini-api-key',
         attributes: { type: 'password', autocomplete: 'off' },
       }),
-      el('button', { id: 'save-keys', text: '保存', attributes: { type: 'button' } }),
+      el('button', { id: 'save-keys', text: t('options.save'), attributes: { type: 'button' } }),
     ]),
   ]);
   body.append(geminiSection);
@@ -34,7 +34,7 @@ export function buildSettingsSections(): HTMLElement {
   // OpenRouter API キー
   const openrouterHelp = el('p', { className: 'options__help' });
   openrouterHelp.append(
-    'OpenRouter 経由のモデル（qwen / deepseek 等）を使う場合に設定します。キーは ',
+    t('options.openrouterHelpPrefix'),
     el('a', {
       text: 'openrouter.ai/settings/keys',
       attributes: {
@@ -43,21 +43,21 @@ export function buildSettingsSections(): HTMLElement {
         rel: 'noreferrer',
       },
     }),
-    ' で取得できます。この端末の chrome.storage にのみ保存されます。',
+    t('options.openrouterHelpSuffix'),
   );
   const openrouterSection = el('section', { className: 'options__section' }, [
-    el('h2', { text: 'OpenRouter API キー（BYOK）' }),
+    el('h2', { text: t('options.openrouterTitle') }),
     openrouterHelp,
-    el('p', { id: 'openrouter-status', className: 'options__status', text: '読み込み中…' }),
+    el('p', { id: 'openrouter-status', className: 'options__status', text: t('common.loading') }),
     el('div', { className: 'options__row' }, [
-      el('label', { text: 'OpenRouter API キー', attributes: { for: 'openrouter-api-key' } }),
+      el('label', { text: t('options.openrouterLabel'), attributes: { for: 'openrouter-api-key' } }),
       el('input', {
         id: 'openrouter-api-key',
         attributes: { type: 'password', autocomplete: 'off' },
       }),
       el('button', {
         id: 'save-openrouter-key',
-        text: '保存',
+        text: t('options.save'),
         attributes: { type: 'button' },
       }),
     ]),
@@ -67,21 +67,21 @@ export function buildSettingsSections(): HTMLElement {
   // LLM 接続方式（Gemini / OpenRouter / OpenAI 互換 API）
   const providerSelect = el('select', {
     id: 'llm-provider',
-    attributes: { 'aria-label': 'LLM 接続方式' },
+    attributes: { 'aria-label': t('options.providerAria') },
   });
   providerSelect.append(
     el('option', { text: 'Gemini', attributes: { value: 'gemini' } }),
     el('option', { text: 'OpenRouter', attributes: { value: 'openrouter' } }),
-    el('option', { text: 'OpenAI 互換 API', attributes: { value: 'openai_compatible' } }),
+    el('option', { text: t('options.providerOpenAiCompatible'), attributes: { value: 'openai_compatible' } }),
   );
   const customFields = el('div', { id: 'openai-compatible-fields' }, [
     el('p', {
       className: 'options__help',
-      text: '論文本文と抽出プロンプトは、ここで指定した接続先へブラウザから直接送信されます。',
+      text: t('options.compatibleNotice'),
     }),
     el('div', { className: 'options__row' }, [
       el('label', {
-        text: 'API エンドポイント',
+        text: t('options.endpointLabel'),
         attributes: { for: 'openai-compatible-endpoint' },
       }),
       el('input', {
@@ -95,7 +95,7 @@ export function buildSettingsSections(): HTMLElement {
     ]),
     el('div', { className: 'options__row' }, [
       el('label', {
-        text: 'API キー',
+        text: t('options.apiKeyLabel'),
         attributes: { for: 'openai-compatible-api-key' },
       }),
       el('input', {
@@ -104,36 +104,36 @@ export function buildSettingsSections(): HTMLElement {
       }),
       el('span', {
         className: 'options__help',
-        text: 'localhost、127.0.0.1、[::1] への接続では省略できます。',
+        text: t('options.loopbackNote'),
       }),
     ]),
   ]);
   customFields.hidden = true;
   const connectionSection = el('section', { className: 'options__section' }, [
-    el('h2', { text: 'LLM 接続先' }),
+    el('h2', { text: t('options.connectionTitle') }),
     el('p', {
       className: 'options__help',
-      text: '保存した接続方式はモデル名より優先されます。HTTP は localhost、127.0.0.1、[::1] だけ許可します。別マシン上の API は HTTPS 化してください。',
+      text: t('options.connectionHelp'),
     }),
     el('p', {
       id: 'llm-connection-status',
       className: 'options__status',
-      text: '読み込み中…',
+      text: t('common.loading'),
     }),
     el('div', { className: 'options__row' }, [
-      el('label', { text: '接続方式', attributes: { for: 'llm-provider' } }),
+      el('label', { text: t('options.providerLabel'), attributes: { for: 'llm-provider' } }),
       providerSelect,
     ]),
     customFields,
     el('div', { className: 'options__actions' }, [
       el('button', {
         id: 'save-llm-connection',
-        text: '接続設定を保存',
+        text: t('options.saveConnection'),
         attributes: { type: 'button' },
       }),
       el('button', {
         id: 'test-llm-connection',
-        text: '接続テスト',
+        text: t('options.testConnection'),
         attributes: { type: 'button' },
       }),
     ]),
@@ -142,18 +142,18 @@ export function buildSettingsSections(): HTMLElement {
 
   // 既定モデル
   const modelSection = el('section', { className: 'options__section' }, [
-    el('h2', { text: '既定モデル' }),
+    el('h2', { text: t('options.defaultModelTitle') }),
     el('p', {
       className: 'options__help',
-      text: '単価表にないモデルはコスト概算が表示されません。',
+      text: t('options.defaultModelHelp'),
     }),
-    el('p', { id: 'default-model-status', className: 'options__status', text: '読み込み中…' }),
+    el('p', { id: 'default-model-status', className: 'options__status', text: t('common.loading') }),
     el('div', { className: 'options__row' }, [
-      el('label', { text: '既定モデル', attributes: { for: 'default-model' } }),
+      el('label', { text: t('options.defaultModelTitle'), attributes: { for: 'default-model' } }),
       el('span', { id: 'default-model-container' }),
       el('button', {
         id: 'save-default-model',
-        text: '保存',
+        text: t('options.save'),
         attributes: { type: 'button' },
       }),
     ]),
@@ -163,31 +163,31 @@ export function buildSettingsSections(): HTMLElement {
   // レート制限 tier（一括抽出の 429 対策。スロットル間隔 + リトライの強さを決める）
   const tierSelect = el('select', {
     id: 'rate-limit-tier',
-    attributes: { 'aria-label': 'レート制限 tier' },
+    attributes: { 'aria-label': t('options.rateLimitTierAria') },
   }) as HTMLSelectElement;
   for (const tier of RATE_LIMIT_TIERS) {
     tierSelect.append(el('option', { text: tier.label, attributes: { value: tier.id } }));
   }
   const rateLimitSection = el('section', { className: 'options__section' }, [
-    el('h2', { text: 'レート制限（一括抽出の 429 対策）' }),
+    el('h2', { text: t('options.rateLimitTitle') }),
     el('p', {
       className: 'options__help',
-      text: '一括抽出で多数の論文を連続処理すると、API の 1 分あたりリクエスト上限に達して 429（Too Many Requests）が出ることがあります。お使いのプラン（tier）を選ぶと、リクエスト間隔と再試行を自動調整します。無料枠は間隔を広めに取ります。',
+      text: t('options.rateLimitHelp'),
     }),
     el('p', {
       id: 'rate-limit-tier-desc',
       className: 'options__help',
       text: '',
     }),
-    el('p', { id: 'rate-limit-status', className: 'options__status', text: '読み込み中…' }),
+    el('p', { id: 'rate-limit-status', className: 'options__status', text: t('common.loading') }),
     el('div', { className: 'options__row' }, [
-      el('label', { text: 'プラン（tier）', attributes: { for: 'rate-limit-tier' } }),
+      el('label', { text: t('options.rateLimitTierLabel'), attributes: { for: 'rate-limit-tier' } }),
       tierSelect,
     ]),
     // カスタム tier のときだけ表示する RPM 入力（1 分あたりの最大リクエスト数）
     el('div', { id: 'rate-limit-custom-row', className: 'options__row', attributes: { hidden: 'true' } }, [
       el('label', {
-        text: '1 分あたりの最大リクエスト数（RPM）',
+        text: t('options.rateLimitRpmLabel'),
         attributes: { for: 'rate-limit-custom-rpm' },
       }),
       el('input', {
@@ -198,7 +198,7 @@ export function buildSettingsSections(): HTMLElement {
     // カスタム tier のときだけ表示する同時実行数入力（並列化のスループット対策。1 = 逐次）
     el('div', { id: 'rate-limit-concurrency-row', className: 'options__row', attributes: { hidden: 'true' } }, [
       el('label', {
-        text: '同時実行数（1 = 逐次。上げると速いが 429 / TPM に注意）',
+        text: t('options.rateLimitConcurrencyLabel'),
         attributes: { for: 'rate-limit-concurrency' },
       }),
       el('input', {
@@ -207,7 +207,7 @@ export function buildSettingsSections(): HTMLElement {
       }),
     ]),
     el('div', { className: 'options__row' }, [
-      el('button', { id: 'save-rate-limit', text: '保存', attributes: { type: 'button' } }),
+      el('button', { id: 'save-rate-limit', text: t('options.save'), attributes: { type: 'button' } }),
     ]),
   ]);
   body.append(rateLimitSection);

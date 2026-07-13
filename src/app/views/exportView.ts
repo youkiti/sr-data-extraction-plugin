@@ -14,36 +14,42 @@ import {
 import { parseCsv } from '../../features/export/parseCsv';
 import type { BuiltRSet, RSetFile } from '../../features/export/rset/buildRSet';
 import { countRSetUnverifiedCells, rSetDataRowCount } from '../../features/export/rset/buildRSet';
+import { t, type MessageKey } from '../../lib/i18n';
 import { el } from '../ui/dom';
 import type { AppState, ExportState } from '../store';
 import type { ViewContext } from './types';
 
-/** 形式選択ラジオの表示順と用途説明（requirements.md §4.4 の用途列） */
+/** 形式選択ラジオの表示順と用途説明（requirements.md §4.4 の用途列。ラベルは描画時に解決） */
 const FORMAT_OPTIONS: ReadonlyArray<{
   format: ExportFormat;
-  label: string;
-  description: string;
+  /** ファイル名はコード用語のため翻訳せず、R セットだけ辞書キーで解決する */
+  label: string | null;
+  labelKey: MessageKey | null;
+  descriptionKey: MessageKey;
 }> = [
   {
     format: 'study_wide',
     label: 'study_wide.csv',
-    description: '1 行 = 1 study。Table 1 の下書き・Excel での目視確認に',
+    labelKey: null,
+    descriptionKey: 'export.formatStudyWideDesc',
   },
   {
     format: 'results_long',
     label: 'results_long.csv',
-    description: '1 行 = 1 結果セル。R でのメタ解析前処理（arm 別アウトカム・RoB）に',
+    labelKey: null,
+    descriptionKey: 'export.formatResultsLongDesc',
   },
   {
     format: 'audit',
     label: 'audit.csv',
-    description: '1 行 = 1 判定イベント + AI 根拠。監査・supplementary・抽出精度研究に',
+    labelKey: null,
+    descriptionKey: 'export.formatAuditDesc',
   },
   {
     format: 'r_set',
-    label: 'R セット（推奨）',
-    description:
-      'tab1 / ma / rob 等 7 CSV + manifest の 8 ファイル。R (readr) でそのまま読める自己記述的な解析用データセット',
+    label: null,
+    labelKey: 'export.formatRSetLabel',
+    descriptionKey: 'export.formatRSetDesc',
   },
 ];
 
@@ -57,14 +63,17 @@ function renderFormatSelector(exportState: ExportState, ctx: ViewContext): HTMLE
     input.addEventListener('change', () => ctx.export.onSelectFormat(option.format));
     return el('label', { className: 'export__format-option' }, [
       input,
-      el('span', { className: 'export__format-label', text: option.label }),
-      el('span', { className: 'export__format-description', text: option.description }),
+      el('span', {
+        className: 'export__format-label',
+        text: option.labelKey === null ? (option.label as string) : t(option.labelKey),
+      }),
+      el('span', { className: 'export__format-description', text: t(option.descriptionKey) }),
     ]);
   });
   return el(
     'fieldset',
     { id: 'export-format', className: 'export__formats' },
-    [el('legend', { text: '形式' }), ...options],
+    [el('legend', { text: t('export.formatLegend') }), ...options],
   );
 }
 
@@ -74,11 +83,11 @@ function renderSummary(built: BuiltExport): HTMLElement {
     el('dd', { text: value }),
   ];
   return el('dl', { id: 'export-summary', className: 'export__summary' }, [
-    ...item('データ行数', String(built.rowCount)),
-    ...item('対象 study 数', String(built.studyCount)),
+    ...item(t('export.summaryRows'), String(built.rowCount)),
+    ...item(t('export.summaryStudies'), String(built.studyCount)),
     // results_long は未検証の概念がないため「—」（ui-states.md §3）
     ...item(
-      '未検証セル数',
+      t('export.summaryUnverified'),
       built.unverifiedCellCount === null ? '—' : String(built.unverifiedCellCount),
     ),
   ]);
@@ -91,7 +100,7 @@ function renderExclusionNotes(built: BuiltExport): HTMLElement[] {
       el('p', {
         id: 'export-skipped',
         className: 'export__exclusion',
-        text: `確定 annotator（consensus / 唯一の human 行）を特定できないため除外した文献: ${built.skippedStudyLabels.join('、')}`,
+        text: t('export.skippedNote', { labels: built.skippedStudyLabels.join('、') }),
       }),
     );
   }
@@ -100,7 +109,7 @@ function renderExclusionNotes(built: BuiltExport): HTMLElement[] {
       el('p', {
         id: 'export-dropped',
         className: 'export__exclusion',
-        text: `field_id が表のデザインに見つからないため除外した行: ${built.droppedRowCount} 行`,
+        text: t('export.droppedNote', { n: built.droppedRowCount }),
       }),
     );
   }
@@ -126,7 +135,7 @@ function renderPreview(data: PreviewData, tableId = 'export-preview'): HTMLEleme
   const table = el('table', { id: tableId, className: 'export__preview' }, [
     el('caption', {
       className: 'export__preview-caption',
-      text: `プレビュー（先頭 ${data.previewRows.length} 行 / 全 ${data.rowCount} 行）`,
+      text: t('export.previewCaption', { shown: data.previewRows.length, total: data.rowCount }),
     }),
     el('thead', {}, [headRow]),
     el('tbody', {}, bodyRows),
@@ -135,7 +144,7 @@ function renderPreview(data: PreviewData, tableId = 'export-preview'): HTMLEleme
   const rest = data.rowCount - data.previewRows.length;
   if (rest > 0) {
     // tableId が既定の 'export-preview' のときは従来どおり 'export-preview-more' になる
-    parts.push(el('p', { id: `${tableId}-more`, text: `…他 ${rest} 行` }));
+    parts.push(el('p', { id: `${tableId}-more`, text: t('export.previewMore', { n: rest }) }));
   }
   return parts;
 }
@@ -148,26 +157,24 @@ function renderWarningDialog(
 ): HTMLElement {
   const continueButton = el('button', {
     id: 'export-warning-continue',
-    text: '続行して生成',
+    text: t('export.warningContinue'),
     attributes: { type: 'button' },
   });
   continueButton.addEventListener('click', () => ctx.export.onConfirmGenerate());
   const cancelButton = el('button', {
     id: 'export-warning-cancel',
-    text: '中止',
+    text: t('export.warningCancel'),
     attributes: { type: 'button' },
   });
   cancelButton.addEventListener('click', () => ctx.export.onCancelGenerate());
   const children: HTMLElement[] = [
     el('h3', {
       id: 'export-warning-title',
-      text: `未検証の項目が ${unverifiedCount} 件あります。`,
+      text: t('export.warningTitle', { n: unverifiedCount }),
     }),
     el('p', {
       className: 'export__warning-note',
-      text:
-        'サブセット抽出（一部項目のみを対象にした実行）が行われている場合、未検証セルの中には' +
-        '意図的に未抽出のままの項目が含まれている可能性があります。',
+      text: t('export.warningSubsetNote'),
     }),
   ];
   if (extraNote !== null) {
@@ -238,7 +245,7 @@ function renderMethodsCard(exportState: ExportState, ctx: ViewContext): HTMLElem
 
   const langGroup = el(
     'div',
-    { className: 'export__methods-tabs', attributes: { role: 'group', 'aria-label': '言語' } },
+    { className: 'export__methods-tabs', attributes: { role: 'group', 'aria-label': t('export.methodsLangAria') } },
     [
       renderMethodsLangTab('methods-lang-en', 'English', 'en', exportState.methodsLanguage, ctx),
       renderMethodsLangTab('methods-lang-ja', '日本語', 'ja', exportState.methodsLanguage, ctx),
@@ -246,18 +253,18 @@ function renderMethodsCard(exportState: ExportState, ctx: ViewContext): HTMLElem
   );
   const workflowGroup = el(
     'div',
-    { className: 'export__methods-tabs', attributes: { role: 'group', 'aria-label': 'ワークフロー' } },
+    { className: 'export__methods-tabs', attributes: { role: 'group', 'aria-label': t('export.methodsWorkflowAria') } },
     [
       renderMethodsWorkflowTab(
         'methods-workflow-single',
-        '単一レビュアー',
+        t('export.methodsWorkflowSingle'),
         'single',
         exportState.methodsWorkflow,
         ctx,
       ),
       renderMethodsWorkflowTab(
         'methods-workflow-dual',
-        '二重独立',
+        t('export.methodsWorkflowDual'),
         'dual',
         exportState.methodsWorkflow,
         ctx,
@@ -268,19 +275,19 @@ function renderMethodsCard(exportState: ExportState, ctx: ViewContext): HTMLElem
   const textArea = el('textarea', {
     id: 'methods-text',
     className: 'export__methods-text',
-    attributes: { readonly: 'readonly', rows: '8', 'aria-label': '論文 Methods 記載例' },
+    attributes: { readonly: 'readonly', rows: '8', 'aria-label': t('export.methodsTitle') },
   });
   textArea.value = text;
 
   const copyButton = el('button', {
     id: 'methods-copy',
-    text: 'コピー',
+    text: t('export.methodsCopy'),
     attributes: { type: 'button' },
   });
   copyButton.addEventListener('click', () => ctx.export.onCopyMethods());
 
   const children: HTMLElement[] = [
-    el('h3', { text: '論文 Methods 記載例' }),
+    el('h3', { text: t('export.methodsTitle') }),
     el('div', { className: 'export__methods-controls' }, [langGroup, workflowGroup]),
     textArea,
     copyButton,
@@ -290,7 +297,7 @@ function renderMethodsCard(exportState: ExportState, ctx: ViewContext): HTMLElem
       el('p', {
         id: 'methods-unresolved-note',
         className: 'export__methods-note',
-        text: '{{ }} の箇所はご自身の情報に置き換えてください',
+        text: t('export.methodsUnresolvedNote'),
       }),
     );
   }
@@ -301,7 +308,9 @@ function renderMethodsCard(exportState: ExportState, ctx: ViewContext): HTMLElem
 function renderRSetFileList(files: readonly RSetFile[], listId: string): HTMLElement {
   const items = files.map((file) =>
     el('li', {
-      text: file.name.endsWith('.json') ? file.name : `${file.name}: ${file.rowCount} 行`,
+      text: file.name.endsWith('.json')
+        ? file.name
+        : t('export.rsetFileRow', { name: file.name, rows: file.rowCount }),
     }),
   );
   return el('ul', { id: listId, className: 'export__rset-files' }, items);
@@ -315,10 +324,10 @@ function renderRSetSummary(rSet: BuiltRSet): HTMLElement {
   ];
   const issuesFile = rSet.files.find((file) => file.name === 'export_issues.csv') as RSetFile;
   const summary = el('dl', { id: 'export-rset-summary', className: 'export__summary' }, [
-    ...item('ファイル数', String(rSet.files.length)),
-    ...item('データ行数', String(rSetDataRowCount(rSet))),
-    ...item('未検証セル数', String(countRSetUnverifiedCells(rSet))),
-    ...item('export_issues 件数', String(issuesFile.rowCount)),
+    ...item(t('export.summaryFiles'), String(rSet.files.length)),
+    ...item(t('export.summaryRows'), String(rSetDataRowCount(rSet))),
+    ...item(t('export.summaryUnverified'), String(countRSetUnverifiedCells(rSet))),
+    ...item(t('export.summaryIssues'), String(issuesFile.rowCount)),
   ]);
   return el('div', { className: 'export__rset-summary-wrap' }, [
     summary,
@@ -335,35 +344,32 @@ function renderRSetPreview(rSet: BuiltRSet): HTMLElement[] {
     previewRows: records.slice(1, 1 + PREVIEW_ROW_LIMIT),
     rowCount: maFile.rowCount,
   };
-  return [el('h3', { text: 'ma.csv プレビュー' }), ...renderPreview(data, 'export-rset-preview')];
+  return [el('h3', { text: t('export.rsetPreviewTitle') }), ...renderPreview(data, 'export-rset-preview')];
 }
 
-/** CSV は UTF-8 BOM なし（D-6）のため、Excel でそのまま開くと文字化けしうる初心者向け案内文 */
-const RSET_UTF8_NOTE =
-  'CSV は UTF-8（BOM なし）で保存されます。Excel でダブルクリックで開くと日本語が文字化けすることがあります。' +
-  'Excel で開く場合は「データ > テキストまたは CSV から」で文字コード UTF-8 を指定してください。' +
-  'R の readr::read_csv() はそのまま読み込めます。';
+// CSV は UTF-8 BOM なし（D-6）のため、Excel でそのまま開くと文字化けしうる初心者向け案内文
+// （export.rsetUtf8Note。表示言語に追従させるため描画時に t() で解決する）
 
 function renderRSetResultCard(exportState: ExportState, ctx: ViewContext): HTMLElement {
   const result = exportState.rSetResult as NonNullable<ExportState['rSetResult']>;
   const downloadButton = el('button', {
     id: 'export-rset-download',
-    text: 'ローカル保存（8 ファイル）',
+    text: t('export.rsetDownload'),
     attributes: { type: 'button' },
   });
   downloadButton.addEventListener('click', () => ctx.export.onDownload());
   return el('div', { id: 'export-rset-result', className: 'export__result' }, [
     el('p', {
-      text: `${result.folderName} フォルダに 8 ファイルを Drive に保存しました（ExportLog に記録済み）。`,
+      text: t('export.rsetSaved', { folder: result.folderName }),
     }),
     el('a', {
       id: 'export-rset-result-link',
-      text: 'Drive で開く',
+      text: t('export.openInDrive'),
       attributes: { href: result.folderRef, target: '_blank', rel: 'noopener' },
     }),
     renderRSetFileList(result.built.files, 'export-rset-result-files'),
     downloadButton,
-    el('p', { id: 'export-rset-utf8-note', className: 'export__note', text: RSET_UTF8_NOTE }),
+    el('p', { id: 'export-rset-utf8-note', className: 'export__note', text: t('export.rsetUtf8Note') }),
   ]);
 }
 
@@ -371,15 +377,15 @@ function renderResultCard(exportState: ExportState, ctx: ViewContext): HTMLEleme
   const result = exportState.result as NonNullable<ExportState['result']>;
   const downloadButton = el('button', {
     id: 'export-download',
-    text: 'ローカル保存',
+    text: t('export.download'),
     attributes: { type: 'button' },
   });
   downloadButton.addEventListener('click', () => ctx.export.onDownload());
   return el('div', { id: 'export-result', className: 'export__result' }, [
-    el('p', { text: `${result.filename} を Drive に保存しました（ExportLog に記録済み）。` }),
+    el('p', { text: t('export.saved', { filename: result.filename }) }),
     el('a', {
       id: 'export-result-link',
-      text: 'Drive で開く',
+      text: t('export.openInDrive'),
       attributes: { href: result.fileRef, target: '_blank', rel: 'noopener' },
     }),
     downloadButton,
@@ -388,10 +394,10 @@ function renderResultCard(exportState: ExportState, ctx: ViewContext): HTMLEleme
 
 export function renderExportView(state: AppState, ctx: ViewContext): HTMLElement {
   const children: Array<HTMLElement | string> = [
-    el('h2', { text: 'エクスポート' }),
+    el('h2', { text: t('app.navExport') }),
     el('p', {
       className: 'view__lead',
-      text: '確定データを study_wide / results_long / audit の CSV として生成し、Drive に保存します。',
+      text: t('export.lead'),
     }),
   ];
   const exportState = state.export;
@@ -399,7 +405,7 @@ export function renderExportView(state: AppState, ctx: ViewContext): HTMLElement
   if (exportState.loadError !== null) {
     const reload = el('button', {
       id: 'export-reload',
-      text: '再読み込み',
+      text: t('common.reload'),
       attributes: { type: 'button' },
     });
     reload.addEventListener('click', () => ctx.export.onReload());
@@ -408,7 +414,7 @@ export function renderExportView(state: AppState, ctx: ViewContext): HTMLElement
         id: 'export-load-error',
         className: 'export__error',
         attributes: { role: 'alert' },
-        text: `エクスポート素材を読み込めませんでした: ${exportState.loadError}`,
+        text: t('export.loadError', { reason: exportState.loadError }),
       }),
       reload,
     );
@@ -416,7 +422,7 @@ export function renderExportView(state: AppState, ctx: ViewContext): HTMLElement
   }
 
   if (exportState.built === null || exportState.loading) {
-    children.push(el('p', { id: 'export-loading', text: 'エクスポート素材を読み込んでいます…' }));
+    children.push(el('p', { id: 'export-loading', text: t('export.loading') }));
     return el('section', { className: 'view view--export' }, children);
   }
 
@@ -438,14 +444,14 @@ export function renderExportView(state: AppState, ctx: ViewContext): HTMLElement
       children.push(
         el('p', {
           className: 'export__empty-note',
-          text: 'R セットで出力できるデータ行がありません。',
+          text: t('export.emptyRSet'),
         }),
       );
     }
     const generateButton = el('button', {
       id: 'export-generate',
       className: 'export__generate',
-      text: '8 ファイルを生成して Drive に保存',
+      text: t('export.generateRSet'),
       attributes: { type: 'button' },
     });
     generateButton.disabled = exportState.generating || dataRowCount === 0;
@@ -457,14 +463,13 @@ export function renderExportView(state: AppState, ctx: ViewContext): HTMLElement
         renderWarningDialog(
           ctx,
           countRSetUnverifiedCells(rSet),
-          'R セットでは未検証セルは値列を空にし、ステータス列（tab1_status.csv / ma_status.csv / ' +
-            'rob.csv）と export_issues.csv に明示されます。',
+          t('export.warningRSetNote'),
         ),
       );
     }
     if (exportState.generating) {
       children.push(
-        el('p', { id: 'export-generating', text: '8 ファイルを生成して Drive に保存しています…' }),
+        el('p', { id: 'export-generating', text: t('export.generatingRSet') }),
       );
     }
     if (exportState.generateError !== null) {
@@ -473,7 +478,7 @@ export function renderExportView(state: AppState, ctx: ViewContext): HTMLElement
           id: 'export-generate-error',
           className: 'export__error',
           attributes: { role: 'alert' },
-          text: `エクスポートに失敗しました: ${exportState.generateError}`,
+          text: t('export.generateError', { reason: exportState.generateError }),
         }),
       );
     }
@@ -492,14 +497,14 @@ export function renderExportView(state: AppState, ctx: ViewContext): HTMLElement
     children.push(
       el('p', {
         className: 'export__empty-note',
-        text: 'この形式で出力できるデータ行がありません。',
+        text: t('export.empty'),
       }),
     );
   }
   const generateButton = el('button', {
     id: 'export-generate',
     className: 'export__generate',
-    text: 'CSV を生成して Drive に保存',
+    text: t('export.generate'),
     attributes: { type: 'button' },
   });
   generateButton.disabled = exportState.generating || built.rowCount === 0;
@@ -511,15 +516,13 @@ export function renderExportView(state: AppState, ctx: ViewContext): HTMLElement
       renderWarningDialog(
         ctx,
         built.unverifiedCellCount ?? 0,
-        built.format === 'audit'
-          ? 'audit.csv では未検証セルが判定列空のプレースホルダ行として明示されます。'
-          : null,
+        built.format === 'audit' ? t('export.warningAuditNote') : null,
       ),
     );
   }
   if (exportState.generating) {
     children.push(
-      el('p', { id: 'export-generating', text: 'CSV を生成して Drive に保存しています…' }),
+      el('p', { id: 'export-generating', text: t('export.generating') }),
     );
   }
   if (exportState.generateError !== null) {
@@ -528,7 +531,7 @@ export function renderExportView(state: AppState, ctx: ViewContext): HTMLElement
         id: 'export-generate-error',
         className: 'export__error',
         attributes: { role: 'alert' },
-        text: `エクスポートに失敗しました: ${exportState.generateError}`,
+        text: t('export.generateError', { reason: exportState.generateError }),
       }),
     );
   }

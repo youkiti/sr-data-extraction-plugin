@@ -13,6 +13,7 @@
 // させる: `flushEveryNStudies` は tier ごとに決め打ちし、custom tier だけは maxConcurrency
 // （書き込み集中の実ドライバ）から逆算する（docs/handoff-20260710-sheets-write-batching.md）。
 import { withRetry } from './retry';
+import { t } from '../i18n';
 import { withThrottle } from './throttle';
 import type { LLMProvider } from './LLMProvider';
 
@@ -94,8 +95,8 @@ export const DEFAULT_CUSTOM_RPM = 30;
 export const RATE_LIMIT_TIERS: readonly RateLimitTier[] = [
   {
     id: 'gemini_free',
-    label: 'Gemini 無料枠（Free）',
-    description: '無料枠は 1 分あたりのリクエスト数が少なく 429 が出やすいため、間隔を広めに取ります。',
+    get label() { return t('options.tierGeminiFreeLabel'); },
+    get description() { return t('options.tierGeminiFreeDesc'); },
     policy: {
       requestsPerMinute: 8,
       maxAttempts: 5,
@@ -109,8 +110,8 @@ export const RATE_LIMIT_TIERS: readonly RateLimitTier[] = [
   },
   {
     id: 'gemini_tier1',
-    label: 'Gemini Tier 1（従量課金）',
-    description: '支払い設定済みの Tier 1。無料枠より大幅に緩い上限を想定します。',
+    get label() { return t('options.tierGeminiTier1Label'); },
+    get description() { return t('options.tierGeminiTier1Desc'); },
     policy: {
       requestsPerMinute: 120,
       maxAttempts: 5,
@@ -124,8 +125,8 @@ export const RATE_LIMIT_TIERS: readonly RateLimitTier[] = [
   },
   {
     id: 'gemini_tier2',
-    label: 'Gemini Tier 2',
-    description: '累計課金額の条件を満たした Tier 2。',
+    get label() { return t('options.tierGeminiTier2Label'); },
+    get description() { return t('options.tierGeminiTier2Desc'); },
     policy: {
       requestsPerMinute: 900,
       maxAttempts: 4,
@@ -139,8 +140,8 @@ export const RATE_LIMIT_TIERS: readonly RateLimitTier[] = [
   },
   {
     id: 'gemini_tier3',
-    label: 'Gemini Tier 3',
-    description: '最上位 Tier 3。',
+    get label() { return t('options.tierGeminiTier3Label'); },
+    get description() { return t('options.tierGeminiTier3Desc'); },
     policy: {
       requestsPerMinute: 1_800,
       maxAttempts: 4,
@@ -154,8 +155,8 @@ export const RATE_LIMIT_TIERS: readonly RateLimitTier[] = [
   },
   {
     id: 'custom',
-    label: 'カスタム（RPM を手動指定）',
-    description: 'OpenRouter や上記に当てはまらない場合に、実際の 1 分あたりリクエスト数を入力します。同時実行数を上げるとスループットが上がりますが、429 / TPM に当たる場合は下げてください。',
+    get label() { return t('options.tierCustomLabel'); },
+    get description() { return t('options.tierCustomDesc'); },
     policy: {
       requestsPerMinute: DEFAULT_CUSTOM_RPM,
       maxAttempts: 5,
@@ -171,8 +172,8 @@ export const RATE_LIMIT_TIERS: readonly RateLimitTier[] = [
   },
   {
     id: 'unlimited',
-    label: '制限なし（スロットルしない）',
-    description: 'サーバ側で十分な上限がある場合のみ。バッチ間の待ち時間を入れません。',
+    get label() { return t('options.tierUnlimitedLabel'); },
+    get description() { return t('options.tierUnlimitedDesc'); },
     policy: UNLIMITED_POLICY,
     editableRpm: false,
     editableConcurrency: false,

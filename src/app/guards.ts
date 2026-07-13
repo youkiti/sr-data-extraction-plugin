@@ -2,6 +2,7 @@
 // allowed = false のルートはサイドバーでディム表示し、遷移せずトーストで案内する。
 // warning は「遷移は許可するが警告バナー / トーストを出す」ケース（#/extract のパイロット未実施）
 import type { ProjectRole } from '../domain/reviewer';
+import { t } from '../lib/i18n';
 import type { AppState } from './store';
 
 export type GuardResult =
@@ -32,31 +33,31 @@ export function guardRoute(hash: string, state: AppState, role: ProjectRole = 'o
   if (hash === '#/adjudicate') {
     return role === 'owner' || role === 'adjudicator'
       ? { allowed: true }
-      : { allowed: false, message: 'このプロジェクトでは裁定権限のため利用できません' };
+      : { allowed: false, message: t('guards.adjudicatorOnly') };
   }
   if (role !== 'owner' && hash !== '#/home' && hash !== '#/verify') {
-    return { allowed: false, message: 'このプロジェクトではレビュアー権限のため利用できません' };
+    return { allowed: false, message: t('guards.reviewerRestricted') };
   }
   switch (hash) {
     case '#/schema':
       if (counts.protocolVersions < 1) {
-        return { allowed: false, message: 'プロトコルを先に入力してください' };
+        return { allowed: false, message: t('guards.needProtocol') };
       }
       return { allowed: true };
     case '#/pilot':
       if (counts.schemaVersions < 1 || counts.documents < 1) {
         return {
           allowed: false,
-          message: '確定済みの表のデザインと取り込み済み文献（1 本以上）が必要です',
+          message: t('guards.needSchemaAndDocs'),
         };
       }
       return { allowed: true };
     case '#/extract':
       if (counts.schemaVersions < 1) {
-        return { allowed: false, message: '確定済みの表のデザインが必要です' };
+        return { allowed: false, message: t('guards.needSchema') };
       }
       if (counts.pilotRuns < 1) {
-        return { allowed: true, warning: 'パイロット抽出を推奨します' };
+        return { allowed: true, warning: t('guards.pilotRecommended') };
       }
       return { allowed: true };
     case '#/verify':
@@ -72,18 +73,18 @@ export function guardRoute(hash: string, state: AppState, role: ProjectRole = 'o
         if (!state.role.folderAccessGranted) {
           return {
             allowed: false,
-            message: 'プロジェクトフォルダへのアクセス付与が必要です（Home から付与してください）',
+            message: t('guards.needFolderAccess'),
           };
         }
         return { allowed: true };
       }
       if (counts.evidenceRows < 1) {
-        return { allowed: false, message: 'AI 抽出が未実施です。先に抽出を実行してください' };
+        return { allowed: false, message: t('guards.needExtraction') };
       }
       return { allowed: true };
     case '#/export':
       if (counts.dataRows < 1) {
-        return { allowed: false, message: 'エクスポートできるデータがまだありません' };
+        return { allowed: false, message: t('guards.noExportData') };
       }
       return { allowed: true };
     default:

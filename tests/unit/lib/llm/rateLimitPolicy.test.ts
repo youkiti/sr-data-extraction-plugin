@@ -17,6 +17,7 @@ import {
   UNLIMITED_POLICY,
   type RateLimitPolicy,
 } from '../../../../src/lib/llm/rateLimitPolicy';
+import { setUiLanguage } from '../../../../src/lib/i18n';
 
 function okResponse(text = 'ok'): ChatResponse {
   return { text, tokensIn: 1, tokensOut: 1, raw: {} };
@@ -247,5 +248,26 @@ describe('applyRateLimitPolicy', () => {
     const wrapped = applyRateLimitPolicy(provider, UNLIMITED_POLICY);
     const res = await wrapped.chat([{ role: 'user', content: 'a' }]);
     expect(res.text).toBe('done');
+  });
+});
+
+describe('tier ラベル・説明の表示言語追従（issue #93）', () => {
+  afterEach(() => {
+    setUiLanguage('ja');
+  });
+
+  test('全 tier の label / description が両言語で非空で、言語切替に追従する', () => {
+    for (const tier of RATE_LIMIT_TIERS) {
+      expect(tier.label).not.toBe('');
+      expect(tier.description).not.toBe('');
+    }
+    const jaFreeLabel = RATE_LIMIT_TIERS[0]?.label;
+    setUiLanguage('en');
+    for (const tier of RATE_LIMIT_TIERS) {
+      expect(tier.label).not.toBe('');
+      expect(tier.description).not.toBe('');
+    }
+    expect(RATE_LIMIT_TIERS[0]?.label).toBe('Gemini free tier (Free)');
+    expect(RATE_LIMIT_TIERS[0]?.label).not.toBe(jaFreeLabel);
   });
 });

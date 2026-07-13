@@ -1,5 +1,6 @@
 import { renderExportView } from '../../../../src/app/views/exportView';
 import { createInitialState, type AppState, type ExportState } from '../../../../src/app/store';
+import { setUiLanguage } from '../../../../src/lib/i18n';
 import type { ExportViewCallbacks, ViewContext } from '../../../../src/app/views/types';
 import type { BuiltExport, ClassicExportFormat } from '../../../../src/features/export/buildExport';
 import { buildMethodsText } from '../../../../src/features/export/methodsBoilerplate';
@@ -627,5 +628,26 @@ describe('renderExportView: 論文 Methods 記載例カード（issue #67）', (
       '差し替え済み本文',
     );
     expect(view.querySelector('#methods-unresolved-note')).toBeNull();
+  });
+});
+
+describe('renderExportView（表示言語 en。issue #93）', () => {
+  afterEach(() => {
+    setUiLanguage('ja');
+  });
+
+  test('見出し・形式説明・読み込み中が en で描画される', () => {
+    setUiLanguage('en');
+    const { ctx } = makeCtx();
+    const view = renderExportView(makeState(), ctx);
+    expect(view.querySelector('h2')?.textContent).toBe('Export');
+    expect(view.querySelector('#export-loading')?.textContent).toBe(
+      'Loading the export materials…',
+    );
+
+    const errorView = renderExportView(makeState({ loadError: 'HTTP 500' }), ctx);
+    expect(errorView.querySelector('#export-load-error')?.textContent).toBe(
+      'Failed to load the export materials: HTTP 500',
+    );
   });
 });

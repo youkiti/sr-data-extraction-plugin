@@ -55,6 +55,7 @@ import {
 import { FACTORY_DEFAULT_MODEL, loadDefaultModel } from '../../lib/storage/settingsStore';
 import type { SchemaState, Store } from '../store';
 import { showToast } from '../ui/toast';
+import { t } from '../../lib/i18n';
 
 export interface SchemaServiceDeps extends ProviderResolutionDeps {
   google: GoogleApiDeps;
@@ -157,7 +158,7 @@ export function toggleSampleDocument(store: Store, documentId: string, selected:
     return;
   }
   if (current.length >= 3) {
-    showToast('サンプル論文は 3 本までです');
+    showToast(t('schema.toastMax3'));
     return;
   }
   patchSchema(store, { selectedDocumentIds: [...current, documentId] });
@@ -181,7 +182,7 @@ export async function resolveProtocol(
   const records = cached ?? (await listProtocols(spreadsheetId, deps.google));
   const protocol = records[0];
   if (protocol === undefined) {
-    throw new Error('プロトコルが未入力です。先に #/protocol で入力してください');
+    throw new Error(t('schema.errNoProtocol'));
   }
   if (protocol.rawTextInline !== null) {
     return { protocol, text: protocol.rawTextInline };
@@ -192,7 +193,7 @@ export async function resolveProtocol(
       return { protocol, text: await getFileText(fileId, deps.google) };
     }
   }
-  throw new Error(`プロトコル v${protocol.version} の本文を取得できません（raw_text がありません）`);
+  throw new Error(t('schema.errProtocolBody', { version: protocol.version }));
 }
 
 /** documents 一覧を解決する（documents スライスに読込済みならそれを使う） */
@@ -218,11 +219,11 @@ export async function runDraftSchema(store: Store, deps: SchemaServiceDeps): Pro
   }
   const { selectedDocumentIds, model } = state.schema;
   if (selectedDocumentIds.length < 1 || selectedDocumentIds.length > 3) {
-    patchSchema(store, { draftError: 'サンプル論文を 1〜3 本選択してください' });
+    patchSchema(store, { draftError: t('schema.errSamples') });
     return;
   }
   if (model === '') {
-    patchSchema(store, { draftError: 'モデルを選択してください（「その他」で直接入力も可）' });
+    patchSchema(store, { draftError: t('extraction.errNoModel') });
     return;
   }
   const providerResolution = await resolveProviderConfig(model, deps);
@@ -292,7 +293,7 @@ export async function runDraftSchema(store: Store, deps: SchemaServiceDeps): Pro
       editorErrors: [],
       editorOrigin: 'ai_draft',
     });
-    showToast(`AI が ${rows.length} 項目をドラフトしました。内容を確認して版として確定してください`);
+    showToast(t('schema.toastDrafted', { n: rows.length }));
   } catch (err) {
     patchSchema(store, { drafting: false, draftError: toMessage(err) });
   } finally {
@@ -487,7 +488,7 @@ export async function confirmSchema(
   if (rows.length === 0 || errors.length > 0) {
     patchSchema(store, {
       editorErrors: errors,
-      draftError: rows.length === 0 ? '表のデザイン項目が 1 件もありません' : null,
+      draftError: rows.length === 0 ? t('schema.errNoRows') : null,
     });
     return;
   }
@@ -523,7 +524,7 @@ export async function confirmSchema(
       },
       counts: { ...after.counts, schemaVersions: versions.length },
     });
-    showToast(`表のデザイン v${version.schemaVersion} を確定しました（${fields.length} 項目）`);
+    showToast(t('schema.toastConfirmed', { version: version.schemaVersion, n: fields.length }));
   } catch (err) {
     patchSchema(store, { confirming: false, draftError: toMessage(err) });
   }

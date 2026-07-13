@@ -14,6 +14,7 @@ import type { GoogleApiDeps } from '../../lib/google/types';
 import type { Protocol } from '../../domain/protocol';
 import type { ProtocolState, Store } from '../store';
 import { showToast } from '../ui/toast';
+import { t } from '../../lib/i18n';
 
 export interface ProtocolServiceDeps {
   google: GoogleApiDeps;
@@ -125,7 +126,7 @@ export async function submitProtocol(
       selectedVersion: null,
       draftText: '',
     });
-    showToast(`プロトコル v${protocol.version} を保存しました`);
+    showToast(t('protocol.toastSaved', { version: protocol.version }));
   } catch (err) {
     patchProtocol(store, { saving: false, saveError: toMessage(err) });
   }

@@ -44,6 +44,7 @@ import { nowIso8601 } from '../../utils/iso8601';
 import { generateUuid } from '../../utils/uuid';
 import type { DocumentsState, ImportRow, MergeDialogState, Store } from '../store';
 import { showToast } from '../ui/toast';
+import { t, type MessageKey } from '../../lib/i18n';
 
 export interface DocumentsServiceDeps {
   google: GoogleApiDeps;
@@ -56,10 +57,11 @@ export interface DocumentsServiceDeps {
   now?: () => string;
 }
 
-const IMPORT_STAGE_LABELS: Record<ImportStage, string> = {
-  copy: 'コピー',
-  extract: 'テキスト抽出',
-  save: 'Documents への保存',
+// 表示言語に追従させるため、段階ラベルは使用時に t() で解決する（キー対応表のみ固定。issue #93）
+const IMPORT_STAGE_LABEL_KEYS: Record<ImportStage, MessageKey> = {
+  copy: 'documents.stageCopy',
+  extract: 'documents.stageExtract',
+  save: 'documents.stageSave',
 };
 
 /** 無視した統合候補ペアを保存する storage.local キー（プロジェクト単位。§4.5） */
@@ -130,7 +132,10 @@ function finalizeImportRows(rows: ImportRow[], result: ImportDocumentsResult): I
       return {
         ...row,
         status: 'failed',
-        detail: `${IMPORT_STAGE_LABELS[failure.stage]}に失敗: ${failure.detail}`,
+        detail: t('documents.stageFailed', {
+          stage: t(IMPORT_STAGE_LABEL_KEYS[failure.stage]),
+          detail: failure.detail,
+        }),
       };
     }
     return { ...row, status: 'done', detail: null };
@@ -140,19 +145,19 @@ function finalizeImportRows(rows: ImportRow[], result: ImportDocumentsResult): I
 /** 完了トースト文言（ui-states.md §3「重複スキップ」。従来 2 文言はスキップ 0 件時に維持） */
 function importResultToast(imported: number, skipped: number, failed: number): string {
   if (skipped === 0 && failed === 0) {
-    return `${imported} 件の PDF を取り込みました`;
+    return t('documents.toastImported', { n: imported });
   }
   if (imported === 0 && failed === 0) {
-    return `取り込み済みのため ${skipped} 件をスキップしました`;
+    return t('documents.toastAllSkipped', { n: skipped });
   }
-  const parts = [`${imported} 件取り込み`];
+  const parts = [t('documents.toastMixedImported', { n: imported })];
   if (skipped > 0) {
-    parts.push(`${skipped} 件スキップ`);
+    parts.push(t('documents.toastMixedSkipped', { n: skipped }));
   }
   if (failed > 0) {
-    parts.push(`${failed} 件失敗`);
+    parts.push(t('documents.toastMixedFailed', { n: failed }));
   }
-  return `${parts.join('、')}しました`;
+  return t('documents.toastMixedSuffix', { parts: parts.join('、') });
 }
 
 /**
@@ -292,7 +297,7 @@ async function runImportSelections(
     // フォルダ解決など一括で中断する失敗（ファイル単位の失敗は importDocuments が failures で返す）
     rows = rows.map((row) => ({ ...row, status: 'failed' as const, detail: toMessage(err) }));
     patchDocuments(store, { importing: false, importRows: rows });
-    showToast(`取り込みに失敗しました: ${toMessage(err)}`);
+    showToast(t('documents.toastImportFailed', { reason: toMessage(err) }));
   }
 }
 
@@ -316,7 +321,7 @@ export async function importFromPicker(
   try {
     selections = await openPdfPicker(deps.picker);
   } catch (err) {
-    showToast(`Drive Picker を開けませんでした: ${toMessage(err)}`);
+    showToast(t('common.pickerFailed', { reason: toMessage(err) }));
     return;
   }
   if (selections === null || selections.length === 0) {
@@ -326,19 +331,19 @@ export async function importFromPicker(
   // フォルダ選択を直下 PDF へ展開する（列挙に数秒かかりうるため先に importing を立てる）
   patchDocuments(store, { importing: true });
   if (selections.some((selection) => selection.mimeType === FOLDER_MIME_TYPE)) {
-    showToast('フォルダを展開中…');
+    showToast(t('documents.toastExpandingFolder'));
   }
   let fileSelections: ImportSelection[];
   try {
     fileSelections = await expandSelections(selections, deps);
   } catch (err) {
     patchDocuments(store, { importing: false });
-    showToast(`フォルダの読み込みに失敗しました: ${toMessage(err)}`);
+    showToast(t('documents.toastFolderFailed', { reason: toMessage(err) }));
     return;
   }
   if (fileSelections.length === 0) {
     patchDocuments(store, { importing: false });
-    showToast('選択したフォルダに PDF が見つかりませんでした');
+    showToast(t('documents.toastNoPdfInFolder'));
     return;
   }
 
@@ -388,12 +393,12 @@ export async function importFromFiles(
 
   if (targets.length === 0) {
     if (excludedCount > 0) {
-      showToast('PDF ファイルが選択されていません');
+      showToast(t('documents.toastNoPdfSelected'));
     }
     return;
   }
   if (excludedCount > 0) {
-    showToast(`PDF 以外の ${excludedCount} 件を除外しました`);
+    showToast(t('documents.toastExcluded', { n: excludedCount }));
   }
 
   const fileSelections: ImportSelection[] = await Promise.all(
@@ -430,7 +435,7 @@ export async function saveStudyLabel(
   }
   const label = rawLabel.trim();
   if (label === '') {
-    showToast('study_label は空にできません');
+    showToast(t('documents.toastLabelEmpty'));
     patchDocuments(store, {}); // 再描画して入力値を元へ戻す
     return;
   }
@@ -479,9 +484,9 @@ async function saveStudyField(
     patchDocuments(store, {
       studies: studies.map((s) => (s.studyId === updated.studyId ? updated : s)),
     });
-    showToast(`${label} を保存しました`);
+    showToast(t('documents.toastFieldSaved', { field: label }));
   } catch (err) {
-    showToast(`${label} の保存に失敗しました: ${toMessage(err)}`);
+    showToast(t('documents.toastFieldSaveFailed', { field: label, reason: toMessage(err) }));
     patchDocuments(store, {}); // 再描画で元の値へ戻す
   }
 }
@@ -508,9 +513,9 @@ export async function saveDocumentRole(
     patchDocuments(store, {
       records: records.map((doc) => (doc.documentId === documentId ? updated : doc)),
     });
-    showToast('document_role を保存しました');
+    showToast(t('documents.toastFieldSaved', { field: 'document_role' }));
   } catch (err) {
-    showToast(`document_role の保存に失敗しました: ${toMessage(err)}`);
+    showToast(t('documents.toastFieldSaveFailed', { field: 'document_role', reason: toMessage(err) }));
     patchDocuments(store, {});
   }
 }
@@ -543,7 +548,7 @@ function openMergeFor(store: Store, studyIds: readonly string[]): void {
   const set = new Set(studyIds);
   const ordered = (state.studies ?? []).filter((s) => set.has(s.studyId));
   if (ordered.length < 2) {
-    showToast('統合するには 2 件以上の試験を選択してください');
+    showToast(t('documents.toastMergeNeedTwo'));
     return;
   }
   const first = ordered[0] as StudyRecord;
@@ -609,11 +614,11 @@ export async function confirmMerge(
       await updateDocument(project.spreadsheetId, { ...doc, studyId: reassign.studyId }, deps.google);
     }
     patchDocuments(store, { merging: false, mergeDialog: null, selectedStudyIds: [] });
-    showToast('試験を統合しました（統合後の試験は未抽出に戻ります）');
+    showToast(t('documents.toastMerged'));
     await loadDocuments(store, deps, { force: true });
   } catch (err) {
     patchDocuments(store, { merging: false, mergeError: toMessage(err) });
-    showToast(`統合に失敗しました: ${toMessage(err)}`);
+    showToast(t('documents.toastMergeFailed', { reason: toMessage(err) }));
   }
 }
 
@@ -640,7 +645,7 @@ export async function ignoreCandidate(
   try {
     await setLocal(ignoredCandidatesKey(project.spreadsheetId), next);
   } catch (err) {
-    showToast(`統合候補の無視を保存できませんでした: ${toMessage(err)}`);
+    showToast(t('documents.toastIgnoreFailed', { reason: toMessage(err) }));
   }
 }
 

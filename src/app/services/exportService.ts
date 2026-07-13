@@ -40,6 +40,7 @@ import { nowIso8601 } from '../../utils/iso8601';
 import { generateUuid } from '../../utils/uuid';
 import { downloadTextFile } from '../ui/download';
 import { showToast } from '../ui/toast';
+import { t } from '../../lib/i18n';
 import type { ExportState, Store } from '../store';
 
 /** Drive のプロジェクトフォルダ直下・`exports/` 配下に作る R セット保存先サブフォルダの接頭辞 */
@@ -206,7 +207,7 @@ export async function loadExportData(
     const latest = versions[0]; // listSchemaVersions は降順
     if (latest === undefined) {
       // ガード（dataRows ≥ 1）を満たす以上、通常は起きない防御
-      throw new Error('確定済みの表のデザインがありません。先に表のデザインを確定してください');
+      throw new Error(t('export.svcNoSchema'));
     }
     const fields = await getSchemaFieldsByVersion(spreadsheetId, latest.schemaVersion, deps.google);
     // エクスポートはアクティブ study（Documents から参照される study）のみ・作成順（§4.5）
@@ -483,8 +484,8 @@ export async function copyMethodsText(store: Store, deps: ExportServiceDeps): Pr
   const write = deps.writeClipboard ?? ((value: string) => navigator.clipboard.writeText(value));
   try {
     await write(text);
-    showToast('コピーしました');
+    showToast(t('export.toastCopied'));
   } catch (err) {
-    showToast(`コピーに失敗しました: ${toMessage(err)}`);
+    showToast(t('common.toastCopyFailed', { reason: toMessage(err) }));
   }
 }

@@ -16,6 +16,7 @@ import type { GoogleApiDeps } from '../../lib/google/types';
 import { nowIso8601 } from '../../utils/iso8601';
 import type { ReviewersState, Store } from '../store';
 import { showToast } from '../ui/toast';
+import { t } from '../../lib/i18n';
 
 /** 追加時に共有する対象（currentProject から取り出す最小情報） */
 export interface ShareableProject {
@@ -127,7 +128,7 @@ export async function requestAddReviewer(
 ): Promise<void> {
   const email = rawInput.email.trim();
   if (email === '') {
-    showToast('email を入力してください');
+    showToast(t('home.toastEmailRequired'));
     return;
   }
   const input: AddReviewerFormInput = { ...rawInput, email };
@@ -190,7 +191,7 @@ async function submitReviewerAssignment(
     });
     if (input.role === 'revoked') {
       // 解除は行追記のみ（他人の Drive アクセスを消す自動アンシェアはしない）
-      showToast(`${input.email} の登録を解除しました`);
+      showToast(t('home.toastRevoked', { email: input.email }));
       return;
     }
     // 役割登録が成功した後で Drive を自動共有する。共有失敗は登録を巻き戻さず警告に縮退する
@@ -201,17 +202,13 @@ async function submitReviewerAssignment(
         input.email,
         deps.google,
       );
-      showToast(`${input.email} を登録し、シート（編集可）とフォルダ（閲覧）を共有しました`);
+      showToast(t('home.toastAdded', { email: input.email }));
     } catch (shareErr) {
-      showToast(
-        `${input.email} を登録しました。ただし自動共有に失敗したため、Google Drive で手動共有してください（${toMessage(
-          shareErr,
-        )}）`,
-      );
+      showToast(t('home.toastAddedShareFailed', { email: input.email, reason: toMessage(shareErr) }));
     }
   } catch (err) {
     patchReviewers(store, { saving: false, saveError: toMessage(err) });
-    showToast(`保存に失敗しました: ${toMessage(err)}`);
+    showToast(t('home.toastSaveFailed', { reason: toMessage(err) }));
   }
 }
 
@@ -240,18 +237,18 @@ export function buildReviewInvite(input: ReviewInviteInput): string {
   const url = `https://docs.google.com/spreadsheets/d/${input.spreadsheetId}/edit`;
   const modeNote =
     input.reviewMode === 'independent'
-      ? 'レビュー方式: AI 抜きの独立入力（AI の抽出結果・根拠は表示されません。PDF を読んでご自身で値を入力してください）'
-      : 'レビュー方式: AI の結果をレビュー（AI が抽出した各項目を accept / edit / reject / not_reported で判定してください）';
+      ? t('home.inviteModeIndependent')
+      : t('home.inviteModeWithAi');
   return [
-    `${input.reviewerEmail} さん`,
+    t('home.inviteGreeting', { email: input.reviewerEmail }),
     '',
-    `系統的レビューのデータ抽出「${input.projectName}」の第 2 レビュアーをお願いします。以下の手順で参加してください。`,
+    t('home.inviteBody', { project: input.projectName }),
     '',
-    '1. Chrome 拡張「SR Data Extraction Plugin」をインストールし、ご自身の Google アカウントでログイン',
-    '2. 拡張アイコン →「スプレッドシート ID / URL で開く」に次を貼り付けて開く:',
+    t('home.inviteStep1'),
+    t('home.inviteStep2'),
     `   ${url}`,
-    '3. Home の「プロジェクトフォルダへのアクセスを付与」で、共有されたプロジェクトフォルダを選択',
-    '4.「検証」画面で担当ぶんを判定してください',
+    t('home.inviteStep3'),
+    t('home.inviteStep4'),
     '',
     modeNote,
   ].join('\n');
@@ -280,8 +277,8 @@ export async function copyReviewInvite(
   const write = deps.writeClipboard ?? ((value: string) => navigator.clipboard.writeText(value));
   try {
     await write(text);
-    showToast('レビュー依頼文をコピーしました');
+    showToast(t('home.toastInviteCopied'));
   } catch (err) {
-    showToast(`コピーに失敗しました: ${toMessage(err)}`);
+    showToast(t('common.toastCopyFailed', { reason: toMessage(err) }));
   }
 }

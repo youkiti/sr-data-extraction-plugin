@@ -17,6 +17,7 @@ import type { GoogleApiDeps } from '../../lib/google/types';
 import { getLocal, setLocal } from '../../lib/storage/chromeStorage';
 import type { RoleState, Store } from '../store';
 import { showToast } from '../ui/toast';
+import { t } from '../../lib/i18n';
 
 export interface RoleServiceDeps {
   google: GoogleApiDeps;
@@ -103,7 +104,7 @@ export async function grantFolderAccess(store: Store, deps: RoleServiceDeps): Pr
     selections = await openPdfPicker(deps.picker);
   } catch (err) {
     patchRole(store, { folderAccessChecking: false, folderAccessError: toMessage(err) });
-    showToast(`Drive Picker を開けませんでした: ${toMessage(err)}`);
+    showToast(t('common.pickerFailed', { reason: toMessage(err) }));
     return;
   }
   if (selections === null || selections.length === 0) {
@@ -122,9 +123,9 @@ export async function grantFolderAccess(store: Store, deps: RoleServiceDeps): Pr
     }
     await setLocal(folderAccessStorageKey(project.spreadsheetId), true);
     patchRole(store, { folderAccessChecking: false, folderAccessGranted: true, folderAccessError: null });
-    showToast('プロジェクトフォルダへのアクセスを確認しました');
+    showToast(t('home.toastFolderAccessConfirmed'));
   } catch (err) {
     patchRole(store, { folderAccessChecking: false, folderAccessError: toMessage(err) });
-    showToast(`フォルダへのアクセスを確認できませんでした: ${toMessage(err)}`);
+    showToast(t('home.toastFolderAccessFailed', { reason: toMessage(err) }));
   }
 }

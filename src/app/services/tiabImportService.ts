@@ -13,6 +13,7 @@ import {
 import { readTiabSheet } from '../../features/documents/tiabSheetReader';
 import type { Store, TiabImportState } from '../store';
 import { showToast } from '../ui/toast';
+import { t } from '../../lib/i18n';
 import { loadDocuments, type DocumentsServiceDeps } from './documentsService';
 
 function toMessage(err: unknown): string {
@@ -64,7 +65,7 @@ export async function previewTiabImport(
   if (spreadsheetId === null) {
     patchTiab(store, {
       sheetInput: rawInput,
-      error: 'tiab-review のスプレッドシートの URL または ID を入力してください',
+      error: t('documents.tiabErrInput'),
       plan: null,
       result: null,
     });
@@ -75,7 +76,7 @@ export async function previewTiabImport(
   if (records === null || studies === null) {
     patchTiab(store, {
       sheetInput: rawInput,
-      error: '文献一覧の読み込みが完了してから実行してください',
+      error: t('documents.tiabErrNotLoaded'),
       plan: null,
       result: null,
     });
@@ -125,10 +126,10 @@ export async function applyTiabImport(store: Store, deps: DocumentsServiceDeps):
         unmatched,
       },
     });
-    showToast('tiab-review の採用リストを反映しました');
+    showToast(t('documents.tiabToastApplied'));
     await loadDocuments(store, deps, { force: true });
   } catch (err) {
     patchTiab(store, { applying: false, error: toMessage(err) });
-    showToast(`取り込みに失敗しました: ${toMessage(err)}`);
+    showToast(t('documents.toastImportFailed', { reason: toMessage(err) }));
   }
 }

@@ -3,6 +3,7 @@
 // + 「その他（直接入力）」でテキスト入力が現れる。
 // 純 DOM 部品（store 非依存・Document を引数で受ける）のため Options からも使う
 import { buildModelCatalog, isCatalogModel } from '../../lib/llm/modelCatalog';
+import { t } from '../../lib/i18n';
 
 /** 「その他（直接入力）」の option 値。表示切替専用の sentinel で state には漏らさない */
 export const MODEL_SELECT_OTHER_VALUE = '__other__';
@@ -56,14 +57,14 @@ export function createModelSelect(doc: Document, opts: ModelSelectOptions): HTML
 
   const other = doc.createElement('option');
   other.value = MODEL_SELECT_OTHER_VALUE;
-  other.textContent = 'その他（直接入力）';
+  other.textContent = t('modelSelect.other');
   select.append(other);
 
   const custom = doc.createElement('input');
   custom.id = `${opts.id}-custom`;
   custom.type = 'text';
-  custom.setAttribute('aria-label', `${opts.ariaLabel}（直接入力）`);
-  custom.placeholder = '例: org/model-name';
+  custom.setAttribute('aria-label', t('modelSelect.customAria', { label: opts.ariaLabel }));
+  custom.placeholder = t('modelSelect.customPlaceholder');
   custom.className = 'model-select__custom';
 
   // state の値からの決定的な復元（views は毎 render で DOM を作り直すため）

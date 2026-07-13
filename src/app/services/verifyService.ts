@@ -33,6 +33,7 @@ import type { VerifyLayoutMode } from '../../lib/storage/settingsStore';
 import { nowIso8601 } from '../../utils/iso8601';
 import type { Store, VerifyState, VerifyTarget } from '../store';
 import { showToast } from '../ui/toast';
+import { t } from '../../lib/i18n';
 import {
   foldDecisionWriteTokens,
   loadVerificationBundle,
@@ -488,7 +489,7 @@ export async function persistVerifyDecision(
   );
   const field = target?.fields.find((candidate) => candidate.fieldId === decision.fieldId);
   if (field === undefined) {
-    showToast(`判定を保存できません: field_id ${decision.fieldId} が表のデザインにありません`);
+    showToast(t('verify.errFieldNotInSchema', { id: decision.fieldId }));
     return;
   }
   let studyValues: Record<string, string | null> | null = null;

@@ -19,6 +19,7 @@ import { indexEvidenceByCellKey, type AdjudicationCell } from '../../features/ad
 import type { StudyGate } from '../../features/adjudication/gate';
 import { entityKeyLabel } from '../../features/verification/cells';
 import { deriveCellStates, emptyCellState, type CellState } from '../../features/verification/cellState';
+import { t, type MessageKey } from '../../lib/i18n';
 import { STUDY_ENTITY_KEY } from '../../utils/entityKey';
 import type { AdjudicateStudyRow, AdjudicateWorking, AppState } from '../store';
 import { el } from '../ui/dom';
@@ -27,18 +28,19 @@ import type { ViewContext } from './types';
 
 type ChipStatus = 'match' | 'mismatch' | 'accept' | 'edit' | 'reject' | 'not_reported' | 'skipped';
 
-const CHIP_LABELS: Record<ChipStatus, string> = {
-  match: '一致',
-  mismatch: '不一致',
-  accept: '裁定済み（採用）',
-  edit: '裁定済み（編集）',
-  reject: '裁定済み（棄却）',
-  not_reported: '裁定済み（未報告）',
-  skipped: 'スキップ',
+// 表示言語に追従させるため、ラベルは描画時に t() で解決する（キー対応表のみ固定。issue #93）
+const CHIP_LABEL_KEYS: Record<ChipStatus, MessageKey> = {
+  match: 'adjudicate.chipMatch',
+  mismatch: 'adjudicate.chipMismatch',
+  accept: 'adjudicate.chipAccept',
+  edit: 'adjudicate.chipEdit',
+  reject: 'adjudicate.chipReject',
+  not_reported: 'adjudicate.chipNotReported',
+  skipped: 'adjudicate.chipSkipped',
 };
 
 function displayValue(value: string | null): string {
-  return value === null ? '（未入力）' : value;
+  return value === null ? t('adjudicate.valueNone') : value;
 }
 
 function chipStatus(cell: AdjudicationCell, consensusState: CellState, skipped: boolean): ChipStatus {
@@ -57,13 +59,20 @@ function chipStatus(cell: AdjudicationCell, consensusState: CellState, skipped: 
 
 /** 両者の完了状況の表示文言（値・判定内訳は見せない = 盲検の継続） */
 function gateProgressText(annotatorA: string, annotatorB: string, gate: StudyGate): string {
-  return `A（${annotatorA}）: ${gate.progressA.decided}/${gate.progressA.total}・B（${annotatorB}）: ${gate.progressB.decided}/${gate.progressB.total}`;
+  return t('adjudicate.gateProgress', {
+    a: annotatorA,
+    aDecided: gate.progressA.decided,
+    aTotal: gate.progressA.total,
+    b: annotatorB,
+    bDecided: gate.progressB.decided,
+    bTotal: gate.progressB.total,
+  });
 }
 
 function openButton(studyId: string, ctx: ViewContext): HTMLElement {
   const open = el('button', {
     className: 'adjudicate__open-button',
-    text: '裁定を開始',
+    text: t('adjudicate.open'),
     attributes: { type: 'button' },
   });
   open.addEventListener('click', () => ctx.adjudicate.onSelectStudy(studyId));
@@ -84,9 +93,9 @@ function renderSelectablePairRow(row: AdjudicateStudyRow, state: AppState, ctx: 
 
   const select = el('select', {
     className: 'adjudicate__pair-select',
-    attributes: { 'aria-label': `${row.study.studyLabel} で裁定する 2 名の組` },
+    attributes: { 'aria-label': t('adjudicate.pairSelectAria', { label: row.study.studyLabel }) },
   }) as HTMLSelectElement;
-  select.append(el('option', { text: '2 名の組を選択…', attributes: { value: '' } }));
+  select.append(el('option', { text: t('adjudicate.pairPlaceholder'), attributes: { value: '' } }));
   options.forEach((option, index) => {
     select.append(
       el('option', {
@@ -114,7 +123,7 @@ function renderSelectablePairRow(row: AdjudicateStudyRow, state: AppState, ctx: 
         })
       : el('p', {
           className: 'adjudicate__pair-progress',
-          text: 'レビュアーが 3 名以上います。裁定する 2 名の組を選択してください。',
+          text: t('adjudicate.pairNote'),
         }),
   );
   cells.push(el('td', {}, statusChildren));
@@ -134,7 +143,7 @@ function renderListRow(row: AdjudicateStudyRow, state: AppState, ctx: ViewContex
 
   if (row.pair.kind === 'waiting') {
     cells.push(
-      el('td', { text: '両者の検証完了待ちです' }),
+      el('td', { text: t('adjudicate.waiting') }),
       el('td', {}),
     );
     return el('tr', { className: 'adjudicate__list-row adjudicate__list-row--dimmed' }, cells);
@@ -155,15 +164,15 @@ function renderList(rows: readonly AdjudicateStudyRow[], state: AppState, ctx: V
   if (rows.length === 0) {
     return el('p', {
       id: 'adjudicate-empty',
-      text: '裁定対象となる研究がありません。#/documents で文献を取り込み、2 名のレビュアーによる検証が完了すると一覧に表示されます。',
+      text: t('adjudicate.emptyList'),
     });
   }
   return el('table', { id: 'adjudicate-list', className: 'adjudicate__list' }, [
     el('thead', {}, [
       el('tr', {}, [
-        el('th', { text: '研究' }),
-        el('th', { text: '状況' }),
-        el('th', { text: '操作' }),
+        el('th', { text: t('adjudicate.headStudy') }),
+        el('th', { text: t('adjudicate.headStatus') }),
+        el('th', { text: t('adjudicate.headAction') }),
       ]),
     ]),
     el('tbody', {}, rows.map((row) => renderListRow(row, state, ctx))),
@@ -182,9 +191,9 @@ function renderArmMappingTable(working: AdjudicateWorking, ctx: ViewContext): HT
   const rows = working.armsA.map((armA, index) => {
     const select = el('select', {
       className: 'adjudicate__arm-map-select',
-      attributes: { 'aria-label': `A の群「${armA.armName}」に対応する B の群` },
+      attributes: { 'aria-label': t('adjudicate.armMapAria', { name: armA.armName }) },
     }) as HTMLSelectElement;
-    select.append(el('option', { text: '対応なし', attributes: { value: '' } }));
+    select.append(el('option', { text: t('adjudicate.armMapNone'), attributes: { value: '' } }));
     for (const armB of working.armsB) {
       select.append(el('option', { text: armB.armName, attributes: { value: armB.armKey } }));
     }
@@ -195,7 +204,12 @@ function renderArmMappingTable(working: AdjudicateWorking, ctx: ViewContext): HT
     return el('tr', {}, [el('td', { text: armA.armName }), el('td', {}, [select])]);
   });
   return el('table', { id: 'adjudicate-arm-map', className: 'adjudicate__arm-map' }, [
-    el('thead', {}, [el('tr', {}, [el('th', { text: 'A の群' }), el('th', { text: '対応する B の群' })])]),
+    el('thead', {}, [
+      el('tr', {}, [
+        el('th', { text: t('adjudicate.armMapHeadA') }),
+        el('th', { text: t('adjudicate.armMapHeadB') }),
+      ]),
+    ]),
     el('tbody', {}, rows),
   ]);
 }
@@ -204,27 +218,27 @@ function renderArmDraftEditor(working: AdjudicateWorking, ctx: ViewContext): HTM
   const rows = working.armDraft.map((row, index) => {
     const input = el('input', {
       className: 'adjudicate__arm-draft-input',
-      attributes: { type: 'text', 'aria-label': `群 ${index + 1} の名称` },
+      attributes: { type: 'text', 'aria-label': t('adjudicate.armDraftNameAria', { n: index + 1 }) },
     }) as HTMLInputElement;
     input.value = row.armName;
     input.addEventListener('change', () => ctx.adjudicate.onArmDraftChange(index, input.value));
     const remove = el('button', {
       className: 'adjudicate__arm-draft-remove',
-      text: '削除',
-      attributes: { type: 'button', 'aria-label': `群 ${index + 1} を削除` },
+      text: t('verify.armRemove'),
+      attributes: { type: 'button', 'aria-label': t('adjudicate.armDraftRemoveAria', { n: index + 1 }) },
     });
     remove.addEventListener('click', () => ctx.adjudicate.onArmDraftRemove(index));
     return el('div', { className: 'adjudicate__arm-draft-row' }, [input, remove]);
   });
   const add = el('button', {
     id: 'adjudicate-arm-add',
-    text: '群を追加',
+    text: t('verify.armAdd'),
     attributes: { type: 'button' },
   });
   add.addEventListener('click', () => ctx.adjudicate.onArmDraftAdd());
   const confirm = el('button', {
     id: 'adjudicate-arm-confirm',
-    text: '確定',
+    text: t('adjudicate.armConfirm'),
     attributes: { type: 'button' },
   });
   confirm.addEventListener('click', () => ctx.adjudicate.onConfirmArms(working.armDraft));
@@ -234,7 +248,7 @@ function renderArmDraftEditor(working: AdjudicateWorking, ctx: ViewContext): HTM
 function renderArmCard(working: AdjudicateWorking, ctx: ViewContext): HTMLElement {
   if (working.consensusArmStructure !== null) {
     return el('section', { id: 'adjudicate-arm-card', className: 'adjudicate__arm-card' }, [
-      el('h4', { text: '群構成（確定済み）' }),
+      el('h4', { text: t('adjudicate.armConfirmedTitle') }),
       el(
         'ul',
         { className: 'adjudicate__arm-confirmed' },
@@ -242,7 +256,7 @@ function renderArmCard(working: AdjudicateWorking, ctx: ViewContext): HTMLElemen
       ),
     ]);
   }
-  const children: HTMLElement[] = [el('h4', { text: '群構成の突き合わせ' })];
+  const children: HTMLElement[] = [el('h4', { text: t('adjudicate.armMatchTitle') })];
   if (working.armsA.length > 0) {
     children.push(renderArmMappingTable(working, ctx));
   }
@@ -251,19 +265,19 @@ function renderArmCard(working: AdjudicateWorking, ctx: ViewContext): HTMLElemen
     children.push(
       el('p', {
         className: 'adjudicate__arm-unmapped-note',
-        text: `どの A の群にも対応づけられていない B の群は、consensus の候補に別の群として追加されます: ${unmapped
-          .map((arm) => arm.armName)
-          .join(' / ')}`,
+        text: t('adjudicate.armUnmappedNote', {
+          names: unmapped.map((arm) => arm.armName).join(' / '),
+        }),
       }),
     );
   }
   if (working.armsMatched) {
     children.push(
-      el('p', { className: 'adjudicate__arm-match-note', text: '本数・名称が一致しています。' }),
+      el('p', { className: 'adjudicate__arm-match-note', text: t('adjudicate.armMatchNote') }),
     );
     const adopt = el('button', {
       id: 'adjudicate-arm-adopt',
-      text: 'このまま採用',
+      text: t('adjudicate.armAdopt'),
       attributes: { type: 'button' },
     });
     adopt.addEventListener('click', () => ctx.adjudicate.onConfirmArms(working.armDraft));
@@ -273,7 +287,7 @@ function renderArmCard(working: AdjudicateWorking, ctx: ViewContext): HTMLElemen
       el('p', {
         className: 'adjudicate__arm-mismatch-note',
         attributes: { role: 'alert' },
-        text: '本数または名称が一致しません。consensus の群構成を編集して確定してください。',
+        text: t('adjudicate.armMismatchNote'),
       }),
       renderArmDraftEditor(working, ctx),
     );
@@ -290,7 +304,7 @@ function valueCellChildren(value: string, note: string | null, side: 'A' | 'B'):
   const children: Array<HTMLElement | string> = [value];
   if (note !== null) {
     children.push(
-      el('p', { className: 'adjudicate__cell-note', text: `${side} のメモ: ${note}` }),
+      el('p', { className: 'adjudicate__cell-note', text: t('adjudicate.sideNote', { side, note }) }),
     );
   }
   return children;
@@ -316,7 +330,7 @@ function renderCellRow(
     fieldChildren.push(
       el('span', {
         className: 'adjudicate__badge adjudicate__badge--schema-mismatch',
-        text: 'schema_version 不一致',
+        text: t('adjudicate.schemaMismatchBadge'),
       }),
     );
   }
@@ -325,8 +339,11 @@ function renderCellRow(
     // not_reported 等で quote が無いセルはボタン無し = 従来どおりハイライト非表示）
     const evidenceButton = el('button', {
       className: 'adjudicate__evidence-button',
-      text: '根拠を表示',
-      attributes: { type: 'button', 'aria-label': `${cell.field.fieldLabel} の AI 根拠を PDF で表示` },
+      text: t('adjudicate.showEvidence'),
+      attributes: {
+        type: 'button',
+        'aria-label': t('adjudicate.showEvidenceAria', { label: cell.field.fieldLabel }),
+      },
     });
     evidenceButton.addEventListener('click', () => focusAdjudicateEvidence(working, cell.cellKey));
     fieldChildren.push(evidenceButton);
@@ -340,7 +357,7 @@ function renderCellRow(
     el(
       'td',
       {},
-      [el('span', { className: `adjudicate__chip adjudicate__chip--${status}`, text: CHIP_LABELS[status] })],
+      [el('span', { className: `adjudicate__chip adjudicate__chip--${status}`, text: t(CHIP_LABEL_KEYS[status]) })],
     ),
   ];
 
@@ -348,22 +365,28 @@ function renderCellRow(
     armLocked && (cell.field.entityLevel === 'arm' || cell.field.entityLevel === 'outcome_result');
   const actionsCell = el('td', { className: 'adjudicate__cell-actions' });
   if (isLocked) {
-    actionsCell.append(el('span', { className: 'adjudicate__locked-note', text: '群構成の確定が必要です' }));
+    actionsCell.append(el('span', { className: 'adjudicate__locked-note', text: t('adjudicate.lockedNote') }));
   } else if (consensusState.status !== 'unverified') {
     const undo = el('button', {
       className: 'adjudicate__action adjudicate__action--undo',
-      text: '取り消し',
-      attributes: { type: 'button', 'aria-label': `${cell.field.fieldLabel} の裁定を取り消し` },
+      text: t('adjudicate.undo'),
+      attributes: {
+        type: 'button',
+        'aria-label': t('adjudicate.undoAria', { label: cell.field.fieldLabel }),
+      },
     });
     undo.addEventListener('click', () => ctx.adjudicate.onUndo(cell.cellKey));
     actionsCell.append(
-      el('span', { className: 'adjudicate__current-value', text: `確定値: ${displayValue(consensusState.value)}` }),
+      el('span', {
+        className: 'adjudicate__current-value',
+        text: t('verify.decidedValue', { value: displayValue(consensusState.value) }),
+      }),
       undo,
     );
   } else if (skipped) {
     const unskip = el('button', {
       className: 'adjudicate__action adjudicate__action--unskip',
-      text: 'スキップを取り消す',
+      text: t('adjudicate.unskip'),
       attributes: { type: 'button' },
     });
     unskip.addEventListener('click', () => ctx.adjudicate.onUnskip(cell.cellKey));
@@ -371,35 +394,44 @@ function renderCellRow(
   } else {
     const chooseA = el('button', {
       className: 'adjudicate__action adjudicate__action--choose-a',
-      text: 'A を採用',
-      attributes: { type: 'button', 'aria-label': `${cell.field.fieldLabel}: A を採用` },
+      text: t('adjudicate.chooseA'),
+      attributes: {
+        type: 'button',
+        'aria-label': t('adjudicate.chooseAAria', { label: cell.field.fieldLabel }),
+      },
     });
     chooseA.addEventListener('click', () => ctx.adjudicate.onChooseA(cell.cellKey));
     const chooseB = el('button', {
       className: 'adjudicate__action adjudicate__action--choose-b',
-      text: 'B を採用',
-      attributes: { type: 'button', 'aria-label': `${cell.field.fieldLabel}: B を採用` },
+      text: t('adjudicate.chooseB'),
+      attributes: {
+        type: 'button',
+        'aria-label': t('adjudicate.chooseBAria', { label: cell.field.fieldLabel }),
+      },
     });
     chooseB.addEventListener('click', () => ctx.adjudicate.onChooseB(cell.cellKey));
     const customInput = el('input', {
       className: 'adjudicate__custom-input',
-      attributes: { type: 'text', 'aria-label': `${cell.field.fieldLabel}: 第 3 の値` },
+      attributes: {
+        type: 'text',
+        'aria-label': t('adjudicate.customAria', { label: cell.field.fieldLabel }),
+      },
     }) as HTMLInputElement;
     const customConfirm = el('button', {
       className: 'adjudicate__action adjudicate__action--custom',
-      text: '入力して確定',
+      text: t('verify.editConfirmIndependent'),
       attributes: { type: 'button' },
     });
     customConfirm.addEventListener('click', () => ctx.adjudicate.onCustomValue(cell.cellKey, customInput.value));
     const notReported = el('button', {
       className: 'adjudicate__action adjudicate__action--not-reported',
-      text: '未報告',
+      text: t('verify.statusNotReported'),
       attributes: { type: 'button' },
     });
     notReported.addEventListener('click', () => ctx.adjudicate.onNotReported(cell.cellKey));
     const skip = el('button', {
       className: 'adjudicate__action adjudicate__action--skip',
-      text: 'スキップ',
+      text: t('adjudicate.skip'),
       attributes: { type: 'button' },
     });
     skip.addEventListener('click', () => ctx.adjudicate.onSkip(cell.cellKey));
@@ -427,7 +459,7 @@ function renderCellSection(state: AppState, ctx: ViewContext, working: Adjudicat
 
   const bulkAccept = el('button', {
     id: 'adjudicate-accept-all',
-    text: '一致セルを一括採用',
+    text: t('adjudicate.bulkAccept'),
     attributes: { type: 'button' },
   });
   bulkAccept.addEventListener('click', () => ctx.adjudicate.onAcceptAllMatches());
@@ -436,16 +468,16 @@ function renderCellSection(state: AppState, ctx: ViewContext, working: Adjudicat
 
   const body =
     visibleCells.length === 0
-      ? el('p', { id: 'adjudicate-cells-empty', text: '表示するセルがありません。' })
+      ? el('p', { id: 'adjudicate-cells-empty', text: t('adjudicate.cellsEmpty') })
       : el('table', { id: 'adjudicate-cells', className: 'adjudicate__cells' }, [
           el('thead', {}, [
             el('tr', {}, [
-              el('th', { text: '区分' }),
-              el('th', { text: '項目' }),
+              el('th', { text: t('adjudicate.headSection') }),
+              el('th', { text: t('adjudicate.headField') }),
               el('th', { text: 'A' }),
               el('th', { text: 'B' }),
-              el('th', { text: '状態' }),
-              el('th', { text: '裁定' }),
+              el('th', { text: t('adjudicate.headState') }),
+              el('th', { text: t('adjudicate.headDecision') }),
             ]),
           ]),
           el(
@@ -463,18 +495,25 @@ function renderCellSection(state: AppState, ctx: ViewContext, working: Adjudicat
       el('div', { className: 'adjudicate__cells-toolbar' }, [
         el('label', { className: 'adjudicate__filter-label' }, [
           filterCheckbox,
-          ' 不一致のみ表示',
+          ` ${t('adjudicate.filterMismatch')}`,
         ]),
         bulkAccept,
       ]),
-      el('p', { id: 'adjudicate-summary', text: `一致 ${matchCount} 件 / 不一致 ${mismatchCount} 件` }),
+      el('p', {
+        id: 'adjudicate-summary',
+        text: t('adjudicate.summaryLine', { match: matchCount, mismatch: mismatchCount }),
+      }),
       body,
     ]),
   ]);
 }
 
 function renderWorking(state: AppState, ctx: ViewContext, working: AdjudicateWorking): HTMLElement {
-  const back = el('button', { id: 'adjudicate-back', text: '一覧に戻る', attributes: { type: 'button' } });
+  const back = el('button', {
+    id: 'adjudicate-back',
+    text: t('adjudicate.back'),
+    attributes: { type: 'button' },
+  });
   back.addEventListener('click', () => ctx.adjudicate.onBackToList());
 
   const headerActions: HTMLElement[] = [];
@@ -484,7 +523,7 @@ function renderWorking(state: AppState, ctx: ViewContext, working: AdjudicateWor
       el('span', {
         id: 'adjudicate-queued',
         className: 'adjudicate__queued',
-        text: `オフライン: ${state.adjudicate.queuedWrites} 件キュー中`,
+        text: t('verify.queued', { n: state.adjudicate.queuedWrites }),
       }),
     );
   }
@@ -534,22 +573,22 @@ function renderAgreementDisagreementRow(item: AgreementDisagreement): HTMLElemen
     el('td', { text: item.studyLabel }),
     el('td', { text: item.entityKey }),
     el('td', { text: item.fieldLabel }),
-    el('td', { text: item.valueA ?? '未入力' }),
-    el('td', { text: item.valueB ?? '未入力' }),
+    el('td', { text: item.valueA ?? t('adjudicate.valueMissing') }),
+    el('td', { text: item.valueB ?? t('adjudicate.valueMissing') }),
   ]);
 }
 
 function renderAgreementDisagreements(disagreements: readonly AgreementDisagreement[]): HTMLElement {
   if (disagreements.length === 0) {
-    return el('p', { id: 'agreement-disagreements-empty', text: '不一致セルはありません。' });
+    return el('p', { id: 'agreement-disagreements-empty', text: t('adjudicate.disagreementsEmpty') });
   }
   return el('div', { id: 'agreement-disagreements', className: 'adjudicate__agreement-disagreements' }, [
     el('table', {}, [
       el('thead', {}, [
         el('tr', {}, [
-          el('th', { text: '研究' }),
+          el('th', { text: t('adjudicate.headStudy') }),
           el('th', { text: 'entity_key' }),
-          el('th', { text: '項目' }),
+          el('th', { text: t('adjudicate.headField') }),
           el('th', { text: 'A' }),
           el('th', { text: 'B' }),
         ]),
@@ -562,13 +601,13 @@ function renderAgreementDisagreements(disagreements: readonly AgreementDisagreem
 function renderAgreementResult(report: AgreementReport, ctx: ViewContext): HTMLElement {
   const summaryCsvButton = el('button', {
     id: 'agreement-csv-summary',
-    text: '項目別サマリを CSV 保存',
+    text: t('adjudicate.agreementCsvSummary'),
     attributes: { type: 'button' },
   });
   summaryCsvButton.addEventListener('click', () => ctx.adjudicate.onDownloadAgreementCsv('summary'));
   const disagreementsCsvButton = el('button', {
     id: 'agreement-csv-disagreements',
-    text: '不一致一覧を CSV 保存',
+    text: t('adjudicate.agreementCsvDisagreements'),
     attributes: { type: 'button' },
   });
   disagreementsCsvButton.addEventListener('click', () => ctx.adjudicate.onDownloadAgreementCsv('disagreements'));
@@ -576,31 +615,33 @@ function renderAgreementResult(report: AgreementReport, ctx: ViewContext): HTMLE
   return el('div', { className: 'adjudicate__agreement-result' }, [
     el('p', {
       id: 'agreement-summary-line',
-      text: `対象研究 ${report.studyCount} 件・全体一致率 ${formatAgreementPercent(
-        report.overall.agreementRate,
-      )}・全体 κ ${formatKappa(report.overall.kappa)}`,
+      text: t('adjudicate.agreementSummaryLine', {
+        n: report.studyCount,
+        rate: formatAgreementPercent(report.overall.agreementRate),
+        kappa: formatKappa(report.overall.kappa),
+      }),
     }),
     el('table', { id: 'agreement-table', className: 'adjudicate__agreement-table' }, [
       el('thead', {}, [
         el('tr', {}, [
-          el('th', { text: '項目' }),
-          el('th', { text: '対象セル' }),
-          el('th', { text: '一致 (%)' }),
+          el('th', { text: t('adjudicate.headField') }),
+          el('th', { text: t('adjudicate.agreementHeadCells') }),
+          el('th', { text: t('adjudicate.agreementHeadAgreement') }),
           el('th', { text: 'κ' }),
         ]),
       ]),
       el('tbody', {}, report.fields.map(renderAgreementFieldRow)),
     ]),
-    el('h4', { text: '不一致セル一覧' }),
+    el('h4', { text: t('adjudicate.disagreementsTitle') }),
     renderAgreementDisagreements(report.disagreements),
     el('div', { className: 'adjudicate__agreement-actions' }, [summaryCsvButton, disagreementsCsvButton]),
     el('p', {
       className: 'adjudicate__agreement-note',
-      text: '両者が入力済みのセルのみを一致率・κ の対象にしています。片側未入力のセルは不一致一覧に含みますが、統計（対象セル・一致・κ）からは除外します。',
+      text: t('adjudicate.agreementNote1'),
     }),
     el('p', {
       className: 'adjudicate__agreement-note',
-      text: 'κ が「—」の項目は、両者の値が単一カテゴリのみ等の理由で κ を定義できないことを示します（一致率は「—」でない限り参考にできます）。',
+      text: t('adjudicate.agreementNote2'),
     }),
   ]);
 }
@@ -609,10 +650,10 @@ function renderAgreementCard(state: AppState, ctx: ViewContext): HTMLElement {
   const { adjudicate } = state;
   // 一覧画面（h2 のみ）の直下に置くカードのため h3 から始める（working 側の群構成カードは
   // h3〔study 名〕配下の h4 だが、こちらは一覧画面に h3 が無いのでカード見出し自体を h3 にする）
-  const children: HTMLElement[] = [el('h3', { text: 'レビュアー間一致度' })];
+  const children: HTMLElement[] = [el('h3', { text: t('adjudicate.agreementTitle') })];
 
   if (adjudicate.agreementLoading) {
-    children.push(el('p', { id: 'agreement-loading', text: '一致度を計算しています…' }));
+    children.push(el('p', { id: 'agreement-loading', text: t('adjudicate.agreementLoading') }));
     return el('section', { id: 'adjudicate-agreement-card', className: 'adjudicate__agreement-card' }, children);
   }
 
@@ -621,7 +662,7 @@ function renderAgreementCard(state: AppState, ctx: ViewContext): HTMLElement {
       children.push(
         el('p', {
           id: 'agreement-error',
-          text: '一致度を計算できる対象がありません（2 名のレビュアーの検証が完了した研究 + 確定済みの表のデザインが必要です）。',
+          text: t('adjudicate.agreementEmpty'),
         }),
       );
     } else {
@@ -633,19 +674,23 @@ function renderAgreementCard(state: AppState, ctx: ViewContext): HTMLElement {
       el('p', {
         id: 'agreement-error',
         attributes: { role: 'alert' },
-        text: `一致度を計算できませんでした: ${adjudicate.agreementError}`,
+        text: t('adjudicate.agreementError', { reason: adjudicate.agreementError }),
       }),
     );
   } else {
     children.push(
       el('p', {
         className: 'view__lead',
-        text: '項目単位の一致率・Cohen’s κ・不一致セル一覧を計算します（2 名のレビュアーの検証が完了した研究が対象）。',
+        text: t('adjudicate.agreementLead'),
       }),
     );
   }
 
-  const loadButton = el('button', { id: 'agreement-load', text: '一致度を計算', attributes: { type: 'button' } });
+  const loadButton = el('button', {
+    id: 'agreement-load',
+    text: t('adjudicate.agreementLoad'),
+    attributes: { type: 'button' },
+  });
   loadButton.addEventListener('click', () => ctx.adjudicate.onLoadAgreement());
   children.push(loadButton);
   return el('section', { id: 'adjudicate-agreement-card', className: 'adjudicate__agreement-card' }, children);
@@ -656,22 +701,26 @@ function renderAgreementCard(state: AppState, ctx: ViewContext): HTMLElement {
 export function renderAdjudicateView(state: AppState, ctx: ViewContext): HTMLElement {
   const { adjudicate } = state;
   const children: HTMLElement[] = [
-    el('h2', { text: '裁定' }),
+    el('h2', { text: t('app.navAdjudicate') }),
     el('p', {
       className: 'view__lead',
-      text: 'ヒトの不一致をレビューし、consensus 行として確定します（一致セルは一括採用できます）。',
+      text: t('adjudicate.lead'),
     }),
   ];
 
   if (adjudicate.loadError !== null) {
-    const retry = el('button', { id: 'adjudicate-retry', text: '再試行', attributes: { type: 'button' } });
+    const retry = el('button', {
+      id: 'adjudicate-retry',
+      text: t('common.retry'),
+      attributes: { type: 'button' },
+    });
     retry.addEventListener('click', () => ctx.adjudicate.onRetryLoad());
     children.push(
       el('p', {
         id: 'adjudicate-error',
         className: 'adjudicate__error',
         attributes: { role: 'alert' },
-        text: `裁定対象を読み込めませんでした: ${adjudicate.loadError}`,
+        text: t('adjudicate.loadError', { reason: adjudicate.loadError }),
       }),
       retry,
     );
@@ -679,7 +728,7 @@ export function renderAdjudicateView(state: AppState, ctx: ViewContext): HTMLEle
   }
 
   if (adjudicate.rows === null || adjudicate.loading) {
-    children.push(el('p', { id: 'adjudicate-loading', text: '裁定対象を読み込んでいます…' }));
+    children.push(el('p', { id: 'adjudicate-loading', text: t('adjudicate.loading') }));
     return el('section', { className: 'view view--adjudicate' }, children);
   }
 
@@ -689,7 +738,7 @@ export function renderAdjudicateView(state: AppState, ctx: ViewContext): HTMLEle
   }
 
   if (adjudicate.workingLoading) {
-    children.push(el('p', { id: 'adjudicate-working-loading', text: '裁定データを読み込んでいます…' }));
+    children.push(el('p', { id: 'adjudicate-working-loading', text: t('adjudicate.workingLoading') }));
     return el('section', { className: 'view view--adjudicate' }, children);
   }
 

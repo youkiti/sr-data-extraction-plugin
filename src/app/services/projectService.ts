@@ -2,6 +2,7 @@
 // lib/google + features/project + chrome.storage を 1 段抽象化し、
 // UI レイヤ（Popup / app）から 1 関数呼び出しで完結させる
 import { toProjectRef, type ProjectRef } from '../../domain/project';
+import { t } from '../../lib/i18n';
 import { createProject } from '../../features/project/createProject';
 import { loadProjectMeta } from '../../features/project/selectProject';
 import { setCurrentProject } from '../../features/project/projectStore';
@@ -23,7 +24,7 @@ export async function createNewProject(
 ): Promise<ProjectRef> {
   const trimmed = projectTitle.trim();
   if (trimmed === '') {
-    throw new Error('プロジェクトタイトルは必須です');
+    throw new Error(t('popup.errTitleRequired'));
   }
   const createdBy = (await getCurrentUserEmail(deps.profile)) ?? '';
   const result = await createProject({ projectTitle: trimmed, createdBy }, deps.google);
@@ -56,7 +57,7 @@ export async function loadExistingProject(
 ): Promise<ProjectRef> {
   const trimmed = extractSpreadsheetId(spreadsheetId);
   if (trimmed === '') {
-    throw new Error('スプレッドシート ID は必須です');
+    throw new Error(t('popup.errIdRequired'));
   }
   const meta = await loadProjectMeta(trimmed, deps.google);
   const ref = toProjectRef(meta);

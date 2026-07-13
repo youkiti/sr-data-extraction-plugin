@@ -40,6 +40,7 @@ import type { VerifyLayoutMode } from '../../lib/storage/settingsStore';
 import { nowIso8601 } from '../../utils/iso8601';
 import type { PilotState, Store } from '../store';
 import { showToast } from '../ui/toast';
+import { t } from '../../lib/i18n';
 import { runExtraction } from './extractionService';
 import { relocateQuote, type RelocateQuoteOutcome } from './relocateQuoteService';
 import { resolveProtocol } from './schemaService';
@@ -107,7 +108,7 @@ export function togglePilotStudy(store: Store, studyId: string, selected: boolea
     return;
   }
   if (current.length >= 3) {
-    showToast('パイロット対象は 3 study までです');
+    showToast(t('pilot.toastMax3'));
     return;
   }
   patchPilot(store, { selectedStudyIds: [...current, studyId] });
@@ -195,22 +196,22 @@ export async function runPilot(store: Store, deps: PilotServiceDeps): Promise<vo
   const fields = state.schema.currentFields;
   if (fields === null || fields.length === 0) {
     patchPilot(store, {
-      runError: '確定済みの表のデザインを読み込めていません。表のデザイン画面で確定・再読込してください',
+      runError: t('extraction.errNoSchema'),
     });
     return;
   }
   const { selectedStudyIds, model, selectedFieldIds } = state.pilot;
   if (selectedStudyIds.length < 1 || selectedStudyIds.length > 3) {
-    patchPilot(store, { runError: '対象 study を 1〜3 件選択してください' });
+    patchPilot(store, { runError: t('pilot.errStudies') });
     return;
   }
   const allFieldIds = fields.map((field) => field.fieldId);
   if (selectedFieldCount(selectedFieldIds, allFieldIds) === 0) {
-    patchPilot(store, { runError: '抽出項目を 1 つ以上選択してください' });
+    patchPilot(store, { runError: t('extraction.errNoFields') });
     return;
   }
   if (model === '') {
-    patchPilot(store, { runError: 'モデルを選択してください（「その他」で直接入力も可）' });
+    patchPilot(store, { runError: t('extraction.errNoModel') });
     return;
   }
   const providerResolution = await resolveProviderConfig(model, deps);
@@ -292,8 +293,8 @@ export async function runPilot(store: Store, deps: PilotServiceDeps): Promise<vo
     });
     showToast(
       outcome.run.status === 'done'
-        ? `パイロット抽出が完了しました（Evidence ${outcome.result.evidence.length} 件）`
-        : 'パイロット抽出が部分的に失敗しました。失敗の内訳を確認してください',
+        ? t('pilot.toastDone', { n: outcome.result.evidence.length })
+        : t('pilot.toastPartial'),
     );
     // 最初の抽出 study を検証 UI に開く（配下の全文書を連結表示。v0.10 フェーズ 3）
     const firstStudyId = outcome.run.studyIds[0];
@@ -368,7 +369,7 @@ export async function loadPilotRun(
   }
   const run = state.pilot.history?.find((candidate) => candidate.runId === runId);
   if (run === undefined) {
-    patchPilot(store, { historyError: `run ${runId} が履歴に見つかりません` });
+    patchPilot(store, { historyError: t('pilot.errRunNotFound', { id: runId }) });
     return;
   }
   // 表示中の PDF を破棄してから読み込む（pdfjs のメモリ解放）
@@ -431,7 +432,7 @@ export async function loadPilotVerification(
   const selection = await resolveStudies(store, deps, project.spreadsheetId);
   const item = selection.find((candidate) => candidate.study.studyId === studyId);
   if (item === undefined) {
-    patchPilot(store, { verifyError: `study ${studyId} が見つかりません` });
+    patchPilot(store, { verifyError: t('pilot.errStudyNotFound', { id: studyId }) });
     return;
   }
   // 前の study の PDF を破棄してから読み込む（pdfjs のメモリ解放）
@@ -504,7 +505,7 @@ export async function persistPilotDecision(
     (candidate: SchemaField) => candidate.fieldId === decision.fieldId,
   );
   if (field === undefined) {
-    showToast(`判定を保存できません: field_id ${decision.fieldId} が表のデザインにありません`);
+    showToast(t('verify.errFieldNotInSchema', { id: decision.fieldId }));
     return;
   }
   let studyValues: Record<string, string | null> | null = null;
@@ -604,14 +605,14 @@ export async function persistPilotRelocateQuote(
   const project = state.currentProject;
   const verification = state.pilot.verification;
   if (!project || verification === null) {
-    return { status: 'not_found', message: 'プロジェクトまたは検証データが読み込まれていません' };
+    return { status: 'not_found', message: t('pilot.relocateNotLoaded') };
   }
   const field = verification.fields.find((candidate) => candidate.fieldId === evidence.fieldId);
   const documentView = verification.documents.find(
     (view) => view.document.documentId === evidence.documentId,
   );
   if (field === undefined || documentView === undefined) {
-    return { status: 'not_found', message: '対象項目または出所文書が見つかりません' };
+    return { status: 'not_found', message: t('pilot.relocateNoTarget') };
   }
   return relocateQuote(
     {

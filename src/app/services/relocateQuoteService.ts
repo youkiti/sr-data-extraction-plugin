@@ -16,6 +16,7 @@
 // app/services/verifyService.ts の「run_id が既知 run か」判定は無改修のまま新行を正しく採用する
 import type { NormalizedPage } from '../../domain/anchor';
 import type { Evidence } from '../../domain/evidence';
+import { t } from '../../lib/i18n';
 import type { SchemaField } from '../../domain/schemaField';
 import { anchorQuote } from '../../features/anchoring/anchorQuote';
 import { normalizeText } from '../../features/anchoring/normalizeText';
@@ -97,7 +98,7 @@ export async function relocateQuote(
   deps: RelocateQuoteDeps,
 ): Promise<RelocateQuoteOutcome> {
   if (params.documentPages.length === 0) {
-    return { status: 'not_found', message: 'この文書には抽出テキストがありません' };
+    return { status: 'not_found', message: t('verify.noTextTitle') };
   }
   const model = (await (deps.loadDefaultModel ?? loadDefaultModel)()) ?? FACTORY_DEFAULT_MODEL;
   const providerResolution = await resolveProviderConfig(model, deps);
