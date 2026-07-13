@@ -300,6 +300,20 @@ export function resolveAdoptedReferences(
   return { phase, includes, totalReferences: references.length };
 }
 
+/**
+ * DOI の URL プレフィクス（https://doi.org/ / http://dx.doi.org/ 等）を剥がす。
+ * tiab の RIS パーサは ` [doi]` サフィックスしか剥がさないため、URL 形式の DOI が
+ * References に入り得る。照合・転記の両方でこの正規化を通す
+ */
+function stripDoiUrlPrefix(doi: string): string {
+  return doi.replace(/^https?:\/\/(?:dx\.)?doi\.org\//i, '');
+}
+
+/** DOI の同値比較（URL プレフィクス除去 + 大文字小文字無視） */
+function doiEquals(a: string, b: string): boolean {
+  return stripDoiUrlPrefix(a).toLowerCase() === stripDoiUrlPrefix(b).toLowerCase();
+}
+
 /** ref と document の突き合わせ（(1) fulltext の Drive ID (2) ファイル名タグ (3) DOI / PMID） */
 function matchesReference(ref: TiabReference, doc: DocumentRecord, fulltextFileId: string | null): boolean {
   if (fulltextFileId !== null && doc.sourceFileId === fulltextFileId) {
@@ -308,7 +322,7 @@ function matchesReference(ref: TiabReference, doc: DocumentRecord, fulltextFileI
   if (doc.filename.includes(`[${ref.refId.slice(0, 8)}]`)) {
     return true;
   }
-  if (ref.doi !== null && doc.doi !== null && doc.doi.toLowerCase() === ref.doi.toLowerCase()) {
+  if (ref.doi !== null && doc.doi !== null && doiEquals(doc.doi, ref.doi)) {
     return true;
   }
   return ref.pmid !== null && doc.pmid !== null && doc.pmid === ref.pmid;
@@ -316,8 +330,11 @@ function matchesReference(ref: TiabReference, doc: DocumentRecord, fulltextFileI
 
 /**
  * include の Reference を取り込み済み study / document と突き合わせ、反映プランを計算する。
- * - study_label: 突き合わせた最初の文書の study へ「著者 (year)」を上書き（同一 study へは先勝ち）
- * - pmid / doi: 突き合わせた全文書へ転記（tiab 側に値がある列のみ。既存値と同じなら何もしない）
+ * - study_label: 突き合わせた最初の文書の study へ「著者 (year)」を上書き。同一 study へは
+ *   「最初に触れた ref」が先勝ちで確定する（ラベルが既に一致していても claim する —
+ *   後続 ref の別ラベルによる上書き・再実行時の A→B→A 振動を防ぎ、再実行は全件「適用済み」へ収束する）
+ * - pmid / doi: 突き合わせた全文書へ転記（tiab 側に値がある列のみ。DOI は URL プレフィクスを
+ *   剥がした形へ正規化して転記。既存値と同じなら何もしない）
  * - 変更が 1 つも無い include は「適用済み」、文書が見つからない include は「PDF 未取り込み」
  * - 1 文書は 1 Reference にのみ紐付く（先勝ち。二重紐付けを防ぐ）
  */
@@ -329,6 +346,8 @@ export function planTiabImport(params: {
   const { adopted, studies, documents } = params;
   const studyById = new Map(studies.map((study) => [study.studyId, study]));
   const claimed = new Set<string>();
+  /** ラベル確定済み（先勝ち）の study_id。更新の有無に関係なく最初に触れた ref が claim する */
+  const claimedStudies = new Set<string>();
   const scheduledStudies = new Map<string, StudyRecord>();
   const scheduledDocs = new Map<string, DocumentRecord>();
   const items: TiabPlanItem[] = [];
@@ -346,22 +365,22 @@ export function planTiabImport(params: {
     }
     let changed = false;
     for (const doc of matched) {
+      // claimed により 1 文書は 1 ref にしか処理されないため、doc を直接基準にできる
       claimed.add(doc.documentId);
-      const base = scheduledDocs.get(doc.documentId) ?? doc;
-      const next: DocumentRecord = {
-        ...base,
-        pmid: ref.pmid ?? base.pmid,
-        doi: ref.doi ?? base.doi,
-      };
-      if (next.pmid !== base.pmid || next.doi !== base.doi) {
-        scheduledDocs.set(doc.documentId, next);
+      const nextPmid = ref.pmid ?? doc.pmid;
+      const nextDoi = ref.doi === null ? doc.doi : stripDoiUrlPrefix(ref.doi);
+      if (nextPmid !== doc.pmid || nextDoi !== doc.doi) {
+        scheduledDocs.set(doc.documentId, { ...doc, pmid: nextPmid, doi: nextDoi });
         changed = true;
       }
     }
     const study = studyById.get(firstMatched.studyId);
-    if (study !== undefined && !scheduledStudies.has(study.studyId) && study.studyLabel !== studyLabel) {
-      scheduledStudies.set(study.studyId, { ...study, studyLabel });
-      changed = true;
+    if (study !== undefined && !claimedStudies.has(study.studyId)) {
+      claimedStudies.add(study.studyId);
+      if (study.studyLabel !== studyLabel) {
+        scheduledStudies.set(study.studyId, { ...study, studyLabel });
+        changed = true;
+      }
     }
     items.push({
       refId: ref.refId,

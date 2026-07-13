@@ -446,6 +446,78 @@ describe('planTiabImport', () => {
     expect(plan.items.map((item) => item.status)).toEqual(['update', 'already']);
   });
 
+  test('再実行で全件「適用済み」へ収束する（同一 study 複数 include でラベルが振動しない）', () => {
+    const ref1 = makeRef({
+      refId: 'r1',
+      authors: 'Smith, J',
+      pmid: '1',
+      fulltextUrl: 'https://drive.google.com/file/d/src-1/view',
+    });
+    const ref2 = makeRef({
+      refId: 'r2',
+      authors: 'Doe, A',
+      pmid: '2',
+      fulltextUrl: 'https://drive.google.com/file/d/src-2/view',
+    });
+    // 統合済み study-1 に 2 文書（各 ref が別文書に一致）
+    const docs = [makeDoc(), makeDoc({ documentId: 'doc-2', sourceFileId: 'src-2', filename: 'doe.pdf' })];
+    const adopted = adoptedOf([ref1, ref2]);
+
+    const first = planTiabImport({ adopted, studies: [makeStudy()], documents: docs });
+    expect(first.studyUpdates).toEqual([makeStudy({ studyLabel: 'Smith (2020)' })]);
+
+    // 1 回目の反映結果を適用した状態で再実行 → 更新 0 件・全件 already（A→B→A の振動をしない）
+    const appliedDocs = docs.map(
+      (doc) => first.documentUpdates.find((updated) => updated.documentId === doc.documentId) ?? doc,
+    );
+    const second = planTiabImport({ adopted, studies: first.studyUpdates, documents: appliedDocs });
+    expect(second.studyUpdates).toEqual([]);
+    expect(second.documentUpdates).toEqual([]);
+    expect(second.items.map((item) => item.status)).toEqual(['already', 'already']);
+  });
+
+  test('現ラベルが先頭 ref と一致していても claim され、後続 ref がラベルを奪わない', () => {
+    const ref1 = makeRef({
+      refId: 'r1',
+      authors: 'Smith, J',
+      fulltextUrl: 'https://drive.google.com/file/d/src-1/view',
+    });
+    const ref2 = makeRef({
+      refId: 'r2',
+      authors: 'Doe, A',
+      fulltextUrl: 'https://drive.google.com/file/d/src-2/view',
+    });
+    const docs = [makeDoc(), makeDoc({ documentId: 'doc-2', sourceFileId: 'src-2', filename: 'doe.pdf' })];
+    // 単回実行でも、現ラベル == 先頭 ref のラベルから始まると後続 ref に奪われないこと
+    const plan = planTiabImport({
+      adopted: adoptedOf([ref1, ref2]),
+      studies: [makeStudy({ studyLabel: 'Smith (2020)' })],
+      documents: docs,
+    });
+    expect(plan.studyUpdates).toEqual([]);
+    expect(plan.items.map((item) => item.status)).toEqual(['already', 'already']);
+  });
+
+  test('URL 形式の DOI（doi.org / dx.doi.org）も照合でき、転記はプレフィクスを剥がした形へ正規化する', () => {
+    // ref 側が URL 形式 → 照合成功 + 正規形（10.…）への転記が走る
+    const refUrl = planTiabImport({
+      adopted: adoptedOf([makeRef({ doi: 'https://doi.org/10.1000/ABC' })]),
+      studies: [makeStudy({ studyLabel: 'Smith (2020)' })],
+      documents: [makeDoc({ doi: '10.1000/abc' })],
+    });
+    expect(refUrl.items[0]?.status).toBe('update');
+    expect(refUrl.documentUpdates[0]?.doi).toBe('10.1000/ABC');
+
+    // doc 側が URL 形式（dx.doi.org）→ 照合成功 + 正規形へ揃える
+    const docUrl = planTiabImport({
+      adopted: adoptedOf([makeRef({ doi: '10.1000/abc' })]),
+      studies: [makeStudy({ studyLabel: 'Smith (2020)' })],
+      documents: [makeDoc({ doi: 'http://dx.doi.org/10.1000/ABC' })],
+    });
+    expect(docUrl.items[0]?.status).toBe('update');
+    expect(docUrl.documentUpdates[0]?.doi).toBe('10.1000/abc');
+  });
+
   test('複数文書に一致した場合は全文書へ識別子を転記し、study は最初の文書のものを使う', () => {
     const ref = makeRef({ refId: 'abcdef1234567890', pmid: '7' });
     const docs = [
