@@ -74,8 +74,9 @@ M1〜M4 のうち、**ローカルの jest / Playwright だけでは完了確認
 | 対象 | 種別 | 何を確認するか |
 |---|---|---|
 | #62 | **実機（実 Google アカウント 2 つ）** | `drive.file` スコープで共有フォルダ配下の PDF / テキストが読めるか（= 設計成立条件・[design-independent-dual-review.md](design-independent-dual-review.md) §7.3）。招待 → Drive 自動共有 → フォルダアクセス付与 → 検証（with_ai / independent）→ 裁定 → consensus エクスポートの通し |
-| #63 | 実機（2 アカウント） | 裁定フローの通し（#62 に付随して実施可） |
-| #68 | 実機（実 tiab-review Sheet + 実データ） | tiab の Sheet 直読み・include 抽出・取り込み PDF との DOI / PMID 突き合わせ |
+| #63 | 実機（2 アカウント） | 裁定フローの通し（#62 に付随して実施可）。PR #114 実装分の追加確認: arm 並べ替えマッピング（note `arm_mapping:{...}` の永続化 → 再入場復元）と 3 名以上のペア選択 |
+| #68 | 実機（実 tiab-review Sheet + 実データ） | tiab の Sheet 直読み・include 抽出・取り込み PDF との DOI / PMID 突き合わせ（URL 形式 DOI・OA 直リンク fulltext_url・`fulltext_ai_active_round` 実値・fulltext スクリーニング途中のシートを含める） |
+| #102 | 実 API（実 Drive・`drive.file` スコープ） | 重複取り込み判定が使う `md5Checksum` が実スコープで取得できるか（`files.list` / `files.get?fields=md5Checksum`。stub では担保不能）。同じ PDF を再選択 / 再ドロップ → 進捗行に「スキップ（理由）」が出ること |
 | #69 | 実 API（実 Sheets・数万行） | 一括 append で 429 / リクエストサイズ超過が実際に出るか（ローカルはコード確認 + チャンク実装まで。**バグ発見自体は 2026-07-12 のローカル負荷試験で完了**、実 API 再現は未） |
 | #61 | 実 API（実 LLM） | signaling question を全出力させたときに出力トークン制約へ当たるか → 1 study 複数回コール（キャッシュあり）の要否判断 |
 | #80 | 実 API（実 Sheets・既存プロジェクト） | `ExtractionRuns` が旧 14 列ヘッダの既存プロジェクトで抽出を実行し、`ensureRunFieldIdsColumn` がヘッダを `field_ids` 込みの 15 列へ自動拡張すること（E2E はモックが最初からフルヘッダを返すため PUT 経路は unit テストのみ）。あわせてサブセット抽出 → S8 で「対象外 field は過去 run の値が残る」合成表示の目視確認。**✅ 実機確認済み（2026-07-13）** |
