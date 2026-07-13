@@ -7,6 +7,7 @@ import { createInitialState, type AppState, type TiabImportState } from '../../.
 import type { DocumentRecord } from '../../../../src/domain/document';
 import type { StudyRecord } from '../../../../src/domain/study';
 import type { TiabImportPlan } from '../../../../src/features/documents/tiabReview';
+import { setUiLanguage } from '../../../../src/lib/i18n';
 
 function makeStudy(overrides: Partial<StudyRecord> = {}): StudyRecord {
   return {
@@ -900,6 +901,63 @@ describe('renderDocumentsView: tiab-review 取り込みカード', () => {
     );
     expect(noUnmatched.querySelector('#tiab-result')?.textContent).toBe(
       'study_label 1 件を更新し、DOI / PMID を 0 文書に転記しました',
+    );
+  });
+});
+
+describe('renderDocumentsView（表示言語 en。issue #93）', () => {
+  afterEach(() => {
+    setUiLanguage('ja');
+  });
+
+  test('見出し・注意書き・進捗ラベル・role option が en で描画される', () => {
+    setUiLanguage('en');
+    const { ctx } = makeCtx();
+    const view = renderDocumentsView(
+      makeState({
+        records: [makeDoc()],
+        studies: [makeStudy()],
+        importRows: [{ key: 'k1', filename: 'a.pdf', status: 'done', detail: null }],
+      }),
+      ctx,
+    );
+    expect(view.querySelector('h2')?.textContent).toBe('Document import & grouping');
+    expect(view.textContent).toContain(
+      'Imported PDFs are sent externally only as extraction requests to the LLM API.',
+    );
+    expect(view.querySelector('#documents-import')?.textContent).toBe(
+      'Choose PDFs / a folder from Drive',
+    );
+    expect(view.querySelector('.documents__progress-status')?.textContent).toBe('Done');
+    expect(
+      view.querySelector('.documents__role-select option[value="article"]')?.textContent,
+    ).toBe('Main article');
+  });
+
+  test('統合ダイアログ・読み込みエラーも en で描画される', () => {
+    setUiLanguage('en');
+    const { ctx } = makeCtx();
+    const dialogView = renderDocumentsView(
+      makeState({
+        records: [makeDoc()],
+        studies: [makeStudy()],
+        mergeDialog: {
+          studyIds: ['study-1', 'study-2'],
+          label: 'Smith 2020',
+          registrationId: '',
+          hasExtractedData: true,
+        },
+      }),
+      ctx,
+    );
+    expect(dialogView.querySelector('#merge-dialog-title')?.textContent).toBe(
+      'Merge these studies?',
+    );
+    expect(dialogView.querySelector('#merge-warning')?.textContent).toContain('Re-extraction');
+
+    const errorView = renderDocumentsView(makeState({ loadError: 'HTTP 500' }), ctx);
+    expect(errorView.querySelector('#documents-load-error')?.textContent).toBe(
+      'Failed to load the list: HTTP 500',
     );
   });
 });

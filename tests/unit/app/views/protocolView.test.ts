@@ -4,6 +4,7 @@ import { renderProtocolView } from '../../../../src/app/views/protocolView';
 import type { ProtocolViewCallbacks, ViewContext } from '../../../../src/app/views/types';
 import { createInitialState, type AppState } from '../../../../src/app/store';
 import type { Protocol } from '../../../../src/domain/protocol';
+import { setUiLanguage } from '../../../../src/lib/i18n';
 
 function makeProtocol(version: number, overrides: Partial<Protocol> = {}): Protocol {
   return {
@@ -462,5 +463,33 @@ describe('renderProtocolView', () => {
       );
       expect((view.querySelector('#protocol-cancel') as HTMLButtonElement).disabled).toBe(true);
     });
+  });
+});
+
+describe('renderProtocolView（表示言語 en。issue #93）', () => {
+  afterEach(() => {
+    setUiLanguage('ja');
+  });
+
+  test('見出し・フォーム・検証エラーが en で描画される', () => {
+    setUiLanguage('en');
+    const { ctx } = makeCtx();
+    const view = renderProtocolView(makeState({ records: [] }), ctx);
+    expect(view.querySelector('h2')?.textContent).toBe('Protocol input');
+    expect(view.querySelector('#protocol-submit')?.textContent).toBe('Save');
+    // 空本文の検証エラーも en
+    submitForm(view);
+    expect(view.querySelector('#protocol-error')?.textContent).toBe('Enter the protocol text');
+  });
+
+  test('読み取り専用サマリの用語ラベルが en で描画される', () => {
+    setUiLanguage('en');
+    const { ctx } = makeCtx();
+    const view = renderProtocolView(
+      makeState({ records: [makeProtocol(1)] }),
+      ctx,
+    );
+    expect(view.textContent).toContain('Input format');
+    expect(view.querySelector('#protocol-edit')?.textContent).toBe('Enter a new version');
   });
 });

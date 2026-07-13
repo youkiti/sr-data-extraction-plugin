@@ -14,6 +14,7 @@ import { toggleDeviationType } from '../../features/schema/presets/robPrespec';
 import type { Rob2DeviationType } from '../../features/schema/presets/robTemplates';
 import type { SchemaEditorRow } from '../../features/schema/types';
 import type { FieldValidationError } from '../../features/schema/validateField';
+import { t, type MessageKey } from '../../lib/i18n';
 import { el } from '../ui/dom';
 import { createModelSelect } from '../ui/modelSelect';
 import type { AppState, SchemaState } from '../store';
@@ -22,34 +23,42 @@ import type { ViewContext } from './types';
 const ENTITY_LEVELS: readonly EntityLevel[] = ['study', 'arm', 'outcome_result', 'rob_domain'];
 const DATA_TYPES: readonly FieldDataType[] = ['text', 'integer', 'float', 'boolean', 'enum', 'date'];
 
+// 表示言語に追従させるため、ラベルは描画時に t() で解決する（キー対応表のみ固定。issue #93）
 /** data_type 列の凡例（表形式エディタのボタン下に常時表示） */
-const DATA_TYPE_DESCRIPTIONS: Record<FieldDataType, string> = {
-  text: '自由記述の文字列（例: プラセボ対照）',
-  integer: '整数（例: 120）',
-  float: '小数を含む数値（例: 12.5）',
-  boolean: 'はい / いいえの 2 値（例: TRUE）',
-  enum: '決まった選択肢から 1 つ。「許容値」列に | 区切りで指定（例: high|some|low）',
-  date: '日付（例: 2024-01-15）',
+const DATA_TYPE_DESCRIPTION_KEYS: Record<FieldDataType, MessageKey> = {
+  text: 'schema.dataTypeText',
+  integer: 'schema.dataTypeInteger',
+  float: 'schema.dataTypeFloat',
+  boolean: 'schema.dataTypeBoolean',
+  enum: 'schema.dataTypeEnum',
+  date: 'schema.dataTypeDate',
 };
 
-const CREATED_BY_TYPE_LABELS: Record<SchemaVersion['createdByType'], string> = {
-  ai_draft: 'AI ドラフト',
-  user_edit: '手動編集',
-  pilot_revision: 'パイロット改訂',
+const CREATED_BY_TYPE_LABEL_KEYS: Record<SchemaVersion['createdByType'], MessageKey> = {
+  ai_draft: 'schema.createdByAiDraft',
+  user_edit: 'schema.createdByUserEdit',
+  pilot_revision: 'schema.createdByPilotRevision',
 };
 
-const ERROR_COLUMN_LABELS: Record<FieldValidationError['column'], string> = {
-  fieldName: 'field_name',
-  fieldLabel: 'field_label',
-  section: 'section',
-  allowedValues: '許容値',
-  extractionInstruction: '抽出指示',
-};
+/** 検証エラーの列名（field_name 等のコード用語はそのまま。和名列だけ翻訳する） */
+function errorColumnLabel(column: FieldValidationError['column']): string {
+  const keys: Partial<Record<FieldValidationError['column'], MessageKey>> = {
+    allowedValues: 'schema.colAllowedValues',
+    extractionInstruction: 'schema.colExtractionInstruction',
+  };
+  const literals: Partial<Record<FieldValidationError['column'], string>> = {
+    fieldName: 'field_name',
+    fieldLabel: 'field_label',
+    section: 'section',
+  };
+  const key = keys[column];
+  return key !== undefined ? t(key) : (literals[column] as string);
+}
 
 function reloadButton(ctx: ViewContext): HTMLButtonElement {
   const button = el('button', {
     id: 'schema-reload',
-    text: '再読み込み',
+    text: t('common.reload'),
     attributes: { type: 'button' },
   });
   button.addEventListener('click', () => ctx.schema.onReload());
@@ -62,20 +71,20 @@ function renderDraftForm(state: AppState, ctx: ViewContext): HTMLElement {
   const { selectedDocumentIds, model, draftError } = state.schema;
 
   const children: HTMLElement[] = [
-    el('h3', { text: 'AI に表のデザインをドラフトさせる' }),
+    el('h3', { text: t('schema.draftTitle') }),
     el('p', {
       className: 'view__lead',
-      text: 'プロトコルとサンプル論文（1〜3 本）から抽出項目のドラフトを生成します。生成後に表形式エディタで確認・編集してから版として確定します。',
+      text: t('schema.draftLead'),
     }),
   ];
 
   if (records === null) {
-    children.push(el('p', { id: 'schema-documents-loading', text: '文献一覧を読み込んでいます…' }));
+    children.push(el('p', { id: 'schema-documents-loading', text: t('schema.documentsLoading') }));
   } else if (records.length === 0) {
     children.push(
       el('p', {
         id: 'schema-documents-empty',
-        text: 'まだ文献がありません。先に文献取り込みで PDF を取り込んでください。',
+        text: t('schema.documentsEmpty'),
       }),
     );
   } else {
@@ -89,14 +98,14 @@ function renderDraftForm(state: AppState, ctx: ViewContext): HTMLElement {
       const labelChildren: (HTMLElement | string)[] = [checkbox, doc.filename];
       if (doc.textRef === null) {
         labelChildren.push(
-          el('small', { className: 'schema__sample-note', text: 'テキスト層なしのため選択不可' }),
+          el('small', { className: 'schema__sample-note', text: t('schema.sampleNoTextLayer') }),
         );
       }
       return el('li', {}, [el('label', { className: 'schema__sample-option' }, labelChildren)]);
     });
     children.push(
       el('fieldset', { className: 'schema__samples' }, [
-        el('legend', { text: `サンプル論文（${selectedDocumentIds.length} / 3 本選択中）` }),
+        el('legend', { text: t('schema.samplesLegend', { count: selectedDocumentIds.length }) }),
         el('ul', { id: 'schema-sample-list', className: 'schema__sample-list' }, items),
       ]),
     );
@@ -104,15 +113,15 @@ function renderDraftForm(state: AppState, ctx: ViewContext): HTMLElement {
 
   const modelSelect = createModelSelect(document, {
     id: 'schema-model',
-    ariaLabel: 'モデル名（requested_model）',
+    ariaLabel: t('schema.modelAria'),
     value: model,
-    placeholderLabel: '選択してください',
+    placeholderLabel: t('schema.modelPlaceholder'),
     onChange: (value) => ctx.schema.onChangeModel(value),
     className: 'schema__model-input',
   });
   children.push(
     el('div', { className: 'schema__field' }, [
-      el('label', { text: 'モデル（requested_model）', attributes: { for: 'schema-model' } }),
+      el('label', { text: t('schema.modelLabel'), attributes: { for: 'schema-model' } }),
       modelSelect,
     ]),
   );
@@ -129,7 +138,7 @@ function renderDraftForm(state: AppState, ctx: ViewContext): HTMLElement {
   const runButton = el('button', {
     id: 'schema-draft-run',
     className: 'schema__primary',
-    text: 'AI に表のデザインをドラフトさせる',
+    text: t('schema.draftTitle'),
     attributes: { type: 'button' },
   });
   runButton.addEventListener('click', () => ctx.schema.onRunDraft());
@@ -143,7 +152,7 @@ function renderDraftProgress(schema: SchemaState): HTMLElement {
   return el('p', {
     id: 'schema-draft-progress',
     className: 'schema__status',
-    text: `AI が表のデザインをドラフトしています…（${schema.draftElapsedSeconds} 秒経過）`,
+    text: t('schema.draftProgress', { seconds: schema.draftElapsedSeconds }),
     attributes: { role: 'status' },
   });
 }
@@ -195,14 +204,14 @@ function renderEditorRow(
   const edit = (patch: Partial<SchemaEditorRow>): void => ctx.schema.onEditRow(index, patch);
 
   const requiredCheckbox = el('input', {
-    attributes: { type: 'checkbox', 'aria-label': `${index + 1} 行目の必須` },
+    attributes: { type: 'checkbox', 'aria-label': t('schema.rowRequiredAria', { row: index + 1 }) },
   });
   requiredCheckbox.checked = row.required;
   requiredCheckbox.addEventListener('change', () => edit({ required: requiredCheckbox.checked }));
 
   const instruction = el('textarea', {
     className: 'schema__cell-instruction',
-    attributes: { rows: '2', 'aria-label': `${index + 1} 行目の抽出指示` },
+    attributes: { rows: '2', 'aria-label': t('schema.rowInstructionAria', { row: index + 1 }) },
   });
   instruction.value = row.extractionInstruction;
   if (invalid('extractionInstruction')) {
@@ -213,8 +222,8 @@ function renderEditorRow(
 
   const removeButton = el('button', {
     className: 'schema__row-remove',
-    text: '削除',
-    attributes: { type: 'button', 'aria-label': `${index + 1} 行目を削除` },
+    text: t('schema.rowRemove'),
+    attributes: { type: 'button', 'aria-label': t('schema.rowRemoveAria', { row: index + 1 }) },
   });
   removeButton.addEventListener('click', () => ctx.schema.onRemoveRow(index));
 
@@ -222,36 +231,36 @@ function renderEditorRow(
     el('td', { className: 'schema__row-index', text: String(index + 1) }),
     textCell(
       row.section,
-      { ariaLabel: `${index + 1} 行目の section`, invalid: invalid('section') },
+      { ariaLabel: t('schema.rowSectionAria', { row: index + 1 }), invalid: invalid('section') },
       (value) => edit({ section: value }),
     ),
     textCell(
       row.fieldName,
-      { ariaLabel: `${index + 1} 行目の field_name`, invalid: invalid('fieldName') },
+      { ariaLabel: t('schema.rowFieldNameAria', { row: index + 1 }), invalid: invalid('fieldName') },
       (value) => edit({ fieldName: value }),
     ),
     textCell(
       row.fieldLabel,
-      { ariaLabel: `${index + 1} 行目の field_label`, invalid: invalid('fieldLabel') },
+      { ariaLabel: t('schema.rowFieldLabelAria', { row: index + 1 }), invalid: invalid('fieldLabel') },
       (value) => edit({ fieldLabel: value }),
     ),
-    selectCell(ENTITY_LEVELS, row.entityLevel, `${index + 1} 行目の entity_level`, (value) =>
+    selectCell(ENTITY_LEVELS, row.entityLevel, t('schema.rowEntityLevelAria', { row: index + 1 }), (value) =>
       edit({ entityLevel: value as EntityLevel }),
     ),
-    selectCell(DATA_TYPES, row.dataType, `${index + 1} 行目の data_type`, (value) =>
+    selectCell(DATA_TYPES, row.dataType, t('schema.rowDataTypeAria', { row: index + 1 }), (value) =>
       edit({ dataType: value as FieldDataType }),
     ),
-    textCell(row.unit ?? '', { ariaLabel: `${index + 1} 行目の単位` }, (value) =>
+    textCell(row.unit ?? '', { ariaLabel: t('schema.rowUnitAria', { row: index + 1 }) }, (value) =>
       edit({ unit: emptyToNull(value) }),
     ),
     textCell(
       row.allowedValues ?? '',
-      { ariaLabel: `${index + 1} 行目の許容値`, invalid: invalid('allowedValues') },
+      { ariaLabel: t('schema.rowAllowedValuesAria', { row: index + 1 }), invalid: invalid('allowedValues') },
       (value) => edit({ allowedValues: emptyToNull(value) }),
     ),
     el('td', { className: 'schema__row-required' }, [requiredCheckbox]),
     el('td', {}, [instruction]),
-    textCell(row.example ?? '', { ariaLabel: `${index + 1} 行目の例` }, (value) =>
+    textCell(row.example ?? '', { ariaLabel: t('schema.rowExampleAria', { row: index + 1 }) }, (value) =>
       edit({ example: emptyToNull(value) }),
     ),
     el('td', {}, [removeButton]),
@@ -262,24 +271,22 @@ function renderEditorRow(
 const DEVIATION_CHECKBOXES: readonly {
   id: string;
   type: Rob2DeviationType;
-  label: string;
+  labelKey: MessageKey;
 }[] = [
   {
     id: 'schema-prespec-dev-non-protocol',
     type: 'non_protocol_interventions',
-    label: '非プロトコル介入の発生（occurrence of non-protocol interventions）',
+    labelKey: 'schema.prespecDevNonProtocol',
   },
   {
     id: 'schema-prespec-dev-implementation',
     type: 'implementation_failures',
-    label:
-      '結果に影響しうる介入実施の失敗（failures in implementing the intervention that could have affected the outcome）',
+    labelKey: 'schema.prespecDevImplementation',
   },
   {
     id: 'schema-prespec-dev-non-adherence',
     type: 'non_adherence',
-    label:
-      '参加者の割り付け介入への非遵守（non-adherence to their assigned intervention by trial participants）',
+    labelKey: 'schema.prespecDevNonAdherence',
   },
 ];
 
@@ -326,40 +333,38 @@ function renderPresetDialog(dialog: RobPrespecDialogState, ctx: ViewContext): HT
   const children: HTMLElement[] = [
     el('h3', {
       id: 'schema-preset-dialog-title',
-      text: isSq ? 'RoB 2（SQ 完全版）の事前設定' : 'RoB 2 テンプレートの事前設定（任意）',
+      text: isSq ? t('schema.prespecTitleSq') : t('schema.prespecTitle'),
     }),
     el('p', {
       className: 'view__lead',
-      text: isSq
-        ? 'ドメイン評価の前にレビューチームが決める項目です（RoB 2 公式テンプレートの Preliminary considerations）。effect of interest は必須で、選択に応じて Domain 2 の signaling question セットが切り替わります。入力内容は各項目の抽出指示の冒頭に Review context（英語）として注入されます。'
-        : 'ドメイン評価の前にレビューチームが決める項目です（RoB 2 公式テンプレートの Preliminary considerations）。すべて任意です。入力すると各項目の抽出指示の冒頭に Review context（英語）として注入されます。スキップすると従来どおりのテンプレートを挿入します。',
+      text: isSq ? t('schema.prespecLeadSq') : t('schema.prespecLead'),
     }),
     el('p', {
       id: 'schema-prespec-design',
       className: 'schema__prespec-design',
-      text: '試験デザイン: individually-randomized parallel-group trial（固定。cluster / crossover 試験は RoB 2 の別版のため本プリセットでは未対応・将来対応予定）',
+      text: t('schema.prespecDesign'),
     }),
     textField(
       'schema-prespec-experimental',
-      'experimental 介入（比較される実験側の介入）',
+      t('schema.prespecExperimental'),
       dialog.experimental,
       'experimental',
     ),
     textField(
       'schema-prespec-comparator',
-      'comparator（比較対照）',
+      t('schema.prespecComparator'),
       dialog.comparator,
       'comparator',
     ),
     textField(
       'schema-prespec-outcome',
-      '評価対象の outcome',
+      t('schema.prespecOutcome'),
       dialog.outcome,
       'outcome',
     ),
     textField(
       'schema-prespec-numerical-result',
-      '評価対象の numerical result（複数解析がある場合に一意化する数値・参照先）',
+      t('schema.prespecNumericalResult'),
       dialog.numericalResult,
       'numericalResult',
     ),
@@ -367,23 +372,23 @@ function renderPresetDialog(dialog: RobPrespecDialogState, ctx: ViewContext): HT
 
   const effectRadios: HTMLElement[] = [];
   if (!isSq) {
-    effectRadios.push(effectRadio('schema-prespec-effect-none', null, '指定しない（既定）'));
+    effectRadios.push(effectRadio('schema-prespec-effect-none', null, t('schema.prespecEffectNone')));
   }
   effectRadios.push(
     effectRadio(
       'schema-prespec-effect-assignment',
       'assignment',
-      'assignment への効果（intention-to-treat 効果）',
+      t('schema.prespecEffectAssignment'),
     ),
     effectRadio(
       'schema-prespec-effect-adhering',
       'adhering',
-      'adhering への効果（per-protocol 効果）',
+      t('schema.prespecEffectAdhering'),
     ),
   );
   children.push(
     el('fieldset', { className: 'schema__prespec-effect' }, [
-      el('legend', { text: isSq ? 'effect of interest（必須）' : 'effect of interest（任意）' }),
+      el('legend', { text: isSq ? t('schema.prespecEffectLegendRequired') : t('schema.prespecEffectLegendOptional') }),
       ...effectRadios,
     ]),
   );
@@ -400,11 +405,11 @@ function renderPresetDialog(dialog: RobPrespecDialogState, ctx: ViewContext): HT
           deviationTypes: toggleDeviationType(dialog.deviationTypes, def.type, checkbox.checked),
         }),
       );
-      return el('label', { className: 'schema__prespec-checkbox' }, [checkbox, def.label]);
+      return el('label', { className: 'schema__prespec-checkbox' }, [checkbox, t(def.labelKey)]);
     });
     children.push(
       el('fieldset', { id: 'schema-prespec-deviations', className: 'schema__prespec-deviations' }, [
-        el('legend', { text: '扱う deviation 種別（最低 1 つ必須）' }),
+        el('legend', { text: t('schema.prespecDeviationsLegend') }),
         ...checkboxes,
       ]),
     );
@@ -424,7 +429,7 @@ function renderPresetDialog(dialog: RobPrespecDialogState, ctx: ViewContext): HT
   const confirmButton = el('button', {
     id: 'schema-prespec-confirm',
     className: 'schema__primary',
-    text: 'この内容で挿入',
+    text: t('schema.prespecConfirm'),
     attributes: { type: 'button' },
   });
   confirmButton.addEventListener('click', () => ctx.schema.onConfirmPresetDialog());
@@ -432,7 +437,7 @@ function renderPresetDialog(dialog: RobPrespecDialogState, ctx: ViewContext): HT
   if (!isSq) {
     const skipButton = el('button', {
       id: 'schema-prespec-skip',
-      text: 'スキップして挿入',
+      text: t('schema.prespecSkip'),
       attributes: { type: 'button' },
     });
     skipButton.addEventListener('click', () => ctx.schema.onSkipPresetDialog());
@@ -440,7 +445,7 @@ function renderPresetDialog(dialog: RobPrespecDialogState, ctx: ViewContext): HT
   }
   const cancelButton = el('button', {
     id: 'schema-prespec-cancel',
-    text: 'キャンセル',
+    text: t('common.cancel'),
     attributes: { type: 'button' },
   });
   cancelButton.addEventListener('click', () => ctx.schema.onCancelPresetDialog());
@@ -475,12 +480,12 @@ function renderEditor(
     el('th', { text: 'field_label' }),
     el('th', { text: 'entity_level' }),
     el('th', { text: 'data_type' }),
-    el('th', { text: '単位' }),
-    el('th', { text: '許容値（| 区切り）' }),
-    el('th', { text: '必須' }),
-    el('th', { text: '抽出指示' }),
-    el('th', { text: '例' }),
-    el('th', { text: '操作' }),
+    el('th', { text: t('schema.headUnit') }),
+    el('th', { text: t('schema.headAllowedValues') }),
+    el('th', { text: t('schema.headRequired') }),
+    el('th', { text: t('schema.headInstruction') }),
+    el('th', { text: t('schema.headExample') }),
+    el('th', { text: t('schema.headActions') }),
   ]);
   const table = el('table', { id: 'schema-editor-table', className: 'schema__table' }, [
     el('thead', {}, [header]),
@@ -489,62 +494,66 @@ function renderEditor(
 
   const addRowButton = el('button', {
     id: 'schema-add-row',
-    text: '行を追加',
+    text: t('schema.addRow'),
     attributes: { type: 'button' },
   });
   addRowButton.addEventListener('click', () => ctx.schema.onAddRow());
   const presetBinary = el('button', {
     id: 'schema-preset-binary',
-    text: '二値アウトカムのプリセットを挿入',
+    text: t('schema.presetBinary'),
     attributes: { type: 'button' },
   });
   presetBinary.addEventListener('click', () => ctx.schema.onInsertPreset('binary'));
   const presetContinuous = el('button', {
     id: 'schema-preset-continuous',
-    text: '連続アウトカムのプリセットを挿入',
+    text: t('schema.presetContinuous'),
     attributes: { type: 'button' },
   });
   presetContinuous.addEventListener('click', () => ctx.schema.onInsertPreset('continuous'));
   const presetRob2 = el('button', {
     id: 'schema-preset-rob2',
-    text: 'RoB 2 テンプレートを挿入',
+    text: t('schema.presetRob2'),
     attributes: { type: 'button' },
   });
   presetRob2.addEventListener('click', () => ctx.schema.onInsertPreset('rob2'));
   const presetRob2Sq = el('button', {
     id: 'schema-preset-rob2-sq',
-    text: 'RoB 2（SQ 完全版）テンプレートを挿入',
+    text: t('schema.presetRob2Sq'),
     attributes: { type: 'button' },
   });
   presetRob2Sq.addEventListener('click', () => ctx.schema.onInsertPreset('rob2_sq'));
   const presetRobinsI = el('button', {
     id: 'schema-preset-robins-i',
-    text: 'ROBINS-I テンプレートを挿入',
+    text: t('schema.presetRobinsI'),
     attributes: { type: 'button' },
   });
   presetRobinsI.addEventListener('click', () => ctx.schema.onInsertPreset('robins_i'));
   const presetRobinsISq = el('button', {
     id: 'schema-preset-robins-i-sq',
-    text: 'ROBINS-I（SQ 完全版）テンプレートを挿入',
+    text: t('schema.presetRobinsISq'),
     attributes: { type: 'button' },
   });
   presetRobinsISq.addEventListener('click', () => ctx.schema.onInsertPreset('robins_i_sq'));
   const presetQuadas3 = el('button', {
     id: 'schema-preset-quadas3',
-    text: 'QUADAS-3 テンプレートを挿入',
+    text: t('schema.presetQuadas3'),
     attributes: { type: 'button' },
   });
   presetQuadas3.addEventListener('click', () => ctx.schema.onInsertPreset('quadas3'));
   const presetQuips = el('button', {
     id: 'schema-preset-quips',
-    text: 'QUIPS テンプレートを挿入',
+    text: t('schema.presetQuips'),
     attributes: { type: 'button' },
   });
   presetQuips.addEventListener('click', () => ctx.schema.onInsertPreset('quips'));
 
   const errorItems = schema.editorErrors.map((error) =>
     el('li', {
-      text: `${error.index + 1} 行目 ${ERROR_COLUMN_LABELS[error.column]}: ${error.message}`,
+      text: t('schema.editorError', {
+        row: error.index + 1,
+        column: errorColumnLabel(error.column),
+        message: error.message,
+      }),
     }),
   );
 
@@ -553,39 +562,39 @@ function renderEditor(
     className: 'schema__note-input',
     attributes: {
       type: 'text',
-      placeholder: '改訂理由（任意。例: パイロットで単位の揺れが判明）',
-      'aria-label': '改訂理由',
+      placeholder: t('schema.notePlaceholder'),
+      'aria-label': t('schema.noteAria'),
     },
   });
   const confirmButton = el('button', {
     id: 'schema-confirm',
     className: 'schema__primary schema__confirm',
-    text: schema.confirming ? '確定しています…' : '版として確定',
+    text: schema.confirming ? t('schema.confirming') : t('schema.confirm'),
     attributes: { type: 'button' },
   });
   confirmButton.disabled = schema.confirming || schema.editorErrors.length > 0;
   confirmButton.addEventListener('click', () => ctx.schema.onConfirm(noteInput.value));
   const cancelButton = el('button', {
     id: 'schema-editor-cancel',
-    text: 'キャンセル',
+    text: t('common.cancel'),
     attributes: { type: 'button' },
   });
   cancelButton.disabled = schema.confirming;
   cancelButton.addEventListener('click', () => ctx.schema.onCancelEditor());
 
   const dataTypeHelp = el('div', { id: 'schema-datatype-help', className: 'schema__datatype-help' }, [
-    el('span', { className: 'schema__datatype-help-title', text: 'data_type の種類:' }),
+    el('span', { className: 'schema__datatype-help-title', text: t('schema.dataTypeHelpTitle') }),
     el(
       'ul',
       { className: 'schema__datatype-help-list' },
       DATA_TYPES.map((type) =>
-        el('li', {}, [el('code', { text: type }), ` = ${DATA_TYPE_DESCRIPTIONS[type]}`]),
+        el('li', {}, [el('code', { text: type }), ` = ${t(DATA_TYPE_DESCRIPTION_KEYS[type])}`]),
       ),
     ),
   ]);
 
   const children: HTMLElement[] = [
-    el('h3', { text: `表のデザイン編集（${rows.length} 項目）` }),
+    el('h3', { text: t('schema.editorTitle', { count: rows.length }) }),
     el('div', { className: 'schema__editor-actions' }, [
       addRowButton,
       presetBinary,
@@ -628,7 +637,7 @@ function renderCurrentFieldRow(field: SchemaField): HTMLElement {
     el('td', { text: field.fieldLabel }),
     el('td', { text: field.entityLevel }),
     el('td', { text: field.dataType }),
-    el('td', { text: field.required ? '必須' : '—' }),
+    el('td', { text: field.required ? t('schema.requiredYes') : '—' }),
   ]);
 }
 
@@ -642,14 +651,18 @@ function renderConfirmed(
   const fields = schema.currentFields ?? [];
 
   const children: HTMLElement[] = [];
-  const meta =
-    `現行版: v${latest.schemaVersion}（${CREATED_BY_TYPE_LABELS[latest.createdByType]} / ` +
-    `Protocol v${latest.protocolVersion} 依拠 / ${latest.createdAt} / ${latest.createdBy}）`;
+  const meta = t('schema.currentMeta', {
+    version: latest.schemaVersion,
+    createdByType: t(CREATED_BY_TYPE_LABEL_KEYS[latest.createdByType]),
+    protocolVersion: latest.protocolVersion,
+    createdAt: latest.createdAt,
+    createdBy: latest.createdBy,
+  });
   children.push(
     el('p', { id: 'schema-current-meta', className: 'schema__current-meta', text: meta }),
   );
   if (latest.note !== null) {
-    children.push(el('p', { className: 'schema__current-note', text: `改訂理由: ${latest.note}` }));
+    children.push(el('p', { className: 'schema__current-note', text: t('schema.currentNote', { note: latest.note }) }));
   }
 
   const header = el('tr', {}, [
@@ -659,7 +672,7 @@ function renderConfirmed(
     el('th', { text: 'field_label' }),
     el('th', { text: 'entity_level' }),
     el('th', { text: 'data_type' }),
-    el('th', { text: '必須' }),
+    el('th', { text: t('schema.headRequired') }),
   ]);
   children.push(
     el('div', { className: 'schema__table-wrap' }, [
@@ -673,7 +686,7 @@ function renderConfirmed(
   const newVersionButton = el('button', {
     id: 'schema-new-version',
     className: 'schema__primary',
-    text: '新しい版を作る(現行版から編集)',
+    text: t('schema.newVersion'),
     attributes: { type: 'button' },
   });
   newVersionButton.addEventListener('click', () => ctx.schema.onStartNewVersion());
@@ -683,13 +696,17 @@ function renderConfirmed(
     const items = versions.map((version) =>
       el('li', {
         text:
-          `v${version.schemaVersion}(${CREATED_BY_TYPE_LABELS[version.createdByType]} / ` +
-          `${version.createdAt}${version.parentVersion === null ? '' : ` / v${version.parentVersion} から派生`})`,
+          `v${version.schemaVersion}(${t(CREATED_BY_TYPE_LABEL_KEYS[version.createdByType])} / ` +
+          `${version.createdAt}${
+            version.parentVersion === null
+              ? ''
+              : t('schema.historyDerived', { parent: version.parentVersion })
+          })`,
       }),
     );
     children.push(
       el('div', { className: 'schema__history' }, [
-        el('h3', { text: '版履歴' }),
+        el('h3', { text: t('schema.historyTitle') }),
         el('ul', { id: 'schema-history', className: 'schema__history-list' }, items),
       ]),
     );
@@ -705,13 +722,13 @@ function renderBody(state: AppState, ctx: ViewContext): HTMLElement {
       el('p', {
         id: 'schema-load-error',
         className: 'schema__error',
-        text: `表のデザインを読み込めませんでした: ${schema.loadError}`,
+        text: t('schema.loadError', { reason: schema.loadError }),
       }),
       el('div', { className: 'schema__actions' }, [reloadButton(ctx)]),
     ]);
   }
   if (schema.versions === null || schema.loading) {
-    return el('p', { id: 'schema-loading', text: '表のデザインを読み込んでいます…' });
+    return el('p', { id: 'schema-loading', text: t('schema.loading') });
   }
   if (schema.drafting) {
     return renderDraftProgress(schema);
@@ -728,13 +745,10 @@ function renderBody(state: AppState, ctx: ViewContext): HTMLElement {
 
 export function renderSchemaView(state: AppState, ctx: ViewContext): HTMLElement {
   const children: HTMLElement[] = [
-    el('h2', { text: '表のデザイン' }),
+    el('h2', { text: t('app.navSchema') }),
     el('p', {
       className: 'view__lead',
-      text:
-        '抽出したい項目のリストをこのページで作成します。スプレッドシートでいえば 1 行目の見出し' +
-        '（列の名前）にあたります。例:「著者名」「出版年」「対象患者数」など。これを設計する工程を' +
-        '表のデザインと呼んでいます。',
+      text: t('schema.lead'),
     }),
   ];
   if (state.currentProject === null) {
@@ -742,7 +756,7 @@ export function renderSchemaView(state: AppState, ctx: ViewContext): HTMLElement
       el('p', {
         id: 'schema-no-project',
         className: 'view__notice',
-        text: '先にプロジェクトを選択してください（Popup から作成 / 選択できます）。',
+        text: t('common.noProject'),
       }),
     );
   } else {

@@ -10,6 +10,7 @@ import {
   createRobPrespecDialogState,
   type RobPrespecDialogState,
 } from '../../../../src/features/schema/presets/robPrespec';
+import { setUiLanguage } from '../../../../src/lib/i18n';
 import type { SchemaEditorRow } from '../../../../src/features/schema/types';
 
 function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<SchemaViewCallbacks> } {
@@ -733,5 +734,41 @@ describe('renderSchemaView', () => {
       expect(items).toHaveLength(2);
       expect(items[0]?.textContent).toContain('v1 から派生');
     });
+  });
+});
+
+describe('renderSchemaView（表示言語 en。issue #93）', () => {
+  afterEach(() => {
+    setUiLanguage('ja');
+  });
+
+  test('見出し・リード・ドラフトフォームが en で描画される', () => {
+    setUiLanguage('en');
+    const { ctx } = makeCtx();
+    const view = renderSchemaView(makeState({ versions: [] }, { documents: [] }), ctx);
+    expect(view.querySelector('h2')?.textContent).toBe('Table design');
+    expect(view.textContent).toContain('the table design');
+    expect(view.querySelector('#schema-documents-empty')?.textContent).toBe(
+      'No documents yet. Import PDFs on the Documents screen first.',
+    );
+    expect(view.querySelector('#schema-draft-run')?.textContent).toBe(
+      'Have AI draft the table design',
+    );
+  });
+
+  test('エディタの検証エラー（和名列）が en で描画される', () => {
+    setUiLanguage('en');
+    const { ctx } = makeCtx();
+    const view = renderSchemaView(
+      makeState({
+        versions: [],
+        editorRows: [makeEditorRow({ allowedValues: '' })],
+        editorErrors: [{ index: 0, column: 'allowedValues', message: 'ng' }],
+      }),
+      ctx,
+    );
+    expect(view.querySelector('#schema-editor-errors')?.textContent).toBe(
+      'Row 1, Allowed values: ng',
+    );
   });
 });

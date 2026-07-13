@@ -35,6 +35,10 @@ async function initApp(page: Page, options: { seedEnglish?: boolean } = {}): Pro
           evidenceRows: 0,
           dataRows: 0,
         },
+        // S3 / S4 / S5 を読込済み（空）で注入し、Sheets 読込を発火させない
+        documents: { records: [], studies: [] },
+        protocol: { records: [] },
+        schema: { versions: [] },
       };
     })();
   `);
@@ -90,6 +94,23 @@ test('保存済みの表示言語（en）でメインビューが英語で起動
   await expect(page.locator('#app-context')).toHaveText('Showing the Home screen');
   await expect(page.locator('#app-open-popup')).toBeHidden();
   await expect(page.locator('html')).toHaveAttribute('lang', 'en');
+});
+
+test('移行済みの S3 / S4 / S5 も en で表示される（issue #93 PR2）', async ({ page }) => {
+  await initApp(page, { seedEnglish: true });
+
+  await page.locator('#app-nav a[href="#/documents"]').click();
+  await expect(page.locator('#app-content h2').first()).toHaveText('Document import & grouping');
+  await expect(page.locator('#documents-empty')).toContainText('No documents yet.');
+  await expect(page.locator('#documents-import')).toHaveText('Choose PDFs / a folder from Drive');
+
+  await page.locator('#app-nav a[href="#/protocol"]').click();
+  await expect(page.locator('#app-content h2').first()).toHaveText('Protocol input');
+  await expect(page.locator('#protocol-submit')).toHaveText('Save');
+
+  await page.locator('#app-nav a[href="#/schema"]').click();
+  await expect(page.locator('#app-content h2').first()).toHaveText('Table design');
+  await expect(page.locator('#schema-draft-run')).toHaveText('Have AI draft the table design');
 });
 
 test('スタンドアロン options.html も保存済み言語（en）で構築され、ja へ戻せる', async ({
