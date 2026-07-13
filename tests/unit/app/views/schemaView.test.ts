@@ -6,10 +6,15 @@ import { createInitialState, type AppState } from '../../../../src/app/store';
 import type { DocumentRecord } from '../../../../src/domain/document';
 import type { SchemaField } from '../../../../src/domain/schemaField';
 import type { SchemaVersion } from '../../../../src/domain/schemaVersion';
+import type { PresetDialogState } from '../../../../src/features/schema/presets/prespecDialog';
 import {
   createRobPrespecDialogState,
   type RobPrespecDialogState,
 } from '../../../../src/features/schema/presets/robPrespec';
+import {
+  createRobinsIPrespecDialogState,
+  type RobinsIPrespecDialogState,
+} from '../../../../src/features/schema/presets/robinsIPrespec';
 import { setUiLanguage } from '../../../../src/lib/i18n';
 import type { SchemaEditorRow } from '../../../../src/features/schema/types';
 
@@ -480,7 +485,7 @@ describe('renderSchemaView', () => {
       }
 
       function renderWithDialog(
-        dialog: RobPrespecDialogState | null,
+        dialog: PresetDialogState | null,
       ): { view: HTMLElement; callbacks: jest.Mocked<SchemaViewCallbacks> } {
         const { ctx, callbacks } = makeCtx();
         const view = renderSchemaView(
@@ -604,6 +609,147 @@ describe('renderSchemaView', () => {
           deviationTypes: ['non_protocol_interventions', 'non_adherence'],
         });
         expect(view.querySelector('#schema-prespec-dev-implementation')).not.toBeNull();
+      });
+
+      describe('ROBINS-I ダイアログ（issue #103 PR2）', () => {
+        function makeRobinsIDialog(
+          patch: Partial<RobinsIPrespecDialogState> = {},
+        ): RobinsIPrespecDialogState {
+          return { ...createRobinsIPrespecDialogState('robins_i', null), ...patch };
+        }
+
+        test('robins_i（軽量版）: 任意の見出し・スキップ + 「指定しない」ラジオあり、各項目が描画される', () => {
+          const { view, callbacks } = renderWithDialog(makeRobinsIDialog());
+          expect(view.querySelector('#schema-preset-dialog-title')?.textContent).toBe(
+            'ROBINS-I テンプレートの事前設定（任意）',
+          );
+          expect(view.querySelector('#schema-prespec-skip')).not.toBeNull();
+          expect(view.querySelector('#schema-prespec-ri-effect-none')).not.toBeNull();
+          for (const id of [
+            'schema-prespec-ri-design',
+            'schema-prespec-ri-participants',
+            'schema-prespec-ri-experimental',
+            'schema-prespec-ri-comparator',
+            'schema-prespec-ri-outcome',
+            'schema-prespec-ri-confounders',
+            'schema-prespec-ri-cointerventions',
+            'schema-prespec-ri-bh-none',
+            'schema-prespec-ri-bh-benefit',
+            'schema-prespec-ri-bh-harm',
+          ]) {
+            expect(view.querySelector(`#${id}`)).not.toBeNull();
+          }
+          (view.querySelector('#schema-prespec-skip') as HTMLButtonElement).click();
+          expect(callbacks.onSkipPresetDialog).toHaveBeenCalledTimes(1);
+        });
+
+        test('robins_i_sq: スキップと「指定しない」ラジオが無く、effect は必須表記', () => {
+          const { view } = renderWithDialog({
+            ...createRobinsIPrespecDialogState('robins_i_sq', null),
+          });
+          expect(view.querySelector('#schema-preset-dialog-title')?.textContent).toBe(
+            'ROBINS-I（SQ 完全版）の事前設定',
+          );
+          expect(view.querySelector('#schema-prespec-skip')).toBeNull();
+          expect(view.querySelector('#schema-prespec-ri-effect-none')).toBeNull();
+        });
+
+        test('テキスト / リスト入力の change が onUpdatePresetDialog に配線されている', () => {
+          const { view, callbacks } = renderWithDialog(
+            makeRobinsIDialog({ participants: '既定値' }),
+          );
+          const participants = view.querySelector(
+            '#schema-prespec-ri-participants',
+          ) as HTMLInputElement;
+          expect(participants.value).toBe('既定値');
+          participants.value = 'adults';
+          participants.dispatchEvent(new Event('change'));
+          expect(callbacks.onUpdatePresetDialog).toHaveBeenCalledWith({ participants: 'adults' });
+          const design = view.querySelector('#schema-prespec-ri-design') as HTMLInputElement;
+          design.value = 'individually randomized';
+          design.dispatchEvent(new Event('change'));
+          expect(callbacks.onUpdatePresetDialog).toHaveBeenCalledWith({
+            design: 'individually randomized',
+          });
+          const confounders = view.querySelector(
+            '#schema-prespec-ri-confounders',
+          ) as HTMLTextAreaElement;
+          confounders.value = 'age\nseverity';
+          confounders.dispatchEvent(new Event('change'));
+          expect(callbacks.onUpdatePresetDialog).toHaveBeenCalledWith({
+            confoundingDomains: 'age\nseverity',
+          });
+          const coInterventions = view.querySelector(
+            '#schema-prespec-ri-cointerventions',
+          ) as HTMLTextAreaElement;
+          coInterventions.value = 'co-drug B';
+          coInterventions.dispatchEvent(new Event('change'));
+          expect(callbacks.onUpdatePresetDialog).toHaveBeenCalledWith({
+            coInterventions: 'co-drug B',
+          });
+          const experimental = view.querySelector(
+            '#schema-prespec-ri-experimental',
+          ) as HTMLInputElement;
+          experimental.value = 'drug A';
+          experimental.dispatchEvent(new Event('change'));
+          expect(callbacks.onUpdatePresetDialog).toHaveBeenCalledWith({ experimental: 'drug A' });
+          const comparator = view.querySelector(
+            '#schema-prespec-ri-comparator',
+          ) as HTMLInputElement;
+          comparator.value = 'usual care';
+          comparator.dispatchEvent(new Event('change'));
+          expect(callbacks.onUpdatePresetDialog).toHaveBeenCalledWith({ comparator: 'usual care' });
+          const outcome = view.querySelector('#schema-prespec-ri-outcome') as HTMLInputElement;
+          outcome.value = 'mortality';
+          outcome.dispatchEvent(new Event('change'));
+          expect(callbacks.onUpdatePresetDialog).toHaveBeenCalledWith({ outcome: 'mortality' });
+        });
+
+        test('effect / benefit-harm ラジオの選択が onUpdatePresetDialog に配線されている', () => {
+          const { view, callbacks } = renderWithDialog(makeRobinsIDialog());
+          const assignment = view.querySelector(
+            '#schema-prespec-ri-effect-assignment',
+          ) as HTMLInputElement;
+          assignment.checked = true;
+          assignment.dispatchEvent(new Event('change'));
+          expect(callbacks.onUpdatePresetDialog).toHaveBeenCalledWith({ effect: 'assignment' });
+          const adhering = view.querySelector(
+            '#schema-prespec-ri-effect-adhering',
+          ) as HTMLInputElement;
+          adhering.checked = true;
+          adhering.dispatchEvent(new Event('change'));
+          expect(callbacks.onUpdatePresetDialog).toHaveBeenCalledWith({
+            effect: 'starting_adhering',
+          });
+          const none = view.querySelector('#schema-prespec-ri-effect-none') as HTMLInputElement;
+          none.checked = true;
+          none.dispatchEvent(new Event('change'));
+          expect(callbacks.onUpdatePresetDialog).toHaveBeenCalledWith({ effect: null });
+          const benefit = view.querySelector('#schema-prespec-ri-bh-benefit') as HTMLInputElement;
+          benefit.checked = true;
+          benefit.dispatchEvent(new Event('change'));
+          expect(callbacks.onUpdatePresetDialog).toHaveBeenCalledWith({ benefitHarm: 'benefit' });
+          const harm = view.querySelector('#schema-prespec-ri-bh-harm') as HTMLInputElement;
+          harm.checked = true;
+          harm.dispatchEvent(new Event('change'));
+          expect(callbacks.onUpdatePresetDialog).toHaveBeenCalledWith({ benefitHarm: 'harm' });
+          const bhNone = view.querySelector('#schema-prespec-ri-bh-none') as HTMLInputElement;
+          bhNone.checked = true;
+          bhNone.dispatchEvent(new Event('change'));
+          expect(callbacks.onUpdatePresetDialog).toHaveBeenCalledWith({ benefitHarm: null });
+        });
+
+        test('検証エラーは共通の #schema-prespec-error（role="alert"）に表示される', () => {
+          const { view } = renderWithDialog(
+            makeRobinsIDialog({
+              kind: 'robins_i_sq',
+              error: 'effect of interest を選択してください',
+            }),
+          );
+          const error = view.querySelector('#schema-prespec-error') as HTMLElement;
+          expect(error.getAttribute('role')).toBe('alert');
+          expect(error.textContent).toContain('effect of interest');
+        });
       });
 
       test('検証エラーは role="alert" で表示し、エラーなしなら要素を出さない', () => {

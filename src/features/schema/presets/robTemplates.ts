@@ -893,12 +893,59 @@ const ROBINS_I_SQ_SUPPORT_ROW: SchemaEditorRow = presetRow({
   example: 'Analyses were adjusted for age, sex, baseline severity, and comorbidity index.',
 });
 
-/** ROBINS-I（SQ 完全版）: ドメイン別の判定 + 根拠 + SQ 34 問（計 36 項目） */
+/** ROBINS-I（SQ 完全版）: ドメイン別の判定 + 根拠 + SQ 34 問（計 36 項目）。
+ * D4 の assignment 版（4.1〜4.2）と starting-and-adhering 版（4.3〜4.6）を両方収載した
+ * 従来互換の定数（SCHEMA_PRESETS の登録値）。issue #103 PR2 以降、S5 の挿入経路は
+ * 事前設定ダイアログの確定時に buildRobinsISqTemplateRows で effect 別に排他生成する */
 export const ROB_TEMPLATE_ROBINS_I_SQ: readonly SchemaEditorRow[] = [
   ROBINS_I_SQ_JUDGEMENT_ROW,
   ROBINS_I_SQ_SUPPORT_ROW,
   ...ROBINS_I_SQ_DEFS.map(robinsISqRow),
 ];
+
+// --- ROBINS-I の effect 別 D4 排他生成（issue #103 PR2） -----------------------
+// 原典（detailed guidance §2.5 / Box 7・tool template 2016-08-01 の "Is your aim for this
+// study…?"）では、effect of interest（assignment ⇄ starting and adhering）は評価前に
+// レビューチームが選ぶ二者択一で、D4 は assignment なら SQ 4.1〜4.2 のみ、
+// starting and adhering なら SQ 4.3〜4.6 のみを回答する（両方は回答しない）。
+// 従来の ROB_TEMPLATE_ROBINS_I_SQ は両セットを同時収載して na 運用に頼っていたため、
+// 事前設定ダイアログの effect 選択で片側だけを生成する（同時収載の解消 = バグ修正でもある）。
+
+/** ROBINS-I の effect of interest（tool template の "Is your aim for this study…?" の二者択一） */
+export type RobinsIEffect = 'assignment' | 'starting_adhering';
+
+/** effect 選択により無条件設問になる D4 SQ（元の conditionSummary は effect の場合分けのみだったもの） */
+const ROBINS_I_D4_UNCONDITIONAL_BY_EFFECT: Readonly<Record<RobinsIEffect, readonly string[]>> = {
+  assignment: ['4.1'],
+  starting_adhering: ['4.3', '4.4', '4.5'],
+};
+
+/** effect 別に生成する D4 SQ の code 一覧 */
+const ROBINS_I_D4_CODES_BY_EFFECT: Readonly<Record<RobinsIEffect, readonly string[]>> = {
+  assignment: ['4.1', '4.2'],
+  starting_adhering: ['4.3', '4.4', '4.5', '4.6'],
+};
+
+/**
+ * ROBINS-I（SQ 完全版）の行生成（issue #103 PR2）。effect of interest に応じて D4 の SQ セットを
+ * 排他的に切り替える（assignment = 4.1〜4.2 のみ〔32 問〕⇄ starting and adhering = 4.3〜4.6 のみ
+ * 〔34 問〕。他ドメインは共通）。片側の SQ 行が存在しないことで、robAlgorithm.ts の
+ * judgeRobinsIDomain4Deviations は存在する側の経路だけで提案を出す（ROBINS_I_SQ_FIELD_NAMES の
+ * 契約は不変更）。毎回新しい行オブジェクトを返す
+ */
+export function buildRobinsISqTemplateRows(effect: RobinsIEffect): SchemaEditorRow[] {
+  const keepCodes = ROBINS_I_D4_CODES_BY_EFFECT[effect];
+  const unconditional = ROBINS_I_D4_UNCONDITIONAL_BY_EFFECT[effect];
+  const sqDefs = ROBINS_I_SQ_DEFS.filter(
+    (def) => def.domainId !== 'd4_deviations' || keepCodes.includes(def.code),
+  ).map((def) =>
+    def.domainId === 'd4_deviations' && unconditional.includes(def.code)
+      ? // 元の発火条件は「evaluate する effect の場合のみ回答」だったため、片側生成では無条件になる
+        { ...def, conditionSummary: null }
+      : def,
+  );
+  return [{ ...ROBINS_I_SQ_JUDGEMENT_ROW }, { ...ROBINS_I_SQ_SUPPORT_ROW }, ...sqDefs.map(robinsISqRow)];
+}
 
 // --- QUADAS-3（診断精度研究）（issue #61 PR3 = issue #88） --------------------
 //

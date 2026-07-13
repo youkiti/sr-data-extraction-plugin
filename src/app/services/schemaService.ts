@@ -24,6 +24,10 @@ import {
 } from '../../features/schema/schemaRepository';
 import { saveSchemaVersion } from '../../features/schema/saveSchemaVersion';
 import { SCHEMA_PRESETS, type SchemaPresetKind } from '../../features/schema/presets';
+import type {
+  PresetDialogPatch,
+  PresetDialogState,
+} from '../../features/schema/presets/prespecDialog';
 import {
   buildRob2LiteRows,
   buildRob2SqRows,
@@ -31,8 +35,15 @@ import {
   dialogToPrespec,
   findRob2PrespecInRows,
   validateRobPrespecDialog,
-  type RobPrespecDialogState,
 } from '../../features/schema/presets/robPrespec';
+import {
+  buildRobinsILiteRows,
+  buildRobinsISqRows,
+  createRobinsIPrespecDialogState,
+  findRobinsIPrespecInRows,
+  robinsIDialogToPrespec,
+  validateRobinsIPrespecDialog,
+} from '../../features/schema/presets/robinsIPrespec';
 import type { SchemaEditorRow } from '../../features/schema/types';
 import { validateEditorRows } from '../../features/schema/validateField';
 import { ensureChildFolder, getFileText, uploadTextFile } from '../../lib/google/drive';
@@ -55,7 +66,7 @@ import {
 import { FACTORY_DEFAULT_MODEL, loadDefaultModel } from '../../lib/storage/settingsStore';
 import type { SchemaState, Store } from '../store';
 import { showToast } from '../ui/toast';
-import { t } from '../../lib/i18n';
+import { t, type MessageKey } from '../../lib/i18n';
 
 export interface SchemaServiceDeps extends ProviderResolutionDeps {
   google: GoogleApiDeps;
@@ -367,34 +378,39 @@ function appendEditorRows(store: Store, added: readonly SchemaEditorRow[]): void
 
 /**
  * エディタ: プリセット挿入（二値 / 連続アウトカム・RoB 系。requirements.md §3.3）。
- * RoB 2 系（rob2 / rob2_sq）は行を挿入する前に事前設定ダイアログを開く（issue #103。
- * ROBINS-I / QUADAS-3 / QUIPS のダイアログ対応は issue #103 PR2 / PR3 のスコープ）
+ * RoB 2 系（rob2 / rob2_sq）と ROBINS-I 系（robins_i / robins_i_sq）は行を挿入する前に
+ * 事前設定ダイアログを開く（issue #103。QUADAS-3 / QUIPS のダイアログ対応は PR3 のスコープ）
  */
 export function insertSchemaPreset(store: Store, kind: SchemaPresetKind): void {
   const rows = store.getState().schema.editorRows;
   if (rows === null) {
     return;
   }
+  // 再挿入時は既存の判定行 note に保存済みの事前設定 JSON をダイアログ初期値へ復元する
   if (kind === 'rob2' || kind === 'rob2_sq') {
-    // 再挿入時は既存の判定行 note に保存済みの事前設定 JSON をダイアログ初期値へ復元する
     patchSchema(store, {
       presetDialog: createRobPrespecDialogState(kind, findRob2PrespecInRows(rows)),
+    });
+    return;
+  }
+  if (kind === 'robins_i' || kind === 'robins_i_sq') {
+    patchSchema(store, {
+      presetDialog: createRobinsIPrespecDialogState(kind, findRobinsIPrespecInRows(rows)),
     });
     return;
   }
   appendEditorRows(store, SCHEMA_PRESETS[kind].map((row) => ({ ...row })));
 }
 
-/** 事前設定ダイアログ: 入力の更新（検証エラーは入力変更でクリアする。ui-states.md §3） */
-export function updateRobPrespecDialog(
-  store: Store,
-  patch: Partial<Omit<RobPrespecDialogState, 'kind' | 'error'>>,
-): void {
+/** 事前設定ダイアログ: 入力の更新（検証エラーは入力変更でクリアする。ui-states.md §3）。
+ * patch がどの variant のものかは view（renderPresetDialog の kind 分岐）が保証するため、
+ * spread 結果の `as` は kind 不変 + variant 整合の不変条件に基づく型注釈 */
+export function updateRobPrespecDialog(store: Store, patch: PresetDialogPatch): void {
   const dialog = store.getState().schema.presetDialog;
   if (dialog === null) {
     return;
   }
-  patchSchema(store, { presetDialog: { ...dialog, ...patch, error: null } });
+  patchSchema(store, { presetDialog: { ...dialog, ...patch, error: null } as PresetDialogState });
 }
 
 /** 事前設定ダイアログ: キャンセル（挿入せず閉じる） */
@@ -403,17 +419,43 @@ export function cancelRobPrespecDialog(store: Store): void {
 }
 
 /**
- * 事前設定ダイアログ: 「スキップして挿入」（軽量版 rob2 のみ）。
- * 現行テンプレートと同一の行を挿入する（回帰なし）。rob2_sq は effect of interest が
+ * 事前設定ダイアログ: 「スキップして挿入」（軽量版 rob2 / robins_i のみ）。
+ * 現行テンプレートと同一の行を挿入する（回帰なし）。SQ 完全版は effect of interest が
  * SQ セット構成を決めるためスキップ不可（ボタン自体を出さない + ここでも防御する）
  */
 export function skipRobPrespecDialog(store: Store): void {
   const dialog = store.getState().schema.presetDialog;
-  if (dialog === null || dialog.kind !== 'rob2') {
+  if (dialog === null || (dialog.kind !== 'rob2' && dialog.kind !== 'robins_i')) {
     return;
   }
-  appendEditorRows(store, SCHEMA_PRESETS['rob2'].map((row) => ({ ...row })));
+  appendEditorRows(store, SCHEMA_PRESETS[dialog.kind].map((row) => ({ ...row })));
   patchSchema(store, { presetDialog: null });
+}
+
+/** ダイアログ確定値からツール別に行群を生成する（confirmRobPrespecDialog の下請け） */
+function buildPresetDialogRows(dialog: PresetDialogState): SchemaEditorRow[] {
+  switch (dialog.kind) {
+    case 'rob2':
+      return buildRob2LiteRows(dialogToPrespec(dialog));
+    case 'rob2_sq':
+      return buildRob2SqRows(dialogToPrespec(dialog));
+    case 'robins_i':
+      return buildRobinsILiteRows(robinsIDialogToPrespec(dialog));
+    case 'robins_i_sq':
+      return buildRobinsISqRows(robinsIDialogToPrespec(dialog));
+  }
+}
+
+/** ツール別の確定前検証（switch で variant を絞る。エラーはメッセージキーで返す） */
+function validatePresetDialog(dialog: PresetDialogState): MessageKey | null {
+  switch (dialog.kind) {
+    case 'rob2':
+    case 'rob2_sq':
+      return validateRobPrespecDialog(dialog);
+    case 'robins_i':
+    case 'robins_i_sq':
+      return validateRobinsIPrespecDialog(dialog);
+  }
 }
 
 /**
@@ -426,14 +468,12 @@ export function confirmRobPrespecDialog(store: Store): void {
   if (dialog === null) {
     return;
   }
-  const error = validateRobPrespecDialog(dialog);
-  if (error !== null) {
-    patchSchema(store, { presetDialog: { ...dialog, error } });
+  const errorKey = validatePresetDialog(dialog);
+  if (errorKey !== null) {
+    patchSchema(store, { presetDialog: { ...dialog, error: t(errorKey) } });
     return;
   }
-  const prespec = dialogToPrespec(dialog);
-  const added = dialog.kind === 'rob2' ? buildRob2LiteRows(prespec) : buildRob2SqRows(prespec);
-  appendEditorRows(store, added);
+  appendEditorRows(store, buildPresetDialogRows(dialog));
   patchSchema(store, { presetDialog: null });
 }
 

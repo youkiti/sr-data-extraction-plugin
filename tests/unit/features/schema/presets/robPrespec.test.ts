@@ -111,19 +111,19 @@ describe('robPrespec', () => {
   });
 
   describe('validateRobPrespecDialog', () => {
-    test('rob2_sq は effect 未選択でエラー', () => {
-      expect(validateRobPrespecDialog(makeDialog({ kind: 'rob2_sq' }))).toContain(
-        'effect of interest',
+    test('rob2_sq は effect 未選択でエラー（表示用メッセージキーを返す。issue #103 PR2 で共通化した契約）', () => {
+      expect(validateRobPrespecDialog(makeDialog({ kind: 'rob2_sq' }))).toBe(
+        'schema.prespecErrEffectRequired',
       );
     });
 
     test('adhering 選択 + deviation 種別 0 個はエラー（rob2 / rob2_sq 共通）', () => {
-      expect(validateRobPrespecDialog(makeDialog({ effect: 'adhering' }))).toContain(
-        '最低 1 つ',
+      expect(validateRobPrespecDialog(makeDialog({ effect: 'adhering' }))).toBe(
+        'schema.prespecErrDeviationRequired',
       );
       expect(
         validateRobPrespecDialog(makeDialog({ kind: 'rob2_sq', effect: 'adhering' })),
-      ).toContain('最低 1 つ');
+      ).toBe('schema.prespecErrDeviationRequired');
     });
 
     test('通過: rob2 は全項目未入力でも可 / rob2_sq は assignment 選択で可 / adhering は種別 1 つ以上で可', () => {

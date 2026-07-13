@@ -291,6 +291,33 @@ export const ja = {
   'schema.prespecDevNonAdherence':
     '参加者の割り付け介入への非遵守（non-adherence to their assigned intervention by trial participants）',
   'schema.prespecDeviationsLegend': '扱う deviation 種別（最低 1 つ必須）',
+  'schema.prespecErrEffectRequired': 'effect of interest（assignment / adhering）を選択してください',
+  'schema.prespecErrDeviationRequired':
+    'adhering を選ぶ場合は、扱う deviation 種別を最低 1 つチェックしてください',
+  'schema.prespecRobinsITitleSq': 'ROBINS-I（SQ 完全版）の事前設定',
+  'schema.prespecRobinsITitle': 'ROBINS-I テンプレートの事前設定（任意）',
+  'schema.prespecRobinsILeadSq':
+    'ドメイン評価の前にレビューチームが決める項目です（ROBINS-I tool template の study 単位 setup + review protocol 段階のリスト）。effect of interest は必須で、選択に応じて Domain 4 の signaling question セットが排他的に切り替わります（assignment = 4.1〜4.2 / starting and adhering = 4.3〜4.6）。入力内容は各項目の抽出指示の冒頭に Review context（英語）として注入されます。',
+  'schema.prespecRobinsILead':
+    'ドメイン評価の前にレビューチームが決める項目です（ROBINS-I tool template の study 単位 setup + review protocol 段階のリスト）。すべて任意です。入力すると各項目の抽出指示の冒頭に Review context（英語）として注入されます。スキップすると従来どおりのテンプレートを挿入します。',
+  'schema.prespecRobinsIDesign':
+    'target trial の design（原典の選択肢: individually randomized / cluster randomized / matched〔cross-over 等〕）',
+  'schema.prespecRobinsIParticipants': 'target trial の participants（対象集団）',
+  'schema.prespecRobinsIExperimental': 'target trial の experimental 介入',
+  'schema.prespecRobinsIComparator': 'target trial の comparator（比較対照）',
+  'schema.prespecRobinsIOutcome': '評価対象の outcome',
+  'schema.prespecBenefitHarmLegend': 'この outcome は介入の benefit / harm どちらの想定か（任意）',
+  'schema.prespecBenefitHarmBenefit': 'benefit（想定される有益性）',
+  'schema.prespecBenefitHarmHarm': 'harm（想定される有害性）',
+  'schema.prespecRobinsIEffectAssignment': 'assignment への効果（割り付けの効果）',
+  'schema.prespecRobinsIEffectStartingAdhering':
+    'starting and adhering への効果（開始・遵守の効果）',
+  'schema.prespecRobinsIConfounders':
+    'important confounding domains（1 行 1 項目。SQ 1.4 / 1.7 の "all the important confounding domains" の定義として注入されます）',
+  'schema.prespecRobinsICoInterventions':
+    'co-interventions（1 行 1 項目。SQ 4.3 の "important co-interventions" の定義として注入されます）',
+  'schema.prespecErrRobinsIEffectRequired':
+    'effect of interest（assignment / starting and adhering）を選択してください',
   'schema.prespecConfirm': 'この内容で挿入',
   'schema.prespecSkip': 'スキップして挿入',
   'schema.editorTitle': '表のデザイン編集（{count} 項目）',

@@ -1093,6 +1093,47 @@ describe('collectRobAlgorithmInfo', () => {
       expect(info?.suggestion).toBe('low');
     });
 
+    test('D4 片側生成（issue #103 PR2・assignment）: 4.3〜4.6 の行が無くても 4.1〜4.2 だけで提案する', () => {
+      // 事前設定ダイアログで effect = assignment を選ぶと 4.3〜4.6 の行は生成されない。
+      // judgeRobinsIDomain4Deviations は存在しない側の経路が null になり、存在する側の判定を返す
+      const entityKey = 'rob:d4_deviations';
+      const cells = [
+        makeSqCell('robins_i_sq4_1', entityKey, 'n'),
+        makeSqCell('robins_i_sq4_2', entityKey, 'na'),
+        makeSqCell('robins_i_judgement', entityKey, 'low'),
+      ];
+      const model: TabModel = { groups: [group(cells)], cells: [] };
+      const info = collectRobAlgorithmInfo(model).get(cellKeyOf('f-robins_i_judgement', entityKey));
+      expect(info?.suggestion).toBe('low');
+      expect(info?.mismatch).toBe(false);
+    });
+
+    test('D4 片側生成（issue #103 PR2・starting_adhering）: 4.1〜4.2 の行が無くても 4.3〜4.6 だけで提案する', () => {
+      const entityKey = 'rob:d4_deviations';
+      const cells = [
+        makeSqCell('robins_i_sq4_3', entityKey, 'y'),
+        makeSqCell('robins_i_sq4_4', entityKey, 'y'),
+        makeSqCell('robins_i_sq4_5', entityKey, 'y'),
+        makeSqCell('robins_i_sq4_6', entityKey, 'na'),
+        makeSqCell('robins_i_judgement', entityKey, 'low'),
+      ];
+      const model: TabModel = { groups: [group(cells)], cells: [] };
+      const info = collectRobAlgorithmInfo(model).get(cellKeyOf('f-robins_i_judgement', entityKey));
+      expect(info?.suggestion).toBe('low');
+    });
+
+    test('D4 片側生成（issue #103 PR2）: 生成された側も未回答なら提案なし（null）', () => {
+      const entityKey = 'rob:d4_deviations';
+      const cells = [
+        makeSqCell('robins_i_sq4_1', entityKey, null),
+        makeSqCell('robins_i_sq4_2', entityKey, null),
+        makeSqCell('robins_i_judgement', entityKey, 'low'),
+      ];
+      const model: TabModel = { groups: [group(cells)], cells: [] };
+      const info = collectRobAlgorithmInfo(model).get(cellKeyOf('f-robins_i_judgement', entityKey));
+      expect(info?.suggestion).toBeNull();
+    });
+
     test('D5（missing_data・SQ 5 問）: 5.1 = y・5.2/5.3 = n の組み合わせで low を提案する', () => {
       const domainGroup = makeRobinsIDomainGroup('d5_missing_data', ['y', 'n', 'n', null, null], 'low');
       const model: TabModel = { groups: [domainGroup], cells: [] };

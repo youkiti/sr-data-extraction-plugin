@@ -1,5 +1,6 @@
 import {
   buildRob2SqTemplateRows,
+  buildRobinsISqTemplateRows,
   QUADAS3_APPLICABILITY_DOMAINS,
   QUADAS3_DOMAINS,
   QUADAS3_SQ_FIELD_NAMES,
@@ -483,6 +484,66 @@ describe('robTemplates', () => {
 
     test('RoB 2（SQ 完全版）と同時挿入しても field_name は衝突しない', () => {
       expect(validateEditorRows([...ROB_TEMPLATE_ROBINS_I_SQ, ...ROB_TEMPLATE_ROB2_SQ])).toEqual([]);
+    });
+
+    describe('effect 別 D4 排他生成（issue #103 PR2）', () => {
+      const namesOf = (rows: readonly { fieldName: string }[]): string[] =>
+        rows.map((row) => row.fieldName);
+
+      test('assignment: D4 は 4.1〜4.2 のみ（判定 + 根拠 + SQ 30 問 = 32 行）', () => {
+        const rows = buildRobinsISqTemplateRows('assignment');
+        expect(rows).toHaveLength(32);
+        const names = namesOf(rows);
+        expect(names).toContain('robins_i_sq4_1');
+        expect(names).toContain('robins_i_sq4_2');
+        for (const dropped of ['robins_i_sq4_3', 'robins_i_sq4_4', 'robins_i_sq4_5', 'robins_i_sq4_6']) {
+          expect(names).not.toContain(dropped);
+        }
+      });
+
+      test('starting_adhering: D4 は 4.3〜4.6 のみ（判定 + 根拠 + SQ 32 問 = 34 行）', () => {
+        const rows = buildRobinsISqTemplateRows('starting_adhering');
+        expect(rows).toHaveLength(34);
+        const names = namesOf(rows);
+        expect(names).not.toContain('robins_i_sq4_1');
+        expect(names).not.toContain('robins_i_sq4_2');
+        for (const kept of ['robins_i_sq4_3', 'robins_i_sq4_4', 'robins_i_sq4_5', 'robins_i_sq4_6']) {
+          expect(names).toContain(kept);
+        }
+      });
+
+      test('effect の場合分けだけだった発火条件は無条件になり、SQ ベースの条件は残る', () => {
+        const instructionOf = (
+          rows: readonly { fieldName: string; extractionInstruction: string }[],
+          fieldName: string,
+        ): string => rows.find((row) => row.fieldName === fieldName)?.extractionInstruction ?? '';
+        const assignment = buildRobinsISqTemplateRows('assignment');
+        expect(instructionOf(assignment, 'robins_i_sq4_1')).not.toContain('条件付きです');
+        expect(instructionOf(assignment, 'robins_i_sq4_2')).toContain('4.1 が y / py');
+        const adhering = buildRobinsISqTemplateRows('starting_adhering');
+        expect(instructionOf(adhering, 'robins_i_sq4_3')).not.toContain('条件付きです');
+        expect(instructionOf(adhering, 'robins_i_sq4_4')).not.toContain('条件付きです');
+        expect(instructionOf(adhering, 'robins_i_sq4_5')).not.toContain('条件付きです');
+        expect(instructionOf(adhering, 'robins_i_sq4_6')).toContain('4.3、4.4、4.5 のいずれかが n / pn');
+      });
+
+      test('D4 以外の行は effect によらず従来定数と同一（毎回新しいオブジェクト）', () => {
+        const nonD4 = (rows: readonly { fieldName: string }[]): readonly { fieldName: string }[] =>
+          rows.filter((row) => !row.fieldName.startsWith('robins_i_sq4_'));
+        const assignment = buildRobinsISqTemplateRows('assignment');
+        expect(nonD4(assignment)).toEqual(nonD4([...ROB_TEMPLATE_ROBINS_I_SQ]));
+        expect(nonD4(buildRobinsISqTemplateRows('starting_adhering'))).toEqual(
+          nonD4([...ROB_TEMPLATE_ROBINS_I_SQ]),
+        );
+        const second = buildRobinsISqTemplateRows('assignment');
+        expect(assignment[0]).not.toBe(second[0]);
+        expect(assignment[2]).not.toBe(second[2]);
+      });
+
+      test('effect 別の行群もエディタ検証を通る', () => {
+        expect(validateEditorRows(buildRobinsISqTemplateRows('assignment'))).toEqual([]);
+        expect(validateEditorRows(buildRobinsISqTemplateRows('starting_adhering'))).toEqual([]);
+      });
     });
 
     test('軽量版 robins_i と同時挿入すると judgement/support の field_name が衝突する（意図的な排他利用の確認）', () => {

@@ -31,7 +31,7 @@ import type { ProgressCounts } from '../features/project/progressCounts';
 import type { TiabImportPlan } from '../features/documents/tiabReview';
 import type { DashboardData } from '../features/verification/dashboard';
 import type { LoadedPdfView } from '../features/verification/pdfViewCache';
-import type { RobPrespecDialogState } from '../features/schema/presets/robPrespec';
+import type { PresetDialogState } from '../features/schema/presets/prespecDialog';
 import type { SchemaEditorRow } from '../features/schema/types';
 import type { FieldValidationError } from '../features/schema/validateField';
 import type { VerificationProgress } from '../features/verification/progress';
@@ -194,7 +194,7 @@ export interface SchemaState {
   editorOrigin: 'ai_draft' | 'user_edit';
   confirming: boolean;
   /** RoB プリセット事前設定ダイアログ（issue #103。ui-states.md §3）。null = 非表示 */
-  presetDialog: RobPrespecDialogState | null;
+  presetDialog: PresetDialogState | null;
 }
 
 /** #/pilot（S6）の画面状態。run の結果と埋め込み検証 UI の素材はタブのセッション内で保持する */
