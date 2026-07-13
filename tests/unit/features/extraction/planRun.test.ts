@@ -21,6 +21,7 @@ import {
   planRun,
 } from '../../../../src/features/extraction/planRun';
 import { APPROX_IMAGE_TOKENS_PER_PAGE, estimateCostUsd } from '../../../../src/lib/llm/pricing';
+import { EXTRACT_DATA_ARM_COMPLETENESS_RULE } from '../../../../src/features/extraction/skills/extractData';
 
 function makeField(
   overrides: Pick<SchemaField, 'fieldId' | 'fieldName'> & Partial<SchemaField>,
@@ -70,17 +71,20 @@ const STUDY_FIELD = makeField({ fieldId: 'f_design', fieldName: 'study_design' }
 /**
  * テスト側で期待値を組み立てるための最小ミラー（1 バッチの入力トークン。テキスト文書ぶん）。
  * v0.10: 連結する各文書に見出し（DOCUMENT_SEPARATOR_CHARS）が付く。docChars は文書別の本文文字数の配列。
- * 画像文書ぶんは expectedImageTokens で別建てに計算し、この関数の戻り値へ加算する
+ * 画像文書ぶんは expectedImageTokens で別建てに計算し、この関数の戻り値へ加算する。
+ * extraChars は arm レベル項目を含むバッチの completeness 強調ぶん（issue #97）等の追加文字数
  */
 function expectedTokensIn(
   docCharsList: number | number[],
   fieldChars: number,
   protocolChars = 0,
+  extraChars = 0,
 ): number {
   const list = Array.isArray(docCharsList) ? docCharsList : [docCharsList];
   const bodyChars = list.reduce((sum, chars) => sum + DOCUMENT_SEPARATOR_CHARS + chars, 0);
   return Math.ceil(
-    (PROMPT_SCAFFOLD_CHARS + protocolChars + fieldChars + bodyChars) / APPROX_CHARS_PER_TOKEN,
+    (PROMPT_SCAFFOLD_CHARS + protocolChars + fieldChars + bodyChars + extraChars) /
+      APPROX_CHARS_PER_TOKEN,
   );
 }
 
@@ -266,6 +270,20 @@ describe('planRun のトークン概算', () => {
       model: 'gemini-2.5-pro',
     });
     expect(plan.batches[0]?.tokensInEstimate).toBe(expectedTokensIn(4_000, richChars));
+  });
+
+  it('arm レベル項目を含むバッチは completeness 強調ぶんの文字数を入力トークンへ加算する（issue #97: buildSuffixSections の追記と概算を同期）', () => {
+    const armField = makeField({ fieldId: 'f_arm_n', fieldName: 'arm_n', entityLevel: 'arm' });
+    const armChars = FIELD_PROMPT_OVERHEAD_CHARS + 'f_arm_n'.length + 'arm_n'.length;
+    const plan = planRun({
+      documents: [makeDocument({ documentId: 'd1' })],
+      fields: [armField],
+      model: 'gemini-2.5-pro',
+    });
+    // + 2 はセクション結合の '\n\n' ぶん（estimateBatch の armCompletenessChars と同じ式）
+    expect(plan.batches[0]?.tokensInEstimate).toBe(
+      expectedTokensIn(4_000, armChars, 0, EXTRACT_DATA_ARM_COMPLETENESS_RULE.length + 2),
+    );
   });
 
   it('protocolContext の文字数を入力トークンに加算する', () => {

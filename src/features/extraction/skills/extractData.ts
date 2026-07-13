@@ -166,8 +166,11 @@ const ENTITY_LEVEL_ORDER: readonly EntityLevel[] = ['study', 'arm', 'outcome_res
  * - なぜ条件付きか: arm レベル項目が無いバッチ（study / outcome_result / rob_domain のみ）には
  *   無関係な強調文がノイズになるため、ENTITY_KEY_RULES の presentLevels 出し分けと同じ方針で
  *   「バッチに arm レベル項目が含まれるときだけ」追加する
+ *
+ * export しているのは planRun のトークン概算（estimateBatch）が同じ条件で .length を
+ * 加算し、見積りとプロンプト実体の同期を保つため
  */
-const EXTRACT_DATA_ARM_COMPLETENESS_RULE = `
+export const EXTRACT_DATA_ARM_COMPLETENESS_RULE = `
 ## Completeness check (arm-level fields)
 
 Before returning, verify your JSON array is COMPLETE for arm-level fields: for EVERY arm-level field listed under "## Fields to extract", return one item for EVERY arm that appears in the documents ("arm:1", "arm:2", ...). If the study has A arms and this batch lists F arm-level fields, your array must contain exactly A x F arm-level items (plus the items for other levels). Do NOT stop after the first arm; arms 2, 3, ... require the same complete set of items as arm 1.

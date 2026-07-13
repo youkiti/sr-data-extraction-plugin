@@ -14,7 +14,10 @@ import { DOCUMENT_ROLE_ORDER, type DocumentRecord } from '../../domain/document'
 import type { InputMode } from '../../domain/extractionRun';
 import type { EntityLevel, SchemaField } from '../../domain/schemaField';
 import { APPROX_IMAGE_TOKENS_PER_PAGE, estimateCostUsd } from '../../lib/llm/pricing';
-import { EXTRACT_DATA_SYSTEM_PROMPT } from './skills/extractData';
+import {
+  EXTRACT_DATA_ARM_COMPLETENESS_RULE,
+  EXTRACT_DATA_SYSTEM_PROMPT,
+} from './skills/extractData';
 
 /** 英語論文テキストの 1 トークンあたり文字数の目安（概算専用） */
 export const APPROX_CHARS_PER_TOKEN = 4;
@@ -180,11 +183,17 @@ function estimateBatch(
     (sum, doc) => sum + DOCUMENT_SEPARATOR_CHARS + documentChars(doc),
     0,
   );
+  // arm レベル項目を含むバッチは buildSuffixSections が completeness 強調を追記する（issue #97）
+  // ため、同じ条件でそのぶんの文字数（+ セクション結合の '\n\n'）を概算にも加算して同期を保つ
+  const armCompletenessChars = fields.some((field) => field.entityLevel === 'arm')
+    ? EXTRACT_DATA_ARM_COMPLETENESS_RULE.length + 2
+    : 0;
   const promptChars =
     PROMPT_SCAFFOLD_CHARS +
     protocolChars +
     fields.reduce((sum, field) => sum + fieldPromptChars(field), 0) +
-    textBodyChars;
+    textBodyChars +
+    armCompletenessChars;
   const items = fields.reduce((sum, field) => sum + ENTITY_INSTANCE_ESTIMATE[field.entityLevel], 0);
   const imageTokens = imageDocs.reduce((sum, doc) => sum + imageDocumentTokens(doc), 0);
   return {
