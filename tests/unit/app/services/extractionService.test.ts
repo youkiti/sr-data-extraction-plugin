@@ -627,4 +627,89 @@ describe('runExtraction', () => {
       }),
     ]);
   });
+
+  /** arm:2 が欠落した応答で warning 付きの完了行を作る共通セットアップ（フォールバック検証用） */
+  function armWarningRunSetup() {
+    mockedReadArmRows.mockResolvedValue([
+      {
+        studyId: 'study-1',
+        version: 1,
+        armKey: 'arm:1',
+        armName: '介入群',
+        annotator: 'me@example.com',
+        annotatorType: 'human_with_ai',
+        confirmedAt: 't0',
+        note: null,
+      },
+      {
+        studyId: 'study-1',
+        version: 1,
+        armKey: 'arm:2',
+        armName: '対照群',
+        annotator: 'me@example.com',
+        annotatorType: 'human_with_ai',
+        confirmedAt: 't0',
+        note: null,
+      },
+    ]);
+    const chat = jest.fn().mockResolvedValue({
+      text: JSON.stringify([
+        {
+          field_id: 'f-arm',
+          entity_key: 'arm:1',
+          value: '60',
+          not_reported: false,
+          quote: '60 patients',
+          page: 1,
+          confidence: 'high',
+        },
+      ]),
+      tokensIn: 10,
+      tokensOut: 5,
+      raw: {},
+    } satisfies ChatResponse);
+    return {
+      params: {
+        ...baseParams(),
+        fields: [makeField({ fieldId: 'f-arm', fieldName: 'sample_size', entityLevel: 'arm' })],
+      },
+      deps: makeDeps(chat),
+    };
+  }
+
+  test('warnings 付き完了行の追記に失敗したら warnings なしで 1 回だけ再試行する（完了行の成立を優先。issue #106 レビュー対応）', async () => {
+    const { params, deps } = armWarningRunSetup();
+    // 完了行（status=done）かつ warnings 付きの追記だけを 1 回失敗させる
+    mockedAppendRun.mockImplementation(async (_sid, run) => {
+      if (run.status === 'done' && run.warnings !== null) {
+        throw new Error('セルサイズ超過（400）');
+      }
+    });
+    const outcome = await runExtraction(params, deps);
+    // running 行 → warnings 付き完了行（失敗）→ warnings なし完了行（成功）の 3 回
+    expect(mockedAppendRun).toHaveBeenCalledTimes(3);
+    expect(mockedAppendRun).toHaveBeenNthCalledWith(
+      3,
+      'sid',
+      expect.objectContaining({ status: 'done', warnings: null }),
+      GOOGLE,
+    );
+    // run は「中断」に転落しない。戻り値の run はシートに書けた内容（warnings なし）を反映し、
+    // S7 表示用の result.armWarnings は保持される
+    expect(outcome.run.status).toBe('done');
+    expect(outcome.run.warnings).toBeNull();
+    expect(outcome.result.armWarnings).toHaveLength(1);
+  });
+
+  test('warnings なし（null）の完了行の追記失敗はフォールバックせずそのまま失敗させる', async () => {
+    const chat = jest.fn().mockResolvedValue(AI_RESPONSE); // 警告なしの通常応答
+    const deps = makeDeps(chat);
+    mockedAppendRun.mockImplementation(async (_sid, run) => {
+      if (run.status === 'done') {
+        throw new Error('ネットワーク断');
+      }
+    });
+    await expect(runExtraction(baseParams(), deps)).rejects.toThrow('ネットワーク断');
+    expect(mockedAppendRun).toHaveBeenCalledTimes(2); // running 行 + 失敗した完了行のみ
+  });
 });

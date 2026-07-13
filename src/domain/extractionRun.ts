@@ -23,6 +23,13 @@ export interface ArmCompletenessRunWarning {
   expectedArmKeys: string[];
   /** 応答に返却されなかった (arm キー × arm レベル field) の組 */
   missingItems: { armKey: string; fieldId: string }[];
+  /**
+   * シート保存時に missingItems を切り詰めた場合の打ち切りマーカー
+   * （Sheets のセル 5 万字制限対策。runRepository の warningsToCell が付ける）
+   */
+  truncated?: boolean;
+  /** 切り詰め前の missingItems 総件数（truncated 時のみ付く） */
+  missingItemsTotal?: number;
 }
 
 /** run 単位の警告（ExtractionRuns.warnings 列に JSON で保持）。現状 arm completeness のみ */

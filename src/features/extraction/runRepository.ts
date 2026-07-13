@@ -41,9 +41,50 @@ function parseFieldIds(cell: string | null | undefined): string[] | null {
   return raw === '' ? null : raw.split(',').filter((id) => id !== '');
 }
 
-/** warnings（null 許容の配列）をシート用の JSON 文字列へ変換する。null = 警告なし → 空文字 */
+/**
+ * warnings セルの直列化サイズ上限。Sheets のセル上限（5 万字）を超えると完了行の追記自体が
+ * 400 で失敗し、run 全体が「中断」扱いへ転落してしまう（flush 済み Evidence が S8/S9 から
+ * 不可視化される）ため、保守的なマージンを取ってこの範囲へ切り詰める（issue #106 レビュー対応）
+ */
+export const MAX_WARNINGS_CELL_CHARS = 40_000;
+
+/** サイズ超過時に 1 警告へ残す missingItems の上限（先頭側を残す） */
+const TRUNCATED_MISSING_ITEMS_LIMIT = 5;
+
+/**
+ * warnings（null 許容の配列）をシート用の JSON 文字列へ変換する。null = 警告なし → 空文字。
+ * MAX_WARNINGS_CELL_CHARS を超える場合は次の順で切り詰める（警告は補助情報であり、
+ * 完了行が書けないことのほうが実害が大きいため）:
+ * 1. 各警告の missingItems を先頭 TRUNCATED_MISSING_ITEMS_LIMIT 件へ切り詰め、
+ *    打ち切りマーカー（truncated: true + missingItemsTotal = 元の総件数）を付ける
+ * 2. それでも超える間は末尾の警告から順に落とす（少なくとも 1 件は残す）
+ * 極端な入力で 1 件でも収まらない場合に備え、完了行の追記失敗時に warnings なしで
+ * 1 回だけ再試行する最終安全弁を extractionService 側に持つ
+ */
 function warningsToCell(warnings: readonly RunWarning[] | null): string {
-  return warnings === null ? '' : JSON.stringify(warnings);
+  if (warnings === null) {
+    return '';
+  }
+  const full = JSON.stringify(warnings);
+  if (full.length <= MAX_WARNINGS_CELL_CHARS) {
+    return full;
+  }
+  let compact: RunWarning[] = warnings.map((warning) =>
+    warning.missingItems.length > TRUNCATED_MISSING_ITEMS_LIMIT
+      ? {
+          ...warning,
+          missingItems: warning.missingItems.slice(0, TRUNCATED_MISSING_ITEMS_LIMIT),
+          truncated: true,
+          missingItemsTotal: warning.missingItems.length,
+        }
+      : warning,
+  );
+  let json = JSON.stringify(compact);
+  while (json.length > MAX_WARNINGS_CELL_CHARS && compact.length > 1) {
+    compact = compact.slice(0, -1);
+    json = JSON.stringify(compact);
+  }
+  return json;
 }
 
 /** RunWarning として最低限の形（kind / studyId / 配列 2 種）を満たすか */

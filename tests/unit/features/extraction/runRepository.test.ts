@@ -4,6 +4,7 @@ import {
   appendExtractionRun,
   ensureRunOptionalColumns,
   extractionRunToRow,
+  MAX_WARNINGS_CELL_CHARS,
   pickLatestCompletedRunByStudy,
   readCompletedRunMetas,
   readMethodsRunFacts,
@@ -85,6 +86,47 @@ describe('extractionRunToRow', () => {
     const warning = makeWarning();
     const row = extractionRunToRow(makeRun({ warnings: [warning] }));
     expect(row[15]).toBe(JSON.stringify([warning]));
+  });
+
+  test('warnings が直列化上限（MAX_WARNINGS_CELL_CHARS）を超えるときは missingItems を先頭 5 件へ切り詰め、打ち切りマーカーを付ける（issue #106 レビュー対応）', () => {
+    // fieldId は実運用では UUID（36 字）。800 件で直列化 ≈ 48,000 字 > 40,000 字
+    const bigWarning = makeWarning({
+      missingItems: Array.from({ length: 800 }, (_, i) => ({
+        armKey: 'arm:2',
+        fieldId: `f-${String(i).padStart(34, '0')}`,
+      })),
+    });
+    const smallWarning = makeWarning({ studyId: 'study-2' });
+    const cell = extractionRunToRow(makeRun({ warnings: [bigWarning, smallWarning] }))[15] as string;
+    expect(cell.length).toBeLessThanOrEqual(MAX_WARNINGS_CELL_CHARS);
+    const parsed = JSON.parse(cell) as RunWarning[];
+    expect(parsed).toHaveLength(2);
+    expect(parsed[0]?.missingItems).toEqual(bigWarning.missingItems.slice(0, 5));
+    expect(parsed[0]?.truncated).toBe(true);
+    expect(parsed[0]?.missingItemsTotal).toBe(800);
+    // 5 件以下の警告は切り詰め対象外（マーカーも付かない）
+    expect(parsed[1]).toEqual(smallWarning);
+  });
+
+  test('missingItems の切り詰めでも上限を超える間は末尾の警告から削る（先頭側 = 先に処理した study を優先して残す）', () => {
+    // 1 警告 ≈ 150 字 × 600 件 ≈ 90,000 字。missingItems は各 1 件のため件数の削減で収める
+    const warnings = Array.from({ length: 600 }, (_, i) =>
+      makeWarning({ studyId: `study-${i}` }),
+    );
+    const cell = extractionRunToRow(makeRun({ warnings }))[15] as string;
+    expect(cell.length).toBeLessThanOrEqual(MAX_WARNINGS_CELL_CHARS);
+    const parsed = JSON.parse(cell) as RunWarning[];
+    expect(parsed.length).toBeGreaterThan(0);
+    expect(parsed.length).toBeLessThan(600);
+    expect(parsed[0]?.studyId).toBe('study-0');
+  });
+
+  test('1 件でも上限を超える極端な警告はそれ以上切り詰めずに返す（完了行の追記失敗時は extractionService 側の warnings なし再試行が最終安全弁）', () => {
+    const huge = makeWarning({ expectedArmKeys: ['a'.repeat(45_000)] });
+    const cell = extractionRunToRow(makeRun({ warnings: [huge] }))[15] as string;
+    const parsed = JSON.parse(cell) as RunWarning[];
+    expect(parsed).toHaveLength(1);
+    expect(cell.length).toBeGreaterThan(MAX_WARNINGS_CELL_CHARS);
   });
 
   test('null 許容列（model_version / tokens / cost 等）は null をそのまま返す', () => {

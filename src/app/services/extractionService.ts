@@ -326,7 +326,21 @@ export async function runExtraction(
     // arm completeness 警告（issue #106）は完了行にのみ記録する（null = 警告なし）
     warnings: result.armWarnings.length === 0 ? null : result.armWarnings,
   };
-  await appendExtractionRun(params.spreadsheetId, run, deps.google);
+  try {
+    await appendExtractionRun(params.spreadsheetId, run, deps.google);
+  } catch (err) {
+    if (run.warnings === null) {
+      throw err;
+    }
+    // warnings 付きの完了行が書けない場合（想定外のセルサイズ超過等）は warnings なしで
+    // 1 回だけ再試行する。完了行が書けないと run 全体が「中断」扱いへ転落し flush 済み
+    // Evidence が S8/S9 から不可視化されるため、「警告の記録失敗で run を止めない」方針の
+    // 最終安全弁として完了行の成立を優先する（issue #106 レビュー対応。
+    // 通常サイズは runRepository.warningsToCell の切り詰めで収まる）
+    const fallback: ExtractionRun = { ...run, warnings: null };
+    await appendExtractionRun(params.spreadsheetId, fallback, deps.google);
+    return { run: fallback, plan, result };
+  }
 
   return { run, plan, result };
 }

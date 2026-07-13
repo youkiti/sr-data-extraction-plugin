@@ -29,7 +29,12 @@ function renderArmCompletenessWarning(target: VerifyTarget): HTMLElement | null 
     const missing = warning.missingItems
       .map((item) => `${item.armKey} × ${labelById.get(item.fieldId) ?? item.fieldId}`)
       .join('、');
-    return el('li', { text: `${scope}${missing} が AI 応答に含まれていませんでした` });
+    // シート保存時にサイズ上限で切り詰められた警告は残件数を添える（runRepository.warningsToCell）
+    const omitted =
+      warning.truncated === true && warning.missingItemsTotal !== undefined
+        ? `（他 ${warning.missingItemsTotal - warning.missingItems.length} 件省略）`
+        : '';
+    return el('li', { text: `${scope}${missing}${omitted} が AI 応答に含まれていませんでした` });
   });
   return el(
     'div',

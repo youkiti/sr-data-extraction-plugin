@@ -375,6 +375,41 @@ describe('renderVerifyView', () => {
     ]);
   });
 
+  test('arm 欠落警告: シート保存時に切り詰められた警告（truncated）は「（他 n 件省略）」を添える', () => {
+    const { ctx } = makeCtx();
+    const target = makeTarget({
+      fields: [makeField({ fieldId: 'f-arm', fieldLabel: '群のサンプルサイズ' })],
+      armWarnings: [
+        {
+          kind: 'arm_completeness',
+          studyId: 'study-1',
+          section: null,
+          expectedArmKeys: ['arm:1', 'arm:2'],
+          missingItems: [{ armKey: 'arm:2', fieldId: 'f-arm' }],
+          truncated: true,
+          missingItemsTotal: 42,
+        },
+        {
+          // 防御的分岐: truncated だが総件数が欠けた警告（壊れたセル由来）は省略表記を付けない
+          kind: 'arm_completeness',
+          studyId: 'study-1',
+          section: null,
+          expectedArmKeys: ['arm:3'],
+          missingItems: [{ armKey: 'arm:3', fieldId: 'f-arm' }],
+          truncated: true,
+        },
+      ],
+    });
+    const root = render(makeState({ targets: [target], selectedStudyId: 'study-1' }), ctx);
+    const items = [
+      ...(root.querySelector('#verify-arm-completeness-warning')?.querySelectorAll('li') ?? []),
+    ].map((li) => li.textContent);
+    expect(items).toEqual([
+      'arm:2 × 群のサンプルサイズ（他 41 件省略） が AI 応答に含まれていませんでした',
+      'arm:3 × 群のサンプルサイズ が AI 応答に含まれていませんでした',
+    ]);
+  });
+
   test('arm 欠落警告: study 未選択・警告なしの study 選択中はバナーを出さない', () => {
     const { ctx } = makeCtx();
     const warned = makeTarget({
