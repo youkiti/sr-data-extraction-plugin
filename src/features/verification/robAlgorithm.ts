@@ -736,6 +736,13 @@ const DOMAIN_ALGORITHMS: Readonly<Record<string, { fieldNames: readonly string[]
         answers[2] as Rob2SqAnswer | null,
       ),
   },
+  // 注意（issue #103）: この D2 決定木は effect of assignment（ITT）版の SQ 2.1〜2.7 専用。
+  // 事前設定ダイアログで adhering を選ぶと、プリセットは adhering 版 D2（SQ 2.1〜2.6。
+  // rob2_sq2_7 の行は生成されない）を挿入するため、fieldNames の rob2_sq2_7 に対応するセルが
+  // 見つからず回答が null になり、judgeDomain2Deviations 冒頭の null ガードで常に
+  // 「提案なし（null）」へ倒れる（意図した挙動 — adhering 版の 2.3〜2.6 は assignment 版と
+  // 設問内容が異なるため、assignment 用決定木を適用してはならない）。adhering 版の決定木
+  // （公式 cribsheet 2019-08-14 p.13 の流れ図）の実装は issue #103 の残課題
   d2_deviations: {
     fieldNames: ROB2_SQ_FIELD_NAMES['d2_deviations'] as readonly string[],
     judge: (answers) =>

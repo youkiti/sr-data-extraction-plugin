@@ -71,6 +71,7 @@ describe('createInitialState', () => {
         editorErrors: [],
         editorOrigin: 'user_edit',
         confirming: false,
+        presetDialog: null,
       },
       pilot: {
         selectedStudyIds: [],

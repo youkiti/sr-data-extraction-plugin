@@ -938,6 +938,48 @@
   padding-left: 20px;
 }
 
+/* RoB プリセット事前設定ダイアログ（issue #103。ui-states.md §3） */
+.schema__preset-dialog {
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 16px;
+  display: grid;
+  gap: 8px;
+  max-width: 640px;
+}
+
+.schema__prespec-design {
+  margin: 0;
+  color: var(--color-text-muted);
+}
+
+.schema__prespec-field {
+  display: grid;
+  gap: 4px;
+}
+
+.schema__prespec-effect,
+.schema__prespec-deviations {
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 8px 12px;
+  display: grid;
+  gap: 4px;
+}
+
+.schema__prespec-radio,
+.schema__prespec-checkbox {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.schema__prespec-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
 /* --- #/pilot（S6）------------------------------------------------------- */
 
 .pilot__docs {

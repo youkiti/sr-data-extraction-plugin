@@ -833,6 +833,29 @@ describe('bootstrapApp', () => {
       'プロトコルが未入力',
     );
 
+    // RoB 2 系プリセットは事前設定ダイアログを開く（issue #103）。
+    // 入力更新 → 確定（Review context 注入つきで 2 行挿入）まで配線を確認する
+    (document.getElementById('schema-preset-rob2') as HTMLButtonElement).click();
+    expect(document.getElementById('schema-preset-dialog')).not.toBeNull();
+    const outcomeInput = document.getElementById('schema-prespec-outcome') as HTMLInputElement;
+    outcomeInput.value = 'mortality';
+    outcomeInput.dispatchEvent(new Event('change'));
+    (document.getElementById('schema-prespec-confirm') as HTMLButtonElement).click();
+    expect(document.getElementById('schema-preset-dialog')).toBeNull();
+    expect(document.querySelectorAll('#schema-editor-table tbody tr')).toHaveLength(5);
+
+    // スキップして挿入（軽量版のみ）とキャンセルの配線
+    // （rob2 を重ねて挿入するため field_name 重複エラーになるが、配線確認には影響しない）
+    (document.getElementById('schema-preset-rob2') as HTMLButtonElement).click();
+    (document.getElementById('schema-prespec-skip') as HTMLButtonElement).click();
+    expect(document.getElementById('schema-preset-dialog')).toBeNull();
+    expect(document.querySelectorAll('#schema-editor-table tbody tr')).toHaveLength(7);
+    (document.getElementById('schema-preset-rob2-sq') as HTMLButtonElement).click();
+    expect(document.getElementById('schema-preset-dialog')).not.toBeNull();
+    (document.getElementById('schema-prespec-cancel') as HTMLButtonElement).click();
+    expect(document.getElementById('schema-preset-dialog')).toBeNull();
+    expect(document.querySelectorAll('#schema-editor-table tbody tr')).toHaveLength(7);
+
     (document.getElementById('schema-editor-cancel') as HTMLButtonElement).click();
     expect(document.getElementById('schema-editor')).toBeNull();
     expect(document.getElementById('schema-draft-form')).not.toBeNull();

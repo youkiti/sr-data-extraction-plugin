@@ -391,12 +391,124 @@ const ROB2_SQ_SUPPORT_ROW: SchemaEditorRow = presetRow({
   example: 'Participants were randomly assigned using a computer-generated sequence with concealed allocation.',
 });
 
-/** RoB 2（SQ 完全版）: ドメイン別の判定 + 根拠 + SQ 22 問（計 24 項目） */
-export const ROB_TEMPLATE_ROB2_SQ: readonly SchemaEditorRow[] = [
-  ROB2_SQ_JUDGEMENT_ROW,
-  ROB2_SQ_SUPPORT_ROW,
-  ...ROB2_SQ_DEFS.map(sqRow),
+// --- RoB 2 adhering 版 D2（issue #103 PR1） ----------------------------------
+// 出典: 公式 RoB 2 Word completion template（22 Aug 2019）の
+// "Domain 2: Risk of bias due to deviations from the intended interventions
+// (effect of adhering to intervention)" 節から逐語転記した（2026-07-13 取得。ローカル保全
+// `c:\tmp\rob-prespec\extracted\rob2_template.txt`。cribsheet 2019-08-14 pp.11-12 の同名節と
+// 一致することも確認済み）。adhering 版の D2 は **2.1〜2.6 の 6 問**で、assignment 版の 2.7 に
+// 相当する設問は存在しない（SQ 完全版全体では 21 問になる）。
+// 2.3〜2.5 の "[If applicable:]" は「Preliminary considerations（事前設定）で当該 deviation
+// 種別を扱うと指定した場合のみ回答する」の意（cribsheet: "This question is asked only if the
+// preliminary considerations specify that the assessment will address ..."）。本実装では
+// 事前設定ダイアログのチェック状態（Rob2DeviationType[]）から、生成時に発火条件文を確定させる。
+
+/** adhering 版で扱う deviation 種別（公式 template の Preliminary considerations のチェック項目） */
+export type Rob2DeviationType =
+  | 'non_protocol_interventions'
+  | 'implementation_failures'
+  | 'non_adherence';
+
+/** adhering 版 D2 の 1 問ぶんの定義（発火条件は deviation 種別の選択に依存するため生成時に確定する） */
+interface Rob2AdheringD2Def {
+  code: string;
+  /** signaling question の英語原文（公式 template から逐語転記。条件句 "[If applicable:]" 等は除く） */
+  question: string;
+  /** この設問が対応する deviation 種別（2.3〜2.5）。null = 種別によらず適用（2.1 / 2.2 / 2.6） */
+  deviationType: Rob2DeviationType | null;
+  /** 種別が選択されている（= applicable な）ときの発火条件（日本語要約）。null = 無条件 */
+  conditionWhenApplicable: string | null;
+}
+
+const ROB2_ADHERING_D2_DEFS: readonly Rob2AdheringD2Def[] = [
+  {
+    code: '2.1',
+    question: 'Were participants aware of their assigned intervention during the trial?',
+    deviationType: null,
+    conditionWhenApplicable: null,
+  },
+  {
+    code: '2.2',
+    question:
+      "Were carers and people delivering the interventions aware of participants' assigned intervention during the trial?",
+    deviationType: null,
+    conditionWhenApplicable: null,
+  },
+  {
+    code: '2.3',
+    question: 'Were important non-protocol interventions balanced across intervention groups?',
+    deviationType: 'non_protocol_interventions',
+    conditionWhenApplicable: 'SQ 2.1 または 2.2 が y / py / ni のときのみ回答する',
+  },
+  {
+    code: '2.4',
+    question: 'Were there failures in implementing the intervention that could have affected the outcome?',
+    deviationType: 'implementation_failures',
+    conditionWhenApplicable: null,
+  },
+  {
+    code: '2.5',
+    question:
+      "Was there non-adherence to the assigned intervention regimen that could have affected participants' outcomes?",
+    deviationType: 'non_adherence',
+    conditionWhenApplicable: null,
+  },
+  {
+    code: '2.6',
+    question: 'Was an appropriate analysis used to estimate the effect of adhering to the intervention?',
+    deviationType: null,
+    conditionWhenApplicable:
+      'SQ 2.3 が n / pn / ni、または SQ 2.4 か 2.5 が y / py / ni のときのみ回答する',
+  },
 ];
+
+/**
+ * adhering 版 D2 の SQ 定義を生成する。事前設定で選択されなかった deviation 種別の設問
+ * （2.3〜2.5 のいずれか）は「常に na」と案内する（原文の "[If applicable:]" 規則）
+ */
+function adheringD2SqDefs(deviationTypes: readonly Rob2DeviationType[]): Rob2SqDef[] {
+  return ROB2_ADHERING_D2_DEFS.map((def) => ({
+    code: def.code,
+    domainId: 'd2_deviations',
+    question: def.question,
+    conditionSummary:
+      def.deviationType !== null && !deviationTypes.includes(def.deviationType)
+        ? '本レビューの事前設定ではこの deviation 種別を扱わないため、常に na（not applicable）と回答する'
+        : def.conditionWhenApplicable,
+  }));
+}
+
+/**
+ * RoB 2（SQ 完全版）の行生成（issue #103）。effect of interest に応じて D2 の SQ セットを
+ * 切り替える（assignment 版 2.1〜2.7 = 22 問 ⇄ adhering 版 2.1〜2.6 = 21 問。D1 / D3〜D5 は共通）。
+ * 毎回新しい行オブジェクトを返す（呼び出し側の編集がテンプレート定数へ波及しない）。
+ * adhering 版では rob2_sq2_7 が生成されないため、robAlgorithm.ts の D2 決定木（assignment 版
+ * 前提）は回答不足の null ガードにより常に「提案なし」へ倒れる（同ファイル冒頭コメント参照）
+ */
+export function buildRob2SqTemplateRows(
+  options:
+    | { effect: 'assignment' }
+    | { effect: 'adhering'; deviationTypes: readonly Rob2DeviationType[] },
+): SchemaEditorRow[] {
+  const sqDefs: readonly Rob2SqDef[] =
+    options.effect === 'assignment'
+      ? ROB2_SQ_DEFS
+      : [
+          ...ROB2_SQ_DEFS.filter((def) => def.domainId === 'd1_randomization'),
+          ...adheringD2SqDefs(options.deviationTypes),
+          ...ROB2_SQ_DEFS.filter(
+            (def) => def.domainId !== 'd1_randomization' && def.domainId !== 'd2_deviations',
+          ),
+        ];
+  return [{ ...ROB2_SQ_JUDGEMENT_ROW }, { ...ROB2_SQ_SUPPORT_ROW }, ...sqDefs.map(sqRow)];
+}
+
+/** RoB 2（SQ 完全版・assignment 版）: ドメイン別の判定 + 根拠 + SQ 22 問（計 24 項目）。
+ * SCHEMA_PRESETS の登録値として残す従来互換の定数。issue #103 以降、S5 の挿入経路は
+ * 事前設定ダイアログの確定時に buildRob2SqTemplateRows / robPrespec.ts で行を生成する */
+export const ROB_TEMPLATE_ROB2_SQ: readonly SchemaEditorRow[] = buildRob2SqTemplateRows({
+  effect: 'assignment',
+});
 
 // --- ROBINS-I SQ（signaling question）完全版（issue #61 PR2 = issue #87） ---------
 // 上の ROB_TEMPLATE_ROBINS_I（軽量版: 判定 + 根拠のみ）は不変更で残し、新たに

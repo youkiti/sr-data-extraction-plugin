@@ -33,15 +33,19 @@ import {
 import {
   addEditorRow,
   cancelEditor,
+  cancelRobPrespecDialog,
+  confirmRobPrespecDialog,
   confirmSchema,
   insertSchemaPreset,
   loadSchema,
   removeEditorRow,
   runDraftSchema,
   setDraftModel,
+  skipRobPrespecDialog,
   startEditorFromCurrent,
   toggleSampleDocument,
   updateEditorRow,
+  updateRobPrespecDialog,
   type SchemaServiceDeps,
 } from './services/schemaService';
 import {
@@ -449,6 +453,18 @@ export async function bootstrapApp(
       },
       onInsertPreset: (kind) => {
         insertSchemaPreset(store, kind);
+      },
+      onUpdatePresetDialog: (patch) => {
+        updateRobPrespecDialog(store, patch);
+      },
+      onConfirmPresetDialog: () => {
+        confirmRobPrespecDialog(store);
+      },
+      onSkipPresetDialog: () => {
+        skipRobPrespecDialog(store);
+      },
+      onCancelPresetDialog: () => {
+        cancelRobPrespecDialog(store);
       },
       onConfirm: (note) => {
         void confirmSchema(store, deps, note);
