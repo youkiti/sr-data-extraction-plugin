@@ -195,6 +195,7 @@ function makeTarget(overrides: Partial<VerifyTarget> = {}): VerifyTarget {
     fields: [makeField()],
     schemaVersion: 1,
     progress: { decided: 1, total: 4, byTab: [] },
+    armWarnings: [],
     ...overrides,
   };
 }
@@ -337,6 +338,65 @@ describe('renderVerifyView', () => {
     );
     expect(root.querySelector('#verify-study')).not.toBeNull();
     expect(root.querySelector('#verify-error')?.textContent).toContain('study-9');
+  });
+
+  test('arm 欠落警告（issue #106）: 選択中 study の armWarnings をセレクタ直下の黄バナーに出す（項目ラベルで表示）', () => {
+    const { ctx } = makeCtx();
+    const target = makeTarget({
+      fields: [makeField({ fieldId: 'f-arm', fieldLabel: '群のサンプルサイズ' })],
+      armWarnings: [
+        {
+          kind: 'arm_completeness',
+          studyId: 'study-1',
+          section: null,
+          expectedArmKeys: ['arm:1', 'arm:2'],
+          missingItems: [
+            { armKey: 'arm:2', fieldId: 'f-arm' },
+            { armKey: 'arm:2', fieldId: 'f-unknown' }, // 表示 run のスキーマに無い id は素通し
+          ],
+        },
+        {
+          kind: 'arm_completeness',
+          studyId: 'study-1',
+          section: 'population',
+          expectedArmKeys: ['arm:3'],
+          missingItems: [{ armKey: 'arm:3', fieldId: 'f-arm' }],
+        },
+      ],
+    });
+    const root = render(makeState({ targets: [target], selectedStudyId: 'study-1' }), ctx);
+    const banner = root.querySelector('#verify-arm-completeness-warning');
+    expect(banner?.getAttribute('role')).toBe('status');
+    expect(banner?.textContent).toContain('群（arm）の欠落の可能性が検出されています');
+    const items = [...(banner?.querySelectorAll('li') ?? [])].map((li) => li.textContent);
+    expect(items).toEqual([
+      'arm:2 × 群のサンプルサイズ、arm:2 × f-unknown が AI 応答に含まれていませんでした',
+      '（section: population）arm:3 × 群のサンプルサイズ が AI 応答に含まれていませんでした',
+    ]);
+  });
+
+  test('arm 欠落警告: study 未選択・警告なしの study 選択中はバナーを出さない', () => {
+    const { ctx } = makeCtx();
+    const warned = makeTarget({
+      armWarnings: [
+        {
+          kind: 'arm_completeness',
+          studyId: 'study-1',
+          section: null,
+          expectedArmKeys: ['arm:1'],
+          missingItems: [{ armKey: 'arm:1', fieldId: 'f-arm' }],
+        },
+      ],
+    });
+    // 未選択（selectedStudyId = null）では警告持ちの target があっても出さない
+    const unselected = render(makeState({ targets: [warned], selectedStudyId: null }), ctx);
+    expect(unselected.querySelector('#verify-arm-completeness-warning')).toBeNull();
+    // 警告なしの study を選択中も出さない
+    const clean = render(
+      makeState({ targets: [makeTarget()], selectedStudyId: 'study-1' }),
+      ctx,
+    );
+    expect(clean.querySelector('#verify-arm-completeness-warning')).toBeNull();
   });
 
   test('検証データ読込済みなら 2 ペインパネルを埋め込み、判定がコールバックへ届く', () => {

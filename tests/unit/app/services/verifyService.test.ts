@@ -227,6 +227,7 @@ function makeCompletedRunMeta(overrides: Partial<CompletedRunMeta> = {}): Comple
     schemaVersion: 1,
     startedAt: 't0',
     fieldIds: null,
+    warnings: null,
     ...overrides,
   };
 }
@@ -310,6 +311,7 @@ function makeTarget(overrides: Partial<VerifyTarget> = {}): VerifyTarget {
     fields: [makeField()],
     schemaVersion: 1,
     progress: { decided: 0, total: 1, byTab: [] },
+    armWarnings: [],
     ...overrides,
   };
 }
@@ -556,6 +558,47 @@ describe('composeEvidenceByStudy（issue #80: run 単位のフィールド選択
       'arm-2',
     ]);
   });
+
+  test('armWarnings: 最新完了 run の warnings から当該 study ぶんだけを抜き出す（issue #106）', () => {
+    const warningOfStudy1 = {
+      kind: 'arm_completeness' as const,
+      studyId: 'study-1',
+      section: null,
+      expectedArmKeys: ['arm:1', 'arm:2'],
+      missingItems: [{ armKey: 'arm:2', fieldId: 'f-a' }],
+    };
+    const warningOfStudy2 = { ...warningOfStudy1, studyId: 'study-2' };
+    const byStudy = composeEvidenceByStudy(
+      [
+        // run-1（旧）にも warnings があるが、最新 run（run-2）の warnings だけを使う
+        makeEvidence({ evidenceId: 'old', studyId: 'study-1', runId: 'run-1', fieldId: 'f-a' }),
+        makeEvidence({ evidenceId: 'new', studyId: 'study-1', runId: 'run-2', fieldId: 'f-a' }),
+        makeEvidence({ evidenceId: 's2', studyId: 'study-2', runId: 'run-2', fieldId: 'f-a' }),
+      ],
+      [
+        makeCompletedRunMeta({
+          runId: 'run-1',
+          startedAt: 't1',
+          warnings: [{ ...warningOfStudy1, expectedArmKeys: ['arm:9'] }],
+        }),
+        makeCompletedRunMeta({
+          runId: 'run-2',
+          startedAt: 't2',
+          warnings: [warningOfStudy1, warningOfStudy2],
+        }),
+      ],
+    );
+    expect(byStudy.get('study-1')?.armWarnings).toEqual([warningOfStudy1]);
+    expect(byStudy.get('study-2')?.armWarnings).toEqual([warningOfStudy2]);
+  });
+
+  test('armWarnings: 最新完了 run の warnings が null（警告なし）なら空配列', () => {
+    const byStudy = composeEvidenceByStudy(
+      [makeEvidence({ evidenceId: 'a', studyId: 'study-1', runId: 'run-1' })],
+      [makeCompletedRunMeta({ runId: 'run-1', warnings: null })],
+    );
+    expect(byStudy.get('study-1')?.armWarnings).toEqual([]);
+  });
 });
 
 describe('loadVerifyTargets', () => {
@@ -578,6 +621,20 @@ describe('loadVerifyTargets', () => {
     });
     expect(verify.targets?.[0]?.study.studyId).toBe('study-doc-1');
     expect(verify.targets?.[0]?.documents.map((doc) => doc.documentId)).toEqual(['doc-1']);
+  });
+
+  test('直近 run の arm completeness 警告を target.armWarnings へ渡す（issue #106）', async () => {
+    const warning = {
+      kind: 'arm_completeness' as const,
+      studyId: 'study-doc-1',
+      section: null,
+      expectedArmKeys: ['arm:1', 'arm:2'],
+      missingItems: [{ armKey: 'arm:2', fieldId: 'f-total' }],
+    };
+    readCompletedRunMetasMock.mockResolvedValue([makeCompletedRunMeta({ warnings: [warning] })]);
+    const store = makeStore({ documents: [makeDocument()] });
+    await loadVerifyTargets(store, makeDeps());
+    expect(store.getState().verify.targets?.[0]?.armWarnings).toEqual([warning]);
   });
 
   test('同じ schema_version の fields 読み出しはキャッシュする', async () => {

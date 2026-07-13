@@ -18,7 +18,7 @@ import { resolveProtocol } from '../../../../src/app/services/schemaService';
 import { createInitialState, createStore, type Store } from '../../../../src/app/store';
 import type { DocumentRecord } from '../../../../src/domain/document';
 import type { Evidence } from '../../../../src/domain/evidence';
-import type { ExtractionRun } from '../../../../src/domain/extractionRun';
+import type { ExtractionRun, RunWarning } from '../../../../src/domain/extractionRun';
 import type { SchemaField } from '../../../../src/domain/schemaField';
 import type { StudyRecord } from '../../../../src/domain/study';
 import { readDocuments } from '../../../../src/features/documents/documentRepository';
@@ -173,6 +173,7 @@ function makeRun(overrides: Partial<ExtractionRun> = {}): ExtractionRun {
     tokensOut: 50,
     costEstimate: 0.01,
     fieldIds: null,
+    warnings: null,
     ...overrides,
   };
 }
@@ -183,6 +184,7 @@ function makeOutcome(
     studyIds?: string[];
     evidence?: Evidence[];
     rejectedItems?: unknown[];
+    armWarnings?: RunWarning[];
   } = {},
 ) {
   const status = overrides.status ?? 'done';
@@ -204,6 +206,7 @@ function makeOutcome(
       evidence: overrides.evidence ?? [makeEvidence()],
       rejectedItems: (overrides.rejectedItems ?? []) as never[],
       batchFailures: [],
+      armWarnings: overrides.armWarnings ?? [],
       tokensIn: 100,
       tokensOut: 50,
       modelVersion: 'gemini-test-001',
@@ -791,6 +794,28 @@ describe('runExtract', () => {
     expect(store.getState().extract.rejectedCount).toBe(2);
   });
 
+  test('arm completeness 警告（issue #106）を armWarnings へ反映する（実行開始時にリセット）', async () => {
+    const warning = {
+      kind: 'arm_completeness' as const,
+      studyId: 'study-doc-1',
+      section: null,
+      expectedArmKeys: ['arm:1', 'arm:2'],
+      missingItems: [{ armKey: 'arm:2', fieldId: 'f-total' }],
+    };
+    const store = makeReadyStore({
+      // 前回 run の警告が残っている状態から開始する
+      armWarnings: [{ ...warning, studyId: 'study-stale' }],
+    });
+    let atStart: unknown = null;
+    runExtractionMock.mockImplementation(async () => {
+      atStart = store.getState().extract.armWarnings;
+      return makeOutcome({ armWarnings: [warning] });
+    });
+    await runExtract(store, makeDeps());
+    expect(atStart).toEqual([]); // 実行開始時に前回分をリセットする
+    expect(store.getState().extract.armWarnings).toEqual([warning]);
+  });
+
   test('実行例外は runError に理由を入れて実行状態を解除する（Error 以外も文字列化）', async () => {
     const store = makeReadyStore();
     runExtractionMock.mockRejectedValue(new Error('LLM が応答しません'));
@@ -950,6 +975,33 @@ describe('retryExtractStudy', () => {
     await retryExtractStudy(store, makeDeps(), 'study-doc-2');
     expect((observedRows as { status: string }[])[1]?.status).toBe('running');
     expect(store.getState().extract.rejectedCount).toBe(2);
+  });
+
+  test('arm completeness 警告（issue #106）: 再試行は当該 study の警告だけを差し替える', async () => {
+    const otherWarning = {
+      kind: 'arm_completeness' as const,
+      studyId: 'study-doc-1',
+      section: null,
+      expectedArmKeys: ['arm:1', 'arm:2'],
+      missingItems: [{ armKey: 'arm:2', fieldId: 'f-total' }],
+    };
+    const staleWarning = { ...otherWarning, studyId: 'study-doc-2' };
+    const newWarning = {
+      ...otherWarning,
+      studyId: 'study-doc-2',
+      expectedArmKeys: ['arm:1', 'arm:2', 'arm:3'],
+      missingItems: [{ armKey: 'arm:3', fieldId: 'f-total' }],
+    };
+    const store = makeFailedStore();
+    store.setState({
+      extract: { ...store.getState().extract, armWarnings: [otherWarning, staleWarning] },
+    });
+    runExtractionMock.mockResolvedValue(
+      makeOutcome({ studyIds: ['study-doc-2'], armWarnings: [newWarning] }),
+    );
+    await retryExtractStudy(store, makeDeps(), 'study-doc-2');
+    // 他 study の警告は残し、study-doc-2 の古い警告だけが新しい結果で置き換わる
+    expect(store.getState().extract.armWarnings).toEqual([otherWarning, newWarning]);
   });
 
   test('study が見つからない・実行例外は対象行を失敗に戻して runError を出す', async () => {

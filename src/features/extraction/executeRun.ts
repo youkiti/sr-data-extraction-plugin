@@ -14,13 +14,14 @@
 import type { NormalizedPage } from '../../domain/anchor';
 import type { DocumentRecord } from '../../domain/document';
 import type { Evidence } from '../../domain/evidence';
-import type { RunStatus } from '../../domain/extractionRun';
+import type { ArmCompletenessRunWarning, RunStatus } from '../../domain/extractionRun';
 import type { SchemaField } from '../../domain/schemaField';
 import { LlmProviderError } from '../../lib/llm/LLMProvider';
 import type { ChatMessage, ChatResponse, LLMProvider } from '../../lib/llm/LLMProvider';
 import { generateUuid } from '../../utils/uuid';
 import { anchorQuote } from '../anchoring/anchorQuote';
 import { normalizeText } from '../anchoring/normalizeText';
+import { detectArmCompletenessWarning } from './armCompleteness';
 import type { PlannedBatch, RunPlan } from './planRun';
 import {
   buildExtractDataSystemPrompt,
@@ -112,6 +113,11 @@ export interface ExecuteRunDeps {
    * 際限なく育ちうるため、行数でも発火条件を持たせる（docs/handoff-20260710-sheets-write-batching.md）
    */
   maxRowsPerFlush?: number;
+  /**
+   * arm completeness 警告の外部記録（issue #106。extractionService が LLMApiLog への
+   * 追記を注入する）。補助的な監査記録のため、失敗しても run は止めない（握りつぶす）
+   */
+  recordArmWarning?: (warning: ArmCompletenessRunWarning) => Promise<void>;
 }
 
 /** flushEveryNStudies 省略時の既定値。extractionService.ts の既定注入にも使う */
@@ -134,6 +140,12 @@ export interface ExecuteRunInput {
   documents: readonly DocumentRecord[];
   /** planRun へ渡したものと同じ補助コンテキスト */
   protocolContext?: string | null;
+  /**
+   * ArmStructures 確定済みの study の arm キー一覧（issue #106 の突合素材。
+   * armCompleteness.confirmedArmKeysByStudy で組み立てて渡す）。未注入・未確定の study は
+   * 応答内の自己整合のみでチェックする
+   */
+  confirmedArmKeysByStudy?: ReadonlyMap<string, readonly string[]>;
 }
 
 export interface ExecuteRunResult {
@@ -144,6 +156,11 @@ export interface ExecuteRunResult {
   evidence: Evidence[];
   rejectedItems: RejectedBatchItem[];
   batchFailures: BatchFailure[];
+  /**
+   * arm completeness チェックの警告（issue #106）。**status には影響させない**
+   * （warning に留める設計判断。ExtractionRuns.warnings への記録と S7/S8 表示の素材）
+   */
+  armWarnings: ArmCompletenessRunWarning[];
   /** 実測合計（ExtractionRuns.tokens_in/out）。プロバイダが一度も返さなければ null */
   tokensIn: number | null;
   tokensOut: number | null;
@@ -325,6 +342,7 @@ export async function executeRun(
   const evidence: Evidence[] = [];
   const rejectedItems: RejectedBatchItem[] = [];
   const batchFailures: BatchFailure[] = [];
+  const armWarnings: ArmCompletenessRunWarning[] = [];
   // 進行中の Promise をキャッシュする（値ではなく Promise を持つことで、並行実行時に
   // 同一 document を複数バッチが同時に miss しても loadDocumentPages を 1 回に抑える）
   const loadedDocuments = new Map<string, Promise<LoadedDocument>>();
@@ -584,6 +602,26 @@ export async function executeRun(
       rejectedItems.push({ ...item, studyId: batch.studyId, section: batch.section });
     }
 
+    // arm completeness チェック（issue #106）: 応答内の自己整合（arm:n が出現するのに
+    // 項目が揃っていない）+ ArmStructures 確定 arm との突合で欠落を機械検出する。
+    // 「真の arm 数」は事前に既知でないため過検出（単群試験・正当な not_reported 等）の
+    // リスクがあり、partial_failure には倒さず **warning に留める**（記録 + UI 表示のみ）
+    const armWarning = detectArmCompletenessWarning({
+      studyId: batch.studyId,
+      section: batch.section,
+      items: validated.items,
+      fields: batchFields,
+      confirmedArmKeys: input.confirmedArmKeysByStudy?.get(batch.studyId) ?? null,
+    });
+    if (armWarning !== null) {
+      armWarnings.push(armWarning);
+      try {
+        await deps.recordArmWarning?.(armWarning);
+      } catch {
+        // 警告の外部記録（LLMApiLog）は補助的な監査記録のため、失敗しても run を止めない
+      }
+    }
+
     // document_index（1..resolved.length）が指す文書でアンカリングし、その documentId を Evidence に書く。
     // 画像入力（pdf_native）の文書にはテキスト層が無いため normalizedPages が無く、anchorStatus は null になる
     const rows = validated.items.map((item) => {
@@ -618,11 +656,14 @@ export async function executeRun(
 
   return {
     runId: input.runId,
+    // arm completeness 警告（armWarnings）は status に影響させない（issue #106 の設計判断:
+    // 過検出リスクを許容する warning に留め、partial_failure = 再試行対象とは区別する）
     status:
       batchFailures.length === 0 && rejectedItems.length === 0 ? 'done' : 'partial_failure',
     evidence,
     rejectedItems,
     batchFailures,
+    armWarnings,
     tokensIn,
     tokensOut,
     modelVersion,

@@ -139,8 +139,11 @@ export const SHEET_HEADERS: Record<SheetTabName, readonly string[]> = {
     // run 単位のフィールド選択（issue #80）。カンマ区切り、空 = 全項目（後方互換規約）。
     // 既存プロジェクトはこの列を持たないため、末尾に追加し読み書き側で後方互換を取る
     // （evidenceRepository の bbox 列と同じ方式。runRepository.ts の
-    // ensureRunFieldIdsColumn / readRunRows 参照）
+    // ensureRunOptionalColumns / readRunRows 参照）
     'field_ids',
+    // run 単位の警告（issue #106: arm completeness チェック）。RunWarning[] の JSON、
+    // 空 = 警告なし。field_ids と同じ後方互換方式（末尾追加・読み書き側で許容）
+    'warnings',
   ],
   StudyData: STUDY_DATA_FIXED_HEADERS,
   ResultsData: [

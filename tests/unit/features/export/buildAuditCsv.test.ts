@@ -66,6 +66,7 @@ const run = (
   tokensOut: null,
   costEstimate: null,
   fieldIds: null,
+  warnings: null,
 });
 
 const evidence = (

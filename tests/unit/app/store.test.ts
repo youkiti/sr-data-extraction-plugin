@@ -117,6 +117,7 @@ describe('createInitialState', () => {
         runError: null,
         run: null,
         rejectedCount: 0,
+        armWarnings: [],
         retryingStudyId: null,
         selectedFieldIds: null,
         collapsedFieldSections: [],

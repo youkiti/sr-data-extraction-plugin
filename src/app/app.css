@@ -1146,8 +1146,10 @@
 
 /* --- #/extract（S7）------------------------------------------------------ */
 
+/* .extract__arm-warnings は arm 欠落警告バナー（issue #106。#extract-arm-warnings） */
 .extract__pilot-warning,
-.extract__interrupted-warning {
+.extract__interrupted-warning,
+.extract__arm-warnings {
   background: var(--color-warning-bg);
   border: 1px solid var(--color-warning-border);
   border-radius: 8px;
@@ -2433,6 +2435,21 @@
 .verify__conflict-warning p {
   margin: 0;
   flex: 1;
+}
+
+/* arm 欠落警告バナー（issue #106。#verify-arm-completeness-warning）。直近 run の
+   completeness チェック結果を検証前に注意喚起する */
+.verify__arm-completeness-warning {
+  background: var(--color-warning-bg);
+  border: 1px solid var(--color-warning-border);
+  border-radius: 8px;
+  padding: 8px 12px;
+  margin-bottom: 12px;
+}
+
+.verify__arm-completeness-warning p,
+.verify__arm-completeness-warning ul {
+  margin: 0;
 }
 
 /* --- PDF ビューア --------------------------------------------------------- */

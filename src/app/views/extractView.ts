@@ -2,6 +2,7 @@
 // 状態: 読み込み中 / 読み込み失敗 / 未実行（対象 study 選択 + コスト概算 + 実行）/
 // 実行確認カード / 実行中（study 単位の進捗リスト）/ 完了（done / partial_failure + 再試行）
 import type { DocumentRecord } from '../../domain/document';
+import type { RunWarning } from '../../domain/extractionRun';
 import {
   buildStudySelection,
   documentsForStudies,
@@ -385,6 +386,50 @@ function renderProgress(state: AppState, ctx: ViewContext): HTMLElement {
   ]);
 }
 
+/**
+ * arm completeness 警告 1 件の表示行（issue #106）。study_label + section + 欠落一覧。
+ * 項目名は現行スキーマの field_id → field_name で解決する（見つからなければ id のまま）
+ */
+function armWarningLineOf(state: AppState, warning: RunWarning): string {
+  const fieldNameById = new Map(
+    (state.schema.currentFields ?? []).map((field) => [field.fieldId, field.fieldName]),
+  );
+  const scope = warning.section === null ? '' : `（section: ${warning.section}）`;
+  const missing = warning.missingItems
+    .map((item) => `${item.armKey} × ${fieldNameById.get(item.fieldId) ?? item.fieldId}`)
+    .join('、');
+  return `${studyLabelOf(state, warning.studyId)}${scope}: ${missing} が応答に含まれていません`;
+}
+
+/**
+ * arm completeness 警告バナー（issue #106・#extract-arm-warnings）。
+ * warning のみ（run の status には影響しない）ため、done / partial_failure の両方で出す
+ */
+function renderArmWarnings(state: AppState): HTMLElement | null {
+  const warnings = state.extract.armWarnings;
+  if (warnings.length === 0) {
+    return null;
+  }
+  return el(
+    'div',
+    {
+      id: 'extract-arm-warnings',
+      className: 'extract__arm-warnings',
+      attributes: { role: 'status' },
+    },
+    [
+      el('p', {
+        text: `群（arm）の欠落の可能性が ${warnings.length} 件検出されました（警告。正当な未報告の可能性もあります。検証時に本文と照合してください）:`,
+      }),
+      el(
+        'ul',
+        {},
+        warnings.map((warning) => el('li', { text: armWarningLineOf(state, warning) })),
+      ),
+    ],
+  );
+}
+
 function renderSummary(state: AppState, ctx: ViewContext): HTMLElement {
   const failedCount = state.extract.studyRows.filter((row) => row.status === 'failed').length;
   const children: HTMLElement[] = [el('h3', { text: '実行結果' })];
@@ -414,6 +459,10 @@ function renderSummary(state: AppState, ctx: ViewContext): HTMLElement {
         }),
       );
     }
+  }
+  const armWarnings = renderArmWarnings(state);
+  if (armWarnings !== null) {
+    children.push(armWarnings);
   }
   children.push(
     renderStudyRows(state, ctx, true),

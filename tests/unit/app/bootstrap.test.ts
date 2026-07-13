@@ -1125,6 +1125,7 @@ describe('bootstrapApp: #/pilot', () => {
     tokensOut: null,
     costEstimate: null,
     fieldIds: null,
+    warnings: null,
   };
 
   function pilotPreloaded(pilotPatch: Partial<AppState['pilot']> = {}): Partial<AppState> {

@@ -411,6 +411,7 @@ export async function runExtract(store: Store, deps: ExtractServiceDeps): Promis
     progress: null,
     run: null,
     rejectedCount: 0,
+    armWarnings: [],
     studyRows: [],
     lastRunFieldIds: fieldIds,
   });
@@ -436,6 +437,8 @@ export async function runExtract(store: Store, deps: ExtractServiceDeps): Promis
       progress: null,
       run: outcome.run,
       rejectedCount: outcome.result.rejectedItems.length,
+      // arm completeness 警告（issue #106。#extract-arm-warnings の素材）
+      armWarnings: outcome.result.armWarnings,
     });
     showToast(
       outcome.run.status === 'done'
@@ -514,6 +517,11 @@ export async function retryExtractStudy(
     patchExtract(store, {
       retryingStudyId: null,
       rejectedCount: store.getState().extract.rejectedCount + outcome.result.rejectedItems.length,
+      // 当該 study の arm completeness 警告を再試行の結果で差し替える（issue #106）
+      armWarnings: [
+        ...store.getState().extract.armWarnings.filter((warning) => warning.studyId !== studyId),
+        ...outcome.result.armWarnings,
+      ],
     });
     showToast(
       outcome.run.status === 'done'

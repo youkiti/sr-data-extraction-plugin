@@ -8,6 +8,7 @@
 import type { Decision } from '../../domain/decision';
 import type { DocumentRecord } from '../../domain/document';
 import type { Evidence } from '../../domain/evidence';
+import type { RunWarning } from '../../domain/extractionRun';
 import { annotatorTypeForRole } from '../../domain/reviewer';
 import type { StudyRecord } from '../../domain/study';
 import type { ConfirmedArmStructure } from '../../domain/armStructure';
@@ -122,6 +123,11 @@ export interface ComposedEvidenceByStudy {
   runId: string;
   /** field_id ごとに選定した run の Evidence を合成したもの */
   evidence: Evidence[];
+  /**
+   * 上記の最新完了 run の warnings のうち当該 study ぶん（issue #106:
+   * arm completeness。S8 の `#verify-arm-completeness-warning` の素材）
+   */
+  armWarnings: RunWarning[];
 }
 
 /**
@@ -231,6 +237,10 @@ export function composeEvidenceByStudy(
       schemaVersion: latestMeta.schemaVersion,
       runId: latestRunId,
       evidence: items.filter((item) => item.runId === resolveWinner(item.fieldId)),
+      // 最新完了 run の arm completeness 警告から当該 study ぶんを抜き出す（issue #106）
+      armWarnings: (latestMeta.warnings ?? []).filter(
+        (warning) => warning.studyId === studyId,
+      ),
     });
   }
 
@@ -287,6 +297,8 @@ async function readIndependentVerifyTargetMaterials(
         fields,
         schemaVersion: latest.schemaVersion,
         progress: verificationProgress(fields, [], ownDecisions, { armStructure }),
+        // 独立入力モードは AI 抽出の情報を一切見せない（issue #106 の警告も出さない）
+        armWarnings: [],
       },
       ownDecisions,
       armStructure,
@@ -352,6 +364,8 @@ export async function readVerifyTargetMaterials(
         fields,
         schemaVersion,
         progress: verificationProgress(fields, entry.evidence, ownDecisions, { armStructure }),
+        // 直近 run の arm completeness 警告（issue #106。S8 バナーの素材）
+        armWarnings: entry.armWarnings,
       },
       ownDecisions,
       armStructure,

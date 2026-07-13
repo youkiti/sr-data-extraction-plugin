@@ -238,6 +238,7 @@ AI 一括抽出の実行単位。tiab-review の `LLM_Runs` に相当。
 | started_at / finished_at | iso8601 | | |
 | tokens_in / tokens_out / cost_estimate | int / int / float | | 実行前にコスト概算を UI 表示 |
 | field_ids | string | | 2026-07 追加（issue #80: run 単位のフィールド選択）。対象 `field_id` をカンマ区切りで記録する。**空 = 全項目**（後方互換規約。既存プロジェクトはこの列を持たないため、書き込み前にヘッダを拡張する）。検証・ダッシュボード・エクスポートの表示は、セル（field_id 単位）ごとに「その field を対象に含む最新の完了 run」の `Evidence` を採用する合成ビューへ切り替わる（サブセット run が最新でも、対象外の field は過去 run の値が見え続ける） |
+| warnings | string(json) | | 2026-07 追加（issue #106: arm completeness チェック）。完了行にのみ書く run 単位の警告（`RunWarning[]` の JSON。現状は `kind='arm_completeness'` のみ）。応答に `arm:n` が現れる（または `ArmStructures` 確定済み）のに当該 arm の arm レベル項目が揃っていないバッチを機械検出した記録。**warning のみで status は `partial_failure` に倒さない**（正当な not_reported 等の過検出リスクとのバランス）。空 = 警告なし。既存プロジェクトはこの列を持たないため field_ids と同じ方式でヘッダを拡張する。S7 実行結果・S8 検証画面のバナー表示の素材 |
 
 #### データ本体タブの分割方針と annotator 軸（v0.4）
 

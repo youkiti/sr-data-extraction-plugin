@@ -6,7 +6,7 @@ import type { DocumentRecord } from '../domain/document';
 import type { StudyRecord } from '../domain/study';
 import type { Evidence } from '../domain/evidence';
 import type { ExportFormat } from '../domain/exportLog';
-import type { ExtractionRun } from '../domain/extractionRun';
+import type { ExtractionRun, RunWarning } from '../domain/extractionRun';
 import type { ProjectRole, ReviewerAssignment, ReviewerRole, ReviewMode } from '../domain/reviewer';
 import type { AnnotatorPairResolution } from '../features/adjudication/pairResolution';
 import type { StudyGate } from '../features/adjudication/gate';
@@ -259,6 +259,11 @@ export interface ExtractState {
   run: ExtractionRun | null;
   /** 直近 run の応答要素の破棄件数（partial_failure バナーに併記） */
   rejectedCount: number;
+  /**
+   * 直近 run の arm completeness 警告（issue #106。`#extract-arm-warnings` の素材）。
+   * 再試行（single_study run）は当該 study の警告を差し替える
+   */
+  armWarnings: RunWarning[];
   /** 再試行（single_study run）実行中の study_id。null = なし */
   retryingStudyId: string | null;
   /**
@@ -294,6 +299,11 @@ export interface VerifyTarget {
   schemaVersion: number;
   /** セレクタの進捗チップ（判定済み n / 総セル m） */
   progress: VerificationProgress;
+  /**
+   * 表示する run の当該 study ぶんの arm completeness 警告（issue #106。
+   * `#verify-arm-completeness-warning` の素材）。独立入力モードでは常に空配列
+   */
+  armWarnings: RunWarning[];
 }
 
 /** #/verify（S8）の画面状態 */
@@ -620,6 +630,7 @@ export function createInitialState(): AppState {
       runError: null,
       run: null,
       rejectedCount: 0,
+      armWarnings: [],
       retryingStudyId: null,
       selectedFieldIds: null,
       collapsedFieldSections: [],

@@ -234,6 +234,7 @@ function makeRun(overrides: Partial<ExtractionRun> = {}): ExtractionRun {
     tokensOut: 50,
     costEstimate: 0.01,
     fieldIds: null,
+    warnings: null,
     ...overrides,
   };
 }
@@ -579,6 +580,7 @@ describe('runPilot: 実行', () => {
           status === 'partial_failure'
             ? [{ studyId: 'study-doc-1', section: null, reason: 'api_error' as const, detail: '500' }]
             : [],
+        armWarnings: [],
         tokensIn: 100,
         tokensOut: 50,
         modelVersion: 'gemini-test-001',
