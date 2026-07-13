@@ -78,17 +78,20 @@ async function bootstrapApiKeySection(
   // 保存済みのときは平文キーを再表示せず、placeholder で「保存済み」を示す。
   // 未設定のときは入力を促す既定文言に戻す
   const setSavedPlaceholder = (saved: boolean): void => {
-    input.placeholder = saved ? '保存済み（変更する場合のみ入力）' : 'API キーを入力';
+    input.placeholder = saved ? t('options.placeholderSavedKey') : t('options.placeholderEnterKey');
   };
 
   const savedKey = await load();
   setSavedPlaceholder(savedKey !== null);
-  setStatus(`${providerLabel}: ${savedKey ? '保存済み' : '未設定'}`, false);
+  setStatus(
+    `${providerLabel}: ${savedKey ? t('options.statusSavedKey') : t('options.statusUnsetKey')}`,
+    false,
+  );
 
   const handleSave = async (): Promise<void> => {
     const value = input.value.trim();
     if (value === '') {
-      setStatus('API キーが空のため保存しませんでした。', true);
+      setStatus(t('options.toastEmptyKey'), true);
       return;
     }
     const warning = foreignKeyWarning(value);
@@ -101,9 +104,9 @@ async function bootstrapApiKeySection(
       await save(value);
       input.value = '';
       setSavedPlaceholder(true);
-      setStatus('保存しました。', false);
+      setStatus(t('options.toastSaved'), false);
     } catch {
-      setStatus('保存に失敗しました。もう一度お試しください。', true);
+      setStatus(t('options.toastSaveFailed'), true);
     } finally {
       saveButton.disabled = false;
     }
@@ -139,24 +142,29 @@ async function bootstrapDefaultModelSection(root: ParentNode): Promise<void> {
   container.append(
     createModelSelect(doc, {
       id: 'default-model',
-      ariaLabel: '既定モデル',
+      ariaLabel: t('options.defaultModelTitle'),
       value: pendingModel,
-      placeholderLabel: '未設定',
+      placeholderLabel: t('options.defaultModelPlaceholder'),
       onChange: (model) => {
         pendingModel = model;
       },
     }),
   );
-  setStatus(`既定モデル: ${savedModel ? '保存済み' : '未設定'}`, false);
+  setStatus(
+    t('options.defaultModelStatus', {
+      status: savedModel ? t('options.statusSavedKey') : t('options.statusUnsetKey'),
+    }),
+    false,
+  );
 
   const handleSave = async (): Promise<void> => {
     saveButton.disabled = true;
     try {
       // 空（プレースホルダ or その他の空文字）は「未設定に戻す」（API キーと違い空での解除を許す）
       await saveDefaultModel(pendingModel);
-      setStatus(pendingModel === '' ? '未設定に戻しました。' : '保存しました。', false);
+      setStatus(pendingModel === '' ? t('options.defaultModelCleared') : t('options.toastSaved'), false);
     } catch {
-      setStatus('保存に失敗しました。もう一度お試しください。', true);
+      setStatus(t('options.toastSaveFailed'), true);
     } finally {
       saveButton.disabled = false;
     }
@@ -215,8 +223,8 @@ async function bootstrapLlmConnectionSection(root: ParentNode): Promise<void> {
   endpointInput.value = settings.openAiCompatibleEndpoint ?? '';
   const savedCustomKey = await loadOpenAiCompatibleApiKey();
   apiKeyInput.placeholder = savedCustomKey
-    ? '保存済み（変更する場合のみ入力）'
-    : 'API キー（loopback は任意）';
+    ? t('options.placeholderSavedKey')
+    : t('options.placeholderKeyOptional');
 
   const renderProvider = (): void => {
     customFields.hidden = selectedProvider(providerSelect) !== 'openai_compatible';
@@ -224,7 +232,7 @@ async function bootstrapLlmConnectionSection(root: ParentNode): Promise<void> {
   renderProvider();
   providerSelect.addEventListener('change', renderProvider);
   setStatus(
-    settings.provider === null ? '未保存（モデル名から自動判定）' : '接続設定: 保存済み',
+    settings.provider === null ? t('options.connectionUnsaved') : t('options.connectionSaved'),
     false,
   );
 
@@ -239,7 +247,9 @@ async function bootstrapLlmConnectionSection(root: ParentNode): Promise<void> {
     if (provider !== 'openai_compatible') {
       const apiKey = await loadKeyForProvider(provider);
       if (apiKey === null) {
-        throw new Error(`${provider === 'gemini' ? 'Gemini' : 'OpenRouter'} API キーが未設定です`);
+        throw new Error(
+          t('options.errKeyMissing', { provider: provider === 'gemini' ? 'Gemini' : 'OpenRouter' }),
+        );
       }
       return { provider, apiKey, model };
     }
@@ -247,7 +257,7 @@ async function bootstrapLlmConnectionSection(root: ParentNode): Promise<void> {
     const enteredKey = apiKeyInput.value.trim();
     const apiKey = enteredKey || (await loadOpenAiCompatibleApiKey());
     if (apiKey === null && !isLoopbackEndpoint(endpoint)) {
-      throw new Error('OpenAI 互換 API キーが未設定です');
+      throw new Error(t('options.errCompatibleKeyMissing'));
     }
     return { provider, endpoint, apiKey: apiKey ?? '', model };
   };
@@ -261,18 +271,18 @@ async function bootstrapLlmConnectionSection(root: ParentNode): Promise<void> {
           config.provider === 'openai_compatible' &&
           !(await requestEndpointPermission(config.endpoint as string))
         ) {
-          throw new Error('接続先へのアクセスが許可されませんでした');
+          throw new Error(t('options.errPermissionDenied'));
         }
         if (config.provider === 'openai_compatible' && apiKeyInput.value.trim() !== '') {
           await saveOpenAiCompatibleApiKey(apiKeyInput.value);
           apiKeyInput.value = '';
-          apiKeyInput.placeholder = '保存済み（変更する場合のみ入力）';
+          apiKeyInput.placeholder = t('options.placeholderSavedKey');
         }
         await saveLlmConnectionSettings({
           provider: config.provider,
           openAiCompatibleEndpoint: config.endpoint ?? null,
         });
-        setStatus('保存しました。', false);
+        setStatus(t('options.toastSaved'), false);
       } catch (err) {
         setStatus(err instanceof Error ? err.message : String(err), true);
       } finally {
@@ -290,7 +300,7 @@ async function bootstrapLlmConnectionSection(root: ParentNode): Promise<void> {
           config.provider === 'openai_compatible' &&
           !(await requestEndpointPermission(config.endpoint as string))
         ) {
-          throw new Error('接続先へのアクセスが許可されませんでした');
+          throw new Error(t('options.errPermissionDenied'));
         }
         const response = await createProvider(config).chat(
           [
@@ -301,11 +311,14 @@ async function bootstrapLlmConnectionSection(root: ParentNode): Promise<void> {
         );
         const parsed = JSON.parse(response.text) as { ok?: unknown };
         if (parsed.ok !== true) {
-          throw new Error('JSON Schema に従う応答を確認できませんでした');
+          throw new Error(t('options.testNoJson'));
         }
-        setStatus('接続テストに成功しました。', false);
+        setStatus(t('options.testSucceeded'), false);
       } catch (err) {
-        setStatus(`接続テストに失敗しました: ${err instanceof Error ? err.message : String(err)}`, true);
+        setStatus(
+          t('options.testFailed', { reason: err instanceof Error ? err.message : String(err) }),
+          true,
+        );
       } finally {
         testButton.disabled = false;
       }
@@ -366,7 +379,7 @@ async function bootstrapRateLimitSection(root: ParentNode): Promise<void> {
     concurrencyInput.value = String(savedConcurrency);
   }
   syncTierUi();
-  setStatus(`レート制限: ${getRateLimitTier(savedTier).label}`, false);
+  setStatus(t('options.rateLimitStatus', { label: getRateLimitTier(savedTier).label }), false);
 
   select.addEventListener('change', syncTierUi);
 
@@ -376,7 +389,7 @@ async function bootstrapRateLimitSection(root: ParentNode): Promise<void> {
     const rpmRaw = customInput.value.trim();
     const rpm = rpmRaw === '' ? Number.NaN : Number(rpmRaw);
     if (getRateLimitTier(tierId).editableRpm && (!Number.isFinite(rpm) || rpm <= 0)) {
-      setStatus('RPM は 1 以上の数値を入力してください。', true);
+      setStatus(t('options.errRpm'), true);
       return;
     }
     // 同時実行数は任意（空 = プリセット既定 = 逐次）。入力があるときだけ 1 以上を要求する
@@ -387,7 +400,7 @@ async function bootstrapRateLimitSection(root: ParentNode): Promise<void> {
       concurrencyRaw !== '' &&
       (!Number.isFinite(concurrency) || concurrency <= 0)
     ) {
-      setStatus('同時実行数は 1 以上の数値を入力してください。', true);
+      setStatus(t('options.errConcurrency'), true);
       return;
     }
     saveButton.disabled = true;
@@ -395,9 +408,9 @@ async function bootstrapRateLimitSection(root: ParentNode): Promise<void> {
       await saveRateLimitTier(tierId);
       await saveRateLimitCustomRpm(rpm);
       await saveRateLimitCustomConcurrency(concurrency);
-      setStatus('保存しました。', false);
+      setStatus(t('options.toastSaved'), false);
     } catch {
-      setStatus('保存に失敗しました。もう一度お試しください。', true);
+      setStatus(t('options.toastSaveFailed'), true);
     } finally {
       saveButton.disabled = false;
     }
@@ -440,10 +453,7 @@ export async function bootstrapOptions(root: ParentNode): Promise<void> {
     'Gemini',
     loadGeminiApiKey,
     saveGeminiApiKey,
-    (key) =>
-      looksLikeOpenRouterApiKey(key)
-        ? 'OpenRouter のキー（sk-or- で始まる）のようです。Gemini キーはここへ、OpenRouter キーは下の欄へ入力してください。'
-        : null,
+    (key) => (looksLikeOpenRouterApiKey(key) ? t('options.warnOpenRouterKey') : null),
   );
   await bootstrapApiKeySection(
     root,
@@ -451,10 +461,7 @@ export async function bootstrapOptions(root: ParentNode): Promise<void> {
     'OpenRouter',
     loadOpenRouterApiKey,
     saveOpenRouterApiKey,
-    (key) =>
-      looksLikeGeminiApiKey(key)
-        ? 'Gemini のキー（AIza で始まる）のようです。OpenRouter キーはここへ、Gemini キーは上の欄へ入力してください。'
-        : null,
+    (key) => (looksLikeGeminiApiKey(key) ? t('options.warnGeminiKey') : null),
   );
   await bootstrapLlmConnectionSection(root);
   await bootstrapDefaultModelSection(root);

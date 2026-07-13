@@ -79,6 +79,7 @@ import type {
 } from '../store';
 import { downloadTextFile } from '../ui/download';
 import { showToast } from '../ui/toast';
+import { t } from '../../lib/i18n';
 import { timestampForFilename } from './exportService';
 import { latestRunEvidenceByStudy } from './verifyService';
 import { persistConsensusWrite, type QueuedWrite } from './verificationService';
@@ -237,15 +238,15 @@ function unavailableMessage(
   pairSelections: AdjudicateState['pairSelections'],
 ): string {
   if (row === undefined) {
-    return '指定された研究が見つかりません';
+    return t('adjudicate.svcStudyNotFound');
   }
   if (row.pair.kind === 'waiting') {
-    return '両者の検証完了待ちです（対象となる human annotator が 2 名そろっていません）';
+    return t('adjudicate.svcWaitingBoth');
   }
   if (row.pair.kind === 'selectable' && resolveEffectivePair(row, pairSelections) === null) {
-    return '裁定する 2 名のレビュアーを選択してください（human annotator が 3 名以上見つかりました）';
+    return t('adjudicate.svcSelectPair');
   }
-  return 'この研究はまだ両者の検証が完了していないため裁定できません';
+  return t('adjudicate.svcNotReady');
 }
 
 /**
@@ -284,12 +285,12 @@ export async function openAdjudicateStudy(
     const studies = await resolveStudies(store, deps, spreadsheetId);
     const item = buildStudySelection(studies, documents).find((candidate) => candidate.study.studyId === studyId);
     if (item === undefined) {
-      throw new Error(`study ${studyId} の文書が見つかりません`);
+      throw new Error(t('extraction.errStudyDocsNotFound', { id: studyId }));
     }
     const versions = await listSchemaVersions(spreadsheetId, deps.google);
     const latest = versions[0];
     if (latest === undefined) {
-      throw new Error('確定済みの表のデザインがありません');
+      throw new Error(t('adjudicate.svcNoSchema'));
     }
     const fields = await getSchemaFieldsByVersion(spreadsheetId, latest.schemaVersion, deps.google);
     const studySheet = await readStudyDataSheet(spreadsheetId, deps.google);
@@ -373,7 +374,7 @@ export async function openAdjudicateStudy(
         if (driveFileId === undefined) {
           return Promise.resolve({
             pdf: null,
-            pdfError: `document_id "${documentId}" が study 配下の文書に見つかりません`,
+            pdfError: t('verify.pdfDocNotFound', { id: documentId }),
             textPages: [],
           });
         }
@@ -384,7 +385,7 @@ export async function openAdjudicateStudy(
         if (driveFileId === undefined) {
           return Promise.resolve({
             pdf: null,
-            pdfError: `document_id "${documentId}" が study 配下の文書に見つかりません`,
+            pdfError: t('verify.pdfDocNotFound', { id: documentId }),
             textPages: [],
           });
         }
@@ -506,7 +507,7 @@ export async function confirmAdjudicateArms(
     return;
   }
   if (arms.length === 0 || arms.some((arm) => arm.armName.trim() === '')) {
-    showToast('すべての群に名称を入力してください');
+    showToast(t('adjudicate.toastArmNames'));
     return;
   }
   try {
@@ -535,9 +536,9 @@ export async function confirmAdjudicateArms(
         },
       });
     }
-    showToast('群構成を確定しました');
+    showToast(t('adjudicate.toastArmConfirmed'));
   } catch (err) {
-    showToast(`群構成の確定に失敗しました: ${toMessage(err)}`);
+    showToast(t('adjudicate.toastArmConfirmFailed', { reason: toMessage(err) }));
   }
 }
 
@@ -617,7 +618,7 @@ async function applyWrites(
     }
   } catch (err) {
     patchAdjudicate(store, { saving: false });
-    showToast(`裁定の保存に失敗しました: ${toMessage(err)}`);
+    showToast(t('adjudicate.toastSaveFailed', { reason: toMessage(err) }));
   }
 }
 
@@ -635,7 +636,7 @@ export async function acceptAllMatchingCells(store: Store, deps: AdjudicationSer
   const unlockedCells = working.cells.filter((cell) => !isArmLocked(working, cell));
   const writes = buildBulkAcceptWrites(unlockedCells, states);
   if (writes.length === 0) {
-    showToast('一括採用できる一致セルがありません');
+    showToast(t('adjudicate.toastNoMatches'));
     return;
   }
   await applyWrites(store, deps, working, writes);
@@ -659,7 +660,7 @@ export async function adjudicateCellChoice(
     return;
   }
   if (isArmLocked(working, cell)) {
-    showToast('群構成の確定後に裁定してください');
+    showToast(t('adjudicate.toastArmFirst'));
     return;
   }
   await applyWrites(store, deps, working, [buildChoiceWrite(cell, choice)]);
@@ -678,7 +679,7 @@ export async function adjudicateCellCustomValue(
     return;
   }
   if (isArmLocked(working, cell)) {
-    showToast('群構成の確定後に裁定してください');
+    showToast(t('adjudicate.toastArmFirst'));
     return;
   }
   await applyWrites(store, deps, working, [buildCustomValueWrite(cell, value)]);
@@ -696,7 +697,7 @@ export async function adjudicateCellNotReported(
     return;
   }
   if (isArmLocked(working, cell)) {
-    showToast('群構成の確定後に裁定してください');
+    showToast(t('adjudicate.toastArmFirst'));
     return;
   }
   await applyWrites(store, deps, working, [buildNotReportedWrite(cell)]);

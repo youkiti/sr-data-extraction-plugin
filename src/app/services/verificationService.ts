@@ -56,6 +56,7 @@ import {
   type VerifyLayoutMode,
 } from '../../lib/storage/settingsStore';
 import { showToast } from '../ui/toast';
+import { t } from '../../lib/i18n';
 
 /** 検証基盤の共有依存（pilotService / verifyService の deps はこれを拡張する） */
 export interface VerificationDeps {
@@ -209,7 +210,7 @@ async function loadExtractedPages(
   if (fileId === null) {
     return {
       extractedPages: [],
-      extractedTextError: `text_ref からファイル ID を解決できません: ${document.textRef}`,
+      extractedTextError: t('verify.errTextRef', { ref: document.textRef }),
     };
   }
   try {
@@ -272,7 +273,7 @@ export async function loadVerificationBundle(
     if (driveFileId === null) {
       return {
         pdf: null,
-        pdfError: `document_id "${documentId}" が study 配下の文書に見つかりません`,
+        pdfError: t('verify.pdfDocNotFound', { id: documentId }),
         textPages: [],
       };
     }
@@ -283,7 +284,7 @@ export async function loadVerificationBundle(
     if (driveFileId === null) {
       return {
         pdf: null,
-        pdfError: `document_id "${documentId}" が study 配下の文書に見つかりません`,
+        pdfError: t('verify.pdfDocNotFound', { id: documentId }),
         textPages: [],
       };
     }
@@ -408,7 +409,7 @@ export async function persistDecisionWrite(
       return { status: 'conflict', message: err.message };
     }
     await queue.enqueue(spreadsheetId, write.decision.annotator, write);
-    showToast('保存に失敗したため、判定をオフラインキューへ退避しました（復帰後に再送されます）');
+    showToast(t('verify.toastQueuedDecision'));
     return { status: 'queued' };
   }
   const written: QueuedDecisionWrite[] = [write];
@@ -447,7 +448,7 @@ export async function persistConsensusWrite(
     await applyConsensusWrites(spreadsheetId, item.consensusWrites, item.consensusParams, deps.google);
   } catch {
     await queue.enqueue(spreadsheetId, decidedBy, item);
-    showToast('保存に失敗したため、裁定をオフラインキューへ退避しました（復帰後に再送されます）');
+    showToast(t('verify.toastQueuedAdjudication'));
     return { status: 'queued' };
   }
   const result = await queue.flush(spreadsheetId, decidedBy, (queued) =>
@@ -493,7 +494,7 @@ export async function persistArmConfirmation(
   try {
     return await appendArmStructureVersion(spreadsheetId, input, deps.google);
   } catch (err) {
-    showToast(`群構成の保存に失敗しました: ${toMessage(err)}`);
+    showToast(t('verify.toastArmSaveFailed', { reason: toMessage(err) }));
     return null;
   }
 }
@@ -516,6 +517,6 @@ export async function persistInstanceDeclarations(
   try {
     await appendDecisionRows(spreadsheetId, decisions, deps.google);
   } catch (err) {
-    showToast(`インスタンス宣言の保存に失敗しました: ${toMessage(err)}`);
+    showToast(t('verify.toastInstanceSaveFailed', { reason: toMessage(err) }));
   }
 }

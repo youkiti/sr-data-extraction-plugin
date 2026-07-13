@@ -13,7 +13,7 @@
 // study 切替のたびに作り直し、それ以外の再描画（セル裁定でストアが更新されるたび）では
 // 同一インスタンス（canvas・ページ位置・ズーム・doc タブ選択・ハイライト計算結果）を再利用する
 // （renderCachedVerificationPanel と同じ考え方。キャッシュキーは studyId）
-import { DOCUMENT_ROLE_LABELS, type DocumentRecord } from '../../domain/document';
+import type { DocumentRecord } from '../../domain/document';
 import type { Evidence } from '../../domain/evidence';
 import { indexEvidenceByCellKey } from '../../features/adjudication/cellMatch';
 import {
@@ -21,12 +21,21 @@ import {
   type EvidenceHighlight,
   type HighlightOccurrence,
 } from '../../features/verification/highlights';
+import { getUiLanguage, t, type UiLanguage } from '../../lib/i18n';
 import type { AdjudicateWorking } from '../store';
+import { documentRoleLabel } from '../ui/documentRoleLabel';
 import { el } from '../ui/dom';
 import { createPdfViewer, type PdfViewerHandle, type ViewerHighlight } from '../ui/pdfViewer';
 
 interface CachedPane {
   studyId: string;
+  /**
+   * ペイン生成時の表示言語（issue #93）。言語切替では studyId が変わらず、同一 study の
+   * `#/adjudicate?study=` 再入場も syncAdjudicateRoute の同一 study ガードで再読込しないため、
+   * studyId 比較だけではキャッシュ済みの左ペイン（読み込み中 / エラー文言・doc タブの role
+   * ラベル等）が旧言語のまま残る。生成時言語をスタンプし、現在言語と異なれば作り直す
+   */
+  language: UiLanguage;
   activeDocumentId: string | null;
   viewer: PdfViewerHandle | null;
   root: HTMLElement;
@@ -59,7 +68,7 @@ function renderDocTabs(
         attributes: { type: 'button' },
       },
       [
-        el('span', { className: 'adjudicate__doc-role', text: DOCUMENT_ROLE_LABELS[doc.documentRole] }),
+        el('span', { className: 'adjudicate__doc-role', text: documentRoleLabel(doc.documentRole) }),
         el('span', { className: 'adjudicate__doc-filename', text: doc.filename }),
       ],
     );
@@ -92,13 +101,15 @@ function toViewerHighlights(
 }
 
 async function loadIntoPane(pane: CachedPane, working: AdjudicateWorking, documentId: string): Promise<void> {
-  pane.bodyEl.replaceChildren(el('p', { className: 'adjudicate__pdf-loading', text: 'PDF を読み込んでいます…' }));
+  pane.bodyEl.replaceChildren(
+    el('p', { className: 'adjudicate__pdf-loading', text: t('verify.pdfLoading') }),
+  );
   const view = await working.loadPdfView(documentId);
   if (cached !== pane || pane.activeDocumentId !== documentId) {
     return; // 破棄済み・別文書へ切替済みなら結果を捨てる
   }
   if (view.pdf === null) {
-    const retry = el('button', { text: '再試行', attributes: { type: 'button' } });
+    const retry = el('button', { text: t('common.retry'), attributes: { type: 'button' } });
     retry.addEventListener('click', () => {
       void loadIntoPane(pane, working, documentId);
     });
@@ -106,7 +117,7 @@ async function loadIntoPane(pane: CachedPane, working: AdjudicateWorking, docume
       el('p', {
         className: 'adjudicate__pdf-error',
         attributes: { role: 'alert' },
-        text: `PDF を読み込めませんでした: ${view.pdfError ?? ''}`,
+        text: t('adjudicate.pdfError', { reason: view.pdfError ?? '' }),
       }),
       retry,
     );
@@ -141,11 +152,15 @@ function selectDocument(pane: CachedPane, working: AdjudicateWorking, documentId
 }
 
 /**
- * study の PDF 参照ペインを返す（同じ studyId への再描画は同一インスタンスを再利用する）。
- * study が切り替わったら破棄して作り直す
+ * study の PDF 参照ペインを返す（同じ studyId + 同じ表示言語への再描画は同一インスタンスを
+ * 再利用する）。study が切り替わった・表示言語が切り替わったら破棄して作り直す（issue #93）
  */
 export function renderAdjudicatePdfPane(working: AdjudicateWorking): HTMLElement {
-  if (cached === null || cached.studyId !== working.study.studyId) {
+  if (
+    cached === null ||
+    cached.studyId !== working.study.studyId ||
+    cached.language !== getUiLanguage()
+  ) {
     const tabsEl = el('div', {});
     const bodyEl = el('div', { className: 'adjudicate__pdf-body' });
     const children: HTMLElement[] = [tabsEl];
@@ -153,7 +168,7 @@ export function renderAdjudicatePdfPane(working: AdjudicateWorking): HTMLElement
       children.push(
         el('p', {
           className: 'adjudicate__no-evidence-note',
-          text: 'この研究には AI 抽出の根拠（Evidence）がありません（独立入力のみ、または AI 抽出が未実行です）。',
+          text: t('adjudicate.noEvidenceNote'),
         }),
       );
     }
@@ -162,6 +177,7 @@ export function renderAdjudicatePdfPane(working: AdjudicateWorking): HTMLElement
     const firstDocumentId = working.documents[0]?.documentId ?? null;
     const pane: CachedPane = {
       studyId: working.study.studyId,
+      language: getUiLanguage(),
       activeDocumentId: firstDocumentId,
       viewer: null,
       root,
@@ -177,7 +193,7 @@ export function renderAdjudicatePdfPane(working: AdjudicateWorking): HTMLElement
     if (firstDocumentId !== null) {
       void loadIntoPane(pane, working, firstDocumentId);
     } else {
-      pane.bodyEl.replaceChildren(el('p', { text: 'この研究には文書がありません。' }));
+      pane.bodyEl.replaceChildren(el('p', { text: t('adjudicate.noDocuments') }));
     }
   }
   return cached.root;

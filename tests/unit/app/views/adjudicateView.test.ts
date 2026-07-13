@@ -1,4 +1,5 @@
 import { renderAdjudicateView } from '../../../../src/app/views/adjudicateView';
+import { setUiLanguage } from '../../../../src/lib/i18n';
 import { disposeAdjudicatePdfPaneCache } from '../../../../src/app/views/adjudicatePdfPane';
 import {
   createInitialState,
@@ -1078,5 +1079,24 @@ describe('renderAdjudicateView: レビュアー間一致度カード（issue #66
     expect(rows).toHaveLength(2);
     expect(rows[0]?.textContent).toContain('未入力');
     expect(rows[1]?.textContent).toContain('未入力');
+  });
+});
+
+describe('renderAdjudicateView（表示言語 en。issue #93）', () => {
+  afterEach(() => {
+    setUiLanguage('ja');
+  });
+
+  test('見出し・空一覧・一致度カードが en で描画される', () => {
+    setUiLanguage('en');
+    const ctx = makeCtx().ctx;
+    const root = render(makeState({ rows: [] }), ctx);
+    expect(root.querySelector('h2')?.textContent).toBe('Adjudication');
+    expect(root.querySelector('#adjudicate-empty')?.textContent).toContain(
+      'No studies to adjudicate.',
+    );
+    expect(root.querySelector('#adjudicate-agreement-card h3')?.textContent).toBe(
+      'Inter-reviewer agreement',
+    );
   });
 });

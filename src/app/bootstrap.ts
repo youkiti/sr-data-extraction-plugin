@@ -212,10 +212,10 @@ function roleBlockOf(state: AppState): RoleBlock | null {
  */
 function renderUnregisteredBlock(): HTMLElement {
   return el('section', { id: 'app-role-blocked', className: 'view view--role-blocked' }, [
-    el('h2', { text: 'アクセスできません' }),
+    el('h2', { text: t('app.roleBlockedTitle') }),
     el('p', {
       attributes: { role: 'alert' },
-      text: 'このプロジェクトのレビュアーとして登録されていません。プロジェクトのオーナーに登録を依頼してください。',
+      text: t('app.roleBlockedBody'),
     }),
   ]);
 }
@@ -223,7 +223,7 @@ function renderUnregisteredBlock(): HTMLElement {
 /** ロール解決待ちのプレースホルダ（盲検のフェイルクローズ: 確定前はどのルートも描画しない） */
 function renderRoleResolvingBlock(): HTMLElement {
   return el('section', { id: 'app-role-resolving', className: 'view view--role-blocked' }, [
-    el('p', { text: 'このプロジェクトでのロールを確認しています…' }),
+    el('p', { text: t('app.roleResolving') }),
   ]);
 }
 
@@ -234,17 +234,17 @@ function renderRoleResolvingBlock(): HTMLElement {
 function renderRoleErrorBlock(message: string, onRetry: () => void): HTMLElement {
   const retry = el('button', {
     id: 'app-role-retry',
-    text: '再試行',
+    text: t('common.retry'),
     attributes: { type: 'button' },
   });
   retry.addEventListener('click', onRetry);
   return el('section', { id: 'app-role-error', className: 'view view--role-blocked' }, [
-    el('h2', { text: 'ロールを確認できませんでした' }),
+    el('h2', { text: t('app.roleErrorTitle') }),
     el('p', {
       attributes: { role: 'alert' },
-      text: `このプロジェクトでのロールを確認できませんでした: ${message}`,
+      text: t('app.roleErrorBody', { reason: message }),
     }),
-    el('p', { text: '盲検保護のため、ロールを確認できるまで画面を表示しません。' }),
+    el('p', { text: t('app.roleErrorNote') }),
     retry,
   ]);
 }
@@ -854,13 +854,13 @@ export async function bootstrapApp(
       // 盲検のフェイルクローズ: ロールが確定するまでどのルートも描画しない（design §1・§3）
       if (block.kind === 'unregistered') {
         contentEl.replaceChildren(renderUnregisteredBlock());
-        contextEl.textContent = 'アクセスできません';
+        contextEl.textContent = t('app.roleBlockedTitle');
       } else if (block.kind === 'error') {
         contentEl.replaceChildren(renderRoleErrorBlock(block.message, retryRole));
-        contextEl.textContent = 'ロールを確認できませんでした';
+        contextEl.textContent = t('app.roleErrorTitle');
       } else {
         contentEl.replaceChildren(renderRoleResolvingBlock());
-        contextEl.textContent = 'ロールを確認しています';
+        contextEl.textContent = t('app.roleCheckingContext');
       }
       return;
     }

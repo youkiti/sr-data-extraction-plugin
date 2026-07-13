@@ -44,6 +44,7 @@ import {
 import { nowIso8601 } from '../../utils/iso8601';
 import type { ExtractState, Store } from '../store';
 import { showToast } from '../ui/toast';
+import { t } from '../../lib/i18n';
 import { runExtraction, type RunExtractionOutcome } from './extractionService';
 import { resolveProtocol, type SchemaServiceDeps } from './schemaService';
 
@@ -256,21 +257,21 @@ export async function requestExtractRun(store: Store, deps: ExtractServiceDeps):
   }
   if (schema.currentFields === null || schema.currentFields.length === 0) {
     patchExtract(store, {
-      runError: '確定済みの表のデザインを読み込めていません。表のデザイン画面で確定・再読込してください',
+      runError: t('extraction.errNoSchema'),
     });
     return;
   }
   if (extract.selectedStudyIds.length === 0) {
-    patchExtract(store, { runError: '対象 study を 1 件以上選択してください' });
+    patchExtract(store, { runError: t('extract.errNoStudies') });
     return;
   }
   const allFieldIds = schema.currentFields.map((field) => field.fieldId);
   if (selectedFieldCount(extract.selectedFieldIds, allFieldIds) === 0) {
-    patchExtract(store, { runError: '抽出項目を 1 つ以上選択してください' });
+    patchExtract(store, { runError: t('extraction.errNoFields') });
     return;
   }
   if (extract.model === '') {
-    patchExtract(store, { runError: 'モデルを選択してください（「その他」で直接入力も可）' });
+    patchExtract(store, { runError: t('extraction.errNoModel') });
     return;
   }
   const providerResolution = await resolveProviderConfig(extract.model, deps);
@@ -442,8 +443,8 @@ export async function runExtract(store: Store, deps: ExtractServiceDeps): Promis
     });
     showToast(
       outcome.run.status === 'done'
-        ? `一括抽出が完了しました（Evidence ${outcome.result.evidence.length} 件）`
-        : '一括抽出が部分的に失敗しました。失敗した study は再試行できます',
+        ? t('extract.toastDone', { n: outcome.result.evidence.length })
+        : t('extract.toastPartial'),
     );
   } catch (err) {
     patchExtract(store, { running: false, progress: null, runError: toMessage(err) });
@@ -495,7 +496,7 @@ export async function retryExtractStudy(
     const studies = await resolveStudies(store, deps.google, project.spreadsheetId);
     const targets = documentsForStudies(buildStudySelection(studies, records), [studyId]);
     if (targets.length === 0) {
-      throw new Error(`study ${studyId} の文書が見つかりません`);
+      throw new Error(t('extraction.errStudyDocsNotFound', { id: studyId }));
     }
     const outcome = await performRun(store, deps, {
       spreadsheetId: project.spreadsheetId,
@@ -525,8 +526,8 @@ export async function retryExtractStudy(
     });
     showToast(
       outcome.run.status === 'done'
-        ? '再試行が完了しました'
-        : '再試行が部分的に失敗しました。失敗の内訳を確認してください',
+        ? t('extract.toastRetryDone')
+        : t('extract.toastRetryPartial'),
     );
   } catch (err) {
     replaceRow({
