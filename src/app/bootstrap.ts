@@ -106,7 +106,9 @@ import {
   loadAgreementReport,
   openAdjudicateStudy,
   removeAdjudicateArmDraftRow,
+  setAdjudicateArmMapping,
   setAdjudicateMismatchOnlyFilter,
+  setAdjudicatePairSelection,
   skipAdjudicateCell,
   undoAdjudicateCell,
   unskipAdjudicateCell,
@@ -635,12 +637,18 @@ export async function bootstrapApp(
         // hash 書き換え → hashchange → syncAdjudicateRoute の一本道（#/verify と同じ経路）
         win.location.hash = `#/adjudicate?study=${encodeURIComponent(studyId)}`;
       },
+      onSelectPair: (studyId, pair) => {
+        setAdjudicatePairSelection(store, studyId, pair);
+      },
       onBackToList: () => {
         backToAdjudicateList(store);
         win.location.hash = '#/adjudicate';
       },
       onRetryLoad: () => {
         void loadAdjudicateTargets(store, deps, { force: true });
+      },
+      onArmMappingChange: (index, bArmKey) => {
+        setAdjudicateArmMapping(store, index, bArmKey);
       },
       onArmDraftChange: (index, armName) => {
         updateAdjudicateArmDraftRow(store, index, armName);

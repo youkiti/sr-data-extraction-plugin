@@ -147,6 +147,8 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<DocumentsViewCall
       adjudicate: {
         onSelectStudy: jest.fn(),
         onBackToList: jest.fn(),
+        onSelectPair: jest.fn(),
+        onArmMappingChange: jest.fn(),
         onRetryLoad: jest.fn(),
         onArmDraftChange: jest.fn(),
         onArmDraftAdd: jest.fn(),

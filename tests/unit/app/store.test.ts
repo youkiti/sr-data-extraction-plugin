@@ -156,6 +156,7 @@ describe('createInitialState', () => {
         saving: false,
         queuedWrites: 0,
         mismatchOnlyFilter: true,
+        pairSelections: {},
         agreement: null,
         agreementLoading: false,
         agreementError: null,

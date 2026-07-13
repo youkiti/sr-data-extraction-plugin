@@ -17,6 +17,8 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<AdjudicateViewCal
   const callbacks: jest.Mocked<AdjudicateViewCallbacks> = {
     onSelectStudy: jest.fn(),
     onBackToList: jest.fn(),
+    onSelectPair: jest.fn(),
+    onArmMappingChange: jest.fn(),
     onRetryLoad: jest.fn(),
     onArmDraftChange: jest.fn(),
     onArmDraftAdd: jest.fn(),
@@ -222,6 +224,35 @@ function makeRow(overrides: Partial<AdjudicateStudyRow> = {}): AdjudicateStudyRo
       progressB: { annotator: 'b@example.com', decided: 4, total: 4, complete: true },
       ready: true,
     },
+    pairOptions: null,
+    ...overrides,
+  };
+}
+
+/** 3 名以上（selectable。issue #63）の study 行のフィクスチャ */
+function makeSelectableRow(overrides: Partial<AdjudicateStudyRow> = {}): AdjudicateStudyRow {
+  const gateReady = (a: string, b: string) => ({
+    progressA: { annotator: a, decided: 4, total: 4, complete: true },
+    progressB: { annotator: b, decided: 4, total: 4, complete: true },
+    ready: true,
+  });
+  return {
+    study: makeStudy(),
+    pair: { kind: 'selectable', annotators: ['a@example.com', 'b@example.com', 'c@example.com'] },
+    gate: null,
+    pairOptions: [
+      { annotatorA: 'a@example.com', annotatorB: 'b@example.com', gate: gateReady('a@example.com', 'b@example.com') },
+      { annotatorA: 'a@example.com', annotatorB: 'c@example.com', gate: gateReady('a@example.com', 'c@example.com') },
+      {
+        annotatorA: 'b@example.com',
+        annotatorB: 'c@example.com',
+        gate: {
+          progressA: { annotator: 'b@example.com', decided: 1, total: 4, complete: false },
+          progressB: { annotator: 'c@example.com', decided: 4, total: 4, complete: true },
+          ready: false,
+        },
+      },
+    ],
     ...overrides,
   };
 }
@@ -237,6 +268,7 @@ function makeWorking(overrides: Partial<AdjudicateWorking> = {}): AdjudicateWork
     armsA: [],
     armsB: [],
     needsArmConfirmation: false,
+    armMapping: [],
     armsMatched: true,
     consensusArmStructure: null,
     armDraft: [],
@@ -244,6 +276,7 @@ function makeWorking(overrides: Partial<AdjudicateWorking> = {}): AdjudicateWork
     consensusDecisions: [],
     evidence: [],
     skippedCellKeys: [],
+    rebuildCells: jest.fn(() => []),
     loadPdfView: jest.fn().mockResolvedValue({ pdf: null, pdfError: 'テストでは PDF なし', textPages: [] }),
     retryPdfView: jest.fn().mockResolvedValue({ pdf: null, pdfError: 'テストでは PDF なし', textPages: [] }),
     disposePdf: jest.fn().mockResolvedValue(undefined),
@@ -335,17 +368,12 @@ describe('renderAdjudicateView: 読み込み系状態', () => {
 });
 
 describe('renderAdjudicateView: study 一覧', () => {
-  test('waiting / ambiguous / ready(未達) はディム表示され開始ボタンが無い', () => {
+  test('waiting / ready(未達) はディム表示され開始ボタンが無い', () => {
     const { ctx } = makeCtx();
     const rows: AdjudicateStudyRow[] = [
       makeRow({
         study: makeStudy({ studyId: 's-waiting', studyLabel: 'Waiting' }),
         pair: { kind: 'waiting', annotators: [] },
-        gate: null,
-      }),
-      makeRow({
-        study: makeStudy({ studyId: 's-ambiguous', studyLabel: 'Ambiguous' }),
-        pair: { kind: 'ambiguous', annotators: ['a@example.com', 'b@example.com', 'c@example.com'] },
         gate: null,
       }),
       makeRow({
@@ -359,14 +387,101 @@ describe('renderAdjudicateView: study 一覧', () => {
     ];
     const root = render(makeState({ rows }), ctx);
     const trs = root.querySelectorAll('#adjudicate-list tbody tr');
-    expect(trs).toHaveLength(3);
+    expect(trs).toHaveLength(2);
     trs.forEach((tr) => {
       expect(tr.className).toContain('adjudicate__list-row--dimmed');
       expect(tr.querySelector('button')).toBeNull();
     });
     expect(root.textContent).toContain('両者の検証完了待ちです');
-    expect(root.textContent).toContain('対象 annotator を特定できません');
     expect(root.textContent).toContain('1/4');
+  });
+
+  test('selectable（3 名以上）はディムせず、ペア選択セレクトを出す（未選択時は開始ボタン無し）', () => {
+    const { ctx, callbacks } = makeCtx();
+    const root = render(makeState({ rows: [makeSelectableRow()] }), ctx);
+    const tr = root.querySelector('#adjudicate-list tbody tr') as HTMLElement;
+    expect(tr.className).not.toContain('dimmed');
+    expect(tr.querySelector('.adjudicate__open-button')).toBeNull();
+    expect(tr.textContent).toContain('レビュアーが 3 名以上います');
+
+    const select = tr.querySelector('.adjudicate__pair-select') as HTMLSelectElement;
+    expect(select.value).toBe('');
+    // プレースホルダ + 3 組
+    expect(select.querySelectorAll('option')).toHaveLength(4);
+    expect(select.querySelectorAll('option')[1]?.textContent).toBe('a@example.com × b@example.com');
+
+    select.value = '1';
+    select.dispatchEvent(new Event('change'));
+    expect(callbacks.onSelectPair).toHaveBeenCalledWith('study-1', {
+      annotatorA: 'a@example.com',
+      annotatorB: 'c@example.com',
+    });
+  });
+
+  test('selectable: プレースホルダへ戻すと onSelectPair(null) を呼ぶ', () => {
+    const { ctx, callbacks } = makeCtx();
+    const root = render(
+      makeState({
+        rows: [makeSelectableRow()],
+        pairSelections: { 'study-1': { annotatorA: 'a@example.com', annotatorB: 'b@example.com' } },
+      }),
+      ctx,
+    );
+    const select = root.querySelector('.adjudicate__pair-select') as HTMLSelectElement;
+    expect(select.value).toBe('0'); // 選択済みの組を復元
+    select.value = '';
+    select.dispatchEvent(new Event('change'));
+    expect(callbacks.onSelectPair).toHaveBeenCalledWith('study-1', null);
+  });
+
+  test('selectable: ゲート達成の組を選択済みなら進捗 + 開始ボタンを出す', () => {
+    const { ctx, callbacks } = makeCtx();
+    const root = render(
+      makeState({
+        rows: [makeSelectableRow()],
+        pairSelections: { 'study-1': { annotatorA: 'a@example.com', annotatorB: 'c@example.com' } },
+      }),
+      ctx,
+    );
+    const tr = root.querySelector('#adjudicate-list tbody tr') as HTMLElement;
+    expect(tr.querySelector('.adjudicate__pair-progress')?.textContent).toContain('A（a@example.com）: 4/4');
+    (tr.querySelector('.adjudicate__open-button') as HTMLButtonElement).click();
+    expect(callbacks.onSelectStudy).toHaveBeenCalledWith('study-1');
+  });
+
+  test('selectable: ゲート未達の組を選択中は開始ボタンを出さない', () => {
+    const { ctx } = makeCtx();
+    const root = render(
+      makeState({
+        rows: [makeSelectableRow()],
+        pairSelections: { 'study-1': { annotatorA: 'b@example.com', annotatorB: 'c@example.com' } },
+      }),
+      ctx,
+    );
+    const tr = root.querySelector('#adjudicate-list tbody tr') as HTMLElement;
+    expect(tr.textContent).toContain('1/4');
+    expect(tr.querySelector('.adjudicate__open-button')).toBeNull();
+  });
+
+  test('selectable: 選択が pairOptions に無い（再読込で組が変わった等）は未選択として扱う', () => {
+    const { ctx } = makeCtx();
+    const root = render(
+      makeState({
+        rows: [makeSelectableRow()],
+        pairSelections: { 'study-1': { annotatorA: 'x@example.com', annotatorB: 'y@example.com' } },
+      }),
+      ctx,
+    );
+    const select = root.querySelector('.adjudicate__pair-select') as HTMLSelectElement;
+    expect(select.value).toBe('');
+    expect(root.querySelector('.adjudicate__open-button')).toBeNull();
+  });
+
+  test('selectable: pairOptions が null（想定外の不整合）でも空のセレクトで防御的に描画する', () => {
+    const { ctx } = makeCtx();
+    const root = render(makeState({ rows: [makeSelectableRow({ pairOptions: null })] }), ctx);
+    const select = root.querySelector('.adjudicate__pair-select') as HTMLSelectElement;
+    expect(select.querySelectorAll('option')).toHaveLength(1); // プレースホルダのみ
   });
 
   test('pair が ready でも gate が null（想定外の不整合）は状況欄を空にしてディム表示する（防御）', () => {
@@ -412,6 +527,7 @@ describe('renderAdjudicateView: 裁定中（working）', () => {
         rows: [makeRow()],
         working: makeWorking({
           needsArmConfirmation: true,
+          armMapping: ['arm:1'],
           armsMatched: true,
           armsA: [{ armKey: 'arm:1', armName: '介入群' }],
           armsB: [{ armKey: 'arm:1', armName: '介入群' }],
@@ -425,6 +541,82 @@ describe('renderAdjudicateView: 裁定中（working）', () => {
     expect(callbacks.onConfirmArms).toHaveBeenCalledWith(draft);
   });
 
+  test('マッピングテーブル: セレクトが現在の対応を反映し、変更で onArmMappingChange を呼ぶ（issue #63）', () => {
+    const { ctx, callbacks } = makeCtx();
+    const root = render(
+      makeState({
+        rows: [makeRow()],
+        working: makeWorking({
+          needsArmConfirmation: true,
+          armMapping: ['arm:2', 'arm:1'],
+          armsMatched: true,
+          armsA: [
+            { armKey: 'arm:1', armName: '介入群' },
+            { armKey: 'arm:2', armName: '対照群' },
+          ],
+          armsB: [
+            { armKey: 'arm:1', armName: '対照群' },
+            { armKey: 'arm:2', armName: '介入群' },
+          ],
+        }),
+      }),
+      ctx,
+    );
+    const selects = root.querySelectorAll<HTMLSelectElement>('#adjudicate-arm-map .adjudicate__arm-map-select');
+    expect(selects).toHaveLength(2);
+    expect(selects[0]?.value).toBe('arm:2');
+    expect(selects[1]?.value).toBe('arm:1');
+    // 「対応なし」+ B の 2 群
+    expect(selects[0]?.querySelectorAll('option')).toHaveLength(3);
+
+    const first = selects[0] as HTMLSelectElement;
+    first.value = 'arm:1';
+    first.dispatchEvent(new Event('change'));
+    expect(callbacks.onArmMappingChange).toHaveBeenCalledWith(0, 'arm:1');
+
+    first.value = '';
+    first.dispatchEvent(new Event('change'));
+    expect(callbacks.onArmMappingChange).toHaveBeenCalledWith(0, null);
+  });
+
+  test('マッピングテーブル: 対応づけられていない B の群は注記に列挙する', () => {
+    const { ctx } = makeCtx();
+    const root = render(
+      makeState({
+        rows: [makeRow()],
+        working: makeWorking({
+          needsArmConfirmation: true,
+          armMapping: ['arm:1'],
+          armsMatched: false,
+          armsA: [{ armKey: 'arm:1', armName: '介入群' }],
+          armsB: [
+            { armKey: 'arm:1', armName: '介入群' },
+            { armKey: 'arm:2', armName: '第 3 群' },
+          ],
+          armDraft: [
+            { armKey: 'arm:1', armName: '介入群' },
+            { armKey: 'arm:2', armName: '第 3 群' },
+          ],
+        }),
+      }),
+      ctx,
+    );
+    expect(root.querySelector('.adjudicate__arm-unmapped-note')?.textContent).toContain('第 3 群');
+  });
+
+  test('A の群が 0 件ならマッピングテーブル自体を出さない', () => {
+    const { ctx } = makeCtx();
+    const root = render(
+      makeState({
+        rows: [makeRow()],
+        working: makeWorking({ needsArmConfirmation: true, armsMatched: true, armsA: [], armsB: [] }),
+      }),
+      ctx,
+    );
+    expect(root.querySelector('#adjudicate-arm-card')).not.toBeNull();
+    expect(root.querySelector('#adjudicate-arm-map')).toBeNull();
+  });
+
   test('群構成が不一致なら編集フォームを出し、追加・削除・確定・編集が発火する', () => {
     const { ctx, callbacks } = makeCtx();
     const draft = [
@@ -436,6 +628,7 @@ describe('renderAdjudicateView: 裁定中（working）', () => {
         rows: [makeRow()],
         working: makeWorking({
           needsArmConfirmation: true,
+          armMapping: ['arm:1'],
           armsMatched: false,
           armsA: [{ armKey: 'arm:1', armName: '介入群' }],
           armsB: [{ armKey: 'arm:1', armName: '対照群' }],

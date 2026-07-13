@@ -152,6 +152,25 @@ export function latestArmStructure(
   return { version, arms };
 }
 
+/**
+ * 指定 annotator の最新 version の note を返す（1 行もなければ null）。
+ * issue #63: 裁定画面が consensus 版の note に直列化した arm マッピング
+ * （features/adjudication/armMatch.ts の serializeArmKeyRemap）を再入場時に取り出すために使う
+ * （appendArmStructureVersion は同一 version の全行へ同じ note を書くため先頭行で代表する）
+ */
+export function latestArmStructureNote(
+  rows: readonly ArmStructureRow[],
+  annotator: string,
+): string | null {
+  const own = rows.filter((row) => row.annotator === annotator);
+  if (own.length === 0) {
+    return null;
+  }
+  const version = Math.max(...own.map((row) => row.version));
+  const latest = own.filter((row) => row.version === version)[0] as ArmStructureRow;
+  return latest.note;
+}
+
 export interface ConfirmArmStructureInput {
   studyId: string;
   arms: readonly { armKey: string; armName: string }[];

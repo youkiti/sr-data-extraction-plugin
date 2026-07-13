@@ -205,10 +205,14 @@ export interface DashboardViewCallbacks {
 export interface AdjudicateViewCallbacks {
   /** 一覧からの study 選択（URL ?study= と同期する） */
   onSelectStudy(studyId: string): void;
+  /** 3 名以上の study で裁定する 2 名の組を選択（null = 選択解除。issue #63） */
+  onSelectPair(studyId: string, pair: { annotatorA: string; annotatorB: string } | null): void;
   /** 裁定中画面の「一覧に戻る」 */
   onBackToList(): void;
   /** 一覧の読み込み失敗時の再読み込み */
   onRetryLoad(): void;
+  /** 群構成カードの arm 並べ替えマッピング変更（index = A の群順・bArmKey = 対応する B の armKey / null = 対応なし。issue #63） */
+  onArmMappingChange(index: number, bArmKey: string | null): void;
   /** 群構成確定カードのドラフト編集 */
   onArmDraftChange(index: number, armName: string): void;
   onArmDraftAdd(): void;

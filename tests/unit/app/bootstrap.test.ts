@@ -49,7 +49,9 @@ jest.mock('../../../src/app/services/adjudicationService', () => ({
   skipAdjudicateCell: jest.fn(),
   unskipAdjudicateCell: jest.fn(),
   undoAdjudicateCell: jest.fn(),
+  setAdjudicateArmMapping: jest.fn(),
   setAdjudicateMismatchOnlyFilter: jest.fn(),
+  setAdjudicatePairSelection: jest.fn(),
   loadAgreementReport: jest.fn(),
   downloadAgreementCsv: jest.fn(),
 }));
@@ -66,7 +68,9 @@ import {
   loadAgreementReport,
   openAdjudicateStudy,
   removeAdjudicateArmDraftRow,
+  setAdjudicateArmMapping,
   setAdjudicateMismatchOnlyFilter,
+  setAdjudicatePairSelection,
   skipAdjudicateCell,
   undoAdjudicateCell,
   unskipAdjudicateCell,
@@ -2591,7 +2595,9 @@ describe('bootstrapApp: #/adjudicate', () => {
   const skipAdjudicateCellMock = skipAdjudicateCell as jest.Mock;
   const unskipAdjudicateCellMock = unskipAdjudicateCell as jest.Mock;
   const undoAdjudicateCellMock = undoAdjudicateCell as jest.Mock;
+  const setAdjudicateArmMappingMock = setAdjudicateArmMapping as jest.Mock;
   const setAdjudicateMismatchOnlyFilterMock = setAdjudicateMismatchOnlyFilter as jest.Mock;
+  const setAdjudicatePairSelectionMock = setAdjudicatePairSelection as jest.Mock;
   const loadAgreementReportMock = loadAgreementReport as jest.Mock;
   const downloadAgreementCsvMock = downloadAgreementCsv as jest.Mock;
 
@@ -2641,6 +2647,7 @@ describe('bootstrapApp: #/adjudicate', () => {
       armsA: [],
       armsB: [],
       needsArmConfirmation: false,
+      armMapping: [],
       armsMatched: true,
       consensusArmStructure: null,
       armDraft: [],
@@ -2648,6 +2655,7 @@ describe('bootstrapApp: #/adjudicate', () => {
       consensusDecisions: [],
       evidence: [],
       skippedCellKeys: [],
+      rebuildCells: jest.fn(() => []),
       loadPdfView: jest.fn().mockResolvedValue({ pdf: null, pdfError: 'テストでは PDF なし', textPages: [] }),
       retryPdfView: jest.fn().mockResolvedValue({ pdf: null, pdfError: 'テストでは PDF なし', textPages: [] }),
       disposePdf: jest.fn().mockResolvedValue(undefined),
@@ -2715,6 +2723,7 @@ describe('bootstrapApp: #/adjudicate', () => {
               progressB: { annotator: 'b@example.com', decided: 1, total: 1, complete: true },
               ready: true,
             },
+            pairOptions: null,
           },
         ],
       },
@@ -2911,6 +2920,71 @@ describe('bootstrapApp: #/adjudicate', () => {
 
     (document.getElementById('adjudicate-arm-confirm') as HTMLButtonElement).click();
     expect(confirmAdjudicateArmsMock).toHaveBeenCalledWith(store, deps, workingNeedsArm.armDraft);
+  });
+
+  test('arm 並べ替えマッピングの変更をサービスへ委譲する（issue #63）', async () => {
+    const workingNeedsArm: AdjudicateWorking = {
+      ...makeWorking(),
+      needsArmConfirmation: true,
+      armMapping: ['arm:1'],
+      armsMatched: false,
+      armsA: [{ armKey: 'arm:1', armName: '介入群' }],
+      armsB: [{ armKey: 'arm:1', armName: '対照群' }],
+      armDraft: [{ armKey: 'arm:1', armName: '介入群' }],
+    };
+    const stub = createWindowStub({
+      currentProject: PROJECT,
+      home: COUNTS_LOADED,
+      adjudicate: {
+        ...createInitialState().adjudicate,
+        rows: [],
+        working: workingNeedsArm,
+      },
+    });
+    const { deps } = createFakeDeps([]);
+    const store = await bootstrapApp(asWindow(stub), deps);
+    stub.location.hash = '#/adjudicate';
+    stub.fireHashChange();
+
+    const select = document.querySelector('.adjudicate__arm-map-select') as HTMLSelectElement;
+    select.value = '';
+    select.dispatchEvent(new Event('change'));
+    expect(setAdjudicateArmMappingMock).toHaveBeenCalledWith(store, 0, null);
+  });
+
+  test('3 名以上のペア選択をサービスへ委譲する（issue #63）', async () => {
+    const gate = {
+      progressA: { annotator: 'a@example.com', decided: 1, total: 1, complete: true },
+      progressB: { annotator: 'b@example.com', decided: 1, total: 1, complete: true },
+      ready: true,
+    };
+    const stub = createWindowStub({
+      currentProject: PROJECT,
+      home: COUNTS_LOADED,
+      adjudicate: {
+        ...createInitialState().adjudicate,
+        rows: [
+          {
+            study: { studyId: 'study-9', studyLabel: 'S9', registrationId: null, createdAt: 't0', createdBy: 'o@example.com', note: null },
+            pair: { kind: 'selectable', annotators: ['a@example.com', 'b@example.com', 'c@example.com'] },
+            gate: null,
+            pairOptions: [{ annotatorA: 'a@example.com', annotatorB: 'b@example.com', gate }],
+          },
+        ],
+      },
+    });
+    const { deps } = createFakeDeps([]);
+    const store = await bootstrapApp(asWindow(stub), deps);
+    stub.location.hash = '#/adjudicate';
+    stub.fireHashChange();
+
+    const select = document.querySelector('.adjudicate__pair-select') as HTMLSelectElement;
+    select.value = '0';
+    select.dispatchEvent(new Event('change'));
+    expect(setAdjudicatePairSelectionMock).toHaveBeenCalledWith(store, 'study-9', {
+      annotatorA: 'a@example.com',
+      annotatorB: 'b@example.com',
+    });
   });
 });
 
