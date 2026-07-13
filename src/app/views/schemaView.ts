@@ -1,10 +1,17 @@
 // #/schema: スキーマデザイン（S5 / ui-states.md §3）。
 // 状態: プロジェクト未選択 / 読み込み中 / 失敗 / ドラフト前（サンプル論文セレクタ + モデル入力）/
-// ドラフト生成中（経過時間は store 管理）/ 編集中（表形式エディタ + 検証エラー）/
+// ドラフト生成中（経過時間は store 管理）/ 編集中（表形式エディタ + 検証エラー +
+// RoB プリセット事前設定ダイアログ〔issue #103〕）/
 // 確定済み（現行版サマリ + 版履歴 + 新しい版を作る）。
 // データは AppState.schema（schemaService が更新）から描く
 import type { EntityLevel, FieldDataType, SchemaField } from '../../domain/schemaField';
 import type { SchemaVersion } from '../../domain/schemaVersion';
+import type {
+  Rob2Effect,
+  RobPrespecDialogState,
+} from '../../features/schema/presets/robPrespec';
+import { toggleDeviationType } from '../../features/schema/presets/robPrespec';
+import type { Rob2DeviationType } from '../../features/schema/presets/robTemplates';
 import type { SchemaEditorRow } from '../../features/schema/types';
 import type { FieldValidationError } from '../../features/schema/validateField';
 import { el } from '../ui/dom';
@@ -251,6 +258,206 @@ function renderEditorRow(
   ]);
 }
 
+/** deviation 種別チェックボックスの表示定義（公式 template の列挙順・原文併記） */
+const DEVIATION_CHECKBOXES: readonly {
+  id: string;
+  type: Rob2DeviationType;
+  label: string;
+}[] = [
+  {
+    id: 'schema-prespec-dev-non-protocol',
+    type: 'non_protocol_interventions',
+    label: '非プロトコル介入の発生（occurrence of non-protocol interventions）',
+  },
+  {
+    id: 'schema-prespec-dev-implementation',
+    type: 'implementation_failures',
+    label:
+      '結果に影響しうる介入実施の失敗（failures in implementing the intervention that could have affected the outcome）',
+  },
+  {
+    id: 'schema-prespec-dev-non-adherence',
+    type: 'non_adherence',
+    label:
+      '参加者の割り付け介入への非遵守（non-adherence to their assigned intervention by trial participants）',
+  },
+];
+
+/**
+ * RoB プリセット事前設定ダイアログ（issue #103。ui-states.md §3「プリセット事前設定ダイアログ」）。
+ * rob2（軽量版）= 全項目任意 + 「スキップして挿入」あり / rob2_sq = effect of interest 必須。
+ * ラベル・説明は日本語、注入される Review context は英語（robPrespec.ts が生成）
+ */
+function renderPresetDialog(dialog: RobPrespecDialogState, ctx: ViewContext): HTMLElement {
+  const isSq = dialog.kind === 'rob2_sq';
+
+  const textField = (
+    id: string,
+    label: string,
+    value: string,
+    key: 'experimental' | 'comparator' | 'outcome' | 'numericalResult',
+  ): HTMLElement => {
+    const input = el('input', {
+      id,
+      attributes: { type: 'text', 'aria-label': label },
+    }) as HTMLInputElement;
+    input.value = value;
+    input.addEventListener('change', () => ctx.schema.onUpdatePresetDialog({ [key]: input.value }));
+    return el('label', { className: 'schema__prespec-field' }, [
+      el('span', { text: label }),
+      input,
+    ]);
+  };
+
+  const effectRadio = (id: string, value: Rob2Effect | null, label: string): HTMLElement => {
+    const input = el('input', {
+      id,
+      attributes: { type: 'radio', name: 'schema-prespec-effect' },
+    }) as HTMLInputElement;
+    input.checked = dialog.effect === value;
+    input.addEventListener('change', () => {
+      if (input.checked) {
+        ctx.schema.onUpdatePresetDialog({ effect: value });
+      }
+    });
+    return el('label', { className: 'schema__prespec-radio' }, [input, label]);
+  };
+
+  const children: HTMLElement[] = [
+    el('h3', {
+      id: 'schema-preset-dialog-title',
+      text: isSq ? 'RoB 2（SQ 完全版）の事前設定' : 'RoB 2 テンプレートの事前設定（任意）',
+    }),
+    el('p', {
+      className: 'view__lead',
+      text: isSq
+        ? 'ドメイン評価の前にレビューチームが決める項目です（RoB 2 公式テンプレートの Preliminary considerations）。effect of interest は必須で、選択に応じて Domain 2 の signaling question セットが切り替わります。入力内容は各項目の抽出指示の冒頭に Review context（英語）として注入されます。'
+        : 'ドメイン評価の前にレビューチームが決める項目です（RoB 2 公式テンプレートの Preliminary considerations）。すべて任意です。入力すると各項目の抽出指示の冒頭に Review context（英語）として注入されます。スキップすると従来どおりのテンプレートを挿入します。',
+    }),
+    el('p', {
+      id: 'schema-prespec-design',
+      className: 'schema__prespec-design',
+      text: '試験デザイン: individually-randomized parallel-group trial（固定。cluster / crossover 試験は RoB 2 の別版のため本プリセットでは未対応・将来対応予定）',
+    }),
+    textField(
+      'schema-prespec-experimental',
+      'experimental 介入（比較される実験側の介入）',
+      dialog.experimental,
+      'experimental',
+    ),
+    textField(
+      'schema-prespec-comparator',
+      'comparator（比較対照）',
+      dialog.comparator,
+      'comparator',
+    ),
+    textField(
+      'schema-prespec-outcome',
+      '評価対象の outcome',
+      dialog.outcome,
+      'outcome',
+    ),
+    textField(
+      'schema-prespec-numerical-result',
+      '評価対象の numerical result（複数解析がある場合に一意化する数値・参照先）',
+      dialog.numericalResult,
+      'numericalResult',
+    ),
+  ];
+
+  const effectRadios: HTMLElement[] = [];
+  if (!isSq) {
+    effectRadios.push(effectRadio('schema-prespec-effect-none', null, '指定しない（既定）'));
+  }
+  effectRadios.push(
+    effectRadio(
+      'schema-prespec-effect-assignment',
+      'assignment',
+      'assignment への効果（intention-to-treat 効果）',
+    ),
+    effectRadio(
+      'schema-prespec-effect-adhering',
+      'adhering',
+      'adhering への効果（per-protocol 効果）',
+    ),
+  );
+  children.push(
+    el('fieldset', { className: 'schema__prespec-effect' }, [
+      el('legend', { text: isSq ? 'effect of interest（必須）' : 'effect of interest（任意）' }),
+      ...effectRadios,
+    ]),
+  );
+
+  if (dialog.effect === 'adhering') {
+    const checkboxes = DEVIATION_CHECKBOXES.map((def) => {
+      const checkbox = el('input', {
+        id: def.id,
+        attributes: { type: 'checkbox' },
+      }) as HTMLInputElement;
+      checkbox.checked = dialog.deviationTypes.includes(def.type);
+      checkbox.addEventListener('change', () =>
+        ctx.schema.onUpdatePresetDialog({
+          deviationTypes: toggleDeviationType(dialog.deviationTypes, def.type, checkbox.checked),
+        }),
+      );
+      return el('label', { className: 'schema__prespec-checkbox' }, [checkbox, def.label]);
+    });
+    children.push(
+      el('fieldset', { id: 'schema-prespec-deviations', className: 'schema__prespec-deviations' }, [
+        el('legend', { text: '扱う deviation 種別（最低 1 つ必須）' }),
+        ...checkboxes,
+      ]),
+    );
+  }
+
+  if (dialog.error !== null) {
+    children.push(
+      el('p', {
+        id: 'schema-prespec-error',
+        className: 'schema__error',
+        attributes: { role: 'alert' },
+        text: dialog.error,
+      }),
+    );
+  }
+
+  const confirmButton = el('button', {
+    id: 'schema-prespec-confirm',
+    className: 'schema__primary',
+    text: 'この内容で挿入',
+    attributes: { type: 'button' },
+  });
+  confirmButton.addEventListener('click', () => ctx.schema.onConfirmPresetDialog());
+  const actions: HTMLElement[] = [confirmButton];
+  if (!isSq) {
+    const skipButton = el('button', {
+      id: 'schema-prespec-skip',
+      text: 'スキップして挿入',
+      attributes: { type: 'button' },
+    });
+    skipButton.addEventListener('click', () => ctx.schema.onSkipPresetDialog());
+    actions.push(skipButton);
+  }
+  const cancelButton = el('button', {
+    id: 'schema-prespec-cancel',
+    text: 'キャンセル',
+    attributes: { type: 'button' },
+  });
+  cancelButton.addEventListener('click', () => ctx.schema.onCancelPresetDialog());
+  actions.push(cancelButton);
+  children.push(el('div', { className: 'schema__prespec-actions' }, actions));
+
+  return el(
+    'div',
+    {
+      id: 'schema-preset-dialog',
+      className: 'schema__preset-dialog',
+      attributes: { role: 'dialog', 'aria-labelledby': 'schema-preset-dialog-title' },
+    },
+    children,
+  );
+}
+
 /** 編集中: 表形式エディタ + 検証エラー + プリセット挿入 + 版として確定 */
 function renderEditor(
   rows: readonly SchemaEditorRow[],
@@ -390,9 +597,12 @@ function renderEditor(
       presetQuadas3,
       presetQuips,
     ]),
-    dataTypeHelp,
-    el('div', { className: 'schema__table-wrap' }, [table]),
   ];
+  // RoB プリセット事前設定ダイアログ（issue #103）: プリセットボタン直下に挿す
+  if (schema.presetDialog !== null) {
+    children.push(renderPresetDialog(schema.presetDialog, ctx));
+  }
+  children.push(dataTypeHelp, el('div', { className: 'schema__table-wrap' }, [table]));
   if (errorItems.length > 0) {
     children.push(
       el('ul', { id: 'schema-editor-errors', className: 'schema__editor-errors' }, errorItems),

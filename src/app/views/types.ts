@@ -8,6 +8,7 @@ import type { ReviewMode } from '../../domain/reviewer';
 import type { MethodsLanguage, MethodsWorkflow } from '../../features/export/methodsBoilerplate';
 import type { ProtocolSubmitInput } from '../../features/protocol/submitInput';
 import type { SchemaPresetKind } from '../../features/schema/presets';
+import type { RobPrespecDialogState } from '../../features/schema/presets/robPrespec';
 import type { SchemaEditorRow } from '../../features/schema/types';
 import type { VerifyLayoutMode } from '../../lib/storage/settingsStore';
 import type { RelocateQuoteOutcome } from '../services/relocateQuoteService';
@@ -92,8 +93,16 @@ export interface SchemaViewCallbacks {
   onEditRow(index: number, patch: Partial<SchemaEditorRow>): void;
   onAddRow(): void;
   onRemoveRow(index: number): void;
-  /** プリセット挿入（二値 / 連続アウトカム・RoB 2 / ROBINS-I） */
+  /** プリセット挿入（二値 / 連続アウトカム・RoB 系。RoB 2 系は事前設定ダイアログを開く — issue #103） */
   onInsertPreset(kind: SchemaPresetKind): void;
+  /** RoB プリセット事前設定ダイアログ（issue #103）: 入力の更新 */
+  onUpdatePresetDialog(patch: Partial<Omit<RobPrespecDialogState, 'kind' | 'error'>>): void;
+  /** 同ダイアログ: 「この内容で挿入」（検証 → 行生成 → 挿入して閉じる） */
+  onConfirmPresetDialog(): void;
+  /** 同ダイアログ: 「スキップして挿入」（軽量版 rob2 のみ。現行と同一の行を挿入） */
+  onSkipPresetDialog(): void;
+  /** 同ダイアログ: キャンセル（挿入せず閉じる） */
+  onCancelPresetDialog(): void;
   /** 「版として確定」（note = 改訂理由） */
   onConfirm(note: string): void;
   onCancelEditor(): void;

@@ -874,6 +874,25 @@ describe('collectRobAlgorithmInfo', () => {
     expect(info?.mismatch).toBe(false);
   });
 
+  test('adhering 版 D2（SQ 2.1〜2.6・rob2_sq2_7 なし。issue #103）は全問回答済みでも常に提案なし（null）', () => {
+    // 事前設定ダイアログで effect = adhering を選ぶと rob2_sq2_7 の行が生成されないため、
+    // assignment 版前提の D2 決定木は null ガードで沈黙する（robAlgorithm.ts の意図コメント参照）
+    const entityKey = 'rob:d2_deviations';
+    const cells = [
+      makeSqCell('rob2_sq2_1', entityKey, 'n'),
+      makeSqCell('rob2_sq2_2', entityKey, 'n'),
+      makeSqCell('rob2_sq2_3', entityKey, 'y'),
+      makeSqCell('rob2_sq2_4', entityKey, 'n'),
+      makeSqCell('rob2_sq2_5', entityKey, 'na'),
+      makeSqCell('rob2_sq2_6', entityKey, 'y'),
+      makeSqCell('rob2_judgement', entityKey, 'low'),
+    ];
+    const model: TabModel = { groups: [group(cells)], cells: [] };
+    const info = collectRobAlgorithmInfo(model).get(cellKeyOf('f-rob2_judgement', entityKey));
+    expect(info?.suggestion).toBeNull();
+    expect(info?.mismatch).toBe(false);
+  });
+
   test('SQ フィールドは存在するが値が無い（AI 値・確定値とも null）場合も提案なし（null）', () => {
     const entityKey = 'rob:d1_randomization';
     const cells = [

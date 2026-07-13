@@ -1,6 +1,8 @@
 import {
   addEditorRow,
   cancelEditor,
+  cancelRobPrespecDialog,
+  confirmRobPrespecDialog,
   confirmSchema,
   emptyEditorRow,
   insertSchemaPreset,
@@ -8,11 +10,15 @@ import {
   removeEditorRow,
   runDraftSchema,
   setDraftModel,
+  skipRobPrespecDialog,
   startEditorFromCurrent,
   toggleSampleDocument,
   updateEditorRow,
+  updateRobPrespecDialog,
   type SchemaServiceDeps,
 } from '../../../../src/app/services/schemaService';
+import { serializeRob2PrespecNote } from '../../../../src/features/schema/presets/robPrespec';
+import { ROB_TEMPLATE_ROB2 } from '../../../../src/features/schema/presets/robTemplates';
 import { createInitialState, createStore, type Store } from '../../../../src/app/store';
 import type { DocumentRecord } from '../../../../src/domain/document';
 import type { Protocol } from '../../../../src/domain/protocol';
@@ -619,15 +625,26 @@ describe('エディタ操作', () => {
     expect(store.getState().schema.editorRows).toHaveLength(14);
     expect(store.getState().schema.editorOrigin).toBe('user_edit');
 
-    // RoB テンプレートも同じ挿入経路（判定 + 根拠の 2 行が末尾に付く）
+    // RoB 2 系は行を挿入せず事前設定ダイアログを開く（issue #103）。
+    // スキップで従来と同一の 2 行（判定 + 根拠）が末尾に付く（回帰なし）
     insertSchemaPreset(store, 'rob2');
+    expect(store.getState().schema.editorRows).toHaveLength(14);
+    expect(store.getState().schema.presetDialog?.kind).toBe('rob2');
+    skipRobPrespecDialog(store);
+    expect(store.getState().schema.presetDialog).toBeNull();
     expect(store.getState().schema.editorRows).toHaveLength(16);
     expect(store.getState().schema.editorRows?.[14]?.fieldName).toBe('rob2_judgement');
     expect(store.getState().schema.editorRows?.[15]?.entityLevel).toBe('rob_domain');
+    expect(store.getState().schema.editorRows?.slice(14)).toEqual([...ROB_TEMPLATE_ROB2]);
     expect(store.getState().schema.editorErrors).toEqual([]);
 
-    // RoB 2（SQ 完全版。issue #61）は判定 + 根拠 + SQ 22 問の計 24 行が末尾に付く
+    // RoB 2（SQ 完全版。issue #61 + #103）はダイアログで effect を選んで確定すると
+    // 判定 + 根拠 + SQ 22 問の計 24 行が末尾に付く
     insertSchemaPreset(store, 'rob2_sq');
+    expect(store.getState().schema.presetDialog?.kind).toBe('rob2_sq');
+    updateRobPrespecDialog(store, { effect: 'assignment' });
+    confirmRobPrespecDialog(store);
+    expect(store.getState().schema.presetDialog).toBeNull();
     expect(store.getState().schema.editorRows).toHaveLength(40);
     expect(store.getState().schema.editorRows?.[16]?.fieldName).toBe('rob2_judgement');
     expect(store.getState().schema.editorRows?.[17]?.fieldName).toBe('rob2_support');
@@ -636,6 +653,148 @@ describe('エディタ操作', () => {
     // 軽量版 rob2 と field_name が衝突するため、この時点ではエラーが検出される
     // （両プリセットは排他利用が前提。robTemplates.test.ts の意図的な衝突確認と対応）
     expect(store.getState().schema.editorErrors.length).toBeGreaterThan(0);
+  });
+
+  describe('RoB プリセット事前設定ダイアログ（issue #103）', () => {
+    function makeEditorStore(rows: SchemaEditorRow[] = [makeEditorRow()]): Store {
+      const store = makeStore();
+      store.setState({ schema: { ...store.getState().schema, editorRows: rows } });
+      return store;
+    }
+
+    test('insertSchemaPreset(rob2 / rob2_sq) は行を挿入せずダイアログを開く（初期値は空）', () => {
+      const store = makeEditorStore();
+      insertSchemaPreset(store, 'rob2');
+      expect(store.getState().schema.editorRows).toHaveLength(1);
+      expect(store.getState().schema.presetDialog).toEqual({
+        kind: 'rob2',
+        experimental: '',
+        comparator: '',
+        outcome: '',
+        numericalResult: '',
+        effect: null,
+        deviationTypes: [],
+        error: null,
+      });
+      insertSchemaPreset(store, 'rob2_sq');
+      expect(store.getState().schema.presetDialog?.kind).toBe('rob2_sq');
+      expect(store.getState().schema.editorRows).toHaveLength(1);
+    });
+
+    test('再挿入時は既存 rob2_judgement 行の note からダイアログ初期値を復元する', () => {
+      const note = serializeRob2PrespecNote({
+        design: 'individually_randomized_parallel_group',
+        experimental: 'CBT-I',
+        comparator: 'waitlist',
+        outcome: 'SOL',
+        numericalResult: null,
+        effect: 'adhering',
+        deviationTypes: ['non_adherence'],
+      });
+      const store = makeEditorStore([
+        makeEditorRow({ fieldName: 'rob2_judgement', note }),
+      ]);
+      insertSchemaPreset(store, 'rob2_sq');
+      expect(store.getState().schema.presetDialog).toMatchObject({
+        kind: 'rob2_sq',
+        experimental: 'CBT-I',
+        comparator: 'waitlist',
+        outcome: 'SOL',
+        numericalResult: '',
+        effect: 'adhering',
+        deviationTypes: ['non_adherence'],
+      });
+    });
+
+    test('updateRobPrespecDialog: 入力を反映し検証エラーをクリアする（非表示中は no-op）', () => {
+      const store = makeEditorStore();
+      updateRobPrespecDialog(store, { outcome: 'x' });
+      expect(store.getState().schema.presetDialog).toBeNull();
+
+      insertSchemaPreset(store, 'rob2_sq');
+      confirmRobPrespecDialog(store); // effect 未選択 → エラー
+      expect(store.getState().schema.presetDialog?.error).toContain('effect of interest');
+      updateRobPrespecDialog(store, { effect: 'assignment' });
+      expect(store.getState().schema.presetDialog?.effect).toBe('assignment');
+      expect(store.getState().schema.presetDialog?.error).toBeNull();
+    });
+
+    test('cancelRobPrespecDialog: 行を挿入せず閉じる', () => {
+      const store = makeEditorStore();
+      insertSchemaPreset(store, 'rob2');
+      cancelRobPrespecDialog(store);
+      expect(store.getState().schema.presetDialog).toBeNull();
+      expect(store.getState().schema.editorRows).toHaveLength(1);
+    });
+
+    test('skipRobPrespecDialog: rob2 のみ現行と同一の行を挿入して閉じる（rob2_sq・非表示中は no-op）', () => {
+      const store = makeEditorStore();
+      skipRobPrespecDialog(store); // 非表示中
+      expect(store.getState().schema.editorRows).toHaveLength(1);
+
+      insertSchemaPreset(store, 'rob2_sq');
+      skipRobPrespecDialog(store); // rob2_sq にスキップは無い
+      expect(store.getState().schema.presetDialog?.kind).toBe('rob2_sq');
+      expect(store.getState().schema.editorRows).toHaveLength(1);
+      cancelRobPrespecDialog(store);
+
+      insertSchemaPreset(store, 'rob2');
+      skipRobPrespecDialog(store);
+      expect(store.getState().schema.presetDialog).toBeNull();
+      expect(store.getState().schema.editorRows?.slice(1)).toEqual([...ROB_TEMPLATE_ROB2]);
+      expect(store.getState().schema.editorOrigin).toBe('user_edit');
+    });
+
+    test('confirmRobPrespecDialog: 非表示中は no-op / adhering + 種別 0 個は必須未充足エラーで挿入しない', () => {
+      const store = makeEditorStore();
+      confirmRobPrespecDialog(store); // 非表示中
+      expect(store.getState().schema.editorRows).toHaveLength(1);
+
+      insertSchemaPreset(store, 'rob2');
+      updateRobPrespecDialog(store, { effect: 'adhering' });
+      confirmRobPrespecDialog(store);
+      expect(store.getState().schema.presetDialog?.error).toContain('最低 1 つ');
+      expect(store.getState().schema.editorRows).toHaveLength(1);
+    });
+
+    test('confirmRobPrespecDialog: rob2 に入力があれば Review context を注入し note に JSON を保存する', () => {
+      const store = makeEditorStore();
+      insertSchemaPreset(store, 'rob2');
+      updateRobPrespecDialog(store, { outcome: 'mortality' });
+      confirmRobPrespecDialog(store);
+      const rows = store.getState().schema.editorRows ?? [];
+      expect(rows).toHaveLength(3);
+      expect(rows[1]?.extractionInstruction).toContain('Review context');
+      expect(rows[1]?.extractionInstruction).toContain('mortality');
+      expect(rows[1]?.note).toContain('rob2_prespec');
+      expect(rows[2]?.note).toBeNull();
+      expect(store.getState().schema.presetDialog).toBeNull();
+    });
+
+    test('confirmRobPrespecDialog: rob2_sq は effect で SQ セットが切り替わる（adhering は 2.7 なしの 23 行）', () => {
+      const store = makeEditorStore();
+      insertSchemaPreset(store, 'rob2_sq');
+      updateRobPrespecDialog(store, {
+        effect: 'adhering',
+        deviationTypes: ['non_protocol_interventions'],
+      });
+      confirmRobPrespecDialog(store);
+      const rows = store.getState().schema.editorRows ?? [];
+      expect(rows).toHaveLength(24); // 既存 1 行 + 23 行
+      const names = rows.map((row) => row.fieldName);
+      expect(names).toContain('rob2_sq2_6');
+      expect(names).not.toContain('rob2_sq2_7');
+      expect(rows[1]?.extractionInstruction).toContain("the 'per-protocol' effect");
+    });
+
+    test('cancelEditor は開いたままの事前設定ダイアログも閉じる', () => {
+      const store = makeEditorStore();
+      insertSchemaPreset(store, 'rob2');
+      expect(store.getState().schema.presetDialog).not.toBeNull();
+      cancelEditor(store);
+      expect(store.getState().schema.presetDialog).toBeNull();
+      expect(store.getState().schema.editorRows).toBeNull();
+    });
   });
 
   test('startEditorFromCurrent: 現行版の項目を fieldId 維持で引き継ぐ（未読込は no-op）', () => {

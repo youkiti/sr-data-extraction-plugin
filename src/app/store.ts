@@ -30,6 +30,7 @@ import type { ExtractStudyRow } from '../features/extraction/studyProgress';
 import type { ProgressCounts } from '../features/project/progressCounts';
 import type { DashboardData } from '../features/verification/dashboard';
 import type { LoadedPdfView } from '../features/verification/pdfViewCache';
+import type { RobPrespecDialogState } from '../features/schema/presets/robPrespec';
 import type { SchemaEditorRow } from '../features/schema/types';
 import type { FieldValidationError } from '../features/schema/validateField';
 import type { VerificationProgress } from '../features/verification/progress';
@@ -172,6 +173,8 @@ export interface SchemaState {
   /** 確定時の created_by_type（AI ドラフト直後 = ai_draft。人が触ったら user_edit） */
   editorOrigin: 'ai_draft' | 'user_edit';
   confirming: boolean;
+  /** RoB プリセット事前設定ダイアログ（issue #103。ui-states.md §3）。null = 非表示 */
+  presetDialog: RobPrespecDialogState | null;
 }
 
 /** #/pilot（S6）の画面状態。run の結果と埋め込み検証 UI の素材はタブのセッション内で保持する */
@@ -574,6 +577,7 @@ export function createInitialState(): AppState {
       editorErrors: [],
       editorOrigin: 'user_edit',
       confirming: false,
+      presetDialog: null,
     },
     pilot: {
       selectedStudyIds: [],

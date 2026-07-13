@@ -206,8 +206,13 @@ test('エディタ: 行操作と検証エラー表示、確定ボタンの無効
   await page.locator('#schema-preset-binary').click();
   await expect(page.locator('#schema-editor-table tbody tr')).toHaveCount(3);
 
-  // RoB 2 テンプレート挿入（判定 + 根拠の 2 行。entity_level は rob_domain）
+  // RoB 2 テンプレート挿入（issue #103: まず事前設定ダイアログが開く。
+  // スキップで従来どおり判定 + 根拠の 2 行。entity_level は rob_domain）
   await page.locator('#schema-preset-rob2').click();
+  await expect(page.locator('#schema-preset-dialog')).toBeVisible();
+  await expect(page.locator('#schema-editor-table tbody tr')).toHaveCount(3);
+  await page.locator('#schema-prespec-skip').click();
+  await expect(page.locator('#schema-preset-dialog')).toHaveCount(0);
   await expect(page.locator('#schema-editor-table tbody tr')).toHaveCount(5);
   await expect(page.locator('input[aria-label="4 行目の field_name"]')).toHaveValue(
     'rob2_judgement',
@@ -236,6 +241,52 @@ test('エディタ: 行操作と検証エラー表示、確定ボタンの無効
   // キャンセルでドラフト前へ戻る
   await page.locator('#schema-editor-cancel').click();
   await expect(page.locator('#schema-draft-form')).toBeVisible();
+});
+
+test('RoB 2 事前設定ダイアログ: rob2_sq の必須検証と adhering の SQ セット切替（issue #103）', async ({
+  page,
+}) => {
+  await initApp(page, { ...EMPTY_SCHEMA_STATE, editorRows: [makeEditorRow()] });
+
+  await page.locator('#schema-preset-rob2-sq').click();
+  await expect(page.locator('#schema-preset-dialog')).toBeVisible();
+  await expect(page.locator('#schema-prespec-design')).toContainText(
+    'individually-randomized parallel-group trial',
+  );
+  // SQ 完全版は effect が必須のためスキップボタンが無い
+  await expect(page.locator('#schema-prespec-skip')).toHaveCount(0);
+
+  // effect 未選択のまま挿入 → 必須未充足エラー（行は挿入されない）
+  await page.locator('#schema-prespec-confirm').click();
+  await expect(page.locator('#schema-prespec-error')).toContainText('effect of interest');
+  await expect(page.locator('#schema-editor-table tbody tr')).toHaveCount(1);
+
+  // adhering を選ぶと deviation 種別チェックが現れ、未チェックのままはエラー
+  await page.locator('#schema-prespec-effect-adhering').check();
+  await expect(page.locator('#schema-prespec-deviations')).toBeVisible();
+  await page.locator('#schema-prespec-confirm').click();
+  await expect(page.locator('#schema-prespec-error')).toContainText('最低 1 つ');
+
+  // 種別を 1 つチェックして挿入 → 判定 + 根拠 + SQ 21 問（adhering 版 D2 = 2.1〜2.6）の 23 行
+  await page.locator('#schema-prespec-dev-non-adherence').check();
+  await page.locator('#schema-prespec-confirm').click();
+  await expect(page.locator('#schema-preset-dialog')).toHaveCount(0);
+  await expect(page.locator('#schema-editor-table tbody tr')).toHaveCount(24);
+  await expect(page.locator('input[aria-label="2 行目の field_name"]')).toHaveValue(
+    'rob2_judgement',
+  );
+  // 抽出指示の冒頭に Review context（英文サマリ）が注入されている
+  await expect(page.locator('textarea[aria-label="2 行目の抽出指示"]')).toHaveValue(
+    /^Review context/,
+  );
+
+  // キャンセルで閉じられる（再挿入時のダイアログ復元も確認: note から adhering が初期選択される）
+  await page.locator('#schema-preset-rob2-sq').click();
+  await expect(page.locator('#schema-prespec-effect-adhering')).toBeChecked();
+  await expect(page.locator('#schema-prespec-dev-non-adherence')).toBeChecked();
+  await page.locator('#schema-prespec-cancel').click();
+  await expect(page.locator('#schema-preset-dialog')).toHaveCount(0);
+  await expect(page.locator('#schema-editor-table tbody tr')).toHaveCount(24);
 });
 
 test('版として確定が SchemaVersions + SchemaFields の追記まで到達する', async ({ page }) => {
@@ -338,6 +389,15 @@ test('アクセシビリティ違反がない（axe・ドラフト前）', async
 test('アクセシビリティ違反がない（axe・エディタ）', async ({ page }) => {
   await initApp(page, { ...EMPTY_SCHEMA_STATE, editorRows: [makeEditorRow()] });
   await expect(page.locator('#schema-editor')).toBeVisible();
+  const results = await new AxeBuilder({ page }).analyze();
+  expect(results.violations).toEqual([]);
+});
+
+test('アクセシビリティ違反がない（axe・RoB 事前設定ダイアログ。issue #103）', async ({ page }) => {
+  await initApp(page, { ...EMPTY_SCHEMA_STATE, editorRows: [makeEditorRow()] });
+  await page.locator('#schema-preset-rob2-sq').click();
+  await page.locator('#schema-prespec-effect-adhering').check();
+  await expect(page.locator('#schema-prespec-deviations')).toBeVisible();
   const results = await new AxeBuilder({ page }).analyze();
   expect(results.violations).toEqual([]);
 });
