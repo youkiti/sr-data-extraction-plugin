@@ -29,8 +29,11 @@ export const EXTRACT_DATA_SKILL_NAME = 'extract-data';
  *   セクションを protocol → documents → fields → 規約 → 出力形式 へ並び替え、
  *   画像パートを Documents セクション直後（fields より前）へ移動（issue #89）。
  *   同一 study の全バッチで system + protocol + documents（+ 画像）が共有 prefix になる
+ * v6（2026-07-13）: 小型モデル（flash-lite）の arm 単位 omission 対策として、arm レベル項目を
+ *   含むバッチの suffix 末尾（Output format の後）へ completeness 強調を追記（issue #97）。
+ *   prefix（protocol / documents / 画像）は不変更のためキャッシュヒットに影響しない
  */
-export const EXTRACT_DATA_PROMPT_VERSION = 5;
+export const EXTRACT_DATA_PROMPT_VERSION = 6;
 
 /** text_only モードで LLM へ渡すページ別本文（extracted_texts/{id}.txt 由来） */
 export interface ExtractDataPage {
@@ -152,6 +155,24 @@ const ENTITY_KEY_RULES: Record<EntityLevel, string> = {
 /** ENTITY_KEY_RULES の出力順（study → arm → outcome_result → rob_domain） */
 const ENTITY_LEVEL_ORDER: readonly EntityLevel[] = ['study', 'arm', 'outcome_result', 'rob_domain'];
 
+/**
+ * arm レベル項目の omission 対策（issue #97）。プロンプト v5（PR #91）でセクション順を
+ * protocol → documents → fields → 規約 → 出力形式 へ並び替えた結果、小型モデル
+ * （gemini-3.1-flash-lite）で 2 つ目以降の arm の項目を書き落とす確率的な欠落が観測された
+ * （項目正確度 62.1% → ≈54.2%）。
+ * - なぜ suffix 末尾か: suffix（Fields to extract 以降）はバッチごとに変わる部分で、
+ *   プロバイダの暗黙 prefix キャッシュ対象には元々含まれない。ここに追記しても
+ *   prefix（Protocol context + Documents + 画像）のキャッシュヒットには影響しない
+ * - なぜ条件付きか: arm レベル項目が無いバッチ（study / outcome_result / rob_domain のみ）には
+ *   無関係な強調文がノイズになるため、ENTITY_KEY_RULES の presentLevels 出し分けと同じ方針で
+ *   「バッチに arm レベル項目が含まれるときだけ」追加する
+ */
+const EXTRACT_DATA_ARM_COMPLETENESS_RULE = `
+## Completeness check (arm-level fields)
+
+Before returning, verify your JSON array is COMPLETE for arm-level fields: for EVERY arm-level field listed under "## Fields to extract", return one item for EVERY arm that appears in the documents ("arm:1", "arm:2", ...). If the study has A arms and this batch lists F arm-level fields, your array must contain exactly A x F arm-level items (plus the items for other levels). Do NOT stop after the first arm; arms 2, 3, ... require the same complete set of items as arm 1.
+`.trim();
+
 /** 1 項目ぶんの定義ブロック。null / 空の補助情報は行ごと省略する */
 function renderField(field: SchemaField): string {
   const lines = [
@@ -237,7 +258,8 @@ function buildPrefixSections(input: ExtractDataPromptInput): string[] {
 }
 
 /**
- * プロンプト後半（バッチごとに変わる部分）のセクション群: Fields to extract → entity_key rules → Output format。
+ * プロンプト後半（バッチごとに変わる部分）のセクション群: Fields to extract → entity_key rules →
+ * Output format（→ arm レベル項目を含むバッチのみ Completeness check）。
  * fields は fieldIndex 順に並べ、entity_key 規約は当該バッチに現れる entity_level のぶんだけ提示する
  */
 function buildSuffixSections(input: ExtractDataPromptInput): string[] {
@@ -260,6 +282,11 @@ function buildSuffixSections(input: ExtractDataPromptInput): string[] {
     (input.requestBox === true ? `, "box_2d": [ymin, xmin, ymax, xmax] | null` : '') +
     ' }';
   sections.push(`## Output format\n\nReturn a JSON array. Each element must be:\n${outputFormatFields}`);
+
+  // arm レベル項目を含むバッチだけ、suffix 末尾へ completeness 強調を追記する（issue #97）
+  if (presentLevels.has('arm')) {
+    sections.push(EXTRACT_DATA_ARM_COMPLETENESS_RULE);
+  }
 
   return sections;
 }
