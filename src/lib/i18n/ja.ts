@@ -318,6 +318,28 @@ export const ja = {
     'co-interventions（1 行 1 項目。SQ 4.3 の "important co-interventions" の定義として注入されます）',
   'schema.prespecErrRobinsIEffectRequired':
     'effect of interest（assignment / starting and adhering）を選択してください',
+  'schema.prespecQuadas3Title': 'QUADAS-3 テンプレートの事前設定（任意）',
+  'schema.prespecQuadas3Lead':
+    '評価前にレビューチームが定める synthesis question（Phase 1）と ideal test accuracy trial の主要 component（Phase 2）です（QUADAS-3 v1.2）。すべて任意です。入力すると各項目の抽出指示の冒頭に Review context（英語）として注入され、適用可能性の判定行と SQ 4.3 には対応する定義が注入されます。スキップすると従来どおりのテンプレートを挿入します（Phase 3〜4〔flow 図・estimate 単位の評価〕は issue #109 のスコープ）。',
+  'schema.prespecQuadas3Population': 'synthesis question の population',
+  'schema.prespecQuadas3IndexTest': 'synthesis question の index test(s)',
+  'schema.prespecQuadas3TargetCondition': 'synthesis question の target condition',
+  'schema.prespecQuadas3IntendedUse': 'ideal trial の intended-use population',
+  'schema.prespecQuadas3TestRole':
+    'index test の役割 / clinical pathway 上の位置（ideal trial の Objective）',
+  'schema.prespecQuadas3ReferenceStandard': 'ideal trial の reference standard',
+  'schema.prespecQuadas3AnalysisUnit':
+    'ideal trial の Analysis / unit of analysis（SQ 4.3 の比較基準として注入されます）',
+  'schema.prespecQuipsTitle': 'QUIPS テンプレートの事前設定（任意）',
+  'schema.prespecQuipsLead':
+    'QUIPS には形式的な事前設定フェーズはありませんが、item 本文が参照する review 固有の定義（population / prognostic factor / outcome / LIST）をここで与えると評価者間の判断が一貫します。すべて任意です。入力すると各項目の抽出指示の冒頭に Review context（英語）として注入され、LIST と定義は対応する item に注入されます。スキップすると従来どおりのテンプレートを挿入します。',
+  'schema.prespecQuipsPopulation': 'population of interest（対象集団）',
+  'schema.prespecQuipsPf': 'prognostic factor（PF）の定義',
+  'schema.prespecQuipsOutcome': 'outcome の定義（follow-up 期間を含む）',
+  'schema.prespecQuipsKeyCharacteristics':
+    'key characteristics（LIST。1 行 1 項目。D1 の item 1.2 に注入されます）',
+  'schema.prespecQuipsConfounders':
+    'important confounders（LIST。1 行 1 項目。D5 の item 5.1 / 5.2 に注入されます）',
   'schema.prespecConfirm': 'この内容で挿入',
   'schema.prespecSkip': 'スキップして挿入',
   'schema.editorTitle': '表のデザイン編集（{count} 項目）',

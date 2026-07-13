@@ -316,6 +316,28 @@ export const en: Record<MessageKey, string> = {
     'Co-interventions (one per line; injected as the definition of "important co-interventions" for SQ 4.3)',
   'schema.prespecErrRobinsIEffectRequired':
     'Select the effect of interest (assignment / starting and adhering)',
+  'schema.prespecQuadas3Title': 'Preliminary considerations for the QUADAS-3 template (optional)',
+  'schema.prespecQuadas3Lead':
+    'The synthesis question (Phase 1) and the main components of the ideal test accuracy trial (Phase 2) that the review team defines before assessment (QUADAS-3 v1.2). All optional. If filled in, the inputs are injected as an English Review context at the top of each extraction instruction, and the corresponding definitions are injected into the applicability judgement row and SQ 4.3. Skipping inserts the template as before (Phases 3-4 — flow diagram and per-estimate assessment — are in scope of issue #109).',
+  'schema.prespecQuadas3Population': 'Population of the synthesis question',
+  'schema.prespecQuadas3IndexTest': 'Index test(s) of the synthesis question',
+  'schema.prespecQuadas3TargetCondition': 'Target condition of the synthesis question',
+  'schema.prespecQuadas3IntendedUse': 'Intended-use population of the ideal trial',
+  'schema.prespecQuadas3TestRole':
+    'Role and position of the index test in the clinical pathway (Objective of the ideal trial)',
+  'schema.prespecQuadas3ReferenceStandard': 'Reference standard of the ideal trial',
+  'schema.prespecQuadas3AnalysisUnit':
+    'Analysis / unit of analysis of the ideal trial (injected as the benchmark for SQ 4.3)',
+  'schema.prespecQuipsTitle': 'Preliminary considerations for the QUIPS template (optional)',
+  'schema.prespecQuipsLead':
+    'QUIPS has no formal preliminary phase, but providing the review-specific definitions the items refer to (population / prognostic factor / outcome / LISTs) makes judgements consistent across assessors. All optional. If filled in, the inputs are injected as an English Review context at the top of each extraction instruction, and the LISTs and definitions are injected into the corresponding items. Skipping inserts the template as before.',
+  'schema.prespecQuipsPopulation': 'Population of interest',
+  'schema.prespecQuipsPf': 'Definition of the prognostic factor (PF)',
+  'schema.prespecQuipsOutcome': 'Definition of the outcome (including duration of follow-up)',
+  'schema.prespecQuipsKeyCharacteristics':
+    'Key characteristics (LIST; one per line; injected into item 1.2 of D1)',
+  'schema.prespecQuipsConfounders':
+    'Important confounders (LIST; one per line; injected into items 5.1 / 5.2 of D5)',
   'schema.prespecConfirm': 'Insert with these settings',
   'schema.prespecSkip': 'Skip and insert',
   'schema.editorTitle': 'Edit the table design ({count} fields)',

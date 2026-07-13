@@ -7,6 +7,8 @@
 import type { EntityLevel, FieldDataType, SchemaField } from '../../domain/schemaField';
 import type { SchemaVersion } from '../../domain/schemaVersion';
 import type { PresetDialogState } from '../../features/schema/presets/prespecDialog';
+import type { Quadas3PrespecDialogState } from '../../features/schema/presets/quadas3Prespec';
+import type { QuipsPrespecDialogState } from '../../features/schema/presets/quipsPrespec';
 import type {
   Rob2Effect,
   RobPrespecDialogState,
@@ -641,6 +643,132 @@ function renderRobinsIPresetDialog(
   return prespecDialogContainer(children);
 }
 
+/**
+ * QUADAS-3 の事前設定ダイアログ（issue #103 PR3）。Phase 1（synthesis question）+
+ * Phase 2（ideal test accuracy trial の主要 component）を全項目任意で入力できる
+ * （Phase 3〜4 は issue #109 のスコープ）。スキップ・全項目未入力は従来と同一の行
+ */
+function renderQuadas3PresetDialog(
+  dialog: Quadas3PrespecDialogState,
+  ctx: ViewContext,
+): HTMLElement {
+  const textField = (
+    id: string,
+    label: string,
+    value: string,
+    key:
+      | 'population'
+      | 'indexTest'
+      | 'targetCondition'
+      | 'intendedUsePopulation'
+      | 'testRole'
+      | 'referenceStandard'
+      | 'analysisUnit',
+  ): HTMLElement =>
+    prespecTextField(id, label, value, (next) => ctx.schema.onUpdatePresetDialog({ [key]: next }));
+
+  const children: HTMLElement[] = [
+    el('h3', {
+      id: 'schema-preset-dialog-title',
+      text: t('schema.prespecQuadas3Title'),
+    }),
+    el('p', { className: 'view__lead', text: t('schema.prespecQuadas3Lead') }),
+    textField(
+      'schema-prespec-q3-population',
+      t('schema.prespecQuadas3Population'),
+      dialog.population,
+      'population',
+    ),
+    textField(
+      'schema-prespec-q3-index-test',
+      t('schema.prespecQuadas3IndexTest'),
+      dialog.indexTest,
+      'indexTest',
+    ),
+    textField(
+      'schema-prespec-q3-target-condition',
+      t('schema.prespecQuadas3TargetCondition'),
+      dialog.targetCondition,
+      'targetCondition',
+    ),
+    textField(
+      'schema-prespec-q3-intended-use',
+      t('schema.prespecQuadas3IntendedUse'),
+      dialog.intendedUsePopulation,
+      'intendedUsePopulation',
+    ),
+    textField(
+      'schema-prespec-q3-test-role',
+      t('schema.prespecQuadas3TestRole'),
+      dialog.testRole,
+      'testRole',
+    ),
+    textField(
+      'schema-prespec-q3-reference-standard',
+      t('schema.prespecQuadas3ReferenceStandard'),
+      dialog.referenceStandard,
+      'referenceStandard',
+    ),
+    textField(
+      'schema-prespec-q3-analysis-unit',
+      t('schema.prespecQuadas3AnalysisUnit'),
+      dialog.analysisUnit,
+      'analysisUnit',
+    ),
+  ];
+
+  appendPrespecFooter(children, dialog.error, true, ctx);
+  return prespecDialogContainer(children);
+}
+
+/**
+ * QUIPS の事前設定ダイアログ（issue #103 PR3）。原典に形式的な事前設定フェーズは無いが、
+ * item 本文が参照する review 固有の定義（population / PF / outcome / LIST）を全項目任意で
+ * 入力できる。スキップ・全項目未入力は従来と同一の行
+ */
+function renderQuipsPresetDialog(dialog: QuipsPrespecDialogState, ctx: ViewContext): HTMLElement {
+  const children: HTMLElement[] = [
+    el('h3', {
+      id: 'schema-preset-dialog-title',
+      text: t('schema.prespecQuipsTitle'),
+    }),
+    el('p', { className: 'view__lead', text: t('schema.prespecQuipsLead') }),
+    prespecTextField(
+      'schema-prespec-quips-population',
+      t('schema.prespecQuipsPopulation'),
+      dialog.population,
+      (next) => ctx.schema.onUpdatePresetDialog({ population: next }),
+    ),
+    prespecTextField(
+      'schema-prespec-quips-pf',
+      t('schema.prespecQuipsPf'),
+      dialog.prognosticFactor,
+      (next) => ctx.schema.onUpdatePresetDialog({ prognosticFactor: next }),
+    ),
+    prespecTextField(
+      'schema-prespec-quips-outcome',
+      t('schema.prespecQuipsOutcome'),
+      dialog.outcome,
+      (next) => ctx.schema.onUpdatePresetDialog({ outcome: next }),
+    ),
+    prespecListField(
+      'schema-prespec-quips-key-characteristics',
+      t('schema.prespecQuipsKeyCharacteristics'),
+      dialog.keyCharacteristics,
+      (next) => ctx.schema.onUpdatePresetDialog({ keyCharacteristics: next }),
+    ),
+    prespecListField(
+      'schema-prespec-quips-confounders',
+      t('schema.prespecQuipsConfounders'),
+      dialog.importantConfounders,
+      (next) => ctx.schema.onUpdatePresetDialog({ importantConfounders: next }),
+    ),
+  ];
+
+  appendPrespecFooter(children, dialog.error, true, ctx);
+  return prespecDialogContainer(children);
+}
+
 /** プリセット事前設定ダイアログ（issue #103）: kind に応じてツール別レンダラへ振り分ける */
 function renderPresetDialog(dialog: PresetDialogState, ctx: ViewContext): HTMLElement {
   switch (dialog.kind) {
@@ -650,6 +778,10 @@ function renderPresetDialog(dialog: PresetDialogState, ctx: ViewContext): HTMLEl
     case 'robins_i':
     case 'robins_i_sq':
       return renderRobinsIPresetDialog(dialog, ctx);
+    case 'quadas3':
+      return renderQuadas3PresetDialog(dialog, ctx);
+    case 'quips':
+      return renderQuipsPresetDialog(dialog, ctx);
   }
 }
 

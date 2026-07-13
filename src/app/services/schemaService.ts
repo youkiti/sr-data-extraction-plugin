@@ -37,6 +37,18 @@ import {
   validateRobPrespecDialog,
 } from '../../features/schema/presets/robPrespec';
 import {
+  buildQuadas3Rows,
+  createQuadas3PrespecDialogState,
+  findQuadas3PrespecInRows,
+  quadas3DialogToPrespec,
+} from '../../features/schema/presets/quadas3Prespec';
+import {
+  buildQuipsRows,
+  createQuipsPrespecDialogState,
+  findQuipsPrespecInRows,
+  quipsDialogToPrespec,
+} from '../../features/schema/presets/quipsPrespec';
+import {
   buildRobinsILiteRows,
   buildRobinsISqRows,
   createRobinsIPrespecDialogState,
@@ -378,8 +390,8 @@ function appendEditorRows(store: Store, added: readonly SchemaEditorRow[]): void
 
 /**
  * エディタ: プリセット挿入（二値 / 連続アウトカム・RoB 系。requirements.md §3.3）。
- * RoB 2 系（rob2 / rob2_sq）と ROBINS-I 系（robins_i / robins_i_sq）は行を挿入する前に
- * 事前設定ダイアログを開く（issue #103。QUADAS-3 / QUIPS のダイアログ対応は PR3 のスコープ）
+ * RoB 系プリセット（rob2 / rob2_sq / robins_i / robins_i_sq / quadas3 / quips）は
+ * 行を挿入する前に事前設定ダイアログを開く（issue #103 PR1〜PR3）
  */
 export function insertSchemaPreset(store: Store, kind: SchemaPresetKind): void {
   const rows = store.getState().schema.editorRows;
@@ -396,6 +408,18 @@ export function insertSchemaPreset(store: Store, kind: SchemaPresetKind): void {
   if (kind === 'robins_i' || kind === 'robins_i_sq') {
     patchSchema(store, {
       presetDialog: createRobinsIPrespecDialogState(kind, findRobinsIPrespecInRows(rows)),
+    });
+    return;
+  }
+  if (kind === 'quadas3') {
+    patchSchema(store, {
+      presetDialog: createQuadas3PrespecDialogState(findQuadas3PrespecInRows(rows)),
+    });
+    return;
+  }
+  if (kind === 'quips') {
+    patchSchema(store, {
+      presetDialog: createQuipsPrespecDialogState(findQuipsPrespecInRows(rows)),
     });
     return;
   }
@@ -418,14 +442,23 @@ export function cancelRobPrespecDialog(store: Store): void {
   patchSchema(store, { presetDialog: null });
 }
 
+/** スキップ可能なダイアログ kind（全項目任意のツール = 軽量版 rob2 / robins_i と quadas3 / quips） */
+const SKIPPABLE_DIALOG_KINDS: ReadonlySet<PresetDialogState['kind']> = new Set([
+  'rob2',
+  'robins_i',
+  'quadas3',
+  'quips',
+]);
+
 /**
- * 事前設定ダイアログ: 「スキップして挿入」（軽量版 rob2 / robins_i のみ）。
- * 現行テンプレートと同一の行を挿入する（回帰なし）。SQ 完全版は effect of interest が
- * SQ セット構成を決めるためスキップ不可（ボタン自体を出さない + ここでも防御する）
+ * 事前設定ダイアログ: 「スキップして挿入」（全項目任意のツールのみ）。
+ * 現行テンプレートと同一の行を挿入する（回帰なし）。SQ 完全版（rob2_sq / robins_i_sq）は
+ * effect of interest が SQ セット構成を決めるためスキップ不可
+ * （ボタン自体を出さない + ここでも防御する）
  */
 export function skipRobPrespecDialog(store: Store): void {
   const dialog = store.getState().schema.presetDialog;
-  if (dialog === null || (dialog.kind !== 'rob2' && dialog.kind !== 'robins_i')) {
+  if (dialog === null || !SKIPPABLE_DIALOG_KINDS.has(dialog.kind)) {
     return;
   }
   appendEditorRows(store, SCHEMA_PRESETS[dialog.kind].map((row) => ({ ...row })));
@@ -443,6 +476,10 @@ function buildPresetDialogRows(dialog: PresetDialogState): SchemaEditorRow[] {
       return buildRobinsILiteRows(robinsIDialogToPrespec(dialog));
     case 'robins_i_sq':
       return buildRobinsISqRows(robinsIDialogToPrespec(dialog));
+    case 'quadas3':
+      return buildQuadas3Rows(quadas3DialogToPrespec(dialog));
+    case 'quips':
+      return buildQuipsRows(quipsDialogToPrespec(dialog));
   }
 }
 
@@ -455,6 +492,10 @@ function validatePresetDialog(dialog: PresetDialogState): MessageKey | null {
     case 'robins_i':
     case 'robins_i_sq':
       return validateRobinsIPrespecDialog(dialog);
+    case 'quadas3':
+    case 'quips':
+      // 全項目任意（原典 Phase 1〜2 / 参照枠の事前記述は推奨だが、v1 は挿入をブロックしない）
+      return null;
   }
 }
 
