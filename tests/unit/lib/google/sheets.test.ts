@@ -2,6 +2,7 @@ import {
   addSheetTab,
   appendRow,
   appendRows,
+  batchUpdateRows,
   createSpreadsheet,
   getBatchValues,
   getSheetTitles,
@@ -148,6 +149,37 @@ describe('appendRows', () => {
   test('空配列は no-op（API を呼ばない）', async () => {
     const d = deps();
     await appendRows('sid', 'Evidence', [], d);
+    expect(d.fetch).not.toHaveBeenCalled();
+  });
+});
+
+describe('batchUpdateRows', () => {
+  test('POST /values:batchUpdate で複数行をまとめて上書き、null は空文字に変換', async () => {
+    const d = deps();
+    await batchUpdateRows(
+      'sid',
+      'Studies',
+      [
+        { rowIndex: 2, row: ['study-1', 'Smith (2020)', null] },
+        { rowIndex: 5, row: ['study-2', 'Doe (2021)', 'NCT1'] },
+      ],
+      d
+    );
+    expect(d.fetch).toHaveBeenCalledTimes(1);
+    const [url, init] = d.fetch.mock.calls[0];
+    expect(url).toContain('/sid/values:batchUpdate');
+    expect((init as RequestInit).method).toBe('POST');
+    const body = JSON.parse((init as RequestInit).body as string);
+    expect(body.valueInputOption).toBe('RAW');
+    expect(body.data).toEqual([
+      { range: 'Studies!A2', values: [['study-1', 'Smith (2020)', '']] },
+      { range: 'Studies!A5', values: [['study-2', 'Doe (2021)', 'NCT1']] },
+    ]);
+  });
+
+  test('空配列は no-op（API を呼ばない）', async () => {
+    const d = deps();
+    await batchUpdateRows('sid', 'Studies', [], d);
     expect(d.fetch).not.toHaveBeenCalled();
   });
 });

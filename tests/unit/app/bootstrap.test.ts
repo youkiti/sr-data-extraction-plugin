@@ -677,6 +677,118 @@ describe('bootstrapApp', () => {
     expect(store?.getState().documents.mergeDialog).toBeNull();
   });
 
+  test('#/documents の tiab-review 取り込み（開く / プレビュー入力エラー / 閉じる）が配線されている', async () => {
+    const stub = createWindowStub({ currentProject: PROJECT, home: COUNTS_LOADED });
+    const { deps } = createTabRoutingDeps({
+      Documents: [[...SHEET_HEADERS.Documents], DOC_ROW],
+      Studies: [[...SHEET_HEADERS.Studies], STUDY_ROW],
+      ExtractionRuns: [[...SHEET_HEADERS.ExtractionRuns]],
+    });
+    const store = await bootstrapApp(asWindow(stub), deps);
+    stub.location.hash = '#/documents';
+    stub.fireHashChange();
+    await flush();
+
+    // 開く（onTiabOpen）
+    (document.getElementById('documents-tiab-open') as HTMLButtonElement).click();
+    await flush();
+    expect(document.getElementById('documents-tiab')).not.toBeNull();
+
+    // 不正入力でプレビュー（onTiabPreview）→ インラインエラー
+    (document.getElementById('tiab-preview') as HTMLButtonElement).click();
+    await flush();
+    expect(document.getElementById('tiab-error')?.textContent).toContain(
+      'URL または ID を入力してください',
+    );
+
+    // 閉じる（onTiabClose）→ 導線ボタンへ戻る
+    (document.getElementById('tiab-close') as HTMLButtonElement).click();
+    await flush();
+    expect(store?.getState().documents.tiabImport.open).toBe(false);
+    expect(document.getElementById('documents-tiab')).toBeNull();
+    expect(document.getElementById('documents-tiab-open')).not.toBeNull();
+  });
+
+  test('#/documents の tiab-review 取り込み実行（onTiabApply）が batchUpdate まで配線されている', async () => {
+    const plan = {
+      phase: 'fulltext',
+      totalReferences: 1,
+      includeCount: 1,
+      items: [
+        {
+          refId: 'r1',
+          title: 'T1',
+          studyLabel: 'Smith (2020)',
+          status: 'update',
+          matchedFilenames: ['smith2020.pdf'],
+        },
+      ],
+      studyUpdates: [
+        {
+          studyId: 'study-1',
+          studyLabel: 'Smith (2020)',
+          registrationId: null,
+          createdAt: 't',
+          createdBy: 'e',
+          note: null,
+        },
+      ],
+      documentUpdates: [],
+    };
+    const stub = createWindowStub({
+      currentProject: PROJECT,
+      home: COUNTS_LOADED,
+      documents: {
+        records: [],
+        studies: [],
+        extractedStudyIds: [],
+        ignoredCandidateKeys: [],
+        loading: false,
+        loadError: null,
+        importing: false,
+        importRows: [],
+        selectedStudyIds: [],
+        mergeDialog: null,
+        merging: false,
+        mergeError: null,
+        tiabImport: {
+          open: true,
+          sheetInput: 'https://docs.google.com/spreadsheets/d/tiab-sheet/edit',
+          loading: false,
+          error: null,
+          plan,
+          applying: false,
+          result: null,
+        },
+      },
+    } as unknown as Partial<AppState>);
+    const { deps, fetchMock } = createTabRoutingDeps({
+      Documents: [[...SHEET_HEADERS.Documents], DOC_ROW],
+      Studies: [[...SHEET_HEADERS.Studies], STUDY_ROW],
+      ExtractionRuns: [[...SHEET_HEADERS.ExtractionRuns]],
+    });
+    const store = await bootstrapApp(asWindow(stub), deps);
+    stub.location.hash = '#/documents';
+    stub.fireHashChange();
+    await flush();
+
+    (document.getElementById('tiab-apply') as HTMLButtonElement).click();
+    await flush();
+    await flush();
+
+    // Studies GET（行番号解決）→ values:batchUpdate POST が飛ぶ
+    const batchUpdateCall = fetchMock.mock.calls.find(([input]) =>
+      String(input).includes('values:batchUpdate'),
+    );
+    expect(batchUpdateCall).toBeDefined();
+    expect(toastTexts()).toContain('tiab-review の採用リストを反映しました');
+    const tiab = store?.getState().documents.tiabImport;
+    expect(tiab?.result).toEqual({ studiesUpdated: 1, documentsUpdated: 0, unmatched: 0 });
+    expect(document.getElementById('tiab-result')?.textContent).toContain(
+      'study_label 1 件を更新し',
+    );
+  });
+
   test('#/protocol 入場で全 version を読み込む（0 件 → 新規フォーム表示）', async () => {
     const stub = createWindowStub({ currentProject: PROJECT, home: COUNTS_LOADED });
     const { deps, fetchMock } = createFakeDeps([[...SHEET_HEADERS.Protocol]]);

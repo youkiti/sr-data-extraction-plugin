@@ -4,7 +4,7 @@
 import type { DocumentRecord, DocumentRole, TextStatus } from '../../domain/document';
 import { DOCUMENT_ROLE_ORDER } from '../../domain/document';
 import { SHEET_HEADERS } from '../../domain/sheetsSchema';
-import { appendRows, getSheetValues, updateRow } from '../../lib/google/sheets';
+import { appendRows, batchUpdateRows, getSheetValues, updateRow } from '../../lib/google/sheets';
 import type { GoogleApiDeps } from '../../lib/google/types';
 
 const DOCUMENTS_TAB = 'Documents';
@@ -133,6 +133,29 @@ export async function appendDocuments(
   deps: GoogleApiDeps,
 ): Promise<void> {
   await appendRows(spreadsheetId, DOCUMENTS_TAB, docs.map(documentToRow), deps);
+}
+
+/**
+ * 複数の既存行（document_id 一致）をまとめて上書きする（1 read + values:batchUpdate 1 回。
+ * tiab-review 取り込みの pmid / doi 一括転記用 issue #68）。見つからない document_id は throw。空配列は no-op
+ */
+export async function updateDocuments(
+  spreadsheetId: string,
+  docs: readonly DocumentRecord[],
+  deps: GoogleApiDeps,
+): Promise<void> {
+  if (docs.length === 0) {
+    return;
+  }
+  const { rowIndexById } = await fetchDocuments(spreadsheetId, deps);
+  const updates = docs.map((doc) => {
+    const rowIndex = rowIndexById.get(doc.documentId);
+    if (rowIndex === undefined) {
+      throw new Error(`Documents に document_id "${doc.documentId}" の行がありません`);
+    }
+    return { rowIndex, row: documentToRow(doc) };
+  });
+  await batchUpdateRows(spreadsheetId, DOCUMENTS_TAB, updates, deps);
 }
 
 /** 既存行（document_id 一致）を丸ごと上書きする。見つからなければ throw */

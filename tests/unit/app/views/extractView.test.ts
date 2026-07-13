@@ -57,6 +57,10 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<ExtractViewCallba
         onUpdateMergeRegistration: jest.fn(),
         onConfirmMerge: jest.fn(),
         onCancelMerge: jest.fn(),
+        onTiabOpen: jest.fn(),
+        onTiabClose: jest.fn(),
+        onTiabPreview: jest.fn(),
+        onTiabApply: jest.fn(),
       },
       protocol: {
         onSubmit: jest.fn(),

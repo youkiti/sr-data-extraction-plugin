@@ -184,6 +184,39 @@ export async function updateRow(
 }
 
 /**
+ * 複数行を 1 API 呼び出しでまとめて上書きする（values:batchUpdate）。
+ * tiab-review 取り込み（issue #68）の study_label / pmid / doi 一括反映のように、
+ * 「多数行の上書きで 1 行ずつの PUT 往復が書き込みクォータ（60 回/分）に当たる」用途で使う。
+ * 各要素は updateRow と同じ意味論（rowIndex は 1 始まり・null は空文字変換）。空配列は no-op
+ */
+export async function batchUpdateRows(
+  spreadsheetId: string,
+  tab: string,
+  updates: readonly { rowIndex: number; row: readonly (string | number | boolean | null)[] }[],
+  deps: GoogleApiDeps,
+): Promise<void> {
+  if (updates.length === 0) {
+    return;
+  }
+  const url = `${API_BASE}/${spreadsheetId}/values:batchUpdate`;
+  await googleFetch(
+    url,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        valueInputOption: 'RAW',
+        data: updates.map((update) => ({
+          range: `${tab}!A${update.rowIndex}`,
+          values: [update.row.map((v) => (v === null ? '' : v))],
+        })),
+      }),
+    },
+    deps,
+  );
+}
+
+/**
  * 複数範囲を 1 API 呼び出しでまとめて取得する（values:batchGet）。
  * 進捗カウント（#/home + ガード）のように「多数タブの行数だけ欲しい」用途で
  * タブごとの GET 往復を避けるために使う。

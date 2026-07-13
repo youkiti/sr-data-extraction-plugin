@@ -3,9 +3,10 @@
 // S3 グルーピング UI（study グループ・role select・統合候補バナー・統合ダイアログ）を網羅する
 import { renderDocumentsView } from '../../../../src/app/views/documentsView';
 import type { DocumentsViewCallbacks, ViewContext } from '../../../../src/app/views/types';
-import { createInitialState, type AppState } from '../../../../src/app/store';
+import { createInitialState, type AppState, type TiabImportState } from '../../../../src/app/store';
 import type { DocumentRecord } from '../../../../src/domain/document';
 import type { StudyRecord } from '../../../../src/domain/study';
+import type { TiabImportPlan } from '../../../../src/features/documents/tiabReview';
 
 function makeStudy(overrides: Partial<StudyRecord> = {}): StudyRecord {
   return {
@@ -56,6 +57,10 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<DocumentsViewCall
     onUpdateMergeRegistration: jest.fn(),
     onConfirmMerge: jest.fn(),
     onCancelMerge: jest.fn(),
+    onTiabOpen: jest.fn(),
+    onTiabClose: jest.fn(),
+    onTiabPreview: jest.fn(),
+    onTiabApply: jest.fn(),
   };
   return {
     ctx: {
@@ -694,5 +699,198 @@ describe('renderDocumentsView', () => {
     const error = view.querySelector('#merge-dialog .documents__error');
     expect(error?.getAttribute('role')).toBe('alert');
     expect(error?.textContent).toBe('統合に失敗しました');
+  });
+});
+
+// tiab-review 採用リスト取り込みカード（issue #68・ui-states.md §3）
+describe('renderDocumentsView: tiab-review 取り込みカード', () => {
+  function tiabState(patch: Partial<TiabImportState> = {}): TiabImportState {
+    return {
+      open: true,
+      sheetInput: '',
+      loading: false,
+      error: null,
+      plan: null,
+      applying: false,
+      result: null,
+      ...patch,
+    };
+  }
+
+  function makePlan(overrides: Partial<TiabImportPlan> = {}): TiabImportPlan {
+    return {
+      phase: 'fulltext',
+      totalReferences: 3,
+      includeCount: 2,
+      items: [
+        {
+          refId: 'r1',
+          title: 'T1',
+          studyLabel: 'Smith (2020)',
+          status: 'update',
+          matchedFilenames: ['smith2020.pdf'],
+        },
+        {
+          refId: 'r2',
+          title: 'T2',
+          studyLabel: 'Doe (2021)',
+          status: 'unmatched',
+          matchedFilenames: [],
+        },
+      ],
+      studyUpdates: [makeStudy({ studyLabel: 'Smith (2020)' })],
+      documentUpdates: [],
+      ...overrides,
+    };
+  }
+
+  test('閉: 導線ボタンのみ表示し、クリックで onTiabOpen（取り込み中は disabled）', () => {
+    const { ctx, callbacks } = makeCtx();
+    const view = renderDocumentsView(makeState(), ctx);
+    const open = view.querySelector('#documents-tiab-open') as HTMLButtonElement;
+    expect(open).not.toBeNull();
+    expect(view.querySelector('#documents-tiab')).toBeNull();
+    open.click();
+    expect(callbacks.onTiabOpen).toHaveBeenCalledTimes(1);
+
+    const importing = renderDocumentsView(makeState({ importing: true }), ctx);
+    expect((importing.querySelector('#documents-tiab-open') as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  test('プロジェクト未選択なら導線ボタン自体を出さない', () => {
+    const { ctx } = makeCtx();
+    const view = renderDocumentsView(makeState({}, false), ctx);
+    expect(view.querySelector('#documents-tiab-open')).toBeNull();
+  });
+
+  test('開: 入力 + プレビュー / 閉じるボタン。プレビューは入力値を渡し、閉じるは onTiabClose', () => {
+    const { ctx, callbacks } = makeCtx();
+    const view = renderDocumentsView(
+      makeState({ tiabImport: tiabState({ sheetInput: 'restored' }) }),
+      ctx,
+    );
+    const input = view.querySelector('#tiab-sheet-input') as HTMLInputElement;
+    expect(input.value).toBe('restored');
+    input.value = 'https://docs.google.com/spreadsheets/d/abc/edit';
+    (view.querySelector('#tiab-preview') as HTMLButtonElement).click();
+    expect(callbacks.onTiabPreview).toHaveBeenCalledWith(
+      'https://docs.google.com/spreadsheets/d/abc/edit',
+    );
+    (view.querySelector('#tiab-close') as HTMLButtonElement).click();
+    expect(callbacks.onTiabClose).toHaveBeenCalledTimes(1);
+  });
+
+  test('読み込み中: #tiab-loading を表示しボタンを無効化する', () => {
+    const { ctx } = makeCtx();
+    const view = renderDocumentsView(makeState({ tiabImport: tiabState({ loading: true }) }), ctx);
+    expect(view.querySelector('#tiab-loading')?.textContent).toBe(
+      'tiab-review のシートを読み込んでいます…',
+    );
+    expect((view.querySelector('#tiab-preview') as HTMLButtonElement).disabled).toBe(true);
+    expect((view.querySelector('#tiab-close') as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  test('エラー: role=alert のインラインエラーを表示する', () => {
+    const { ctx } = makeCtx();
+    const view = renderDocumentsView(
+      makeState({ tiabImport: tiabState({ error: 'タブが見つかりません' }) }),
+      ctx,
+    );
+    const error = view.querySelector('#tiab-error');
+    expect(error?.getAttribute('role')).toBe('alert');
+    expect(error?.textContent).toBe('タブが見つかりません');
+  });
+
+  test('プレビュー: サマリ + 一覧テーブル + 状態バッジ + 実行ボタン（クリックで onTiabApply）', () => {
+    const { ctx, callbacks } = makeCtx();
+    const view = renderDocumentsView(makeState({ tiabImport: tiabState({ plan: makePlan() }) }), ctx);
+    expect(view.querySelector('#tiab-summary')?.textContent).toBe(
+      '最終判定 include 2 件（全文スクリーニングの判定・全 3 件中）: 反映 1 件 / 適用済み 0 件 / PDF 未取り込み 1 件',
+    );
+    const rows = view.querySelectorAll('#tiab-plan tbody tr');
+    expect(rows).toHaveLength(2);
+    expect(rows[0]?.textContent).toContain('Smith (2020)');
+    expect(rows[0]?.textContent).toContain('smith2020.pdf');
+    expect(rows[0]?.querySelector('.documents__tiab-status--update')?.textContent).toBe('反映');
+    expect(rows[1]?.textContent).toContain('—');
+    expect(rows[1]?.querySelector('.documents__tiab-status--unmatched')?.textContent).toBe(
+      'PDF 未取り込み',
+    );
+    const apply = view.querySelector('#tiab-apply') as HTMLButtonElement;
+    expect(apply.disabled).toBe(false);
+    apply.click();
+    expect(callbacks.onTiabApply).toHaveBeenCalledTimes(1);
+  });
+
+  test('プレビュー: TiAb 相のサマリ表記・反映 0 件は実行ボタンを無効化する', () => {
+    const { ctx } = makeCtx();
+    const plan = makePlan({
+      phase: 'tiab',
+      studyUpdates: [],
+      documentUpdates: [],
+      items: [
+        {
+          refId: 'r1',
+          title: 'T1',
+          studyLabel: 'Smith (2020)',
+          status: 'already',
+          matchedFilenames: ['smith2020.pdf'],
+        },
+      ],
+      includeCount: 1,
+    });
+    const view = renderDocumentsView(makeState({ tiabImport: tiabState({ plan }) }), ctx);
+    expect(view.querySelector('#tiab-summary')?.textContent).toContain(
+      'タイトル・抄録スクリーニングの判定',
+    );
+    expect(view.querySelector('.documents__tiab-status--already')?.textContent).toBe('適用済み');
+    expect((view.querySelector('#tiab-apply') as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  test('プレビュー: include 0 件は案内のみ（テーブル・実行ボタンなし）', () => {
+    const { ctx } = makeCtx();
+    const plan = makePlan({ items: [], includeCount: 0, studyUpdates: [], documentUpdates: [] });
+    const view = renderDocumentsView(makeState({ tiabImport: tiabState({ plan }) }), ctx);
+    expect(view.querySelector('#tiab-plan-empty')?.textContent).toContain(
+      'include の文献が見つかりませんでした',
+    );
+    expect(view.querySelector('#tiab-plan')).toBeNull();
+    expect(view.querySelector('#tiab-apply')).toBeNull();
+  });
+
+  test('反映中: 実行ボタンが「反映しています…」で disabled', () => {
+    const { ctx } = makeCtx();
+    const view = renderDocumentsView(
+      makeState({ tiabImport: tiabState({ plan: makePlan(), applying: true }) }),
+      ctx,
+    );
+    const apply = view.querySelector('#tiab-apply') as HTMLButtonElement;
+    expect(apply.textContent).toBe('反映しています…');
+    expect(apply.disabled).toBe(true);
+  });
+
+  test('結果: role=status で件数サマリを表示する（未紐付け 0 件なら注記なし）', () => {
+    const { ctx } = makeCtx();
+    const withUnmatched = renderDocumentsView(
+      makeState({
+        tiabImport: tiabState({ result: { studiesUpdated: 2, documentsUpdated: 3, unmatched: 1 } }),
+      }),
+      ctx,
+    );
+    const result = withUnmatched.querySelector('#tiab-result');
+    expect(result?.getAttribute('role')).toBe('status');
+    expect(result?.textContent).toBe(
+      'study_label 2 件を更新し、DOI / PMID を 3 文書に転記しました（PDF 未取り込み 1 件）',
+    );
+
+    const noUnmatched = renderDocumentsView(
+      makeState({
+        tiabImport: tiabState({ result: { studiesUpdated: 1, documentsUpdated: 0, unmatched: 0 } }),
+      }),
+      ctx,
+    );
+    expect(noUnmatched.querySelector('#tiab-result')?.textContent).toBe(
+      'study_label 1 件を更新し、DOI / PMID を 0 文書に転記しました',
+    );
   });
 });
