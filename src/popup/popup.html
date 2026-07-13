@@ -8,17 +8,24 @@
     <link rel="stylesheet" href="popup.css" />
   </head>
   <body>
+    <!-- 静的文言は data-i18n 系属性で表示言語に追従する（bootstrapPopup の localizeDom。issue #93）。
+         HTML 上の初期文言は ja（既定言語と一致） -->
     <main class="popup">
       <h1 class="popup__title">SR Data Extraction Plugin</h1>
       <p id="popup-build-date" class="popup__build-date"></p>
-      <p id="popup-status" class="popup__status">読み込み中…</p>
+      <p id="popup-status" class="popup__status" data-i18n="popup.loading">読み込み中…</p>
 
       <section class="popup__section" id="popup-auth" hidden>
-        <p class="popup__muted">
+        <p class="popup__muted" data-i18n="popup.authLead">
           プロジェクトは Google Sheets / Drive に保存されます。Google
           アカウントでログインしてください。
         </p>
-        <button type="button" id="login-button" class="popup__button popup__button--primary">
+        <button
+          type="button"
+          id="login-button"
+          class="popup__button popup__button--primary"
+          data-i18n="popup.login"
+        >
           Google でログイン
         </button>
         <p class="popup__form-error" id="login-error"></p>
@@ -27,26 +34,35 @@
       <div id="popup-projects" hidden>
         <section class="popup__section popup__account" id="popup-account">
           <p class="popup__muted popup__account-row">
-            ログイン中:
+            <span data-i18n="popup.loggedInAs">ログイン中:</span>
             <span id="popup-email" class="popup__account-email">—</span>
           </p>
-          <button type="button" id="logout-button" class="popup__button popup__button--text">
+          <button
+            type="button"
+            id="logout-button"
+            class="popup__button popup__button--text"
+            data-i18n="popup.logout"
+          >
             ログアウト
           </button>
         </section>
 
         <section class="popup__section" id="popup-recent-section" hidden>
-          <h2 class="popup__section-title">最近のプロジェクト</h2>
+          <h2 class="popup__section-title" data-i18n="popup.recentTitle">最近のプロジェクト</h2>
           <ul class="popup__recent" id="popup-recent"></ul>
         </section>
 
         <section class="popup__section">
-          <h2 class="popup__section-title">新規プロジェクト</h2>
-          <p class="popup__muted">
+          <h2 class="popup__section-title" data-i18n="popup.createTitle">新規プロジェクト</h2>
+          <p class="popup__muted" data-i18n="popup.createLead">
             データ抽出プロジェクトを作成します（スプレッドシート + Drive フォルダを生成）。
           </p>
           <form id="popup-create-form" class="popup__form">
-            <label class="popup__visually-hidden" for="popup-create-title">
+            <label
+              class="popup__visually-hidden"
+              for="popup-create-title"
+              data-i18n="popup.createTitleLabel"
+            >
               プロジェクトタイトル
             </label>
             <input
@@ -54,16 +70,19 @@
               id="popup-create-title"
               class="popup__input"
               placeholder="プロジェクトタイトル"
+              data-i18n-placeholder="popup.createTitleLabel"
             />
-            <button type="submit" class="popup__button">作成</button>
+            <button type="submit" class="popup__button" data-i18n="popup.createSubmit">作成</button>
           </form>
           <p class="popup__form-error" id="popup-create-error"></p>
         </section>
 
         <section class="popup__section">
-          <h2 class="popup__section-title">スプレッドシート ID / URL で開く</h2>
+          <h2 class="popup__section-title" data-i18n="popup.openTitle">
+            スプレッドシート ID / URL で開く
+          </h2>
           <form id="popup-open-form" class="popup__form">
-            <label class="popup__visually-hidden" for="popup-open-id">
+            <label class="popup__visually-hidden" for="popup-open-id" data-i18n="popup.openIdLabel">
               スプレッドシート ID または URL
             </label>
             <input
@@ -71,14 +90,20 @@
               id="popup-open-id"
               class="popup__input"
               placeholder="スプレッドシート ID または URL を貼り付け"
+              data-i18n-placeholder="popup.openIdPlaceholder"
             />
-            <button type="submit" class="popup__button">開く</button>
+            <button type="submit" class="popup__button" data-i18n="popup.openSubmit">開く</button>
           </form>
           <p class="popup__form-error" id="popup-open-error"></p>
         </section>
       </div>
 
-      <button type="button" id="open-options" class="popup__button popup__button--text">
+      <button
+        type="button"
+        id="open-options"
+        class="popup__button popup__button--text"
+        data-i18n="popup.openOptions"
+      >
         設定を開く
       </button>
     </main>

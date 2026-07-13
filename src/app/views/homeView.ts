@@ -6,19 +6,21 @@
 // - reviewer 系（reviewer_with_ai / reviewer_independent / adjudicator）: 縮退版 Home
 //   （プロジェクト名 + フォルダアクセス付与ステップ + 検証への導線のみ。進捗カウントは見せない §3）
 import type { ReviewerAssignment, ReviewerRole, ReviewMode } from '../../domain/reviewer';
+import { t, type MessageKey } from '../../lib/i18n';
 import { el, svgIcon } from '../ui/dom';
 import type { AppState, ReviewerFormInput } from '../store';
 import type { ViewContext } from './types';
 
-const ROLE_LABELS: Record<ReviewerRole, string> = {
-  reviewer: 'レビュアー',
-  adjudicator: '裁定者',
-  revoked: '解除済み',
+// 表示言語に追従させるため、ラベルは描画時に t() で解決する（キー対応表のみ固定。issue #93）
+const ROLE_LABEL_KEYS: Record<ReviewerRole, MessageKey> = {
+  reviewer: 'home.roleReviewer',
+  adjudicator: 'home.roleAdjudicator',
+  revoked: 'home.roleRevoked',
 };
 
-const MODE_LABELS: Record<ReviewMode, string> = {
-  with_ai: '① AI の結果をレビュー',
-  independent: '② AI 抜きでレビュー',
+const MODE_LABEL_KEYS: Record<ReviewMode, MessageKey> = {
+  with_ai: 'home.modeWithAi',
+  independent: 'home.modeIndependent',
 };
 
 function summaryItems(label: string, value: number): HTMLElement[] {
@@ -41,14 +43,15 @@ const TRASH_ICON = [
 ];
 
 function renderReviewerRow(row: ReviewerAssignment, ctx: ViewContext): HTMLElement {
-  const modeText = row.role === 'reviewer' && row.reviewMode !== null ? MODE_LABELS[row.reviewMode] : '–';
+  const modeText =
+    row.role === 'reviewer' && row.reviewMode !== null ? t(MODE_LABEL_KEYS[row.reviewMode]) : '–';
   // ごみ箱アイコン = 登録解除（削除）
   const revoke = el('button', {
     className: 'reviewers__revoke reviewers__icon-button',
     attributes: {
       type: 'button',
-      'aria-label': `${row.email} を解除`,
-      title: '解除（削除）',
+      'aria-label': t('home.revokeAria', { email: row.email }),
+      title: t('home.revokeTitle'),
     },
   }) as HTMLButtonElement;
   revoke.append(svgIcon(TRASH_ICON));
@@ -59,8 +62,8 @@ function renderReviewerRow(row: ReviewerAssignment, ctx: ViewContext): HTMLEleme
     className: 'reviewers__invite reviewers__icon-button',
     attributes: {
       type: 'button',
-      'aria-label': `${row.email} へのレビュー依頼文をコピー`,
-      title: 'レビュー依頼文をコピー',
+      'aria-label': t('home.copyInviteAria', { email: row.email }),
+      title: t('home.copyInviteTitle'),
     },
   }) as HTMLButtonElement;
   copyInvite.append(svgIcon(COPY_ICON));
@@ -68,7 +71,7 @@ function renderReviewerRow(row: ReviewerAssignment, ctx: ViewContext): HTMLEleme
   copyInvite.addEventListener('click', () => ctx.home.onCopyInvite(row.email));
   return el('tr', { className: 'reviewers__row' }, [
     el('td', { text: row.email }),
-    el('td', { text: ROLE_LABELS[row.role] }),
+    el('td', { text: t(ROLE_LABEL_KEYS[row.role]) }),
     el('td', { text: modeText }),
     el('td', { className: 'reviewers__actions' }, [revoke, copyInvite]),
   ]);
@@ -78,13 +81,13 @@ function renderReviewerRow(row: ReviewerAssignment, ctx: ViewContext): HTMLEleme
 function renderReviewerModeConfirm(pending: ReviewerFormInput, ctx: ViewContext): HTMLElement {
   const confirm = el('button', {
     id: 'reviewer-mode-confirm-ok',
-    text: '続行して変更する',
+    text: t('home.modeConfirmOk'),
     attributes: { type: 'button' },
   });
   confirm.addEventListener('click', () => ctx.home.onConfirmReviewerChange());
   const cancel = el('button', {
     id: 'reviewer-mode-confirm-cancel',
-    text: 'キャンセル',
+    text: t('common.cancel'),
     attributes: { type: 'button' },
   });
   cancel.addEventListener('click', () => ctx.home.onCancelReviewerChange());
@@ -96,9 +99,9 @@ function renderReviewerModeConfirm(pending: ReviewerFormInput, ctx: ViewContext)
       attributes: { role: 'alertdialog', 'aria-labelledby': 'reviewer-mode-confirm-title' },
     },
     [
-      el('h3', { id: 'reviewer-mode-confirm-title', text: 'レビューモードを変更しますか？' }),
+      el('h3', { id: 'reviewer-mode-confirm-title', text: t('home.modeConfirmTitle') }),
       el('p', {
-        text: `${pending.email} は既に登録済みです。モード変更（盲検の前提）は事後的に盲検を破る可能性があります。`,
+        text: t('home.modeConfirmBody', { email: pending.email }),
       }),
       el('div', { className: 'reviewers__confirm-actions' }, [confirm, cancel]),
     ],
@@ -110,23 +113,23 @@ function renderReviewerForm(ctx: ViewContext): HTMLFormElement {
   const form = el('form', { id: 'reviewer-add-form', className: 'reviewers__form' }) as HTMLFormElement;
   const emailInput = el('input', {
     id: 'reviewer-email',
-    attributes: { type: 'email', 'aria-label': '追加するレビュアーの email' },
+    attributes: { type: 'email', 'aria-label': t('home.addReviewerEmailAria') },
   }) as HTMLInputElement;
   const roleSelect = el('select', {
     id: 'reviewer-role',
-    attributes: { 'aria-label': '役割（role）' },
+    attributes: { 'aria-label': t('home.addReviewerRoleAria') },
   }) as HTMLSelectElement;
   roleSelect.append(
-    el('option', { text: ROLE_LABELS.reviewer, attributes: { value: 'reviewer' } }),
-    el('option', { text: ROLE_LABELS.adjudicator, attributes: { value: 'adjudicator' } }),
+    el('option', { text: t(ROLE_LABEL_KEYS.reviewer), attributes: { value: 'reviewer' } }),
+    el('option', { text: t(ROLE_LABEL_KEYS.adjudicator), attributes: { value: 'adjudicator' } }),
   );
   const modeSelect = el('select', {
     id: 'reviewer-mode',
-    attributes: { 'aria-label': 'レビューモード（review_mode）' },
+    attributes: { 'aria-label': t('home.addReviewerModeAria') },
   }) as HTMLSelectElement;
   modeSelect.append(
-    el('option', { text: MODE_LABELS.with_ai, attributes: { value: 'with_ai' } }),
-    el('option', { text: MODE_LABELS.independent, attributes: { value: 'independent' } }),
+    el('option', { text: t(MODE_LABEL_KEYS.with_ai), attributes: { value: 'with_ai' } }),
+    el('option', { text: t(MODE_LABEL_KEYS.independent), attributes: { value: 'independent' } }),
   );
   // 裁定者には review_mode の意味がないため、role='adjudicator' の間は無効化する
   roleSelect.addEventListener('change', () => {
@@ -135,10 +138,11 @@ function renderReviewerForm(ctx: ViewContext): HTMLFormElement {
 
   const submit = el('button', {
     id: 'reviewer-add-submit',
-    text: '追加',
+    text: t('home.addSubmit'),
     attributes: { type: 'submit' },
   });
   form.append(
+    // email / role / review_mode はシートの列名（コード用語）のため翻訳しない
     el('label', { className: 'reviewers__form-field' }, [el('span', { text: 'email' }), emailInput]),
     el('label', { className: 'reviewers__form-field' }, [el('span', { text: 'role' }), roleSelect]),
     el('label', { className: 'reviewers__form-field' }, [el('span', { text: 'review_mode' }), modeSelect]),
@@ -159,18 +163,18 @@ function renderReviewerForm(ctx: ViewContext): HTMLFormElement {
 function renderReviewerAdminCard(state: AppState, ctx: ViewContext): HTMLElement {
   const { reviewers } = state;
   const children: Array<HTMLElement | string> = [
-    el('h3', { text: 'レビュアー管理' }),
+    el('h3', { text: t('home.reviewersTitle') }),
     el('p', {
       className: 'view__notice',
-      text: '追加すると、対象アカウントへスプレッドシート（編集可）とプロジェクトフォルダ（閲覧）を自動で共有します。共有に失敗した場合は登録だけ残し、手動共有の案内を表示します。',
+      text: t('home.reviewersNotice'),
     }),
   ];
   if (reviewers.loading) {
-    children.push(el('p', { id: 'home-reviewers-loading', text: '読み込んでいます…' }));
+    children.push(el('p', { id: 'home-reviewers-loading', text: t('home.reviewersLoading') }));
   } else if (reviewers.loadError !== null) {
     const reload = el('button', {
       id: 'home-reviewers-reload',
-      text: '再読み込み',
+      text: t('common.reload'),
       attributes: { type: 'button' },
     });
     reload.addEventListener('click', () => ctx.home.onReloadReviewers());
@@ -179,14 +183,14 @@ function renderReviewerAdminCard(state: AppState, ctx: ViewContext): HTMLElement
         id: 'home-reviewers-error',
         className: 'home__error',
         attributes: { role: 'alert' },
-        text: `一覧を読み込めませんでした: ${reviewers.loadError}`,
+        text: t('home.reviewersError', { reason: reviewers.loadError }),
       }),
       reload,
     );
   } else {
     const rows = reviewers.assignments ?? [];
     if (rows.length === 0) {
-      children.push(el('p', { id: 'home-reviewers-empty', text: 'まだレビュアーが登録されていません。' }));
+      children.push(el('p', { id: 'home-reviewers-empty', text: t('home.reviewersEmpty') }));
     } else {
       children.push(
         el('table', { id: 'home-reviewers-list', className: 'reviewers__table' }, [
@@ -195,7 +199,7 @@ function renderReviewerAdminCard(state: AppState, ctx: ViewContext): HTMLElement
               el('th', { text: 'email' }),
               el('th', { text: 'role' }),
               el('th', { text: 'review_mode' }),
-              el('th', { text: '操作' }),
+              el('th', { text: t('home.reviewersActions') }),
             ]),
           ]),
           el('tbody', {}, rows.map((row) => renderReviewerRow(row, ctx))),
@@ -223,26 +227,26 @@ function renderReviewerAdminCard(state: AppState, ctx: ViewContext): HTMLElement
 /** owner 用の Home（既存の進捗サマリ + レビュアー管理カード） */
 function renderOwnerHome(state: AppState, ctx: ViewContext): HTMLElement {
   const { counts, home } = state;
-  const projectName = state.currentProject?.name ?? '未選択';
+  const projectName = state.currentProject?.name ?? t('home.projectNone');
   const children: Array<HTMLElement | string> = [
-    el('h2', { text: 'プロジェクト概要' }),
-    el('p', { className: 'view__lead', text: `プロジェクト: ${projectName}` }),
+    el('h2', { text: t('home.title') }),
+    el('p', { className: 'view__lead', text: t('app.statusProject', { name: projectName }) }),
     // プロジェクト切替: S1 プロジェクト選択ページへ同一タブで遷移する（新規タブは開かない）
     el('p', {}, [
       el('a', {
         id: 'home-switch-project',
-        text: '別のプロジェクトを開く',
+        text: t('app.switchProject'),
         attributes: { href: '../popup/popup.html' },
       }),
     ]),
   ];
 
   if (home.countsLoading) {
-    children.push(el('p', { id: 'home-counts-loading', text: '進捗を読み込んでいます…' }));
+    children.push(el('p', { id: 'home-counts-loading', text: t('home.countsLoading') }));
   } else if (home.countsError !== null) {
     const reload = el('button', {
       id: 'home-counts-reload',
-      text: '再読み込み',
+      text: t('common.reload'),
       attributes: { type: 'button' },
     });
     reload.addEventListener('click', () => ctx.home.onReload());
@@ -251,18 +255,18 @@ function renderOwnerHome(state: AppState, ctx: ViewContext): HTMLElement {
         id: 'home-counts-error',
         className: 'home__error',
         attributes: { role: 'alert' },
-        text: `進捗を読み込めませんでした: ${home.countsError}`,
+        text: t('home.countsError', { reason: home.countsError }),
       }),
       reload,
     );
   } else {
     children.push(
       el('dl', { className: 'home__summary' }, [
-        ...summaryItems('文献数', counts.documents),
-        ...summaryItems('プロトコル版数', counts.protocolVersions),
-        ...summaryItems('表のデザインの確定版数', counts.schemaVersions),
-        ...summaryItems('AI 抽出済み Evidence 行数', counts.evidenceRows),
-        ...summaryItems('データ行数（StudyData + ResultsData）', counts.dataRows),
+        ...summaryItems(t('home.summaryDocuments'), counts.documents),
+        ...summaryItems(t('home.summaryProtocolVersions'), counts.protocolVersions),
+        ...summaryItems(t('home.summarySchemaVersions'), counts.schemaVersions),
+        ...summaryItems(t('home.summaryEvidenceRows'), counts.evidenceRows),
+        ...summaryItems(t('home.summaryDataRows'), counts.dataRows),
       ]),
     );
   }
@@ -276,14 +280,14 @@ function renderOwnerHome(state: AppState, ctx: ViewContext): HTMLElement {
 
 /** reviewer 系ロール用の縮退版 Home（§3・§7.2）。進捗カウントは見せない */
 function renderReviewerHome(state: AppState, ctx: ViewContext): HTMLElement {
-  const projectName = state.currentProject?.name ?? '未選択';
+  const projectName = state.currentProject?.name ?? t('home.projectNone');
   const children: Array<HTMLElement | string> = [
-    el('h2', { text: 'プロジェクト概要' }),
-    el('p', { className: 'view__lead', text: `プロジェクト: ${projectName}` }),
+    el('h2', { text: t('home.title') }),
+    el('p', { className: 'view__lead', text: t('app.statusProject', { name: projectName }) }),
     el('p', {}, [
       el('a', {
         id: 'home-switch-project',
-        text: '別のプロジェクトを開く',
+        text: t('app.switchProject'),
         attributes: { href: '../popup/popup.html' },
       }),
     ]),
@@ -292,19 +296,19 @@ function renderReviewerHome(state: AppState, ctx: ViewContext): HTMLElement {
   if (!state.role.folderAccessGranted) {
     const grant = el('button', {
       id: 'home-grant-folder-access',
-      text: 'プロジェクトフォルダへのアクセスを付与',
+      text: t('home.grantFolderAccess'),
       attributes: { type: 'button' },
     }) as HTMLButtonElement;
     grant.disabled = state.role.folderAccessChecking;
     grant.addEventListener('click', () => ctx.home.onGrantFolderAccess());
     const stepChildren: Array<HTMLElement | string> = [
       el('p', {
-        text: '検証を始める前に、プロジェクトの Drive フォルダへのアクセスを付与してください（PDF・抽出テキストを読み込むために必要です）。',
+        text: t('home.folderAccessLead'),
       }),
       grant,
     ];
     if (state.role.folderAccessChecking) {
-      stepChildren.push(el('p', { id: 'home-folder-access-checking', text: '確認しています…' }));
+      stepChildren.push(el('p', { id: 'home-folder-access-checking', text: t('home.folderAccessChecking') }));
     }
     if (state.role.folderAccessError !== null) {
       stepChildren.push(
@@ -312,16 +316,16 @@ function renderReviewerHome(state: AppState, ctx: ViewContext): HTMLElement {
           id: 'home-folder-access-error',
           className: 'home__error',
           attributes: { role: 'alert' },
-          text: `アクセスを確認できませんでした: ${state.role.folderAccessError}`,
+          text: t('home.folderAccessError', { reason: state.role.folderAccessError }),
         }),
       );
     }
     children.push(el('div', { id: 'home-folder-access', className: 'home__folder-access' }, stepChildren));
   } else {
     children.push(
-      el('p', { id: 'home-folder-access-granted', text: 'プロジェクトフォルダへのアクセスは付与済みです。' }),
+      el('p', { id: 'home-folder-access-granted', text: t('home.folderAccessGranted') }),
       el('p', {}, [
-        el('a', { id: 'home-go-verify', text: '検証を開始する', attributes: { href: '#/verify' } }),
+        el('a', { id: 'home-go-verify', text: t('home.goVerify'), attributes: { href: '#/verify' } }),
       ]),
     );
   }

@@ -13,6 +13,7 @@ import {
   setCurrentProject,
 } from '../../../src/features/project/projectStore';
 import type { GoogleApiDeps } from '../../../src/lib/google/types';
+import { setUiLanguage } from '../../../src/lib/i18n';
 
 const POPUP_TEMPLATE = `
   <main class="popup">
@@ -427,5 +428,88 @@ describe('createChromePopupDeps', () => {
   test('google.getAccessToken は interactive=true でトークンを返す', async () => {
     const deps = createChromePopupDeps();
     await expect(deps.google.getAccessToken()).resolves.toBe('mock-token');
+  });
+});
+
+describe('bootstrapPopup（表示言語 en。issue #93）', () => {
+  // data-i18n 系属性を持つテンプレート（popup.html の該当部分と同じ構成）
+  const POPUP_TEMPLATE_I18N = `
+    <main class="popup">
+      <p id="popup-status" data-i18n="popup.loading">読み込み中…</p>
+      <section id="popup-auth" hidden>
+        <button id="login-button" type="button" data-i18n="popup.login">Google でログイン</button>
+        <p id="login-error"></p>
+      </section>
+      <div id="popup-projects" hidden>
+        <span data-i18n="popup.loggedInAs">ログイン中:</span>
+        <span id="popup-email">—</span>
+        <button id="logout-button" type="button" data-i18n="popup.logout">ログアウト</button>
+        <section id="popup-recent-section" hidden>
+          <ul id="popup-recent"></ul>
+        </section>
+        <form id="popup-create-form">
+          <input
+            type="text"
+            id="popup-create-title"
+            placeholder="プロジェクトタイトル"
+            data-i18n-placeholder="popup.createTitleLabel"
+          />
+          <button type="submit" data-i18n="popup.createSubmit">作成</button>
+        </form>
+        <p id="popup-create-error"></p>
+        <form id="popup-open-form">
+          <input type="text" id="popup-open-id" />
+          <button type="submit">開く</button>
+        </form>
+        <p id="popup-open-error"></p>
+      </div>
+      <button id="open-options" type="button" data-i18n="popup.openOptions">設定を開く</button>
+    </main>
+  `;
+
+  beforeEach(() => {
+    const chromeMock = installChromeMock();
+    chromeMock.storage.local.data['settings.uiLanguage'] = 'en';
+    document.body.innerHTML = POPUP_TEMPLATE_I18N;
+    document.documentElement.lang = 'ja';
+  });
+
+  afterEach(() => {
+    setUiLanguage('ja');
+  });
+
+  test('保存済み言語（en）で静的文言と <html lang> を解決する', async () => {
+    await bootstrapPopup(document, makeDeps({ isAuthenticated: jest.fn(async () => false) }));
+    expect(document.documentElement.lang).toBe('en');
+    expect(el('login-button').textContent).toBe('Sign in with Google');
+    expect(el('open-options').textContent).toBe('Open settings');
+    expect(el<HTMLInputElement>('popup-create-title').placeholder).toBe('Project title');
+    // 動的ステータスも en
+    expect(el('popup-status').textContent).toBe('Sign-in required.');
+  });
+
+  test('ログイン済みステータス・失敗文言も en で表示する', async () => {
+    const deps = makeDeps({
+      isAuthenticated: jest.fn(async () => true),
+      profile: { getProfileUserInfo: async () => ({ email: '', id: '' }) },
+    });
+    await bootstrapPopup(document, deps);
+    expect(el('popup-status').textContent).toBe(
+      'Create a new project or open one from a spreadsheet ID.',
+    );
+    expect(el('popup-email').textContent).toBe('(unknown)');
+  });
+
+  test('ログイン失敗の文言は en で表示する', async () => {
+    const deps = makeDeps({
+      isAuthenticated: jest.fn(async () => false),
+      signIn: jest.fn(async () => false),
+    });
+    await bootstrapPopup(document, deps);
+    el<HTMLButtonElement>('login-button').click();
+    await flush();
+    expect(el('login-error').textContent).toBe(
+      'Sign-in failed. Make sure a Google account is added to your browser.',
+    );
   });
 });

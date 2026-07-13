@@ -18,16 +18,24 @@
           <p id="app-build-date" class="app__build-date"></p>
         </div>
         <p id="app-status" class="app__status">読み込み中…</p>
-        <a id="app-open-popup" href="../popup/popup.html" hidden>プロジェクト選択を開く</a>
-        <a id="app-open-options" class="app__options-link" href="#/options" title="設定を開く" aria-label="設定を開く">
+        <a id="app-open-popup" href="../popup/popup.html" data-i18n="app.openPopup" hidden>プロジェクト選択を開く</a>
+        <a
+          id="app-open-options"
+          class="app__options-link"
+          href="#/options"
+          title="設定を開く"
+          aria-label="設定を開く"
+          data-i18n-title="app.openOptionsTitle"
+          data-i18n-aria-label="app.openOptionsTitle"
+        >
           <span class="app__options-icon" aria-hidden="true">⚙</span>
-          <span class="app__options-text">設定</span>
+          <span class="app__options-text" data-i18n="app.openOptions">設定</span>
         </a>
-        <p id="app-context" class="app__context" aria-live="polite">起動中</p>
+        <p id="app-context" class="app__context" aria-live="polite" data-i18n="app.contextStarting">起動中</p>
       </header>
       <div class="app__body">
         <aside class="app__sidebar">
-          <nav aria-label="ステップナビゲーション">
+          <nav aria-label="ステップナビゲーション" data-i18n-aria-label="app.navAriaLabel">
             <ul id="app-nav" class="app__nav"></ul>
           </nav>
         </aside>

@@ -20,6 +20,8 @@ import {
   type ProfileDeps,
 } from '../lib/google/identity';
 import type { GoogleApiDeps } from '../lib/google/types';
+import { getUiLanguage, localizeDom, setUiLanguage, t } from '../lib/i18n';
+import { loadUiLanguage } from '../lib/storage/settingsStore';
 
 export interface PopupDeps {
   /** メインビュー（app.html）へ遷移する（S1 はフルページ表示のため同一タブを書き換える） */
@@ -138,6 +140,11 @@ export async function bootstrapPopup(doc: Document, deps: PopupDeps): Promise<vo
   if (!els) {
     return;
   }
+  // 表示言語（issue #93）: 保存値を反映してから静的文言（data-i18n 系属性）を解決する。
+  // Popup 自体に言語セレクタは無く、切替は Options で行う（次回表示時に反映）
+  setUiLanguage(await loadUiLanguage());
+  doc.documentElement.lang = getUiLanguage();
+  localizeDom(doc);
   // アプリ名の下にビルド日を表示する（要素が無い環境では何もしない）
   const buildDateEl = doc.getElementById('popup-build-date');
   if (buildDateEl) {
@@ -159,7 +166,7 @@ async function refresh(doc: Document, els: PopupElements, deps: PopupDeps): Prom
   els.projects.hidden = !authed;
 
   if (!authed) {
-    els.status.textContent = 'ログインが必要です。';
+    els.status.textContent = t('popup.statusLoginRequired');
     return;
   }
 
@@ -167,17 +174,15 @@ async function refresh(doc: Document, els: PopupElements, deps: PopupDeps): Prom
   const recent = await loadRecentProjects();
   renderRecent(doc, els, recent, deps);
   els.status.textContent =
-    recent.length > 0
-      ? '最近のプロジェクトから選ぶか、新しく作成してください。'
-      : '新しいプロジェクトを作成するか、スプレッドシート ID から開いてください。';
+    recent.length > 0 ? t('popup.statusPickRecent') : t('popup.statusCreateOrOpen');
 }
 
 async function renderAccount(els: PopupElements, deps: PopupDeps): Promise<void> {
   try {
     const email = await getCurrentUserEmail(deps.profile);
-    els.email.textContent = email ?? '(不明)';
+    els.email.textContent = email ?? t('popup.emailUnknown');
   } catch {
-    els.email.textContent = '(不明)';
+    els.email.textContent = t('popup.emailUnknown');
   }
 }
 
@@ -217,8 +222,7 @@ function bindLoginButton(doc: Document, els: PopupElements, deps: PopupDeps): vo
       els.loginButton.disabled = false;
       if (!ok) {
         // 状態 D（ログイン失敗）
-        els.loginError.textContent =
-          'ログインに失敗しました。ブラウザに Google アカウントが追加されているか確認してください。';
+        els.loginError.textContent = t('popup.loginFailed');
         return;
       }
       await refresh(doc, els, deps);
@@ -247,7 +251,7 @@ function bindCreateForm(els: PopupElements, deps: PopupDeps): void {
     event.preventDefault();
     els.createError.textContent = '';
     els.createSubmit.disabled = true;
-    els.createSubmit.textContent = '作成中…';
+    els.createSubmit.textContent = t('popup.creating');
     void createNewProject(els.createTitle.value, { google: deps.google, profile: deps.profile })
       .then(() => {
         els.createTitle.value = '';
@@ -258,7 +262,7 @@ function bindCreateForm(els: PopupElements, deps: PopupDeps): void {
       })
       .finally(() => {
         els.createSubmit.disabled = false;
-        els.createSubmit.textContent = '作成';
+        els.createSubmit.textContent = t('popup.createSubmit');
       });
   });
 }
