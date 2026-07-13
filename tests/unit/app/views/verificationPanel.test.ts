@@ -15,6 +15,7 @@ import type { SchemaField } from '../../../../src/domain/schemaField';
 import type { StudyRecord } from '../../../../src/domain/study';
 import type { TextLayerPage } from '../../../../src/domain/textLayer';
 import { cellKeyOf, emptyCellState } from '../../../../src/features/verification/cellState';
+import { setUiLanguage } from '../../../../src/lib/i18n';
 import type { VerificationCell } from '../../../../src/features/verification/cells';
 import type { FocusUnit } from '../../../../src/features/verification/focusUnits';
 import * as highlightsModule from '../../../../src/features/verification/highlights';
@@ -2438,6 +2439,45 @@ describe('renderCachedVerificationPanel', () => {
   test('disposeVerificationPanelCache は空でも安全', async () => {
     disposeVerificationPanelCache();
     disposeVerificationPanelCache();
+  });
+
+  test('表示言語が切り替わったら同じ VerificationData 参照でも作り直す（issue #93）', async () => {
+    const data = makeData();
+    const onDecision = jest.fn();
+    const first = renderCachedVerificationPanel({
+      data,
+      onDecision,
+      now: () => 't',
+      renderPage,
+      layoutMode: 'list',
+    });
+    expect(first.textContent).toContain('承認 (a)');
+    try {
+      setUiLanguage('en');
+      // 言語切替では data の参照が変わらない（#/verify 再入場も alreadyShown ガードで再読込しない）が、
+      // 言語スタンプの不一致でキャッシュを破棄し、新言語で描画し直す
+      const second = renderCachedVerificationPanel({
+        data,
+        onDecision,
+        now: () => 't',
+        renderPage,
+        layoutMode: 'list',
+      });
+      expect(second).not.toBe(first);
+      expect(second.textContent).toContain('Accept (a)');
+      expect(second.textContent).not.toContain('承認 (a)');
+      // 同一言語のままの再描画は同一 DOM を返す（キャッシュ維持）
+      const third = renderCachedVerificationPanel({
+        data,
+        onDecision,
+        now: () => 't',
+        renderPage,
+        layoutMode: 'list',
+      });
+      expect(third).toBe(second);
+    } finally {
+      setUiLanguage('ja');
+    }
   });
 
   test('新規パネル生成直後に初期フォーカスセルを scrollIntoView する', async () => {
