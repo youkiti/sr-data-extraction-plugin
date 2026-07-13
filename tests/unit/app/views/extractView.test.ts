@@ -228,6 +228,7 @@ function makeRun(overrides: Partial<ExtractionRun> = {}): ExtractionRun {
     tokensOut: null,
     costEstimate: null,
     fieldIds: null,
+    warnings: null,
     ...overrides,
   };
 }
@@ -768,6 +769,81 @@ describe('完了サマリ', () => {
     expect(retry?.disabled).toBe(false);
     retry?.click();
     expect(callbacks.onRetryStudy).toHaveBeenCalledWith('study-2');
+  });
+
+  test('arm 欠落警告（issue #106）: done でも黄バナー #extract-arm-warnings を出し、study_label と項目名で欠落を列挙する', () => {
+    const { root } = render(
+      makeState({
+        studies: [makeStudy('study-1', 'Smith 2020')],
+        fields: [
+          makeField({ fieldId: 'f-arm', fieldName: 'sample_size', entityLevel: 'arm' }),
+        ],
+        extract: {
+          run: makeRun(),
+          studyRows: [makeStudyRow({ studyId: 'study-1', status: 'done' })],
+          armWarnings: [
+            {
+              kind: 'arm_completeness',
+              studyId: 'study-1',
+              section: null,
+              expectedArmKeys: ['arm:1', 'arm:2'],
+              missingItems: [
+                { armKey: 'arm:2', fieldId: 'f-arm' },
+                { armKey: 'arm:2', fieldId: 'f-unknown' }, // 現行スキーマに無い id は素通し
+              ],
+            },
+          ],
+        },
+      }),
+    );
+    const banner = root.querySelector('#extract-arm-warnings');
+    expect(banner?.getAttribute('role')).toBe('status');
+    expect(banner?.textContent).toContain('群（arm）の欠落の可能性が 1 件検出されました');
+    expect(banner?.textContent).toContain(
+      'Smith 2020: arm:2 × sample_size、arm:2 × f-unknown が応答に含まれていません',
+    );
+    // done のバナーと共存する（status は warning で変わらない設計判断）
+    expect(root.querySelector('#extract-run-done')).not.toBeNull();
+  });
+
+  test('arm 欠落警告: partial_failure と共存し、section 付きバッチは scope を併記。スキーマ未読込でも id で表示する', () => {
+    const { root } = render(
+      makeState({
+        studies: [makeStudy('study-2')],
+        fields: null,
+        extract: {
+          run: makeRun({ status: 'partial_failure' }),
+          studyRows: [makeStudyRow({ studyId: 'study-2', status: 'failed', detail: 'x' })],
+          armWarnings: [
+            {
+              kind: 'arm_completeness',
+              studyId: 'study-unknown', // studies に無い study は id のまま表示
+              section: 'population',
+              expectedArmKeys: ['arm:1', 'arm:2'],
+              missingItems: [{ armKey: 'arm:2', fieldId: 'f-arm' }],
+            },
+          ],
+        },
+      }),
+    );
+    const banner = root.querySelector('#extract-arm-warnings');
+    expect(root.querySelector('#extract-partial-failure')).not.toBeNull();
+    expect(banner?.textContent).toContain(
+      'study-unknown（section: population）: arm:2 × f-arm が応答に含まれていません',
+    );
+  });
+
+  test('arm 欠落警告が 0 件ならバナーを出さない', () => {
+    const { root } = render(
+      makeState({
+        extract: {
+          run: makeRun(),
+          studyRows: [makeStudyRow({ studyId: 'study-1', status: 'done' })],
+          armWarnings: [],
+        },
+      }),
+    );
+    expect(root.querySelector('#extract-arm-warnings')).toBeNull();
   });
 
   test('再試行中は再試行・実行ボタンとも無効化する', () => {

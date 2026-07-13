@@ -1,0 +1,156 @@
+// arm completeness チェック（issue #106）: AI 応答の「arm 欠落」を機械的に検出する。
+// 背景: arm レベル項目の completeness（全 arm × 全項目の列挙）はプロンプト文言（issue #97）
+// でしか担保されておらず、モデルが arm を丸ごと返さないと S8 の検証導線にも現れない
+// silent omission になる。本モジュールは executeRun のバッチ後処理から呼ばれ、
+// 「応答内の自己整合（arm:n が出現するのに項目が揃っていない）」を基準に欠落を検出する。
+// ArmStructures が確定済みの study では確定 arm キーとの突合も行う。
+//
+// 設計判断（issue #106 受け入れ条件 3）: 「真の arm 数」は事前に既知でないため、
+// 正当な理由で arm が現れないケース（単群試験・not_reported を返さないモデル挙動等）と
+// 真の欠落を機械的に区別できない。過検出で partial_failure（再試行対象）に倒すと
+// かえって信頼を損なうため、検出結果は **warning に留める**（ExtractionRuns / LLMApiLog への
+// 記録 + S7 実行結果・S8 検証画面での表示のみ。run の status は変えない）
+import type { ArmStructureRow } from '../../domain/armStructure';
+import type { ArmCompletenessRunWarning } from '../../domain/extractionRun';
+import type { SchemaField } from '../../domain/schemaField';
+import { makeArmEntityKey, parseEntityKey } from '../../utils/entityKey';
+import type { ValidatedAiItem } from './validateAiOutput';
+
+/**
+ * (armKey, fieldId) の組を Set のキーにするための結合。区切りには NUL（U+0000）を使う:
+ * fieldId は UUID・armKey は `arm:n` 形式で、いずれも NUL を含まないため衝突しない
+ */
+function pairKey(armKey: string, fieldId: string): string {
+  return `${armKey}\u0000${fieldId}`;
+}
+
+export interface DetectArmCompletenessParams {
+  /** バッチ（= 1 study）の study_id（警告の帰属先） */
+  studyId: string;
+  /** section 単位分割バッチの section 名。スキーマ全項目一括なら null */
+  section: string | null;
+  /** validateAiOutput を通過した応答要素（rejected は含めない） */
+  items: readonly ValidatedAiItem[];
+  /** 当該バッチで要求した項目 */
+  fields: readonly SchemaField[];
+  /** ArmStructures 確定済みの arm キー（`arm:n`）。未確定の study は null */
+  confirmedArmKeys?: readonly string[] | null;
+}
+
+/**
+ * 1 バッチぶんの応答に対する arm completeness チェック。
+ * - 期待 arm 集合 = 応答中に出現した arm（arm レベル項目の entity_key +
+ *   outcome_result の `|arm:n` セグメント）∪ ArmStructures 確定済み arm
+ * - 期待 arm × バッチ内 arm レベル field の直積に対し、返却されなかった組を欠落とする
+ *   （not_reported=true の返却は「明示的に未報告と答えた」ため欠落に数えない）
+ * - バッチに arm レベル項目が無い / 期待 arm を 1 つも特定できない（自己整合の
+ *   シグナルが無い）場合はチェック不能として null（警告なし）
+ */
+export function detectArmCompletenessWarning(
+  params: DetectArmCompletenessParams,
+): ArmCompletenessRunWarning | null {
+  const armFields = params.fields.filter((field) => field.entityLevel === 'arm');
+  if (armFields.length === 0) {
+    return null;
+  }
+  const armFieldIds = new Set(armFields.map((field) => field.fieldId));
+  const expected = new Set<string>(params.confirmedArmKeys ?? []);
+  const returned = new Set<string>();
+  for (const item of params.items) {
+    const parsed = parseEntityKey(item.entityKey);
+    if (parsed === null) {
+      continue; // 防御的分岐: validateAiOutput 通過済みなら到達しない
+    }
+    if (parsed.level === 'arm') {
+      // arm レベルの entity_key は `arm:n` の正規形（validateAiOutput で検証済み）
+      expected.add(item.entityKey);
+      if (armFieldIds.has(item.fieldId)) {
+        returned.add(pairKey(item.entityKey, item.fieldId));
+      }
+    } else if (parsed.level === 'outcome_result' && parsed.arm !== null) {
+      // アウトカム側にだけ現れる arm も期待集合に加える（arm レベル項目の丸ごと欠落を検出する要）
+      expected.add(makeArmEntityKey(parsed.arm));
+    }
+  }
+  if (expected.size === 0) {
+    return null; // 自己整合のシグナルも確定 arm も無い = チェック不能（過検出を避ける）
+  }
+  const expectedArmKeys = [...expected].sort();
+  const missingItems: ArmCompletenessRunWarning['missingItems'] = [];
+  for (const armKey of expectedArmKeys) {
+    for (const field of armFields) {
+      if (!returned.has(pairKey(armKey, field.fieldId))) {
+        missingItems.push({ armKey, fieldId: field.fieldId });
+      }
+    }
+  }
+  if (missingItems.length === 0) {
+    return null;
+  }
+  return {
+    kind: 'arm_completeness',
+    studyId: params.studyId,
+    section: params.section,
+    expectedArmKeys,
+    missingItems,
+  };
+}
+
+/**
+ * ArmStructures の全行から、study ごとの「現在の確定 arm キー一覧」を組み立てる
+ * （executeRun へ渡す突合素材）。annotator ごとに最新 version を畳み込み、
+ * 複数 annotator が確定済みの study は confirmed_at が最も新しい annotator の構成を採用する
+ * （裁定後は consensus の確定が通常最新になる）
+ */
+export function confirmedArmKeysByStudy(
+  rows: readonly ArmStructureRow[],
+): Map<string, string[]> {
+  const byStudyAnnotator = new Map<string, Map<string, ArmStructureRow[]>>();
+  for (const row of rows) {
+    let annotators = byStudyAnnotator.get(row.studyId);
+    if (annotators === undefined) {
+      annotators = new Map();
+      byStudyAnnotator.set(row.studyId, annotators);
+    }
+    const list = annotators.get(row.annotator);
+    if (list === undefined) {
+      annotators.set(row.annotator, [row]);
+    } else {
+      list.push(row);
+    }
+  }
+  const result = new Map<string, string[]>();
+  for (const [studyId, annotators] of byStudyAnnotator) {
+    let winner: { confirmedAt: string; armKeys: string[] } | null = null;
+    for (const list of annotators.values()) {
+      const version = Math.max(...list.map((row) => row.version));
+      const latest = list.filter((row) => row.version === version);
+      // 同一 version の行は同一の確定操作で追記されるため confirmed_at は共通
+      const confirmedAt = (latest[0] as ArmStructureRow).confirmedAt;
+      if (winner === null || confirmedAt > winner.confirmedAt) {
+        winner = { confirmedAt, armKeys: latest.map((row) => row.armKey) };
+      }
+    }
+    // annotators は必ず 1 件以上のため winner は非 null
+    result.set(studyId, (winner as { confirmedAt: string; armKeys: string[] }).armKeys);
+  }
+  return result;
+}
+
+/**
+ * 警告 1 件の人間可読な説明文（LLMApiLog の error 列・UI 表示の素材）。
+ * fieldNameById があれば field_id を項目名へ解決する（無ければ id のまま）
+ */
+export function describeArmCompletenessWarning(
+  warning: ArmCompletenessRunWarning,
+  fieldNameById?: ReadonlyMap<string, string>,
+): string {
+  const scope = warning.section === null ? '' : `（section: ${warning.section}）`;
+  const missing = warning.missingItems
+    .map((item) => `${item.armKey} × ${fieldNameById?.get(item.fieldId) ?? item.fieldId}`)
+    .join('、');
+  return (
+    `study ${warning.studyId}${scope}: 群 ${warning.expectedArmKeys.join(', ')} に対して ` +
+    `arm レベル項目の欠落があります: ${missing}（群の見落としの可能性。正当な未報告の可能性もあるため warning 扱い）`
+  );
+}

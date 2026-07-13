@@ -8,9 +8,10 @@ import {
 } from '../../../../src/features/extraction/evidenceRepository';
 import {
   appendExtractionRun,
-  ensureRunFieldIdsColumn,
+  ensureRunOptionalColumns,
 } from '../../../../src/features/extraction/runRepository';
 import type { ExtractDataPage } from '../../../../src/features/extraction/skills/extractData';
+import { readAllArmStructures } from '../../../../src/features/verification/armStructureRepository';
 import { uploadTextFile } from '../../../../src/lib/google/drive';
 import type { GoogleApiDeps } from '../../../../src/lib/google/types';
 import { appendLlmApiLog } from '../../../../src/lib/llm/apiLogRepository';
@@ -20,6 +21,7 @@ import type { RateLimitPolicy } from '../../../../src/lib/llm/rateLimitPolicy';
 jest.mock('../../../../src/features/extraction/annotationRepository');
 jest.mock('../../../../src/features/extraction/evidenceRepository');
 jest.mock('../../../../src/features/extraction/runRepository');
+jest.mock('../../../../src/features/verification/armStructureRepository');
 jest.mock('../../../../src/lib/google/drive');
 jest.mock('../../../../src/lib/llm/apiLogRepository');
 
@@ -30,7 +32,8 @@ const mockedEnsureBboxColumns = jest.mocked(ensureEvidenceBboxColumns);
 const mockedUpsertStudy = jest.mocked(upsertStudyDataRows);
 const mockedUpsertResults = jest.mocked(upsertResultsDataRows);
 const mockedAppendRun = jest.mocked(appendExtractionRun);
-const mockedEnsureRunFieldIdsColumn = jest.mocked(ensureRunFieldIdsColumn);
+const mockedEnsureRunOptionalColumns = jest.mocked(ensureRunOptionalColumns);
+const mockedReadArmRows = jest.mocked(readAllArmStructures);
 
 const GOOGLE: GoogleApiDeps = {
   fetch: jest.fn(),
@@ -130,6 +133,8 @@ function baseParams() {
 beforeEach(() => {
   jest.clearAllMocks();
   mockedUpload.mockResolvedValue({ id: 'file-1', webViewLink: 'https://drive/log' });
+  // 既定: ArmStructures は未確定（arm completeness チェックは応答内の自己整合のみ。issue #106）
+  mockedReadArmRows.mockResolvedValue([]);
 });
 
 describe('runExtraction', () => {
@@ -160,6 +165,7 @@ describe('runExtraction', () => {
       tokensOut: 200,
       costEstimate: outcome.plan.costEstimateUsd,
       fieldIds: null, // フェーズ 1: UI 未結線のため常に全項目（issue #80）
+      warnings: null, // arm completeness 警告なし（issue #106）
     });
     // 2 行プロトコル: running 行 → 完了行の順に 2 回追記する
     expect(mockedAppendRun).toHaveBeenCalledTimes(2);
@@ -187,9 +193,9 @@ describe('runExtraction', () => {
     expect(mockedEnsureBboxColumns.mock.invocationCallOrder[0]).toBeLessThan(
       mockedAppendRun.mock.invocationCallOrder[0] as number,
     );
-    // ExtractionRuns タブのヘッダ拡張（field_ids 列。issue #80）も running 行より先に行う
-    expect(mockedEnsureRunFieldIdsColumn).toHaveBeenCalledWith('sid', GOOGLE);
-    expect(mockedEnsureRunFieldIdsColumn.mock.invocationCallOrder[0]).toBeLessThan(
+    // ExtractionRuns タブのヘッダ拡張（field_ids / warnings 列。issue #80 / #106）も running 行より先に行う
+    expect(mockedEnsureRunOptionalColumns).toHaveBeenCalledWith('sid', GOOGLE);
+    expect(mockedEnsureRunOptionalColumns.mock.invocationCallOrder[0]).toBeLessThan(
       mockedAppendRun.mock.invocationCallOrder[0] as number,
     );
 
@@ -482,5 +488,228 @@ describe('runExtraction', () => {
       ([, rows]) => (rows as unknown[]).length,
     );
     expect(rowCounts).toEqual([5, 1]);
+  });
+
+  test('arm completeness 警告（issue #106）: ArmStructures 確定 arm との突合で欠落を検出し、完了行の warnings と LLMApiLog へ記録する（status は done のまま）', async () => {
+    // ArmStructures は study-1 に arm:1 / arm:2 の 2 群を確定済み
+    mockedReadArmRows.mockResolvedValue([
+      {
+        studyId: 'study-1',
+        version: 1,
+        armKey: 'arm:1',
+        armName: '介入群',
+        annotator: 'me@example.com',
+        annotatorType: 'human_with_ai',
+        confirmedAt: 't0',
+        note: null,
+      },
+      {
+        studyId: 'study-1',
+        version: 1,
+        armKey: 'arm:2',
+        armName: '対照群',
+        annotator: 'me@example.com',
+        annotatorType: 'human_with_ai',
+        confirmedAt: 't0',
+        note: null,
+      },
+    ]);
+    // 応答は arm:1 の arm レベル項目のみ返す（arm:2 が丸ごと欠落）
+    const chat = jest.fn().mockResolvedValue({
+      text: JSON.stringify([
+        {
+          field_id: 'f-arm',
+          entity_key: 'arm:1',
+          value: '60',
+          not_reported: false,
+          quote: '60 patients',
+          page: 1,
+          confidence: 'high',
+        },
+      ]),
+      tokensIn: 10,
+      tokensOut: 5,
+      raw: {},
+    } satisfies ChatResponse);
+    const deps = makeDeps(chat);
+    const outcome = await runExtraction(
+      {
+        ...baseParams(),
+        fields: [makeField({ fieldId: 'f-arm', fieldName: 'sample_size', entityLevel: 'arm' })],
+      },
+      deps,
+    );
+
+    const expectedWarning = {
+      kind: 'arm_completeness',
+      studyId: 'study-1',
+      section: null,
+      expectedArmKeys: ['arm:1', 'arm:2'],
+      missingItems: [{ armKey: 'arm:2', fieldId: 'f-arm' }],
+    };
+    // warning のみで status には影響しない（issue #106 の設計判断）
+    expect(outcome.run.status).toBe('done');
+    expect(outcome.result.armWarnings).toEqual([expectedWarning]);
+    expect(outcome.run.warnings).toEqual([expectedWarning]);
+    // 完了行（2 回目の追記）に warnings が載る。running 行（1 回目）は null のまま
+    expect(mockedAppendRun).toHaveBeenNthCalledWith(
+      1,
+      'sid',
+      expect.objectContaining({ status: 'running', warnings: null }),
+      GOOGLE,
+    );
+    expect(mockedAppendRun).toHaveBeenNthCalledWith(
+      2,
+      'sid',
+      expect.objectContaining({ status: 'done', warnings: [expectedWarning] }),
+      GOOGLE,
+    );
+    // LLMApiLog には chat の 1 行 + 警告の 1 行が追記される
+    expect(mockedAppendLog).toHaveBeenCalledTimes(2);
+    const warningEntry = mockedAppendLog.mock.calls
+      .map(([, entry]) => entry)
+      .find((entry) => entry.error !== null);
+    expect(warningEntry).toMatchObject({
+      purpose: 'extract_study',
+      promptRef: '',
+      responseRef: '',
+      promptSummary: `[arm_completeness] run ${outcome.run.runId}`,
+    });
+    expect(warningEntry?.error).toContain('警告（arm_completeness）');
+    expect(warningEntry?.error).toContain('arm:2 × sample_size');
+  });
+
+  test('arm completeness 警告: ArmStructures の読み出し失敗は握りつぶし、応答内の自己整合のみでチェックして run を続行する（issue #106）', async () => {
+    mockedReadArmRows.mockRejectedValue(new Error('sheets down'));
+    // 応答内で arm:2 が outcome に現れるのに arm レベル項目が arm:1 しか無い → 自己整合だけで検出できる
+    const chat = jest.fn().mockResolvedValue({
+      text: JSON.stringify([
+        {
+          field_id: 'f-arm',
+          entity_key: 'arm:1',
+          value: '60',
+          not_reported: false,
+          quote: '60 patients',
+          page: 1,
+          confidence: 'high',
+        },
+        {
+          field_id: 'f-events',
+          entity_key: 'outcome:mortality|arm:2',
+          value: '3',
+          not_reported: false,
+          quote: '3 deaths',
+          page: 1,
+          confidence: 'high',
+        },
+      ]),
+      tokensIn: 10,
+      tokensOut: 5,
+      raw: {},
+    } satisfies ChatResponse);
+    const deps = makeDeps(chat);
+    const outcome = await runExtraction(
+      {
+        ...baseParams(),
+        fields: [
+          makeField({ fieldId: 'f-arm', fieldName: 'sample_size', entityLevel: 'arm' }),
+          makeField({ fieldId: 'f-events', fieldName: 'events', entityLevel: 'outcome_result' }),
+        ],
+      },
+      deps,
+    );
+    expect(outcome.run.status).toBe('done');
+    expect(outcome.result.armWarnings).toEqual([
+      expect.objectContaining({
+        studyId: 'study-1',
+        expectedArmKeys: ['arm:1', 'arm:2'],
+        missingItems: [{ armKey: 'arm:2', fieldId: 'f-arm' }],
+      }),
+    ]);
+  });
+
+  /** arm:2 が欠落した応答で warning 付きの完了行を作る共通セットアップ（フォールバック検証用） */
+  function armWarningRunSetup() {
+    mockedReadArmRows.mockResolvedValue([
+      {
+        studyId: 'study-1',
+        version: 1,
+        armKey: 'arm:1',
+        armName: '介入群',
+        annotator: 'me@example.com',
+        annotatorType: 'human_with_ai',
+        confirmedAt: 't0',
+        note: null,
+      },
+      {
+        studyId: 'study-1',
+        version: 1,
+        armKey: 'arm:2',
+        armName: '対照群',
+        annotator: 'me@example.com',
+        annotatorType: 'human_with_ai',
+        confirmedAt: 't0',
+        note: null,
+      },
+    ]);
+    const chat = jest.fn().mockResolvedValue({
+      text: JSON.stringify([
+        {
+          field_id: 'f-arm',
+          entity_key: 'arm:1',
+          value: '60',
+          not_reported: false,
+          quote: '60 patients',
+          page: 1,
+          confidence: 'high',
+        },
+      ]),
+      tokensIn: 10,
+      tokensOut: 5,
+      raw: {},
+    } satisfies ChatResponse);
+    return {
+      params: {
+        ...baseParams(),
+        fields: [makeField({ fieldId: 'f-arm', fieldName: 'sample_size', entityLevel: 'arm' })],
+      },
+      deps: makeDeps(chat),
+    };
+  }
+
+  test('warnings 付き完了行の追記に失敗したら warnings なしで 1 回だけ再試行する（完了行の成立を優先。issue #106 レビュー対応）', async () => {
+    const { params, deps } = armWarningRunSetup();
+    // 完了行（status=done）かつ warnings 付きの追記だけを 1 回失敗させる
+    mockedAppendRun.mockImplementation(async (_sid, run) => {
+      if (run.status === 'done' && run.warnings !== null) {
+        throw new Error('セルサイズ超過（400）');
+      }
+    });
+    const outcome = await runExtraction(params, deps);
+    // running 行 → warnings 付き完了行（失敗）→ warnings なし完了行（成功）の 3 回
+    expect(mockedAppendRun).toHaveBeenCalledTimes(3);
+    expect(mockedAppendRun).toHaveBeenNthCalledWith(
+      3,
+      'sid',
+      expect.objectContaining({ status: 'done', warnings: null }),
+      GOOGLE,
+    );
+    // run は「中断」に転落しない。戻り値の run はシートに書けた内容（warnings なし）を反映し、
+    // S7 表示用の result.armWarnings は保持される
+    expect(outcome.run.status).toBe('done');
+    expect(outcome.run.warnings).toBeNull();
+    expect(outcome.result.armWarnings).toHaveLength(1);
+  });
+
+  test('warnings なし（null）の完了行の追記失敗はフォールバックせずそのまま失敗させる', async () => {
+    const chat = jest.fn().mockResolvedValue(AI_RESPONSE); // 警告なしの通常応答
+    const deps = makeDeps(chat);
+    mockedAppendRun.mockImplementation(async (_sid, run) => {
+      if (run.status === 'done') {
+        throw new Error('ネットワーク断');
+      }
+    });
+    await expect(runExtraction(baseParams(), deps)).rejects.toThrow('ネットワーク断');
+    expect(mockedAppendRun).toHaveBeenCalledTimes(2); // running 行 + 失敗した完了行のみ
   });
 });

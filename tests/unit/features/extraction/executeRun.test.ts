@@ -544,6 +544,7 @@ describe('executeRun の正常系', () => {
       evidence: [],
       rejectedItems: [],
       batchFailures: [],
+      armWarnings: [],
       tokensIn: null,
       tokensOut: null,
       modelVersion: null,
@@ -1568,5 +1569,145 @@ describe('executeRun の実測集計', () => {
       deps,
     );
     expect(result.modelVersion).toBeNull();
+  });
+});
+
+describe('executeRun の arm completeness チェック（issue #106）', () => {
+  // 2 群とも f_n が返る完全な応答（arm:2 は not_reported の明示返却 = 欠落ではない）
+  const COMPLETE_TWO_ARM_ITEMS = [
+    ARM_ITEM, // arm:1 × f_n
+    { ...ARM_ITEM, entity_key: 'arm:2', value: null, quote: null, page: null, not_reported: true },
+  ];
+
+  test('応答に arm:n が現れるのに arm レベル項目が揃っていなければ armWarnings に記録し、status は done のまま（warning に留める設計判断）', async () => {
+    // arm:2 は outcome 側にしか現れず、f_n（arm レベル）は arm:1 しか返っていない応答
+    const outcomeField = makeField({
+      fieldId: 'f_events',
+      fieldName: 'events',
+      fieldIndex: 3,
+      section: 'outcomes',
+      entityLevel: 'outcome_result',
+    });
+    const outcomeItem = {
+      field_id: 'f_events',
+      entity_key: 'outcome:mortality|arm:2',
+      value: '3',
+      not_reported: false,
+      quote: 'Sixty patients received the intervention and 60 received placebo.',
+      page: 2,
+      document_index: 1,
+      confidence: 'high',
+    };
+    const { provider } = providerOf([chatResponse([ARM_ITEM, outcomeItem])]);
+    const { deps } = makeDeps(provider);
+    const recorded: unknown[] = [];
+    deps.recordArmWarning = async (warning) => {
+      recorded.push(warning);
+    };
+    const result = await execute(
+      {
+        runId: 'run-1',
+        plan: makePlan([makeBatch({ studyId: 'd1', fieldIds: ['f_n', 'f_events'] })]),
+        fields: [...FIELDS, outcomeField],
+      },
+      deps,
+    );
+    const expectedWarning = {
+      kind: 'arm_completeness',
+      studyId: 'd1',
+      section: null,
+      expectedArmKeys: ['arm:1', 'arm:2'],
+      missingItems: [{ armKey: 'arm:2', fieldId: 'f_n' }],
+    };
+    expect(result.status).toBe('done'); // warning は partial_failure に倒さない
+    expect(result.armWarnings).toEqual([expectedWarning]);
+    expect(recorded).toEqual([expectedWarning]); // 外部記録（LLMApiLog 配線）も呼ばれる
+  });
+
+  test('全 arm × 全項目が揃っていれば armWarnings は空で recordArmWarning も呼ばれない（not_reported も返却に数える）', async () => {
+    const { provider } = providerOf([chatResponse(COMPLETE_TWO_ARM_ITEMS)]);
+    const { deps } = makeDeps(provider);
+    const recordArmWarning = jest.fn();
+    deps.recordArmWarning = recordArmWarning;
+    const result = await execute(
+      {
+        runId: 'run-1',
+        plan: makePlan([makeBatch({ studyId: 'd1', fieldIds: ['f_n'] })]),
+        fields: FIELDS,
+      },
+      deps,
+    );
+    expect(result.status).toBe('done');
+    expect(result.armWarnings).toEqual([]);
+    expect(recordArmWarning).not.toHaveBeenCalled();
+  });
+
+  test('confirmedArmKeysByStudy 注入時は確定 arm 数との突合も行う（未確定 study は自己整合のみ）', async () => {
+    const { provider } = providerOf([
+      chatResponse([ARM_ITEM]), // d1: 確定 3 群に対し arm:1 しか返らない
+      chatResponse([ARM_ITEM]), // d2: 未確定 study。arm:1 が揃っているため警告なし
+    ]);
+    const { deps } = makeDeps(provider);
+    const result = await execute(
+      {
+        runId: 'run-1',
+        plan: makePlan([
+          makeBatch({ studyId: 'd1', fieldIds: ['f_n'] }),
+          makeBatch({ studyId: 'd2', fieldIds: ['f_n'], section: 'population' }),
+        ]),
+        fields: FIELDS,
+        confirmedArmKeysByStudy: new Map([['d1', ['arm:1', 'arm:2', 'arm:3']]]),
+      },
+      deps,
+    );
+    expect(result.armWarnings).toEqual([
+      {
+        kind: 'arm_completeness',
+        studyId: 'd1',
+        section: null,
+        expectedArmKeys: ['arm:1', 'arm:2', 'arm:3'],
+        missingItems: [
+          { armKey: 'arm:2', fieldId: 'f_n' },
+          { armKey: 'arm:3', fieldId: 'f_n' },
+        ],
+      },
+    ]);
+  });
+
+  test('recordArmWarning が失敗しても run は止めない（補助的な監査記録のため握りつぶす）', async () => {
+    const { provider } = providerOf([chatResponse([ARM_ITEM])]);
+    const { deps, saved } = makeDeps(provider);
+    deps.recordArmWarning = jest.fn().mockRejectedValue(new Error('log down'));
+    const result = await execute(
+      {
+        runId: 'run-1',
+        plan: makePlan([makeBatch({ studyId: 'd1', fieldIds: ['f_n'] })]),
+        fields: FIELDS,
+        confirmedArmKeysByStudy: new Map([['d1', ['arm:1', 'arm:2']]]),
+      },
+      deps,
+    );
+    expect(result.status).toBe('done');
+    expect(result.armWarnings).toHaveLength(1);
+    expect(saved.flat()).toHaveLength(1); // Evidence の保存は継続する
+  });
+
+  test('recordArmWarning 未注入でも警告の集計だけは行う（section 付きバッチの警告に section が載る）', async () => {
+    const { provider } = providerOf([chatResponse([ARM_ITEM])]);
+    const { deps } = makeDeps(provider);
+    const result = await execute(
+      {
+        runId: 'run-1',
+        plan: makePlan([
+          makeBatch({ studyId: 'd1', fieldIds: ['f_n'], section: 'population' }),
+        ]),
+        fields: FIELDS,
+        confirmedArmKeysByStudy: new Map([['d1', ['arm:1', 'arm:2']]]),
+      },
+      deps,
+    );
+    expect(result.armWarnings).toEqual([
+      expect.objectContaining({ section: 'population', missingItems: [{ armKey: 'arm:2', fieldId: 'f_n' }] }),
+    ]);
   });
 });

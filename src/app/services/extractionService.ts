@@ -21,6 +21,10 @@ import {
   upsertStudyDataRows,
 } from '../../features/extraction/annotationRepository';
 import {
+  confirmedArmKeysByStudy,
+  describeArmCompletenessWarning,
+} from '../../features/extraction/armCompleteness';
+import {
   appendEvidenceRows,
   ensureEvidenceBboxColumns,
 } from '../../features/extraction/evidenceRepository';
@@ -33,8 +37,9 @@ import {
 import { planRun, type RunPlan, type RunTokenBudget } from '../../features/extraction/planRun';
 import {
   appendExtractionRun,
-  ensureRunFieldIdsColumn,
+  ensureRunOptionalColumns,
 } from '../../features/extraction/runRepository';
+import { readAllArmStructures } from '../../features/verification/armStructureRepository';
 import {
   EXTRACT_DATA_PROMPT_VERSION,
   type ExtractDataImagePage,
@@ -217,9 +222,24 @@ export async function runExtraction(
   // §7.4 PR3）。running 行より前に行う: これを怠ると旧ヘッダ（12 列）のまま
   // appendEvidenceRows が 17 列を追記してしまい、列がずれた壊れた行になる
   await ensureEvidenceBboxColumns(params.spreadsheetId, deps.google);
-  // ExtractionRuns タブのヘッダを field_ids 込みへ拡張する（既存プロジェクトの後方互換移行。
-  // issue #80）。running 行より前に行う（bbox 列と同じ理由: 怠ると旧ヘッダのまま列がずれる）
-  await ensureRunFieldIdsColumn(params.spreadsheetId, deps.google);
+  // ExtractionRuns タブのヘッダを field_ids / warnings 込みへ拡張する（既存プロジェクトの
+  // 後方互換移行。issue #80 / #106）。running 行より前に行う
+  // （bbox 列と同じ理由: 怠ると旧ヘッダのまま列がずれる）
+  await ensureRunOptionalColumns(params.spreadsheetId, deps.google);
+
+  // arm completeness 警告（issue #106）の説明文用: field_id → field_name の解決表
+  const fieldNameById = new Map(params.fields.map((field) => [field.fieldId, field.fieldName]));
+  // arm completeness チェック（issue #106）の突合素材: ArmStructures 確定済み study の
+  // arm キー一覧。warning 専用の補助情報のため、読み出しに失敗しても run は止めず
+  // 「確定なし」（応答内の自己整合のみでチェック）として続行する
+  let confirmedArmKeys: Map<string, string[]> | undefined;
+  try {
+    confirmedArmKeys = confirmedArmKeysByStudy(
+      await readAllArmStructures(params.spreadsheetId, deps.google),
+    );
+  } catch {
+    confirmedArmKeys = undefined;
+  }
 
   // running 行の先行追記（2 行プロトコルの 1 行目）。この追記が失敗したら
   // Evidence を 1 行も書かずに中断するため、孤児 Evidence は生まれない
@@ -232,6 +252,7 @@ export async function runExtraction(
       finishedAt: null,
       tokensIn: null,
       tokensOut: null,
+      warnings: null,
     },
     deps.google,
   );
@@ -243,6 +264,7 @@ export async function runExtraction(
       fields: params.fields,
       documents: params.documents,
       protocolContext: params.protocolContext,
+      confirmedArmKeysByStudy: confirmedArmKeys,
     },
     {
       provider,
@@ -257,6 +279,28 @@ export async function runExtraction(
       // 優先順は 明示注入（deps.flushEveryNStudies）> tier のポリシー値 > 最終フォールバック
       flushEveryNStudies:
         deps.flushEveryNStudies ?? policy.flushEveryNStudies ?? DEFAULT_FLUSH_EVERY_N_STUDIES,
+      // arm completeness 警告（issue #106）を LLMApiLog へも残す（エラー列に「警告」明記。
+      // フル payload は無い = prompt_ref / response_ref は空。監査時の一次手掛かり用）
+      recordArmWarning: (warning) =>
+        appendLlmApiLog(
+          params.spreadsheetId,
+          {
+            logId: uuid(),
+            timestamp: now(),
+            provider: baseProvider.providerId,
+            model: params.model,
+            purpose: 'extract_study',
+            promptRef: '',
+            responseRef: '',
+            promptSummary: `[arm_completeness] run ${runId}`,
+            tokensIn: null,
+            tokensOut: null,
+            latencyMs: null,
+            costEstimateUsd: null,
+            error: `警告（arm_completeness）: ${describeArmCompletenessWarning(warning, fieldNameById)}`,
+          },
+          deps.google,
+        ),
     },
   );
 
@@ -279,8 +323,24 @@ export async function runExtraction(
     finishedAt: now(),
     tokensIn: result.tokensIn,
     tokensOut: result.tokensOut,
+    // arm completeness 警告（issue #106）は完了行にのみ記録する（null = 警告なし）
+    warnings: result.armWarnings.length === 0 ? null : result.armWarnings,
   };
-  await appendExtractionRun(params.spreadsheetId, run, deps.google);
+  try {
+    await appendExtractionRun(params.spreadsheetId, run, deps.google);
+  } catch (err) {
+    if (run.warnings === null) {
+      throw err;
+    }
+    // warnings 付きの完了行が書けない場合（想定外のセルサイズ超過等）は warnings なしで
+    // 1 回だけ再試行する。完了行が書けないと run 全体が「中断」扱いへ転落し flush 済み
+    // Evidence が S8/S9 から不可視化されるため、「警告の記録失敗で run を止めない」方針の
+    // 最終安全弁として完了行の成立を優先する（issue #106 レビュー対応。
+    // 通常サイズは runRepository.warningsToCell の切り詰めで収まる）
+    const fallback: ExtractionRun = { ...run, warnings: null };
+    await appendExtractionRun(params.spreadsheetId, fallback, deps.google);
+    return { run: fallback, plan, result };
+  }
 
   return { run, plan, result };
 }

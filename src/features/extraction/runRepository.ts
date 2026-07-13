@@ -5,12 +5,13 @@
 // 読み手は run_id ごとに「完了行があるか」で完了 / 中断を判別する。
 // 実行中の細かい進捗は UI（S7 の進捗バー）で in-memory 管理し、シートには残さない
 //
-// field_ids 列（run 単位のフィールド選択。issue #80）は既存プロジェクトに存在しないことが
-// あるため、evidenceRepository の bbox 列と同じ方式で後方互換を取る:
-// - 読み出し（readRunRows）: 先頭 14 列（旧ヘッダ）は厳格一致、15 列目（field_ids）は
-//   「存在すれば」名前一致を要求し「欠けていれば」旧プロジェクトとして許容する
-// - 書き込み（ensureRunFieldIdsColumn）: 旧 14 列ヘッダのプロジェクトへは実行前に
-//   ヘッダ行を 15 列のフルヘッダへ拡張する（呼び出しは extractionService.ts の責務）
+// field_ids 列（run 単位のフィールド選択。issue #80）と warnings 列（arm completeness
+// チェック。issue #106）は既存プロジェクトに存在しないことがあるため、
+// evidenceRepository の bbox 列と同じ方式で後方互換を取る:
+// - 読み出し（readRunRows）: 先頭 14 列（旧ヘッダ）は厳格一致、15 列目以降（field_ids /
+//   warnings）は「存在すれば」名前一致を要求し「欠けていれば」旧プロジェクトとして許容する
+// - 書き込み（ensureRunOptionalColumns）: 旧ヘッダ（14 列 / 15 列）のプロジェクトへは
+//   実行前にヘッダ行をフルヘッダへ拡張する（呼び出しは extractionService.ts の責務）
 import type { LlmProviderId } from '../../domain/llmApiLog';
 import type {
   ExtractionRun,
@@ -18,6 +19,7 @@ import type {
   RunAuditInfo,
   RunStatus,
   RunType,
+  RunWarning,
 } from '../../domain/extractionRun';
 import { SHEET_HEADERS } from '../../domain/sheetsSchema';
 import { appendRow, getBatchValues, getSheetValues, updateRow } from '../../lib/google/sheets';
@@ -25,7 +27,7 @@ import type { GoogleApiDeps } from '../../lib/google/types';
 
 const RUNS_TAB = 'ExtractionRuns';
 
-/** 旧ヘッダ（field_ids 列導入前）の列数。以降 field_ids 1 列 */
+/** 旧ヘッダ（field_ids 列導入前）の列数。以降 field_ids / warnings の任意列が続く */
 const LEGACY_COLUMN_COUNT = 14;
 
 /** field_ids（null 許容の配列）をシート用のカンマ区切り文字列へ変換する。null = 全項目 → 空文字 */
@@ -37,6 +39,90 @@ function fieldIdsToCell(fieldIds: readonly string[] | null): string {
 function parseFieldIds(cell: string | null | undefined): string[] | null {
   const raw = cell ?? '';
   return raw === '' ? null : raw.split(',').filter((id) => id !== '');
+}
+
+/**
+ * warnings セルの直列化サイズ上限。Sheets のセル上限（5 万字）を超えると完了行の追記自体が
+ * 400 で失敗し、run 全体が「中断」扱いへ転落してしまう（flush 済み Evidence が S8/S9 から
+ * 不可視化される）ため、保守的なマージンを取ってこの範囲へ切り詰める（issue #106 レビュー対応）
+ */
+export const MAX_WARNINGS_CELL_CHARS = 40_000;
+
+/** サイズ超過時に 1 警告へ残す missingItems の上限（先頭側を残す） */
+const TRUNCATED_MISSING_ITEMS_LIMIT = 5;
+
+/**
+ * warnings（null 許容の配列）をシート用の JSON 文字列へ変換する。null = 警告なし → 空文字。
+ * MAX_WARNINGS_CELL_CHARS を超える場合は次の順で切り詰める（警告は補助情報であり、
+ * 完了行が書けないことのほうが実害が大きいため）:
+ * 1. 各警告の missingItems を先頭 TRUNCATED_MISSING_ITEMS_LIMIT 件へ切り詰め、
+ *    打ち切りマーカー（truncated: true + missingItemsTotal = 元の総件数）を付ける
+ * 2. それでも超える間は末尾の警告から順に落とす（少なくとも 1 件は残す）
+ * 極端な入力で 1 件でも収まらない場合に備え、完了行の追記失敗時に warnings なしで
+ * 1 回だけ再試行する最終安全弁を extractionService 側に持つ
+ */
+function warningsToCell(warnings: readonly RunWarning[] | null): string {
+  if (warnings === null) {
+    return '';
+  }
+  const full = JSON.stringify(warnings);
+  if (full.length <= MAX_WARNINGS_CELL_CHARS) {
+    return full;
+  }
+  let compact: RunWarning[] = warnings.map((warning) =>
+    warning.missingItems.length > TRUNCATED_MISSING_ITEMS_LIMIT
+      ? {
+          ...warning,
+          missingItems: warning.missingItems.slice(0, TRUNCATED_MISSING_ITEMS_LIMIT),
+          truncated: true,
+          missingItemsTotal: warning.missingItems.length,
+        }
+      : warning,
+  );
+  let json = JSON.stringify(compact);
+  while (json.length > MAX_WARNINGS_CELL_CHARS && compact.length > 1) {
+    compact = compact.slice(0, -1);
+    json = JSON.stringify(compact);
+  }
+  return json;
+}
+
+/** RunWarning として最低限の形（kind / studyId / 配列 2 種）を満たすか */
+function isRunWarning(value: unknown): value is RunWarning {
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+  const candidate = value as Record<string, unknown>;
+  return (
+    candidate.kind === 'arm_completeness' &&
+    typeof candidate.studyId === 'string' &&
+    (candidate.section === null || typeof candidate.section === 'string') &&
+    Array.isArray(candidate.expectedArmKeys) &&
+    Array.isArray(candidate.missingItems)
+  );
+}
+
+/**
+ * warnings 列（16 列目）をパースする。警告は表示専用の補助情報のため寛容にパースし、
+ * 空セル・列自体の欠落（旧プロジェクト）・JSON 不正・未知の形はすべて null（= 警告なし）
+ * に落として読み出し自体は止めない（issue #106）
+ */
+function parseRunWarnings(cell: string | null | undefined): RunWarning[] | null {
+  const raw = cell ?? '';
+  if (raw === '') {
+    return null;
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (!Array.isArray(parsed)) {
+    return null;
+  }
+  const warnings = parsed.filter(isRunWarning);
+  return warnings.length === 0 ? null : warnings;
 }
 
 /** ExtractionRun → シート行。列順は SHEET_HEADERS.ExtractionRuns（domain/sheetsSchema.ts）に対応 */
@@ -57,6 +143,7 @@ export function extractionRunToRow(run: ExtractionRun): (string | number | null)
     run.tokensOut,
     run.costEstimate,
     fieldIdsToCell(run.fieldIds),
+    warningsToCell(run.warnings),
   ];
 }
 
@@ -69,17 +156,18 @@ export async function appendExtractionRun(
 }
 
 /**
- * ExtractionRuns タブのヘッダ行を field_ids 込みの 15 列へ拡張する（既存プロジェクトの
- * 後方互換移行。evidenceRepository.ensureEvidenceBboxColumns と同じ方式）。
+ * ExtractionRuns タブのヘッダ行を任意列（field_ids / warnings）込みのフルヘッダへ拡張する
+ * （既存プロジェクトの後方互換移行。evidenceRepository.ensureEvidenceBboxColumns と同じ方式）。
  * - 先頭 14 列（旧ヘッダ）が SHEET_HEADERS.ExtractionRuns と食い違う場合は throw
  *   （想定外のタブ・壊れたプロジェクトへの書き込み事故を防ぐ）
- * - 既に 15 列以上（= 拡張済み）なら no-op
- * - それ以外（旧 14 列のまま）はヘッダ行を SHEET_HEADERS.ExtractionRuns のフル 15 列で上書きする
+ * - 15 列目以降に既存の列があれば名前一致を要求する（未知の列を warnings で上書きしない）
+ * - 既にフル列数（= 拡張済み）なら no-op
+ * - それ以外（旧 14 列 / field_ids までの 15 列）はヘッダ行をフルヘッダで上書きする
  *
  * runExtraction が running 行の追記より前に毎回呼ぶ（extractionService.ts）。
  * ヘッダ行だけを読むため getBatchValues で `ExtractionRuns!1:1` のみ取得する（全行 GET は避ける）
  */
-export async function ensureRunFieldIdsColumn(
+export async function ensureRunOptionalColumns(
   spreadsheetId: string,
   deps: GoogleApiDeps,
 ): Promise<void> {
@@ -88,12 +176,20 @@ export async function ensureRunFieldIdsColumn(
   SHEET_HEADERS.ExtractionRuns.slice(0, LEGACY_COLUMN_COUNT).forEach((name, i) => {
     if ((header[i] ?? '') !== name) {
       throw new Error(
-        `ExtractionRuns のヘッダ ${i + 1} 列目が "${name}" ではありません（実際: "${header[i] ?? ''}"）。field_ids 列の移行を中止します`,
+        `ExtractionRuns のヘッダ ${i + 1} 列目が "${name}" ではありません（実際: "${header[i] ?? ''}"）。任意列（field_ids / warnings）の移行を中止します`,
       );
     }
   });
-  if (header.length > LEGACY_COLUMN_COUNT) {
-    // 既に拡張済み（15 列）。no-op
+  SHEET_HEADERS.ExtractionRuns.slice(LEGACY_COLUMN_COUNT).forEach((name, i) => {
+    const idx = LEGACY_COLUMN_COUNT + i;
+    if (idx < header.length && (header[idx] ?? '') !== name) {
+      throw new Error(
+        `ExtractionRuns のヘッダ ${idx + 1} 列目が "${name}" ではありません（実際: "${header[idx] ?? ''}"）。任意列（field_ids / warnings）の移行を中止します`,
+      );
+    }
+  });
+  if (header.length >= SHEET_HEADERS.ExtractionRuns.length) {
+    // 既に拡張済み（フル列数）。no-op
     return;
   }
   await updateRow(spreadsheetId, RUNS_TAB, 1, [...SHEET_HEADERS.ExtractionRuns], deps);
@@ -101,8 +197,8 @@ export async function ensureRunFieldIdsColumn(
 
 /**
  * ヘッダ行を検証してデータ行だけを返す（読み出し系の共通前処理）。
- * 先頭 14 列（旧ヘッダ）は厳格一致。15 列目（field_ids）は存在すれば名前一致を要求し、
- * 欠けていれば（= 旧プロジェクト）許容する
+ * 先頭 14 列（旧ヘッダ）は厳格一致。15 列目以降（field_ids / warnings）は存在すれば
+ * 名前一致を要求し、欠けていれば（= 旧プロジェクト）許容する
  */
 async function readRunRows(
   spreadsheetId: string,
@@ -120,16 +216,14 @@ async function readRunRows(
       );
     }
   });
-  if (header.length > LEGACY_COLUMN_COUNT) {
-    SHEET_HEADERS.ExtractionRuns.slice(LEGACY_COLUMN_COUNT).forEach((name, i) => {
-      const idx = LEGACY_COLUMN_COUNT + i;
-      if ((header[idx] ?? '') !== name) {
-        throw new Error(
-          `ExtractionRuns のヘッダ ${idx + 1} 列目が "${name}" ではありません（実際: "${header[idx] ?? ''}"）`,
-        );
-      }
-    });
-  }
+  SHEET_HEADERS.ExtractionRuns.slice(LEGACY_COLUMN_COUNT).forEach((name, i) => {
+    const idx = LEGACY_COLUMN_COUNT + i;
+    if (idx < header.length && (header[idx] ?? '') !== name) {
+      throw new Error(
+        `ExtractionRuns のヘッダ ${idx + 1} 列目が "${name}" ではありません（実際: "${header[idx] ?? ''}"）`,
+      );
+    }
+  });
   return values.slice(1);
 }
 
@@ -199,11 +293,14 @@ export interface CompletedRunMeta {
   startedAt: string | null;
   /** null = 全項目（後方互換規約） */
   fieldIds: string[] | null;
+  /** run 単位の警告（issue #106: arm completeness）。null = 警告なし（S8 バナーの素材） */
+  warnings: RunWarning[] | null;
 }
 
 /**
  * 完了行（done / partial_failure）のみを対象に、run_id / schema_version / started_at /
- * field_ids の最小情報をシート行順（= 追記順）で返す（S8/S9 の field 単位合成ビューの素材）。
+ * field_ids / warnings の最小情報をシート行順（= 追記順）で返す
+ * （S8/S9 の field 単位合成ビュー + S8 の arm 欠落警告バナーの素材）。
  * 中断 run（running 行のみ）は含めない（readRunStudyCoverage と同じ完了判定）
  */
 export async function readCompletedRunMetas(
@@ -222,6 +319,7 @@ export async function readCompletedRunMetas(
       schemaVersion: parseRequiredInteger(raw[2], context, 'schema_version'),
       startedAt: emptyToNull(raw[9]),
       fieldIds: parseFieldIds(raw[14]),
+      warnings: parseRunWarnings(raw[15]),
     });
   });
   return metas;
@@ -411,6 +509,7 @@ function rowToExtractionRun(raw: (string | null)[], rowIndex: number): Extractio
     tokensOut: parseNullableInteger(raw[12], context, 'tokens_out'),
     costEstimate: parseNullableNumber(raw[13], context, 'cost_estimate'),
     fieldIds: parseFieldIds(raw[14]),
+    warnings: parseRunWarnings(raw[15]),
   };
 }
 

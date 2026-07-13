@@ -14,6 +14,44 @@ function selectorLabel(target: VerifyTarget): string {
   return `${target.study.studyLabel}（判定済み ${progress.decided} / ${progress.total}）`;
 }
 
+/**
+ * 選択中 study の arm completeness 警告バナー（issue #106・`#verify-arm-completeness-warning`）。
+ * 直近 run（ExtractionRuns.warnings）由来。項目名は表示 run のスキーマ項目ラベルで解決する。
+ * 警告が無ければ null（独立入力モードは armWarnings が常に空のため自動的に出ない）
+ */
+function renderArmCompletenessWarning(target: VerifyTarget): HTMLElement | null {
+  if (target.armWarnings.length === 0) {
+    return null;
+  }
+  const labelById = new Map(target.fields.map((field) => [field.fieldId, field.fieldLabel]));
+  const items = target.armWarnings.map((warning) => {
+    const scope = warning.section === null ? '' : `（section: ${warning.section}）`;
+    const missing = warning.missingItems
+      .map((item) => `${item.armKey} × ${labelById.get(item.fieldId) ?? item.fieldId}`)
+      .join('、');
+    // シート保存時にサイズ上限で切り詰められた警告は残件数を添える（runRepository.warningsToCell）
+    const omitted =
+      warning.truncated === true && warning.missingItemsTotal !== undefined
+        ? `（他 ${warning.missingItemsTotal - warning.missingItems.length} 件省略）`
+        : '';
+    return el('li', { text: `${scope}${missing}${omitted} が AI 応答に含まれていませんでした` });
+  });
+  return el(
+    'div',
+    {
+      id: 'verify-arm-completeness-warning',
+      className: 'verify__arm-completeness-warning',
+      attributes: { role: 'status' },
+    },
+    [
+      el('p', {
+        text: '直近の AI 抽出で群（arm）の欠落の可能性が検出されています。群構成の確定・検証時に本文と照合してください:',
+      }),
+      el('ul', {}, items),
+    ],
+  );
+}
+
 function renderSelector(state: AppState, ctx: ViewContext, targets: readonly VerifyTarget[]): HTMLElement {
   const select = el('select', {
     id: 'verify-study',
@@ -102,6 +140,17 @@ export function renderVerifyView(state: AppState, ctx: ViewContext): HTMLElement
   }
 
   children.push(renderSelector(state, ctx, verify.targets));
+
+  // 選択中 study の arm 欠落警告（issue #106）。セレクタ直下 = パネル読み込み中でも見える
+  const selectedTarget = verify.targets.find(
+    (target) => target.study.studyId === verify.selectedStudyId,
+  );
+  if (selectedTarget !== undefined) {
+    const armWarning = renderArmCompletenessWarning(selectedTarget);
+    if (armWarning !== null) {
+      children.push(armWarning);
+    }
+  }
 
   if (verify.verifyError !== null) {
     children.push(
