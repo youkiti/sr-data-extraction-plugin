@@ -63,6 +63,14 @@ export interface DocumentsViewCallbacks {
   onConfirmMerge(): void;
   /** 統合ダイアログのキャンセル */
   onCancelMerge(): void;
+  /** tiab-review 採用リスト取り込みカード（issue #68）を開く */
+  onTiabOpen(): void;
+  /** 同カードを閉じる（入力・プレビューを破棄） */
+  onTiabClose(): void;
+  /** tiab-review シートの読み込み → include 抽出 → 反映プレビュー計算 */
+  onTiabPreview(sheetInput: string): void;
+  /** プレビューの反映（Studies 上書き + Documents 転記）を実行 */
+  onTiabApply(): void;
 }
 
 /** #/protocol（S4）のユーザー操作コールバック */

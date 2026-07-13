@@ -23,6 +23,12 @@ import {
   type DocumentsServiceDeps,
 } from './services/documentsService';
 import {
+  applyTiabImport,
+  closeTiabImport,
+  openTiabImport,
+  previewTiabImport,
+} from './services/tiabImportService';
+import {
   cancelEditProtocol,
   loadProtocols,
   selectProtocolVersion,
@@ -412,6 +418,18 @@ export async function bootstrapApp(
       },
       onCancelMerge: () => {
         cancelMerge(store);
+      },
+      onTiabOpen: () => {
+        openTiabImport(store);
+      },
+      onTiabClose: () => {
+        closeTiabImport(store);
+      },
+      onTiabPreview: (sheetInput) => {
+        void previewTiabImport(store, deps, sheetInput);
+      },
+      onTiabApply: () => {
+        void applyTiabImport(store, deps);
       },
     },
     protocol: {

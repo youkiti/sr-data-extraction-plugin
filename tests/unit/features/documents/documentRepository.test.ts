@@ -5,6 +5,7 @@ import {
   documentToRow,
   readDocuments,
   updateDocument,
+  updateDocuments,
 } from '../../../../src/features/documents/documentRepository';
 
 const HEADER = [...SHEET_HEADERS.Documents];
@@ -192,5 +193,43 @@ describe('updateDocument', () => {
     await expect(updateDocument('sid', makeDocument(), deps)).rejects.toThrow(
       'document_id "doc-1" の行がありません',
     );
+  });
+});
+
+describe('updateDocuments', () => {
+  test('1 read + values:batchUpdate 1 回で複数行を上書きする（issue #68）', async () => {
+    const row2 = [...SHEET_ROW];
+    row2[0] = 'doc-2';
+    const deps = makeDeps([HEADER, SHEET_ROW, row2]);
+    await updateDocuments(
+      'sid',
+      [
+        makeDocument({ pmid: '999' }),
+        makeDocument({ documentId: 'doc-2', doi: '10.2000/abc' }),
+      ],
+      deps,
+    );
+    // 1 回目 = Documents GET（行番号解決）、2 回目 = values:batchUpdate POST
+    expect(deps.fetch).toHaveBeenCalledTimes(2);
+    const [url, init] = deps.fetch.mock.calls[1];
+    expect(url as string).toContain('/values:batchUpdate');
+    const body = JSON.parse((init as RequestInit).body as string);
+    expect(body.data.map((d: { range: string }) => d.range)).toEqual([
+      'Documents!A2',
+      'Documents!A3',
+    ]);
+    expect(body.data[0].values[0][6]).toBe('999');
+    expect(body.data[1].values[0][7]).toBe('10.2000/abc');
+  });
+
+  test('該当行が無ければ throw・空配列は no-op', async () => {
+    const deps = makeDeps([HEADER]);
+    await expect(updateDocuments('sid', [makeDocument()], deps)).rejects.toThrow(
+      'document_id "doc-1" の行がありません',
+    );
+
+    const empty = makeDeps([HEADER]);
+    await updateDocuments('sid', [], empty);
+    expect(empty.fetch).not.toHaveBeenCalled();
   });
 });

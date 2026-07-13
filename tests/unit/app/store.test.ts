@@ -46,6 +46,15 @@ describe('createInitialState', () => {
         mergeDialog: null,
         merging: false,
         mergeError: null,
+        tiabImport: {
+          open: false,
+          sheetInput: '',
+          loading: false,
+          error: null,
+          plan: null,
+          applying: false,
+          result: null,
+        },
       },
       protocol: {
         records: null,

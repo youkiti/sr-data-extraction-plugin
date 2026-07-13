@@ -28,6 +28,7 @@ import type { BatchFailure, RunProgress } from '../features/extraction/executeRu
 import type { FieldSelection, FieldSubsetBadge } from '../features/extraction/fieldSelection';
 import type { ExtractStudyRow } from '../features/extraction/studyProgress';
 import type { ProgressCounts } from '../features/project/progressCounts';
+import type { TiabImportPlan } from '../features/documents/tiabReview';
 import type { DashboardData } from '../features/verification/dashboard';
 import type { LoadedPdfView } from '../features/verification/pdfViewCache';
 import type { RobPrespecDialogState } from '../features/schema/presets/robPrespec';
@@ -112,6 +113,23 @@ export interface MergeDialogState {
   hasExtractedData: boolean;
 }
 
+/** S3「tiab-review から採用リストを読み込む」カードの状態（issue #68・requirements.md §4.5 / ※Q2） */
+export interface TiabImportState {
+  /** カードの開閉（閉 = 導線ボタンのみ表示） */
+  open: boolean;
+  /** 直近プレビュー時の入力値（再描画でフォームを復元する） */
+  sheetInput: string;
+  /** tiab シートの読み込み + プレビュー計算中 */
+  loading: boolean;
+  error: string | null;
+  /** 反映プラン（プレビュー = そのまま実行内容）。null = 未計算 */
+  plan: TiabImportPlan | null;
+  /** 「取り込みを実行」の反映中 */
+  applying: boolean;
+  /** 直近の実行結果サマリ（次のプレビューまで残す） */
+  result: { studiesUpdated: number; documentsUpdated: number; unmatched: number } | null;
+}
+
 /** #/documents（S3）の画面状態 */
 export interface DocumentsState {
   /** Documents タブの一覧。null = 未読込（画面表示時に読み込む） */
@@ -133,6 +151,8 @@ export interface DocumentsState {
   mergeDialog: MergeDialogState | null;
   merging: boolean;
   mergeError: string | null;
+  /** tiab-review 採用リスト取り込みカード（issue #68） */
+  tiabImport: TiabImportState;
 }
 
 /** #/protocol（S4）の画面状態 */
@@ -580,6 +600,15 @@ export function createInitialState(): AppState {
       mergeDialog: null,
       merging: false,
       mergeError: null,
+      tiabImport: {
+        open: false,
+        sheetInput: '',
+        loading: false,
+        error: null,
+        plan: null,
+        applying: false,
+        result: null,
+      },
     },
     protocol: {
       records: null,
