@@ -15,6 +15,7 @@ import {
 } from '../../lib/pdf/renderPage';
 import { toDisplayRect } from '../../lib/pdf/viewportRect';
 import { searchPages, type HighlightOccurrence } from '../../features/verification/highlights';
+import { t } from '../../lib/i18n';
 import { el } from './dom';
 
 /** ハイライト色の区分（requirements.md §5-4: 検証済み = 緑 / 未検証 = 黄 / low = 橙） */
@@ -79,18 +80,18 @@ export function createPdfViewer(options: PdfViewerOptions): PdfViewerHandle {
   // --- ツールバー ---------------------------------------------------------
   const prevButton = el('button', {
     className: 'pdf-viewer__prev',
-    text: '前のページ',
+    text: t('pdf.prevPage'),
     attributes: { type: 'button' },
   });
   const nextButton = el('button', {
     className: 'pdf-viewer__next',
-    text: '次のページ',
+    text: t('pdf.nextPage'),
     attributes: { type: 'button' },
   });
   const pageIndicator = el('span', { className: 'pdf-viewer__page-indicator' });
   const zoomSelect = el('select', {
     className: 'pdf-viewer__zoom',
-    attributes: { 'aria-label': 'ズーム' },
+    attributes: { 'aria-label': t('pdf.zoomAria') },
   });
   for (const level of ZOOM_LEVELS) {
     const option = el('option', { text: `${Number(level) * 100}%`, attributes: { value: level } });
@@ -99,11 +100,11 @@ export function createPdfViewer(options: PdfViewerOptions): PdfViewerHandle {
   zoomSelect.value = '1';
   const searchInput = el('input', {
     className: 'pdf-viewer__search-input',
-    attributes: { type: 'search', 'aria-label': '本文検索', placeholder: '本文を検索' },
+    attributes: { type: 'search', 'aria-label': t('pdf.searchAria'), placeholder: t('pdf.searchPlaceholder') },
   });
   const searchButton = el('button', {
     className: 'pdf-viewer__search-button',
-    text: '検索',
+    text: t('pdf.searchButton'),
     attributes: { type: 'button' },
   });
   const searchStatus = el('span', {
@@ -124,7 +125,7 @@ export function createPdfViewer(options: PdfViewerOptions): PdfViewerHandle {
   // なる）。focusable なスクロール領域に表示名を与えつつ landmark ノイズを避ける最小構成
   const scroller = el('div', {
     className: 'pdf-viewer__scroller',
-    attributes: { role: 'group', tabindex: '0', 'aria-label': 'PDF 表示領域' },
+    attributes: { role: 'group', tabindex: '0', 'aria-label': t('pdf.viewerAria') },
   }, [errorEl, pageWrap]);
   const root = el('div', { className: 'pdf-viewer' }, [
     el('div', { className: 'pdf-viewer__toolbar' }, [
@@ -184,7 +185,7 @@ export function createPdfViewer(options: PdfViewerOptions): PdfViewerHandle {
       for (const rect of highlight.occurrence.rects) {
         const node = el('button', {
           className: `pdf-viewer__hl pdf-viewer__hl--${highlight.kind}`,
-          attributes: { type: 'button', 'aria-label': `根拠: ${highlight.label}` },
+          attributes: { type: 'button', 'aria-label': t('pdf.highlightAria', { label: highlight.label }) },
         });
         if (highlight.id === activeId) {
           node.classList.add('pdf-viewer__hl--active');
@@ -205,7 +206,7 @@ export function createPdfViewer(options: PdfViewerOptions): PdfViewerHandle {
   }
 
   function renderToolbar(): void {
-    pageIndicator.textContent = `${currentPage} / ${numPages} ページ`;
+    pageIndicator.textContent = t('pdf.pageIndicator', { current: currentPage, total: numPages });
     prevButton.disabled = currentPage <= 1;
     nextButton.disabled = currentPage >= numPages;
   }
@@ -234,7 +235,9 @@ export function createPdfViewer(options: PdfViewerOptions): PdfViewerHandle {
         }
       } catch (err) {
         if (seq === renderSeq) {
-          errorEl.textContent = `PDF を表示できません: ${err instanceof Error ? err.message : String(err)}`;
+          errorEl.textContent = t('pdf.renderError', {
+            reason: err instanceof Error ? err.message : String(err),
+          });
           errorEl.hidden = false;
         }
       } finally {
@@ -278,11 +281,11 @@ export function createPdfViewer(options: PdfViewerOptions): PdfViewerHandle {
     }
     const hit = searchHits[searchIndex];
     if (hit === undefined) {
-      searchStatus.textContent = '一致する本文が見つかりません';
+      searchStatus.textContent = t('pdf.searchNoHits');
       renderOverlay();
       return;
     }
-    searchStatus.textContent = `${searchIndex + 1} / ${searchHits.length} 件`;
+    searchStatus.textContent = t('pdf.searchHits', { index: searchIndex + 1, total: searchHits.length });
     goToPage(hit.page);
   }
 

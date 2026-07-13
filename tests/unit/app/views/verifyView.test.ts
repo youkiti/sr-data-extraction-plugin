@@ -1,6 +1,7 @@
 import { renderVerifyView } from '../../../../src/app/views/verifyView';
 import { disposeVerificationPanelCache } from '../../../../src/app/views/verificationPanel';
 import { createInitialState, type AppState, type VerifyTarget } from '../../../../src/app/store';
+import { setUiLanguage } from '../../../../src/lib/i18n';
 import type { ViewContext, VerifyViewCallbacks } from '../../../../src/app/views/types';
 import type { DocumentRecord } from '../../../../src/domain/document';
 import type { SchemaField } from '../../../../src/domain/schemaField';
@@ -618,5 +619,21 @@ describe('renderVerifyView', () => {
         entityKey: 'outcome:outcome_1|arm:1',
       }),
     ]);
+  });
+});
+
+describe('renderVerifyView（表示言語 en。issue #93）', () => {
+  afterEach(() => {
+    setUiLanguage('ja');
+  });
+
+  test('見出し・空状態が en で描画される', () => {
+    setUiLanguage('en');
+    const { ctx } = makeCtx();
+    const view = renderVerifyView(makeState({ targets: [] }), ctx);
+    expect(view.querySelector('h2')?.textContent).toBe('Verification');
+    expect(view.querySelector('#verify-empty')?.textContent).toBe(
+      'No AI-extracted studies. Run an extraction first on the Pilot or Full extraction screen.',
+    );
   });
 });

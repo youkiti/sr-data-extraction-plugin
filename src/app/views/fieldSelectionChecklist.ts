@@ -11,6 +11,7 @@ import {
   selectedFieldCount,
   type FieldSelection,
 } from '../../features/extraction/fieldSelection';
+import { t } from '../../lib/i18n';
 import { el } from '../ui/dom';
 
 export interface FieldSelectionChecklistProps {
@@ -43,7 +44,7 @@ export function fieldSelectionSummaryText(
   const allFieldIds = fields.map((field) => field.fieldId);
   const selectedCount = selectedFieldCount(selection, allFieldIds);
   return selection === null
-    ? `全項目（${allFieldIds.length}）`
+    ? t('fieldSelection.allFields', { n: allFieldIds.length })
     : `${selectedCount} / ${allFieldIds.length}`;
 }
 
@@ -75,7 +76,7 @@ function renderSectionHead(
   const fullySelected = isSectionFullySelected(props.selection, sectionFieldIds);
   const sectionToggle = el('button', {
     className: `${props.idPrefix}__field-section-toggle`,
-    text: fullySelected ? '全解除' : '全選択',
+    text: fullySelected ? t('fieldSelection.deselectAll') : t('fieldSelection.selectAll'),
     attributes: { type: 'button' },
   });
   sectionToggle.addEventListener('click', () =>
@@ -86,7 +87,10 @@ function renderSectionHead(
     collapseButton,
     el('span', {
       className: `${props.idPrefix}__field-section-count`,
-      text: `選択 ${selectedCount} / 全 ${sectionFields.length}`,
+      text: t('fieldSelection.sectionCount', {
+        selected: selectedCount,
+        total: sectionFields.length,
+      }),
     }),
     sectionToggle,
   ]);
@@ -97,7 +101,10 @@ function renderFieldItem(props: FieldSelectionChecklistProps, field: SchemaField
     className: `${props.idPrefix}__field-checkbox`,
     attributes: {
       type: 'checkbox',
-      'aria-label': `${field.fieldLabel}（${field.fieldName}）を抽出対象にする`,
+      'aria-label': t('fieldSelection.fieldToggleAria', {
+        label: field.fieldLabel,
+        name: field.fieldName,
+      }),
     },
   });
   checkbox.checked = isFieldSelected(props.selection, field.fieldId);
@@ -136,7 +143,9 @@ export function renderFieldSelectionChecklist(props: FieldSelectionChecklistProp
   const summary = el('p', {
     id: `${props.idPrefix}-field-summary`,
     className: `${props.idPrefix}__field-summary`,
-    text: `対象項目: ${fieldSelectionSummaryText(props.selection, props.fields)}`,
+    text: t('fieldSelection.summary', {
+      summary: fieldSelectionSummaryText(props.selection, props.fields),
+    }),
   });
 
   const children: HTMLElement[] = [...sectionElements, summary];
@@ -146,7 +155,7 @@ export function renderFieldSelectionChecklist(props: FieldSelectionChecklistProp
         id: `${props.idPrefix}-field-error`,
         className: `${props.idPrefix}__error`,
         attributes: { role: 'alert' },
-        text: '抽出対象の項目を 1 つ以上選択してください',
+        text: t('fieldSelection.zeroError'),
       }),
     );
   }

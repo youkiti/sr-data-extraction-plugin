@@ -11,7 +11,6 @@
 import { NOT_REPORTED_TOKEN } from '../../domain/annotation';
 import type { ConfirmedArmStructure } from '../../domain/armStructure';
 import type { Decision, DecisionAction } from '../../domain/decision';
-import { DOCUMENT_ROLE_LABELS } from '../../domain/document';
 import type { Evidence } from '../../domain/evidence';
 import type { EntityLevel } from '../../domain/schemaField';
 import type { TextLayerPage } from '../../domain/textLayer';
@@ -62,8 +61,10 @@ import type {
 } from '../../features/verification/types';
 import type { VerifyLayoutMode } from '../../lib/storage/settingsStore';
 import type { renderPdfPageToCanvas } from '../../lib/pdf/renderPage';
+import { t } from '../../lib/i18n';
 import { nowIso8601 } from '../../utils/iso8601';
 import { nextOutcomeId } from '../../utils/entityKey';
+import { documentRoleLabel } from '../ui/documentRoleLabel';
 import { el } from '../ui/dom';
 import { createPdfViewer, type PdfViewerHandle, type ViewerHighlight } from '../ui/pdfViewer';
 import { createTextViewer, type TextViewerSnippet } from '../ui/textViewer';
@@ -452,7 +453,7 @@ export function createVerificationPanel(
     return el('p', {
       className: 'verify__pdf-loading',
       attributes: { role: 'status', 'aria-live': 'polite' },
-      text: 'PDF を読み込んでいます…',
+      text: t('verify.pdfLoading'),
     });
   }
 
@@ -484,7 +485,7 @@ export function createVerificationPanel(
       button.append(
         el('span', {
           className: `verify__doc-role verify__doc-role--${view.document.documentRole}`,
-          text: DOCUMENT_ROLE_LABELS[view.document.documentRole],
+          text: documentRoleLabel(view.document.documentRole),
         }),
         el('span', { className: 'verify__doc-filename', text: view.document.filename }),
       );
@@ -494,17 +495,15 @@ export function createVerificationPanel(
     });
     docTabsBar = el(
       'div',
-      { className: 'verify__doc-tabs', attributes: { role: 'tablist', 'aria-label': '文書切替' } },
+      { className: 'verify__doc-tabs', attributes: { role: 'tablist', 'aria-label': t('verify.docTabsAria') } },
       buttons,
     );
   }
 
   // no_text_layer バナーの 2 種類の文言（§7.4 PR4）。bbox を持つ Evidence が 1 件でもある
   // 文書は「AI 推定ハイライトを表示中」、無ければ従来どおり「ハイライト検証は使えません」
-  const NO_TEXT_LAYER_BANNER_TEXT =
-    'この PDF はテキスト層がないためハイライト検証は使えません（quote 全文とページヒントで検証してください）';
-  const NO_TEXT_LAYER_BBOX_BANNER_TEXT =
-    'この PDF はテキスト層がありません。AI が推定した座標ハイライト（bbox）を表示しています。位置は機械検証できないため、必ず quote 全文と照らして検証してください';
+  const NO_TEXT_LAYER_BANNER_TEXT = t('verify.noTextLayerBanner');
+  const NO_TEXT_LAYER_BBOX_BANNER_TEXT = t('verify.noTextLayerBboxBanner');
   // bbox を持つ Evidence の出所文書 ID 集合（バナー出し分けに使う。study 全体で 1 回だけ計算する）
   const documentsWithBbox = new Set(
     currentEvidence()
@@ -533,17 +532,17 @@ export function createVerificationPanel(
   }) as HTMLButtonElement;
   const textModeButton = el('button', {
     className: 'verify__view-toggle-btn',
-    text: '抽出テキスト',
+    text: t('verify.viewText'),
     attributes: { type: 'button', 'aria-pressed': 'false' },
   }) as HTMLButtonElement;
   const viewToggleBar = el(
     'div',
-    { className: 'verify__view-toggle', attributes: { role: 'group', 'aria-label': '左ペインの表示切替' } },
+    { className: 'verify__view-toggle', attributes: { role: 'group', 'aria-label': t('verify.viewToggleAria') } },
     [pdfModeButton, textModeButton],
   );
   const textModeNote = el('p', {
     className: 'verify__view-toggle-note',
-    text: 'この文書には抽出テキストがありません（no_text_layer、または抽出に失敗しています）',
+    text: t('verify.noTextNote'),
   });
 
   const viewerBody = el('div', { className: 'verify__pdf-body' });
@@ -562,15 +561,15 @@ export function createVerificationPanel(
   function pdfErrorCard(documentId: string, message: string | null): HTMLElement {
     const retryButton = el('button', {
       className: 'verify__pdf-retry',
-      text: '再試行',
+      text: t('common.retry'),
       attributes: { type: 'button' },
     }) as HTMLButtonElement;
     retryButton.addEventListener('click', () => {
       void retryActiveDocumentPdf(documentId);
     });
-    const link = el('a', { text: '文献取り込み画面を開く', attributes: { href: '#/documents' } });
+    const link = el('a', { text: t('verify.openDocuments'), attributes: { href: '#/documents' } });
     return el('div', { className: 'verify__pdf-error', attributes: { role: 'alert' } }, [
-      el('p', { text: `PDF を開けません: ${message ?? '原因不明'}` }),
+      el('p', { text: t('verify.pdfOpenError', { reason: message ?? t('verify.pdfErrorUnknown') }) }),
       retryButton,
       link,
     ]);
@@ -752,7 +751,7 @@ export function createVerificationPanel(
     textModeButton.classList.toggle('verify__view-toggle-btn--active', viewMode === 'text');
     textModeButton.setAttribute('aria-pressed', String(viewMode === 'text'));
     textModeButton.disabled = !hasText;
-    textModeButton.title = hasText ? '' : 'この文書には抽出テキストがありません';
+    textModeButton.title = hasText ? '' : t('verify.noTextTitle');
     textModeNote.hidden = hasText;
     viewerBody.hidden = viewMode !== 'pdf';
     textViewerBody.hidden = viewMode !== 'text';
@@ -909,7 +908,10 @@ export function createVerificationPanel(
 
   /** 文書のファイル名 + role ラベル（抽出テキストビューの出所文書表示。issue #28 案2） */
   function documentLabelOf(view: VerificationDocumentView): string {
-    return `${view.document.filename}（${DOCUMENT_ROLE_LABELS[view.document.documentRole]}）`;
+    return t('verify.documentLabel', {
+      filename: view.document.filename,
+      role: documentRoleLabel(view.document.documentRole),
+    });
   }
 
   /**
@@ -1102,12 +1104,12 @@ export function createVerificationPanel(
     onArmConfirm() {
       const trimmed = armRows.map((arm) => ({ armKey: arm.armKey, armName: arm.armName.trim() }));
       if (trimmed.length === 0) {
-        armError = '少なくとも 1 つの群が必要です';
+        armError = t('verify.armErrorNeedOne');
         refreshForm();
         return;
       }
       if (trimmed.some((arm) => arm.armName === '')) {
-        armError = '名称が空の群があります。すべての群に名称を入力してください';
+        armError = t('verify.armErrorEmptyName');
         refreshForm();
         return;
       }
@@ -1145,7 +1147,7 @@ export function createVerificationPanel(
       const outcomeId = outcomeKeyDraft.trim();
       const time = outcomeTimeDraft.trim();
       if (outcomeId === '') {
-        outcomeError = 'アウトカムキーを入力してください';
+        outcomeError = t('verify.outcomeKeyRequired');
         refreshForm();
         return;
       }
@@ -1171,7 +1173,7 @@ export function createVerificationPanel(
       );
       const duplicate = declarations.find((decision) => existing.has(decision.entityKey));
       if (duplicate !== undefined) {
-        outcomeError = `entity_key ${duplicate.entityKey} は既に存在します`;
+        outcomeError = t('verify.outcomeDuplicate', { key: duplicate.entityKey });
         refreshForm();
         return;
       }

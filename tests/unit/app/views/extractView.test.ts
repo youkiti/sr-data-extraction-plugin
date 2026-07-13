@@ -7,6 +7,7 @@ import type { SchemaField } from '../../../../src/domain/schemaField';
 import type { StudyRecord } from '../../../../src/domain/study';
 import type { ExtractStudyRow } from '../../../../src/features/extraction/studyProgress';
 import { planRun } from '../../../../src/features/extraction/planRun';
+import { setUiLanguage } from '../../../../src/lib/i18n';
 
 jest.mock('../../../../src/features/extraction/planRun', () => {
   const actual = jest.requireActual<typeof import('../../../../src/features/extraction/planRun')>(
@@ -862,5 +863,24 @@ describe('完了サマリ', () => {
     );
     expect(root.querySelector<HTMLButtonElement>('.extract__retry')?.disabled).toBe(true);
     expect(root.querySelector<HTMLButtonElement>('#extract-run')?.disabled).toBe(true);
+  });
+});
+
+describe('renderExtractView（表示言語 en。issue #93）', () => {
+  afterEach(() => {
+    setUiLanguage('ja');
+  });
+
+  test('見出し・実行ボタン・読み込みエラーが en で描画される', () => {
+    setUiLanguage('en');
+    const { ctx } = makeCtx();
+    const view = renderExtractView(makeState(), ctx);
+    expect(view.querySelector('h2')?.textContent).toBe('Full extraction');
+    expect(view.querySelector('#extract-run')?.textContent).toBe('Run full extraction');
+
+    const errorView = renderExtractView(makeState({ documentsError: 'HTTP 500' }), ctx);
+    expect(errorView.querySelector('#extract-load-error')?.textContent).toBe(
+      'Failed to load extraction targets: HTTP 500',
+    );
   });
 });

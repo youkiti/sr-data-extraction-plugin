@@ -16,6 +16,7 @@ import {
 import { isArmDependentLevel } from '../../features/verification/armDraft';
 import type { VerificationProgress } from '../../features/verification/progress';
 import type { RobAlgorithmInfo } from '../../features/verification/robAlgorithm';
+import { t, type MessageKey } from '../../lib/i18n';
 import { el } from '../ui/dom';
 import {
   renderCell,
@@ -147,11 +148,12 @@ export interface VerificationFormHandlers {
   onMoveUnit(delta: number): void;
 }
 
-const TAB_LABELS: Record<EntityLevel, string> = {
-  study: 'Study',
-  arm: '群（arm）',
-  outcome_result: 'アウトカム',
-  rob_domain: 'RoB',
+// 表示言語に追従させるため、ラベルは描画時に t() で解決する（キー対応表のみ固定。issue #93）
+const TAB_LABEL_KEYS: Record<EntityLevel, MessageKey> = {
+  study: 'verify.tabStudy',
+  arm: 'verify.tabArm',
+  outcome_result: 'verify.tabOutcome',
+  rob_domain: 'verify.tabRob',
 };
 
 /**
@@ -178,14 +180,14 @@ function renderDecidedRow(
   children.push(
     el('span', {
       className: 'verify__decided-value',
-      text: `確定値: ${cell.state.value ?? '（空）'}`,
+      text: t('verify.decidedValue', { value: cell.state.value ?? t('verify.valueEmpty') }),
     }),
   );
   const row = el(
     'button',
     {
       className: 'verify__cell verify__cell--decided',
-      attributes: { type: 'button', title: 'クリックで詳細を表示' },
+      attributes: { type: 'button', title: t('verify.decidedRowTitle') },
     },
     children,
   );
@@ -200,7 +202,12 @@ function renderDecidedRow(
 /** 「判定済み N / M（残り R）」の定型文（R=0 は「すべて判定済み」） */
 function progressText(decided: number, total: number): string {
   const remaining = Math.max(total - decided, 0);
-  return `判定済み ${decided} / ${total}${remaining > 0 ? `（残り ${remaining}）` : '（すべて判定済み）'}`;
+  return t('verify.progressText', {
+    decided,
+    total,
+    suffix:
+      remaining > 0 ? t('verify.progressRemaining', { n: remaining }) : t('verify.progressComplete'),
+  });
 }
 
 /**
@@ -214,8 +221,8 @@ function renderProgress(progress: VerificationProgress, activeTab: EntityLevel):
     className: 'verify__progress-text',
     text:
       tab.total === 0
-        ? 'このタブに判定対象の項目がありません'
-        : `${TAB_LABELS[activeTab]}: ${progressText(tab.decided, tab.total)}`,
+        ? t('verify.progressEmptyTab')
+        : `${t(TAB_LABEL_KEYS[activeTab])}: ${progressText(tab.decided, tab.total)}`,
   });
   const bar = el('progress', {
     className: 'verify__progress-bar',
@@ -228,7 +235,7 @@ function renderProgress(progress: VerificationProgress, activeTab: EntityLevel):
     children.push(
       el('span', {
         className: 'verify__progress-overall',
-        text: `全体: ${progressText(progress.decided, progress.total)}`,
+        text: t('verify.progressOverall', { progress: progressText(progress.decided, progress.total) }),
       }),
     );
   }
@@ -247,7 +254,7 @@ function renderTabs(model: VerificationFormModel, handlers: VerificationFormHand
   const buttons = model.tabs.map((tab) => {
     const button = el('button', {
       className: 'verify__tab',
-      text: TAB_LABELS[tab],
+      text: t(TAB_LABEL_KEYS[tab]),
       attributes: { type: 'button', role: 'tab', 'aria-selected': String(tab === model.activeTab) },
     });
     if (tab === model.activeTab) {
@@ -280,11 +287,11 @@ function renderLayoutToggle(
   const button = el('button', {
     id: 'verify-layout-toggle',
     className: 'verify__layout-toggle',
-    text: isFocus ? 'リスト表示に切替' : 'フォーカス表示に切替',
+    text: isFocus ? t('verify.layoutToList') : t('verify.layoutToFocus'),
     attributes: {
       type: 'button',
       'aria-pressed': String(isFocus),
-      title: isFocus ? 'リスト表示に切替' : 'フォーカス表示に切替',
+      title: isFocus ? t('verify.layoutToList') : t('verify.layoutToFocus'),
     },
   });
   button.addEventListener('click', () => handlers.onToggleLayoutMode(nextMode));
@@ -298,14 +305,14 @@ function renderArmCardEditor(
   const rows = card.rows.map((arm, index) => {
     const input = el('input', {
       className: 'verify__arm-name',
-      attributes: { type: 'text', 'aria-label': `群 ${arm.armKey} の名称` },
+      attributes: { type: 'text', 'aria-label': t('verify.armNameAria', { key: arm.armKey }) },
     });
     input.value = arm.armName;
     input.addEventListener('change', () => handlers.onArmNameChange(index, input.value));
     const removeButton = el('button', {
       className: 'verify__arm-remove',
-      text: '削除',
-      attributes: { type: 'button', 'aria-label': `群 ${arm.armKey} を削除` },
+      text: t('verify.armRemove'),
+      attributes: { type: 'button', 'aria-label': t('verify.armRemoveAria', { key: arm.armKey }) },
     });
     removeButton.addEventListener('click', () => handlers.onArmRemoveRow(index));
     return el('li', { className: 'verify__arm-row' }, [
@@ -317,7 +324,7 @@ function renderArmCardEditor(
 
   const addButton = el('button', {
     className: 'verify__arm-add',
-    text: '群を追加',
+    text: t('verify.armAdd'),
     attributes: { type: 'button' },
   });
   addButton.addEventListener('click', () => handlers.onArmAddRow());
@@ -325,7 +332,7 @@ function renderArmCardEditor(
   const confirmButton = el('button', {
     id: 'verify-arm-confirm',
     className: 'verify__arm-confirm',
-    text: '群構成を確定',
+    text: t('verify.armConfirm'),
     attributes: { type: 'button' },
   });
   confirmButton.addEventListener('click', () => handlers.onArmConfirm());
@@ -334,7 +341,7 @@ function renderArmCardEditor(
   if (card.confirmedVersion !== null) {
     const cancelButton = el('button', {
       className: 'verify__arm-cancel',
-      text: 'キャンセル',
+      text: t('common.cancel'),
       attributes: { type: 'button' },
     });
     cancelButton.addEventListener('click', () => handlers.onArmCancelRevise());
@@ -346,10 +353,7 @@ function renderArmCardEditor(
     children.push(
       el('p', {
         className: 'verify__arm-lead',
-        text:
-          card.mode === 'independent'
-            ? 'まず群構成を確定してください（群を追加して名称・数を自分で確定します）'
-            : 'まず群構成を確定してください（AI ドラフトを初期値に、群の名称・数を確定します）',
+        text: card.mode === 'independent' ? t('verify.armLeadIndependent') : t('verify.armLead'),
       }),
     );
   }
@@ -375,23 +379,25 @@ function renderArmCardSummary(
   const reviseButton = el('button', {
     id: 'verify-arm-revise',
     className: 'verify__arm-revise',
-    text: '改訂',
+    text: t('verify.armRevise'),
     attributes: { type: 'button' },
   });
   reviseButton.addEventListener('click', () => handlers.onArmRevise());
   return [
     el('p', {
       className: 'verify__arm-summary',
-      text: `群構成: ${card.rows.length} 群（version ${card.confirmedVersion}）— ${card.rows
-        .map((arm) => arm.armName)
-        .join(' / ')}`,
+      text: t('verify.armSummary', {
+        count: card.rows.length,
+        version: String(card.confirmedVersion),
+        names: card.rows.map((arm) => arm.armName).join(' / '),
+      }),
     }),
     el('div', { className: 'verify__arm-actions' }, [reviseButton]),
   ];
 }
 
 function renderArmCard(card: ArmCardModel, handlers: VerificationFormHandlers): HTMLElement {
-  const children: HTMLElement[] = [el('h4', { className: 'verify__arm-heading', text: '群構成' })];
+  const children: HTMLElement[] = [el('h4', { className: 'verify__arm-heading', text: t('verify.armHeading') })];
   children.push(
     ...(card.editing ? renderArmCardEditor(card, handlers) : renderArmCardSummary(card, handlers)),
   );
@@ -421,20 +427,20 @@ function renderOutcomeAdd(
   const addButton = el('button', {
     id: 'verify-outcome-add-button',
     className: 'verify__outcome-add-button',
-    text: 'アウトカムを追加',
+    text: t('verify.outcomeAddTitle'),
     attributes: { type: 'button' },
   });
   addButton.addEventListener('click', () => handlers.onOutcomeAdd());
 
   const children: HTMLElement[] = [
-    el('h4', { className: 'verify__outcome-heading', text: 'アウトカムを追加' }),
+    el('h4', { className: 'verify__outcome-heading', text: t('verify.outcomeAddTitle') }),
     el('div', { className: 'verify__outcome-fields' }, [
       el('label', { className: 'verify__outcome-field', attributes: { for: 'verify-outcome-key' } }, [
-        'アウトカムキー',
+        t('verify.outcomeKeyLabel'),
         keyInput,
       ]),
       el('label', { className: 'verify__outcome-field', attributes: { for: 'verify-outcome-time' } }, [
-        '時点（任意）',
+        t('verify.outcomeTimeLabel'),
         timeInput,
       ]),
       addButton,
@@ -455,9 +461,7 @@ function renderOutcomeAdd(
 
 /** ショートカット注記の文言（モードごとにキー割当が異なる。ui-flow.md §7） */
 function shortcutNoteText(layoutMode: 'focus' | 'list'): string {
-  return layoutMode === 'focus'
-    ? 'ショートカット: a 承認 / e 修正 / x 棄却 / n 未報告 / z 直近判定を戻す / j・k 行移動 / h・l 列移動 / J・K ユニット切替 / f ハイライトへ'
-    : 'ショートカット: a 承認 / e 修正 / x 棄却 / n 未報告 / z 戻す / j・k 項目移動 / f ハイライトへ';
+  return layoutMode === 'focus' ? t('verify.shortcutNoteFocus') : t('verify.shortcutNoteList');
 }
 
 /**
@@ -503,7 +507,7 @@ export function renderVerificationForm(
     children.push(
       el('p', {
         className: 'verify__locked-note',
-        text: 'まず群構成を確定してください',
+        text: t('verify.lockedNote'),
       }),
     );
     return finalizeForm(children);
@@ -512,7 +516,7 @@ export function renderVerificationForm(
     children.push(
       el('p', {
         className: 'verify__empty',
-        text: 'このタブに表示できる項目がありません（AI 抽出にインスタンスがありません）',
+        text: t('verify.emptyTab'),
       }),
     );
     children.push(el('p', { className: 'verify__shortcut-note', text: shortcutNoteText(model.layoutMode) }));
@@ -545,7 +549,7 @@ export function renderVerificationForm(
   if (decided.length > 0) {
     children.push(
       el('section', { className: 'verify__group verify__group--decided' }, [
-        el('h4', { className: 'verify__group-heading', text: `判定済み（${decided.length}）` }),
+        el('h4', { className: 'verify__group-heading', text: t('verify.decidedGroupHeading', { n: decided.length }) }),
         ...decided.map((entry) => renderDecidedRow(entry, model, handlers)),
       ]),
     );

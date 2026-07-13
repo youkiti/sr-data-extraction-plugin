@@ -31,14 +31,28 @@ async function initApp(page: Page, options: { seedEnglish?: boolean } = {}): Pro
           documents: 1,
           protocolVersions: 1,
           schemaVersions: 1,
-          pilotRuns: 0,
-          evidenceRows: 0,
+          pilotRuns: 1,
+          evidenceRows: 1,
           dataRows: 0,
         },
-        // S3 / S4 / S5 を読込済み（空）で注入し、Sheets 読込を発火させない
+        // S3〜S9 を読込済み（空）で注入し、Sheets 読込を発火させない
         documents: { records: [], studies: [] },
         protocol: { records: [] },
         schema: { versions: [] },
+        extract: { extractedStudyIds: [], interruptedStudyIds: [] },
+        verify: { targets: [] },
+        dashboard: {
+          data: {
+            sections: [],
+            rows: [],
+            totals: {
+              progress: { decided: 0, total: 0 },
+              accuracy: { accept: 0, edit: 0, reject: 0, notReported: 0, decided: 0 },
+              anchor: { numerator: 0, denominator: 0 },
+              notReported: { numerator: 0, denominator: 0 },
+            },
+          },
+        },
       };
     })();
   `);
@@ -111,6 +125,29 @@ test('移行済みの S3 / S4 / S5 も en で表示される（issue #93 PR2）'
   await page.locator('#app-nav a[href="#/schema"]').click();
   await expect(page.locator('#app-content h2').first()).toHaveText('Table design');
   await expect(page.locator('#schema-draft-run')).toHaveText('Have AI draft the table design');
+});
+
+test('移行済みの S6 / S7 / S8 / S9 も en で表示される（issue #93 PR3）', async ({ page }) => {
+  await initApp(page, { seedEnglish: true });
+
+  await page.locator('#app-nav a[href="#/pilot"]').click();
+  await expect(page.locator('#app-content h2').first()).toHaveText('Pilot extraction');
+  await expect(page.locator('#pilot-documents-empty')).toHaveText(
+    'No studies yet. Import documents first on the Documents screen.',
+  );
+  await expect(page.locator('#pilot-run')).toHaveText('Run pilot extraction');
+
+  await page.locator('#app-nav a[href="#/extract"]').click();
+  await expect(page.locator('#app-content h2').first()).toHaveText('Full extraction');
+  await expect(page.locator('#extract-run')).toHaveText('Run full extraction');
+
+  await page.locator('#app-nav a[href="#/verify"]').click();
+  await expect(page.locator('#app-content h2').first()).toHaveText('Verification');
+  await expect(page.locator('#verify-empty')).toContainText('No AI-extracted studies.');
+
+  await page.locator('#app-nav a[href="#/dashboard"]').click();
+  await expect(page.locator('#app-content h2').first()).toHaveText('Dashboard');
+  await expect(page.locator('#dashboard-empty')).toContainText('No extractions yet.');
 });
 
 test('スタンドアロン options.html も保存済み言語（en）で構築され、ja へ戻せる', async ({

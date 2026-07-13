@@ -1,5 +1,6 @@
 import { rateText, renderDashboardView } from '../../../../src/app/views/dashboardView';
 import { createInitialState, type AppState } from '../../../../src/app/store';
+import { setUiLanguage } from '../../../../src/lib/i18n';
 import type { DashboardViewCallbacks, ViewContext } from '../../../../src/app/views/types';
 import type { DashboardData } from '../../../../src/features/verification/dashboard';
 
@@ -280,5 +281,23 @@ describe('renderDashboardView', () => {
     expect(cells).toEqual(['—', '—', '—', '—', '—']);
     // 空白入り document_id の行見出し（リンクは無いが表示は保つ）
     expect(row2.querySelector('th')?.textContent).toBe('Jones 2021（0 / 0）');
+  });
+});
+
+describe('renderDashboardView（表示言語 en。issue #93）', () => {
+  afterEach(() => {
+    setUiLanguage('ja');
+  });
+
+  test('見出し・サマリラベル・率の表記が en で描画される', () => {
+    setUiLanguage('en');
+    const { ctx } = makeCtx();
+    const view = renderDashboardView(makeState({ data: makeData() }), ctx);
+    expect(view.querySelector('h2')?.textContent).toBe('Dashboard');
+    expect(view.querySelector('#dashboard-summary')?.textContent).toContain(
+      'Verification progress',
+    );
+    // 率は en の半角括弧表記になる
+    expect(rateText({ numerator: 1, denominator: 2 })).toBe('1 / 2 (50%)');
   });
 });

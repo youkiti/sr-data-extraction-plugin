@@ -8,6 +8,7 @@ import { NOT_REPORTED_TOKEN } from '../../domain/annotation';
 import type { VerificationCell } from '../../features/verification/cells';
 import type { CellStatus } from '../../features/verification/cellState';
 import type { RobAlgorithmInfo } from '../../features/verification/robAlgorithm';
+import { t, type MessageKey } from '../../lib/i18n';
 import { el } from '../ui/dom';
 
 /** セルに対応するハイライトの表示情報（0 件 = ハイライトなし → フォールバック UI） */
@@ -82,30 +83,33 @@ export interface CellCardHandlers {
   onCollapseDecided(): void;
 }
 
-const STATUS_LABELS: Record<CellStatus, string> = {
-  unverified: '未検証',
-  accept: '承認',
-  edit: '修正',
-  reject: '棄却',
-  not_reported: '未報告',
+// 表示言語に追従させるため、ラベルは描画時に t() で解決する（キー対応表のみ固定。issue #93）
+const STATUS_LABEL_KEYS: Record<CellStatus, MessageKey> = {
+  unverified: 'verify.statusUnverified',
+  accept: 'verify.statusAccept',
+  edit: 'verify.statusEdit',
+  reject: 'verify.statusReject',
+  not_reported: 'verify.statusNotReported',
 };
 
 export function renderStatusChip(status: CellStatus): HTMLElement {
   return el('span', {
     className: `verify__chip verify__chip--${status}`,
-    text: STATUS_LABELS[status],
+    text: t(STATUS_LABEL_KEYS[status]),
   });
 }
 
 function renderAiSummary(cell: VerificationCell): HTMLElement {
   const { evidence } = cell;
   if (evidence === null) {
-    return el('p', { className: 'verify__ai verify__ai--none', text: 'AI 抽出なし（手入力のみ）' });
+    return el('p', { className: 'verify__ai verify__ai--none', text: t('verify.aiNone') });
   }
   const parts: HTMLElement[] = [
     el('span', {
       className: 'verify__ai-value',
-      text: evidence.notReported ? `未報告（${NOT_REPORTED_TOKEN}）` : (evidence.value ?? '（値なし）'),
+      text: evidence.notReported
+        ? t('verify.aiNotReported', { token: NOT_REPORTED_TOKEN })
+        : (evidence.value ?? t('verify.aiValueNone')),
     }),
   ];
   if (evidence.confidence !== null) {
@@ -160,7 +164,7 @@ function renderRobAlgorithmInfo(cell: VerificationCell, model: CellCardModel): H
     children.push(
       el('p', {
         className: 'verify__rob-suggestion',
-        text: `アルゴリズム提案: ${info.suggestion}`,
+        text: t('verify.robSuggestion', { suggestion: info.suggestion as string }),
       }),
     );
   }
@@ -172,9 +176,10 @@ function renderRobAlgorithmInfo(cell: VerificationCell, model: CellCardModel): H
         [
           el('p', {
             className: 'verify__rob-mismatch-warning',
-            text:
-              `⚠ アルゴリズム提案 (${info.suggestion}) と現在の判定 (${info.currentValue}) が` +
-              '一致しません',
+            text: t('verify.robMismatch', {
+              suggestion: info.suggestion as string,
+              current: String(info.currentValue),
+            }),
           }),
         ],
       ),
@@ -184,7 +189,7 @@ function renderRobAlgorithmInfo(cell: VerificationCell, model: CellCardModel): H
     children.push(
       el('p', {
         className: 'verify__rob-unconfirmed',
-        text: 'AI 判定・未確認（まだ人が確認していません）',
+        text: t('verify.robUnconfirmed'),
       }),
     );
   }
@@ -214,7 +219,7 @@ function renderExtractionInstruction(cell: VerificationCell): HTMLElement {
  */
 function renderExtractionInstructionToggle(cell: VerificationCell): HTMLElement {
   return el('details', { className: 'verify__instruction-toggle' }, [
-    el('summary', { text: '指示を表示' }),
+    el('summary', { text: t('verify.instructionToggle') }),
     el('p', {
       className: 'verify__instruction',
       text: cell.field.extractionInstruction,
@@ -239,7 +244,7 @@ function renderQuote(
   if (anchored) {
     const jumpButton = el('button', {
       className: 'verify__quote-jump',
-      text: 'ハイライトへ移動',
+      text: t('verify.jumpToHighlight'),
       attributes: { type: 'button' },
     });
     jumpButton.addEventListener('click', () => handlers.onJump(cell.cellKey));
@@ -247,7 +252,11 @@ function renderQuote(
     if (info.matchCount > 1) {
       const cycleButton = el('button', {
         className: 'verify__quote-cycle',
-        text: `他 ${info.matchCount - 1} 箇所に一致（${info.matchIndex + 1} / ${info.matchCount}）`,
+        text: t('verify.cycleMatch', {
+          others: info.matchCount - 1,
+          index: info.matchIndex + 1,
+          total: info.matchCount,
+        }),
         attributes: { type: 'button' },
       });
       cycleButton.addEventListener('click', () => handlers.onCycleMatch(cell.cellKey));
@@ -255,13 +264,13 @@ function renderQuote(
     }
   } else {
     children.push(
-      el('span', { className: 'verify__quote-unanchored', text: 'ハイライト位置を特定できません' }),
+      el('span', { className: 'verify__quote-unanchored', text: t('verify.unanchored') }),
     );
     if (model.canSearchText) {
       const quoteText = evidence.quote;
       const searchButton = el('button', {
         className: 'verify__quote-search',
-        text: '本文内を検索',
+        text: t('verify.searchInText'),
         attributes: { type: 'button' },
       });
       searchButton.addEventListener('click', () => handlers.onSearchQuote(quoteText));
@@ -273,7 +282,7 @@ function renderQuote(
       const status = model.relocateStatus?.get(cell.cellKey);
       const relocateButton = el('button', {
         className: 'verify__quote-relocate',
-        text: status === 'running' ? 'AI で再特定中…' : 'AI で再特定',
+        text: status === 'running' ? t('verify.relocating') : t('verify.relocate'),
         attributes: { type: 'button' },
       }) as HTMLButtonElement;
       relocateButton.disabled = status === 'running';
@@ -284,7 +293,7 @@ function renderQuote(
           el('p', {
             className: 'verify__quote-relocate-not-found',
             attributes: { role: 'status' },
-            text: 'AI でも見つかりませんでした。本文内検索をお試しください',
+            text: t('verify.relocateNotFound'),
           }),
         );
       }
@@ -303,7 +312,7 @@ function renderEditor(
     className: 'verify__edit-input',
     attributes: {
       type: 'text',
-      'aria-label': `${cell.field.fieldLabel} の値`,
+      'aria-label': t('verify.editValueAria', { label: cell.field.fieldLabel }),
     },
   });
   // edit は現在値（未検証なら AI 値）から修正し、reject は白紙から手入力する（§4.2）。
@@ -316,7 +325,12 @@ function renderEditor(
   // （reject は独立入力モードでは到達しない操作。renderActions が棄却ボタンを出さない）
   const confirmButton = el('button', {
     className: 'verify__edit-confirm',
-    text: mode === 'independent' ? '入力して確定' : action === 'edit' ? '修正して確定' : '棄却して確定',
+    text:
+      mode === 'independent'
+        ? t('verify.editConfirmIndependent')
+        : action === 'edit'
+          ? t('verify.editConfirm')
+          : t('verify.rejectConfirm'),
     attributes: { type: 'button' },
   });
   confirmButton.addEventListener('click', () =>
@@ -324,7 +338,7 @@ function renderEditor(
   );
   const cancelButton = el('button', {
     className: 'verify__edit-cancel',
-    text: 'キャンセル',
+    text: t('common.cancel'),
     attributes: { type: 'button' },
   });
   cancelButton.addEventListener('click', () => handlers.onCancelEdit());
@@ -352,7 +366,7 @@ function renderEditButton(cell: VerificationCell, handlers: CellCardHandlers, la
 function renderNotReportedButton(cell: VerificationCell, handlers: CellCardHandlers): HTMLElement {
   const notReported = el('button', {
     className: 'verify__action verify__action--not-reported',
-    text: '未報告 (n)',
+    text: t('verify.actionNotReported'),
     attributes: { type: 'button' },
   });
   notReported.addEventListener('click', () => handlers.onNotReported(cell.cellKey));
@@ -362,7 +376,7 @@ function renderNotReportedButton(cell: VerificationCell, handlers: CellCardHandl
 function renderUndoButton(cell: VerificationCell, handlers: CellCardHandlers): HTMLElement {
   const undo = el('button', {
     className: 'verify__action verify__action--undo',
-    text: '戻す (z)',
+    text: t('verify.actionUndo'),
     attributes: { type: 'button' },
   });
   undo.disabled = cell.state.stack.length === 0;
@@ -379,14 +393,14 @@ function renderActions(
     // 独立入力モード（design §5.2）: 承認 / 棄却は AI 値が無いため出さない。
     // 「入力」「未報告」「戻す」の 3 操作のみ（キーボード a / x の無効化はパネル側で行う）
     return el('div', { className: 'verify__actions' }, [
-      renderEditButton(cell, handlers, '入力 (e)'),
+      renderEditButton(cell, handlers, t('verify.actionInput')),
       renderNotReportedButton(cell, handlers),
       renderUndoButton(cell, handlers),
     ]);
   }
   const accept = el('button', {
     className: 'verify__action verify__action--accept',
-    text: '承認 (a)',
+    text: t('verify.actionAccept'),
     attributes: { type: 'button' },
   });
   accept.disabled = cell.evidence === null;
@@ -394,14 +408,14 @@ function renderActions(
 
   const reject = el('button', {
     className: 'verify__action verify__action--reject',
-    text: '棄却 (x)',
+    text: t('verify.actionReject'),
     attributes: { type: 'button' },
   });
   reject.addEventListener('click', () => handlers.onStartEdit(cell.cellKey, 'reject'));
 
   return el('div', { className: 'verify__actions' }, [
     accept,
-    renderEditButton(cell, handlers, '修正 (e)'),
+    renderEditButton(cell, handlers, t('verify.actionEdit')),
     reject,
     renderNotReportedButton(cell, handlers),
     renderUndoButton(cell, handlers),
@@ -427,7 +441,7 @@ export function renderCell(
     // 判定済みブロック内の展開カードにだけ「たたむ」を出す
     const collapseButton = el('button', {
       className: 'verify__decided-collapse',
-      text: 'たたむ',
+      text: t('verify.collapse'),
       attributes: { type: 'button' },
     });
     collapseButton.addEventListener('click', () => handlers.onCollapseDecided());
@@ -459,7 +473,7 @@ export function renderCell(
     children.push(
       el('p', {
         className: 'verify__current-value',
-        text: `確定値: ${cell.state.value ?? '（空）'}`,
+        text: t('verify.decidedValue', { value: cell.state.value ?? t('verify.valueEmpty') }),
       }),
     );
   }

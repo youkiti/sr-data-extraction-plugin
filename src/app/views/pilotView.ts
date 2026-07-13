@@ -15,6 +15,7 @@ import {
   resolveFieldIdsForRun,
 } from '../../features/extraction/fieldSelection';
 import { planRun } from '../../features/extraction/planRun';
+import { t, type MessageKey } from '../../lib/i18n';
 import { el } from '../ui/dom';
 import { createModelSelect } from '../ui/modelSelect';
 import type { AppState } from '../store';
@@ -23,13 +24,14 @@ import { hasZeroFieldsSelected, renderFieldSelectionChecklist } from './fieldSel
 import type { ViewContext } from './types';
 import { renderCachedVerificationPanel } from './verificationPanel';
 
-const DOCUMENT_ROLE_LABELS: Readonly<Record<DocumentRecord['documentRole'], string>> = {
-  article: '本論文',
-  registration: '試験登録',
-  protocol: 'プロトコル',
-  abstract: '抄録',
-  supplement: '付録',
-  other: 'その他',
+// 表示言語に追従させるため、ラベルは描画時に t() で解決する（キー対応表のみ固定。issue #93）
+const DOCUMENT_ROLE_LABEL_KEYS: Readonly<Record<DocumentRecord['documentRole'], MessageKey>> = {
+  article: 'documents.roleArticle',
+  registration: 'documents.roleRegistration',
+  protocol: 'documents.roleProtocol',
+  abstract: 'documents.roleAbstractShort',
+  supplement: 'documents.roleSupplementShort',
+  other: 'documents.roleOther',
 };
 
 /** 現在の documents / studies スライスから study 選択モデルを組む */
@@ -47,16 +49,19 @@ function renderStudySelector(state: AppState, ctx: ViewContext): HTMLElement {
     return el('p', {
       id: 'pilot-documents-error',
       className: 'pilot__error',
-      text: `文献一覧を読み込めませんでした: ${loadError}`,
+      text: t('pilot.documentsError', { reason: loadError }),
     });
   }
   if (records === null || studies === null || loading) {
-    return el('p', { id: 'pilot-documents-loading', text: '文献一覧を読み込んでいます…' });
+    return el('p', { id: 'pilot-documents-loading', text: t('pilot.documentsLoading') });
   }
   const items = selectionOf(state).map((item) => {
     const studyId = item.study.studyId;
     const checkbox = el('input', {
-      attributes: { type: 'checkbox', 'aria-label': `${item.study.studyLabel} を対象にする` },
+      attributes: {
+        type: 'checkbox',
+        'aria-label': t('extraction.studyToggleAria', { label: item.study.studyLabel }),
+      },
     });
     checkbox.checked = state.pilot.selectedStudyIds.includes(studyId);
     // pdf_native 対応（handoff-scanned-pdf-native-highlight.md §7.4 PR2）により
@@ -72,7 +77,7 @@ function renderStudySelector(state: AppState, ctx: ViewContext): HTMLElement {
       head.push(
         el('small', {
           className: 'pilot__doc-note',
-          text: 'テキスト層なし: ページ画像を LLM へ送信して抽出します（ハイライトなし・コスト増）',
+          text: t('extraction.noTextLayerNote'),
         }),
       );
     }
@@ -83,11 +88,11 @@ function renderStudySelector(state: AppState, ctx: ViewContext): HTMLElement {
         el('li', { className: 'pilot__study-doc' }, [
           el('span', {
             className: 'pilot__doc-role',
-            text: DOCUMENT_ROLE_LABELS[doc.documentRole],
+            text: t(DOCUMENT_ROLE_LABEL_KEYS[doc.documentRole]),
           }),
           el('span', { className: 'pilot__doc-filename', text: doc.filename }),
           ...(doc.textStatus === 'no_text_layer'
-            ? [el('small', { className: 'pilot__doc-note', text: 'テキスト層なし' })]
+            ? [el('small', { className: 'pilot__doc-note', text: t('extraction.noTextLayerShort') })]
             : []),
         ]),
       ),
@@ -98,7 +103,7 @@ function renderStudySelector(state: AppState, ctx: ViewContext): HTMLElement {
     ]);
   });
   if (items.length === 0) {
-    return el('p', { id: 'pilot-documents-empty', text: 'まだ試験がありません。先に #/documents で取り込んでください。' });
+    return el('p', { id: 'pilot-documents-empty', text: t('extraction.noStudies') });
   }
   return el('ul', { id: 'pilot-documents', className: 'pilot__docs' }, items);
 }
@@ -110,14 +115,14 @@ function renderEstimate(state: AppState): HTMLElement {
     return el('p', {
       id: 'pilot-estimate',
       className: 'pilot__estimate',
-      text: 'コスト概算: 対象 study を選択すると表示されます',
+      text: t('extraction.estimateSelectStudies'),
     });
   }
   if (hasZeroFieldsSelected(state.pilot.selectedFieldIds, fields)) {
     return el('p', {
       id: 'pilot-estimate',
       className: 'pilot__estimate',
-      text: 'コスト概算: 対象項目を選択すると表示されます',
+      text: t('extraction.estimateSelectFields'),
     });
   }
   const estimateFields = filterFieldsBySelection(
@@ -133,26 +138,36 @@ function renderEstimate(state: AppState): HTMLElement {
     });
     const cost =
       plan.costEstimateUsd === null
-        ? '概算不可（単価表にないモデル）'
+        ? t('extraction.estimateUnavailable')
         : `$${plan.costEstimateUsd.toFixed(4)}`;
     const lines: HTMLElement[] = [
       el('p', {
-        text: `コスト概算: ${cost}（入力 ~${plan.tokensInEstimate.toLocaleString()} / 出力 ~${plan.tokensOutEstimate.toLocaleString()} トークン、${plan.batches.length} バッチ）`,
+        text: t('extraction.estimateLine', {
+          cost,
+          tokensIn: plan.tokensInEstimate.toLocaleString(),
+          tokensOut: plan.tokensOutEstimate.toLocaleString(),
+          batches: plan.batches.length,
+        }),
       }),
       el('p', {
         className: 'pilot__estimate-note',
-        text: 'プロトコル本文ぶんは概算に含まれません（実行時は加算されます）',
+        text: t('extraction.estimateNote'),
       }),
     ];
     for (const warning of plan.warnings) {
-      lines.push(el('p', { className: 'pilot__estimate-warning', text: `注意: ${warning}` }));
+      lines.push(
+        el('p', {
+          className: 'pilot__estimate-warning',
+          text: t('extraction.estimateWarning', { warning }),
+        }),
+      );
     }
     return el('div', { id: 'pilot-estimate', className: 'pilot__estimate' }, lines);
   } catch (err) {
     return el('p', {
       id: 'pilot-estimate',
       className: 'pilot__estimate pilot__estimate--error',
-      text: `コスト概算を計算できません: ${err instanceof Error ? err.message : String(err)}`,
+      text: t('extraction.estimateError', { reason: err instanceof Error ? err.message : String(err) }),
     });
   }
 }
@@ -164,7 +179,7 @@ function renderFieldSelector(state: AppState, ctx: ViewContext): HTMLElement | n
     return null;
   }
   return el('div', { className: 'pilot__field-selector' }, [
-    el('h4', { text: '対象項目（既定 = 全項目）' }),
+    el('h4', { text: t('extraction.fieldSelectorTitle') }),
     renderFieldSelectionChecklist({
       idPrefix: 'pilot',
       fields,
@@ -180,9 +195,9 @@ function renderFieldSelector(state: AppState, ctx: ViewContext): HTMLElement | n
 function renderSetup(state: AppState, ctx: ViewContext): HTMLElement {
   const modelSelect = createModelSelect(document, {
     id: 'pilot-model',
-    ariaLabel: 'モデル名（requested_model）',
+    ariaLabel: t('schema.modelAria'),
     value: state.pilot.model,
-    placeholderLabel: '選択してください',
+    placeholderLabel: t('schema.modelPlaceholder'),
     onChange: (value) => ctx.pilot.onChangeModel(value),
     className: 'pilot__model-input',
   });
@@ -191,7 +206,7 @@ function renderSetup(state: AppState, ctx: ViewContext): HTMLElement {
   const runButton = el('button', {
     id: 'pilot-run',
     className: 'pilot__run',
-    text: 'パイロット抽出を実行',
+    text: t('pilot.run'),
     attributes: { type: 'button' },
   });
   runButton.disabled = hasZeroFieldsSelected(state.pilot.selectedFieldIds, fields);
@@ -199,16 +214,16 @@ function renderSetup(state: AppState, ctx: ViewContext): HTMLElement {
 
   const fieldSelector = renderFieldSelector(state, ctx);
   const children: HTMLElement[] = [
-    el('h3', { text: '新規パイロット' }),
+    el('h3', { text: t('pilot.newTitle') }),
     el('p', {
       className: 'pilot__setup-lead',
-      text: '新しく 2〜3 本の論文でパイロット抽出を実行します。',
+      text: t('pilot.setupLead'),
     }),
-    el('h4', { text: '対象試験（2〜3 件を推奨）' }),
+    el('h4', { text: t('pilot.targetTitle') }),
     renderStudySelector(state, ctx),
     ...(fieldSelector === null ? [] : [fieldSelector]),
     el('div', { className: 'pilot__model' }, [
-      el('label', { text: 'モデル: ', attributes: { for: 'pilot-model' } }),
+      el('label', { text: t('extraction.modelLabel'), attributes: { for: 'pilot-model' } }),
       modelSelect,
     ]),
     renderEstimate(state),
@@ -230,7 +245,7 @@ function renderSetup(state: AppState, ctx: ViewContext): HTMLElement {
 function renderProgress(state: AppState): HTMLElement {
   const { progress } = state.pilot;
   const bar = el('progress', { id: 'pilot-progress', className: 'pilot__progress-bar' });
-  let text = '実行準備中…';
+  let text = t('extraction.preparing');
   if (progress !== null) {
     bar.max = progress.totalBatches;
     bar.value = progress.completedBatches;
@@ -239,10 +254,16 @@ function renderProgress(state: AppState): HTMLElement {
         ? Math.floor((progress.completedBatches / progress.totalBatches) * 100)
         : 0;
     const label = studyLabelOf(state, progress.studyId);
-    text = `${progress.completedBatches} / ${progress.totalBatches} バッチ完了（${percent}% / 直近: ${label}${progress.section === null ? '' : ` / ${progress.section}`}）`;
+    text = t('pilot.progressText', {
+      completed: progress.completedBatches,
+      total: progress.totalBatches,
+      percent,
+      label,
+      sectionSuffix: progress.section === null ? '' : ` / ${progress.section}`,
+    });
   }
   return el('section', { className: 'pilot__running', attributes: { 'aria-live': 'polite' } }, [
-    el('h3', { text: '抽出を実行しています…' }),
+    el('h3', { text: t('extraction.runningTitle') }),
     bar,
     el('p', { className: 'pilot__progress-text', text }),
   ]);
@@ -259,27 +280,32 @@ function renderRunSummary(run: ExtractionRun, state: AppState): HTMLElement {
   if (run.status === 'partial_failure') {
     const failureItems = batchFailures.map((failure) =>
       el('li', {
-        text: `${studyLabelOf(state, failure.studyId)}${failure.section === null ? '' : ` / ${failure.section}`}: ${failure.reason}（${failure.detail}）`,
+        text: t('pilot.failureLine', {
+          study: studyLabelOf(state, failure.studyId),
+          sectionSuffix: failure.section === null ? '' : ` / ${failure.section}`,
+          reason: failure.reason,
+          detail: failure.detail,
+        }),
       }),
     );
     if (rejectedCount > 0) {
-      failureItems.push(el('li', { text: `応答要素の破棄: ${rejectedCount} 件` }));
+      failureItems.push(el('li', { text: t('extraction.rejectedCount', { n: rejectedCount }) }));
     }
     // 履歴から読み込んだ run は内訳を再構成できないため、空のときは案内を出す
     if (failureItems.length === 0) {
       failureItems.push(
-        el('li', { text: '失敗の内訳は保存されていません（履歴から読み込んだ実行）。' }),
+        el('li', { text: t('pilot.failureUnknown') }),
       );
     }
     children.push(
       el('div', { id: 'pilot-partial-failure', className: 'pilot__partial-failure' }, [
-        el('p', { text: '一部のバッチが失敗しました（成功分は検証できます）:' }),
+        el('p', { text: t('pilot.partialFailureLead') }),
         el('ul', {}, failureItems),
       ]),
     );
   } else {
     children.push(
-      el('p', { id: 'pilot-run-done', className: 'pilot__run-done', text: '抽出が完了しました。' }),
+      el('p', { id: 'pilot-run-done', className: 'pilot__run-done', text: t('pilot.runDone') }),
     );
   }
   // 「表のデザインを改訂して再パイロット」導線は完了後は常に可視（ui-states.md §3）
@@ -288,7 +314,7 @@ function renderRunSummary(run: ExtractionRun, state: AppState): HTMLElement {
       el('a', {
         id: 'pilot-revise-schema',
         className: 'pilot__revise-link',
-        text: '表のデザインを改訂して再パイロット',
+        text: t('pilot.reviseSchema'),
         attributes: { href: '#/schema' },
       }),
     ]),
@@ -297,11 +323,11 @@ function renderRunSummary(run: ExtractionRun, state: AppState): HTMLElement {
 }
 
 function renderVerification(run: ExtractionRun, state: AppState, ctx: ViewContext): HTMLElement {
-  const children: HTMLElement[] = [el('h3', { text: '検証（S8 と同じ操作）' })];
+  const children: HTMLElement[] = [el('h3', { text: t('pilot.verifyTitle') })];
 
   const select = el('select', {
     id: 'pilot-verify-study',
-    attributes: { 'aria-label': '検証する研究' },
+    attributes: { 'aria-label': t('verify.studyAria') },
   });
   // run は study 単位（studyIds）。配下の全文書を連結表示するため study を選ぶ（v0.10 フェーズ 3）
   const runStudyIds = new Set(run.studyIds);
@@ -320,7 +346,7 @@ function renderVerification(run: ExtractionRun, state: AppState, ctx: ViewContex
   }
   select.addEventListener('change', () => ctx.pilot.onSelectVerifyStudy(select.value));
   const header: HTMLElement[] = [
-    el('label', { text: '研究: ', attributes: { for: 'pilot-verify-study' } }),
+    el('label', { text: t('verify.studyLabel'), attributes: { for: 'pilot-verify-study' } }),
     select,
   ];
   if (state.pilot.queuedDecisions > 0) {
@@ -328,23 +354,28 @@ function renderVerification(run: ExtractionRun, state: AppState, ctx: ViewContex
       el('span', {
         id: 'pilot-queued',
         className: 'pilot__queued',
-        text: `オフライン: ${state.pilot.queuedDecisions} 件キュー中`,
+        text: t('verify.queued', { n: state.pilot.queuedDecisions }),
       }),
     );
   }
   children.push(el('div', { className: 'pilot__verify-header' }, header));
 
   if (state.pilot.verifyLoading) {
-    children.push(el('p', { id: 'pilot-verify-loading', text: '検証データを読み込んでいます…' }));
+    children.push(el('p', { id: 'pilot-verify-loading', text: t('verify.dataLoading') }));
   } else if (state.pilot.verifyError !== null) {
     const retry = el('button', {
       id: 'pilot-verify-retry',
-      text: '再試行',
+      text: t('common.retry'),
       attributes: { type: 'button' },
     });
     retry.addEventListener('click', () => ctx.pilot.onRetryVerifyLoad());
     children.push(
-      el('p', { id: 'pilot-verify-error', className: 'pilot__error', attributes: { role: 'alert' }, text: `検証データを読み込めませんでした: ${state.pilot.verifyError}` }),
+      el('p', {
+        id: 'pilot-verify-error',
+        className: 'pilot__error',
+        attributes: { role: 'alert' },
+        text: t('pilot.verifyError', { reason: state.pilot.verifyError }),
+      }),
       retry,
     );
   } else if (state.pilot.verification !== null) {
@@ -368,10 +399,10 @@ function renderVerification(run: ExtractionRun, state: AppState, ctx: ViewContex
   return el('section', { className: 'pilot__verify' }, children);
 }
 
-/** 完了 run の status を履歴・サマリで日本語表示するラベル */
-const RUN_STATUS_LABEL: Record<string, string> = {
-  done: '完了',
-  partial_failure: '一部失敗',
+/** 完了 run の status を履歴・サマリで表示するラベル（表示言語に追従） */
+const RUN_STATUS_LABEL_KEYS: Record<string, MessageKey> = {
+  done: 'pilot.runStatusDone',
+  partial_failure: 'pilot.runStatusPartialFailure',
 };
 
 /**
@@ -382,27 +413,27 @@ function renderHistory(state: AppState, ctx: ViewContext): HTMLElement | null {
   const { history, historyLoading, historyError, loadingRunId, run } = state.pilot;
   if (historyLoading) {
     return el('section', { className: 'pilot__history' }, [
-      el('h3', { text: '過去のパイロット結果' }),
+      el('h3', { text: t('pilot.historyTitle') }),
       el('p', {
         id: 'pilot-history-loading',
-        text: '過去のパイロット結果を読み込んでいます…',
+        text: t('pilot.historyLoading'),
       }),
     ]);
   }
   if (historyError !== null) {
     const reload = el('button', {
       id: 'pilot-history-reload',
-      text: '再読み込み',
+      text: t('common.reload'),
       attributes: { type: 'button' },
     });
     reload.addEventListener('click', () => ctx.pilot.onReloadHistory());
     return el('section', { className: 'pilot__history' }, [
-      el('h3', { text: '過去のパイロット結果' }),
+      el('h3', { text: t('pilot.historyTitle') }),
       el('p', {
         id: 'pilot-history-error',
         className: 'pilot__error',
         attributes: { role: 'alert' },
-        text: `過去のパイロット結果を読み込めませんでした: ${historyError}`,
+        text: t('pilot.historyError', { reason: historyError }),
       }),
       reload,
     ]);
@@ -412,8 +443,9 @@ function renderHistory(state: AppState, ctx: ViewContext): HTMLElement | null {
   }
   const items = history.map((entry) => {
     const isCurrent = run?.runId === entry.runId;
-    const when = entry.finishedAt ?? entry.startedAt ?? '(日時不明)';
-    const statusLabel = RUN_STATUS_LABEL[entry.status] ?? entry.status;
+    const when = entry.finishedAt ?? entry.startedAt ?? t('pilot.whenUnknown');
+    const statusKey = RUN_STATUS_LABEL_KEYS[entry.status];
+    const statusLabel = statusKey === undefined ? entry.status : t(statusKey);
     const open = el(
       'button',
       { className: 'pilot__history-open', attributes: { type: 'button' } },
@@ -422,7 +454,7 @@ function renderHistory(state: AppState, ctx: ViewContext): HTMLElement | null {
         el('span', { className: 'pilot__history-model', text: entry.requestedModel }),
         el('span', {
           className: 'pilot__history-docs',
-          text: `${entry.studyIds.length} 試験`,
+          text: t('pilot.historyStudies', { n: entry.studyIds.length }),
         }),
         el('span', {
           className: `pilot__history-status pilot__history-status--${entry.status}`,
@@ -435,9 +467,9 @@ function renderHistory(state: AppState, ctx: ViewContext): HTMLElement | null {
     open.addEventListener('click', () => ctx.pilot.onSelectRun(entry.runId));
     const parts: HTMLElement[] = [open];
     if (isCurrent) {
-      parts.push(el('span', { className: 'pilot__history-current', text: '表示中' }));
+      parts.push(el('span', { className: 'pilot__history-current', text: t('pilot.historyCurrent') }));
     } else if (loadingRunId === entry.runId) {
-      parts.push(el('span', { className: 'pilot__history-note', text: '読み込み中…' }));
+      parts.push(el('span', { className: 'pilot__history-note', text: t('common.loading') }));
     }
     const item = el('li', { className: 'pilot__history-item' }, parts);
     if (isCurrent) {
@@ -446,10 +478,10 @@ function renderHistory(state: AppState, ctx: ViewContext): HTMLElement | null {
     return item;
   });
   return el('section', { className: 'pilot__history' }, [
-    el('h3', { text: '過去のパイロット結果' }),
+    el('h3', { text: t('pilot.historyTitle') }),
     el('p', {
       className: 'pilot__history-lead',
-      text: '過去の結果を読み込んで検証を続けられます。新しく試すときは下の「新規パイロット」から実行してください。',
+      text: t('pilot.historyLead'),
     }),
     el('ul', { id: 'pilot-history', className: 'pilot__history-list' }, items),
   ]);
@@ -457,10 +489,10 @@ function renderHistory(state: AppState, ctx: ViewContext): HTMLElement | null {
 
 export function renderPilotView(state: AppState, ctx: ViewContext): HTMLElement {
   const children: HTMLElement[] = [
-    el('h2', { text: 'パイロット抽出' }),
+    el('h2', { text: t('app.navPilot') }),
     el('p', {
       className: 'view__lead',
-      text: '2〜3 本の論文で AI 抽出を試行し、検証結果をもとに表のデザインを改訂します。',
+      text: t('pilot.lead'),
     }),
   ];
   if (state.pilot.running) {
