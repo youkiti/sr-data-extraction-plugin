@@ -2967,14 +2967,30 @@
   margin: 12px 0;
 }
 
-.adjudicate__arm-compare {
-  display: flex;
-  gap: 24px;
-  flex-wrap: wrap;
+/* arm 並べ替えマッピングテーブル + 3 名以上のペア選択（issue #63） */
+.adjudicate__arm-map {
+  border-collapse: collapse;
+  margin: 4px 0 8px;
 }
 
-.adjudicate__arm-list h5 {
-  margin: 0 0 4px;
+.adjudicate__arm-map th,
+.adjudicate__arm-map td {
+  border: 1px solid var(--color-border);
+  padding: 4px 10px;
+  text-align: left;
+}
+
+.adjudicate__arm-unmapped-note {
+  color: var(--color-text-muted);
+  margin: 4px 0;
+}
+
+.adjudicate__pair-select {
+  max-width: 100%;
+}
+
+.adjudicate__pair-progress {
+  margin: 4px 0 0;
 }
 
 .adjudicate__arm-match-note {

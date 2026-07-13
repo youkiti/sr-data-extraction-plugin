@@ -1,9 +1,15 @@
-// `#/adjudicate`（S12。docs/design-independent-dual-review.md §6・§9 PR3）のサービス層。
-// - study 一覧の読込: 対象 annotator ペアの解決 + study 単位ゲート（progress 100%）
+// `#/adjudicate`（S12。docs/design-independent-dual-review.md §6・§9 PR3・§13）のサービス層。
+// - study 一覧の読込: 対象 annotator ペアの解決 + study 単位ゲート（progress 100%）。
+//   3 名以上の study は全 2 名組合せのゲートを事前計算し（pairOptions）、裁定者が一覧で
+//   選んだ組（AdjudicateState.pairSelections）で裁定を開始する（issue #63 の 3 人以上対応）
 // - study を開く: 群構成突き合わせ + セル突き合わせのスナップショットを組み立てる
 //   （表示する run の Evidence も study 単位で解決し working へ持たせる。issue #63:
-//   PDF ペインの根拠ハイライト + セル一覧の各レビュアーの note 表示に使う）
-// - 群構成の確定・改訂の永続化（annotator='consensus' の新版として追記）
+//   PDF ペインの根拠ハイライト + セル一覧の各レビュアーの note 表示に使う）。
+//   セル突き合わせの前に B 側 entity_key を arm マッピング（armMatch.ts。issue #63 の
+//   並べ替えマッピング）で正準キーへ書き換える。マッピングは consensus 版 ArmStructures の
+//   note から復元し、無ければ既定（名称一致 → 位置対応 → 残り物同士）を使う
+// - 群構成の確定・改訂の永続化（annotator='consensus' の新版として追記。note に
+//   arm マッピング辞書を直列化して残す）
 // - セルの裁定（一致一括採用 / A・B 採用 / 第 3 の値 / not_reported / undo）の永続化
 //   consensus 行 upsert → Decisions batch 追記の順で行う（features/adjudication/consensusRepository）。
 //   失敗は検証側（app/services/verificationService.ts）と共有する 'decisions' オフラインキューへ
@@ -18,7 +24,17 @@ import {
   buildAgreementDisagreementsCsv,
   type AgreementStudyInput,
 } from '../../features/adjudication/agreement';
-import { armsMatch, buildConsensusArmDraft, type DraftArmRow } from '../../features/adjudication/armMatch';
+import {
+  armMappingFromRemap,
+  armsMatch,
+  buildArmKeyRemap,
+  buildConsensusArmDraft,
+  buildDefaultArmMapping,
+  parseArmKeyRemapNote,
+  remapArmEntityKey,
+  serializeArmKeyRemap,
+  type DraftArmRow,
+} from '../../features/adjudication/armMatch';
 import { buildAdjudicationCells, type AdjudicationCell } from '../../features/adjudication/cellMatch';
 import {
   buildBulkAcceptWrites,
@@ -42,6 +58,7 @@ import { readRunSchemaVersions } from '../../features/extraction/runRepository';
 import { getSchemaFieldsByVersion, listSchemaVersions } from '../../features/schema/schemaRepository';
 import {
   latestArmStructure,
+  latestArmStructureNote,
   readAllArmStructures,
   appendArmStructureVersion,
 } from '../../features/verification/armStructureRepository';
@@ -53,7 +70,13 @@ import { getCurrentUserEmail, type ProfileDeps } from '../../lib/google/identity
 import type { GoogleApiDeps } from '../../lib/google/types';
 import type { OfflineQueue } from '../../lib/storage/offlineQueue';
 import { nowIso8601 } from '../../utils/iso8601';
-import type { AdjudicateState, AdjudicateStudyRow, AdjudicateWorking, Store } from '../store';
+import type {
+  AdjudicatePairOption,
+  AdjudicateState,
+  AdjudicateStudyRow,
+  AdjudicateWorking,
+  Store,
+} from '../store';
 import { downloadTextFile } from '../ui/download';
 import { showToast } from '../ui/toast';
 import { timestampForFilename } from './exportService';
@@ -99,8 +122,9 @@ async function resolveStudies(
 
 /**
  * study 一覧を読み込む（S12 の初期表示）。対象 study ごとに annotator ペアを解決し、
- * ペアが確定した study のみゲート（進捗 100%）を計算する。1 名以下・3 名以上は
- * gate=null のまま返し、画面側が案内文言を出す
+ * 2 名ちょうど（ready）の study はゲート（進捗 100%）を計算する。3 名以上（selectable。
+ * issue #63）は全 2 名組合せぶんのゲートを事前計算して pairOptions へ入れ、裁定者の
+ * 選択（pairSelections）に委ねる。1 名以下（waiting）は gate=null のまま返し画面側が案内する
  */
 export async function loadAdjudicateTargets(
   store: Store,
@@ -139,13 +163,36 @@ export async function loadAdjudicateTargets(
         decisions,
       });
       let gate: StudyGate | null = null;
+      let pairOptions: AdjudicatePairOption[] | null = null;
+      const studyArmRows = armRows.filter((row) => row.studyId === study.studyId);
       if (pair.kind === 'ready') {
-        const studyArmRows = armRows.filter((row) => row.studyId === study.studyId);
         const armStructureA = latestArmStructure(studyArmRows, pair.annotatorA);
         const armStructureB = latestArmStructure(studyArmRows, pair.annotatorB);
         gate = computeStudyGate(pair.annotatorA, pair.annotatorB, fields, studyDecisions, armStructureA, armStructureB);
+      } else if (pair.kind === 'selectable') {
+        // issue #63: 3 名以上は全 2 名組合せ（email 昇順ペア）のゲートを事前計算する
+        pairOptions = [];
+        const emails = pair.annotators;
+        for (let i = 0; i < emails.length; i += 1) {
+          for (let j = i + 1; j < emails.length; j += 1) {
+            const annotatorA = emails[i] as string;
+            const annotatorB = emails[j] as string;
+            pairOptions.push({
+              annotatorA,
+              annotatorB,
+              gate: computeStudyGate(
+                annotatorA,
+                annotatorB,
+                fields,
+                studyDecisions,
+                latestArmStructure(studyArmRows, annotatorA),
+                latestArmStructure(studyArmRows, annotatorB),
+              ),
+            });
+          }
+        }
       }
-      rows.push({ study, pair, gate });
+      rows.push({ study, pair, gate, pairOptions });
     }
     patchAdjudicate(store, { loading: false, rows });
   } catch (err) {
@@ -153,26 +200,52 @@ export async function loadAdjudicateTargets(
   }
 }
 
-/** study が見つからない・対象を特定できない・ゲート未達のときの案内文言 */
-function unavailableMessage(row: AdjudicateStudyRow | undefined): string {
+/**
+ * この study で実際に裁定へ使う 2 名とゲートを解決する（issue #63）。
+ * ready（2 名ちょうど）は自動確定のペアを、selectable（3 名以上）は裁定者の選択
+ * （pairSelections）に一致する pairOptions の組を返す。未選択・選択が無効・waiting は null
+ */
+function resolveEffectivePair(
+  row: AdjudicateStudyRow,
+  pairSelections: AdjudicateState['pairSelections'],
+): { annotatorA: string; annotatorB: string; gate: StudyGate } | null {
+  if (row.pair.kind === 'ready') {
+    // gate は pair.kind === 'ready' のとき必ず計算される（loadAdjudicateTargets の不変条件）
+    /* istanbul ignore next -- 上記の理由で row.gate === null 側は実行時に到達しない */
+    if (row.gate === null) {
+      return null;
+    }
+    return { annotatorA: row.pair.annotatorA, annotatorB: row.pair.annotatorB, gate: row.gate };
+  }
+  if (row.pair.kind === 'selectable' && row.pairOptions !== null) {
+    const selection = pairSelections[row.study.studyId];
+    if (selection === undefined) {
+      return null;
+    }
+    const option = row.pairOptions.find(
+      (candidate) =>
+        candidate.annotatorA === selection.annotatorA && candidate.annotatorB === selection.annotatorB,
+    );
+    return option ?? null;
+  }
+  return null;
+}
+
+/** study が見つからない・ペア未選択・ゲート未達のときの案内文言 */
+function unavailableMessage(
+  row: AdjudicateStudyRow | undefined,
+  pairSelections: AdjudicateState['pairSelections'],
+): string {
   if (row === undefined) {
     return '指定された研究が見つかりません';
   }
   if (row.pair.kind === 'waiting') {
     return '両者の検証完了待ちです（対象となる human annotator が 2 名そろっていません）';
   }
-  if (row.pair.kind === 'ambiguous') {
-    return '対象 annotator を特定できません（human annotator が 3 名以上見つかりました）';
+  if (row.pair.kind === 'selectable' && resolveEffectivePair(row, pairSelections) === null) {
+    return '裁定する 2 名のレビュアーを選択してください（human annotator が 3 名以上見つかりました）';
   }
-  // gate は pair.kind === 'ready' のときにしか null 以外にならない（loadAdjudicateTargets の
-  // 不変条件）。ここまで来た時点で pair は必ず 'ready' なので row.gate は実質常に非 null だが、
-  // 型は AdjudicateStudyRow['gate'] のままにしておく（呼び出し元の防御を保つ）
-  /* istanbul ignore next -- 上記の理由で row.gate === null 側は実行時に到達しない */
-  if (row.gate === null || !row.gate.ready) {
-    return 'この研究はまだ両者の検証が完了していないため裁定できません';
-  }
-  /* istanbul ignore next -- 呼び出し元（openAdjudicateStudy）は非 ready 行のときしかこの関数を呼ばない */
-  return '';
+  return 'この研究はまだ両者の検証が完了していないため裁定できません';
 }
 
 /**
@@ -191,13 +264,13 @@ export async function openAdjudicateStudy(
     return;
   }
   const row = rows.find((candidate) => candidate.study.studyId === studyId);
-  const pair = row?.pair;
-  if (row === undefined || pair === undefined || pair.kind !== 'ready' || row.gate === null || !row.gate.ready) {
+  const effectivePair = row === undefined ? null : resolveEffectivePair(row, state.adjudicate.pairSelections);
+  if (row === undefined || effectivePair === null || !effectivePair.gate.ready) {
     await state.adjudicate.working?.disposePdf();
     patchAdjudicate(store, {
       selectedStudyId: studyId,
       working: null,
-      workingError: unavailableMessage(row),
+      workingError: unavailableMessage(row, state.adjudicate.pairSelections),
     });
     return;
   }
@@ -206,7 +279,7 @@ export async function openAdjudicateStudy(
   patchAdjudicate(store, { workingLoading: true, workingError: null, selectedStudyId: studyId, working: null });
   try {
     const { spreadsheetId } = project;
-    const { annotatorA, annotatorB } = pair;
+    const { annotatorA, annotatorB } = effectivePair;
     const documents = await resolveDocuments(store, deps, spreadsheetId);
     const studies = await resolveStudies(store, deps, spreadsheetId);
     const item = buildStudySelection(studies, documents).find((candidate) => candidate.study.studyId === studyId);
@@ -246,20 +319,32 @@ export async function openAdjudicateStudy(
     const armsA = latestArmStructure(studyArmRows, annotatorA)?.arms ?? [];
     const armsB = latestArmStructure(studyArmRows, annotatorB)?.arms ?? [];
     const consensusArmStructure = latestArmStructure(studyArmRows, 'consensus');
+    // issue #63（arm 並べ替えマッピング）: 確定済み consensus 版の note に永続化した辞書が
+    // あればそれを復元し、無ければ既定マッピング（名称一致 → 位置対応 → 残り物同士）を使う
+    const persistedRemap = parseArmKeyRemapNote(latestArmStructureNote(studyArmRows, 'consensus'));
+    const armMapping =
+      persistedRemap !== null
+        ? armMappingFromRemap(armsA, armsB, persistedRemap)
+        : buildDefaultArmMapping(armsA, armsB);
+    const armKeyRemap = persistedRemap ?? buildArmKeyRemap(armsA, armsB, armMapping);
     const armDraft: DraftArmRow[] =
       consensusArmStructure !== null
         ? consensusArmStructure.arms.map((arm) => ({ ...arm }))
-        : buildConsensusArmDraft(armsA, armsB);
+        : buildConsensusArmDraft(armsA, armsB, armMapping);
 
-    const cells = buildAdjudicationCells(
-      fields,
-      studyDataRowA,
-      studyDataRowB,
-      resultsRowsA,
-      resultsRowsB,
-      decisionsA,
-      decisionsB,
-    );
+    // B 側の entity_key（arm:n / outcome:...|arm:n）を正準キーへ書き換えてから突き合わせる。
+    // マッピング変更時（setAdjudicateArmMapping）は同じクロージャで再計算する
+    const rebuildCells = (remap: ReadonlyMap<string, string>): AdjudicationCell[] =>
+      buildAdjudicationCells(
+        fields,
+        studyDataRowA,
+        studyDataRowB,
+        resultsRowsA,
+        resultsRowsB.map((r) => ({ ...r, entityKey: remapArmEntityKey(r.entityKey, remap) })),
+        decisionsA,
+        decisionsB.map((d) => ({ ...d, entityKey: remapArmEntityKey(d.entityKey, remap) })),
+      );
+    const cells = rebuildCells(armKeyRemap);
     const consensusDecisions = decisions.filter((d) => d.studyId === studyId && d.annotator === 'consensus');
 
     const pdfCache = createPdfViewCache({ google: deps.google, loadPdf: deps.loadPdf });
@@ -274,13 +359,15 @@ export async function openAdjudicateStudy(
       armsA,
       armsB,
       needsArmConfirmation: needsArmConfirmation(fields),
-      armsMatched: armsMatch(armsA, armsB),
+      armMapping,
+      armsMatched: armsMatch(armsA, armsB, armMapping),
       consensusArmStructure,
       armDraft,
       cells,
       consensusDecisions,
       evidence: studyEvidence,
       skippedCellKeys: [],
+      rebuildCells,
       loadPdfView: (documentId) => {
         const driveFileId = driveFileIdByDocument.get(documentId);
         if (driveFileId === undefined) {
@@ -318,6 +405,56 @@ export function backToAdjudicateList(store: Store): void {
   void working?.disposePdf();
 }
 
+/**
+ * 3 名以上の study（selectable）で裁定する 2 名の組を選ぶ / 解除する（issue #63）。
+ * セッション内のみの選択（永続化なし）。選択の妥当性（pairOptions に含まれるか）は
+ * resolveEffectivePair が開く時点で検証する
+ */
+export function setAdjudicatePairSelection(
+  store: Store,
+  studyId: string,
+  selection: { annotatorA: string; annotatorB: string } | null,
+): void {
+  const next = { ...store.getState().adjudicate.pairSelections };
+  if (selection === null) {
+    delete next[studyId];
+  } else {
+    next[studyId] = selection;
+  }
+  patchAdjudicate(store, { pairSelections: next });
+}
+
+/**
+ * arm 並べ替えマッピングの変更（issue #63）: A の index 行に対応する B の armKey を選ぶ
+ * （null = 対応なし）。同じ B 群が他の行で選ばれていれば外して 1:1 対応を保つ。
+ * マッピング変更はセル突き合わせ・一致判定・consensus ドラフトへ即時反映する
+ * （consensus 群構成の確定後は変更不可 = no-op。確定時に辞書が note へ永続化されるため）
+ */
+export function setAdjudicateArmMapping(store: Store, index: number, bArmKey: string | null): void {
+  const working = store.getState().adjudicate.working;
+  if (working === null || working.consensusArmStructure !== null) {
+    return;
+  }
+  if (index < 0 || index >= working.armMapping.length) {
+    return;
+  }
+  if (bArmKey !== null && !working.armsB.some((arm) => arm.armKey === bArmKey)) {
+    return;
+  }
+  const armMapping = working.armMapping.map((current) => (current === bArmKey ? null : current));
+  armMapping[index] = bArmKey;
+  const remap = buildArmKeyRemap(working.armsA, working.armsB, armMapping);
+  patchAdjudicate(store, {
+    working: {
+      ...working,
+      armMapping,
+      armsMatched: armsMatch(working.armsA, working.armsB, armMapping),
+      armDraft: buildConsensusArmDraft(working.armsA, working.armsB, armMapping),
+      cells: working.rebuildCells(remap),
+    },
+  });
+}
+
 /** 群構成確定カードのドラフト編集（永続化なし。ローカル state のみ） */
 export function updateAdjudicateArmDraftRow(store: Store, index: number, armName: string): void {
   const working = store.getState().adjudicate.working;
@@ -333,7 +470,14 @@ export function addAdjudicateArmDraftRow(store: Store): void {
   if (working === null) {
     return;
   }
-  const armDraft = [...working.armDraft, { armKey: `arm:${working.armDraft.length + 1}`, armName: '' }];
+  // 追加行の armKey は既存ドラフトと衝突しない最小の arm:n を採番する
+  // （行削除後の再追加で `arm:${length + 1}` が既存キーと重複する不具合の修正。issue #63）
+  const taken = new Set(working.armDraft.map((row) => row.armKey));
+  let n = 1;
+  while (taken.has(`arm:${n}`)) {
+    n += 1;
+  }
+  const armDraft = [...working.armDraft, { armKey: `arm:${n}`, armName: '' }];
   patchAdjudicate(store, { working: { ...working, armDraft } });
 }
 
@@ -346,7 +490,11 @@ export function removeAdjudicateArmDraftRow(store: Store, index: number): void {
   patchAdjudicate(store, { working: { ...working, armDraft } });
 }
 
-/** 「このまま採用」/ 編集後の「確定」共通の永続化（ArmStructures へ annotator='consensus' で追記） */
+/**
+ * 「このまま採用」/ 編集後の「確定」共通の永続化（ArmStructures へ annotator='consensus' で追記）。
+ * note には裁定者と arm マッピング辞書（issue #63。B の armKey → 正準 armKey）を直列化して残し、
+ * 再入場時に同じセル突き合わせを復元できるようにする
+ */
 export async function confirmAdjudicateArms(
   store: Store,
   deps: AdjudicationServiceDeps,
@@ -364,6 +512,7 @@ export async function confirmAdjudicateArms(
   try {
     const decidedBy = (await getCurrentUserEmail(deps.profile)) ?? '';
     const confirmedAt = (deps.now ?? nowIso8601)();
+    const remap = buildArmKeyRemap(working.armsA, working.armsB, working.armMapping);
     const result: ConfirmedArmStructure = await appendArmStructureVersion(
       project.spreadsheetId,
       {
@@ -372,7 +521,7 @@ export async function confirmAdjudicateArms(
         annotator: 'consensus',
         annotatorType: 'consensus',
         confirmedAt,
-        note: `裁定者: ${decidedBy}`,
+        note: `裁定者: ${decidedBy} / ${serializeArmKeyRemap(remap)}`,
       },
       deps.google,
     );

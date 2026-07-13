@@ -83,7 +83,7 @@ flowchart TD
 | `#/verify` | 検証（S8） | §3 参照。document 選択 → 2 ペイン検証 | `StudyData` / `ResultsData`（自分の annotator 行の更新）+ `Decisions` 追記 + `ArmStructures` 追記（群構成の確定） |
 | `#/dashboard` | ダッシュボード（S9） | document × section の検証進捗マトリクス、anchor 失敗率、not_reported 率。セルクリックで `#/verify` の該当 document / section へ | `StudyData` / `ResultsData` / `Evidence` / `Documents`（読み取りのみ） |
 | `#/export` | エクスポート（S10） | 形式選択（study_wide / results_long / audit）、プレビュー、CSV 生成 + Drive 保存 + ダウンロード。未検証セル残存時は警告ダイアログ | `ExportLog` 追記 |
-| `#/adjudicate` | 裁定（S12・v0.11） | owner / adjudicator のみ。human annotator 2 名の検証が揃った study を選択 → 群構成の突き合わせ → セル一覧（一致は一括採用・不一致は個別裁定）→ `consensus` 確定 | `ArmStructures` / `StudyData` / `ResultsData`（consensus 版の追記）+ `Decisions` 追記 |
+| `#/adjudicate` | 裁定（S12・v0.11） | owner / adjudicator のみ。human annotator 2 名の検証が揃った study を選択（3 名以上の study は一覧のペア選択で裁定する 2 名を選ぶ。issue #63）→ 群構成の突き合わせ（arm 並べ替えマッピング付き）→ セル一覧（一致は一括採用・不一致は個別裁定）→ `consensus` 確定 | `ArmStructures` / `StudyData` / `ResultsData`（consensus 版の追記）+ `Decisions` 追記 |
 
 ### ロール別ナビゲーション（v0.11・独立二重レビュー機能 issue #44）
 

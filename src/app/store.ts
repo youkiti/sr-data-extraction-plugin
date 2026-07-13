@@ -377,12 +377,24 @@ export interface ExportState {
   methodsWorkflow: MethodsWorkflow;
 }
 
+/**
+ * 3 名以上の study（pair.kind === 'selectable'）で選択できる 2 名の組（issue #63）。
+ * 一覧読込時に全組合せぶんのゲートを事前計算して持つ
+ */
+export interface AdjudicatePairOption {
+  annotatorA: string;
+  annotatorB: string;
+  gate: StudyGate;
+}
+
 /** `#/adjudicate`（S12。docs/design-independent-dual-review.md §6）一覧 1 study ぶんの行 */
 export interface AdjudicateStudyRow {
   study: StudyRecord;
   pair: AnnotatorPairResolution;
   /** pair.kind === 'ready' のときのみ非 null */
   gate: StudyGate | null;
+  /** pair.kind === 'selectable'（3 名以上。issue #63）のときのみ非 null: 選択可能な 2 名の組一覧 */
+  pairOptions: AdjudicatePairOption[] | null;
 }
 
 /**
@@ -403,7 +415,12 @@ export interface AdjudicateWorking {
   armsB: readonly { armKey: string; armName: string }[];
   /** 群構成が必要なスキーマか（arm / outcome_result 項目の有無） */
   needsArmConfirmation: boolean;
-  /** 本数・名称が位置対応で完全一致するか（§6.2） */
+  /**
+   * A の各群（index 順）に対応する B の armKey（null = 対応なし。issue #63 の並べ替えマッピング）。
+   * 既定は名称一致 → 位置対応 → 残り物同士の自動対応。consensus 群構成の確定後は変更不可
+   */
+  armMapping: (string | null)[];
+  /** マッピング適用後に本数・対応名称が完全一致するか（§6.2・§13） */
   armsMatched: boolean;
   /** 確定済みの consensus 群構成。null = 未確定（arm / outcome_result セルはロック） */
   consensusArmStructure: ConfirmedArmStructure | null;
@@ -421,6 +438,11 @@ export interface AdjudicateWorking {
   evidence: Evidence[];
   /** スキップしたセル（セッション内のみ。永続化しない。key = cellKeyOf(fieldId, entityKey)） */
   skippedCellKeys: string[];
+  /**
+   * マッピング変更時にセル突き合わせを再計算する（issue #63）。生素材（両者の行・Decisions）は
+   * クロージャに閉じ込め、remap（B の armKey → 正準 armKey 辞書）だけを受け取る
+   */
+  rebuildCells(remap: ReadonlyMap<string, string>): AdjudicationCell[];
   /** documentId 1 件ぶんの PDF ビューア素材を遅延読込する（features/verification/pdfViewCache 経由） */
   loadPdfView(documentId: string): Promise<LoadedPdfView>;
   retryPdfView(documentId: string): Promise<LoadedPdfView>;
@@ -450,6 +472,12 @@ export interface AdjudicateState {
   queuedWrites: number;
   /** セル一覧の「不一致のみ」フィルタ（既定 ON。§6.4） */
   mismatchOnlyFilter: boolean;
+  /**
+   * 3 名以上の study（selectable）で裁定者が選んだ 2 名（studyId → 組。issue #63）。
+   * セッション内のみで永続化しない。選択が pairOptions に無い（force 再読込で組が変わった等）
+   * 場合は未選択として扱う
+   */
+  pairSelections: Record<string, { annotatorA: string; annotatorB: string }>;
   /**
    * レビュアー間一致度レポート（issue #66）。null = 未計算（画面入場時には自動読込しない
    * オンデマンド計算。Sheets 読み出しを増やさないため）。読込成功時は対象が 0 件でも
@@ -658,6 +686,7 @@ export function createInitialState(): AppState {
       saving: false,
       queuedWrites: 0,
       mismatchOnlyFilter: true,
+      pairSelections: {},
       agreement: null,
       agreementLoading: false,
       agreementError: null,
