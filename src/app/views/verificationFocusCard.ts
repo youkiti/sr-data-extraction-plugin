@@ -13,6 +13,7 @@ import { NOT_REPORTED_TOKEN } from '../../domain/annotation';
 import type { VerificationCell } from '../../features/verification/cells';
 import type { FocusUnit, FocusUnitColumn, FocusUnitRow } from '../../features/verification/focusUnits';
 import type { RobAlgorithmInfo } from '../../features/verification/robAlgorithm';
+import { t } from '../../lib/i18n';
 import { el } from '../ui/dom';
 import {
   renderCell,
@@ -82,7 +83,7 @@ function displayValue(cell: VerificationCell): string {
     return '—';
   }
   if (raw === NOT_REPORTED_TOKEN) {
-    return `未報告（${NOT_REPORTED_TOKEN}）`;
+    return t('verify.aiNotReported', { token: NOT_REPORTED_TOKEN });
   }
   return raw;
 }
@@ -99,14 +100,15 @@ function renderUnitNavButton(
   const isPrev = direction === 'prev';
   const disabled = isPrev ? model.unitIndex <= 1 : model.unitIndex >= model.totalUnits;
   const shortcutHint = isPrev ? 'Shift+K' : 'Shift+J';
-  const label = isPrev ? '前のユニット' : '次のユニット';
+  const label = isPrev ? t('verify.focusPrevUnit') : t('verify.focusNextUnit');
+  const navTitle = t('verify.focusNavTitle', { label, hint: shortcutHint });
   const button = el('button', {
     className: `focus-card__nav focus-card__nav--${direction}`,
     text: label,
     attributes: {
       type: 'button',
-      'aria-label': `${label}へ移動（${shortcutHint}）`,
-      title: `${label}へ移動（${shortcutHint}）`,
+      'aria-label': navTitle,
+      title: navTitle,
     },
   }) as HTMLButtonElement;
   button.disabled = disabled;
@@ -123,7 +125,11 @@ function renderUnitHeader(
     el('p', {
       id: 'verify-focus-position',
       className: 'focus-card__position',
-      text: `ユニット ${model.unitIndex} / ${model.totalUnits}（残り ${model.remainingUnits}）`,
+      text: t('verify.focusPosition', {
+        index: model.unitIndex,
+        total: model.totalUnits,
+        remaining: model.remainingUnits,
+      }),
     }),
     renderUnitNavButton('next', model, handlers),
   ]);
@@ -161,7 +167,7 @@ function renderMatrixDataCell(
         text: '⚠',
       }),
     );
-    attributes['aria-label'] = `${baseLabel}（整合性チェック警告: ${warnings.join('。')}）`;
+    attributes['aria-label'] = `${baseLabel}${t('verify.consistencyAriaSuffix', { warnings: warnings.join('。') })}`;
     titleParts.push(...warnings);
   }
   const robInfo = model.robAlgorithmInfo.get(cell.cellKey);
@@ -174,8 +180,11 @@ function renderMatrixDataCell(
         text: '⚠',
       }),
     );
-    const robMessage = `アルゴリズム提案 (${robInfo.suggestion}) と現在の判定 (${robInfo.currentValue}) が一致しません`;
-    attributes['aria-label'] = `${attributes['aria-label']}（RoB アルゴリズム提案との不一致: ${robMessage}）`;
+    const robMessage = t('verify.robMismatch', {
+      suggestion: robInfo.suggestion as string,
+      current: String(robInfo.currentValue),
+    }).replace(/^⚠ /, '');
+    attributes['aria-label'] = `${attributes['aria-label']}${t('verify.robAriaSuffix', { message: robMessage })}`;
     titleParts.push(robMessage);
   }
   if (titleParts.length > 0) {
@@ -216,7 +225,7 @@ function renderMatrix(
   handlers: VerificationFocusCardHandlers,
 ): HTMLElement {
   const headerRow = el('tr', {}, [
-    el('th', { className: 'focus-card__matrix-colhead', attributes: { scope: 'col' }, text: '項目' }),
+    el('th', { className: 'focus-card__matrix-colhead', attributes: { scope: 'col' }, text: t('verify.focusItemHead') }),
     ...model.unit.columns.map((column) =>
       el('th', { className: 'focus-card__matrix-colhead', attributes: { scope: 'col' }, text: column.label }),
     ),
@@ -257,7 +266,7 @@ function renderDetailStrip(
     return el('p', {
       id: 'verify-focus-detail',
       className: 'focus-card__detail-empty',
-      text: 'マトリクスからセルを選択してください',
+      text: t('verify.focusDetailEmpty'),
     });
   }
   const cellCardModel: CellCardModel = {
@@ -291,7 +300,7 @@ function renderRecentBar(
   }
   const undoButton = el('button', {
     className: 'focus-card__recent-undo',
-    text: '戻す (z)',
+    text: t('verify.actionUndo'),
     attributes: { type: 'button' },
   });
   undoButton.disabled = cell.state.stack.length === 0;
@@ -304,7 +313,7 @@ function renderRecentBar(
       attributes: { role: 'status', 'aria-live': 'polite' },
     },
     [
-      el('span', { className: 'focus-card__recent-label-lead', text: '直近判定: ' }),
+      el('span', { className: 'focus-card__recent-label-lead', text: t('verify.recentLead') }),
       renderStatusChip(cell.state.status),
       el('span', { className: 'focus-card__recent-label', text: cell.field.fieldLabel }),
       el('span', { className: 'focus-card__recent-value', text: `= ${displayValue(cell)}` }),
@@ -320,7 +329,7 @@ export function renderVerificationFocusCard(
   const children: HTMLElement[] = [renderUnitHeader(model, handlers), renderMatrix(model, handlers)];
   if (model.unit.summary !== null) {
     children.push(
-      el('p', { className: 'focus-card__summary', text: `要約: ${model.unit.summary}` }),
+      el('p', { className: 'focus-card__summary', text: t('verify.focusSummary', { summary: model.unit.summary }) }),
     );
   }
   children.push(renderDetailStrip(model, handlers));

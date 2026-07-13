@@ -7,6 +7,7 @@ import type { ExtractionRun } from '../../../../src/domain/extractionRun';
 import type { SchemaField } from '../../../../src/domain/schemaField';
 import type { StudyRecord } from '../../../../src/domain/study';
 import { planRun } from '../../../../src/features/extraction/planRun';
+import { setUiLanguage } from '../../../../src/lib/i18n';
 import type { VerificationData } from '../../../../src/features/verification/types';
 
 jest.mock('../../../../src/app/views/verificationPanel', () => ({
@@ -755,5 +756,23 @@ describe('過去のパイロット結果（履歴）', () => {
     expect(headings).toContain('過去のパイロット結果');
     expect(headings).toContain('新規パイロット');
     expect(root.querySelector('.pilot__setup')).not.toBeNull();
+  });
+});
+
+describe('renderPilotView（表示言語 en。issue #93）', () => {
+  afterEach(() => {
+    setUiLanguage('ja');
+  });
+
+  test('見出し・実行ボタン・空状態が en で描画される', () => {
+    setUiLanguage('en');
+    const { root } = render(makeState());
+    expect(root.querySelector('h2')?.textContent).toBe('Pilot extraction');
+    expect(root.querySelector('#pilot-run')?.textContent).toBe('Run pilot extraction');
+
+    const empty = render(makeState({ documents: [] }));
+    expect(empty.root.querySelector('#pilot-documents-empty')?.textContent).toBe(
+      'No studies yet. Import documents first on the Documents screen.',
+    );
   });
 });

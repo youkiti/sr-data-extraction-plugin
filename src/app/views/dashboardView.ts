@@ -9,6 +9,7 @@ import type {
   DashboardSectionCell,
   RateCount,
 } from '../../features/verification/dashboard';
+import { t } from '../../lib/i18n';
 import { el } from '../ui/dom';
 import type { AppState } from '../store';
 import type { ViewContext } from './types';
@@ -19,7 +20,11 @@ export function rateText(rate: RateCount): string {
     return '—';
   }
   const percent = Math.round((rate.numerator / rate.denominator) * 100);
-  return `${rate.numerator} / ${rate.denominator}（${percent}%）`;
+  return t('dashboard.rate', {
+    numerator: rate.numerator,
+    denominator: rate.denominator,
+    percent,
+  });
 }
 
 function verifyHref(studyId: string, entityKey: string): string {
@@ -33,7 +38,12 @@ export function acceptRateText(accuracy: AccuracyBreakdown): string {
 
 /** AI 精度の内訳（承認 / 修正 / 棄却 / 報告なし）を人向け文字列に */
 export function accuracyBreakdownText(accuracy: AccuracyBreakdown): string {
-  return `承認 ${accuracy.accept}・修正 ${accuracy.edit}・棄却 ${accuracy.reject}・報告なし ${accuracy.notReported}`;
+  return t('dashboard.accuracyBreakdown', {
+    accept: accuracy.accept,
+    edit: accuracy.edit,
+    reject: accuracy.reject,
+    notReported: accuracy.notReported,
+  });
 }
 
 function renderSummary(data: DashboardData): HTMLElement {
@@ -43,11 +53,14 @@ function renderSummary(data: DashboardData): HTMLElement {
     el('dd', { text: value }),
   ];
   return el('dl', { id: 'dashboard-summary', className: 'dashboard__summary' }, [
-    ...item('検証進捗', rateText({ numerator: totals.progress.decided, denominator: totals.progress.total })),
-    ...item('AI 採用率（人が無修正で承認）', acceptRateText(totals.accuracy)),
-    ...item('AI 精度内訳', accuracyBreakdownText(totals.accuracy)),
-    ...item('anchor 失敗率', rateText(totals.anchor)),
-    ...item('not_reported 率', rateText(totals.notReported)),
+    ...item(
+      t('dashboard.summaryProgress'),
+      rateText({ numerator: totals.progress.decided, denominator: totals.progress.total }),
+    ),
+    ...item(t('dashboard.summaryAcceptRate'), acceptRateText(totals.accuracy)),
+    ...item(t('dashboard.summaryAccuracy'), accuracyBreakdownText(totals.accuracy)),
+    ...item(t('dashboard.summaryAnchor'), rateText(totals.anchor)),
+    ...item(t('dashboard.summaryNotReported'), rateText(totals.notReported)),
   ]);
 }
 
@@ -64,7 +77,12 @@ function renderSectionCell(row: DashboardRow, cell: DashboardSectionCell | null)
       text: `${cell.decided} / ${cell.total}`,
       attributes: {
         href: verifyHref(row.studyId, cell.entityKey),
-        'aria-label': `${row.studyLabel} の ${cell.section} を検証（判定済み ${cell.decided} / ${cell.total}）`,
+        'aria-label': t('dashboard.cellAria', {
+          study: row.studyLabel,
+          section: cell.section,
+          decided: cell.decided,
+          total: cell.total,
+        }),
       },
     }),
   );
@@ -73,11 +91,11 @@ function renderSectionCell(row: DashboardRow, cell: DashboardSectionCell | null)
 
 function renderMatrix(data: DashboardData): HTMLElement {
   const headRow = el('tr', {}, [
-    el('th', { text: '研究', attributes: { scope: 'col' } }),
+    el('th', { text: t('dashboard.headStudy'), attributes: { scope: 'col' } }),
     ...data.sections.map((section) => el('th', { text: section, attributes: { scope: 'col' } })),
-    el('th', { text: 'AI 採用率', attributes: { scope: 'col' } }),
-    el('th', { text: 'anchor 失敗率', attributes: { scope: 'col' } }),
-    el('th', { text: 'not_reported 率', attributes: { scope: 'col' } }),
+    el('th', { text: t('dashboard.headAcceptRate'), attributes: { scope: 'col' } }),
+    el('th', { text: t('dashboard.summaryAnchor'), attributes: { scope: 'col' } }),
+    el('th', { text: t('dashboard.summaryNotReported'), attributes: { scope: 'col' } }),
   ]);
   const bodyRows = data.rows.map((row) =>
     el('tr', { className: 'dashboard__row' }, [
@@ -99,7 +117,7 @@ function renderMatrix(data: DashboardData): HTMLElement {
   return el('table', { id: 'dashboard-matrix', className: 'dashboard__matrix' }, [
     el('caption', {
       className: 'dashboard__matrix-caption',
-      text: 'study × section の検証進捗（セル = 判定済み / 総セル。クリックで検証画面へ）',
+      text: t('dashboard.caption'),
     }),
     el('thead', {}, [headRow]),
     el('tbody', {}, bodyRows),
@@ -108,10 +126,10 @@ function renderMatrix(data: DashboardData): HTMLElement {
 
 export function renderDashboardView(state: AppState, ctx: ViewContext): HTMLElement {
   const children: HTMLElement[] = [
-    el('h2', { text: 'ダッシュボード' }),
+    el('h2', { text: t('app.navDashboard') }),
     el('p', {
       className: 'view__lead',
-      text: '検証の進捗マトリクス、AI 採用率（人の判定から算出）、anchor 失敗率、not_reported 率を可視化します。',
+      text: t('dashboard.lead'),
     }),
   ];
   const dashboard = state.dashboard;
@@ -119,7 +137,7 @@ export function renderDashboardView(state: AppState, ctx: ViewContext): HTMLElem
   if (dashboard.loadError !== null) {
     const reload = el('button', {
       id: 'dashboard-reload',
-      text: '再読み込み',
+      text: t('common.reload'),
       attributes: { type: 'button' },
     });
     reload.addEventListener('click', () => ctx.dashboard.onReload());
@@ -128,7 +146,7 @@ export function renderDashboardView(state: AppState, ctx: ViewContext): HTMLElem
         id: 'dashboard-load-error',
         className: 'dashboard__error',
         attributes: { role: 'alert' },
-        text: `進捗を読み込めませんでした: ${dashboard.loadError}`,
+        text: t('dashboard.loadError', { reason: dashboard.loadError }),
       }),
       reload,
     );
@@ -136,15 +154,15 @@ export function renderDashboardView(state: AppState, ctx: ViewContext): HTMLElem
   }
 
   if (dashboard.data === null || dashboard.loading) {
-    children.push(el('p', { id: 'dashboard-loading', text: '進捗を読み込んでいます…' }));
+    children.push(el('p', { id: 'dashboard-loading', text: t('dashboard.loading') }));
     return el('section', { className: 'view view--dashboard' }, children);
   }
 
   if (dashboard.data.rows.length === 0) {
     children.push(
       el('div', { id: 'dashboard-empty', className: 'dashboard__empty' }, [
-        el('p', { text: 'まだ抽出がありません。' }),
-        el('a', { text: '一括抽出を実行する', attributes: { href: '#/extract' } }),
+        el('p', { text: t('dashboard.emptyBody') }),
+        el('a', { text: t('dashboard.emptyLink'), attributes: { href: '#/extract' } }),
       ]),
     );
     return el('section', { className: 'view view--dashboard' }, children);

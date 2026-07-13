@@ -1,6 +1,7 @@
 // 保存の競合検出バナー（issue #64）。#/verify 単独画面と #/pilot 埋め込み検証パネルで共有する
 // （同一 annotator の 2 コンテキストからの上書きを検出したときに出す。同時に 1 画面しか
 // 出ないため id を共有してよい）。extract-interrupted-warning と同じ「文言 + 再読み込み」構成
+import { t } from '../../lib/i18n';
 import { el } from '../ui/dom';
 
 /**
@@ -10,7 +11,7 @@ import { el } from '../ui/dom';
 export function renderConflictWarning(message: string, onReload: () => void): HTMLElement {
   const reload = el('button', {
     id: 'verify-conflict-reload',
-    text: '再読み込み',
+    text: t('common.reload'),
     attributes: { type: 'button' },
   });
   reload.addEventListener('click', () => onReload());

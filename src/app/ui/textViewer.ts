@@ -3,6 +3,7 @@
 // 根拠引用（<mark> 強調）/ 引用前後の文脈。座標計算・描画は一切持たず、呼び出し側
 // （verificationPanel）が features/verification/textContext.ts で組み立てたスニペットを
 // そのまま流し込む純粋な表示コンポーネント
+import { t } from '../../lib/i18n';
 import { el } from './dom';
 
 export interface TextViewerSnippet {
@@ -31,9 +32,7 @@ export function createTextViewer(): TextViewerHandle {
     body.replaceChildren(
       el('p', {
         className: 'text-viewer__empty',
-        text:
-          '項目を選択すると、抽出テキスト上の根拠箇所と前後の文脈がここに表示されます' +
-          '（AI 抽出のない項目では何も表示されません）。',
+        text: t('verify.textViewerEmpty'),
       }),
     );
   }
@@ -43,7 +42,7 @@ export function createTextViewer(): TextViewerHandle {
       el('p', { className: 'text-viewer__doc-label', text: snippet.documentLabel }),
       el('p', {
         className: 'text-viewer__unresolved-note',
-        text: '抽出テキスト上に根拠箇所を再特定できません。引用全文を表示します。',
+        text: t('verify.textViewerUnresolved'),
       }),
       el('blockquote', { className: 'text-viewer__quote-full', text: snippet.quote }),
     );
@@ -55,7 +54,7 @@ export function createTextViewer(): TextViewerHandle {
   ): void {
     body.replaceChildren(
       el('p', { className: 'text-viewer__doc-label', text: snippet.documentLabel }),
-      el('p', { className: 'text-viewer__page', text: `${located.page} ページ` }),
+      el('p', { className: 'text-viewer__page', text: t('verify.textViewerPage', { page: located.page }) }),
       el('p', { className: 'text-viewer__snippet' }, [
         located.before,
         el('mark', { className: 'text-viewer__mark', text: snippet.quote }),

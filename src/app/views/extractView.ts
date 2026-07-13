@@ -16,6 +16,7 @@ import {
 } from '../../features/extraction/fieldSelection';
 import type { ExtractStudyRow, ExtractStudyStatus } from '../../features/extraction/studyProgress';
 import { planRun } from '../../features/extraction/planRun';
+import { t, type MessageKey } from '../../lib/i18n';
 import { el } from '../ui/dom';
 import { createModelSelect } from '../ui/modelSelect';
 import type { AppState } from '../store';
@@ -26,20 +27,21 @@ import {
 } from './fieldSelectionChecklist';
 import type { ViewContext } from './types';
 
-const STATUS_LABELS: Readonly<Record<ExtractStudyStatus, string>> = {
-  queued: '待機中',
-  running: '実行中',
-  done: '完了',
-  failed: '失敗',
+// 表示言語に追従させるため、ラベルは描画時に t() で解決する（キー対応表のみ固定。issue #93）
+const STATUS_LABEL_KEYS: Readonly<Record<ExtractStudyStatus, MessageKey>> = {
+  queued: 'extract.statusQueued',
+  running: 'extract.statusRunning',
+  done: 'extract.statusDone',
+  failed: 'extract.statusFailed',
 };
 
-const DOCUMENT_ROLE_LABELS: Readonly<Record<DocumentRecord['documentRole'], string>> = {
-  article: '本論文',
-  registration: '試験登録',
-  protocol: 'プロトコル',
-  abstract: '抄録',
-  supplement: '付録',
-  other: 'その他',
+const DOCUMENT_ROLE_LABEL_KEYS: Readonly<Record<DocumentRecord['documentRole'], MessageKey>> = {
+  article: 'documents.roleArticle',
+  registration: 'documents.roleRegistration',
+  protocol: 'documents.roleProtocol',
+  abstract: 'documents.roleAbstractShort',
+  supplement: 'documents.roleSupplementShort',
+  other: 'documents.roleOther',
 };
 
 /**
@@ -71,7 +73,10 @@ function renderStudySelector(state: AppState, ctx: ViewContext): HTMLElement {
   const items = selection.map((item) => {
     const studyId = item.study.studyId;
     const checkbox = el('input', {
-      attributes: { type: 'checkbox', 'aria-label': `${item.study.studyLabel} を対象にする` },
+      attributes: {
+        type: 'checkbox',
+        'aria-label': t('extraction.studyToggleAria', { label: item.study.studyLabel }),
+      },
     });
     checkbox.checked = state.extract.selectedStudyIds.includes(studyId);
     // pdf_native 対応（handoff-scanned-pdf-native-highlight.md §7.4 PR2）により
@@ -85,14 +90,16 @@ function renderStudySelector(state: AppState, ctx: ViewContext): HTMLElement {
       // サブセット run（fieldIds ≠ null）が直近なら「直近 run は n/m 項目」を添える（issue #80）
       const badge = state.extract.fieldSubsetBadges[studyId];
       const text =
-        badge === undefined ? '抽出済み' : `抽出済み（直近 run は ${badge.selected}/${badge.total} 項目）`;
+        badge === undefined
+          ? t('extract.extracted')
+          : t('extract.extractedSubset', { selected: badge.selected, total: badge.total });
       head.push(el('span', { className: 'extract__doc-extracted', text }));
     }
     if (!item.hasTextLayer) {
       head.push(
         el('small', {
           className: 'extract__doc-note',
-          text: 'テキスト層なし: ページ画像を LLM へ送信して抽出します（ハイライトなし・コスト増）',
+          text: t('extraction.noTextLayerNote'),
         }),
       );
     }
@@ -104,11 +111,11 @@ function renderStudySelector(state: AppState, ctx: ViewContext): HTMLElement {
         el('li', { className: 'extract__study-doc' }, [
           el('span', {
             className: 'extract__doc-role',
-            text: DOCUMENT_ROLE_LABELS[doc.documentRole],
+            text: t(DOCUMENT_ROLE_LABEL_KEYS[doc.documentRole]),
           }),
           el('span', { className: 'extract__doc-filename', text: doc.filename }),
           ...(doc.textStatus === 'no_text_layer'
-            ? [el('small', { className: 'extract__doc-note', text: 'テキスト層なし' })]
+            ? [el('small', { className: 'extract__doc-note', text: t('extraction.noTextLayerShort') })]
             : []),
         ]),
       ),
@@ -121,7 +128,7 @@ function renderStudySelector(state: AppState, ctx: ViewContext): HTMLElement {
   if (items.length === 0) {
     return el('p', {
       id: 'extract-documents-empty',
-      text: 'まだ試験がありません。先に #/documents で取り込んでください。',
+      text: t('extraction.noStudies'),
     });
   }
   return el('ul', { id: 'extract-studies', className: 'extract__studies' }, items);
@@ -134,14 +141,14 @@ function renderEstimate(state: AppState): HTMLElement {
     return el('p', {
       id: 'extract-estimate',
       className: 'extract__estimate',
-      text: 'コスト概算: 対象 study を選択すると表示されます',
+      text: t('extraction.estimateSelectStudies'),
     });
   }
   if (hasZeroFieldsSelected(state.extract.selectedFieldIds, fields)) {
     return el('p', {
       id: 'extract-estimate',
       className: 'extract__estimate',
-      text: 'コスト概算: 対象項目を選択すると表示されます',
+      text: t('extraction.estimateSelectFields'),
     });
   }
   const estimateFields = filterFieldsBySelection(
@@ -157,26 +164,36 @@ function renderEstimate(state: AppState): HTMLElement {
     });
     const cost =
       plan.costEstimateUsd === null
-        ? '概算不可（単価表にないモデル）'
+        ? t('extraction.estimateUnavailable')
         : `$${plan.costEstimateUsd.toFixed(4)}`;
     const lines: HTMLElement[] = [
       el('p', {
-        text: `コスト概算: ${cost}（入力 ~${plan.tokensInEstimate.toLocaleString()} / 出力 ~${plan.tokensOutEstimate.toLocaleString()} トークン、${plan.batches.length} バッチ）`,
+        text: t('extraction.estimateLine', {
+          cost,
+          tokensIn: plan.tokensInEstimate.toLocaleString(),
+          tokensOut: plan.tokensOutEstimate.toLocaleString(),
+          batches: plan.batches.length,
+        }),
       }),
       el('p', {
         className: 'extract__estimate-note',
-        text: 'プロトコル本文ぶんは概算に含まれません（実行時は加算されます）',
+        text: t('extraction.estimateNote'),
       }),
     ];
     for (const warning of plan.warnings) {
-      lines.push(el('p', { className: 'extract__estimate-warning', text: `注意: ${warning}` }));
+      lines.push(
+        el('p', {
+          className: 'extract__estimate-warning',
+          text: t('extraction.estimateWarning', { warning }),
+        }),
+      );
     }
     return el('div', { id: 'extract-estimate', className: 'extract__estimate' }, lines);
   } catch (err) {
     return el('p', {
       id: 'extract-estimate',
       className: 'extract__estimate extract__estimate--error',
-      text: `コスト概算を計算できません: ${err instanceof Error ? err.message : String(err)}`,
+      text: t('extraction.estimateError', { reason: err instanceof Error ? err.message : String(err) }),
     });
   }
 }
@@ -188,7 +205,7 @@ function renderFieldSelector(state: AppState, ctx: ViewContext): HTMLElement | n
     return null;
   }
   return el('div', { className: 'extract__field-selector' }, [
-    el('h3', { text: '対象項目（既定 = 全項目）' }),
+    el('h3', { text: t('extraction.fieldSelectorTitle') }),
     renderFieldSelectionChecklist({
       idPrefix: 'extract',
       fields,
@@ -204,9 +221,9 @@ function renderFieldSelector(state: AppState, ctx: ViewContext): HTMLElement | n
 function renderSetup(state: AppState, ctx: ViewContext): HTMLElement {
   const modelSelect = createModelSelect(document, {
     id: 'extract-model',
-    ariaLabel: 'モデル名（requested_model）',
+    ariaLabel: t('schema.modelAria'),
     value: state.extract.model,
-    placeholderLabel: '選択してください',
+    placeholderLabel: t('schema.modelPlaceholder'),
     onChange: (value) => ctx.extract.onChangeModel(value),
     className: 'extract__model-input',
   });
@@ -215,7 +232,7 @@ function renderSetup(state: AppState, ctx: ViewContext): HTMLElement {
   const runButton = el('button', {
     id: 'extract-run',
     className: 'extract__run',
-    text: '一括抽出を実行',
+    text: t('extract.run'),
     attributes: { type: 'button' },
   });
   runButton.disabled =
@@ -226,11 +243,11 @@ function renderSetup(state: AppState, ctx: ViewContext): HTMLElement {
 
   const fieldSelector = renderFieldSelector(state, ctx);
   const children: HTMLElement[] = [
-    el('h3', { text: '対象試験（既定 = 未抽出の全件）' }),
+    el('h3', { text: t('extract.targetTitle') }),
     renderStudySelector(state, ctx),
     ...(fieldSelector === null ? [] : [fieldSelector]),
     el('div', { className: 'extract__model' }, [
-      el('label', { text: 'モデル: ', attributes: { for: 'extract-model' } }),
+      el('label', { text: t('extraction.modelLabel'), attributes: { for: 'extract-model' } }),
       modelSelect,
     ]),
     renderEstimate(state),
@@ -257,13 +274,13 @@ function renderConfirm(state: AppState, ctx: ViewContext): HTMLElement {
   const confirmButton = el('button', {
     id: 'extract-confirm-run',
     className: 'extract__confirm-run',
-    text: '実行する',
+    text: t('extract.confirmRun'),
     attributes: { type: 'button' },
   });
   confirmButton.addEventListener('click', () => ctx.extract.onConfirmRun());
   const cancelButton = el('button', {
     id: 'extract-confirm-cancel',
-    text: 'キャンセル',
+    text: t('common.cancel'),
     attributes: { type: 'button' },
   });
   cancelButton.addEventListener('click', () => ctx.extract.onCancelConfirm());
@@ -275,13 +292,21 @@ function renderConfirm(state: AppState, ctx: ViewContext): HTMLElement {
       attributes: { role: 'alertdialog', 'aria-labelledby': 'extract-confirm-title' },
     },
     [
-      el('h4', { id: 'extract-confirm-title', text: '一括抽出を開始しますか？' }),
+      el('h4', { id: 'extract-confirm-title', text: t('extract.confirmTitle') }),
       el('p', {
-        text: `対象 ${state.extract.selectedStudyIds.length} 試験をモデル ${state.extract.model} で抽出します。`,
+        text: t('extract.confirmBody', {
+          count: state.extract.selectedStudyIds.length,
+          model: state.extract.model,
+        }),
       }),
       el('p', {
         id: 'extract-confirm-fields',
-        text: `対象項目: ${fieldSelectionSummaryText(state.extract.selectedFieldIds, state.schema.currentFields ?? [])}`,
+        text: t('fieldSelection.summary', {
+          summary: fieldSelectionSummaryText(
+            state.extract.selectedFieldIds,
+            state.schema.currentFields ?? [],
+          ),
+        }),
       }),
       renderEstimate(state),
       el('div', { className: 'extract__confirm-actions' }, [confirmButton, cancelButton]),
@@ -294,7 +319,7 @@ function renderStudyRows(state: AppState, ctx: ViewContext, withRetry: boolean):
     const parts: Array<HTMLElement | string> = [
       el('span', {
         className: `extract__doc-status extract__doc-status--${row.status}`,
-        text: STATUS_LABELS[row.status],
+        text: t(STATUS_LABEL_KEYS[row.status]),
       }),
       el('span', {
         className: 'extract__study-label',
@@ -306,7 +331,10 @@ function renderStudyRows(state: AppState, ctx: ViewContext, withRetry: boolean):
       parts.push(
         el('span', {
           className: 'extract__doc-batches',
-          text: `バッチ ${row.completedBatches}/${row.totalBatches}`,
+          text: t('extract.batchProgress', {
+            completed: row.completedBatches,
+            total: row.totalBatches,
+          }),
         }),
       );
     }
@@ -316,7 +344,7 @@ function renderStudyRows(state: AppState, ctx: ViewContext, withRetry: boolean):
     if (withRetry && row.status === 'failed') {
       const retryButton = el('button', {
         className: 'extract__retry',
-        text: '再試行',
+        text: t('common.retry'),
         attributes: { type: 'button' },
       });
       retryButton.disabled = state.extract.retryingStudyId !== null;
@@ -339,15 +367,15 @@ function renderRunPosition(state: AppState): HTMLElement[] {
   }
   const doneCount = rows.filter((row) => row.status === 'done').length;
   const failedCount = rows.filter((row) => row.status === 'failed').length;
-  const summaryParts = [`試験: 完了 ${doneCount}`];
-  if (failedCount > 0) {
-    summaryParts.push(`失敗 ${failedCount}`);
-  }
   const lines = [
     el('p', {
       id: 'extract-doc-summary',
       className: 'extract__doc-summary',
-      text: `${summaryParts.join(' / ')} / 全 ${rows.length} 件`,
+      text: t('extract.positionSummary', {
+        done: doneCount,
+        failedSuffix: failedCount > 0 ? t('extract.positionFailed', { n: failedCount }) : '',
+        total: rows.length,
+      }),
     }),
   ];
   const runningIndex = rows.findIndex((row) => row.status === 'running');
@@ -357,7 +385,12 @@ function renderRunPosition(state: AppState): HTMLElement[] {
       el('p', {
         id: 'extract-current-doc',
         className: 'extract__current-doc',
-        text: `処理中: ${studyLabelOf(state, running.studyId)}（${runningIndex + 1} 件目・バッチ ${running.completedBatches}/${running.totalBatches}）`,
+        text: t('extract.currentDoc', {
+          label: studyLabelOf(state, running.studyId),
+          index: runningIndex + 1,
+          completed: running.completedBatches,
+          total: running.totalBatches,
+        }),
       }),
     );
   }
@@ -367,7 +400,7 @@ function renderRunPosition(state: AppState): HTMLElement[] {
 function renderProgress(state: AppState, ctx: ViewContext): HTMLElement {
   const { progress } = state.extract;
   const bar = el('progress', { id: 'extract-progress', className: 'extract__progress-bar' });
-  let text = '実行準備中…';
+  let text = t('extraction.preparing');
   if (progress !== null) {
     bar.max = progress.totalBatches;
     bar.value = progress.completedBatches;
@@ -375,10 +408,14 @@ function renderProgress(state: AppState, ctx: ViewContext): HTMLElement {
       progress.totalBatches > 0
         ? Math.floor((progress.completedBatches / progress.totalBatches) * 100)
         : 0;
-    text = `${progress.completedBatches} / ${progress.totalBatches} バッチ完了（${percent}%）`;
+    text = t('extract.progressText', {
+      completed: progress.completedBatches,
+      total: progress.totalBatches,
+      percent,
+    });
   }
   return el('section', { className: 'extract__running', attributes: { 'aria-live': 'polite' } }, [
-    el('h3', { text: '抽出を実行しています…' }),
+    el('h3', { text: t('extraction.runningTitle') }),
     bar,
     el('p', { className: 'extract__progress-text', text }),
     ...renderRunPosition(state),
@@ -394,11 +431,16 @@ function armWarningLineOf(state: AppState, warning: RunWarning): string {
   const fieldNameById = new Map(
     (state.schema.currentFields ?? []).map((field) => [field.fieldId, field.fieldName]),
   );
-  const scope = warning.section === null ? '' : `（section: ${warning.section}）`;
+  const scope =
+    warning.section === null ? '' : t('extract.armWarningScope', { section: warning.section });
   const missing = warning.missingItems
     .map((item) => `${item.armKey} × ${fieldNameById.get(item.fieldId) ?? item.fieldId}`)
     .join('、');
-  return `${studyLabelOf(state, warning.studyId)}${scope}: ${missing} が応答に含まれていません`;
+  return t('extract.armWarningLine', {
+    study: studyLabelOf(state, warning.studyId),
+    scope,
+    missing,
+  });
 }
 
 /**
@@ -419,7 +461,7 @@ function renderArmWarnings(state: AppState): HTMLElement | null {
     },
     [
       el('p', {
-        text: `群（arm）の欠落の可能性が ${warnings.length} 件検出されました（警告。正当な未報告の可能性もあります。検証時に本文と照合してください）:`,
+        text: t('extract.armWarningsLead', { n: warnings.length }),
       }),
       el(
         'ul',
@@ -432,13 +474,13 @@ function renderArmWarnings(state: AppState): HTMLElement | null {
 
 function renderSummary(state: AppState, ctx: ViewContext): HTMLElement {
   const failedCount = state.extract.studyRows.filter((row) => row.status === 'failed').length;
-  const children: HTMLElement[] = [el('h3', { text: '実行結果' })];
+  const children: HTMLElement[] = [el('h3', { text: t('extract.resultTitle') })];
   if (failedCount > 0) {
     const lines: HTMLElement[] = [
-      el('p', { text: `${failedCount} 件の試験で失敗しました。再試行できます` }),
+      el('p', { text: t('extract.failedSummary', { n: failedCount }) }),
     ];
     if (state.extract.rejectedCount > 0) {
-      lines.push(el('p', { text: `応答要素の破棄: ${state.extract.rejectedCount} 件` }));
+      lines.push(el('p', { text: t('extraction.rejectedCount', { n: state.extract.rejectedCount }) }));
     }
     children.push(
       el('div', { id: 'extract-partial-failure', className: 'extract__partial-failure' }, lines),
@@ -448,14 +490,14 @@ function renderSummary(state: AppState, ctx: ViewContext): HTMLElement {
       el('p', {
         id: 'extract-run-done',
         className: 'extract__run-done',
-        text: '一括抽出が完了しました。',
+        text: t('extract.runDone'),
       }),
     );
     if (state.extract.rejectedCount > 0) {
       children.push(
         el('p', {
           className: 'extract__rejected-note',
-          text: `応答要素の破棄: ${state.extract.rejectedCount} 件（内訳は LLMApiLog を参照）`,
+          text: t('extract.rejectedNote', { n: state.extract.rejectedCount }),
         }),
       );
     }
@@ -470,7 +512,7 @@ function renderSummary(state: AppState, ctx: ViewContext): HTMLElement {
       el('a', {
         id: 'extract-verify-link',
         className: 'extract__verify-link',
-        text: '検証へ進む',
+        text: t('extract.goVerify'),
         attributes: { href: '#/verify' },
       }),
     ]),
@@ -480,10 +522,10 @@ function renderSummary(state: AppState, ctx: ViewContext): HTMLElement {
 
 export function renderExtractView(state: AppState, ctx: ViewContext): HTMLElement {
   const children: HTMLElement[] = [
-    el('h2', { text: '一括抽出' }),
+    el('h2', { text: t('app.navExtract') }),
     el('p', {
       className: 'view__lead',
-      text: '対象試験とモデルを選び、コスト概算を確認してから全試験の AI 抽出を実行します。',
+      text: t('extract.lead'),
     }),
   ];
   const { extract, documents, counts } = state;
@@ -491,7 +533,7 @@ export function renderExtractView(state: AppState, ctx: ViewContext): HTMLElemen
   if (documents.loadError !== null || extract.loadError !== null) {
     const reloadButton = el('button', {
       id: 'extract-reload',
-      text: '再読み込み',
+      text: t('common.reload'),
       attributes: { type: 'button' },
     });
     reloadButton.addEventListener('click', () => ctx.extract.onReloadTargets());
@@ -500,7 +542,8 @@ export function renderExtractView(state: AppState, ctx: ViewContext): HTMLElemen
         id: 'extract-load-error',
         className: 'extract__error',
         attributes: { role: 'alert' },
-        text: `抽出対象を読み込めませんでした: ${documents.loadError ?? extract.loadError}`,
+        // このガードは documents.loadError / extract.loadError のいずれかが非 null のときだけ通る
+        text: t('extract.loadError', { reason: String(documents.loadError ?? extract.loadError) }),
       }),
       reloadButton,
     );
@@ -513,7 +556,7 @@ export function renderExtractView(state: AppState, ctx: ViewContext): HTMLElemen
     extract.extractedStudyIds === null ||
     extract.loading
   ) {
-    children.push(el('p', { id: 'extract-loading', text: '抽出対象を読み込んでいます…' }));
+    children.push(el('p', { id: 'extract-loading', text: t('extract.loading') }));
     return el('section', { className: 'view view--extract' }, children);
   }
 
@@ -522,7 +565,7 @@ export function renderExtractView(state: AppState, ctx: ViewContext): HTMLElemen
       el('p', {
         id: 'extract-pilot-warning',
         className: 'extract__pilot-warning',
-        text: 'パイロット抽出を推奨します（表のデザインの妥当性を 2〜3 本で確認してから一括抽出してください）',
+        text: t('extract.pilotWarning'),
       }),
     );
   }
@@ -538,7 +581,7 @@ export function renderExtractView(state: AppState, ctx: ViewContext): HTMLElemen
         id: 'extract-interrupted-warning',
         className: 'extract__interrupted-warning',
         attributes: { role: 'status' },
-        text: `前回の抽出が途中で中断されています（未完了 ${interruptedRemaining.length} 件）。未完了の試験は対象の既定選択に含まれているため、そのまま実行すると再開できます。`,
+        text: t('extract.interruptedWarning', { n: interruptedRemaining.length }),
       }),
     );
   }
