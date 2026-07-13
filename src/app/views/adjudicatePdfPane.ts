@@ -21,7 +21,7 @@ import {
   type EvidenceHighlight,
   type HighlightOccurrence,
 } from '../../features/verification/highlights';
-import { t } from '../../lib/i18n';
+import { getUiLanguage, t, type UiLanguage } from '../../lib/i18n';
 import type { AdjudicateWorking } from '../store';
 import { documentRoleLabel } from '../ui/documentRoleLabel';
 import { el } from '../ui/dom';
@@ -29,6 +29,13 @@ import { createPdfViewer, type PdfViewerHandle, type ViewerHighlight } from '../
 
 interface CachedPane {
   studyId: string;
+  /**
+   * ペイン生成時の表示言語（issue #93）。言語切替では studyId が変わらず、同一 study の
+   * `#/adjudicate?study=` 再入場も syncAdjudicateRoute の同一 study ガードで再読込しないため、
+   * studyId 比較だけではキャッシュ済みの左ペイン（読み込み中 / エラー文言・doc タブの role
+   * ラベル等）が旧言語のまま残る。生成時言語をスタンプし、現在言語と異なれば作り直す
+   */
+  language: UiLanguage;
   activeDocumentId: string | null;
   viewer: PdfViewerHandle | null;
   root: HTMLElement;
@@ -145,11 +152,15 @@ function selectDocument(pane: CachedPane, working: AdjudicateWorking, documentId
 }
 
 /**
- * study の PDF 参照ペインを返す（同じ studyId への再描画は同一インスタンスを再利用する）。
- * study が切り替わったら破棄して作り直す
+ * study の PDF 参照ペインを返す（同じ studyId + 同じ表示言語への再描画は同一インスタンスを
+ * 再利用する）。study が切り替わった・表示言語が切り替わったら破棄して作り直す（issue #93）
  */
 export function renderAdjudicatePdfPane(working: AdjudicateWorking): HTMLElement {
-  if (cached === null || cached.studyId !== working.study.studyId) {
+  if (
+    cached === null ||
+    cached.studyId !== working.study.studyId ||
+    cached.language !== getUiLanguage()
+  ) {
     const tabsEl = el('div', {});
     const bodyEl = el('div', { className: 'adjudicate__pdf-body' });
     const children: HTMLElement[] = [tabsEl];
@@ -166,6 +177,7 @@ export function renderAdjudicatePdfPane(working: AdjudicateWorking): HTMLElement
     const firstDocumentId = working.documents[0]?.documentId ?? null;
     const pane: CachedPane = {
       studyId: working.study.studyId,
+      language: getUiLanguage(),
       activeDocumentId: firstDocumentId,
       viewer: null,
       root,

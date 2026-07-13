@@ -550,3 +550,33 @@ test('3 名以上のレビュアー: 一覧のペア選択でゲート達成の 
   const results = await new AxeBuilder({ page }).analyze();
   expect(results.violations).toEqual([]);
 });
+
+test('表示言語の切替: 裁定中の PDF ペインが同一 study のまま新言語で再構築される（issue #93）', async ({
+  page,
+}) => {
+  await setupRoutes(page);
+  await initApp(page);
+
+  await expect(page.locator('#adjudicate-list')).toBeVisible({ timeout: 15_000 });
+  await page.locator('tr[data-study-id="study-1"] .adjudicate__open-button').click();
+  await expect(page.locator('#adjudicate-working')).toBeVisible();
+  // 左ペイン（studyId キーのキャッシュ。ツールバーは生成時に文言解決される）が ja で表示される
+  await expect(page.locator('.adjudicate__pane--pdf')).toContainText('前のページ');
+
+  // Options で en へ切替 → #/adjudicate へ戻る（同一 study の working は再読込されない =
+  // 言語スタンプによるキャッシュ再生成の検証経路）
+  await page.locator('#app-open-options').click();
+  await page.locator('#ui-language').selectOption('en');
+  await expect(page.locator('#app-content .settings__header h2')).toHaveText('Settings');
+  await page.locator('#app-nav a[href="#/adjudicate"]').click();
+  await expect(page.locator('#adjudicate-working')).toBeVisible();
+  await expect(page.locator('.adjudicate__pane--pdf')).toContainText('Previous page');
+  // セル一覧側（キャッシュ外）も新言語で描画される
+  await expect(page.locator('#adjudicate-accept-all')).toHaveText('Adopt all matching cells');
+
+  // ja へ復帰しても同様に作り直される
+  await page.locator('#app-open-options').click();
+  await page.locator('#ui-language').selectOption('ja');
+  await page.locator('#app-nav a[href="#/adjudicate"]').click();
+  await expect(page.locator('.adjudicate__pane--pdf')).toContainText('前のページ');
+});

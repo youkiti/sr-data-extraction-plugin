@@ -135,7 +135,7 @@ UI 文言は自前辞書方式（`src/lib/i18n/`。`t(key)` + `ja.ts` / `en.ts` 
 | 切替 | `change` で即時に `settings.uiLanguage` へ保存 + `setUiLanguage` でアプリ内の再描画を同期発火（**リロード不要**）。アプリ内 `#/options` ではストア再描画で全画面（ヘッダ / サイドバー / 表示中ルート）が新言語へ切り替わる。スタンドアロン `options.html` では設定本文を新言語で再構築する。`<html lang>` も追従する |
 | 保存失敗 | トースト「表示言語の保存に失敗しました。」（表示言語自体はメモリ内で切り替わり、次回起動時に保存済みの言語へ戻る） |
 | 伝播範囲 | 即時反映は**切替を行った同一タブ内**（アプリ内 `#/options` ⇄ 各画面、スタンドアロン options.html 自身）に限る。Popup は表示時に保存値を読む（**次回表示時に反映**）。スタンドアロン options.html で切替えても、既に開いているメインビュータブへは伝播しない（**次回起動時に反映**） |
-| キャッシュ済みパネル | 検証パネル（`renderCachedVerificationPanel`）は VerificationData 参照に加えて**生成時言語をスタンプ**し、言語切替後の再描画でキャッシュを破棄して新言語で作り直す（言語切替ではデータ参照が変わらず、同一 study の `#/verify` 再入場も再読込しないため。issue #93） |
+| キャッシュ済みパネル | 検証パネル（`renderCachedVerificationPanel`）は VerificationData 参照に、裁定 PDF ペイン（`renderAdjudicatePdfPane`）は studyId に加えて、いずれも**生成時言語をスタンプ**し、言語切替後の再描画でキャッシュを破棄して新言語で作り直す（言語切替ではデータ参照 / studyId が変わらず、同一 study の `#/verify` / `#/adjudicate?study=` 再入場も再読込しないため。issue #93） |
 | Popup / Options の静的 HTML | `data-i18n`（textContent）/ `data-i18n-placeholder` / `data-i18n-title` / `data-i18n-aria-label` 属性を各 bootstrap 起動時に `localizeDom` が解決する。HTML 上の初期文言は ja（既定言語と一致） |
 
 ## 3. App / メインビュー (`src/app/app.html`)

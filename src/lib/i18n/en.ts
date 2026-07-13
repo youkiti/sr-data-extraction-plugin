@@ -571,7 +571,7 @@ export const en: Record<MessageKey, string> = {
   'app.roleCheckingContext': 'Checking your role',
 
   // ルートガード
-  'guards.adjudicatorOnly': 'Not available with your adjudicator permission in this project',
+  'guards.adjudicatorOnly': 'Requires adjudicator permission in this project',
   'guards.reviewerRestricted': 'Not available with your reviewer permission in this project',
   'guards.needProtocol': 'Enter the protocol first',
   'guards.needSchemaAndDocs':

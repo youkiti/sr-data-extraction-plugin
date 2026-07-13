@@ -11,6 +11,7 @@ import type { StudyRecord } from '../../../../src/domain/study';
 import type { TextLayerPage } from '../../../../src/domain/textLayer';
 import type { AdjudicationCell } from '../../../../src/features/adjudication/cellMatch';
 import { cellKeyOf } from '../../../../src/features/verification/cellState';
+import { setUiLanguage } from '../../../../src/lib/i18n';
 import type { LoadedPdfView } from '../../../../src/features/verification/pdfViewCache';
 import type { PdfViewerDocument, RenderablePdfPage } from '../../../../src/lib/pdf/renderPage';
 
@@ -258,6 +259,34 @@ describe('renderAdjudicatePdfPane', () => {
     disposeAdjudicatePdfPaneCache();
     const second = renderAdjudicatePdfPane(working);
     expect(first).not.toBe(second);
+  });
+
+  test('表示言語が切り替わったら同じ study でも作り直す（issue #93）', async () => {
+    const working = makeWorking({
+      loadPdfView: jest
+        .fn()
+        .mockResolvedValue({ pdf: null, pdfError: 'boom', textPages: [] } as LoadedPdfView),
+    });
+    const first = renderAdjudicatePdfPane(working);
+    await flush();
+    expect(first.querySelector('.adjudicate__pdf-error')?.textContent).toBe(
+      'PDF を読み込めませんでした: boom',
+    );
+    try {
+      setUiLanguage('en');
+      // 言語切替では studyId が変わらない（同一 study の再入場も syncAdjudicateRoute の
+      // ガードで再読込しない）が、言語スタンプの不一致でキャッシュを破棄し新言語で描画し直す
+      const second = renderAdjudicatePdfPane(working);
+      expect(second).not.toBe(first);
+      await flush();
+      expect(second.querySelector('.adjudicate__pdf-error')?.textContent).toBe(
+        'Failed to load the PDF: boom',
+      );
+      // 同一言語のままの再描画は同一 DOM を返す（キャッシュ維持）
+      expect(renderAdjudicatePdfPane(working)).toBe(second);
+    } finally {
+      setUiLanguage('ja');
+    }
   });
 });
 
