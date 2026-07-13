@@ -61,7 +61,7 @@ import type {
 } from '../../features/verification/types';
 import type { VerifyLayoutMode } from '../../lib/storage/settingsStore';
 import type { renderPdfPageToCanvas } from '../../lib/pdf/renderPage';
-import { t } from '../../lib/i18n';
+import { getUiLanguage, t, type UiLanguage } from '../../lib/i18n';
 import { nowIso8601 } from '../../utils/iso8601';
 import { nextOutcomeId } from '../../utils/entityKey';
 import { documentRoleLabel } from '../ui/documentRoleLabel';
@@ -1564,22 +1564,38 @@ export function createVerificationPanel(
 
 let cachedPanel: {
   data: VerificationData;
+  /**
+   * パネル生成時の表示言語（issue #93）。言語切替では VerificationData の参照が変わらず、
+   * さらに #/verify 再入場は bootstrap の alreadyShown ガードで再読込しないため、参照比較だけでは
+   * キャッシュ済み DOM（判定ボタン・タブ・バナー・左ペインのツールバー等）が旧言語のまま残る。
+   * 生成時言語をスタンプし、現在言語と異なればキャッシュを破棄して作り直す
+   */
+  language: UiLanguage;
   handle: VerificationPanelHandle;
   /** 適用済みの ?entity=（同じ値の再描画でフォーカスを奪い直さないための記録） */
   appliedFocusEntity: string | null;
 } | null = null;
 
 /**
- * 同じ VerificationData 参照に対しては同一パネル（DOM / 判定の楽観状態）を返す。
- * データが差し替わったら古いパネルを破棄して作り直す。
+ * 同じ VerificationData 参照 + 同じ表示言語に対しては同一パネル（DOM / 判定の楽観状態）を返す。
+ * データが差し替わった・表示言語が切り替わったら古いパネルを破棄して作り直す。
  * focusEntityKey は値が変わったときだけ focusEntity を呼ぶ（ストア再描画では発火しない）
  */
 export function renderCachedVerificationPanel(options: VerificationPanelOptions): HTMLElement {
   const focusEntityKey = options.focusEntityKey ?? null;
-  if (cachedPanel === null || cachedPanel.data !== options.data) {
+  if (
+    cachedPanel === null ||
+    cachedPanel.data !== options.data ||
+    cachedPanel.language !== getUiLanguage()
+  ) {
     cachedPanel?.handle.dispose();
     const handle = createVerificationPanel(options);
-    cachedPanel = { data: options.data, handle, appliedFocusEntity: null };
+    cachedPanel = {
+      data: options.data,
+      language: getUiLanguage(),
+      handle,
+      appliedFocusEntity: null,
+    };
     if (focusEntityKey === null) {
       // ?entity= 指定時は下の focusEntity 適用に任せる。未指定時のみ初期フォーカスセルを可視化する。
       // render 時点ではパネルが DOM 未接続のため、接続後（microtask）にスクロールする
