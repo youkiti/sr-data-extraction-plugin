@@ -16,44 +16,46 @@ import type {
   TiabPlanItemStatus,
   TiabScreeningPhase,
 } from '../../features/documents/tiabReview';
+import { t, type MessageKey } from '../../lib/i18n';
 import { activeStudyGroups, visibleMergeCandidates } from '../services/documentsService';
 import { el } from '../ui/dom';
 import type { AppState, ImportRow, ImportRowStatus, MergeDialogState, TiabImportState } from '../store';
 import type { ViewContext } from './types';
 
-const IMPORT_ROW_LABELS: Record<ImportRowStatus, string> = {
-  queued: '待機中',
-  copy: 'コピー中…',
-  extract: 'テキスト抽出中…',
-  done: '完了',
-  failed: '失敗',
-  skipped: 'スキップ',
+// 表示言語に追従させるため、ラベルは描画時に t() で解決する（キー対応表のみ固定。issue #93）
+const IMPORT_ROW_LABEL_KEYS: Record<ImportRowStatus, MessageKey> = {
+  queued: 'documents.importStatusQueued',
+  copy: 'documents.importStatusCopy',
+  extract: 'documents.importStatusExtract',
+  done: 'documents.importStatusDone',
+  failed: 'documents.importStatusFailed',
+  skipped: 'documents.importStatusSkipped',
 };
 
 /** include 抽出に使った相の表示名（ui-states.md §3） */
-const TIAB_PHASE_LABELS: Record<TiabScreeningPhase, string> = {
-  fulltext: '全文スクリーニング',
-  tiab: 'タイトル・抄録スクリーニング',
+const TIAB_PHASE_LABEL_KEYS: Record<TiabScreeningPhase, MessageKey> = {
+  fulltext: 'documents.tiabPhaseFulltext',
+  tiab: 'documents.tiabPhaseTiab',
 };
 
 /** プレビュー行の状態バッジ文言 */
-const TIAB_STATUS_LABELS: Record<TiabPlanItemStatus, string> = {
-  update: '反映',
-  already: '適用済み',
-  unmatched: 'PDF 未取り込み',
+const TIAB_STATUS_LABEL_KEYS: Record<TiabPlanItemStatus, MessageKey> = {
+  update: 'documents.tiabStatusUpdate',
+  already: 'documents.tiabStatusAlready',
+  unmatched: 'documents.tiabStatusUnmatched',
 };
 
-const TEXT_STATUS_NOTES: Partial<Record<TextStatus, string>> = {
-  no_text_layer: 'pdf_native 抽出・ハイライトは AI 推定（bbox）',
+const TEXT_STATUS_NOTE_KEYS: Partial<Record<TextStatus, MessageKey>> = {
+  no_text_layer: 'documents.textStatusNoteNoTextLayer',
 };
 
-const ROLE_LABELS: Record<DocumentRole, string> = {
-  article: '本論文',
-  registration: '試験登録',
-  protocol: 'プロトコル',
-  abstract: '学会抄録',
-  supplement: '付録・補遺',
-  other: 'その他',
+const ROLE_LABEL_KEYS: Record<DocumentRole, MessageKey> = {
+  article: 'documents.roleArticle',
+  registration: 'documents.roleRegistration',
+  protocol: 'documents.roleProtocol',
+  abstract: 'documents.roleAbstract',
+  supplement: 'documents.roleSupplement',
+  other: 'documents.roleOther',
 };
 
 /** ローカル選択ボタン + 隠しファイル入力（ボタン click で input を open）。ドロップゾーン内に置く */
@@ -78,7 +80,7 @@ function renderLocalImportControls(
   const button = el('button', {
     id: 'documents-local-import',
     className: 'documents__local-import',
-    text: '💻 PC からファイルを選択',
+    text: t('documents.localImport'),
     attributes: { type: 'button' },
   });
   button.disabled = disabled;
@@ -97,8 +99,8 @@ function renderLocalImportControls(
 function renderDropzone(ctx: ViewContext, disabled: boolean): HTMLElement {
   const { button, input } = renderLocalImportControls(ctx, disabled);
   const zone = el('div', { id: 'documents-dropzone', className: 'documents__dropzone' }, [
-    el('p', { className: 'documents__dropzone-prompt', text: 'PDF をここにドラッグ&ドロップ' }),
-    el('p', { className: 'documents__dropzone-or', text: 'または' }),
+    el('p', { className: 'documents__dropzone-prompt', text: t('documents.dropPrompt') }),
+    el('p', { className: 'documents__dropzone-or', text: t('documents.dropOr') }),
     button,
     input,
   ]);
@@ -143,8 +145,8 @@ function renderProgress(rows: ImportRow[]): HTMLElement {
     // detail は failed（失敗段階 + 理由）と skipped（重複スキップの理由。issue #102）で非 null
     const statusText =
       row.detail !== null
-        ? `${IMPORT_ROW_LABELS[row.status]}（${row.detail}）`
-        : IMPORT_ROW_LABELS[row.status];
+        ? `${t(IMPORT_ROW_LABEL_KEYS[row.status])}（${row.detail}）`
+        : t(IMPORT_ROW_LABEL_KEYS[row.status]);
     return el('li', { className: 'documents__progress-row' }, [
       el('span', { className: 'documents__progress-filename', text: row.filename }),
       el('span', {
@@ -154,7 +156,7 @@ function renderProgress(rows: ImportRow[]): HTMLElement {
     ]);
   });
   return el('div', { className: 'documents__progress' }, [
-    el('h3', { text: '取り込み進捗' }),
+    el('h3', { text: t('documents.progressTitle') }),
     el('ul', { id: 'documents-progress', className: 'documents__progress-list' }, items),
   ]);
 }
@@ -164,11 +166,14 @@ function renderStatusBadge(status: TextStatus): HTMLElement {
     className: `documents__badge documents__badge--${status}`,
     text: status,
   });
-  const note = TEXT_STATUS_NOTES[status];
-  if (note === undefined) {
+  const noteKey = TEXT_STATUS_NOTE_KEYS[status];
+  if (noteKey === undefined) {
     return badge;
   }
-  return el('span', {}, [badge, el('small', { className: 'documents__badge-note', text: note })]);
+  return el('span', {}, [
+    badge,
+    el('small', { className: 'documents__badge-note', text: t(noteKey) }),
+  ]);
 }
 
 /** テキスト入力のインライン編集（Enter / blur で確定を 1 経路にする） */
@@ -195,11 +200,11 @@ function inlineInput(
 function renderRoleSelect(doc: DocumentRecord, ctx: ViewContext): HTMLSelectElement {
   const select = el('select', {
     className: 'documents__role-select',
-    attributes: { 'aria-label': `${doc.filename} の document_role` },
+    attributes: { 'aria-label': t('documents.roleSelectAria', { filename: doc.filename }) },
   }) as HTMLSelectElement;
   for (const role of DOCUMENT_ROLE_ORDER) {
     select.append(
-      el('option', { text: ROLE_LABELS[role], attributes: { value: role } }),
+      el('option', { text: t(ROLE_LABEL_KEYS[role]), attributes: { value: role } }),
     );
   }
   select.value = doc.documentRole;
@@ -226,7 +231,10 @@ function renderStudyGroup(
 ): HTMLElement {
   const checkbox = el('input', {
     className: 'documents__study-check',
-    attributes: { type: 'checkbox', 'aria-label': `${study.studyLabel} を統合対象にする` },
+    attributes: {
+      type: 'checkbox',
+      'aria-label': t('documents.mergeTargetAria', { label: study.studyLabel }),
+    },
   }) as HTMLInputElement;
   checkbox.checked = state.documents.selectedStudyIds.includes(study.studyId);
   checkbox.addEventListener('change', () =>
@@ -235,13 +243,13 @@ function renderStudyGroup(
 
   const labelInput = inlineInput(
     study.studyLabel,
-    `${study.studyLabel} の study_label`,
+    t('documents.studyLabelAria', { label: study.studyLabel }),
     'documents__label-input',
     (value) => ctx.documents.onSaveStudyLabel(study.studyId, value),
   );
   const regInput = inlineInput(
     study.registrationId ?? '',
-    `${study.studyLabel} の registration_id`,
+    t('documents.registrationIdAria', { label: study.studyLabel }),
     'documents__registration-input',
     (value) => ctx.documents.onSaveRegistrationId(study.studyId, value),
   );
@@ -249,10 +257,10 @@ function renderStudyGroup(
   const docsTable = el('table', { className: 'documents__docs-table' }, [
     el('thead', {}, [
       el('tr', {}, [
-        el('th', { text: 'ロール' }),
-        el('th', { text: 'ファイル名' }),
-        el('th', { text: 'テキスト層' }),
-        el('th', { text: 'ページ数' }),
+        el('th', { text: t('documents.headRole') }),
+        el('th', { text: t('documents.headFilename') }),
+        el('th', { text: t('documents.headTextStatus') }),
+        el('th', { text: t('documents.headPages') }),
       ]),
     ]),
     el('tbody', {}, documents.map((doc) => renderDocumentRow(doc, ctx))),
@@ -265,7 +273,7 @@ function renderStudyGroup(
       el('div', { className: 'documents__study-head' }, [
         el('label', { className: 'documents__study-select' }, [
           checkbox,
-          el('span', { text: '統合対象' }),
+          el('span', { text: t('documents.mergeTarget') }),
         ]),
         el('label', { className: 'documents__study-field' }, [
           el('span', { text: 'study_label: ' }),
@@ -291,16 +299,21 @@ function renderTiabPlan(plan: TiabImportPlan, tiab: TiabImportState, ctx: ViewCo
     el('p', {
       id: 'tiab-summary',
       className: 'documents__tiab-summary',
-      text:
-        `最終判定 include ${plan.includeCount} 件（${TIAB_PHASE_LABELS[plan.phase]}の判定・全 ${plan.totalReferences} 件中）: ` +
-        `反映 ${counts.update} 件 / 適用済み ${counts.already} 件 / PDF 未取り込み ${counts.unmatched} 件`,
+      text: t('documents.tiabSummary', {
+        include: plan.includeCount,
+        phase: t(TIAB_PHASE_LABEL_KEYS[plan.phase]),
+        total: plan.totalReferences,
+        update: counts.update,
+        already: counts.already,
+        unmatched: counts.unmatched,
+      }),
     }),
   ];
   if (plan.items.length === 0) {
     children.push(
       el('p', {
         id: 'tiab-plan-empty',
-        text: 'include の文献が見つかりませんでした。tiab-review 側の判定状況を確認してください。',
+        text: t('documents.tiabPlanEmpty'),
       }),
     );
     return children;
@@ -308,10 +321,10 @@ function renderTiabPlan(plan: TiabImportPlan, tiab: TiabImportState, ctx: ViewCo
   const table = el('table', { id: 'tiab-plan', className: 'documents__tiab-table' }, [
     el('thead', {}, [
       el('tr', {}, [
-        el('th', { text: '文献' }),
-        el('th', { text: '生成 study_label' }),
-        el('th', { text: '突き合わせた PDF' }),
-        el('th', { text: '状態' }),
+        el('th', { text: t('documents.tiabHeadReference') }),
+        el('th', { text: t('documents.tiabHeadLabel') }),
+        el('th', { text: t('documents.tiabHeadMatched') }),
+        el('th', { text: t('documents.tiabHeadStatus') }),
       ]),
     ]),
     el(
@@ -327,7 +340,7 @@ function renderTiabPlan(plan: TiabImportPlan, tiab: TiabImportState, ctx: ViewCo
           el('td', {}, [
             el('span', {
               className: `documents__tiab-status documents__tiab-status--${item.status}`,
-              text: TIAB_STATUS_LABELS[item.status],
+              text: t(TIAB_STATUS_LABEL_KEYS[item.status]),
             }),
           ]),
         ]),
@@ -339,7 +352,7 @@ function renderTiabPlan(plan: TiabImportPlan, tiab: TiabImportState, ctx: ViewCo
   const apply = el('button', {
     id: 'tiab-apply',
     className: 'documents__tiab-apply',
-    text: tiab.applying ? '反映しています…' : '取り込みを実行',
+    text: tiab.applying ? t('documents.tiabApplying') : t('documents.tiabApply'),
     attributes: { type: 'button' },
   });
   apply.disabled =
@@ -359,7 +372,7 @@ function renderTiabCard(state: AppState, ctx: ViewContext): HTMLElement {
     const open = el('button', {
       id: 'documents-tiab-open',
       className: 'documents__tiab-open',
-      text: 'tiab-review から採用リストを読み込む',
+      text: t('documents.tiabOpen'),
       attributes: { type: 'button' },
     });
     open.disabled = state.documents.importing;
@@ -374,15 +387,15 @@ function renderTiabCard(state: AppState, ctx: ViewContext): HTMLElement {
     className: 'documents__tiab-input',
     attributes: {
       type: 'text',
-      'aria-label': 'tiab-review のスプレッドシート URL または ID',
-      placeholder: 'https://docs.google.com/spreadsheets/d/… または ID',
+      'aria-label': t('documents.tiabSheetAria'),
+      placeholder: t('documents.tiabSheetPlaceholder'),
     },
   }) as HTMLInputElement;
   input.value = tiab.sheetInput;
 
   const preview = el('button', {
     id: 'tiab-preview',
-    text: '読み込んでプレビュー',
+    text: t('documents.tiabPreview'),
     attributes: { type: 'button' },
   });
   preview.disabled = busy;
@@ -390,24 +403,22 @@ function renderTiabCard(state: AppState, ctx: ViewContext): HTMLElement {
 
   const close = el('button', {
     id: 'tiab-close',
-    text: '閉じる',
+    text: t('documents.tiabClose'),
     attributes: { type: 'button' },
   });
   close.disabled = busy;
   close.addEventListener('click', () => ctx.documents.onTiabClose());
 
   const children: HTMLElement[] = [
-    el('h3', { text: 'tiab-review から採用リストを読み込む' }),
+    el('h3', { text: t('documents.tiabOpen') }),
     el('p', {
       className: 'view__lead',
-      text:
-        'tiab-review のスプレッドシートを直読みし、最終判定 include の文献から study_label（著者 (year)）と ' +
-        'DOI / PMID を反映します。fulltext フォルダから取り込んだ PDF と突き合わせるため、先に PDF を取り込んでください。',
+      text: t('documents.tiabLead'),
     }),
     el('div', { className: 'documents__tiab-form' }, [input, preview, close]),
   ];
   if (tiab.loading) {
-    children.push(el('p', { id: 'tiab-loading', text: 'tiab-review のシートを読み込んでいます…' }));
+    children.push(el('p', { id: 'tiab-loading', text: t('documents.tiabLoading') }));
   }
   if (tiab.error !== null) {
     children.push(
@@ -423,15 +434,20 @@ function renderTiabCard(state: AppState, ctx: ViewContext): HTMLElement {
     children.push(...renderTiabPlan(tiab.plan, tiab, ctx));
   }
   if (tiab.result !== null) {
-    const suffix = tiab.result.unmatched > 0 ? `（PDF 未取り込み ${tiab.result.unmatched} 件）` : '';
+    const suffix =
+      tiab.result.unmatched > 0
+        ? t('documents.tiabResultUnmatched', { n: tiab.result.unmatched })
+        : '';
     children.push(
       el('p', {
         id: 'tiab-result',
         className: 'documents__tiab-result',
         attributes: { role: 'status' },
-        text:
-          `study_label ${tiab.result.studiesUpdated} 件を更新し、` +
-          `DOI / PMID を ${tiab.result.documentsUpdated} 文書に転記しました${suffix}`,
+        text: t('documents.tiabResult', {
+          studies: tiab.result.studiesUpdated,
+          documents: tiab.result.documentsUpdated,
+          unmatchedSuffix: suffix,
+        }),
       }),
     );
   }
@@ -444,7 +460,7 @@ function renderCandidateBanners(state: AppState, ctx: ViewContext): HTMLElement[
     const mergeButton = el('button', {
       className: 'documents__candidate-merge',
       attributes: { type: 'button' },
-      text: '統合する',
+      text: t('documents.merge'),
     });
     mergeButton.addEventListener('click', () =>
       ctx.documents.onOpenMergeCandidate(candidate.studyIds),
@@ -452,7 +468,7 @@ function renderCandidateBanners(state: AppState, ctx: ViewContext): HTMLElement[
     const ignoreButton = el('button', {
       className: 'documents__candidate-ignore',
       attributes: { type: 'button' },
-      text: '無視',
+      text: t('documents.candidateIgnore'),
     });
     ignoreButton.addEventListener('click', () =>
       ctx.documents.onIgnoreCandidate(candidate.studyIds),
@@ -465,7 +481,10 @@ function renderCandidateBanners(state: AppState, ctx: ViewContext): HTMLElement[
       },
       [
         el('p', {
-          text: `同じ登録番号「${candidate.registrationId}」の試験が ${candidate.studyIds.length} 件あります。同一試験の可能性があります。`,
+          text: t('documents.candidateBody', {
+            registrationId: candidate.registrationId,
+            count: candidate.studyIds.length,
+          }),
         }),
         el('div', { className: 'documents__candidate-actions' }, [mergeButton, ignoreButton]),
       ],
@@ -477,14 +496,14 @@ function renderCandidateBanners(state: AppState, ctx: ViewContext): HTMLElement[
 function renderMergeDialog(dialog: MergeDialogState, state: AppState, ctx: ViewContext): HTMLElement {
   const labelInput = el('input', {
     id: 'merge-label',
-    attributes: { type: 'text', 'aria-label': '統合後の study_label' },
+    attributes: { type: 'text', 'aria-label': t('documents.mergeLabelLabel') },
   }) as HTMLInputElement;
   labelInput.value = dialog.label;
   labelInput.addEventListener('input', () => ctx.documents.onUpdateMergeLabel(labelInput.value));
 
   const regInput = el('input', {
     id: 'merge-registration',
-    attributes: { type: 'text', 'aria-label': '統合後の registration_id' },
+    attributes: { type: 'text', 'aria-label': t('documents.mergeRegistrationLabel') },
   }) as HTMLInputElement;
   regInput.value = dialog.registrationId;
   regInput.addEventListener('input', () =>
@@ -492,10 +511,10 @@ function renderMergeDialog(dialog: MergeDialogState, state: AppState, ctx: ViewC
   );
 
   const children: HTMLElement[] = [
-    el('h3', { id: 'merge-dialog-title', text: '試験を統合しますか？' }),
-    el('p', { text: `${dialog.studyIds.length} 件の試験を 1 つにまとめます。` }),
-    el('label', {}, [el('span', { text: '統合後の study_label: ' }), labelInput]),
-    el('label', {}, [el('span', { text: '統合後の registration_id: ' }), regInput]),
+    el('h3', { id: 'merge-dialog-title', text: t('documents.mergeDialogTitle') }),
+    el('p', { text: t('documents.mergeDialogBody', { count: dialog.studyIds.length }) }),
+    el('label', {}, [el('span', { text: `${t('documents.mergeLabelLabel')}: ` }), labelInput]),
+    el('label', {}, [el('span', { text: `${t('documents.mergeRegistrationLabel')}: ` }), regInput]),
   ];
   if (dialog.hasExtractedData) {
     children.push(
@@ -503,7 +522,7 @@ function renderMergeDialog(dialog: MergeDialogState, state: AppState, ctx: ViewC
         id: 'merge-warning',
         className: 'documents__merge-warning',
         attributes: { role: 'alert' },
-        text: '統合後この試験は未抽出に戻ります（過去の判定履歴は Decisions に残ります）。再抽出が必要です。',
+        text: t('documents.mergeWarning'),
       }),
     );
   }
@@ -515,13 +534,13 @@ function renderMergeDialog(dialog: MergeDialogState, state: AppState, ctx: ViewC
   const confirm = el('button', {
     id: 'merge-confirm',
     attributes: { type: 'button' },
-    text: '統合する',
+    text: t('documents.merge'),
   });
   confirm.addEventListener('click', () => ctx.documents.onConfirmMerge());
   const cancel = el('button', {
     id: 'merge-cancel',
     attributes: { type: 'button' },
-    text: 'キャンセル',
+    text: t('common.cancel'),
   });
   cancel.addEventListener('click', () => ctx.documents.onCancelMerge());
   if (state.documents.merging) {
@@ -546,23 +565,23 @@ function renderList(state: AppState, ctx: ViewContext): HTMLElement {
     return el('p', {
       id: 'documents-load-error',
       className: 'documents__error',
-      text: `一覧を読み込めませんでした: ${loadError}`,
+      text: t('documents.loadError', { reason: loadError }),
     });
   }
   if (records === null || studies === null || loading) {
-    return el('p', { id: 'documents-loading', text: '一覧を読み込んでいます…' });
+    return el('p', { id: 'documents-loading', text: t('documents.loading') });
   }
   const groups = activeStudyGroups(studies, records);
   if (groups.length === 0) {
     return el('p', {
       id: 'documents-empty',
-      text: 'まだ文献がありません。上の「Drive から PDF / フォルダを選択」、またはこの PC からのドラッグ&ドロップ / ファイル選択で採用論文の PDF を取り込んでください。',
+      text: t('documents.empty'),
     });
   }
   const mergeButton = el('button', {
     id: 'documents-merge',
     className: 'documents__merge-open',
-    text: '選択した試験を統合',
+    text: t('documents.mergeOpen'),
     attributes: { type: 'button' },
   });
   mergeButton.disabled = state.documents.selectedStudyIds.length < 2;
@@ -583,7 +602,7 @@ export function renderDocumentsView(state: AppState, ctx: ViewContext): HTMLElem
   const importButton = el('button', {
     id: 'documents-import',
     className: 'documents__import',
-    text: 'Drive から PDF / フォルダを選択',
+    text: t('documents.importDrive'),
     attributes: { type: 'button' },
   });
   importButton.disabled = disabled;
@@ -592,21 +611,21 @@ export function renderDocumentsView(state: AppState, ctx: ViewContext): HTMLElem
   const reloadButton = el('button', {
     id: 'documents-reload',
     className: 'documents__reload',
-    text: '一覧を再読み込み',
+    text: t('common.reloadList'),
     attributes: { type: 'button' },
   });
   reloadButton.disabled = disabled;
   reloadButton.addEventListener('click', () => ctx.documents.onReload());
 
   const children: HTMLElement[] = [
-    el('h2', { text: '文献取り込み・グルーピング' }),
+    el('h2', { text: t('documents.title') }),
     el('p', {
       className: 'view__notice',
-      text: '取り込んだ PDF が外部へ送信されるのは LLM API への抽出リクエストのみです。',
+      text: t('documents.notice'),
     }),
     el('p', {
       className: 'view__lead',
-      text: '採用論文の PDF を取り込みます。Drive から選択するか、この PC から PDF をドラッグ&ドロップ / ファイル選択できます。フォルダを選ぶと直下の PDF をまとめて取り込み、同一試験の複数文書は取り込み後に「統合」でまとめられます。',
+      text: t('documents.lead'),
     }),
     el('div', { className: 'documents__actions' }, [importButton, reloadButton]),
     renderDropzone(ctx, disabled),

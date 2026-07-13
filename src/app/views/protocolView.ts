@@ -5,14 +5,16 @@
 // 再入力フォーム。データは AppState.protocol（protocolService が更新）から描く
 import type { Protocol, ProtocolSourceType } from '../../domain/protocol';
 import type { ProtocolSubmitInput } from '../../features/protocol/submitInput';
+import { t, type MessageKey } from '../../lib/i18n';
 import { el } from '../ui/dom';
 import type { AppState, ProtocolState } from '../store';
 import type { ViewContext } from './types';
 
-const SOURCE_TYPE_LABELS: Record<ProtocolSourceType, string> = {
-  manual: '手入力',
-  markdown: 'Markdown',
-  docx: 'Word（.docx）',
+// 表示言語に追従させるため、ラベルは描画時に t() で解決する（キー対応表のみ固定。issue #93）
+const SOURCE_TYPE_LABEL_KEYS: Record<ProtocolSourceType, MessageKey> = {
+  manual: 'protocol.sourceManual',
+  markdown: 'protocol.sourceMarkdown',
+  docx: 'protocol.sourceDocx',
 };
 
 /** アップロード対応拡張子（sr-query-builder と同一） */
@@ -30,13 +32,13 @@ function collectFormInput(
   if (mode === 'manual') {
     if (textarea.value.trim() === '') {
       // LLM 抽出を挟まないため空本文は保存させない（保存 = #/schema ガード解除のため）
-      throw new Error('本文を入力してください');
+      throw new Error(t('protocol.errorEmptyBody'));
     }
     return { sourceType: 'manual', inlineText: textarea.value };
   }
   const file = fileInput.files?.[0] ?? null;
   if (!file) {
-    throw new Error('プロトコルファイルを選択してください');
+    throw new Error(t('protocol.errorNoFile'));
   }
   if (/\.(md|markdown)$/i.test(file.name)) {
     return { sourceType: 'markdown', file: { name: file.name, text: () => file.text() } };
@@ -44,7 +46,7 @@ function collectFormInput(
   if (/\.docx$/i.test(file.name)) {
     return { sourceType: 'docx', file: { name: file.name, arrayBuffer: () => file.arrayBuffer() } };
   }
-  throw new Error('対応形式は .md / .markdown / .docx です');
+  throw new Error(t('protocol.errorBadExtension'));
 }
 
 function renderForm(protocol: ProtocolState, ctx: ViewContext, hasVersions: boolean): HTMLElement {
@@ -64,7 +66,7 @@ function renderForm(protocol: ProtocolState, ctx: ViewContext, hasVersions: bool
   textarea.value = protocol.draftText;
   const manualSection = el('div', { id: 'protocol-manual-section', className: 'protocol__section' }, [
     el('label', { className: 'protocol__field' }, [
-      el('span', { text: '本文' }),
+      el('span', { text: t('protocol.bodyLabel') }),
       textarea,
     ]),
   ]);
@@ -75,7 +77,7 @@ function renderForm(protocol: ProtocolState, ctx: ViewContext, hasVersions: bool
   });
   const fileSection = el('div', { id: 'protocol-file-section', className: 'protocol__section' }, [
     el('label', { className: 'protocol__field' }, [
-      el('span', { text: 'プロトコルファイル（.md / .markdown / .docx）' }),
+      el('span', { text: t('protocol.fileLabel') }),
       fileInput,
     ]),
   ]);
@@ -98,7 +100,7 @@ function renderForm(protocol: ProtocolState, ctx: ViewContext, hasVersions: bool
   const submitButton = el('button', {
     id: 'protocol-submit',
     className: 'protocol__submit',
-    text: hasVersions ? '新しい版として保存' : '保存する',
+    text: hasVersions ? t('protocol.submitNew') : t('protocol.submit'),
     attributes: { type: 'submit' },
   });
   submitButton.disabled = protocol.saving;
@@ -108,7 +110,7 @@ function renderForm(protocol: ProtocolState, ctx: ViewContext, hasVersions: bool
     const cancelButton = el('button', {
       id: 'protocol-cancel',
       className: 'protocol__cancel',
-      text: 'キャンセル',
+      text: t('common.cancel'),
       attributes: { type: 'button' },
     });
     cancelButton.disabled = protocol.saving;
@@ -118,11 +120,14 @@ function renderForm(protocol: ProtocolState, ctx: ViewContext, hasVersions: bool
 
   const children: HTMLElement[] = [
     el('fieldset', { className: 'protocol__source' }, [
-      el('legend', { text: '入力方法' }),
-      el('label', { className: 'protocol__source-option' }, [manualRadio, '手入力']),
+      el('legend', { text: t('protocol.sourceLegend') }),
+      el('label', { className: 'protocol__source-option' }, [
+        manualRadio,
+        t('protocol.sourceManual'),
+      ]),
       el('label', { className: 'protocol__source-option' }, [
         fileRadio,
-        'ファイル（.md / .docx）',
+        t('protocol.sourceOptionFile'),
       ]),
     ]),
     manualSection,
@@ -134,7 +139,7 @@ function renderForm(protocol: ProtocolState, ctx: ViewContext, hasVersions: bool
       el('p', {
         id: 'protocol-status',
         className: 'protocol__status',
-        text: '保存中…（Drive / Sheets へ書き込んでいます）',
+        text: t('protocol.saving'),
         attributes: { role: 'status' },
       }),
     );
@@ -181,7 +186,7 @@ function renderReadOnly(
     });
     for (const record of records) {
       const option = el('option', {
-        text: `v${record.version}（${record.createdAt}）`,
+        text: t('protocol.versionOption', { version: record.version, createdAt: record.createdAt }),
         attributes: { value: String(record.version) },
       });
       option.selected = record.version === displayed.version;
@@ -191,7 +196,10 @@ function renderReadOnly(
       ctx.protocol.onSelectVersion(Number(select.value));
     });
     children.push(
-      el('label', { className: 'protocol__versions' }, [el('span', { text: 'バージョン' }), select]),
+      el('label', { className: 'protocol__versions' }, [
+        el('span', { text: t('protocol.versionLabel') }),
+        select,
+      ]),
     );
   }
   if (displayed.version !== latest.version) {
@@ -199,43 +207,46 @@ function renderReadOnly(
       el('p', {
         id: 'protocol-old-note',
         className: 'protocol__old-note',
-        text: `古い版を表示しています（最新: v${latest.version}）`,
+        text: t('protocol.oldNote', { latest: latest.version }),
       }),
     );
   }
 
   const sourceLabel =
     displayed.sourceFilename === null
-      ? SOURCE_TYPE_LABELS[displayed.sourceType]
-      : `${SOURCE_TYPE_LABELS[displayed.sourceType]}（${displayed.sourceFilename}）`;
+      ? t(SOURCE_TYPE_LABEL_KEYS[displayed.sourceType])
+      : t('protocol.sourceWithFilename', {
+          type: t(SOURCE_TYPE_LABEL_KEYS[displayed.sourceType]),
+          filename: displayed.sourceFilename,
+        });
   const sourceLink =
     displayed.rawTextRef === null
       ? '—'
       : el('a', {
-          text: 'Drive で開く',
+          text: t('protocol.openInDrive'),
           attributes: { href: displayed.rawTextRef, target: '_blank', rel: 'noreferrer' },
         });
   children.push(
     el('dl', { id: 'protocol-summary', className: 'protocol__summary' }, [
-      ...summaryRow('版', `v${displayed.version}`),
-      ...summaryRow('入力形式', sourceLabel),
-      ...summaryRow('本文', displayed.rawTextInline ?? displayed.rawTextPreview ?? '—'),
-      ...summaryRow('元ファイル', sourceLink),
-      ...summaryRow('作成日時', displayed.createdAt),
-      ...summaryRow('作成者', displayed.createdBy),
+      ...summaryRow(t('protocol.summaryVersion'), `v${displayed.version}`),
+      ...summaryRow(t('protocol.summarySourceType'), sourceLabel),
+      ...summaryRow(t('protocol.summaryBody'), displayed.rawTextInline ?? displayed.rawTextPreview ?? '—'),
+      ...summaryRow(t('protocol.summarySourceFile'), sourceLink),
+      ...summaryRow(t('protocol.summaryCreatedAt'), displayed.createdAt),
+      ...summaryRow(t('protocol.summaryCreatedBy'), displayed.createdBy),
     ]),
   );
 
   const editButton = el('button', {
     id: 'protocol-edit',
     className: 'protocol__edit',
-    text: '新しい版を入力',
+    text: t('protocol.edit'),
     attributes: { type: 'button' },
   });
   editButton.addEventListener('click', () => ctx.protocol.onStartEdit());
   const reloadButton = el('button', {
     id: 'protocol-reload',
-    text: '一覧を再読み込み',
+    text: t('common.reloadList'),
     attributes: { type: 'button' },
   });
   reloadButton.addEventListener('click', () => ctx.protocol.onReload());
@@ -249,7 +260,7 @@ function renderBody(state: AppState, ctx: ViewContext): HTMLElement {
   if (loadError !== null) {
     const reloadButton = el('button', {
       id: 'protocol-reload',
-      text: '一覧を再読み込み',
+      text: t('common.reloadList'),
       attributes: { type: 'button' },
     });
     reloadButton.addEventListener('click', () => ctx.protocol.onReload());
@@ -257,13 +268,13 @@ function renderBody(state: AppState, ctx: ViewContext): HTMLElement {
       el('p', {
         id: 'protocol-load-error',
         className: 'protocol__error',
-        text: `プロトコルを読み込めませんでした: ${loadError}`,
+        text: t('protocol.loadError', { reason: loadError }),
       }),
       el('div', { className: 'protocol__actions' }, [reloadButton]),
     ]);
   }
   if (records === null || loading) {
-    return el('p', { id: 'protocol-loading', text: 'プロトコルを読み込んでいます…' });
+    return el('p', { id: 'protocol-loading', text: t('protocol.loading') });
   }
   const latest = records[0];
   if (latest === undefined || editing) {
@@ -273,20 +284,20 @@ function renderBody(state: AppState, ctx: ViewContext): HTMLElement {
 }
 
 export function renderProtocolView(state: AppState, ctx: ViewContext): HTMLElement {
-  const children: HTMLElement[] = [el('h2', { text: 'プロトコル入力' })];
+  const children: HTMLElement[] = [el('h2', { text: t('protocol.title') })];
   if (state.currentProject === null) {
     children.push(
       el('p', {
         id: 'protocol-no-project',
         className: 'view__notice',
-        text: '先にプロジェクトを選択してください（Popup から作成 / 選択できます）。',
+        text: t('common.noProject'),
       }),
     );
   } else {
     children.push(
       el('p', {
         className: 'view__lead',
-        text: '研究プロトコル（RQ・組入 / 除外基準など）を登録します。手入力または .md / .docx ファイルを取り込み、表のデザイン（AI ドラフト）が本文を参照します。保存は常に新しい版として追記され、過去の版は保持されます。',
+        text: t('protocol.lead'),
       }),
       renderBody(state, ctx),
     );
