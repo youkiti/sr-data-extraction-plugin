@@ -1,6 +1,8 @@
 // 段階的マッチングの table-driven テスト（architecture.md §4.3 / requirements.md §5-2）。
 // quote / ページテキストは正規化済み前提の API のため、テストへは正規化後の文字列を渡す
+// （和文の統合ケースのみ normalizeText を通して正規化との連携を検証する）
 import { anchorQuote, FUZZY_DISTANCE_RATIO_THRESHOLD } from '../../../../src/features/anchoring/anchorQuote';
+import { normalizeText } from '../../../../src/features/anchoring/normalizeText';
 import type { NormalizedPage } from '../../../../src/domain/anchor';
 
 function pages(...texts: string[]): NormalizedPage[] {
@@ -151,6 +153,46 @@ describe('anchorQuote', () => {
     test('ページまたぎ quote は現行方式では回収できない（既知の制約）', () => {
       const result = anchorQuote('alpha beta gamma delta', pages('... alpha beta', 'gamma delta ...'), 1);
       expect(result.status).toBe('failed');
+    });
+  });
+
+  // 和文（issue #95 層 1）: 正規化 → 段階的マッチングの連携を実際の和文パターンで検証する
+  describe('和文（正規化との統合）', () => {
+    test('行折り返し（hasEOL 由来の改行）を含む和文ページに、改行なしの quote が exact で当たる', () => {
+      // テキスト層は行末ごとに改行が入る（和文は行折り返しに空白を持たない）が、
+      // LLM の verbatim quote は折り返しなしの連続文字列で返る
+      const pageText = '本研究ではよりバイア\nスに対処可能なデザインを用い，効果を検\n討した．';
+      const quote = '本研究ではよりバイアスに対処可能なデザインを用い，効果を検討した．';
+      const result = anchorQuote(
+        normalizeText(quote),
+        [{ page: 1, text: normalizeText(pageText) }],
+        1,
+      );
+      expect(result.status).toBe('exact');
+      expect(result.page).toBe(1);
+    });
+
+    test('波ダッシュ（U+301C）と全角チルダ（U+FF5E）の揺れを正規化が吸収して exact になる', () => {
+      const pageText = '対象は生後 1〜2 歳の幼児とした'; // テキスト層: JIS 由来の波ダッシュ
+      const quote = '生後1～2歳の幼児'; // LLM 出力: CP932 由来の全角チルダ
+      const result = anchorQuote(
+        normalizeText(quote),
+        [{ page: 1, text: normalizeText(pageText) }],
+        1,
+      );
+      expect(result.status).toBe('exact');
+    });
+
+    test('和文の fuzzy: 連続文字列でも文字単位の編集距離で回収される（15% 閾値）', () => {
+      // quote 13 文字・1 文字置換（保健 → 保険）→ 距離 1 ≤ ceil(13 × 0.15) = 2
+      const page = normalizeText('主要評価項目は子に対する歯科保健行動得点とした');
+      const result = anchorQuote(
+        normalizeText('子に対する歯科保険行動得点'),
+        [{ page: 1, text: page }],
+        1,
+      );
+      expect(result.status).toBe('fuzzy');
+      expect(result.bestDistance).toBe(1);
     });
   });
 });

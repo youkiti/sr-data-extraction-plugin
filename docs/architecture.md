@@ -230,6 +230,7 @@ anchorQuote() ──文字範囲──▶ highlightMap() ──span 座標──
 | `src/options/options.ts` | `dist/options/options.js` |
 
 - `pdfjs-dist` の **worker（`pdf.worker.min.mjs`）は `copy-webpack-plugin` で `dist/` へ同梱**（CDN 参照不可、MV3 CSP 準拠）。`GlobalWorkerOptions.workerSrc` は `chrome.runtime.getURL()` で解決
+- **既定 CMap（`cmaps/*.bcmap`）も同様に `dist/cmaps/` へ同梱**し、`getDocument` の `cMapUrl` に `chrome.runtime.getURL('cmaps/')` を渡す（issue #95: 和文 PDF の CID フォントは既定 CMap がないとテキスト抽出がほぼ空になる）
 - `.env` 運用（`OAUTH_CLIENT_ID` / `LOCAL_OAUTH_CLIENT_ID`）、dev ビルドの拡張名 `(dev)` 付与、固定 `key` による拡張 ID 固定は sr-query-builder の `webpack.config.js` / `release-alpha.ps1` を踏襲
 
 ### 3.2 npm スクリプト

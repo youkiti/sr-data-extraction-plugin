@@ -516,7 +516,7 @@ owner / adjudicator が human annotator 間の不一致を裁定し、`consensus
 
 本拡張の技術的な中核。LLM が返した verbatim quote を PDF.js テキスト層上の位置に対応付ける。**アンカリングの対象は quote の出所文書 1 本**（`Evidence.document_id` の extracted_text / テキスト層。v0.10）であり、study 内の他文書は探索しない。`page` ヒントも当該文書内のページ番号。
 
-1. **正規化**: quote と各ページのテキスト層の双方に共通正規化を適用（空白圧縮、行末ハイフネーション結合 `exam-\nple → example`、リガチャ展開 `ﬁ → fi`、全角/半角統一、Unicode NFKC）
+1. **正規化**: quote と各ページのテキスト層の双方に共通正規化を適用（空白圧縮、行末ハイフネーション結合 `exam-\nple → example`、リガチャ展開 `ﬁ → fi`、全角/半角統一、Unicode NFKC）。和文対応（issue #95 層 1）として、波ダッシュ U+301C を `~` へ折り畳み（全角チルダ U+FF5E は NFKC が畳む）、和文文字（漢字・かな・CJK 記号）に隣接する空白は行折り返し由来のノイズとして空白ごと除去する（和文は語間空白を持たないため。英文のみのテキストは従来どおり）
 2. **段階的マッチング**:
    - `exact`: ai_page ± 1 ページ内で正規化後の完全一致
    - `normalized`: 全ページで正規化後の完全一致
