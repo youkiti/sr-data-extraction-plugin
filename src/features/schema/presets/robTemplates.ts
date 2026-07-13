@@ -119,14 +119,17 @@ export const ROB_TEMPLATE_ROBINS_I: readonly SchemaEditorRow[] = [
 // 出典: signaling question の文言・条件付き質問の発火規則・ドメイン別アルゴリズムは、いずれも
 // Sterne JAC et al. "RoB 2: a revised tool for assessing risk of bias in randomised trials."
 // BMJ 2019;366:l4898 の付随ガイダンス（Cochrane, RoB 2 guidance, 2019）に基づく。
-// 一次資料（cochrane.de の PDF・BMJ 誌本体・riskofbias.info 等）は本セッションの outbound
-// egress ポリシーにより直接アクセスできなかった（github.com / raw.githubusercontent.com 以外の
-// 大半のホストが 403 で遮断された）。そのため、上記 BMJ 論文を明示的な典拠として引用している
-// サードパーティの OSS 実装（GitHub: rob-luke/risk-of-bias、
-// risk_of_bias/frameworks/rob2/domains/_domain_{1..5}_*.py の Question 定義）から
-// signaling question の英語原文を取得して転記した。一次資料との逐語照合はできていないため、
-// **正式なガイダンス PDF 入手時に再照合すること**（TODO: 原典照合待ち。
-// features/verification/robAlgorithm.ts 冒頭のコメントに同種の注記あり）。
+//
+// 原典照合の記録（issue #103）: 実装当時（issue #61 PR1）は outbound egress 制限により一次資料へ
+// 直接アクセスできず、上記 BMJ 論文を明示的な典拠として引用しているサードパーティの OSS 実装
+// （GitHub: rob-luke/risk-of-bias、risk_of_bias/frameworks/rob2/domains/_domain_{1..5}_*.py の
+// Question 定義）から signaling question の英語原文を転記していた（転記元の経緯として記録を残す）。
+// その後 2026-07-13 に公式 RoB 2 Word template（completion template, 22 Aug 2019。
+// riskofbias.info の公式配布リンク経由で取得）と全 22 問を逐語照合し、**22/22 一致・修正不要**を
+// 確認済み（照合待ち TODO は解消）。原典 PDF/DOCX はローカルに保全している:
+// `c:\tmp\rob-prespec\`（originals/ に SHA-256 記録付きの SOURCES.md、extracted/ に機械抽出
+// テキスト、詳細な照合結果は同 REPORT.md）。なお、この照合は SQ 質問本文についてのものであり、
+// 判定アルゴリズム（決定木）の照合状況は features/verification/robAlgorithm.ts 冒頭コメント参照。
 //
 // 対象は individually randomized parallel-group trials 版・effect of assignment（ITT）:
 // D1（1.1〜1.3）/ D2（2.1〜2.7）/ D3（3.1〜3.4）/ D4（4.1〜4.5）/ D5（5.1〜5.3）= 22 問。
@@ -795,7 +798,9 @@ export const ROB_TEMPLATE_ROBINS_I_SQ: readonly SchemaEditorRow[] = [
 //   https://www.bristol.ac.uk/media-library/sites/social-community-medicine/quadas/QUADAS-3%201.2.docx
 //   （2026-07-13 取得。mammoth.js で本文を機械抽出のうえ Phase 5・6 の記載を逐語転記した）
 // あわせて、原著論文 Whiting PF et al. "QUADAS-3: A Revised Tool for the Quality Assessment of
-// Diagnostic Test Accuracy Studies." Annals of Internal Medicine（2025 年公表）が本ツールの
+// Diagnostic Test Accuracy Studies." Ann Intern Med 2026;179:548-555（DOI 10.7326/ANNALS-25-02104。
+// Bristol 公式ページの記載では 2026-02-17 公表。DOI 中の "25" は原稿番号であり出版年ではない。
+// 2025 年は piloting 論文〔J Clin Epidemiol 2025;188:111983〕）が本ツールの
 // 出典である（issue #61 D-3 合意: QUADAS-3 は公開済みのため QUADAS-2 での先行実装はしない）。
 //
 // QUADAS-3 は 4 ドメイン（Participants / Index Test / Target Condition / Analysis）を SQ で評価し、
