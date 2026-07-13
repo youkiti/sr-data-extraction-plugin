@@ -107,6 +107,12 @@ export interface PilotViewCallbacks {
   onToggleStudy(studyId: string, selected: boolean): void;
   /** requested_model の変更 */
   onChangeModel(model: string): void;
+  /** 抽出対象フィールドのチェックリスト（issue #80）: 単一項目の切替 */
+  onToggleField(fieldId: string, selected: boolean): void;
+  /** 抽出対象フィールドのチェックリスト: section 見出しの全選択 / 全解除トグル */
+  onToggleFieldSection(fieldIds: readonly string[], selected: boolean): void;
+  /** 抽出対象フィールドのチェックリスト: section の折りたたみ切替 */
+  onToggleFieldSectionCollapse(section: string): void;
   /** 「パイロット抽出を実行」 */
   onRun(): void;
   /** 過去のパイロット結果を履歴から読み込む */
@@ -142,6 +148,12 @@ export interface ExtractViewCallbacks {
   onToggleStudy(studyId: string, selected: boolean): void;
   /** requested_model の変更 */
   onChangeModel(model: string): void;
+  /** 抽出対象フィールドのチェックリスト（issue #80）: 単一項目の切替 */
+  onToggleField(fieldId: string, selected: boolean): void;
+  /** 抽出対象フィールドのチェックリスト: section 見出しの全選択 / 全解除トグル */
+  onToggleFieldSection(fieldIds: readonly string[], selected: boolean): void;
+  /** 抽出対象フィールドのチェックリスト: section の折りたたみ切替 */
+  onToggleFieldSectionCollapse(section: string): void;
   /** 「一括抽出を実行」: 検証 → 実行確認カードを開く */
   onRequestRun(): void;
   /** 確認カードの「実行する」: full run を開始 */

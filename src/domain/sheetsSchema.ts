@@ -136,6 +136,11 @@ export const SHEET_HEADERS: Record<SheetTabName, readonly string[]> = {
     'tokens_in',
     'tokens_out',
     'cost_estimate',
+    // run 単位のフィールド選択（issue #80）。カンマ区切り、空 = 全項目（後方互換規約）。
+    // 既存プロジェクトはこの列を持たないため、末尾に追加し読み書き側で後方互換を取る
+    // （evidenceRepository の bbox 列と同じ方式。runRepository.ts の
+    // ensureRunFieldIdsColumn / readRunRows 参照）
+    'field_ids',
   ],
   StudyData: STUDY_DATA_FIXED_HEADERS,
   ResultsData: [

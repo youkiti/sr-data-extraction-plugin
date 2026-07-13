@@ -25,6 +25,7 @@ import type { Protocol } from '../domain/protocol';
 import type { SchemaField } from '../domain/schemaField';
 import type { SchemaVersion } from '../domain/schemaVersion';
 import type { BatchFailure, RunProgress } from '../features/extraction/executeRun';
+import type { FieldSelection, FieldSubsetBadge } from '../features/extraction/fieldSelection';
 import type { ExtractStudyRow } from '../features/extraction/studyProgress';
 import type { ProgressCounts } from '../features/project/progressCounts';
 import type { DashboardData } from '../features/verification/dashboard';
@@ -222,6 +223,13 @@ export interface PilotState {
   resultsRowUpdatedAt: Record<string, string>;
   /** 保存の競合検出バナー（#verify-conflict-warning）の文言。null = 非表示（issue #64） */
   conflictMessage: string | null;
+  /**
+   * run 単位のフィールド選択（issue #80）。null = 全選択（既定）。
+   * 画面入場のたびに全選択へリセットする（storage への永続化はしない）
+   */
+  selectedFieldIds: FieldSelection;
+  /** 折りたたみ中の section 名（既定は全展開 = 空配列） */
+  collapsedFieldSections: string[];
 }
 
 /** #/extract（S7）の画面状態。run の結果はタブのセッション内で保持する */
@@ -253,6 +261,25 @@ export interface ExtractState {
   rejectedCount: number;
   /** 再試行（single_study run）実行中の study_id。null = なし */
   retryingStudyId: string | null;
+  /**
+   * run 単位のフィールド選択（issue #80）。null = 全選択（既定）。
+   * 画面入場・対象再読込のたびに全選択へリセットする（storage への永続化はしない）
+   */
+  selectedFieldIds: FieldSelection;
+  /** 折りたたみ中の section 名（既定は全展開 = 空配列） */
+  collapsedFieldSections: string[];
+  /**
+   * 直近実行時に実際に使った fieldIds（A-2: 失敗 study の再試行〔retryExtractStudy〕が
+   * 元 run と同じ選択を引き継ぐための保持値）。performRun 呼び出し前に確定させ、
+   * 成功・失敗にかかわらず保持する。まだ一度も実行していなければ null（= 全項目相当）
+   */
+  lastRunFieldIds: string[] | null;
+  /**
+   * study_id → 直近の完了 run がサブセット（fieldIds ≠ null）だったときの
+   * { selected, total }（S7 の「抽出済み」バッジ注記の素材。issue #80）。
+   * 全項目 run が直近だった study はキー自体を持たない
+   */
+  fieldSubsetBadges: Record<string, FieldSubsetBadge>;
 }
 
 /** #/verify（S8）の一覧 1 study ぶんの検証素材（Evidence がある study のみ。v0.10 フェーズ 3） */
@@ -575,6 +602,8 @@ export function createInitialState(): AppState {
       studyRowUpdatedAt: null,
       resultsRowUpdatedAt: {},
       conflictMessage: null,
+      selectedFieldIds: null,
+      collapsedFieldSections: [],
     },
     extract: {
       selectedStudyIds: [],
@@ -592,6 +621,10 @@ export function createInitialState(): AppState {
       run: null,
       rejectedCount: 0,
       retryingStudyId: null,
+      selectedFieldIds: null,
+      collapsedFieldSections: [],
+      lastRunFieldIds: null,
+      fieldSubsetBadges: {},
     },
     verify: {
       targets: null,

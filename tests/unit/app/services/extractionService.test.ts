@@ -6,7 +6,10 @@ import {
   appendEvidenceRows,
   ensureEvidenceBboxColumns,
 } from '../../../../src/features/extraction/evidenceRepository';
-import { appendExtractionRun } from '../../../../src/features/extraction/runRepository';
+import {
+  appendExtractionRun,
+  ensureRunFieldIdsColumn,
+} from '../../../../src/features/extraction/runRepository';
 import type { ExtractDataPage } from '../../../../src/features/extraction/skills/extractData';
 import { uploadTextFile } from '../../../../src/lib/google/drive';
 import type { GoogleApiDeps } from '../../../../src/lib/google/types';
@@ -27,6 +30,7 @@ const mockedEnsureBboxColumns = jest.mocked(ensureEvidenceBboxColumns);
 const mockedUpsertStudy = jest.mocked(upsertStudyDataRows);
 const mockedUpsertResults = jest.mocked(upsertResultsDataRows);
 const mockedAppendRun = jest.mocked(appendExtractionRun);
+const mockedEnsureRunFieldIdsColumn = jest.mocked(ensureRunFieldIdsColumn);
 
 const GOOGLE: GoogleApiDeps = {
   fetch: jest.fn(),
@@ -119,6 +123,7 @@ function baseParams() {
     documents: [makeDocument()],
     fields: [makeField()],
     model: 'gemini-2.5-flash',
+    fieldIds: null,
   };
 }
 
@@ -154,6 +159,7 @@ describe('runExtraction', () => {
       tokensIn: 1000,
       tokensOut: 200,
       costEstimate: outcome.plan.costEstimateUsd,
+      fieldIds: null, // フェーズ 1: UI 未結線のため常に全項目（issue #80）
     });
     // 2 行プロトコル: running 行 → 完了行の順に 2 回追記する
     expect(mockedAppendRun).toHaveBeenCalledTimes(2);
@@ -179,6 +185,11 @@ describe('runExtraction', () => {
     // running 行の追記よりも先に行う（§7.4 PR3。怠ると旧ヘッダのまま列がずれた行を書いてしまう）
     expect(mockedEnsureBboxColumns).toHaveBeenCalledWith('sid', GOOGLE);
     expect(mockedEnsureBboxColumns.mock.invocationCallOrder[0]).toBeLessThan(
+      mockedAppendRun.mock.invocationCallOrder[0] as number,
+    );
+    // ExtractionRuns タブのヘッダ拡張（field_ids 列。issue #80）も running 行より先に行う
+    expect(mockedEnsureRunFieldIdsColumn).toHaveBeenCalledWith('sid', GOOGLE);
+    expect(mockedEnsureRunFieldIdsColumn.mock.invocationCallOrder[0]).toBeLessThan(
       mockedAppendRun.mock.invocationCallOrder[0] as number,
     );
 
@@ -212,6 +223,31 @@ describe('runExtraction', () => {
 
     // 進捗通知
     expect(progress).toEqual([1]);
+  });
+
+  test('fieldIds（run 単位のフィールド選択）を running 行・完了行の両方に記録する（issue #80）', async () => {
+    const chat = jest.fn().mockResolvedValue(AI_RESPONSE);
+    const deps = makeDeps(chat);
+    const outcome = await runExtraction(
+      { ...baseParams(), fieldIds: ['f-study', 'f-other'] },
+      deps,
+    );
+    expect(outcome.run.fieldIds).toEqual(['f-study', 'f-other']);
+    expect(mockedAppendRun).toHaveBeenNthCalledWith(
+      1,
+      'sid',
+      expect.objectContaining({ status: 'running', fieldIds: ['f-study', 'f-other'] }),
+      GOOGLE,
+    );
+    expect(mockedAppendRun).toHaveBeenNthCalledWith(
+      2,
+      'sid',
+      expect.objectContaining({ status: 'done', fieldIds: ['f-study', 'f-other'] }),
+      GOOGLE,
+    );
+    // runExtraction 自体は params.fieldIds で params.fields を絞り込まない
+    // （絞り込み済みの fields を渡す設計は呼び出し側の責務）
+    expect(chat).toHaveBeenCalledTimes(1);
   });
 
   test('withLogging の配線: プロンプト版数付き payload を logs/llm へ保存し LLMApiLog に追記する', async () => {

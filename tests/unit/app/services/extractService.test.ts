@@ -3,9 +3,13 @@ import {
   initExtractSelection,
   loadExtractTargets,
   requestExtractRun,
+  resetExtractFieldSelection,
   retryExtractStudy,
   runExtract,
   setExtractModel,
+  toggleExtractField,
+  toggleExtractFieldSection,
+  toggleExtractFieldSectionCollapse,
   toggleExtractStudy,
   type ExtractServiceDeps,
 } from '../../../../src/app/services/extractService';
@@ -19,7 +23,11 @@ import type { SchemaField } from '../../../../src/domain/schemaField';
 import type { StudyRecord } from '../../../../src/domain/study';
 import { readDocuments } from '../../../../src/features/documents/documentRepository';
 import { readStudies } from '../../../../src/features/documents/studyRepository';
-import { readRunStudyCoverage } from '../../../../src/features/extraction/runRepository';
+import {
+  readRunStudyCoverage,
+  type CompletedRunStudySummary,
+} from '../../../../src/features/extraction/runRepository';
+import { getSchemaFieldsByVersion } from '../../../../src/features/schema/schemaRepository';
 import { ensureChildFolder } from '../../../../src/lib/google/drive';
 
 // extractService → makeLoadDocumentPageImages → lib/pdf/loadPdf 経由で
@@ -45,6 +53,9 @@ jest.mock('../../../../src/features/documents/studyRepository', () => ({
 jest.mock('../../../../src/features/extraction/runRepository', () => ({
   readRunStudyCoverage: jest.fn(),
 }));
+jest.mock('../../../../src/features/schema/schemaRepository', () => ({
+  getSchemaFieldsByVersion: jest.fn(),
+}));
 jest.mock('../../../../src/lib/google/drive', () => ({
   ensureChildFolder: jest.fn(),
 }));
@@ -54,6 +65,8 @@ const resolveProtocolMock = resolveProtocol as jest.MockedFunction<typeof resolv
 const readDocumentsMock = readDocuments as jest.MockedFunction<typeof readDocuments>;
 const readStudiesMock = readStudies as jest.MockedFunction<typeof readStudies>;
 const readCoverageMock = readRunStudyCoverage as jest.MockedFunction<typeof readRunStudyCoverage>;
+const getSchemaFieldsByVersionMock =
+  getSchemaFieldsByVersion as jest.MockedFunction<typeof getSchemaFieldsByVersion>;
 const ensureChildFolderMock = ensureChildFolder as jest.MockedFunction<typeof ensureChildFolder>;
 
 /** doc-1 → study-doc-1（1 文書 = 1 study の既定） */
@@ -159,6 +172,7 @@ function makeRun(overrides: Partial<ExtractionRun> = {}): ExtractionRun {
     tokensIn: 100,
     tokensOut: 50,
     costEstimate: 0.01,
+    fieldIds: null,
     ...overrides,
   };
 }
@@ -250,9 +264,15 @@ beforeEach(() => {
     id: `${name}-id`,
     webViewLink: `https://drive.example/${name}`,
   }));
-  readCoverageMock.mockResolvedValue({ extracted: new Set(), interrupted: new Set() });
+  readCoverageMock.mockResolvedValue({
+    extracted: new Set(),
+    interrupted: new Set(),
+    latestCompletedRunByStudy: new Map(),
+  });
   readDocumentsMock.mockResolvedValue([]);
   readStudiesMock.mockResolvedValue([]);
+  // バッジ注記素材（issue #80）。既定は完了 run なし = バッジなし
+  getSchemaFieldsByVersionMock.mockResolvedValue([]);
 });
 
 describe('loadExtractTargets', () => {
@@ -260,6 +280,7 @@ describe('loadExtractTargets', () => {
     readCoverageMock.mockResolvedValue({
       extracted: new Set(['study-doc-1']),
       interrupted: new Set(['study-doc-2']),
+      latestCompletedRunByStudy: new Map(),
     });
     const store = makeStore({
       documents: [makeDocument({ documentId: 'doc-1' }), makeDocument({ documentId: 'doc-2' })],
@@ -274,6 +295,82 @@ describe('loadExtractTargets', () => {
     await loadExtractTargets(makeStore({ withProject: false }), makeDeps());
     await loadExtractTargets(makeStore({ extract: { loading: true } }), makeDeps());
     expect(readCoverageMock).not.toHaveBeenCalled();
+  });
+
+  describe('fieldSubsetBadges（issue #80: 「直近 run は n/m 項目」バッジ注記の素材）', () => {
+    function summary(overrides: Partial<CompletedRunStudySummary> = {}): CompletedRunStudySummary {
+      return {
+        runId: 'run-1',
+        studyIds: ['study-doc-1'],
+        schemaVersion: 1,
+        startedAt: 't1',
+        fieldIds: null,
+        ...overrides,
+      };
+    }
+
+    test('サブセット run が直近: schema の全 field 数を版ごとにキャッシュして読み、{selected, total} を持つ', async () => {
+      readCoverageMock.mockResolvedValue({
+        extracted: new Set(),
+        interrupted: new Set(),
+        latestCompletedRunByStudy: new Map([
+          ['study-doc-1', summary({ fieldIds: ['f-1', 'f-2'], schemaVersion: 3 })],
+        ]),
+      });
+      getSchemaFieldsByVersionMock.mockResolvedValue([
+        makeField({ fieldId: 'f-1' }),
+        makeField({ fieldId: 'f-2' }),
+        makeField({ fieldId: 'f-3' }),
+      ]);
+      const store = makeStore({});
+      await loadExtractTargets(store, makeDeps());
+      expect(store.getState().extract.fieldSubsetBadges).toEqual({
+        'study-doc-1': { selected: 2, total: 3 },
+      });
+      expect(getSchemaFieldsByVersionMock).toHaveBeenCalledWith('sheet-1', 3, expect.anything());
+    });
+
+    test('全項目 run が直近: バッジなし（キー自体を持たない）', async () => {
+      readCoverageMock.mockResolvedValue({
+        extracted: new Set(),
+        interrupted: new Set(),
+        latestCompletedRunByStudy: new Map([['study-doc-1', summary({ fieldIds: null })]]),
+      });
+      const store = makeStore({});
+      await loadExtractTargets(store, makeDeps());
+      expect(store.getState().extract.fieldSubsetBadges).toEqual({});
+      expect(getSchemaFieldsByVersionMock).not.toHaveBeenCalled();
+    });
+
+    test('完了 run なし: バッジなし', async () => {
+      readCoverageMock.mockResolvedValue({
+        extracted: new Set(),
+        interrupted: new Set(),
+        latestCompletedRunByStudy: new Map(),
+      });
+      const store = makeStore({});
+      await loadExtractTargets(store, makeDeps());
+      expect(store.getState().extract.fieldSubsetBadges).toEqual({});
+    });
+
+    test('同一 schema_version の複数 study はキャッシュを再利用する（1 回だけ読む）', async () => {
+      readCoverageMock.mockResolvedValue({
+        extracted: new Set(),
+        interrupted: new Set(),
+        latestCompletedRunByStudy: new Map([
+          ['study-a', summary({ studyIds: ['study-a'], fieldIds: ['f-1'], schemaVersion: 2 })],
+          ['study-b', summary({ studyIds: ['study-b'], fieldIds: ['f-1', 'f-2'], schemaVersion: 2 })],
+        ]),
+      });
+      getSchemaFieldsByVersionMock.mockResolvedValue([makeField({ fieldId: 'f-1' }), makeField({ fieldId: 'f-2' })]);
+      const store = makeStore({});
+      await loadExtractTargets(store, makeDeps());
+      expect(getSchemaFieldsByVersionMock).toHaveBeenCalledTimes(1);
+      expect(store.getState().extract.fieldSubsetBadges).toEqual({
+        'study-a': { selected: 1, total: 2 },
+        'study-b': { selected: 2, total: 2 },
+      });
+    });
   });
 
   test('読込済みは no-op、force 指定で再読込する', async () => {
@@ -380,6 +477,57 @@ describe('toggleExtractStudy / setExtractModel', () => {
   });
 });
 
+describe('resetExtractFieldSelection / toggleExtractField / toggleExtractFieldSection / toggleExtractFieldSectionCollapse（issue #80）', () => {
+  const fields = [
+    makeField({ fieldId: 'f-1', section: 'methods' }),
+    makeField({ fieldId: 'f-2', section: 'methods' }),
+    makeField({ fieldId: 'f-3', section: 'results' }),
+  ];
+
+  test('resetExtractFieldSelection: 選択・折りたたみを既定（全選択・全展開）へ戻す', () => {
+    const store = makeStore({
+      fields,
+      extract: { selectedFieldIds: ['f-1'], collapsedFieldSections: ['methods'] },
+    });
+    resetExtractFieldSelection(store);
+    expect(store.getState().extract.selectedFieldIds).toBeNull();
+    expect(store.getState().extract.collapsedFieldSections).toEqual([]);
+  });
+
+  test('toggleExtractField: 単一項目の選択解除・追加', () => {
+    const store = makeStore({ fields, extract: { selectedFieldIds: null } });
+    toggleExtractField(store, 'f-2', false);
+    expect(store.getState().extract.selectedFieldIds?.sort()).toEqual(['f-1', 'f-3']);
+    toggleExtractField(store, 'f-2', true);
+    expect(store.getState().extract.selectedFieldIds).toBeNull(); // 全件そろって null へ正規化
+  });
+
+  test('toggleExtractFieldSection: section 単位の全選択 / 全解除', () => {
+    const store = makeStore({ fields, extract: { selectedFieldIds: null } });
+    toggleExtractFieldSection(store, ['f-1', 'f-2'], false);
+    expect(store.getState().extract.selectedFieldIds).toEqual(['f-3']);
+    toggleExtractFieldSection(store, ['f-1', 'f-2'], true);
+    expect(store.getState().extract.selectedFieldIds).toBeNull();
+  });
+
+  test('toggleExtractFieldSectionCollapse: 折りたたみの切替', () => {
+    const store = makeStore({ fields, extract: { collapsedFieldSections: [] } });
+    toggleExtractFieldSectionCollapse(store, 'methods');
+    expect(store.getState().extract.collapsedFieldSections).toEqual(['methods']);
+    toggleExtractFieldSectionCollapse(store, 'methods');
+    expect(store.getState().extract.collapsedFieldSections).toEqual([]);
+  });
+
+  test('toggleExtractField / toggleExtractFieldSection: スキーマ未読込（null）でも落ちない（防御分岐）', () => {
+    // allFieldIds が空になるため、正規化により常に null（全選択）へ畳み込まれる
+    const store = makeStore({ fields: null, extract: { selectedFieldIds: null } });
+    toggleExtractField(store, 'f-1', false);
+    expect(store.getState().extract.selectedFieldIds).toBeNull();
+    toggleExtractFieldSection(store, ['f-1'], true);
+    expect(store.getState().extract.selectedFieldIds).toBeNull();
+  });
+});
+
 describe('requestExtractRun / cancelExtractConfirm', () => {
   test('検証を通れば確認カードを開く（runError はクリア）', async () => {
     const store = makeStore({
@@ -411,6 +559,13 @@ describe('requestExtractRun / cancelExtractConfirm', () => {
     const noSelection = makeStore({ fields: [makeField()], extract: { selectedStudyIds: [] } });
     await requestExtractRun(noSelection, makeDeps());
     expect(noSelection.getState().extract.runError).toContain('対象 study を 1 件以上');
+
+    const noFieldsSelected = makeStore({
+      fields: [makeField()],
+      extract: { selectedStudyIds: ['study-doc-1'], selectedFieldIds: [] },
+    });
+    await requestExtractRun(noFieldsSelected, makeDeps());
+    expect(noFieldsSelected.getState().extract.runError).toContain('抽出項目を 1 つ以上選択してください');
 
     const noModel = makeStore({
       fields: [makeField()],
@@ -486,7 +641,10 @@ describe('runExtract', () => {
       runType: 'full',
       model: 'gemini-test',
       protocolContext: 'PROTOCOL TEXT',
+      // 全選択（既定）時は fieldIds: null で渡す（issue #80）
+      fieldIds: null,
     });
+    expect(params.fields).toEqual([makeField()]);
     // 選択 study（study-doc-1）配下の文書だけが対象
     expect(params.documents.map((doc) => doc.documentId)).toEqual(['doc-1']);
     // pdf_native（handoff-scanned-pdf-native-highlight.md §7.4 PR2）経路のため
@@ -549,6 +707,37 @@ describe('runExtract', () => {
     await runExtract(store, makeDeps());
     expect(readDocumentsMock).toHaveBeenCalledWith('sheet-1', expect.anything());
     expect(store.getState().extract.run?.runId).toBe('run-1');
+  });
+
+  test('サブセット選択時は絞った fields + 選択 field_ids を runExtraction へ渡す（issue #80）', async () => {
+    const fields = [makeField({ fieldId: 'f-1' }), makeField({ fieldId: 'f-2' })];
+    const store = makeStore({
+      documents: [makeDocument()],
+      fields,
+      extract: {
+        selectedStudyIds: ['study-doc-1'],
+        model: 'gemini-test',
+        confirming: true,
+        extractedStudyIds: [],
+        selectedFieldIds: ['f-2'],
+      },
+    });
+    runExtractionMock.mockResolvedValue(makeOutcome());
+    await runExtract(store, makeDeps());
+    const [params] = runExtractionMock.mock.calls[0] as unknown as [
+      Parameters<typeof runExtraction>[0],
+    ];
+    expect(params.fieldIds).toEqual(['f-2']);
+    expect(params.fields.map((field) => field.fieldId)).toEqual(['f-2']);
+    expect(store.getState().extract.lastRunFieldIds).toEqual(['f-2']);
+  });
+
+  test('lastRunFieldIds は performRun 呼び出し前に確定し、実行が失敗しても保持される（A-2 の引き継ぎ元）', async () => {
+    const store = makeReadyStore({ selectedFieldIds: ['f-total'] });
+    runExtractionMock.mockRejectedValue(new Error('boom'));
+    await runExtract(store, makeDeps());
+    expect(store.getState().extract.runError).toBe('boom');
+    expect(store.getState().extract.lastRunFieldIds).toEqual(['f-total']);
   });
 
   test('進捗コールバックが progress と studyRows を更新し、失敗バッチは failed 行になる', async () => {
@@ -700,6 +889,8 @@ describe('retryExtractStudy', () => {
     ];
     expect(params.runType).toBe('single_study');
     expect(params.documents.map((doc) => doc.documentId)).toEqual(['doc-2']);
+    // lastRunFieldIds 未設定（元 run の記録がない）ときは全項目扱い
+    expect(params.fieldIds).toBeNull();
 
     const state = store.getState();
     expect(state.extract.retryingStudyId).toBeNull();
@@ -721,6 +912,28 @@ describe('retryExtractStudy', () => {
     ]);
     expect(state.extract.extractedStudyIds?.sort()).toEqual(['study-doc-1', 'study-doc-2']);
     expect(state.counts).toMatchObject({ evidenceRows: 1, dataRows: 1 });
+  });
+
+  test('A-2: 元 run の fieldIds（lastRunFieldIds）を引き継ぐ。現在のチェックリスト選択は無視する', async () => {
+    const store = makeFailedStore();
+    // 元 run はサブセット（f-total のみ）だった。その後チェックリストで全選択に変えていても
+    // 再試行は元 run の選択（lastRunFieldIds）を使う
+    store.setState({
+      extract: {
+        ...store.getState().extract,
+        lastRunFieldIds: ['f-total'],
+        selectedFieldIds: null,
+      },
+    });
+    runExtractionMock.mockResolvedValue(makeOutcome({ studyIds: ['study-doc-2'] }));
+    await retryExtractStudy(store, makeDeps(), 'study-doc-2');
+    const [params] = runExtractionMock.mock.calls[0] as unknown as [
+      Parameters<typeof runExtraction>[0],
+    ];
+    expect(params.fieldIds).toEqual(['f-total']);
+    expect(params.fields.map((field) => field.fieldId)).toEqual(['f-total']);
+    // 引き継いだ値を維持したまま記録し続ける
+    expect(store.getState().extract.lastRunFieldIds).toEqual(['f-total']);
   });
 
   test('再実行中は対象行を実行中として表示する（partial_failure の破棄件数は加算）', async () => {

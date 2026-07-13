@@ -31,7 +31,10 @@ import {
   type RunProgress,
 } from '../../features/extraction/executeRun';
 import { planRun, type RunPlan, type RunTokenBudget } from '../../features/extraction/planRun';
-import { appendExtractionRun } from '../../features/extraction/runRepository';
+import {
+  appendExtractionRun,
+  ensureRunFieldIdsColumn,
+} from '../../features/extraction/runRepository';
 import {
   EXTRACT_DATA_PROMPT_VERSION,
   type ExtractDataImagePage,
@@ -111,6 +114,14 @@ export interface RunExtractionParams {
   model: string;
   protocolContext?: string | null;
   budget?: Partial<RunTokenBudget>;
+  /**
+   * run 単位のフィールド選択（issue #80 案 A）。**null = 全項目**（後方互換規約）。
+   * 呼び出し側が「選択 = 版の全項目」のときも null を渡す（空配列は使わない）。
+   * ExtractionRuns の running 行・完了行の両方に記録するのみで、本関数自身は
+   * この値で params.fields を絞り込まない（絞り込み済みの fields を渡す設計は呼び出し側の責務。
+   * フェーズ 1 時点では UI 未結線のため全呼び出し元が null を渡す）
+   */
+  fieldIds: string[] | null;
   /** S7 の進捗バー用コールバック */
   onProgress?: (progress: RunProgress) => void;
 }
@@ -200,11 +211,15 @@ export async function runExtraction(
     inputMode: plan.inputMode,
     startedAt,
     costEstimate: plan.costEstimateUsd,
+    fieldIds: params.fieldIds,
   };
   // Evidence タブのヘッダを bbox 5 列込みへ拡張する（既存プロジェクトの後方互換移行。
   // §7.4 PR3）。running 行より前に行う: これを怠ると旧ヘッダ（12 列）のまま
   // appendEvidenceRows が 17 列を追記してしまい、列がずれた壊れた行になる
   await ensureEvidenceBboxColumns(params.spreadsheetId, deps.google);
+  // ExtractionRuns タブのヘッダを field_ids 込みへ拡張する（既存プロジェクトの後方互換移行。
+  // issue #80）。running 行より前に行う（bbox 列と同じ理由: 怠ると旧ヘッダのまま列がずれる）
+  await ensureRunFieldIdsColumn(params.spreadsheetId, deps.google);
 
   // running 行の先行追記（2 行プロトコルの 1 行目）。この追記が失敗したら
   // Evidence を 1 行も書かずに中断するため、孤児 Evidence は生まれない

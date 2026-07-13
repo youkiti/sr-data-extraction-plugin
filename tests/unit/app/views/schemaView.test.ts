@@ -61,6 +61,9 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<SchemaViewCallbac
       pilot: {
         onToggleStudy: jest.fn(),
         onChangeModel: jest.fn(),
+        onToggleField: jest.fn(),
+        onToggleFieldSection: jest.fn(),
+        onToggleFieldSectionCollapse: jest.fn(),
         onRun: jest.fn(),
         onSelectRun: jest.fn(),
         onReloadHistory: jest.fn(),
@@ -75,6 +78,9 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<SchemaViewCallbac
       extract: {
         onToggleStudy: jest.fn(),
         onChangeModel: jest.fn(),
+        onToggleField: jest.fn(),
+        onToggleFieldSection: jest.fn(),
+        onToggleFieldSectionCollapse: jest.fn(),
         onRequestRun: jest.fn(),
         onConfirmRun: jest.fn(),
         onCancelConfirm: jest.fn(),

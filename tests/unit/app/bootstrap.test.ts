@@ -1124,6 +1124,7 @@ describe('bootstrapApp: #/pilot', () => {
     tokensIn: null,
     tokensOut: null,
     costEstimate: null,
+    fieldIds: null,
   };
 
   function pilotPreloaded(pilotPatch: Partial<AppState['pilot']> = {}): Partial<AppState> {
@@ -1187,6 +1188,46 @@ describe('bootstrapApp: #/pilot', () => {
     expect(document.getElementById('pilot-run-error')?.textContent).toContain(
       'Gemini API キーが未設定です',
     );
+  });
+
+  test('#/pilot の対象項目チェックリストが配線され、画面再入場のたびに全選択へ戻る（issue #80）', async () => {
+    const stub = createWindowStub(pilotPreloaded());
+    const { deps } = createFakeDeps([[...SHEET_HEADERS.Documents]]);
+    const store = await bootstrapApp(asWindow(stub), deps);
+
+    stub.location.hash = '#/pilot';
+    stub.fireHashChange();
+    await flush();
+
+    // 既定は全選択（null）
+    expect(store?.getState().pilot.selectedFieldIds).toBeNull();
+    const fieldCheckbox = document.querySelector<HTMLInputElement>('.pilot__field-checkbox');
+    expect(fieldCheckbox?.checked).toBe(true);
+
+    // 単一項目の解除が配線されている
+    fieldCheckbox!.checked = false;
+    fieldCheckbox!.dispatchEvent(new Event('change'));
+    expect(store?.getState().pilot.selectedFieldIds).toEqual([]);
+
+    // section 見出しの全選択トグルが配線されている
+    document.querySelector<HTMLButtonElement>('.pilot__field-section-toggle')?.click();
+    expect(store?.getState().pilot.selectedFieldIds).toBeNull();
+
+    // section 折りたたみが配線されている
+    const collapseButton = document.querySelector<HTMLButtonElement>('.pilot__field-collapse');
+    expect(collapseButton?.getAttribute('aria-expanded')).toBe('true');
+    collapseButton?.click();
+    expect(store?.getState().pilot.collapsedFieldSections).toEqual(['methods']);
+
+    // 別ルートへ移動して #/pilot へ戻ると全選択・全展開へリセットされる（A-4）
+    stub.location.hash = '#/documents';
+    stub.fireHashChange();
+    await flush();
+    stub.location.hash = '#/pilot';
+    stub.fireHashChange();
+    await flush();
+    expect(store?.getState().pilot.selectedFieldIds).toBeNull();
+    expect(store?.getState().pilot.collapsedFieldSections).toEqual([]);
   });
 
   test('#/pilot の検証セクション（study 切替セレクタ / 再試行）が配線されている', async () => {
@@ -1756,6 +1797,49 @@ describe('bootstrapApp: #/extract', () => {
     expect(document.getElementById('extract-run-error')).not.toBeNull();
   });
 
+  test('#/extract の対象項目チェックリストが配線され、画面再入場・対象再読込のたびに全選択へ戻る（issue #80）', async () => {
+    const stub = createWindowStub(extractPreloaded());
+    const { deps } = createFakeDeps([[...SHEET_HEADERS.ExtractionRuns]]);
+    const store = await bootstrapApp(asWindow(stub), deps);
+
+    stub.location.hash = '#/extract';
+    stub.fireHashChange();
+    await flush();
+
+    // 既定は全選択（null）
+    expect(store?.getState().extract.selectedFieldIds).toBeNull();
+    const fieldCheckbox = document.querySelector<HTMLInputElement>('.extract__field-checkbox');
+    expect(fieldCheckbox?.checked).toBe(true);
+
+    // 単一項目の解除が配線されている
+    fieldCheckbox!.checked = false;
+    fieldCheckbox!.dispatchEvent(new Event('change'));
+    expect(store?.getState().extract.selectedFieldIds).toEqual([]);
+
+    // section 見出しの全選択トグルが配線されている
+    document.querySelector<HTMLButtonElement>('.extract__field-section-toggle')?.click();
+    expect(store?.getState().extract.selectedFieldIds).toBeNull();
+
+    // section 折りたたみが配線されている
+    const collapseButton = document.querySelector<HTMLButtonElement>('.extract__field-collapse');
+    expect(collapseButton?.getAttribute('aria-expanded')).toBe('true');
+    collapseButton?.click();
+    expect(store?.getState().extract.collapsedFieldSections).toEqual(['methods']);
+
+    // 対象再読込（#extract-reload は読み込み失敗時のみ表示されるため、選択解除 → onReloadTargets
+    // 相当の force 再読込を直接呼ぶのと同じ経路 = 再度 #/extract へ入場することで検証する（A-4）
+    fieldCheckbox!.checked = false;
+    fieldCheckbox!.dispatchEvent(new Event('change'));
+    stub.location.hash = '#/documents';
+    stub.fireHashChange();
+    await flush();
+    stub.location.hash = '#/extract';
+    stub.fireHashChange();
+    await flush();
+    expect(store?.getState().extract.selectedFieldIds).toBeNull();
+    expect(store?.getState().extract.collapsedFieldSections).toEqual([]);
+  });
+
   test('#/extract の再試行と再読み込みが配線されている', async () => {
     const stub = createWindowStub(
       extractPreloaded({
@@ -1801,13 +1885,17 @@ describe('bootstrapApp: #/extract', () => {
     await flush();
     expect(store?.getState().extract.runError).toContain('Gemini API キーが未設定です');
 
-    // 読み込み失敗 → 再読み込みの配線（documents + ExtractionRuns を強制再取得）
+    // 読み込み失敗 → 再読み込みの配線（documents + ExtractionRuns を強制再取得 +
+    // フィールド選択チェックリストも全選択へリセットする。issue #80 A-4）
     const current = store?.getState() as AppState;
-    store?.setState({ extract: { ...current.extract, loadError: 'boom' } });
+    store?.setState({
+      extract: { ...current.extract, loadError: 'boom', selectedFieldIds: [] },
+    });
     const callsBefore = fetchMock.mock.calls.length;
     (document.getElementById('extract-reload') as HTMLButtonElement).click();
     await flush();
     expect(fetchMock.mock.calls.length).toBeGreaterThan(callsBefore);
+    expect(store?.getState().extract.selectedFieldIds).toBeNull();
   });
 });
 

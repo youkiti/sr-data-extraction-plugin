@@ -225,7 +225,12 @@ export async function openAdjudicateStudy(
     const armRows = await readAllArmStructures(spreadsheetId, deps.google);
     const studyArmRows = armRows.filter((r) => r.studyId === studyId);
     // issue #63: PDF ペインの根拠ハイライトの情報源。表示する run（既知 run のうち study の
-    // 最新）の Evidence のみを対象にする（S8/S9 と同じ latestRunEvidenceByStudy を再利用）
+    // 最新）の Evidence のみを対象にする（latestRunEvidenceByStudy を再利用）。
+    // S8/S9 は issue #80 で field 単位合成（composeEvidenceByStudy。完了 run のみ対象）へ
+    // 移行したが、裁定のハイライトは補助表示のため v1 は study 単位の最新 run のままとする
+    // （サブセット run が最新のとき対象外 field のハイライトが出ない・中断 run の Evidence が
+    // こちらでは出るのに S8/S9 では出ない、という食い違いを許容する割り切り。
+    // 必要になったら合成へ揃える）
     const allEvidence = await readEvidenceRows(spreadsheetId, deps.google);
     const runVersions = await readRunSchemaVersions(spreadsheetId, deps.google);
     const evidenceByStudy = latestRunEvidenceByStudy(allEvidence, new Set(runVersions.keys()));

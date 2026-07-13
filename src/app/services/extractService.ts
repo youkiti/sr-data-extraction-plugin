@@ -16,11 +16,24 @@ import { makeLoadDocumentPages } from '../../features/documents/loadDocumentPage
 import { makeLoadDocumentPageImages } from '../../features/documents/loadDocumentPageImages';
 import { buildAiAnnotationRows } from '../../features/extraction/aiAnnotationRows';
 import {
+  filterFieldsBySelection,
+  resolveFieldIdsForRun,
+  selectedFieldCount,
+  toggleCollapsedSection,
+  toggleFieldSection,
+  toggleFieldSelection,
+  type FieldSubsetBadge,
+} from '../../features/extraction/fieldSelection';
+import {
   createStudyProgressTracker,
   type ExtractStudyRow,
 } from '../../features/extraction/studyProgress';
 import { planRun } from '../../features/extraction/planRun';
-import { readRunStudyCoverage } from '../../features/extraction/runRepository';
+import {
+  readRunStudyCoverage,
+  type CompletedRunStudySummary,
+} from '../../features/extraction/runRepository';
+import { getSchemaFieldsByVersion } from '../../features/schema/schemaRepository';
 import { ensureChildFolder } from '../../lib/google/drive';
 import type { GoogleApiDeps } from '../../lib/google/types';
 import { missingApiKeyMessage } from '../../lib/llm/modelCatalog';
@@ -90,6 +103,11 @@ export async function loadExtractTargets(
     const coverage = await readRunStudyCoverage(project.spreadsheetId, deps.google);
     const documents = await resolveDocuments(store, deps.google, project.spreadsheetId);
     const studies = await resolveStudies(store, deps.google, project.spreadsheetId);
+    const fieldSubsetBadges = await loadFieldSubsetBadges(
+      project.spreadsheetId,
+      deps.google,
+      coverage.latestCompletedRunByStudy,
+    );
     // 選択リスト表示のため documents スライスへも反映（未読込だったときのみ）
     const after = store.getState().documents;
     store.setState({
@@ -103,10 +121,83 @@ export async function loadExtractTargets(
       loading: false,
       extractedStudyIds: [...coverage.extracted],
       interruptedStudyIds: [...coverage.interrupted],
+      fieldSubsetBadges,
     });
   } catch (err) {
     patchExtract(store, { loading: false, loadError: toMessage(err) });
   }
+}
+
+/**
+ * S7 の「直近 run は n/m 項目」バッジ注記の素材（issue #80）。study_id ごとに、直近の完了 run が
+ * サブセット（fieldIds ≠ null）だったときだけ { selected, total } を持つ
+ * （全項目 run が直近だった study は注記なし = キーを持たない）。
+ * latestByStudy は readRunStudyCoverage が ExtractionRuns を読んだついでに組み立てた値を渡す
+ * （バッジ専用に同じタブをもう一度 GET しないため）
+ */
+async function loadFieldSubsetBadges(
+  spreadsheetId: string,
+  google: GoogleApiDeps,
+  latestByStudy: ReadonlyMap<string, CompletedRunStudySummary>,
+): Promise<Record<string, FieldSubsetBadge>> {
+  const fieldsByVersion = new Map<number, SchemaField[]>();
+  const badges: Record<string, FieldSubsetBadge> = {};
+  for (const [studyId, run] of latestByStudy) {
+    if (run.fieldIds === null) {
+      continue;
+    }
+    let fields = fieldsByVersion.get(run.schemaVersion);
+    if (fields === undefined) {
+      fields = await getSchemaFieldsByVersion(spreadsheetId, run.schemaVersion, google);
+      fieldsByVersion.set(run.schemaVersion, fields);
+    }
+    badges[studyId] = { selected: run.fieldIds.length, total: fields.length };
+  }
+  return badges;
+}
+
+/**
+ * フィールド選択チェックリストを全選択へリセットする（A-4: 画面入場・対象再読込のたびに
+ * 全選択へ戻す。storage への永続化はしない）。bootstrap の `#/extract` ルート入場時と
+ * `onReloadTargets` の両方から呼ぶ
+ */
+export function resetExtractFieldSelection(store: Store): void {
+  patchExtract(store, { selectedFieldIds: null, collapsedFieldSections: [] });
+}
+
+/** フィールドチェックリストの単一項目切替 */
+export function toggleExtractField(store: Store, fieldId: string, selected: boolean): void {
+  const { schema, extract } = store.getState();
+  const allFieldIds = (schema.currentFields ?? []).map((field) => field.fieldId);
+  patchExtract(store, {
+    selectedFieldIds: toggleFieldSelection(extract.selectedFieldIds, allFieldIds, fieldId, selected),
+  });
+}
+
+/** section 見出しの全選択 / 全解除トグル */
+export function toggleExtractFieldSection(
+  store: Store,
+  sectionFieldIds: readonly string[],
+  selected: boolean,
+): void {
+  const { schema, extract } = store.getState();
+  const allFieldIds = (schema.currentFields ?? []).map((field) => field.fieldId);
+  patchExtract(store, {
+    selectedFieldIds: toggleFieldSection(
+      extract.selectedFieldIds,
+      allFieldIds,
+      sectionFieldIds,
+      selected,
+    ),
+  });
+}
+
+/** section の折りたたみ切替 */
+export function toggleExtractFieldSectionCollapse(store: Store, section: string): void {
+  const { extract } = store.getState();
+  patchExtract(store, {
+    collapsedFieldSections: toggleCollapsedSection(extract.collapsedFieldSections, section),
+  });
 }
 
 /**
@@ -173,6 +264,11 @@ export async function requestExtractRun(store: Store, deps: ExtractServiceDeps):
     patchExtract(store, { runError: '対象 study を 1 件以上選択してください' });
     return;
   }
+  const allFieldIds = schema.currentFields.map((field) => field.fieldId);
+  if (selectedFieldCount(extract.selectedFieldIds, allFieldIds) === 0) {
+    patchExtract(store, { runError: '抽出項目を 1 つ以上選択してください' });
+    return;
+  }
   if (extract.model === '') {
     patchExtract(store, { runError: 'モデルを選択してください（「その他」で直接入力も可）' });
     return;
@@ -201,7 +297,10 @@ async function performRun(
     studyIds: readonly string[];
     /** studyIds の配下文書すべて（連結・アンカリングの対象） */
     targets: readonly DocumentRecord[];
+    /** 選択サブセットで絞り込んだ fields（全選択時は schema.currentFields の全件。issue #80） */
     fields: readonly SchemaField[];
+    /** ExtractionRuns へ記録する run 単位のフィールド選択（全選択時は null。issue #80） */
+    fieldIds: string[] | null;
     model: string;
     providerConfig: ProviderConfig;
     onStudyRows: (rows: ExtractStudyRow[]) => void;
@@ -233,6 +332,7 @@ async function performRun(
       fields: params.fields,
       model: params.model,
       protocolContext,
+      fieldIds: params.fieldIds,
       onProgress: (progress) => {
         tracker.onProgress(progress);
         patchExtract(store, { progress });
@@ -299,6 +399,11 @@ export async function runExtract(store: Store, deps: ExtractServiceDeps): Promis
     });
     return;
   }
+  // 選択サブセットで fields を絞り込む（全選択時は fieldIds: null。issue #80）。
+  // performRun 呼び出し前に lastRunFieldIds を確定させる = 成功・失敗にかかわらず
+  // 再試行（retryExtractStudy）が同じ選択を引き継げる（A-2）
+  const fieldIds = resolveFieldIdsForRun(state.extract.selectedFieldIds);
+  const runFields = filterFieldsBySelection(fields, fieldIds);
   patchExtract(store, {
     confirming: false,
     running: true,
@@ -307,6 +412,7 @@ export async function runExtract(store: Store, deps: ExtractServiceDeps): Promis
     run: null,
     rejectedCount: 0,
     studyRows: [],
+    lastRunFieldIds: fieldIds,
   });
   try {
     const records = await resolveDocuments(store, deps.google, project.spreadsheetId);
@@ -319,7 +425,8 @@ export async function runExtract(store: Store, deps: ExtractServiceDeps): Promis
       runType: 'full',
       studyIds,
       targets,
-      fields,
+      fields: runFields,
+      fieldIds,
       model: state.extract.model,
       providerConfig: providerResolution.config,
       onStudyRows: (rows) => patchExtract(store, { studyRows: rows }),
@@ -373,7 +480,11 @@ export async function retryExtractStudy(
         .extract.studyRows.map((current) => (current.studyId === studyId ? row : current)),
     });
   };
-  patchExtract(store, { retryingStudyId: studyId, runError: null });
+  // A-2: 元 run と同じ field 選択を引き継ぐ（現在のチェックリスト選択ではなく
+  // lastRunFieldIds = 直近実行時に実際に使った値を使う）
+  const fieldIds = state.extract.lastRunFieldIds;
+  const runFields = filterFieldsBySelection(fields, fieldIds);
+  patchExtract(store, { retryingStudyId: studyId, runError: null, lastRunFieldIds: fieldIds });
   // 再計画前のプレースホルダ（バッチ数はまだ不明 = 0/0。onStudyRows が実数で置き換える）
   replaceRow({ studyId, status: 'running', completedBatches: 0, totalBatches: 0, detail: null });
   try {
@@ -389,7 +500,8 @@ export async function retryExtractStudy(
       runType: 'single_study',
       studyIds: [studyId],
       targets,
-      fields,
+      fields: runFields,
+      fieldIds,
       model: state.extract.model,
       providerConfig: providerResolution.config,
       onStudyRows: (rows) => {

@@ -9,11 +9,20 @@ import {
 } from '../../features/documents/studySelection';
 import type { StudyRecord } from '../../domain/study';
 import { studyLabelMap } from '../../features/documents/studyRepository';
+import {
+  filterFieldsBySelection,
+  resolveFieldIdsForRun,
+} from '../../features/extraction/fieldSelection';
 import type { ExtractStudyRow, ExtractStudyStatus } from '../../features/extraction/studyProgress';
 import { planRun } from '../../features/extraction/planRun';
 import { el } from '../ui/dom';
 import { createModelSelect } from '../ui/modelSelect';
 import type { AppState } from '../store';
+import {
+  fieldSelectionSummaryText,
+  hasZeroFieldsSelected,
+  renderFieldSelectionChecklist,
+} from './fieldSelectionChecklist';
 import type { ViewContext } from './types';
 
 const STATUS_LABELS: Readonly<Record<ExtractStudyStatus, string>> = {
@@ -72,7 +81,11 @@ function renderStudySelector(state: AppState, ctx: ViewContext): HTMLElement {
       el('span', { className: 'extract__study-label', text: item.study.studyLabel }),
     ];
     if (extracted.has(studyId)) {
-      head.push(el('span', { className: 'extract__doc-extracted', text: '抽出済み' }));
+      // サブセット run（fieldIds ≠ null）が直近なら「直近 run は n/m 項目」を添える（issue #80）
+      const badge = state.extract.fieldSubsetBadges[studyId];
+      const text =
+        badge === undefined ? '抽出済み' : `抽出済み（直近 run は ${badge.selected}/${badge.total} 項目）`;
+      head.push(el('span', { className: 'extract__doc-extracted', text }));
     }
     if (!item.hasTextLayer) {
       head.push(
@@ -123,10 +136,21 @@ function renderEstimate(state: AppState): HTMLElement {
       text: 'コスト概算: 対象 study を選択すると表示されます',
     });
   }
+  if (hasZeroFieldsSelected(state.extract.selectedFieldIds, fields)) {
+    return el('p', {
+      id: 'extract-estimate',
+      className: 'extract__estimate',
+      text: 'コスト概算: 対象項目を選択すると表示されます',
+    });
+  }
+  const estimateFields = filterFieldsBySelection(
+    fields,
+    resolveFieldIdsForRun(state.extract.selectedFieldIds),
+  );
   try {
     const plan = planRun({
       documents: selected,
-      fields,
+      fields: estimateFields,
       model: state.extract.model === '' ? 'unknown' : state.extract.model,
       protocolContext: null,
     });
@@ -156,6 +180,26 @@ function renderEstimate(state: AppState): HTMLElement {
   }
 }
 
+/** 抽出対象フィールドのチェックリスト（issue #80）。スキーマ未読込時は何も出さない */
+function renderFieldSelector(state: AppState, ctx: ViewContext): HTMLElement | null {
+  const fields = state.schema.currentFields;
+  if (fields === null || fields.length === 0) {
+    return null;
+  }
+  return el('div', { className: 'extract__field-selector' }, [
+    el('h3', { text: '対象項目（既定 = 全項目）' }),
+    renderFieldSelectionChecklist({
+      idPrefix: 'extract',
+      fields,
+      selection: state.extract.selectedFieldIds,
+      collapsedSections: state.extract.collapsedFieldSections,
+      onToggleField: (fieldId, selected) => ctx.extract.onToggleField(fieldId, selected),
+      onToggleSection: (fieldIds, selected) => ctx.extract.onToggleFieldSection(fieldIds, selected),
+      onToggleCollapse: (section) => ctx.extract.onToggleFieldSectionCollapse(section),
+    }),
+  ]);
+}
+
 function renderSetup(state: AppState, ctx: ViewContext): HTMLElement {
   const modelSelect = createModelSelect(document, {
     id: 'extract-model',
@@ -166,18 +210,24 @@ function renderSetup(state: AppState, ctx: ViewContext): HTMLElement {
     className: 'extract__model-input',
   });
 
+  const fields = state.schema.currentFields ?? [];
   const runButton = el('button', {
     id: 'extract-run',
     className: 'extract__run',
     text: '一括抽出を実行',
     attributes: { type: 'button' },
   });
-  runButton.disabled = state.extract.confirming || state.extract.retryingStudyId !== null;
+  runButton.disabled =
+    state.extract.confirming ||
+    state.extract.retryingStudyId !== null ||
+    hasZeroFieldsSelected(state.extract.selectedFieldIds, fields);
   runButton.addEventListener('click', () => ctx.extract.onRequestRun());
 
+  const fieldSelector = renderFieldSelector(state, ctx);
   const children: HTMLElement[] = [
     el('h3', { text: '対象試験（既定 = 未抽出の全件）' }),
     renderStudySelector(state, ctx),
+    ...(fieldSelector === null ? [] : [fieldSelector]),
     el('div', { className: 'extract__model' }, [
       el('label', { text: 'モデル: ', attributes: { for: 'extract-model' } }),
       modelSelect,
@@ -227,6 +277,10 @@ function renderConfirm(state: AppState, ctx: ViewContext): HTMLElement {
       el('h4', { id: 'extract-confirm-title', text: '一括抽出を開始しますか？' }),
       el('p', {
         text: `対象 ${state.extract.selectedStudyIds.length} 試験をモデル ${state.extract.model} で抽出します。`,
+      }),
+      el('p', {
+        id: 'extract-confirm-fields',
+        text: `対象項目: ${fieldSelectionSummaryText(state.extract.selectedFieldIds, state.schema.currentFields ?? [])}`,
       }),
       renderEstimate(state),
       el('div', { className: 'extract__confirm-actions' }, [confirmButton, cancelButton]),

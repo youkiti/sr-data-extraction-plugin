@@ -99,6 +99,8 @@ describe('createInitialState', () => {
         studyRowUpdatedAt: null,
         resultsRowUpdatedAt: {},
         conflictMessage: null,
+        selectedFieldIds: null,
+        collapsedFieldSections: [],
       },
       extract: {
         selectedStudyIds: [],
@@ -116,6 +118,10 @@ describe('createInitialState', () => {
         run: null,
         rejectedCount: 0,
         retryingStudyId: null,
+        selectedFieldIds: null,
+        collapsedFieldSections: [],
+        lastRunFieldIds: null,
+        fieldSubsetBadges: {},
       },
       verify: {
         targets: null,
