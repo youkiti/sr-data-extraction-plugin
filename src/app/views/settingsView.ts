@@ -3,6 +3,7 @@
 // これにより「設定 ⇄ 各作業画面」を 1 タブ内のハッシュ遷移で行き来できる（別タブを開かない）。
 import { bootstrapOptions } from '../../options/bootstrap';
 import { buildSettingsSections } from '../../options/settingsSections';
+import { t } from '../../lib/i18n';
 import { el } from '../ui/dom';
 import type { AppState } from '../store';
 import type { ViewContext } from './types';
@@ -15,10 +16,10 @@ export function renderSettingsView(state: AppState, _ctx: ViewContext): HTMLElem
   // 戻る（直接 #/options を開いた場合など。ハッシュリンクなので同一タブ内で遷移する）
   const returnHash = state.settingsReturnHash ?? '#/home';
   const header = el('div', { className: 'settings__header' }, [
-    el('h2', { text: '設定' }),
+    el('h2', { text: t('settings.title') }),
     el('a', {
       className: 'settings__back',
-      text: '← 前の画面へ戻る',
+      text: t('settings.back'),
       attributes: { href: returnHash },
     }),
   ]);

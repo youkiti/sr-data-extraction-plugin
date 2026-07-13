@@ -9,8 +9,10 @@ import {
 } from '../llm/rateLimitPolicy';
 import { getLocal, removeLocal, setLocal } from './chromeStorage';
 import type { LlmProviderId } from '../../domain/llmApiLog';
+import { isUiLanguage, type UiLanguage } from '../i18n';
 
 const DEFAULT_MODEL_STORAGE_KEY = 'settings.defaultModel';
+const UI_LANGUAGE_STORAGE_KEY = 'settings.uiLanguage';
 const LLM_PROVIDER_STORAGE_KEY = 'settings.llmProvider';
 const OPENAI_COMPATIBLE_ENDPOINT_STORAGE_KEY = 'settings.openAiCompatibleEndpoint';
 const HTTP_LOOPBACK_HOSTNAMES: ReadonlySet<string> = new Set(['localhost', '127.0.0.1', '[::1]']);
@@ -194,6 +196,20 @@ export async function loadVerifyLayoutMode(): Promise<VerifyLayoutMode> {
 /** 検証パネルのレイアウトモードを保存する（トグル操作のたびに即時永続化） */
 export async function saveVerifyLayoutMode(mode: VerifyLayoutMode): Promise<void> {
   await setLocal(VERIFY_LAYOUT_MODE_STORAGE_KEY, mode);
+}
+
+/**
+ * UI 表示言語を読み出す（未設定・不正値は既定 'ja'。issue #93・docs/ui-states.md §2「表示言語」）。
+ * 各エントリの bootstrap が起動時に読み、lib/i18n の setUiLanguage へ反映する
+ */
+export async function loadUiLanguage(): Promise<UiLanguage> {
+  const stored = await getLocal<string>(UI_LANGUAGE_STORAGE_KEY);
+  return isUiLanguage(stored) ? stored : 'ja';
+}
+
+/** UI 表示言語を保存する（言語セレクタの change のたびに即時永続化） */
+export async function saveUiLanguage(language: UiLanguage): Promise<void> {
+  await setLocal(UI_LANGUAGE_STORAGE_KEY, language);
 }
 
 /**

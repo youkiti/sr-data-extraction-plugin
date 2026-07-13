@@ -1,5 +1,6 @@
 // ハッシュルーティングのルート定義（ui-flow.md §2）。
 // 遷移時のガード適用・描画は bootstrap.ts が行い、本ファイルは定義と正規化のみを持つ
+import { t } from '../lib/i18n';
 import type { AppState } from './store';
 import type { ViewContext } from './views/types';
 import { renderHomeView } from './views/homeView';
@@ -29,22 +30,24 @@ export type RouteHash =
 
 export interface RouteDefinition {
   hash: RouteHash;
-  /** サイドバー・スクリーンリーダ通知用の表示名 */
-  label: string;
+  /** サイドバー・スクリーンリーダ通知用の表示名（表示言語に追従する getter。issue #93） */
+  readonly label: string;
   render(state: AppState, ctx: ViewContext): HTMLElement;
 }
 
+// label は評価のたびに現在の表示言語で解決する getter にする（モジュール読込時に固定すると
+// 言語切替後の再描画へ追従できないため。issue #93）
 export const ROUTES: RouteDefinition[] = [
-  { hash: '#/home', label: 'Home', render: renderHomeView },
-  { hash: '#/documents', label: '文献取り込み', render: renderDocumentsView },
-  { hash: '#/protocol', label: 'プロトコル', render: renderProtocolView },
-  { hash: '#/schema', label: '表のデザイン', render: renderSchemaView },
-  { hash: '#/pilot', label: 'パイロット抽出', render: renderPilotView },
-  { hash: '#/extract', label: '一括抽出', render: renderExtractView },
-  { hash: '#/verify', label: '検証', render: renderVerifyView },
-  { hash: '#/dashboard', label: 'ダッシュボード', render: renderDashboardView },
-  { hash: '#/export', label: 'エクスポート', render: renderExportView },
-  { hash: '#/adjudicate', label: '裁定', render: renderAdjudicateView },
+  { hash: '#/home', get label() { return t('app.navHome'); }, render: renderHomeView },
+  { hash: '#/documents', get label() { return t('app.navDocuments'); }, render: renderDocumentsView },
+  { hash: '#/protocol', get label() { return t('app.navProtocol'); }, render: renderProtocolView },
+  { hash: '#/schema', get label() { return t('app.navSchema'); }, render: renderSchemaView },
+  { hash: '#/pilot', get label() { return t('app.navPilot'); }, render: renderPilotView },
+  { hash: '#/extract', get label() { return t('app.navExtract'); }, render: renderExtractView },
+  { hash: '#/verify', get label() { return t('app.navVerify'); }, render: renderVerifyView },
+  { hash: '#/dashboard', get label() { return t('app.navDashboard'); }, render: renderDashboardView },
+  { hash: '#/export', get label() { return t('app.navExport'); }, render: renderExportView },
+  { hash: '#/adjudicate', get label() { return t('app.navAdjudicate'); }, render: renderAdjudicateView },
 ];
 
 /**
@@ -54,7 +57,7 @@ export const ROUTES: RouteDefinition[] = [
  */
 export const SETTINGS_ROUTE: RouteDefinition = {
   hash: '#/options',
-  label: '設定',
+  get label() { return t('app.navSettings'); },
   render: renderSettingsView,
 };
 

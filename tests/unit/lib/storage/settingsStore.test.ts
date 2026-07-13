@@ -7,6 +7,7 @@ import {
   loadRateLimitCustomConcurrency,
   loadRateLimitCustomRpm,
   loadRateLimitTier,
+  loadUiLanguage,
   normalizeOpenAiCompatibleEndpoint,
   loadVerifyLayoutMode,
   resolveRateLimitPolicy,
@@ -15,6 +16,7 @@ import {
   saveRateLimitCustomConcurrency,
   saveRateLimitCustomRpm,
   saveRateLimitTier,
+  saveUiLanguage,
   saveVerifyLayoutMode,
 } from '../../../../src/lib/storage/settingsStore';
 
@@ -232,5 +234,30 @@ describe('settingsStore 検証パネルのレイアウトモード（issue #38�
     await expect(loadVerifyLayoutMode()).resolves.toBe('list');
     await saveVerifyLayoutMode('focus');
     await expect(loadVerifyLayoutMode()).resolves.toBe('focus');
+  });
+});
+
+describe('settingsStore UI 表示言語（issue #93）', () => {
+  beforeEach(() => {
+    installChromeMock();
+  });
+
+  test('未設定なら既定 ja', async () => {
+    await expect(loadUiLanguage()).resolves.toBe('ja');
+  });
+
+  test('不正な保存値は既定 ja へフォールバック', async () => {
+    const mock = installChromeMock();
+    mock.storage.local.data['settings.uiLanguage'] = 'fr';
+    await expect(loadUiLanguage()).resolves.toBe('ja');
+  });
+
+  test('保存して読み出せる', async () => {
+    const mock = installChromeMock();
+    await saveUiLanguage('en');
+    expect(mock.storage.local.data['settings.uiLanguage']).toBe('en');
+    await expect(loadUiLanguage()).resolves.toBe('en');
+    await saveUiLanguage('ja');
+    await expect(loadUiLanguage()).resolves.toBe('ja');
   });
 });

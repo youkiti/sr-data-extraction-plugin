@@ -156,8 +156,10 @@ import {
 } from '../lib/storage/secretsStore';
 import {
   loadLlmConnectionSettings,
+  loadUiLanguage,
   resolveRateLimitPolicy,
 } from '../lib/storage/settingsStore';
+import { getUiLanguage, localizeDom, onUiLanguageChange, setUiLanguage, t } from '../lib/i18n';
 import { el } from './ui/dom';
 
 declare global {
@@ -342,6 +344,16 @@ export async function bootstrapApp(
   if (buildDateEl) {
     buildDateEl.textContent = `build ${BUILD_DATE}`;
   }
+
+  // 表示言語（issue #93）: 最初の描画より前に保存値を反映し、静的 HTML
+  // （設定リンク・ナビの aria-label 等の data-i18n 属性）と <html lang> / タイトルを解決する
+  setUiLanguage(await loadUiLanguage());
+  const applyStaticI18n = (): void => {
+    doc.documentElement.lang = getUiLanguage();
+    doc.title = t('app.documentTitle');
+    localizeDom(doc);
+  };
+  applyStaticI18n();
 
   const store = createStore(await seedState(win));
   let currentHash: RouteHash = '#/home';
@@ -779,14 +791,13 @@ export async function bootstrapApp(
       const link = doc.createElement('a');
       link.className = 'app__status-link';
       link.href = '../popup/popup.html';
-      link.title = '別のプロジェクトを開く';
-      link.textContent = `プロジェクト: ${state.currentProject.name}`;
+      link.title = t('app.switchProject');
+      link.textContent = t('app.statusProject', { name: state.currentProject.name });
       statusEl.replaceChildren(link);
       openPopupButton.hidden = true;
     } else {
       // 状態 A（ui-states.md §3）: 未選択メッセージ + プロジェクト選択ページへ戻る導線を出す
-      statusEl.textContent =
-        'プロジェクトが選択されていません。「プロジェクト選択を開く」から選択してください。';
+      statusEl.textContent = t('app.statusNoProject');
       openPopupButton.hidden = false;
     }
   };
@@ -855,7 +866,7 @@ export async function bootstrapApp(
     }
     const route = findRoute(currentHash);
     contentEl.replaceChildren(route.render(state, viewContext));
-    contextEl.textContent = `${route.label} 画面を表示しています`;
+    contextEl.textContent = t('app.contextShowing', { screen: route.label });
   };
 
   const handleHashChange = (): void => {
@@ -972,6 +983,13 @@ export async function bootstrapApp(
       }
     });
   };
+
+  // 表示言語の切替（Options の #ui-language。issue #93）: 静的 HTML を新言語で解決し直し、
+  // ストア再描画（空パッチ）でヘッダ / ナビ / 表示中ルートを即時に切り替える（リロード不要）
+  onUiLanguageChange(() => {
+    applyStaticI18n();
+    store.setState({});
+  });
 
   titleButton.addEventListener('click', () => {
     win.location.hash = '#/home';

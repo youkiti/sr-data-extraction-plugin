@@ -1,6 +1,7 @@
 import { ROUTES, studyQueryOf, entityQueryOf, findRoute, normalizeHash } from '../../../src/app/router';
 import { createInitialState } from '../../../src/app/store';
 import type { ViewContext } from '../../../src/app/views/types';
+import { setUiLanguage } from '../../../src/lib/i18n';
 
 const stubCtx: ViewContext = {
   home: {
@@ -157,6 +158,28 @@ describe('findRoute', () => {
 
   test('設定ルート #/options を解決する', () => {
     expect(findRoute('#/options').label).toBe('設定');
+  });
+
+  test('label は表示言語に追従する（en へ切替 → ja へ復帰。issue #93）', () => {
+    setUiLanguage('en');
+    try {
+      expect(ROUTES.map((route) => route.label)).toEqual([
+        'Home',
+        'Documents',
+        'Protocol',
+        'Table design',
+        'Pilot extraction',
+        'Full extraction',
+        'Verification',
+        'Dashboard',
+        'Export',
+        'Adjudication',
+      ]);
+      expect(findRoute('#/options').label).toBe('Settings');
+    } finally {
+      setUiLanguage('ja');
+    }
+    expect(findRoute('#/schema').label).toBe('表のデザイン');
   });
 });
 

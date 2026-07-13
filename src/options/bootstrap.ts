@@ -2,7 +2,17 @@
 // 状態仕様は docs/ui-states.md §2（trim 保存・API キーの空文字は保存抑止・
 // 既定モデルの空は「未設定に戻す」・保存中はボタン無効化）
 import { createModelSelect } from '../app/ui/modelSelect';
+import { showToast } from '../app/ui/toast';
 import type { LlmProviderId } from '../domain/llmApiLog';
+import {
+  getUiLanguage,
+  isUiLanguage,
+  localizeDom,
+  onUiLanguageChange,
+  setUiLanguage,
+  t,
+} from '../lib/i18n';
+import { buildSettingsSections } from './settingsSections';
 import { createProvider, resolveProviderId } from '../lib/llm/providerFactory';
 import {
   getRateLimitTier,
@@ -28,12 +38,14 @@ import {
   loadRateLimitCustomConcurrency,
   loadRateLimitCustomRpm,
   loadRateLimitTier,
+  loadUiLanguage,
   normalizeOpenAiCompatibleEndpoint,
   saveDefaultModel,
   saveLlmConnectionSettings,
   saveRateLimitCustomConcurrency,
   saveRateLimitCustomRpm,
   saveRateLimitTier,
+  saveUiLanguage,
 } from '../lib/storage/settingsStore';
 
 /** ステータス要素へ文言 + 通常 / エラー系の色分けを反映する */
@@ -397,6 +409,27 @@ async function bootstrapRateLimitSection(root: ParentNode): Promise<void> {
 }
 
 /**
+ * 表示言語セレクタの配線（issue #93。docs/ui-states.md §2「表示言語」）。
+ * change で即時に保存 + setUiLanguage（購読者 = アプリのストア再描画 / options.html の
+ * 本文再構築が新言語で描き直す）。保存失敗は切替自体を妨げず、トーストで知らせる。
+ * 初期値は保存値ではなく現在の表示言語（同期。各エントリの起動時に保存値を反映済み）
+ */
+function bootstrapUiLanguageSection(root: ParentNode): void {
+  const select = root.querySelector<HTMLSelectElement>('#ui-language');
+  if (!select) {
+    return;
+  }
+  select.value = getUiLanguage();
+  select.addEventListener('change', () => {
+    const language = isUiLanguage(select.value) ? select.value : 'ja';
+    void saveUiLanguage(language).catch(() => {
+      showToast(t('options.languageSaveFailed'), select.ownerDocument);
+    });
+    setUiLanguage(language);
+  });
+}
+
+/**
  * 設定本文の配線。root は options.html の `document` でも、アプリ内 #/options が
  * 生成した（未 attach でよい）コンテナ要素でもよい（querySelector で解決するため）。
  */
@@ -426,4 +459,30 @@ export async function bootstrapOptions(root: ParentNode): Promise<void> {
   await bootstrapLlmConnectionSection(root);
   await bootstrapDefaultModelSection(root);
   await bootstrapRateLimitSection(root);
+  bootstrapUiLanguageSection(root);
+}
+
+/**
+ * スタンドアロン設定ページ（options.html）の起動配線: 保存済みの表示言語を反映してから
+ * 設定本文を構築・配線し、言語切替のたびに本文を新言語で再構築する（issue #93）。
+ * アプリ内 #/options はストア再描画が同じ役割を担うため、これは options.html 専用
+ */
+export async function bootstrapOptionsPage(doc: Document): Promise<void> {
+  const body = doc.getElementById('settings-body');
+  if (!body) {
+    return;
+  }
+  setUiLanguage(await loadUiLanguage());
+  const rebuild = async (): Promise<void> => {
+    // 静的部分（h1 / アプリを開くリンクの data-i18n）+ <html lang> + タイトルも追従させる
+    doc.documentElement.lang = getUiLanguage();
+    doc.title = t('options.documentTitle');
+    localizeDom(doc);
+    body.replaceChildren(buildSettingsSections());
+    await bootstrapOptions(doc);
+  };
+  onUiLanguageChange(() => {
+    void rebuild();
+  });
+  await rebuild();
 }

@@ -2,6 +2,7 @@
 // options.html（独立ページ）とアプリ内 #/options（settingsView）の双方から使う
 // 単一の正典（ID は bootstrapOptions が querySelector で解決する）。
 import { el } from '../app/ui/dom';
+import { t } from '../lib/i18n';
 import { RATE_LIMIT_TIERS } from '../lib/llm/rateLimitPolicy';
 
 /**
@@ -211,16 +212,21 @@ export function buildSettingsSections(): HTMLElement {
   ]);
   body.append(rateLimitSection);
 
-  // 表示言語（MVP は ja 固定）
+  // 表示言語（issue #93。change で即時保存 + setUiLanguage の購読者が再描画する。
+  // 言語名の option は翻訳しない = 各言語の母語表記で固定）
   const languageSelect = el('select', {
     id: 'ui-language',
-    attributes: { disabled: 'true' },
+    attributes: { 'aria-label': t('options.languageLabel') },
   });
-  languageSelect.append(el('option', { text: '日本語（MVP は ja 固定）', attributes: { selected: 'true' } }));
+  languageSelect.append(
+    el('option', { text: '日本語', attributes: { value: 'ja' } }),
+    el('option', { text: 'English', attributes: { value: 'en' } }),
+  );
   const languageSection = el('section', { className: 'options__section' }, [
-    el('h2', { text: '表示言語' }),
+    el('h2', { text: t('options.languageTitle') }),
+    el('p', { className: 'options__help', text: t('options.languageHelp') }),
     el('div', { className: 'options__row' }, [
-      el('label', { text: '言語', attributes: { for: 'ui-language' } }),
+      el('label', { text: t('options.languageLabel'), attributes: { for: 'ui-language' } }),
       languageSelect,
     ]),
   ]);

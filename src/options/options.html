@@ -11,13 +11,13 @@
   <body>
     <main class="options">
       <div class="options__header">
-        <h1>設定</h1>
+        <h1 data-i18n="options.heading">設定</h1>
         <!--
           スタンドアロン設定ページ（拡張アイコンの右クリックメニュー等から開く）専用の導線。
           アプリ内 #/options はサイドバー + 「← 前の画面へ戻る」を持つためここには出さない
           （settingsSections.ts はアプリ内 #/options と共通のため、このリンクは持たせない）
         -->
-        <a id="options-open-app" class="options__open-app" href="../app/app.html">アプリを開く</a>
+        <a id="options-open-app" class="options__open-app" href="../app/app.html" data-i18n="options.openApp">アプリを開く</a>
       </div>
       <!-- 本文（各節）は settingsSections.ts が生成する（アプリ内 #/options と共通） -->
       <div id="settings-body"></div>

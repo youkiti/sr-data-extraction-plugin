@@ -80,6 +80,7 @@ import type { BuiltExport, ClassicExportFormat } from '../../../src/features/exp
 import { createInitialState, type AdjudicateWorking, type AppState } from '../../../src/app/store';
 import { SHEET_HEADERS } from '../../../src/domain/sheetsSchema';
 import { CURRENT_PROJECT_STORAGE_KEY } from '../../../src/features/project/projectStore';
+import { setUiLanguage } from '../../../src/lib/i18n';
 
 interface WindowStub {
   document: Document;
@@ -406,6 +407,35 @@ describe('bootstrapApp', () => {
     expect(document.querySelector('#app-nav a[aria-current="page"]')?.getAttribute('href')).toBe(
       '#/home',
     );
+  });
+
+  test('表示言語: 保存値 en で起動すると en で描画し、切替で即時再描画する（issue #93）', async () => {
+    const mock = installChromeMock();
+    mock.storage.local.data['settings.uiLanguage'] = 'en';
+    try {
+      await bootstrapApp(asWindow(createWindowStub()));
+      // <html lang> / タイトル / ヘッダ / ナビ / ルート内容 / スクリーンリーダ通知が en
+      expect(document.documentElement.lang).toBe('en');
+      expect(document.title).toBe('SR Data Extraction Plugin — Main view');
+      expect(document.getElementById('app-status')?.textContent).toContain('No project selected');
+      expect(document.getElementById('app-context')?.textContent).toBe('Showing the Home screen');
+      expect(document.getElementById('app-content')?.textContent).toContain('Project overview');
+      const labels = Array.from(document.querySelectorAll('#app-nav a')).map(
+        (link) => link.textContent,
+      );
+      expect(labels).toContain('Table design');
+
+      // 切替（Options の #ui-language 相当 = setUiLanguage）: リロード不要で ja へ即時再描画
+      setUiLanguage('ja');
+      expect(document.documentElement.lang).toBe('ja');
+      expect(document.getElementById('app-context')?.textContent).toBe('Home 画面を表示しています');
+      expect(document.getElementById('app-content')?.textContent).toContain('プロジェクト概要');
+      expect(
+        Array.from(document.querySelectorAll('#app-nav a')).map((link) => link.textContent),
+      ).toContain('表のデザイン');
+    } finally {
+      setUiLanguage('ja');
+    }
   });
 
   test('ガード未充足のステップはディム表示され、クリックでトースト案内（状態 B）', async () => {
