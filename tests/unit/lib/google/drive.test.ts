@@ -4,6 +4,7 @@ import {
   ensureChildFolder,
   ensureRootFolder,
   getFileBinary,
+  getFileMd5,
   getFileText,
   listFolderPdfs,
   moveFileToFolder,
@@ -296,20 +297,21 @@ describe('getFileBinary', () => {
 });
 
 describe('listFolderPdfs', () => {
-  test('PDF フィルタ + 直下フォルダのクエリを組み立てる（単一ページ）', async () => {
+  test('PDF フィルタ + 直下フォルダのクエリを組み立てる（単一ページ・md5Checksum も要求する）', async () => {
     const fetch = jest
       .fn()
       .mockResolvedValueOnce(
         okJson({
           files: [
-            { id: 'p1', name: 'a.pdf' },
+            { id: 'p1', name: 'a.pdf', md5Checksum: 'md5-a' },
             { id: 'p2', name: 'b.pdf' },
           ],
         }),
       );
     const deps = { fetch, getAccessToken: jest.fn().mockResolvedValue('t') };
+    // md5Checksum は返っていれば通し、欠落（Google ドキュメント等）はプロパティごと持たない
     await expect(listFolderPdfs('FOLDER', deps)).resolves.toEqual([
-      { id: 'p1', name: 'a.pdf' },
+      { id: 'p1', name: 'a.pdf', md5Checksum: 'md5-a' },
       { id: 'p2', name: 'b.pdf' },
     ]);
     expect(fetch).toHaveBeenCalledTimes(1);
@@ -321,6 +323,7 @@ describe('listFolderPdfs', () => {
     expect(decoded).toContain('trashed=false');
     expect(decoded).toContain('pageSize=1000');
     expect(decoded).toContain('orderBy=name');
+    expect(decoded).toContain('files(id,name,md5Checksum)');
     expect(url).not.toContain('pageToken');
   });
 
@@ -342,6 +345,22 @@ describe('listFolderPdfs', () => {
     const fetch = jest.fn().mockResolvedValueOnce(okJson({}));
     const deps = { fetch, getAccessToken: jest.fn().mockResolvedValue('t') };
     await expect(listFolderPdfs('EMPTY', deps)).resolves.toEqual([]);
+  });
+});
+
+describe('getFileMd5', () => {
+  test('fields=md5Checksum で取得して値を返す', async () => {
+    const fetch = jest.fn().mockResolvedValueOnce(okJson({ md5Checksum: 'abc123' }));
+    const deps = { fetch, getAccessToken: jest.fn().mockResolvedValue('t') };
+    await expect(getFileMd5('FILE-id', deps)).resolves.toBe('abc123');
+    const [url] = fetch.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain('/drive/v3/files/FILE-id?fields=md5Checksum');
+  });
+
+  test('md5Checksum が無いファイル（Google ドキュメント等）は null を返す', async () => {
+    const fetch = jest.fn().mockResolvedValueOnce(okJson({}));
+    const deps = { fetch, getAccessToken: jest.fn().mockResolvedValue('t') };
+    await expect(getFileMd5('DOC-id', deps)).resolves.toBeNull();
   });
 });
 

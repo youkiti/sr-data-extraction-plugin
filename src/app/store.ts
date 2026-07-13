@@ -87,15 +87,15 @@ export interface ReviewersState {
   confirmingChange: ReviewerFormInput | null;
 }
 
-/** 取り込み進捗 1 行の段階（ui-states.md §3「コピー → テキスト抽出の 2 段階表示」+ 前後の状態） */
-export type ImportRowStatus = 'queued' | 'copy' | 'extract' | 'done' | 'failed';
+/** 取り込み進捗 1 行の段階（ui-states.md §3「コピー → テキスト抽出の 2 段階表示」+ 前後の状態 + 重複スキップ〔issue #102〕） */
+export type ImportRowStatus = 'queued' | 'copy' | 'extract' | 'done' | 'failed' | 'skipped';
 
 export interface ImportRow {
   /** 進捗行の突き合わせキー（Drive/ローカル共通。features/documents/importDocuments.ts の ImportSelection.key） */
   key: string;
   filename: string;
   status: ImportRowStatus;
-  /** failed のときの詳細（失敗段階 + 理由）。それ以外は null */
+  /** failed（失敗段階 + 理由）/ skipped（スキップ理由）のときの詳細。それ以外は null */
   detail: string | null;
 }
 

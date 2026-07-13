@@ -41,6 +41,8 @@ export interface ImportFailure {
 }
 
 export interface ImportProgress {
+  /** 進捗行との突き合わせキー（ImportSelection.key と同値。重複スキップで行番号がずれるため key で対応付ける） */
+  key: string;
   /** 0 始まりの処理中ファイル番号 */
   fileIndex: number;
   totalFiles: number;
@@ -110,6 +112,7 @@ export async function importDocuments(
     };
     const notify = (stage: ImportProgress['stage']): void => {
       deps.onProgress?.({
+        key: selection.key,
         fileIndex,
         totalFiles: params.selections.length,
         filename: selection.filename,
