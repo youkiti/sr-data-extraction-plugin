@@ -28,4 +28,16 @@ describe('bestSubstringDistance', () => {
   test('text が空文字列ならパターン長が距離になる', () => {
     expect(bestSubstringDistance('abc', '').distance).toBe(3);
   });
+
+  // 和文（issue #95 層 1）: DP は文字（UTF-16 コード単位）ベースで単語区切り（空白）を
+  // 前提としないため、語間空白のない連続文字列でも英文と同品質でマッチする
+  test('和文（語間空白なしの連続文字列）の完全部分一致は距離 0', () => {
+    const result = bestSubstringDistance('歯科保健行動', '母親の歯科保健行動を検討した');
+    expect(result.distance).toBe(0);
+    expect(result.endIndex).toBe('母親の歯科保健行動'.length);
+  });
+
+  test('和文の 1 文字置換（保健 → 保険）は距離 1', () => {
+    expect(bestSubstringDistance('歯科保険行動', '母親の歯科保健行動を検討した').distance).toBe(1);
+  });
 });

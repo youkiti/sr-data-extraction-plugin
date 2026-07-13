@@ -1,5 +1,6 @@
 import { GlobalWorkerOptions, getDocument } from 'pdfjs-dist';
 import {
+  PDF_CMAP_DIR,
   PDF_WORKER_ASSET,
   configurePdfWorker,
   loadDisposablePdf,
@@ -42,9 +43,16 @@ describe('loadPdf', () => {
     const data = new Uint8Array([1, 2, 3]).buffer;
     await expect(loadPdf(data)).resolves.toBe(doc);
     expect(GlobalWorkerOptions.workerSrc).toContain(PDF_WORKER_ASSET);
-    const arg = mockedGetDocument.mock.calls[0]?.[0] as { data: Uint8Array };
+    const arg = mockedGetDocument.mock.calls[0]?.[0] as {
+      data: Uint8Array;
+      cMapUrl: string;
+      cMapPacked: boolean;
+    };
     expect(arg.data).toBeInstanceOf(Uint8Array);
     expect([...arg.data]).toEqual([1, 2, 3]);
+    // 和文 PDF の CID フォント抽出用に、同梱 CMap を拡張内 URL で渡す（issue #95）
+    expect(arg.cMapUrl).toBe(`chrome-extension://test-extension-id/${PDF_CMAP_DIR}`);
+    expect(arg.cMapPacked).toBe(true);
   });
 });
 

@@ -1,4 +1,4 @@
-# E2E / anchoring テスト用の PMC OA 論文 PDF を取得する。
+# E2E / anchoring テスト用の OA 論文 PDF（PMC + J-STAGE）を取得する。
 # 一覧とライセンスは同ディレクトリの README.md を参照。
 # PDF は .gitignore 済みのため、クローン後に本スクリプトで再取得する。
 
@@ -13,6 +13,11 @@ $pdfs = @(
     @{
         Name = 'PMC10766786_frontmed_thermocov_rct.pdf'
         Url  = 'https://www.frontiersin.org/articles/10.3389/fmed.2023.1256197/pdf'
+    },
+    @{
+        # 和文 fixture（issue #95: 日本語論文対応のアンカリング検証用。CC BY 4.0）
+        Name = 'JSTAGE330303_kenkokyoiku_shika_ja.pdf'
+        Url  = 'https://www.jstage.jst.go.jp/article/kenkokyoiku/33/3/33_330303/_pdf/-char/ja'
     }
 )
 

@@ -16,10 +16,37 @@ describe('normalizeTextWithMap', () => {
       'ｎ＝４２　patients',
       '  multiple\t\twhitespace\n\nchars  ',
       'plain text',
+      // 和文（issue #95 層 1）
+      '効果を検\n討した．',
+      '追跡期間は 1〜2 年（中央値）',
+      '山田　太郎',
+      'ﾃﾞｰﾀﾍﾞｰｽ',
+      '𠮟\nる',
     ];
     for (const input of inputs) {
       expect(normalizeTextWithMap(input).text).toBe(normalizeText(input));
     }
+  });
+
+  test('和文の行折り返し: 除去された改行は写像に現れず、前後の文字が元位置を指す', () => {
+    const map = normalizeTextWithMap('検\n討');
+    expect(map.text).toBe('検討');
+    expect(map.rawStart).toEqual([0, 2]);
+    expect(map.rawEnd).toEqual([1, 3]);
+  });
+
+  test('波ダッシュの折り畳みは 1 文字 → 1 文字で写像を変えない', () => {
+    const map = normalizeTextWithMap('1〜2');
+    expect(map.text).toBe('1~2');
+    expect(map.rawStart).toEqual([0, 1, 2]);
+    expect(map.rawEnd).toEqual([1, 2, 3]);
+  });
+
+  test('全角スペースの除去: 由来の位置は写像から消える（山田　太郎 → 山田太郎）', () => {
+    const map = normalizeTextWithMap('山田　太郎');
+    expect(map.text).toBe('山田太郎');
+    expect(map.rawStart).toEqual([0, 1, 3, 4]);
+    expect(map.rawEnd).toEqual([1, 2, 4, 5]);
   });
 
   test('ハイフネーション結合: 結合後の各文字が元位置を指す（- と改行は写像から消える）', () => {

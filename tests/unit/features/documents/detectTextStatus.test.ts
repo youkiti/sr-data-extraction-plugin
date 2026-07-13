@@ -90,4 +90,18 @@ describe('detectTextStatus', () => {
       detectTextStatus([{ text: STAMP }, { text: spaced }, { text: STAMP }]).textStatus,
     ).toBe('no_text_layer');
   });
+
+  // 和文 PDF（issue #95 層 1）: 閾値 30 字/頁 は和文でも妥当。和文は 1 文字の情報量が
+  // 多く本文ページは閾値を大きく超える（fixture 実測: J-STAGE 和文論文 11 頁の
+  // 最小ページで実質 94 字。tests/fixtures/pdf/README.md の和文 fixture）
+  test('和文の本文ページは閾値 30 字を満たし ok になる', () => {
+    const jaBody = '本研究では準実験デザインを用いて歯科保健教育の効果を検討した．'.repeat(2);
+    expect(detectTextStatus([{ text: jaBody }]).textStatus).toBe('ok');
+  });
+
+  test('和文でも柱・ページ番号だけのページは実質テキストなしと判定する', () => {
+    const jaHeader = '日健教誌 2025; 33(3)'; // 空白除去後 14 字 < 30
+    const jaBody = '本研究では準実験デザインを用いて歯科保健教育の効果を検討した．';
+    expect(detectTextStatus([{ text: jaBody }, { text: jaHeader }]).textStatus).toBe('partial');
+  });
 });
