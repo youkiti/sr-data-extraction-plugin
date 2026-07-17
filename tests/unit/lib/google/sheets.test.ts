@@ -7,9 +7,12 @@ import {
   getBatchValues,
   getSheetTitles,
   getSheetValues,
+  isSheetsAccessDenied,
+  SheetsAccessDeniedError,
   updateRow,
   writeHeaderRow,
 } from '../../../../src/lib/google/sheets';
+import { GoogleApiError } from '../../../../src/lib/google/types';
 
 function okJson(body: unknown): Response {
   return {
@@ -224,5 +227,58 @@ describe('getBatchValues', () => {
       [],
     ]);
     await expect(getBatchValues('sid', ['Documents!A2:A'], deps({}))).resolves.toEqual([[]]);
+  });
+});
+
+describe('SheetsAccessDeniedError / isSheetsAccessDenied（issue #130）', () => {
+  const make = (status: number, body: string): GoogleApiError =>
+    new GoogleApiError(`Google API failed: HTTP ${status}`, status, 'https://sheets/x', body);
+
+  test('SheetsAccessDeniedError は spreadsheetId / status を保持する', () => {
+    const err = new SheetsAccessDeniedError('SID-1', 404);
+    expect(err.name).toBe('SheetsAccessDeniedError');
+    expect(err.spreadsheetId).toBe('SID-1');
+    expect(err.status).toBe(404);
+    expect(err.message).toContain('権限がまだありません');
+  });
+
+  test('404 は本文に関わらず常にアクセス拒否扱い', () => {
+    expect(isSheetsAccessDenied(make(404, ''))).toBe(true);
+    expect(isSheetsAccessDenied(make(404, 'not json'))).toBe(true);
+  });
+
+  test('403 は error.status = PERMISSION_DENIED のときアクセス拒否扱い', () => {
+    const body = JSON.stringify({ error: { status: 'PERMISSION_DENIED' } });
+    expect(isSheetsAccessDenied(make(403, body))).toBe(true);
+  });
+
+  test('403 は errors[].reason が forbidden / insufficientPermissions でもアクセス拒否扱い', () => {
+    const forbidden = JSON.stringify({ error: { errors: [{ reason: 'forbidden' }] } });
+    const insufficient = JSON.stringify({
+      error: { errors: [{ reason: 'insufficientPermissions' }] },
+    });
+    expect(isSheetsAccessDenied(make(403, forbidden))).toBe(true);
+    expect(isSheetsAccessDenied(make(403, insufficient))).toBe(true);
+  });
+
+  test('403 でも権限系以外（API 無効化・クォータ等）は対象外', () => {
+    const disabled = JSON.stringify({
+      error: { status: 'FAILED_PRECONDITION', errors: [{ reason: 'accessNotConfigured' }] },
+    });
+    expect(isSheetsAccessDenied(make(403, disabled))).toBe(false);
+    // reason が非文字列・errors 欠落でも落ちずに false
+    expect(isSheetsAccessDenied(make(403, JSON.stringify({ error: { errors: [{ reason: 1 }] } })))).toBe(false);
+    expect(isSheetsAccessDenied(make(403, JSON.stringify({ error: {} })))).toBe(false);
+    expect(isSheetsAccessDenied(make(403, JSON.stringify({})))).toBe(false);
+  });
+
+  test('403 で本文が JSON でない場合は保守的に対象外', () => {
+    expect(isSheetsAccessDenied(make(403, 'plain text'))).toBe(false);
+  });
+
+  test('403 / 404 以外のステータス・GoogleApiError 以外は対象外', () => {
+    expect(isSheetsAccessDenied(make(500, ''))).toBe(false);
+    expect(isSheetsAccessDenied(new Error('x'))).toBe(false);
+    expect(isSheetsAccessDenied(null)).toBe(false);
   });
 });

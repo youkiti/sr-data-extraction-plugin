@@ -4,13 +4,20 @@
 // Picker 本体はホスト済み HTTPS ページ（hosted/picker.html を GitHub Pages 等へデプロイ）を
 // 新規タブで開き、次のプロトコルで拡張と通信する（externally_connectable 経由の外部メッセージ）:
 //
-//   1. 拡張がタブを開く（URL フラグメントで extension_id を渡す。トークンは URL に載せない）
-//   2. ページが { kind: 'ready' } を chrome.runtime.sendMessage(extensionId, ...) で送る
-//      → 拡張は sendResponse({ token }) で OAuth トークンを返す（原則 5: URL / ログへ出さない）
-//   3. ユーザーが PDF / フォルダを選択 → ページが { kind: 'picked', files } を送る（キャンセルは 'cancelled'）
+//   1. 拡張がタブを開く（URL フラグメントで extension_id と nonce、モードにより
+//      view=spreadsheet / file_id を渡す。トークンは URL に載せない）
+//   2. ページが { kind: 'ready', nonce } を chrome.runtime.sendMessage(extensionId, ...) で送る
+//      → 拡張は sender.url（ホストページのオリジン）と nonce を検証してから
+//        sendResponse({ token }) で OAuth トークンを返す（原則 5: URL / ログへ出さない）
+//   3. ユーザーが選択 → ページが { kind: 'picked', files, nonce } を送る（キャンセルは 'cancelled'）
 //      files[].mimeType でフォルダ（FOLDER_MIME_TYPE）とファイルを見分ける。フォルダは呼び出し側
 //      （documentsService）が直下 PDF を列挙して取り込む
 //   4. 拡張がタブを閉じ、選択結果を返す。ユーザーがタブを直接閉じた場合はキャンセル扱い
+//
+// セキュリティ（issue #130）: bearer token を外部ホストへ渡す境界のため、
+// (a) 送信元タブ ID、(b) sender.url がホストページ URL と一致、(c) 起動ごとの nonce の
+// 3 点を検証してからトークンを応答する。nonce はページが「受け取ったら echo する」方式
+// （旧デプロイのページは echo しないため、ページを先行デプロイしてから拡張をリリースする）
 import type { GoogleApiDeps } from './types';
 
 /** Drive のフォルダを表す mimeType（Picker のフォルダ選択の判定に使う） */
@@ -38,6 +45,12 @@ export const PICKER_MESSAGE_SOURCE = 'sr-data-extraction-picker';
 export const PICKER_PAGE_URL =
   'https://youkiti.github.io/sr-data-extraction-plugin/picker.html';
 
+/** メッセージ送信元の情報（externally_connectable の sender から抽出） */
+export interface PickerMessageSender {
+  tabId: number | null;
+  url: string | null;
+}
+
 export interface PickerDeps {
   /** OAuth アクセストークン（drive.file スコープ）を取得する */
   getAccessToken: () => Promise<string>;
@@ -48,18 +61,20 @@ export interface PickerDeps {
   createTab: (url: string) => Promise<number>;
   removeTab: (tabId: number) => Promise<void>;
   /**
-   * chrome.runtime.onMessageExternal の購読。listener には送信元タブ ID と
+   * chrome.runtime.onMessageExternal の購読。listener には送信元情報（タブ ID + URL）と
    * 同期応答用の sendResponse を渡す。戻り値は購読解除関数
    */
   addExternalMessageListener: (
     listener: (
       message: unknown,
-      senderTabId: number | null,
+      sender: PickerMessageSender,
       sendResponse: (response: unknown) => void,
     ) => void,
   ) => () => void;
   /** chrome.tabs.onRemoved の購読。戻り値は購読解除関数 */
   addTabRemovedListener: (listener: (tabId: number) => void) => () => void;
+  /** 起動ごとの nonce 生成（テストで固定するため注入可能）。省略時は crypto.randomUUID */
+  createNonce?: () => string;
 }
 
 /** Chrome ランタイムから PickerDeps を組み立てる（app エントリ用） */
@@ -82,7 +97,11 @@ export function createChromePickerDeps(google: GoogleApiDeps): PickerDeps {
         sender: chrome.runtime.MessageSender,
         sendResponse: (response: unknown) => void,
       ): void => {
-        listener(message, sender.tab?.id ?? null, sendResponse);
+        listener(
+          message,
+          { tabId: sender.tab?.id ?? null, url: sender.url ?? null },
+          sendResponse,
+        );
       };
       chrome.runtime.onMessageExternal.addListener(wrapped);
       return () => chrome.runtime.onMessageExternal.removeListener(wrapped);
@@ -91,6 +110,7 @@ export function createChromePickerDeps(google: GoogleApiDeps): PickerDeps {
       chrome.tabs.onRemoved.addListener(listener);
       return () => chrome.tabs.onRemoved.removeListener(listener);
     },
+    createNonce: () => crypto.randomUUID(),
   };
 }
 
@@ -100,10 +120,13 @@ interface PickedFileShape {
   mimeType?: string;
 }
 
+type ParsedPickerMessage =
+  | { kind: 'ready'; nonce: string | null }
+  | { kind: 'cancelled'; nonce: string | null }
+  | { kind: 'picked'; nonce: string | null; files: PickedFileShape[] };
+
 /** ページからのメッセージを堅く検証する（外部オリジン由来のため信用しない） */
-function parsePickerMessage(
-  message: unknown,
-): { kind: 'ready' } | { kind: 'cancelled' } | { kind: 'picked'; files: PickedFileShape[] } | null {
+function parsePickerMessage(message: unknown): ParsedPickerMessage | null {
   if (typeof message !== 'object' || message === null) {
     return null;
   }
@@ -111,11 +134,12 @@ function parsePickerMessage(
   if (record.source !== PICKER_MESSAGE_SOURCE) {
     return null;
   }
+  const nonce = typeof record.nonce === 'string' ? record.nonce : null;
   if (record.kind === 'ready') {
-    return { kind: 'ready' };
+    return { kind: 'ready', nonce };
   }
   if (record.kind === 'cancelled') {
-    return { kind: 'cancelled' };
+    return { kind: 'cancelled', nonce };
   }
   if (record.kind === 'picked' && Array.isArray(record.files)) {
     const files: PickedFileShape[] = [];
@@ -131,19 +155,26 @@ function parsePickerMessage(
       const mimeType = typeof file.mimeType === 'string' ? file.mimeType : undefined;
       files.push({ id: file.id, name: file.name, mimeType });
     }
-    return { kind: 'picked', files };
+    return { kind: 'picked', nonce, files };
   }
   return null;
 }
 
 /**
- * Drive Picker を開き、ユーザーが選択した PDF の一覧を返す。
+ * ホスト済み Picker ページを開き、選択結果を返す共通処理。
+ * extraFragment でページのモード（view=spreadsheet / file_id）を切り替える。
  * キャンセル（Picker のキャンセルボタン / タブを閉じる）は null。
  */
-export async function openPdfPicker(deps: PickerDeps): Promise<PickerSelection[] | null> {
+async function runPicker(
+  deps: PickerDeps,
+  extraFragment: Record<string, string>,
+): Promise<PickerSelection[] | null> {
   // タブを開く前にトークンを確保する（未ログインならここで失敗させ、空タブを残さない）
   const token = await deps.getAccessToken();
-  const url = `${deps.pickerPageUrl}#extension_id=${encodeURIComponent(deps.extensionId)}`;
+  const nonce = (deps.createNonce ?? (() => crypto.randomUUID()))();
+  const params = new URLSearchParams({ extension_id: deps.extensionId, ...extraFragment });
+  params.set('nonce', nonce);
+  const url = `${deps.pickerPageUrl}#${params.toString()}`;
   const tabId = await deps.createTab(url);
 
   return await new Promise<PickerSelection[] | null>((resolve) => {
@@ -167,12 +198,22 @@ export async function openPdfPicker(deps: PickerDeps): Promise<PickerSelection[]
     };
 
     const removeMessageListener = deps.addExternalMessageListener(
-      (message, senderTabId, sendResponse) => {
-        if (senderTabId !== tabId) {
+      (message, sender, sendResponse) => {
+        if (sender.tabId !== tabId) {
+          return;
+        }
+        // bearer token を渡す境界の防御: 開いたホストページ以外（リダイレクト・
+        // 同一タブでの別ページ遷移等）からのメッセージには応答しない
+        if (sender.url === null || !sender.url.startsWith(deps.pickerPageUrl)) {
           return;
         }
         const parsed = parsePickerMessage(message);
         if (parsed === null) {
+          return;
+        }
+        // 起動ごとの nonce を全メッセージで照合する（フラグメントを知る = 拡張が開いた
+        // 正規のページであることの確認）
+        if (parsed.nonce !== nonce) {
           return;
         }
         if (parsed.kind === 'ready') {
@@ -199,4 +240,33 @@ export async function openPdfPicker(deps: PickerDeps): Promise<PickerSelection[]
       }
     });
   });
+}
+
+/**
+ * Drive Picker を開き、ユーザーが選択した PDF の一覧を返す。
+ * キャンセル（Picker のキャンセルボタン / タブを閉じる）は null。
+ */
+export async function openPdfPicker(deps: PickerDeps): Promise<PickerSelection[] | null> {
+  return runPicker(deps, {});
+}
+
+/** スプレッドシート Picker の結果（docs/ui-states.md §1「アクセス許可が必要」） */
+export type SpreadsheetPickResult = 'granted' | 'mismatch' | 'cancelled';
+
+/**
+ * 共有スプレッドシートへの drive.file アクセスを付与するための Picker（issue #130）。
+ * ホストページをスプレッドシートビュー（setFileIds で対象 1 件に限定）で開き、
+ * ユーザーが要求 ID と同じシートを選んだときだけ 'granted' を返す。
+ * 「すべてのスプレッドシートから選ぶ」で別シートを選んだ場合は 'mismatch'
+ * （選択したシート自体には drive.file が付与されるが、開こうとした ID は未許可のまま）。
+ */
+export async function openSpreadsheetPicker(
+  deps: PickerDeps,
+  spreadsheetId: string,
+): Promise<SpreadsheetPickResult> {
+  const selections = await runPicker(deps, { view: 'spreadsheet', file_id: spreadsheetId });
+  if (selections === null || selections.length === 0) {
+    return 'cancelled';
+  }
+  return selections.some((s) => s.sourceFileId === spreadsheetId) ? 'granted' : 'mismatch';
 }

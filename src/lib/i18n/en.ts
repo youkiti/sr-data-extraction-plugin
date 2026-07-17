@@ -889,6 +889,15 @@ export const en: Record<MessageKey, string> = {
   'home.inviteStep4': '4. Judge your assigned items on the "Verification" screen',
   'popup.errTitleRequired': 'A project title is required',
   'popup.errIdRequired': 'A spreadsheet ID is required',
+  // 既存 ID で開く: アクセス許可が必要（issue #130。docs/ui-states.md §1）
+  'popup.accessNeeded':
+    'You do not yet have permission to open this spreadsheet. If it was shared with you, click "Allow with Google" and select the sheet (this message also appears when the sheet is missing, deleted, or the ID is wrong).',
+  'popup.openGrant': 'Allow with Google',
+  'popup.grantWaiting': 'Waiting for permission…',
+  'popup.grantMismatch':
+    'The selected sheet differs from the entered ID. Please select the shared sheet itself.',
+  'popup.grantStillDenied':
+    'Still unable to access after granting. The sheet may have been deleted or the ID may be wrong.',
 
   // Options
   'options.geminiTitle': 'Gemini API key (BYOK)',

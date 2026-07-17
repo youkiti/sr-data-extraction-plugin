@@ -7,6 +7,9 @@ const path = require('path');
 
 const PORT = 4400;
 const ROOT = path.resolve(__dirname, '..', 'dist');
+// hosted/picker.html の E2E（tests/e2e/hosted-picker.spec.ts）用に、/hosted/ 配下だけ
+// リポジトリの hosted/ ディレクトリから配信する（dist には同梱しない = ストア zip に入れない）
+const HOSTED_ROOT = path.resolve(__dirname, '..', 'hosted');
 const MIME = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript',
@@ -21,8 +24,11 @@ const MIME = {
 http
   .createServer((req, res) => {
     const urlPath = decodeURIComponent(new URL(req.url, 'http://localhost').pathname);
-    const filePath = path.join(ROOT, urlPath === '/' ? 'app/app.html' : urlPath);
-    if (!filePath.startsWith(ROOT)) {
+    const fromHosted = urlPath.startsWith('/hosted/');
+    const filePath = fromHosted
+      ? path.join(HOSTED_ROOT, urlPath.slice('/hosted/'.length))
+      : path.join(ROOT, urlPath === '/' ? 'app/app.html' : urlPath);
+    if (!filePath.startsWith(fromHosted ? HOSTED_ROOT : ROOT)) {
       res.writeHead(403);
       res.end('forbidden');
       return;

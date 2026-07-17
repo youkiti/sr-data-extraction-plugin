@@ -879,6 +879,15 @@ export const ja = {
   'home.inviteStep4': '4.「検証」画面で担当ぶんを判定してください',
   'popup.errTitleRequired': 'プロジェクトタイトルは必須です',
   'popup.errIdRequired': 'スプレッドシート ID は必須です',
+  // 既存 ID で開く: アクセス許可が必要（issue #130。docs/ui-states.md §1）
+  'popup.accessNeeded':
+    'このスプレッドシートを開く権限がまだありません。共有されたシートの場合は「Google で許可する」からシートを選択してください（見つからない・削除済み・ID 誤りの場合もこの表示になります）',
+  'popup.openGrant': 'Google で許可する',
+  'popup.grantWaiting': '許可を待っています…',
+  'popup.grantMismatch':
+    '選択されたシートは入力された ID と異なります。共有されたシート本体を選択してください',
+  'popup.grantStillDenied':
+    '許可後もアクセスできませんでした。シートが削除されたか、ID が誤っている可能性があります',
 
   // Options（settingsSections.ts + options/bootstrap.ts + rateLimitPolicy の tier ラベル）
   'options.geminiTitle': 'Gemini API キー（BYOK）',

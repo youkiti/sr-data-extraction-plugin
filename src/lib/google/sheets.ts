@@ -1,8 +1,64 @@
 // sr-query-builder-plugin の lib/google/sheets.ts をコピー流用（architecture.md §7-3）。
-// 本拡張向けに getSheetTitles（タブ一覧の取得。既存プロジェクト検証用）を追加している
-import { googleFetch, type GoogleApiDeps } from './types';
+// 本拡張向けに getSheetTitles（タブ一覧の取得。既存プロジェクト検証用）と
+// SheetsAccessDeniedError（drive.file スコープのアクセス拒否分類。issue #130）を追加している
+import { GoogleApiError, googleFetch, type GoogleApiDeps } from './types';
 
 const API_BASE = 'https://sheets.googleapis.com/v4/spreadsheets';
+
+/**
+ * drive.file スコープでのアクセス拒否（issue #130）。
+ * このアプリが作成していない・Picker で許可されていないシートを開いたときに発生し、
+ * S1 / ロール解決の「Google で許可する」（スプレッドシート Picker）誘導のトリガーになる。
+ * drive.file では「未許可」と「不存在」を区別できない（未許可シートも 404 を返す）ため、
+ * 404 は常に本エラーへ分類する。
+ */
+export class SheetsAccessDeniedError extends Error {
+  readonly spreadsheetId: string;
+  readonly status: number;
+
+  constructor(spreadsheetId: string, status: number) {
+    super(
+      'このスプレッドシートを開く権限がまだありません（共有シートの場合は Picker での許可が必要です）'
+    );
+    this.name = 'SheetsAccessDeniedError';
+    this.spreadsheetId = spreadsheetId;
+    this.status = status;
+  }
+}
+
+/**
+ * Sheets API のエラーがアクセス拒否（Picker 誘導の対象）かを判定する。
+ * - 404: 常に対象（上記のとおり不存在と未許可を区別できない）
+ * - 403: responseBody の reason が権限系のときのみ対象。API 無効化・クォータ等の
+ *   403 は Picker で解決しないため一般エラーのまま伝播させる
+ */
+export function isSheetsAccessDenied(err: unknown): err is GoogleApiError {
+  if (!(err instanceof GoogleApiError)) {
+    return false;
+  }
+  if (err.status === 404) {
+    return true;
+  }
+  if (err.status !== 403) {
+    return false;
+  }
+  try {
+    const body = JSON.parse(err.responseBody) as {
+      error?: { status?: unknown; errors?: Array<{ reason?: unknown }> };
+    };
+    const statusText = typeof body.error?.status === 'string' ? body.error.status : '';
+    const reasons = (body.error?.errors ?? [])
+      .map((e) => (typeof e.reason === 'string' ? e.reason : ''))
+      .filter((r) => r.length > 0);
+    return (
+      statusText === 'PERMISSION_DENIED' ||
+      reasons.some((r) => r === 'forbidden' || r === 'insufficientPermissions')
+    );
+  } catch {
+    // body が JSON でない 403 は判断材料がないため保守的に一般エラー扱い
+    return false;
+  }
+}
 
 /**
  * Sheets API v4 の薄いラッパ群。Sheets API は JSON なので XML 変換は不要。
