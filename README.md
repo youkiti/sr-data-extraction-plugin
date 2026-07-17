@@ -47,13 +47,13 @@ flowchart LR
     end
     LLM["Gemini API（BYOK）"]
 
-    Ext <-->|"OAuth 2.0<br/>spreadsheets / drive.file スコープのみ"| Sheets
+    Ext <-->|"OAuth 2.0<br/>userinfo.email / drive.file スコープのみ"| Sheets
     Ext <-->|PDF コピー・テキスト保存| Drive
     Ext -->|"論文本文 + プロンプト<br/>（PDF の外部送信はここだけ）"| LLM
     LLM -->|抽出 JSON + verbatim quote| Ext
 ```
 
-- OAuth スコープは `spreadsheets` と `drive.file` のみ。`drive.file` により、アクセスできるのは**ユーザーが Picker で明示的に選択したファイルと拡張が作成したファイルだけ**です（Drive 全体を読むスコープは要求しません）
+- OAuth スコープは `userinfo.email`（サインイン中アカウントのメール。監査証跡の記録者表示に使用）と `drive.file` のみ。`drive.file` により、アクセスできるのは**ユーザーが Picker で明示的に選択したファイルと拡張が作成したファイルだけ**です（プロジェクト DB の Sheets 読み書きもこの範囲で行い、Drive 全体や全スプレッドシートを読むスコープは要求しません）
 - 学術研究目的のデータ抽出（テキスト・データマイニング）は著作権法上の権利制限規定（30 条の 4 等）の範囲内であり適法との整理です。PDF が外部へ送信されるのは LLM API への抽出リクエストのみです（詳細: [docs/requirements.md §1.5](docs/requirements.md)）
 
 ## 利用者向けセットアップ
@@ -63,7 +63,7 @@ flowchart LR
 1. **インストール**: [Chrome ウェブストアの掲載ページ](https://chromewebstore.google.com/detail/sr-data-extraction-plugin/ibpbkgffgkmdmflamhadbcfjgfljjgip)を開き、「Chrome に追加」を押します（一般公開中のため、ストア検索・リンクのどちらからでもインストールできます）。
 2. **LLM 接続の設定**: 拡張のオプション画面を開き、ご自身の **Gemini API キー**、OpenRouter API キー、または OpenAI 互換 Chat Completions API の完全 URL + API キーを保存します。OpenAI 互換 API は HTTPS に加え、`http://localhost`、`http://127.0.0.1`、`http://[::1]` のローカル LLM に対応します。loopback 接続では API キーを省略できます。別マシン上の HTTP API は直接接続せず、[Tailscale Serve](https://tailscale.com/docs/features/tailscale-serve) または [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/) などで HTTPS 化してください。接続先の Chrome 権限を確認し、構造化出力の接続テストを実行できます。キーはブラウザ内にのみ保存され、外部の開発者サーバーへは送信されません（BYOK）。
    - Gemini API キーは Google AI Studio（<https://aistudio.google.com/apikey>）で取得できます。
-3. **Google アカウント連携（OAuth 同意）**: ポップアップから「ログイン」を押し、Google の同意画面で **Sheets** と **Drive（選択したファイルのみ）** へのアクセスを許可します。要求されるスコープは `spreadsheets` と `drive.file` の 2 つだけです（Drive 全体は読みません。詳細は[データフロー](#データフローサーバーレス構成)）。
+3. **Google アカウント連携（OAuth 同意）**: ポップアップから「ログイン」を押し、Google のアカウント選択・同意画面で **メールアドレス** と **Drive（選択したファイルのみ）** へのアクセスを許可します。要求されるスコープは `userinfo.email` と `drive.file` の 2 つだけです（Drive 全体は読みません。詳細は[データフロー](#データフローサーバーレス構成)）。
 4. これでプロジェクト作成 → PDF 取り込み → スキーマ作成 → AI 抽出 → 検証 → CSV エクスポートまで一通り使えます。
 
 > プライバシーの詳細は [docs/store/privacy-policy.md](docs/store/privacy-policy.md) を参照してください。
@@ -76,7 +76,7 @@ flowchart LR
 git clone https://github.com/youkiti/sr-data-extraction-plugin
 cd sr-data-extraction-plugin
 npm install
-cp .env.example .env   # OAUTH_CLIENT_ID を設定（dev ビルドだけなら空でも可）
+cp .env.example .env   # WEBAUTH_CLIENT_ID（Web アプリケーション型）を設定（dev ビルドだけなら空でも可・ログインは不可）
 npm run dev            # dist/ に開発ビルドを生成
 ```
 

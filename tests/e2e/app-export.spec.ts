@@ -176,6 +176,12 @@ async function initApp(page: Page, hash: string): Promise<void> {
         },
       },
       runtime: {
+        // 認証は SW ブローカーへの sendMessage 経由（issue #129）
+        sendMessage: async (msg: { type?: string }) => {
+          if (msg?.type === 'auth:get-token') return { ok: true, token: 'e2e-token' };
+          if (msg?.type === 'auth:get-email') return { ok: true, email: 'e2e@example.com' };
+          return { ok: true };
+        },
         id: 'e2e-extension-id',
         getURL: (p: string) => `/${p}`,
         lastError: undefined,
@@ -187,12 +193,6 @@ async function initApp(page: Page, hash: string): Promise<void> {
         onRemoved: { addListener: () => undefined, removeListener: () => undefined },
       },
       identity: {
-        getAuthToken: (_opts: unknown, cb: (token?: string) => void) => {
-          cb('e2e-token');
-        },
-        removeCachedAuthToken: (_details: unknown, cb: () => void) => {
-          cb();
-        },
         getProfileUserInfo: (_opts: unknown, cb: (info: unknown) => void) => {
           cb({ email: 'e2e@example.com', id: '1' });
         },

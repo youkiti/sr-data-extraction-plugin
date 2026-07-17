@@ -10,12 +10,21 @@ export interface ChromeMock {
       set: jest.Mock;
       remove: jest.Mock;
     };
+    /** 認証ブローカーのトークンキャッシュ用（issue #129。local と同じ最小実装） */
+    session: {
+      data: Record<string, unknown>;
+      get: jest.Mock;
+      set: jest.Mock;
+      remove: jest.Mock;
+    };
   };
   runtime: {
     id: string;
     getURL: jest.Mock;
     /** exportService の tool_version 既定実装（chrome.runtime.getManifest().version）用 */
     getManifest: jest.Mock;
+    /** 認証クライアント（lib/google/auth.ts）→ SW ブローカーへの依頼用 */
+    sendMessage: jest.Mock;
     onInstalled: { addListener: jest.Mock };
     onMessageExternal: { addListener: jest.Mock; removeListener: jest.Mock };
     /** chrome.identity 系コールバック API のエラー通知。テストから直接設定する */
@@ -28,8 +37,9 @@ export interface ChromeMock {
     onRemoved: { addListener: jest.Mock; removeListener: jest.Mock };
   };
   identity: {
-    getAuthToken: jest.Mock;
-    removeCachedAuthToken: jest.Mock;
+    /** launchWebAuthFlow（既定は 2 スコープ付きの成功リダイレクトを返す） */
+    launchWebAuthFlow: jest.Mock;
+    getRedirectURL: jest.Mock;
     getProfileUserInfo: jest.Mock;
   };
   permissions: {
@@ -37,25 +47,54 @@ export interface ChromeMock {
   };
 }
 
-export function installChromeMock(): ChromeMock {
+/** 既定の launchWebAuthFlow 成功リダイレクト（要求 2 スコープが揃った応答） */
+export const MOCK_REDIRECT_URL =
+  'https://test-extension-id.chromiumapp.org/#access_token=mock-token&expires_in=3600' +
+  '&scope=https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fuserinfo.email%20https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fdrive.file';
+
+function makeStorageArea(): {
+  data: Record<string, unknown>;
+  get: jest.Mock;
+  set: jest.Mock;
+  remove: jest.Mock;
+} {
   const data: Record<string, unknown> = {};
+  return {
+    data,
+    get: jest.fn(async (key: string) => (key in data ? { [key]: data[key] } : {})),
+    set: jest.fn(async (items: Record<string, unknown>) => {
+      Object.assign(data, items);
+    }),
+    remove: jest.fn(async (key: string) => {
+      delete data[key];
+    }),
+  };
+}
+
+export function installChromeMock(): ChromeMock {
   const mock: ChromeMock = {
     storage: {
-      local: {
-        data,
-        get: jest.fn(async (key: string) => (key in data ? { [key]: data[key] } : {})),
-        set: jest.fn(async (items: Record<string, unknown>) => {
-          Object.assign(data, items);
-        }),
-        remove: jest.fn(async (key: string) => {
-          delete data[key];
-        }),
-      },
+      local: makeStorageArea(),
+      session: makeStorageArea(),
     },
     runtime: {
       id: 'test-extension-id',
       getURL: jest.fn((path: string) => `chrome-extension://test-extension-id/${path}`),
       getManifest: jest.fn(() => ({ version: '0.0.0-test' })),
+      // 既定はログイン済み相当の応答（認証ブローカーの正常応答を模す）。
+      // 失敗させたいテストは mockImplementation / mockResolvedValue で上書きする
+      sendMessage: jest.fn(async (message: { type?: string }) => {
+        if (message?.type === 'auth:get-token' || message?.type === 'auth:force-reauth') {
+          return { ok: true, token: 'mock-token' };
+        }
+        if (message?.type === 'auth:get-email') {
+          return { ok: true, email: 'tester@example.com' };
+        }
+        if (message?.type === 'auth:clear') {
+          return { ok: true };
+        }
+        return undefined;
+      }),
       onInstalled: { addListener: jest.fn() },
       onMessageExternal: { addListener: jest.fn(), removeListener: jest.fn() },
       lastError: undefined,
@@ -67,16 +106,8 @@ export function installChromeMock(): ChromeMock {
       onRemoved: { addListener: jest.fn(), removeListener: jest.fn() },
     },
     identity: {
-      // 既定はログイン済み（トークン取得成功）。失敗させたいテストは
-      // mockImplementation で cb(undefined) + runtime.lastError を設定する
-      getAuthToken: jest.fn(
-        (_options: { interactive?: boolean }, cb: (token?: string) => void) => {
-          cb('mock-token');
-        },
-      ),
-      removeCachedAuthToken: jest.fn((_details: { token: string }, cb: () => void) => {
-        cb();
-      }),
+      launchWebAuthFlow: jest.fn(async () => MOCK_REDIRECT_URL),
+      getRedirectURL: jest.fn(() => 'https://test-extension-id.chromiumapp.org/'),
       getProfileUserInfo: jest.fn(
         (
           _options: { accountStatus?: string },

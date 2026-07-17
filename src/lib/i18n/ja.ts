@@ -75,6 +75,8 @@ export const ja = {
   'popup.statusCreateOrOpen':
     '新しいプロジェクトを作成するか、スプレッドシート ID から開いてください。',
   'popup.emailUnknown': '(不明)',
+  'popup.accountMismatch':
+    'Chrome プロファイル（{profileEmail}）とは別のアカウントでログインしています。抽出・判定はこのログイン中アカウントで記録されます。',
 
   // Home S2（homeView.ts）
   'home.title': 'プロジェクト概要',

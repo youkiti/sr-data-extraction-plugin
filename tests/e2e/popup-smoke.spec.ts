@@ -26,11 +26,20 @@ function chromeStub(options: { authed: boolean; seedRecent: boolean }): string {
             remove: async (key) => { delete data[key]; },
           },
         },
-        runtime: { getURL: (p) => '/' + p, lastError: undefined },
+        runtime: {
+          getURL: (p) => '/' + p,
+          lastError: undefined,
+          // 認証は SW ブローカーへの sendMessage 経由（issue #129）。未ログインは ok:false
+          sendMessage: async (msg) => {
+            if (msg && msg.type === 'auth:get-token') {
+              return ${options.authed ? "{ ok: true, token: 'e2e-token' }" : "{ ok: false, error: 'interaction_required' }"};
+            }
+            if (msg && msg.type === 'auth:get-email') { return { ok: true, email: 'e2e@example.com' }; }
+            return { ok: true };
+          },
+        },
         tabs: { create: async () => ({}) },
         identity: {
-          getAuthToken: (_opts, cb) => { cb(${options.authed ? "'e2e-token'" : 'undefined'}); },
-          removeCachedAuthToken: (_details, cb) => { cb(); },
           getProfileUserInfo: (_opts, cb) => { cb({ email: 'e2e@example.com', id: '1' }); },
         },
       };

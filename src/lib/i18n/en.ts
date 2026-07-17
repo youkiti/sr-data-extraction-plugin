@@ -73,6 +73,8 @@ export const en: Record<MessageKey, string> = {
   'popup.statusPickRecent': 'Choose a recent project or create a new one.',
   'popup.statusCreateOrOpen': 'Create a new project or open one from a spreadsheet ID.',
   'popup.emailUnknown': '(unknown)',
+  'popup.accountMismatch':
+    'Signed in with an account different from your Chrome profile ({profileEmail}). Extractions and decisions are recorded under the signed-in account.',
 
   // Home S2
   'home.title': 'Project overview',

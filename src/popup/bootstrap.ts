@@ -13,9 +13,14 @@ import {
   loadRecentProjects,
   setCurrentProject,
 } from '../features/project/projectStore';
-import { createChromeAuthDeps } from '../lib/google/auth';
+import {
+  createChromeAuthClientDeps,
+  getAccessToken,
+  signOut as brokerSignOut,
+} from '../lib/google/auth';
 import {
   createChromeProfileDeps,
+  getChromeProfileEmail,
   getCurrentUserEmail,
   type ProfileDeps,
 } from '../lib/google/identity';
@@ -30,22 +35,27 @@ export interface PopupDeps {
   openOptions: () => void;
   /** Sheets / Drive API 呼び出し用の依存 */
   google: GoogleApiDeps;
-  /** メールアドレス取得用の依存 */
+  /** メールアドレス取得用の依存（OAuth で認可したアカウントのメール） */
   profile: ProfileDeps;
-  /** 既にログイン済みかを UI を出さずに確認（interactive=false 相当） */
+  /**
+   * Chrome プロファイルのメール。OAuth アカウントとの不一致表示にのみ使う
+   * （取れなければ null。比較できないだけで機能には影響しない）
+   */
+  chromeProfileEmail: () => Promise<string | null>;
+  /** 既にログイン済みかを UI を出さずに確認（サイレント取得のみ） */
   isAuthenticated: () => Promise<boolean>;
-  /** Google OAuth 同意 UI を明示的に開く。true=成功 / false=失敗 */
+  /** Google OAuth 認可ウィンドウを明示的に開く。true=成功 / false=失敗 */
   signIn: () => Promise<boolean>;
   /**
-   * ログアウト。キャッシュされた OAuth トークンを削除する。
-   * Google 側のトークン失効は行わない（Chrome の identity キャッシュからの除去のみ）。
+   * ログアウト。認証ブローカーがトークンを revoke（ベストエフォート）し、
+   * セッションのトークンと保存済みメールを破棄する。
    * プロジェクト選択状態のクリアは呼び出し側（bindLogoutButton）が行う。
    */
   signOut: () => Promise<void>;
 }
 
 export function createChromePopupDeps(): PopupDeps {
-  const auth = createChromeAuthDeps();
+  const auth = createChromeAuthClientDeps();
   return {
     openAppTab: () => {
       // S1 は新規タブのフルページとして開かれるため、選択後は同一タブのまま
@@ -58,10 +68,11 @@ export function createChromePopupDeps(): PopupDeps {
       void chrome.tabs.update({ url: chrome.runtime.getURL('app/app.html#/options') });
     },
     google: createChromeGoogleApiDeps(auth),
-    profile: createChromeProfileDeps(),
+    profile: createChromeProfileDeps(auth),
+    chromeProfileEmail: () => getChromeProfileEmail(),
     isAuthenticated: async () => {
       try {
-        await auth.getAuthToken({ interactive: false });
+        await getAccessToken(auth, false);
         return true;
       } catch {
         return false;
@@ -69,20 +80,13 @@ export function createChromePopupDeps(): PopupDeps {
     },
     signIn: async () => {
       try {
-        await auth.getAuthToken({ interactive: true });
+        await getAccessToken(auth, true);
         return true;
       } catch {
         return false;
       }
     },
-    signOut: async () => {
-      try {
-        const token = await auth.getAuthToken({ interactive: false });
-        await auth.removeCachedAuthToken(token);
-      } catch {
-        // トークンが既に無ければ何もしない
-      }
-    },
+    signOut: () => brokerSignOut(auth),
   };
 }
 
@@ -94,6 +98,7 @@ interface PopupElements {
   loginButton: HTMLButtonElement;
   loginError: HTMLElement;
   email: HTMLElement;
+  accountNote: HTMLElement;
   logoutButton: HTMLButtonElement;
   recentSection: HTMLElement;
   recentList: HTMLElement;
@@ -115,6 +120,7 @@ function collectElements(doc: Document): PopupElements | null {
     loginButton: doc.getElementById('login-button'),
     loginError: doc.getElementById('login-error'),
     email: doc.getElementById('popup-email'),
+    accountNote: doc.getElementById('popup-account-note'),
     logoutButton: doc.getElementById('logout-button'),
     recentSection: doc.getElementById('popup-recent-section'),
     recentList: doc.getElementById('popup-recent'),
@@ -178,11 +184,28 @@ async function refresh(doc: Document, els: PopupElements, deps: PopupDeps): Prom
 }
 
 async function renderAccount(els: PopupElements, deps: PopupDeps): Promise<void> {
+  els.accountNote.hidden = true;
+  els.accountNote.textContent = '';
+  let email: string | null = null;
   try {
-    const email = await getCurrentUserEmail(deps.profile);
+    email = await getCurrentUserEmail(deps.profile);
     els.email.textContent = email ?? t('popup.emailUnknown');
   } catch {
     els.email.textContent = t('popup.emailUnknown');
+  }
+  if (email === null) {
+    return;
+  }
+  // launchWebAuthFlow では Chrome プロファイル以外のアカウントも選べるため、
+  // 不一致時は明示表示する（annotator / created_by はこの OAuth アカウントで記録される）
+  try {
+    const profileEmail = await deps.chromeProfileEmail();
+    if (profileEmail !== null && profileEmail !== email) {
+      els.accountNote.hidden = false;
+      els.accountNote.textContent = t('popup.accountMismatch', { profileEmail });
+    }
+  } catch {
+    // 不一致表示は補助情報。取得失敗時は何も出さない
   }
 }
 
