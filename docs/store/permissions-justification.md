@@ -1,6 +1,6 @@
 # 権限の使用理由説明（Chrome ウェブストア審査フォーム用）
 
-- **最終更新**: 2026-07-06
+- **最終更新**: 2026-07-18（issue #129: スコープを `userinfo.email` + `drive.file` へ変更・`launchWebAuthFlow` 移行を反映）
 - **用途**: Chrome ウェブストアのアイテム登録時、各権限に求められる「使用理由（justification）」欄へそのまま貼り付けるための原稿。日本語と英語を併記します。
 - **正典**: 権限の一覧は [src/manifest.json](../../src/manifest.json)、データフローは [privacy-policy.md](privacy-policy.md) を参照。
 
@@ -17,8 +17,8 @@
 
 ### `identity` / `identity.email`
 
-- **JA**: Google OAuth 2.0（`chrome.identity`）でユーザーの Google アカウントにサインインし、プロジェクト DB である Google Sheets とファイル実体の Google Drive にアクセスするために使用します。`identity.email` はログイン中アカウントのメールアドレスを画面に表示し、複数アカウント誤用を防ぐために使用します。取得した情報を開発者サーバーへ送信することはありません（開発者サーバーは存在しません）。
-- **EN**: Used to sign in to the user's Google account via Google OAuth 2.0 (`chrome.identity`) so the extension can access the user's Google Sheets (used as the project database) and Google Drive (used to store files). `identity.email` is used only to display the signed-in account's email address in the UI to prevent using the wrong account. No information is sent to any developer-operated server (there is none).
+- **JA**: Google OAuth 2.0（`chrome.identity.launchWebAuthFlow`）でユーザーの Google アカウントにサインインし、プロジェクト DB である Google Sheets とファイル実体の Google Drive にアクセスするために使用します。`identity.email` は、初回サインイン時に Chrome プロファイルのアカウントを事前選択（login_hint）することと、サインイン中アカウントが Chrome プロファイルと異なる場合に注意書きを表示して複数アカウント誤用を防ぐことにのみ使用します。取得した情報を開発者サーバーへ送信することはありません（開発者サーバーは存在しません）。
+- **EN**: Used to sign in to the user's Google account via Google OAuth 2.0 (`chrome.identity.launchWebAuthFlow`) so the extension can access the user's Google Sheets (used as the project database) and Google Drive (used to store files). `identity.email` is used only to pre-select the Chrome profile account at first sign-in (login_hint) and to show a notice when the signed-in account differs from the Chrome profile, preventing wrong-account use. No information is sent to any developer-operated server (there is none).
 
 ### `storage`
 
@@ -32,10 +32,10 @@
 
 ## host_permissions
 
-### `https://sheets.googleapis.com/*` / `https://www.googleapis.com/*`
+### `https://sheets.googleapis.com/*` / `https://www.googleapis.com/*` / `https://oauth2.googleapis.com/*`
 
-- **JA**: プロジェクト DB である Google Sheets の読み書き、および Google Drive へのファイル（PDF コピー・抽出テキスト・ログ）の保存・取得に使用します。アクセス範囲は OAuth スコープ `spreadsheets` と `drive.file`（ユーザーが選択したファイル + 拡張が作成したファイルのみ）に限定されます。
-- **EN**: Used to read/write the user's Google Sheets (project database) and to store/retrieve files (PDF copies, extracted text, logs) in Google Drive. Access is limited by the OAuth scopes `spreadsheets` and `drive.file` (only files the user selects and files the extension creates).
+- **JA**: プロジェクト DB である Google Sheets の読み書き、Google Drive へのファイル（PDF コピー・抽出テキスト・ログ）の保存・取得、およびサインイン中アカウントのメール取得（userinfo）に使用します。アクセス範囲は OAuth スコープ `userinfo.email` と `drive.file`（ユーザーが選択したファイル + 拡張が作成したファイルのみ。Sheets へのアクセスもこの範囲に限定）です。`oauth2.googleapis.com` はログアウト時のトークン失効（revoke）にのみ使用します。
+- **EN**: Used to read/write the user's Google Sheets (project database), to store/retrieve files (PDF copies, extracted text, logs) in Google Drive, and to fetch the signed-in account's email (userinfo). Access is limited by the OAuth scopes `userinfo.email` and `drive.file` (only files the user selects and files the extension creates; Sheets access is also limited to this set). `oauth2.googleapis.com` is used only to revoke the token at sign-out.
 
 ### `https://generativelanguage.googleapis.com/*`
 
@@ -62,7 +62,7 @@
 
 | スコープ | 用途 |
 |---|---|
-| `.../auth/spreadsheets` | プロジェクト DB としての Google Sheets 読み書き |
-| `.../auth/drive.file` | ユーザーが選択したファイル + 拡張が作成したファイルのみへのアクセス（Drive 全体は読まない） |
+| `.../auth/userinfo.email` | サインイン中アカウントのメール取得（監査証跡の記録者表示・アカウント指定のみ） |
+| `.../auth/drive.file` | ユーザーが選択したファイル + 拡張が作成したファイルのみへのアクセス（プロジェクト DB の Sheets 読み書きを含む。Drive 全体は読まない） |
 
 いずれのスコープで取得したデータも、機能提供以外の目的（広告・分析・第三者提供・モデル学習）には使用しません。Google API Services User Data Policy（Limited Use を含む）を遵守します。

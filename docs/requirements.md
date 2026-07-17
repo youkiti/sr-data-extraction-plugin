@@ -87,7 +87,7 @@ tiab-review-plugin / sr-query-builder-plugin の構成に準拠。
 | UI | **メインビュー**（`chrome.tabs.create` で開く拡張オリジンのフルページ `app.html`。sr-query-builder と同方式）+ Popup（プロジェクト選択）+ Options |
 | 言語 | TypeScript / HTML / CSS |
 | ビルド | webpack |
-| 認証 | Google OAuth 2.0（`chrome.identity.getAuthToken`） |
+| 認証 | Google OAuth 2.0（`chrome.identity.launchWebAuthFlow` + Web アプリケーション型クライアント。認証は service worker の認証ブローカーに集約し、各ページはメッセージで取得【issue #129。2026-07-18】） |
 | ストレージ | Google Sheets（主 DB）/ Google Drive（PDF 原本・抽出テキスト・LLM ログ実体）/ `chrome.storage`（API キー、ローカルキャッシュ、オフラインキュー） |
 | PDF 描画 | `pdfjs-dist`（PDF.js）: canvas 描画 + テキスト層 + ハイライトオーバーレイ |
 | docx パース | `mammoth.js`（プロトコル入力用） |
@@ -98,21 +98,25 @@ tiab-review-plugin / sr-query-builder-plugin の構成に準拠。
 ### 2.1 OAuth スコープ
 
 ```
-https://www.googleapis.com/auth/spreadsheets   # Sheets 読み書き
-https://www.googleapis.com/auth/drive.file     # Drive Picker で選択したファイル + 拡張が作成したファイルのみ
+https://www.googleapis.com/auth/userinfo.email  # サインイン中アカウントのメール（annotator / created_by の記録に使用）
+https://www.googleapis.com/auth/drive.file      # Drive Picker で選択したファイル + 拡張が作成したファイルのみ（Sheets API もこのスコープで呼ぶ）
 ```
 
 - `drive.file` スコープにより、**ユーザーが Picker で明示的に選択した PDF（またはフォルダ）** と拡張が作成したファイルにのみアクセス可能。フォルダを選択した場合はその直下 PDF の列挙・取り込みまでを許可（配下ファイルへは選択フォルダ経由でアクセス可）。Drive 全体を読むスコープは要求しない（プライバシー姿勢を README に明記）。
-- メールアドレスは `chrome.identity.getProfileUserInfo()` で取得（sr-query-builder §2.1 と同方針）。
+- **`spreadsheets` スコープは要求しない**【issue #128〜#132。2026-07-18】。センシティブスコープのため OAuth 未検証アプリは同意 100 人で打ち止めになる（tiab-review が実際に到達）。Sheets API は `drive.file` で「拡張が作成したシート + Picker で許可されたシート」に対して呼べるため機能損失はなく、他人が作成した共有シートを開くときだけ初回 1 回の Picker 許可が必要（issue #130 のフォールバック導線）。
+- メールアドレスは認可アカウントの userinfo（`https://www.googleapis.com/oauth2/v3/userinfo`）から取得し、`storage.local` に保持して `login_hint` にも使う。旧 `getProfileUserInfo()`（Chrome プロファイル固定）は「初回認可の login_hint シード」と「プロファイルと別アカウントでログイン中」表示の比較にのみ残す。
+- **implicit flow（`response_type=token`）採用の記録**: Google は新規のブラウザ実装にコードフローを推奨するが、拡張は client secret を保持できず、参照実装 tiab-review で運用実績がある。トークンは URL フラグメントからのみ取得し、ログ・永続ストレージへは出さない（`storage.session` のみ。作業原則 5）。認可応答の `scope` を検証し、部分同意（2 スコープ不揃い）はサインイン失敗として扱う。Google が implicit を廃止する場合は GIS / PKCE へ移行する。
 
 ### 2.2 Manifest V3 要件
 
-- `permissions`: `identity`, `identity.email`, `storage`, `tabs`
+- `permissions`: `identity`（launchWebAuthFlow 用）, `identity.email`（初回 login_hint シード + 別アカウント表示の比較用。§2.1）, `storage`, `tabs`
 - `host_permissions`:
   - `https://sheets.googleapis.com/*`
   - `https://www.googleapis.com/*`
+  - `https://oauth2.googleapis.com/*`（ログアウト時のトークン revoke）
   - `https://generativelanguage.googleapis.com/*`（Gemini）
   - `https://openrouter.ai/*`（OpenRouter）
+- `oauth2` ブロック（manifest）は持たない。クライアント ID（Web アプリケーション型、リダイレクト URI = `https://<拡張ID>.chromiumapp.org/`）はビルド時に DefinePlugin の `__WEBAUTH_CLIENT_ID__` として注入する（.env の `WEBAUTH_CLIENT_ID` / dev は `LOCAL_WEBAUTH_CLIENT_ID`。hosted/picker.html の `PICKER_APP_ID` と同一 GCP プロジェクトで発行すること）
 - `optional_host_permissions`: `https://*/*`、`http://localhost/*`、`http://127.0.0.1/*`、`http://[::1]/*`。OpenAI 互換 API の設定保存時に、入力 URL の scheme + hostname pattern だけを `chrome.permissions.request` で利用者へ提示・要求する。権限 pattern はポートを含めず、実際の API リクエスト URLでは入力されたポートとパスを維持する
 - `action.default_popup`: `popup.html`
 - PDF.js の worker は拡張パッケージに同梱（CDN 参照不可、CSP 準拠）

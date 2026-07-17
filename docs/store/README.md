@@ -76,9 +76,11 @@ node tools/selenium/manualCheck.mjs --profile .selenium-profile-clean login proj
 
 ## manifest レビュー結果
 
-[src/manifest.json](../../src/manifest.json) を requirements.md §6 と照合した結果（タスク E-3）。
+[src/manifest.json](../../src/manifest.json) を requirements.md §6 と照合した結果（タスク E-3。v0.1.0 提出時点の記録）。
 
-- **OAuth スコープ**: `spreadsheets` + `drive.file` のみ。requirements.md §6 と一致。✅
+> **2026-07-18 更新（issue #129）**: OAuth スコープを `userinfo.email` + `drive.file` に変更（`spreadsheets` 廃止）。認証は `launchWebAuthFlow` + Web アプリケーション型クライアントとなり、manifest の `oauth2` ブロックは削除。`host_permissions` に `https://oauth2.googleapis.com/*`（revoke 用）を追加。次回ストア提出時は下記レビューではなく requirements.md §2.1〜2.2 と permissions-justification.md の最新版を正とする。
+
+- **OAuth スコープ**: `spreadsheets` + `drive.file` のみ。requirements.md §6 と一致。✅（→ 2026-07-18 変更。上記注記参照）
 - **permissions**: `identity` / `identity.email` / `storage` / `tabs` — いずれも [permissions-justification.md](permissions-justification.md) で説明済み。余計な権限なし。✅
 - **host_permissions**: Sheets / Google APIs / Gemini / OpenRouter の 4 つ。すべて BYOK の API 通信 or Google API で正当。OpenAI 互換 API は `optional_host_permissions` とし、HTTPS または限定した loopback HTTP の scheme + hostname pattern だけを実行時に要求する。✅
 - **`oauth2.client_id`（提出前に必須の確認）**: `src/manifest.json` は `__OAUTH_CLIENT_ID__` プレースホルダを持ち、webpack が `.env` の `OAUTH_CLIENT_ID` で置換する（[webpack.config.js](../../webpack.config.js) L19・L26）。**`.env` 未設定でビルドすると `client_id` が空文字になり OAuth が機能しない**。提出用パッケージのビルド前に、GCP で発行した Chrome アプリ種別の OAuth クライアント ID を `.env` の `OAUTH_CLIENT_ID` に設定すること（CI / この環境のビルドは空のまま = スモーク用途。⚠️ 要ユーザー作業）。

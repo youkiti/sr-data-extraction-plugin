@@ -28,8 +28,8 @@
 
 本拡張が要求する OAuth スコープは以下の 2 つ **のみ** です。
 
-- `https://www.googleapis.com/auth/spreadsheets` — プロジェクト DB として利用する Google Sheets の読み書き
-- `https://www.googleapis.com/auth/drive.file` — **利用者が Picker で明示的に選択したファイルと、本拡張が作成したファイルだけ** にアクセスします。Drive 全体を読むスコープ（`drive.readonly` 等）は要求しません
+- `https://www.googleapis.com/auth/userinfo.email` — サインインしたアカウントのメールアドレスの取得。「誰が抽出・判定したか」の記録（監査証跡）と、次回サインイン時のアカウント指定にのみ使用します
+- `https://www.googleapis.com/auth/drive.file` — **利用者が Picker で明示的に選択したファイルと、本拡張が作成したファイルだけ** にアクセスします（プロジェクト DB の Google Sheets の読み書きもこの範囲で行います）。Drive 全体を読むスコープ（`drive.readonly` 等）や、全スプレッドシートへアクセスする `spreadsheets` スコープは要求しません
 
 本拡張は、Google API から取得したユーザーデータを、上記の機能提供以外の目的（広告・分析・第三者への提供・機械学習モデルの学習等）に **一切使用しません**。Google API Services User Data Policy（Limited Use 要件を含む）を遵守します。
 
