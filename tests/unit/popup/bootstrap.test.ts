@@ -24,6 +24,7 @@ const POPUP_TEMPLATE = `
     </section>
     <div id="popup-projects" hidden>
       <span id="popup-email">—</span>
+      <p id="popup-account-note" hidden></p>
       <button id="logout-button" type="button">ログアウト</button>
       <section id="popup-recent-section" hidden>
         <ul id="popup-recent"></ul>
@@ -93,6 +94,7 @@ function makeDeps(over: Partial<PopupDeps> = {}): PopupDeps {
     profile: {
       getProfileUserInfo: async () => ({ email: 'me@example.com', id: 'uid' }),
     },
+    chromeProfileEmail: jest.fn(async () => 'me@example.com'),
     isAuthenticated: jest.fn(async () => true),
     signIn: jest.fn(async () => true),
     signOut: jest.fn(async () => undefined),
@@ -187,6 +189,52 @@ describe('bootstrapPopup', () => {
     });
     await bootstrapPopup(document, deps);
     expect(el('popup-email').textContent).toBe('(不明)');
+  });
+
+  describe('アカウント不一致表示（issue #129: launchWebAuthFlow は別アカウントを選べる）', () => {
+    test('OAuth アカウントとプロファイルが一致すれば注意書きは出さない', async () => {
+      await bootstrapPopup(document, makeDeps());
+      expect(el('popup-account-note').hidden).toBe(true);
+      expect(el('popup-account-note').textContent).toBe('');
+    });
+
+    test('不一致ならプロファイルのメール入りの注意書きを表示する', async () => {
+      const deps = makeDeps({
+        chromeProfileEmail: jest.fn(async () => 'profile@example.com'),
+      });
+      await bootstrapPopup(document, deps);
+      expect(el('popup-account-note').hidden).toBe(false);
+      expect(el('popup-account-note').textContent).toContain('profile@example.com');
+      expect(el('popup-account-note').textContent).toContain('別のアカウント');
+    });
+
+    test('プロファイルのメールが取れない（null）場合は表示しない', async () => {
+      const deps = makeDeps({ chromeProfileEmail: jest.fn(async () => null) });
+      await bootstrapPopup(document, deps);
+      expect(el('popup-account-note').hidden).toBe(true);
+    });
+
+    test('プロファイル取得が throw しても表示せず落ちない', async () => {
+      const deps = makeDeps({
+        chromeProfileEmail: jest.fn(async () => {
+          throw new Error('identity unavailable');
+        }),
+      });
+      await bootstrapPopup(document, deps);
+      expect(el('popup-account-note').hidden).toBe(true);
+      expect(el('popup-email').textContent).toBe('me@example.com');
+    });
+
+    test('OAuth メールが取れない場合は比較自体を行わない', async () => {
+      const chromeProfileEmail = jest.fn(async () => 'profile@example.com');
+      const deps = makeDeps({
+        profile: { getProfileUserInfo: async () => ({ email: '', id: '' }) },
+        chromeProfileEmail,
+      });
+      await bootstrapPopup(document, deps);
+      expect(chromeProfileEmail).not.toHaveBeenCalled();
+      expect(el('popup-account-note').hidden).toBe(true);
+    });
   });
 
   test('状態 B-N: 最近のプロジェクトを新しい順に列挙し、クリックで選択 + メインビューを開く', async () => {
@@ -371,21 +419,17 @@ describe('createChromePopupDeps', () => {
     expect(chromeMock.tabs.create).not.toHaveBeenCalled();
   });
 
-  test('isAuthenticated: トークン取得成功で true（interactive=false）', async () => {
+  test('isAuthenticated: サイレント取得成功で true（interactive=false でブローカーへ依頼）', async () => {
     const deps = createChromePopupDeps();
     await expect(deps.isAuthenticated()).resolves.toBe(true);
-    expect(chromeMock.identity.getAuthToken).toHaveBeenCalledWith(
-      { interactive: false },
-      expect.any(Function),
-    );
+    expect(chromeMock.runtime.sendMessage).toHaveBeenCalledWith({
+      type: 'auth:get-token',
+      interactive: false,
+    });
   });
 
   test('isAuthenticated: 失敗で false', async () => {
-    chromeMock.identity.getAuthToken.mockImplementation(
-      (_opts: unknown, cb: (token?: string) => void) => {
-        cb(undefined);
-      },
-    );
+    chromeMock.runtime.sendMessage.mockResolvedValue({ ok: false, error: 'interaction_required' });
     const deps = createChromePopupDeps();
     await expect(deps.isAuthenticated()).resolves.toBe(false);
   });
@@ -393,41 +437,34 @@ describe('createChromePopupDeps', () => {
   test('signIn: 成功で true（interactive=true）/ 失敗で false', async () => {
     const deps = createChromePopupDeps();
     await expect(deps.signIn()).resolves.toBe(true);
-    expect(chromeMock.identity.getAuthToken).toHaveBeenCalledWith(
-      { interactive: true },
-      expect.any(Function),
-    );
-    chromeMock.identity.getAuthToken.mockImplementation(
-      (_opts: unknown, cb: (token?: string) => void) => {
-        cb(undefined);
-      },
-    );
+    expect(chromeMock.runtime.sendMessage).toHaveBeenCalledWith({
+      type: 'auth:get-token',
+      interactive: true,
+    });
+    chromeMock.runtime.sendMessage.mockResolvedValue({ ok: false, error: 'auth_flow_cancelled' });
     await expect(deps.signIn()).resolves.toBe(false);
   });
 
-  test('signOut: 取得済みトークンをキャッシュから除去する', async () => {
-    const deps = createChromePopupDeps();
-    await deps.signOut();
-    expect(chromeMock.identity.removeCachedAuthToken).toHaveBeenCalledWith(
-      { token: 'mock-token' },
-      expect.any(Function),
-    );
-  });
-
-  test('signOut: トークンが無ければ何もしない', async () => {
-    chromeMock.identity.getAuthToken.mockImplementation(
-      (_opts: unknown, cb: (token?: string) => void) => {
-        cb(undefined);
-      },
-    );
+  test('signOut: ブローカーへ auth:clear を依頼する', async () => {
     const deps = createChromePopupDeps();
     await expect(deps.signOut()).resolves.toBeUndefined();
-    expect(chromeMock.identity.removeCachedAuthToken).not.toHaveBeenCalled();
+    expect(chromeMock.runtime.sendMessage).toHaveBeenCalledWith({ type: 'auth:clear' });
   });
 
   test('google.getAccessToken は interactive=true でトークンを返す', async () => {
     const deps = createChromePopupDeps();
     await expect(deps.google.getAccessToken()).resolves.toBe('mock-token');
+  });
+
+  test('profile は OAuth アカウントのメール、chromeProfileEmail はプロファイルのメールを返す', async () => {
+    const deps = createChromePopupDeps();
+    await expect(deps.profile.getProfileUserInfo()).resolves.toEqual({
+      email: 'tester@example.com',
+      id: '',
+    });
+    await expect(deps.chromeProfileEmail()).resolves.toBe('tester@example.com');
+    expect(chromeMock.runtime.sendMessage).toHaveBeenCalledWith({ type: 'auth:get-email' });
+    expect(chromeMock.identity.getProfileUserInfo).toHaveBeenCalled();
   });
 });
 
@@ -443,6 +480,7 @@ describe('bootstrapPopup（表示言語 en。issue #93）', () => {
       <div id="popup-projects" hidden>
         <span data-i18n="popup.loggedInAs">ログイン中:</span>
         <span id="popup-email">—</span>
+        <p id="popup-account-note" hidden></p>
         <button id="logout-button" type="button" data-i18n="popup.logout">ログアウト</button>
         <section id="popup-recent-section" hidden>
           <ul id="popup-recent"></ul>

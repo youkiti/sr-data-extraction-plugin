@@ -1,7 +1,8 @@
 // webpack ビルド設定（docs/architecture.md §3）
 // - 4 エントリ（service-worker / popup / app / options）を dist/ へビルド
 // - HTML / CSS / manifest / _locales / icons は copy-webpack-plugin で転写
-// - manifest.json の __OAUTH_CLIENT_ID__ を .env の値で置換。dev ビルドは拡張名に (dev) を付与
+// - OAuth クライアント ID（Web アプリケーション型。issue #129）は DefinePlugin の
+//   __WEBAUTH_CLIENT_ID__ としてコードへ注入する。dev ビルドは拡張名に (dev) を付与
 require('dotenv').config();
 const path = require('path');
 const webpack = require('webpack');
@@ -15,15 +16,22 @@ const buildDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2,
 
 module.exports = (_env, argv) => {
   const isProduction = argv && argv.mode === 'production';
-  const clientId =
-    (!isProduction && process.env.LOCAL_OAUTH_CLIENT_ID) || process.env.OAUTH_CLIENT_ID || '';
+  // launchWebAuthFlow 用の Web アプリケーション型クライアント ID。
+  // dev / 本番とも同一 GCP プロジェクト（hosted/picker.html の PICKER_APP_ID）で
+  // 発行しないと Picker の drive.file 付与が拡張のトークンへ引き継がれない
+  const webAuthClientId =
+    (!isProduction && process.env.LOCAL_WEBAUTH_CLIENT_ID) || process.env.WEBAUTH_CLIENT_ID || '';
+  if (isProduction && webAuthClientId === '') {
+    // CI は dev ビルドしか走らないため、本番だけの設定漏れはここで止める（tiab の教訓）
+    throw new Error('WEBAUTH_CLIENT_ID が未設定です（.env を確認してください）');
+  }
 
   const transformManifest = (content) => {
     const manifest = JSON.parse(content.toString());
     if (!isProduction) {
       manifest.name = `${manifest.name} (dev)`;
     }
-    return JSON.stringify(manifest, null, 2).replace('__OAUTH_CLIENT_ID__', clientId);
+    return JSON.stringify(manifest, null, 2);
   };
 
   return {
@@ -60,6 +68,7 @@ module.exports = (_env, argv) => {
     plugins: [
       new webpack.DefinePlugin({
         __BUILD_DATE__: JSON.stringify(buildDate),
+        __WEBAUTH_CLIENT_ID__: JSON.stringify(webAuthClientId),
       }),
       new CopyWebpackPlugin({
         patterns: [
