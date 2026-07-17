@@ -26,15 +26,18 @@ async function installChromeStub(page: Page, email: string): Promise<void> {
           remove: async () => undefined,
         },
       },
-      runtime: { id: 'e2e-extension-id', getURL: (p: string) => `/${p}` },
+      runtime: {
+        id: 'e2e-extension-id',
+        getURL: (p: string) => `/${p}`,
+        // 認証は SW ブローカーへの sendMessage 経由（issue #129）
+        sendMessage: async (msg: { type?: string }) => {
+          if (msg?.type === 'auth:get-token') return { ok: true, token: 'e2e-token' };
+          if (msg?.type === 'auth:get-email') return { ok: true, email: userEmail };
+          return { ok: true };
+        },
+      },
       tabs: { create: async () => ({ id: 1 }) },
       identity: {
-        getAuthToken: (_opts: unknown, cb: (token?: string) => void) => {
-          cb('e2e-token');
-        },
-        removeCachedAuthToken: (_details: unknown, cb: () => void) => {
-          cb();
-        },
         getProfileUserInfo: (_opts: unknown, cb: (info: unknown) => void) => {
           cb({ email: userEmail, id: '1' });
         },
