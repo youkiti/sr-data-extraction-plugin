@@ -36,6 +36,7 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<ExtractViewCallba
       home: {
     onReload: jest.fn(),
     onGrantFolderAccess: jest.fn(),
+    onSkipMissingFiles: jest.fn(),
     onReloadReviewers: jest.fn(),
     onAddReviewer: jest.fn(),
     onConfirmReviewerChange: jest.fn(),
