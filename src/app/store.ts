@@ -73,6 +73,12 @@ export interface RoleState {
   folderAccessGranted: boolean;
   folderAccessChecking: boolean;
   folderAccessError: string | null;
+  /**
+   * 差分付与の不足件数（issue #141）。null = 未計算 / 非該当、0 = 不足なし、
+   * n>0 = 未付与ファイルが n 件（Home に banner を出す）。
+   * grantFolderAccess の一部選択後・checkMissingFileAccess の起動時差分検知で更新する
+   */
+  folderAccessMissingCount: number | null;
 }
 
 /** owner の「レビュアー管理」カード（Home。§7.1・§2.1）が使う入力 1 件分 */
@@ -599,6 +605,7 @@ export function createInitialState(): AppState {
       folderAccessGranted: false,
       folderAccessChecking: false,
       folderAccessError: null,
+      folderAccessMissingCount: null,
     },
     reviewers: {
       assignments: null,

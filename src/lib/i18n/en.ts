@@ -115,8 +115,9 @@ export const en: Record<MessageKey, string> = {
   'home.grantFolderAccess': 'Grant access to the project files (select all files in the picker)',
   'home.folderAccessChecking': 'Checking…',
   'home.folderAccessError': 'Could not confirm access: {reason}',
-  'home.folderAccessPartial':
-    '{missing} of {total} files were not selected. Open the picker again and select every file in the list',
+  'home.folderAccessMissing':
+    'There are {n} files without access. The grant button will list only the missing files (select them all).',
+  'home.skipMissingFiles': 'Skip unreadable files and continue',
   'home.folderAccessGranted': 'Access to the project files has been granted.',
   'home.regrantLead':
     'If new documents are imported later, grant access again to make them readable too (select all files in the picker: click the first, then Shift+click the last).',
@@ -890,6 +891,8 @@ export const en: Record<MessageKey, string> = {
   'home.toastInviteCopied': 'Copied the review invitation',
   'home.toastFolderAccessConfirmed': 'Confirmed access to the project files',
   'home.toastFolderAccessFailed': 'Could not confirm access to the files: {reason}',
+  'home.toastSkippedMissing':
+    'Skipped {n} files without access. Those documents will fail to load in the verification view.',
   'home.inviteModeIndependent':
     'Review mode: independent input without AI (AI extraction results and evidence are not shown; read the PDF and enter values yourself)',
   'home.inviteModeWithAi':

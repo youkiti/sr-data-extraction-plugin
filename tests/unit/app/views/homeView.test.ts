@@ -8,6 +8,7 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<HomeViewCallbacks
   const callbacks: jest.Mocked<HomeViewCallbacks> = {
     onReload: jest.fn(),
     onGrantFolderAccess: jest.fn(),
+    onSkipMissingFiles: jest.fn(),
     onReloadReviewers: jest.fn(),
     onAddReviewer: jest.fn(),
     onConfirmReviewerChange: jest.fn(),
@@ -318,6 +319,92 @@ describe('renderHomeView（reviewer 系ロールの縮退版 Home。§3・§7.2�
     const state = reviewerState('reviewer_with_ai', { folderAccessGranted: true });
     state.currentProject = null;
     expect(renderHomeView(state, ctx).textContent).toContain('プロジェクト: 未選択');
+  });
+
+  describe('差分付与（issue #141）: 不足分の表示とスキップ導線', () => {
+    test('未付与 + 部分選択後（missingCount > 0）: 案内文が不足件数に差し替わり、スキップボタンを出す', () => {
+      const { ctx, callbacks } = makeCtx();
+      const view = renderHomeView(
+        reviewerState('reviewer_with_ai', { folderAccessMissingCount: 3 }),
+        ctx,
+      );
+      const missing = view.querySelector('#home-folder-access-missing');
+      expect(missing?.textContent).toContain('未付与のファイルが 3 件あります');
+      expect(missing?.getAttribute('role')).toBe('status');
+      // 通常時の案内文は出さない（差し替え）
+      expect(view.textContent).not.toContain('検証を始める前に');
+      expect(view.querySelector('#home-grant-folder-access')).not.toBeNull();
+
+      const skip = view.querySelector('#home-skip-missing-files') as HTMLButtonElement;
+      expect(skip.disabled).toBe(false);
+      skip.click();
+      expect(callbacks.onSkipMissingFiles).toHaveBeenCalledTimes(1);
+    });
+
+    test('未付与 + missingCount = 0 / null は従来表示のまま（スキップボタンを出さない）', () => {
+      const { ctx } = makeCtx();
+      const zeroView = renderHomeView(
+        reviewerState('reviewer_with_ai', { folderAccessMissingCount: 0 }),
+        ctx,
+      );
+      expect(zeroView.querySelector('#home-folder-access-missing')).toBeNull();
+      expect(zeroView.querySelector('#home-skip-missing-files')).toBeNull();
+
+      const nullView = renderHomeView(
+        reviewerState('reviewer_with_ai', { folderAccessMissingCount: null }),
+        ctx,
+      );
+      expect(nullView.querySelector('#home-folder-access-missing')).toBeNull();
+      expect(nullView.querySelector('#home-skip-missing-files')).toBeNull();
+    });
+
+    test('未付与 + 確認中は付与ボタンだけでなくスキップボタンも無効化する', () => {
+      const { ctx } = makeCtx();
+      const view = renderHomeView(
+        reviewerState('reviewer_with_ai', { folderAccessMissingCount: 1, folderAccessChecking: true }),
+        ctx,
+      );
+      expect((view.querySelector('#home-grant-folder-access') as HTMLButtonElement).disabled).toBe(true);
+      expect((view.querySelector('#home-skip-missing-files') as HTMLButtonElement).disabled).toBe(true);
+    });
+
+    test('付与済み + 起動時差分検知（missingCount > 0）: banner + 再付与ボタン + スキップボタンを出す', () => {
+      const { ctx, callbacks } = makeCtx();
+      const view = renderHomeView(
+        reviewerState('reviewer_with_ai', { folderAccessGranted: true, folderAccessMissingCount: 2 }),
+        ctx,
+      );
+      const banner = view.querySelector('#home-missing-files');
+      expect(banner?.textContent).toContain('未付与のファイルが 2 件あります');
+      expect(banner?.getAttribute('role')).toBe('status');
+      expect(view.querySelector('#home-go-verify')).not.toBeNull();
+
+      const regrant = view.querySelector('#home-regrant-files') as HTMLButtonElement;
+      regrant.click();
+      expect(callbacks.onGrantFolderAccess).toHaveBeenCalledTimes(1);
+
+      const skip = view.querySelector('#home-skip-missing-files') as HTMLButtonElement;
+      expect(skip.disabled).toBe(false);
+      skip.click();
+      expect(callbacks.onSkipMissingFiles).toHaveBeenCalledTimes(1);
+    });
+
+    test('付与済み + missingCount = 0 / null は banner もスキップボタンも出さない（従来表示）', () => {
+      const { ctx } = makeCtx();
+      const zeroView = renderHomeView(
+        reviewerState('reviewer_with_ai', { folderAccessGranted: true, folderAccessMissingCount: 0 }),
+        ctx,
+      );
+      expect(zeroView.querySelector('#home-missing-files')).toBeNull();
+      expect(zeroView.querySelector('#home-skip-missing-files')).toBeNull();
+
+      const nullView = renderHomeView(
+        reviewerState('reviewer_with_ai', { folderAccessGranted: true, folderAccessMissingCount: null }),
+        ctx,
+      );
+      expect(nullView.querySelector('#home-missing-files')).toBeNull();
+      expect(nullView.querySelector('#home-skip-missing-files')).toBeNull();
+    });
   });
 });
 

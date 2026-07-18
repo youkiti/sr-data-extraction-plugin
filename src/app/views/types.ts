@@ -17,8 +17,12 @@ import type { RelocateQuoteOutcome } from '../services/relocateQuoteService';
 export interface HomeViewCallbacks {
   /** 進捗カウント読込失敗時の再読み込み（force 再取得。owner のみ） */
   onReload(): void;
-  /** reviewer 系: プロジェクトフォルダへのアクセス付与（Picker → 到達性確認。§7.2） */
+  /** reviewer 系: プロジェクトフォルダへのアクセス付与（Picker → 到達性確認。§7.2）。
+   * issue #141 で差分付与に変更: Picker には不足分のみが列挙される */
   onGrantFolderAccess(): void;
+  /** reviewer 系: 読めないファイルをスキップして続行する（issue #141。スキップした文書は
+   * 検証画面で個別に読み込みエラーになる） */
+  onSkipMissingFiles(): void;
   /** owner: レビュアー一覧の再読み込み */
   onReloadReviewers(): void;
   /** owner: レビュアー追加フォームの送信（既存 reviewer のモード変更は確認ダイアログを挟む） */

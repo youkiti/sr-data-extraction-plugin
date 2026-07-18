@@ -117,8 +117,9 @@ export const ja = {
   'home.grantFolderAccess': 'プロジェクトファイルへのアクセスを付与（開いた一覧をすべて選択）',
   'home.folderAccessChecking': '確認しています…',
   'home.folderAccessError': 'アクセスを確認できませんでした: {reason}',
-  'home.folderAccessPartial':
-    '選択されていないファイルが {missing} 件あります（全 {total} 件）。もう一度開いて、一覧のファイルをすべて選択してください',
+  'home.folderAccessMissing':
+    '未付与のファイルが {n} 件あります。付与ボタンを押すと不足分だけが一覧に表示されます（すべて選択してください）。',
+  'home.skipMissingFiles': '読めないファイルをスキップして続行',
   'home.folderAccessGranted': 'プロジェクトファイルへのアクセスは付与済みです。',
   'home.regrantLead':
     'その後に新しい文献が取り込まれた場合は、再度付与するとそのぶんも読めるようになります（開いた一覧をすべて選択: 先頭を 1 クリック → 末尾を Shift+クリック）。',
@@ -881,6 +882,8 @@ export const ja = {
   'home.toastInviteCopied': 'レビュー依頼文をコピーしました',
   'home.toastFolderAccessConfirmed': 'プロジェクトファイルへのアクセスを確認しました',
   'home.toastFolderAccessFailed': 'ファイルへのアクセスを確認できませんでした: {reason}',
+  'home.toastSkippedMissing':
+    '未付与のファイル {n} 件をスキップしました。該当する文書は検証画面で読み込めません。',
   'home.inviteModeIndependent':
     'レビュー方式: AI 抜きの独立入力（AI の抽出結果・根拠は表示されません。PDF を読んでご自身で値を入力してください）',
   'home.inviteModeWithAi':

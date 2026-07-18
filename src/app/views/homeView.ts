@@ -293,6 +293,24 @@ function renderReviewerHome(state: AppState, ctx: ViewContext): HTMLElement {
     ]),
   ];
 
+  // 差分付与の不足件数（issue #141）。null / 0 は「不足なし」として従来表示のまま変えない
+  const missingCount = state.role.folderAccessMissingCount;
+  const hasMissing = missingCount !== null && missingCount > 0;
+
+  // 「読めないファイルをスキップして続行」ボタン（issue #141 課題 2）。未付与・付与済みの
+  // 不足表示のどちらでも共通で使う（Drive 上で削除済みのファイルの残存行が全選択ゲートを
+  // 恒久ブロックする問題の逃げ道）
+  const buildSkipMissingButton = (): HTMLButtonElement => {
+    const skip = el('button', {
+      id: 'home-skip-missing-files',
+      text: t('home.skipMissingFiles'),
+      attributes: { type: 'button' },
+    }) as HTMLButtonElement;
+    skip.disabled = state.role.folderAccessChecking;
+    skip.addEventListener('click', () => ctx.home.onSkipMissingFiles());
+    return skip;
+  };
+
   if (!state.role.folderAccessGranted) {
     const grant = el('button', {
       id: 'home-grant-folder-access',
@@ -302,11 +320,20 @@ function renderReviewerHome(state: AppState, ctx: ViewContext): HTMLElement {
     grant.disabled = state.role.folderAccessChecking;
     grant.addEventListener('click', () => ctx.home.onGrantFolderAccess());
     const stepChildren: Array<HTMLElement | string> = [
-      el('p', {
-        text: t('home.folderAccessLead'),
-      }),
+      hasMissing
+        ? el('p', {
+            id: 'home-folder-access-missing',
+            attributes: { role: 'status' },
+            text: t('home.folderAccessMissing', { n: missingCount }),
+          })
+        : el('p', {
+            text: t('home.folderAccessLead'),
+          }),
       grant,
     ];
+    if (hasMissing) {
+      stepChildren.push(buildSkipMissingButton());
+    }
     if (state.role.folderAccessChecking) {
       stepChildren.push(el('p', { id: 'home-folder-access-checking', text: t('home.folderAccessChecking') }));
     }
@@ -336,9 +363,22 @@ function renderReviewerHome(state: AppState, ctx: ViewContext): HTMLElement {
       el('p', {}, [
         el('a', { id: 'home-go-verify', text: t('home.goVerify'), attributes: { href: '#/verify' } }),
       ]),
-      el('p', { text: t('home.regrantLead') }),
-      regrant,
     ];
+    if (hasMissing) {
+      // 起動時の差分検知（checkMissingFileAccess）で立った banner。owner が後から
+      // 取り込んだ文献の不足を知らせる
+      grantedChildren.push(
+        el('p', {
+          id: 'home-missing-files',
+          attributes: { role: 'status' },
+          text: t('home.folderAccessMissing', { n: missingCount }),
+        }),
+      );
+    }
+    grantedChildren.push(el('p', { text: t('home.regrantLead') }), regrant);
+    if (hasMissing) {
+      grantedChildren.push(buildSkipMissingButton());
+    }
     if (state.role.folderAccessChecking) {
       grantedChildren.push(
         el('p', { id: 'home-folder-access-checking', text: t('home.folderAccessChecking') }),

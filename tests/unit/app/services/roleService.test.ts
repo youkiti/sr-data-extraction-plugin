@@ -1,9 +1,13 @@
 import {
+  checkMissingFileAccess,
+  fileAccessRecordStorageKey,
   folderAccessStorageKey,
   grantFolderAccess,
   grantSpreadsheetAccess,
   loadRole,
   resolveProjectRole,
+  skipMissingFileAccess,
+  type FileAccessRecord,
   type RoleServiceDeps,
 } from '../../../../src/app/services/roleService';
 import { createInitialState, createStore, type Store } from '../../../../src/app/store';
@@ -98,6 +102,10 @@ beforeEach(() => {
   jest.clearAllMocks();
   loadProjectMetaMock.mockResolvedValue(META);
   readReviewerAssignmentsMock.mockResolvedValue([]);
+  // clearAllMocks は呼び出し履歴だけをクリアし mockImplementation は引き継がれるため、
+  // 個別テストで getLocal に特殊な実装（mockImplementation / 拒否）を積んだ場合に後続テストへ
+  // 漏れないよう、毎テスト開始時に安全な既定（未設定 = undefined）へ戻す
+  getLocalMock.mockResolvedValue(undefined);
 });
 
 describe('resolveProjectRole', () => {
@@ -205,6 +213,7 @@ describe('loadRole', () => {
       folderAccessGranted: true,
       folderAccessChecking: false,
       folderAccessError: null,
+      folderAccessMissingCount: null,
     });
     expect(getLocalMock).not.toHaveBeenCalled();
   });
@@ -257,6 +266,7 @@ describe('loadRole', () => {
       folderAccessGranted: false,
       folderAccessChecking: false,
       folderAccessError: null,
+      folderAccessMissingCount: null,
     });
   });
 
@@ -298,7 +308,7 @@ describe('folderAccessStorageKey', () => {
   });
 });
 
-describe('grantFolderAccess（issue #139: ファイル単位付与）', () => {
+describe('grantFolderAccess（issue #139: ファイル単位付与・issue #141: 差分付与）', () => {
   function makeStore(patch: Partial<ReturnType<typeof createInitialState>['role']> = {}): Store {
     const state = createInitialState();
     state.currentProject = PROJECT;
@@ -325,6 +335,17 @@ describe('grantFolderAccess（issue #139: ファイル単位付与）', () => {
       note: null,
       ...patch,
     };
+  }
+
+  /** FileAccessRecord の読み出しだけを差し替える（folderAccessStorageKey の boolean 読み出しは
+   * このテストでは使わないため undefined のまま。getLocalMock は共有モックなのでキーで分岐する） */
+  function mockStoredRecord(email: string, record: FileAccessRecord): void {
+    getLocalMock.mockImplementation(async (key: string) => {
+      if (key === fileAccessRecordStorageKey('sheet-1', email)) {
+        return record;
+      }
+      return undefined;
+    });
   }
 
   test('プロジェクト未選択なら no-op', async () => {
@@ -356,6 +377,7 @@ describe('grantFolderAccess（issue #139: ファイル単位付与）', () => {
     expect(openProjectFilesPickerMock).not.toHaveBeenCalled();
     expect(setLocalMock).toHaveBeenCalledWith(folderAccessStorageKey('sheet-1', 'r1@example.com'), true);
     expect(store.getState().role.folderAccessGranted).toBe(true);
+    expect(store.getState().role.folderAccessMissingCount).toBe(0);
   });
 
   test('付与対象 0 件（drive_file_id 空 + text_ref 解析不能）も Picker を開かずフラグを立てる', async () => {
@@ -381,6 +403,21 @@ describe('grantFolderAccess（issue #139: ファイル単位付与）', () => {
     expect(store.getState().role.folderAccessChecking).toBe(false);
     expect(store.getState().role.folderAccessError).toBe('storage full');
     expect(store.getState().role.folderAccessGranted).toBe(false);
+  });
+
+  test('付与済みレコードの読み出しに失敗したら fail し、Picker を開かない', async () => {
+    readDocumentsMock.mockResolvedValue([doc()]);
+    getLocalMock.mockImplementation(async (key: string) => {
+      if (key === fileAccessRecordStorageKey('sheet-1', 'r1@example.com')) {
+        throw new Error('storage unavailable');
+      }
+      return undefined;
+    });
+    const store = makeStore();
+    await grantFolderAccess(store, makeDeps('r1@example.com'));
+    expect(openProjectFilesPickerMock).not.toHaveBeenCalled();
+    expect(store.getState().role.folderAccessChecking).toBe(false);
+    expect(store.getState().role.folderAccessError).toBe('storage unavailable');
   });
 
   test('Picker 起動失敗はエラーを記録する', async () => {
@@ -411,7 +448,7 @@ describe('grantFolderAccess（issue #139: ファイル単位付与）', () => {
     expect(store.getState().role.folderAccessGranted).toBe(false);
   });
 
-  test('必要ファイル ID（PDF + 抽出テキスト）を重複なく列挙して Picker を開く', async () => {
+  test('必要ファイル ID（PDF + 抽出テキスト）を重複なく列挙し、候補（不足分）として Picker を開く', async () => {
     readDocumentsMock.mockResolvedValue([
       doc(),
       doc({ documentId: 'doc-2' }),
@@ -420,6 +457,7 @@ describe('grantFolderAccess（issue #139: ファイル単位付与）', () => {
     openProjectFilesPickerMock.mockResolvedValue(null);
     const store = makeStore();
     await grantFolderAccess(store, makeDeps('r1@example.com'));
+    // 付与済みレコードが無い（初回）ので候補 = required 全件
     expect(openProjectFilesPickerMock).toHaveBeenCalledWith(expect.anything(), [
       'drive-1',
       'txt-1',
@@ -427,17 +465,80 @@ describe('grantFolderAccess（issue #139: ファイル単位付与）', () => {
     ]);
   });
 
-  test('一部だけ選択されたら付与漏れとしてエラーを記録し、フラグを立てない', async () => {
-    readDocumentsMock.mockResolvedValue([doc()]);
+  test('一部だけ選択されても弾かず、選択分を永続化して不足分の件数を記録する（issue #141）', async () => {
+    readDocumentsMock.mockResolvedValue([
+      doc(),
+      doc({ documentId: 'doc-2', driveFileId: 'drive-2', textRef: null }),
+    ]);
     openProjectFilesPickerMock.mockResolvedValue([{ sourceFileId: 'drive-1', filename: 'a.pdf' }]);
     const store = makeStore();
     await grantFolderAccess(store, makeDeps('r1@example.com'));
+    expect(openProjectFilesPickerMock).toHaveBeenCalledWith(expect.anything(), [
+      'drive-1',
+      'txt-1',
+      'drive-2',
+    ]);
+    expect(setLocalMock).toHaveBeenCalledWith(fileAccessRecordStorageKey('sheet-1', 'r1@example.com'), {
+      granted: ['drive-1'],
+      skipped: [],
+    });
     expect(store.getState().role.folderAccessGranted).toBe(false);
-    expect(store.getState().role.folderAccessError).toContain(
-      '選択されていないファイルが 1 件あります',
-    );
+    expect(store.getState().role.folderAccessMissingCount).toBe(2);
+    expect(store.getState().role.folderAccessError).toBeNull();
     expect(getFileTextMock).not.toHaveBeenCalled();
-    expect(setLocalMock).not.toHaveBeenCalled();
+  });
+
+  test('選択分の永続化に失敗したら fail し、到達性は確認しない', async () => {
+    readDocumentsMock.mockResolvedValue([doc()]);
+    openProjectFilesPickerMock.mockResolvedValue([{ sourceFileId: 'drive-1', filename: 'a.pdf' }]);
+    setLocalMock.mockRejectedValueOnce(new Error('storage full'));
+    const store = makeStore();
+    await grantFolderAccess(store, makeDeps('r1@example.com'));
+    expect(getFileTextMock).not.toHaveBeenCalled();
+    expect(store.getState().role.folderAccessChecking).toBe(false);
+    expect(store.getState().role.folderAccessError).toBe('storage full');
+    expect(store.getState().role.folderAccessGranted).toBe(false);
+  });
+
+  test('2 回目の Picker は前回までに記録した分を除いた不足分のみで開く（差分付与）', async () => {
+    readDocumentsMock.mockResolvedValue([
+      doc(),
+      doc({ documentId: 'doc-2', driveFileId: 'drive-2', textRef: null }),
+    ]);
+    mockStoredRecord('r1@example.com', { granted: ['drive-1', 'txt-1'], skipped: [] });
+    openProjectFilesPickerMock.mockResolvedValue([{ sourceFileId: 'drive-2', filename: 'b.pdf' }]);
+    getFileTextMock.mockResolvedValue('本文');
+    const store = makeStore();
+    await grantFolderAccess(store, makeDeps('r1@example.com'));
+    expect(openProjectFilesPickerMock).toHaveBeenCalledWith(expect.anything(), ['drive-2']);
+    expect(store.getState().role.folderAccessGranted).toBe(true);
+    expect(store.getState().role.folderAccessMissingCount).toBe(0);
+  });
+
+  test('候補 0 件（required が既に granted / skipped で埋まっている）なら Picker を開かず到達性のみ確認する', async () => {
+    readDocumentsMock.mockResolvedValue([doc()]);
+    mockStoredRecord('r1@example.com', { granted: ['drive-1'], skipped: ['txt-1'] });
+    getFileTextMock.mockResolvedValue('本文');
+    const store = makeStore();
+    await grantFolderAccess(store, makeDeps('r1@example.com'));
+    expect(openProjectFilesPickerMock).not.toHaveBeenCalled();
+    expect(getFileTextMock).toHaveBeenCalledWith('txt-1', expect.anything());
+    expect(store.getState().role.folderAccessGranted).toBe(true);
+    expect(store.getState().role.folderAccessMissingCount).toBe(0);
+  });
+
+  test('候補 0 件で到達性確認に失敗したらフラグを立てず、最後のエラーを記録する', async () => {
+    readDocumentsMock.mockResolvedValue([doc()]);
+    mockStoredRecord('r1@example.com', { granted: ['drive-1'], skipped: ['txt-1'] });
+    getFileTextMock.mockRejectedValue(new Error('HTTP 404'));
+    const store = makeStore();
+    const { deps, sleep } = depsWithSleep('r1@example.com');
+    await grantFolderAccess(store, deps);
+    expect(openProjectFilesPickerMock).not.toHaveBeenCalled();
+    expect(getFileTextMock).toHaveBeenCalledTimes(3);
+    expect(sleep).toHaveBeenCalledTimes(2);
+    expect(store.getState().role.folderAccessGranted).toBe(false);
+    expect(store.getState().role.folderAccessError).toBe('HTTP 404');
   });
 
   test('全件選択 + text_ref の試し読み成功でフラグを立てる', async () => {
@@ -451,9 +552,14 @@ describe('grantFolderAccess（issue #139: ファイル単位付与）', () => {
     await grantFolderAccess(store, makeDeps('r1@example.com'));
     expect(getFileTextMock).toHaveBeenCalledWith('txt-1', expect.anything());
     expect(getFileMd5Mock).not.toHaveBeenCalled();
+    expect(setLocalMock).toHaveBeenCalledWith(fileAccessRecordStorageKey('sheet-1', 'r1@example.com'), {
+      granted: ['drive-1', 'txt-1'],
+      skipped: [],
+    });
     expect(setLocalMock).toHaveBeenCalledWith(folderAccessStorageKey('sheet-1', 'r1@example.com'), true);
     expect(store.getState().role.folderAccessGranted).toBe(true);
     expect(store.getState().role.folderAccessChecking).toBe(false);
+    expect(store.getState().role.folderAccessMissingCount).toBe(0);
   });
 
   test('試し読み成功後のフラグ保存失敗は到達性エラーと誤分類せず、再プローブしない', async () => {
@@ -463,7 +569,8 @@ describe('grantFolderAccess（issue #139: ファイル単位付与）', () => {
       { sourceFileId: 'txt-1', filename: 'a.txt' },
     ]);
     getFileTextMock.mockResolvedValue('本文');
-    setLocalMock.mockRejectedValueOnce(new Error('storage full'));
+    // 1 回目 = 選択分の record 永続化（成功）、2 回目 = confirmGranted の boolean フラグ保存（失敗）
+    setLocalMock.mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('storage full'));
     const store = makeStore();
     await grantFolderAccess(store, makeDeps('r1@example.com'));
     expect(getFileTextMock).toHaveBeenCalledTimes(1);
@@ -534,7 +641,7 @@ describe('grantFolderAccess（issue #139: ファイル単位付与）', () => {
     }
   });
 
-  test('試し読みが 3 回失敗したらフラグを立てず、最後のエラーを記録する', async () => {
+  test('試し読みが 3 回失敗したらフラグを立てず、最後のエラーを記録する（選択分の記録は残る）', async () => {
     readDocumentsMock.mockResolvedValue([doc()]);
     openProjectFilesPickerMock.mockResolvedValue([
       { sourceFileId: 'drive-1', filename: 'a.pdf' },
@@ -548,7 +655,275 @@ describe('grantFolderAccess（issue #139: ファイル単位付与）', () => {
     expect(sleep).toHaveBeenCalledTimes(2);
     expect(store.getState().role.folderAccessGranted).toBe(false);
     expect(store.getState().role.folderAccessError).toBe('HTTP 404');
+    // 選択分の永続化（record）は既に行われている。boolean フラグだけが未設定のまま
+    expect(setLocalMock).toHaveBeenCalledTimes(1);
+    expect(setLocalMock).toHaveBeenCalledWith(fileAccessRecordStorageKey('sheet-1', 'r1@example.com'), {
+      granted: ['drive-1', 'txt-1'],
+      skipped: [],
+    });
+  });
+});
+
+describe('fileAccessRecordStorageKey', () => {
+  test('プロジェクト × アカウントのキーを生成する（folderAccessStorageKey とは別キー）', () => {
+    expect(fileAccessRecordStorageKey('sheet-1', 'r1@example.com')).toBe(
+      'sr-data-extraction:file-access-record:sheet-1:r1@example.com',
+    );
+  });
+});
+
+describe('skipMissingFileAccess（issue #141 課題 2: 削除済みファイルの恒久ブロック回避）', () => {
+  function makeStore(patch: Partial<ReturnType<typeof createInitialState>['role']> = {}): Store {
+    const state = createInitialState();
+    state.currentProject = PROJECT;
+    state.role = { ...state.role, ...patch };
+    return createStore(state);
+  }
+
+  function doc(patch: Partial<DocumentRecord> = {}): DocumentRecord {
+    return {
+      documentId: 'doc-1',
+      studyId: 'study-1',
+      documentRole: 'article',
+      driveFileId: 'drive-1',
+      sourceFileId: 'src-1',
+      filename: 'a.pdf',
+      pmid: null,
+      doi: null,
+      textRef: null,
+      textStatus: 'ok',
+      pageCount: 1,
+      charCount: 1,
+      importedAt: 't',
+      importedBy: 'e',
+      note: null,
+      ...patch,
+    };
+  }
+
+  test('プロジェクト未選択なら no-op', async () => {
+    const store = createStore(createInitialState());
+    await skipMissingFileAccess(store, makeDeps('r1@example.com'));
+    expect(readDocumentsMock).not.toHaveBeenCalled();
+  });
+
+  test('確認中の再入は no-op', async () => {
+    const store = makeStore({ folderAccessChecking: true });
+    await skipMissingFileAccess(store, makeDeps('r1@example.com'));
+    expect(readDocumentsMock).not.toHaveBeenCalled();
+  });
+
+  test('Documents の読み出し失敗はエラーを記録する', async () => {
+    readDocumentsMock.mockRejectedValue(new Error('sheet unreachable'));
+    const store = makeStore();
+    await skipMissingFileAccess(store, makeDeps('r1@example.com'));
+    expect(store.getState().role.folderAccessChecking).toBe(false);
+    expect(store.getState().role.folderAccessError).toBe('sheet unreachable');
+  });
+
+  test('レコード読み出し失敗はエラーを記録する', async () => {
+    readDocumentsMock.mockResolvedValue([doc({ driveFileId: 'drive-1' })]);
+    getLocalMock.mockRejectedValue(new Error('storage unavailable'));
+    const store = makeStore();
+    await skipMissingFileAccess(store, makeDeps('r1@example.com'));
+    expect(store.getState().role.folderAccessError).toBe('storage unavailable');
+  });
+
+  test('不足分すべてを skipped として永続化し、ゲートを開く', async () => {
+    readDocumentsMock.mockResolvedValue([
+      doc({ driveFileId: 'drive-1' }),
+      doc({ documentId: 'doc-2', driveFileId: 'drive-2' }),
+    ]);
+    const store = makeStore();
+    await skipMissingFileAccess(store, makeDeps('r1@example.com'));
+    expect(setLocalMock).toHaveBeenCalledWith(fileAccessRecordStorageKey('sheet-1', 'r1@example.com'), {
+      granted: [],
+      skipped: ['drive-1', 'drive-2'],
+    });
+    expect(setLocalMock).toHaveBeenCalledWith(folderAccessStorageKey('sheet-1', 'r1@example.com'), true);
+    expect(store.getState().role).toMatchObject({
+      folderAccessChecking: false,
+      folderAccessGranted: true,
+      folderAccessMissingCount: 0,
+      folderAccessError: null,
+    });
+    expect(document.body.textContent).toContain('未付与のファイル 2 件をスキップしました');
+  });
+
+  test('既に granted / skipped 済みの ID は除外して不足分だけを skipped に足す', async () => {
+    readDocumentsMock.mockResolvedValue([
+      doc({ driveFileId: 'drive-1' }),
+      doc({ documentId: 'doc-2', driveFileId: 'drive-2' }),
+      doc({ documentId: 'doc-3', driveFileId: 'drive-3' }),
+    ]);
+    getLocalMock.mockImplementation(async (key: string) => {
+      if (key === fileAccessRecordStorageKey('sheet-1', 'r1@example.com')) {
+        return { granted: ['drive-1'], skipped: ['drive-2'] } as FileAccessRecord;
+      }
+      return undefined;
+    });
+    const store = makeStore();
+    await skipMissingFileAccess(store, makeDeps('r1@example.com'));
+    expect(setLocalMock).toHaveBeenCalledWith(fileAccessRecordStorageKey('sheet-1', 'r1@example.com'), {
+      granted: ['drive-1'],
+      skipped: ['drive-2', 'drive-3'],
+    });
+  });
+
+  test('永続化に失敗したらエラーを記録し、ゲートを開かない', async () => {
+    readDocumentsMock.mockResolvedValue([doc({ driveFileId: 'drive-1' })]);
+    setLocalMock.mockRejectedValueOnce(new Error('storage full'));
+    const store = makeStore();
+    await skipMissingFileAccess(store, makeDeps('r1@example.com'));
+    expect(store.getState().role.folderAccessGranted).toBe(false);
+    expect(store.getState().role.folderAccessError).toBe('storage full');
+  });
+
+  test('email が取得できないときは空文字キーで保存する（防御的フォールバック）', async () => {
+    readDocumentsMock.mockResolvedValue([doc({ driveFileId: 'drive-1' })]);
+    const store = makeStore();
+    await skipMissingFileAccess(store, makeDeps(''));
+    expect(setLocalMock).toHaveBeenCalledWith(fileAccessRecordStorageKey('sheet-1', ''), {
+      granted: [],
+      skipped: ['drive-1'],
+    });
+    expect(setLocalMock).toHaveBeenCalledWith(folderAccessStorageKey('sheet-1', ''), true);
+  });
+});
+
+describe('checkMissingFileAccess（issue #141 課題 1: 起動時の差分検知）', () => {
+  function makeStore(patch: Partial<ReturnType<typeof createInitialState>['role']> = {}): Store {
+    const state = createInitialState();
+    state.currentProject = PROJECT;
+    state.role = { ...state.role, role: 'reviewer_with_ai', folderAccessGranted: true, ...patch };
+    return createStore(state);
+  }
+
+  function doc(patch: Partial<DocumentRecord> = {}): DocumentRecord {
+    return {
+      documentId: 'doc-1',
+      studyId: 'study-1',
+      documentRole: 'article',
+      driveFileId: 'drive-1',
+      sourceFileId: 'src-1',
+      filename: 'a.pdf',
+      pmid: null,
+      doi: null,
+      textRef: null,
+      textStatus: 'ok',
+      pageCount: 1,
+      charCount: 1,
+      importedAt: 't',
+      importedBy: 'e',
+      note: null,
+      ...patch,
+    };
+  }
+
+  test('プロジェクト未選択なら no-op', async () => {
+    const store = createStore(createInitialState());
+    await checkMissingFileAccess(store, makeDeps('r1@example.com'));
+    expect(readDocumentsMock).not.toHaveBeenCalled();
+  });
+
+  test('role が未解決（null）なら no-op', async () => {
+    const store = makeStore({ role: null });
+    await checkMissingFileAccess(store, makeDeps('r1@example.com'));
+    expect(readDocumentsMock).not.toHaveBeenCalled();
+  });
+
+  test('owner は no-op（フォルダアクセス付与の対象外）', async () => {
+    const store = makeStore({ role: 'owner' });
+    await checkMissingFileAccess(store, makeDeps('owner@example.com'));
+    expect(readDocumentsMock).not.toHaveBeenCalled();
+  });
+
+  test('フォルダアクセス未付与なら no-op', async () => {
+    const store = makeStore({ folderAccessGranted: false });
+    await checkMissingFileAccess(store, makeDeps('r1@example.com'));
+    expect(readDocumentsMock).not.toHaveBeenCalled();
+  });
+
+  test('計算済み（missingCount !== null）なら再計算しない（冪等ガード）', async () => {
+    const store = makeStore({ folderAccessMissingCount: 0 });
+    await checkMissingFileAccess(store, makeDeps('r1@example.com'));
+    expect(readDocumentsMock).not.toHaveBeenCalled();
+  });
+
+  test('レコードが存在しない（レガシー: 旧 boolean のみで付与した既存 reviewer）は検知対象外', async () => {
+    getLocalMock.mockResolvedValue(undefined);
+    const store = makeStore();
+    await checkMissingFileAccess(store, makeDeps('r1@example.com'));
+    expect(readDocumentsMock).not.toHaveBeenCalled();
+    expect(store.getState().role.folderAccessMissingCount).toBeNull();
+  });
+
+  test('候補 0 件（required が既に granted / skipped で埋まっている）は missingCount=0', async () => {
+    getLocalMock.mockResolvedValue({ granted: ['drive-1'], skipped: [] });
+    readDocumentsMock.mockResolvedValue([doc({ driveFileId: 'drive-1' })]);
+    const store = makeStore();
+    await checkMissingFileAccess(store, makeDeps('r1@example.com'));
+    expect(getFileMd5Mock).not.toHaveBeenCalled();
+    expect(store.getState().role.folderAccessMissingCount).toBe(0);
+  });
+
+  test('email が取得できないときは空文字キーで読む（防御的フォールバック）', async () => {
+    getLocalMock.mockResolvedValue({ granted: ['drive-1'], skipped: [] });
+    readDocumentsMock.mockResolvedValue([doc({ driveFileId: 'drive-1' })]);
+    const store = makeStore();
+    await checkMissingFileAccess(store, makeDeps(''));
+    expect(getLocalMock).toHaveBeenCalledWith(fileAccessRecordStorageKey('sheet-1', ''));
+    expect(store.getState().role.folderAccessMissingCount).toBe(0);
+  });
+
+  test('候補を試し読みして読めた ID は granted へ足し、永続化する（自己修復）', async () => {
+    getLocalMock.mockResolvedValue({ granted: [], skipped: [] });
+    readDocumentsMock.mockResolvedValue([
+      doc({ driveFileId: 'drive-1' }),
+      doc({ documentId: 'doc-2', driveFileId: 'drive-2' }),
+    ]);
+    getFileMd5Mock.mockResolvedValueOnce('md5-1').mockRejectedValueOnce(new Error('HTTP 404'));
+    const store = makeStore();
+    await checkMissingFileAccess(store, makeDeps('r1@example.com'));
+    expect(getFileMd5Mock).toHaveBeenCalledTimes(2);
+    expect(setLocalMock).toHaveBeenCalledWith(fileAccessRecordStorageKey('sheet-1', 'r1@example.com'), {
+      granted: ['drive-1'],
+      skipped: [],
+    });
+    expect(store.getState().role.folderAccessMissingCount).toBe(1);
+  });
+
+  test('全件読めなければ自己修復の永続化は行わず、missingCount = 候補数', async () => {
+    getLocalMock.mockResolvedValue({ granted: [], skipped: [] });
+    readDocumentsMock.mockResolvedValue([doc({ driveFileId: 'drive-1' })]);
+    getFileMd5Mock.mockRejectedValue(new Error('HTTP 404'));
+    const store = makeStore();
+    await checkMissingFileAccess(store, makeDeps('r1@example.com'));
     expect(setLocalMock).not.toHaveBeenCalled();
+    expect(store.getState().role.folderAccessMissingCount).toBe(1);
+  });
+
+  test('候補が 25 件を超える分はプローブせず missing 扱いにする（API 呼び出し数の上限）', async () => {
+    getLocalMock.mockResolvedValue({ granted: [], skipped: [] });
+    const docs = Array.from({ length: 30 }, (_, i) =>
+      doc({ documentId: `doc-${i}`, driveFileId: `drive-${i}` }),
+    );
+    readDocumentsMock.mockResolvedValue(docs);
+    getFileMd5Mock.mockResolvedValue('md5');
+    const store = makeStore();
+    await checkMissingFileAccess(store, makeDeps('r1@example.com'));
+    expect(getFileMd5Mock).toHaveBeenCalledTimes(25);
+    // 先頭 25 件は読めた（granted）ので、missing は超過分の 5 件のみ
+    expect(store.getState().role.folderAccessMissingCount).toBe(5);
+  });
+
+  test('途中の失敗（Documents 読み出し等）は UI に出さず握りつぶす', async () => {
+    getLocalMock.mockResolvedValue({ granted: [], skipped: [] });
+    readDocumentsMock.mockRejectedValue(new Error('sheet unreachable'));
+    const store = makeStore();
+    await expect(checkMissingFileAccess(store, makeDeps('r1@example.com'))).resolves.toBeUndefined();
+    expect(store.getState().role.folderAccessMissingCount).toBeNull();
+    expect(store.getState().role.folderAccessError).toBeNull();
   });
 });
 

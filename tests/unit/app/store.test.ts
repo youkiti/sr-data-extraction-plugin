@@ -25,6 +25,7 @@ describe('createInitialState', () => {
         folderAccessGranted: false,
         folderAccessChecking: false,
         folderAccessError: null,
+        folderAccessMissingCount: null,
       },
       reviewers: {
         assignments: null,
