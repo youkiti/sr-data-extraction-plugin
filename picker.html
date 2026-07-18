@@ -1,7 +1,7 @@
 <!doctype html>
 <!--
   Drive Picker ホストページ（lib/google/picker.ts の対向実装）。
-  version: 2026-07-18c (issue #139: view=files モード追加 + file_ids 欠落時フェイルクローズ)
+  version: 2026-07-18d (issue #139: files モードのタイトルへ全選択の操作説明を表示)
 
   MV3 では apis.google.com のスクリプトを拡張ページで読み込めないため、
   このページを HTTPS でホストし（既定: GitHub Pages。lib/google/picker.ts の
@@ -163,12 +163,15 @@
           .setAppId(PICKER_APP_ID)
           .setOAuthToken(token)
           .addView(view)
-          .setTitle('プロジェクトのファイルをすべて選択')
+          // Picker はモーダルでページ本文（#status / #files-note）を覆い隠すため、
+          // 全選択の操作説明はモーダル上に常時見えるタイトルへ入れる（Picker 内部は
+          // Google 配信の iframe で、ページ側から選択操作を代行するボタンは作れない）
+          .setTitle('すべて選択してください: 先頭を 1 クリック → 末尾を Shift+クリック')
           .setCallback(onPickerAction())
           .build()
           .setVisible(true);
         statusEl.textContent =
-          '表示されたファイルをすべて選択してください（一部だけ選択すると検証画面で読み込みに失敗します）。';
+          '表示されたファイルをすべて選択してください（先頭を 1 クリック → 末尾を Shift+クリックで範囲選択。一部だけ選択すると検証画面で読み込みに失敗します）。';
         filesNoteEl.hidden = false;
       }
 
