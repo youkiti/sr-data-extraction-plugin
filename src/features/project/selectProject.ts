@@ -2,8 +2,13 @@
 // （sr-query-builder の selectProject を移植し、本拡張固有のタブ存在確認を追加）
 import { CURRENT_SCHEMA_VERSION, type ProjectMeta } from '../../domain/project';
 import { SHEET_HEADERS } from '../../domain/sheetsSchema';
-import { getSheetTitles, getSheetValues } from '../../lib/google/sheets';
-import { GoogleApiError, type GoogleApiDeps } from '../../lib/google/types';
+import {
+  getSheetTitles,
+  getSheetValues,
+  isSheetsAccessDenied,
+  SheetsAccessDeniedError,
+} from '../../lib/google/sheets';
+import { type GoogleApiDeps } from '../../lib/google/types';
 
 export class ProjectSchemaError extends Error {
   constructor(message: string) {
@@ -18,7 +23,8 @@ const REQUIRED_TABS = ['Documents', 'SchemaFields'] as const;
 /**
  * スプレッドシートの Meta タブを読み、ProjectMeta に変換する。
  *
- * - スプレッドシートが開けない（404）→ ProjectSchemaError
+ * - アクセス拒否（404 / 権限系 403）→ SheetsAccessDeniedError（issue #130。
+ *   drive.file では未許可と不存在を区別できないため、Picker 許可導線へ誘導する）
  * - Meta タブ欠落 / 列構成不一致 / スキーマバージョン不一致 → ProjectSchemaError
  * - Documents / SchemaFields タブ欠落（= sr-query-builder 等の別ツールのシート）
  *   → 「sr-data-extraction のプロジェクトではありません」（docs/ui-states.md §1）
@@ -27,17 +33,20 @@ export async function loadProjectMeta(
   spreadsheetId: string,
   deps: GoogleApiDeps
 ): Promise<ProjectMeta> {
-  let tabTitles: string[];
-  try {
-    tabTitles = await getSheetTitles(spreadsheetId, deps);
-  } catch (err) {
-    if (err instanceof GoogleApiError && err.status === 404) {
-      throw new ProjectSchemaError(
-        'スプレッドシートが見つかりません。ID を確認してください'
-      );
+  // アクセス拒否（404 / 権限系 403）を SheetsAccessDeniedError へ分類する共通ラッパ。
+  // Meta 読み取り系の全 API 呼び出しをこれで包む（分類漏れを 1 箇所の修正で防ぐ）
+  const classifyAccess = async <T>(operation: Promise<T>): Promise<T> => {
+    try {
+      return await operation;
+    } catch (err) {
+      if (isSheetsAccessDenied(err)) {
+        throw new SheetsAccessDeniedError(spreadsheetId, err.status);
+      }
+      throw err;
     }
-    throw err;
-  }
+  };
+
+  const tabTitles = await classifyAccess(getSheetTitles(spreadsheetId, deps));
   if (!tabTitles.includes('Meta')) {
     throw new ProjectSchemaError(
       'Meta タブがありません。プロジェクトとして初期化されていません'
@@ -50,7 +59,8 @@ export async function loadProjectMeta(
     );
   }
 
-  const rows = await getSheetValues(spreadsheetId, 'Meta', deps);
+  // タブ一覧が読めた直後に許可が失効するケース（レア）も同じ導線へ倒す
+  const rows = await classifyAccess(getSheetValues(spreadsheetId, 'Meta', deps));
   if (rows.length === 0) {
     throw new ProjectSchemaError('Meta タブが空です。プロジェクトとして初期化されていません');
   }

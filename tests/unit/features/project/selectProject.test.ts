@@ -4,6 +4,7 @@ import {
 } from '../../../../src/features/project/selectProject';
 import { CURRENT_SCHEMA_VERSION } from '../../../../src/domain/project';
 import { SHEET_HEADERS } from '../../../../src/domain/sheetsSchema';
+import { SheetsAccessDeniedError } from '../../../../src/lib/google/sheets';
 import type { GoogleApiDeps } from '../../../../src/lib/google/types';
 
 const META_HEADER = [...SHEET_HEADERS.Meta];
@@ -26,6 +27,10 @@ function makeDeps(options: {
   tabs?: string[];
   rows?: string[][];
   metadataStatus?: number;
+  /** metadataStatus 非 200 のときのレスポンス本文（403 の reason 分類テスト用） */
+  metadataBody?: string;
+  /** values GET だけ失敗させる（タブ一覧成功後の許可失効ケース） */
+  valuesStatus?: number;
 }): GoogleApiDeps {
   return {
     getAccessToken: async () => 'tok',
@@ -38,7 +43,7 @@ function makeDeps(options: {
             ok: false,
             status,
             json: async () => ({}),
-            text: async () => 'not found',
+            text: async () => options.metadataBody ?? 'not found',
           } as Response;
         }
         const json = {
@@ -49,6 +54,15 @@ function makeDeps(options: {
           status: 200,
           json: async () => json,
           text: async () => JSON.stringify(json),
+        } as Response;
+      }
+      const valuesStatus = options.valuesStatus ?? 200;
+      if (valuesStatus !== 200) {
+        return {
+          ok: false,
+          status: valuesStatus,
+          json: async () => ({}),
+          text: async () => 'not found',
         } as Response;
       }
       const json = { values: options.rows ?? [] };
@@ -81,16 +95,35 @@ describe('loadProjectMeta', () => {
     await expect(loadProjectMeta('SID', deps)).rejects.toThrow(/サポート外のスキーマバージョン/);
   });
 
-  test('スプレッドシートが 404 なら ID 確認を促す ProjectSchemaError', async () => {
+  test('404 は SheetsAccessDeniedError（drive.file では未許可と不存在を区別できない。issue #130）', async () => {
     const deps = makeDeps({ metadataStatus: 404 });
-    await expect(loadProjectMeta('missing', deps)).rejects.toThrow(
-      /スプレッドシートが見つかりません/,
-    );
+    const err = await loadProjectMeta('missing', deps).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(SheetsAccessDeniedError);
+    expect((err as SheetsAccessDeniedError).spreadsheetId).toBe('missing');
+    expect((err as SheetsAccessDeniedError).status).toBe(404);
   });
 
-  test('404 以外の GoogleApiError はそのまま伝播する', async () => {
+  test('権限系 403（PERMISSION_DENIED）も SheetsAccessDeniedError', async () => {
+    const deps = makeDeps({
+      metadataStatus: 403,
+      metadataBody: JSON.stringify({ error: { status: 'PERMISSION_DENIED' } }),
+    });
+    await expect(loadProjectMeta('SID', deps)).rejects.toBeInstanceOf(SheetsAccessDeniedError);
+  });
+
+  test('権限系でない 403（本文が JSON でない等）はそのまま伝播する', async () => {
     const deps = makeDeps({ metadataStatus: 403 });
     await expect(loadProjectMeta('SID', deps)).rejects.toThrow(/HTTP 403/);
+  });
+
+  test('タブ一覧成功後の values GET のアクセス拒否も SheetsAccessDeniedError に分類する', async () => {
+    const deps = makeDeps({ valuesStatus: 404 });
+    await expect(loadProjectMeta('SID', deps)).rejects.toBeInstanceOf(SheetsAccessDeniedError);
+  });
+
+  test('values GET のアクセス拒否以外のエラーはそのまま伝播する', async () => {
+    const deps = makeDeps({ valuesStatus: 500 });
+    await expect(loadProjectMeta('SID', deps)).rejects.toThrow(/HTTP 500/);
   });
 
   test('Meta タブが無ければ初期化されていないエラー', async () => {

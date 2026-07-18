@@ -12,6 +12,7 @@ import {
   loadCurrentProject,
   setCurrentProject,
 } from '../../../src/features/project/projectStore';
+import { PICKER_PAGE_URL } from '../../../src/lib/google/picker';
 import type { GoogleApiDeps } from '../../../src/lib/google/types';
 import { setUiLanguage } from '../../../src/lib/i18n';
 
@@ -39,6 +40,7 @@ const POPUP_TEMPLATE = `
         <button type="submit">開く</button>
       </form>
       <p id="popup-open-error"></p>
+      <button id="popup-open-grant" type="button" hidden>Google で許可する</button>
     </div>
     <button id="open-options" type="button">設定を開く</button>
   </main>
@@ -95,6 +97,8 @@ function makeDeps(over: Partial<PopupDeps> = {}): PopupDeps {
       getProfileUserInfo: async () => ({ email: 'me@example.com', id: 'uid' }),
     },
     chromeProfileEmail: jest.fn(async () => 'me@example.com'),
+    openSpreadsheetPicker: jest.fn(async () => 'cancelled' as const),
+    sleep: jest.fn(async () => undefined),
     isAuthenticated: jest.fn(async () => true),
     signIn: jest.fn(async () => true),
     signOut: jest.fn(async () => undefined),
@@ -396,6 +400,211 @@ describe('bootstrapPopup', () => {
       expect(el('popup-open-error').textContent).toBe('boom');
     });
   });
+
+  describe('アクセス許可が必要（issue #130。docs/ui-states.md §1）', () => {
+    /** アクセス拒否状態を切り替えられる google スタブ（denied 中は全 API 404） */
+    function makeDeniedGoogle(state: { denied: boolean }): GoogleApiDeps {
+      const okGoogle = makeGoogle();
+      return {
+        getAccessToken: async () => 'tok',
+        fetch: (async (input: RequestInfo | URL, init?: RequestInit) => {
+          if (state.denied) {
+            return {
+              ok: false,
+              status: 404,
+              json: async () => ({}),
+              text: async () => 'not found',
+            } as Response;
+          }
+          return (okGoogle.fetch as typeof fetch)(input, init);
+        }) as typeof fetch,
+      };
+    }
+
+    async function submitOpen(id: string): Promise<void> {
+      el<HTMLInputElement>('popup-open-id').value = id;
+      el<HTMLFormElement>('popup-open-form').dispatchEvent(
+        new Event('submit', { cancelable: true }),
+      );
+      await flush();
+    }
+
+    test('アクセス拒否で案内文 + 「Google で許可する」を表示する', async () => {
+      const deps = makeDeps({ google: makeDeniedGoogle({ denied: true }) });
+      await bootstrapPopup(document, deps);
+      await submitOpen('SID-9');
+      expect(el('popup-open-error').textContent).toContain('権限がまだありません');
+      expect(el<HTMLButtonElement>('popup-open-grant').hidden).toBe(false);
+      expect(deps.openAppTab).not.toHaveBeenCalled();
+    });
+
+    test('通常の検証エラーでは許可ボタンを出さない', async () => {
+      const deps = makeDeps(); // makeGoogle は正常応答（既存 SR が開ける）
+      await bootstrapPopup(document, deps);
+      await submitOpen('SID-9');
+      expect(el<HTMLButtonElement>('popup-open-grant').hidden).toBe(true);
+    });
+
+    test('granted → 開き直しに成功したらメインビューへ遷移し表示をリセットする', async () => {
+      const state = { denied: true };
+      const openSpreadsheetPicker = jest.fn(async () => {
+        state.denied = false; // Picker の許可で以後アクセス可能になる
+        return 'granted' as const;
+      });
+      const deps = makeDeps({ google: makeDeniedGoogle(state), openSpreadsheetPicker });
+      await bootstrapPopup(document, deps);
+      await submitOpen('SID-9');
+      el<HTMLButtonElement>('popup-open-grant').click();
+      await flush();
+      expect(openSpreadsheetPicker).toHaveBeenCalledWith('SID-9');
+      expect(deps.openAppTab).toHaveBeenCalledTimes(1);
+      expect(el('popup-open-error').textContent).toBe('');
+      expect(el<HTMLButtonElement>('popup-open-grant').hidden).toBe(true);
+      expect(el<HTMLInputElement>('popup-open-id').value).toBe('');
+    });
+
+    test('処理中はボタンを無効化し「許可を待っています…」を表示、再クリックは無視する', async () => {
+      let release: (r: 'cancelled') => void = () => undefined;
+      const openSpreadsheetPicker = jest.fn(
+        () => new Promise<'cancelled'>((resolve) => { release = resolve; }),
+      );
+      const deps = makeDeps({ google: makeDeniedGoogle({ denied: true }), openSpreadsheetPicker });
+      await bootstrapPopup(document, deps);
+      await submitOpen('SID-9');
+      const grant = el<HTMLButtonElement>('popup-open-grant');
+      grant.click();
+      expect(grant.disabled).toBe(true);
+      expect(grant.textContent).toBe('許可を待っています…');
+      // disabled 中の再クリック（dispatchEvent はネイティブの disabled 抑止を通らない）
+      grant.dispatchEvent(new MouseEvent('click'));
+      expect(openSpreadsheetPicker).toHaveBeenCalledTimes(1);
+      release('cancelled');
+      await flush();
+      expect(grant.disabled).toBe(false);
+      expect(grant.textContent).toBe('Google で許可する');
+    });
+
+    test('granted でもアクセス拒否が続いたら 3 回で打ち切り、最終文言 + ボタン非表示（再誘導しない）', async () => {
+      const openSpreadsheetPicker = jest.fn(async () => 'granted' as const);
+      const sleep = jest.fn(async () => undefined);
+      const deps = makeDeps({
+        google: makeDeniedGoogle({ denied: true }),
+        openSpreadsheetPicker,
+        sleep,
+      });
+      await bootstrapPopup(document, deps);
+      await submitOpen('SID-9');
+      el<HTMLButtonElement>('popup-open-grant').click();
+      await flush();
+      expect(sleep).toHaveBeenCalledTimes(2);
+      expect(sleep).toHaveBeenCalledWith(2_000);
+      expect(el('popup-open-error').textContent).toContain('許可後もアクセスできませんでした');
+      expect(el<HTMLButtonElement>('popup-open-grant').hidden).toBe(true);
+      expect(deps.openAppTab).not.toHaveBeenCalled();
+    });
+
+    test('mismatch は専用文言を表示し、ボタンは残す', async () => {
+      const deps = makeDeps({
+        google: makeDeniedGoogle({ denied: true }),
+        openSpreadsheetPicker: jest.fn(async () => 'mismatch' as const),
+      });
+      await bootstrapPopup(document, deps);
+      await submitOpen('SID-9');
+      el<HTMLButtonElement>('popup-open-grant').click();
+      await flush();
+      expect(el('popup-open-error').textContent).toContain('入力された ID と異なります');
+      expect(el<HTMLButtonElement>('popup-open-grant').hidden).toBe(false);
+    });
+
+    test('cancelled は案内文とボタンをそのまま残す', async () => {
+      const deps = makeDeps({ google: makeDeniedGoogle({ denied: true }) });
+      await bootstrapPopup(document, deps);
+      await submitOpen('SID-9');
+      el<HTMLButtonElement>('popup-open-grant').click();
+      await flush();
+      expect(el('popup-open-error').textContent).toContain('権限がまだありません');
+      expect(el<HTMLButtonElement>('popup-open-grant').hidden).toBe(false);
+    });
+
+    test('Picker 自体の失敗はエラーメッセージを表示する', async () => {
+      const deps = makeDeps({
+        google: makeDeniedGoogle({ denied: true }),
+        openSpreadsheetPicker: jest.fn(async () => {
+          throw new Error('Picker タブの作成に失敗しました');
+        }),
+      });
+      await bootstrapPopup(document, deps);
+      await submitOpen('SID-9');
+      el<HTMLButtonElement>('popup-open-grant').click();
+      await flush();
+      expect(el('popup-open-error').textContent).toContain('Picker タブの作成に失敗しました');
+    });
+
+    test('granted 後にアクセス以外の検証エラーなら通常エラー表示 + ボタン非表示', async () => {
+      // 許可は通ったが、開いた先が別ツールのシート（Documents / SchemaFields 欠落）だったケース
+      const state = { denied: true };
+      const okButWrong: GoogleApiDeps = {
+        getAccessToken: async () => 'tok',
+        fetch: (async () => {
+          if (state.denied) {
+            return {
+              ok: false,
+              status: 404,
+              json: async () => ({}),
+              text: async () => 'not found',
+            } as Response;
+          }
+          const json = { sheets: [{ properties: { title: 'Meta' } }] };
+          return {
+            ok: true,
+            status: 200,
+            json: async () => json,
+            text: async () => JSON.stringify(json),
+          } as Response;
+        }) as typeof fetch,
+      };
+      const deps = makeDeps({
+        google: okButWrong,
+        openSpreadsheetPicker: jest.fn(async () => {
+          state.denied = false;
+          return 'granted' as const;
+        }),
+      });
+      await bootstrapPopup(document, deps);
+      await submitOpen('SID-9');
+      el<HTMLButtonElement>('popup-open-grant').click();
+      await flush();
+      expect(el('popup-open-error').textContent).toContain(
+        'sr-data-extraction のプロジェクトではありません',
+      );
+      expect(el<HTMLButtonElement>('popup-open-grant').hidden).toBe(true);
+    });
+
+    test('フォーム再送で許可ボタンと対象 ID をリセットする', async () => {
+      const state = { denied: true };
+      const openSpreadsheetPicker = jest.fn(async () => 'cancelled' as const);
+      const deps = makeDeps({ google: makeDeniedGoogle(state), openSpreadsheetPicker });
+      await bootstrapPopup(document, deps);
+      await submitOpen('SID-9');
+      expect(el<HTMLButtonElement>('popup-open-grant').hidden).toBe(false);
+      // 再送（成功ケース）でボタンが隠れ、以後クリックしても何も起きない
+      state.denied = false;
+      await submitOpen('SID-9');
+      expect(el<HTMLButtonElement>('popup-open-grant').hidden).toBe(true);
+      el<HTMLButtonElement>('popup-open-grant').click();
+      await flush();
+      expect(openSpreadsheetPicker).not.toHaveBeenCalled();
+    });
+
+    test('許可対象が未設定のままクリックしても何もしない', async () => {
+      const openSpreadsheetPicker = jest.fn(async () => 'cancelled' as const);
+      const deps = makeDeps({ openSpreadsheetPicker });
+      await bootstrapPopup(document, deps);
+      el<HTMLButtonElement>('popup-open-grant').click();
+      await flush();
+      expect(openSpreadsheetPicker).not.toHaveBeenCalled();
+    });
+  });
 });
 
 describe('createChromePopupDeps', () => {
@@ -466,6 +675,35 @@ describe('createChromePopupDeps', () => {
     expect(chromeMock.runtime.sendMessage).toHaveBeenCalledWith({ type: 'auth:get-email' });
     expect(chromeMock.identity.getProfileUserInfo).toHaveBeenCalled();
   });
+
+  test('openSpreadsheetPicker は Picker タブ（view=spreadsheet）を開き、結果を返す（配線確認）', async () => {
+    chromeMock.tabs.create.mockResolvedValueOnce({ id: 42 });
+    const deps = createChromePopupDeps();
+    const promise = deps.openSpreadsheetPicker('SID-1');
+    await flush();
+    const url = (chromeMock.tabs.create.mock.calls[0]?.[0] as { url: string }).url;
+    expect(url).toContain(`${PICKER_PAGE_URL}#`);
+    expect(url).toContain('view=spreadsheet');
+    expect(url).toContain('file_id=SID-1');
+    // 実生成された nonce をタブ URL から拾ってキャンセルを送る
+    const nonce = new URLSearchParams(url.split('#')[1] ?? '').get('nonce');
+    const wrapped = chromeMock.runtime.onMessageExternal.addListener.mock.calls[0]?.[0] as (
+      message: unknown,
+      sender: { tab?: { id?: number }; url?: string },
+      sendResponse: (response: unknown) => void,
+    ) => void;
+    wrapped(
+      { source: 'sr-data-extraction-picker', kind: 'cancelled', nonce },
+      { tab: { id: 42 }, url: `${PICKER_PAGE_URL}#x` },
+      jest.fn(),
+    );
+    await expect(promise).resolves.toBe('cancelled');
+  });
+
+  test('sleep は resolve する', async () => {
+    const deps = createChromePopupDeps();
+    await expect(deps.sleep(0)).resolves.toBeUndefined();
+  });
 });
 
 describe('bootstrapPopup（表示言語 en。issue #93）', () => {
@@ -500,6 +738,9 @@ describe('bootstrapPopup（表示言語 en。issue #93）', () => {
           <button type="submit">開く</button>
         </form>
         <p id="popup-open-error"></p>
+        <button id="popup-open-grant" type="button" hidden data-i18n="popup.openGrant">
+          Google で許可する
+        </button>
       </div>
       <button id="open-options" type="button" data-i18n="popup.openOptions">設定を開く</button>
     </main>

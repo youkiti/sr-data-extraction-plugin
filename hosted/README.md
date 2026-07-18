@@ -15,6 +15,27 @@ MV3 の remote hosted code 制約により、Google Picker（`apis.google.com/js
 - `src/lib/google/picker.ts` の `PICKER_PAGE_URL`
 - `src/manifest.json` の `externally_connectable.matches`
 
+## スプレッドシート許可モード（issue #130・要再デプロイ）
+
+`picker.html` は URL フラグメントの `view=spreadsheet` で**共有スプレッドシートの drive.file
+許可モード**になる（S1「既存 ID で開く」のアクセス拒否時と、メインビュー再入場時の誘導が使う）:
+
+- `file_id=<スプレッドシート ID>` があれば `setFileIds` で対象シートだけを表示する。
+  **setFileIds は表示フィルタであり事前フォーカスではない** — Drive 側で共有されていない
+  シートは表示されないため、ページに「Drive で共有を確認」の注意書きと
+  「すべてのスプレッドシートから選ぶ」フォールバックリンクを常設している
+- `nonce=<乱数>` を受け取ったら全メッセージ（ready / picked / cancelled）へ echo する。
+  拡張側はこの echo と `sender.url` を照合してからトークンを応答する（トークン受け渡し境界の防御）。
+  旧拡張は nonce を付けてこないため echo しない（後方互換）。**逆に新拡張は echo を必須検証する
+  ため、拡張のリリース前に本ページを先行デプロイすること**
+
+## デプロイ手順（更新時）
+
+1. `picker.html` の HTML 冒頭コメントの `version:` を更新日に書き換える（デプロイ版の識別用）
+2. `gh-pages` ブランチの `picker.html` を本ファイルの内容で上書きして push
+3. デプロイ後、`https://youkiti.github.io/sr-data-extraction-plugin/picker.html` をブラウザで開き、
+   ページソースの `version:` コメントが一致することを確認する
+
 ## フォルダ単位の取り込み（要再デプロイ）
 
 `picker.html` はマイドライブビューで `setSelectFolderEnabled(true)` を有効化し、PDF に加えて
