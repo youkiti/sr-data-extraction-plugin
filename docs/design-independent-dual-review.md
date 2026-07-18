@@ -176,9 +176,11 @@ RoB タブ（`rob_domain`）と study タブは群構成に依存しないため
 ### 7.2 reviewer 側: 初回オンボーディング
 
 1. 拡張をインストール → 自分の Google アカウントでログイン
-2. Popup の「スプレッドシート ID / URL で開く」に ID **または共有 URL**（`https://docs.google.com/spreadsheets/d/{ID}/edit…`）を貼る → `extractSpreadsheetId` が URL から ID を取り出し `loadExistingProject` が Meta を読む（Sheets API はフル `spreadsheets` スコープのため共有シートは ID で開ける）
+2. Popup の「スプレッドシート ID / URL で開く」に ID **または共有 URL**（`https://docs.google.com/spreadsheets/d/{ID}/edit…`）を貼る → `extractSpreadsheetId` が URL から ID を取り出し `loadExistingProject` が Meta を読む。**2026-07-18 改訂（issue #128〜#131）**: `spreadsheets` スコープ廃止により、`drive.file` では他人が作成した共有シートを ID だけでは開けない。初回はアクセス拒否（`SheetsAccessDeniedError`）→「**Google で許可する**」→ スプレッドシート Picker で当該シートを選択（ユーザー × シートごと 1 回）→ 自動再試行で開く（[ui-states.md §1](ui-states.md) の「アクセス許可が必要」）。メインビュー再入場でロール解決が拒否された場合も同じ導線をロールエラー画面に出す（issue #131）
 3. ロール解決 → reviewer と判明
 4. **フォルダアクセス付与ステップ**: `drive.file` スコープでは他人が作成したファイルのバイナリを読めないため、Picker でプロジェクトフォルダを選択して本アプリに権限を付与する（S3 フォルダ取り込みと同じ Picker 経路を流用した専用画面を Home に出す。PDF が読めるようになるまで検証入場をブロック）
+
+> 旧設計（〜2026-07-17）の手順 2 は「Sheets API はフル `spreadsheets` スコープのため共有シートは ID で開ける」を前提にしていたが、`spreadsheets` はセンシティブスコープで OAuth 未検証アプリは同意 100 人で打ち止めになるため廃止した（issue #128。スコープは `userinfo.email` + `drive.file` のみ。requirements.md §2.1）。
 
 ### 7.3 技術リスク（最優先の実機確認項目）
 
