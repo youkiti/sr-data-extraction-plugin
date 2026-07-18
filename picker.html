@@ -1,7 +1,8 @@
 <!doctype html>
 <!--
   Drive Picker ホストページ（lib/google/picker.ts の対向実装）。
-  version: 2026-07-18d (issue #139: files モードのタイトルへ全選択の操作説明を表示)
+  version: 2026-07-19a (issue #141: buildPicker 集約 + page_version ハンドシェイク +
+           files モードの file_ids を ready 応答経由に変更)
 
   MV3 では apis.google.com のスクリプトを拡張ページで読み込めないため、
   このページを HTTPS でホストし（既定: GitHub Pages。lib/google/picker.ts の
@@ -20,7 +21,17 @@
   - file_id      : view=spreadsheet のとき、対象シートだけを表示する（setFileIds）。
                    setFileIds は表示フィルタであり、Drive 側で共有されていないシートは
                    表示されない点に注意（ページ内の注意書きで案内）
-  - file_ids     : view=files のとき、表示対象のファイル ID（カンマ区切り）。setFileIds へ渡す
+  - file_ids     : view=files のとき、表示対象のファイル ID（カンマ区切り）。新拡張は ready 応答
+                   （sendMessage のコールバックで受け取る response.file_ids）で渡すため、この
+                   フラグメントは付けてこない（issue #141: 数百件規模での URL 実用上限回避 +
+                   ブラウザ履歴に ID 一覧を残さないため）。旧拡張との後方互換のため、フラグメント
+                   で渡された場合（response.file_ids が無いとき）は従来どおりこちらを使う
+
+  page_version ハンドシェイク（issue #141）:
+  - このページは ready メッセージへ { page_version: PAGE_VERSION } を含める。新拡張は
+    files モードでこの値が 1 未満（未対応の旧ページ）だとトークンを渡さずエラーにする
+    （旧ページのままだと file_ids を ready 応答経由で受け取れないため。ページ先行デプロイの
+    原則により、拡張リリース前に本ページを再デプロイすること）
 
   デプロイ時の設定（このファイル内のプレースホルダを書き換える）:
   - PICKER_API_KEY : GCP の API キー（Google Picker API を有効化したプロジェクトのもの）
@@ -60,6 +71,9 @@
       var PICKER_APP_ID = '1022221973986';
 
       var MESSAGE_SOURCE = 'sr-data-extraction-picker';
+      // ページ側のプロトコル対応バージョン（issue #141）。拡張は files モードで
+      // この値を検査し、未対応（無い/古い）なら明示エラーにする
+      var PAGE_VERSION = 1;
       var statusEl = document.getElementById('status');
       var titleEl = document.getElementById('title');
       var sheetNoteEl = document.getElementById('sheet-note');
@@ -109,6 +123,23 @@
         };
       }
 
+      // 3 モード共通の PickerBuilder ボイラープレート（issue #141）。
+      // views は addView へ渡す順番のまま並べた配列（ViewId 文字列 / View インスタンス混在可）。
+      // opts.token は必須、opts.multiselect が true のときだけ MULTISELECT_ENABLED を有効化する。
+      // 各モード関数はビュー構築とこの呼び出しだけを行い、挙動（ビューの種類・順序・ラベル・
+      // タイトル・案内文・フェイルクローズ）はリファクタ前と完全に同一にする
+      function buildPicker(views, title, opts) {
+        var builder = new google.picker.PickerBuilder();
+        if (opts.multiselect) {
+          builder.enableFeature(google.picker.Feature.MULTISELECT_ENABLED);
+        }
+        builder.setDeveloperKey(PICKER_API_KEY).setAppId(PICKER_APP_ID).setOAuthToken(opts.token);
+        views.forEach(function (view) {
+          builder.addView(view);
+        });
+        builder.setTitle(title).setCallback(onPickerAction()).build().setVisible(true);
+      }
+
       function showPdfPicker(token) {
         // ビューは addView した分だけ左側のタブになる（先頭が既定タブ）。
         // 既定タブ = 最近使用したファイル、
@@ -130,46 +161,34 @@
         if (typeof starredView.setLabel === 'function') {
           starredView.setLabel('スター付き');
         }
-        new google.picker.PickerBuilder()
-          .enableFeature(google.picker.Feature.MULTISELECT_ENABLED)
-          .setDeveloperKey(PICKER_API_KEY)
-          .setAppId(PICKER_APP_ID)
-          .setOAuthToken(token)
-          .addView(google.picker.ViewId.RECENTLY_PICKED)
-          .addView(driveView)
-          .addView(starredView)
-          .setTitle('取り込む PDF またはフォルダを選択')
-          .setCallback(onPickerAction())
-          .build()
-          .setVisible(true);
+        buildPicker(
+          [google.picker.ViewId.RECENTLY_PICKED, driveView, starredView],
+          '取り込む PDF またはフォルダを選択',
+          { token: token, multiselect: true },
+        );
         statusEl.textContent = 'PDF またはフォルダを選択してください。';
       }
 
       // プロジェクトファイル許可モード（issue #139）。拡張が Documents タブ由来の必要ファイル ID
-      // （PDF + 抽出テキスト）を file_ids で渡してくるので、setFileIds で列挙して全選択してもらう。
+      // （PDF + 抽出テキスト）を渡してくるので、setFileIds で列挙して全選択してもらう。
       // mime フィルタは掛けない（PDF 以外の抽出テキストも選択対象のため）。
       // ID 一覧で絞り込めない状況では「全 Drive 表示 + 全選択の案内」という危険な縮退になるため、
-      // file_ids 欠落・setFileIds 非対応はフェイルクローズにする
-      function showProjectFilesPicker(token) {
+      // fileIds 欠落・setFileIds 非対応はフェイルクローズにする
+      function showProjectFilesPicker(token, fileIds) {
         var view = new google.picker.DocsView(google.picker.ViewId.DOCS);
         if (typeof view.setFileIds !== 'function') {
           fail('この環境の Picker はファイル指定（setFileIds）に対応していません。拡張のタブから開き直してください。');
           return;
         }
-        view.setFileIds(targetFileIds);
-        new google.picker.PickerBuilder()
-          .enableFeature(google.picker.Feature.MULTISELECT_ENABLED)
-          .setDeveloperKey(PICKER_API_KEY)
-          .setAppId(PICKER_APP_ID)
-          .setOAuthToken(token)
-          .addView(view)
+        view.setFileIds(fileIds);
+        buildPicker(
+          [view],
           // Picker はモーダルでページ本文（#status / #files-note）を覆い隠すため、
           // 全選択の操作説明はモーダル上に常時見えるタイトルへ入れる（Picker 内部は
           // Google 配信の iframe で、ページ側から選択操作を代行するボタンは作れない）
-          .setTitle('すべて選択してください: 先頭を 1 クリック → 末尾を Shift+クリック')
-          .setCallback(onPickerAction())
-          .build()
-          .setVisible(true);
+          'すべて選択してください: 先頭を 1 クリック → 末尾を Shift+クリック',
+          { token: token, multiselect: true },
+        );
         statusEl.textContent =
           '表示されたファイルをすべて選択してください（先頭を 1 クリック → 末尾を Shift+クリックで範囲選択。一部だけ選択すると検証画面で読み込みに失敗します）。';
         filesNoteEl.hidden = false;
@@ -183,15 +202,7 @@
         if (restrict && targetFileId && typeof view.setFileIds === 'function') {
           view.setFileIds(targetFileId);
         }
-        new google.picker.PickerBuilder()
-          .setDeveloperKey(PICKER_API_KEY)
-          .setAppId(PICKER_APP_ID)
-          .setOAuthToken(token)
-          .addView(view)
-          .setTitle('プロジェクトのスプレッドシートを選択')
-          .setCallback(onPickerAction())
-          .build()
-          .setVisible(true);
+        buildPicker([view], 'プロジェクトのスプレッドシートを選択', { token: token, multiselect: false });
         statusEl.textContent =
           'プロジェクトのスプレッドシートを選択してください（選択すると拡張へアクセスが許可されます）。';
         sheetNoteEl.hidden = false;
@@ -199,8 +210,9 @@
 
       function onApiLoaded() {
         gapi.load('picker', function () {
-          // 拡張へ ready を送り、応答で OAuth トークンを受け取ってから Picker を表示する
-          send({ source: MESSAGE_SOURCE, kind: 'ready' }, function (response) {
+          // 拡張へ ready（+ page_version）を送り、応答で OAuth トークンを受け取ってから
+          // Picker を表示する。page_version は拡張側のバージョンハンドシェイク（issue #141）
+          send({ source: MESSAGE_SOURCE, kind: 'ready', page_version: PAGE_VERSION }, function (response) {
             if (chrome.runtime.lastError || !response || !response.token) {
               fail('拡張からトークンを受け取れませんでした。拡張のタブから開き直してください。');
               return;
@@ -216,10 +228,16 @@
             } else if (viewMode === 'files') {
               titleEl.textContent = 'プロジェクトのファイルをすべて選択';
               document.title = 'SR データ抽出 — ファイルの許可';
-              if (!targetFileIds) {
+              // file_ids は ready 応答（新拡張）を優先し、無ければフラグメント（旧拡張）を使う
+              // （issue #141: 新拡張は file_ids を URL に載せないため）
+              var fileIds =
+                Array.isArray(response.file_ids) && response.file_ids.length > 0
+                  ? response.file_ids.join(',')
+                  : targetFileIds;
+              if (!fileIds) {
                 fail('対象ファイルの一覧を受け取れませんでした。拡張のタブから開き直してください。');
               } else {
-                showProjectFilesPicker(response.token);
+                showProjectFilesPicker(response.token, fileIds);
               }
             } else {
               showPdfPicker(response.token);
