@@ -800,6 +800,8 @@ export const ja = {
   'adjudicate.toastSaveFailed': '裁定の保存に失敗しました: {reason}',
   'adjudicate.toastNoMatches': '一括採用できる一致セルがありません',
   'adjudicate.toastArmFirst': '群構成の確定後に裁定してください',
+  'adjudicate.toastArmKeyCollision':
+    'B 側に群構成外の項目キー（{keys}）が見つかったため、別キーへ退避して突き合わせました。データの見落としがないか確認してください',
 
   // サービス層のトースト・状態エラー（S1〜S9 ぶん）
   'common.pickerFailed': 'Drive Picker を開けませんでした: {reason}',

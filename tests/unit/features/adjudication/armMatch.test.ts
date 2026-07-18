@@ -1,9 +1,11 @@
 import {
+  armKeysInUse,
   armMappingFromRemap,
   armsMatch,
   buildArmKeyRemap,
   buildConsensusArmDraft,
   buildDefaultArmMapping,
+  escapeArmKeyRemapCollisions,
   parseArmKeyRemapNote,
   remapArmEntityKey,
   serializeArmKeyRemap,
@@ -247,5 +249,71 @@ describe('remapArmEntityKey', () => {
     expect(remapArmEntityKey('-', remap)).toBe('-');
     expect(remapArmEntityKey('rob:domain_1', remap)).toBe('rob:domain_1');
     expect(remapArmEntityKey('broken::key', remap)).toBe('broken::key');
+  });
+
+  // issue #117 件1: 非正準順（outcome|time|arm 等）のキーでもセグメント順序を保ったまま
+  // arm セグメントだけを置換する（makeOutcomeEntityKey による正準順への再構築はしない）
+  test('非正準順（outcome|time|arm）でもセグメント順序を保って arm だけ置換する', () => {
+    expect(remapArmEntityKey('outcome:mortality|time:30d|arm:2', remap)).toBe('outcome:mortality|time:30d|arm:1');
+  });
+
+  test('恒等マッピング（B armKey → 同じ armKey）でも非正準順の文字列がそのまま保たれる（偽の不一致の解消）', () => {
+    const identityRemap = new Map([['arm:1', 'arm:1']]);
+    const key = 'outcome:x|time:30d|arm:1';
+    // 修正前は makeOutcomeEntityKey で正準順（outcome|arm|time）へ再構築されるため
+    // 'outcome:x|arm:1|time:30d' になり、A 側が同じ非正準順のキーを出していると文字列比較で
+    // 不一致になっていた。修正後は入力と完全に同じ文字列を返す
+    expect(remapArmEntityKey(key, identityRemap)).toBe(key);
+  });
+});
+
+describe('armKeysInUse', () => {
+  test('arm レベル・outcome_result レベルの arm セグメントを集める（重複除去）', () => {
+    expect(
+      armKeysInUse(['arm:1', 'outcome:x|arm:2', 'outcome:y|arm:2|time:30d', 'outcome:z|arm:1']),
+    ).toEqual(new Set(['arm:1', 'arm:2']));
+  });
+
+  test('study / rob_domain / arm を含まない outcome / 形式不正のキーは無視する', () => {
+    expect(armKeysInUse(['-', 'rob:domain_1', 'outcome:mortality', 'broken::key'])).toEqual(new Set());
+  });
+
+  test('空の列は空集合', () => {
+    expect(armKeysInUse([])).toEqual(new Set());
+  });
+});
+
+describe('escapeArmKeyRemapCollisions', () => {
+  test('衝突が無ければ辞書のコピーをそのまま返す（新規 Map・同じ内容）', () => {
+    const remap = new Map([['arm:2', 'arm:1']]);
+    const result = escapeArmKeyRemapCollisions(remap, new Set(['arm:2']));
+    expect(result.collisions).toEqual([]);
+    expect([...result.remap.entries()]).toEqual([['arm:2', 'arm:1']]);
+    expect(result.remap).not.toBe(remap);
+  });
+
+  test('辞書に無い素通しキーが写像先の正準キーと衝突すると退避キーへ差し替える（issue #117 件2）', () => {
+    // B の確定 armsB = arm:1, arm:2（辞書対象）だが、B の実データには辞書に無い旧キー
+    // 'arm:3' が残っており、A 側の 2 群目が 'arm:3' へ写像される（辞書の写像先と衝突）
+    const remap = new Map([
+      ['arm:2', 'arm:1'],
+      ['arm:1', 'arm:3'],
+    ]);
+    const result = escapeArmKeyRemapCollisions(remap, new Set(['arm:1', 'arm:2', 'arm:3']));
+    expect(result.collisions).toEqual(['arm:3']);
+    // 退避キーは正準キー集合・実データキーのいずれとも衝突しない最小の arm:n
+    expect(result.remap.get('arm:3')).toBe('arm:4');
+    // 元の辞書エントリ（衝突とは無関係の写像）は変更されない
+    expect(result.remap.get('arm:2')).toBe('arm:1');
+    expect(result.remap.get('arm:1')).toBe('arm:3');
+  });
+
+  test('衝突していない素通しキーは退避しない', () => {
+    const remap = new Map([['arm:9', 'arm:1']]);
+    const result = escapeArmKeyRemapCollisions(remap, new Set(['arm:1', 'arm:9', 'arm:2']));
+    // 'arm:1' は canonicalTargets（{'arm:1'}）と衝突するので退避対象、'arm:2' は衝突しないため対象外
+    expect(result.collisions).toEqual(['arm:1']);
+    expect(result.remap.has('arm:2')).toBe(false);
+    expect(result.remap.get('arm:1')).toBe('arm:3');
   });
 });

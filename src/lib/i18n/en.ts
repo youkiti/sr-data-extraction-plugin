@@ -809,6 +809,8 @@ export const en: Record<MessageKey, string> = {
   'adjudicate.toastSaveFailed': 'Failed to save the adjudication: {reason}',
   'adjudicate.toastNoMatches': 'No matching cells to adopt in bulk',
   'adjudicate.toastArmFirst': 'Confirm the arm structure before adjudicating',
+  'adjudicate.toastArmKeyCollision':
+    'Found item keys on side B outside the confirmed arm structure ({keys}); they were moved to separate keys to avoid overwriting data. Please double-check nothing was missed',
 
   // サービス層のトースト・状態エラー
   'common.pickerFailed': 'Could not open the Drive Picker: {reason}',

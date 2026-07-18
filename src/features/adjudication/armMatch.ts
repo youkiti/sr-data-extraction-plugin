@@ -6,8 +6,11 @@
 // （A のキー空間 + B のみ群の新規採番キー）」の辞書（buildArmKeyRemap）として渡り、
 // B 側 entity_key の書き換え（remapArmEntityKey）に使う。群構成の確定時は辞書を
 // ArmStructures の note へ直列化（serializeArmKeyRemap）し、再入場時に復元する
-// （parseArmKeyRemapNote。note に辞書が無い旧データは既定マッピングへフォールバック）
-import { makeArmEntityKey, makeOutcomeEntityKey, parseEntityKey } from '../../utils/entityKey';
+// （parseArmKeyRemapNote。note に辞書が無い旧データは既定マッピングへフォールバック）。
+// issue #117（裁定 arm マッピングの残エッジ）: remapArmEntityKey のセグメント順序保存
+// （非正準順キーでの偽の不一致を解消）+ 素通しキー衝突検知（escapeArmKeyRemapCollisions。
+// 無言のデータ潰しを防ぐ）を追加
+import { makeArmEntityKey, parseEntityKey } from '../../utils/entityKey';
 
 /** 群 1 本ぶんの参照（ArmStructures の最新版から armKey / armName だけを使う） */
 export interface ArmRef {
@@ -209,7 +212,15 @@ export function parseArmKeyRemapNote(note: string | null): Map<string, string> |
 /**
  * entity_key の arm セグメントを辞書で書き換える（B 側の行に適用する。issue #63）。
  * arm レベルはキー全体を、outcome_result レベルは `arm:` セグメントだけを写す。
- * 辞書に無い arm・arm を含まないレベル（study / rob_domain）・形式不正のキーはそのまま返す
+ * 辞書に無い arm・arm を含まないレベル（study / rob_domain）・形式不正のキーはそのまま返す。
+ *
+ * issue #117 件1: outcome_result レベルは `makeOutcomeEntityKey` で正準順（outcome|arm|time）へ
+ * 再構築せず、元のセグメント順序を保ったまま `arm:` セグメントだけをその場で置換する。
+ * LLM が非正準順（例 `outcome:x|time:30d|arm:1`）のキーを出力していた場合、正準順への
+ * 再構築だと恒等マッピング（B armKey → 同じ A armKey）ですら A/B のキー文字列が食い違い
+ * 「偽の不一致」になっていたための修正（`validateAiOutput` は entity_key を素通し保存するため
+ * 非正準順のキーが理論上到達しうる。根治策〔validateAiOutput 側での正準化〕は既存保存データとの
+ * 意味論が変わるため見送り、突き合わせ側〔ここ〕での吸収に留める）
  */
 export function remapArmEntityKey(entityKey: string, remap: ReadonlyMap<string, string>): string {
   const parsed = parseEntityKey(entityKey);
@@ -225,11 +236,75 @@ export function remapArmEntityKey(entityKey: string, remap: ReadonlyMap<string, 
       return entityKey;
     }
     const armValue = mapped.slice('arm:'.length);
-    return makeOutcomeEntityKey({
-      outcome: parsed.outcome,
-      arm: armValue,
-      ...(parsed.time !== null ? { time: parsed.time } : {}),
-    });
+    const armSegment = makeArmEntityKey(armValue);
+    return entityKey
+      .split('|')
+      .map((segment) => (segment.startsWith('arm:') ? armSegment : segment))
+      .join('|');
   }
   return entityKey;
+}
+
+/**
+ * entity_key の列から実際に使われている arm キー（`arm:n` 形式）を集める
+ * （issue #117 件2: B の確定 ArmStructures に無い「素通しキー」の衝突検知に使う）
+ */
+export function armKeysInUse(entityKeys: Iterable<string>): Set<string> {
+  const keys = new Set<string>();
+  for (const entityKey of entityKeys) {
+    const parsed = parseEntityKey(entityKey);
+    if (parsed === null) {
+      continue;
+    }
+    if (parsed.level === 'arm') {
+      keys.add(entityKey);
+    } else if (parsed.level === 'outcome_result' && parsed.arm !== null) {
+      keys.add(makeArmEntityKey(parsed.arm));
+    }
+  }
+  return keys;
+}
+
+export interface ArmKeyRemapEscapeResult {
+  /** 衝突を退避した辞書（衝突が無ければ元の辞書と等価な新規 Map） */
+  remap: Map<string, string>;
+  /** 退避された素通しキー（B の生 entity_key に現れた arm キーのうち辞書対象外だったもの） */
+  collisions: string[];
+}
+
+/**
+ * B の ResultsData / Decisions の実データに現れる arm キー（`actualBArmKeys`）のうち、
+ * 辞書（`remap`）の対象外（= B の確定 ArmStructures に無い「素通しキー」。evidence 由来の
+ * 旧データ等）が、辞書の写像先（正準キー集合）と文字列衝突する場合に、衝突しない新規キーへ
+ * 退避した辞書を返す（issue #117 件2）。
+ *
+ * 背景: `remapArmEntityKey` は辞書に無い arm キーをそのまま通す（素通し）。素通しキーが
+ * たまたま辞書の写像先と同じ文字列になると、突き合わせ側（`indexResultsRows` の Map）で
+ * 後勝ちの 1 行が他方を無言で潰す。ここで事前に検知し、退避キーへ差し替えることでデータ消失を防ぐ
+ * （退避キーは正準キー集合・実データ上の全 arm キー・他の退避キーのいずれとも衝突しない
+ * `arm:n` を 1 から順に探して割り当てる）。衝突が無ければ `remap` のコピーをそのまま返す
+ */
+export function escapeArmKeyRemapCollisions(
+  remap: ReadonlyMap<string, string>,
+  actualBArmKeys: ReadonlySet<string>,
+): ArmKeyRemapEscapeResult {
+  const canonicalTargets = new Set(remap.values());
+  const collidingKeys = [...actualBArmKeys]
+    .filter((key) => !remap.has(key) && canonicalTargets.has(key))
+    .sort();
+  const escaped = new Map(remap);
+  if (collidingKeys.length === 0) {
+    return { remap: escaped, collisions: [] };
+  }
+  const taken = new Set<string>([...canonicalTargets, ...actualBArmKeys, ...remap.keys()]);
+  for (const key of collidingKeys) {
+    let n = 1;
+    while (taken.has(makeArmEntityKey(n))) {
+      n += 1;
+    }
+    const escapeKey = makeArmEntityKey(n);
+    taken.add(escapeKey);
+    escaped.set(key, escapeKey);
+  }
+  return { remap: escaped, collisions: collidingKeys };
 }
