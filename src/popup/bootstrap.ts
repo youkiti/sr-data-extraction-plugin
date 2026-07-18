@@ -5,7 +5,7 @@
 // 開くので、独立した「メインビューを開く」ボタンは持たない（sr-query-builder と同一）。
 // すべての deps を引数注入するので OAuth 無しでテスト可能。
 import { createChromeGoogleApiDeps } from '../app/services/factories';
-import { BUILD_DATE } from '../build-info';
+import { BUILD_DATE, IS_DEV_BUILD, withDevSuffix } from '../build-info';
 import { createNewProject, loadExistingProject } from '../app/services/projectService';
 import type { ProjectRef } from '../domain/project';
 import {
@@ -170,7 +170,14 @@ export async function bootstrapPopup(doc: Document, deps: PopupDeps): Promise<vo
   setUiLanguage(await loadUiLanguage());
   doc.documentElement.lang = getUiLanguage();
   localizeDom(doc);
-  // アプリ名の下にビルド日を表示する（要素が無い環境では何もしない）
+  // dev ビルドではヘッダーのアプリ名にも manifest 名と同じ「 (dev)」を付ける
+  // （要素が無い環境では何もしない。以下のビルド日表示も同様）
+  const popupTitleEl = doc.querySelector('.popup__title');
+  if (popupTitleEl) {
+    popupTitleEl.textContent = withDevSuffix(popupTitleEl.textContent, IS_DEV_BUILD);
+  }
+
+  // アプリ名の下にビルド日を表示する
   const buildDateEl = doc.getElementById('popup-build-date');
   if (buildDateEl) {
     buildDateEl.textContent = `build ${BUILD_DATE}`;

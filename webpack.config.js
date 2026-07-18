@@ -68,6 +68,7 @@ module.exports = (_env, argv) => {
     plugins: [
       new webpack.DefinePlugin({
         __BUILD_DATE__: JSON.stringify(buildDate),
+        __IS_DEV_BUILD__: JSON.stringify(!isProduction),
         __WEBAUTH_CLIENT_ID__: JSON.stringify(webAuthClientId),
       }),
       new CopyWebpackPlugin({

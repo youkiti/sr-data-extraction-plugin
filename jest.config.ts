@@ -6,9 +6,10 @@ import type { Config } from 'jest';
 
 const config: Config = {
   testEnvironment: 'jsdom',
-  // ビルド時に webpack DefinePlugin が注入する __BUILD_DATE__ をテストにも与える
-  // （build-info.ts が参照。値は任意の固定日でよい）
-  globals: { __BUILD_DATE__: '2026-07-06' },
+  // ビルド時に webpack DefinePlugin が注入する __BUILD_DATE__ / __IS_DEV_BUILD__ を
+  // テストにも与える（build-info.ts が参照。日付は任意の固定日でよい。dev フラグは
+  // 本番相当の false とし、(dev) サフィックスの分岐は withDevSuffix の単体テストで覆う）
+  globals: { __BUILD_DATE__: '2026-07-06', __IS_DEV_BUILD__: false },
   roots: ['<rootDir>/src', '<rootDir>/tests'],
   testMatch: ['**/*.test.ts'],
   testPathIgnorePatterns: ['/node_modules/', '<rootDir>/tests/e2e/'],

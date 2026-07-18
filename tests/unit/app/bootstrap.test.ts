@@ -375,6 +375,11 @@ describe('bootstrapApp', () => {
     expect(document.getElementById('app-build-date')?.textContent).toBe(`build ${BUILD_DATE}`);
   });
 
+  test('ヘッダーのアプリ名は本番相当ビルドではそのまま表示する（dev サフィックス無し）', async () => {
+    await bootstrapApp(asWindow(createWindowStub()));
+    expect(document.getElementById('app-title')?.textContent).toBe('SR データ抽出');
+  });
+
   test('プロジェクト未選択（状態 A）: 未選択メッセージ + プロジェクト選択ページへの同一タブ導線', async () => {
     await bootstrapApp(asWindow(createWindowStub()));
     expect(document.getElementById('app-status')?.textContent).toContain(
