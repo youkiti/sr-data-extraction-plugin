@@ -843,6 +843,7 @@ export const en: Record<MessageKey, string> = {
   'documents.toastIgnoreFailed': 'Failed to save ignoring the merge candidate: {reason}',
   'documents.tiabErrInput': 'Enter the spreadsheet URL or ID of tiab-review',
   'documents.tiabErrNotLoaded': 'Wait until the document list has finished loading',
+  'documents.tiabAccessMismatch': 'You selected a different sheet than the one you tried to open',
   'documents.tiabToastApplied': 'Applied the included list from tiab-review',
   'schema.toastMax3': 'Up to 3 sample articles',
   'schema.errNoProtocol': 'No protocol entered. Enter it first on the Protocol screen',

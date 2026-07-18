@@ -834,6 +834,7 @@ export const ja = {
   'documents.toastIgnoreFailed': '統合候補の無視を保存できませんでした: {reason}',
   'documents.tiabErrInput': 'tiab-review のスプレッドシートの URL または ID を入力してください',
   'documents.tiabErrNotLoaded': '文献一覧の読み込みが完了してから実行してください',
+  'documents.tiabAccessMismatch': '開こうとしたシートと違うシートが選択されました',
   'documents.tiabToastApplied': 'tiab-review の採用リストを反映しました',
   'schema.toastMax3': 'サンプル論文は 3 本までです',
   'schema.errNoProtocol': 'プロトコルが未入力です。先に #/protocol で入力してください',

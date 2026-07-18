@@ -127,6 +127,11 @@ export interface TiabImportState {
   /** tiab シートの読み込み + プレビュー計算中 */
   loading: boolean;
   error: string | null;
+  /**
+   * 直近エラーが drive.file 未許可（`SheetsAccessDeniedError`）か（issue #142）。
+   * true のとき `#tiab-error` に「Google で許可する」（スプレッドシート Picker）導線を出す
+   */
+  accessDenied: boolean;
   /** 反映プラン（プレビュー = そのまま実行内容）。null = 未計算 */
   plan: TiabImportPlan | null;
   /** 「取り込みを実行」の反映中 */
@@ -621,6 +626,7 @@ export function createInitialState(): AppState {
         sheetInput: '',
         loading: false,
         error: null,
+        accessDenied: false,
         plan: null,
         applying: false,
         result: null,
