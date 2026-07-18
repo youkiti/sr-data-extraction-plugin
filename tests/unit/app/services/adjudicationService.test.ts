@@ -1569,6 +1569,63 @@ describe('loadAgreementReport（issue #66）', () => {
     );
   });
 
+  test('issue #117 件3: consensus 群構成に永続化された arm マッピングを一致度統計にも適用し、裁定画面と統計を揃える', async () => {
+    const store = seedStore();
+    const armField = makeField({ fieldId: 'f-arm', fieldName: 'arm_name', entityLevel: 'arm' });
+    readDocumentsMock.mockResolvedValue([makeDocument()]);
+    readStudiesMock.mockResolvedValue([makeStudy()]);
+    readStudyDataSheetMock.mockResolvedValue({ fieldNames: [], rows: [] });
+    readResultsDataRowsMock.mockResolvedValue([
+      makeResultsRow({ resultId: 'r-a', fieldId: 'f-arm', annotator: A, entityKey: 'arm:1', value: '介入群' }),
+      // B は自身の確定 ArmStructures では arm:2 として同じ群を宣言している想定
+      makeResultsRow({ resultId: 'r-b', fieldId: 'f-arm', annotator: B, entityKey: 'arm:2', value: '介入群' }),
+    ]);
+    readAllDecisionsMock.mockResolvedValue([]);
+    // 裁定画面で群構成を確定した際に永続化された辞書（B の arm:2 → 正準 arm:1）
+    readAllArmStructuresMock.mockResolvedValue([
+      makeArmRow({
+        annotator: 'consensus',
+        annotatorType: 'consensus',
+        armKey: 'arm:1',
+        armName: '介入群',
+        note: `裁定者: ${JUDGE} / arm_mapping:{"arm:2":"arm:1"}`,
+      }),
+    ]);
+    listSchemaVersionsMock.mockResolvedValue([makeSchemaVersion()]);
+    getSchemaFieldsMock.mockResolvedValue([armField]);
+    await loadAgreementReport(store, makeDeps());
+    const agreement = store.getState().adjudicate.agreement;
+    // マッピング適用で B の 'arm:2' が A と同じ 'arm:1' へ書き換わり、1 セルとして一致判定される
+    // （マッピング未適用だと片側ずつ null の 2 セルに分かれ pairCount=0 になっていた = 旧挙動）
+    expect(agreement?.fields[0]).toEqual(
+      expect.objectContaining({ fieldId: 'f-arm', pairCount: 1, agreementCount: 1, agreementRate: 1 }),
+    );
+    expect(agreement?.disagreements).toEqual([]);
+  });
+
+  test('issue #117 件3: consensus 群構成が未確定（マッピング未保存）の study は従来どおり B の生キーで比較する', async () => {
+    const store = seedStore();
+    const armField = makeField({ fieldId: 'f-arm', fieldName: 'arm_name', entityLevel: 'arm' });
+    readDocumentsMock.mockResolvedValue([makeDocument()]);
+    readStudiesMock.mockResolvedValue([makeStudy()]);
+    readStudyDataSheetMock.mockResolvedValue({ fieldNames: [], rows: [] });
+    readResultsDataRowsMock.mockResolvedValue([
+      makeResultsRow({ resultId: 'r-a', fieldId: 'f-arm', annotator: A, entityKey: 'arm:1', value: '介入群' }),
+      makeResultsRow({ resultId: 'r-b', fieldId: 'f-arm', annotator: B, entityKey: 'arm:2', value: '介入群' }),
+    ]);
+    readAllDecisionsMock.mockResolvedValue([]);
+    readAllArmStructuresMock.mockResolvedValue([]); // consensus 群構成が無い（マッピング未保存）
+    listSchemaVersionsMock.mockResolvedValue([makeSchemaVersion()]);
+    getSchemaFieldsMock.mockResolvedValue([armField]);
+    await loadAgreementReport(store, makeDeps());
+    const agreement = store.getState().adjudicate.agreement;
+    // 生キーのまま突き合わせるため片側ずつ null の 2 セルに分かれ、両方とも対象外（pairCount=0）
+    expect(agreement?.fields[0]).toEqual(
+      expect.objectContaining({ fieldId: 'f-arm', pairCount: 0, agreementCount: 0, agreementRate: null }),
+    );
+    expect(agreement?.disagreements).toHaveLength(2);
+  });
+
   test('読込失敗は agreementError へ（agreement は変更しない）', async () => {
     const store = seedStore();
     readDocumentsMock.mockRejectedValue(new Error('boom'));

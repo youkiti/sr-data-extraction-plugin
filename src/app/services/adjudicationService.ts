@@ -749,7 +749,15 @@ export async function undoAdjudicateCell(
  * study 単位で ready ペア（human annotator ちょうど 2 名）を解決し、
  * features/adjudication/cellMatch.buildAdjudicationCells でセルを組み立てる。
  * openAdjudicateStudy と同じ読み出しパターン（studies / documents / StudyData /
- * ResultsData / Decisions / 最新確定 SchemaFields）を使う
+ * ResultsData / Decisions / 最新確定 SchemaFields）を使う。
+ *
+ * issue #117 件3: 裁定画面（openAdjudicateStudy）は B 側 entity_key を consensus 版
+ * ArmStructures の note に永続化された arm マッピングで正準キーへ書き換えてから突き合わせるが、
+ * この一致度レポートは従来 B の生 entity_key をそのまま使っていたため、裁定画面で一致して見える
+ * セルが統計では位置対応のまま不一致計上される食い違いがあった。ここでは**永続化済みの
+ * マッピングがある場合のみ**同じ書き換えを適用して画面と統計を揃える（マッピング未確定の
+ * study は consensus 群構成自体がまだ無く、裁定者の判断が入っていないため既定マッピングへの
+ * フォールバックはせず、従来どおり B の生キーで比較する = 挙動維持）
  */
 async function collectReadyStudyInputs(
   store: Store,
@@ -762,6 +770,7 @@ async function collectReadyStudyInputs(
   const studySheet = await readStudyDataSheet(spreadsheetId, deps.google);
   const resultsRows = await readResultsDataRows(spreadsheetId, deps.google);
   const decisions = await readAllDecisions(spreadsheetId, deps.google);
+  const armRows = await readAllArmStructures(spreadsheetId, deps.google);
 
   const inputs: AgreementStudyInput[] = [];
   for (const item of buildStudySelection(studies, documents)) {
@@ -781,7 +790,13 @@ async function collectReadyStudyInputs(
       studySheet.rows.find((r) => r.studyId === study.studyId && r.annotator === pair.annotatorB) ?? null;
     const resultsRowsA = resultsRows.filter((r) => r.studyId === study.studyId && r.annotator === pair.annotatorA);
     const resultsRowsB = resultsRows.filter((r) => r.studyId === study.studyId && r.annotator === pair.annotatorB);
-    const cells = buildAdjudicationCells(fields, studyDataRowA, studyDataRowB, resultsRowsA, resultsRowsB);
+    const studyArmRows = armRows.filter((r) => r.studyId === study.studyId);
+    const persistedRemap = parseArmKeyRemapNote(latestArmStructureNote(studyArmRows, 'consensus'));
+    const remappedResultsRowsB =
+      persistedRemap === null
+        ? resultsRowsB
+        : resultsRowsB.map((r) => ({ ...r, entityKey: remapArmEntityKey(r.entityKey, persistedRemap) }));
+    const cells = buildAdjudicationCells(fields, studyDataRowA, studyDataRowB, resultsRowsA, remappedResultsRowsB);
     inputs.push({ studyId: study.studyId, studyLabel: study.studyLabel, cells });
   }
   return inputs;
