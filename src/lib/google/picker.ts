@@ -5,10 +5,17 @@
 // 新規タブで開き、次のプロトコルで拡張と通信する（externally_connectable 経由の外部メッセージ）:
 //
 //   1. 拡張がタブを開く（URL フラグメントで extension_id と nonce、モードにより
-//      view=spreadsheet / file_id、または view=files / file_ids を渡す。トークンは URL に載せない）
-//   2. ページが { kind: 'ready', nonce } を chrome.runtime.sendMessage(extensionId, ...) で送る
+//      view=spreadsheet / file_id、または view=files を渡す。トークンと files モードの
+//      対象ファイル ID 一覧はいずれも URL に載せない）
+//   2. ページが { kind: 'ready', nonce, page_version } を chrome.runtime.sendMessage(extensionId, ...)
+//      で送る（page_version はページ側のプロトコル対応バージョン。issue #141 のハンドシェイク）
 //      → 拡張は sender.url（ホストページのオリジン）と nonce を検証してから
-//        sendResponse({ token }) で OAuth トークンを返す（原則 5: URL / ログへ出さない）
+//        sendResponse({ token }) で OAuth トークンを返す（原則 5: URL / ログへ出さない）。
+//        files モードでは sendResponse({ token, file_ids }) で対象ファイル ID 一覧も同じ経路
+//        （sendResponse）で渡す（issue #141: 数百件規模で URL フラグメントの実用上限に当たり得る
+//        うえ、ID 一覧をブラウザ履歴に残さないため）。ページの page_version が未対応
+//        （無い / 1 未満）の場合、files モードはトークンを渡さずに拒否する
+//        （openProjectFilesPicker が日本語エラーで reject する。ページの再デプロイ待ちを示す）
 //   3. ユーザーが選択 → ページが { kind: 'picked', files, nonce } を送る（キャンセルは 'cancelled'）
 //      files[].mimeType でフォルダ（FOLDER_MIME_TYPE）とファイルを見分ける。フォルダは呼び出し側
 //      （documentsService）が直下 PDF を列挙して取り込む
@@ -121,7 +128,7 @@ interface PickedFileShape {
 }
 
 type ParsedPickerMessage =
-  | { kind: 'ready'; nonce: string | null }
+  | { kind: 'ready'; nonce: string | null; pageVersion: number | undefined }
   | { kind: 'cancelled'; nonce: string | null }
   | { kind: 'picked'; nonce: string | null; files: PickedFileShape[] };
 
@@ -136,7 +143,10 @@ function parsePickerMessage(message: unknown): ParsedPickerMessage | null {
   }
   const nonce = typeof record.nonce === 'string' ? record.nonce : null;
   if (record.kind === 'ready') {
-    return { kind: 'ready', nonce };
+    // page_version はバージョンハンドシェイク（issue #141）。number 以外（欠落含む）は
+    // 未対応の旧ページとみなせるよう undefined 扱いにする
+    const pageVersion = typeof record.page_version === 'number' ? record.page_version : undefined;
+    return { kind: 'ready', nonce, pageVersion };
   }
   if (record.kind === 'cancelled') {
     return { kind: 'cancelled', nonce };
@@ -169,14 +179,28 @@ function isPickerPageUrl(senderUrl: string, pageUrl: string): boolean {
   );
 }
 
+/** runPicker の内部オプション（呼び出し側ごとの ready 応答拡張・版数要求。issue #141） */
+interface RunPickerOptions {
+  /** ready 応答へ token 以外に追加するフィールド（例: files モードの file_ids） */
+  extraReadyFields?: Record<string, unknown>;
+  /**
+   * ready の page_version に要求する最低値。未指定なら検証しない（pdf / spreadsheet モードは
+   * 旧ページでも動く必要があるため不要）。ページの page_version がこれ未満（未対応の旧ページ
+   * を含む）なら、トークンを渡さずに reject する
+   */
+  minPageVersion?: number;
+}
+
 /**
  * ホスト済み Picker ページを開き、選択結果を返す共通処理。
  * extraFragment でページのモード（view=spreadsheet / file_id）を切り替える。
  * キャンセル（Picker のキャンセルボタン / タブを閉じる）は null。
+ * minPageVersion 未達（旧ページ）のときは reject する。
  */
 async function runPicker(
   deps: PickerDeps,
   extraFragment: Record<string, string>,
+  options: RunPickerOptions = {},
 ): Promise<PickerSelection[] | null> {
   // タブを開く前にトークンを確保する（未ログインならここで失敗させ、空タブを残さない）
   const token = await deps.getAccessToken();
@@ -186,11 +210,11 @@ async function runPicker(
   const url = `${deps.pickerPageUrl}#${params.toString()}`;
   const tabId = await deps.createTab(url);
 
-  return await new Promise<PickerSelection[] | null>((resolve) => {
+  return await new Promise<PickerSelection[] | null>((resolve, reject) => {
     let settled = false;
 
     // 確定後に届いた遅延イベント（タブ削除 → メッセージ等の競合）は無視する。
-    // 2 つの購読はこの直後に同期的に確立され、settle はイベントでしか呼ばれないため、
+    // 2 つの購読はこの直後に同期的に確立され、settle / fail はイベントでしか呼ばれないため、
     // 呼び出し時点で removeMessageListener / removeTabListener は必ず初期化済み
     const settle = (result: PickerSelection[] | null, closeTab: boolean): void => {
       if (settled) {
@@ -204,6 +228,17 @@ async function runPicker(
         void deps.removeTab(tabId).catch(() => undefined);
       }
       resolve(result);
+    };
+    // 版数不足の旧ページ等、Picker を続行できないエラー。トークンを渡さずタブを閉じて reject する
+    const fail = (error: Error): void => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      removeMessageListener();
+      removeTabListener();
+      void deps.removeTab(tabId).catch(() => undefined);
+      reject(error);
     };
 
     const removeMessageListener = deps.addExternalMessageListener(
@@ -228,7 +263,18 @@ async function runPicker(
           return;
         }
         if (parsed.kind === 'ready') {
-          sendResponse({ token });
+          if (
+            options.minPageVersion !== undefined &&
+            (parsed.pageVersion === undefined || parsed.pageVersion < options.minPageVersion)
+          ) {
+            fail(
+              new Error(
+                'Picker ページの更新がまだ反映されていません。数分待ってからもう一度お試しください',
+              ),
+            );
+            return;
+          }
+          sendResponse(options.extraReadyFields ? { token, ...options.extraReadyFields } : { token });
           return;
         }
         if (parsed.kind === 'cancelled') {
@@ -261,18 +307,30 @@ export async function openPdfPicker(deps: PickerDeps): Promise<PickerSelection[]
   return runPicker(deps, {});
 }
 
+/** files モードのページ側プロトコル対応に要求する最低 page_version（issue #141） */
+const FILES_MODE_MIN_PAGE_VERSION = 1;
+
 /**
  * プロジェクトの必要ファイル（PDF・抽出テキスト）へ drive.file アクセスを付与するための
  * Picker（issue #139）。共有フォルダの Picker 選択では配下ファイルへの読み取りが付与されない
  * ことが実機で確定したため（issue #62）、Documents タブ由来のファイル ID を setFileIds で
  * 列挙し、reviewer に全選択してもらってファイル単位で付与する。全件選択されたかの照合は
- * 呼び出し側（roleService.grantFolderAccess）が行う
+ * 呼び出し側（roleService.grantFolderAccess）が行う。
+ * ファイル ID 一覧は URL フラグメントではなく ready 応答（sendResponse）経由でページへ渡す
+ * （issue #141: 数百件規模で URL / Picker 内部リクエストの実用上限に当たり得るうえ、
+ * ID 一覧をブラウザ履歴に残さないため）。ページが未対応（page_version が無い / 1 未満の
+ * 旧デプロイ）の場合はトークンを渡さずに reject する（呼び出し側 roleService.grantFolderAccess
+ * は既存の catch でトースト表示 + folderAccessError へ格納するため、この関数側での追加対応は不要）
  */
 export async function openProjectFilesPicker(
   deps: PickerDeps,
   fileIds: readonly string[],
 ): Promise<PickerSelection[] | null> {
-  return runPicker(deps, { view: 'files', file_ids: fileIds.join(',') });
+  return runPicker(
+    deps,
+    { view: 'files' },
+    { extraReadyFields: { file_ids: fileIds }, minPageVersion: FILES_MODE_MIN_PAGE_VERSION },
+  );
 }
 
 /** スプレッドシート Picker の結果（docs/ui-states.md §1「アクセス許可が必要」） */
