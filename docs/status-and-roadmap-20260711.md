@@ -63,7 +63,7 @@ SR ツール群 3 部作（sr-query-builder → tiab-review → 本拡張）の 
 
 ### 2.2 横断基盤
 
-- **Google 層**: OAuth（`chrome.identity`）+ Sheets（batchGet / appendRows / 全列範囲）+ Drive（コピー・フォルダ列挙・共有 `permissions.create`）+ Picker（hosted ページ方式、GitHub Pages 配信）。スコープは `spreadsheets` + `drive.file` のみ。
+- **Google 層**: OAuth（`chrome.identity`）+ Sheets（batchGet / appendRows / 全列範囲）+ Drive（コピー・フォルダ列挙・共有 `permissions.create`）+ Picker（hosted ページ方式、GitHub Pages 配信）。スコープは `spreadsheets` + `drive.file` のみ。（→ **2026-07-18 変更**: `spreadsheets` を廃止し `userinfo.email` + `drive.file` へ。認証も `launchWebAuthFlow` + SW 認証ブローカーに移行。issue #128〜#131・requirements.md §2.1）
 - **LLM 層**: `LLMProvider` 抽象 + Gemini / OpenRouter / OpenAI 互換エンドポイント。`withRetry`（`Retry-After` 尊重）+ `withThrottle`（RPM 平準化）+ `withLogging`（LLMApiLog + Drive フル payload）。レート制限 tier プリセット + 同時実行数（並列足場）。単価表 + モデルカタログ + コスト概算。
 - **抽出パイプライン**: planRun（study 単位バッチ・トークン予算）→ executeRun（複数文書連結・document_index・quote アンカリング・Evidence 生成・partial_failure・Sheets 書き込みバッチ化）→ 検証データ束。
 - **信頼性**: オフライン書き込みキュー（Decisions 退避 + 再送）・抽出の耐中断性（2 行プロトコル）・`googleFetch` の 429/503 リトライ。
