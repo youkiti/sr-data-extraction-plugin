@@ -24,6 +24,7 @@ import {
 } from '../../features/schema/schemaRepository';
 import { saveSchemaVersion } from '../../features/schema/saveSchemaVersion';
 import { SCHEMA_PRESETS, type SchemaPresetKind } from '../../features/schema/presets';
+import { mergePresetDialogPatch } from '../../features/schema/presets/prespecDialog';
 import type {
   PresetDialogPatch,
   PresetDialogState,
@@ -427,14 +428,15 @@ export function insertSchemaPreset(store: Store, kind: SchemaPresetKind): void {
 }
 
 /** 事前設定ダイアログ: 入力の更新（検証エラーは入力変更でクリアする。ui-states.md §3）。
- * patch がどの variant のものかは view（renderPresetDialog の kind 分岐）が保証するため、
- * spread 結果の `as` は kind 不変 + variant 整合の不変条件に基づく型注釈 */
+ * patch がどの variant のものかは view（renderPresetDialog の kind 分岐）が保証する契約は
+ * 従来どおりだが、マージ自体は dialog.kind で narrow する mergePresetDialogPatch に委ねる
+ * （issue #126 項目5: 一括 `as PresetDialogState` キャストを kind ガードで置き換え） */
 export function updateRobPrespecDialog(store: Store, patch: PresetDialogPatch): void {
   const dialog = store.getState().schema.presetDialog;
   if (dialog === null) {
     return;
   }
-  patchSchema(store, { presetDialog: { ...dialog, ...patch, error: null } as PresetDialogState });
+  patchSchema(store, { presetDialog: mergePresetDialogPatch(dialog, patch) });
 }
 
 /** 事前設定ダイアログ: キャンセル（挿入せず閉じる） */
@@ -502,7 +504,10 @@ function validatePresetDialog(dialog: PresetDialogState): MessageKey | null {
 /**
  * 事前設定ダイアログ: 「この内容で挿入」。検証 → 行生成（Review context 注入 +
  * 判定行 note へ構造化 JSON 保存）→ エディタ末尾へ挿入して閉じる。
- * 検証エラーはダイアログ内に表示し、挿入しない（ui-states.md §3「必須未充足」）
+ * 検証エラーはダイアログ内に表示し、挿入しない（ui-states.md §3「必須未充足」）。
+ * error にはメッセージキーをそのまま保存し、t() での解決は view の描画時に行う
+ * （issue #126 項目3: エラー表示中に言語を切り替えても追従するように、解決済み文字列ではなく
+ * キーを state に持たせる）
  */
 export function confirmRobPrespecDialog(store: Store): void {
   const dialog = store.getState().schema.presetDialog;
@@ -511,7 +516,7 @@ export function confirmRobPrespecDialog(store: Store): void {
   }
   const errorKey = validatePresetDialog(dialog);
   if (errorKey !== null) {
-    patchSchema(store, { presetDialog: { ...dialog, error: t(errorKey) } });
+    patchSchema(store, { presetDialog: { ...dialog, error: errorKey } });
     return;
   }
   appendEditorRows(store, buildPresetDialogRows(dialog));

@@ -30,8 +30,9 @@ export interface RobPrespecDialogState {
   effect: Rob2Effect | null;
   /** adhering 選択時に扱う deviation 種別（最低 1 つ必須） */
   deviationTypes: readonly Rob2DeviationType[];
-  /** 「この内容で挿入」時の検証エラー。入力を変更したらクリアする */
-  error: string | null;
+  /** 「この内容で挿入」時の検証エラー（表示用メッセージキー）。描画時に t() で現在言語に解決する
+   * ことでエラー表示中の言語切替にも追従する（issue #126 項目3）。入力を変更したらクリアする */
+  error: MessageKey | null;
 }
 
 /** 事前設定の確定値（note へ保存する構造化 JSON の中身）。空入力は null に正規化する */

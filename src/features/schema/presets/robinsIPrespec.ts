@@ -13,6 +13,7 @@
 // （Schemas タブの既存列のみを使い、Sheets のデータモデルは変更しない）。
 import type { MessageKey } from '../../../lib/i18n';
 import type { SchemaEditorRow } from '../types';
+import { parseOptionalString, parseStringArray } from './prespecDialog';
 import {
   buildRobinsISqTemplateRows,
   ROB_TEMPLATE_ROBINS_I,
@@ -40,8 +41,9 @@ export interface RobinsIPrespecDialogState {
   confoundingDomains: string;
   /** co-interventions（textarea の生値。1 行 1 項目） */
   coInterventions: string;
-  /** 「この内容で挿入」時の検証エラー（表示文字列）。入力を変更したらクリアする */
-  error: string | null;
+  /** 「この内容で挿入」時の検証エラー（表示用メッセージキー）。描画時に t() で現在言語に解決する
+   * ことでエラー表示中の言語切替にも追従する（issue #126 項目3）。入力を変更したらクリアする */
+  error: MessageKey | null;
 }
 
 /** 事前設定の確定値（note へ保存する構造化 JSON の中身）。空入力は null / 空配列に正規化する */
@@ -141,17 +143,6 @@ export function serializeRobinsIPrespecNote(prespec: RobinsIPrespec): string {
 
 const EFFECT_VALUES: readonly RobinsIEffect[] = ['assignment', 'starting_adhering'];
 const BENEFIT_HARM_VALUES: readonly RobinsIBenefitHarm[] = ['benefit', 'harm'];
-
-function parseOptionalString(value: unknown): string | null {
-  return typeof value === 'string' && value.trim() !== '' ? value : null;
-}
-
-function parseStringArray(value: unknown): string[] {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-  return value.filter((item): item is string => typeof item === 'string' && item.trim() !== '');
-}
 
 /**
  * note の JSON から事前設定を復元する（再挿入時の初期値）。

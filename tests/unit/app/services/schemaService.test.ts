@@ -724,7 +724,9 @@ describe('エディタ操作', () => {
 
       insertSchemaPreset(store, 'rob2_sq');
       confirmRobPrespecDialog(store); // effect 未選択 → エラー
-      expect(store.getState().schema.presetDialog?.error).toContain('effect of interest');
+      // error には t() 解決前のメッセージキーを保持する（issue #126 項目3: 描画時に現在言語で
+      // 解決することでエラー表示中の言語切替にも追従する。renderer 側の確認は schemaView.test.ts）
+      expect(store.getState().schema.presetDialog?.error).toBe('schema.prespecErrEffectRequired');
       updateRobPrespecDialog(store, { effect: 'assignment' });
       // union（PresetDialogState）のうち rob2_sq を開いていることは直前で保証済み
       const dialog = store.getState().schema.presetDialog as RobPrespecDialogState;
@@ -766,7 +768,9 @@ describe('エディタ操作', () => {
       insertSchemaPreset(store, 'rob2');
       updateRobPrespecDialog(store, { effect: 'adhering' });
       confirmRobPrespecDialog(store);
-      expect(store.getState().schema.presetDialog?.error).toContain('最低 1 つ');
+      expect(store.getState().schema.presetDialog?.error).toBe(
+        'schema.prespecErrDeviationRequired',
+      );
       expect(store.getState().schema.editorRows).toHaveLength(1);
     });
 
@@ -864,7 +868,9 @@ describe('エディタ操作', () => {
       const store = makeEditorStore();
       insertSchemaPreset(store, 'robins_i_sq');
       confirmRobPrespecDialog(store);
-      expect(store.getState().schema.presetDialog?.error).toContain('effect of interest');
+      expect(store.getState().schema.presetDialog?.error).toBe(
+        'schema.prespecErrRobinsIEffectRequired',
+      );
       expect(store.getState().schema.editorRows).toHaveLength(1);
     });
 

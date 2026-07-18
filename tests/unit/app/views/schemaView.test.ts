@@ -746,7 +746,7 @@ describe('renderSchemaView', () => {
           const { view } = renderWithDialog(
             makeRobinsIDialog({
               kind: 'robins_i_sq',
-              error: 'effect of interest を選択してください',
+              error: 'schema.prespecErrRobinsIEffectRequired',
             }),
           );
           const error = view.querySelector('#schema-prespec-error') as HTMLElement;
@@ -851,9 +851,7 @@ describe('renderSchemaView', () => {
       test('検証エラーは role="alert" で表示し、エラーなしなら要素を出さない', () => {
         const { view: withoutError } = renderWithDialog(makeDialog());
         expect(withoutError.querySelector('#schema-prespec-error')).toBeNull();
-        const { view } = renderWithDialog(
-          makeDialog({ error: 'effect of interest（assignment / adhering）を選択してください' }),
-        );
+        const { view } = renderWithDialog(makeDialog({ error: 'schema.prespecErrEffectRequired' }));
         const error = view.querySelector('#schema-prespec-error') as HTMLElement;
         expect(error.getAttribute('role')).toBe('alert');
         expect(error.textContent).toContain('effect of interest');
@@ -1011,6 +1009,36 @@ describe('renderSchemaView（表示言語 en。issue #93）', () => {
     );
     expect(view.querySelector('#schema-editor-errors')?.textContent).toBe(
       'Row 1, Allowed values: ng',
+    );
+  });
+
+  test('事前設定ダイアログの検証エラーは表示言語に追従する（issue #126 項目3）', () => {
+    // state には MessageKey（'schema.prespecErrEffectRequired'）を保持し、描画時に
+    // 現在言語で t() 解決する。エラーを set した後で言語を切り替えても、再描画すれば
+    // 新しい言語の文言になることを確認する（旧実装は t() 解決済み文字列を state に
+    // 保存していたため、この再描画でも ja のまま残っていた）
+    const { ctx } = makeCtx();
+    const dialog = {
+      ...createRobPrespecDialogState('rob2_sq', null),
+      error: 'schema.prespecErrEffectRequired' as const,
+    };
+
+    setUiLanguage('ja');
+    const jaView = renderSchemaView(
+      makeState({ versions: [], editorRows: [makeEditorRow()], presetDialog: dialog }),
+      ctx,
+    );
+    expect(jaView.querySelector('#schema-prespec-error')?.textContent).toBe(
+      'effect of interest（assignment / adhering）を選択してください',
+    );
+
+    setUiLanguage('en');
+    const enView = renderSchemaView(
+      makeState({ versions: [], editorRows: [makeEditorRow()], presetDialog: dialog }),
+      ctx,
+    );
+    expect(enView.querySelector('#schema-prespec-error')?.textContent).toBe(
+      'Select the effect of interest (assignment / adhering)',
     );
   });
 });

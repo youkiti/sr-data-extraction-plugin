@@ -9,7 +9,9 @@
 // D1 の item 1.2、important confounders LIST は D5 の item 5.1 / 5.2、PF 定義は D3、
 // outcome 定義は D4 の item へ狙い撃ちで注入する。
 // 構造化 JSON は判定行（quips_judgement）の note に保存し、再挿入時に復元する。
+import type { MessageKey } from '../../../lib/i18n';
 import type { SchemaEditorRow } from '../types';
+import { parseOptionalString, parseStringArray } from './prespecDialog';
 import { parseListInput } from './robinsIPrespec';
 import { ROB_TEMPLATE_QUIPS } from './robTemplates';
 
@@ -23,8 +25,9 @@ export interface QuipsPrespecDialogState {
   keyCharacteristics: string;
   /** important confounders（textarea の生値。1 行 1 項目） */
   importantConfounders: string;
-  /** 全項目任意のため検証エラーは発生しないが、他ツールと状態の形を揃える */
-  error: string | null;
+  /** 全項目任意のため検証エラーは発生しないが、他ツールと状態の形を揃える（型は MessageKey |
+   * null。描画時に t() で解決する。issue #126 項目3） */
+  error: MessageKey | null;
 }
 
 /** 事前設定の確定値（note へ保存する構造化 JSON の中身）。空入力は null / 空配列に正規化する */
@@ -80,17 +83,6 @@ export function serializeQuipsPrespecNote(prespec: QuipsPrespec): string {
     key_characteristics: prespec.keyCharacteristics,
     important_confounders: prespec.importantConfounders,
   });
-}
-
-function parseOptionalString(value: unknown): string | null {
-  return typeof value === 'string' && value.trim() !== '' ? value : null;
-}
-
-function parseStringArray(value: unknown): string[] {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-  return value.filter((item): item is string => typeof item === 'string' && item.trim() !== '');
 }
 
 /**
