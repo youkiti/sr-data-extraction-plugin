@@ -66,6 +66,7 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<ProtocolViewCallb
         onTiabClose: jest.fn(),
         onTiabPreview: jest.fn(),
         onTiabApply: jest.fn(),
+        onTiabGrantAccess: jest.fn(),
       },
       protocol: callbacks,
       schema: {

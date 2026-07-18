@@ -1,4 +1,5 @@
-// tiabImportService（S3 tiab-review 採用リスト取り込み。issue #68）のテスト。
+// tiabImportService（S3 tiab-review 採用リスト取り込み。issue #68。
+// アクセス拒否からの Picker 許可導線は issue #142）のテスト。
 // シート直読み（tiabSheetReader）とリポジトリのバッチ更新はモジュールモックで置き換え、
 // include 抽出 + プラン計算（tiabReview）は本物を使う。ストア遷移とトースト文言を検証する
 import { createInitialState, createStore, type Store } from '../../../../src/app/store';
@@ -6,6 +7,7 @@ import { type DocumentsServiceDeps } from '../../../../src/app/services/document
 import {
   applyTiabImport,
   closeTiabImport,
+  grantTiabSheetAccess,
   openTiabImport,
   previewTiabImport,
 } from '../../../../src/app/services/tiabImportService';
@@ -15,6 +17,8 @@ import { updateDocuments } from '../../../../src/features/documents/documentRepo
 import { updateStudies } from '../../../../src/features/documents/studyRepository';
 import type { TiabImportPlan } from '../../../../src/features/documents/tiabReview';
 import { readTiabSheet } from '../../../../src/features/documents/tiabSheetReader';
+import { openSpreadsheetPicker } from '../../../../src/lib/google/picker';
+import { SheetsAccessDeniedError } from '../../../../src/lib/google/sheets';
 
 jest.mock('../../../../src/features/documents/tiabSheetReader');
 jest.mock('../../../../src/features/documents/documentRepository', () => {
@@ -27,6 +31,9 @@ jest.mock('../../../../src/features/documents/studyRepository', () => {
 });
 jest.mock('../../../../src/features/extraction/runRepository');
 jest.mock('../../../../src/lib/storage/chromeStorage');
+jest.mock('../../../../src/lib/google/picker', () => ({
+  openSpreadsheetPicker: jest.fn(),
+}));
 
 import { readDocuments } from '../../../../src/features/documents/documentRepository';
 import { readStudies } from '../../../../src/features/documents/studyRepository';
@@ -40,6 +47,7 @@ const mockReadDocuments = jest.mocked(readDocuments);
 const mockReadStudies = jest.mocked(readStudies);
 const mockReadCoverage = jest.mocked(readRunStudyCoverage);
 const mockGetLocal = jest.mocked(getLocal);
+const mockOpenSpreadsheetPicker = jest.mocked(openSpreadsheetPicker);
 
 const SHEET_URL = 'https://docs.google.com/spreadsheets/d/tiab-sheet-1/edit';
 
@@ -154,6 +162,7 @@ describe('openTiabImport / closeTiabImport', () => {
           sheetInput: 'x',
           loading: false,
           error: 'err',
+          accessDenied: true,
           plan: makePlan(),
           applying: false,
           result: { studiesUpdated: 1, documentsUpdated: 1, unmatched: 0 },
@@ -166,6 +175,7 @@ describe('openTiabImport / closeTiabImport', () => {
       sheetInput: '',
       loading: false,
       error: null,
+      accessDenied: false,
       plan: null,
       applying: false,
       result: null,
@@ -269,6 +279,157 @@ describe('previewTiabImport', () => {
     mockReadTiabSheet.mockRejectedValue('boom');
     await previewTiabImport(store, makeDeps(), SHEET_URL);
     expect(store.getState().documents.tiabImport.error).toBe('boom');
+  });
+
+  test('SheetsAccessDeniedError（drive.file 未許可）は accessDenied を立てる（issue #142）', async () => {
+    const store = makeStore();
+    mockReadTiabSheet.mockRejectedValue(new SheetsAccessDeniedError('tiab-sheet-1', 404));
+    await previewTiabImport(store, makeDeps(), SHEET_URL);
+    const tiab = store.getState().documents.tiabImport;
+    expect(tiab.accessDenied).toBe(true);
+    expect(tiab.error).toContain('Picker での許可が必要です');
+  });
+
+  test('通常のエラー（アクセス拒否以外）は accessDenied を立てない', async () => {
+    const store = makeStore();
+    mockReadTiabSheet.mockRejectedValue(new Error('タブが見つかりません'));
+    await previewTiabImport(store, makeDeps(), SHEET_URL);
+    expect(store.getState().documents.tiabImport.accessDenied).toBe(false);
+  });
+
+  test('再プレビューは直前の accessDenied を引きずらない', async () => {
+    const store = makeStore();
+    store.setState({
+      documents: {
+        ...store.getState().documents,
+        tiabImport: { ...store.getState().documents.tiabImport, accessDenied: true, error: '前回のエラー' },
+      },
+    });
+    mockReadTiabSheet.mockResolvedValue({ references: [], decisions: [], activeFulltextAiRound: null });
+    await previewTiabImport(store, makeDeps(), SHEET_URL);
+    expect(store.getState().documents.tiabImport.accessDenied).toBe(false);
+  });
+});
+
+describe('grantTiabSheetAccess（issue #142。docs/ui-states.md §3 tiab カード）', () => {
+  function makeDeniedStore(sheetInput: string = SHEET_URL): Store {
+    const store = makeStore();
+    store.setState({
+      documents: {
+        ...store.getState().documents,
+        tiabImport: {
+          ...store.getState().documents.tiabImport,
+          open: true,
+          sheetInput,
+          error: 'このスプレッドシートを開く権限がまだありません',
+          accessDenied: true,
+        },
+      },
+    });
+    return store;
+  }
+
+  test('プロジェクト未選択・accessDenied でない・読み込み中・反映中は no-op', async () => {
+    await grantTiabSheetAccess(makeStore({ withProject: false }), makeDeps());
+    expect(mockOpenSpreadsheetPicker).not.toHaveBeenCalled();
+
+    const notDenied = makeStore();
+    await grantTiabSheetAccess(notDenied, makeDeps());
+    expect(mockOpenSpreadsheetPicker).not.toHaveBeenCalled();
+
+    const loading = makeDeniedStore();
+    loading.setState({
+      documents: {
+        ...loading.getState().documents,
+        tiabImport: { ...loading.getState().documents.tiabImport, loading: true },
+      },
+    });
+    await grantTiabSheetAccess(loading, makeDeps());
+    expect(mockOpenSpreadsheetPicker).not.toHaveBeenCalled();
+
+    const applying = makeDeniedStore();
+    applying.setState({
+      documents: {
+        ...applying.getState().documents,
+        tiabImport: { ...applying.getState().documents.tiabImport, applying: true },
+      },
+    });
+    await grantTiabSheetAccess(applying, makeDeps());
+    expect(mockOpenSpreadsheetPicker).not.toHaveBeenCalled();
+  });
+
+  test('accessDenied だが sheetInput を解釈できない場合は Picker を開かない（フェイルクローズ）', async () => {
+    const store = makeDeniedStore('not a sheet url');
+    await grantTiabSheetAccess(store, makeDeps());
+    expect(mockOpenSpreadsheetPicker).not.toHaveBeenCalled();
+  });
+
+  test('cancelled は状態を変えない（案内とボタンは残る）', async () => {
+    mockOpenSpreadsheetPicker.mockResolvedValue('cancelled');
+    const store = makeDeniedStore();
+    await grantTiabSheetAccess(store, makeDeps());
+    expect(mockOpenSpreadsheetPicker).toHaveBeenCalledWith(expect.anything(), 'tiab-sheet-1');
+    expect(store.getState().documents.tiabImport.accessDenied).toBe(true);
+    expect(mockReadTiabSheet).not.toHaveBeenCalled();
+  });
+
+  test('mismatch はトースト表示のみで状態を変えない', async () => {
+    mockOpenSpreadsheetPicker.mockResolvedValue('mismatch');
+    const store = makeDeniedStore();
+    await grantTiabSheetAccess(store, makeDeps());
+    expect(store.getState().documents.tiabImport.accessDenied).toBe(true);
+    expect(mockReadTiabSheet).not.toHaveBeenCalled();
+    expect(document.body.textContent).toContain('開こうとしたシートと違うシートが選択されました');
+  });
+
+  test('Picker 起動自体の失敗はトースト表示のみで状態を変えない', async () => {
+    mockOpenSpreadsheetPicker.mockRejectedValue(new Error('タブの作成に失敗'));
+    const store = makeDeniedStore();
+    await grantTiabSheetAccess(store, makeDeps());
+    expect(store.getState().documents.tiabImport.accessDenied).toBe(true);
+    expect(document.body.textContent).toContain('タブの作成に失敗');
+  });
+
+  test('granted → プレビューを自動リトライして成功する', async () => {
+    mockOpenSpreadsheetPicker.mockResolvedValue('granted');
+    mockReadTiabSheet.mockResolvedValue({
+      references: [
+        {
+          refId: 'r1',
+          title: 'T1',
+          year: 2020,
+          authors: 'Smith, J',
+          doi: null,
+          pmid: '123',
+          fulltextUrl: null,
+        },
+      ],
+      decisions: [
+        {
+          refId: 'r1',
+          reviewerId: 'a@example.com',
+          decision: 'include',
+          decidedAt: 't1',
+          screeningPhase: 'fulltext',
+        },
+      ],
+      activeFulltextAiRound: null,
+    });
+    const store = makeDeniedStore();
+    await grantTiabSheetAccess(store, makeDeps());
+    expect(mockReadTiabSheet).toHaveBeenCalledWith('tiab-sheet-1', expect.anything());
+    const tiab = store.getState().documents.tiabImport;
+    expect(tiab.accessDenied).toBe(false);
+    expect(tiab.error).toBeNull();
+    expect(tiab.plan?.includeCount).toBe(1);
+  });
+
+  test('granted だが再取得も拒否されたら accessDenied を維持する', async () => {
+    mockOpenSpreadsheetPicker.mockResolvedValue('granted');
+    mockReadTiabSheet.mockRejectedValue(new SheetsAccessDeniedError('tiab-sheet-1', 404));
+    const store = makeDeniedStore();
+    await grantTiabSheetAccess(store, makeDeps());
+    expect(store.getState().documents.tiabImport.accessDenied).toBe(true);
   });
 });
 

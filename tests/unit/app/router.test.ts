@@ -33,6 +33,7 @@ const stubCtx: ViewContext = {
     onTiabClose: jest.fn(),
     onTiabPreview: jest.fn(),
     onTiabApply: jest.fn(),
+    onTiabGrantAccess: jest.fn(),
   },
   protocol: {
     onSubmit: jest.fn(),

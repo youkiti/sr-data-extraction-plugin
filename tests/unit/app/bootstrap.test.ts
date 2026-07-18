@@ -790,6 +790,7 @@ describe('bootstrapApp', () => {
           sheetInput: 'https://docs.google.com/spreadsheets/d/tiab-sheet/edit',
           loading: false,
           error: null,
+          accessDenied: false,
           plan,
           applying: false,
           result: null,
@@ -821,6 +822,53 @@ describe('bootstrapApp', () => {
     expect(document.getElementById('tiab-result')?.textContent).toContain(
       'study_label 1 件を更新し',
     );
+  });
+
+  test('#/documents の tiab-review Picker 許可導線（onTiabGrantAccess）が配線されている（issue #142）', async () => {
+    const stub = createWindowStub({
+      currentProject: PROJECT,
+      home: COUNTS_LOADED,
+      documents: {
+        records: [],
+        studies: [],
+        extractedStudyIds: [],
+        ignoredCandidateKeys: [],
+        loading: false,
+        loadError: null,
+        importing: false,
+        importRows: [],
+        selectedStudyIds: [],
+        mergeDialog: null,
+        merging: false,
+        mergeError: null,
+        tiabImport: {
+          open: true,
+          sheetInput: 'https://docs.google.com/spreadsheets/d/tiab-sheet/edit',
+          loading: false,
+          error: 'このスプレッドシートを開く権限がまだありません（共有シートの場合は Picker での許可が必要です）',
+          accessDenied: true,
+          plan: null,
+          applying: false,
+          result: null,
+        },
+      },
+    } as unknown as Partial<AppState>);
+    // picker.getAccessToken は 'picker offline' で reject する既定（createFakeDeps）。
+    // Picker タブを開く前段の getAccessToken で落ちるため、実タブは開かず配線だけを検証できる
+    const { deps } = createFakeDeps([]);
+    await bootstrapApp(asWindow(stub), deps);
+    stub.location.hash = '#/documents';
+    stub.fireHashChange();
+    await flush();
+
+    const grant = document.getElementById('tiab-grant-access') as HTMLButtonElement;
+    expect(grant).not.toBeNull();
+    expect(grant.disabled).toBe(false);
+    grant.click();
+    // クリック直後（Picker 起動中）は二重起動防止で即 disabled
+    expect(grant.disabled).toBe(true);
+    await flush();
+    expect(toastTexts()).toContain('Drive Picker を開けませんでした: picker offline');
   });
 
   test('#/protocol 入場で全 version を読み込む（0 件 → 新規フォーム表示）', async () => {
