@@ -716,6 +716,8 @@ export const ja = {
   'adjudicate.pairSelectAria': '{label} で裁定する 2 名の組',
   'adjudicate.pairPlaceholder': '2 名の組を選択…',
   'adjudicate.pairNote': 'レビュアーが 3 名以上います。裁定する 2 名の組を選択してください。',
+  'adjudicate.pairSessionNote':
+    'ペアの選択はこの画面のセッション内のみ保持されます（再読み込みや画面を離れると解除され、保存はされません）。',
   'adjudicate.waiting': '両者の検証完了待ちです',
   'adjudicate.emptyList':
     '裁定対象となる研究がありません。#/documents で文献を取り込み、2 名のレビュアーによる検証が完了すると一覧に表示されます。',
@@ -724,6 +726,7 @@ export const ja = {
   'adjudicate.headAction': '操作',
   'adjudicate.armMapAria': 'A の群「{name}」に対応する B の群',
   'adjudicate.armMapNone': '対応なし',
+  'adjudicate.armMapOptionWithKey': '{name}（{key}）',
   'adjudicate.armMapHeadA': 'A の群',
   'adjudicate.armMapHeadB': '対応する B の群',
   'adjudicate.armDraftNameAria': '群 {n} の名称',

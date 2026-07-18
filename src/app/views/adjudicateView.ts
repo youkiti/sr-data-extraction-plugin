@@ -167,27 +167,62 @@ function renderList(rows: readonly AdjudicateStudyRow[], state: AppState, ctx: V
       text: t('adjudicate.emptyList'),
     });
   }
-  return el('table', { id: 'adjudicate-list', className: 'adjudicate__list' }, [
-    el('thead', {}, [
-      el('tr', {}, [
-        el('th', { text: t('adjudicate.headStudy') }),
-        el('th', { text: t('adjudicate.headStatus') }),
-        el('th', { text: t('adjudicate.headAction') }),
+  const children: HTMLElement[] = [];
+  // issue #117 ④: 3 名以上の study（ペア選択セレクトが出る行）が 1 件でもあるとき、
+  // 選択がセッション内のみ（永続化なし）である旨を一覧の直上に明示する
+  if (rows.some((row) => row.pair.kind === 'selectable')) {
+    children.push(
+      el('p', { className: 'adjudicate__pair-session-note', text: t('adjudicate.pairSessionNote') }),
+    );
+  }
+  children.push(
+    el('table', { id: 'adjudicate-list', className: 'adjudicate__list' }, [
+      el('thead', {}, [
+        el('tr', {}, [
+          el('th', { text: t('adjudicate.headStudy') }),
+          el('th', { text: t('adjudicate.headStatus') }),
+          el('th', { text: t('adjudicate.headAction') }),
+        ]),
       ]),
+      el('tbody', {}, rows.map((row) => renderListRow(row, state, ctx))),
     ]),
-    el('tbody', {}, rows.map((row) => renderListRow(row, state, ctx))),
-  ]);
+  );
+  return el('div', { className: 'adjudicate__list-wrap' }, children);
 }
 
 // ---------------------------------------------------------------------------
 // 裁定中: 群構成の突き合わせ
 // ---------------------------------------------------------------------------
 
+/** B の群名のうち複数の群で重複しているものを集める（issue #117 ④の判定材料） */
+function duplicateArmNames(armsB: readonly { armName: string }[]): Set<string> {
+  const seen = new Set<string>();
+  const duplicates = new Set<string>();
+  for (const armB of armsB) {
+    const name = armB.armName.trim();
+    if (seen.has(name)) {
+      duplicates.add(name);
+    }
+    seen.add(name);
+  }
+  return duplicates;
+}
+
+/** B の群名で選択肢を作る。同名の群が複数あると区別がつかないため、その名前だけ armKey を併記する（issue #117 ④） */
+function armOptionLabel(armB: AdjudicateWorking['armsB'][number], duplicateNames: ReadonlySet<string>): string {
+  if (!duplicateNames.has(armB.armName.trim())) {
+    return armB.armName;
+  }
+  return t('adjudicate.armMapOptionWithKey', { name: armB.armName, key: armB.armKey });
+}
+
 /**
  * arm 並べ替えマッピングテーブル（issue #63）: 1 行 = A の群。「対応する B の群」セレクトで
- * 対応を手動変更できる（同じ B 群を選ぶと元の行の対応は service 側で自動解除される）
+ * 対応を手動変更できる（同じ B 群を選ぶと元の行の対応は service 側で自動解除される）。
+ * B に同名の群が複数あるときは選択肢にキーを併記して区別する（issue #117 ④）
  */
 function renderArmMappingTable(working: AdjudicateWorking, ctx: ViewContext): HTMLElement {
+  const duplicateNames = duplicateArmNames(working.armsB);
   const rows = working.armsA.map((armA, index) => {
     const select = el('select', {
       className: 'adjudicate__arm-map-select',
@@ -195,7 +230,9 @@ function renderArmMappingTable(working: AdjudicateWorking, ctx: ViewContext): HT
     }) as HTMLSelectElement;
     select.append(el('option', { text: t('adjudicate.armMapNone'), attributes: { value: '' } }));
     for (const armB of working.armsB) {
-      select.append(el('option', { text: armB.armName, attributes: { value: armB.armKey } }));
+      select.append(
+        el('option', { text: armOptionLabel(armB, duplicateNames), attributes: { value: armB.armKey } }),
+      );
     }
     select.value = working.armMapping[index] ?? '';
     select.addEventListener('change', () => {
