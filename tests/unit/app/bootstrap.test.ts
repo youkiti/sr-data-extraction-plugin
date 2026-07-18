@@ -3191,11 +3191,15 @@ describe('bootstrapApp: 独立二重レビュー機能', () => {
     );
     expect(links).toEqual(['#/home', '#/verify']);
 
-    // 縮退版 Home（進捗カウントは出さない）+ フォルダアクセス付与ボタンの配線
+    // 縮退版 Home（進捗カウントは出さない）+ ファイルアクセス付与ボタンの配線
+    // （issue #139: ボタンはまず Documents タブを読む。fake sheets は空応答のため
+    //   ヘッダ検証エラーのトーストが出る = grantFolderAccess まで配線されている証明）
     expect(document.querySelector('.home__summary')).toBeNull();
     (document.getElementById('home-grant-folder-access') as HTMLButtonElement).click();
     await flush();
-    expect(toastTexts()).toContain('Drive Picker を開けませんでした: picker offline');
+    expect(toastTexts()).toContain(
+      'ファイルへのアクセスを確認できませんでした: Documents タブにヘッダ行がありません（プロジェクト初期化が不完全です）',
+    );
   });
 
   test('reviewer_independent ロールで #/verify 以外へ直接遷移するとトースト + #/home へ戻される', async () => {

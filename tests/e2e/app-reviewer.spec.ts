@@ -101,7 +101,7 @@ test.describe('reviewer ロールのシェル制限（design §3・§3.1）', ()
     // #/verify への直接遷移はフォルダアクセス未付与でブロックされる
     // （ナビ側は aria-disabled でディム表示のため、実際のクリックは force で行う）
     await page.locator('#app-nav a[href="#/verify"]').click({ force: true });
-    await expect(page.locator('.toast')).toContainText('プロジェクトフォルダへのアクセス付与が必要です');
+    await expect(page.locator('.toast')).toContainText('プロジェクトファイルへのアクセス付与が必要です');
     await expect(page).toHaveURL(/#\/home$/);
 
     const results = await new AxeBuilder({ page }).analyze();

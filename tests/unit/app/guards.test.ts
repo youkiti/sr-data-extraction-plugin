@@ -139,7 +139,7 @@ describe('guardRoute', () => {
       expect(state.role.folderAccessGranted).toBe(false);
       expect(guardRoute('#/verify', state, 'reviewer_with_ai')).toEqual({
         allowed: false,
-        message: 'プロジェクトフォルダへのアクセス付与が必要です（Home から付与してください）',
+        message: 'プロジェクトファイルへのアクセス付与が必要です（Home から付与してください）',
       });
     });
 

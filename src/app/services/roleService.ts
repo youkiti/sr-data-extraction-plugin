@@ -5,6 +5,7 @@
 // Reviewers の有効行（latest-wins）に一致 → role='adjudicator' なら adjudicator、role='reviewer' なら
 // review_mode により reviewer_with_ai / reviewer_independent。どちらでもない（revoked 含む）→
 // unregistered（bootstrap 側が全画面エラーで以降の読み込みを中断する）
+import type { DocumentRecord } from '../../domain/document';
 import type { ProjectRole } from '../../domain/reviewer';
 import { readDocuments } from '../../features/documents/documentRepository';
 import { parseDriveFileId } from '../../features/documents/loadDocumentPages';
@@ -13,7 +14,7 @@ import { latestReviewerAssignment, readReviewerAssignments } from '../../feature
 import { getFileText } from '../../lib/google/drive';
 import { getCurrentUserEmail, type ProfileDeps } from '../../lib/google/identity';
 import {
-  openPdfPicker,
+  openProjectFilesPicker,
   openSpreadsheetPicker,
   type PickerDeps,
   type SpreadsheetPickResult,
@@ -148,11 +149,29 @@ export async function grantSpreadsheetAccess(store: Store, deps: RoleServiceDeps
   patchRole(store, { accessDenied: false, error: t('app.roleAccessStillDenied') });
 }
 
+/** Documents から付与が必要な Drive ファイル ID（PDF = drive_file_id / 抽出テキスト = text_ref）を集める */
+function collectRequiredFileIds(documents: readonly DocumentRecord[]): string[] {
+  const ids = new Set<string>();
+  for (const doc of documents) {
+    if (doc.driveFileId !== '') {
+      ids.add(doc.driveFileId);
+    }
+    const textFileId = doc.textRef === null ? null : parseDriveFileId(doc.textRef);
+    if (textFileId !== null) {
+      ids.add(textFileId);
+    }
+  }
+  return [...ids];
+}
+
 /**
- * reviewer オンボーディングのフォルダアクセス付与ステップ（§7.2 手順 4）。
- * Picker でプロジェクトフォルダ（または個別ファイル）を選択させ、Documents 先頭行の
- * extracted_texts を 1 件試し読みして到達性を確認する。Documents が 0 件なら選択成功だけで
- * フラグを立てる。キャンセルは何もしない
+ * reviewer オンボーディングのファイルアクセス付与ステップ（§7.2 手順 4・issue #139）。
+ * 共有フォルダの Picker 選択では drive.file の読み取りが配下ファイルへ付与されないことが
+ * 実機で確定したため（issue #62）、Documents タブから必要ファイル ID を集めて Picker に列挙し、
+ * reviewer に全選択してもらってファイル単位で付与する。全件選択を照合したうえで、先頭の
+ * text_ref を 1 件試し読みして到達性を確認する（付与直後の伝播遅延に備えてリトライ）。
+ * 付与対象が 0 件なら選択操作なしでフラグを立てる。キャンセルは何もしない。
+ * 関数名・state キー（folderAccess*）は互換のため旧称のまま
  */
 export async function grantFolderAccess(store: Store, deps: RoleServiceDeps): Promise<void> {
   const state = store.getState();
@@ -162,9 +181,26 @@ export async function grantFolderAccess(store: Store, deps: RoleServiceDeps): Pr
   }
   patchRole(store, { folderAccessChecking: true, folderAccessError: null });
 
-  let selections: Awaited<ReturnType<typeof openPdfPicker>>;
+  let documents: DocumentRecord[];
   try {
-    selections = await openPdfPicker(deps.picker);
+    documents = await readDocuments(project.spreadsheetId, deps.google);
+  } catch (err) {
+    patchRole(store, { folderAccessChecking: false, folderAccessError: toMessage(err) });
+    showToast(t('home.toastFolderAccessFailed', { reason: toMessage(err) }));
+    return;
+  }
+
+  const requiredIds = collectRequiredFileIds(documents);
+  if (requiredIds.length === 0) {
+    await setLocal(folderAccessStorageKey(project.spreadsheetId), true);
+    patchRole(store, { folderAccessChecking: false, folderAccessGranted: true, folderAccessError: null });
+    showToast(t('home.toastFolderAccessConfirmed'));
+    return;
+  }
+
+  let selections: Awaited<ReturnType<typeof openProjectFilesPicker>>;
+  try {
+    selections = await openProjectFilesPicker(deps.picker, requiredIds);
   } catch (err) {
     patchRole(store, { folderAccessChecking: false, folderAccessError: toMessage(err) });
     showToast(t('common.pickerFailed', { reason: toMessage(err) }));
@@ -175,20 +211,43 @@ export async function grantFolderAccess(store: Store, deps: RoleServiceDeps): Pr
     return;
   }
 
-  try {
-    const documents = await readDocuments(project.spreadsheetId, deps.google);
-    const sample = documents.find((doc) => doc.textRef !== null);
-    if (sample?.textRef) {
-      const fileId = parseDriveFileId(sample.textRef);
-      if (fileId !== null) {
-        await getFileText(fileId, deps.google); // 到達性の確認のみ。内容は使わない
+  // 一部だけ選択された場合は付与漏れとして弾く（漏れたファイルは検証画面で読めない）
+  const selectedIds = new Set(selections.map((s) => s.sourceFileId));
+  const missing = requiredIds.filter((id) => !selectedIds.has(id));
+  if (missing.length > 0) {
+    const message = t('home.folderAccessPartial', {
+      missing: missing.length,
+      total: requiredIds.length,
+    });
+    patchRole(store, { folderAccessChecking: false, folderAccessError: message });
+    showToast(t('home.toastFolderAccessFailed', { reason: message }));
+    return;
+  }
+
+  // 到達性の確認のみ。内容は使わない（text_ref が 1 件も無いプロジェクトは選択照合だけで確定）
+  const sampleRef = documents.find(
+    (doc) => doc.textRef !== null && parseDriveFileId(doc.textRef) !== null,
+  )?.textRef;
+  const sampleId = sampleRef === undefined || sampleRef === null ? null : parseDriveFileId(sampleRef);
+  const sleep =
+    deps.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+  let lastError: unknown = null;
+  for (let attempt = 1; attempt <= GRANT_RETRY_MAX; attempt += 1) {
+    try {
+      if (sampleId !== null) {
+        await getFileText(sampleId, deps.google);
+      }
+      await setLocal(folderAccessStorageKey(project.spreadsheetId), true);
+      patchRole(store, { folderAccessChecking: false, folderAccessGranted: true, folderAccessError: null });
+      showToast(t('home.toastFolderAccessConfirmed'));
+      return;
+    } catch (err) {
+      lastError = err;
+      if (attempt < GRANT_RETRY_MAX) {
+        await sleep(GRANT_RETRY_INTERVAL_MS);
       }
     }
-    await setLocal(folderAccessStorageKey(project.spreadsheetId), true);
-    patchRole(store, { folderAccessChecking: false, folderAccessGranted: true, folderAccessError: null });
-    showToast(t('home.toastFolderAccessConfirmed'));
-  } catch (err) {
-    patchRole(store, { folderAccessChecking: false, folderAccessError: toMessage(err) });
-    showToast(t('home.toastFolderAccessFailed', { reason: toMessage(err) }));
   }
+  patchRole(store, { folderAccessChecking: false, folderAccessError: toMessage(lastError) });
+  showToast(t('home.toastFolderAccessFailed', { reason: toMessage(lastError) }));
 }

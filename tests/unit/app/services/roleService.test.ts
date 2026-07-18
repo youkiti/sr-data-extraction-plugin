@@ -10,8 +10,9 @@ import { createInitialState, createStore, type Store } from '../../../../src/app
 import { loadProjectMeta } from '../../../../src/features/project/selectProject';
 import { readReviewerAssignments } from '../../../../src/features/project/reviewerRepository';
 import { readDocuments } from '../../../../src/features/documents/documentRepository';
+import type { DocumentRecord } from '../../../../src/domain/document';
 import { getFileText } from '../../../../src/lib/google/drive';
-import { openPdfPicker, openSpreadsheetPicker } from '../../../../src/lib/google/picker';
+import { openProjectFilesPicker, openSpreadsheetPicker } from '../../../../src/lib/google/picker';
 import { SheetsAccessDeniedError } from '../../../../src/lib/google/sheets';
 import { getLocal, setLocal } from '../../../../src/lib/storage/chromeStorage';
 
@@ -29,7 +30,7 @@ jest.mock('../../../../src/lib/google/drive', () => ({
   getFileText: jest.fn(),
 }));
 jest.mock('../../../../src/lib/google/picker', () => ({
-  openPdfPicker: jest.fn(),
+  openProjectFilesPicker: jest.fn(),
   openSpreadsheetPicker: jest.fn(),
 }));
 jest.mock('../../../../src/lib/storage/chromeStorage', () => ({
@@ -43,7 +44,9 @@ const readReviewerAssignmentsMock = readReviewerAssignments as jest.MockedFuncti
 >;
 const readDocumentsMock = readDocuments as jest.MockedFunction<typeof readDocuments>;
 const getFileTextMock = getFileText as jest.MockedFunction<typeof getFileText>;
-const openPdfPickerMock = openPdfPicker as jest.MockedFunction<typeof openPdfPicker>;
+const openProjectFilesPickerMock = openProjectFilesPicker as jest.MockedFunction<
+  typeof openProjectFilesPicker
+>;
 const openSpreadsheetPickerMock = openSpreadsheetPicker as jest.MockedFunction<
   typeof openSpreadsheetPicker
 >;
@@ -279,7 +282,7 @@ describe('folderAccessStorageKey', () => {
   });
 });
 
-describe('grantFolderAccess', () => {
+describe('grantFolderAccess（issue #139: ファイル単位付与）', () => {
   function makeStore(patch: Partial<ReturnType<typeof createInitialState>['role']> = {}): Store {
     const state = createInitialState();
     state.currentProject = PROJECT;
@@ -287,20 +290,74 @@ describe('grantFolderAccess', () => {
     return createStore(state);
   }
 
+  function depsWithSleep(email: string): { deps: RoleServiceDeps; sleep: jest.Mock } {
+    const sleep = jest.fn(async () => undefined);
+    return { deps: { ...makeDeps(email), sleep }, sleep };
+  }
+
+  function doc(patch: Partial<DocumentRecord> = {}): DocumentRecord {
+    return {
+      documentId: 'doc-1',
+      studyId: 'study-1',
+      documentRole: 'article',
+      driveFileId: 'drive-1',
+      sourceFileId: 'src-1',
+      filename: 'a.pdf',
+      pmid: null,
+      doi: null,
+      textRef: 'https://drive.google.com/file/d/txt-1/view',
+      textStatus: 'ok',
+      pageCount: 1,
+      charCount: 1,
+      importedAt: 't',
+      importedBy: 'e',
+      note: null,
+      ...patch,
+    };
+  }
+
   test('プロジェクト未選択なら no-op', async () => {
     const store = createStore(createInitialState());
     await grantFolderAccess(store, makeDeps('r1@example.com'));
-    expect(openPdfPickerMock).not.toHaveBeenCalled();
+    expect(readDocumentsMock).not.toHaveBeenCalled();
+    expect(openProjectFilesPickerMock).not.toHaveBeenCalled();
   });
 
   test('確認中の再入は no-op', async () => {
     const store = makeStore({ folderAccessChecking: true });
     await grantFolderAccess(store, makeDeps('r1@example.com'));
-    expect(openPdfPickerMock).not.toHaveBeenCalled();
+    expect(readDocumentsMock).not.toHaveBeenCalled();
+  });
+
+  test('Documents の読み出し失敗はエラーを記録し、Picker を開かない', async () => {
+    readDocumentsMock.mockRejectedValue(new Error('sheet unreachable'));
+    const store = makeStore();
+    await grantFolderAccess(store, makeDeps('r1@example.com'));
+    expect(store.getState().role.folderAccessChecking).toBe(false);
+    expect(store.getState().role.folderAccessError).toBe('sheet unreachable');
+    expect(openProjectFilesPickerMock).not.toHaveBeenCalled();
+  });
+
+  test('付与対象 0 件（Documents 0 件）は Picker を開かずフラグを立てる', async () => {
+    readDocumentsMock.mockResolvedValue([]);
+    const store = makeStore();
+    await grantFolderAccess(store, makeDeps('r1@example.com'));
+    expect(openProjectFilesPickerMock).not.toHaveBeenCalled();
+    expect(setLocalMock).toHaveBeenCalledWith(folderAccessStorageKey('sheet-1'), true);
+    expect(store.getState().role.folderAccessGranted).toBe(true);
+  });
+
+  test('付与対象 0 件（drive_file_id 空 + text_ref 解析不能）も Picker を開かずフラグを立てる', async () => {
+    readDocumentsMock.mockResolvedValue([doc({ driveFileId: '', textRef: 'not-a-url' })]);
+    const store = makeStore();
+    await grantFolderAccess(store, makeDeps('r1@example.com'));
+    expect(openProjectFilesPickerMock).not.toHaveBeenCalled();
+    expect(store.getState().role.folderAccessGranted).toBe(true);
   });
 
   test('Picker 起動失敗はエラーを記録する', async () => {
-    openPdfPickerMock.mockRejectedValue(new Error('picker offline'));
+    readDocumentsMock.mockResolvedValue([doc()]);
+    openProjectFilesPickerMock.mockRejectedValue(new Error('picker offline'));
     const store = makeStore();
     await grantFolderAccess(store, makeDeps('r1@example.com'));
     expect(store.getState().role.folderAccessChecking).toBe(false);
@@ -309,41 +366,57 @@ describe('grantFolderAccess', () => {
   });
 
   test('キャンセル（null）は何も変えない', async () => {
-    openPdfPickerMock.mockResolvedValue(null);
+    readDocumentsMock.mockResolvedValue([doc()]);
+    openProjectFilesPickerMock.mockResolvedValue(null);
     const store = makeStore();
     await grantFolderAccess(store, makeDeps('r1@example.com'));
     expect(store.getState().role.folderAccessChecking).toBe(false);
     expect(store.getState().role.folderAccessGranted).toBe(false);
-    expect(readDocumentsMock).not.toHaveBeenCalled();
+    expect(getFileTextMock).not.toHaveBeenCalled();
   });
 
   test('選択 0 件（空配列）も何も変えない', async () => {
-    openPdfPickerMock.mockResolvedValue([]);
+    readDocumentsMock.mockResolvedValue([doc()]);
+    openProjectFilesPickerMock.mockResolvedValue([]);
     const store = makeStore();
     await grantFolderAccess(store, makeDeps('r1@example.com'));
     expect(store.getState().role.folderAccessGranted).toBe(false);
   });
 
-  test('Documents 先頭の text_ref を試し読みして成功したらフラグを立てる', async () => {
-    openPdfPickerMock.mockResolvedValue([{ sourceFileId: 'f1', filename: 'a.pdf' }]);
+  test('必要ファイル ID（PDF + 抽出テキスト）を重複なく列挙して Picker を開く', async () => {
     readDocumentsMock.mockResolvedValue([
-      {
-        documentId: 'doc-1',
-        studyId: 'study-1',
-        documentRole: 'article',
-        driveFileId: 'drive-1',
-        sourceFileId: 'src-1',
-        filename: 'a.pdf',
-        pmid: null,
-        doi: null,
-        textRef: 'https://drive.google.com/file/d/txt-1/view',
-        textStatus: 'ok',
-        pageCount: 1,
-        charCount: 1,
-        importedAt: 't',
-        importedBy: 'e',
-        note: null,
-      },
+      doc(),
+      doc({ documentId: 'doc-2' }),
+      doc({ documentId: 'doc-3', driveFileId: 'drive-2', textRef: null }),
+    ]);
+    openProjectFilesPickerMock.mockResolvedValue(null);
+    const store = makeStore();
+    await grantFolderAccess(store, makeDeps('r1@example.com'));
+    expect(openProjectFilesPickerMock).toHaveBeenCalledWith(expect.anything(), [
+      'drive-1',
+      'txt-1',
+      'drive-2',
+    ]);
+  });
+
+  test('一部だけ選択されたら付与漏れとしてエラーを記録し、フラグを立てない', async () => {
+    readDocumentsMock.mockResolvedValue([doc()]);
+    openProjectFilesPickerMock.mockResolvedValue([{ sourceFileId: 'drive-1', filename: 'a.pdf' }]);
+    const store = makeStore();
+    await grantFolderAccess(store, makeDeps('r1@example.com'));
+    expect(store.getState().role.folderAccessGranted).toBe(false);
+    expect(store.getState().role.folderAccessError).toContain(
+      '選択されていないファイルが 1 件あります',
+    );
+    expect(getFileTextMock).not.toHaveBeenCalled();
+    expect(setLocalMock).not.toHaveBeenCalled();
+  });
+
+  test('全件選択 + text_ref の試し読み成功でフラグを立てる', async () => {
+    readDocumentsMock.mockResolvedValue([doc()]);
+    openProjectFilesPickerMock.mockResolvedValue([
+      { sourceFileId: 'drive-1', filename: 'a.pdf' },
+      { sourceFileId: 'txt-1', filename: 'a.txt' },
     ]);
     getFileTextMock.mockResolvedValue('本文');
     const store = makeStore();
@@ -354,68 +427,68 @@ describe('grantFolderAccess', () => {
     expect(store.getState().role.folderAccessChecking).toBe(false);
   });
 
-  test('Documents 0 件は試し読みをスキップしてフラグを立てる', async () => {
-    openPdfPickerMock.mockResolvedValue([{ sourceFileId: 'f1', filename: 'a.pdf' }]);
-    readDocumentsMock.mockResolvedValue([]);
+  test('text_ref が 1 件も無い（PDF のみ）は試し読みをスキップしてフラグを立てる', async () => {
+    readDocumentsMock.mockResolvedValue([doc({ textRef: null })]);
+    openProjectFilesPickerMock.mockResolvedValue([{ sourceFileId: 'drive-1', filename: 'a.pdf' }]);
     const store = makeStore();
     await grantFolderAccess(store, makeDeps('r1@example.com'));
     expect(getFileTextMock).not.toHaveBeenCalled();
     expect(store.getState().role.folderAccessGranted).toBe(true);
   });
 
-  test('text_ref からファイル ID を解決できない場合も試し読みをスキップしてフラグを立てる', async () => {
-    openPdfPickerMock.mockResolvedValue([{ sourceFileId: 'f1', filename: 'a.pdf' }]);
-    readDocumentsMock.mockResolvedValue([
-      {
-        documentId: 'doc-1',
-        studyId: 'study-1',
-        documentRole: 'article',
-        driveFileId: 'drive-1',
-        sourceFileId: 'src-1',
-        filename: 'a.pdf',
-        pmid: null,
-        doi: null,
-        textRef: 'not-a-url',
-        textStatus: 'ok',
-        pageCount: 1,
-        charCount: 1,
-        importedAt: 't',
-        importedBy: 'e',
-        note: null,
-      },
+  test('試し読みが伝播遅延で失敗しても最大 3 回リトライして成功できる', async () => {
+    readDocumentsMock.mockResolvedValue([doc()]);
+    openProjectFilesPickerMock.mockResolvedValue([
+      { sourceFileId: 'drive-1', filename: 'a.pdf' },
+      { sourceFileId: 'txt-1', filename: 'a.txt' },
     ]);
+    getFileTextMock
+      .mockRejectedValueOnce(new Error('HTTP 404'))
+      .mockRejectedValueOnce(new Error('HTTP 404'))
+      .mockResolvedValue('本文');
     const store = makeStore();
-    await grantFolderAccess(store, makeDeps('r1@example.com'));
-    expect(getFileTextMock).not.toHaveBeenCalled();
+    const { deps, sleep } = depsWithSleep('r1@example.com');
+    await grantFolderAccess(store, deps);
+    expect(getFileTextMock).toHaveBeenCalledTimes(3);
+    expect(sleep).toHaveBeenCalledTimes(2);
+    expect(sleep).toHaveBeenCalledWith(2_000);
     expect(store.getState().role.folderAccessGranted).toBe(true);
   });
 
-  test('試し読みに失敗したらフラグを立てず、エラーを記録する', async () => {
-    openPdfPickerMock.mockResolvedValue([{ sourceFileId: 'f1', filename: 'a.pdf' }]);
-    readDocumentsMock.mockResolvedValue([
-      {
-        documentId: 'doc-1',
-        studyId: 'study-1',
-        documentRole: 'article',
-        driveFileId: 'drive-1',
-        sourceFileId: 'src-1',
-        filename: 'a.pdf',
-        pmid: null,
-        doi: null,
-        textRef: 'https://drive.google.com/file/d/txt-1/view',
-        textStatus: 'ok',
-        pageCount: 1,
-        charCount: 1,
-        importedAt: 't',
-        importedBy: 'e',
-        note: null,
-      },
+  test('sleep 未注入時は既定の setTimeout 待ちでリトライする', async () => {
+    jest.useFakeTimers();
+    try {
+      readDocumentsMock.mockResolvedValue([doc()]);
+      openProjectFilesPickerMock.mockResolvedValue([
+        { sourceFileId: 'drive-1', filename: 'a.pdf' },
+        { sourceFileId: 'txt-1', filename: 'a.txt' },
+      ]);
+      getFileTextMock.mockRejectedValueOnce(new Error('HTTP 404')).mockResolvedValue('本文');
+      const store = makeStore();
+      const promise = grantFolderAccess(store, makeDeps('r1@example.com'));
+      await jest.advanceTimersByTimeAsync(2_000);
+      await promise;
+      expect(getFileTextMock).toHaveBeenCalledTimes(2);
+      expect(store.getState().role.folderAccessGranted).toBe(true);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  test('試し読みが 3 回失敗したらフラグを立てず、最後のエラーを記録する', async () => {
+    readDocumentsMock.mockResolvedValue([doc()]);
+    openProjectFilesPickerMock.mockResolvedValue([
+      { sourceFileId: 'drive-1', filename: 'a.pdf' },
+      { sourceFileId: 'txt-1', filename: 'a.txt' },
     ]);
-    getFileTextMock.mockRejectedValue(new Error('HTTP 403'));
+    getFileTextMock.mockRejectedValue(new Error('HTTP 404'));
     const store = makeStore();
-    await grantFolderAccess(store, makeDeps('r1@example.com'));
+    const { deps, sleep } = depsWithSleep('r1@example.com');
+    await grantFolderAccess(store, deps);
+    expect(getFileTextMock).toHaveBeenCalledTimes(3);
+    expect(sleep).toHaveBeenCalledTimes(2);
     expect(store.getState().role.folderAccessGranted).toBe(false);
-    expect(store.getState().role.folderAccessError).toBe('HTTP 403');
+    expect(store.getState().role.folderAccessError).toBe('HTTP 404');
     expect(setLocalMock).not.toHaveBeenCalled();
   });
 });

@@ -5,6 +5,7 @@ import { installChromeMock, type ChromeMock } from '../../../setup/chrome-mock';
 import {
   createChromePickerDeps,
   openPdfPicker,
+  openProjectFilesPicker,
   openSpreadsheetPicker,
   PICKER_MESSAGE_SOURCE,
   PICKER_PAGE_URL,
@@ -373,6 +374,35 @@ describe('openSpreadsheetPicker（issue #130）', () => {
       withNonce({ source: PICKER_MESSAGE_SOURCE, kind: 'picked', files: [] }),
     );
     await expect(promise2).resolves.toBe('cancelled');
+  });
+});
+
+describe('openProjectFilesPicker（issue #139）', () => {
+  test('view=files + file_ids（カンマ区切り）+ nonce のフラグメントでタブを開く', async () => {
+    const fake = createFakeDeps();
+    const promise = openProjectFilesPicker(fake.deps, ['F1', 'F2']);
+    await flushMicrotasks();
+    expect(fake.createTab).toHaveBeenCalledWith(
+      `${PAGE_URL}#extension_id=ext-id&view=files&file_ids=F1%2CF2&nonce=${NONCE}`,
+    );
+    fake.emitMessage(withNonce({ source: PICKER_MESSAGE_SOURCE, kind: 'cancelled' }));
+    await expect(promise).resolves.toBeNull();
+  });
+
+  test('選択結果（ファイル ID + ファイル名 + mimeType）をそのまま返す', async () => {
+    const fake = createFakeDeps();
+    const promise = openProjectFilesPicker(fake.deps, ['F1']);
+    await flushMicrotasks();
+    fake.emitMessage(
+      withNonce({
+        source: PICKER_MESSAGE_SOURCE,
+        kind: 'picked',
+        files: [{ id: 'F1', name: 'a.pdf', mimeType: 'application/pdf' }],
+      }),
+    );
+    await expect(promise).resolves.toEqual([
+      { sourceFileId: 'F1', filename: 'a.pdf', mimeType: 'application/pdf' },
+    ]);
   });
 });
 
