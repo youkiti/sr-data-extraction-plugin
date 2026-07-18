@@ -129,7 +129,13 @@ import {
   requestAddReviewer,
   revokeReviewer,
 } from './services/reviewerAdminService';
-import { grantFolderAccess, grantSpreadsheetAccess, loadRole } from './services/roleService';
+import {
+  checkMissingFileAccess,
+  grantFolderAccess,
+  grantSpreadsheetAccess,
+  loadRole,
+  skipMissingFileAccess,
+} from './services/roleService';
 import {
   cancelExportWarning,
   changeMethodsLanguage,
@@ -392,6 +398,9 @@ export async function bootstrapApp(
       },
       onGrantFolderAccess: () => {
         void grantFolderAccess(store, deps);
+      },
+      onSkipMissingFiles: () => {
+        void skipMissingFileAccess(store, deps);
       },
       onReloadReviewers: () => {
         void loadReviewers(store, deps, { force: true });
@@ -1071,6 +1080,9 @@ export async function bootstrapApp(
     renderNav(store.getState());
     renderRoute();
     await loadRole(store, deps);
+    // 起動時の差分検知（issue #141）: owner が後から取り込んだ文献の不足を reviewer に
+    // 気づかせる banner を静かに準備する。fire-and-forget（起動をブロックしない）
+    void checkMissingFileAccess(store, deps);
   }
   startRouting();
   return store;
