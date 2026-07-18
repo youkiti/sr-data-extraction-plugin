@@ -504,7 +504,10 @@ function validatePresetDialog(dialog: PresetDialogState): MessageKey | null {
 /**
  * 事前設定ダイアログ: 「この内容で挿入」。検証 → 行生成（Review context 注入 +
  * 判定行 note へ構造化 JSON 保存）→ エディタ末尾へ挿入して閉じる。
- * 検証エラーはダイアログ内に表示し、挿入しない（ui-states.md §3「必須未充足」）
+ * 検証エラーはダイアログ内に表示し、挿入しない（ui-states.md §3「必須未充足」）。
+ * error にはメッセージキーをそのまま保存し、t() での解決は view の描画時に行う
+ * （issue #126 項目3: エラー表示中に言語を切り替えても追従するように、解決済み文字列ではなく
+ * キーを state に持たせる）
  */
 export function confirmRobPrespecDialog(store: Store): void {
   const dialog = store.getState().schema.presetDialog;
@@ -513,7 +516,7 @@ export function confirmRobPrespecDialog(store: Store): void {
   }
   const errorKey = validatePresetDialog(dialog);
   if (errorKey !== null) {
-    patchSchema(store, { presetDialog: { ...dialog, error: t(errorKey) } });
+    patchSchema(store, { presetDialog: { ...dialog, error: errorKey } });
     return;
   }
   appendEditorRows(store, buildPresetDialogRows(dialog));

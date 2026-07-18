@@ -351,10 +351,12 @@ function prespecRadio(
   return el('label', { className: 'schema__prespec-radio' }, [input, label]);
 }
 
-/** ダイアログ共通: 検証エラー表示 + 操作ボタン（確定 / スキップ〔軽量版のみ〕/ キャンセル）を追加する */
+/** ダイアログ共通: 検証エラー表示 + 操作ボタン（確定 / スキップ〔軽量版のみ〕/ キャンセル）を追加する。
+ * error はメッセージキーで受け取り、ここで t() を呼んで現在言語に解決する
+ * （issue #126 項目3: エラー表示中に言語を切り替えても追従させるため） */
 function appendPrespecFooter(
   children: HTMLElement[],
-  error: string | null,
+  error: MessageKey | null,
   showSkip: boolean,
   ctx: ViewContext,
 ): void {
@@ -364,7 +366,7 @@ function appendPrespecFooter(
         id: 'schema-prespec-error',
         className: 'schema__error',
         attributes: { role: 'alert' },
-        text: error,
+        text: t(error),
       }),
     );
   }

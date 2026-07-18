@@ -10,6 +10,7 @@
 // SQ 4.3（"Does the unit of analysis match the ideal test accuracy trial?"）へ
 // ideal trial の Analysis / unit を狙い撃ちで注入する（issue #103 D-4）。
 // 構造化 JSON は判定行（quadas3_rob_judgement）の note に保存し、再挿入時に復元する。
+import type { MessageKey } from '../../../lib/i18n';
 import type { SchemaEditorRow } from '../types';
 import { parseOptionalString } from './prespecDialog';
 import { ROB_TEMPLATE_QUADAS3 } from './robTemplates';
@@ -26,8 +27,9 @@ export interface Quadas3PrespecDialogState {
   testRole: string;
   referenceStandard: string;
   analysisUnit: string;
-  /** 全項目任意のため検証エラーは発生しないが、他ツールと状態の形を揃える */
-  error: string | null;
+  /** 全項目任意のため検証エラーは発生しないが、他ツールと状態の形を揃える（型は MessageKey |
+   * null。描画時に t() で解決する。issue #126 項目3） */
+  error: MessageKey | null;
 }
 
 /** 事前設定の確定値（note へ保存する構造化 JSON の中身）。空入力は null に正規化する */
