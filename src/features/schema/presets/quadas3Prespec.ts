@@ -11,6 +11,7 @@
 // ideal trial の Analysis / unit を狙い撃ちで注入する（issue #103 D-4）。
 // 構造化 JSON は判定行（quadas3_rob_judgement）の note に保存し、再挿入時に復元する。
 import type { SchemaEditorRow } from '../types';
+import { parseOptionalString } from './prespecDialog';
 import { ROB_TEMPLATE_QUADAS3 } from './robTemplates';
 
 /** 事前設定ダイアログの画面状態（AppState.schema.presetDialog）。テキストは入力中の生値を保持する */
@@ -90,10 +91,6 @@ export function serializeQuadas3PrespecNote(prespec: Quadas3Prespec): string {
     reference_standard: prespec.referenceStandard,
     analysis_unit: prespec.analysisUnit,
   });
-}
-
-function parseOptionalString(value: unknown): string | null {
-  return typeof value === 'string' && value.trim() !== '' ? value : null;
 }
 
 /**
