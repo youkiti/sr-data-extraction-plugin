@@ -1,5 +1,5 @@
 import { renderAdjudicateView } from '../../../../src/app/views/adjudicateView';
-import { setUiLanguage } from '../../../../src/lib/i18n';
+import { setUiLanguage, t } from '../../../../src/lib/i18n';
 import { disposeAdjudicatePdfPaneCache } from '../../../../src/app/views/adjudicatePdfPane';
 import {
   createInitialState,
@@ -402,6 +402,23 @@ describe('renderAdjudicateView: study 一覧', () => {
     expect(root.textContent).toContain('1/4');
   });
 
+  test('selectable な行が無ければペア選択セッション注記は出さない（issue #117 ④）', () => {
+    const { ctx } = makeCtx();
+    const root = render(makeState({ rows: [makeRow()] }), ctx);
+    expect(root.querySelector('.adjudicate__pair-session-note')).toBeNull();
+  });
+
+  test('selectable な行が 1 件でもあれば「ペア選択はセッション内のみ」の注記を一覧の直上に出す（issue #117 ④）', () => {
+    const { ctx } = makeCtx();
+    const root = render(makeState({ rows: [makeRow(), makeSelectableRow()] }), ctx);
+    const note = root.querySelector('.adjudicate__pair-session-note');
+    expect(note?.textContent).toBe(t('adjudicate.pairSessionNote'));
+    // 注記は一覧テーブルより前（直上）に置かれる
+    expect(note?.compareDocumentPosition(root.querySelector('#adjudicate-list') as Node)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+  });
+
   test('selectable（3 名以上）はディムせず、ペア選択セレクトを出す（未選択時は開始ボタン無し）', () => {
     const { ctx, callbacks } = makeCtx();
     const root = render(makeState({ rows: [makeSelectableRow()] }), ctx);
@@ -583,6 +600,50 @@ describe('renderAdjudicateView: 裁定中（working）', () => {
     first.value = '';
     first.dispatchEvent(new Event('change'));
     expect(callbacks.onArmMappingChange).toHaveBeenCalledWith(0, null);
+  });
+
+  test('マッピングテーブル: B に同名の群が複数あるときはキーを併記して区別する（issue #117 ④）', () => {
+    const { ctx } = makeCtx();
+    const root = render(
+      makeState({
+        rows: [makeRow()],
+        working: makeWorking({
+          needsArmConfirmation: true,
+          armMapping: ['arm:1'],
+          armsMatched: false,
+          armsA: [{ armKey: 'arm:1', armName: '介入群' }],
+          armsB: [
+            { armKey: 'arm:1', armName: '対照群' },
+            { armKey: 'arm:2', armName: '対照群' },
+          ],
+        }),
+      }),
+      ctx,
+    );
+    const select = root.querySelector<HTMLSelectElement>('#adjudicate-arm-map .adjudicate__arm-map-select');
+    const optionTexts = Array.from(select?.querySelectorAll('option') ?? []).map((opt) => opt.textContent);
+    // 「対応なし」+ B の同名 2 群はキー併記で区別できる
+    expect(optionTexts).toEqual([t('adjudicate.armMapNone'), '対照群（arm:1）', '対照群（arm:2）']);
+  });
+
+  test('マッピングテーブル: B の群名が重複していなければキーを併記しない', () => {
+    const { ctx } = makeCtx();
+    const root = render(
+      makeState({
+        rows: [makeRow()],
+        working: makeWorking({
+          needsArmConfirmation: true,
+          armMapping: ['arm:1'],
+          armsMatched: true,
+          armsA: [{ armKey: 'arm:1', armName: '介入群' }],
+          armsB: [{ armKey: 'arm:1', armName: '介入群' }],
+        }),
+      }),
+      ctx,
+    );
+    const select = root.querySelector<HTMLSelectElement>('#adjudicate-arm-map .adjudicate__arm-map-select');
+    const optionTexts = Array.from(select?.querySelectorAll('option') ?? []).map((opt) => opt.textContent);
+    expect(optionTexts).toEqual([t('adjudicate.armMapNone'), '介入群']);
   });
 
   test('マッピングテーブル: 対応づけられていない B の群は注記に列挙する', () => {

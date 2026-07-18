@@ -135,9 +135,9 @@ flowchart LR
 
 arm 別セルは `entity_key`（`arm:n` / `outcome:...:arm:n`）で突き合わせるため、先に consensus 群構成を確定する：
 
-1. 両者の最新 `ArmStructures` を並べて表示（`arm:1` ↔ `arm:1` の**位置対応**。並べ替えマッピング UI は将来拡張とし、v1 は位置対応固定）
-2. 本数・名称が一致 → 「このまま採用」1 クリック。不一致 → 裁定者が consensus の本数・名称を編集して確定
-3. `ArmStructures` へ `annotator='consensus'` / `annotator_type='consensus'` の版として追記
+1. 両者の最新 `ArmStructures` を並べて表示し、「A の各群に対応する B の群」をマッピングテーブル（`#adjudicate-arm-map`）で対応づける。既定マッピングは名称一致（trim）→ 位置対応 → 残り物同士の順で自動対応し、裁定者はセレクトで手動変更できる（**v1 の「`arm:1` ↔ `arm:1` の位置対応固定」は 2026-07-13〔issue #63〕に解消済み**。詳細・実装は §13 参照）
+2. 本数・対応する名称が一致 → 「このまま採用」1 クリック。不一致 → 裁定者が consensus の本数・名称を編集して確定
+3. `ArmStructures` へ `annotator='consensus'` / `annotator_type='consensus'` の版として追記（マッピング辞書を note へ直列化して永続化。§13）
 
 RoB タブ（`rob_domain`）と study タブは群構成に依存しないため、群構成確定前でも裁定可（検証画面の `isArmDependentLevel` と同じ規約）。
 
@@ -257,3 +257,8 @@ RoB タブ（`rob_domain`）と study タブは群構成に依存しないため
 - **裁定一覧に annotator の email を表示する判断**: §6.1 は「両者の完了状況（n/m）のみを見せ、値・判定内訳は見せない」としていたが、この「完了状況」の内訳表示（`#adjudicate-list`）では A / B の区別のために各 annotator の email を併記している（値そのものは見せないため盲検の担保範囲は維持できると判断。email は元々 owner が `Reviewers` へ登録した情報であり新規の漏えいではない）
 - **Drive 自動共有の後付け実装（§7.1・§11 の設計判断の撤回。2026-07-11）**: 当初は「Drive 共有 API には追加スコープが要る」との誤認からアプリ内共有を見送り案内文言のみとしていた。実機テストで owner が登録しても reviewer にシート/フォルダが共有されず手間がかかる指摘を受け再検討したところ、`drive.file` スコープでもアプリが作成・操作したファイルには `permissions.create` で共有可能（tiab-review-plugin の `addPermission` が同スコープで実運用済み）と確認できたため、レビュアー登録確定時にスプレッドシート（編集者）＋プロジェクトフォルダ（閲覧者）を自動共有する実装を追加した（`lib/google/drive.ts` の `shareFileWithUser`、`app/services/reviewerAdminService.ts` の既定 `shareProjectWithReviewer`）。共有失敗は登録行を残したまま警告に縮退。解除時の自動アンシェアは破壊的なため見送り
 - **未実施の確認事項**: 2 アカウント（owner + reviewer）を使った実機通し確認（§7.3 の drive.file スコープでの共有フォルダ配下読み出しスパイクを含む）は未実施。`docs/manual-testing.md` に確認手順を追記済みだが、実施は今後のタスク
+- **裁定 arm マッピングの残エッジ 4 件の解消（2026-07-18・issue #117）**: issue #63 のマッピング実装（本節上記）で残っていた 4 件のエッジケースを修正した。
+  1. **`remapArmEntityKey` のセグメント順序保存**: outcome_result キーを `makeOutcomeEntityKey` で正準順（outcome|arm|time）へ再構築する実装だと、LLM が非正準順（例 `outcome:x|time:30d|arm:1`）のキーを出力していた場合、恒等マッピングでも A/B のキー文字列が食い違い「偽の不一致」になっていた。元のセグメント順序を保ったまま `arm:` セグメントだけをその場で置換するよう修正（`armMatch.ts`）。`validateAiOutput` 側での正準化（根治策）は既存保存データとの意味論が変わるため見送った
+  2. **B 素通しキーと写像先の衝突検知**: B の `ResultsData`/`Decisions` に「B の確定 `ArmStructures` に無い arm キー」（evidence 由来の旧データ等）が残っていると、辞書はそれを素通しし、写像された別の B 群キーと衝突した場合に `indexResultsRows` の `Map` で後勝ちの 1 行が他方を無言で潰す不具合があった。`escapeArmKeyRemapCollisions`（`armMatch.ts`）で衝突を検知し、衝突する素通しキーだけを衝突しない新規 `arm:n` へ退避する。衝突を検知した場合はトースト（`adjudicate.toastArmKeyCollision`）で裁定者に知らせる
+  3. **一致度レポート（issue #66）へのマッピング適用**: 裁定画面は arm マッピングで並べ替え後に一致するセルが、一致度統計（`agreement.ts` が集計元にする `collectReadyStudyInputs`）では B の生 entity_key のまま位置対応で突き合わせていたため不一致計上され、画面と統計が食い違っていた。`collectReadyStudyInputs` で consensus 版 `ArmStructures` の note に**永続化済みの**マッピングがあればそれを適用するよう修正（`app/services/adjudicationService.ts`）。マッピング未確定（consensus 群構成が未確定）の study は、裁定者の判断が入っていないため既定マッピングへのフォールバックはせず、従来どおり B の生キーで比較する挙動を維持する
+  4. **本節（§6.2）の残置記述の是正**: 本節の「v1 は位置対応固定」の記述を、上記の解消結果に合わせて修正した（本追記）。あわせて UI にも「ペア選択はセッション内のみで永続化しない」旨の注記（`.adjudicate__pair-session-note`。一覧に選択可能な study が 1 件以上あるとき表示）と、arm マッピングテーブルで B に同名の群が複数あるときの選択肢のキー併記（`adjudicate.armMapOptionWithKey`）を追加した

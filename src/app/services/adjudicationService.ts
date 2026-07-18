@@ -14,6 +14,9 @@
 //   consensus 行 upsert → Decisions batch 追記の順で行う（features/adjudication/consensusRepository）。
 //   失敗は検証側（app/services/verificationService.ts）と共有する 'decisions' オフラインキューへ
 //   退避し、次回成功時に再送する（issue #63）
+// - issue #117 件2: B の素通しキー（B の確定 ArmStructures に無い arm キー）が写像先と衝突する場合の
+//   退避キー割当 + トースト警告（escapeArmKeyRemapCollisions）。件3 は collectReadyStudyInputs 側の
+//   docstring 参照（一致度レポートへの arm マッピング適用）
 import type { ConfirmedArmStructure } from '../../domain/armStructure';
 import type { DocumentRecord } from '../../domain/document';
 import type { SchemaField } from '../../domain/schemaField';
@@ -25,11 +28,13 @@ import {
   type AgreementStudyInput,
 } from '../../features/adjudication/agreement';
 import {
+  armKeysInUse,
   armMappingFromRemap,
   armsMatch,
   buildArmKeyRemap,
   buildConsensusArmDraft,
   buildDefaultArmMapping,
+  escapeArmKeyRemapCollisions,
   parseArmKeyRemapNote,
   remapArmEntityKey,
   serializeArmKeyRemap,
@@ -334,17 +339,30 @@ export async function openAdjudicateStudy(
         : buildConsensusArmDraft(armsA, armsB, armMapping);
 
     // B 側の entity_key（arm:n / outcome:...|arm:n）を正準キーへ書き換えてから突き合わせる。
-    // マッピング変更時（setAdjudicateArmMapping）は同じクロージャで再計算する
-    const rebuildCells = (remap: ReadonlyMap<string, string>): AdjudicationCell[] =>
-      buildAdjudicationCells(
+    // マッピング変更時（setAdjudicateArmMapping）は同じクロージャで再計算する。
+    // issue #117 件2: B の実データ（ResultsData / Decisions）に「B の確定 ArmStructures に無い
+    // arm キー」（evidence 由来の素通しキー）が残っていて、それが写像先の正準キーと衝突する場合は
+    // escapeArmKeyRemapCollisions で退避キーへ差し替え、indexResultsRows での無言の後勝ち上書きを防ぐ。
+    // 衝突を検知したらトーストで裁定者に知らせる（既存の警告トーストと同じパターン）
+    const actualBArmKeys = armKeysInUse([
+      ...resultsRowsB.map((r) => r.entityKey),
+      ...decisionsB.map((d) => d.entityKey),
+    ]);
+    const rebuildCells = (remap: ReadonlyMap<string, string>): AdjudicationCell[] => {
+      const { remap: safeRemap, collisions } = escapeArmKeyRemapCollisions(remap, actualBArmKeys);
+      if (collisions.length > 0) {
+        showToast(t('adjudicate.toastArmKeyCollision', { keys: collisions.join(', ') }));
+      }
+      return buildAdjudicationCells(
         fields,
         studyDataRowA,
         studyDataRowB,
         resultsRowsA,
-        resultsRowsB.map((r) => ({ ...r, entityKey: remapArmEntityKey(r.entityKey, remap) })),
+        resultsRowsB.map((r) => ({ ...r, entityKey: remapArmEntityKey(r.entityKey, safeRemap) })),
         decisionsA,
-        decisionsB.map((d) => ({ ...d, entityKey: remapArmEntityKey(d.entityKey, remap) })),
+        decisionsB.map((d) => ({ ...d, entityKey: remapArmEntityKey(d.entityKey, safeRemap) })),
       );
+    };
     const cells = rebuildCells(armKeyRemap);
     const consensusDecisions = decisions.filter((d) => d.studyId === studyId && d.annotator === 'consensus');
 
@@ -731,7 +749,15 @@ export async function undoAdjudicateCell(
  * study 単位で ready ペア（human annotator ちょうど 2 名）を解決し、
  * features/adjudication/cellMatch.buildAdjudicationCells でセルを組み立てる。
  * openAdjudicateStudy と同じ読み出しパターン（studies / documents / StudyData /
- * ResultsData / Decisions / 最新確定 SchemaFields）を使う
+ * ResultsData / Decisions / 最新確定 SchemaFields）を使う。
+ *
+ * issue #117 件3: 裁定画面（openAdjudicateStudy）は B 側 entity_key を consensus 版
+ * ArmStructures の note に永続化された arm マッピングで正準キーへ書き換えてから突き合わせるが、
+ * この一致度レポートは従来 B の生 entity_key をそのまま使っていたため、裁定画面で一致して見える
+ * セルが統計では位置対応のまま不一致計上される食い違いがあった。ここでは**永続化済みの
+ * マッピングがある場合のみ**同じ書き換えを適用して画面と統計を揃える（マッピング未確定の
+ * study は consensus 群構成自体がまだ無く、裁定者の判断が入っていないため既定マッピングへの
+ * フォールバックはせず、従来どおり B の生キーで比較する = 挙動維持）
  */
 async function collectReadyStudyInputs(
   store: Store,
@@ -744,6 +770,7 @@ async function collectReadyStudyInputs(
   const studySheet = await readStudyDataSheet(spreadsheetId, deps.google);
   const resultsRows = await readResultsDataRows(spreadsheetId, deps.google);
   const decisions = await readAllDecisions(spreadsheetId, deps.google);
+  const armRows = await readAllArmStructures(spreadsheetId, deps.google);
 
   const inputs: AgreementStudyInput[] = [];
   for (const item of buildStudySelection(studies, documents)) {
@@ -763,7 +790,13 @@ async function collectReadyStudyInputs(
       studySheet.rows.find((r) => r.studyId === study.studyId && r.annotator === pair.annotatorB) ?? null;
     const resultsRowsA = resultsRows.filter((r) => r.studyId === study.studyId && r.annotator === pair.annotatorA);
     const resultsRowsB = resultsRows.filter((r) => r.studyId === study.studyId && r.annotator === pair.annotatorB);
-    const cells = buildAdjudicationCells(fields, studyDataRowA, studyDataRowB, resultsRowsA, resultsRowsB);
+    const studyArmRows = armRows.filter((r) => r.studyId === study.studyId);
+    const persistedRemap = parseArmKeyRemapNote(latestArmStructureNote(studyArmRows, 'consensus'));
+    const remappedResultsRowsB =
+      persistedRemap === null
+        ? resultsRowsB
+        : resultsRowsB.map((r) => ({ ...r, entityKey: remapArmEntityKey(r.entityKey, persistedRemap) }));
+    const cells = buildAdjudicationCells(fields, studyDataRowA, studyDataRowB, resultsRowsA, remappedResultsRowsB);
     inputs.push({ studyId: study.studyId, studyLabel: study.studyLabel, cells });
   }
   return inputs;

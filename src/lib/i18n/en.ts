@@ -725,6 +725,8 @@ export const en: Record<MessageKey, string> = {
   'adjudicate.pairSelectAria': 'Pair of reviewers to adjudicate {label}',
   'adjudicate.pairPlaceholder': 'Select a pair…',
   'adjudicate.pairNote': 'There are 3 or more reviewers. Select the pair to adjudicate.',
+  'adjudicate.pairSessionNote':
+    'The pair selection is kept for this browsing session only (it resets on reload or when you leave the screen, and is never saved).',
   'adjudicate.waiting': 'Waiting for both reviewers to finish verification',
   'adjudicate.emptyList':
     'No studies to adjudicate. Studies appear here once documents are imported and two reviewers have completed verification.',
@@ -733,6 +735,7 @@ export const en: Record<MessageKey, string> = {
   'adjudicate.headAction': 'Actions',
   'adjudicate.armMapAria': 'B arm corresponding to A\'s arm "{name}"',
   'adjudicate.armMapNone': 'No match',
+  'adjudicate.armMapOptionWithKey': '{name} ({key})',
   'adjudicate.armMapHeadA': "A's arms",
   'adjudicate.armMapHeadB': 'Corresponding B arm',
   'adjudicate.armDraftNameAria': 'Name of arm {n}',
@@ -809,6 +812,8 @@ export const en: Record<MessageKey, string> = {
   'adjudicate.toastSaveFailed': 'Failed to save the adjudication: {reason}',
   'adjudicate.toastNoMatches': 'No matching cells to adopt in bulk',
   'adjudicate.toastArmFirst': 'Confirm the arm structure before adjudicating',
+  'adjudicate.toastArmKeyCollision':
+    'Found item keys on side B outside the confirmed arm structure ({keys}); they were moved to separate keys to avoid overwriting data. Please double-check nothing was missed',
 
   // サービス層のトースト・状態エラー
   'common.pickerFailed': 'Could not open the Drive Picker: {reason}',

@@ -3082,6 +3082,12 @@ section.documents__tiab {
   color: var(--color-text-muted);
 }
 
+/* issue #117 ④: ペア選択がセッション内のみである旨の注記 */
+.adjudicate__pair-session-note {
+  color: var(--color-text-muted);
+  margin: 4px 0 8px;
+}
+
 .adjudicate__working-header {
   display: flex;
   align-items: baseline;
