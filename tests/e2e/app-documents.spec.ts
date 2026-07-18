@@ -501,6 +501,38 @@ test('tiab-review 取り込み: 不正入力はインラインエラー（role=a
   await expect(page.locator('#documents-tiab-open')).toBeVisible();
 });
 
+test('tiab-review 取り込み: 404（drive.file 未許可）は Picker 許可導線を表示する（issue #142。Picker 本体は seam でスタブ）', async ({ page }) => {
+  // tiab-review は別 OAuth クライアントが作成したシートのため、drive.file スコープでは
+  // 初回 403/404 になる（#128〜#132）。References / Decisions の batchGet を 404 で応答させる
+  await page.route('https://sheets.googleapis.com/**', async (route) => {
+    const req = route.request();
+    const url = decodeURIComponent(req.url());
+    if (req.method() === 'GET' && url.includes('values:batchGet')) {
+      await route.fulfill({ status: 404, json: { error: { message: 'not found' } } });
+      return;
+    }
+    await route.fulfill({ json: { values: [] } });
+  });
+
+  await initApp(page, docsState());
+  await page.locator('#documents-tiab-open').click();
+  await page.locator('#tiab-sheet-input').fill('https://docs.google.com/spreadsheets/d/tiab-sheet-1/edit');
+  await page.locator('#tiab-preview').click();
+
+  const error = page.locator('#tiab-error');
+  await expect(error).toContainText('このスプレッドシートを開く権限がまだありません');
+  await expect(error).toHaveAttribute('role', 'alert');
+  const grant = page.locator('#tiab-grant-access');
+  await expect(grant).toBeVisible();
+  await expect(grant).toHaveText('Google で許可する');
+
+  // Picker 本体はホスト済みページ + externally_connectable のため E2E 対象外（他 spec と同じ方針。
+  // hosted-picker.spec.ts が別途分岐を検証する）。ここではクリックで Picker 起動導線（二重起動防止の
+  // disabled 化）まで配線されていることだけを確認する
+  await grant.click();
+  await expect(grant).toBeDisabled();
+});
+
 test('アクセシビリティ違反がない（axe）', async ({ page }) => {
   await initApp(page, docsState({
     studies: [makeStudy('study-1', 'Smith 2020', 'NCT01234567'), makeStudy('study-2', 'Smith 2020 reg', 'NCT01234567'), STUDIES[2]],

@@ -77,7 +77,7 @@ M1〜M4 のうち、**ローカルの jest / Playwright だけでは完了確認
 | #62 | **実機（実 Google アカウント 2 つ）** | **前半完了（2026-07-18）**: §7.3 の設計成立条件は「共有フォルダの Picker 選択では配下ファイルが読めない」= **不成立が確定**（トップフォルダ・サブフォルダ直接選択とも 404）。ファイル単位付与（issue #139・PR #140。hosted picker `view=files` + `setFileIds` 全選択）へ設計変更し、招待 → Drive 自動共有 → シート許可 → **ファイルアクセス付与 → `#/verify` での PDF / 抽出テキスト読出しまで実機確認済み**。**残り**: 検証（with_ai / independent）→ 裁定 → consensus エクスポートの通し（手順は [manual-testing.md](manual-testing.md) §5-6-2。完了後に PR #140 をマージし #62/#138/#139 をクローズ） |
 | #63 | 実機（2 アカウント） | 裁定フローの通し（#62 に付随して実施可）。PR #114 実装分の追加確認: arm 並べ替えマッピング（note `arm_mapping:{...}` の永続化 → 再入場復元)と 3 名以上のペア選択 |
 | #141 | 実機（多数文献プロジェクト） | `setFileIds` の件数上限（数百 ID で Picker の一覧表示が欠けないか。欠けると全選択チェックが恒久失敗する）。#62 の通し成立後、大きめのプロジェクトで観察してからチャンク分割 / バンドルファイル方式の要否を判断 |
-| #68 | 実機（実 tiab-review Sheet + 実データ） | tiab の Sheet 直読み・include 抽出・取り込み PDF との DOI / PMID 突き合わせ（URL 形式 DOI・OA 直リンク fulltext_url・`fulltext_ai_active_round` 実値・fulltext スクリーニング途中のシートを含める） |
+| #68 | 実機（実 tiab-review Sheet + 実データ） | tiab の Sheet 直読み・include 抽出・取り込み PDF との DOI / PMID 突き合わせ（URL 形式 DOI・OA 直リンク fulltext_url・`fulltext_ai_active_round` 実値・fulltext スクリーニング途中のシートを含める）。**Picker 許可導線（issue #142。初回 403/404 → 「Google で許可する」→ Picker 付与 → プレビュー自動リトライ成功。#128〜#132 の drive.file 移行後、tiab-review は別アプリ作成シートのため必ず通る経路）** |
 | #102 | 実 API（実 Drive・`drive.file` スコープ） | 重複取り込み判定が使う `md5Checksum` が実スコープで取得できるか（`files.list` / `files.get?fields=md5Checksum`。stub では担保不能）。同じ PDF を再選択 / 再ドロップ → 進捗行に「スキップ（理由）」が出ること |
 | #69 | 実 API（実 Sheets・数万行） | 一括 append で 429 / リクエストサイズ超過が実際に出るか（ローカルはコード確認 + チャンク実装まで。**バグ発見自体は 2026-07-12 のローカル負荷試験で完了**、実 API 再現は未） |
 | #61 | 実 API（実 LLM） | signaling question を全出力させたときに出力トークン制約へ当たるか → 1 study 複数回コール（キャッシュあり）の要否判断 |

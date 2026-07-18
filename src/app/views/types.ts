@@ -71,6 +71,8 @@ export interface DocumentsViewCallbacks {
   onTiabPreview(sheetInput: string): void;
   /** プレビューの反映（Studies 上書き + Documents 転記）を実行 */
   onTiabApply(): void;
+  /** アクセス拒否（drive.file 未許可の tiab-review シート）からの Picker 許可導線（issue #142） */
+  onTiabGrantAccess(): void;
 }
 
 /** #/protocol（S4）のユーザー操作コールバック */

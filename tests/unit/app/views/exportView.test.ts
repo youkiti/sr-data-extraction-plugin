@@ -61,6 +61,7 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<ExportViewCallbac
         onTiabClose: jest.fn(),
         onTiabPreview: jest.fn(),
         onTiabApply: jest.fn(),
+        onTiabGrantAccess: jest.fn(),
       },
       protocol: {
         onSubmit: jest.fn(),

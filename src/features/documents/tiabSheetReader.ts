@@ -3,7 +3,12 @@
 // fulltext_ai_active_round（フルテキスト AI 判定の採用ラウンド）を別途読む。
 // Config はタブ自体が無い旧シートがあるため、読み出し失敗は null として扱う。
 // パース（列名解決・型変換）は tiabReview.ts の純ロジックに委譲する
-import { getBatchValues, getSheetValues } from '../../lib/google/sheets';
+import {
+  getBatchValues,
+  getSheetValues,
+  isSheetsAccessDenied,
+  SheetsAccessDeniedError,
+} from '../../lib/google/sheets';
 import { GoogleApiError, type GoogleApiDeps } from '../../lib/google/types';
 import {
   parseTiabDecisions,
@@ -19,26 +24,26 @@ export interface TiabSheetData {
   activeFulltextAiRound: string | null;
 }
 
-/** GoogleApiError をユーザー向けの文言へ変換する（タブ欠落・アクセス不可の典型例） */
+/** GoogleApiError をユーザー向けの文言へ変換する（タブ欠落の典型例。アクセス拒否は別経路） */
 function toFriendlyError(err: unknown): Error {
-  if (err instanceof GoogleApiError) {
-    if (err.status === 400) {
-      return new Error(
-        'References / Decisions タブが見つかりません。tiab-review のスプレッドシートを指定してください',
-      );
-    }
-    if (err.status === 403 || err.status === 404) {
-      return new Error(
-        'スプレッドシートを開けません。URL / ID と、同じ Google アカウントでアクセスできることを確認してください',
-      );
-    }
+  if (err instanceof GoogleApiError && err.status === 400) {
+    return new Error(
+      'References / Decisions タブが見つかりません。tiab-review のスプレッドシートを指定してください',
+    );
   }
   return err instanceof Error ? err : new Error(String(err));
 }
 
 /**
  * tiab-review シートの References / Decisions / Config を読み、パース済みデータを返す。
- * References / Decisions の読み出し・パース失敗は throw（呼び出し側でエラー表示）
+ * References / Decisions の読み出し・パース失敗は throw（呼び出し側でエラー表示）。
+ *
+ * drive.file 未許可（403 権限系 / 404）は SheetsAccessDeniedError として伝播させる（issue #142）。
+ * tiab-review は別 OAuth クライアント（別アプリ）が作成したシートのため、#128〜#132 の
+ * drive.file 移行後は Picker で明示付与するまで所有者本人でも開けない。呼び出し側
+ * （tiabImportService）が `err instanceof SheetsAccessDeniedError` で判定して Picker 許可導線を
+ * 出せるよう、toFriendlyError で情報が落ちる前に分類する（selectProject.loadProjectMeta と同じ
+ * isSheetsAccessDenied の分類ロジックを再利用し、#130 とトンマナを揃える）
  */
 export async function readTiabSheet(
   spreadsheetId: string,
@@ -53,6 +58,9 @@ export async function readTiabSheet(
       deps,
     )) as [string[][], string[][]];
   } catch (err) {
+    if (isSheetsAccessDenied(err)) {
+      throw new SheetsAccessDeniedError(spreadsheetId, err.status);
+    }
     throw toFriendlyError(err);
   }
 

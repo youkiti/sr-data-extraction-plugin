@@ -52,6 +52,7 @@ describe('createInitialState', () => {
           sheetInput: '',
           loading: false,
           error: null,
+          accessDenied: false,
           plan: null,
           applying: false,
           result: null,

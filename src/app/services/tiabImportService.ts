@@ -3,6 +3,12 @@
 // Studies 上書き + Documents 転記（各リポジトリのバッチ更新）を担い、
 // AppState.documents.tiabImport の遷移を一手に引き受ける。
 // view は render(state) の純粋関数のまま、コールバック経由でここを呼ぶ（architecture.md §2.2）
+//
+// アクセス拒否からの Picker 許可導線（issue #142）: tiab-review は別 OAuth クライアントが
+// 作成したシートのため、drive.file スコープでは初回のみ Picker 許可が必要（#128〜#132）。
+// readTiabSheet が SheetsAccessDeniedError を投げたら accessDenied フラグを立て、
+// grantTiabSheetAccess（「Google で許可する」から呼ぶ）でスプレッドシート Picker を起動し、
+// 許可されたらプレビューを自動リトライする（roleService.grantSpreadsheetAccess と同じトンマナ）
 import { updateDocuments } from '../../features/documents/documentRepository';
 import { updateStudies } from '../../features/documents/studyRepository';
 import {
@@ -11,6 +17,8 @@ import {
   resolveAdoptedReferences,
 } from '../../features/documents/tiabReview';
 import { readTiabSheet } from '../../features/documents/tiabSheetReader';
+import { openSpreadsheetPicker, type SpreadsheetPickResult } from '../../lib/google/picker';
+import { SheetsAccessDeniedError } from '../../lib/google/sheets';
 import type { Store, TiabImportState } from '../store';
 import { showToast } from '../ui/toast';
 import { t } from '../../lib/i18n';
@@ -40,6 +48,7 @@ export function closeTiabImport(store: Store): void {
     sheetInput: '',
     loading: false,
     error: null,
+    accessDenied: false,
     plan: null,
     applying: false,
     result: null,
@@ -66,6 +75,7 @@ export async function previewTiabImport(
     patchTiab(store, {
       sheetInput: rawInput,
       error: t('documents.tiabErrInput'),
+      accessDenied: false,
       plan: null,
       result: null,
     });
@@ -77,12 +87,20 @@ export async function previewTiabImport(
     patchTiab(store, {
       sheetInput: rawInput,
       error: t('documents.tiabErrNotLoaded'),
+      accessDenied: false,
       plan: null,
       result: null,
     });
     return;
   }
-  patchTiab(store, { sheetInput: rawInput, loading: true, error: null, plan: null, result: null });
+  patchTiab(store, {
+    sheetInput: rawInput,
+    loading: true,
+    error: null,
+    accessDenied: false,
+    plan: null,
+    result: null,
+  });
   try {
     const sheet = await readTiabSheet(spreadsheetId, deps.google);
     const adopted = resolveAdoptedReferences(
@@ -93,8 +111,57 @@ export async function previewTiabImport(
     const plan = planTiabImport({ adopted, studies, documents: records });
     patchTiab(store, { loading: false, plan });
   } catch (err) {
-    patchTiab(store, { loading: false, error: toMessage(err) });
+    // drive.file 未許可（SheetsAccessDeniedError）は「Google で許可する」導線を出す（issue #142。
+    // roleService.loadRole の accessDenied 判定と同じ考え方）
+    patchTiab(store, {
+      loading: false,
+      error: toMessage(err),
+      accessDenied: err instanceof SheetsAccessDeniedError,
+    });
   }
+}
+
+/**
+ * tiab-review シートへの drive.file アクセス拒否（issue #142）からの復帰導線。
+ * `#tiab-error` の「Google で許可する」から呼ぶ。スプレッドシート Picker を対象 1 件に限定して開き
+ * （selectProject 側 #130 の roleService.grantSpreadsheetAccess と同じトンマナ）、
+ * granted ならエラー表示を消してプレビューを自動リトライする。
+ * mismatch / cancelled はエラー表示・許可導線を維持したまま（再クリックできる）。
+ * 呼び出し側 UI は Picker 起動中の二重クリックを DOM 側で防ぐ（roleService と同じ運用）
+ */
+export async function grantTiabSheetAccess(
+  store: Store,
+  deps: DocumentsServiceDeps,
+): Promise<void> {
+  const state = store.getState();
+  const tiab = state.documents.tiabImport;
+  if (!state.currentProject || !tiab.accessDenied || tiab.loading || tiab.applying) {
+    return;
+  }
+  const spreadsheetId = parseTiabSpreadsheetId(tiab.sheetInput);
+  if (spreadsheetId === null) {
+    // accessDenied は readTiabSheet 成功後（= 入力の解釈に成功した後）にしか立たないため
+    // 通常到達しないが、念のためのフェイルクローズ
+    return;
+  }
+  let result: SpreadsheetPickResult;
+  try {
+    result = await openSpreadsheetPicker(deps.picker, spreadsheetId);
+  } catch (err) {
+    showToast(t('common.pickerFailed', { reason: toMessage(err) }));
+    patchTiab(store, {});
+    return;
+  }
+  if (result === 'cancelled') {
+    patchTiab(store, {});
+    return;
+  }
+  if (result === 'mismatch') {
+    showToast(t('documents.tiabAccessMismatch'));
+    patchTiab(store, {});
+    return;
+  }
+  await previewTiabImport(store, deps, tiab.sheetInput);
 }
 
 /**

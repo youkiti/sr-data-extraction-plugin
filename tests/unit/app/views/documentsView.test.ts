@@ -62,6 +62,7 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<DocumentsViewCall
     onTiabClose: jest.fn(),
     onTiabPreview: jest.fn(),
     onTiabApply: jest.fn(),
+    onTiabGrantAccess: jest.fn(),
   };
   return {
     ctx: {
@@ -720,6 +721,7 @@ describe('renderDocumentsView: tiab-review 取り込みカード', () => {
       sheetInput: '',
       loading: false,
       error: null,
+      accessDenied: false,
       plan: null,
       applying: false,
       result: null,
@@ -800,7 +802,7 @@ describe('renderDocumentsView: tiab-review 取り込みカード', () => {
     expect((view.querySelector('#tiab-close') as HTMLButtonElement).disabled).toBe(true);
   });
 
-  test('エラー: role=alert のインラインエラーを表示する', () => {
+  test('エラー: role=alert のインラインエラーを表示する（accessDenied でなければ許可ボタンは出さない）', () => {
     const { ctx } = makeCtx();
     const view = renderDocumentsView(
       makeState({ tiabImport: tiabState({ error: 'タブが見つかりません' }) }),
@@ -809,6 +811,28 @@ describe('renderDocumentsView: tiab-review 取り込みカード', () => {
     const error = view.querySelector('#tiab-error');
     expect(error?.getAttribute('role')).toBe('alert');
     expect(error?.textContent).toBe('タブが見つかりません');
+    expect(view.querySelector('#tiab-grant-access')).toBeNull();
+  });
+
+  // アクセス拒否からの Picker 許可導線（issue #142・selectProject 側 #130 とトンマナを揃える）
+  test('エラー: accessDenied なら「Google で許可する」ボタンを表示し、クリックで disabled 化 + onTiabGrantAccess', () => {
+    const { ctx, callbacks } = makeCtx();
+    const view = renderDocumentsView(
+      makeState({
+        tiabImport: tiabState({
+          error: 'このスプレッドシートを開く権限がまだありません（共有シートの場合は Picker での許可が必要です）',
+          accessDenied: true,
+        }),
+      }),
+      ctx,
+    );
+    const grant = view.querySelector('#tiab-grant-access') as HTMLButtonElement;
+    expect(grant).not.toBeNull();
+    expect(grant.textContent).toBe('Google で許可する');
+    expect(grant.disabled).toBe(false);
+    grant.click();
+    expect(grant.disabled).toBe(true);
+    expect(callbacks.onTiabGrantAccess).toHaveBeenCalledTimes(1);
   });
 
   test('プレビュー: サマリ + 一覧テーブル + 状態バッジ + 実行ボタン（クリックで onTiabApply）', () => {

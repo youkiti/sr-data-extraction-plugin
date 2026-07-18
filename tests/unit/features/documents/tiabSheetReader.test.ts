@@ -1,7 +1,8 @@
-// tiab-review シート直読み I/O のテスト（issue #68）。
+// tiab-review シート直読み I/O のテスト（issue #68・アクセス拒否の分類は issue #142）。
 // References / Decisions は values:batchGet 1 回、Config は別 GET（欠落は null）で読むこと、
-// GoogleApiError のユーザー向け文言変換を検証する
+// GoogleApiError のユーザー向け文言変換 / SheetsAccessDeniedError への分類を検証する
 import { readTiabSheet } from '../../../../src/features/documents/tiabSheetReader';
+import { SheetsAccessDeniedError } from '../../../../src/lib/google/sheets';
 
 const REF_HEADER = ['ref_id', 'title', 'abstract', 'year', 'authors', 'doi', 'pmid', 'fulltext_url'];
 const DEC_HEADER = ['decision_id', 'ref_id', 'reviewer_id', 'decision', 'reason', 'labels', 'note', 'decided_at', 'client_version', 'source_url', 'screening_phase'];
@@ -97,13 +98,32 @@ describe('readTiabSheet', () => {
     );
   });
 
-  test('403 / 404 はアクセス確認のエラーへ変換する', async () => {
-    for (const status of [403, 404]) {
-      const deps = makeDeps(() => errorResponse(status));
-      await expect(readTiabSheet('sheet-1', deps)).rejects.toThrow(
-        'スプレッドシートを開けません。URL / ID と、同じ Google アカウントでアクセスできることを確認してください',
-      );
-    }
+  test('404 は SheetsAccessDeniedError へ分類する（issue #142: Picker 許可導線の判定材料）', async () => {
+    // drive.file では未許可と不存在を区別できないため、404 は本文の内容に関わらず常に対象
+    const deps = makeDeps(() => errorResponse(404));
+    await expect(readTiabSheet('sheet-1', deps)).rejects.toBeInstanceOf(SheetsAccessDeniedError);
+    await expect(readTiabSheet('sheet-1', deps)).rejects.toThrow(
+      'このスプレッドシートを開く権限がまだありません（共有シートの場合は Picker での許可が必要です）',
+    );
+  });
+
+  test('権限系 403（PERMISSION_DENIED）も SheetsAccessDeniedError へ分類する', async () => {
+    const deps = makeDeps(
+      () =>
+        ({
+          ok: false,
+          status: 403,
+          json: async () => ({}),
+          text: async () => JSON.stringify({ error: { status: 'PERMISSION_DENIED' } }),
+          headers: new Headers(),
+        }) as unknown as Response,
+    );
+    await expect(readTiabSheet('sheet-1', deps)).rejects.toBeInstanceOf(SheetsAccessDeniedError);
+  });
+
+  test('権限系でない 403（本文が JSON でない等）はそのまま伝播する（selectProject.loadProjectMeta と同じ分類）', async () => {
+    const deps = makeDeps(() => errorResponse(403));
+    await expect(readTiabSheet('sheet-1', deps)).rejects.toThrow(/HTTP 403/);
   });
 
   test('その他の GoogleApiError はそのまま伝播する', async () => {

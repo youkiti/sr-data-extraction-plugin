@@ -25,6 +25,7 @@ import {
 import {
   applyTiabImport,
   closeTiabImport,
+  grantTiabSheetAccess,
   openTiabImport,
   previewTiabImport,
 } from './services/tiabImportService';
@@ -461,6 +462,9 @@ export async function bootstrapApp(
       },
       onTiabApply: () => {
         void applyTiabImport(store, deps);
+      },
+      onTiabGrantAccess: () => {
+        void grantTiabSheetAccess(store, deps);
       },
     },
     protocol: {

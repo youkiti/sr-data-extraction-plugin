@@ -429,6 +429,20 @@ function renderTiabCard(state: AppState, ctx: ViewContext): HTMLElement {
         text: tiab.error,
       }),
     );
+    // drive.file 未許可（403/404）からの Picker 許可導線（issue #142。#app-role-grant と同じトンマナ）
+    if (tiab.accessDenied) {
+      const grant = el('button', {
+        id: 'tiab-grant-access',
+        text: t('app.roleAccessGrant'),
+        attributes: { type: 'button' },
+      }) as HTMLButtonElement;
+      grant.addEventListener('click', () => {
+        // Picker タブが開いている間の二重起動を防ぐ（完了時は store パッチで作り直される）
+        grant.disabled = true;
+        ctx.documents.onTiabGrantAccess();
+      });
+      children.push(grant);
+    }
   }
   if (tiab.plan !== null) {
     children.push(...renderTiabPlan(tiab.plan, tiab, ctx));
