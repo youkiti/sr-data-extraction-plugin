@@ -62,6 +62,11 @@ export interface RoleState {
   /** ロール解決自体の失敗（ネットワーク等）。unregistered はエラーではなくロール値で表現する */
   error: string | null;
   /**
+   * 解決失敗の原因が drive.file のアクセス拒否（SheetsAccessDeniedError）か。
+   * true のときロールエラー画面に「Google で許可する」導線を出す（issue #131）
+   */
+  accessDenied: boolean;
+  /**
    * reviewer 系ロールのプロジェクトフォルダアクセス付与済みか（§7.2）。owner は不要なため
    * 常に true 扱いにする。付与前は #/verify 入場をガードで塞ぐ
    */
@@ -585,6 +590,7 @@ export function createInitialState(): AppState {
       role: null,
       resolving: false,
       error: null,
+      accessDenied: false,
       folderAccessGranted: false,
       folderAccessChecking: false,
       folderAccessError: null,

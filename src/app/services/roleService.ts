@@ -12,7 +12,13 @@ import { loadProjectMeta } from '../../features/project/selectProject';
 import { latestReviewerAssignment, readReviewerAssignments } from '../../features/project/reviewerRepository';
 import { getFileText } from '../../lib/google/drive';
 import { getCurrentUserEmail, type ProfileDeps } from '../../lib/google/identity';
-import { openPdfPicker, type PickerDeps } from '../../lib/google/picker';
+import {
+  openPdfPicker,
+  openSpreadsheetPicker,
+  type PickerDeps,
+  type SpreadsheetPickResult,
+} from '../../lib/google/picker';
+import { SheetsAccessDeniedError } from '../../lib/google/sheets';
 import type { GoogleApiDeps } from '../../lib/google/types';
 import { getLocal, setLocal } from '../../lib/storage/chromeStorage';
 import type { RoleState, Store } from '../store';
@@ -23,6 +29,8 @@ export interface RoleServiceDeps {
   google: GoogleApiDeps;
   profile: ProfileDeps;
   picker: PickerDeps;
+  /** 許可後の再解決リトライの間隔待ち（テストで固定するため注入可能。省略時 setTimeout） */
+  sleep?: (ms: number) => Promise<void>;
 }
 
 function toMessage(err: unknown): string {
@@ -74,15 +82,70 @@ export async function loadRole(store: Store, deps: RoleServiceDeps): Promise<voi
   if (!project || state.role.resolving || state.role.role !== null) {
     return;
   }
-  patchRole(store, { resolving: true, error: null });
+  patchRole(store, { resolving: true, error: null, accessDenied: false });
   try {
     const role = await resolveProjectRole(project.spreadsheetId, deps);
     const folderAccessGranted =
       role === 'owner' ? true : (await getLocal<boolean>(folderAccessStorageKey(project.spreadsheetId))) === true;
     patchRole(store, { role, resolving: false, error: null, folderAccessGranted });
   } catch (err) {
-    patchRole(store, { resolving: false, error: toMessage(err) });
+    patchRole(store, {
+      resolving: false,
+      error: toMessage(err),
+      // drive.file のアクセス拒否なら「Google で許可する」導線を出す（issue #131。
+      // 既存コラボレータは currentProject が残ったまま再入場するため、この経路が主動線）
+      accessDenied: err instanceof SheetsAccessDeniedError,
+    });
   }
+}
+
+/** 許可後の再解決リトライ（docs/ui-states.md §3 ロール解決。popup の導線と同じ間隔） */
+const GRANT_RETRY_MAX = 3;
+const GRANT_RETRY_INTERVAL_MS = 2_000;
+
+/**
+ * 再入場時のアクセス許可誘導（issue #131）。ロールエラー画面の「Google で許可する」から呼ぶ。
+ * スプレッドシート Picker で drive.file を付与 → ロールを未解決に戻して再解決（最大 3 回・
+ * 約 2 秒間隔）。なお拒否が続けば一般エラーへ切り替えて打ち切る（再誘導ループしない）。
+ * すべての終端で store をパッチし、呼び出し側 UI（disabled 化したボタン）を再描画させる
+ */
+export async function grantSpreadsheetAccess(store: Store, deps: RoleServiceDeps): Promise<void> {
+  const project = store.getState().currentProject;
+  if (!project) {
+    return;
+  }
+  let result: SpreadsheetPickResult;
+  try {
+    result = await openSpreadsheetPicker(deps.picker, project.spreadsheetId);
+  } catch (err) {
+    showToast(t('common.pickerFailed', { reason: toMessage(err) }));
+    patchRole(store, {});
+    return;
+  }
+  if (result === 'cancelled') {
+    patchRole(store, {});
+    return;
+  }
+  if (result === 'mismatch') {
+    showToast(t('app.roleAccessMismatch'));
+    patchRole(store, {});
+    return;
+  }
+  const sleep =
+    deps.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+  for (let attempt = 1; attempt <= GRANT_RETRY_MAX; attempt += 1) {
+    patchRole(store, { role: null, resolving: false, error: null, accessDenied: false });
+    await loadRole(store, deps);
+    if (!store.getState().role.accessDenied) {
+      // 解決成功、またはアクセス以外のエラー（通常のロールエラー表示に任せる）
+      return;
+    }
+    if (attempt < GRANT_RETRY_MAX) {
+      await sleep(GRANT_RETRY_INTERVAL_MS);
+    }
+  }
+  // 打ち切り: 許可ボタンなしの一般エラーへ切り替える（docs/ui-states.md §3）
+  patchRole(store, { accessDenied: false, error: t('app.roleAccessStillDenied') });
 }
 
 /**
