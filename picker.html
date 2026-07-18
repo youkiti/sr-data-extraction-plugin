@@ -1,7 +1,7 @@
 <!doctype html>
 <!--
   Drive Picker ホストページ（lib/google/picker.ts の対向実装）。
-  version: 2026-07-18 (issue #130: view=spreadsheet モード + nonce echo)
+  version: 2026-07-18b (issue #139: view=files モード追加)
 
   MV3 では apis.google.com のスクリプトを拡張ページで読み込めないため、
   このページを HTTPS でホストし（既定: GitHub Pages。lib/google/picker.ts の
@@ -13,10 +13,14 @@
   - nonce        : 拡張が起動ごとに生成。受け取ったら全メッセージへ echo する
                    （旧拡張は付けてこないため、無いときは echo しない = 後方互換）
   - view         : 'spreadsheet' でスプレッドシート選択モード（issue #130 の共有シート許可導線）。
+                   'files' でプロジェクトファイル許可モード（issue #139 の reviewer オンボーディング。
+                   共有フォルダの Picker 選択では drive.file の読み取りが配下ファイルへ付与されない
+                   ことが実機で確定したため、必要ファイルを列挙して全選択で 1 件ずつ付与する）。
                    無指定は従来の PDF / フォルダ取り込みモード
   - file_id      : view=spreadsheet のとき、対象シートだけを表示する（setFileIds）。
                    setFileIds は表示フィルタであり、Drive 側で共有されていないシートは
                    表示されない点に注意（ページ内の注意書きで案内）
+  - file_ids     : view=files のとき、表示対象のファイル ID（カンマ区切り）。setFileIds へ渡す
 
   デプロイ時の設定（このファイル内のプレースホルダを書き換える）:
   - PICKER_API_KEY : GCP の API キー（Google Picker API を有効化したプロジェクトのもの）
@@ -45,6 +49,11 @@
       Drive で確認してください。
       <a href="#" id="show-all">すべてのスプレッドシートから選ぶ</a>
     </p>
+    <p id="files-note" class="muted" hidden>
+      一覧の先頭を選択 → 末尾を Shift+クリックすると全件を範囲選択できます。選択したファイルだけが
+      拡張から読めるようになります。ファイルが表示されない場合は、プロジェクトフォルダがあなたの
+      Google アカウントに共有されているかを Drive で確認してください。
+    </p>
     <script>
       // デプロイ時に実値へ書き換える（API キーはブラウザキー = 公開前提の値）
       var PICKER_API_KEY = 'AIzaSyBZHP3AaHT3_pieKMXQlk4ss5aXQKE2euU';
@@ -54,6 +63,7 @@
       var statusEl = document.getElementById('status');
       var titleEl = document.getElementById('title');
       var sheetNoteEl = document.getElementById('sheet-note');
+      var filesNoteEl = document.getElementById('files-note');
       var showAllEl = document.getElementById('show-all');
 
       function fail(message) {
@@ -67,6 +77,7 @@
       var extensionId = params.get('extension_id');
       var viewMode = params.get('view');
       var targetFileId = params.get('file_id');
+      var targetFileIds = params.get('file_ids');
       var nonce = params.get('nonce');
 
       function send(message, callback) {
@@ -134,6 +145,29 @@
         statusEl.textContent = 'PDF またはフォルダを選択してください。';
       }
 
+      // プロジェクトファイル許可モード（issue #139）。拡張が Documents タブ由来の必要ファイル ID
+      // （PDF + 抽出テキスト）を file_ids で渡してくるので、setFileIds で列挙して全選択してもらう。
+      // mime フィルタは掛けない（PDF 以外の抽出テキストも選択対象のため）
+      function showProjectFilesPicker(token) {
+        var view = new google.picker.DocsView(google.picker.ViewId.DOCS);
+        if (targetFileIds && typeof view.setFileIds === 'function') {
+          view.setFileIds(targetFileIds);
+        }
+        new google.picker.PickerBuilder()
+          .enableFeature(google.picker.Feature.MULTISELECT_ENABLED)
+          .setDeveloperKey(PICKER_API_KEY)
+          .setAppId(PICKER_APP_ID)
+          .setOAuthToken(token)
+          .addView(view)
+          .setTitle('プロジェクトのファイルをすべて選択')
+          .setCallback(onPickerAction())
+          .build()
+          .setVisible(true);
+        statusEl.textContent =
+          '表示されたファイルをすべて選択してください（一部だけ選択すると検証画面で読み込みに失敗します）。';
+        filesNoteEl.hidden = false;
+      }
+
       // スプレッドシート許可モード（issue #130）。restrict=true なら対象シートだけを表示する。
       // setFileIds は表示フィルタであり事前フォーカスではない: Drive 側で共有されていない
       // シートはそもそも表示されない（→ 上部の注意書き + 全シートフォールバックで案内）
@@ -172,6 +206,10 @@
                 showSpreadsheetPicker(response.token, false);
               });
               showSpreadsheetPicker(response.token, true);
+            } else if (viewMode === 'files') {
+              titleEl.textContent = 'プロジェクトのファイルをすべて選択';
+              document.title = 'SR データ抽出 — ファイルの許可';
+              showProjectFilesPicker(response.token);
             } else {
               showPdfPicker(response.token);
             }
