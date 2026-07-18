@@ -216,9 +216,24 @@ describe('openPdfPicker', () => {
         { url: null },
         sendResponse,
       );
+      // 同一オリジンでも前方一致だけの別ページ（picker.html.bak 等）は拒否する
+      fake.emitMessage(
+        withNonce({ source: PICKER_MESSAGE_SOURCE, kind: 'ready' }),
+        { url: `${PAGE_URL}.bak` },
+        sendResponse,
+      );
       expect(sendResponse).not.toHaveBeenCalled();
-      // 正規のページからは応答できる
-      fake.emitMessage(withNonce({ source: PICKER_MESSAGE_SOURCE, kind: 'cancelled' }));
+      // ページ URL そのもの・クエリ付きは正規として応答できる
+      fake.emitMessage(
+        withNonce({ source: PICKER_MESSAGE_SOURCE, kind: 'ready' }),
+        { url: PAGE_URL },
+        sendResponse,
+      );
+      expect(sendResponse).toHaveBeenCalledWith({ token: 'token-1234' });
+      fake.emitMessage(
+        withNonce({ source: PICKER_MESSAGE_SOURCE, kind: 'cancelled' }),
+        { url: `${PAGE_URL}?x=1` },
+      );
       await expect(promise).resolves.toBeNull();
     });
 

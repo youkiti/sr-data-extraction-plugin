@@ -160,6 +160,15 @@ function parsePickerMessage(message: unknown): ParsedPickerMessage | null {
   return null;
 }
 
+/** 送信元 URL がホストページそのもの（+ フラグメント / クエリ）かを判定する */
+function isPickerPageUrl(senderUrl: string, pageUrl: string): boolean {
+  return (
+    senderUrl === pageUrl ||
+    senderUrl.startsWith(`${pageUrl}#`) ||
+    senderUrl.startsWith(`${pageUrl}?`)
+  );
+}
+
 /**
  * ホスト済み Picker ページを開き、選択結果を返す共通処理。
  * extraFragment でページのモード（view=spreadsheet / file_id）を切り替える。
@@ -203,8 +212,10 @@ async function runPicker(
           return;
         }
         // bearer token を渡す境界の防御: 開いたホストページ以外（リダイレクト・
-        // 同一タブでの別ページ遷移等）からのメッセージには応答しない
-        if (sender.url === null || !sender.url.startsWith(deps.pickerPageUrl)) {
+        // 同一タブでの別ページ遷移等）からのメッセージには応答しない。
+        // 単純な前方一致だと同一オリジンの picker.html.bak 等も通るため、
+        // ページ URL そのもの + フラグメント / クエリ区切りのみ許可する
+        if (sender.url === null || !isPickerPageUrl(sender.url, deps.pickerPageUrl)) {
           return;
         }
         const parsed = parsePickerMessage(message);

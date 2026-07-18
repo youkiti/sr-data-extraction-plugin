@@ -33,16 +33,20 @@ export async function loadProjectMeta(
   spreadsheetId: string,
   deps: GoogleApiDeps
 ): Promise<ProjectMeta> {
-  let tabTitles: string[];
-  let rows: string[][];
-  try {
-    tabTitles = await getSheetTitles(spreadsheetId, deps);
-  } catch (err) {
-    if (isSheetsAccessDenied(err)) {
-      throw new SheetsAccessDeniedError(spreadsheetId, err.status);
+  // アクセス拒否（404 / 権限系 403）を SheetsAccessDeniedError へ分類する共通ラッパ。
+  // Meta 読み取り系の全 API 呼び出しをこれで包む（分類漏れを 1 箇所の修正で防ぐ）
+  const classifyAccess = async <T>(operation: Promise<T>): Promise<T> => {
+    try {
+      return await operation;
+    } catch (err) {
+      if (isSheetsAccessDenied(err)) {
+        throw new SheetsAccessDeniedError(spreadsheetId, err.status);
+      }
+      throw err;
     }
-    throw err;
-  }
+  };
+
+  const tabTitles = await classifyAccess(getSheetTitles(spreadsheetId, deps));
   if (!tabTitles.includes('Meta')) {
     throw new ProjectSchemaError(
       'Meta タブがありません。プロジェクトとして初期化されていません'
@@ -55,15 +59,8 @@ export async function loadProjectMeta(
     );
   }
 
-  try {
-    rows = await getSheetValues(spreadsheetId, 'Meta', deps);
-  } catch (err) {
-    // タブ一覧が読めた直後に許可が失効するケース（レア）も同じ導線へ倒す
-    if (isSheetsAccessDenied(err)) {
-      throw new SheetsAccessDeniedError(spreadsheetId, err.status);
-    }
-    throw err;
-  }
+  // タブ一覧が読めた直後に許可が失効するケース（レア）も同じ導線へ倒す
+  const rows = await classifyAccess(getSheetValues(spreadsheetId, 'Meta', deps));
   if (rows.length === 0) {
     throw new ProjectSchemaError('Meta タブが空です。プロジェクトとして初期化されていません');
   }
