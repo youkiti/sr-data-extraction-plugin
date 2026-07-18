@@ -29,6 +29,18 @@ MV3 の remote hosted code 制約により、Google Picker（`apis.google.com/js
   旧拡張は nonce を付けてこないため echo しない（後方互換）。**逆に新拡張は echo を必須検証する
   ため、拡張のリリース前に本ページを先行デプロイすること**
 
+## プロジェクトファイル許可モード（issue #139・要再デプロイ）
+
+`picker.html` は URL フラグメントの `view=files` で **reviewer オンボーディングのファイル許可
+モード**になる（Home の「プロジェクトファイルへのアクセスを付与」が使う）:
+
+- `file_ids=<カンマ区切りのファイル ID>` を `setFileIds` で列挙する（Documents タブ由来の
+  PDF + 抽出テキスト。抽出テキストを含むため mime フィルタは掛けない）。ユーザーには
+  **全選択**してもらい、ファイル単位で drive.file を付与する
+- この方式を採るのは、**他人所有の共有フォルダでは Picker のフォルダ選択が配下ファイルに
+  drive.file の読み取りを付与しない**ことが実機で確定したため（issue #62 / #139。
+  自分所有フォルダの直下列挙〔下記「フォルダ単位の取り込み」〕は引き続き成立する）
+
 ## デプロイ手順（更新時）
 
 1. `picker.html` の HTML 冒頭コメントの `version:` を更新日に書き換える（デプロイ版の識別用）
@@ -42,7 +54,8 @@ MV3 の remote hosted code 制約により、Google Picker（`apis.google.com/js
 **フォルダそのものを選択**できる。選択結果の各 doc には `mimeType` を含めて拡張へ返し、拡張は
 フォルダ（`application/vnd.google-apps.folder`）なら [drive.ts](../src/lib/google/drive.ts) の
 `listFolderPdfs` で直下 PDF を列挙して一括取り込みする（`drive.file` スコープでも選択フォルダ配下は
-列挙できる）。この挙動を有効にするには **本ページを GitHub Pages へ再デプロイ**する必要がある
+列挙できる。ただし実機で成立を確認できているのは**自分所有フォルダ**のケースのみ。他人所有の
+共有フォルダでは配下ファイルへの付与が効かない — issue #139 のファイル許可モードを使うこと）。この挙動を有効にするには **本ページを GitHub Pages へ再デプロイ**する必要がある
 （旧ページのままだと `mimeType` が返らず、フォルダ選択が効かない＝従来どおり個別ファイルのみ）。
 
 ## 実機での動作確認

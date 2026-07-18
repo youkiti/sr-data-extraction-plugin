@@ -26,14 +26,22 @@ export type GuardResult =
  * アクセス付与（§7.2）を要求する。
  *
  * `#/adjudicate`（S12。裁定は盲検解除後の工程）は owner / adjudicator のみ許可し、counts に
- * よる入場条件は課さない（design §6.1・§9 PR3。対象が無ければ画面内の空状態で案内する）
+ * よる入場条件は課さない（design §6.1・§9 PR3。対象が無ければ画面内の空状態で案内する）。
+ * 非 owner の adjudicator は PDF 読込に drive.file のファイル付与が必要なため、#/verify と
+ * 同じくファイルアクセス付与をゲートにする（issue #139 レビュー指摘）
  */
 export function guardRoute(hash: string, state: AppState, role: ProjectRole = 'owner'): GuardResult {
   const { counts } = state;
   if (hash === '#/adjudicate') {
-    return role === 'owner' || role === 'adjudicator'
+    if (role === 'owner') {
+      return { allowed: true };
+    }
+    if (role !== 'adjudicator') {
+      return { allowed: false, message: t('guards.adjudicatorOnly') };
+    }
+    return state.role.folderAccessGranted
       ? { allowed: true }
-      : { allowed: false, message: t('guards.adjudicatorOnly') };
+      : { allowed: false, message: t('guards.needFolderAccess') };
   }
   if (role !== 'owner' && hash !== '#/home' && hash !== '#/verify') {
     return { allowed: false, message: t('guards.reviewerRestricted') };

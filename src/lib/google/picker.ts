@@ -5,7 +5,7 @@
 // 新規タブで開き、次のプロトコルで拡張と通信する（externally_connectable 経由の外部メッセージ）:
 //
 //   1. 拡張がタブを開く（URL フラグメントで extension_id と nonce、モードにより
-//      view=spreadsheet / file_id を渡す。トークンは URL に載せない）
+//      view=spreadsheet / file_id、または view=files / file_ids を渡す。トークンは URL に載せない）
 //   2. ページが { kind: 'ready', nonce } を chrome.runtime.sendMessage(extensionId, ...) で送る
 //      → 拡張は sender.url（ホストページのオリジン）と nonce を検証してから
 //        sendResponse({ token }) で OAuth トークンを返す（原則 5: URL / ログへ出さない）
@@ -259,6 +259,20 @@ async function runPicker(
  */
 export async function openPdfPicker(deps: PickerDeps): Promise<PickerSelection[] | null> {
   return runPicker(deps, {});
+}
+
+/**
+ * プロジェクトの必要ファイル（PDF・抽出テキスト）へ drive.file アクセスを付与するための
+ * Picker（issue #139）。共有フォルダの Picker 選択では配下ファイルへの読み取りが付与されない
+ * ことが実機で確定したため（issue #62）、Documents タブ由来のファイル ID を setFileIds で
+ * 列挙し、reviewer に全選択してもらってファイル単位で付与する。全件選択されたかの照合は
+ * 呼び出し側（roleService.grantFolderAccess）が行う
+ */
+export async function openProjectFilesPicker(
+  deps: PickerDeps,
+  fileIds: readonly string[],
+): Promise<PickerSelection[] | null> {
+  return runPicker(deps, { view: 'files', file_ids: fileIds.join(',') });
 }
 
 /** スプレッドシート Picker の結果（docs/ui-states.md §1「アクセス許可が必要」） */

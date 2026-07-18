@@ -111,11 +111,16 @@ export const en: Record<MessageKey, string> = {
   'home.addReviewerModeAria': 'Review mode (review_mode)',
   'home.addSubmit': 'Add',
   'home.folderAccessLead':
-    "Before starting verification, grant access to the project's Drive folder (required to load PDFs and extracted text).",
-  'home.grantFolderAccess': 'Grant access to the project folder',
+    "Before starting verification, grant read access to the project's files (PDFs and extracted text). Clicking the button opens a Google picker listing the required files — select all of them (click the first item, then Shift+click the last to select a range).",
+  'home.grantFolderAccess': 'Grant access to the project files (select all files in the picker)',
   'home.folderAccessChecking': 'Checking…',
   'home.folderAccessError': 'Could not confirm access: {reason}',
-  'home.folderAccessGranted': 'Access to the project folder has been granted.',
+  'home.folderAccessPartial':
+    '{missing} of {total} files were not selected. Open the picker again and select every file in the list',
+  'home.folderAccessGranted': 'Access to the project files has been granted.',
+  'home.regrantLead':
+    'If new documents are imported later, grant access again to make them readable too (select all files in the picker: click the first, then Shift+click the last).',
+  'home.regrantFiles': 'Grant access again (select all files in the picker)',
   'home.goVerify': 'Start verification',
 
   // S3 文献取り込み
@@ -636,7 +641,7 @@ export const en: Record<MessageKey, string> = {
   'guards.needSchema': 'A confirmed table design is required',
   'guards.pilotRecommended': 'A pilot extraction is recommended',
   'guards.needFolderAccess':
-    'Access to the project folder must be granted first (grant it from Home)',
+    'Access to the project files must be granted first (grant it from Home)',
   'guards.needExtraction': 'No AI extraction has been run yet. Run an extraction first',
   'guards.noExportData': 'There is no data to export yet',
 
@@ -877,8 +882,8 @@ export const en: Record<MessageKey, string> = {
     'Registered {email}, but automatic sharing failed. Share manually in Google Drive ({reason})',
   'home.toastSaveFailed': 'Saving failed: {reason}',
   'home.toastInviteCopied': 'Copied the review invitation',
-  'home.toastFolderAccessConfirmed': 'Confirmed access to the project folder',
-  'home.toastFolderAccessFailed': 'Could not confirm access to the folder: {reason}',
+  'home.toastFolderAccessConfirmed': 'Confirmed access to the project files',
+  'home.toastFolderAccessFailed': 'Could not confirm access to the files: {reason}',
   'home.inviteModeIndependent':
     'Review mode: independent input without AI (AI extraction results and evidence are not shown; read the PDF and enter values yourself)',
   'home.inviteModeWithAi':
@@ -891,7 +896,7 @@ export const en: Record<MessageKey, string> = {
   'home.inviteStep2':
     '2. Click the extension icon → paste the following into "Open by spreadsheet ID / URL":',
   'home.inviteStep3':
-    '3. On Home, use "Grant access to the project folder" and select the shared project folder',
+    '3. On Home, use "Grant access to the project files" and select every file shown in the picker',
   'home.inviteStep4': '4. Judge your assigned items on the "Verification" screen',
   'popup.errTitleRequired': 'A project title is required',
   'popup.errIdRequired': 'A spreadsheet ID is required',

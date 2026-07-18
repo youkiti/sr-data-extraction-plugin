@@ -322,12 +322,39 @@ function renderReviewerHome(state: AppState, ctx: ViewContext): HTMLElement {
     }
     children.push(el('div', { id: 'home-folder-access', className: 'home__folder-access' }, stepChildren));
   } else {
-    children.push(
+    // 付与済みでも再付与できる（issue #139 レビュー指摘: 付与はファイル単位のスナップショット
+    // のため、owner が後から取り込んだ文献は再付与しないと読めない）
+    const regrant = el('button', {
+      id: 'home-regrant-files',
+      text: t('home.regrantFiles'),
+      attributes: { type: 'button' },
+    }) as HTMLButtonElement;
+    regrant.disabled = state.role.folderAccessChecking;
+    regrant.addEventListener('click', () => ctx.home.onGrantFolderAccess());
+    const grantedChildren: Array<HTMLElement | string> = [
       el('p', { id: 'home-folder-access-granted', text: t('home.folderAccessGranted') }),
       el('p', {}, [
         el('a', { id: 'home-go-verify', text: t('home.goVerify'), attributes: { href: '#/verify' } }),
       ]),
-    );
+      el('p', { text: t('home.regrantLead') }),
+      regrant,
+    ];
+    if (state.role.folderAccessChecking) {
+      grantedChildren.push(
+        el('p', { id: 'home-folder-access-checking', text: t('home.folderAccessChecking') }),
+      );
+    }
+    if (state.role.folderAccessError !== null) {
+      grantedChildren.push(
+        el('p', {
+          id: 'home-folder-access-error',
+          className: 'home__error',
+          attributes: { role: 'alert' },
+          text: t('home.folderAccessError', { reason: state.role.folderAccessError }),
+        }),
+      );
+    }
+    children.push(el('div', { id: 'home-folder-access', className: 'home__folder-access' }, grantedChildren));
   }
 
   return el('section', { className: 'view view--home view--home-reviewer' }, children);

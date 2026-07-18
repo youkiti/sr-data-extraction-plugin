@@ -1,6 +1,6 @@
 # 残実装計画書（v0.1.0 公開後の作業指示）
 
-- **作成日**: 2026-07-03（タスク A〜E）/ **更新**: 2026-07-12（v0.1.0 公開後のマイルストーン M1〜M4 を追加）
+- **作成日**: 2026-07-03（タスク A〜E）/ **更新**: 2026-07-12（v0.1.0 公開後のマイルストーン M1〜M4 を追加）・2026-07-18（#62 実機検証の §7.3 決着 = フォルダ付与不成立 → ファイル単位付与への設計変更〔#138/#139 = PR #140〕と進捗を反映）
 - **対象読者**: 本リポジトリで作業する実装者
 - **構成**: **前半 = 現行の作業指示**（リリース後マイルストーン M1〜M4。GitHub issue の index）。**後半 = 付録**（MVP 完了までの計画タスク A〜E。全消化済み・履歴として保持）。
 - **正典**: 仕様の根拠は必ず [requirements.md](requirements.md)（v0.12）/ [architecture.md](architecture.md) / [test-strategy.md](test-strategy.md) / [ui-states.md](ui-states.md) に当たること。本書は「何をどの順でやるか」の作業指示であり、仕様は複製しない（各 issue が自己完結の作業指示を持つ）。
@@ -37,10 +37,11 @@
 
 | issue | 内容 |
 |---|---|
-| [#62](https://github.com/youkiti/sr-data-extraction-plugin/issues/62) | 独立二重レビューの 2 アカウント実機通し確認（`drive.file` 共有配下読み出し = 設計成立条件・**最優先**） |
+| [#62](https://github.com/youkiti/sr-data-extraction-plugin/issues/62) | 独立二重レビューの 2 アカウント実機通し確認（**進行中・前半決着**。設計成立条件 §7.3 は 2026-07-18 に実機で決着: 共有フォルダの Picker 選択では配下が読めず**不成立** → ファイル単位付与〔#138/#139 = PR #140〕へ設計変更し、**付与成功 + `#/verify` での PDF・抽出テキスト読出しまで実機確認済み**。残り = 検証〔with_ai / independent〕→ 裁定 → consensus エクスポートの通し） |
 | [#63](https://github.com/youkiti/sr-data-extraction-plugin/issues/63) | 独立二重レビュー v1 簡略化の解消（裁定ハイライト・offlineQueue・arm 並べ替え・3 人以上） |
 | [#64](https://github.com/youkiti/sr-data-extraction-plugin/issues/64) | StudyData/ResultsData upsert の楽観ロック（複数人運用の後勝ち上書き防止） |
 | [#69](https://github.com/youkiti/sr-data-extraction-plugin/issues/69) | ai 行転記 appendRows のチャンク制御（40k 行一発 append の非対称性。負荷試験で発見） |
+| [#141](https://github.com/youkiti/sr-data-extraction-plugin/issues/141) | ファイル単位付与の残課題（付与済み ID セットの永続化と差分再付与 / 削除済みファイル残存行の恒久ブロック解消 / `setFileIds` 件数上限 / hosted ページ整理・バンドルファイル方式の検討。#62 の通し成立後に着手判断） |
 
 ### M2 方法論の質
 
@@ -73,8 +74,9 @@ M1〜M4 のうち、**ローカルの jest / Playwright だけでは完了確認
 
 | 対象 | 種別 | 何を確認するか |
 |---|---|---|
-| #62 | **実機（実 Google アカウント 2 つ）** | `drive.file` スコープで共有フォルダ配下の PDF / テキストが読めるか（= 設計成立条件・[design-independent-dual-review.md](design-independent-dual-review.md) §7.3）。招待 → Drive 自動共有 → フォルダアクセス付与 → 検証（with_ai / independent）→ 裁定 → consensus エクスポートの通し |
-| #63 | 実機（2 アカウント） | 裁定フローの通し（#62 に付随して実施可）。PR #114 実装分の追加確認: arm 並べ替えマッピング（note `arm_mapping:{...}` の永続化 → 再入場復元）と 3 名以上のペア選択 |
+| #62 | **実機（実 Google アカウント 2 つ）** | **前半完了（2026-07-18）**: §7.3 の設計成立条件は「共有フォルダの Picker 選択では配下ファイルが読めない」= **不成立が確定**（トップフォルダ・サブフォルダ直接選択とも 404）。ファイル単位付与（issue #139・PR #140。hosted picker `view=files` + `setFileIds` 全選択）へ設計変更し、招待 → Drive 自動共有 → シート許可 → **ファイルアクセス付与 → `#/verify` での PDF / 抽出テキスト読出しまで実機確認済み**。**残り**: 検証（with_ai / independent）→ 裁定 → consensus エクスポートの通し（手順は [manual-testing.md](manual-testing.md) §5-6-2。完了後に PR #140 をマージし #62/#138/#139 をクローズ） |
+| #63 | 実機（2 アカウント） | 裁定フローの通し（#62 に付随して実施可）。PR #114 実装分の追加確認: arm 並べ替えマッピング（note `arm_mapping:{...}` の永続化 → 再入場復元)と 3 名以上のペア選択 |
+| #141 | 実機（多数文献プロジェクト） | `setFileIds` の件数上限（数百 ID で Picker の一覧表示が欠けないか。欠けると全選択チェックが恒久失敗する）。#62 の通し成立後、大きめのプロジェクトで観察してからチャンク分割 / バンドルファイル方式の要否を判断 |
 | #68 | 実機（実 tiab-review Sheet + 実データ） | tiab の Sheet 直読み・include 抽出・取り込み PDF との DOI / PMID 突き合わせ（URL 形式 DOI・OA 直リンク fulltext_url・`fulltext_ai_active_round` 実値・fulltext スクリーニング途中のシートを含める） |
 | #102 | 実 API（実 Drive・`drive.file` スコープ） | 重複取り込み判定が使う `md5Checksum` が実スコープで取得できるか（`files.list` / `files.get?fields=md5Checksum`。stub では担保不能）。同じ PDF を再選択 / 再ドロップ → 進捗行に「スキップ（理由）」が出ること |
 | #69 | 実 API（実 Sheets・数万行） | 一括 append で 429 / リクエストサイズ超過が実際に出るか（ローカルはコード確認 + チャンク実装まで。**バグ発見自体は 2026-07-12 のローカル負荷試験で完了**、実 API 再現は未） |

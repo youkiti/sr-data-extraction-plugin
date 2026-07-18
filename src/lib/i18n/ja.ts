@@ -113,11 +113,16 @@ export const ja = {
   'home.addReviewerModeAria': 'レビューモード（review_mode）',
   'home.addSubmit': '追加',
   'home.folderAccessLead':
-    '検証を始める前に、プロジェクトの Drive フォルダへのアクセスを付与してください（PDF・抽出テキストを読み込むために必要です）。',
-  'home.grantFolderAccess': 'プロジェクトフォルダへのアクセスを付与',
+    '検証を始める前に、プロジェクトのファイル（PDF・抽出テキスト）を読み込むためのアクセス付与が必要です。ボタンを押すと Google の選択画面に必要なファイルの一覧が表示されるので、すべて選択してください（先頭を選択 → 末尾を Shift+クリックで範囲選択できます）。',
+  'home.grantFolderAccess': 'プロジェクトファイルへのアクセスを付与（開いた一覧をすべて選択）',
   'home.folderAccessChecking': '確認しています…',
   'home.folderAccessError': 'アクセスを確認できませんでした: {reason}',
-  'home.folderAccessGranted': 'プロジェクトフォルダへのアクセスは付与済みです。',
+  'home.folderAccessPartial':
+    '選択されていないファイルが {missing} 件あります（全 {total} 件）。もう一度開いて、一覧のファイルをすべて選択してください',
+  'home.folderAccessGranted': 'プロジェクトファイルへのアクセスは付与済みです。',
+  'home.regrantLead':
+    'その後に新しい文献が取り込まれた場合は、再度付与するとそのぶんも読めるようになります（開いた一覧をすべて選択: 先頭を 1 クリック → 末尾を Shift+クリック）。',
+  'home.regrantFiles': 'アクセスを付与し直す（開いた一覧をすべて選択）',
   'home.goVerify': '検証を開始する',
 
   // S3 文献取り込み（documentsView.ts）
@@ -629,7 +634,7 @@ export const ja = {
   'guards.needSchema': '確定済みの表のデザインが必要です',
   'guards.pilotRecommended': 'パイロット抽出を推奨します',
   'guards.needFolderAccess':
-    'プロジェクトフォルダへのアクセス付与が必要です（Home から付与してください）',
+    'プロジェクトファイルへのアクセス付与が必要です（Home から付与してください）',
   'guards.needExtraction': 'AI 抽出が未実施です。先に抽出を実行してください',
   'guards.noExportData': 'エクスポートできるデータがまだありません',
 
@@ -868,8 +873,8 @@ export const ja = {
     '{email} を登録しました。ただし自動共有に失敗したため、Google Drive で手動共有してください（{reason}）',
   'home.toastSaveFailed': '保存に失敗しました: {reason}',
   'home.toastInviteCopied': 'レビュー依頼文をコピーしました',
-  'home.toastFolderAccessConfirmed': 'プロジェクトフォルダへのアクセスを確認しました',
-  'home.toastFolderAccessFailed': 'フォルダへのアクセスを確認できませんでした: {reason}',
+  'home.toastFolderAccessConfirmed': 'プロジェクトファイルへのアクセスを確認しました',
+  'home.toastFolderAccessFailed': 'ファイルへのアクセスを確認できませんでした: {reason}',
   'home.inviteModeIndependent':
     'レビュー方式: AI 抜きの独立入力（AI の抽出結果・根拠は表示されません。PDF を読んでご自身で値を入力してください）',
   'home.inviteModeWithAi':
@@ -881,7 +886,7 @@ export const ja = {
     '1. Chrome 拡張「SR Data Extraction Plugin」をインストールし、ご自身の Google アカウントでログイン',
   'home.inviteStep2': '2. 拡張アイコン →「スプレッドシート ID / URL で開く」に次を貼り付けて開く:',
   'home.inviteStep3':
-    '3. Home の「プロジェクトフォルダへのアクセスを付与」で、共有されたプロジェクトフォルダを選択',
+    '3. Home の「プロジェクトファイルへのアクセスを付与」で、表示されたファイルをすべて選択',
   'home.inviteStep4': '4.「検証」画面で担当ぶんを判定してください',
   'popup.errTitleRequired': 'プロジェクトタイトルは必須です',
   'popup.errIdRequired': 'スプレッドシート ID は必須です',
