@@ -24,6 +24,7 @@ import {
 } from '../../features/schema/schemaRepository';
 import { saveSchemaVersion } from '../../features/schema/saveSchemaVersion';
 import { SCHEMA_PRESETS, type SchemaPresetKind } from '../../features/schema/presets';
+import { mergePresetDialogPatch } from '../../features/schema/presets/prespecDialog';
 import type {
   PresetDialogPatch,
   PresetDialogState,
@@ -427,14 +428,15 @@ export function insertSchemaPreset(store: Store, kind: SchemaPresetKind): void {
 }
 
 /** 事前設定ダイアログ: 入力の更新（検証エラーは入力変更でクリアする。ui-states.md §3）。
- * patch がどの variant のものかは view（renderPresetDialog の kind 分岐）が保証するため、
- * spread 結果の `as` は kind 不変 + variant 整合の不変条件に基づく型注釈 */
+ * patch がどの variant のものかは view（renderPresetDialog の kind 分岐）が保証する契約は
+ * 従来どおりだが、マージ自体は dialog.kind で narrow する mergePresetDialogPatch に委ねる
+ * （issue #126 項目5: 一括 `as PresetDialogState` キャストを kind ガードで置き換え） */
 export function updateRobPrespecDialog(store: Store, patch: PresetDialogPatch): void {
   const dialog = store.getState().schema.presetDialog;
   if (dialog === null) {
     return;
   }
-  patchSchema(store, { presetDialog: { ...dialog, ...patch, error: null } as PresetDialogState });
+  patchSchema(store, { presetDialog: mergePresetDialogPatch(dialog, patch) });
 }
 
 /** 事前設定ダイアログ: キャンセル（挿入せず閉じる） */

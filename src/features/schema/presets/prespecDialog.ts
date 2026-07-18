@@ -2,7 +2,8 @@
 // ツール別のダイアログ状態（robPrespec / robinsIPrespec）を kind で判別できる合併型として
 // store / views / service へ公開する。ツールを追加するときはここへ合併するだけでよい。
 // あわせて、複数のツール別モジュールに同型実装があった小さな共有ヘルパー（parseOptionalString /
-// parseStringArray）も本モジュールに置く（issue #126 項目4）
+// parseStringArray）と、ダイアログ状態パッチの適用（mergePresetDialogPatch）も本モジュールに置く
+// （issue #126 項目4・5）
 import type { Quadas3PrespecDialogState } from './quadas3Prespec';
 import type { QuipsPrespecDialogState } from './quipsPrespec';
 import type { RobPrespecDialogState } from './robPrespec';
@@ -41,4 +42,56 @@ export function parseStringArray(value: unknown): string[] {
     return [];
   }
   return value.filter((item): item is string => typeof item === 'string' && item.trim() !== '');
+}
+
+/**
+ * ダイアログ状態へ入力パッチを適用する（issue #126 項目5）。
+ * 従来は `{ ...dialog, ...patch, error: null } as PresetDialogState` という一括キャストで
+ * union 全体の整合性チェックを素通りさせていた。ここでは dialog.kind で分岐して型を
+ * narrow してから同一 variant の型でマージすることで、switch の網羅性チェックにより
+ * 「ツールが増えたのに分岐を足し忘れる」ケースをコンパイルエラーで検出できるようにする。
+ * patch がどの variant のものかは呼び出し元（view の kind 分岐）が保証する契約は従来どおりのため、
+ * 各分岐内の narrow キャストは残るが、対象は「patch の形」だけに縮小される
+ * （kind 不一致という主要な取り違えは switch 側の型で防げる）
+ */
+export function mergePresetDialogPatch(
+  dialog: PresetDialogState,
+  patch: PresetDialogPatch,
+): PresetDialogState {
+  switch (dialog.kind) {
+    case 'rob2':
+    case 'rob2_sq': {
+      const next: RobPrespecDialogState = {
+        ...dialog,
+        ...(patch as Partial<Omit<RobPrespecDialogState, 'kind' | 'error'>>),
+        error: null,
+      };
+      return next;
+    }
+    case 'robins_i':
+    case 'robins_i_sq': {
+      const next: RobinsIPrespecDialogState = {
+        ...dialog,
+        ...(patch as Partial<Omit<RobinsIPrespecDialogState, 'kind' | 'error'>>),
+        error: null,
+      };
+      return next;
+    }
+    case 'quadas3': {
+      const next: Quadas3PrespecDialogState = {
+        ...dialog,
+        ...(patch as Partial<Omit<Quadas3PrespecDialogState, 'kind' | 'error'>>),
+        error: null,
+      };
+      return next;
+    }
+    case 'quips': {
+      const next: QuipsPrespecDialogState = {
+        ...dialog,
+        ...(patch as Partial<Omit<QuipsPrespecDialogState, 'kind' | 'error'>>),
+        error: null,
+      };
+      return next;
+    }
+  }
 }
