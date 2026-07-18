@@ -120,6 +120,9 @@ export const ja = {
   'home.folderAccessPartial':
     '選択されていないファイルが {missing} 件あります（全 {total} 件）。もう一度開いて、一覧のファイルをすべて選択してください',
   'home.folderAccessGranted': 'プロジェクトファイルへのアクセスは付与済みです。',
+  'home.regrantLead':
+    'その後に新しい文献が取り込まれた場合は、再度付与するとそのぶんも読めるようになります。',
+  'home.regrantFiles': 'アクセスを付与し直す',
   'home.goVerify': '検証を開始する',
 
   // S3 文献取り込み（documentsView.ts）

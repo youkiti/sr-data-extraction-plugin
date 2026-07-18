@@ -118,8 +118,21 @@ describe('guardRoute', () => {
   });
 
   describe('#/adjudicate（S12。owner / adjudicator のみ許可・counts は問わない）', () => {
-    test.each(['owner', 'adjudicator'] as const)('%s は counts に関わらず許可される', (role) => {
-      expect(guardRoute('#/adjudicate', createInitialState(), role)).toEqual({ allowed: true });
+    test('owner は counts・ファイルアクセス付与に関わらず許可される', () => {
+      expect(guardRoute('#/adjudicate', createInitialState(), 'owner')).toEqual({ allowed: true });
+    });
+
+    test('adjudicator はファイルアクセス未付与なら不可（PDF 読込に drive.file の付与が必要。issue #139）', () => {
+      expect(guardRoute('#/adjudicate', createInitialState(), 'adjudicator')).toEqual({
+        allowed: false,
+        message: 'プロジェクトファイルへのアクセス付与が必要です（Home から付与してください）',
+      });
+    });
+
+    test('adjudicator はファイルアクセス付与済みなら counts に関わらず許可される', () => {
+      const state = createInitialState();
+      state.role = { ...state.role, folderAccessGranted: true };
+      expect(guardRoute('#/adjudicate', state, 'adjudicator')).toEqual({ allowed: true });
     });
 
     test.each(['reviewer_with_ai', 'reviewer_independent'] as const)(

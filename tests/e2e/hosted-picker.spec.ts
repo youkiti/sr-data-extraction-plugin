@@ -228,6 +228,12 @@ test('ファイル許可モード（view=files）: setFileIds で対象列挙 + 
   });
 });
 
+test('ファイル許可モード: file_ids 欠落はフェイルクローズ（全 Drive 表示へ縮退しない）', async ({ page }) => {
+  await setup(page, '#extension_id=ext-1&view=files&nonce=n-5');
+  await expect(page.locator('#status')).toContainText('対象ファイルの一覧を受け取れませんでした');
+  expect(await pickersOf(page)).toHaveLength(0);
+});
+
 test('PDF モード（view なし）: 3 ビュー + MULTISELECT + キャンセル送信', async ({ page }) => {
   await setup(page, '#extension_id=ext-1&nonce=n-2');
   await expect(page.locator('#title')).toHaveText('Drive から PDF / フォルダを選択');

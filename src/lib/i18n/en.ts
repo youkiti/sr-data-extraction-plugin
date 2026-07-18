@@ -118,6 +118,9 @@ export const en: Record<MessageKey, string> = {
   'home.folderAccessPartial':
     '{missing} of {total} files were not selected. Open the picker again and select every file in the list',
   'home.folderAccessGranted': 'Access to the project files has been granted.',
+  'home.regrantLead':
+    'If new documents are imported later, grant access again to make them readable too.',
+  'home.regrantFiles': 'Grant access again',
   'home.goVerify': 'Start verification',
 
   // S3 文献取り込み

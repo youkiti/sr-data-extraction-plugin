@@ -11,7 +11,7 @@ import { loadProjectMeta } from '../../../../src/features/project/selectProject'
 import { readReviewerAssignments } from '../../../../src/features/project/reviewerRepository';
 import { readDocuments } from '../../../../src/features/documents/documentRepository';
 import type { DocumentRecord } from '../../../../src/domain/document';
-import { getFileText } from '../../../../src/lib/google/drive';
+import { getFileMd5, getFileText } from '../../../../src/lib/google/drive';
 import { openProjectFilesPicker, openSpreadsheetPicker } from '../../../../src/lib/google/picker';
 import { SheetsAccessDeniedError } from '../../../../src/lib/google/sheets';
 import { getLocal, setLocal } from '../../../../src/lib/storage/chromeStorage';
@@ -27,6 +27,7 @@ jest.mock('../../../../src/features/documents/documentRepository', () => ({
   readDocuments: jest.fn(),
 }));
 jest.mock('../../../../src/lib/google/drive', () => ({
+  getFileMd5: jest.fn(),
   getFileText: jest.fn(),
 }));
 jest.mock('../../../../src/lib/google/picker', () => ({
@@ -44,6 +45,7 @@ const readReviewerAssignmentsMock = readReviewerAssignments as jest.MockedFuncti
 >;
 const readDocumentsMock = readDocuments as jest.MockedFunction<typeof readDocuments>;
 const getFileTextMock = getFileText as jest.MockedFunction<typeof getFileText>;
+const getFileMd5Mock = getFileMd5 as jest.MockedFunction<typeof getFileMd5>;
 const openProjectFilesPickerMock = openProjectFilesPicker as jest.MockedFunction<
   typeof openProjectFilesPicker
 >;
@@ -84,6 +86,12 @@ function makeDeps(email: string): RoleServiceDeps {
       addTabRemovedListener: jest.fn(() => () => undefined),
     },
   };
+}
+
+/** deps に sleep モックを差し込む（伝播待ちリトライのテスト用。両 grant 系 describe で共用） */
+function depsWithSleep(email: string): { deps: RoleServiceDeps; sleep: jest.Mock } {
+  const sleep = jest.fn(async () => undefined);
+  return { deps: { ...makeDeps(email), sleep }, sleep };
 }
 
 beforeEach(() => {
@@ -210,9 +218,17 @@ describe('loadRole', () => {
     state.currentProject = PROJECT;
     const store = createStore(state);
     await loadRole(store, makeDeps('r1@example.com'));
-    expect(getLocalMock).toHaveBeenCalledWith(folderAccessStorageKey('sheet-1'));
+    expect(getLocalMock).toHaveBeenCalledWith(folderAccessStorageKey('sheet-1', 'r1@example.com'));
     expect(store.getState().role.role).toBe('reviewer_with_ai');
     expect(store.getState().role.folderAccessGranted).toBe(true);
+  });
+
+  test('email が取得できないときは空文字キーで読む（防御的フォールバック）', async () => {
+    const state = createInitialState();
+    state.currentProject = PROJECT;
+    const store = createStore(state);
+    await loadRole(store, makeDeps(''));
+    expect(getLocalMock).toHaveBeenCalledWith(folderAccessStorageKey('sheet-1', ''));
   });
 
   test('reviewer で storage.local が未設定なら folderAccessGranted=false', async () => {
@@ -275,9 +291,9 @@ describe('loadRole', () => {
 });
 
 describe('folderAccessStorageKey', () => {
-  test('プロジェクト単位のキーを生成する', () => {
-    expect(folderAccessStorageKey('sheet-1')).toBe(
-      'sr-data-extraction:folder-access-granted:sheet-1',
+  test('プロジェクト × アカウントのキーを生成する（同一プロファイルのアカウント切替で流用しない）', () => {
+    expect(folderAccessStorageKey('sheet-1', 'r1@example.com')).toBe(
+      'sr-data-extraction:folder-access-granted:sheet-1:r1@example.com',
     );
   });
 });
@@ -288,11 +304,6 @@ describe('grantFolderAccess（issue #139: ファイル単位付与）', () => {
     state.currentProject = PROJECT;
     state.role = { ...state.role, ...patch };
     return createStore(state);
-  }
-
-  function depsWithSleep(email: string): { deps: RoleServiceDeps; sleep: jest.Mock } {
-    const sleep = jest.fn(async () => undefined);
-    return { deps: { ...makeDeps(email), sleep }, sleep };
   }
 
   function doc(patch: Partial<DocumentRecord> = {}): DocumentRecord {
@@ -343,7 +354,7 @@ describe('grantFolderAccess（issue #139: ファイル単位付与）', () => {
     const store = makeStore();
     await grantFolderAccess(store, makeDeps('r1@example.com'));
     expect(openProjectFilesPickerMock).not.toHaveBeenCalled();
-    expect(setLocalMock).toHaveBeenCalledWith(folderAccessStorageKey('sheet-1'), true);
+    expect(setLocalMock).toHaveBeenCalledWith(folderAccessStorageKey('sheet-1', 'r1@example.com'), true);
     expect(store.getState().role.folderAccessGranted).toBe(true);
   });
 
@@ -353,6 +364,23 @@ describe('grantFolderAccess（issue #139: ファイル単位付与）', () => {
     await grantFolderAccess(store, makeDeps('r1@example.com'));
     expect(openProjectFilesPickerMock).not.toHaveBeenCalled();
     expect(store.getState().role.folderAccessGranted).toBe(true);
+  });
+
+  test('email が取得できないときは空文字キーで保存する（防御的フォールバック）', async () => {
+    readDocumentsMock.mockResolvedValue([]);
+    const store = makeStore();
+    await grantFolderAccess(store, makeDeps(''));
+    expect(setLocalMock).toHaveBeenCalledWith(folderAccessStorageKey('sheet-1', ''), true);
+  });
+
+  test('付与対象 0 件でフラグ保存が失敗したら checking を戻してエラーを記録する（未処理拒否にしない）', async () => {
+    readDocumentsMock.mockResolvedValue([]);
+    setLocalMock.mockRejectedValueOnce(new Error('storage full'));
+    const store = makeStore();
+    await grantFolderAccess(store, makeDeps('r1@example.com'));
+    expect(store.getState().role.folderAccessChecking).toBe(false);
+    expect(store.getState().role.folderAccessError).toBe('storage full');
+    expect(store.getState().role.folderAccessGranted).toBe(false);
   });
 
   test('Picker 起動失敗はエラーを記録する', async () => {
@@ -422,17 +450,48 @@ describe('grantFolderAccess（issue #139: ファイル単位付与）', () => {
     const store = makeStore();
     await grantFolderAccess(store, makeDeps('r1@example.com'));
     expect(getFileTextMock).toHaveBeenCalledWith('txt-1', expect.anything());
-    expect(setLocalMock).toHaveBeenCalledWith(folderAccessStorageKey('sheet-1'), true);
+    expect(getFileMd5Mock).not.toHaveBeenCalled();
+    expect(setLocalMock).toHaveBeenCalledWith(folderAccessStorageKey('sheet-1', 'r1@example.com'), true);
     expect(store.getState().role.folderAccessGranted).toBe(true);
     expect(store.getState().role.folderAccessChecking).toBe(false);
   });
 
-  test('text_ref が 1 件も無い（PDF のみ）は試し読みをスキップしてフラグを立てる', async () => {
+  test('試し読み成功後のフラグ保存失敗は到達性エラーと誤分類せず、再プローブしない', async () => {
+    readDocumentsMock.mockResolvedValue([doc()]);
+    openProjectFilesPickerMock.mockResolvedValue([
+      { sourceFileId: 'drive-1', filename: 'a.pdf' },
+      { sourceFileId: 'txt-1', filename: 'a.txt' },
+    ]);
+    getFileTextMock.mockResolvedValue('本文');
+    setLocalMock.mockRejectedValueOnce(new Error('storage full'));
+    const store = makeStore();
+    await grantFolderAccess(store, makeDeps('r1@example.com'));
+    expect(getFileTextMock).toHaveBeenCalledTimes(1);
+    expect(store.getState().role.folderAccessChecking).toBe(false);
+    expect(store.getState().role.folderAccessError).toBe('storage full');
+    expect(store.getState().role.folderAccessGranted).toBe(false);
+  });
+
+  test('text_ref が 1 件も無い（全スキャン PDF）は先頭 PDF のメタデータ取得で到達性を確認する', async () => {
     readDocumentsMock.mockResolvedValue([doc({ textRef: null })]);
     openProjectFilesPickerMock.mockResolvedValue([{ sourceFileId: 'drive-1', filename: 'a.pdf' }]);
+    getFileMd5Mock.mockResolvedValue('md5');
     const store = makeStore();
     await grantFolderAccess(store, makeDeps('r1@example.com'));
     expect(getFileTextMock).not.toHaveBeenCalled();
+    expect(getFileMd5Mock).toHaveBeenCalledWith('drive-1', expect.anything());
+    expect(store.getState().role.folderAccessGranted).toBe(true);
+  });
+
+  test('text_ref 解析不能 + 有効な drive_file_id はテキストを除外して PDF メタデータで確認する（挙動の固定）', async () => {
+    readDocumentsMock.mockResolvedValue([doc({ textRef: 'not-a-url' })]);
+    openProjectFilesPickerMock.mockResolvedValue([{ sourceFileId: 'drive-1', filename: 'a.pdf' }]);
+    getFileMd5Mock.mockResolvedValue('md5');
+    const store = makeStore();
+    await grantFolderAccess(store, makeDeps('r1@example.com'));
+    expect(openProjectFilesPickerMock).toHaveBeenCalledWith(expect.anything(), ['drive-1']);
+    expect(getFileTextMock).not.toHaveBeenCalled();
+    expect(getFileMd5Mock).toHaveBeenCalledWith('drive-1', expect.anything());
     expect(store.getState().role.folderAccessGranted).toBe(true);
   });
 
@@ -503,11 +562,6 @@ describe('grantSpreadsheetAccess（issue #131。docs/ui-states.md §3 ロール�
       accessDenied: true,
     };
     return createStore(state);
-  }
-
-  function depsWithSleep(email: string): { deps: RoleServiceDeps; sleep: jest.Mock } {
-    const sleep = jest.fn(async () => undefined);
-    return { deps: { ...makeDeps(email), sleep }, sleep };
   }
 
   test('プロジェクト未選択なら no-op', async () => {

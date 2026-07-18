@@ -1,7 +1,7 @@
 <!doctype html>
 <!--
   Drive Picker ホストページ（lib/google/picker.ts の対向実装）。
-  version: 2026-07-18b (issue #139: view=files モード追加)
+  version: 2026-07-18c (issue #139: view=files モード追加 + file_ids 欠落時フェイルクローズ)
 
   MV3 では apis.google.com のスクリプトを拡張ページで読み込めないため、
   このページを HTTPS でホストし（既定: GitHub Pages。lib/google/picker.ts の
@@ -147,12 +147,16 @@
 
       // プロジェクトファイル許可モード（issue #139）。拡張が Documents タブ由来の必要ファイル ID
       // （PDF + 抽出テキスト）を file_ids で渡してくるので、setFileIds で列挙して全選択してもらう。
-      // mime フィルタは掛けない（PDF 以外の抽出テキストも選択対象のため）
+      // mime フィルタは掛けない（PDF 以外の抽出テキストも選択対象のため）。
+      // ID 一覧で絞り込めない状況では「全 Drive 表示 + 全選択の案内」という危険な縮退になるため、
+      // file_ids 欠落・setFileIds 非対応はフェイルクローズにする
       function showProjectFilesPicker(token) {
         var view = new google.picker.DocsView(google.picker.ViewId.DOCS);
-        if (targetFileIds && typeof view.setFileIds === 'function') {
-          view.setFileIds(targetFileIds);
+        if (typeof view.setFileIds !== 'function') {
+          fail('この環境の Picker はファイル指定（setFileIds）に対応していません。拡張のタブから開き直してください。');
+          return;
         }
+        view.setFileIds(targetFileIds);
         new google.picker.PickerBuilder()
           .enableFeature(google.picker.Feature.MULTISELECT_ENABLED)
           .setDeveloperKey(PICKER_API_KEY)
@@ -209,7 +213,11 @@
             } else if (viewMode === 'files') {
               titleEl.textContent = 'プロジェクトのファイルをすべて選択';
               document.title = 'SR データ抽出 — ファイルの許可';
-              showProjectFilesPicker(response.token);
+              if (!targetFileIds) {
+                fail('対象ファイルの一覧を受け取れませんでした。拡張のタブから開き直してください。');
+              } else {
+                showProjectFilesPicker(response.token);
+              }
             } else {
               showPdfPicker(response.token);
             }
