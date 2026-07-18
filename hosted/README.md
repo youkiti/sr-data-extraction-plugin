@@ -15,6 +15,23 @@ MV3 の remote hosted code 制約により、Google Picker（`apis.google.com/js
 - `src/lib/google/picker.ts` の `PICKER_PAGE_URL`
 - `src/manifest.json` の `externally_connectable.matches`
 
+## ページ先行デプロイの原則 + page_version ハンドシェイク（issue #141）
+
+`picker.html` と拡張はメッセージプロトコルで結合しているため、**プロトコルを拡張する変更は
+必ず本ページを先にデプロイしてから拡張をリリースする**（ページが未対応のまま新拡張が先に
+出回ると、ready 応答の形が合わずに壊れる）。
+
+この原則を機械的に強制するため、ページは ready メッセージへ `page_version`（整数。現在値は
+`picker.html` 内の `PAGE_VERSION` 定数）を含めて送る。拡張は files モード（下記「プロジェクト
+ファイル許可モード」）でこの値を検査し、拡張が要求する最低版数に届かない場合（`page_version`
+が無い旧ページ、または値が古い場合）は **OAuth トークンを渡さずに** 明示エラー
+（「Picker ページの更新がまだ反映されていません。数分待ってからもう一度お試しください」）を出す。
+spreadsheet / pdf モードは `page_version` を検査しない（ready 応答は従来どおり `{ token }` のみで
+足りるため、旧ページでも動く）。
+
+`PAGE_VERSION` を上げる変更（= ready 応答の形やプロトコルを拡張側が要求するように変える変更）を
+行うときは、本ページのデプロイ → 拡張の `minPageVersion` 引き上げ → 拡張リリース、の順を守ること。
+
 ## スプレッドシート許可モード（issue #130・要再デプロイ）
 
 `picker.html` は URL フラグメントの `view=spreadsheet` で**共有スプレッドシートの drive.file
@@ -34,9 +51,14 @@ MV3 の remote hosted code 制約により、Google Picker（`apis.google.com/js
 `picker.html` は URL フラグメントの `view=files` で **reviewer オンボーディングのファイル許可
 モード**になる（Home の「プロジェクトファイルへのアクセスを付与」が使う）:
 
-- `file_ids=<カンマ区切りのファイル ID>` を `setFileIds` で列挙する（Documents タブ由来の
-  PDF + 抽出テキスト。抽出テキストを含むため mime フィルタは掛けない）。ユーザーには
-  **全選択**してもらい、ファイル単位で drive.file を付与する
+- 対象ファイル ID（Documents タブ由来の PDF + 抽出テキスト）を `setFileIds` で列挙する。
+  抽出テキストを含むため mime フィルタは掛けない。ユーザーには **全選択**してもらい、
+  ファイル単位で drive.file を付与する
+- ID 一覧は **ready 応答（`sendMessage` のコールバックで受け取る `response.file_ids`）経由**で
+  渡す（issue #141）。新拡張は URL フラグメントへ `file_ids` を載せない — 数百文献規模だと
+  URL / Picker 内部リクエストの実用上限に当たり得るうえ、ID 一覧をブラウザ履歴に残さないため。
+  旧拡張との後方互換として、`response.file_ids` が無いときは従来どおりフラグメントの
+  `file_ids=<カンマ区切りのファイル ID>` を使う
 - この方式を採るのは、**他人所有の共有フォルダでは Picker のフォルダ選択が配下ファイルに
   drive.file の読み取りを付与しない**ことが実機で確定したため（issue #62 / #139。
   自分所有フォルダの直下列挙〔下記「フォルダ単位の取り込み」〕は引き続き成立する）

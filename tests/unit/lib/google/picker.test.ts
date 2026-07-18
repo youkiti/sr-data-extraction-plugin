@@ -318,6 +318,21 @@ describe('openPdfPicker', () => {
     await expect(openPdfPicker(fake.deps)).rejects.toThrow('not signed in');
     expect(fake.createTab).not.toHaveBeenCalled();
   });
+
+  test('page_version 付きの ready でも応答は token のみ（files モード専用の検査は行わない。issue #141）', async () => {
+    const fake = createFakeDeps();
+    const promise = openPdfPicker(fake.deps);
+    await flushMicrotasks();
+    const sendResponse = jest.fn();
+    fake.emitMessage(
+      withNonce({ source: PICKER_MESSAGE_SOURCE, kind: 'ready', page_version: 1 }),
+      {},
+      sendResponse,
+    );
+    expect(sendResponse).toHaveBeenCalledWith({ token: 'token-1234' });
+    fake.emitMessage(withNonce({ source: PICKER_MESSAGE_SOURCE, kind: 'cancelled' }));
+    await expect(promise).resolves.toBeNull();
+  });
 });
 
 describe('openSpreadsheetPicker（issue #130）', () => {
@@ -375,15 +390,26 @@ describe('openSpreadsheetPicker（issue #130）', () => {
     );
     await expect(promise2).resolves.toBe('cancelled');
   });
+
+  test('page_version 無しの ready でも従来どおり token のみで応答する（旧ページ互換。issue #141）', async () => {
+    const fake = createFakeDeps();
+    const promise = openSpreadsheetPicker(fake.deps, 'SID-9');
+    await flushMicrotasks();
+    const sendResponse = jest.fn();
+    fake.emitMessage(withNonce({ source: PICKER_MESSAGE_SOURCE, kind: 'ready' }), {}, sendResponse);
+    expect(sendResponse).toHaveBeenCalledWith({ token: 'token-1234' });
+    fake.emitMessage(withNonce({ source: PICKER_MESSAGE_SOURCE, kind: 'cancelled' }));
+    await expect(promise).resolves.toBe('cancelled');
+  });
 });
 
 describe('openProjectFilesPicker（issue #139）', () => {
-  test('view=files + file_ids（カンマ区切り）+ nonce のフラグメントでタブを開く', async () => {
+  test('view=files + nonce のフラグメントでタブを開く（file_ids はフラグメントに載せない。issue #141）', async () => {
     const fake = createFakeDeps();
     const promise = openProjectFilesPicker(fake.deps, ['F1', 'F2']);
     await flushMicrotasks();
     expect(fake.createTab).toHaveBeenCalledWith(
-      `${PAGE_URL}#extension_id=ext-id&view=files&file_ids=F1%2CF2&nonce=${NONCE}`,
+      `${PAGE_URL}#extension_id=ext-id&view=files&nonce=${NONCE}`,
     );
     fake.emitMessage(withNonce({ source: PICKER_MESSAGE_SOURCE, kind: 'cancelled' }));
     await expect(promise).resolves.toBeNull();
@@ -403,6 +429,72 @@ describe('openProjectFilesPicker（issue #139）', () => {
     await expect(promise).resolves.toEqual([
       { sourceFileId: 'F1', filename: 'a.pdf', mimeType: 'application/pdf' },
     ]);
+  });
+
+  describe('page_version ハンドシェイク（issue #141）', () => {
+    test('page_version 付き ready への応答は token と file_ids を含む（フラグメント経由をやめて sendResponse 経由へ）', async () => {
+      const fake = createFakeDeps();
+      const promise = openProjectFilesPicker(fake.deps, ['F1', 'F2']);
+      await flushMicrotasks();
+      const sendResponse = jest.fn();
+      fake.emitMessage(
+        withNonce({ source: PICKER_MESSAGE_SOURCE, kind: 'ready', page_version: 1 }),
+        {},
+        sendResponse,
+      );
+      expect(sendResponse).toHaveBeenCalledWith({ token: 'token-1234', file_ids: ['F1', 'F2'] });
+      fake.emitMessage(withNonce({ source: PICKER_MESSAGE_SOURCE, kind: 'cancelled' }));
+      await expect(promise).resolves.toBeNull();
+    });
+
+    test('page_version が無い ready（旧ページ）はトークンを渡さず reject し、タブを閉じる', async () => {
+      const fake = createFakeDeps();
+      const promise = openProjectFilesPicker(fake.deps, ['F1']);
+      await flushMicrotasks();
+      const sendResponse = jest.fn();
+      fake.emitMessage(withNonce({ source: PICKER_MESSAGE_SOURCE, kind: 'ready' }), {}, sendResponse);
+      expect(sendResponse).not.toHaveBeenCalled();
+      await expect(promise).rejects.toThrow(
+        'Picker ページの更新がまだ反映されていません。数分待ってからもう一度お試しください',
+      );
+      expect(fake.removeTab).toHaveBeenCalledWith(77);
+      expect(fake.unsubscribeMessage).toHaveBeenCalled();
+      expect(fake.unsubscribeTab).toHaveBeenCalled();
+    });
+
+    test('page_version が最低要求値未満の ready も未対応として reject する', async () => {
+      const fake = createFakeDeps();
+      const promise = openProjectFilesPicker(fake.deps, ['F1']);
+      await flushMicrotasks();
+      const sendResponse = jest.fn();
+      fake.emitMessage(
+        withNonce({ source: PICKER_MESSAGE_SOURCE, kind: 'ready', page_version: 0 }),
+        {},
+        sendResponse,
+      );
+      expect(sendResponse).not.toHaveBeenCalled();
+      await expect(promise).rejects.toThrow('Picker ページの更新がまだ反映されていません');
+    });
+
+    test('reject 確定後に届いた追加の ready は無視される（二重 reject しない）', async () => {
+      const fake = createFakeDeps();
+      const promise = openProjectFilesPicker(fake.deps, ['F1']);
+      await flushMicrotasks();
+      const sendResponse = jest.fn();
+      fake.emitMessage(withNonce({ source: PICKER_MESSAGE_SOURCE, kind: 'ready' }), {}, sendResponse);
+      fake.emitMessage(withNonce({ source: PICKER_MESSAGE_SOURCE, kind: 'ready' }), {}, sendResponse);
+      await expect(promise).rejects.toThrow('Picker ページの更新がまだ反映されていません');
+      expect(fake.removeTab).toHaveBeenCalledTimes(1);
+    });
+
+    test('reject 時に removeTab が失敗しても握りつぶす（結果は確定済み）', async () => {
+      const fake = createFakeDeps();
+      fake.removeTab.mockRejectedValue(new Error('tab already closed'));
+      const promise = openProjectFilesPicker(fake.deps, ['F1']);
+      await flushMicrotasks();
+      fake.emitMessage(withNonce({ source: PICKER_MESSAGE_SOURCE, kind: 'ready' }), {}, jest.fn());
+      await expect(promise).rejects.toThrow('Picker ページの更新がまだ反映されていません');
+    });
   });
 });
 
