@@ -21,6 +21,7 @@ describe('createInitialState', () => {
         role: null,
         resolving: false,
         error: null,
+        accessDenied: false,
         folderAccessGranted: false,
         folderAccessChecking: false,
         folderAccessError: null,

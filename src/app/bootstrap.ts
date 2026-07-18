@@ -128,7 +128,7 @@ import {
   requestAddReviewer,
   revokeReviewer,
 } from './services/reviewerAdminService';
-import { grantFolderAccess, loadRole } from './services/roleService';
+import { grantFolderAccess, grantSpreadsheetAccess, loadRole } from './services/roleService';
 import {
   cancelExportWarning,
   changeMethodsLanguage,
@@ -180,7 +180,7 @@ function roleOf(state: AppState): ProjectRole {
 /** プロジェクト選択済みセッションでロールが確定していない間の全画面ブロック種別 */
 type RoleBlock =
   | { kind: 'resolving' }
-  | { kind: 'error'; message: string }
+  | { kind: 'error'; message: string; accessDenied: boolean }
   | { kind: 'unregistered' };
 
 /**
@@ -197,7 +197,7 @@ function roleBlockOf(state: AppState): RoleBlock | null {
     return { kind: 'unregistered' };
   }
   if (state.role.error !== null) {
-    return { kind: 'error', message: state.role.error };
+    return { kind: 'error', message: state.role.error, accessDenied: state.role.accessDenied };
   }
   if (state.role.role === null) {
     return { kind: 'resolving' };
@@ -231,22 +231,41 @@ function renderRoleResolvingBlock(): HTMLElement {
  * ロール解決失敗の全画面ブロック。盲検のフェイルクローズ: 一時的な読込エラーで reviewer に
  * owner 向け UI（全ナビ + エクスポート等）を開放しないため、確認できるまで再試行のみを提供する
  */
-function renderRoleErrorBlock(message: string, onRetry: () => void): HTMLElement {
+function renderRoleErrorBlock(
+  message: string,
+  onRetry: () => void,
+  onGrant: (() => void) | null,
+): HTMLElement {
   const retry = el('button', {
     id: 'app-role-retry',
     text: t('common.retry'),
     attributes: { type: 'button' },
   });
   retry.addEventListener('click', onRetry);
-  return el('section', { id: 'app-role-error', className: 'view view--role-blocked' }, [
+  const children: HTMLElement[] = [
     el('h2', { text: t('app.roleErrorTitle') }),
     el('p', {
       attributes: { role: 'alert' },
       text: t('app.roleErrorBody', { reason: message }),
     }),
     el('p', { text: t('app.roleErrorNote') }),
-    retry,
-  ]);
+  ];
+  // アクセス拒否（drive.file 未許可の共有シート）のときだけ Picker 許可導線を出す（issue #131）
+  if (onGrant !== null) {
+    const grant = el('button', {
+      id: 'app-role-grant',
+      text: t('app.roleAccessGrant'),
+      attributes: { type: 'button' },
+    });
+    grant.addEventListener('click', () => {
+      // Picker タブが開いている間の二重起動を防ぐ（完了時は store パッチで作り直される）
+      grant.disabled = true;
+      onGrant();
+    });
+    children.push(grant);
+  }
+  children.push(retry);
+  return el('section', { id: 'app-role-error', className: 'view view--role-blocked' }, children);
 }
 
 export async function seedState(win: Window): Promise<AppState> {
@@ -856,7 +875,9 @@ export async function bootstrapApp(
         contentEl.replaceChildren(renderUnregisteredBlock());
         contextEl.textContent = t('app.roleBlockedTitle');
       } else if (block.kind === 'error') {
-        contentEl.replaceChildren(renderRoleErrorBlock(block.message, retryRole));
+        contentEl.replaceChildren(
+          renderRoleErrorBlock(block.message, retryRole, block.accessDenied ? grantRole : null),
+        );
         contextEl.textContent = t('app.roleErrorTitle');
       } else {
         contentEl.replaceChildren(renderRoleResolvingBlock());
@@ -978,6 +999,15 @@ export async function bootstrapApp(
   /** ロール解決失敗画面の「再試行」。解決できたら初期ルーティングをやり直す */
   const retryRole = (): void => {
     void loadRole(store, deps).then(() => {
+      if (roleBlockOf(store.getState()) === null) {
+        startRouting();
+      }
+    });
+  };
+
+  /** アクセス許可誘導（issue #131）: Picker 許可 → 再解決。解決できたら初期ルーティングをやり直す */
+  const grantRole = (): void => {
+    void grantSpreadsheetAccess(store, deps).then(() => {
       if (roleBlockOf(store.getState()) === null) {
         startRouting();
       }

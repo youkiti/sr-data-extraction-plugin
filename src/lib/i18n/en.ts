@@ -619,6 +619,12 @@ export const en: Record<MessageKey, string> = {
   'app.roleErrorTitle': 'Could not confirm your role',
   'app.roleErrorBody': 'Could not confirm your role in this project: {reason}',
   'app.roleErrorNote': 'To protect blinding, no screen is shown until your role can be confirmed.',
+  // ロール解決エラーの accessDenied 変種（issue #131。docs/ui-states.md §3 ロール解決）
+  'app.roleAccessGrant': 'Allow with Google',
+  'app.roleAccessMismatch':
+    'The selected sheet differs from this project’s spreadsheet. Please select the shared sheet itself.',
+  'app.roleAccessStillDenied':
+    'Still unable to access after granting. Check the sharing settings or try again later.',
   'app.roleCheckingContext': 'Checking your role',
 
   // ルートガード

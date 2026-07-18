@@ -613,6 +613,12 @@ export const ja = {
   'app.roleErrorTitle': 'ロールを確認できませんでした',
   'app.roleErrorBody': 'このプロジェクトでのロールを確認できませんでした: {reason}',
   'app.roleErrorNote': '盲検保護のため、ロールを確認できるまで画面を表示しません。',
+  // ロール解決エラーの accessDenied 変種（issue #131。docs/ui-states.md §3 ロール解決）
+  'app.roleAccessGrant': 'Google で許可する',
+  'app.roleAccessMismatch':
+    '選択されたシートはこのプロジェクトのスプレッドシートと異なります。共有されたシート本体を選択してください',
+  'app.roleAccessStillDenied':
+    '許可後もアクセスできませんでした。共有設定を確認するか、時間をおいて再試行してください',
   'app.roleCheckingContext': 'ロールを確認しています',
 
   // ルートガード（guards.ts。ディムナビのクリック時トースト）

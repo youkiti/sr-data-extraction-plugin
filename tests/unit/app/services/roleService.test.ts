@@ -1,6 +1,7 @@
 import {
   folderAccessStorageKey,
   grantFolderAccess,
+  grantSpreadsheetAccess,
   loadRole,
   resolveProjectRole,
   type RoleServiceDeps,
@@ -10,7 +11,8 @@ import { loadProjectMeta } from '../../../../src/features/project/selectProject'
 import { readReviewerAssignments } from '../../../../src/features/project/reviewerRepository';
 import { readDocuments } from '../../../../src/features/documents/documentRepository';
 import { getFileText } from '../../../../src/lib/google/drive';
-import { openPdfPicker } from '../../../../src/lib/google/picker';
+import { openPdfPicker, openSpreadsheetPicker } from '../../../../src/lib/google/picker';
+import { SheetsAccessDeniedError } from '../../../../src/lib/google/sheets';
 import { getLocal, setLocal } from '../../../../src/lib/storage/chromeStorage';
 
 jest.mock('../../../../src/features/project/selectProject', () => ({
@@ -28,6 +30,7 @@ jest.mock('../../../../src/lib/google/drive', () => ({
 }));
 jest.mock('../../../../src/lib/google/picker', () => ({
   openPdfPicker: jest.fn(),
+  openSpreadsheetPicker: jest.fn(),
 }));
 jest.mock('../../../../src/lib/storage/chromeStorage', () => ({
   getLocal: jest.fn(),
@@ -41,6 +44,9 @@ const readReviewerAssignmentsMock = readReviewerAssignments as jest.MockedFuncti
 const readDocumentsMock = readDocuments as jest.MockedFunction<typeof readDocuments>;
 const getFileTextMock = getFileText as jest.MockedFunction<typeof getFileText>;
 const openPdfPickerMock = openPdfPicker as jest.MockedFunction<typeof openPdfPicker>;
+const openSpreadsheetPickerMock = openSpreadsheetPicker as jest.MockedFunction<
+  typeof openSpreadsheetPicker
+>;
 const getLocalMock = getLocal as jest.MockedFunction<typeof getLocal>;
 const setLocalMock = setLocal as jest.MockedFunction<typeof setLocal>;
 
@@ -184,6 +190,7 @@ describe('loadRole', () => {
       role: 'owner',
       resolving: false,
       error: null,
+      accessDenied: false,
       folderAccessGranted: true,
       folderAccessChecking: false,
       folderAccessError: null,
@@ -227,6 +234,7 @@ describe('loadRole', () => {
       role: null,
       resolving: false,
       error: 'HTTP 500',
+      accessDenied: false,
       folderAccessGranted: false,
       folderAccessChecking: false,
       folderAccessError: null,
@@ -240,6 +248,26 @@ describe('loadRole', () => {
     const store = createStore(state);
     await loadRole(store, makeDeps('owner@example.com'));
     expect(store.getState().role.error).toBe('boom');
+  });
+
+  test('SheetsAccessDeniedError なら accessDenied=true（許可導線を出す。issue #131）', async () => {
+    loadProjectMetaMock.mockRejectedValue(new SheetsAccessDeniedError('sheet-1', 404));
+    const state = createInitialState();
+    state.currentProject = PROJECT;
+    const store = createStore(state);
+    await loadRole(store, makeDeps('r1@example.com'));
+    expect(store.getState().role.accessDenied).toBe(true);
+    expect(store.getState().role.error).toContain('権限がまだありません');
+  });
+
+  test('解決を開始したら前回の accessDenied をリセットする', async () => {
+    const state = createInitialState();
+    state.currentProject = PROJECT;
+    state.role = { ...state.role, error: null, accessDenied: true };
+    const store = createStore(state);
+    await loadRole(store, makeDeps('owner@example.com'));
+    expect(store.getState().role.accessDenied).toBe(false);
+    expect(store.getState().role.role).toBe('owner');
   });
 });
 
@@ -389,5 +417,120 @@ describe('grantFolderAccess', () => {
     expect(store.getState().role.folderAccessGranted).toBe(false);
     expect(store.getState().role.folderAccessError).toBe('HTTP 403');
     expect(setLocalMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('grantSpreadsheetAccess（issue #131。docs/ui-states.md §3 ロール解決）', () => {
+  function makeDeniedStore(): Store {
+    const state = createInitialState();
+    state.currentProject = PROJECT;
+    state.role = {
+      ...state.role,
+      error: 'このスプレッドシートを開く権限がまだありません',
+      accessDenied: true,
+    };
+    return createStore(state);
+  }
+
+  function depsWithSleep(email: string): { deps: RoleServiceDeps; sleep: jest.Mock } {
+    const sleep = jest.fn(async () => undefined);
+    return { deps: { ...makeDeps(email), sleep }, sleep };
+  }
+
+  test('プロジェクト未選択なら no-op', async () => {
+    const store = createStore(createInitialState());
+    await grantSpreadsheetAccess(store, makeDeps('r1@example.com'));
+    expect(openSpreadsheetPickerMock).not.toHaveBeenCalled();
+  });
+
+  test('cancelled は状態を変えない（案内とボタンは残る）', async () => {
+    openSpreadsheetPickerMock.mockResolvedValue('cancelled');
+    const store = makeDeniedStore();
+    await grantSpreadsheetAccess(store, makeDeps('r1@example.com'));
+    expect(openSpreadsheetPickerMock).toHaveBeenCalledWith(expect.anything(), 'sheet-1');
+    expect(store.getState().role.accessDenied).toBe(true);
+    expect(loadProjectMetaMock).not.toHaveBeenCalled();
+  });
+
+  test('mismatch はトースト表示のみで状態を変えない', async () => {
+    openSpreadsheetPickerMock.mockResolvedValue('mismatch');
+    const store = makeDeniedStore();
+    await grantSpreadsheetAccess(store, makeDeps('r1@example.com'));
+    expect(store.getState().role.accessDenied).toBe(true);
+    expect(loadProjectMetaMock).not.toHaveBeenCalled();
+    expect(document.body.textContent).toContain('スプレッドシートと異なります');
+  });
+
+  test('Picker 失敗はトースト表示のみで状態を変えない', async () => {
+    openSpreadsheetPickerMock.mockRejectedValue(new Error('タブの作成に失敗'));
+    const store = makeDeniedStore();
+    await grantSpreadsheetAccess(store, makeDeps('r1@example.com'));
+    expect(store.getState().role.accessDenied).toBe(true);
+    expect(document.body.textContent).toContain('タブの作成に失敗');
+  });
+
+  test('granted → 再解決成功でロールが確定する（リトライ・sleep なし）', async () => {
+    openSpreadsheetPickerMock.mockResolvedValue('granted');
+    const store = makeDeniedStore();
+    const { deps, sleep } = depsWithSleep('owner@example.com');
+    await grantSpreadsheetAccess(store, deps);
+    expect(store.getState().role.role).toBe('owner');
+    expect(store.getState().role.error).toBeNull();
+    expect(store.getState().role.accessDenied).toBe(false);
+    expect(sleep).not.toHaveBeenCalled();
+  });
+
+  test('granted → 拒否が続いたら 3 回で打ち切り、一般エラーへ切替（再誘導しない）', async () => {
+    openSpreadsheetPickerMock.mockResolvedValue('granted');
+    loadProjectMetaMock.mockRejectedValue(new SheetsAccessDeniedError('sheet-1', 404));
+    const store = makeDeniedStore();
+    const { deps, sleep } = depsWithSleep('r1@example.com');
+    await grantSpreadsheetAccess(store, deps);
+    expect(loadProjectMetaMock).toHaveBeenCalledTimes(3);
+    expect(sleep).toHaveBeenCalledTimes(2);
+    expect(sleep).toHaveBeenCalledWith(2_000);
+    expect(store.getState().role.accessDenied).toBe(false);
+    expect(store.getState().role.error).toContain('許可後もアクセスできませんでした');
+  });
+
+  test('granted → 2 回目で成功するケース（ACL 伝播待ち）', async () => {
+    openSpreadsheetPickerMock.mockResolvedValue('granted');
+    loadProjectMetaMock
+      .mockRejectedValueOnce(new SheetsAccessDeniedError('sheet-1', 404))
+      .mockResolvedValue(META);
+    const store = makeDeniedStore();
+    const { deps, sleep } = depsWithSleep('owner@example.com');
+    await grantSpreadsheetAccess(store, deps);
+    expect(store.getState().role.role).toBe('owner');
+    expect(sleep).toHaveBeenCalledTimes(1);
+  });
+
+  test('granted → アクセス以外のエラーは即打ち切り、通常のロールエラー表示に任せる', async () => {
+    openSpreadsheetPickerMock.mockResolvedValue('granted');
+    loadProjectMetaMock.mockRejectedValue(new Error('HTTP 500'));
+    const store = makeDeniedStore();
+    const { deps, sleep } = depsWithSleep('r1@example.com');
+    await grantSpreadsheetAccess(store, deps);
+    expect(loadProjectMetaMock).toHaveBeenCalledTimes(1);
+    expect(sleep).not.toHaveBeenCalled();
+    expect(store.getState().role.error).toBe('HTTP 500');
+    expect(store.getState().role.accessDenied).toBe(false);
+  });
+
+  test('sleep 未注入でも既定の setTimeout 実装で完走する', async () => {
+    jest.useFakeTimers();
+    try {
+      openSpreadsheetPickerMock.mockResolvedValue('granted');
+      loadProjectMetaMock
+        .mockRejectedValueOnce(new SheetsAccessDeniedError('sheet-1', 404))
+        .mockResolvedValue(META);
+      const store = makeDeniedStore();
+      const promise = grantSpreadsheetAccess(store, makeDeps('owner@example.com'));
+      await jest.advanceTimersByTimeAsync(2_000);
+      await promise;
+      expect(store.getState().role.role).toBe('owner');
+    } finally {
+      jest.useRealTimers();
+    }
   });
 });
