@@ -349,7 +349,7 @@ describe('renderHomeView（表示言語 en。issue #93）', () => {
     state.role = { ...state.role, role: 'reviewer_with_ai' };
     const view = renderHomeView(state, ctx);
     expect(view.querySelector('#home-grant-folder-access')?.textContent).toBe(
-      'Grant access to the project files',
+      'Grant access to the project files (select all files in the picker)',
     );
   });
 });

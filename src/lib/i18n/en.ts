@@ -112,15 +112,15 @@ export const en: Record<MessageKey, string> = {
   'home.addSubmit': 'Add',
   'home.folderAccessLead':
     "Before starting verification, grant read access to the project's files (PDFs and extracted text). Clicking the button opens a Google picker listing the required files — select all of them (click the first item, then Shift+click the last to select a range).",
-  'home.grantFolderAccess': 'Grant access to the project files',
+  'home.grantFolderAccess': 'Grant access to the project files (select all files in the picker)',
   'home.folderAccessChecking': 'Checking…',
   'home.folderAccessError': 'Could not confirm access: {reason}',
   'home.folderAccessPartial':
     '{missing} of {total} files were not selected. Open the picker again and select every file in the list',
   'home.folderAccessGranted': 'Access to the project files has been granted.',
   'home.regrantLead':
-    'If new documents are imported later, grant access again to make them readable too.',
-  'home.regrantFiles': 'Grant access again',
+    'If new documents are imported later, grant access again to make them readable too (select all files in the picker: click the first, then Shift+click the last).',
+  'home.regrantFiles': 'Grant access again (select all files in the picker)',
   'home.goVerify': 'Start verification',
 
   // S3 文献取り込み

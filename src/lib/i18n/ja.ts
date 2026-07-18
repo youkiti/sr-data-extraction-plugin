@@ -114,15 +114,15 @@ export const ja = {
   'home.addSubmit': '追加',
   'home.folderAccessLead':
     '検証を始める前に、プロジェクトのファイル（PDF・抽出テキスト）を読み込むためのアクセス付与が必要です。ボタンを押すと Google の選択画面に必要なファイルの一覧が表示されるので、すべて選択してください（先頭を選択 → 末尾を Shift+クリックで範囲選択できます）。',
-  'home.grantFolderAccess': 'プロジェクトファイルへのアクセスを付与',
+  'home.grantFolderAccess': 'プロジェクトファイルへのアクセスを付与（開いた一覧をすべて選択）',
   'home.folderAccessChecking': '確認しています…',
   'home.folderAccessError': 'アクセスを確認できませんでした: {reason}',
   'home.folderAccessPartial':
     '選択されていないファイルが {missing} 件あります（全 {total} 件）。もう一度開いて、一覧のファイルをすべて選択してください',
   'home.folderAccessGranted': 'プロジェクトファイルへのアクセスは付与済みです。',
   'home.regrantLead':
-    'その後に新しい文献が取り込まれた場合は、再度付与するとそのぶんも読めるようになります。',
-  'home.regrantFiles': 'アクセスを付与し直す',
+    'その後に新しい文献が取り込まれた場合は、再度付与するとそのぶんも読めるようになります（開いた一覧をすべて選択: 先頭を 1 クリック → 末尾を Shift+クリック）。',
+  'home.regrantFiles': 'アクセスを付与し直す（開いた一覧をすべて選択）',
   'home.goVerify': '検証を開始する',
 
   // S3 文献取り込み（documentsView.ts）
