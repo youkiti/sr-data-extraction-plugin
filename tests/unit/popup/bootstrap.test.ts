@@ -129,6 +129,17 @@ describe('bootstrapPopup', () => {
     expect(el('popup-build-date').textContent).toBe(`build ${BUILD_DATE}`);
   });
 
+  test('ヘッダーのアプリ名とタブタイトルに dev サフィックスを付ける（jest は dev ビルド相当）', async () => {
+    const titleEl = document.createElement('h1');
+    titleEl.className = 'popup__title';
+    titleEl.textContent = 'SR Data Extraction Plugin';
+    document.querySelector('.popup')?.prepend(titleEl);
+    document.title = 'SR Data Extraction Plugin';
+    await bootstrapPopup(document, makeDeps({ isAuthenticated: jest.fn(async () => false) }));
+    expect(titleEl.textContent).toBe('SR Data Extraction Plugin (dev)');
+    expect(document.title).toBe('SR Data Extraction Plugin (dev)');
+  });
+
   test('状態 A: 未ログインならログインセクションのみ表示', async () => {
     await bootstrapPopup(document, makeDeps({ isAuthenticated: jest.fn(async () => false) }));
     expect(el('popup-status').textContent).toBe('ログインが必要です。');

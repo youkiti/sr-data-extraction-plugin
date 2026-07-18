@@ -896,7 +896,8 @@ describe('bootstrapOptionsPage（スタンドアロン options.html の起動配
     chromeMock.storage.local.data['settings.uiLanguage'] = 'en';
     await bootstrapOptionsPage(document);
     expect(document.documentElement.lang).toBe('en');
-    expect(document.title).toBe('SR Data Extraction Plugin — Settings');
+    // jest は dev ビルド相当（__DEV_NAME_SUFFIX__ = ' (dev)'）なのでタブタイトルにも付く
+    expect(document.title).toBe('SR Data Extraction Plugin — Settings (dev)');
     expect(document.querySelector('h1')?.textContent).toBe('Settings');
     expect(document.getElementById('options-open-app')?.textContent).toBe('Open the app');
     const select = document.getElementById('ui-language') as HTMLSelectElement;

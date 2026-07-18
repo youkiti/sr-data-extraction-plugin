@@ -1,6 +1,7 @@
 // Options（S11）の実処理: Gemini / OpenRouter API キーの保存（BYOK）と既定モデルの保存。
 // 状態仕様は docs/ui-states.md §2（trim 保存・API キーの空文字は保存抑止・
 // 既定モデルの空は「未設定に戻す」・保存中はボタン無効化）
+import { withDevSuffix } from '../build-info';
 import { createModelSelect } from '../app/ui/modelSelect';
 import { showToast } from '../app/ui/toast';
 import type { LlmProviderId } from '../domain/llmApiLog';
@@ -483,7 +484,8 @@ export async function bootstrapOptionsPage(doc: Document): Promise<void> {
   const rebuild = async (): Promise<void> => {
     // 静的部分（h1 / アプリを開くリンクの data-i18n）+ <html lang> + タイトルも追従させる
     doc.documentElement.lang = getUiLanguage();
-    doc.title = t('options.documentTitle');
+    // タブタイトルにも dev サフィックスを付ける（app / popup と同じ扱い。build-info.ts）
+    doc.title = withDevSuffix(t('options.documentTitle'));
     localizeDom(doc);
     body.replaceChildren(buildSettingsSections());
     await bootstrapOptions(doc);
