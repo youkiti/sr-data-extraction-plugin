@@ -26,11 +26,13 @@ module.exports = (_env, argv) => {
     throw new Error('WEBAUTH_CLIENT_ID が未設定です（.env を確認してください）');
   }
 
+  // dev ビルドで拡張名・ヘッダー・タブタイトルへ付けるサフィックス（本番は空文字）。
+  // manifest 名と画面表示（build-info.ts の withDevSuffix）の唯一の定義元
+  const devNameSuffix = isProduction ? '' : ' (dev)';
+
   const transformManifest = (content) => {
     const manifest = JSON.parse(content.toString());
-    if (!isProduction) {
-      manifest.name = `${manifest.name} (dev)`;
-    }
+    manifest.name = `${manifest.name}${devNameSuffix}`;
     return JSON.stringify(manifest, null, 2);
   };
 
@@ -68,7 +70,7 @@ module.exports = (_env, argv) => {
     plugins: [
       new webpack.DefinePlugin({
         __BUILD_DATE__: JSON.stringify(buildDate),
-        __IS_DEV_BUILD__: JSON.stringify(!isProduction),
+        __DEV_NAME_SUFFIX__: JSON.stringify(devNameSuffix),
         __WEBAUTH_CLIENT_ID__: JSON.stringify(webAuthClientId),
       }),
       new CopyWebpackPlugin({

@@ -375,9 +375,9 @@ describe('bootstrapApp', () => {
     expect(document.getElementById('app-build-date')?.textContent).toBe(`build ${BUILD_DATE}`);
   });
 
-  test('ヘッダーのアプリ名は本番相当ビルドではそのまま表示する（dev サフィックス無し）', async () => {
+  test('ヘッダーのアプリ名に dev サフィックスを付ける（jest は dev ビルド相当）', async () => {
     await bootstrapApp(asWindow(createWindowStub()));
-    expect(document.getElementById('app-title')?.textContent).toBe('SR データ抽出');
+    expect(document.getElementById('app-title')?.textContent).toBe('SR データ抽出 (dev)');
   });
 
   test('プロジェクト未選択（状態 A）: 未選択メッセージ + プロジェクト選択ページへの同一タブ導線', async () => {
@@ -421,7 +421,7 @@ describe('bootstrapApp', () => {
       await bootstrapApp(asWindow(createWindowStub()));
       // <html lang> / タイトル / ヘッダ / ナビ / ルート内容 / スクリーンリーダ通知が en
       expect(document.documentElement.lang).toBe('en');
-      expect(document.title).toBe('SR Data Extraction Plugin — Main view');
+      expect(document.title).toBe('SR Data Extraction Plugin — Main view (dev)');
       expect(document.getElementById('app-status')?.textContent).toContain('No project selected');
       expect(document.getElementById('app-context')?.textContent).toBe('Showing the Home screen');
       expect(document.getElementById('app-content')?.textContent).toContain('Project overview');

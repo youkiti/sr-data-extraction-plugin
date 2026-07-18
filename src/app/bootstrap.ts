@@ -145,7 +145,7 @@ import { createChromeGoogleApiDeps } from './services/factories';
 import type { ProjectRole } from '../domain/reviewer';
 import { loadCurrentProject } from '../features/project/projectStore';
 import { extractDocxText } from '../lib/docx/extractDocxText';
-import { BUILD_DATE, IS_DEV_BUILD, withDevSuffix } from '../build-info';
+import { BUILD_DATE, withDevSuffix } from '../build-info';
 import { createChromeProfileDeps } from '../lib/google/identity';
 import { createChromePickerDeps } from '../lib/google/picker';
 import { createProvider } from '../lib/llm/providerFactory';
@@ -360,7 +360,7 @@ export async function bootstrapApp(
   }
 
   // dev ビルドではヘッダーのアプリ名にも manifest 名と同じ「 (dev)」を付ける
-  titleButton.textContent = withDevSuffix(titleButton.textContent, IS_DEV_BUILD);
+  titleButton.textContent = withDevSuffix(titleButton.textContent);
 
   // アプリ名の下にビルド日を表示する（要素が無い環境では何もしない）
   const buildDateEl = doc.getElementById('app-build-date');
@@ -373,7 +373,8 @@ export async function bootstrapApp(
   setUiLanguage(await loadUiLanguage());
   const applyStaticI18n = (): void => {
     doc.documentElement.lang = getUiLanguage();
-    doc.title = t('app.documentTitle');
+    // タブタイトルにも dev サフィックスを付け、ストア版と dev 版をタブ上で区別できるようにする
+    doc.title = withDevSuffix(t('app.documentTitle'));
     localizeDom(doc);
   };
   applyStaticI18n();
