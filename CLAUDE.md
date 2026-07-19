@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 現在のフェーズ
 
-**v0.1.0 を Chrome ウェブストアで一般公開済み**（2026-07-12。[掲載ページ](https://chromewebstore.google.com/detail/sr-data-extraction-plugin/ibpbkgffgkmdmflamhadbcfjgfljjgip)）。MVP（S1〜S10 + Options）に加え、P1 前倒し分（RoB テンプレート・独立二重レビュー + 裁定 S12・pdf_native・R セットエクスポート・数値整合性チェック・κ 一致度レポート・Methods 文案カード等）まで実装済み。
+**v0.2.0 を Chrome ウェブストアで一般公開済み**（v0.1.0 = 2026-07-12、v0.2.0 = 2026-07-19。[掲載ページ](https://chromewebstore.google.com/detail/sr-data-extraction-plugin/ibpbkgffgkmdmflamhadbcfjgfljjgip)）。MVP（S1〜S10 + Options）に加え、P1 前倒し分（RoB テンプレート・独立二重レビュー + 裁定 S12・pdf_native・R セットエクスポート・数値整合性チェック・κ 一致度レポート・Methods 文案カード等）まで実装済み。v0.2.0 で OAuth スコープ縮小移行（issue #128〜#132）が完遂し、GCP 同意画面からの `spreadsheets` 削除まで完了（2026-07-19。100 人上限・未検証警告の対象外）。
 
 - **現行の作業指示**: [docs/remaining-work-plan.md](docs/remaining-work-plan.md) の「リリース後マイルストーン M1〜M4」。GitHub issue が作業単位で、各 issue が自己完結の指示（背景・方針・受け入れ条件）を持つ。
 - **実装済み機能の履歴**: [docs/dev-log-mvp.md](docs/dev-log-mvp.md)（〜v0.1.0 の凍結アーカイブ）+ git log / マージ済み PR。
