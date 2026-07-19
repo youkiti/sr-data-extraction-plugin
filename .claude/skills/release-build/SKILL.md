@@ -10,10 +10,11 @@ Chrome Web Store へ提出・更新する zip を作る手順。**Store は mani
 ## 前提知識
 
 - `src/manifest.json` の `key` は **dev（未パック読込）用に必須なので削除しない**。除去は提出用ステージングでのみ行う。
-- 拡張 ID: `ibpbkgffgkmdmflamhadbcfjgfljjgip`（`key` / `key.pem` から決定的に導出。GCP の OAuth クライアント〔Chrome 拡張機能タイプ〕のアイテム ID と一致していること）。
+- 拡張 ID: `ibpbkgffgkmdmflamhadbcfjgfljjgip`（`key` / `key.pem` から決定的に導出。GCP の **Web アプリケーション型 OAuth クライアント**〔issue #129 で Chrome 拡張機能タイプから移行〕のリダイレクト URI `https://<拡張ID>.chromiumapp.org/` と一致していること）。
 - 秘密鍵: `C:\Users\youki\codes\keys\sr-data-extraction-plugin-ext-key.pem`（**リポジトリ外・絶対にコミットや zip 以外へコピーしない**）。
   - **初回アップロードのみ** zip ルートへ `key.pem` として同梱する（Store が同じ拡張 ID を導出するため）。**初回提出は 2026-07-10 に完了済みなので、以後の更新では同梱しない**。
-- 本番ビルドは `.env` の `OAUTH_CLIENT_ID` **のみ**を読む（`LOCAL_OAUTH_CLIENT_ID` は dev 専用。webpack.config.js 参照）。未設定だと client_id が空になり OAuth が壊れた提出物ができる。
+- OAuth クライアント ID は manifest ではなく**コードへ注入**される: 本番ビルドは `.env` の `WEBAUTH_CLIENT_ID` **のみ**を読み、DefinePlugin の `__WEBAUTH_CLIENT_ID__` として service worker の認証ブローカーへ入る（`LOCAL_WEBAUTH_CLIENT_ID` は dev 優先用。webpack.config.js 参照）。本番で未設定なら webpack が**エラーで停止する**ので、壊れた提出物は作れない。
+- manifest に `oauth2` セクションは**無いのが正常形**（launchWebAuthFlow 移行後。スコープ `userinfo.email` + `drive.file` は認証ブローカー `src/background/authBroker.ts` の `OAUTH_SCOPES` が要求する）。
 - `release/` は gitignore 済み。
 
 ## 手順
@@ -22,11 +23,16 @@ Chrome Web Store へ提出・更新する zip を作る手順。**Store は mani
 
 1. `master` が最新で、リリース対象の変更がすべてマージ済みであることを確認する。
 2. **version バンプ**: `src/manifest.json` の `version` を上げる（Store は既存と同じ version の再アップロードを拒否する。初回 = 0.1.0）。バンプは変更なのでブランチ + PR を経由する（作業原則 1）。
-3. `.env` に `OAUTH_CLIENT_ID` が設定されていることを確認する（値は出力しない。キー名の存在確認のみ）:
+3. `.env` に `WEBAUTH_CLIENT_ID` が設定されていることを確認する（値は出力しない。キー名の存在確認のみ）:
    ```bash
-   grep -c '^OAUTH_CLIENT_ID=.' .env   # 1 なら OK
+   grep -c '^WEBAUTH_CLIENT_ID=.' .env   # 1 なら OK
    ```
 4. テスト・lint が通っていること（`npm run typecheck` / `npm test` / `npm run lint` / `npm run lint:css`。CI green の master ならスキップ可）。
+5. `hosted/picker.html` に変更が入ったリリースなら、gh-pages のデプロイ版が最新であることを確認する（新拡張は nonce echo を必須検証するため、古いページのままだと Picker 付与が失敗する。手順: hosted/README.md）:
+   ```bash
+   curl -s https://youkiti.github.io/sr-data-extraction-plugin/picker.html | grep -oE '2026-[0-9]{2}-[0-9]{2}[a-z]?'
+   # 出力されたバージョンコメントが src 側 hosted/picker.html の最新コメントと一致すること
+   ```
 
 ### 1. 本番ビルド
 
@@ -40,10 +46,14 @@ npm run build
 
 以下をすべて確認（1 つでも NG なら停止）:
 
-- `oauth2.client_id` が実値（`__OAUTH_CLIENT_ID__` や空文字でない）
 - `name` に `(dev)` サフィックスがない（= production ビルド）
 - `version` が意図した値
-- `oauth2.scopes` が `spreadsheets` + `drive.file` の 2 つのみ
+- `oauth2` セクションが**存在しない**（launchWebAuthFlow 移行後の正常形。あったら移行前の残骸なので停止）
+- client_id がコードへ注入されていること:
+  ```bash
+  grep -rc '__WEBAUTH_CLIENT_ID__' dist/ | grep -v ':0'   # 何も出なければ OK（プレースホルダ残存なし）
+  grep -c 'apps\.googleusercontent\.com' dist/background/service-worker.js   # 1 以上なら OK（実値が入っている）
+  ```
 
 ### 3. ステージング + zip 化（PowerShell）
 
@@ -75,9 +85,9 @@ zip を開いて以下を確認（1 つでも NG なら停止）:
 
 - `manifest.json` が **zip のルート**にある（`dist/manifest.json` のような入れ子は NG）
 - manifest に `key` フィールドが**ない**
-- `oauth2.client_id` が実値のまま（ConvertTo-Json での破損がないこと。scopes / permissions / host_permissions / externally_connectable も目視）
+- ConvertTo-Json での破損がないこと（`permissions` / `host_permissions` / `optional_host_permissions` / `externally_connectable` / `background` を目視。client_id は manifest ではなく `background/service-worker.js` 内なので、手順 2 と同じ grep を zip 展開先でも実行して確認）
 - 更新提出なら `key.pem` が**入っていない**こと（初回のみ同梱）
-- 同梱物: `_locales` / `app` / `background` / `options` / `popup` / `icons` / `pdf.worker.min.mjs` / `styles`
+- 同梱物: `_locales` / `app` / `background` / `cmaps` / `options` / `popup` / `icons` / `pdf.worker.min.mjs` / `styles`（`cmaps` は和文 PDF 用 CMap。issue #95 で同梱）
 
 ### 5. 提出
 
@@ -91,6 +101,6 @@ zip を開いて以下を確認（1 つでも NG なら停止）:
 | 症状 | 原因と対処 |
 |---|---|
 | 「マニフェストでは key フィールドを使用できません」 | manifest から `key` を除去し忘れ。手順 3 をやり直す |
-| OAuth が `bad client id` で失敗する提出物 | `.env` の `OAUTH_CLIENT_ID` 未設定のままビルドした（`LOCAL_OAUTH_CLIENT_ID` だけでは production に入らない）。手順 0-3 → 1 をやり直す |
+| ビルドが `WEBAUTH_CLIENT_ID が未設定です` で停止 | `.env` の `WEBAUTH_CLIENT_ID` 未設定（`LOCAL_WEBAUTH_CLIENT_ID` だけでは production に入らない）。手順 0-3 を確認して 1 をやり直す。※旧 `OAUTH_CLIENT_ID`（getAuthToken 時代）は issue #129 で廃止済みで、いくら設定しても読まれない |
 | 同じ version でアップロード拒否 | `src/manifest.json` の version バンプ忘れ。手順 0-2 |
 | 拡張 ID が変わった | 初回アップロードで `key.pem` を同梱し忘れた場合に起こる（初回は完了済みのため通常は起こらない）。GCP の OAuth クライアント設定と突き合わせて報告 |
