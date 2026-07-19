@@ -19,7 +19,7 @@ import { updateDocuments } from '../../../../src/features/documents/documentRepo
 import { updateStudies } from '../../../../src/features/documents/studyRepository';
 import type { TiabImportPlan } from '../../../../src/features/documents/tiabReview';
 import { readTiabSheet } from '../../../../src/features/documents/tiabSheetReader';
-import { TIAB_HANDOFF_STORAGE_KEY } from '../../../../src/features/project/tiabHandoffStore';
+import { tiabHandoffKey } from '../../../../src/features/project/tiabHandoffStore';
 import { openProjectFilesPicker, openSpreadsheetPicker } from '../../../../src/lib/google/picker';
 import { SheetsAccessDeniedError } from '../../../../src/lib/google/sheets';
 import { t } from '../../../../src/lib/i18n';
@@ -541,11 +541,13 @@ describe('applyTiabImport', () => {
     expect(mockRemoveLocal).not.toHaveBeenCalled();
   });
 
-  test('tiabHandoff がある場合は force 再読込の前に storage の引き継ぎ状態をクリアする', async () => {
+  test('反映したシートが引き継ぎ対象と一致すれば force 再読込の前に storage の引き継ぎ状態をクリアする', async () => {
     const store = storeWithPlan(makePlan());
     store.setState({
       documents: {
         ...store.getState().documents,
+        // tiab.sheetInput が引き継ぎ対象（HANDOFF_SHEET_ID）と一致するケース
+        tiabImport: { ...store.getState().documents.tiabImport, plan: makePlan(), sheetInput: HANDOFF_SHEET_ID },
         tiabHandoff: { tiabSheetId: HANDOFF_SHEET_ID, running: false, error: null },
       },
     });
@@ -560,9 +562,70 @@ describe('applyTiabImport', () => {
 
     await applyTiabImport(store, makeDeps());
 
-    expect(mockRemoveLocal).toHaveBeenCalledWith(TIAB_HANDOFF_STORAGE_KEY);
+    expect(mockRemoveLocal).toHaveBeenCalledWith(tiabHandoffKey('p1'));
     // 直後の loadDocuments(force) は loadTiabHandoff() → null（storage クリア済み）を読むため非表示になる
     expect(store.getState().documents.tiabHandoff).toBeNull();
+  });
+
+  test('反映したシートが引き継ぎ対象と一致しなければクリアしない（手動で別の tiab シートを入力して反映したケース）', async () => {
+    const store = storeWithPlan(makePlan());
+    store.setState({
+      documents: {
+        ...store.getState().documents,
+        // sheetInput は引き継ぎ対象（HANDOFF_SHEET_ID）とは別のシート
+        tiabImport: {
+          ...store.getState().documents.tiabImport,
+          plan: makePlan(),
+          sheetInput: 'another-manual-sheet-id-xxxxxxxxxx',
+        },
+        tiabHandoff: { tiabSheetId: HANDOFF_SHEET_ID, running: false, error: null },
+      },
+    });
+    mockReadDocuments.mockResolvedValue([makeDoc({ pmid: '123' })]);
+    mockReadStudies.mockResolvedValue([makeStudy({ studyLabel: 'Smith (2020)' })]);
+    mockReadCoverage.mockResolvedValue({
+      extracted: new Set<string>(),
+      interrupted: new Set<string>(),
+      latestCompletedRunByStudy: new Map(),
+    });
+    mockGetLocal.mockResolvedValue(null);
+
+    await applyTiabImport(store, makeDeps());
+
+    expect(mockRemoveLocal).not.toHaveBeenCalled();
+  });
+
+  test('storage のクリアに失敗しても（ベストエフォート）Sheets への反映は成功扱いのまま force 再読込まで進む', async () => {
+    const store = storeWithPlan(makePlan());
+    store.setState({
+      documents: {
+        ...store.getState().documents,
+        tiabImport: { ...store.getState().documents.tiabImport, plan: makePlan(), sheetInput: HANDOFF_SHEET_ID },
+        tiabHandoff: { tiabSheetId: HANDOFF_SHEET_ID, running: false, error: null },
+      },
+    });
+    mockReadDocuments.mockResolvedValue([makeDoc({ pmid: '123' })]);
+    mockReadStudies.mockResolvedValue([makeStudy({ studyLabel: 'Smith (2020)' })]);
+    mockReadCoverage.mockResolvedValue({
+      extracted: new Set<string>(),
+      interrupted: new Set<string>(),
+      latestCompletedRunByStudy: new Map(),
+    });
+    mockGetLocal.mockResolvedValue(null);
+    // mockRejectedValueOnce: jest.clearAllMocks()（beforeEach）は呼び出し履歴のみクリアし
+    // 実装は引き継がれるため、mockRejectedValue（永続）だと後続テストの removeLocal 呼び出しまで
+    // 失敗させてしまう。1 回だけ失敗させれば本テストの検証には十分
+    mockRemoveLocal.mockRejectedValueOnce(new Error('storage failed'));
+
+    await applyTiabImport(store, makeDeps());
+
+    expect(mockRemoveLocal).toHaveBeenCalledWith(tiabHandoffKey('p1'));
+    const tiab = store.getState().documents.tiabImport;
+    expect(tiab.applying).toBe(false);
+    expect(tiab.error).toBeNull();
+    expect(tiab.plan).toBeNull();
+    expect(document.body.textContent).toContain('tiab-review の採用リストを反映しました');
+    expect(mockReadDocuments).toHaveBeenCalled();
   });
 
   test('プラン未計算・反映中・プロジェクト未選択・変更 0 件は no-op', async () => {
@@ -703,7 +766,7 @@ describe('runTiabHandoffImport（S3 tiab-review 引き継ぎパネル。ui-state
     expect(mockOpenProjectFilesPicker).toHaveBeenCalledWith(expect.anything(), ['src-9']);
   });
 
-  test('Picker キャンセルは状態を維持する（running のみ false へ戻す）', async () => {
+  test('Picker キャンセル（null）は状態を維持する（running のみ false へ戻す）', async () => {
     const store = withHandoff();
     mockReadTiabSheet.mockResolvedValue(includedSheetResponse());
     mockOpenProjectFilesPicker.mockResolvedValue(null);
@@ -716,28 +779,58 @@ describe('runTiabHandoffImport（S3 tiab-review 引き継ぎパネル。ui-state
     expect(mockImportPickedSelections).not.toHaveBeenCalled();
   });
 
-  test('成功フロー: importPickedSelections → openTiabImport → previewTiabImport の順で呼ばれる', async () => {
+  test('Picker で空配列が確定してもキャンセル扱い（running のみ false へ戻す）', async () => {
+    const store = withHandoff();
+    mockReadTiabSheet.mockResolvedValue(includedSheetResponse());
+    mockOpenProjectFilesPicker.mockResolvedValue([]);
+
+    await runTiabHandoffImport(store, makeDeps());
+
+    const handoff = store.getState().documents.tiabHandoff;
+    expect(handoff?.running).toBe(false);
+    expect(handoff?.error).toBeNull();
+    expect(mockImportPickedSelections).not.toHaveBeenCalled();
+  });
+
+  test('importPickedSelections が false（別の取り込みと競合）なら busy エラーで打ち切り、preview は実行しない', async () => {
     const store = withHandoff();
     mockReadTiabSheet.mockResolvedValue(includedSheetResponse());
     const selections = [{ sourceFileId: 'src-9', filename: 'a.pdf' }];
     mockOpenProjectFilesPicker.mockResolvedValue(selections);
-    mockImportPickedSelections.mockResolvedValue(undefined);
+    mockImportPickedSelections.mockResolvedValue(false);
 
     await runTiabHandoffImport(store, makeDeps());
 
     expect(mockImportPickedSelections).toHaveBeenCalledWith(store, expect.anything(), selections);
-    // 1 回目の readTiabSheet（handoff の fulltext 列挙）→ importPickedSelections →
-    // 2 回目の readTiabSheet（openTiabImport 後の previewTiabImport 内部呼び出し）の順序
-    const firstRead = mockReadTiabSheet.mock.invocationCallOrder[0] as number;
-    const importedAt = mockImportPickedSelections.mock.invocationCallOrder[0] as number;
-    const secondRead = mockReadTiabSheet.mock.invocationCallOrder[1] as number;
-    expect(firstRead).toBeLessThan(importedAt);
-    expect(importedAt).toBeLessThan(secondRead);
+    // readTiabSheet は fulltext 列挙用の 1 回だけ（busy で打ち切るため previewTiabImport は呼ばれない）
+    expect(mockReadTiabSheet).toHaveBeenCalledTimes(1);
+    const handoff = store.getState().documents.tiabHandoff;
+    expect(handoff?.running).toBe(false);
+    expect(handoff?.error).toBe(t('documents.tiabHandoffBusy'));
+    // openTiabImport / previewTiabImport は呼ばれていない
+    const tiab = store.getState().documents.tiabImport;
+    expect(tiab.open).toBe(false);
+    expect(tiab.plan).toBeNull();
+  });
+
+  test('成功フロー: importPickedSelections → openTiabImport → previewTiabImport の順で呼ばれる（readTiabSheet は 1 回だけ）', async () => {
+    const store = withHandoff();
+    mockReadTiabSheet.mockResolvedValue(includedSheetResponse());
+    const selections = [{ sourceFileId: 'src-9', filename: 'a.pdf' }];
+    mockOpenProjectFilesPicker.mockResolvedValue(selections);
+    mockImportPickedSelections.mockResolvedValue(true);
+
+    await runTiabHandoffImport(store, makeDeps());
+
+    expect(mockImportPickedSelections).toHaveBeenCalledWith(store, expect.anything(), selections);
+    // previewTiabImport には直前に読んだ sheet（prefetched）を渡すため、readTiabSheet は
+    // fulltext 列挙用の 1 回だけで済む（Sheets API の往復を 1 回に抑える）
+    expect(mockReadTiabSheet).toHaveBeenCalledTimes(1);
 
     // openTiabImport が呼ばれた証跡（previewTiabImport 自体は open を触らない）
     const tiab = store.getState().documents.tiabImport;
     expect(tiab.open).toBe(true);
-    // previewTiabImport が成功した証跡（反映プレビューの自動実行）
+    // previewTiabImport が成功した証跡（prefetched のシートから計算した反映プレビューの自動実行）
     expect(tiab.plan?.includeCount).toBe(1);
     expect(tiab.sheetInput).toBe(HANDOFF_SHEET_ID);
 
@@ -787,14 +880,23 @@ describe('runTiabHandoffImport（S3 tiab-review 引き継ぎパネル。ui-state
 });
 
 describe('dismissTiabHandoff（「この案内を閉じる」）', () => {
-  test('storage の引き継ぎ状態を破棄して tiabHandoff を null にする', async () => {
+  test('storage の引き継ぎ状態（プロジェクト単位キー）を破棄して tiabHandoff を null にする', async () => {
     const store = withHandoff();
 
     await dismissTiabHandoff(store);
 
-    expect(mockRemoveLocal).toHaveBeenCalledWith(TIAB_HANDOFF_STORAGE_KEY);
+    expect(mockRemoveLocal).toHaveBeenCalledWith(tiabHandoffKey('p1'));
     expect(store.getState().documents.tiabHandoff).toBeNull();
     // 他スライスは維持する
     expect(store.getState().documents.tiabImport.open).toBe(false);
+  });
+
+  test('プロジェクト未選択なら storage には触らず state だけ null にする', async () => {
+    const store = withHandoff({}, { withProject: false });
+
+    await dismissTiabHandoff(store);
+
+    expect(mockRemoveLocal).not.toHaveBeenCalled();
+    expect(store.getState().documents.tiabHandoff).toBeNull();
   });
 });

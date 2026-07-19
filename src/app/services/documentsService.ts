@@ -103,14 +103,16 @@ export async function loadDocuments(
     const studies = await readStudies(spreadsheetId, deps.google);
     const coverage = await readRunStudyCoverage(spreadsheetId, deps.google);
     const ignored = (await getLocal<string[]>(ignoredCandidatesKey(spreadsheetId))) ?? [];
-    const handoff = await loadTiabHandoff();
+    // 引き継ぎ状態（プロジェクト単位キー）の読み出しは Sheets 読みの後 = setState の直前に置く。
+    // Sheets 読み中に「この案内を閉じる」で storage が破棄された場合に、先に読んだ古い値で
+    // パネルを復活させてしまう競合窓を最小化するため
+    const handoff = await loadTiabHandoff(project.projectId);
     const current = store.getState();
-    // storage の引き継ぎ状態が現在のプロジェクトを指すときだけパネルを表示する。
     // 取り込み完了後の force 再読込中でも running / error 表示が消えないよう、
-    // 直前の tiabHandoff（同一プロジェクトぶん）があればその running / error を維持する
+    // 直前の tiabHandoff があればその running / error を維持する
     const previousHandoff = current.documents.tiabHandoff;
     const tiabHandoff: TiabHandoffState | null =
-      handoff !== null && handoff.projectId === project.projectId
+      handoff !== null
         ? {
             tiabSheetId: handoff.tiabSheetId,
             running: previousHandoff?.running ?? false,
@@ -321,18 +323,20 @@ async function runImportSelections(
  * runImportSelections 呼び出しまでを担う共通処理）。importFromPicker の Picker 確定後の処理を
  * 抽出したもので、tiab-review 引き継ぎパネル（tiabImportService.runTiabHandoffImport。
  * ui-states.md §3）のファイル許可モード Picker 確定後の取り込みとしても再利用する。
- * project 未選択・取り込み中は no-op（呼び出し元を増やしてもガードが抜けないよう、
- * importFromPicker と同じ判定をここにも持たせる）
+ * project 未選択・取り込み中は取り込まずに false を返す（Picker 確定は非同期のため、
+ * Picker を開いている間に別の取り込みが始まっていることがある。黙って捨てると
+ * 「選択したのに何も起きない」になるので、呼び出し側が false を見てユーザーへ知らせる）。
+ * 取り込み処理に入った（結果はトースト / 進捗行で提示済み）ときは true
  */
 export async function importPickedSelections(
   store: Store,
   deps: DocumentsServiceDeps,
   selections: readonly PickerSelection[],
-): Promise<void> {
+): Promise<boolean> {
   const state = store.getState();
   const project = state.currentProject;
   if (!project || state.documents.importing || selections.length === 0) {
-    return;
+    return false;
   }
 
   // フォルダ選択を直下 PDF へ展開する（列挙に数秒かかりうるため先に importing を立てる）
@@ -346,15 +350,16 @@ export async function importPickedSelections(
   } catch (err) {
     patchDocuments(store, { importing: false });
     showToast(t('documents.toastFolderFailed', { reason: toMessage(err) }));
-    return;
+    return true;
   }
   if (fileSelections.length === 0) {
     patchDocuments(store, { importing: false });
     showToast(t('documents.toastNoPdfInFolder'));
-    return;
+    return true;
   }
 
   await runImportSelections(store, deps, project, fileSelections);
+  return true;
 }
 
 /**
@@ -384,7 +389,11 @@ export async function importFromPicker(
     return;
   }
 
-  await importPickedSelections(store, deps, selections);
+  // Picker を開いている間に別の取り込み（ローカル D&D 等）が始まっていた場合、確定した
+  // 選択は取り込まれない。黙って捨てると「選択したのに何も起きない」になるため知らせる
+  if (!(await importPickedSelections(store, deps, selections))) {
+    showToast(t('documents.toastImportBusy'));
+  }
 }
 
 /** ローカルファイルの進捗行キー兼バッチ内の粗い重複排除キー（filename + size。内容同一の判定は dedupSelections の MD5 が担う） */

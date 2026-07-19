@@ -382,7 +382,13 @@ function renderTiabHandoffPanel(handoff: TiabHandoffState, state: AppState, ctx:
     text: t('documents.tiabHandoffImport'),
     attributes: { type: 'button' },
   }) as HTMLButtonElement;
-  importButton.disabled = handoff.running || state.documents.importing;
+  // runTiabHandoffImport のガード（取り込み中・tiab カードの読込 / 反映中は no-op）と
+  // 揃える — ガードだけだと「押せるのに何も起きない」ボタンになる
+  importButton.disabled =
+    handoff.running ||
+    state.documents.importing ||
+    state.documents.tiabImport.loading ||
+    state.documents.tiabImport.applying;
   importButton.addEventListener('click', () => ctx.documents.onTiabHandoffImport());
 
   const dismissButton = el('button', {

@@ -71,6 +71,8 @@ export const en: Record<MessageKey, string> = {
   'popup.tiabPicking': 'Choose the sheet in the picker…',
   'popup.tiabChecking': 'Checking the selected sheet…',
   'popup.tiabDetected': 'Found {n} included references. Confirm the project title and create.',
+  'popup.tiabNoIncludes':
+    'No included references were found. Check the screening decisions in tiab-review.',
   'popup.tiabCreateSubmit': 'Create and continue',
   'popup.openTitle': 'Open by spreadsheet ID / URL',
   'popup.openIdLabel': 'Spreadsheet ID or URL',
@@ -186,6 +188,10 @@ export const en: Record<MessageKey, string> = {
   'documents.tiabHandoffImport': 'Import the included PDFs',
   'documents.tiabHandoffDismiss': 'Dismiss this guide',
   'documents.tiabHandoffRunning': 'Checking the tiab-review fulltext files…',
+  'documents.tiabHandoffBusy':
+    'Another import is in progress, so the included PDFs were not imported. Try again after it finishes',
+  'documents.toastImportBusy':
+    'Another import is in progress, so the selected files were not imported. Try again after it finishes',
   'documents.tiabHandoffNoFulltext':
     'No Drive fulltext PDFs were found for the included references. Import the PDFs with "Import PDFs / folders from Drive" first, then run "Load the included list from tiab-review"',
   'documents.tiabOpen': 'Load the included list from tiab-review',

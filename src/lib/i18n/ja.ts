@@ -72,6 +72,8 @@ export const ja = {
   'popup.tiabPicking': 'Picker でシートを選んでください…',
   'popup.tiabChecking': '選択したシートを確認しています…',
   'popup.tiabDetected': 'include {n} 件を検出しました。プロジェクト名を確認して作成してください。',
+  'popup.tiabNoIncludes':
+    'include の文献が見つかりませんでした。tiab-review 側の判定状況を確認してください。',
   'popup.tiabCreateSubmit': '作成して続行',
   'popup.openTitle': 'スプレッドシート ID / URL で開く',
   'popup.openIdLabel': 'スプレッドシート ID または URL',
@@ -187,6 +189,10 @@ export const ja = {
   'documents.tiabHandoffImport': 'include の PDF をまとめて取り込む',
   'documents.tiabHandoffDismiss': 'この案内を閉じる',
   'documents.tiabHandoffRunning': 'tiab-review の fulltext を確認しています…',
+  'documents.tiabHandoffBusy':
+    '別の取り込みが実行中のため、include の PDF を取り込めませんでした。完了後にもう一度お試しください',
+  'documents.toastImportBusy':
+    '別の取り込みが実行中のため、選択したファイルを取り込めませんでした。完了後にもう一度お試しください',
   'documents.tiabHandoffNoFulltext':
     'include に Drive 上の fulltext PDF が見つかりませんでした。「Drive から PDF / フォルダを取り込む」で PDF を追加してから、「tiab-review から採用リストを読み込む」を実行してください',
   'documents.tiabOpen': 'tiab-review から採用リストを読み込む',

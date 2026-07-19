@@ -24,6 +24,13 @@ export interface TiabSheetData {
   activeFulltextAiRound: string | null;
 }
 
+/**
+ * tiab-review のシートであることの判定・読み出しに使う必須タブ
+ * （tiab-review-plugin/src/lib/sheets-api.ts の createSpreadsheet が生成するタブのうち
+ * データ本体の 2 つ。S1 の誤入力検出〔selectProject〕と直読みで単一の定義を共有する）
+ */
+export const TIAB_REQUIRED_TABS = ['References', 'Decisions'] as const;
+
 /** GoogleApiError をユーザー向けの文言へ変換する（タブ欠落の典型例。アクセス拒否は別経路） */
 function toFriendlyError(err: unknown): Error {
   if (err instanceof GoogleApiError && err.status === 400) {
@@ -54,7 +61,7 @@ export async function readTiabSheet(
   try {
     [refValues, decisionValues] = (await getBatchValues(
       spreadsheetId,
-      ['References', 'Decisions'],
+      [...TIAB_REQUIRED_TABS],
       deps,
     )) as [string[][], string[][]];
   } catch (err) {

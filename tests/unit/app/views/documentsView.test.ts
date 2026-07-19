@@ -1003,6 +1003,32 @@ describe('renderDocumentsView: tiab-review 引き継ぎパネル', () => {
     expect((view.querySelector('#tiab-handoff-dismiss') as HTMLButtonElement).disabled).toBe(false);
   });
 
+  test('tiab カードの読込中（tiabImport.loading）は import ボタンだけ disabled にする（runTiabHandoffImport のガードと揃える）', () => {
+    const { ctx } = makeCtx();
+    const view = renderDocumentsView(
+      makeState({
+        tiabHandoff: handoffState(),
+        tiabImport: { ...createInitialState().documents.tiabImport, loading: true },
+      }),
+      ctx,
+    );
+    expect((view.querySelector('#tiab-handoff-import') as HTMLButtonElement).disabled).toBe(true);
+    expect((view.querySelector('#tiab-handoff-dismiss') as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  test('tiab カードの反映中（tiabImport.applying）は import ボタンだけ disabled にする（runTiabHandoffImport のガードと揃える）', () => {
+    const { ctx } = makeCtx();
+    const view = renderDocumentsView(
+      makeState({
+        tiabHandoff: handoffState(),
+        tiabImport: { ...createInitialState().documents.tiabImport, applying: true },
+      }),
+      ctx,
+    );
+    expect((view.querySelector('#tiab-handoff-import') as HTMLButtonElement).disabled).toBe(true);
+    expect((view.querySelector('#tiab-handoff-dismiss') as HTMLButtonElement).disabled).toBe(false);
+  });
+
   test('エラーあり: role=alert でエラー文言を表示する（パネル自体は残る）', () => {
     const { ctx } = makeCtx();
     const view = renderDocumentsView(

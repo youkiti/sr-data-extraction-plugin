@@ -2,6 +2,7 @@
 // （sr-query-builder の selectProject を移植し、本拡張固有のタブ存在確認を追加）
 import { CURRENT_SCHEMA_VERSION, type ProjectMeta } from '../../domain/project';
 import { SHEET_HEADERS } from '../../domain/sheetsSchema';
+import { TIAB_REQUIRED_TABS } from '../documents/tiabSheetReader';
 import {
   getSheetTitles,
   getSheetValues,
@@ -49,11 +50,17 @@ export async function loadProjectMeta(
   const tabTitles = await classifyAccess(getSheetTitles(spreadsheetId, deps));
   const missing = REQUIRED_TABS.filter((tab) => !tabTitles.includes(tab));
   // tiab-review のスプレッドシートの誤入力は専用文言で正しい導線へ案内する
-  // （References / Decisions タブを持ち、本拡張のプロジェクトとして不成立のシート。
-  //   採用リストの読み込みは S3 の「tiab-review から採用リストを読み込む」で行う。
-  //   docs/ui-states.md §1）
-  const looksLikeTiabSheet = ['References', 'Decisions'].every((tab) => tabTitles.includes(tab));
-  if (looksLikeTiabSheet && (!tabTitles.includes('Meta') || missing.length > 0)) {
+  // （採用リストの読み込みは S3 の「tiab-review から採用リストを読み込む」で行う。
+  //   docs/ui-states.md §1）。判定は References / Decisions を持ち、かつ Meta も
+  //   本拡張の必須タブも一切持たないシートに限る — 本拡張のプロジェクトにも
+  //   Decisions タブがあるため、緩い判定だと「壊れた本拡張のシート」を tiab-review と
+  //   誤診して正しい復旧（欠けたタブの案内）から遠ざけてしまう。tiab-review のシートは
+  //   References / Decisions / Config のみで Meta を持たない
+  const looksLikeTiabSheet =
+    TIAB_REQUIRED_TABS.every((tab) => tabTitles.includes(tab)) &&
+    !tabTitles.includes('Meta') &&
+    missing.length === REQUIRED_TABS.length;
+  if (looksLikeTiabSheet) {
     throw new ProjectSchemaError(
       'これは tiab-review のスプレッドシートのようです。この画面では開けません。新規プロジェクトを作成し、文献取り込み画面の「tiab-review から採用リストを読み込む」から読み込んでください'
     );

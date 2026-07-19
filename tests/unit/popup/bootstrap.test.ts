@@ -789,7 +789,90 @@ describe('bootstrapPopup', () => {
       await flush();
       expect(el('tiab-error').textContent).toBe('');
       expect(deps.openAppTab).toHaveBeenCalledWith('#/documents');
-      await expect(loadTiabHandoff()).resolves.toBeNull();
+      const projectId = (await loadCurrentProject())?.projectId as string;
+      await expect(loadTiabHandoff(projectId)).resolves.toBeNull();
+    });
+
+    test('状態 C（検証成功だが include 0 件）: 作成へ進ませず tiabNoIncludes を表示する（ui-states.md §1）', async () => {
+      const openTiabSheetPicker = jest.fn(async () => SELECTION);
+      const deps = makeDeps({
+        openTiabSheetPicker,
+        google: makeTiabGoogle({ includeCount: 0 }),
+      });
+      await bootstrapPopup(document, deps);
+      el<HTMLButtonElement>('tiab-pick').click();
+      await flush();
+      expect(el<HTMLFormElement>('tiab-create-form').hidden).toBe(true);
+      expect(el('tiab-status').textContent).toBe('');
+      expect(el('tiab-error').textContent).toBe(
+        'include の文献が見つかりませんでした。tiab-review 側の判定状況を確認してください。',
+      );
+      expect(el<HTMLButtonElement>('tiab-pick').disabled).toBe(false);
+    });
+
+    describe('Picker 付与直後の伝播遅延（issue #142 と同じ事情。SheetsAccessDeniedError のみリトライ）', () => {
+      /**
+       * References / Decisions の values:batchGet だけ最初の attempts 回を 404（アクセス拒否）で
+       * 応答し、以降は makeTiabGoogle の正常応答へフォールバックする google スタブ
+       */
+      function makeFlakyTiabGoogle(deniedAttempts: number): GoogleApiDeps {
+        const ok = makeTiabGoogle({ includeCount: 1 });
+        let calls = 0;
+        return {
+          getAccessToken: async () => 'tok',
+          fetch: (async (input: RequestInfo | URL, init?: RequestInit) => {
+            const url = String(input);
+            if (url.includes('values:batchGet')) {
+              calls += 1;
+              if (calls <= deniedAttempts) {
+                return {
+                  ok: false,
+                  status: 404,
+                  json: async () => ({}),
+                  text: async () => 'not found',
+                } as Response;
+              }
+            }
+            return (ok.fetch as typeof fetch)(input, init);
+          }) as typeof fetch,
+        };
+      }
+
+      test('1 回目だけアクセス拒否ならリトライして成功する', async () => {
+        const openTiabSheetPicker = jest.fn(async () => SELECTION);
+        const sleep = jest.fn(async () => undefined);
+        const deps = makeDeps({
+          openTiabSheetPicker,
+          google: makeFlakyTiabGoogle(1),
+          sleep,
+        });
+        await bootstrapPopup(document, deps);
+        el<HTMLButtonElement>('tiab-pick').click();
+        await flush();
+        expect(sleep).toHaveBeenCalledTimes(1);
+        expect(sleep).toHaveBeenCalledWith(2_000);
+        expect(el<HTMLFormElement>('tiab-create-form').hidden).toBe(false);
+        expect(el('tiab-error').textContent).toBe('');
+      });
+
+      test('GRANT_RETRY_MAX 回（3 回）とも拒否されたら最終エラーを表示する', async () => {
+        const openTiabSheetPicker = jest.fn(async () => SELECTION);
+        const sleep = jest.fn(async () => undefined);
+        const deps = makeDeps({
+          openTiabSheetPicker,
+          google: makeFlakyTiabGoogle(3),
+          sleep,
+        });
+        await bootstrapPopup(document, deps);
+        el<HTMLButtonElement>('tiab-pick').click();
+        await flush();
+        // 3 回試行・間隔は 2 回（1→2, 2→3）。3 回目は待たずに打ち切る（runGrantFlow と同じ挙動）
+        expect(sleep).toHaveBeenCalledTimes(2);
+        expect(sleep).toHaveBeenCalledWith(2_000);
+        expect(el('tiab-error').textContent).toContain('権限がまだありません');
+        expect(el<HTMLFormElement>('tiab-create-form').hidden).toBe(true);
+        expect(el<HTMLButtonElement>('tiab-pick').disabled).toBe(false);
+      });
     });
 
     test('状態 E: 作成成功で引き継ぎ状態を保存し #/documents へ遷移する', async () => {
@@ -815,14 +898,44 @@ describe('bootstrapPopup', () => {
       expect(el('tiab-error').textContent).toBe('');
       expect(deps.openAppTab).toHaveBeenCalledWith('#/documents');
       await expect(loadCurrentProject()).resolves.toMatchObject({ name: 'tiab 引き継ぎ SR' });
-      const projectId = (await loadCurrentProject())?.projectId;
-      await expect(loadTiabHandoff()).resolves.toEqual({
-        projectId,
+      const projectId = (await loadCurrentProject())?.projectId as string;
+      await expect(loadTiabHandoff(projectId)).resolves.toEqual({
         tiabSheetId: 'TIAB-SID',
       });
     });
 
+    test('引き継ぎ状態の storage 保存に失敗しても（ベストエフォート）#/documents へ遷移する', async () => {
+      const chromeMock = installChromeMock();
+      // tiab-handoff キーの書き込みだけ失敗させる（プロジェクト作成自体の保存は通常どおり）
+      chromeMock.storage.local.set.mockImplementation(async (items: Record<string, unknown>) => {
+        if (Object.keys(items).some((key) => key.startsWith('sr-data-extraction:tiab-handoff:'))) {
+          throw new Error('quota exceeded');
+        }
+        Object.assign(chromeMock.storage.local.data, items);
+      });
+      const openTiabSheetPicker = jest.fn(async () => SELECTION);
+      const deps = makeDeps({
+        openTiabSheetPicker,
+        google: makeTiabGoogle({ includeCount: 1 }),
+      });
+      await bootstrapPopup(document, deps);
+      el<HTMLButtonElement>('tiab-pick').click();
+      await flush();
+
+      const form = el<HTMLFormElement>('tiab-create-form');
+      el<HTMLInputElement>('tiab-project-title').value = 'tiab 引き継ぎ SR（保存失敗）';
+      form.dispatchEvent(new Event('submit', { cancelable: true }));
+      await flush();
+
+      expect(el('tiab-error').textContent).toBe('');
+      expect(deps.openAppTab).toHaveBeenCalledWith('#/documents');
+      await expect(loadCurrentProject()).resolves.toMatchObject({
+        name: 'tiab 引き継ぎ SR（保存失敗）',
+      });
+    });
+
     test('状態 E（失敗）: 作成失敗でエラー表示・ボタン復帰・プロジェクトは作られない', async () => {
+      const chromeMock = installChromeMock();
       const openTiabSheetPicker = jest.fn(async () => SELECTION);
       const google: GoogleApiDeps = {
         getAccessToken: async () => 'tok',
@@ -860,7 +973,14 @@ describe('bootstrapPopup', () => {
       expect(submit.disabled).toBe(false);
       expect(submit.textContent).toBe('作成して続行');
       expect(deps.openAppTab).not.toHaveBeenCalled();
-      await expect(loadTiabHandoff()).resolves.toBeNull();
+      // プロジェクトが作られていない（= projectId が無い）ため、どの tiab-handoff キーにも
+      // 書き込みが起きていないことを storage.local.set の呼び出し自体で確認する
+      const tiabWrites = chromeMock.storage.local.set.mock.calls.filter(([items]) =>
+        Object.keys(items as Record<string, unknown>).some((key) =>
+          key.startsWith('sr-data-extraction:tiab-handoff:'),
+        ),
+      );
+      expect(tiabWrites).toHaveLength(0);
     });
   });
 });

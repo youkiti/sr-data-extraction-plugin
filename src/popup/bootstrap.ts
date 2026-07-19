@@ -438,10 +438,33 @@ async function runGrantFlow(
 }
 
 /**
+ * Picker 選択直後のシート検証読み。Picker での選択（= drive.file 付与）は Sheets API への
+ * 伝播に数秒かかることがある（runGrantFlow と同じ事情）ため、アクセス拒否
+ * （SheetsAccessDeniedError）だけは最大 GRANT_RETRY_MAX 回・GRANT_RETRY_INTERVAL_MS 間隔で
+ * リトライする。それ以外の失敗（tiab-review のシートでない等）は即座に投げ直す
+ */
+async function readTiabSheetWithGrantRetry(
+  deps: PopupDeps,
+  sheetId: string,
+): ReturnType<typeof readTiabSheet> {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      return await readTiabSheet(sheetId, deps.google);
+    } catch (err) {
+      if (!(err instanceof SheetsAccessDeniedError) || attempt >= GRANT_RETRY_MAX) {
+        throw err;
+      }
+      await deps.sleep(GRANT_RETRY_INTERVAL_MS);
+    }
+  }
+}
+
+/**
  * tiab-review から引き継いで作成（S1 #popup-tiab-handoff。docs/ui-states.md §1 状態 A〜E）。
  * Picker でシートを選ぶ → References / Decisions を直読みして include 件数を検証 →
- * タイトル確認フォームで新規プロジェクトを作成し、引き継ぎ状態（projectId + tiab シート ID）を
- * chrome.storage.local へ保存して S3 documents（#/documents）へ直接遷移する。
+ * タイトル確認フォームで新規プロジェクトを作成し、引き継ぎ状態（tiab シート ID）を
+ * chrome.storage.local（プロジェクト単位キー）へ保存して S3 documents（#/documents）へ
+ * 直接遷移する。
  */
 function bindTiabHandoff(els: PopupElements, deps: PopupDeps): void {
   // 検証成功した tiab シートの ID（作成フォーム submit で使う。別シートの選び直しで更新される）
@@ -460,14 +483,23 @@ function bindTiabHandoff(els: PopupElements, deps: PopupDeps): void {
           els.tiabStatus.textContent = '';
           return;
         }
-        // 状態 C: 検証中
+        // 状態 C: 検証中（付与直後の伝播遅延はリトライで吸収する）
         els.tiabStatus.textContent = t('popup.tiabChecking');
-        const sheet = await readTiabSheet(selection.sourceFileId, deps.google);
+        const sheet = await readTiabSheetWithGrantRetry(deps, selection.sourceFileId);
         const adopted = resolveAdoptedReferences(
           sheet.references,
           sheet.decisions,
           sheet.activeFulltextAiRound,
         );
+        if (adopted.includes.length === 0) {
+          // include 0 件のまま作成しても S3 の引き継ぎで取り込めるものが無い（行き止まり）
+          // ため、作成へ進ませず tiab-review 側の判定状況の確認を促す
+          checkedSheetId = null;
+          els.tiabForm.hidden = true;
+          els.tiabStatus.textContent = '';
+          els.tiabError.textContent = t('popup.tiabNoIncludes');
+          return;
+        }
         // 状態 D: 作成確認
         checkedSheetId = selection.sourceFileId;
         els.tiabForm.hidden = false;
@@ -496,12 +528,16 @@ function bindTiabHandoff(els: PopupElements, deps: PopupDeps): void {
     void createNewProject(els.tiabTitle.value, { google: deps.google, profile: deps.profile })
       .then(async (ref) => {
         if (sheetId !== null) {
-          await saveTiabHandoff({ projectId: ref.projectId, tiabSheetId: sheetId });
+          // 引き継ぎ状態の保存はベストエフォート — プロジェクトは既に作成済みなので、
+          // storage の失敗で作成を失敗扱いにしない（失敗時は S3 の引き継ぎパネルが
+          // 出ないだけで、従来の手動導線で続行できる。エラー表示のまま再送信させると
+          // 同一プロジェクトの二重作成につながる）
+          await saveTiabHandoff(ref.projectId, { tiabSheetId: sheetId }).catch(() => undefined);
         }
         deps.openAppTab('#/documents');
       })
       .catch((err: unknown) => {
-        // 状態 E（失敗）: プロジェクトは作られない
+        // 状態 E（作成失敗）: プロジェクトは作られていないので再送信でやり直せる
         els.tiabError.textContent = formatError(err);
       })
       .finally(() => {

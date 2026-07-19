@@ -18,7 +18,7 @@ import {
   planTiabImport,
   resolveAdoptedReferences,
 } from '../../features/documents/tiabReview';
-import { readTiabSheet } from '../../features/documents/tiabSheetReader';
+import { readTiabSheet, type TiabSheetData } from '../../features/documents/tiabSheetReader';
 import {
   openProjectFilesPicker,
   openSpreadsheetPicker,
@@ -82,12 +82,15 @@ export function closeTiabImport(store: Store): void {
 
 /**
  * tiab-review シートを読み、最終判定 include の抽出 → 反映プランの計算までを行う（プレビュー）。
- * 実際の書き込みは applyTiabImport が担う
+ * 実際の書き込みは applyTiabImport が担う。
+ * prefetched を渡すとシートの再読込を省く（引き継ぎパネルの自動プレビュー用。呼び出し側が
+ * 直前に読んだ TiabSheetData を流用し、Sheets API の読みを 1 往復に抑える）
  */
 export async function previewTiabImport(
   store: Store,
   deps: DocumentsServiceDeps,
   rawInput: string,
+  prefetched?: TiabSheetData,
 ): Promise<void> {
   const state = store.getState();
   const project = state.currentProject;
@@ -127,7 +130,7 @@ export async function previewTiabImport(
     result: null,
   });
   try {
-    const sheet = await readTiabSheet(spreadsheetId, deps.google);
+    const sheet = prefetched ?? (await readTiabSheet(spreadsheetId, deps.google));
     const adopted = resolveAdoptedReferences(
       sheet.references,
       sheet.decisions,
@@ -220,9 +223,16 @@ export async function applyTiabImport(store: Store, deps: DocumentsServiceDeps):
     });
     showToast(t('documents.tiabToastApplied'));
     // 引き継ぎパネル経由の反映が確定したら storage の引き継ぎ状態をクリアする（force 再読込の
-    // 同期でパネルが消える。ui-states.md §3「反映実行（#tiab-apply）成功で…」）
-    if (store.getState().documents.tiabHandoff !== null) {
-      await clearTiabHandoff();
+    // 同期でパネルが消える。ui-states.md §3「反映実行（#tiab-apply）成功で…」）。
+    // 手動でカードに別の tiab シートを入れて反映したケースでは保留中の引き継ぎを消さないよう、
+    // 反映したシートが引き継ぎ対象と一致するときだけクリアする。クリアはベストエフォート —
+    // Sheets への反映は既に成功しているので、storage の失敗で成功済みの反映を失敗扱いにしない
+    const handoffAfterApply = store.getState().documents.tiabHandoff;
+    if (
+      handoffAfterApply !== null &&
+      parseTiabSpreadsheetId(tiab.sheetInput) === handoffAfterApply.tiabSheetId
+    ) {
+      await clearTiabHandoff(project.projectId).catch(() => undefined);
     }
     await loadDocuments(store, deps, { force: true });
   } catch (err) {
@@ -277,14 +287,21 @@ export async function runTiabHandoffImport(
       return;
     }
     const selections = await openProjectFilesPicker(deps.picker, fileIds);
-    if (selections === null) {
-      // キャンセル / タブを閉じる: 状態を維持する（案内・ボタンは残る）
+    if (selections === null || selections.length === 0) {
+      // キャンセル / タブを閉じる / 空選択: 状態を維持する（案内・ボタンは残る）
       patchTiabHandoff(store, { running: false });
       return;
     }
-    await importPickedSelections(store, deps, selections);
+    // Picker を開いている間に別の取り込みが始まっていた場合は取り込まれない（false）。
+    // そのままプレビューへ進むと include が全件「PDF 未取り込み」に見えてしまうため、
+    // ここで打ち切ってエラーとして知らせる
+    if (!(await importPickedSelections(store, deps, selections))) {
+      patchTiabHandoff(store, { running: false, error: t('documents.tiabHandoffBusy') });
+      return;
+    }
     openTiabImport(store);
-    await previewTiabImport(store, deps, handoff.tiabSheetId);
+    // シートは直前に読んだ内容を流用してプレビューする（Sheets API の読みを 1 往復に抑える）
+    await previewTiabImport(store, deps, handoff.tiabSheetId, sheet);
     patchTiabHandoff(store, { running: false });
   } catch (err) {
     // Picker 起動失敗も含め、ここで一括して案内する（トーストは不要 — パネル内エラーで完結）
@@ -293,11 +310,14 @@ export async function runTiabHandoffImport(
 }
 
 /**
- * 「この案内を閉じる」: storage の引き継ぎ状態を破棄してパネルを消す
+ * 「この案内を閉じる」: storage の引き継ぎ状態（現在のプロジェクトぶん）を破棄してパネルを消す
  * （以降は tiab-review 採用リスト取り込みカードの従来の手動導線のみになる）
  */
 export async function dismissTiabHandoff(store: Store): Promise<void> {
-  await clearTiabHandoff();
+  const project = store.getState().currentProject;
+  if (project !== null) {
+    await clearTiabHandoff(project.projectId);
+  }
   const documents = store.getState().documents;
   store.setState({ documents: { ...documents, tiabHandoff: null } });
 }
