@@ -30,7 +30,7 @@ Chrome Web Store へ提出・更新する zip を作る手順。**Store は mani
 4. テスト・lint が通っていること（`npm run typecheck` / `npm test` / `npm run lint` / `npm run lint:css`。CI green の master ならスキップ可）。
 5. `hosted/picker.html` に変更が入ったリリースなら、gh-pages のデプロイ版が最新であることを確認する（新拡張は nonce echo を必須検証するため、古いページのままだと Picker 付与が失敗する。手順: hosted/README.md）:
    ```bash
-   curl -s https://youkiti.github.io/sr-data-extraction-plugin/picker.html | grep -oE '2026-[0-9]{2}-[0-9]{2}[a-z]?'
+   curl -s https://youkiti.github.io/sr-data-extraction-plugin/picker.html | grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}[a-z]?'
    # 出力されたバージョンコメントが src 側 hosted/picker.html の最新コメントと一致すること
    ```
 
