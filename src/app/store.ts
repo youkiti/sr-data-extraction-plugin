@@ -146,6 +146,15 @@ export interface TiabImportState {
   result: { studiesUpdated: number; documentsUpdated: number; unmatched: number } | null;
 }
 
+/** S3 の tiab-review 引き継ぎパネル（S1「tiab-review から引き継いで作成」からの継続。ui-states.md §3） */
+export interface TiabHandoffState {
+  /** tiab-review スプレッドシートの ID（S1 の Picker 選択で drive.file 付与済み） */
+  tiabSheetId: string;
+  /** fulltext 列挙 → Picker → 取り込み → 自動プレビューの一連の実行中 */
+  running: boolean;
+  error: string | null;
+}
+
 /** #/documents（S3）の画面状態 */
 export interface DocumentsState {
   /** Documents タブの一覧。null = 未読込（画面表示時に読み込む） */
@@ -169,6 +178,8 @@ export interface DocumentsState {
   mergeError: string | null;
   /** tiab-review 採用リスト取り込みカード（issue #68） */
   tiabImport: TiabImportState;
+  /** tiab-review 引き継ぎパネル（※Q2）。null = 非表示 */
+  tiabHandoff: TiabHandoffState | null;
 }
 
 /** #/protocol（S4）の画面状態 */
@@ -638,6 +649,7 @@ export function createInitialState(): AppState {
         applying: false,
         result: null,
       },
+      tiabHandoff: null,
     },
     protocol: {
       records: null,

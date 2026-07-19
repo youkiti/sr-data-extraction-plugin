@@ -78,6 +78,40 @@
           <p class="popup__form-error" id="popup-create-error"></p>
         </section>
 
+        <!-- tiab-review から引き継いで作成（docs/ui-states.md §1 #popup-tiab-handoff。状態 A〜E） -->
+        <section class="popup__section" id="popup-tiab-handoff">
+          <h2 class="popup__section-title" data-i18n="popup.tiabTitle">
+            tiab-review から引き継いで作成
+          </h2>
+          <p class="popup__muted" data-i18n="popup.tiabLead">
+            tiab-review のスプレッドシートを選ぶと、プロジェクトを自動作成し、採用文献（include）の PDF
+            取り込みまで案内します。
+          </p>
+          <button type="button" id="tiab-pick" class="popup__button" data-i18n="popup.tiabPick">
+            tiab-review のシートを選ぶ
+          </button>
+          <form id="tiab-create-form" class="popup__form" hidden>
+            <label
+              class="popup__visually-hidden"
+              for="tiab-project-title"
+              data-i18n="popup.createTitleLabel"
+            >
+              プロジェクトタイトル
+            </label>
+            <input type="text" id="tiab-project-title" class="popup__input" />
+            <button
+              type="submit"
+              id="tiab-create-submit"
+              class="popup__button"
+              data-i18n="popup.tiabCreateSubmit"
+            >
+              作成して続行
+            </button>
+          </form>
+          <p id="tiab-status" class="popup__muted"></p>
+          <p id="tiab-error" class="popup__form-error"></p>
+        </section>
+
         <section class="popup__section">
           <h2 class="popup__section-title" data-i18n="popup.openTitle">
             スプレッドシート ID / URL で開く

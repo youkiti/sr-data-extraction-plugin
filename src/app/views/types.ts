@@ -77,6 +77,10 @@ export interface DocumentsViewCallbacks {
   onTiabApply(): void;
   /** アクセス拒否（drive.file 未許可の tiab-review シート）からの Picker 許可導線（issue #142） */
   onTiabGrantAccess(): void;
+  /** tiab-review 引き継ぎパネル（ui-states.md §3）の「include の PDF をまとめて取り込む」 */
+  onTiabHandoffImport(): void;
+  /** 同パネルの「この案内を閉じる」（storage の引き継ぎ状態を破棄してパネルを消す） */
+  onTiabHandoffDismiss(): void;
 }
 
 /** #/protocol（S4）のユーザー操作コールバック */

@@ -12,7 +12,8 @@ import {
   loadCurrentProject,
   setCurrentProject,
 } from '../../../src/features/project/projectStore';
-import { PICKER_PAGE_URL } from '../../../src/lib/google/picker';
+import { loadTiabHandoff } from '../../../src/features/project/tiabHandoffStore';
+import { PICKER_PAGE_URL, type PickerSelection } from '../../../src/lib/google/picker';
 import type { GoogleApiDeps } from '../../../src/lib/google/types';
 import { setUiLanguage } from '../../../src/lib/i18n';
 
@@ -41,6 +42,13 @@ const POPUP_TEMPLATE = `
       </form>
       <p id="popup-open-error"></p>
       <button id="popup-open-grant" type="button" hidden>Google で許可する</button>
+      <button id="tiab-pick" type="button">tiab-review のシートを選ぶ</button>
+      <form id="tiab-create-form" hidden>
+        <input type="text" id="tiab-project-title" />
+        <button type="submit" id="tiab-create-submit">作成して続行</button>
+      </form>
+      <p id="tiab-status"></p>
+      <p id="tiab-error"></p>
     </div>
     <button id="open-options" type="button">設定を開く</button>
   </main>
@@ -98,6 +106,7 @@ function makeDeps(over: Partial<PopupDeps> = {}): PopupDeps {
     },
     chromeProfileEmail: jest.fn(async () => 'me@example.com'),
     openSpreadsheetPicker: jest.fn(async () => 'cancelled' as const),
+    openTiabSheetPicker: jest.fn(async () => null),
     sleep: jest.fn(async () => undefined),
     isAuthenticated: jest.fn(async () => true),
     signIn: jest.fn(async () => true),
@@ -108,6 +117,84 @@ function makeDeps(over: Partial<PopupDeps> = {}): PopupDeps {
 
 function el<T extends HTMLElement>(id: string): T {
   return document.getElementById(id) as T;
+}
+
+const TIAB_REF_HEADER = ['ref_id', 'title', 'abstract', 'year', 'authors', 'doi', 'pmid', 'fulltext_url'];
+const TIAB_DEC_HEADER = [
+  'decision_id',
+  'ref_id',
+  'reviewer_id',
+  'decision',
+  'reason',
+  'labels',
+  'note',
+  'decided_at',
+  'client_version',
+  'source_url',
+  'screening_phase',
+];
+
+/**
+ * readTiabSheet（References / Decisions の values:batchGet + Config の GET）に応答する
+ * google スタブ。include 判定の文献を includeCount 件生成する。それ以外の URL
+ *（createNewProject が発行する Sheets / Drive API 群）は makeGoogle() の寛容な既定応答へ
+ * フォールバックする
+ */
+function makeTiabGoogle(options: { includeCount?: number } = {}): GoogleApiDeps {
+  const base = makeGoogle();
+  const references = Array.from({ length: options.includeCount ?? 2 }, (_, i) => [
+    `r${i}`,
+    `Title ${i}`,
+    '',
+    '2020',
+    `Author${i}`,
+    '',
+    '',
+    '',
+  ]);
+  const decisions = references.map((row) => [
+    `d-${row[0]}`,
+    row[0] as string,
+    'reviewer@example.com',
+    'include',
+    '',
+    '',
+    '',
+    't1',
+    '',
+    '',
+    '',
+  ]);
+  return {
+    getAccessToken: async () => 'tok',
+    fetch: (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('values:batchGet')) {
+        const json = {
+          valueRanges: [
+            { values: [TIAB_REF_HEADER, ...references] },
+            { values: [TIAB_DEC_HEADER, ...decisions] },
+          ],
+        };
+        return {
+          ok: true,
+          status: 200,
+          json: async () => json,
+          text: async () => JSON.stringify(json),
+        } as Response;
+      }
+      if (url.includes('/values/Config')) {
+        const json = { values: [] };
+        return {
+          ok: true,
+          status: 200,
+          json: async () => json,
+          text: async () => JSON.stringify(json),
+        } as Response;
+      }
+      return (base.fetch as typeof fetch)(input, init);
+    }) as typeof fetch,
+  };
 }
 
 describe('bootstrapPopup', () => {
@@ -616,6 +703,166 @@ describe('bootstrapPopup', () => {
       expect(openSpreadsheetPicker).not.toHaveBeenCalled();
     });
   });
+
+  describe('tiab-review から引き継いで作成（docs/ui-states.md §1 #popup-tiab-handoff）', () => {
+    const SELECTION: PickerSelection = { sourceFileId: 'TIAB-SID', filename: 'tiab-review 対象' };
+
+    test('状態 A→B→A: キャンセルで元の表示に戻る', async () => {
+      const openTiabSheetPicker = jest.fn(async () => null);
+      const deps = makeDeps({ openTiabSheetPicker });
+      await bootstrapPopup(document, deps);
+      el<HTMLButtonElement>('tiab-pick').click();
+      // 状態 B（同期）: ボタン disabled + Picker 案内文
+      expect(el<HTMLButtonElement>('tiab-pick').disabled).toBe(true);
+      expect(el('tiab-status').textContent).toBe('Picker でシートを選んでください…');
+      await flush();
+      // キャンセル: 状態 A へ戻る
+      expect(el<HTMLButtonElement>('tiab-pick').disabled).toBe(false);
+      expect(el('tiab-status').textContent).toBe('');
+      expect(el<HTMLFormElement>('tiab-create-form').hidden).toBe(true);
+      expect(el('tiab-error').textContent).toBe('');
+    });
+
+    test('状態 C→D: 検証成功でフォーム表示・タイトル既定値・件数文言', async () => {
+      const openTiabSheetPicker = jest.fn(async () => SELECTION);
+      const deps = makeDeps({
+        openTiabSheetPicker,
+        google: makeTiabGoogle({ includeCount: 3 }),
+      });
+      await bootstrapPopup(document, deps);
+      el<HTMLButtonElement>('tiab-pick').click();
+      await flush();
+      expect(el<HTMLFormElement>('tiab-create-form').hidden).toBe(false);
+      expect(el<HTMLInputElement>('tiab-project-title').value).toBe('tiab-review 対象');
+      expect(el('tiab-status').textContent).toBe(
+        'include 3 件を検出しました。プロジェクト名を確認して作成してください。',
+      );
+      expect(el('tiab-error').textContent).toBe('');
+      expect(el<HTMLButtonElement>('tiab-pick').disabled).toBe(false);
+    });
+
+    test('状態 C（検証失敗）: tiab-review のシートでない場合はエラー表示 + 状態 A へ戻る', async () => {
+      const openTiabSheetPicker = jest.fn(async () => SELECTION);
+      // References タブに ref_id / title 列が無い = tiab-review のシートではない
+      const badGoogle: GoogleApiDeps = {
+        getAccessToken: async () => 'tok',
+        fetch: (async (input: RequestInfo | URL) => {
+          const url = String(input);
+          if (url.includes('values:batchGet')) {
+            const json = { valueRanges: [{ values: [['id', 'name']] }, { values: [] }] };
+            return {
+              ok: true,
+              status: 200,
+              json: async () => json,
+              text: async () => JSON.stringify(json),
+            } as Response;
+          }
+          const json = { values: [] };
+          return {
+            ok: true,
+            status: 200,
+            json: async () => json,
+            text: async () => JSON.stringify(json),
+          } as Response;
+        }) as typeof fetch,
+      };
+      const deps = makeDeps({ openTiabSheetPicker, google: badGoogle });
+      await bootstrapPopup(document, deps);
+      el<HTMLButtonElement>('tiab-pick').click();
+      await flush();
+      expect(el('tiab-error').textContent).toContain(
+        'References タブに ref_id / title 列が見つかりません',
+      );
+      expect(el('tiab-status').textContent).toBe('');
+      expect(el<HTMLFormElement>('tiab-create-form').hidden).toBe(true);
+      expect(el<HTMLButtonElement>('tiab-pick').disabled).toBe(false);
+    });
+
+    test('検証済みシートが無い状態でフォームが送信されても（防御的分岐）saveTiabHandoff を呼ばず作成のみ行う', async () => {
+      // 通常の UI 操作では #tiab-create-form は検証成功後にしか表示されないため到達しないが、
+      // checkedSheetId 未設定時のガード（bindTiabHandoff）を直接検証する
+      const deps = makeDeps({ google: makeTiabGoogle({ includeCount: 1 }) });
+      await bootstrapPopup(document, deps);
+      const form = el<HTMLFormElement>('tiab-create-form');
+      el<HTMLInputElement>('tiab-project-title').value = '手動送信 SR';
+      form.dispatchEvent(new Event('submit', { cancelable: true }));
+      await flush();
+      expect(el('tiab-error').textContent).toBe('');
+      expect(deps.openAppTab).toHaveBeenCalledWith('#/documents');
+      await expect(loadTiabHandoff()).resolves.toBeNull();
+    });
+
+    test('状態 E: 作成成功で引き継ぎ状態を保存し #/documents へ遷移する', async () => {
+      const openTiabSheetPicker = jest.fn(async () => SELECTION);
+      const deps = makeDeps({
+        openTiabSheetPicker,
+        google: makeTiabGoogle({ includeCount: 1 }),
+      });
+      await bootstrapPopup(document, deps);
+      el<HTMLButtonElement>('tiab-pick').click();
+      await flush();
+
+      const form = el<HTMLFormElement>('tiab-create-form');
+      const submit = el<HTMLButtonElement>('tiab-create-submit');
+      el<HTMLInputElement>('tiab-project-title').value = 'tiab 引き継ぎ SR';
+      form.dispatchEvent(new Event('submit', { cancelable: true }));
+      // 送信直後（同期）に作成中表示へ切り替わる
+      expect(submit.disabled).toBe(true);
+      expect(submit.textContent).toBe('作成中…');
+      await flush();
+      expect(submit.disabled).toBe(false);
+      expect(submit.textContent).toBe('作成して続行');
+      expect(el('tiab-error').textContent).toBe('');
+      expect(deps.openAppTab).toHaveBeenCalledWith('#/documents');
+      await expect(loadCurrentProject()).resolves.toMatchObject({ name: 'tiab 引き継ぎ SR' });
+      const projectId = (await loadCurrentProject())?.projectId;
+      await expect(loadTiabHandoff()).resolves.toEqual({
+        projectId,
+        tiabSheetId: 'TIAB-SID',
+      });
+    });
+
+    test('状態 E（失敗）: 作成失敗でエラー表示・ボタン復帰・プロジェクトは作られない', async () => {
+      const openTiabSheetPicker = jest.fn(async () => SELECTION);
+      const google: GoogleApiDeps = {
+        getAccessToken: async () => 'tok',
+        // eslint-disable-next-line prefer-promise-reject-errors
+        fetch: (async () => Promise.reject('boom')) as typeof fetch,
+      };
+      // Picker deps だけ差し替え、readTiabSheet 自体はスタブ化せず createNewProject 側で失敗させる。
+      // readTiabSheet も同じ google.fetch を使うため、まず正常系で検証を通してから失敗させたいが、
+      // fetch が常に失敗する google では検証自体も失敗するため、検証専用の google と作成専用の
+      // google を切り替えるスタブにする
+      let phase: 'checking' | 'creating' = 'checking';
+      const okGoogle = makeTiabGoogle({ includeCount: 1 });
+      const switching: GoogleApiDeps = {
+        getAccessToken: async () => 'tok',
+        fetch: (async (input: RequestInfo | URL, init?: RequestInit) => {
+          if (phase === 'creating') {
+            return (google.fetch as typeof fetch)(input, init);
+          }
+          return (okGoogle.fetch as typeof fetch)(input, init);
+        }) as typeof fetch,
+      };
+      const deps = makeDeps({ openTiabSheetPicker, google: switching });
+      await bootstrapPopup(document, deps);
+      el<HTMLButtonElement>('tiab-pick').click();
+      await flush();
+      expect(el<HTMLFormElement>('tiab-create-form').hidden).toBe(false);
+
+      phase = 'creating';
+      const form = el<HTMLFormElement>('tiab-create-form');
+      const submit = el<HTMLButtonElement>('tiab-create-submit');
+      el<HTMLInputElement>('tiab-project-title').value = 'tiab 引き継ぎ SR';
+      form.dispatchEvent(new Event('submit', { cancelable: true }));
+      await flush();
+      expect(el('tiab-error').textContent).toBe('boom');
+      expect(submit.disabled).toBe(false);
+      expect(submit.textContent).toBe('作成して続行');
+      expect(deps.openAppTab).not.toHaveBeenCalled();
+      await expect(loadTiabHandoff()).resolves.toBeNull();
+    });
+  });
 });
 
 describe('createChromePopupDeps', () => {
@@ -637,6 +884,14 @@ describe('createChromePopupDeps', () => {
       url: 'chrome-extension://test-extension-id/app/app.html#/options',
     });
     expect(chromeMock.tabs.create).not.toHaveBeenCalled();
+  });
+
+  test('openAppTab は hash 指定で該当ルートへ直接遷移する（tiab-review 引き継ぎ作成後）', () => {
+    const deps = createChromePopupDeps();
+    deps.openAppTab('#/documents');
+    expect(chromeMock.tabs.update).toHaveBeenCalledWith({
+      url: 'chrome-extension://test-extension-id/app/app.html#/documents',
+    });
   });
 
   test('isAuthenticated: サイレント取得成功で true（interactive=false でブローカーへ依頼）', async () => {
@@ -711,6 +966,34 @@ describe('createChromePopupDeps', () => {
     await expect(promise).resolves.toBe('cancelled');
   });
 
+  test('openTiabSheetPicker は Picker タブ（view=spreadsheet・file_id 制限なし）を開き、選択を返す（配線確認）', async () => {
+    chromeMock.tabs.create.mockResolvedValueOnce({ id: 43 });
+    const deps = createChromePopupDeps();
+    const promise = deps.openTiabSheetPicker();
+    await flush();
+    const url = (chromeMock.tabs.create.mock.calls[0]?.[0] as { url: string }).url;
+    expect(url).toContain(`${PICKER_PAGE_URL}#`);
+    expect(url).toContain('view=spreadsheet');
+    expect(url).not.toContain('file_id=');
+    const nonce = new URLSearchParams(url.split('#')[1] ?? '').get('nonce');
+    const wrapped = chromeMock.runtime.onMessageExternal.addListener.mock.calls[0]?.[0] as (
+      message: unknown,
+      sender: { tab?: { id?: number }; url?: string },
+      sendResponse: (response: unknown) => void,
+    ) => void;
+    wrapped(
+      {
+        source: 'sr-data-extraction-picker',
+        kind: 'picked',
+        nonce,
+        files: [{ id: 'TIAB-SID', name: 'tiab シート' }],
+      },
+      { tab: { id: 43 }, url: `${PICKER_PAGE_URL}#x` },
+      jest.fn(),
+    );
+    await expect(promise).resolves.toEqual({ sourceFileId: 'TIAB-SID', filename: 'tiab シート' });
+  });
+
   test('sleep は resolve する', async () => {
     const deps = createChromePopupDeps();
     await expect(deps.sleep(0)).resolves.toBeUndefined();
@@ -752,6 +1035,17 @@ describe('bootstrapPopup（表示言語 en。issue #93）', () => {
         <button id="popup-open-grant" type="button" hidden data-i18n="popup.openGrant">
           Google で許可する
         </button>
+        <button id="tiab-pick" type="button" data-i18n="popup.tiabPick">
+          tiab-review のシートを選ぶ
+        </button>
+        <form id="tiab-create-form" hidden>
+          <input type="text" id="tiab-project-title" />
+          <button type="submit" id="tiab-create-submit" data-i18n="popup.tiabCreateSubmit">
+            作成して続行
+          </button>
+        </form>
+        <p id="tiab-status"></p>
+        <p id="tiab-error"></p>
       </div>
       <button id="open-options" type="button" data-i18n="popup.openOptions">設定を開く</button>
     </main>

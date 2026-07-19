@@ -10,19 +10,29 @@
 // grantTiabSheetAccess（「Google で許可する」から呼ぶ）でスプレッドシート Picker を起動し、
 // 許可されたらプレビューを自動リトライする（roleService.grantSpreadsheetAccess と同じトンマナ）
 import { updateDocuments } from '../../features/documents/documentRepository';
+import { clearTiabHandoff } from '../../features/project/tiabHandoffStore';
 import { updateStudies } from '../../features/documents/studyRepository';
 import {
+  extractDriveFileId,
   parseTiabSpreadsheetId,
   planTiabImport,
   resolveAdoptedReferences,
 } from '../../features/documents/tiabReview';
 import { readTiabSheet } from '../../features/documents/tiabSheetReader';
-import { openSpreadsheetPicker, type SpreadsheetPickResult } from '../../lib/google/picker';
+import {
+  openProjectFilesPicker,
+  openSpreadsheetPicker,
+  type SpreadsheetPickResult,
+} from '../../lib/google/picker';
 import { SheetsAccessDeniedError } from '../../lib/google/sheets';
-import type { Store, TiabImportState } from '../store';
+import type { Store, TiabHandoffState, TiabImportState } from '../store';
 import { showToast } from '../ui/toast';
 import { t } from '../../lib/i18n';
-import { loadDocuments, type DocumentsServiceDeps } from './documentsService';
+import {
+  importPickedSelections,
+  loadDocuments,
+  type DocumentsServiceDeps,
+} from './documentsService';
 
 function toMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
@@ -33,6 +43,21 @@ function patchTiab(store: Store, patch: Partial<TiabImportState>): void {
   const documents = store.getState().documents;
   store.setState({
     documents: { ...documents, tiabImport: { ...documents.tiabImport, ...patch } },
+  });
+}
+
+/**
+ * tiabHandoff スライスだけを差し替える setState ヘルパ（他スライスは維持）。
+ * 直前の tiabHandoff が null（dismiss 済み・そもそも非表示）なら no-op にする
+ * （runTiabHandoffImport の実行中に dismissTiabHandoff が呼ばれた場合の競合対策）
+ */
+function patchTiabHandoff(store: Store, patch: Partial<TiabHandoffState>): void {
+  const documents = store.getState().documents;
+  if (documents.tiabHandoff === null) {
+    return;
+  }
+  store.setState({
+    documents: { ...documents, tiabHandoff: { ...documents.tiabHandoff, ...patch } },
   });
 }
 
@@ -194,9 +219,85 @@ export async function applyTiabImport(store: Store, deps: DocumentsServiceDeps):
       },
     });
     showToast(t('documents.tiabToastApplied'));
+    // 引き継ぎパネル経由の反映が確定したら storage の引き継ぎ状態をクリアする（force 再読込の
+    // 同期でパネルが消える。ui-states.md §3「反映実行（#tiab-apply）成功で…」）
+    if (store.getState().documents.tiabHandoff !== null) {
+      await clearTiabHandoff();
+    }
     await loadDocuments(store, deps, { force: true });
   } catch (err) {
     patchTiab(store, { applying: false, error: toMessage(err) });
     showToast(t('documents.toastImportFailed', { reason: toMessage(err) }));
   }
+}
+
+/**
+ * S3 tiab-review 引き継ぎパネル（S1 #popup-tiab-handoff からの継続。ui-states.md §3）の
+ * 「include の PDF をまとめて取り込む」を実行する: tiab シートの直読み（drive.file は S1 の
+ * Picker 選択で付与済み）→ include の fulltext_url から Drive ファイル ID を列挙（重複除去）→
+ * ファイル許可モード Picker（reviewer オンボーディング #139/#141 と同じ全選択方式）→ 通常の
+ * 取り込みパイプライン（documentsService.importPickedSelections）→ tiab カードを自動で開いて
+ * シート ID を入力済みにし、反映プレビューを自動実行する。反映の確定（#tiab-apply）は
+ * 従来どおり手動のまま（プレビュー → ユーザー確定の 2 段階を維持）
+ */
+export async function runTiabHandoffImport(
+  store: Store,
+  deps: DocumentsServiceDeps,
+): Promise<void> {
+  const state = store.getState();
+  const project = state.currentProject;
+  const handoff = state.documents.tiabHandoff;
+  if (
+    !project ||
+    handoff === null ||
+    handoff.running ||
+    state.documents.importing ||
+    state.documents.tiabImport.loading ||
+    state.documents.tiabImport.applying
+  ) {
+    return;
+  }
+  patchTiabHandoff(store, { running: true, error: null });
+  try {
+    const sheet = await readTiabSheet(handoff.tiabSheetId, deps.google);
+    const adopted = resolveAdoptedReferences(
+      sheet.references,
+      sheet.decisions,
+      sheet.activeFulltextAiRound,
+    );
+    const fileIds = [
+      ...new Set(
+        adopted.includes
+          .map((ref) => (ref.fulltextUrl === null ? null : extractDriveFileId(ref.fulltextUrl)))
+          .filter((id): id is string => id !== null),
+      ),
+    ];
+    if (fileIds.length === 0) {
+      patchTiabHandoff(store, { running: false, error: t('documents.tiabHandoffNoFulltext') });
+      return;
+    }
+    const selections = await openProjectFilesPicker(deps.picker, fileIds);
+    if (selections === null) {
+      // キャンセル / タブを閉じる: 状態を維持する（案内・ボタンは残る）
+      patchTiabHandoff(store, { running: false });
+      return;
+    }
+    await importPickedSelections(store, deps, selections);
+    openTiabImport(store);
+    await previewTiabImport(store, deps, handoff.tiabSheetId);
+    patchTiabHandoff(store, { running: false });
+  } catch (err) {
+    // Picker 起動失敗も含め、ここで一括して案内する（トーストは不要 — パネル内エラーで完結）
+    patchTiabHandoff(store, { running: false, error: toMessage(err) });
+  }
+}
+
+/**
+ * 「この案内を閉じる」: storage の引き継ぎ状態を破棄してパネルを消す
+ * （以降は tiab-review 採用リスト取り込みカードの従来の手動導線のみになる）
+ */
+export async function dismissTiabHandoff(store: Store): Promise<void> {
+  await clearTiabHandoff();
+  const documents = store.getState().documents;
+  store.setState({ documents: { ...documents, tiabHandoff: null } });
 }

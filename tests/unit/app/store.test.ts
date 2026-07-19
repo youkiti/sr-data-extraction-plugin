@@ -58,6 +58,7 @@ describe('createInitialState', () => {
           applying: false,
           result: null,
         },
+        tiabHandoff: null,
       },
       protocol: {
         records: null,

@@ -64,6 +64,14 @@ export const en: Record<MessageKey, string> = {
   'popup.createTitleLabel': 'Project title',
   'popup.createSubmit': 'Create',
   'popup.creating': 'Creating…',
+  'popup.tiabTitle': 'Create by importing from tiab-review',
+  'popup.tiabLead':
+    'Pick your tiab-review spreadsheet to create a project automatically and get guided through importing the included PDFs.',
+  'popup.tiabPick': 'Pick the tiab-review sheet',
+  'popup.tiabPicking': 'Choose the sheet in the picker…',
+  'popup.tiabChecking': 'Checking the selected sheet…',
+  'popup.tiabDetected': 'Found {n} included references. Confirm the project title and create.',
+  'popup.tiabCreateSubmit': 'Create and continue',
   'popup.openTitle': 'Open by spreadsheet ID / URL',
   'popup.openIdLabel': 'Spreadsheet ID or URL',
   'popup.openIdPlaceholder': 'Paste a spreadsheet ID or URL',
@@ -172,6 +180,14 @@ export const en: Record<MessageKey, string> = {
   'documents.tiabHeadStatus': 'Status',
   'documents.tiabApplying': 'Applying…',
   'documents.tiabApply': 'Run import',
+  'documents.tiabHandoffTitle': 'Continue the tiab-review handoff',
+  'documents.tiabHandoffLead':
+    "Import the included references' PDFs (the tiab-review fulltext cache) in one go. When the picker opens, select all files (click the first, then Shift+click the last). After the import, the included-list preview is shown automatically.",
+  'documents.tiabHandoffImport': 'Import the included PDFs',
+  'documents.tiabHandoffDismiss': 'Dismiss this guide',
+  'documents.tiabHandoffRunning': 'Checking the tiab-review fulltext files…',
+  'documents.tiabHandoffNoFulltext':
+    'No Drive fulltext PDFs were found for the included references. Import the PDFs with "Import PDFs / folders from Drive" first, then run "Load the included list from tiab-review"',
   'documents.tiabOpen': 'Load the included list from tiab-review',
   'documents.tiabLead':
     'Reads the tiab-review spreadsheet directly and applies study_label (author (year)) and DOI / PMID from the finally included references. Import the PDFs from the fulltext folder first so they can be matched.',

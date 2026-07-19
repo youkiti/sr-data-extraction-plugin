@@ -65,6 +65,14 @@ export const ja = {
   'popup.createTitleLabel': 'プロジェクトタイトル',
   'popup.createSubmit': '作成',
   'popup.creating': '作成中…',
+  'popup.tiabTitle': 'tiab-review から引き継いで作成',
+  'popup.tiabLead':
+    'tiab-review のスプレッドシートを選ぶと、プロジェクトを自動作成し、採用文献（include）の PDF 取り込みまで案内します。',
+  'popup.tiabPick': 'tiab-review のシートを選ぶ',
+  'popup.tiabPicking': 'Picker でシートを選んでください…',
+  'popup.tiabChecking': '選択したシートを確認しています…',
+  'popup.tiabDetected': 'include {n} 件を検出しました。プロジェクト名を確認して作成してください。',
+  'popup.tiabCreateSubmit': '作成して続行',
   'popup.openTitle': 'スプレッドシート ID / URL で開く',
   'popup.openIdLabel': 'スプレッドシート ID または URL',
   'popup.openIdPlaceholder': 'スプレッドシート ID または URL を貼り付け',
@@ -173,6 +181,14 @@ export const ja = {
   'documents.tiabHeadStatus': '状態',
   'documents.tiabApplying': '反映しています…',
   'documents.tiabApply': '取り込みを実行',
+  'documents.tiabHandoffTitle': 'tiab-review 引き継ぎの続き',
+  'documents.tiabHandoffLead':
+    '採用文献（include）の PDF（tiab-review の fulltext キャッシュ）をまとめて取り込みます。Picker が開いたらすべて選択してください（先頭を 1 クリック → 末尾を Shift+クリック）。取り込み後、採用リストの反映プレビューを自動表示します。',
+  'documents.tiabHandoffImport': 'include の PDF をまとめて取り込む',
+  'documents.tiabHandoffDismiss': 'この案内を閉じる',
+  'documents.tiabHandoffRunning': 'tiab-review の fulltext を確認しています…',
+  'documents.tiabHandoffNoFulltext':
+    'include に Drive 上の fulltext PDF が見つかりませんでした。「Drive から PDF / フォルダを取り込む」で PDF を追加してから、「tiab-review から採用リストを読み込む」を実行してください',
   'documents.tiabOpen': 'tiab-review から採用リストを読み込む',
   'documents.tiabLead':
     'tiab-review のスプレッドシートを直読みし、最終判定 include の文献から study_label（著者 (year)）と DOI / PMID を反映します。fulltext フォルダから取り込んだ PDF と突き合わせるため、先に PDF を取り込んでください。',

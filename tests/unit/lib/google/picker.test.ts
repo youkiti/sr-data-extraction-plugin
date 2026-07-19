@@ -7,6 +7,7 @@ import {
   openPdfPicker,
   openProjectFilesPicker,
   openSpreadsheetPicker,
+  openTiabSpreadsheetPicker,
   PICKER_MESSAGE_SOURCE,
   PICKER_PAGE_URL,
   type PickerDeps,
@@ -400,6 +401,61 @@ describe('openSpreadsheetPicker（issue #130）', () => {
     expect(sendResponse).toHaveBeenCalledWith({ token: 'token-1234' });
     fake.emitMessage(withNonce({ source: PICKER_MESSAGE_SOURCE, kind: 'cancelled' }));
     await expect(promise).resolves.toBe('cancelled');
+  });
+});
+
+describe('openTiabSpreadsheetPicker（tiab-review 引き継ぎ。S1 #popup-tiab-handoff）', () => {
+  test('view=spreadsheet を file_id 制限なしで開く（全シートから選択できる）', async () => {
+    const fake = createFakeDeps();
+    const promise = openTiabSpreadsheetPicker(fake.deps);
+    await flushMicrotasks();
+    expect(fake.createTab).toHaveBeenCalledWith(
+      `${PAGE_URL}#extension_id=ext-id&view=spreadsheet&nonce=${NONCE}`,
+    );
+    fake.emitMessage(withNonce({ source: PICKER_MESSAGE_SOURCE, kind: 'cancelled' }));
+    await promise;
+  });
+
+  test('選択 1 件はその選択を返す', async () => {
+    const fake = createFakeDeps();
+    const promise = openTiabSpreadsheetPicker(fake.deps);
+    await flushMicrotasks();
+    fake.emitMessage(
+      withNonce({
+        source: PICKER_MESSAGE_SOURCE,
+        kind: 'picked',
+        files: [
+          {
+            id: 'TIAB-SID',
+            name: 'tiab-review プロジェクト',
+            mimeType: 'application/vnd.google-apps.spreadsheet',
+          },
+        ],
+      }),
+    );
+    await expect(promise).resolves.toEqual({
+      sourceFileId: 'TIAB-SID',
+      filename: 'tiab-review プロジェクト',
+      mimeType: 'application/vnd.google-apps.spreadsheet',
+    });
+  });
+
+  test('cancelled は null', async () => {
+    const fake = createFakeDeps();
+    const promise = openTiabSpreadsheetPicker(fake.deps);
+    await flushMicrotasks();
+    fake.emitMessage(withNonce({ source: PICKER_MESSAGE_SOURCE, kind: 'cancelled' }));
+    await expect(promise).resolves.toBeNull();
+  });
+
+  test('選択 0 件（picked の files が空配列）も null', async () => {
+    const fake = createFakeDeps();
+    const promise = openTiabSpreadsheetPicker(fake.deps);
+    await flushMicrotasks();
+    fake.emitMessage(
+      withNonce({ source: PICKER_MESSAGE_SOURCE, kind: 'picked', files: [] }),
+    );
+    await expect(promise).resolves.toBeNull();
   });
 });
 

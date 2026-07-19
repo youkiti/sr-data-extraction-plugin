@@ -47,12 +47,22 @@ export async function loadProjectMeta(
   };
 
   const tabTitles = await classifyAccess(getSheetTitles(spreadsheetId, deps));
+  const missing = REQUIRED_TABS.filter((tab) => !tabTitles.includes(tab));
+  // tiab-review のスプレッドシートの誤入力は専用文言で正しい導線へ案内する
+  // （References / Decisions タブを持ち、本拡張のプロジェクトとして不成立のシート。
+  //   採用リストの読み込みは S3 の「tiab-review から採用リストを読み込む」で行う。
+  //   docs/ui-states.md §1）
+  const looksLikeTiabSheet = ['References', 'Decisions'].every((tab) => tabTitles.includes(tab));
+  if (looksLikeTiabSheet && (!tabTitles.includes('Meta') || missing.length > 0)) {
+    throw new ProjectSchemaError(
+      'これは tiab-review のスプレッドシートのようです。この画面では開けません。新規プロジェクトを作成し、文献取り込み画面の「tiab-review から採用リストを読み込む」から読み込んでください'
+    );
+  }
   if (!tabTitles.includes('Meta')) {
     throw new ProjectSchemaError(
       'Meta タブがありません。プロジェクトとして初期化されていません'
     );
   }
-  const missing = REQUIRED_TABS.filter((tab) => !tabTitles.includes(tab));
   if (missing.length > 0) {
     throw new ProjectSchemaError(
       `sr-data-extraction のプロジェクトではありません（${missing.join(' / ')} タブが見つかりません）`

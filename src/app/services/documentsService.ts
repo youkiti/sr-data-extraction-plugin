@@ -30,6 +30,7 @@ import {
   updateStudy,
 } from '../../features/documents/studyRepository';
 import { readRunStudyCoverage } from '../../features/extraction/runRepository';
+import { loadTiabHandoff } from '../../features/project/tiabHandoffStore';
 import { ensureChildFolder, listFolderPdfs } from '../../lib/google/drive';
 import {
   FOLDER_MIME_TYPE,
@@ -42,7 +43,7 @@ import type { GoogleApiDeps } from '../../lib/google/types';
 import { getLocal, setLocal } from '../../lib/storage/chromeStorage';
 import { nowIso8601 } from '../../utils/iso8601';
 import { generateUuid } from '../../utils/uuid';
-import type { DocumentsState, ImportRow, MergeDialogState, Store } from '../store';
+import type { DocumentsState, ImportRow, MergeDialogState, Store, TiabHandoffState } from '../store';
 import { showToast } from '../ui/toast';
 import { t, type MessageKey } from '../../lib/i18n';
 
@@ -102,7 +103,20 @@ export async function loadDocuments(
     const studies = await readStudies(spreadsheetId, deps.google);
     const coverage = await readRunStudyCoverage(spreadsheetId, deps.google);
     const ignored = (await getLocal<string[]>(ignoredCandidatesKey(spreadsheetId))) ?? [];
+    const handoff = await loadTiabHandoff();
     const current = store.getState();
+    // storage の引き継ぎ状態が現在のプロジェクトを指すときだけパネルを表示する。
+    // 取り込み完了後の force 再読込中でも running / error 表示が消えないよう、
+    // 直前の tiabHandoff（同一プロジェクトぶん）があればその running / error を維持する
+    const previousHandoff = current.documents.tiabHandoff;
+    const tiabHandoff: TiabHandoffState | null =
+      handoff !== null && handoff.projectId === project.projectId
+        ? {
+            tiabSheetId: handoff.tiabSheetId,
+            running: previousHandoff?.running ?? false,
+            error: previousHandoff?.error ?? null,
+          }
+        : null;
     store.setState({
       documents: {
         ...current.documents,
@@ -113,6 +127,7 @@ export async function loadDocuments(
         extractedStudyIds: [...coverage.extracted],
         ignoredCandidateKeys: ignored,
         selectedStudyIds: [],
+        tiabHandoff,
       },
       counts: { ...current.counts, documents: records.length },
     });
@@ -302,6 +317,47 @@ async function runImportSelections(
 }
 
 /**
+ * Picker で確定した選択（ファイル + フォルダ混在）を実際に取り込む（フォルダの展開 →
+ * runImportSelections 呼び出しまでを担う共通処理）。importFromPicker の Picker 確定後の処理を
+ * 抽出したもので、tiab-review 引き継ぎパネル（tiabImportService.runTiabHandoffImport。
+ * ui-states.md §3）のファイル許可モード Picker 確定後の取り込みとしても再利用する。
+ * project 未選択・取り込み中は no-op（呼び出し元を増やしてもガードが抜けないよう、
+ * importFromPicker と同じ判定をここにも持たせる）
+ */
+export async function importPickedSelections(
+  store: Store,
+  deps: DocumentsServiceDeps,
+  selections: readonly PickerSelection[],
+): Promise<void> {
+  const state = store.getState();
+  const project = state.currentProject;
+  if (!project || state.documents.importing || selections.length === 0) {
+    return;
+  }
+
+  // フォルダ選択を直下 PDF へ展開する（列挙に数秒かかりうるため先に importing を立てる）
+  patchDocuments(store, { importing: true });
+  if (selections.some((selection) => selection.mimeType === FOLDER_MIME_TYPE)) {
+    showToast(t('documents.toastExpandingFolder'));
+  }
+  let fileSelections: ImportSelection[];
+  try {
+    fileSelections = await expandSelections(selections, deps);
+  } catch (err) {
+    patchDocuments(store, { importing: false });
+    showToast(t('documents.toastFolderFailed', { reason: toMessage(err) }));
+    return;
+  }
+  if (fileSelections.length === 0) {
+    patchDocuments(store, { importing: false });
+    showToast(t('documents.toastNoPdfInFolder'));
+    return;
+  }
+
+  await runImportSelections(store, deps, project, fileSelections);
+}
+
+/**
  * Drive Picker を開いて選択された PDF を取り込む（S3 の中核フロー）。
  * ファイルに加えてフォルダも選択でき、フォルダは直下 PDF を列挙して一括取り込みする。
  * 1 PDF = 1 study を自動生成する（§4.5）。Picker キャンセルは何もしない。
@@ -328,26 +384,7 @@ export async function importFromPicker(
     return;
   }
 
-  // フォルダ選択を直下 PDF へ展開する（列挙に数秒かかりうるため先に importing を立てる）
-  patchDocuments(store, { importing: true });
-  if (selections.some((selection) => selection.mimeType === FOLDER_MIME_TYPE)) {
-    showToast(t('documents.toastExpandingFolder'));
-  }
-  let fileSelections: ImportSelection[];
-  try {
-    fileSelections = await expandSelections(selections, deps);
-  } catch (err) {
-    patchDocuments(store, { importing: false });
-    showToast(t('documents.toastFolderFailed', { reason: toMessage(err) }));
-    return;
-  }
-  if (fileSelections.length === 0) {
-    patchDocuments(store, { importing: false });
-    showToast(t('documents.toastNoPdfInFolder'));
-    return;
-  }
-
-  await runImportSelections(store, deps, project, fileSelections);
+  await importPickedSelections(store, deps, selections);
 }
 
 /** ローカルファイルの進捗行キー兼バッチ内の粗い重複排除キー（filename + size。内容同一の判定は dedupSelections の MD5 が担う） */

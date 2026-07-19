@@ -19,7 +19,14 @@ import type {
 import { t, type MessageKey } from '../../lib/i18n';
 import { activeStudyGroups, visibleMergeCandidates } from '../services/documentsService';
 import { el } from '../ui/dom';
-import type { AppState, ImportRow, ImportRowStatus, MergeDialogState, TiabImportState } from '../store';
+import type {
+  AppState,
+  ImportRow,
+  ImportRowStatus,
+  MergeDialogState,
+  TiabHandoffState,
+  TiabImportState,
+} from '../store';
 import type { ViewContext } from './types';
 
 // 表示言語に追従させるため、ラベルは描画時に t() で解決する（キー対応表のみ固定。issue #93）
@@ -363,6 +370,57 @@ function renderTiabPlan(plan: TiabImportPlan, tiab: TiabImportState, ctx: ViewCo
 }
 
 /**
+ * tiab-review 引き継ぎパネル（S1 #popup-tiab-handoff からの継続。ui-states.md §3）。
+ * chrome.storage.local の tiabHandoff が現在のプロジェクトを指すときだけ、tiab カード導線の
+ * 上に表示する（documentsService.loadDocuments が一覧読込時に同期する）。
+ * 「include の PDF をまとめて取り込む」で fulltext 列挙 → Picker → 取り込み → 自動プレビューの
+ * 一連を実行し、「この案内を閉じる」で storage の引き継ぎ状態を破棄してパネルを消す
+ */
+function renderTiabHandoffPanel(handoff: TiabHandoffState, state: AppState, ctx: ViewContext): HTMLElement {
+  const importButton = el('button', {
+    id: 'tiab-handoff-import',
+    text: t('documents.tiabHandoffImport'),
+    attributes: { type: 'button' },
+  }) as HTMLButtonElement;
+  importButton.disabled = handoff.running || state.documents.importing;
+  importButton.addEventListener('click', () => ctx.documents.onTiabHandoffImport());
+
+  const dismissButton = el('button', {
+    id: 'tiab-handoff-dismiss',
+    text: t('documents.tiabHandoffDismiss'),
+    attributes: { type: 'button' },
+  }) as HTMLButtonElement;
+  dismissButton.disabled = handoff.running;
+  dismissButton.addEventListener('click', () => ctx.documents.onTiabHandoffDismiss());
+
+  const children: HTMLElement[] = [
+    el('h3', { text: t('documents.tiabHandoffTitle') }),
+    el('p', { className: 'view__lead', text: t('documents.tiabHandoffLead') }),
+    el('div', { className: 'documents__tiab-actions' }, [importButton, dismissButton]),
+  ];
+  if (handoff.running) {
+    children.push(
+      el('p', {
+        id: 'tiab-handoff-running',
+        attributes: { role: 'status' },
+        text: t('documents.tiabHandoffRunning'),
+      }),
+    );
+  }
+  if (handoff.error !== null) {
+    children.push(
+      el('p', {
+        id: 'tiab-handoff-error',
+        className: 'documents__error',
+        attributes: { role: 'alert' },
+        text: handoff.error,
+      }),
+    );
+  }
+  return el('section', { id: 'documents-tiab-handoff', className: 'documents__tiab' }, children);
+}
+
+/**
  * tiab-review 採用リスト取り込みカード（issue #68・requirements.md §4.5 / ※Q2）。
  * 閉: 導線ボタンのみ。開: URL / ID 入力 + プレビュー（include 抽出 + 突き合わせ結果）+ 実行
  */
@@ -648,6 +706,9 @@ export function renderDocumentsView(state: AppState, ctx: ViewContext): HTMLElem
     children.push(renderProgress(importRows));
   }
   if (hasProject) {
+    if (state.documents.tiabHandoff !== null) {
+      children.push(renderTiabHandoffPanel(state.documents.tiabHandoff, state, ctx));
+    }
     children.push(renderTiabCard(state, ctx));
     children.push(...renderCandidateBanners(state, ctx));
     if (mergeDialog !== null) {

@@ -25,9 +25,11 @@ import {
 import {
   applyTiabImport,
   closeTiabImport,
+  dismissTiabHandoff,
   grantTiabSheetAccess,
   openTiabImport,
   previewTiabImport,
+  runTiabHandoffImport,
 } from './services/tiabImportService';
 import {
   cancelEditProtocol,
@@ -478,6 +480,12 @@ export async function bootstrapApp(
       },
       onTiabGrantAccess: () => {
         void grantTiabSheetAccess(store, deps);
+      },
+      onTiabHandoffImport: () => {
+        void runTiabHandoffImport(store, deps);
+      },
+      onTiabHandoffDismiss: () => {
+        void dismissTiabHandoff(store);
       },
     },
     protocol: {

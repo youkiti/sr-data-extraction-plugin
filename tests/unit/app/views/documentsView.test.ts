@@ -3,7 +3,12 @@
 // S3 グルーピング UI（study グループ・role select・統合候補バナー・統合ダイアログ）を網羅する
 import { renderDocumentsView } from '../../../../src/app/views/documentsView';
 import type { DocumentsViewCallbacks, ViewContext } from '../../../../src/app/views/types';
-import { createInitialState, type AppState, type TiabImportState } from '../../../../src/app/store';
+import {
+  createInitialState,
+  type AppState,
+  type TiabHandoffState,
+  type TiabImportState,
+} from '../../../../src/app/store';
 import type { DocumentRecord } from '../../../../src/domain/document';
 import type { StudyRecord } from '../../../../src/domain/study';
 import type { TiabImportPlan } from '../../../../src/features/documents/tiabReview';
@@ -63,6 +68,8 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<DocumentsViewCall
     onTiabPreview: jest.fn(),
     onTiabApply: jest.fn(),
     onTiabGrantAccess: jest.fn(),
+    onTiabHandoffImport: jest.fn(),
+    onTiabHandoffDismiss: jest.fn(),
   };
   return {
     ctx: {
@@ -927,6 +934,85 @@ describe('renderDocumentsView: tiab-review 取り込みカード', () => {
     expect(noUnmatched.querySelector('#tiab-result')?.textContent).toBe(
       'study_label 1 件を更新し、DOI / PMID を 0 文書に転記しました',
     );
+  });
+});
+
+// tiab-review 引き継ぎパネル（S1 #popup-tiab-handoff からの継続。ui-states.md §3 / ※Q2）
+describe('renderDocumentsView: tiab-review 引き継ぎパネル', () => {
+  function handoffState(patch: Partial<TiabHandoffState> = {}): TiabHandoffState {
+    return { tiabSheetId: 'tiab-sheet-xyz', running: false, error: null, ...patch };
+  }
+
+  test('tiabHandoff が null（既定）ならパネルを描画しない', () => {
+    const { ctx } = makeCtx();
+    const view = renderDocumentsView(
+      makeState({ records: [makeDoc()], studies: [makeStudy()] }),
+      ctx,
+    );
+    expect(view.querySelector('#documents-tiab-handoff')).toBeNull();
+  });
+
+  test('通常表示: 見出し・リード・両ボタンが活性でクリックが各コールバックを呼ぶ（tiab カードより上に描画）', () => {
+    const { ctx, callbacks } = makeCtx();
+    const view = renderDocumentsView(makeState({ tiabHandoff: handoffState() }), ctx);
+
+    const panel = view.querySelector('#documents-tiab-handoff');
+    expect(panel).not.toBeNull();
+    expect(panel?.querySelector('h3')?.textContent).toBe('tiab-review 引き継ぎの続き');
+
+    // tiab カード（#documents-tiab-open）より前に描画される
+    const children = Array.from(view.children);
+    const handoffIndex = children.findIndex((c) => c.id === 'documents-tiab-handoff');
+    const cardIndex = children.findIndex((c) => c.querySelector('#documents-tiab-open') !== null);
+    expect(handoffIndex).toBeGreaterThanOrEqual(0);
+    expect(cardIndex).toBeGreaterThan(handoffIndex);
+
+    const importButton = view.querySelector('#tiab-handoff-import') as HTMLButtonElement;
+    const dismissButton = view.querySelector('#tiab-handoff-dismiss') as HTMLButtonElement;
+    expect(importButton.disabled).toBe(false);
+    expect(dismissButton.disabled).toBe(false);
+    expect(view.querySelector('#tiab-handoff-running')).toBeNull();
+    expect(view.querySelector('#tiab-handoff-error')).toBeNull();
+
+    importButton.click();
+    expect(callbacks.onTiabHandoffImport).toHaveBeenCalledTimes(1);
+    dismissButton.click();
+    expect(callbacks.onTiabHandoffDismiss).toHaveBeenCalledTimes(1);
+  });
+
+  test('running 中: 両ボタンを disabled にし role=status の実行中表示を出す', () => {
+    const { ctx } = makeCtx();
+    const view = renderDocumentsView(
+      makeState({ tiabHandoff: handoffState({ running: true }) }),
+      ctx,
+    );
+    expect((view.querySelector('#tiab-handoff-import') as HTMLButtonElement).disabled).toBe(true);
+    expect((view.querySelector('#tiab-handoff-dismiss') as HTMLButtonElement).disabled).toBe(true);
+    const running = view.querySelector('#tiab-handoff-running');
+    expect(running?.getAttribute('role')).toBe('status');
+    expect(running?.textContent).toBe('tiab-review の fulltext を確認しています…');
+  });
+
+  test('通常取り込み中（documents.importing）は import ボタンだけ disabled にする（dismiss は活性のまま）', () => {
+    const { ctx } = makeCtx();
+    const view = renderDocumentsView(
+      makeState({ tiabHandoff: handoffState(), importing: true }),
+      ctx,
+    );
+    expect((view.querySelector('#tiab-handoff-import') as HTMLButtonElement).disabled).toBe(true);
+    expect((view.querySelector('#tiab-handoff-dismiss') as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  test('エラーあり: role=alert でエラー文言を表示する（パネル自体は残る）', () => {
+    const { ctx } = makeCtx();
+    const view = renderDocumentsView(
+      makeState({ tiabHandoff: handoffState({ error: 'include に Drive 上の fulltext PDF が見つかりませんでした' }) }),
+      ctx,
+    );
+    const error = view.querySelector('#tiab-handoff-error');
+    expect(error?.getAttribute('role')).toBe('alert');
+    expect(error?.textContent).toBe('include に Drive 上の fulltext PDF が見つかりませんでした');
+    expect((view.querySelector('#tiab-handoff-import') as HTMLButtonElement).disabled).toBe(false);
   });
 });
 

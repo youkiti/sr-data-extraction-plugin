@@ -27,16 +27,24 @@ import {
 import {
   createChromePickerDeps,
   openSpreadsheetPicker,
+  openTiabSpreadsheetPicker,
+  type PickerSelection,
   type SpreadsheetPickResult,
 } from '../lib/google/picker';
 import { SheetsAccessDeniedError } from '../lib/google/sheets';
 import type { GoogleApiDeps } from '../lib/google/types';
 import { getUiLanguage, localizeDom, setUiLanguage, t } from '../lib/i18n';
 import { loadUiLanguage } from '../lib/storage/settingsStore';
+import { readTiabSheet } from '../features/documents/tiabSheetReader';
+import { resolveAdoptedReferences } from '../features/documents/tiabReview';
+import { saveTiabHandoff } from '../features/project/tiabHandoffStore';
 
 export interface PopupDeps {
-  /** メインビュー（app.html）へ遷移する（S1 はフルページ表示のため同一タブを書き換える） */
-  openAppTab: () => void;
+  /**
+   * メインビュー（app.html）へ遷移する（S1 はフルページ表示のため同一タブを書き換える）。
+   * hash を渡すと該当ルートへ直接遷移する（例: '#/documents'。tiab-review 引き継ぎ作成後）
+   */
+  openAppTab: (hash?: string) => void;
   /** 設定画面を開く（アプリ内 #/options へ同一タブ遷移） */
   openOptions: () => void;
   /** Sheets / Drive API 呼び出し用の依存 */
@@ -53,6 +61,12 @@ export interface PopupDeps {
    * 要求 ID と同じシートが選ばれたら 'granted'、別シートは 'mismatch'、キャンセルは 'cancelled'
    */
   openSpreadsheetPicker: (spreadsheetId: string) => Promise<SpreadsheetPickResult>;
+  /**
+   * tiab-review 引き継ぎ用の全シート選択 Picker（S1 #popup-tiab-handoff。docs/ui-states.md §1）。
+   * `view=spreadsheet` を `file_id` 制限なしで開き、選択がそのまま drive.file 付与になる。
+   * キャンセル / タブを閉じる → null
+   */
+  openTiabSheetPicker: () => Promise<PickerSelection | null>;
   /** 許可後の開き直し再試行の間隔待ち（テストで固定するため注入） */
   sleep: (ms: number) => Promise<void>;
   /** 既にログイン済みかを UI を出さずに確認（サイレント取得のみ） */
@@ -71,10 +85,10 @@ export function createChromePopupDeps(): PopupDeps {
   const auth = createChromeAuthClientDeps();
   const google = createChromeGoogleApiDeps(auth);
   return {
-    openAppTab: () => {
+    openAppTab: (hash) => {
       // S1 は新規タブのフルページとして開かれるため、選択後は同一タブのまま
-      // メインビューへ遷移する（タブを増やさない）
-      void chrome.tabs.update({ url: chrome.runtime.getURL('app/app.html') });
+      // メインビューへ遷移する（タブを増やさない）。hash 指定で特定ルートへ直接遷移する
+      void chrome.tabs.update({ url: chrome.runtime.getURL('app/app.html' + (hash ?? '')) });
     },
     openOptions: () => {
       // 設定はアプリ内 #/options として同一タブで開く（別タブを増やさない）。
@@ -86,6 +100,7 @@ export function createChromePopupDeps(): PopupDeps {
     chromeProfileEmail: () => getChromeProfileEmail(),
     openSpreadsheetPicker: (spreadsheetId) =>
       openSpreadsheetPicker(createChromePickerDeps(google), spreadsheetId),
+    openTiabSheetPicker: () => openTiabSpreadsheetPicker(createChromePickerDeps(google)),
     sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
     isAuthenticated: async () => {
       try {
@@ -127,6 +142,12 @@ interface PopupElements {
   openId: HTMLInputElement;
   openError: HTMLElement;
   openGrant: HTMLButtonElement;
+  tiabPick: HTMLButtonElement;
+  tiabForm: HTMLFormElement;
+  tiabTitle: HTMLInputElement;
+  tiabSubmit: HTMLButtonElement;
+  tiabStatus: HTMLElement;
+  tiabError: HTMLElement;
   openOptionsButton: HTMLElement;
 }
 
@@ -150,6 +171,12 @@ function collectElements(doc: Document): PopupElements | null {
     openId: doc.getElementById('popup-open-id'),
     openError: doc.getElementById('popup-open-error'),
     openGrant: doc.getElementById('popup-open-grant'),
+    tiabPick: doc.getElementById('tiab-pick'),
+    tiabForm: doc.getElementById('tiab-create-form'),
+    tiabTitle: doc.getElementById('tiab-project-title'),
+    tiabSubmit: doc.getElementById('tiab-create-submit'),
+    tiabStatus: doc.getElementById('tiab-status'),
+    tiabError: doc.getElementById('tiab-error'),
     openOptionsButton: doc.getElementById('open-options'),
   };
   for (const el of Object.values(els)) {
@@ -190,6 +217,7 @@ export async function bootstrapPopup(doc: Document, deps: PopupDeps): Promise<vo
   });
   bindCreateForm(els, deps);
   bindOpenForm(els, deps);
+  bindTiabHandoff(els, deps);
   await refresh(doc, els, deps);
 }
 
@@ -407,6 +435,80 @@ async function runGrantFlow(
   }
   els.openError.textContent = t('popup.grantStillDenied');
   els.openGrant.hidden = true;
+}
+
+/**
+ * tiab-review から引き継いで作成（S1 #popup-tiab-handoff。docs/ui-states.md §1 状態 A〜E）。
+ * Picker でシートを選ぶ → References / Decisions を直読みして include 件数を検証 →
+ * タイトル確認フォームで新規プロジェクトを作成し、引き継ぎ状態（projectId + tiab シート ID）を
+ * chrome.storage.local へ保存して S3 documents（#/documents）へ直接遷移する。
+ */
+function bindTiabHandoff(els: PopupElements, deps: PopupDeps): void {
+  // 検証成功した tiab シートの ID（作成フォーム submit で使う。別シートの選び直しで更新される）
+  let checkedSheetId: string | null = null;
+
+  els.tiabPick.addEventListener('click', () => {
+    els.tiabError.textContent = '';
+    els.tiabPick.disabled = true;
+    // 状態 B: Picker 選択中
+    els.tiabStatus.textContent = t('popup.tiabPicking');
+    void deps
+      .openTiabSheetPicker()
+      .then(async (selection) => {
+        if (selection === null) {
+          // キャンセル / タブを閉じる: 状態 A へ戻る（既に検証済みのフォームがあれば維持する）
+          els.tiabStatus.textContent = '';
+          return;
+        }
+        // 状態 C: 検証中
+        els.tiabStatus.textContent = t('popup.tiabChecking');
+        const sheet = await readTiabSheet(selection.sourceFileId, deps.google);
+        const adopted = resolveAdoptedReferences(
+          sheet.references,
+          sheet.decisions,
+          sheet.activeFulltextAiRound,
+        );
+        // 状態 D: 作成確認
+        checkedSheetId = selection.sourceFileId;
+        els.tiabForm.hidden = false;
+        els.tiabTitle.value = selection.filename;
+        els.tiabStatus.textContent = t('popup.tiabDetected', { n: adopted.includes.length });
+      })
+      .catch((err: unknown) => {
+        // tiab-review のシートでない等の検証失敗: 状態 A へ戻す
+        els.tiabError.textContent = formatError(err);
+        els.tiabStatus.textContent = '';
+        els.tiabForm.hidden = true;
+        checkedSheetId = null;
+      })
+      .finally(() => {
+        els.tiabPick.disabled = false;
+      });
+  });
+
+  els.tiabForm.addEventListener('submit', (event) => {
+    event.preventDefault();
+    els.tiabError.textContent = '';
+    const sheetId = checkedSheetId;
+    // 状態 E: 作成中
+    els.tiabSubmit.disabled = true;
+    els.tiabSubmit.textContent = t('popup.creating');
+    void createNewProject(els.tiabTitle.value, { google: deps.google, profile: deps.profile })
+      .then(async (ref) => {
+        if (sheetId !== null) {
+          await saveTiabHandoff({ projectId: ref.projectId, tiabSheetId: sheetId });
+        }
+        deps.openAppTab('#/documents');
+      })
+      .catch((err: unknown) => {
+        // 状態 E（失敗）: プロジェクトは作られない
+        els.tiabError.textContent = formatError(err);
+      })
+      .finally(() => {
+        els.tiabSubmit.disabled = false;
+        els.tiabSubmit.textContent = t('popup.tiabCreateSubmit');
+      });
+  });
 }
 
 function formatError(err: unknown): string {

@@ -10,6 +10,7 @@ import {
   ignoredCandidatesKey,
   importFromFiles,
   importFromPicker,
+  importPickedSelections,
   loadDocuments,
   openMergeCandidate,
   openMergeDialog,
@@ -32,6 +33,7 @@ import {
   updateStudy,
 } from '../../../../src/features/documents/studyRepository';
 import { readRunStudyCoverage } from '../../../../src/features/extraction/runRepository';
+import { loadTiabHandoff } from '../../../../src/features/project/tiabHandoffStore';
 import { ensureChildFolder, listFolderPdfs } from '../../../../src/lib/google/drive';
 import { getCurrentUserEmail } from '../../../../src/lib/google/identity';
 import { FOLDER_MIME_TYPE, openPdfPicker } from '../../../../src/lib/google/picker';
@@ -55,6 +57,7 @@ jest.mock('../../../../src/features/documents/studyRepository', () => {
   };
 });
 jest.mock('../../../../src/features/extraction/runRepository');
+jest.mock('../../../../src/features/project/tiabHandoffStore');
 jest.mock('../../../../src/lib/google/drive');
 jest.mock('../../../../src/lib/google/identity');
 jest.mock('../../../../src/lib/google/picker');
@@ -68,6 +71,7 @@ const mockReadStudies = jest.mocked(readStudies);
 const mockAppendStudies = jest.mocked(appendStudies);
 const mockUpdateStudy = jest.mocked(updateStudy);
 const mockReadCoverage = jest.mocked(readRunStudyCoverage);
+const mockLoadTiabHandoff = jest.mocked(loadTiabHandoff);
 const mockEnsureChildFolder = jest.mocked(ensureChildFolder);
 const mockListFolderPdfs = jest.mocked(listFolderPdfs);
 const mockGetCurrentUserEmail = jest.mocked(getCurrentUserEmail);
@@ -171,6 +175,7 @@ beforeEach(() => {
   });
   mockGetLocal.mockResolvedValue(undefined);
   mockSetLocal.mockResolvedValue(undefined);
+  mockLoadTiabHandoff.mockResolvedValue(null);
 });
 
 describe('loadDocuments', () => {
@@ -228,6 +233,100 @@ describe('loadDocuments', () => {
     mockReadDocuments.mockRejectedValue('str');
     await loadDocuments(store, makeDeps(), { force: true });
     expect(store.getState().documents.loadError).toBe('str');
+  });
+
+  // tiab-review 引き継ぎパネル（ui-states.md §3 / ※Q2）: storage の tiabHandoff との同期
+  test('tiabHandoff: storage の projectId が一致すれば running / error を維持したまま反映する（取り込み完了後の force 再読込で消えない）', async () => {
+    const store = makeStore();
+    setDocs(store, {
+      records: [],
+      studies: [],
+      tiabHandoff: { tiabSheetId: 'old-sheet-id', running: true, error: '前回のエラー' },
+    });
+    mockReadDocuments.mockResolvedValue([]);
+    mockReadStudies.mockResolvedValue([]);
+    mockLoadTiabHandoff.mockResolvedValue({ projectId: 'p1', tiabSheetId: 'tiab-sheet-xyz' });
+
+    await loadDocuments(store, makeDeps(), { force: true });
+
+    expect(store.getState().documents.tiabHandoff).toEqual({
+      tiabSheetId: 'tiab-sheet-xyz',
+      running: true,
+      error: '前回のエラー',
+    });
+  });
+
+  test('tiabHandoff: 直前状態が無い初回読込は running=false / error=null で初期化する', async () => {
+    const store = makeStore();
+    mockReadDocuments.mockResolvedValue([]);
+    mockReadStudies.mockResolvedValue([]);
+    mockLoadTiabHandoff.mockResolvedValue({ projectId: 'p1', tiabSheetId: 'tiab-sheet-xyz' });
+
+    await loadDocuments(store, makeDeps());
+
+    expect(store.getState().documents.tiabHandoff).toEqual({
+      tiabSheetId: 'tiab-sheet-xyz',
+      running: false,
+      error: null,
+    });
+  });
+
+  test('tiabHandoff: storage が別プロジェクトを指すなら非表示（null）にする', async () => {
+    const store = makeStore();
+    setDocs(store, {
+      records: [],
+      studies: [],
+      tiabHandoff: { tiabSheetId: 'old-sheet-id', running: false, error: null },
+    });
+    mockReadDocuments.mockResolvedValue([]);
+    mockReadStudies.mockResolvedValue([]);
+    mockLoadTiabHandoff.mockResolvedValue({ projectId: 'other-project', tiabSheetId: 'tiab-sheet-xyz' });
+
+    await loadDocuments(store, makeDeps(), { force: true });
+
+    expect(store.getState().documents.tiabHandoff).toBeNull();
+  });
+
+  test('tiabHandoff: storage が空（未保存）なら非表示（null）にする', async () => {
+    const store = makeStore();
+    mockReadDocuments.mockResolvedValue([]);
+    mockReadStudies.mockResolvedValue([]);
+    mockLoadTiabHandoff.mockResolvedValue(null);
+
+    await loadDocuments(store, makeDeps());
+
+    expect(store.getState().documents.tiabHandoff).toBeNull();
+  });
+});
+
+describe('importPickedSelections（Picker 確定後の共通取り込み処理。tiab-review 引き継ぎパネルからも再利用）', () => {
+  test('プロジェクト未選択 / 取り込み中 / 選択 0 件は no-op', async () => {
+    await importPickedSelections(makeStore(false), makeDeps(), [{ sourceFileId: 'src-1', filename: 'a.pdf' }]);
+    expect(mockEnsureChildFolder).not.toHaveBeenCalled();
+
+    const importingStore = makeStore();
+    setDocs(importingStore, { importing: true });
+    await importPickedSelections(importingStore, makeDeps(), [{ sourceFileId: 'src-1', filename: 'a.pdf' }]);
+    expect(mockEnsureChildFolder).not.toHaveBeenCalled();
+
+    const store = makeStore();
+    await importPickedSelections(store, makeDeps(), []);
+    expect(mockEnsureChildFolder).not.toHaveBeenCalled();
+    expect(store.getState().documents.importing).toBe(false);
+  });
+
+  test('選択を取り込みパイプラインへ渡す（importFromPicker と同じ挙動）', async () => {
+    const store = makeStore();
+    mockImportDocuments.mockResolvedValue({
+      importedStudies: [makeStudy({ studyId: 'study-1' })],
+      imported: [makeDoc({ documentId: 'doc-1', studyId: 'study-1' })],
+      failures: [],
+    });
+
+    await importPickedSelections(store, makeDeps(), [{ sourceFileId: 'src-1', filename: 'a.pdf' }]);
+
+    expect(store.getState().documents.records?.map((d) => d.documentId)).toEqual(['doc-1']);
+    expect(toastTexts()).toContain('1 件の PDF を取り込みました');
   });
 });
 

@@ -139,6 +139,22 @@ describe('loadProjectMeta', () => {
     );
   });
 
+  describe('tiab-review シートの誤入力（docs/ui-states.md §1。Meta 欠落の一般文言より優先）', () => {
+    test('References / Decisions を持ち Meta が無ければ tiab-review 専用文言で reject する', async () => {
+      const deps = makeDeps({ tabs: ['References', 'Decisions', 'Config'] });
+      await expect(loadProjectMeta('SID', deps)).rejects.toThrow(
+        /これは tiab-review のスプレッドシートのようです/,
+      );
+    });
+
+    test('References / Decisions を持ち Documents / SchemaFields が無ければ同エラー', async () => {
+      const deps = makeDeps({ tabs: ['Meta', 'References', 'Decisions'] });
+      await expect(loadProjectMeta('SID', deps)).rejects.toThrow(
+        /これは tiab-review のスプレッドシートのようです/,
+      );
+    });
+  });
+
   test('Meta タブが空なら ProjectSchemaError', async () => {
     const deps = makeDeps({ rows: [] });
     await expect(loadProjectMeta('SID', deps)).rejects.toBeInstanceOf(ProjectSchemaError);
