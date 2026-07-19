@@ -105,11 +105,17 @@ describe('withThrottle', () => {
 
   test('sleep / now 未注入でも実タイマー（defaultSleep / defaultNow）で間隔を空ける', async () => {
     const { provider, callTimes } = providerRecording({ now: 0 });
-    const wrapped = withThrottle(provider, { minIntervalMs: 5 });
+    const wrapped = withThrottle(provider, { minIntervalMs: 25 });
     const startedAt = Date.now();
-    await wrapped.chat([{ role: 'user', content: 'a' }]); // 初回は待たない
-    await wrapped.chat([{ role: 'user', content: 'b' }]); // 2 本目は実タイマーで ~5ms 待つ
+    // 2 本を同一タスク内で連続起動する: 同期部（時刻計算と nextAllowedAt 更新）が
+    // back-to-back で走るため 2 本目は必ず wait > 0 になり、defaultSleep を決定的に通る。
+    // 逐次 await だと遅い CI ランナーで呼び出し間に minIntervalMs 以上経過して wait = 0 になり、
+    // テストは通るのに defaultSleep がカバレッジから漏れることがある（CI で実際に発生）
+    await Promise.all([
+      wrapped.chat([{ role: 'user', content: 'a' }]), // 初回は待たない
+      wrapped.chat([{ role: 'user', content: 'b' }]), // 2 本目は実タイマーで ~25ms 待つ
+    ]);
     expect(callTimes).toHaveLength(2);
-    expect(Date.now() - startedAt).toBeGreaterThanOrEqual(4);
+    expect(Date.now() - startedAt).toBeGreaterThanOrEqual(20);
   });
 });

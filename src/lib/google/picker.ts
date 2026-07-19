@@ -333,6 +333,24 @@ export async function openProjectFilesPicker(
   );
 }
 
+/**
+ * tiab-review 引き継ぎ用: 任意のスプレッドシートを 1 件選ぶ Picker（S1 `#popup-tiab-handoff`。
+ * docs/ui-states.md §1 / ※Q2）。`view=spreadsheet` を `file_id` 制限なしで開く
+ * （ホスト済みページは `file_id` が無ければ setFileIds を掛けず全シート表示になる）。
+ * 選択がそのまま drive.file 付与になる（tiab-review は別 OAuth クライアント作成のシートのため、
+ * この選択が唯一のアクセス経路）。キャンセル / タブを閉じる → null
+ */
+export async function openTiabSpreadsheetPicker(
+  deps: PickerDeps,
+): Promise<PickerSelection | null> {
+  const selections = await runPicker(deps, { view: 'spreadsheet' });
+  if (selections === null || selections.length === 0) {
+    return null;
+  }
+  // length > 0 が確定しているので [0] は必ず定義されている（noUncheckedIndexedAccess の分岐を作らない）
+  return selections[0] as PickerSelection;
+}
+
 /** スプレッドシート Picker の結果（docs/ui-states.md §1「アクセス許可が必要」） */
 export type SpreadsheetPickResult = 'granted' | 'mismatch' | 'cancelled';
 

@@ -26,6 +26,8 @@ flowchart LR
     Popup -->|プロジェクト選択| Open[メインビューへ遷移（同一タブ）]
     Popup -->|設定を開く（同一タブ）| Options
     Popup -->|新規プロジェクト| New["プロジェクト作成ウィザード（S2）"]
+    Popup -->|tiab-review から引き継いで作成（※Q2）| Handoff["シート Picker → 自動作成 → #/documents へ"]
+    Handoff --> Main
     New --> Open
     Open --> Main[メインビュー /app.html]
 
@@ -37,7 +39,8 @@ flowchart LR
     Main -->|認証エラー時に誘導| Options
 ```
 
-- プロジェクト作成ウィザード（S2）はスプレッドシート + Drive フォルダ（`documents/` / `extracted_texts/` / `raw_protocols/` / `logs/llm/`）を生成する。tiab-review 引き継ぎ（Q2）は P1 のため、MVP のウィザードは「新規作成」のみ
+- プロジェクト作成ウィザード（S2）はスプレッドシート + Drive フォルダ（`documents/` / `extracted_texts/` / `raw_protocols/` / `logs/llm/`）を生成する
+- **tiab-review 引き継ぎ（※Q2）**: S1 の「tiab-review から引き継いで作成」から、tiab シートの Picker 選択（= drive.file 付与）→ include 検証 → プロジェクト自動作成（タイトル既定 = シート名）→ 同一タブで `app.html#/documents` へ直接遷移し、S3 の引き継ぎパネルで include の fulltext PDF 一括取り込み → 採用リスト反映プレビューまで案内する（状態仕様は [ui-states.md](ui-states.md) §1 / §3）
 
 ### reviewer オンボーディング（v0.11・独立二重レビュー機能 issue #44）
 

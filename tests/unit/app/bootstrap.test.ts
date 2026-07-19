@@ -876,6 +876,60 @@ describe('bootstrapApp', () => {
     expect(toastTexts()).toContain('Drive Picker を開けませんでした: picker offline');
   });
 
+  test('#/documents の tiab-review 引き継ぎパネル（onTiabHandoffImport / onTiabHandoffDismiss）が配線されている（※Q2）', async () => {
+    const stub = createWindowStub({
+      currentProject: PROJECT,
+      home: COUNTS_LOADED,
+      documents: {
+        records: [],
+        studies: [],
+        extractedStudyIds: [],
+        ignoredCandidateKeys: [],
+        loading: false,
+        loadError: null,
+        importing: false,
+        importRows: [],
+        selectedStudyIds: [],
+        mergeDialog: null,
+        merging: false,
+        mergeError: null,
+        tiabImport: {
+          open: false,
+          sheetInput: '',
+          loading: false,
+          error: null,
+          accessDenied: false,
+          plan: null,
+          applying: false,
+          result: null,
+        },
+        tiabHandoff: { tiabSheetId: 'tiab-sheet-1234567890', running: false, error: null },
+      },
+    } as unknown as Partial<AppState>);
+    // records/studies が既に読込済み（[]）のため、#/documents 入場時の loadDocuments は no-op になり
+    // 上で注入した tiabHandoff がそのまま残る（onTiabApply テストと同じ手法）
+    const { deps } = createTabRoutingDeps({});
+    const store = await bootstrapApp(asWindow(stub), deps);
+    stub.location.hash = '#/documents';
+    stub.fireHashChange();
+    await flush();
+
+    expect(document.getElementById('documents-tiab-handoff')).not.toBeNull();
+
+    // 取り込み実行（onTiabHandoffImport）: tiab シートの読み込みに失敗し #tiab-handoff-error へ
+    (document.getElementById('tiab-handoff-import') as HTMLButtonElement).click();
+    await flush();
+    await flush();
+    expect(document.getElementById('tiab-handoff-error')).not.toBeNull();
+    expect(store?.getState().documents.tiabHandoff?.running).toBe(false);
+
+    // 閉じる（onTiabHandoffDismiss）: storage の引き継ぎ状態を破棄してパネルを消す
+    (document.getElementById('tiab-handoff-dismiss') as HTMLButtonElement).click();
+    await flush();
+    expect(store?.getState().documents.tiabHandoff).toBeNull();
+    expect(document.getElementById('documents-tiab-handoff')).toBeNull();
+  });
+
   test('#/protocol 入場で全 version を読み込む（0 件 → 新規フォーム表示）', async () => {
     const stub = createWindowStub({ currentProject: PROJECT, home: COUNTS_LOADED });
     const { deps, fetchMock } = createFakeDeps([[...SHEET_HEADERS.Protocol]]);
