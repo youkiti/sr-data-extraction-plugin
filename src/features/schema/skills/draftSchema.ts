@@ -12,7 +12,7 @@ import type { SchemaEditorRow } from '../types';
 export const DRAFT_SCHEMA_SKILL_NAME = 'draft-schema';
 
 /** プロンプト版数。プロンプト文言・スキーマを変えたら必ずインクリメントする */
-export const DRAFT_SCHEMA_PROMPT_VERSION = 1;
+export const DRAFT_SCHEMA_PROMPT_VERSION = 2;
 
 /** サンプル論文 1 本ぶんのページ別本文（extracted_texts/{id}.txt 由来） */
 export interface DraftSchemaSamplePaper {
@@ -33,6 +33,12 @@ export interface DraftSchemaPromptInput {
  * enum の許容値規約は後続の抽出品質と CSV 列名に直結するため、
  * 文言を変える場合は DRAFT_SCHEMA_PROMPT_VERSION を上げる
  *
+ * 版数 2: プロトコルからレビュータイプ（介入比較 / DTA / 予後 / scoping）を推定し、
+ * タイプに応じた entity_level 構成で提案するよう変更（従来は PICO・比較研究前提を強制し、
+ * scoping review 等でも arm / outcome_result 項目を出しがちだった）。
+ * DTA / 予後の結果インスタンスは arm セグメントなしの outcome_result として
+ * 既存のエンティティモデルへそのまま格納できる（requirements.md §3.3）
+ *
  * 末尾の "Propose 10-40 fields" は AI が一度に提案する項目数の目安であり、
  * スキーマ全体の項目数上限ではない（issue #80）。ユーザーは表形式エディタで項目を
  * 自由に追加・編集でき、SchemaFields タブ・CSV エクスポートのいずれも項目数を制限しない
@@ -45,14 +51,19 @@ Rules:
 - "field_name": a unique snake_case identifier (lowercase letters, digits, underscores; must start with a letter). It becomes a CSV column name.
 - "field_label": a short human-readable label in Japanese.
 - "section": one of "identification", "methods", "population", "intervention", "outcomes", or another short lowercase group name.
-- "entity_level": "study" for once-per-article fields (design, country, total N), "arm" for per-group fields (arm name, intervention detail, group N), "outcome_result" for per-outcome-per-timepoint results (events, totals, means, SDs). Never use any other level.
+- "entity_level": "study" for once-per-article fields (design, country, total N), "arm" for per-group fields (arm name, intervention detail, group N), "outcome_result" for fields repeated per result instance (per-outcome-per-timepoint results, per-index-test accuracy data, per-prognostic-factor effect estimates). Never use any other level.
 - "data_type": one of "text", "integer", "float", "boolean", "enum", "date".
 - "allowed_values": ONLY when data_type is "enum" — the permitted values joined by "|" (e.g. "rct|quasi_rct|observational"). Otherwise null.
 - "unit": the expected unit (e.g. "mg/day") or null. Values are extracted as reported; units are never converted.
 - "required": true for fields essential to the review question; extraction must report not_reported explicitly for them.
 - "extraction_instruction": a concrete instruction in English telling the extractor exactly what to look for and how to report it.
 - "example": a realistic example value as it would appear in an article, or null.
-- Cover the protocol's PICO: identification and methods fields, population fields, arm-level intervention fields, and outcome_result fields for every protocol-defined outcome (for binary outcomes: events and totals per arm; for continuous: mean, SD and N per arm).
+- First infer the review type from the protocol, then cover the protocol's key concepts at the entity levels that fit that type:
+  - Intervention (comparative) reviews: identification and methods fields, population fields, arm-level intervention fields, and outcome_result fields for every protocol-defined outcome (for binary outcomes: events and totals per arm; for continuous: mean, SD and N per arm).
+  - Diagnostic test accuracy reviews: study-level fields for the target condition, setting, index test and reference standard details; outcome_result fields repeated per index test for TP, FP, FN, TN and reported sensitivity/specificity, plus a positivity-threshold field when thresholds vary. Use "arm" only when the protocol actually compares participant groups.
+  - Prognosis reviews: study-level cohort and follow-up fields; outcome_result fields repeated per prognostic factor and outcome (and timepoint when reported) for the reported effect estimates (HR, OR, RR, ...) with their confidence intervals and adjustment variables. Use "arm" only when the studies define distinct exposure groups.
+  - Scoping or mapping reviews: chart the concepts the protocol lists as "study" level fields. Do not invent "arm" or "outcome_result" fields when the protocol defines no per-group or per-result numeric data.
+  - Other review types (prevalence, qualitative, ...): choose the closest structure above; prefer "study" level when in doubt.
 - Propose 10-40 fields. Do not include risk-of-bias domains.
 `.trim();
 

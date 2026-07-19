@@ -134,8 +134,18 @@ describe('parseDraftSchemaResponse', () => {
 
 describe('定数', () => {
   test('プロンプト版数とシステムプロンプト・応答スキーマが定義されている', () => {
-    expect(DRAFT_SCHEMA_PROMPT_VERSION).toBe(1);
+    expect(DRAFT_SCHEMA_PROMPT_VERSION).toBe(2);
     expect(DRAFT_SCHEMA_SYSTEM_PROMPT).toContain('snake_case');
     expect(DRAFT_SCHEMA_RESPONSE_SCHEMA['type']).toBe('array');
+  });
+
+  // 版数 2: レビュータイプ適応。scoping / DTA / 予後のプロトコルに PICO・比較研究の
+  // entity_level 構成を強制しないことがこの版の眼目のため、タイプ別の指示があることを固定する
+  test('システムプロンプトがレビュータイプ別の指示を含む（版数 2）', () => {
+    expect(DRAFT_SCHEMA_SYSTEM_PROMPT).toContain('First infer the review type');
+    expect(DRAFT_SCHEMA_SYSTEM_PROMPT).toContain('Intervention (comparative) reviews');
+    expect(DRAFT_SCHEMA_SYSTEM_PROMPT).toContain('Diagnostic test accuracy reviews');
+    expect(DRAFT_SCHEMA_SYSTEM_PROMPT).toContain('Prognosis reviews');
+    expect(DRAFT_SCHEMA_SYSTEM_PROMPT).toContain('Scoping or mapping reviews');
   });
 });
