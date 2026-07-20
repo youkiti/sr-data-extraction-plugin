@@ -32,8 +32,12 @@ export const EXTRACT_DATA_SKILL_NAME = 'extract-data';
  * v6（2026-07-13）: 小型モデル（flash-lite）の arm 単位 omission 対策として、arm レベル項目を
  *   含むバッチの suffix 末尾（Output format の後）へ completeness 強調を追記（issue #97）。
  *   prefix（protocol / documents / 画像）は不変更のためキャッシュヒットに影響しない
+ * v7（2026-07-20）: 多言語文書対応の明示（issue #95 層 2）。quote / value の規約へ
+ *   「原文の言語・文字体系のまま（翻訳・音写の禁止）」を明記（和文論文で quote が
+ *   英訳・音写されるとアンカリング不能になるため）。システムプロンプトのみの変更で、
+ *   同一 study 内の全バッチが共有する prefix 構造は不変のためキャッシュヒット率に影響しない
  */
-export const EXTRACT_DATA_PROMPT_VERSION = 6;
+export const EXTRACT_DATA_PROMPT_VERSION = 7;
 
 /** text_only モードで LLM へ渡すページ別本文（extracted_texts/{id}.txt 由来） */
 export interface ExtractDataPage {
@@ -109,9 +113,9 @@ Extract the requested fields from the provided documents and return ONLY a JSON 
 The documents (see "## Documents") all report the SAME trial (e.g. the main article, its trial registration, a protocol paper, a conference abstract). Read them together as one study.
 
 Rules:
-- "quote": copy the supporting passage VERBATIM from the document text — character for character, exactly as it appears (including line-break artifacts), no paraphrasing, no ellipsis. At most 300 characters; choose the shortest passage that contains the reported value. Highlighting in the PDF viewer depends on an exact match.
+- "quote": copy the supporting passage VERBATIM from the document text — character for character, exactly as it appears (including line-break artifacts), no paraphrasing, no ellipsis. Keep it in the document's original language and script — NEVER translate or transliterate (e.g. quote Japanese text in Japanese). At most 300 characters; choose the shortest passage that contains the reported value. Highlighting in the PDF viewer depends on an exact match.
 - Never infer, compute, or guess values that are not explicitly stated. If NO document reports a field, return the item with "not_reported": true, "value": null, "quote": null and "document_index": null.
-- "value": report exactly as written in the document. Do not convert units, do not round, do not translate.
+- "value": report exactly as written in the document, in its original language and script. Do not convert units, do not round, do not translate or transliterate.
 - "document_index": the 1-based number of the document (from the "=== Document i/N ... ===" headers) that your quote and page refer to. REQUIRED whenever "quote" is provided; set it to null only when "not_reported" is true.
 - "page": the 1-indexed page number within THAT document where the quote appears. Page boundaries are marked as [PAGE n] within each document.
 - For a scanned document with no text layer (its "=== Document i/N ..." note says so): its pages are attached as images right after the Documents section, each labeled "Document i/N page p". "quote" must be a verbatim transcription of the text actually visible in that page image (character for character, no paraphrasing), and "page" must be the p shown in that image's label.
