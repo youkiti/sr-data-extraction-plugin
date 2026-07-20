@@ -109,9 +109,8 @@ const DOCS = [makeDoc()];
 describe('extract-data skill 定数', () => {
   it('skill 名とプロンプト版数を公開する（LLMApiLog 記録用）', () => {
     expect(EXTRACT_DATA_SKILL_NAME).toBe('extract-data');
-    // v6: arm レベル項目を含むバッチの suffix 末尾へ completeness 強調を追記
-    // （小型モデルの arm omission 対策。issue #97）
-    expect(EXTRACT_DATA_PROMPT_VERSION).toBe(6);
+    // v7: 多言語文書対応の明示（quote / value を原文の言語・文字体系のまま返す規約を追記。issue #95 層 2）
+    expect(EXTRACT_DATA_PROMPT_VERSION).toBe(7);
   });
 
   it('システムプロンプトに verbatim quote の規約（300 文字上限）と document_index の規約を含む', () => {
@@ -120,6 +119,15 @@ describe('extract-data skill 定数', () => {
     expect(EXTRACT_DATA_SYSTEM_PROMPT).toContain('"not_reported": true');
     expect(EXTRACT_DATA_SYSTEM_PROMPT).toContain('"document_index"');
     expect(EXTRACT_DATA_SYSTEM_PROMPT).toContain('SAME trial');
+  });
+
+  it('システムプロンプトに quote / value を原文の言語・文字体系のまま返す規約（翻訳・音写の禁止）を含む（issue #95 層 2）', () => {
+    expect(EXTRACT_DATA_SYSTEM_PROMPT).toContain(
+      "Keep it in the document's original language and script — NEVER translate or transliterate",
+    );
+    expect(EXTRACT_DATA_SYSTEM_PROMPT).toContain(
+      'report exactly as written in the document, in its original language and script',
+    );
   });
 
   it('システムプロンプトにスキャン文書（画像添付）向けの quote / page 規約を含む', () => {
