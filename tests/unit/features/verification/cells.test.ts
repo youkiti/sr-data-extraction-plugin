@@ -276,7 +276,7 @@ describe('buildTabModel', () => {
     });
   });
 
-  test('rob_domain タブは base と estimate 別インスタンスを別グループにする（issue #109）', () => {
+  test('rob_domain タブは base と estimate 別インスタンスを別グループにし、base 見出しへ「共通（全 estimate）」を付記する（issue #109）', () => {
     const fields = [
       makeField({ fieldId: 'f-r', entityLevel: 'rob_domain', fieldName: 'rob2_judgement' }),
     ];
@@ -285,10 +285,75 @@ describe('buildTabModel', () => {
       makeDecision({ fieldId: 'f-r', entityKey: 'rob:d1|outcome:mortality', action: 'edit', value: 'low' }),
     ];
     const model = buildTabModel('rob_domain', fields, evidence, decisions);
-    expect(model.groups.map((g) => g.heading)).toEqual(['RoB: d1', 'RoB: d1 — mortality']);
+    expect(model.groups.map((g) => g.heading)).toEqual([
+      'RoB: d1 — 共通（全 estimate）',
+      'RoB: d1 — mortality',
+    ]);
     expect(model.cells.map((cell) => [cell.entityKey, cell.evidence?.evidenceId ?? null])).toEqual([
       ['rob:d1', 'ev-1'],
       ['rob:d1|outcome:mortality', null],
+    ]);
+  });
+
+  test('estimate 別インスタンスが無い rob_domain タブは base 見出しへ注記を付けない（現行表示のまま）', () => {
+    const fields = [
+      makeField({ fieldId: 'f-r', entityLevel: 'rob_domain', fieldName: 'rob2_judgement' }),
+    ];
+    const evidence = [makeEvidence({ fieldId: 'f-r', entityKey: 'rob:d1_randomization' })];
+    const model = buildTabModel('rob_domain', fields, evidence, []);
+    expect(model.groups.map((g) => g.heading)).toEqual(['RoB: d1_randomization']);
+  });
+
+  test('estimate 別インスタンスは宣言ドメインの判定 + 根拠 + そのドメインの SQ セルだけへ絞る（issue #109）', () => {
+    const fields = [
+      makeField({ fieldId: 'f-j', fieldIndex: 1, entityLevel: 'rob_domain', fieldName: 'rob2_judgement' }),
+      makeField({ fieldId: 'f-s', fieldIndex: 2, entityLevel: 'rob_domain', fieldName: 'rob2_support', required: false }),
+      makeField({ fieldId: 'f-sq11', fieldIndex: 3, entityLevel: 'rob_domain', fieldName: 'rob2_sq1_1' }),
+      makeField({ fieldId: 'f-sq21', fieldIndex: 4, entityLevel: 'rob_domain', fieldName: 'rob2_sq2_1' }),
+    ];
+    const evidence = [makeEvidence({ fieldId: 'f-j', entityKey: 'rob:d1_randomization' })];
+    const decisions = [
+      makeDecision({
+        fieldId: '__entity_instance__',
+        entityKey: 'rob:d1_randomization|outcome:pain',
+        action: 'edit',
+        value: 'rob:d1_randomization|outcome:pain',
+      }),
+    ];
+    const model = buildTabModel('rob_domain', fields, evidence, decisions);
+    // base は現行どおり全 field の直積（幽霊セル込み）
+    expect(model.groups[0]?.cells.map((cell) => cell.field.fieldName)).toEqual([
+      'rob2_judgement',
+      'rob2_support',
+      'rob2_sq1_1',
+      'rob2_sq2_1',
+    ]);
+    // オーバーライドは d1 所属の field のみ（他ドメインの SQ セルをばら撒かない）
+    expect(model.groups[1]?.cells.map((cell) => cell.field.fieldName)).toEqual([
+      'rob2_judgement',
+      'rob2_support',
+      'rob2_sq1_1',
+    ]);
+    // 宣言直後は AI 抽出なしの空セル（手入力のみ）で、進捗分母（cells）に含まれる
+    expect(
+      model.groups[1]?.cells.every(
+        (cell) => cell.evidence === null && cell.state.status === 'unverified',
+      ),
+    ).toBe(true);
+    expect(model.cells).toHaveLength(7);
+  });
+
+  test('テンプレート外のドメイン id の estimate インスタンスは base と同じ全 field 展開へフォールバックする（防御）', () => {
+    const fields = [
+      makeField({ fieldId: 'f-j', fieldIndex: 1, entityLevel: 'rob_domain', fieldName: 'rob2_judgement' }),
+      makeField({ fieldId: 'f-sq21', fieldIndex: 2, entityLevel: 'rob_domain', fieldName: 'rob2_sq2_1' }),
+    ];
+    const decisions = [makeDecision({ entityKey: 'rob:custom_x|outcome:pain' })];
+    const model = buildTabModel('rob_domain', fields, [], decisions);
+    expect(model.groups.map((g) => g.heading)).toEqual(['RoB: custom_x — pain']);
+    expect(model.groups[0]?.cells.map((cell) => cell.field.fieldName)).toEqual([
+      'rob2_judgement',
+      'rob2_sq2_1',
     ]);
   });
 

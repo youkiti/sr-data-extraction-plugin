@@ -90,6 +90,9 @@ function makeHandlers(): jest.Mocked<VerificationFormHandlers> {
     onOutcomeKeyChange: jest.fn(),
     onOutcomeTimeChange: jest.fn(),
     onOutcomeAdd: jest.fn(),
+    onRobEstimateKeyChange: jest.fn(),
+    onRobEstimateDomainChange: jest.fn(),
+    onRobEstimateAdd: jest.fn(),
     onToggleLayoutMode: jest.fn(),
     onMoveUnit: jest.fn(),
   };
@@ -115,6 +118,7 @@ function makeModel(
     canSearchText: true,
     armCard: null,
     outcomeAdd: null,
+    robEstimateAdd: null,
     armLocked: false,
     progress: {
       decided: 0,
@@ -902,6 +906,71 @@ describe('renderVerificationForm: アウトカム追加フォーム', () => {
     const error = root.querySelector('#verify-outcome-error');
     expect(error?.getAttribute('role')).toBe('alert');
     expect(error?.textContent).toContain('既に存在します');
+  });
+});
+
+describe('renderVerificationForm: estimate 別 RoB 評価の宣言フォーム（issue #109）', () => {
+  const robEstimateAdd = {
+    estimateOptions: [
+      { key: 'outcome:mortality|arm:1', label: 'mortality / 群 1' },
+      { key: 'outcome:pain|arm:1|time:8w', label: 'pain / 群 1 / 8w' },
+    ],
+    domainOptions: [
+      { id: 'd1_randomization', label: 'randomization process' },
+      { id: 'overall', label: 'overall risk of bias' },
+    ],
+    selectedEstimate: 'outcome:pain|arm:1|time:8w',
+    selectedDomain: 'd1_randomization',
+    error: null,
+  };
+
+  test('rob_domain タブでセレクタ・追加ボタンを描画し、変更と追加をハンドラへ渡す', () => {
+    const { root, handlers } = render(
+      makeModel([], {
+        tabs: ['rob_domain'],
+        activeTab: 'rob_domain',
+        robEstimateAdd,
+        progress: { decided: 0, total: 0, byTab: [{ tab: 'rob_domain', decided: 0, total: 0 }] },
+      }),
+    );
+    const card = root.querySelector('#verify-rob-est-add');
+    expect(card).not.toBeNull();
+    const key = root.querySelector<HTMLSelectElement>('#verify-rob-est-key');
+    const domain = root.querySelector<HTMLSelectElement>('#verify-rob-est-domain');
+    expect([...(key?.options ?? [])].map((option) => option.textContent)).toEqual([
+      'mortality / 群 1',
+      'pain / 群 1 / 8w',
+    ]);
+    expect(key?.value).toBe('outcome:pain|arm:1|time:8w');
+    expect([...(domain?.options ?? [])].map((option) => option.textContent)).toEqual([
+      'd1_randomization (randomization process)',
+      'overall (overall risk of bias)',
+    ]);
+    expect(domain?.value).toBe('d1_randomization');
+    key!.value = 'outcome:mortality|arm:1';
+    key!.dispatchEvent(new Event('change'));
+    expect(handlers.onRobEstimateKeyChange).toHaveBeenCalledWith('outcome:mortality|arm:1');
+    domain!.value = 'overall';
+    domain!.dispatchEvent(new Event('change'));
+    expect(handlers.onRobEstimateDomainChange).toHaveBeenCalledWith('overall');
+    root.querySelector<HTMLButtonElement>('#verify-rob-est-add-button')?.click();
+    expect(handlers.onRobEstimateAdd).toHaveBeenCalled();
+  });
+
+  test('宣言エラーは role=alert で出す', () => {
+    const { root } = render(
+      makeModel([], {
+        tabs: ['rob_domain'],
+        activeTab: 'rob_domain',
+        robEstimateAdd: {
+          ...robEstimateAdd,
+          error: 'entity_key rob:d1_randomization|outcome:mortality|arm:1 は既に宣言されています',
+        },
+      }),
+    );
+    const error = root.querySelector('#verify-rob-est-error');
+    expect(error?.getAttribute('role')).toBe('alert');
+    expect(error?.textContent).toContain('既に宣言されています');
   });
 });
 

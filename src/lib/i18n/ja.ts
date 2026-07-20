@@ -580,6 +580,12 @@ export const ja = {
   'verify.outcomeAddTitle': 'アウトカムを追加',
   'verify.outcomeKeyLabel': 'アウトカムキー',
   'verify.outcomeTimeLabel': '時点（任意）',
+  'verify.robEstAddTitle': 'estimate 別の評価を追加',
+  'verify.robEstKeyLabel': '対象 estimate（outcome_result インスタンス）',
+  'verify.robEstDomainLabel': '対象ドメイン',
+  'verify.robEstDuplicate': 'entity_key {key} は既に宣言されています',
+  'verify.robEstNoOutcome':
+    'outcome_result インスタンスがありません。先にアウトカムを検証・追加してください',
   'verify.shortcutNoteFocus':
     'ショートカット: a 承認 / e 修正 / x 棄却 / n 未報告 / z 直近判定を戻す / j・k 行移動 / h・l 列移動 / J・K ユニット切替 / f ハイライトへ',
   'verify.shortcutNoteList':

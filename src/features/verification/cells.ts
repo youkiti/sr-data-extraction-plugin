@@ -14,6 +14,7 @@ import {
   STUDY_ENTITY_KEY,
 } from '../../utils/entityKey';
 import { cellKeyOf, deriveCellStates, emptyCellState, type CellState } from './cellState';
+import { robOverrideFieldNames } from './robEstimateFields';
 
 export interface VerificationCell {
   cellKey: string;
@@ -244,6 +245,30 @@ export function splitDecidedCells(
 }
 
 /**
+ * インスタンスへ展開する field 列。rob_domain タブの estimate 別オーバーライド
+ * （issue #109）だけは「宣言ドメインの判定 + 根拠 + そのドメインの SQ」へ絞る
+ * （base は現行どおり全 field の直積 = 幽霊セル）。テンプレート外のドメイン id
+ * （防御）は base と同じ全 field 展開へフォールバックする
+ */
+function instanceFields(
+  tab: EntityLevel,
+  tabFields: readonly SchemaField[],
+  allFields: readonly SchemaField[],
+  entityKey: string,
+): readonly SchemaField[] {
+  if (tab !== 'rob_domain' || robEstimateScopeOf(entityKey) === null) {
+    return tabFields;
+  }
+  // scope が非 null なら parseEntityKey は必ず rob_domain バリアント（robEstimateScopeOf の定義）
+  const { domain } = parseEntityKey(entityKey) as { domain: string };
+  const allowed = robOverrideFieldNames(domain, allFields);
+  if (allowed === null) {
+    return tabFields;
+  }
+  return tabFields.filter((field) => allowed.has(field.fieldName));
+}
+
+/**
  * タブのセルモデルを構築する。decisions は「自分の annotator 行への判定」だけを
  * 渡すこと（他 annotator の判定を混ぜると状態導出が濁る）
  */
@@ -273,10 +298,21 @@ export function buildTabModel(
       }
     }
   } else {
-    for (const entityKey of entityInstances(tab, evidence, decisions, options)) {
+    const instanceKeys = entityInstances(tab, evidence, decisions, options);
+    // estimate 別オーバーライドが 1 つでもあるとき、base 見出しへ「共通（全 estimate）」を
+    // 付記して読み分けられるようにする（issue #109・ui-states.md #/verify）
+    const hasEstimateInstances =
+      tab === 'rob_domain' && instanceKeys.some((key) => robEstimateScopeOf(key) !== null);
+    for (const entityKey of instanceKeys) {
+      const label = entityKeyLabel(entityKey);
       groups.push({
-        heading: entityKeyLabel(entityKey),
-        cells: tabFields.map((field) => makeCell(field, entityKey, evidenceIndex, states)),
+        heading:
+          hasEstimateInstances && robEstimateScopeOf(entityKey) === null
+            ? `${label} — 共通（全 estimate）`
+            : label,
+        cells: instanceFields(tab, tabFields, fields, entityKey).map((field) =>
+          makeCell(field, entityKey, evidenceIndex, states),
+        ),
       });
     }
   }

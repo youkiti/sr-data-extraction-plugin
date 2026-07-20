@@ -24,6 +24,7 @@ import {
   availableTabs,
   buildTabModel,
   entityInstances,
+  entityKeyLabel,
   splitDecidedCells,
   type TabModel,
   type VerificationCell,
@@ -51,11 +52,16 @@ import {
   type EvidenceTextMatch,
   type HighlightOccurrence,
 } from '../../features/verification/highlights';
-import { buildOutcomeDeclarationDecisions } from '../../features/verification/instanceDeclarations';
+import {
+  buildOutcomeDeclarationDecisions,
+  buildRobEstimateDeclarationDecisions,
+  robEstimateEntityKeyOf,
+} from '../../features/verification/instanceDeclarations';
 import {
   isMermaidPreviewField,
   parseMermaid,
 } from '../../features/verification/mermaidPreview';
+import { robDomainOptions } from '../../features/verification/robEstimateFields';
 import { verificationProgress } from '../../features/verification/progress';
 import { findQuoteContext } from '../../features/verification/textContext';
 import type {
@@ -77,6 +83,7 @@ import type { VerificationFocusCardModel } from './verificationFocusCard';
 import {
   renderVerificationForm,
   type CellHighlightInfo,
+  type RobEstimateAddModel,
   type VerificationFormHandlers,
   type VerificationFormModel,
 } from './verificationForm';
@@ -297,6 +304,10 @@ export function createVerificationPanel(
   );
   let outcomeTimeDraft = '';
   let outcomeError: string | null = null;
+  // estimate 別 RoB 評価の宣言フォーム（issue #109）。draft 空文字 = 先頭候補を選択中
+  let robEstKeyDraft = '';
+  let robEstDomainDraft = '';
+  let robEstError: string | null = null;
   // 判定済みブロック（ui-states.md §3）: 直近判定の 1 件だけ元の位置へ残し、
   // それ以外の判定済みセルは下部ブロックへ送る。展開中セルは通常カードで描画する
   let recentDecidedKey: string | null = null;
@@ -304,6 +315,36 @@ export function createVerificationPanel(
 
   const currentTabModel = (): TabModel =>
     buildTabModel(activeTab, data.fields, currentEvidence(), ownDecisions, { armStructure });
+
+  /**
+   * 「estimate 別の評価を追加」フォーム（issue #109・ui-states.md #/verify）の表示素材。
+   * rob タブで、outcome_result インスタンスとテンプレート由来ドメインが 1 件以上あるときだけ表示
+   * （インスタンス源は Evidence / Decisions / 宣言イベント = entityInstances をそのまま流用）
+   */
+  function robEstimateAddModel(): RobEstimateAddModel | null {
+    if (activeTab !== 'rob_domain') {
+      return null;
+    }
+    const estimateKeys = entityInstances('outcome_result', currentEvidence(), ownDecisions, {
+      armStructure,
+    });
+    const domains = robDomainOptions(data.fields);
+    if (estimateKeys.length === 0 || domains.length === 0) {
+      return null;
+    }
+    const domainIds = domains.map((domain) => domain.id);
+    return {
+      estimateOptions: estimateKeys.map((key) => ({ key, label: entityKeyLabel(key) })),
+      domainOptions: domains,
+      selectedEstimate: estimateKeys.includes(robEstKeyDraft)
+        ? robEstKeyDraft
+        : (estimateKeys[0] as string),
+      selectedDomain: domainIds.includes(robEstDomainDraft)
+        ? robEstDomainDraft
+        : (domainIds[0] as string),
+      error: robEstError,
+    };
+  }
 
   /** 現在タブの表示順のセル（未判定 + 直近判定 → 判定済みブロック）。j / k の移動順（リストモード） */
   const displayCells = (): VerificationCell[] => {
@@ -1211,6 +1252,52 @@ export function createVerificationPanel(
       syncTextViewer();
       options.onInstanceDeclare?.(declarations);
     },
+    onRobEstimateKeyChange(value) {
+      robEstKeyDraft = value;
+      robEstError = null;
+    },
+    onRobEstimateDomainChange(value) {
+      robEstDomainDraft = value;
+      robEstError = null;
+    },
+    onRobEstimateAdd() {
+      const model = robEstimateAddModel();
+      /* istanbul ignore if -- 追加ボタンはフォーム（model 非 null）内にしか描画されず、
+         パネル内状態のインスタンス・ドメインは減らないため実行時に null にはならない
+         （ui-states.md の「outcome_result インスタンス 0 件」ケースの防御） */
+      if (model === null) {
+        robEstError = t('verify.robEstNoOutcome');
+        refreshForm();
+        return;
+      }
+      // セレクタの選択値は entityInstances / robDomainOptions 由来のため必ず有効なキーになる
+      const entityKey = robEstimateEntityKeyOf(model.selectedDomain, model.selectedEstimate);
+      const existing = entityInstances('rob_domain', currentEvidence(), ownDecisions);
+      if (existing.includes(entityKey)) {
+        robEstError = t('verify.robEstDuplicate', { key: entityKey });
+        refreshForm();
+        return;
+      }
+      const declarations = buildRobEstimateDeclarationDecisions({
+        studyId: data.study.studyId,
+        domainId: model.selectedDomain,
+        outcomeKey: model.selectedEstimate,
+        annotator: data.annotator,
+        annotatorType: data.annotatorType,
+        schemaVersion: data.schemaVersion,
+        decidedAt: now(),
+      });
+      ownDecisions.push(...declarations);
+      robEstError = null;
+      const nextModel = currentTabModel();
+      // 宣言を ownDecisions に追加済みなので、直後のセルモデルには必ず同じ entity_key が現れる
+      focusedCellKey = nextModel.cells.find((cell) => cell.entityKey === entityKey)!.cellKey;
+      editing = null;
+      refreshForm();
+      syncViewer();
+      syncTextViewer();
+      options.onInstanceDeclare?.(declarations);
+    },
     onToggleLayoutMode(mode) {
       setLayoutMode(mode);
     },
@@ -1250,6 +1337,7 @@ export function createVerificationPanel(
         activeTab === 'outcome_result' && armStructure !== null
           ? { outcomeKey: outcomeKeyDraft, time: outcomeTimeDraft, error: outcomeError }
           : null,
+      robEstimateAdd: robEstimateAddModel(),
       armLocked: armLocked(),
       progress: verificationProgress(data.fields, currentEvidence(), ownDecisions, { armStructure }),
       layoutMode,
