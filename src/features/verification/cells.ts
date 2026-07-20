@@ -7,7 +7,12 @@ import type { Decision } from '../../domain/decision';
 import type { Evidence } from '../../domain/evidence';
 import type { ConfirmedArmStructure } from '../../domain/armStructure';
 import type { EntityLevel, SchemaField } from '../../domain/schemaField';
-import { makeOutcomeEntityKey, parseEntityKey, STUDY_ENTITY_KEY } from '../../utils/entityKey';
+import {
+  makeOutcomeEntityKey,
+  parseEntityKey,
+  robEstimateScopeOf,
+  STUDY_ENTITY_KEY,
+} from '../../utils/entityKey';
 import { cellKeyOf, deriveCellStates, emptyCellState, type CellState } from './cellState';
 
 export interface VerificationCell {
@@ -55,19 +60,25 @@ export function entityKeyLabel(entityKey: string): string {
       return 'Study';
     case 'arm':
       return `群 ${parsed.arm}`;
-    case 'outcome_result': {
-      let label = parsed.outcome;
-      if (parsed.arm !== null) {
-        label += ` / 群 ${parsed.arm}`;
-      }
-      if (parsed.time !== null) {
-        label += ` / ${parsed.time}`;
-      }
-      return label;
-    }
+    case 'outcome_result':
+      return outcomeInstanceLabel(parsed.outcome, parsed.arm, parsed.time);
     case 'rob_domain':
-      return `RoB: ${parsed.domain}`;
+      return parsed.outcome === undefined
+        ? `RoB: ${parsed.domain}`
+        : `RoB: ${parsed.domain} — ${outcomeInstanceLabel(parsed.outcome, parsed.arm ?? null, parsed.time ?? null)}`;
   }
+}
+
+/** outcome_result インスタンスの表示部分（outcome ／ 群 ／ 時点を ` / ` で連結） */
+function outcomeInstanceLabel(outcome: string, arm: string | null, time: string | null): string {
+  let label = outcome;
+  if (arm !== null) {
+    label += ` / 群 ${arm}`;
+  }
+  if (time !== null) {
+    label += ` / ${time}`;
+  }
+  return label;
 }
 
 /** fieldId × entityKey → Evidence。同一セルに複数あれば後勝ち（後の行が新しい） */
@@ -96,7 +107,28 @@ function makeCell(
 }
 
 /**
- * 指定タブの entity インスタンス一覧（entity_key 昇順）。
+ * rob_domain タブのインスタンス表示順（issue #109・ui-states.md #/verify）:
+ * base（`rob:<domain_id>`）グループ群をキー昇順で先頭に、estimate 別オーバーライドグループ群を
+ * 参照先 outcome キー昇順（同一 estimate 内はキー昇順）で後ろに並べる
+ */
+export function compareRobInstanceKeys(a: string, b: string): number {
+  const scopeA = robEstimateScopeOf(a);
+  const scopeB = robEstimateScopeOf(b);
+  if (scopeA === null && scopeB === null) {
+    return a.localeCompare(b);
+  }
+  if (scopeA === null) {
+    return -1;
+  }
+  if (scopeB === null) {
+    return 1;
+  }
+  const byScope = scopeA.localeCompare(scopeB);
+  return byScope !== 0 ? byScope : a.localeCompare(b);
+}
+
+/**
+ * 指定タブの entity インスタンス一覧（entity_key 昇順。rob_domain のみ base 群 → estimate 別群）。
  * AI 抽出（Evidence）と判定履歴（Decisions）の双方から集める
  */
 export function entityInstances(
@@ -127,7 +159,9 @@ export function entityInstances(
       keys.add(entityKey);
     }
   }
-  return [...keys].sort((a, b) => a.localeCompare(b));
+  return level === 'rob_domain'
+    ? [...keys].sort(compareRobInstanceKeys)
+    : [...keys].sort((a, b) => a.localeCompare(b));
 }
 
 /**

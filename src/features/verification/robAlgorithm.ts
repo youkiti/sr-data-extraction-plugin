@@ -681,7 +681,7 @@ export function judgeOverallRobinsI(
 // --- UI 配線用の集約（issue #61 §3。#65 の collectConsistencyWarnings と同じ
 //     「純関数 + cellKey → 情報」パターン） --------------------------------------
 import { NOT_REPORTED_TOKEN } from '../../domain/annotation';
-import { parseEntityKey } from '../../utils/entityKey';
+import { parseEntityKey, robEstimateScopeOf } from '../../utils/entityKey';
 import { ROB2_SQ_FIELD_NAMES, ROBINS_I_SQ_FIELD_NAMES } from '../schema/presets/robTemplates';
 import type { CellGroup, TabModel, VerificationCell } from './cells';
 
@@ -950,12 +950,15 @@ function buildInfo(cell: VerificationCell, suggestion: Rob2Judgement | RobinsIJu
  * 無い domain_id）は suggestion が自然に null になり、aiUnconfirmed だけが有効に働く。
  * rob2 / robins_i それぞれの軽量版・SQ 完全版が同一スキーマに混在する場合（field_name は同じだが
  * 通常はエディタの重複バリデーションで防止される組み合わせ）も、group 内の `_judgement` セルを
- * 漏れなく走査する
+ * 漏れなく走査する。
+ * SQ 回答 → 提案の導出と overall のドメイン集約は同一スコープ（base = study 単位 /
+ * estimate 単位オーバーライドは参照先 outcome キー。issue #109）内で完結させる
  */
 export function collectRobAlgorithmInfo(model: TabModel): Map<string, RobAlgorithmInfo> {
   const result = new Map<string, RobAlgorithmInfo>();
-  const domainCurrentValues = new Map<string, Rob2Judgement | RobinsIJudgement | null>();
-  const overallCells: VerificationCell[] = [];
+  // スコープ（base = 空文字 / estimate = 参照先 outcome キーの正準形）→ ドメイン id → 現在判定値
+  const scopedDomainValues = new Map<string, Map<string, Rob2Judgement | RobinsIJudgement | null>>();
+  const overallCells: { cell: VerificationCell; scope: string }[] = [];
 
   for (const group of model.groups) {
     const entityKey = group.cells[0]?.entityKey;
@@ -966,12 +969,13 @@ export function collectRobAlgorithmInfo(model: TabModel): Map<string, RobAlgorit
     if (parsed === null || parsed.level !== 'rob_domain') {
       continue;
     }
+    const scope = robEstimateScopeOf(entityKey) ?? '';
     const judgementCells = group.cells.filter((cell) => cell.field.fieldName.endsWith('_judgement'));
     if (judgementCells.length === 0) {
       continue;
     }
     if (parsed.domain === 'overall') {
-      overallCells.push(...judgementCells);
+      overallCells.push(...judgementCells.map((cell) => ({ cell, scope })));
       continue;
     }
 
@@ -993,21 +997,25 @@ export function collectRobAlgorithmInfo(model: TabModel): Map<string, RobAlgorit
       const info = buildInfo(judgementCell, isPrimaryJudgement ? sqSuggestion : null);
       result.set(info.cellKey, info);
       if (isPrimaryJudgement) {
-        domainCurrentValues.set(parsed.domain, info.currentValue);
+        const domainValues =
+          scopedDomainValues.get(scope) ?? new Map<string, Rob2Judgement | RobinsIJudgement | null>();
+        domainValues.set(parsed.domain, info.currentValue);
+        scopedDomainValues.set(scope, domainValues);
       }
     }
   }
 
-  for (const cell of overallCells) {
+  for (const { cell, scope } of overallCells) {
+    const domainValues = scopedDomainValues.get(scope);
     const fieldName = cell.field.fieldName;
     let suggestion: Rob2Judgement | RobinsIJudgement | null = null;
     if (fieldName === ROB2_JUDGEMENT_FIELD_NAME) {
       suggestion = judgeOverallRob2(
-        ROB2_RCT_DOMAIN_IDS.map((id) => (domainCurrentValues.get(id) as Rob2Judgement | null) ?? null),
+        ROB2_RCT_DOMAIN_IDS.map((id) => (domainValues?.get(id) as Rob2Judgement | null) ?? null),
       );
     } else if (fieldName === ROBINS_I_JUDGEMENT_FIELD_NAME) {
       suggestion = judgeOverallRobinsI(
-        ROBINS_I_DOMAIN_IDS.map((id) => (domainCurrentValues.get(id) as RobinsIJudgement | null) ?? null),
+        ROBINS_I_DOMAIN_IDS.map((id) => (domainValues?.get(id) as RobinsIJudgement | null) ?? null),
       );
     }
     const info = buildInfo(cell, suggestion);

@@ -440,6 +440,21 @@ describe('buildFocusUnits: rob_domain タブ', () => {
     expect(units[0]?.rows.map((r) => r.field.fieldId)).toEqual(['f-judge', 'f-reason']);
   });
 
+  test('base と estimate 別グループはそれぞれ別ユニットになる（issue #109）', () => {
+    const evidence = [makeEvidence({ fieldId: 'f-judge', entityKey: 'rob:d1', value: 'low' })];
+    const decisions = [
+      makeDecision({ fieldId: 'f-judge', entityKey: 'rob:d1|outcome:mortality|arm:1' }),
+    ];
+    const model = buildTabModel('rob_domain', fields, evidence, decisions);
+    const units = buildFocusUnits('rob_domain', model);
+    expect(units.map((u) => u.unitKey)).toEqual(['rob:d1', 'rob:d1|outcome:mortality|arm:1']);
+    expect(units[1]).toMatchObject({
+      heading: 'RoB: d1 — mortality / 群 1',
+      columns: [{ entityKey: 'rob:d1|outcome:mortality|arm:1', label: 'RoB' }],
+    });
+    expect(units[1]?.rows.map((r) => r.field.fieldId)).toEqual(['f-judge', 'f-reason']);
+  });
+
   test('rob レベルフィールドが 0 件でもインスタンスがあれば heading ベースの unitKey で空行のユニットを作る', () => {
     const decisions = [makeDecision({ fieldId: 'x', entityKey: 'rob:d1' })];
     const model = buildTabModel('rob_domain', [], [], decisions);

@@ -3,8 +3,10 @@ import {
   makeArmEntityKey,
   makeOutcomeEntityKey,
   makeRobDomainEntityKey,
+  makeRobEstimateEntityKey,
   nextOutcomeId,
   parseEntityKey,
+  robEstimateScopeOf,
 } from '../../../src/utils/entityKey';
 
 describe('makeArmEntityKey', () => {
@@ -52,6 +54,45 @@ describe('makeRobDomainEntityKey', () => {
   });
 });
 
+describe('makeRobEstimateEntityKey', () => {
+  test('outcome のみの estimate スコープキーを生成する', () => {
+    expect(makeRobEstimateEntityKey('d1_randomization', { outcome: 'mortality' })).toBe(
+      'rob:d1_randomization|outcome:mortality',
+    );
+  });
+
+  test('outcome + arm + time は makeOutcomeEntityKey と同じ正準順序で組み立てる', () => {
+    expect(makeRobEstimateEntityKey('overall', { outcome: 'pain', arm: 1, time: '30d' })).toBe(
+      'rob:overall|outcome:pain|arm:1|time:30d',
+    );
+  });
+
+  test('ドメイン・参照先セグメントの区切り記号を拒否する', () => {
+    expect(() => makeRobEstimateEntityKey('d|1', { outcome: 'x' })).toThrow('entity_key');
+    expect(() => makeRobEstimateEntityKey('d1', { outcome: 'a|b' })).toThrow('entity_key');
+  });
+});
+
+describe('robEstimateScopeOf', () => {
+  test('estimate スコープキーから参照先 outcome キーを正準形で返す', () => {
+    expect(robEstimateScopeOf('rob:d1|outcome:mortality')).toBe('outcome:mortality');
+    expect(robEstimateScopeOf('rob:d1|outcome:mortality|arm:1')).toBe('outcome:mortality|arm:1');
+    expect(robEstimateScopeOf('rob:d1|outcome:pain|time:8w')).toBe('outcome:pain|time:8w');
+  });
+
+  test('順序違いの入力も正準順序（outcome → arm → time）へ戻る', () => {
+    expect(robEstimateScopeOf('rob:d1|outcome:mortality|time:30d|arm:1')).toBe(
+      'outcome:mortality|arm:1|time:30d',
+    );
+  });
+
+  test('base 評価・rob_domain 以外・形式不正は null', () => {
+    expect(robEstimateScopeOf('rob:d1')).toBeNull();
+    expect(robEstimateScopeOf('outcome:mortality|arm:1')).toBeNull();
+    expect(robEstimateScopeOf('broken')).toBeNull();
+  });
+});
+
 describe('nextOutcomeId', () => {
   test('既存 outcome_<n> の最大 + 1 を返す', () => {
     expect(
@@ -81,6 +122,42 @@ describe('parseEntityKey', () => {
 
   test('rob_domain レベル（P1）', () => {
     expect(parseEntityKey('rob:domain_1')).toEqual({ level: 'rob_domain', domain: 'domain_1' });
+  });
+
+  test('rob_domain の estimate スコープ（issue #109）', () => {
+    expect(parseEntityKey('rob:d1|outcome:mortality')).toEqual({
+      level: 'rob_domain',
+      domain: 'd1',
+      outcome: 'mortality',
+      arm: null,
+      time: null,
+    });
+    expect(parseEntityKey('rob:d1|outcome:mortality|arm:1|time:30d')).toEqual({
+      level: 'rob_domain',
+      domain: 'd1',
+      outcome: 'mortality',
+      arm: '1',
+      time: '30d',
+    });
+    // outcome_result と同じセグメント読解のため arm / time の順序違いも受理する
+    expect(parseEntityKey('rob:d1|outcome:mortality|time:30d|arm:1')).toEqual({
+      level: 'rob_domain',
+      domain: 'd1',
+      outcome: 'mortality',
+      arm: '1',
+      time: '30d',
+    });
+  });
+
+  test('estimate スコープの生成関数とラウンドトリップする', () => {
+    const key = makeRobEstimateEntityKey('d2_deviations', { outcome: 'sens', arm: 2, time: '12w' });
+    expect(parseEntityKey(key)).toEqual({
+      level: 'rob_domain',
+      domain: 'd2_deviations',
+      outcome: 'sens',
+      arm: '2',
+      time: '12w',
+    });
   });
 
   test('outcome_result レベル（arm / time 省略）', () => {
@@ -129,5 +206,15 @@ describe('parseEntityKey', () => {
     expect(parseEntityKey('outcome:x|time:1w|time:2w')).toBeNull(); // time 重複
     expect(parseEntityKey('outcome:x|foo:1')).toBeNull(); // 未知の後続セグメント
     expect(parseEntityKey('outcome:x|bad')).toBeNull(); // 後続セグメントにコロンなし
+  });
+
+  test('rob_domain の estimate スコープの形式不正は null（outcome_result と同じ厳格さ）', () => {
+    expect(parseEntityKey('rob:d1|arm:1')).toBeNull(); // outcome 無しで arm だけ
+    expect(parseEntityKey('rob:d1|time:30d')).toBeNull(); // outcome 無しで time だけ
+    expect(parseEntityKey('rob:d1|outcome:x|outcome:y')).toBeNull(); // outcome 重複
+    expect(parseEntityKey('rob:d1|outcome:x|arm:1|arm:2')).toBeNull(); // arm 重複
+    expect(parseEntityKey('rob:d1|outcome:x|time:1w|time:2w')).toBeNull(); // time 重複
+    expect(parseEntityKey('rob:d1|outcome:x|foo:1')).toBeNull(); // 未知の後続セグメント
+    expect(parseEntityKey('rob:d1|outcome:x|rob:d2')).toBeNull(); // rob の再出現
   });
 });
