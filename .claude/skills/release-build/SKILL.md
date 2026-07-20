@@ -1,11 +1,13 @@
 ---
 name: release-build
-description: Chrome Web Store 提出用のリリースビルドと zip 作成。本番ビルド → manifest から key 除去 → （初回のみ key.pem 同梱）→ release/ に zip 化 → 検証まで。「リリースビルド」「ストア用 zip」「提出用パッケージ」「Store 更新」で使用。
+description: Chrome Web Store 提出用のリリースビルドと zip 作成。version バンプ → 本番ビルド → `npm run pack:release`（過去 zip 削除・key 除去・zip 化・検証を自動実行）→ 提出。「リリースビルド」「ストア用 zip」「提出用パッケージ」「Store 更新」で使用。
 ---
 
 # リリースビルド（Chrome Web Store 提出用 zip 作成）
 
 Chrome Web Store へ提出・更新する zip を作る手順。**Store は manifest に `key` フィールドがあると拒否する**（2026-07-10 の初回提出で実証）ため、提出時だけ `key` を除去する。拡張 ID の固定は初回アップロード時の `key.pem` 同梱で達成済み。
+
+パッケージング（key 除去・zip 化・検証）は [`tools/release/pack.ps1`](../../../tools/release/pack.ps1) に実装済みで、`npm run pack:release` で実行する。**検証 NG なら非 0 終了する**ので、壊れた提出物は作られない。人間が判断するのは手順 0（前提チェック）と手順 3（提出）だけ。
 
 ## 前提知識
 
@@ -15,14 +17,15 @@ Chrome Web Store へ提出・更新する zip を作る手順。**Store は mani
   - **初回アップロードのみ** zip ルートへ `key.pem` として同梱する（Store が同じ拡張 ID を導出するため）。**初回提出は 2026-07-10 に完了済みなので、以後の更新では同梱しない**。
 - OAuth クライアント ID は manifest ではなく**コードへ注入**される: 本番ビルドは `.env` の `WEBAUTH_CLIENT_ID` **のみ**を読み、DefinePlugin の `__WEBAUTH_CLIENT_ID__` として service worker の認証ブローカーへ入る（`LOCAL_WEBAUTH_CLIENT_ID` は dev 優先用。webpack.config.js 参照）。本番で未設定なら webpack が**エラーで停止する**ので、壊れた提出物は作れない。
 - manifest に `oauth2` セクションは**無いのが正常形**（launchWebAuthFlow 移行後。スコープ `userinfo.email` + `drive.file` は認証ブローカー `src/background/authBroker.ts` の `OAUTH_SCOPES` が要求する）。
-- `release/` は gitignore 済み。
+- `release/` は gitignore 済み。**過去のビルドは残さない**（`pack:release` が実行のたび `release/*.zip` を全削除してから作り直す。dev zip も対象）。手元の zip は常に最新の提出物 1 つだけになる。
+- version は **`src/manifest.json` / `package.json` / `package-lock.json` の 3 箇所**を揃える。`pack:release` が不一致を検出して止める。
 
 ## 手順
 
 ### 0. 前提チェック
 
 1. `master` が最新で、リリース対象の変更がすべてマージ済みであることを確認する。
-2. **version バンプ**: `src/manifest.json` の `version` を上げる（Store は既存と同じ version の再アップロードを拒否する。初回 = 0.1.0）。バンプは変更なのでブランチ + PR を経由する（作業原則 1）。
+2. **version バンプ**: `src/manifest.json` / `package.json` / `package-lock.json` の `version` を**3 箇所とも**上げる（Store は既存と同じ version の再アップロードを拒否する。初回 = 0.1.0）。lock は手で書かず `npm install --package-lock-only` で追随させる。バンプは変更なのでブランチ + PR を経由する（作業原則 1）。
 3. `.env` に `WEBAUTH_CLIENT_ID` が設定されていることを確認する（値は出力しない。キー名の存在確認のみ）:
    ```bash
    grep -c '^WEBAUTH_CLIENT_ID=.' .env   # 1 なら OK
@@ -40,56 +43,34 @@ Chrome Web Store へ提出・更新する zip を作る手順。**Store は mani
 npm run build
 ```
 
-既知の警告: PDF.js バンドルサイズの performance 警告のみ。それ以外の WARNING / ERROR が出たら停止して報告。
+既知の警告: PDF.js / mermaid のバンドルサイズ performance 警告のみ。それ以外の WARNING / ERROR が出たら停止して報告。
 
-### 2. dist/manifest.json の検証
+### 2. パッケージング + 検証
 
-以下をすべて確認（1 つでも NG なら停止）:
-
-- `name` に `(dev)` サフィックスがない（= production ビルド）
-- `version` が意図した値
-- `oauth2` セクションが**存在しない**（launchWebAuthFlow 移行後の正常形。あったら移行前の残骸なので停止）
-- client_id がコードへ注入されていること:
-  ```bash
-  grep -rc '__WEBAUTH_CLIENT_ID__' dist/ | grep -v ':0'   # 何も出なければ OK（プレースホルダ残存なし）
-  grep -c 'apps\.googleusercontent\.com' dist/background/service-worker.js   # 1 以上なら OK（実値が入っている）
-  ```
-
-### 3. ステージング + zip 化（PowerShell）
-
-```powershell
-Set-Location c:\Users\youki\codes\sr-data-extraction-plugin
-$stage = "release\stage"
-if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }
-Copy-Item dist $stage -Recurse
-
-# manifest から key を除去（Store は key を拒否する）
-$m = Get-Content "$stage\manifest.json" -Raw | ConvertFrom-Json
-$m.PSObject.Properties.Remove('key')
-$m | ConvertTo-Json -Depth 10 | Set-Content "$stage\manifest.json" -Encoding utf8NoBOM
-
-# ★初回アップロードのときだけ（通常の更新ではこの行を実行しない）
-# Copy-Item "C:\Users\youki\codes\keys\sr-data-extraction-plugin-ext-key.pem" "$stage\key.pem"
-
-$version = $m.version
-$zip = "release\sr-data-extraction-plugin-$version.zip"
-if (Test-Path $zip) { Remove-Item $zip -Force }
-Compress-Archive -Path "$stage\*" -DestinationPath $zip
-Remove-Item $stage -Recurse -Force
-Get-Item $zip
+```bash
+npm run pack:release
 ```
 
-### 4. zip の検証
+`release/sr-data-extraction-plugin-<version>.zip` が出来る。スクリプトが順に実行するのは:
 
-zip を開いて以下を確認（1 つでも NG なら停止）:
+1. **dist の事前検証** — 本番ビルドか（`name` に `(dev)` が無い）/ version が 3 ファイルで一致 / `oauth2` セクション不在 / `__WEBAUTH_CLIENT_ID__` のプレースホルダ残存なし・実 client_id 注入済み
+2. **`release/*.zip` を全削除** — 過去ビルドは残さない
+3. **ステージング + `key` 除去** — manifest は生テキストから `key` 行だけを削る（`ConvertTo-Json` 再シリアライズによる配列・順序の破損を避けるため）
+4. **zip 化**
+5. **zip を展開し直して検証** — `manifest.json` がルートにある / `key` フィールド無し / **key 以外が dist と完全一致**（破損検知）/ `key.pem` 未同梱 / 同梱物（`_locales` `app` `background` `cmaps` `icons` `options` `popup` `styles` `pdf.worker.min.mjs`）/ zip 内も client_id 注入済み
 
-- `manifest.json` が **zip のルート**にある（`dist/manifest.json` のような入れ子は NG）
-- manifest に `key` フィールドが**ない**
-- ConvertTo-Json での破損がないこと（`permissions` / `host_permissions` / `optional_host_permissions` / `externally_connectable` / `background` を目視。client_id は manifest ではなく `background/service-worker.js` 内なので、手順 2 と同じ grep を zip 展開先でも実行して確認）
-- 更新提出なら `key.pem` が**入っていない**こと（初回のみ同梱）
-- 同梱物: `_locales` / `app` / `background` / `cmaps` / `options` / `popup` / `icons` / `pdf.worker.min.mjs` / `styles`（`cmaps` は和文 PDF 用 CMap。issue #95 で同梱）
+**1 つでも NG なら非 0 終了する**。全行 `OK` で終わったら手順 3 へ。NG が出たら落とし穴の表を見る。
 
-### 5. 提出
+- 1 の事前検証で止まった場合は `release/` に一切手を付けていないので、既存 zip は失われない。
+- 4 以降（zip 検証）で止まった場合は作りかけの zip が `release/` に残る。**その zip は提出しない**。原因を直して再実行すれば作り直される。
+
+初回アップロードのときだけ `key.pem` を同梱する（Store に同じ拡張 ID を導出させるため。**初回提出は 2026-07-10 に完了済みなので通常は不要**）:
+
+```bash
+pwsh -NoProfile -File tools/release/pack.ps1 -IncludeKeyPem
+```
+
+### 3. 提出
 
 - https://chrome.google.com/webstore/devconsole でアイテムを開き、新しい zip をアップロード → 審査へ提出。
 - 掲載メタ情報・権限の使用理由・単一用途の原稿は [docs/store/README.md](../../../docs/store/README.md) と [docs/store/permissions-justification.md](../../../docs/store/permissions-justification.md) が正典。
@@ -100,7 +81,10 @@ zip を開いて以下を確認（1 つでも NG なら停止）:
 
 | 症状 | 原因と対処 |
 |---|---|
-| 「マニフェストでは key フィールドを使用できません」 | manifest から `key` を除去し忘れ。手順 3 をやり直す |
+| 「マニフェストでは key フィールドを使用できません」 | manifest から `key` を除去し忘れ。`npm run pack:release` を通していれば起きない（zip 検証が止める） |
+| `dist が dev ビルドです` で停止 | 直前に `npm run dev` / `npm run watch` を回して dist が dev のまま。`npm run build` からやり直す |
 | ビルドが `WEBAUTH_CLIENT_ID が未設定です` で停止 | `.env` の `WEBAUTH_CLIENT_ID` 未設定（`LOCAL_WEBAUTH_CLIENT_ID` だけでは production に入らない）。手順 0-3 を確認して 1 をやり直す。※旧 `OAUTH_CLIENT_ID`（getAuthToken 時代）は issue #129 で廃止済みで、いくら設定しても読まれない |
-| 同じ version でアップロード拒否 | `src/manifest.json` の version バンプ忘れ。手順 0-2 |
+| `package.json の version が manifest と一致しません` で停止 | 3 箇所のバンプ漏れ。手順 0-2 |
+| `manifest の key 行を一意に特定できません` で停止 | dist/manifest.json の整形が変わった（webpack の `transformManifest` は `JSON.stringify(manifest, null, 2)` 前提でトップレベルのインデントは半角 2 個）。webpack.config.js の変更を確認し、必要なら `tools/release/pack.ps1` の `$keyLinePattern` を追随させる |
+| 同じ version でアップロード拒否 | version バンプ忘れ。手順 0-2 |
 | 拡張 ID が変わった | 初回アップロードで `key.pem` を同梱し忘れた場合に起こる（初回は完了済みのため通常は起こらない）。GCP の OAuth クライアント設定と突き合わせて報告 |

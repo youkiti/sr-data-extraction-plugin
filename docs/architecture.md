@@ -23,7 +23,7 @@ sr-data-extraction-plugin/
 │   ├── unit/                      # 単体テスト（src/ 構成をミラー）
 │   └── e2e/                       # Playwright（ルート別 spec + axe）
 ├── hosted/                        # GitHub Pages でホストする Drive Picker ページ（picker.html + README.md）
-├── tools/                         # 開発補助スクリプト（playwright-server.js 等）
+├── tools/                         # 開発補助スクリプト（playwright-server.js / selenium/ / release/pack.ps1）
 ├── experiments/                   # 抽出精度ベンチマーク（requirements.md §8。tiab-review の運用を踏襲）
 ├── sr-query-builder-plugin/       # サブモジュール（要件・UI 構成の参照実装）
 ├── tiab-review-plugin/            # サブモジュール（技術スタック・オフライン同期の参照実装）
@@ -235,7 +235,11 @@ anchorQuote() ──文字範囲──▶ highlightMap() ──span 座標──
 
 ### 3.2 npm スクリプト
 
-sr-query-builder と同一（`dev` / `watch` / `build` / `release:alpha` / `lint` / `lint:css` / `typecheck` / `test` / `test:e2e`）。
+`dev` / `watch` / `build` / `pack:release` / `lint` / `lint:css` / `typecheck` / `test` / `test:watch` / `test:coverage` / `test:e2e` / `test:e2e:ui` / `manual:check`。
+
+`pack:release`（= `tools/release/pack.ps1`）は Chrome ウェブストア提出用 zip を作る。`npm run build` 済みの `dist/` を入力に、事前検証 → `release/*.zip` の全削除（過去ビルドは残さない）→ manifest からの `key` 除去 → zip 化 → 展開し直しての検証、までを行い、検証 NG なら非 0 終了する。運用手順は `.claude/skills/release-build/SKILL.md` が正典。
+
+> sr-query-builder のアルファ配布用 `release:alpha` は踏襲していない（本拡張は Chrome ウェブストア公開を採用）。
 
 ## 4. テスト方針
 
