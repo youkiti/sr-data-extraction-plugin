@@ -7,6 +7,10 @@
 import { NOT_REPORTED_TOKEN } from '../../domain/annotation';
 import type { VerificationCell } from '../../features/verification/cells';
 import type { CellStatus } from '../../features/verification/cellState';
+import {
+  isMermaidPreviewField,
+  renderMermaid,
+} from '../../features/verification/mermaidPreview';
 import type { RobAlgorithmInfo } from '../../features/verification/robAlgorithm';
 import { t, type MessageKey } from '../../lib/i18n';
 import { el } from '../ui/dom';
@@ -57,6 +61,12 @@ export interface CellCardModel {
    * 省略時は空扱い（既存フィクスチャの互換のため optional）
    */
   relocateStatus?: ReadonlyMap<string, 'running' | 'not_found'>;
+  /**
+   * flow 図（mermaid）の編集保存に伴う構文チェック警告（issue #109）。cellKey → 理由。
+   * verificationPanel が保存時に parseMermaid で検査し、エラーのときだけ載せる
+   * （警告表示のみで保存はブロックしない。ui-states.md §3）。省略時は空扱い
+   */
+  mermaidWarnings?: ReadonlyMap<string, string>;
 }
 
 /** renderCell が実際に呼び出す最小のハンドラ集合 */
@@ -225,6 +235,88 @@ function renderExtractionInstructionToggle(cell: VerificationCell): HTMLElement 
       text: cell.field.extractionInstruction,
     }),
   ]);
+}
+
+/**
+ * flow 図（mermaid）プレビューの対象ソース（issue #109）。フォーカスモードのマトリクスと同じ
+ * 「判定確定値 > AI 値」の優先順で表示値を解決する。独立入力モードは AI 値を見せない原則の
+ * とおり人間の入力値（判定確定値）だけを対象にする。値なし・未報告トークンは null
+ * （プレビュートグル自体を出さない = 描画できるソースがあるときだけの UI）
+ */
+function mermaidSourceOf(cell: VerificationCell, mode: 'review' | 'independent'): string | null {
+  const aiValue =
+    mode === 'independent' || cell.evidence === null || cell.evidence.notReported
+      ? null
+      : cell.evidence.value;
+  const source = cell.state.value ?? aiValue;
+  return source === null || source === NOT_REPORTED_TOKEN ? null : source;
+}
+
+/**
+ * 「図をプレビュー」トグル（issue #109・ui-states.md §3「flow 図（mermaid）プレビュー」）。
+ * 予約 field_name（MERMAID_PREVIEW_FIELD_NAMES）のセルにだけ出す。mermaid チャンクの
+ * 遅延ロードを兼ねて描画は開いたとき（toggle）に 1 回だけ行い、構文エラーは
+ * `.verify__mermaid-error` の表示へフォールバックする（ソーステキスト = セルの値表示は
+ * 従来どおり残る）。instruction toggle（issue #81）と同じくネイティブ `<details>` を使い、
+ * 再描画のたびに畳んだ状態へ戻る
+ */
+function renderMermaidPreviewToggle(
+  cell: VerificationCell,
+  model: CellCardModel,
+): HTMLElement | null {
+  if (!isMermaidPreviewField(cell.field.fieldName)) {
+    return null;
+  }
+  const source = mermaidSourceOf(cell, model.mode ?? 'review');
+  if (source === null) {
+    return null;
+  }
+  const preview = el('div', {
+    className: 'verify__mermaid-preview',
+    text: t('verify.mermaidRendering'),
+  });
+  const details = el('details', { className: 'verify__mermaid-toggle' }, [
+    el('summary', { text: t('verify.mermaidToggle') }),
+    preview,
+  ]);
+  let requested = false;
+  details.addEventListener('toggle', () => {
+    if (!details.open || requested) {
+      return;
+    }
+    requested = true;
+    void renderMermaid(source, preview).then((result) => {
+      if (!result.ok) {
+        preview.replaceChildren(
+          el('p', {
+            className: 'verify__mermaid-error',
+            text: t('verify.mermaidError', { reason: result.error }),
+          }),
+        );
+        return;
+      }
+      // mermaid が生成する SVG は graphics-document ロールを持つ一方アクセシブルネームを
+      // 持たない（axe: svg-img-alt）ため、項目ラベルを名前として与える
+      preview.querySelector('svg')?.setAttribute('aria-label', cell.field.fieldLabel);
+    });
+  });
+  return details;
+}
+
+/**
+ * 編集保存時の mermaid 構文チェック警告（issue #109）。#65 の整合性チェックと同じ
+ * 「判定操作を増やさない情報提示のみ」のパターン。該当警告が無ければ null
+ */
+function renderMermaidWarning(cell: VerificationCell, model: CellCardModel): HTMLElement | null {
+  const reason = model.mermaidWarnings?.get(cell.cellKey);
+  if (reason === undefined) {
+    return null;
+  }
+  return el('p', {
+    className: 'verify__mermaid-warning',
+    attributes: { role: 'note' },
+    text: t('verify.mermaidSaveWarning', { reason }),
+  });
 }
 
 function renderQuote(
@@ -480,6 +572,16 @@ export function renderCell(
   const quote = mode === 'independent' ? null : renderQuote(cell, model, handlers);
   if (quote !== null) {
     children.push(quote);
+  }
+  // flow 図（mermaid）の描画プレビュー + 保存時構文チェック警告（issue #109）。
+  // 独立入力モードでも人間の入力値に対して同じプレビューが機能する（ui-states.md §3）
+  const mermaidToggle = renderMermaidPreviewToggle(cell, model);
+  if (mermaidToggle !== null) {
+    children.push(mermaidToggle);
+  }
+  const mermaidWarning = renderMermaidWarning(cell, model);
+  if (mermaidWarning !== null) {
+    children.push(mermaidWarning);
   }
   if (model.editing !== null && model.editing.cellKey === cell.cellKey) {
     children.push(renderEditor(cell, model.editing.action, handlers, mode));

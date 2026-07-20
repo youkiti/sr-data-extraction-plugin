@@ -66,7 +66,7 @@ export function buildRSet(materials: RSetMaterials, meta: RSetManifestMeta): Bui
 
   const tab1 = buildTab1Csv(studies, studyRows, evidences, documentStudyIds, fields);
   const ma = buildMaCsv(studies, resultsRows, decisions, evidences, armStructureRows, fields);
-  const rob = buildRobCsv(studies, resultsRows, evidences, fields);
+  const rob = buildRobCsv(studies, resultsRows, decisions, evidences, fields);
   const dictionary = buildDataDictionaryCsv(fields);
 
   // 黙示的除外の横断チェック（duplicate_key / dropped_unknown_field）はファイルをまたいで

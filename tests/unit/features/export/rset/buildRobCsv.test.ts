@@ -1,6 +1,7 @@
 import { parseCsv } from '../../../../../src/features/export/parseCsv';
 import { buildRobCsv, ROB_HEADER } from '../../../../../src/features/export/rset/buildRobCsv';
-import { makeEvidence, makeField, makeResultsDataRow, makeStudy } from './testHelpers';
+import { ENTITY_INSTANCE_DECLARATION_FIELD_ID } from '../../../../../src/features/verification/instanceDeclarations';
+import { makeDecision, makeEvidence, makeField, makeResultsDataRow, makeStudy } from './testHelpers';
 
 const rob2Fields = [
   makeField({
@@ -20,7 +21,7 @@ const rob2Fields = [
 
 describe('buildRobCsv', () => {
   test('RoB テンプレートがスキーマに無ければヘッダーのみ', () => {
-    const result = buildRobCsv([makeStudy()], [], [], []);
+    const result = buildRobCsv([makeStudy()], [], [], [], []);
     expect(result.csv).toBe(`${ROB_HEADER.join(',')}\r\n`);
     expect(result.rowCount).toBe(0);
     expect(result.issues).toEqual([]);
@@ -53,7 +54,7 @@ describe('buildRobCsv', () => {
       }),
     ];
     const evidences = [makeEvidence({ studyId: 'study-1', fieldId: 'f-judgement', entityKey: 'rob:overall' })];
-    const result = buildRobCsv(studies, resultsRows, evidences, rob2Fields);
+    const result = buildRobCsv(studies, resultsRows, [], evidences, rob2Fields);
     const records = parseCsv(result.csv);
     const byDomain = new Map(records.slice(1).map((r) => [r[3], r]));
 
@@ -100,7 +101,7 @@ describe('buildRobCsv', () => {
         value: 'high',
       }),
     ];
-    const result = buildRobCsv(studies, resultsRows, [], judgementOnly);
+    const result = buildRobCsv(studies, resultsRows, [], [], judgementOnly);
     const records = parseCsv(result.csv);
     const overall = records.find((r) => r[3] === 'overall');
     expect(overall?.[9]).toBe(''); // support 列は常に空
@@ -112,7 +113,7 @@ describe('buildRobCsv', () => {
       makeResultsDataRow({ resultId: 'r-1', studyId: 'study-1', annotator: 'a@example.com', fieldId: 'f-judgement' }),
       makeResultsDataRow({ resultId: 'r-2', studyId: 'study-1', annotator: 'b@example.com', fieldId: 'f-judgement' }),
     ];
-    const result = buildRobCsv(studies, resultsRows, [], rob2Fields);
+    const result = buildRobCsv(studies, resultsRows, [], [], rob2Fields);
     expect(result.rowCount).toBe(0);
     expect(result.issues).toEqual([
       expect.objectContaining({ issueType: 'skipped_study_no_final_annotator', studyId: 'study-1' }),
@@ -141,7 +142,7 @@ describe('buildRobCsv', () => {
         value: 'low',
       }),
     ];
-    const result = buildRobCsv(studies, resultsRows, [], rob2Fields);
+    const result = buildRobCsv(studies, resultsRows, [], [], rob2Fields);
     const records = parseCsv(result.csv);
     const overall = records.find((r) => r[3] === 'overall');
     expect(overall?.[8]).toBe('low'); // AI 行（high）ではなく確定 human 行の値
@@ -171,7 +172,7 @@ describe('buildRobCsv', () => {
         value: 'decoy',
       }),
     ];
-    const result = buildRobCsv(studies, resultsRows, [], rob2Fields);
+    const result = buildRobCsv(studies, resultsRows, [], [], rob2Fields);
     const records = parseCsv(result.csv);
     const overall = records.find((r) => r[3] === 'overall');
     expect(overall?.[8]).toBe('low'); // judgement（consensus 行）
@@ -180,7 +181,7 @@ describe('buildRobCsv', () => {
 
   test('ResultsData 行が 0 件の study は issue を積まず黙って除外する', () => {
     const studies = [makeStudy({ studyId: 'study-1' })];
-    const result = buildRobCsv(studies, [], [], rob2Fields);
+    const result = buildRobCsv(studies, [], [], [], rob2Fields);
     expect(result.rowCount).toBe(0);
     expect(result.issues).toEqual([]);
   });
@@ -193,7 +194,7 @@ describe('buildRobCsv', () => {
     const resultsRows = [
       makeResultsDataRow({ resultId: 'r-1', studyId: 'study-1', fieldId: 'f-j', entityKey: 'rob:overall', value: 'moderate' }),
     ];
-    const result = buildRobCsv(studies, resultsRows, [], robinsFields);
+    const result = buildRobCsv(studies, resultsRows, [], [], robinsFields);
     const records = parseCsv(result.csv);
     expect(records).toHaveLength(1 + 8); // ROBINS-I は 7 ドメイン + overall = 8 行
     expect(records.find((r) => r[3] === 'overall')?.[2]).toBe('robins_i');
@@ -221,7 +222,7 @@ describe('buildRobCsv', () => {
         value: 'high',
       }),
     ];
-    const result = buildRobCsv(studies, resultsRows, [], quadas3Fields);
+    const result = buildRobCsv(studies, resultsRows, [], [], quadas3Fields);
     const records = parseCsv(result.csv);
     // risk-of-bias（D1〜D4 + overall = 5 行）+ applicability（D1〜D3 + overall = 4 行）
     expect(records).toHaveLength(1 + 5 + 4);
@@ -231,6 +232,170 @@ describe('buildRobCsv', () => {
       (r) => r[2] === 'quadas3_applicability' && r[3] === 'quadas3_overall',
     );
     expect(applicabilityOverall?.[8]).toBe('high');
+  });
+
+  test('estimate 単位のオーバーライド行を宣言分だけ出力し、outcome_id に参照先キーの正準形を充填する（issue #109）', () => {
+    const studies = [makeStudy({ studyId: 'study-1' })];
+    const overrideKey = 'rob:d1_randomization|outcome:mortality|arm:1';
+    const resultsRows = [
+      // base（d1）と estimate 別オーバーライド（d1 × mortality/arm:1）が共存する
+      makeResultsDataRow({
+        resultId: 'r-base-j',
+        studyId: 'study-1',
+        fieldId: 'f-judgement',
+        entityKey: 'rob:d1_randomization',
+        value: 'low',
+      }),
+      makeResultsDataRow({
+        resultId: 'r-ov-j',
+        studyId: 'study-1',
+        fieldId: 'f-judgement',
+        entityKey: overrideKey,
+        value: 'high',
+      }),
+      makeResultsDataRow({
+        resultId: 'r-ov-s',
+        studyId: 'study-1',
+        fieldId: 'f-support',
+        entityKey: overrideKey,
+        value: 'per-protocol only for this estimate',
+      }),
+      // outcome_result レベルの行はオーバーライド列挙の対象外
+      makeResultsDataRow({
+        resultId: 'r-out',
+        studyId: 'study-1',
+        fieldId: 'f-other',
+        entityKey: 'outcome:mortality|arm:1',
+        value: '1',
+      }),
+    ];
+    const result = buildRobCsv(studies, resultsRows, [], [], rob2Fields);
+    const records = parseCsv(result.csv);
+    const d1Rows = records.filter((r) => r[3] === 'd1_randomization');
+    expect(d1Rows).toHaveLength(2);
+    // base 行は outcome_id 空のまま先頭
+    expect(d1Rows[0]?.slice(6, 12)).toEqual(['', 'rob:d1_randomization', 'low', '', 'verified', '1']);
+    // オーバーライド行は outcome_id に参照先インスタンスキー・entity_key に原文
+    expect(d1Rows[1]?.slice(0, 12)).toEqual([
+      'study-1',
+      'Smith 2020',
+      'rob2',
+      'd1_randomization',
+      'randomization process',
+      '',
+      'outcome:mortality|arm:1',
+      overrideKey,
+      'high',
+      'per-protocol only for this estimate',
+      'verified',
+      '1',
+    ]);
+    // オーバーライドの無い他ドメインは base 1 行のまま（未評価 estimate の行は捏造しない）
+    expect(records.filter((r) => r[3] === 'd2_deviations')).toHaveLength(1);
+    expect(result.rowCount).toBe(6 + 1);
+  });
+
+  test('ソートは domain テンプレート順 → outcome_id 昇順（base 先頭）。宣言のみのオーバーライドも出現する', () => {
+    const studies = [makeStudy({ studyId: 'study-1' })];
+    const resultsRows = [
+      makeResultsDataRow({
+        resultId: 'r-1',
+        studyId: 'study-1',
+        fieldId: 'f-judgement',
+        entityKey: 'rob:d1_randomization|outcome:pain',
+        value: 'high',
+      }),
+      makeResultsDataRow({
+        resultId: 'r-2',
+        studyId: 'study-1',
+        fieldId: 'f-judgement',
+        entityKey: 'rob:d1_randomization|outcome:mortality',
+        value: 'low',
+      }),
+      // 同一 estimate を指すセグメント順の表記揺れ 2 キーは entity_key 昇順のタイブレークで並ぶ
+      makeResultsDataRow({
+        resultId: 'r-3',
+        studyId: 'study-1',
+        fieldId: 'f-judgement',
+        entityKey: 'rob:d2_deviations|outcome:pain|time:30d|arm:2',
+        value: 'high',
+      }),
+      makeResultsDataRow({
+        resultId: 'r-4',
+        studyId: 'study-1',
+        fieldId: 'f-judgement',
+        entityKey: 'rob:d2_deviations|outcome:pain|arm:2|time:30d',
+        value: 'low',
+      }),
+    ];
+    const decisions = [
+      // S8 の宣言イベントだけがあり ResultsData が無いオーバーライドも宣言分として出現する（no_data）
+      makeDecision({
+        studyId: 'study-1',
+        fieldId: ENTITY_INSTANCE_DECLARATION_FIELD_ID,
+        entityKey: 'rob:overall|outcome:mortality',
+        value: 'rob:overall|outcome:mortality',
+      }),
+      // テンプレートに無いドメインの宣言・study レベルの判定行は出力に関与しない
+      makeDecision({ studyId: 'study-1', entityKey: 'rob:unknown_domain|outcome:mortality' }),
+      makeDecision({ studyId: 'study-1', entityKey: '-' }),
+      // 他 study の宣言は混入しない
+      makeDecision({ studyId: 'study-2', entityKey: 'rob:overall|outcome:pain' }),
+    ];
+    const result = buildRobCsv(studies, resultsRows, decisions, [], rob2Fields);
+    const records = parseCsv(result.csv);
+    expect(records.slice(1).map((r) => [r[3], r[6]])).toEqual([
+      ['d1_randomization', ''],
+      ['d1_randomization', 'outcome:mortality'],
+      ['d1_randomization', 'outcome:pain'],
+      ['d2_deviations', ''],
+      ['d2_deviations', 'outcome:pain|arm:2|time:30d'],
+      ['d2_deviations', 'outcome:pain|arm:2|time:30d'],
+      ['d3_missing_data', ''],
+      ['d4_measurement', ''],
+      ['d5_reporting', ''],
+      ['overall', ''],
+      ['overall', 'outcome:mortality'],
+    ]);
+    expect(records.filter((r) => r[3] === 'd2_deviations' && r[6] !== '').map((r) => r[7])).toEqual([
+      'rob:d2_deviations|outcome:pain|arm:2|time:30d',
+      'rob:d2_deviations|outcome:pain|time:30d|arm:2',
+    ]);
+    const declaredOnly = records.find((r) => r[7] === 'rob:overall|outcome:mortality');
+    expect(declaredOnly?.[10]).toBe('no_data');
+  });
+
+  test('オーバーライド行にも verification_status の規則と unverified_cell の積み上げを base と同様に適用する', () => {
+    const studies = [makeStudy({ studyId: 'study-1' })];
+    const overrideKey = 'rob:overall|outcome:mortality|arm:1';
+    const decisions = [
+      makeDecision({
+        studyId: 'study-1',
+        fieldId: ENTITY_INSTANCE_DECLARATION_FIELD_ID,
+        entityKey: overrideKey,
+        value: overrideKey,
+      }),
+    ];
+    // 宣言済みオーバーライドに AI Evidence だけがあり人間の判定が 0 件 → unverified
+    const evidences = [makeEvidence({ studyId: 'study-1', fieldId: 'f-judgement', entityKey: overrideKey })];
+    const resultsRows = [
+      makeResultsDataRow({
+        resultId: 'r-1',
+        studyId: 'study-1',
+        fieldId: 'f-judgement',
+        entityKey: 'rob:overall',
+        value: 'low',
+      }),
+    ];
+    const result = buildRobCsv(studies, resultsRows, decisions, evidences, rob2Fields);
+    const records = parseCsv(result.csv);
+    const overrideRow = records.find((r) => r[7] === overrideKey);
+    expect(overrideRow?.[6]).toBe('outcome:mortality|arm:1');
+    expect(overrideRow?.[8]).toBe(''); // 値列は unverified のため空（base と同じ規則）
+    expect(overrideRow?.[10]).toBe('unverified');
+    expect(result.issues).toEqual([
+      expect.objectContaining({ issueType: 'unverified_cell', entityKey: overrideKey, fieldId: 'f-judgement' }),
+    ]);
   });
 
   test('QUIPS のドメインも列挙できる（overall は無く 6 ドメインのみ・issue #88）', () => {
@@ -245,7 +410,7 @@ describe('buildRobCsv', () => {
         value: 'moderate',
       }),
     ];
-    const result = buildRobCsv(studies, resultsRows, [], quipsFields);
+    const result = buildRobCsv(studies, resultsRows, [], [], quipsFields);
     const records = parseCsv(result.csv);
     expect(records).toHaveLength(1 + 6); // QUIPS は 6 ドメインのみ（overall 無し）
     expect(records.find((r) => r[3] === 'quips_d5_confounding')?.[8]).toBe('moderate');
