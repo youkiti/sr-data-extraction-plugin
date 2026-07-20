@@ -10,7 +10,13 @@ import type { Decision } from '../../../domain/decision';
 import type { Evidence } from '../../../domain/evidence';
 import type { SchemaField } from '../../../domain/schemaField';
 import type { StudyRecord } from '../../../domain/study';
-import { makeRobDomainEntityKey, parseEntityKey } from '../../../utils/entityKey';
+import type { ParsedEntityKey } from '../../../utils/entityKey';
+import {
+  makeOutcomeEntityKey,
+  makeRobDomainEntityKey,
+  parseEntityKey,
+  robEstimateScopeOf,
+} from '../../../utils/entityKey';
 import { latestArmStructure } from '../../verification/armStructureRepository';
 import { entityInstances } from '../../verification/cells';
 import { distinctAnnotators } from './annotatorPool';
@@ -22,7 +28,8 @@ import { activeRobToolFieldSets } from './robFields';
 import { resolveRSetStatus, resolveRSetValue, resultsRowRawValue, type RSetStatus } from './rsetStatus';
 import { parseTimepoint } from './timepoint';
 
-/** キー列（rob_tool / rob_overall_judgement は「study レベル overall の複製」= schema_version の手前に置く） */
+/** キー列（rob_tool / rob_overall_judgement は overall 判定の複製列 = schema_version の手前に置く。
+ * 複製値は当該 outcome 行への verified オーバーライド優先・なければ study 単位の base。§4.2.2） */
 const MA_KEY_HEADER = [
   'study_id',
   'study_label',
@@ -40,6 +47,9 @@ const MA_KEY_HEADER = [
 
 /** outcome_label 解決の規約項目名（v1 で新設。無ければ outcome_label は空のまま） */
 const OUTCOME_NAME_FIELD_NAME = 'outcome_name';
+
+/** rob_overall_judgement 複製列の解決に使う overall ドメイン id（base・オーバーライドで共通） */
+const ROB_OVERALL_DOMAIN_ID = 'overall';
 
 export interface MaBuildResult {
   csv: string;
@@ -176,11 +186,15 @@ export function buildMaCsv(
     }
     const instances = [...instanceSet].sort((a, b) => a.localeCompare(b));
 
-    // rob:overall の複製 2 列（study 単位で 1 回だけ計算し、全 outcome 行へ複製する）
+    // rob:overall の複製 2 列（study 単位の base を 1 回だけ計算し、全 outcome 行へ複製する）
     let robOverallStatus: RSetStatus | null = null;
     let robOverallValue = '';
+    // estimate 単位オーバーライドの解決材料（issue #109 design-r-export.md §4.2.2）:
+    // 確定 annotator の ResultsData から overall のオーバーライド行を集め、verified のものだけを
+    // 「参照先 estimate の正準形キー → 判定値」で引けるようにする（未 verified は base へフォールバック）
+    const robOverallOverrides = new Map<string, string>();
     if (robToolSet !== null && robJudgementField !== null) {
-      const overallKey = makeRobDomainEntityKey('overall');
+      const overallKey = makeRobDomainEntityKey(ROB_OVERALL_DOMAIN_ID);
       const row = lookup.index.get(cellKey(overallKey, robJudgementField.fieldId));
       const raw = resultsRowRawValue(row);
       const hasEvidence = lookup.evidenceKeys.has(cellKey(overallKey, robJudgementField.fieldId));
@@ -195,6 +209,33 @@ export function buildMaCsv(
           detail: 'ma.csv: rob_overall_judgement は AI 抽出のみで人間の判定が 0 件です',
         });
       }
+
+      for (const resultsRow of lookup.index.values()) {
+        if (resultsRow.fieldId !== robJudgementField.fieldId) {
+          continue;
+        }
+        const scope = robEstimateScopeOf(resultsRow.entityKey);
+        if (scope === null) {
+          continue; // base 評価（rob:<domain_id> 単独）や rob_domain 以外のキーはオーバーライドではない
+        }
+        // robEstimateScopeOf が非 null の時点で rob_domain の estimate スコープキーであることは保証される
+        const parsed = parseEntityKey(resultsRow.entityKey) as Extract<ParsedEntityKey, { level: 'rob_domain' }>;
+        if (parsed.domain !== ROB_OVERALL_DOMAIN_ID) {
+          continue; // overall 以外のドメインのオーバーライドは ma.csv の複製列に関与しない
+        }
+        const overrideRaw = resultsRowRawValue(resultsRow);
+        const overrideStatus = resolveRSetStatus(
+          overrideRaw,
+          lookup.evidenceKeys.has(cellKey(resultsRow.entityKey, resultsRow.fieldId)),
+        );
+        if (overrideStatus !== 'verified') {
+          continue;
+        }
+        // セグメント順の表記揺れで同一 estimate を指す重複キーは先勝ちで決定的に解決する
+        if (!robOverallOverrides.has(scope)) {
+          robOverallOverrides.set(scope, resolveRSetValue(overrideRaw, overrideStatus));
+        }
+      }
     }
 
     const studyRows: MaRow[] = [];
@@ -207,6 +248,19 @@ export function buildMaCsv(
       }
       const armId = parsed.arm ?? '';
       const { value: timepointValue, unit: timepointUnit } = parseTimepoint(parsed.time);
+
+      // オーバーライドの照合は正準形（robEstimateScopeOf と同じ outcome → arm → time 順）同士で行う。
+      // instances には Evidence / ResultsData 由来のセグメント順が異なるキーも混在しうるため
+      const canonicalInstanceKey = makeOutcomeEntityKey({
+        outcome: parsed.outcome,
+        arm: parsed.arm ?? undefined,
+        time: parsed.time ?? undefined,
+      });
+      // 当該 outcome 行への verified オーバーライドがあればそれを優先し、なければ base（§4.2.2）。
+      // ma_status.csv 側の verification_status も採用した側のものを出す
+      const overrideJudgement = robOverallOverrides.get(canonicalInstanceKey);
+      const rowRobOverallValue = overrideJudgement ?? robOverallValue;
+      const rowRobOverallStatus: string = overrideJudgement === undefined ? (robOverallStatus ?? '') : 'verified';
 
       // 1 パス目: 各 field の生値・基底ステータス（no_data / unverified / not_reported / verified）を
       // field 配列と同じ並びで作る（2 パス目は配列を直接なめるため、存在しないキーの `?? 既定値` が
@@ -259,7 +313,7 @@ export function buildMaCsv(
         armId,
         armLabelOf(armId, confirmedArms),
         robToolSet?.tool ?? '',
-        robOverallValue,
+        rowRobOverallValue,
         schemaVersionCandidate > 0 ? String(schemaVersionCandidate) : '',
       ];
       const statusKeyValues = [
@@ -273,7 +327,7 @@ export function buildMaCsv(
         armId,
         armLabelOf(armId, confirmedArms),
         robToolSet?.tool ?? '',
-        robOverallStatus ?? '',
+        rowRobOverallStatus,
         schemaVersionCandidate > 0 ? String(schemaVersionCandidate) : '',
       ];
 

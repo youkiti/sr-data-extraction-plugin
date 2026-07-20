@@ -233,6 +233,86 @@ describe('buildMaCsv', () => {
     );
   });
 
+  test('rob_overall_judgement は当該 outcome 行への verified オーバーライドを base より優先する（issue #109）', () => {
+    const robFields = [
+      makeField({ fieldId: 'f-judgement', fieldName: 'rob2_judgement', entityLevel: 'rob_domain' }),
+    ];
+    const studies = [makeStudy({ studyId: 'study-1' })];
+    const resultsRows = [
+      row({ resultId: 'r-o1', entityKey: 'outcome:mortality|arm:1', fieldId: 'f-mean', value: '1' }),
+      row({ resultId: 'r-o2', entityKey: 'outcome:pain|arm:1', fieldId: 'f-mean', value: '2' }),
+      row({ resultId: 'r-base', entityKey: 'rob:overall', fieldId: 'f-judgement', value: 'low' }),
+      row({
+        resultId: 'r-ov',
+        entityKey: 'rob:overall|outcome:mortality|arm:1',
+        fieldId: 'f-judgement',
+        value: 'high',
+      }),
+      // overall 以外のドメインのオーバーライドは複製列に関与しない
+      row({
+        resultId: 'r-d1',
+        entityKey: 'rob:d1_randomization|outcome:pain|arm:1',
+        fieldId: 'f-judgement',
+        value: 'some_concerns',
+      }),
+    ];
+    const result = buildMaCsv(studies, resultsRows, [], [], [], [...continuousFields, ...robFields]);
+    const records = parseCsv(result.csv);
+    const statusRecords = parseCsv(result.statusCsv);
+    expect(records.find((r) => r[2] === 'mortality')?.[10]).toBe('high'); // オーバーライド優先
+    expect(records.find((r) => r[2] === 'pain')?.[10]).toBe('low'); // オーバーライドが無い行は base（現行どおり）
+    expect(statusRecords.find((r) => r[2] === 'mortality')?.[10]).toBe('verified'); // 採用した側の状態
+    expect(statusRecords.find((r) => r[2] === 'pain')?.[10]).toBe('verified');
+  });
+
+  test('rob_overall_judgement のオーバーライドが verified でなければ base へフォールバックする', () => {
+    const robFields = [
+      makeField({ fieldId: 'f-judgement', fieldName: 'rob2_judgement', entityLevel: 'rob_domain' }),
+    ];
+    const studies = [makeStudy({ studyId: 'study-1' })];
+    const overrideKey = 'rob:overall|outcome:mortality|arm:1';
+    const resultsRows = [
+      row({ resultId: 'r-o1', entityKey: 'outcome:mortality|arm:1', fieldId: 'f-mean', value: '1' }),
+      row({ resultId: 'r-base', entityKey: 'rob:overall', fieldId: 'f-judgement', value: 'low' }),
+      // オーバーライドは AI Evidence のみで人間の判定が 0 件（annotator 行が null）→ 未 verified
+      row({ resultId: 'r-ov', entityKey: overrideKey, fieldId: 'f-judgement', value: null }),
+    ];
+    const evidences = [makeEvidence({ studyId: 'study-1', fieldId: 'f-judgement', entityKey: overrideKey })];
+    const result = buildMaCsv(studies, resultsRows, [], evidences, [], [...continuousFields, ...robFields]);
+    const records = parseCsv(result.csv);
+    const statusRecords = parseCsv(result.statusCsv);
+    expect(records[1]?.[10]).toBe('low'); // base（verified）へフォールバック
+    expect(statusRecords[1]?.[10]).toBe('verified');
+  });
+
+  test('rob_overall_judgement のオーバーライド照合は正準形で行い、表記揺れの重複キーは先勝ちで解決する', () => {
+    const robFields = [
+      makeField({ fieldId: 'f-judgement', fieldName: 'rob2_judgement', entityLevel: 'rob_domain' }),
+    ];
+    const studies = [makeStudy({ studyId: 'study-1' })];
+    const resultsRows = [
+      // インスタンスキー自体もセグメント順が正準でない形で保存されている
+      row({ resultId: 'r-o1', entityKey: 'outcome:mortality|time:30d|arm:1', fieldId: 'f-mean', value: '1' }),
+      row({
+        resultId: 'r-ov1',
+        entityKey: 'rob:overall|outcome:mortality|arm:1|time:30d',
+        fieldId: 'f-judgement',
+        value: 'high',
+      }),
+      row({
+        resultId: 'r-ov2',
+        entityKey: 'rob:overall|outcome:mortality|time:30d|arm:1',
+        fieldId: 'f-judgement',
+        value: 'some_concerns',
+      }),
+    ];
+    const result = buildMaCsv(studies, resultsRows, [], [], [], [...continuousFields, ...robFields]);
+    const records = parseCsv(result.csv);
+    const statusRecords = parseCsv(result.statusCsv);
+    expect(records[1]?.[10]).toBe('high'); // 先に現れた verified オーバーライドが決定的に勝つ
+    expect(statusRecords[1]?.[10]).toBe('verified'); // base 不在（no_data）でもオーバーライド採用側の状態
+  });
+
   test('outcome_label は outcome_name フィールドの verified 値のみ採用する（無ければ空）', () => {
     const nameField = makeField({ fieldId: 'f-name', fieldName: 'outcome_name', entityLevel: 'outcome_result' });
     const studies = [makeStudy({ studyId: 'study-1' })];
