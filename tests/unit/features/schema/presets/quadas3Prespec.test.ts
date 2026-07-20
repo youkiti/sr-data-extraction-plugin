@@ -172,6 +172,27 @@ describe('quadas3Prespec', () => {
     expect(rows.find((row) => row.fieldName === 'quadas3_applicability_judgement')?.note).toBeNull();
   });
 
+  test('buildQuadas3Rows: Review context は Phase 3 flow / Phase 4 estimate の新 13 行にも伝播する（issue #109 PR3）', () => {
+    const rows = buildQuadas3Rows({
+      ...emptyPrespec(),
+      population: 'adults',
+      analysisUnit: 'per patient',
+    });
+    for (const fieldName of [
+      'quadas3_flow_diagram',
+      'quadas3_flow_enrolled',
+      'quadas3_flow_exclusions',
+      'quadas3_est_participants',
+      'quadas3_est_analysis',
+    ]) {
+      expect(instructionOf(rows, fieldName).startsWith('Review context')).toBe(true);
+    }
+    // 狙い撃ち注入（適用可能性判定行・SQ 4.3 向け）は新行には載らない
+    expect(instructionOf(rows, 'quadas3_flow_diagram')).not.toContain('is defined as —');
+    expect(instructionOf(rows, 'quadas3_est_unit')).not.toContain('unit of analysis of the ideal');
+    expect(instructionOf(rows, 'quadas3_sq4_3')).toContain('unit of analysis of the ideal');
+  });
+
   test('buildQuadas3Rows: ideal trial の Analysis / unit は SQ 4.3 だけに注入される', () => {
     const rows = buildQuadas3Rows({ ...emptyPrespec(), analysisUnit: 'per patient' });
     expect(instructionOf(rows, 'quadas3_sq4_3')).toContain(

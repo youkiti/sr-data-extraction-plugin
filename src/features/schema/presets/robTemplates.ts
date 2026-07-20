@@ -36,13 +36,15 @@ function presetRow(
   patch: Pick<
     SchemaEditorRow,
     'fieldName' | 'fieldLabel' | 'dataType' | 'allowedValues' | 'required' | 'extractionInstruction' | 'example'
-  > & { section?: string },
+  > & { section?: string; entityLevel?: SchemaEditorRow['entityLevel'] },
 ): SchemaEditorRow {
-  const { section, ...rest } = patch;
+  const { section, entityLevel, ...rest } = patch;
   return {
     fieldId: null,
     section: section ?? 'risk_of_bias',
-    entityLevel: 'rob_domain',
+    // 既定は rob_domain。QUADAS-3 Phase 3〜4 の項目（issue #109）だけが study /
+    // outcome_result を指定する
+    entityLevel: entityLevel ?? 'rob_domain',
     unit: null,
     aiGenerated: false,
     note: null,
@@ -1249,13 +1251,224 @@ const QUADAS3_APPLICABILITY_SUPPORT_ROW: SchemaEditorRow = presetRow({
   example: 'The study population was restricted to hospitalised patients, unlike the review question population.',
 });
 
-/** QUADAS-3: ドメイン別の risk-of-bias 判定 + 根拠 + 適用可能性判定 + 根拠 + SQ 20 問（計 24 項目） */
+// --- QUADAS-3 Phase 3〜4（issue #109 PR3） -----------------------------------
+// 原典 v1.2 の Phase 3（flow 図）と Phase 4（Table 5: 評価対象 estimate の特定）に対応する
+// 記述項目群。Phase 3 = study レベル 6 項目（mermaid フロー図 1 + 構造化数値 5。図の描画
+// プレビューは S8 側 = issue #109 PR5。`quadas3_flow_diagram` は予約 field_name 規約）、
+// Phase 4 = outcome_result レベル 7 項目（Table 5 の記述行と 1:1。1 outcome_result
+// インスタンス = 1 つの 2×2 表 = 1 estimate の対応を流用する。requirements.md §3.3）。
+// section は既存の risk_of_bias_quadas3 に載せ（planRun のセクション分割で RoB 評価と同一
+// バッチになる）、全て text・required=false = 不要なレビューは S5 エディタで行削除できる。
+// 文言は原典（`c:\tmp\rob-prespec\extracted\quadas3.txt` の Phase 3 本文・Table 5 行見出し・
+// Domain 4 記述欄）から転記した。
+
+/** Phase 3: flow 図（mermaid flowchart TD ソースを値とする。issue #109 決定 D-5 改） */
+const QUADAS3_FLOW_DIAGRAM_ROW: SchemaEditorRow = presetRow({
+  section: QUADAS3_SECTION,
+  entityLevel: 'study',
+  fieldName: 'quadas3_flow_diagram',
+  fieldLabel: 'QUADAS-3 フロー図（mermaid）',
+  dataType: 'text',
+  allowedValues: null,
+  required: false,
+  extractionInstruction:
+    'QUADAS-3 Phase 3: "Draw a flow diagram for the primary study to provide a visual summary of how ' +
+    'participants and test results underlying accuracy estimates progress through a primary study." ' +
+    'From the participant flow reported in the article (a CONSORT-style Figure 1 or the flow described in ' +
+    'the text), construct that diagram as mermaid flowchart TD source code. Use one node per stage with its ' +
+    'participant count (enrolled, received index test, received reference standard, included in the 2x2 ' +
+    'analysis) and label the edges between stages with the reasons and counts of exclusions or dropouts. ' +
+    'When the study reports multiple index tests, multiple pathways, or subgroups, represent them as ' +
+    'branches exactly as reported. Output only the mermaid source code as the value (no explanatory text, ' +
+    'no code fences). For the quote, use the main verbatim evidence of the flow (the flow figure caption or ' +
+    'the sentences describing participant flow).',
+  example:
+    'flowchart TD\n' +
+    '  enrolled["Enrolled (n=120)"] --> index["Received index test (n=118)"]\n' +
+    '  enrolled -->|"Declined (n=2)"| excluded1["Excluded (n=2)"]\n' +
+    '  index --> ref["Received reference standard (n=115)"]\n' +
+    '  ref --> analyzed["Included in 2x2 analysis (n=110)"]',
+});
+
+/** Phase 3: 構造化数値 1 項目ぶんの定義（flow の主要段階のマシンリーダブルな控え） */
+interface Quadas3FlowDef {
+  fieldName: string;
+  fieldLabel: string;
+  /** 抽出対象の説明（英語。共通指示文へ埋め込む） */
+  description: string;
+  example: string;
+}
+
+const QUADAS3_FLOW_COUNT_DEFS: readonly Quadas3FlowDef[] = [
+  {
+    fieldName: 'quadas3_flow_enrolled',
+    fieldLabel: 'QUADAS-3 フロー: 組み入れ参加者数',
+    description: 'the number of participants enrolled in the study (eligible / recruited participants)',
+    example: '120',
+  },
+  {
+    fieldName: 'quadas3_flow_index_tested',
+    fieldLabel: 'QUADAS-3 フロー: index test 受検者数',
+    description: 'the number of participants who received the index test',
+    example: '118',
+  },
+  {
+    fieldName: 'quadas3_flow_reference_standard',
+    fieldLabel: 'QUADAS-3 フロー: reference standard 受検者数',
+    description: 'the number of participants who received the reference standard',
+    example: '115',
+  },
+  {
+    fieldName: 'quadas3_flow_analyzed',
+    fieldLabel: 'QUADAS-3 フロー: 2×2 表算入者数',
+    description:
+      'the number of participants included in the 2x2 analysis underlying the accuracy estimates',
+    example: '110',
+  },
+];
+
+function quadas3FlowCountRow(def: Quadas3FlowDef): SchemaEditorRow {
+  return presetRow({
+    section: QUADAS3_SECTION,
+    entityLevel: 'study',
+    fieldName: def.fieldName,
+    fieldLabel: def.fieldLabel,
+    dataType: 'text',
+    allowedValues: null,
+    required: false,
+    extractionInstruction:
+      `QUADAS-3 Phase 3 participant flow: report ${def.description}, exactly as reported by the article ` +
+      '(keep the reported string as is; do not recalculate). This is the machine-readable companion of the ' +
+      'quadas3_flow_diagram stages. Mark it as not_reported when the article does not report this number.',
+    example: def.example,
+  });
+}
+
+/** Phase 3: 各段階の除外数 + 理由（原典 Domain 4 記述欄の文言を指示に用いる） */
+const QUADAS3_FLOW_EXCLUSIONS_ROW: SchemaEditorRow = presetRow({
+  section: QUADAS3_SECTION,
+  entityLevel: 'study',
+  fieldName: 'quadas3_flow_exclusions',
+  fieldLabel: 'QUADAS-3 フロー: 除外数と理由（段階別）',
+  dataType: 'text',
+  allowedValues: null,
+  required: false,
+  extractionInstruction:
+    'QUADAS-3 Phase 3 participant flow: describe any participants who were enrolled in the study but ' +
+    'excluded from the 2x2 table and reasons why they were excluded (e.g. did not receive index test, did ' +
+    'not receive reference standard, uninterpretable index result etc.). Report each stage of the flow with ' +
+    'its exclusion count and reason, exactly as reported by the article. Mark it as not_reported when the ' +
+    'article reports no exclusions and no dropouts.',
+  example: 'Did not receive reference standard (n=3); uninterpretable index test result (n=5).',
+});
+
+/** Phase 3 flow 項目（study レベル 6 行。図 1 + 構造化数値 4 + 除外 1） */
+const QUADAS3_FLOW_ROWS: readonly SchemaEditorRow[] = [
+  QUADAS3_FLOW_DIAGRAM_ROW,
+  ...QUADAS3_FLOW_COUNT_DEFS.map(quadas3FlowCountRow),
+  QUADAS3_FLOW_EXCLUSIONS_ROW,
+];
+
+/** Phase 4: Table 5 の estimate 記述 1 行ぶんの定義 */
+interface Quadas3EstDef {
+  fieldName: string;
+  fieldLabel: string;
+  /** Table 5 の行見出し（原典から逐語転記） */
+  tableRow: string;
+  /** 抽出対象の説明（英語。共通指示文へ埋め込む） */
+  description: string;
+  example: string;
+}
+
+const QUADAS3_EST_DEFS: readonly Quadas3EstDef[] = [
+  {
+    fieldName: 'quadas3_est_participants',
+    fieldLabel: 'QUADAS-3 estimate: 参加者',
+    tableRow: 'Participants',
+    description:
+      'describe the participants contributing to this estimate (e.g. the subgroup or analysed population)',
+    example: 'Adults with suspected DVT attending the emergency department.',
+  },
+  {
+    fieldName: 'quadas3_est_index_test',
+    fieldLabel: 'QUADAS-3 estimate: index test',
+    tableRow: 'Index test',
+    description: 'describe the index test evaluated by this estimate (name, technique, how it was conducted)',
+    example: 'Point-of-care quantitative D-dimer assay.',
+  },
+  {
+    fieldName: 'quadas3_est_threshold',
+    fieldLabel: 'QUADAS-3 estimate: index test 閾値',
+    tableRow: 'Index test threshold (if applicable)',
+    description:
+      'describe the index test threshold (cut-off / positivity criterion) used for this estimate; when no ' +
+      'threshold applies, mark it as not_reported',
+    example: '500 ng/mL.',
+  },
+  {
+    fieldName: 'quadas3_est_target_condition',
+    fieldLabel: 'QUADAS-3 estimate: target condition',
+    tableRow: 'Target condition',
+    description:
+      'describe the target condition detected by this estimate (definition, severity or spectrum)',
+    example: 'Proximal deep vein thrombosis.',
+  },
+  {
+    fieldName: 'quadas3_est_reference_standard',
+    fieldLabel: 'QUADAS-3 estimate: reference standard',
+    tableRow: 'Reference standard',
+    description:
+      'describe the reference standard used to establish the target condition for this estimate',
+    example: 'Whole-leg compression ultrasonography.',
+  },
+  {
+    fieldName: 'quadas3_est_unit',
+    fieldLabel: 'QUADAS-3 estimate: 解析単位',
+    tableRow: 'Unit of analysis (e.g. participant, tumour, lesion, sample)',
+    description: 'describe the unit of analysis of this estimate',
+    example: 'Per participant.',
+  },
+  {
+    fieldName: 'quadas3_est_analysis',
+    fieldLabel: 'QUADAS-3 estimate: 解析方法',
+    tableRow: 'Analysis (e.g. analysis method, participants included in analysis)',
+    description:
+      'describe the analysis behind this estimate (e.g. analysis method, participants included in analysis)',
+    example: 'Complete-case analysis excluding uninterpretable results.',
+  },
+];
+
+function quadas3EstRow(def: Quadas3EstDef): SchemaEditorRow {
+  return presetRow({
+    section: QUADAS3_SECTION,
+    entityLevel: 'outcome_result',
+    fieldName: def.fieldName,
+    fieldLabel: def.fieldLabel,
+    dataType: 'text',
+    allowedValues: null,
+    required: false,
+    extractionInstruction:
+      `QUADAS-3 Phase 4, Table 5 row "${def.tableRow}": for this accuracy estimate (this outcome_result ` +
+      `instance, i.e. one 2x2 table of sensitivity and specificity), ${def.description}, based on verbatim ` +
+      'wording from the article. Mark it as not_reported when the article reports nothing specific to this ' +
+      'estimate.',
+    example: def.example,
+  });
+}
+
+/** Phase 4 Table 5 の estimate 記述項目（outcome_result レベル 7 行） */
+const QUADAS3_ESTIMATE_ROWS: readonly SchemaEditorRow[] = QUADAS3_EST_DEFS.map(quadas3EstRow);
+
+/** QUADAS-3: ドメイン別の risk-of-bias 判定 + 根拠 + 適用可能性判定 + 根拠 + SQ 20 問
+ * + Phase 3 flow 6 項目 + Phase 4 estimate 記述 7 項目（計 37 項目。issue #109 PR3） */
 export const ROB_TEMPLATE_QUADAS3: readonly SchemaEditorRow[] = [
   QUADAS3_ROB_JUDGEMENT_ROW,
   QUADAS3_ROB_SUPPORT_ROW,
   QUADAS3_APPLICABILITY_JUDGEMENT_ROW,
   QUADAS3_APPLICABILITY_SUPPORT_ROW,
   ...QUADAS3_SQ_DEFS.map(quadas3SqRow),
+  ...QUADAS3_FLOW_ROWS,
+  ...QUADAS3_ESTIMATE_ROWS,
 ];
 
 // --- QUIPS（予後研究）（issue #61 PR3 = issue #88） ----------------------------
