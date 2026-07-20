@@ -52,6 +52,10 @@ import {
   type HighlightOccurrence,
 } from '../../features/verification/highlights';
 import { buildOutcomeDeclarationDecisions } from '../../features/verification/instanceDeclarations';
+import {
+  isMermaidPreviewField,
+  parseMermaid,
+} from '../../features/verification/mermaidPreview';
 import { verificationProgress } from '../../features/verification/progress';
 import { findQuoteContext } from '../../features/verification/textContext';
 import type {
@@ -240,6 +244,12 @@ export function createVerificationPanel(
   const relocatedEvidence: Evidence[] = [];
   /** relocate-quote の実行状態（issue #94）。cellKey → 'running' / 'not_found' */
   const relocateStatus = new Map<string, 'running' | 'not_found'>();
+  /**
+   * flow 図（mermaid）の編集保存に伴う構文チェック警告（issue #109）。cellKey → 理由。
+   * 保存はブロックしない（部分的なドラフトも保存できる）ため、判定自体は commit へ
+   * そのまま流し、チェック結果だけを後から警告として重ねる
+   */
+  const mermaidWarnings = new Map<string, string>();
   /** VerificationData が保持する元の evidence 配列（パネル生存中は不変） */
   const baseEvidence: readonly Evidence[] = data.evidence;
   /** 元の evidence 配列 + relocatedEvidence（後勝ち畳み込み用に後ろへ連結）。呼び出しのたびに評価する */
@@ -360,6 +370,7 @@ export function createVerificationPanel(
       robAlgorithmInfo: collectRobAlgorithmInfo(tabModel),
       canRelocateQuote,
       relocateStatus,
+      mermaidWarnings,
     };
   }
 
@@ -1031,7 +1042,13 @@ export function createVerificationPanel(
       const cell = findCell(cellKey);
       editing = null;
       const trimmed = value.trim();
-      commit(cell, action, trimmed === '' ? null : trimmed);
+      const saved = trimmed === '' ? null : trimmed;
+      commit(cell, action, saved);
+      // flow 図（mermaid）の保存時構文チェック（issue #109）: 警告表示のみで保存はブロック
+      // しない（commit を先に済ませてから非同期チェックの結果だけを重ねる）
+      if (saved !== null && isMermaidPreviewField(cell.field.fieldName)) {
+        void warnOnMermaidSyntax(cell.cellKey, saved);
+      }
     },
     onCancelEdit() {
       editing = null;
@@ -1246,6 +1263,8 @@ export function createVerificationPanel(
       // relocate-quote（issue #94）: ボタン表示可否 + セルごとの実行状態
       canRelocateQuote,
       relocateStatus,
+      // flow 図（mermaid）の保存時構文チェック警告（issue #109）
+      mermaidWarnings,
     };
     formPane.replaceChildren(renderVerificationForm(model, handlers));
     formPane.scrollTop = savedScrollTop;
@@ -1344,7 +1363,27 @@ export function createVerificationPanel(
     }
   }
 
+  /**
+   * flow 図（mermaid）の編集保存に伴う構文チェック（issue #109・ui-states.md §3）。
+   * mermaid チャンクの遅延ロードを含むため非同期で走らせ、エラーのときだけ警告を貼って
+   * フォームを描き直す（valid なら何も出さない。保存はどちらでも既に完了している）
+   */
+  async function warnOnMermaidSyntax(cellKey: string, source: string): Promise<void> {
+    const result = await parseMermaid(source);
+    if (result.valid) {
+      return;
+    }
+    mermaidWarnings.set(cellKey, result.error);
+    refreshForm();
+  }
+
   function commit(cell: VerificationCell, action: DecisionAction, value: string | null): void {
+    if (isMermaidPreviewField(cell.field.fieldName)) {
+      // mermaid 構文チェック警告は「直近に保存した値」に対する表示のため、次の判定
+      // （undo・未報告・再編集を含む）で一旦消す（エラーが残る値なら onConfirmEdit 側の
+      // 再チェックが貼り直す）
+      mermaidWarnings.delete(cell.cellKey);
+    }
     const decision: Decision = {
       decidedAt: now(),
       decidedBy: data.annotator,

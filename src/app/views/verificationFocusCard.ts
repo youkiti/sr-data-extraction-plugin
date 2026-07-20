@@ -71,6 +71,11 @@ export interface VerificationFocusCardModel {
   canRelocateQuote?: boolean;
   /** relocate-quote の実行状態（issue #94）。cellKey → 'running' / 'not_found' */
   relocateStatus?: ReadonlyMap<string, 'running' | 'not_found'>;
+  /**
+   * flow 図（mermaid）の保存時構文チェック警告（issue #109）。cellKey → 理由。
+   * 詳細ストリップ（renderCell）へそのまま渡す
+   */
+  mermaidWarnings?: ReadonlyMap<string, string>;
 }
 
 /**
@@ -280,6 +285,7 @@ function renderDetailStrip(
     robAlgorithmInfo: model.robAlgorithmInfo,
     canRelocateQuote: model.canRelocateQuote,
     relocateStatus: model.relocateStatus,
+    mermaidWarnings: model.mermaidWarnings,
   };
   return el('div', { id: 'verify-focus-detail', className: 'focus-card__detail' }, [
     renderCell(cell, cellCardModel, handlers),

@@ -29,6 +29,22 @@ import type {
   RenderablePdfPage,
 } from '../../../../src/lib/pdf/renderPage';
 
+// flow 図（mermaid）の保存前構文チェック（issue #109 PR5）用: mermaid パッケージは
+// ESM 専用配布で jest から実体をロードできないため API 面だけを差し替える
+// （ラッパー features/verification/mermaidPreview.ts の実コードパスは通す）
+const mockMermaidInitialize = jest.fn();
+const mockMermaidParse = jest.fn();
+const mockMermaidRender = jest.fn();
+
+jest.mock('mermaid', () => ({
+  __esModule: true,
+  default: {
+    initialize: mockMermaidInitialize,
+    parse: mockMermaidParse,
+    render: mockMermaidRender,
+  },
+}));
+
 function buildPage(page: number, text: string): TextLayerPage {
   return {
     page,
@@ -2833,5 +2849,84 @@ describe('「AI で再特定」（relocate-quote。issue #94）', () => {
       'mortality was 12 percent',
     );
     panel.dispose();
+  });
+});
+
+describe('flow 図（mermaid）の保存前構文チェック（issue #109）', () => {
+  const FLOW_FIELD = makeField({
+    fieldId: 'f-flow',
+    fieldIndex: 1,
+    fieldName: 'quadas3_flow_diagram',
+    fieldLabel: 'QUADAS-3 フロー図（mermaid）',
+    dataType: 'text',
+  });
+  const KEY_FLOW = cellKeyOf('f-flow', '-');
+
+  /** 保存後の非同期チェック（遅延ロード → parse → 再描画）を全部流す */
+  async function flushSyntaxCheck(): Promise<void> {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+
+  /** 対象セルの編集フローを保存まで実行する（list モードの編集ボタン → 入力 → 確定） */
+  function confirmEdit(root: HTMLElement, cellKey: string, value: string): void {
+    cellEl(root, cellKey)?.querySelector<HTMLButtonElement>('.verify__action--edit')?.click();
+    const input = root.querySelector<HTMLInputElement>('.verify__edit-input');
+    (input as HTMLInputElement).value = value;
+    root.querySelector<HTMLButtonElement>('.verify__edit-confirm')?.click();
+  }
+
+  test('構文エラーでも保存はブロックせず、警告だけを表示する', async () => {
+    mockMermaidParse.mockRejectedValue(new Error('Parse error on line 2'));
+    const { panel, onDecision } = await createPanel({ fields: [FLOW_FIELD], evidence: [] });
+    confirmEdit(panel.root, KEY_FLOW, 'flowchart TD; A -->');
+    // 保存（Decisions への判定）はチェック結果を待たず先に完了している
+    expect(onDecision).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'edit', value: 'flowchart TD; A -->' }),
+    );
+    await flushSyntaxCheck();
+    expect(mockMermaidParse).toHaveBeenCalledWith('flowchart TD; A -->');
+    expect(panel.root.querySelector('.verify__mermaid-warning')?.textContent).toBe(
+      '⚠ 保存した値に mermaid の構文エラーがあります: Parse error on line 2',
+    );
+  });
+
+  test('構文 OK なら警告を出さない', async () => {
+    mockMermaidParse.mockResolvedValue({ diagramType: 'flowchart-v2' });
+    const { panel, onDecision } = await createPanel({ fields: [FLOW_FIELD], evidence: [] });
+    confirmEdit(panel.root, KEY_FLOW, 'flowchart TD; A --> B');
+    await flushSyntaxCheck();
+    expect(onDecision).toHaveBeenCalledTimes(1);
+    expect(panel.root.querySelector('.verify__mermaid-warning')).toBeNull();
+  });
+
+  test('警告は次の判定（undo）で消える', async () => {
+    mockMermaidParse.mockRejectedValue(new Error('Parse error'));
+    const { panel } = await createPanel({ fields: [FLOW_FIELD], evidence: [] });
+    confirmEdit(panel.root, KEY_FLOW, 'broken');
+    await flushSyntaxCheck();
+    expect(panel.root.querySelector('.verify__mermaid-warning')).not.toBeNull();
+    mockMermaidParse.mockClear();
+    cellEl(panel.root, KEY_FLOW)?.querySelector<HTMLButtonElement>('.verify__action--undo')?.click();
+    await flushSyntaxCheck();
+    // undo は編集保存ではないため再チェックせず、警告も消えたままになる
+    expect(mockMermaidParse).not.toHaveBeenCalled();
+    expect(panel.root.querySelector('.verify__mermaid-warning')).toBeNull();
+  });
+
+  test('空値の保存（値クリア）はチェックしない', async () => {
+    const { panel, onDecision } = await createPanel({ fields: [FLOW_FIELD], evidence: [] });
+    confirmEdit(panel.root, KEY_FLOW, '   ');
+    await flushSyntaxCheck();
+    expect(onDecision).toHaveBeenCalledWith(expect.objectContaining({ action: 'edit', value: null }));
+    expect(mockMermaidParse).not.toHaveBeenCalled();
+    expect(panel.root.querySelector('.verify__mermaid-warning')).toBeNull();
+  });
+
+  test('非対象フィールドの編集はチェックしない', async () => {
+    const { panel } = await createPanel();
+    confirmEdit(panel.root, KEY_TOTAL, '15');
+    await flushSyntaxCheck();
+    expect(mockMermaidParse).not.toHaveBeenCalled();
+    expect(panel.root.querySelector('.verify__mermaid-warning')).toBeNull();
   });
 });

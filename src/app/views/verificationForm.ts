@@ -103,6 +103,11 @@ export interface VerificationFormModel {
   canRelocateQuote?: boolean;
   /** relocate-quote の実行状態（issue #94）。cellKey → 'running' / 'not_found' */
   relocateStatus?: ReadonlyMap<string, 'running' | 'not_found'>;
+  /**
+   * flow 図（mermaid）の保存時構文チェック警告（issue #109）。cellKey → 理由。
+   * verificationPanel が編集保存時に parseMermaid で検査して載せる（保存はブロックしない）
+   */
+  mermaidWarnings?: ReadonlyMap<string, string>;
 }
 
 export interface VerificationFormHandlers {

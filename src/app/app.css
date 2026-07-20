@@ -1989,23 +1989,59 @@ section.documents__tiab {
 
 /* with_ai レビューのセルカードに追加する抽出指示の折りたたみ（issue #81）。
    既定は畳んだ状態（<details> の open 属性なし）。ネイティブ要素のため開閉の
-   アクセシビリティ（キーボード操作・展開状態の AT 通知）はブラウザ任せでよい */
-.verify__instruction-toggle {
+   アクセシビリティ（キーボード操作・展開状態の AT 通知）はブラウザ任せでよい。
+   flow 図（mermaid）プレビューのトグル（issue #109）も同一トンマナのため併記する */
+.verify__instruction-toggle,
+.verify__mermaid-toggle {
   margin: 6px 0;
 }
 
-.verify__instruction-toggle > summary {
+.verify__instruction-toggle > summary,
+.verify__mermaid-toggle > summary {
   cursor: pointer;
   color: var(--color-text-muted);
   font-size: 13px;
 }
 
-.verify__instruction-toggle > summary:hover {
+.verify__instruction-toggle > summary:hover,
+.verify__mermaid-toggle > summary:hover {
   color: var(--color-text);
 }
 
 .verify__instruction-toggle > .verify__instruction {
   margin: 4px 0 0;
+}
+
+/* flow 図（mermaid）の描画プレビュー（issue #109）。警告は verify__consistency-warnings と
+   同一トンマナに揃える（クラスは ui-states.md §3 の spec 名で分ける） */
+.verify__mermaid-preview {
+  margin: 4px 0 0;
+  padding: 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-bg);
+  overflow-x: auto;
+}
+
+.verify__mermaid-preview svg {
+  max-width: 100%;
+  height: auto;
+}
+
+.verify__mermaid-error {
+  margin: 0;
+  color: var(--color-danger);
+  font-size: 13px;
+}
+
+.verify__mermaid-warning {
+  margin: 6px 0;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: var(--color-warning-bg);
+  border: 1px solid var(--color-warning-border);
+  color: var(--color-danger);
+  font-size: 13px;
 }
 
 .verify__ai--none {
