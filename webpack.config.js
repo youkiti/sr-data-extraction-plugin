@@ -49,6 +49,11 @@ module.exports = (_env, argv) => {
     output: {
       path: path.resolve(__dirname, 'dist'),
       filename: '[name].js',
+      // dynamic import の遅延チャンク（mermaid。issue #109 PR5）は dist/chunks/ へまとめる。
+      // publicPath は既定の 'auto'（実行スクリプトの URL から出力ルートを逆算）のままにし、
+      // 拡張ページ（chrome-extension://.../app/app.html）と E2E 静的配信の双方で
+      // `<ルート>/chunks/*.js` として解決させる
+      chunkFilename: 'chunks/[name].js',
       clean: true,
     },
     resolve: {
