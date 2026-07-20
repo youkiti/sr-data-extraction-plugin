@@ -1239,6 +1239,87 @@ describe('collectRobAlgorithmInfo', () => {
     });
   });
 
+  describe('estimate スコープ（issue #109）', () => {
+    /** RoB 2 の 5 固定ドメイン id（robAlgorithm.ts の ROB2_RCT_DOMAIN_IDS と同順） */
+    const ROB2_DOMAIN_IDS = [
+      'd1_randomization',
+      'd2_deviations',
+      'd3_missing_data',
+      'd4_measurement',
+      'd5_reporting',
+    ] as const;
+
+    /** 判定確定値だけを持つ judgement セル 1 件のグループ（estimate セルは AI 値なしが前提） */
+    function judgementOnlyGroup(entityKey: string, stateValue: string): CellGroup {
+      return group([makeSqCell('rob2_judgement', entityKey, null, { stateValue, status: 'edit' })]);
+    }
+
+    test('estimate スコープの SQ 回答からも同一グループ内で提案を導出する（AI 値なしの手入力セル）', () => {
+      const entityKey = 'rob:d1_randomization|outcome:mortality|arm:1';
+      const cells = [
+        makeSqCell('rob2_sq1_1', entityKey, null, { stateValue: 'y', status: 'edit' }),
+        makeSqCell('rob2_sq1_2', entityKey, null, { stateValue: 'y', status: 'edit' }),
+        makeSqCell('rob2_sq1_3', entityKey, null, { stateValue: 'n', status: 'edit' }),
+        makeSqCell('rob2_judgement', entityKey, null),
+      ];
+      const model: TabModel = { groups: [group(cells)], cells: [] };
+      const info = collectRobAlgorithmInfo(model).get(cellKeyOf('f-rob2_judgement', entityKey));
+      expect(info?.suggestion).toBe('low');
+      expect(info?.aiUnconfirmed).toBe(false); // AI 値が無いため未確認バッジは出ない
+    });
+
+    test('同一ドメインの base と estimate 別インスタンスは、それぞれのグループの SQ から独立に提案する', () => {
+      const baseGroup = makeD1Group(); // SQ は low の組み合わせ
+      const estKey = 'rob:d1_randomization|outcome:mortality';
+      const estGroup = group([
+        makeSqCell('rob2_sq1_1', estKey, null, { stateValue: 'y', status: 'edit' }),
+        makeSqCell('rob2_sq1_2', estKey, null, { stateValue: 'n', status: 'edit' }), // 隠蔽なし → high
+        makeSqCell('rob2_sq1_3', estKey, null, { stateValue: 'n', status: 'edit' }),
+        makeSqCell('rob2_judgement', estKey, null),
+      ]);
+      const model: TabModel = { groups: [baseGroup, estGroup], cells: [] };
+      const result = collectRobAlgorithmInfo(model);
+      expect(result.get(cellKeyOf('f-rob2_judgement', 'rob:d1_randomization'))?.suggestion).toBe('low');
+      expect(result.get(cellKeyOf('f-rob2_judgement', estKey))?.suggestion).toBe('high');
+    });
+
+    test('base の overall は estimate スコープのドメイン判定を集約しない（base の 5 ドメインが揃わなければ提案なし）', () => {
+      const groups: CellGroup[] = [
+        // base は d2〜d5 のみ判定済み（d1 が無い）
+        ...ROB2_DOMAIN_IDS.slice(1).map((id) => judgementOnlyGroup(`rob:${id}`, 'low')),
+        // estimate スコープに d1 の判定があっても base の overall には使われない
+        judgementOnlyGroup('rob:d1_randomization|outcome:mortality', 'low'),
+        group([makeSqCell('rob2_judgement', 'rob:overall', 'low')]),
+      ];
+      const model: TabModel = { groups, cells: [] };
+      const info = collectRobAlgorithmInfo(model).get(cellKeyOf('f-rob2_judgement', 'rob:overall'));
+      expect(info?.suggestion).toBeNull();
+    });
+
+    test('estimate スコープの overall は同一スコープのドメインが揃わなければ提案なし（base が揃っていても使わない）', () => {
+      const estOverallKey = 'rob:overall|outcome:mortality';
+      const groups: CellGroup[] = [
+        // base 側は 5 ドメイン揃っている（が estimate の overall には使われない）
+        ...ROB2_DOMAIN_IDS.map((id) => judgementOnlyGroup(`rob:${id}`, 'low')),
+        group([makeSqCell('rob2_judgement', estOverallKey, null)]),
+      ];
+      const model: TabModel = { groups, cells: [] };
+      const info = collectRobAlgorithmInfo(model).get(cellKeyOf('f-rob2_judgement', estOverallKey));
+      expect(info?.suggestion).toBeNull();
+    });
+
+    test('estimate スコープの overall は同一スコープの 5 ドメイン判定が揃えば提案を算出する', () => {
+      const est = '|outcome:mortality';
+      const groups: CellGroup[] = [
+        ...ROB2_DOMAIN_IDS.map((id) => judgementOnlyGroup(`rob:${id}${est}`, 'low')),
+        group([makeSqCell('rob2_judgement', `rob:overall${est}`, null)]),
+      ];
+      const model: TabModel = { groups, cells: [] };
+      const info = collectRobAlgorithmInfo(model).get(cellKeyOf('f-rob2_judgement', `rob:overall${est}`));
+      expect(info?.suggestion).toBe('low');
+    });
+  });
+
   test('rob2 軽量版・SQ 完全版が混在する group（field_name が同じ rob2_judgement のみ）でも通常どおり動く', () => {
     // 実運用では field_name 衝突がエディタ確定前に検出されるため通常発生しないが、
     // group 内を漏れなく走査する実装であることの防御的確認

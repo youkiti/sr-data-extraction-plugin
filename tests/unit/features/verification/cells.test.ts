@@ -4,6 +4,7 @@ import type { SchemaField } from '../../../../src/domain/schemaField';
 import {
   availableTabs,
   buildTabModel,
+  compareRobInstanceKeys,
   entityInstances,
   entityKeyLabel,
   splitDecidedCells,
@@ -93,9 +94,30 @@ describe('entityKeyLabel', () => {
     ['outcome:mortality|time:30d', 'mortality / 30d'],
     ['outcome:mortality|arm:2|time:30d', 'mortality / 群 2 / 30d'],
     ['rob:domain_1', 'RoB: domain_1'],
+    ['rob:domain_1|outcome:mortality', 'RoB: domain_1 — mortality'],
+    ['rob:domain_1|outcome:mortality|arm:1', 'RoB: domain_1 — mortality / 群 1'],
+    ['rob:domain_1|outcome:mortality|time:30d', 'RoB: domain_1 — mortality / 30d'],
+    ['rob:domain_1|outcome:mortality|arm:2|time:30d', 'RoB: domain_1 — mortality / 群 2 / 30d'],
     ['broken key', 'broken key'],
   ])('%s → %s', (key, label) => {
     expect(entityKeyLabel(key)).toBe(label);
+  });
+});
+
+describe('compareRobInstanceKeys', () => {
+  test('base 同士はキー昇順', () => {
+    expect(compareRobInstanceKeys('rob:d1', 'rob:d2')).toBeLessThan(0);
+    expect(compareRobInstanceKeys('rob:d2', 'rob:d1')).toBeGreaterThan(0);
+  });
+
+  test('base は estimate 別より常に先頭（ドメイン id の昇順に関わらず）', () => {
+    expect(compareRobInstanceKeys('rob:overall', 'rob:d1|outcome:mortality')).toBeLessThan(0);
+    expect(compareRobInstanceKeys('rob:d1|outcome:mortality', 'rob:overall')).toBeGreaterThan(0);
+  });
+
+  test('estimate 別同士は参照先 outcome キー昇順 → 同一 estimate 内はキー昇順', () => {
+    expect(compareRobInstanceKeys('rob:d2|outcome:a', 'rob:d1|outcome:b')).toBeLessThan(0);
+    expect(compareRobInstanceKeys('rob:d1|outcome:x', 'rob:d2|outcome:x')).toBeLessThan(0);
   });
 });
 
@@ -165,6 +187,25 @@ describe('entityInstances', () => {
       }),
     ).toEqual(['outcome:mortality|time:30d']);
   });
+
+  test('rob_domain は base 群を先頭に、estimate 別群を outcome キー昇順で後ろに並べる（issue #109）', () => {
+    const evidence = [
+      makeEvidence({ entityKey: 'rob:d1_randomization' }),
+      makeEvidence({ entityKey: 'rob:overall' }),
+    ];
+    const decisions = [
+      makeDecision({ entityKey: 'rob:d1_randomization|outcome:pain' }),
+      makeDecision({ entityKey: 'rob:overall|outcome:mortality|arm:1' }),
+      makeDecision({ entityKey: 'rob:d1_randomization|outcome:mortality|arm:1' }),
+    ];
+    expect(entityInstances('rob_domain', evidence, decisions)).toEqual([
+      'rob:d1_randomization',
+      'rob:overall',
+      'rob:d1_randomization|outcome:mortality|arm:1',
+      'rob:overall|outcome:mortality|arm:1',
+      'rob:d1_randomization|outcome:pain',
+    ]);
+  });
 });
 
 describe('buildTabModel', () => {
@@ -233,6 +274,22 @@ describe('buildTabModel', () => {
       evidence: null,
       state: { status: 'unverified', value: null, stack: [] },
     });
+  });
+
+  test('rob_domain タブは base と estimate 別インスタンスを別グループにする（issue #109）', () => {
+    const fields = [
+      makeField({ fieldId: 'f-r', entityLevel: 'rob_domain', fieldName: 'rob2_judgement' }),
+    ];
+    const evidence = [makeEvidence({ fieldId: 'f-r', entityKey: 'rob:d1' })];
+    const decisions = [
+      makeDecision({ fieldId: 'f-r', entityKey: 'rob:d1|outcome:mortality', action: 'edit', value: 'low' }),
+    ];
+    const model = buildTabModel('rob_domain', fields, evidence, decisions);
+    expect(model.groups.map((g) => g.heading)).toEqual(['RoB: d1', 'RoB: d1 — mortality']);
+    expect(model.cells.map((cell) => [cell.entityKey, cell.evidence?.evidenceId ?? null])).toEqual([
+      ['rob:d1', 'ev-1'],
+      ['rob:d1|outcome:mortality', null],
+    ]);
   });
 
   test('outcome タブは AI が出した outcome を未抽出 arm にも展開する', () => {

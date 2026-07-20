@@ -9,7 +9,9 @@
 // - arm: section ごとに 1 ユニット。列 = 群インスタンス（TabModel の各 group）
 // - outcome_result: outcome × time の組ごとに 1 ユニット（同一 outcome・同一 time の全 arm を
 //   横結合）。列 = arm。arm セグメントを持たないキー（arm=null）は「群なし」列として扱う
-// - rob_domain: インスタンス（rob:ドメイン）ごとに 1 ユニット。列は固定 1 つ
+// - rob_domain: インスタンスごとに 1 ユニット。列は固定 1 つ。base（rob:ドメイン）と
+//   estimate 別オーバーライド（rob:ドメイン|outcome:...。issue #109）はインスタンスキーが
+//   異なるため、それぞれ別ユニットになる
 import { NOT_REPORTED_TOKEN } from '../../domain/annotation';
 import type { ConfirmedArmStructure } from '../../domain/armStructure';
 import type { EntityLevel, SchemaField } from '../../domain/schemaField';
@@ -315,7 +317,11 @@ function resolvedCellValue(cell: VerificationCell | null): string {
   return raw;
 }
 
-/** rob_domain タブ: インスタンス（rob:ドメイン）ごとに 1 ユニット（列は固定 1 つ） */
+/**
+ * rob_domain タブ: インスタンスごとに 1 ユニット（列は固定 1 つ）。base（`rob:<domain_id>`）と
+ * estimate 別オーバーライド（`rob:<domain_id>|outcome:<key>` 等。issue #109）は TabModel 上で
+ * 別グループになるため、それぞれ別ユニットとして並ぶ（並び順は cells.ts の compareRobInstanceKeys）
+ */
 function buildRobUnits(model: TabModel): FocusUnit[] {
   return model.groups.map((group) => {
     const entityKey = groupEntityKey(group);
