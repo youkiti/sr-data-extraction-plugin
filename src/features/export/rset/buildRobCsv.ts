@@ -1,12 +1,17 @@
 // rob.csv（issue #60 design-r-export.md §2）: 1 行 = study × RoB ドメイン。robvis 互換出力の派生元。
-// RoB ドメインは AI ドラフト非対応（テンプレート挿入が唯一の入口）のため、インスタンス列挙は
+// RoB ドメインは AI ドラフト非対応（テンプレート挿入が唯一の入口）のため、base 行のインスタンス列挙は
 // Evidence / Decisions からのデータ駆動ではなく、テンプレート定義（ROB2_DOMAINS / ROBINS_I_DOMAINS）
-// からの直接列挙にする。これにより AI が抽出できていないドメインも no_data 行として必ず出現する
+// からの直接列挙にする。これにより AI が抽出できていないドメインも no_data 行として必ず出現する。
+// estimate 単位のオーバーライド行（issue #109 design-r-export.md §4.3）は逆に、保存データ
+// （確定 annotator の ResultsData + Decisions の宣言）に存在する宣言分だけをデータ駆動で出力する:
+// 未評価 estimate の行は捏造せず、評価値の解決（オーバーライド優先）は R 側の join に委ねる
 import type { ResultsDataRow } from '../../../domain/annotation';
+import type { Decision } from '../../../domain/decision';
 import type { Evidence } from '../../../domain/evidence';
 import type { SchemaField } from '../../../domain/schemaField';
 import type { StudyRecord } from '../../../domain/study';
-import { makeRobDomainEntityKey } from '../../../utils/entityKey';
+import type { ParsedEntityKey } from '../../../utils/entityKey';
+import { makeRobDomainEntityKey, parseEntityKey, robEstimateScopeOf } from '../../../utils/entityKey';
 import { distinctAnnotators } from './annotatorPool';
 import { buildCsv } from '../csvEncode';
 import { selectFinalAnnotator } from '../finalAnnotator';
@@ -42,9 +47,16 @@ function cellKey(entityKey: string, fieldId: string): string {
   return `${entityKey}${SEP}${fieldId}`;
 }
 
+/** estimate 単位オーバーライドの出力単位（entity_key は保存行の原文・outcome_id は正準形） */
+interface RobOverrideInstance {
+  entityKey: string;
+  outcomeId: string;
+}
+
 export function buildRobCsv(
   studies: readonly StudyRecord[],
   resultsRows: readonly ResultsDataRow[],
+  decisions: readonly Decision[],
   evidences: readonly Evidence[],
   fields: readonly SchemaField[],
 ): RobBuildResult {
@@ -82,6 +94,45 @@ export function buildRobCsv(
     }
     const evidenceKeys = new Set(studyEvidence.map((evidence) => cellKey(evidence.entityKey, evidence.fieldId)));
 
+    // estimate 単位オーバーライドの列挙（design-r-export.md §4.3）: 確定 annotator の ResultsData と
+    // Decisions（S8 の宣言イベント含む）に実在する estimate スコープキーだけを domain_id ごとに集める
+    const overridesByDomain = new Map<string, RobOverrideInstance[]>();
+    const seenOverrideKeys = new Set<string>();
+    const collectOverride = (entityKey: string): void => {
+      if (seenOverrideKeys.has(entityKey)) {
+        return;
+      }
+      seenOverrideKeys.add(entityKey);
+      const outcomeId = robEstimateScopeOf(entityKey);
+      if (outcomeId === null) {
+        return; // base 評価・rob_domain 以外・形式不正はオーバーライドではない
+      }
+      // robEstimateScopeOf が非 null の時点で rob_domain の estimate スコープキーであることは保証される
+      const parsed = parseEntityKey(entityKey) as Extract<ParsedEntityKey, { level: 'rob_domain' }>;
+      const list = overridesByDomain.get(parsed.domain);
+      if (list === undefined) {
+        overridesByDomain.set(parsed.domain, [{ entityKey, outcomeId }]);
+      } else {
+        list.push({ entityKey, outcomeId });
+      }
+    };
+    for (const row of index.values()) {
+      collectOverride(row.entityKey);
+    }
+    for (const decision of decisions) {
+      if (decision.studyId === study.studyId) {
+        collectOverride(decision.entityKey);
+      }
+    }
+    for (const list of overridesByDomain.values()) {
+      // ソート規則（§4.3）: outcome_id 昇順。同一 outcome_id（セグメント順の表記揺れ）は
+      // entity_key 昇順のタイブレークで決定的に並べる
+      list.sort((a, b) => {
+        const byOutcome = a.outcomeId.localeCompare(b.outcomeId);
+        return byOutcome !== 0 ? byOutcome : a.entityKey.localeCompare(b.entityKey);
+      });
+    }
+
     for (const toolSet of toolSets) {
       const judgementField = fields.find(
         (field) => field.entityLevel === 'rob_domain' && field.fieldName === toolSet.judgementFieldName,
@@ -95,9 +146,9 @@ export function buildRobCsv(
         (field) => field.entityLevel === 'rob_domain' && field.fieldName === toolSet.supportFieldName,
       );
 
-      for (const domain of toolSet.domains) {
-        const entityKey = makeRobDomainEntityKey(domain.id);
-
+      // base 行とオーバーライド行で verification_status / support / judgement の規則と
+      // unverified_cell の積み上げを完全に共有する（§4.3。差は outcome_id と entity_key のみ）
+      const emitRow = (entityKey: string, outcomeId: string, domainLabel: string, domainId: string): void => {
         const judgementRow = index.get(cellKey(entityKey, judgementField.fieldId));
         const judgementRaw = resultsRowRawValue(judgementRow);
         const judgementHasEvidence = evidenceKeys.has(cellKey(entityKey, judgementField.fieldId));
@@ -119,10 +170,10 @@ export function buildRobCsv(
           study.studyId,
           study.studyLabel,
           toolSet.tool,
-          domain.id,
-          domain.label,
+          domainId,
+          domainLabel,
           '', // sq_id（signaling question。#61 実装後）
-          '', // outcome_id（result-level RoB。v1 は常に空）
+          outcomeId, // base 行は空・オーバーライド行は参照先インスタンスキーの正準形（issue #109）
           entityKey,
           judgementValue,
           supportValue,
@@ -138,6 +189,14 @@ export function buildRobCsv(
             entityKey,
             detail: `rob.csv: ${toolSet.judgementFieldName} は AI 抽出のみで人間の判定が 0 件です`,
           });
+        }
+      };
+
+      // ソート規則（§4.3）: study → domain（テンプレート順）→ outcome_id（base = 空が先頭、以降昇順）
+      for (const domain of toolSet.domains) {
+        emitRow(makeRobDomainEntityKey(domain.id), '', domain.label, domain.id);
+        for (const override of overridesByDomain.get(domain.id) ?? []) {
+          emitRow(override.entityKey, override.outcomeId, domain.label, domain.id);
         }
       }
     }
