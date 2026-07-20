@@ -561,13 +561,13 @@ describe('robTemplates', () => {
   });
 
   describe('QUADAS-3（issue #61 PR3 = issue #88）', () => {
-    test('risk-of-bias 判定 + 根拠 + 適用可能性判定 + 根拠 + SQ 20 問の計 24 項目を挿入する', () => {
-      expect(ROB_TEMPLATE_QUADAS3).toHaveLength(24);
+    test('判定 4 行 + SQ 20 問 + Phase 3 flow 6 項目 + Phase 4 estimate 記述 7 項目の計 37 項目を挿入する', () => {
+      expect(ROB_TEMPLATE_QUADAS3).toHaveLength(37);
       expect(ROB_TEMPLATE_QUADAS3[0]?.fieldName).toBe('quadas3_rob_judgement');
       expect(ROB_TEMPLATE_QUADAS3[1]?.fieldName).toBe('quadas3_rob_support');
       expect(ROB_TEMPLATE_QUADAS3[2]?.fieldName).toBe('quadas3_applicability_judgement');
       expect(ROB_TEMPLATE_QUADAS3[3]?.fieldName).toBe('quadas3_applicability_support');
-      const sqFieldNames = ROB_TEMPLATE_QUADAS3.slice(4).map((row) => row.fieldName);
+      const sqFieldNames = ROB_TEMPLATE_QUADAS3.slice(4, 24).map((row) => row.fieldName);
       expect(sqFieldNames).toEqual([
         'quadas3_sq1_1',
         'quadas3_sq1_2',
@@ -590,6 +590,23 @@ describe('robTemplates', () => {
         'quadas3_sq4_3',
         'quadas3_sq4_4',
       ]);
+      // 新 13 行（issue #109 PR3）は既存 24 行の後ろへ追加される
+      const appendedFieldNames = ROB_TEMPLATE_QUADAS3.slice(24).map((row) => row.fieldName);
+      expect(appendedFieldNames).toEqual([
+        'quadas3_flow_diagram',
+        'quadas3_flow_enrolled',
+        'quadas3_flow_index_tested',
+        'quadas3_flow_reference_standard',
+        'quadas3_flow_analyzed',
+        'quadas3_flow_exclusions',
+        'quadas3_est_participants',
+        'quadas3_est_index_test',
+        'quadas3_est_threshold',
+        'quadas3_est_target_condition',
+        'quadas3_est_reference_standard',
+        'quadas3_est_unit',
+        'quadas3_est_analysis',
+      ]);
     });
 
     test('ドメイン定義: risk-of-bias は D1〜D4 + overall / 適用可能性は D1〜D3 + overall（Analysis を除く）', () => {
@@ -608,17 +625,25 @@ describe('robTemplates', () => {
       ]);
     });
 
-    test('全項目が rob_domain レベル・専用セクション risk_of_bias_quadas3 に属する', () => {
+    test('全項目が専用セクション risk_of_bias_quadas3 に属し、entity_level は評価 24 行 = rob_domain / flow 6 行 = study / estimate 7 行 = outcome_result', () => {
       for (const row of ROB_TEMPLATE_QUADAS3) {
-        expect(row.entityLevel).toBe('rob_domain');
         expect(row.section).toBe('risk_of_bias_quadas3');
         expect(row.fieldId).toBeNull();
         expect(row.aiGenerated).toBe(false);
       }
+      for (const row of ROB_TEMPLATE_QUADAS3.slice(0, 24)) {
+        expect(row.entityLevel).toBe('rob_domain');
+      }
+      for (const row of ROB_TEMPLATE_QUADAS3.slice(24, 30)) {
+        expect(row.entityLevel).toBe('study');
+      }
+      for (const row of ROB_TEMPLATE_QUADAS3.slice(30)) {
+        expect(row.entityLevel).toBe('outcome_result');
+      }
     });
 
     test('SQ 項目は enum・y|py|pn|n|ni|na・required=false', () => {
-      for (const row of ROB_TEMPLATE_QUADAS3.slice(4)) {
+      for (const row of ROB_TEMPLATE_QUADAS3.slice(4, 24)) {
         expect(row.dataType).toBe('enum');
         expect(row.allowedValues).toBe('y|py|pn|n|ni|na');
         expect(row.required).toBe(false);
@@ -688,6 +713,80 @@ describe('robTemplates', () => {
       for (const domain of QUADAS3_APPLICABILITY_DOMAINS) {
         expect(applicabilityInstruction).toContain(`"rob:${domain.id}"`);
       }
+    });
+
+    describe('Phase 3 flow 項目 + Phase 4 estimate 記述項目（issue #109 PR3）', () => {
+      const rowOf = (fieldName: string) =>
+        ROB_TEMPLATE_QUADAS3.find((row) => row.fieldName === fieldName);
+
+      test('新 13 行は全て text・任意・許容値なし', () => {
+        for (const row of ROB_TEMPLATE_QUADAS3.slice(24)) {
+          expect(row.dataType).toBe('text');
+          expect(row.allowedValues).toBeNull();
+          expect(row.required).toBe(false);
+        }
+      });
+
+      test('flow 図の抽出指示: mermaid flowchart TD・原典 Phase 3 の一文の引用・コードのみ出力・分岐表現', () => {
+        const instruction = rowOf('quadas3_flow_diagram')?.extractionInstruction ?? '';
+        expect(instruction).toContain('mermaid flowchart TD');
+        expect(instruction).toContain(
+          'Draw a flow diagram for the primary study to provide a visual summary of how participants and ' +
+            'test results underlying accuracy estimates progress through a primary study.',
+        );
+        expect(instruction).toContain('no explanatory text, no code fences');
+        expect(instruction).toContain('multiple index tests, multiple pathways, or subgroups');
+        // quote には flow の主要な根拠箇所（Figure キャプション・本文の flow 記述）を要求する
+        expect(instruction).toContain('For the quote');
+        expect(rowOf('quadas3_flow_diagram')?.example).toContain('flowchart TD');
+      });
+
+      test('flow の構造化数値 4 項目の抽出指示: 段階の説明 + 報告どおりの文字列 + not_reported 案内', () => {
+        const stages: readonly [string, string][] = [
+          ['quadas3_flow_enrolled', 'enrolled in the study'],
+          ['quadas3_flow_index_tested', 'received the index test'],
+          ['quadas3_flow_reference_standard', 'received the reference standard'],
+          ['quadas3_flow_analyzed', 'included in the 2x2 analysis'],
+        ];
+        for (const [fieldName, phrase] of stages) {
+          const instruction = rowOf(fieldName)?.extractionInstruction ?? '';
+          expect(instruction).toContain(phrase);
+          expect(instruction).toContain('exactly as reported');
+          expect(instruction).toContain('not_reported');
+        }
+      });
+
+      test('flow の除外項目の抽出指示: 原典 Domain 4 記述欄の文言を用いる', () => {
+        const instruction = rowOf('quadas3_flow_exclusions')?.extractionInstruction ?? '';
+        expect(instruction).toContain(
+          'describe any participants who were enrolled in the study but excluded from the 2x2 table',
+        );
+        expect(instruction).toContain(
+          'did not receive index test, did not receive reference standard, uninterpretable index result',
+        );
+      });
+
+      test('estimate 記述 7 項目の抽出指示: 原典 Table 5 の行見出しを逐語で含み、estimate = outcome_result インスタンスを明示する', () => {
+        const tableRows: readonly [string, string][] = [
+          ['quadas3_est_participants', 'Participants'],
+          ['quadas3_est_index_test', 'Index test'],
+          ['quadas3_est_threshold', 'Index test threshold (if applicable)'],
+          ['quadas3_est_target_condition', 'Target condition'],
+          ['quadas3_est_reference_standard', 'Reference standard'],
+          ['quadas3_est_unit', 'Unit of analysis (e.g. participant, tumour, lesion, sample)'],
+          ['quadas3_est_analysis', 'Analysis (e.g. analysis method, participants included in analysis)'],
+        ];
+        for (const [fieldName, tableRow] of tableRows) {
+          const instruction = rowOf(fieldName)?.extractionInstruction ?? '';
+          expect(instruction).toContain(`Table 5 row "${tableRow}"`);
+          expect(instruction).toContain('this outcome_result instance');
+          expect(instruction).toContain('verbatim');
+        }
+      });
+
+      test('テンプレート全 37 行のスナップショット（既存 24 行の不変 + 新 13 行の固定）', () => {
+        expect(ROB_TEMPLATE_QUADAS3).toMatchSnapshot();
+      });
     });
 
     test('プリセット単体はエディタ検証を通る', () => {
