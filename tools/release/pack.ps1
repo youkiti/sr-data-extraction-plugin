@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-  Chrome ウェブストア提出用 zip を dist/ から作成する（.claude/skills/release-build 手順 1〜4 の自動化）。
+  Chrome ウェブストア提出用 zip を dist/ から作成する（.claude/skills/release-build 手順 2 の実体）。
 
 .DESCRIPTION
   `npm run build` 済みの dist/ を入力として、以下を一括で行う:
@@ -229,4 +229,4 @@ try {
 
 Write-Host ''
 Write-Host "提出用 zip: $zipPath" -ForegroundColor Cyan
-Write-Host '次: Chrome ウェブストア デベロッパー ダッシュボードへアップロード（.claude/skills/release-build 手順 5）'
+Write-Host '次: Chrome ウェブストア デベロッパー ダッシュボードへアップロード（.claude/skills/release-build 手順 3）'
