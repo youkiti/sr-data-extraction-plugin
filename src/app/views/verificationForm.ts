@@ -53,6 +53,19 @@ export interface OutcomeAddModel {
   error: string | null;
 }
 
+/**
+ * rob_domain タブの「estimate 別の評価を追加」フォーム（issue #109・ui-states.md #/verify）。
+ * estimate セレクタ = その study の outcome_result インスタンス、ドメインセレクタ =
+ * テンプレート行から得た全ドメイン（ツール非依存）。verificationPanel が組み立てる
+ */
+export interface RobEstimateAddModel {
+  estimateOptions: readonly { key: string; label: string }[];
+  domainOptions: readonly { id: string; label: string }[];
+  selectedEstimate: string;
+  selectedDomain: string;
+  error: string | null;
+}
+
 export interface VerificationFormModel {
   tabs: EntityLevel[];
   activeTab: EntityLevel;
@@ -71,6 +84,8 @@ export interface VerificationFormModel {
   armCard: ArmCardModel | null;
   /** outcome_result タブで、人間が見落としアウトカムを追加するフォーム */
   outcomeAdd: OutcomeAddModel | null;
+  /** rob_domain タブで、estimate 別 RoB オーバーライドを宣言するフォーム（issue #109） */
+  robEstimateAdd: RobEstimateAddModel | null;
   /** true のとき arm / outcome_result タブをディムし、該当タブの本文を確定案内に差し替える */
   armLocked: boolean;
   /** 全 entity タブ横断の判定進捗（判定のたびに更新。「どこまでやったか」の可視化） */
@@ -139,6 +154,10 @@ export interface VerificationFormHandlers {
   onOutcomeKeyChange(value: string): void;
   onOutcomeTimeChange(value: string): void;
   onOutcomeAdd(): void;
+  /** estimate 別 RoB 評価の宣言フォーム（issue #109） */
+  onRobEstimateKeyChange(value: string): void;
+  onRobEstimateDomainChange(value: string): void;
+  onRobEstimateAdd(): void;
   /** レイアウトモード切替（`#verify-layout-toggle`）。永続化はサービス層の責務 */
   onToggleLayoutMode(mode: 'focus' | 'list'): void;
   /**
@@ -459,6 +478,87 @@ function renderOutcomeAdd(
   return el('section', { id: 'verify-outcome-add', className: 'verify__outcome-add' }, children);
 }
 
+/** 選択肢付き select を組み立てる（estimate 別 RoB 宣言フォームの 2 セレクタ共用） */
+function renderRobEstimateSelect(
+  id: string,
+  className: string,
+  options: readonly { value: string; label: string }[],
+  selected: string,
+  onChange: (value: string) => void,
+): HTMLSelectElement {
+  const select = el('select', { id, className });
+  for (const option of options) {
+    const optionEl = el('option', { text: option.label });
+    optionEl.value = option.value;
+    select.append(optionEl);
+  }
+  select.value = selected;
+  select.addEventListener('change', () => onChange(select.value));
+  return select;
+}
+
+/**
+ * rob_domain タブの「estimate 別の評価を追加」フォーム（issue #109・ui-states.md #/verify）。
+ * `#verify-outcome-add` と同型: 宣言は Decisions のインスタンス宣言イベントとして追記される
+ */
+function renderRobEstimateAdd(
+  model: RobEstimateAddModel,
+  handlers: VerificationFormHandlers,
+): HTMLElement {
+  const keySelect = renderRobEstimateSelect(
+    'verify-rob-est-key',
+    'verify__rob-est-key',
+    model.estimateOptions.map((option) => ({ value: option.key, label: option.label })),
+    model.selectedEstimate,
+    (value) => handlers.onRobEstimateKeyChange(value),
+  );
+  const domainSelect = renderRobEstimateSelect(
+    'verify-rob-est-domain',
+    'verify__rob-est-domain',
+    model.domainOptions.map((option) => ({
+      value: option.id,
+      label: `${option.id} (${option.label})`,
+    })),
+    model.selectedDomain,
+    (value) => handlers.onRobEstimateDomainChange(value),
+  );
+
+  const addButton = el('button', {
+    id: 'verify-rob-est-add-button',
+    className: 'verify__rob-est-add-button',
+    text: t('verify.robEstAddTitle'),
+    attributes: { type: 'button' },
+  });
+  addButton.addEventListener('click', () => handlers.onRobEstimateAdd());
+
+  const children: HTMLElement[] = [
+    el('h4', { className: 'verify__rob-est-heading', text: t('verify.robEstAddTitle') }),
+    el('div', { className: 'verify__rob-est-fields' }, [
+      el('label', { className: 'verify__rob-est-field', attributes: { for: 'verify-rob-est-key' } }, [
+        t('verify.robEstKeyLabel'),
+        keySelect,
+      ]),
+      el(
+        'label',
+        { className: 'verify__rob-est-field', attributes: { for: 'verify-rob-est-domain' } },
+        [t('verify.robEstDomainLabel'), domainSelect],
+      ),
+      addButton,
+    ]),
+  ];
+  if (model.error !== null) {
+    children.push(
+      el('p', {
+        id: 'verify-rob-est-error',
+        className: 'verify__rob-est-error',
+        attributes: { role: 'alert' },
+        text: model.error,
+      }),
+    );
+  }
+  return el('section', { id: 'verify-rob-est-add', className: 'verify__rob-est-add' }, children);
+}
+
 /** ショートカット注記の文言（モードごとにキー割当が異なる。ui-flow.md §7） */
 function shortcutNoteText(layoutMode: 'focus' | 'list'): string {
   return layoutMode === 'focus' ? t('verify.shortcutNoteFocus') : t('verify.shortcutNoteList');
@@ -501,6 +601,9 @@ export function renderVerificationForm(
   }
   if (model.outcomeAdd !== null) {
     children.push(renderOutcomeAdd(model.outcomeAdd, handlers));
+  }
+  if (model.robEstimateAdd !== null) {
+    children.push(renderRobEstimateAdd(model.robEstimateAdd, handlers));
   }
   if (model.armLocked && isArmDependentLevel(model.activeTab)) {
     // study 項目のないスキーマではロック対象タブが初期表示になりうる。本文を確定案内に差し替える

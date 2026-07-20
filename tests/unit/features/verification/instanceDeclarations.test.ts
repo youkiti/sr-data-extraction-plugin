@@ -1,9 +1,12 @@
 import {
   ENTITY_INSTANCE_DECLARATION_FIELD_ID,
   OUTCOME_INSTANCE_DECLARATION_NOTE,
+  ROB_ESTIMATE_INSTANCE_DECLARATION_NOTE,
   buildOutcomeDeclarationDecisions,
+  buildRobEstimateDeclarationDecisions,
   isEntityInstanceDeclaration,
   outcomeEntityKeysForArms,
+  robEstimateEntityKeyOf,
 } from '../../../../src/features/verification/instanceDeclarations';
 
 describe('outcomeEntityKeysForArms', () => {
@@ -85,6 +88,68 @@ describe('buildOutcomeDeclarationDecisions', () => {
       annotatorType: 'human_independent',
       schemaVersion: 3,
       decidedAt: '2026-07-09T00:00:00Z',
+    });
+    expect(decisions[0]?.annotatorType).toBe('human_independent');
+  });
+});
+
+describe('robEstimateEntityKeyOf（issue #109）', () => {
+  test('outcome_result インスタンスキーの正準順序（outcome → arm → time）で組み立てる', () => {
+    expect(robEstimateEntityKeyOf('d1_randomization', 'outcome:mortality|arm:1|time:30d')).toBe(
+      'rob:d1_randomization|outcome:mortality|arm:1|time:30d',
+    );
+    expect(robEstimateEntityKeyOf('overall', 'outcome:pain')).toBe('rob:overall|outcome:pain');
+    expect(robEstimateEntityKeyOf('quadas3_d4_analysis', 'outcome:sens|time:baseline')).toBe(
+      'rob:quadas3_d4_analysis|outcome:sens|time:baseline',
+    );
+  });
+
+  test('outcome_result キーとして読めない参照先はエラー', () => {
+    expect(() => robEstimateEntityKeyOf('d1_randomization', 'arm:1')).toThrow(
+      'outcome_result キー arm:1 が不正です',
+    );
+    expect(() => robEstimateEntityKeyOf('d1_randomization', 'bad')).toThrow('不正');
+  });
+});
+
+describe('buildRobEstimateDeclarationDecisions（issue #109）', () => {
+  test('outcome_result の宣言と同型の Decisions 追記イベントを 1 件作る', () => {
+    const decisions = buildRobEstimateDeclarationDecisions({
+      studyId: 'study-1',
+      domainId: 'd1_randomization',
+      outcomeKey: 'outcome:mortality|arm:1',
+      annotator: 'me@example.com',
+      annotatorType: 'human_with_ai',
+      schemaVersion: 3,
+      decidedAt: '2026-07-20T00:00:00Z',
+    });
+    expect(decisions).toEqual([
+      {
+        decidedAt: '2026-07-20T00:00:00Z',
+        decidedBy: 'me@example.com',
+        studyId: 'study-1',
+        fieldId: ENTITY_INSTANCE_DECLARATION_FIELD_ID,
+        entityKey: 'rob:d1_randomization|outcome:mortality|arm:1',
+        annotator: 'me@example.com',
+        annotatorType: 'human_with_ai',
+        schemaVersion: 3,
+        action: 'edit',
+        value: 'rob:d1_randomization|outcome:mortality|arm:1',
+        note: ROB_ESTIMATE_INSTANCE_DECLARATION_NOTE,
+      },
+    ]);
+    expect(isEntityInstanceDeclaration(decisions[0]!)).toBe(true);
+  });
+
+  test('annotatorType は呼び出し側の入力をそのまま使う（独立入力モードでも宣言可能）', () => {
+    const decisions = buildRobEstimateDeclarationDecisions({
+      studyId: 'study-1',
+      domainId: 'overall',
+      outcomeKey: 'outcome:pain',
+      annotator: 'reviewer@example.com',
+      annotatorType: 'human_independent',
+      schemaVersion: 3,
+      decidedAt: '2026-07-20T00:00:00Z',
     });
     expect(decisions[0]?.annotatorType).toBe('human_independent');
   });

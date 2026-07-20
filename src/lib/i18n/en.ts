@@ -585,6 +585,11 @@ export const en: Record<MessageKey, string> = {
   'verify.outcomeAddTitle': 'Add an outcome',
   'verify.outcomeKeyLabel': 'Outcome key',
   'verify.outcomeTimeLabel': 'Time point (optional)',
+  'verify.robEstAddTitle': 'Add a per-estimate assessment',
+  'verify.robEstKeyLabel': 'Target estimate (outcome_result instance)',
+  'verify.robEstDomainLabel': 'Target domain',
+  'verify.robEstDuplicate': 'entity_key {key} is already declared',
+  'verify.robEstNoOutcome': 'No outcome_result instances yet. Add or verify outcomes first.',
   'verify.shortcutNoteFocus':
     'Shortcuts: a accept / e edit / x reject / n not reported / z undo last decision / j·k move row / h·l move column / J·K switch unit / f jump to highlight',
   'verify.shortcutNoteList':

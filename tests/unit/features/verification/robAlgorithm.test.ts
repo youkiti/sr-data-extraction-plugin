@@ -1,8 +1,9 @@
 import { NOT_REPORTED_TOKEN } from '../../../../src/domain/annotation';
+import type { Decision } from '../../../../src/domain/decision';
 import type { Evidence } from '../../../../src/domain/evidence';
 import type { FieldDataType, SchemaField } from '../../../../src/domain/schemaField';
 import { ROBINS_I_DOMAINS, ROBINS_I_SQ_FIELD_NAMES } from '../../../../src/features/schema/presets/robTemplates';
-import type { CellGroup, TabModel, VerificationCell } from '../../../../src/features/verification/cells';
+import { buildTabModel, type CellGroup, type TabModel, type VerificationCell } from '../../../../src/features/verification/cells';
 import { cellKeyOf, emptyCellState, type CellState } from '../../../../src/features/verification/cellState';
 import {
   collectRobAlgorithmInfo,
@@ -1317,6 +1318,46 @@ describe('collectRobAlgorithmInfo', () => {
       const model: TabModel = { groups, cells: [] };
       const info = collectRobAlgorithmInfo(model).get(cellKeyOf('f-rob2_judgement', `rob:overall${est}`));
       expect(info?.suggestion).toBe('low');
+    });
+
+    test('宣言（issue #109 PR2）で作られた buildTabModel 経由のオーバーライドグループでも SQ 回答 → 提案が働く', () => {
+      // フィールド絞り込み（宣言ドメインの判定 + 根拠 + その SQ のみ）後のグループが
+      // アルゴリズム提案に必要な SQ セルを保持していることの統合確認
+      const fields = [
+        makeField({ fieldId: 'f-j', fieldIndex: 1, fieldName: 'rob2_judgement' }),
+        makeField({
+          fieldId: 'f-sq11', fieldIndex: 2, fieldName: 'rob2_sq1_1',
+          allowedValues: 'y|py|pn|n|ni|na', required: false,
+        }),
+        makeField({
+          fieldId: 'f-sq12', fieldIndex: 3, fieldName: 'rob2_sq1_2',
+          allowedValues: 'y|py|pn|n|ni|na', required: false,
+        }),
+        makeField({
+          fieldId: 'f-sq13', fieldIndex: 4, fieldName: 'rob2_sq1_3',
+          allowedValues: 'y|py|pn|n|ni|na', required: false,
+        }),
+      ];
+      const estKey = 'rob:d1_randomization|outcome:mortality|arm:1';
+      const baseDecision = {
+        decidedAt: 't1',
+        decidedBy: 'me@example.com',
+        studyId: 'study-1',
+        annotator: 'me@example.com',
+        annotatorType: 'human_with_ai',
+        schemaVersion: 1,
+        note: null,
+      } as const;
+      const decisions: Decision[] = [
+        { ...baseDecision, fieldId: '__entity_instance__', entityKey: estKey, action: 'edit', value: estKey, note: 'rob_estimate_instance_declared' },
+        { ...baseDecision, fieldId: 'f-sq11', entityKey: estKey, action: 'edit', value: 'y' },
+        { ...baseDecision, fieldId: 'f-sq12', entityKey: estKey, action: 'edit', value: 'y' },
+        { ...baseDecision, fieldId: 'f-sq13', entityKey: estKey, action: 'edit', value: 'n' },
+      ];
+      const model = buildTabModel('rob_domain', fields, [], decisions);
+      const info = collectRobAlgorithmInfo(model).get(cellKeyOf('f-j', estKey));
+      expect(info?.suggestion).toBe('low');
+      expect(info?.currentValue).toBeNull();
     });
   });
 

@@ -1938,6 +1938,225 @@ describe('outcome_result インスタンス追加', () => {
   });
 });
 
+describe('estimate 別 RoB 評価の宣言（issue #109）', () => {
+  const outcomeField = makeField({
+    fieldId: 'f-out-event',
+    fieldIndex: 5,
+    section: 'outcomes',
+    fieldName: 'event_count',
+    fieldLabel: 'イベント数',
+    entityLevel: 'outcome_result',
+  });
+  const robJudgementField = makeField({
+    fieldId: 'f-rob-j',
+    fieldIndex: 6,
+    section: 'risk_of_bias_rob2',
+    fieldName: 'rob2_judgement',
+    fieldLabel: 'RoB 2 判定',
+    entityLevel: 'rob_domain',
+  });
+  const robSupportField = makeField({
+    fieldId: 'f-rob-s',
+    fieldIndex: 7,
+    section: 'risk_of_bias_rob2',
+    fieldName: 'rob2_support',
+    fieldLabel: 'RoB 2 根拠',
+    entityLevel: 'rob_domain',
+    required: false,
+  });
+  const robSq11Field = makeField({
+    fieldId: 'f-rob-sq11',
+    fieldIndex: 8,
+    section: 'risk_of_bias_rob2',
+    fieldName: 'rob2_sq1_1',
+    fieldLabel: 'RoB 2 SQ 1.1',
+    entityLevel: 'rob_domain',
+    required: false,
+  });
+  const robSq21Field = makeField({
+    fieldId: 'f-rob-sq21',
+    fieldIndex: 9,
+    section: 'risk_of_bias_rob2',
+    fieldName: 'rob2_sq2_1',
+    fieldLabel: 'RoB 2 SQ 2.1',
+    entityLevel: 'rob_domain',
+    required: false,
+  });
+  const ROB_FIELDS = [
+    ...FIELDS,
+    outcomeField,
+    robJudgementField,
+    robSupportField,
+    robSq11Field,
+    robSq21Field,
+  ];
+  const outcomeEvidence = makeEvidence({
+    evidenceId: 'ev-out',
+    fieldId: 'f-out-event',
+    entityKey: 'outcome:mortality|arm:1',
+    value: '5',
+  });
+  const robEvidence = makeEvidence({
+    evidenceId: 'ev-rob',
+    fieldId: 'f-rob-j',
+    entityKey: 'rob:d1_randomization',
+    value: 'low',
+  });
+  const ROB_EVIDENCE = [...EVIDENCE, outcomeEvidence, robEvidence];
+  const EST_KEY = 'rob:d1_randomization|outcome:mortality|arm:1';
+
+  async function openRobPanel(
+    dataOverrides: Parameters<typeof createPanel>[0] = {},
+    options: Parameters<typeof createPanel>[1] = {},
+  ) {
+    const onInstanceDeclare = jest.fn();
+    const created = await createPanel(
+      { fields: ROB_FIELDS, evidence: ROB_EVIDENCE, ...dataOverrides },
+      { onInstanceDeclare, ...options },
+    );
+    [...created.panel.root.querySelectorAll<HTMLButtonElement>('.verify__tab')]
+      .find((button) => button.textContent === 'RoB')
+      ?.click();
+    return { ...created, onInstanceDeclare };
+  }
+
+  test('rob タブの宣言フォームから追加すると、宣言イベント + 当該ドメインだけの空セル群 + 見出し注記が出る', async () => {
+    const { panel, onInstanceDeclare } = await openRobPanel();
+    expect(panel.root.querySelector('#verify-rob-est-add')).not.toBeNull();
+    const key = panel.root.querySelector<HTMLSelectElement>('#verify-rob-est-key');
+    const domain = panel.root.querySelector<HTMLSelectElement>('#verify-rob-est-domain');
+    expect([...key!.options].map((option) => option.value)).toEqual(['outcome:mortality|arm:1']);
+    expect([...key!.options].map((option) => option.textContent)).toEqual(['mortality / 群 1']);
+    // ドメインセレクタはテンプレート行から得た全ドメイン（RoB 2 = D1〜D5 + overall）
+    expect(domain!.options).toHaveLength(6);
+    expect(domain!.value).toBe('d1_randomization');
+
+    panel.root.querySelector<HTMLButtonElement>('#verify-rob-est-add-button')?.click();
+    expect(onInstanceDeclare).toHaveBeenCalledWith([
+      expect.objectContaining({
+        decidedAt: 't1',
+        studyId: 'study-1',
+        fieldId: '__entity_instance__',
+        entityKey: EST_KEY,
+        annotator: ME,
+        annotatorType: 'human_with_ai',
+        action: 'edit',
+        value: EST_KEY,
+        note: 'rob_estimate_instance_declared',
+      }),
+    ]);
+    // 空セル: 当該ドメインの判定 + 根拠 + D1 の SQ のみ（他ドメインの SQ セルはばら撒かない）
+    const judgementCell = cellEl(panel.root, cellKeyOf('f-rob-j', EST_KEY));
+    expect(judgementCell).not.toBeNull();
+    expect(judgementCell?.textContent).toContain('AI 抽出なし');
+    expect(judgementCell?.classList.contains('verify__cell--focused')).toBe(true);
+    expect(cellEl(panel.root, cellKeyOf('f-rob-s', EST_KEY))).not.toBeNull();
+    expect(cellEl(panel.root, cellKeyOf('f-rob-sq11', EST_KEY))).not.toBeNull();
+    expect(cellEl(panel.root, cellKeyOf('f-rob-sq21', EST_KEY))).toBeNull();
+    // base グループの見出しに「共通（全 estimate）」の注記、estimate 別グループはその後ろ
+    const headings = [...panel.root.querySelectorAll('.verify__group-heading')].map(
+      (node) => node.textContent,
+    );
+    expect(headings).toContain('RoB: d1_randomization — 共通（全 estimate）');
+    expect(headings).toContain('RoB: d1_randomization — mortality / 群 1');
+    expect(headings.indexOf('RoB: d1_randomization — 共通（全 estimate）')).toBeLessThan(
+      headings.indexOf('RoB: d1_randomization — mortality / 群 1'),
+    );
+    // 進捗分母に含まれる（base 4 セル + オーバーライド 3 セル）
+    expect(panel.root.querySelector('#verify-progress')?.textContent).toContain('判定済み 0 / 7');
+    panel.dispose();
+  });
+
+  test('既存宣言と重複する組は保存せず role=alert のエラーを出す', async () => {
+    const { panel, onInstanceDeclare } = await openRobPanel();
+    panel.root.querySelector<HTMLButtonElement>('#verify-rob-est-add-button')?.click();
+    expect(onInstanceDeclare).toHaveBeenCalledTimes(1);
+    panel.root.querySelector<HTMLButtonElement>('#verify-rob-est-add-button')?.click();
+    expect(onInstanceDeclare).toHaveBeenCalledTimes(1);
+    const error = panel.root.querySelector('#verify-rob-est-error');
+    expect(error?.getAttribute('role')).toBe('alert');
+    expect(error?.textContent).toContain(`entity_key ${EST_KEY} は既に宣言されています`);
+    panel.dispose();
+  });
+
+  test('estimate・ドメインの選択が宣言キーへ反映される', async () => {
+    const painEvidence = makeEvidence({
+      evidenceId: 'ev-out-pain',
+      fieldId: 'f-out-event',
+      entityKey: 'outcome:pain|arm:1',
+      value: '9',
+    });
+    const { panel, onInstanceDeclare } = await openRobPanel({
+      evidence: [...ROB_EVIDENCE, painEvidence],
+    });
+    const key = panel.root.querySelector<HTMLSelectElement>('#verify-rob-est-key');
+    const domain = panel.root.querySelector<HTMLSelectElement>('#verify-rob-est-domain');
+    key!.value = 'outcome:pain|arm:1';
+    key!.dispatchEvent(new Event('change'));
+    domain!.value = 'overall';
+    domain!.dispatchEvent(new Event('change'));
+    panel.root.querySelector<HTMLButtonElement>('#verify-rob-est-add-button')?.click();
+    expect(onInstanceDeclare).toHaveBeenCalledWith([
+      expect.objectContaining({ entityKey: 'rob:overall|outcome:pain|arm:1' }),
+    ]);
+    // 再描画後も選択が保持される（draft が有効なキーの間はそれを使う）
+    expect(panel.root.querySelector<HTMLSelectElement>('#verify-rob-est-key')?.value).toBe(
+      'outcome:pain|arm:1',
+    );
+    expect(panel.root.querySelector<HTMLSelectElement>('#verify-rob-est-domain')?.value).toBe(
+      'overall',
+    );
+    panel.dispose();
+  });
+
+  test('outcome_result インスタンスが 0 件のときはフォームを出さない', async () => {
+    const { panel } = await openRobPanel({ evidence: [...EVIDENCE, robEvidence] });
+    expect(panel.root.querySelector('.verify__tab--active')?.textContent).toBe('RoB');
+    expect(panel.root.querySelector('#verify-rob-est-add')).toBeNull();
+    panel.dispose();
+  });
+
+  test('テンプレート由来のドメインが無い（カスタム RoB 項目のみ）ときはフォームを出さない', async () => {
+    const customRobField = makeField({
+      fieldId: 'f-rob-c',
+      fieldIndex: 6,
+      section: 'risk_of_bias',
+      fieldName: 'myrob_judgement',
+      fieldLabel: '独自 RoB 判定',
+      entityLevel: 'rob_domain',
+    });
+    const customEvidence = makeEvidence({
+      evidenceId: 'ev-rob-c',
+      fieldId: 'f-rob-c',
+      entityKey: 'rob:custom_domain',
+      value: 'low',
+    });
+    const { panel } = await openRobPanel({
+      fields: [...FIELDS, outcomeField, customRobField],
+      evidence: [...EVIDENCE, outcomeEvidence, customEvidence],
+    });
+    expect(panel.root.querySelector('#verify-rob-est-add')).toBeNull();
+    panel.dispose();
+  });
+
+  test('独立入力モードでも宣言フォームと手入力セルが機能する（AI 情報は見せない）', async () => {
+    const { panel, onInstanceDeclare } = await openRobPanel({
+      annotatorType: 'human_independent',
+    });
+    expect(panel.root.querySelector('#verify-rob-est-add')).not.toBeNull();
+    panel.root.querySelector<HTMLButtonElement>('#verify-rob-est-add-button')?.click();
+    expect(onInstanceDeclare).toHaveBeenCalledWith([
+      expect.objectContaining({ entityKey: EST_KEY, annotatorType: 'human_independent' }),
+    ]);
+    const judgementCell = cellEl(panel.root, cellKeyOf('f-rob-j', EST_KEY));
+    expect(judgementCell).not.toBeNull();
+    // 独立入力モードのセルカード: AI 抽出関連の表示を持たず抽出指示のみ
+    expect(judgementCell?.querySelector('.verify__ai')).toBeNull();
+    expect(judgementCell?.querySelector('.verify__instruction')).not.toBeNull();
+    panel.dispose();
+  });
+});
+
 describe('独立入力モード（design §5.2。annotatorType = human_independent の panelMode）', () => {
   test('Evidence quote・AI 値・ハイライトを描画せず、代わりに抽出指示を出す（evidence があっても隠す）', async () => {
     const { panel } = await createPanel({ annotatorType: 'human_independent' });
