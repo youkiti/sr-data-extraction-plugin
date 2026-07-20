@@ -17,8 +17,11 @@ export const RELOCATE_QUOTE_SKILL_NAME = 'relocate-quote';
 /**
  * プロンプト版数。プロンプト文言・スキーマを変えたら必ずインクリメントする。
  * v1（2026-07。issue #94）: 初版
+ * v2（2026-07-20）: 多言語文書対応の明示（issue #161。extract-data v7 = issue #95 層 2 のパリティ）。
+ *   quote 規約へ「原文の言語・文字体系のまま（翻訳・音写の禁止）」を明記
+ *   （和文文書で quote が英訳されると再アンカリング検証で毎回棄却され、再特定が常に失敗するため）
  */
-export const RELOCATE_QUOTE_PROMPT_VERSION = 1;
+export const RELOCATE_QUOTE_PROMPT_VERSION = 2;
 
 /**
  * 元の AI page ヒントの前後何ページを LLM へ渡すか（トークン節約。requirements.md §4.3 の
@@ -36,7 +39,7 @@ You are helping to re-locate a supporting quote for a single previously extracte
 An earlier automatic pass could not find the reported quote verbatim in the document text (it may have been paraphrased, mistyped, or attributed to the wrong page), so a human reviewer is asking you to look again in the same document.
 
 Rules:
-- "quote": copy the supporting passage VERBATIM from the provided document text — character for character, exactly as it appears (including line-break artifacts), no paraphrasing, no ellipsis. At most 300 characters; choose the shortest passage that supports the reported value.
+- "quote": copy the supporting passage VERBATIM from the provided document text — character for character, exactly as it appears (including line-break artifacts), no paraphrasing, no ellipsis. Keep it in the document's original language and script — NEVER translate or transliterate (e.g. quote Japanese text in Japanese). At most 300 characters; choose the shortest passage that supports the reported value.
 - "page": the 1-indexed page (within the provided text, marked as [PAGE n]) where the quote appears.
 - If you cannot find a passage in the given text that actually supports the reported value, return { "found": false, "quote": null, "page": null }. Never invent or paraphrase a quote — a missing quote is always preferable to a wrong one.
 - Return ONLY a JSON object — no markdown fences, no commentary.

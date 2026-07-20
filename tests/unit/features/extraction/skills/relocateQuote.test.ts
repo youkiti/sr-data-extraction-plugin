@@ -123,6 +123,12 @@ describe('RELOCATE_QUOTE_SYSTEM_PROMPT / RELOCATE_QUOTE_RESPONSE_SCHEMA / RELOCA
     expect(RELOCATE_QUOTE_SYSTEM_PROMPT).toContain('found');
   });
 
+  test('システムプロンプトに quote を原文の言語・文字体系のまま返す規約がある（issue #161）', () => {
+    expect(RELOCATE_QUOTE_SYSTEM_PROMPT).toContain(
+      "Keep it in the document's original language and script — NEVER translate or transliterate",
+    );
+  });
+
   test('応答スキーマは found/quote/page の必須プロパティを持つ', () => {
     expect(RELOCATE_QUOTE_RESPONSE_SCHEMA['required']).toEqual(['found', 'quote', 'page']);
   });
