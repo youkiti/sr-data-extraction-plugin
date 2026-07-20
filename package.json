@@ -1,6 +1,6 @@
 {
   "name": "sr-data-extraction-plugin",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "description": "SR のデータ抽出工程を支援する Chrome 拡張（AI 事前抽出 + 人間検証 + 監査証跡）",
   "license": "MIT",
@@ -11,6 +11,7 @@
     "dev": "webpack --mode development",
     "watch": "webpack --mode development --watch",
     "build": "webpack --mode production",
+    "pack:release": "pwsh -NoProfile -File tools/release/pack.ps1",
     "lint": "eslint \"src/**/*.ts\" \"tests/**/*.ts\"",
     "lint:css": "stylelint \"src/**/*.css\"",
     "typecheck": "tsc --noEmit",
