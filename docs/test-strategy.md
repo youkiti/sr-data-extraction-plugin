@@ -41,6 +41,7 @@ sr-query-builder では後付けになって手戻りしたため、スケルト
 実 PDF のテキスト層の癖（span 分割のされ方 / 2 段組の読み順 / 実際に出るリガチャ）への回帰検証は、anchor-spike の実弾検証（[REPORT](../experiments/anchor-spike/REPORT.md)）とフェーズ 2〜3 の実 PDF E2E（第 1 層）が受け持つ。JSON 層は「実 PDF 由来の unit 回帰」が必要になった時点（extract-text の読み順バグ等が出た場合）で導入を再判断する。
 
 - PDF canvas への `toHaveScreenshot()` はフォントレンダリング差で flaky になりやすいため、ハイライト検証は **overlay DOM の位置 assert を主**とし、screenshot 比較は限定的に使う
+- **CCITT 合成 fixture**（`tests/e2e/pdf-ccitt.spec.ts` にインライン定義。Pillow の group4 TIFF から生成した 240×120pt・1 ページの CCITTFaxDecode 画像で、著作権上の懸念のない合成物）: wasm 資産（jbig2/openjpeg/qcms）の同梱漏れで画像デコーダが初期化に失敗すると該当ページが白紙になる回帰を、実 PDF fixture ではなくこのインライン合成 fixture で検出する。方針は §2.2 冒頭の「インライン合成 fixture を正とする」に整合させ、canvas の暗い画素率という広い閾値で判定する（screenshot 完全一致は使わない）
 
 ### 2.3 anchoring は fixture 先行の TDD
 

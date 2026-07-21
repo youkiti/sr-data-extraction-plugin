@@ -51,9 +51,12 @@ $verifyDir = Join-Path $releaseDir '_verify'
 $distManifestPath = Join-Path $distDir 'manifest.json'
 $serviceWorkerRelPath = 'background/service-worker.js'
 
-# zip に必ず入っていること（cmaps は和文 PDF 用 CMap。issue #95 で同梱）
+# zip に必ず入っていること（cmaps は和文 PDF 用 CMap。issue #95 で同梱。
+# wasm / standard_fonts / iccs は pdfjs 6.x の画像デコーダ（CCITTFax/JBIG2 等）・標準フォント・
+# ICC プロファイルの同梱資産。未同梱だとスキャン PDF の該当ページが白紙になる）
 $requiredEntries = @(
-  '_locales', 'app', 'background', 'cmaps', 'icons', 'options', 'popup', 'styles', 'pdf.worker.min.mjs'
+  '_locales', 'app', 'background', 'cmaps', 'icons', 'options', 'popup', 'styles', 'pdf.worker.min.mjs',
+  'wasm', 'standard_fonts', 'iccs'
 )
 
 # ---------------------------------------------------------------------------

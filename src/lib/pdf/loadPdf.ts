@@ -14,6 +14,26 @@ export const PDF_WORKER_ASSET = 'pdf.worker.min.mjs';
 export const PDF_CMAP_DIR = 'cmaps/';
 
 /**
+ * 画像デコーダ（CCITTFax/JBIG2・JPEG2000）の wasm 同梱ディレクトリ。
+ * pdfjs-dist 6.x はこれらのデコーダを wasm 実装へ切り替えており、`wasmUrl` 未指定だと
+ * `#instantiateWasm: Ensure that the wasmUrl API parameter is provided` で初期化に失敗し、
+ * スキャン PDF の該当ページ（CCITTFaxDecode 等）が白紙になる（実測済み）
+ */
+export const PDF_WASM_DIR = 'wasm/';
+
+/**
+ * 標準 14 フォント（非埋め込み PDF 用）の同梱ディレクトリ。未指定でも致命的ではないが
+ * 警告が出るため、他の資産と同様に dist/ へ同梱して解決する
+ */
+export const PDF_STANDARD_FONT_DIR = 'standard_fonts/';
+
+/**
+ * 既定 ICC プロファイル（qcms）の同梱ディレクトリ。未指定でも致命的ではないが
+ * 警告が出るため、他の資産と同様に dist/ へ同梱して解決する
+ */
+export const PDF_ICC_DIR = 'iccs/';
+
+/**
  * 使用後に破棄できる形にした PDF ドキュメント
  * （features/documents の DisposablePdfDocument を構造的に満たす）。
  * pdfjs-dist 6.x では destroy が PDFDocumentProxy から loadingTask へ移ったため、ここで吸収する
@@ -41,6 +61,15 @@ export async function loadPdf(data: ArrayBuffer): Promise<PDFDocumentProxy> {
     data: new Uint8Array(data),
     cMapUrl: chrome.runtime.getURL(PDF_CMAP_DIR),
     cMapPacked: true,
+    // 画像デコーダの wasm 資産（同梱）。未指定だと Jbig2Error 等で該当ページが白紙になる
+    wasmUrl: chrome.runtime.getURL(PDF_WASM_DIR),
+    // 標準 14 フォント・既定 ICC プロファイル（いずれも同梱。未指定時の警告を防ぐ）
+    standardFontDataUrl: chrome.runtime.getURL(PDF_STANDARD_FONT_DIR),
+    iccUrl: chrome.runtime.getURL(PDF_ICC_DIR),
+    // pdfjs の isValidFetchUrl は http/https のみ許可するため、実機の chrome-extension: URL では
+    // 自動的に false になるが、E2E の chrome スタブ（getURL: p => '/'+p）は http URL に化けて
+    // true になり得る。取得経路を実機と E2E で揃えるため明示的に false を渡す
+    useWorkerFetch: false,
   }).promise;
 }
 
