@@ -104,13 +104,32 @@ function makeImageDoc(
   };
 }
 
+/** 高精度読み取りモード（issue #176）の文書: 本文 + ページ画像を併用する */
+function makeTextWithImagesDoc(
+  overrides: Partial<{
+    role: DocumentRole;
+    filename: string;
+    pages: typeof PAGES;
+    imagePages: ExtractDataImagePage[];
+  }> = {},
+): ExtractDataDocument {
+  return {
+    role: 'article' as DocumentRole,
+    filename: 'smith2020.pdf',
+    mode: 'text_with_images',
+    pages: PAGES,
+    imagePages: IMAGE_PAGES,
+    ...overrides,
+  };
+}
+
 const DOCS = [makeDoc()];
 
 describe('extract-data skill 定数', () => {
   it('skill 名とプロンプト版数を公開する（LLMApiLog 記録用）', () => {
     expect(EXTRACT_DATA_SKILL_NAME).toBe('extract-data');
-    // v7: 多言語文書対応の明示（quote / value を原文の言語・文字体系のまま返す規約を追記。issue #95 層 2）
-    expect(EXTRACT_DATA_PROMPT_VERSION).toBe(7);
+    // v8: 高精度読み取りモード（issue #176・input_mode = text_with_page_images）対応
+    expect(EXTRACT_DATA_PROMPT_VERSION).toBe(8);
   });
 
   it('システムプロンプトに verbatim quote の規約（300 文字上限）と document_index の規約を含む', () => {
@@ -133,6 +152,13 @@ describe('extract-data skill 定数', () => {
   it('システムプロンプトにスキャン文書（画像添付）向けの quote / page 規約を含む', () => {
     expect(EXTRACT_DATA_SYSTEM_PROMPT).toContain('scanned document with no text layer');
     expect(EXTRACT_DATA_SYSTEM_PROMPT).toContain('verbatim transcription');
+  });
+
+  it('システムプロンプトに高精度読み取りモード（テキスト層 + 画像併用文書）向けの quote 規約を含む（issue #176）', () => {
+    expect(EXTRACT_DATA_SYSTEM_PROMPT).toContain('DO have a text layer are ALSO attached as page images');
+    expect(EXTRACT_DATA_SYSTEM_PROMPT).toContain(
+      'still copy "quote" VERBATIM from that document\'s extracted TEXT below (not from the image)',
+    );
   });
 
   it('構造化出力スキーマは応答 8 キー（document_index 込み）すべてを required にする', () => {
@@ -229,6 +255,36 @@ describe('buildExtractDataUserPrompt', () => {
         documents: [makeImageDoc({ imagePages: [] })],
       }),
     ).toThrow('ページ画像が 1 件も無い文書');
+  });
+
+  it('本文ページが 1 件も無い text_with_images 文書が含まれると投げる（issue #176）', () => {
+    expect(() =>
+      buildExtractDataUserPrompt({
+        fields: [STUDY_FIELD],
+        documents: [makeTextWithImagesDoc({ pages: [] })],
+      }),
+    ).toThrow('本文ページが 1 件も無い文書');
+  });
+
+  it('ページ画像が 1 件も無い text_with_images 文書が含まれると投げる（issue #176）', () => {
+    expect(() =>
+      buildExtractDataUserPrompt({
+        fields: [STUDY_FIELD],
+        documents: [makeTextWithImagesDoc({ imagePages: [] })],
+      }),
+    ).toThrow('ページ画像が 1 件も無い文書');
+  });
+
+  it('text_with_images 文書（issue #176・高精度読み取りモード）は本文をそのまま出したうえで画像併用の注記を足す', () => {
+    const prompt = buildExtractDataUserPrompt({
+      fields: [STUDY_FIELD],
+      documents: [makeTextWithImagesDoc()],
+    });
+    expect(prompt).toContain('=== Document 1/1 [article] smith2020.pdf ===');
+    // 本文（[PAGE n]）はそのまま出る（image モードと違い省略しない）
+    expect(prompt).toContain('[PAGE 1]\nA randomized controlled trial of 120 patients.');
+    expect(prompt).toContain('ALSO attached as images');
+    expect(prompt).toContain('Document 1/1 page p');
   });
 
   it('画像文書（mode: image）は本文の代わりに画像添付の注記を出す（pdf_native）', () => {
@@ -459,6 +515,44 @@ describe('buildExtractDataUserContent（pdf_native）', () => {
 
     // 不変条件: prefix + '\n\n' + suffix は buildExtractDataUserPrompt の全文と一致する
     expect(`${prefixText}\n\n${suffixText}`).toBe(buildExtractDataUserPrompt(input));
+  });
+
+  it('text_with_images 文書（issue #176・高精度読み取りモード）: 本文込みの prefix の直後に画像パートを添付する', () => {
+    const input = { fields: [STUDY_FIELD], documents: [makeTextWithImagesDoc()] };
+    const content = buildExtractDataUserContent(input);
+    expect(Array.isArray(content)).toBe(true);
+    const parts = content as ChatContentPart[];
+
+    // 先頭の prefix テキストに本文（[PAGE n]）が含まれる（image モードと違い本文を省略しない）
+    const prefixText = (parts[0] as { text: string }).text;
+    expect(prefixText).toContain('[PAGE 1]\nA randomized controlled trial of 120 patients.');
+    expect(prefixText).toContain('ALSO attached as images');
+
+    expect(parts.slice(1, -1)).toEqual([
+      { type: 'text', text: '[Document 1/1 page 1]' },
+      { type: 'image', mimeType: 'image/png', dataBase64: 'QUJD' },
+      { type: 'text', text: '[Document 1/1 page 2]' },
+      { type: 'image', mimeType: 'image/png', dataBase64: 'REVG' },
+    ]);
+
+    const suffixText = (parts[parts.length - 1] as { text: string }).text;
+    expect(suffixText).toContain('## Fields to extract');
+
+    // 不変条件は text_with_images でも成り立つ
+    expect(`${prefixText}\n\n${suffixText}`).toBe(buildExtractDataUserPrompt(input));
+  });
+
+  it('text_with_images 文書 + 通常の text 文書が混在する場合、text 文書には画像を添付しない', () => {
+    const input = { fields: [STUDY_FIELD], documents: [makeDoc(), makeTextWithImagesDoc()] };
+    const content = buildExtractDataUserContent(input);
+    const parts = content as ChatContentPart[];
+    // 画像は 2 番目（text_with_images）の文書ぶんだけ
+    expect(parts.slice(1, -1)).toEqual([
+      { type: 'text', text: '[Document 2/2 page 1]' },
+      { type: 'image', mimeType: 'image/png', dataBase64: 'QUJD' },
+      { type: 'text', text: '[Document 2/2 page 2]' },
+      { type: 'image', mimeType: 'image/png', dataBase64: 'REVG' },
+    ]);
   });
 
   it('複数の画像文書がある場合、文書順（document_index）→ ページ順で画像パートを並べる', () => {

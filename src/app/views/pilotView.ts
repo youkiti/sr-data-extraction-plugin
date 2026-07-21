@@ -16,11 +16,13 @@ import {
 } from '../../features/extraction/fieldSelection';
 import { planRun } from '../../features/extraction/planRun';
 import { t, type MessageKey } from '../../lib/i18n';
+import { resolveEffectiveHighAccuracyImages } from '../../lib/llm/providerFactory';
 import { el } from '../ui/dom';
 import { createModelSelect } from '../ui/modelSelect';
 import type { AppState } from '../store';
 import { renderConflictWarning } from './conflictWarning';
 import { hasZeroFieldsSelected, renderFieldSelectionChecklist } from './fieldSelectionChecklist';
+import { renderHighAccuracyToggle } from './highAccuracyToggle';
 import type { ViewContext } from './types';
 import { renderCachedVerificationPanel } from './verificationPanel';
 
@@ -135,6 +137,11 @@ function renderEstimate(state: AppState): HTMLElement {
       fields: estimateFields,
       model: state.pilot.model === '' ? 'unknown' : state.pilot.model,
       protocolContext: null,
+      // 実行時に実際に効く値と揃える（プロバイダ非対応時は概算にも反映しない。issue #176）
+      highAccuracyImages: resolveEffectiveHighAccuracyImages(
+        state.pilot.model,
+        state.pilot.highAccuracyImages,
+      ),
     });
     const cost =
       plan.costEstimateUsd === null
@@ -226,6 +233,12 @@ function renderSetup(state: AppState, ctx: ViewContext): HTMLElement {
       el('label', { text: t('extraction.modelLabel'), attributes: { for: 'pilot-model' } }),
       modelSelect,
     ]),
+    renderHighAccuracyToggle({
+      idPrefix: 'pilot',
+      checked: state.pilot.highAccuracyImages,
+      model: state.pilot.model,
+      onChange: (enabled) => ctx.pilot.onToggleHighAccuracyImages(enabled),
+    }),
     renderEstimate(state),
   ];
   if (state.pilot.runError !== null) {

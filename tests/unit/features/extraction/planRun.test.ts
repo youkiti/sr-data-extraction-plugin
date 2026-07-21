@@ -136,6 +136,7 @@ describe('planRun のバッチ分割', () => {
       studyId: 'd1',
       documentIds: ['d1'],
       imageDocumentIds: [],
+      augmentedImageDocumentIds: [],
       section: null,
       fieldIds: ['f_design'],
       tokensInEstimate: expectedTokensIn(4_000, STUDY_FIELD_CHARS),
@@ -599,6 +600,116 @@ describe('planRun のコスト概算と画像入力（pdf_native）の警告', (
     expect(plan.warnings).toEqual([
       'テキスト層がない文献 1 件はページ画像として LLM へ送信します（pdf_native。画像トークンぶんコストが増えます）',
     ]);
+  });
+});
+
+describe('planRun の高精度読み取りモード（issue #176・input_mode = text_with_page_images）', () => {
+  it('highAccuracyImages 省略時は従来どおり（既定は変えない。既存 batch の toEqual テストで augmentedImageDocumentIds: [] を確認済み）', () => {
+    const plan = planRun({
+      documents: [makeDocument({ documentId: 'd1', charCount: 4_000 })],
+      fields: [STUDY_FIELD],
+      model: 'gemini-2.5-pro',
+    });
+    expect(plan.batches[0]?.augmentedImageDocumentIds).toEqual([]);
+    expect(plan.inputMode).toBe('text_only');
+  });
+
+  it('highAccuracyImages: false は明示指定でも省略時と同じ（既定を変えない）', () => {
+    const plan = planRun({
+      documents: [makeDocument({ documentId: 'd1', charCount: 4_000 })],
+      fields: [STUDY_FIELD],
+      model: 'gemini-2.5-pro',
+      highAccuracyImages: false,
+    });
+    expect(plan.batches[0]?.augmentedImageDocumentIds).toEqual([]);
+    expect(plan.inputMode).toBe('text_only');
+    expect(plan.warnings).toHaveLength(0);
+  });
+
+  it('highAccuracyImages: true はテキスト層のある文献のページ画像トークンを追加算入し、input_mode = text_with_page_images + 警告を出す', () => {
+    const plan = planRun({
+      documents: [makeDocument({ documentId: 'd1', charCount: 4_000, pageCount: 3 })],
+      fields: [STUDY_FIELD],
+      model: 'gemini-2.5-pro',
+      highAccuracyImages: true,
+    });
+    expect(plan.batches[0]?.imageDocumentIds).toEqual([]);
+    expect(plan.batches[0]?.augmentedImageDocumentIds).toEqual(['d1']);
+    // テキストぶん（従来どおり）+ 画像ぶん（ページ数 × 画像トークン単価 + 見出しぶん）を別建てで合算する
+    expect(plan.batches[0]?.tokensInEstimate).toBe(
+      expectedTokensIn(4_000, STUDY_FIELD_CHARS) + expectedImageTokens(3),
+    );
+    expect(plan.inputMode).toBe('text_with_page_images');
+    expect(plan.warnings).toEqual([
+      '高精度読み取りモード: テキスト層がある文献 1 件のページ画像も追加送信します（トークン消費量が大幅に増えます）',
+    ]);
+  });
+
+  it('study 内に text と no_text_layer が混在する場合、両方の警告を出し augmentedImageDocumentIds は text 文書のみに限る（no_text_layer への「追加」はしない）', () => {
+    const plan = planRun({
+      documents: [
+        makeDocument({ documentId: 'art', studyId: 's1', documentRole: 'article', charCount: 2_000 }),
+        makeDocument({
+          documentId: 'scan',
+          studyId: 's1',
+          documentRole: 'supplement',
+          textStatus: 'no_text_layer',
+          textRef: null,
+          pageCount: 4,
+        }),
+      ],
+      fields: [STUDY_FIELD],
+      model: 'gemini-2.5-pro',
+      highAccuracyImages: true,
+    });
+    expect(plan.batches).toHaveLength(1);
+    expect(plan.batches[0]?.imageDocumentIds).toEqual(['scan']);
+    expect(plan.batches[0]?.augmentedImageDocumentIds).toEqual(['art']);
+    expect(plan.inputMode).toBe('text_with_page_images');
+    expect(plan.warnings).toEqual([
+      'テキスト層がない文献 1 件はページ画像として LLM へ送信します（pdf_native。画像トークンぶんコストが増えます）',
+      '高精度読み取りモード: テキスト層がある文献 1 件のページ画像も追加送信します（トークン消費量が大幅に増えます）',
+    ]);
+  });
+
+  it('highAccuracyImages: true でも全文書が no_text_layer なら augmentedImageDocumentIds は 0 件のまま（実際には何も変わらないため input_mode は pdf_native）', () => {
+    const plan = planRun({
+      documents: [
+        makeDocument({
+          documentId: 'd1',
+          textStatus: 'no_text_layer',
+          textRef: null,
+          pageCount: 5,
+        }),
+      ],
+      fields: [STUDY_FIELD],
+      model: 'gemini-2.5-pro',
+      highAccuracyImages: true,
+    });
+    expect(plan.batches[0]?.augmentedImageDocumentIds).toEqual([]);
+    expect(plan.inputMode).toBe('pdf_native');
+    expect(plan.warnings).toEqual([
+      'テキスト層がない文献 1 件はページ画像として LLM へ送信します（pdf_native。画像トークンぶんコストが増えます）',
+    ]);
+  });
+
+  it('section 分割時も highAccuracyImages を各バッチへ同じ値で適用する', () => {
+    // 出力予算を超えると section 単位に分割するテスト（既存「planRun のバッチ分割」と同じ設定）と
+    // 同じ 3 項目 2 section 構成で、確実に分割させる
+    const m1 = makeField({ fieldId: 'f_m1', fieldName: 'm1', fieldIndex: 1, section: 'methods' });
+    const o1 = makeField({ fieldId: 'f_o1', fieldName: 'o1', fieldIndex: 2, section: 'outcomes' });
+    const m2 = makeField({ fieldId: 'f_m2', fieldName: 'm2', fieldIndex: 3, section: 'methods' });
+    const plan = planRun({
+      documents: [makeDocument({ documentId: 'd1', charCount: 4_000, pageCount: 2 })],
+      fields: [o1, m2, m1],
+      model: 'gemini-2.5-pro',
+      highAccuracyImages: true,
+      budget: { maxOutputTokensPerCall: 200 },
+    });
+    expect(plan.batches).toHaveLength(2);
+    for (const batch of plan.batches) {
+      expect(batch.augmentedImageDocumentIds).toEqual(['d1']);
+    }
   });
 });
 

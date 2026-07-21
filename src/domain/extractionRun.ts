@@ -3,8 +3,13 @@ import type { LlmProviderId } from './llmApiLog';
 
 export type RunType = 'pilot' | 'full' | 'single_study';
 
-/** PDF を直接 LLM へ渡すか、抽出済みテキストのみ渡すか（※Q3） */
-export type InputMode = 'pdf_native' | 'text_only';
+/**
+ * PDF を直接 LLM へ渡すか、抽出済みテキストのみ渡すか（※Q3）。
+ * `text_with_page_images` は issue #176 の高精度読み取りモード:
+ * テキスト層のある文書でも、抽出テキストに加えて全ページのレンダリング画像を LLM へ
+ * 添付する（表・図の読み取り精度を上げるための run 単位のオプトイン。既定は `text_only`）
+ */
+export type InputMode = 'pdf_native' | 'text_only' | 'text_with_page_images';
 
 export type RunStatus = 'queued' | 'running' | 'done' | 'partial_failure';
 

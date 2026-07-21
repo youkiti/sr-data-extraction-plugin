@@ -280,6 +280,13 @@ export interface PilotState {
   selectedFieldIds: FieldSelection;
   /** 折りたたみ中の section 名（既定は全展開 = 空配列） */
   collapsedFieldSections: string[];
+  /**
+   * 高精度読み取りモード（issue #176）。true でテキスト層のある文書にもページ画像を
+   * 併用添付する（`input_mode = text_with_page_images`。トークン消費量が大幅に増える）。
+   * 既定 false。画面入場のたびにリセットする点は selectedFieldIds と同じ設計判断
+   * （「次に実行するときも高コストモードのまま」を明示操作なしに引き継がせない）
+   */
+  highAccuracyImages: boolean;
 }
 
 /** #/extract（S7）の画面状態。run の結果はタブのセッション内で保持する */
@@ -335,6 +342,18 @@ export interface ExtractState {
    * 全項目 run が直近だった study はキー自体を持たない
    */
   fieldSubsetBadges: Record<string, FieldSubsetBadge>;
+  /**
+   * 高精度読み取りモード（issue #176）。true でテキスト層のある文書にもページ画像を
+   * 併用添付する（`input_mode = text_with_page_images`。トークン消費量が大幅に増える）。
+   * 既定 false。画面入場・対象再読込のたびにリセットする（selectedFieldIds と同じ設計判断）
+   */
+  highAccuracyImages: boolean;
+  /**
+   * 直近実行時に実際に使った highAccuracyImages（A-2 と同じ考え方: 失敗 study の再試行
+   * 〔retryExtractStudy〕は現在のチェックボックス状態ではなく元 run と同じ設定を引き継ぐ）。
+   * まだ一度も実行していなければ false
+   */
+  lastRunHighAccuracyImages: boolean;
 }
 
 /** #/verify（S8）の一覧 1 study ぶんの検証素材（Evidence がある study のみ。v0.10 フェーズ 3） */
@@ -706,6 +725,7 @@ export function createInitialState(): AppState {
       conflictMessage: null,
       selectedFieldIds: null,
       collapsedFieldSections: [],
+      highAccuracyImages: false,
     },
     extract: {
       selectedStudyIds: [],
@@ -728,6 +748,8 @@ export function createInitialState(): AppState {
       collapsedFieldSections: [],
       lastRunFieldIds: null,
       fieldSubsetBadges: {},
+      highAccuracyImages: false,
+      lastRunHighAccuracyImages: false,
     },
     verify: {
       targets: null,

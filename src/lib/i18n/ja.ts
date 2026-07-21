@@ -424,6 +424,13 @@ export const ja = {
   'extraction.preparing': '実行準備中…',
   'extraction.rejectedCount': '応答要素の破棄: {n} 件',
 
+  // 高精度読み取りモード（issue #176。S6 / S7 共有）
+  'extraction.highAccuracyLabel':
+    '高精度読み取りモード（テキスト層のある文献にもページ画像を追加送信）',
+  'extraction.highAccuracyWarning':
+    '表・図の読み取り精度が上がりますが、トークン消費量（コスト）が大幅に増えます。',
+  'extraction.highAccuracyDisabledReason': '選択中のプロバイダは画像入力に対応していません',
+
   // フィールド選択チェックリスト（issue #80。S6 / S7 共有）
   'fieldSelection.summary': '対象項目: {summary}',
   'fieldSelection.allFields': '全項目（{n}）',

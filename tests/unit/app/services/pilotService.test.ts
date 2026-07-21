@@ -10,6 +10,7 @@ import {
   persistPilotRelocateQuote,
   resetPilotFieldSelection,
   runPilot,
+  setPilotHighAccuracyImages,
   setPilotLayoutMode,
   setPilotModel,
   togglePilotField,
@@ -453,14 +454,27 @@ describe('resetPilotFieldSelection / togglePilotField / togglePilotFieldSection 
     makeField({ fieldId: 'f-3', section: 'results' }),
   ];
 
-  test('resetPilotFieldSelection: 選択・折りたたみを既定（全選択・全展開）へ戻す', () => {
+  test('resetPilotFieldSelection: 選択・折りたたみ・高精度読み取りモードを既定へ戻す（issue #176）', () => {
     const store = makeStore({
       fields,
-      pilot: { selectedFieldIds: ['f-1'], collapsedFieldSections: ['methods'] },
+      pilot: {
+        selectedFieldIds: ['f-1'],
+        collapsedFieldSections: ['methods'],
+        highAccuracyImages: true,
+      },
     });
     resetPilotFieldSelection(store);
     expect(store.getState().pilot.selectedFieldIds).toBeNull();
     expect(store.getState().pilot.collapsedFieldSections).toEqual([]);
+    expect(store.getState().pilot.highAccuracyImages).toBe(false);
+  });
+
+  test('setPilotHighAccuracyImages: 高精度読み取りモードのトグル切替（issue #176）', () => {
+    const store = makeStore({ fields, pilot: { highAccuracyImages: false } });
+    setPilotHighAccuracyImages(store, true);
+    expect(store.getState().pilot.highAccuracyImages).toBe(true);
+    setPilotHighAccuracyImages(store, false);
+    expect(store.getState().pilot.highAccuracyImages).toBe(false);
   });
 
   test('togglePilotField: 単一項目の選択解除・追加', () => {
@@ -629,6 +643,34 @@ describe('runPilot: 実行', () => {
     const loaded = await state.pilot.verification?.loadPdfView('doc-1');
     expect(loaded?.pdf).not.toBeNull();
     expect(getFileBinaryMock).toHaveBeenCalledTimes(1);
+  });
+
+  test('高精度読み取りモード（issue #176）: チェック時は highAccuracyImages: true を runExtraction へ渡す', async () => {
+    const store = makeStore({
+      documents: [makeDocument(), makeDocument({ documentId: 'doc-2' })],
+      fields: [makeField()],
+      pilot: {
+        selectedStudyIds: ['study-doc-1'],
+        model: 'gemini-test',
+        highAccuracyImages: true,
+      },
+    });
+    runExtractionMock.mockResolvedValue(makeOutcome());
+    await runPilot(store, makeDeps());
+    const [params] = runExtractionMock.mock.calls[0] as unknown as [
+      Parameters<typeof runExtraction>[0],
+    ];
+    expect(params.highAccuracyImages).toBe(true);
+  });
+
+  test('高精度読み取りモード（issue #176）: 未チェック時は highAccuracyImages: false を渡す（既定挙動を変えない）', async () => {
+    const store = makeReadyStore();
+    runExtractionMock.mockResolvedValue(makeOutcome());
+    await runPilot(store, makeDeps());
+    const [params] = runExtractionMock.mock.calls[0] as unknown as [
+      Parameters<typeof runExtraction>[0],
+    ];
+    expect(params.highAccuracyImages).toBe(false);
   });
 
   test('サブセット選択時は絞った fields + 選択 field_ids を runExtraction へ渡す。埋め込み検証 UI の runFields は絞り込まない（issue #80）', async () => {

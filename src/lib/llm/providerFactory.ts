@@ -42,6 +42,40 @@ export function resolveProviderId(modelId: string): LlmProviderId {
   return modelId.includes('/') ? 'openrouter' : 'gemini';
 }
 
+/**
+ * プロバイダ単位の画像入力対応可否（issue #176: 高精度読み取りモードの UI ガード用）。
+ * 各 `LLMProvider` 実装の `supportsImageInput` は provider ごとの静的なフラグ（モデルには依らない）
+ * のため、実際にインスタンス化しなくても引ける静的写像として持つ（apiKey 未確定な UI 描画時にも
+ * 呼べるようにするため）。**モデル単位の対応可否は分からない**（OpenRouter / OpenAI 互換は
+ * モデル依存）: 現状 3 プロバイダとも true だが、非対応モデルを選んだ場合は実行時に
+ * LlmProviderError（4xx）として executeRun の `api_error` ハンドリングに落ちる
+ */
+const PROVIDER_IMAGE_INPUT_SUPPORT: Readonly<Record<LlmProviderId, boolean>> = {
+  gemini: true,
+  openrouter: true,
+  openai_compatible: true,
+};
+
+export function providerSupportsImageInput(providerId: LlmProviderId): boolean {
+  return PROVIDER_IMAGE_INPUT_SUPPORT[providerId];
+}
+
+/**
+ * 高精度読み取りモード（issue #176）の「実際に効かせてよいか」を 1 か所で判定する。
+ * requested（チェックボックスの状態）が true でも、選択中モデルのプロバイダが画像入力に
+ * 対応しない（`providerSupportsImageInput` が false）ならモードは効かせない。
+ * UI（disabled 表示）・コスト概算（planRun への注入値）・実行（runExtraction への注入値）の
+ * 3 箇所すべてがこの関数で判定を揃えることで、「見た目は有効なのに実行時だけ無効化される」
+ * 食い違いを防ぐ（model が空文字のときは provider を確定できないため requested をそのまま通す —
+ * この場合はどのみち後続のモデル未選択チェックで実行がブロックされる）
+ */
+export function resolveEffectiveHighAccuracyImages(model: string, requested: boolean): boolean {
+  if (!requested || model === '') {
+    return requested;
+  }
+  return providerSupportsImageInput(resolveProviderId(model));
+}
+
 export function createProvider(config: ProviderConfig): LLMProvider {
   const provider = config.provider ?? resolveProviderId(config.model);
   if (provider === 'openai_compatible') {
