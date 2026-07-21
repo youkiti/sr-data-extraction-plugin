@@ -27,6 +27,9 @@ export const MODEL_PRICING: Readonly<Record<string, ModelPricing>> = {
   // gemini-3.1-flash-lite の入力はテキスト/画像/動画レート（音声は $0.50）。ベンチマークは text_only。
   'gemini-3.5-flash': { inputPerMillion: 1.5, outputPerMillion: 9.0 },
   'gemini-3.1-flash-lite': { inputPerMillion: 0.25, outputPerMillion: 1.5 },
+  // 2026-07-22 追加。Gemini 3.6 Flash / gemini-3.5-flash-lite（公式料金ページで確認・更新）。
+  'gemini-3.6-flash': { inputPerMillion: 1.5, outputPerMillion: 7.5 },
+  'gemini-3.5-flash-lite': { inputPerMillion: 0.3, outputPerMillion: 2.5 },
   'qwen/qwen3-235b-a22b-2507': { inputPerMillion: 0.09, outputPerMillion: 0.1 },
   'deepseek/deepseek-v4-flash': { inputPerMillion: 0.07, outputPerMillion: 0.14 },
 };
