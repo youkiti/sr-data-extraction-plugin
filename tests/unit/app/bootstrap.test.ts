@@ -1454,6 +1454,13 @@ describe('bootstrapApp: #/pilot', () => {
     model.dispatchEvent(new Event('change'));
     expect(store?.getState().pilot.model).toBe('gemini-2.0-flash');
 
+    // 高精度読み取りモードのトグルが配線されている（issue #176）
+    const highAccuracy = document.getElementById('pilot-high-accuracy-images') as HTMLInputElement;
+    expect(highAccuracy.checked).toBe(false);
+    highAccuracy.checked = true;
+    highAccuracy.dispatchEvent(new Event('change'));
+    expect(store?.getState().pilot.highAccuracyImages).toBe(true);
+
     // 実行の配線（API キー未設定 → インラインエラー）
     const box = document.querySelector(
       '#pilot-documents input[type="checkbox"]',
@@ -2057,6 +2064,13 @@ describe('bootstrapApp: #/extract', () => {
     model.value = 'gemini-2.0-flash';
     model.dispatchEvent(new Event('change'));
     expect(store?.getState().extract.model).toBe('gemini-2.0-flash');
+
+    // 高精度読み取りモードのトグルが配線されている（issue #176）
+    const highAccuracy = document.getElementById('extract-high-accuracy-images') as HTMLInputElement;
+    expect(highAccuracy.checked).toBe(false);
+    highAccuracy.checked = true;
+    highAccuracy.dispatchEvent(new Event('change'));
+    expect(store?.getState().extract.highAccuracyImages).toBe(true);
 
     // 実行 → 確認カード → キャンセルの配線
     (document.getElementById('extract-run') as HTMLButtonElement).click();

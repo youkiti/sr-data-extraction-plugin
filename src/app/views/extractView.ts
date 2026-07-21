@@ -17,6 +17,7 @@ import {
 import type { ExtractStudyRow, ExtractStudyStatus } from '../../features/extraction/studyProgress';
 import { planRun } from '../../features/extraction/planRun';
 import { t, type MessageKey } from '../../lib/i18n';
+import { resolveEffectiveHighAccuracyImages } from '../../lib/llm/providerFactory';
 import { el } from '../ui/dom';
 import { createModelSelect } from '../ui/modelSelect';
 import type { AppState } from '../store';
@@ -25,6 +26,7 @@ import {
   hasZeroFieldsSelected,
   renderFieldSelectionChecklist,
 } from './fieldSelectionChecklist';
+import { renderHighAccuracyToggle } from './highAccuracyToggle';
 import type { ViewContext } from './types';
 
 // 表示言語に追従させるため、ラベルは描画時に t() で解決する（キー対応表のみ固定。issue #93）
@@ -161,6 +163,11 @@ function renderEstimate(state: AppState): HTMLElement {
       fields: estimateFields,
       model: state.extract.model === '' ? 'unknown' : state.extract.model,
       protocolContext: null,
+      // 実行時に実際に効く値と揃える（プロバイダ非対応時は概算にも反映しない。issue #176）
+      highAccuracyImages: resolveEffectiveHighAccuracyImages(
+        state.extract.model,
+        state.extract.highAccuracyImages,
+      ),
     });
     const cost =
       plan.costEstimateUsd === null
@@ -250,6 +257,12 @@ function renderSetup(state: AppState, ctx: ViewContext): HTMLElement {
       el('label', { text: t('extraction.modelLabel'), attributes: { for: 'extract-model' } }),
       modelSelect,
     ]),
+    renderHighAccuracyToggle({
+      idPrefix: 'extract',
+      checked: state.extract.highAccuracyImages,
+      model: state.extract.model,
+      onChange: (enabled) => ctx.extract.onToggleHighAccuracyImages(enabled),
+    }),
     renderEstimate(state),
   ];
   if (state.extract.runError !== null) {

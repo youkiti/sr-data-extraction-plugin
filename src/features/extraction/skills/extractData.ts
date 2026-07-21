@@ -36,8 +36,17 @@ export const EXTRACT_DATA_SKILL_NAME = 'extract-data';
  *   「原文の言語・文字体系のまま（翻訳・音写の禁止）」を明記（和文論文で quote が
  *   英訳・音写されるとアンカリング不能になるため）。システムプロンプトのみの変更で、
  *   同一 study 内の全バッチが共有する prefix 構造は不変のためキャッシュヒット率に影響しない
+ * v8（2026-07-21）: 高精度読み取りモード（issue #176・input_mode = text_with_page_images）に
+ *   対応。テキスト層のある文書にページ画像を併用添付できる mode: 'text_with_images' を
+ *   ExtractDataDocument へ追加し、システムプロンプトへ「画像は表・図を正しく読むための補助であり、
+ *   quote は必ず添付テキストから逐語で取ること（画像から見えた内容を要約・書き起こしただけの
+ *   文言にしない）」の規約を追記した。requestBox は従来どおり mode: 'image'（no_text_layer の
+ *   pdf_native）のときだけ true にでき、text_with_images では常に false のまま
+ *   （quote の出所がテキストのため bbox 対応は対象外。executeRun 側の判定は不変更）。
+ *   prefix（Protocol context + Documents + 画像）の構造は変わらないため既存バッチの
+ *   キャッシュヒットには影響しない
  */
-export const EXTRACT_DATA_PROMPT_VERSION = 7;
+export const EXTRACT_DATA_PROMPT_VERSION = 8;
 
 /** text_only モードで LLM へ渡すページ別本文（extracted_texts/{id}.txt 由来） */
 export interface ExtractDataPage {
@@ -62,7 +71,9 @@ export interface ExtractDataImagePage {
  * プロンプトへ連結する 1 文書（v0.10）。並び順（配列の添字 + 1）が document_index になる。
  * 同一 study の全文書をロール付き区切りで連結して 1 回で抽出する（§4.3）。
  * text_status = no_text_layer の文書は mode: 'image'（本文の代わりにページ画像を添付する
- * pdf_native 入力。handoff-scanned-pdf-native-highlight.md §7.4 PR2）
+ * pdf_native 入力。handoff-scanned-pdf-native-highlight.md §7.4 PR2）。
+ * mode: 'text_with_images' は高精度読み取りモード（issue #176）: テキスト層がある文書に
+ * ページ画像を「併用」添付する（本文はそのまま残し、画像は表・図の読み取り補助として追加する）
  */
 export type ExtractDataDocument =
   | {
@@ -79,6 +90,15 @@ export type ExtractDataDocument =
       filename: string;
       mode: 'image';
       /** 当該文書のページ画像（ページ順） */
+      imagePages: readonly ExtractDataImagePage[];
+    }
+  | {
+      role: DocumentRole;
+      filename: string;
+      mode: 'text_with_images';
+      /** 当該文書の本文（ページ順）。quote のアンカリングはこちらを基準にする */
+      pages: readonly ExtractDataPage[];
+      /** 本文に加えて添付するページ画像（表・図の読み取り補助。ページ順） */
       imagePages: readonly ExtractDataImagePage[];
     };
 
@@ -119,6 +139,7 @@ Rules:
 - "document_index": the 1-based number of the document (from the "=== Document i/N ... ===" headers) that your quote and page refer to. REQUIRED whenever "quote" is provided; set it to null only when "not_reported" is true.
 - "page": the 1-indexed page number within THAT document where the quote appears. Page boundaries are marked as [PAGE n] within each document.
 - For a scanned document with no text layer (its "=== Document i/N ..." note says so): its pages are attached as images right after the Documents section, each labeled "Document i/N page p". "quote" must be a verbatim transcription of the text actually visible in that page image (character for character, no paraphrasing), and "page" must be the p shown in that image's label.
+- Some documents that DO have a text layer are ALSO attached as page images right after their text (its "=== Document i/N ..." note says so), each labeled "Document i/N page p", to help you read tables and figures more accurately. When you use such an image to determine a value, still copy "quote" VERBATIM from that document's extracted TEXT below (not from the image) — locate the matching passage in the text even if its line breaks or spacing differ slightly from the image. This keeps quote-based highlighting reliable.
 - When documents disagree on a value, prefer the main article, lower your "confidence", and take the quote from the document you actually read the value from.
 - "confidence": self-assess each item as "high", "medium" or "low".
 - "field_id" is the matching key: echo it exactly as listed. Never invent field_ids.
@@ -205,8 +226,9 @@ function renderField(field: SchemaField): string {
 
 /**
  * 1 文書ぶんの連結ブロック（`=== Document i/N [role] filename ===` + ページ本文）。
- * mode: 'image' の文書は本文の代わりに画像添付の注記だけを出す。実ページ画像は
- * buildExtractDataUserContent がこのプロンプトの後ろへ ChatContentPart[] として添付する
+ * mode: 'image' の文書は本文の代わりに画像添付の注記だけを出す。mode: 'text_with_images'
+ * （issue #176・高精度読み取りモード）は本文をそのまま出したうえで画像併用の注記を足す。
+ * 実ページ画像は buildExtractDataUserContent がこのプロンプトの後ろへ ChatContentPart[] として添付する
  */
 function renderDocument(doc: ExtractDataDocument, index: number, total: number): string {
   const header = `=== Document ${index}/${total} [${doc.role}] ${doc.filename} ===`;
@@ -218,6 +240,13 @@ function renderDocument(doc: ExtractDataDocument, index: number, total: number):
     );
   }
   const body = doc.pages.map((page) => `[PAGE ${page.page}]\n${page.text}`).join('\n\n');
+  if (doc.mode === 'text_with_images') {
+    return (
+      `${header}\n\n${body}\n\n` +
+      'This document\'s pages are ALSO attached as images right after this Documents section, ' +
+      `labeled "Document ${index}/${total} page p" (to help you read tables and figures more accurately).`
+    );
+  }
   return `${header}\n\n${body}`;
 }
 
@@ -229,10 +258,19 @@ function assertValidPromptInput(input: ExtractDataPromptInput): void {
   if (input.documents.length === 0) {
     throw new Error('extract-data skill に文書が 1 件も渡されていません');
   }
-  if (input.documents.some((doc) => doc.mode === 'text' && doc.pages.length === 0)) {
+  if (
+    input.documents.some(
+      (doc) => (doc.mode === 'text' || doc.mode === 'text_with_images') && doc.pages.length === 0,
+    )
+  ) {
     throw new Error('extract-data skill に本文ページが 1 件も無い文書が含まれています');
   }
-  if (input.documents.some((doc) => doc.mode === 'image' && doc.imagePages.length === 0)) {
+  if (
+    input.documents.some(
+      (doc) =>
+        (doc.mode === 'image' || doc.mode === 'text_with_images') && doc.imagePages.length === 0,
+    )
+  ) {
     throw new Error('extract-data skill にページ画像が 1 件も無い文書が含まれています');
   }
 }
@@ -312,14 +350,16 @@ export function buildExtractDataUserPrompt(input: ExtractDataPromptInput): strin
 
 /**
  * ユーザープロンプトを LLMProvider へそのまま渡せる形（string | ChatContentPart[]）に組み立てる。
- * - 画像文書（mode: 'image'）が 1 件も無ければ buildExtractDataUserPrompt の文字列をそのまま返す
- *   （text_only の既存経路と完全一致。呼び出し側はどちらの戻り値も ChatMessage.content にそのまま渡せる）
- * - 画像文書があれば、prefix（Protocol context + Documents）の text パートに続けて
+ * - 画像を伴う文書（mode: 'image' / 'text_with_images'）が 1 件も無ければ
+ *   buildExtractDataUserPrompt の文字列をそのまま返す（text_only の既存経路と完全一致。
+ *   呼び出し側はどちらの戻り値も ChatMessage.content にそのまま渡せる）
+ * - 画像を伴う文書があれば、prefix（Protocol context + Documents）の text パートに続けて
  *   「文書順 → ページ順」で画像パートを並べ、末尾に suffix（Fields to extract 以降）の text パートを置く。
  *   各画像の直前に `[Document i/N page p]` のラベル（text パート）を置く
  *   （画像だけでは LLM がどの文書 / ページの画像かを見失うため。i/N/p は実際の値に展開する）。
  *   画像がバッチ間で変わらない Documents セクション直後に来るため、fields より前にあり
- *   prefix キャッシュの対象に含まれる（issue #89）
+ *   prefix キャッシュの対象に含まれる（issue #89）。mode: 'text_with_images'（issue #176）の
+ *   画像も同じ位置・同じラベル形式で並ぶ（本文はすでに prefixSections の text に含まれている）
  */
 export function buildExtractDataUserContent(
   input: ExtractDataPromptInput,
@@ -327,14 +367,16 @@ export function buildExtractDataUserContent(
   assertValidPromptInput(input);
   const prefixSections = buildPrefixSections(input);
   const suffixSections = buildSuffixSections(input);
-  const hasImageDocument = input.documents.some((doc) => doc.mode === 'image');
+  const hasImageDocument = input.documents.some(
+    (doc) => doc.mode === 'image' || doc.mode === 'text_with_images',
+  );
   if (!hasImageDocument) {
     return [...prefixSections, ...suffixSections].join('\n\n');
   }
   const total = input.documents.length;
   const parts: ChatContentPart[] = [{ type: 'text', text: prefixSections.join('\n\n') }];
   input.documents.forEach((doc, i) => {
-    if (doc.mode !== 'image') {
+    if (doc.mode === 'text') {
       return;
     }
     const docIndex = i + 1;

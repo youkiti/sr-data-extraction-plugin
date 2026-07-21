@@ -1089,6 +1089,32 @@ section.documents__tiab {
   min-width: 260px;
 }
 
+.pilot__high-accuracy {
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface);
+  padding: 8px 12px;
+  margin-bottom: 12px;
+}
+
+.pilot__high-accuracy-choice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pilot__high-accuracy-warning {
+  color: var(--color-text-muted);
+  font-size: 13px;
+  margin: 4px 0 0;
+}
+
+.pilot__high-accuracy-disabled {
+  color: var(--color-danger);
+  font-size: 13px;
+  margin: 4px 0 0;
+}
+
 .pilot__estimate {
   border: 1px solid var(--color-border);
   border-radius: 8px;
@@ -1460,6 +1486,32 @@ section.documents__tiab {
 
 .extract__model-input {
   min-width: 260px;
+}
+
+.extract__high-accuracy {
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface);
+  padding: 8px 12px;
+  margin-bottom: 12px;
+}
+
+.extract__high-accuracy-choice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.extract__high-accuracy-warning {
+  color: var(--color-text-muted);
+  font-size: 13px;
+  margin: 4px 0 0;
+}
+
+.extract__high-accuracy-disabled {
+  color: var(--color-danger);
+  font-size: 13px;
+  margin: 4px 0 0;
 }
 
 .extract__estimate {

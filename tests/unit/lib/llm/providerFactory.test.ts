@@ -5,6 +5,8 @@ import { OpenAICompatibleProvider } from '../../../../src/lib/llm/OpenAICompatib
 import { OpenRouterProvider } from '../../../../src/lib/llm/OpenRouterProvider';
 import {
   createProvider,
+  providerSupportsImageInput,
+  resolveEffectiveHighAccuracyImages,
   resolveProviderConfig,
   resolveProviderId,
 } from '../../../../src/lib/llm/providerFactory';
@@ -148,5 +150,30 @@ describe('resolveProviderConfig', () => {
       provider: 'openai_compatible',
       config: { provider: 'openai_compatible', apiKey: 'k', model: 'm' },
     });
+  });
+});
+
+// 高精度読み取りモード（issue #176）の対応可否判定
+describe('providerSupportsImageInput', () => {
+  test('現行 3 プロバイダ（gemini / openrouter / openai_compatible）はいずれも画像入力に対応する', () => {
+    expect(providerSupportsImageInput('gemini')).toBe(true);
+    expect(providerSupportsImageInput('openrouter')).toBe(true);
+    expect(providerSupportsImageInput('openai_compatible')).toBe(true);
+  });
+});
+
+describe('resolveEffectiveHighAccuracyImages（issue #176）', () => {
+  test('未チェック（requested: false）はそのまま false', () => {
+    expect(resolveEffectiveHighAccuracyImages('gemini-2.5-pro', false)).toBe(false);
+  });
+
+  test('モデル未選択（空文字）は provider を確定できないため requested をそのまま通す', () => {
+    expect(resolveEffectiveHighAccuracyImages('', true)).toBe(true);
+    expect(resolveEffectiveHighAccuracyImages('', false)).toBe(false);
+  });
+
+  test('チェック済み + モデル選択済みは選択中プロバイダの対応可否で判定する（現行は全プロバイダ対応 = true）', () => {
+    expect(resolveEffectiveHighAccuracyImages('gemini-2.5-pro', true)).toBe(true);
+    expect(resolveEffectiveHighAccuracyImages('qwen/qwen3-235b-a22b-2507', true)).toBe(true);
   });
 });

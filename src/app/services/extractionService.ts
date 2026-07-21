@@ -127,6 +127,13 @@ export interface RunExtractionParams {
    * フェーズ 1 時点では UI 未結線のため全呼び出し元が null を渡す）
    */
   fieldIds: string[] | null;
+  /**
+   * 高精度読み取りモード（issue #176）。true にすると、テキスト層のある文書にもページ画像を
+   * 併用添付する（`input_mode = text_with_page_images`。トークン消費量が大幅に増える）。
+   * 既定 false（省略時）= 既存の text_only / pdf_native 挙動を一切変えない。
+   * S6 / S7 の run 単位トグルから渡す（呼び出し側 = pilotService / extractService）
+   */
+  highAccuracyImages?: boolean;
   /** S7 の進捗バー用コールバック */
   onProgress?: (progress: RunProgress) => void;
 }
@@ -164,6 +171,7 @@ export async function runExtraction(
     model: params.model,
     protocolContext: params.protocolContext,
     budget: params.budget,
+    highAccuracyImages: params.highAccuracyImages,
   });
 
   const baseProvider = (deps.buildProvider ?? createProvider)({

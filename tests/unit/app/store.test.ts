@@ -115,6 +115,7 @@ describe('createInitialState', () => {
         conflictMessage: null,
         selectedFieldIds: null,
         collapsedFieldSections: [],
+        highAccuracyImages: false,
       },
       extract: {
         selectedStudyIds: [],
@@ -137,6 +138,8 @@ describe('createInitialState', () => {
         collapsedFieldSections: [],
         lastRunFieldIds: null,
         fieldSubsetBadges: {},
+        highAccuracyImages: false,
+        lastRunHighAccuracyImages: false,
       },
       verify: {
         targets: null,

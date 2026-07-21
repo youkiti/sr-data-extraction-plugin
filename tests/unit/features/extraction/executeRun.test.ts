@@ -99,6 +99,7 @@ function makeBatch(
     // 既定は 1 study = 1 文書（document_id は study_id と同値）
     documentIds: [overrides.studyId],
     imageDocumentIds: [],
+    augmentedImageDocumentIds: [],
     section: null,
     tokensInEstimate: 0,
     tokensOutEstimate: 0,
@@ -1708,6 +1709,237 @@ describe('executeRun の arm completeness チェック（issue #106）', () => {
     );
     expect(result.armWarnings).toEqual([
       expect.objectContaining({ section: 'population', missingItems: [{ armKey: 'arm:2', fieldId: 'f_n' }] }),
+    ]);
+  });
+});
+
+describe('executeRun の高精度読み取りモード（issue #176・input_mode = text_with_page_images）', () => {
+  const IMAGE_PAGES: ExtractDataImagePage[] = [
+    { page: 1, mimeType: 'image/png', dataBase64: 'QUJD' },
+    { page: 2, mimeType: 'image/png', dataBase64: 'REVG' },
+  ];
+
+  test('augmentedImageDocumentIds の文書は本文 + ページ画像を両方ロードし、mode: text_with_images でプロンプトへ渡す（アンカリングは本文基準）', async () => {
+    const { provider, calls } = providerOf([chatResponse([DESIGN_ITEM])]);
+    const { deps } = makeDeps(provider);
+    const loadImages = jest.fn().mockResolvedValue(IMAGE_PAGES);
+    deps.loadDocumentPageImages = loadImages;
+    const result = await executeRun(
+      {
+        runId: 'run-1',
+        plan: makePlan([
+          makeBatch({
+            studyId: 'd1',
+            documentIds: ['d1'],
+            augmentedImageDocumentIds: ['d1'],
+            fieldIds: ['f_design'],
+          }),
+        ]),
+        fields: FIELDS,
+        documents: [makeDocument('d1')], // 既定 textStatus: 'ok'（テキスト層あり）
+      },
+      deps,
+    );
+
+    expect(loadImages).toHaveBeenCalledWith('d1');
+    const userContent = calls[0]!.messages[1]!.content;
+    expect(Array.isArray(userContent)).toBe(true);
+    const parts = userContent as ChatContentPart[];
+    // prefix（先頭 text パート）に本文がそのまま含まれる（image モードと違い省略しない）
+    expect((parts[0] as { text: string }).text).toContain(
+      'The study design was a randomized controlled trial in adults.',
+    );
+    expect((parts[0] as { text: string }).text).toContain('ALSO attached as images');
+    expect(parts.slice(1, -1)).toEqual([
+      { type: 'text', text: '[Document 1/1 page 1]' },
+      { type: 'image', mimeType: 'image/png', dataBase64: 'QUJD' },
+      { type: 'text', text: '[Document 1/1 page 2]' },
+      { type: 'image', mimeType: 'image/png', dataBase64: 'REVG' },
+    ]);
+
+    // box_2d は要求しない（画像専用〔mode: image〕のバッチのみ requestBox の対象。§7.4 PR3 の設計を維持）
+    expect(calls[0]!.options?.responseSchema).toBe(EXTRACT_DATA_RESPONSE_SCHEMA);
+
+    expect(result.status).toBe('done');
+    // 本文があるため通常どおりアンカリングされる（bbox は対象外）
+    expect(result.evidence[0]).toMatchObject({ anchorStatus: 'exact', bboxPage: null, bbox: null });
+  });
+
+  test('augmentedImageDocumentIds の文書があるのに loadDocumentPageImages 未注入なら実行前に throw する', async () => {
+    const { provider } = providerOf([]);
+    const { deps } = makeDeps(provider); // loadDocumentPageImages 未設定
+    await expect(
+      executeRun(
+        {
+          runId: 'run-1',
+          plan: makePlan([
+            makeBatch({
+              studyId: 'd1',
+              documentIds: ['d1'],
+              augmentedImageDocumentIds: ['d1'],
+              fieldIds: ['f_design'],
+            }),
+          ]),
+          fields: FIELDS,
+          documents: [makeDocument('d1')],
+        },
+        deps,
+      ),
+    ).rejects.toThrow('text_with_page_images');
+  });
+
+  test('本文が 0 ページなら load_failed（画像のロードに関わらず文書ごと失敗にする）', async () => {
+    const { provider } = providerOf([]);
+    const { deps, loadPages } = makeDeps(provider);
+    loadPages.mockResolvedValue([]);
+    deps.loadDocumentPageImages = jest.fn().mockResolvedValue(IMAGE_PAGES);
+    const result = await executeRun(
+      {
+        runId: 'run-1',
+        plan: makePlan([
+          makeBatch({
+            studyId: 'd1',
+            documentIds: ['d1'],
+            augmentedImageDocumentIds: ['d1'],
+            fieldIds: ['f_design'],
+          }),
+        ]),
+        fields: FIELDS,
+        documents: [makeDocument('d1')],
+      },
+      deps,
+    );
+    expect(result.batchFailures[0]).toMatchObject({
+      reason: 'load_failed',
+      detail: expect.stringContaining('本文ページが 0 件'),
+    });
+  });
+
+  test('ページ画像が 0 件なら load_failed（本文のロードに成功していても文書ごと失敗にする）', async () => {
+    const { provider } = providerOf([]);
+    const { deps } = makeDeps(provider);
+    deps.loadDocumentPageImages = jest.fn().mockResolvedValue([]);
+    const result = await executeRun(
+      {
+        runId: 'run-1',
+        plan: makePlan([
+          makeBatch({
+            studyId: 'd1',
+            documentIds: ['d1'],
+            augmentedImageDocumentIds: ['d1'],
+            fieldIds: ['f_design'],
+          }),
+        ]),
+        fields: FIELDS,
+        documents: [makeDocument('d1')],
+      },
+      deps,
+    );
+    expect(result.batchFailures[0]).toMatchObject({
+      reason: 'load_failed',
+      detail: expect.stringContaining('ページ画像が 0 件'),
+    });
+  });
+
+  test('画像のロード失敗（例外）は load_failed として記録する', async () => {
+    const { provider } = providerOf([]);
+    const { deps } = makeDeps(provider);
+    deps.loadDocumentPageImages = jest.fn().mockRejectedValue(new Error('drive down'));
+    const result = await executeRun(
+      {
+        runId: 'run-1',
+        plan: makePlan([
+          makeBatch({
+            studyId: 'd1',
+            documentIds: ['d1'],
+            augmentedImageDocumentIds: ['d1'],
+            fieldIds: ['f_design'],
+          }),
+        ]),
+        fields: FIELDS,
+        documents: [makeDocument('d1')],
+      },
+      deps,
+    );
+    expect(result.batchFailures).toEqual([
+      { studyId: 'd1', section: null, reason: 'load_failed', detail: 'drive down' },
+    ]);
+  });
+
+  test('同一 augmented 文書は複数バッチにまたがっても本文・画像とも 1 回だけロードする（Promise キャッシュ）', async () => {
+    const { provider } = providerOf([chatResponse([DESIGN_ITEM]), chatResponse([DESIGN_ITEM])]);
+    const { deps, loadPages } = makeDeps(provider);
+    const loadImages = jest.fn().mockResolvedValue(IMAGE_PAGES);
+    deps.loadDocumentPageImages = loadImages;
+    const result = await executeRun(
+      {
+        runId: 'run-1',
+        plan: makePlan([
+          makeBatch({
+            studyId: 'd1',
+            section: 'methods',
+            documentIds: ['d1'],
+            augmentedImageDocumentIds: ['d1'],
+            fieldIds: ['f_design'],
+          }),
+          makeBatch({
+            studyId: 'd1',
+            section: 'population',
+            documentIds: ['d1'],
+            augmentedImageDocumentIds: ['d1'],
+            fieldIds: ['f_design'],
+          }),
+        ]),
+        fields: FIELDS,
+        documents: [makeDocument('d1')],
+      },
+      deps,
+    );
+    expect(loadPages).toHaveBeenCalledTimes(1);
+    expect(loadImages).toHaveBeenCalledTimes(1);
+    expect(result.evidence).toHaveLength(2);
+  });
+
+  test('study 内で通常のテキスト文書と augmented 文書が混在する場合、画像は augmented 文書ぶんだけ添付する', async () => {
+    const artItem = { ...DESIGN_ITEM, document_index: 1 };
+    const augItem = { ...ARM_ITEM, document_index: 2 };
+    const { provider, calls } = providerOf([chatResponse([artItem, augItem])]);
+    const { deps } = makeDeps(provider);
+    deps.loadDocumentPageImages = jest.fn().mockResolvedValue(IMAGE_PAGES);
+    const result = await executeRun(
+      {
+        runId: 'run-1',
+        plan: makePlan([
+          makeBatch({
+            studyId: 's1',
+            documentIds: ['art', 'aug'],
+            augmentedImageDocumentIds: ['aug'],
+            fieldIds: ['f_design', 'f_n'],
+          }),
+        ]),
+        fields: FIELDS,
+        documents: [
+          makeDocument('art', { studyId: 's1', documentRole: 'article', filename: 'main.pdf' }),
+          makeDocument('aug', { studyId: 's1', documentRole: 'supplement', filename: 'supp.pdf' }),
+        ],
+      },
+      deps,
+    );
+
+    const userContent = calls[0]!.messages[1]!.content as ChatContentPart[];
+    const prefixText = (userContent[0] as { text: string }).text;
+    expect(prefixText).toContain('=== Document 1/2 [article] main.pdf ===');
+    expect(prefixText).toContain('=== Document 2/2 [supplement] supp.pdf ===');
+    // 画像ラベルは augmented 文書（document_index 2）ぶんだけ
+    expect(userContent.some((part) => part.type === 'text' && part.text === '[Document 1/2 page 1]')).toBe(
+      false,
+    );
+    expect(userContent.some((part) => part.type === 'text' && part.text === '[Document 2/2 page 1]')).toBe(
+      true,
+    );
+    expect(result.evidence).toEqual([
+      expect.objectContaining({ documentId: 'art', anchorStatus: 'exact' }),
+      expect.objectContaining({ documentId: 'aug', anchorStatus: 'exact' }),
     ]);
   });
 });

@@ -10,6 +10,7 @@ function batch(studyId: string, section: string | null = null): PlannedBatch {
     studyId,
     documentIds: [`${studyId}-doc`],
     imageDocumentIds: [],
+    augmentedImageDocumentIds: [],
     section,
     fieldIds: ['f-1'],
     tokensInEstimate: 100,

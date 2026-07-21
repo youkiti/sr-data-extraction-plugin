@@ -267,7 +267,7 @@ describe('runExtraction', () => {
     expect(promptCall?.parentId).toBe('folder-logs');
     expect(promptCall?.mimeType).toBe('application/json');
     expect(promptCall?.name).toMatch(/\.prompt\.json$/);
-    expect(JSON.parse(promptCall?.content ?? '{}').promptVersion).toBe(7); // EXTRACT_DATA_PROMPT_VERSION
+    expect(JSON.parse(promptCall?.content ?? '{}').promptVersion).toBe(8); // EXTRACT_DATA_PROMPT_VERSION
     expect(mockedUpload.mock.calls[1]?.[0].name).toMatch(/\.response\.json$/);
 
     expect(mockedAppendLog).toHaveBeenCalledTimes(1);
@@ -301,6 +301,32 @@ describe('runExtraction', () => {
     // 画像入力の文書にはテキスト層が無いためアンカリングできず null のまま保存する
     expect(outcome.result.evidence[0]?.anchorStatus).toBeNull();
     expect(mockedAppendRun).toHaveBeenCalledTimes(2);
+  });
+
+  test('高精度読み取りモード（issue #176）: highAccuracyImages: true はテキスト層のある文献にもページ画像を併用添付し、input_mode = text_with_page_images を記録する', async () => {
+    const chat = jest.fn().mockResolvedValue(AI_RESPONSE);
+    const deps = makeDeps(chat);
+    const loadImages = jest.fn().mockResolvedValue([
+      { page: 1, mimeType: 'image/png', dataBase64: 'QUJD' },
+    ]);
+    const outcome = await runExtraction(
+      { ...baseParams(), highAccuracyImages: true },
+      { ...deps, loadDocumentPageImages: loadImages },
+    );
+    expect(outcome.run.inputMode).toBe('text_with_page_images');
+    expect(loadImages).toHaveBeenCalledWith('doc-1');
+    expect(deps.loadDocumentPages).toHaveBeenCalledWith('doc-1');
+    // テキスト層があるためアンカリングは通常どおり成立する（画像は読み取り補助のみ）
+    expect(outcome.result.evidence[0]?.anchorStatus).toBe('exact');
+    expect(mockedAppendRun).toHaveBeenCalledTimes(2);
+  });
+
+  test('高精度読み取りモード省略時（highAccuracyImages 未指定）は既定の text_only のまま変わらない', async () => {
+    const chat = jest.fn().mockResolvedValue(AI_RESPONSE);
+    const deps = makeDeps(chat);
+    const outcome = await runExtraction(baseParams(), deps);
+    expect(outcome.run.inputMode).toBe('text_only');
+    expect(deps.loadDocumentPageImages).not.toHaveBeenCalled();
   });
 
   test('省略可能な依存（buildProvider / newUuid / now）は既定実装で動く', async () => {

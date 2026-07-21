@@ -6,6 +6,7 @@ import {
   resetExtractFieldSelection,
   retryExtractStudy,
   runExtract,
+  setExtractHighAccuracyImages,
   setExtractModel,
   toggleExtractField,
   toggleExtractFieldSection,
@@ -487,14 +488,27 @@ describe('resetExtractFieldSelection / toggleExtractField / toggleExtractFieldSe
     makeField({ fieldId: 'f-3', section: 'results' }),
   ];
 
-  test('resetExtractFieldSelection: 選択・折りたたみを既定（全選択・全展開）へ戻す', () => {
+  test('resetExtractFieldSelection: 選択・折りたたみ・高精度読み取りモードを既定へ戻す（issue #176）', () => {
     const store = makeStore({
       fields,
-      extract: { selectedFieldIds: ['f-1'], collapsedFieldSections: ['methods'] },
+      extract: {
+        selectedFieldIds: ['f-1'],
+        collapsedFieldSections: ['methods'],
+        highAccuracyImages: true,
+      },
     });
     resetExtractFieldSelection(store);
     expect(store.getState().extract.selectedFieldIds).toBeNull();
     expect(store.getState().extract.collapsedFieldSections).toEqual([]);
+    expect(store.getState().extract.highAccuracyImages).toBe(false);
+  });
+
+  test('setExtractHighAccuracyImages: 高精度読み取りモードのトグル切替（issue #176）', () => {
+    const store = makeStore({ fields, extract: { highAccuracyImages: false } });
+    setExtractHighAccuracyImages(store, true);
+    expect(store.getState().extract.highAccuracyImages).toBe(true);
+    setExtractHighAccuracyImages(store, false);
+    expect(store.getState().extract.highAccuracyImages).toBe(false);
   });
 
   test('toggleExtractField: 単一項目の選択解除・追加', () => {
@@ -671,6 +685,28 @@ describe('runExtract', () => {
         detail: null,
       },
     ]);
+  });
+
+  test('高精度読み取りモード（issue #176）: チェック時は highAccuracyImages: true を渡し、lastRunHighAccuracyImages に確定値を保持する', async () => {
+    const store = makeReadyStore({ highAccuracyImages: true });
+    runExtractionMock.mockResolvedValue(makeOutcome());
+    await runExtract(store, makeDeps());
+    const [params] = runExtractionMock.mock.calls[0] as unknown as [
+      Parameters<typeof runExtraction>[0],
+    ];
+    expect(params.highAccuracyImages).toBe(true);
+    expect(store.getState().extract.lastRunHighAccuracyImages).toBe(true);
+  });
+
+  test('高精度読み取りモード（issue #176）: 未チェック時は highAccuracyImages: false を渡す（既定挙動を変えない）', async () => {
+    const store = makeReadyStore();
+    runExtractionMock.mockResolvedValue(makeOutcome());
+    await runExtract(store, makeDeps());
+    const [params] = runExtractionMock.mock.calls[0] as unknown as [
+      Parameters<typeof runExtraction>[0],
+    ];
+    expect(params.highAccuracyImages).toBe(false);
+    expect(store.getState().extract.lastRunHighAccuracyImages).toBe(false);
   });
 
   test('保存した OpenAI 互換接続を本番抽出へ渡す', async () => {
@@ -959,6 +995,25 @@ describe('retryExtractStudy', () => {
     expect(params.fields.map((field) => field.fieldId)).toEqual(['f-total']);
     // 引き継いだ値を維持したまま記録し続ける
     expect(store.getState().extract.lastRunFieldIds).toEqual(['f-total']);
+  });
+
+  test('A-2（issue #176）: 元 run の高精度読み取りモード（lastRunHighAccuracyImages）を引き継ぐ。現在のチェックボックス状態は無視する', async () => {
+    const store = makeFailedStore();
+    // 元 run は高精度読み取りモード有効だった。その後チェックボックスを外していても
+    // 再試行は元 run の設定（lastRunHighAccuracyImages）を使う
+    store.setState({
+      extract: {
+        ...store.getState().extract,
+        lastRunHighAccuracyImages: true,
+        highAccuracyImages: false,
+      },
+    });
+    runExtractionMock.mockResolvedValue(makeOutcome({ studyIds: ['study-doc-2'] }));
+    await retryExtractStudy(store, makeDeps(), 'study-doc-2');
+    const [params] = runExtractionMock.mock.calls[0] as unknown as [
+      Parameters<typeof runExtraction>[0],
+    ];
+    expect(params.highAccuracyImages).toBe(true);
   });
 
   test('再実行中は対象行を実行中として表示する（partial_failure の破棄件数は加算）', async () => {

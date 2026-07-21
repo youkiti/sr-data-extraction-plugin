@@ -38,6 +38,7 @@ import { ensureChildFolder } from '../../lib/google/drive';
 import type { GoogleApiDeps } from '../../lib/google/types';
 import { missingApiKeyMessage } from '../../lib/llm/modelCatalog';
 import {
+  resolveEffectiveHighAccuracyImages,
   resolveProviderConfig,
   type ProviderConfig,
 } from '../../lib/llm/providerFactory';
@@ -160,10 +161,20 @@ async function loadFieldSubsetBadges(
 /**
  * フィールド選択チェックリストを全選択へリセットする（A-4: 画面入場・対象再読込のたびに
  * 全選択へ戻す。storage への永続化はしない）。bootstrap の `#/extract` ルート入場時と
- * `onReloadTargets` の両方から呼ぶ
+ * `onReloadTargets` の両方から呼ぶ。高精度読み取りモード（issue #176）のトグルも同じ理由で
+ * 毎回 false へ戻す（前回オンにしたことを忘れたまま高コストな run を打たせない設計）
  */
 export function resetExtractFieldSelection(store: Store): void {
-  patchExtract(store, { selectedFieldIds: null, collapsedFieldSections: [] });
+  patchExtract(store, {
+    selectedFieldIds: null,
+    collapsedFieldSections: [],
+    highAccuracyImages: false,
+  });
+}
+
+/** 高精度読み取りモード（issue #176）のトグル切替 */
+export function setExtractHighAccuracyImages(store: Store, enabled: boolean): void {
+  patchExtract(store, { highAccuracyImages: enabled });
 }
 
 /** フィールドチェックリストの単一項目切替 */
@@ -302,6 +313,8 @@ async function performRun(
     fields: readonly SchemaField[];
     /** ExtractionRuns へ記録する run 単位のフィールド選択（全選択時は null。issue #80） */
     fieldIds: string[] | null;
+    /** 高精度読み取りモード（issue #176。プロバイダ非対応時は呼び出し側で false に落として渡す） */
+    highAccuracyImages: boolean;
     model: string;
     providerConfig: ProviderConfig;
     onStudyRows: (rows: ExtractStudyRow[]) => void;
@@ -310,12 +323,15 @@ async function performRun(
   const { text: protocolContext } = await resolveProtocol(store, deps, params.spreadsheetId);
 
   // 進捗リストの分母（study 別バッチ数）を実行前に計画しておく。
-  // runExtraction は内部で再計画するが、同一入力なら計画は一致する（extractionService の契約）
+  // runExtraction は内部で再計画するが、同一入力なら計画は一致する（extractionService の契約。
+  // highAccuracyImages も同じ値を渡さないと、画像トークン加算による section 分割の有無が
+  // ずれてバッチ数の見込みが実際の run と食い違う）
   const plan = planRun({
     documents: params.targets,
     fields: params.fields,
     model: params.model,
     protocolContext,
+    highAccuracyImages: params.highAccuracyImages,
   });
   const tracker = createStudyProgressTracker(params.studyIds, plan.batches);
   params.onStudyRows(tracker.rows());
@@ -334,6 +350,7 @@ async function performRun(
       model: params.model,
       protocolContext,
       fieldIds: params.fieldIds,
+      highAccuracyImages: params.highAccuracyImages,
       onProgress: (progress) => {
         tracker.onProgress(progress);
         patchExtract(store, { progress });
@@ -405,6 +422,14 @@ export async function runExtract(store: Store, deps: ExtractServiceDeps): Promis
   // 再試行（retryExtractStudy）が同じ選択を引き継げる（A-2）
   const fieldIds = resolveFieldIdsForRun(state.extract.selectedFieldIds);
   const runFields = filterFieldsBySelection(fields, fieldIds);
+  // 高精度読み取りモード（issue #176）: UI は非対応プロバイダで選択自体を disabled にするが、
+  // ここでも二重に効かせる（モデル変更後の古い選択が残っていても、非対応プロバイダには送らない）。
+  // lastRunFieldIds と同じ理由で、実行直前に確定させた値を lastRunHighAccuracyImages として
+  // 保持し、再試行（A-2）が同じ設定を引き継げるようにする
+  const highAccuracyImages = resolveEffectiveHighAccuracyImages(
+    state.extract.model,
+    state.extract.highAccuracyImages,
+  );
   patchExtract(store, {
     confirming: false,
     running: true,
@@ -415,6 +440,7 @@ export async function runExtract(store: Store, deps: ExtractServiceDeps): Promis
     armWarnings: [],
     studyRows: [],
     lastRunFieldIds: fieldIds,
+    lastRunHighAccuracyImages: highAccuracyImages,
   });
   try {
     const records = await resolveDocuments(store, deps.google, project.spreadsheetId);
@@ -429,6 +455,7 @@ export async function runExtract(store: Store, deps: ExtractServiceDeps): Promis
       targets,
       fields: runFields,
       fieldIds,
+      highAccuracyImages,
       model: state.extract.model,
       providerConfig: providerResolution.config,
       onStudyRows: (rows) => patchExtract(store, { studyRows: rows }),
@@ -506,6 +533,8 @@ export async function retryExtractStudy(
       targets,
       fields: runFields,
       fieldIds,
+      // A-2 と同じ考え方: 現在のチェックボックス状態ではなく元 run の値を引き継ぐ（issue #176）
+      highAccuracyImages: state.extract.lastRunHighAccuracyImages,
       model: state.extract.model,
       providerConfig: providerResolution.config,
       onStudyRows: (rows) => {

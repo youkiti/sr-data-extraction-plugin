@@ -423,6 +423,14 @@ export const en: Record<MessageKey, string> = {
   'extraction.preparing': 'Preparing…',
   'extraction.rejectedCount': 'Discarded response elements: {n}',
 
+  // High-accuracy image mode (issue #176, shared by S6 / S7)
+  'extraction.highAccuracyLabel':
+    'High-accuracy reading mode (also send page images for documents with a text layer)',
+  'extraction.highAccuracyWarning':
+    'Improves table/figure reading accuracy, but greatly increases token usage (cost).',
+  'extraction.highAccuracyDisabledReason':
+    'The selected provider does not support image input',
+
   // フィールド選択チェックリスト（issue #80）
   'fieldSelection.summary': 'Target fields: {summary}',
   'fieldSelection.allFields': 'all fields ({n})',

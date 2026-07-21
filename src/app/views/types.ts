@@ -140,6 +140,8 @@ export interface PilotViewCallbacks {
   onToggleFieldSection(fieldIds: readonly string[], selected: boolean): void;
   /** 抽出対象フィールドのチェックリスト: section の折りたたみ切替 */
   onToggleFieldSectionCollapse(section: string): void;
+  /** 高精度読み取りモード（issue #176）のトグル切替: テキスト層のある文書にもページ画像を併用添付する */
+  onToggleHighAccuracyImages(enabled: boolean): void;
   /** 「パイロット抽出を実行」 */
   onRun(): void;
   /** 過去のパイロット結果を履歴から読み込む */
@@ -181,6 +183,8 @@ export interface ExtractViewCallbacks {
   onToggleFieldSection(fieldIds: readonly string[], selected: boolean): void;
   /** 抽出対象フィールドのチェックリスト: section の折りたたみ切替 */
   onToggleFieldSectionCollapse(section: string): void;
+  /** 高精度読み取りモード（issue #176）のトグル切替: テキスト層のある文書にもページ画像を併用添付する */
+  onToggleHighAccuracyImages(enabled: boolean): void;
   /** 「一括抽出を実行」: 検証 → 実行確認カードを開く */
   onRequestRun(): void;
   /** 確認カードの「実行する」: full run を開始 */
