@@ -13,6 +13,8 @@ playwright-report/
 # --profile で作る別プロファイル（例: .selenium-profile-clean）もまとめて除外
 .selenium-profile*/
 
+debug/
+
 # 環境変数（OAUTH_CLIENT_ID 等）
 .env
 
