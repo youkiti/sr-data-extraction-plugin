@@ -231,6 +231,7 @@ anchorQuote() ──文字範囲──▶ highlightMap() ──span 座標──
 
 - `pdfjs-dist` の **worker（`pdf.worker.min.mjs`）は `copy-webpack-plugin` で `dist/` へ同梱**（CDN 参照不可、MV3 CSP 準拠）。`GlobalWorkerOptions.workerSrc` は `chrome.runtime.getURL()` で解決
 - **既定 CMap（`cmaps/*.bcmap`）も同様に `dist/cmaps/` へ同梱**し、`getDocument` の `cMapUrl` に `chrome.runtime.getURL('cmaps/')` を渡す（issue #95: 和文 PDF の CID フォントは既定 CMap がないとテキスト抽出がほぼ空になる）
+- **画像デコーダの wasm（`dist/wasm/`）・標準 14 フォント（`dist/standard_fonts/`）・既定 ICC プロファイル（`dist/iccs/`）も同梱**し、`getDocument` にそれぞれ `wasmUrl` / `standardFontDataUrl` / `iccUrl` を渡す。pdfjs-dist 6.x は CCITTFax/JBIG2・JPEG2000・ICC のデコーダが wasm 実装になっており、`wasmUrl` 未指定だと `Jbig2Error` 等で初期化に失敗し、スキャン PDF の該当ページ（CCITTFaxDecode 等）が白紙になる（テキスト層は無事なためハイライトだけ出る症状）。`quickjs-eval.*`（PDF 内 JavaScript の隔離実行用）は本拡張が使わないため同梱から除外する。manifest には `content_security_policy.extension_pages` に `'wasm-unsafe-eval'` を追加している
 - `.env` 運用（`OAUTH_CLIENT_ID` / `LOCAL_OAUTH_CLIENT_ID`）、dev ビルドの拡張名 `(dev)` 付与、固定 `key` による拡張 ID 固定は sr-query-builder の `webpack.config.js` / `release-alpha.ps1` を踏襲
 
 ### 3.2 npm スクリプト

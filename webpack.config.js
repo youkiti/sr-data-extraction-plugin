@@ -101,6 +101,24 @@ module.exports = (_env, argv) => {
             from: 'node_modules/pdfjs-dist/cmaps',
             to: 'cmaps',
           },
+          {
+            // pdfjs 6.x は画像デコーダ（CCITTFax/JBIG2・JPEG2000・ICC）が wasm 実装なので同梱する。
+            // 未同梱だとスキャン PDF の該当ページが白紙になる。実行時は chrome.runtime.getURL('wasm/') で解決する。
+            // quickjs-eval.* は PDF 内 JavaScript の隔離実行（pdf.sandbox）用で本拡張は使わないため除外する
+            from: 'node_modules/pdfjs-dist/wasm',
+            to: 'wasm',
+            globOptions: { ignore: ['**/quickjs-eval.js', '**/quickjs-eval.wasm'] },
+          },
+          {
+            // 標準 14 フォント（非埋め込み PDF 用）
+            from: 'node_modules/pdfjs-dist/standard_fonts',
+            to: 'standard_fonts',
+          },
+          {
+            // 既定 ICC プロファイル（qcms）
+            from: 'node_modules/pdfjs-dist/iccs',
+            to: 'iccs',
+          },
         ],
       }),
     ],

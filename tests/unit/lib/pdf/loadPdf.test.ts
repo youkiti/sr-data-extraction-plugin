@@ -1,6 +1,9 @@
 import { GlobalWorkerOptions, getDocument } from 'pdfjs-dist';
 import {
   PDF_CMAP_DIR,
+  PDF_ICC_DIR,
+  PDF_STANDARD_FONT_DIR,
+  PDF_WASM_DIR,
   PDF_WORKER_ASSET,
   configurePdfWorker,
   loadDisposablePdf,
@@ -47,12 +50,31 @@ describe('loadPdf', () => {
       data: Uint8Array;
       cMapUrl: string;
       cMapPacked: boolean;
+      wasmUrl: string;
+      standardFontDataUrl: string;
+      iccUrl: string;
+      useWorkerFetch: boolean;
     };
     expect(arg.data).toBeInstanceOf(Uint8Array);
     expect([...arg.data]).toEqual([1, 2, 3]);
     // 和文 PDF の CID フォント抽出用に、同梱 CMap を拡張内 URL で渡す（issue #95）
     expect(arg.cMapUrl).toBe(`chrome-extension://test-extension-id/${PDF_CMAP_DIR}`);
     expect(arg.cMapPacked).toBe(true);
+    // 画像デコーダ（CCITTFax/JBIG2 等）の wasm 資産・標準フォント・ICC プロファイルも
+    // 同梱ディレクトリを拡張内 URL で渡す（未指定だとスキャン PDF が白紙になる）
+    expect(arg.wasmUrl).toBe(`chrome-extension://test-extension-id/${PDF_WASM_DIR}`);
+    expect(arg.standardFontDataUrl).toBe(
+      `chrome-extension://test-extension-id/${PDF_STANDARD_FONT_DIR}`,
+    );
+    expect(arg.iccUrl).toBe(`chrome-extension://test-extension-id/${PDF_ICC_DIR}`);
+    // pdfjs の getFactoryUrlProp は末尾 `/` がないと「Invalid factory url」を投げるため、
+    // 4 つの URL すべてが末尾スラッシュで終わることを回帰防止として固定する
+    for (const url of [arg.cMapUrl, arg.wasmUrl, arg.standardFontDataUrl, arg.iccUrl]) {
+      expect(url.endsWith('/')).toBe(true);
+    }
+    // E2E の chrome スタブ（getURL: p => '/'+p）では isValidFetchUrl が true になり得るため、
+    // 実機（chrome-extension:）と取得経路を揃えるよう明示的に false にしている
+    expect(arg.useWorkerFetch).toBe(false);
   });
 });
 
