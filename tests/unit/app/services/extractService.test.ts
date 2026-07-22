@@ -8,6 +8,7 @@ import {
   runExtract,
   setExtractHighAccuracyImages,
   setExtractModel,
+  toggleAllExtractStudies,
   toggleExtractField,
   toggleExtractFieldSection,
   toggleExtractFieldSectionCollapse,
@@ -493,6 +494,27 @@ describe('toggleExtractStudy / setExtractModel', () => {
     const store = makeStore({});
     setExtractModel(store, '  gemini-x  ');
     expect(store.getState().extract.model).toBe('gemini-x');
+  });
+});
+
+describe('toggleAllExtractStudies（issue #180）', () => {
+  test('selected=true: 未抽出 study をまとめて選択に追加する', () => {
+    const store = makeStore({ extract: { selectedStudyIds: [] } });
+    toggleAllExtractStudies(store, ['s1', 's2'], true);
+    expect(store.getState().extract.selectedStudyIds).toEqual(['s1', 's2']);
+  });
+
+  test('selected=true: 既に選択済みの抽出済み study の選択を維持する（union・重複追加しない）', () => {
+    // s-extracted は個別チェックで選択済みの抽出済み study。未抽出は s1 のみ
+    const store = makeStore({ extract: { selectedStudyIds: ['s-extracted', 's1'] } });
+    toggleAllExtractStudies(store, ['s1', 's2'], true);
+    expect(store.getState().extract.selectedStudyIds).toEqual(['s-extracted', 's1', 's2']);
+  });
+
+  test('selected=false: 全 study の選択を一括解除する（抽出済みの個別選択も消える）', () => {
+    const store = makeStore({ extract: { selectedStudyIds: ['s-extracted', 's1', 's2'] } });
+    toggleAllExtractStudies(store, ['s1', 's2'], false);
+    expect(store.getState().extract.selectedStudyIds).toEqual([]);
   });
 });
 

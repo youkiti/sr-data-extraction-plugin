@@ -1388,6 +1388,32 @@ section.documents__tiab {
   gap: 10px;
 }
 
+.extract__studies-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+
+.extract__studies-toggle {
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 13px;
+  color: var(--color-text);
+}
+
+.extract__studies-toggle:hover:not(:disabled) {
+  border-color: var(--color-primary);
+}
+
+.extract__studies-note {
+  color: var(--color-text-muted);
+  font-size: 13px;
+}
+
 .extract__study-choice {
   display: inline-flex;
   align-items: center;

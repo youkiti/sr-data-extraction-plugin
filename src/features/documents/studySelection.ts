@@ -80,3 +80,26 @@ export function buildExtractionCandidates(
     records.filter((doc) => !doc.excluded),
   );
 }
+
+/**
+ * 全選択トグル（issue #180）の対象となる「未抽出」study_id を選択リストの並び順で返す。
+ * 抽出済み（extractedStudyIds に含まれる）study は対象外。
+ */
+export function selectableUnextractedStudyIds(
+  selection: readonly StudySelectionItem[],
+  extractedStudyIds: readonly string[],
+): string[] {
+  const extracted = new Set(extractedStudyIds);
+  return selection
+    .map((item) => item.study.studyId)
+    .filter((studyId) => !extracted.has(studyId));
+}
+
+/** 未抽出 study がすべて選択済みか（トグルのラベル切替に使う。未抽出 0 件なら true） */
+export function areAllUnextractedStudiesSelected(
+  unextractedStudyIds: readonly string[],
+  selectedStudyIds: readonly string[],
+): boolean {
+  const selected = new Set(selectedStudyIds);
+  return unextractedStudyIds.every((studyId) => selected.has(studyId));
+}

@@ -253,6 +253,30 @@ export function toggleExtractStudy(store: Store, studyId: string, selected: bool
   }
 }
 
+/**
+ * study 選択の一括トグル（issue #180）。
+ * selected=true: 未抽出 study をまとめて選択する（個別に選んだ抽出済み study の選択は維持）。
+ * selected=false: 全 study の選択を一括解除する。
+ */
+export function toggleAllExtractStudies(
+  store: Store,
+  unextractedStudyIds: readonly string[],
+  selected: boolean,
+): void {
+  if (!selected) {
+    patchExtract(store, { selectedStudyIds: [] });
+    return;
+  }
+  const current = store.getState().extract.selectedStudyIds;
+  const merged = [...current];
+  for (const studyId of unextractedStudyIds) {
+    if (!merged.includes(studyId)) {
+      merged.push(studyId);
+    }
+  }
+  patchExtract(store, { selectedStudyIds: merged });
+}
+
 export function setExtractModel(store: Store, model: string): void {
   patchExtract(store, { model: model.trim() });
 }

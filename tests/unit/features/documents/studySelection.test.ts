@@ -2,9 +2,11 @@
 import type { DocumentRecord } from '../../../../src/domain/document';
 import type { StudyRecord } from '../../../../src/domain/study';
 import {
+  areAllUnextractedStudiesSelected,
   buildExtractionCandidates,
   buildStudySelection,
   documentsForStudies,
+  selectableUnextractedStudyIds,
 } from '../../../../src/features/documents/studySelection';
 
 function makeDocument(overrides: Partial<DocumentRecord> & { documentId: string }): DocumentRecord {
@@ -165,5 +167,50 @@ describe('buildExtractionCandidates（issue #181: 除外文書を除いた抽出
     const candidates = buildExtractionCandidates(studies, documents);
     expect(candidates).toHaveLength(1);
     expect(candidates[0]?.documents.map((d) => d.documentId)).toEqual(['b']);
+  });
+});
+
+// issue #180: 全選択トグルの対象判定
+describe('selectableUnextractedStudyIds', () => {
+  it('抽出済みを除外して選択リストの並び順で返す', () => {
+    const documents = [
+      makeDocument({ documentId: 'a', studyId: 's1' }),
+      makeDocument({ documentId: 'b', studyId: 's2' }),
+      makeDocument({ documentId: 'c', studyId: 's3' }),
+    ];
+    const selection = buildStudySelection(
+      [makeStudy('s1'), makeStudy('s2'), makeStudy('s3')],
+      documents,
+    );
+    expect(selectableUnextractedStudyIds(selection, ['s2'])).toEqual(['s1', 's3']);
+  });
+
+  it('抽出済み配列が空なら全件を返す', () => {
+    const documents = [makeDocument({ documentId: 'a', studyId: 's1' })];
+    const selection = buildStudySelection([makeStudy('s1')], documents);
+    expect(selectableUnextractedStudyIds(selection, [])).toEqual(['s1']);
+  });
+
+  it('全部抽出済みなら空配列を返す', () => {
+    const documents = [
+      makeDocument({ documentId: 'a', studyId: 's1' }),
+      makeDocument({ documentId: 'b', studyId: 's2' }),
+    ];
+    const selection = buildStudySelection([makeStudy('s1'), makeStudy('s2')], documents);
+    expect(selectableUnextractedStudyIds(selection, ['s1', 's2'])).toEqual([]);
+  });
+});
+
+describe('areAllUnextractedStudiesSelected', () => {
+  it('未抽出すべてが選択済みなら true', () => {
+    expect(areAllUnextractedStudiesSelected(['s1', 's2'], ['s1', 's2', 's3'])).toBe(true);
+  });
+
+  it('一部が未選択なら false', () => {
+    expect(areAllUnextractedStudiesSelected(['s1', 's2'], ['s1'])).toBe(false);
+  });
+
+  it('未抽出が 0 件なら true（every の性質上）', () => {
+    expect(areAllUnextractedStudiesSelected([], [])).toBe(true);
   });
 });

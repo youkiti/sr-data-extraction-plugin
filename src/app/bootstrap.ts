@@ -95,6 +95,7 @@ import {
   runExtract,
   setExtractHighAccuracyImages,
   setExtractModel,
+  toggleAllExtractStudies,
   toggleExtractField,
   toggleExtractFieldSection,
   toggleExtractFieldSectionCollapse,
@@ -645,6 +646,9 @@ export async function bootstrapApp(
     extract: {
       onToggleStudy: (studyId, selected) => {
         toggleExtractStudy(store, studyId, selected);
+      },
+      onToggleAllStudies: (unextractedStudyIds, selected) => {
+        toggleAllExtractStudies(store, unextractedStudyIds, selected);
       },
       onChangeModel: (model) => {
         setExtractModel(store, model);

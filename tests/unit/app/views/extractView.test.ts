@@ -21,6 +21,7 @@ const planRunMock = planRun as jest.MockedFunction<typeof planRun>;
 function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<ExtractViewCallbacks> } {
   const callbacks = {
     onToggleStudy: jest.fn(),
+    onToggleAllStudies: jest.fn(),
     onChangeModel: jest.fn(),
     onToggleField: jest.fn(),
     onToggleFieldSection: jest.fn(),
@@ -432,6 +433,73 @@ describe('未実行（setup）', () => {
 
     checkboxes[2]!.click();
     expect(callbacks.onToggleStudy).toHaveBeenCalledWith('study-3', true);
+  });
+
+  describe('全選択/全解除トグル（issue #180）', () => {
+    function docsFor(ids: string[]): DocumentRecord[] {
+      return ids.map((studyId) => makeDocument({ documentId: `doc-${studyId}`, studyId }));
+    }
+
+    test('未抽出が一部だけ選択済みなら「未抽出をすべて選択」を表示し、click で未抽出 id + true を渡す', () => {
+      const docs = docsFor(['study-1', 'study-2', 'study-3']);
+      const { root, callbacks } = render(
+        makeState({
+          documents: docs,
+          extract: {
+            extractedStudyIds: ['study-3'],
+            selectedStudyIds: ['study-1'], // study-2（未抽出）は未選択
+          },
+        }),
+      );
+      const toggle = root.querySelector<HTMLButtonElement>('#extract-studies-toggle');
+      expect(toggle?.textContent).toBe('未抽出をすべて選択');
+      toggle?.click();
+      expect(callbacks.onToggleAllStudies).toHaveBeenCalledWith(['study-1', 'study-2'], true);
+    });
+
+    test('未抽出がすべて選択済みなら「全解除」を表示し、click で未抽出 id + false を渡す', () => {
+      const docs = docsFor(['study-1', 'study-2', 'study-3']);
+      const { root, callbacks } = render(
+        makeState({
+          documents: docs,
+          extract: {
+            extractedStudyIds: ['study-3'],
+            selectedStudyIds: ['study-1', 'study-2'],
+          },
+        }),
+      );
+      const toggle = root.querySelector<HTMLButtonElement>('#extract-studies-toggle');
+      expect(toggle?.textContent).toBe('全解除');
+      toggle?.click();
+      expect(callbacks.onToggleAllStudies).toHaveBeenCalledWith(['study-1', 'study-2'], false);
+    });
+
+    test('抽出済み study があるときは #extract-studies-note に件数を表示し、無いときは出さない', () => {
+      const docs = docsFor(['study-1', 'study-2', 'study-3']);
+      const withExtracted = render(
+        makeState({
+          documents: docs,
+          extract: { extractedStudyIds: ['study-2', 'study-3'], selectedStudyIds: ['study-1'] },
+        }),
+      );
+      expect(withExtracted.root.querySelector('#extract-studies-note')?.textContent).toBe(
+        '抽出済みの 2 件は全選択に含まれません',
+      );
+
+      const noneExtracted = render(
+        makeState({
+          documents: docs,
+          extract: { extractedStudyIds: [], selectedStudyIds: ['study-1'] },
+        }),
+      );
+      expect(noneExtracted.root.querySelector('#extract-studies-note')).toBeNull();
+    });
+
+    test('study が 0 件のときは #extract-documents-empty を出しトグルは無い', () => {
+      const { root } = render(makeState({ documents: [], studies: [] }));
+      expect(root.querySelector('#extract-documents-empty')).not.toBeNull();
+      expect(root.querySelector('#extract-studies-toggle')).toBeNull();
+    });
   });
 
   test('抽出済みバッジ: サブセット run が直近なら「直近 run は n/m 項目」を添える（issue #80）', () => {
