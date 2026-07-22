@@ -1513,5 +1513,79 @@ describe('文献除外機能（issue #181）', () => {
       expect(toastTexts()).toContain('除外解除に失敗しました: offline');
       expect(store.getState().documents.records?.[0]?.excluded).toBe(true);
     });
+
+    test('連続する解除呼び出しは完了順が入れ替わっても両方の反映が残る（呼び出し時点の古い records で上書きしない）', async () => {
+      const store = makeStore();
+      setDocs(store, {
+        studies: [makeStudy({ studyId: 'study-1' }), makeStudy({ studyId: 'study-2' })],
+        records: [
+          makeDoc({
+            documentId: 'doc-a',
+            studyId: 'study-1',
+            filename: 'a.pdf',
+            excluded: true,
+            exclusionReason: 'duplicate',
+          }),
+          makeDoc({
+            documentId: 'doc-b',
+            studyId: 'study-2',
+            filename: 'b.pdf',
+            excluded: true,
+            exclusionReason: 'on_hold',
+          }),
+        ],
+      });
+
+      // doc-a 側の Google API 呼び出しは手動で resolve するまで完了しない
+      // （= doc-a の解除操作が doc-b の解除操作より後に完了する状況を作る）
+      let resolveA: (() => void) | undefined;
+      const pendingA = new Promise<void>((resolve) => {
+        resolveA = resolve;
+      });
+      mockUpdateDocuments
+        .mockImplementationOnce(async () => {
+          await pendingA;
+        })
+        .mockImplementationOnce(async () => undefined);
+
+      // 2 つの解除操作を続けて呼ぶ（await を挟まない = 呼び出し時点の records スナップショットが同じになる）
+      const restoreAPromise = restoreDocument(store, makeDeps(), 'doc-a');
+      const restoreBPromise = restoreDocument(store, makeDeps(), 'doc-b');
+
+      // doc-b が先に完了する
+      await restoreBPromise;
+      expect(store.getState().documents.records?.find((d) => d.documentId === 'doc-b')?.excluded).toBe(
+        false,
+      );
+
+      // doc-a が後から完了する
+      resolveA?.();
+      await restoreAPromise;
+
+      const records = store.getState().documents.records;
+      expect(records?.find((d) => d.documentId === 'doc-a')?.excluded).toBe(false);
+      // 修正前は doc-a の完了時に呼び出し時点の古い records スナップショット（doc-b がまだ
+      // excluded: true）へマージするため、先に完了した doc-b の解除結果が巻き戻っていた
+      expect(records?.find((d) => d.documentId === 'doc-b')?.excluded).toBe(false);
+    });
+
+    test('完了時点で records が未読込（null）になっていても例外にならず空配列にフォールバックする', async () => {
+      const store = excludedDoc();
+      let resolveUpdate: (() => void) | undefined;
+      const pending = new Promise<void>((resolve) => {
+        resolveUpdate = resolve;
+      });
+      mockUpdateDocuments.mockImplementationOnce(async () => {
+        await pending;
+      });
+
+      const promise = restoreDocument(store, makeDeps(), 'doc-1');
+      // Google API 呼び出しの完了前に、別操作（再読込等）で records が未読込状態に戻った状況を模す
+      setDocs(store, { records: null });
+      resolveUpdate?.();
+      await promise;
+
+      expect(store.getState().documents.records).toEqual([]);
+    });
   });
 });

@@ -835,12 +835,18 @@ export async function confirmExclusion(store: Store, deps: DocumentsServiceDeps)
   }
 }
 
-/** 除外解除の共通処理（成功で楽観反映 + トースト、失敗はトースト + 再描画） */
+/**
+ * 除外解除の共通処理（成功で楽観反映 + トースト、失敗はトースト + 再描画）。
+ * マージ先は呼び出し時点の records スナップショットではなく、完了時点の最新
+ * store.getState().documents.records を使う。2 つの解除操作を続けて呼ぶと、
+ * 両方が呼び出し時点で同じ古い records を受け取るため、古いスナップショットへマージすると
+ * 後から完了した方が、先に完了して既に store に反映済みの結果を上書きして巻き戻してしまう
+ * （issue #181 PR レビュー対応）
+ */
 async function restoreDocs(
   store: Store,
   deps: DocumentsServiceDeps,
   spreadsheetId: string,
-  records: readonly DocumentRecord[],
   targets: readonly DocumentRecord[],
   label: string,
 ): Promise<void> {
@@ -848,7 +854,8 @@ async function restoreDocs(
   try {
     await updateDocuments(spreadsheetId, updated, deps.google);
     const byId = new Map(updated.map((doc) => [doc.documentId, doc]));
-    patchDocuments(store, { records: records.map((doc) => byId.get(doc.documentId) ?? doc) });
+    const latest = store.getState().documents.records ?? [];
+    patchDocuments(store, { records: latest.map((doc) => byId.get(doc.documentId) ?? doc) });
     showToast(t('documents.toastRestored', { label }));
   } catch (err) {
     showToast(t('documents.toastRestoreFailed', { reason: toMessage(err) }));
@@ -876,7 +883,7 @@ export async function restoreStudy(
     return;
   }
   const label = findStudy(store, studyId)?.studyLabel ?? studyId;
-  await restoreDocs(store, deps, project.spreadsheetId, records, targets, label);
+  await restoreDocs(store, deps, project.spreadsheetId, targets, label);
 }
 
 /** 文書 1 件の除外を解除する。未検出・未除外は no-op */
@@ -892,5 +899,5 @@ export async function restoreDocument(
   if (!project || doc === null) {
     return;
   }
-  await restoreDocs(store, deps, project.spreadsheetId, records, [doc], doc.filename);
+  await restoreDocs(store, deps, project.spreadsheetId, [doc], doc.filename);
 }

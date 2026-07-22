@@ -272,6 +272,10 @@ function renderExcludedDocumentRow(doc: DocumentRecord, ctx: ViewContext): HTMLE
     el('td', { className: 'documents__doc-filename', text: doc.filename }),
     el('td', { text: t(ROLE_LABEL_KEYS[doc.documentRole]) }),
     el('td', { className: 'documents__doc-reason', text: excludedReasonLabel(doc.exclusionReason) }),
+    el('td', {
+      className: 'documents__doc-note',
+      text: doc.exclusionNote === null ? '–' : doc.exclusionNote,
+    }),
     el('td', {}, [restore]),
   ]);
 }
@@ -287,6 +291,7 @@ function renderExcludedSection(excludedDocs: DocumentRecord[], ctx: ViewContext)
           el('th', { text: t('documents.headFilename') }),
           el('th', { text: t('documents.headRole') }),
           el('th', { text: t('documents.headReason') }),
+          el('th', { text: t('documents.headNote') }),
           el('th', { text: t('documents.headActions') }),
         ]),
       ]),

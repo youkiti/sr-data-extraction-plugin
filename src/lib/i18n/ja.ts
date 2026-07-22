@@ -240,6 +240,7 @@ export const ja = {
   'documents.excludedSectionSummary': '除外済み ({n})',
   'documents.excludedReasonUnset': '理由未入力',
   'documents.headReason': '除外理由',
+  'documents.headNote': 'メモ',
   'documents.headActions': '操作',
   'documents.exclusionDialogTitleStudy': 'study を抽出候補から除外しますか？',
   'documents.exclusionDialogTitleDocument': '文書を抽出候補から除外しますか？',

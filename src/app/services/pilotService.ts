@@ -11,6 +11,7 @@ import { readStudies } from '../../features/documents/studyRepository';
 import {
   buildExtractionCandidates,
   documentsForStudies,
+  effectiveStudyIds,
   type StudySelectionItem,
 } from '../../features/documents/studySelection';
 import { makeLoadDocumentPages } from '../../features/documents/loadDocumentPages';
@@ -216,7 +217,14 @@ export async function runPilot(store: Store, deps: PilotServiceDeps): Promise<vo
     return;
   }
   const { selectedStudyIds, model, selectedFieldIds } = state.pilot;
-  if (selectedStudyIds.length < 1 || selectedStudyIds.length > 3) {
+  // 除外済み study は候補から外して検証する（issue #181 PR レビュー対応）。
+  // S6/S7 表示後に S3 で除外されると selectedStudyIds に除外済み ID が残るため
+  const candidates = buildExtractionCandidates(
+    state.documents.studies ?? [],
+    state.documents.records ?? [],
+  );
+  const targetStudyIds = effectiveStudyIds(candidates, selectedStudyIds);
+  if (targetStudyIds.length < 1 || targetStudyIds.length > 3) {
     patchPilot(store, { runError: t('pilot.errStudies') });
     return;
   }
@@ -247,7 +255,7 @@ export async function runPilot(store: Store, deps: PilotServiceDeps): Promise<vo
   try {
     // 選択 study の全文書を連結対象にする（study 単位抽出。§4.3）
     const selection = await resolveStudies(store, deps, project.spreadsheetId);
-    const targets = documentsForStudies(selection, selectedStudyIds);
+    const targets = documentsForStudies(selection, targetStudyIds);
     const { text: protocolContext } = await resolveProtocol(store, deps, project.spreadsheetId);
 
     // logs/llm フォルダを名前で解決（プロジェクト生成時に作成済み。Meta はトップフォルダ ID のみ保持）

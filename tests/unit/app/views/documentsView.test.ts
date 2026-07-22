@@ -840,6 +840,48 @@ describe('renderDocumentsView: 文献除外機能', () => {
     expect(callbacks.onRestoreDocument).toHaveBeenCalledWith('doc-1');
   });
 
+  test('除外済み一覧はメモ（exclusionNote）を表示する（issue #181 PR レビュー対応）', () => {
+    const { ctx } = makeCtx();
+    const view = mount(
+      renderDocumentsView(
+        makeState({
+          records: [
+            makeDoc({
+              documentId: 'doc-1',
+              excluded: true,
+              exclusionReason: 'duplicate',
+              exclusionNote: '別コホートの重複報告',
+            }),
+          ],
+          studies: [makeStudy()],
+        }),
+        ctx,
+      ),
+    );
+    expect(view.querySelector('.documents__doc-note')?.textContent).toBe('別コホートの重複報告');
+  });
+
+  test('exclusionNote が null の除外済み文書は「–」を表示する', () => {
+    const { ctx } = makeCtx();
+    const view = mount(
+      renderDocumentsView(
+        makeState({
+          records: [
+            makeDoc({
+              documentId: 'doc-1',
+              excluded: true,
+              exclusionReason: 'duplicate',
+              exclusionNote: null,
+            }),
+          ],
+          studies: [makeStudy()],
+        }),
+        ctx,
+      ),
+    );
+    expect(view.querySelector('.documents__doc-note')?.textContent).toBe('–');
+  });
+
   test('exclusionDialog が null なら描画しない', () => {
     const { ctx } = makeCtx();
     const view = renderDocumentsView(makeState({ records: [makeDoc()], studies: [makeStudy()] }), ctx);

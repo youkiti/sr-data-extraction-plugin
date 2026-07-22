@@ -240,6 +240,7 @@ export const en: Record<MessageKey, string> = {
   'documents.excludedSectionSummary': 'Excluded ({n})',
   'documents.excludedReasonUnset': 'No reason entered',
   'documents.headReason': 'Exclusion reason',
+  'documents.headNote': 'Note',
   'documents.headActions': 'Actions',
   'documents.exclusionDialogTitleStudy': 'Exclude this study from extraction candidates?',
   'documents.exclusionDialogTitleDocument': 'Exclude this document from extraction candidates?',

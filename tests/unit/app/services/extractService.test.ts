@@ -585,6 +585,7 @@ describe('resetExtractFieldSelection / toggleExtractField / toggleExtractFieldSe
 describe('requestExtractRun / cancelExtractConfirm', () => {
   test('検証を通れば確認カードを開く（runError はクリア）', async () => {
     const store = makeStore({
+      documents: [makeDocument()],
       fields: [makeField()],
       extract: { selectedStudyIds: ['study-doc-1'], model: 'gemini-test', runError: '前回のエラー' },
     });
@@ -615,6 +616,7 @@ describe('requestExtractRun / cancelExtractConfirm', () => {
     expect(noSelection.getState().extract.runError).toContain('対象 study を 1 件以上');
 
     const noFieldsSelected = makeStore({
+      documents: [makeDocument()],
       fields: [makeField()],
       extract: { selectedStudyIds: ['study-doc-1'], selectedFieldIds: [] },
     });
@@ -622,6 +624,7 @@ describe('requestExtractRun / cancelExtractConfirm', () => {
     expect(noFieldsSelected.getState().extract.runError).toContain('抽出項目を 1 つ以上選択してください');
 
     const noModel = makeStore({
+      documents: [makeDocument()],
       fields: [makeField()],
       extract: { selectedStudyIds: ['study-doc-1'], model: '' },
     });
@@ -629,12 +632,24 @@ describe('requestExtractRun / cancelExtractConfirm', () => {
     expect(noModel.getState().extract.runError).toContain('モデルを選択してください');
 
     const noKey = makeStore({
+      documents: [makeDocument()],
       fields: [makeField()],
       extract: { selectedStudyIds: ['study-doc-1'], model: 'gemini-test' },
     });
     await requestExtractRun(noKey, makeDeps({ loadApiKey: jest.fn().mockResolvedValue(null) }));
     expect(noKey.getState().extract.runError).toContain('Gemini API キーが未設定です');
     expect(noKey.getState().extract.confirming).toBe(false);
+  });
+
+  test('選択済み study が全て抽出候補から除外されている場合もエラー（issue #181 PR レビュー対応）', async () => {
+    const store = makeStore({
+      documents: [makeDocument({ documentId: 'doc-1', excluded: true })],
+      fields: [makeField()],
+      extract: { selectedStudyIds: ['study-doc-1'], model: 'gemini-test' },
+    });
+    await requestExtractRun(store, makeDeps());
+    expect(store.getState().extract.runError).toContain('対象 study を 1 件以上');
+    expect(store.getState().extract.confirming).toBe(false);
   });
 
   test('キャンセルで確認カードを閉じる', () => {
@@ -746,6 +761,28 @@ describe('runExtract', () => {
     ];
     // study-doc-1（除外済み文書のみ）は候補から消えるため対象に含まれない
     expect(params.documents.map((doc) => doc.documentId)).toEqual(['doc-2']);
+  });
+
+  test('確認カード表示後に選択済み study が全て候補から外れていた場合、performRun を呼ばず errNoStudies を返す（issue #181 PR レビュー対応）', async () => {
+    // 確認カードを開いた後、実行するボタンを押すまでの間に別タブ等で選択済み study の文書が
+    // 全部除外された、という稀な競合ケースを模す
+    const store = makeStore({
+      documents: [makeDocument({ documentId: 'doc-1', excluded: true, exclusionReason: 'duplicate' })],
+      fields: [makeField()],
+      extract: {
+        selectedStudyIds: ['study-doc-1'],
+        model: 'gemini-test',
+        confirming: true,
+        extractedStudyIds: [],
+      },
+    });
+    await runExtract(store, makeDeps());
+
+    expect(runExtractionMock).not.toHaveBeenCalled();
+    const state = store.getState();
+    expect(state.extract.running).toBe(false);
+    expect(state.extract.confirming).toBe(false);
+    expect(state.extract.runError).toContain('対象 study を 1 件以上');
   });
 
   test('高精度読み取りモード（issue #176）: チェック時は highAccuracyImages: true を渡し、lastRunHighAccuracyImages に確定値を保持する', async () => {

@@ -7,6 +7,7 @@ import {
   areAllUnextractedStudiesSelected,
   buildExtractionCandidates,
   documentsForStudies,
+  effectiveStudyIds,
   selectableUnextractedStudyIds,
   type StudySelectionItem,
 } from '../../features/documents/studySelection';
@@ -342,7 +343,7 @@ function renderConfirm(state: AppState, ctx: ViewContext): HTMLElement {
       el('h4', { id: 'extract-confirm-title', text: t('extract.confirmTitle') }),
       el('p', {
         text: t('extract.confirmBody', {
-          count: state.extract.selectedStudyIds.length,
+          count: effectiveStudyIds(selectionOf(state), state.extract.selectedStudyIds).length,
           model: state.extract.model,
         }),
       }),
