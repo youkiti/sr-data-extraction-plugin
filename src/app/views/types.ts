@@ -175,6 +175,8 @@ export interface PilotViewCallbacks {
 export interface ExtractViewCallbacks {
   /** 対象 study チェックボックスの切替（上限なし） */
   onToggleStudy(studyId: string, selected: boolean): void;
+  /** study 選択チェックリストの全選択（未抽出のみ）/ 全解除トグル（issue #180） */
+  onToggleAllStudies(unextractedStudyIds: readonly string[], selected: boolean): void;
   /** requested_model の変更 */
   onChangeModel(model: string): void;
   /** 抽出対象フィールドのチェックリスト（issue #80）: 単一項目の切替 */

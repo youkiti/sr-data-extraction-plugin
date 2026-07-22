@@ -2059,6 +2059,17 @@ describe('bootstrapApp: #/extract', () => {
     checkbox.checked = true;
     checkbox.dispatchEvent(new Event('change'));
 
+    // 全選択/全解除トグルの配線（issue #180）: 未抽出（study-1）が選択済みのため「全解除」表示
+    const toggleAll = document.getElementById('extract-studies-toggle') as HTMLButtonElement;
+    expect(toggleAll.textContent).toBe('全解除');
+    toggleAll.click();
+    expect(store?.getState().extract.selectedStudyIds).toEqual([]);
+    // 再度クリックして未抽出（study-1）を選び直し、以降のフローへの影響を残さない
+    const toggleAllAgain = document.getElementById('extract-studies-toggle') as HTMLButtonElement;
+    expect(toggleAllAgain.textContent).toBe('未抽出をすべて選択');
+    toggleAllAgain.click();
+    expect(store?.getState().extract.selectedStudyIds).toEqual(['study-1']);
+
     // モデル変更の配線（プルダウン → store）
     const model = document.getElementById('extract-model') as HTMLSelectElement;
     model.value = 'gemini-2.0-flash';

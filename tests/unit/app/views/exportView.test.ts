@@ -110,6 +110,7 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<ExportViewCallbac
       },
       extract: {
         onToggleStudy: jest.fn(),
+        onToggleAllStudies: jest.fn(),
         onChangeModel: jest.fn(),
         onToggleField: jest.fn(),
         onToggleFieldSection: jest.fn(),
