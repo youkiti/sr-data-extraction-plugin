@@ -4,8 +4,10 @@
 import type { DocumentRecord } from '../../domain/document';
 import type { RunWarning } from '../../domain/extractionRun';
 import {
+  areAllUnextractedStudiesSelected,
   buildStudySelection,
   documentsForStudies,
+  selectableUnextractedStudyIds,
   type StudySelectionItem,
 } from '../../features/documents/studySelection';
 import type { StudyRecord } from '../../domain/study';
@@ -133,7 +135,38 @@ function renderStudySelector(state: AppState, ctx: ViewContext): HTMLElement {
       text: t('extraction.noStudies'),
     });
   }
-  return el('ul', { id: 'extract-studies', className: 'extract__studies' }, items);
+  // 全選択トグル（issue #180）: 対象は未抽出 study のみ。抽出済みの個別選択は維持する
+  const unextractedIds = selectableUnextractedStudyIds(
+    selection,
+    state.extract.extractedStudyIds as readonly string[],
+  );
+  const extractedCount = selection.length - unextractedIds.length;
+  const allUnextractedSelected = areAllUnextractedStudiesSelected(
+    unextractedIds,
+    state.extract.selectedStudyIds,
+  );
+  const toggle = el('button', {
+    id: 'extract-studies-toggle',
+    className: 'extract__studies-toggle',
+    text: allUnextractedSelected ? t('extract.deselectAllStudies') : t('extract.selectAllUnextracted'),
+    attributes: { type: 'button' },
+  });
+  toggle.addEventListener('click', () =>
+    ctx.extract.onToggleAllStudies(unextractedIds, !allUnextractedSelected),
+  );
+  const toolbarChildren: HTMLElement[] = [toggle];
+  if (extractedCount > 0) {
+    toolbarChildren.push(
+      el('span', {
+        id: 'extract-studies-note',
+        className: 'extract__studies-note',
+        text: t('extract.studiesExtractedExcluded', { n: extractedCount }),
+      }),
+    );
+  }
+  const toolbar = el('div', { className: 'extract__studies-toolbar' }, toolbarChildren);
+  const list = el('ul', { id: 'extract-studies', className: 'extract__studies' }, items);
+  return el('div', { className: 'extract__study-selector' }, [toolbar, list]);
 }
 
 function renderEstimate(state: AppState): HTMLElement {
