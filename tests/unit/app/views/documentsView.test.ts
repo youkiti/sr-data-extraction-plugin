@@ -43,6 +43,10 @@ function makeDoc(overrides: Partial<DocumentRecord> = {}): DocumentRecord {
     importedAt: '2026-07-02T00:00:00Z',
     importedBy: 'tester@example.com',
     note: null,
+    excluded: false,
+    exclusionReason: null,
+    exclusionNote: null,
+    excludedAt: null,
     ...overrides,
   };
 }
@@ -70,6 +74,13 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<DocumentsViewCall
     onTiabGrantAccess: jest.fn(),
     onTiabHandoffImport: jest.fn(),
     onTiabHandoffDismiss: jest.fn(),
+    onOpenExcludeStudy: jest.fn(),
+    onOpenExcludeDocument: jest.fn(),
+    onUpdateExclusionDialog: jest.fn(),
+    onCancelExclusion: jest.fn(),
+    onConfirmExclusion: jest.fn(),
+    onRestoreStudy: jest.fn(),
+    onRestoreDocument: jest.fn(),
   };
   return {
     ctx: {
@@ -724,6 +735,284 @@ describe('renderDocumentsView', () => {
   });
 });
 
+// 文献除外機能（issue #181）
+describe('renderDocumentsView: 文献除外機能', () => {
+  test('アクティブ文書ありの study: 除外ボタンを表示し、クリックで onOpenExcludeStudy(studyId) を呼ぶ', () => {
+    const { ctx, callbacks } = makeCtx();
+    const view = mount(
+      renderDocumentsView(makeState({ records: [makeDoc()], studies: [makeStudy()] }), ctx),
+    );
+    const button = view.querySelector('.documents__exclude-study') as HTMLButtonElement;
+    expect(button).not.toBeNull();
+    expect(button.textContent).toBe('この study を除外');
+    expect(view.querySelector('.documents__restore-study')).toBeNull();
+    expect(view.querySelector('.documents__all-excluded-note')).toBeNull();
+
+    button.click();
+    expect(callbacks.onOpenExcludeStudy).toHaveBeenCalledWith('study-1');
+  });
+
+  test('全文書除外済みの study: 除外ボタンの代わりに解除ボタン + 全除外注記を表示し、アクティブテーブルは出さない', () => {
+    const { ctx, callbacks } = makeCtx();
+    const view = mount(
+      renderDocumentsView(
+        makeState({
+          records: [makeDoc({ excluded: true, exclusionReason: 'duplicate' })],
+          studies: [makeStudy()],
+        }),
+        ctx,
+      ),
+    );
+    expect(view.querySelector('.documents__exclude-study')).toBeNull();
+    const restore = view.querySelector('.documents__restore-study') as HTMLButtonElement;
+    expect(restore).not.toBeNull();
+    expect(restore.textContent).toBe('study の除外を解除');
+    expect(view.querySelector('.documents__all-excluded-note')?.textContent).toContain(
+      'すべて除外されています',
+    );
+    // アクティブ文書テーブル自体を出さない（除外済みのみ）
+    expect(view.querySelector('.documents__docs-table:not(.documents__docs-table--excluded)')).toBeNull();
+
+    restore.click();
+    expect(callbacks.onRestoreStudy).toHaveBeenCalledWith('study-1');
+  });
+
+  test('アクティブ文書行に除外ボタンを表示し、クリックで onOpenExcludeDocument(documentId) を呼ぶ', () => {
+    const { ctx, callbacks } = makeCtx();
+    const view = mount(
+      renderDocumentsView(makeState({ records: [makeDoc()], studies: [makeStudy()] }), ctx),
+    );
+    const button = view.querySelector('.documents__exclude-doc') as HTMLButtonElement;
+    expect(button).not.toBeNull();
+    expect(button.textContent).toBe('除外');
+    button.click();
+    expect(callbacks.onOpenExcludeDocument).toHaveBeenCalledWith('doc-1');
+  });
+
+  test('除外済みは既定折りたたみの details に件数付きで表示し、活動中の文書とは分けて出す', () => {
+    const { ctx } = makeCtx();
+    const view = mount(
+      renderDocumentsView(
+        makeState({
+          records: [
+            makeDoc({ documentId: 'doc-1', filename: 'active.pdf' }),
+            makeDoc({
+              documentId: 'doc-2',
+              filename: 'excluded.pdf',
+              excluded: true,
+              exclusionReason: 'duplicate',
+            }),
+          ],
+          studies: [makeStudy()],
+        }),
+        ctx,
+      ),
+    );
+    const details = view.querySelector('.documents__excluded') as HTMLDetailsElement;
+    expect(details).not.toBeNull();
+    expect(details.open).toBe(false);
+    expect(details.querySelector('summary')?.textContent).toBe('除外済み (1)');
+    // アクティブ側の filename には excluded.pdf は出ない
+    expect(
+      Array.from(view.querySelectorAll('.documents__docs-table:not(.documents__docs-table--excluded) .documents__doc-filename')).map((n) => n.textContent),
+    ).toEqual(['active.pdf']);
+    expect(details.querySelector('.documents__doc-filename')?.textContent).toBe('excluded.pdf');
+    expect(details.querySelector('.documents__doc-reason')?.textContent).toBe('重複');
+  });
+
+  test('除外理由未入力の除外済み文書は「理由未入力」を表示し、解除ボタンで onRestoreDocument(documentId) を呼ぶ', () => {
+    const { ctx, callbacks } = makeCtx();
+    const view = mount(
+      renderDocumentsView(
+        makeState({
+          records: [
+            makeDoc({ documentId: 'doc-1', excluded: true, exclusionReason: null }),
+          ],
+          studies: [makeStudy()],
+        }),
+        ctx,
+      ),
+    );
+    expect(view.querySelector('.documents__doc-reason')?.textContent).toBe('理由未入力');
+    const restore = view.querySelector('.documents__restore-doc') as HTMLButtonElement;
+    expect(restore.textContent).toBe('解除');
+    restore.click();
+    expect(callbacks.onRestoreDocument).toHaveBeenCalledWith('doc-1');
+  });
+
+  test('除外済み一覧はメモ（exclusionNote）を表示する（issue #181 PR レビュー対応）', () => {
+    const { ctx } = makeCtx();
+    const view = mount(
+      renderDocumentsView(
+        makeState({
+          records: [
+            makeDoc({
+              documentId: 'doc-1',
+              excluded: true,
+              exclusionReason: 'duplicate',
+              exclusionNote: '別コホートの重複報告',
+            }),
+          ],
+          studies: [makeStudy()],
+        }),
+        ctx,
+      ),
+    );
+    expect(view.querySelector('.documents__doc-note')?.textContent).toBe('別コホートの重複報告');
+  });
+
+  test('exclusionNote が null の除外済み文書は「–」を表示する', () => {
+    const { ctx } = makeCtx();
+    const view = mount(
+      renderDocumentsView(
+        makeState({
+          records: [
+            makeDoc({
+              documentId: 'doc-1',
+              excluded: true,
+              exclusionReason: 'duplicate',
+              exclusionNote: null,
+            }),
+          ],
+          studies: [makeStudy()],
+        }),
+        ctx,
+      ),
+    );
+    expect(view.querySelector('.documents__doc-note')?.textContent).toBe('–');
+  });
+
+  test('exclusionDialog が null なら描画しない', () => {
+    const { ctx } = makeCtx();
+    const view = renderDocumentsView(makeState({ records: [makeDoc()], studies: [makeStudy()] }), ctx);
+    expect(view.querySelector('#exclusion-dialog')).toBeNull();
+  });
+
+  test('除外ダイアログ（study scope）: タイトル・本文・ヒント文を表示し、理由未選択で確定ボタンが無効', () => {
+    const { ctx, callbacks } = makeCtx();
+    const view = mount(
+      renderDocumentsView(
+        makeState({
+          exclusionDialog: {
+            scope: 'study',
+            targetId: 'study-1',
+            targetLabel: 'Smith 2020',
+            reason: null,
+            note: '',
+          },
+        }),
+        ctx,
+      ),
+    );
+    const dialog = view.querySelector('#exclusion-dialog');
+    expect(dialog?.getAttribute('role')).toBe('alertdialog');
+    expect(dialog?.getAttribute('aria-labelledby')).toBe('exclusion-dialog-title');
+    expect(view.querySelector('#exclusion-dialog-title')?.textContent).toBe(
+      'study を抽出候補から除外しますか？',
+    );
+    expect(dialog?.textContent).toContain('「Smith 2020」を抽出候補から除外します。');
+    expect(view.querySelector('#exclusion-reason-hint')?.textContent).toBe(
+      'study 単位の除外は理由の選択が必須です。',
+    );
+    expect((view.querySelector('#exclusion-confirm') as HTMLButtonElement).disabled).toBe(true);
+
+    const select = view.querySelector('#exclusion-reason') as HTMLSelectElement;
+    expect(select.value).toBe('');
+    const options = Array.from(select.querySelectorAll('option'));
+    expect(options.map((o) => o.getAttribute('value'))).toEqual([
+      '',
+      'ineligible',
+      'duplicate',
+      'mis_imported',
+      'on_hold',
+      'other',
+    ]);
+    expect(options[0]?.textContent).toBe('（理由を選択）');
+    expect(options[2]?.textContent).toBe('重複');
+
+    select.value = 'duplicate';
+    select.dispatchEvent(new Event('change'));
+    expect(callbacks.onUpdateExclusionDialog).toHaveBeenCalledWith({ reason: 'duplicate' });
+
+    const note = view.querySelector('#exclusion-note') as HTMLTextAreaElement;
+    note.value = '重複のため';
+    note.dispatchEvent(new Event('input'));
+    expect(callbacks.onUpdateExclusionDialog).toHaveBeenCalledWith({ note: '重複のため' });
+
+    (view.querySelector('#exclusion-cancel') as HTMLButtonElement).click();
+    expect(callbacks.onCancelExclusion).toHaveBeenCalledTimes(1);
+  });
+
+  test('除外ダイアログ（study scope）: 理由選択済みなら確定ボタンが有効になり、クリックで onConfirmExclusion を呼ぶ', () => {
+    const { ctx, callbacks } = makeCtx();
+    const view = mount(
+      renderDocumentsView(
+        makeState({
+          exclusionDialog: {
+            scope: 'study',
+            targetId: 'study-1',
+            targetLabel: 'Smith 2020',
+            reason: 'duplicate',
+            note: '',
+          },
+        }),
+        ctx,
+      ),
+    );
+    const confirm = view.querySelector('#exclusion-confirm') as HTMLButtonElement;
+    expect(confirm.disabled).toBe(false);
+    const select = view.querySelector('#exclusion-reason') as HTMLSelectElement;
+    expect(select.value).toBe('duplicate');
+    confirm.click();
+    expect(callbacks.onConfirmExclusion).toHaveBeenCalledTimes(1);
+
+    // 選択を空へ戻すと reason: null で通知する
+    select.value = '';
+    select.dispatchEvent(new Event('change'));
+    expect(callbacks.onUpdateExclusionDialog).toHaveBeenCalledWith({ reason: null });
+  });
+
+  test('除外ダイアログ（document scope）: タイトルが文書向けで、理由未選択でも確定ボタンは有効', () => {
+    const { ctx } = makeCtx();
+    const view = renderDocumentsView(
+      makeState({
+        exclusionDialog: {
+          scope: 'document',
+          targetId: 'doc-1',
+          targetLabel: 'smith2020.pdf',
+          reason: null,
+          note: '',
+        },
+      }),
+      ctx,
+    );
+    expect(view.querySelector('#exclusion-dialog-title')?.textContent).toBe(
+      '文書を抽出候補から除外しますか？',
+    );
+    expect(view.querySelector('#exclusion-reason-hint')).toBeNull();
+    expect((view.querySelector('#exclusion-confirm') as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  test('除外ダイアログ: excluding 中は確定・キャンセルの両方を無効化する', () => {
+    const { ctx } = makeCtx();
+    const view = renderDocumentsView(
+      makeState({
+        exclusionDialog: {
+          scope: 'document',
+          targetId: 'doc-1',
+          targetLabel: 'smith2020.pdf',
+          reason: null,
+          note: '',
+        },
+        excluding: true,
+      }),
+      ctx,
+    );
+    expect((view.querySelector('#exclusion-confirm') as HTMLButtonElement).disabled).toBe(true);
+    expect((view.querySelector('#exclusion-cancel') as HTMLButtonElement).disabled).toBe(true);
+  });
+});
+
 // tiab-review 採用リスト取り込みカード（issue #68・ui-states.md §3）
 describe('renderDocumentsView: tiab-review 取り込みカード', () => {
   function tiabState(patch: Partial<TiabImportState> = {}): TiabImportState {
@@ -1099,5 +1388,42 @@ describe('renderDocumentsView（表示言語 en。issue #93）', () => {
     expect(errorView.querySelector('#documents-load-error')?.textContent).toBe(
       'Failed to load the list: HTTP 500',
     );
+  });
+
+  // 除外理由ラベルも role option（documents.roleArticle 等）と同じ i18n 経由にした（issue #181 修正）
+  test('除外理由ラベル（除外済みセクション + 除外ダイアログの select）も en で描画される', () => {
+    setUiLanguage('en');
+    const { ctx } = makeCtx();
+    const excludedView = renderDocumentsView(
+      makeState({
+        records: [makeDoc({ excluded: true, exclusionReason: 'duplicate' })],
+        studies: [makeStudy()],
+      }),
+      ctx,
+    );
+    expect(excludedView.querySelector('.documents__doc-reason')?.textContent).toBe('Duplicate');
+
+    const dialogView = renderDocumentsView(
+      makeState({
+        exclusionDialog: {
+          scope: 'study',
+          targetId: 'study-1',
+          targetLabel: 'Smith 2020',
+          reason: null,
+          note: '',
+        },
+      }),
+      ctx,
+    );
+    const select = dialogView.querySelector('#exclusion-reason') as HTMLSelectElement;
+    const options = Array.from(select.querySelectorAll('option'));
+    expect(options.map((o) => o.textContent)).toEqual([
+      '(Select a reason)',
+      'Determined ineligible',
+      'Duplicate',
+      'Imported by mistake',
+      'On hold',
+      'Other (add free text)',
+    ]);
   });
 });

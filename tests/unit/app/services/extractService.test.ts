@@ -94,6 +94,10 @@ function makeDocument(overrides: Partial<DocumentRecord> = {}): DocumentRecord {
     importedAt: 't0',
     importedBy: 'me@example.com',
     note: null,
+    excluded: false,
+    exclusionReason: null,
+    exclusionNote: null,
+    excludedAt: null,
     ...overrides,
   };
 }
@@ -462,6 +466,17 @@ describe('initExtractSelection', () => {
     initExtractSelection(noRuns);
     expect(noRuns.getState().extract.selectionInitialized).toBe(false);
   });
+
+  test('除外文書は既定選択の候補から外れる（issue #181。全除外 study は候補ごと消え、一部除外は残る）', () => {
+    const docs = [
+      makeDocument({ documentId: 'd1' }),
+      makeDocument({ documentId: 'd2', excluded: true, exclusionReason: 'ineligible' }),
+      makeDocument({ documentId: 'd3' }),
+    ];
+    const store = makeStore({ documents: docs, extract: { extractedStudyIds: [] } });
+    initExtractSelection(store);
+    expect(store.getState().extract.selectedStudyIds).toEqual([studyIdOf('d1'), studyIdOf('d3')]);
+  });
 });
 
 describe('toggleExtractStudy / setExtractModel', () => {
@@ -570,6 +585,7 @@ describe('resetExtractFieldSelection / toggleExtractField / toggleExtractFieldSe
 describe('requestExtractRun / cancelExtractConfirm', () => {
   test('検証を通れば確認カードを開く（runError はクリア）', async () => {
     const store = makeStore({
+      documents: [makeDocument()],
       fields: [makeField()],
       extract: { selectedStudyIds: ['study-doc-1'], model: 'gemini-test', runError: '前回のエラー' },
     });
@@ -600,6 +616,7 @@ describe('requestExtractRun / cancelExtractConfirm', () => {
     expect(noSelection.getState().extract.runError).toContain('対象 study を 1 件以上');
 
     const noFieldsSelected = makeStore({
+      documents: [makeDocument()],
       fields: [makeField()],
       extract: { selectedStudyIds: ['study-doc-1'], selectedFieldIds: [] },
     });
@@ -607,6 +624,7 @@ describe('requestExtractRun / cancelExtractConfirm', () => {
     expect(noFieldsSelected.getState().extract.runError).toContain('抽出項目を 1 つ以上選択してください');
 
     const noModel = makeStore({
+      documents: [makeDocument()],
       fields: [makeField()],
       extract: { selectedStudyIds: ['study-doc-1'], model: '' },
     });
@@ -614,12 +632,24 @@ describe('requestExtractRun / cancelExtractConfirm', () => {
     expect(noModel.getState().extract.runError).toContain('モデルを選択してください');
 
     const noKey = makeStore({
+      documents: [makeDocument()],
       fields: [makeField()],
       extract: { selectedStudyIds: ['study-doc-1'], model: 'gemini-test' },
     });
     await requestExtractRun(noKey, makeDeps({ loadApiKey: jest.fn().mockResolvedValue(null) }));
     expect(noKey.getState().extract.runError).toContain('Gemini API キーが未設定です');
     expect(noKey.getState().extract.confirming).toBe(false);
+  });
+
+  test('選択済み study が全て抽出候補から除外されている場合もエラー（issue #181 PR レビュー対応）', async () => {
+    const store = makeStore({
+      documents: [makeDocument({ documentId: 'doc-1', excluded: true })],
+      fields: [makeField()],
+      extract: { selectedStudyIds: ['study-doc-1'], model: 'gemini-test' },
+    });
+    await requestExtractRun(store, makeDeps());
+    expect(store.getState().extract.runError).toContain('対象 study を 1 件以上');
+    expect(store.getState().extract.confirming).toBe(false);
   });
 
   test('キャンセルで確認カードを閉じる', () => {
@@ -707,6 +737,52 @@ describe('runExtract', () => {
         detail: null,
       },
     ]);
+  });
+
+  test('除外文書は抽出対象から外れる（issue #181）: 除外 study を選択していても対象文書が渡らない', async () => {
+    const store = makeStore({
+      documents: [
+        makeDocument({ documentId: 'doc-1', excluded: true, exclusionReason: 'duplicate' }),
+        makeDocument({ documentId: 'doc-2' }),
+      ],
+      fields: [makeField()],
+      extract: {
+        selectedStudyIds: ['study-doc-1', 'study-doc-2'],
+        model: 'gemini-test',
+        confirming: true,
+        extractedStudyIds: [],
+      },
+    });
+    runExtractionMock.mockResolvedValue(makeOutcome());
+    await runExtract(store, makeDeps());
+
+    const [params] = runExtractionMock.mock.calls[0] as unknown as [
+      Parameters<typeof runExtraction>[0],
+    ];
+    // study-doc-1（除外済み文書のみ）は候補から消えるため対象に含まれない
+    expect(params.documents.map((doc) => doc.documentId)).toEqual(['doc-2']);
+  });
+
+  test('確認カード表示後に選択済み study が全て候補から外れていた場合、performRun を呼ばず errNoStudies を返す（issue #181 PR レビュー対応）', async () => {
+    // 確認カードを開いた後、実行するボタンを押すまでの間に別タブ等で選択済み study の文書が
+    // 全部除外された、という稀な競合ケースを模す
+    const store = makeStore({
+      documents: [makeDocument({ documentId: 'doc-1', excluded: true, exclusionReason: 'duplicate' })],
+      fields: [makeField()],
+      extract: {
+        selectedStudyIds: ['study-doc-1'],
+        model: 'gemini-test',
+        confirming: true,
+        extractedStudyIds: [],
+      },
+    });
+    await runExtract(store, makeDeps());
+
+    expect(runExtractionMock).not.toHaveBeenCalled();
+    const state = store.getState();
+    expect(state.extract.running).toBe(false);
+    expect(state.extract.confirming).toBe(false);
+    expect(state.extract.runError).toContain('対象 study を 1 件以上');
   });
 
   test('高精度読み取りモード（issue #176）: チェック時は highAccuracyImages: true を渡し、lastRunHighAccuracyImages に確定値を保持する', async () => {
@@ -1079,6 +1155,22 @@ describe('retryExtractStudy', () => {
     await retryExtractStudy(store, makeDeps(), 'study-doc-2');
     // 他 study の警告は残し、study-doc-2 の古い警告だけが新しい結果で置き換わる
     expect(store.getState().extract.armWarnings).toEqual([otherWarning, newWarning]);
+  });
+
+  test('除外文書は再試行の対象からも外れる（issue #181）: 対象 study の文書が全除外なら見つからない扱い', async () => {
+    const store = makeFailedStore();
+    store.setState({
+      documents: {
+        ...store.getState().documents,
+        records: [
+          makeDocument({ documentId: 'doc-1' }),
+          makeDocument({ documentId: 'doc-2', excluded: true, exclusionReason: 'duplicate' }),
+        ],
+      },
+    });
+    await retryExtractStudy(store, makeDeps(), 'study-doc-2');
+    expect(store.getState().extract.runError).toContain('study-doc-2 の文書が見つかりません');
+    expect(runExtractionMock).not.toHaveBeenCalled();
   });
 
   test('study が見つからない・実行例外は対象行を失敗に戻して runError を出す', async () => {

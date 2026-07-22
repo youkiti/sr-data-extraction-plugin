@@ -46,6 +46,33 @@ export const DOCUMENT_ROLE_LABELS: Record<DocumentRole, string> = {
   other: 'その他',
 };
 
+/**
+ * 除外理由（issue #181: 文献除外機能）。
+ * ineligible（対象外と判明）/ duplicate（重複）/ mis_imported（誤って取り込んだ）/
+ * on_hold（保留）/ other（その他・自由記述で補足）
+ */
+export type ExclusionReason = 'ineligible' | 'duplicate' | 'mis_imported' | 'on_hold' | 'other';
+
+/**
+ * exclusionReason の固定順（issue #181）。S3 のプルダウン表示等で共有する唯一の定義
+ */
+export const EXCLUSION_REASON_ORDER: readonly ExclusionReason[] = [
+  'ineligible',
+  'duplicate',
+  'mis_imported',
+  'on_hold',
+  'other',
+];
+
+/** exclusionReason の日本語表示ラベル（issue #181） */
+export const EXCLUSION_REASON_LABELS: Record<ExclusionReason, string> = {
+  ineligible: '対象外と判明（不適格）',
+  duplicate: '重複',
+  mis_imported: '誤って取り込んだ',
+  on_hold: '保留',
+  other: 'その他（自由記述で補足）',
+};
+
 /** 1 行 = 1 文書（PDF）。試験への所属は study_id で表す */
 export interface DocumentRecord {
   documentId: string;
@@ -71,4 +98,12 @@ export interface DocumentRecord {
   importedAt: string;
   importedBy: string;
   note: string | null;
+  /** 抽出候補から除外中か（true=除外中）。issue #181。解除で false に戻す */
+  excluded: boolean;
+  /** 直近の除外理由（issue #181）。解除後も残す */
+  exclusionReason: ExclusionReason | null;
+  /** 除外の自由記述（issue #181）。解除後も残す */
+  exclusionNote: string | null;
+  /** 直近の除外操作日時（ISO。issue #181）。解除後も残す */
+  excludedAt: string | null;
 }

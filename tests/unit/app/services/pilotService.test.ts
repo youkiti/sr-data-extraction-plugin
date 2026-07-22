@@ -172,6 +172,10 @@ function makeDocument(overrides: Partial<DocumentRecord> = {}): DocumentRecord {
     importedAt: 't0',
     importedBy: ME,
     note: null,
+    excluded: false,
+    exclusionReason: null,
+    exclusionNote: null,
+    excludedAt: null,
     ...overrides,
   };
 }
@@ -425,6 +429,17 @@ describe('initPilotSelection', () => {
     initPilotSelection(store);
     expect(store.getState().pilot.model).toBe('user-model');
   });
+
+  test('除外文書は既定選択の候補から外れる（issue #181。全除外 study は候補ごと消え、一部除外は残る）', () => {
+    const docs = [
+      makeDocument({ documentId: 'd1' }), // 除外なし
+      makeDocument({ documentId: 'd2', excluded: true, exclusionReason: 'duplicate' }), // study 丸ごと除外
+      makeDocument({ documentId: 'd3' }),
+    ];
+    const store = makeStore({ documents: docs });
+    initPilotSelection(store);
+    expect(store.getState().pilot.selectedStudyIds).toEqual(['study-d1', 'study-d3']);
+  });
 });
 
 describe('togglePilotStudy / setPilotModel', () => {
@@ -645,6 +660,25 @@ describe('runPilot: 実行', () => {
     expect(getFileBinaryMock).toHaveBeenCalledTimes(1);
   });
 
+  test('除外文書は抽出対象から外れる（issue #181）: 除外 study を選択していても対象文書が渡らない', async () => {
+    const store = makeStore({
+      documents: [
+        makeDocument({ documentId: 'doc-1', excluded: true, exclusionReason: 'duplicate' }),
+        makeDocument({ documentId: 'doc-2' }),
+      ],
+      fields: [makeField()],
+      pilot: { selectedStudyIds: ['study-doc-1', 'study-doc-2'], model: 'gemini-test' },
+    });
+    runExtractionMock.mockResolvedValue(makeOutcome());
+    await runPilot(store, makeDeps());
+
+    const [params] = runExtractionMock.mock.calls[0] as unknown as [
+      Parameters<typeof runExtraction>[0],
+    ];
+    // study-doc-1（除外済み文書のみ）は候補から消えるため対象に含まれない
+    expect(params.documents.map((doc) => doc.documentId)).toEqual(['doc-2']);
+  });
+
   test('高精度読み取りモード（issue #176）: チェック時は highAccuracyImages: true を runExtraction へ渡す', async () => {
     const store = makeStore({
       documents: [makeDocument(), makeDocument({ documentId: 'doc-2' })],
@@ -765,29 +799,24 @@ describe('runPilot: 実行', () => {
     expect(store.getState().pilot.history?.map((run) => run.runId)).toEqual(['run-1']);
   });
 
-  test('documents / studies が未読込なら readDocuments / readStudies で解決する', async () => {
+  test('documents / studies が未読込（documents スライス未読込）なら、実行前の候補照合（issue #181 PR レビュー対応）で対象 0 件扱いとなりエラーになる', async () => {
+    // S6/S7 は通常 documents スライスを読み込んでから study を選択させるため、
+    // documents スライス未読込のまま selectedStudyIds が入っている状態は本来起こらないが、
+    // 起きた場合でも「候補との積集合」の検証で弾かれることを確認する（readDocuments/readStudies を
+    // 呼んで実行してしまわない）
     const store = makeStore({
       documents: null,
       studies: null,
       fields: [makeField()],
       pilot: { selectedStudyIds: ['study-doc-1'], model: 'gemini-test' },
     });
-    readDocumentsMock.mockResolvedValue([makeDocument()]);
-    readStudiesMock.mockResolvedValue([
-      {
-        studyId: 'study-doc-1',
-        studyLabel: 'label',
-        registrationId: null,
-        createdAt: 't0',
-        createdBy: ME,
-        note: null,
-      },
-    ]);
     runExtractionMock.mockResolvedValue(makeOutcome());
     await runPilot(store, makeDeps());
-    expect(readDocumentsMock).toHaveBeenCalledWith('sheet-1', expect.anything());
-    expect(readStudiesMock).toHaveBeenCalledWith('sheet-1', expect.anything());
-    expect(store.getState().pilot.run).not.toBeNull();
+    expect(readDocumentsMock).not.toHaveBeenCalled();
+    expect(readStudiesMock).not.toHaveBeenCalled();
+    expect(runExtractionMock).not.toHaveBeenCalled();
+    expect(store.getState().pilot.run).toBeNull();
+    expect(store.getState().pilot.runError).toContain('対象 study を 1〜3 件選択してください');
   });
 
   test('抽出対象が空（studyIds なし）なら検証読み込みをスキップする', async () => {
@@ -852,6 +881,35 @@ describe('loadPilotVerification', () => {
     const store = makeRanStore();
     await loadPilotVerification(store, makeDeps(), 'study-9');
     expect(store.getState().pilot.verifyError).toContain('study-9 が見つかりません');
+  });
+
+  test('documents / studies が未読込（documents スライス未読込）のときは readDocuments / readStudies で解決してから検証データ束を組み立てる', async () => {
+    const store = makeStore({
+      documents: null,
+      studies: null,
+      fields: [makeField()],
+      pilot: {
+        run: makeRun({ studyIds: ['study-doc-1'] }),
+        runFields: [makeField()],
+        evidence: [makeEvidence()],
+      },
+    });
+    readDocumentsMock.mockResolvedValue([makeDocument()]);
+    readStudiesMock.mockResolvedValue([
+      {
+        studyId: 'study-doc-1',
+        studyLabel: 'label',
+        registrationId: null,
+        createdAt: 't0',
+        createdBy: ME,
+        note: null,
+      },
+    ]);
+    await loadPilotVerification(store, makeDeps(), 'study-doc-1');
+    expect(readDocumentsMock).toHaveBeenCalledWith('sheet-1', expect.anything());
+    expect(readStudiesMock).toHaveBeenCalledWith('sheet-1', expect.anything());
+    expect(store.getState().pilot.verifyError).toBeNull();
+    expect(store.getState().pilot.verification?.study.studyId).toBe('study-doc-1');
   });
 
   test('検証データ束を組み立てる（当該 study の Evidence だけ / StudyData の自分の行）', async () => {

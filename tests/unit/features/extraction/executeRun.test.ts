@@ -88,6 +88,10 @@ function makeDocument(
     importedAt: '2026-07-01T00:00:00Z',
     importedBy: 'tester@example.com',
     note: null,
+    excluded: false,
+    exclusionReason: null,
+    exclusionNote: null,
+    excludedAt: null,
     ...overrides,
   };
 }

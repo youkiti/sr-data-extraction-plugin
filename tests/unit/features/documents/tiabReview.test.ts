@@ -69,6 +69,10 @@ function makeDoc(overrides: Partial<DocumentRecord> = {}): DocumentRecord {
     importedAt: '2026-07-02T00:00:00Z',
     importedBy: 'tester@example.com',
     note: null,
+    excluded: false,
+    exclusionReason: null,
+    exclusionNote: null,
+    excludedAt: null,
     ...overrides,
   };
 }

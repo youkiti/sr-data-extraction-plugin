@@ -67,6 +67,35 @@ export function documentsForStudies(
 }
 
 /**
+ * 除外文書（excluded=true）を除いた抽出候補の study 選択モデルを返す（issue #181）。
+ * 全文書が除外された study は候補から外れ、一部除外の study は残り文書で候補になる。
+ * buildStudySelection 自体は変更しない（S3 表示・検証・エクスポートは除外済みも見せるため）
+ */
+export function buildExtractionCandidates(
+  studies: readonly StudyRecord[],
+  records: readonly DocumentRecord[],
+): StudySelectionItem[] {
+  return buildStudySelection(
+    studies,
+    records.filter((doc) => !doc.excluded),
+  );
+}
+
+/**
+ * 選択 study_id 群を現在の抽出候補（buildExtractionCandidates の結果）との積集合に絞る。
+ * S6/S7 表示後に S3 で study/document を除外すると selectedStudyIds に除外済み ID が
+ * 残ったままになるため、検証・件数表示・進捗トラッカー・実行対象のすべてでこの関数を通した
+ * 値を使う（issue #181 PR レビュー対応）。selectedStudyIds の並び順を維持する。
+ */
+export function effectiveStudyIds(
+  candidates: readonly StudySelectionItem[],
+  selectedStudyIds: readonly string[],
+): string[] {
+  const candidateIds = new Set(candidates.map((item) => item.study.studyId));
+  return selectedStudyIds.filter((studyId) => candidateIds.has(studyId));
+}
+
+/**
  * 全選択トグル（issue #180）の対象となる「未抽出」study_id を選択リストの並び順で返す。
  * 抽出済み（extractedStudyIds に含まれる）study は対象外。
  */

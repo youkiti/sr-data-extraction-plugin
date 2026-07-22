@@ -9,8 +9,9 @@ import type { SchemaField } from '../../domain/schemaField';
 import { readDocuments } from '../../features/documents/documentRepository';
 import { readStudies } from '../../features/documents/studyRepository';
 import {
-  buildStudySelection,
+  buildExtractionCandidates,
   documentsForStudies,
+  effectiveStudyIds,
 } from '../../features/documents/studySelection';
 import { makeLoadDocumentPages } from '../../features/documents/loadDocumentPages';
 import { makeLoadDocumentPageImages } from '../../features/documents/loadDocumentPageImages';
@@ -230,8 +231,8 @@ export function initExtractSelection(store: Store): void {
     return;
   }
   const extracted = new Set(extract.extractedStudyIds);
-  // ガードで documents.records / studies は非 null
-  const defaults = buildStudySelection(documents.studies, documents.records)
+  // ガードで documents.records / studies は非 null。除外文書は既定選択の候補から外す（issue #181）
+  const defaults = buildExtractionCandidates(documents.studies, documents.records)
     .filter((item) => !extracted.has(item.study.studyId))
     .map((item) => item.study.studyId);
   patchExtract(store, {
@@ -286,7 +287,7 @@ export function setExtractModel(store: Store, model: string): void {
  * 実行自体は confirmExtractRun が行う（確認を経ずに実行は始まらない — ui-states.md §3）
  */
 export async function requestExtractRun(store: Store, deps: ExtractServiceDeps): Promise<void> {
-  const { extract, schema } = store.getState();
+  const { extract, schema, documents } = store.getState();
   if (extract.running || extract.retryingStudyId !== null) {
     return;
   }
@@ -296,7 +297,10 @@ export async function requestExtractRun(store: Store, deps: ExtractServiceDeps):
     });
     return;
   }
-  if (extract.selectedStudyIds.length === 0) {
+  // 除外済み study は候補から外して検証する（issue #181 PR レビュー対応）。
+  // S6/S7 表示後に S3 で除外されると selectedStudyIds に除外済み ID が残るため
+  const candidates = buildExtractionCandidates(documents.studies ?? [], documents.records ?? []);
+  if (effectiveStudyIds(candidates, extract.selectedStudyIds).length === 0) {
     patchExtract(store, { runError: t('extract.errNoStudies') });
     return;
   }
@@ -469,8 +473,17 @@ export async function runExtract(store: Store, deps: ExtractServiceDeps): Promis
   try {
     const records = await resolveDocuments(store, deps.google, project.spreadsheetId);
     const studies = await resolveStudies(store, deps.google, project.spreadsheetId);
-    const studyIds = [...state.extract.selectedStudyIds];
-    const targets = documentsForStudies(buildStudySelection(studies, records), studyIds);
+    // 除外文書は抽出対象から外す（issue #181）
+    const candidates = buildExtractionCandidates(studies, records);
+    // 選択済み study_id を候補との積集合に絞る（issue #181 PR レビュー対応）。確認カードを
+    // 開いた後、実行するボタンを押すまでの間に別タブ等で候補から外れた study があっても、
+    // 検証・件数表示・進捗・実行のすべてで一致した対象になるようにする
+    const studyIds = effectiveStudyIds(candidates, state.extract.selectedStudyIds);
+    if (studyIds.length === 0) {
+      patchExtract(store, { running: false, runError: t('extract.errNoStudies') });
+      return;
+    }
+    const targets = documentsForStudies(candidates, studyIds);
     const outcome = await performRun(store, deps, {
       spreadsheetId: project.spreadsheetId,
       driveFolderId: project.driveFolderId,
@@ -545,7 +558,8 @@ export async function retryExtractStudy(
   try {
     const records = await resolveDocuments(store, deps.google, project.spreadsheetId);
     const studies = await resolveStudies(store, deps.google, project.spreadsheetId);
-    const targets = documentsForStudies(buildStudySelection(studies, records), [studyId]);
+    // 除外文書は再試行の対象からも外す（issue #181）
+    const targets = documentsForStudies(buildExtractionCandidates(studies, records), [studyId]);
     if (targets.length === 0) {
       throw new Error(t('extraction.errStudyDocsNotFound', { id: studyId }));
     }

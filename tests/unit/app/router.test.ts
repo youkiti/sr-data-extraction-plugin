@@ -37,6 +37,13 @@ const stubCtx: ViewContext = {
     onTiabGrantAccess: jest.fn(),
     onTiabHandoffImport: jest.fn(),
     onTiabHandoffDismiss: jest.fn(),
+    onOpenExcludeStudy: jest.fn(),
+    onOpenExcludeDocument: jest.fn(),
+    onUpdateExclusionDialog: jest.fn(),
+    onCancelExclusion: jest.fn(),
+    onConfirmExclusion: jest.fn(),
+    onRestoreStudy: jest.fn(),
+    onRestoreDocument: jest.fn(),
   },
   protocol: {
     onSubmit: jest.fn(),

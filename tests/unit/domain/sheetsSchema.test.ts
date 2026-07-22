@@ -51,7 +51,7 @@ describe('SHEET_HEADERS', () => {
     expect(SHEET_HEADERS.Protocol).toContain('combination_expression');
   });
 
-  test('Documents は取り込みメタデータ（凍結スナップショット + テキスト層状態）を持つ', () => {
+  test('Documents は取り込みメタデータ（凍結スナップショット + テキスト層状態 + 除外機能）を持つ', () => {
     expect(SHEET_HEADERS.Documents).toEqual([
       'document_id',
       'study_id',
@@ -68,6 +68,10 @@ describe('SHEET_HEADERS', () => {
       'imported_at',
       'imported_by',
       'note',
+      'excluded',
+      'exclusion_reason',
+      'exclusion_note',
+      'excluded_at',
     ]);
   });
 

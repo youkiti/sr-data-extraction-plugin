@@ -9,7 +9,12 @@ import {
   dedupSelections,
   DUPLICATE_REASON_LABELS,
 } from '../../features/documents/dedupSelections';
-import { readDocuments, updateDocument } from '../../features/documents/documentRepository';
+import {
+  ensureDocumentExclusionColumns,
+  readDocuments,
+  updateDocument,
+  updateDocuments,
+} from '../../features/documents/documentRepository';
 import {
   findMergeCandidates,
   hasExtractedData,
@@ -43,7 +48,14 @@ import type { GoogleApiDeps } from '../../lib/google/types';
 import { getLocal, setLocal } from '../../lib/storage/chromeStorage';
 import { nowIso8601 } from '../../utils/iso8601';
 import { generateUuid } from '../../utils/uuid';
-import type { DocumentsState, ImportRow, MergeDialogState, Store, TiabHandoffState } from '../store';
+import type {
+  DocumentsState,
+  ExclusionDialogState,
+  ImportRow,
+  MergeDialogState,
+  Store,
+  TiabHandoffState,
+} from '../store';
 import { showToast } from '../ui/toast';
 import { t, type MessageKey } from '../../lib/i18n';
 
@@ -464,6 +476,11 @@ function findStudy(store: Store, studyId: string): StudyRecord | null {
   return store.getState().documents.studies?.find((s) => s.studyId === studyId) ?? null;
 }
 
+/** 対象 document を find するヘルパ（未読込・未検出なら null） */
+function findDocument(store: Store, documentId: string): DocumentRecord | null {
+  return store.getState().documents.records?.find((doc) => doc.documentId === documentId) ?? null;
+}
+
 /**
  * study_label のインライン編集を保存する（Studies 行の上書き。§3.1）。
  * 空文字は保存せず案内し、失敗時は再描画で元の値へ戻す
@@ -717,4 +734,170 @@ export function visibleMergeCandidates(state: DocumentsState): ReturnType<typeof
   return findMergeCandidates(active).filter(
     (candidate) => !ignored.has(ignoredCandidateKey(candidate.studyIds)),
   );
+}
+
+// ---- 文献除外機能（issue #181） ----------------------------------------------------------
+
+/** study 単位の除外ダイアログを開く（study_label を表示ラベルにする）。未検出は no-op */
+export function openExcludeStudy(store: Store, studyId: string): void {
+  const study = findStudy(store, studyId);
+  if (study === null) {
+    return;
+  }
+  const dialog: ExclusionDialogState = {
+    scope: 'study',
+    targetId: studyId,
+    targetLabel: study.studyLabel,
+    reason: null,
+    note: '',
+  };
+  patchDocuments(store, { exclusionDialog: dialog });
+}
+
+/** 文書単位の除外ダイアログを開く（filename を表示ラベルにする）。未検出は no-op */
+export function openExcludeDocument(store: Store, documentId: string): void {
+  const doc = findDocument(store, documentId);
+  if (doc === null) {
+    return;
+  }
+  const dialog: ExclusionDialogState = {
+    scope: 'document',
+    targetId: documentId,
+    targetLabel: doc.filename,
+    reason: null,
+    note: '',
+  };
+  patchDocuments(store, { exclusionDialog: dialog });
+}
+
+/** 除外ダイアログの入力（reason / note）を更新する */
+export function updateExclusionDialog(store: Store, patch: Partial<ExclusionDialogState>): void {
+  const dialog = store.getState().documents.exclusionDialog;
+  if (dialog === null) {
+    return;
+  }
+  patchDocuments(store, { exclusionDialog: { ...dialog, ...patch } });
+}
+
+export function cancelExclusion(store: Store): void {
+  patchDocuments(store, { exclusionDialog: null });
+}
+
+/**
+ * 除外を確定する（§4.5 / issue #181）。study scope は理由の選択が必須（study 単位の除外は
+ * 影響範囲が大きいため、UI 側の確定ボタン無効化に加えてサービス側でも防御する）。
+ * 除外機能列（excluded 等）が未拡張の旧プロジェクトへ書き込む前に、ensureDocumentExclusionColumns
+ * でヘッダを移行してから updateDocuments で対象行を一括上書きする
+ */
+export async function confirmExclusion(store: Store, deps: DocumentsServiceDeps): Promise<void> {
+  const state = store.getState();
+  const project = state.currentProject;
+  const dialog = state.documents.exclusionDialog;
+  if (!project || dialog === null || state.documents.excluding) {
+    return;
+  }
+  if (dialog.scope === 'study' && dialog.reason === null) {
+    showToast(t('documents.toastExcludeReasonRequired'));
+    return;
+  }
+  const records = state.documents.records ?? [];
+  const targets = records.filter((doc) =>
+    dialog.scope === 'study' ? doc.studyId === dialog.targetId : doc.documentId === dialog.targetId,
+  );
+  patchDocuments(store, { excluding: true });
+  const excludedAt = (deps.now ?? nowIso8601)();
+  const note = dialog.note.trim();
+  const updated: DocumentRecord[] = targets.map((doc) => ({
+    ...doc,
+    excluded: true,
+    exclusionReason: dialog.reason,
+    exclusionNote: note === '' ? null : note,
+    excludedAt,
+  }));
+  try {
+    await ensureDocumentExclusionColumns(project.spreadsheetId, deps.google);
+    await updateDocuments(project.spreadsheetId, updated, deps.google);
+    const byId = new Map(updated.map((doc) => [doc.documentId, doc]));
+    patchDocuments(store, {
+      records: records.map((doc) => byId.get(doc.documentId) ?? doc),
+      excluding: false,
+      exclusionDialog: null,
+    });
+    showToast(
+      dialog.scope === 'study'
+        ? t('documents.toastStudyExcluded', { label: dialog.targetLabel })
+        : t('documents.toastDocumentExcluded', { filename: dialog.targetLabel }),
+    );
+  } catch (err) {
+    // ダイアログは開いたまま残し、入力（reason / note）をやり直させない
+    patchDocuments(store, { excluding: false });
+    showToast(t('documents.toastExcludeFailed', { reason: toMessage(err) }));
+  }
+}
+
+/**
+ * 除外解除の共通処理（成功で楽観反映 + トースト、失敗はトースト + 再描画）。
+ * マージ先は呼び出し時点の records スナップショットではなく、完了時点の最新
+ * store.getState().documents.records を使う。2 つの解除操作を続けて呼ぶと、
+ * 両方が呼び出し時点で同じ古い records を受け取るため、古いスナップショットへマージすると
+ * 後から完了した方が、先に完了して既に store に反映済みの結果を上書きして巻き戻してしまう
+ * （issue #181 PR レビュー対応）
+ */
+async function restoreDocs(
+  store: Store,
+  deps: DocumentsServiceDeps,
+  spreadsheetId: string,
+  targets: readonly DocumentRecord[],
+  label: string,
+): Promise<void> {
+  const updated: DocumentRecord[] = targets.map((doc) => ({ ...doc, excluded: false }));
+  try {
+    await updateDocuments(spreadsheetId, updated, deps.google);
+    const byId = new Map(updated.map((doc) => [doc.documentId, doc]));
+    const latest = store.getState().documents.records ?? [];
+    patchDocuments(store, { records: latest.map((doc) => byId.get(doc.documentId) ?? doc) });
+    showToast(t('documents.toastRestored', { label }));
+  } catch (err) {
+    showToast(t('documents.toastRestoreFailed', { reason: toMessage(err) }));
+    patchDocuments(store, {}); // 再描画（元の値のまま）
+  }
+}
+
+/**
+ * study 配下の除外済み文書をまとめて除外解除する（exclusionReason / exclusionNote / excludedAt は
+ * 監査のため残し、excluded だけを false へ戻す）。対象 0 件（全解除済み・study 未検出）は no-op
+ */
+export async function restoreStudy(
+  store: Store,
+  deps: DocumentsServiceDeps,
+  studyId: string,
+): Promise<void> {
+  const state = store.getState();
+  const project = state.currentProject;
+  if (!project) {
+    return;
+  }
+  const records = state.documents.records ?? [];
+  const targets = records.filter((doc) => doc.studyId === studyId && doc.excluded);
+  if (targets.length === 0) {
+    return;
+  }
+  const label = findStudy(store, studyId)?.studyLabel ?? studyId;
+  await restoreDocs(store, deps, project.spreadsheetId, targets, label);
+}
+
+/** 文書 1 件の除外を解除する。未検出・未除外は no-op */
+export async function restoreDocument(
+  store: Store,
+  deps: DocumentsServiceDeps,
+  documentId: string,
+): Promise<void> {
+  const state = store.getState();
+  const project = state.currentProject;
+  const records = state.documents.records ?? [];
+  const doc = records.find((d) => d.documentId === documentId && d.excluded) ?? null;
+  if (!project || doc === null) {
+    return;
+  }
+  await restoreDocs(store, deps, project.spreadsheetId, [doc], doc.filename);
 }

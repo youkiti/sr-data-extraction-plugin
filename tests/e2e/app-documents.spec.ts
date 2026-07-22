@@ -33,6 +33,11 @@ function makeRecord(seed: DocumentSeed): Record<string, unknown> {
     importedAt: '2026-07-02T00:00:00Z',
     importedBy: 'e2e@example.com',
     note: null,
+    // 文献除外機能（issue #181）。既定は除外なし
+    excluded: false,
+    exclusionReason: null,
+    exclusionNote: null,
+    excludedAt: null,
   };
 }
 
@@ -391,6 +396,116 @@ test('統合シナリオ: 2 study を選択 → 統合ダイアログ → 確定
   expect(updatedDocs.length).toBe(2);
   // 再読込後は統合後の 1 study だけがアクティブ（study-new に 2 文書）
   await expect(page.locator('.documents__study-group')).toHaveCount(1);
+});
+
+// 文献除外機能（issue #181）
+test('文書の除外: 除外済みセクションへ移動し、解除ボタンで元に戻る', async ({ page }) => {
+  const recordA = makeRecord({ documentId: 'doc-1a', studyId: 'study-1', documentRole: 'article', filename: 'smith2020.pdf', textStatus: 'ok', pageCount: 12 });
+  const recordB = makeRecord({ documentId: 'doc-1b', studyId: 'study-1', documentRole: 'supplement', filename: 'smith2020-appendix.pdf', textStatus: 'ok', pageCount: 3 });
+  const docRow = (documentId: string, filename: string, role: string): string[] => [
+    documentId, 'study-1', role, `drive-${documentId}`, `src-${documentId}`, filename,
+    '', '', `https://drive.google.com/file/d/txt-${documentId}/view`, 'ok', '12', '24000',
+    '2026-07-02T00:00:00Z', 'e2e@example.com', '', 'FALSE', '', '', '',
+  ];
+  const batchUpdateBodies: string[] = [];
+  await page.route('https://sheets.googleapis.com/**', async (route) => {
+    const req = route.request();
+    const url = decodeURIComponent(req.url());
+    const method = req.method();
+    // ensureDocumentExclusionColumns: ヘッダ行（既にフル列数）を返す
+    if (method === 'GET' && url.includes('values:batchGet')) {
+      await route.fulfill({ json: { valueRanges: [{ values: [[...SHEET_HEADERS.Documents]] }] } });
+      return;
+    }
+    if (method === 'POST' && url.includes('values:batchUpdate')) {
+      batchUpdateBodies.push(req.postData() ?? '');
+      await route.fulfill({ json: {} });
+      return;
+    }
+    // updateDocuments の行番号解決（fetchDocuments）: 現在値は問わず妥当な行を返せばよい
+    // （楽観反映はクライアント側の state 更新で行われ、Sheets を読み直さないため）
+    if (method === 'GET' && url.includes('/values/Documents')) {
+      await route.fulfill({
+        json: {
+          values: [
+            [...SHEET_HEADERS.Documents],
+            docRow('doc-1a', 'smith2020.pdf', 'article'),
+            docRow('doc-1b', 'smith2020-appendix.pdf', 'supplement'),
+          ],
+        },
+      });
+      return;
+    }
+    await route.fulfill({ json: { values: [] } });
+  });
+
+  await initApp(page, docsState({ records: [recordA, recordB], studies: [STUDIES[0]] }));
+
+  await expect(page.locator('.documents__exclude-doc')).toHaveCount(2);
+  await page.locator('.documents__exclude-doc').first().click();
+  await expect(page.locator('#exclusion-dialog')).toBeVisible();
+  // 文書単位は理由未選択でも確定できる
+  await expect(page.locator('#exclusion-confirm')).toBeEnabled();
+  await page.locator('#exclusion-confirm').click();
+
+  await expect(page.locator('#exclusion-dialog')).toHaveCount(0);
+  await expect(page.locator('.documents__excluded summary')).toHaveText('除外済み (1)');
+  await expect(
+    page.locator('.documents__docs-table:not(.documents__docs-table--excluded) .documents__doc-filename'),
+  ).toHaveText('smith2020-appendix.pdf');
+  await expect(page.locator('.toast').last()).toHaveText('smith2020.pdf を抽出候補から除外しました');
+
+  // 除外済みセクションを開いて解除する
+  await page.locator('.documents__excluded summary').click();
+  await page.locator('.documents__restore-doc').click();
+
+  await expect(page.locator('.documents__excluded')).toHaveCount(0);
+  await expect(page.locator('.documents__exclude-doc')).toHaveCount(2);
+  await expect(page.locator('.toast').last()).toHaveText('smith2020.pdf の除外を解除しました');
+  expect(batchUpdateBodies.length).toBe(2);
+});
+
+test('study の除外: 理由未選択は確定不可・選択後に確定すると全除外注記 + 解除ボタンを表示する', async ({ page }) => {
+  const record = makeRecord({ documentId: 'doc-1', studyId: 'study-1', documentRole: 'article', filename: 'smith2020.pdf', textStatus: 'ok', pageCount: 12 });
+  const docRow = [
+    'doc-1', 'study-1', 'article', 'drive-doc-1', 'src-doc-1', 'smith2020.pdf', '', '',
+    'https://drive.google.com/file/d/txt-doc-1/view', 'ok', '12', '24000',
+    '2026-07-02T00:00:00Z', 'e2e@example.com', '', 'FALSE', '', '', '',
+  ];
+  await page.route('https://sheets.googleapis.com/**', async (route) => {
+    const req = route.request();
+    const url = decodeURIComponent(req.url());
+    const method = req.method();
+    if (method === 'GET' && url.includes('values:batchGet')) {
+      await route.fulfill({ json: { valueRanges: [{ values: [[...SHEET_HEADERS.Documents]] }] } });
+      return;
+    }
+    if (method === 'POST' && url.includes('values:batchUpdate')) {
+      await route.fulfill({ json: {} });
+      return;
+    }
+    if (method === 'GET' && url.includes('/values/Documents')) {
+      await route.fulfill({ json: { values: [[...SHEET_HEADERS.Documents], docRow] } });
+      return;
+    }
+    await route.fulfill({ json: { values: [] } });
+  });
+
+  await initApp(page, docsState({ records: [record], studies: [STUDIES[0]] }));
+
+  await page.locator('.documents__exclude-study').click();
+  await expect(page.locator('#exclusion-dialog-title')).toHaveText('study を抽出候補から除外しますか？');
+  await expect(page.locator('#exclusion-reason-hint')).toBeVisible();
+  await expect(page.locator('#exclusion-confirm')).toBeDisabled();
+
+  await page.locator('#exclusion-reason').selectOption('duplicate');
+  await expect(page.locator('#exclusion-confirm')).toBeEnabled();
+  await page.locator('#exclusion-confirm').click();
+
+  await expect(page.locator('#exclusion-dialog')).toHaveCount(0);
+  await expect(page.locator('.documents__all-excluded-note')).toBeVisible();
+  await expect(page.locator('.documents__restore-study')).toBeVisible();
+  await expect(page.locator('.toast').last()).toHaveText('Smith 2020 を抽出候補から除外しました');
 });
 
 test('統合候補バナー: 同じ登録番号のアクティブ study が複数なら候補を出す', async ({ page }) => {

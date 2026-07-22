@@ -6,8 +6,10 @@
 // 状態: 読み込み中 / 失敗 / 空 / 取り込み中（進捗行）/ 一覧（試験ごとのグループ）
 import {
   DOCUMENT_ROLE_ORDER,
+  EXCLUSION_REASON_ORDER,
   type DocumentRecord,
   type DocumentRole,
+  type ExclusionReason,
   type TextStatus,
 } from '../../domain/document';
 import type { StudyRecord } from '../../domain/study';
@@ -21,6 +23,7 @@ import { activeStudyGroups, visibleMergeCandidates } from '../services/documents
 import { el } from '../ui/dom';
 import type {
   AppState,
+  ExclusionDialogState,
   ImportRow,
   ImportRowStatus,
   MergeDialogState,
@@ -63,6 +66,15 @@ const ROLE_LABEL_KEYS: Record<DocumentRole, MessageKey> = {
   abstract: 'documents.roleAbstract',
   supplement: 'documents.roleSupplement',
   other: 'documents.roleOther',
+};
+
+/** 除外理由の表示ラベル（表示言語に追従。issue #181 / issue #93 と同じ方式） */
+const EXCLUSION_REASON_LABEL_KEYS: Record<ExclusionReason, MessageKey> = {
+  ineligible: 'documents.reasonIneligible',
+  duplicate: 'documents.reasonDuplicate',
+  mis_imported: 'documents.reasonMisImported',
+  on_hold: 'documents.reasonOnHold',
+  other: 'documents.reasonOther',
 };
 
 /** ローカル選択ボタン + 隠しファイル入力（ボタン click で input を open）。ドロップゾーン内に置く */
@@ -222,11 +234,73 @@ function renderRoleSelect(doc: DocumentRecord, ctx: ViewContext): HTMLSelectElem
 }
 
 function renderDocumentRow(doc: DocumentRecord, ctx: ViewContext): HTMLElement {
+  const exclude = el('button', {
+    className: 'documents__exclude-doc',
+    text: t('documents.excludeDocumentButton'),
+    attributes: {
+      type: 'button',
+      'aria-label': t('documents.excludeDocumentAria', { filename: doc.filename }),
+    },
+  });
+  exclude.addEventListener('click', () => ctx.documents.onOpenExcludeDocument(doc.documentId));
   return el('tr', { className: 'documents__doc-row' }, [
     el('td', {}, [renderRoleSelect(doc, ctx)]),
     el('td', { className: 'documents__doc-filename', text: doc.filename }),
     el('td', {}, [renderStatusBadge(doc.textStatus)]),
     el('td', { text: doc.pageCount === null ? '–' : String(doc.pageCount) }),
+    el('td', {}, [exclude]),
+  ]);
+}
+
+/** 除外理由の表示ラベル（理由未入力は案内文言。issue #181） */
+function excludedReasonLabel(reason: ExclusionReason | null): string {
+  return reason === null ? t('documents.excludedReasonUnset') : t(EXCLUSION_REASON_LABEL_KEYS[reason]);
+}
+
+/** 除外済み文書 1 行（ファイル名 / ロール / 除外理由 / 解除ボタン） */
+function renderExcludedDocumentRow(doc: DocumentRecord, ctx: ViewContext): HTMLElement {
+  const restore = el('button', {
+    className: 'documents__restore-doc',
+    text: t('documents.restoreDocumentButton'),
+    attributes: {
+      type: 'button',
+      'aria-label': t('documents.restoreDocumentAria', { filename: doc.filename }),
+    },
+  });
+  restore.addEventListener('click', () => ctx.documents.onRestoreDocument(doc.documentId));
+  return el('tr', { className: 'documents__doc-row documents__doc-row--excluded' }, [
+    el('td', { className: 'documents__doc-filename', text: doc.filename }),
+    el('td', { text: t(ROLE_LABEL_KEYS[doc.documentRole]) }),
+    el('td', { className: 'documents__doc-reason', text: excludedReasonLabel(doc.exclusionReason) }),
+    el('td', {
+      className: 'documents__doc-note',
+      text: doc.exclusionNote === null ? '–' : doc.exclusionNote,
+    }),
+    el('td', {}, [restore]),
+  ]);
+}
+
+/** 除外済み文書の折りたたみセクション（既定折りたたみ。issue #181） */
+function renderExcludedSection(excludedDocs: DocumentRecord[], ctx: ViewContext): HTMLElement {
+  const table = el(
+    'table',
+    { className: 'documents__docs-table documents__docs-table--excluded' },
+    [
+      el('thead', {}, [
+        el('tr', {}, [
+          el('th', { text: t('documents.headFilename') }),
+          el('th', { text: t('documents.headRole') }),
+          el('th', { text: t('documents.headReason') }),
+          el('th', { text: t('documents.headNote') }),
+          el('th', { text: t('documents.headActions') }),
+        ]),
+      ]),
+      el('tbody', {}, excludedDocs.map((doc) => renderExcludedDocumentRow(doc, ctx))),
+    ],
+  );
+  return el('details', { className: 'documents__excluded' }, [
+    el('summary', { text: t('documents.excludedSectionSummary', { n: excludedDocs.length }) }),
+    table,
   ]);
 }
 
@@ -261,17 +335,60 @@ function renderStudyGroup(
     (value) => ctx.documents.onSaveRegistrationId(study.studyId, value),
   );
 
-  const docsTable = el('table', { className: 'documents__docs-table' }, [
-    el('thead', {}, [
-      el('tr', {}, [
-        el('th', { text: t('documents.headRole') }),
-        el('th', { text: t('documents.headFilename') }),
-        el('th', { text: t('documents.headTextStatus') }),
-        el('th', { text: t('documents.headPages') }),
+  // 抽出候補からの除外（issue #181）: アクティブ文書が 1 件以上あれば study 単位の除外ボタン、
+  // 全文書が除外済みなら代わりに study 単位の除外解除ボタンを出す
+  const activeDocs = documents.filter((doc) => !doc.excluded);
+  const excludedDocs = documents.filter((doc) => doc.excluded);
+  let exclusionToggle: HTMLButtonElement;
+  if (activeDocs.length > 0) {
+    exclusionToggle = el('button', {
+      className: 'documents__exclude-study',
+      text: t('documents.excludeStudyButton'),
+      attributes: {
+        type: 'button',
+        'aria-label': t('documents.excludeStudyAria', { label: study.studyLabel }),
+      },
+    });
+    exclusionToggle.addEventListener('click', () => ctx.documents.onOpenExcludeStudy(study.studyId));
+  } else {
+    exclusionToggle = el('button', {
+      className: 'documents__restore-study',
+      text: t('documents.restoreStudyButton'),
+      attributes: {
+        type: 'button',
+        'aria-label': t('documents.restoreStudyAria', { label: study.studyLabel }),
+      },
+    });
+    exclusionToggle.addEventListener('click', () => ctx.documents.onRestoreStudy(study.studyId));
+  }
+
+  const bodyChildren: HTMLElement[] = [];
+  if (activeDocs.length > 0) {
+    bodyChildren.push(
+      el('table', { className: 'documents__docs-table' }, [
+        el('thead', {}, [
+          el('tr', {}, [
+            el('th', { text: t('documents.headRole') }),
+            el('th', { text: t('documents.headFilename') }),
+            el('th', { text: t('documents.headTextStatus') }),
+            el('th', { text: t('documents.headPages') }),
+            el('th', { text: t('documents.headActions') }),
+          ]),
+        ]),
+        el('tbody', {}, activeDocs.map((doc) => renderDocumentRow(doc, ctx))),
       ]),
-    ]),
-    el('tbody', {}, documents.map((doc) => renderDocumentRow(doc, ctx))),
-  ]);
+    );
+  } else {
+    bodyChildren.push(
+      el('p', {
+        className: 'documents__all-excluded-note',
+        text: t('documents.allDocsExcludedNote'),
+      }),
+    );
+  }
+  if (excludedDocs.length > 0) {
+    bodyChildren.push(renderExcludedSection(excludedDocs, ctx));
+  }
 
   return el(
     'div',
@@ -290,8 +407,9 @@ function renderStudyGroup(
           el('span', { text: 'registration_id: ' }),
           regInput,
         ]),
+        exclusionToggle,
       ]),
-      docsTable,
+      ...bodyChildren,
     ],
   );
 }
@@ -637,6 +755,95 @@ function renderMergeDialog(dialog: MergeDialogState, state: AppState, ctx: ViewC
   );
 }
 
+/** 文献除外ダイアログ（role=alertdialog。§4.5 / issue #181） */
+function renderExclusionDialog(
+  dialog: ExclusionDialogState,
+  state: AppState,
+  ctx: ViewContext,
+): HTMLElement {
+  const titleKey: MessageKey =
+    dialog.scope === 'study'
+      ? 'documents.exclusionDialogTitleStudy'
+      : 'documents.exclusionDialogTitleDocument';
+
+  const reasonSelect = el('select', {
+    id: 'exclusion-reason',
+    attributes: { 'aria-label': t('documents.exclusionReasonLabel') },
+  }) as HTMLSelectElement;
+  reasonSelect.append(
+    el('option', {
+      text: t('documents.exclusionReasonPlaceholder'),
+      attributes: { value: '' },
+    }),
+  );
+  for (const reason of EXCLUSION_REASON_ORDER) {
+    reasonSelect.append(
+      el('option', { text: t(EXCLUSION_REASON_LABEL_KEYS[reason]), attributes: { value: reason } }),
+    );
+  }
+  reasonSelect.value = dialog.reason ?? '';
+  reasonSelect.addEventListener('change', () => {
+    ctx.documents.onUpdateExclusionDialog({
+      reason: reasonSelect.value === '' ? null : (reasonSelect.value as ExclusionReason),
+    });
+  });
+
+  const noteInput = el('textarea', {
+    id: 'exclusion-note',
+    attributes: { 'aria-label': t('documents.exclusionNoteLabel') },
+  }) as HTMLTextAreaElement;
+  noteInput.value = dialog.note;
+  noteInput.addEventListener('input', () =>
+    ctx.documents.onUpdateExclusionDialog({ note: noteInput.value }),
+  );
+
+  const children: HTMLElement[] = [
+    el('h3', { id: 'exclusion-dialog-title', text: t(titleKey) }),
+    el('p', { text: t('documents.exclusionDialogBody', { label: dialog.targetLabel }) }),
+    el('label', {}, [
+      el('span', { text: `${t('documents.exclusionReasonLabel')}: ` }),
+      reasonSelect,
+    ]),
+    el('label', {}, [el('span', { text: `${t('documents.exclusionNoteLabel')}: ` }), noteInput]),
+  ];
+  if (dialog.scope === 'study') {
+    children.push(
+      el('p', {
+        id: 'exclusion-reason-hint',
+        className: 'documents__exclusion-hint',
+        text: t('documents.exclusionReasonRequiredHint'),
+      }),
+    );
+  }
+
+  const confirm = el('button', {
+    id: 'exclusion-confirm',
+    attributes: { type: 'button' },
+    text: t('documents.exclusionConfirm'),
+  }) as HTMLButtonElement;
+  confirm.disabled =
+    state.documents.excluding || (dialog.scope === 'study' && dialog.reason === null);
+  confirm.addEventListener('click', () => ctx.documents.onConfirmExclusion());
+  const cancel = el('button', {
+    id: 'exclusion-cancel',
+    attributes: { type: 'button' },
+    text: t('common.cancel'),
+  }) as HTMLButtonElement;
+  cancel.disabled = state.documents.excluding;
+  cancel.addEventListener('click', () => ctx.documents.onCancelExclusion());
+  children.push(el('div', { className: 'documents__exclusion-actions' }, [confirm, cancel]));
+
+  return el(
+    'div',
+    {
+      id: 'exclusion-dialog',
+      className: 'documents__exclusion-dialog',
+      attributes: { role: 'alertdialog', 'aria-labelledby': 'exclusion-dialog-title' },
+    },
+    children,
+  );
+}
+
 function renderList(state: AppState, ctx: ViewContext): HTMLElement {
   const { records, studies, loading, loadError } = state.documents;
   if (loadError !== null) {
@@ -672,7 +879,7 @@ function renderList(state: AppState, ctx: ViewContext): HTMLElement {
 }
 
 export function renderDocumentsView(state: AppState, ctx: ViewContext): HTMLElement {
-  const { importing, importRows, mergeDialog } = state.documents;
+  const { importing, importRows, mergeDialog, exclusionDialog } = state.documents;
   const hasProject = state.currentProject !== null;
 
   const disabled = importing || !hasProject;
@@ -719,6 +926,9 @@ export function renderDocumentsView(state: AppState, ctx: ViewContext): HTMLElem
     children.push(...renderCandidateBanners(state, ctx));
     if (mergeDialog !== null) {
       children.push(renderMergeDialog(mergeDialog, state, ctx));
+    }
+    if (exclusionDialog !== null) {
+      children.push(renderExclusionDialog(exclusionDialog, state, ctx));
     }
     children.push(renderList(state, ctx));
   }

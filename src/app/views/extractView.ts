@@ -5,8 +5,9 @@ import type { DocumentRecord } from '../../domain/document';
 import type { RunWarning } from '../../domain/extractionRun';
 import {
   areAllUnextractedStudiesSelected,
-  buildStudySelection,
+  buildExtractionCandidates,
   documentsForStudies,
+  effectiveStudyIds,
   selectableUnextractedStudyIds,
   type StudySelectionItem,
 } from '../../features/documents/studySelection';
@@ -53,10 +54,11 @@ const DOCUMENT_ROLE_LABEL_KEYS: Readonly<Record<DocumentRecord['documentRole'], 
  * setup / 確認カードは読み込みガード（renderExtractView）を通った後にのみ描画されるため非 null
  */
 function selectionOf(state: AppState): StudySelectionItem[] {
-  // renderExtractView の読み込みガードを通った後のため records / studies は非 null
+  // renderExtractView の読み込みガードを通った後のため records / studies は非 null。
+  // 除外文書は選択リストの対象からも外す（issue #181）
   const records = state.documents.records as readonly DocumentRecord[];
   const studies = state.documents.studies as readonly StudyRecord[];
-  return buildStudySelection(studies, records);
+  return buildExtractionCandidates(studies, records);
 }
 
 /** study の表示ラベル（study_label）。見つからなければ study_id */
@@ -341,7 +343,7 @@ function renderConfirm(state: AppState, ctx: ViewContext): HTMLElement {
       el('h4', { id: 'extract-confirm-title', text: t('extract.confirmTitle') }),
       el('p', {
         text: t('extract.confirmBody', {
-          count: state.extract.selectedStudyIds.length,
+          count: effectiveStudyIds(selectionOf(state), state.extract.selectedStudyIds).length,
           model: state.extract.model,
         }),
       }),

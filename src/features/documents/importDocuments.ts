@@ -204,6 +204,10 @@ export async function importDocuments(
       importedAt: now(),
       importedBy: params.importedBy,
       note: null,
+      excluded: false,
+      exclusionReason: null,
+      exclusionNote: null,
+      excludedAt: null,
     });
     importedKeys.push(selection.key);
   }

@@ -3,8 +3,10 @@ import type { DocumentRecord } from '../../../../src/domain/document';
 import type { StudyRecord } from '../../../../src/domain/study';
 import {
   areAllUnextractedStudiesSelected,
+  buildExtractionCandidates,
   buildStudySelection,
   documentsForStudies,
+  effectiveStudyIds,
   selectableUnextractedStudyIds,
 } from '../../../../src/features/documents/studySelection';
 
@@ -24,6 +26,10 @@ function makeDocument(overrides: Partial<DocumentRecord> & { documentId: string 
     importedAt: 't0',
     importedBy: 'me',
     note: null,
+    excluded: false,
+    exclusionReason: null,
+    exclusionNote: null,
+    excludedAt: null,
     ...overrides,
   };
 }
@@ -130,6 +136,41 @@ describe('documentsForStudies', () => {
   });
 });
 
+describe('buildExtractionCandidates（issue #181: 除外文書を除いた抽出候補）', () => {
+  it('除外なしなら buildStudySelection と同じ全件を返す', () => {
+    const documents = [
+      makeDocument({ documentId: 'a', studyId: 's1' }),
+      makeDocument({ documentId: 'b', studyId: 's2' }),
+    ];
+    const studies = [makeStudy('s1'), makeStudy('s2')];
+    expect(buildExtractionCandidates(studies, documents)).toEqual(
+      buildStudySelection(studies, documents),
+    );
+  });
+
+  it('全文書が除外された study は候補から外れる', () => {
+    const documents = [
+      makeDocument({ documentId: 'a', studyId: 's1', excluded: true }),
+      makeDocument({ documentId: 'b', studyId: 's1', documentRole: 'registration', excluded: true }),
+      makeDocument({ documentId: 'c', studyId: 's2' }),
+    ];
+    const studies = [makeStudy('s1'), makeStudy('s2')];
+    const candidates = buildExtractionCandidates(studies, documents);
+    expect(candidates.map((item) => item.study.studyId)).toEqual(['s2']);
+  });
+
+  it('一部除外の study は残り文書で候補になる', () => {
+    const documents = [
+      makeDocument({ documentId: 'a', studyId: 's1', documentRole: 'article', excluded: true }),
+      makeDocument({ documentId: 'b', studyId: 's1', documentRole: 'registration', excluded: false }),
+    ];
+    const studies = [makeStudy('s1')];
+    const candidates = buildExtractionCandidates(studies, documents);
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0]?.documents.map((d) => d.documentId)).toEqual(['b']);
+  });
+});
+
 // issue #180: 全選択トグルの対象判定
 describe('selectableUnextractedStudyIds', () => {
   it('抽出済みを除外して選択リストの並び順で返す', () => {
@@ -158,6 +199,47 @@ describe('selectableUnextractedStudyIds', () => {
     ];
     const selection = buildStudySelection([makeStudy('s1'), makeStudy('s2')], documents);
     expect(selectableUnextractedStudyIds(selection, ['s1', 's2'])).toEqual([]);
+  });
+});
+
+// issue #181 PR レビュー対応: S6/S7 表示後に S3 で除外された study が selectedStudyIds に
+// 残ったままにならないよう、候補との積集合に絞る
+describe('effectiveStudyIds', () => {
+  it('全て候補に含まれるなら selectedStudyIds をそのまま返す', () => {
+    const documents = [
+      makeDocument({ documentId: 'a', studyId: 's1' }),
+      makeDocument({ documentId: 'b', studyId: 's2' }),
+    ];
+    const candidates = buildExtractionCandidates([makeStudy('s1'), makeStudy('s2')], documents);
+    expect(effectiveStudyIds(candidates, ['s1', 's2'])).toEqual(['s1', 's2']);
+  });
+
+  it('候補から外れた（除外済みの）study_id は欠落する', () => {
+    const documents = [
+      makeDocument({ documentId: 'a', studyId: 's1', excluded: true }),
+      makeDocument({ documentId: 'b', studyId: 's2' }),
+    ];
+    const candidates = buildExtractionCandidates([makeStudy('s1'), makeStudy('s2')], documents);
+    // s1 は全文書除外で候補から外れる。selectedStudyIds には s1 が残っていても除去される
+    expect(effectiveStudyIds(candidates, ['s1', 's2'])).toEqual(['s2']);
+  });
+
+  it('selectedStudyIds の並び順を維持する', () => {
+    const documents = [
+      makeDocument({ documentId: 'a', studyId: 's1' }),
+      makeDocument({ documentId: 'b', studyId: 's2' }),
+      makeDocument({ documentId: 'c', studyId: 's3' }),
+    ];
+    const candidates = buildExtractionCandidates(
+      [makeStudy('s1'), makeStudy('s2'), makeStudy('s3')],
+      documents,
+    );
+    // selectedStudyIds は候補の作成順（s1,s2,s3）とは異なる並びで渡す
+    expect(effectiveStudyIds(candidates, ['s3', 's1', 's2'])).toEqual(['s3', 's1', 's2']);
+  });
+
+  it('候補が空なら空配列', () => {
+    expect(effectiveStudyIds([], ['s1', 's2'])).toEqual([]);
   });
 });
 
