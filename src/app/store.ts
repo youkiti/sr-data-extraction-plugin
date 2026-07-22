@@ -2,7 +2,7 @@
 // 状態変更は必ず setState 経由で行う（architecture.md §2.2）
 import type { ConfirmedArmStructure } from '../domain/armStructure';
 import type { Decision } from '../domain/decision';
-import type { DocumentRecord } from '../domain/document';
+import type { DocumentRecord, ExclusionReason } from '../domain/document';
 import type { StudyRecord } from '../domain/study';
 import type { Evidence } from '../domain/evidence';
 import type { ExportFormat } from '../domain/exportLog';
@@ -155,6 +155,20 @@ export interface TiabHandoffState {
   error: string | null;
 }
 
+/** 文献除外ダイアログ（S3。issue #181）の状態。null = 非表示 */
+export interface ExclusionDialogState {
+  /** 除外の対象単位: study 単位 / 文書単位 */
+  scope: 'study' | 'document';
+  /** 対象 id（scope='study' なら study_id、'document' なら document_id） */
+  targetId: string;
+  /** 表示用ラベル（study_label または filename） */
+  targetLabel: string;
+  /** 除外理由。study scope は確定に必須（null のままは確定不可） */
+  reason: ExclusionReason | null;
+  /** 除外の自由記述メモ（任意） */
+  note: string;
+}
+
 /** #/documents（S3）の画面状態 */
 export interface DocumentsState {
   /** Documents タブの一覧。null = 未読込（画面表示時に読み込む） */
@@ -180,6 +194,10 @@ export interface DocumentsState {
   tiabImport: TiabImportState;
   /** tiab-review 引き継ぎパネル（※Q2）。null = 非表示 */
   tiabHandoff: TiabHandoffState | null;
+  /** 文献除外ダイアログ（issue #181）。null = 非表示 */
+  exclusionDialog: ExclusionDialogState | null;
+  /** 除外・解除の書き込み中フラグ（二重送信防止） */
+  excluding: boolean;
 }
 
 /** #/protocol（S4）の画面状態 */
@@ -669,6 +687,8 @@ export function createInitialState(): AppState {
         result: null,
       },
       tiabHandoff: null,
+      exclusionDialog: null,
+      excluding: false,
     },
     protocol: {
       records: null,

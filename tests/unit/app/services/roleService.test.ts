@@ -333,6 +333,10 @@ describe('grantFolderAccess（issue #139: ファイル単位付与・issue #141:
       importedAt: 't',
       importedBy: 'e',
       note: null,
+      excluded: false,
+      exclusionReason: null,
+      exclusionNote: null,
+      excludedAt: null,
       ...patch,
     };
   }
@@ -697,6 +701,10 @@ describe('skipMissingFileAccess（issue #141 課題 2: 削除済みファイル�
       importedAt: 't',
       importedBy: 'e',
       note: null,
+      excluded: false,
+      exclusionReason: null,
+      exclusionNote: null,
+      excludedAt: null,
       ...patch,
     };
   }
@@ -816,6 +824,10 @@ describe('checkMissingFileAccess（issue #141 課題 1: 起動時の差分検知
       importedAt: 't',
       importedBy: 'e',
       note: null,
+      excluded: false,
+      exclusionReason: null,
+      exclusionNote: null,
+      excludedAt: null,
       ...patch,
     };
   }

@@ -65,3 +65,18 @@ export function documentsForStudies(
     .filter((item) => wanted.has(item.study.studyId))
     .flatMap((item) => item.documents);
 }
+
+/**
+ * 除外文書（excluded=true）を除いた抽出候補の study 選択モデルを返す（issue #181）。
+ * 全文書が除外された study は候補から外れ、一部除外の study は残り文書で候補になる。
+ * buildStudySelection 自体は変更しない（S3 表示・検証・エクスポートは除外済みも見せるため）
+ */
+export function buildExtractionCandidates(
+  studies: readonly StudyRecord[],
+  records: readonly DocumentRecord[],
+): StudySelectionItem[] {
+  return buildStudySelection(
+    studies,
+    records.filter((doc) => !doc.excluded),
+  );
+}

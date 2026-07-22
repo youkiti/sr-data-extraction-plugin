@@ -5,7 +5,7 @@
 import type { DocumentRecord } from '../../domain/document';
 import type { ExtractionRun } from '../../domain/extractionRun';
 import {
-  buildStudySelection,
+  buildExtractionCandidates,
   documentsForStudies,
   type StudySelectionItem,
 } from '../../features/documents/studySelection';
@@ -36,13 +36,13 @@ const DOCUMENT_ROLE_LABEL_KEYS: Readonly<Record<DocumentRecord['documentRole'], 
   other: 'documents.roleOther',
 };
 
-/** 現在の documents / studies スライスから study 選択モデルを組む */
+/** 現在の documents / studies スライスから抽出候補の study 選択モデルを組む（除外文書は対象外。issue #181） */
 function selectionOf(state: AppState): StudySelectionItem[] {
   const { records, studies } = state.documents;
   if (records === null || studies === null) {
     return [];
   }
-  return buildStudySelection(studies, records);
+  return buildExtractionCandidates(studies, records);
 }
 
 function renderStudySelector(state: AppState, ctx: ViewContext): HTMLElement {

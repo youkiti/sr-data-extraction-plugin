@@ -172,6 +172,10 @@ function makeDocument(overrides: Partial<DocumentRecord> = {}): DocumentRecord {
     importedAt: 't0',
     importedBy: ME,
     note: null,
+    excluded: false,
+    exclusionReason: null,
+    exclusionNote: null,
+    excludedAt: null,
     ...overrides,
   };
 }
@@ -425,6 +429,17 @@ describe('initPilotSelection', () => {
     initPilotSelection(store);
     expect(store.getState().pilot.model).toBe('user-model');
   });
+
+  test('除外文書は既定選択の候補から外れる（issue #181。全除外 study は候補ごと消え、一部除外は残る）', () => {
+    const docs = [
+      makeDocument({ documentId: 'd1' }), // 除外なし
+      makeDocument({ documentId: 'd2', excluded: true, exclusionReason: 'duplicate' }), // study 丸ごと除外
+      makeDocument({ documentId: 'd3' }),
+    ];
+    const store = makeStore({ documents: docs });
+    initPilotSelection(store);
+    expect(store.getState().pilot.selectedStudyIds).toEqual(['study-d1', 'study-d3']);
+  });
 });
 
 describe('togglePilotStudy / setPilotModel', () => {
@@ -643,6 +658,25 @@ describe('runPilot: 実行', () => {
     const loaded = await state.pilot.verification?.loadPdfView('doc-1');
     expect(loaded?.pdf).not.toBeNull();
     expect(getFileBinaryMock).toHaveBeenCalledTimes(1);
+  });
+
+  test('除外文書は抽出対象から外れる（issue #181）: 除外 study を選択していても対象文書が渡らない', async () => {
+    const store = makeStore({
+      documents: [
+        makeDocument({ documentId: 'doc-1', excluded: true, exclusionReason: 'duplicate' }),
+        makeDocument({ documentId: 'doc-2' }),
+      ],
+      fields: [makeField()],
+      pilot: { selectedStudyIds: ['study-doc-1', 'study-doc-2'], model: 'gemini-test' },
+    });
+    runExtractionMock.mockResolvedValue(makeOutcome());
+    await runPilot(store, makeDeps());
+
+    const [params] = runExtractionMock.mock.calls[0] as unknown as [
+      Parameters<typeof runExtraction>[0],
+    ];
+    // study-doc-1（除外済み文書のみ）は候補から消えるため対象に含まれない
+    expect(params.documents.map((doc) => doc.documentId)).toEqual(['doc-2']);
   });
 
   test('高精度読み取りモード（issue #176）: チェック時は highAccuracyImages: true を runExtraction へ渡す', async () => {

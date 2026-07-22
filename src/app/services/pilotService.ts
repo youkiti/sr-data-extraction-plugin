@@ -9,7 +9,7 @@ import type { SchemaField } from '../../domain/schemaField';
 import { readDocuments } from '../../features/documents/documentRepository';
 import { readStudies } from '../../features/documents/studyRepository';
 import {
-  buildStudySelection,
+  buildExtractionCandidates,
   documentsForStudies,
   type StudySelectionItem,
 } from '../../features/documents/studySelection';
@@ -86,8 +86,8 @@ export function initPilotSelection(store: Store): void {
   ) {
     return;
   }
-  // ガードで documents.records / studies は非 null
-  const defaults = buildStudySelection(state.documents.studies, state.documents.records)
+  // ガードで documents.records / studies は非 null。除外文書は既定選択の候補から外す（issue #181）
+  const defaults = buildExtractionCandidates(state.documents.studies, state.documents.records)
     .filter((item) => item.hasTextLayer)
     .slice(0, 3)
     .map((item) => item.study.studyId);
@@ -183,7 +183,10 @@ async function resolveDocuments(
   return cached ?? (await readDocuments(spreadsheetId, deps.google));
 }
 
-/** Studies 一覧を解決する（documents スライスに読込済みならそれを使う） */
+/**
+ * Studies 一覧（抽出候補。除外文書は対象から外す。issue #181）を解決する
+ * （documents スライスに読込済みならそれを使う）
+ */
 async function resolveStudies(
   store: Store,
   deps: PilotServiceDeps,
@@ -192,7 +195,7 @@ async function resolveStudies(
   const cachedStudies = store.getState().documents.studies;
   const studies = cachedStudies ?? (await readStudies(spreadsheetId, deps.google));
   const records = await resolveDocuments(store, deps, spreadsheetId);
-  return buildStudySelection(studies, records);
+  return buildExtractionCandidates(studies, records);
 }
 
 /**

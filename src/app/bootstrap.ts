@@ -7,18 +7,25 @@ import { guardRoute } from './guards';
 import { showToast } from './ui/toast';
 import type { ViewContext } from './views/types';
 import {
+  cancelExclusion,
   cancelMerge,
+  confirmExclusion,
   confirmMerge,
   ignoreCandidate,
   importFromFiles,
   importFromPicker,
   loadDocuments,
+  openExcludeDocument,
+  openExcludeStudy,
   openMergeCandidate,
   openMergeDialog,
+  restoreDocument,
+  restoreStudy,
   saveDocumentRole,
   saveRegistrationId,
   saveStudyLabel,
   toggleStudySelection,
+  updateExclusionDialog,
   updateMergeDialog,
   type DocumentsServiceDeps,
 } from './services/documentsService';
@@ -488,6 +495,27 @@ export async function bootstrapApp(
       },
       onTiabHandoffDismiss: () => {
         void dismissTiabHandoff(store);
+      },
+      onOpenExcludeStudy: (studyId) => {
+        openExcludeStudy(store, studyId);
+      },
+      onOpenExcludeDocument: (documentId) => {
+        openExcludeDocument(store, documentId);
+      },
+      onUpdateExclusionDialog: (patch) => {
+        updateExclusionDialog(store, patch);
+      },
+      onCancelExclusion: () => {
+        cancelExclusion(store);
+      },
+      onConfirmExclusion: () => {
+        void confirmExclusion(store, deps);
+      },
+      onRestoreStudy: (studyId) => {
+        void restoreStudy(store, deps, studyId);
+      },
+      onRestoreDocument: (documentId) => {
+        void restoreDocument(store, deps, documentId);
       },
     },
     protocol: {

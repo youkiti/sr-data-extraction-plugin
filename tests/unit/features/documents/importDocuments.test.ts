@@ -147,6 +147,10 @@ describe('importDocuments（Drive Picker 経由）', () => {
         importedAt: 'NOW',
         importedBy: 'me@example.com',
         note: null,
+        excluded: false,
+        exclusionReason: null,
+        exclusionNote: null,
+        excludedAt: null,
       },
     ]);
     // Studies を Documents より先に追記する（study_id が必ず解決できる不変条件）

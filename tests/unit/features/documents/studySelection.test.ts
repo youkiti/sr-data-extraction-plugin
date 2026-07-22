@@ -2,6 +2,7 @@
 import type { DocumentRecord } from '../../../../src/domain/document';
 import type { StudyRecord } from '../../../../src/domain/study';
 import {
+  buildExtractionCandidates,
   buildStudySelection,
   documentsForStudies,
 } from '../../../../src/features/documents/studySelection';
@@ -22,6 +23,10 @@ function makeDocument(overrides: Partial<DocumentRecord> & { documentId: string 
     importedAt: 't0',
     importedBy: 'me',
     note: null,
+    excluded: false,
+    exclusionReason: null,
+    exclusionNote: null,
+    excludedAt: null,
     ...overrides,
   };
 }
@@ -125,5 +130,40 @@ describe('documentsForStudies', () => {
     const documents = [makeDocument({ documentId: 'a', studyId: 's1' })];
     const selection = buildStudySelection([makeStudy('s1')], documents);
     expect(documentsForStudies(selection, [])).toEqual([]);
+  });
+});
+
+describe('buildExtractionCandidates（issue #181: 除外文書を除いた抽出候補）', () => {
+  it('除外なしなら buildStudySelection と同じ全件を返す', () => {
+    const documents = [
+      makeDocument({ documentId: 'a', studyId: 's1' }),
+      makeDocument({ documentId: 'b', studyId: 's2' }),
+    ];
+    const studies = [makeStudy('s1'), makeStudy('s2')];
+    expect(buildExtractionCandidates(studies, documents)).toEqual(
+      buildStudySelection(studies, documents),
+    );
+  });
+
+  it('全文書が除外された study は候補から外れる', () => {
+    const documents = [
+      makeDocument({ documentId: 'a', studyId: 's1', excluded: true }),
+      makeDocument({ documentId: 'b', studyId: 's1', documentRole: 'registration', excluded: true }),
+      makeDocument({ documentId: 'c', studyId: 's2' }),
+    ];
+    const studies = [makeStudy('s1'), makeStudy('s2')];
+    const candidates = buildExtractionCandidates(studies, documents);
+    expect(candidates.map((item) => item.study.studyId)).toEqual(['s2']);
+  });
+
+  it('一部除外の study は残り文書で候補になる', () => {
+    const documents = [
+      makeDocument({ documentId: 'a', studyId: 's1', documentRole: 'article', excluded: true }),
+      makeDocument({ documentId: 'b', studyId: 's1', documentRole: 'registration', excluded: false }),
+    ];
+    const studies = [makeStudy('s1')];
+    const candidates = buildExtractionCandidates(studies, documents);
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0]?.documents.map((d) => d.documentId)).toEqual(['b']);
   });
 });

@@ -99,6 +99,10 @@ function makeDocument(overrides: Partial<DocumentRecord> = {}): DocumentRecord {
     importedAt: 't0',
     importedBy: 'owner@example.com',
     note: null,
+    excluded: false,
+    exclusionReason: null,
+    exclusionNote: null,
+    excludedAt: null,
     ...overrides,
   };
 }

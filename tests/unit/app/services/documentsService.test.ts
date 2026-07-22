@@ -4,7 +4,9 @@
 import { createInitialState, createStore, type Store } from '../../../../src/app/store';
 import {
   activeStudyGroups,
+  cancelExclusion,
   cancelMerge,
+  confirmExclusion,
   confirmMerge,
   ignoreCandidate,
   ignoredCandidatesKey,
@@ -12,12 +14,17 @@ import {
   importFromPicker,
   importPickedSelections,
   loadDocuments,
+  openExcludeDocument,
+  openExcludeStudy,
   openMergeCandidate,
   openMergeDialog,
+  restoreDocument,
+  restoreStudy,
   saveDocumentRole,
   saveRegistrationId,
   saveStudyLabel,
   toggleStudySelection,
+  updateExclusionDialog,
   updateMergeDialog,
   visibleMergeCandidates,
   type DocumentsServiceDeps,
@@ -25,7 +32,12 @@ import {
 import type { DocumentRecord } from '../../../../src/domain/document';
 import type { StudyRecord } from '../../../../src/domain/study';
 import { dedupSelections } from '../../../../src/features/documents/dedupSelections';
-import { readDocuments, updateDocument } from '../../../../src/features/documents/documentRepository';
+import {
+  ensureDocumentExclusionColumns,
+  readDocuments,
+  updateDocument,
+  updateDocuments,
+} from '../../../../src/features/documents/documentRepository';
 import { importDocuments } from '../../../../src/features/documents/importDocuments';
 import {
   appendStudies,
@@ -66,6 +78,8 @@ jest.mock('../../../../src/lib/storage/chromeStorage');
 const mockDedupSelections = jest.mocked(dedupSelections);
 const mockReadDocuments = jest.mocked(readDocuments);
 const mockUpdateDocument = jest.mocked(updateDocument);
+const mockUpdateDocuments = jest.mocked(updateDocuments);
+const mockEnsureDocumentExclusionColumns = jest.mocked(ensureDocumentExclusionColumns);
 const mockImportDocuments = jest.mocked(importDocuments);
 const mockReadStudies = jest.mocked(readStudies);
 const mockAppendStudies = jest.mocked(appendStudies);
@@ -96,6 +110,10 @@ function makeDoc(overrides: Partial<DocumentRecord> = {}): DocumentRecord {
     importedAt: '2026-07-02T00:00:00Z',
     importedBy: 'tester@example.com',
     note: null,
+    excluded: false,
+    exclusionReason: null,
+    exclusionNote: null,
+    excludedAt: null,
     ...overrides,
   };
 }
@@ -176,6 +194,8 @@ beforeEach(() => {
   mockGetLocal.mockResolvedValue(undefined);
   mockSetLocal.mockResolvedValue(undefined);
   mockLoadTiabHandoff.mockResolvedValue(null);
+  mockUpdateDocuments.mockResolvedValue(undefined);
+  mockEnsureDocumentExclusionColumns.mockResolvedValue(undefined);
 });
 
 describe('loadDocuments', () => {
@@ -1117,5 +1137,381 @@ describe('activeStudyGroups / visibleMergeCandidates', () => {
 
   test('studies / records 未読込（null）でも空配列を返す', () => {
     expect(visibleMergeCandidates(createInitialState().documents)).toEqual([]);
+  });
+});
+
+describe('文献除外機能（issue #181）', () => {
+  function withExclusionFixture(): Store {
+    const store = makeStore();
+    setDocs(store, {
+      studies: [makeStudy({ studyId: 'study-1', studyLabel: 'Smith 2020' })],
+      records: [
+        makeDoc({ documentId: 'doc-1', studyId: 'study-1', filename: 'smith2020.pdf' }),
+        makeDoc({ documentId: 'doc-2', studyId: 'study-1', filename: 'smith2020-appendix.pdf' }),
+      ],
+    });
+    return store;
+  }
+
+  describe('openExcludeStudy / openExcludeDocument', () => {
+    test('study 検出でダイアログを開く（既定値: reason null, note 空）', () => {
+      const store = withExclusionFixture();
+      openExcludeStudy(store, 'study-1');
+      expect(store.getState().documents.exclusionDialog).toEqual({
+        scope: 'study',
+        targetId: 'study-1',
+        targetLabel: 'Smith 2020',
+        reason: null,
+        note: '',
+      });
+    });
+
+    test('study 未検出は no-op', () => {
+      const store = withExclusionFixture();
+      openExcludeStudy(store, 'unknown');
+      expect(store.getState().documents.exclusionDialog).toBeNull();
+    });
+
+    test('document 検出でダイアログを開く（filename を表示ラベルにする）', () => {
+      const store = withExclusionFixture();
+      openExcludeDocument(store, 'doc-1');
+      expect(store.getState().documents.exclusionDialog).toEqual({
+        scope: 'document',
+        targetId: 'doc-1',
+        targetLabel: 'smith2020.pdf',
+        reason: null,
+        note: '',
+      });
+    });
+
+    test('document 未検出は no-op', () => {
+      const store = withExclusionFixture();
+      openExcludeDocument(store, 'unknown');
+      expect(store.getState().documents.exclusionDialog).toBeNull();
+    });
+  });
+
+  describe('updateExclusionDialog / cancelExclusion', () => {
+    test('dialog が無ければ no-op / あれば patch', () => {
+      const store = withExclusionFixture();
+      updateExclusionDialog(store, { note: 'x' });
+      expect(store.getState().documents.exclusionDialog).toBeNull();
+
+      openExcludeStudy(store, 'study-1');
+      updateExclusionDialog(store, { reason: 'duplicate', note: '重複のため' });
+      expect(store.getState().documents.exclusionDialog).toEqual({
+        scope: 'study',
+        targetId: 'study-1',
+        targetLabel: 'Smith 2020',
+        reason: 'duplicate',
+        note: '重複のため',
+      });
+    });
+
+    test('cancelExclusion で閉じる', () => {
+      const store = withExclusionFixture();
+      openExcludeStudy(store, 'study-1');
+      cancelExclusion(store);
+      expect(store.getState().documents.exclusionDialog).toBeNull();
+    });
+  });
+
+  describe('confirmExclusion', () => {
+    test('プロジェクト未選択 / dialog なし / excluding 中は no-op', async () => {
+      const noProject = makeStore(false);
+      setDocs(noProject, {
+        exclusionDialog: {
+          scope: 'document',
+          targetId: 'doc-1',
+          targetLabel: 'a.pdf',
+          reason: null,
+          note: '',
+        },
+      });
+      await confirmExclusion(noProject, makeDeps());
+      expect(mockUpdateDocuments).not.toHaveBeenCalled();
+
+      await confirmExclusion(makeStore(), makeDeps()); // dialog null
+      expect(mockUpdateDocuments).not.toHaveBeenCalled();
+
+      const busy = withExclusionFixture();
+      openExcludeDocument(busy, 'doc-1');
+      setDocs(busy, { excluding: true });
+      await confirmExclusion(busy, makeDeps());
+      expect(mockUpdateDocuments).not.toHaveBeenCalled();
+    });
+
+    test('study scope で理由未選択はトーストのみで書き込まない（ダイアログは開いたまま）', async () => {
+      const store = withExclusionFixture();
+      openExcludeStudy(store, 'study-1');
+      await confirmExclusion(store, makeDeps());
+      expect(mockUpdateDocuments).not.toHaveBeenCalled();
+      expect(mockEnsureDocumentExclusionColumns).not.toHaveBeenCalled();
+      expect(toastTexts()).toContain('study 単位の除外には理由の選択が必要です');
+      expect(store.getState().documents.exclusionDialog).not.toBeNull();
+      expect(store.getState().documents.excluding).toBe(false);
+    });
+
+    test('study scope: 対象 study の全文書へ書き込み、ensureDocumentExclusionColumns が updateDocuments より前に呼ばれる', async () => {
+      const store = withExclusionFixture();
+      openExcludeStudy(store, 'study-1');
+      updateExclusionDialog(store, { reason: 'duplicate', note: '  重複のため  ' });
+
+      await confirmExclusion(store, makeDeps());
+
+      expect(mockEnsureDocumentExclusionColumns).toHaveBeenCalledWith('sheet-1', expect.anything());
+      expect(mockUpdateDocuments).toHaveBeenCalledTimes(1);
+      const ensureOrder = mockEnsureDocumentExclusionColumns.mock.invocationCallOrder[0] as number;
+      const updateOrder = mockUpdateDocuments.mock.invocationCallOrder[0] as number;
+      expect(ensureOrder).toBeLessThan(updateOrder);
+
+      const [, updatedDocs] = mockUpdateDocuments.mock.calls[0] as unknown as [string, DocumentRecord[]];
+      expect(updatedDocs.map((d) => d.documentId)).toEqual(['doc-1', 'doc-2']);
+      expect(updatedDocs.every((d) => d.excluded === true)).toBe(true);
+      expect(updatedDocs.every((d) => d.exclusionReason === 'duplicate')).toBe(true);
+      expect(updatedDocs.every((d) => d.exclusionNote === '重複のため')).toBe(true);
+      expect(updatedDocs.every((d) => d.excludedAt === 'NOW')).toBe(true);
+
+      const state = store.getState();
+      expect(state.documents.records?.every((d) => d.excluded)).toBe(true);
+      expect(state.documents.exclusionDialog).toBeNull();
+      expect(state.documents.excluding).toBe(false);
+      expect(toastTexts()).toContain('Smith 2020 を抽出候補から除外しました');
+    });
+
+    test('document scope: 理由 null でも確定でき、対象 1 件だけ書き込む（メモは空文字→null）', async () => {
+      const store = withExclusionFixture();
+      openExcludeDocument(store, 'doc-1');
+
+      await confirmExclusion(store, makeDeps());
+
+      expect(mockUpdateDocuments).toHaveBeenCalledTimes(1);
+      const [, updatedDocs] = mockUpdateDocuments.mock.calls[0] as unknown as [string, DocumentRecord[]];
+      expect(updatedDocs).toHaveLength(1);
+      expect(updatedDocs[0]).toMatchObject({
+        documentId: 'doc-1',
+        excluded: true,
+        exclusionReason: null,
+        exclusionNote: null,
+        excludedAt: 'NOW',
+      });
+
+      const state = store.getState();
+      expect(state.documents.records?.find((d) => d.documentId === 'doc-1')?.excluded).toBe(true);
+      expect(state.documents.records?.find((d) => d.documentId === 'doc-2')?.excluded).toBe(false);
+      expect(toastTexts()).toContain('smith2020.pdf を抽出候補から除外しました');
+    });
+
+    test('失敗で excluding を戻し、ダイアログは開いたままトーストのみ', async () => {
+      const store = withExclusionFixture();
+      openExcludeDocument(store, 'doc-1');
+      mockUpdateDocuments.mockRejectedValue(new Error('offline'));
+
+      await confirmExclusion(store, makeDeps());
+
+      const state = store.getState();
+      expect(state.documents.excluding).toBe(false);
+      expect(state.documents.exclusionDialog).not.toBeNull();
+      expect(state.documents.records?.every((d) => d.excluded === false)).toBe(true);
+      expect(toastTexts()).toContain('除外に失敗しました: offline');
+    });
+
+    test('ensureDocumentExclusionColumns の失敗も同様にトーストのみ', async () => {
+      const store = withExclusionFixture();
+      openExcludeDocument(store, 'doc-1');
+      mockEnsureDocumentExclusionColumns.mockRejectedValue(new Error('列移行に失敗'));
+
+      await confirmExclusion(store, makeDeps());
+
+      expect(mockUpdateDocuments).not.toHaveBeenCalled();
+      expect(store.getState().documents.excluding).toBe(false);
+      expect(toastTexts()).toContain('除外に失敗しました: 列移行に失敗');
+    });
+
+    test('records 未読込（null）でも例外にならず対象 0 件で確定する', async () => {
+      const store = makeStore();
+      setDocs(store, {
+        records: null,
+        exclusionDialog: {
+          scope: 'document',
+          targetId: 'doc-1',
+          targetLabel: 'a.pdf',
+          reason: null,
+          note: '',
+        },
+      });
+      await confirmExclusion(store, makeDeps());
+      expect(mockUpdateDocuments).toHaveBeenCalledWith('sheet-1', [], expect.anything());
+      expect(store.getState().documents.records).toEqual([]);
+    });
+
+    test('deps.now 未指定時は既定の nowIso8601 を使う', async () => {
+      const store = withExclusionFixture();
+      openExcludeDocument(store, 'doc-1');
+      const deps = makeDeps();
+      await confirmExclusion(store, { ...deps, now: undefined });
+      const [, updatedDocs] = mockUpdateDocuments.mock.calls[0] as unknown as [string, DocumentRecord[]];
+      // 注入した固定値 'NOW' ではなく、実際の nowIso8601() が使われる
+      expect(updatedDocs[0]?.excludedAt).not.toBe('NOW');
+      expect(updatedDocs[0]?.excludedAt).not.toBe('');
+    });
+  });
+
+  describe('restoreStudy', () => {
+    function excludedFixture(): Store {
+      const store = makeStore();
+      setDocs(store, {
+        studies: [makeStudy({ studyId: 'study-1', studyLabel: 'Smith 2020' })],
+        records: [
+          makeDoc({
+            documentId: 'doc-1',
+            studyId: 'study-1',
+            excluded: true,
+            exclusionReason: 'duplicate',
+            exclusionNote: '重複',
+            excludedAt: 'PAST',
+          }),
+          makeDoc({
+            documentId: 'doc-2',
+            studyId: 'study-1',
+            filename: 'appendix.pdf',
+            excluded: true,
+            exclusionReason: null,
+            exclusionNote: null,
+            excludedAt: 'PAST',
+          }),
+        ],
+      });
+      return store;
+    }
+
+    test('プロジェクト未選択は no-op', async () => {
+      await restoreStudy(makeStore(false), makeDeps(), 'study-1');
+      expect(mockUpdateDocuments).not.toHaveBeenCalled();
+    });
+
+    test('records 未読込（null）は対象 0 件扱いで no-op', async () => {
+      const store = makeStore();
+      setDocs(store, { records: null });
+      await restoreStudy(store, makeDeps(), 'study-1');
+      expect(mockUpdateDocuments).not.toHaveBeenCalled();
+    });
+
+    test('対象 0 件（除外済み文書なし）は no-op', async () => {
+      const store = withExclusionFixture(); // 全て excluded: false
+      await restoreStudy(store, makeDeps(), 'study-1');
+      expect(mockUpdateDocuments).not.toHaveBeenCalled();
+    });
+
+    test('除外済み文書をまとめて解除する（reason / note / excludedAt は保持・対象外の他 study 文書は据え置き）', async () => {
+      const store = excludedFixture();
+      // 対象外（別 study・非除外）の文書を混在させ、更新対象から外れることも検証する
+      const otherDoc = makeDoc({
+        documentId: 'doc-other',
+        studyId: 'study-2',
+        filename: 'other.pdf',
+        excluded: false,
+      });
+      setDocs(store, { records: [...(store.getState().documents.records as DocumentRecord[]), otherDoc] });
+
+      await restoreStudy(store, makeDeps(), 'study-1');
+
+      expect(mockUpdateDocuments).toHaveBeenCalledTimes(1);
+      const [, updatedDocs] = mockUpdateDocuments.mock.calls[0] as unknown as [string, DocumentRecord[]];
+      expect(updatedDocs.map((d) => d.documentId)).toEqual(['doc-1', 'doc-2']);
+      expect(updatedDocs.every((d) => d.excluded === false)).toBe(true);
+
+      const state = store.getState();
+      const doc1 = state.documents.records?.find((d) => d.documentId === 'doc-1');
+      expect(doc1).toMatchObject({
+        excluded: false,
+        exclusionReason: 'duplicate',
+        exclusionNote: '重複',
+        excludedAt: 'PAST',
+      });
+      // 対象外の文書は変更されない（restoreDocs の byId フォールバック分岐）
+      expect(state.documents.records?.find((d) => d.documentId === 'doc-other')).toEqual(otherDoc);
+      expect(toastTexts()).toContain('Smith 2020 の除外を解除しました');
+    });
+
+    test('study 未検出でも配下の除外済み文書があれば解除し、ラベルは studyId をそのまま使う', async () => {
+      const store = makeStore();
+      setDocs(store, {
+        studies: [],
+        records: [
+          makeDoc({ documentId: 'doc-9', studyId: 'study-ghost', excluded: true }),
+        ],
+      });
+      await restoreStudy(store, makeDeps(), 'study-ghost');
+      expect(mockUpdateDocuments).toHaveBeenCalledTimes(1);
+      expect(toastTexts()).toContain('study-ghost の除外を解除しました');
+    });
+
+    test('失敗はトースト + 再描画（値は変わらない）', async () => {
+      const store = excludedFixture();
+      mockUpdateDocuments.mockRejectedValue(new Error('offline'));
+      const listener = jest.fn();
+      store.subscribe(listener);
+
+      await restoreStudy(store, makeDeps(), 'study-1');
+
+      expect(toastTexts()).toContain('除外解除に失敗しました: offline');
+      expect(store.getState().documents.records?.every((d) => d.excluded)).toBe(true);
+      expect(listener).toHaveBeenCalled();
+    });
+  });
+
+  describe('restoreDocument', () => {
+    function excludedDoc(): Store {
+      const store = makeStore();
+      setDocs(store, {
+        studies: [makeStudy({ studyId: 'study-1' })],
+        records: [
+          makeDoc({
+            documentId: 'doc-1',
+            studyId: 'study-1',
+            filename: 'smith2020.pdf',
+            excluded: true,
+            exclusionReason: 'on_hold',
+            exclusionNote: null,
+            excludedAt: 'PAST',
+          }),
+        ],
+      });
+      return store;
+    }
+
+    test('プロジェクト未選択 / 未検出 / 未除外は no-op', async () => {
+      await restoreDocument(makeStore(false), makeDeps(), 'doc-1');
+      expect(mockUpdateDocuments).not.toHaveBeenCalled();
+
+      const store = excludedDoc();
+      await restoreDocument(store, makeDeps(), 'unknown');
+      expect(mockUpdateDocuments).not.toHaveBeenCalled();
+
+      const notExcluded = withExclusionFixture();
+      await restoreDocument(notExcluded, makeDeps(), 'doc-1');
+      expect(mockUpdateDocuments).not.toHaveBeenCalled();
+    });
+
+    test('成功で excluded: false へ 1 件だけ書き込む', async () => {
+      const store = excludedDoc();
+      await restoreDocument(store, makeDeps(), 'doc-1');
+
+      expect(mockUpdateDocuments).toHaveBeenCalledTimes(1);
+      const [, updatedDocs] = mockUpdateDocuments.mock.calls[0] as unknown as [string, DocumentRecord[]];
+      expect(updatedDocs).toHaveLength(1);
+      expect(updatedDocs[0]).toMatchObject({ documentId: 'doc-1', excluded: false, exclusionReason: 'on_hold' });
+      expect(store.getState().documents.records?.[0]?.excluded).toBe(false);
+      expect(toastTexts()).toContain('smith2020.pdf の除外を解除しました');
+    });
+
+    test('失敗はトースト + 再描画', async () => {
+      const store = excludedDoc();
+      mockUpdateDocuments.mockRejectedValue(new Error('offline'));
+      await restoreDocument(store, makeDeps(), 'doc-1');
+      expect(toastTexts()).toContain('除外解除に失敗しました: offline');
+      expect(store.getState().documents.records?.[0]?.excluded).toBe(true);
+    });
   });
 });

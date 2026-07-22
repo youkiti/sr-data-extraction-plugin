@@ -93,6 +93,10 @@ function makeDocument(overrides: Partial<DocumentRecord> = {}): DocumentRecord {
     importedAt: 't0',
     importedBy: 'me@example.com',
     note: null,
+    excluded: false,
+    exclusionReason: null,
+    exclusionNote: null,
+    excludedAt: null,
     ...overrides,
   };
 }
@@ -461,6 +465,17 @@ describe('initExtractSelection', () => {
     initExtractSelection(noRuns);
     expect(noRuns.getState().extract.selectionInitialized).toBe(false);
   });
+
+  test('除外文書は既定選択の候補から外れる（issue #181。全除外 study は候補ごと消え、一部除外は残る）', () => {
+    const docs = [
+      makeDocument({ documentId: 'd1' }),
+      makeDocument({ documentId: 'd2', excluded: true, exclusionReason: 'ineligible' }),
+      makeDocument({ documentId: 'd3' }),
+    ];
+    const store = makeStore({ documents: docs, extract: { extractedStudyIds: [] } });
+    initExtractSelection(store);
+    expect(store.getState().extract.selectedStudyIds).toEqual([studyIdOf('d1'), studyIdOf('d3')]);
+  });
 });
 
 describe('toggleExtractStudy / setExtractModel', () => {
@@ -685,6 +700,30 @@ describe('runExtract', () => {
         detail: null,
       },
     ]);
+  });
+
+  test('除外文書は抽出対象から外れる（issue #181）: 除外 study を選択していても対象文書が渡らない', async () => {
+    const store = makeStore({
+      documents: [
+        makeDocument({ documentId: 'doc-1', excluded: true, exclusionReason: 'duplicate' }),
+        makeDocument({ documentId: 'doc-2' }),
+      ],
+      fields: [makeField()],
+      extract: {
+        selectedStudyIds: ['study-doc-1', 'study-doc-2'],
+        model: 'gemini-test',
+        confirming: true,
+        extractedStudyIds: [],
+      },
+    });
+    runExtractionMock.mockResolvedValue(makeOutcome());
+    await runExtract(store, makeDeps());
+
+    const [params] = runExtractionMock.mock.calls[0] as unknown as [
+      Parameters<typeof runExtraction>[0],
+    ];
+    // study-doc-1（除外済み文書のみ）は候補から消えるため対象に含まれない
+    expect(params.documents.map((doc) => doc.documentId)).toEqual(['doc-2']);
   });
 
   test('高精度読み取りモード（issue #176）: チェック時は highAccuracyImages: true を渡し、lastRunHighAccuracyImages に確定値を保持する', async () => {
@@ -1057,6 +1096,22 @@ describe('retryExtractStudy', () => {
     await retryExtractStudy(store, makeDeps(), 'study-doc-2');
     // 他 study の警告は残し、study-doc-2 の古い警告だけが新しい結果で置き換わる
     expect(store.getState().extract.armWarnings).toEqual([otherWarning, newWarning]);
+  });
+
+  test('除外文書は再試行の対象からも外れる（issue #181）: 対象 study の文書が全除外なら見つからない扱い', async () => {
+    const store = makeFailedStore();
+    store.setState({
+      documents: {
+        ...store.getState().documents,
+        records: [
+          makeDocument({ documentId: 'doc-1' }),
+          makeDocument({ documentId: 'doc-2', excluded: true, exclusionReason: 'duplicate' }),
+        ],
+      },
+    });
+    await retryExtractStudy(store, makeDeps(), 'study-doc-2');
+    expect(store.getState().extract.runError).toContain('study-doc-2 の文書が見つかりません');
+    expect(runExtractionMock).not.toHaveBeenCalled();
   });
 
   test('study が見つからない・実行例外は対象行を失敗に戻して runError を出す', async () => {

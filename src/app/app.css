@@ -620,6 +620,52 @@
   margin-top: 8px;
 }
 
+/* 文献除外機能（issue #181） */
+.documents__exclude-study,
+.documents__restore-study,
+.documents__exclude-doc,
+.documents__restore-doc {
+  margin-left: auto;
+}
+
+.documents__all-excluded-note {
+  color: var(--color-text-muted);
+  font-style: italic;
+}
+
+.documents__doc-row--excluded {
+  color: var(--color-text-muted);
+}
+
+.documents__excluded {
+  margin-top: 8px;
+}
+
+.documents__excluded summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.documents__exclusion-dialog {
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 16px;
+  margin-top: 12px;
+  display: grid;
+  gap: 8px;
+  max-width: 560px;
+}
+
+.documents__exclusion-hint {
+  color: var(--color-text-muted);
+}
+
+.documents__exclusion-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
 /* tiab-review 採用リスト取り込みカード（issue #68・ui-states.md §3） */
 .documents__tiab {
   margin-top: 12px;

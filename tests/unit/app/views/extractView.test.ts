@@ -67,6 +67,13 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<ExtractViewCallba
         onTiabGrantAccess: jest.fn(),
         onTiabHandoffImport: jest.fn(),
         onTiabHandoffDismiss: jest.fn(),
+        onOpenExcludeStudy: jest.fn(),
+        onOpenExcludeDocument: jest.fn(),
+        onUpdateExclusionDialog: jest.fn(),
+        onCancelExclusion: jest.fn(),
+        onConfirmExclusion: jest.fn(),
+        onRestoreStudy: jest.fn(),
+        onRestoreDocument: jest.fn(),
       },
       protocol: {
         onSubmit: jest.fn(),
@@ -177,6 +184,10 @@ function makeDocument(overrides: Partial<DocumentRecord> = {}): DocumentRecord {
     importedAt: 't0',
     importedBy: 'me',
     note: null,
+    excluded: false,
+    exclusionReason: null,
+    exclusionNote: null,
+    excludedAt: null,
     ...overrides,
   };
 }

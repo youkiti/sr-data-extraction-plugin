@@ -9,7 +9,7 @@ import type { SchemaField } from '../../domain/schemaField';
 import { readDocuments } from '../../features/documents/documentRepository';
 import { readStudies } from '../../features/documents/studyRepository';
 import {
-  buildStudySelection,
+  buildExtractionCandidates,
   documentsForStudies,
 } from '../../features/documents/studySelection';
 import { makeLoadDocumentPages } from '../../features/documents/loadDocumentPages';
@@ -230,8 +230,8 @@ export function initExtractSelection(store: Store): void {
     return;
   }
   const extracted = new Set(extract.extractedStudyIds);
-  // ガードで documents.records / studies は非 null
-  const defaults = buildStudySelection(documents.studies, documents.records)
+  // ガードで documents.records / studies は非 null。除外文書は既定選択の候補から外す（issue #181）
+  const defaults = buildExtractionCandidates(documents.studies, documents.records)
     .filter((item) => !extracted.has(item.study.studyId))
     .map((item) => item.study.studyId);
   patchExtract(store, {
@@ -446,7 +446,8 @@ export async function runExtract(store: Store, deps: ExtractServiceDeps): Promis
     const records = await resolveDocuments(store, deps.google, project.spreadsheetId);
     const studies = await resolveStudies(store, deps.google, project.spreadsheetId);
     const studyIds = [...state.extract.selectedStudyIds];
-    const targets = documentsForStudies(buildStudySelection(studies, records), studyIds);
+    // 除外文書は抽出対象から外す（issue #181）
+    const targets = documentsForStudies(buildExtractionCandidates(studies, records), studyIds);
     const outcome = await performRun(store, deps, {
       spreadsheetId: project.spreadsheetId,
       driveFolderId: project.driveFolderId,
@@ -521,7 +522,8 @@ export async function retryExtractStudy(
   try {
     const records = await resolveDocuments(store, deps.google, project.spreadsheetId);
     const studies = await resolveStudies(store, deps.google, project.spreadsheetId);
-    const targets = documentsForStudies(buildStudySelection(studies, records), [studyId]);
+    // 除外文書は再試行の対象からも外す（issue #181）
+    const targets = documentsForStudies(buildExtractionCandidates(studies, records), [studyId]);
     if (targets.length === 0) {
       throw new Error(t('extraction.errStudyDocsNotFound', { id: studyId }));
     }

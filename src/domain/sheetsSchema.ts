@@ -94,6 +94,13 @@ export const SHEET_HEADERS: Record<SheetTabName, readonly string[]> = {
     'imported_at',
     'imported_by',
     'note',
+    // 文献除外機能（issue #181）。既存プロジェクトはこの 4 列を持たないため、末尾に追加し
+    // 読み書き側で後方互換を取る（evidenceRepository の bbox 列と同じ方式。
+    // documentRepository.ts の ensureDocumentExclusionColumns / fetchDocuments 参照）
+    'excluded',
+    'exclusion_reason',
+    'exclusion_note',
+    'excluded_at',
   ],
   SchemaVersions: [
     'schema_version',

@@ -11,6 +11,7 @@ import type { SchemaPresetKind } from '../../features/schema/presets';
 import type { PresetDialogPatch } from '../../features/schema/presets/prespecDialog';
 import type { SchemaEditorRow } from '../../features/schema/types';
 import type { VerifyLayoutMode } from '../../lib/storage/settingsStore';
+import type { ExclusionDialogState } from '../store';
 import type { RelocateQuoteOutcome } from '../services/relocateQuoteService';
 
 /** #/home のユーザー操作コールバック（owner のレビュアー管理カード + reviewer の縮退版 Home を含む） */
@@ -81,6 +82,20 @@ export interface DocumentsViewCallbacks {
   onTiabHandoffImport(): void;
   /** 同パネルの「この案内を閉じる」（storage の引き継ぎ状態を破棄してパネルを消す） */
   onTiabHandoffDismiss(): void;
+  /** study 単位の除外ダイアログを開く（issue #181） */
+  onOpenExcludeStudy(studyId: string): void;
+  /** 文書単位の除外ダイアログを開く */
+  onOpenExcludeDocument(documentId: string): void;
+  /** 除外ダイアログの入力（reason / note）更新 */
+  onUpdateExclusionDialog(patch: Partial<ExclusionDialogState>): void;
+  /** 除外ダイアログのキャンセル */
+  onCancelExclusion(): void;
+  /** 除外ダイアログの確定 */
+  onConfirmExclusion(): void;
+  /** study 配下の除外済み文書をまとめて除外解除する */
+  onRestoreStudy(studyId: string): void;
+  /** 文書 1 件の除外を解除する */
+  onRestoreDocument(documentId: string): void;
 }
 
 /** #/protocol（S4）のユーザー操作コールバック */

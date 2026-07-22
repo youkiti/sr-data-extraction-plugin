@@ -79,6 +79,7 @@ import {
 import type { BuiltExport, ClassicExportFormat } from '../../../src/features/export/buildExport';
 import { createInitialState, type AdjudicateWorking, type AppState } from '../../../src/app/store';
 import { SHEET_HEADERS } from '../../../src/domain/sheetsSchema';
+import { documentToRow } from '../../../src/features/documents/documentRepository';
 import { CURRENT_PROJECT_STORAGE_KEY } from '../../../src/features/project/projectStore';
 import { setUiLanguage } from '../../../src/lib/i18n';
 
@@ -714,6 +715,116 @@ describe('bootstrapApp', () => {
     await flush();
     // 統合が走り、ダイアログは閉じる
     expect(store?.getState().documents.mergeDialog).toBeNull();
+  });
+
+  test('#/documents の文献除外機能（study / document の除外・解除・ダイアログ操作）が配線されている（issue #181）', async () => {
+    const study1 = { studyId: 'study-1', studyLabel: 'Smith 2020', registrationId: null, createdAt: 't', createdBy: 'e', note: null };
+    const doc1 = { documentId: 'doc-1', studyId: 'study-1', documentRole: 'article' as const, driveFileId: 'd1', sourceFileId: 's1', filename: 'a.pdf', pmid: null, doi: null, textRef: 't1', textStatus: 'ok' as const, pageCount: 1, charCount: 1, importedAt: 't', importedBy: 'e', note: null, excluded: false, exclusionReason: null, exclusionNote: null, excludedAt: null };
+    const doc2 = { ...doc1, documentId: 'doc-2', filename: 'b.pdf' };
+    const stub = createWindowStub({
+      currentProject: PROJECT,
+      home: COUNTS_LOADED,
+      documents: {
+        records: [doc1, doc2],
+        studies: [study1],
+        extractedStudyIds: [],
+        ignoredCandidateKeys: [],
+        loading: false,
+        loadError: null,
+        importing: false,
+        importRows: [],
+        selectedStudyIds: [],
+        mergeDialog: null,
+        merging: false,
+        mergeError: null,
+      },
+    } as unknown as Partial<AppState>);
+
+    // ensureDocumentExclusionColumns（values:batchGet）と updateDocuments（GET + values:batchUpdate）
+    // まで届く配線を検証するため、createTabRoutingDeps を拡張したローカル fetch モックを使う。
+    // 行番号解決（fetchDocuments）が全行をパースするため、doc1 / doc2 は妥当な行として与える
+    const toRowStrings = (row: readonly (string | number | boolean | null)[]): string[] =>
+      row.map((v) => (v === null ? '' : String(v)));
+    const documentsHeader = [...SHEET_HEADERS.Documents];
+    const documentsRows = [documentsHeader, toRowStrings(documentToRow(doc1)), toRowStrings(documentToRow(doc2))];
+    const fetchMock = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = decodeURIComponent(String(input));
+      const method = init?.method ?? 'GET';
+      if (method === 'GET' && url.includes('values:batchGet')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ valueRanges: [{ values: [documentsHeader] }] }),
+          text: async () => '',
+        };
+      }
+      if (method === 'POST' && url.includes('values:batchUpdate')) {
+        return { ok: true, status: 200, json: async () => ({}), text: async () => '' };
+      }
+      let json: unknown = {};
+      if (method === 'GET' && url.includes('/values/Documents')) {
+        json = { values: documentsRows };
+      }
+      return { ok: true, status: 200, json: async () => json, text: async () => '' };
+    });
+    const { deps } = createFakeDeps([]);
+    deps.google = { fetch: fetchMock as unknown as typeof fetch, getAccessToken: async () => 'token' };
+
+    const store = await bootstrapApp(asWindow(stub), deps);
+    stub.location.hash = '#/documents';
+    stub.fireHashChange();
+    await flush();
+
+    // study 単位の除外ダイアログを開いてキャンセル（onOpenExcludeStudy / onCancelExclusion）
+    (document.querySelector('.documents__exclude-study') as HTMLButtonElement).click();
+    await flush();
+    expect(document.getElementById('exclusion-dialog')).not.toBeNull();
+    (document.getElementById('exclusion-cancel') as HTMLButtonElement).click();
+    await flush();
+    expect(document.getElementById('exclusion-dialog')).toBeNull();
+
+    // 文書単位の除外ダイアログ（onOpenExcludeDocument）→ 理由・メモ入力（onUpdateExclusionDialog）→ 確定（onConfirmExclusion）
+    (document.querySelectorAll('.documents__exclude-doc')[0] as HTMLButtonElement).click();
+    await flush();
+    const reasonSelect = document.getElementById('exclusion-reason') as HTMLSelectElement;
+    reasonSelect.value = 'duplicate';
+    reasonSelect.dispatchEvent(new Event('change'));
+    const noteInput = document.getElementById('exclusion-note') as HTMLTextAreaElement;
+    noteInput.value = '重複のため';
+    noteInput.dispatchEvent(new Event('input'));
+    (document.getElementById('exclusion-confirm') as HTMLButtonElement).click();
+    await flush();
+    await flush();
+
+    expect(document.getElementById('exclusion-dialog')).toBeNull();
+    expect(store?.getState().documents.records?.find((d) => d.documentId === 'doc-1')?.excluded).toBe(true);
+    expect(toastTexts()).toContain('a.pdf を抽出候補から除外しました');
+
+    // 文書単位の除外解除（onRestoreDocument）
+    (document.querySelector('.documents__restore-doc') as HTMLButtonElement).click();
+    await flush();
+    await flush();
+    expect(store?.getState().documents.records?.find((d) => d.documentId === 'doc-1')?.excluded).toBe(false);
+    expect(toastTexts()).toContain('a.pdf の除外を解除しました');
+
+    // 残る 2 文書目も除外して study を全除外にし、study 単位の除外解除（onRestoreStudy）まで確認する
+    (document.querySelectorAll('.documents__exclude-doc')[0] as HTMLButtonElement).click();
+    await flush();
+    (document.getElementById('exclusion-confirm') as HTMLButtonElement).click();
+    await flush();
+    await flush();
+    (document.querySelectorAll('.documents__exclude-doc')[0] as HTMLButtonElement).click();
+    await flush();
+    (document.getElementById('exclusion-confirm') as HTMLButtonElement).click();
+    await flush();
+    await flush();
+    expect(document.querySelector('.documents__restore-study')).not.toBeNull();
+
+    (document.querySelector('.documents__restore-study') as HTMLButtonElement).click();
+    await flush();
+    await flush();
+    expect(store?.getState().documents.records?.every((d) => d.excluded === false)).toBe(true);
+    expect(toastTexts()).toContain('Smith 2020 の除外を解除しました');
   });
 
   test('#/documents の tiab-review 取り込み（開く / プレビュー入力エラー / 閉じる）が配線されている', async () => {

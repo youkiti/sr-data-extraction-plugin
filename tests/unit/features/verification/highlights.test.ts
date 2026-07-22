@@ -345,6 +345,10 @@ describe('buildStudyTextMatches', () => {
       importedAt: '2026-07-09T00:00:00Z',
       importedBy: 'me@example.com',
       note: null,
+      excluded: false,
+      exclusionReason: null,
+      exclusionNote: null,
+      excludedAt: null,
     };
   }
 
