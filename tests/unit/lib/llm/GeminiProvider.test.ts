@@ -129,7 +129,7 @@ describe('GeminiProvider.chat', () => {
   test('responseFormat=text なら responseMimeType を付けない', async () => {
     const fetch = jest
       .fn()
-      .mockResolvedValue(jsonResponse({ candidates: [{ content: { parts: [{ text: '' }] } }] }));
+      .mockResolvedValue(jsonResponse({ candidates: [{ content: { parts: [{ text: 'ok' }] } }] }));
     const provider = new GeminiProvider({ apiKey: 'k', fetch });
     await provider.chat([{ role: 'user', content: 'q' }], { responseFormat: 'text' });
     const body = JSON.parse((fetch.mock.calls[0][1] as RequestInit).body as string);
@@ -147,22 +147,102 @@ describe('GeminiProvider.chat', () => {
     expect(r.text).toBe('foobar');
   });
 
-  test('candidates が無い場合は空文字', async () => {
-    const fetch = jest.fn().mockResolvedValue(jsonResponse({}));
-    const provider = new GeminiProvider({ apiKey: 'k', fetch });
-    const r = await provider.chat([{ role: 'user', content: 'q' }]);
-    expect(r.text).toBe('');
-    expect(r.tokensIn).toBeNull();
-    expect(r.tokensOut).toBeNull();
-  });
-
-  test('parts に text が無いキーがあっても落ちない', async () => {
+  test('parts に text が無いキーが混ざっても他の text パートを拾う', async () => {
     const fetch = jest
       .fn()
-      .mockResolvedValue(jsonResponse({ candidates: [{ content: { parts: [{}] } }] }));
+      .mockResolvedValue(jsonResponse({ candidates: [{ content: { parts: [{}, { text: 'ok' }] } }] }));
     const provider = new GeminiProvider({ apiKey: 'k', fetch });
     const r = await provider.chat([{ role: 'user', content: 'q' }]);
-    expect(r.text).toBe('');
+    expect(r.text).toBe('ok');
+  });
+
+  // 応答内容の検査（issue #187）: 空応答・打ち切り・ボディ切断を原因付きで throw する
+  describe('応答内容の検査（issue #187）', () => {
+    test('candidates が無い場合は「本文がありません」で throw する', async () => {
+      const fetch = jest.fn().mockResolvedValue(jsonResponse({}));
+      const provider = new GeminiProvider({ apiKey: 'k', fetch });
+      try {
+        await provider.chat([{ role: 'user', content: 'q' }]);
+        throw new Error('should have thrown');
+      } catch (err) {
+        expect(err).toBeInstanceOf(LlmProviderError);
+        const e = err as LlmProviderError;
+        expect(e.message).toContain('本文がありません');
+        expect(e.message).toContain('finishReason=不明');
+        expect(e.retryable).toBe(false);
+      }
+    });
+
+    test('プロンプトがブロックされた場合は blockReason も message に載る', async () => {
+      const fetch = jest
+        .fn()
+        .mockResolvedValue(jsonResponse({ promptFeedback: { blockReason: 'PROHIBITED_CONTENT' } }));
+      const provider = new GeminiProvider({ apiKey: 'k', fetch });
+      await expect(provider.chat([{ role: 'user', content: 'q' }])).rejects.toThrow(
+        'blockReason=PROHIBITED_CONTENT',
+      );
+    });
+
+    test('finishReason=MAX_TOKENS は text があっても出力トークン上限の打ち切りとして throw', async () => {
+      const fetch = jest.fn().mockResolvedValue(
+        jsonResponse({
+          candidates: [{ content: { parts: [{ text: '[{"trunca' }] }, finishReason: 'MAX_TOKENS' }],
+        }),
+      );
+      const provider = new GeminiProvider({ apiKey: 'k', fetch });
+      await expect(provider.chat([{ role: 'user', content: 'q' }])).rejects.toThrow(
+        '出力トークン上限で打ち切られました（finishReason=MAX_TOKENS）',
+      );
+    });
+
+    test('finishReason=RECITATION は引用チェックの打ち切りとして throw し、診断を responseBody に残す', async () => {
+      const fetch = jest.fn().mockResolvedValue(
+        jsonResponse({
+          candidates: [{ content: { parts: [] }, finishReason: 'RECITATION' }],
+        }),
+      );
+      const provider = new GeminiProvider({ apiKey: 'k', fetch });
+      try {
+        await provider.chat([{ role: 'user', content: 'q' }]);
+        throw new Error('should have thrown');
+      } catch (err) {
+        expect(err).toBeInstanceOf(LlmProviderError);
+        const e = err as LlmProviderError;
+        expect(e.message).toContain('引用（recitation）チェックで打ち切られました');
+        expect(JSON.parse(e.responseBody)).toEqual({ finishReason: 'RECITATION', blockReason: null });
+      }
+    });
+
+    test('未知の finishReason はそのままラベルとして message に載る', async () => {
+      const fetch = jest.fn().mockResolvedValue(
+        jsonResponse({
+          candidates: [{ content: { parts: [{ text: 'x' }] }, finishReason: 'NEW_REASON' }],
+        }),
+      );
+      const provider = new GeminiProvider({ apiKey: 'k', fetch });
+      await expect(provider.chat([{ role: 'user', content: 'q' }])).rejects.toThrow(
+        'NEW_REASONで打ち切られました',
+      );
+    });
+
+    test('HTTP 200 でもボディが JSON として読めなければ retryable な LlmProviderError（切断疑い）', async () => {
+      const fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        text: async () => '{"candidates":[{"content":{"par',
+      } as unknown as Response);
+      const provider = new GeminiProvider({ apiKey: 'k', fetch });
+      try {
+        await provider.chat([{ role: 'user', content: 'q' }]);
+        throw new Error('should have thrown');
+      } catch (err) {
+        expect(err).toBeInstanceOf(LlmProviderError);
+        const e = err as LlmProviderError;
+        expect(e.message).toContain('JSON として読めません');
+        expect(e.retryable).toBe(true);
+        expect(e.status).toBe(200);
+      }
+    });
   });
 
   test('model オプションを反映する', async () => {

@@ -35,12 +35,27 @@ interface GeminiResponse {
     content?: { parts?: Array<{ text?: string }>; role?: string };
     finishReason?: string;
   }>;
+  /** プロンプト自体がブロックされた場合に載る（candidates が空になる） */
+  promptFeedback?: { blockReason?: string };
   usageMetadata?: {
     promptTokenCount?: number;
     candidatesTokenCount?: number;
     totalTokenCount?: number;
   };
 }
+
+/** エラー詳細（responseBody）に載せる応答ボディ抜粋の最大長 */
+const ERROR_BODY_EXCERPT_CHARS = 1_000;
+
+/** 打ち切り理由の日本語ラベル（既知の finishReason のみ。未知はそのまま表示） */
+const FINISH_REASON_LABELS: Record<string, string> = {
+  MAX_TOKENS: '出力トークン上限',
+  SAFETY: 'セーフティフィルタ',
+  RECITATION: '引用（recitation）チェック',
+  PROHIBITED_CONTENT: '禁止コンテンツ判定',
+  BLOCKLIST: 'ブロックリスト',
+  OTHER: 'その他の理由',
+};
 
 export class GeminiProvider implements LLMProvider {
   readonly providerId = 'gemini' as const;
@@ -77,8 +92,50 @@ export class GeminiProvider implements LLMProvider {
         parseRetryAfterMs(res.headers.get('retry-after')),
       );
     }
-    const json = (await res.json()) as GeminiResponse;
+    // 応答ボディの検査（issue #187）: OpenRouterProvider と同じ方針で、ボディの途切れ・
+    // finishReason による打ち切り（MAX_TOKENS / SAFETY / RECITATION 等）・空テキストを
+    // 裸の SyntaxError や空文字のまま通さず、原因付きの LlmProviderError にする
+    const bodyText = await res.text();
+    let json: GeminiResponse;
+    try {
+      json = JSON.parse(bodyText) as GeminiResponse;
+    } catch {
+      throw new LlmProviderError(
+        'Gemini 応答ボディが JSON として読めません（応答が途中で切断された可能性）',
+        this.providerId,
+        res.status,
+        bodyText.slice(-ERROR_BODY_EXCERPT_CHARS),
+        null,
+        true,
+      );
+    }
+    const finishReason = json.candidates?.[0]?.finishReason;
+    const diagnostics = JSON.stringify({
+      finishReason: finishReason ?? null,
+      blockReason: json.promptFeedback?.blockReason ?? null,
+    });
+    if (finishReason !== undefined && finishReason !== 'STOP') {
+      const label = FINISH_REASON_LABELS[finishReason] ?? finishReason;
+      throw new LlmProviderError(
+        `Gemini 応答が${label}で打ち切られました（finishReason=${finishReason}）`,
+        this.providerId,
+        res.status,
+        diagnostics,
+      );
+    }
     const text = extractText(json);
+    if (text === '') {
+      throw new LlmProviderError(
+        `Gemini 応答に本文がありません（finishReason=${finishReason ?? '不明'}${
+          json.promptFeedback?.blockReason !== undefined
+            ? `, blockReason=${json.promptFeedback.blockReason}`
+            : ''
+        }）`,
+        this.providerId,
+        res.status,
+        diagnostics,
+      );
+    }
     return {
       text,
       tokensIn: json.usageMetadata?.promptTokenCount ?? null,

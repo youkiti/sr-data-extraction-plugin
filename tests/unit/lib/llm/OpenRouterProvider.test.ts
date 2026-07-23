@@ -189,11 +189,130 @@ describe('OpenRouterProvider.chat', () => {
     expect(r.tokensOut).toBeNull();
   });
 
-  test('content が null なら空文字を返す', async () => {
-    const fetch = jest.fn().mockResolvedValue(jsonResponse(chatCompletion(null)));
-    const provider = new OpenRouterProvider({ apiKey: 'k', model: 'm/x', fetch });
-    const r = await provider.chat([{ role: 'user', content: 'q' }]);
-    expect(r.text).toBe('');
+  // 応答内容の検査（issue #187）: 空 content・打ち切り・ボディ切断を原因付きで throw する
+  describe('応答内容の検査（issue #187）', () => {
+    test('content が null なら finish_reason 付きの LlmProviderError（再試行対象外）', async () => {
+      const fetch = jest.fn().mockResolvedValue(jsonResponse(chatCompletion(null)));
+      const provider = new OpenRouterProvider({ apiKey: 'k', model: 'm/x', fetch });
+      try {
+        await provider.chat([{ role: 'user', content: 'q' }]);
+        throw new Error('should have thrown');
+      } catch (err) {
+        expect(err).toBeInstanceOf(LlmProviderError);
+        const e = err as LlmProviderError;
+        expect(e.message).toContain('本文（content）がありません');
+        expect(e.message).toContain('finish_reason=stop');
+        expect(e.retryable).toBe(false);
+        expect(JSON.parse(e.responseBody)).toMatchObject({ finish_reason: 'stop' });
+      }
+    });
+
+    test('content が空文字でも同様に throw する', async () => {
+      const fetch = jest.fn().mockResolvedValue(jsonResponse(chatCompletion('')));
+      const provider = new OpenRouterProvider({ apiKey: 'k', model: 'm/x', fetch });
+      await expect(provider.chat([{ role: 'user', content: 'q' }])).rejects.toThrow(
+        '本文（content）がありません',
+      );
+    });
+
+    test('choices 自体が無い応答は finish_reason=不明 で throw する', async () => {
+      const fetch = jest.fn().mockResolvedValue(jsonResponse({ usage: {} }));
+      const provider = new OpenRouterProvider({ apiKey: 'k', model: 'm/x', fetch });
+      await expect(provider.chat([{ role: 'user', content: 'q' }])).rejects.toThrow(
+        'finish_reason=不明',
+      );
+    });
+
+    test('HTTP 200 でもボディが JSON として読めなければ retryable な LlmProviderError（切断疑い）', async () => {
+      const fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        text: async () => '{"choices":[{"message":{"content":"truncat',
+      } as unknown as Response);
+      const provider = new OpenRouterProvider({ apiKey: 'k', model: 'm/x', fetch });
+      try {
+        await provider.chat([{ role: 'user', content: 'q' }]);
+        throw new Error('should have thrown');
+      } catch (err) {
+        expect(err).toBeInstanceOf(LlmProviderError);
+        const e = err as LlmProviderError;
+        expect(e.message).toContain('JSON として読めません');
+        expect(e.retryable).toBe(true);
+        expect(e.status).toBe(200);
+        expect(e.responseBody).toContain('truncat'); // ボディ末尾の抜粋を残す
+      }
+    });
+
+    test('choice にプロバイダ側 error があれば retryable な LlmProviderError', async () => {
+      const fetch = jest.fn().mockResolvedValue(
+        jsonResponse({
+          choices: [
+            {
+              message: { role: 'assistant', content: null },
+              finish_reason: 'error',
+              native_finish_reason: 'upstream_timeout',
+              error: { message: 'Provider returned error', code: 502 },
+            },
+          ],
+        }),
+      );
+      const provider = new OpenRouterProvider({ apiKey: 'k', model: 'm/x', fetch });
+      try {
+        await provider.chat([{ role: 'user', content: 'q' }]);
+        throw new Error('should have thrown');
+      } catch (err) {
+        expect(err).toBeInstanceOf(LlmProviderError);
+        const e = err as LlmProviderError;
+        expect(e.message).toContain('プロバイダ側エラー');
+        expect(e.retryable).toBe(true);
+        expect(JSON.parse(e.responseBody)).toMatchObject({
+          finish_reason: 'error',
+          native_finish_reason: 'upstream_timeout',
+          error: { message: 'Provider returned error', code: 502 },
+        });
+      }
+    });
+
+    test('finish_reason 無しでも choice に error があれば finish_reason=不明 で throw する', async () => {
+      const fetch = jest.fn().mockResolvedValue(
+        jsonResponse({
+          choices: [{ message: { role: 'assistant', content: null }, error: { message: 'boom' } }],
+        }),
+      );
+      const provider = new OpenRouterProvider({ apiKey: 'k', model: 'm/x', fetch });
+      await expect(provider.chat([{ role: 'user', content: 'q' }])).rejects.toThrow(
+        'プロバイダ側エラーを返しました（finish_reason=不明）',
+      );
+    });
+
+    test('finish_reason=length は content があっても出力トークン上限の打ち切りとして throw', async () => {
+      const fetch = jest.fn().mockResolvedValue(
+        jsonResponse({
+          choices: [{ message: { role: 'assistant', content: '[{"trunca' }, finish_reason: 'length' }],
+        }),
+      );
+      const provider = new OpenRouterProvider({ apiKey: 'k', model: 'm/x', fetch });
+      await expect(provider.chat([{ role: 'user', content: 'q' }])).rejects.toThrow(
+        '出力トークン上限で打ち切られました',
+      );
+    });
+
+    test('finish_reason=content_filter はコンテンツフィルタの打ち切りとして throw（再試行対象外）', async () => {
+      const fetch = jest.fn().mockResolvedValue(
+        jsonResponse({
+          choices: [{ message: { role: 'assistant', content: 'partial' }, finish_reason: 'content_filter' }],
+        }),
+      );
+      const provider = new OpenRouterProvider({ apiKey: 'k', model: 'm/x', fetch });
+      try {
+        await provider.chat([{ role: 'user', content: 'q' }]);
+        throw new Error('should have thrown');
+      } catch (err) {
+        expect(err).toBeInstanceOf(LlmProviderError);
+        expect((err as LlmProviderError).message).toContain('コンテンツフィルタ');
+        expect((err as LlmProviderError).retryable).toBe(false);
+      }
+    });
   });
 
   test('supportsImageInput は true（OpenAI 互換の image_url をパススルーする）', () => {
