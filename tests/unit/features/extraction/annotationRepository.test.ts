@@ -57,6 +57,16 @@ function callsOf(deps: MockDeps, method: string): [string, RequestInit][] {
     .map(([url, init]) => [decodeURIComponent(String(url)), init as RequestInit]);
 }
 
+/** 新規行の追記（values:append）呼び出しのみ。既存行更新の batchUpdate も POST のため URL で分ける */
+function appendCallsOf(deps: MockDeps): [string, RequestInit][] {
+  return callsOf(deps, 'POST').filter(([url]) => url.includes(':append'));
+}
+
+/** 既存行更新（values:batchUpdate。issue #185）呼び出しのみ */
+function batchUpdateCallsOf(deps: MockDeps): [string, RequestInit][] {
+  return callsOf(deps, 'POST').filter(([url]) => url.includes('values:batchUpdate'));
+}
+
 function makeStudyRow(overrides: Partial<StudyDataUpsertRow> = {}): StudyDataUpsertRow {
   return {
     studyId: 'doc-1',
@@ -145,19 +155,21 @@ describe('readStudyDataSheet', () => {
 });
 
 describe('upsertStudyDataRows', () => {
-  test('既存行（study_id × annotator 一致）は行番号を特定して上書きする', async () => {
+  test('既存行（study_id × annotator 一致）は行番号を特定して batchUpdate で上書きする（issue #185）', async () => {
     const deps = makeDeps([
       [...STUDY_HEADER, 'sample_size_total'],
       ['doc-0', 'ai', 'ai', '1', 'run-0', 't0', '10'],
       ['doc-1', 'ai', 'ai', '1', 'run-0', 't0', '99'],
     ]);
     await upsertStudyDataRows('sid', [makeStudyRow()], deps);
-    const puts = callsOf(deps, 'PUT');
-    expect(puts).toHaveLength(1);
-    expect(puts[0]?.[0]).toContain('StudyData!A3?valueInputOption=RAW'); // 3 行目 = doc-1 の行
-    const body = JSON.parse(puts[0]?.[1].body as string);
-    expect(body.values).toEqual([['doc-1', 'ai', 'ai', 2, 'run-1', 't2', '120']]);
-    expect(callsOf(deps, 'POST')).toHaveLength(0);
+    const updates = batchUpdateCallsOf(deps);
+    expect(updates).toHaveLength(1);
+    const body = JSON.parse(updates[0]?.[1].body as string);
+    expect(body.data).toEqual([
+      { range: 'StudyData!A3', values: [['doc-1', 'ai', 'ai', 2, 'run-1', 't2', '120']] }, // 3 行目 = doc-1 の行
+    ]);
+    expect(callsOf(deps, 'PUT')).toHaveLength(0); // per-row PUT は使わない
+    expect(appendCallsOf(deps)).toHaveLength(0);
   });
 
   test('既存行が無ければ追記し、複数の新規行は 1 回の :append にまとめる', async () => {
@@ -167,7 +179,7 @@ describe('upsertStudyDataRows', () => {
       [makeStudyRow(), makeStudyRow({ studyId: 'doc-2', values: {} })],
       deps,
     );
-    const posts = callsOf(deps, 'POST');
+    const posts = appendCallsOf(deps);
     expect(posts).toHaveLength(1);
     expect(posts[0]?.[0]).toContain('StudyData!A1:append');
     const body = JSON.parse(posts[0]?.[1].body as string);
@@ -183,7 +195,7 @@ describe('upsertStudyDataRows', () => {
       makeStudyRow({ studyId: `doc-${i}`, values: { sample_size_total: String(i) } }),
     );
     await upsertStudyDataRows('sid', rows, deps, { maxRowsPerAppend: 2 });
-    const posts = callsOf(deps, 'POST');
+    const posts = appendCallsOf(deps);
     expect(posts).toHaveLength(3); // 2 行 + 2 行 + 1 行
     const bodies = posts.map(([, init]) => JSON.parse(init.body as string).values);
     expect(bodies).toEqual([
@@ -211,7 +223,7 @@ describe('upsertStudyDataRows', () => {
     expect(puts[0]?.[0]).toContain('StudyData!A1?valueInputOption=RAW');
     const headerBody = JSON.parse(puts[0]?.[1].body as string);
     expect(headerBody.values).toEqual([[...STUDY_HEADER, 'sample_size_total', 'country']]);
-    const posts = callsOf(deps, 'POST');
+    const posts = appendCallsOf(deps);
     const body = JSON.parse(posts[0]?.[1].body as string);
     expect(body.values).toEqual([['doc-1', 'ai', 'ai', 2, 'run-1', 't2', '120', 'Japan']]);
   });
@@ -273,7 +285,7 @@ describe('upsertStudyDataRows: 楽観ロック（issue #64）', () => {
       ['doc-1', 'ai', 'ai', '1', '', 't0', '10'],
     ]);
     await upsertStudyDataRows('sid', [makeStudyRow({ expectedUpdatedAt: 't0' })], deps);
-    expect(callsOf(deps, 'PUT')).toHaveLength(1);
+    expect(batchUpdateCallsOf(deps)).toHaveLength(1);
   });
 
   test('expectedUpdatedAt=undefined はチェックなし（従来挙動。ai 転記・consensus・キュー再送）', async () => {
@@ -282,7 +294,7 @@ describe('upsertStudyDataRows: 楽観ロック（issue #64）', () => {
       ['doc-1', 'ai', 'ai', '1', '', 't-anything', '10'],
     ]);
     await upsertStudyDataRows('sid', [makeStudyRow()], deps); // expectedUpdatedAt 省略
-    expect(callsOf(deps, 'PUT')).toHaveLength(1);
+    expect(batchUpdateCallsOf(deps)).toHaveLength(1);
   });
 
   test('複数行入力の 2 行目が競合すると PUT / POST が 1 件も飛ばない（ヘッダ追加を要する新規列があっても）', async () => {
@@ -327,7 +339,7 @@ describe('upsertStudyDataRows: 楽観ロック（issue #64）', () => {
   test('expectedUpdatedAt を渡してもシート行へは書き込まれない', async () => {
     const deps = makeDeps([[...STUDY_HEADER, 'sample_size_total']]);
     await upsertStudyDataRows('sid', [makeStudyRow({ expectedUpdatedAt: null })], deps);
-    const posts = callsOf(deps, 'POST');
+    const posts = appendCallsOf(deps);
     const body = JSON.parse(posts[0]?.[1].body as string);
     expect(body.values).toEqual([['doc-1', 'ai', 'ai', 2, 'run-1', 't2', '120']]);
   });
@@ -380,20 +392,53 @@ describe('readResultsDataRows', () => {
 });
 
 describe('upsertResultsDataRows', () => {
-  test('既存行は result_id を保持したまま上書きする', async () => {
+  test('既存行は result_id を保持したまま batchUpdate で上書きする（issue #185）', async () => {
     const deps = makeDeps([
       RESULTS_HEADER,
       ['r-9', 'doc-1', 'f-arm-n', 'ai', 'ai', '1', 'arm:1', 'run-0', '59', 'false', 't0'],
     ]);
     await upsertResultsDataRows('sid', [makeResultsRow()], deps, { newUuid: () => 'r-new' });
-    const puts = callsOf(deps, 'PUT');
-    expect(puts).toHaveLength(1);
-    expect(puts[0]?.[0]).toContain('ResultsData!A2?valueInputOption=RAW');
-    const body = JSON.parse(puts[0]?.[1].body as string);
-    expect(body.values).toEqual([
-      ['r-9', 'doc-1', 'f-arm-n', 'ai', 'ai', 2, 'arm:1', 'run-1', '60', false, 't2'],
+    const updates = batchUpdateCallsOf(deps);
+    expect(updates).toHaveLength(1);
+    const body = JSON.parse(updates[0]?.[1].body as string);
+    expect(body.data).toEqual([
+      {
+        range: 'ResultsData!A2',
+        values: [['r-9', 'doc-1', 'f-arm-n', 'ai', 'ai', 2, 'arm:1', 'run-1', '60', false, 't2']],
+      },
     ]);
-    expect(callsOf(deps, 'POST')).toHaveLength(0);
+    expect(callsOf(deps, 'PUT')).toHaveLength(0); // per-row PUT は使わない
+    expect(appendCallsOf(deps)).toHaveLength(0);
+  });
+
+  test('既存行更新も maxRowsPerAppend 行ごとの batchUpdate に分割し、追記より先に発行する（issue #185）', async () => {
+    // 既存 5 行（arm:0〜arm:4）+ 新規 1 行（arm:5）を maxRowsPerAppend=2 で upsert する
+    const existing = Array.from({ length: 5 }, (_, i) => [
+      `r-${i}`, 'doc-1', 'f-arm-n', 'ai', 'ai', '1', `arm:${i}`, 'run-0', '0', 'false', 't0',
+    ]);
+    const deps = makeDeps([RESULTS_HEADER, ...existing]);
+    const rows = Array.from({ length: 6 }, (_, i) => makeResultsRow({ entityKey: `arm:${i}` }));
+    await upsertResultsDataRows('sid', rows, deps, {
+      newUuid: () => 'r-new',
+      maxRowsPerAppend: 2,
+    });
+    const updates = batchUpdateCallsOf(deps);
+    expect(updates).toHaveLength(3); // 2 行 + 2 行 + 1 行
+    const ranges = updates.map(([, init]) =>
+      (JSON.parse(init.body as string).data as { range: string }[]).map((d) => d.range),
+    );
+    expect(ranges).toEqual([
+      ['ResultsData!A2', 'ResultsData!A3'],
+      ['ResultsData!A4', 'ResultsData!A5'],
+      ['ResultsData!A6'],
+    ]);
+    // 新規行（arm:5）は追記され、更新（batchUpdate）の後に発行される
+    const posts = callsOf(deps, 'POST');
+    expect(posts[posts.length - 1]?.[0]).toContain(':append');
+    const appendBody = JSON.parse(posts[posts.length - 1]?.[1].body as string);
+    expect(appendBody.values).toEqual([
+      ['r-new', 'doc-1', 'f-arm-n', 'ai', 'ai', 2, 'arm:5', 'run-1', '60', false, 't2'],
+    ]);
   });
 
   test('新規行は result_id を採番して 1 回の :append にまとめる', async () => {
@@ -405,7 +450,7 @@ describe('upsertResultsDataRows', () => {
       deps,
       { newUuid: () => uuids.shift() as string },
     );
-    const posts = callsOf(deps, 'POST');
+    const posts = appendCallsOf(deps);
     expect(posts).toHaveLength(1);
     const body = JSON.parse(posts[0]?.[1].body as string);
     expect(body.values).toEqual([
@@ -422,7 +467,7 @@ describe('upsertResultsDataRows', () => {
       newUuid: () => uuids.shift() as string,
       maxRowsPerAppend: 2,
     });
-    const posts = callsOf(deps, 'POST');
+    const posts = appendCallsOf(deps);
     expect(posts).toHaveLength(3); // 2 行 + 2 行 + 1 行
     const bodies = posts.map(([, init]) => JSON.parse(init.body as string).values as unknown[][]);
     // result_id（0 列目）・entity_key（6 列目）とも入力順どおりに分割されている
@@ -443,7 +488,7 @@ describe('upsertResultsDataRows', () => {
     const deps = makeDeps([RESULTS_HEADER]);
     const rows = Array.from({ length: 1250 }, (_, i) => makeResultsRow({ entityKey: `arm:${i}` }));
     await upsertResultsDataRows('sid', rows, deps);
-    const posts = callsOf(deps, 'POST');
+    const posts = appendCallsOf(deps);
     const counts = posts.map(([, init]) => (JSON.parse(init.body as string).values as unknown[]).length);
     expect(counts).toEqual([500, 500, 250]);
   });
@@ -452,7 +497,7 @@ describe('upsertResultsDataRows', () => {
     const deps = makeDeps([RESULTS_HEADER]);
     const rows = Array.from({ length: 40000 }, (_, i) => makeResultsRow({ entityKey: `arm:${i}` }));
     await upsertResultsDataRows('sid', rows, deps);
-    const posts = callsOf(deps, 'POST');
+    const posts = appendCallsOf(deps);
     expect(posts).toHaveLength(80); // 40,000 / 500
     for (const [, init] of posts) {
       const values = JSON.parse(init.body as string).values as unknown[];
@@ -465,11 +510,11 @@ describe('upsertResultsDataRows', () => {
 
     const zeroDeps = makeDeps([RESULTS_HEADER]);
     await upsertResultsDataRows('sid', rows, zeroDeps, { maxRowsPerAppend: 0 });
-    expect(callsOf(zeroDeps, 'POST')).toHaveLength(3); // 1 行ずつ
+    expect(appendCallsOf(zeroDeps)).toHaveLength(3); // 1 行ずつ
 
     const floatDeps = makeDeps([RESULTS_HEADER]);
     await upsertResultsDataRows('sid', rows, floatDeps, { maxRowsPerAppend: 2.9 });
-    const posts = callsOf(floatDeps, 'POST');
+    const posts = appendCallsOf(floatDeps);
     const counts = posts.map(([, init]) => (JSON.parse(init.body as string).values as unknown[]).length);
     expect(counts).toEqual([2, 1]); // floor(2.9) = 2 行ずつ
   });
@@ -477,7 +522,7 @@ describe('upsertResultsDataRows', () => {
   test('helpers 省略時は既定の UUID 発番を使う', async () => {
     const deps = makeDeps([RESULTS_HEADER]);
     await upsertResultsDataRows('sid', [makeResultsRow()], deps);
-    const posts = callsOf(deps, 'POST');
+    const posts = appendCallsOf(deps);
     const body = JSON.parse(posts[0]?.[1].body as string);
     // UUID v4 形式で採番されている
     expect(body.values[0][0]).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-/);
@@ -538,10 +583,10 @@ describe('upsertResultsDataRows: 楽観ロック（issue #64）', () => {
     await upsertResultsDataRows('sid', [makeResultsRow({ expectedUpdatedAt: 't0' })], deps, {
       newUuid: () => 'r-new',
     });
-    const puts = callsOf(deps, 'PUT');
-    expect(puts).toHaveLength(1);
-    const body = JSON.parse(puts[0]?.[1].body as string);
-    expect(body.values[0][0]).toBe('r-9'); // result_id は既存を保持（新規採番は使わない）
+    const updates = batchUpdateCallsOf(deps);
+    expect(updates).toHaveLength(1);
+    const body = JSON.parse(updates[0]?.[1].body as string);
+    expect(body.data[0].values[0][0]).toBe('r-9'); // result_id は既存を保持（新規採番は使わない）
   });
 
   test('expectedUpdatedAt=undefined はチェックなし（従来挙動。ai 転記・consensus・キュー再送）', async () => {
@@ -550,7 +595,7 @@ describe('upsertResultsDataRows: 楽観ロック（issue #64）', () => {
       ['r-9', 'doc-1', 'f-arm-n', 'ai', 'ai', '1', 'arm:1', '', '59', 'false', 't-anything'],
     ]);
     await upsertResultsDataRows('sid', [makeResultsRow()], deps); // expectedUpdatedAt 省略
-    expect(callsOf(deps, 'PUT')).toHaveLength(1);
+    expect(batchUpdateCallsOf(deps)).toHaveLength(1);
   });
 
   test('複数行入力の 2 行目が競合すると PUT / POST が 1 件も飛ばない（部分書き込みなし）', async () => {
@@ -593,7 +638,7 @@ describe('upsertResultsDataRows: 楽観ロック（issue #64）', () => {
     await upsertResultsDataRows('sid', [makeResultsRow({ expectedUpdatedAt: null })], deps, {
       newUuid: () => 'r-new',
     });
-    const posts = callsOf(deps, 'POST');
+    const posts = appendCallsOf(deps);
     const body = JSON.parse(posts[0]?.[1].body as string);
     expect(body.values).toEqual([
       ['r-new', 'doc-1', 'f-arm-n', 'ai', 'ai', 2, 'arm:1', 'run-1', '60', false, 't2'],

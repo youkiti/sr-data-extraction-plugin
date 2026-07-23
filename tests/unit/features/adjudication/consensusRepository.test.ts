@@ -128,12 +128,18 @@ describe('applyConsensusWrites', () => {
       { field: field({ fieldName: 'sample_size' }), entityKey: '-', action: 'accept', value: '120' },
     ];
     await applyConsensusWrites('sheet-1', writes, PARAMS, deps);
-    const puts = callsOf(deps, 'PUT');
-    // updateRow（既存行の上書き）が呼ばれ、design 列（'RCT'）が保持されていること
-    const updateCall = puts.find(([url]) => url.includes('StudyData'));
+    // 既存行の上書き（values:batchUpdate。issue #185）が呼ばれ、design 列（'RCT'）が保持されていること
+    const updateCall = callsOf(deps, 'POST')
+      .filter(([url]) => url.includes('values:batchUpdate'))
+      .find(([, init]) => String(init.body).includes('StudyData'));
     expect(updateCall).toBeDefined();
-    const body = JSON.parse(String(updateCall?.[1].body)) as { values: unknown[][] };
-    expect(body.values[0]).toEqual(['study-1', 'consensus', 'consensus', 1, '', 't-now', '120', 'RCT']);
+    const body = JSON.parse(String(updateCall?.[1].body)) as {
+      data: { range: string; values: unknown[][] }[];
+    };
+    expect(body.data[0]?.range).toBe('StudyData!A2');
+    expect(body.data[0]?.values[0]).toEqual([
+      'study-1', 'consensus', 'consensus', 1, '', 't-now', '120', 'RCT',
+    ]);
   });
 
   test('entity レベルの書き込みは ResultsData へ 1 回で upsert し、not_reported を value から判定する', async () => {

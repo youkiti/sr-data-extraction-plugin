@@ -6,6 +6,10 @@
 //   「追加のみ」行う（削除・改名はしない。§3.2）
 // - 新規行の追記は 1 回の values:append あたり DEFAULT_MAX_ROWS_PER_APPEND 行までに区切り、
 //   逐次呼び出す（Sheets API のリクエストサイズ超過・429 対策。issue #69）
+// - 既存行の上書きも 1 行ずつの PUT ではなく values:batchUpdate へまとめる（issue #185）:
+//   2 回目以降の full run では既存 ai 行（数百〜数千行）の更新が発生し、per-row PUT だと
+//   書き込みクォータ（60 回/分/ユーザー）を必ず超えて転記が死に、ExtractionRuns の完了行が
+//   書かれないまま run 全体が「中断」扱いへ転落する
 // - expectedUpdatedAt（省略可）による楽観ロック（issue #64）: 独立二重レビューで同一 annotator が
 //   2 コンテキスト（別タブ・別端末）から同じ行を書くと read-modify-write の後勝ち上書きが起きうる。
 //   行の updated_at 列をバージョントークンとして使う（新列を増やさない）。
@@ -23,7 +27,7 @@ import {
   STUDY_DATA_FIXED_HEADERS,
   buildStudyDataHeader,
 } from '../../domain/sheetsSchema';
-import { appendRows, getSheetValues, updateRow, writeHeaderRow } from '../../lib/google/sheets';
+import { appendRows, batchUpdateRows, getSheetValues, writeHeaderRow } from '../../lib/google/sheets';
 import type { GoogleApiDeps } from '../../lib/google/types';
 import { generateUuid } from '../../utils/uuid';
 import type { NewResultsDataRow } from './aiAnnotationRows';
@@ -125,6 +129,24 @@ async function appendRowsInChunks(
 ): Promise<void> {
   for (let i = 0; i < rows.length; i += maxRowsPerAppend) {
     await appendRows(spreadsheetId, tab, rows.slice(i, i + maxRowsPerAppend), deps);
+  }
+}
+
+/**
+ * 既存行の上書きを maxRowsPerAppend 行ずつの values:batchUpdate へまとめて逐次発行する
+ * （issue #185: per-row PUT だと 2 回目以降の full run の転記が書き込みクォータ
+ * 60 回/分/ユーザーを超えて死ぬ。チャンク幅は追記側と同じ knob を使う =
+ * 「1 リクエストに載せる行数の上限」という同じ意味のため）。空配列は何も呼ばない
+ */
+async function updateRowsInChunks(
+  spreadsheetId: string,
+  tab: string,
+  updates: readonly { rowIndex: number; row: readonly (string | number | boolean | null)[] }[],
+  deps: GoogleApiDeps,
+  maxRowsPerAppend: number,
+): Promise<void> {
+  for (let i = 0; i < updates.length; i += maxRowsPerAppend) {
+    await batchUpdateRows(spreadsheetId, tab, updates.slice(i, i + maxRowsPerAppend), deps);
   }
 }
 
@@ -336,15 +358,17 @@ export async function upsertStudyDataRows(
   }
 
   const appends: (string | number | null)[][] = [];
+  const updates: { rowIndex: number; row: (string | number | null)[] }[] = [];
   for (const row of rows) {
     const sheetRow = studyRowToSheetRow(row, fieldNames);
     const existing = index.get(keyOf(row.studyId, row.annotator));
     if (existing === undefined) {
       appends.push(sheetRow);
     } else {
-      await updateRow(spreadsheetId, STUDY_TAB, existing.rowIndex, sheetRow, deps);
+      updates.push({ rowIndex: existing.rowIndex, row: sheetRow });
     }
   }
+  await updateRowsInChunks(spreadsheetId, STUDY_TAB, updates, deps, maxRowsPerAppend);
   await appendRowsInChunks(spreadsheetId, STUDY_TAB, appends, deps, maxRowsPerAppend);
 }
 
@@ -496,19 +520,18 @@ export async function upsertResultsDataRows(
   }
 
   const appends: (string | number | boolean | null)[][] = [];
+  const updates: { rowIndex: number; row: (string | number | boolean | null)[] }[] = [];
   for (const row of rows) {
     const existing = index.get(resultsKeyOf(row));
     if (existing === undefined) {
       appends.push(resultsRowToSheetRow({ ...row, resultId: uuid() }));
     } else {
-      await updateRow(
-        spreadsheetId,
-        RESULTS_TAB,
-        existing.rowIndex,
-        resultsRowToSheetRow({ ...row, resultId: existing.resultId }),
-        deps,
-      );
+      updates.push({
+        rowIndex: existing.rowIndex,
+        row: resultsRowToSheetRow({ ...row, resultId: existing.resultId }),
+      });
     }
   }
+  await updateRowsInChunks(spreadsheetId, RESULTS_TAB, updates, deps, maxRowsPerAppend);
   await appendRowsInChunks(spreadsheetId, RESULTS_TAB, appends, deps, maxRowsPerAppend);
 }
