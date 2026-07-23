@@ -107,7 +107,7 @@ export interface LLMProvider {
   chat(messages: readonly ChatMessage[], options?: ChatOptions): Promise<ChatResponse>;
 }
 
-/** プロバイダ呼び出し時の例外（4xx/5xx を統一的に表す） */
+/** プロバイダ呼び出し時の例外（4xx/5xx と応答内容の異常を統一的に表す） */
 export class LlmProviderError extends Error {
   readonly providerId: LlmProviderId;
   readonly status: number | null;
@@ -118,6 +118,13 @@ export class LlmProviderError extends Error {
    * （本文の RetryInfo よりヘッダを優先する）
    */
   readonly retryAfterMs: number | null;
+  /**
+   * HTTP ステータスと無関係に「再送すれば成功しうる一時的エラー」であることを
+   * provider 実装が明示するフラグ（issue #187: HTTP 200 なのに応答ボディが途切れている・
+   * choice がプロバイダ側エラーで終わっている等）。withRetry の既定判定が
+   * RETRYABLE_STATUSES に加えてこのフラグを尊重する
+   */
+  readonly retryable: boolean;
 
   constructor(
     message: string,
@@ -125,6 +132,7 @@ export class LlmProviderError extends Error {
     status: number | null,
     responseBody: string,
     retryAfterMs: number | null = null,
+    retryable = false,
   ) {
     super(message);
     this.name = 'LlmProviderError';
@@ -132,5 +140,6 @@ export class LlmProviderError extends Error {
     this.status = status;
     this.responseBody = responseBody;
     this.retryAfterMs = retryAfterMs;
+    this.retryable = retryable;
   }
 }

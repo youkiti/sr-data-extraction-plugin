@@ -33,16 +33,36 @@ export interface OpenRouterProviderOptions {
 
 const ENDPOINT = 'https://openrouter.ai/api/v1/chat/completions';
 
+interface OpenRouterChoice {
+  message?: { role?: string; content?: string | null };
+  finish_reason?: string;
+  native_finish_reason?: string;
+  /** プロバイダ側エラーで choice が終わった場合に載る（OpenRouter 仕様） */
+  error?: unknown;
+}
+
 interface OpenRouterResponse {
-  choices?: Array<{
-    message?: { role?: string; content?: string | null };
-    finish_reason?: string;
-  }>;
+  choices?: OpenRouterChoice[];
   usage?: {
     prompt_tokens?: number;
     completion_tokens?: number;
     total_tokens?: number;
   };
+}
+
+/** エラー詳細（responseBody）に載せる応答ボディ抜粋の最大長 */
+const ERROR_BODY_EXCERPT_CHARS = 1_000;
+
+/**
+ * content が返らなかった・打ち切られたときのエラー詳細。finish_reason と choice の
+ * error を残す（フル応答は withLogging が Drive に保存するため、ここは一次手掛かり）
+ */
+function describeChoice(choice: OpenRouterChoice | undefined): string {
+  return JSON.stringify({
+    finish_reason: choice?.finish_reason ?? null,
+    native_finish_reason: choice?.native_finish_reason ?? null,
+    error: choice?.error ?? null,
+  });
 }
 
 export class OpenRouterProvider implements LLMProvider {
@@ -83,10 +103,56 @@ export class OpenRouterProvider implements LLMProvider {
         parseRetryAfterMs(res.headers.get('retry-after'))
       );
     }
-    const json = (await res.json()) as OpenRouterResponse;
-    const text = json.choices?.[0]?.message?.content ?? '';
+    // 応答ボディの検査（issue #187）: 実プロジェクトで「HTTP 200 なのにボディが途切れて
+    // JSON として読めない」「choice がプロバイダ側エラー/打ち切りで content が空」が
+    // 頻発したため、裸の SyntaxError や空文字を返さず、原因（finish_reason / error）を
+    // 載せた LlmProviderError にする。長時間生成の切断は一時的な可能性があるため retryable
+    const bodyText = await res.text();
+    let json: OpenRouterResponse;
+    try {
+      json = JSON.parse(bodyText) as OpenRouterResponse;
+    } catch {
+      throw new LlmProviderError(
+        'OpenRouter 応答ボディが JSON として読めません（応答が途中で切断された可能性）',
+        this.providerId,
+        res.status,
+        bodyText.slice(-ERROR_BODY_EXCERPT_CHARS),
+        null,
+        true,
+      );
+    }
+    const choice = json.choices?.[0];
+    const finishReason = choice?.finish_reason;
+    const content = choice?.message?.content;
+    if (choice?.error !== undefined || finishReason === 'error') {
+      throw new LlmProviderError(
+        `OpenRouter がプロバイダ側エラーを返しました（finish_reason=${finishReason ?? '不明'}）`,
+        this.providerId,
+        res.status,
+        describeChoice(choice),
+        null,
+        true, // 上流プロバイダの一時障害の可能性があるため再試行対象
+      );
+    }
+    if (content === undefined || content === null || content === '') {
+      throw new LlmProviderError(
+        `OpenRouter 応答に本文（content）がありません（finish_reason=${finishReason ?? '不明'}）`,
+        this.providerId,
+        res.status,
+        describeChoice(choice),
+      );
+    }
+    if (finishReason === 'length' || finishReason === 'content_filter') {
+      const reasonLabel = finishReason === 'length' ? '出力トークン上限' : 'コンテンツフィルタ';
+      throw new LlmProviderError(
+        `OpenRouter 応答が${reasonLabel}で打ち切られました（finish_reason=${finishReason}）`,
+        this.providerId,
+        res.status,
+        describeChoice(choice),
+      );
+    }
     return {
-      text,
+      text: content,
       tokensIn: json.usage?.prompt_tokens ?? null,
       tokensOut: json.usage?.completion_tokens ?? null,
       raw: json,

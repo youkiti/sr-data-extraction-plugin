@@ -28,10 +28,18 @@ export interface RetryOptions {
   isRetryable?: (err: unknown) => boolean;
 }
 
+/**
+ * 既定の再試行判定（issue #187 で拡張）:
+ * - LlmProviderError: 一時的な HTTP ステータス（429/5xx）、または provider 実装が
+ *   `retryable=true` を明示したもの（HTTP 200 なのに応答ボディが途切れている等）
+ * - TypeError: fetch のネットワーク断（Chrome の `Failed to fetch`）。実プロジェクトの
+ *   LLMApiLog で最多の一時的失敗だったため再試行対象にする
+ */
 function defaultIsRetryable(err: unknown): boolean {
-  return (
-    err instanceof LlmProviderError && err.status !== null && RETRYABLE_STATUSES.has(err.status)
-  );
+  if (err instanceof LlmProviderError) {
+    return err.retryable || (err.status !== null && RETRYABLE_STATUSES.has(err.status));
+  }
+  return err instanceof TypeError;
 }
 
 function defaultSleep(ms: number): Promise<void> {

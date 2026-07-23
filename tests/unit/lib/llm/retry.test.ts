@@ -98,11 +98,35 @@ describe('withRetry', () => {
     expect(calls()).toBe(1);
   });
 
-  test('LlmProviderError 以外の例外は再試行しない', async () => {
-    const { provider, calls } = buildProvider([new TypeError('fetch failed')]);
+  test('fetch のネットワーク断（TypeError: Failed to fetch）は再試行する（issue #187）', async () => {
+    const { provider, calls } = buildProvider([new TypeError('Failed to fetch'), okResponse()]);
     const wrapped = withRetry(provider, { sleep: noSleep });
-    await expect(wrapped.chat([{ role: 'user', content: 'hi' }])).rejects.toThrow('fetch failed');
+    const res = await wrapped.chat([{ role: 'user', content: 'hi' }]);
+    expect(res.text).toBe('ok');
+    expect(calls()).toBe(2);
+  });
+
+  test('TypeError 以外の一般 Error は再試行しない', async () => {
+    const { provider, calls } = buildProvider([new Error('boom')]);
+    const wrapped = withRetry(provider, { sleep: noSleep });
+    await expect(wrapped.chat([{ role: 'user', content: 'hi' }])).rejects.toThrow('boom');
     expect(calls()).toBe(1);
+  });
+
+  test('retryable=true の LlmProviderError はステータスに関係なく再試行する（issue #187）', async () => {
+    const truncated = new LlmProviderError(
+      'OpenRouter 応答ボディが JSON として読めません（応答が途中で切断された可能性）',
+      'openrouter',
+      200,
+      '{"choices":[{"messa',
+      null,
+      true,
+    );
+    const { provider, calls } = buildProvider([truncated, okResponse()]);
+    const wrapped = withRetry(provider, { sleep: noSleep });
+    const res = await wrapped.chat([{ role: 'user', content: 'hi' }]);
+    expect(res.text).toBe('ok');
+    expect(calls()).toBe(2);
   });
 
   test('バックオフは指数的に伸びる（1 回目 base、2 回目 base*2）', async () => {
