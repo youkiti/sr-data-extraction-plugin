@@ -5,6 +5,7 @@ import { OpenAICompatibleProvider } from '../../../../src/lib/llm/OpenAICompatib
 import { OpenRouterProvider } from '../../../../src/lib/llm/OpenRouterProvider';
 import {
   createProvider,
+  isRunBlockedByImageUnsupportedModel,
   providerSupportsImageInput,
   resolveEffectiveHighAccuracyImages,
   resolveProviderConfig,
@@ -174,6 +175,39 @@ describe('resolveEffectiveHighAccuracyImages（issue #176）', () => {
 
   test('チェック済み + モデル選択済みは選択中プロバイダの対応可否で判定する（現行は全プロバイダ対応 = true）', () => {
     expect(resolveEffectiveHighAccuracyImages('gemini-2.5-pro', true)).toBe(true);
-    expect(resolveEffectiveHighAccuracyImages('qwen/qwen3-235b-a22b-2507', true)).toBe(true);
+  });
+
+  test('モデル単位で既知の非対応（unsupported）と判明していれば false（画像非対応モデルの実行ブロック）', () => {
+    // qwen3-235b は OpenRouter 経由で画像入力 404 を実測済み（lib/llm/pricing.ts の
+    // MODEL_IMAGE_CAPABILITY）。プロバイダ（openrouter）自体は対応扱いでも効かせない
+    expect(resolveEffectiveHighAccuracyImages('qwen/qwen3-235b-a22b-2507', true)).toBe(false);
+    expect(resolveEffectiveHighAccuracyImages('deepseek/deepseek-v4-flash', true)).toBe(false);
+  });
+
+  test('カタログ外（unknown）のモデルは実測が無いため requested をそのまま尊重する', () => {
+    expect(resolveEffectiveHighAccuracyImages('mystery/model', true)).toBe(true);
+  });
+});
+
+describe('isRunBlockedByImageUnsupportedModel（画像非対応モデルの実行ブロック）', () => {
+  test('画像入力が必要な文書が無ければブロックしない', () => {
+    expect(isRunBlockedByImageUnsupportedModel('qwen/qwen3-235b-a22b-2507', false)).toBe(false);
+  });
+
+  test('モデル未選択（空文字）はブロックしない（モデル未選択チェックに委ねる）', () => {
+    expect(isRunBlockedByImageUnsupportedModel('', true)).toBe(false);
+  });
+
+  test('画像入力が必要な文書があり、モデルが既知の unsupported ならブロックする', () => {
+    expect(isRunBlockedByImageUnsupportedModel('qwen/qwen3-235b-a22b-2507', true)).toBe(true);
+    expect(isRunBlockedByImageUnsupportedModel('deepseek/deepseek-v4-flash', true)).toBe(true);
+  });
+
+  test('画像入力が必要な文書があっても supported モデルならブロックしない', () => {
+    expect(isRunBlockedByImageUnsupportedModel('gemini-2.5-pro', true)).toBe(false);
+  });
+
+  test('画像入力が必要な文書があっても unknown（カタログ外）モデルはブロックしない（過検出を避ける）', () => {
+    expect(isRunBlockedByImageUnsupportedModel('mystery/model', true)).toBe(false);
   });
 });

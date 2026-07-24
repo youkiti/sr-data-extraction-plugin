@@ -18,7 +18,12 @@
 import { DOCUMENT_ROLE_ORDER, type DocumentRecord } from '../../domain/document';
 import type { InputMode } from '../../domain/extractionRun';
 import type { EntityLevel, SchemaField } from '../../domain/schemaField';
-import { APPROX_IMAGE_TOKENS_PER_PAGE, estimateCostUsd } from '../../lib/llm/pricing';
+import {
+  APPROX_IMAGE_TOKENS_PER_PAGE,
+  estimateCostUsd,
+  resolveModelImageInputSupport,
+} from '../../lib/llm/pricing';
+import { resolveProviderId } from '../../lib/llm/providerFactory';
 import {
   EXTRACT_DATA_ARM_COMPLETENESS_RULE,
   EXTRACT_DATA_SYSTEM_PROMPT,
@@ -144,6 +149,14 @@ export interface PlanRunInput {
    * 既定 false = 既存の text_only / pdf_native 挙動を一切変えない
    */
   highAccuracyImages?: boolean;
+  /**
+   * モデルが実際に選択されているか（画像非対応モデルの実行ブロック。既定 true）。
+   * `false` を明示したときだけ「画像対応が unknown のモデル」警告を出さない。
+   * extractView.ts の `renderEstimate` はモデル未選択時にコスト概算のためだけに
+   * `model: 'unknown'` という文字列を代入して planRun を呼ぶ経路があり、その代入値を
+   * 「画像対応が不明なモデルが選ばれている」と誤検出しないための切り分けフラグ
+   */
+  modelSelected?: boolean;
 }
 
 /** text_status = no_text_layer の文書はページ画像として送る（pdf_native。requirements.md Q7） */
@@ -401,6 +414,20 @@ export function planRun(input: PlanRunInput): RunPlan {
   }
   if (costEstimateUsd === null) {
     warnings.push(`モデル「${input.model}」は単価表に無いためコストを概算できません`);
+  }
+  // 画像非対応モデルの実行ブロック（B）: バッチに画像入力（pdf_native / 高精度読み取りモード）が
+  // 含まれ、かつモデルが実際に選択されている（modelSelected !== false）のに画像対応可否が
+  // unknown（カタログに実測が無い）なら警告だけ足す（ブロックはしない。ブロックは
+  // isRunBlockedByImageUnsupportedModel の役目 = 'unsupported' 確定時のみ）
+  const modelSelected = input.modelSelected !== false;
+  if (
+    modelSelected &&
+    (imageDocumentIds.size > 0 || augmentedImageDocumentIds.size > 0) &&
+    resolveModelImageInputSupport(resolveProviderId(input.model), input.model) === 'unknown'
+  ) {
+    warnings.push(
+      `モデル「${input.model}」が画像入力に対応しているか分かっていません（カタログ外）。テキスト層のない文献や高精度読み取りモードの画像が正しく読めない可能性があります`,
+    );
   }
 
   return {

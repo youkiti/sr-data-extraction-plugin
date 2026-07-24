@@ -20,7 +20,11 @@ import {
 import type { ExtractStudyRow, ExtractStudyStatus } from '../../features/extraction/studyProgress';
 import { planRun } from '../../features/extraction/planRun';
 import { t, type MessageKey } from '../../lib/i18n';
-import { resolveEffectiveHighAccuracyImages } from '../../lib/llm/providerFactory';
+import type { LlmFailureKind } from '../../lib/llm/LLMProvider';
+import {
+  isRunBlockedByImageUnsupportedModel,
+  resolveEffectiveHighAccuracyImages,
+} from '../../lib/llm/providerFactory';
 import { el } from '../ui/dom';
 import { createModelSelect } from '../ui/modelSelect';
 import type { AppState } from '../store';
@@ -38,6 +42,20 @@ const STATUS_LABEL_KEYS: Readonly<Record<ExtractStudyStatus, MessageKey>> = {
   running: 'extract.statusRunning',
   done: 'extract.statusDone',
   failed: 'extract.statusFailed',
+};
+
+/**
+ * 失敗理由別のヒント文言キー（実データ抽出の失敗ヒント）。
+ * `ExtractStudyRow.failureKind` はコード（言語非依存）で持たせているため、翻訳はここ View 側で
+ * t() を通す（言語切替に追従させるため）。種別が不明（null）のときはヒント自体を出さない
+ * （憶測で誘導しない）
+ */
+const FAILURE_HINT_KEYS: Readonly<Record<LlmFailureKind, MessageKey>> = {
+  timeout: 'extract.failureHintTimeout',
+  image_unsupported: 'extract.failureHintImageUnsupported',
+  output_limit: 'extract.failureHintOutputLimit',
+  content_filter: 'extract.failureHintContentFilter',
+  malformed: 'extract.failureHintMalformed',
 };
 
 const DOCUMENT_ROLE_LABEL_KEYS: Readonly<Record<DocumentRecord['documentRole'], MessageKey>> = {
@@ -203,6 +221,9 @@ function renderEstimate(state: AppState): HTMLElement {
         state.extract.model,
         state.extract.highAccuracyImages,
       ),
+      // モデル未選択時のダミー値 'unknown' を「画像対応が不明なモデルが選ばれている」と
+      // 誤検出しないための切り分け（pilotView.ts の renderEstimate と同じ理由。レビュー指摘）
+      modelSelected: state.extract.model !== '',
     });
     const cost =
       plan.costEstimateUsd === null
@@ -271,6 +292,15 @@ function renderSetup(state: AppState, ctx: ViewContext): HTMLElement {
   });
 
   const fields = state.schema.currentFields ?? [];
+  // 選択中 study に画像入力が必要な文書（no_text_layer）が含まれ、かつ選択中モデルが画像入力に
+  // 非対応と判明しているときは実行をブロックする（画像非対応モデルの実行ブロック）
+  const hasImageInputDocs = selectedDocuments(state).some(
+    (doc) => doc.textStatus === 'no_text_layer',
+  );
+  const imageUnsupportedBlocked = isRunBlockedByImageUnsupportedModel(
+    state.extract.model,
+    hasImageInputDocs,
+  );
   const runButton = el('button', {
     id: 'extract-run',
     className: 'extract__run',
@@ -280,7 +310,8 @@ function renderSetup(state: AppState, ctx: ViewContext): HTMLElement {
   runButton.disabled =
     state.extract.confirming ||
     state.extract.retryingStudyId !== null ||
-    hasZeroFieldsSelected(state.extract.selectedFieldIds, fields);
+    hasZeroFieldsSelected(state.extract.selectedFieldIds, fields) ||
+    imageUnsupportedBlocked;
   runButton.addEventListener('click', () => ctx.extract.onRequestRun());
 
   const fieldSelector = renderFieldSelector(state, ctx);
@@ -298,8 +329,18 @@ function renderSetup(state: AppState, ctx: ViewContext): HTMLElement {
       model: state.extract.model,
       onChange: (enabled) => ctx.extract.onToggleHighAccuracyImages(enabled),
     }),
-    renderEstimate(state),
   ];
+  if (imageUnsupportedBlocked) {
+    children.push(
+      el('p', {
+        id: 'extract-image-unsupported-warning',
+        className: 'extract__image-unsupported-warning',
+        attributes: { role: 'alert' },
+        text: t('extract.imageUnsupportedBlocked', { model: state.extract.model }),
+      }),
+    );
+  }
+  children.push(renderEstimate(state));
   if (state.extract.runError !== null) {
     children.push(
       el('p', {
@@ -388,6 +429,14 @@ function renderStudyRows(state: AppState, ctx: ViewContext, withRetry: boolean):
     }
     if (row.detail !== null) {
       parts.push(el('span', { className: 'extract__doc-detail', text: row.detail }));
+    }
+    if (row.failureKind !== null) {
+      parts.push(
+        el('span', {
+          className: 'extract__doc-hint',
+          text: t(FAILURE_HINT_KEYS[row.failureKind]),
+        }),
+      );
     }
     if (withRetry && row.status === 'failed') {
       const retryButton = el('button', {

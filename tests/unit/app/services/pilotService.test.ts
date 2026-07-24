@@ -607,7 +607,15 @@ describe('runPilot: 実行', () => {
         rejectedItems: [],
         batchFailures:
           status === 'partial_failure'
-            ? [{ studyId: 'study-doc-1', section: null, reason: 'api_error' as const, detail: '500' }]
+            ? [
+                {
+                  studyId: 'study-doc-1',
+                  section: null,
+                  reason: 'api_error' as const,
+                  detail: '500',
+                  failureKind: null,
+                },
+              ]
             : [],
         armWarnings: [],
         tokensIn: 100,

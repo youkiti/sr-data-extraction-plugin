@@ -107,6 +107,20 @@ export interface LLMProvider {
   chat(messages: readonly ChatMessage[], options?: ChatOptions): Promise<ChatResponse>;
 }
 
+/**
+ * 応答検査で判別した失敗の種別（実データ抽出の失敗ヒント。S7 の失敗行ヒント表示の素材）。
+ * provider 境界（応答の構造化フィールド）で正規化する — エラー本文の部分一致では判定しない
+ * （`finish_reason=error` は任意の上流エラーを含みうる／`responseBody` は表示用に切り詰められる
+ * ため部分一致が壊れる／同一 detail に複数の理由が共存しうる、が理由）。
+ * 既定は null（不明）。provider 側が構造化フィールドから判別できたときだけ設定する
+ */
+export type LlmFailureKind =
+  | 'timeout'
+  | 'image_unsupported'
+  | 'output_limit'
+  | 'content_filter'
+  | 'malformed';
+
 /** プロバイダ呼び出し時の例外（4xx/5xx と応答内容の異常を統一的に表す） */
 export class LlmProviderError extends Error {
   readonly providerId: LlmProviderId;
@@ -125,6 +139,11 @@ export class LlmProviderError extends Error {
    * RETRYABLE_STATUSES に加えてこのフラグを尊重する
    */
   readonly retryable: boolean;
+  /**
+   * 失敗の種別（provider 境界で正規化済み。S7 の失敗行ヒント表示の素材）。
+   * 既定 null で後方互換を保つ（retryable と同じ増やし方）
+   */
+  readonly failureKind: LlmFailureKind | null;
 
   constructor(
     message: string,
@@ -133,6 +152,7 @@ export class LlmProviderError extends Error {
     responseBody: string,
     retryAfterMs: number | null = null,
     retryable = false,
+    failureKind: LlmFailureKind | null = null,
   ) {
     super(message);
     this.name = 'LlmProviderError';
@@ -141,5 +161,6 @@ export class LlmProviderError extends Error {
     this.responseBody = responseBody;
     this.retryAfterMs = retryAfterMs;
     this.retryable = retryable;
+    this.failureKind = failureKind;
   }
 }

@@ -241,7 +241,54 @@ describe('GeminiProvider.chat', () => {
         expect(e.message).toContain('JSON として読めません');
         expect(e.retryable).toBe(true);
         expect(e.status).toBe(200);
+        expect(e.failureKind).toBe('malformed');
       }
+    });
+  });
+
+  // 失敗種別（LlmFailureKind）の分類（実データ抽出の失敗ヒント）
+  describe('失敗種別（LlmFailureKind）の分類', () => {
+    test('finishReason=MAX_TOKENS は output_limit', async () => {
+      const fetch = jest.fn().mockResolvedValue(
+        jsonResponse({
+          candidates: [{ content: { parts: [{ text: '[{"trunca' }] }, finishReason: 'MAX_TOKENS' }],
+        }),
+      );
+      const provider = new GeminiProvider({ apiKey: 'k', fetch });
+      await expect(provider.chat([{ role: 'user', content: 'q' }])).rejects.toMatchObject({
+        failureKind: 'output_limit',
+      });
+    });
+
+    test.each(['SAFETY', 'PROHIBITED_CONTENT', 'BLOCKLIST'])(
+      'finishReason=%s は content_filter',
+      async (finishReason) => {
+        const fetch = jest.fn().mockResolvedValue(
+          jsonResponse({ candidates: [{ content: { parts: [] }, finishReason }] }),
+        );
+        const provider = new GeminiProvider({ apiKey: 'k', fetch });
+        await expect(provider.chat([{ role: 'user', content: 'q' }])).rejects.toMatchObject({
+          failureKind: 'content_filter',
+        });
+      },
+    );
+
+    test('finishReason=RECITATION（表に無い値）は理由不明のまま failureKind が null', async () => {
+      const fetch = jest.fn().mockResolvedValue(
+        jsonResponse({ candidates: [{ content: { parts: [] }, finishReason: 'RECITATION' }] }),
+      );
+      const provider = new GeminiProvider({ apiKey: 'k', fetch });
+      await expect(provider.chat([{ role: 'user', content: 'q' }])).rejects.toMatchObject({
+        failureKind: null,
+      });
+    });
+
+    test('candidates が無い（空応答）は failureKind が null', async () => {
+      const fetch = jest.fn().mockResolvedValue(jsonResponse({}));
+      const provider = new GeminiProvider({ apiKey: 'k', fetch });
+      await expect(provider.chat([{ role: 'user', content: 'q' }])).rejects.toMatchObject({
+        failureKind: null,
+      });
     });
   });
 

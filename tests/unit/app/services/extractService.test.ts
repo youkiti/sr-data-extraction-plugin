@@ -657,6 +657,47 @@ describe('requestExtractRun / cancelExtractConfirm', () => {
     cancelExtractConfirm(store);
     expect(store.getState().extract.confirming).toBe(false);
   });
+
+  // 画像非対応モデルの実行ブロック（実際に解決済みの provider で判定する defense in depth）
+  describe('画像非対応モデルの実行ブロック', () => {
+    test('画像入力（no_text_layer）文書 + 実測 unsupported モデルはインラインエラーで確認カードを開かない', async () => {
+      const store = makeStore({
+        documents: [makeDocument({ documentId: 'doc-1', textStatus: 'no_text_layer' })],
+        fields: [makeField()],
+        extract: {
+          selectedStudyIds: ['study-doc-1'],
+          model: 'qwen/qwen3-235b-a22b-2507',
+        },
+      });
+      await requestExtractRun(store, makeDeps());
+      expect(store.getState().extract.confirming).toBe(false);
+      expect(store.getState().extract.runError).toContain('qwen/qwen3-235b-a22b-2507');
+      expect(store.getState().extract.runError).toContain('画像入力');
+    });
+
+    test('画像入力文書が無ければ unsupported モデルでもブロックしない', async () => {
+      const store = makeStore({
+        documents: [makeDocument({ documentId: 'doc-1' })],
+        fields: [makeField()],
+        extract: {
+          selectedStudyIds: ['study-doc-1'],
+          model: 'qwen/qwen3-235b-a22b-2507',
+        },
+      });
+      await requestExtractRun(store, makeDeps());
+      expect(store.getState().extract.confirming).toBe(true);
+    });
+
+    test('unknown（カタログ外）モデルはブロックしない', async () => {
+      const store = makeStore({
+        documents: [makeDocument({ documentId: 'doc-1', textStatus: 'no_text_layer' })],
+        fields: [makeField()],
+        extract: { selectedStudyIds: ['study-doc-1'], model: 'mystery-model' },
+      });
+      await requestExtractRun(store, makeDeps());
+      expect(store.getState().extract.confirming).toBe(true);
+    });
+  });
 });
 
 describe('runExtract', () => {
@@ -692,6 +733,26 @@ describe('runExtract', () => {
     await runExtract(store, makeDeps({ loadApiKey: jest.fn().mockResolvedValue(null) }));
     expect(store.getState().extract.confirming).toBe(false);
     expect(store.getState().extract.runError).toContain('Gemini API キーが未設定です');
+    expect(runExtractionMock).not.toHaveBeenCalled();
+  });
+
+  test('画像非対応モデルの実行ブロック（defense in depth）: 確認カードを開いたまま unsupported モデルへ変更されていたら実行しない', async () => {
+    const store = makeStore({
+      documents: [
+        makeDocument({ documentId: 'doc-1', textStatus: 'no_text_layer' }),
+        makeDocument({ documentId: 'doc-2' }),
+      ],
+      fields: [makeField()],
+      extract: {
+        selectedStudyIds: ['study-doc-1'],
+        model: 'qwen/qwen3-235b-a22b-2507',
+        confirming: true,
+        extractedStudyIds: [],
+      },
+    });
+    await runExtract(store, makeDeps());
+    expect(store.getState().extract.confirming).toBe(false);
+    expect(store.getState().extract.runError).toContain('qwen/qwen3-235b-a22b-2507');
     expect(runExtractionMock).not.toHaveBeenCalled();
   });
 
@@ -735,6 +796,7 @@ describe('runExtract', () => {
         completedBatches: 0,
         totalBatches: 1,
         detail: null,
+        failureKind: null,
       },
     ]);
   });
@@ -893,7 +955,13 @@ describe('runExtract', () => {
         completedBatches: 2,
         studyId: 'study-doc-2',
         section: null,
-        failure: { studyId: 'study-doc-2', section: null, reason: 'api_error', detail: '500' },
+        failure: {
+          studyId: 'study-doc-2',
+          section: null,
+          reason: 'api_error',
+          detail: '500',
+          failureKind: null,
+        },
       });
       observedRows = store.getState().extract.studyRows;
       return makeOutcome({ status: 'partial_failure', studyIds: ['study-doc-1', 'study-doc-2'] });
@@ -906,6 +974,7 @@ describe('runExtract', () => {
         completedBatches: 1,
         totalBatches: 1,
         detail: null,
+        failureKind: null,
       },
       {
         studyId: 'study-doc-2',
@@ -913,6 +982,7 @@ describe('runExtract', () => {
         completedBatches: 1,
         totalBatches: 1,
         detail: 'api_error（500）',
+        failureKind: null,
       },
     ]);
     expect(store.getState().extract.progress).toBeNull();
@@ -988,6 +1058,7 @@ describe('retryExtractStudy', () => {
             completedBatches: 1,
             totalBatches: 1,
             detail: null,
+            failureKind: null,
           },
           {
             studyId: 'study-doc-2',
@@ -995,6 +1066,7 @@ describe('retryExtractStudy', () => {
             completedBatches: 1,
             totalBatches: 1,
             detail: 'api_error（500）',
+            failureKind: null,
           },
         ],
         rejectedCount: 1,
@@ -1060,6 +1132,7 @@ describe('retryExtractStudy', () => {
         completedBatches: 1,
         totalBatches: 1,
         detail: null,
+        failureKind: null,
       },
       {
         studyId: 'study-doc-2',
@@ -1067,6 +1140,7 @@ describe('retryExtractStudy', () => {
         completedBatches: 1,
         totalBatches: 1,
         detail: null,
+        failureKind: null,
       },
     ]);
     expect(state.extract.extractedStudyIds?.sort()).toEqual(['study-doc-1', 'study-doc-2']);
@@ -1194,6 +1268,7 @@ describe('retryExtractStudy', () => {
       completedBatches: 0,
       totalBatches: 0,
       detail: 'boom',
+      failureKind: null,
     });
     expect(failing.getState().extract.retryingStudyId).toBeNull();
   });

@@ -255,7 +255,7 @@ function makeRun(overrides: Partial<ExtractionRun> = {}): ExtractionRun {
 function makeStudyRow(
   overrides: Partial<ExtractStudyRow> & Pick<ExtractStudyRow, 'studyId' | 'status'>,
 ): ExtractStudyRow {
-  return { completedBatches: 0, totalBatches: 1, detail: null, ...overrides };
+  return { completedBatches: 0, totalBatches: 1, detail: null, failureKind: null, ...overrides };
 }
 
 function makeState(
@@ -554,6 +554,65 @@ describe('未実行（setup）', () => {
     expect(root.querySelector('#extract-field-error')).not.toBeNull();
   });
 
+  // 画像非対応モデルの実行ブロック
+  describe('画像非対応モデルの実行ブロック', () => {
+    function scanDocs(): DocumentRecord[] {
+      return [
+        makeDocument({
+          documentId: 'doc-scan',
+          studyId: 'study-1',
+          textStatus: 'no_text_layer',
+        }),
+      ];
+    }
+
+    test('画像入力 study + 画像非対応と実測済みのモデル（unsupported）は実行ボタンを disabled にし警告を出す', () => {
+      const { root } = render(
+        makeState({
+          documents: scanDocs(),
+          extract: { model: 'qwen/qwen3-235b-a22b-2507' },
+        }),
+      );
+      expect(root.querySelector<HTMLButtonElement>('#extract-run')?.disabled).toBe(true);
+      const warning = root.querySelector('#extract-image-unsupported-warning');
+      expect(warning?.textContent).toContain('qwen/qwen3-235b-a22b-2507');
+      expect(warning?.textContent).toContain('画像入力');
+    });
+
+    test('画像入力 study が無ければ非対応モデルでも disabled にしない', () => {
+      const { root } = render(
+        makeState({
+          documents: [makeDocument({ documentId: 'doc-1', studyId: 'study-1' })],
+          extract: { model: 'qwen/qwen3-235b-a22b-2507' },
+        }),
+      );
+      expect(root.querySelector<HTMLButtonElement>('#extract-run')?.disabled).toBe(false);
+      expect(root.querySelector('#extract-image-unsupported-warning')).toBeNull();
+    });
+
+    test('unknown（カタログに実測が無い）モデルは disabled にしない', () => {
+      const { root } = render(
+        makeState({
+          documents: scanDocs(),
+          extract: { model: 'mystery-model' },
+        }),
+      );
+      expect(root.querySelector<HTMLButtonElement>('#extract-run')?.disabled).toBe(false);
+      expect(root.querySelector('#extract-image-unsupported-warning')).toBeNull();
+    });
+
+    test('supported（Gemini 系）モデルは disabled にしない', () => {
+      const { root } = render(
+        makeState({
+          documents: scanDocs(),
+          extract: { model: 'gemini-2.5-pro' },
+        }),
+      );
+      expect(root.querySelector<HTMLButtonElement>('#extract-run')?.disabled).toBe(false);
+      expect(root.querySelector('#extract-image-unsupported-warning')).toBeNull();
+    });
+  });
+
   test('モデル変更・実行ボタンのコールバック + インラインエラー表示', () => {
     const { root, callbacks } = render(
       makeState({ extract: { runError: 'モデルを選択してください（「その他」で直接入力も可）' } }),
@@ -612,6 +671,20 @@ describe('未実行（setup）', () => {
 
     render(makeState({ extract: { model: '' } }));
     expect(planRunMock).toHaveBeenCalledWith(expect.objectContaining({ model: 'unknown' }));
+  });
+
+  test('コスト概算: モデル未選択 + テキスト層なし文献選択時は unknown 警告を出さない（レビュー指摘）', () => {
+    const docs = [
+      makeDocument({ documentId: 'doc-scan', studyId: 'study-1', textStatus: 'no_text_layer' }),
+    ];
+    const { root } = render(
+      makeState({ documents: docs, extract: { selectedStudyIds: ['study-1'], model: '' } }),
+    );
+    const estimate = root.querySelector('#extract-estimate');
+    // ダミーのモデル名 'unknown' を「画像対応が不明なモデルが選ばれている」と誤検出しない
+    expect(estimate?.textContent).not.toContain('画像入力に対応しているか分かっていません');
+    // pdf_native（画像入力）自体の warning は引き続き出る
+    expect(estimate?.textContent).toContain('注意:');
   });
 
   test('スキーマ未読込は概算を出さず、planRun が例外を投げたらエラー表示', () => {
@@ -855,6 +928,93 @@ describe('完了サマリ', () => {
     expect(retry?.disabled).toBe(false);
     retry?.click();
     expect(callbacks.onRetryStudy).toHaveBeenCalledWith('study-2');
+  });
+
+  // 失敗理由のヒント（実データ抽出の失敗ヒント。ExtractStudyRow.failureKind → t() で翻訳）
+  describe('失敗理由のヒント', () => {
+    test.each([
+      ['timeout', 'モデルが応答を返しきれずタイムアウトしました。別のモデル（flash 系など）での再実行を検討してください'],
+      ['image_unsupported', 'このモデルは画像入力に対応していません。Gemini 系モデルを選び直してください'],
+      ['output_limit', '出力が長すぎて打ち切られました'],
+      ['content_filter', 'コンテンツフィルタにより応答が打ち切られました'],
+      ['malformed', '応答が JSON として壊れていました。別のモデルを試してください'],
+    ] as const)('failureKind=%s は対応するヒントを表示する', (failureKind, expectedSubstring) => {
+      const { root } = render(
+        makeState({
+          extract: {
+            run: makeRun({ status: 'partial_failure' }),
+            studyRows: [
+              makeStudyRow({ studyId: 'study-1', status: 'failed', detail: 'x', failureKind }),
+            ],
+          },
+        }),
+      );
+      expect(root.querySelector('.extract__doc-hint')?.textContent).toContain(expectedSubstring);
+    });
+
+    test('output_limit のヒントは「再試行ボタン」ではなく対象項目チェックリストでの再実行を案内する', () => {
+      const { root } = render(
+        makeState({
+          extract: {
+            run: makeRun({ status: 'partial_failure' }),
+            studyRows: [
+              makeStudyRow({
+                studyId: 'study-1',
+                status: 'failed',
+                detail: 'x',
+                failureKind: 'output_limit',
+              }),
+            ],
+          },
+        }),
+      );
+      const hint = root.querySelector('.extract__doc-hint')?.textContent ?? '';
+      expect(hint).toContain('対象項目');
+      // 「再試行ボタン」の存在自体には触れてよいが、それを使うよう積極的に勧めてはいけない
+      // （retryExtractStudy は lastRunFieldIds を引き継ぐため項目を絞れない）
+      expect(hint).not.toMatch(/再試行ボタン(を|で)(押|クリック|使)/);
+    });
+
+    test('failureKind が null（不明）のときはヒントを出さない（憶測で誘導しない）', () => {
+      const { root } = render(
+        makeState({
+          extract: {
+            run: makeRun({ status: 'partial_failure' }),
+            studyRows: [
+              makeStudyRow({ studyId: 'study-1', status: 'failed', detail: 'x', failureKind: null }),
+            ],
+          },
+        }),
+      );
+      expect(root.querySelector('.extract__doc-hint')).toBeNull();
+    });
+
+    test('言語切替後はヒントも再翻訳される（コードを保持して View で翻訳している証明）', () => {
+      const state = makeState({
+        extract: {
+          run: makeRun({ status: 'partial_failure' }),
+          studyRows: [
+            makeStudyRow({
+              studyId: 'study-1',
+              status: 'failed',
+              detail: 'x',
+              failureKind: 'timeout',
+            }),
+          ],
+        },
+      });
+      const { root: jaRoot } = render(state);
+      expect(jaRoot.querySelector('.extract__doc-hint')?.textContent).toContain('タイムアウト');
+
+      setUiLanguage('en');
+      try {
+        const { ctx } = makeCtx();
+        const enRoot = renderExtractView(state, ctx);
+        expect(enRoot.querySelector('.extract__doc-hint')?.textContent).toContain('timed out');
+      } finally {
+        setUiLanguage('ja');
+      }
+    });
   });
 
   test('arm 欠落警告（issue #106）: done でも黄バナー #extract-arm-warnings を出し、study_label と項目名で欠落を列挙する', () => {

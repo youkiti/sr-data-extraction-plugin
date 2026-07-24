@@ -5,6 +5,11 @@ import type { LlmProviderId } from '../../domain/llmApiLog';
 import { MODEL_PRICING } from './pricing';
 import { resolveProviderId } from './providerFactory';
 
+// モデル単位の画像入力対応可否（画像非対応モデルの実行ブロック）は lib/llm/pricing.ts の
+// `resolveModelImageInputSupport` / `MODEL_IMAGE_CAPABILITY`（MODEL_PRICING と同じ「カタログ」）を
+// 直接 import する（providerFactory.ts / planRun.ts / extractService.ts）。ここでは re-export しない
+// （誰も経由しない re-export はカバレッジ 100% 強制のもとで到達不能な余剰コードになるため）
+
 export interface ModelCatalogGroup {
   /** optgroup の表示ラベル */
   label: 'Gemini' | 'OpenRouter';

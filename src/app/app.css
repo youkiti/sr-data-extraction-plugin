@@ -1586,6 +1586,13 @@ section.documents__tiab {
   margin: 4px 0 0;
 }
 
+/* 画像非対応モデルの実行ブロック */
+.extract__image-unsupported-warning {
+  color: var(--color-danger);
+  font-size: 13px;
+  margin: 4px 0 0;
+}
+
 .extract__estimate {
   border: 1px solid var(--color-border);
   border-radius: 8px;
@@ -1719,6 +1726,13 @@ section.documents__tiab {
 
 .extract__doc-detail {
   color: var(--color-danger);
+  font-size: 13px;
+}
+
+/* 失敗理由別のヒント（S7 失敗行。実データ抽出の失敗ヒント） */
+.extract__doc-hint {
+  display: block;
+  color: var(--color-text-muted);
   font-size: 13px;
 }
 
