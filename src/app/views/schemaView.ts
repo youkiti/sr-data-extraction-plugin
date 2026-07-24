@@ -7,6 +7,13 @@
 import type { EntityLevel, FieldDataType, SchemaField } from '../../domain/schemaField';
 import type { SchemaVersion } from '../../domain/schemaVersion';
 import type { PresetDialogState } from '../../features/schema/presets/prespecDialog';
+import type {
+  RedraftAddedItem,
+  RedraftAttributeChange,
+  RedraftChangedItem,
+  RedraftComparedKey,
+  RedraftRemovedItem,
+} from '../../features/schema/redraftDiff';
 import type { Quadas3PrespecDialogState } from '../../features/schema/presets/quadas3Prespec';
 import type { QuipsPrespecDialogState } from '../../features/schema/presets/quipsPrespec';
 import type {
@@ -27,7 +34,7 @@ import type { FieldValidationError } from '../../features/schema/validateField';
 import { t, type MessageKey } from '../../lib/i18n';
 import { el } from '../ui/dom';
 import { createModelSelect } from '../ui/modelSelect';
-import type { AppState, SchemaState } from '../store';
+import type { AppState, RedraftReviewState, SchemaState } from '../store';
 import type { ViewContext } from './types';
 
 const ENTITY_LEVELS: readonly EntityLevel[] = ['study', 'arm', 'outcome_result', 'rob_domain'];
@@ -75,18 +82,17 @@ function reloadButton(ctx: ViewContext): HTMLButtonElement {
   return button;
 }
 
-/** ドラフト前: サンプル論文セレクタ（1〜3 本）+ requested_model + 実行ボタン */
-function renderDraftForm(state: AppState, ctx: ViewContext): HTMLElement {
+/**
+ * サンプル論文セレクタ（1〜3 本）+ requested_model + 実行前エラー表示。
+ * 0 版のドラフト前フォーム（renderDraftForm）と確定済み画面の再ドラフトカード
+ * （renderRedraftForm。issue #197）で共有する。DOM id（`schema-sample-list` /
+ * `schema-model` / `schema-draft-error`）が重複するため、両者は排他描画（renderBody の
+ * 分岐）でしか使われない前提
+ */
+function renderSampleAndModelFields(state: AppState, ctx: ViewContext): HTMLElement[] {
   const { records } = state.documents;
   const { selectedDocumentIds, model, draftError } = state.schema;
-
-  const children: HTMLElement[] = [
-    el('h3', { text: t('schema.draftTitle') }),
-    el('p', {
-      className: 'view__lead',
-      text: t('schema.draftLead'),
-    }),
-  ];
+  const children: HTMLElement[] = [];
 
   if (records === null) {
     children.push(el('p', { id: 'schema-documents-loading', text: t('schema.documentsLoading') }));
@@ -145,6 +151,20 @@ function renderDraftForm(state: AppState, ctx: ViewContext): HTMLElement {
     }),
   );
 
+  return children;
+}
+
+/** ドラフト前: サンプル論文セレクタ（1〜3 本）+ requested_model + 実行ボタン */
+function renderDraftForm(state: AppState, ctx: ViewContext): HTMLElement {
+  const children: HTMLElement[] = [
+    el('h3', { text: t('schema.draftTitle') }),
+    el('p', {
+      className: 'view__lead',
+      text: t('schema.draftLead'),
+    }),
+    ...renderSampleAndModelFields(state, ctx),
+  ];
+
   const runButton = el('button', {
     id: 'schema-draft-run',
     className: 'schema__primary',
@@ -155,6 +175,32 @@ function renderDraftForm(state: AppState, ctx: ViewContext): HTMLElement {
   children.push(el('div', { className: 'schema__actions' }, [runButton]));
 
   return el('div', { id: 'schema-draft-form', className: 'schema__draft-form' }, children);
+}
+
+/**
+ * 確定済み画面の再ドラフトカード（issue #197）: サンプル論文セレクタ・モデルセレクタは
+ * renderSampleAndModelFields を再利用し、実行ボタンだけ別 id（#schema-redraft-run）を持つ
+ */
+function renderRedraftForm(state: AppState, ctx: ViewContext): HTMLElement {
+  const children: HTMLElement[] = [
+    el('h3', { text: t('schema.redraftTitle') }),
+    el('p', {
+      className: 'view__lead',
+      text: t('schema.redraftLead'),
+    }),
+    ...renderSampleAndModelFields(state, ctx),
+  ];
+
+  const runButton = el('button', {
+    id: 'schema-redraft-run',
+    className: 'schema__primary',
+    text: t('schema.redraftTitle'),
+    attributes: { type: 'button' },
+  });
+  runButton.addEventListener('click', () => ctx.schema.onRunDraft());
+  children.push(el('div', { className: 'schema__actions' }, [runButton]));
+
+  return el('section', { id: 'schema-redraft-form', className: 'schema__redraft-form' }, children);
 }
 
 /** ドラフト生成中: 経過時間つき進捗（store 管理のため他の再描画でも消えない） */
@@ -965,13 +1011,14 @@ function renderCurrentFieldRow(field: SchemaField): HTMLElement {
   ]);
 }
 
-/** 確定済み: 現行版の読み取り専用サマリ + 版履歴 + 「新しい版を作る」 */
+/** 確定済み: 現行版の読み取り専用サマリ + 版履歴 + 「新しい版を作る」+ 再ドラフト導線 */
 function renderConfirmed(
   latest: SchemaVersion,
   versions: readonly SchemaVersion[],
   schema: SchemaState,
   ctx: ViewContext,
   latestProtocolVersion: number | null,
+  state: AppState,
 ): HTMLElement {
   const fields = schema.currentFields ?? [];
 
@@ -1032,6 +1079,9 @@ function renderConfirmed(
   newVersionButton.addEventListener('click', () => ctx.schema.onStartNewVersion());
   children.push(el('div', { className: 'schema__actions' }, [newVersionButton, reloadButton(ctx)]));
 
+  // 再ドラフト導線（issue #197）: 版履歴の手前に置く
+  children.push(renderRedraftForm(state, ctx));
+
   if (versions.length > 1) {
     const items = versions.map((version) =>
       el('li', {
@@ -1055,6 +1105,197 @@ function renderConfirmed(
   return el('div', { id: 'schema-confirmed', className: 'schema__confirmed' }, children);
 }
 
+/** 差分承認画面: 1 項目の要約（field_label（field_name）/ entity_level / data_type） */
+function redraftItemSummary(row: {
+  fieldLabel: string;
+  fieldName: string;
+  entityLevel: EntityLevel;
+  dataType: FieldDataType;
+}): string {
+  return t('schema.redraftItemSummary', {
+    fieldLabel: row.fieldLabel,
+    fieldName: row.fieldName,
+    entityLevel: row.entityLevel,
+    dataType: row.dataType,
+  });
+}
+
+/**
+ * 差分承認画面: 変更属性名の表示ラベル（コード用語の列はそのまま、和名列だけ翻訳する。
+ * errorColumnLabel と同じ方針）
+ */
+function redraftAttrLabel(key: RedraftComparedKey): string {
+  const keys: Partial<Record<RedraftComparedKey, MessageKey>> = {
+    unit: 'schema.headUnit',
+    allowedValues: 'schema.colAllowedValues',
+    required: 'schema.headRequired',
+    extractionInstruction: 'schema.colExtractionInstruction',
+    example: 'schema.headExample',
+  };
+  const literals: Partial<Record<RedraftComparedKey, string>> = {
+    section: 'section',
+    fieldLabel: 'field_label',
+    entityLevel: 'entity_level',
+    dataType: 'data_type',
+  };
+  const messageKey = keys[key];
+  return messageKey !== undefined ? t(messageKey) : (literals[key] as string);
+}
+
+/** 差分承認画面: 変更項目 1 件の属性別差分リスト（属性名: before → after。null は「—」表示） */
+function renderRedraftChangeList(changes: readonly RedraftAttributeChange[]): HTMLElement {
+  return el(
+    'ul',
+    { className: 'schema__redraft-changes' },
+    changes.map((change) =>
+      el('li', {
+        text: t('schema.redraftChangeLine', {
+          label: redraftAttrLabel(change.key),
+          before: change.before ?? '—',
+          after: change.after ?? '—',
+        }),
+      }),
+    ),
+  );
+}
+
+/** 差分承認画面: 追加候補（既定チェック済み。0 件は案内文のみ） */
+function renderRedraftAdded(
+  items: readonly RedraftAddedItem[],
+  selection: Record<string, boolean>,
+  ctx: ViewContext,
+): HTMLElement {
+  if (items.length === 0) {
+    return el('p', { id: 'schema-redraft-added', text: t('schema.redraftAddedEmpty') });
+  }
+  const rows = items.map((item) => {
+    const fieldName = item.row.fieldName.trim();
+    const checkbox = el('input', {
+      className: 'schema__redraft-check',
+      attributes: { type: 'checkbox', 'data-kind': 'added', 'data-field-name': fieldName },
+    }) as HTMLInputElement;
+    checkbox.checked = selection[fieldName] ?? false;
+    checkbox.addEventListener('change', () =>
+      ctx.schema.onToggleRedraft('added', fieldName, checkbox.checked),
+    );
+    return el('li', {}, [el('label', {}, [checkbox, redraftItemSummary(item.row)])]);
+  });
+  return el('ul', { id: 'schema-redraft-added', className: 'schema__redraft-list' }, rows);
+}
+
+/** 差分承認画面: 変更候補（既定チェック済み。属性ごとの差分を併記） */
+function renderRedraftChanged(
+  items: readonly RedraftChangedItem[],
+  selection: Record<string, boolean>,
+  ctx: ViewContext,
+): HTMLElement {
+  const rows = items.map((item) => {
+    const fieldName = item.current.fieldName.trim();
+    const checkbox = el('input', {
+      className: 'schema__redraft-check',
+      attributes: { type: 'checkbox', 'data-kind': 'changed', 'data-field-name': fieldName },
+    }) as HTMLInputElement;
+    checkbox.checked = selection[fieldName] ?? false;
+    checkbox.addEventListener('change', () =>
+      ctx.schema.onToggleRedraft('changed', fieldName, checkbox.checked),
+    );
+    const heading = el('span', {
+      text: t('schema.redraftItemHeading', { fieldLabel: item.current.fieldLabel, fieldName }),
+    });
+    return el('li', {}, [el('label', {}, [checkbox, heading]), renderRedraftChangeList(item.changes)]);
+  });
+  return el('ul', { id: 'schema-redraft-changed', className: 'schema__redraft-list' }, rows);
+}
+
+/**
+ * 差分承認画面: 削除候補（既定は未チェック = 削除しない）。
+ * 注意書き（#schema-redraft-removed-note）は 0 件でも常に出す
+ */
+function renderRedraftRemoved(
+  items: readonly RedraftRemovedItem[],
+  selection: Record<string, boolean>,
+  ctx: ViewContext,
+): HTMLElement[] {
+  const note = el('p', {
+    id: 'schema-redraft-removed-note',
+    className: 'schema__error',
+    text: t('schema.redraftRemovedNote'),
+  });
+  const rows = items.map((item) => {
+    const fieldName = item.current.fieldName.trim();
+    const checkbox = el('input', {
+      className: 'schema__redraft-check',
+      attributes: { type: 'checkbox', 'data-kind': 'removed', 'data-field-name': fieldName },
+    }) as HTMLInputElement;
+    checkbox.checked = selection[fieldName] ?? false;
+    checkbox.addEventListener('change', () =>
+      ctx.schema.onToggleRedraft('removed', fieldName, checkbox.checked),
+    );
+    return el('li', {}, [el('label', {}, [checkbox, redraftItemSummary(item.current)])]);
+  });
+  const list = el('ul', { id: 'schema-redraft-removed', className: 'schema__redraft-list' }, rows);
+  return [note, list];
+}
+
+/**
+ * 差分承認画面（issue #197）: AI 再ドラフト結果と現行版の差分を提示し、
+ * 追加 / 変更 / 削除の承認を経てからエディタへ反映する
+ */
+function renderRedraftReview(redraft: RedraftReviewState, ctx: ViewContext): HTMLElement {
+  const { diff, selection } = redraft;
+
+  const children: HTMLElement[] = [
+    el('h3', { text: t('schema.redraftReviewTitle') }),
+    el('p', {
+      id: 'schema-redraft-summary',
+      text: t('schema.redraftSummary', {
+        added: diff.added.length,
+        changed: diff.changed.length,
+        removed: diff.removed.length,
+        unchanged: diff.unchanged.length,
+        protectedCount: diff.protectedFields.length,
+      }),
+    }),
+    el('h4', { text: t('schema.redraftAddedTitle') }),
+    renderRedraftAdded(diff.added, selection.added, ctx),
+    el('h4', { text: t('schema.redraftChangedTitle') }),
+    renderRedraftChanged(diff.changed, selection.changed, ctx),
+    el('h4', { text: t('schema.redraftRemovedTitle') }),
+    ...renderRedraftRemoved(diff.removed, selection.removed, ctx),
+    el('p', {
+      id: 'schema-redraft-unchanged',
+      text: t('schema.redraftUnchangedCount', { count: diff.unchanged.length }),
+    }),
+  ];
+
+  // 保持（RoB テンプレート）: 0 件なら出さない
+  if (diff.protectedFields.length > 0) {
+    children.push(
+      el('p', {
+        id: 'schema-redraft-protected',
+        text: t('schema.redraftProtectedNote', { count: diff.protectedFields.length }),
+      }),
+    );
+  }
+
+  const applyButton = el('button', {
+    id: 'schema-redraft-apply',
+    className: 'schema__primary',
+    text: t('schema.redraftApply'),
+    attributes: { type: 'button' },
+  });
+  applyButton.addEventListener('click', () => ctx.schema.onApplyRedraft());
+  const cancelButton = el('button', {
+    id: 'schema-redraft-cancel',
+    text: t('schema.redraftCancel'),
+    attributes: { type: 'button' },
+  });
+  cancelButton.addEventListener('click', () => ctx.schema.onCancelRedraft());
+  children.push(el('div', { className: 'schema__actions' }, [applyButton, cancelButton]));
+
+  return el('section', { id: 'schema-redraft-review', className: 'schema__redraft-review' }, children);
+}
+
 function renderBody(state: AppState, ctx: ViewContext): HTMLElement {
   const { schema } = state;
   if (schema.loadError !== null) {
@@ -1073,6 +1314,11 @@ function renderBody(state: AppState, ctx: ViewContext): HTMLElement {
   if (schema.drafting) {
     return renderDraftProgress(schema);
   }
+  // 差分承認画面（issue #197）はエディタと併存しない（redraft はエディタへ反映するまで
+  // editorRows を書き換えない。applyRedraft / cancelRedraft のいずれかで redraft は null に戻る）
+  if (schema.redraft !== null) {
+    return renderRedraftReview(schema.redraft, ctx);
+  }
   if (schema.editorRows !== null) {
     return renderEditor(schema.editorRows, schema, ctx);
   }
@@ -1080,7 +1326,14 @@ function renderBody(state: AppState, ctx: ViewContext): HTMLElement {
   if (latest === undefined) {
     return renderDraftForm(state, ctx);
   }
-  return renderConfirmed(latest, schema.versions, schema, ctx, state.protocol.records?.[0]?.version ?? null);
+  return renderConfirmed(
+    latest,
+    schema.versions,
+    schema,
+    ctx,
+    state.protocol.records?.[0]?.version ?? null,
+    state,
+  );
 }
 
 export function renderSchemaView(state: AppState, ctx: ViewContext): HTMLElement {

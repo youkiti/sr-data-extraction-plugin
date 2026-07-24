@@ -1,4 +1,4 @@
-// S5「AI 再ドラフト」の差分ロジック（issue #197 Chunk A）。
+// S5「AI 再ドラフト」の差分ロジック（issue #197 Chunk A + レビュー反映 Chunk B）。
 // プロトコル改訂後に AI へ表デザインを再ドラフトさせた結果（SchemaEditorRow[]）と、
 // 現行スキーマ版（SchemaField[]）を突き合わせて差分を作る純粋関数群。
 // DOM・store・ネットワークには一切依存しない（差分画面の描画・サービス配線は Chunk B）
@@ -51,6 +51,21 @@ export interface RedraftRemovedItem {
   current: SchemaField;
 }
 
+/**
+ * current 側 1 項目の分類結果（issue #197 レビュー反映）。
+ * applyRedraftDiff はこの判別可能ユニオンを走査するだけで出力行を組み立てられるため、
+ * field_name をキーにした Map の再構築・型アサーション・重複 field_name での取りこぼしが
+ * まとめて解消される（旧 currentFieldOrder + 4 Map 方式の問題点）。
+ * buildRedraftDiff / applyRedraftDiff のペアでのみ意味を持つ内部契約であり、
+ * 差分画面の描画（Chunk B の schemaView.ts）は added / changed / removed / unchanged /
+ * protectedFields を直接使い、このフィールドは参照しない想定
+ */
+export type RedraftEntry =
+  | { kind: 'protected'; field: SchemaField }
+  | { kind: 'unchanged'; field: SchemaField }
+  | { kind: 'changed'; item: RedraftChangedItem }
+  | { kind: 'removed'; item: RedraftRemovedItem };
+
 export interface RedraftDiff {
   added: RedraftAddedItem[];
   changed: RedraftChangedItem[];
@@ -61,11 +76,10 @@ export interface RedraftDiff {
   protectedFields: SchemaField[];
   /**
    * 内部フィールド: applyRedraftDiff が「現行版の並び順を維持」するために使う、
-   * current 配列の元順序（trim 済み field_name の列。protectedFields も含む全件）。
-   * buildRedraftDiff / applyRedraftDiff のペアでのみ意味を持つ内部契約であり、
-   * 差分画面の描画（Chunk B）はこのフィールドを直接参照しない想定
+   * current 配列を元の並び順のまま分類したエントリ列（protectedFields も含む全件）。
+   * buildRedraftDiff / applyRedraftDiff のペアでのみ意味を持つ内部契約
    */
-  readonly currentFieldOrder: readonly string[];
+  readonly currentEntries: readonly RedraftEntry[];
 }
 
 /** 比較対象の属性をエディタ表示用の文字列へ変換する（boolean は 'true'/'false'、null はそのまま） */
@@ -85,9 +99,14 @@ type ComparableSource = Pick<
 function stringifyAttr(key: RedraftComparedKey, source: ComparableSource): string | null {
   switch (key) {
     case 'section':
-      return source.section;
+      // saveSchemaVersion.ts は保存時に section を trim する。current 側（＝保存済みの現行版）は
+      // 既に trim 済みだが、AI 提案（proposed）は trim 前のままここに渡ってくるため、
+      // trim せずに比較すると前後の空白の差だけで「変更あり」に化けてしまう。
+      // 比較は「保存後の値どうし」を突き合わせる規約として、ここで trim してから行う
+      return source.section.trim();
     case 'fieldLabel':
-      return source.fieldLabel;
+      // section と同じ理由（saveSchemaVersion.ts が fieldLabel も trim して保存する）
+      return source.fieldLabel.trim();
     case 'entityLevel':
       return source.entityLevel;
     case 'dataType':
@@ -95,11 +114,16 @@ function stringifyAttr(key: RedraftComparedKey, source: ComparableSource): strin
     case 'unit':
       return source.unit;
     case 'allowedValues':
-      return source.allowedValues;
+      // saveSchemaVersion.ts は enum 以外の allowedValues を保存時に破棄する
+      // （`row.dataType === 'enum' ? row.allowedValues : null`）。比較もこの規約に合わせないと、
+      // 「AI 提案が非 enum なのに allowed_values を返した」だけで実際には保存後は消える値の
+      // 差分が「変更あり」に化けてしまう
+      return source.dataType === 'enum' ? source.allowedValues : null;
     case 'required':
       return source.required ? 'true' : 'false';
     case 'extractionInstruction':
-      return source.extractionInstruction;
+      // section / fieldLabel と同じ理由（saveSchemaVersion.ts が trim して保存する）
+      return source.extractionInstruction.trim();
     case 'example':
       return source.example;
   }
@@ -134,21 +158,18 @@ function computeChanges(
 /**
  * AI 再ドラフト結果（drafted）と現行スキーマ版（current）を突き合わせて差分を作る。
  * 突き合わせキーは field_name（前後の空白を trim。大文字小文字は区別する = snake_case
- * 強制済みのため）
+ * 強制済みのため）。current に同名 field が複数あっても（SchemaFields タブの直読みなので
+ * 理論上ありうる）取りこぼさない — 各 current 項目を 1 件ずつ独立に分類し、drafted 側の
+ * 対応行は先着 1 件にしか消費させない（2 件目以降は removed 扱いになる）
  */
 export function buildRedraftDiff(
   current: readonly SchemaField[],
   drafted: readonly SchemaEditorRow[],
 ): RedraftDiff {
-  const protectedFields: SchemaField[] = [];
   const protectedNames = new Set<string>();
-  const nonProtectedCurrent: SchemaField[] = [];
   for (const field of current) {
     if (isProtectedField(field)) {
-      protectedFields.push(field);
       protectedNames.add(field.fieldName.trim());
-    } else {
-      nonProtectedCurrent.push(field);
     }
   }
 
@@ -168,32 +189,44 @@ export function buildRedraftDiff(
     draftedByName.set(name, row);
   }
 
+  const protectedFields: SchemaField[] = [];
   const changed: RedraftChangedItem[] = [];
   const removed: RedraftRemovedItem[] = [];
   const unchanged: SchemaField[] = [];
-  for (const field of nonProtectedCurrent) {
+  const currentEntries: RedraftEntry[] = [];
+
+  for (const field of current) {
+    if (isProtectedField(field)) {
+      protectedFields.push(field);
+      currentEntries.push({ kind: 'protected', field });
+      continue;
+    }
     const name = field.fieldName.trim();
     const proposed = draftedByName.get(name);
     if (proposed === undefined) {
-      removed.push({ current: field });
+      const item: RedraftRemovedItem = { current: field };
+      removed.push(item);
+      currentEntries.push({ kind: 'removed', item });
       continue;
     }
-    // 現行版とマッチした AI 提案は「added」候補から除く（added に残るのは未消費分のみ）
+    // 現行版とマッチした AI 提案は「added」候補から除く（added に残るのは未消費分のみ）。
+    // 同名の current が複数ある場合、2 件目以降はこの delete 済みのため必ず removed になる
     draftedByName.delete(name);
     const rowChanges = computeChanges(field, proposed);
     if (rowChanges.length > 0) {
-      changed.push({ current: field, proposed, changes: rowChanges });
+      const item: RedraftChangedItem = { current: field, proposed, changes: rowChanges };
+      changed.push(item);
+      currentEntries.push({ kind: 'changed', item });
     } else {
       unchanged.push(field);
+      currentEntries.push({ kind: 'unchanged', field });
     }
   }
 
   // 残った draftedByName は current に無い新規提案（drafted の出現順を維持する Map の性質を利用）
   const added: RedraftAddedItem[] = Array.from(draftedByName.values()).map((row) => ({ row }));
 
-  const currentFieldOrder = current.map((field) => field.fieldName.trim());
-
-  return { added, changed, removed, unchanged, protectedFields, currentFieldOrder };
+  return { added, changed, removed, unchanged, protectedFields, currentEntries };
 }
 
 /** 差分画面のチェック状態。キーは added=field_name / changed=field_name / removed=field_name */
@@ -244,51 +277,41 @@ function schemaFieldToEditorRow(field: SchemaField): SchemaEditorRow {
 
 /**
  * 選択状態に基づき差分を適用し、エディタ行の配列を返す。
- * - 現行版の並び順を維持する（protectedFields / unchanged / changed / removed を
- *   元の current 配列の順序で走査し、added は末尾へ追記）
+ * - 現行版の並び順を維持する（currentEntries を先頭から走査し、added は末尾へ追記）
  * - field_id の継承がこの機能の肝（requirements.md §3.2）: field_name 一致で
  *   必ず既存 fieldId を引き継ぐ
  */
 export function applyRedraftDiff(diff: RedraftDiff, selection: RedraftSelection): SchemaEditorRow[] {
-  const protectedByName = new Map(diff.protectedFields.map((field) => [field.fieldName.trim(), field]));
-  const unchangedByName = new Map(diff.unchanged.map((field) => [field.fieldName.trim(), field]));
-  const changedByName = new Map(diff.changed.map((item) => [item.current.fieldName.trim(), item]));
-  const removedByName = new Map(diff.removed.map((item) => [item.current.fieldName.trim(), item]));
-
   const rows: SchemaEditorRow[] = [];
-  for (const name of diff.currentFieldOrder) {
-    const protectedField = protectedByName.get(name);
-    if (protectedField !== undefined) {
-      rows.push(schemaFieldToEditorRow(protectedField));
-      continue;
-    }
-    const unchangedField = unchangedByName.get(name);
-    if (unchangedField !== undefined) {
-      rows.push(schemaFieldToEditorRow(unchangedField));
-      continue;
-    }
-    const changedItem = changedByName.get(name);
-    if (changedItem !== undefined) {
-      const approved = selection.changed[name] ?? false;
-      rows.push(
-        approved
-          ? {
-              ...changedItem.proposed,
-              fieldId: changedItem.current.fieldId,
-              note: changedItem.current.note,
-              aiGenerated: true,
-            }
-          : schemaFieldToEditorRow(changedItem.current),
-      );
-      continue;
-    }
-    // currentFieldOrder の各 name は buildRedraftDiff により
-    // protected/unchanged/changed/removed のいずれか 1 つに必ず分類されているため、
-    // ここまで来た name は removed に存在することが保証されている
-    const removedItem = removedByName.get(name) as RedraftRemovedItem;
-    const approvedRemoval = selection.removed[name] ?? false;
-    if (!approvedRemoval) {
-      rows.push(schemaFieldToEditorRow(removedItem.current));
+  for (const entry of diff.currentEntries) {
+    switch (entry.kind) {
+      case 'protected':
+      case 'unchanged':
+        rows.push(schemaFieldToEditorRow(entry.field));
+        break;
+      case 'changed': {
+        const name = entry.item.current.fieldName.trim();
+        const approved = selection.changed[name] ?? false;
+        rows.push(
+          approved
+            ? {
+                ...entry.item.proposed,
+                fieldId: entry.item.current.fieldId,
+                note: entry.item.current.note,
+                aiGenerated: true,
+              }
+            : schemaFieldToEditorRow(entry.item.current),
+        );
+        break;
+      }
+      case 'removed': {
+        const name = entry.item.current.fieldName.trim();
+        const approvedRemoval = selection.removed[name] ?? false;
+        if (!approvedRemoval) {
+          rows.push(schemaFieldToEditorRow(entry.item.current));
+        }
+        break;
+      }
     }
   }
 

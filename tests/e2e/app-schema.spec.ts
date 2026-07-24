@@ -78,10 +78,15 @@ const EMPTY_SCHEMA_STATE = {
 async function initApp(
   page: Page,
   schema: Record<string, unknown>,
-  options: { schemaVersions?: number; documents?: Record<string, unknown>[] } = {},
+  options: {
+    schemaVersions?: number;
+    documents?: Record<string, unknown>[];
+    /** 陳腐化バナー（issue #197）検証用。指定時のみ protocol.records へ 1 件注入する */
+    protocolVersion?: number;
+  } = {},
 ): Promise<void> {
   await page.addInitScript(
-    ({ schemaState, versions, documents }) => {
+    ({ schemaState, versions, documents, protocolVersion }) => {
       const win = window as unknown as Record<string, unknown>;
       win.chrome = {
         storage: {
@@ -151,12 +156,38 @@ async function initApp(
           mergeError: null,
         },
         schema: schemaState,
+        ...(protocolVersion === null
+          ? {}
+          : {
+              protocol: {
+                records: [
+                  {
+                    version: protocolVersion,
+                    frameworkType: null,
+                    researchQuestion: '',
+                    inclusionCriteria: null,
+                    exclusionCriteria: null,
+                    studyDesign: null,
+                    blockCount: 0,
+                    combinationExpression: '',
+                    sourceType: 'manual',
+                    sourceFilename: null,
+                    rawTextRef: null,
+                    rawTextPreview: null,
+                    rawTextInline: 'P: 成人肺炎',
+                    createdAt: '2026-07-01T00:00:00Z',
+                    createdBy: 'e2e@example.com',
+                  },
+                ],
+              },
+            }),
       };
     },
     {
       schemaState: schema,
       versions: options.schemaVersions ?? 0,
       documents: options.documents ?? [DOCUMENT],
+      protocolVersion: options.protocolVersion ?? null,
     },
   );
   await page.goto('/app/app.html#/schema');
@@ -468,6 +499,105 @@ test('確定済み: 現行版サマリから「新しい版を作る」でエデ
   await expect(
     page.locator('input[aria-label="1 行目の field_name"]'),
   ).toHaveValue('study_design');
+});
+
+const CONFIRMED_SCHEMA_STATE = {
+  ...EMPTY_SCHEMA_STATE,
+  versions: [
+    {
+      schemaVersion: 1,
+      parentVersion: null,
+      protocolVersion: 1,
+      createdByType: 'ai_draft',
+      createdAt: '2026-07-01T00:00:00Z',
+      createdBy: 'e2e@example.com',
+      note: null,
+    },
+  ],
+  currentFields: [
+    {
+      schemaVersion: 1,
+      fieldId: 'f-1',
+      fieldIndex: 1,
+      section: 'methods',
+      fieldName: 'study_design',
+      fieldLabel: '研究デザイン',
+      entityLevel: 'study',
+      dataType: 'text',
+      unit: null,
+      allowedValues: null,
+      required: true,
+      extractionInstruction: 'Report the design.',
+      example: null,
+      aiGenerated: true,
+      note: null,
+    },
+  ],
+};
+
+test('確定済み: プロトコルが改訂されていると陳腐化バナーと再ドラフト導線を表示する（issue #197）', async ({
+  page,
+}) => {
+  await initApp(page, CONFIRMED_SCHEMA_STATE, { schemaVersions: 1, protocolVersion: 2 });
+
+  await expect(page.locator('#schema-confirmed')).toBeVisible();
+  await expect(page.locator('#schema-stale-protocol')).toBeVisible();
+  await expect(page.locator('#schema-stale-protocol')).toContainText('Protocol v1');
+  await expect(page.locator('#schema-stale-protocol')).toContainText('v2');
+
+  // 再ドラフトカードは版履歴の手前にあり、サンプル論文セレクタ・モデルセレクタを共有する
+  await expect(page.locator('#schema-redraft-form')).toBeVisible();
+  await expect(page.locator('#schema-redraft-run')).toBeVisible();
+  await expect(page.locator('#schema-sample-list')).toBeVisible();
+});
+
+test('差分承認画面: 追加は既定チェック・削除候補は既定未チェックで描画され、反映でエディタへ遷移する（issue #197）', async ({
+  page,
+}) => {
+  const currentField = {
+    schemaVersion: 1,
+    fieldId: 'f-1',
+    fieldIndex: 1,
+    section: 'methods',
+    fieldName: 'study_design',
+    fieldLabel: '研究デザイン',
+    entityLevel: 'study',
+    dataType: 'text',
+    unit: null,
+    allowedValues: null,
+    required: true,
+    extractionInstruction: 'Report the design.',
+    example: null,
+    aiGenerated: true,
+    note: null,
+  };
+  const addedRow = makeEditorRow({ fieldName: 'country', fieldLabel: '対象国' });
+  await initApp(page, {
+    ...CONFIRMED_SCHEMA_STATE,
+    redraft: {
+      diff: {
+        added: [{ row: addedRow }],
+        changed: [],
+        removed: [{ current: currentField }],
+        unchanged: [],
+        protectedFields: [],
+        currentEntries: [{ kind: 'removed', item: { current: currentField } }],
+      },
+      selection: { added: { country: true }, changed: {}, removed: { study_design: false } },
+    },
+  });
+
+  await expect(page.locator('#schema-redraft-review')).toBeVisible();
+  const addedCheckbox = page.locator('#schema-redraft-added input[type="checkbox"]');
+  await expect(addedCheckbox).toBeChecked();
+  const removedCheckbox = page.locator('#schema-redraft-removed input[type="checkbox"]');
+  await expect(removedCheckbox).not.toBeChecked();
+
+  await page.locator('#schema-redraft-apply').click();
+  await expect(page.locator('#schema-redraft-review')).toHaveCount(0);
+  await expect(page.locator('#schema-editor')).toBeVisible();
+  // 追加（既定チェック）は反映され、削除候補（既定未チェック）は残る
+  await expect(page.locator('#schema-editor-table tbody tr')).toHaveCount(2);
 });
 
 test('アクセシビリティ違反がない（axe・ドラフト前）', async ({ page }) => {

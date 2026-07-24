@@ -49,7 +49,9 @@ import {
 } from './services/protocolService';
 import {
   addEditorRow,
+  applyRedraft,
   cancelEditor,
+  cancelRedraft,
   cancelRobPrespecDialog,
   confirmRobPrespecDialog,
   confirmSchema,
@@ -60,6 +62,7 @@ import {
   setDraftModel,
   skipRobPrespecDialog,
   startEditorFromCurrent,
+  toggleRedraftSelection,
   toggleSampleDocument,
   updateEditorRow,
   updateRobPrespecDialog,
@@ -587,6 +590,15 @@ export async function bootstrapApp(
       },
       onStartNewVersion: () => {
         startEditorFromCurrent(store);
+      },
+      onToggleRedraft: (kind, fieldName, selected) => {
+        toggleRedraftSelection(store, kind, fieldName, selected);
+      },
+      onApplyRedraft: () => {
+        applyRedraft(store);
+      },
+      onCancelRedraft: () => {
+        cancelRedraft(store);
       },
     },
     pilot: {

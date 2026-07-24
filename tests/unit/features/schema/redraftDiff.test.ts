@@ -190,7 +190,67 @@ describe('buildRedraftDiff', () => {
       unchanged: [],
       protectedFields: [],
     });
-    expect(diff.currentFieldOrder).toEqual([]);
+    expect(diff.currentEntries).toEqual([]);
+  });
+
+  test('section / fieldLabel / extractionInstruction は trim してから比較する（前後空白だけの差は unchanged。レビュー指摘 1-a）', () => {
+    const field = makeField({
+      fieldName: 'sample_size',
+      section: 'methods',
+      fieldLabel: 'ラベル',
+      extractionInstruction: '指示文',
+    });
+    const row = makeRow({
+      fieldName: 'sample_size',
+      section: '  methods  ',
+      fieldLabel: '  ラベル  ',
+      extractionInstruction: '  指示文  ',
+    });
+    const diff = buildRedraftDiff([field], [row]);
+    expect(diff.unchanged).toEqual([field]);
+    expect(diff.changed).toEqual([]);
+  });
+
+  test('非 enum の allowedValues は保存時に破棄される規約に合わせ、AI 提案が allowed_values を返しても差分にしない（レビュー指摘 1-b）', () => {
+    const field = makeField({
+      fieldName: 'sample_size',
+      dataType: 'text',
+      allowedValues: null,
+    });
+    const row = makeRow({
+      fieldName: 'sample_size',
+      dataType: 'text',
+      allowedValues: 'a|b',
+    });
+    const diff = buildRedraftDiff([field], [row]);
+    expect(diff.unchanged).toEqual([field]);
+    expect(diff.changed).toEqual([]);
+  });
+
+  test('enum どうしの allowedValues の実差分は引き続き検出する', () => {
+    const field = makeField({ fieldName: 'severity', dataType: 'enum', allowedValues: 'low|high' });
+    const row = makeRow({ fieldName: 'severity', dataType: 'enum', allowedValues: 'low|mid|high' });
+    const diff = buildRedraftDiff([field], [row]);
+    expect(diff.changed).toHaveLength(1);
+    expect(diff.changed[0]?.changes).toEqual([
+      { key: 'allowedValues', before: 'low|high', after: 'low|mid|high' },
+    ]);
+  });
+
+  test('current に同名 field_name が複数あっても取りこぼさない（レビュー指摘 1-c）', () => {
+    const first = makeField({ fieldId: 'f-1', fieldName: 'dup_field', fieldIndex: 1, required: false });
+    const second = makeField({ fieldId: 'f-2', fieldName: 'dup_field', fieldIndex: 2, required: false });
+    const row = makeRow({ fieldName: 'dup_field', required: true });
+    const diff = buildRedraftDiff([first, second], [row]);
+    // 先着 1 件（first）だけが drafted の提案を消費して changed になり、
+    // 2 件目（second）は提案が残っていないため removed になる（重複耐性の仕様）
+    expect(diff.changed).toEqual([{ current: first, proposed: row, changes: [{ key: 'required', before: 'false', after: 'true' }] }]);
+    expect(diff.removed).toEqual([{ current: second }]);
+    expect(diff.added).toEqual([]);
+    expect(diff.currentEntries).toEqual([
+      { kind: 'changed', item: diff.changed[0] },
+      { kind: 'removed', item: diff.removed[0] },
+    ]);
   });
 });
 
@@ -313,6 +373,21 @@ describe('applyRedraftDiff', () => {
     const diff = buildRedraftDiff([], []);
     const selection = defaultRedraftSelection(diff);
     expect(applyRedraftDiff(diff, selection)).toEqual([]);
+  });
+
+  test('current に同名 field_name が複数あっても両方が出力に反映される（レビュー指摘 1-c。重複で片方が消えない）', () => {
+    const first = makeField({ fieldId: 'f-1', fieldName: 'dup_field', fieldIndex: 1, required: false });
+    const second = makeField({ fieldId: 'f-2', fieldName: 'dup_field', fieldIndex: 2, required: false });
+    const row = makeRow({ fieldName: 'dup_field', required: true });
+    const diff = buildRedraftDiff([first, second], [row]);
+    // changed（1 件目）を承認、removed（2 件目）は非承認のまま → 両方とも出力に残る
+    const selection: RedraftSelection = { added: {}, changed: { dup_field: true }, removed: { dup_field: false } };
+    const rows = applyRedraftDiff(diff, selection);
+    expect(rows).toHaveLength(2);
+    expect(rows[0]?.fieldId).toBe('f-1');
+    expect(rows[0]?.required).toBe(true); // changed 承認で AI 提案を採用
+    expect(rows[1]?.fieldId).toBe('f-2');
+    expect(rows[1]?.required).toBe(false); // removed 非承認で現行値のまま残る
   });
 });
 

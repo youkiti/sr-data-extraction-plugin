@@ -141,6 +141,12 @@ export interface SchemaViewCallbacks {
   onCancelEditor(): void;
   /** 確定済み画面の「新しい版を作る」 */
   onStartNewVersion(): void;
+  /** 差分承認画面のチェック切替（issue #197） */
+  onToggleRedraft: (kind: 'added' | 'changed' | 'removed', fieldName: string, selected: boolean) => void;
+  /** 差分をエディタへ反映 */
+  onApplyRedraft: () => void;
+  /** 差分をキャンセルして確定済み画面へ戻る */
+  onCancelRedraft: () => void;
 }
 
 /** #/pilot（S6）のユーザー操作コールバック */
