@@ -378,13 +378,33 @@ test('実行 → 完了 → 埋め込み検証 UI（ハイライト + 判定 + D
   await expect(page.locator('.pdf-viewer__page-indicator')).toHaveText('1 / 1 ページ');
   await expect(page.locator('.pdf-viewer__hl--unverified')).toHaveCount(1, { timeout: 15_000 });
 
-  // 判定: 承認 → チップ更新 + ハイライトが検証済み色 + Decisions 追記
+  // スクロール保持（issue #192）: #/pilot 埋め込みでも判定保存の非同期ストア更新
+  // （detach → reattach）で右ペインのスクロール位置が先頭へ戻らないことを見る。
+  // 中間位置を使う（末尾だと承認後にセル内容が縮んで最大値へクランプされ得るため）
+  await page.addStyleTag({ content: '.verify__pane--form { max-height: 120px; }' });
+  const formPane = page.locator('.verify__pane--form');
+  const formScrollTop = await formPane.evaluate((node) => {
+    node.scrollTop = 10_000;
+    const max = node.scrollTop;
+    node.scrollTop = Math.min(60, max);
+    return node.scrollTop;
+  });
+  expect(formScrollTop).toBeGreaterThan(0);
+
+  // 判定: 承認 → チップ更新 + ハイライトが検証済み色 + Decisions 追記。
+  // Playwright のクリックは画面外ボタンの可視化スクロールで退避対象の位置を動かし得る
+  // ため、クリック直後（保存前の楽観再描画後）の実位置を控えて保存後と比較する
   await page.locator('.verify__action--accept').click();
   await expect(page.locator('#verify-focus-detail .verify__chip')).toHaveText('承認');
   await expect(page.locator('.pdf-viewer__hl--verified')).toHaveCount(1);
+  const afterClickScrollTop = await formPane.evaluate((node) => node.scrollTop);
+  expect(afterClickScrollTop).toBeGreaterThan(0); // 復元が効いていなければここで 0 に戻っている
   await expect
     .poll(() => appendUrls.filter((url) => url.includes('Decisions') && url.includes(':append')).length)
     .toBeGreaterThan(0);
+
+  // 保存完了（非同期ストア更新の再描画）後もスクロール位置が保持される
+  await expect.poll(() => formPane.evaluate((node) => node.scrollTop)).toBe(afterClickScrollTop);
 
   const results = await new AxeBuilder({ page }).analyze();
   expect(results.violations).toEqual([]);

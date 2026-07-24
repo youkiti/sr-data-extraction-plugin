@@ -25,7 +25,12 @@ export interface TextViewerHandle {
 }
 
 export function createTextViewer(): TextViewerHandle {
-  const body = el('div', { className: 'text-viewer__body' });
+  // data-preserve-scroll: ストア再描画の detach → reattach でスクロールが先頭へ戻らない
+  // ようにする（bootstrap の購読ハンドラが退避・復元する。issue #192）
+  const body = el('div', {
+    className: 'text-viewer__body',
+    attributes: { 'data-preserve-scroll': '' },
+  });
   const root = el('div', { className: 'text-viewer' }, [body]);
 
   function renderEmpty(): void {

@@ -5,6 +5,10 @@ describe('createTextViewer', () => {
     const viewer = createTextViewer();
     expect(viewer.root.querySelector('.text-viewer__empty')).not.toBeNull();
     expect(viewer.root.querySelector('.text-viewer__snippet')).toBeNull();
+    // 本文領域はストア再描画をまたぐスクロール位置復元の対象（issue #192）
+    expect(
+      viewer.root.querySelector('.text-viewer__body')?.hasAttribute('data-preserve-scroll'),
+    ).toBe(true);
   });
 
   test('located ありはスニペット（出所文書 / ページ番号 / mark 強調 / 前後文脈）を表示する', () => {

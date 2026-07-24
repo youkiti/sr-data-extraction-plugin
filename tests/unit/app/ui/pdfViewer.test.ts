@@ -87,6 +87,10 @@ describe('createPdfViewer', () => {
     const wrap = viewer.root.querySelector<HTMLElement>('.pdf-viewer__page');
     expect(wrap?.style.width).toBe('612px');
     expect(wrap?.style.height).toBe('792px');
+    // スクロール領域はストア再描画をまたぐ位置復元の対象（issue #192）
+    expect(
+      viewer.root.querySelector('.pdf-viewer__scroller')?.hasAttribute('data-preserve-scroll'),
+    ).toBe(true);
   });
 
   test('ページ送り: 次へ / 前へで移動し、端では無効化される', async () => {
