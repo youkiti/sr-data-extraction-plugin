@@ -10,7 +10,7 @@ import type { ProtocolSubmitInput } from '../../features/protocol/submitInput';
 import type { SchemaPresetKind } from '../../features/schema/presets';
 import type { PresetDialogPatch } from '../../features/schema/presets/prespecDialog';
 import type { SchemaEditorRow } from '../../features/schema/types';
-import type { VerifyLayoutMode } from '../../lib/storage/settingsStore';
+import type { VerifyLayoutMode, VerifyPaneLayout } from '../../lib/storage/settingsStore';
 import type { ExclusionDialogState } from '../store';
 import type { RelocateQuoteOutcome } from '../services/relocateQuoteService';
 
@@ -175,6 +175,8 @@ export interface PilotViewCallbacks {
   onInstanceDeclare?(decisions: readonly Decision[]): void;
   /** 検証パネルのレイアウトモード切替（フォーカス ⇄ リスト。issue #38）の永続化 */
   onChangeLayoutMode(mode: VerifyLayoutMode): void;
+  /** 検証パネルの 2 ペインのサイズ調整（issue #193）の永続化。ドラッグ終了時に 1 回だけ呼ばれる */
+  onChangePaneLayout(layout: VerifyPaneLayout): void;
   /** 保存の競合検出バナー（issue #64）の「再読み込み」: 埋め込み検証データ束を読み直す */
   onReloadVerification(): void;
   /**
@@ -228,6 +230,8 @@ export interface VerifyViewCallbacks {
   onInstanceDeclare?(decisions: readonly Decision[]): void;
   /** 検証パネルのレイアウトモード切替（フォーカス ⇄ リスト。issue #38）の永続化 */
   onChangeLayoutMode(mode: VerifyLayoutMode): void;
+  /** 検証パネルの 2 ペインのサイズ調整（issue #193）の永続化。ドラッグ終了時に 1 回だけ呼ばれる */
+  onChangePaneLayout(layout: VerifyPaneLayout): void;
   /** 保存の競合検出バナー（issue #64）の「再読み込み」: 表示中 study を読み直す */
   onReloadVerification(): void;
   /** 「AI で再特定」ボタン（anchor failed の quote 再特定。issue #94）。PilotViewCallbacks 参照 */

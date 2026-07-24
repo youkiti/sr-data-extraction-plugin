@@ -37,7 +37,11 @@ import type { SchemaEditorRow } from '../features/schema/types';
 import type { FieldValidationError } from '../features/schema/validateField';
 import type { VerificationProgress } from '../features/verification/progress';
 import type { VerificationData } from '../features/verification/types';
-import type { VerifyLayoutMode } from '../lib/storage/settingsStore';
+import {
+  DEFAULT_VERIFY_PANE_LAYOUT,
+  type VerifyLayoutMode,
+  type VerifyPaneLayout,
+} from '../lib/storage/settingsStore';
 import type { RouteHash } from './router';
 
 // 定義は features/project/progressCounts.ts（Sheets 読み出しと同居）。従来の import 先を維持する
@@ -286,6 +290,12 @@ export interface PilotState {
    * 検証データ束の読込時に読み直す（S6 / S8 で共有する設定）。既定は 'focus'
    */
   layoutMode: VerifyLayoutMode;
+  /**
+   * 検証パネルの 2 ペインのサイズ調整（issue #193）。settingsStore 由来で検証データ束の
+   * 読込時に読み直す（S6 / S8 で共有する設定）。既定は未設定（{ formPaneHeight: null,
+   * pdfPaneRatio: null }= 既定の見た目）
+   */
+  paneLayout: VerifyPaneLayout;
   /** 自分の StudyData 行の updated_at（楽観ロックの期待値。issue #64） */
   studyRowUpdatedAt: string | null;
   /** 自分の ResultsData 行のセルキー別 updated_at（楽観ロックの期待値。issue #64） */
@@ -422,6 +432,11 @@ export interface VerifyState {
   queuedDecisions: number;
   /** 検証パネルのレイアウトモード（issue #38）。settingsStore 由来。既定は 'focus' */
   layoutMode: VerifyLayoutMode;
+  /**
+   * 検証パネルの 2 ペインのサイズ調整（issue #193）。settingsStore 由来。既定は未設定
+   * （{ formPaneHeight: null, pdfPaneRatio: null } = 既定の見た目）
+   */
+  paneLayout: VerifyPaneLayout;
   /** 自分の StudyData 行の updated_at（楽観ロックの期待値。issue #64） */
   studyRowUpdatedAt: string | null;
   /** 自分の ResultsData 行のセルキー別 updated_at（楽観ロックの期待値。issue #64） */
@@ -761,6 +776,7 @@ export function createInitialState(): AppState {
       studyValues: null,
       queuedDecisions: 0,
       layoutMode: 'focus',
+      paneLayout: DEFAULT_VERIFY_PANE_LAYOUT,
       studyRowUpdatedAt: null,
       resultsRowUpdatedAt: {},
       conflictMessage: null,
@@ -804,6 +820,7 @@ export function createInitialState(): AppState {
       studyValues: null,
       queuedDecisions: 0,
       layoutMode: 'focus',
+      paneLayout: DEFAULT_VERIFY_PANE_LAYOUT,
       studyRowUpdatedAt: null,
       resultsRowUpdatedAt: {},
       conflictMessage: null,

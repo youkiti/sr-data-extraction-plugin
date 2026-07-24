@@ -39,7 +39,7 @@ import {
   type ProviderResolutionDeps,
 } from '../../lib/llm/providerFactory';
 import type { RateLimitPolicy } from '../../lib/llm/rateLimitPolicy';
-import type { VerifyLayoutMode } from '../../lib/storage/settingsStore';
+import type { VerifyLayoutMode, VerifyPaneLayout } from '../../lib/storage/settingsStore';
 import { nowIso8601 } from '../../utils/iso8601';
 import type { PilotState, Store } from '../store';
 import { showToast } from '../ui/toast';
@@ -55,6 +55,7 @@ import {
   persistDecisionWrite,
   persistInstanceDeclarations,
   persistVerifyLayoutMode,
+  persistVerifyPaneLayout,
   resultsCellKeyOf,
   type QueuedDecisionWrite,
   type VerificationDeps,
@@ -519,6 +520,7 @@ export async function loadPilotVerification(
       verification: bundle.verification,
       studyValues: bundle.studyValues,
       layoutMode: bundle.layoutMode,
+      paneLayout: bundle.paneLayout,
       studyRowUpdatedAt: bundle.studyRowUpdatedAt,
       resultsRowUpdatedAt: bundle.resultsRowUpdatedAt,
     });
@@ -538,6 +540,19 @@ export async function setPilotLayoutMode(
 ): Promise<void> {
   patchPilot(store, { layoutMode: mode });
   await persistVerifyLayoutMode(mode, deps);
+}
+
+/**
+ * 検証パネルの 2 ペインのサイズ調整（issue #193）を永続化する。パネル側がスプリッタの
+ * ドラッグ終了時（pointerup）に 1 回だけ呼ぶ（ドラッグ中は呼ばない。パネル側のコメント参照）
+ */
+export async function setPilotPaneLayout(
+  store: Store,
+  deps: PilotServiceDeps,
+  layout: VerifyPaneLayout,
+): Promise<void> {
+  patchPilot(store, { paneLayout: layout });
+  await persistVerifyPaneLayout(layout, deps);
 }
 
 /**

@@ -15,6 +15,7 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<VerifyViewCallbac
     onDecision: jest.fn(),
     onArmConfirm: jest.fn(),
     onChangeLayoutMode: jest.fn(),
+    onChangePaneLayout: jest.fn(),
     onReloadVerification: jest.fn(),
     onRelocateQuote: jest.fn(),
     onInstanceDeclare: jest.fn(),
@@ -101,6 +102,7 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<VerifyViewCallbac
         onDecision: jest.fn(),
         onArmConfirm: jest.fn(),
         onChangeLayoutMode: jest.fn(),
+        onChangePaneLayout: jest.fn(),
         onReloadVerification: jest.fn(),
         onRelocateQuote: jest.fn(),
       },
@@ -531,6 +533,33 @@ describe('renderVerifyView', () => {
     expect(toggle?.textContent).toBe('フォーカス表示に切替'); // list スライス値がパネルへ渡っている
     toggle?.click();
     expect(callbacks.onChangeLayoutMode).toHaveBeenCalledWith('focus');
+  });
+
+  test('ペインサイズ調整（issue #193）は verify スライスからパネルへ渡り、ドラッグ確定が onChangePaneLayout へ委譲される', () => {
+    const { ctx, callbacks } = makeCtx();
+    const verification = makeVerification();
+    const root = render(
+      makeState({
+        targets: [makeTarget()],
+        selectedStudyId: 'study-1',
+        verification,
+        paneLayout: { formPaneHeight: 900, pdfPaneRatio: 0.6 },
+      }),
+      ctx,
+    );
+    const panes = root.querySelector<HTMLElement>('.verify__panes');
+    expect(panes?.style.getPropertyValue('--verify-pdf-basis')).toBe('60%');
+    const splitter = root.querySelector<HTMLElement>('.verify__splitter--vertical');
+    (panes as HTMLElement).getBoundingClientRect = jest.fn(
+      () =>
+        ({ width: 1200, height: 0, top: 0, left: 0, right: 0, bottom: 0, x: 0, y: 0, toJSON: () => ({}) }) as DOMRect,
+    );
+    splitter?.dispatchEvent(new MouseEvent('pointerdown', { clientX: 100, bubbles: true }));
+    splitter?.dispatchEvent(new MouseEvent('pointermove', { clientX: 160, bubbles: true }));
+    splitter?.dispatchEvent(new MouseEvent('pointerup', { clientX: 160, bubbles: true }));
+    expect(callbacks.onChangePaneLayout).toHaveBeenCalledWith(
+      expect.objectContaining({ pdfPaneRatio: 0.6 + 60 / 1200 }),
+    );
   });
 
   test('deepLinkEntityKey（?entity=）がパネルへ渡り、該当タブへ切替える', async () => {

@@ -12,6 +12,7 @@ import {
   runPilot,
   setPilotHighAccuracyImages,
   setPilotLayoutMode,
+  setPilotPaneLayout,
   setPilotModel,
   togglePilotField,
   togglePilotFieldSection,
@@ -1109,6 +1110,17 @@ describe('setPilotLayoutMode（issue #38）', () => {
     await setPilotLayoutMode(store, makeDeps({ saveVerifyLayoutMode }), 'list');
     expect(store.getState().pilot.layoutMode).toBe('list');
     expect(saveVerifyLayoutMode).toHaveBeenCalledWith('list');
+  });
+});
+
+describe('setPilotPaneLayout（issue #193）', () => {
+  test('pilot.paneLayout を楽観反映し、settingsStore（deps 注入）へ永続化する', async () => {
+    const store = makeStore({});
+    const saveVerifyPaneLayout = jest.fn().mockResolvedValue(undefined);
+    const layout = { formPaneHeight: 900, pdfPaneRatio: 0.65 };
+    await setPilotPaneLayout(store, makeDeps({ saveVerifyPaneLayout }), layout);
+    expect(store.getState().pilot.paneLayout).toEqual(layout);
+    expect(saveVerifyPaneLayout).toHaveBeenCalledWith(layout);
   });
 });
 

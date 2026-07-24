@@ -69,7 +69,7 @@ import type {
   VerificationData,
   VerificationDocumentView,
 } from '../../features/verification/types';
-import type { VerifyLayoutMode } from '../../lib/storage/settingsStore';
+import type { VerifyLayoutMode, VerifyPaneLayout } from '../../lib/storage/settingsStore';
 import type { renderPdfPageToCanvas } from '../../lib/pdf/renderPage';
 import { getUiLanguage, t, type UiLanguage } from '../../lib/i18n';
 import { nowIso8601 } from '../../utils/iso8601';
@@ -110,6 +110,17 @@ export interface VerificationPanelOptions {
   layoutMode?: VerifyLayoutMode;
   /** トグル操作（`#verify-layout-toggle`）のたびに呼ばれる。永続化はサービス層の責務 */
   onLayoutModeChange?: (mode: VerifyLayoutMode) => void;
+  /**
+   * 2 ペインのサイズ調整の初期表示（issue #193。未指定は両方 null = 既定の見た目）。
+   * layoutMode と同じく読込はサービス層が検証データ束の読込時に settingsStore から行う
+   * （S6 / S8 で設定を共有する）
+   */
+  paneLayout?: VerifyPaneLayout;
+  /**
+   * スプリッタのドラッグ終了時（pointerup）・ダブルクリックリセット時に 1 回だけ呼ばれる
+   * （ドラッグ中の毎フレーム呼び出しはしない。永続化はサービス層の責務）
+   */
+  onPaneLayoutChange?: (layout: VerifyPaneLayout) => void;
   /**
    * 「AI で再特定」ボタン（anchor failed のフォールバック。issue #94）。他のコールバックと違い
    * 結果を Promise で返す必要がある（実行中スピナー・成功時のハイライト即時反映・not_found の
@@ -223,6 +234,20 @@ export function stepUnitPosition(
   }
 }
 
+// --- ペインサイズ調整（issue #193）の定数 -----------------------------------
+// ui-flow.md §8: PDF ペイン最小 600px / 判定項目枠最小 360px（app.css の min-width と揃える）
+const PDF_PANE_MIN_WIDTH = 600;
+const FORM_PANE_MIN_WIDTH = 360;
+/** ダブルクリックでの既定比率リセット先（既定 CSS の flex-basis 比 600:480 相当） */
+const DEFAULT_PDF_PANE_RATIO = PDF_PANE_MIN_WIDTH / (PDF_PANE_MIN_WIDTH + 480);
+/** 右ペイン高さの実用下限（settingsStore の MIN_FORM_PANE_HEIGHT と同値） */
+const FORM_PANE_MIN_HEIGHT = 240;
+/** aria-valuemax の表示上の目安（settingsStore の MAX_FORM_PANE_HEIGHT と同値） */
+const FORM_PANE_MAX_HEIGHT = 4000;
+/** 矢印キー 1 回あたりの調整量（比率は 2%、高さは 24px） */
+const RATIO_KEYBOARD_STEP = 0.02;
+const HEIGHT_KEYBOARD_STEP = 24;
+
 export function createVerificationPanel(
   options: VerificationPanelOptions,
 ): VerificationPanelHandle {
@@ -297,6 +322,15 @@ export function createVerificationPanel(
   // --- レイアウトモード（フォーカス / リスト。issue #38） ------------------
   // 既定はフォーカス。初期値はサービス層が settingsStore から読んで options 経由で渡す
   let layoutMode: VerifyLayoutMode = options.layoutMode ?? 'focus';
+  // --- ペインサイズ調整（issue #193） ---------------------------------------
+  // ドラッグ中は自分の DOM の inline style（CSS カスタムプロパティ）だけを直接書き換え、
+  // 永続化コールバック（onPaneLayoutChange）はドラッグ終了時 / キーボード操作 /
+  // ダブルクリックリセットの確定時に 1 回だけ呼ぶ（store 更新は route 全体の再描画を
+  // 引き起こすため、頻度を上げるとちらつく。ファイル冒頭コメント参照）
+  let paneLayout: VerifyPaneLayout = {
+    formPaneHeight: options.paneLayout?.formPaneHeight ?? null,
+    pdfPaneRatio: options.paneLayout?.pdfPaneRatio ?? null,
+  };
   let focusedCellKey: string | null = null;
   let editing: { cellKey: string; action: 'edit' | 'reject' } | null = null;
   let outcomeKeyDraft = nextOutcomeId(
@@ -882,9 +916,192 @@ export function createVerificationPanel(
     attributes: { 'data-preserve-scroll': '' },
   });
 
-  const root = el('div', { className: 'verify' }, [
-    el('div', { className: 'verify__panes' }, [leftPane, formPane]),
-  ]);
+  // --- ペインサイズ調整（issue #193）: スプリッタ 2 種 ---------------------
+  // 左右比率（PDF ⇄ 判定項目枠）。ARIA window splitter パターン（role=separator +
+  // aria-orientation + キーボード操作可能）。leftPane と formPane の間に挿入する
+  const widthSplitter = el('div', {
+    className: 'verify__splitter verify__splitter--vertical',
+    attributes: {
+      role: 'separator',
+      'aria-orientation': 'vertical',
+      'aria-label': t('verify.paneSplitterAria'),
+      tabindex: '0',
+    },
+  });
+  // 右ペインの高さ。設計方針: CSS の resize:vertical はキーボード操作・ARIA 属性を持てず
+  // axe / キーボード操作の受け入れ条件を満たせないため不採用。左右スプリッタと同じ
+  // ドラッグ＋キーボード操作の流儀に揃え、formPane の末尾に sticky 配置する
+  // （overflow-y:auto なスクロール領域内で bottom:0 に固定し続ける。issue #193）
+  const heightSplitter = el('div', {
+    className: 'verify__splitter verify__splitter--horizontal',
+    attributes: {
+      role: 'separator',
+      'aria-orientation': 'horizontal',
+      'aria-label': t('verify.paneHeightSplitterAria'),
+      tabindex: '0',
+    },
+  });
+
+  const panesEl = el('div', { className: 'verify__panes' }, [leftPane, widthSplitter, formPane]);
+  const root = el('div', { className: 'verify' }, [panesEl]);
+
+  /** 現在の paneLayout を DOM（CSS カスタムプロパティ + aria-value*）へ反映する。null は既定へ戻す */
+  function applyPaneLayout(): void {
+    const ratio = paneLayout.pdfPaneRatio ?? DEFAULT_PDF_PANE_RATIO;
+    widthSplitter.setAttribute('aria-valuenow', String(Math.round(ratio * 100)));
+    widthSplitter.setAttribute('aria-valuemin', '0');
+    widthSplitter.setAttribute('aria-valuemax', '100');
+    if (paneLayout.pdfPaneRatio === null) {
+      panesEl.style.removeProperty('--verify-pdf-basis');
+      panesEl.style.removeProperty('--verify-form-basis');
+    } else {
+      panesEl.style.setProperty('--verify-pdf-basis', `${paneLayout.pdfPaneRatio * 100}%`);
+      panesEl.style.setProperty('--verify-form-basis', `${(1 - paneLayout.pdfPaneRatio) * 100}%`);
+    }
+    const height = paneLayout.formPaneHeight ?? Math.round(formPane.getBoundingClientRect().height);
+    heightSplitter.setAttribute('aria-valuenow', String(height > 0 ? height : FORM_PANE_MIN_HEIGHT));
+    heightSplitter.setAttribute('aria-valuemin', String(FORM_PANE_MIN_HEIGHT));
+    heightSplitter.setAttribute('aria-valuemax', String(FORM_PANE_MAX_HEIGHT));
+    if (paneLayout.formPaneHeight === null) {
+      formPane.style.removeProperty('--verify-form-height');
+    } else {
+      formPane.style.setProperty('--verify-form-height', `${paneLayout.formPaneHeight}px`);
+    }
+  }
+  applyPaneLayout();
+
+  /**
+   * ratio を、コンテナ幅から求めた min-width 遵守の範囲へクランプする。
+   * コンテナ幅が測定できない（0 以下・両ペインの最小幅を同時に満たせないほど狭い）ときは
+   * null を返し、呼び出し側は調整を諦める（no-op。実データでは起こらない防御パス）
+   */
+  function clampPdfRatio(ratio: number): number | null {
+    const containerWidth = panesEl.getBoundingClientRect().width;
+    if (containerWidth <= 0) {
+      return null;
+    }
+    const min = PDF_PANE_MIN_WIDTH / containerWidth;
+    const max = 1 - FORM_PANE_MIN_WIDTH / containerWidth;
+    if (min >= max) {
+      return null;
+    }
+    return Math.min(Math.max(ratio, min), max);
+  }
+
+  /**
+   * 高さをウィンドウ内に収まる範囲へクランプする（下限は実用下限、上限はビューポート基準）。
+   * defaultView は「ownerDocument に window が結び付いている」という不変条件（拡張機能は
+   * 常に実タブ内で動く。単体テストの jsdom でも同様）に基づき、存在を前提にする
+   */
+  function clampFormHeight(height: number): number {
+    const viewportHeight = (root.ownerDocument.defaultView as Window).innerHeight;
+    const max = Math.max(viewportHeight - 80, FORM_PANE_MIN_HEIGHT);
+    return Math.min(Math.max(height, FORM_PANE_MIN_HEIGHT), max);
+  }
+
+  /** ドラッグ終了 / キーボード操作 / ダブルクリックリセットの確定時に 1 回だけ呼ぶ永続化 */
+  function commitPaneLayout(next: VerifyPaneLayout): void {
+    paneLayout = next;
+    applyPaneLayout();
+    options.onPaneLayoutChange?.(paneLayout);
+  }
+
+  // --- 左右スプリッタ: pointerdown → pointermove（ドラッグ中は DOM 直書き）→ pointerup（確定） ---
+  let widthDragStartX: number | null = null;
+  let widthDragStartRatio = 0;
+  function widthSplitterRatio(): number {
+    return paneLayout.pdfPaneRatio ?? DEFAULT_PDF_PANE_RATIO;
+  }
+  widthSplitter.addEventListener('pointerdown', (event) => {
+    widthDragStartX = event.clientX;
+    widthDragStartRatio = widthSplitterRatio();
+    widthSplitter.setPointerCapture?.(event.pointerId);
+  });
+  widthSplitter.addEventListener('pointermove', (event) => {
+    if (widthDragStartX === null) {
+      return;
+    }
+    // コンテナ幅で正規化した移動量を開始比率へ加算する。幅が測定できない防御パスは
+    // clampPdfRatio 側の containerWidth <= 0 判定に委ね、ここでは 0 除算を避けるためだけに
+    // 1 とみなす（その場合 clampPdfRatio が null を返すため実際の値は使われない）
+    const containerWidth = panesEl.getBoundingClientRect().width || 1;
+    const clamped = clampPdfRatio(widthDragStartRatio + (event.clientX - widthDragStartX) / containerWidth);
+    if (clamped === null) {
+      return;
+    }
+    paneLayout = { ...paneLayout, pdfPaneRatio: clamped };
+    applyPaneLayout();
+  });
+  function endWidthDrag(event: PointerEvent): void {
+    if (widthDragStartX === null) {
+      return;
+    }
+    widthDragStartX = null;
+    widthSplitter.releasePointerCapture?.(event.pointerId);
+    commitPaneLayout(paneLayout);
+  }
+  widthSplitter.addEventListener('pointerup', endWidthDrag);
+  widthSplitter.addEventListener('pointercancel', endWidthDrag);
+  widthSplitter.addEventListener('dblclick', () => {
+    commitPaneLayout({ ...paneLayout, pdfPaneRatio: null });
+  });
+  widthSplitter.addEventListener('keydown', (event) => {
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') {
+      return;
+    }
+    event.preventDefault();
+    const delta = event.key === 'ArrowRight' ? RATIO_KEYBOARD_STEP : -RATIO_KEYBOARD_STEP;
+    const clamped = clampPdfRatio(widthSplitterRatio() + delta);
+    if (clamped !== null) {
+      commitPaneLayout({ ...paneLayout, pdfPaneRatio: clamped });
+    }
+  });
+
+  // --- 高さスプリッタ: pointerdown → pointermove → pointerup ---------------
+  let heightDragStartY: number | null = null;
+  let heightDragStartHeight = 0;
+  function heightSplitterHeight(): number {
+    if (paneLayout.formPaneHeight !== null) {
+      return paneLayout.formPaneHeight;
+    }
+    const measured = formPane.getBoundingClientRect().height;
+    return clampFormHeight(measured > 0 ? measured : FORM_PANE_MIN_HEIGHT);
+  }
+  heightSplitter.addEventListener('pointerdown', (event) => {
+    heightDragStartY = event.clientY;
+    heightDragStartHeight = heightSplitterHeight();
+    heightSplitter.setPointerCapture?.(event.pointerId);
+  });
+  heightSplitter.addEventListener('pointermove', (event) => {
+    if (heightDragStartY === null) {
+      return;
+    }
+    const next = clampFormHeight(heightDragStartHeight + (event.clientY - heightDragStartY));
+    paneLayout = { ...paneLayout, formPaneHeight: next };
+    applyPaneLayout();
+  });
+  function endHeightDrag(event: PointerEvent): void {
+    if (heightDragStartY === null) {
+      return;
+    }
+    heightDragStartY = null;
+    heightSplitter.releasePointerCapture?.(event.pointerId);
+    commitPaneLayout(paneLayout);
+  }
+  heightSplitter.addEventListener('pointerup', endHeightDrag);
+  heightSplitter.addEventListener('pointercancel', endHeightDrag);
+  heightSplitter.addEventListener('dblclick', () => {
+    commitPaneLayout({ ...paneLayout, formPaneHeight: null });
+  });
+  heightSplitter.addEventListener('keydown', (event) => {
+    if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') {
+      return;
+    }
+    event.preventDefault();
+    const delta = event.key === 'ArrowDown' ? HEIGHT_KEYBOARD_STEP : -HEIGHT_KEYBOARD_STEP;
+    const next = clampFormHeight(heightSplitterHeight() + delta);
+    commitPaneLayout({ ...paneLayout, formPaneHeight: next });
+  });
 
   /**
    * matchCount / 選択出現は「テキストのみの再特定」（textMatches）を唯一の情報源にする。
@@ -1363,7 +1580,9 @@ export function createVerificationPanel(
       // flow 図（mermaid）の保存時構文チェック警告（issue #109）
       mermaidWarnings,
     };
-    formPane.replaceChildren(renderVerificationForm(model, handlers));
+    // heightSplitter（issue #193）は refreshForm のたびに作り直される内容の末尾へ
+    // 常に再付与する（sticky 配置で bottom:0 に固定され続ける）
+    formPane.replaceChildren(renderVerificationForm(model, handlers), heightSplitter);
     formPane.scrollTop = savedScrollTop;
     if (hadFocus && focusedCellKey !== null && editing === null && !tabLocked(activeTab)) {
       // 復元したスクロール位置を尊重しつつ（preventScroll）、フォーカスセルが画面外なら最小移動で見せる
@@ -1568,6 +1787,11 @@ export function createVerificationPanel(
       target instanceof HTMLTextAreaElement ||
       target instanceof HTMLSelectElement
     ) {
+      return;
+    }
+    // ペインサイズ調整スプリッタ（issue #193）にフォーカスがあるときは、そちら側の
+    // 矢印キー操作（比率・高さ調整）を優先し、判定ショートカット（j/k/a/e 等）を誤爆させない
+    if (target === widthSplitter || target === heightSplitter) {
       return;
     }
     if (event.shiftKey) {

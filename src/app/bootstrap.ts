@@ -80,6 +80,7 @@ import {
   setPilotHighAccuracyImages,
   setPilotLayoutMode,
   setPilotModel,
+  setPilotPaneLayout,
   togglePilotField,
   togglePilotFieldSection,
   togglePilotFieldSectionCollapse,
@@ -110,6 +111,7 @@ import {
   persistVerifyInstanceDeclarations,
   persistVerifyRelocateQuote,
   setVerifyLayoutMode,
+  setVerifyPaneLayout,
 } from './services/verifyService';
 import { loadDashboard } from './services/dashboardService';
 import { loadProgressCounts } from './services/homeService';
@@ -641,6 +643,9 @@ export async function bootstrapApp(
       onChangeLayoutMode: (mode) => {
         void setPilotLayoutMode(store, deps, mode);
       },
+      onChangePaneLayout: (layout) => {
+        void setPilotPaneLayout(store, deps, layout);
+      },
       onReloadVerification: () => {
         // 保存の競合検出バナー（issue #64）の「再読み込み」: 埋め込み検証中の study を読み直す
         const studyId = store.getState().pilot.verifyStudyId;
@@ -709,6 +714,9 @@ export async function bootstrapApp(
       onRelocateQuote: (evidence) => persistVerifyRelocateQuote(store, deps, evidence),
       onChangeLayoutMode: (mode) => {
         void setVerifyLayoutMode(store, deps, mode);
+      },
+      onChangePaneLayout: (layout) => {
+        void setVerifyPaneLayout(store, deps, layout);
       },
       onReloadVerification: () => {
         // 保存の競合検出バナー（issue #64）の「再読み込み」: 表示中 study を読み直す

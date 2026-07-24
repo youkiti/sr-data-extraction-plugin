@@ -1758,14 +1758,19 @@ section.documents__tiab {
 
 .verify__panes {
   display: flex;
-  gap: 12px;
+
+  /* 元は gap: 12px（2 ペイン間の余白）。issue #193 でスプリッタ要素をその間へ挿入したため、
+     余白はスプリッタ自身の flex-basis（12px）で確保する（gap は使わない。二重に余白が
+     入ると既定の見た目が変わってしまうため） */
   align-items: stretch;
   min-height: 480px;
 }
 
 .verify__pane--pdf {
-  flex: 1 1 600px;
-  min-width: 600px; /* ui-flow.md §8: PDF ビューアの最小幅 */
+  /* 既定（未設定）は従来どおり flex: 1 1 600px。issue #193 のスプリッタ操作で
+     --verify-pdf-basis（% 文字列）が設定されると、その比率を basis として使う */
+  flex: 1 1 var(--verify-pdf-basis, 600px);
+  min-width: 600px; /* ui-flow.md §8: PDF ビューアの最小幅（スプリッタ操作でもこの値は変わらない） */
   border: 1px solid var(--color-border);
   border-radius: 8px;
   background: var(--color-surface);
@@ -1775,10 +1780,83 @@ section.documents__tiab {
 }
 
 .verify__pane--form {
-  flex: 1 1 480px;
-  min-width: 360px;
-  max-height: 75vh;
+  /* 既定（未設定）は従来どおり flex: 1 1 480px。issue #193 のスプリッタ操作で
+     --verify-form-basis（% 文字列）が設定されると、その比率を basis として使う */
+  flex: 1 1 var(--verify-form-basis, 480px);
+  min-width: 360px; /* ui-flow.md §8: 判定項目枠の最小幅（スプリッタ操作でもこの値は変わらない） */
+
+  /*
+   * 既定（未設定）は従来どおり height: auto（align-items:stretch で PDF ペインと同じ高さに
+   * 揃う）+ max-height: 75vh。issue #193 の高さスプリッタ操作で --verify-form-height（px）が
+   * 設定されると、height / max-height の両方をその値に固定する
+   */
+  height: var(--verify-form-height, auto);
+  max-height: var(--verify-form-height, 75vh);
   overflow-y: auto;
+}
+
+/* ペインサイズ調整スプリッタ（issue #193）共通 */
+.verify__splitter {
+  background: transparent;
+  touch-action: none; /* ドラッグ中のスクロール・ズームジェスチャーとの競合を避ける */
+}
+
+.verify__splitter:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: -2px;
+}
+
+/* 左右比率スプリッタ: leftPane と formPane の間（旧 gap: 12px を置き換える） */
+.verify__splitter--vertical {
+  flex: 0 0 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: col-resize;
+  align-self: stretch;
+}
+
+.verify__splitter--vertical::before {
+  content: '';
+  width: 2px;
+  height: 40px;
+  border-radius: 1px;
+  background: var(--color-border);
+}
+
+.verify__splitter--vertical:hover::before,
+.verify__splitter--vertical:focus-visible::before {
+  background: var(--color-primary);
+}
+
+/*
+ * 右ペイン高さスプリッタ: formPane の末尾（renderVerificationForm の描画結果の直後）に
+ * 常に再付与され、sticky 配置で判定項目枠のスクロール中も下端に見え続ける
+ */
+.verify__splitter--horizontal {
+  position: sticky;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: row-resize;
+  background: var(--color-surface);
+}
+
+.verify__splitter--horizontal::before {
+  content: '';
+  width: 40px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--color-border);
+}
+
+.verify__splitter--horizontal:hover::before,
+.verify__splitter--horizontal:focus-visible::before {
+  background: var(--color-primary);
 }
 
 .verify__pdf-error {

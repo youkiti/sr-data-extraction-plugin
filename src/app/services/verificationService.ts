@@ -52,8 +52,11 @@ import type { GoogleApiDeps } from '../../lib/google/types';
 import { createOfflineQueue, type OfflineQueue } from '../../lib/storage/offlineQueue';
 import {
   loadVerifyLayoutMode,
+  loadVerifyPaneLayout,
   saveVerifyLayoutMode,
+  saveVerifyPaneLayout,
   type VerifyLayoutMode,
+  type VerifyPaneLayout,
 } from '../../lib/storage/settingsStore';
 import { showToast } from '../ui/toast';
 import { t } from '../../lib/i18n';
@@ -75,6 +78,9 @@ export interface VerificationDeps {
   /** 検証パネルのレイアウトモード設定の読み書き（省略時は lib/storage/settingsStore の実装。issue #38） */
   loadVerifyLayoutMode?: () => Promise<VerifyLayoutMode>;
   saveVerifyLayoutMode?: (mode: VerifyLayoutMode) => Promise<void>;
+  /** 検証パネルの 2 ペインサイズ調整の読み書き（省略時は lib/storage/settingsStore の実装。issue #193） */
+  loadVerifyPaneLayout?: () => Promise<VerifyPaneLayout>;
+  saveVerifyPaneLayout?: (layout: VerifyPaneLayout) => Promise<void>;
 }
 
 /**
@@ -182,6 +188,11 @@ export interface VerificationBundle {
    * 読込時」に読む — study 切替のたびに読み直すことで、他画面での切替を常に最新反映する
    */
   layoutMode: VerifyLayoutMode;
+  /**
+   * 検証パネルの 2 ペインのサイズ調整の初期表示（issue #193）。layoutMode と同じ経路で
+   * 「検証データ束の読込時」に settingsStore から読む
+   */
+  paneLayout: VerifyPaneLayout;
   /**
    * 自分の StudyData 行の読込時 updated_at（楽観ロックの期待値。issue #64）。
    * 行が無ければ null（= 次の保存は「行がまだ無い」ことを期待する）
@@ -307,7 +318,8 @@ export async function loadVerificationBundle(
     disposePdf,
   };
   const layoutMode = await (deps.loadVerifyLayoutMode ?? loadVerifyLayoutMode)();
-  return { verification, studyValues, layoutMode, studyRowUpdatedAt, resultsRowUpdatedAt };
+  const paneLayout = await (deps.loadVerifyPaneLayout ?? loadVerifyPaneLayout)();
+  return { verification, studyValues, layoutMode, paneLayout, studyRowUpdatedAt, resultsRowUpdatedAt };
 }
 
 /**
@@ -319,6 +331,17 @@ export async function persistVerifyLayoutMode(
   deps: VerificationDeps,
 ): Promise<void> {
   await (deps.saveVerifyLayoutMode ?? saveVerifyLayoutMode)(mode);
+}
+
+/**
+ * 検証パネルの 2 ペインのサイズ調整を永続化する（スプリッタのドラッグ終了時に 1 回だけ呼ぶ）。
+ * S6 / S8 共通の永続化経路（persistVerifyLayoutMode と同じ流儀）
+ */
+export async function persistVerifyPaneLayout(
+  layout: VerifyPaneLayout,
+  deps: VerificationDeps,
+): Promise<void> {
+  await (deps.saveVerifyPaneLayout ?? saveVerifyPaneLayout)(layout);
 }
 
 /**

@@ -45,6 +45,7 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<PilotViewCallback
     onDecision: jest.fn(),
     onArmConfirm: jest.fn(),
     onChangeLayoutMode: jest.fn(),
+    onChangePaneLayout: jest.fn(),
     onReloadVerification: jest.fn(),
     onRelocateQuote: jest.fn(),
     onInstanceDeclare: jest.fn(),
@@ -137,6 +138,7 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<PilotViewCallback
         onDecision: jest.fn(),
         onArmConfirm: jest.fn(),
         onChangeLayoutMode: jest.fn(),
+        onChangePaneLayout: jest.fn(),
         onReloadVerification: jest.fn(),
         onRelocateQuote: jest.fn(),
       },
@@ -676,6 +678,11 @@ describe('完了（サマリ + 埋め込み検証）', () => {
     expect(options?.layoutMode).toBe('list');
     options?.onLayoutModeChange?.('focus');
     expect(ok.callbacks.onChangeLayoutMode).toHaveBeenCalledWith('focus');
+    // ペインサイズ調整（issue #193）は pilot スライスから渡り、確定は ctx.pilot.onChangePaneLayout へ委譲される
+    expect(options?.paneLayout).toEqual({ formPaneHeight: null, pdfPaneRatio: null });
+    const paneLayout = { formPaneHeight: 900, pdfPaneRatio: 0.6 };
+    options?.onPaneLayoutChange?.(paneLayout);
+    expect(ok.callbacks.onChangePaneLayout).toHaveBeenCalledWith(paneLayout);
     // onDecision は ctx.pilot.onDecision へ委譲される
     const decision = { fieldId: 'f-1' } as never;
     options?.onDecision(decision);
