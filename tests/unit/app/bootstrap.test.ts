@@ -515,7 +515,11 @@ describe('bootstrapApp', () => {
     await bootstrapApp(asWindow(stub));
     stub.location.hash = '#/verify';
     stub.fireHashChange();
-    expect(toastTexts().some((text) => text.includes('AI 抽出が未実施です'))).toBe(true);
+    // #/verify の入場ガードは Evidence 起点から「確定スキーマ + 取り込み済み文献」起点へ変更
+    // （AI 抽出が全滅した study も検証画面で人手入力できるようにするため）
+    expect(
+      toastTexts().some((text) => text.includes('確定済みの表のデザインと取り込み済み文献')),
+    ).toBe(true);
     expect(stub.location.hash).toBe('#/home');
     expect(document.getElementById('app-content')?.textContent).toContain('プロジェクト概要');
   });
@@ -2459,7 +2463,9 @@ describe('bootstrapApp: #/verify・#/dashboard', () => {
   function verifyPreloaded(documents = [DOC_RECORD_1]): Partial<AppState> {
     return {
       currentProject: PROJECT,
-      counts: { evidenceRows: 1 } as AppState['counts'],
+      // #/verify の入場ガードは確定スキーマ + 取り込み済み文献の有無で判定する（Evidence 起点
+      // ではなくなった。AI 抽出が全滅した study も検証画面へ入れるようにするため）
+      counts: { schemaVersions: 1, documents: documents.length, evidenceRows: 1 } as AppState['counts'],
       documents: { records: documents } as unknown as AppState['documents'],
     };
   }

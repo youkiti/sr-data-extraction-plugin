@@ -2774,6 +2774,24 @@ section.documents__tiab {
   margin: 0;
 }
 
+/* AI 抽出結果なしバナー（#verify-no-ai-result）。完了 run の対象だったが Evidence が
+   1 行も生成されなかった study への案内 + rob_domain タブの制限の明記 */
+.verify__no-ai-result {
+  background: var(--color-warning-bg);
+  border: 1px solid var(--color-warning-border);
+  border-radius: 8px;
+  padding: 8px 12px;
+  margin-bottom: 12px;
+}
+
+.verify__no-ai-result p {
+  margin: 0;
+}
+
+.verify__no-ai-result p + p {
+  margin-top: 4px;
+}
+
 /* --- PDF ビューア --------------------------------------------------------- */
 
 .pdf-viewer {

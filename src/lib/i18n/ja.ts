@@ -560,6 +560,11 @@ export const ja = {
   'verify.leadIndependent':
     'PDF を確認しながら、値を入力（edit）/ not_reported で判定します（AI 抽出は行われません）。',
   'verify.selectorOption': '{label}（判定済み {decided} / {total}）',
+  'verify.selectorOptionNoResult': '{label}［AI 抽出結果なし］（判定済み {decided} / {total}）',
+  'verify.noAiResultLead':
+    'AI 抽出結果がありません（抽出に失敗したか応答が空でした）。値は手入力で記録できます。',
+  'verify.noAiResultRobLimit':
+    'RoB（rob_domain）タブは AI 抽出結果がないとインスタンスが生成されないため入力できません。study レベル項目・群構成確定後の arm・アウトカム追加フォーム経由の outcome_result は入力できます。',
   'verify.armWarnLead':
     '直近の AI 抽出で群（arm）の欠落の可能性が検出されています。群構成の確定・検証時に本文と照合してください:',
   'verify.armWarnItem': '{scope}{missing}{omitted} が AI 応答に含まれていませんでした',
@@ -707,7 +712,8 @@ export const ja = {
   'guards.pilotRecommended': 'パイロット抽出を推奨します',
   'guards.needFolderAccess':
     'プロジェクトファイルへのアクセス付与が必要です（Home から付与してください）',
-  'guards.needExtraction': 'AI 抽出が未実施です。先に抽出を実行してください',
+  'guards.needSchemaAndDocuments':
+    '確定済みの表のデザインと取り込み済み文献（1 本以上）が必要です（AI 抽出が未実施・全滅していても、検証画面で人手入力できます）',
   'guards.noExportData': 'エクスポートできるデータがまだありません',
 
   // モデルセレクタ（ui/modelSelect.ts）

@@ -49,6 +49,8 @@ import { showToast } from '../ui/toast';
 import { t } from '../../lib/i18n';
 import { runExtraction, type RunExtractionOutcome } from './extractionService';
 import { resolveProtocol, type SchemaServiceDeps } from './schemaService';
+import { invalidateDashboard } from './dashboardService';
+import { invalidateVerifyTargets } from './verifyService';
 
 /** S5 と同じ依存で足りる（google + loadApiKey + buildProvider。resolveProtocol も共用） */
 export type ExtractServiceDeps = SchemaServiceDeps;
@@ -505,6 +507,11 @@ export async function runExtract(store: Store, deps: ExtractServiceDeps): Promis
       // arm completeness 警告（issue #106。#extract-arm-warnings の素材）
       armWarnings: outcome.result.armWarnings,
     });
+    // 抽出完了（done / partial_failure とも）で #/verify・#/dashboard の読込済みキャッシュを
+    // 無効化する（PR #190 のレビュー対応）。抽出前に開いていて空一覧のままキャッシュされていても、
+    // 再入場時に既存の読込経路（force なし）が自然に最新化する
+    invalidateVerifyTargets(store);
+    invalidateDashboard(store);
     showToast(
       outcome.run.status === 'done'
         ? t('extract.toastDone', { n: outcome.result.evidence.length })
@@ -591,6 +598,9 @@ export async function retryExtractStudy(
         ...outcome.result.armWarnings,
       ],
     });
+    // 再試行の完了（done / partial_failure とも）でも同様に無効化する（PR #190 のレビュー対応）
+    invalidateVerifyTargets(store);
+    invalidateDashboard(store);
     showToast(
       outcome.run.status === 'done'
         ? t('extract.toastRetryDone')

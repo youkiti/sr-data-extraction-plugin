@@ -16,6 +16,16 @@ function patchDashboard(store: Store, patch: Partial<DashboardState>): void {
 }
 
 /**
+ * dashboard スライスの読込済みキャッシュを無効化する（抽出完了処理から呼ぶ。PR #190 の
+ * レビュー対応。verifyService.invalidateVerifyTargets の S9 版）。抽出前に対象 0 件のまま
+ * キャッシュされた集計が、抽出完了後も再読込されず残ってしまう問題への対処。
+ * `loading` は触らない
+ */
+export function invalidateDashboard(store: Store): void {
+  patchDashboard(store, { data: null, loadError: null });
+}
+
+/**
  * ダッシュボードの集計を読み込む（初回表示時。読込済みなら no-op、force で強制再取得）。
  * 集計はセルモデル基準（検証画面の進捗チップと同じ数え方）
  */
@@ -34,7 +44,11 @@ export async function loadDashboard(
   }
   patchDashboard(store, { loading: true, loadError: null });
   try {
-    const materials = await readVerifyTargetMaterials(store, deps, project.spreadsheetId);
+    const { materials, runStartedAt } = await readVerifyTargetMaterials(
+      store,
+      deps,
+      project.spreadsheetId,
+    );
     // 表示ラベルは target.study（Studies 由来。v0.10）
     const data = buildDashboard(
       materials.map((material) => ({
@@ -45,6 +59,7 @@ export async function loadDashboard(
         ownDecisions: material.ownDecisions,
         armStructure: material.armStructure,
       })),
+      runStartedAt,
     );
     patchDashboard(store, { loading: false, data });
   } catch (err) {

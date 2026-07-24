@@ -391,6 +391,15 @@ export interface VerifyTarget {
    * `#verify-arm-completeness-warning` の素材）。独立入力モードでは常に空配列
    */
   armWarnings: RunWarning[];
+  /**
+   * AI 抽出結果の有無。'no_result' = 完了 run（status = done / partial_failure）の対象
+   * だったのに Evidence が 1 行も生成されなかった study（応答の途中打ち切り・空応答等に
+   * よる抽出全滅）。値を人手入力で記録できるよう一覧・検証画面には表示するが、AI 根拠が
+   * 無いことを明示するバナーを出す。union 型にしているのは将来 'partial'（一部項目のみ
+   * 抽出結果あり）を足せる余地を残すため。独立入力モードは常に 'extracted' 固定
+   * （AI 抽出の実施状況を一切見せない盲検レビューのため）
+   */
+  aiExtractionStatus: 'extracted' | 'no_result';
 }
 
 /** #/verify（S8）の画面状態 */

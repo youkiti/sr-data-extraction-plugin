@@ -564,6 +564,11 @@ export const en: Record<MessageKey, string> = {
   'verify.leadIndependent':
     'While viewing the PDF, enter values (edit) or mark not_reported (no AI extraction is shown).',
   'verify.selectorOption': '{label} ({decided} / {total} decided)',
+  'verify.selectorOptionNoResult': '{label} [No AI result] ({decided} / {total} decided)',
+  'verify.noAiResultLead':
+    'There is no AI extraction result (the extraction failed or returned an empty response). You can still record values by hand.',
+  'verify.noAiResultRobLimit':
+    'The RoB (rob_domain) tab cannot be filled in because its instances are only generated from an AI extraction result. Study-level fields, arms (once the arm structure is confirmed), and outcome_result added via the outcome form can still be entered.',
   'verify.armWarnLead':
     'The latest AI extraction detected possibly missing arms. Check against the full text when confirming the arm structure and verifying:',
   'verify.armWarnItem': '{scope}{missing}{omitted} were not included in the AI response',
@@ -715,7 +720,8 @@ export const en: Record<MessageKey, string> = {
   'guards.pilotRecommended': 'A pilot extraction is recommended',
   'guards.needFolderAccess':
     'Access to the project files must be granted first (grant it from Home)',
-  'guards.needExtraction': 'No AI extraction has been run yet. Run an extraction first',
+  'guards.needSchemaAndDocuments':
+    'A confirmed table design and at least one imported document are required (you can still enter values by hand on the verification screen even if AI extraction has not run yet, or failed entirely)',
   'guards.noExportData': 'There is no data to export yet',
 
   // モデルセレクタ
