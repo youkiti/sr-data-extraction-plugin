@@ -1210,7 +1210,7 @@ describe('renderSchemaView', () => {
       expect(callbacks.onToggleRedraft).toHaveBeenCalledWith('removed', 'old_field', true);
     });
 
-    test('削除候補の注意書きは 0 件でも表示する', () => {
+    test('削除候補 0 件: 「削除候補はありません」の案内文だけを出す（注意書きは出さない）', () => {
       const { ctx } = makeCtx();
       const diff = buildRedraftDiff([], []);
       const view = renderSchemaView(
@@ -1220,8 +1220,9 @@ describe('renderSchemaView', () => {
         }),
         ctx,
       );
-      expect(view.querySelector('#schema-redraft-removed-note')).not.toBeNull();
-      expect(view.querySelectorAll('#schema-redraft-removed li')).toHaveLength(0);
+      expect(view.querySelector('#schema-redraft-removed-note')).toBeNull();
+      expect(view.querySelector('#schema-redraft-removed')?.textContent).toBe('削除候補はありません');
+      expect(view.querySelector('#schema-redraft-removed ul')).toBeNull();
     });
 
     test('変更なし: 件数だけを表示する（一覧は出さない）', () => {

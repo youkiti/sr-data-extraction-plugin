@@ -440,6 +440,7 @@ export const ja = {
   'schema.redraftAddedEmpty': '追加はありません',
   'schema.redraftChangedTitle': '変更',
   'schema.redraftRemovedTitle': '削除候補',
+  'schema.redraftRemovedEmpty': '削除候補はありません',
   'schema.redraftRemovedNote':
     'チェックした項目だけが削除されます。AI が提案しなかっただけの項目を、確認せずに消さないでください。',
   'schema.redraftUnchangedCount': '変更なし: {count} 件',

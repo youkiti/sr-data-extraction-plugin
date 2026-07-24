@@ -439,6 +439,7 @@ export const en: Record<MessageKey, string> = {
   'schema.redraftAddedEmpty': 'No fields were added',
   'schema.redraftChangedTitle': 'Changed',
   'schema.redraftRemovedTitle': 'Removal candidates',
+  'schema.redraftRemovedEmpty': 'No removal candidates',
   'schema.redraftRemovedNote':
     'Only the fields you check will be removed. Do not remove fields just because the AI did not propose them, without checking first.',
   'schema.redraftUnchangedCount': 'Unchanged: {count} fields',

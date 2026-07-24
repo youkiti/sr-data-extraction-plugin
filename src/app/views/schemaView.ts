@@ -1011,15 +1011,19 @@ function renderCurrentFieldRow(field: SchemaField): HTMLElement {
   ]);
 }
 
-/** 確定済み: 現行版の読み取り専用サマリ + 版履歴 + 「新しい版を作る」+ 再ドラフト導線 */
+/**
+ * 確定済み: 現行版の読み取り専用サマリ + 版履歴 + 「新しい版を作る」+ 再ドラフト導線。
+ * schema / latestProtocolVersion は state から導出できるため引数に取らない
+ * （コマンダーレビュー対応: 6 引数中 2 つが state と重複していた）
+ */
 function renderConfirmed(
   latest: SchemaVersion,
   versions: readonly SchemaVersion[],
-  schema: SchemaState,
-  ctx: ViewContext,
-  latestProtocolVersion: number | null,
   state: AppState,
+  ctx: ViewContext,
 ): HTMLElement {
+  const schema = state.schema;
+  const latestProtocolVersion = state.protocol.records?.[0]?.version ?? null;
   const fields = schema.currentFields ?? [];
 
   const children: HTMLElement[] = [];
@@ -1209,16 +1213,21 @@ function renderRedraftChanged(
 
 /**
  * 差分承認画面: 削除候補（既定は未チェック = 削除しない）。
- * 注意書き（#schema-redraft-removed-note）は 0 件でも常に出す
+ * 削除候補が 1 件以上あるときだけ注意書き（#schema-redraft-removed-note）+ 一覧を出す。
+ * 0 件のときは renderRedraftAdded と同じ形で「削除候補はありません」の案内文だけを出す
+ * （コマンダーレビュー対応: 消すものが無い差分でも赤いエラー表示が出ていた不具合を修正）
  */
 function renderRedraftRemoved(
   items: readonly RedraftRemovedItem[],
   selection: Record<string, boolean>,
   ctx: ViewContext,
 ): HTMLElement[] {
+  if (items.length === 0) {
+    return [el('p', { id: 'schema-redraft-removed', text: t('schema.redraftRemovedEmpty') })];
+  }
   const note = el('p', {
     id: 'schema-redraft-removed-note',
-    className: 'schema__error',
+    className: 'schema__redraft-note',
     text: t('schema.redraftRemovedNote'),
   });
   const rows = items.map((item) => {
@@ -1326,14 +1335,7 @@ function renderBody(state: AppState, ctx: ViewContext): HTMLElement {
   if (latest === undefined) {
     return renderDraftForm(state, ctx);
   }
-  return renderConfirmed(
-    latest,
-    schema.versions,
-    schema,
-    ctx,
-    state.protocol.records?.[0]?.version ?? null,
-    state,
-  );
+  return renderConfirmed(latest, schema.versions, state, ctx);
 }
 
 export function renderSchemaView(state: AppState, ctx: ViewContext): HTMLElement {

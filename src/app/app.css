@@ -1142,6 +1142,16 @@ section.documents__tiab {
   margin-right: 6px;
 }
 
+/* 削除候補の注意書き（コマンダーレビュー対応）: エラーではなく常設の案内文のため
+   .schema__error（危険色）ではなく .schema__stale-banner と同じ warning トンマナにする */
+.schema__redraft-note {
+  background: var(--color-warning-bg);
+  border: 1px solid var(--color-warning-border);
+  border-radius: 8px;
+  padding: 8px 12px;
+  margin: 8px 0;
+}
+
 /* --- #/pilot（S6）------------------------------------------------------- */
 
 .pilot__docs {
