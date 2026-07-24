@@ -1843,7 +1843,11 @@ section.documents__tiab {
   align-items: center;
   justify-content: center;
   cursor: row-resize;
-  background: var(--color-surface);
+
+  /* .verify__pane--form 自体は background 指定を持たずページ背景（--color-bg）が透ける。
+     sticky でスクロール内容の上に重なるため不透明な背景が要るが、色はペインの見た目に
+     揃えて --color-bg にする（--color-surface＝白だと下端に白い帯が浮いて見える） */
+  background: var(--color-bg);
 }
 
 .verify__splitter--horizontal::before {

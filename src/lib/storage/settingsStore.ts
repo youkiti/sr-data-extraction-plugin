@@ -36,12 +36,12 @@ function isVerifyLayoutMode(value: unknown): value is VerifyLayoutMode {
  */
 export interface VerifyPaneLayout {
   /** 右ペイン（判定項目枠 `.verify__pane--form`）の高さ。単位は px。null = 既定（CSS の 75vh 上限） */
-  formPaneHeight: number | null;
+  readonly formPaneHeight: number | null;
   /**
    * 左右比率: `.verify__panes` 内で PDF ペインが占める割合（0〜1 の小数。例 0.6 = PDF 60% /
    * 判定項目枠 40%）。null = 既定（`flex: 1 1 600px` / `flex: 1 1 480px` 相当の自然な比率）
    */
-  pdfPaneRatio: number | null;
+  readonly pdfPaneRatio: number | null;
 }
 
 /** 未設定を表す既定値（load 前の初期状態・store の初期値で使う） */

@@ -945,9 +945,29 @@ export function createVerificationPanel(
   const panesEl = el('div', { className: 'verify__panes' }, [leftPane, widthSplitter, formPane]);
   const root = el('div', { className: 'verify' }, [panesEl]);
 
+  /**
+   * 現在の PDF ペイン比率。設定済みならその値をそのまま使う。未設定（null）のときは
+   * 「見た目どおりの比率」を実測（leftPane 幅 / panesEl 幅）で求める — flex-grow が両ペインとも
+   * 1 のため、余剰幅は basis 比ではなく等分される。定数比（600:480 相当）をそのまま既定値扱いすると、
+   * 広いビューポートでは実際の描画比率とずれ、ドラッグ開始時にスプリッタが実際の位置から
+   * ジャンプしてから追従してしまう（issue #193 レビュー指摘）。測定不能（コンテナ幅 0 以下。
+   * 未接続 DOM 等の防御パス）のときだけ定数へフォールバックする。heightSplitterHeight() と
+   * 同じ「実測を優先し、定数はフォールバックのみ」という流儀に揃える
+   */
+  function currentPdfRatio(): number {
+    if (paneLayout.pdfPaneRatio !== null) {
+      return paneLayout.pdfPaneRatio;
+    }
+    const containerWidth = panesEl.getBoundingClientRect().width;
+    if (containerWidth <= 0) {
+      return DEFAULT_PDF_PANE_RATIO;
+    }
+    return leftPane.getBoundingClientRect().width / containerWidth;
+  }
+
   /** 現在の paneLayout を DOM（CSS カスタムプロパティ + aria-value*）へ反映する。null は既定へ戻す */
   function applyPaneLayout(): void {
-    const ratio = paneLayout.pdfPaneRatio ?? DEFAULT_PDF_PANE_RATIO;
+    const ratio = currentPdfRatio();
     widthSplitter.setAttribute('aria-valuenow', String(Math.round(ratio * 100)));
     widthSplitter.setAttribute('aria-valuemin', '0');
     widthSplitter.setAttribute('aria-valuemax', '100');
@@ -999,22 +1019,37 @@ export function createVerificationPanel(
     return Math.min(Math.max(height, FORM_PANE_MIN_HEIGHT), max);
   }
 
-  /** ドラッグ終了 / キーボード操作 / ダブルクリックリセットの確定時に 1 回だけ呼ぶ永続化 */
-  function commitPaneLayout(next: VerifyPaneLayout): void {
+  /**
+   * ドラッグ終了 / キーボード操作 / ダブルクリックリセットの確定時に 1 回だけ呼ぶ永続化。
+   * `splitterEl` は操作したスプリッタ要素（幅 / 高さ）: `onPaneLayoutChange` はサービス層の
+   * store patch を同期的に発火させ、bootstrap のストア購読が route 全体を
+   * `replaceChildren` で作り直す（キャッシュ済みパネルは detach → reattach される）。
+   * `preserveScroll.ts` はスクロール位置しか救わないため、フォーカスがスプリッタ自身に
+   * あった場合はここで明示的に復元する（`refreshForm` の hadFocus + preventScroll と同じ流儀）。
+   * これが無いと矢印キーでの連続調整が 1 回で `<body>` へフォーカスが逃げ、2 回目以降
+   * 効かなくなる（issue #193 レビュー指摘）
+   */
+  function commitPaneLayout(next: VerifyPaneLayout, splitterEl: HTMLElement): void {
     paneLayout = next;
     applyPaneLayout();
+    const doc = splitterEl.ownerDocument;
+    const hadFocus = doc.activeElement === splitterEl;
     options.onPaneLayoutChange?.(paneLayout);
+    if (hadFocus && doc.activeElement !== splitterEl) {
+      splitterEl.focus({ preventScroll: true });
+    }
   }
 
   // --- 左右スプリッタ: pointerdown → pointermove（ドラッグ中は DOM 直書き）→ pointerup（確定） ---
   let widthDragStartX: number | null = null;
   let widthDragStartRatio = 0;
-  function widthSplitterRatio(): number {
-    return paneLayout.pdfPaneRatio ?? DEFAULT_PDF_PANE_RATIO;
-  }
+  // ドラッグ中に実際に値が変わったかどうか。変化が無ければ pointerup で commit しない
+  // （クリックだけ・ダブルクリック前の 2 組の pointerdown/pointerup で無駄な永続化を走らせないため）
+  let widthDragChanged = false;
   widthSplitter.addEventListener('pointerdown', (event) => {
     widthDragStartX = event.clientX;
-    widthDragStartRatio = widthSplitterRatio();
+    widthDragStartRatio = currentPdfRatio();
+    widthDragChanged = false;
     widthSplitter.setPointerCapture?.(event.pointerId);
   });
   widthSplitter.addEventListener('pointermove', (event) => {
@@ -1029,6 +1064,9 @@ export function createVerificationPanel(
     if (clamped === null) {
       return;
     }
+    if (clamped !== paneLayout.pdfPaneRatio) {
+      widthDragChanged = true;
+    }
     paneLayout = { ...paneLayout, pdfPaneRatio: clamped };
     applyPaneLayout();
   });
@@ -1038,12 +1076,16 @@ export function createVerificationPanel(
     }
     widthDragStartX = null;
     widthSplitter.releasePointerCapture?.(event.pointerId);
-    commitPaneLayout(paneLayout);
+    if (widthDragChanged) {
+      commitPaneLayout(paneLayout, widthSplitter);
+    }
   }
   widthSplitter.addEventListener('pointerup', endWidthDrag);
   widthSplitter.addEventListener('pointercancel', endWidthDrag);
   widthSplitter.addEventListener('dblclick', () => {
-    commitPaneLayout({ ...paneLayout, pdfPaneRatio: null });
+    if (paneLayout.pdfPaneRatio !== null) {
+      commitPaneLayout({ ...paneLayout, pdfPaneRatio: null }, widthSplitter);
+    }
   });
   widthSplitter.addEventListener('keydown', (event) => {
     if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') {
@@ -1051,15 +1093,17 @@ export function createVerificationPanel(
     }
     event.preventDefault();
     const delta = event.key === 'ArrowRight' ? RATIO_KEYBOARD_STEP : -RATIO_KEYBOARD_STEP;
-    const clamped = clampPdfRatio(widthSplitterRatio() + delta);
-    if (clamped !== null) {
-      commitPaneLayout({ ...paneLayout, pdfPaneRatio: clamped });
+    const clamped = clampPdfRatio(currentPdfRatio() + delta);
+    if (clamped !== null && clamped !== paneLayout.pdfPaneRatio) {
+      commitPaneLayout({ ...paneLayout, pdfPaneRatio: clamped }, widthSplitter);
     }
   });
 
   // --- 高さスプリッタ: pointerdown → pointermove → pointerup ---------------
   let heightDragStartY: number | null = null;
   let heightDragStartHeight = 0;
+  // widthDragChanged と同じ理由（クリック / ダブルクリックでの無駄な commit を防ぐ）
+  let heightDragChanged = false;
   function heightSplitterHeight(): number {
     if (paneLayout.formPaneHeight !== null) {
       return paneLayout.formPaneHeight;
@@ -1070,6 +1114,7 @@ export function createVerificationPanel(
   heightSplitter.addEventListener('pointerdown', (event) => {
     heightDragStartY = event.clientY;
     heightDragStartHeight = heightSplitterHeight();
+    heightDragChanged = false;
     heightSplitter.setPointerCapture?.(event.pointerId);
   });
   heightSplitter.addEventListener('pointermove', (event) => {
@@ -1077,6 +1122,9 @@ export function createVerificationPanel(
       return;
     }
     const next = clampFormHeight(heightDragStartHeight + (event.clientY - heightDragStartY));
+    if (next !== paneLayout.formPaneHeight) {
+      heightDragChanged = true;
+    }
     paneLayout = { ...paneLayout, formPaneHeight: next };
     applyPaneLayout();
   });
@@ -1086,12 +1134,16 @@ export function createVerificationPanel(
     }
     heightDragStartY = null;
     heightSplitter.releasePointerCapture?.(event.pointerId);
-    commitPaneLayout(paneLayout);
+    if (heightDragChanged) {
+      commitPaneLayout(paneLayout, heightSplitter);
+    }
   }
   heightSplitter.addEventListener('pointerup', endHeightDrag);
   heightSplitter.addEventListener('pointercancel', endHeightDrag);
   heightSplitter.addEventListener('dblclick', () => {
-    commitPaneLayout({ ...paneLayout, formPaneHeight: null });
+    if (paneLayout.formPaneHeight !== null) {
+      commitPaneLayout({ ...paneLayout, formPaneHeight: null }, heightSplitter);
+    }
   });
   heightSplitter.addEventListener('keydown', (event) => {
     if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') {
@@ -1100,7 +1152,9 @@ export function createVerificationPanel(
     event.preventDefault();
     const delta = event.key === 'ArrowDown' ? HEIGHT_KEYBOARD_STEP : -HEIGHT_KEYBOARD_STEP;
     const next = clampFormHeight(heightSplitterHeight() + delta);
-    commitPaneLayout({ ...paneLayout, formPaneHeight: next });
+    if (next !== paneLayout.formPaneHeight) {
+      commitPaneLayout({ ...paneLayout, formPaneHeight: next }, heightSplitter);
+    }
   });
 
   /**

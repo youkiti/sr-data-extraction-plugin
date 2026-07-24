@@ -1929,18 +1929,24 @@ describe('bootstrapApp: #/pilot', () => {
     await flush();
     expect(store?.getState().pilot.layoutMode).toBe('list');
 
-    // 左右スプリッタのドラッグが onChangePaneLayout（setPilotPaneLayout）に配線されている（issue #193）
+    // 左右スプリッタのドラッグが onChangePaneLayout（setPilotPaneLayout）に配線されている（issue #193）。
+    // 未設定時の開始比率は実測（leftPane 幅 / panesEl 幅）のため、leftPane 側も stub する（issue #193 F1）
     const splitter = document.querySelector('.verify__splitter--vertical') as HTMLElement;
     const panes = document.querySelector('.verify__panes') as HTMLElement;
+    const leftPane = document.querySelector('.verify__pane--pdf') as HTMLElement;
     panes.getBoundingClientRect = jest.fn(
       () =>
         ({ width: 1200, height: 0, top: 0, left: 0, right: 0, bottom: 0, x: 0, y: 0, toJSON: () => ({}) }) as DOMRect,
+    );
+    leftPane.getBoundingClientRect = jest.fn(
+      () =>
+        ({ width: 700, height: 0, top: 0, left: 0, right: 0, bottom: 0, x: 0, y: 0, toJSON: () => ({}) }) as DOMRect,
     );
     splitter.dispatchEvent(new MouseEvent('pointerdown', { clientX: 100, bubbles: true }));
     splitter.dispatchEvent(new MouseEvent('pointermove', { clientX: 160, bubbles: true }));
     splitter.dispatchEvent(new MouseEvent('pointerup', { clientX: 160, bubbles: true }));
     await flush();
-    expect(store?.getState().pilot.paneLayout.pdfPaneRatio).toBeCloseTo(600 / 1080 + 60 / 1200);
+    expect(store?.getState().pilot.paneLayout.pdfPaneRatio).toBeCloseTo(700 / 1200 + 60 / 1200);
   });
 
   test('#/pilot の保存競合検出バナー（issue #64）の「再読み込み」は埋め込み検証を読み直す', async () => {
@@ -2542,18 +2548,24 @@ describe('bootstrapApp: #/verify・#/dashboard', () => {
     await flush();
     expect(store?.getState().verify.layoutMode).toBe('list');
 
-    // 左右スプリッタのドラッグが onChangePaneLayout（setVerifyPaneLayout）に配線されている（issue #193）
+    // 左右スプリッタのドラッグが onChangePaneLayout（setVerifyPaneLayout）に配線されている（issue #193）。
+    // 未設定時の開始比率は実測（leftPane 幅 / panesEl 幅）のため、leftPane 側も stub する（issue #193 F1）
     const splitter = document.querySelector('.verify__splitter--vertical') as HTMLElement;
     const panes = document.querySelector('.verify__panes') as HTMLElement;
+    const leftPane = document.querySelector('.verify__pane--pdf') as HTMLElement;
     panes.getBoundingClientRect = jest.fn(
       () =>
         ({ width: 1200, height: 0, top: 0, left: 0, right: 0, bottom: 0, x: 0, y: 0, toJSON: () => ({}) }) as DOMRect,
+    );
+    leftPane.getBoundingClientRect = jest.fn(
+      () =>
+        ({ width: 700, height: 0, top: 0, left: 0, right: 0, bottom: 0, x: 0, y: 0, toJSON: () => ({}) }) as DOMRect,
     );
     splitter.dispatchEvent(new MouseEvent('pointerdown', { clientX: 100, bubbles: true }));
     splitter.dispatchEvent(new MouseEvent('pointermove', { clientX: 160, bubbles: true }));
     splitter.dispatchEvent(new MouseEvent('pointerup', { clientX: 160, bubbles: true }));
     await flush();
-    expect(store?.getState().verify.paneLayout.pdfPaneRatio).toBeCloseTo(600 / 1080 + 60 / 1200);
+    expect(store?.getState().verify.paneLayout.pdfPaneRatio).toBeCloseTo(700 / 1200 + 60 / 1200);
 
     // 同じ状態での再 hashchange は再読込しない（alreadyShown）
     const decisionsReads = () =>

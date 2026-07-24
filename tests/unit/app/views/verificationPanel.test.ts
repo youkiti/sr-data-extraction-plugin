@@ -3166,8 +3166,8 @@ describe('flow 図（mermaid）の保存前構文チェック（issue #109）', 
 });
 
 describe('createVerificationPanel: ペインサイズ調整（issue #193）', () => {
-  // 既定比率（PDF ペイン 600px : 判定項目枠 480px 相当）。ダブルクリックリセット・
-  // 未設定時の aria-valuenow の期待値算出に使う
+  // 既定比率（PDF ペイン 600px : 判定項目枠 480px 相当）。コンテナ幅が測定できないときの
+  // フォールバックにのみ使う（通常は leftPane / panesEl の実測比率を使う。レビュー指摘 F1）
   const DEFAULT_PDF_RATIO = 600 / (600 + 480);
 
   /** 要素の getBoundingClientRect を固定値へ差し替える（jsdom は既定で全 0 を返すため） */
@@ -3203,6 +3203,9 @@ describe('createVerificationPanel: ペインサイズ調整（issue #193）', ()
   function panesEl(root: HTMLElement): HTMLElement {
     return root.querySelector<HTMLElement>('.verify__panes')!;
   }
+  function leftPaneEl(root: HTMLElement): HTMLElement {
+    return root.querySelector<HTMLElement>('.verify__pane--pdf')!;
+  }
   function formPaneEl(root: HTMLElement): HTMLElement {
     return root.querySelector<HTMLElement>('.verify__pane--form')!;
   }
@@ -3229,6 +3232,7 @@ describe('createVerificationPanel: ペインサイズ調整（issue #193）', ()
     expect(panes.style.getPropertyValue('--verify-pdf-basis')).toBe('');
     expect(panes.style.getPropertyValue('--verify-form-basis')).toBe('');
     expect(form.style.getPropertyValue('--verify-form-height')).toBe('');
+    // panesEl の getBoundingClientRect は既定で幅 0（jsdom）→ 実測不能につき既定比率へフォールバック
     expect(widthSplitterEl(panel.root).getAttribute('aria-valuenow')).toBe(
       String(Math.round(DEFAULT_PDF_RATIO * 100)),
     );
@@ -3254,16 +3258,43 @@ describe('createVerificationPanel: ペインサイズ調整（issue #193）', ()
     panel.dispose();
   });
 
+  // issue #193 レビュー指摘 F1: flex-grow が両ペインとも 1 のため、既定状態の実際の描画比率は
+  // 定数（600:480 相当）と一致しない（余剰幅は basis 比でなく等分されるため）。未設定時は
+  // 定数ではなく実測（leftPane 幅 / panesEl 幅）をドラッグ開始比率に使うべきで、そうしないと
+  // 掴んだ瞬間にスプリッタが実位置から定数比の位置へジャンプしてから追従してしまう
+  test('未設定時のドラッグ開始比率は実測（leftPane 幅 / panesEl 幅）を使う。定数比とは異なってもジャンプしない', async () => {
+    const onPaneLayoutChange = jest.fn();
+    const { panel } = await createPanel({}, { onPaneLayoutChange });
+    const splitter = widthSplitterEl(panel.root);
+    // 実測比率 = 1020 / 1920 ≈ 0.53125。定数比（600/1080 ≈ 0.5556）とは約 46px 相当ずれる
+    stubRect(panesEl(panel.root), { width: 1920 });
+    stubRect(leftPaneEl(panel.root), { width: 1020 });
+
+    firePointer(splitter, 'pointerdown', 100);
+    firePointer(splitter, 'pointermove', 100); // 0px 移動 = 掴んだ瞬間の位置そのもの
+    const ratio = parseFloat(panesEl(panel.root).style.getPropertyValue('--verify-pdf-basis')) / 100;
+    expect(ratio).toBeCloseTo(1020 / 1920, 5);
+    expect(ratio).not.toBeCloseTo(DEFAULT_PDF_RATIO, 2); // 定数比とは異なる = ジャンプしていない
+    panel.dispose();
+  });
+
   test('左右スプリッタ: ドラッグ中は DOM 直書きのみ・pointerup で 1 回だけ永続化コールバックを呼ぶ', async () => {
     const onPaneLayoutChange = jest.fn();
     const { panel } = await createPanel({}, { onPaneLayoutChange });
     const splitter = widthSplitterEl(panel.root);
     stubRect(panesEl(panel.root), { width: 1200 });
+    stubRect(leftPaneEl(panel.root), { width: 700 }); // 実測開始比率 = 700/1200 ≈ 0.58333
 
     firePointer(splitter, 'pointerdown', 100);
     firePointer(splitter, 'pointermove', 160); // +60px / 1200px = +0.05
     expect(onPaneLayoutChange).not.toHaveBeenCalled(); // ドラッグ中は呼ばない
-    const expectedRatio = DEFAULT_PDF_RATIO + 60 / 1200;
+    const expectedRatio = 700 / 1200 + 60 / 1200;
+    expect(panesEl(panel.root).style.getPropertyValue('--verify-pdf-basis')).toBe(
+      `${expectedRatio * 100}%`,
+    );
+
+    // 同じ位置への重複 pointermove（実ブラウザでも起きうる）は「変化なし」分岐を通る
+    firePointer(splitter, 'pointermove', 160);
     expect(panesEl(panel.root).style.getPropertyValue('--verify-pdf-basis')).toBe(
       `${expectedRatio * 100}%`,
     );
@@ -3276,7 +3307,7 @@ describe('createVerificationPanel: ペインサイズ調整（issue #193）', ()
     panel.dispose();
   });
 
-  test('左右スプリッタ: min-width を同時に満たせないほど狭いコンテナでは調整を諦める（no-op）', async () => {
+  test('左右スプリッタ: min-width を同時に満たせないほど狭いコンテナでは調整を諦め、永続化しない（no-op）', async () => {
     const onPaneLayoutChange = jest.fn();
     const { panel } = await createPanel({}, { onPaneLayoutChange });
     const splitter = widthSplitterEl(panel.root);
@@ -3286,14 +3317,12 @@ describe('createVerificationPanel: ペインサイズ調整（issue #193）', ()
     firePointer(splitter, 'pointermove', 300);
     expect(panesEl(panel.root).style.getPropertyValue('--verify-pdf-basis')).toBe('');
     firePointer(splitter, 'pointerup', 300);
-    // ドラッグ自体は成立している（pointerdown 済み）ため確定コールバックは呼ぶが、値は変わらない
-    expect(onPaneLayoutChange).toHaveBeenCalledWith(
-      expect.objectContaining({ pdfPaneRatio: null }),
-    );
+    // クランプ不能で実際には何も変わっていないため、無駄な永続化（issue #193 レビュー指摘 F2）はしない
+    expect(onPaneLayoutChange).not.toHaveBeenCalled();
     panel.dispose();
   });
 
-  test('左右スプリッタ: コンテナ幅が測定できない（既定 0）ときは何もしない', async () => {
+  test('左右スプリッタ: コンテナ幅が測定できない（既定 0）ときは何もせず、永続化もしない', async () => {
     const onPaneLayoutChange = jest.fn();
     const { panel } = await createPanel({}, { onPaneLayoutChange });
     const splitter = widthSplitterEl(panel.root);
@@ -3302,6 +3331,8 @@ describe('createVerificationPanel: ペインサイズ調整（issue #193）', ()
     firePointer(splitter, 'pointerdown', 100);
     firePointer(splitter, 'pointermove', 300);
     expect(panesEl(panel.root).style.getPropertyValue('--verify-pdf-basis')).toBe('');
+    firePointer(splitter, 'pointerup', 300);
+    expect(onPaneLayoutChange).not.toHaveBeenCalled();
     panel.dispose();
   });
 
@@ -3316,6 +3347,43 @@ describe('createVerificationPanel: ペインサイズ調整（issue #193）', ()
     firePointer(splitter, 'pointercancel', 300);
     expect(onPaneLayoutChange).not.toHaveBeenCalled();
     expect(panesEl(panel.root).style.getPropertyValue('--verify-pdf-basis')).toBe('');
+    panel.dispose();
+  });
+
+  // issue #193 レビュー指摘 F2: dblclick の前には必ず pointerdown/pointerup が 2 組先行する。
+  // 移動を伴わないクリックでは commit しないため、ダブルクリック 1 回で永続化が 1 回だけ走ることを検証する
+  test('左右スプリッタ: 移動なしのクリック（pointerdown→pointerup のみ）は永続化しない', async () => {
+    const onPaneLayoutChange = jest.fn();
+    const { panel } = await createPanel({}, { onPaneLayoutChange });
+    const splitter = widthSplitterEl(panel.root);
+    stubRect(panesEl(panel.root), { width: 1200 });
+    stubRect(leftPaneEl(panel.root), { width: 700 });
+
+    firePointer(splitter, 'pointerdown', 100);
+    firePointer(splitter, 'pointerup', 100); // pointermove なし = 移動していない
+    expect(onPaneLayoutChange).not.toHaveBeenCalled();
+    panel.dispose();
+  });
+
+  test('左右スプリッタ: ダブルクリック前後の 2 組の pointerdown/pointerup では commit されず、dblclick の 1 回だけ確定する', async () => {
+    const onPaneLayoutChange = jest.fn();
+    const { panel } = await createPanel(
+      {},
+      { paneLayout: { formPaneHeight: null, pdfPaneRatio: 0.6 }, onPaneLayoutChange },
+    );
+    const splitter = widthSplitterEl(panel.root);
+    stubRect(panesEl(panel.root), { width: 1200 });
+
+    firePointer(splitter, 'pointerdown', 100);
+    firePointer(splitter, 'pointerup', 100);
+    firePointer(splitter, 'pointerdown', 100);
+    firePointer(splitter, 'pointerup', 100);
+    splitter.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+
+    expect(onPaneLayoutChange).toHaveBeenCalledTimes(1);
+    expect(onPaneLayoutChange).toHaveBeenCalledWith(
+      expect.objectContaining({ pdfPaneRatio: null }),
+    );
     panel.dispose();
   });
 
@@ -3334,21 +3402,31 @@ describe('createVerificationPanel: ペインサイズ調整（issue #193）', ()
     panel.dispose();
   });
 
+  test('左右スプリッタ: 既に既定比率（null）のときのダブルクリックは永続化しない', async () => {
+    const onPaneLayoutChange = jest.fn();
+    const { panel } = await createPanel({}, { onPaneLayoutChange });
+    const splitter = widthSplitterEl(panel.root);
+    splitter.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+    expect(onPaneLayoutChange).not.toHaveBeenCalled();
+    panel.dispose();
+  });
+
   test('左右スプリッタ: 矢印キー（→ / ←）で比率を増減し、都度確定する', async () => {
     const onPaneLayoutChange = jest.fn();
     const { panel } = await createPanel({}, { onPaneLayoutChange });
     const splitter = widthSplitterEl(panel.root);
     stubRect(panesEl(panel.root), { width: 1200 });
+    stubRect(leftPaneEl(panel.root), { width: 700 }); // 実測開始比率 = 700/1200 ≈ 0.58333
 
     splitter.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
     expect(onPaneLayoutChange).toHaveBeenCalledWith(
-      expect.objectContaining({ pdfPaneRatio: DEFAULT_PDF_RATIO + 0.02 }),
+      expect.objectContaining({ pdfPaneRatio: 700 / 1200 + 0.02 }),
     );
     onPaneLayoutChange.mockClear();
 
     splitter.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }));
     expect(onPaneLayoutChange).toHaveBeenCalledWith(
-      expect.objectContaining({ pdfPaneRatio: DEFAULT_PDF_RATIO }),
+      expect.objectContaining({ pdfPaneRatio: 700 / 1200 }),
     );
     panel.dispose();
   });
@@ -3372,6 +3450,30 @@ describe('createVerificationPanel: ペインサイズ調整（issue #193）', ()
     panel2.dispose();
   });
 
+  // issue #193 レビュー指摘 F2: クランプ上限に張り付いた状態で同じキーを連打しても、
+  // 値が変わらないなら commit しない
+  test('左右スプリッタ: クランプ上限に到達後の同じ矢印キー連打は追加で永続化しない', async () => {
+    const onPaneLayoutChange = jest.fn();
+    const { panel } = await createPanel({}, { onPaneLayoutChange });
+    const splitter = widthSplitterEl(panel.root);
+    stubRect(panesEl(panel.root), { width: 1200 }); // max = 1 - 360/1200 = 0.7
+    stubRect(leftPaneEl(panel.root), { width: 700 }); // 開始比率 ≈ 0.58333
+
+    // 0.58333 → 0.7（上限）まで到達させる（step 0.02 で 6 回）
+    for (let i = 0; i < 6; i++) {
+      splitter.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+    }
+    expect(onPaneLayoutChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({ pdfPaneRatio: 0.7 }),
+    );
+    const callsAtMax = onPaneLayoutChange.mock.calls.length;
+
+    // 上限に張り付いたままの追加押下は値が変わらないため commit しない
+    splitter.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+    expect(onPaneLayoutChange.mock.calls.length).toBe(callsAtMax);
+    panel.dispose();
+  });
+
   test('高さスプリッタ: ドラッグでフォームペインの高さを変更し、pointerup で 1 回だけ確定する', async () => {
     const onPaneLayoutChange = jest.fn();
     const { panel } = await createPanel({}, { onPaneLayoutChange });
@@ -3381,6 +3483,10 @@ describe('createVerificationPanel: ペインサイズ調整（issue #193）', ()
     firePointer(splitter, 'pointerdown', 0, 200);
     firePointer(splitter, 'pointermove', 0, 260); // +60px
     expect(onPaneLayoutChange).not.toHaveBeenCalled();
+    expect(formPaneEl(panel.root).style.getPropertyValue('--verify-form-height')).toBe('560px');
+
+    // 同じ位置への重複 pointermove は「変化なし」分岐を通る
+    firePointer(splitter, 'pointermove', 0, 260);
     expect(formPaneEl(panel.root).style.getPropertyValue('--verify-form-height')).toBe('560px');
 
     firePointer(splitter, 'pointerup', 0, 260);
@@ -3432,6 +3538,19 @@ describe('createVerificationPanel: ペインサイズ調整（issue #193）', ()
     panel.dispose();
   });
 
+  test('高さスプリッタ: 移動なしのクリック（pointerdown→pointerup のみ）は永続化しない', async () => {
+    const onPaneLayoutChange = jest.fn();
+    const { panel } = await createPanel(
+      {},
+      { paneLayout: { formPaneHeight: 500, pdfPaneRatio: null }, onPaneLayoutChange },
+    );
+    const splitter = heightSplitterEl(panel.root);
+    firePointer(splitter, 'pointerdown', 0, 200);
+    firePointer(splitter, 'pointerup', 0, 200);
+    expect(onPaneLayoutChange).not.toHaveBeenCalled();
+    panel.dispose();
+  });
+
   test('高さスプリッタ: ダブルクリックで既定（未設定）へリセットする', async () => {
     const onPaneLayoutChange = jest.fn();
     const { panel } = await createPanel(
@@ -3444,6 +3563,15 @@ describe('createVerificationPanel: ペインサイズ調整（issue #193）', ()
       expect.objectContaining({ formPaneHeight: null }),
     );
     expect(formPaneEl(panel.root).style.getPropertyValue('--verify-form-height')).toBe('');
+    panel.dispose();
+  });
+
+  test('高さスプリッタ: 既に既定（null）のときのダブルクリックは永続化しない', async () => {
+    const onPaneLayoutChange = jest.fn();
+    const { panel } = await createPanel({}, { onPaneLayoutChange });
+    const splitter = heightSplitterEl(panel.root);
+    splitter.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+    expect(onPaneLayoutChange).not.toHaveBeenCalled();
     panel.dispose();
   });
 
@@ -3464,6 +3592,26 @@ describe('createVerificationPanel: ペインサイズ調整（issue #193）', ()
     onPaneLayoutChange.mockClear();
 
     splitter.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    expect(onPaneLayoutChange).not.toHaveBeenCalled();
+    panel.dispose();
+  });
+
+  // issue #193 レビュー指摘 F2: クランプ上限に張り付いた状態で同じキーを連打しても
+  // 値が変わらないなら commit しない（高さ側）
+  test('高さスプリッタ: クランプ上限に到達後の同じ矢印キー連打は追加で永続化しない', async () => {
+    const onPaneLayoutChange = jest.fn();
+    const { panel } = await createPanel(
+      {},
+      { paneLayout: { formPaneHeight: 680, pdfPaneRatio: null }, onPaneLayoutChange },
+    );
+    const splitter = heightSplitterEl(panel.root);
+    // jsdom の既定 window.innerHeight（768）→ 上限 = max(768-80, 240) = 688
+
+    splitter.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+    expect(onPaneLayoutChange).toHaveBeenCalledWith(expect.objectContaining({ formPaneHeight: 688 }));
+    onPaneLayoutChange.mockClear();
+
+    splitter.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
     expect(onPaneLayoutChange).not.toHaveBeenCalled();
     panel.dispose();
   });
@@ -3490,6 +3638,64 @@ describe('createVerificationPanel: ペインサイズ調整（issue #193）', ()
       new KeyboardEvent('keydown', { key: 'a', bubbles: true }),
     );
     expect(onDecision).not.toHaveBeenCalled();
+    panel.dispose();
+  });
+
+  // issue #193 レビュー指摘 F4: onPaneLayoutChange はサービス層の store patch を同期的に
+  // 発火させ、bootstrap のストア購読が route 全体を作り直す（キャッシュ済みパネルは
+  // detach → reattach される）。preserveScroll.ts はスクロール位置しか救わずフォーカスは
+  // 復元されないため、矢印キーでの連続調整が 1 回で効かなくなっていた。ここでは
+  // onPaneLayoutChange 内で明示的に blur してその効果を模し、commitPaneLayout が
+  // フォーカスを復元することを検証する
+  test('矢印キーでの確定後にフォーカスが外れても、スプリッタへ復元し 2 回目以降も効く', async () => {
+    let splitterRef: HTMLElement | null = null;
+    const onPaneLayoutChange = jest.fn(() => {
+      // 実アプリの route 再描画によるフォーカス喪失を模す
+      splitterRef?.blur();
+    });
+    const { panel } = await createPanel({}, { onPaneLayoutChange });
+    const splitter = widthSplitterEl(panel.root);
+    splitterRef = splitter;
+    stubRect(panesEl(panel.root), { width: 1200 });
+    stubRect(leftPaneEl(panel.root), { width: 700 });
+
+    splitter.focus();
+    expect(document.activeElement).toBe(splitter);
+
+    splitter.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+    expect(onPaneLayoutChange).toHaveBeenCalledTimes(1);
+    expect(document.activeElement).toBe(splitter); // フォーカスが復元されている
+
+    splitter.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+    expect(onPaneLayoutChange).toHaveBeenCalledTimes(2); // 2 回目も効く（フォーカスが残っているため）
+    panel.dispose();
+  });
+
+  test('フォーカスが無い状態での確定はフォーカスを奪わない', async () => {
+    const onPaneLayoutChange = jest.fn();
+    const { panel } = await createPanel({}, { onPaneLayoutChange });
+    const splitter = widthSplitterEl(panel.root);
+    stubRect(panesEl(panel.root), { width: 1200 });
+    firePointer(splitter, 'pointerdown', 100);
+    firePointer(splitter, 'pointermove', 160);
+    firePointer(splitter, 'pointerup', 160);
+    expect(onPaneLayoutChange).toHaveBeenCalledTimes(1);
+    expect(document.activeElement).not.toBe(splitter); // pointer 操作はフォーカスを伴わない
+    panel.dispose();
+  });
+
+  test('フォーカスが維持されたままの確定は focus() を呼び直さない', async () => {
+    const onPaneLayoutChange = jest.fn(); // blur しない
+    const { panel } = await createPanel(
+      {},
+      { paneLayout: { formPaneHeight: null, pdfPaneRatio: 0.6 }, onPaneLayoutChange },
+    );
+    const splitter = widthSplitterEl(panel.root);
+    splitter.focus();
+    const focusSpy = jest.spyOn(splitter, 'focus');
+    splitter.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+    expect(document.activeElement).toBe(splitter);
+    expect(focusSpy).not.toHaveBeenCalled();
     panel.dispose();
   });
 });

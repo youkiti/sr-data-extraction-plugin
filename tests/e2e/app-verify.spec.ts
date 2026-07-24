@@ -412,155 +412,97 @@ async function initApp(
   page: Page,
   hash: string,
   docs: Record<string, unknown> = defaultDocuments(),
-  options: { apiKey?: string } = {},
+  options: { apiKey?: string; persistSettings?: boolean } = {},
 ): Promise<void> {
-  await page.addInitScript(({ documents, apiKey }) => {
-    const win = window as unknown as Record<string, unknown>;
-    // apiKey が渡されたときだけ secrets.geminiApiKey を持たせる（relocate-quote の
-    // LLM 呼び出し実弾テスト用。issue #94。未指定時は従来どおり常に空を返す）
-    const stored: Record<string, unknown> =
-      apiKey === null ? {} : { 'secrets.geminiApiKey': apiKey };
-    win.chrome = {
-      storage: {
-        local: {
-          get: async (keys: string | string[]) => {
-            const wanted = Array.isArray(keys) ? keys : [keys];
-            const found: Record<string, unknown> = {};
-            for (const key of wanted) {
-              if (key in stored) {
-                found[key] = stored[key];
+  await page.addInitScript(
+    ({ documents, apiKey, persistSettings }) => {
+      const win = window as unknown as Record<string, unknown>;
+      // apiKey が渡されたときだけ secrets.geminiApiKey を持たせる（relocate-quote の
+      // LLM 呼び出し実弾テスト用。issue #94。未指定時は従来どおり常に空を返す）
+      const stored: Record<string, unknown> =
+        apiKey === null ? {} : { 'secrets.geminiApiKey': apiKey };
+      // ペインサイズ調整（issue #193）のリロード後保持等、page.reload() をまたぐ永続化を
+      // 検証するテストだけ persistSettings で window.localStorage 裏付けの get/set/remove に
+      // 切替える（既定は set/remove が no-op の従来どおりのスタブ）。addInitScript は
+      // reload のたびに再実行されるため、localStorage に書いた値は次の読込でも読める
+      const persistPrefix = 'e2e-chrome-storage:';
+      win.chrome = {
+        storage: {
+          local: {
+            get: async (keys: string | string[]) => {
+              const wanted = Array.isArray(keys) ? keys : [keys];
+              const found: Record<string, unknown> = {};
+              for (const key of wanted) {
+                if (persistSettings) {
+                  const raw = window.localStorage.getItem(persistPrefix + key);
+                  if (raw !== null) {
+                    found[key] = JSON.parse(raw);
+                  }
+                } else if (key in stored) {
+                  found[key] = stored[key];
+                }
               }
-            }
-            return found;
+              return found;
+            },
+            set: persistSettings
+              ? async (items: Record<string, unknown>) => {
+                  for (const [key, value] of Object.entries(items)) {
+                    window.localStorage.setItem(persistPrefix + key, JSON.stringify(value));
+                  }
+                }
+              : async () => undefined,
+            remove: persistSettings
+              ? async (key: string | string[]) => {
+                  for (const k of Array.isArray(key) ? key : [key]) {
+                    window.localStorage.removeItem(persistPrefix + k);
+                  }
+                }
+              : async () => undefined,
           },
-          set: async () => undefined,
+        },
+        runtime: {
+          // 認証は SW ブローカーへの sendMessage 経由（issue #129）
+          sendMessage: async (msg: { type?: string }) => {
+            if (msg?.type === 'auth:get-token') return { ok: true, token: 'e2e-token' };
+            if (msg?.type === 'auth:get-email') return { ok: true, email: 'e2e@example.com' };
+            return { ok: true };
+          },
+          id: 'e2e-extension-id',
+          getURL: (p: string) => `/${p}`,
+          lastError: undefined,
+          onMessageExternal: { addListener: () => undefined, removeListener: () => undefined },
+        },
+        tabs: {
+          create: async () => ({ id: 1 }),
           remove: async () => undefined,
+          onRemoved: { addListener: () => undefined, removeListener: () => undefined },
         },
-      },
-      runtime: {
-        // 認証は SW ブローカーへの sendMessage 経由（issue #129）
-        sendMessage: async (msg: { type?: string }) => {
-          if (msg?.type === 'auth:get-token') return { ok: true, token: 'e2e-token' };
-          if (msg?.type === 'auth:get-email') return { ok: true, email: 'e2e@example.com' };
-          return { ok: true };
-        },
-        id: 'e2e-extension-id',
-        getURL: (p: string) => `/${p}`,
-        lastError: undefined,
-        onMessageExternal: { addListener: () => undefined, removeListener: () => undefined },
-      },
-      tabs: {
-        create: async () => ({ id: 1 }),
-        remove: async () => undefined,
-        onRemoved: { addListener: () => undefined, removeListener: () => undefined },
-      },
-      identity: {
-        getProfileUserInfo: (_opts: unknown, cb: (info: unknown) => void) => {
-          cb({ email: 'e2e@example.com', id: '1' });
-        },
-      },
-    };
-    win.__E2E_PRELOADED_STATE__ = {
-      currentProject: {
-        projectId: 'e2e-project',
-        spreadsheetId: 'e2e-sheet',
-        driveFolderId: 'e2e-folder',
-        name: 'E2E プロジェクト',
-      },
-      counts: {
-        documents: 2,
-        protocolVersions: 1,
-        schemaVersions: 1,
-        pilotRuns: 1,
-        evidenceRows: 2,
-        dataRows: 0,
-      },
-      documents,
-    };
-  }, { documents: docs, apiKey: options.apiKey ?? null });
-  await page.goto(`/app/app.html${hash}`);
-}
-
-/**
- * ペインサイズ調整（issue #193）のリロード後保持を検証するため、chrome.storage.local を
- * window.localStorage 裏付けのスタブへ差し替える（initApp の既定スタブは set/remove が
- * no-op のため、ページ再読込をまたぐ永続化の検証には使えない）。addInitScript は
- * page.reload() のたびに再実行されるため、localStorage に書いた値は次の読込でも読める
- */
-async function initAppWithPersistentSettings(
-  page: Page,
-  hash: string,
-  docs: Record<string, unknown> = defaultDocuments(),
-): Promise<void> {
-  await page.addInitScript(({ documents }) => {
-    const win = window as unknown as Record<string, unknown>;
-    const prefix = 'e2e-chrome-storage:';
-    win.chrome = {
-      storage: {
-        local: {
-          get: async (keys: string | string[]) => {
-            const wanted = Array.isArray(keys) ? keys : [keys];
-            const found: Record<string, unknown> = {};
-            for (const key of wanted) {
-              const raw = window.localStorage.getItem(prefix + key);
-              if (raw !== null) {
-                found[key] = JSON.parse(raw);
-              }
-            }
-            return found;
-          },
-          set: async (items: Record<string, unknown>) => {
-            for (const [key, value] of Object.entries(items)) {
-              window.localStorage.setItem(prefix + key, JSON.stringify(value));
-            }
-          },
-          remove: async (key: string | string[]) => {
-            for (const k of Array.isArray(key) ? key : [key]) {
-              window.localStorage.removeItem(prefix + k);
-            }
+        identity: {
+          getProfileUserInfo: (_opts: unknown, cb: (info: unknown) => void) => {
+            cb({ email: 'e2e@example.com', id: '1' });
           },
         },
-      },
-      runtime: {
-        sendMessage: async (msg: { type?: string }) => {
-          if (msg?.type === 'auth:get-token') return { ok: true, token: 'e2e-token' };
-          if (msg?.type === 'auth:get-email') return { ok: true, email: 'e2e@example.com' };
-          return { ok: true };
+      };
+      win.__E2E_PRELOADED_STATE__ = {
+        currentProject: {
+          projectId: 'e2e-project',
+          spreadsheetId: 'e2e-sheet',
+          driveFolderId: 'e2e-folder',
+          name: 'E2E プロジェクト',
         },
-        id: 'e2e-extension-id',
-        getURL: (p: string) => `/${p}`,
-        lastError: undefined,
-        onMessageExternal: { addListener: () => undefined, removeListener: () => undefined },
-      },
-      tabs: {
-        create: async () => ({ id: 1 }),
-        remove: async () => undefined,
-        onRemoved: { addListener: () => undefined, removeListener: () => undefined },
-      },
-      identity: {
-        getProfileUserInfo: (_opts: unknown, cb: (info: unknown) => void) => {
-          cb({ email: 'e2e@example.com', id: '1' });
+        counts: {
+          documents: 2,
+          protocolVersions: 1,
+          schemaVersions: 1,
+          pilotRuns: 1,
+          evidenceRows: 2,
+          dataRows: 0,
         },
-      },
-    };
-    win.__E2E_PRELOADED_STATE__ = {
-      currentProject: {
-        projectId: 'e2e-project',
-        spreadsheetId: 'e2e-sheet',
-        driveFolderId: 'e2e-folder',
-        name: 'E2E プロジェクト',
-      },
-      counts: {
-        documents: 2,
-        protocolVersions: 1,
-        schemaVersions: 1,
-        pilotRuns: 1,
-        evidenceRows: 2,
-        dataRows: 0,
-      },
-      documents,
-    };
-  }, { documents: docs });
+        documents,
+      };
+    },
+    { documents: docs, apiKey: options.apiKey ?? null, persistSettings: options.persistSettings ?? false },
+  );
   await page.goto(`/app/app.html${hash}`);
 }
 
@@ -622,7 +564,7 @@ test('ペインサイズ調整: 左右スプリッタのドラッグで比率が
     schemaRows: [STUDY_FIELD_ROW],
     evidenceRows: [EVIDENCE_ROW_1, EVIDENCE_ROW_2],
   });
-  await initAppWithPersistentSettings(page, '#/verify?study=study-1');
+  await initApp(page, '#/verify?study=study-1', undefined, { persistSettings: true });
 
   const panes = page.locator('.verify__panes');
   await expect(panes).toBeVisible({ timeout: 15_000 });
@@ -630,22 +572,29 @@ test('ペインサイズ調整: 左右スプリッタのドラッグで比率が
   await expect(splitter).toHaveAttribute('role', 'separator');
   await expect(splitter).toHaveAttribute('aria-orientation', 'vertical');
 
-  // panesEl の幅を固定し、ドラッグ量から比率の変化を決定論的に検証する
+  // panesEl / leftPane（.verify__pane--pdf）の幅を固定し、ドラッグ量から比率の変化を
+  // 決定論的に検証する。未設定時の開始比率は実測（leftPane 幅 / panesEl 幅）のため、
+  // leftPane 側も stub しないと開始比率が不定になる（issue #193 レビュー指摘 F1）
   await page.evaluate(() => {
-    const el = document.querySelector('.verify__panes') as HTMLElement;
-    el.getBoundingClientRect = () =>
-      ({
-        width: 1200,
-        height: 480,
-        top: 0,
-        left: 0,
-        right: 1200,
-        bottom: 480,
-        x: 0,
-        y: 0,
-        toJSON: () => ({}),
-      }) as DOMRect;
+    const stubRect = (selector: string, width: number) => {
+      const el = document.querySelector(selector) as HTMLElement;
+      el.getBoundingClientRect = () =>
+        ({
+          width,
+          height: 480,
+          top: 0,
+          left: 0,
+          right: width,
+          bottom: 480,
+          x: 0,
+          y: 0,
+          toJSON: () => ({}),
+        }) as DOMRect;
+    };
+    stubRect('.verify__panes', 1200);
+    stubRect('.verify__pane--pdf', 700);
   });
+  const startRatio = 700 / 1200;
 
   const before = await panes.evaluate((el) => (el as HTMLElement).style.getPropertyValue('--verify-pdf-basis'));
   expect(before).toBe(''); // 既定は未設定
@@ -655,7 +604,7 @@ test('ペインサイズ調整: 左右スプリッタのドラッグで比率が
   const after = await panes.evaluate((el) => (el as HTMLElement).style.getPropertyValue('--verify-pdf-basis'));
   expect(after).not.toBe('');
   const ratioAfterDrag = parseFloat(after) / 100;
-  expect(ratioAfterDrag).toBeGreaterThan(600 / 1080); // 既定比率より PDF ペインが広がった
+  expect(ratioAfterDrag).toBeCloseTo(startRatio + 0.05, 5); // 実測した開始比率からの相対移動
 
   // リロード後も比率が保持される（settingsStore への永続化 → 検証データ束読込時に読み直す）
   await page.reload();
@@ -675,32 +624,49 @@ test('ペインサイズ調整: 矢印キーで比率・高さを調整でき、
     schemaRows: [STUDY_FIELD_ROW],
     evidenceRows: [EVIDENCE_ROW_1, EVIDENCE_ROW_2],
   });
-  await initAppWithPersistentSettings(page, '#/verify?study=study-1');
+  await initApp(page, '#/verify?study=study-1', undefined, { persistSettings: true });
   await expect(page.locator('.verify__panes')).toBeVisible({ timeout: 15_000 });
 
   await page.evaluate(() => {
-    const el = document.querySelector('.verify__panes') as HTMLElement;
-    el.getBoundingClientRect = () =>
-      ({
-        width: 1200,
-        height: 480,
-        top: 0,
-        left: 0,
-        right: 1200,
-        bottom: 480,
-        x: 0,
-        y: 0,
-        toJSON: () => ({}),
-      }) as DOMRect;
+    const stubRect = (selector: string, width: number) => {
+      const el = document.querySelector(selector) as HTMLElement;
+      el.getBoundingClientRect = () =>
+        ({
+          width,
+          height: 480,
+          top: 0,
+          left: 0,
+          right: width,
+          bottom: 480,
+          x: 0,
+          y: 0,
+          toJSON: () => ({}),
+        }) as DOMRect;
+    };
+    stubRect('.verify__panes', 1200);
+    stubRect('.verify__pane--pdf', 700);
   });
+  const startRatio = 700 / 1200;
 
   const widthSplitter = page.locator('.verify__splitter--vertical');
   await widthSplitter.focus();
   await page.keyboard.press('ArrowRight');
-  const ratioAfterArrow = await page
+  const ratioAfterFirstArrow = await page
     .locator('.verify__panes')
     .evaluate((el) => parseFloat((el as HTMLElement).style.getPropertyValue('--verify-pdf-basis')) / 100);
-  expect(ratioAfterArrow).toBeGreaterThan(600 / 1080);
+  expect(ratioAfterFirstArrow).toBeCloseTo(startRatio + 0.02, 5);
+
+  // issue #193 レビュー指摘 F4: onPaneLayoutChange はストア購読を同期的に発火させ、
+  // キャッシュ済みパネルが detach → reattach される。commitPaneLayout がスプリッタへの
+  // フォーカスを復元しないと、1 回目の矢印キーで <body> へフォーカスが逃げ 2 回目が効かない。
+  // ここではフォーカスを取り直さず（Tab 相当で移った状態のまま）連続で押せることを確認する
+  await expect(widthSplitter).toBeFocused();
+  await page.keyboard.press('ArrowRight');
+  const ratioAfterSecondArrow = await page
+    .locator('.verify__panes')
+    .evaluate((el) => parseFloat((el as HTMLElement).style.getPropertyValue('--verify-pdf-basis')) / 100);
+  expect(ratioAfterSecondArrow).toBeCloseTo(startRatio + 0.04, 5);
+  expect(ratioAfterSecondArrow).not.toBeCloseTo(ratioAfterFirstArrow, 5);
 
   // ダブルクリックで既定（未設定 = カスタムプロパティなし）へ戻る。setPointerCapture との
   // 相互作用で Playwright の高レベル dblclick() は実クリック位置がずれることがあるため、
@@ -711,17 +677,26 @@ test('ペインサイズ調整: 矢印キーで比率・高さを調整でき、
     .evaluate((el) => (el as HTMLElement).style.getPropertyValue('--verify-pdf-basis'));
   expect(afterReset).toBe('');
 
-  // 高さスプリッタも矢印キーで調整でき、ダブルクリックで既定へ戻る
+  // 高さスプリッタも矢印キーで調整でき（連続 2 回とも効く）、ダブルクリックで既定へ戻る
   const heightSplitter = page.locator('.verify__splitter--horizontal');
   await expect(heightSplitter).toHaveAttribute('role', 'separator');
   await expect(heightSplitter).toHaveAttribute('aria-orientation', 'horizontal');
   await heightSplitter.focus();
   await page.keyboard.press('ArrowDown');
   const formPane = page.locator('.verify__pane--form');
-  const heightAfterArrow = await formPane.evaluate((el) =>
+  const heightAfterFirstArrow = await formPane.evaluate((el) =>
     (el as HTMLElement).style.getPropertyValue('--verify-form-height'),
   );
-  expect(heightAfterArrow).not.toBe('');
+  expect(heightAfterFirstArrow).not.toBe('');
+
+  await expect(heightSplitter).toBeFocused();
+  await page.keyboard.press('ArrowDown');
+  const heightAfterSecondArrow = await formPane.evaluate((el) =>
+    (el as HTMLElement).style.getPropertyValue('--verify-form-height'),
+  );
+  expect(heightAfterSecondArrow).not.toBe(heightAfterFirstArrow);
+  expect(parseFloat(heightAfterSecondArrow)).toBe(parseFloat(heightAfterFirstArrow) + 24);
+
   await heightSplitter.evaluate((el) => el.dispatchEvent(new MouseEvent('dblclick', { bubbles: true })));
   const heightAfterReset = await formPane.evaluate((el) =>
     (el as HTMLElement).style.getPropertyValue('--verify-form-height'),
