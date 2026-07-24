@@ -971,6 +971,7 @@ function renderConfirmed(
   versions: readonly SchemaVersion[],
   schema: SchemaState,
   ctx: ViewContext,
+  latestProtocolVersion: number | null,
 ): HTMLElement {
   const fields = schema.currentFields ?? [];
 
@@ -985,6 +986,21 @@ function renderConfirmed(
   children.push(
     el('p', { id: 'schema-current-meta', className: 'schema__current-meta', text: meta }),
   );
+  // このスキーマ版が古いプロトコルに基づいているときの注意バナー（issue #197 Chunk A）。
+  // 最新プロトコル版が未読込（null）のときは判定できないため出さない
+  if (latestProtocolVersion !== null && latest.protocolVersion < latestProtocolVersion) {
+    children.push(
+      el('p', {
+        id: 'schema-stale-protocol',
+        className: 'schema__stale-banner',
+        text: t('schema.staleProtocol', {
+          schemaProtocolVersion: latest.protocolVersion,
+          latestProtocolVersion,
+        }),
+        attributes: { role: 'status' },
+      }),
+    );
+  }
   if (latest.note !== null) {
     children.push(el('p', { className: 'schema__current-note', text: t('schema.currentNote', { note: latest.note }) }));
   }
@@ -1064,7 +1080,7 @@ function renderBody(state: AppState, ctx: ViewContext): HTMLElement {
   if (latest === undefined) {
     return renderDraftForm(state, ctx);
   }
-  return renderConfirmed(latest, schema.versions, schema, ctx);
+  return renderConfirmed(latest, schema.versions, schema, ctx, state.protocol.records?.[0]?.version ?? null);
 }
 
 export function renderSchemaView(state: AppState, ctx: ViewContext): HTMLElement {

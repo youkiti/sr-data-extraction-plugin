@@ -4,6 +4,7 @@ import { renderSchemaView } from '../../../../src/app/views/schemaView';
 import type { SchemaViewCallbacks, ViewContext } from '../../../../src/app/views/types';
 import { createInitialState, type AppState } from '../../../../src/app/store';
 import type { DocumentRecord } from '../../../../src/domain/document';
+import type { Protocol } from '../../../../src/domain/protocol';
 import type { SchemaField } from '../../../../src/domain/schemaField';
 import type { SchemaVersion } from '../../../../src/domain/schemaVersion';
 import type { PresetDialogState } from '../../../../src/features/schema/presets/prespecDialog';
@@ -171,7 +172,11 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<SchemaViewCallbac
 
 function makeState(
   patch: Partial<AppState['schema']> = {},
-  options: { withProject?: boolean; documents?: DocumentRecord[] | null } = {},
+  options: {
+    withProject?: boolean;
+    documents?: DocumentRecord[] | null;
+    protocolRecords?: Protocol[] | null;
+  } = {},
 ): AppState {
   const state = createInitialState();
   if (options.withProject !== false) {
@@ -185,8 +190,32 @@ function makeState(
   if (options.documents !== undefined) {
     state.documents = { ...state.documents, records: options.documents };
   }
+  if (options.protocolRecords !== undefined) {
+    state.protocol = { ...state.protocol, records: options.protocolRecords };
+  }
   state.schema = { ...state.schema, ...patch };
   return state;
+}
+
+function makeProtocol(overrides: Partial<Protocol> = {}): Protocol {
+  return {
+    version: 1,
+    frameworkType: 'pico',
+    researchQuestion: 'RQ',
+    inclusionCriteria: null,
+    exclusionCriteria: null,
+    studyDesign: null,
+    blockCount: 0,
+    combinationExpression: '',
+    sourceType: 'manual',
+    sourceFilename: null,
+    rawTextRef: null,
+    rawTextPreview: null,
+    rawTextInline: 'text',
+    createdAt: '2026-07-01T00:00:00Z',
+    createdBy: 'tester@example.com',
+    ...overrides,
+  };
 }
 
 function makeDocument(overrides: Partial<DocumentRecord> = {}): DocumentRecord {
@@ -990,6 +1019,52 @@ describe('renderSchemaView', () => {
       const items = multi.querySelectorAll('#schema-history li');
       expect(items).toHaveLength(2);
       expect(items[0]?.textContent).toContain('v1 から派生');
+    });
+
+    test('陳腐化バナー: スキーマ版の protocolVersion が最新プロトコル版より古いときだけ表示する（issue #197）', () => {
+      const { ctx } = makeCtx();
+      const view = renderSchemaView(
+        makeState(
+          { versions: [makeVersion(1, { protocolVersion: 1 })] },
+          { protocolRecords: [makeProtocol({ version: 2 })] },
+        ),
+        ctx,
+      );
+      const banner = view.querySelector('#schema-stale-protocol');
+      expect(banner).not.toBeNull();
+      expect(banner?.getAttribute('role')).toBe('status');
+      expect(banner?.textContent).toContain('Protocol v1');
+      expect(banner?.textContent).toContain('v2');
+    });
+
+    test('陳腐化バナー: 同一版なら表示しない', () => {
+      const { ctx } = makeCtx();
+      const view = renderSchemaView(
+        makeState(
+          { versions: [makeVersion(1, { protocolVersion: 2 })] },
+          { protocolRecords: [makeProtocol({ version: 2 })] },
+        ),
+        ctx,
+      );
+      expect(view.querySelector('#schema-stale-protocol')).toBeNull();
+    });
+
+    test('陳腐化バナー: プロトコル未読込（records === null）なら表示しない', () => {
+      const { ctx } = makeCtx();
+      const view = renderSchemaView(
+        makeState({ versions: [makeVersion(1, { protocolVersion: 1 })] }, { protocolRecords: null }),
+        ctx,
+      );
+      expect(view.querySelector('#schema-stale-protocol')).toBeNull();
+    });
+
+    test('陳腐化バナー: プロトコル 0 版（records = []、records[0] === undefined）なら表示しない', () => {
+      const { ctx } = makeCtx();
+      const view = renderSchemaView(
+        makeState({ versions: [makeVersion(1, { protocolVersion: 1 })] }, { protocolRecords: [] }),
+        ctx,
+      );
+      expect(view.querySelector('#schema-stale-protocol')).toBeNull();
     });
   });
 });

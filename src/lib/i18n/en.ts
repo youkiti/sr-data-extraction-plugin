@@ -424,6 +424,8 @@ export const en: Record<MessageKey, string> = {
   'schema.currentMeta':
     'Current version: v{version} ({createdByType} / based on Protocol v{protocolVersion} / {createdAt} / {createdBy})',
   'schema.currentNote': 'Revision note: {note}',
+  'schema.staleProtocol':
+    'This table design is based on Protocol v{schemaProtocolVersion} (the current protocol is v{latestProtocolVersion}). To reflect the protocol revision, have the AI redraft it and review the differences.',
   'schema.newVersion': 'Create a new version (edit from the current one)',
   'schema.historyTitle': 'Version history',
   'schema.historyDerived': ' / derived from v{parent}',

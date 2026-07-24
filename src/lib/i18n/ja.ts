@@ -425,6 +425,8 @@ export const ja = {
   'schema.currentMeta':
     '現行版: v{version}（{createdByType} / Protocol v{protocolVersion} 依拠 / {createdAt} / {createdBy}）',
   'schema.currentNote': '改訂理由: {note}',
+  'schema.staleProtocol':
+    'この表のデザインは Protocol v{schemaProtocolVersion} に基づいています(現行のプロトコルは v{latestProtocolVersion})。プロトコル改訂を反映するには、AI に再ドラフトさせて差分を確認してください。',
   'schema.newVersion': '新しい版を作る(現行版から編集)',
   'schema.historyTitle': '版履歴',
   'schema.historyDerived': ' / v{parent} から派生',
