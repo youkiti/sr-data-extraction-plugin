@@ -548,7 +548,9 @@ describe('renderVerifyView', () => {
       ctx,
     );
     const panes = root.querySelector<HTMLElement>('.verify__panes');
-    expect(panes?.style.getPropertyValue('--verify-pdf-basis')).toBe('60%');
+    // panesEl / widthSplitter を stub していないため比率はクランプ対象外（保存値をそのまま使う）。
+    // basis はスプリッタ幅（未測定時のフォールバック 12px）を除いた座標系（issue #193 レビュー指摘 R2）
+    expect(panes?.style.getPropertyValue('--verify-pdf-basis')).toBe('calc((100% - 12px) * 0.6)');
     const splitter = root.querySelector<HTMLElement>('.verify__splitter--vertical');
     (panes as HTMLElement).getBoundingClientRect = jest.fn(
       () =>
@@ -557,8 +559,9 @@ describe('renderVerifyView', () => {
     splitter?.dispatchEvent(new MouseEvent('pointerdown', { clientX: 100, bubbles: true }));
     splitter?.dispatchEvent(new MouseEvent('pointermove', { clientX: 160, bubbles: true }));
     splitter?.dispatchEvent(new MouseEvent('pointerup', { clientX: 160, bubbles: true }));
+    // widthSplitter 自身は stub していないため、幅は 12px フォールバック（issue #193 R2）
     expect(callbacks.onChangePaneLayout).toHaveBeenCalledWith(
-      expect.objectContaining({ pdfPaneRatio: 0.6 + 60 / 1200 }),
+      expect.objectContaining({ pdfPaneRatio: 0.6 + 60 / (1200 - 12) }),
     );
   });
 

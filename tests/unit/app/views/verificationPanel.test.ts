@@ -3169,6 +3169,16 @@ describe('createVerificationPanel: ペインサイズ調整（issue #193）', ()
   // 既定比率（PDF ペイン 600px : 判定項目枠 480px 相当）。コンテナ幅が測定できないときの
   // フォールバックにのみ使う（通常は leftPane / panesEl の実測比率を使う。レビュー指摘 F1）
   const DEFAULT_PDF_RATIO = 600 / (600 + 480);
+  // src/app/views/verificationPanel.ts の PDF_PANE_MIN_WIDTH / FORM_PANE_MIN_WIDTH と同値
+  // （ui-flow.md §8）。クランプ境界の期待値算出に使う
+  const PDF_PANE_MIN_WIDTH = 600;
+  const FORM_PANE_MIN_WIDTH = 360;
+
+  // window.innerHeight は jsdom がテストファイル間で使い回すグローバルのため、resize
+  // テストで書き換えたら必ず既定（jsdom の既定値 768）へ戻す（他テストへの汚染防止）
+  afterEach(() => {
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 768 });
+  });
 
   /** 要素の getBoundingClientRect を固定値へ差し替える（jsdom は既定で全 0 を返すため） */
   function stubRect(el: HTMLElement, rect: { width?: number; height?: number }): void {
@@ -3210,6 +3220,18 @@ describe('createVerificationPanel: ペインサイズ調整（issue #193）', ()
     return root.querySelector<HTMLElement>('.verify__pane--form')!;
   }
 
+  /**
+   * `--verify-pdf-basis` の値（`calc((100% - {splitterWidth}px) * {ratio})` 形式。
+   * issue #193 レビュー指摘 R2）から比率だけを取り出す
+   */
+  function ratioFromBasis(value: string): number {
+    const match = /\*\s*([0-9.]+)\)$/.exec(value);
+    if (match === null) {
+      throw new Error(`unexpected --verify-pdf-basis value: ${value}`);
+    }
+    return parseFloat(match[1] as string);
+  }
+
   test('スプリッタ 2 種の ARIA 属性（role=separator + aria-orientation + aria-label + tabindex）', async () => {
     const { panel } = await createPanel();
     const w = widthSplitterEl(panel.root);
@@ -3222,6 +3244,51 @@ describe('createVerificationPanel: ペインサイズ調整（issue #193）', ()
     expect(h.getAttribute('aria-orientation')).toBe('horizontal');
     expect(h.getAttribute('aria-label')).toBe('判定項目枠の高さを調整');
     expect(h.getAttribute('tabindex')).toBe('0');
+    panel.dispose();
+  });
+
+  // issue #193 レビュー指摘 R2: スプリッタ自身の幅は実測を優先する（CSS 変更に自動追従させるため）
+  test('スプリッタ幅は実測できればその値を使う（未測定時のみ 12px フォールバック）', async () => {
+    const onPaneLayoutChange = jest.fn();
+    const { panel } = await createPanel(
+      {},
+      { paneLayout: { formPaneHeight: null, pdfPaneRatio: 0.5 }, onPaneLayoutChange },
+    );
+    // 幅は広めに取り、比率 0.5 が min-width クランプの対象にならないようにする
+    stubRect(panesEl(panel.root), { width: 2000 });
+    stubRect(widthSplitterEl(panel.root), { width: 20 }); // 実測 20px（フォールバック 12px とは異なる）
+
+    // 何らかの操作で applyPaneLayout を再実行させる（ここではウィンドウリサイズを使う）
+    panel.root.ownerDocument.defaultView?.dispatchEvent(new Event('resize'));
+
+    expect(panesEl(panel.root).style.getPropertyValue('--verify-pdf-basis')).toBe(
+      'calc((100% - 20px) * 0.5)',
+    );
+    panel.dispose();
+  });
+
+  // issue #193 レビュー指摘 R2: スプリッタ幅を引くと 0 以下になるほど狭いコンテナは測定不能扱い
+  test('コンテナ幅がスプリッタ幅以下のときは比率調整を諦める', async () => {
+    const onPaneLayoutChange = jest.fn();
+    const { panel } = await createPanel({}, { onPaneLayoutChange });
+    const splitter = widthSplitterEl(panel.root);
+    stubRect(panesEl(panel.root), { width: 5 }); // フォールバックのスプリッタ幅 12px より狭い
+
+    firePointer(splitter, 'pointerdown', 100);
+    firePointer(splitter, 'pointermove', 300);
+    expect(panesEl(panel.root).style.getPropertyValue('--verify-pdf-basis')).toBe('');
+    firePointer(splitter, 'pointerup', 300);
+    expect(onPaneLayoutChange).not.toHaveBeenCalled();
+    panel.dispose();
+  });
+
+  // issue #193 レビュー指摘 R3: 未設定時の aria-valuenow は formPane の実測高さを使う
+  // （0 より大きく測定できたとき）。resize での再描画をきっかけに測定し直す
+  test('高さ未設定時、実測できれば aria-valuenow に実測高さを反映する', async () => {
+    const { panel } = await createPanel({}, { paneLayout: { formPaneHeight: null, pdfPaneRatio: null } });
+    stubRect(formPaneEl(panel.root), { height: 500 });
+    panel.root.ownerDocument.defaultView?.dispatchEvent(new Event('resize'));
+    expect(heightSplitterEl(panel.root).getAttribute('aria-valuenow')).toBe('500');
     panel.dispose();
   });
 
@@ -3245,17 +3312,103 @@ describe('createVerificationPanel: ペインサイズ調整（issue #193）', ()
     const onPaneLayoutChange = jest.fn();
     const { panel } = await createPanel(
       {},
-      { paneLayout: { formPaneHeight: 900, pdfPaneRatio: 0.6 }, onPaneLayoutChange },
+      { paneLayout: { formPaneHeight: 500, pdfPaneRatio: 0.6 }, onPaneLayoutChange },
     );
     const panes = panesEl(panel.root);
     const form = formPaneEl(panel.root);
-    expect(panes.style.getPropertyValue('--verify-pdf-basis')).toBe('60%');
-    expect(panes.style.getPropertyValue('--verify-form-basis')).toBe('40%');
-    expect(form.style.getPropertyValue('--verify-form-height')).toBe('900px');
+    // panesEl / widthSplitter を stub していないため、比率は測定不能でクランプ対象外
+    // （保存値をそのまま使う）。basis はスプリッタ幅（未測定時のフォールバック 12px）を
+    // 除いた座標系（issue #193 レビュー指摘 R2）
+    expect(panes.style.getPropertyValue('--verify-pdf-basis')).toBe('calc((100% - 12px) * 0.6)');
+    expect(panes.style.getPropertyValue('--verify-form-basis')).toBe('calc((100% - 12px) * 0.4)');
+    expect(form.style.getPropertyValue('--verify-form-height')).toBe('500px');
     expect(widthSplitterEl(panel.root).getAttribute('aria-valuenow')).toBe('60');
-    expect(heightSplitterEl(panel.root).getAttribute('aria-valuenow')).toBe('900');
+    expect(heightSplitterEl(panel.root).getAttribute('aria-valuenow')).toBe('500');
     expect(onPaneLayoutChange).not.toHaveBeenCalled();
     panel.dispose();
+  });
+
+  // issue #193 レビュー指摘 R3: 保存済みの高さは現在のビューポートで再クランプしてから表示する。
+  // 27 インチ等の広い画面で保存した値（例 1500px）をノート PC 等の狭い画面で読み込むと、
+  // クランプを通さない場合は判定項目枠が画面外へはみ出す
+  test('保存済みの高さがビューポート上限を超えるときは再クランプして表示する（R3）', async () => {
+    const onPaneLayoutChange = jest.fn();
+    const { panel } = await createPanel(
+      {},
+      { paneLayout: { formPaneHeight: 1500, pdfPaneRatio: null }, onPaneLayoutChange },
+    );
+    const form = formPaneEl(panel.root);
+    // jsdom の既定 window.innerHeight（768）→ 上限 = max(768-80, 240) = 688
+    expect(form.style.getPropertyValue('--verify-form-height')).toBe('688px');
+    expect(heightSplitterEl(panel.root).getAttribute('aria-valuenow')).toBe('688');
+    // 保存値そのもの（paneLayout.formPaneHeight）は書き換えない（次に広い画面で開いたときに
+    // 元の 1500px が復元されるように）。ドラッグ開始点にも再クランプ後の値を使う
+    const splitter = heightSplitterEl(panel.root);
+    firePointer(splitter, 'pointerdown', 0, 200);
+    firePointer(splitter, 'pointermove', 0, 220); // +20px → 688 + 20 のはずだが上限なので変わらない
+    expect(form.style.getPropertyValue('--verify-form-height')).toBe('688px');
+    panel.dispose();
+  });
+
+  // issue #193 レビュー指摘 R3: ウィンドウリサイズでも再クランプする（永続化はしない）
+  test('ウィンドウリサイズで高さ・比率を再クランプし、DOM だけ更新する（永続化しない）', async () => {
+    const onPaneLayoutChange = jest.fn();
+    const { panel } = await createPanel(
+      {},
+      { paneLayout: { formPaneHeight: 500, pdfPaneRatio: 0.6 }, onPaneLayoutChange },
+    );
+    const form = formPaneEl(panel.root);
+    expect(form.style.getPropertyValue('--verify-form-height')).toBe('500px');
+
+    // window.innerHeight を狭く差し替えてから resize を発火する
+    const win = panel.root.ownerDocument.defaultView as Window;
+    Object.defineProperty(win, 'innerHeight', { configurable: true, value: 300 });
+    win.dispatchEvent(new Event('resize'));
+
+    // 上限 = max(300-80, 240) = 240 まで再クランプされる（DOM のみ・保存値は変えない）
+    expect(form.style.getPropertyValue('--verify-form-height')).toBe('240px');
+    expect(onPaneLayoutChange).not.toHaveBeenCalled();
+
+    // 広い画面へ戻すと保存値（500px）がそのまま復活する（保存値を書き換えていない証拠）
+    Object.defineProperty(win, 'innerHeight', { configurable: true, value: 768 });
+    win.dispatchEvent(new Event('resize'));
+    expect(form.style.getPropertyValue('--verify-form-height')).toBe('500px');
+    panel.dispose();
+  });
+
+  // issue #193 レビュー指摘 R3: 比率側も同じ resize ハンドラで再クランプする（一貫性）。
+  // コンテナが狭くなり、保存済み比率が min-width を満たせなくなるケースを再現する
+  test('コンテナ幅が狭くなった状態での resize は比率も再クランプする', async () => {
+    const onPaneLayoutChange = jest.fn();
+    const { panel } = await createPanel(
+      {},
+      { paneLayout: { formPaneHeight: null, pdfPaneRatio: 0.6 }, onPaneLayoutChange },
+    );
+    const panes = panesEl(panel.root);
+    // usable = 992 - 12 = 980 → min = 600/980 ≈ 0.6122 > 0.6（保存値）→ 上限側へ押し上げられる
+    stubRect(panes, { width: 992 });
+
+    panel.root.ownerDocument.defaultView?.dispatchEvent(new Event('resize'));
+
+    expect(panes.style.getPropertyValue('--verify-pdf-basis')).toBe(
+      `calc((100% - 12px) * ${600 / 980})`,
+    );
+    expect(onPaneLayoutChange).not.toHaveBeenCalled(); // 保存値は変えない（永続化しない）
+    panel.dispose();
+  });
+
+  test('dispose() 後は resize リスナが解除される（リーク防止）', async () => {
+    const { panel } = await createPanel(
+      {},
+      { paneLayout: { formPaneHeight: 500, pdfPaneRatio: null } },
+    );
+    const form = formPaneEl(panel.root);
+    const win = panel.root.ownerDocument.defaultView as Window;
+    panel.dispose();
+    Object.defineProperty(win, 'innerHeight', { configurable: true, value: 300 });
+    win.dispatchEvent(new Event('resize'));
+    // dispose 後はリスナが外れているため、DOM は書き換わらないまま
+    expect(form.style.getPropertyValue('--verify-form-height')).toBe('500px');
   });
 
   // issue #193 レビュー指摘 F1: flex-grow が両ペインとも 1 のため、既定状態の実際の描画比率は
@@ -3266,14 +3419,15 @@ describe('createVerificationPanel: ペインサイズ調整（issue #193）', ()
     const onPaneLayoutChange = jest.fn();
     const { panel } = await createPanel({}, { onPaneLayoutChange });
     const splitter = widthSplitterEl(panel.root);
-    // 実測比率 = 1020 / 1920 ≈ 0.53125。定数比（600/1080 ≈ 0.5556）とは約 46px 相当ずれる
+    // 実測比率 = leftPane 幅 / (panesEl 幅 − スプリッタ幅) = 1020 / (1920 − 12) ≈ 0.53459。
+    // 定数比（600/1080 ≈ 0.5556）とは異なる（スプリッタ幅を除いた座標系。issue #193 R2）
     stubRect(panesEl(panel.root), { width: 1920 });
     stubRect(leftPaneEl(panel.root), { width: 1020 });
 
     firePointer(splitter, 'pointerdown', 100);
     firePointer(splitter, 'pointermove', 100); // 0px 移動 = 掴んだ瞬間の位置そのもの
-    const ratio = parseFloat(panesEl(panel.root).style.getPropertyValue('--verify-pdf-basis')) / 100;
-    expect(ratio).toBeCloseTo(1020 / 1920, 5);
+    const ratio = ratioFromBasis(panesEl(panel.root).style.getPropertyValue('--verify-pdf-basis'));
+    expect(ratio).toBeCloseTo(1020 / (1920 - 12), 5);
     expect(ratio).not.toBeCloseTo(DEFAULT_PDF_RATIO, 2); // 定数比とは異なる = ジャンプしていない
     panel.dispose();
   });
@@ -3283,20 +3437,22 @@ describe('createVerificationPanel: ペインサイズ調整（issue #193）', ()
     const { panel } = await createPanel({}, { onPaneLayoutChange });
     const splitter = widthSplitterEl(panel.root);
     stubRect(panesEl(panel.root), { width: 1200 });
-    stubRect(leftPaneEl(panel.root), { width: 700 }); // 実測開始比率 = 700/1200 ≈ 0.58333
+    stubRect(leftPaneEl(panel.root), { width: 700 }); // 実測開始比率 = 700/(1200-12) ≈ 0.58923
 
     firePointer(splitter, 'pointerdown', 100);
-    firePointer(splitter, 'pointermove', 160); // +60px / 1200px = +0.05
+    firePointer(splitter, 'pointermove', 160); // +60px / (1200-12)px ≈ +0.0505
     expect(onPaneLayoutChange).not.toHaveBeenCalled(); // ドラッグ中は呼ばない
-    const expectedRatio = 700 / 1200 + 60 / 1200;
+    // usableWidth はスプリッタ幅（12px。app.css の flex: 0 0 12px）を除いた幅（issue #193 R2）
+    const usableWidth = 1200 - 12;
+    const expectedRatio = 700 / usableWidth + 60 / usableWidth;
     expect(panesEl(panel.root).style.getPropertyValue('--verify-pdf-basis')).toBe(
-      `${expectedRatio * 100}%`,
+      `calc((100% - 12px) * ${expectedRatio})`,
     );
 
     // 同じ位置への重複 pointermove（実ブラウザでも起きうる）は「変化なし」分岐を通る
     firePointer(splitter, 'pointermove', 160);
     expect(panesEl(panel.root).style.getPropertyValue('--verify-pdf-basis')).toBe(
-      `${expectedRatio * 100}%`,
+      `calc((100% - 12px) * ${expectedRatio})`,
     );
 
     firePointer(splitter, 'pointerup', 160);
@@ -3311,7 +3467,11 @@ describe('createVerificationPanel: ペインサイズ調整（issue #193）', ()
     const onPaneLayoutChange = jest.fn();
     const { panel } = await createPanel({}, { onPaneLayoutChange });
     const splitter = widthSplitterEl(panel.root);
-    stubRect(panesEl(panel.root), { width: 700 }); // min=600/700, max=1-360/700 → min >= max
+    // usable = 700 - 12(フォールバックのスプリッタ幅) = 688。
+    // min = 600/688 ≈ 0.872、max = 1 - 360/688 ≈ 0.477 → min >= max で調整不能
+    stubRect(panesEl(panel.root), { width: 700 });
+    const usableWidth = 700 - 12;
+    expect(PDF_PANE_MIN_WIDTH / usableWidth).toBeGreaterThanOrEqual(1 - FORM_PANE_MIN_WIDTH / usableWidth);
 
     firePointer(splitter, 'pointerdown', 100);
     firePointer(splitter, 'pointermove', 300);
@@ -3416,17 +3576,18 @@ describe('createVerificationPanel: ペインサイズ調整（issue #193）', ()
     const { panel } = await createPanel({}, { onPaneLayoutChange });
     const splitter = widthSplitterEl(panel.root);
     stubRect(panesEl(panel.root), { width: 1200 });
-    stubRect(leftPaneEl(panel.root), { width: 700 }); // 実測開始比率 = 700/1200 ≈ 0.58333
+    stubRect(leftPaneEl(panel.root), { width: 700 }); // 実測開始比率 = 700/(1200-12) ≈ 0.58923
+    const usableWidth = 1200 - 12; // スプリッタ幅（12px）を除いた座標系（issue #193 R2）
 
     splitter.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
     expect(onPaneLayoutChange).toHaveBeenCalledWith(
-      expect.objectContaining({ pdfPaneRatio: 700 / 1200 + 0.02 }),
+      expect.objectContaining({ pdfPaneRatio: 700 / usableWidth + 0.02 }),
     );
     onPaneLayoutChange.mockClear();
 
     splitter.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }));
     expect(onPaneLayoutChange).toHaveBeenCalledWith(
-      expect.objectContaining({ pdfPaneRatio: 700 / 1200 }),
+      expect.objectContaining({ pdfPaneRatio: 700 / usableWidth }),
     );
     panel.dispose();
   });
@@ -3456,15 +3617,17 @@ describe('createVerificationPanel: ペインサイズ調整（issue #193）', ()
     const onPaneLayoutChange = jest.fn();
     const { panel } = await createPanel({}, { onPaneLayoutChange });
     const splitter = widthSplitterEl(panel.root);
-    stubRect(panesEl(panel.root), { width: 1200 }); // max = 1 - 360/1200 = 0.7
-    stubRect(leftPaneEl(panel.root), { width: 700 }); // 開始比率 ≈ 0.58333
+    stubRect(panesEl(panel.root), { width: 1200 });
+    stubRect(leftPaneEl(panel.root), { width: 700 }); // 開始比率 ≈ 0.58923
+    const usableWidth = 1200 - 12; // max = 1 - 360/usableWidth ≈ 0.69697（issue #193 R2）
+    const max = 1 - FORM_PANE_MIN_WIDTH / usableWidth;
 
-    // 0.58333 → 0.7（上限）まで到達させる（step 0.02 で 6 回）
+    // 開始比率 → 上限まで到達させる（step 0.02 で 6 回）
     for (let i = 0; i < 6; i++) {
       splitter.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
     }
     expect(onPaneLayoutChange).toHaveBeenLastCalledWith(
-      expect.objectContaining({ pdfPaneRatio: 0.7 }),
+      expect.objectContaining({ pdfPaneRatio: max }),
     );
     const callsAtMax = onPaneLayoutChange.mock.calls.length;
 

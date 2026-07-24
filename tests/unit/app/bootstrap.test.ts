@@ -1946,7 +1946,7 @@ describe('bootstrapApp: #/pilot', () => {
     splitter.dispatchEvent(new MouseEvent('pointermove', { clientX: 160, bubbles: true }));
     splitter.dispatchEvent(new MouseEvent('pointerup', { clientX: 160, bubbles: true }));
     await flush();
-    expect(store?.getState().pilot.paneLayout.pdfPaneRatio).toBeCloseTo(700 / 1200 + 60 / 1200);
+    expect(store?.getState().pilot.paneLayout.pdfPaneRatio).toBeCloseTo(700 / (1200 - 12) + 60 / (1200 - 12));
   });
 
   test('#/pilot の保存競合検出バナー（issue #64）の「再読み込み」は埋め込み検証を読み直す', async () => {
@@ -2565,7 +2565,7 @@ describe('bootstrapApp: #/verify・#/dashboard', () => {
     splitter.dispatchEvent(new MouseEvent('pointermove', { clientX: 160, bubbles: true }));
     splitter.dispatchEvent(new MouseEvent('pointerup', { clientX: 160, bubbles: true }));
     await flush();
-    expect(store?.getState().verify.paneLayout.pdfPaneRatio).toBeCloseTo(700 / 1200 + 60 / 1200);
+    expect(store?.getState().verify.paneLayout.pdfPaneRatio).toBeCloseTo(700 / (1200 - 12) + 60 / (1200 - 12));
 
     // 同じ状態での再 hashchange は再読込しない（alreadyShown）
     const decisionsReads = () =>
