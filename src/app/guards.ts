@@ -86,8 +86,13 @@ export function guardRoute(hash: string, state: AppState, role: ProjectRole = 'o
         }
         return { allowed: true };
       }
-      if (counts.evidenceRows < 1) {
-        return { allowed: false, message: t('guards.needExtraction') };
+      // 従来は counts.evidenceRows ≥ 1（Evidence が 1 行以上）を条件にしていたが、AI 抽出が
+      // 全滅（Evidence 0 行）した study も S8 で「AI 抽出結果なし」として表示し人手入力へ
+      // 進めるようにしたため、Evidence 起点の判定は入場ガードとしては不適切になった。
+      // 「確定スキーマがあり、かつ文書が取り込まれている」を条件にする（抽出前に入った場合は
+      // verifyService の読込結果が空になり、既存の #verify-empty 空状態表示に委ねる）
+      if (counts.schemaVersions < 1 || counts.documents < 1) {
+        return { allowed: false, message: t('guards.needSchemaAndDocuments') };
       }
       return { allowed: true };
     case '#/export':

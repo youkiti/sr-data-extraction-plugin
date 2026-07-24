@@ -18,6 +18,7 @@ import { readStudies } from '../../features/documents/studyRepository';
 import { buildStudySelection } from '../../features/documents/studySelection';
 import { readEvidenceRows } from '../../features/extraction/evidenceRepository';
 import {
+  pickLatestCompletedRunByStudy,
   readCompletedRunMetas,
   type CompletedRunMeta,
 } from '../../features/extraction/runRepository';
@@ -300,6 +301,9 @@ async function readIndependentVerifyTargetMaterials(
         progress: verificationProgress(fields, [], ownDecisions, { armStructure }),
         // 独立入力モードは AI 抽出の情報を一切見せない（issue #106 の警告も出さない）
         armWarnings: [],
+        // 独立入力モードは AI 抽出の有無・実施状況を一切見せない盲検レビューのため、
+        // no_result バナー（AI 抽出結果なし）も出さず常に 'extracted' 固定にする
+        aiExtractionStatus: 'extracted',
       },
       ownDecisions,
       armStructure,
@@ -309,7 +313,9 @@ async function readIndependentVerifyTargetMaterials(
 }
 
 /**
- * Evidence がある study の検証素材一式を読み込む（S8 一覧と S9 ダッシュボードの共通素材）。
+ * Evidence がある study、および「完了 run の対象だったが AI 抽出が全滅して Evidence が
+ * 1 行も生成されなかった study（= AI 抽出結果なし）」の検証素材一式を読み込む
+ * （S8 一覧と S9 ダッシュボードの共通素材）。
  * 進捗の分母・分子はセルモデル（features/verification/progress.ts）で数える。
  * study 内の文書は role 固定順 → 取り込み順で並べ、Evidence は全文書ぶんを渡す。
  *
@@ -336,20 +342,25 @@ export async function readVerifyTargetMaterials(
   // field_id 単位で「表示する run」を選び Evidence を合成する（issue #80。サブセット run が
   // 最新でも、対象外の field は過去 run の Evidence が透けて見え続ける）
   const byStudy = composeEvidenceByStudy(allEvidence, completedRuns);
+  // study_id ごとの「その study を含む最新の完了 run」（S7 バッジ注記と同じ関数・同じ並び規約を
+  // 再利用する。CompletedRunMeta は CompletedRunStudySummary のスーパーセットのためそのまま渡せる）。
+  // Evidence が 1 行も無い study が「そもそも完了 run の対象外（未抽出）」なのか「対象だったが
+  // 全滅（AI 抽出結果なし）」なのかを見分けるために使う
+  const latestCompletedRunByStudy = pickLatestCompletedRunByStudy(completedRuns);
   const fieldsByVersion = new Map<number, SchemaField[]>();
   const materials: VerifyTargetMaterial[] = [];
   // アクティブ study を作成順で。配下文書は role 固定順 → 取り込み順（buildStudySelection）
   for (const item of buildStudySelection(studies, documents)) {
     const entry = byStudy.get(item.study.studyId);
-    if (entry === undefined) {
-      continue; // Evidence なし（孤児 Evidence のみ含む）= 未抽出の study は一覧に出さない
+    // entry が無い（Evidence が 1 行も無い。孤児 Evidence のみ含む場合を含む）study のうち、
+    // 完了 run の対象に一度も含まれていないものは、従来どおり「未抽出」として一覧から除外する。
+    // 除外が確定するこの時点より前に decisions / armStructure の filter を走らせない
+    // （study 数・Decisions 行数が多い実プロジェクトで、除外される study ぶんの無駄な計算を防ぐ）
+    const latestRun = entry === undefined ? latestCompletedRunByStudy.get(item.study.studyId) : undefined;
+    if (entry === undefined && latestRun === undefined) {
+      continue;
     }
-    const schemaVersion = entry.schemaVersion;
-    let fields = fieldsByVersion.get(schemaVersion);
-    if (fields === undefined) {
-      fields = await getSchemaFieldsByVersion(spreadsheetId, schemaVersion, deps.google);
-      fieldsByVersion.set(schemaVersion, fields);
-    }
+
     const ownDecisions = allDecisions.filter(
       (decision) => decision.studyId === item.study.studyId && decision.annotator === annotator,
     );
@@ -357,16 +368,33 @@ export async function readVerifyTargetMaterials(
       allArmRows.filter((row) => row.studyId === item.study.studyId),
       annotator,
     );
+
+    // entry の有無から表示に使う値だけを決める。fields の解決と materials.push は
+    // 下の 1 箇所にまとめる（将来 aiExtractionStatus に 'partial' 等を足すときも 1 箇所で済む）。
+    // entry === undefined のときは、完了 run の対象だったのに Evidence が 1 行も生成されなかった
+    // = AI 抽出結果なし（latestRun は上の guard により必ず解決済み）
+    const schemaVersion = entry !== undefined ? entry.schemaVersion : (latestRun as CompletedRunMeta).schemaVersion;
+    const evidence = entry?.evidence ?? [];
+    // 直近 run の arm completeness 警告（issue #106。S8 バナーの素材）。no_result には無い
+    const armWarnings = entry?.armWarnings ?? [];
+    const aiExtractionStatus: VerifyTarget['aiExtractionStatus'] =
+      entry !== undefined ? 'extracted' : 'no_result';
+
+    let fields = fieldsByVersion.get(schemaVersion);
+    if (fields === undefined) {
+      fields = await getSchemaFieldsByVersion(spreadsheetId, schemaVersion, deps.google);
+      fieldsByVersion.set(schemaVersion, fields);
+    }
     materials.push({
       target: {
         study: item.study,
         documents: item.documents,
-        evidence: entry.evidence,
+        evidence,
         fields,
         schemaVersion,
-        progress: verificationProgress(fields, entry.evidence, ownDecisions, { armStructure }),
-        // 直近 run の arm completeness 警告（issue #106。S8 バナーの素材）
-        armWarnings: entry.armWarnings,
+        progress: verificationProgress(fields, evidence, ownDecisions, { armStructure }),
+        armWarnings,
+        aiExtractionStatus,
       },
       ownDecisions,
       armStructure,

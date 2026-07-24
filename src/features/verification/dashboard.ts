@@ -80,6 +80,16 @@ export interface DashboardStudyInput {
   ownDecisions: readonly Decision[];
   /** 自分が確定した群構成。確定 arm 由来の空セルも分母へ含める */
   armStructure?: ConfirmedArmStructure | null;
+  /**
+   * AI 抽出結果の有無（app/store.ts の VerifyTarget.aiExtractionStatus と同じ契約）。
+   * 'no_result'（AI 抽出結果なし = Evidence 0 件）の study は進捗マトリクスには含めるが、
+   * AI 精度内訳（accept/edit/reject/notReported）には加算しない — AI 根拠が存在しない
+   * 手入力を「AI を修正した（edit 等）」として数えると automation bias の指標が汚染されるため。
+   * 必須フィールド（本番の呼び出し元は dashboardService.ts の 1 箇所のみだが、省略可にすると
+   * 将来の別呼び出し経路が渡し忘れたときに AI 精度指標の汚染が型エラーなくサイレントに
+   * 復活する。テスト側は既定値を入れるファクトリ〔dashboard.test.ts の makeInput〕を使う）
+   */
+  aiExtractionStatus: 'extracted' | 'no_result';
 }
 
 /** 検証フォームと同じ順（タブ順 → グループ順）で全セルを連結する */
@@ -122,6 +132,10 @@ function buildRow(input: DashboardStudyInput, sections: readonly string[]): Dash
     notReported: 0,
     decided: 0,
   };
+  // AI 抽出結果なし（Evidence 0 件）の study は、AI 根拠が無いまま行われた手入力を
+  // 「AI を修正した」と数えないよう AI 精度内訳の加算対象から外す（進捗マトリクスへの
+  // 算入〔decided / total〕は従来どおり行う）
+  const countAccuracy = input.aiExtractionStatus !== 'no_result';
   for (const cell of orderedCells(input)) {
     // セルはスキーマ項目から作られるため、その section は必ず bySection に存在する
     const entry = bySection.get(cell.field.section) as DashboardSectionCell;
@@ -132,12 +146,14 @@ function buildRow(input: DashboardStudyInput, sections: readonly string[]): Dash
     if (status !== 'unverified') {
       entry.decided += 1;
       decided += 1;
-      accuracy.decided += 1;
-      if (status === 'not_reported') {
-        accuracy.notReported += 1;
-      } else {
-        // status は accept / edit / reject のいずれか
-        accuracy[status] += 1;
+      if (countAccuracy) {
+        accuracy.decided += 1;
+        if (status === 'not_reported') {
+          accuracy.notReported += 1;
+        } else {
+          // status は accept / edit / reject のいずれか
+          accuracy[status] += 1;
+        }
       }
     }
   }

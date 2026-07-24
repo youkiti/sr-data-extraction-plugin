@@ -79,6 +79,10 @@ const FIELDS: SchemaField[] = [
   }),
 ];
 
+// aiExtractionStatus は DashboardStudyInput の必須フィールド（本番の呼び出し元は
+// dashboardService.ts の 1 箇所のみ。省略可にすると将来の別呼び出し経路が渡し忘れたときに
+// AI 精度指標の汚染が型エラーなくサイレントに復活するため必須にした）。テスト側は
+// このファクトリで既定値 'extracted' を入れ、no_result を検証するテストだけ overrides で渡す
 function makeInput(overrides: Partial<DashboardStudyInput> = {}): DashboardStudyInput {
   return {
     studyId: 'study-1',
@@ -97,6 +101,7 @@ function makeInput(overrides: Partial<DashboardStudyInput> = {}): DashboardStudy
       }),
     ],
     ownDecisions: [makeDecision()],
+    aiExtractionStatus: 'extracted',
     ...overrides,
   };
 }
@@ -211,6 +216,38 @@ describe('buildDashboard', () => {
       reject: 0,
       notReported: 1,
       decided: 3,
+    });
+  });
+
+  test('AI 抽出結果なし（no_result）の study は進捗マトリクスに含めるが、AI 精度内訳には加算しない', () => {
+    const data = buildDashboard([
+      makeInput({
+        aiExtractionStatus: 'no_result',
+        evidence: [], // 抽出結果なし = Evidence 0 件
+        ownDecisions: [
+          makeDecision(), // f-total を手入力で accept 相当に確定
+          makeDecision({ fieldId: 'f-country', action: 'edit', value: 'Japan' }),
+        ],
+      }),
+    ]);
+    // 進捗マトリクス（decided/total）には通常どおり算入する（evidence が空 + armStructure 未指定
+    // のため outcomes〔arm〕セクションは 0 セル。study 項目 2 件のみが対象になる）
+    expect(data.rows[0]?.progress).toEqual({ decided: 2, total: 2 });
+    expect(data.totals.progress).toEqual({ decided: 2, total: 2 });
+    // AI 根拠が無い手入力を「AI を修正した」と数えない = AI 精度内訳は 0 のまま
+    expect(data.rows[0]?.accuracy).toEqual({
+      accept: 0,
+      edit: 0,
+      reject: 0,
+      notReported: 0,
+      decided: 0,
+    });
+    expect(data.totals.accuracy).toEqual({
+      accept: 0,
+      edit: 0,
+      reject: 0,
+      notReported: 0,
+      decided: 0,
     });
   });
 

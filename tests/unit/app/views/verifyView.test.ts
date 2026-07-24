@@ -225,6 +225,7 @@ function makeTarget(overrides: Partial<VerifyTarget> = {}): VerifyTarget {
     schemaVersion: 1,
     progress: { decided: 1, total: 4, byTab: [] },
     armWarnings: [],
+    aiExtractionStatus: 'extracted',
     ...overrides,
   };
 }
@@ -347,6 +348,36 @@ describe('renderVerifyView', () => {
     select.value = 'study-1';
     select.dispatchEvent(new Event('change'));
     expect(callbacks.onSelectStudy).toHaveBeenCalledWith('study-1');
+  });
+
+  test('AI 抽出結果なし（no_result）: セレクタのラベルに印が付き、選択中は #verify-no-ai-result バナーを出す', () => {
+    const { ctx } = makeCtx();
+    const targets = [
+      makeTarget({
+        study: makeStudy({ studyId: 'study-2', studyLabel: 'Jones 2021' }),
+        documents: [makeDocument({ documentId: 'doc-2', studyId: 'study-2' })],
+        progress: { decided: 0, total: 2, byTab: [] },
+        aiExtractionStatus: 'no_result',
+      }),
+    ];
+    const root = render(makeState({ targets, selectedStudyId: 'study-2' }), ctx);
+    const select = root.querySelector('#verify-study') as HTMLSelectElement;
+    expect(select.options[0]?.textContent).toBe('Jones 2021［AI 抽出結果なし］（判定済み 0 / 2）');
+    const banner = root.querySelector('#verify-no-ai-result');
+    expect(banner?.getAttribute('role')).toBe('status');
+    expect(banner?.textContent).toContain('AI 抽出結果がありません');
+    expect(banner?.textContent).toContain('値は手入力で記録できます');
+    // 正直な制限の明記: rob_domain タブが入力できない旨
+    expect(banner?.textContent).toContain('RoB（rob_domain）タブは AI 抽出結果がないと');
+  });
+
+  test('AI 抽出結果あり（extracted）の study 選択中は #verify-no-ai-result バナーを出さない', () => {
+    const { ctx } = makeCtx();
+    const root = render(
+      makeState({ targets: [makeTarget()], selectedStudyId: 'study-1' }),
+      ctx,
+    );
+    expect(root.querySelector('#verify-no-ai-result')).toBeNull();
   });
 
   test('検証データ読み込み中は #verify-doc-loading、オフラインキューは #verify-queued', () => {

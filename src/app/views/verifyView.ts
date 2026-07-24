@@ -12,11 +12,34 @@ import { renderCachedVerificationPanel } from './verificationPanel';
 
 function selectorLabel(target: VerifyTarget): string {
   const { progress } = target;
-  return t('verify.selectorOption', {
+  const key =
+    target.aiExtractionStatus === 'no_result' ? 'verify.selectorOptionNoResult' : 'verify.selectorOption';
+  return t(key, {
     label: target.study.studyLabel,
     decided: progress.decided,
     total: progress.total,
   });
+}
+
+/**
+ * AI 抽出結果なしバナー（完了 run の対象だったが Evidence が 1 行も生成されなかった study）。
+ * 手入力で記録できる旨に加え、rob_domain タブが入力できない制限を正直に明記する
+ * （features/verification/cells.ts の entityInstances は rob_domain のインスタンスを
+ * Evidence と Decisions からのみ導出するため、両方 0 件だとタブが空になる）
+ */
+function renderNoAiResultBanner(): HTMLElement {
+  return el(
+    'div',
+    {
+      id: 'verify-no-ai-result',
+      className: 'verify__no-ai-result',
+      attributes: { role: 'status' },
+    },
+    [
+      el('p', { text: t('verify.noAiResultLead') }),
+      el('p', { text: t('verify.noAiResultRobLimit') }),
+    ],
+  );
 }
 
 /**
@@ -143,11 +166,15 @@ export function renderVerifyView(state: AppState, ctx: ViewContext): HTMLElement
 
   children.push(renderSelector(state, ctx, verify.targets));
 
-  // 選択中 study の arm 欠落警告（issue #106）。セレクタ直下 = パネル読み込み中でも見える
+  // 選択中 study の AI 抽出結果なしバナー・arm 欠落警告（issue #106）。
+  // セレクタ直下 = パネル読み込み中でも見える
   const selectedTarget = verify.targets.find(
     (target) => target.study.studyId === verify.selectedStudyId,
   );
   if (selectedTarget !== undefined) {
+    if (selectedTarget.aiExtractionStatus === 'no_result') {
+      children.push(renderNoAiResultBanner());
+    }
     const armWarning = renderArmCompletenessWarning(selectedTarget);
     if (armWarning !== null) {
       children.push(armWarning);

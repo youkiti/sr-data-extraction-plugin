@@ -109,6 +109,7 @@ function makeMaterial(): VerifyTargetMaterial {
       schemaVersion: 1,
       progress: { decided: 0, total: 1, byTab: [{ tab: 'study', decided: 0, total: 1 }] },
       armWarnings: [],
+      aiExtractionStatus: 'extracted',
     },
     ownDecisions: [],
     armStructure: null,
@@ -157,6 +158,39 @@ describe('loadDashboard', () => {
       studyId: 'study-doc-1',
       studyLabel: 'Smith 2020',
       progress: { decided: 0, total: 1 },
+    });
+  });
+
+  test('target.aiExtractionStatus を buildDashboard の入力へ引き継ぐ（no_result は AI 精度内訳に加算しない）', async () => {
+    const material = makeMaterial();
+    material.target.aiExtractionStatus = 'no_result';
+    material.target.evidence = [];
+    material.ownDecisions = [
+      {
+        decidedAt: 't-now',
+        decidedBy: 'me@example.com',
+        studyId: 'study-doc-1',
+        fieldId: 'f-total',
+        entityKey: '-',
+        annotator: 'me@example.com',
+        annotatorType: 'human_with_ai',
+        schemaVersion: 1,
+        action: 'accept',
+        value: '120',
+        note: null,
+      },
+    ];
+    readMaterialsMock.mockResolvedValue([material]);
+    const store = makeStore();
+    await loadDashboard(store, makeDeps());
+    const { dashboard } = store.getState();
+    expect(dashboard.data?.rows[0]?.progress).toEqual({ decided: 1, total: 1 });
+    expect(dashboard.data?.rows[0]?.accuracy).toEqual({
+      accept: 0,
+      edit: 0,
+      reject: 0,
+      notReported: 0,
+      decided: 0,
     });
   });
 

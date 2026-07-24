@@ -44,6 +44,7 @@ export async function loadDashboard(
         evidence: material.target.evidence,
         ownDecisions: material.ownDecisions,
         armStructure: material.armStructure,
+        aiExtractionStatus: material.target.aiExtractionStatus,
       })),
     );
     patchDashboard(store, { loading: false, data });
