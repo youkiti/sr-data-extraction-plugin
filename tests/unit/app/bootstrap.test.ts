@@ -355,6 +355,28 @@ describe('seedState', () => {
     expect(state.export.loadError).toBe('注入エラー');
     expect(state.export.format).toBe('study_wide'); // 未指定フィールドは既定値
   });
+
+  // 接続方式 override（issue #191 レビュー対応）: 起動時に chrome.storage.local から
+  // 保存済み接続方式を 1 回だけ読み込み、AppState.llmProviderOverride へ反映する
+  describe('llmProviderOverride', () => {
+    test('未保存なら null（従来どおりモデル名推定に従う）', async () => {
+      const state = await seedState(asWindow(createWindowStub()));
+      expect(state.llmProviderOverride).toBeNull();
+    });
+
+    test('chrome.storage.local の保存済み接続方式を読み込む', async () => {
+      chromeMock.storage.local.data['settings.llmProvider'] = 'openai_compatible';
+      const state = await seedState(asWindow(createWindowStub()));
+      expect(state.llmProviderOverride).toBe('openai_compatible');
+    });
+
+    test('E2E seam: __E2E_PRELOADED_STATE__ の明示注入が優先される', async () => {
+      chromeMock.storage.local.data['settings.llmProvider'] = 'openai_compatible';
+      const stub = createWindowStub({ llmProviderOverride: 'gemini' });
+      const state = await seedState(asWindow(stub));
+      expect(state.llmProviderOverride).toBe('gemini');
+    });
+  });
 });
 
 describe('bootstrapApp', () => {

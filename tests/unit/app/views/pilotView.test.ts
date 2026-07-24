@@ -483,6 +483,23 @@ describe('未実行（setup）', () => {
     const { root } = render(makeState({ pilot: { runError: 'API キー未設定' } }));
     expect(root.querySelector('#pilot-run-error')?.textContent).toBe('API キー未設定');
   });
+
+  // 接続方式 override（issue #191 レビュー対応）: 保存済み接続方式（state.llmProviderOverride）が
+  // モデル名推定より優先されるため、openai_compatible 接続では qwen モデルが unknown 扱いになり
+  // 高精度読み取りモードのチェック状態がそのまま概算（planRun）に反映される
+  test('コスト概算: 接続方式 override が高精度読み取りモードの実効値に反映される', () => {
+    const state = makeState({ pilot: { model: 'qwen/qwen3-235b-a22b-2507', highAccuracyImages: true } });
+    render(state);
+    expect(planRunMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({ highAccuracyImages: false }),
+    );
+
+    state.llmProviderOverride = 'openai_compatible';
+    render(state);
+    expect(planRunMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({ highAccuracyImages: true }),
+    );
+  });
 });
 
 describe('実行中', () => {

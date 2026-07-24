@@ -611,6 +611,29 @@ describe('未実行（setup）', () => {
       expect(root.querySelector<HTMLButtonElement>('#extract-run')?.disabled).toBe(false);
       expect(root.querySelector('#extract-image-unsupported-warning')).toBeNull();
     });
+
+    // 接続方式 override（issue #191 レビュー対応）: state.llmProviderOverride がモデル名推定
+    // （openrouter）より優先されるため、openai_compatible 接続では unknown 扱いになりブロックしない
+    test('接続方式 override（openai_compatible）が設定済みなら qwen モデルもブロックしない', () => {
+      const state = makeState({
+        documents: scanDocs(),
+        extract: { model: 'qwen/qwen3-235b-a22b-2507' },
+      });
+      state.llmProviderOverride = 'openai_compatible';
+      const { root } = render(state);
+      expect(root.querySelector<HTMLButtonElement>('#extract-run')?.disabled).toBe(false);
+      expect(root.querySelector('#extract-image-unsupported-warning')).toBeNull();
+    });
+
+    test('接続方式 override が openrouter 明示なら従来どおりブロックする', () => {
+      const state = makeState({
+        documents: scanDocs(),
+        extract: { model: 'qwen/qwen3-235b-a22b-2507' },
+      });
+      state.llmProviderOverride = 'openrouter';
+      const { root } = render(state);
+      expect(root.querySelector<HTMLButtonElement>('#extract-run')?.disabled).toBe(true);
+    });
   });
 
   test('モデル変更・実行ボタンのコールバック + インラインエラー表示', () => {
@@ -1108,6 +1131,61 @@ describe('完了サマリ', () => {
     );
     expect(root.querySelector<HTMLButtonElement>('.extract__retry')?.disabled).toBe(true);
     expect(root.querySelector<HTMLButtonElement>('#extract-run')?.disabled).toBe(true);
+  });
+
+  // 画像非対応モデルの実行ブロック（issue #191 レビュー対応）: モデルを画像非対応モデルへ
+  // 切り替えて再試行すると既知の 404 を踏む問題への対応
+  describe('失敗行の再試行ボタン: 画像非対応モデルの実行ブロック', () => {
+    test('画像入力（no_text_layer）文書を含む study の再試行ボタンは disabled にし title で案内する', () => {
+      const { root } = render(
+        makeState({
+          documents: [
+            makeDocument({ documentId: 'doc-scan', studyId: 'study-1', textStatus: 'no_text_layer' }),
+          ],
+          extract: {
+            run: makeRun({ status: 'partial_failure' }),
+            model: 'qwen/qwen3-235b-a22b-2507',
+            studyRows: [makeStudyRow({ studyId: 'study-1', status: 'failed', detail: 'x' })],
+          },
+        }),
+      );
+      const retryButton = root.querySelector<HTMLButtonElement>('.extract__retry');
+      expect(retryButton?.disabled).toBe(true);
+      expect(retryButton?.title).toContain('qwen/qwen3-235b-a22b-2507');
+    });
+
+    test('画像入力文書が無い study の再試行ボタンは disabled にしない', () => {
+      const { root } = render(
+        makeState({
+          documents: [makeDocument({ documentId: 'doc-1', studyId: 'study-1' })],
+          extract: {
+            run: makeRun({ status: 'partial_failure' }),
+            model: 'qwen/qwen3-235b-a22b-2507',
+            studyRows: [makeStudyRow({ studyId: 'study-1', status: 'failed', detail: 'x' })],
+          },
+        }),
+      );
+      const retryButton = root.querySelector<HTMLButtonElement>('.extract__retry');
+      expect(retryButton?.disabled).toBe(false);
+      expect(retryButton?.title).toBe('');
+    });
+
+    test('接続方式 override（openai_compatible）なら qwen モデルの再試行ボタンも disabled にしない', () => {
+      const state = makeState({
+        documents: [
+          makeDocument({ documentId: 'doc-scan', studyId: 'study-1', textStatus: 'no_text_layer' }),
+        ],
+        extract: {
+          run: makeRun({ status: 'partial_failure' }),
+          model: 'qwen/qwen3-235b-a22b-2507',
+          studyRows: [makeStudyRow({ studyId: 'study-1', status: 'failed', detail: 'x' })],
+        },
+      });
+      state.llmProviderOverride = 'openai_compatible';
+      const { root } = render(state);
+      const retryButton = root.querySelector<HTMLButtonElement>('.extract__retry');
+      expect(retryButton?.disabled).toBe(false);
+    });
   });
 });
 

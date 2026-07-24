@@ -137,10 +137,12 @@ function renderEstimate(state: AppState): HTMLElement {
       fields: estimateFields,
       model: state.pilot.model === '' ? 'unknown' : state.pilot.model,
       protocolContext: null,
-      // 実行時に実際に効く値と揃える（プロバイダ非対応時は概算にも反映しない。issue #176）
+      // 実行時に実際に効く値と揃える（プロバイダ非対応時は概算にも反映しない。issue #176）。
+      // 保存済み接続方式（llmProviderOverride）をモデル名推定より優先する（issue #191 レビュー対応）
       highAccuracyImages: resolveEffectiveHighAccuracyImages(
         state.pilot.model,
         state.pilot.highAccuracyImages,
+        state.llmProviderOverride,
       ),
       // モデル未選択時のダミー値 'unknown' を「画像対応が不明なモデルが選ばれている」と
       // 誤検出しないための切り分け（extractView.ts の renderEstimate と同じ理由。レビュー指摘）

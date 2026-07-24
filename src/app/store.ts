@@ -3,6 +3,7 @@
 import type { ConfirmedArmStructure } from '../domain/armStructure';
 import type { Decision } from '../domain/decision';
 import type { DocumentRecord, ExclusionReason } from '../domain/document';
+import type { LlmProviderId } from '../domain/llmApiLog';
 import type { StudyRecord } from '../domain/study';
 import type { Evidence } from '../domain/evidence';
 import type { ExportFormat } from '../domain/exportLog';
@@ -619,6 +620,17 @@ export interface AppState {
    * （直接 #/options を開いた等）で #/home へ戻す（B. 設定画面の「戻る」改善）
    */
   settingsReturnHash: RouteHash | null;
+  /**
+   * 保存済み LLM 接続方式の override（Options で設定。`loadLlmConnectionSettings().provider`）。
+   * null = 未設定（モデル名からの provider 推定 `resolveProviderId` に従う）。
+   * bootstrap 起動時に 1 回だけ読み込む（接続方式は Options でしか変わらないため）。
+   * 画像非対応モデルの実行ブロック判定（`isRunBlockedByImageUnsupportedModel` /
+   * `resolveEffectiveHighAccuracyImages`）の UI 描画（disabled 表示）で、モデル名推定だけでは
+   * openai_compatible 接続時に誤判定する問題（issue #191 レビュー対応）を防ぐ。
+   * 実行直前の authoritative な判定はサービス層が毎回 `resolveProviderConfig` で行うため、
+   * ここは UI 描画専用の非同期スナップショットで足りる
+   */
+  llmProviderOverride: LlmProviderId | null;
 }
 
 export type StateListener = (state: AppState) => void;
@@ -826,6 +838,7 @@ export function createInitialState(): AppState {
       methodsWorkflow: 'single',
     },
     settingsReturnHash: null,
+    llmProviderOverride: null,
   };
 }
 

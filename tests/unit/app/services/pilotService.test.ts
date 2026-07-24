@@ -715,6 +715,45 @@ describe('runPilot: 実行', () => {
     expect(params.highAccuracyImages).toBe(false);
   });
 
+  // 画像非対応モデルの実行ブロック（issue #191 レビュー対応: extractService と同型の欠落）。
+  // pilotView.ts には実行ボタンの disabled 表示がまだ無いため、ここが唯一のガードになる
+  describe('画像非対応モデルの実行ブロック', () => {
+    test('画像入力（no_text_layer）文書 + 実測 unsupported モデルは run を開始せず runError を出す', async () => {
+      const store = makeStore({
+        documents: [makeDocument({ documentId: 'doc-1', textStatus: 'no_text_layer' })],
+        fields: [makeField()],
+        pilot: { selectedStudyIds: ['study-doc-1'], model: 'qwen/qwen3-235b-a22b-2507' },
+      });
+      await runPilot(store, makeDeps());
+      expect(store.getState().pilot.runError).toContain('qwen/qwen3-235b-a22b-2507');
+      expect(store.getState().pilot.runError).toContain('画像入力');
+      expect(store.getState().pilot.running).toBe(false);
+      expect(runExtractionMock).not.toHaveBeenCalled();
+    });
+
+    test('画像入力文書が無ければ unsupported モデルでもブロックしない', async () => {
+      const store = makeStore({
+        documents: [makeDocument({ documentId: 'doc-1' })],
+        fields: [makeField()],
+        pilot: { selectedStudyIds: ['study-doc-1'], model: 'qwen/qwen3-235b-a22b-2507' },
+      });
+      runExtractionMock.mockResolvedValue(makeOutcome());
+      await runPilot(store, makeDeps());
+      expect(runExtractionMock).toHaveBeenCalledTimes(1);
+    });
+
+    test('unknown（カタログ外）モデルはブロックしない', async () => {
+      const store = makeStore({
+        documents: [makeDocument({ documentId: 'doc-1', textStatus: 'no_text_layer' })],
+        fields: [makeField()],
+        pilot: { selectedStudyIds: ['study-doc-1'], model: 'mystery-model' },
+      });
+      runExtractionMock.mockResolvedValue(makeOutcome());
+      await runPilot(store, makeDeps());
+      expect(runExtractionMock).toHaveBeenCalledTimes(1);
+    });
+  });
+
   test('サブセット選択時は絞った fields + 選択 field_ids を runExtraction へ渡す。埋め込み検証 UI の runFields は絞り込まない（issue #80）', async () => {
     const fields = [makeField({ fieldId: 'f-1' }), makeField({ fieldId: 'f-2' })];
     const store = makeStore({
