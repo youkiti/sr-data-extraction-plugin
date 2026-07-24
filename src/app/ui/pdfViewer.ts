@@ -123,9 +123,16 @@ export function createPdfViewer(options: PdfViewerOptions): PdfViewerHandle {
   // キーボード操作でスクロールできなくなる。#/adjudicate のセル一覧が短くなる構成で顕在化した）
   // role='group' は aria-label を許容する（role なしの div では axe: aria-prohibited-attr に
   // なる）。focusable なスクロール領域に表示名を与えつつ landmark ノイズを避ける最小構成
+  // data-preserve-scroll: ストア再描画の detach → reattach でスクロールが先頭へ戻らない
+  // ようにする（bootstrap の購読ハンドラが退避・復元する。issue #192）
   const scroller = el('div', {
     className: 'pdf-viewer__scroller',
-    attributes: { role: 'group', tabindex: '0', 'aria-label': t('pdf.viewerAria') },
+    attributes: {
+      role: 'group',
+      tabindex: '0',
+      'aria-label': t('pdf.viewerAria'),
+      'data-preserve-scroll': '',
+    },
   }, [errorEl, pageWrap]);
   const root = el('div', { className: 'pdf-viewer' }, [
     el('div', { className: 'pdf-viewer__toolbar' }, [

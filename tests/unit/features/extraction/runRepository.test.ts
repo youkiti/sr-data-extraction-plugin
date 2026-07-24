@@ -868,7 +868,7 @@ describe('readRunRows の後方互換（field_ids / warnings 列。issue #80 / #
     ];
     const metas = await readCompletedRunMetas('sheet-1', readDeps([[...LEGACY_RUN_HEADER], legacyRow]));
     expect(metas).toEqual([
-      { runId: 'run-1', schemaVersion: 1, startedAt: 't1', fieldIds: null, warnings: null },
+      { runId: 'run-1', schemaVersion: 1, startedAt: 't1', studyIds: ['doc-1'], fieldIds: null, warnings: null },
     ]);
   });
 
@@ -892,7 +892,14 @@ describe('readRunRows の後方互換（field_ids / warnings 列。issue #80 / #
     ];
     const metas = await readCompletedRunMetas('sheet-1', readDeps([[...FIELD_IDS_RUN_HEADER], row15]));
     expect(metas).toEqual([
-      { runId: 'run-1', schemaVersion: 1, startedAt: 't1', fieldIds: ['f-1'], warnings: null },
+      {
+        runId: 'run-1',
+        schemaVersion: 1,
+        startedAt: 't1',
+        studyIds: ['doc-1'],
+        fieldIds: ['f-1'],
+        warnings: null,
+      },
     ]);
   });
 
@@ -1070,8 +1077,17 @@ describe('readCompletedRunMetas（issue #80: field 単位合成ビューの素�
     ];
     const metas = await readCompletedRunMetas('sheet-1', readDeps([[...SHEET_HEADERS.ExtractionRuns], nullRunId]));
     expect(metas).toEqual([
-      { runId: '', schemaVersion: 1, startedAt: 't1', fieldIds: null, warnings: null },
+      { runId: '', schemaVersion: 1, startedAt: 't1', studyIds: ['doc-1'], fieldIds: null, warnings: null },
     ]);
+  });
+
+  test('study_ids 列（4 列目）をカンマ分解する。空セルは空配列（AI 抽出結果なし study 検出の素材）', async () => {
+    const values = [
+      [...SHEET_HEADERS.ExtractionRuns],
+      row({ runId: 'r1' }), // row ヘルパは 4 列目 = 'doc-1' 固定
+    ];
+    const metas = await readCompletedRunMetas('sheet-1', readDeps(values));
+    expect(metas[0]).toMatchObject({ runId: 'r1', studyIds: ['doc-1'] });
   });
 });
 

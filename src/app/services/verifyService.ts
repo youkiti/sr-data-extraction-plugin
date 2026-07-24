@@ -18,6 +18,7 @@ import { readStudies } from '../../features/documents/studyRepository';
 import { buildStudySelection } from '../../features/documents/studySelection';
 import { readEvidenceRows } from '../../features/extraction/evidenceRepository';
 import {
+  pickLatestCompletedRunByStudy,
   readCompletedRunMetas,
   type CompletedRunMeta,
 } from '../../features/extraction/runRepository';
@@ -257,6 +258,17 @@ export interface VerifyTargetMaterial {
   armStructure: ConfirmedArmStructure | null;
 }
 
+/** readVerifyTargetMaterials の戻り値（検証対象素材一式 + ダッシュボードの AI 精度算入判定用 run 情報） */
+export interface VerifyTargetMaterialsResult {
+  materials: VerifyTargetMaterial[];
+  /**
+   * run_id → started_at（完了 run のみ。started_at 未記録の旧プロトコル行は null）。
+   * dashboard.ts の isAiAccuracyEligible がセル単位の AI 精度算入判定に使う（PR #190 レビュー対応）。
+   * 独立入力モードは常に空 map（下記 readIndependentVerifyTargetMaterials 呼び出し側参照）
+   */
+  runStartedAt: Map<string, string | null>;
+}
+
 /**
  * 独立入力モード（reviewer_independent）の検証対象素材（design §5.1）。
  * Evidence / ExtractionRuns を一切読まず、Studies（アクティブ study 全件）× 最新確定
@@ -300,6 +312,9 @@ async function readIndependentVerifyTargetMaterials(
         progress: verificationProgress(fields, [], ownDecisions, { armStructure }),
         // 独立入力モードは AI 抽出の情報を一切見せない（issue #106 の警告も出さない）
         armWarnings: [],
+        // 独立入力モードは AI 抽出の有無・実施状況を一切見せない盲検レビューのため、
+        // no_result バナー（AI 抽出結果なし）も出さず常に 'extracted' 固定にする
+        aiExtractionStatus: 'extracted',
       },
       ownDecisions,
       armStructure,
@@ -309,21 +324,25 @@ async function readIndependentVerifyTargetMaterials(
 }
 
 /**
- * Evidence がある study の検証素材一式を読み込む（S8 一覧と S9 ダッシュボードの共通素材）。
+ * Evidence がある study、および「完了 run の対象だったが AI 抽出が全滅して Evidence が
+ * 1 行も生成されなかった study（= AI 抽出結果なし）」の検証素材一式を読み込む
+ * （S8 一覧と S9 ダッシュボードの共通素材）。
  * 進捗の分母・分子はセルモデル（features/verification/progress.ts）で数える。
  * study 内の文書は role 固定順 → 取り込み順で並べ、Evidence は全文書ぶんを渡す。
  *
  * 独立入力モード（role='reviewer_independent'）は Evidence 非依存の別経路
- * （readIndependentVerifyTargetMaterials）へ委譲する（design §5.1）
+ * （readIndependentVerifyTargetMaterials）へ委譲する（design §5.1）。ダッシュボードは
+ * owner 専用のため、独立入力モードの runStartedAt は空 map で構わない（実害なし）
  */
 export async function readVerifyTargetMaterials(
   store: Store,
   deps: VerificationDeps,
   spreadsheetId: string,
-): Promise<VerifyTargetMaterial[]> {
+): Promise<VerifyTargetMaterialsResult> {
   const role = store.getState().role.role ?? 'owner';
   if (role === 'reviewer_independent') {
-    return readIndependentVerifyTargetMaterials(store, deps, spreadsheetId);
+    const materials = await readIndependentVerifyTargetMaterials(store, deps, spreadsheetId);
+    return { materials, runStartedAt: new Map() };
   }
   const documents = await resolveDocuments(store, deps, spreadsheetId);
   const studies = await resolveStudies(store, deps, spreadsheetId);
@@ -336,20 +355,25 @@ export async function readVerifyTargetMaterials(
   // field_id 単位で「表示する run」を選び Evidence を合成する（issue #80。サブセット run が
   // 最新でも、対象外の field は過去 run の Evidence が透けて見え続ける）
   const byStudy = composeEvidenceByStudy(allEvidence, completedRuns);
+  // study_id ごとの「その study を含む最新の完了 run」（S7 バッジ注記と同じ関数・同じ並び規約を
+  // 再利用する。CompletedRunMeta は CompletedRunStudySummary のスーパーセットのためそのまま渡せる）。
+  // Evidence が 1 行も無い study が「そもそも完了 run の対象外（未抽出）」なのか「対象だったが
+  // 全滅（AI 抽出結果なし）」なのかを見分けるために使う
+  const latestCompletedRunByStudy = pickLatestCompletedRunByStudy(completedRuns);
   const fieldsByVersion = new Map<number, SchemaField[]>();
   const materials: VerifyTargetMaterial[] = [];
   // アクティブ study を作成順で。配下文書は role 固定順 → 取り込み順（buildStudySelection）
   for (const item of buildStudySelection(studies, documents)) {
     const entry = byStudy.get(item.study.studyId);
-    if (entry === undefined) {
-      continue; // Evidence なし（孤児 Evidence のみ含む）= 未抽出の study は一覧に出さない
+    // entry が無い（Evidence が 1 行も無い。孤児 Evidence のみ含む場合を含む）study のうち、
+    // 完了 run の対象に一度も含まれていないものは、従来どおり「未抽出」として一覧から除外する。
+    // 除外が確定するこの時点より前に decisions / armStructure の filter を走らせない
+    // （study 数・Decisions 行数が多い実プロジェクトで、除外される study ぶんの無駄な計算を防ぐ）
+    const latestRun = entry === undefined ? latestCompletedRunByStudy.get(item.study.studyId) : undefined;
+    if (entry === undefined && latestRun === undefined) {
+      continue;
     }
-    const schemaVersion = entry.schemaVersion;
-    let fields = fieldsByVersion.get(schemaVersion);
-    if (fields === undefined) {
-      fields = await getSchemaFieldsByVersion(spreadsheetId, schemaVersion, deps.google);
-      fieldsByVersion.set(schemaVersion, fields);
-    }
+
     const ownDecisions = allDecisions.filter(
       (decision) => decision.studyId === item.study.studyId && decision.annotator === annotator,
     );
@@ -357,22 +381,69 @@ export async function readVerifyTargetMaterials(
       allArmRows.filter((row) => row.studyId === item.study.studyId),
       annotator,
     );
+
+    // entry の有無から表示に使う値だけを決める。fields の解決と materials.push は
+    // 下の 1 箇所にまとめる（将来 aiExtractionStatus に 'partial' 等を足すときも 1 箇所で済む）。
+    // entry === undefined のときは、完了 run の対象だったのに Evidence が 1 行も生成されなかった
+    // = AI 抽出結果なし（latestRun は上の guard により必ず解決済み）
+    const schemaVersion = entry !== undefined ? entry.schemaVersion : (latestRun as CompletedRunMeta).schemaVersion;
+    const evidence = entry?.evidence ?? [];
+    // 直近 run の arm completeness 警告（issue #106。S8 バナーの素材）。no_result には無い
+    const armWarnings = entry?.armWarnings ?? [];
+    const aiExtractionStatus: VerifyTarget['aiExtractionStatus'] =
+      entry !== undefined ? 'extracted' : 'no_result';
+
+    let fields = fieldsByVersion.get(schemaVersion);
+    if (fields === undefined) {
+      fields = await getSchemaFieldsByVersion(spreadsheetId, schemaVersion, deps.google);
+      fieldsByVersion.set(schemaVersion, fields);
+    }
     materials.push({
       target: {
         study: item.study,
         documents: item.documents,
-        evidence: entry.evidence,
+        evidence,
         fields,
         schemaVersion,
-        progress: verificationProgress(fields, entry.evidence, ownDecisions, { armStructure }),
-        // 直近 run の arm completeness 警告（issue #106。S8 バナーの素材）
-        armWarnings: entry.armWarnings,
+        progress: verificationProgress(fields, evidence, ownDecisions, { armStructure }),
+        armWarnings,
+        aiExtractionStatus,
       },
       ownDecisions,
       armStructure,
     });
   }
-  return materials;
+  // Sheets の GET を追加せず、既読の completedRuns から run_id → started_at map を作るだけ
+  // （dashboard.ts のセル単位 AI 精度判定に使う。PR #190 レビュー対応）
+  const runStartedAt = new Map(completedRuns.map((meta) => [meta.runId, meta.startedAt]));
+  return { materials, runStartedAt };
+}
+
+/**
+ * verify スライスの読込済みキャッシュを無効化する（抽出完了処理から呼ぶ。PR #190 のレビュー対応）。
+ * PR #190 で #/verify の入場ガードを「確定スキーマ ≥ 1 かつ document ≥ 1」へ緩和した結果、
+ * 抽出前に #/verify を開くと `targets: []` がキャッシュされ、その後 #/pilot・#/extract で抽出しても
+ * `loadVerifyTargets`（`targets !== null` で早期 return）が再読込しないまま残ってしまう
+ * （再入場してもページ再読み込みまで空一覧が残る）。抽出完了のたびにキャッシュを破棄し、
+ * 次回 #/verify 入場時の既存の読込経路（force なしの自然な再読込）に委ねる。
+ * `loading` / `queuedDecisions` / `layoutMode` / `deepLinkEntityKey` は抽出の成否と無関係なので
+ * 触らない（queuedDecisions はオフラインキュー件数、layoutMode は設定由来のため）
+ */
+export function invalidateVerifyTargets(store: Store): void {
+  // 表示中 PDF を解放してから状態を破棄する（pdfjs のメモリ解放。openVerifyStudy と同じ流儀）。
+  // 抽出完了処理を PDF 解放の完了で足止めしないよう fire-and-forget にする
+  void store.getState().verify.verification?.disposePdf?.();
+  patchVerify(store, {
+    targets: null,
+    selectedStudyId: null,
+    verification: null,
+    verifyError: null,
+    loadError: null,
+    studyValues: null,
+    studyRowUpdatedAt: null,
+    resultsRowUpdatedAt: {},
+    conflictMessage: null,
+  });
 }
 
 /** 検証対象一覧を読み込む（S8 の初期表示） */
@@ -391,7 +462,7 @@ export async function loadVerifyTargets(
   }
   patchVerify(store, { loading: true, loadError: null });
   try {
-    const materials = await readVerifyTargetMaterials(store, deps, project.spreadsheetId);
+    const { materials } = await readVerifyTargetMaterials(store, deps, project.spreadsheetId);
     patchVerify(store, { loading: false, targets: materials.map((material) => material.target) });
   } catch (err) {
     patchVerify(store, { loading: false, loadError: toMessage(err) });

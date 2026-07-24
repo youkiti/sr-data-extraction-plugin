@@ -1,5 +1,6 @@
 import {
   composeEvidenceByStudy,
+  invalidateVerifyTargets,
   latestRunEvidenceByStudy,
   loadVerifyTargets,
   openVerifyStudy,
@@ -74,6 +75,9 @@ jest.mock('../../../../src/features/extraction/evidenceRepository', () => ({
   readEvidenceRows: jest.fn(),
 }));
 jest.mock('../../../../src/features/extraction/runRepository', () => ({
+  // pickLatestCompletedRunByStudy は純粋関数（ソート規約）のため実物を使う
+  // （readVerifyTargetMaterials が S7 バッジ注記と同じ関数を再利用しているため。brief 要件）
+  ...jest.requireActual('../../../../src/features/extraction/runRepository'),
   readCompletedRunMetas: jest.fn(),
 }));
 jest.mock('../../../../src/features/schema/schemaRepository', () => ({
@@ -230,6 +234,7 @@ function makeCompletedRunMeta(overrides: Partial<CompletedRunMeta> = {}): Comple
     runId: 'run-1',
     schemaVersion: 1,
     startedAt: 't0',
+    studyIds: ['study-doc-1'],
     fieldIds: null,
     warnings: null,
     ...overrides,
@@ -316,6 +321,7 @@ function makeTarget(overrides: Partial<VerifyTarget> = {}): VerifyTarget {
     schemaVersion: 1,
     progress: { decided: 0, total: 1, byTab: [] },
     armWarnings: [],
+    aiExtractionStatus: 'extracted',
     ...overrides,
   };
 }
@@ -732,6 +738,152 @@ describe('loadVerifyTargets', () => {
   });
 });
 
+describe('invalidateVerifyTargets', () => {
+  test('読込済みキャッシュをリセットし、表示中 PDF を解放する（PR #190: 抽出完了時に呼ぶ）', () => {
+    const disposePdf = jest.fn().mockResolvedValue(undefined);
+    const store = makeStore({
+      verify: {
+        targets: [],
+        selectedStudyId: 'study-doc-1',
+        verification: { disposePdf } as unknown as VerificationData,
+        verifyError: '前回のエラー',
+        loadError: '前回の読込エラー',
+        studyValues: { field: '1' },
+        studyRowUpdatedAt: 't1',
+        resultsRowUpdatedAt: { 'entity:field': 't2' },
+        conflictMessage: '競合しています',
+        // 触らないはずの項目（PR #190 の指示どおり据え置きを確認する）
+        loading: true,
+        queuedDecisions: 3,
+        layoutMode: 'list',
+      },
+    });
+    invalidateVerifyTargets(store);
+    const { verify } = store.getState();
+    expect(disposePdf).toHaveBeenCalledTimes(1);
+    expect(verify.targets).toBeNull();
+    expect(verify.selectedStudyId).toBeNull();
+    expect(verify.verification).toBeNull();
+    expect(verify.verifyError).toBeNull();
+    expect(verify.loadError).toBeNull();
+    expect(verify.studyValues).toBeNull();
+    expect(verify.studyRowUpdatedAt).toBeNull();
+    expect(verify.resultsRowUpdatedAt).toEqual({});
+    expect(verify.conflictMessage).toBeNull();
+    // loading / queuedDecisions / layoutMode は触らない
+    expect(verify.loading).toBe(true);
+    expect(verify.queuedDecisions).toBe(3);
+    expect(verify.layoutMode).toBe('list');
+  });
+
+  test('表示中の検証データが無い（verification: null）ときも disposePdf を呼ばず安全に無効化する', () => {
+    const store = makeStore({ verify: { targets: [] } });
+    expect(() => invalidateVerifyTargets(store)).not.toThrow();
+    expect(store.getState().verify.targets).toBeNull();
+  });
+});
+
+describe('readVerifyTargetMaterials: AI 抽出結果なしの study（no_result）', () => {
+  test('完了 run の対象だが Evidence が 1 行も無い study は一覧に出て aiExtractionStatus が no_result になる', async () => {
+    const store = makeStore({ documents: [makeDocument()] });
+    readEvidenceRowsMock.mockResolvedValue([]); // 抽出は完了したが Evidence が 0 行（応答の途中打ち切り・空応答等の全滅）
+    readCompletedRunMetasMock.mockResolvedValue([makeCompletedRunMeta({ studyIds: ['study-doc-1'] })]);
+    const { materials } = await readVerifyTargetMaterials(store, makeDeps(), 'sheet-1');
+    expect(materials).toHaveLength(1);
+    expect(materials[0]?.target).toMatchObject({
+      aiExtractionStatus: 'no_result',
+      evidence: [],
+      armWarnings: [],
+      schemaVersion: 1,
+    });
+    // 群構成・進捗（study レベル項目は入力可）は通常の study と同じ組み立て方
+    expect(materials[0]?.target.progress).toEqual({
+      decided: 0,
+      total: 1,
+      byTab: [{ tab: 'study', decided: 0, total: 1 }],
+    });
+  });
+
+  test('Evidence がある study は従来どおり aiExtractionStatus が extracted になる（既存挙動の回帰確認）', async () => {
+    const store = makeStore({ documents: [makeDocument()] });
+    // beforeEach の既定どおり Evidence あり
+    const { materials } = await readVerifyTargetMaterials(store, makeDeps(), 'sheet-1');
+    expect(materials[0]?.target.aiExtractionStatus).toBe('extracted');
+  });
+
+  test('running 行のみ（中断）で完了行がない run しか含まない study は一覧に出ない（既存規約の維持）', async () => {
+    const store = makeStore({ documents: [makeDocument()] });
+    readEvidenceRowsMock.mockResolvedValue([]);
+    // readCompletedRunMetas は completed 行のみを返す実装のため、running 行しかない run は
+    // ここに 1 件も現れない（= 中断 run の study はこの経路では検出しようがなく、従来どおり除外）
+    readCompletedRunMetasMock.mockResolvedValue([]);
+    const { materials } = await readVerifyTargetMaterials(store, makeDeps(), 'sheet-1');
+    expect(materials).toHaveLength(0);
+  });
+
+  test('同一 study が複数の完了 run に含まれるとき、schemaVersion は最新 run のものになる（started_at 同値はシート行順。pickLatestCompletedRunByStudy を再利用）', async () => {
+    const store = makeStore({ documents: [makeDocument()] });
+    readEvidenceRowsMock.mockResolvedValue([]);
+    readCompletedRunMetasMock.mockResolvedValue([
+      makeCompletedRunMeta({ runId: 'run-old', schemaVersion: 1, startedAt: null, studyIds: ['study-doc-1'] }),
+      makeCompletedRunMeta({ runId: 'run-new', schemaVersion: 2, startedAt: null, studyIds: ['study-doc-1'] }),
+    ]);
+    const { materials } = await readVerifyTargetMaterials(store, makeDeps(), 'sheet-1');
+    expect(materials[0]?.target.schemaVersion).toBe(2);
+    expect(getSchemaFieldsMock).toHaveBeenCalledWith('sheet-1', 2, expect.anything());
+  });
+
+  test('study_ids が空の完了 run（他用途）が混在しても壊れない', async () => {
+    const store = makeStore({ documents: [makeDocument()] });
+    readEvidenceRowsMock.mockResolvedValue([]);
+    readCompletedRunMetasMock.mockResolvedValue([
+      makeCompletedRunMeta({ runId: 'run-empty', studyIds: [] }),
+      makeCompletedRunMeta({ runId: 'run-1', studyIds: ['study-doc-1'] }),
+    ]);
+    const { materials } = await readVerifyTargetMaterials(store, makeDeps(), 'sheet-1');
+    expect(materials).toHaveLength(1);
+    expect(materials[0]?.target.aiExtractionStatus).toBe('no_result');
+  });
+
+  test('全 study が no_result（Evidence 0 行）のときも一覧を組める', async () => {
+    const store = makeStore({
+      documents: [makeDocument(), makeDocument({ documentId: 'doc-2' })],
+    });
+    readEvidenceRowsMock.mockResolvedValue([]);
+    readCompletedRunMetasMock.mockResolvedValue([
+      makeCompletedRunMeta({ studyIds: ['study-doc-1', 'study-doc-2'] }),
+    ]);
+    const { materials } = await readVerifyTargetMaterials(store, makeDeps(), 'sheet-1');
+    expect(materials).toHaveLength(2);
+    expect(materials.every((material) => material.target.aiExtractionStatus === 'no_result')).toBe(true);
+  });
+});
+
+describe('readVerifyTargetMaterials: runStartedAt（dashboard.ts のセル単位 AI 精度算入判定の素材。PR #190 レビュー対応）', () => {
+  test('完了 run の run_id → started_at を map で返す（Sheets の追加 GET はしない。既読の completedRuns から作るだけ）', async () => {
+    const store = makeStore({ documents: [makeDocument()] });
+    // readCompletedRunMetas は raw シート行の空文字を emptyToNull で null 変換済みの
+    // CompletedRunMeta（startedAt: string | null）を返す契約（runRepository.ts）。
+    // verifyService はその値をそのまま map 化するだけで、ここで再変換はしない
+    readCompletedRunMetasMock.mockResolvedValue([
+      makeCompletedRunMeta({ runId: 'run-1', startedAt: 't1' }),
+      makeCompletedRunMeta({ runId: 'run-2', startedAt: null }), // 旧プロトコルで未記録の run
+    ]);
+    const { runStartedAt } = await readVerifyTargetMaterials(store, makeDeps(), 'sheet-1');
+    // completedRuns の読み出し自体は 1 回のみ（S8 一覧の素材読込と共用。追加の GET はしない）
+    expect(readCompletedRunMetasMock).toHaveBeenCalledTimes(1);
+    expect(runStartedAt.get('run-1')).toBe('t1');
+    expect(runStartedAt.get('run-2')).toBeNull();
+  });
+
+  test('独立入力モード（reviewer_independent）は空 map（ダッシュボード非対象のため実害なし）', async () => {
+    const store = makeStore({ documents: [makeDocument()], role: 'reviewer_independent' });
+    listSchemaVersionsMock.mockResolvedValue([makeSchemaVersion()]);
+    const { runStartedAt } = await readVerifyTargetMaterials(store, makeDeps(), 'sheet-1');
+    expect(runStartedAt.size).toBe(0);
+  });
+});
+
 describe('readVerifyTargetMaterials: 独立入力モード（reviewer_independent。design §5.1）', () => {
   test('Evidence / ExtractionRuns を読まず、Studies × 最新確定スキーマから対象一覧を組む', async () => {
     const store = makeStore({ documents: [makeDocument()], role: 'reviewer_independent' });
@@ -739,7 +891,7 @@ describe('readVerifyTargetMaterials: 独立入力モード（reviewer_independen
       makeSchemaVersion({ schemaVersion: 2 }),
       makeSchemaVersion({ schemaVersion: 1 }),
     ]);
-    const materials = await readVerifyTargetMaterials(store, makeDeps(), 'sheet-1');
+    const { materials } = await readVerifyTargetMaterials(store, makeDeps(), 'sheet-1');
     expect(readEvidenceRowsMock).not.toHaveBeenCalled();
     expect(readCompletedRunMetasMock).not.toHaveBeenCalled();
     // 最新版（先頭行）で解決する
@@ -748,12 +900,15 @@ describe('readVerifyTargetMaterials: 独立入力モード（reviewer_independen
     expect(materials[0]?.target.evidence).toEqual([]);
     expect(materials[0]?.target.schemaVersion).toBe(2);
     expect(materials[0]?.target.study.studyId).toBe('study-doc-1');
+    // 独立入力モードは AI 抽出の実施状況を一切見せない盲検レビューのため常に 'extracted' 固定
+    // （evidence が空でも no_result バナーは出さない）
+    expect(materials[0]?.target.aiExtractionStatus).toBe('extracted');
   });
 
   test('確定済みスキーマが 1 つも無ければ空配列（画面側が空状態メッセージを出す）', async () => {
     const store = makeStore({ documents: [makeDocument()], role: 'reviewer_independent' });
     listSchemaVersionsMock.mockResolvedValue([]);
-    const materials = await readVerifyTargetMaterials(store, makeDeps(), 'sheet-1');
+    const { materials } = await readVerifyTargetMaterials(store, makeDeps(), 'sheet-1');
     expect(materials).toEqual([]);
     expect(getSchemaFieldsMock).not.toHaveBeenCalled();
   });
@@ -761,7 +916,7 @@ describe('readVerifyTargetMaterials: 独立入力モード（reviewer_independen
   test('アクティブ study が 0 件（Studies 未参照）なら空配列', async () => {
     const store = makeStore({ documents: [], role: 'reviewer_independent' });
     listSchemaVersionsMock.mockResolvedValue([makeSchemaVersion()]);
-    const materials = await readVerifyTargetMaterials(store, makeDeps(), 'sheet-1');
+    const { materials } = await readVerifyTargetMaterials(store, makeDeps(), 'sheet-1');
     expect(materials).toEqual([]);
   });
 
@@ -792,7 +947,7 @@ describe('readVerifyTargetMaterials: 独立入力モード（reviewer_independen
         note: null,
       },
     ]);
-    const materials = await readVerifyTargetMaterials(store, makeDeps(), 'sheet-1');
+    const { materials } = await readVerifyTargetMaterials(store, makeDeps(), 'sheet-1');
     expect(materials[0]?.target.progress).toEqual({
       decided: 1,
       total: 1,
@@ -816,7 +971,7 @@ describe('readVerifyTargetMaterials: 独立入力モード（reviewer_independen
     listSchemaVersionsMock.mockResolvedValue([makeSchemaVersion()]);
     getCurrentUserEmailMock.mockResolvedValue(null);
     readAllDecisionsMock.mockResolvedValue([makeDecision()]); // ME の判定は数えない
-    const materials = await readVerifyTargetMaterials(store, makeDeps(), 'sheet-1');
+    const { materials } = await readVerifyTargetMaterials(store, makeDeps(), 'sheet-1');
     expect(materials[0]?.target.progress).toEqual({
       decided: 0,
       total: 1,

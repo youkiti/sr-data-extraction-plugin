@@ -598,7 +598,11 @@ export function createVerificationPanel(
   });
 
   const viewerBody = el('div', { className: 'verify__pdf-body' });
-  const textViewerBody = el('div', { className: 'verify__text-body' }, [textViewer.root]);
+  // data-preserve-scroll: 右ペインと同じ枠でスクロール位置を退避・復元する（issue #192）
+  const textViewerBody = el('div', {
+    className: 'verify__text-body',
+    attributes: { 'data-preserve-scroll': '' },
+  }, [textViewer.root]);
   const leftChildren: HTMLElement[] = [];
   if (docTabsBar !== null) {
     leftChildren.push(docTabsBar);
@@ -871,7 +875,12 @@ export function createVerificationPanel(
   }
 
   // --- 右ペイン（フォーム） -----------------------------------------------
-  const formPane = el('div', { className: 'verify__pane verify__pane--form' });
+  // data-preserve-scroll: ストア再描画の detach → reattach でスクロールが先頭へ戻らない
+  // ようにする（bootstrap の購読ハンドラが退避・復元する。issue #192）
+  const formPane = el('div', {
+    className: 'verify__pane verify__pane--form',
+    attributes: { 'data-preserve-scroll': '' },
+  });
 
   const root = el('div', { className: 'verify' }, [
     el('div', { className: 'verify__panes' }, [leftPane, formPane]),
