@@ -33,6 +33,7 @@ import type { TiabImportPlan } from '../features/documents/tiabReview';
 import type { DashboardData } from '../features/verification/dashboard';
 import type { LoadedPdfView } from '../features/verification/pdfViewCache';
 import type { PresetDialogState } from '../features/schema/presets/prespecDialog';
+import type { RedraftDiff, RedraftSelection } from '../features/schema/redraftDiff';
 import type { SchemaEditorRow } from '../features/schema/types';
 import type { FieldValidationError } from '../features/schema/validateField';
 import type { VerificationProgress } from '../features/verification/progress';
@@ -218,6 +219,15 @@ export interface ProtocolState {
   draftText: string;
 }
 
+/**
+ * AI 再ドラフトの差分承認画面の素材（issue #197）。
+ * diff = buildRedraftDiff の結果、selection = チェック状態（既定は defaultRedraftSelection）
+ */
+export interface RedraftReviewState {
+  diff: RedraftDiff;
+  selection: RedraftSelection;
+}
+
 /** #/schema（S5）の画面状態 */
 export interface SchemaState {
   /** SchemaVersions タブの全版（降順）。null = 未読込 */
@@ -241,6 +251,12 @@ export interface SchemaState {
   confirming: boolean;
   /** RoB プリセット事前設定ダイアログ（issue #103。ui-states.md §3）。null = 非表示 */
   presetDialog: PresetDialogState | null;
+  /**
+   * AI 再ドラフトの差分承認画面（issue #197）。null = 非表示。
+   * 現行版があるときの再ドラフト結果はエディタへ直行せずここへ入り、
+   * ユーザーが追加 / 変更 / 削除を承認してからエディタへ流し込む
+   */
+  redraft: RedraftReviewState | null;
 }
 
 /** #/pilot（S6）の画面状態。run の結果と埋め込み検証 UI の素材はタブのセッション内で保持する */
@@ -736,6 +752,7 @@ export function createInitialState(): AppState {
       editorOrigin: 'user_edit',
       confirming: false,
       presetDialog: null,
+      redraft: null,
     },
     pilot: {
       selectedStudyIds: [],

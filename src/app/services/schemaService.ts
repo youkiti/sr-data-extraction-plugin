@@ -19,6 +19,12 @@ import {
   type DraftSchemaSamplePaper,
 } from '../../features/schema/skills/draftSchema';
 import {
+  applyRedraftDiff,
+  buildRedraftDiff,
+  defaultRedraftSelection,
+  isRedraftSelectionPristine,
+} from '../../features/schema/redraftDiff';
+import {
   getSchemaFieldsByVersion,
   listSchemaVersions,
 } from '../../features/schema/schemaRepository';
@@ -311,13 +317,32 @@ export async function runDraftSchema(store: Store, deps: SchemaServiceDeps): Pro
       { responseFormat: 'json', responseSchema: DRAFT_SCHEMA_RESPONSE_SCHEMA },
     );
     const rows = parseDraftSchemaResponse(response.text);
-    patchSchema(store, {
-      drafting: false,
-      editorRows: rows,
-      editorErrors: [],
-      editorOrigin: 'ai_draft',
-    });
-    showToast(t('schema.toastDrafted', { n: rows.length }));
+    // 現行版の有無で分岐する（issue #197）: 0 版（初回ドラフト）は従来どおりエディタへ直行、
+    // 1 件以上あるときはエディタへ直行せず差分承認画面（redraft）を経由させる
+    // （既存項目がユーザーの明示的承認なしに消えないようにするため）
+    const currentFields = store.getState().schema.currentFields;
+    if (currentFields === null || currentFields.length === 0) {
+      patchSchema(store, {
+        drafting: false,
+        editorRows: rows,
+        editorErrors: [],
+        editorOrigin: 'ai_draft',
+      });
+      showToast(t('schema.toastDrafted', { n: rows.length }));
+    } else {
+      const diff = buildRedraftDiff(currentFields, rows);
+      patchSchema(store, {
+        drafting: false,
+        redraft: { diff, selection: defaultRedraftSelection(diff) },
+      });
+      showToast(
+        t('schema.toastRedrafted', {
+          added: diff.added.length,
+          changed: diff.changed.length,
+          removed: diff.removed.length,
+        }),
+      );
+    }
   } catch (err) {
     patchSchema(store, { drafting: false, draftError: toMessage(err) });
   } finally {
@@ -550,9 +575,62 @@ export function startEditorFromCurrent(store: Store): void {
   });
 }
 
-/** エディタを閉じる（下書きは破棄。開いたままの事前設定ダイアログも閉じる） */
+/** エディタを閉じる（下書きは破棄。開いたままの事前設定ダイアログ・差分承認も閉じる） */
 export function cancelEditor(store: Store): void {
-  patchSchema(store, { editorRows: null, editorErrors: [], draftError: null, presetDialog: null });
+  patchSchema(store, {
+    editorRows: null,
+    editorErrors: [],
+    draftError: null,
+    presetDialog: null,
+    redraft: null,
+  });
+}
+
+/**
+ * 差分承認画面: チェックボックスの切替（issue #197）。
+ * redraft が null（非表示中）は no-op
+ */
+export function toggleRedraftSelection(
+  store: Store,
+  kind: 'added' | 'changed' | 'removed',
+  fieldName: string,
+  selected: boolean,
+): void {
+  const { redraft } = store.getState().schema;
+  if (redraft === null) {
+    return;
+  }
+  patchSchema(store, {
+    redraft: {
+      ...redraft,
+      selection: { ...redraft.selection, [kind]: { ...redraft.selection[kind], [fieldName]: selected } },
+    },
+  });
+}
+
+/**
+ * 差分承認画面: 「この内容でエディタへ反映」（issue #197）。
+ * redraft が null（非表示中）は no-op。選択が既定のまま（isRedraftSelectionPristine）なら
+ * created_by_type は ai_draft、1 つでも変更していれば user_edit として確定時に扱う
+ * （applyEditorOrigin は confirmSchema がそのまま editorOrigin を使う）
+ */
+export function applyRedraft(store: Store): void {
+  const { redraft } = store.getState().schema;
+  if (redraft === null) {
+    return;
+  }
+  const rows = applyRedraftDiff(redraft.diff, redraft.selection);
+  patchSchema(store, {
+    editorRows: rows,
+    editorErrors: validateEditorRows(rows),
+    editorOrigin: isRedraftSelectionPristine(redraft.diff, redraft.selection) ? 'ai_draft' : 'user_edit',
+    redraft: null,
+  });
+}
+
+/** 差分承認画面: 「破棄して戻る」（エディタは開かず確定済み画面へ戻る。issue #197） */
+export function cancelRedraft(store: Store): void {
+  patchSchema(store, { redraft: null });
 }
 
 /**
@@ -588,6 +666,11 @@ export async function confirmSchema(
         spreadsheetId: project.spreadsheetId,
         rows,
         parentVersion: state.schema.versions?.[0]?.schemaVersion ?? null,
+        // 確定時は常に「その時点の最新プロトコル版」を刻む（親版の protocolVersion を
+        // 継承しない。issue #197 でユーザーが確定した方針）。継承すると
+        // SchemaVersions.protocol_version が単調でなくなり、監査で「どのプロトコルの下で
+        // 確定された版か」が読めなくなるため。現行版が古いプロトコルに基づく状態は
+        // 確定済み画面の陳腐化バナー（#schema-stale-protocol）で通知し、再ドラフトへ誘導する
         protocolVersion: protocol.version,
         createdByType: state.schema.editorOrigin,
         createdBy,

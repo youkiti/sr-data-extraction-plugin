@@ -425,9 +425,32 @@ export const ja = {
   'schema.currentMeta':
     '現行版: v{version}（{createdByType} / Protocol v{protocolVersion} 依拠 / {createdAt} / {createdBy}）',
   'schema.currentNote': '改訂理由: {note}',
+  'schema.staleProtocol':
+    'この表のデザインは Protocol v{schemaProtocolVersion} に基づいています(現行のプロトコルは v{latestProtocolVersion})。プロトコル改訂を反映するには、AI に再ドラフトさせて差分を確認してください。',
   'schema.newVersion': '新しい版を作る(現行版から編集)',
   'schema.historyTitle': '版履歴',
   'schema.historyDerived': ' / v{parent} から派生',
+  'schema.redraftTitle': '新しいプロトコルで AI に再ドラフトさせる',
+  'schema.redraftLead':
+    '最新のプロトコルとサンプル論文をもとに AI が表のデザインを作り直し、現行版との差分を提示します。既存の項目は、あなたが承認しない限り消えません。',
+  'schema.redraftReviewTitle': '再ドラフトの差分を確認',
+  'schema.redraftSummary':
+    '追加 {added} 件 / 変更 {changed} 件 / 削除候補 {removed} 件 / 変更なし {unchanged} 件 / 保持 {protectedCount} 件',
+  'schema.redraftAddedTitle': '追加',
+  'schema.redraftAddedEmpty': '追加はありません',
+  'schema.redraftChangedTitle': '変更',
+  'schema.redraftRemovedTitle': '削除候補',
+  'schema.redraftRemovedEmpty': '削除候補はありません',
+  'schema.redraftRemovedNote':
+    'チェックした項目だけが削除されます。AI が提案しなかっただけの項目を、確認せずに消さないでください。',
+  'schema.redraftUnchangedCount': '変更なし: {count} 件',
+  'schema.redraftChangeLine': '{label}: {before} → {after}',
+  'schema.redraftItemSummary': '{fieldLabel}（{fieldName}） / {entityLevel} / {dataType}',
+  'schema.redraftItemHeading': '{fieldLabel}（{fieldName}）',
+  'schema.redraftProtectedNote':
+    'リスク・オブ・バイアス評価のテンプレート項目({count} 件)は AI の提案対象外のため、そのまま維持されます。',
+  'schema.redraftApply': 'この内容でエディタへ反映',
+  'schema.redraftCancel': '破棄して戻る',
 
   // S3〜S7 で使う document_role の短縮ラベル（S6 / S7 の配下文書リスト用）
   'documents.roleAbstractShort': '抄録',
@@ -947,6 +970,8 @@ export const ja = {
   'schema.errSamples': 'サンプル論文を 1〜3 本選択してください',
   'schema.toastDrafted':
     'AI が {n} 項目をドラフトしました。内容を確認して版として確定してください',
+  'schema.toastRedrafted':
+    'AI が再ドラフトしました（追加 {added} 件 / 変更 {changed} 件 / 削除候補 {removed} 件）。差分を確認してください',
   'schema.errNoRows': '表のデザイン項目が 1 件もありません',
   'schema.toastConfirmed': '表のデザイン v{version} を確定しました（{n} 項目）',
   'protocol.toastSaved': 'プロトコル v{version} を保存しました',
