@@ -293,6 +293,11 @@ export async function seedState(win: Window): Promise<AppState> {
   if (storedProject) {
     state.currentProject = storedProject;
   }
+  // 保存済み LLM 接続方式（AppState.llmProviderOverride）を起動時に 1 回だけ読み込む
+  // （issue #191 レビュー対応。接続方式は Options でしか変わらないため起動時 1 回で足りる。
+  // 実行直前の authoritative な判定は各サービスが毎回 resolveProviderConfig で行う）
+  const connectionSettings = await loadLlmConnectionSettings();
+  state.llmProviderOverride = connectionSettings.provider;
   const preloaded = win.__E2E_PRELOADED_STATE__;
   if (preloaded) {
     // ロールは通常メインビュー起動時に Sheets を読んで解決する（roleService.loadRole）。
