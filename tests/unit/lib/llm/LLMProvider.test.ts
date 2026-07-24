@@ -28,6 +28,13 @@ describe('LlmProviderError', () => {
     expect(new LlmProviderError('boom', 'gemini', 429, 'x').retryAfterMs).toBeNull();
     expect(new LlmProviderError('boom', 'gemini', 429, 'x', 5000).retryAfterMs).toBe(5000);
   });
+
+  test('failureKind は既定 null（後方互換）、指定すれば保持する', () => {
+    expect(new LlmProviderError('boom', 'gemini', 429, 'x').failureKind).toBeNull();
+    expect(
+      new LlmProviderError('boom', 'openrouter', 504, 'x', null, true, 'timeout').failureKind,
+    ).toBe('timeout');
+  });
 });
 
 describe('chatContentToText', () => {

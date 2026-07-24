@@ -272,6 +272,39 @@ test('未実行: 未抽出の既定選択 + 抽出済みバッジ + 中断バナ
   expect(results.violations).toEqual([]);
 });
 
+test('画像非対応モデルの実行ブロック: 実行ボタン disabled + 警告 → 対応モデルへ切替で解除', async ({ page }) => {
+  // no_text_layer の study のみを対象にする（画像入力〔pdf_native〕が必要な文献）
+  await page.route('https://sheets.googleapis.com/**', async (route) => {
+    await route.fulfill({ json: { values: [] } });
+  });
+
+  await initApp(page, {
+    documents: [DOC_NO_TEXT],
+    extract: {
+      selectionInitialized: true,
+      selectedStudyIds: ['study-3'],
+      model: '',
+      extractedStudyIds: [],
+    },
+  });
+
+  // 画像非対応と実測済みのモデル（qwen3-235b。lib/llm/pricing.ts の MODEL_IMAGE_CAPABILITY）を
+  // 選ぶと実行ボタンが disabled になり、警告が表示される
+  await page.locator('#extract-model').selectOption('qwen/qwen3-235b-a22b-2507');
+  await expect(page.locator('#extract-image-unsupported-warning')).toContainText(
+    '画像入力（スキャン PDF 等）に対応していないことが判明しています',
+  );
+  await expect(page.locator('#extract-run')).toBeDisabled();
+
+  // 画像対応モデル（Gemini 系）へ切り替えるとブロックが解除される
+  await page.locator('#extract-model').selectOption('gemini-3.5-flash');
+  await expect(page.locator('#extract-image-unsupported-warning')).toHaveCount(0);
+  await expect(page.locator('#extract-run')).toBeEnabled();
+
+  const results = await new AxeBuilder({ page }).analyze();
+  expect(results.violations).toEqual([]);
+});
+
 test('実行確認 → 一部失敗 → 再試行成功 → 完了（ExtractionRuns / Evidence 追記）', async ({ page }) => {
   const appendUrls: string[] = [];
   let geminiFailsForDoc2 = true;

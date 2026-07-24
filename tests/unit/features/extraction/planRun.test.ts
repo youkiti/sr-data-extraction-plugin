@@ -717,6 +717,48 @@ describe('planRun の高精度読み取りモード（issue #176・input_mode = 
   });
 });
 
+describe('planRun の画像対応不明モデルの警告（B: 画像非対応モデルの実行ブロック）', () => {
+  it('画像入力を含むバッチで画像対応が unknown（カタログ外）のモデルなら警告を 1 件足す', () => {
+    const plan = planRun({
+      documents: [
+        makeDocument({ documentId: 'd1', textStatus: 'no_text_layer', textRef: null, pageCount: 3 }),
+      ],
+      fields: [STUDY_FIELD],
+      model: 'mystery-model',
+    });
+    expect(plan.warnings).toContain(
+      'モデル「mystery-model」が画像入力に対応しているか分かっていません（カタログ外）。テキスト層のない文献や高精度読み取りモードの画像が正しく読めない可能性があります',
+    );
+  });
+
+  it('modelSelected: false（モデル未選択の代入値）なら unknown 警告を出さない', () => {
+    // extractView.ts の renderEstimate はモデル未選択時に model: 'unknown' という文字列を
+    // 代入して呼ぶ経路があるため、その代入値を「画像対応が不明なモデル」と誤検出しないことを確認する
+    const plan = planRun({
+      documents: [
+        makeDocument({ documentId: 'd1', textStatus: 'no_text_layer', textRef: null, pageCount: 3 }),
+      ],
+      fields: [STUDY_FIELD],
+      model: 'unknown',
+      modelSelected: false,
+    });
+    expect(plan.warnings).not.toContain(
+      'モデル「unknown」が画像入力に対応しているか分かっていません（カタログ外）。テキスト層のない文献や高精度読み取りモードの画像が正しく読めない可能性があります',
+    );
+  });
+
+  it('画像入力が無ければ unknown モデルでも警告を出さない（単価表の警告とは独立）', () => {
+    const plan = planRun({
+      documents: [makeDocument({ documentId: 'd1' })],
+      fields: [STUDY_FIELD],
+      model: 'mystery-model',
+    });
+    expect(plan.warnings).toEqual([
+      'モデル「mystery-model」は単価表に無いためコストを概算できません',
+    ]);
+  });
+});
+
 describe('既定トークン予算', () => {
   it('入力 200,000 / 出力 8,000 トークンを既定とする', () => {
     expect(DEFAULT_RUN_TOKEN_BUDGET).toEqual({

@@ -555,7 +555,7 @@ describe('bootstrapOptions（LLM 接続先。Issue #27）', () => {
   test('OpenAI 互換 API の構造化出力接続テストに成功する', async () => {
     globalThis.fetch = jest.fn().mockResolvedValue({
       ok: true,
-      json: async () => ({ choices: [{ message: { content: '{"ok":true}' } }] }),
+      text: async () => JSON.stringify({ choices: [{ message: { content: '{"ok":true}' } }] }),
     }) as unknown as typeof fetch;
     await bootstrapOptions(document);
     provider().value = 'openai_compatible';
@@ -573,7 +573,7 @@ describe('bootstrapOptions（LLM 接続先。Issue #27）', () => {
   test('接続テストの権限拒否、非準拠応答、JSON エラーを表示する', async () => {
     globalThis.fetch = jest.fn().mockResolvedValue({
       ok: true,
-      json: async () => ({ choices: [{ message: { content: '{"ok":false}' } }] }),
+      text: async () => JSON.stringify({ choices: [{ message: { content: '{"ok":false}' } }] }),
     }) as unknown as typeof fetch;
     await bootstrapOptions(document);
     provider().value = 'openai_compatible';
@@ -592,7 +592,7 @@ describe('bootstrapOptions（LLM 接続先。Issue #27）', () => {
 
     (globalThis.fetch as jest.Mock).mockResolvedValueOnce({
       ok: true,
-      json: async () => ({ choices: [{ message: { content: 'not-json' } }] }),
+      text: async () => JSON.stringify({ choices: [{ message: { content: 'not-json' } }] }),
     });
     testConnection().click();
     await flush();

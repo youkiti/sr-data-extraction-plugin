@@ -5,6 +5,7 @@ import { OpenAICompatibleProvider } from '../../../../src/lib/llm/OpenAICompatib
 import { OpenRouterProvider } from '../../../../src/lib/llm/OpenRouterProvider';
 import {
   createProvider,
+  isRunBlockedByImageUnsupportedModel,
   providerSupportsImageInput,
   resolveEffectiveHighAccuracyImages,
   resolveProviderConfig,
@@ -174,6 +175,79 @@ describe('resolveEffectiveHighAccuracyImages（issue #176）', () => {
 
   test('チェック済み + モデル選択済みは選択中プロバイダの対応可否で判定する（現行は全プロバイダ対応 = true）', () => {
     expect(resolveEffectiveHighAccuracyImages('gemini-2.5-pro', true)).toBe(true);
-    expect(resolveEffectiveHighAccuracyImages('qwen/qwen3-235b-a22b-2507', true)).toBe(true);
+  });
+
+  test('モデル単位で既知の非対応（unsupported）と判明していれば false（画像非対応モデルの実行ブロック）', () => {
+    // qwen3-235b は OpenRouter 経由で画像入力 404 を実測済み（lib/llm/pricing.ts の
+    // MODEL_IMAGE_CAPABILITY）。プロバイダ（openrouter）自体は対応扱いでも効かせない
+    expect(resolveEffectiveHighAccuracyImages('qwen/qwen3-235b-a22b-2507', true)).toBe(false);
+    expect(resolveEffectiveHighAccuracyImages('deepseek/deepseek-v4-flash', true)).toBe(false);
+  });
+
+  test('カタログ外（unknown）のモデルは実測が無いため requested をそのまま尊重する', () => {
+    expect(resolveEffectiveHighAccuracyImages('mystery/model', true)).toBe(true);
+  });
+
+  // 接続方式 override（issue #191 レビュー対応）: 保存済み接続方式をモデル名推定より優先する
+  describe('providerOverride（保存済み接続方式）', () => {
+    test('openai_compatible override で送る qwen モデルは unknown 扱いになりブロックしない（モデル名推定の openrouter だと unsupported になる既知モデル）', () => {
+      expect(
+        resolveEffectiveHighAccuracyImages('qwen/qwen3-235b-a22b-2507', true, 'openai_compatible'),
+      ).toBe(true);
+    });
+
+    test('override 未指定（null）は従来どおりモデル名推定に従う', () => {
+      expect(resolveEffectiveHighAccuracyImages('qwen/qwen3-235b-a22b-2507', true, null)).toBe(false);
+    });
+
+    test('override が実測 provider と一致すれば従来どおり unsupported を尊重する', () => {
+      expect(
+        resolveEffectiveHighAccuracyImages('qwen/qwen3-235b-a22b-2507', true, 'openrouter'),
+      ).toBe(false);
+    });
+  });
+});
+
+describe('isRunBlockedByImageUnsupportedModel（画像非対応モデルの実行ブロック）', () => {
+  test('画像入力が必要な文書が無ければブロックしない', () => {
+    expect(isRunBlockedByImageUnsupportedModel('qwen/qwen3-235b-a22b-2507', false)).toBe(false);
+  });
+
+  test('モデル未選択（空文字）はブロックしない（モデル未選択チェックに委ねる）', () => {
+    expect(isRunBlockedByImageUnsupportedModel('', true)).toBe(false);
+  });
+
+  test('画像入力が必要な文書があり、モデルが既知の unsupported ならブロックする', () => {
+    expect(isRunBlockedByImageUnsupportedModel('qwen/qwen3-235b-a22b-2507', true)).toBe(true);
+    expect(isRunBlockedByImageUnsupportedModel('deepseek/deepseek-v4-flash', true)).toBe(true);
+  });
+
+  test('画像入力が必要な文書があっても supported モデルならブロックしない', () => {
+    expect(isRunBlockedByImageUnsupportedModel('gemini-2.5-pro', true)).toBe(false);
+  });
+
+  test('画像入力が必要な文書があっても unknown（カタログ外）モデルはブロックしない（過検出を避ける）', () => {
+    expect(isRunBlockedByImageUnsupportedModel('mystery/model', true)).toBe(false);
+  });
+
+  // 接続方式 override（issue #191 レビュー対応）: PR レビューで確定した不具合の再現ケース。
+  // openai_compatible 接続で qwen モデルを送っている実際の運用では、モデル名推定（openrouter）
+  // 由来の unsupported 判定を誤って適用してはいけない
+  describe('providerOverride（保存済み接続方式）', () => {
+    test('openai_compatible override で qwen モデルはブロックしない（unknown 扱い）', () => {
+      expect(
+        isRunBlockedByImageUnsupportedModel('qwen/qwen3-235b-a22b-2507', true, 'openai_compatible'),
+      ).toBe(false);
+    });
+
+    test('override 未指定（null）は従来どおりモデル名推定（openrouter）でブロックする', () => {
+      expect(isRunBlockedByImageUnsupportedModel('qwen/qwen3-235b-a22b-2507', true, null)).toBe(true);
+    });
+
+    test('override が実測 provider（openrouter）と一致すれば従来どおりブロックする', () => {
+      expect(
+        isRunBlockedByImageUnsupportedModel('qwen/qwen3-235b-a22b-2507', true, 'openrouter'),
+      ).toBe(true);
+    });
   });
 });

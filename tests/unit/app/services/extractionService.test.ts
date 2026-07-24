@@ -344,7 +344,7 @@ describe('runExtraction', () => {
     });
     expect(outcome.run.status).toBe('partial_failure');
     expect(outcome.result.batchFailures).toEqual([
-      { studyId: 'study-1', section: null, reason: 'load_failed', detail: 'drive down' },
+      { studyId: 'study-1', section: null, reason: 'load_failed', detail: 'drive down', failureKind: null },
     ]);
     expect(outcome.run.provider).toBe('gemini');
     expect(outcome.run.runId).toMatch(/^[0-9a-f]{8}-/); // 既定 UUID 発番

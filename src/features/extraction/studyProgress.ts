@@ -2,6 +2,7 @@
 // executeRun の進捗はバッチ単位（RunProgress。1 バッチ = 1 study）のため、計画時のバッチ数と
 // 突き合わせて「待機中 / 実行中 / 完了 / 失敗」の 1 study = 1 行へ畳み込む。
 // 失敗は最初のバッチ失敗を採用し、以後のバッチが成功しても上書きしない（partial_failure の根拠を残す）
+import type { LlmFailureKind } from '../../lib/llm/LLMProvider';
 import type { BatchFailure, RunProgress } from './executeRun';
 import type { PlannedBatch } from './planRun';
 
@@ -17,6 +18,12 @@ export interface ExtractStudyRow {
   totalBatches: number;
   /** failed のときの内訳（reason + detail）。それ以外は null */
   detail: string | null;
+  /**
+   * failed のときの失敗種別コード（S7 の失敗行ヒント表示の素材）。
+   * 翻訳済み文字列ではなくコードを持たせる（言語切替に追従させるため、翻訳は View 側で行う）。
+   * 種別が不明・failed 以外は null
+   */
+  failureKind: LlmFailureKind | null;
 }
 
 export interface StudyProgressTracker {
@@ -53,7 +60,7 @@ export function createStudyProgressTracker(
     }
   }
   const completed = new Map<string, number>();
-  const statuses = new Map<string, Pick<ExtractStudyRow, 'status' | 'detail'>>();
+  const statuses = new Map<string, Pick<ExtractStudyRow, 'status' | 'detail' | 'failureKind'>>();
   for (const studyId of studyIds) {
     statuses.set(
       studyId,
@@ -61,8 +68,9 @@ export function createStudyProgressTracker(
         ? {
             status: 'failed',
             detail: '抽出計画から除外されました（テキスト層のある文書がありません）',
+            failureKind: null,
           }
-        : { status: 'queued', detail: null },
+        : { status: 'queued', detail: null, failureKind: null },
     );
   }
 
@@ -71,7 +79,7 @@ export function createStudyProgressTracker(
       studyIds.map((studyId) => ({
         studyId,
         // 追跡対象の status / 総バッチ数はコンストラクタで必ずセット済み
-        ...(statuses.get(studyId) as Pick<ExtractStudyRow, 'status' | 'detail'>),
+        ...(statuses.get(studyId) as Pick<ExtractStudyRow, 'status' | 'detail' | 'failureKind'>),
         completedBatches: completed.get(studyId) ?? 0,
         totalBatches: totals.get(studyId) as number,
       })),
@@ -89,6 +97,8 @@ export function createStudyProgressTracker(
         statuses.set(progress.studyId, {
           status: 'failed',
           detail: describeBatchFailure(progress.failure),
+          // BatchFailure.failureKind は必須 + `| null`（不明時は null）のためそのまま使える
+          failureKind: progress.failure.failureKind,
         });
         return;
       }
@@ -96,6 +106,7 @@ export function createStudyProgressTracker(
         // 追跡対象の総バッチ数はコンストラクタで必ずセット済み
         status: done >= (totals.get(progress.studyId) as number) ? 'done' : 'running',
         detail: null,
+        failureKind: null,
       });
     },
   };

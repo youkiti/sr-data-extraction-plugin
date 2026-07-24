@@ -8,6 +8,9 @@ import {
 } from './LLMProvider';
 import { normalizeOpenAiCompatibleEndpoint } from '../storage/settingsStore';
 
+/** エラー詳細（responseBody）に載せる応答ボディ抜粋の最大長（OpenRouterProvider と同じ方針） */
+const ERROR_BODY_EXCERPT_CHARS = 1_000;
+
 export interface OpenAICompatibleProviderOptions {
   apiKey: string;
   model: string;
@@ -82,13 +85,7 @@ export class OpenAICompatibleProvider implements LLMProvider {
         if (mode !== undefined) {
           this.structuredOutputMode = mode;
         }
-        const json = (await res.json()) as OpenAICompatibleResponse;
-        return {
-          text: json.choices?.[0]?.message?.content ?? '',
-          tokensIn: json.usage?.prompt_tokens ?? null,
-          tokensOut: json.usage?.completion_tokens ?? null,
-          raw: json,
-        };
+        return this.parseSuccessResponse(res);
       }
       const text = await res.text().catch(() => '');
       const error = new LlmProviderError(
@@ -108,6 +105,62 @@ export class OpenAICompatibleProvider implements LLMProvider {
       }
       mode = nextMode;
     }
+  }
+
+  /**
+   * res.ok（HTTP 2xx）応答の検査（issue #187 の OpenRouterProvider と同じ方針を踏襲。
+   * それまでは `json.choices?.[0]?.message?.content ?? ''` で握りつぶしていたため、
+   * length 打ち切りが下流で空応答 = `format_error` に化けていた）。
+   * 失敗種別（LlmFailureKind）の判定順: ボディ切断（malformed）を最優先で判定し、
+   * 次に finish_reason の length / content_filter を見る。content が空でも finish_reason が
+   * 上記に当てはまらなければ理由不明のまま null にする（構造化出力の互換性リトライ〔上位の
+   * for ループ〕は HTTP ステータスだけで判定するため、ここでの応答内容検査とは独立に働く）
+   */
+  private async parseSuccessResponse(res: Response): Promise<ChatResponse> {
+    const bodyText = await res.text();
+    let json: OpenAICompatibleResponse;
+    try {
+      json = JSON.parse(bodyText) as OpenAICompatibleResponse;
+    } catch {
+      throw new LlmProviderError(
+        'OpenAI 互換応答ボディが JSON として読めません（応答が途中で切断された可能性）',
+        this.providerId,
+        res.status,
+        bodyText.slice(-ERROR_BODY_EXCERPT_CHARS),
+        null,
+        true,
+        'malformed',
+      );
+    }
+    const choice = json.choices?.[0];
+    const finishReason = choice?.finish_reason;
+    const content = choice?.message?.content;
+    if (finishReason === 'length' || finishReason === 'content_filter') {
+      const reasonLabel = finishReason === 'length' ? '出力トークン上限' : 'コンテンツフィルタ';
+      throw new LlmProviderError(
+        `OpenAI 互換応答が${reasonLabel}で打ち切られました（finish_reason=${finishReason}）`,
+        this.providerId,
+        res.status,
+        JSON.stringify({ finish_reason: finishReason }),
+        null,
+        false,
+        finishReason === 'length' ? 'output_limit' : 'content_filter',
+      );
+    }
+    if (content === undefined || content === null || content === '') {
+      throw new LlmProviderError(
+        `OpenAI 互換応答に本文（content）がありません（finish_reason=${finishReason ?? '不明'}）`,
+        this.providerId,
+        res.status,
+        JSON.stringify({ finish_reason: finishReason ?? null }),
+      );
+    }
+    return {
+      text: content,
+      tokensIn: json.usage?.prompt_tokens ?? null,
+      tokensOut: json.usage?.completion_tokens ?? null,
+      raw: json,
+    };
   }
 
   private buildRequestBody(

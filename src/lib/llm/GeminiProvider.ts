@@ -14,6 +14,7 @@ import {
   type ChatResponse,
   type JsonSchema,
   type LLMProvider,
+  type LlmFailureKind,
 } from './LLMProvider';
 import { parseRetryAfterMs } from './retry';
 
@@ -57,6 +58,34 @@ const FINISH_REASON_LABELS: Record<string, string> = {
   OTHER: 'その他の理由',
 };
 
+/**
+ * finishReason → 失敗種別（実データ抽出の失敗ヒント）。
+ * MAX_TOKENS は出力トークン上限の打ち切り、SAFETY / PROHIBITED_CONTENT / BLOCKLIST は
+ * コンテンツフィルタ系の打ち切りとして扱う。表に無い finishReason（RECITATION / OTHER / 未知の値）
+ * は理由不明のまま null にする（憶測で分類しない）
+ */
+const FINISH_REASON_FAILURE_KIND: Readonly<Record<string, LlmFailureKind>> = {
+  MAX_TOKENS: 'output_limit',
+  SAFETY: 'content_filter',
+  PROHIBITED_CONTENT: 'content_filter',
+  BLOCKLIST: 'content_filter',
+};
+
+/**
+ * `promptFeedback.blockReason` → 失敗種別（実データ抽出の失敗ヒント）。
+ * プロンプト自体がブロックされた応答（candidates が空 / finishReason undefined）は
+ * FINISH_REASON_FAILURE_KIND を経由せず本文なしエラーへ落ちるため、そちらとは別に判定する。
+ * SAFETY / PROHIBITED_CONTENT / BLOCKLIST / IMAGE_SAFETY はコンテンツフィルタ系のブロックとして
+ * 扱う。表に無い blockReason（未知の値）・blockReason 無しは理由不明のまま null にする
+ * （憶測で分類しない）
+ */
+const BLOCK_REASON_FAILURE_KIND: Readonly<Record<string, LlmFailureKind>> = {
+  SAFETY: 'content_filter',
+  PROHIBITED_CONTENT: 'content_filter',
+  BLOCKLIST: 'content_filter',
+  IMAGE_SAFETY: 'content_filter',
+};
+
 export class GeminiProvider implements LLMProvider {
   readonly providerId = 'gemini' as const;
   readonly model: string;
@@ -94,7 +123,10 @@ export class GeminiProvider implements LLMProvider {
     }
     // 応答ボディの検査（issue #187）: OpenRouterProvider と同じ方針で、ボディの途切れ・
     // finishReason による打ち切り（MAX_TOKENS / SAFETY / RECITATION 等）・空テキストを
-    // 裸の SyntaxError や空文字のまま通さず、原因付きの LlmProviderError にする
+    // 裸の SyntaxError や空文字のまま通さず、原因付きの LlmProviderError にする。
+    // 失敗種別（LlmFailureKind）の判定順: ボディ切断（malformed）を最優先で判定し、
+    // 次に具体的な finishReason（FINISH_REASON_FAILURE_KIND に載る既知の値）を見る。
+    // 表に無い finishReason（RECITATION 等）は理由不明のまま null にする
     const bodyText = await res.text();
     let json: GeminiResponse;
     try {
@@ -107,6 +139,7 @@ export class GeminiProvider implements LLMProvider {
         bodyText.slice(-ERROR_BODY_EXCERPT_CHARS),
         null,
         true,
+        'malformed',
       );
     }
     const finishReason = json.candidates?.[0]?.finishReason;
@@ -121,19 +154,26 @@ export class GeminiProvider implements LLMProvider {
         this.providerId,
         res.status,
         diagnostics,
+        null,
+        false,
+        FINISH_REASON_FAILURE_KIND[finishReason] ?? null,
       );
     }
     const text = extractText(json);
     if (text === '') {
+      // プロンプト自体がブロックされた場合（candidates 空 / finishReason undefined）は
+      // blockReason から failureKind を判別する（issue #191 レビュー対応。それ以外は理由不明の null）
+      const blockReason = json.promptFeedback?.blockReason;
       throw new LlmProviderError(
         `Gemini 応答に本文がありません（finishReason=${finishReason ?? '不明'}${
-          json.promptFeedback?.blockReason !== undefined
-            ? `, blockReason=${json.promptFeedback.blockReason}`
-            : ''
+          blockReason !== undefined ? `, blockReason=${blockReason}` : ''
         }）`,
         this.providerId,
         res.status,
         diagnostics,
+        null,
+        false,
+        blockReason !== undefined ? (BLOCK_REASON_FAILURE_KIND[blockReason] ?? null) : null,
       );
     }
     return {

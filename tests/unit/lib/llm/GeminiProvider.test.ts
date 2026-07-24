@@ -241,7 +241,87 @@ describe('GeminiProvider.chat', () => {
         expect(e.message).toContain('JSON として読めません');
         expect(e.retryable).toBe(true);
         expect(e.status).toBe(200);
+        expect(e.failureKind).toBe('malformed');
       }
+    });
+  });
+
+  // 失敗種別（LlmFailureKind）の分類（実データ抽出の失敗ヒント）
+  describe('失敗種別（LlmFailureKind）の分類', () => {
+    test('finishReason=MAX_TOKENS は output_limit', async () => {
+      const fetch = jest.fn().mockResolvedValue(
+        jsonResponse({
+          candidates: [{ content: { parts: [{ text: '[{"trunca' }] }, finishReason: 'MAX_TOKENS' }],
+        }),
+      );
+      const provider = new GeminiProvider({ apiKey: 'k', fetch });
+      await expect(provider.chat([{ role: 'user', content: 'q' }])).rejects.toMatchObject({
+        failureKind: 'output_limit',
+      });
+    });
+
+    test.each(['SAFETY', 'PROHIBITED_CONTENT', 'BLOCKLIST'])(
+      'finishReason=%s は content_filter',
+      async (finishReason) => {
+        const fetch = jest.fn().mockResolvedValue(
+          jsonResponse({ candidates: [{ content: { parts: [] }, finishReason }] }),
+        );
+        const provider = new GeminiProvider({ apiKey: 'k', fetch });
+        await expect(provider.chat([{ role: 'user', content: 'q' }])).rejects.toMatchObject({
+          failureKind: 'content_filter',
+        });
+      },
+    );
+
+    test('finishReason=RECITATION（表に無い値）は理由不明のまま failureKind が null', async () => {
+      const fetch = jest.fn().mockResolvedValue(
+        jsonResponse({ candidates: [{ content: { parts: [] }, finishReason: 'RECITATION' }] }),
+      );
+      const provider = new GeminiProvider({ apiKey: 'k', fetch });
+      await expect(provider.chat([{ role: 'user', content: 'q' }])).rejects.toMatchObject({
+        failureKind: null,
+      });
+    });
+
+    test('candidates が無い（空応答）は failureKind が null', async () => {
+      const fetch = jest.fn().mockResolvedValue(jsonResponse({}));
+      const provider = new GeminiProvider({ apiKey: 'k', fetch });
+      await expect(provider.chat([{ role: 'user', content: 'q' }])).rejects.toMatchObject({
+        failureKind: null,
+      });
+    });
+
+    // プロンプト自体がブロックされた場合（candidates 空 / finishReason undefined）の
+    // blockReason 判定（issue #191 レビュー対応）
+    test.each(['SAFETY', 'PROHIBITED_CONTENT', 'BLOCKLIST', 'IMAGE_SAFETY'])(
+      'candidates 空 + promptFeedback.blockReason=%s は content_filter',
+      async (blockReason) => {
+        const fetch = jest
+          .fn()
+          .mockResolvedValue(jsonResponse({ promptFeedback: { blockReason } }));
+        const provider = new GeminiProvider({ apiKey: 'k', fetch });
+        await expect(provider.chat([{ role: 'user', content: 'q' }])).rejects.toMatchObject({
+          failureKind: 'content_filter',
+        });
+      },
+    );
+
+    test('blockReason 無しの空本文は failureKind が null のまま（回帰確認）', async () => {
+      const fetch = jest.fn().mockResolvedValue(jsonResponse({}));
+      const provider = new GeminiProvider({ apiKey: 'k', fetch });
+      await expect(provider.chat([{ role: 'user', content: 'q' }])).rejects.toMatchObject({
+        failureKind: null,
+      });
+    });
+
+    test('未知の blockReason は理由不明のまま failureKind が null', async () => {
+      const fetch = jest
+        .fn()
+        .mockResolvedValue(jsonResponse({ promptFeedback: { blockReason: 'OTHER' } }));
+      const provider = new GeminiProvider({ apiKey: 'k', fetch });
+      await expect(provider.chat([{ role: 'user', content: 'q' }])).rejects.toMatchObject({
+        failureKind: null,
+      });
     });
   });
 

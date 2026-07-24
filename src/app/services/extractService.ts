@@ -39,6 +39,7 @@ import { ensureChildFolder } from '../../lib/google/drive';
 import type { GoogleApiDeps } from '../../lib/google/types';
 import { missingApiKeyMessage } from '../../lib/llm/modelCatalog';
 import {
+  isRunBlockedByImageUnsupportedModel,
   resolveEffectiveHighAccuracyImages,
   resolveProviderConfig,
   type ProviderConfig,
@@ -320,6 +321,22 @@ export async function requestExtractRun(store: Store, deps: ExtractServiceDeps):
     patchExtract(store, { runError: missingApiKeyMessage(providerResolution.provider) });
     return;
   }
+  // 画像非対応モデルの実行ブロック: extractView.ts の実行ボタン disabled は起動時に読み込んだ
+  // 接続方式スナップショット（state.llmProviderOverride）で判定するが、ここは実際に解決済みの
+  // provider（接続方式 override を反映済み）で二重に確認する（defense in depth）
+  const targets = documentsForStudies(candidates, effectiveStudyIds(candidates, extract.selectedStudyIds));
+  if (
+    isRunBlockedByImageUnsupportedModel(
+      extract.model,
+      targets.some((doc) => doc.textStatus === 'no_text_layer'),
+      providerResolution.provider,
+    )
+  ) {
+    patchExtract(store, {
+      runError: t('extraction.errImageUnsupportedModel', { model: extract.model }),
+    });
+    return;
+  }
   patchExtract(store, { runError: null, confirming: true });
 }
 
@@ -447,6 +464,29 @@ export async function runExtract(store: Store, deps: ExtractServiceDeps): Promis
     });
     return;
   }
+  // 画像非対応モデルの実行ブロック: 確認カードを開いたまま裏でモデルを変更されるケースの
+  // defense in depth（requestExtractRun と同じ判定を、実際に解決済みの provider で再確認する）
+  const candidatesForBlockCheck = buildExtractionCandidates(
+    state.documents.studies ?? [],
+    state.documents.records ?? [],
+  );
+  const targetsForBlockCheck = documentsForStudies(
+    candidatesForBlockCheck,
+    effectiveStudyIds(candidatesForBlockCheck, state.extract.selectedStudyIds),
+  );
+  if (
+    isRunBlockedByImageUnsupportedModel(
+      state.extract.model,
+      targetsForBlockCheck.some((doc) => doc.textStatus === 'no_text_layer'),
+      providerResolution.provider,
+    )
+  ) {
+    patchExtract(store, {
+      confirming: false,
+      runError: t('extraction.errImageUnsupportedModel', { model: state.extract.model }),
+    });
+    return;
+  }
   // 選択サブセットで fields を絞り込む（全選択時は fieldIds: null。issue #80）。
   // performRun 呼び出し前に lastRunFieldIds を確定させる = 成功・失敗にかかわらず
   // 再試行（retryExtractStudy）が同じ選択を引き継げる（A-2）
@@ -459,6 +499,7 @@ export async function runExtract(store: Store, deps: ExtractServiceDeps): Promis
   const highAccuracyImages = resolveEffectiveHighAccuracyImages(
     state.extract.model,
     state.extract.highAccuracyImages,
+    providerResolution.provider,
   );
   patchExtract(store, {
     confirming: false,
@@ -559,10 +600,10 @@ export async function retryExtractStudy(
   // lastRunFieldIds = 直近実行時に実際に使った値を使う）
   const fieldIds = state.extract.lastRunFieldIds;
   const runFields = filterFieldsBySelection(fields, fieldIds);
-  patchExtract(store, { retryingStudyId: studyId, runError: null, lastRunFieldIds: fieldIds });
-  // 再計画前のプレースホルダ（バッチ数はまだ不明 = 0/0。onStudyRows が実数で置き換える）
-  replaceRow({ studyId, status: 'running', completedBatches: 0, totalBatches: 0, detail: null });
   try {
+    // 対象文書の解決（画像非対応モデルの実行ブロック判定にも使うため、running プレースホルダを
+    // 出す前に行う。issue #191 レビュー対応: モデルを画像非対応モデルへ切り替えて再試行すると
+    // 既知の 404 を踏む問題を防ぐ。失敗行の表示〔failureKind・detail〕は変更しないまま返す）
     const records = await resolveDocuments(store, deps.google, project.spreadsheetId);
     const studies = await resolveStudies(store, deps.google, project.spreadsheetId);
     // 除外文書は再試行の対象からも外す（issue #181）
@@ -570,6 +611,28 @@ export async function retryExtractStudy(
     if (targets.length === 0) {
       throw new Error(t('extraction.errStudyDocsNotFound', { id: studyId }));
     }
+    if (
+      isRunBlockedByImageUnsupportedModel(
+        state.extract.model,
+        targets.some((doc) => doc.textStatus === 'no_text_layer'),
+        providerResolution.provider,
+      )
+    ) {
+      patchExtract(store, {
+        runError: t('extraction.errImageUnsupportedModel', { model: state.extract.model }),
+      });
+      return;
+    }
+    patchExtract(store, { retryingStudyId: studyId, runError: null, lastRunFieldIds: fieldIds });
+    // 再計画前のプレースホルダ（バッチ数はまだ不明 = 0/0。onStudyRows が実数で置き換える）
+    replaceRow({
+      studyId,
+      status: 'running',
+      completedBatches: 0,
+      totalBatches: 0,
+      detail: null,
+      failureKind: null,
+    });
     const outcome = await performRun(store, deps, {
       spreadsheetId: project.spreadsheetId,
       driveFolderId: project.driveFolderId,
@@ -613,6 +676,9 @@ export async function retryExtractStudy(
       completedBatches: 0,
       totalBatches: 0,
       detail: toMessage(err),
+      // ここは再計画・文書解決・performRun 呼び出し自体の例外（バッチ単位の LLM 応答検査を
+      // 経由しない）のため、failureKind は判別できない（不明のまま null）
+      failureKind: null,
     });
     patchExtract(store, { retryingStudyId: null, runError: toMessage(err) });
   }

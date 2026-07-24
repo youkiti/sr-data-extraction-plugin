@@ -11,6 +11,7 @@ import { GeminiProvider } from './GeminiProvider';
 import type { LLMProvider } from './LLMProvider';
 import { OpenAICompatibleProvider } from './OpenAICompatibleProvider';
 import { OpenRouterProvider } from './OpenRouterProvider';
+import { resolveModelImageInputSupport } from './pricing';
 
 export interface ProviderConfig {
   /** 省略時は model から自動解決 */
@@ -46,9 +47,12 @@ export function resolveProviderId(modelId: string): LlmProviderId {
  * プロバイダ単位の画像入力対応可否（issue #176: 高精度読み取りモードの UI ガード用）。
  * 各 `LLMProvider` 実装の `supportsImageInput` は provider ごとの静的なフラグ（モデルには依らない）
  * のため、実際にインスタンス化しなくても引ける静的写像として持つ（apiKey 未確定な UI 描画時にも
- * 呼べるようにするため）。**モデル単位の対応可否は分からない**（OpenRouter / OpenAI 互換は
- * モデル依存）: 現状 3 プロバイダとも true だが、非対応モデルを選んだ場合は実行時に
- * LlmProviderError（4xx）として executeRun の `api_error` ハンドリングに落ちる
+ * 呼べるようにするため）。現状 3 プロバイダとも true（OpenRouter / OpenAI 互換は image_url を
+ * パススルーするだけ）。**モデル単位の対応可否**は `resolveModelImageInputSupport`
+ * （lib/llm/pricing.ts の `MODEL_IMAGE_CAPABILITY`）が既知のモデルぶんだけ判定する
+ * （実測 404 の qwen3-235b / deepseek-v4-flash 等。それ以外はカタログ外 = `unknown` のままで、
+ * 非対応モデルを選んだ場合は実行時に LlmProviderError（4xx）として executeRun の
+ * `api_error` ハンドリングに落ちる）
  */
 const PROVIDER_IMAGE_INPUT_SUPPORT: Readonly<Record<LlmProviderId, boolean>> = {
   gemini: true,
@@ -64,16 +68,59 @@ export function providerSupportsImageInput(providerId: LlmProviderId): boolean {
  * 高精度読み取りモード（issue #176）の「実際に効かせてよいか」を 1 か所で判定する。
  * requested（チェックボックスの状態）が true でも、選択中モデルのプロバイダが画像入力に
  * 対応しない（`providerSupportsImageInput` が false）ならモードは効かせない。
+ * さらにモデル単位で既知の非対応（`resolveModelImageInputSupport` が `unsupported` を返す。
+ * 画像非対応モデルの実行ブロック）と判明している場合も効かせない。'unknown'（カタログ外）は
+ * 実測が無いため requested をそのまま尊重する（過検出を避ける）。
  * UI（disabled 表示）・コスト概算（planRun への注入値）・実行（runExtraction への注入値）の
  * 3 箇所すべてがこの関数で判定を揃えることで、「見た目は有効なのに実行時だけ無効化される」
  * 食い違いを防ぐ（model が空文字のときは provider を確定できないため requested をそのまま通す —
- * この場合はどのみち後続のモデル未選択チェックで実行がブロックされる）
+ * この場合はどのみち後続のモデル未選択チェックで実行がブロックされる）。
+ * `providerOverride`（保存済み接続方式。null 可）を渡すとモデル名推定（`resolveProviderId`）より
+ * 優先する（レビュー指摘: openai_compatible 接続で送るモデルを openrouter 前提のカタログ実測と
+ * 混同しないため。省略時 = null は従来どおりモデル名推定にフォールバックする）
  */
-export function resolveEffectiveHighAccuracyImages(model: string, requested: boolean): boolean {
+export function resolveEffectiveHighAccuracyImages(
+  model: string,
+  requested: boolean,
+  providerOverride: LlmProviderId | null = null,
+): boolean {
   if (!requested || model === '') {
     return requested;
   }
-  return providerSupportsImageInput(resolveProviderId(model));
+  const provider = providerOverride ?? resolveProviderId(model);
+  // モデル単位で既知の非対応（画像非対応モデルの実行ブロック）を先に見る。
+  // 現行 3 プロバイダは providerSupportsImageInput が常に true を返すため、この if を
+  // 経由しない残りの経路（下の return）はプロバイダ単位の判定を素通しするだけの
+  // 従来どおりの分岐なし expression に保つ（非対応プロバイダを模擬しないと踏めない分岐を
+  // 増やさないため）
+  if (resolveModelImageInputSupport(provider, model) === 'unsupported') {
+    return false;
+  }
+  return providerSupportsImageInput(provider);
+}
+
+/**
+ * 選択中の対象に画像入力が必要な文書（`textStatus === 'no_text_layer'`）が含まれ、かつ選択中
+ * モデルが画像入力に非対応と判明している（`unsupported`）ときだけ実行をブロックする
+ * （画像非対応モデルの実行ブロック）。'unknown'（カタログに実測が無い）はブロックしない
+ * （過検出で正当な run まで止めないため。実測済みの qwen3-235b / deepseek-v4-flash 等だけが対象）。
+ * `providerOverride`（保存済み接続方式。null 可）を渡すとモデル名推定（`resolveProviderId`）より
+ * 優先する。UI 描画時（起動時に 1 回読み込んだ `state.llmProviderOverride` を渡す）・
+ * サービス層の実行直前（`resolveProviderConfig` の解決結果を渡す。defense in depth）の
+ * どちらもこの引数で同じ判定を共有する。省略時（null）は従来どおりモデル名推定にフォールバックする
+ */
+export function isRunBlockedByImageUnsupportedModel(
+  model: string,
+  hasImageInputDocuments: boolean,
+  providerOverride: LlmProviderId | null = null,
+): boolean {
+  if (!hasImageInputDocuments || model === '') {
+    return false;
+  }
+  return (
+    resolveModelImageInputSupport(providerOverride ?? resolveProviderId(model), model) ===
+    'unsupported'
+  );
 }
 
 export function createProvider(config: ProviderConfig): LLMProvider {

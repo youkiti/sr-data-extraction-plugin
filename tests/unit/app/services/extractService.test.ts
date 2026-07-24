@@ -657,6 +657,47 @@ describe('requestExtractRun / cancelExtractConfirm', () => {
     cancelExtractConfirm(store);
     expect(store.getState().extract.confirming).toBe(false);
   });
+
+  // 画像非対応モデルの実行ブロック（実際に解決済みの provider で判定する defense in depth）
+  describe('画像非対応モデルの実行ブロック', () => {
+    test('画像入力（no_text_layer）文書 + 実測 unsupported モデルはインラインエラーで確認カードを開かない', async () => {
+      const store = makeStore({
+        documents: [makeDocument({ documentId: 'doc-1', textStatus: 'no_text_layer' })],
+        fields: [makeField()],
+        extract: {
+          selectedStudyIds: ['study-doc-1'],
+          model: 'qwen/qwen3-235b-a22b-2507',
+        },
+      });
+      await requestExtractRun(store, makeDeps());
+      expect(store.getState().extract.confirming).toBe(false);
+      expect(store.getState().extract.runError).toContain('qwen/qwen3-235b-a22b-2507');
+      expect(store.getState().extract.runError).toContain('画像入力');
+    });
+
+    test('画像入力文書が無ければ unsupported モデルでもブロックしない', async () => {
+      const store = makeStore({
+        documents: [makeDocument({ documentId: 'doc-1' })],
+        fields: [makeField()],
+        extract: {
+          selectedStudyIds: ['study-doc-1'],
+          model: 'qwen/qwen3-235b-a22b-2507',
+        },
+      });
+      await requestExtractRun(store, makeDeps());
+      expect(store.getState().extract.confirming).toBe(true);
+    });
+
+    test('unknown（カタログ外）モデルはブロックしない', async () => {
+      const store = makeStore({
+        documents: [makeDocument({ documentId: 'doc-1', textStatus: 'no_text_layer' })],
+        fields: [makeField()],
+        extract: { selectedStudyIds: ['study-doc-1'], model: 'mystery-model' },
+      });
+      await requestExtractRun(store, makeDeps());
+      expect(store.getState().extract.confirming).toBe(true);
+    });
+  });
 });
 
 describe('runExtract', () => {
@@ -692,6 +733,26 @@ describe('runExtract', () => {
     await runExtract(store, makeDeps({ loadApiKey: jest.fn().mockResolvedValue(null) }));
     expect(store.getState().extract.confirming).toBe(false);
     expect(store.getState().extract.runError).toContain('Gemini API キーが未設定です');
+    expect(runExtractionMock).not.toHaveBeenCalled();
+  });
+
+  test('画像非対応モデルの実行ブロック（defense in depth）: 確認カードを開いたまま unsupported モデルへ変更されていたら実行しない', async () => {
+    const store = makeStore({
+      documents: [
+        makeDocument({ documentId: 'doc-1', textStatus: 'no_text_layer' }),
+        makeDocument({ documentId: 'doc-2' }),
+      ],
+      fields: [makeField()],
+      extract: {
+        selectedStudyIds: ['study-doc-1'],
+        model: 'qwen/qwen3-235b-a22b-2507',
+        confirming: true,
+        extractedStudyIds: [],
+      },
+    });
+    await runExtract(store, makeDeps());
+    expect(store.getState().extract.confirming).toBe(false);
+    expect(store.getState().extract.runError).toContain('qwen/qwen3-235b-a22b-2507');
     expect(runExtractionMock).not.toHaveBeenCalled();
   });
 
@@ -735,6 +796,7 @@ describe('runExtract', () => {
         completedBatches: 0,
         totalBatches: 1,
         detail: null,
+        failureKind: null,
       },
     ]);
   });
@@ -893,7 +955,13 @@ describe('runExtract', () => {
         completedBatches: 2,
         studyId: 'study-doc-2',
         section: null,
-        failure: { studyId: 'study-doc-2', section: null, reason: 'api_error', detail: '500' },
+        failure: {
+          studyId: 'study-doc-2',
+          section: null,
+          reason: 'api_error',
+          detail: '500',
+          failureKind: null,
+        },
       });
       observedRows = store.getState().extract.studyRows;
       return makeOutcome({ status: 'partial_failure', studyIds: ['study-doc-1', 'study-doc-2'] });
@@ -906,6 +974,7 @@ describe('runExtract', () => {
         completedBatches: 1,
         totalBatches: 1,
         detail: null,
+        failureKind: null,
       },
       {
         studyId: 'study-doc-2',
@@ -913,6 +982,7 @@ describe('runExtract', () => {
         completedBatches: 1,
         totalBatches: 1,
         detail: 'api_error（500）',
+        failureKind: null,
       },
     ]);
     expect(store.getState().extract.progress).toBeNull();
@@ -1042,6 +1112,7 @@ describe('retryExtractStudy', () => {
             completedBatches: 1,
             totalBatches: 1,
             detail: null,
+            failureKind: null,
           },
           {
             studyId: 'study-doc-2',
@@ -1049,6 +1120,7 @@ describe('retryExtractStudy', () => {
             completedBatches: 1,
             totalBatches: 1,
             detail: 'api_error（500）',
+            failureKind: null,
           },
         ],
         rejectedCount: 1,
@@ -1114,6 +1186,7 @@ describe('retryExtractStudy', () => {
         completedBatches: 1,
         totalBatches: 1,
         detail: null,
+        failureKind: null,
       },
       {
         studyId: 'study-doc-2',
@@ -1121,6 +1194,7 @@ describe('retryExtractStudy', () => {
         completedBatches: 1,
         totalBatches: 1,
         detail: null,
+        failureKind: null,
       },
     ]);
     expect(state.extract.extractedStudyIds?.sort()).toEqual(['study-doc-1', 'study-doc-2']);
@@ -1227,6 +1301,86 @@ describe('retryExtractStudy', () => {
     expect(runExtractionMock).not.toHaveBeenCalled();
   });
 
+  // 画像非対応モデルの実行ブロック（issue #191 レビュー対応）: 失敗後にモデルを画像非対応モデルへ
+  // 切り替えて再試行すると既知の 404 を踏む問題への対応
+  describe('画像非対応モデルの実行ブロック', () => {
+    function makeBlockableStore(): Store {
+      return makeStore({
+        documents: [
+          makeDocument({ documentId: 'doc-1' }),
+          makeDocument({ documentId: 'doc-2', textStatus: 'no_text_layer' }),
+        ],
+        fields: [makeField()],
+        extract: {
+          selectedStudyIds: ['study-doc-1', 'study-doc-2'],
+          model: 'qwen/qwen3-235b-a22b-2507',
+          extractedStudyIds: ['study-doc-1'],
+          run: makeRun({ status: 'partial_failure' }),
+          studyRows: [
+            {
+              studyId: 'study-doc-1',
+              status: 'done',
+              completedBatches: 1,
+              totalBatches: 1,
+              detail: null,
+              failureKind: null,
+            },
+            {
+              studyId: 'study-doc-2',
+              status: 'failed',
+              completedBatches: 1,
+              totalBatches: 1,
+              detail: 'api_error（500）',
+              failureKind: null,
+            },
+          ],
+          rejectedCount: 1,
+        },
+      });
+    }
+
+    test('画像入力（no_text_layer）文書 + 実測 unsupported モデルは run を開始せず runError を出す', async () => {
+      const store = makeBlockableStore();
+      await retryExtractStudy(store, makeDeps(), 'study-doc-2');
+      expect(store.getState().extract.runError).toContain('qwen/qwen3-235b-a22b-2507');
+      expect(store.getState().extract.runError).toContain('画像入力');
+      expect(runExtractionMock).not.toHaveBeenCalled();
+    });
+
+    test('ブロック時は retryingStudyId を null のまま保ち、失敗行を running プレースホルダへ書き換えない', async () => {
+      const store = makeBlockableStore();
+      await retryExtractStudy(store, makeDeps(), 'study-doc-2');
+      expect(store.getState().extract.retryingStudyId).toBeNull();
+      // 失敗行の表示（failureKind・detail）を維持したまま返す
+      expect(store.getState().extract.studyRows[1]).toEqual({
+        studyId: 'study-doc-2',
+        status: 'failed',
+        completedBatches: 1,
+        totalBatches: 1,
+        detail: 'api_error（500）',
+        failureKind: null,
+      });
+    });
+
+    test('unknown（カタログ外）モデルはブロックしない', async () => {
+      const store = makeBlockableStore();
+      store.setState({ extract: { ...store.getState().extract, model: 'mystery-model' } });
+      runExtractionMock.mockImplementation(async (params) => {
+        params.onProgress?.({
+          totalBatches: 1,
+          completedBatches: 1,
+          studyId: 'study-doc-2',
+          section: null,
+          failure: null,
+        });
+        return makeOutcome({ studyIds: ['study-doc-2'] });
+      });
+      await retryExtractStudy(store, makeDeps(), 'study-doc-2');
+      expect(runExtractionMock).toHaveBeenCalledTimes(1);
+      expect(store.getState().extract.studyRows[1]).toMatchObject({ status: 'done' });
+    });
+  });
+
   test('study が見つからない・実行例外は対象行を失敗に戻して runError を出す', async () => {
     const missing = makeFailedStore();
     readDocumentsMock.mockResolvedValue([]);
@@ -1248,6 +1402,7 @@ describe('retryExtractStudy', () => {
       completedBatches: 0,
       totalBatches: 0,
       detail: 'boom',
+      failureKind: null,
     });
     expect(failing.getState().extract.retryingStudyId).toBeNull();
   });

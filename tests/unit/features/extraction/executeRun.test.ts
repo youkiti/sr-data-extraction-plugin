@@ -642,7 +642,7 @@ describe('executeRun の partial_failure', () => {
     );
     expect(result.status).toBe('partial_failure');
     expect(result.batchFailures).toEqual([
-      { studyId: 'd1', section: 'methods', reason: 'api_error', detail: 'boom' },
+      { studyId: 'd1', section: 'methods', reason: 'api_error', detail: 'boom', failureKind: null },
     ]);
     expect(result.evidence).toHaveLength(1);
     expect(result.evidence[0]?.fieldId).toBe('f_n');
@@ -657,7 +657,13 @@ describe('executeRun の partial_failure', () => {
         completedBatches: 1,
         studyId: 'd1',
         section: 'methods',
-        failure: { studyId: 'd1', section: 'methods', reason: 'api_error', detail: 'boom' },
+        failure: {
+          studyId: 'd1',
+          section: 'methods',
+          reason: 'api_error',
+          detail: 'boom',
+          failureKind: null,
+        },
       },
       { totalBatches: 2, completedBatches: 2, studyId: 'd1', section: 'population', failure: null },
     ]);
@@ -682,6 +688,7 @@ describe('executeRun の partial_failure', () => {
         section: null,
         reason: 'api_error',
         detail: 'Gemini API failed: HTTP 400: input token count exceeds the maximum',
+        failureKind: null,
       },
     ]);
   });
@@ -723,6 +730,47 @@ describe('executeRun の partial_failure', () => {
     expect(result.batchFailures[0]?.detail).toBe('Gemini API failed: HTTP 401');
   });
 
+  test('LlmProviderError が failureKind を持てば BatchFailure / RunProgress.failure に伝播する', async () => {
+    const { provider } = providerOf([
+      new LlmProviderError(
+        'OpenRouter がプロバイダ側エラーを返しました',
+        'openrouter',
+        200,
+        '{"finish_reason":"error"}',
+        null,
+        true,
+        'timeout',
+      ),
+    ]);
+    const { deps, progress } = makeDeps(provider);
+    const result = await execute(
+      {
+        runId: 'run-1',
+        plan: makePlan([makeBatch({ studyId: 'd1', fieldIds: ['f_design'] })]),
+        fields: FIELDS,
+      },
+      deps,
+    );
+    expect(result.batchFailures[0]?.failureKind).toBe('timeout');
+    expect(progress[0]?.failure?.failureKind).toBe('timeout');
+  });
+
+  test('LlmProviderError の failureKind が判別できない（不明）なら BatchFailure.failureKind は null になる', async () => {
+    const { provider } = providerOf([
+      new LlmProviderError('Gemini API failed: HTTP 500', 'gemini', 500, 'server error'),
+    ]);
+    const { deps } = makeDeps(provider);
+    const result = await execute(
+      {
+        runId: 'run-1',
+        plan: makePlan([makeBatch({ studyId: 'd1', fieldIds: ['f_design'] })]),
+        fields: FIELDS,
+      },
+      deps,
+    );
+    expect(result.batchFailures[0]?.failureKind).toBeNull();
+  });
+
   test('Error 以外の例外も文字列化して記録する', async () => {
     const { provider } = providerOf(['throw-string']);
     const { deps } = makeDeps(provider);
@@ -735,7 +783,7 @@ describe('executeRun の partial_failure', () => {
       deps,
     );
     expect(result.batchFailures).toEqual([
-      { studyId: 'd1', section: null, reason: 'api_error', detail: 'oops' },
+      { studyId: 'd1', section: null, reason: 'api_error', detail: 'oops', failureKind: null },
     ]);
   });
 
@@ -776,8 +824,14 @@ describe('executeRun の partial_failure', () => {
     );
     expect(result.status).toBe('partial_failure');
     expect(result.batchFailures).toEqual([
-      { studyId: 'd1', section: 'methods', reason: 'load_failed', detail: 'drive down' },
-      { studyId: 'd1', section: 'population', reason: 'load_failed', detail: 'drive down' },
+      { studyId: 'd1', section: 'methods', reason: 'load_failed', detail: 'drive down', failureKind: null },
+      {
+        studyId: 'd1',
+        section: 'population',
+        reason: 'load_failed',
+        detail: 'drive down',
+        failureKind: null,
+      },
     ]);
     expect(loadPages).toHaveBeenCalledTimes(1);
     expect(calls).toHaveLength(0);
@@ -796,7 +850,13 @@ describe('executeRun の partial_failure', () => {
       deps,
     );
     expect(result.batchFailures).toEqual([
-      { studyId: 's1', section: null, reason: 'load_failed', detail: '本文を取得できる文書がありません' },
+      {
+        studyId: 's1',
+        section: null,
+        reason: 'load_failed',
+        detail: '本文を取得できる文書がありません',
+        failureKind: null,
+      },
     ]);
     expect(calls).toHaveLength(0);
   });
@@ -866,7 +926,7 @@ describe('executeRun の partial_failure', () => {
     );
     expect(result.status).toBe('partial_failure');
     expect(result.batchFailures).toEqual([
-      { studyId: 'd1', section: null, reason: 'save_failed', detail: 'sheets quota' },
+      { studyId: 'd1', section: null, reason: 'save_failed', detail: 'sheets quota', failureKind: null },
     ]);
     expect(result.evidence).toHaveLength(0);
   });
@@ -960,7 +1020,7 @@ describe('executeRun の画像入力（pdf_native。handoff-scanned-pdf-native-h
       deps,
     );
     expect(result.batchFailures).toEqual([
-      { studyId: 'd1', section: null, reason: 'load_failed', detail: 'drive down' },
+      { studyId: 'd1', section: null, reason: 'load_failed', detail: 'drive down', failureKind: null },
     ]);
   });
 
@@ -1380,8 +1440,20 @@ describe('executeRun の Evidence 書き込みバッチ化（429 対策）', () 
     expect(result.evidence).toHaveLength(2);
     expect(new Set(result.evidence.map((e) => e.studyId))).toEqual(new Set(['d1', 'd2']));
     expect(result.batchFailures).toEqual([
-      { studyId: 'd3', section: null, reason: 'save_failed', detail: 'sheets quota (2nd flush)' },
-      { studyId: 'd4', section: null, reason: 'save_failed', detail: 'sheets quota (2nd flush)' },
+      {
+        studyId: 'd3',
+        section: null,
+        reason: 'save_failed',
+        detail: 'sheets quota (2nd flush)',
+        failureKind: null,
+      },
+      {
+        studyId: 'd4',
+        section: null,
+        reason: 'save_failed',
+        detail: 'sheets quota (2nd flush)',
+        failureKind: null,
+      },
     ]);
   });
 
@@ -1866,7 +1938,7 @@ describe('executeRun の高精度読み取りモード（issue #176・input_mode
       deps,
     );
     expect(result.batchFailures).toEqual([
-      { studyId: 'd1', section: null, reason: 'load_failed', detail: 'drive down' },
+      { studyId: 'd1', section: null, reason: 'load_failed', detail: 'drive down', failureKind: null },
     ]);
   });
 
