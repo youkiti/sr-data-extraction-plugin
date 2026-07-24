@@ -71,6 +71,21 @@ const FINISH_REASON_FAILURE_KIND: Readonly<Record<string, LlmFailureKind>> = {
   BLOCKLIST: 'content_filter',
 };
 
+/**
+ * `promptFeedback.blockReason` → 失敗種別（実データ抽出の失敗ヒント）。
+ * プロンプト自体がブロックされた応答（candidates が空 / finishReason undefined）は
+ * FINISH_REASON_FAILURE_KIND を経由せず本文なしエラーへ落ちるため、そちらとは別に判定する。
+ * SAFETY / PROHIBITED_CONTENT / BLOCKLIST / IMAGE_SAFETY はコンテンツフィルタ系のブロックとして
+ * 扱う。表に無い blockReason（未知の値）・blockReason 無しは理由不明のまま null にする
+ * （憶測で分類しない）
+ */
+const BLOCK_REASON_FAILURE_KIND: Readonly<Record<string, LlmFailureKind>> = {
+  SAFETY: 'content_filter',
+  PROHIBITED_CONTENT: 'content_filter',
+  BLOCKLIST: 'content_filter',
+  IMAGE_SAFETY: 'content_filter',
+};
+
 export class GeminiProvider implements LLMProvider {
   readonly providerId = 'gemini' as const;
   readonly model: string;
@@ -146,15 +161,19 @@ export class GeminiProvider implements LLMProvider {
     }
     const text = extractText(json);
     if (text === '') {
+      // プロンプト自体がブロックされた場合（candidates 空 / finishReason undefined）は
+      // blockReason から failureKind を判別する（issue #191 レビュー対応。それ以外は理由不明の null）
+      const blockReason = json.promptFeedback?.blockReason;
       throw new LlmProviderError(
         `Gemini 応答に本文がありません（finishReason=${finishReason ?? '不明'}${
-          json.promptFeedback?.blockReason !== undefined
-            ? `, blockReason=${json.promptFeedback.blockReason}`
-            : ''
+          blockReason !== undefined ? `, blockReason=${blockReason}` : ''
         }）`,
         this.providerId,
         res.status,
         diagnostics,
+        null,
+        false,
+        blockReason !== undefined ? (BLOCK_REASON_FAILURE_KIND[blockReason] ?? null) : null,
       );
     }
     return {

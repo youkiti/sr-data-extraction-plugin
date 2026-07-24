@@ -112,6 +112,9 @@ export interface LLMProvider {
  * provider 境界（応答の構造化フィールド）で正規化する — エラー本文の部分一致では判定しない
  * （`finish_reason=error` は任意の上流エラーを含みうる／`responseBody` は表示用に切り詰められる
  * ため部分一致が壊れる／同一 detail に複数の理由が共存しうる、が理由）。
+ * 唯一の例外が `OpenRouterProvider.classifyHttpErrorFailureKind`（HTTP 404 の画像入力非対応判定）:
+ * OpenRouter の 404 応答にはこれ以上の構造化シグナルが存在しないため、人間向け文言への
+ * 部分一致に依存する best-effort 判定として明記のうえ許容する（同関数の JSDoc 参照）。
  * 既定は null（不明）。provider 側が構造化フィールドから判別できたときだけ設定する
  */
 export type LlmFailureKind =

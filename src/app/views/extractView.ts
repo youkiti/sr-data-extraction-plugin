@@ -216,10 +216,12 @@ function renderEstimate(state: AppState): HTMLElement {
       fields: estimateFields,
       model: state.extract.model === '' ? 'unknown' : state.extract.model,
       protocolContext: null,
-      // 実行時に実際に効く値と揃える（プロバイダ非対応時は概算にも反映しない。issue #176）
+      // 実行時に実際に効く値と揃える（プロバイダ非対応時は概算にも反映しない。issue #176）。
+      // 保存済み接続方式（llmProviderOverride）をモデル名推定より優先する（issue #191 レビュー対応）
       highAccuracyImages: resolveEffectiveHighAccuracyImages(
         state.extract.model,
         state.extract.highAccuracyImages,
+        state.llmProviderOverride,
       ),
       // モデル未選択時のダミー値 'unknown' を「画像対応が不明なモデルが選ばれている」と
       // 誤検出しないための切り分け（pilotView.ts の renderEstimate と同じ理由。レビュー指摘）
@@ -297,9 +299,11 @@ function renderSetup(state: AppState, ctx: ViewContext): HTMLElement {
   const hasImageInputDocs = selectedDocuments(state).some(
     (doc) => doc.textStatus === 'no_text_layer',
   );
+  // 保存済み接続方式（llmProviderOverride）をモデル名推定より優先する（issue #191 レビュー対応）
   const imageUnsupportedBlocked = isRunBlockedByImageUnsupportedModel(
     state.extract.model,
     hasImageInputDocs,
+    state.llmProviderOverride,
   );
   const runButton = el('button', {
     id: 'extract-run',
@@ -439,12 +443,26 @@ function renderStudyRows(state: AppState, ctx: ViewContext, withRetry: boolean):
       );
     }
     if (withRetry && row.status === 'failed') {
+      // 失敗行の再試行ボタン: 当該 study に画像入力が必要な文書（no_text_layer）が含まれ、かつ
+      // 選択中モデルが画像入力に非対応と判明しているときは disabled にする（issue #191 レビュー
+      // 対応: モデルを画像非対応モデルへ切り替えて再試行すると既知の 404 を踏むのを事前に防ぐ）
+      const hasImageInputDocs = documentsForStudies(selectionOf(state), [row.studyId]).some(
+        (doc) => doc.textStatus === 'no_text_layer',
+      );
+      const retryBlocked = isRunBlockedByImageUnsupportedModel(
+        state.extract.model,
+        hasImageInputDocs,
+        state.llmProviderOverride,
+      );
       const retryButton = el('button', {
         className: 'extract__retry',
         text: t('common.retry'),
         attributes: { type: 'button' },
       });
-      retryButton.disabled = state.extract.retryingStudyId !== null;
+      retryButton.disabled = state.extract.retryingStudyId !== null || retryBlocked;
+      if (retryBlocked) {
+        retryButton.title = t('extract.imageUnsupportedBlocked', { model: state.extract.model });
+      }
       retryButton.addEventListener('click', () => ctx.extract.onRetryStudy(row.studyId));
       parts.push(retryButton);
     }

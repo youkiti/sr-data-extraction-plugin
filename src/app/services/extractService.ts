@@ -4,7 +4,6 @@
 //   study 単位の進捗（features/extraction/studyProgress）へ畳み込む。抽出は study の全文書を連結して 1 回
 // - 失敗 study の再試行: runType = 'single_study' で当該 1 study のみ再実行する
 import type { DocumentRecord } from '../../domain/document';
-import type { LlmProviderId } from '../../domain/llmApiLog';
 import type { StudyRecord } from '../../domain/study';
 import type { SchemaField } from '../../domain/schemaField';
 import { readDocuments } from '../../features/documents/documentRepository';
@@ -39,8 +38,8 @@ import { getSchemaFieldsByVersion } from '../../features/schema/schemaRepository
 import { ensureChildFolder } from '../../lib/google/drive';
 import type { GoogleApiDeps } from '../../lib/google/types';
 import { missingApiKeyMessage } from '../../lib/llm/modelCatalog';
-import { resolveModelImageInputSupport } from '../../lib/llm/pricing';
 import {
+  isRunBlockedByImageUnsupportedModel,
   resolveEffectiveHighAccuracyImages,
   resolveProviderConfig,
   type ProviderConfig,
@@ -62,23 +61,6 @@ function toMessage(err: unknown): string {
 /** extract スライスだけを差し替える setState ヘルパ（他スライスは維持） */
 function patchExtract(store: Store, patch: Partial<ExtractState>): void {
   store.setState({ extract: { ...store.getState().extract, ...patch } });
-}
-
-/**
- * 画像非対応モデルの実行ブロック判定（requestExtractRun / runExtract 共通）。
- * 対象文書に画像入力が必要なもの（`textStatus === 'no_text_layer'`）が含まれ、かつ実際に
- * 解決済みの provider（接続方式 override 反映済み）でそのモデルが画像入力に非対応と
- * 判明している（'unsupported'）ときだけブロックする。'unknown'（カタログ外）はブロックしない
- */
-function isBlockedByImageUnsupportedModel(
-  targets: readonly DocumentRecord[],
-  provider: LlmProviderId,
-  model: string,
-): boolean {
-  return (
-    targets.some((doc) => doc.textStatus === 'no_text_layer') &&
-    resolveModelImageInputSupport(provider, model) === 'unsupported'
-  );
 }
 
 /** documents 一覧を解決する（documents スライスに読込済みならそれを使う） */
@@ -337,11 +319,17 @@ export async function requestExtractRun(store: Store, deps: ExtractServiceDeps):
     patchExtract(store, { runError: missingApiKeyMessage(providerResolution.provider) });
     return;
   }
-  // 画像非対応モデルの実行ブロック: extractView.ts の実行ボタン disabled は既定の
-  // provider 推定（resolveProviderId）で判定するが、ここは実際に解決済みの provider
-  // （接続方式 override を反映済み）で二重に確認する（defense in depth）
+  // 画像非対応モデルの実行ブロック: extractView.ts の実行ボタン disabled は起動時に読み込んだ
+  // 接続方式スナップショット（state.llmProviderOverride）で判定するが、ここは実際に解決済みの
+  // provider（接続方式 override を反映済み）で二重に確認する（defense in depth）
   const targets = documentsForStudies(candidates, effectiveStudyIds(candidates, extract.selectedStudyIds));
-  if (isBlockedByImageUnsupportedModel(targets, providerResolution.provider, extract.model)) {
+  if (
+    isRunBlockedByImageUnsupportedModel(
+      extract.model,
+      targets.some((doc) => doc.textStatus === 'no_text_layer'),
+      providerResolution.provider,
+    )
+  ) {
     patchExtract(store, {
       runError: t('extraction.errImageUnsupportedModel', { model: extract.model }),
     });
@@ -484,7 +472,13 @@ export async function runExtract(store: Store, deps: ExtractServiceDeps): Promis
     candidatesForBlockCheck,
     effectiveStudyIds(candidatesForBlockCheck, state.extract.selectedStudyIds),
   );
-  if (isBlockedByImageUnsupportedModel(targetsForBlockCheck, providerResolution.provider, state.extract.model)) {
+  if (
+    isRunBlockedByImageUnsupportedModel(
+      state.extract.model,
+      targetsForBlockCheck.some((doc) => doc.textStatus === 'no_text_layer'),
+      providerResolution.provider,
+    )
+  ) {
     patchExtract(store, {
       confirming: false,
       runError: t('extraction.errImageUnsupportedModel', { model: state.extract.model }),
@@ -503,6 +497,7 @@ export async function runExtract(store: Store, deps: ExtractServiceDeps): Promis
   const highAccuracyImages = resolveEffectiveHighAccuracyImages(
     state.extract.model,
     state.extract.highAccuracyImages,
+    providerResolution.provider,
   );
   patchExtract(store, {
     confirming: false,
@@ -598,17 +593,10 @@ export async function retryExtractStudy(
   // lastRunFieldIds = 直近実行時に実際に使った値を使う）
   const fieldIds = state.extract.lastRunFieldIds;
   const runFields = filterFieldsBySelection(fields, fieldIds);
-  patchExtract(store, { retryingStudyId: studyId, runError: null, lastRunFieldIds: fieldIds });
-  // 再計画前のプレースホルダ（バッチ数はまだ不明 = 0/0。onStudyRows が実数で置き換える）
-  replaceRow({
-    studyId,
-    status: 'running',
-    completedBatches: 0,
-    totalBatches: 0,
-    detail: null,
-    failureKind: null,
-  });
   try {
+    // 対象文書の解決（画像非対応モデルの実行ブロック判定にも使うため、running プレースホルダを
+    // 出す前に行う。issue #191 レビュー対応: モデルを画像非対応モデルへ切り替えて再試行すると
+    // 既知の 404 を踏む問題を防ぐ。失敗行の表示〔failureKind・detail〕は変更しないまま返す）
     const records = await resolveDocuments(store, deps.google, project.spreadsheetId);
     const studies = await resolveStudies(store, deps.google, project.spreadsheetId);
     // 除外文書は再試行の対象からも外す（issue #181）
@@ -616,6 +604,28 @@ export async function retryExtractStudy(
     if (targets.length === 0) {
       throw new Error(t('extraction.errStudyDocsNotFound', { id: studyId }));
     }
+    if (
+      isRunBlockedByImageUnsupportedModel(
+        state.extract.model,
+        targets.some((doc) => doc.textStatus === 'no_text_layer'),
+        providerResolution.provider,
+      )
+    ) {
+      patchExtract(store, {
+        runError: t('extraction.errImageUnsupportedModel', { model: state.extract.model }),
+      });
+      return;
+    }
+    patchExtract(store, { retryingStudyId: studyId, runError: null, lastRunFieldIds: fieldIds });
+    // 再計画前のプレースホルダ（バッチ数はまだ不明 = 0/0。onStudyRows が実数で置き換える）
+    replaceRow({
+      studyId,
+      status: 'running',
+      completedBatches: 0,
+      totalBatches: 0,
+      detail: null,
+      failureKind: null,
+    });
     const outcome = await performRun(store, deps, {
       spreadsheetId: project.spreadsheetId,
       driveFolderId: project.driveFolderId,

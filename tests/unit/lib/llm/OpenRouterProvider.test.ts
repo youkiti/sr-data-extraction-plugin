@@ -444,6 +444,33 @@ describe('OpenRouterProvider.chat', () => {
       });
     });
 
+    // レビュー指摘: finish_reason の length/content_filter 判定は空 content チェックより前に行う
+    // （content: null + finish_reason=content_filter という一般的な応答形が、理由不明の
+    // 「本文がありません」エラーに落ちて failureKind が付かなくなる問題の修正）
+    test('content: null + finish_reason=content_filter でも content_filter（空 content 判定より判定順が先）', async () => {
+      const fetch = jest.fn().mockResolvedValue(
+        jsonResponse({
+          choices: [{ message: { role: 'assistant', content: null }, finish_reason: 'content_filter' }],
+        }),
+      );
+      const provider = new OpenRouterProvider({ apiKey: 'k', model: 'm/x', fetch });
+      await expect(provider.chat([{ role: 'user', content: 'q' }])).rejects.toMatchObject({
+        failureKind: 'content_filter',
+      });
+    });
+
+    test('content: 空文字 + finish_reason=length でも output_limit（空 content 判定より判定順が先）', async () => {
+      const fetch = jest.fn().mockResolvedValue(
+        jsonResponse({
+          choices: [{ message: { role: 'assistant', content: '' }, finish_reason: 'length' }],
+        }),
+      );
+      const provider = new OpenRouterProvider({ apiKey: 'k', model: 'm/x', fetch });
+      await expect(provider.chat([{ role: 'user', content: 'q' }])).rejects.toMatchObject({
+        failureKind: 'output_limit',
+      });
+    });
+
     test('ボディが JSON として読めない（切断）は malformed', async () => {
       const fetch = jest.fn().mockResolvedValue({
         ok: true,

@@ -32,6 +32,7 @@ import { ensureChildFolder } from '../../lib/google/drive';
 import type { LLMProvider } from '../../lib/llm/LLMProvider';
 import { missingApiKeyMessage } from '../../lib/llm/modelCatalog';
 import {
+  isRunBlockedByImageUnsupportedModel,
   resolveEffectiveHighAccuracyImages,
   resolveProviderConfig,
   type ProviderConfig,
@@ -248,8 +249,27 @@ export async function runPilot(store: Store, deps: PilotServiceDeps): Promise<vo
   const fieldIds = resolveFieldIdsForRun(selectedFieldIds);
   const extractionFields = filterFieldsBySelection(fields, fieldIds);
   // 高精度読み取りモード（issue #176）: UI は非対応プロバイダで選択自体を disabled にするが、
-  // ここでも二重に効かせる（モデル変更後の古い選択が残っていても、非対応プロバイダには送らない）
-  const highAccuracyImages = resolveEffectiveHighAccuracyImages(model, state.pilot.highAccuracyImages);
+  // ここでも二重に効かせる（モデル変更後の古い選択が残っていても、非対応プロバイダには送らない）。
+  // 実際に解決済みの provider（接続方式 override 反映済み）を渡す（issue #191 レビュー対応）
+  const highAccuracyImages = resolveEffectiveHighAccuracyImages(
+    model,
+    state.pilot.highAccuracyImages,
+    providerResolution.provider,
+  );
+  // 画像非対応モデルの実行ブロック（issue #191 レビュー対応）: extractService と同じ判定を
+  // runExtraction 呼び出し前に行う。pilotView.ts には実行ボタンの disabled 表示（S7 と同等の
+  // UI ガード）がまだ無いため、ここが唯一のガードになる
+  const targetsForBlockCheck = documentsForStudies(candidates, targetStudyIds);
+  if (
+    isRunBlockedByImageUnsupportedModel(
+      model,
+      targetsForBlockCheck.some((doc) => doc.textStatus === 'no_text_layer'),
+      providerResolution.provider,
+    )
+  ) {
+    patchPilot(store, { runError: t('extraction.errImageUnsupportedModel', { model }) });
+    return;
+  }
 
   patchPilot(store, { running: true, runError: null, progress: null });
   try {

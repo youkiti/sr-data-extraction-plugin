@@ -73,7 +73,14 @@ function describeChoice(choice: OpenRouterChoice | undefined): string {
  * `bodyText` を JSON としてパースし、`error.message` フィールドの内容だけを見る
  * （表示用に切り詰められる `responseBody` や `detail` の部分一致とは違い、ここは切り詰め前の
  * フルボディを構造化フィールド越しに見ているため、任意の上流エラーを誤検出しない）。
- * 404 以外・JSON として読めない・該当メッセージが無いときは null（不明）
+ * 404 以外・JSON として読めない・該当メッセージが無いときは null（不明）。
+ *
+ * この判定だけは `LlmFailureKind`（LLMProvider.ts）の「エラー本文の部分一致では判定しない」
+ * 方針の唯一の例外: OpenRouter の 404 応答には `error.message` の人間向け文言以外に
+ * 構造化シグナルが実在しないため、明記した best-effort 判定として `/image input/i` への
+ * 部分一致を許容する。OpenRouter 側の文言が変わった場合は誤分類（他の理由を image_unsupported と
+ * 誤検出する）ではなく null（ヒント非表示）に倒れる fail-open な設計にしてある
+ * （メッセージが一致しなくなるだけで、上の分岐がそのまま null を返す）
  */
 function classifyHttpErrorFailureKind(status: number, bodyText: string): LlmFailureKind | null {
   if (status !== 404) {
@@ -160,9 +167,12 @@ export class OpenRouterProvider implements LLMProvider {
     // 頻発したため、裸の SyntaxError や空文字を返さず、原因（finish_reason / error）を
     // 載せた LlmProviderError にする。長時間生成の切断は一時的な可能性があるため retryable。
     // 失敗種別（LlmFailureKind）の判定順: 具体的なシグナル（choice.error の error_type/code、
-    // finish_reason の length/content_filter）を先に見て、finish_reason=error のような
-    // 汎用フォールバックは「理由不明」（null）に倒す（error は timeout に限らず任意の
-    // 上流エラーを含みうるため、安易に timeout と決め打ちしない）
+    // finish_reason の length/content_filter）を先に見る。finish_reason の length/content_filter は
+    // content が null（空本文）で終わる応答が一般的なため、空 content チェックより前に判定する
+    // （レビュー指摘: 順序が逆だと content:null + finish_reason=content_filter が理由不明のまま
+    // 空本文エラーに落ちてしまう）。finish_reason=error のような汎用フォールバックは
+    // 「理由不明」（null）に倒す（error は timeout に限らず任意の上流エラーを含みうるため、
+    // 安易に timeout と決め打ちしない）
     const bodyText = await res.text();
     let json: OpenRouterResponse;
     try {
@@ -192,14 +202,6 @@ export class OpenRouterProvider implements LLMProvider {
         classifyChoiceErrorFailureKind(choice),
       );
     }
-    if (content === undefined || content === null || content === '') {
-      throw new LlmProviderError(
-        `OpenRouter 応答に本文（content）がありません（finish_reason=${finishReason ?? '不明'}）`,
-        this.providerId,
-        res.status,
-        describeChoice(choice),
-      );
-    }
     if (finishReason === 'length' || finishReason === 'content_filter') {
       const reasonLabel = finishReason === 'length' ? '出力トークン上限' : 'コンテンツフィルタ';
       throw new LlmProviderError(
@@ -210,6 +212,14 @@ export class OpenRouterProvider implements LLMProvider {
         null,
         false,
         finishReason === 'length' ? 'output_limit' : 'content_filter',
+      );
+    }
+    if (content === undefined || content === null || content === '') {
+      throw new LlmProviderError(
+        `OpenRouter 応答に本文（content）がありません（finish_reason=${finishReason ?? '不明'}）`,
+        this.providerId,
+        res.status,
+        describeChoice(choice),
       );
     }
     return {

@@ -74,13 +74,20 @@ export function providerSupportsImageInput(providerId: LlmProviderId): boolean {
  * UI（disabled 表示）・コスト概算（planRun への注入値）・実行（runExtraction への注入値）の
  * 3 箇所すべてがこの関数で判定を揃えることで、「見た目は有効なのに実行時だけ無効化される」
  * 食い違いを防ぐ（model が空文字のときは provider を確定できないため requested をそのまま通す —
- * この場合はどのみち後続のモデル未選択チェックで実行がブロックされる）
+ * この場合はどのみち後続のモデル未選択チェックで実行がブロックされる）。
+ * `providerOverride`（保存済み接続方式。null 可）を渡すとモデル名推定（`resolveProviderId`）より
+ * 優先する（レビュー指摘: openai_compatible 接続で送るモデルを openrouter 前提のカタログ実測と
+ * 混同しないため。省略時 = null は従来どおりモデル名推定にフォールバックする）
  */
-export function resolveEffectiveHighAccuracyImages(model: string, requested: boolean): boolean {
+export function resolveEffectiveHighAccuracyImages(
+  model: string,
+  requested: boolean,
+  providerOverride: LlmProviderId | null = null,
+): boolean {
   if (!requested || model === '') {
     return requested;
   }
-  const provider = resolveProviderId(model);
+  const provider = providerOverride ?? resolveProviderId(model);
   // モデル単位で既知の非対応（画像非対応モデルの実行ブロック）を先に見る。
   // 現行 3 プロバイダは providerSupportsImageInput が常に true を返すため、この if を
   // 経由しない残りの経路（下の return）はプロバイダ単位の判定を素通しするだけの
@@ -97,19 +104,23 @@ export function resolveEffectiveHighAccuracyImages(model: string, requested: boo
  * モデルが画像入力に非対応と判明している（`unsupported`）ときだけ実行をブロックする
  * （画像非対応モデルの実行ブロック）。'unknown'（カタログに実測が無い）はブロックしない
  * （過検出で正当な run まで止めないため。実測済みの qwen3-235b / deepseek-v4-flash 等だけが対象）。
- * ここは UI 描画時に同期で判定する必要があるため、実際の接続方式 override
- * （`resolveProviderConfig`）ではなく既定のモデル名からの provider 推定（`resolveProviderId`）を
- * 使う。override を反映した厳密な判定は実行直前（extractService.ts が resolveProviderConfig の
- * 解決結果で行う。defense in depth）
+ * `providerOverride`（保存済み接続方式。null 可）を渡すとモデル名推定（`resolveProviderId`）より
+ * 優先する。UI 描画時（起動時に 1 回読み込んだ `state.llmProviderOverride` を渡す）・
+ * サービス層の実行直前（`resolveProviderConfig` の解決結果を渡す。defense in depth）の
+ * どちらもこの引数で同じ判定を共有する。省略時（null）は従来どおりモデル名推定にフォールバックする
  */
 export function isRunBlockedByImageUnsupportedModel(
   model: string,
   hasImageInputDocuments: boolean,
+  providerOverride: LlmProviderId | null = null,
 ): boolean {
   if (!hasImageInputDocuments || model === '') {
     return false;
   }
-  return resolveModelImageInputSupport(resolveProviderId(model), model) === 'unsupported';
+  return (
+    resolveModelImageInputSupport(providerOverride ?? resolveProviderId(model), model) ===
+    'unsupported'
+  );
 }
 
 export function createProvider(config: ProviderConfig): LLMProvider {

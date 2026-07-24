@@ -198,6 +198,7 @@ describe('createInitialState', () => {
         methodsWorkflow: 'single',
       },
       settingsReturnHash: null,
+      llmProviderOverride: null,
     });
   });
 });
