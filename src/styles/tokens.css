@@ -31,8 +31,11 @@
   --color-highlight-unverified: rgb(255 214 79 / 40%);
   --color-highlight-low-confidence: rgb(255 152 0 / 40%);
 
-  /* 選択中ハイライト（塗り + 実線枠）。検索ヒットは同色の破線枠で区別する（issue #31 D） */
+  /* 選択中ハイライト（塗りのみ。枠は文字を横切って読みづらいため持たない）。
+     検索ヒットは同色の塗り + 破線枠で区別する（issue #31 D） */
   --color-highlight-active: rgb(26 115 232 / 35%);
+
+  /* 検索ヒットの破線枠 */
   --color-highlight-active-border: #1a73e8;
   --font-family-base: "Hiragino Sans", "Noto Sans JP", "Yu Gothic UI", sans-serif;
 }
