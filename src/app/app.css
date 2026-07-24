@@ -2915,13 +2915,12 @@ section.documents__tiab {
   background: var(--color-highlight-active);
 }
 
-/* 選択中は塗り・枠とも青で上書きする（issue #31 D. 選択中ハイライトを青に + 検索
+/* 選択中は塗りを青で上書きする（issue #31 D. 選択中ハイライトを青に + 検索
    ヒットとの区別）。kind 別クラスとの優先は定義順ではなくセレクタ詳細度（0,2,0）で
-   符号化し、将来のルール並べ替えで壊れないようにする */
-.pdf-viewer__hl.pdf-viewer__hl--active {
-  outline: 2px solid var(--color-highlight-active-border);
-}
-
+   符号化し、将来のルール並べ替えで壊れないようにする。
+   枠は持たない — 行ごとの矩形それぞれに枠が付くと文字を横切る線として重なり、
+   引用が読みづらくなるため（verified/unverified と同じく塗りのみ）。検索ヒットとは
+   破線枠の有無で区別する */
 .pdf-viewer__hl.pdf-viewer__hl--active::before {
   background: var(--color-highlight-active);
 }
