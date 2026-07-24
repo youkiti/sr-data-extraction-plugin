@@ -301,12 +301,14 @@ describe('renderVerifyView', () => {
     expect(callbacks.onRetryLoad).toHaveBeenCalled();
   });
 
-  test('抽出済み研究が 0 件なら空状態', () => {
-    const { ctx } = makeCtx();
+  test('抽出済み研究が 0 件なら空状態 + 再読込ボタン（PR #190: 抽出前に開いてキャッシュされた空一覧の手動再読込導線）', () => {
+    const { ctx, callbacks } = makeCtx();
     const root = render(makeState({ targets: [] }), ctx);
     expect(root.querySelector('#verify-empty')?.textContent).toContain(
       'AI 抽出済みの研究がありません',
     );
+    (root.querySelector('#verify-empty-reload') as HTMLButtonElement).click();
+    expect(callbacks.onRetryLoad).toHaveBeenCalled();
   });
 
   test('独立入力モード（reviewer_independent）: 対象 0 件は AI 抽出前提ではない空状態メッセージ', () => {

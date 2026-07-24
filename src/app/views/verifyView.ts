@@ -155,11 +155,21 @@ export function renderVerifyView(state: AppState, ctx: ViewContext): HTMLElement
   if (verify.targets.length === 0) {
     // 独立入力モードは「確定済みスキーマが無い」「Studies が 0 件」のいずれでも一覧が空になる
     // （design §5.1）。AI 抽出の有無を前提にした案内は出さない
+    // 抽出前に #/verify を開くと空一覧がキャッシュされる（PR #190）。抽出完了時に
+    // 自動で無効化され再入場すれば通常は自然に最新化されるが、念のため手動の再読込導線も置く
+    // （PR #190 のレビュー対応）
+    const reload = el('button', {
+      id: 'verify-empty-reload',
+      text: t('common.retry'),
+      attributes: { type: 'button' },
+    });
+    reload.addEventListener('click', () => ctx.verify.onRetryLoad());
     children.push(
       el('p', {
         id: 'verify-empty',
         text: independent ? t('verify.emptyIndependent') : t('verify.empty'),
       }),
+      reload,
     );
     return el('section', { className: 'view view--verify' }, children);
   }

@@ -547,6 +547,11 @@ test('AI 抽出結果なし（no_result）study: セレクタ切替に応じて 
   await expect(page).toHaveURL(/#\/verify\?study=study-2$/);
   await expect(page.locator('#verify-no-ai-result')).toBeVisible({ timeout: 15_000 });
   await expect(page.locator('#verify-no-ai-result')).toContainText('AI 抽出結果がありません');
+  // study-2 の検証データ束の読込完了（パネル表示）を待ってから切り替える。読込中の切替は
+  // openVerifyStudy の verifyLoading 再入ガードが弾くため、待たずに戻すと遅い環境で
+  // selectedStudyId が study-2 のまま残りバナーが消えない（実行速度依存のフレーク防止）
+  await expect(page.locator('#verify-doc-loading')).toHaveCount(0, { timeout: 15_000 });
+  await expect(page.locator('.verify__panes')).toBeVisible({ timeout: 15_000 });
 
   // study-1（Evidence あり）へ戻す → バナーが消える
   await select.selectOption('study-1');
@@ -1527,6 +1532,268 @@ test('flow 図（mermaid）プレビュー: 構文エラーはメッセージへ
   await expect
     .poll(() => appendUrls.filter((url) => url.includes('Decisions') && url.includes(':append')).length)
     .toBeGreaterThan(0);
+
+  const results = await new AxeBuilder({ page }).analyze();
+  expect(results.violations).toEqual([]);
+});
+
+// PR #190 のレビュー対応: PR #190 で #/verify の入場ガードを緩和した結果、抽出前に開くと
+// targets: [] がキャッシュされ、その後抽出しても loadVerifyTargets（targets !== null で
+// 早期 return）が再読込しないまま残っていた。抽出完了処理（extractService.runExtract）が
+// verify / dashboard の読込済みキャッシュを無効化するため、同一タブ内で #/verify → #/extract →
+// #/verify と辿るだけ（ページ再読み込みなし）で一覧が最新化されることを実弾で確認する
+test('抽出前に #/verify を開くと空状態 → 抽出実行 → #/verify 再入場で一覧が表示される（PR #190）', async ({
+  page,
+}) => {
+  const PROTOCOL_HEADERS = [
+    'version', 'framework_type', 'research_question', 'inclusion_criteria', 'exclusion_criteria',
+    'study_design', 'block_count', 'combination_expression', 'source_type', 'source_filename',
+    'raw_text_ref', 'raw_text_preview', 'raw_text_inline', 'created_at', 'created_by',
+  ];
+  const PROTOCOL_ROW = [
+    '1', '', '', '', '', '', '0', '', 'manual', '', '', 'P: 成人肺炎', 'P: 成人肺炎',
+    '2026-07-01T00:00:00Z', 'e2e@example.com',
+  ];
+
+  const appendUrls: string[] = [];
+  const extractionRunsRows: string[][] = [];
+  const evidenceRowsAccum: string[][] = [];
+
+  await page.route('https://sheets.googleapis.com/**', async (route) => {
+    const req = route.request();
+    const url = decodeURIComponent(req.url());
+    if (req.method() === 'GET') {
+      if (url.includes('/values/Protocol')) {
+        await route.fulfill({ json: { values: [PROTOCOL_HEADERS, PROTOCOL_ROW] } });
+      } else if (url.includes('/values/StudyData')) {
+        await route.fulfill({ json: { values: [STUDY_DATA_HEADERS] } });
+      } else if (url.includes('/values/ResultsData')) {
+        await route.fulfill({ json: { values: [RESULTS_DATA_HEADERS] } });
+      } else if (url.includes('values:batchGet') && url.includes('Evidence')) {
+        // ヘッダ拡張チェック（ensureEvidenceBboxColumns 等）。既にフルヘッダの想定にして
+        // 拡張 PUT を no-op にする（他 spec と同じスタブ）
+        await route.fulfill({ json: { valueRanges: [{ values: [[...SHEET_HEADERS.Evidence]] }] } });
+      } else if (url.includes('values:batchGet') && url.includes('ExtractionRuns')) {
+        await route.fulfill({
+          json: { valueRanges: [{ values: [[...SHEET_HEADERS.ExtractionRuns]] }] },
+        });
+      } else if (url.includes('/values/Evidence')) {
+        // 抽出前は空、抽出完了後は実際に追記された行を反映する（#/verify 再読込の実弾検証のため）
+        await route.fulfill({ json: { values: [EVIDENCE_HEADERS, ...evidenceRowsAccum] } });
+      } else if (url.includes('/values/ExtractionRuns')) {
+        await route.fulfill({ json: { values: [RUNS_HEADERS, ...extractionRunsRows] } });
+      } else if (url.includes('/values/Decisions')) {
+        await route.fulfill({ json: { values: [DECISIONS_HEADERS] } });
+      } else if (url.includes('/values/SchemaFields')) {
+        await route.fulfill({ json: { values: [SCHEMA_FIELDS_HEADERS, STUDY_FIELD_ROW] } });
+      } else {
+        await route.fulfill({ json: { values: [] } });
+      }
+      return;
+    }
+    // POST（append）: 実際に書き込まれた行を記録し、以後の GET へ反映する（ステートフルスタブ）
+    const body = req.postDataJSON() as { values?: string[][] } | undefined;
+    if (url.includes('ExtractionRuns!A1:append') && body?.values) {
+      extractionRunsRows.push(...body.values);
+    }
+    if (url.includes('Evidence!A1:append') && body?.values) {
+      evidenceRowsAccum.push(...body.values);
+    }
+    appendUrls.push(url);
+    await route.fulfill({ json: {} });
+  });
+
+  await page.route('https://www.googleapis.com/**', async (route) => {
+    const url = decodeURIComponent(route.request().url());
+    if (url.includes('/upload/drive/v3/files')) {
+      await route.fulfill({ json: { id: 'log-1', webViewLink: 'https://drive.example/log-1' } });
+      return;
+    }
+    if (url.includes('/drive/v3/files?q=')) {
+      const name = /name = '([^']+)'/.exec(url)?.[1] ?? 'folder';
+      await route.fulfill({
+        json: { files: [{ id: `${name}-id`, webViewLink: `https://drive.example/${name}` }] },
+      });
+      return;
+    }
+    if (url.includes('/drive/v3/files/txt-doc-1?alt=media')) {
+      await route.fulfill({ contentType: 'text/plain', body: QUOTE });
+      return;
+    }
+    await route.fulfill({ json: {} });
+  });
+
+  await page.route('https://generativelanguage.googleapis.com/**', async (route) => {
+    await route.fulfill({
+      json: {
+        candidates: [
+          {
+            content: {
+              parts: [
+                {
+                  text: JSON.stringify([
+                    {
+                      field_id: 'f-total',
+                      entity_key: '-',
+                      value: '12',
+                      not_reported: false,
+                      quote: QUOTE,
+                      page: 1,
+                      confidence: 'high',
+                    },
+                  ]),
+                },
+              ],
+            },
+          },
+        ],
+        usageMetadata: { promptTokenCount: 100, candidatesTokenCount: 20 },
+        modelVersion: 'gemini-test-001',
+      },
+    });
+  });
+
+  // documents / schema をプリロードし、Evidence / ExtractionRuns はまだ 0 件（= 抽出前）の
+  // 状態で #/verify から開始する
+  await page.addInitScript(
+    ({ documents, schema }) => {
+      const win = window as unknown as Record<string, unknown>;
+      win.chrome = {
+        storage: {
+          local: {
+            get: async (keys: string | string[]) => {
+              const wanted = Array.isArray(keys) ? keys : [keys];
+              const found: Record<string, unknown> = {};
+              for (const key of wanted) {
+                if (key === 'secrets.geminiApiKey') {
+                  found[key] = 'e2e-api-key';
+                }
+              }
+              return found;
+            },
+            set: async () => undefined,
+            remove: async () => undefined,
+          },
+        },
+        runtime: {
+          sendMessage: async (msg: { type?: string }) => {
+            if (msg?.type === 'auth:get-token') return { ok: true, token: 'e2e-token' };
+            if (msg?.type === 'auth:get-email') return { ok: true, email: 'e2e@example.com' };
+            return { ok: true };
+          },
+          id: 'e2e-extension-id',
+          getURL: (p: string) => `/${p}`,
+          lastError: undefined,
+          onMessageExternal: { addListener: () => undefined, removeListener: () => undefined },
+        },
+        tabs: {
+          create: async () => ({ id: 1 }),
+          remove: async () => undefined,
+          onRemoved: { addListener: () => undefined, removeListener: () => undefined },
+        },
+        identity: {
+          getProfileUserInfo: (_opts: unknown, cb: (info: unknown) => void) => {
+            cb({ email: 'e2e@example.com', id: '1' });
+          },
+        },
+      };
+      win.__E2E_PRELOADED_STATE__ = {
+        currentProject: {
+          projectId: 'e2e-project',
+          spreadsheetId: 'e2e-sheet',
+          driveFolderId: 'e2e-folder',
+          name: 'E2E プロジェクト',
+        },
+        counts: {
+          documents: 1,
+          protocolVersions: 1,
+          schemaVersions: 1,
+          pilotRuns: 0,
+          evidenceRows: 0,
+          dataRows: 0,
+        },
+        documents,
+        schema,
+      };
+    },
+    {
+      documents: documentsSlice(
+        [docRecord('doc-1', 'study-1', 'article', 'drive-1', 'smith2020.pdf')],
+        [studyRecord('study-1', 'Smith 2020')],
+      ),
+      schema: {
+        versions: [
+          {
+            schemaVersion: 1,
+            parentVersion: null,
+            protocolVersion: 1,
+            createdByType: 'user_edit',
+            createdAt: '2026-07-01T00:00:00Z',
+            createdBy: 'e2e@example.com',
+            note: null,
+          },
+        ],
+        currentFields: [
+          {
+            schemaVersion: 1,
+            fieldId: 'f-total',
+            fieldIndex: 1,
+            section: 'results',
+            fieldName: 'mortality_pct',
+            fieldLabel: '死亡率',
+            entityLevel: 'study',
+            dataType: 'text',
+            unit: null,
+            allowedValues: null,
+            required: true,
+            extractionInstruction: 'Report overall mortality.',
+            example: null,
+            aiGenerated: false,
+            note: null,
+          },
+        ],
+        loading: false,
+        loadError: null,
+        drafting: false,
+        draftElapsedSeconds: 0,
+        draftError: null,
+        selectedDocumentIds: [],
+        model: '',
+        editorRows: null,
+        editorErrors: [],
+        editorOrigin: 'user_edit',
+        confirming: false,
+        presetDialog: null,
+      },
+    },
+  );
+  await page.goto('/app/app.html#/verify');
+
+  // 抽出前: #/verify は空状態（#verify-empty）+ 再読込ボタンを表示する
+  await expect(page.locator('#verify-empty')).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator('#verify-empty-reload')).toBeVisible();
+  await expect(page.locator('#verify-study')).toHaveCount(0);
+
+  // #/extract へ移動して一括抽出を実行する（ページ再読み込みはしない = 同一タブ内の SPA 遷移）
+  await page.locator('.app__nav-link[href="#/extract"]').click();
+  const studyCheckbox = page.locator('#extract-studies input[type="checkbox"]').first();
+  await expect(studyCheckbox).toBeChecked({ timeout: 15_000 });
+  await page.locator('#extract-model').selectOption('gemini-2.0-flash');
+  await page.locator('#extract-run').click();
+  await page.locator('#extract-confirm-run').click();
+  await expect(page.locator('#extract-run-done')).toHaveText('一括抽出が完了しました。', {
+    timeout: 15_000,
+  });
+  expect(appendUrls.some((url) => url.includes('Evidence!A1:append'))).toBe(true);
+
+  // #/verify へ戻る（ページ再読み込みなし）: 抽出完了処理による自動無効化 → 既存の読込経路
+  // （force なし）が自然に再読込し、一覧に study-1 が表示される（従来はここで空のままになっていた）
+  await page.locator('.app__nav-link[href="#/verify"]').click();
+  await expect(page.locator('#verify-empty')).toHaveCount(0);
+  const select = page.locator('#verify-study');
+  await expect(select).toBeVisible({ timeout: 15_000 });
+  await expect(select.locator('option')).toHaveCount(1);
+  await expect(select.locator('option').nth(0)).toContainText('Smith 2020');
 
   const results = await new AxeBuilder({ page }).analyze();
   expect(results.violations).toEqual([]);

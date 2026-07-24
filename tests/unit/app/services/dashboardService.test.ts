@@ -1,4 +1,4 @@
-import { loadDashboard } from '../../../../src/app/services/dashboardService';
+import { invalidateDashboard, loadDashboard } from '../../../../src/app/services/dashboardService';
 import type { VerificationDeps } from '../../../../src/app/services/verificationService';
 import {
   readVerifyTargetMaterials,
@@ -116,6 +116,11 @@ function makeMaterial(): VerifyTargetMaterial {
   };
 }
 
+/** readVerifyTargetMaterials の既定モック応答（materials 1 件 + 空の runStartedAt） */
+function makeMaterialsResult(materials: VerifyTargetMaterial[]) {
+  return { materials, runStartedAt: new Map<string, string | null>() };
+}
+
 function makeDeps(): VerificationDeps {
   return {
     google: { fetch: jest.fn(), getAccessToken: jest.fn() },
@@ -143,7 +148,34 @@ function makeStore(patch: {
 
 beforeEach(() => {
   readMaterialsMock.mockReset();
-  readMaterialsMock.mockResolvedValue([makeMaterial()]);
+  readMaterialsMock.mockResolvedValue(makeMaterialsResult([makeMaterial()]));
+});
+
+describe('invalidateDashboard', () => {
+  test('data / loadError をリセットする（PR #190: 抽出完了時に呼ぶ）。loading は触らない', () => {
+    const store = makeStore({
+      dashboard: {
+        loading: true,
+        loadError: '前回の読込エラー',
+        data: {
+          sections: ['methods'],
+          rows: [],
+          totals: {
+            progress: { decided: 0, total: 0 },
+            accuracy: { accept: 0, edit: 0, reject: 0, notReported: 0, decided: 0 },
+            anchor: { numerator: 0, denominator: 0 },
+            notReported: { numerator: 0, denominator: 0 },
+          },
+        },
+      },
+    });
+    invalidateDashboard(store);
+    const { dashboard } = store.getState();
+    expect(dashboard.data).toBeNull();
+    expect(dashboard.loadError).toBeNull();
+    // loading は触らない
+    expect(dashboard.loading).toBe(true);
+  });
 });
 
 describe('loadDashboard', () => {
@@ -161,7 +193,7 @@ describe('loadDashboard', () => {
     });
   });
 
-  test('target.aiExtractionStatus を buildDashboard の入力へ引き継ぐ（no_result は AI 精度内訳に加算しない）', async () => {
+  test('AI 抽出結果なし（Evidence 0 件）の study の手入力は buildDashboard で AI 精度内訳に加算されない', async () => {
     const material = makeMaterial();
     material.target.aiExtractionStatus = 'no_result';
     material.target.evidence = [];
@@ -180,7 +212,41 @@ describe('loadDashboard', () => {
         note: null,
       },
     ];
-    readMaterialsMock.mockResolvedValue([material]);
+    readMaterialsMock.mockResolvedValue(makeMaterialsResult([material]));
+    const store = makeStore();
+    await loadDashboard(store, makeDeps());
+    const { dashboard } = store.getState();
+    expect(dashboard.data?.rows[0]?.progress).toEqual({ decided: 1, total: 1 });
+    expect(dashboard.data?.rows[0]?.accuracy).toEqual({
+      accept: 0,
+      edit: 0,
+      reject: 0,
+      notReported: 0,
+      decided: 0,
+    });
+  });
+
+  test('readVerifyTargetMaterials の runStartedAt を buildDashboard へそのまま渡す（PR #190 レビュー対応: セル単位の AI 精度算入判定）', async () => {
+    const material = makeMaterial(); // evidence の runId は既定 'run-1'
+    material.ownDecisions = [
+      {
+        decidedAt: '2026-07-19T00:00:00Z', // 表示 run の started_at より前 = 未算入
+        decidedBy: 'me@example.com',
+        studyId: 'study-doc-1',
+        fieldId: 'f-total',
+        entityKey: '-',
+        annotator: 'me@example.com',
+        annotatorType: 'human_with_ai',
+        schemaVersion: 1,
+        action: 'accept',
+        value: '120',
+        note: null,
+      },
+    ];
+    readMaterialsMock.mockResolvedValue({
+      materials: [material],
+      runStartedAt: new Map([['run-1', '2026-07-20T00:00:00Z']]),
+    });
     const store = makeStore();
     await loadDashboard(store, makeDeps());
     const { dashboard } = store.getState();

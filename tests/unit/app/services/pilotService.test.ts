@@ -853,6 +853,56 @@ describe('runPilot: 実行', () => {
     await runPilot(store, makeDeps({ now: undefined }));
     expect(store.getState().pilot.run?.runId).toBe('run-1');
   });
+
+  // PR #190 のレビュー対応: 抽出前に #/verify・#/dashboard を開いてキャッシュされた
+  // 空一覧・空集計が、パイロット完了後も再読込されず残ってしまう問題への対処
+  describe('verify / dashboard キャッシュの無効化（PR #190）', () => {
+    function seedCaches(store: Store): void {
+      store.setState({
+        verify: { ...store.getState().verify, targets: [], loadError: '前回のエラー' },
+        dashboard: {
+          ...store.getState().dashboard,
+          data: {
+            sections: [],
+            rows: [],
+            totals: {
+              progress: { decided: 0, total: 0 },
+              accuracy: { accept: 0, edit: 0, reject: 0, notReported: 0, decided: 0 },
+              anchor: { numerator: 0, denominator: 0 },
+              notReported: { numerator: 0, denominator: 0 },
+            },
+          },
+        },
+      });
+    }
+
+    test('done: verify.targets / dashboard.data を null に戻す', async () => {
+      const store = makeReadyStore();
+      seedCaches(store);
+      runExtractionMock.mockResolvedValue(makeOutcome({ status: 'done' }));
+      await runPilot(store, makeDeps());
+      expect(store.getState().verify.targets).toBeNull();
+      expect(store.getState().dashboard.data).toBeNull();
+    });
+
+    test('partial_failure でも同様に無効化する', async () => {
+      const store = makeReadyStore();
+      seedCaches(store);
+      runExtractionMock.mockResolvedValue(makeOutcome({ status: 'partial_failure' }));
+      await runPilot(store, makeDeps());
+      expect(store.getState().verify.targets).toBeNull();
+      expect(store.getState().dashboard.data).toBeNull();
+    });
+
+    test('実行例外（catch）では無効化しない', async () => {
+      const store = makeReadyStore();
+      seedCaches(store);
+      runExtractionMock.mockRejectedValue(new Error('boom'));
+      await runPilot(store, makeDeps());
+      expect(store.getState().verify.targets).toEqual([]);
+      expect(store.getState().dashboard.data).not.toBeNull();
+    });
+  });
 });
 
 describe('loadPilotVerification', () => {

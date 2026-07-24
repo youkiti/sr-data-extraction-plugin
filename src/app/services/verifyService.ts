@@ -258,6 +258,17 @@ export interface VerifyTargetMaterial {
   armStructure: ConfirmedArmStructure | null;
 }
 
+/** readVerifyTargetMaterials の戻り値（検証対象素材一式 + ダッシュボードの AI 精度算入判定用 run 情報） */
+export interface VerifyTargetMaterialsResult {
+  materials: VerifyTargetMaterial[];
+  /**
+   * run_id → started_at（完了 run のみ。started_at 未記録の旧プロトコル行は null）。
+   * dashboard.ts の isAiAccuracyEligible がセル単位の AI 精度算入判定に使う（PR #190 レビュー対応）。
+   * 独立入力モードは常に空 map（下記 readIndependentVerifyTargetMaterials 呼び出し側参照）
+   */
+  runStartedAt: Map<string, string | null>;
+}
+
 /**
  * 独立入力モード（reviewer_independent）の検証対象素材（design §5.1）。
  * Evidence / ExtractionRuns を一切読まず、Studies（アクティブ study 全件）× 最新確定
@@ -320,16 +331,18 @@ async function readIndependentVerifyTargetMaterials(
  * study 内の文書は role 固定順 → 取り込み順で並べ、Evidence は全文書ぶんを渡す。
  *
  * 独立入力モード（role='reviewer_independent'）は Evidence 非依存の別経路
- * （readIndependentVerifyTargetMaterials）へ委譲する（design §5.1）
+ * （readIndependentVerifyTargetMaterials）へ委譲する（design §5.1）。ダッシュボードは
+ * owner 専用のため、独立入力モードの runStartedAt は空 map で構わない（実害なし）
  */
 export async function readVerifyTargetMaterials(
   store: Store,
   deps: VerificationDeps,
   spreadsheetId: string,
-): Promise<VerifyTargetMaterial[]> {
+): Promise<VerifyTargetMaterialsResult> {
   const role = store.getState().role.role ?? 'owner';
   if (role === 'reviewer_independent') {
-    return readIndependentVerifyTargetMaterials(store, deps, spreadsheetId);
+    const materials = await readIndependentVerifyTargetMaterials(store, deps, spreadsheetId);
+    return { materials, runStartedAt: new Map() };
   }
   const documents = await resolveDocuments(store, deps, spreadsheetId);
   const studies = await resolveStudies(store, deps, spreadsheetId);
@@ -400,7 +413,37 @@ export async function readVerifyTargetMaterials(
       armStructure,
     });
   }
-  return materials;
+  // Sheets の GET を追加せず、既読の completedRuns から run_id → started_at map を作るだけ
+  // （dashboard.ts のセル単位 AI 精度判定に使う。PR #190 レビュー対応）
+  const runStartedAt = new Map(completedRuns.map((meta) => [meta.runId, meta.startedAt]));
+  return { materials, runStartedAt };
+}
+
+/**
+ * verify スライスの読込済みキャッシュを無効化する（抽出完了処理から呼ぶ。PR #190 のレビュー対応）。
+ * PR #190 で #/verify の入場ガードを「確定スキーマ ≥ 1 かつ document ≥ 1」へ緩和した結果、
+ * 抽出前に #/verify を開くと `targets: []` がキャッシュされ、その後 #/pilot・#/extract で抽出しても
+ * `loadVerifyTargets`（`targets !== null` で早期 return）が再読込しないまま残ってしまう
+ * （再入場してもページ再読み込みまで空一覧が残る）。抽出完了のたびにキャッシュを破棄し、
+ * 次回 #/verify 入場時の既存の読込経路（force なしの自然な再読込）に委ねる。
+ * `loading` / `queuedDecisions` / `layoutMode` / `deepLinkEntityKey` は抽出の成否と無関係なので
+ * 触らない（queuedDecisions はオフラインキュー件数、layoutMode は設定由来のため）
+ */
+export function invalidateVerifyTargets(store: Store): void {
+  // 表示中 PDF を解放してから状態を破棄する（pdfjs のメモリ解放。openVerifyStudy と同じ流儀）。
+  // 抽出完了処理を PDF 解放の完了で足止めしないよう fire-and-forget にする
+  void store.getState().verify.verification?.disposePdf?.();
+  patchVerify(store, {
+    targets: null,
+    selectedStudyId: null,
+    verification: null,
+    verifyError: null,
+    loadError: null,
+    studyValues: null,
+    studyRowUpdatedAt: null,
+    resultsRowUpdatedAt: {},
+    conflictMessage: null,
+  });
 }
 
 /** 検証対象一覧を読み込む（S8 の初期表示） */
@@ -419,7 +462,7 @@ export async function loadVerifyTargets(
   }
   patchVerify(store, { loading: true, loadError: null });
   try {
-    const materials = await readVerifyTargetMaterials(store, deps, project.spreadsheetId);
+    const { materials } = await readVerifyTargetMaterials(store, deps, project.spreadsheetId);
     patchVerify(store, { loading: false, targets: materials.map((material) => material.target) });
   } catch (err) {
     patchVerify(store, { loading: false, loadError: toMessage(err) });
