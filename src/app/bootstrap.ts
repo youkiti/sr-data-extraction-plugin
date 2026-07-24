@@ -5,6 +5,7 @@ import { createInitialState, createStore, type AppState, type Store, type Verify
 import { studyQueryOf, entityQueryOf, findRoute, normalizeHash, ROUTES, type RouteHash } from './router';
 import { guardRoute } from './guards';
 import { showToast } from './ui/toast';
+import { captureScrollPositions, restoreScrollPositions } from './ui/preserveScroll';
 import type { ViewContext } from './views/types';
 import {
   cancelExclusion,
@@ -1109,14 +1110,18 @@ export async function bootstrapApp(
     // ストア更新の再描画は route 全体を replaceChildren で作り直すため、ページ全体
     // （documentElement）のスクロール位置が一旦 0 へクランプされる。ナビゲーション
     // （hashchange）と違い同一画面の部分更新なので、退避して復元する（例: パイロットの
-    // 論文チェック・モデル選択・判定操作のたびに一覧の先頭へ戻ってしまうのを防ぐ）
+    // 論文チェック・モデル選択・判定操作のたびに一覧の先頭へ戻ってしまうのを防ぐ）。
+    // 内側のスクロールコンテナ（data-preserve-scroll。検証パネルの右ペイン・PDF ペイン等）も
+    // detach → reattach で 0 にリセットされるため、同じ枠で退避・復元する（issue #192）
     const scrollTop = doc.documentElement.scrollTop;
     const scrollLeft = doc.documentElement.scrollLeft;
+    const innerScrolls = captureScrollPositions(doc);
     renderHeader(state);
     renderNav(state);
     renderRoute();
     doc.documentElement.scrollTop = scrollTop;
     doc.documentElement.scrollLeft = scrollLeft;
+    restoreScrollPositions(innerScrolls);
   });
 
   renderHeader(store.getState());

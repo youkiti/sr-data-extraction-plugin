@@ -517,6 +517,67 @@ test('一覧 + 検証フロー: 進捗チップ → ハイライト → 承認 �
   await expect(page.locator('.verify__ai-value')).toHaveText('9', { timeout: 15_000 });
 });
 
+// スクロールリセットの回帰テスト（issue #192）: 判定保存の非同期ストア更新は route 全体を
+// replaceChildren で作り直し、キャッシュ済みパネルが detach → reattach される。実ブラウザは
+// このとき内側スクロールコンテナの位置を 0 にリセットするため、bootstrap の退避・復元
+// （data-preserve-scroll）が効いていることを、判定 → Decisions 追記（保存完了）後の
+// スクロール位置で確認する。承認後の自動送りによる scrollIntoView の影響を受けないよう、
+// 未判定セルは 1 件だけにする（movedTo なし = 判定時のスクロール副作用なし）
+test('判定保存（非同期ストア更新）の再描画でもペイン内のスクロール位置が保持される（issue #192）', async ({
+  page,
+}) => {
+  const { appendUrls } = await setupRoutes(page, {
+    schemaRows: [STUDY_FIELD_ROW],
+    evidenceRows: [EVIDENCE_ROW_1, EVIDENCE_ROW_2],
+  });
+  await initApp(page, '#/verify?study=study-1');
+
+  await expect(page.locator('.verify__panes')).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator('.pdf-viewer__hl--unverified')).toHaveCount(1, { timeout: 15_000 });
+
+  // リスト表示へ切替（報告の再現手順）+ fixture のセル数に依存せず決定的に
+  // スクロール可能な高さへ制限する
+  await page.locator('#verify-layout-toggle').click();
+  await expect(page.locator('#verify-focus-card')).toHaveCount(0);
+  await page.addStyleTag({
+    content: '.verify__pane--form { max-height: 120px; } .pdf-viewer__scroller { max-height: 120px; }',
+  });
+
+  // 右ペイン / PDF ペインを中間位置へスクロールする。末尾（最大値）だと承認後に
+  // セル内容が縮んで scrollHeight が減り、復元値が新しい最大値へクランプされて
+  // 位置比較が成立しないため、縮小後も範囲内に収まる中間値を使う
+  const formPane = page.locator('.verify__pane--form');
+  const pdfScroller = page.locator('.pdf-viewer__scroller');
+  const formScrollTop = await formPane.evaluate((node) => {
+    node.scrollTop = 10_000;
+    const max = node.scrollTop;
+    node.scrollTop = Math.min(60, max);
+    return node.scrollTop;
+  });
+  const viewerScrollTop = await pdfScroller.evaluate((node) => {
+    node.scrollTop = 10_000;
+    const max = node.scrollTop;
+    node.scrollTop = Math.min(60, max);
+    return node.scrollTop;
+  });
+  expect(formScrollTop).toBeGreaterThan(0);
+  expect(viewerScrollTop).toBeGreaterThan(0);
+
+  // 判定は DOM click で発火する（Playwright のクリックは画面外のボタンを可視化する
+  // 自動スクロールを伴い、退避対象の位置そのものを動かしてしまうため）
+  await page
+    .locator('.verify__action--accept')
+    .evaluate((node) => (node as HTMLElement).click());
+
+  // 保存完了（Decisions 追記 = 非同期ストア更新の再描画が走った後）でも
+  // 両ペインのスクロール位置が保持される
+  await expect
+    .poll(() => appendUrls.filter((url) => url.includes('Decisions') && url.includes(':append')).length)
+    .toBeGreaterThan(0);
+  await expect.poll(() => formPane.evaluate((node) => node.scrollTop)).toBe(formScrollTop);
+  await expect.poll(() => pdfScroller.evaluate((node) => node.scrollTop)).toBe(viewerScrollTop);
+});
+
 // AI 抽出結果なし（no_result）バナー: RUN_ROW は study-1,study-2 の両方を対象にしているが、
 // Evidence は study-1 ぶんしか渡さない → study-2 は「完了 run の対象だったが Evidence が
 // 1 行も生成されなかった study」として #verify-no-ai-result バナーが出る（Evidence がある
