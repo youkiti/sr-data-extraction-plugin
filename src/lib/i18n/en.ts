@@ -537,6 +537,20 @@ export const en: Record<MessageKey, string> = {
   'extract.interruptedWarning':
     'The previous extraction was interrupted ({n} unfinished). Unfinished studies are included in the default selection, so running as-is resumes them.',
 
+  // Failure-reason hints (S7 failed rows; the code is ExtractStudyRow.failureKind in studyProgress.ts)
+  'extract.failureHintTimeout':
+    'The model timed out before returning a response. Consider re-running with a different model (e.g. a flash variant)',
+  'extract.failureHintImageUnsupported':
+    'This model does not support image input. Choose a Gemini-family model instead',
+  'extract.failureHintOutputLimit':
+    'The output was too long and got cut off. Narrow down the target fields in the "Target fields" checklist before re-running (the retry button reuses the original field selection, so it cannot narrow the fields)',
+  'extract.failureHintContentFilter': 'The response was cut off by a content filter',
+  'extract.failureHintMalformed': 'The response was broken as JSON. Try a different model',
+
+  // Blocking runs on image-input-unsupported models
+  'extract.imageUnsupportedBlocked':
+    'The selected model "{model}" is known not to support image input (e.g. scanned PDFs). Choose a different model (e.g. a Gemini-family model) or deselect the affected documents',
+
   // S9 ダッシュボード
   'dashboard.lead':
     'Visualizes the verification progress matrix, AI acceptance rate (from human decisions), anchor failure rate, and not_reported rate.',
@@ -895,6 +909,8 @@ export const en: Record<MessageKey, string> = {
     'The confirmed table design is not loaded. Confirm / reload it on the Table design screen',
   'extraction.errNoFields': 'Select at least one field to extract',
   'extraction.errNoModel': 'Select a model ("Other" allows direct input)',
+  'extraction.errImageUnsupportedModel':
+    'The selected model "{model}" does not support image input, so the run cannot start. Choose a different model or deselect the affected documents',
   'extraction.errStudyDocsNotFound': 'Documents of study {id} were not found',
   'documents.stageCopy': 'Copy',
   'documents.stageExtract': 'Text extraction',

@@ -448,6 +448,22 @@ describe('未実行（setup）', () => {
     expect(root.querySelector('#pilot-estimate')?.textContent).toContain('概算不可');
   });
 
+  test('コスト概算: モデル未選択 + テキスト層なし文献選択時は unknown 警告を出さない（レビュー指摘）', () => {
+    const { root } = render(
+      makeState({
+        documents: [
+          makeDocument({ documentId: 'doc-scan', studyId: 'study-1', textStatus: 'no_text_layer' }),
+        ],
+        pilot: { selectedStudyIds: ['study-1'], model: '' },
+      }),
+    );
+    const estimate = root.querySelector('#pilot-estimate');
+    // ダミーのモデル名 'unknown' を「画像対応が不明なモデルが選ばれている」と誤検出しない
+    expect(estimate?.textContent).not.toContain('画像入力に対応しているか分かっていません');
+    // pdf_native（画像入力）自体の warning は引き続き出る
+    expect(estimate?.textContent).toContain('注意:');
+  });
+
   test('コスト概算: planRun の失敗は文言に落とす（Error / 非 Error）', () => {
     planRunMock.mockImplementationOnce(() => {
       throw new Error('壊れた入力');
@@ -538,8 +554,20 @@ describe('完了（サマリ + 埋め込み検証）', () => {
 
   test('partial_failure は失敗の内訳（破棄件数あり / なし）', () => {
     const failures = [
-      { studyId: 'study-1', section: 'results', reason: 'api_error' as const, detail: '500' },
-      { studyId: 'study-1', section: null, reason: 'format_error' as const, detail: 'JSON' },
+      {
+        studyId: 'study-1',
+        section: 'results',
+        reason: 'api_error' as const,
+        detail: '500',
+        failureKind: null,
+      },
+      {
+        studyId: 'study-1',
+        section: null,
+        reason: 'format_error' as const,
+        detail: 'JSON',
+        failureKind: null,
+      },
     ];
     const withRejected = render(
       makeState({

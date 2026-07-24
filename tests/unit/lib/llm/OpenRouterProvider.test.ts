@@ -315,6 +315,157 @@ describe('OpenRouterProvider.chat', () => {
     });
   });
 
+  // 失敗種別（LlmFailureKind）の分類（実データ抽出の失敗ヒント）
+  describe('失敗種別（LlmFailureKind）の分類', () => {
+    test('choice.error.metadata.error_type === "timeout" は timeout', async () => {
+      const fetch = jest.fn().mockResolvedValue(
+        jsonResponse({
+          choices: [
+            {
+              message: { role: 'assistant', content: null },
+              finish_reason: 'error',
+              error: { message: 'Upstream idle timeout exceeded', code: 504, metadata: { error_type: 'timeout' } },
+            },
+          ],
+        }),
+      );
+      const provider = new OpenRouterProvider({ apiKey: 'k', model: 'm/x', fetch });
+      await expect(provider.chat([{ role: 'user', content: 'q' }])).rejects.toMatchObject({
+        failureKind: 'timeout',
+        retryable: true,
+      });
+    });
+
+    test('error.code === 504（metadata なし）も timeout', async () => {
+      const fetch = jest.fn().mockResolvedValue(
+        jsonResponse({
+          choices: [
+            { message: { role: 'assistant', content: null }, finish_reason: 'error', error: { code: 504 } },
+          ],
+        }),
+      );
+      const provider = new OpenRouterProvider({ apiKey: 'k', model: 'm/x', fetch });
+      await expect(provider.chat([{ role: 'user', content: 'q' }])).rejects.toMatchObject({
+        failureKind: 'timeout',
+      });
+    });
+
+    test('finish_reason=error でも choice.error 自体が無ければ failureKind は null', async () => {
+      const fetch = jest.fn().mockResolvedValue(
+        jsonResponse({
+          choices: [{ message: { role: 'assistant', content: null }, finish_reason: 'error' }],
+        }),
+      );
+      const provider = new OpenRouterProvider({ apiKey: 'k', model: 'm/x', fetch });
+      await expect(provider.chat([{ role: 'user', content: 'q' }])).rejects.toMatchObject({
+        failureKind: null,
+      });
+    });
+
+    test('finish_reason=error でも timeout シグナルが無ければ failureKind は null（汎用フォールバック。判定優先順位）', async () => {
+      const fetch = jest.fn().mockResolvedValue(
+        jsonResponse({
+          choices: [
+            {
+              message: { role: 'assistant', content: null },
+              finish_reason: 'error',
+              error: { message: 'Provider returned error', code: 502 },
+            },
+          ],
+        }),
+      );
+      const provider = new OpenRouterProvider({ apiKey: 'k', model: 'm/x', fetch });
+      await expect(provider.chat([{ role: 'user', content: 'q' }])).rejects.toMatchObject({
+        failureKind: null,
+      });
+    });
+
+    test('HTTP 404 + 画像入力非対応の本文は image_unsupported（実物: OpenRouter の "No endpoints found that support image input"）', async () => {
+      const fetch = jest.fn().mockResolvedValue(
+        errorResponse(404, JSON.stringify({ error: { message: 'No endpoints found that support image input', code: 404 } })),
+      );
+      const provider = new OpenRouterProvider({ apiKey: 'k', model: 'qwen/qwen3-235b-a22b-2507', fetch });
+      await expect(provider.chat([{ role: 'user', content: 'q' }])).rejects.toMatchObject({
+        failureKind: 'image_unsupported',
+        status: 404,
+      });
+    });
+
+    test('HTTP 404 でも画像入力非対応と無関係な本文なら failureKind は null', async () => {
+      const fetch = jest.fn().mockResolvedValue(
+        errorResponse(404, JSON.stringify({ error: { message: 'model not found', code: 404 } })),
+      );
+      const provider = new OpenRouterProvider({ apiKey: 'k', model: 'm/x', fetch });
+      await expect(provider.chat([{ role: 'user', content: 'q' }])).rejects.toMatchObject({
+        failureKind: null,
+      });
+    });
+
+    test('HTTP 404 の本文が JSON として読めなければ failureKind は null', async () => {
+      const fetch = jest.fn().mockResolvedValue(errorResponse(404, 'not json'));
+      const provider = new OpenRouterProvider({ apiKey: 'k', model: 'm/x', fetch });
+      await expect(provider.chat([{ role: 'user', content: 'q' }])).rejects.toMatchObject({
+        failureKind: null,
+      });
+    });
+
+    test('HTTP 404 以外のステータスは画像非対応の本文でも image_unsupported にしない', async () => {
+      const fetch = jest.fn().mockResolvedValue(
+        errorResponse(400, JSON.stringify({ error: { message: 'No endpoints found that support image input', code: 400 } })),
+      );
+      const provider = new OpenRouterProvider({ apiKey: 'k', model: 'm/x', fetch });
+      await expect(provider.chat([{ role: 'user', content: 'q' }])).rejects.toMatchObject({
+        failureKind: null,
+        status: 400,
+      });
+    });
+
+    test('finish_reason=length は output_limit', async () => {
+      const fetch = jest.fn().mockResolvedValue(
+        jsonResponse({
+          choices: [{ message: { role: 'assistant', content: '[{"trunca' }, finish_reason: 'length' }],
+        }),
+      );
+      const provider = new OpenRouterProvider({ apiKey: 'k', model: 'm/x', fetch });
+      await expect(provider.chat([{ role: 'user', content: 'q' }])).rejects.toMatchObject({
+        failureKind: 'output_limit',
+      });
+    });
+
+    test('finish_reason=content_filter は content_filter', async () => {
+      const fetch = jest.fn().mockResolvedValue(
+        jsonResponse({
+          choices: [{ message: { role: 'assistant', content: 'partial' }, finish_reason: 'content_filter' }],
+        }),
+      );
+      const provider = new OpenRouterProvider({ apiKey: 'k', model: 'm/x', fetch });
+      await expect(provider.chat([{ role: 'user', content: 'q' }])).rejects.toMatchObject({
+        failureKind: 'content_filter',
+      });
+    });
+
+    test('ボディが JSON として読めない（切断）は malformed', async () => {
+      const fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        text: async () => '{"choices":[{"message":{"content":"truncat',
+      } as unknown as Response);
+      const provider = new OpenRouterProvider({ apiKey: 'k', model: 'm/x', fetch });
+      await expect(provider.chat([{ role: 'user', content: 'q' }])).rejects.toMatchObject({
+        failureKind: 'malformed',
+        retryable: true,
+      });
+    });
+
+    test('content が空（理由不明）は failureKind が null', async () => {
+      const fetch = jest.fn().mockResolvedValue(jsonResponse(chatCompletion(null)));
+      const provider = new OpenRouterProvider({ apiKey: 'k', model: 'm/x', fetch });
+      await expect(provider.chat([{ role: 'user', content: 'q' }])).rejects.toMatchObject({
+        failureKind: null,
+      });
+    });
+  });
+
   test('supportsImageInput は true（OpenAI 互換の image_url をパススルーする）', () => {
     const provider = new OpenRouterProvider({ apiKey: 'k', model: 'm/x' });
     expect(provider.supportsImageInput).toBe(true);

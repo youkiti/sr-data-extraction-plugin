@@ -534,6 +534,20 @@ export const ja = {
   'extract.interruptedWarning':
     '前回の抽出が途中で中断されています（未完了 {n} 件）。未完了の試験は対象の既定選択に含まれているため、そのまま実行すると再開できます。',
 
+  // 失敗理由のヒント（S7 失敗行。コードは studyProgress.ts の ExtractStudyRow.failureKind）
+  'extract.failureHintTimeout':
+    'モデルが応答を返しきれずタイムアウトしました。別のモデル（flash 系など）での再実行を検討してください',
+  'extract.failureHintImageUnsupported':
+    'このモデルは画像入力に対応していません。Gemini 系モデルを選び直してください',
+  'extract.failureHintOutputLimit':
+    '出力が長すぎて打ち切られました。「対象項目」チェックリストで項目を絞ってから再実行してください（再試行ボタンは元 run と同じ項目選択のまま実行されるため項目は絞れません）',
+  'extract.failureHintContentFilter': 'コンテンツフィルタにより応答が打ち切られました',
+  'extract.failureHintMalformed': '応答が JSON として壊れていました。別のモデルを試してください',
+
+  // 画像非対応モデルの実行ブロック
+  'extract.imageUnsupportedBlocked':
+    '選択中のモデル「{model}」は画像入力（スキャン PDF 等）に対応していないことが判明しています。別のモデル（Gemini 系など）を選ぶか、該当する文献の選択を外してください',
+
   // S9 ダッシュボード（dashboardView.ts）
   'dashboard.lead':
     '検証の進捗マトリクス、AI 採用率（人の判定から算出）、anchor 失敗率、not_reported 率を可視化します。',
@@ -885,6 +899,8 @@ export const ja = {
     '確定済みの表のデザインを読み込めていません。表のデザイン画面で確定・再読込してください',
   'extraction.errNoFields': '抽出項目を 1 つ以上選択してください',
   'extraction.errNoModel': 'モデルを選択してください（「その他」で直接入力も可）',
+  'extraction.errImageUnsupportedModel':
+    '選択中のモデル「{model}」は画像入力に対応していないため実行できません。別のモデルを選ぶか、該当する文献の選択を外してください',
   'extraction.errStudyDocsNotFound': 'study {id} の文書が見つかりません',
   'documents.stageCopy': 'コピー',
   'documents.stageExtract': 'テキスト抽出',

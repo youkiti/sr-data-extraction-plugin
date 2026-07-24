@@ -5,6 +5,7 @@ import {
   type ChatOptions,
   type ChatResponse,
   type LLMProvider,
+  type LlmFailureKind,
 } from './LLMProvider';
 import { parseRetryAfterMs } from './retry';
 
@@ -65,6 +66,54 @@ function describeChoice(choice: OpenRouterChoice | undefined): string {
   });
 }
 
+/**
+ * HTTP エラー応答（`!res.ok`）からの失敗種別判定（実データ抽出の失敗ヒント）。
+ * 現状わかっているのは HTTP 404 の画像入力非対応エラーだけ（実物:
+ * `{"error":{"message":"No endpoints found that support image input","code":404}}`）。
+ * `bodyText` を JSON としてパースし、`error.message` フィールドの内容だけを見る
+ * （表示用に切り詰められる `responseBody` や `detail` の部分一致とは違い、ここは切り詰め前の
+ * フルボディを構造化フィールド越しに見ているため、任意の上流エラーを誤検出しない）。
+ * 404 以外・JSON として読めない・該当メッセージが無いときは null（不明）
+ */
+function classifyHttpErrorFailureKind(status: number, bodyText: string): LlmFailureKind | null {
+  if (status !== 404) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(bodyText) as { error?: { message?: unknown } };
+    const message = parsed.error?.message;
+    if (typeof message === 'string' && /image input/i.test(message)) {
+      return 'image_unsupported';
+    }
+  } catch {
+    // JSON として読めなければ判定不能（不明のまま null で返す）
+  }
+  return null;
+}
+
+/**
+ * `choice.error`（プロバイダ側エラーで choice が終わった場合。OpenRouter 仕様）からの
+ * 失敗種別判定。具体的なシグナル（`metadata.error_type` / HTTP 相当の `code`）を先に見る。
+ * `finish_reason=error` 自体は timeout に限らず任意の上流エラーを含みうる汎用フォールバックのため、
+ * 該当しなければ null（理由不明）のまま返し、timeout と誤分類しない
+ */
+function classifyChoiceErrorFailureKind(choice: OpenRouterChoice | undefined): LlmFailureKind | null {
+  const error = choice?.error;
+  if (typeof error !== 'object' || error === null) {
+    return null;
+  }
+  const metadata = (error as { metadata?: unknown }).metadata;
+  const errorType =
+    typeof metadata === 'object' && metadata !== null
+      ? (metadata as { error_type?: unknown }).error_type
+      : undefined;
+  const code = (error as { code?: unknown }).code;
+  if (errorType === 'timeout' || code === 504) {
+    return 'timeout';
+  }
+  return null;
+}
+
 export class OpenRouterProvider implements LLMProvider {
   readonly providerId = 'openrouter' as const;
   readonly model: string;
@@ -100,13 +149,20 @@ export class OpenRouterProvider implements LLMProvider {
         this.providerId,
         res.status,
         text,
-        parseRetryAfterMs(res.headers.get('retry-after'))
+        parseRetryAfterMs(res.headers.get('retry-after')),
+        false,
+        // HTTP 404 の画像入力非対応エラー（実測済み）だけを判別する。それ以外は不明のまま
+        classifyHttpErrorFailureKind(res.status, text),
       );
     }
     // 応答ボディの検査（issue #187）: 実プロジェクトで「HTTP 200 なのにボディが途切れて
     // JSON として読めない」「choice がプロバイダ側エラー/打ち切りで content が空」が
     // 頻発したため、裸の SyntaxError や空文字を返さず、原因（finish_reason / error）を
-    // 載せた LlmProviderError にする。長時間生成の切断は一時的な可能性があるため retryable
+    // 載せた LlmProviderError にする。長時間生成の切断は一時的な可能性があるため retryable。
+    // 失敗種別（LlmFailureKind）の判定順: 具体的なシグナル（choice.error の error_type/code、
+    // finish_reason の length/content_filter）を先に見て、finish_reason=error のような
+    // 汎用フォールバックは「理由不明」（null）に倒す（error は timeout に限らず任意の
+    // 上流エラーを含みうるため、安易に timeout と決め打ちしない）
     const bodyText = await res.text();
     let json: OpenRouterResponse;
     try {
@@ -119,6 +175,7 @@ export class OpenRouterProvider implements LLMProvider {
         bodyText.slice(-ERROR_BODY_EXCERPT_CHARS),
         null,
         true,
+        'malformed',
       );
     }
     const choice = json.choices?.[0];
@@ -132,6 +189,7 @@ export class OpenRouterProvider implements LLMProvider {
         describeChoice(choice),
         null,
         true, // 上流プロバイダの一時障害の可能性があるため再試行対象
+        classifyChoiceErrorFailureKind(choice),
       );
     }
     if (content === undefined || content === null || content === '') {
@@ -149,6 +207,9 @@ export class OpenRouterProvider implements LLMProvider {
         this.providerId,
         res.status,
         describeChoice(choice),
+        null,
+        false,
+        finishReason === 'length' ? 'output_limit' : 'content_filter',
       );
     }
     return {

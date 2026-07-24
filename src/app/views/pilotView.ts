@@ -142,6 +142,9 @@ function renderEstimate(state: AppState): HTMLElement {
         state.pilot.model,
         state.pilot.highAccuracyImages,
       ),
+      // モデル未選択時のダミー値 'unknown' を「画像対応が不明なモデルが選ばれている」と
+      // 誤検出しないための切り分け（extractView.ts の renderEstimate と同じ理由。レビュー指摘）
+      modelSelected: state.pilot.model !== '',
     });
     const cost =
       plan.costEstimateUsd === null

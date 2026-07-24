@@ -3,6 +3,7 @@
  * 実行前は planRun のトークン概算 → ExtractionRuns.cost_estimate（S7 のコスト表示）、
  * 実行後は実測 tokens_in / tokens_out → LLMApiLog.cost_estimate_usd を埋める。
  */
+import type { LlmProviderId } from '../../domain/llmApiLog';
 
 /** 入力・出力それぞれの USD / 100 万トークン単価 */
 export interface ModelPricing {
@@ -62,4 +63,56 @@ export function estimateCostUsd(
   const inputCost = ((tokensIn ?? 0) / 1_000_000) * pricing.inputPerMillion;
   const outputCost = ((tokensOut ?? 0) / 1_000_000) * pricing.outputPerMillion;
   return inputCost + outputCost;
+}
+
+/** モデル単位の画像入力対応可否（画像非対応モデルの実行ブロック）の 3 値 */
+export type ImageInputSupport = 'supported' | 'unsupported' | 'unknown';
+
+interface ModelImageCapability {
+  /**
+   * この能力を実測した provider。`resolveModelImageInputSupport` は provider が一致した
+   * ときだけ support を返す（接続方式 override で同じモデル名を別 provider 経由に
+   * 送った場合は実測が無いため `unknown` に倒す。実測が無いのに断定しないための設計）
+   */
+  provider: LlmProviderId;
+  support: Exclude<ImageInputSupport, 'unknown'>;
+}
+
+/**
+ * モデル単位の画像入力対応表。`MODEL_PRICING` の全モデルに明示エントリを持たせる
+ * （`gemini-*` のような前方一致は広すぎるため使わない。カタログ外のモデルは
+ * `resolveModelImageInputSupport` が `unknown` を返す。新モデル追加時の更新漏れは
+ * pricing.test.ts のカタログ全件チェックで検出する）。
+ * - Gemini 系はネイティブ画像入力に対応（`supported`）
+ * - `qwen/qwen3-235b-a22b-2507` / `deepseek/deepseek-v4-flash` は OpenRouter 経由で
+ *   `HTTP 404 No endpoints found that support image input` を実測済み（`unsupported`）
+ */
+export const MODEL_IMAGE_CAPABILITY: Readonly<Record<string, ModelImageCapability>> = {
+  'gemini-2.5-pro': { provider: 'gemini', support: 'supported' },
+  'gemini-2.0-flash': { provider: 'gemini', support: 'supported' },
+  'gemini-3.5-flash': { provider: 'gemini', support: 'supported' },
+  'gemini-3.1-flash-lite': { provider: 'gemini', support: 'supported' },
+  'gemini-3.6-flash': { provider: 'gemini', support: 'supported' },
+  'gemini-3.5-flash-lite': { provider: 'gemini', support: 'supported' },
+  'qwen/qwen3-235b-a22b-2507': { provider: 'openrouter', support: 'unsupported' },
+  'deepseek/deepseek-v4-flash': { provider: 'openrouter', support: 'unsupported' },
+};
+
+/**
+ * モデル単位の画像入力対応可否を解決する。
+ * 入力に `provider` と `model` の両方を要求するのは、`providerFactory.resolveProviderConfig` が
+ * 保存済みの接続方式でモデル名からの provider 推定を上書きできるため
+ * （同じモデル名でも Gemini 直結 / OpenRouter / ローカル OpenAI 互換で実際の能力が異なりうる）。
+ * カタログの実測 provider と一致しないとき（override で別 provider に送った場合を含む）は
+ * 実測が無いため `unknown` を返す
+ */
+export function resolveModelImageInputSupport(
+  provider: LlmProviderId,
+  model: string,
+): ImageInputSupport {
+  const entry = MODEL_IMAGE_CAPABILITY[model];
+  if (entry === undefined || entry.provider !== provider) {
+    return 'unknown';
+  }
+  return entry.support;
 }

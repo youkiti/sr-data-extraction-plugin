@@ -17,7 +17,12 @@ import type { Evidence } from '../../domain/evidence';
 import type { ArmCompletenessRunWarning, RunStatus } from '../../domain/extractionRun';
 import type { SchemaField } from '../../domain/schemaField';
 import { LlmProviderError } from '../../lib/llm/LLMProvider';
-import type { ChatMessage, ChatResponse, LLMProvider } from '../../lib/llm/LLMProvider';
+import type {
+  ChatMessage,
+  ChatResponse,
+  LLMProvider,
+  LlmFailureKind,
+} from '../../lib/llm/LLMProvider';
 import { generateUuid } from '../../utils/uuid';
 import { anchorQuote } from '../anchoring/anchorQuote';
 import { normalizeText } from '../anchoring/normalizeText';
@@ -54,6 +59,15 @@ export interface BatchFailure {
   section: string | null;
   reason: BatchFailureReason;
   detail: string;
+  /**
+   * 応答検査で判別した失敗の種別（provider 境界で正規化済み。S7 の失敗行ヒント表示の素材。
+   * reason は既存の分類のまま残し、種別は別フィールドで持つ）。
+   * `reason='api_error'` で provider が `LlmProviderError.failureKind` を返したときだけ値を持つ。
+   * それ以外（load_failed / format_error / save_failed、または failureKind が判別できなかった
+   * api_error）は null（`ExtractStudyRow.failureKind`〔studyProgress.ts〕と同じ
+   * 「不明は null」という表現に揃える。必須フィールドにすることで型上も欠落を許さない）
+   */
+  failureKind: LlmFailureKind | null;
 }
 
 /** validateAiOutput が破棄した要素に、どのバッチ由来かを付与したもの */
@@ -460,12 +474,18 @@ export async function executeRun(
     return loading;
   };
 
-  const failBatch = (batch: PlannedBatch, reason: BatchFailureReason, detail: string): BatchFailure => {
+  const failBatch = (
+    batch: PlannedBatch,
+    reason: BatchFailureReason,
+    detail: string,
+    failureKind: LlmFailureKind | null = null,
+  ): BatchFailure => {
     const failure: BatchFailure = {
       studyId: batch.studyId,
       section: batch.section,
       reason,
       detail,
+      failureKind,
     };
     batchFailures.push(failure);
     return failure;
@@ -666,7 +686,10 @@ export async function executeRun(
         responseSchema: extractDataResponseSchema(requestBox),
       });
     } catch (err) {
-      reportProgress(batch, failBatch(batch, 'api_error', toDetail(err)));
+      // failureKind は provider が構造化フィールドから判別できたときだけ持つ
+      // （LlmProviderError 以外・不明時は null。BatchFailure のコメント参照）
+      const failureKind = err instanceof LlmProviderError ? err.failureKind : null;
+      reportProgress(batch, failBatch(batch, 'api_error', toDetail(err), failureKind));
       return;
     }
     tokensIn = addTokens(tokensIn, response.tokensIn);

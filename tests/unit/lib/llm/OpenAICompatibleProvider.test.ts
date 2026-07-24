@@ -63,11 +63,10 @@ describe('OpenAICompatibleProvider', () => {
     expect(result).toMatchObject({ text: '{"ok":true}', tokensIn: 12, tokensOut: 3 });
   });
 
-  test('JSON mode と省略応答を扱う', async () => {
-    const fetchMock = jest
-      .fn()
-      .mockResolvedValueOnce(response({ choices: [{ message: { content: null } }] }))
-      .mockResolvedValueOnce(response({}));
+  test('JSON mode は response_format を反映する（本文ありの正常応答）', async () => {
+    const fetchMock = jest.fn().mockResolvedValue(
+      response({ choices: [{ message: { content: '{}' } }] }),
+    );
     const provider = new OpenAICompatibleProvider({
       apiKey: 'k',
       model: 'm',
@@ -76,18 +75,30 @@ describe('OpenAICompatibleProvider', () => {
     });
     await expect(
       provider.chat([{ role: 'user', content: 'q' }], { responseFormat: 'json' }),
-    ).resolves.toEqual(expect.objectContaining({ text: '', tokensIn: null, tokensOut: null }));
+    ).resolves.toEqual(expect.objectContaining({ text: '{}', tokensIn: null, tokensOut: null }));
     const firstBody = JSON.parse((fetchMock.mock.calls[0]?.[1] as RequestInit).body as string);
     expect(firstBody.response_format).toEqual({ type: 'json_object' });
-    await expect(provider.chat([])).resolves.toEqual(
-      expect.objectContaining({ text: '', tokensIn: null, tokensOut: null }),
+  });
+
+  test('メッセージ 0 件でも body は空配列で送る', async () => {
+    const fetchMock = jest.fn().mockResolvedValue(
+      response({ choices: [{ message: { content: 'ok' } }] }),
     );
-    const secondBody = JSON.parse((fetchMock.mock.calls[1]?.[1] as RequestInit).body as string);
-    expect(secondBody).toEqual({ model: 'm', messages: [] });
+    const provider = new OpenAICompatibleProvider({
+      apiKey: 'k',
+      model: 'm',
+      endpoint: 'https://llm.example/v1/chat/completions',
+      fetch: fetchMock,
+    });
+    await provider.chat([]);
+    const body = JSON.parse((fetchMock.mock.calls[0]?.[1] as RequestInit).body as string);
+    expect(body).toEqual({ model: 'm', messages: [] });
   });
 
   test('loopback の空 API キーでは Authorization ヘッダーを送らない', async () => {
-    const fetchMock = jest.fn().mockResolvedValue(response({}));
+    const fetchMock = jest.fn().mockResolvedValue(
+      response({ choices: [{ message: { content: 'ok' } }] }),
+    );
     const provider = new OpenAICompatibleProvider({
       apiKey: '   ',
       model: 'local-model',
@@ -97,6 +108,111 @@ describe('OpenAICompatibleProvider', () => {
     await provider.chat([]);
     expect((fetchMock.mock.calls[0]?.[1] as RequestInit).headers).toEqual({
       'Content-Type': 'application/json',
+    });
+  });
+
+  // 応答内容の検査（issue #187 / OpenRouterProvider と同じ方針）: 空 content・打ち切り・
+  // ボディ切断を原因付きで throw し、length 打ち切りが format_error に化けないようにする
+  describe('応答内容の検査（issue #187）', () => {
+    test('content が null なら本文なしの LlmProviderError（failureKind は不明のまま null）', async () => {
+      const fetchMock = jest.fn().mockResolvedValue(
+        response({ choices: [{ message: { content: null }, finish_reason: 'stop' }] }),
+      );
+      const provider = new OpenAICompatibleProvider({
+        apiKey: 'k',
+        model: 'm',
+        endpoint: 'https://llm.example/v1/chat/completions',
+        fetch: fetchMock,
+      });
+      try {
+        await provider.chat([{ role: 'user', content: 'q' }]);
+        throw new Error('should have thrown');
+      } catch (err) {
+        expect(err).toBeInstanceOf(LlmProviderError);
+        const e = err as LlmProviderError;
+        expect(e.message).toContain('本文（content）がありません');
+        expect(e.failureKind).toBeNull();
+      }
+    });
+
+    test('choices 自体が無い応答（{}）も本文なしとして throw する', async () => {
+      const fetchMock = jest.fn().mockResolvedValue(response({}));
+      const provider = new OpenAICompatibleProvider({
+        apiKey: 'k',
+        model: 'm',
+        endpoint: 'https://llm.example/v1/chat/completions',
+        fetch: fetchMock,
+      });
+      await expect(provider.chat([])).rejects.toThrow('本文（content）がありません');
+    });
+
+    test('HTTP 200 でもボディが JSON として読めなければ retryable な LlmProviderError（malformed）', async () => {
+      const fetchMock = jest.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        text: async () => '{"choices":[{"message":{"content":"truncat',
+      } as unknown as Response);
+      const provider = new OpenAICompatibleProvider({
+        apiKey: 'k',
+        model: 'm',
+        endpoint: 'https://llm.example/v1/chat/completions',
+        fetch: fetchMock,
+      });
+      try {
+        await provider.chat([{ role: 'user', content: 'q' }]);
+        throw new Error('should have thrown');
+      } catch (err) {
+        expect(err).toBeInstanceOf(LlmProviderError);
+        const e = err as LlmProviderError;
+        expect(e.message).toContain('JSON として読めません');
+        expect(e.retryable).toBe(true);
+        expect(e.failureKind).toBe('malformed');
+      }
+    });
+
+    test('finish_reason=length は content があっても output_limit として分類する（format_error に化けない）', async () => {
+      const fetchMock = jest.fn().mockResolvedValue(
+        response({
+          choices: [{ message: { content: '[{"trunca' }, finish_reason: 'length' }],
+        }),
+      );
+      const provider = new OpenAICompatibleProvider({
+        apiKey: 'k',
+        model: 'm',
+        endpoint: 'https://llm.example/v1/chat/completions',
+        fetch: fetchMock,
+      });
+      try {
+        await provider.chat([{ role: 'user', content: 'q' }]);
+        throw new Error('should have thrown');
+      } catch (err) {
+        expect(err).toBeInstanceOf(LlmProviderError);
+        const e = err as LlmProviderError;
+        expect(e.message).toContain('出力トークン上限で打ち切られました');
+        expect(e.failureKind).toBe('output_limit');
+        expect(e.retryable).toBe(false);
+      }
+    });
+
+    test('finish_reason=content_filter は content_filter として分類する', async () => {
+      const fetchMock = jest.fn().mockResolvedValue(
+        response({
+          choices: [{ message: { content: 'partial' }, finish_reason: 'content_filter' }],
+        }),
+      );
+      const provider = new OpenAICompatibleProvider({
+        apiKey: 'k',
+        model: 'm',
+        endpoint: 'https://llm.example/v1/chat/completions',
+        fetch: fetchMock,
+      });
+      try {
+        await provider.chat([{ role: 'user', content: 'q' }]);
+        throw new Error('should have thrown');
+      } catch (err) {
+        expect(err).toBeInstanceOf(LlmProviderError);
+        expect((err as LlmProviderError).failureKind).toBe('content_filter');
+      }
     });
   });
 
