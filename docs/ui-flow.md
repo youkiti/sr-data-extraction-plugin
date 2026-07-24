@@ -136,7 +136,7 @@ flowchart LR
 | `→ #/schema` | `Protocol` に少なくとも 1 行存在 | サイドバーでディム、クリック時はトーストで誘導 |
 | `→ #/pilot` | 確定済み `schema_version` ≥ 1 **かつ** document ≥ 1（`no_text_layer` の document は `pdf_native` モードでのみ抽出対象 ※requirements.md Q7） | 同上 |
 | `→ #/extract` | 確定済み `schema_version` ≥ 1 | パイロット未実施の場合は警告バナー（「パイロット抽出を推奨します」）を出すが遷移は許可 |
-| `→ #/verify` | `owner`: `Evidence` に少なくとも 1 行存在（AI 抽出実施済み）。**reviewer 系ロール（v0.11）**: counts を見ずフォルダアクセス付与済みのみを条件にする（盲検のため counts ベースの判定は行わない。「AI 抽出未実施」「確定スキーマ無し」は画面内の空状態表示に譲る） | サイドバーでディム。未充足時はトーストで案内 |
+| `→ #/verify` | `owner`: 確定済み `schema_version` ≥ 1 **かつ** document ≥ 1（`Evidence` の有無は問わない）。AI 抽出が全滅して `Evidence` が 0 行の study も S8 に「AI 抽出結果なし」として表示し人手入力へ進めるため、Evidence 起点の判定は入場ガードとしては使わない（抽出前に入った場合は一覧が空になり `#verify-empty` の空状態表示に委ねる。#/pilot・#/extract の抽出完了処理は verify / dashboard の読込済みキャッシュを無効化するため、その後 #/verify・#/dashboard へ再入場すれば通常の読込経路〔force なし〕で自然に最新化される — PR #190 のレビュー対応。`#verify-empty-reload` は念のための手動導線）。**reviewer 系ロール（v0.11）**: counts を見ずフォルダアクセス付与済みのみを条件にする（盲検のため counts ベースの判定は行わない。「AI 抽出未実施」「確定スキーマ無し」は画面内の空状態表示に譲る） | サイドバーでディム。未充足時はトーストで案内 |
 | `→ #/dashboard` | なし（0 件でも空状態 UI） | — |
 | `→ #/export` | `StudyData` / `ResultsData` に少なくとも 1 行存在 | サイドバーでディム。未検証セル残存はガードではなく警告ダイアログで扱う |
 | `→ #/adjudicate`（v0.11） | `owner` / `adjudicator` ロールのみ。counts による入場条件はなし（対象 study が無ければ画面内の空状態で案内） | それ以外のロールはナビ自体に表示されない |

@@ -12,11 +12,34 @@ import { renderCachedVerificationPanel } from './verificationPanel';
 
 function selectorLabel(target: VerifyTarget): string {
   const { progress } = target;
-  return t('verify.selectorOption', {
+  const key =
+    target.aiExtractionStatus === 'no_result' ? 'verify.selectorOptionNoResult' : 'verify.selectorOption';
+  return t(key, {
     label: target.study.studyLabel,
     decided: progress.decided,
     total: progress.total,
   });
+}
+
+/**
+ * AI 抽出結果なしバナー（完了 run の対象だったが Evidence が 1 行も生成されなかった study）。
+ * 手入力で記録できる旨に加え、rob_domain タブが入力できない制限を正直に明記する
+ * （features/verification/cells.ts の entityInstances は rob_domain のインスタンスを
+ * Evidence と Decisions からのみ導出するため、両方 0 件だとタブが空になる）
+ */
+function renderNoAiResultBanner(): HTMLElement {
+  return el(
+    'div',
+    {
+      id: 'verify-no-ai-result',
+      className: 'verify__no-ai-result',
+      attributes: { role: 'status' },
+    },
+    [
+      el('p', { text: t('verify.noAiResultLead') }),
+      el('p', { text: t('verify.noAiResultRobLimit') }),
+    ],
+  );
 }
 
 /**
@@ -132,22 +155,36 @@ export function renderVerifyView(state: AppState, ctx: ViewContext): HTMLElement
   if (verify.targets.length === 0) {
     // 独立入力モードは「確定済みスキーマが無い」「Studies が 0 件」のいずれでも一覧が空になる
     // （design §5.1）。AI 抽出の有無を前提にした案内は出さない
+    // 抽出前に #/verify を開くと空一覧がキャッシュされる（PR #190）。抽出完了時に
+    // 自動で無効化され再入場すれば通常は自然に最新化されるが、念のため手動の再読込導線も置く
+    // （PR #190 のレビュー対応）
+    const reload = el('button', {
+      id: 'verify-empty-reload',
+      text: t('common.retry'),
+      attributes: { type: 'button' },
+    });
+    reload.addEventListener('click', () => ctx.verify.onRetryLoad());
     children.push(
       el('p', {
         id: 'verify-empty',
         text: independent ? t('verify.emptyIndependent') : t('verify.empty'),
       }),
+      reload,
     );
     return el('section', { className: 'view view--verify' }, children);
   }
 
   children.push(renderSelector(state, ctx, verify.targets));
 
-  // 選択中 study の arm 欠落警告（issue #106）。セレクタ直下 = パネル読み込み中でも見える
+  // 選択中 study の AI 抽出結果なしバナー・arm 欠落警告（issue #106）。
+  // セレクタ直下 = パネル読み込み中でも見える
   const selectedTarget = verify.targets.find(
     (target) => target.study.studyId === verify.selectedStudyId,
   );
   if (selectedTarget !== undefined) {
+    if (selectedTarget.aiExtractionStatus === 'no_result') {
+      children.push(renderNoAiResultBanner());
+    }
     const armWarning = renderArmCompletenessWarning(selectedTarget);
     if (armWarning !== null) {
       children.push(armWarning);

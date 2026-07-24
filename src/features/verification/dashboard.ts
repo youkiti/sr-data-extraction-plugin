@@ -108,7 +108,45 @@ function documentSections(fields: readonly SchemaField[]): string[] {
   return sections;
 }
 
-function buildRow(input: DashboardStudyInput, sections: readonly string[]): DashboardRow {
+/**
+ * セルを AI 精度内訳（accept/edit/reject/notReported）へ算入してよいかを判定する
+ * （PR #190 レビュー対応: study 単位の `aiExtractionStatus` フラグを廃止し、セル単位の
+ * 判定へ置き換える）。算入条件:
+ * - セルに AI Evidence が表示されている（`cell.evidence !== null`）。AI 根拠が無い
+ *   手入力を「AI を修正した」と数えると automation bias の指標が汚染されるため除外する
+ * - かつ、セルの現在判定（`cell.state.stack` 末尾 = 最新の有効判定）の `decidedAt` が、
+ *   その Evidence を生んだ run（`cell.evidence.runId`）の `started_at` より後（文字列
+ *   比較で厳密に大きい）。これにより「no_result（AI 抽出結果なし）の間に行った手入力が、
+ *   再抽出成功後に study の status が 'extracted' に変わることで AI 精度へ混入する」事故を防ぐ
+ *   （手入力時点ではまだ表示中の Evidence は存在せず、その判定は「AI 出力を見た上での判定」
+ *   ではないため）。副次的に、再抽出で表示 run が変わったときも旧 run 時代の判定は
+ *   算入対象から外れる
+ * `started_at` が null の run（旧プロトコルで未記録）は「最古」扱いとして常に算入する
+ * （後方互換）。runId が runStartedAt に無い場合も従来どおり算入する（防御的フォールバック。
+ * composeEvidenceByStudy は完了 run の Evidence しか通さないため実際には到達しない）
+ */
+function isAiAccuracyEligible(
+  cell: VerificationCell,
+  runStartedAt: ReadonlyMap<string, string | null>,
+): boolean {
+  if (cell.evidence === null) {
+    return false;
+  }
+  // 呼び出し元（buildRow）は status !== 'unverified' のセルだけを渡すため、
+  // stack は必ず 1 件以上積まれている（cellState.ts の stateOfStack）
+  const decision = cell.state.stack[cell.state.stack.length - 1] as Decision;
+  const startedAt = runStartedAt.get(cell.evidence.runId) ?? null;
+  if (startedAt === null) {
+    return true;
+  }
+  return decision.decidedAt.localeCompare(startedAt) > 0;
+}
+
+function buildRow(
+  input: DashboardStudyInput,
+  sections: readonly string[],
+  runStartedAt: ReadonlyMap<string, string | null>,
+): DashboardRow {
   const own = documentSections(input.fields);
   const bySection = new Map<string, DashboardSectionCell>(
     own.map((section) => [section, { section, decided: 0, total: 0, entityKey: null }]),
@@ -132,12 +170,14 @@ function buildRow(input: DashboardStudyInput, sections: readonly string[]): Dash
     if (status !== 'unverified') {
       entry.decided += 1;
       decided += 1;
-      accuracy.decided += 1;
-      if (status === 'not_reported') {
-        accuracy.notReported += 1;
-      } else {
-        // status は accept / edit / reject のいずれか
-        accuracy[status] += 1;
+      if (isAiAccuracyEligible(cell, runStartedAt)) {
+        accuracy.decided += 1;
+        if (status === 'not_reported') {
+          accuracy.notReported += 1;
+        } else {
+          // status は accept / edit / reject のいずれか
+          accuracy[status] += 1;
+        }
       }
     }
   }
@@ -161,9 +201,15 @@ function buildRow(input: DashboardStudyInput, sections: readonly string[]): Dash
 
 /**
  * ダッシュボードの表示データを組み立てる。
- * inputs は Evidence がある study のみ（verifyService の検証対象一覧と同じ母集団）
+ * inputs は Evidence がある study のみ（verifyService の検証対象一覧と同じ母集団）。
+ * runStartedAt は run_id → started_at（完了 run の ExtractionRuns 由来。旧プロトコルの
+ * 未記録行は null）の全 study 共通 map（isAiAccuracyEligible が使う。field ごとに表示 run が
+ * 異なりうるため study 単位ではなく run_id 単位で持つ）
  */
-export function buildDashboard(inputs: readonly DashboardStudyInput[]): DashboardData {
+export function buildDashboard(
+  inputs: readonly DashboardStudyInput[],
+  runStartedAt: ReadonlyMap<string, string | null>,
+): DashboardData {
   const sections: string[] = [];
   for (const input of inputs) {
     for (const section of documentSections(input.fields)) {
@@ -172,7 +218,7 @@ export function buildDashboard(inputs: readonly DashboardStudyInput[]): Dashboar
       }
     }
   }
-  const rows = inputs.map((input) => buildRow(input, sections));
+  const rows = inputs.map((input) => buildRow(input, sections, runStartedAt));
   const totals = {
     progress: {
       decided: rows.reduce((sum, row) => sum + row.progress.decided, 0),

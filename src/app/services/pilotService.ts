@@ -43,6 +43,7 @@ import { nowIso8601 } from '../../utils/iso8601';
 import type { PilotState, Store } from '../store';
 import { showToast } from '../ui/toast';
 import { t } from '../../lib/i18n';
+import { invalidateDashboard } from './dashboardService';
 import { runExtraction } from './extractionService';
 import { relocateQuote, type RelocateQuoteOutcome } from './relocateQuoteService';
 import { resolveProtocol } from './schemaService';
@@ -57,6 +58,7 @@ import {
   type QueuedDecisionWrite,
   type VerificationDeps,
 } from './verificationService';
+import { invalidateVerifyTargets } from './verifyService';
 
 export interface PilotServiceDeps extends VerificationDeps, ProviderResolutionDeps {
   /** provider 生成（実行時は lib/llm/providerFactory.createProvider。テストは fake を注入） */
@@ -318,6 +320,10 @@ export async function runPilot(store: Store, deps: PilotServiceDeps): Promise<vo
         historyInitialized: true,
       },
     });
+    // パイロット完了（done / partial_failure とも）でも #/verify・#/dashboard の読込済み
+    // キャッシュを無効化する（PR #190 のレビュー対応。extractService と同じ理由）
+    invalidateVerifyTargets(store);
+    invalidateDashboard(store);
     showToast(
       outcome.run.status === 'done'
         ? t('pilot.toastDone', { n: outcome.result.evidence.length })

@@ -63,12 +63,33 @@ describe('guardRoute', () => {
   });
 
   describe('#/verify', () => {
-    test('Evidence 0 行なら不可', () => {
+    // AI 抽出が全滅（Evidence 0 行）した study も S8 で「AI 抽出結果なし」として表示し
+    // 人手入力へ進めるようにしたため、入場ガードは Evidence 起点の判定をやめ、
+    // 「確定スキーマ + 取り込み済み文献」の有無を条件にする
+    test('確定スキーマ・文献ともに 0 件なら不可', () => {
       expect(guardRoute('#/verify', createInitialState()).allowed).toBe(false);
     });
 
-    test('Evidence 1 行以上なら可', () => {
-      expect(guardRoute('#/verify', stateWith({ evidenceRows: 1 }))).toEqual({ allowed: true });
+    test('Evidence が 0 行でも schemaVersions ≥ 1 かつ documents ≥ 1 なら可', () => {
+      expect(
+        guardRoute('#/verify', stateWith({ schemaVersions: 1, documents: 1, evidenceRows: 0 })),
+      ).toEqual({ allowed: true });
+    });
+
+    test('Evidence が 1 行以上あっても schemaVersions が 0 件なら不可', () => {
+      expect(guardRoute('#/verify', stateWith({ documents: 1, evidenceRows: 1 })).allowed).toBe(
+        false,
+      );
+    });
+
+    test('schemaVersions はあっても documents が 0 件なら不可', () => {
+      expect(guardRoute('#/verify', stateWith({ schemaVersions: 1 })).allowed).toBe(false);
+    });
+
+    test('schemaVersions ≥ 1 かつ documents ≥ 1（Evidence 由来 counts 省略時）なら可', () => {
+      expect(guardRoute('#/verify', stateWith({ schemaVersions: 1, documents: 1 }))).toEqual({
+        allowed: true,
+      });
     });
   });
 
@@ -182,7 +203,7 @@ describe('guardRoute', () => {
     });
 
     test('owner はフォルダアクセス未付与でも #/verify に到達できる', () => {
-      const state = stateWith({ evidenceRows: 1 });
+      const state = stateWith({ schemaVersions: 1, documents: 1 });
       expect(state.role.folderAccessGranted).toBe(false);
       expect(guardRoute('#/verify', state, 'owner')).toEqual({ allowed: true });
     });

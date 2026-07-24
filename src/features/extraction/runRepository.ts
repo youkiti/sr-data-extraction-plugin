@@ -291,6 +291,13 @@ export interface CompletedRunMeta {
   runId: string;
   schemaVersion: number;
   startedAt: string | null;
+  /**
+   * 当該完了 run が対象にした study_id 一覧（§3.2）。AI 抽出が全滅して Evidence が
+   * 1 行も生成されなかった study を「完了 run の対象ではあった」と検出するための素材
+   * （verifyService.readVerifyTargetMaterials の no_result 判定。追加の GET はしない
+   * ＝ readCompletedRunMetas が既に読んでいる行から取り出すだけ）
+   */
+  studyIds: string[];
   /** null = 全項目（後方互換規約） */
   fieldIds: string[] | null;
   /** run 単位の警告（issue #106: arm completeness）。null = 警告なし（S8 バナーの素材） */
@@ -299,8 +306,8 @@ export interface CompletedRunMeta {
 
 /**
  * 完了行（done / partial_failure）のみを対象に、run_id / schema_version / started_at /
- * field_ids / warnings の最小情報をシート行順（= 追記順）で返す
- * （S8/S9 の field 単位合成ビュー + S8 の arm 欠落警告バナーの素材）。
+ * study_ids / field_ids / warnings の最小情報をシート行順（= 追記順）で返す
+ * （S8/S9 の field 単位合成ビュー + S8 の arm 欠落警告バナー + AI 抽出結果なし study 検出の素材）。
  * 中断 run（running 行のみ）は含めない（readRunStudyCoverage と同じ完了判定）
  */
 export async function readCompletedRunMetas(
@@ -318,6 +325,7 @@ export async function readCompletedRunMetas(
       runId: raw[0] ?? '',
       schemaVersion: parseRequiredInteger(raw[2], context, 'schema_version'),
       startedAt: emptyToNull(raw[9]),
+      studyIds: parseStudyIds(raw[3]),
       fieldIds: parseFieldIds(raw[14]),
       warnings: parseRunWarnings(raw[15]),
     });
