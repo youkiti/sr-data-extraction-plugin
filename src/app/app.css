@@ -2369,6 +2369,21 @@ section.documents__tiab {
   flex: 1 1 200px;
 }
 
+/* mermaid プレビュー対象フィールドの複数行編集（issue #170） */
+.verify__edit-input--multiline {
+  flex-basis: 100%;
+  min-height: 120px;
+  resize: vertical;
+  font-family: monospace;
+}
+
+.verify__edit-hint {
+  flex-basis: 100%;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  margin: 0;
+}
+
 .verify__empty {
   color: var(--color-text-muted);
 }

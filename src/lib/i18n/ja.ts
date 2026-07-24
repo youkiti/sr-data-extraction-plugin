@@ -676,6 +676,7 @@ export const ja = {
   'verify.relocating': 'AI で再特定中…',
   'verify.relocateNotFound': 'AI でも見つかりませんでした。本文内検索をお試しください',
   'verify.editValueAria': '{label} の値',
+  'verify.editMultilineHint': 'Enter で改行 / Ctrl+Enter（Mac は Cmd+Enter）で確定',
   'verify.editConfirmIndependent': '入力して確定',
   'verify.editConfirm': '修正して確定',
   'verify.rejectConfirm': '棄却して確定',

@@ -1086,7 +1086,7 @@ export function createVerificationPanel(
       focusedCellKey = cellKey;
       refreshForm();
       // 値入力へ即フォーカス（e キーの操作感。ui-flow.md §7）
-      formPane.querySelector<HTMLInputElement>('.verify__edit-input')?.focus();
+      formPane.querySelector<HTMLElement>('.verify__edit-input')?.focus();
     },
     onConfirmEdit(cellKey, action, value) {
       const cell = findCell(cellKey);

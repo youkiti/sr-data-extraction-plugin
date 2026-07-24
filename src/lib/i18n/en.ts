@@ -682,6 +682,7 @@ export const en: Record<MessageKey, string> = {
   'verify.relocating': 'Relocating with AI…',
   'verify.relocateNotFound': 'AI could not find it either. Try searching the text',
   'verify.editValueAria': 'Value of {label}',
+  'verify.editMultilineHint': 'Enter inserts a line break; Ctrl+Enter (Cmd+Enter on Mac) confirms',
   'verify.editConfirmIndependent': 'Confirm input',
   'verify.editConfirm': 'Confirm edit',
   'verify.rejectConfirm': 'Reject and confirm',

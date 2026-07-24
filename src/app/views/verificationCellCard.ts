@@ -400,13 +400,24 @@ function renderEditor(
   handlers: CellCardHandlers,
   mode: 'review' | 'independent',
 ): HTMLElement {
-  const input = el('input', {
-    className: 'verify__edit-input',
-    attributes: {
-      type: 'text',
-      'aria-label': t('verify.editValueAria', { label: cell.field.fieldLabel }),
-    },
-  });
+  // mermaid プレビュー対象フィールド（quadas3_flow_diagram 等）だけ複数行 textarea にする
+  // （issue #170）。改行を保つ必要があるのはこのフィールド限定のため、それ以外は 1 行 input を
+  // 現状維持する（Enter 確定を含め挙動を変えない）
+  const isMultiline = isMermaidPreviewField(cell.field.fieldName);
+  const ariaLabel = t('verify.editValueAria', { label: cell.field.fieldLabel });
+  // ヒント段落と textarea を aria-describedby で関連付ける固定 id。cellKey（cellKeyOf が返す
+  // JSON 文字列。entity_key 由来の空白を含みうる）は空白区切りの ID 参照リストである
+  // aria-describedby と相性が悪いため使わない。編集中セルは常に 1 件のため固定 id で足りる
+  const hintId = 'verify-edit-hint';
+  const input = isMultiline
+    ? el('textarea', {
+        className: 'verify__edit-input verify__edit-input--multiline',
+        attributes: { rows: '6', 'aria-label': ariaLabel, 'aria-describedby': hintId },
+      })
+    : el('input', {
+        className: 'verify__edit-input',
+        attributes: { type: 'text', 'aria-label': ariaLabel },
+      });
   // edit は現在値（未検証なら AI 値）から修正し、reject は白紙から手入力する（§4.2）。
   // 独立入力モードは AI 値を一切見せないため、確定値が無ければ空欄から始める（design §5.2）
   if (action === 'edit') {
@@ -434,14 +445,33 @@ function renderEditor(
     attributes: { type: 'button' },
   });
   cancelButton.addEventListener('click', () => handlers.onCancelEdit());
-  input.addEventListener('keydown', (event) => {
+  // input / textarea の union 型のままだと addEventListener のオーバーロード解決が効かず
+  // listener 引数が Event に弱まるため、HTMLElement 型の変数経由で購読する
+  const keyTarget: HTMLElement = input;
+  keyTarget.addEventListener('keydown', (event) => {
+    if (isMultiline) {
+      // textarea は Enter 単独で改行を許す（preventDefault しない）。確定は
+      // Ctrl+Enter / Cmd(Meta)+Enter のみ。Escape は 1 行 input と同じくキャンセル
+      if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+        handlers.onConfirmEdit(cell.cellKey, action, input.value);
+      } else if (event.key === 'Escape') {
+        handlers.onCancelEdit();
+      }
+      return;
+    }
     if (event.key === 'Enter') {
       handlers.onConfirmEdit(cell.cellKey, action, input.value);
     } else if (event.key === 'Escape') {
       handlers.onCancelEdit();
     }
   });
-  return el('div', { className: 'verify__editor' }, [input, confirmButton, cancelButton]);
+  // 確定方法が Enter 単独から Ctrl+Enter に変わるため操作ヒントを textarea 直後に出す
+  // （issue #170）。aria-describedby で textarea と紐付けた読み上げ順に合わせ、
+  // DOM 順も [textarea, ヒント, ボタン] にする（flex-wrap により見た目もその順で改行される）
+  const children: HTMLElement[] = isMultiline
+    ? [input, el('p', { className: 'verify__edit-hint', id: hintId, text: t('verify.editMultilineHint') }), confirmButton, cancelButton]
+    : [input, confirmButton, cancelButton];
+  return el('div', { className: 'verify__editor' }, children);
 }
 
 /** 独立入力モードの「入力 (e)」ボタン（承認・棄却は AI 値が無いため出さない。design §5.2） */
