@@ -232,6 +232,104 @@ describe('flow 図（mermaid）プレビューの描画', () => {
   });
 });
 
+describe('mermaid 対象フィールドの複数行編集入力（issue #170）', () => {
+  test('mermaid 対象フィールドの edit では textarea.verify__edit-input が描画される', () => {
+    const cell = makeCell();
+    const root = render(
+      cell,
+      makeModel({ editing: { cellKey: cell.cellKey, action: 'edit' } }),
+    );
+    const textarea = root.querySelector('.verify__edit-input');
+    expect(textarea?.tagName).toBe('TEXTAREA');
+    expect(textarea?.classList.contains('verify__edit-input--multiline')).toBe(true);
+    expect(textarea?.getAttribute('rows')).toBe('6');
+    expect(textarea?.getAttribute('aria-label')).toBe('QUADAS-3 フロー図（mermaid） の値');
+    const hint = root.querySelector('.verify__edit-hint');
+    expect(hint?.textContent).toBe('Enter で改行 / Ctrl+Enter（Mac は Cmd+Enter）で確定');
+    // ヒントは textarea と aria-describedby で紐付き、DOM 順も textarea 直後（読み上げ順）
+    expect(hint?.id).toBe('verify-edit-hint');
+    expect(textarea?.getAttribute('aria-describedby')).toBe('verify-edit-hint');
+    const editor = root.querySelector('.verify__editor');
+    const order = Array.from(editor?.children ?? []).map((node) => node.className);
+    expect(order).toEqual([
+      'verify__edit-input verify__edit-input--multiline',
+      'verify__edit-hint',
+      'verify__edit-confirm',
+      'verify__edit-cancel',
+    ]);
+  });
+
+  test('非対象フィールドでは input.verify__edit-input のまま（ヒント・aria-describedby も出ない）', () => {
+    const cell = makeCell({ field: makeField({ fieldId: 'f-total', fieldName: 'mortality_pct' }) });
+    const root = render(
+      cell,
+      makeModel({ editing: { cellKey: cell.cellKey, action: 'edit' } }),
+    );
+    const input = root.querySelector('.verify__edit-input');
+    expect(input?.tagName).toBe('INPUT');
+    expect(input?.classList.contains('verify__edit-input--multiline')).toBe(false);
+    expect(input?.getAttribute('aria-describedby')).toBeNull();
+    expect(root.querySelector('.verify__edit-hint')).toBeNull();
+  });
+
+  test('複数行値を入れて Ctrl+Enter → onConfirmEdit が改行入りの値で呼ばれる', () => {
+    const cell = makeCell();
+    const handlers = makeHandlers();
+    const node = renderCell(cell, makeModel({ editing: { cellKey: cell.cellKey, action: 'edit' } }), handlers);
+    document.body.replaceChildren(node);
+    const textarea = node.querySelector<HTMLTextAreaElement>('.verify__edit-input') as HTMLTextAreaElement;
+    const multiline = 'flowchart TD\n  A --> B\n  B --> C';
+    textarea.value = multiline;
+    textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true }));
+    expect(handlers.onConfirmEdit).toHaveBeenCalledWith(cell.cellKey, 'edit', multiline);
+  });
+
+  test('Cmd(Meta)+Enter でも確定する', () => {
+    const cell = makeCell();
+    const handlers = makeHandlers();
+    const node = renderCell(cell, makeModel({ editing: { cellKey: cell.cellKey, action: 'edit' } }), handlers);
+    document.body.replaceChildren(node);
+    const textarea = node.querySelector<HTMLTextAreaElement>('.verify__edit-input') as HTMLTextAreaElement;
+    textarea.value = 'flowchart TD\n  A --> B';
+    textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', metaKey: true, bubbles: true }));
+    expect(handlers.onConfirmEdit).toHaveBeenCalledWith(cell.cellKey, 'edit', 'flowchart TD\n  A --> B');
+  });
+
+  test('Enter 単独では onConfirmEdit が呼ばれず、preventDefault もされない（改行を許す）', () => {
+    const cell = makeCell();
+    const handlers = makeHandlers();
+    const node = renderCell(cell, makeModel({ editing: { cellKey: cell.cellKey, action: 'edit' } }), handlers);
+    document.body.replaceChildren(node);
+    const textarea = node.querySelector<HTMLTextAreaElement>('.verify__edit-input') as HTMLTextAreaElement;
+    const event = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true });
+    textarea.dispatchEvent(event);
+    expect(handlers.onConfirmEdit).not.toHaveBeenCalled();
+    expect(event.defaultPrevented).toBe(false);
+  });
+
+  test('Escape → onCancelEdit（1 行 input と同じ）', () => {
+    const cell = makeCell();
+    const handlers = makeHandlers();
+    const node = renderCell(cell, makeModel({ editing: { cellKey: cell.cellKey, action: 'edit' } }), handlers);
+    document.body.replaceChildren(node);
+    const textarea = node.querySelector<HTMLTextAreaElement>('.verify__edit-input') as HTMLTextAreaElement;
+    textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(handlers.onCancelEdit).toHaveBeenCalledTimes(1);
+  });
+
+  test('reject アクションでも textarea になり、白紙から手入力を確定できる', () => {
+    const cell = makeCell();
+    const handlers = makeHandlers();
+    const node = renderCell(cell, makeModel({ editing: { cellKey: cell.cellKey, action: 'reject' } }), handlers);
+    document.body.replaceChildren(node);
+    const textarea = node.querySelector<HTMLTextAreaElement>('.verify__edit-input') as HTMLTextAreaElement;
+    expect(textarea.value).toBe('');
+    textarea.value = 'flowchart TD\n  X --> Y';
+    textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true }));
+    expect(handlers.onConfirmEdit).toHaveBeenCalledWith(cell.cellKey, 'reject', 'flowchart TD\n  X --> Y');
+  });
+});
+
 describe('flow 図（mermaid）の保存時構文チェック警告', () => {
   test('警告マップに載ったセルへ role=note の警告を出す', () => {
     const cell = makeCell();

@@ -1598,6 +1598,49 @@ test('flow 図（mermaid）プレビュー: 構文エラーはメッセージへ
   expect(results.violations).toEqual([]);
 });
 
+test('flow 図（mermaid）プレビュー: 編集入力は複数行 textarea で改行が保持され、Ctrl+Enter 確定後も描画できる（issue #170）', async ({
+  page,
+}) => {
+  await setupRoutes(page, {
+    schemaRows: [FLOW_FIELD_ROW],
+    evidenceRows: [FLOW_EVIDENCE_ROW],
+  });
+  await initApp(page, '#/verify?study=study-1');
+  await expect(page.locator('.verify__panes')).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator('#verify-focus-detail .verify__cell-label')).toHaveText(
+    'QUADAS-3 フロー図（mermaid）',
+  );
+
+  // 編集を開くと textarea（複数行）になり、確定方法のヒントが出る
+  await page.locator('#verify-focus-detail .verify__action--edit').click();
+  const editor = page.locator('#verify-focus-detail .verify__edit-input');
+  await expect(editor).toHaveJSProperty('tagName', 'TEXTAREA');
+  await expect(page.locator('#verify-focus-detail .verify__edit-hint')).toContainText(
+    'Ctrl+Enter',
+  );
+
+  // 改行入りの mermaid ソースを入力し、Ctrl+Enter で確定する（Enter 単独では確定しない）
+  const multilineSource = 'flowchart TD\n  A[Enrolled 100] --> B[Analyzed 80]\n  B --> C[Excluded 20]';
+  await editor.fill(multilineSource);
+  await editor.press('Control+Enter');
+  await expect(page.locator('#verify-focus-detail .verify__chip')).toHaveText('修正');
+
+  // 改行が保持されたことを AI 値表示ではなく判定確定値表示（複数行）で確認する
+  await expect(page.locator('#verify-focus-detail .verify__current-value')).toContainText(
+    'Excluded 20',
+  );
+
+  // 保存後、プレビューを開くと構文エラーなく SVG が描画される（改行を含む有効な mermaid ソース）
+  const toggle = page.locator('#verify-focus-detail .verify__mermaid-toggle');
+  await toggle.locator('summary').click();
+  await expect(page.locator('.verify__mermaid-preview svg')).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator('.verify__mermaid-error')).toHaveCount(0);
+  await expect(page.locator('.verify__mermaid-warning')).toHaveCount(0);
+
+  const results = await new AxeBuilder({ page }).analyze();
+  expect(results.violations).toEqual([]);
+});
+
 // PR #190 のレビュー対応: PR #190 で #/verify の入場ガードを緩和した結果、抽出前に開くと
 // targets: [] がキャッシュされ、その後抽出しても loadVerifyTargets（targets !== null で
 // 早期 return）が再読込しないまま残っていた。抽出完了処理（extractService.runExtract）が
