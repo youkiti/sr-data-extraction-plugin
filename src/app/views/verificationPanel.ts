@@ -143,6 +143,14 @@ export interface VerificationPanelHandle {
    * 可視域へスクロールする（新規パネルの初期表示用。issue #51）
    */
   scrollFocusedIntoView(): void;
+  /**
+   * ペインサイズ調整の aria-valuenow を実測へ同期する（新規パネルの DOM 接続後に 1 回呼ぶ。
+   * issue #193 レビュー指摘 P2-3(a)）。`createVerificationPanel` 内の初回 `applyPaneLayout()`
+   * はパネルがまだ document に未接続の時点で走るため、`getBoundingClientRect()` が 0 を返し
+   * （既定高さ等の分岐で）実寸とずれた値が入る。接続後に呼び出し側（`renderCachedVerificationPanel`）
+   * が `scrollFocusedIntoView()` と同じ「接続後の microtask」タイミングで呼び直す
+   */
+  syncPaneLayoutMeasurements(): void;
   dispose(): void;
 }
 
@@ -980,18 +988,27 @@ export function createVerificationPanel(
   }
 
   /**
-   * 現在の PDF ペイン比率（スプリッタ幅を除いた座標系。上記 usablePanesWidth() 参照）。
-   * 設定済みならその値をそのまま使う。未設定（null）のときは「見た目どおりの比率」を
-   * 実測（leftPane 幅 / usablePanesWidth()）で求める — flex-grow が両ペインとも 1 のため、
-   * 余剰幅は basis 比ではなく等分される。定数比（600:480 相当）をそのまま既定値扱いすると、
-   * 広いビューポートでは実際の描画比率とずれ、ドラッグ開始時にスプリッタが実際の位置から
-   * ジャンプしてから追従してしまう（issue #193 レビュー指摘 F1）。測定不能（防御パス）のときだけ
-   * 定数へフォールバックする。heightSplitterHeight() と同じ「実測を優先し、定数はフォールバック
-   * のみ」という流儀に揃える
+   * 「いま画面に描かれている」PDF ペイン比率。表示（`applyPaneLayout` の basis / aria-valuenow）と
+   * 操作の起点（ドラッグ開始・矢印キー）の**両方がこの 1 つの値を使う**（issue #193 レビュー指摘 P2-1）。
+   *
+   * 背景: 保存値 `paneLayout.pdfPaneRatio` は現在のコンテナ幅では min-width を満たせないことがあり、
+   * 表示は再クランプされる（R3）。もし操作の起点だけが未クランプの保存値だと、
+   * 保存 0.8 / 表示 0.7 のような乖離が生まれ、右へドラッグしても `(0.8-0.7)×usable幅` ぶん
+   * 動かすまで見た目が変わらない不感帯ができる。
+   *
+   * そこで「表示と操作の起点を同じ式から導く」ことで、不感帯を構造的に発生させない:
+   * - 保存値あり → 描画と同じ `clampPdfRatio(保存値)`（クランプ不能な防御パスは保存値そのまま）
+   * - 保存値なし（既定 = basis 未設定）→ flex-grow で等分された実際の見た目を実測する
+   *   （定数比 600:480 をそのまま既定値扱いすると広いビューポートで実際の描画比率とずれ、
+   *   ドラッグ開始時にスプリッタがジャンプする。issue #193 レビュー指摘 F1）
+   *
+   * 保存値ありのときに実測を使わないのは、「測る → basis を書く → また測る」の
+   * フィードバックループを避けるため（浮動小数点誤差の蓄積で値がドリフトし得る）。
+   * 実測は basis が未設定＝測るしか手段がないときに限る
    */
   function currentPdfRatio(): number {
     if (paneLayout.pdfPaneRatio !== null) {
-      return paneLayout.pdfPaneRatio;
+      return clampPdfRatio(paneLayout.pdfPaneRatio) ?? paneLayout.pdfPaneRatio;
     }
     const usableWidth = usablePanesWidth();
     if (usableWidth === null) {
@@ -1002,21 +1019,24 @@ export function createVerificationPanel(
 
   /** 現在の paneLayout を DOM（CSS カスタムプロパティ + aria-value*）へ反映する。null は既定へ戻す */
   function applyPaneLayout(): void {
-    // 保存済み比率は現在のコンテナ幅では min-width を満たせなくなっていることがある
-    // （ウィンドウリサイズ等。issue #193 レビュー指摘 R3 と同じ考え方を比率側にも適用する）。
-    // 表示のたびに再クランプするが、保存値 paneLayout.pdfPaneRatio 自体は変えない。
-    // クランプ不能（測定不能な防御パス）なら保存値をそのまま使う
-    const displayRatio =
-      paneLayout.pdfPaneRatio === null
-        ? currentPdfRatio()
-        : clampPdfRatio(paneLayout.pdfPaneRatio) ?? paneLayout.pdfPaneRatio;
-    widthSplitter.setAttribute('aria-valuenow', String(Math.round(displayRatio * 100)));
-    widthSplitter.setAttribute('aria-valuemin', '0');
-    widthSplitter.setAttribute('aria-valuemax', '100');
+    // カスタムプロパティの更新を比率の測定（currentPdfRatio() 経由の displayRatio 算出）より
+    // 先に行う（issue #193 レビュー指摘 P2-3(b)）。リセット直後（pdfPaneRatio === null）に
+    // 旧 --verify-pdf-basis が残ったまま測定すると、レイアウトがまだ旧比率のままのため
+    // 旧値を拾ってしまう（getBoundingClientRect は呼び出し時点の最新スタイルを強制的に
+    // 反映してから幾何情報を返す＝先に削除しておけば正しい値が測れる）
     if (paneLayout.pdfPaneRatio === null) {
       panesEl.style.removeProperty('--verify-pdf-basis');
       panesEl.style.removeProperty('--verify-form-basis');
-    } else {
+    }
+    // 保存済み比率は現在のコンテナ幅では min-width を満たせなくなっていることがある
+    // （ウィンドウリサイズ等。issue #193 レビュー指摘 R3 と同じ考え方を比率側にも適用する）。
+    // 表示のたびに再クランプするが、保存値 paneLayout.pdfPaneRatio 自体は変えない。
+    // 操作の起点と同じ currentPdfRatio() を使い、表示と操作を一致させる（P2-1）
+    const displayRatio = currentPdfRatio();
+    widthSplitter.setAttribute('aria-valuenow', String(Math.round(displayRatio * 100)));
+    widthSplitter.setAttribute('aria-valuemin', '0');
+    widthSplitter.setAttribute('aria-valuemax', '100');
+    if (paneLayout.pdfPaneRatio !== null) {
       // basis の合計をスプリッタ幅ぶん引いた残りに揃える（R2）: calc((100% - スプリッタ幅) * 比率）
       const splitterWidthPx = measuredSplitterWidth();
       panesEl.style.setProperty(
@@ -2039,6 +2059,9 @@ export function createVerificationPanel(
       );
       element?.scrollIntoView?.({ block: 'nearest' });
     },
+    syncPaneLayoutMeasurements() {
+      applyPaneLayout();
+    },
     dispose() {
       ownerDoc.removeEventListener('keydown', handleKeydown);
       // issue #193 レビュー指摘 R3: パネルは study 切替のたびに作り直される
@@ -2086,6 +2109,15 @@ export function renderCachedVerificationPanel(options: VerificationPanelOptions)
       handle,
       appliedFocusEntity: null,
     };
+    // ペインサイズ調整の aria-valuenow を実測へ同期する（issue #193 レビュー指摘 P2-3(a)）。
+    // createVerificationPanel 内の初回 applyPaneLayout() はパネルが DOM 未接続の時点で走るため
+    // 実寸とずれた値（既定高さ等）が入る。scrollFocusedIntoView と同じ「接続後の microtask」
+    // タイミングで呼び直し、focusEntityKey の有無に関わらず常に実行する
+    queueMicrotask(() => {
+      if (cachedPanel?.handle === handle) {
+        handle.syncPaneLayoutMeasurements();
+      }
+    });
     if (focusEntityKey === null) {
       // ?entity= 指定時は下の focusEntity 適用に任せる。未指定時のみ初期フォーカスセルを可視化する。
       // render 時点ではパネルが DOM 未接続のため、接続後（microtask）にスクロールする

@@ -2691,6 +2691,47 @@ describe('renderCachedVerificationPanel', () => {
     disposeVerificationPanelCache();
   });
 
+  // issue #193 レビュー指摘 P2-3(a): createVerificationPanel 内の初回 applyPaneLayout() は
+  // パネルが document へ未接続の時点で走るため、getBoundingClientRect() が 0 を返し
+  // aria-valuenow に実寸とずれた値（既定高さの実用下限 240 等）が入る。
+  // renderCachedVerificationPanel は接続後（呼び出し側が root を挿入した後の microtask）に
+  // syncPaneLayoutMeasurements() を呼び直し、実測へ同期する
+  test('新規パネル生成時、DOM 接続後（microtask）に aria-valuenow を実測へ同期する', async () => {
+    const data = makeData();
+    const onDecision = jest.fn();
+    const root = renderCachedVerificationPanel({
+      data,
+      onDecision,
+      now: () => 't',
+      renderPage,
+      layoutMode: 'list',
+    });
+    const heightSplitter = root.querySelector<HTMLElement>('.verify__splitter--horizontal')!;
+    // 接続前: formPane の getBoundingClientRect は既定で高さ 0（jsdom）→ 実用下限 240 が入る
+    expect(heightSplitter.getAttribute('aria-valuenow')).toBe('240');
+
+    document.body.replaceChildren(root);
+    const formPane = root.querySelector<HTMLElement>('.verify__pane--form')!;
+    formPane.getBoundingClientRect = jest.fn(
+      () =>
+        ({
+          width: 0,
+          height: 500,
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          x: 0,
+          y: 0,
+          toJSON: () => ({}),
+        }) as DOMRect,
+    );
+
+    await flush(); // 接続後の microtask を流す
+
+    expect(heightSplitter.getAttribute('aria-valuenow')).toBe('500');
+  });
+
   test('表示言語が切り替わったら同じ VerificationData 参照でも作り直す（issue #93）', async () => {
     const data = makeData();
     const onDecision = jest.fn();
@@ -3232,6 +3273,41 @@ describe('createVerificationPanel: ペインサイズ調整（issue #193）', ()
     return parseFloat(match[1] as string);
   }
 
+  /**
+   * leftPane の getBoundingClientRect を、panesEl の現在の `--verify-pdf-basis` から
+   * 動的に計算するよう差し替える。実ブラウザでは比率を変えれば leftPane の実寸も追従するため、
+   * 固定幅の stub より実挙動に近い（basis 未設定のときだけ initialRatio を返す）。
+   *
+   * `currentPdfRatio()` は保存値ありなら `clampPdfRatio(保存値)`、なし（basis 未設定）なら実測を
+   * 使う（issue #193 レビュー指摘 P2-1）。この stub は両者を一致させるため、
+   * 「実測を使う経路」と「保存値を使う経路」のどちらを通っても同じ値が得られることを担保する
+   */
+  function stubTrackingLeftPane(
+    panes: HTMLElement,
+    leftPane: HTMLElement,
+    panesWidth: number,
+    splitterWidth: number,
+    initialRatio: number,
+  ): void {
+    leftPane.getBoundingClientRect = jest.fn(() => {
+      const basis = panes.style.getPropertyValue('--verify-pdf-basis');
+      const ratio = basis === '' ? initialRatio : ratioFromBasis(basis);
+      return {
+        width: ratio * (panesWidth - splitterWidth),
+        height: 0,
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        x: 0,
+        y: 0,
+        toJSON() {
+          return {};
+        },
+      } as DOMRect;
+    });
+  }
+
   test('スプリッタ 2 種の ARIA 属性（role=separator + aria-orientation + aria-label + tabindex）', async () => {
     const { panel } = await createPanel();
     const w = widthSplitterEl(panel.root);
@@ -3562,6 +3638,33 @@ describe('createVerificationPanel: ペインサイズ調整（issue #193）', ()
     panel.dispose();
   });
 
+  // issue #193 レビュー指摘 P2-3(b): --verify-pdf-basis の削除を測定より後に行うと、
+  // リセット直後は「旧 basis がまだ残ったまま実測してしまう」ため aria-valuenow に旧比率が
+  // 居座る。stubTrackingLeftPane で「panesEl の現在の basis に応じて leftPane の実測幅が
+  // 変わる」ことを模し、リセット後の aria-valuenow が旧比率（0.6 → 60）ではなく
+  // 実測由来の自然な比率（basis 未設定時の値）へ更新されることを検証する
+  test('左右スプリッタ: ダブルクリックリセット後の aria-valuenow は旧比率ではなく実測値になる', async () => {
+    const onPaneLayoutChange = jest.fn();
+    const { panel } = await createPanel(
+      {},
+      { paneLayout: { formPaneHeight: null, pdfPaneRatio: 0.6 }, onPaneLayoutChange },
+    );
+    const panes = panesEl(panel.root);
+    stubRect(panes, { width: 1200 });
+    const naturalRatio = 700 / (1200 - 12); // basis 未設定時（= リセット後）の「自然な」実測比率
+    stubTrackingLeftPane(panes, leftPaneEl(panel.root), 1200, 12, naturalRatio);
+
+    const splitter = widthSplitterEl(panel.root);
+    splitter.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+
+    expect(panes.style.getPropertyValue('--verify-pdf-basis')).toBe('');
+    // 旧比率（0.6 → 60）が残っていないこと・実測由来の自然な値になっていることの両方を確認する
+    const expectedNow = String(Math.round(naturalRatio * 100));
+    expect(expectedNow).not.toBe('60');
+    expect(widthSplitterEl(panel.root).getAttribute('aria-valuenow')).toBe(expectedNow);
+    panel.dispose();
+  });
+
   test('左右スプリッタ: 既に既定比率（null）のときのダブルクリックは永続化しない', async () => {
     const onPaneLayoutChange = jest.fn();
     const { panel } = await createPanel({}, { onPaneLayoutChange });
@@ -3575,9 +3678,10 @@ describe('createVerificationPanel: ペインサイズ調整（issue #193）', ()
     const onPaneLayoutChange = jest.fn();
     const { panel } = await createPanel({}, { onPaneLayoutChange });
     const splitter = widthSplitterEl(panel.root);
-    stubRect(panesEl(panel.root), { width: 1200 });
-    stubRect(leftPaneEl(panel.root), { width: 700 }); // 実測開始比率 = 700/(1200-12) ≈ 0.58923
     const usableWidth = 1200 - 12; // スプリッタ幅（12px）を除いた座標系（issue #193 R2）
+    stubRect(panesEl(panel.root), { width: 1200 });
+    // 実測開始比率 = 700/(1200-12) ≈ 0.58923。以降は panesEl の basis に追従して実測が変わる（P2-1）
+    stubTrackingLeftPane(panesEl(panel.root), leftPaneEl(panel.root), 1200, 12, 700 / usableWidth);
 
     splitter.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
     expect(onPaneLayoutChange).toHaveBeenCalledWith(
@@ -3611,16 +3715,36 @@ describe('createVerificationPanel: ペインサイズ調整（issue #193）', ()
     panel2.dispose();
   });
 
+  // issue #193 レビュー指摘 P2-1: currentPdfRatio() は保存値ありなら clampPdfRatio(保存値) を返すが、
+  // コンテナ幅が測定できない防御パスではクランプ自体が null になり、保存値がそのまま起点になる。
+  // その状態では commit 側（clampPdfRatio）も null を返すため、操作は no-op になることを検証する
+  test('左右スプリッタ: 測定不能なときは保存済み比率が起点になる（クランプもできないため確定はしない）', async () => {
+    const onPaneLayoutChange = jest.fn();
+    const { panel } = await createPanel(
+      {},
+      { paneLayout: { formPaneHeight: null, pdfPaneRatio: 0.6 }, onPaneLayoutChange },
+    );
+    const splitter = widthSplitterEl(panel.root);
+    // panesEl の getBoundingClientRect は既定で幅 0（jsdom）のまま stub しない
+    // → usablePanesWidth() は null。clampPdfRatio() も null を返すため起点は保存値 0.6 のまま
+
+    splitter.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+    // クランプ側も測定不能で null を返すため、フォールバック値を使っても結局 commit はしない
+    expect(onPaneLayoutChange).not.toHaveBeenCalled();
+    panel.dispose();
+  });
+
   // issue #193 レビュー指摘 F2: クランプ上限に張り付いた状態で同じキーを連打しても、
   // 値が変わらないなら commit しない
   test('左右スプリッタ: クランプ上限に到達後の同じ矢印キー連打は追加で永続化しない', async () => {
     const onPaneLayoutChange = jest.fn();
     const { panel } = await createPanel({}, { onPaneLayoutChange });
     const splitter = widthSplitterEl(panel.root);
-    stubRect(panesEl(panel.root), { width: 1200 });
-    stubRect(leftPaneEl(panel.root), { width: 700 }); // 開始比率 ≈ 0.58923
     const usableWidth = 1200 - 12; // max = 1 - 360/usableWidth ≈ 0.69697（issue #193 R2）
     const max = 1 - FORM_PANE_MIN_WIDTH / usableWidth;
+    stubRect(panesEl(panel.root), { width: 1200 });
+    // 開始比率 ≈ 0.58923。以降は panesEl の basis に追従して実測が変わる（issue #193 P2-1）
+    stubTrackingLeftPane(panesEl(panel.root), leftPaneEl(panel.root), 1200, 12, 700 / usableWidth);
 
     // 開始比率 → 上限まで到達させる（step 0.02 で 6 回）
     for (let i = 0; i < 6; i++) {
@@ -3820,7 +3944,8 @@ describe('createVerificationPanel: ペインサイズ調整（issue #193）', ()
     const splitter = widthSplitterEl(panel.root);
     splitterRef = splitter;
     stubRect(panesEl(panel.root), { width: 1200 });
-    stubRect(leftPaneEl(panel.root), { width: 700 });
+    // 開始比率 = 700/(1200-12)。以降は panesEl の basis に追従して実測が変わる（issue #193 P2-1）
+    stubTrackingLeftPane(panesEl(panel.root), leftPaneEl(panel.root), 1200, 12, 700 / (1200 - 12));
 
     splitter.focus();
     expect(document.activeElement).toBe(splitter);

@@ -556,6 +556,24 @@ describe('renderVerifyView', () => {
       () =>
         ({ width: 1200, height: 0, top: 0, left: 0, right: 0, bottom: 0, x: 0, y: 0, toJSON: () => ({}) }) as DOMRect,
     );
+    // issue #193 レビュー指摘 P2-1: ドラッグ開始比率は「いま描かれている比率」= clampPdfRatio(保存値)
+    // を使う。leftPane 側も保存比率（0.6）相当の幅で stub し、実測経路を通る場合（basis 未設定）でも
+    // 同じ起点になるようにしておく
+    const leftPane = root.querySelector<HTMLElement>('.verify__pane--pdf');
+    (leftPane as HTMLElement).getBoundingClientRect = jest.fn(
+      () =>
+        ({
+          width: 0.6 * (1200 - 12),
+          height: 0,
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          x: 0,
+          y: 0,
+          toJSON: () => ({}),
+        }) as DOMRect,
+    );
     splitter?.dispatchEvent(new MouseEvent('pointerdown', { clientX: 100, bubbles: true }));
     splitter?.dispatchEvent(new MouseEvent('pointermove', { clientX: 160, bubbles: true }));
     splitter?.dispatchEvent(new MouseEvent('pointerup', { clientX: 160, bubbles: true }));

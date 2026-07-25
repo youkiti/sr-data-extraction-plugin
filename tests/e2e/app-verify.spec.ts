@@ -521,6 +521,18 @@ async function dragWidthSplitter(page: Page, deltaX: number): Promise<void> {
   await page.mouse.up();
 }
 
+/**
+ * `--verify-pdf-basis` の値（`calc((100% - {スプリッタ幅}px) * {比率})` 形式。
+ * issue #193 レビュー指摘 R2）から比率だけを取り出す
+ */
+function ratioFromBasis(value: string): number {
+  const match = /\*\s*([0-9.]+)\)$/.exec(value);
+  if (match === null) {
+    throw new Error(`unexpected --verify-pdf-basis value: ${value}`);
+  }
+  return parseFloat(match[1] as string);
+}
+
 test('一覧 + 検証フロー: 進捗チップ → ハイライト → 承認 → Decisions 追記 → セレクタ切替の hash 同期', async ({ page }) => {
   const { appendUrls } = await setupRoutes(page, {
     schemaRows: [STUDY_FIELD_ROW],
@@ -560,6 +572,12 @@ test('一覧 + 検証フロー: 進捗チップ → ハイライト → 承認 �
 // ペインサイズ調整（issue #193）: 左右比率スプリッタをドラッグして比率を変え、
 // リロード後も settingsStore（chrome.storage.local）経由で保持されることを検証する
 test('ペインサイズ調整: 左右スプリッタのドラッグで比率が変わり、リロード後も保持される', async ({ page }) => {
+  // 既定ビューポート（1280px）では判定項目枠の min-width（360px）により PDF 比率の上限が
+  // 約 0.634 になり、下でドラッグして保存する 0.640 が「リロード後の表示時に再クランプされる」
+  // （R3 の正しい挙動）ため、保持そのものを検証できない。クランプの検証は別テスト
+  // （「保存済みの高さがビューポート上限を超えるときは再クランプして表示する（R3）」）の担当なので、
+  // ここではクランプが介入しない幅（usable 幅 ≈ 1100px → 上限 ≈ 0.67）へ広げて保持だけを見る
+  await page.setViewportSize({ width: 1400, height: 900 });
   await setupRoutes(page, {
     schemaRows: [STUDY_FIELD_ROW],
     evidenceRows: [EVIDENCE_ROW_1, EVIDENCE_ROW_2],
@@ -572,9 +590,9 @@ test('ペインサイズ調整: 左右スプリッタのドラッグで比率が
   await expect(splitter).toHaveAttribute('role', 'separator');
   await expect(splitter).toHaveAttribute('aria-orientation', 'vertical');
 
-  // panesEl / leftPane（.verify__pane--pdf）の幅を固定し、ドラッグ量から比率の変化を
-  // 決定論的に検証する。未設定時の開始比率は実測（leftPane 幅 / panesEl 幅）のため、
-  // leftPane 側も stub しないと開始比率が不定になる（issue #193 レビュー指摘 F1）
+  // panesEl / leftPane（.verify__pane--pdf）/ widthSplitter の幅を固定し、ドラッグ量から
+  // 比率の変化を決定論的に検証する。未設定時の開始比率は実測（leftPane 幅 /
+  // (panesEl 幅 − スプリッタ幅)。issue #193 レビュー指摘 F1・R2）のため、いずれも stub する
   await page.evaluate(() => {
     const stubRect = (selector: string, width: number) => {
       const el = document.querySelector(selector) as HTMLElement;
@@ -593,18 +611,20 @@ test('ペインサイズ調整: 左右スプリッタのドラッグで比率が
     };
     stubRect('.verify__panes', 1200);
     stubRect('.verify__pane--pdf', 700);
+    stubRect('.verify__splitter--vertical', 12);
   });
-  const startRatio = 700 / 1200;
+  const usableWidth = 1200 - 12;
+  const startRatio = 700 / usableWidth;
 
   const before = await panes.evaluate((el) => (el as HTMLElement).style.getPropertyValue('--verify-pdf-basis'));
   expect(before).toBe(''); // 既定は未設定
 
-  await dragWidthSplitter(page, 60); // +60px / 1200px = +0.05
+  await dragWidthSplitter(page, 60); // +60px / (1200-12)px
 
   const after = await panes.evaluate((el) => (el as HTMLElement).style.getPropertyValue('--verify-pdf-basis'));
   expect(after).not.toBe('');
-  const ratioAfterDrag = parseFloat(after) / 100;
-  expect(ratioAfterDrag).toBeCloseTo(startRatio + 0.05, 5); // 実測した開始比率からの相対移動
+  const ratioAfterDrag = ratioFromBasis(after);
+  expect(ratioAfterDrag).toBeCloseTo(startRatio + 60 / usableWidth, 5); // 実測した開始比率からの相対移動
 
   // リロード後も比率が保持される（settingsStore への永続化 → 検証データ束読込時に読み直す）
   await page.reload();
@@ -612,10 +632,36 @@ test('ペインサイズ調整: 左右スプリッタのドラッグで比率が
   const ratioAfterReload = await page
     .locator('.verify__panes')
     .evaluate((el) => (el as HTMLElement).style.getPropertyValue('--verify-pdf-basis'));
-  expect(parseFloat(ratioAfterReload) / 100).toBeCloseTo(ratioAfterDrag, 5);
+  // リロード後は panesEl / widthSplitter の stub は失われるため、basis は保存済み比率を
+  // 実際のスプリッタ幅で再計算した calc() 文字列になる（ratioFromBasis で比率だけ比較する）
+  expect(ratioFromBasis(ratioAfterReload)).toBeCloseTo(ratioAfterDrag, 5);
 
   const results = await new AxeBuilder({ page }).analyze();
   expect(results.violations).toEqual([]);
+});
+
+// issue #193 レビュー指摘 R2: スプリッタ自身の幅（12px）を比率の座標系から除かないと、
+// ドラッグ開始時に約 6px ジャンプし、ドラッグ量とペイン幅の変化が 1:1 にならない
+// （修正前の実測: 幅 2400px で +1px ドラッグ → PDF ペインが 5.3px 縮む）。
+// rect のスタブなし・実レイアウトで再現する
+test('ペインサイズ調整: 広いビューポートで 1px ドラッグすると PDF ペインの実測幅もおよそ 1px だけ変わる', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 2400, height: 900 });
+  await setupRoutes(page, {
+    schemaRows: [STUDY_FIELD_ROW],
+    evidenceRows: [EVIDENCE_ROW_1, EVIDENCE_ROW_2],
+  });
+  await initApp(page, '#/verify?study=study-1', undefined, { persistSettings: true });
+  await expect(page.locator('.verify__panes')).toBeVisible({ timeout: 15_000 });
+
+  const pdfPane = page.locator('.verify__pane--pdf');
+  const widthBefore = (await pdfPane.boundingBox())?.width as number;
+
+  await dragWidthSplitter(page, 1);
+
+  const widthAfter = (await pdfPane.boundingBox())?.width as number;
+  expect(Math.abs(widthAfter - widthBefore - 1)).toBeLessThanOrEqual(2);
 });
 
 // ペインサイズ調整（issue #193）: キーボード操作（矢印キー）とダブルクリックリセットの実ブラウザ確認
@@ -645,15 +691,18 @@ test('ペインサイズ調整: 矢印キーで比率・高さを調整でき、
     };
     stubRect('.verify__panes', 1200);
     stubRect('.verify__pane--pdf', 700);
+    stubRect('.verify__splitter--vertical', 12);
   });
-  const startRatio = 700 / 1200;
+  const usableWidth = 1200 - 12; // スプリッタ幅（12px）を除いた座標系（issue #193 レビュー指摘 R2）
+  const startRatio = 700 / usableWidth;
 
   const widthSplitter = page.locator('.verify__splitter--vertical');
   await widthSplitter.focus();
   await page.keyboard.press('ArrowRight');
   const ratioAfterFirstArrow = await page
     .locator('.verify__panes')
-    .evaluate((el) => parseFloat((el as HTMLElement).style.getPropertyValue('--verify-pdf-basis')) / 100);
+    .evaluate((el) => (el as HTMLElement).style.getPropertyValue('--verify-pdf-basis'))
+    .then(ratioFromBasis);
   expect(ratioAfterFirstArrow).toBeCloseTo(startRatio + 0.02, 5);
 
   // issue #193 レビュー指摘 F4: onPaneLayoutChange はストア購読を同期的に発火させ、
@@ -664,14 +713,17 @@ test('ペインサイズ調整: 矢印キーで比率・高さを調整でき、
   await page.keyboard.press('ArrowRight');
   const ratioAfterSecondArrow = await page
     .locator('.verify__panes')
-    .evaluate((el) => parseFloat((el as HTMLElement).style.getPropertyValue('--verify-pdf-basis')) / 100);
+    .evaluate((el) => (el as HTMLElement).style.getPropertyValue('--verify-pdf-basis'))
+    .then(ratioFromBasis);
   expect(ratioAfterSecondArrow).toBeCloseTo(startRatio + 0.04, 5);
   expect(ratioAfterSecondArrow).not.toBeCloseTo(ratioAfterFirstArrow, 5);
 
-  // ダブルクリックで既定（未設定 = カスタムプロパティなし）へ戻る。setPointerCapture との
-  // 相互作用で Playwright の高レベル dblclick() は実クリック位置がずれることがあるため、
-  // dblclick イベントを直接発火して確定的に検証する
-  await widthSplitter.evaluate((el) => el.dispatchEvent(new MouseEvent('dblclick', { bubbles: true })));
+  // ダブルクリックで既定（未設定 = カスタムプロパティなし）へ戻る。実クリック列（Playwright の
+  // 高レベル dblclick()）で検証する — F2 の修正（無変化な pointerup では commit しない）に
+  // より、2 クリック間の pointerup が route 再描画を起こさなくなり、実クリックでも問題なく
+  // 動く（issue #193 レビュー指摘 R1。以前は合成 dblclick イベントで代用していたが、
+  // それでは実クリック列の経路を検証できていなかった）
+  await widthSplitter.dblclick();
   const afterReset = await page
     .locator('.verify__panes')
     .evaluate((el) => (el as HTMLElement).style.getPropertyValue('--verify-pdf-basis'));
@@ -697,7 +749,8 @@ test('ペインサイズ調整: 矢印キーで比率・高さを調整でき、
   expect(heightAfterSecondArrow).not.toBe(heightAfterFirstArrow);
   expect(parseFloat(heightAfterSecondArrow)).toBe(parseFloat(heightAfterFirstArrow) + 24);
 
-  await heightSplitter.evaluate((el) => el.dispatchEvent(new MouseEvent('dblclick', { bubbles: true })));
+  // 高さ側も実クリック列で確定的にリセットできる（R1 と同じ理由）
+  await heightSplitter.dblclick();
   const heightAfterReset = await formPane.evaluate((el) =>
     (el as HTMLElement).style.getPropertyValue('--verify-form-height'),
   );
@@ -710,6 +763,37 @@ test('ペインサイズ調整: 矢印キーで比率・高さを調整でき、
   await expect(page.locator('#verify-focus-detail .verify__chip')).toHaveText('承認', {
     timeout: 15_000,
   });
+});
+
+// issue #193 レビュー指摘 R3: 27 インチ等の広い画面で保存した高さ（例 1500px）を、
+// ノート PC 等の狭いビューポートで読み込んだときに再クランプされることを実ブラウザで確認する。
+// クランプを通さない場合、判定項目枠が画面外へはみ出す
+test('ペインサイズ調整: 保存済みの高さがビューポート上限を超えるときは再クランプして表示する（R3）', async ({
+  page,
+}) => {
+  // initApp（persistSettings 版）より先に登録することで、chrome.storage.local のスタブが
+  // 読む localStorage へ事前に保存値を書いておく（addInitScript は登録順にナビゲーション前に実行される）
+  await page.addInitScript(() => {
+    window.localStorage.setItem(
+      'e2e-chrome-storage:settings.verifyPaneLayout',
+      JSON.stringify({ formPaneHeight: 1500, pdfPaneRatio: null }),
+    );
+  });
+  await page.setViewportSize({ width: 1400, height: 720 });
+  await setupRoutes(page, {
+    schemaRows: [STUDY_FIELD_ROW],
+    evidenceRows: [EVIDENCE_ROW_1, EVIDENCE_ROW_2],
+  });
+  await initApp(page, '#/verify?study=study-1', undefined, { persistSettings: true });
+
+  const formPane = page.locator('.verify__pane--form');
+  await expect(formPane).toBeVisible({ timeout: 15_000 });
+  const height = (await formPane.boundingBox())?.height as number;
+  // クランプ上限 = max(720 - 80, 240) = 640。保存値 1500px のまま描画されると画面外へはみ出す
+  expect(height).toBeLessThanOrEqual(720 - 80);
+
+  const results = await new AxeBuilder({ page }).analyze();
+  expect(results.violations).toEqual([]);
 });
 
 // スクロールリセットの回帰テスト（issue #192）: 判定保存の非同期ストア更新は route 全体を
