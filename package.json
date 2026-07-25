@@ -11,6 +11,7 @@
     "dev": "webpack --mode development",
     "watch": "webpack --mode development --watch",
     "build": "webpack --mode production",
+    "release": "pwsh -NoProfile -File tools/release/release.ps1",
     "pack:release": "pwsh -NoProfile -File tools/release/pack.ps1",
     "lint": "eslint \"src/**/*.ts\" \"tests/**/*.ts\"",
     "lint:css": "stylelint \"src/**/*.css\"",
