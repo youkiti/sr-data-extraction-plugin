@@ -648,6 +648,8 @@ export const ja = {
   'verify.progressOverall': '全体: {progress}',
   'verify.layoutToList': 'リスト表示に切替',
   'verify.layoutToFocus': 'フォーカス表示に切替',
+  'verify.paneSplitterAria': 'PDF ペインと判定項目枠の左右比率を調整',
+  'verify.paneHeightSplitterAria': '判定項目枠の高さを調整',
   'verify.armHeading': '群構成',
   'verify.armNameAria': '群 {key} の名称',
   'verify.armRemove': '削除',

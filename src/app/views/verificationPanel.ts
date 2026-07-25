@@ -69,7 +69,7 @@ import type {
   VerificationData,
   VerificationDocumentView,
 } from '../../features/verification/types';
-import type { VerifyLayoutMode } from '../../lib/storage/settingsStore';
+import type { VerifyLayoutMode, VerifyPaneLayout } from '../../lib/storage/settingsStore';
 import type { renderPdfPageToCanvas } from '../../lib/pdf/renderPage';
 import { getUiLanguage, t, type UiLanguage } from '../../lib/i18n';
 import { nowIso8601 } from '../../utils/iso8601';
@@ -111,6 +111,17 @@ export interface VerificationPanelOptions {
   /** トグル操作（`#verify-layout-toggle`）のたびに呼ばれる。永続化はサービス層の責務 */
   onLayoutModeChange?: (mode: VerifyLayoutMode) => void;
   /**
+   * 2 ペインのサイズ調整の初期表示（issue #193。未指定は両方 null = 既定の見た目）。
+   * layoutMode と同じく読込はサービス層が検証データ束の読込時に settingsStore から行う
+   * （S6 / S8 で設定を共有する）
+   */
+  paneLayout?: VerifyPaneLayout;
+  /**
+   * スプリッタのドラッグ終了時（pointerup）・ダブルクリックリセット時に 1 回だけ呼ばれる
+   * （ドラッグ中の毎フレーム呼び出しはしない。永続化はサービス層の責務）
+   */
+  onPaneLayoutChange?: (layout: VerifyPaneLayout) => void;
+  /**
    * 「AI で再特定」ボタン（anchor failed のフォールバック。issue #94）。他のコールバックと違い
    * 結果を Promise で返す必要がある（実行中スピナー・成功時のハイライト即時反映・not_found の
    * 案内メッセージをパネル自身が local overlay として持つため。judgment/群構成と同じ「サービス層は
@@ -132,6 +143,15 @@ export interface VerificationPanelHandle {
    * 可視域へスクロールする（新規パネルの初期表示用。issue #51）
    */
   scrollFocusedIntoView(): void;
+  /**
+   * ペインサイズ調整の aria-value* / basis を実測へ同期する（issue #193 レビュー指摘 P2）。
+   * `createVerificationPanel` 内の初回 `applyPaneLayout()` はパネルがまだ document に未接続の
+   * 時点で走るため、`getBoundingClientRect()` が 0 を返して実寸とずれた値が入る。また detach 中に
+   * window resize が起きた場合も同様にゼロ寸法で測ってしまう。呼び出し側
+   * （`renderCachedVerificationPanel`）が `scrollFocusedIntoView()` と同じ「接続後の microtask」
+   * タイミングで、**新規生成時とキャッシュ再利用時の両方で**呼び直す
+   */
+  syncPaneLayoutMeasurements(): void;
   dispose(): void;
 }
 
@@ -223,6 +243,31 @@ export function stepUnitPosition(
   }
 }
 
+// --- ペインサイズ調整（issue #193）の定数 -----------------------------------
+// ui-flow.md §8: PDF ペイン最小 600px / 判定項目枠最小 360px（app.css の min-width と揃える）
+const PDF_PANE_MIN_WIDTH = 600;
+const FORM_PANE_MIN_WIDTH = 360;
+/** ダブルクリックでの既定比率リセット先（既定 CSS の flex-basis 比 600:480 相当） */
+const DEFAULT_PDF_PANE_RATIO = PDF_PANE_MIN_WIDTH / (PDF_PANE_MIN_WIDTH + 480);
+/** 右ペイン高さの実用下限（settingsStore の MIN_FORM_PANE_HEIGHT と同値） */
+const FORM_PANE_MIN_HEIGHT = 240;
+/**
+ * 右ペイン高さの絶対上限（settingsStore の MAX_FORM_PANE_HEIGHT と同値）。実効上限は
+ * ビューポート基準の値との小さい方（`formHeightBounds()`）。settingsStore 側も同値でクランプする
+ * ため、ここで揃えておかないと「DOM は 4200px・保存値は 4000px」の食い違いが起こり得る
+ */
+const FORM_PANE_MAX_HEIGHT = 4000;
+/** 矢印キー 1 回あたりの調整量（比率は 2%、高さは 24px） */
+const RATIO_KEYBOARD_STEP = 0.02;
+const HEIGHT_KEYBOARD_STEP = 24;
+/**
+ * 左右スプリッタ自身の幅（app.css の `.verify__splitter--vertical { flex: 0 0 12px }` と同値）。
+ * 実測できない（未接続 DOM 等）ときのフォールバックにのみ使う。比率の座標系は
+ * 「panesEl 幅 − スプリッタ幅」であり、スプリッタ自身の幅を含めると flex-basis の合計が
+ * panesEl の幅を超えて両ペインが shrink する（issue #193 レビュー指摘 R2）
+ */
+const WIDTH_SPLITTER_FALLBACK_PX = 12;
+
 export function createVerificationPanel(
   options: VerificationPanelOptions,
 ): VerificationPanelHandle {
@@ -297,6 +342,15 @@ export function createVerificationPanel(
   // --- レイアウトモード（フォーカス / リスト。issue #38） ------------------
   // 既定はフォーカス。初期値はサービス層が settingsStore から読んで options 経由で渡す
   let layoutMode: VerifyLayoutMode = options.layoutMode ?? 'focus';
+  // --- ペインサイズ調整（issue #193） ---------------------------------------
+  // ドラッグ中は自分の DOM の inline style（CSS カスタムプロパティ）だけを直接書き換え、
+  // 永続化コールバック（onPaneLayoutChange）はドラッグ終了時 / キーボード操作 /
+  // ダブルクリックリセットの確定時に 1 回だけ呼ぶ（store 更新は route 全体の再描画を
+  // 引き起こすため、頻度を上げるとちらつく。ファイル冒頭コメント参照）
+  let paneLayout: VerifyPaneLayout = {
+    formPaneHeight: options.paneLayout?.formPaneHeight ?? null,
+    pdfPaneRatio: options.paneLayout?.pdfPaneRatio ?? null,
+  };
   let focusedCellKey: string | null = null;
   let editing: { cellKey: string; action: 'edit' | 'reject' } | null = null;
   let outcomeKeyDraft = nextOutcomeId(
@@ -882,9 +936,370 @@ export function createVerificationPanel(
     attributes: { 'data-preserve-scroll': '' },
   });
 
-  const root = el('div', { className: 'verify' }, [
-    el('div', { className: 'verify__panes' }, [leftPane, formPane]),
-  ]);
+  // --- ペインサイズ調整（issue #193）: スプリッタ 2 種 ---------------------
+  // 左右比率（PDF ⇄ 判定項目枠）。ARIA window splitter パターン（role=separator +
+  // aria-orientation + キーボード操作可能）。leftPane と formPane の間に挿入する
+  const widthSplitter = el('div', {
+    className: 'verify__splitter verify__splitter--vertical',
+    attributes: {
+      role: 'separator',
+      'aria-orientation': 'vertical',
+      'aria-label': t('verify.paneSplitterAria'),
+      tabindex: '0',
+    },
+  });
+  // 右ペインの高さ。設計方針: CSS の resize:vertical はキーボード操作・ARIA 属性を持てず
+  // axe / キーボード操作の受け入れ条件を満たせないため不採用。左右スプリッタと同じ
+  // ドラッグ＋キーボード操作の流儀に揃え、formPane の末尾に sticky 配置する
+  // （overflow-y:auto なスクロール領域内で bottom:0 に固定し続ける。issue #193）
+  const heightSplitter = el('div', {
+    className: 'verify__splitter verify__splitter--horizontal',
+    attributes: {
+      role: 'separator',
+      'aria-orientation': 'horizontal',
+      'aria-label': t('verify.paneHeightSplitterAria'),
+      tabindex: '0',
+    },
+  });
+
+  const panesEl = el('div', { className: 'verify__panes' }, [leftPane, widthSplitter, formPane]);
+  const root = el('div', { className: 'verify' }, [panesEl]);
+
+  /**
+   * スプリッタ自身の実測幅。CSS（`flex: 0 0 12px`）を変更したときに自動追従させるため、
+   * 定数を決め打ちにせず実測する。未接続 DOM 等で測定できない（0 以下）ときだけ
+   * `WIDTH_SPLITTER_FALLBACK_PX`（CSS の現在値と同値）へフォールバックする
+   */
+  function measuredSplitterWidth(): number {
+    const width = widthSplitter.getBoundingClientRect().width;
+    return width > 0 ? width : WIDTH_SPLITTER_FALLBACK_PX;
+  }
+
+  /**
+   * 比率の座標系となる「スプリッタ自身の幅を除いた」panesEl の内容幅。flex-basis の % は
+   * panesEl 全体の幅に対して解決されるため、PDF ペイン + 判定項目枠の 2 つの basis の合計を
+   * この値に合わせないと、スプリッタの `flex: 0 0 12px` の分だけ余剰幅が負になり両ペインが
+   * shrink する（issue #193 レビュー指摘 R2: 比率 0.55 前後で PDF ペインが約 6.6px 縮む
+   * 症状の原因）。測定不能（コンテナ幅 0 以下、またはスプリッタ幅を引いた残りが 0 以下）
+   * のときは null を返す（呼び出し側は防御的に扱う）
+   */
+  function usablePanesWidth(): number | null {
+    const containerWidth = panesEl.getBoundingClientRect().width;
+    if (containerWidth <= 0) {
+      return null;
+    }
+    const usable = containerWidth - measuredSplitterWidth();
+    return usable > 0 ? usable : null;
+  }
+
+  /**
+   * 「いま画面に描かれている」PDF ペイン比率。表示（`applyPaneLayout` の basis / aria-valuenow）と
+   * 操作の起点（ドラッグ開始・矢印キー）の**両方がこの 1 つの値を使う**（issue #193 レビュー指摘 P2-1）。
+   *
+   * 背景: 保存値 `paneLayout.pdfPaneRatio` は現在のコンテナ幅では min-width を満たせないことがあり、
+   * 表示は再クランプされる（R3）。もし操作の起点だけが未クランプの保存値だと、
+   * 保存 0.8 / 表示 0.7 のような乖離が生まれ、右へドラッグしても `(0.8-0.7)×usable幅` ぶん
+   * 動かすまで見た目が変わらない不感帯ができる。
+   *
+   * そこで「表示と操作の起点を同じ式から導く」ことで、不感帯を構造的に発生させない:
+   * - 保存値あり → 描画と同じ `clampPdfRatio(保存値)`（クランプ不能な防御パスは保存値そのまま）
+   * - 保存値なし（既定 = basis 未設定）→ flex-grow で等分された実際の見た目を実測する
+   *   （定数比 600:480 をそのまま既定値扱いすると広いビューポートで実際の描画比率とずれ、
+   *   ドラッグ開始時にスプリッタがジャンプする。issue #193 レビュー指摘 F1）
+   *
+   * 保存値ありのときに実測を使わないのは、「測る → basis を書く → また測る」の
+   * フィードバックループを避けるため（浮動小数点誤差の蓄積で値がドリフトし得る）。
+   * 実測は basis が未設定＝測るしか手段がないときに限る
+   */
+  function currentPdfRatio(): number {
+    if (paneLayout.pdfPaneRatio !== null) {
+      return clampPdfRatio(paneLayout.pdfPaneRatio) ?? paneLayout.pdfPaneRatio;
+    }
+    const usableWidth = usablePanesWidth();
+    if (usableWidth === null) {
+      return DEFAULT_PDF_PANE_RATIO;
+    }
+    return leftPane.getBoundingClientRect().width / usableWidth;
+  }
+
+  /** 現在の paneLayout を DOM（CSS カスタムプロパティ + aria-value*）へ反映する。null は既定へ戻す */
+  function applyPaneLayout(): void {
+    // カスタムプロパティの更新を比率の測定（currentPdfRatio() 経由の displayRatio 算出）より
+    // 先に行う（issue #193 レビュー指摘 P2-3(b)）。リセット直後（pdfPaneRatio === null）に
+    // 旧 --verify-pdf-basis が残ったまま測定すると、レイアウトがまだ旧比率のままのため
+    // 旧値を拾ってしまう（getBoundingClientRect は呼び出し時点の最新スタイルを強制的に
+    // 反映してから幾何情報を返す＝先に削除しておけば正しい値が測れる）
+    if (paneLayout.pdfPaneRatio === null) {
+      panesEl.style.removeProperty('--verify-pdf-basis');
+      panesEl.style.removeProperty('--verify-form-basis');
+    }
+    // 保存済み比率は現在のコンテナ幅では min-width を満たせなくなっていることがある
+    // （ウィンドウリサイズ等。issue #193 レビュー指摘 R3 と同じ考え方を比率側にも適用する）。
+    // 表示のたびに再クランプするが、保存値 paneLayout.pdfPaneRatio 自体は変えない。
+    // 操作の起点と同じ currentPdfRatio() を使い、表示と操作を一致させる（P2-1）
+    const displayRatio = currentPdfRatio();
+    widthSplitter.setAttribute('aria-valuenow', String(Math.round(displayRatio * 100)));
+    // aria-valuemin/max は実際に操作できる範囲（両ペインの min-width 由来）を通知する。
+    // 測定不能なときだけ 0–100 の名目値にフォールバックする（issue #193 レビュー指摘 P2）。
+    // Math.round は単調非減少なので、min ≤ valuenow ≤ max の関係は丸め後も崩れない
+    const ratioBounds = pdfRatioBounds();
+    widthSplitter.setAttribute('aria-valuemin', String(ratioBounds === null ? 0 : Math.round(ratioBounds.min * 100)));
+    widthSplitter.setAttribute('aria-valuemax', String(ratioBounds === null ? 100 : Math.round(ratioBounds.max * 100)));
+    if (paneLayout.pdfPaneRatio !== null) {
+      // basis の合計をスプリッタ幅ぶん引いた残りに揃える（R2）: calc((100% - スプリッタ幅) * 比率）
+      const splitterWidthPx = measuredSplitterWidth();
+      panesEl.style.setProperty(
+        '--verify-pdf-basis',
+        `calc((100% - ${splitterWidthPx}px) * ${displayRatio})`,
+      );
+      panesEl.style.setProperty(
+        '--verify-form-basis',
+        `calc((100% - ${splitterWidthPx}px) * ${1 - displayRatio})`,
+      );
+    }
+    if (paneLayout.formPaneHeight === null) {
+      formPane.style.removeProperty('--verify-form-height');
+      const measured = Math.round(formPane.getBoundingClientRect().height);
+      // 実測値も aria-valuemin/max の範囲へ収めてから通知する（極端に低いビューポートで
+      // 実測 < 下限になり、valuenow が範囲外になるのを防ぐ）
+      heightSplitter.setAttribute(
+        'aria-valuenow',
+        String(clampFormHeight(measured > 0 ? measured : FORM_PANE_MIN_HEIGHT)),
+      );
+    } else {
+      // 保存済み高さも同様に、現在のビューポートで再クランプしてから表示する（R3）。
+      // clampFormHeight は必ず数値を返すため null フォールバックは不要
+      const displayHeight = clampFormHeight(paneLayout.formPaneHeight);
+      formPane.style.setProperty('--verify-form-height', `${displayHeight}px`);
+      heightSplitter.setAttribute('aria-valuenow', String(displayHeight));
+    }
+    // 高さ側も実効範囲（ビューポート基準の上限）を通知する（issue #193 レビュー指摘 P2）。
+    // 例: 高さ 720px の画面では上限 640px であり、4000px と通知すると
+    // 「640px なのに ↓ が反応しない」理由が支援技術側から分からない
+    const heightBounds = formHeightBounds();
+    heightSplitter.setAttribute('aria-valuemin', String(heightBounds.min));
+    heightSplitter.setAttribute('aria-valuemax', String(heightBounds.max));
+  }
+  applyPaneLayout();
+
+  /**
+   * ratio を、スプリッタ幅を除いたコンテナ幅（usablePanesWidth）から求めた min-width
+   * 遵守の範囲へクランプする。測定できない（コンテナ幅 0 以下・両ペインの最小幅を同時に
+   * 満たせないほど狭い）ときは null を返し、呼び出し側は調整を諦める（no-op。実データでは
+   * 起こらない防御パス）
+   */
+  /**
+   * 現在のコンテナ幅で実際に取り得る比率の範囲。両ペインの min-width が同時に満たせない
+   * ほど狭い / 測定できないときは null（調整不能）。`clampPdfRatio` と `aria-valuemin/max` の
+   * 両方がここを唯一の情報源にする（issue #193 レビュー指摘 P2: ARIA が常に 0–100 を
+   * 通知していると、実際には上限で止まっているのに支援技術側は「まだ動かせる」と読める）
+   */
+  function pdfRatioBounds(): { min: number; max: number } | null {
+    const usableWidth = usablePanesWidth();
+    if (usableWidth === null) {
+      return null;
+    }
+    const min = PDF_PANE_MIN_WIDTH / usableWidth;
+    const max = 1 - FORM_PANE_MIN_WIDTH / usableWidth;
+    return min < max ? { min, max } : null;
+  }
+
+  function clampPdfRatio(ratio: number): number | null {
+    const bounds = pdfRatioBounds();
+    if (bounds === null) {
+      return null;
+    }
+    return Math.min(Math.max(ratio, bounds.min), bounds.max);
+  }
+
+  /**
+   * 現在のビューポートで実際に取り得る高さの範囲（下限は実用下限、上限はビューポート基準と
+   * 絶対上限の小さい方）。`clampFormHeight` と `aria-valuemin/max` の両方がここを使う。
+   * defaultView は「ownerDocument に window が結び付いている」という不変条件（拡張機能は
+   * 常に実タブ内で動く。単体テストの jsdom でも同様）に基づき、存在を前提にする
+   */
+  function formHeightBounds(): { min: number; max: number } {
+    const viewportHeight = (root.ownerDocument.defaultView as Window).innerHeight;
+    const max = Math.max(Math.min(viewportHeight - 80, FORM_PANE_MAX_HEIGHT), FORM_PANE_MIN_HEIGHT);
+    return { min: FORM_PANE_MIN_HEIGHT, max };
+  }
+
+  /** 高さをウィンドウ内に収まる範囲へクランプする */
+  function clampFormHeight(height: number): number {
+    const bounds = formHeightBounds();
+    return Math.min(Math.max(height, bounds.min), bounds.max);
+  }
+
+  /**
+   * ウィンドウリサイズ時の再クランプ（issue #193 レビュー指摘 R3）。ユーザーが明示操作した
+   * わけではないため、保存値（paneLayout.formPaneHeight / pdfPaneRatio）自体は書き換えず、
+   * 現在のビューポート / コンテナ幅で再計算した見た目だけを applyPaneLayout() 経由で
+   * DOM へ反映する（永続化しない）。狭い画面で自動的に縮んだ見た目は、広い画面へ戻したときに
+   * 保存済みの元の値へ自然に復元される（保存値を書き換えると復元できなくなる）
+   */
+  function handleWindowResize(): void {
+    applyPaneLayout();
+  }
+  const panelWindow = root.ownerDocument.defaultView;
+  panelWindow?.addEventListener('resize', handleWindowResize);
+
+  /**
+   * ドラッグ終了 / キーボード操作 / ダブルクリックリセットの確定時に 1 回だけ呼ぶ永続化。
+   * `splitterEl` は操作したスプリッタ要素（幅 / 高さ）。
+   *
+   * store patch を先に行う設計（かつ落とさない）理由: `onPaneLayoutChange` はサービス層の
+   * store patch を同期的に発火させ、bootstrap のストア購読が route 全体を `replaceChildren`
+   * で作り直す（キャッシュ済みパネルは detach → reattach される）。これを「保存経路では
+   * ストアを再描画しない」設計にする案もあるが、`renderCachedVerificationPanel` はスライスの
+   * paneLayout 値から新規パネルを作るため、patch を落とすと表示言語切替等でパネルが
+   * 作り直されたときに調整値が既定へ戻ってしまう。よって patch は維持し、副作用（フォーカス
+   * 喪失）側だけをここで打ち消す方針にする。`preserveScroll.ts` はスクロール位置しか救わない
+   * ため、フォーカスがスプリッタ自身にあった場合はここで明示的に復元する（`refreshForm` の
+   * hadFocus + preventScroll と同じ流儀）。これが無いと矢印キーでの連続調整が 1 回で
+   * `<body>` へフォーカスが逃げ、2 回目以降効かなくなる（issue #193 レビュー指摘 F4）
+   */
+  function commitPaneLayout(next: VerifyPaneLayout, splitterEl: HTMLElement): void {
+    paneLayout = next;
+    applyPaneLayout();
+    const doc = splitterEl.ownerDocument;
+    const hadFocus = doc.activeElement === splitterEl;
+    options.onPaneLayoutChange?.(paneLayout);
+    if (hadFocus && doc.activeElement !== splitterEl) {
+      splitterEl.focus({ preventScroll: true });
+    }
+  }
+
+  // --- 左右スプリッタ: pointerdown → pointermove（ドラッグ中は DOM 直書き）→ pointerup（確定） ---
+  let widthDragStartX: number | null = null;
+  let widthDragStartRatio = 0;
+  // ドラッグ中に実際に値が変わったかどうか。変化が無ければ pointerup で commit しない
+  // （クリックだけ・ダブルクリック前の 2 組の pointerdown/pointerup で無駄な永続化を走らせないため）
+  let widthDragChanged = false;
+  widthSplitter.addEventListener('pointerdown', (event) => {
+    widthDragStartX = event.clientX;
+    widthDragStartRatio = currentPdfRatio();
+    widthDragChanged = false;
+    widthSplitter.setPointerCapture?.(event.pointerId);
+  });
+  widthSplitter.addEventListener('pointermove', (event) => {
+    if (widthDragStartX === null) {
+      return;
+    }
+    // スプリッタ幅を除いた幅（usablePanesWidth）で正規化した移動量を開始比率へ加算する。
+    // 測定できない防御パスは clampPdfRatio 側の null 判定に委ね、ここでは 0 除算を避ける
+    // ためだけに 1 とみなす（その場合 clampPdfRatio が null を返すため実際の値は使われない）
+    const usableWidth = usablePanesWidth() ?? 1;
+    const clamped = clampPdfRatio(widthDragStartRatio + (event.clientX - widthDragStartX) / usableWidth);
+    if (clamped === null) {
+      return;
+    }
+    // 比較対象は「いま描かれている比率」（currentPdfRatio）であり、未クランプの保存値ではない
+    // （issue #193 レビュー指摘 P2）。保存 0.8 が現在の幅で 0.697 へ再クランプされて描かれている
+    // ときに未クランプの 0.8 と比べると、見た目が 0.697 のまま動いていないのに「変化あり」と
+    // 判定され、0.697 を保存して元の 0.8 を失う（広い画面へ戻しても復元されなくなる）。
+    // 見た目が変わらないなら paneLayout（= 保存値）にも触らない
+    if (clamped === currentPdfRatio()) {
+      return;
+    }
+    widthDragChanged = true;
+    paneLayout = { ...paneLayout, pdfPaneRatio: clamped };
+    applyPaneLayout();
+  });
+  function endWidthDrag(event: PointerEvent): void {
+    if (widthDragStartX === null) {
+      return;
+    }
+    widthDragStartX = null;
+    widthSplitter.releasePointerCapture?.(event.pointerId);
+    if (widthDragChanged) {
+      commitPaneLayout(paneLayout, widthSplitter);
+    }
+  }
+  widthSplitter.addEventListener('pointerup', endWidthDrag);
+  widthSplitter.addEventListener('pointercancel', endWidthDrag);
+  widthSplitter.addEventListener('dblclick', () => {
+    if (paneLayout.pdfPaneRatio !== null) {
+      commitPaneLayout({ ...paneLayout, pdfPaneRatio: null }, widthSplitter);
+    }
+  });
+  widthSplitter.addEventListener('keydown', (event) => {
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') {
+      return;
+    }
+    event.preventDefault();
+    const delta = event.key === 'ArrowRight' ? RATIO_KEYBOARD_STEP : -RATIO_KEYBOARD_STEP;
+    const current = currentPdfRatio();
+    const clamped = clampPdfRatio(current + delta);
+    // 比較対象は保存値ではなく実効値（ドラッグ側と同じ理由。issue #193 レビュー指摘 P2）。
+    // 上限に張り付いている状態でさらに → を押しても、保存値は書き換えない
+    if (clamped !== null && clamped !== current) {
+      commitPaneLayout({ ...paneLayout, pdfPaneRatio: clamped }, widthSplitter);
+    }
+  });
+
+  // --- 高さスプリッタ: pointerdown → pointermove → pointerup ---------------
+  let heightDragStartY: number | null = null;
+  let heightDragStartHeight = 0;
+  // widthDragChanged と同じ理由（クリック / ダブルクリックでの無駄な commit を防ぐ）
+  let heightDragChanged = false;
+  function heightSplitterHeight(): number {
+    if (paneLayout.formPaneHeight !== null) {
+      return clampFormHeight(paneLayout.formPaneHeight);
+    }
+    const measured = formPane.getBoundingClientRect().height;
+    return clampFormHeight(measured > 0 ? measured : FORM_PANE_MIN_HEIGHT);
+  }
+  heightSplitter.addEventListener('pointerdown', (event) => {
+    heightDragStartY = event.clientY;
+    heightDragStartHeight = heightSplitterHeight();
+    heightDragChanged = false;
+    heightSplitter.setPointerCapture?.(event.pointerId);
+  });
+  heightSplitter.addEventListener('pointermove', (event) => {
+    if (heightDragStartY === null) {
+      return;
+    }
+    const next = clampFormHeight(heightDragStartHeight + (event.clientY - heightDragStartY));
+    // 比率側と同じ理由（issue #193 レビュー指摘 P2）: 保存 1500px がビューポート上限 688px へ
+    // 再クランプされて描かれているとき、未クランプの 1500 と比べると見た目が変わらないのに
+    // 688 を保存して 1500 を失う。実効値（heightSplitterHeight）と比べ、変化がなければ触らない
+    if (next === heightSplitterHeight()) {
+      return;
+    }
+    heightDragChanged = true;
+    paneLayout = { ...paneLayout, formPaneHeight: next };
+    applyPaneLayout();
+  });
+  function endHeightDrag(event: PointerEvent): void {
+    if (heightDragStartY === null) {
+      return;
+    }
+    heightDragStartY = null;
+    heightSplitter.releasePointerCapture?.(event.pointerId);
+    if (heightDragChanged) {
+      commitPaneLayout(paneLayout, heightSplitter);
+    }
+  }
+  heightSplitter.addEventListener('pointerup', endHeightDrag);
+  heightSplitter.addEventListener('pointercancel', endHeightDrag);
+  heightSplitter.addEventListener('dblclick', () => {
+    if (paneLayout.formPaneHeight !== null) {
+      commitPaneLayout({ ...paneLayout, formPaneHeight: null }, heightSplitter);
+    }
+  });
+  heightSplitter.addEventListener('keydown', (event) => {
+    if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') {
+      return;
+    }
+    event.preventDefault();
+    const delta = event.key === 'ArrowDown' ? HEIGHT_KEYBOARD_STEP : -HEIGHT_KEYBOARD_STEP;
+    const current = heightSplitterHeight();
+    const next = clampFormHeight(current + delta);
+    // 比較対象は保存値ではなく実効値（issue #193 レビュー指摘 P2）
+    if (next !== current) {
+      commitPaneLayout({ ...paneLayout, formPaneHeight: next }, heightSplitter);
+    }
+  });
 
   /**
    * matchCount / 選択出現は「テキストのみの再特定」（textMatches）を唯一の情報源にする。
@@ -1363,7 +1778,9 @@ export function createVerificationPanel(
       // flow 図（mermaid）の保存時構文チェック警告（issue #109）
       mermaidWarnings,
     };
-    formPane.replaceChildren(renderVerificationForm(model, handlers));
+    // heightSplitter（issue #193）は refreshForm のたびに作り直される内容の末尾へ
+    // 常に再付与する（sticky 配置で bottom:0 に固定され続ける）
+    formPane.replaceChildren(renderVerificationForm(model, handlers), heightSplitter);
     formPane.scrollTop = savedScrollTop;
     if (hadFocus && focusedCellKey !== null && editing === null && !tabLocked(activeTab)) {
       // 復元したスクロール位置を尊重しつつ（preventScroll）、フォーカスセルが画面外なら最小移動で見せる
@@ -1570,6 +1987,11 @@ export function createVerificationPanel(
     ) {
       return;
     }
+    // ペインサイズ調整スプリッタ（issue #193）にフォーカスがあるときは、そちら側の
+    // 矢印キー操作（比率・高さ調整）を優先し、判定ショートカット（j/k/a/e 等）を誤爆させない
+    if (target === widthSplitter || target === heightSplitter) {
+      return;
+    }
     if (event.shiftKey) {
       // フォーカスモードの Shift+J / Shift+K（前後ユニットへ移動）だけを許可する。
       // それ以外の Shift 併用（誤爆防止）は無視する
@@ -1688,8 +2110,14 @@ export function createVerificationPanel(
       );
       element?.scrollIntoView?.({ block: 'nearest' });
     },
+    syncPaneLayoutMeasurements() {
+      applyPaneLayout();
+    },
     dispose() {
       ownerDoc.removeEventListener('keydown', handleKeydown);
+      // issue #193 レビュー指摘 R3: パネルは study 切替のたびに作り直される
+      // （createVerificationPanel が毎回呼ばれる）ため、resize リスナを解除しないとリークする
+      panelWindow?.removeEventListener('resize', handleWindowResize);
     },
   };
 }
@@ -1742,6 +2170,20 @@ export function renderCachedVerificationPanel(options: VerificationPanelOptions)
       });
     }
   }
+  // ペインサイズ調整の aria-value* / basis を実測へ同期する（issue #193 レビュー指摘 P2）。
+  // 新規生成時とキャッシュ再利用時の**両方**で必要になるため、if の外（毎回通る場所）に置く:
+  // - 新規生成時: createVerificationPanel 内の初回 applyPaneLayout() は DOM 未接続の時点で走るため、
+  //   getBoundingClientRect() が 0 を返して実寸とずれた値（高さの実用下限 240 等）が入る
+  // - キャッシュ再利用時: #/verify → 別ルート → ウィンドウリサイズ → #/verify と戻ると、
+  //   detach 中の resize ハンドラがゼロ寸法を測って aria-valuenow="240" 等を書き込む。
+  //   その後は同じキャッシュを返すだけなので、ここで呼び直さないとずれが残り続ける
+  // タイミングは scrollFocusedIntoView と同じ「呼び出し側が root を接続し終えた後の microtask」
+  const syncTarget = cachedPanel.handle;
+  queueMicrotask(() => {
+    if (cachedPanel?.handle === syncTarget) {
+      syncTarget.syncPaneLayoutMeasurements();
+    }
+  });
   if (focusEntityKey !== cachedPanel.appliedFocusEntity) {
     cachedPanel.appliedFocusEntity = focusEntityKey;
     if (focusEntityKey !== null) {

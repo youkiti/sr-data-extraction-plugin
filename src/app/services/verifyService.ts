@@ -30,7 +30,7 @@ import {
 import { readAllDecisions } from '../../features/verification/decisionRepository';
 import { verificationProgress } from '../../features/verification/progress';
 import { getCurrentUserEmail } from '../../lib/google/identity';
-import type { VerifyLayoutMode } from '../../lib/storage/settingsStore';
+import type { VerifyLayoutMode, VerifyPaneLayout } from '../../lib/storage/settingsStore';
 import { nowIso8601 } from '../../utils/iso8601';
 import type { Store, VerifyState, VerifyTarget } from '../store';
 import { showToast } from '../ui/toast';
@@ -42,6 +42,7 @@ import {
   persistDecisionWrite,
   persistInstanceDeclarations,
   persistVerifyLayoutMode,
+  persistVerifyPaneLayout,
   resultsCellKeyOf,
   type QueuedDecisionWrite,
   type VerificationDeps,
@@ -426,8 +427,9 @@ export async function readVerifyTargetMaterials(
  * `loadVerifyTargets`（`targets !== null` で早期 return）が再読込しないまま残ってしまう
  * （再入場してもページ再読み込みまで空一覧が残る）。抽出完了のたびにキャッシュを破棄し、
  * 次回 #/verify 入場時の既存の読込経路（force なしの自然な再読込）に委ねる。
- * `loading` / `queuedDecisions` / `layoutMode` / `deepLinkEntityKey` は抽出の成否と無関係なので
- * 触らない（queuedDecisions はオフラインキュー件数、layoutMode は設定由来のため）
+ * `loading` / `queuedDecisions` / `layoutMode` / `paneLayout` / `deepLinkEntityKey` は
+ * 抽出の成否と無関係なので触らない（queuedDecisions はオフラインキュー件数、
+ * layoutMode / paneLayout は設定由来のため）
  */
 export function invalidateVerifyTargets(store: Store): void {
   // 表示中 PDF を解放してから状態を破棄する（pdfjs のメモリ解放。openVerifyStudy と同じ流儀）。
@@ -520,6 +522,7 @@ export async function openVerifyStudy(
       verification: bundle.verification,
       studyValues: bundle.studyValues,
       layoutMode: bundle.layoutMode,
+      paneLayout: bundle.paneLayout,
       studyRowUpdatedAt: bundle.studyRowUpdatedAt,
       resultsRowUpdatedAt: bundle.resultsRowUpdatedAt,
     });
@@ -539,6 +542,19 @@ export async function setVerifyLayoutMode(
 ): Promise<void> {
   patchVerify(store, { layoutMode: mode });
   await persistVerifyLayoutMode(mode, deps);
+}
+
+/**
+ * 検証パネルの 2 ペインのサイズ調整（issue #193）を永続化する。パネル側がスプリッタの
+ * ドラッグ終了時（pointerup）に 1 回だけ呼ぶ（ドラッグ中は呼ばない。パネル側のコメント参照）
+ */
+export async function setVerifyPaneLayout(
+  store: Store,
+  deps: VerificationDeps,
+  layout: VerifyPaneLayout,
+): Promise<void> {
+  patchVerify(store, { paneLayout: layout });
+  await persistVerifyPaneLayout(layout, deps);
 }
 
 /**

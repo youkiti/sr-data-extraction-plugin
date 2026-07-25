@@ -10,6 +10,7 @@ import {
   persistVerifyRelocateQuote,
   readVerifyTargetMaterials,
   setVerifyLayoutMode,
+  setVerifyPaneLayout,
 } from '../../../../src/app/services/verifyService';
 import { relocateQuote } from '../../../../src/app/services/relocateQuoteService';
 import {
@@ -1524,5 +1525,16 @@ describe('setVerifyLayoutMode（issue #38）', () => {
     await setVerifyLayoutMode(store, makeDeps({ saveVerifyLayoutMode }), 'list');
     expect(store.getState().verify.layoutMode).toBe('list');
     expect(saveVerifyLayoutMode).toHaveBeenCalledWith('list');
+  });
+});
+
+describe('setVerifyPaneLayout（issue #193）', () => {
+  test('verify.paneLayout を楽観反映し、settingsStore（deps 注入）へ永続化する', async () => {
+    const store = makeStore({});
+    const saveVerifyPaneLayout = jest.fn().mockResolvedValue(undefined);
+    const layout = { formPaneHeight: 900, pdfPaneRatio: 0.65 };
+    await setVerifyPaneLayout(store, makeDeps({ saveVerifyPaneLayout }), layout);
+    expect(store.getState().verify.paneLayout).toEqual(layout);
+    expect(saveVerifyPaneLayout).toHaveBeenCalledWith(layout);
   });
 });

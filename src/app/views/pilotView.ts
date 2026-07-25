@@ -411,6 +411,8 @@ function renderVerification(run: ExtractionRun, state: AppState, ctx: ViewContex
         onRelocateQuote: (evidence) => ctx.pilot.onRelocateQuote(evidence),
         layoutMode: state.pilot.layoutMode,
         onLayoutModeChange: (mode) => ctx.pilot.onChangeLayoutMode(mode),
+        paneLayout: state.pilot.paneLayout,
+        onPaneLayoutChange: (layout) => ctx.pilot.onChangePaneLayout(layout),
       }),
     );
   }

@@ -653,6 +653,8 @@ export const en: Record<MessageKey, string> = {
   'verify.progressOverall': 'Overall: {progress}',
   'verify.layoutToList': 'Switch to list view',
   'verify.layoutToFocus': 'Switch to focus view',
+  'verify.paneSplitterAria': 'Adjust width split between PDF pane and verification form',
+  'verify.paneHeightSplitterAria': 'Adjust verification form height',
   'verify.armHeading': 'Arm structure',
   'verify.armNameAria': 'Name of arm {key}',
   'verify.armRemove': 'Remove',

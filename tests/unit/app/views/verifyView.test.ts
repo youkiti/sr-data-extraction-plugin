@@ -15,6 +15,7 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<VerifyViewCallbac
     onDecision: jest.fn(),
     onArmConfirm: jest.fn(),
     onChangeLayoutMode: jest.fn(),
+    onChangePaneLayout: jest.fn(),
     onReloadVerification: jest.fn(),
     onRelocateQuote: jest.fn(),
     onInstanceDeclare: jest.fn(),
@@ -104,6 +105,7 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<VerifyViewCallbac
         onDecision: jest.fn(),
         onArmConfirm: jest.fn(),
         onChangeLayoutMode: jest.fn(),
+        onChangePaneLayout: jest.fn(),
         onReloadVerification: jest.fn(),
         onRelocateQuote: jest.fn(),
       },
@@ -534,6 +536,54 @@ describe('renderVerifyView', () => {
     expect(toggle?.textContent).toBe('フォーカス表示に切替'); // list スライス値がパネルへ渡っている
     toggle?.click();
     expect(callbacks.onChangeLayoutMode).toHaveBeenCalledWith('focus');
+  });
+
+  test('ペインサイズ調整（issue #193）は verify スライスからパネルへ渡り、ドラッグ確定が onChangePaneLayout へ委譲される', () => {
+    const { ctx, callbacks } = makeCtx();
+    const verification = makeVerification();
+    const root = render(
+      makeState({
+        targets: [makeTarget()],
+        selectedStudyId: 'study-1',
+        verification,
+        paneLayout: { formPaneHeight: 900, pdfPaneRatio: 0.6 },
+      }),
+      ctx,
+    );
+    const panes = root.querySelector<HTMLElement>('.verify__panes');
+    // panesEl / widthSplitter を stub していないため比率はクランプ対象外（保存値をそのまま使う）。
+    // basis はスプリッタ幅（未測定時のフォールバック 12px）を除いた座標系（issue #193 レビュー指摘 R2）
+    expect(panes?.style.getPropertyValue('--verify-pdf-basis')).toBe('calc((100% - 12px) * 0.6)');
+    const splitter = root.querySelector<HTMLElement>('.verify__splitter--vertical');
+    (panes as HTMLElement).getBoundingClientRect = jest.fn(
+      () =>
+        ({ width: 1200, height: 0, top: 0, left: 0, right: 0, bottom: 0, x: 0, y: 0, toJSON: () => ({}) }) as DOMRect,
+    );
+    // issue #193 レビュー指摘 P2-1: ドラッグ開始比率は「いま描かれている比率」= clampPdfRatio(保存値)
+    // を使う。leftPane 側も保存比率（0.6）相当の幅で stub し、実測経路を通る場合（basis 未設定）でも
+    // 同じ起点になるようにしておく
+    const leftPane = root.querySelector<HTMLElement>('.verify__pane--pdf');
+    (leftPane as HTMLElement).getBoundingClientRect = jest.fn(
+      () =>
+        ({
+          width: 0.6 * (1200 - 12),
+          height: 0,
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          x: 0,
+          y: 0,
+          toJSON: () => ({}),
+        }) as DOMRect,
+    );
+    splitter?.dispatchEvent(new MouseEvent('pointerdown', { clientX: 100, bubbles: true }));
+    splitter?.dispatchEvent(new MouseEvent('pointermove', { clientX: 160, bubbles: true }));
+    splitter?.dispatchEvent(new MouseEvent('pointerup', { clientX: 160, bubbles: true }));
+    // widthSplitter 自身は stub していないため、幅は 12px フォールバック（issue #193 R2）
+    expect(callbacks.onChangePaneLayout).toHaveBeenCalledWith(
+      expect.objectContaining({ pdfPaneRatio: 0.6 + 60 / (1200 - 12) }),
+    );
   });
 
   test('deepLinkEntityKey（?entity=）がパネルへ渡り、該当タブへ切替える', async () => {

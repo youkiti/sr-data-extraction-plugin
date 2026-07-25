@@ -11,6 +11,7 @@ import {
   persistDecisionWrite,
   persistInstanceDeclarations,
   persistVerifyLayoutMode,
+  persistVerifyPaneLayout,
   resultsCellKeyOf,
   saveDecisionWrite,
   type VerificationBundleInput,
@@ -323,6 +324,23 @@ describe('loadVerificationBundle', () => {
     expect(loadVerifyLayoutMode).toHaveBeenCalledTimes(1);
   });
 
+  test('paneLayout は settingsStore（chrome.storage.local）から読む（未設定は既定 null/null）', async () => {
+    const { paneLayout } = await loadVerificationBundle(makeBundleInput(), makeDeps());
+    expect(paneLayout).toEqual({ formPaneHeight: null, pdfPaneRatio: null });
+  });
+
+  test('paneLayout は deps.loadVerifyPaneLayout を注入すればそちらを使う', async () => {
+    const loadVerifyPaneLayout = jest
+      .fn()
+      .mockResolvedValue({ formPaneHeight: 900, pdfPaneRatio: 0.7 });
+    const { paneLayout } = await loadVerificationBundle(
+      makeBundleInput(),
+      makeDeps({ loadVerifyPaneLayout }),
+    );
+    expect(paneLayout).toEqual({ formPaneHeight: 900, pdfPaneRatio: 0.7 });
+    expect(loadVerifyPaneLayout).toHaveBeenCalledTimes(1);
+  });
+
   describe('楽観ロックのトークン取得（issue #64）', () => {
     test('自分の StudyData 行があれば updated_at をトークンに持つ', async () => {
       readStudyDataSheetMock.mockResolvedValue({
@@ -429,6 +447,24 @@ describe('persistVerifyLayoutMode', () => {
     await persistVerifyLayoutMode('list', makeDeps());
     const { loadVerifyLayoutMode } = await import('../../../../src/lib/storage/settingsStore');
     await expect(loadVerifyLayoutMode()).resolves.toBe('list');
+  });
+});
+
+describe('persistVerifyPaneLayout', () => {
+  test('deps.saveVerifyPaneLayout を注入すればそちらへ保存する', async () => {
+    const saveVerifyPaneLayout = jest.fn().mockResolvedValue(undefined);
+    const layout = { formPaneHeight: 800, pdfPaneRatio: 0.6 };
+    await persistVerifyPaneLayout(layout, makeDeps({ saveVerifyPaneLayout }));
+    expect(saveVerifyPaneLayout).toHaveBeenCalledWith(layout);
+  });
+
+  test('未注入なら settingsStore（chrome.storage.local）へ保存する', async () => {
+    await persistVerifyPaneLayout({ formPaneHeight: 800, pdfPaneRatio: 0.6 }, makeDeps());
+    const { loadVerifyPaneLayout } = await import('../../../../src/lib/storage/settingsStore');
+    await expect(loadVerifyPaneLayout()).resolves.toEqual({
+      formPaneHeight: 800,
+      pdfPaneRatio: 0.6,
+    });
   });
 });
 

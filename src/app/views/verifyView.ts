@@ -226,6 +226,8 @@ export function renderVerifyView(state: AppState, ctx: ViewContext): HTMLElement
         focusEntityKey: verify.deepLinkEntityKey,
         layoutMode: verify.layoutMode,
         onLayoutModeChange: (mode) => ctx.verify.onChangeLayoutMode(mode),
+        paneLayout: verify.paneLayout,
+        onPaneLayoutChange: (layout) => ctx.verify.onChangePaneLayout(layout),
       }),
     );
   }

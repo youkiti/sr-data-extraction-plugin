@@ -412,73 +412,125 @@ async function initApp(
   page: Page,
   hash: string,
   docs: Record<string, unknown> = defaultDocuments(),
-  options: { apiKey?: string } = {},
+  options: { apiKey?: string; persistSettings?: boolean } = {},
 ): Promise<void> {
-  await page.addInitScript(({ documents, apiKey }) => {
-    const win = window as unknown as Record<string, unknown>;
-    // apiKey が渡されたときだけ secrets.geminiApiKey を持たせる（relocate-quote の
-    // LLM 呼び出し実弾テスト用。issue #94。未指定時は従来どおり常に空を返す）
-    const stored: Record<string, unknown> =
-      apiKey === null ? {} : { 'secrets.geminiApiKey': apiKey };
-    win.chrome = {
-      storage: {
-        local: {
-          get: async (keys: string | string[]) => {
-            const wanted = Array.isArray(keys) ? keys : [keys];
-            const found: Record<string, unknown> = {};
-            for (const key of wanted) {
-              if (key in stored) {
-                found[key] = stored[key];
+  await page.addInitScript(
+    ({ documents, apiKey, persistSettings }) => {
+      const win = window as unknown as Record<string, unknown>;
+      // apiKey が渡されたときだけ secrets.geminiApiKey を持たせる（relocate-quote の
+      // LLM 呼び出し実弾テスト用。issue #94。未指定時は従来どおり常に空を返す）
+      const stored: Record<string, unknown> =
+        apiKey === null ? {} : { 'secrets.geminiApiKey': apiKey };
+      // ペインサイズ調整（issue #193）のリロード後保持等、page.reload() をまたぐ永続化を
+      // 検証するテストだけ persistSettings で window.localStorage 裏付けの get/set/remove に
+      // 切替える（既定は set/remove が no-op の従来どおりのスタブ）。addInitScript は
+      // reload のたびに再実行されるため、localStorage に書いた値は次の読込でも読める
+      const persistPrefix = 'e2e-chrome-storage:';
+      win.chrome = {
+        storage: {
+          local: {
+            get: async (keys: string | string[]) => {
+              const wanted = Array.isArray(keys) ? keys : [keys];
+              const found: Record<string, unknown> = {};
+              for (const key of wanted) {
+                if (persistSettings) {
+                  const raw = window.localStorage.getItem(persistPrefix + key);
+                  if (raw !== null) {
+                    found[key] = JSON.parse(raw);
+                  }
+                } else if (key in stored) {
+                  found[key] = stored[key];
+                }
               }
-            }
-            return found;
+              return found;
+            },
+            set: persistSettings
+              ? async (items: Record<string, unknown>) => {
+                  for (const [key, value] of Object.entries(items)) {
+                    window.localStorage.setItem(persistPrefix + key, JSON.stringify(value));
+                  }
+                }
+              : async () => undefined,
+            remove: persistSettings
+              ? async (key: string | string[]) => {
+                  for (const k of Array.isArray(key) ? key : [key]) {
+                    window.localStorage.removeItem(persistPrefix + k);
+                  }
+                }
+              : async () => undefined,
           },
-          set: async () => undefined,
+        },
+        runtime: {
+          // 認証は SW ブローカーへの sendMessage 経由（issue #129）
+          sendMessage: async (msg: { type?: string }) => {
+            if (msg?.type === 'auth:get-token') return { ok: true, token: 'e2e-token' };
+            if (msg?.type === 'auth:get-email') return { ok: true, email: 'e2e@example.com' };
+            return { ok: true };
+          },
+          id: 'e2e-extension-id',
+          getURL: (p: string) => `/${p}`,
+          lastError: undefined,
+          onMessageExternal: { addListener: () => undefined, removeListener: () => undefined },
+        },
+        tabs: {
+          create: async () => ({ id: 1 }),
           remove: async () => undefined,
+          onRemoved: { addListener: () => undefined, removeListener: () => undefined },
         },
-      },
-      runtime: {
-        // 認証は SW ブローカーへの sendMessage 経由（issue #129）
-        sendMessage: async (msg: { type?: string }) => {
-          if (msg?.type === 'auth:get-token') return { ok: true, token: 'e2e-token' };
-          if (msg?.type === 'auth:get-email') return { ok: true, email: 'e2e@example.com' };
-          return { ok: true };
+        identity: {
+          getProfileUserInfo: (_opts: unknown, cb: (info: unknown) => void) => {
+            cb({ email: 'e2e@example.com', id: '1' });
+          },
         },
-        id: 'e2e-extension-id',
-        getURL: (p: string) => `/${p}`,
-        lastError: undefined,
-        onMessageExternal: { addListener: () => undefined, removeListener: () => undefined },
-      },
-      tabs: {
-        create: async () => ({ id: 1 }),
-        remove: async () => undefined,
-        onRemoved: { addListener: () => undefined, removeListener: () => undefined },
-      },
-      identity: {
-        getProfileUserInfo: (_opts: unknown, cb: (info: unknown) => void) => {
-          cb({ email: 'e2e@example.com', id: '1' });
+      };
+      win.__E2E_PRELOADED_STATE__ = {
+        currentProject: {
+          projectId: 'e2e-project',
+          spreadsheetId: 'e2e-sheet',
+          driveFolderId: 'e2e-folder',
+          name: 'E2E プロジェクト',
         },
-      },
-    };
-    win.__E2E_PRELOADED_STATE__ = {
-      currentProject: {
-        projectId: 'e2e-project',
-        spreadsheetId: 'e2e-sheet',
-        driveFolderId: 'e2e-folder',
-        name: 'E2E プロジェクト',
-      },
-      counts: {
-        documents: 2,
-        protocolVersions: 1,
-        schemaVersions: 1,
-        pilotRuns: 1,
-        evidenceRows: 2,
-        dataRows: 0,
-      },
-      documents,
-    };
-  }, { documents: docs, apiKey: options.apiKey ?? null });
+        counts: {
+          documents: 2,
+          protocolVersions: 1,
+          schemaVersions: 1,
+          pilotRuns: 1,
+          evidenceRows: 2,
+          dataRows: 0,
+        },
+        documents,
+      };
+    },
+    { documents: docs, apiKey: options.apiKey ?? null, persistSettings: options.persistSettings ?? false },
+  );
   await page.goto(`/app/app.html${hash}`);
+}
+
+/** 検証パネル 2 ペイン間の左右スプリッタをドラッグする（要素を実マウス操作で動かす） */
+async function dragWidthSplitter(page: Page, deltaX: number): Promise<void> {
+  const splitter = page.locator('.verify__splitter--vertical');
+  const box = await splitter.boundingBox();
+  if (box === null) {
+    throw new Error('verify__splitter--vertical のバウンディングボックスが取得できません');
+  }
+  const startX = box.x + box.width / 2;
+  const startY = box.y + box.height / 2;
+  await page.mouse.move(startX, startY);
+  await page.mouse.down();
+  await page.mouse.move(startX + deltaX, startY, { steps: 5 });
+  await page.mouse.up();
+}
+
+/**
+ * `--verify-pdf-basis` の値（`calc((100% - {スプリッタ幅}px) * {比率})` 形式。
+ * issue #193 レビュー指摘 R2）から比率だけを取り出す
+ */
+function ratioFromBasis(value: string): number {
+  const match = /\*\s*([0-9.]+)\)$/.exec(value);
+  if (match === null) {
+    throw new Error(`unexpected --verify-pdf-basis value: ${value}`);
+  }
+  return parseFloat(match[1] as string);
 }
 
 test('一覧 + 検証フロー: 進捗チップ → ハイライト → 承認 → Decisions 追記 → セレクタ切替の hash 同期', async ({ page }) => {
@@ -515,6 +567,233 @@ test('一覧 + 検証フロー: 進捗チップ → ハイライト → 承認 �
   await select.selectOption('study-2');
   await expect(page).toHaveURL(/#\/verify\?study=study-2$/);
   await expect(page.locator('.verify__ai-value')).toHaveText('9', { timeout: 15_000 });
+});
+
+// ペインサイズ調整（issue #193）: 左右比率スプリッタをドラッグして比率を変え、
+// リロード後も settingsStore（chrome.storage.local）経由で保持されることを検証する
+test('ペインサイズ調整: 左右スプリッタのドラッグで比率が変わり、リロード後も保持される', async ({ page }) => {
+  // 既定ビューポート（1280px）では判定項目枠の min-width（360px）により PDF 比率の上限が
+  // 約 0.634 になり、下でドラッグして保存する 0.640 が「リロード後の表示時に再クランプされる」
+  // （R3 の正しい挙動）ため、保持そのものを検証できない。クランプの検証は別テスト
+  // （「保存済みの高さがビューポート上限を超えるときは再クランプして表示する（R3）」）の担当なので、
+  // ここではクランプが介入しない幅（usable 幅 ≈ 1100px → 上限 ≈ 0.67）へ広げて保持だけを見る
+  await page.setViewportSize({ width: 1400, height: 900 });
+  await setupRoutes(page, {
+    schemaRows: [STUDY_FIELD_ROW],
+    evidenceRows: [EVIDENCE_ROW_1, EVIDENCE_ROW_2],
+  });
+  await initApp(page, '#/verify?study=study-1', undefined, { persistSettings: true });
+
+  const panes = page.locator('.verify__panes');
+  await expect(panes).toBeVisible({ timeout: 15_000 });
+  const splitter = page.locator('.verify__splitter--vertical');
+  await expect(splitter).toHaveAttribute('role', 'separator');
+  await expect(splitter).toHaveAttribute('aria-orientation', 'vertical');
+
+  // panesEl / leftPane（.verify__pane--pdf）/ widthSplitter の幅を固定し、ドラッグ量から
+  // 比率の変化を決定論的に検証する。未設定時の開始比率は実測（leftPane 幅 /
+  // (panesEl 幅 − スプリッタ幅)。issue #193 レビュー指摘 F1・R2）のため、いずれも stub する
+  await page.evaluate(() => {
+    const stubRect = (selector: string, width: number) => {
+      const el = document.querySelector(selector) as HTMLElement;
+      el.getBoundingClientRect = () =>
+        ({
+          width,
+          height: 480,
+          top: 0,
+          left: 0,
+          right: width,
+          bottom: 480,
+          x: 0,
+          y: 0,
+          toJSON: () => ({}),
+        }) as DOMRect;
+    };
+    stubRect('.verify__panes', 1200);
+    stubRect('.verify__pane--pdf', 700);
+    stubRect('.verify__splitter--vertical', 12);
+  });
+  const usableWidth = 1200 - 12;
+  const startRatio = 700 / usableWidth;
+
+  const before = await panes.evaluate((el) => (el as HTMLElement).style.getPropertyValue('--verify-pdf-basis'));
+  expect(before).toBe(''); // 既定は未設定
+
+  await dragWidthSplitter(page, 60); // +60px / (1200-12)px
+
+  const after = await panes.evaluate((el) => (el as HTMLElement).style.getPropertyValue('--verify-pdf-basis'));
+  expect(after).not.toBe('');
+  const ratioAfterDrag = ratioFromBasis(after);
+  expect(ratioAfterDrag).toBeCloseTo(startRatio + 60 / usableWidth, 5); // 実測した開始比率からの相対移動
+
+  // リロード後も比率が保持される（settingsStore への永続化 → 検証データ束読込時に読み直す）
+  await page.reload();
+  await expect(page.locator('.verify__panes')).toBeVisible({ timeout: 15_000 });
+  const ratioAfterReload = await page
+    .locator('.verify__panes')
+    .evaluate((el) => (el as HTMLElement).style.getPropertyValue('--verify-pdf-basis'));
+  // リロード後は panesEl / widthSplitter の stub は失われるため、basis は保存済み比率を
+  // 実際のスプリッタ幅で再計算した calc() 文字列になる（ratioFromBasis で比率だけ比較する）
+  expect(ratioFromBasis(ratioAfterReload)).toBeCloseTo(ratioAfterDrag, 5);
+
+  const results = await new AxeBuilder({ page }).analyze();
+  expect(results.violations).toEqual([]);
+});
+
+// issue #193 レビュー指摘 R2: スプリッタ自身の幅（12px）を比率の座標系から除かないと、
+// ドラッグ開始時に約 6px ジャンプし、ドラッグ量とペイン幅の変化が 1:1 にならない
+// （修正前の実測: 幅 2400px で +1px ドラッグ → PDF ペインが 5.3px 縮む）。
+// rect のスタブなし・実レイアウトで再現する
+test('ペインサイズ調整: 広いビューポートで 1px ドラッグすると PDF ペインの実測幅もおよそ 1px だけ変わる', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 2400, height: 900 });
+  await setupRoutes(page, {
+    schemaRows: [STUDY_FIELD_ROW],
+    evidenceRows: [EVIDENCE_ROW_1, EVIDENCE_ROW_2],
+  });
+  await initApp(page, '#/verify?study=study-1', undefined, { persistSettings: true });
+  await expect(page.locator('.verify__panes')).toBeVisible({ timeout: 15_000 });
+
+  const pdfPane = page.locator('.verify__pane--pdf');
+  const widthBefore = (await pdfPane.boundingBox())?.width as number;
+
+  await dragWidthSplitter(page, 1);
+
+  const widthAfter = (await pdfPane.boundingBox())?.width as number;
+  expect(Math.abs(widthAfter - widthBefore - 1)).toBeLessThanOrEqual(2);
+});
+
+// ペインサイズ調整（issue #193）: キーボード操作（矢印キー）とダブルクリックリセットの実ブラウザ確認
+test('ペインサイズ調整: 矢印キーで比率・高さを調整でき、ダブルクリックで既定へ戻せる', async ({ page }) => {
+  await setupRoutes(page, {
+    schemaRows: [STUDY_FIELD_ROW],
+    evidenceRows: [EVIDENCE_ROW_1, EVIDENCE_ROW_2],
+  });
+  await initApp(page, '#/verify?study=study-1', undefined, { persistSettings: true });
+  await expect(page.locator('.verify__panes')).toBeVisible({ timeout: 15_000 });
+
+  await page.evaluate(() => {
+    const stubRect = (selector: string, width: number) => {
+      const el = document.querySelector(selector) as HTMLElement;
+      el.getBoundingClientRect = () =>
+        ({
+          width,
+          height: 480,
+          top: 0,
+          left: 0,
+          right: width,
+          bottom: 480,
+          x: 0,
+          y: 0,
+          toJSON: () => ({}),
+        }) as DOMRect;
+    };
+    stubRect('.verify__panes', 1200);
+    stubRect('.verify__pane--pdf', 700);
+    stubRect('.verify__splitter--vertical', 12);
+  });
+  const usableWidth = 1200 - 12; // スプリッタ幅（12px）を除いた座標系（issue #193 レビュー指摘 R2）
+  const startRatio = 700 / usableWidth;
+
+  const widthSplitter = page.locator('.verify__splitter--vertical');
+  await widthSplitter.focus();
+  await page.keyboard.press('ArrowRight');
+  const ratioAfterFirstArrow = await page
+    .locator('.verify__panes')
+    .evaluate((el) => (el as HTMLElement).style.getPropertyValue('--verify-pdf-basis'))
+    .then(ratioFromBasis);
+  expect(ratioAfterFirstArrow).toBeCloseTo(startRatio + 0.02, 5);
+
+  // issue #193 レビュー指摘 F4: onPaneLayoutChange はストア購読を同期的に発火させ、
+  // キャッシュ済みパネルが detach → reattach される。commitPaneLayout がスプリッタへの
+  // フォーカスを復元しないと、1 回目の矢印キーで <body> へフォーカスが逃げ 2 回目が効かない。
+  // ここではフォーカスを取り直さず（Tab 相当で移った状態のまま）連続で押せることを確認する
+  await expect(widthSplitter).toBeFocused();
+  await page.keyboard.press('ArrowRight');
+  const ratioAfterSecondArrow = await page
+    .locator('.verify__panes')
+    .evaluate((el) => (el as HTMLElement).style.getPropertyValue('--verify-pdf-basis'))
+    .then(ratioFromBasis);
+  expect(ratioAfterSecondArrow).toBeCloseTo(startRatio + 0.04, 5);
+  expect(ratioAfterSecondArrow).not.toBeCloseTo(ratioAfterFirstArrow, 5);
+
+  // ダブルクリックで既定（未設定 = カスタムプロパティなし）へ戻る。実クリック列（Playwright の
+  // 高レベル dblclick()）で検証する — F2 の修正（無変化な pointerup では commit しない）に
+  // より、2 クリック間の pointerup が route 再描画を起こさなくなり、実クリックでも問題なく
+  // 動く（issue #193 レビュー指摘 R1。以前は合成 dblclick イベントで代用していたが、
+  // それでは実クリック列の経路を検証できていなかった）
+  await widthSplitter.dblclick();
+  const afterReset = await page
+    .locator('.verify__panes')
+    .evaluate((el) => (el as HTMLElement).style.getPropertyValue('--verify-pdf-basis'));
+  expect(afterReset).toBe('');
+
+  // 高さスプリッタも矢印キーで調整でき（連続 2 回とも効く）、ダブルクリックで既定へ戻る
+  const heightSplitter = page.locator('.verify__splitter--horizontal');
+  await expect(heightSplitter).toHaveAttribute('role', 'separator');
+  await expect(heightSplitter).toHaveAttribute('aria-orientation', 'horizontal');
+  await heightSplitter.focus();
+  await page.keyboard.press('ArrowDown');
+  const formPane = page.locator('.verify__pane--form');
+  const heightAfterFirstArrow = await formPane.evaluate((el) =>
+    (el as HTMLElement).style.getPropertyValue('--verify-form-height'),
+  );
+  expect(heightAfterFirstArrow).not.toBe('');
+
+  await expect(heightSplitter).toBeFocused();
+  await page.keyboard.press('ArrowDown');
+  const heightAfterSecondArrow = await formPane.evaluate((el) =>
+    (el as HTMLElement).style.getPropertyValue('--verify-form-height'),
+  );
+  expect(heightAfterSecondArrow).not.toBe(heightAfterFirstArrow);
+  expect(parseFloat(heightAfterSecondArrow)).toBe(parseFloat(heightAfterFirstArrow) + 24);
+
+  // 高さ側も実クリック列で確定的にリセットできる（R1 と同じ理由）
+  await heightSplitter.dblclick();
+  const heightAfterReset = await formPane.evaluate((el) =>
+    (el as HTMLElement).style.getPropertyValue('--verify-form-height'),
+  );
+  expect(heightAfterReset).toBe('');
+
+  // 既存のキーボードショートカット（a = 承認）はスプリッタ操作後も壊れていない
+  // （handleKeydown のスプリッタ除外ガードが他要素にフォーカスがあるときの動作を妨げないこと）
+  await page.locator('.verify__action--accept').first().focus();
+  await page.keyboard.press('a');
+  await expect(page.locator('#verify-focus-detail .verify__chip')).toHaveText('承認', {
+    timeout: 15_000,
+  });
+});
+
+// issue #193 レビュー指摘 R3: 27 インチ等の広い画面で保存した高さ（例 1500px）を、
+// ノート PC 等の狭いビューポートで読み込んだときに再クランプされることを実ブラウザで確認する。
+// クランプを通さない場合、判定項目枠が画面外へはみ出す
+test('ペインサイズ調整: 保存済みの高さがビューポート上限を超えるときは再クランプして表示する（R3）', async ({
+  page,
+}) => {
+  // initApp（persistSettings 版）より先に登録することで、chrome.storage.local のスタブが
+  // 読む localStorage へ事前に保存値を書いておく（addInitScript は登録順にナビゲーション前に実行される）
+  await page.addInitScript(() => {
+    window.localStorage.setItem(
+      'e2e-chrome-storage:settings.verifyPaneLayout',
+      JSON.stringify({ formPaneHeight: 1500, pdfPaneRatio: null }),
+    );
+  });
+  await page.setViewportSize({ width: 1400, height: 720 });
+  await setupRoutes(page, {
+    schemaRows: [STUDY_FIELD_ROW],
+    evidenceRows: [EVIDENCE_ROW_1, EVIDENCE_ROW_2],
+  });
+  await initApp(page, '#/verify?study=study-1', undefined, { persistSettings: true });
+
+  const formPane = page.locator('.verify__pane--form');
+  await expect(formPane).toBeVisible({ timeout: 15_000 });
+  const height = (await formPane.boundingBox())?.height as number;
+  // クランプ上限 = max(720 - 80, 240) = 640。保存値 1500px のまま描画されると画面外へはみ出す
+  expect(height).toBeLessThanOrEqual(720 - 80);
+
+  const results = await new AxeBuilder({ page }).analyze();
+  expect(results.violations).toEqual([]);
 });
 
 // スクロールリセットの回帰テスト（issue #192）: 判定保存の非同期ストア更新は route 全体を
