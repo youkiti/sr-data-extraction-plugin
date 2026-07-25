@@ -78,6 +78,9 @@ import {
 } from '../../../src/app/services/adjudicationService';
 import type { BuiltExport, ClassicExportFormat } from '../../../src/features/export/buildExport';
 import { createInitialState, type AdjudicateWorking, type AppState } from '../../../src/app/store';
+import type { SchemaField } from '../../../src/domain/schemaField';
+import { buildRedraftDiff, defaultRedraftSelection } from '../../../src/features/schema/redraftDiff';
+import type { SchemaEditorRow } from '../../../src/features/schema/types';
 import { SHEET_HEADERS } from '../../../src/domain/sheetsSchema';
 import { documentToRow } from '../../../src/features/documents/documentRepository';
 import { CURRENT_PROJECT_STORAGE_KEY } from '../../../src/features/project/projectStore';
@@ -1318,6 +1321,126 @@ describe('bootstrapApp', () => {
     expect(document.querySelector('.schema__samples legend')?.textContent).toContain(
       '1 / 3 本選択中',
     );
+  });
+
+  test('#/schema の差分承認画面（追加 / 変更 / 削除候補のチェック切替・反映・キャンセル。issue #197）が配線されている', async () => {
+    const currentField: SchemaField = {
+      schemaVersion: 1,
+      fieldId: 'f-1',
+      fieldIndex: 1,
+      section: 'methods',
+      fieldName: 'study_design',
+      fieldLabel: '研究デザイン',
+      entityLevel: 'study',
+      dataType: 'text',
+      unit: null,
+      allowedValues: null,
+      required: true,
+      extractionInstruction: 'Report the design.',
+      example: null,
+      aiGenerated: true,
+      note: null,
+    };
+    const draftedRow = { ...EDITOR_ROW, fieldId: null, fieldName: 'country' } as SchemaEditorRow;
+    const diff = buildRedraftDiff([currentField], [draftedRow]);
+    const stub = createWindowStub({
+      currentProject: PROJECT,
+      counts: { protocolVersions: 1, schemaVersions: 1 } as AppState['counts'],
+      schema: {
+        versions: [
+          {
+            schemaVersion: 1,
+            parentVersion: null,
+            protocolVersion: 1,
+            createdByType: 'ai_draft',
+            createdAt: '2026-07-01T00:00:00Z',
+            createdBy: 'e2e@example.com',
+            note: null,
+          },
+        ],
+        currentFields: [currentField],
+        redraft: { diff, selection: defaultRedraftSelection(diff) },
+      } as unknown as AppState['schema'],
+    });
+    const { deps } = createFakeDeps([[...SHEET_HEADERS.SchemaVersions]]);
+    await bootstrapApp(asWindow(stub), deps);
+    stub.location.hash = '#/schema';
+    stub.fireHashChange();
+    await flush();
+
+    expect(document.getElementById('schema-redraft-review')).not.toBeNull();
+    // 追加は既定でチェック済み → チェックを外す
+    const addedCheckbox = document.querySelector(
+      '#schema-redraft-added input[type="checkbox"]',
+    ) as HTMLInputElement;
+    expect(addedCheckbox.checked).toBe(true);
+    addedCheckbox.checked = false;
+    addedCheckbox.dispatchEvent(new Event('change'));
+
+    (document.getElementById('schema-redraft-apply') as HTMLButtonElement).click();
+    expect(document.getElementById('schema-redraft-review')).toBeNull();
+    expect(document.getElementById('schema-editor')).not.toBeNull();
+    // 追加のチェックを外していたので country は反映されない（study_design のみ）
+    expect(document.querySelectorAll('#schema-editor-table tbody tr')).toHaveLength(1);
+    expect(
+      (document.querySelector('input[aria-label="1 行目の field_name"]') as HTMLInputElement).value,
+    ).toBe('study_design');
+
+    // エディタをキャンセルして確定済みへ戻り、再度差分承認を開いて「破棄して戻る」も確認する
+    (document.getElementById('schema-editor-cancel') as HTMLButtonElement).click();
+    expect(document.getElementById('schema-confirmed')).not.toBeNull();
+  });
+
+  test('#/schema の差分承認画面: 「破棄して戻る」でエディタを開かず確定済みへ戻る（issue #197）', async () => {
+    const currentField: SchemaField = {
+      schemaVersion: 1,
+      fieldId: 'f-1',
+      fieldIndex: 1,
+      section: 'methods',
+      fieldName: 'study_design',
+      fieldLabel: '研究デザイン',
+      entityLevel: 'study',
+      dataType: 'text',
+      unit: null,
+      allowedValues: null,
+      required: true,
+      extractionInstruction: 'Report the design.',
+      example: null,
+      aiGenerated: true,
+      note: null,
+    };
+    const draftedRow = { ...EDITOR_ROW, fieldId: null, fieldName: 'country' } as SchemaEditorRow;
+    const diff = buildRedraftDiff([currentField], [draftedRow]);
+    const stub = createWindowStub({
+      currentProject: PROJECT,
+      counts: { protocolVersions: 1, schemaVersions: 1 } as AppState['counts'],
+      schema: {
+        versions: [
+          {
+            schemaVersion: 1,
+            parentVersion: null,
+            protocolVersion: 1,
+            createdByType: 'ai_draft',
+            createdAt: '2026-07-01T00:00:00Z',
+            createdBy: 'e2e@example.com',
+            note: null,
+          },
+        ],
+        currentFields: [currentField],
+        redraft: { diff, selection: defaultRedraftSelection(diff) },
+      } as unknown as AppState['schema'],
+    });
+    const { deps } = createFakeDeps([[...SHEET_HEADERS.SchemaVersions]]);
+    await bootstrapApp(asWindow(stub), deps);
+    stub.location.hash = '#/schema';
+    stub.fireHashChange();
+    await flush();
+
+    expect(document.getElementById('schema-redraft-review')).not.toBeNull();
+    (document.getElementById('schema-redraft-cancel') as HTMLButtonElement).click();
+    expect(document.getElementById('schema-redraft-review')).toBeNull();
+    expect(document.getElementById('schema-editor')).toBeNull();
+    expect(document.getElementById('schema-confirmed')).not.toBeNull();
   });
 
   test('ストア更新でヘッダ・サイドバー・現在ルートを再描画する', async () => {

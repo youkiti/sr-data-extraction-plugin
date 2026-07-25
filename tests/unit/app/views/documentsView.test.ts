@@ -119,6 +119,9 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<DocumentsViewCall
         onConfirm: jest.fn(),
         onCancelEditor: jest.fn(),
         onStartNewVersion: jest.fn(),
+        onToggleRedraft: jest.fn(),
+        onApplyRedraft: jest.fn(),
+        onCancelRedraft: jest.fn(),
       },
       pilot: {
         onToggleStudy: jest.fn(),

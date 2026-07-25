@@ -424,9 +424,32 @@ export const en: Record<MessageKey, string> = {
   'schema.currentMeta':
     'Current version: v{version} ({createdByType} / based on Protocol v{protocolVersion} / {createdAt} / {createdBy})',
   'schema.currentNote': 'Revision note: {note}',
+  'schema.staleProtocol':
+    'This table design is based on Protocol v{schemaProtocolVersion} (the current protocol is v{latestProtocolVersion}). To reflect the protocol revision, have the AI redraft it and review the differences.',
   'schema.newVersion': 'Create a new version (edit from the current one)',
   'schema.historyTitle': 'Version history',
   'schema.historyDerived': ' / derived from v{parent}',
+  'schema.redraftTitle': 'Have AI redraft with the new protocol',
+  'schema.redraftLead':
+    'AI redesigns the table using the latest protocol and sample articles, and shows you the differences from the current version. Existing fields are never removed unless you approve it.',
+  'schema.redraftReviewTitle': 'Review the redraft differences',
+  'schema.redraftSummary':
+    'Added {added} / Changed {changed} / Removal candidates {removed} / Unchanged {unchanged} / Kept {protectedCount}',
+  'schema.redraftAddedTitle': 'Added',
+  'schema.redraftAddedEmpty': 'No fields were added',
+  'schema.redraftChangedTitle': 'Changed',
+  'schema.redraftRemovedTitle': 'Removal candidates',
+  'schema.redraftRemovedEmpty': 'No removal candidates',
+  'schema.redraftRemovedNote':
+    'Only the fields you check will be removed. Do not remove fields just because the AI did not propose them, without checking first.',
+  'schema.redraftUnchangedCount': 'Unchanged: {count} fields',
+  'schema.redraftProtectedNote':
+    'The risk-of-bias assessment template fields ({count}) are outside the scope of the AI proposal and are kept as-is.',
+  'schema.redraftApply': 'Apply to the editor',
+  'schema.redraftCancel': 'Discard and go back',
+  'schema.redraftChangeLine': '{label}: {before} → {after}',
+  'schema.redraftItemSummary': '{fieldLabel} ({fieldName}) / {entityLevel} / {dataType}',
+  'schema.redraftItemHeading': '{fieldLabel} ({fieldName})',
 
   // S3〜S7 で使う document_role の短縮ラベル
   'documents.roleAbstractShort': 'Abstract',
@@ -684,6 +707,7 @@ export const en: Record<MessageKey, string> = {
   'verify.relocating': 'Relocating with AI…',
   'verify.relocateNotFound': 'AI could not find it either. Try searching the text',
   'verify.editValueAria': 'Value of {label}',
+  'verify.editMultilineHint': 'Enter inserts a line break; Ctrl+Enter (Cmd+Enter on Mac) confirms',
   'verify.editConfirmIndependent': 'Confirm input',
   'verify.editConfirm': 'Confirm edit',
   'verify.rejectConfirm': 'Reject and confirm',
@@ -958,6 +982,8 @@ export const en: Record<MessageKey, string> = {
   'schema.errProtocolBody': 'Cannot read the body of protocol v{version} (raw_text is missing)',
   'schema.errSamples': 'Select 1–3 sample articles',
   'schema.toastDrafted': 'AI drafted {n} fields. Review them and confirm as a version',
+  'schema.toastRedrafted':
+    'AI redrafted the table design (added {added} / changed {changed} / removal candidates {removed}). Review the differences',
   'schema.errNoRows': 'The table design has no fields',
   'schema.toastConfirmed': 'Confirmed table design v{version} ({n} fields)',
   'protocol.toastSaved': 'Saved protocol v{version}',

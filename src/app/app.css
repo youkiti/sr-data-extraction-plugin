@@ -1097,6 +1097,61 @@ section.documents__tiab {
   margin-top: 8px;
 }
 
+/* 陳腐化バナー（issue #197。既存の警告系トンマナ = .schema__editor-errors / .verify__banner と揃える） */
+.schema__stale-banner {
+  background: var(--color-warning-bg);
+  border: 1px solid var(--color-warning-border);
+  border-radius: 8px;
+  padding: 8px 12px;
+  margin: 8px 0;
+}
+
+/* 再ドラフト導線（issue #197）: 確定済み画面のカード */
+.schema__redraft-form {
+  display: grid;
+  gap: 16px;
+  margin: 16px 0;
+  padding: 16px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+}
+
+/* 差分承認画面（issue #197） */
+.schema__redraft-review {
+  display: grid;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.schema__redraft-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.schema__redraft-changes {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0 0 0 24px;
+  color: var(--color-text-muted);
+}
+
+.schema__redraft-check {
+  margin-right: 6px;
+}
+
+/* 削除候補の注意書き（コマンダーレビュー対応）: エラーではなく常設の案内文のため
+   .schema__error（危険色）ではなく .schema__stale-banner と同じ warning トンマナにする */
+.schema__redraft-note {
+  background: var(--color-warning-bg);
+  border: 1px solid var(--color-warning-border);
+  border-radius: 8px;
+  padding: 8px 12px;
+  margin: 8px 0;
+}
+
 /* --- #/pilot（S6）------------------------------------------------------- */
 
 .pilot__docs {
@@ -2453,6 +2508,21 @@ section.documents__tiab {
 
 .verify__edit-input {
   flex: 1 1 200px;
+}
+
+/* mermaid プレビュー対象フィールドの複数行編集（issue #170） */
+.verify__edit-input--multiline {
+  flex-basis: 100%;
+  min-height: 120px;
+  resize: vertical;
+  font-family: monospace;
+}
+
+.verify__edit-hint {
+  flex-basis: 100%;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  margin: 0;
 }
 
 .verify__empty {

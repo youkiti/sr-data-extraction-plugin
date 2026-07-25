@@ -1,6 +1,8 @@
 import {
   addEditorRow,
+  applyRedraft,
   cancelEditor,
+  cancelRedraft,
   cancelRobPrespecDialog,
   confirmRobPrespecDialog,
   confirmSchema,
@@ -12,6 +14,7 @@ import {
   setDraftModel,
   skipRobPrespecDialog,
   startEditorFromCurrent,
+  toggleRedraftSelection,
   toggleSampleDocument,
   updateEditorRow,
   updateRobPrespecDialog,
@@ -31,6 +34,7 @@ import {
   ROB_TEMPLATE_ROBINS_I,
 } from '../../../../src/features/schema/presets/robTemplates';
 import { createInitialState, createStore, type Store } from '../../../../src/app/store';
+import { buildRedraftDiff, defaultRedraftSelection } from '../../../../src/features/schema/redraftDiff';
 import type { DocumentRecord } from '../../../../src/domain/document';
 import type { Protocol } from '../../../../src/domain/protocol';
 import type { SchemaField } from '../../../../src/domain/schemaField';
@@ -588,6 +592,138 @@ describe('runDraftSchema', () => {
     } finally {
       jest.useRealTimers();
     }
+  });
+
+  describe('現行版があるときの分岐（issue #197。差分承認画面を経由する）', () => {
+    test('currentFields が 1 件以上なら editorRows へ直行せず redraft をセットする', async () => {
+      const store = makeStore();
+      seedForDraft(store);
+      store.setState({
+        schema: {
+          ...store.getState().schema,
+          currentFields: [makeField({ fieldName: 'sample_size_total', required: false })],
+        },
+      });
+      const { deps } = makeDeps();
+      await runDraftSchema(store, deps);
+
+      const { schema } = store.getState();
+      expect(schema.drafting).toBe(false);
+      expect(schema.editorRows).toBeNull();
+      expect(schema.redraft).not.toBeNull();
+      expect(schema.redraft?.diff.changed).toHaveLength(1); // required の差分あり
+      expect(schema.redraft?.selection.changed).toEqual({ sample_size_total: true });
+      expect(toastTexts().some((text) => text.includes('追加 0 件 / 変更 1 件 / 削除候補 0 件'))).toBe(
+        true,
+      );
+    });
+
+    test('currentFields が空配列（0 版扱い）なら従来どおり editorRows へ直行する', async () => {
+      const store = makeStore();
+      seedForDraft(store);
+      store.setState({ schema: { ...store.getState().schema, currentFields: [] } });
+      const { deps } = makeDeps();
+      await runDraftSchema(store, deps);
+
+      const { schema } = store.getState();
+      expect(schema.editorRows).toHaveLength(1);
+      expect(schema.redraft).toBeNull();
+      expect(toastTexts().some((text) => text.includes('1 項目をドラフト'))).toBe(true);
+    });
+  });
+});
+
+describe('差分承認画面のサービス関数（issue #197）', () => {
+  function seedRedraft(store: Store): void {
+    const currentFields = [
+      makeField({ fieldId: 'f-changed', fieldName: 'changed_field', required: false }),
+      makeField({ fieldId: 'f-removed', fieldName: 'removed_field' }),
+    ];
+    const drafted = [
+      makeEditorRow({ fieldName: 'changed_field', required: true }),
+      makeEditorRow({ fieldName: 'added_field' }),
+    ];
+    store.setState({
+      schema: {
+        ...store.getState().schema,
+        currentFields,
+        redraft: {
+          diff: buildRedraftDiff(currentFields, drafted),
+          selection: defaultRedraftSelection(buildRedraftDiff(currentFields, drafted)),
+        },
+      },
+    });
+  }
+
+  describe('toggleRedraftSelection', () => {
+    test('redraft が null（非表示中）は no-op', () => {
+      const store = makeStore();
+      toggleRedraftSelection(store, 'added', 'added_field', false);
+      expect(store.getState().schema.redraft).toBeNull();
+    });
+
+    test('該当キーだけを更新し、他のキーは保持する', () => {
+      const store = makeStore();
+      seedRedraft(store);
+      toggleRedraftSelection(store, 'removed', 'removed_field', true);
+      const { redraft } = store.getState().schema;
+      expect(redraft?.selection.removed).toEqual({ removed_field: true });
+      expect(redraft?.selection.added).toEqual({ added_field: true }); // 他カテゴリは不変
+      toggleRedraftSelection(store, 'added', 'added_field', false);
+      expect(store.getState().schema.redraft?.selection.added).toEqual({ added_field: false });
+    });
+  });
+
+  describe('applyRedraft', () => {
+    test('redraft が null（非表示中）は no-op', () => {
+      const store = makeStore();
+      applyRedraft(store);
+      expect(store.getState().schema.editorRows).toBeNull();
+    });
+
+    test('既定選択のまま適用すると editorOrigin は ai_draft になり、redraft は閉じる', () => {
+      const store = makeStore();
+      seedRedraft(store);
+      applyRedraft(store);
+      const { schema } = store.getState();
+      expect(schema.redraft).toBeNull();
+      expect(schema.editorOrigin).toBe('ai_draft');
+      // removed_field は既定選択（false = 削除しない）のため残る
+      expect(schema.editorRows?.map((row) => row.fieldName)).toEqual([
+        'changed_field',
+        'removed_field',
+        'added_field',
+      ]);
+      expect(schema.editorErrors).toEqual([]);
+    });
+
+    test('選択を既定から変更して適用すると editorOrigin は user_edit になる', () => {
+      const store = makeStore();
+      seedRedraft(store);
+      toggleRedraftSelection(store, 'added', 'added_field', false);
+      applyRedraft(store);
+      const { schema } = store.getState();
+      expect(schema.editorOrigin).toBe('user_edit');
+      expect(schema.editorRows?.map((row) => row.fieldName)).toEqual(['changed_field', 'removed_field']);
+    });
+  });
+
+  describe('cancelRedraft', () => {
+    test('redraft を null に戻す（エディタは開かない）', () => {
+      const store = makeStore();
+      seedRedraft(store);
+      cancelRedraft(store);
+      const { schema } = store.getState();
+      expect(schema.redraft).toBeNull();
+      expect(schema.editorRows).toBeNull();
+    });
+  });
+
+  test('cancelEditor は開いたままの差分承認画面も閉じる', () => {
+    const store = makeStore();
+    seedRedraft(store);
+    cancelEditor(store);
+    expect(store.getState().schema.redraft).toBeNull();
   });
 });
 

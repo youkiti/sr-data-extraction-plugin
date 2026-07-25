@@ -87,6 +87,7 @@ describe('createInitialState', () => {
         editorOrigin: 'user_edit',
         confirming: false,
         presetDialog: null,
+        redraft: null,
       },
       pilot: {
         selectedStudyIds: [],

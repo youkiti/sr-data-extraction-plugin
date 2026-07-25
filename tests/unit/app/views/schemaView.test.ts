@@ -4,6 +4,7 @@ import { renderSchemaView } from '../../../../src/app/views/schemaView';
 import type { SchemaViewCallbacks, ViewContext } from '../../../../src/app/views/types';
 import { createInitialState, type AppState } from '../../../../src/app/store';
 import type { DocumentRecord } from '../../../../src/domain/document';
+import type { Protocol } from '../../../../src/domain/protocol';
 import type { SchemaField } from '../../../../src/domain/schemaField';
 import type { SchemaVersion } from '../../../../src/domain/schemaVersion';
 import type { PresetDialogState } from '../../../../src/features/schema/presets/prespecDialog';
@@ -19,6 +20,10 @@ import { createQuadas3PrespecDialogState } from '../../../../src/features/schema
 import { createQuipsPrespecDialogState } from '../../../../src/features/schema/presets/quipsPrespec';
 import { setUiLanguage } from '../../../../src/lib/i18n';
 import type { SchemaEditorRow } from '../../../../src/features/schema/types';
+import {
+  buildRedraftDiff,
+  defaultRedraftSelection,
+} from '../../../../src/features/schema/redraftDiff';
 
 function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<SchemaViewCallbacks> } {
   const callbacks = {
@@ -37,6 +42,9 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<SchemaViewCallbac
     onConfirm: jest.fn(),
     onCancelEditor: jest.fn(),
     onStartNewVersion: jest.fn(),
+    onToggleRedraft: jest.fn(),
+    onApplyRedraft: jest.fn(),
+    onCancelRedraft: jest.fn(),
   };
   return {
     ctx: {
@@ -173,7 +181,11 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<SchemaViewCallbac
 
 function makeState(
   patch: Partial<AppState['schema']> = {},
-  options: { withProject?: boolean; documents?: DocumentRecord[] | null } = {},
+  options: {
+    withProject?: boolean;
+    documents?: DocumentRecord[] | null;
+    protocolRecords?: Protocol[] | null;
+  } = {},
 ): AppState {
   const state = createInitialState();
   if (options.withProject !== false) {
@@ -187,8 +199,32 @@ function makeState(
   if (options.documents !== undefined) {
     state.documents = { ...state.documents, records: options.documents };
   }
+  if (options.protocolRecords !== undefined) {
+    state.protocol = { ...state.protocol, records: options.protocolRecords };
+  }
   state.schema = { ...state.schema, ...patch };
   return state;
+}
+
+function makeProtocol(overrides: Partial<Protocol> = {}): Protocol {
+  return {
+    version: 1,
+    frameworkType: 'pico',
+    researchQuestion: 'RQ',
+    inclusionCriteria: null,
+    exclusionCriteria: null,
+    studyDesign: null,
+    blockCount: 0,
+    combinationExpression: '',
+    sourceType: 'manual',
+    sourceFilename: null,
+    rawTextRef: null,
+    rawTextPreview: null,
+    rawTextInline: 'text',
+    createdAt: '2026-07-01T00:00:00Z',
+    createdBy: 'tester@example.com',
+    ...overrides,
+  };
 }
 
 function makeDocument(overrides: Partial<DocumentRecord> = {}): DocumentRecord {
@@ -992,6 +1028,297 @@ describe('renderSchemaView', () => {
       const items = multi.querySelectorAll('#schema-history li');
       expect(items).toHaveLength(2);
       expect(items[0]?.textContent).toContain('v1 から派生');
+    });
+
+    test('陳腐化バナー: スキーマ版の protocolVersion が最新プロトコル版より古いときだけ表示する（issue #197）', () => {
+      const { ctx } = makeCtx();
+      const view = renderSchemaView(
+        makeState(
+          { versions: [makeVersion(1, { protocolVersion: 1 })] },
+          { protocolRecords: [makeProtocol({ version: 2 })] },
+        ),
+        ctx,
+      );
+      const banner = view.querySelector('#schema-stale-protocol');
+      expect(banner).not.toBeNull();
+      expect(banner?.getAttribute('role')).toBe('status');
+      expect(banner?.textContent).toContain('Protocol v1');
+      expect(banner?.textContent).toContain('v2');
+    });
+
+    test('陳腐化バナー: 同一版なら表示しない', () => {
+      const { ctx } = makeCtx();
+      const view = renderSchemaView(
+        makeState(
+          { versions: [makeVersion(1, { protocolVersion: 2 })] },
+          { protocolRecords: [makeProtocol({ version: 2 })] },
+        ),
+        ctx,
+      );
+      expect(view.querySelector('#schema-stale-protocol')).toBeNull();
+    });
+
+    test('陳腐化バナー: プロトコル未読込（records === null）なら表示しない', () => {
+      const { ctx } = makeCtx();
+      const view = renderSchemaView(
+        makeState({ versions: [makeVersion(1, { protocolVersion: 1 })] }, { protocolRecords: null }),
+        ctx,
+      );
+      expect(view.querySelector('#schema-stale-protocol')).toBeNull();
+    });
+
+    test('陳腐化バナー: プロトコル 0 版（records = []、records[0] === undefined）なら表示しない', () => {
+      const { ctx } = makeCtx();
+      const view = renderSchemaView(
+        makeState({ versions: [makeVersion(1, { protocolVersion: 1 })] }, { protocolRecords: [] }),
+        ctx,
+      );
+      expect(view.querySelector('#schema-stale-protocol')).toBeNull();
+    });
+
+    test('再ドラフトカード（issue #197）: サンプル論文セレクタ・モデルセレクタを共有し、実行ボタンが onRunDraft に配線されている', () => {
+      const { ctx, callbacks } = makeCtx();
+      const view = renderSchemaView(
+        makeState(
+          { versions: [makeVersion(1)], model: 'gemini-test' },
+          { documents: [makeDocument()] },
+        ),
+        ctx,
+      );
+      expect(view.querySelector('#schema-redraft-form')).not.toBeNull();
+      expect(view.querySelector('#schema-redraft-form h3')?.textContent).toBe(
+        '新しいプロトコルで AI に再ドラフトさせる',
+      );
+      // サンプル論文セレクタ・モデルセレクタは renderDraftForm と共有ウィジェット（同一 id）
+      expect(view.querySelector('#schema-sample-list')).not.toBeNull();
+      const model = view.querySelector('#schema-model') as HTMLSelectElement;
+      expect(model.value).toBe('__other__');
+      (view.querySelector('#schema-redraft-run') as HTMLButtonElement).click();
+      expect(callbacks.onRunDraft).toHaveBeenCalledTimes(1);
+      // 版履歴の手前に置かれる（版履歴は versions.length > 1 のときだけ出るため、ここは history 無し）
+      expect(view.querySelector('#schema-history')).toBeNull();
+    });
+  });
+
+  describe('差分承認画面（issue #197。redraft !== null）', () => {
+    const protectedField = makeField({
+      fieldId: 'f-protected',
+      fieldName: 'rob2_judgement',
+      entityLevel: 'rob_domain',
+      section: 'risk_of_bias',
+    });
+    const changedField = makeField({
+      fieldId: 'f-changed',
+      fieldName: 'sample_size',
+      fieldLabel: 'サンプルサイズ',
+      unit: null,
+      required: false,
+    });
+    const removedField = makeField({ fieldId: 'f-removed', fieldName: 'old_field' });
+
+    function buildDiff() {
+      const changedRow = makeEditorRow({
+        fieldName: 'sample_size',
+        fieldLabel: 'サンプルサイズ',
+        unit: 'mg',
+        required: true,
+      });
+      const addedRow = makeEditorRow({ fieldName: 'country', fieldLabel: '対象国' });
+      return buildRedraftDiff(
+        [protectedField, changedField, removedField],
+        [changedRow, addedRow],
+      );
+    }
+
+    function renderReview(patchSelection?: (selection: ReturnType<typeof defaultRedraftSelection>) => void) {
+      const { ctx, callbacks } = makeCtx();
+      const diff = buildDiff();
+      const selection = defaultRedraftSelection(diff);
+      patchSelection?.(selection);
+      const view = renderSchemaView(makeState({ versions: [makeVersion(1)], redraft: { diff, selection } }), ctx);
+      return { view, callbacks, diff, selection };
+    }
+
+    test('renderBody は redraft !== null のときエディタより優先して差分承認画面を描画する', () => {
+      const { view } = renderReview();
+      expect(view.querySelector('#schema-redraft-review')).not.toBeNull();
+      expect(view.querySelector('#schema-editor')).toBeNull();
+    });
+
+    test('サマリ行: 追加 / 変更 / 削除候補 / 変更なし / 保持の件数を表示する', () => {
+      const { view } = renderReview();
+      expect(view.querySelector('#schema-redraft-summary')?.textContent).toBe(
+        '追加 1 件 / 変更 1 件 / 削除候補 1 件 / 変更なし 0 件 / 保持 1 件',
+      );
+    });
+
+    test('追加: 既定でチェック済み・要約を表示し、change で onToggleRedraft(added, ...) を呼ぶ', () => {
+      const { view, callbacks } = renderReview();
+      const checkbox = view.querySelector(
+        '#schema-redraft-added input[type="checkbox"]',
+      ) as HTMLInputElement;
+      expect(checkbox.checked).toBe(true);
+      expect(checkbox.getAttribute('data-kind')).toBe('added');
+      expect(checkbox.getAttribute('data-field-name')).toBe('country');
+      expect(view.querySelector('#schema-redraft-added')?.textContent).toContain('対象国（country）');
+      checkbox.checked = false;
+      checkbox.dispatchEvent(new Event('change'));
+      expect(callbacks.onToggleRedraft).toHaveBeenCalledWith('added', 'country', false);
+    });
+
+    test('追加 0 件: 「追加はありません」の案内文を出す（一覧は出さない）', () => {
+      const { ctx } = makeCtx();
+      const diff = buildRedraftDiff([], []);
+      const view = renderSchemaView(
+        makeState({
+          versions: [makeVersion(1)],
+          redraft: { diff, selection: defaultRedraftSelection(diff) },
+        }),
+        ctx,
+      );
+      expect(view.querySelector('#schema-redraft-added')?.textContent).toBe('追加はありません');
+      expect(view.querySelector('#schema-redraft-added ul')).toBeNull();
+    });
+
+    test('変更: 既定でチェック済み・属性ごとの差分（null は「—」）を表示し、change で onToggleRedraft(changed, ...) を呼ぶ', () => {
+      const { view, callbacks } = renderReview();
+      const li = view.querySelector('#schema-redraft-changed li') as HTMLElement;
+      expect(li.textContent).toContain('サンプルサイズ（sample_size）');
+      const changes = Array.from(li.querySelectorAll('.schema__redraft-changes li')).map(
+        (node) => node.textContent,
+      );
+      expect(changes).toEqual(
+        expect.arrayContaining(['単位: — → mg', '必須: false → true']),
+      );
+      const checkbox = li.querySelector('input[type="checkbox"]') as HTMLInputElement;
+      expect(checkbox.checked).toBe(true);
+      checkbox.checked = false;
+      checkbox.dispatchEvent(new Event('change'));
+      expect(callbacks.onToggleRedraft).toHaveBeenCalledWith('changed', 'sample_size', false);
+    });
+
+    test('削除候補: 既定で未チェック・注意書きを常時表示し、change で onToggleRedraft(removed, ...) を呼ぶ', () => {
+      const { view, callbacks } = renderReview();
+      expect(view.querySelector('#schema-redraft-removed-note')?.textContent).toContain(
+        'チェックした項目だけが削除されます',
+      );
+      const checkbox = view.querySelector(
+        '#schema-redraft-removed input[type="checkbox"]',
+      ) as HTMLInputElement;
+      expect(checkbox.checked).toBe(false);
+      expect(view.querySelector('#schema-redraft-removed')?.textContent).toContain('old_field');
+      checkbox.checked = true;
+      checkbox.dispatchEvent(new Event('change'));
+      expect(callbacks.onToggleRedraft).toHaveBeenCalledWith('removed', 'old_field', true);
+    });
+
+    test('削除候補 0 件: 「削除候補はありません」の案内文だけを出す（注意書きは出さない）', () => {
+      const { ctx } = makeCtx();
+      const diff = buildRedraftDiff([], []);
+      const view = renderSchemaView(
+        makeState({
+          versions: [makeVersion(1)],
+          redraft: { diff, selection: defaultRedraftSelection(diff) },
+        }),
+        ctx,
+      );
+      expect(view.querySelector('#schema-redraft-removed-note')).toBeNull();
+      expect(view.querySelector('#schema-redraft-removed')?.textContent).toBe('削除候補はありません');
+      expect(view.querySelector('#schema-redraft-removed ul')).toBeNull();
+    });
+
+    test('変更なし: 件数だけを表示する（一覧は出さない）', () => {
+      const { view } = renderReview();
+      expect(view.querySelector('#schema-redraft-unchanged')?.textContent).toBe('変更なし: 0 件');
+      expect(view.querySelector('#schema-redraft-unchanged ul')).toBeNull();
+    });
+
+    test('保持（RoB テンプレート）: 1 件以上なら件数 + 注記を表示する', () => {
+      const { view } = renderReview();
+      expect(view.querySelector('#schema-redraft-protected')?.textContent).toContain(
+        'リスク・オブ・バイアス評価のテンプレート項目(1 件)',
+      );
+    });
+
+    test('保持（RoB テンプレート）: 0 件なら表示しない', () => {
+      const { ctx } = makeCtx();
+      const diff = buildRedraftDiff(
+        [makeField({ fieldName: 'kept' })],
+        [makeEditorRow({ fieldName: 'kept' })],
+      );
+      const view = renderSchemaView(
+        makeState({
+          versions: [makeVersion(1)],
+          redraft: { diff, selection: defaultRedraftSelection(diff) },
+        }),
+        ctx,
+      );
+      expect(view.querySelector('#schema-redraft-protected')).toBeNull();
+    });
+
+    test('反映 / キャンセルのボタンが配線されている', () => {
+      const { view, callbacks } = renderReview();
+      (view.querySelector('#schema-redraft-apply') as HTMLButtonElement).click();
+      expect(callbacks.onApplyRedraft).toHaveBeenCalledTimes(1);
+      (view.querySelector('#schema-redraft-cancel') as HTMLButtonElement).click();
+      expect(callbacks.onCancelRedraft).toHaveBeenCalledTimes(1);
+    });
+
+    test('属性ラベル: section / field_label / entity_level / data_type はコード用語のまま表示し、null への変化も「—」表示する', () => {
+      const { ctx } = makeCtx();
+      const current = makeField({
+        fieldId: 'f-multi',
+        fieldName: 'multi',
+        section: 'methods',
+        fieldLabel: '旧ラベル',
+        entityLevel: 'study',
+        dataType: 'text',
+        unit: 'mg',
+        required: false,
+      });
+      const proposed = makeEditorRow({
+        fieldName: 'multi',
+        section: 'outcomes',
+        fieldLabel: '新ラベル',
+        entityLevel: 'arm',
+        dataType: 'date',
+        unit: null,
+        required: false,
+      });
+      const diff = buildRedraftDiff([current], [proposed]);
+      const view = renderSchemaView(
+        makeState({
+          versions: [makeVersion(1)],
+          redraft: { diff, selection: defaultRedraftSelection(diff) },
+        }),
+        ctx,
+      );
+      const lines = Array.from(view.querySelectorAll('.schema__redraft-changes li')).map(
+        (node) => node.textContent,
+      );
+      expect(lines).toEqual([
+        'section: methods → outcomes',
+        'field_label: 旧ラベル → 新ラベル',
+        'entity_level: study → arm',
+        'data_type: text → date',
+        '単位: mg → —',
+      ]);
+    });
+
+    test('selection にキーが無い項目は既定 false（未チェック）にフォールバックする', () => {
+      const { ctx } = makeCtx();
+      const diff = buildDiff();
+      const emptySelection = { added: {}, changed: {}, removed: {} };
+      const view = renderSchemaView(
+        makeState({ versions: [makeVersion(1)], redraft: { diff, selection: emptySelection } }),
+        ctx,
+      );
+      const checkboxes = view.querySelectorAll<HTMLInputElement>(
+        '#schema-redraft-added input, #schema-redraft-changed input, #schema-redraft-removed input',
+      );
+      for (const checkbox of Array.from(checkboxes)) {
+        expect(checkbox.checked).toBe(false);
+      }
     });
   });
 });
