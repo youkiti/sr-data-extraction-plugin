@@ -365,6 +365,8 @@ export const ja = {
   'schema.prespecRobinsIExperimental': 'target trial の experimental 介入',
   'schema.prespecRobinsIComparator': 'target trial の comparator（比較対照）',
   'schema.prespecRobinsIOutcome': '評価対象の outcome',
+  'schema.prespecRobinsINumericalResult':
+    '評価対象の numerical result（複数の解析がある場合に一意化する数値・参照先）',
   'schema.prespecBenefitHarmLegend': 'この outcome は介入の benefit / harm どちらの想定か（任意）',
   'schema.prespecBenefitHarmBenefit': 'benefit（想定される有益性）',
   'schema.prespecBenefitHarmHarm': 'harm（想定される有害性）',

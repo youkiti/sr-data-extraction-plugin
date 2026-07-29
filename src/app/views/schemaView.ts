@@ -582,7 +582,13 @@ function renderRobinsIPresetDialog(
     id: string,
     label: string,
     value: string,
-    key: 'design' | 'participants' | 'experimental' | 'comparator' | 'outcome',
+    key:
+      | 'design'
+      | 'participants'
+      | 'experimental'
+      | 'comparator'
+      | 'outcome'
+      | 'numericalResult',
   ): HTMLElement =>
     prespecTextField(id, label, value, (next) => ctx.schema.onUpdatePresetDialog({ [key]: next }));
 
@@ -665,6 +671,12 @@ function renderRobinsIPresetDialog(
     ),
   );
   children.push(
+    textField(
+      'schema-prespec-ri-numerical-result',
+      t('schema.prespecRobinsINumericalResult'),
+      dialog.numericalResult,
+      'numericalResult',
+    ),
     el('fieldset', { className: 'schema__prespec-effect' }, [
       el('legend', {
         text: isSq

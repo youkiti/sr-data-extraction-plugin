@@ -27,6 +27,7 @@ function emptyPrespec(): RobinsIPrespec {
     experimental: null,
     comparator: null,
     outcome: null,
+    numericalResult: null,
     benefitHarm: null,
     effect: null,
     confoundingDomains: [],
@@ -70,6 +71,7 @@ describe('robinsIPrespec', () => {
         experimental: '',
         comparator: '',
         outcome: '',
+        numericalResult: '',
         benefitHarm: null,
         effect: null,
         confoundingDomains: '',
@@ -85,6 +87,7 @@ describe('robinsIPrespec', () => {
         experimental: 'early vasopressin',
         comparator: 'norepinephrine alone',
         outcome: '28-day mortality',
+        numericalResult: 'RR = 1.52 (95% CI 0.83 to 2.77)',
         benefitHarm: 'benefit',
         effect: 'starting_adhering',
         confoundingDomains: ['baseline severity', 'age'],
@@ -97,6 +100,7 @@ describe('robinsIPrespec', () => {
         experimental: 'early vasopressin',
         comparator: 'norepinephrine alone',
         outcome: '28-day mortality',
+        numericalResult: 'RR = 1.52 (95% CI 0.83 to 2.77)',
         benefitHarm: 'benefit',
         effect: 'starting_adhering',
         confoundingDomains: 'baseline severity\nage',
@@ -143,6 +147,7 @@ describe('robinsIPrespec', () => {
           design: '  individually randomized ',
           participants: '   ',
           outcome: '28-day mortality',
+          numericalResult: '  RR = 1.52 (95% CI 0.83 to 2.77) ',
           benefitHarm: 'harm',
           effect: 'assignment',
           confoundingDomains: ' age \n\nseverity ',
@@ -153,10 +158,16 @@ describe('robinsIPrespec', () => {
       expect(prespec.participants).toBeNull();
       expect(prespec.experimental).toBeNull();
       expect(prespec.outcome).toBe('28-day mortality');
+      expect(prespec.numericalResult).toBe('RR = 1.52 (95% CI 0.83 to 2.77)');
       expect(prespec.benefitHarm).toBe('harm');
       expect(prespec.effect).toBe('assignment');
       expect(prespec.confoundingDomains).toEqual(['age', 'severity']);
       expect(prespec.coInterventions).toEqual([]);
+    });
+
+    test('numericalResult が空白のみなら null に正規化する', () => {
+      const prespec = robinsIDialogToPrespec(makeDialog({ numericalResult: '   ' }));
+      expect(prespec.numericalResult).toBeNull();
     });
   });
 
@@ -168,6 +179,7 @@ describe('robinsIPrespec', () => {
         experimental: 'drug A',
         comparator: 'usual care',
         outcome: 'mortality',
+        numericalResult: 'RR = 1.52 (95% CI 0.83 to 2.77)',
         benefitHarm: 'harm',
         effect: 'assignment',
         confoundingDomains: ['age', 'severity'],
@@ -175,6 +187,9 @@ describe('robinsIPrespec', () => {
       };
       const note = serializeRobinsIPrespecNote(prespec);
       expect(JSON.parse(note)).toMatchObject({ type: 'robins_i_prespec', version: 1 });
+      expect(JSON.parse(note)).toMatchObject({
+        numerical_result: 'RR = 1.52 (95% CI 0.83 to 2.77)',
+      });
       expect(parseRobinsIPrespecNote(note)).toEqual(prespec);
     });
 
@@ -206,6 +221,7 @@ describe('robinsIPrespec', () => {
         experimental: null,
         comparator: null,
         outcome: 'ok',
+        numericalResult: null,
         benefitHarm: null,
         effect: null,
         confoundingDomains: [],
@@ -246,6 +262,7 @@ describe('robinsIPrespec', () => {
           experimental: 'drug A',
           comparator: 'usual care',
           outcome: 'mortality',
+          numericalResult: 'RR = 1.52 (95% CI 0.83 to 2.77)',
           benefitHarm: 'benefit',
           effect: 'starting_adhering',
         },
@@ -257,8 +274,19 @@ describe('robinsIPrespec', () => {
       expect(context).toContain('Target trial comparator: usual care.');
       expect(context).toContain('Outcome being assessed for risk of bias: mortality.');
       expect(context).toContain('This outcome is a proposed benefit of intervention.');
+      expect(context).toContain(
+        'Numerical result being assessed: RR = 1.52 (95% CI 0.83 to 2.77).',
+      );
       expect(context).toContain('to assess the effect of starting and adhering to intervention');
       expect(context).toContain('pre-specified by the review team');
+    });
+
+    test('numericalResult 未入力なら "Numerical result being assessed" は含まれない', () => {
+      const context = buildRobinsIReviewContext(
+        { ...emptyPrespec(), outcome: 'mortality' },
+        { includeLists: false },
+      );
+      expect(context).not.toContain('Numerical result being assessed');
     });
 
     test('includeLists = true のときだけ confounding domains / co-interventions を含める', () => {

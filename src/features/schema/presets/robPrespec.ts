@@ -9,6 +9,7 @@
 // （Schemas タブの既存列のみを使い、Sheets のデータモデルは変更しない — issue #103 D-1）。
 import type { MessageKey } from '../../../lib/i18n';
 import type { SchemaEditorRow } from '../types';
+import { parseOptionalString } from './prespecDialog';
 import {
   buildRob2SqTemplateRows,
   ROB_TEMPLATE_ROB2,
@@ -140,10 +141,6 @@ export function serializeRob2PrespecNote(prespec: Rob2Prespec): string {
 }
 
 const EFFECT_VALUES: readonly Rob2Effect[] = ['assignment', 'adhering'];
-
-function parseOptionalString(value: unknown): string | null {
-  return typeof value === 'string' && value.trim() !== '' ? value : null;
-}
 
 /**
  * note の JSON から事前設定を復元する（再挿入時の初期値）。
