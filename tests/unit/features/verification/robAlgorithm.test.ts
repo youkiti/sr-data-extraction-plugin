@@ -2,6 +2,7 @@ import { NOT_REPORTED_TOKEN } from '../../../../src/domain/annotation';
 import type { Decision } from '../../../../src/domain/decision';
 import type { Evidence } from '../../../../src/domain/evidence';
 import type { FieldDataType, SchemaField } from '../../../../src/domain/schemaField';
+import { serializeRob2PrespecNote } from '../../../../src/features/schema/presets/robPrespec';
 import { ROBINS_I_DOMAINS, ROBINS_I_SQ_FIELD_NAMES } from '../../../../src/features/schema/presets/robTemplates';
 import { buildTabModel, type CellGroup, type TabModel, type VerificationCell } from '../../../../src/features/verification/cells';
 import { cellKeyOf, emptyCellState, type CellState } from '../../../../src/features/verification/cellState';
@@ -9,6 +10,7 @@ import {
   collectRobAlgorithmInfo,
   judgeDomain1Randomization,
   judgeDomain2Deviations,
+  judgeDomain2DeviationsAdhering,
   judgeDomain3Missing,
   judgeDomain4Measurement,
   judgeDomain5Selection,
@@ -127,6 +129,53 @@ describe('judgeDomain2Deviations（SQ 2.1〜2.7・effect of assignment 版）', 
 
   test('part1 = high・part2 = low の組み合わせも high（OR の左辺）', () => {
     expect(judgeDomain2Deviations('y', 'y', 'y', 'y', 'n', 'y', 'n')).toBe('high');
+  });
+});
+
+describe('judgeDomain2DeviationsAdhering（SQ 2.1〜2.6・effect of adhering 版）', () => {
+  // 2.1・2.2 = n（両方非認識）→ 2.4/2.5 は na/na（noConcern）→ low になる組み合わせ
+  const FULL: readonly Rob2SqAnswer[] = ['n', 'n', 'na', 'na', 'na', 'y'];
+
+  test.each([0, 1, 2, 3, 4, 5])('SQ %i 番目が未回答なら null（回答不足）', (index) => {
+    const args = [...FULL] as [
+      Rob2SqAnswer | null,
+      Rob2SqAnswer | null,
+      Rob2SqAnswer | null,
+      Rob2SqAnswer | null,
+      Rob2SqAnswer | null,
+      Rob2SqAnswer | null,
+    ];
+    args[index] = null;
+    expect(judgeDomain2DeviationsAdhering(...args)).toBeNull();
+  });
+
+  test('2.1・2.2 が両方 n/pn（非認識）・2.4 = na・2.5 = n は low（noConcern の na 側・NO.has 側の両方を通す）', () => {
+    expect(judgeDomain2DeviationsAdhering('n', 'pn', 'y', 'na', 'n', 'y')).toBe('low');
+  });
+
+  test('2.1・2.2 が両方 n/pn・2.4 か 2.5 が y/py/ni（不遵守の懸念あり）はノード〔2.6〕へ', () => {
+    expect(judgeDomain2DeviationsAdhering('n', 'n', 'na', 'y', 'na', 'y')).toBe('some_concerns');
+    expect(judgeDomain2DeviationsAdhering('n', 'n', 'na', 'y', 'na', 'n')).toBe('high');
+    expect(judgeDomain2DeviationsAdhering('n', 'n', 'na', 'y', 'na', 'na')).toBeNull();
+  });
+
+  test('2.1 か 2.2 が y/py/ni・2.3 = na（発火条件なし）はノード〔2.4/2.5〕へ（low）', () => {
+    expect(judgeDomain2DeviationsAdhering('y', 'n', 'na', 'na', 'n', 'y')).toBe('low');
+  });
+
+  test('2.1 か 2.2 が y/py/ni・2.3 = y/py（非プロトコル介入は均衡）はノード〔2.4/2.5〕へ（2.6 経由で high）', () => {
+    expect(judgeDomain2DeviationsAdhering('y', 'n', 'y', 'y', 'na', 'n')).toBe('high');
+  });
+
+  test('2.1 か 2.2 が y/py/ni・2.3 = n/pn/ni（非プロトコル介入は不均衡）はノード〔2.6〕へ', () => {
+    expect(judgeDomain2DeviationsAdhering('y', 'n', 'n', 'na', 'na', 'y')).toBe('some_concerns');
+    expect(judgeDomain2DeviationsAdhering('y', 'n', 'pn', 'na', 'na', 'n')).toBe('high');
+    expect(judgeDomain2DeviationsAdhering('y', 'n', 'ni', 'na', 'na', 'na')).toBeNull();
+  });
+
+  test('2.1 または 2.2 が na（無条件設問での想定外入力）は null', () => {
+    expect(judgeDomain2DeviationsAdhering('na', 'n', 'na', 'na', 'na', 'y')).toBeNull();
+    expect(judgeDomain2DeviationsAdhering('n', 'na', 'na', 'na', 'na', 'y')).toBeNull();
   });
 });
 
@@ -875,9 +924,60 @@ describe('collectRobAlgorithmInfo', () => {
     expect(info?.mismatch).toBe(false);
   });
 
-  test('adhering 版 D2（SQ 2.1〜2.6・rob2_sq2_7 なし。issue #103）は全問回答済みでも常に提案なし（null）', () => {
-    // 事前設定ダイアログで effect = adhering を選ぶと rob2_sq2_7 の行が生成されないため、
-    // assignment 版前提の D2 決定木は null ガードで沈黙する（robAlgorithm.ts の意図コメント参照）
+  test('事前設定 note が effect=adhering の場合、adhering 版決定木で提案が出る（low になる SQ 回答。issue #126 項目1）', () => {
+    const entityKey = 'rob:d2_deviations';
+    const note = serializeRob2PrespecNote({
+      design: 'individually_randomized_parallel_group',
+      experimental: null,
+      comparator: null,
+      outcome: null,
+      numericalResult: null,
+      effect: 'adhering',
+      deviationTypes: ['non_protocol_interventions'],
+    });
+    const cells = [
+      makeSqCell('rob2_sq2_1', entityKey, 'n'),
+      makeSqCell('rob2_sq2_2', entityKey, 'n'),
+      makeSqCell('rob2_sq2_3', entityKey, 'na'),
+      makeSqCell('rob2_sq2_4', entityKey, 'na'),
+      makeSqCell('rob2_sq2_5', entityKey, 'n'),
+      makeSqCell('rob2_sq2_6', entityKey, 'y'),
+      makeSqCell('rob2_judgement', entityKey, 'low', { fieldOverrides: { note } }),
+    ];
+    const model: TabModel = { groups: [group(cells)], cells: [] };
+    const info = collectRobAlgorithmInfo(model).get(cellKeyOf('f-rob2_judgement', entityKey));
+    expect(info?.suggestion).toBe('low');
+  });
+
+  test('事前設定 note が effect=adhering の場合、adhering 版決定木で提案が出る（high になる SQ 回答）', () => {
+    const entityKey = 'rob:d2_deviations';
+    const note = serializeRob2PrespecNote({
+      design: 'individually_randomized_parallel_group',
+      experimental: null,
+      comparator: null,
+      outcome: null,
+      numericalResult: null,
+      effect: 'adhering',
+      deviationTypes: ['non_protocol_interventions'],
+    });
+    const cells = [
+      makeSqCell('rob2_sq2_1', entityKey, 'y'),
+      makeSqCell('rob2_sq2_2', entityKey, 'n'),
+      makeSqCell('rob2_sq2_3', entityKey, 'n'),
+      makeSqCell('rob2_sq2_4', entityKey, 'na'),
+      makeSqCell('rob2_sq2_5', entityKey, 'na'),
+      makeSqCell('rob2_sq2_6', entityKey, 'n'),
+      makeSqCell('rob2_judgement', entityKey, 'high', { fieldOverrides: { note } }),
+    ];
+    const model: TabModel = { groups: [group(cells)], cells: [] };
+    const info = collectRobAlgorithmInfo(model).get(cellKeyOf('f-rob2_judgement', entityKey));
+    expect(info?.suggestion).toBe('high');
+    expect(info?.mismatch).toBe(false); // 現在値 high と一致
+  });
+
+  test('後方互換: 事前設定 note が無い旧データは assignment 版のまま沈黙する（提案なし）', () => {
+    // note が無い（旧データ・軽量版からの移行等）場合、SQ が 2.1〜2.6 のみ（rob2_sq2_7 なし）でも
+    // assignment 版決定木（rob2_sq2_7 必須）が適用され続け、null ガードで沈黙する（回帰なし）
     const entityKey = 'rob:d2_deviations';
     const cells = [
       makeSqCell('rob2_sq2_1', entityKey, 'n'),
@@ -892,6 +992,68 @@ describe('collectRobAlgorithmInfo', () => {
     const info = collectRobAlgorithmInfo(model).get(cellKeyOf('f-rob2_judgement', entityKey));
     expect(info?.suggestion).toBeNull();
     expect(info?.mismatch).toBe(false);
+  });
+
+  test('事前設定 note が effect=assignment の場合は従来どおり assignment 版決定木で提案が出る（回帰なし）', () => {
+    const entityKey = 'rob:d2_deviations';
+    const note = serializeRob2PrespecNote({
+      design: 'individually_randomized_parallel_group',
+      experimental: null,
+      comparator: null,
+      outcome: null,
+      numericalResult: null,
+      effect: 'assignment',
+      deviationTypes: [],
+    });
+    const cells = [
+      makeSqCell('rob2_sq2_1', entityKey, 'n'),
+      makeSqCell('rob2_sq2_2', entityKey, 'n'),
+      makeSqCell('rob2_sq2_3', entityKey, 'y'),
+      makeSqCell('rob2_sq2_4', entityKey, 'n'),
+      makeSqCell('rob2_sq2_5', entityKey, 'n'),
+      makeSqCell('rob2_sq2_6', entityKey, 'y'),
+      makeSqCell('rob2_sq2_7', entityKey, 'n'),
+      makeSqCell('rob2_judgement', entityKey, 'low', { fieldOverrides: { note } }),
+    ];
+    const model: TabModel = { groups: [group(cells)], cells: [] };
+    const info = collectRobAlgorithmInfo(model).get(cellKeyOf('f-rob2_judgement', entityKey));
+    expect(info?.suggestion).toBe('low');
+  });
+
+  test('rob2_judgement セルが group に無い（custom_judgement のみ）場合は assignment 版へフォールバックする（提案は null）', () => {
+    // rob2PrespecEffectOf が judgement セルを見つけられず null を返す経路
+    const entityKey = 'rob:d2_deviations';
+    const cells = [
+      makeSqCell('rob2_sq2_1', entityKey, 'n'),
+      makeSqCell('rob2_sq2_2', entityKey, 'n'),
+      makeSqCell('rob2_sq2_3', entityKey, 'na'),
+      makeSqCell('rob2_sq2_4', entityKey, 'na'),
+      makeSqCell('rob2_sq2_5', entityKey, 'n'),
+      makeSqCell('rob2_sq2_6', entityKey, 'y'),
+      makeSqCell('custom_judgement', entityKey, 'low'),
+    ];
+    const model: TabModel = { groups: [group(cells)], cells: [] };
+    const info = collectRobAlgorithmInfo(model).get(cellKeyOf('f-custom_judgement', entityKey));
+    expect(info?.suggestion).toBeNull();
+  });
+
+  test('note が JSON として壊れている / 他ツールの note の場合も assignment 版へフォールバックする（提案は null）', () => {
+    // parseRob2PrespecNote が type 不一致で null を返す経路（note ありだが rob2_prespec ではない）
+    const entityKey = 'rob:d2_deviations';
+    const cells = [
+      makeSqCell('rob2_sq2_1', entityKey, 'n'),
+      makeSqCell('rob2_sq2_2', entityKey, 'n'),
+      makeSqCell('rob2_sq2_3', entityKey, 'na'),
+      makeSqCell('rob2_sq2_4', entityKey, 'na'),
+      makeSqCell('rob2_sq2_5', entityKey, 'n'),
+      makeSqCell('rob2_sq2_6', entityKey, 'y'),
+      makeSqCell('rob2_judgement', entityKey, 'low', {
+        fieldOverrides: { note: '{"type":"robins_i_prespec"}' },
+      }),
+    ];
+    const model: TabModel = { groups: [group(cells)], cells: [] };
+    const info = collectRobAlgorithmInfo(model).get(cellKeyOf('f-rob2_judgement', entityKey));
+    expect(info?.suggestion).toBeNull();
   });
 
   test('SQ フィールドは存在するが値が無い（AI 値・確定値とも null）場合も提案なし（null）', () => {

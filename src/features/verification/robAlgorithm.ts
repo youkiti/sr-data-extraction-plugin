@@ -30,6 +30,11 @@
 // 2026-07-13 の照合は SQ 質問本文を対象としたため決定木の分岐単位の逐語照合は含まない
 // （移植元 OSS の典拠が同一の公式ガイダンスであることは確認済み）。
 //
+// adhering 版 D2 の決定木（judgeDomain2DeviationsAdhering）のみ例外: 移植元 OSS
+// （rob-luke/risk-of-bias）には effect of assignment（ITT）版の Domain 2 しか実装がなく、
+// adhering（per-protocol）版の対応物が存在しない。そのため公式 cribsheet 2019-08-14 p.13 の
+// adhering 用流れ図（`c:\tmp\rob-prespec\` に原典保全）から直接起こした（issue #126 項目1）。
+//
 // --- 実装上の意図的な差分 ----------------------------------------------------
 // 移植元 Python は Domain 2（deviations）の _compute_judgement のみ「未回答（None）」の
 // 明示ガードを持たない（他の 4 ドメインは関数冒頭で `if None in (...): return None` を持つ）。
@@ -150,6 +155,70 @@ export function judgeDomain2Deviations(
     return 'high';
   }
   return 'some_concerns';
+}
+
+/** adhering 版 D2 のノード〔2.6〕: adhering の効果を推定する適切な解析が用いられたか */
+function judgeAdheringAnalysisNode(q2_6: Rob2SqAnswer): Rob2Judgement | null {
+  if (YES.has(q2_6)) {
+    return 'some_concerns';
+  }
+  if (NO_OR_NI.has(q2_6)) {
+    return 'high';
+  }
+  return null; // na（2.6 の発火条件を満たす経路で na は矛盾するため提案しない）
+}
+
+/** adhering 版 D2 のノード〔2.4 / 2.5〕: 介入実施の失敗・不遵守。
+ * 両方が na / n / pn なら low、どちらかが y / py / ni ならノード〔2.6〕へ */
+function judgeAdheringDeviationNode(
+  q2_4: Rob2SqAnswer,
+  q2_5: Rob2SqAnswer,
+  q2_6: Rob2SqAnswer,
+): Rob2Judgement | null {
+  const noConcern = (answer: Rob2SqAnswer): boolean => answer === 'na' || NO.has(answer);
+  if (noConcern(q2_4) && noConcern(q2_5)) {
+    return 'low';
+  }
+  return judgeAdheringAnalysisNode(q2_6);
+}
+
+/**
+ * Domain 2（deviations from intended interventions – effect of adhering to intervention,
+ * per-protocol 版）。SQ 2.1〜2.6。
+ * 出典: 公式 RoB 2 cribsheet 2019-08-14 p.13 の adhering 用流れ図。
+ * assignment 版（judgeDomain2Deviations。移植元 Python の `_domain_2_deviations.py`）とは
+ * 別系統の決定木であり、移植元 OSS には adhering 版の実装が存在しないため、上記流れ図から
+ * 直接起こしたもの（ファイル冒頭コメント参照）
+ */
+export function judgeDomain2DeviationsAdhering(
+  q2_1: Rob2SqAnswer | null,
+  q2_2: Rob2SqAnswer | null,
+  q2_3: Rob2SqAnswer | null,
+  q2_4: Rob2SqAnswer | null,
+  q2_5: Rob2SqAnswer | null,
+  q2_6: Rob2SqAnswer | null,
+): Rob2Judgement | null {
+  if (
+    q2_1 === null ||
+    q2_2 === null ||
+    q2_3 === null ||
+    q2_4 === null ||
+    q2_5 === null ||
+    q2_6 === null
+  ) {
+    return null;
+  }
+  if (NO.has(q2_1) && NO.has(q2_2)) {
+    return judgeAdheringDeviationNode(q2_4, q2_5, q2_6); // 両方が非認識 → 2.3 は問わない
+  }
+  if (!YES_OR_NI.has(q2_1) && !YES_OR_NI.has(q2_2)) {
+    return null; // 2.1 / 2.2 は無条件設問のため na は想定外の入力（assignment 版・D1 と同じ流儀）
+  }
+  // ノード〔2.3〕: 重要な非プロトコル介入が群間でバランスしていたか
+  if (q2_3 === 'na' || YES.has(q2_3)) {
+    return judgeAdheringDeviationNode(q2_4, q2_5, q2_6);
+  }
+  return judgeAdheringAnalysisNode(q2_6); // 2.3 = n / pn / ni
 }
 
 /**
@@ -682,7 +751,12 @@ export function judgeOverallRobinsI(
 //     「純関数 + cellKey → 情報」パターン） --------------------------------------
 import { NOT_REPORTED_TOKEN } from '../../domain/annotation';
 import { parseEntityKey, robEstimateScopeOf } from '../../utils/entityKey';
-import { ROB2_SQ_FIELD_NAMES, ROBINS_I_SQ_FIELD_NAMES } from '../schema/presets/robTemplates';
+import { parseRob2PrespecNote, type Rob2Effect } from '../schema/presets/robPrespec';
+import {
+  ROB2_ADHERING_D2_SQ_FIELD_NAMES,
+  ROB2_SQ_FIELD_NAMES,
+  ROBINS_I_SQ_FIELD_NAMES,
+} from '../schema/presets/robTemplates';
 import type { CellGroup, TabModel, VerificationCell } from './cells';
 
 /** rob2 プリセット（軽量版・SQ 完全版共通）の判定フィールド名 */
@@ -713,6 +787,13 @@ const ROBINS_I_DOMAIN_IDS: readonly string[] = [
 
 type DomainJudgeFn = (answers: readonly (Rob2SqAnswer | null)[]) => Rob2Judgement | RobinsIJudgement | null;
 
+/** ドメイン id ごとの SQ field_name 一覧 + 判定関数を 1 つに束ねる型（DOMAIN_ALGORITHMS のエントリ・
+ * ROB2_D2_ADHERING_ALGORITHM の双方で使う） */
+interface DomainAlgorithm {
+  fieldNames: readonly string[];
+  judge: DomainJudgeFn;
+}
+
 /** ドメイン id ごとの SQ field_name 一覧 + 判定関数を 1 つに束ねる。
  *
  * fieldNames・judge を別々の Record として持つと（例: `fieldNames[id] !== undefined &&
@@ -726,7 +807,7 @@ type DomainJudgeFn = (answers: readonly (Rob2SqAnswer | null)[]) => Rob2Judgemen
  * 型注釈（実行時分岐を生まない）。judge 内の `answers[n] as ...` も同様に、
  * fieldNames.length と answers.length が呼び出し側で必ず一致する不変条件に基づく型注釈であり、
  * `?? null` のような実行時フォールバックは使わない（同じ理由で到達不能分岐を避けるため） */
-const DOMAIN_ALGORITHMS: Readonly<Record<string, { fieldNames: readonly string[]; judge: DomainJudgeFn }>> = {
+const DOMAIN_ALGORITHMS: Readonly<Record<string, DomainAlgorithm>> = {
   d1_randomization: {
     fieldNames: ROB2_SQ_FIELD_NAMES['d1_randomization'] as readonly string[],
     judge: (answers) =>
@@ -736,13 +817,11 @@ const DOMAIN_ALGORITHMS: Readonly<Record<string, { fieldNames: readonly string[]
         answers[2] as Rob2SqAnswer | null,
       ),
   },
-  // 注意（issue #103）: この D2 決定木は effect of assignment（ITT）版の SQ 2.1〜2.7 専用。
-  // 事前設定ダイアログで adhering を選ぶと、プリセットは adhering 版 D2（SQ 2.1〜2.6。
-  // rob2_sq2_7 の行は生成されない）を挿入するため、fieldNames の rob2_sq2_7 に対応するセルが
-  // 見つからず回答が null になり、judgeDomain2Deviations 冒頭の null ガードで常に
-  // 「提案なし（null）」へ倒れる（意図した挙動 — adhering 版の 2.3〜2.6 は assignment 版と
-  // 設問内容が異なるため、assignment 用決定木を適用してはならない）。adhering 版の決定木
-  // （公式 cribsheet 2019-08-14 p.13 の流れ図）の実装は issue #103 の残課題
+  // 注意（issue #126 項目1・旧 issue #103 の残課題を解消）: このエントリの D2 決定木
+  // （judgeDomain2Deviations）は effect of assignment（ITT）版の SQ 2.1〜2.7 専用。
+  // adhering（per-protocol）版（SQ 2.1〜2.6。rob2_sq2_7 の行は生成されない）は resolveDomainAlgorithm
+  // が judgeDomain2DeviationsAdhering を使う ROB2_D2_ADHERING_ALGORITHM を選ぶため、
+  // ここには含めない（判定行 note の事前設定 effect で切り替える。下記 resolveDomainAlgorithm 参照）
   d2_deviations: {
     fieldNames: ROB2_SQ_FIELD_NAMES['d2_deviations'] as readonly string[],
     judge: (answers) =>
@@ -866,6 +945,21 @@ const DOMAIN_ALGORITHMS: Readonly<Record<string, { fieldNames: readonly string[]
   },
 };
 
+/** adhering 版 D2 のアルゴリズム（DOMAIN_ALGORITHMS には入れない。entity_key のドメイン id は
+ * assignment 版と同じ d2_deviations であり、判別は判定行 note の事前設定 effect で行うため） */
+const ROB2_D2_ADHERING_ALGORITHM: DomainAlgorithm = {
+  fieldNames: ROB2_ADHERING_D2_SQ_FIELD_NAMES,
+  judge: (answers) =>
+    judgeDomain2DeviationsAdhering(
+      answers[0] as Rob2SqAnswer | null,
+      answers[1] as Rob2SqAnswer | null,
+      answers[2] as Rob2SqAnswer | null,
+      answers[3] as Rob2SqAnswer | null,
+      answers[4] as Rob2SqAnswer | null,
+      answers[5] as Rob2SqAnswer | null,
+    ),
+};
+
 const SQ_ANSWER_VALUES: readonly Rob2SqAnswer[] = ['y', 'py', 'pn', 'n', 'ni', 'na'];
 const ROB2_JUDGEMENT_VALUES: readonly Rob2Judgement[] = ['low', 'some_concerns', 'high'];
 const ROBINS_I_JUDGEMENT_VALUES: readonly RobinsIJudgement[] = [
@@ -914,6 +1008,31 @@ function resolveCellRawValue(cell: VerificationCell): string | null {
 
 function findCellByFieldName(group: CellGroup, fieldName: string): VerificationCell | undefined {
   return group.cells.find((cell) => cell.field.fieldName === fieldName);
+}
+
+/** 判定行 rob2_judgement の note に保存された事前設定から effect of interest を読む
+ * （note なし / 他ツールの note / 壊れた JSON は null = 未指定扱い） */
+function rob2PrespecEffectOf(group: CellGroup): Rob2Effect | null {
+  const judgementCell = findCellByFieldName(group, ROB2_JUDGEMENT_FIELD_NAME);
+  if (judgementCell === undefined) {
+    return null;
+  }
+  const prespec = parseRob2PrespecNote(judgementCell.field.note);
+  if (prespec === null) {
+    return null;
+  }
+  return prespec.effect;
+}
+
+/** ドメイン id + 事前設定からアルゴリズムを解決する。D2 だけは effect で決定木が変わる
+ * （d2_deviations かつ note の effect が adhering のときだけ ROB2_D2_ADHERING_ALGORITHM を使う。
+ * それ以外〔note なし・effect=assignment・他ドメイン〕は従来どおり DOMAIN_ALGORITHMS を使うため、
+ * 旧データ・assignment 版の挙動は完全に据え置き — issue #126 項目1） */
+function resolveDomainAlgorithm(domain: string, group: CellGroup): DomainAlgorithm | undefined {
+  if (domain === 'd2_deviations' && rob2PrespecEffectOf(group) === 'adhering') {
+    return ROB2_D2_ADHERING_ALGORITHM;
+  }
+  return DOMAIN_ALGORITHMS[domain];
 }
 
 /** rob_domain タブの judgement セル 1 件ぶんの情報（提案チップ・不一致警告・未確認表示の素材） */
@@ -979,7 +1098,7 @@ export function collectRobAlgorithmInfo(model: TabModel): Map<string, RobAlgorit
       continue;
     }
 
-    const algorithm = DOMAIN_ALGORITHMS[parsed.domain];
+    const algorithm = resolveDomainAlgorithm(parsed.domain, group);
     const sqSuggestion =
       algorithm === undefined
         ? null

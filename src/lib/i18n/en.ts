@@ -364,6 +364,8 @@ export const en: Record<MessageKey, string> = {
   'schema.prespecRobinsIExperimental': 'Experimental intervention of the target trial',
   'schema.prespecRobinsIComparator': 'Comparator of the target trial',
   'schema.prespecRobinsIOutcome': 'Outcome being assessed',
+  'schema.prespecRobinsINumericalResult':
+    'Numerical result being assessed (identifies a unique result when multiple analyses are presented)',
   'schema.prespecBenefitHarmLegend':
     'Is this outcome a proposed benefit or harm of intervention? (optional)',
   'schema.prespecBenefitHarmBenefit': 'Benefit (proposed benefit)',

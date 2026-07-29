@@ -33,6 +33,7 @@ export interface RobinsIPrespecDialogState {
   experimental: string;
   comparator: string;
   outcome: string;
+  numericalResult: string;
   /** null = 未指定（任意入力） */
   benefitHarm: RobinsIBenefitHarm | null;
   /** null = 未選択（robins_i では「指定しない」を許す。robins_i_sq では確定時に必須エラー） */
@@ -53,6 +54,7 @@ export interface RobinsIPrespec {
   experimental: string | null;
   comparator: string | null;
   outcome: string | null;
+  numericalResult: string | null;
   benefitHarm: RobinsIBenefitHarm | null;
   effect: RobinsIEffect | null;
   confoundingDomains: readonly string[];
@@ -82,6 +84,7 @@ export function createRobinsIPrespecDialogState(
     experimental: initial?.experimental ?? '',
     comparator: initial?.comparator ?? '',
     outcome: initial?.outcome ?? '',
+    numericalResult: initial?.numericalResult ?? '',
     benefitHarm: initial?.benefitHarm ?? null,
     effect: initial?.effect ?? null,
     confoundingDomains: (initial?.confoundingDomains ?? []).join('\n'),
@@ -117,6 +120,7 @@ export function robinsIDialogToPrespec(state: RobinsIPrespecDialogState): Robins
     experimental: normalize(state.experimental),
     comparator: normalize(state.comparator),
     outcome: normalize(state.outcome),
+    numericalResult: normalize(state.numericalResult),
     benefitHarm: state.benefitHarm,
     effect: state.effect,
     confoundingDomains: parseListInput(state.confoundingDomains),
@@ -134,6 +138,7 @@ export function serializeRobinsIPrespecNote(prespec: RobinsIPrespec): string {
     experimental: prespec.experimental,
     comparator: prespec.comparator,
     outcome: prespec.outcome,
+    numerical_result: prespec.numericalResult,
     benefit_harm: prespec.benefitHarm,
     effect: prespec.effect,
     confounding_domains: prespec.confoundingDomains,
@@ -173,6 +178,7 @@ export function parseRobinsIPrespecNote(note: string | null): RobinsIPrespec | n
     experimental: parseOptionalString(record['experimental']),
     comparator: parseOptionalString(record['comparator']),
     outcome: parseOptionalString(record['outcome']),
+    numericalResult: parseOptionalString(record['numerical_result']),
     benefitHarm: (BENEFIT_HARM_VALUES as readonly unknown[]).includes(benefitHarmRaw)
       ? (benefitHarmRaw as RobinsIBenefitHarm)
       : null,
@@ -232,6 +238,9 @@ export function buildRobinsIReviewContext(
   }
   if (prespec.benefitHarm !== null) {
     parts.push(`This outcome is a proposed ${prespec.benefitHarm} of intervention.`);
+  }
+  if (prespec.numericalResult !== null) {
+    parts.push(`Numerical result being assessed: ${prespec.numericalResult}.`);
   }
   if (prespec.effect !== null) {
     parts.push(`The review team's aim for this study is ${EFFECT_PHRASES[prespec.effect]}.`);

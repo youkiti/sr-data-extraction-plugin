@@ -464,6 +464,14 @@ const ROB2_ADHERING_D2_DEFS: readonly Rob2AdheringD2Def[] = [
   },
 ];
 
+/** adhering 版 D2 の SQ field_name 一覧（質問番号順。ROB2_ADHERING_D2_DEFS から導出することで
+ * プリセットが実際に生成する field_name と常に一致させる。robAlgorithm.ts の
+ * collectRobAlgorithmInfo が import して adhering 版 D2 の SQ 回答を読む
+ * ＝ ROB2_SQ_FIELD_NAMES と同じ契約） */
+export const ROB2_ADHERING_D2_SQ_FIELD_NAMES: readonly string[] = ROB2_ADHERING_D2_DEFS.map(
+  (def) => rob2SqFieldName(def.code),
+);
+
 /**
  * adhering 版 D2 の SQ 定義を生成する。事前設定で選択されなかった deviation 種別の設問
  * （2.3〜2.5 のいずれか）は「常に na」と案内する（原文の "[If applicable:]" 規則）
@@ -484,8 +492,9 @@ function adheringD2SqDefs(deviationTypes: readonly Rob2DeviationType[]): Rob2SqD
  * RoB 2（SQ 完全版）の行生成（issue #103）。effect of interest に応じて D2 の SQ セットを
  * 切り替える（assignment 版 2.1〜2.7 = 22 問 ⇄ adhering 版 2.1〜2.6 = 21 問。D1 / D3〜D5 は共通）。
  * 毎回新しい行オブジェクトを返す（呼び出し側の編集がテンプレート定数へ波及しない）。
- * adhering 版では rob2_sq2_7 が生成されないため、robAlgorithm.ts の D2 決定木（assignment 版
- * 前提）は回答不足の null ガードにより常に「提案なし」へ倒れる（同ファイル冒頭コメント参照）
+ * robAlgorithm.ts は判定行 rob2_judgement の note に保存された事前設定（effect）で D2 の決定木を
+ * 切り替える。adhering 版には専用の決定木（judgeDomain2DeviationsAdhering）を適用するため、
+ * rob2_sq2_7 が無いことによる「常に提案なし」は起きない（issue #126 項目1）
  */
 export function buildRob2SqTemplateRows(
   options:

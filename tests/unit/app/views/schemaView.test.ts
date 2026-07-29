@@ -689,6 +689,7 @@ describe('renderSchemaView', () => {
             'schema-prespec-ri-experimental',
             'schema-prespec-ri-comparator',
             'schema-prespec-ri-outcome',
+            'schema-prespec-ri-numerical-result',
             'schema-prespec-ri-confounders',
             'schema-prespec-ri-cointerventions',
             'schema-prespec-ri-bh-none',
@@ -761,6 +762,14 @@ describe('renderSchemaView', () => {
           outcome.value = 'mortality';
           outcome.dispatchEvent(new Event('change'));
           expect(callbacks.onUpdatePresetDialog).toHaveBeenCalledWith({ outcome: 'mortality' });
+          const numericalResult = view.querySelector(
+            '#schema-prespec-ri-numerical-result',
+          ) as HTMLInputElement;
+          numericalResult.value = 'RR = 1.52 (95% CI 0.83 to 2.77)';
+          numericalResult.dispatchEvent(new Event('change'));
+          expect(callbacks.onUpdatePresetDialog).toHaveBeenCalledWith({
+            numericalResult: 'RR = 1.52 (95% CI 0.83 to 2.77)',
+          });
         });
 
         test('effect / benefit-harm ラジオの選択が onUpdatePresetDialog に配線されている', () => {
