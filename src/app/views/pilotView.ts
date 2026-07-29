@@ -16,13 +16,11 @@ import {
 } from '../../features/extraction/fieldSelection';
 import { planRun } from '../../features/extraction/planRun';
 import { t, type MessageKey } from '../../lib/i18n';
-import { resolveEffectiveHighAccuracyImages } from '../../lib/llm/providerFactory';
 import { el } from '../ui/dom';
 import { createModelSelect } from '../ui/modelSelect';
 import type { AppState } from '../store';
 import { renderConflictWarning } from './conflictWarning';
 import { hasZeroFieldsSelected, renderFieldSelectionChecklist } from './fieldSelectionChecklist';
-import { renderHighAccuracyToggle } from './highAccuracyToggle';
 import type { ViewContext } from './types';
 import { renderCachedVerificationPanel } from './verificationPanel';
 
@@ -137,13 +135,6 @@ function renderEstimate(state: AppState): HTMLElement {
       fields: estimateFields,
       model: state.pilot.model === '' ? 'unknown' : state.pilot.model,
       protocolContext: null,
-      // 実行時に実際に効く値と揃える（プロバイダ非対応時は概算にも反映しない。issue #176）。
-      // 保存済み接続方式（llmProviderOverride）をモデル名推定より優先する（issue #191 レビュー対応）
-      highAccuracyImages: resolveEffectiveHighAccuracyImages(
-        state.pilot.model,
-        state.pilot.highAccuracyImages,
-        state.llmProviderOverride,
-      ),
       // モデル未選択時のダミー値 'unknown' を「画像対応が不明なモデルが選ばれている」と
       // 誤検出しないための切り分け（extractView.ts の renderEstimate と同じ理由。レビュー指摘）
       modelSelected: state.pilot.model !== '',
@@ -238,12 +229,6 @@ function renderSetup(state: AppState, ctx: ViewContext): HTMLElement {
       el('label', { text: t('extraction.modelLabel'), attributes: { for: 'pilot-model' } }),
       modelSelect,
     ]),
-    renderHighAccuracyToggle({
-      idPrefix: 'pilot',
-      checked: state.pilot.highAccuracyImages,
-      model: state.pilot.model,
-      onChange: (enabled) => ctx.pilot.onToggleHighAccuracyImages(enabled),
-    }),
     renderEstimate(state),
   ];
   if (state.pilot.runError !== null) {

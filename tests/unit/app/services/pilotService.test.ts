@@ -10,7 +10,6 @@ import {
   persistPilotRelocateQuote,
   resetPilotFieldSelection,
   runPilot,
-  setPilotHighAccuracyImages,
   setPilotLayoutMode,
   setPilotPaneLayout,
   setPilotModel,
@@ -470,27 +469,17 @@ describe('resetPilotFieldSelection / togglePilotField / togglePilotFieldSection 
     makeField({ fieldId: 'f-3', section: 'results' }),
   ];
 
-  test('resetPilotFieldSelection: 選択・折りたたみ・高精度読み取りモードを既定へ戻す（issue #176）', () => {
+  test('resetPilotFieldSelection: 選択・折りたたみを既定へ戻す', () => {
     const store = makeStore({
       fields,
       pilot: {
         selectedFieldIds: ['f-1'],
         collapsedFieldSections: ['methods'],
-        highAccuracyImages: true,
       },
     });
     resetPilotFieldSelection(store);
     expect(store.getState().pilot.selectedFieldIds).toBeNull();
     expect(store.getState().pilot.collapsedFieldSections).toEqual([]);
-    expect(store.getState().pilot.highAccuracyImages).toBe(false);
-  });
-
-  test('setPilotHighAccuracyImages: 高精度読み取りモードのトグル切替（issue #176）', () => {
-    const store = makeStore({ fields, pilot: { highAccuracyImages: false } });
-    setPilotHighAccuracyImages(store, true);
-    expect(store.getState().pilot.highAccuracyImages).toBe(true);
-    setPilotHighAccuracyImages(store, false);
-    expect(store.getState().pilot.highAccuracyImages).toBe(false);
   });
 
   test('togglePilotField: 単一項目の選択解除・追加', () => {
@@ -686,34 +675,6 @@ describe('runPilot: 実行', () => {
     ];
     // study-doc-1（除外済み文書のみ）は候補から消えるため対象に含まれない
     expect(params.documents.map((doc) => doc.documentId)).toEqual(['doc-2']);
-  });
-
-  test('高精度読み取りモード（issue #176）: チェック時は highAccuracyImages: true を runExtraction へ渡す', async () => {
-    const store = makeStore({
-      documents: [makeDocument(), makeDocument({ documentId: 'doc-2' })],
-      fields: [makeField()],
-      pilot: {
-        selectedStudyIds: ['study-doc-1'],
-        model: 'gemini-test',
-        highAccuracyImages: true,
-      },
-    });
-    runExtractionMock.mockResolvedValue(makeOutcome());
-    await runPilot(store, makeDeps());
-    const [params] = runExtractionMock.mock.calls[0] as unknown as [
-      Parameters<typeof runExtraction>[0],
-    ];
-    expect(params.highAccuracyImages).toBe(true);
-  });
-
-  test('高精度読み取りモード（issue #176）: 未チェック時は highAccuracyImages: false を渡す（既定挙動を変えない）', async () => {
-    const store = makeReadyStore();
-    runExtractionMock.mockResolvedValue(makeOutcome());
-    await runPilot(store, makeDeps());
-    const [params] = runExtractionMock.mock.calls[0] as unknown as [
-      Parameters<typeof runExtraction>[0],
-    ];
-    expect(params.highAccuracyImages).toBe(false);
   });
 
   // 画像非対応モデルの実行ブロック（issue #191 レビュー対応: extractService と同型の欠落）。

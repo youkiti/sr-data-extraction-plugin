@@ -21,10 +21,7 @@ import type { ExtractStudyRow, ExtractStudyStatus } from '../../features/extract
 import { planRun } from '../../features/extraction/planRun';
 import { t, type MessageKey } from '../../lib/i18n';
 import type { LlmFailureKind } from '../../lib/llm/LLMProvider';
-import {
-  isRunBlockedByImageUnsupportedModel,
-  resolveEffectiveHighAccuracyImages,
-} from '../../lib/llm/providerFactory';
+import { isRunBlockedByImageUnsupportedModel } from '../../lib/llm/providerFactory';
 import { el } from '../ui/dom';
 import { createModelSelect } from '../ui/modelSelect';
 import type { AppState } from '../store';
@@ -33,7 +30,6 @@ import {
   hasZeroFieldsSelected,
   renderFieldSelectionChecklist,
 } from './fieldSelectionChecklist';
-import { renderHighAccuracyToggle } from './highAccuracyToggle';
 import type { ViewContext } from './types';
 
 // 表示言語に追従させるため、ラベルは描画時に t() で解決する（キー対応表のみ固定。issue #93）
@@ -216,13 +212,6 @@ function renderEstimate(state: AppState): HTMLElement {
       fields: estimateFields,
       model: state.extract.model === '' ? 'unknown' : state.extract.model,
       protocolContext: null,
-      // 実行時に実際に効く値と揃える（プロバイダ非対応時は概算にも反映しない。issue #176）。
-      // 保存済み接続方式（llmProviderOverride）をモデル名推定より優先する（issue #191 レビュー対応）
-      highAccuracyImages: resolveEffectiveHighAccuracyImages(
-        state.extract.model,
-        state.extract.highAccuracyImages,
-        state.llmProviderOverride,
-      ),
       // モデル未選択時のダミー値 'unknown' を「画像対応が不明なモデルが選ばれている」と
       // 誤検出しないための切り分け（pilotView.ts の renderEstimate と同じ理由。レビュー指摘）
       modelSelected: state.extract.model !== '',
@@ -327,12 +316,6 @@ function renderSetup(state: AppState, ctx: ViewContext): HTMLElement {
       el('label', { text: t('extraction.modelLabel'), attributes: { for: 'extract-model' } }),
       modelSelect,
     ]),
-    renderHighAccuracyToggle({
-      idPrefix: 'extract',
-      checked: state.extract.highAccuracyImages,
-      model: state.extract.model,
-      onChange: (enabled) => ctx.extract.onToggleHighAccuracyImages(enabled),
-    }),
   ];
   if (imageUnsupportedBlocked) {
     children.push(

@@ -9,11 +9,6 @@
 //   study 内に text / image の文書が混在してもバッチは 1 本のまま（executeRun が文書ごとに
 //   入力形式を出し分ける）。トークン概算はテキスト文書ぶん（文字数 ÷ 4）と画像文書ぶん
 //   （ページ数 × 画像トークン単価）を別建てで計算してから合算する
-// - 高精度読み取りモード（issue #176・input_mode = text_with_page_images）: `highAccuracyImages`
-//   を true で渡すと、テキスト層のある（= no_text_layer でない）文書についても本文に加えて
-//   ページ画像を併用添付する（表・図の読み取り精度を上げる run 単位のオプトイン。既定 false =
-//   既存の text_only / pdf_native 挙動を一切変えない）。対象文書は augmentedImageDocumentIds に
-//   載り、そのぶんの画像トークンも estimateBatch の見積もりへ加算する
 // - 実行（API 呼び出し・進捗・partial_failure）は executeRun の責務。ここは純粋関数のみ
 import { DOCUMENT_ROLE_ORDER, type DocumentRecord } from '../../domain/document';
 import type { InputMode } from '../../domain/extractionRun';
@@ -98,14 +93,6 @@ export interface PlannedBatch {
    * documentIds の部分集合・同順。0 件なら全文書がテキスト入力（text_only）
    */
   imageDocumentIds: readonly string[];
-  /**
-   * documentIds のうちテキスト層があり、かつ高精度読み取りモード（issue #176）でページ画像を
-   * 「本文に加えて」併用添付する文書。documentIds の部分集合・同順で imageDocumentIds とは排他
-   * （no_text_layer 文書は常に imageDocumentIds 側。テキスト層の無い文書に画像を「追加」する
-   * 意味は無いため augmentedImageDocumentIds には載らない）。0 件 = 高精度読み取りモード無効、
-   * または対象文書が無かった（全文書 no_text_layer 等）
-   */
-  augmentedImageDocumentIds: readonly string[];
   /** section 単位分割時の section 名。スキーマ全項目一括なら null */
   section: string | null;
   /** 当該バッチで抽出する項目（fieldIndex 順） */
@@ -143,12 +130,6 @@ export interface PlanRunInput {
   /** extractData のプロンプトへ渡す予定の補助コンテキスト（トークン概算にのみ使用） */
   protocolContext?: string | null;
   budget?: Partial<RunTokenBudget>;
-  /**
-   * 高精度読み取りモード（issue #176）。true にすると、テキスト層のある文書についても
-   * ページ画像を本文に加えて併用添付する（`input_mode = text_with_page_images`）。
-   * 既定 false = 既存の text_only / pdf_native 挙動を一切変えない
-   */
-  highAccuracyImages?: boolean;
   /**
    * モデルが実際に選択されているか（画像非対応モデルの実行ブロック。既定 true）。
    * `false` を明示したときだけ「画像対応が unknown のモデル」警告を出さない。
@@ -202,16 +183,12 @@ interface BatchEstimate {
 /**
  * 1 バッチ（1 study の全文書連結 × 項目集合）の入出力トークン概算。
  * テキスト文書は文字数 ÷ 4 の目安（従来どおり）、画像文書はページ数 × 画像トークン単価で
- * 別建てに計算してから合算する（画像文書が無ければ従来と完全に同じ数値になる）。
- * `highAccuracyImages` が true のときは、テキスト文書（no_text_layer でない文書）ぶんの
- * 画像トークンも同じ単価で加算する（issue #176: 本文はそのまま・画像を追加するため、
- * imageDocumentTokens と同じ「ページ数 × APPROX_IMAGE_TOKENS_PER_PAGE + 見出しぶん」の式を流用する）
+ * 別建てに計算してから合算する（画像文書が無ければ従来と完全に同じ数値になる）
  */
 function estimateBatch(
   docs: readonly DocumentRecord[],
   fields: readonly SchemaField[],
   protocolChars: number,
-  highAccuracyImages: boolean,
 ): BatchEstimate {
   const textDocs = docs.filter((doc) => !isImageDocument(doc));
   const imageDocs = docs.filter(isImageDocument);
@@ -232,11 +209,8 @@ function estimateBatch(
     armCompletenessChars;
   const items = fields.reduce((sum, field) => sum + ENTITY_INSTANCE_ESTIMATE[field.entityLevel], 0);
   const imageTokens = imageDocs.reduce((sum, doc) => sum + imageDocumentTokens(doc), 0);
-  const augmentedImageTokens = highAccuracyImages
-    ? textDocs.reduce((sum, doc) => sum + imageDocumentTokens(doc), 0)
-    : 0;
   return {
-    tokensIn: Math.ceil(promptChars / APPROX_CHARS_PER_TOKEN) + imageTokens + augmentedImageTokens,
+    tokensIn: Math.ceil(promptChars / APPROX_CHARS_PER_TOKEN) + imageTokens,
     tokensOut: Math.ceil((items * OUTPUT_CHARS_PER_ITEM) / APPROX_CHARS_PER_TOKEN),
   };
 }
@@ -318,28 +292,16 @@ export function planRun(input: PlanRunInput): RunPlan {
   const protocolChars = input.protocolContext?.length ?? 0;
   const sortedFields = [...input.fields].sort((a, b) => a.fieldIndex - b.fieldIndex);
   const allFieldIds = sortedFields.map((field) => field.fieldId);
-  // 高精度読み取りモード（issue #176）: 明示的に true を渡したときだけ有効にする
-  // （既定 undefined は従来どおり false 相当 = 挙動・コストを変えない）
-  const highAccuracyImages = input.highAccuracyImages === true;
 
   const batches: PlannedBatch[] = [];
   const imageDocumentIds = new Set<string>();
-  const augmentedImageDocumentIds = new Set<string>();
   let unknownCharCountDocs = 0;
 
   for (const [studyId, docs] of groupDocumentsByStudy(input.documents)) {
     const documentIds = docs.map((doc) => doc.documentId);
     const batchImageDocumentIds = docs.filter(isImageDocument).map((doc) => doc.documentId);
-    // 高精度読み取りモードの対象はテキスト層がある文書のみ（no_text_layer は既に画像入力のため
-    // 「追加」する意味が無く、imageDocumentIds と augmentedImageDocumentIds は排他になる）
-    const batchAugmentedImageDocumentIds = highAccuracyImages
-      ? docs.filter((doc) => !isImageDocument(doc)).map((doc) => doc.documentId)
-      : [];
     for (const id of batchImageDocumentIds) {
       imageDocumentIds.add(id);
-    }
-    for (const id of batchAugmentedImageDocumentIds) {
-      augmentedImageDocumentIds.add(id);
     }
     for (const doc of docs) {
       if (!isImageDocument(doc) && doc.charCount === null) {
@@ -347,13 +309,12 @@ export function planRun(input: PlanRunInput): RunPlan {
       }
     }
 
-    const fullEstimate = estimateBatch(docs, sortedFields, protocolChars, highAccuracyImages);
+    const fullEstimate = estimateBatch(docs, sortedFields, protocolChars);
     if (withinBudget(fullEstimate, budget)) {
       batches.push({
         studyId,
         documentIds,
         imageDocumentIds: batchImageDocumentIds,
-        augmentedImageDocumentIds: batchAugmentedImageDocumentIds,
         section: null,
         fieldIds: allFieldIds,
         tokensInEstimate: fullEstimate.tokensIn,
@@ -364,12 +325,11 @@ export function planRun(input: PlanRunInput): RunPlan {
     }
 
     for (const [section, sectionFields] of groupBySection(sortedFields)) {
-      const estimate = estimateBatch(docs, sectionFields, protocolChars, highAccuracyImages);
+      const estimate = estimateBatch(docs, sectionFields, protocolChars);
       batches.push({
         studyId,
         documentIds,
         imageDocumentIds: batchImageDocumentIds,
-        augmentedImageDocumentIds: batchAugmentedImageDocumentIds,
         section,
         fieldIds: sectionFields.map((field) => field.fieldId),
         tokensInEstimate: estimate.tokensIn,
@@ -382,25 +342,12 @@ export function planRun(input: PlanRunInput): RunPlan {
   const tokensInEstimate = batches.reduce((sum, batch) => sum + batch.tokensInEstimate, 0);
   const tokensOutEstimate = batches.reduce((sum, batch) => sum + batch.tokensOutEstimate, 0);
   const costEstimateUsd = estimateCostUsd(input.model, tokensInEstimate, tokensOutEstimate);
-  // 高精度読み取りモードが実際に何か文書へ適用されたときだけ input_mode をそう記録する
-  // （全対象が no_text_layer などで augmentedImageDocumentIds が 0 件なら、
-  // ユーザーがモードをオンにしていても実際の入力は変わっていないため pdf_native / text_only のまま）
-  const inputMode: InputMode =
-    augmentedImageDocumentIds.size > 0
-      ? 'text_with_page_images'
-      : imageDocumentIds.size > 0
-        ? 'pdf_native'
-        : 'text_only';
+  const inputMode: InputMode = imageDocumentIds.size > 0 ? 'pdf_native' : 'text_only';
 
   const warnings: string[] = [];
   if (imageDocumentIds.size > 0) {
     warnings.push(
       `テキスト層がない文献 ${imageDocumentIds.size} 件はページ画像として LLM へ送信します（pdf_native。画像トークンぶんコストが増えます）`,
-    );
-  }
-  if (augmentedImageDocumentIds.size > 0) {
-    warnings.push(
-      `高精度読み取りモード: テキスト層がある文献 ${augmentedImageDocumentIds.size} 件のページ画像も追加送信します（トークン消費量が大幅に増えます）`,
     );
   }
   if (unknownCharCountDocs > 0) {
@@ -415,18 +362,18 @@ export function planRun(input: PlanRunInput): RunPlan {
   if (costEstimateUsd === null) {
     warnings.push(`モデル「${input.model}」は単価表に無いためコストを概算できません`);
   }
-  // 画像非対応モデルの実行ブロック（B）: バッチに画像入力（pdf_native / 高精度読み取りモード）が
-  // 含まれ、かつモデルが実際に選択されている（modelSelected !== false）のに画像対応可否が
-  // unknown（カタログに実測が無い）なら警告だけ足す（ブロックはしない。ブロックは
-  // isRunBlockedByImageUnsupportedModel の役目 = 'unsupported' 確定時のみ）
+  // 画像非対応モデルの実行ブロック（B）: バッチに画像入力（pdf_native）が含まれ、かつモデルが
+  // 実際に選択されている（modelSelected !== false）のに画像対応可否が unknown（カタログに
+  // 実測が無い）なら警告だけ足す（ブロックはしない。ブロックは isRunBlockedByImageUnsupportedModel
+  // の役目 = 'unsupported' 確定時のみ）
   const modelSelected = input.modelSelected !== false;
   if (
     modelSelected &&
-    (imageDocumentIds.size > 0 || augmentedImageDocumentIds.size > 0) &&
+    imageDocumentIds.size > 0 &&
     resolveModelImageInputSupport(resolveProviderId(input.model), input.model) === 'unknown'
   ) {
     warnings.push(
-      `モデル「${input.model}」が画像入力に対応しているか分かっていません（カタログ外）。テキスト層のない文献や高精度読み取りモードの画像が正しく読めない可能性があります`,
+      `モデル「${input.model}」が画像入力に対応しているか分かっていません（カタログ外）。テキスト層のない文献が正しく読めない可能性があります`,
     );
   }
 

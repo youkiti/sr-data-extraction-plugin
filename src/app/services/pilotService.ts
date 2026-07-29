@@ -33,7 +33,6 @@ import type { LLMProvider } from '../../lib/llm/LLMProvider';
 import { missingApiKeyMessage } from '../../lib/llm/modelCatalog';
 import {
   isRunBlockedByImageUnsupportedModel,
-  resolveEffectiveHighAccuracyImages,
   resolveProviderConfig,
   type ProviderConfig,
   type ProviderResolutionDeps,
@@ -126,21 +125,13 @@ export function setPilotModel(store: Store, model: string): void {
 
 /**
  * フィールド選択チェックリストを全選択へリセットする（A-4: 画面入場のたびに全選択へ戻す。
- * storage への永続化はしない）。bootstrap の `#/pilot` ルート入場時に呼ぶ。
- * 高精度読み取りモード（issue #176）のトグルも同じ理由で毎回 false へ戻す
- * （前回オンにしたことを忘れたまま高コストな run を打たせない設計）
+ * storage への永続化はしない）。bootstrap の `#/pilot` ルート入場時に呼ぶ
  */
 export function resetPilotFieldSelection(store: Store): void {
   patchPilot(store, {
     selectedFieldIds: null,
     collapsedFieldSections: [],
-    highAccuracyImages: false,
   });
-}
-
-/** 高精度読み取りモード（issue #176）のトグル切替 */
-export function setPilotHighAccuracyImages(store: Store, enabled: boolean): void {
-  patchPilot(store, { highAccuracyImages: enabled });
 }
 
 /** フィールドチェックリストの単一項目切替 */
@@ -251,14 +242,6 @@ export async function runPilot(store: Store, deps: PilotServiceDeps): Promise<vo
   // 未抽出項目も人間が手動で判定できるようにするため。絞り込むのは LLM 呼び出し側の fields のみ）
   const fieldIds = resolveFieldIdsForRun(selectedFieldIds);
   const extractionFields = filterFieldsBySelection(fields, fieldIds);
-  // 高精度読み取りモード（issue #176）: UI は非対応プロバイダで選択自体を disabled にするが、
-  // ここでも二重に効かせる（モデル変更後の古い選択が残っていても、非対応プロバイダには送らない）。
-  // 実際に解決済みの provider（接続方式 override 反映済み）を渡す（issue #191 レビュー対応）
-  const highAccuracyImages = resolveEffectiveHighAccuracyImages(
-    model,
-    state.pilot.highAccuracyImages,
-    providerResolution.provider,
-  );
   // 画像非対応モデルの実行ブロック（issue #191 レビュー対応）: extractService と同じ判定を
   // runExtraction 呼び出し前に行う。pilotView.ts には実行ボタンの disabled 表示（S7 と同等の
   // UI ガード）がまだ無いため、ここが唯一のガードになる
@@ -295,7 +278,6 @@ export async function runPilot(store: Store, deps: PilotServiceDeps): Promise<vo
         model,
         protocolContext,
         fieldIds,
-        highAccuracyImages,
         onProgress: (progress) => patchPilot(store, { progress }),
       },
       {
