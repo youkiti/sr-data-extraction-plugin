@@ -80,7 +80,6 @@ import {
   persistPilotRelocateQuote,
   resetPilotFieldSelection,
   runPilot,
-  setPilotHighAccuracyImages,
   setPilotLayoutMode,
   setPilotModel,
   setPilotPaneLayout,
@@ -98,7 +97,6 @@ import {
   resetExtractFieldSelection,
   retryExtractStudy,
   runExtract,
-  setExtractHighAccuracyImages,
   setExtractModel,
   toggleAllExtractStudies,
   toggleExtractField,
@@ -619,9 +617,6 @@ export async function bootstrapApp(
       onToggleFieldSectionCollapse: (section) => {
         togglePilotFieldSectionCollapse(store, section);
       },
-      onToggleHighAccuracyImages: (enabled) => {
-        setPilotHighAccuracyImages(store, enabled);
-      },
       onRun: () => {
         void runPilot(store, deps);
       },
@@ -684,9 +679,6 @@ export async function bootstrapApp(
       },
       onToggleFieldSectionCollapse: (section) => {
         toggleExtractFieldSectionCollapse(store, section);
-      },
-      onToggleHighAccuracyImages: (enabled) => {
-        setExtractHighAccuracyImages(store, enabled);
       },
       onRequestRun: () => {
         void requestExtractRun(store, deps);
