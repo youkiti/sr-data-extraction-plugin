@@ -1,6 +1,6 @@
 # 残実装計画書（v0.1.0 公開後の作業指示）
 
-- **作成日**: 2026-07-03（タスク A〜E）/ **更新**: 2026-07-12（v0.1.0 公開後のマイルストーン M1〜M4 を追加）・2026-07-18（#62 実機検証の §7.3 決着 = フォルダ付与不成立 → ファイル単位付与への設計変更〔#138/#139 = PR #140〕と進捗を反映）・2026-07-19（#62 実機通し完了 = 検証 → 裁定 → consensus エクスポートまで全項目 OK。#62 クローズ・#63/#141 の残確認を更新。#142 Picker 許可導線の実機確認完了 → クローズを #68 行へ反映）
+- **作成日**: 2026-07-03（タスク A〜E）/ **更新**: 2026-07-12（v0.1.0 公開後のマイルストーン M1〜M4 を追加）・2026-07-18（#62 実機検証の §7.3 決着 = フォルダ付与不成立 → ファイル単位付与への設計変更〔#138/#139 = PR #140〕と進捗を反映）・2026-07-19（#62 実機通し完了 = 検証 → 裁定 → consensus エクスポートまで全項目 OK。#62 クローズ・#63/#141 の残確認を更新。#142 Picker 許可導線の実機確認完了 → クローズを #68 行へ反映）・2026-07-29（**M1〜M4 表を GitHub issue の実状態と同期**。クローズ済み issue へ ✅ とクローズ日 / 対応 PR を付記し、未消化の作業だけが残るようにした）
 - **対象読者**: 本リポジトリで作業する実装者
 - **構成**: **前半 = 現行の作業指示**（リリース後マイルストーン M1〜M4。GitHub issue の index）。**後半 = 付録**（MVP 完了までの計画タスク A〜E。全消化済み・履歴として保持）。
 - **正典**: 仕様の根拠は必ず [requirements.md](requirements.md)（v0.12）/ [architecture.md](architecture.md) / [test-strategy.md](test-strategy.md) / [ui-states.md](ui-states.md) に当たること。本書は「何をどの順でやるか」の作業指示であり、仕様は複製しない（各 issue が自己完結の作業指示を持つ）。
@@ -32,45 +32,47 @@
 
 - **位置づけ**: v0.1.0 一般公開（2026-07-12）後の残作業。以降は GitHub issue を作業単位とし、本章がその index。各 issue が自己完結の作業指示（背景・方針・受け入れ条件）を持つため、本書に仕様は複製しない。§0 の共通ルール（ブランチ・日本語・カバレッジ 100%・定型フロー・spec 先行）はそのまま適用する。
 - **設計判断の経緯**: [status-and-roadmap-20260711.md](status-and-roadmap-20260711.md)（レビュー済み）。仕様の正典は [requirements.md](requirements.md)（v0.12）。
+- **消化状況（2026-07-29 時点）**: **M1〜M3 の issue はすべてクローズ済み**。オープンな issue は [#141](https://github.com/youkiti/sr-data-extraction-plugin/issues/141)（実装済み・実機確認とバンドル方式の判断が残り）と [#127](https://github.com/youkiti/sr-data-extraction-plugin/issues/127)（要件定義から）の 2 件のみ。ただし**実装完了 ≠ 検証完了**で、クローズ済み issue でも実機 / 実 API 確認が残っているものがある（後述「実機 / 実 API テストが必要な項目」が正典）。
 
 ### M1 リリース品質（公開後の運用担保）
 
 | issue | 内容 |
 |---|---|
 | [#62](https://github.com/youkiti/sr-data-extraction-plugin/issues/62) | 独立二重レビューの 2 アカウント実機通し確認（**✅ 完了・クローズ済み（2026-07-19）**。§7.3 はファイル単位付与〔#138/#139 = PR #140〕で決着し、検証〔with_ai / independent〕→ arm マッピング → 裁定 → consensus エクスポートの通しまで全項目問題なし。記録は [manual-testing.md](manual-testing.md) §5-6） |
-| [#63](https://github.com/youkiti/sr-data-extraction-plugin/issues/63) | 独立二重レビュー v1 簡略化の解消（裁定ハイライト・offlineQueue・arm 並べ替え・3 人以上） |
-| [#64](https://github.com/youkiti/sr-data-extraction-plugin/issues/64) | StudyData/ResultsData upsert の楽観ロック（複数人運用の後勝ち上書き防止） |
-| [#69](https://github.com/youkiti/sr-data-extraction-plugin/issues/69) | ai 行転記 appendRows のチャンク制御（40k 行一発 append の非対称性。負荷試験で発見） |
+| [#63](https://github.com/youkiti/sr-data-extraction-plugin/issues/63) | 独立二重レビュー v1 簡略化の解消（裁定ハイライト・offlineQueue・arm 並べ替え・3 人以上）（**✅ 完了・クローズ済み（2026-07-13）**。PR #85 = 裁定 Evidence ハイライト + オフラインキュー / PR #114 = arm 並べ替えマッピング + 3 人以上のペア選択。**残り = 実機のみ**: 3 アカウント目でのペア選択〔下表 #63 行〕） |
+| [#64](https://github.com/youkiti/sr-data-extraction-plugin/issues/64) | StudyData/ResultsData upsert の楽観ロック（複数人運用の後勝ち上書き防止）（**✅ 完了・クローズ済み（2026-07-12。PR #79）**） |
+| [#69](https://github.com/youkiti/sr-data-extraction-plugin/issues/69) | ai 行転記 appendRows のチャンク制御（40k 行一発 append の非対称性。負荷試験で発見）（**✅ 完了・クローズ済み（2026-07-12。PR #71）**。**残り = 実 API での再現確認**〔下表 #69 行〕） |
 | [#141](https://github.com/youkiti/sr-data-extraction-plugin/issues/141) | ファイル単位付与の残課題（**課題 1・2・4 は 2026-07-19 に実装済み**: 付与済み ID セット永続化 + 差分付与 + スキップ導線 = PR #150 / hosted ページ整理 + `page_version` ハンドシェイク + files モードの file_ids を ready 応答経由へ = PR #149・picker.html 2026-07-19a を gh-pages デプロイ済み。**残り** = 実機確認〔差分付与の収束・スキップ・件数上限観察〕とバンドルファイル方式の要否判断） |
 
 ### M2 方法論の質
 
 | issue | 内容 |
 |---|---|
-| [#65](https://github.com/youkiti/sr-data-extraction-plugin/issues/65) | 決定論的な数値整合性チェック（非 LLM の第 3 独立検証） |
-| [#66](https://github.com/youkiti/sr-data-extraction-plugin/issues/66) | レビュアー間一致度（Cohen's κ・一致率・不一致一覧） |
-| [#67](https://github.com/youkiti/sr-data-extraction-plugin/issues/67) | Methods 文案カードの S10 実装（PRISMA 2020 item 9） |
-| [#61](https://github.com/youkiti/sr-data-extraction-plugin/issues/61) | RoB2 / ROBINS-I の signaling question 対応 + QUADAS-2 / QUIPS（出力トークン制約で複数回コール検討） |
+| [#65](https://github.com/youkiti/sr-data-extraction-plugin/issues/65) | 決定論的な数値整合性チェック（非 LLM の第 3 独立検証）（**✅ 完了・クローズ済み（2026-07-12。PR #73 → PR #79）**） |
+| [#66](https://github.com/youkiti/sr-data-extraction-plugin/issues/66) | レビュアー間一致度（Cohen's κ・一致率・不一致一覧）（**✅ 完了・クローズ済み（2026-07-12。PR #79）**） |
+| [#67](https://github.com/youkiti/sr-data-extraction-plugin/issues/67) | Methods 文案カードの S10 実装（PRISMA 2020 item 9）（**✅ 完了・クローズ済み（2026-07-12。PR #79）**） |
+| [#61](https://github.com/youkiti/sr-data-extraction-plugin/issues/61) | RoB2 / ROBINS-I の signaling question 対応 + QUADAS-2 / QUIPS（出力トークン制約で複数回コール検討）（**✅ 完了・クローズ済み（2026-07-12）**。PR #86 = RoB 2 / PR #98 = ROBINS-I〔#87〕/ PR #99 = QUADAS-3・QUIPS〔#88〕。QUADAS-3 の estimate 単位評価は後続の [#109](https://github.com/youkiti/sr-data-extraction-plugin/issues/109) で 2026-07-20 に完了。**残り = 実 API での出力トークン制約の観察**〔下表 #61 行〕） |
 
 ### M3 上流・下流接続
 
 | issue | 内容 |
 |---|---|
-| [#60](https://github.com/youkiti/sr-data-extraction-plugin/issues/60) | R 解析向け CSV エクスポート契約（tab1 / ma / rob + data_dictionary。**v1 は analysis_role 抜き** = tab1 に全変数・R で join） |
-| [#68](https://github.com/youkiti/sr-data-extraction-plugin/issues/68) | tiab-review 採用リスト読み込み → study 自動生成（study_label / DOI / PMID。旧 §4 提案6 を同時充足） |
+| [#60](https://github.com/youkiti/sr-data-extraction-plugin/issues/60) | R 解析向け CSV エクスポート契約（tab1 / ma / rob + data_dictionary。**v1 は analysis_role 抜き** = tab1 に全変数・R で join）（**✅ 完了・クローズ済み（2026-07-12。PR-A = builder 群 / PR #84 = S10 UI 配線）**） |
+| [#68](https://github.com/youkiti/sr-data-extraction-plugin/issues/68) | tiab-review 採用リスト読み込み → study 自動生成（study_label / DOI / PMID。旧 §4 提案6 を同時充足）（**✅ 完了・クローズ済み（2026-07-13。PR #114 → PR #115）**。Picker 許可フォールバックは [#142](https://github.com/youkiti/sr-data-extraction-plugin/issues/142) = PR #145 で追加し実機確認済み。**残り = 実機**: Sheet 直読み〜 DOI / PMID 突き合わせ〔下表 #68 行〕） |
 
-### M4 差別化・国際化（着手時に issue を起こす）
+### M4 差別化・国際化（未着手の項目は着手時に issue を起こす）
 
-| 項目 | 位置づけ |
+| 項目 | 位置づけ / 状態 |
 |---|---|
-| 登録情報との突き合わせ（selective reporting・RoB2 D5 支援） | 差別化の本命。規模大（status-and-roadmap §4 提案4） |
-| UI 英語化・表示言語切替 | 海外テスター / 論文発表を見据える場合に優先度↑ |
-| 日本語論文対応（プロンプト多言語化） | requirements §6 P2 |
-| relocate-quote skill（アンカリング失敗 quote の LLM 再特定） | `LLMApiLog.purpose` に enum 予約済み |
+| 登録情報との突き合わせ（selective reporting・RoB2 D5 支援） | **未着手（issue なし）**。差別化の本命。規模大（status-and-roadmap §4 提案4）。着手時に issue を起こす |
+| [#127](https://github.com/youkiti/sr-data-extraction-plugin/issues/127) 各種 API への対応 | **オープン・要件定義から**。LLM プロバイダの拡充（[kouchou-ai-serverless](https://github.com/tokoroten/kouchou-ai-serverless) を参考）。現状の issue 本文は方向性のみで受け入れ条件がないため、実装前に対象プロバイダ・認証方式・設定 UI の範囲を確定する |
+| UI 英語化・表示言語切替 | **✅ 完了・クローズ済み（[#93](https://github.com/youkiti/sr-data-extraction-plugin/issues/93)。2026-07-13。PR #122）**。i18n 基盤 + 段階的な画面移行 |
+| 日本語論文対応（プロンプト多言語化） | **✅ 完了・クローズ済み（[#95](https://github.com/youkiti/sr-data-extraction-plugin/issues/95)。2026-07-20）**。層 1 = アンカリング正規化 + 和文 E2E 実弾（PR #143）、層 2 = extract-data プロンプト v7 の原文言語保持（PR #160）+ relocate-quote プロンプト版数 2（[#161](https://github.com/youkiti/sr-data-extraction-plugin/issues/161)）。**残り = 実機 / 実 API**〔下表 #95 層 1・層 2 行〕 |
+| relocate-quote skill（アンカリング失敗 quote の LLM 再特定） | **✅ 完了・クローズ済み（[#94](https://github.com/youkiti/sr-data-extraction-plugin/issues/94)。2026-07-12）**。`LLMApiLog.purpose` の enum を実配線 |
 
 ### 実機 / 実 API テストが必要な項目（見落とし防止）
 
-M1〜M4 のうち、**ローカルの jest / Playwright だけでは完了確認できない**もの。実装完了 ≠ 検証完了なので、各 issue の受け入れ条件とは別にここで一覧化する。
+M1〜M4 のうち、**ローカルの jest / Playwright だけでは完了確認できない**もの。実装完了 ≠ 検証完了なので、各 issue の受け入れ条件とは別にここで一覧化する。**issue がクローズ済みでもこの表の行は残る**（実装のマージで issue は閉じるが、実機 / 実 API の確認はまとめて別枠で消化する運用）。未消化の行が「やること」の正典。
 
 | 対象 | 種別 | 何を確認するか |
 |---|---|---|
