@@ -22,6 +22,20 @@ describe('buildModelCatalog', () => {
     const all = [...gemini.models, ...openrouter.models].sort();
     expect(all).toEqual(Object.keys(MODEL_PRICING).sort());
   });
+
+  // 回帰テスト（issue #127 PR1）: buildModelCatalog は以前 `resolveProviderId`
+  // （モデル名に `/` を含むか否かだけの推定）でグループ分けしていたため、
+  // `/` を含まない非 Gemini モデル（例: 将来の Claude モデル）が「Gemini」optgroup へ
+  // 紛れ込む実バグがあった。現在は `MODEL_IMAGE_CAPABILITY` の明示的な provider を出典にしており、
+  // かつモデルが 1 件も無いグループ（PR1 時点の Anthropic）は結果から除外される。
+  // PR2 で MODEL_PRICING に Claude モデルが追加されれば、このテストを変更しなくても
+  // 自動的に 3 番目の 'Anthropic' グループが出るようになる（このテストはそれまで
+  // 'Anthropic' が出ない = 空グループが描画されないことを固定する）
+  test('空グループ（現状は Anthropic — 単価表にモデルが無い）は結果から除外される', () => {
+    const groups = buildModelCatalog();
+    expect(groups.find((g) => g.label === 'Anthropic')).toBeUndefined();
+    expect(groups.every((g) => g.models.length > 0)).toBe(true);
+  });
 });
 
 describe('isCatalogModel', () => {
@@ -43,6 +57,9 @@ describe('missingApiKeyMessage', () => {
     );
     expect(missingApiKeyMessage('openai_compatible')).toBe(
       'OpenAI 互換 API キーが未設定です。設定画面（Options）で保存してください',
+    );
+    expect(missingApiKeyMessage('anthropic')).toBe(
+      'Anthropic API キーが未設定です。設定画面（Options）で保存してください',
     );
   });
 });
