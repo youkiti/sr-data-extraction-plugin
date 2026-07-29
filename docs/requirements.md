@@ -93,6 +93,7 @@ tiab-review-plugin / sr-query-builder-plugin の構成に準拠。
 | docx パース | `mammoth.js`（プロトコル入力用） |
 | LLM（MVP） | Gemini API（工場出荷の既定モデル = `gemini-3.5-flash`。実データ抽出ベンチマークで確定 ※Q8。tiab-review の固定バージョン ID 方針を踏襲） |
 | LLM（MVP 追加） | OpenRouter（OpenAI 互換 API。`OpenRouterProvider` を sr-query-builder から移植・2026-07-04）+ 利用者指定の OpenAI 互換 Chat Completions API（Issue #27。HTTPS を原則とし、HTTP は `localhost` / `127.0.0.1` / `[::1]` のみ許可。非標準ポート、loopback の認証なし接続、構造化出力の互換性フォールバックに対応）。モデルセレクタの「その他（直接入力）」で任意モデル ID を指定可。カスタムモデルの一覧管理 UI は P1 |
+| LLM（接続方式・issue #127） | 上記に加え **Anthropic ネイティブ**（Messages API。`AnthropicProvider`。固定エンドポイント `https://api.anthropic.com/v1/messages` + `x-api-key` / `anthropic-version` 認証。PR1 で provider 層のみ実装・PR2 で Options 配線）+ **Azure OpenAI**（PR3。利用者が入力するクエリ文字列付き完全 URL + デプロイメント名をモデル欄に入力）。§10 Q11 のとおり、これらに限って「独自認証は投機実装しない」の不採用宣言を明示的に覆す（実需 — 公開ユーザーが持っているキーの 2 大勢力のため。プロバイダごとに**固定の**認証方式を実装し、利用者が自由にヘッダーを追加できる汎用の任意ヘッダー入力 UI は引き続き不採用） |
 | Node.js | ≥ 18 |
 
 ### 2.1 OAuth スコープ
@@ -116,6 +117,8 @@ https://www.googleapis.com/auth/drive.file      # Drive Picker で選択した�
   - `https://oauth2.googleapis.com/*`（ログアウト時のトークン revoke）
   - `https://generativelanguage.googleapis.com/*`（Gemini）
   - `https://openrouter.ai/*`（OpenRouter）
+  - `https://api.anthropic.com/*`（Anthropic ネイティブ。issue #127。エンドポイントが固定 URL のため恒久的な `host_permissions` として登録する）
+- **Azure OpenAI**（issue #127・PR3）はテナントごとにエンドポイント URL が異なるため `host_permissions` へ固定登録できない。§2.2 の `optional_host_permissions`（`https://*/*` 等）と同じ `chrome.permissions.request` 経路で足りる（OpenAI 互換 API の完全 URL 入力と同じ扱い。新規のホスト定義は不要）
 - `oauth2` ブロック（manifest）は持たない。クライアント ID（Web アプリケーション型、リダイレクト URI = `https://<拡張ID>.chromiumapp.org/`）はビルド時に DefinePlugin の `__WEBAUTH_CLIENT_ID__` として注入する（.env の `WEBAUTH_CLIENT_ID` / dev は `LOCAL_WEBAUTH_CLIENT_ID`。hosted/picker.html の `PICKER_APP_ID` と同一 GCP プロジェクトで発行すること）
 - `optional_host_permissions`: `https://*/*`、`http://localhost/*`、`http://127.0.0.1/*`、`http://[::1]/*`。OpenAI 互換 API の設定保存時に、入力 URL の scheme + hostname pattern だけを `chrome.permissions.request` で利用者へ提示・要求する。権限 pattern はポートを含めず、実際の API リクエスト URLでは入力されたポートとパスを維持する
 - `action.default_popup`: `popup.html`
@@ -436,7 +439,7 @@ SR のデータ抽出は「研究 → 群（arm）→ アウトカム × 時点�
 | S8 | 検証（中核画面） | §4.2 |
 | S9 | ダッシュボード | study × section 単位の検証進捗マトリクス、anchor 失敗率、not_reported 率 |
 | S10 | エクスポート | 形式選択（study_wide / results_long / audit）、プレビュー、CSV 生成 + Drive 保存、論文 Methods 記載例のコピー |
-| S11 | Options / 設定 | API キー（Gemini / OpenRouter / OpenAI 互換 API）、接続方式、OpenAI 互換 API の完全 URL + origin 権限要求 + JSON Schema 接続テスト、既定モデル（プルダウン + その他で直接入力。**カスタムモデル一覧管理 UI は不採用〔v0.12〕** — OpenAI 互換 + ローカル LLM〔localhost〕+ 直接入力で実需をカバー。任意ヘッダー / 独自認証も投機実装しない）、表示言語 |
+| S11 | Options / 設定 | API キー（Gemini / OpenRouter / OpenAI 互換 API / **Anthropic**〔issue #127 PR2〕/ **Azure OpenAI**〔PR3〕）、接続方式、OpenAI 互換 API の完全 URL + origin 権限要求 + JSON Schema 接続テスト（Azure OpenAI も同様にクエリ文字列付き完全 URL を入力）、既定モデル（プルダウン + その他で直接入力。**カスタムモデル一覧管理 UI は不採用〔v0.12〕** — OpenAI 互換 + ローカル LLM〔localhost〕+ 直接入力で実需をカバー。モデル一覧の自動取得〔PR4〕で補う）、reasoning effort の既定値（未設定可。PR5）、表示言語。**独自認証は投機実装しないの不採用宣言を Anthropic ネイティブ・Azure OpenAI に限って明示的に覆す〔v0.16・issue #127〕**: 両者はプロバイダごとに固定の認証方式を実装する実需（公開ユーザーが持っているキーの 2 大勢力）であり、投機実装ではない。引き続き不採用のまま維持するのは①利用者が自由にヘッダー名/値を追加する汎用の任意ヘッダー入力 UI、②カスタムモデル一覧の手動管理 UI（→ モデル一覧自動取得で代替） |
 | S12 | 裁定画面（v0.11） | owner / adjudicator が、human annotator 2 名（reviewer_with_ai / reviewer_independent 等）の検証が揃った study について群構成の突き合わせ・セル単位の一致判定 / 個別裁定を行い `consensus` 行を確定（※Q4） |
 
 ### 4.2 検証画面（S8）の要件
@@ -624,6 +627,7 @@ owner / adjudicator が human annotator 間の不一致を裁定し、`consensus
 | Q8 | 既定モデルと採用基準 | **確定: 工場出荷の既定モデル = `gemini-3.5-flash`（2026-07-06）**。実データ抽出ベンチマーク（`experiments/extraction-benchmark-real/REPORT.md`。不眠 SR 10 論文の人手 gold）で項目正確度が最良（成功 run 72%・anchor 92.5%）だったため採用。採用基準の参考は CESAR プロジェクトの中止境界（下表）。事前登録ベンチ（`experiments/extraction-benchmark/`）は別建てで凍結保持し、正式な再確認に使える |
 | Q9 | PDF 原本の扱い | (a) プロジェクトフォルダへコピー（凍結スナップショット、監査に強い）(b) 参照のみ（ユーザーが原本を移動すると壊れる）。**確定: (a) コピー**。取り込み時に `documents/` へコピーを作成し、`Documents.drive_file_id` にはコピーの ID を、元 PDF の ID は `source_file_id` に分けて記録する（§3.2） |
 | Q10 | 複数報告文書（multiple reports）の扱い | **確定（v0.10・2026-07-07）: study / document を分離し、study を抽出・検証・エクスポートの単位にする**。検討 3 案 — (a) study 第一級エンティティ化 (b) primary document 方式（主文書の document_id を study キーに流用）(c) 抽出は文書単位のまま検証で人間が統合 — のうち (a) を採用（(b) は主文書差し替えでキーが揺れ、(c) は文書横断コンテキストを LLM に与えられず目的を達しない）。付随決定: ① study メタデータは新設 `Studies` タブ（14 タブ目）② 取り込みは 1 PDF = 1 study 自動生成 → S3 で後から統合 ③ 登録番号の自動検出は候補提案 → ユーザー確認（自動統合しない）④ 抽出後のグルーピング変更は可 — 新 study_id 発行で「未抽出」に戻して再抽出を促す（旧データ行は監査用に残置）。未リリースのため後方互換なし（§3.2 / §4.5） |
+| Q11 | Anthropic ネイティブ / Azure OpenAI 対応（issue #127） | **方針確定（PR0）: provider 層はプロバイダごとに固定の認証方式で実装する（任意ヘッダー入力 UI・カスタムモデル一覧管理 UI は引き続き不採用）**。以下は実装済みコードのレビューだけでは確認できず、**実 API 確認が必要な未決事項**として記録する: ①拡張の実機（Chrome 拡張のオリジン）から `api.anthropic.com` への疎通（CORS ヘッダーが拡張オリジンからの `fetch` を許可するか）。②構造化出力（`output_config.format` の `json_schema`）で**ルートが `type:'array'` のスキーマ**（`EXTRACT_DATA_RESPONSE_SCHEMA` の形）が受理されるか（`toAnthropicSchema` はパススルーする実装だが、Anthropic 側がオブジェクト以外のルート型を拒否する可能性は未検証）。③ Azure OpenAI の実テナント（実際のデプロイメント名 + API バージョンクエリ文字列付き URL）での疎通。①〜③はいずれも PR2〜PR5（Options 配線・接続テスト UI 実装）の実装完了後、まとめて実機確認する（docs/remaining-work-plan.md の「実機 / 実 API テストが必要な項目」へ合流させる） |
 
 ### Q8 参考: CESAR プロジェクトの中止境界と判断ルール（中間解析）
 
@@ -637,6 +641,16 @@ owner / adjudicator が human annotator 間の不一致を裁定し、`consensus
 | Major error proportion | >3% | >2% | Stop if either boundary is crossed |
 
 本拡張のベンチマーク（§8）ではデータ抽出側の行（Sensitivity futility <92% / NI margin <97%、Major error futility >3% / NI margin >2%）を採用基準の出発点とする。
+
+### Q11 参考: PR2 で `MODEL_PRICING` / `MODEL_IMAGE_CAPABILITY` へ追加する Anthropic 3 モデルの数値（確認済み・転記用）
+
+issue #127 PR1 では `createProvider()` / `settingsStore.LLM_PROVIDERS` が `'anthropic'` を解決できず、モデルセレクタに出しても選択すると誤って Gemini へ送信されてしまうため、単価表への追加を見送った（PR2 で Options 配線と同時に追加する）。以下は PR1 の調査で確認済みの数値で、再調査せずそのまま転記できる。
+
+| モデル ID | 入力 USD/1M | 出力 USD/1M | 画像入力 | 備考 |
+| --- | --- | --- | --- | --- |
+| `claude-opus-5` | 5.00 | 25.00 | 対応（ネイティブ base64） | コンテキスト長 1M |
+| `claude-sonnet-5` | 3.00 | 15.00 | 対応（ネイティブ base64） | コンテキスト長 1M。**2026-08-31 までの導入価格は入力 $2.00 / 出力 $10.00** だが、コスト概算を過小表示しないため単価表には通常価格（$3.00 / $15.00）を載せる（導入価格終了後に単価表を直す必要が無いようにする意図もある） |
+| `claude-haiku-4-5` | 1.00 | 5.00 | 対応（ネイティブ base64） | **コンテキスト長 200K**（他の 2 モデルは 1M）。全文 PDF 抽出という本用途では長尺文書で haiku だけ収まらないケースが起こりうる点に注意 |
 
 ---
 

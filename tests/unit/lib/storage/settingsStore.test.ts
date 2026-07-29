@@ -57,6 +57,14 @@ describe('settingsStore', () => {
     });
   });
 
+  test('LLM 接続設定: "anthropic" は LlmProviderId としては妥当だが LLM_PROVIDERS 未収載のため未知値と同じ扱い（issue #127 PR1。settingsStore への anthropic 追加は PR2/PR3）', async () => {
+    chromeMock.storage.local.data['settings.llmProvider'] = 'anthropic';
+    await expect(loadLlmConnectionSettings()).resolves.toEqual({
+      provider: null,
+      openAiCompatibleEndpoint: null,
+    });
+  });
+
   test('LLM 接続設定: provider と正規化した OpenAI 互換 URL を保存・復元する', async () => {
     await saveLlmConnectionSettings({
       provider: 'openai_compatible',
