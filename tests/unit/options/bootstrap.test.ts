@@ -822,7 +822,7 @@ describe('bootstrapOptions（Azure OpenAI 接続。issue #127 PR3 target spec �
       origins: ['https://res.openai.azure.com/*'],
     });
     expect(chromeMock.storage.local.data['settings.llmProvider']).toBe('azure_openai');
-    expect(chromeMock.storage.local.data['settings.openAiCompatibleEndpoint']).toBe(AZURE_URL);
+    expect(chromeMock.storage.local.data['settings.azureOpenAiEndpoint']).toBe(AZURE_URL);
     expect(chromeMock.storage.local.data['secrets.azureOpenAiApiKey']).toBe('azure-secret');
     expect(azureKey().value).toBe('');
     expect(azureKey().placeholder).toBe('保存済み（変更する場合のみ入力）');
@@ -861,6 +861,78 @@ describe('bootstrapOptions（Azure OpenAI 接続。issue #127 PR3 target spec �
     const headers = init.headers as Record<string, string>;
     expect(headers['api-key']).toBe('azure-saved');
     expect(headers['Authorization']).toBeUndefined();
+  });
+});
+
+// issue #127 PR3 フォローアップ（レビュー対応）: OpenAI 互換 API と Azure OpenAI の
+// エンドポイント保存キーを分離した本来の目的（接続方式の切替で他方の URL を失わない）を
+// Options 画面レベルで検証する
+describe('bootstrapOptions（OpenAI 互換 API と Azure OpenAI の URL 分離。issue #127 PR3 フォローアップ）', () => {
+  let chromeMock: ChromeMock;
+
+  const provider = (): HTMLSelectElement =>
+    document.getElementById('llm-provider') as HTMLSelectElement;
+  const compatibleEndpoint = (): HTMLInputElement =>
+    document.getElementById('openai-compatible-endpoint') as HTMLInputElement;
+  const compatibleKey = (): HTMLInputElement =>
+    document.getElementById('openai-compatible-api-key') as HTMLInputElement;
+  const azureEndpoint = (): HTMLInputElement =>
+    document.getElementById('azure-openai-endpoint') as HTMLInputElement;
+  const azureKey = (): HTMLInputElement =>
+    document.getElementById('azure-openai-api-key') as HTMLInputElement;
+  const save = (): HTMLButtonElement =>
+    document.getElementById('save-llm-connection') as HTMLButtonElement;
+
+  const COMPATIBLE_URL = 'https://llm.example/v1/chat/completions';
+  const AZURE_URL =
+    'https://res.openai.azure.com/openai/deployments/gpt-4o-deployment/chat/completions?api-version=2026-01-01';
+
+  beforeEach(() => {
+    chromeMock = installChromeMock();
+    document.body.replaceChildren(buildSettingsSections());
+  });
+
+  test('OpenAI 互換 API を設定 → Azure へ切替・設定 → 元の OpenAI 互換 API へ戻すと、元の URL がそのまま復元される', async () => {
+    await bootstrapOptions(document);
+
+    // 1. OpenAI 互換 API を設定して保存する
+    provider().value = 'openai_compatible';
+    provider().dispatchEvent(new Event('change'));
+    compatibleEndpoint().value = COMPATIBLE_URL;
+    compatibleKey().value = 'compat-secret';
+    save().click();
+    await flush();
+    await flush();
+    expect(chromeMock.storage.local.data['settings.openAiCompatibleEndpoint']).toBe(
+      COMPATIBLE_URL,
+    );
+
+    // 2. Azure OpenAI へ切り替えて設定・保存する
+    provider().value = 'azure_openai';
+    provider().dispatchEvent(new Event('change'));
+    azureEndpoint().value = AZURE_URL;
+    azureKey().value = 'azure-secret';
+    save().click();
+    await flush();
+    await flush();
+    expect(chromeMock.storage.local.data['settings.azureOpenAiEndpoint']).toBe(AZURE_URL);
+    // Azure を保存しても、OpenAI 互換 API 用の保存キーはクロバーされていない
+    expect(chromeMock.storage.local.data['settings.openAiCompatibleEndpoint']).toBe(
+      COMPATIBLE_URL,
+    );
+
+    // 3. 画面を再読込した状態を模し、Options を再ブートストラップする
+    document.body.replaceChildren(buildSettingsSections());
+    await bootstrapOptions(document);
+
+    // 直近の保存は azure_openai のため、再読込直後は Azure が選択され、Azure の URL を表示する
+    expect(provider().value).toBe('azure_openai');
+    expect(azureEndpoint().value).toBe(AZURE_URL);
+
+    // 4. OpenAI 互換 API へ切り替えると、最初に保存した URL がそのまま復元される
+    provider().value = 'openai_compatible';
+    provider().dispatchEvent(new Event('change'));
+    expect(compatibleEndpoint().value).toBe(COMPATIBLE_URL);
   });
 });
 

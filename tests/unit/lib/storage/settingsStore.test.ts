@@ -10,7 +10,9 @@ import {
   loadUiLanguage,
   normalizeOpenAiCompatibleEndpoint,
   loadVerifyLayoutMode,
+  requiresFullUrlEndpoint,
   resolveRateLimitPolicy,
+  resolveStoredEndpoint,
   saveDefaultModel,
   saveLlmConnectionSettings,
   saveRateLimitCustomConcurrency,
@@ -18,7 +20,6 @@ import {
   saveRateLimitTier,
   saveUiLanguage,
   saveVerifyLayoutMode,
-  usesOpenAiCompatibleEndpoint,
 } from '../../../../src/lib/storage/settingsStore';
 
 describe('settingsStore', () => {
@@ -49,12 +50,14 @@ describe('settingsStore', () => {
     await expect(loadLlmConnectionSettings()).resolves.toEqual({
       provider: null,
       openAiCompatibleEndpoint: null,
+      azureOpenAiEndpoint: null,
     });
     chromeMock.storage.local.data['settings.llmProvider'] = 'unknown';
     chromeMock.storage.local.data['settings.openAiCompatibleEndpoint'] = '   ';
     await expect(loadLlmConnectionSettings()).resolves.toEqual({
       provider: null,
       openAiCompatibleEndpoint: null,
+      azureOpenAiEndpoint: null,
     });
   });
 
@@ -63,26 +66,34 @@ describe('settingsStore', () => {
     await expect(loadLlmConnectionSettings()).resolves.toEqual({
       provider: 'anthropic',
       openAiCompatibleEndpoint: null,
+      azureOpenAiEndpoint: null,
     });
     await saveLlmConnectionSettings({ provider: 'anthropic' });
     await expect(loadLlmConnectionSettings()).resolves.toMatchObject({ provider: 'anthropic' });
   });
 
-  test('LLM 接続設定: "azure_openai" は保存済み接続方式として受理され、そのまま往復する（issue #127 PR3）', async () => {
+  test('LLM 接続設定: "azure_openai" は保存済み接続方式として受理され、専用キーでそのまま往復する（issue #127 PR3 フォローアップ: 保存キー分離）', async () => {
     chromeMock.storage.local.data['settings.llmProvider'] = 'azure_openai';
     await expect(loadLlmConnectionSettings()).resolves.toEqual({
       provider: 'azure_openai',
       openAiCompatibleEndpoint: null,
+      azureOpenAiEndpoint: null,
     });
     await saveLlmConnectionSettings({
       provider: 'azure_openai',
-      openAiCompatibleEndpoint: 'https://res.openai.azure.com/openai/deployments/gpt/chat/completions?api-version=2026-01-01',
+      azureOpenAiEndpoint:
+        'https://res.openai.azure.com/openai/deployments/gpt/chat/completions?api-version=2026-01-01',
     });
     await expect(loadLlmConnectionSettings()).resolves.toEqual({
       provider: 'azure_openai',
-      openAiCompatibleEndpoint:
+      openAiCompatibleEndpoint: null,
+      azureOpenAiEndpoint:
         'https://res.openai.azure.com/openai/deployments/gpt/chat/completions?api-version=2026-01-01',
     });
+    // 専用の設定キーに保存されている（OpenAI 互換 API のキーとは別）
+    expect(chromeMock.storage.local.data['settings.azureOpenAiEndpoint']).toBe(
+      'https://res.openai.azure.com/openai/deployments/gpt/chat/completions?api-version=2026-01-01',
+    );
   });
 
   test('LLM 接続設定: 未知の provider は後方互換の null', async () => {
@@ -90,10 +101,11 @@ describe('settingsStore', () => {
     await expect(loadLlmConnectionSettings()).resolves.toEqual({
       provider: null,
       openAiCompatibleEndpoint: null,
+      azureOpenAiEndpoint: null,
     });
   });
 
-  test('LLM 接続設定: provider と正規化した OpenAI 互換 URL を保存・復元する', async () => {
+  test('LLM 接続設定: provider と正規化した OpenAI 互換 URL を保存・復元する（既存の保存キー settings.openAiCompatibleEndpoint は不変）', async () => {
     await saveLlmConnectionSettings({
       provider: 'openai_compatible',
       openAiCompatibleEndpoint: ' https://llm.example/v1/chat/completions ',
@@ -101,7 +113,11 @@ describe('settingsStore', () => {
     await expect(loadLlmConnectionSettings()).resolves.toEqual({
       provider: 'openai_compatible',
       openAiCompatibleEndpoint: 'https://llm.example/v1/chat/completions',
+      azureOpenAiEndpoint: null,
     });
+    expect(chromeMock.storage.local.data['settings.openAiCompatibleEndpoint']).toBe(
+      'https://llm.example/v1/chat/completions',
+    );
   });
 
   test('LLM 接続設定: Gemini / OpenRouter は endpoint を削除して保存できる', async () => {
@@ -116,6 +132,44 @@ describe('settingsStore', () => {
     await expect(loadLlmConnectionSettings()).resolves.toMatchObject({ provider: 'openrouter' });
     await saveLlmConnectionSettings({ provider: 'anthropic' });
     await expect(loadLlmConnectionSettings()).resolves.toMatchObject({ provider: 'anthropic' });
+  });
+
+  // issue #127 PR3 フォローアップ（レビュー対応）: 接続方式を切り替えても、もう一方の
+  // provider が保存した URL を失わないことを直接検証する（保存キー分離の中心的な回帰防止）
+  test('LLM 接続設定: openai_compatible の保存は azure_openai の保存済み URL をクロバーしない', async () => {
+    await saveLlmConnectionSettings({
+      provider: 'azure_openai',
+      azureOpenAiEndpoint:
+        'https://res.openai.azure.com/openai/deployments/gpt/chat/completions?api-version=2026-01-01',
+    });
+    await saveLlmConnectionSettings({
+      provider: 'openai_compatible',
+      openAiCompatibleEndpoint: 'https://llm.example/v1/chat/completions',
+    });
+    await expect(loadLlmConnectionSettings()).resolves.toEqual({
+      provider: 'openai_compatible',
+      openAiCompatibleEndpoint: 'https://llm.example/v1/chat/completions',
+      azureOpenAiEndpoint:
+        'https://res.openai.azure.com/openai/deployments/gpt/chat/completions?api-version=2026-01-01',
+    });
+  });
+
+  test('LLM 接続設定: azure_openai の保存は openai_compatible の保存済み URL をクロバーしない', async () => {
+    await saveLlmConnectionSettings({
+      provider: 'openai_compatible',
+      openAiCompatibleEndpoint: 'https://llm.example/v1/chat/completions',
+    });
+    await saveLlmConnectionSettings({
+      provider: 'azure_openai',
+      azureOpenAiEndpoint:
+        'https://res.openai.azure.com/openai/deployments/gpt/chat/completions?api-version=2026-01-01',
+    });
+    await expect(loadLlmConnectionSettings()).resolves.toEqual({
+      provider: 'azure_openai',
+      openAiCompatibleEndpoint: 'https://llm.example/v1/chat/completions',
+      azureOpenAiEndpoint:
+        'https://res.openai.azure.com/openai/deployments/gpt/chat/completions?api-version=2026-01-01',
+    });
   });
 
   test('LLM 接続設定: 未対応 provider は拒否する', async () => {
@@ -197,12 +251,29 @@ describe('settingsStore', () => {
     expect(isLoopbackEndpoint(value)).toBe(false);
   });
 
-  test('usesOpenAiCompatibleEndpoint: openai_compatible / azure_openai だけ true（issue #127 PR3）', () => {
-    expect(usesOpenAiCompatibleEndpoint('openai_compatible')).toBe(true);
-    expect(usesOpenAiCompatibleEndpoint('azure_openai')).toBe(true);
-    expect(usesOpenAiCompatibleEndpoint('gemini')).toBe(false);
-    expect(usesOpenAiCompatibleEndpoint('openrouter')).toBe(false);
-    expect(usesOpenAiCompatibleEndpoint('anthropic')).toBe(false);
+  test('requiresFullUrlEndpoint: openai_compatible / azure_openai だけ true（issue #127 PR3 フォローアップ: usesOpenAiCompatibleEndpoint から改称）', () => {
+    expect(requiresFullUrlEndpoint('openai_compatible')).toBe(true);
+    expect(requiresFullUrlEndpoint('azure_openai')).toBe(true);
+    expect(requiresFullUrlEndpoint('gemini')).toBe(false);
+    expect(requiresFullUrlEndpoint('openrouter')).toBe(false);
+    expect(requiresFullUrlEndpoint('anthropic')).toBe(false);
+  });
+
+  test('resolveStoredEndpoint: provider ごとに専用キーの保存値を返す（他方は無視する）', () => {
+    const settings = {
+      openAiCompatibleEndpoint: 'https://llm.example/v1/chat/completions',
+      azureOpenAiEndpoint:
+        'https://res.openai.azure.com/openai/deployments/gpt/chat/completions?api-version=2026-01-01',
+    };
+    expect(resolveStoredEndpoint(settings, 'openai_compatible')).toBe(
+      'https://llm.example/v1/chat/completions',
+    );
+    expect(resolveStoredEndpoint(settings, 'azure_openai')).toBe(
+      'https://res.openai.azure.com/openai/deployments/gpt/chat/completions?api-version=2026-01-01',
+    );
+    expect(resolveStoredEndpoint(settings, 'gemini')).toBeNull();
+    expect(resolveStoredEndpoint(settings, 'openrouter')).toBeNull();
+    expect(resolveStoredEndpoint(settings, 'anthropic')).toBeNull();
   });
 });
 

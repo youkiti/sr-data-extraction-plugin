@@ -45,13 +45,13 @@ import {
   loadRateLimitTier,
   loadUiLanguage,
   normalizeOpenAiCompatibleEndpoint,
+  requiresFullUrlEndpoint,
   saveDefaultModel,
   saveLlmConnectionSettings,
   saveRateLimitCustomConcurrency,
   saveRateLimitCustomRpm,
   saveRateLimitTier,
   saveUiLanguage,
-  usesOpenAiCompatibleEndpoint,
 } from '../lib/storage/settingsStore';
 
 /** ステータス要素へ文言 + 通常 / エラー系の色分けを反映する */
@@ -243,10 +243,11 @@ async function bootstrapLlmConnectionSection(root: ParentNode): Promise<void> {
   const settings = await loadLlmConnectionSettings();
   const defaultModel = (await loadDefaultModel()) ?? FACTORY_DEFAULT_MODEL;
   providerSelect.value = settings.provider ?? resolveProviderId(defaultModel);
-  // openai_compatible / azure_openai は完全 URL の保存先設定キーを共有する
-  // （usesOpenAiCompatibleEndpoint。settingsStore.ts 参照）。どちらの入力欄にも同じ保存値を反映する
+  // openai_compatible / azure_openai は保存先の設定キーが別（settingsStore.ts 参照）。
+  // 接続方式を切り替えても他方の入力欄の保存値を失わないよう、それぞれ専用のフィールドを読む
+  // （issue #127 PR3 フォローアップ）
   endpointInput.value = settings.openAiCompatibleEndpoint ?? '';
-  azureEndpointInput.value = settings.openAiCompatibleEndpoint ?? '';
+  azureEndpointInput.value = settings.azureOpenAiEndpoint ?? '';
   const savedCustomKey = await loadOpenAiCompatibleApiKey();
   apiKeyInput.placeholder = savedCustomKey
     ? t('options.placeholderSavedKey')
@@ -323,7 +324,7 @@ async function bootstrapLlmConnectionSection(root: ParentNode): Promise<void> {
       try {
         const config = await resolveFormConfig();
         if (
-          usesOpenAiCompatibleEndpoint(config.provider) &&
+          requiresFullUrlEndpoint(config.provider) &&
           !(await requestEndpointPermission(config.endpoint as string))
         ) {
           throw new Error(t('options.errPermissionDenied'));
@@ -343,9 +344,16 @@ async function bootstrapLlmConnectionSection(root: ParentNode): Promise<void> {
           azureApiKeyInput.value = '';
           azureApiKeyInput.placeholder = t('options.placeholderSavedKey');
         }
+        // 保存対象の provider に属するフィールドだけを渡す（settingsStore.saveLlmConnectionSettings
+        // が provider ごとに保存キーを分けて扱うため。他方の provider の保存値には触れない）。
+        // openai_compatible / azure_openai は resolveFormConfig が必ず endpoint を検証済み文字列で
+        // 返すため、ここで undefined ↔ null のフォールバックは不要
         await saveLlmConnectionSettings({
           provider: config.provider,
-          openAiCompatibleEndpoint: config.endpoint ?? null,
+          ...(config.provider === 'openai_compatible'
+            ? { openAiCompatibleEndpoint: config.endpoint }
+            : {}),
+          ...(config.provider === 'azure_openai' ? { azureOpenAiEndpoint: config.endpoint } : {}),
         });
         setStatus(t('options.toastSaved'), false);
       } catch (err) {
@@ -362,7 +370,7 @@ async function bootstrapLlmConnectionSection(root: ParentNode): Promise<void> {
       try {
         const config = await resolveFormConfig();
         if (
-          usesOpenAiCompatibleEndpoint(config.provider) &&
+          requiresFullUrlEndpoint(config.provider) &&
           !(await requestEndpointPermission(config.endpoint as string))
         ) {
           throw new Error(t('options.errPermissionDenied'));

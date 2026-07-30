@@ -845,6 +845,7 @@ describe('runExtract', () => {
         loadLlmConnectionSettings: async () => ({
           provider: 'openai_compatible',
           openAiCompatibleEndpoint: 'https://llm.example/v1/chat/completions',
+          azureOpenAiEndpoint: null,
         }),
         loadApiKey: jest.fn().mockResolvedValue('custom-key'),
       }),

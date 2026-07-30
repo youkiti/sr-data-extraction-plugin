@@ -5,7 +5,8 @@
 import type { LlmProviderId } from '../../domain/llmApiLog';
 import {
   isLoopbackEndpoint,
-  usesOpenAiCompatibleEndpoint,
+  requiresFullUrlEndpoint,
+  resolveStoredEndpoint,
   type LlmConnectionSettings,
 } from '../storage/settingsStore';
 import { AnthropicProvider } from './AnthropicProvider';
@@ -132,12 +133,10 @@ export async function resolveProviderConfig(
 ): Promise<ProviderResolution> {
   const settings = deps.loadLlmConnectionSettings
     ? await deps.loadLlmConnectionSettings()
-    : { provider: null, openAiCompatibleEndpoint: null };
+    : { provider: null, openAiCompatibleEndpoint: null, azureOpenAiEndpoint: null };
   const provider = settings.provider ?? resolveProviderId(model);
   const apiKey = await deps.loadApiKey(provider);
-  const endpoint = usesOpenAiCompatibleEndpoint(provider)
-    ? settings.openAiCompatibleEndpoint
-    : null;
+  const endpoint = requiresFullUrlEndpoint(provider) ? resolveStoredEndpoint(settings, provider) : null;
   // loopback HTTP のキー任意許可は OpenAI 互換 API 限定（requirements.md §2.1 の loopback 実験用途）。
   // Azure OpenAI は常にキー必須のため、loopback URL を入力しても空キーを許可しない
   // （issue #127 PR3。ui-states.md §2「Azure OpenAI 選択時」）

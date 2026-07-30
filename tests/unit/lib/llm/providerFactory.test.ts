@@ -141,6 +141,7 @@ describe('resolveProviderConfig', () => {
         loadLlmConnectionSettings: async () => ({
           provider: 'openai_compatible',
           openAiCompatibleEndpoint: 'https://llm.example/v1/chat/completions',
+          azureOpenAiEndpoint: null,
         }),
       }),
     ).resolves.toEqual({
@@ -161,6 +162,7 @@ describe('resolveProviderConfig', () => {
         loadLlmConnectionSettings: async () => ({
           provider: 'gemini',
           openAiCompatibleEndpoint: null,
+          azureOpenAiEndpoint: null,
         }),
       }),
     ).resolves.toEqual({ provider: 'gemini', config: null });
@@ -173,6 +175,7 @@ describe('resolveProviderConfig', () => {
         loadLlmConnectionSettings: async () => ({
           provider: 'openai_compatible',
           openAiCompatibleEndpoint: 'http://localhost:11434/v1/chat/completions',
+          azureOpenAiEndpoint: null,
         }),
       }),
     ).resolves.toEqual({
@@ -194,6 +197,7 @@ describe('resolveProviderConfig', () => {
         loadLlmConnectionSettings: async () => ({
           provider: 'anthropic',
           openAiCompatibleEndpoint: null,
+          azureOpenAiEndpoint: null,
         }),
       }),
     ).resolves.toEqual({
@@ -212,16 +216,18 @@ describe('resolveProviderConfig', () => {
     expect(loadApiKey).toHaveBeenCalledWith('anthropic');
   });
 
-  // issue #127 PR3: 保存済み接続方式が azure_openai なら openAiCompatibleEndpoint を解決する
-  // （openai_compatible と保存キーを共有する。settingsStore.usesOpenAiCompatibleEndpoint）
-  test('保存済み接続方式が azure_openai なら endpoint を解決する', async () => {
+  // issue #127 PR3 フォローアップ: 保存済み接続方式が azure_openai なら専用キー
+  // azureOpenAiEndpoint を解決する（openai_compatible とは別の保存キー。settingsStore の
+  // resolveStoredEndpoint 参照）
+  test('保存済み接続方式が azure_openai なら azureOpenAiEndpoint を解決する', async () => {
     const loadApiKey = jest.fn().mockResolvedValue('azure-key');
     await expect(
       resolveProviderConfig('gpt-4o-deployment', {
         loadApiKey,
         loadLlmConnectionSettings: async () => ({
           provider: 'azure_openai',
-          openAiCompatibleEndpoint:
+          openAiCompatibleEndpoint: null,
+          azureOpenAiEndpoint:
             'https://res.openai.azure.com/openai/deployments/gpt-4o-deployment/chat/completions?api-version=2026-01-01',
         }),
       }),
@@ -238,6 +244,48 @@ describe('resolveProviderConfig', () => {
     expect(loadApiKey).toHaveBeenCalledWith('azure_openai');
   });
 
+  // issue #127 PR3 フォローアップ: 保存キーが分離された後も、azure_openai は
+  // openAiCompatibleEndpoint 側の値を誤って読まないことを固定する（保存キーの取り違え回帰防止）
+  test('azure_openai は openAiCompatibleEndpoint が設定されていても無視し、azureOpenAiEndpoint を使う', async () => {
+    const loadApiKey = jest.fn().mockResolvedValue('azure-key');
+    await expect(
+      resolveProviderConfig('gpt-4o-deployment', {
+        loadApiKey,
+        loadLlmConnectionSettings: async () => ({
+          provider: 'azure_openai',
+          openAiCompatibleEndpoint: 'https://llm.example/v1/chat/completions',
+          azureOpenAiEndpoint:
+            'https://res.openai.azure.com/openai/deployments/gpt-4o-deployment/chat/completions?api-version=2026-01-01',
+        }),
+      }),
+    ).resolves.toMatchObject({
+      provider: 'azure_openai',
+      config: {
+        endpoint:
+          'https://res.openai.azure.com/openai/deployments/gpt-4o-deployment/chat/completions?api-version=2026-01-01',
+      },
+    });
+  });
+
+  // 逆方向: openai_compatible は azureOpenAiEndpoint が設定されていても無視し、
+  // openAiCompatibleEndpoint を使う
+  test('openai_compatible は azureOpenAiEndpoint が設定されていても無視し、openAiCompatibleEndpoint を使う', async () => {
+    await expect(
+      resolveProviderConfig('org/model', {
+        loadApiKey: async () => 'custom-key',
+        loadLlmConnectionSettings: async () => ({
+          provider: 'openai_compatible',
+          openAiCompatibleEndpoint: 'https://llm.example/v1/chat/completions',
+          azureOpenAiEndpoint:
+            'https://res.openai.azure.com/openai/deployments/gpt-4o-deployment/chat/completions?api-version=2026-01-01',
+        }),
+      }),
+    ).resolves.toMatchObject({
+      provider: 'openai_compatible',
+      config: { endpoint: 'https://llm.example/v1/chat/completions' },
+    });
+  });
+
   // issue #127 PR3: Azure は loopback URL でもキー任意許可の対象にしない
   // （OpenAI 互換 API 限定の loopback 実験用途を Azure まで広げない）
   test('azure_openai は loopback endpoint でも空キーを許可しない（config は null）', async () => {
@@ -246,7 +294,8 @@ describe('resolveProviderConfig', () => {
         loadApiKey: async () => null,
         loadLlmConnectionSettings: async () => ({
           provider: 'azure_openai',
-          openAiCompatibleEndpoint: 'http://localhost:11434/openai/deployments/x?api-version=2026-01-01',
+          openAiCompatibleEndpoint: null,
+          azureOpenAiEndpoint: 'http://localhost:11434/openai/deployments/x?api-version=2026-01-01',
         }),
       }),
     ).resolves.toEqual({ provider: 'azure_openai', config: null });
@@ -259,6 +308,7 @@ describe('resolveProviderConfig', () => {
         loadLlmConnectionSettings: async () => ({
           provider: 'openai_compatible',
           openAiCompatibleEndpoint: null,
+          azureOpenAiEndpoint: null,
         }),
       }),
     ).resolves.toEqual({

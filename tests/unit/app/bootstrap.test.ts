@@ -142,6 +142,7 @@ describe('createChromeAppDeps', () => {
     await expect(deps.loadLlmConnectionSettings?.()).resolves.toEqual({
       provider: null,
       openAiCompatibleEndpoint: null,
+      azureOpenAiEndpoint: null,
     });
   });
 });
