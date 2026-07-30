@@ -627,7 +627,7 @@ owner / adjudicator が human annotator 間の不一致を裁定し、`consensus
 | Q8 | 既定モデルと採用基準 | **確定: 工場出荷の既定モデル = `gemini-3.5-flash`（2026-07-06）**。実データ抽出ベンチマーク（`experiments/extraction-benchmark-real/REPORT.md`。不眠 SR 10 論文の人手 gold）で項目正確度が最良（成功 run 72%・anchor 92.5%）だったため採用。採用基準の参考は CESAR プロジェクトの中止境界（下表）。事前登録ベンチ（`experiments/extraction-benchmark/`）は別建てで凍結保持し、正式な再確認に使える |
 | Q9 | PDF 原本の扱い | (a) プロジェクトフォルダへコピー（凍結スナップショット、監査に強い）(b) 参照のみ（ユーザーが原本を移動すると壊れる）。**確定: (a) コピー**。取り込み時に `documents/` へコピーを作成し、`Documents.drive_file_id` にはコピーの ID を、元 PDF の ID は `source_file_id` に分けて記録する（§3.2） |
 | Q10 | 複数報告文書（multiple reports）の扱い | **確定（v0.10・2026-07-07）: study / document を分離し、study を抽出・検証・エクスポートの単位にする**。検討 3 案 — (a) study 第一級エンティティ化 (b) primary document 方式（主文書の document_id を study キーに流用）(c) 抽出は文書単位のまま検証で人間が統合 — のうち (a) を採用（(b) は主文書差し替えでキーが揺れ、(c) は文書横断コンテキストを LLM に与えられず目的を達しない）。付随決定: ① study メタデータは新設 `Studies` タブ（14 タブ目）② 取り込みは 1 PDF = 1 study 自動生成 → S3 で後から統合 ③ 登録番号の自動検出は候補提案 → ユーザー確認（自動統合しない）④ 抽出後のグルーピング変更は可 — 新 study_id 発行で「未抽出」に戻して再抽出を促す（旧データ行は監査用に残置）。未リリースのため後方互換なし（§3.2 / §4.5） |
-| Q11 | Anthropic ネイティブ / Azure OpenAI 対応（issue #127） | **方針確定（PR0）: provider 層はプロバイダごとに固定の認証方式で実装する（任意ヘッダー入力 UI・カスタムモデル一覧管理 UI は引き続き不採用）**。以下は実装済みコードのレビューだけでは確認できず、**実 API 確認が必要な未決事項**として記録する: ①拡張の実機（Chrome 拡張のオリジン）から `api.anthropic.com` への疎通（CORS ヘッダーが拡張オリジンからの `fetch` を許可するか）。②構造化出力（`output_config.format` の `json_schema`）で**ルートが `type:'array'` のスキーマ**（`EXTRACT_DATA_RESPONSE_SCHEMA` の形）が受理されるか（`toAnthropicSchema` はパススルーする実装だが、Anthropic 側がオブジェクト以外のルート型を拒否する可能性は未検証）。③ Azure OpenAI の実テナント（実際のデプロイメント名 + API バージョンクエリ文字列付き URL）での疎通。①〜③はいずれも PR2〜PR5（Options 配線・接続テスト UI 実装）の実装完了後、まとめて実機確認する（docs/remaining-work-plan.md の「実機 / 実 API テストが必要な項目」へ合流させる） |
+| Q11 | Anthropic ネイティブ / Azure OpenAI 対応（issue #127） | **方針確定（PR0）: provider 層はプロバイダごとに固定の認証方式で実装する（任意ヘッダー入力 UI・カスタムモデル一覧管理 UI は引き続き不採用）**。**PR2 で Anthropic の Options 配線（`#llm-provider` に `anthropic` を追加 + `#anthropic-api-key` + 接続テスト + `createProvider` / `resolveProviderId` / 単価表 3 モデル）まで実装完了**。Azure OpenAI は PR3 target spec のまま（docs/ui-states.md §2「LLM 接続先の拡張」）。以下は実装済みコードのレビューだけでは確認できず、**実 API 確認が必要な未決事項**として記録する: ①拡張の実機（Chrome 拡張のオリジン）から `api.anthropic.com` への疎通（CORS ヘッダーが拡張オリジンからの `fetch` を許可するか）。②構造化出力（`output_config.format` の `json_schema`）で**ルートが `type:'array'` のスキーマ**（`EXTRACT_DATA_RESPONSE_SCHEMA` の形）が受理されるか（`toAnthropicSchema` はパススルーする実装だが、Anthropic 側がオブジェクト以外のルート型を拒否する可能性は未検証）。③ Azure OpenAI の実テナント（実際のデプロイメント名 + API バージョンクエリ文字列付き URL）での疎通。①〜③はいずれも PR2〜PR5（Options 配線・接続テスト UI 実装）の実装完了後、まとめて実機確認する（docs/remaining-work-plan.md の「実機 / 実 API テストが必要な項目」へ合流させる） |
 
 ### Q8 参考: CESAR プロジェクトの中止境界と判断ルール（中間解析）
 
@@ -642,9 +642,9 @@ owner / adjudicator が human annotator 間の不一致を裁定し、`consensus
 
 本拡張のベンチマーク（§8）ではデータ抽出側の行（Sensitivity futility <92% / NI margin <97%、Major error futility >3% / NI margin >2%）を採用基準の出発点とする。
 
-### Q11 参考: PR2 で `MODEL_PRICING` / `MODEL_IMAGE_CAPABILITY` へ追加する Anthropic 3 モデルの数値（確認済み・転記用）
+### Q11 参考: `MODEL_PRICING` / `MODEL_IMAGE_CAPABILITY` の Anthropic 3 モデルの数値（PR2 で転記済み）
 
-issue #127 PR1 では `createProvider()` / `settingsStore.LLM_PROVIDERS` が `'anthropic'` を解決できず、モデルセレクタに出しても選択すると誤って Gemini へ送信されてしまうため、単価表への追加を見送った（PR2 で Options 配線と同時に追加する）。以下は PR1 の調査で確認済みの数値で、再調査せずそのまま転記できる。
+issue #127 PR1 時点では `createProvider()` / `settingsStore.LLM_PROVIDERS` が `'anthropic'` を解決できず、モデルセレクタに出しても選択すると誤って Gemini へ送信されてしまうため、単価表への追加を見送っていた。**PR2 で `src/lib/llm/pricing.ts` の `MODEL_PRICING` / `MODEL_IMAGE_CAPABILITY` へ以下の数値をそのまま転記済み**（再調査は行っていない）。
 
 | モデル ID | 入力 USD/1M | 出力 USD/1M | 画像入力 | 備考 |
 | --- | --- | --- | --- | --- |

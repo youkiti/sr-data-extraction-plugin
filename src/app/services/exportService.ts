@@ -106,6 +106,9 @@ function providerDisplayName(provider: LlmProviderId): string {
   if (provider === 'openai_compatible') {
     return 'OpenAI-compatible';
   }
+  if (provider === 'anthropic') {
+    return 'Anthropic';
+  }
   return 'Gemini';
 }
 

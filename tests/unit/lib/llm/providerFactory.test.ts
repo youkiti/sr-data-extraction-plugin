@@ -1,5 +1,6 @@
 // createProvider / resolveProviderId の単体テスト
 // （sr-query-builder から流用。本拡張の調整: model 必須）
+import { AnthropicProvider } from '../../../../src/lib/llm/AnthropicProvider';
 import { GeminiProvider } from '../../../../src/lib/llm/GeminiProvider';
 import { OpenAICompatibleProvider } from '../../../../src/lib/llm/OpenAICompatibleProvider';
 import { OpenRouterProvider } from '../../../../src/lib/llm/OpenRouterProvider';
@@ -17,6 +18,20 @@ describe('resolveProviderId', () => {
 
   test('/ を含まないモデル ID は gemini と解決する', () => {
     expect(resolveProviderId('gemini-2.5-pro')).toBe('gemini');
+  });
+
+  // issue #127 PR2: claude- 始まりのモデル ID を Gemini 誤送信させない回帰テスト
+  // （resolveProviderConfig が settings.provider ?? resolveProviderId(model) を使うため、
+  // 接続方式を保存していないユーザーが claude-opus-5 を選ぶとここが直に効く）
+  test('claude- 始まりのモデル ID は anthropic と解決する', () => {
+    expect(resolveProviderId('claude-opus-5')).toBe('anthropic');
+    expect(resolveProviderId('claude-sonnet-5')).toBe('anthropic');
+  });
+
+  // OpenRouter 経由でホストされる anthropic/claude-... は org/model 形式（/ を含む）が
+  // 優先されるべきで、claude- 判定に食われて anthropic 誤判定にならないことを固定する
+  test('OpenRouter の org/model 形式（anthropic/claude-...）は / 判定が勝ち openrouter のまま', () => {
+    expect(resolveProviderId('anthropic/claude-opus-5')).toBe('openrouter');
   });
 });
 
@@ -71,6 +86,20 @@ describe('createProvider', () => {
     expect(() =>
       createProvider({ provider: 'openai_compatible', apiKey: 'k', model: 'm' }),
     ).toThrow('エンドポイントが未設定');
+  });
+
+  // issue #127 PR2: createProvider は以前 provider === 'anthropic' を分岐せず、
+  // 末尾の無条件 `return new GeminiProvider(...)` にフォールスルーして Gemini へ誤送信していた
+  test('provider: anthropic（明示・自動解決とも）は AnthropicProvider が返る（Gemini への誤フォールバック回帰）', () => {
+    const explicit = createProvider({ provider: 'anthropic', apiKey: 'k', model: 'claude-opus-5' });
+    expect(explicit).toBeInstanceOf(AnthropicProvider);
+    expect(explicit).not.toBeInstanceOf(GeminiProvider);
+    expect(explicit.providerId).toBe('anthropic');
+    expect(explicit.model).toBe('claude-opus-5');
+
+    const resolved = createProvider({ apiKey: 'k', model: 'claude-sonnet-5' });
+    expect(resolved).toBeInstanceOf(AnthropicProvider);
+    expect(resolved.model).toBe('claude-sonnet-5');
   });
 });
 
@@ -134,6 +163,32 @@ describe('resolveProviderConfig', () => {
         endpoint: 'http://localhost:11434/v1/chat/completions',
       },
     });
+  });
+
+  test('保存済み接続方式が anthropic なら claude- 以外のモデル名でも Anthropic キーを解決する', async () => {
+    const loadApiKey = jest.fn().mockResolvedValue('anthropic-key');
+    await expect(
+      resolveProviderConfig('claude-opus-5', {
+        loadApiKey,
+        loadLlmConnectionSettings: async () => ({
+          provider: 'anthropic',
+          openAiCompatibleEndpoint: null,
+        }),
+      }),
+    ).resolves.toEqual({
+      provider: 'anthropic',
+      config: { provider: 'anthropic', apiKey: 'anthropic-key', model: 'claude-opus-5' },
+    });
+    expect(loadApiKey).toHaveBeenCalledWith('anthropic');
+  });
+
+  test('接続方式未保存でも claude- モデル名から anthropic を自動解決する', async () => {
+    const loadApiKey = jest.fn().mockResolvedValue('anthropic-key');
+    await expect(resolveProviderConfig('claude-haiku-4-5', { loadApiKey })).resolves.toEqual({
+      provider: 'anthropic',
+      config: { provider: 'anthropic', apiKey: 'anthropic-key', model: 'claude-haiku-4-5' },
+    });
+    expect(loadApiKey).toHaveBeenCalledWith('anthropic');
   });
 
   test('OpenAI 互換 endpoint が null なら endpoint を config に足さない', async () => {

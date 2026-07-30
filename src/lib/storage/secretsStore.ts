@@ -5,6 +5,7 @@ import { getLocal, removeLocal, setLocal } from './chromeStorage';
 const GEMINI_API_KEY_STORAGE_KEY = 'secrets.geminiApiKey';
 const OPENROUTER_API_KEY_STORAGE_KEY = 'secrets.openRouterApiKey';
 const OPENAI_COMPATIBLE_API_KEY_STORAGE_KEY = 'secrets.openAiCompatibleApiKey';
+const ANTHROPIC_API_KEY_STORAGE_KEY = 'secrets.anthropicApiKey';
 
 // 既知の API キー プレフィックス（プロバイダの取り違え検出用）。
 // 形式変更で正規キーを弾かないよう、確信できる場合だけ判定に使う（取りこぼし優先）
@@ -70,4 +71,21 @@ export async function saveOpenAiCompatibleApiKey(key: string): Promise<void> {
 
 export async function clearOpenAiCompatibleApiKey(): Promise<void> {
   await removeLocal(OPENAI_COMPATIBLE_API_KEY_STORAGE_KEY);
+}
+
+export async function loadAnthropicApiKey(): Promise<string | null> {
+  return (await getLocal<string>(ANTHROPIC_API_KEY_STORAGE_KEY)) ?? null;
+}
+
+/** trim して保存する。空文字は保存抑止（Gemini キーと同じ規約） */
+export async function saveAnthropicApiKey(key: string): Promise<void> {
+  const trimmed = key.trim();
+  if (trimmed === '') {
+    throw new Error('空の API キーは保存できません');
+  }
+  await setLocal(ANTHROPIC_API_KEY_STORAGE_KEY, trimmed);
+}
+
+export async function clearAnthropicApiKey(): Promise<void> {
+  await removeLocal(ANTHROPIC_API_KEY_STORAGE_KEY);
 }

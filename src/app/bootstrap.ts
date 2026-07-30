@@ -173,6 +173,7 @@ import { createChromePickerDeps } from '../lib/google/picker';
 import { createProvider } from '../lib/llm/providerFactory';
 import { loadDisposablePdf } from '../lib/pdf/loadPdf';
 import {
+  loadAnthropicApiKey,
   loadGeminiApiKey,
   loadOpenAiCompatibleApiKey,
   loadOpenRouterApiKey,
@@ -361,6 +362,9 @@ export function createChromeAppDeps(): AppDeps {
       }
       if (provider === 'openai_compatible') {
         return loadOpenAiCompatibleApiKey();
+      }
+      if (provider === 'anthropic') {
+        return loadAnthropicApiKey();
       }
       return loadGeminiApiKey();
     },

@@ -33,11 +33,13 @@ export const MODEL_PRICING: Readonly<Record<string, ModelPricing>> = {
   'gemini-3.5-flash-lite': { inputPerMillion: 0.3, outputPerMillion: 2.5 },
   'qwen/qwen3-235b-a22b-2507': { inputPerMillion: 0.09, outputPerMillion: 0.1 },
   'deepseek/deepseek-v4-flash': { inputPerMillion: 0.07, outputPerMillion: 0.14 },
-  // Anthropic 3 モデル（claude-opus-5 / claude-sonnet-5 / claude-haiku-4-5）は issue #127 PR2 で
-  // Options 配線とあわせて追加する（PR1 時点ではモデルセレクタから選べても createProvider() /
-  // settingsStore.LLM_PROVIDERS が 'anthropic' を解決できず Gemini 誤送信になるため、
-  // 単価表への追加も PR2 まで見送る）。単価・画像対応の確認済みの数値は
-  // docs/requirements.md §10 Q11（PR2 target spec）に記録済み — 再調査不要でそのまま転記できる
+  // Anthropic 3 モデル。issue #127 PR2 で Options 配線とあわせて追加（数値は
+  // docs/requirements.md §10 Q11 で確認済み）。claude-sonnet-5 は 2026-08-31 までの導入価格
+  // （入力 $2.00 / 出力 $10.00）が別途あるが、コスト概算を過小表示しないよう通常価格を採用する。
+  // claude-haiku-4-5 のみコンテキスト長 200K（他の 2 モデルは 1M）
+  'claude-opus-5': { inputPerMillion: 5.0, outputPerMillion: 25.0 },
+  'claude-sonnet-5': { inputPerMillion: 3.0, outputPerMillion: 15.0 },
+  'claude-haiku-4-5': { inputPerMillion: 1.0, outputPerMillion: 5.0 },
 };
 
 /**
@@ -101,7 +103,10 @@ export const MODEL_IMAGE_CAPABILITY: Readonly<Record<string, ModelImageCapabilit
   'gemini-3.5-flash-lite': { provider: 'gemini', support: 'supported' },
   'qwen/qwen3-235b-a22b-2507': { provider: 'openrouter', support: 'unsupported' },
   'deepseek/deepseek-v4-flash': { provider: 'openrouter', support: 'unsupported' },
-  // Anthropic 3 モデルのエントリは PR2 で MODEL_PRICING と同時に追加する（上記コメント参照）
+  // Anthropic 3 モデルはネイティブ base64 画像入力に対応（docs/requirements.md §10 Q11）
+  'claude-opus-5': { provider: 'anthropic', support: 'supported' },
+  'claude-sonnet-5': { provider: 'anthropic', support: 'supported' },
+  'claude-haiku-4-5': { provider: 'anthropic', support: 'supported' },
 };
 
 /**

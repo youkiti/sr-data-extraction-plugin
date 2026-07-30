@@ -31,13 +31,55 @@ const ENDPOINT = 'https://api.anthropic.com/v1/messages';
 const ANTHROPIC_VERSION = '2023-06-01';
 
 /**
- * `max_tokens` 未指定時の既定値。Anthropic では `max_tokens` が必須パラメータで、
- * かつ「thinking + 応答本文の合計」に対する上限として働く。最新モデル（claude-opus-5 等）は
- * thinking が既定で ON のため、応答サイズだけを基準に小さく切り詰めると thinking に食われて
- * 本文が `stop_reason:'max_tokens'` で途中打ち切りになる。公式ドキュメントで確認済みの推奨
- * （16000 以上）に合わせて既定値を確保する
+ * `ChatOptions.maxOutputTokens` 未指定時に使う既定の「本文」トークン予算。
+ * Gemini / OpenRouter / OpenAI 互換の他 provider と共通の契約どおり「応答本文に使いたい
+ * トークン数」を表す値であり、Anthropic の `max_tokens`（thinking + 本文の合計に対する上限。
+ * 必須パラメータ）そのものではない。実際に送る `max_tokens` は `resolveMaxTokens` が
+ * この値（または呼び出し側の `maxOutputTokens`）へ `THINKING_HEADROOM_TOKENS` を上乗せして
+ * 組み立てる（下記）。本文予算そのものにも公式ドキュメントで確認済みの推奨（16000 以上）を
+ * 確保しておく
  */
 const DEFAULT_MAX_TOKENS = 16000;
+
+/**
+ * `max_tokens`（= thinking + 応答本文の合計）を組み立てる際に、呼び出し側の「本文」予算
+ * （`maxOutputTokens` 未指定時は `DEFAULT_MAX_TOKENS`）へ上乗せする thinking の取り分。
+ *
+ * 背景: `ChatOptions.maxOutputTokens` は他 3 provider（Gemini / OpenRouter / OpenAI 互換）
+ * では素直に「応答本文のトークン数」だが、Anthropic では `max_tokens` が thinking を含む
+ * 合計の上限として働く。claude-opus-5 / claude-sonnet-5 は thinking が既定 ON のため、
+ * 呼び出し側が小さい値（例: Options 接続テストの `maxOutputTokens: 64`）をそのまま
+ * `max_tokens` に渡すと thinking だけで使い切り、本文が `stop_reason:'max_tokens'` で
+ * 打ち切られる。呼び出し側の契約（「本文トークン数」の意味）は他 provider と共通のため
+ * 変更せず、provider 境界のこちらで吸収する。
+ *
+ * 4,000 という値は「64 トークンの本文要求でも thinking に数千トークンの実用的な余地が残る」
+ * ことを狙った数値（`effort:'low'` で thinking の消費は抑えられるが、ゼロにはならないため
+ * 数百〜低千トークン規模の余地は必要）。`resolveMaxTokens` で `MAX_TOKENS_CEILING` へ
+ * クランプするため、この値を大きめに倒しても実害は無い
+ */
+const THINKING_HEADROOM_TOKENS = 4_000;
+
+/**
+ * `max_tokens` の送信上限。claude-haiku-4-5 の最大出力トークン数は 64,000
+ * （claude-opus-5 / claude-sonnet-5 の 128,000 より小さい）で、出荷対象 3 モデルに
+ * 共通して安全な値としてこれを採用する（モデルごとに上限を出し分けない — モデルセレクタの
+ * 「その他（直接入力）」で未知モデルを指定できるため、実測の無いモデルの上限を推測しない
+ * 設計に合わせる）。モデルの出力上限を超えて `max_tokens` を送ること自体が単体で
+ * HTTP 400 になるため、このクランプが無いと `THINKING_HEADROOM_TOKENS` の上乗せが
+ * かえって大きな `maxOutputTokens` 指定時に新たな 400 を生む
+ */
+const MAX_TOKENS_CEILING = 64_000;
+
+/**
+ * 呼び出し側の「本文」トークン予算（`maxOutputTokens`。未指定は `DEFAULT_MAX_TOKENS`）へ
+ * thinking の取り分を上乗せしたうえで `MAX_TOKENS_CEILING` へクランプし、実際に送る
+ * `max_tokens`（thinking + 本文の合計）を組み立てる
+ */
+function resolveMaxTokens(maxOutputTokens: number | undefined): number {
+  const bodyBudget = maxOutputTokens ?? DEFAULT_MAX_TOKENS;
+  return Math.min(bodyBudget + THINKING_HEADROOM_TOKENS, MAX_TOKENS_CEILING);
+}
 
 /**
  * `output_config.effort` の既定値（この PR では provider 内の定数。Options から設定可能にするのは
@@ -218,7 +260,7 @@ export class AnthropicProvider implements LLMProvider {
 
     const body: Record<string, unknown> = {
       model: this.model,
-      max_tokens: options.maxOutputTokens ?? DEFAULT_MAX_TOKENS,
+      max_tokens: resolveMaxTokens(options.maxOutputTokens),
       messages: conversational.map((m) => ({
         role: m.role === 'model' ? 'assistant' : m.role,
         content: toAnthropicContent(m.content),

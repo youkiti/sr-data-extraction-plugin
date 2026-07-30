@@ -51,7 +51,8 @@ describe('AnthropicProvider.chat', () => {
     const body = JSON.parse(init.body as string);
     expect(body).toEqual({
       model: 'claude-opus-5',
-      max_tokens: 16000,
+      // DEFAULT_MAX_TOKENS（16000・本文予算）+ THINKING_HEADROOM_TOKENS（4000）
+      max_tokens: 20000,
       messages: [{ role: 'user', content: 'hi' }],
       output_config: { effort: 'low' },
     });
@@ -129,14 +130,50 @@ describe('AnthropicProvider.chat', () => {
     ]);
   });
 
-  test('maxOutputTokens を指定すれば max_tokens へ反映する', async () => {
+  test('maxOutputTokens を指定すれば max_tokens へ thinking の取り分（4000）を上乗せして反映する', async () => {
     const fetch = jest
       .fn()
       .mockResolvedValue(jsonResponse({ content: [{ type: 'text', text: 'ok' }], stop_reason: 'end_turn' }));
     const provider = new AnthropicProvider({ apiKey: 'k', model: 'claude-opus-5', fetch });
     await provider.chat([{ role: 'user', content: 'u' }], { maxOutputTokens: 4096 });
     const body = JSON.parse((fetch.mock.calls[0]?.[1] as RequestInit).body as string);
-    expect(body.max_tokens).toBe(4096);
+    expect(body.max_tokens).toBe(8096);
+  });
+
+  // 接続テスト回帰（issue #127 PR2 レビュー対応）: Options 接続テストは maxOutputTokens: 64 の
+  // ような小さい「本文予算」を送ってくる。claude-opus-5 / claude-sonnet-5 は thinking が既定 ON
+  // で max_tokens が thinking + 本文の合計に対する上限のため、64 をそのまま max_tokens に送ると
+  // thinking だけで使い切り stop_reason:'max_tokens' で打ち切られてしまう。文字通り 64 を
+  // 送ってはいけない（余地を上乗せする）ことを固定する
+  test('maxOutputTokens: 64 のような極小値でも max_tokens は 64 そのものではなく余地を上乗せした値になる', async () => {
+    const fetch = jest
+      .fn()
+      .mockResolvedValue(jsonResponse({ content: [{ type: 'text', text: 'ok' }], stop_reason: 'end_turn' }));
+    const provider = new AnthropicProvider({ apiKey: 'k', model: 'claude-opus-5', fetch });
+    await provider.chat([{ role: 'user', content: 'u' }], { maxOutputTokens: 64 });
+    const body = JSON.parse((fetch.mock.calls[0]?.[1] as RequestInit).body as string);
+    expect(body.max_tokens).toBe(4064);
+    expect(body.max_tokens).toBeGreaterThan(64);
+  });
+
+  test('maxOutputTokens 未指定でも既定の本文予算（16000）へ余地を上乗せした値になる', async () => {
+    const fetch = jest
+      .fn()
+      .mockResolvedValue(jsonResponse({ content: [{ type: 'text', text: 'ok' }], stop_reason: 'end_turn' }));
+    const provider = new AnthropicProvider({ apiKey: 'k', model: 'claude-opus-5', fetch });
+    await provider.chat([{ role: 'user', content: 'u' }]);
+    const body = JSON.parse((fetch.mock.calls[0]?.[1] as RequestInit).body as string);
+    expect(body.max_tokens).toBe(20000);
+  });
+
+  test('maxOutputTokens が極端に大きくても max_tokens は上限 64000 へクランプする', async () => {
+    const fetch = jest
+      .fn()
+      .mockResolvedValue(jsonResponse({ content: [{ type: 'text', text: 'ok' }], stop_reason: 'end_turn' }));
+    const provider = new AnthropicProvider({ apiKey: 'k', model: 'claude-opus-5', fetch });
+    await provider.chat([{ role: 'user', content: 'u' }], { maxOutputTokens: 1_000_000 });
+    const body = JSON.parse((fetch.mock.calls[0]?.[1] as RequestInit).body as string);
+    expect(body.max_tokens).toBe(64_000);
   });
 
   test('temperature を指定しても body には含めない（claude-opus-5 / claude-sonnet-5 等はサンプリングパラメータ非サポートで 400 になるため）', async () => {

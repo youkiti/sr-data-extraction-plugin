@@ -287,8 +287,9 @@ describe('bootstrapOptions（既定モデル。docs/ui-states.md §2「既定モ
   test('セレクタに単価表（MODEL_PRICING）のモデル ID を optgroup 付きで列挙する', async () => {
     await bootstrapOptions(document);
     const select = modelSelectEl();
+    // issue #127 PR2: 単価表への Claude 3 モデル追加で Anthropic optgroup が新たに出現する
     const groups = Array.from(select.querySelectorAll('optgroup')).map((g) => g.label);
-    expect(groups).toEqual(['Gemini', 'OpenRouter']);
+    expect(groups).toEqual(['Gemini', 'OpenRouter', 'Anthropic']);
     const values = Array.from(select.options).map((option) => option.value);
     for (const model of Object.keys(MODEL_PRICING)) {
       expect(values).toContain(model);
@@ -615,6 +616,126 @@ describe('bootstrapOptions（LLM 接続先。Issue #27）', () => {
     testConnection().click();
     await flush();
     expect(connectionStatus().textContent).toBe('接続テストに失敗しました: 503');
+  });
+});
+
+describe('bootstrapOptions（Anthropic 接続。issue #127 PR2 target spec の実装）', () => {
+  let chromeMock: ChromeMock;
+  let originalFetch: typeof fetch | undefined;
+
+  const provider = (): HTMLSelectElement =>
+    document.getElementById('llm-provider') as HTMLSelectElement;
+  const anthropicFields = (): HTMLElement =>
+    document.getElementById('anthropic-fields') as HTMLElement;
+  const compatibleFields = (): HTMLElement =>
+    document.getElementById('openai-compatible-fields') as HTMLElement;
+  const anthropicKey = (): HTMLInputElement =>
+    document.getElementById('anthropic-api-key') as HTMLInputElement;
+  const save = (): HTMLButtonElement =>
+    document.getElementById('save-llm-connection') as HTMLButtonElement;
+  const testConnection = (): HTMLButtonElement =>
+    document.getElementById('test-llm-connection') as HTMLButtonElement;
+  const connectionStatus = (): HTMLElement =>
+    document.getElementById('llm-connection-status') as HTMLElement;
+
+  beforeEach(() => {
+    chromeMock = installChromeMock();
+    originalFetch = globalThis.fetch;
+    document.body.replaceChildren(buildSettingsSections());
+  });
+
+  afterEach(() => {
+    if (originalFetch === undefined) {
+      delete (globalThis as { fetch?: typeof fetch }).fetch;
+    } else {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test('Anthropic 選択時はエンドポイント欄を隠し、API キー欄だけ表示する', async () => {
+    await bootstrapOptions(document);
+    provider().value = 'anthropic';
+    provider().dispatchEvent(new Event('change'));
+    expect(anthropicFields().hidden).toBe(false);
+    expect(compatibleFields().hidden).toBe(true);
+    expect(anthropicKey().placeholder).toBe('API キーを入力');
+  });
+
+  test('保存済みキーがあれば placeholder を保存済みへ切り替える', async () => {
+    chromeMock.storage.local.data['secrets.anthropicApiKey'] = 'sk-ant-saved';
+    await bootstrapOptions(document);
+    expect(anthropicKey().placeholder).toBe('保存済み（変更する場合のみ入力）');
+  });
+
+  test('キー未入力・未保存では保存も接続テストも「Anthropic API キーが未設定です」', async () => {
+    await bootstrapOptions(document);
+    provider().value = 'anthropic';
+    provider().dispatchEvent(new Event('change'));
+    save().click();
+    await flush();
+    expect(connectionStatus().textContent).toBe('Anthropic API キーが未設定です');
+
+    testConnection().click();
+    await flush();
+    expect(connectionStatus().textContent).toBe(
+      '接続テストに失敗しました: Anthropic API キーが未設定です',
+    );
+  });
+
+  test('API キーを保存すると入力欄をクリアし placeholder を更新する（エンドポイント権限確認は不要）', async () => {
+    await bootstrapOptions(document);
+    provider().value = 'anthropic';
+    provider().dispatchEvent(new Event('change'));
+    anthropicKey().value = '  sk-ant-TESTKEY  ';
+    save().click();
+    await flush();
+    expect(chromeMock.permissions.request).not.toHaveBeenCalled();
+    expect(chromeMock.storage.local.data['settings.llmProvider']).toBe('anthropic');
+    expect(chromeMock.storage.local.data['secrets.anthropicApiKey']).toBe('sk-ant-TESTKEY');
+    expect(anthropicKey().value).toBe('');
+    expect(anthropicKey().placeholder).toBe('保存済み（変更する場合のみ入力）');
+    expect(connectionStatus().textContent).toBe('保存しました。');
+  });
+
+  test('接続テストの成功・失敗を Anthropic 応答の形（content 配列）で判定する', async () => {
+    globalThis.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      text: async () => JSON.stringify({ content: [{ type: 'text', text: '{"ok":true}' }] }),
+    }) as unknown as typeof fetch;
+    await bootstrapOptions(document);
+    provider().value = 'anthropic';
+    provider().dispatchEvent(new Event('change'));
+    anthropicKey().value = 'sk-ant-TESTKEY';
+    testConnection().click();
+    await flush();
+    await flush();
+    expect(connectionStatus().textContent).toBe('接続テストに成功しました。');
+    const init = (globalThis.fetch as jest.Mock).mock.calls[0]?.[1] as RequestInit;
+    expect((init.headers as Record<string, string>)['x-api-key']).toBe('sk-ant-TESTKEY');
+
+    (globalThis.fetch as jest.Mock).mockResolvedValueOnce({
+      ok: true,
+      text: async () => JSON.stringify({ content: [{ type: 'text', text: '{"ok":false}' }] }),
+    });
+    testConnection().click();
+    await flush();
+    await flush();
+    expect(connectionStatus().textContent).toContain('接続テストに失敗しました');
+  });
+
+  test('保存済みキーを再入力せず接続テストできる', async () => {
+    chromeMock.storage.local.data['secrets.anthropicApiKey'] = 'sk-ant-saved';
+    globalThis.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      text: async () => JSON.stringify({ content: [{ type: 'text', text: '{"ok":true}' }] }),
+    }) as unknown as typeof fetch;
+    await bootstrapOptions(document);
+    provider().value = 'anthropic';
+    provider().dispatchEvent(new Event('change'));
+    testConnection().click();
+    await flush();
+    await flush();
+    expect(connectionStatus().textContent).toBe('接続テストに成功しました。');
   });
 });
 

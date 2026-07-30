@@ -21,11 +21,13 @@ import {
   type RateLimitTierId,
 } from '../lib/llm/rateLimitPolicy';
 import {
+  loadAnthropicApiKey,
   loadGeminiApiKey,
   loadOpenAiCompatibleApiKey,
   loadOpenRouterApiKey,
   looksLikeGeminiApiKey,
   looksLikeOpenRouterApiKey,
+  saveAnthropicApiKey,
   saveGeminiApiKey,
   saveOpenAiCompatibleApiKey,
   saveOpenRouterApiKey,
@@ -185,12 +187,14 @@ const CONNECTION_TEST_SCHEMA = {
 
 function selectedProvider(select: HTMLSelectElement): LlmProviderId {
   const value = select.value;
-  return value === 'openrouter' || value === 'openai_compatible' ? value : 'gemini';
+  if (value === 'openrouter' || value === 'openai_compatible' || value === 'anthropic') {
+    return value;
+  }
+  return 'gemini';
 }
 
-async function loadKeyForProvider(
-  provider: Exclude<LlmProviderId, 'openai_compatible'>,
-): Promise<string | null> {
+/** Gemini / OpenRouter は接続方式節に専用の入力欄を持たず、上部の BYOK 節の保存済みキーをそのまま使う */
+async function loadKeyForProvider(provider: 'gemini' | 'openrouter'): Promise<string | null> {
   if (provider === 'openrouter') {
     return loadOpenRouterApiKey();
   }
@@ -203,6 +207,8 @@ async function bootstrapLlmConnectionSection(root: ParentNode): Promise<void> {
   const customFields = root.querySelector<HTMLElement>('#openai-compatible-fields');
   const endpointInput = root.querySelector<HTMLInputElement>('#openai-compatible-endpoint');
   const apiKeyInput = root.querySelector<HTMLInputElement>('#openai-compatible-api-key');
+  const anthropicFields = root.querySelector<HTMLElement>('#anthropic-fields');
+  const anthropicKeyInput = root.querySelector<HTMLInputElement>('#anthropic-api-key');
   const saveButton = root.querySelector<HTMLButtonElement>('#save-llm-connection');
   const testButton = root.querySelector<HTMLButtonElement>('#test-llm-connection');
   const statusEl = root.querySelector<HTMLElement>('#llm-connection-status');
@@ -211,6 +217,8 @@ async function bootstrapLlmConnectionSection(root: ParentNode): Promise<void> {
     !customFields ||
     !endpointInput ||
     !apiKeyInput ||
+    !anthropicFields ||
+    !anthropicKeyInput ||
     !saveButton ||
     !testButton ||
     !statusEl
@@ -226,9 +234,15 @@ async function bootstrapLlmConnectionSection(root: ParentNode): Promise<void> {
   apiKeyInput.placeholder = savedCustomKey
     ? t('options.placeholderSavedKey')
     : t('options.placeholderKeyOptional');
+  const savedAnthropicKey = await loadAnthropicApiKey();
+  anthropicKeyInput.placeholder = savedAnthropicKey
+    ? t('options.placeholderSavedKey')
+    : t('options.placeholderEnterKey');
 
   const renderProvider = (): void => {
-    customFields.hidden = selectedProvider(providerSelect) !== 'openai_compatible';
+    const provider = selectedProvider(providerSelect);
+    customFields.hidden = provider !== 'openai_compatible';
+    anthropicFields.hidden = provider !== 'anthropic';
   };
   renderProvider();
   providerSelect.addEventListener('change', renderProvider);
@@ -245,6 +259,14 @@ async function bootstrapLlmConnectionSection(root: ParentNode): Promise<void> {
   }> => {
     const provider = selectedProvider(providerSelect);
     const model = (await loadDefaultModel()) ?? FACTORY_DEFAULT_MODEL;
+    if (provider === 'anthropic') {
+      const enteredKey = anthropicKeyInput.value.trim();
+      const apiKey = enteredKey || (await loadAnthropicApiKey());
+      if (apiKey === null) {
+        throw new Error(t('options.errKeyMissing', { provider: 'Anthropic' }));
+      }
+      return { provider, apiKey, model };
+    }
     if (provider !== 'openai_compatible') {
       const apiKey = await loadKeyForProvider(provider);
       if (apiKey === null) {
@@ -278,6 +300,11 @@ async function bootstrapLlmConnectionSection(root: ParentNode): Promise<void> {
           await saveOpenAiCompatibleApiKey(apiKeyInput.value);
           apiKeyInput.value = '';
           apiKeyInput.placeholder = t('options.placeholderSavedKey');
+        }
+        if (config.provider === 'anthropic' && anthropicKeyInput.value.trim() !== '') {
+          await saveAnthropicApiKey(anthropicKeyInput.value);
+          anthropicKeyInput.value = '';
+          anthropicKeyInput.placeholder = t('options.placeholderSavedKey');
         }
         await saveLlmConnectionSettings({
           provider: config.provider,

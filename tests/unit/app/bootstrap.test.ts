@@ -128,10 +128,13 @@ describe('createChromeAppDeps', () => {
     chromeMock.storage.local.data['secrets.geminiApiKey'] = 'g-key';
     chromeMock.storage.local.data['secrets.openRouterApiKey'] = 'or-key';
     chromeMock.storage.local.data['secrets.openAiCompatibleApiKey'] = 'custom-key';
+    chromeMock.storage.local.data['secrets.anthropicApiKey'] = 'anthropic-key';
     const deps = createChromeAppDeps();
     await expect(deps.loadApiKey('gemini')).resolves.toBe('g-key');
     await expect(deps.loadApiKey('openrouter')).resolves.toBe('or-key');
     await expect(deps.loadApiKey('openai_compatible')).resolves.toBe('custom-key');
+    // issue #127 PR2: 'anthropic' 未対応のまま Gemini キーへ黙ってフォールバックしていたバグの回帰防止
+    await expect(deps.loadApiKey('anthropic')).resolves.toBe('anthropic-key');
     await expect(deps.loadLlmConnectionSettings?.()).resolves.toEqual({
       provider: null,
       openAiCompatibleEndpoint: null,

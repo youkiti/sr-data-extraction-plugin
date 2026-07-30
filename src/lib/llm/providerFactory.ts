@@ -7,6 +7,7 @@ import {
   isLoopbackEndpoint,
   type LlmConnectionSettings,
 } from '../storage/settingsStore';
+import { AnthropicProvider } from './AnthropicProvider';
 import { GeminiProvider } from './GeminiProvider';
 import type { LLMProvider } from './LLMProvider';
 import { OpenAICompatibleProvider } from './OpenAICompatibleProvider';
@@ -37,10 +38,18 @@ export interface ProviderResolution {
 
 /**
  * モデル ID からプロバイダを解決する。
- * `/` を含む（OpenRouter の `org/model` 形式）なら openrouter、それ以外は gemini
+ * `/` を含む（OpenRouter の `org/model` 形式。OpenRouter 経由の `anthropic/claude-...` も
+ * この形なので `/` 判定を最優先する）なら openrouter、次に `claude-` 始まり（Anthropic
+ * ネイティブのモデル ID）なら anthropic、それ以外は gemini
  */
 export function resolveProviderId(modelId: string): LlmProviderId {
-  return modelId.includes('/') ? 'openrouter' : 'gemini';
+  if (modelId.includes('/')) {
+    return 'openrouter';
+  }
+  if (modelId.startsWith('claude-')) {
+    return 'anthropic';
+  }
+  return 'gemini';
 }
 
 /**
@@ -82,6 +91,13 @@ export function createProvider(config: ProviderConfig): LLMProvider {
   }
   if (provider === 'openrouter') {
     return new OpenRouterProvider({
+      apiKey: config.apiKey,
+      model: config.model,
+      fetch: config.fetch,
+    });
+  }
+  if (provider === 'anthropic') {
+    return new AnthropicProvider({
       apiKey: config.apiKey,
       model: config.model,
       fetch: config.fetch,
