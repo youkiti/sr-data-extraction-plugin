@@ -18,6 +18,7 @@ import {
   saveRateLimitTier,
   saveUiLanguage,
   saveVerifyLayoutMode,
+  usesOpenAiCompatibleEndpoint,
 } from '../../../../src/lib/storage/settingsStore';
 
 describe('settingsStore', () => {
@@ -67,8 +68,25 @@ describe('settingsStore', () => {
     await expect(loadLlmConnectionSettings()).resolves.toMatchObject({ provider: 'anthropic' });
   });
 
-  test('LLM 接続設定: 依然として未知の provider は後方互換の null', async () => {
+  test('LLM 接続設定: "azure_openai" は保存済み接続方式として受理され、そのまま往復する（issue #127 PR3）', async () => {
     chromeMock.storage.local.data['settings.llmProvider'] = 'azure_openai';
+    await expect(loadLlmConnectionSettings()).resolves.toEqual({
+      provider: 'azure_openai',
+      openAiCompatibleEndpoint: null,
+    });
+    await saveLlmConnectionSettings({
+      provider: 'azure_openai',
+      openAiCompatibleEndpoint: 'https://res.openai.azure.com/openai/deployments/gpt/chat/completions?api-version=2026-01-01',
+    });
+    await expect(loadLlmConnectionSettings()).resolves.toEqual({
+      provider: 'azure_openai',
+      openAiCompatibleEndpoint:
+        'https://res.openai.azure.com/openai/deployments/gpt/chat/completions?api-version=2026-01-01',
+    });
+  });
+
+  test('LLM 接続設定: 未知の provider は後方互換の null', async () => {
+    chromeMock.storage.local.data['settings.llmProvider'] = 'not-a-real-provider';
     await expect(loadLlmConnectionSettings()).resolves.toEqual({
       provider: null,
       openAiCompatibleEndpoint: null,
@@ -112,6 +130,12 @@ describe('settingsStore', () => {
     ).rejects.toThrow('有効な API エンドポイント');
   });
 
+  test('LLM 接続設定: Azure OpenAI provider も endpoint 必須（issue #127 PR3）', async () => {
+    await expect(
+      saveLlmConnectionSettings({ provider: 'azure_openai' }),
+    ).rejects.toThrow('有効な API エンドポイント');
+  });
+
   test.each([
     ['', '有効な API エンドポイント'],
     ['not-a-url', '有効な API エンドポイント'],
@@ -120,8 +144,7 @@ describe('settingsStore', () => {
     ['http://192.168.1.10:11434/v1/chat/completions', 'HTTPS'],
     ['http://127.0.0.2:11434/v1/chat/completions', 'HTTPS'],
     ['https://user:pass@llm.example/v1/chat/completions', '認証情報'],
-    ['https://llm.example/v1/chat/completions?q=1', 'クエリ文字列'],
-    ['https://llm.example/v1/chat/completions#x', 'クエリ文字列'],
+    ['https://llm.example/v1/chat/completions#x', 'フラグメント'],
   ])('OpenAI 互換 URL の不正値を拒否する: %s', (value, message) => {
     expect(() => normalizeOpenAiCompatibleEndpoint(value)).toThrow(message);
   });
@@ -130,6 +153,33 @@ describe('settingsStore', () => {
     expect(normalizeOpenAiCompatibleEndpoint(' https://llm.example/v1/chat/completions ')).toBe(
       'https://llm.example/v1/chat/completions',
     );
+  });
+
+  // issue #127 PR3: Azure OpenAI はデプロイメント URL に必須の `?api-version=...` を
+  // クエリ文字列として含む完全 URL を入力させるため、クエリ文字列は許可へ倒す
+  // （フラグメントは引き続き拒否。埋め込み認証情報・HTTPS/loopback の各ガードは維持）
+  test('OpenAI 互換 URL はクエリ文字列を許可する（Azure OpenAI の api-version 等）', () => {
+    const value =
+      'https://res.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2026-01-01';
+    expect(normalizeOpenAiCompatibleEndpoint(value)).toBe(value);
+  });
+
+  test('クエリ文字列を許可しても、フラグメントは引き続き拒否する', () => {
+    expect(() =>
+      normalizeOpenAiCompatibleEndpoint('https://llm.example/v1/chat/completions?q=1#frag'),
+    ).toThrow('フラグメント');
+  });
+
+  test('クエリ文字列を許可しても、埋め込み認証情報は引き続き拒否する', () => {
+    expect(() =>
+      normalizeOpenAiCompatibleEndpoint('https://user:pass@llm.example/v1/chat/completions?q=1'),
+    ).toThrow('認証情報');
+  });
+
+  test('クエリ文字列を許可しても、非 HTTPS・非 loopback は引き続き拒否する', () => {
+    expect(() =>
+      normalizeOpenAiCompatibleEndpoint('http://llm.example/v1/chat/completions?q=1'),
+    ).toThrow('HTTPS');
   });
 
   test.each([
@@ -145,6 +195,14 @@ describe('settingsStore', () => {
     const value = 'https://llm.example:8443/v1/chat/completions';
     expect(normalizeOpenAiCompatibleEndpoint(value)).toBe(value);
     expect(isLoopbackEndpoint(value)).toBe(false);
+  });
+
+  test('usesOpenAiCompatibleEndpoint: openai_compatible / azure_openai だけ true（issue #127 PR3）', () => {
+    expect(usesOpenAiCompatibleEndpoint('openai_compatible')).toBe(true);
+    expect(usesOpenAiCompatibleEndpoint('azure_openai')).toBe(true);
+    expect(usesOpenAiCompatibleEndpoint('gemini')).toBe(false);
+    expect(usesOpenAiCompatibleEndpoint('openrouter')).toBe(false);
+    expect(usesOpenAiCompatibleEndpoint('anthropic')).toBe(false);
   });
 });
 

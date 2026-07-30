@@ -63,6 +63,8 @@ export function missingApiKeyMessage(provider: LlmProviderId): string {
         ? 'OpenAI 互換'
         : provider === 'anthropic'
           ? 'Anthropic'
-          : 'Gemini';
+          : provider === 'azure_openai'
+            ? 'Azure OpenAI'
+            : 'Gemini';
   return `${label} API キーが未設定です。設定画面（Options）で保存してください`;
 }

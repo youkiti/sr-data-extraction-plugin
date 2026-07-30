@@ -1,3 +1,4 @@
+import type { LlmProviderId } from '../../domain/llmApiLog';
 import {
   LlmProviderError,
   toOpenAiContent,
@@ -11,11 +12,22 @@ import { normalizeOpenAiCompatibleEndpoint } from '../storage/settingsStore';
 /** エラー詳細（responseBody）に載せる応答ボディ抜粋の最大長（OpenRouterProvider と同じ方針） */
 const ERROR_BODY_EXCERPT_CHARS = 1_000;
 
+/**
+ * 認証ヘッダー方式。既定は `bearer`（`Authorization: Bearer <key>`。従来の OpenAI 互換 API）。
+ * `azure_api_key` は Azure OpenAI 用（`api-key: <key>`。issue #127 PR3）。
+ * 利用者が自由入力するヘッダー名ではなく、接続方式（provider）に紐づく固定値として
+ * `createProvider`（providerFactory.ts）が選ぶ。任意ヘッダー入力 UI は導入しない
+ * （docs/ui-states.md §2・requirements.md §10 Q11 の不採用宣言を参照）
+ */
+export type OpenAiCompatibleAuthMode = 'bearer' | 'azure_api_key';
+
 export interface OpenAICompatibleProviderOptions {
   apiKey: string;
   model: string;
   endpoint: string;
   fetch?: typeof fetch;
+  /** 省略時は 'bearer'（従来どおり）。Azure OpenAI は 'azure_api_key' を渡す */
+  authMode?: OpenAiCompatibleAuthMode;
 }
 
 interface OpenAICompatibleResponse {
@@ -46,15 +58,22 @@ function isStructuredOutputCompatibilityError(status: number, responseBody: stri
   );
 }
 
-/** OpenAI Chat Completions 互換 API 向け実装。空の API キーでは認証ヘッダーを送らない */
+/**
+ * OpenAI Chat Completions 互換 API 向け実装。空の API キーでは認証ヘッダーを送らない。
+ * Azure OpenAI（issue #127 PR3）もこのクラスを流用する — リクエストボディは OpenAI 互換のままで、
+ * 差分は (a) URL がクエリ文字列付き（`normalizeOpenAiCompatibleEndpoint` 側で許可済み）、
+ * (b) 認証ヘッダーが `api-key:` である点だけのため、新規 provider クラスは作らない
+ * （requirements.md §10 Q11・docs/ui-states.md §2）
+ */
 export class OpenAICompatibleProvider implements LLMProvider {
-  readonly providerId = 'openai_compatible' as const;
+  readonly providerId: LlmProviderId;
   readonly model: string;
   // OpenAI 互換の image_url をパススルーするだけなので画像対応を宣言する。
   // モデルがマルチモーダル非対応の場合は API 側が 4xx を返し、LlmProviderError として表面化する
   readonly supportsImageInput = true;
   private readonly apiKey: string;
   private readonly endpoint: string;
+  private readonly authMode: OpenAiCompatibleAuthMode;
   private readonly fetchImpl: typeof fetch | undefined;
   private structuredOutputMode: StructuredOutputMode = 'json_schema_strict';
 
@@ -63,13 +82,21 @@ export class OpenAICompatibleProvider implements LLMProvider {
     this.model = options.model;
     this.endpoint = normalizeOpenAiCompatibleEndpoint(options.endpoint);
     this.fetchImpl = options.fetch;
+    this.authMode = options.authMode ?? 'bearer';
+    // LLMApiLog.provider へ書く値を認証方式に連動させる（Azure 分の run を openai_compatible の
+    // ログ・コスト集計へ紛れ込ませない）
+    this.providerId = this.authMode === 'azure_api_key' ? 'azure_openai' : 'openai_compatible';
   }
 
   async chat(messages: readonly ChatMessage[], options: ChatOptions = {}): Promise<ChatResponse> {
     const fetchFn = this.fetchImpl ?? globalThis.fetch;
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (this.apiKey !== '') {
-      headers['Authorization'] = `Bearer ${this.apiKey}`;
+      if (this.authMode === 'azure_api_key') {
+        headers['api-key'] = this.apiKey;
+      } else {
+        headers['Authorization'] = `Bearer ${this.apiKey}`;
+      }
     }
     let mode: StructuredOutputMode | undefined = options.responseSchema
       ? this.structuredOutputMode

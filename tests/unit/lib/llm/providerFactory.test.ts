@@ -101,6 +101,27 @@ describe('createProvider', () => {
     expect(resolved).toBeInstanceOf(AnthropicProvider);
     expect(resolved.model).toBe('claude-sonnet-5');
   });
+
+  // issue #127 PR3: Azure OpenAI は新規 provider クラスを作らず、OpenAICompatibleProvider を
+  // 認証方式（api-key ヘッダー）だけ切り替えて流用する
+  test('provider: azure_openai は OpenAICompatibleProvider を azure_api_key 認証で生成する', () => {
+    const provider = createProvider({
+      provider: 'azure_openai',
+      apiKey: 'k',
+      model: 'gpt-4o-deployment',
+      endpoint:
+        'https://res.openai.azure.com/openai/deployments/gpt-4o-deployment/chat/completions?api-version=2026-01-01',
+    });
+    expect(provider).toBeInstanceOf(OpenAICompatibleProvider);
+    expect(provider.providerId).toBe('azure_openai');
+    expect(provider.model).toBe('gpt-4o-deployment');
+  });
+
+  test('Azure OpenAI の endpoint 欠落は拒否する', () => {
+    expect(() =>
+      createProvider({ provider: 'azure_openai', apiKey: 'k', model: 'm' }),
+    ).toThrow('エンドポイントが未設定');
+  });
 });
 
 describe('resolveProviderConfig', () => {
@@ -189,6 +210,46 @@ describe('resolveProviderConfig', () => {
       config: { provider: 'anthropic', apiKey: 'anthropic-key', model: 'claude-haiku-4-5' },
     });
     expect(loadApiKey).toHaveBeenCalledWith('anthropic');
+  });
+
+  // issue #127 PR3: 保存済み接続方式が azure_openai なら openAiCompatibleEndpoint を解決する
+  // （openai_compatible と保存キーを共有する。settingsStore.usesOpenAiCompatibleEndpoint）
+  test('保存済み接続方式が azure_openai なら endpoint を解決する', async () => {
+    const loadApiKey = jest.fn().mockResolvedValue('azure-key');
+    await expect(
+      resolveProviderConfig('gpt-4o-deployment', {
+        loadApiKey,
+        loadLlmConnectionSettings: async () => ({
+          provider: 'azure_openai',
+          openAiCompatibleEndpoint:
+            'https://res.openai.azure.com/openai/deployments/gpt-4o-deployment/chat/completions?api-version=2026-01-01',
+        }),
+      }),
+    ).resolves.toEqual({
+      provider: 'azure_openai',
+      config: {
+        provider: 'azure_openai',
+        apiKey: 'azure-key',
+        model: 'gpt-4o-deployment',
+        endpoint:
+          'https://res.openai.azure.com/openai/deployments/gpt-4o-deployment/chat/completions?api-version=2026-01-01',
+      },
+    });
+    expect(loadApiKey).toHaveBeenCalledWith('azure_openai');
+  });
+
+  // issue #127 PR3: Azure は loopback URL でもキー任意許可の対象にしない
+  // （OpenAI 互換 API 限定の loopback 実験用途を Azure まで広げない）
+  test('azure_openai は loopback endpoint でも空キーを許可しない（config は null）', async () => {
+    await expect(
+      resolveProviderConfig('local-deployment', {
+        loadApiKey: async () => null,
+        loadLlmConnectionSettings: async () => ({
+          provider: 'azure_openai',
+          openAiCompatibleEndpoint: 'http://localhost:11434/openai/deployments/x?api-version=2026-01-01',
+        }),
+      }),
+    ).resolves.toEqual({ provider: 'azure_openai', config: null });
   });
 
   test('OpenAI 互換 endpoint が null なら endpoint を config に足さない', async () => {

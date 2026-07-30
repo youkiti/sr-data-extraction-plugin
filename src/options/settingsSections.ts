@@ -74,6 +74,7 @@ export function buildSettingsSections(): HTMLElement {
     el('option', { text: 'OpenRouter', attributes: { value: 'openrouter' } }),
     el('option', { text: t('options.providerOpenAiCompatible'), attributes: { value: 'openai_compatible' } }),
     el('option', { text: 'Anthropic', attributes: { value: 'anthropic' } }),
+    el('option', { text: 'Azure OpenAI', attributes: { value: 'azure_openai' } }),
   );
   const anthropicFields = el('div', { id: 'anthropic-fields' }, [
     el('div', { className: 'options__row' }, [
@@ -88,6 +89,40 @@ export function buildSettingsSections(): HTMLElement {
     ]),
   ]);
   anthropicFields.hidden = true;
+  const azureFields = el('div', { id: 'azure-openai-fields' }, [
+    el('p', {
+      className: 'options__help',
+      text: t('options.compatibleNotice'),
+    }),
+    el('div', { className: 'options__row' }, [
+      el('label', {
+        text: t('options.endpointLabel'),
+        attributes: { for: 'azure-openai-endpoint' },
+      }),
+      el('input', {
+        id: 'azure-openai-endpoint',
+        attributes: {
+          type: 'url',
+          placeholder:
+            'https://{resource}.openai.azure.com/openai/deployments/{deployment}/chat/completions?api-version=2026-xx-xx',
+          autocomplete: 'off',
+        },
+      }),
+    ]),
+    el('p', { className: 'options__help', text: t('options.azureEndpointHelp') }),
+    el('div', { className: 'options__row' }, [
+      el('label', {
+        text: t('options.apiKeyLabel'),
+        attributes: { for: 'azure-openai-api-key' },
+      }),
+      el('input', {
+        id: 'azure-openai-api-key',
+        attributes: { type: 'password', autocomplete: 'off' },
+      }),
+    ]),
+    el('p', { className: 'options__help', text: t('options.azureModelHelp') }),
+  ]);
+  azureFields.hidden = true;
   const customFields = el('div', { id: 'openai-compatible-fields' }, [
     el('p', {
       className: 'options__help',
@@ -140,6 +175,7 @@ export function buildSettingsSections(): HTMLElement {
     ]),
     customFields,
     anthropicFields,
+    azureFields,
     el('div', { className: 'options__actions' }, [
       el('button', {
         id: 'save-llm-connection',

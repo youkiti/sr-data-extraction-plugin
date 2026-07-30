@@ -3,11 +3,12 @@
 
 /**
  * LLMApiLog / ExtractionRuns に記録する接続方式。
- * `anthropic`（issue #127 PR1）: Anthropic ネイティブ（Messages API）。追記型のシートに
- * 新しい値を書き足すだけなので既存行への影響はない。この PR は UI 配線を持たないため、
- * 実際にこの値がシートへ書かれるのはプロバイダ層を直接呼ぶコード（テスト等）のみ
+ * `anthropic`（issue #127 PR1・PR2 で Options 配線済み）: Anthropic ネイティブ（Messages API）。
+ * `azure_openai`（issue #127 PR3）: Azure OpenAI。`OpenAICompatibleProvider` を認証方式だけ
+ * 切り替えて流用する（新規 provider クラスは作らない。requirements.md §10 Q11）。
+ * いずれも追記型のシートに新しい値を書き足すだけなので既存行への影響はない
  */
-export type LlmProviderId = 'gemini' | 'openrouter' | 'openai_compatible' | 'anthropic';
+export type LlmProviderId = 'gemini' | 'openrouter' | 'openai_compatible' | 'anthropic' | 'azure_openai';
 
 export type LlmPurpose =
   | 'draft_schema'

@@ -93,7 +93,18 @@ const LLM_PROVIDERS: ReadonlySet<string> = new Set([
   'openrouter',
   'openai_compatible',
   'anthropic',
+  'azure_openai',
 ]);
+
+/**
+ * 完全 URL の入力欄（`openAiCompatibleEndpoint`）を共有する接続方式か。
+ * Azure OpenAI はデプロイメント + `api-version` クエリ文字列を含む完全 URL を必要とする点で
+ * OpenAI 互換 API と同じ形の入力のため、保存先の設定キーを共有する（provider ごとに
+ * 別キーへ分けない。requirements.md §10 Q11・issue #127 PR3）
+ */
+export function usesOpenAiCompatibleEndpoint(provider: LlmProviderId): boolean {
+  return provider === 'openai_compatible' || provider === 'azure_openai';
+}
 
 /**
  * 工場出荷の既定モデル。ユーザーが Options で既定モデルを未設定のとき、S5 スキーマ画面の
@@ -123,7 +134,13 @@ export async function saveDefaultModel(model: string): Promise<void> {
   await setLocal(DEFAULT_MODEL_STORAGE_KEY, trimmed);
 }
 
-/** OpenAI 互換 Chat Completions の完全 URL を検証・正規化する */
+/**
+ * OpenAI 互換 Chat Completions の完全 URL を検証・正規化する（Azure OpenAI の完全 URL 入力欄も
+ * このバリデータを共有する。issue #127 PR3）。
+ * クエリ文字列は許可する — Azure OpenAI がデプロイメント URL に必須の
+ * `?api-version=...` を含む完全 URL を入力させる仕様（docs/ui-states.md §2）のため。
+ * フラグメントは実質的な URL 差分を生まない冗長な入力のため引き続き拒否する
+ */
 export function normalizeOpenAiCompatibleEndpoint(endpoint: string): string {
   const trimmed = endpoint.trim();
   let url: URL;
@@ -141,8 +158,8 @@ export function normalizeOpenAiCompatibleEndpoint(endpoint: string): string {
   if (url.username !== '' || url.password !== '') {
     throw new Error('API エンドポイントに認証情報を含めないでください');
   }
-  if (url.search !== '' || url.hash !== '') {
-    throw new Error('API エンドポイントにクエリ文字列やフラグメントを含めないでください');
+  if (url.hash !== '') {
+    throw new Error('API エンドポイントにフラグメントを含めないでください');
   }
   return url.toString();
 }
@@ -167,7 +184,7 @@ export async function loadLlmConnectionSettings(): Promise<LlmConnectionSettings
   };
 }
 
-/** 接続方式を保存する。OpenAI 互換 API では検証済みの完全 URL も必須 */
+/** 接続方式を保存する。OpenAI 互換 API / Azure OpenAI では検証済みの完全 URL も必須 */
 export async function saveLlmConnectionSettings(settings: {
   provider: LlmProviderId;
   openAiCompatibleEndpoint?: string | null;
@@ -175,10 +192,9 @@ export async function saveLlmConnectionSettings(settings: {
   if (!LLM_PROVIDERS.has(settings.provider)) {
     throw new Error('未対応の LLM 接続方式です');
   }
-  const endpoint =
-    settings.provider === 'openai_compatible'
-      ? normalizeOpenAiCompatibleEndpoint(settings.openAiCompatibleEndpoint ?? '')
-      : null;
+  const endpoint = usesOpenAiCompatibleEndpoint(settings.provider)
+    ? normalizeOpenAiCompatibleEndpoint(settings.openAiCompatibleEndpoint ?? '')
+    : null;
   await setLocal(LLM_PROVIDER_STORAGE_KEY, settings.provider);
   if (endpoint !== null) {
     await setLocal(OPENAI_COMPATIBLE_ENDPOINT_STORAGE_KEY, endpoint);

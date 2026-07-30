@@ -739,6 +739,131 @@ describe('bootstrapOptions（Anthropic 接続。issue #127 PR2 target spec の�
   });
 });
 
+describe('bootstrapOptions（Azure OpenAI 接続。issue #127 PR3 target spec の実装）', () => {
+  let chromeMock: ChromeMock;
+  let originalFetch: typeof fetch | undefined;
+
+  const provider = (): HTMLSelectElement =>
+    document.getElementById('llm-provider') as HTMLSelectElement;
+  const azureFields = (): HTMLElement =>
+    document.getElementById('azure-openai-fields') as HTMLElement;
+  const compatibleFields = (): HTMLElement =>
+    document.getElementById('openai-compatible-fields') as HTMLElement;
+  const anthropicFields = (): HTMLElement =>
+    document.getElementById('anthropic-fields') as HTMLElement;
+  const azureEndpoint = (): HTMLInputElement =>
+    document.getElementById('azure-openai-endpoint') as HTMLInputElement;
+  const azureKey = (): HTMLInputElement =>
+    document.getElementById('azure-openai-api-key') as HTMLInputElement;
+  const save = (): HTMLButtonElement =>
+    document.getElementById('save-llm-connection') as HTMLButtonElement;
+  const testConnection = (): HTMLButtonElement =>
+    document.getElementById('test-llm-connection') as HTMLButtonElement;
+  const connectionStatus = (): HTMLElement =>
+    document.getElementById('llm-connection-status') as HTMLElement;
+
+  const AZURE_URL =
+    'https://res.openai.azure.com/openai/deployments/gpt-4o-deployment/chat/completions?api-version=2026-01-01';
+
+  beforeEach(() => {
+    chromeMock = installChromeMock();
+    originalFetch = globalThis.fetch;
+    document.body.replaceChildren(buildSettingsSections());
+  });
+
+  afterEach(() => {
+    if (originalFetch === undefined) {
+      delete (globalThis as { fetch?: typeof fetch }).fetch;
+    } else {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test('Azure OpenAI 選択時はエンドポイント欄と API キー欄を表示し、他の接続方式の欄を隠す', async () => {
+    await bootstrapOptions(document);
+    provider().value = 'azure_openai';
+    provider().dispatchEvent(new Event('change'));
+    expect(azureFields().hidden).toBe(false);
+    expect(compatibleFields().hidden).toBe(true);
+    expect(anthropicFields().hidden).toBe(true);
+    expect(azureKey().placeholder).toBe('API キーを入力');
+  });
+
+  test('保存済みキーがあれば placeholder を保存済みへ切り替える', async () => {
+    chromeMock.storage.local.data['secrets.azureOpenAiApiKey'] = 'azure-saved';
+    await bootstrapOptions(document);
+    expect(azureKey().placeholder).toBe('保存済み（変更する場合のみ入力）');
+  });
+
+  test('URL 未入力・キー未入力を理由付きで表示する（loopback でもキー任意にはならない）', async () => {
+    await bootstrapOptions(document);
+    provider().value = 'azure_openai';
+    provider().dispatchEvent(new Event('change'));
+    save().click();
+    await flush();
+    expect(connectionStatus().textContent).toContain('有効な API エンドポイント');
+
+    azureEndpoint().value = 'http://localhost:11434/openai/deployments/x?api-version=2026-01-01';
+    save().click();
+    await flush();
+    expect(connectionStatus().textContent).toBe('Azure OpenAI API キーが未設定です');
+  });
+
+  test('origin 権限を得てから URL とキーを保存する（OpenAI 互換 API と同じ経路）', async () => {
+    await bootstrapOptions(document);
+    provider().value = 'azure_openai';
+    provider().dispatchEvent(new Event('change'));
+    azureEndpoint().value = AZURE_URL;
+    azureKey().value = '  azure-secret  ';
+    save().click();
+    await flush();
+    await flush();
+    expect(chromeMock.permissions.request).toHaveBeenCalledWith({
+      origins: ['https://res.openai.azure.com/*'],
+    });
+    expect(chromeMock.storage.local.data['settings.llmProvider']).toBe('azure_openai');
+    expect(chromeMock.storage.local.data['settings.openAiCompatibleEndpoint']).toBe(AZURE_URL);
+    expect(chromeMock.storage.local.data['secrets.azureOpenAiApiKey']).toBe('azure-secret');
+    expect(azureKey().value).toBe('');
+    expect(azureKey().placeholder).toBe('保存済み（変更する場合のみ入力）');
+    expect(connectionStatus().textContent).toBe('保存しました。');
+  });
+
+  test('権限拒否時は理由を表示し、保存しない', async () => {
+    await bootstrapOptions(document);
+    provider().value = 'azure_openai';
+    provider().dispatchEvent(new Event('change'));
+    azureEndpoint().value = AZURE_URL;
+    azureKey().value = 'azure-secret';
+    chromeMock.permissions.request.mockResolvedValueOnce(false);
+    save().click();
+    await flush();
+    await flush();
+    expect(connectionStatus().textContent).toBe('接続先へのアクセスが許可されませんでした');
+    expect(chromeMock.storage.local.data['settings.llmProvider']).toBeUndefined();
+  });
+
+  test('保存済みキーを再入力せず接続テストできる（api-key ヘッダーで送信）', async () => {
+    chromeMock.storage.local.data['secrets.azureOpenAiApiKey'] = 'azure-saved';
+    globalThis.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      text: async () => JSON.stringify({ choices: [{ message: { content: '{"ok":true}' } }] }),
+    }) as unknown as typeof fetch;
+    await bootstrapOptions(document);
+    provider().value = 'azure_openai';
+    provider().dispatchEvent(new Event('change'));
+    azureEndpoint().value = AZURE_URL;
+    testConnection().click();
+    await flush();
+    await flush();
+    expect(connectionStatus().textContent).toBe('接続テストに成功しました。');
+    const init = (globalThis.fetch as jest.Mock).mock.calls[0]?.[1] as RequestInit;
+    const headers = init.headers as Record<string, string>;
+    expect(headers['api-key']).toBe('azure-saved');
+    expect(headers['Authorization']).toBeUndefined();
+  });
+});
+
 describe('bootstrapOptions（レート制限 tier。docs/ui-states.md §2「レート制限」）', () => {
   let chromeMock: ChromeMock;
 
