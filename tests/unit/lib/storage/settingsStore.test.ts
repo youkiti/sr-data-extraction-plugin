@@ -120,18 +120,31 @@ describe('settingsStore', () => {
     );
   });
 
-  test('LLM 接続設定: Gemini / OpenRouter は endpoint を削除して保存できる', async () => {
+  // issue #127 PR3 レビュー対応: 以前は Gemini / OpenRouter / Anthropic への切替で
+  // openAiCompatibleEndpoint を暗黙に削除していたが、保存済み URL を暗黙に失わせない方針に
+  // 統一したため、この削除は行わなくなった（仕様変更。docs/ui-states.md §2「接続方式切替」）
+  test('LLM 接続設定: Gemini / OpenRouter / Anthropic へ切り替えても保存済みの OpenAI 互換 URL は削除されない', async () => {
     chromeMock.storage.local.data['settings.openAiCompatibleEndpoint'] =
       'https://old.example/v1/chat/completions';
     await saveLlmConnectionSettings({ provider: 'gemini' });
-    await expect(loadLlmConnectionSettings()).resolves.toMatchObject({ provider: 'gemini' });
-    expect(chromeMock.storage.local.remove).toHaveBeenCalledWith(
+    await expect(loadLlmConnectionSettings()).resolves.toEqual({
+      provider: 'gemini',
+      openAiCompatibleEndpoint: 'https://old.example/v1/chat/completions',
+      azureOpenAiEndpoint: null,
+    });
+    expect(chromeMock.storage.local.remove).not.toHaveBeenCalledWith(
       'settings.openAiCompatibleEndpoint',
     );
     await saveLlmConnectionSettings({ provider: 'openrouter' });
-    await expect(loadLlmConnectionSettings()).resolves.toMatchObject({ provider: 'openrouter' });
+    await expect(loadLlmConnectionSettings()).resolves.toMatchObject({
+      provider: 'openrouter',
+      openAiCompatibleEndpoint: 'https://old.example/v1/chat/completions',
+    });
     await saveLlmConnectionSettings({ provider: 'anthropic' });
-    await expect(loadLlmConnectionSettings()).resolves.toMatchObject({ provider: 'anthropic' });
+    await expect(loadLlmConnectionSettings()).resolves.toMatchObject({
+      provider: 'anthropic',
+      openAiCompatibleEndpoint: 'https://old.example/v1/chat/completions',
+    });
   });
 
   // issue #127 PR3 フォローアップ（レビュー対応）: 接続方式を切り替えても、もう一方の

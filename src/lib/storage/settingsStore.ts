@@ -217,7 +217,13 @@ export async function loadLlmConnectionSettings(): Promise<LlmConnectionSettings
  * 接続方式を保存する。OpenAI 互換 API / Azure OpenAI では検証済みの完全 URL も必須。
  * 2 方式は保存先の設定キーが別（`openAiCompatibleEndpoint` / `azureOpenAiEndpoint`）のため、
  * 保存対象の provider に属するキーだけを書き換え、もう一方の保存値には触れない
- * （issue #127 PR3 フォローアップ: 接続方式の切替で他方の URL を失わないようにする）
+ * （issue #127 PR3 フォローアップ: 接続方式の切替で他方の URL を失わないようにする）。
+ * **接続方式の切替そのものではどちらの保存済み URL も削除しない**（以前は gemini / openrouter /
+ * anthropic への切替時に `openAiCompatibleEndpoint` を暗黙に削除していたが、保存済み URL を
+ * 暗黙に失わせない方針に統一するため、この削除処理自体をやめた — issue #127 PR3 レビュー対応）。
+ * 現時点では保存済みエンドポイント URL を明示的に削除する手段が Options 側に無い
+ * （API キーと同様、削除専用の UI 操作は未実装。Azure OpenAI の URL はテナントのリソース名を
+ * 含むため、削除手段が必要になった際は別途 Options に追加を検討する）
  */
 export async function saveLlmConnectionSettings(settings: {
   provider: LlmProviderId;
@@ -239,11 +245,10 @@ export async function saveLlmConnectionSettings(settings: {
     await setLocal(AZURE_OPENAI_ENDPOINT_STORAGE_KEY, endpoint);
     return;
   }
-  // gemini / openrouter / anthropic はエンドポイント欄を持たない接続方式。既存仕様どおり
-  // OpenAI 互換 API 用 URL は削除する（docs/ui-states.md §2「接続方式切替」）。Azure 用 URL は
-  // 別 provider の保存値のためここでは触れない
+  // gemini / openrouter / anthropic はエンドポイント欄を持たない接続方式。保存済みの
+  // OpenAI 互換 API / Azure OpenAI 用 URL はどちらも保持したまま provider だけ切り替える
+  // （保存済み URL を暗黙に失わせない。issue #127 PR3 レビュー対応）
   await setLocal(LLM_PROVIDER_STORAGE_KEY, settings.provider);
-  await removeLocal(OPENAI_COMPATIBLE_ENDPOINT_STORAGE_KEY);
 }
 
 /**

@@ -111,7 +111,7 @@ spec が正。実装が追いついていない箇所は以下のとおり（実
 | 保存完了 | `#llm-connection-status` = `保存しました。`。OpenAI 互換 API のキー入力はクリアし、placeholder を保存済みへ切り替える |
 | 保存失敗 | URL 不正、API キー未設定、権限拒否、storage 失敗の理由を赤系メッセージで表示し、ボタンを復帰する |
 | 接続テスト | `#test-llm-connection.disabled = true`。現在の入力値と既定モデルを使い、`json_schema + strict`、`json_schema`、`json_object` の順で最小リクエストを送る。互換性エラー時だけ次の方式へフォールバックし、JSON 応答を確認できれば `接続テストに成功しました。`、それ以外は理由を赤系で表示する |
-| 接続方式切替 | Gemini / OpenRouter / Anthropic を保存したときは `settings.openAiCompatibleEndpoint` を削除する（`settings.azureOpenAiEndpoint` は別 provider の保存値のため触れない。issue #127 PR3 フォローアップ）。OpenAI 互換 API キーは秘密情報として別管理し、接続方式の切り替えだけでは削除しない |
+| 接続方式切替 | **どの接続方式へ切り替えて保存しても、保存済みのエンドポイント URL は一切削除しない**（issue #127 PR3 レビュー対応。以前は Gemini / OpenRouter / Anthropic を保存すると `settings.openAiCompatibleEndpoint` を暗黙に削除していたが、保存済み URL を暗黙に失わせない方針に統一したためこの削除処理自体をやめた）。OpenAI 互換 API の URL（`settings.openAiCompatibleEndpoint`）と Azure OpenAI の URL（`settings.azureOpenAiEndpoint`）はそれぞれ専用キーに保存され、もう一方の接続方式を保存しても・ページを再読み込みしても値は残り続ける。OpenAI 互換 API を設定 → Azure へ切替・設定 → OpenAI 互換 API へ戻す、という往復をしても双方の URL がそのまま復元される。API キーも同様に秘密情報として別管理し、接続方式の切り替えだけでは削除しない |
 
 OpenAI 互換 API の URL は HTTPS を原則とし、HTTP は hostname が `localhost`、`127.0.0.1`、`[::1]` のいずれかと完全一致する場合だけ受け付ける。
 非標準ポートは HTTPS と loopback HTTP の双方で許可する。
