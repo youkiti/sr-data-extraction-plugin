@@ -25,7 +25,7 @@ function errorResponse(status: number, body = 'err', retryAfter: string | null =
 }
 
 describe('AnthropicProvider.chat', () => {
-  test('user メッセージを messages に渡し、テキストを返す（固定ヘッダー3種・max_tokens既定・effort既定）', async () => {
+  test('user メッセージを messages に渡し、テキストを返す（固定ヘッダー4種・max_tokens既定・effort既定）', async () => {
     const fetch = jest.fn().mockResolvedValue(
       jsonResponse({
         content: [{ type: 'text', text: 'Hello!' }],
@@ -47,6 +47,9 @@ describe('AnthropicProvider.chat', () => {
       'x-api-key': 'sk-ant-xxx',
       'anthropic-version': '2023-06-01',
       'content-type': 'application/json',
+      // Chrome が拡張ページからの POST に付ける Origin ヘッダのため必須。無いと 401
+      // （実 API で確認済み。AnthropicProvider.ts の BROWSER_ACCESS_HEADER のコメント参照）
+      'anthropic-dangerous-direct-browser-access': 'true',
     });
     const body = JSON.parse(init.body as string);
     expect(body).toEqual({
@@ -58,6 +61,33 @@ describe('AnthropicProvider.chat', () => {
     });
     expect(body.system).toBeUndefined();
     expect(body.thinking).toBeUndefined();
+  });
+
+  // 回帰テスト: このヘッダを落とすと実機（拡張ページからの POST に Chrome が Origin を付ける）で
+  // 全リクエストが 401 になる。Node 上の実 API 疎通では Origin が付かないため露見せず、
+  // モックでも 401 を再現できないため、ヘッダの存在自体を独立したテストで固定する（issue #127）
+  test('ブラウザ直接呼び出しの opt-in ヘッダを常に送る（構造化出力や画像入力の有無に依らない）', async () => {
+    const fetch = jest
+      .fn()
+      .mockResolvedValue(
+        jsonResponse({ content: [{ type: 'text', text: '{}' }], stop_reason: 'end_turn', usage: {} }),
+      );
+    const provider = new AnthropicProvider({
+      apiKey: 'sk-ant-xxx',
+      model: 'claude-haiku-4-5',
+      fetch,
+    });
+    await provider.chat([{ role: 'user', content: 'hi' }]);
+    await provider.chat(
+      [{ role: 'user', content: [{ type: 'text', text: 'hi' }] }],
+      { responseSchema: { type: 'object' }, maxOutputTokens: 64 },
+    );
+    for (const call of fetch.mock.calls) {
+      const [, init] = call as [string, RequestInit];
+      expect(
+        (init.headers as Record<string, string>)['anthropic-dangerous-direct-browser-access'],
+      ).toBe('true');
+    }
   });
 
   test('role: model は assistant へ、system メッセージは複数あれば結合してトップレベル system へ写す', async () => {

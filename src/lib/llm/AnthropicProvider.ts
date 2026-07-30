@@ -1,8 +1,9 @@
 // Anthropic Messages API（api.anthropic.com）向け実装（issue #127 PR1）。
 // GeminiProvider / OpenAICompatibleProvider と同じ構造・エラー処理・fetch 注入パターンに倣う。
 //
-// - 認証は固定 3 ヘッダー方式（BYOK。requirements.md §2.1）: `x-api-key` / `anthropic-version` /
-//   `content-type`。エンドポイントは `https://api.anthropic.com/v1/messages` 固定で利用者入力は無い
+// - 認証は固定 4 ヘッダー方式（BYOK。requirements.md §2.1）: `x-api-key` / `anthropic-version` /
+//   `content-type` + `anthropic-dangerous-direct-browser-access`（下記 BROWSER_ACCESS_HEADER）。
+//   エンドポイントは `https://api.anthropic.com/v1/messages` 固定で利用者入力は無い
 // - `system` ロールのメッセージはトップレベルの独立フィールド `system` へ写す（messages 配列には
 //   入れない）。`role:'model'` は `'assistant'` へ写す
 // - 画像パートは `{type:'image', source:{type:'base64', media_type, data}}`
@@ -29,6 +30,27 @@ export interface AnthropicProviderOptions {
 
 const ENDPOINT = 'https://api.anthropic.com/v1/messages';
 const ANTHROPIC_VERSION = '2023-06-01';
+
+/**
+ * ブラウザ文脈からの直接呼び出しに必要な opt-in ヘッダ。**省略できない**。
+ *
+ * Anthropic API は `Origin` ヘッダが付いたリクエストを、このヘッダが無いと本文の検査前に
+ * HTTP 401 `authentication_error` で拒否する
+ * （`CORS requests must set 'anthropic-dangerous-direct-browser-access' header`）。
+ * Chrome は拡張ページ（Options / app.html）や service worker からの POST に
+ * `Origin: chrome-extension://<拡張 ID>` を付けるため、`api.anthropic.com` を
+ * host_permissions に持ち CORS 自体は免除される MV3 拡張でも、この 401 は避けられない。
+ *
+ * 実 API で確認済み（2026-07-30。debug/ のプローブ、issue #127）:
+ *  - Origin あり + 本ヘッダ無し → 401（上記メッセージ）／プリフライトも 400・ACAO 無し
+ *  - Origin あり + 本ヘッダ `true` → 200・`access-control-allow-origin: *`／プリフライトも 200
+ *  - Origin 無し（Node 等の非ブラウザ文脈）+ 本ヘッダ `true` → 200（常時送っても無害）
+ *
+ * 上記のとおり非ブラウザ文脈でも副作用が無いため、条件分岐せず常に送る。
+ * 名称の "dangerous" は「ブラウザへ API キーを置くこと」への警告で、BYOK 前提の本拡張では
+ * 利用者自身のキーを利用者のブラウザだけに保存する設計（requirements.md §2.1）のため受容する
+ */
+const BROWSER_ACCESS_HEADER = 'anthropic-dangerous-direct-browser-access';
 
 /**
  * `ChatOptions.maxOutputTokens` 未指定時に使う既定の「本文」トークン予算。
@@ -149,6 +171,7 @@ export class AnthropicProvider implements LLMProvider {
         'x-api-key': this.apiKey,
         'anthropic-version': ANTHROPIC_VERSION,
         'content-type': 'application/json',
+        [BROWSER_ACCESS_HEADER]: 'true',
       },
       body: JSON.stringify(this.buildRequestBody(messages, options)),
     });
