@@ -122,19 +122,19 @@ loopback HTTP で API キーが空の場合は Authorization ヘッダーを送�
 接続先へ論文本文と抽出プロンプトが送信される旨を設定画面に表示する。
 任意ヘッダー、Bearer 以外の認証、Chat Completions 以外の API 形式は対象外とする。
 
-### LLM 接続先の拡張（target spec・issue #127。PR2〜PR5 で実装。実装より先に spec を書く運用）
+### LLM 接続先の拡張（issue #127。Anthropic 部分は PR2 で実装済み・Azure OpenAI / モデル一覧自動取得 / reasoning effort は PR3〜PR5 の target spec）
 
-> この節は未実装の target spec。PR1（`AnthropicProvider` コア）は provider 層のみでこの節の UI 配線を持たない。実装が進み次第この節を「実装済み」に更新する。
+> PR1（`AnthropicProvider` コア）は provider 層のみで UI 配線を持たなかった。PR2 で Options（`#llm-provider` に `anthropic` を追加 + `#anthropic-api-key` + 接続テスト）まで配線した。「Anthropic 選択時」の行は実装済み。Azure OpenAI / 「モデル一覧を取得」ボタン / reasoning effort の 3 行は引き続き未実装の target spec（実装が進み次第この節を更新する）。
 
-`#llm-provider` の選択肢に `anthropic`（Anthropic ネイティブ）/ `azure_openai`（Azure OpenAI）を追加する（既存の `gemini` / `openrouter` / `openai_compatible` はそのまま）。
+`#llm-provider` の選択肢に `anthropic`（Anthropic ネイティブ。**PR2 で実装済み**）/ `azure_openai`（Azure OpenAI。PR3 target spec）を追加する（既存の `gemini` / `openrouter` / `openai_compatible` はそのまま）。
 
 | 状態 | 受入基準 |
 |---|---|
-| Anthropic 選択時 | エンドポイント入力欄を表示しない（`https://api.anthropic.com/v1/messages` 固定。§2.2 の `host_permissions` に固定登録済みのため権限確認も不要）。表示するのは `#anthropic-api-key`（password。Gemini / OpenRouter と同じトンマナ）のみ |
-| Azure OpenAI 選択時 | `#azure-openai-endpoint`（クエリ文字列付きの**完全 URL**を入力させる。ヘルプ文言「デプロイメント + API バージョンを含む完全な URL を入力してください（例: `https://{resource}.openai.azure.com/openai/deployments/{deployment}/chat/completions?api-version=2026-xx-xx`）」）+ `#azure-openai-api-key`（password）。**モデル欄（`requested_model` 等）には Azure の「デプロイメント名」を入れてもらう旨のヘルプ文言**を添える（Azure OpenAI は OpenAI 標準モデル ID ではなくテナントごとのデプロイメント名で呼び出すため）。URL 検証・origin 権限要求は OpenAI 互換 API と同じ経路（`optional_host_permissions` の `https://*/*`）を使う（§2.2 決定） |
-| 「モデル一覧を取得」ボタン（PR4） | 各接続方式に `#fetch-model-list` を持つ。**未取得**: プレースホルダ文言「モデル一覧は未取得です」+ ボタン活性。**取得中**: ボタン disabled + 「取得しています…」。**成功**: 取得したモデル ID をセレクタへ反映しトースト「モデル一覧を更新しました」。**失敗**: 赤系メッセージ + **ハードコードのカタログ（`MODEL_PRICING` 等の静的リスト）へフォールバック**して従来どおりセレクタを使用可能にする（自動取得は「実需を補う」位置づけであり、失敗しても既存の静的カタログ利用を妨げない） |
-| 単価表に無いモデルを選んだとき | S7（一括抽出）のコスト概算欄 `#extract-estimate` は**空欄**になる（既存仕様「概算不可」と同じ扱い。`MODEL_PRICING` に無いモデル ID は `estimateCostUsd` が `null` を返すため）。UI 上に補足文言「単価未登録のためコスト概算は表示されません」を明示する（モデル一覧の自動取得〔PR4〕で単価表に無い新モデルを選べるようになるため、この補足が既存の「概算不可」より重要になる） |
-| reasoning effort の既定値（PR5） | Options に `#default-reasoning-effort` セレクタ（`low` / `medium` / `high` / 未設定）を追加する。保存キーは `settings.defaultReasoningEffort`（未設定 = null 可。Anthropic 系プロバイダの `ChatOptions` に effort フィールドが追加された時点でここから注入する。**未設定を許すのは全プロバイダ共通ではなく Anthropic 系のみが consume するため**、無指定でも他プロバイダの動作に影響しない） |
+| Anthropic 選択時（**実装済み・PR2**） | エンドポイント入力欄を表示しない（`https://api.anthropic.com/v1/messages` 固定。§2.2 の `host_permissions` に固定登録済みのため権限確認も不要）。表示するのは `#anthropic-fields` 配下の `#anthropic-api-key`（password。Gemini / OpenRouter と同じトンマナ。保存済みは placeholder で示し平文は再表示しない）のみ。保存キーは `settings.llmProvider = 'anthropic'` + `secrets.anthropicApiKey`（`src/lib/storage/secretsStore.ts`）。`resolveProviderId` は `claude-` 始まりのモデル ID を anthropic と解決するため、接続方式を未保存のまま Claude モデルを既定モデルへ設定した場合も自動判定される。単価表 `MODEL_PRICING` / `MODEL_IMAGE_CAPABILITY` に `claude-opus-5` / `claude-sonnet-5` / `claude-haiku-4-5` の 3 モデル（数値は docs/requirements.md §10 Q11）を収載済みで、モデルセレクタに `Anthropic` optgroup が出る |
+| Azure OpenAI 選択時（PR3 target spec） | `#azure-openai-endpoint`（クエリ文字列付きの**完全 URL**を入力させる。ヘルプ文言「デプロイメント + API バージョンを含む完全な URL を入力してください（例: `https://{resource}.openai.azure.com/openai/deployments/{deployment}/chat/completions?api-version=2026-xx-xx`）」）+ `#azure-openai-api-key`（password）。**モデル欄（`requested_model` 等）には Azure の「デプロイメント名」を入れてもらう旨のヘルプ文言**を添える（Azure OpenAI は OpenAI 標準モデル ID ではなくテナントごとのデプロイメント名で呼び出すため）。URL 検証・origin 権限要求は OpenAI 互換 API と同じ経路（`optional_host_permissions` の `https://*/*`）を使う（§2.2 決定） |
+| 「モデル一覧を取得」ボタン（PR4 target spec） | 各接続方式に `#fetch-model-list` を持つ。**未取得**: プレースホルダ文言「モデル一覧は未取得です」+ ボタン活性。**取得中**: ボタン disabled + 「取得しています…」。**成功**: 取得したモデル ID をセレクタへ反映しトースト「モデル一覧を更新しました」。**失敗**: 赤系メッセージ + **ハードコードのカタログ（`MODEL_PRICING` 等の静的リスト）へフォールバック**して従来どおりセレクタを使用可能にする（自動取得は「実需を補う」位置づけであり、失敗しても既存の静的カタログ利用を妨げない） |
+| 単価表に無いモデルを選んだとき（PR4 target spec） | S7（一括抽出）のコスト概算欄 `#extract-estimate` は**空欄**になる（既存仕様「概算不可」と同じ扱い。`MODEL_PRICING` に無いモデル ID は `estimateCostUsd` が `null` を返すため）。UI 上に補足文言「単価未登録のためコスト概算は表示されません」を明示する（モデル一覧の自動取得〔PR4〕で単価表に無い新モデルを選べるようになるため、この補足が既存の「概算不可」より重要になる） |
+| reasoning effort の既定値（PR5 target spec） | Options に `#default-reasoning-effort` セレクタ（`low` / `medium` / `high` / 未設定）を追加する。保存キーは `settings.defaultReasoningEffort`（未設定 = null 可。Anthropic 系プロバイダの `ChatOptions` に effort フィールドが追加された時点でここから注入する。**未設定を許すのは全プロバイダ共通ではなく Anthropic 系のみが consume するため**、無指定でも他プロバイダの動作に影響しない） |
 
 **Anthropic ネイティブと Azure OpenAI に限り、「独自認証は投機実装しない」の不採用宣言を明示的に覆す**（requirements.md §10 Q11）。プロバイダごとに**固定の**認証方式（Anthropic = `x-api-key` + `anthropic-version` 固定ヘッダー、Azure OpenAI = 利用者が入力する URL への Bearer/API キー）を実装するのみで、利用者が自由にヘッダー名・値を追加できる汎用の任意ヘッダー入力 UI は導入しない。カスタムモデル一覧の手動管理 UI も引き続き不採用のまま、「モデル一覧を取得」ボタンによる自動取得で実需をカバーする。
 

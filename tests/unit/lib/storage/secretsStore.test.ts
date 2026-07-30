@@ -1,13 +1,16 @@
 import { installChromeMock } from '../../../setup/chrome-mock';
 import {
+  clearAnthropicApiKey,
   clearGeminiApiKey,
   clearOpenAiCompatibleApiKey,
   clearOpenRouterApiKey,
+  loadAnthropicApiKey,
   loadGeminiApiKey,
   loadOpenAiCompatibleApiKey,
   loadOpenRouterApiKey,
   looksLikeGeminiApiKey,
   looksLikeOpenRouterApiKey,
+  saveAnthropicApiKey,
   saveGeminiApiKey,
   saveOpenAiCompatibleApiKey,
   saveOpenRouterApiKey,
@@ -79,5 +82,25 @@ describe('secretsStore', () => {
 
   test('OpenAI 互換 API キー: 空文字を拒否する', async () => {
     await expect(saveOpenAiCompatibleApiKey('   ')).rejects.toThrow('空の API キー');
+  });
+
+  // issue #127 PR2: Anthropic API キー（他プロバイダと同じ trim 保存・空文字拒否・独立削除の規約）
+  test('Anthropic キー: 未設定なら null、trim して保存し、読み出せる', async () => {
+    await expect(loadAnthropicApiKey()).resolves.toBeNull();
+    await saveAnthropicApiKey('  sk-ant-TESTKEY  ');
+    await expect(loadAnthropicApiKey()).resolves.toBe('sk-ant-TESTKEY');
+  });
+
+  test('Anthropic キー: 空文字（空白のみ含む）は保存を拒否する', async () => {
+    await expect(saveAnthropicApiKey('   ')).rejects.toThrow('空の API キー');
+    await expect(loadAnthropicApiKey()).resolves.toBeNull();
+  });
+
+  test('Anthropic キー: clear で削除され、他プロバイダのキーには影響しない', async () => {
+    await saveGeminiApiKey('AIzaSyTESTKEY');
+    await saveAnthropicApiKey('sk-ant-TESTKEY');
+    await clearAnthropicApiKey();
+    await expect(loadAnthropicApiKey()).resolves.toBeNull();
+    await expect(loadGeminiApiKey()).resolves.toBe('AIzaSyTESTKEY');
   });
 });

@@ -7,19 +7,25 @@ import {
 import { MODEL_PRICING } from '../../../../src/lib/llm/pricing';
 
 describe('buildModelCatalog', () => {
-  test('単価表のモデルを Gemini / OpenRouter にグループ分けする', () => {
+  test('単価表のモデルを Gemini / OpenRouter / Anthropic にグループ分けする', () => {
     const groups = buildModelCatalog();
-    expect(groups.map((g) => g.label)).toEqual(['Gemini', 'OpenRouter']);
+    // issue #127 PR2: MODEL_PRICING に Claude 3 モデルを追加したことで
+    // 3 番目の 'Anthropic' グループが出るようになった（下記 PR1 回帰テストの続き）
+    expect(groups.map((g) => g.label)).toEqual(['Gemini', 'OpenRouter', 'Anthropic']);
     const gemini = groups[0]!;
     const openrouter = groups[1]!;
+    const anthropic = groups[2]!;
     for (const model of gemini.models) {
       expect(model).not.toContain('/');
     }
     for (const model of openrouter.models) {
       expect(model).toContain('/');
     }
+    for (const model of anthropic.models) {
+      expect(model.startsWith('claude-')).toBe(true);
+    }
     // 単価表の全モデルがどちらかのグループに漏れなく載る
-    const all = [...gemini.models, ...openrouter.models].sort();
+    const all = [...gemini.models, ...openrouter.models, ...anthropic.models].sort();
     expect(all).toEqual(Object.keys(MODEL_PRICING).sort());
   });
 
@@ -27,15 +33,10 @@ describe('buildModelCatalog', () => {
   // （モデル名に `/` を含むか否かだけの推定）でグループ分けしていたため、
   // `/` を含まない非 Gemini モデル（例: 将来の Claude モデル）が「Gemini」optgroup へ
   // 紛れ込む実バグがあった。現在は `MODEL_IMAGE_CAPABILITY` の明示的な provider を出典にしており、
-  // かつモデルが 1 件も無いグループ（PR1 時点の Anthropic）は結果から除外される。
-  // PR2 で MODEL_PRICING に Claude モデルが追加されれば、このテストを変更しなくても
-  // 自動的に 3 番目の 'Anthropic' グループが出るようになる（このテストはそれまで
-  // 'Anthropic' が出ない = 空グループが描画されないことを固定する）
-  test('空グループ（現状は Anthropic — 単価表にモデルが無い）は結果から除外される', () => {
-    const groups = buildModelCatalog();
-    expect(groups.find((g) => g.label === 'Anthropic')).toBeUndefined();
-    expect(groups.every((g) => g.models.length > 0)).toBe(true);
-  });
+  // モデルが 1 件も無いグループは結果から除外される（issue #127 PR2 で Anthropic に
+  // Claude 3 モデルが載ったため、空グループの実例は現状無い。除外ロジック自体は
+  // buildModelCatalog の実装（.filter）で担保されており、ここで別途空グループを作って
+  // 検証する意味は薄いため、このテストは上のグループ分けテストへ吸収した）
 });
 
 describe('isCatalogModel', () => {

@@ -57,8 +57,18 @@ describe('settingsStore', () => {
     });
   });
 
-  test('LLM 接続設定: "anthropic" は LlmProviderId としては妥当だが LLM_PROVIDERS 未収載のため未知値と同じ扱い（issue #127 PR1。settingsStore への anthropic 追加は PR2/PR3）', async () => {
+  test('LLM 接続設定: "anthropic" は保存済み接続方式として受理され、そのまま往復する（issue #127 PR2）', async () => {
     chromeMock.storage.local.data['settings.llmProvider'] = 'anthropic';
+    await expect(loadLlmConnectionSettings()).resolves.toEqual({
+      provider: 'anthropic',
+      openAiCompatibleEndpoint: null,
+    });
+    await saveLlmConnectionSettings({ provider: 'anthropic' });
+    await expect(loadLlmConnectionSettings()).resolves.toMatchObject({ provider: 'anthropic' });
+  });
+
+  test('LLM 接続設定: 依然として未知の provider は後方互換の null', async () => {
+    chromeMock.storage.local.data['settings.llmProvider'] = 'azure_openai';
     await expect(loadLlmConnectionSettings()).resolves.toEqual({
       provider: null,
       openAiCompatibleEndpoint: null,
@@ -86,6 +96,8 @@ describe('settingsStore', () => {
     );
     await saveLlmConnectionSettings({ provider: 'openrouter' });
     await expect(loadLlmConnectionSettings()).resolves.toMatchObject({ provider: 'openrouter' });
+    await saveLlmConnectionSettings({ provider: 'anthropic' });
+    await expect(loadLlmConnectionSettings()).resolves.toMatchObject({ provider: 'anthropic' });
   });
 
   test('LLM 接続設定: 未対応 provider は拒否する', async () => {

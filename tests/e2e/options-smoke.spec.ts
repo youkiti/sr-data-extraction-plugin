@@ -131,6 +131,32 @@ test('OpenAI 互換 API: loopback HTTP は API キーなしで保存・接続で
   await expect(page.locator('#llm-connection-status')).toHaveText('保存しました。');
 });
 
+test('Anthropic: エンドポイント欄なしで API キーの保存と接続テストができる（issue #127 PR2）', async ({
+  page,
+}) => {
+  await page.addInitScript(chromeStub({ seedModel: false }));
+  await page.route('https://api.anthropic.com/v1/messages', async (route) => {
+    const headers = route.request().headers();
+    expect(headers['x-api-key']).toBe('sk-ant-TESTKEY');
+    expect(headers['anthropic-version']).toBeTruthy();
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ content: [{ type: 'text', text: '{"ok":true}' }] }),
+    });
+  });
+  await page.goto('/options/options.html');
+  await page.locator('#llm-provider').selectOption('anthropic');
+  await expect(page.locator('#anthropic-fields')).toBeVisible();
+  await expect(page.locator('#openai-compatible-fields')).toBeHidden();
+  await page.locator('#anthropic-api-key').fill('sk-ant-TESTKEY');
+  await page.locator('#test-llm-connection').click();
+  await expect(page.locator('#llm-connection-status')).toHaveText('接続テストに成功しました。');
+  await page.locator('#save-llm-connection').click();
+  await expect(page.locator('#llm-connection-status')).toHaveText('保存しました。');
+  await expect(page.locator('#anthropic-api-key')).toHaveValue('');
+});
+
 test('アクセシビリティ違反がない（axe）', async ({ page }) => {
   await page.addInitScript(chromeStub({ seedModel: true }));
   await page.goto('/options/options.html');

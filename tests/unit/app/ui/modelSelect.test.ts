@@ -24,7 +24,7 @@ afterEach(() => {
 });
 
 describe('createModelSelect の構造', () => {
-  test('プレースホルダ + Gemini / OpenRouter optgroup + その他 option を持つ', () => {
+  test('プレースホルダ + Gemini / OpenRouter / Anthropic optgroup + その他 option を持つ', () => {
     const { select, custom } = mount('');
     expect(select.getAttribute('aria-label')).toBe('モデル名（requested_model）');
     expect(custom.getAttribute('aria-label')).toBe('モデル名（requested_model）（直接入力）');
@@ -33,8 +33,9 @@ describe('createModelSelect の構造', () => {
     expect(first.value).toBe('');
     expect(first.textContent).toBe('選択してください');
 
+    // issue #127 PR2: 単価表への Claude 3 モデル追加で Anthropic optgroup が新たに出現する
     const groups = [...select.querySelectorAll('optgroup')];
-    expect(groups.map((g) => g.label)).toEqual(['Gemini', 'OpenRouter']);
+    expect(groups.map((g) => g.label)).toEqual(['Gemini', 'OpenRouter', 'Anthropic']);
     const optionValues = [...select.options].map((o) => o.value);
     for (const model of Object.keys(MODEL_PRICING)) {
       expect(optionValues).toContain(model);

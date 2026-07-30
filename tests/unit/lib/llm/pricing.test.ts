@@ -58,6 +58,23 @@ describe('estimateCostUsd', () => {
   it('画像 1 ページあたりの概算トークン単価（pdf_native）は 1,100', () => {
     expect(APPROX_IMAGE_TOKENS_PER_PAGE).toBe(1_100);
   });
+
+  // issue #127 PR2: docs/requirements.md §10 Q11 で確認済みの Anthropic 3 モデルの単価転記
+  it('claude-opus-5 は入力 $5.00 / 出力 $25.00 per 1M で概算する', () => {
+    expect(MODEL_PRICING['claude-opus-5']).toEqual({ inputPerMillion: 5.0, outputPerMillion: 25.0 });
+    // 1,000,000 入力 + 1,000,000 出力 = 5.00 + 25.00 = 30.00 USD
+    expect(estimateCostUsd('claude-opus-5', 1_000_000, 1_000_000)).toBeCloseTo(30.0, 10);
+  });
+
+  it('claude-sonnet-5 は入力 $3.00 / 出力 $15.00 per 1M（導入価格ではなく通常価格）で概算する', () => {
+    expect(MODEL_PRICING['claude-sonnet-5']).toEqual({ inputPerMillion: 3.0, outputPerMillion: 15.0 });
+    expect(estimateCostUsd('claude-sonnet-5', 1_000_000, 1_000_000)).toBeCloseTo(18.0, 10);
+  });
+
+  it('claude-haiku-4-5 は入力 $1.00 / 出力 $5.00 per 1M で概算する', () => {
+    expect(MODEL_PRICING['claude-haiku-4-5']).toEqual({ inputPerMillion: 1.0, outputPerMillion: 5.0 });
+    expect(estimateCostUsd('claude-haiku-4-5', 1_000_000, 1_000_000)).toBeCloseTo(6.0, 10);
+  });
 });
 
 describe('resolveModelImageInputSupport（画像非対応モデルの実行ブロック）', () => {
@@ -81,6 +98,12 @@ describe('resolveModelImageInputSupport（画像非対応モデルの実行ブ�
     expect(resolveModelImageInputSupport('openrouter', 'deepseek/deepseek-v4-flash')).toBe(
       'unsupported',
     );
+  });
+
+  it('Anthropic 3 モデルは anthropic provider で supported（issue #127 PR2）', () => {
+    expect(resolveModelImageInputSupport('anthropic', 'claude-opus-5')).toBe('supported');
+    expect(resolveModelImageInputSupport('anthropic', 'claude-sonnet-5')).toBe('supported');
+    expect(resolveModelImageInputSupport('anthropic', 'claude-haiku-4-5')).toBe('supported');
   });
 
   it('カタログ外のモデルは unknown', () => {

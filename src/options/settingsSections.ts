@@ -73,7 +73,21 @@ export function buildSettingsSections(): HTMLElement {
     el('option', { text: 'Gemini', attributes: { value: 'gemini' } }),
     el('option', { text: 'OpenRouter', attributes: { value: 'openrouter' } }),
     el('option', { text: t('options.providerOpenAiCompatible'), attributes: { value: 'openai_compatible' } }),
+    el('option', { text: 'Anthropic', attributes: { value: 'anthropic' } }),
   );
+  const anthropicFields = el('div', { id: 'anthropic-fields' }, [
+    el('div', { className: 'options__row' }, [
+      el('label', {
+        text: t('options.apiKeyLabel'),
+        attributes: { for: 'anthropic-api-key' },
+      }),
+      el('input', {
+        id: 'anthropic-api-key',
+        attributes: { type: 'password', autocomplete: 'off' },
+      }),
+    ]),
+  ]);
+  anthropicFields.hidden = true;
   const customFields = el('div', { id: 'openai-compatible-fields' }, [
     el('p', {
       className: 'options__help',
@@ -125,6 +139,7 @@ export function buildSettingsSections(): HTMLElement {
       providerSelect,
     ]),
     customFields,
+    anthropicFields,
     el('div', { className: 'options__actions' }, [
       el('button', {
         id: 'save-llm-connection',

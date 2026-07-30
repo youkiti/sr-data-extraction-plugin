@@ -92,6 +92,7 @@ const LLM_PROVIDERS: ReadonlySet<string> = new Set([
   'gemini',
   'openrouter',
   'openai_compatible',
+  'anthropic',
 ]);
 
 /**
