@@ -1,5 +1,6 @@
 // createProvider / resolveProviderId の単体テスト
 // （sr-query-builder から流用。本拡張の調整: model 必須）
+import { installChromeMock } from '../../../setup/chrome-mock';
 import { AnthropicProvider } from '../../../../src/lib/llm/AnthropicProvider';
 import { GeminiProvider } from '../../../../src/lib/llm/GeminiProvider';
 import { OpenAICompatibleProvider } from '../../../../src/lib/llm/OpenAICompatibleProvider';
@@ -121,6 +122,86 @@ describe('createProvider', () => {
     expect(() =>
       createProvider({ provider: 'azure_openai', apiKey: 'k', model: 'm' }),
     ).toThrow('エンドポイントが未設定');
+  });
+
+  // issue #127 PR5: reasoning effort の設定化。ProviderConfig.reasoningEffort を
+  // 各 provider の construction 時点の既定へ橋渡しする（Gemini は受け取らない）
+  describe('reasoningEffort（issue #127 PR5）', () => {
+    test('anthropic は reasoningEffort を construction 時点の既定として反映する', async () => {
+      const fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        text: async () =>
+          JSON.stringify({ content: [{ type: 'text', text: 'ok' }], stop_reason: 'end_turn' }),
+      } as unknown as Response);
+      const provider = createProvider({
+        provider: 'anthropic',
+        apiKey: 'k',
+        model: 'claude-sonnet-5',
+        fetch,
+        reasoningEffort: 'high',
+      });
+      await provider.chat([{ role: 'user', content: 'u' }]);
+      const body = JSON.parse((fetch.mock.calls[0]?.[1] as RequestInit).body as string);
+      expect(body.output_config).toEqual({ effort: 'high' });
+    });
+
+    test('openrouter は reasoningEffort を construction 時点の既定として反映する', async () => {
+      const fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        text: async () =>
+          JSON.stringify({ choices: [{ message: { content: 'ok' }, finish_reason: 'stop' } ] }),
+      } as unknown as Response);
+      const provider = createProvider({
+        provider: 'openrouter',
+        apiKey: 'k',
+        model: 'org/model',
+        fetch,
+        reasoningEffort: 'medium',
+      });
+      await provider.chat([{ role: 'user', content: 'u' }]);
+      const body = JSON.parse((fetch.mock.calls[0]?.[1] as RequestInit).body as string);
+      expect(body.reasoning_effort).toBe('medium');
+    });
+
+    test('openai_compatible は reasoningEffort を construction 時点の既定として反映する', async () => {
+      const fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({ choices: [{ message: { content: 'ok' } }] }),
+      } as unknown as Response);
+      const provider = createProvider({
+        provider: 'openai_compatible',
+        apiKey: 'k',
+        model: 'org/model',
+        endpoint: 'https://llm.example/v1/chat/completions',
+        fetch,
+        reasoningEffort: 'low',
+      });
+      await provider.chat([{ role: 'user', content: 'u' }]);
+      const body = JSON.parse((fetch.mock.calls[0]?.[1] as RequestInit).body as string);
+      expect(body.reasoning_effort).toBe('low');
+    });
+
+    test('gemini は reasoningEffort を渡しても無視する（未対応）', async () => {
+      const fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        text: async () => JSON.stringify({ candidates: [{ content: { parts: [{ text: 'ok' }] } }] }),
+      } as unknown as Response);
+      const provider = createProvider({
+        provider: 'gemini',
+        apiKey: 'k',
+        model: 'gemini-3.5-flash',
+        fetch,
+        reasoningEffort: 'high',
+      });
+      await provider.chat([{ role: 'user', content: 'u' }]);
+      const body = JSON.parse((fetch.mock.calls[0]?.[1] as RequestInit).body as string);
+      expect(body).not.toHaveProperty('reasoningEffort');
+      expect(body.generationConfig).toBeUndefined();
+    });
   });
 });
 
@@ -314,6 +395,40 @@ describe('resolveProviderConfig', () => {
     ).resolves.toEqual({
       provider: 'openai_compatible',
       config: { provider: 'openai_compatible', apiKey: 'k', model: 'm' },
+    });
+  });
+
+  // issue #127 PR5: reasoning effort の既定値。settings.defaultReasoningEffort が未設定なら
+  // config に reasoningEffort キー自体を足さない（endpoint と同じ流儀。既存呼び出し側の
+  // config の形を変えないための最重要の受け入れ条件）
+  describe('reasoningEffort（issue #127 PR5）', () => {
+    beforeEach(() => {
+      installChromeMock();
+    });
+
+    test('未設定なら config に reasoningEffort キーを足さない（既存の挙動を変えない）', async () => {
+      await expect(
+        resolveProviderConfig('org/model', { loadApiKey: async () => 'key' }),
+      ).resolves.toEqual({
+        provider: 'openrouter',
+        config: { provider: 'openrouter', apiKey: 'key', model: 'org/model' },
+      });
+    });
+
+    test('保存済みなら config.reasoningEffort へ反映する', async () => {
+      const mock = installChromeMock();
+      mock.storage.local.data['settings.defaultReasoningEffort'] = 'high';
+      await expect(
+        resolveProviderConfig('org/model', { loadApiKey: async () => 'key' }),
+      ).resolves.toEqual({
+        provider: 'openrouter',
+        config: {
+          provider: 'openrouter',
+          apiKey: 'key',
+          model: 'org/model',
+          reasoningEffort: 'high',
+        },
+      });
     });
   });
 });

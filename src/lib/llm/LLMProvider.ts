@@ -69,6 +69,16 @@ export type ResponseFormat = 'text' | 'json';
  */
 export type JsonSchema = Record<string, unknown>;
 
+/**
+ * 抽象化した reasoning effort（issue #127 PR5。Options `#default-reasoning-effort` の選択肢と
+ * 1:1）。あくまで advisory な値で、各 provider が自分の方言へ写すか、対応が無ければ無視する:
+ * - Anthropic ネイティブ: `output_config.effort` へそのまま写す（`AnthropicProvider`）
+ * - OpenRouter / OpenAI 互換（Azure OpenAI 含む）: `reasoning_effort` へそのまま写す
+ * - Gemini: 現時点では未対応で無視する（thinking budget 相当の設計は別途検討。
+ *   `GeminiProvider` 冒頭コメント参照）
+ */
+export type ReasoningEffort = 'low' | 'medium' | 'high';
+
 export interface ChatOptions {
   temperature?: number;
   maxOutputTokens?: number;
@@ -80,6 +90,14 @@ export interface ChatOptions {
    * 確実に valid な JSON が欲しい skill（extract-data 等）はこちらを使う。
    */
   responseSchema?: JsonSchema;
+  /**
+   * 呼び出し 1 回ぶんの reasoning effort（advisory）。**未指定（undefined）は「対応 provider の
+   * 既定挙動」を必ず維持する** — Anthropic は従来どおり `output_config.effort = 'low'` を送り、
+   * OpenRouter / OpenAI 互換は従来どおり `reasoning_effort` を一切送らない。既存呼び出し側は
+   * この値を渡していないため、渡さない限りリクエスト本文は 1 バイトも変わらない
+   * （issue #127 PR5）。Gemini はこの値自体を参照しない
+   */
+  reasoningEffort?: ReasoningEffort;
 }
 
 export interface ChatResponse {

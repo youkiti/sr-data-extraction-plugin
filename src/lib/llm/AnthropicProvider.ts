@@ -19,6 +19,7 @@ import {
   type ChatResponse,
   type JsonSchema,
   type LLMProvider,
+  type ReasoningEffort,
 } from './LLMProvider';
 import { parseRetryAfterMs } from './retry';
 
@@ -26,6 +27,13 @@ export interface AnthropicProviderOptions {
   apiKey: string;
   model: string;
   fetch?: typeof fetch;
+  /**
+   * construction 時点の既定 reasoning effort（Options `settings.defaultReasoningEffort` から
+   * `providerFactory.createProvider` が注入する。issue #127 PR5）。呼び出し側が
+   * `ChatOptions.reasoningEffort` を明示すればそちらを優先する。どちらも無ければ
+   * `DEFAULT_EFFORT`（'low'）を送る従来どおりの挙動を維持する（下記 `buildRequestBody` 参照）
+   */
+  reasoningEffort?: ReasoningEffort | null;
 }
 
 const ENDPOINT = 'https://api.anthropic.com/v1/messages';
@@ -168,11 +176,13 @@ export class AnthropicProvider implements LLMProvider {
   readonly supportsImageInput = true;
   private readonly apiKey: string;
   private readonly fetchImpl: typeof fetch | undefined;
+  private readonly reasoningEffort: ReasoningEffort | null;
 
   constructor(options: AnthropicProviderOptions) {
     this.apiKey = options.apiKey;
     this.model = options.model;
     this.fetchImpl = options.fetch;
+    this.reasoningEffort = options.reasoningEffort ?? null;
   }
 
   async chat(messages: readonly ChatMessage[], options: ChatOptions = {}): Promise<ChatResponse> {
@@ -284,7 +294,11 @@ export class AnthropicProvider implements LLMProvider {
 
     const outputConfig: Record<string, unknown> = {};
     if (!MODELS_WITHOUT_EFFORT_SUPPORT.has(this.model)) {
-      outputConfig['effort'] = DEFAULT_EFFORT;
+      // 優先順位: 呼び出し 1 回ぶんの ChatOptions.reasoningEffort（現状どの呼び出し側も渡さない）
+      // → construction 時点の既定（Options 設定。未設定なら null）→ DEFAULT_EFFORT（'low'）。
+      // 両方とも未指定なら DEFAULT_EFFORT に落ちるため、Options で reasoning effort を
+      // 設定していない既存ユーザーの挙動は一切変わらない（issue #127 PR5 の必須要件）
+      outputConfig['effort'] = options.reasoningEffort ?? this.reasoningEffort ?? DEFAULT_EFFORT;
     }
     if (options.responseSchema) {
       outputConfig['format'] = {

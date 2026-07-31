@@ -6,6 +6,7 @@ import {
   type ChatOptions,
   type ChatResponse,
   type LLMProvider,
+  type ReasoningEffort,
 } from './LLMProvider';
 import { normalizeOpenAiCompatibleEndpoint } from '../storage/settingsStore';
 
@@ -28,6 +29,12 @@ export interface OpenAICompatibleProviderOptions {
   fetch?: typeof fetch;
   /** 省略時は 'bearer'（従来どおり）。Azure OpenAI は 'azure_api_key' を渡す */
   authMode?: OpenAiCompatibleAuthMode;
+  /**
+   * construction 時点の既定 reasoning effort（Options `settings.defaultReasoningEffort` から
+   * `providerFactory.createProvider` が注入する。issue #127 PR5。Azure OpenAI 経由も含む）。
+   * 未指定（null / undefined）なら `reasoning_effort` を一切送らない従来どおりの挙動を維持する
+   */
+  reasoningEffort?: ReasoningEffort | null;
 }
 
 interface OpenAICompatibleResponse {
@@ -50,12 +57,36 @@ const STRUCTURED_OUTPUT_MODES: readonly StructuredOutputMode[] = [
   'json_object',
 ];
 
-/** 認証やモデル指定のエラーを隠さず、構造化出力の非互換だけを再試行対象にする */
+/**
+ * 認証やモデル指定のエラーを隠さず、構造化出力の非互換だけを再試行対象にする。
+ *
+ * **`reasoning_effort` 非対応の 400/422 はここではカバーしない**: 判定は応答本文が
+ * `response_format` / `json_schema` / `strict` / `structured_output` のいずれかを含む場合に
+ * 限られ、`reasoning_effort` という語はこの正規表現にマッチしない。issue #127 §4-4 は
+ * 「400 は既存の非互換フォールバックで縮退させる」ことを要求していたが、この関数だけでは
+ * その要求を満たせないと判明した（PR5 の実装レビューで確認）。そのため
+ * `reasoning_effort` 拒否は本関数とは完全に別枠の判定・縮退（`isReasoningEffortRejection` +
+ * `chat()` 内の `reasoningEffortDropped` 一度きりフォールバック）を新設して対応した
+ * （下記 `isReasoningEffortRejection` の JSDoc・`chat()` 本体のコメント参照）。
+ */
 function isStructuredOutputCompatibilityError(status: number, responseBody: string): boolean {
   return (
     (status === 400 || status === 422) &&
     /response[_ -]?format|json[_ -]?schema|strict|structured[_ -]?output/i.test(responseBody)
   );
+}
+
+/**
+ * `reasoning_effort` パラメータ自体が非対応で拒否されたことを示す 400/422 か
+ * （issue #127 PR5 レビュー対応。requirements.md §10 Q11）。
+ * `isStructuredOutputCompatibilityError` と同じ「応答本文の部分一致」方式だが、見る語が違う
+ * （パラメータ名そのもの）ため独立した関数にする。構造化出力の互換性判定とは無関係に、
+ * 任意の利用者指定エンドポイント（localhost の llama.cpp / LM Studio / Ollama 等、厳格な
+ * パラメータ検証をしがちなサーバを含む）が `reasoning_effort` を知らずに 400/422 を返す
+ * ケースだけを拾う。
+ */
+function isReasoningEffortRejection(status: number, responseBody: string): boolean {
+  return (status === 400 || status === 422) && /reasoning[_ -]?effort/i.test(responseBody);
 }
 
 /**
@@ -76,6 +107,7 @@ export class OpenAICompatibleProvider implements LLMProvider {
   private readonly authMode: OpenAiCompatibleAuthMode;
   private readonly fetchImpl: typeof fetch | undefined;
   private structuredOutputMode: StructuredOutputMode = 'json_schema_strict';
+  private readonly reasoningEffort: ReasoningEffort | null;
 
   constructor(options: OpenAICompatibleProviderOptions) {
     this.apiKey = options.apiKey.trim();
@@ -83,6 +115,7 @@ export class OpenAICompatibleProvider implements LLMProvider {
     this.endpoint = normalizeOpenAiCompatibleEndpoint(options.endpoint);
     this.fetchImpl = options.fetch;
     this.authMode = options.authMode ?? 'bearer';
+    this.reasoningEffort = options.reasoningEffort ?? null;
     // LLMApiLog.provider へ書く値を認証方式に連動させる（Azure 分の run を openai_compatible の
     // ログ・コスト集計へ紛れ込ませない）
     this.providerId = this.authMode === 'azure_api_key' ? 'azure_openai' : 'openai_compatible';
@@ -101,12 +134,26 @@ export class OpenAICompatibleProvider implements LLMProvider {
     let mode: StructuredOutputMode | undefined = options.responseSchema
       ? this.structuredOutputMode
       : undefined;
+    // reasoning_effort 拒否の一度きりの縮退フラグ（issue #127 PR5 レビュー対応。
+    // requirements.md §10 Q11）。**構造化出力の `mode` カスケードとは完全に独立させる**:
+    // - このフラグを立てても `mode` には一切触れない（＝構造化出力側の再試行余地を消費しない）
+    // - `mode` が進んでも本フラグはリセットしない（＝一度落とした reasoning_effort を
+    //   「もう一度送ってみる」ことはしない）
+    // 両者が同じ `for` ループ・同じ HTTP エラー分岐を共有するのは実装上の都合だが、
+    // 1 回のエラーに対して「どちらか一方だけ」を 1 段階進める設計にしてあるため、
+    // 両者が互いを再度トリガーし合う（ping-pong する）ことは構造的に起こらない
+    // （`reasoningEffortDropped` は false→true の一方向のみ、`mode` も配列を前進するだけで
+    // 後退しない。どちらも有限回で尽きるため、最終的に必ず throw で終わる）
+    let reasoningEffortDropped = false;
 
     for (;;) {
+      const sendReasoningEffort = !reasoningEffortDropped;
       const res = await fetchFn(this.endpoint, {
         method: 'POST',
         headers,
-        body: JSON.stringify(this.buildRequestBody(messages, options, mode)),
+        body: JSON.stringify(
+          this.buildRequestBody(messages, options, mode, !sendReasoningEffort),
+        ),
       });
       if (res.ok) {
         if (mode !== undefined) {
@@ -121,6 +168,21 @@ export class OpenAICompatibleProvider implements LLMProvider {
         res.status,
         text,
       );
+
+      // reasoning_effort 拒否の判定を構造化出力の判定より先に見る（このリクエストで実際に
+      // reasoning_effort を送っていて、かつまだ縮退していないときだけ）。1 回だけ落として
+      // 同じ mode のまま再送する（continue。mode は動かさない）
+      const effectiveReasoningEffort = options.reasoningEffort ?? this.reasoningEffort;
+      if (
+        sendReasoningEffort &&
+        effectiveReasoningEffort !== null &&
+        effectiveReasoningEffort !== undefined &&
+        isReasoningEffortRejection(res.status, text)
+      ) {
+        reasoningEffortDropped = true;
+        continue;
+      }
+
       const modeIndex = mode === undefined ? -1 : STRUCTURED_OUTPUT_MODES.indexOf(mode);
       const nextMode = STRUCTURED_OUTPUT_MODES[modeIndex + 1];
       if (
@@ -193,7 +255,8 @@ export class OpenAICompatibleProvider implements LLMProvider {
   private buildRequestBody(
     messages: readonly ChatMessage[],
     options: ChatOptions,
-    structuredOutputMode?: StructuredOutputMode,
+    structuredOutputMode: StructuredOutputMode | undefined,
+    dropReasoningEffort: boolean,
   ): Record<string, unknown> {
     const body: Record<string, unknown> = {
       model: this.model,
@@ -223,6 +286,16 @@ export class OpenAICompatibleProvider implements LLMProvider {
       }
     } else if (options.responseFormat === 'json') {
       body['response_format'] = { type: 'json_object' };
+    }
+    // reasoning effort（issue #127 PR5）。呼び出し 1 回ぶんの ChatOptions.reasoningEffort を
+    // construction 時点の既定より優先する。両方とも未指定なら `reasoning_effort` を一切送らない
+    // （＝既存ユーザーの body は 1 バイトも変わらない）。`dropReasoningEffort`（chat() の
+    // 一度きりフォールバックが立てる）が true のときは、設定の有無に関係なく強制的に省く
+    if (!dropReasoningEffort) {
+      const reasoningEffort = options.reasoningEffort ?? this.reasoningEffort;
+      if (reasoningEffort !== null && reasoningEffort !== undefined) {
+        body['reasoning_effort'] = reasoningEffort;
+      }
     }
     return body;
   }

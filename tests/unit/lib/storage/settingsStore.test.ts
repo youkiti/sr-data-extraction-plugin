@@ -3,6 +3,7 @@ import { getRateLimitTier } from '../../../../src/lib/llm/rateLimitPolicy';
 import {
   isLoopbackEndpoint,
   loadDefaultModel,
+  loadDefaultReasoningEffort,
   loadLlmConnectionSettings,
   loadRateLimitCustomConcurrency,
   loadRateLimitCustomRpm,
@@ -14,6 +15,7 @@ import {
   resolveRateLimitPolicy,
   resolveStoredEndpoint,
   saveDefaultModel,
+  saveDefaultReasoningEffort,
   saveLlmConnectionSettings,
   saveRateLimitCustomConcurrency,
   saveRateLimitCustomRpm,
@@ -421,5 +423,40 @@ describe('settingsStore UI 表示言語（issue #93）', () => {
     await expect(loadUiLanguage()).resolves.toBe('en');
     await saveUiLanguage('ja');
     await expect(loadUiLanguage()).resolves.toBe('ja');
+  });
+});
+
+describe('settingsStore reasoning effort の既定値（issue #127 PR5）', () => {
+  beforeEach(() => {
+    installChromeMock();
+  });
+
+  test('未設定なら既定 null', async () => {
+    await expect(loadDefaultReasoningEffort()).resolves.toBeNull();
+  });
+
+  test('不正な保存値は null へフォールバック', async () => {
+    const mock = installChromeMock();
+    mock.storage.local.data['settings.defaultReasoningEffort'] = 'xhigh';
+    await expect(loadDefaultReasoningEffort()).resolves.toBeNull();
+  });
+
+  test('保存して読み出せる（low / medium / high）', async () => {
+    const mock = installChromeMock();
+    await saveDefaultReasoningEffort('low');
+    expect(mock.storage.local.data['settings.defaultReasoningEffort']).toBe('low');
+    await expect(loadDefaultReasoningEffort()).resolves.toBe('low');
+    await saveDefaultReasoningEffort('medium');
+    await expect(loadDefaultReasoningEffort()).resolves.toBe('medium');
+    await saveDefaultReasoningEffort('high');
+    await expect(loadDefaultReasoningEffort()).resolves.toBe('high');
+  });
+
+  test('null を保存すると未設定に戻す（保存キーを削除）', async () => {
+    const mock = installChromeMock();
+    await saveDefaultReasoningEffort('high');
+    await saveDefaultReasoningEffort(null);
+    expect(mock.storage.local.remove).toHaveBeenCalledWith('settings.defaultReasoningEffort');
+    await expect(loadDefaultReasoningEffort()).resolves.toBeNull();
   });
 });

@@ -63,6 +63,78 @@ describe('OpenAICompatibleProvider', () => {
     expect(result).toMatchObject({ text: '{"ok":true}', tokensIn: 12, tokensOut: 3 });
   });
 
+  // issue #127 PR5: reasoning effort の設定化。「未指定 → 従来どおり body を一切変えない」が
+  // 最重要の受け入れ条件（既存ユーザーの body はバイト単位で不変であること。Azure OpenAI も
+  // このクラスを流用するため authMode: 'azure_api_key' でも同じ契約が成り立つ必要がある）
+  describe('reasoning effort（issue #127 PR5）', () => {
+    test('未指定（construction / 呼び出し 1 回ぶんとも）なら body は従来どおり（reasoning_effort を持たない）', async () => {
+      const fetchMock = jest
+        .fn()
+        .mockResolvedValue(response({ choices: [{ message: { content: 'ok' } }] }));
+      const provider = new OpenAICompatibleProvider({
+        apiKey: 'secret',
+        model: 'org/model',
+        endpoint: 'https://llm.example/v1/chat/completions',
+        fetch: fetchMock,
+      });
+      await provider.chat([{ role: 'user', content: 'u' }]);
+      const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
+      expect(JSON.parse(init.body as string)).toEqual({
+        model: 'org/model',
+        messages: [{ role: 'user', content: 'u' }],
+      });
+    });
+
+    test('construction 時に reasoningEffort: null を渡しても body は従来どおり', async () => {
+      const fetchMock = jest
+        .fn()
+        .mockResolvedValue(response({ choices: [{ message: { content: 'ok' } }] }));
+      const provider = new OpenAICompatibleProvider({
+        apiKey: 'secret',
+        model: 'org/model',
+        endpoint: 'https://llm.example/v1/chat/completions',
+        fetch: fetchMock,
+        reasoningEffort: null,
+      });
+      await provider.chat([{ role: 'user', content: 'u' }]);
+      const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
+      expect(JSON.parse(init.body as string)).not.toHaveProperty('reasoning_effort');
+    });
+
+    test('construction 時の reasoningEffort（Options 既定値）を reasoning_effort へ写す（Azure OpenAI 経由も含む）', async () => {
+      const fetchMock = jest
+        .fn()
+        .mockResolvedValue(response({ choices: [{ message: { content: 'ok' } }] }));
+      const provider = new OpenAICompatibleProvider({
+        apiKey: 'secret',
+        model: 'gpt-4o-deployment',
+        endpoint: 'https://res.openai.azure.com/openai/deployments/gpt-4o-deployment/chat/completions?api-version=2026-01-01',
+        fetch: fetchMock,
+        authMode: 'azure_api_key',
+        reasoningEffort: 'low',
+      });
+      await provider.chat([{ role: 'user', content: 'u' }]);
+      const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
+      expect(JSON.parse(init.body as string).reasoning_effort).toBe('low');
+    });
+
+    test('呼び出し 1 回ぶんの ChatOptions.reasoningEffort が construction 時の既定より優先する', async () => {
+      const fetchMock = jest
+        .fn()
+        .mockResolvedValue(response({ choices: [{ message: { content: 'ok' } }] }));
+      const provider = new OpenAICompatibleProvider({
+        apiKey: 'secret',
+        model: 'org/model',
+        endpoint: 'https://llm.example/v1/chat/completions',
+        fetch: fetchMock,
+        reasoningEffort: 'low',
+      });
+      await provider.chat([{ role: 'user', content: 'u' }], { reasoningEffort: 'high' });
+      const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
+      expect(JSON.parse(init.body as string).reasoning_effort).toBe('high');
+    });
+  });
+
   test('JSON mode は response_format を反映する（本文ありの正常応答）', async () => {
     const fetchMock = jest.fn().mockResolvedValue(
       response({ choices: [{ message: { content: '{}' } }] }),
@@ -292,6 +364,160 @@ describe('OpenAICompatibleProvider', () => {
       status: 400,
     });
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  // issue #127 PR5 レビュー対応: reasoning_effort 拒否の一度きりの縮退フォールバック
+  // （requirements.md §10 Q11。任意の利用者指定エンドポイント — localhost の llama.cpp /
+  // LM Studio / Ollama 等 — が reasoning_effort を知らずに 400/422 を返すケースを救済する）
+  describe('reasoning_effort 拒否の縮退フォールバック（issue #127 PR5 レビュー対応）', () => {
+    test('reasoning_effort 拒否の 400 は 1 回だけ落として再送し、成功する', async () => {
+      const fetchMock = jest
+        .fn()
+        .mockResolvedValueOnce(
+          response({ error: "Unsupported parameter: 'reasoning_effort'" }, false, 400),
+        )
+        .mockResolvedValueOnce(response({ choices: [{ message: { content: 'ok' } }] }));
+      const provider = new OpenAICompatibleProvider({
+        apiKey: 'k',
+        model: 'm',
+        endpoint: 'https://llm.example/v1/chat/completions',
+        fetch: fetchMock,
+        reasoningEffort: 'high',
+      });
+      const result = await provider.chat([{ role: 'user', content: 'u' }]);
+      expect(result.text).toBe('ok');
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      const firstBody = JSON.parse((fetchMock.mock.calls[0]?.[1] as RequestInit).body as string);
+      const secondBody = JSON.parse((fetchMock.mock.calls[1]?.[1] as RequestInit).body as string);
+      expect(firstBody.reasoning_effort).toBe('high');
+      expect(secondBody).not.toHaveProperty('reasoning_effort');
+    });
+
+    test('reasoning_effort 拒否の縮退は 1 回だけ（2 回目も reasoning_effort 拒否なら例外化する）', async () => {
+      const fetchMock = jest
+        .fn()
+        .mockResolvedValue(
+          response({ error: "Unsupported parameter: 'reasoning_effort'" }, false, 400),
+        );
+      const provider = new OpenAICompatibleProvider({
+        apiKey: 'k',
+        model: 'm',
+        endpoint: 'https://llm.example/v1/chat/completions',
+        fetch: fetchMock,
+        reasoningEffort: 'high',
+      });
+      await expect(provider.chat([{ role: 'user', content: 'u' }])).rejects.toMatchObject({
+        status: 400,
+      });
+      // 1 回目（reasoning_effort あり）→ 縮退して 2 回目（reasoning_effort なし）→ 失敗して即例外化。
+      // 3 回目は無い（一度きりであることの固定）
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+
+    test('reasoning_effort 拒否は HTTP 422 でも同様に 1 回だけ落として再送する', async () => {
+      const fetchMock = jest
+        .fn()
+        .mockResolvedValueOnce(
+          response({ error: "Invalid parameter: 'reasoning_effort'" }, false, 422),
+        )
+        .mockResolvedValueOnce(response({ choices: [{ message: { content: 'ok' } }] }));
+      const provider = new OpenAICompatibleProvider({
+        apiKey: 'k',
+        model: 'm',
+        endpoint: 'https://llm.example/v1/chat/completions',
+        fetch: fetchMock,
+        reasoningEffort: 'low',
+      });
+      const result = await provider.chat([{ role: 'user', content: 'u' }]);
+      expect(result.text).toBe('ok');
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+
+    test('reasoning_effort 未設定なら拒否メッセージが来ても新しい再試行を起こさない（既存挙動の保護）', async () => {
+      const fetchMock = jest.fn().mockResolvedValue(
+        response({ error: "Unsupported parameter: 'reasoning_effort'" }, false, 400),
+      );
+      const provider = new OpenAICompatibleProvider({
+        apiKey: 'k',
+        model: 'm',
+        endpoint: 'https://llm.example/v1/chat/completions',
+        fetch: fetchMock,
+      });
+      await expect(provider.chat([{ role: 'user', content: 'u' }])).rejects.toMatchObject({
+        status: 400,
+      });
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    test('reasoning_effort 拒否でも構造化出力でもない 400 は即座に例外化する（新しい黙示的リトライを追加しない）', async () => {
+      const fetchMock = jest.fn().mockResolvedValue(response({ error: 'model not found' }, false, 400));
+      const provider = new OpenAICompatibleProvider({
+        apiKey: 'k',
+        model: 'missing',
+        endpoint: 'https://llm.example/v1/chat/completions',
+        fetch: fetchMock,
+        reasoningEffort: 'high',
+      });
+      await expect(provider.chat([{ role: 'user', content: 'u' }])).rejects.toMatchObject({
+        status: 400,
+        responseBody: '{"error":"model not found"}',
+      });
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    test('構造化出力の縮退と reasoning_effort の縮退が絡んでも、互いをトリガーし返す（ping-pong する）ことなく決定的に終わる', async () => {
+      const fetchMock = jest
+        .fn()
+        // 1 回目: mode=json_schema_strict（既定）+ reasoning_effort あり → strict 非対応で
+        //         構造化出力側だけが 1 段階進む（reasoning_effort 側は未反応。文言が一致しないため）
+        .mockResolvedValueOnce(response({ error: 'strict unsupported' }, false, 400))
+        // 2 回目: mode=json_schema（strict なし）+ reasoning_effort あり → reasoning_effort 拒否。
+        //         mode には触れず reasoning_effort だけを 1 回きり落として同じ mode で再送する
+        .mockResolvedValueOnce(
+          response({ error: "Unsupported parameter: 'reasoning_effort'" }, false, 400),
+        )
+        // 3 回目: mode=json_schema（reasoning_effort は既に無し）→ それでも構造化出力非互換 →
+        //         json_object へ 1 段階進む（reasoning_effort はもう縮退済みなので再度は反応しない）
+        .mockResolvedValueOnce(response({ error: 'json_schema unsupported' }, false, 422))
+        // 4 回目: mode=json_object（reasoning_effort なし）→ 成功
+        .mockResolvedValueOnce(response({ choices: [{ message: { content: 'ok' } }] }));
+      const provider = new OpenAICompatibleProvider({
+        apiKey: 'k',
+        model: 'm',
+        endpoint: 'https://llm.example/v1/chat/completions',
+        fetch: fetchMock,
+        reasoningEffort: 'medium',
+      });
+      const result = await provider.chat([], { responseSchema: { type: 'object' } });
+      expect(result.text).toBe('ok');
+      // ちょうど 4 回（3 段の mode カスケード分 + reasoning_effort の 1 回きり縮退分）で終わる。
+      // 両者が互いを再トリガーし続ける ping-pong なら 4 回では終わらない
+      expect(fetchMock).toHaveBeenCalledTimes(4);
+      const bodies = fetchMock.mock.calls.map((call) =>
+        JSON.parse((call[1] as RequestInit).body as string),
+      );
+      // 構造化出力側: strict → 素の json_schema（2・3 回目は同じ mode のまま）→ json_object
+      expect(bodies[0].response_format.json_schema).toEqual({
+        name: 'response',
+        strict: true,
+        schema: { type: 'object' },
+      });
+      expect(bodies[1].response_format.json_schema).toEqual({
+        name: 'response',
+        schema: { type: 'object' },
+      });
+      expect(bodies[2].response_format.json_schema).toEqual({
+        name: 'response',
+        schema: { type: 'object' },
+      });
+      expect(bodies[3].response_format).toEqual({ type: 'json_object' });
+      // reasoning_effort: 1・2 回目は付き、3 回目以降は落ちたまま（一度きりの縮退が維持される。
+      // mode が 3 回目・4 回目で進んでも reasoning_effort が復活しないことの固定）
+      expect(bodies[0].reasoning_effort).toBe('medium');
+      expect(bodies[1].reasoning_effort).toBe('medium');
+      expect(bodies[2]).not.toHaveProperty('reasoning_effort');
+      expect(bodies[3]).not.toHaveProperty('reasoning_effort');
+    });
   });
 
   // issue #127 PR3: Azure OpenAI は OpenAICompatibleProvider を認証方式だけ切り替えて流用する

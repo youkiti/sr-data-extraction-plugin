@@ -5,6 +5,7 @@ import { withDevSuffix } from '../build-info';
 import { createModelSelect } from '../app/ui/modelSelect';
 import { showToast } from '../app/ui/toast';
 import type { LlmProviderId } from '../domain/llmApiLog';
+import type { ReasoningEffort } from '../lib/llm/LLMProvider';
 import {
   getUiLanguage,
   isUiLanguage,
@@ -42,6 +43,7 @@ import {
   FACTORY_DEFAULT_MODEL,
   isLoopbackEndpoint,
   loadDefaultModel,
+  loadDefaultReasoningEffort,
   loadLlmConnectionSettings,
   loadRateLimitCustomConcurrency,
   loadRateLimitCustomRpm,
@@ -50,6 +52,7 @@ import {
   normalizeOpenAiCompatibleEndpoint,
   requiresFullUrlEndpoint,
   saveDefaultModel,
+  saveDefaultReasoningEffort,
   saveLlmConnectionSettings,
   saveRateLimitCustomConcurrency,
   saveRateLimitCustomRpm,
@@ -184,6 +187,45 @@ async function bootstrapDefaultModelSection(root: ParentNode): Promise<void> {
   });
 }
 
+function isReasoningEffortValue(value: string): value is ReasoningEffort {
+  return value === 'low' || value === 'medium' || value === 'high';
+}
+
+/**
+ * reasoning effort の既定値節の配線（issue #127 PR5。docs/ui-states.md §2「reasoning effort の
+ * 既定値」。必須要素が欠けている場合は何もしない）。change の都度即時保存する
+ * （#ui-language と同じ流儀。保存に失敗してもセレクタの選択自体は妨げない）
+ */
+async function bootstrapReasoningEffortSection(root: ParentNode): Promise<void> {
+  const select = root.querySelector<HTMLSelectElement>('#default-reasoning-effort');
+  const statusEl = root.querySelector<HTMLElement>('#default-reasoning-effort-status');
+  if (!select || !statusEl) {
+    return;
+  }
+
+  const setStatus = makeSetStatus(statusEl);
+  const renderStatus = (saved: ReasoningEffort | null): void => {
+    setStatus(
+      t('options.reasoningEffortStatus', {
+        status: saved ? t('options.statusSavedKey') : t('options.statusUnsetKey'),
+      }),
+      false,
+    );
+  };
+
+  const saved = await loadDefaultReasoningEffort();
+  select.value = saved ?? '';
+  renderStatus(saved);
+
+  select.addEventListener('change', () => {
+    const value = select.value;
+    const effort = isReasoningEffortValue(value) ? value : null;
+    void saveDefaultReasoningEffort(effort)
+      .then(() => renderStatus(effort))
+      .catch(() => setStatus(t('options.toastSaveFailed'), true));
+  });
+}
+
 const CONNECTION_TEST_SCHEMA = {
   type: 'object',
   properties: { ok: { type: 'boolean' } },
@@ -302,16 +344,21 @@ async function bootstrapLlmConnectionSection(root: ParentNode): Promise<void> {
     endpoint?: string;
     apiKey: string;
     model: string;
+    reasoningEffort: ReasoningEffort | null;
   }> => {
     const provider = selectedProvider(providerSelect);
     const model = (await loadDefaultModel()) ?? FACTORY_DEFAULT_MODEL;
+    // 保存済みの reasoning effort（issue #127 PR5）を接続テスト / モデル一覧取得にも反映する。
+    // createProvider が provider ごとの方言へ写す（Gemini は無視）。未設定なら null のままで、
+    // 各 provider は従来どおりの挙動を維持する
+    const reasoningEffort = await loadDefaultReasoningEffort();
     if (provider === 'anthropic') {
       const enteredKey = anthropicKeyInput.value.trim();
       const apiKey = enteredKey || (await loadAnthropicApiKey());
       if (apiKey === null) {
         throw new Error(t('options.errKeyMissing', { provider: 'Anthropic' }));
       }
-      return { provider, apiKey, model };
+      return { provider, apiKey, model, reasoningEffort };
     }
     if (provider === 'azure_openai') {
       const endpoint = normalizeOpenAiCompatibleEndpoint(azureEndpointInput.value);
@@ -321,7 +368,7 @@ async function bootstrapLlmConnectionSection(root: ParentNode): Promise<void> {
       if (apiKey === null) {
         throw new Error(t('options.errKeyMissing', { provider: 'Azure OpenAI' }));
       }
-      return { provider, endpoint, apiKey, model };
+      return { provider, endpoint, apiKey, model, reasoningEffort };
     }
     if (provider !== 'openai_compatible') {
       const apiKey = await loadKeyForProvider(provider);
@@ -330,7 +377,7 @@ async function bootstrapLlmConnectionSection(root: ParentNode): Promise<void> {
           t('options.errKeyMissing', { provider: provider === 'gemini' ? 'Gemini' : 'OpenRouter' }),
         );
       }
-      return { provider, apiKey, model };
+      return { provider, apiKey, model, reasoningEffort };
     }
     const endpoint = normalizeOpenAiCompatibleEndpoint(endpointInput.value);
     const enteredKey = apiKeyInput.value.trim();
@@ -338,7 +385,7 @@ async function bootstrapLlmConnectionSection(root: ParentNode): Promise<void> {
     if (apiKey === null && !isLoopbackEndpoint(endpoint)) {
       throw new Error(t('options.errCompatibleKeyMissing'));
     }
-    return { provider, endpoint, apiKey: apiKey ?? '', model };
+    return { provider, endpoint, apiKey: apiKey ?? '', model, reasoningEffort };
   };
 
   saveButton.addEventListener('click', () => {
@@ -631,6 +678,7 @@ export async function bootstrapOptions(root: ParentNode): Promise<void> {
     (key) => (looksLikeGeminiApiKey(key) ? t('options.warnGeminiKey') : null),
   );
   await bootstrapLlmConnectionSection(root);
+  await bootstrapReasoningEffortSection(root);
   await bootstrapDefaultModelSection(root);
   await bootstrapRateLimitSection(root);
   bootstrapUiLanguageSection(root);

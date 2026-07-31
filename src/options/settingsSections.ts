@@ -204,6 +204,41 @@ export function buildSettingsSections(): HTMLElement {
   ]);
   body.append(connectionSection);
 
+  // reasoning effort の既定値（issue #127 PR5。docs/ui-states.md §2「reasoning effort の既定値」）。
+  // 保存キーは settings.defaultReasoningEffort（未設定 = null）。Anthropic ネイティブは
+  // output_config.effort へ、OpenRouter / OpenAI 互換（Azure OpenAI 含む）は reasoning_effort へ
+  // 写す。Gemini は現時点で無視する（options.reasoningEffortHelp 参照）
+  const reasoningEffortSelect = el('select', {
+    id: 'default-reasoning-effort',
+    attributes: { 'aria-label': t('options.reasoningEffortAria') },
+  });
+  reasoningEffortSelect.append(
+    el('option', { text: t('options.reasoningEffortUnset'), attributes: { value: '' } }),
+    el('option', { text: t('options.reasoningEffortLow'), attributes: { value: 'low' } }),
+    el('option', { text: t('options.reasoningEffortMedium'), attributes: { value: 'medium' } }),
+    el('option', { text: t('options.reasoningEffortHigh'), attributes: { value: 'high' } }),
+  );
+  const reasoningEffortSection = el('section', { className: 'options__section' }, [
+    el('h2', { text: t('options.reasoningEffortTitle') }),
+    el('p', {
+      className: 'options__help',
+      text: t('options.reasoningEffortHelp'),
+    }),
+    el('p', {
+      id: 'default-reasoning-effort-status',
+      className: 'options__status',
+      text: t('common.loading'),
+    }),
+    el('div', { className: 'options__row' }, [
+      el('label', {
+        text: t('options.reasoningEffortLabel'),
+        attributes: { for: 'default-reasoning-effort' },
+      }),
+      reasoningEffortSelect,
+    ]),
+  ]);
+  body.append(reasoningEffortSection);
+
   // 既定モデル
   const modelSection = el('section', { className: 'options__section' }, [
     el('h2', { text: t('options.defaultModelTitle') }),
