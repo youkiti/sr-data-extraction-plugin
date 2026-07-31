@@ -14,6 +14,9 @@ import {
   t,
 } from '../lib/i18n';
 import { buildSettingsSections } from './settingsSections';
+import { isCatalogModel } from '../lib/llm/modelCatalog';
+import { MODEL_SELECT_OTHER_VALUE } from '../app/ui/modelSelect';
+import { fetchModelIds, isModelListFetchSupported } from '../lib/llm/modelListFetcher';
 import { createProvider, resolveProviderId } from '../lib/llm/providerFactory';
 import {
   getRateLimitTier,
@@ -223,6 +226,8 @@ async function bootstrapLlmConnectionSection(root: ParentNode): Promise<void> {
   const saveButton = root.querySelector<HTMLButtonElement>('#save-llm-connection');
   const testButton = root.querySelector<HTMLButtonElement>('#test-llm-connection');
   const statusEl = root.querySelector<HTMLElement>('#llm-connection-status');
+  const fetchModelListButton = root.querySelector<HTMLButtonElement>('#fetch-model-list');
+  const fetchModelListStatusEl = root.querySelector<HTMLElement>('#fetch-model-list-status');
   if (
     !providerSelect ||
     !customFields ||
@@ -235,11 +240,14 @@ async function bootstrapLlmConnectionSection(root: ParentNode): Promise<void> {
     !azureApiKeyInput ||
     !saveButton ||
     !testButton ||
-    !statusEl
+    !statusEl ||
+    !fetchModelListButton ||
+    !fetchModelListStatusEl
   ) {
     return;
   }
   const setStatus = makeSetStatus(statusEl);
+  const setFetchModelListStatus = makeSetStatus(fetchModelListStatusEl);
   const settings = await loadLlmConnectionSettings();
   const defaultModel = (await loadDefaultModel()) ?? FACTORY_DEFAULT_MODEL;
   providerSelect.value = settings.provider ?? resolveProviderId(defaultModel);
@@ -261,11 +269,26 @@ async function bootstrapLlmConnectionSection(root: ParentNode): Promise<void> {
     ? t('options.placeholderSavedKey')
     : t('options.placeholderEnterKey');
 
+  // モデル一覧の自動取得（issue #127 PR4）: gemini / azure_openai は対象外
+  // （modelListFetcher.ts 冒頭コメント参照）のため、ボタンを disabled にして理由を明示する。
+  // 取得中はこの関数を呼ばない（renderProvider は接続方式の切替時にも走るため、取得中に
+  // 切替が起きると表示が「未取得」側へ巻き戻るが、取得自体は完了まで別 provider の設定に
+  // 影響しないので実害はない）
+  const renderFetchModelListAvailability = (): void => {
+    const provider = selectedProvider(providerSelect);
+    const supported = isModelListFetchSupported(provider);
+    fetchModelListButton.disabled = !supported;
+    setFetchModelListStatus(
+      supported ? t('options.fetchModelListUnfetched') : t('options.fetchModelListUnsupported'),
+      false,
+    );
+  };
   const renderProvider = (): void => {
     const provider = selectedProvider(providerSelect);
     customFields.hidden = provider !== 'openai_compatible';
     anthropicFields.hidden = provider !== 'anthropic';
     azureFields.hidden = provider !== 'azure_openai';
+    renderFetchModelListAvailability();
   };
   renderProvider();
   providerSelect.addEventListener('change', renderProvider);
@@ -397,6 +420,77 @@ async function bootstrapLlmConnectionSection(root: ParentNode): Promise<void> {
       }
     })();
   });
+
+  // モデル一覧の自動取得（issue #127 PR4。docs/ui-states.md §2「モデル一覧を取得」ボタン）。
+  // 未取得 / 取得中 / 成功 / 失敗の 4 状態。取得はこのクリックでのみ起こり、画面表示時には
+  // 一切走らせない（既存キーの消費・レイテンシ・失敗によるブロックを避けるため）。
+  // 失敗時はハードコードのカタログ（MODEL_PRICING 等）が既に選択肢として残っているだけで、
+  // 取得前の状態を壊さずセレクタを使い続けられる（フォールバックのために何もしない）
+  fetchModelListButton.addEventListener('click', () => {
+    void (async () => {
+      const provider = selectedProvider(providerSelect);
+      if (!isModelListFetchSupported(provider)) {
+        return;
+      }
+      fetchModelListButton.disabled = true;
+      setFetchModelListStatus(t('options.fetchModelListFetching'), false);
+      try {
+        const config = await resolveFormConfig();
+        const modelIds = await fetchModelIds(
+          provider === 'openai_compatible'
+            ? { provider, apiKey: config.apiKey, chatCompletionsUrl: config.endpoint as string }
+            : { provider, apiKey: config.apiKey },
+        );
+        applyFetchedModelIds(root, modelIds);
+        setFetchModelListStatus(t('options.fetchModelListFetched', { count: modelIds.length }), false);
+        showToast(t('options.fetchModelListToast'), providerSelect.ownerDocument);
+      } catch (err) {
+        setFetchModelListStatus(
+          t('options.fetchModelListFailed', {
+            reason: err instanceof Error ? err.message : String(err),
+          }),
+          true,
+        );
+      } finally {
+        fetchModelListButton.disabled = false;
+      }
+    })();
+  });
+}
+
+/**
+ * 取得したモデル ID を既定モデルセレクタ（`#default-model`）へ反映する。
+ * ストレージへは保存しない（現在の Options 画面のメモリ上のみ。issue #127 PR4 ブリーフの
+ * 「新規 storage キーを追加しない」制約）。単価表に既にあるモデルは静的カタログの optgroup に
+ * 既出のため二重に足さない。再取得時は前回分の「取得したモデル」optgroup を入れ替える
+ * （複数回押しても選択肢が増殖しない）
+ */
+function applyFetchedModelIds(root: ParentNode, modelIds: readonly string[]): void {
+  const select = root.querySelector<HTMLSelectElement>('#default-model');
+  if (!select) {
+    return;
+  }
+  const groupLabel = t('options.fetchModelListGroupLabel');
+  select.querySelectorAll('optgroup').forEach((group) => {
+    if (group.label === groupLabel) {
+      group.remove();
+    }
+  });
+  const uniqueIds = Array.from(new Set(modelIds)).filter((id) => !isCatalogModel(id));
+  if (uniqueIds.length === 0) {
+    return;
+  }
+  const doc = select.ownerDocument;
+  const optgroup = doc.createElement('optgroup');
+  optgroup.label = groupLabel;
+  for (const id of uniqueIds) {
+    const option = doc.createElement('option');
+    option.value = id;
+    option.textContent = id;
+    optgroup.append(option);
+  }
+  const otherOption = select.querySelector(`option[value="${MODEL_SELECT_OTHER_VALUE}"]`);
+  select.insertBefore(optgroup, otherOption);
 }
 
 /**

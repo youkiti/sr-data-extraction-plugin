@@ -29,7 +29,12 @@ export interface AnthropicProviderOptions {
 }
 
 const ENDPOINT = 'https://api.anthropic.com/v1/messages';
-const ANTHROPIC_VERSION = '2023-06-01';
+/**
+ * `anthropic-version` ヘッダの固定値。`GET /v1/models`（モデル一覧の自動取得。
+ * lib/llm/modelListFetcher.ts）も同じ値を送るため export する（値の一元管理。
+ * このファイルの認証ヘッダー構築自体は変更しない）
+ */
+export const ANTHROPIC_VERSION = '2023-06-01';
 
 /**
  * ブラウザ文脈からの直接呼び出しに必要な opt-in ヘッダ。**省略できない**。
@@ -48,9 +53,16 @@ const ANTHROPIC_VERSION = '2023-06-01';
  *
  * 上記のとおり非ブラウザ文脈でも副作用が無いため、条件分岐せず常に送る。
  * 名称の "dangerous" は「ブラウザへ API キーを置くこと」への警告で、BYOK 前提の本拡張では
- * 利用者自身のキーを利用者のブラウザだけに保存する設計（requirements.md §2.1）のため受容する
+ * 利用者自身のキーを利用者のブラウザだけに保存する設計（requirements.md §2.1）のため受容する。
+ *
+ * `GET /v1/models`（モデル一覧の自動取得。lib/llm/modelListFetcher.ts）にも同じ制約が
+ * かかるものとして、このヘッダを export してそちらから再利用する（値を手元で再定義しない）。
+ * ただし **models エンドポイントについては実測できていない** — 実測したのは上記のとおり
+ * `POST /v1/messages` のみで、models 側は同一ホスト・同一認証方式であることからの推定である
+ * （jest では fetch をモックするため検証不能）。実機での確認は
+ * docs/remaining-work-plan.md の「実機 / 実 API テストが必要な項目」に未実施として起票済み
  */
-const BROWSER_ACCESS_HEADER = 'anthropic-dangerous-direct-browser-access';
+export const BROWSER_ACCESS_HEADER = 'anthropic-dangerous-direct-browser-access';
 
 /**
  * `ChatOptions.maxOutputTokens` 未指定時に使う既定の「本文」トークン予算。

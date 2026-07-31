@@ -864,6 +864,344 @@ describe('bootstrapOptions（Azure OpenAI 接続。issue #127 PR3 target spec �
   });
 });
 
+describe('bootstrapOptions（モデル一覧の自動取得。issue #127 PR4 target spec の実装）', () => {
+  let chromeMock: ChromeMock;
+  let originalFetch: typeof fetch | undefined;
+
+  const provider = (): HTMLSelectElement =>
+    document.getElementById('llm-provider') as HTMLSelectElement;
+  const compatibleEndpoint = (): HTMLInputElement =>
+    document.getElementById('openai-compatible-endpoint') as HTMLInputElement;
+  const compatibleKey = (): HTMLInputElement =>
+    document.getElementById('openai-compatible-api-key') as HTMLInputElement;
+  const fetchButton = (): HTMLButtonElement =>
+    document.getElementById('fetch-model-list') as HTMLButtonElement;
+  const fetchStatus = (): HTMLElement =>
+    document.getElementById('fetch-model-list-status') as HTMLElement;
+  const defaultModelSelect = (): HTMLSelectElement =>
+    document.getElementById('default-model') as HTMLSelectElement;
+
+  function toastTexts(): string[] {
+    return Array.from(document.querySelectorAll('.toast')).map((node) => node.textContent ?? '');
+  }
+
+  function jsonResponse(body: unknown): Response {
+    return {
+      ok: true,
+      status: 200,
+      json: async () => body,
+      text: async () => JSON.stringify(body),
+    } as unknown as Response;
+  }
+
+  beforeEach(() => {
+    chromeMock = installChromeMock();
+    originalFetch = globalThis.fetch;
+    document.body.replaceChildren(buildSettingsSections());
+  });
+
+  afterEach(() => {
+    if (originalFetch === undefined) {
+      delete (globalThis as { fetch?: typeof fetch }).fetch;
+    } else {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test('未取得: Anthropic / OpenRouter / OpenAI 互換 API はボタン活性 + 「モデル一覧は未取得です」', async () => {
+    await bootstrapOptions(document);
+    for (const value of ['anthropic', 'openrouter', 'openai_compatible']) {
+      provider().value = value;
+      provider().dispatchEvent(new Event('change'));
+      expect(fetchButton().disabled).toBe(false);
+      expect(fetchStatus().textContent).toBe('モデル一覧は未取得です');
+    }
+  });
+
+  test('Gemini / Azure OpenAI は非対応: ボタンを disabled にし理由を明示する（死んだボタンにしない）', async () => {
+    await bootstrapOptions(document);
+    provider().value = 'gemini';
+    provider().dispatchEvent(new Event('change'));
+    expect(fetchButton().disabled).toBe(true);
+    expect(fetchStatus().textContent).toBe(
+      'この接続方式ではモデル一覧の自動取得に対応していません（Gemini は単価表に収載済み、Azure OpenAI はデプロイメント名がテナント固有のため取得できません）',
+    );
+
+    provider().value = 'azure_openai';
+    provider().dispatchEvent(new Event('change'));
+    expect(fetchButton().disabled).toBe(true);
+    expect(fetchStatus().textContent).toContain('対応していません');
+  });
+
+  test('非対応の接続方式でクリックしても何も起きない（disabled 属性に頼らないガード）', async () => {
+    await bootstrapOptions(document);
+    // ボタンの disabled 属性そのものに依存せず、クリックハンドラ内部のガードだけで
+    // 単体でも安全なことを確認する（対応方式でボタンを活性化させたあと、change を
+    // 発火させずに select 値だけ非対応方式へ書き換える = renderProvider を経由しない）
+    provider().value = 'anthropic';
+    provider().dispatchEvent(new Event('change'));
+    expect(fetchButton().disabled).toBe(false);
+    provider().value = 'gemini';
+    globalThis.fetch = jest.fn();
+    fetchButton().click();
+    await flush();
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  test('取得中: ボタンを disabled にし「取得しています…」を表示する', async () => {
+    chromeMock.storage.local.data['secrets.anthropicApiKey'] = 'sk-ant-saved';
+    let resolveFetch: (value: Response) => void = () => undefined;
+    globalThis.fetch = jest.fn().mockReturnValue(
+      new Promise<Response>((resolve) => {
+        resolveFetch = resolve;
+      }),
+    );
+    await bootstrapOptions(document);
+    provider().value = 'anthropic';
+    provider().dispatchEvent(new Event('change'));
+    fetchButton().click();
+    expect(fetchButton().disabled).toBe(true);
+    expect(fetchStatus().textContent).toBe('取得しています…');
+
+    resolveFetch(jsonResponse({ data: [{ id: 'claude-fetched' }], has_more: false }));
+    await flush();
+    await flush();
+    expect(fetchButton().disabled).toBe(false);
+  });
+
+  test('成功: Anthropic のモデル一覧を既定モデルセレクタへ反映し、トーストを表示する', async () => {
+    chromeMock.storage.local.data['secrets.anthropicApiKey'] = 'sk-ant-saved';
+    globalThis.fetch = jest
+      .fn()
+      .mockResolvedValue(jsonResponse({ data: [{ id: 'claude-new-model' }], has_more: false }));
+    await bootstrapOptions(document);
+    provider().value = 'anthropic';
+    provider().dispatchEvent(new Event('change'));
+    fetchButton().click();
+    await flush();
+    await flush();
+    await flush();
+
+    expect(fetchStatus().textContent).toBe('1 件のモデルを取得しました');
+    expect(fetchStatus().classList.contains('options__status--error')).toBe(false);
+    expect(toastTexts()).toContain('モデル一覧を更新しました');
+
+    const select = defaultModelSelect();
+    const groups = Array.from(select.querySelectorAll('optgroup')).map((g) => g.label);
+    expect(groups).toContain('取得したモデル');
+    const values = Array.from(select.options).map((option) => option.value);
+    expect(values).toContain('claude-new-model');
+    // 実 API の必須ヘッダを一覧取得でも送っている（issue #210 / #127 の同じ制約）
+    const init = (globalThis.fetch as jest.Mock).mock.calls[0]?.[1] as RequestInit;
+    expect((init.headers as Record<string, string>)['anthropic-dangerous-direct-browser-access']).toBe(
+      'true',
+    );
+  });
+
+  test('再取得すると「取得したモデル」optgroup を入れ替える（増殖しない）', async () => {
+    chromeMock.storage.local.data['secrets.anthropicApiKey'] = 'sk-ant-saved';
+    globalThis.fetch = jest
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({ data: [{ id: 'claude-first' }], has_more: false }))
+      .mockResolvedValueOnce(jsonResponse({ data: [{ id: 'claude-second' }], has_more: false }));
+    await bootstrapOptions(document);
+    provider().value = 'anthropic';
+    provider().dispatchEvent(new Event('change'));
+    fetchButton().click();
+    await flush();
+    await flush();
+    await flush();
+    fetchButton().click();
+    await flush();
+    await flush();
+    await flush();
+
+    const select = defaultModelSelect();
+    const groups = Array.from(select.querySelectorAll('optgroup')).filter(
+      (g) => g.label === '取得したモデル',
+    );
+    expect(groups).toHaveLength(1);
+    const values = Array.from(select.options).map((option) => option.value);
+    expect(values).not.toContain('claude-first');
+    expect(values).toContain('claude-second');
+  });
+
+  test('失敗: 赤系メッセージを表示し、静的カタログはそのまま使える（フォールバック）', async () => {
+    chromeMock.storage.local.data['secrets.anthropicApiKey'] = 'sk-ant-saved';
+    globalThis.fetch = jest.fn().mockResolvedValue({
+      ok: false,
+      status: 401,
+      text: async () => 'invalid x-api-key',
+    } as unknown as Response);
+    await bootstrapOptions(document);
+    provider().value = 'anthropic';
+    provider().dispatchEvent(new Event('change'));
+
+    const select = defaultModelSelect();
+    const valuesBefore = Array.from(select.options).map((option) => option.value);
+
+    fetchButton().click();
+    await flush();
+    await flush();
+    await flush();
+
+    expect(fetchStatus().classList.contains('options__status--error')).toBe(true);
+    expect(fetchStatus().textContent).toContain('モデル一覧の取得に失敗しました');
+    expect(fetchStatus().textContent).toContain('既存のカタログを使用します');
+    expect(fetchButton().disabled).toBe(false);
+    // 静的カタログの選択肢は失われていない（フォールバック）
+    const valuesAfter = Array.from(select.options).map((option) => option.value);
+    expect(valuesAfter).toEqual(valuesBefore);
+  });
+
+  test('失敗: Error 以外の例外は文字列化して表示する', async () => {
+    chromeMock.storage.local.data['secrets.anthropicApiKey'] = 'sk-ant-saved';
+    globalThis.fetch = jest.fn().mockRejectedValue('network-down');
+    await bootstrapOptions(document);
+    provider().value = 'anthropic';
+    provider().dispatchEvent(new Event('change'));
+    fetchButton().click();
+    await flush();
+    await flush();
+    expect(fetchStatus().textContent).toContain('network-down');
+    expect(fetchStatus().classList.contains('options__status--error')).toBe(true);
+  });
+
+  test('失敗: API キー未設定は resolveFormConfig のエラーがそのままフォールバック表示になる', async () => {
+    await bootstrapOptions(document);
+    provider().value = 'anthropic';
+    provider().dispatchEvent(new Event('change'));
+    fetchButton().click();
+    await flush();
+    await flush();
+    expect(fetchStatus().textContent).toContain('Anthropic API キーが未設定です');
+    expect(fetchStatus().classList.contains('options__status--error')).toBe(true);
+  });
+
+  test('OpenAI 互換 API: 保存済み URL から /models を導出して取得する', async () => {
+    globalThis.fetch = jest
+      .fn()
+      .mockResolvedValue(jsonResponse({ data: [{ id: 'local-model' }] }));
+    await bootstrapOptions(document);
+    provider().value = 'openai_compatible';
+    provider().dispatchEvent(new Event('change'));
+    compatibleEndpoint().value = 'https://llm.example/v1/chat/completions';
+    compatibleKey().value = 'compat-key';
+    fetchButton().click();
+    await flush();
+    await flush();
+    await flush();
+
+    const [url, init] = (globalThis.fetch as jest.Mock).mock.calls[0] as [string, RequestInit];
+    expect(url).toBe('https://llm.example/v1/models');
+    expect((init.headers as Record<string, string>)['Authorization']).toBe('Bearer compat-key');
+    expect(toastTexts()).toContain('モデル一覧を更新しました');
+  });
+
+  test('OpenAI 互換 API: 保存済み URL が /chat/completions 形式でなければ推測せずエラーを表示する', async () => {
+    await bootstrapOptions(document);
+    provider().value = 'openai_compatible';
+    provider().dispatchEvent(new Event('change'));
+    compatibleEndpoint().value = 'https://llm.example/v1/completions';
+    compatibleKey().value = 'compat-key';
+    fetchButton().click();
+    await flush();
+    await flush();
+
+    expect(fetchStatus().classList.contains('options__status--error')).toBe(true);
+    expect(fetchStatus().textContent).toContain('推測できません');
+  });
+
+  test('OpenRouter: 公開エンドポイントへ認証なしで取得する', async () => {
+    // resolveFormConfig（save / test と共有）は OpenRouter でも API キー保存済みを要求するため、
+    // 取得エンドポイント自体は無認証でも設定は必要（既存の共有ロジックにそのまま乗る）
+    chromeMock.storage.local.data['secrets.openRouterApiKey'] = 'or-saved';
+    globalThis.fetch = jest
+      .fn()
+      .mockResolvedValue(jsonResponse({ data: [{ id: 'openrouter/new-model' }] }));
+    await bootstrapOptions(document);
+    provider().value = 'openrouter';
+    provider().dispatchEvent(new Event('change'));
+    fetchButton().click();
+    await flush();
+    await flush();
+    await flush();
+
+    const [url, init] = (globalThis.fetch as jest.Mock).mock.calls[0] as [string, RequestInit];
+    expect(url).toBe('https://openrouter.ai/api/v1/models');
+    expect(init.headers).toBeUndefined();
+    const values = Array.from(defaultModelSelect().options).map((option) => option.value);
+    expect(values).toContain('openrouter/new-model');
+  });
+
+  test('取得できたモデルが全て単価表に既存なら「取得したモデル」optgroup を作らない', async () => {
+    chromeMock.storage.local.data['secrets.anthropicApiKey'] = 'sk-ant-saved';
+    globalThis.fetch = jest
+      .fn()
+      .mockResolvedValue(jsonResponse({ data: [{ id: 'claude-opus-5' }], has_more: false }));
+    await bootstrapOptions(document);
+    provider().value = 'anthropic';
+    provider().dispatchEvent(new Event('change'));
+    fetchButton().click();
+    await flush();
+    await flush();
+    await flush();
+
+    expect(fetchStatus().textContent).toBe('1 件のモデルを取得しました');
+    const groups = Array.from(defaultModelSelect().querySelectorAll('optgroup')).map(
+      (g) => g.label,
+    );
+    expect(groups).not.toContain('取得したモデル');
+  });
+
+  test('既定モデルセレクタが DOM に無い場合は何もしない（防御的ガード）', async () => {
+    chromeMock.storage.local.data['secrets.anthropicApiKey'] = 'sk-ant-saved';
+    globalThis.fetch = jest
+      .fn()
+      .mockResolvedValue(jsonResponse({ data: [{ id: 'claude-new-model' }], has_more: false }));
+    await bootstrapOptions(document);
+    provider().value = 'anthropic';
+    provider().dispatchEvent(new Event('change'));
+    // 既定モデル節が無いページ（options.html のごく一部だけ差し替えた場合等）を模す
+    defaultModelSelect().remove();
+    fetchButton().click();
+    await flush();
+    await flush();
+    await flush();
+
+    expect(fetchStatus().textContent).toBe('1 件のモデルを取得しました');
+    expect(toastTexts()).toContain('モデル一覧を更新しました');
+  });
+
+  test('単価表に既にあるモデルは「取得したモデル」optgroup へ二重に足さない', async () => {
+    chromeMock.storage.local.data['secrets.anthropicApiKey'] = 'sk-ant-saved';
+    globalThis.fetch = jest.fn().mockResolvedValue(
+      jsonResponse({
+        data: [{ id: 'claude-opus-5' }, { id: 'claude-brand-new' }],
+        has_more: false,
+      }),
+    );
+    await bootstrapOptions(document);
+    provider().value = 'anthropic';
+    provider().dispatchEvent(new Event('change'));
+    fetchButton().click();
+    await flush();
+    await flush();
+    await flush();
+
+    const select = defaultModelSelect();
+    const fetchedGroup = Array.from(select.querySelectorAll('optgroup')).find(
+      (g) => g.label === '取得したモデル',
+    );
+    const fetchedValues = Array.from(fetchedGroup?.querySelectorAll('option') ?? []).map(
+      (option) => (option as HTMLOptionElement).value,
+    );
+    expect(fetchedValues).toEqual(['claude-brand-new']);
+    // claude-opus-5 は既存の Anthropic optgroup に既出（重複させない）
+    expect(Array.from(select.options).filter((o) => o.value === 'claude-opus-5')).toHaveLength(1);
+  });
+});
+
 // issue #127 PR3 フォローアップ（レビュー対応）: OpenAI 互換 API と Azure OpenAI の
 // エンドポイント保存キーを分離した本来の目的（接続方式の切替で他方の URL を失わない）を
 // Options 画面レベルで検証する
