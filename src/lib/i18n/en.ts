@@ -1062,6 +1062,10 @@ export const en: Record<MessageKey, string> = {
   'options.endpointLabel': 'API endpoint',
   'options.apiKeyLabel': 'API key',
   'options.loopbackNote': 'Optional for connections to localhost, 127.0.0.1, or [::1].',
+  'options.azureEndpointHelp':
+    'Enter the full URL including the deployment and API version (e.g. https://{resource}.openai.azure.com/openai/deployments/{deployment}/chat/completions?api-version=2026-xx-xx).',
+  'options.azureModelHelp':
+    'Enter the Azure OpenAI "deployment name" in the default model field (the deployment in the URL determines the model, so the request body model value is ignored).',
   'options.providerLabel': 'Connection method',
   'options.saveConnection': 'Save connection settings',
   'options.testConnection': 'Test connection',

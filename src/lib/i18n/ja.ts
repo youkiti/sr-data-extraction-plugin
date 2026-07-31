@@ -1051,6 +1051,10 @@ export const ja = {
   'options.endpointLabel': 'API エンドポイント',
   'options.apiKeyLabel': 'API キー',
   'options.loopbackNote': 'localhost、127.0.0.1、[::1] への接続では省略できます。',
+  'options.azureEndpointHelp':
+    'デプロイメント + API バージョンを含む完全な URL を入力してください（例: https://{resource}.openai.azure.com/openai/deployments/{deployment}/chat/completions?api-version=2026-xx-xx）。',
+  'options.azureModelHelp':
+    '既定モデル欄には Azure OpenAI の「デプロイメント名」を入力してください（URL のデプロイメントで呼び出されるため、リクエスト本文の model 値は無視されます）。',
   'options.providerLabel': '接続方式',
   'options.saveConnection': '接続設定を保存',
   'options.testConnection': '接続テスト',

@@ -455,6 +455,7 @@ describe('runDraftSchema', () => {
     deps.loadLlmConnectionSettings = async () => ({
       provider: 'openai_compatible',
       openAiCompatibleEndpoint: 'https://llm.example/v1/chat/completions',
+      azureOpenAiEndpoint: null,
     });
     deps.loadApiKey = jest.fn().mockResolvedValue('custom-key');
     deps.buildProvider = jest.fn((config) => ({

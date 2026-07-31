@@ -319,6 +319,8 @@ describe('loadExportData', () => {
       { runType: 'full', provider: 'openai_compatible', modelVersion: 'custom-model', studyIds: ['s3'] },
       // issue #127 PR2: anthropic の provider 表示名（Anthropic）を確認する
       { runType: 'full', provider: 'anthropic', modelVersion: 'claude-opus-5', studyIds: ['s4'] },
+      // issue #127 PR3: azure_openai の provider 表示名（Azure OpenAI）を確認する
+      { runType: 'full', provider: 'azure_openai', modelVersion: 'gpt-4o-deployment', studyIds: ['s5'] },
       // full の modelVersion 重複は 1 つに畳み込む
       { runType: 'full', provider: 'gemini', modelVersion: 'gemini-3.5-flash-001', studyIds: ['s1'] },
       { runType: 'pilot', provider: 'gemini', modelVersion: 'gemini-3.5-flash-001', studyIds: ['s1', 's2'] },
@@ -330,8 +332,14 @@ describe('loadExportData', () => {
     expect(readMethodsRunFactsMock).toHaveBeenCalledWith('sheet-1', expect.anything());
     expect(store.getState().export.methodsFacts).toEqual({
       toolVersion: '1.2.3',
-      modelIds: ['gemini-3.5-flash-001', 'gpt-test', 'custom-model', 'claude-opus-5'],
-      providers: ['Gemini', 'OpenRouter', 'OpenAI-compatible', 'Anthropic'],
+      modelIds: [
+        'gemini-3.5-flash-001',
+        'gpt-test',
+        'custom-model',
+        'claude-opus-5',
+        'gpt-4o-deployment',
+      ],
+      providers: ['Gemini', 'OpenRouter', 'OpenAI-compatible', 'Anthropic', 'Azure OpenAI'],
       pilotStudyCount: 3, // s1 / s2 / s3 の和集合
       scannedDocumentCount: 2, // d2 / d3
     });

@@ -294,6 +294,88 @@ describe('OpenAICompatibleProvider', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  // issue #127 PR3: Azure OpenAI は OpenAICompatibleProvider を認証方式だけ切り替えて流用する
+  describe('Azure OpenAI 認証モード（authMode: "azure_api_key"）', () => {
+    test('api-key ヘッダーで送信し、Authorization は付けない', async () => {
+      const fetchMock = jest.fn().mockResolvedValue(
+        response({ choices: [{ message: { content: '{"ok":true}' } }] }),
+      );
+      const provider = new OpenAICompatibleProvider({
+        apiKey: 'azure-secret',
+        model: 'gpt-4o-deployment',
+        endpoint:
+          'https://res.openai.azure.com/openai/deployments/gpt-4o-deployment/chat/completions?api-version=2026-01-01',
+        fetch: fetchMock,
+        authMode: 'azure_api_key',
+      });
+      await provider.chat([{ role: 'user', content: 'q' }]);
+      const headers = (fetchMock.mock.calls[0]?.[1] as RequestInit).headers as Record<
+        string,
+        string
+      >;
+      expect(headers).toEqual({ 'Content-Type': 'application/json', 'api-key': 'azure-secret' });
+      expect(headers['Authorization']).toBeUndefined();
+      expect(fetchMock).toHaveBeenCalledWith(
+        'https://res.openai.azure.com/openai/deployments/gpt-4o-deployment/chat/completions?api-version=2026-01-01',
+        expect.anything(),
+      );
+    });
+
+    test('providerId は azure_openai を報告する（LLMApiLog.provider への記録用）', () => {
+      const provider = new OpenAICompatibleProvider({
+        apiKey: 'k',
+        model: 'm',
+        endpoint: 'https://res.openai.azure.com/openai/deployments/m/chat/completions?api-version=2026-01-01',
+        authMode: 'azure_api_key',
+      });
+      expect(provider.providerId).toBe('azure_openai');
+    });
+
+    test('authMode 省略時（既定の bearer モード）は従来どおり providerId が openai_compatible のまま', () => {
+      const provider = new OpenAICompatibleProvider({
+        apiKey: 'k',
+        model: 'm',
+        endpoint: 'https://llm.example/v1/chat/completions',
+      });
+      expect(provider.providerId).toBe('openai_compatible');
+    });
+
+    test('既定モード（bearer）の送信ヘッダーは authMode 追加前とバイト単位で同一', async () => {
+      const fetchMock = jest.fn().mockResolvedValue(
+        response({ choices: [{ message: { content: 'ok' } }] }),
+      );
+      const provider = new OpenAICompatibleProvider({
+        apiKey: 'secret',
+        model: 'm',
+        endpoint: 'https://llm.example/v1/chat/completions',
+        fetch: fetchMock,
+        authMode: 'bearer',
+      });
+      await provider.chat([]);
+      expect((fetchMock.mock.calls[0]?.[1] as RequestInit).headers).toEqual({
+        'Content-Type': 'application/json',
+        Authorization: 'Bearer secret',
+      });
+    });
+
+    test('loopback の空 API キー + azure_api_key モードでも認証ヘッダーを送らない', async () => {
+      const fetchMock = jest.fn().mockResolvedValue(
+        response({ choices: [{ message: { content: 'ok' } }] }),
+      );
+      const provider = new OpenAICompatibleProvider({
+        apiKey: '   ',
+        model: 'm',
+        endpoint: 'http://localhost:11434/v1/chat/completions',
+        fetch: fetchMock,
+        authMode: 'azure_api_key',
+      });
+      await provider.chat([]);
+      expect((fetchMock.mock.calls[0]?.[1] as RequestInit).headers).toEqual({
+        'Content-Type': 'application/json',
+      });
+    });
+  });
+
   test('supportsImageInput は true（OpenAI 互換の image_url をパススルーする）', () => {
     const provider = new OpenAICompatibleProvider({
       apiKey: 'k',

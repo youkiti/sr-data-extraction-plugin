@@ -62,5 +62,8 @@ describe('missingApiKeyMessage', () => {
     expect(missingApiKeyMessage('anthropic')).toBe(
       'Anthropic API キーが未設定です。設定画面（Options）で保存してください',
     );
+    expect(missingApiKeyMessage('azure_openai')).toBe(
+      'Azure OpenAI API キーが未設定です。設定画面（Options）で保存してください',
+    );
   });
 });

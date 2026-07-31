@@ -157,6 +157,36 @@ test('Anthropic: エンドポイント欄なしで API キーの保存と接続�
   await expect(page.locator('#anthropic-api-key')).toHaveValue('');
 });
 
+test('Azure OpenAI: 完全 URL + api-key ヘッダーで保存・接続テストができる（issue #127 PR3）', async ({
+  page,
+}) => {
+  await page.addInitScript(chromeStub({ seedModel: false }));
+  const azureUrl =
+    'https://res.openai.azure.com/openai/deployments/gpt-4o-deployment/chat/completions?api-version=2026-01-01';
+  await page.route(azureUrl, async (route) => {
+    const headers = route.request().headers();
+    expect(headers['api-key']).toBe('azure-secret');
+    expect(headers['authorization']).toBeUndefined();
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ choices: [{ message: { content: '{"ok":true}' } }] }),
+    });
+  });
+  await page.goto('/options/options.html');
+  await page.locator('#llm-provider').selectOption('azure_openai');
+  await expect(page.locator('#azure-openai-fields')).toBeVisible();
+  await expect(page.locator('#openai-compatible-fields')).toBeHidden();
+  await expect(page.locator('#anthropic-fields')).toBeHidden();
+  await page.locator('#azure-openai-endpoint').fill(azureUrl);
+  await page.locator('#azure-openai-api-key').fill('azure-secret');
+  await page.locator('#test-llm-connection').click();
+  await expect(page.locator('#llm-connection-status')).toHaveText('接続テストに成功しました。');
+  await page.locator('#save-llm-connection').click();
+  await expect(page.locator('#llm-connection-status')).toHaveText('保存しました。');
+  await expect(page.locator('#azure-openai-api-key')).toHaveValue('');
+});
+
 test('アクセシビリティ違反がない（axe）', async ({ page }) => {
   await page.addInitScript(chromeStub({ seedModel: true }));
   await page.goto('/options/options.html');

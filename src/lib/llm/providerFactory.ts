@@ -5,6 +5,8 @@
 import type { LlmProviderId } from '../../domain/llmApiLog';
 import {
   isLoopbackEndpoint,
+  requiresFullUrlEndpoint,
+  resolveStoredEndpoint,
   type LlmConnectionSettings,
 } from '../storage/settingsStore';
 import { AnthropicProvider } from './AnthropicProvider';
@@ -103,6 +105,20 @@ export function createProvider(config: ProviderConfig): LLMProvider {
       fetch: config.fetch,
     });
   }
+  if (provider === 'azure_openai') {
+    if (config.endpoint === undefined) {
+      throw new Error('Azure OpenAI のエンドポイントが未設定です');
+    }
+    // OpenAICompatibleProvider を認証方式（api-key ヘッダー）だけ切り替えて流用する
+    // （新規 provider クラスは作らない。requirements.md §10 Q11・issue #127 PR3）
+    return new OpenAICompatibleProvider({
+      apiKey: config.apiKey,
+      model: config.model,
+      endpoint: config.endpoint,
+      fetch: config.fetch,
+      authMode: 'azure_api_key',
+    });
+  }
   return new GeminiProvider({
     apiKey: config.apiKey,
     model: config.model,
@@ -117,12 +133,15 @@ export async function resolveProviderConfig(
 ): Promise<ProviderResolution> {
   const settings = deps.loadLlmConnectionSettings
     ? await deps.loadLlmConnectionSettings()
-    : { provider: null, openAiCompatibleEndpoint: null };
+    : { provider: null, openAiCompatibleEndpoint: null, azureOpenAiEndpoint: null };
   const provider = settings.provider ?? resolveProviderId(model);
   const apiKey = await deps.loadApiKey(provider);
-  const endpoint =
-    provider === 'openai_compatible' ? settings.openAiCompatibleEndpoint : null;
-  const allowsEmptyApiKey = endpoint !== null && isLoopbackEndpoint(endpoint);
+  const endpoint = requiresFullUrlEndpoint(provider) ? resolveStoredEndpoint(settings, provider) : null;
+  // loopback HTTP のキー任意許可は OpenAI 互換 API 限定（requirements.md §2.1 の loopback 実験用途）。
+  // Azure OpenAI は常にキー必須のため、loopback URL を入力しても空キーを許可しない
+  // （issue #127 PR3。ui-states.md §2「Azure OpenAI 選択時」）
+  const allowsEmptyApiKey =
+    provider === 'openai_compatible' && endpoint !== null && isLoopbackEndpoint(endpoint);
   return {
     provider,
     config:

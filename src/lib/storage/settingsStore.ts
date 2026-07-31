@@ -15,6 +15,7 @@ const DEFAULT_MODEL_STORAGE_KEY = 'settings.defaultModel';
 const UI_LANGUAGE_STORAGE_KEY = 'settings.uiLanguage';
 const LLM_PROVIDER_STORAGE_KEY = 'settings.llmProvider';
 const OPENAI_COMPATIBLE_ENDPOINT_STORAGE_KEY = 'settings.openAiCompatibleEndpoint';
+const AZURE_OPENAI_ENDPOINT_STORAGE_KEY = 'settings.azureOpenAiEndpoint';
 const HTTP_LOOPBACK_HOSTNAMES: ReadonlySet<string> = new Set(['localhost', '127.0.0.1', '[::1]']);
 const RATE_LIMIT_TIER_STORAGE_KEY = 'settings.rateLimitTier';
 const RATE_LIMIT_CUSTOM_RPM_STORAGE_KEY = 'settings.rateLimitCustomRpm';
@@ -86,6 +87,8 @@ export interface LlmConnectionSettings {
   /** null は既存環境。モデル ID による従来判定へフォールバックする */
   provider: LlmProviderId | null;
   openAiCompatibleEndpoint: string | null;
+  /** Azure OpenAI 用の完全 URL。OpenAI 互換 API とは別キーで保存する（issue #127 PR3 フォローアップ） */
+  azureOpenAiEndpoint: string | null;
 }
 
 const LLM_PROVIDERS: ReadonlySet<string> = new Set([
@@ -93,7 +96,40 @@ const LLM_PROVIDERS: ReadonlySet<string> = new Set([
   'openrouter',
   'openai_compatible',
   'anthropic',
+  'azure_openai',
 ]);
+
+/**
+ * 完全 URL のエンドポイント入力を必須とする接続方式か（保存時の URL 検証、および
+ * origin 権限確認〔`chrome.permissions.request`〕を要求するかどうかのゲーティングに使う）。
+ * OpenAI 互換 API と Azure OpenAI はどちらもデプロイメント + `api-version` クエリ文字列を含む
+ * 完全 URL を必要とする点で同じ形の入力だが、保存先の設定キーは provider ごとに分離している
+ * （`openAiCompatibleEndpoint` / `azureOpenAiEndpoint`。以前は 1 キーを共有していたが、接続方式を
+ * 切り替えると他方の保存値を失う不具合があったため分離した。issue #127 PR3 フォローアップ）。
+ * 「どの保存キーが対象か」は `resolveStoredEndpoint` が別途担う
+ */
+export function requiresFullUrlEndpoint(provider: LlmProviderId): boolean {
+  return provider === 'openai_compatible' || provider === 'azure_openai';
+}
+
+/**
+ * 接続設定オブジェクトから、指定した provider が使う保存済みエンドポイントを解決する。
+ * provider ごとに保存キーが分かれているため（openai_compatible → openAiCompatibleEndpoint、
+ * azure_openai → azureOpenAiEndpoint）、呼び出し側でどちらのフィールドを読むべきか
+ * 分岐を重複させないようここへ集約する（対象外の provider は null）
+ */
+export function resolveStoredEndpoint(
+  settings: Pick<LlmConnectionSettings, 'openAiCompatibleEndpoint' | 'azureOpenAiEndpoint'>,
+  provider: LlmProviderId,
+): string | null {
+  if (provider === 'openai_compatible') {
+    return settings.openAiCompatibleEndpoint;
+  }
+  if (provider === 'azure_openai') {
+    return settings.azureOpenAiEndpoint;
+  }
+  return null;
+}
 
 /**
  * 工場出荷の既定モデル。ユーザーが Options で既定モデルを未設定のとき、S5 スキーマ画面の
@@ -123,7 +159,13 @@ export async function saveDefaultModel(model: string): Promise<void> {
   await setLocal(DEFAULT_MODEL_STORAGE_KEY, trimmed);
 }
 
-/** OpenAI 互換 Chat Completions の完全 URL を検証・正規化する */
+/**
+ * OpenAI 互換 Chat Completions の完全 URL を検証・正規化する（Azure OpenAI の完全 URL 入力欄も
+ * このバリデータを共有する。issue #127 PR3）。
+ * クエリ文字列は許可する — Azure OpenAI がデプロイメント URL に必須の
+ * `?api-version=...` を含む完全 URL を入力させる仕様（docs/ui-states.md §2）のため。
+ * フラグメントは実質的な URL 差分を生まない冗長な入力のため引き続き拒否する
+ */
 export function normalizeOpenAiCompatibleEndpoint(endpoint: string): string {
   const trimmed = endpoint.trim();
   let url: URL;
@@ -141,8 +183,8 @@ export function normalizeOpenAiCompatibleEndpoint(endpoint: string): string {
   if (url.username !== '' || url.password !== '') {
     throw new Error('API エンドポイントに認証情報を含めないでください');
   }
-  if (url.search !== '' || url.hash !== '') {
-    throw new Error('API エンドポイントにクエリ文字列やフラグメントを含めないでください');
+  if (url.hash !== '') {
+    throw new Error('API エンドポイントにフラグメントを含めないでください');
   }
   return url.toString();
 }
@@ -153,38 +195,60 @@ export function isLoopbackEndpoint(endpoint: string): boolean {
   return url.protocol === 'http:' && HTTP_LOOPBACK_HOSTNAMES.has(url.hostname);
 }
 
-/** 接続方式と OpenAI 互換 API の URL を読み出す */
+/** 接続方式と OpenAI 互換 API / Azure OpenAI それぞれの URL を読み出す */
 export async function loadLlmConnectionSettings(): Promise<LlmConnectionSettings> {
   const rawProvider = await getLocal<string>(LLM_PROVIDER_STORAGE_KEY);
   const provider =
     rawProvider !== undefined && LLM_PROVIDERS.has(rawProvider)
       ? (rawProvider as LlmProviderId)
       : null;
-  const endpoint = await getLocal<string>(OPENAI_COMPATIBLE_ENDPOINT_STORAGE_KEY);
+  const [endpoint, azureEndpoint] = await Promise.all([
+    getLocal<string>(OPENAI_COMPATIBLE_ENDPOINT_STORAGE_KEY),
+    getLocal<string>(AZURE_OPENAI_ENDPOINT_STORAGE_KEY),
+  ]);
   return {
     provider,
     openAiCompatibleEndpoint: endpoint?.trim() ? endpoint : null,
+    azureOpenAiEndpoint: azureEndpoint?.trim() ? azureEndpoint : null,
   };
 }
 
-/** 接続方式を保存する。OpenAI 互換 API では検証済みの完全 URL も必須 */
+/**
+ * 接続方式を保存する。OpenAI 互換 API / Azure OpenAI では検証済みの完全 URL も必須。
+ * 2 方式は保存先の設定キーが別（`openAiCompatibleEndpoint` / `azureOpenAiEndpoint`）のため、
+ * 保存対象の provider に属するキーだけを書き換え、もう一方の保存値には触れない
+ * （issue #127 PR3 フォローアップ: 接続方式の切替で他方の URL を失わないようにする）。
+ * **接続方式の切替そのものではどちらの保存済み URL も削除しない**（以前は gemini / openrouter /
+ * anthropic への切替時に `openAiCompatibleEndpoint` を暗黙に削除していたが、保存済み URL を
+ * 暗黙に失わせない方針に統一するため、この削除処理自体をやめた — issue #127 PR3 レビュー対応）。
+ * 現時点では保存済みエンドポイント URL を明示的に削除する手段が Options 側に無い
+ * （API キーと同様、削除専用の UI 操作は未実装。Azure OpenAI の URL はテナントのリソース名を
+ * 含むため、削除手段が必要になった際は別途 Options に追加を検討する）
+ */
 export async function saveLlmConnectionSettings(settings: {
   provider: LlmProviderId;
   openAiCompatibleEndpoint?: string | null;
+  azureOpenAiEndpoint?: string | null;
 }): Promise<void> {
   if (!LLM_PROVIDERS.has(settings.provider)) {
     throw new Error('未対応の LLM 接続方式です');
   }
-  const endpoint =
-    settings.provider === 'openai_compatible'
-      ? normalizeOpenAiCompatibleEndpoint(settings.openAiCompatibleEndpoint ?? '')
-      : null;
-  await setLocal(LLM_PROVIDER_STORAGE_KEY, settings.provider);
-  if (endpoint !== null) {
+  if (settings.provider === 'openai_compatible') {
+    const endpoint = normalizeOpenAiCompatibleEndpoint(settings.openAiCompatibleEndpoint ?? '');
+    await setLocal(LLM_PROVIDER_STORAGE_KEY, settings.provider);
     await setLocal(OPENAI_COMPATIBLE_ENDPOINT_STORAGE_KEY, endpoint);
-  } else {
-    await removeLocal(OPENAI_COMPATIBLE_ENDPOINT_STORAGE_KEY);
+    return;
   }
+  if (settings.provider === 'azure_openai') {
+    const endpoint = normalizeOpenAiCompatibleEndpoint(settings.azureOpenAiEndpoint ?? '');
+    await setLocal(LLM_PROVIDER_STORAGE_KEY, settings.provider);
+    await setLocal(AZURE_OPENAI_ENDPOINT_STORAGE_KEY, endpoint);
+    return;
+  }
+  // gemini / openrouter / anthropic はエンドポイント欄を持たない接続方式。保存済みの
+  // OpenAI 互換 API / Azure OpenAI 用 URL はどちらも保持したまま provider だけ切り替える
+  // （保存済み URL を暗黙に失わせない。issue #127 PR3 レビュー対応）
+  await setLocal(LLM_PROVIDER_STORAGE_KEY, settings.provider);
 }
 
 /**

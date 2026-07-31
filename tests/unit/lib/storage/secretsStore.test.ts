@@ -1,16 +1,19 @@
 import { installChromeMock } from '../../../setup/chrome-mock';
 import {
   clearAnthropicApiKey,
+  clearAzureOpenAiApiKey,
   clearGeminiApiKey,
   clearOpenAiCompatibleApiKey,
   clearOpenRouterApiKey,
   loadAnthropicApiKey,
+  loadAzureOpenAiApiKey,
   loadGeminiApiKey,
   loadOpenAiCompatibleApiKey,
   loadOpenRouterApiKey,
   looksLikeGeminiApiKey,
   looksLikeOpenRouterApiKey,
   saveAnthropicApiKey,
+  saveAzureOpenAiApiKey,
   saveGeminiApiKey,
   saveOpenAiCompatibleApiKey,
   saveOpenRouterApiKey,
@@ -101,6 +104,26 @@ describe('secretsStore', () => {
     await saveAnthropicApiKey('sk-ant-TESTKEY');
     await clearAnthropicApiKey();
     await expect(loadAnthropicApiKey()).resolves.toBeNull();
+    await expect(loadGeminiApiKey()).resolves.toBe('AIzaSyTESTKEY');
+  });
+
+  // issue #127 PR3: Azure OpenAI API キー（他プロバイダと同じ trim 保存・空文字拒否・独立削除の規約）
+  test('Azure OpenAI キー: 未設定なら null、trim して保存し、読み出せる', async () => {
+    await expect(loadAzureOpenAiApiKey()).resolves.toBeNull();
+    await saveAzureOpenAiApiKey('  azure-secret-TESTKEY  ');
+    await expect(loadAzureOpenAiApiKey()).resolves.toBe('azure-secret-TESTKEY');
+  });
+
+  test('Azure OpenAI キー: 空文字（空白のみ含む）は保存を拒否する', async () => {
+    await expect(saveAzureOpenAiApiKey('   ')).rejects.toThrow('空の API キー');
+    await expect(loadAzureOpenAiApiKey()).resolves.toBeNull();
+  });
+
+  test('Azure OpenAI キー: clear で削除され、他プロバイダのキーには影響しない', async () => {
+    await saveGeminiApiKey('AIzaSyTESTKEY');
+    await saveAzureOpenAiApiKey('azure-secret-TESTKEY');
+    await clearAzureOpenAiApiKey();
+    await expect(loadAzureOpenAiApiKey()).resolves.toBeNull();
     await expect(loadGeminiApiKey()).resolves.toBe('AIzaSyTESTKEY');
   });
 });

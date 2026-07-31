@@ -109,6 +109,9 @@ function providerDisplayName(provider: LlmProviderId): string {
   if (provider === 'anthropic') {
     return 'Anthropic';
   }
+  if (provider === 'azure_openai') {
+    return 'Azure OpenAI';
+  }
   return 'Gemini';
 }
 

@@ -174,6 +174,7 @@ import { createProvider } from '../lib/llm/providerFactory';
 import { loadDisposablePdf } from '../lib/pdf/loadPdf';
 import {
   loadAnthropicApiKey,
+  loadAzureOpenAiApiKey,
   loadGeminiApiKey,
   loadOpenAiCompatibleApiKey,
   loadOpenRouterApiKey,
@@ -365,6 +366,9 @@ export function createChromeAppDeps(): AppDeps {
       }
       if (provider === 'anthropic') {
         return loadAnthropicApiKey();
+      }
+      if (provider === 'azure_openai') {
+        return loadAzureOpenAiApiKey();
       }
       return loadGeminiApiKey();
     },
