@@ -1069,6 +1069,16 @@ export const en: Record<MessageKey, string> = {
   'options.providerLabel': 'Connection method',
   'options.saveConnection': 'Save connection settings',
   'options.testConnection': 'Test connection',
+  'options.fetchModelList': 'Fetch model list',
+  'options.fetchModelListUnfetched': 'The model list has not been fetched yet.',
+  'options.fetchModelListFetching': 'Fetching…',
+  'options.fetchModelListFetched': 'Fetched {count} model(s).',
+  'options.fetchModelListToast': 'Model list updated.',
+  'options.fetchModelListFailed':
+    'Failed to fetch the model list: {reason} (using the built-in catalog instead).',
+  'options.fetchModelListUnsupported':
+    'Fetching a model list is not supported for this connection method (Gemini models are already in the price table; Azure OpenAI deployment names are tenant-specific and cannot be listed).',
+  'options.fetchModelListGroupLabel': 'Fetched models',
   'options.defaultModelTitle': 'Default model',
   'options.defaultModelHelp': 'Cost estimates are not shown for models not in the price table.',
   'options.rateLimitTitle': 'Rate limiting (429 protection for full extraction)',

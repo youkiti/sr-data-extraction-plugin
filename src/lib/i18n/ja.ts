@@ -1058,6 +1058,17 @@ export const ja = {
   'options.providerLabel': '接続方式',
   'options.saveConnection': '接続設定を保存',
   'options.testConnection': '接続テスト',
+  // モデル一覧の自動取得（issue #127 PR4。docs/ui-states.md §2「モデル一覧を取得」ボタン）
+  'options.fetchModelList': 'モデル一覧を取得',
+  'options.fetchModelListUnfetched': 'モデル一覧は未取得です',
+  'options.fetchModelListFetching': '取得しています…',
+  'options.fetchModelListFetched': '{count} 件のモデルを取得しました',
+  'options.fetchModelListToast': 'モデル一覧を更新しました',
+  'options.fetchModelListFailed':
+    'モデル一覧の取得に失敗しました: {reason}（既存のカタログを使用します）',
+  'options.fetchModelListUnsupported':
+    'この接続方式ではモデル一覧の自動取得に対応していません（Gemini は単価表に収載済み、Azure OpenAI はデプロイメント名がテナント固有のため取得できません）',
+  'options.fetchModelListGroupLabel': '取得したモデル',
   'options.defaultModelTitle': '既定モデル',
   'options.defaultModelHelp': '単価表にないモデルはコスト概算が表示されません。',
   'options.rateLimitTitle': 'レート制限（一括抽出の 429 対策）',

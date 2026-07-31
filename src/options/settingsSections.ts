@@ -187,7 +187,20 @@ export function buildSettingsSections(): HTMLElement {
         text: t('options.testConnection'),
         attributes: { type: 'button' },
       }),
+      // モデル一覧の自動取得（issue #127 PR4）。接続方式が単一の select で切り替わるのと同じ理由で、
+      // ボタンも各接続方式で共有する 1 つの id（#fetch-model-list。docs/ui-states.md §2）にする。
+      // 対応可否・活性状態は bootstrapLlmConnectionSection が現在の選択に応じて出し分ける
+      el('button', {
+        id: 'fetch-model-list',
+        text: t('options.fetchModelList'),
+        attributes: { type: 'button' },
+      }),
     ]),
+    el('p', {
+      id: 'fetch-model-list-status',
+      className: 'options__status',
+      text: t('options.fetchModelListUnfetched'),
+    }),
   ]);
   body.append(connectionSection);
 
