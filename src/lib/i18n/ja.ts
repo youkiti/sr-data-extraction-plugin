@@ -1069,6 +1069,17 @@ export const ja = {
   'options.fetchModelListUnsupported':
     'この接続方式ではモデル一覧の自動取得に対応していません（Gemini は単価表に収載済み、Azure OpenAI はデプロイメント名がテナント固有のため取得できません）',
   'options.fetchModelListGroupLabel': '取得したモデル',
+  // reasoning effort の既定値（issue #127 PR5。docs/ui-states.md §2「reasoning effort の既定値」）
+  'options.reasoningEffortTitle': 'reasoning effort の既定値',
+  'options.reasoningEffortHelp':
+    '未設定のままなら今までどおりの挙動を維持します（Anthropic ネイティブは low 相当を送信し続け、OpenRouter / OpenAI 互換 API は何も送りません）。設定すると、Anthropic ネイティブは output_config.effort へ、OpenRouter / OpenAI 互換 API（Azure OpenAI 含む）は reasoning_effort へそのまま送ります。Gemini では現時点で使用しません。',
+  'options.reasoningEffortAria': 'reasoning effort の既定値',
+  'options.reasoningEffortLabel': 'reasoning effort',
+  'options.reasoningEffortUnset': '未設定（従来どおり）',
+  'options.reasoningEffortLow': '低い（low）',
+  'options.reasoningEffortMedium': '中程度（medium）',
+  'options.reasoningEffortHigh': '高い（high）',
+  'options.reasoningEffortStatus': 'reasoning effort の既定値: {status}',
   'options.defaultModelTitle': '既定モデル',
   'options.defaultModelHelp': '単価表にないモデルはコスト概算が表示されません。',
   'options.rateLimitTitle': 'レート制限（一括抽出の 429 対策）',

@@ -1450,6 +1450,125 @@ describe('bootstrapOptions（レート制限 tier。docs/ui-states.md §2「レ�
   });
 });
 
+describe('bootstrapOptions（reasoning effort の既定値。docs/ui-states.md §2「reasoning effort の既定値」・issue #127 PR5）', () => {
+  let chromeMock: ChromeMock;
+
+  function effortSelect(): HTMLSelectElement {
+    return document.getElementById('default-reasoning-effort') as HTMLSelectElement;
+  }
+  function effortStatusEl(): HTMLElement {
+    return document.getElementById('default-reasoning-effort-status') as HTMLElement;
+  }
+
+  beforeEach(() => {
+    chromeMock = installChromeMock();
+    document.body.replaceChildren(buildSettingsSections());
+  });
+
+  test('必須要素が欠けている場合は他の節だけ配線する', async () => {
+    document.body.innerHTML = OPTIONS_TEMPLATE;
+    await expect(bootstrapOptions(document)).resolves.toBeUndefined();
+    expect(document.getElementById('default-reasoning-effort-status')).toBeNull();
+  });
+
+  test('未設定なら空欄（未設定）を選択し、ステータスに「未設定」を表示する', async () => {
+    await bootstrapOptions(document);
+    expect(effortSelect().value).toBe('');
+    expect(effortStatusEl().textContent).toBe('reasoning effort の既定値: 未設定');
+  });
+
+  test('保存済みなら該当 option を選択して復元する', async () => {
+    chromeMock.storage.local.data['settings.defaultReasoningEffort'] = 'high';
+    await bootstrapOptions(document);
+    expect(effortSelect().value).toBe('high');
+    expect(effortStatusEl().textContent).toBe('reasoning effort の既定値: 保存済み');
+  });
+
+  test('不正な保存値は空欄（未設定）へ倒す', async () => {
+    chromeMock.storage.local.data['settings.defaultReasoningEffort'] = 'xhigh';
+    await bootstrapOptions(document);
+    expect(effortSelect().value).toBe('');
+    expect(effortStatusEl().textContent).toBe('reasoning effort の既定値: 未設定');
+  });
+
+  test('change で即時保存する（low / medium / high）', async () => {
+    await bootstrapOptions(document);
+    effortSelect().value = 'medium';
+    effortSelect().dispatchEvent(new Event('change'));
+    await flush();
+    expect(chromeMock.storage.local.data['settings.defaultReasoningEffort']).toBe('medium');
+    expect(effortStatusEl().textContent).toBe('reasoning effort の既定値: 保存済み');
+  });
+
+  test('未設定（空欄）へ戻すと保存キーを削除する', async () => {
+    chromeMock.storage.local.data['settings.defaultReasoningEffort'] = 'high';
+    await bootstrapOptions(document);
+    effortSelect().value = '';
+    effortSelect().dispatchEvent(new Event('change'));
+    await flush();
+    expect(chromeMock.storage.local.remove).toHaveBeenCalledWith('settings.defaultReasoningEffort');
+    expect(chromeMock.storage.local.data['settings.defaultReasoningEffort']).toBeUndefined();
+    expect(effortStatusEl().textContent).toBe('reasoning effort の既定値: 未設定');
+  });
+
+  test('保存失敗時は赤系メッセージを表示する', async () => {
+    await bootstrapOptions(document);
+    chromeMock.storage.local.set.mockRejectedValueOnce(new Error('quota exceeded'));
+    effortSelect().value = 'low';
+    effortSelect().dispatchEvent(new Event('change'));
+    await flush();
+    expect(effortStatusEl().textContent).toBe('保存に失敗しました。もう一度お試しください。');
+    expect(effortStatusEl().classList.contains('options__status--error')).toBe(true);
+  });
+
+  // 注入経路の受け入れ条件（issue #127 PR5 ブリーフ work item 5）: Options 接続テストは
+  // resolveProviderConfig を経由しない独自の resolveFormConfig を使うため、そちらにも
+  // 保存済み reasoning effort が反映されることを別途固定する
+  describe('Options 接続テストへの反映（resolveFormConfig 経由）', () => {
+    let originalFetch: typeof fetch | undefined;
+
+    const provider = (): HTMLSelectElement =>
+      document.getElementById('llm-provider') as HTMLSelectElement;
+    const anthropicKey = (): HTMLInputElement =>
+      document.getElementById('anthropic-api-key') as HTMLInputElement;
+    const testConnection = (): HTMLButtonElement =>
+      document.getElementById('test-llm-connection') as HTMLButtonElement;
+    const connectionStatus = (): HTMLElement =>
+      document.getElementById('llm-connection-status') as HTMLElement;
+
+    beforeEach(() => {
+      originalFetch = globalThis.fetch;
+    });
+
+    afterEach(() => {
+      if (originalFetch === undefined) {
+        delete (globalThis as { fetch?: typeof fetch }).fetch;
+      } else {
+        globalThis.fetch = originalFetch;
+      }
+    });
+
+    test('保存済みの reasoning effort を接続テストの output_config.effort へ反映する（Anthropic）', async () => {
+      chromeMock.storage.local.data['settings.defaultReasoningEffort'] = 'high';
+      globalThis.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        text: async () => JSON.stringify({ content: [{ type: 'text', text: '{"ok":true}' }] }),
+      }) as unknown as typeof fetch;
+      await bootstrapOptions(document);
+      provider().value = 'anthropic';
+      provider().dispatchEvent(new Event('change'));
+      anthropicKey().value = 'sk-ant-TESTKEY';
+      testConnection().click();
+      await flush();
+      await flush();
+      expect(connectionStatus().textContent).toBe('接続テストに成功しました。');
+      const init = (globalThis.fetch as jest.Mock).mock.calls[0]?.[1] as RequestInit;
+      const body = JSON.parse(init.body as string);
+      expect(body.output_config.effort).toBe('high');
+    });
+  });
+});
+
 describe('bootstrapOptions（表示言語。docs/ui-states.md §2「表示言語」・issue #93）', () => {
   let chromeMock: ChromeMock;
 

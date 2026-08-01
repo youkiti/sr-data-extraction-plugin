@@ -252,6 +252,79 @@ describe('AnthropicProvider.chat', () => {
     expect(body.output_config).toEqual({ effort: 'low' });
   });
 
+  // issue #127 PR5: reasoning effort の設定化。「未指定 → 従来どおり」が最重要の受け入れ条件
+  describe('reasoning effort（issue #127 PR5）', () => {
+    test('construction 時に reasoningEffort を渡さなければ従来どおり effort:low を送る（回帰）', async () => {
+      const fetch = jest
+        .fn()
+        .mockResolvedValue(jsonResponse({ content: [{ type: 'text', text: 'ok' }], stop_reason: 'end_turn' }));
+      const provider = new AnthropicProvider({ apiKey: 'k', model: 'claude-sonnet-5', fetch });
+      await provider.chat([{ role: 'user', content: 'u' }]);
+      const body = JSON.parse((fetch.mock.calls[0]?.[1] as RequestInit).body as string);
+      expect(body.output_config).toEqual({ effort: 'low' });
+    });
+
+    test('construction 時に reasoningEffort: null を渡しても従来どおり effort:low を送る', async () => {
+      const fetch = jest
+        .fn()
+        .mockResolvedValue(jsonResponse({ content: [{ type: 'text', text: 'ok' }], stop_reason: 'end_turn' }));
+      const provider = new AnthropicProvider({
+        apiKey: 'k',
+        model: 'claude-sonnet-5',
+        fetch,
+        reasoningEffort: null,
+      });
+      await provider.chat([{ role: 'user', content: 'u' }]);
+      const body = JSON.parse((fetch.mock.calls[0]?.[1] as RequestInit).body as string);
+      expect(body.output_config).toEqual({ effort: 'low' });
+    });
+
+    test('construction 時の reasoningEffort（Options 既定値）を output_config.effort へ写す', async () => {
+      const fetch = jest
+        .fn()
+        .mockResolvedValue(jsonResponse({ content: [{ type: 'text', text: 'ok' }], stop_reason: 'end_turn' }));
+      const provider = new AnthropicProvider({
+        apiKey: 'k',
+        model: 'claude-sonnet-5',
+        fetch,
+        reasoningEffort: 'high',
+      });
+      await provider.chat([{ role: 'user', content: 'u' }]);
+      const body = JSON.parse((fetch.mock.calls[0]?.[1] as RequestInit).body as string);
+      expect(body.output_config).toEqual({ effort: 'high' });
+    });
+
+    test('呼び出し 1 回ぶんの ChatOptions.reasoningEffort が construction 時の既定より優先する', async () => {
+      const fetch = jest
+        .fn()
+        .mockResolvedValue(jsonResponse({ content: [{ type: 'text', text: 'ok' }], stop_reason: 'end_turn' }));
+      const provider = new AnthropicProvider({
+        apiKey: 'k',
+        model: 'claude-sonnet-5',
+        fetch,
+        reasoningEffort: 'high',
+      });
+      await provider.chat([{ role: 'user', content: 'u' }], { reasoningEffort: 'medium' });
+      const body = JSON.parse((fetch.mock.calls[0]?.[1] as RequestInit).body as string);
+      expect(body.output_config).toEqual({ effort: 'medium' });
+    });
+
+    test('claude-haiku-4-5 は reasoningEffort を設定しても送らない（deny list が勝つ）', async () => {
+      const fetch = jest
+        .fn()
+        .mockResolvedValue(jsonResponse({ content: [{ type: 'text', text: 'ok' }], stop_reason: 'end_turn' }));
+      const provider = new AnthropicProvider({
+        apiKey: 'k',
+        model: 'claude-haiku-4-5',
+        fetch,
+        reasoningEffort: 'high',
+      });
+      await provider.chat([{ role: 'user', content: 'u' }]);
+      const body = JSON.parse((fetch.mock.calls[0]?.[1] as RequestInit).body as string);
+      expect(body).not.toHaveProperty('output_config');
+    });
+  });
+
   test('responseSchema を渡すと output_config.format = json_schema（toAnthropicSchema 変換込み）で要求する', async () => {
     const fetch = jest
       .fn()

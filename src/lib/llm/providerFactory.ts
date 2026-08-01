@@ -5,13 +5,14 @@
 import type { LlmProviderId } from '../../domain/llmApiLog';
 import {
   isLoopbackEndpoint,
+  loadDefaultReasoningEffort,
   requiresFullUrlEndpoint,
   resolveStoredEndpoint,
   type LlmConnectionSettings,
 } from '../storage/settingsStore';
 import { AnthropicProvider } from './AnthropicProvider';
 import { GeminiProvider } from './GeminiProvider';
-import type { LLMProvider } from './LLMProvider';
+import type { LLMProvider, ReasoningEffort } from './LLMProvider';
 import { OpenAICompatibleProvider } from './OpenAICompatibleProvider';
 import { OpenRouterProvider } from './OpenRouterProvider';
 import { resolveModelImageInputSupport } from './pricing';
@@ -24,6 +25,13 @@ export interface ProviderConfig {
   /** provider = openai_compatible の完全な Chat Completions URL */
   endpoint?: string;
   fetch?: typeof fetch;
+  /**
+   * Options の既定 reasoning effort（`settings.defaultReasoningEffort`。未設定 = null / 省略）。
+   * Anthropic ネイティブ / OpenRouter / OpenAI 互換（Azure OpenAI 含む）の construction 時点の
+   * 既定値として渡す。Gemini は無視する（issue #127 PR5）。null / 省略なら各 provider は
+   * 従来どおりの挙動を維持する（`AnthropicProvider` 等の JSDoc 参照）
+   */
+  reasoningEffort?: ReasoningEffort | null;
 }
 
 export interface ProviderResolutionDeps {
@@ -89,6 +97,7 @@ export function createProvider(config: ProviderConfig): LLMProvider {
       model: config.model,
       endpoint: config.endpoint,
       fetch: config.fetch,
+      reasoningEffort: config.reasoningEffort,
     });
   }
   if (provider === 'openrouter') {
@@ -96,6 +105,7 @@ export function createProvider(config: ProviderConfig): LLMProvider {
       apiKey: config.apiKey,
       model: config.model,
       fetch: config.fetch,
+      reasoningEffort: config.reasoningEffort,
     });
   }
   if (provider === 'anthropic') {
@@ -103,6 +113,7 @@ export function createProvider(config: ProviderConfig): LLMProvider {
       apiKey: config.apiKey,
       model: config.model,
       fetch: config.fetch,
+      reasoningEffort: config.reasoningEffort,
     });
   }
   if (provider === 'azure_openai') {
@@ -117,8 +128,11 @@ export function createProvider(config: ProviderConfig): LLMProvider {
       endpoint: config.endpoint,
       fetch: config.fetch,
       authMode: 'azure_api_key',
+      reasoningEffort: config.reasoningEffort,
     });
   }
+  // Gemini は reasoningEffort を受け取らない（未対応。issue #127 PR5 — thinking budget 相当の
+  // 設計は別途検討。GeminiProvider 冒頭コメント参照）
   return new GeminiProvider({
     apiKey: config.apiKey,
     model: config.model,
@@ -142,6 +156,10 @@ export async function resolveProviderConfig(
   // （issue #127 PR3。ui-states.md §2「Azure OpenAI 選択時」）
   const allowsEmptyApiKey =
     provider === 'openai_compatible' && endpoint !== null && isLoopbackEndpoint(endpoint);
+  // reasoning effort の既定値（issue #127 PR5）。未設定（null）なら config へ足さない
+  // （endpoint と同じ「無ければキー自体を持たない」流儀。既存の呼び出し側 / テストが
+  // 期待する config の形を、未設定のユーザーに対しては 1 バイトも変えないため）
+  const reasoningEffort = await loadDefaultReasoningEffort();
   return {
     provider,
     config:
@@ -152,6 +170,7 @@ export async function resolveProviderConfig(
             apiKey: apiKey ?? '',
             model,
             ...(endpoint !== null ? { endpoint } : {}),
+            ...(reasoningEffort !== null ? { reasoningEffort } : {}),
           },
   };
 }

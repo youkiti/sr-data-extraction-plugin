@@ -10,12 +10,14 @@ import {
 import { getLocal, removeLocal, setLocal } from './chromeStorage';
 import type { LlmProviderId } from '../../domain/llmApiLog';
 import { isUiLanguage, type UiLanguage } from '../i18n';
+import type { ReasoningEffort } from '../llm/LLMProvider';
 
 const DEFAULT_MODEL_STORAGE_KEY = 'settings.defaultModel';
 const UI_LANGUAGE_STORAGE_KEY = 'settings.uiLanguage';
 const LLM_PROVIDER_STORAGE_KEY = 'settings.llmProvider';
 const OPENAI_COMPATIBLE_ENDPOINT_STORAGE_KEY = 'settings.openAiCompatibleEndpoint';
 const AZURE_OPENAI_ENDPOINT_STORAGE_KEY = 'settings.azureOpenAiEndpoint';
+const DEFAULT_REASONING_EFFORT_STORAGE_KEY = 'settings.defaultReasoningEffort';
 const HTTP_LOOPBACK_HOSTNAMES: ReadonlySet<string> = new Set(['localhost', '127.0.0.1', '[::1]']);
 const RATE_LIMIT_TIER_STORAGE_KEY = 'settings.rateLimitTier';
 const RATE_LIMIT_CUSTOM_RPM_STORAGE_KEY = 'settings.rateLimitCustomRpm';
@@ -353,6 +355,32 @@ export async function loadUiLanguage(): Promise<UiLanguage> {
 /** UI 表示言語を保存する（言語セレクタの change のたびに即時永続化） */
 export async function saveUiLanguage(language: UiLanguage): Promise<void> {
   await setLocal(UI_LANGUAGE_STORAGE_KEY, language);
+}
+
+function isReasoningEffort(value: unknown): value is ReasoningEffort {
+  return value === 'low' || value === 'medium' || value === 'high';
+}
+
+/**
+ * reasoning effort の既定値を読み出す（未設定・不正値は null。issue #127 PR5・
+ * docs/ui-states.md §2「reasoning effort の既定値」）。**null は「provider ごとの従来挙動を
+ * 維持する」を意味し、明示的な off ではない** — `lib/llm/providerFactory.ts` の
+ * `resolveProviderConfig` / `createProvider` がこの値を各 provider の construction 時点の
+ * 既定へ注入し、provider 側は「未指定なら今までどおり」の解決を行う（Anthropic は
+ * `output_config.effort='low'` を送り続け、OpenRouter / OpenAI 互換は何も送らない）
+ */
+export async function loadDefaultReasoningEffort(): Promise<ReasoningEffort | null> {
+  const stored = await getLocal<string>(DEFAULT_REASONING_EFFORT_STORAGE_KEY);
+  return isReasoningEffort(stored) ? stored : null;
+}
+
+/** reasoning effort の既定値を保存する。null は「未設定に戻す」（保存キーを削除） */
+export async function saveDefaultReasoningEffort(effort: ReasoningEffort | null): Promise<void> {
+  if (effort === null) {
+    await removeLocal(DEFAULT_REASONING_EFFORT_STORAGE_KEY);
+    return;
+  }
+  await setLocal(DEFAULT_REASONING_EFFORT_STORAGE_KEY, effort);
 }
 
 /**

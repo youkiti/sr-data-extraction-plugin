@@ -68,6 +68,26 @@ describe('GeminiProvider.chat', () => {
     expect(body.contents).toEqual([{ role: 'user', parts: [{ text: 'q' }] }]);
   });
 
+  // issue #127 PR5: reasoning effort は Gemini では未対応。ChatOptions.reasoningEffort を
+  // 渡しても渡さなくても body が完全に同一であることを固定する（未対応 = 無視、を保証する回帰）
+  test('ChatOptions.reasoningEffort を渡しても body に一切反映しない（未対応・無視）', async () => {
+    const fetchWithout = jest
+      .fn()
+      .mockResolvedValue(jsonResponse({ candidates: [{ content: { parts: [{ text: 'ok' }] } }] }));
+    const providerWithout = new GeminiProvider({ apiKey: 'k', fetch: fetchWithout });
+    await providerWithout.chat([{ role: 'user', content: 'q' }]);
+    const bodyWithout = JSON.parse((fetchWithout.mock.calls[0][1] as RequestInit).body as string);
+
+    const fetchWith = jest
+      .fn()
+      .mockResolvedValue(jsonResponse({ candidates: [{ content: { parts: [{ text: 'ok' }] } }] }));
+    const providerWith = new GeminiProvider({ apiKey: 'k', fetch: fetchWith });
+    await providerWith.chat([{ role: 'user', content: 'q' }], { reasoningEffort: 'high' });
+    const bodyWith = JSON.parse((fetchWith.mock.calls[0][1] as RequestInit).body as string);
+
+    expect(bodyWith).toEqual(bodyWithout);
+  });
+
   test('model ロールはそのまま contents に入る', async () => {
     const fetch = jest
       .fn()

@@ -95,6 +95,58 @@ describe('OpenRouterProvider.chat', () => {
     expect(body.response_format).toBeUndefined();
   });
 
+  // issue #127 PR5: reasoning effort の設定化。「未指定 → 従来どおり body を一切変えない」が
+  // 最重要の受け入れ条件（既存ユーザーの body はバイト単位で不変であること）
+  describe('reasoning effort（issue #127 PR5）', () => {
+    test('未指定（construction / 呼び出し 1 回ぶんとも）なら body は従来どおり（reasoning_effort を持たない）', async () => {
+      const fetch = jest.fn().mockResolvedValue(jsonResponse(chatCompletion('ok')));
+      const provider = new OpenRouterProvider({ apiKey: 'k', model: 'm/x', fetch });
+      await provider.chat([{ role: 'user', content: 'q' }]);
+      const body = JSON.parse((fetch.mock.calls[0][1] as RequestInit).body as string);
+      expect(body).toEqual({ model: 'm/x', messages: [{ role: 'user', content: 'q' }] });
+      expect(body).not.toHaveProperty('reasoning_effort');
+    });
+
+    test('construction 時に reasoningEffort: null を渡しても body は従来どおり', async () => {
+      const fetch = jest.fn().mockResolvedValue(jsonResponse(chatCompletion('ok')));
+      const provider = new OpenRouterProvider({
+        apiKey: 'k',
+        model: 'm/x',
+        fetch,
+        reasoningEffort: null,
+      });
+      await provider.chat([{ role: 'user', content: 'q' }]);
+      const body = JSON.parse((fetch.mock.calls[0][1] as RequestInit).body as string);
+      expect(body).not.toHaveProperty('reasoning_effort');
+    });
+
+    test('construction 時の reasoningEffort（Options 既定値）を reasoning_effort へ写す', async () => {
+      const fetch = jest.fn().mockResolvedValue(jsonResponse(chatCompletion('ok')));
+      const provider = new OpenRouterProvider({
+        apiKey: 'k',
+        model: 'm/x',
+        fetch,
+        reasoningEffort: 'medium',
+      });
+      await provider.chat([{ role: 'user', content: 'q' }]);
+      const body = JSON.parse((fetch.mock.calls[0][1] as RequestInit).body as string);
+      expect(body.reasoning_effort).toBe('medium');
+    });
+
+    test('呼び出し 1 回ぶんの ChatOptions.reasoningEffort が construction 時の既定より優先する', async () => {
+      const fetch = jest.fn().mockResolvedValue(jsonResponse(chatCompletion('ok')));
+      const provider = new OpenRouterProvider({
+        apiKey: 'k',
+        model: 'm/x',
+        fetch,
+        reasoningEffort: 'medium',
+      });
+      await provider.chat([{ role: 'user', content: 'q' }], { reasoningEffort: 'high' });
+      const body = JSON.parse((fetch.mock.calls[0][1] as RequestInit).body as string);
+      expect(body.reasoning_effort).toBe('high');
+    });
+  });
+
   test('responseFormat=json なら response_format を json_object にする', async () => {
     const fetch = jest.fn().mockResolvedValue(jsonResponse(chatCompletion('{}')));
     const provider = new OpenRouterProvider({ apiKey: 'k', model: 'm/x', fetch });

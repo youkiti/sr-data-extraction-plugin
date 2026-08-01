@@ -187,6 +187,28 @@ test('Azure OpenAI: 完全 URL + api-key ヘッダーで保存・接続テスト
   await expect(page.locator('#azure-openai-api-key')).toHaveValue('');
 });
 
+test('reasoning effort の既定値: 未設定表示 → 選択で即時保存する（issue #127 PR5）', async ({
+  page,
+}) => {
+  await page.addInitScript(chromeStub({ seedModel: false }));
+  await page.goto('/options/options.html');
+  await expect(page.locator('#default-reasoning-effort-status')).toHaveText(
+    'reasoning effort の既定値: 未設定',
+  );
+  await expect(page.locator('#default-reasoning-effort')).toHaveValue('');
+
+  await page.locator('#default-reasoning-effort').selectOption('high');
+  await expect(page.locator('#default-reasoning-effort-status')).toHaveText(
+    'reasoning effort の既定値: 保存済み',
+  );
+
+  // 未設定（空欄）へ戻すと保存キーを削除して「未設定」表示へ戻る
+  await page.locator('#default-reasoning-effort').selectOption('');
+  await expect(page.locator('#default-reasoning-effort-status')).toHaveText(
+    'reasoning effort の既定値: 未設定',
+  );
+});
+
 test('アクセシビリティ違反がない（axe）', async ({ page }) => {
   await page.addInitScript(chromeStub({ seedModel: true }));
   await page.goto('/options/options.html');

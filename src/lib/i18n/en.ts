@@ -1079,6 +1079,17 @@ export const en: Record<MessageKey, string> = {
   'options.fetchModelListUnsupported':
     'Fetching a model list is not supported for this connection method (Gemini models are already in the price table; Azure OpenAI deployment names are tenant-specific and cannot be listed).',
   'options.fetchModelListGroupLabel': 'Fetched models',
+  // Default reasoning effort (issue #127 PR5. docs/ui-states.md §2 "reasoning effort の既定値")
+  'options.reasoningEffortTitle': 'Default reasoning effort',
+  'options.reasoningEffortHelp':
+    "Leaving this unset keeps today's behavior (the Anthropic native connection keeps sending a low-equivalent effort; OpenRouter / OpenAI-compatible APIs send nothing). Setting it sends the value as-is: Anthropic native uses output_config.effort, and OpenRouter / OpenAI-compatible APIs (including Azure OpenAI) use reasoning_effort. Gemini does not use it yet.",
+  'options.reasoningEffortAria': 'Default reasoning effort',
+  'options.reasoningEffortLabel': 'Reasoning effort',
+  'options.reasoningEffortUnset': 'Not set (unchanged)',
+  'options.reasoningEffortLow': 'Low',
+  'options.reasoningEffortMedium': 'Medium',
+  'options.reasoningEffortHigh': 'High',
+  'options.reasoningEffortStatus': 'Default reasoning effort: {status}',
   'options.defaultModelTitle': 'Default model',
   'options.defaultModelHelp': 'Cost estimates are not shown for models not in the price table.',
   'options.rateLimitTitle': 'Rate limiting (429 protection for full extraction)',

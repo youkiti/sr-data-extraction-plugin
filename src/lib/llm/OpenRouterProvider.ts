@@ -6,6 +6,7 @@ import {
   type ChatResponse,
   type LLMProvider,
   type LlmFailureKind,
+  type ReasoningEffort,
 } from './LLMProvider';
 import { parseRetryAfterMs } from './retry';
 
@@ -30,6 +31,12 @@ export interface OpenRouterProviderOptions {
   apiKey: string;
   model: string;
   fetch?: typeof fetch;
+  /**
+   * construction 時点の既定 reasoning effort（Options `settings.defaultReasoningEffort` から
+   * `providerFactory.createProvider` が注入する。issue #127 PR5）。未指定（null / undefined）
+   * なら `reasoning_effort` を一切送らない従来どおりの挙動を維持する
+   */
+  reasoningEffort?: ReasoningEffort | null;
 }
 
 const ENDPOINT = 'https://openrouter.ai/api/v1/chat/completions';
@@ -129,11 +136,13 @@ export class OpenRouterProvider implements LLMProvider {
   readonly supportsImageInput = true;
   private readonly apiKey: string;
   private readonly fetchImpl: typeof fetch | undefined;
+  private readonly reasoningEffort: ReasoningEffort | null;
 
   constructor(options: OpenRouterProviderOptions) {
     this.apiKey = options.apiKey;
     this.model = options.model;
     this.fetchImpl = options.fetch;
+    this.reasoningEffort = options.reasoningEffort ?? null;
   }
 
   async chat(messages: readonly ChatMessage[], options: ChatOptions = {}): Promise<ChatResponse> {
@@ -262,6 +271,14 @@ export class OpenRouterProvider implements LLMProvider {
       };
     } else if (options.responseFormat === 'json') {
       body['response_format'] = { type: 'json_object' };
+    }
+    // reasoning effort（issue #127 PR5）。呼び出し 1 回ぶんの ChatOptions.reasoningEffort を
+    // construction 時点の既定より優先する。両方とも未指定なら `reasoning_effort` を一切送らない
+    // （＝既存ユーザーの body は 1 バイトも変わらない）。対応しないモデルへ送ると 400 になりうるが、
+    // これは OpenRouter 側の挙動でこちらの制御外
+    const reasoningEffort = options.reasoningEffort ?? this.reasoningEffort;
+    if (reasoningEffort !== null && reasoningEffort !== undefined) {
+      body['reasoning_effort'] = reasoningEffort;
     }
     return body;
   }

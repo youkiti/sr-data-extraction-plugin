@@ -123,9 +123,9 @@ loopback HTTP で API キーが空の場合は Authorization ヘッダーを送�
 接続先へ論文本文と抽出プロンプトが送信される旨を設定画面に表示する。
 任意ヘッダー、Bearer 以外の認証、Chat Completions 以外の API 形式は対象外とする。
 
-### LLM 接続先の拡張（issue #127。Anthropic は PR2・Azure OpenAI は PR3・モデル一覧自動取得は PR4 で実装済み・reasoning effort は PR5 の target spec）
+### LLM 接続先の拡張（issue #127。Anthropic は PR2・Azure OpenAI は PR3・モデル一覧自動取得は PR4・reasoning effort の設定化は PR5 で実装済み）
 
-> PR1（`AnthropicProvider` コア）は provider 層のみで UI 配線を持たなかった。PR2 で Options（`#llm-provider` に `anthropic` を追加 + `#anthropic-api-key` + 接続テスト）まで配線した。PR3 で Azure OpenAI（`#llm-provider` に `azure_openai` を追加 + `#azure-openai-endpoint` / `#azure-openai-api-key` + 接続テスト。新規 provider クラスは作らず `OpenAICompatibleProvider` を認証方式だけ切り替えて流用）まで配線した。PR4 で「モデル一覧を取得」ボタン（`src/lib/llm/modelListFetcher.ts` + `src/options/bootstrap.ts`）まで配線した。「Anthropic 選択時」「Azure OpenAI 選択時」「モデル一覧を取得」ボタン「単価表に無いモデルを選んだとき」の 4 行は実装済み。reasoning effort の 1 行は引き続き未実装の target spec（実装が進み次第この節を更新する）。
+> PR1（`AnthropicProvider` コア）は provider 層のみで UI 配線を持たなかった。PR2 で Options（`#llm-provider` に `anthropic` を追加 + `#anthropic-api-key` + 接続テスト）まで配線した。PR3 で Azure OpenAI（`#llm-provider` に `azure_openai` を追加 + `#azure-openai-endpoint` / `#azure-openai-api-key` + 接続テスト。新規 provider クラスは作らず `OpenAICompatibleProvider` を認証方式だけ切り替えて流用）まで配線した。PR4 で「モデル一覧を取得」ボタン（`src/lib/llm/modelListFetcher.ts` + `src/options/bootstrap.ts`）まで配線した。PR5 で reasoning effort の設定化（`#default-reasoning-effort` セレクタ + `ChatOptions.reasoningEffort`）まで配線した。本節の 5 行は全て実装済み（issue #127 は本 PR5 で完了）。
 
 `#llm-provider` の選択肢に `anthropic`（Anthropic ネイティブ。**PR2 で実装済み**）/ `azure_openai`（Azure OpenAI。**PR3 で実装済み**）を追加した（既存の `gemini` / `openrouter` / `openai_compatible` はそのまま）。
 
