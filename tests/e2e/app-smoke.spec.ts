@@ -50,6 +50,20 @@ test('サイドバーから #/documents へ遷移できる（注意書きの常�
   );
 });
 
+test('ヘッダに使い方ガイドへの外部リンクがある（issue #214）', async ({ page }) => {
+  await page.goto('/app/app.html#/home');
+  const help = page.locator('#app-open-help');
+  await expect(help).toBeVisible();
+  // アイコン（装飾・aria-hidden）+ ラベルの 2 span 構成のためラベル側を見る
+  await expect(help.locator('.app__options-text')).toHaveText('ヘルプ');
+  await expect(help).toHaveAttribute(
+    'href',
+    'https://youkiti.github.io/sr-data-extraction-plugin/help.html',
+  );
+  await expect(help).toHaveAttribute('target', '_blank');
+  await expect(help).toHaveAttribute('rel', 'noopener noreferrer');
+});
+
 test('アクセシビリティ違反がない（axe）', async ({ page }) => {
   await page.goto('/app/app.html#/home');
   await expect(page.locator('#app-content h2')).toHaveText('プロジェクト概要');

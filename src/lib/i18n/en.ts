@@ -22,6 +22,8 @@ export const en: Record<MessageKey, string> = {
   'app.openPopup': 'Open project selection',
   'app.openOptions': 'Settings',
   'app.openOptionsTitle': 'Open settings',
+  'app.openHelp': 'Help',
+  'app.openHelpTitle': 'Open the user guide in a new tab',
   'app.switchProject': 'Open another project',
   'app.navAriaLabel': 'Step navigation',
   'app.navHome': 'Home',
@@ -48,6 +50,13 @@ export const en: Record<MessageKey, string> = {
   'options.languageHelp': 'Language of the user interface. Changes apply immediately.',
   'options.languageLabel': 'Language',
   'options.languageSaveFailed': 'Failed to save the display language.',
+
+  // Options の公開ページリンク節（settingsSections.ts。issue #214）
+  'options.linksTitle': 'Help and policies',
+  'options.linksHelp': 'All links open in a new tab.',
+  'options.linkHelp': 'User guide',
+  'options.linkPrivacy': 'Privacy policy',
+  'options.linkTerms': 'Terms of service',
 
   // Popup S1
   'popup.loading': 'Loading…',
@@ -79,6 +88,7 @@ export const en: Record<MessageKey, string> = {
   'popup.openIdPlaceholder': 'Paste a spreadsheet ID or URL',
   'popup.openSubmit': 'Open',
   'popup.openOptions': 'Open settings',
+  'popup.openHelp': 'User guide',
   'popup.statusLoginRequired': 'Sign-in required.',
   'popup.statusPickRecent': 'Choose a recent project or create a new one.',
   'popup.statusCreateOrOpen': 'Create a new project or open one from a spreadsheet ID.',

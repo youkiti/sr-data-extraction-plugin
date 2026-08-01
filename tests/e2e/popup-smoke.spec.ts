@@ -70,6 +70,22 @@ test('ログイン済 + 最近 2 件: recent リストと各フォームが表�
   await expect(page.locator('#popup-open-form')).toBeVisible();
 });
 
+test('フッタに使い方ガイドへの外部リンクがある（未ログインでも表示。issue #214）', async ({
+  page,
+}) => {
+  await page.addInitScript(chromeStub({ authed: false, seedRecent: false }));
+  await page.goto('/popup/popup.html');
+  const help = page.locator('#popup-open-help');
+  await expect(help).toBeVisible();
+  await expect(help).toHaveText('使い方');
+  await expect(help).toHaveAttribute(
+    'href',
+    'https://youkiti.github.io/sr-data-extraction-plugin/help.html',
+  );
+  await expect(help).toHaveAttribute('target', '_blank');
+  await expect(help).toHaveAttribute('rel', 'noopener noreferrer');
+});
+
 test('アクセシビリティ違反がない（axe・ログイン済状態）', async ({ page }) => {
   await page.addInitScript(chromeStub({ authed: true, seedRecent: true }));
   await page.goto('/popup/popup.html');

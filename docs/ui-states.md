@@ -61,6 +61,7 @@ spec が正。実装が追いついていない箇所は以下のとおり（実
   - 再試行が 3 回とも失敗 → 最終文言「許可後もアクセスできませんでした。シートが削除されたか、ID が誤っている可能性があります」に切り替え、**再誘導ループはしない**（`#popup-open-grant` は非表示にし、通常のフォーム再送のみ可能）
   - drive.file では「未許可」と「不存在」を区別できないため、旧文言「スプレッドシートが見つかりません。ID を確認してください」（404 専用）はこの案内文に**置換**する
   - 403 でも権限系以外の reason（API 無効化・クォータ等）は従来どおり一般エラー表示（Picker 誘導しない）
+- ページ末尾のフッタ `.popup__footer` に**使い方ガイドへの外部リンク `#popup-open-help`**（issue #214。`target="_blank"` + `rel="noopener noreferrer"`）を常時表示する（未ログイン状態でも出す）
 - 設定は `#open-options` からアプリ内ルート `app/app.html#/options` へ同一タブで遷移する（`chrome.tabs.update`。独立ページ `options/options.html` は拡張管理画面の「オプション」からのみ開く）
 - プロジェクト選択（作成 / 既存 ID / 履歴クリック）成功で直ちに同一タブのままメインビューへ遷移する（`chrome.tabs.update`。S1 はフルページ表示のためタブを増やさない）。独立した「メインビューを開く」ボタンは持たない（スケルトン段階の `#open-app` ボタンは廃止）
 
@@ -156,6 +157,16 @@ loopback HTTP で API キーが空の場合は Authorization ヘッダーを送�
 | 保存不可 | custom で RPM が空・0 以下・非数値なら `RPM は 1 以上の数値を入力してください。` / 同時実行数が入力ありで 0 以下・非数値なら `同時実行数は 1 以上の数値を入力してください。`（いずれも赤系・保存しない） |
 | 保存中 / 失敗 | `#save-rate-limit.disabled = true` / 赤系 `保存に失敗しました。もう一度お試しください。` + ボタン復帰 |
 
+### ヘルプ・ポリシー（issue #214）
+
+設定本文の**最終節**（`settingsSections.ts` が「表示言語」の後に生成。options.html / アプリ内 `#/options` で共通）。GitHub Pages の公開ページ 3 つへの外部リンクを 1 行（既存の `.options__row`）に並べる。
+
+| 状態 | 受入基準 |
+|---|---|
+| 通常表示 | 見出し「ヘルプ・ポリシー」+ 補足「いずれも新しいタブで開きます。」+ リンク 3 本（使い方ガイド → `help.html` / プライバシーポリシー → `privacy-policy.html` / 利用規約 → `terms-of-service.html`）。すべて `target="_blank"` + `rel="noopener noreferrer"` |
+| URL の正典 | [src/lib/publicPages.ts](../src/lib/publicPages.ts)（静的 HTML 側の `href` との一致は unit テストが検査する） |
+| 表示言語 | ラベルは i18n（`options.linksTitle` 等）。リンク先 URL は言語によらず同一（ページ自体が ja / en 並記） |
+
 ### 表示言語（issue #93・i18n）
 
 UI 文言は自前辞書方式（`src/lib/i18n/`。`t(key)` + `ja.ts` / `en.ts` の辞書ペア。キーは `画面.要素` 形式・未定義キーは ja へフォールバック）。保存キーは `settings.uiLanguage`（`'ja' | 'en'`。未設定・不正値は既定 `'ja'`）。画面移行は PR チェーンで段階的に行った（PR1 = 基盤 + Popup / Home / App シェル、PR2 = S3〜S5、PR3 = S6〜S9 + 検証パネル共有部、PR4 = S10 / S12 / ガード・ロールブロック・Options 本文・サービス層のトースト / ダイアログ / 状態エラー）。**未移行（既知の残り）**: features 層で生成される文言（数値整合性チェック警告〔issue #65〕・RoB SQ アルゴリズム提案・スキーマ検証エラー `validateField`・リポジトリ / lib 層の例外メッセージ・プロジェクト検証エラー `selectProject` 等）は `{reason}` / `{message}` プレースホルダ経由で表示されるため、en 表示でも日本語のまま出ることがある。
@@ -172,7 +183,7 @@ UI 文言は自前辞書方式（`src/lib/i18n/`。`t(key)` + `ja.ts` / `en.ts` 
 
 ## 3. App / メインビュー (`src/app/app.html`)
 
-共通レイアウト: `header.app__header`（タイトル + `#app-status` + 設定への歯車リンク `#app-open-options`〔`../options/options.html` への同一タブ遷移。`aria-label="設定を開く"`。issue #50: 歯車アイコン（装飾・`aria-hidden`）+「設定」テキストラベルを常時表示するボタン状の見た目〕+ `#app-context`〔`aria-live="polite"`〕）+ `aside.app__sidebar` + `section#app-content`。プロジェクト選択済みの `#app-status` はプロジェクト名自体が S1 プロジェクト選択ページへの同一タブ遷移リンク（`title="別のプロジェクトを開く"`）。ルート遷移のスクリーンリーダ通知は `#app-context` の更新で検証する（文言は「{ルート表示名} 画面を表示しています」。表示言語 en では `Showing the {screen} screen`）。ヘッダ・サイドバーのナビラベル・`#app-context` は表示言語（§2「表示言語」）に追従し、言語切替のストア再描画で即時に切り替わる（issue #93）。
+共通レイアウト: `header.app__header`（タイトル + `#app-status` + **使い方ガイドへの外部リンク `#app-open-help`**〔issue #214: `https://youkiti.github.io/sr-data-extraction-plugin/help.html` を `target="_blank"` + `rel="noopener noreferrer"` で新規タブに開く。`.app__options-link` を流用した「? + ヘルプ」のボタン状。全状態共通で常時表示し、プロジェクト未選択・ロール未確定・ガード未充足でも消えない〕 + 設定への歯車リンク `#app-open-options`〔`../options/options.html` への同一タブ遷移。`aria-label="設定を開く"`。issue #50: 歯車アイコン（装飾・`aria-hidden`）+「設定」テキストラベルを常時表示するボタン状の見た目〕+ `#app-context`〔`aria-live="polite"`〕）+ `aside.app__sidebar` + `section#app-content`。プロジェクト選択済みの `#app-status` はプロジェクト名自体が S1 プロジェクト選択ページへの同一タブ遷移リンク（`title="別のプロジェクトを開く"`）。ルート遷移のスクリーンリーダ通知は `#app-context` の更新で検証する（文言は「{ルート表示名} 画面を表示しています」。表示言語 en では `Showing the {screen} screen`）。ヘッダ・サイドバーのナビラベル・`#app-context` は表示言語（§2「表示言語」）に追従し、言語切替のストア再描画で即時に切り替わる（issue #93）。
 
 ### 状態 A: プロジェクト未選択（不正アクセス）
 

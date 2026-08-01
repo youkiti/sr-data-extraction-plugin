@@ -4,6 +4,7 @@
 import { el } from '../app/ui/dom';
 import { t } from '../lib/i18n';
 import { RATE_LIMIT_TIERS } from '../lib/llm/rateLimitPolicy';
+import { HELP_URL, PRIVACY_POLICY_URL, TERMS_OF_SERVICE_URL } from '../lib/publicPages';
 
 /**
  * 設定本文の各節（Gemini / OpenRouter / 既定モデル / レート制限 / 表示言語）を組み立てて返す。
@@ -331,5 +332,27 @@ export function buildSettingsSections(): HTMLElement {
   ]);
   body.append(languageSection);
 
+  // 公開ページへのリンク（issue #214。GitHub Pages 配信。実体は hosted/）
+  const linksSection = el('section', { className: 'options__section' }, [
+    el('h2', { text: t('options.linksTitle') }),
+    el('p', { className: 'options__help', text: t('options.linksHelp') }),
+    // 既存の .options__row（flex + gap）を流用し、新しい CSS を持たない
+    // （app.css / options.css の双方に同名クラスがあり、両文脈で同じ見た目になる）
+    el('div', { className: 'options__row' }, [
+      externalLink(HELP_URL, t('options.linkHelp')),
+      externalLink(PRIVACY_POLICY_URL, t('options.linkPrivacy')),
+      externalLink(TERMS_OF_SERVICE_URL, t('options.linkTerms')),
+    ]),
+  ]);
+  body.append(linksSection);
+
   return body;
+}
+
+/** 新規タブで開く外部リンク（rel は noopener noreferrer 固定） */
+function externalLink(href: string, text: string): HTMLElement {
+  return el('a', {
+    text,
+    attributes: { href, target: '_blank', rel: 'noopener noreferrer' },
+  });
 }

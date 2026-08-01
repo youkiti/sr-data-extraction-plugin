@@ -224,3 +224,20 @@ test('スタンドアロン設定ページに「アプリを開く」導線が�
   await expect(openApp).toHaveText('アプリを開く');
   await expect(openApp).toHaveAttribute('href', '../app/app.html');
 });
+
+test('末尾にヘルプ・ポリシーの外部リンク 3 本がある（issue #214）', async ({ page }) => {
+  await page.addInitScript(chromeStub({ seedModel: false }));
+  await page.goto('/options/options.html');
+  const base = 'https://youkiti.github.io/sr-data-extraction-plugin';
+  const links: Array<[string, string]> = [
+    ['使い方ガイド', `${base}/help.html`],
+    ['プライバシーポリシー', `${base}/privacy-policy.html`],
+    ['利用規約', `${base}/terms-of-service.html`],
+  ];
+  for (const [label, href] of links) {
+    const link = page.getByRole('link', { name: label });
+    await expect(link).toHaveAttribute('href', href);
+    await expect(link).toHaveAttribute('target', '_blank');
+    await expect(link).toHaveAttribute('rel', 'noopener noreferrer');
+  }
+});

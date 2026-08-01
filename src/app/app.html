@@ -19,6 +19,20 @@
         </div>
         <p id="app-status" class="app__status">読み込み中…</p>
         <a id="app-open-popup" href="../popup/popup.html" data-i18n="app.openPopup" hidden>プロジェクト選択を開く</a>
+        <!-- 使い方ガイド（GitHub Pages）。URL の正典は src/lib/publicPages.ts の HELP_URL
+             （一致は tests/unit/lib/publicPages.test.ts が検査する） -->
+        <a
+          id="app-open-help"
+          class="app__options-link"
+          href="https://youkiti.github.io/sr-data-extraction-plugin/help.html"
+          target="_blank"
+          rel="noopener noreferrer"
+          title="使い方ガイドを新しいタブで開く"
+          data-i18n-title="app.openHelpTitle"
+        >
+          <span class="app__options-icon" aria-hidden="true">?</span>
+          <span class="app__options-text" data-i18n="app.openHelp">ヘルプ</span>
+        </a>
         <a
           id="app-open-options"
           class="app__options-link"

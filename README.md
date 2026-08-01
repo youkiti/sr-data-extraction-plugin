@@ -6,6 +6,8 @@
 
 > **📦 インストール**: [Chrome ウェブストアの掲載ページ](https://chromewebstore.google.com/detail/sr-data-extraction-plugin/ibpbkgffgkmdmflamhadbcfjgfljjgip)から「Chrome に追加」でインストールできます。
 
+> **📖 使い方ガイド**: [https://youkiti.github.io/sr-data-extraction-plugin/help.html](https://youkiti.github.io/sr-data-extraction-plugin/help.html)（[ランディング](https://youkiti.github.io/sr-data-extraction-plugin/) / [プライバシーポリシー](https://youkiti.github.io/sr-data-extraction-plugin/privacy-policy.html) / [利用規約](https://youkiti.github.io/sr-data-extraction-plugin/terms-of-service.html)。ページの実体は [hosted/](hosted/)）
+
 ## なにをするツールか
 
 1. Google Drive 上の**採用論文 PDF** と研究プロトコルから、AI が抽出スキーマ（コーディングシート）をドラフト
@@ -66,7 +68,7 @@ flowchart LR
 3. **Google アカウント連携（OAuth 同意）**: ポップアップから「ログイン」を押し、Google のアカウント選択・同意画面で **メールアドレス** と **Drive（選択したファイルのみ）** へのアクセスを許可します。要求されるスコープは `userinfo.email` と `drive.file` の 2 つだけです（Drive 全体は読みません。詳細は[データフロー](#データフローサーバーレス構成)）。
 4. これでプロジェクト作成 → PDF 取り込み → スキーマ作成 → AI 抽出 → 検証 → CSV エクスポートまで一通り使えます。
 
-> プライバシーの詳細は [docs/store/privacy-policy.md](docs/store/privacy-policy.md) を参照してください。
+> 操作の詳細は[使い方ガイド](https://youkiti.github.io/sr-data-extraction-plugin/help.html)を、プライバシーの詳細は [docs/store/privacy-policy.md](docs/store/privacy-policy.md)（[公開ページ版](https://youkiti.github.io/sr-data-extraction-plugin/privacy-policy.html)）を参照してください。
 
 ## 開発セットアップ
 
