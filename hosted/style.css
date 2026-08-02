@@ -1,6 +1,6 @@
 /* SR Data Extraction Plugin 公開ページ共通スタイル（index / help / privacy-policy / terms-of-service）。
    トンマナは拡張本体の src/styles/tokens.css（緑基調）に合わせる。
-   version: 2026-08-01 */
+   version: 2026-08-02 */
 
 :root {
   --primary: #1b5e4a;

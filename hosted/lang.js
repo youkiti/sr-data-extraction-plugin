@@ -13,6 +13,8 @@
 //
 // ビルド対象外の素の JS（GitHub Pages へそのまま配置する）。head から同期読み込みし、
 // 最初の描画より前に data-lang を確定させる（切替のちらつきを避けるため）。
+//
+// version: 2026-08-02
 (function () {
   'use strict';
 
