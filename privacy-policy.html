@@ -1,53 +1,77 @@
 <!doctype html>
 <!-- プライバシーポリシー（GitHub Pages 配信）。
-     内容の正典は docs/store/privacy-policy.md。本ファイルはその HTML 転記 + 英訳併記であり、
+     内容の正典は docs/store/privacy-policy.md。本ファイルはその HTML 転記 + 英訳であり、
      **更新時は必ず両方を直す**（hosted/README.md「ヘルプ / 公開ページ」参照）。
-     version: 2026-08-01 -->
+     ja / en は両方を持ち、表示は lang.js + CSS が片方だけに絞る（併記しない）。
+     version: 2026-08-02 -->
 <html lang="ja">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>プライバシーポリシー / Privacy Policy — SR Data Extraction Plugin</title>
+    <title data-en="Privacy Policy — SR Data Extraction Plugin">プライバシーポリシー — SR Data Extraction Plugin</title>
     <meta
       name="description"
-      content="SR Data Extraction Plugin のプライバシーポリシー。開発者サーバーは存在せず、データは利用者の Google アカウントと BYOK の LLM API の間でのみ流通します。 / Privacy policy for SR Data Extraction Plugin."
+      content="SR Data Extraction Plugin のプライバシーポリシー。開発者サーバーは存在せず、データは利用者の Google アカウントと BYOK の LLM API の間でのみ流通します。"
+      data-en-content="Privacy policy for SR Data Extraction Plugin: there is no developer-operated server; data flows only between the user’s own Google account and the BYOK LLM API."
     />
     <link rel="stylesheet" href="style.css" />
+    <!-- 表示言語（ja / en）の解決と切替。初期描画前に確定させるため head で同期読み込みする -->
+    <script src="lang.js"></script>
   </head>
   <body>
     <header class="site-header">
       <div class="container">
         <a class="logo" href="index.html">SR Data Extraction Plugin</a>
-        <nav class="site-nav" aria-label="サイト内ナビゲーション">
-          <a href="index.html">ホーム / Home</a>
-          <a href="help.html">使い方 / Help</a>
-          <a href="privacy-policy.html" aria-current="page">プライバシー / Privacy</a>
-          <a href="terms-of-service.html">利用規約 / Terms</a>
+        <nav
+          class="site-nav"
+          aria-label="サイト内ナビゲーション"
+          data-en-aria-label="Site navigation"
+        >
+          <a href="index.html"
+            ><span class="ja" lang="ja">ホーム</span><span class="en" lang="en">Home</span></a
+          >
+          <a href="help.html"
+            ><span class="ja" lang="ja">使い方</span><span class="en" lang="en">Help</span></a
+          >
+          <a href="privacy-policy.html" aria-current="page"
+            ><span class="ja" lang="ja">プライバシー</span><span class="en" lang="en">Privacy</span></a
+          >
+          <a href="terms-of-service.html"
+            ><span class="ja" lang="ja">利用規約</span><span class="en" lang="en">Terms</span></a
+          >
           <a href="https://github.com/youkiti/sr-data-extraction-plugin">GitHub</a>
         </nav>
+        <!-- 言語切替ボタンは lang.js が組み立てる（JS 無効時は空のまま = 両言語が並ぶ） -->
+        <div class="lang-switch" data-lang-switch></div>
       </div>
     </header>
 
     <main class="document-page">
       <div class="container">
         <h1>
-          <span class="ja">プライバシーポリシー</span>
-          <span class="en">Privacy Policy</span>
+          <span class="ja" lang="ja">プライバシーポリシー</span>
+          <span class="en" lang="en">Privacy Policy</span>
         </h1>
         <p class="last-updated">
-          最終更新: 2026-08-01 &nbsp;·&nbsp; Last updated: 2026-08-01<br />
-          対象: Chrome 拡張機能「SR Data Extraction」（sr-data-extraction-plugin） &nbsp;·&nbsp; Applies to the Chrome
-          extension “SR Data Extraction”
+          <span class="ja" lang="ja"
+            >最終更新: 2026-08-01<br />
+            対象: Chrome 拡張機能「SR Data Extraction」（sr-data-extraction-plugin）</span
+          >
+          <span class="en" lang="en"
+            >Last updated: 2026-08-01<br />
+            Applies to the Chrome extension “SR Data Extraction”
+            (sr-data-extraction-plugin)</span
+          >
         </p>
 
         <section>
           <p>
-            <span class="ja"
+            <span class="ja" lang="ja"
               >本拡張は MIT ライセンスの OSS です。開発は JSPS 科研費 25K13585
               の助成を受けています。このページは、Chrome
               ウェブストアの審査および利用者への開示のために、本拡張が扱うデータとその流通経路を説明します。</span
             >
-            <span class="en"
+            <span class="en" lang="en"
               >This extension is MIT-licensed open-source software, developed with support from JSPS KAKENHI Grant
               Number 25K13585. This page explains, for Chrome Web Store review and for our users, what data the
               extension handles and where it flows.</span
@@ -57,16 +81,16 @@
 
         <section>
           <h2>
-            <span class="ja">要点</span>
-            <span class="en">Summary</span>
+            <span class="ja" lang="ja">要点</span>
+            <span class="en" lang="en">Summary</span>
           </h2>
           <p>
-            <span class="ja"
+            <span class="ja" lang="ja"
               ><strong>本拡張の開発者が運用するサーバーは存在しません。</strong>
               利用者のデータが開発者側に送信・保存・収集されることは一切ありません。データはすべて、利用者自身が契約・所有する以下の
               3 者の間でのみ流通します。</span
             >
-            <span class="en"
+            <span class="en" lang="en"
               ><strong>There is no developer-operated server.</strong> No user data is ever transmitted to, stored by or
               collected by the developer. All data flows only between the following three parties, all of which the user
               owns or contracts with directly.</span
@@ -74,25 +98,25 @@
           </p>
           <ol>
             <li>
-              <span class="ja">利用者のブラウザ（本拡張の実行環境）</span>
-              <span class="en">The user’s browser, where the extension runs</span>
+              <span class="ja" lang="ja">利用者のブラウザ（本拡張の実行環境）</span>
+              <span class="en" lang="en">The user’s browser, where the extension runs</span>
             </li>
             <li>
-              <span class="ja"
+              <span class="ja" lang="ja"
                 >利用者の Google アカウント（Google Sheets = プロジェクト DB、Google Drive =
                 PDF・抽出テキスト・ログの実体）</span
               >
-              <span class="en"
+              <span class="en" lang="en"
                 >The user’s Google account (Google Sheets as the project database; Google Drive for PDFs, extracted text
                 and logs)</span
               >
             </li>
             <li>
-              <span class="ja"
+              <span class="ja" lang="ja"
                 >利用者が自分の API キー（BYOK: Bring Your Own Key）で契約または指定する LLM API（Gemini
                 API、OpenRouter、Anthropic、Azure OpenAI、利用者指定の OpenAI 互換 API）</span
               >
-              <span class="en"
+              <span class="en" lang="en"
                 >The LLM API the user contracts with or specifies using their own key (BYOK): Gemini API, OpenRouter,
                 Anthropic, Azure OpenAI, or any user-specified OpenAI-compatible API</span
               >
@@ -102,87 +126,94 @@
 
         <section>
           <h2>
-            <span class="ja">取り扱うデータと送信先</span>
-            <span class="en">Data handled and where it goes</span>
+            <span class="ja" lang="ja">取り扱うデータと送信先</span>
+            <span class="en" lang="en">Data handled and where it goes</span>
           </h2>
           <div class="table-scroll">
             <table>
               <thead>
                 <tr>
-                  <th>データ / Data</th>
-                  <th>どこへ / Destination</th>
-                  <th>目的 / Purpose</th>
+                  <th>
+                    <span class="ja" lang="ja">データ</span><span class="en" lang="en">Data</span>
+                  </th>
+                  <th>
+                    <span class="ja" lang="ja">どこへ</span
+                    ><span class="en" lang="en">Destination</span>
+                  </th>
+                  <th>
+                    <span class="ja" lang="ja">目的</span><span class="en" lang="en">Purpose</span>
+                  </th>
                 </tr>
               </thead>
               <tbody>
                 <tr>
                   <td>
-                    <span class="ja">採用論文 PDF・そこから抽出したテキスト</span>
-                    <span class="en">Included-study PDFs and text extracted from them</span>
+                    <span class="ja" lang="ja">採用論文 PDF・そこから抽出したテキスト</span>
+                    <span class="en" lang="en">Included-study PDFs and text extracted from them</span>
                   </td>
                   <td>
-                    <span class="ja">利用者の Google Drive</span>
-                    <span class="en">The user’s Google Drive</span>
+                    <span class="ja" lang="ja">利用者の Google Drive</span>
+                    <span class="en" lang="en">The user’s Google Drive</span>
                   </td>
                   <td>
-                    <span class="ja">ファイル実体の保管</span>
-                    <span class="en">Storing the files themselves</span>
-                  </td>
-                </tr>
-                <tr>
-                  <td>
-                    <span class="ja">抽出スキーマ・抽出結果・判定履歴・監査証跡</span>
-                    <span class="en">Extraction schema, results, decision history, audit trail</span>
-                  </td>
-                  <td>
-                    <span class="ja">利用者の Google Sheets</span>
-                    <span class="en">The user’s Google Sheets</span>
-                  </td>
-                  <td>
-                    <span class="ja">プロジェクト DB</span>
-                    <span class="en">The project database</span>
+                    <span class="ja" lang="ja">ファイル実体の保管</span>
+                    <span class="en" lang="en">Storing the files themselves</span>
                   </td>
                 </tr>
                 <tr>
                   <td>
-                    <span class="ja">論文本文 + 抽出プロンプト</span>
-                    <span class="en">Full text of the paper plus the extraction prompt</span>
+                    <span class="ja" lang="ja">抽出スキーマ・抽出結果・判定履歴・監査証跡</span>
+                    <span class="en" lang="en">Extraction schema, results, decision history, audit trail</span>
                   </td>
                   <td>
-                    <span class="ja">利用者が設定した LLM API <strong>のみ</strong></span>
-                    <span class="en">Only the LLM API configured by the user</span>
+                    <span class="ja" lang="ja">利用者の Google Sheets</span>
+                    <span class="en" lang="en">The user’s Google Sheets</span>
                   </td>
                   <td>
-                    <span class="ja">AI によるデータ抽出。本文が外部へ送信されるのはこの経路だけです</span>
-                    <span class="en">AI extraction — the only route by which full text leaves the browser</span>
-                  </td>
-                </tr>
-                <tr>
-                  <td>
-                    <span class="ja">Google OAuth トークン</span>
-                    <span class="en">Google OAuth token</span>
-                  </td>
-                  <td>
-                    <span class="ja">利用者のブラウザ内（<code>chrome.storage</code>）</span>
-                    <span class="en">Inside the user’s browser (<code>chrome.storage</code>)</span>
-                  </td>
-                  <td>
-                    <span class="ja">Google API 認証。開発者へは送信されません</span>
-                    <span class="en">Google API authentication; never sent to the developer</span>
+                    <span class="ja" lang="ja">プロジェクト DB</span>
+                    <span class="en" lang="en">The project database</span>
                   </td>
                 </tr>
                 <tr>
                   <td>
-                    <span class="ja">LLM API キー</span>
-                    <span class="en">LLM API key</span>
+                    <span class="ja" lang="ja">論文本文 + 抽出プロンプト</span>
+                    <span class="en" lang="en">Full text of the paper plus the extraction prompt</span>
                   </td>
                   <td>
-                    <span class="ja">利用者のブラウザ内（<code>chrome.storage.local</code>）</span>
-                    <span class="en">Inside the user’s browser (<code>chrome.storage.local</code>)</span>
+                    <span class="ja" lang="ja">利用者が設定した LLM API <strong>のみ</strong></span>
+                    <span class="en" lang="en">Only the LLM API configured by the user</span>
                   </td>
                   <td>
-                    <span class="ja">LLM API 認証。開発者へは送信されません</span>
-                    <span class="en">LLM API authentication; never sent to the developer</span>
+                    <span class="ja" lang="ja">AI によるデータ抽出。本文が外部へ送信されるのはこの経路だけです</span>
+                    <span class="en" lang="en">AI extraction — the only route by which full text leaves the browser</span>
+                  </td>
+                </tr>
+                <tr>
+                  <td>
+                    <span class="ja" lang="ja">Google OAuth トークン</span>
+                    <span class="en" lang="en">Google OAuth token</span>
+                  </td>
+                  <td>
+                    <span class="ja" lang="ja">利用者のブラウザ内（<code>chrome.storage</code>）</span>
+                    <span class="en" lang="en">Inside the user’s browser (<code>chrome.storage</code>)</span>
+                  </td>
+                  <td>
+                    <span class="ja" lang="ja">Google API 認証。開発者へは送信されません</span>
+                    <span class="en" lang="en">Google API authentication; never sent to the developer</span>
+                  </td>
+                </tr>
+                <tr>
+                  <td>
+                    <span class="ja" lang="ja">LLM API キー</span>
+                    <span class="en" lang="en">LLM API key</span>
+                  </td>
+                  <td>
+                    <span class="ja" lang="ja">利用者のブラウザ内（<code>chrome.storage.local</code>）</span>
+                    <span class="en" lang="en">Inside the user’s browser (<code>chrome.storage.local</code>)</span>
+                  </td>
+                  <td>
+                    <span class="ja" lang="ja">LLM API 認証。開発者へは送信されません</span>
+                    <span class="en" lang="en">LLM API authentication; never sent to the developer</span>
                   </td>
                 </tr>
               </tbody>
@@ -192,26 +223,26 @@
 
         <section>
           <h2>
-            <span class="ja">Google ユーザーデータへのアクセス範囲</span>
-            <span class="en">Scope of access to Google user data</span>
+            <span class="ja" lang="ja">Google ユーザーデータへのアクセス範囲</span>
+            <span class="en" lang="en">Scope of access to Google user data</span>
           </h2>
           <p>
-            <span class="ja">本拡張が要求する OAuth スコープは以下の 2 つ <strong>のみ</strong> です。</span>
-            <span class="en">The extension requests <strong>only</strong> these two OAuth scopes.</span>
+            <span class="ja" lang="ja">本拡張が要求する OAuth スコープは以下の 2 つ <strong>のみ</strong> です。</span>
+            <span class="en" lang="en">The extension requests <strong>only</strong> these two OAuth scopes.</span>
           </p>
           <ul>
             <li>
-              <span class="ja"
+              <span class="ja" lang="ja"
                 ><code>https://www.googleapis.com/auth/userinfo.email</code> —
                 サインインしたアカウントのメールアドレスの取得。「誰が抽出・判定したか」の記録（監査証跡）と、次回サインイン時のアカウント指定にのみ使用します</span
               >
-              <span class="en"
+              <span class="en" lang="en"
                 ><code>userinfo.email</code> — the signed-in account’s email address, used only to record who extracted
                 or decided a value (audit trail) and to preselect the account at the next sign-in</span
               >
             </li>
             <li>
-              <span class="ja"
+              <span class="ja" lang="ja"
                 ><code>https://www.googleapis.com/auth/drive.file</code> — <strong
                   >利用者が Picker で明示的に選択したファイルと、本拡張が作成したファイルだけ</strong
                 >
@@ -219,7 +250,7 @@
                 全体を読むスコープ（<code>drive.readonly</code> 等）や、全スプレッドシートへアクセスする
                 <code>spreadsheets</code> スコープは要求しません</span
               >
-              <span class="en"
+              <span class="en" lang="en"
                 ><code>drive.file</code> — access limited to <strong>files the user explicitly picks and files the
                 extension creates</strong> (the project spreadsheet is read and written within this scope). Broader
                 scopes such as <code>drive.readonly</code> or <code>spreadsheets</code> are never requested</span
@@ -227,13 +258,13 @@
             </li>
           </ul>
           <p>
-            <span class="ja"
+            <span class="ja" lang="ja"
               >本拡張は、Google API
               から取得したユーザーデータを、上記の機能提供以外の目的（広告・分析・第三者への提供・機械学習モデルの学習等）に
               <strong>一切使用しません</strong>。Google API Services User Data Policy（Limited Use
               要件を含む）を遵守します。</span
             >
-            <span class="en"
+            <span class="en" lang="en"
               >User data obtained through Google APIs is <strong>never</strong> used for anything beyond the features
               described above — no advertising, analytics, transfer to third parties, or model training. The extension
               complies with the Google API Services User Data Policy, including its Limited Use requirements.</span
@@ -243,16 +274,16 @@
 
         <section>
           <h2>
-            <span class="ja">LLM API への送信について</span>
-            <span class="en">Transmission to the LLM API</span>
+            <span class="ja" lang="ja">LLM API への送信について</span>
+            <span class="en" lang="en">Transmission to the LLM API</span>
           </h2>
           <p>
-            <span class="ja"
+            <span class="ja" lang="ja"
               >AI 抽出を実行すると、対象論文の本文テキストと抽出指示プロンプトが、利用者が設定した LLM API（Gemini
               API、OpenRouter、Anthropic、Azure OpenAI、または利用者指定の OpenAI 互換 API）へ送信されます。送信先によるデータの取り扱いは、その運営者の利用規約・プライバシーポリシーに従います。本拡張はプロバイダを仲介せず、利用者のブラウザから直接
               API を呼び出します。</span
             >
-            <span class="en"
+            <span class="en" lang="en"
               >Running an extraction sends the paper’s text and the extraction prompt to the LLM API the user configured
               (Gemini API, OpenRouter, Anthropic, Azure OpenAI, or a user-specified OpenAI-compatible API). How that
               provider handles the data is governed by the provider’s own terms and privacy policy. The extension does
@@ -260,14 +291,14 @@
             >
           </p>
           <p>
-            <span class="ja"
+            <span class="ja" lang="ja"
               >OpenAI 互換 API を指定する場合、本拡張は保存前に接続先の scheme + hostname pattern を表示し、Chrome
               の実行時ホスト権限を利用者へ要求します。HTTP は <code>localhost</code>、<code>127.0.0.1</code>、<code
                 >[::1]</code
               >
               に限って許可します。loopback HTTP の通信は暗号化されません。</span
             >
-            <span class="en"
+            <span class="en" lang="en"
               >For OpenAI-compatible endpoints, the extension shows the scheme and hostname pattern before saving and
               requests the corresponding Chrome runtime host permission. Plain HTTP is allowed only for
               <code>localhost</code>, <code>127.0.0.1</code> and <code>[::1]</code>; loopback HTTP traffic is not
@@ -275,11 +306,11 @@
             >
           </p>
           <p>
-            <span class="ja"
+            <span class="ja" lang="ja"
               >学術研究目的のデータ抽出（テキスト・データマイニング）は、日本の著作権法上の権利制限規定（第 30 条の 4
               等）の範囲内であるとの整理に基づいています。</span
             >
-            <span class="en"
+            <span class="en" lang="en"
               >Text and data mining for academic research is treated as falling within the limitations and exceptions of
               Japanese copyright law (Article 30-4 and related provisions).</span
             >
@@ -288,28 +319,28 @@
 
         <section>
           <h2>
-            <span class="ja">データの保存・削除</span>
-            <span class="en">Retention and deletion</span>
+            <span class="ja" lang="ja">データの保存・削除</span>
+            <span class="en" lang="en">Retention and deletion</span>
           </h2>
           <ul>
             <li>
-              <span class="ja"
+              <span class="ja" lang="ja"
                 >すべてのデータは利用者自身の Google
                 アカウントとブラウザローカルストレージに保存されます。削除は、利用者が Google Drive / Sheets
                 上のファイルを削除し、拡張を削除（またはブラウザのストレージをクリア）することで完結します。</span
               >
-              <span class="en"
+              <span class="en" lang="en"
                 >All data lives in the user’s own Google account and in browser local storage. Deleting the files in
                 Google Drive / Sheets and removing the extension (or clearing browser storage) removes everything.</span
               >
             </li>
             <li>
-              <span class="ja"
+              <span class="ja" lang="ja"
                 >本拡張をアンインストールすると、<code>chrome.storage</code> 内の設定（API キー・OAuth
                 トークン・既定モデル等）は Chrome によって削除されます。Google Drive / Sheets
                 上のファイルは利用者の資産としてそのまま残ります。</span
               >
-              <span class="en"
+              <span class="en" lang="en"
                 >Uninstalling the extension makes Chrome delete its <code>chrome.storage</code> settings (API keys, OAuth
                 tokens, default model). Files in Google Drive / Sheets remain, as they belong to the user.</span
               >
@@ -319,14 +350,14 @@
 
         <section>
           <h2>
-            <span class="ja">第三者提供・データ販売</span>
-            <span class="en">Third parties and data sales</span>
+            <span class="ja" lang="ja">第三者提供・データ販売</span>
+            <span class="en" lang="en">Third parties and data sales</span>
           </h2>
           <p>
-            <span class="ja"
+            <span class="ja" lang="ja"
               >本拡張は、利用者のデータを第三者へ販売・提供しません。開発者はデータを収集しないため、そもそも提供しうるデータを保持しません。</span
             >
-            <span class="en"
+            <span class="en" lang="en"
               >The extension neither sells nor discloses user data to third parties. The developer collects no data and
               therefore holds nothing that could be disclosed.</span
             >
@@ -335,15 +366,15 @@
 
         <section>
           <h2>
-            <span class="ja">お問い合わせ</span>
-            <span class="en">Contact</span>
+            <span class="ja" lang="ja">お問い合わせ</span>
+            <span class="en" lang="en">Contact</span>
           </h2>
           <p>
-            <span class="ja"
+            <span class="ja" lang="ja"
               >本ポリシーに関する問い合わせは、GitHub リポジトリの
               <a href="https://github.com/youkiti/sr-data-extraction-plugin/issues">Issues</a> へお願いします。</span
             >
-            <span class="en"
+            <span class="en" lang="en"
               >Please contact us through the
               <a href="https://github.com/youkiti/sr-data-extraction-plugin/issues">Issues</a> page of the GitHub
               repository.</span
@@ -357,10 +388,19 @@
       <div class="container">
         <div class="footer-content">
           <div class="footer-links">
-            <a href="index.html">ホーム / Home</a>
-            <a href="help.html">使い方 / Help</a>
-            <a href="privacy-policy.html">プライバシーポリシー / Privacy</a>
-            <a href="terms-of-service.html">利用規約 / Terms</a>
+            <a href="index.html"
+              ><span class="ja" lang="ja">ホーム</span><span class="en" lang="en">Home</span></a
+            >
+            <a href="help.html"
+              ><span class="ja" lang="ja">使い方</span><span class="en" lang="en">Help</span></a
+            >
+            <a href="privacy-policy.html"
+              ><span class="ja" lang="ja">プライバシーポリシー</span
+              ><span class="en" lang="en">Privacy</span></a
+            >
+            <a href="terms-of-service.html"
+              ><span class="ja" lang="ja">利用規約</span><span class="en" lang="en">Terms</span></a
+            >
             <a href="https://github.com/youkiti/sr-data-extraction-plugin">GitHub</a>
           </div>
           <p class="copyright">© 2026 youkiti — MIT License</p>
