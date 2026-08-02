@@ -1,0 +1,272 @@
+<!doctype html>
+<!-- SR Data Extraction Plugin ランディングページ（GitHub Pages 配信）。
+     正典はこのファイル（master の hosted/）。デプロイ手順は hosted/README.md を参照。
+     version: 2026-08-01 -->
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SR Data Extraction Plugin — SR のデータ抽出を支援する Chrome 拡張</title>
+    <meta
+      name="description"
+      content="システマティックレビューのデータ抽出工程を支援する MIT ライセンスの Chrome 拡張。AI 事前抽出 + 根拠ハイライト + 人間検証 + CSV エクスポート。 / A Chrome extension that supports the data extraction stage of systematic reviews."
+    />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <header class="hero">
+      <div class="container">
+        <h1>SR Data Extraction Plugin</h1>
+        <p class="subtitle">
+          <span class="ja">システマティックレビューの<strong>データ抽出工程</strong>を支援する Chrome 拡張</span>
+          <span class="en">A Chrome extension that supports the data extraction stage of systematic reviews</span>
+        </p>
+        <div class="hero-buttons">
+          <a
+            class="btn btn-primary"
+            href="https://chromewebstore.google.com/detail/sr-data-extraction-plugin/ibpbkgffgkmdmflamhadbcfjgfljjgip"
+            >Chrome ウェブストアで入手 / Install</a
+          >
+          <a class="btn btn-secondary" href="help.html">使い方を見る / User guide</a>
+        </div>
+      </div>
+    </header>
+
+    <main>
+      <section class="section">
+        <div class="container">
+          <h2>
+            <span class="ja">なにをするツールか</span>
+            <span class="en">What it does</span>
+          </h2>
+          <ol class="steps">
+            <li>
+              <span class="ja"
+                >Google Drive 上の採用論文 PDF と研究プロトコルから、AI が抽出スキーマ（コーディングシート）をドラフトします。</span
+              >
+              <span class="en"
+                >AI drafts an extraction schema (coding sheet) from your protocol and the included PDFs stored in Google Drive.</span
+              >
+            </li>
+            <li>
+              <span class="ja"
+                >AI が各論文からスキーマに沿って値を抽出し、各値に根拠となる本文箇所（verbatim quote）を付けます。</span
+              >
+              <span class="en"
+                >AI extracts values from each paper along that schema and attaches a verbatim quote as evidence for every value.</span
+              >
+            </li>
+            <li>
+              <span class="ja">PDF.js ビューア上で根拠箇所をハイライト表示します。</span>
+              <span class="en">Each quote is highlighted in the built-in PDF.js viewer.</span>
+            </li>
+            <li>
+              <span class="ja"
+                >研究者がハイライトを見ながら accept / edit / reject / not_reported で最終判定し、すべての判断が監査証跡として記録されます。</span
+              >
+              <span class="en"
+                >You make the final call with accept / edit / reject / not_reported, and every decision is recorded as an audit trail.</span
+              >
+            </li>
+            <li>
+              <span class="ja"
+                >確定データを CSV（study_wide / results_long / audit）と R 用データセットとして書き出します。</span
+              >
+              <span class="en"
+                >Confirmed data is exported as CSV (study_wide / results_long / audit) and as an R-ready dataset.</span
+              >
+            </li>
+          </ol>
+        </div>
+      </section>
+
+      <section class="section section--alt">
+        <div class="container container--wide">
+          <h2>
+            <span class="ja">画面イメージ</span>
+            <span class="en">Screenshots</span>
+          </h2>
+          <div class="shots">
+            <figure class="shot">
+              <img
+                src="screenshots/s3-documents.png"
+                alt="文献取り込み画面。Drive Picker で選んだ PDF の一覧とテキスト抽出状況が並ぶ"
+                loading="lazy"
+              />
+              <figcaption>
+                <span class="ja">文献取り込み: Drive Picker で採用論文 PDF（フォルダ単位も可）を取り込み、テキスト層を抽出。</span>
+                <span class="en">Import: pick included PDFs (or a whole folder) via the Drive Picker and extract their text layer.</span>
+              </figcaption>
+            </figure>
+            <figure class="shot">
+              <img
+                src="screenshots/s5-schema.png"
+                alt="表のデザイン画面。抽出項目が表形式エディタで並ぶ"
+                loading="lazy"
+              />
+              <figcaption>
+                <span class="ja">表のデザイン: AI がプロトコルからコーディングシートをドラフトし、表形式エディタで確定。</span>
+                <span class="en">Schema: AI drafts a coding sheet from the protocol; you finalize it in a table editor.</span>
+              </figcaption>
+            </figure>
+            <figure class="shot">
+              <img
+                src="screenshots/s8-verify-highlight.png"
+                alt="検証画面。左に PDF ビューアと根拠ハイライト、右に判定フォーム"
+                loading="lazy"
+              />
+              <figcaption>
+                <span class="ja">検証: PDF 上で根拠 quote をハイライトし、accept / edit / reject / not_reported で判定。</span>
+                <span class="en">Verify: evidence quotes are highlighted on the PDF; decide with accept / edit / reject / not_reported.</span>
+              </figcaption>
+            </figure>
+            <figure class="shot">
+              <img
+                src="screenshots/s9-dashboard.png"
+                alt="ダッシュボード画面。study × section の検証進捗マトリクス"
+                loading="lazy"
+              />
+              <figcaption>
+                <span class="ja">ダッシュボード: 検証進捗・AI 採用率・anchor 失敗率・not_reported 率を俯瞰。</span>
+                <span class="en">Dashboard: overview of verification progress, AI acceptance, anchor failures and not_reported rates.</span>
+              </figcaption>
+            </figure>
+          </div>
+          <p>
+            <span class="ja">画像はテスト用データで、実データは含みません。</span>
+            <span class="en">The screenshots use test data only; no real study data is shown.</span>
+          </p>
+        </div>
+      </section>
+
+      <section class="section">
+        <div class="container">
+          <h2>
+            <span class="ja">サーバーレス構成（BYOK）</span>
+            <span class="en">Serverless by design (BYOK)</span>
+          </h2>
+          <p>
+            <span class="ja"
+              >開発者が運用するサーバーは存在しません。データは、利用者自身の Google Drive / Sheets と、利用者が自分の API
+              キーで契約する LLM API の間でのみ流通します。</span
+            >
+            <span class="en"
+              >There is no developer-operated server. Your data flows only between your own Google Drive / Sheets and the LLM
+              API you pay for with your own key.</span
+            >
+          </p>
+          <div class="cards">
+            <div class="card">
+              <h3>
+                <span class="ja">保存先はあなたの Google アカウント</span>
+                <span class="en">Stored in your Google account</span>
+              </h3>
+              <p>
+                <span class="ja"
+                  >プロジェクト DB は Google Sheets、PDF・抽出テキスト・ログの実体は Google Drive に置かれます。</span
+                >
+                <span class="en"
+                  >The project database is a Google Sheet; PDFs, extracted text and logs live in your Google Drive.</span
+                >
+              </p>
+            </div>
+            <div class="card">
+              <h3>
+                <span class="ja">要求するスコープは 2 つだけ</span>
+                <span class="en">Only two OAuth scopes</span>
+              </h3>
+              <p>
+                <span class="ja"
+                  >「<code>userinfo.email</code>」と「<code>drive.file</code>」のみ。Drive 全体や全スプレッドシートを読む権限は要求しません。</span
+                >
+                <span class="en"
+                  >Just <code>userinfo.email</code> and <code>drive.file</code> — never full Drive or all-spreadsheet
+                  access.</span
+                >
+              </p>
+            </div>
+            <div class="card">
+              <h3>
+                <span class="ja">BYOK の LLM API</span>
+                <span class="en">Bring your own LLM key</span>
+              </h3>
+              <p>
+                <span class="ja"
+                  >Gemini API・OpenRouter・Anthropic・Azure OpenAI・OpenAI 互換 API（ローカル LLM
+                  含む）から選べます。キーはブラウザ内にのみ保存されます。</span
+                >
+                <span class="en"
+                  >Choose Gemini, OpenRouter, Anthropic, Azure OpenAI or any OpenAI-compatible endpoint (including local
+                  LLMs). Keys never leave your browser.</span
+                >
+              </p>
+            </div>
+            <div class="card">
+              <h3>
+                <span class="ja">MIT ライセンスの OSS</span>
+                <span class="en">MIT-licensed open source</span>
+              </h3>
+              <p>
+                <span class="ja"
+                  >ソースコードは GitHub で公開しています。開発は JSPS 科研費 25K13585 の助成を受けています。</span
+                >
+                <span class="en"
+                  >The source is public on GitHub. This work was supported by JSPS KAKENHI Grant Number 25K13585.</span
+                >
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section section--alt">
+        <div class="container">
+          <h2>
+            <span class="ja">はじめかた</span>
+            <span class="en">Getting started</span>
+          </h2>
+          <ol>
+            <li>
+              <span class="ja"
+                ><a
+                  href="https://chromewebstore.google.com/detail/sr-data-extraction-plugin/ibpbkgffgkmdmflamhadbcfjgfljjgip"
+                  >Chrome ウェブストア</a
+                >からインストールします。</span
+              >
+              <span class="en">Install from the Chrome Web Store.</span>
+            </li>
+            <li>
+              <span class="ja">拡張の設定画面で、ご自身の LLM API キーを保存します（BYOK）。</span>
+              <span class="en">Save your own LLM API key in the extension options (BYOK).</span>
+            </li>
+            <li>
+              <span class="ja">Google アカウントでログインし、プロジェクトを作成します。</span>
+              <span class="en">Sign in with Google and create a project.</span>
+            </li>
+          </ol>
+          <p>
+            <span class="ja"
+              >操作の詳細は<a href="help.html">使い方ガイド</a>を参照してください。</span
+            >
+            <span class="en">See the <a href="help.html">user guide</a> for the full walkthrough.</span>
+          </p>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <div class="container">
+        <div class="footer-content">
+          <div class="footer-links">
+            <a href="index.html">ホーム / Home</a>
+            <a href="help.html">使い方 / Help</a>
+            <a href="privacy-policy.html">プライバシーポリシー / Privacy</a>
+            <a href="terms-of-service.html">利用規約 / Terms</a>
+            <a href="https://github.com/youkiti/sr-data-extraction-plugin">GitHub</a>
+          </div>
+          <p class="copyright">© 2026 youkiti — MIT License</p>
+        </div>
+      </div>
+    </footer>
+  </body>
+</html>
