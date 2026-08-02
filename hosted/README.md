@@ -131,3 +131,7 @@ spreadsheet / pdf モードは `page_version` を検査しない（ready 応答�
 4. ストアダッシュボードの「プライバシーポリシー URL」を `privacy-policy.html` へ、「ウェブサイト」欄を
    ルート URL へ設定する（PR ではなく運用作業。[docs/remaining-work-plan.md](../docs/remaining-work-plan.md) の
    実機 / 運用テスト一覧に記録済み）
+
+**デプロイ記録**: 初回デプロイ = 2026-08-02（`gh-pages` へ 4 ページ + `style.css` + `screenshots/`。
+`picker.html` / `.nojekyll` は無変更）。手順 3 のブラウザ表示確認と手順 4 のストア設定は未実施
+（remaining-work-plan.md の #214 行が正典）。
