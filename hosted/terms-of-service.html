@@ -1,55 +1,79 @@
 <!doctype html>
 <!-- 利用規約（GitHub Pages 配信）。正典はこのファイル（master の hosted/）。
      内容は本拡張の実態（MIT OSS・サーバーレス・BYOK・無保証）に即して書き下ろす。
-     version: 2026-08-01 -->
+     ja / en は両方を持ち、表示は lang.js + CSS が片方だけに絞る（併記しない）。
+     version: 2026-08-02 -->
 <html lang="ja">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>利用規約 / Terms of Service — SR Data Extraction Plugin</title>
+    <title data-en="Terms of Service — SR Data Extraction Plugin">利用規約 — SR Data Extraction Plugin</title>
     <meta
       name="description"
-      content="SR Data Extraction Plugin の利用規約。MIT ライセンスの OSS・サーバーレス・BYOK・無保証。 / Terms of service for SR Data Extraction Plugin."
+      content="SR Data Extraction Plugin の利用規約。MIT ライセンスの OSS・サーバーレス・BYOK・無保証。"
+      data-en-content="Terms of service for SR Data Extraction Plugin: MIT-licensed open source, serverless, BYOK, provided as is."
     />
     <link rel="stylesheet" href="style.css" />
+    <!-- 表示言語（ja / en）の解決と切替。初期描画前に確定させるため head で同期読み込みする -->
+    <script src="lang.js"></script>
   </head>
   <body>
     <header class="site-header">
       <div class="container">
         <a class="logo" href="index.html">SR Data Extraction Plugin</a>
-        <nav class="site-nav" aria-label="サイト内ナビゲーション">
-          <a href="index.html">ホーム / Home</a>
-          <a href="help.html">使い方 / Help</a>
-          <a href="privacy-policy.html">プライバシー / Privacy</a>
-          <a href="terms-of-service.html" aria-current="page">利用規約 / Terms</a>
+        <nav
+          class="site-nav"
+          aria-label="サイト内ナビゲーション"
+          data-en-aria-label="Site navigation"
+        >
+          <a href="index.html"
+            ><span class="ja" lang="ja">ホーム</span><span class="en" lang="en">Home</span></a
+          >
+          <a href="help.html"
+            ><span class="ja" lang="ja">使い方</span><span class="en" lang="en">Help</span></a
+          >
+          <a href="privacy-policy.html"
+            ><span class="ja" lang="ja">プライバシー</span><span class="en" lang="en">Privacy</span></a
+          >
+          <a href="terms-of-service.html" aria-current="page"
+            ><span class="ja" lang="ja">利用規約</span><span class="en" lang="en">Terms</span></a
+          >
           <a href="https://github.com/youkiti/sr-data-extraction-plugin">GitHub</a>
         </nav>
+        <!-- 言語切替ボタンは lang.js が組み立てる（JS 無効時は空のまま = 両言語が並ぶ） -->
+        <div class="lang-switch" data-lang-switch></div>
       </div>
     </header>
 
     <main class="document-page">
       <div class="container">
         <h1>
-          <span class="ja">利用規約</span>
-          <span class="en">Terms of Service</span>
+          <span class="ja" lang="ja">利用規約</span>
+          <span class="en" lang="en">Terms of Service</span>
         </h1>
         <p class="last-updated">
-          最終更新: 2026-08-01 &nbsp;·&nbsp; Last updated: 2026-08-01<br />
-          対象: Chrome 拡張機能「SR Data Extraction」（sr-data-extraction-plugin） &nbsp;·&nbsp; Applies to the Chrome
-          extension “SR Data Extraction”
+          <span class="ja" lang="ja"
+            >最終更新: 2026-08-01<br />
+            対象: Chrome 拡張機能「SR Data Extraction」（sr-data-extraction-plugin）</span
+          >
+          <span class="en" lang="en"
+            >Last updated: 2026-08-01<br />
+            Applies to the Chrome extension “SR Data Extraction”
+            (sr-data-extraction-plugin)</span
+          >
         </p>
 
         <section>
           <h2>
-            <span class="ja">1. 適用</span>
-            <span class="en">1. Scope</span>
+            <span class="ja" lang="ja">1. 適用</span>
+            <span class="en" lang="en">1. Scope</span>
           </h2>
           <p>
-            <span class="ja"
+            <span class="ja" lang="ja"
               >本規約は、Chrome 拡張機能「SR
               Data Extraction」（以下「本拡張」）の利用条件を定めるものです。本拡張をインストールまたは利用した時点で、本規約に同意したものとみなします。同意いただけない場合は本拡張を利用しないでください。</span
             >
-            <span class="en"
+            <span class="en" lang="en"
               >These terms govern the use of the Chrome extension “SR Data Extraction” (the “extension”). By installing
               or using the extension you accept these terms; if you do not accept them, please do not use it.</span
             >
@@ -58,18 +82,18 @@
 
         <section>
           <h2>
-            <span class="ja">2. ライセンスと費用</span>
-            <span class="en">2. Licence and cost</span>
+            <span class="ja" lang="ja">2. ライセンスと費用</span>
+            <span class="en" lang="en">2. Licence and cost</span>
           </h2>
           <ul>
             <li>
-              <span class="ja"
+              <span class="ja" lang="ja"
                 >本拡張は <a href="https://github.com/youkiti/sr-data-extraction-plugin/blob/master/LICENSE">MIT
                 ライセンス</a>のオープンソースソフトウェアです。ソースコードの利用・改変・再配布は MIT
                 ライセンスの条件に従います。本規約と MIT ライセンスの内容が矛盾する場合、ソフトウェア自体の利用許諾については
                 MIT ライセンスが優先します。</span
               >
-              <span class="en"
+              <span class="en" lang="en"
                 >The extension is open-source software released under the
                 <a href="https://github.com/youkiti/sr-data-extraction-plugin/blob/master/LICENSE">MIT licence</a>. Use,
                 modification and redistribution of the source code are governed by that licence, which prevails over
@@ -77,29 +101,29 @@
               >
             </li>
             <li>
-              <span class="ja"
+              <span class="ja" lang="ja"
                 >本拡張の利用に対して開発者が課金することはありません。ただし、利用者が接続する LLM
                 API の利用料金・Google アカウントの利用条件は、利用者と各サービス提供者との契約に基づきます。</span
               >
-              <span class="en"
+              <span class="en" lang="en"
                 >The developer charges nothing for the extension. Fees for the LLM API you connect to, and the terms of
                 your Google account, are matters between you and those providers.</span
               >
             </li>
             <li>
-              <span class="ja">本拡張の開発は JSPS 科研費 25K13585 の助成を受けています。</span>
-              <span class="en">Development is supported by JSPS KAKENHI Grant Number 25K13585.</span>
+              <span class="ja" lang="ja">本拡張の開発は JSPS 科研費 25K13585 の助成を受けています。</span>
+              <span class="en" lang="en">Development is supported by JSPS KAKENHI Grant Number 25K13585.</span>
             </li>
           </ul>
         </section>
 
         <section>
           <h2>
-            <span class="ja">3. サーバーレス構成と BYOK</span>
-            <span class="en">3. Serverless design and BYOK</span>
+            <span class="ja" lang="ja">3. サーバーレス構成と BYOK</span>
+            <span class="en" lang="en">3. Serverless design and BYOK</span>
           </h2>
           <p>
-            <span class="ja"
+            <span class="ja" lang="ja"
               >本拡張には開発者が運用するサーバーが存在しません。データは、利用者自身の Google Drive / Google
               Sheets と、利用者が自身の API キーで契約・指定する LLM API（BYOK: Bring Your Own
               Key）の間でのみ流通します。開発者が利用者のデータを受信・保存・収集することはありません。詳細は<a
@@ -107,7 +131,7 @@
                 >プライバシーポリシー</a
               >を参照してください。</span
             >
-            <span class="en"
+            <span class="en" lang="en"
               >The extension has no developer-operated server. Data flows only between your own Google Drive / Google
               Sheets and the LLM API you contract with or specify using your own key (BYOK). The developer never
               receives, stores or collects your data. See the <a href="privacy-policy.html">privacy policy</a> for
@@ -115,10 +139,10 @@
             >
           </p>
           <p>
-            <span class="ja"
+            <span class="ja" lang="ja"
               >そのため、データの保全・バックアップ・アクセス管理（共同研究者との共有設定を含む）は、すべて利用者自身の責任で行っていただく必要があります。</span
             >
-            <span class="en"
+            <span class="en" lang="en"
               >Consequently, safeguarding, backing up and controlling access to your data — including how you share it
               with collaborators — is entirely your responsibility.</span
             >
@@ -127,16 +151,16 @@
 
         <section>
           <h2>
-            <span class="ja">4. 利用者の責任</span>
-            <span class="en">4. Your responsibilities</span>
+            <span class="ja" lang="ja">4. 利用者の責任</span>
+            <span class="en" lang="en">4. Your responsibilities</span>
           </h2>
           <ul>
             <li>
-              <span class="ja"
+              <span class="ja" lang="ja"
                 >取り込む論文 PDF について、利用者自身が適法に取得・利用できる立場にあることを確認してください。学術研究目的のデータ抽出（テキスト・データマイニング）は日本の著作権法上の権利制限規定（第
                 30 条の 4 等）の範囲内であるとの整理に基づいていますが、適用される法域・契約（出版社との購読契約等）は利用者の環境により異なります。</span
               >
-              <span class="en"
+              <span class="en" lang="en"
                 >Ensure that you are lawfully entitled to obtain and use the PDFs you import. Text and data mining for
                 academic research is treated as falling within the limitations of Japanese copyright law (Article 30-4
                 and related provisions), but the applicable jurisdiction and contracts (for example publisher
@@ -144,42 +168,42 @@
               >
             </li>
             <li>
-              <span class="ja"
+              <span class="ja" lang="ja"
                 >LLM API へ送信される内容（論文本文を含む）は、送信先プロバイダの利用規約・プライバシーポリシーに従って扱われます。機密性の高い資料を扱う場合は、送信先の条件を事前に確認してください。</span
               >
-              <span class="en"
+              <span class="en" lang="en"
                 >Anything sent to the LLM API — including full text — is handled under that provider’s terms and privacy
                 policy. Check those terms before processing sensitive material.</span
               >
             </li>
             <li>
-              <span class="ja"
+              <span class="ja" lang="ja"
                 >本拡張は「AI
                 による事前抽出 + 人間による検証」を前提に設計されています。<strong>AI の出力をそのまま研究成果として用いないでください。</strong>抽出値の正確性・研究上の妥当性の最終的な責任は利用者にあります。</span
               >
-              <span class="en"
+              <span class="en" lang="en"
                 >The extension is designed around AI pre-extraction followed by human verification. <strong>Do not use
                 AI output as a research result without checking it.</strong> You remain responsible for the accuracy and
                 methodological validity of the extracted data.</span
               >
             </li>
             <li>
-              <span class="ja">API キー・OAuth 認証情報の管理は利用者の責任で行ってください。</span>
-              <span class="en">Keeping your API keys and OAuth credentials secure is your responsibility.</span>
+              <span class="ja" lang="ja">API キー・OAuth 認証情報の管理は利用者の責任で行ってください。</span>
+              <span class="en" lang="en">Keeping your API keys and OAuth credentials secure is your responsibility.</span>
             </li>
           </ul>
         </section>
 
         <section>
           <h2>
-            <span class="ja">5. 禁止事項</span>
-            <span class="en">5. Prohibited use</span>
+            <span class="ja" lang="ja">5. 禁止事項</span>
+            <span class="en" lang="en">5. Prohibited use</span>
           </h2>
           <p>
-            <span class="ja">本拡張を、法令に違反する目的、第三者の権利を侵害する目的、または接続先サービス（Google
+            <span class="ja" lang="ja">本拡張を、法令に違反する目的、第三者の権利を侵害する目的、または接続先サービス（Google
               API・LLM API 提供者）の利用規約に違反する態様で利用しないでください。</span
             >
-            <span class="en"
+            <span class="en" lang="en"
               >Do not use the extension for unlawful purposes, in ways that infringe the rights of others, or in breach
               of the terms of the services it connects to (Google APIs and your LLM provider).</span
             >
@@ -188,15 +212,15 @@
 
         <section>
           <h2>
-            <span class="ja">6. 無保証・免責</span>
-            <span class="en">6. No warranty and limitation of liability</span>
+            <span class="ja" lang="ja">6. 無保証・免責</span>
+            <span class="en" lang="en">6. No warranty and limitation of liability</span>
           </h2>
           <p>
-            <span class="ja"
+            <span class="ja" lang="ja"
               >本拡張は MIT ライセンスに基づき<strong>「現状のまま」（AS IS）</strong>提供されます。開発者は、商品性・特定目的への適合性・非侵害を含むいかなる保証も行いません。抽出結果の正確性・完全性、サービスの継続性、Google
               API や LLM API の仕様変更に対する追随についても保証しません。</span
             >
-            <span class="en"
+            <span class="en" lang="en"
               >The extension is provided <strong>“AS IS”</strong> under the MIT licence, without warranty of any kind,
               including merchantability, fitness for a particular purpose and non-infringement. No guarantee is made as
               to the accuracy or completeness of extraction results, continued availability, or compatibility with
@@ -204,11 +228,11 @@
             >
           </p>
           <p>
-            <span class="ja"
+            <span class="ja" lang="ja"
               >本拡張の利用または利用不能から生じたいかなる損害（データの消失、研究上の損失、API
               利用料金の発生を含む）についても、適用法令が許す最大限の範囲で開発者は責任を負いません。</span
             >
-            <span class="en"
+            <span class="en" lang="en"
               >To the fullest extent permitted by law, the developer is not liable for any damages arising from use or
               inability to use the extension, including data loss, research setbacks or API charges you incur.</span
             >
@@ -217,15 +241,15 @@
 
         <section>
           <h2>
-            <span class="ja">7. 第三者サービス</span>
-            <span class="en">7. Third-party services</span>
+            <span class="ja" lang="ja">7. 第三者サービス</span>
+            <span class="en" lang="en">7. Third-party services</span>
           </h2>
           <p>
-            <span class="ja"
+            <span class="ja" lang="ja"
               >本拡張は Google API（Sheets / Drive / OAuth）および利用者が指定する LLM API
               を利用します。これらのサービスの提供条件・可用性・料金は各提供者が定めるものであり、開発者は関与しません。</span
             >
-            <span class="en"
+            <span class="en" lang="en"
               >The extension uses Google APIs (Sheets, Drive, OAuth) and the LLM API you specify. The terms, availability
               and pricing of those services are set by their providers, not by the developer.</span
             >
@@ -234,14 +258,14 @@
 
         <section>
           <h2>
-            <span class="ja">8. 規約の変更</span>
-            <span class="en">8. Changes to these terms</span>
+            <span class="ja" lang="ja">8. 規約の変更</span>
+            <span class="en" lang="en">8. Changes to these terms</span>
           </h2>
           <p>
-            <span class="ja"
+            <span class="ja" lang="ja"
               >本規約は、機能の追加・法令の変更等に応じて改定されることがあります。改定後の規約は本ページに掲載した時点で効力を生じます（最終更新日は冒頭に表示します）。</span
             >
-            <span class="en"
+            <span class="en" lang="en"
               >These terms may be revised as features or applicable law change. Revisions take effect when published on
               this page; the last-updated date is shown at the top.</span
             >
@@ -250,26 +274,26 @@
 
         <section>
           <h2>
-            <span class="ja">9. 準拠法</span>
-            <span class="en">9. Governing law</span>
+            <span class="ja" lang="ja">9. 準拠法</span>
+            <span class="en" lang="en">9. Governing law</span>
           </h2>
           <p>
-            <span class="ja">本規約は日本法に準拠して解釈されます。</span>
-            <span class="en">These terms are interpreted under the laws of Japan.</span>
+            <span class="ja" lang="ja">本規約は日本法に準拠して解釈されます。</span>
+            <span class="en" lang="en">These terms are interpreted under the laws of Japan.</span>
           </p>
         </section>
 
         <section>
           <h2>
-            <span class="ja">10. お問い合わせ</span>
-            <span class="en">10. Contact</span>
+            <span class="ja" lang="ja">10. お問い合わせ</span>
+            <span class="en" lang="en">10. Contact</span>
           </h2>
           <p>
-            <span class="ja"
+            <span class="ja" lang="ja"
               >本規約に関する問い合わせ・不具合の報告は、GitHub リポジトリの
               <a href="https://github.com/youkiti/sr-data-extraction-plugin/issues">Issues</a> へお願いします。</span
             >
-            <span class="en"
+            <span class="en" lang="en"
               >For questions about these terms or to report a problem, please open an issue on
               <a href="https://github.com/youkiti/sr-data-extraction-plugin/issues">GitHub</a>.</span
             >
@@ -282,10 +306,19 @@
       <div class="container">
         <div class="footer-content">
           <div class="footer-links">
-            <a href="index.html">ホーム / Home</a>
-            <a href="help.html">使い方 / Help</a>
-            <a href="privacy-policy.html">プライバシーポリシー / Privacy</a>
-            <a href="terms-of-service.html">利用規約 / Terms</a>
+            <a href="index.html"
+              ><span class="ja" lang="ja">ホーム</span><span class="en" lang="en">Home</span></a
+            >
+            <a href="help.html"
+              ><span class="ja" lang="ja">使い方</span><span class="en" lang="en">Help</span></a
+            >
+            <a href="privacy-policy.html"
+              ><span class="ja" lang="ja">プライバシーポリシー</span
+              ><span class="en" lang="en">Privacy</span></a
+            >
+            <a href="terms-of-service.html"
+              ><span class="ja" lang="ja">利用規約</span><span class="en" lang="en">Terms</span></a
+            >
             <a href="https://github.com/youkiti/sr-data-extraction-plugin">GitHub</a>
           </div>
           <p class="copyright">© 2026 youkiti — MIT License</p>

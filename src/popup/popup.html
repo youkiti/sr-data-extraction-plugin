@@ -152,11 +152,13 @@
       </button>
 
       <!-- 使い方ガイド（GitHub Pages）。URL の正典は src/lib/publicPages.ts の HELP_URL
-           （一致は tests/unit/lib/publicPages.test.ts が検査する） -->
+           （一致は tests/unit/lib/publicPages.test.ts が検査する）。
+           data-public-page: 表示言語を ?lang= で引き継ぐ目印（applyPublicPageLanguage） -->
       <footer class="popup__footer">
         <a
           id="popup-open-help"
           href="https://youkiti.github.io/sr-data-extraction-plugin/help.html"
+          data-public-page
           target="_blank"
           rel="noopener noreferrer"
           data-i18n="popup.openHelp"

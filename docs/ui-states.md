@@ -165,7 +165,7 @@ loopback HTTP で API キーが空の場合は Authorization ヘッダーを送�
 |---|---|
 | 通常表示 | 見出し「ヘルプ・ポリシー」+ 補足「いずれも新しいタブで開きます。」+ リンク 3 本（使い方ガイド → `help.html` / プライバシーポリシー → `privacy-policy.html` / 利用規約 → `terms-of-service.html`）。すべて `target="_blank"` + `rel="noopener noreferrer"` |
 | URL の正典 | [src/lib/publicPages.ts](../src/lib/publicPages.ts)（静的 HTML 側の `href` との一致は unit テストが検査する） |
-| 表示言語 | ラベルは i18n（`options.linksTitle` 等）。リンク先 URL は言語によらず同一（ページ自体が ja / en 並記） |
+| 表示言語 | ラベルは i18n（`options.linksTitle` 等）。リンク先 URL は現在の表示言語を `?lang=ja` / `?lang=en` で引き継ぐ（`withUiLanguage`）。公開ページ側は `hosted/lang.js` がこのクエリを最優先で解釈し、ja / en の一方だけを表示する（旧: ページが常時併記） |
 
 ### 表示言語（issue #93・i18n）
 
@@ -183,7 +183,7 @@ UI 文言は自前辞書方式（`src/lib/i18n/`。`t(key)` + `ja.ts` / `en.ts` 
 
 ## 3. App / メインビュー (`src/app/app.html`)
 
-共通レイアウト: `header.app__header`（タイトル + `#app-status` + **使い方ガイドへの外部リンク `#app-open-help`**〔issue #214: `https://youkiti.github.io/sr-data-extraction-plugin/help.html` を `target="_blank"` + `rel="noopener noreferrer"` で新規タブに開く。`.app__options-link` を流用した「? + ヘルプ」のボタン状。全状態共通で常時表示し、プロジェクト未選択・ロール未確定・ガード未充足でも消えない〕 + 設定への歯車リンク `#app-open-options`〔`../options/options.html` への同一タブ遷移。`aria-label="設定を開く"`。issue #50: 歯車アイコン（装飾・`aria-hidden`）+「設定」テキストラベルを常時表示するボタン状の見た目〕+ `#app-context`〔`aria-live="polite"`〕）+ `aside.app__sidebar` + `section#app-content`。プロジェクト選択済みの `#app-status` はプロジェクト名自体が S1 プロジェクト選択ページへの同一タブ遷移リンク（`title="別のプロジェクトを開く"`）。ルート遷移のスクリーンリーダ通知は `#app-context` の更新で検証する（文言は「{ルート表示名} 画面を表示しています」。表示言語 en では `Showing the {screen} screen`）。ヘッダ・サイドバーのナビラベル・`#app-context` は表示言語（§2「表示言語」）に追従し、言語切替のストア再描画で即時に切り替わる（issue #93）。
+共通レイアウト: `header.app__header`（タイトル + `#app-status` + **使い方ガイドへの外部リンク `#app-open-help`**〔issue #214: `https://youkiti.github.io/sr-data-extraction-plugin/help.html` を `target="_blank"` + `rel="noopener noreferrer"` で新規タブに開く。href には現在の表示言語が `?lang=` で付く（`applyPublicPageLanguage`。ページ側 `hosted/lang.js` が同じ言語で表示する）。`.app__options-link` を流用した「? + ヘルプ」のボタン状。全状態共通で常時表示し、プロジェクト未選択・ロール未確定・ガード未充足でも消えない〕 + 設定への歯車リンク `#app-open-options`〔`../options/options.html` への同一タブ遷移。`aria-label="設定を開く"`。issue #50: 歯車アイコン（装飾・`aria-hidden`）+「設定」テキストラベルを常時表示するボタン状の見た目〕+ `#app-context`〔`aria-live="polite"`〕）+ `aside.app__sidebar` + `section#app-content`。プロジェクト選択済みの `#app-status` はプロジェクト名自体が S1 プロジェクト選択ページへの同一タブ遷移リンク（`title="別のプロジェクトを開く"`）。ルート遷移のスクリーンリーダ通知は `#app-context` の更新で検証する（文言は「{ルート表示名} 画面を表示しています」。表示言語 en では `Showing the {screen} screen`）。ヘッダ・サイドバーのナビラベル・`#app-context` は表示言語（§2「表示言語」）に追従し、言語切替のストア再描画で即時に切り替わる（issue #93）。
 
 ### 状態 A: プロジェクト未選択（不正アクセス）
 

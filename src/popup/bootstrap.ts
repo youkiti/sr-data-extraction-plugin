@@ -34,6 +34,7 @@ import {
 import { SheetsAccessDeniedError } from '../lib/google/sheets';
 import type { GoogleApiDeps } from '../lib/google/types';
 import { getUiLanguage, localizeDom, setUiLanguage, t } from '../lib/i18n';
+import { applyPublicPageLanguage } from '../lib/publicPages';
 import { loadUiLanguage } from '../lib/storage/settingsStore';
 import { readTiabSheet } from '../features/documents/tiabSheetReader';
 import { resolveAdoptedReferences } from '../features/documents/tiabReview';
@@ -197,6 +198,8 @@ export async function bootstrapPopup(doc: Document, deps: PopupDeps): Promise<vo
   setUiLanguage(await loadUiLanguage());
   doc.documentElement.lang = getUiLanguage();
   localizeDom(doc);
+  // 公開ページ（ヘルプ）も同じ言語で開くよう href へ ?lang= を反映する
+  applyPublicPageLanguage(doc, getUiLanguage());
   // dev ビルドではヘッダーのアプリ名・タブタイトルにも manifest 名と同じ「 (dev)」を
   // 付ける（要素が無い環境では何もしない。以下のビルド日表示も同様）
   doc.title = withDevSuffix(doc.title);

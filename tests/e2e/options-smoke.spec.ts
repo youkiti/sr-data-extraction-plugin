@@ -229,10 +229,11 @@ test('末尾にヘルプ・ポリシーの外部リンク 3 本がある（issue
   await page.addInitScript(chromeStub({ seedModel: false }));
   await page.goto('/options/options.html');
   const base = 'https://youkiti.github.io/sr-data-extraction-plugin';
+  // 表示言語を ?lang= で引き継ぐ（公開ページ側は hosted/lang.js がこれを最優先で読む）
   const links: Array<[string, string]> = [
-    ['使い方ガイド', `${base}/help.html`],
-    ['プライバシーポリシー', `${base}/privacy-policy.html`],
-    ['利用規約', `${base}/terms-of-service.html`],
+    ['使い方ガイド', `${base}/help.html?lang=ja`],
+    ['プライバシーポリシー', `${base}/privacy-policy.html?lang=ja`],
+    ['利用規約', `${base}/terms-of-service.html?lang=ja`],
   ];
   for (const [label, href] of links) {
     const link = page.getByRole('link', { name: label });
