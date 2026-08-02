@@ -18,7 +18,9 @@
 - **カテゴリ**: 仕事効率化（Productivity）
 - **言語**: 日本語（`default_locale: "ja"`）
 - **公開範囲**: 一般公開（public）— ストア検索・リンクのどちらからでも誰でもインストール可（2026-07-12 に一般公開で掲載）
-- **プライバシーポリシー URL**: privacy-policy.md を公開ページ化して指定する。案: GitHub のファイル URL（`https://github.com/youkiti/sr-data-extraction-plugin/blob/master/docs/store/privacy-policy.md`）をそのまま指定するか、既存の GitHub Pages（`youkiti.github.io`）配下へ HTML 化して置く。
+- **プライバシーポリシー URL**: `https://youkiti.github.io/sr-data-extraction-plugin/privacy-policy.html`（GitHub Pages。issue #214 で方針確定）。v0.1.0 提出時の暫定だった GitHub ファイル URL 方式（`blob/master/docs/store/privacy-policy.md`）から差し替える — **ストアダッシュボードでの差し替えは運用作業**（[remaining-work-plan.md](../remaining-work-plan.md) の実機 / 運用テスト一覧を参照）。
+  - ページの実体は [hosted/privacy-policy.html](../../hosted/privacy-policy.html)（[privacy-policy.md](privacy-policy.md) の HTML 転記 + 英訳併記）。**内容の正典は md 側**なので、更新時は両方を直す（[hosted/README.md](../../hosted/README.md#更新時に守ること)）。
+- **ウェブサイト**: `https://youkiti.github.io/sr-data-extraction-plugin/`（ランディング [hosted/index.html](../../hosted/index.html)）。使い方ガイドは `https://youkiti.github.io/sr-data-extraction-plugin/help.html`。
 
 ## 必要な画像
 

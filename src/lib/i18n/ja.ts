@@ -22,6 +22,8 @@ export const ja = {
   'app.openPopup': 'プロジェクト選択を開く',
   'app.openOptions': '設定',
   'app.openOptionsTitle': '設定を開く',
+  'app.openHelp': 'ヘルプ',
+  'app.openHelpTitle': '使い方ガイドを新しいタブで開く',
   'app.switchProject': '別のプロジェクトを開く',
   'app.navAriaLabel': 'ステップナビゲーション',
   'app.navHome': 'Home',
@@ -48,6 +50,13 @@ export const ja = {
   'options.languageHelp': 'UI の表示言語です。切り替えるとすぐに画面へ反映されます。',
   'options.languageLabel': '言語',
   'options.languageSaveFailed': '表示言語の保存に失敗しました。',
+
+  // Options の公開ページリンク節（settingsSections.ts。issue #214）
+  'options.linksTitle': 'ヘルプ・ポリシー',
+  'options.linksHelp': 'いずれも新しいタブで開きます。',
+  'options.linkHelp': '使い方ガイド',
+  'options.linkPrivacy': 'プライバシーポリシー',
+  'options.linkTerms': '利用規約',
 
   // Popup S1（popup.html + popup/bootstrap.ts）
   'popup.loading': '読み込み中…',
@@ -80,6 +89,7 @@ export const ja = {
   'popup.openIdPlaceholder': 'スプレッドシート ID または URL を貼り付け',
   'popup.openSubmit': '開く',
   'popup.openOptions': '設定を開く',
+  'popup.openHelp': '使い方',
   'popup.statusLoginRequired': 'ログインが必要です。',
   'popup.statusPickRecent': '最近のプロジェクトから選ぶか、新しく作成してください。',
   'popup.statusCreateOrOpen':

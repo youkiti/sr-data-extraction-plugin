@@ -1,0 +1,869 @@
+<!doctype html>
+<!-- SR Data Extraction Plugin 使い方ガイド（GitHub Pages 配信）。
+     正典はこのファイル（master の hosted/）。デプロイ手順は hosted/README.md を参照。
+     内容はワークフローレベルに留める（画面細部はアプリ内のリード文が担う。issue #214 §3）。
+     version: 2026-08-01 -->
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>使い方 / Help — SR Data Extraction Plugin</title>
+    <meta
+      name="description"
+      content="SR Data Extraction Plugin の使い方ガイド。プロジェクト作成から文献取り込み・AI 抽出・検証・エクスポートまでの操作手順とトラブルシューティング。 / User guide for SR Data Extraction Plugin."
+    />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <div class="container">
+        <a class="logo" href="index.html">SR Data Extraction Plugin</a>
+        <nav class="site-nav" aria-label="サイト内ナビゲーション">
+          <a href="index.html">ホーム / Home</a>
+          <a href="help.html" aria-current="page">使い方 / Help</a>
+          <a href="privacy-policy.html">プライバシー / Privacy</a>
+          <a href="terms-of-service.html">利用規約 / Terms</a>
+          <a href="https://github.com/youkiti/sr-data-extraction-plugin">GitHub</a>
+        </nav>
+      </div>
+    </header>
+
+    <main class="help-page">
+      <div class="container">
+        <h1>
+          <span class="ja">使い方ガイド</span>
+          <span class="en">User guide</span>
+        </h1>
+        <p class="last-updated">
+          最終更新: 2026-08-01 / 対象バージョン: v0.6.0 &nbsp;·&nbsp; Last updated: 2026-08-01 / Covers v0.6.0
+        </p>
+
+        <nav class="toc" aria-label="目次 / Table of contents">
+          <h2>
+            <span class="ja">目次</span>
+            <span class="en">Contents</span>
+          </h2>
+          <ol>
+            <li><a href="#setup">準備（インストールと LLM 接続の設定） / Setup</a></li>
+            <li><a href="#project">プロジェクトを作る・開く / Create or open a project</a></li>
+            <li><a href="#documents">文献を取り込む / Import documents</a></li>
+            <li><a href="#protocol">プロトコルを登録する / Register the protocol</a></li>
+            <li><a href="#schema">表のデザイン（抽出項目）を決める / Design the extraction schema</a></li>
+            <li><a href="#pilot">パイロット抽出で試す / Pilot extraction</a></li>
+            <li><a href="#extract">一括抽出を実行する / Run the full extraction</a></li>
+            <li><a href="#verify">検証する（中核の工程） / Verify (the core step)</a></li>
+            <li><a href="#dashboard">ダッシュボードで進捗を見る / Track progress</a></li>
+            <li><a href="#dual-review">独立二重レビューと裁定 / Independent dual review and adjudication</a></li>
+            <li><a href="#export">エクスポートする / Export</a></li>
+            <li><a href="#options">設定（BYOK・接続方式・レート制限） / Options</a></li>
+            <li><a href="#troubleshooting">トラブルシューティング / Troubleshooting</a></li>
+            <li><a href="#faq">よくある質問 / FAQ</a></li>
+          </ol>
+        </nav>
+
+        <section id="setup">
+          <h2>
+            <span class="ja">1. 準備（インストールと LLM 接続の設定）</span>
+            <span class="en">1. Setup: install and connect an LLM</span>
+          </h2>
+          <ol>
+            <li>
+              <span class="ja"
+                ><a
+                  href="https://chromewebstore.google.com/detail/sr-data-extraction-plugin/ibpbkgffgkmdmflamhadbcfjgfljjgip"
+                  >Chrome ウェブストアの掲載ページ</a
+                >から「Chrome に追加」でインストールします。</span
+              >
+              <span class="en">Install from the Chrome Web Store listing.</span>
+            </li>
+            <li>
+              <span class="ja"
+                >拡張アイコンを右クリック →「オプション」で設定画面を開き、ご自身の LLM API キーを保存します（BYOK =
+                Bring Your Own Key）。既定は Gemini API で、キーは
+                <a href="https://aistudio.google.com/apikey">Google AI Studio</a> から取得できます。</span
+              >
+              <span class="en"
+                >Right-click the extension icon → “Options”, then save your own LLM API key (BYOK). Gemini is the
+                default; you can get a key from Google AI Studio.</span
+              >
+            </li>
+            <li>
+              <span class="ja"
+                >拡張アイコンをクリックするとプロジェクト選択画面が新しいタブで開きます。「Google
+                でログイン」を押し、メールアドレスと Drive（選択したファイルのみ）へのアクセスを許可します。</span
+              >
+              <span class="en"
+                >Click the extension icon to open the project page in a new tab, sign in with Google and grant access to
+                your email address and Drive (selected files only).</span
+              >
+            </li>
+          </ol>
+          <div class="note">
+            <p>
+              <span class="ja"
+                >論文本文が外部へ送信されるのは、あなたが設定した LLM API への抽出リクエストのときだけです。開発者が運用するサーバーは存在しません（<a
+                  href="privacy-policy.html"
+                  >プライバシーポリシー</a
+                >）。</span
+              >
+              <span class="en"
+                >Full text leaves your browser only in extraction requests to the LLM API you configured. There is no
+                developer-operated server (see the <a href="privacy-policy.html">privacy policy</a>).</span
+              >
+            </p>
+          </div>
+        </section>
+
+        <section id="project">
+          <h2>
+            <span class="ja">2. プロジェクトを作る・開く</span>
+            <span class="en">2. Create or open a project</span>
+          </h2>
+          <p>
+            <span class="ja"
+              >1 つの SR が 1 プロジェクトです。作成すると、プロジェクト DB になる Google スプレッドシートと、PDF
+              ・抽出テキスト・ログを置く Drive フォルダがあなたの Google アカウント内に生成されます。</span
+            >
+            <span class="en"
+              >One project equals one review. Creating a project generates a Google Sheet (the project database) and a
+              Drive folder for PDFs, extracted text and logs inside your own Google account.</span
+            >
+          </p>
+          <ul>
+            <li>
+              <span class="ja"><strong>新規プロジェクト</strong>: タイトルを入れて「作成」。</span>
+              <span class="en"><strong>New project</strong>: enter a title and press Create.</span>
+            </li>
+            <li>
+              <span class="ja"
+                ><strong>最近のプロジェクト</strong>: 一覧から選ぶとそのままメインビューが開きます。</span
+              >
+              <span class="en"><strong>Recent projects</strong>: pick one to jump straight into the main view.</span>
+            </li>
+            <li>
+              <span class="ja"
+                ><strong>スプレッドシート ID / URL で開く</strong>:
+                共同研究者から共有されたプロジェクトはこの欄から開きます（初回のみ Picker
+                での許可が必要 → <a href="#troubleshooting">トラブルシューティング</a>）。</span
+              >
+              <span class="en"
+                ><strong>Open by spreadsheet ID / URL</strong>: use this for a project shared with you (the first time
+                you will be asked to grant access via the Picker — see troubleshooting).</span
+              >
+            </li>
+            <li>
+              <span class="ja"
+                ><strong>tiab-review から引き継いで作成</strong>:
+                <a href="https://github.com/youkiti/tiab-review-plugin">tiab-review</a>
+                のスプレッドシートを選ぶと、採用（include）文献をそのまま引き継いでプロジェクトを自動作成します。</span
+              >
+              <span class="en"
+                ><strong>Hand-off from tiab-review</strong>: select a tiab-review sheet and the project is created
+                automatically, carrying over the included studies.</span
+              >
+            </li>
+          </ul>
+          <p>
+            <span class="ja"
+              >プロジェクトを開くとメインビューが開きます。左サイドバーが工程（Home → 文献取り込み → プロトコル →
+              表のデザイン → パイロット抽出 → 一括抽出 → 検証 → ダッシュボード → エクスポート）で、前提を満たしていない工程は淡く表示され、クリックすると必要な条件が案内されます。</span
+            >
+            <span class="en"
+              >The main view opens with the workflow in the left sidebar (Home → Import → Protocol → Schema → Pilot →
+              Extract → Verify → Dashboard → Export). Steps whose prerequisites are unmet are dimmed and explain what is
+              missing when clicked.</span
+            >
+          </p>
+        </section>
+
+        <section id="documents">
+          <h2>
+            <span class="ja">3. 文献を取り込む</span>
+            <span class="en">3. Import documents</span>
+          </h2>
+          <p>
+            <span class="ja"
+              >採用論文の PDF を取り込みます。Google Drive から選ぶ（フォルダを選ぶと直下の PDF
+              をまとめて取り込みます）か、この PC からドラッグ &amp; ドロップ / ファイル選択できます。取り込み時に PDF
+              のテキスト層を抽出します。</span
+            >
+            <span class="en"
+              >Import the PDFs of your included studies — from Google Drive (selecting a folder imports the PDFs directly
+              inside it) or from your computer by drag &amp; drop / file picker. The text layer is extracted on
+              import.</span
+            >
+          </p>
+          <ul>
+            <li>
+              <span class="ja"
+                >テキスト層の状態は一覧に <code>ok</code> / <code>partial</code> / <code>no_text_layer</code>
+                のバッジで表示されます。<code>no_text_layer</code>（スキャン PDF）は根拠ハイライトが使えず、pdf_native
+                モードでの抽出のみ可能です。</span
+              >
+              <span class="en"
+                >Each document shows an <code>ok</code> / <code>partial</code> / <code>no_text_layer</code> badge.
+                Scanned PDFs (<code>no_text_layer</code>) cannot be highlighted and can only be processed in pdf_native
+                mode.</span
+              >
+            </li>
+            <li>
+              <span class="ja"
+                >同じ試験の複数文書（本文 + 補遺など）は、取り込み後に「統合」でひとつの試験（study）にまとめられます。</span
+              >
+              <span class="en"
+                >Multiple documents of the same trial (main paper + supplement) can be merged into a single study after
+                import.</span
+              >
+            </li>
+          </ul>
+        </section>
+
+        <section id="protocol">
+          <h2>
+            <span class="ja">4. プロトコルを登録する</span>
+            <span class="en">4. Register the protocol</span>
+          </h2>
+          <p>
+            <span class="ja"
+              >研究プロトコル（RQ・組入 / 除外基準など）を手入力するか、<code>.md</code> / <code>.docx</code>
+              ファイルから取り込みます。次の工程で AI が表のデザインをドラフトする際の参照元になります。保存は常に新しい版として追記され、過去の版は残ります。</span
+            >
+            <span class="en"
+              >Enter your protocol (research question, eligibility criteria, …) by hand or import a <code>.md</code> /
+              <code>.docx</code> file. It is the source AI reads when drafting the schema. Every save is appended as a
+              new version; earlier versions are kept.</span
+            >
+          </p>
+        </section>
+
+        <section id="schema">
+          <h2>
+            <span class="ja">5. 表のデザイン（抽出項目）を決める</span>
+            <span class="en">5. Design the extraction schema</span>
+          </h2>
+          <p>
+            <span class="ja"
+              >抽出したい項目のリスト＝スプレッドシートの見出し行にあたるものを作ります（例:
+              著者名・出版年・対象患者数）。プロトコルとサンプル論文 1〜3
+              本から AI にドラフトさせ、表形式エディタで項目の追加・削除・型変更・抽出指示（extraction_instruction）の編集を行い、版として確定します。</span
+            >
+            <span class="en"
+              >Define the list of fields to extract — the header row of your coding sheet. AI drafts it from the protocol
+              and 1–3 sample papers; you then add, remove, retype fields and edit their extraction instructions in a
+              table editor before fixing it as a version.</span
+            >
+          </p>
+          <ul>
+            <li>
+              <span class="ja"
+                >項目数に上限はありません（AI が一度に提案する目安が 10〜40 個というだけです）。</span
+              >
+              <span class="en"
+                >There is no cap on the number of fields; 10–40 is merely how many AI proposes at once.</span
+              >
+            </li>
+            <li>
+              <span class="ja"
+                >バイアスリスク評価は RoB 2 / ROBINS-I / QUADAS-3 / QUIPS
+                のテンプレートを事前設定として取り込めます。</span
+              >
+              <span class="en"
+                >Risk-of-bias templates (RoB 2, ROBINS-I, QUADAS-3, QUIPS) can be pre-loaded into the schema.</span
+              >
+            </li>
+            <li>
+              <span class="ja"
+                >版履歴から過去の版を確認でき、プロトコルを改訂したら AI に再ドラフトさせて差分（追加 / 変更 /
+                削除候補）を確認できます。</span
+              >
+              <span class="en"
+                >You can browse past versions and, after revising the protocol, ask AI to re-draft and review the diff
+                (added / changed / removal candidates).</span
+              >
+            </li>
+          </ul>
+        </section>
+
+        <section id="pilot">
+          <h2>
+            <span class="ja">6. パイロット抽出で試す</span>
+            <span class="en">6. Pilot extraction</span>
+          </h2>
+          <p>
+            <span class="ja"
+              >いきなり全件を回す前に、2〜3 本の論文で AI 抽出を試します。検証 UI
+              がそのまま埋め込まれているので、抽出結果の質をその場で確認し、表のデザインを改訂して再パイロット、という往復ができます。過去のパイロット結果も残ります。</span
+            >
+            <span class="en"
+              >Before running everything, try 2–3 papers. The verification UI is embedded here, so you can judge the
+              output quality on the spot, revise the schema and pilot again. Past pilot runs are kept.</span
+            >
+          </p>
+        </section>
+
+        <section id="extract">
+          <h2>
+            <span class="ja">7. 一括抽出を実行する</span>
+            <span class="en">7. Run the full extraction</span>
+          </h2>
+          <p>
+            <span class="ja"
+              >対象試験（既定は未抽出の全件）とモデルを選び、コスト概算を確認してから実行します。進捗バーで状況が見え、失敗した文献は個別に再試行できます。</span
+            >
+            <span class="en"
+              >Select the target studies (all not-yet-extracted ones by default) and the model, review the cost estimate
+              and start. A progress bar shows the state and failed documents can be retried individually.</span
+            >
+          </p>
+          <div class="note">
+            <p>
+              <span class="ja"
+                >件数が多いと LLM API のレート制限（429）に当たります。設定画面の「レート制限」で契約プランに合った
+                tier を選んでおくと、スロットル間隔と再試行が自動で調整されます（→ <a href="#options">設定</a>）。</span
+              >
+              <span class="en"
+                >Large batches can hit the provider’s rate limit (429). Pick the tier matching your plan under
+                “Rate limiting” in the options and throttling / retries adjust automatically.</span
+              >
+            </p>
+          </div>
+        </section>
+
+        <section id="verify">
+          <h2>
+            <span class="ja">8. 検証する（中核の工程）</span>
+            <span class="en">8. Verify (the core step)</span>
+          </h2>
+          <p>
+            <span class="ja"
+              >左に PDF ビューア、右に抽出フォームの 2 ペインです。AI
+              が付けた根拠 quote が PDF 上でハイライトされ、それを見ながら各値を判定します。</span
+            >
+            <span class="en"
+              >A two-pane screen: the PDF viewer on the left, the extraction form on the right. Evidence quotes are
+              highlighted on the PDF while you decide each value.</span
+            >
+          </p>
+          <div class="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>判定 / Decision</th>
+                  <th>意味 / Meaning</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><code>accept</code></td>
+                  <td>
+                    <span class="ja">AI の値をそのまま採用する</span>
+                    <span class="en">Take the AI value as it is</span>
+                  </td>
+                </tr>
+                <tr>
+                  <td><code>edit</code></td>
+                  <td>
+                    <span class="ja">値を修正して採用する</span>
+                    <span class="en">Correct the value and take it</span>
+                  </td>
+                </tr>
+                <tr>
+                  <td><code>reject</code></td>
+                  <td>
+                    <span class="ja">AI の値を棄却する（誤り）</span>
+                    <span class="en">Reject the AI value as wrong</span>
+                  </td>
+                </tr>
+                <tr>
+                  <td><code>not_reported</code></td>
+                  <td>
+                    <span class="ja">論文に記載がないと確認した</span>
+                    <span class="en">Confirmed as not reported in the paper</span>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <h3>
+            <span class="ja">進めかた</span>
+            <span class="en">How to work through it</span>
+          </h3>
+          <ul>
+            <li>
+              <span class="ja"
+                >項目は study（試験レベル）→ arm（群）→ outcome_result（アウトカム）の順にタブが並びます。arm
+                タブの冒頭で群の数と名称を確定すると、arm / outcome の入力ができるようになります。</span
+              >
+              <span class="en"
+                >Tabs run study → arm → outcome_result. Confirm the number and names of arms at the top of the arm tab to
+                unlock arm and outcome entry.</span
+              >
+            </li>
+            <li>
+              <span class="ja"
+                >判定はキーボードでも行えます: <code>a</code> = accept / <code>e</code> = edit / <code>x</code> = reject /
+                <code>n</code> = not reported、<code>j</code> <code>k</code> で移動、<code>z</code> で直前の判定を戻す、<code>f</code>
+                で該当ハイライトへスクロール。判定すると自動で次の未判定セルへ移ります。</span
+              >
+              <span class="en"
+                >Keyboard: <code>a</code> accept, <code>e</code> edit, <code>x</code> reject, <code>n</code> not
+                reported; <code>j</code>/<code>k</code> to move, <code>z</code> to undo the last decision, <code>f</code>
+                to scroll to the highlight. Focus advances to the next undecided cell automatically.</span
+              >
+            </li>
+            <li>
+              <span class="ja"
+                >根拠が本文に見つからなかった項目（anchor
+                失敗）は quote 全文と「本文内を検索」ボタンが出ます。「AI で再特定」で位置を取り直すこともできます。</span
+              >
+              <span class="en"
+                >When a quote could not be anchored, the full quote and a “search in text” button appear; you can also
+                ask AI to relocate it.</span
+              >
+            </li>
+            <li>
+              <span class="ja"
+                >判定は 1 件ずつ即時に保存されます（オフライン時はキューに退避し、復帰時に自動再送）。人の判定は空欄（未検証）から始まり、accept
+                にも 1 操作が必要です — これは automation bias（AI の値を無検証で追認してしまうこと）への対策です。</span
+              >
+              <span class="en"
+                >Decisions are saved one by one (queued offline and resent automatically). Human rows start empty and
+                even <code>accept</code> requires an explicit action — a deliberate guard against automation bias.</span
+              >
+            </li>
+          </ul>
+        </section>
+
+        <section id="dashboard">
+          <h2>
+            <span class="ja">9. ダッシュボードで進捗を見る</span>
+            <span class="en">9. Track progress</span>
+          </h2>
+          <p>
+            <span class="ja"
+              >study × section の検証進捗マトリクスに加え、AI 採用率（人が無修正で承認した割合）・anchor
+              失敗率・not_reported 率を表示します。セルをクリックすると該当箇所の検証画面へ直接飛べます。</span
+            >
+            <span class="en"
+              >A study × section progress matrix plus AI acceptance rate (values approved unchanged), anchor failure rate
+              and not_reported rate. Click a cell to jump straight to that spot in the verification screen.</span
+            >
+          </p>
+        </section>
+
+        <section id="dual-review">
+          <h2>
+            <span class="ja">10. 独立二重レビューと裁定</span>
+            <span class="en">10. Independent dual review and adjudication</span>
+          </h2>
+          <p>
+            <span class="ja"
+              >2 名で独立に抽出し、不一致を裁定する運用に対応しています。オーナーが Home
+              の「レビュアー管理」で共同研究者のメールアドレスを登録し、モード（AI 抽出を見ながらの検証 = with AI / AI
+              を見ずに自分で入力 = independent）を選びます。</span
+            >
+            <span class="en"
+              >Two reviewers can extract independently and have disagreements adjudicated. The owner registers
+              collaborators by email under “Reviewer management” on Home and picks their mode (verify with AI, or
+              independent entry without seeing AI output).</span
+            >
+          </p>
+          <ul>
+            <li>
+              <span class="ja"
+                >招待されたレビュアーは、共有されたスプレッドシート ID
+                でプロジェクトを開き、Home の「プロジェクトファイルへのアクセスを付与」で PDF
+                と抽出テキストへのアクセスを許可してから検証に入ります。</span
+              >
+              <span class="en"
+                >An invited reviewer opens the project by its shared spreadsheet ID, then grants access to the project
+                files (PDFs and extracted text) from Home before verifying.</span
+              >
+            </li>
+            <li>
+              <span class="ja"
+                >2 名の検証が揃った試験は「裁定」画面で処理します。群構成を突き合わせ、一致セルは一括採用、不一致セルは個別に裁定して
+                consensus（確定版）を作ります。レビュアー間一致度（κ）も確認できます。</span
+              >
+              <span class="en"
+                >Once both reviewers are done, the adjudication screen matches the arm structures, bulk-accepts agreeing
+                cells and lets you settle each disagreement into a consensus row. Inter-reviewer agreement (κ) is shown
+                as well.</span
+              >
+            </li>
+          </ul>
+        </section>
+
+        <section id="export">
+          <h2>
+            <span class="ja">11. エクスポートする</span>
+            <span class="en">11. Export</span>
+          </h2>
+          <div class="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>形式 / Format</th>
+                  <th>1 行の単位 / One row is</th>
+                  <th>用途 / Use</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><code>study_wide</code></td>
+                  <td>
+                    <span class="ja">1 試験</span>
+                    <span class="en">one study</span>
+                  </td>
+                  <td>
+                    <span class="ja">Table 1 の下書き・Excel での目視確認</span>
+                    <span class="en">Drafting Table 1, eyeballing in Excel</span>
+                  </td>
+                </tr>
+                <tr>
+                  <td><code>results_long</code></td>
+                  <td>
+                    <span class="ja">1 結果セル（群 × アウトカム・RoB）</span>
+                    <span class="en">one result cell (arm × outcome, RoB)</span>
+                  </td>
+                  <td>
+                    <span class="ja">R でのメタ解析前処理</span>
+                    <span class="en">Pre-processing for meta-analysis in R</span>
+                  </td>
+                </tr>
+                <tr>
+                  <td><code>audit</code></td>
+                  <td>
+                    <span class="ja">1 判定イベント + AI 根拠</span>
+                    <span class="en">one decision event with its AI evidence</span>
+                  </td>
+                  <td>
+                    <span class="ja">監査・supplementary・抽出精度研究</span>
+                    <span class="en">Audit trail, supplementary material, accuracy studies</span>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p>
+            <span class="ja"
+              >CSV は Drive に保存され、同時にダウンロードされます。メタ解析用の R セット（<code>ma.csv</code>
+              等）の書き出しと、論文の Methods
+              にそのまま使える文案カードも用意しています。未検証の項目が残っているとエクスポート前に警告が出ます。</span
+            >
+            <span class="en"
+              >CSVs are saved to Drive and downloaded at the same time. You can also export an R-ready meta-analysis set
+              (e.g. <code>ma.csv</code>) and copy a ready-made Methods paragraph. A warning appears if unverified cells
+              remain.</span
+            >
+          </p>
+        </section>
+
+        <section id="options">
+          <h2>
+            <span class="ja">12. 設定（BYOK・接続方式・レート制限）</span>
+            <span class="en">12. Options (BYOK, providers, rate limiting)</span>
+          </h2>
+          <ul>
+            <li>
+              <span class="ja"
+                ><strong>API キー（BYOK）</strong>: Gemini / OpenRouter
+                のキーを保存します。キーはブラウザ内（<code>chrome.storage.local</code>）にのみ保存され、開発者へ送信されることはありません。</span
+              >
+              <span class="en"
+                ><strong>API keys (BYOK)</strong>: store your Gemini / OpenRouter keys. They stay in your browser
+                (<code>chrome.storage.local</code>) and are never sent to the developer.</span
+              >
+            </li>
+            <li>
+              <span class="ja"
+                ><strong>LLM 接続先</strong>: Gemini / OpenRouter / OpenAI 互換 API / Anthropic / Azure OpenAI
+                から選べます。OpenAI 互換 API は完全 URL を入力し、Chrome
+                の接続許可を与えて使います。<code>http://localhost</code>・<code>http://127.0.0.1</code>・<code
+                  >http://[::1]</code
+                >
+                のローカル LLM も指定でき、この場合は API キーを省略できます。</span
+              >
+              <span class="en"
+                ><strong>Provider</strong>: Gemini, OpenRouter, an OpenAI-compatible endpoint, Anthropic or Azure OpenAI.
+                For OpenAI-compatible endpoints you enter the full URL and grant Chrome host permission; local LLMs on
+                <code>localhost</code> / <code>127.0.0.1</code> / <code>[::1]</code> are allowed and may omit the
+                key.</span
+              >
+            </li>
+            <li>
+              <span class="ja"
+                ><strong>既定モデル</strong>: 新しい抽出の初期値になります（工場出荷の既定は
+                <code>gemini-3.5-flash</code>）。接続先によってはモデル一覧を自動取得できます。</span
+              >
+              <span class="en"
+                ><strong>Default model</strong>: the initial choice for new runs (factory default
+                <code>gemini-3.5-flash</code>). For some providers the model list is fetched automatically.</span
+              >
+            </li>
+            <li>
+              <span class="ja"
+                ><strong>レート制限</strong>: 契約プランに合わせた tier を選ぶと、一括抽出のスロットル間隔・同時実行数・再試行が調整され、429
+                エラーを避けられます。tier を「カスタム」にすれば RPM と同時実行数を直接指定できます。</span
+              >
+              <span class="en"
+                ><strong>Rate limiting</strong>: choosing the tier of your plan tunes throttling, concurrency and retries
+                during full extraction so you avoid 429s. “Custom” lets you set RPM and concurrency directly.</span
+              >
+            </li>
+            <li>
+              <span class="ja"
+                ><strong>表示言語</strong>: 日本語 / English を切り替えられます（切替は即時に反映されます）。</span
+              >
+              <span class="en"
+                ><strong>Display language</strong>: switch between Japanese and English; changes apply immediately.</span
+              >
+            </li>
+          </ul>
+        </section>
+
+        <section id="troubleshooting">
+          <h2>
+            <span class="ja">13. トラブルシューティング</span>
+            <span class="en">13. Troubleshooting</span>
+          </h2>
+
+          <h3>
+            <span class="ja">共有されたプロジェクトが「開く権限がありません」になる</span>
+            <span class="en">“You don’t have permission to open this spreadsheet”</span>
+          </h3>
+          <p>
+            <span class="ja"
+              >本拡張は Drive 全体を読む権限を持たず、<code>drive.file</code>（あなたが選んだファイルと拡張が作ったファイルだけ）で動きます。そのため、他の人が作ったスプレッドシートは
+              <strong>初回に一度だけ</strong> Google のファイル選択画面（Picker）で選んで許可する必要があります。エラー表示の下の「Google
+              で許可する」を押し、同じシートを選んでください。許可は「あなた × そのシート」ごとに 1 回で済みます。</span
+            >
+            <span class="en"
+              >The extension never reads your whole Drive — it uses <code>drive.file</code>, i.e. only files you pick and
+              files it created. A sheet created by someone else therefore has to be granted <strong>once</strong> through
+              the Google file picker: press “Grant with Google” under the error and select the same sheet. One grant per
+              user and sheet is enough.</span
+            >
+          </p>
+
+          <h3>
+            <span class="ja">レビュアーとして PDF が開けない</span>
+            <span class="en">As a reviewer, the PDFs will not open</span>
+          </h3>
+          <p>
+            <span class="ja"
+              >同じ理由です。Home の「プロジェクトファイルへのアクセスを付与」から Picker
+              を開き、表示されたファイル（PDF と抽出テキスト）を<strong>すべて選択</strong>してください。付与後にオーナーが新しい文献を追加した場合は「アクセスを付与し直す」でやり直します。</span
+            >
+            <span class="en"
+              >Same cause. Open the picker from “Grant access to project files” on Home and <strong>select them
+              all</strong> (PDFs and extracted text). If the owner adds documents later, use “Grant access again”.</span
+            >
+          </p>
+
+          <h3>
+            <span class="ja">一括抽出が 429（レート制限）で失敗する</span>
+            <span class="en">Full extraction fails with 429 (rate limited)</span>
+          </h3>
+          <p>
+            <span class="ja"
+              >設定画面の「レート制限」で、契約プランに合った tier（無料枠なら低い tier）を選んでください。失敗した文献は一括抽出画面から再試行できます。無料枠では
+              1 分あたりの上限が小さいため、件数が多い場合は時間をおいて分割実行するのが確実です。</span
+            >
+            <span class="en"
+              >Pick the tier matching your plan (a low tier for free quotas) under “Rate limiting”. Failed documents can
+              be retried from the extraction screen. On free quotas, splitting a large batch over time is the safest
+              route.</span
+            >
+          </p>
+
+          <h3>
+            <span class="ja">ハイライトが出ない / 根拠が見つからない</span>
+            <span class="en">No highlight appears / the quote cannot be found</span>
+          </h3>
+          <p>
+            <span class="ja"
+              >スキャン PDF（<code>no_text_layer</code>）にはテキスト層がないため、ハイライト検証はできません。テキスト層のある
+              PDF でも、記号や改行の違いで位置特定に失敗することがあります（anchor 失敗）。その場合は quote
+              全文を見ながら「本文内を検索」または「AI で再特定」を使ってください。</span
+            >
+            <span class="en"
+              >Scanned PDFs (<code>no_text_layer</code>) have no text layer, so highlighting is unavailable. Even with a
+              text layer, symbols or line breaks can defeat anchoring; use “search in text” or “relocate with AI” while
+              reading the full quote.</span
+            >
+          </p>
+
+          <h3>
+            <span class="ja">AI 抽出の結果が空だった</span>
+            <span class="en">The AI extraction came back empty</span>
+          </h3>
+          <p>
+            <span class="ja"
+              >検証画面には「AI 抽出結果なし」として表示され、値は手入力で記録できます。抽出自体をやり直す場合は、一括抽出画面から該当試験だけを再実行してください。</span
+            >
+            <span class="en"
+              >The verification screen shows “no AI result” and you can enter values by hand. To retry the extraction,
+              re-run just that study from the extraction screen.</span
+            >
+          </p>
+
+          <h3>
+            <span class="ja">保存に失敗した / オフラインになった</span>
+            <span class="en">Saving failed / you went offline</span>
+          </h3>
+          <p>
+            <span class="ja"
+              >判定はオフラインキューに退避され、接続が戻ると自動で再送されます。キュー件数は画面上部に表示されます。ログインの有効期限が切れた場合は再ログインを促す表示が出ます。</span
+            >
+            <span class="en"
+              >Decisions are queued and resent automatically when the connection returns; the queue size is shown at the
+              top of the screen. If your sign-in expired, you will be prompted to sign in again.</span
+            >
+          </p>
+        </section>
+
+        <section id="faq">
+          <h2>
+            <span class="ja">14. よくある質問</span>
+            <span class="en">14. FAQ</span>
+          </h2>
+
+          <details class="faq">
+            <summary>
+              <span class="ja">論文の PDF はどこへ送信されますか？</span>
+              <span class="en">Where are my PDFs sent?</span>
+            </summary>
+            <p>
+              <span class="ja"
+                >あなたの Google Drive と、あなたが設定した LLM API
+                だけです。開発者が運用するサーバーは存在せず、開発者がデータを受け取ることはありません（<a
+                  href="privacy-policy.html"
+                  >プライバシーポリシー</a
+                >）。</span
+              >
+              <span class="en"
+                >Only to your own Google Drive and to the LLM API you configured. There is no developer-operated server
+                and the developer never receives your data.</span
+              >
+            </p>
+          </details>
+
+          <details class="faq">
+            <summary>
+              <span class="ja">利用料はかかりますか？</span>
+              <span class="en">Does it cost anything?</span>
+            </summary>
+            <p>
+              <span class="ja"
+                >拡張自体は無料（MIT ライセンス）です。LLM API
+                の利用料はあなたと API 提供者の契約で発生します（無料枠のみで使うこともできます）。</span
+              >
+              <span class="en"
+                >The extension itself is free and MIT-licensed. LLM usage is billed by your provider under your own
+                contract (free tiers work too).</span
+              >
+            </p>
+          </details>
+
+          <details class="faq">
+            <summary>
+              <span class="ja">どの LLM を使うのがよいですか？</span>
+              <span class="en">Which LLM should I use?</span>
+            </summary>
+            <p>
+              <span class="ja"
+                >既定は <code>gemini-3.5-flash</code> です（実データでのベンチマークで項目正確度が最良だったため）。まずはパイロット抽出で
+                2〜3 本試し、あなたの領域の論文で妥当な結果が出るモデルを選んでください。</span
+              >
+              <span class="en"
+                >The default is <code>gemini-3.5-flash</code>, which scored best on our real-data benchmark. Run a pilot
+                on 2–3 papers and pick whatever performs well on the literature in your field.</span
+              >
+            </p>
+          </details>
+
+          <details class="faq">
+            <summary>
+              <span class="ja">AI の抽出をそのまま論文に使ってよいですか？</span>
+              <span class="en">Can I publish the AI output as-is?</span>
+            </summary>
+            <p>
+              <span class="ja"
+                >本拡張は「AI 事前抽出 + 人間検証」を前提に設計されています。すべての値は人が根拠を見て判定する運用にしてください。エクスポートの
+                audit 形式が、その検証過程の証跡になります。</span
+              >
+              <span class="en"
+                >The tool is built around “AI pre-extraction plus human verification”. Every value should be checked
+                against its evidence by a human; the audit export documents that process.</span
+              >
+            </p>
+          </details>
+
+          <details class="faq">
+            <summary>
+              <span class="ja">スキャン PDF（テキスト層なし）でも使えますか？</span>
+              <span class="en">Does it work with scanned PDFs?</span>
+            </summary>
+            <p>
+              <span class="ja"
+                >pdf_native モードでの抽出は可能ですが、根拠ハイライトは使えません。可能であれば OCR
+                済みの PDF を取り込んでください。</span
+              >
+              <span class="en"
+                >They can be processed in pdf_native mode, but evidence highlighting is unavailable. Import OCR’d PDFs
+                where possible.</span
+              >
+            </p>
+          </details>
+
+          <details class="faq">
+            <summary>
+              <span class="ja">データを消したいときは？</span>
+              <span class="en">How do I delete my data?</span>
+            </summary>
+            <p>
+              <span class="ja"
+                >Google Drive / Sheets 上のプロジェクトファイルを削除し、拡張をアンインストールしてください。ブラウザ内の設定（API
+                キー等）は拡張の削除時に Chrome が消去します。</span
+              >
+              <span class="en"
+                >Delete the project files in your Google Drive / Sheets and uninstall the extension; Chrome removes the
+                in-browser settings (API keys and so on) with it.</span
+              >
+            </p>
+          </details>
+
+          <details class="faq">
+            <summary>
+              <span class="ja">不具合を見つけました / 機能を提案したいです</span>
+              <span class="en">I found a bug / I have a feature request</span>
+            </summary>
+            <p>
+              <span class="ja"
+                >GitHub の <a href="https://github.com/youkiti/sr-data-extraction-plugin/issues">Issues</a>
+                へお寄せください。</span
+              >
+              <span class="en">Please open an issue on GitHub.</span>
+            </p>
+          </details>
+        </section>
+      </div>
+    </main>
+
+    <footer class="footer">
+      <div class="container">
+        <div class="footer-content">
+          <div class="footer-links">
+            <a href="index.html">ホーム / Home</a>
+            <a href="help.html">使い方 / Help</a>
+            <a href="privacy-policy.html">プライバシーポリシー / Privacy</a>
+            <a href="terms-of-service.html">利用規約 / Terms</a>
+            <a href="https://github.com/youkiti/sr-data-extraction-plugin">GitHub</a>
+          </div>
+          <p class="copyright">© 2026 youkiti — MIT License</p>
+        </div>
+      </div>
+    </footer>
+  </body>
+</html>

@@ -1,4 +1,11 @@
-# hosted/ — Drive Picker ホストページ
+# hosted/ — GitHub Pages 配信ファイル（Drive Picker ホストページ + 公開ページ）
+
+`gh-pages` ブランチのルートへ配置するファイル一式の正典。2 系統ある:
+
+| ファイル | 役割 | 拡張との結合 |
+|---|---|---|
+| [picker.html](picker.html) | Drive Picker ホストページ（下記） | **あり**（メッセージプロトコル。先行デプロイの原則あり） |
+| [index.html](index.html) / [help.html](help.html) / [privacy-policy.html](privacy-policy.html) / [terms-of-service.html](terms-of-service.html) / [style.css](style.css) / [screenshots/](screenshots/) | ランディング・使い方ガイド・プライバシーポリシー・利用規約（issue #214） | **なし**（拡張からは通常の外部リンクで新規タブに開くだけ） |
 
 MV3 の remote hosted code 制約により、Google Picker（`apis.google.com/js/api.js`）は拡張ページで
 読み込めない。そのため [picker.html](picker.html) を **HTTPS でホストして新規タブで開く**方式を採る
@@ -84,3 +91,43 @@ spreadsheet / pdf モードは `page_version` を検査しない（ready 応答�
 
 デプロイ後の実機確認手順（チェックリスト + トラブルシューティング）は
 [docs/manual-testing.md](../docs/manual-testing.md) を参照。
+
+## 公開ページ（index / help / privacy-policy / terms-of-service。issue #214）
+
+使い方ガイド・ランディング・プライバシーポリシー・利用規約の 4 ページ。**picker.html と同じ
+`gh-pages` ブランチのルートに同居**させる（Pages のソースを `docs/` フォルダ方式へ切り替えない
+— picker.html の URL と `src/manifest.json` の `externally_connectable.matches` を動かさないため）。
+
+| URL | ファイル |
+|---|---|
+| `https://youkiti.github.io/sr-data-extraction-plugin/` | [index.html](index.html) |
+| `https://youkiti.github.io/sr-data-extraction-plugin/help.html` | [help.html](help.html) |
+| `https://youkiti.github.io/sr-data-extraction-plugin/privacy-policy.html` | [privacy-policy.html](privacy-policy.html) |
+| `https://youkiti.github.io/sr-data-extraction-plugin/terms-of-service.html` | [terms-of-service.html](terms-of-service.html) |
+
+拡張との結合は無い（メッセージプロトコルを持たないため `page_version` ハンドシェイクと先行
+デプロイの原則は**対象外**）。拡張側からは app ヘッダ / popup フッタ / Options 末尾の外部リンク
+（`target="_blank"`）で開くだけで、URL の正典は [src/lib/publicPages.ts](../src/lib/publicPages.ts)。
+静的 HTML（app.html / popup.html）の `href` との一致は
+[tests/unit/lib/publicPages.test.ts](../tests/unit/lib/publicPages.test.ts) が検査する。
+
+### 更新時に守ること
+
+- **プライバシーポリシーの正典は [docs/store/privacy-policy.md](../docs/store/privacy-policy.md)**。
+  `privacy-policy.html` はその転記 + 英訳併記なので、**内容を変えるときは両方を直す**（乖離すると
+  ストア審査で参照される URL の内容と リポジトリの原稿がずれる）
+- 4 ページは **ja / en 並記**（`.ja` / `.en` の span を併記）。言語トグル JS は持たない
+- `help.html` の内容は**ワークフローレベル**に留める（画面細部はアプリ内のリード文・Options の
+  ヘルプ文言が担う）。冒頭の「最終更新 / 対象バージョン」は内容を変えたら更新する
+- 各ファイル冒頭コメントの `version:` を更新日に書き換える（デプロイ版の識別用。picker.html と同じ運用）
+
+### デプロイ手順（手動。picker.html と同じ運用）
+
+1. 上記「更新時に守ること」を反映する
+2. `gh-pages` ブランチのルートへ `index.html` / `help.html` / `privacy-policy.html` /
+   `terms-of-service.html` / `style.css` / `screenshots/`（4 枚）を本ディレクトリの内容で上書きして push
+3. デプロイ後、各 URL をブラウザで開き、相互リンク・スクリーンショット表示・ja/en 並記の可読性を
+   PC 幅とスマホ幅で確認する（`picker.html` が従来どおり動くことも合わせて確認）
+4. ストアダッシュボードの「プライバシーポリシー URL」を `privacy-policy.html` へ、「ウェブサイト」欄を
+   ルート URL へ設定する（PR ではなく運用作業。[docs/remaining-work-plan.md](../docs/remaining-work-plan.md) の
+   実機 / 運用テスト一覧に記録済み）
