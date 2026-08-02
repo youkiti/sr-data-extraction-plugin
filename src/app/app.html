@@ -20,11 +20,13 @@
         <p id="app-status" class="app__status">読み込み中…</p>
         <a id="app-open-popup" href="../popup/popup.html" data-i18n="app.openPopup" hidden>プロジェクト選択を開く</a>
         <!-- 使い方ガイド（GitHub Pages）。URL の正典は src/lib/publicPages.ts の HELP_URL
-             （一致は tests/unit/lib/publicPages.test.ts が検査する） -->
+             （一致は tests/unit/lib/publicPages.test.ts が検査する）。
+             data-public-page: 表示言語を ?lang= で引き継ぐ目印（applyPublicPageLanguage） -->
         <a
           id="app-open-help"
           class="app__options-link"
           href="https://youkiti.github.io/sr-data-extraction-plugin/help.html"
+          data-public-page
           target="_blank"
           rel="noopener noreferrer"
           title="使い方ガイドを新しいタブで開く"

@@ -185,6 +185,7 @@ import {
   resolveRateLimitPolicy,
 } from '../lib/storage/settingsStore';
 import { getUiLanguage, localizeDom, onUiLanguageChange, setUiLanguage, t } from '../lib/i18n';
+import { applyPublicPageLanguage } from '../lib/publicPages';
 import { el } from './ui/dom';
 
 declare global {
@@ -411,6 +412,8 @@ export async function bootstrapApp(
     // タブタイトルにも dev サフィックスを付け、ストア版と dev 版をタブ上で区別できるようにする
     doc.title = withDevSuffix(t('app.documentTitle'));
     localizeDom(doc);
+    // 公開ページ（ヘルプ）も同じ言語で開くよう href へ ?lang= を反映する
+    applyPublicPageLanguage(doc, getUiLanguage());
   };
   applyStaticI18n();
 

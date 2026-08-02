@@ -111,12 +111,29 @@ spreadsheet / pdf モードは `page_version` を検査しない（ready 応答�
 静的 HTML（app.html / popup.html）の `href` との一致は
 [tests/unit/lib/publicPages.test.ts](../tests/unit/lib/publicPages.test.ts) が検査する。
 
+### 表示言語（ja / en の切替。併記はしない）
+
+拡張本体の i18n（[src/lib/i18n](../src/lib/i18n)）と同じく、4 ページも **ja / en のどちらか
+一方だけを表示する**（旧: 常時併記）。担当は [lang.js](lang.js) と `style.css`:
+
+- 本文は `.ja` / `.en` の span で両言語を持ち、表示・非表示は CSS（`html[data-lang]`）が行う
+- `<title>` / meta description は `data-en`、`alt` / `aria-label` 等の属性は `data-en-<属性名>` に
+  英語を持たせ、`lang.js` が差し替える（元の ja は `data-ja` / `data-ja-<属性名>` へ退避）
+- 言語の決定順は **`?lang=` → `localStorage` → ブラウザの言語設定 → `ja`**。
+  拡張本体は [publicPages.ts](../src/lib/publicPages.ts) の `withUiLanguage` /
+  `applyPublicPageLanguage` で `?lang=` を付けて開くため、**アプリの表示言語がそのまま引き継がれる**
+- ヘッダー（index はヒーロー）の `[data-lang-switch]` に `lang.js` が切替ボタンを組み立てる。
+  JS が無効な環境では `data-lang` が付かず、従来どおり両言語が並ぶ（degrade）
+- 挙動の検査は [tests/e2e/hosted-lang.spec.ts](../tests/e2e/hosted-lang.spec.ts)（実ページを
+  `/hosted/` 経由で開く）と [tests/unit/lib/publicPages.test.ts](../tests/unit/lib/publicPages.test.ts)
+
 ### 更新時に守ること
 
 - **プライバシーポリシーの正典は [docs/store/privacy-policy.md](../docs/store/privacy-policy.md)**。
-  `privacy-policy.html` はその転記 + 英訳併記なので、**内容を変えるときは両方を直す**（乖離すると
+  `privacy-policy.html` はその転記 + 英訳なので、**内容を変えるときは両方を直す**（乖離すると
   ストア審査で参照される URL の内容と リポジトリの原稿がずれる）
-- 4 ページは **ja / en 並記**（`.ja` / `.en` の span を併記）。言語トグル JS は持たない
+- 文言を足すときは **ja / en の両方**を書く（`.ja` / `.en` の span 対、または `data-en-*` 属性）。
+  「日本語 / English」のような 1 要素内での併記は作らない（切替で片方だけを見せられなくなる）
 - `help.html` の内容は**ワークフローレベル**に留める（画面細部はアプリ内のリード文・Options の
   ヘルプ文言が担う）。冒頭の「最終更新 / 対象バージョン」は内容を変えたら更新する
 - 各ファイル冒頭コメントの `version:` を更新日に書き換える（デプロイ版の識別用。picker.html と同じ運用）
@@ -125,9 +142,11 @@ spreadsheet / pdf モードは `page_version` を検査しない（ready 応答�
 
 1. 上記「更新時に守ること」を反映する
 2. `gh-pages` ブランチのルートへ `index.html` / `help.html` / `privacy-policy.html` /
-   `terms-of-service.html` / `style.css` / `screenshots/`（4 枚）を本ディレクトリの内容で上書きして push
-3. デプロイ後、各 URL をブラウザで開き、相互リンク・スクリーンショット表示・ja/en 並記の可読性を
-   PC 幅とスマホ幅で確認する（`picker.html` が従来どおり動くことも合わせて確認）
+   `terms-of-service.html` / `style.css` / `lang.js` / `screenshots/`（4 枚）を本ディレクトリの内容で
+   上書きして push
+3. デプロイ後、各 URL をブラウザで開き、相互リンク・スクリーンショット表示・言語切替（切替ボタン・
+   `?lang=en`・ページ遷移後の保持）を PC 幅とスマホ幅で確認する
+   （`picker.html` が従来どおり動くことも合わせて確認）
 4. ストアダッシュボードの「プライバシーポリシー URL」を `privacy-policy.html` へ、「ウェブサイト」欄を
    ルート URL へ設定する（PR ではなく運用作業。[docs/remaining-work-plan.md](../docs/remaining-work-plan.md) の
    実機 / 運用テスト一覧に記録済み）

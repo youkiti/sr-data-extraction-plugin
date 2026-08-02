@@ -56,9 +56,10 @@ test('ヘッダに使い方ガイドへの外部リンクがある（issue #214�
   await expect(help).toBeVisible();
   // アイコン（装飾・aria-hidden）+ ラベルの 2 span 構成のためラベル側を見る
   await expect(help.locator('.app__options-text')).toHaveText('ヘルプ');
+  // 表示言語を ?lang= で引き継ぐ（公開ページ側は hosted/lang.js がこれを最優先で読む）
   await expect(help).toHaveAttribute(
     'href',
-    'https://youkiti.github.io/sr-data-extraction-plugin/help.html',
+    'https://youkiti.github.io/sr-data-extraction-plugin/help.html?lang=ja',
   );
   await expect(help).toHaveAttribute('target', '_blank');
   await expect(help).toHaveAttribute('rel', 'noopener noreferrer');

@@ -2,9 +2,14 @@
 // options.html（独立ページ）とアプリ内 #/options（settingsView）の双方から使う
 // 単一の正典（ID は bootstrapOptions が querySelector で解決する）。
 import { el } from '../app/ui/dom';
-import { t } from '../lib/i18n';
+import { getUiLanguage, t } from '../lib/i18n';
 import { RATE_LIMIT_TIERS } from '../lib/llm/rateLimitPolicy';
-import { HELP_URL, PRIVACY_POLICY_URL, TERMS_OF_SERVICE_URL } from '../lib/publicPages';
+import {
+  HELP_URL,
+  PRIVACY_POLICY_URL,
+  TERMS_OF_SERVICE_URL,
+  withUiLanguage,
+} from '../lib/publicPages';
 
 /**
  * 設定本文の各節（Gemini / OpenRouter / 既定モデル / レート制限 / 表示言語）を組み立てて返す。
@@ -338,10 +343,11 @@ export function buildSettingsSections(): HTMLElement {
     el('p', { className: 'options__help', text: t('options.linksHelp') }),
     // 既存の .options__row（flex + gap）を流用し、新しい CSS を持たない
     // （app.css / options.css の双方に同名クラスがあり、両文脈で同じ見た目になる）
+    // 公開ページも同じ表示言語で開く（?lang=。本文は再構築されるため常に現在言語になる）
     el('div', { className: 'options__row' }, [
-      externalLink(HELP_URL, t('options.linkHelp')),
-      externalLink(PRIVACY_POLICY_URL, t('options.linkPrivacy')),
-      externalLink(TERMS_OF_SERVICE_URL, t('options.linkTerms')),
+      externalLink(withUiLanguage(HELP_URL, getUiLanguage()), t('options.linkHelp')),
+      externalLink(withUiLanguage(PRIVACY_POLICY_URL, getUiLanguage()), t('options.linkPrivacy')),
+      externalLink(withUiLanguage(TERMS_OF_SERVICE_URL, getUiLanguage()), t('options.linkTerms')),
     ]),
   ]);
   body.append(linksSection);
