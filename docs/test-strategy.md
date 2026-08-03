@@ -9,7 +9,7 @@
 
 | 項目 | 内容 |
 |---|---|
-| unit | jest + ts-jest + jsdom。`src/` 配下の行・分岐カバレッジ **100% を `coverageThreshold` で強制**。エントリ（`popup.ts` / `app.ts` / `options.ts` / `service-worker.ts`）は coverage 除外し、実処理は `bootstrap.ts` 側でテスト |
+| unit | jest + ts-jest + jsdom。`src/` 配下の行・分岐カバレッジ **100% を `coverageThreshold` で強制**。エントリ（`popup.ts` / `app.ts` / `options.ts` / `service-worker.ts`）は coverage 除外し、実処理は `bootstrap.ts` 側でテスト。動画収録用デモビルド専用コード（`src/demo/**`）も同じ理由（収録専用・配布物である `dist/` には含まれない）で coverage 除外（`jest.config.ts` の `collectCoverageFrom`） |
 | chrome API | `tests/setup/chrome-mock.ts`（コピー流用） |
 | E2E | Playwright。`webServer` で dev ビルド → `tools/playwright-server.js` で `dist/` を静的配信（localhost:4400）。`page.addInitScript()` で chrome スタブ、`page.route()` で外部 API（Sheets / Drive / Gemini）を全 stub |
 | a11y | `@axe-core/playwright` を各 E2E spec に組み込み（Tier 3） |
