@@ -1357,6 +1357,59 @@ describe('bootstrapApp', () => {
     expect(store?.getState().schema.editorRows?.[0]?.fieldName).toBe('study_desig');
   });
 
+  test('#/home レビュアー追加フォーム（type="email"）入力中に非同期のストア更新が来ても入力途中の値・フォーカスが保持され、送信で onAddReviewer へ渡る（issue #235）', async () => {
+    const stub = createWindowStub({
+      currentProject: PROJECT,
+      home: COUNTS_LOADED,
+      reviewers: {
+        assignments: [],
+        loading: false,
+        loadError: null,
+        saving: false,
+        saveError: null,
+        confirmingChange: null,
+      } as AppState['reviewers'],
+    });
+    const { deps } = createFakeDeps([[...SHEET_HEADERS.Reviewers]]);
+    const store = await bootstrapApp(asWindow(stub), deps);
+
+    const input = document.getElementById('reviewer-email') as HTMLInputElement;
+    input.focus();
+    // 末尾のドメインを打つ前の状態を模す（= uncontrolled のため未コミットという概念は無いが、
+    // DOM 上にしか存在しない入力途中の値という点は schema セル入力と同じ）
+    input.value = 'new@exam';
+
+    // 無関係な非同期ストア更新（例: 進捗カウントの読込完了）が着地し、再描画が走る状況を模す
+    store?.setState({
+      counts: {
+        documents: 0,
+        protocolVersions: 1,
+        schemaVersions: 0,
+        pilotRuns: 0,
+        evidenceRows: 0,
+        dataRows: 0,
+      },
+    });
+
+    // 再描画で <input> は作り直されているが、type="email" は selection API 非対応のため
+    // キャレット位置は復元対象にならない（値とフォーカスだけ復元される）
+    const rerendered = document.getElementById('reviewer-email') as HTMLInputElement;
+    expect(rerendered).not.toBe(input);
+    expect(rerendered.value).toBe('new@exam');
+    expect(document.activeElement).toBe(rerendered);
+
+    // 続きを入力してフォーム送信 → uncontrolled なので送信時にまとめて emailInput.value を読む。
+    // 復元後のノードが実際に onAddReviewer 配線先の closure と一致していることを確認する
+    rerendered.value = 'new@example.com';
+    (document.getElementById('reviewer-add-form') as HTMLFormElement).dispatchEvent(
+      new Event('submit', { cancelable: true }),
+    );
+    await flush();
+    expect(toastTexts()).toContain(
+      'new@example.com を登録し、シート（編集可）とフォルダ（閲覧）を共有しました',
+    );
+  });
+
   test('#/schema の確定済み画面（新しい版を作る / 再読み込み / サンプル選択）が配線されている', async () => {
     const stub = createWindowStub({
       currentProject: PROJECT,

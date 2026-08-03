@@ -89,6 +89,47 @@ describe('captureFocusState', () => {
     input.focus();
     expect(captureFocusState(document)).toBeNull();
   });
+
+  test('type="search" もテキスト系として対象になる（issue #235）', () => {
+    const input = document.createElement('input');
+    input.type = 'search';
+    input.id = 'search-input';
+    input.value = 'query';
+    document.body.append(input);
+    input.setSelectionRange(1, 3, 'forward');
+    input.focus();
+    const snapshot = captureFocusState(document);
+    expect(snapshot).toEqual({
+      element: input,
+      tagName: 'INPUT',
+      keyType: 'id',
+      restoreKey: 'search-input',
+      value: 'query',
+      selectionStart: 1,
+      selectionEnd: 3,
+      selectionDirection: 'forward',
+    });
+  });
+
+  test('type="email" は selection API 非対応のため selectionStart / selectionEnd / selectionDirection が null で退避される（issue #235）', () => {
+    const input = document.createElement('input');
+    input.type = 'email';
+    input.id = 'email-input';
+    input.value = 'a@example.com';
+    document.body.append(input);
+    input.focus();
+    const snapshot = captureFocusState(document);
+    expect(snapshot).toEqual({
+      element: input,
+      tagName: 'INPUT',
+      keyType: 'id',
+      restoreKey: 'email-input',
+      value: 'a@example.com',
+      selectionStart: null,
+      selectionEnd: null,
+      selectionDirection: null,
+    });
+  });
 });
 
 describe('restoreFocusState', () => {
@@ -266,6 +307,80 @@ describe('restoreFocusState', () => {
     input.dispatchEvent(new Event('change', { bubbles: true })); // native change が先に来る
     input.dispatchEvent(new Event('blur'));
     expect(changeSpy).toHaveBeenCalledTimes(1); // 合成 change の追加送出なし
+  });
+
+  test('selectionStart が数値でも selectionDirection が null な組み合わせでは undefined に変換して setSelectionRange へ渡す（issue #235。Safari 系ブラウザで selection API 対応の型でも selectionDirection が null になる実装がある防御）', () => {
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.id = 'direction-null';
+    input.value = 'from-store';
+    document.body.append(input);
+    const setSelectionRangeSpy = jest.fn();
+    input.setSelectionRange = setSelectionRangeSpy;
+
+    const snapshot: FocusSnapshot = {
+      element: document.createElement('input'),
+      tagName: 'INPUT',
+      keyType: 'id',
+      restoreKey: 'direction-null',
+      value: 'typed',
+      selectionStart: 2,
+      selectionEnd: 4,
+      selectionDirection: null,
+    };
+    restoreFocusState(document, snapshot);
+    expect(setSelectionRangeSpy).toHaveBeenCalledWith(2, 4, undefined);
+    expect(document.activeElement).toBe(input);
+  });
+
+  test('type="search" は値・キャレット位置・フォーカスを復元する（issue #235）', () => {
+    const input = document.createElement('input');
+    input.type = 'search';
+    input.id = 'search-target';
+    input.value = 'from-store';
+    document.body.append(input);
+
+    const snapshot: FocusSnapshot = {
+      element: document.createElement('input'),
+      tagName: 'INPUT',
+      keyType: 'id',
+      restoreKey: 'search-target',
+      value: 'typed-in-progress',
+      selectionStart: 3,
+      selectionEnd: 6,
+      selectionDirection: 'backward',
+    };
+    restoreFocusState(document, snapshot);
+    expect(input.value).toBe('typed-in-progress');
+    expect(input.selectionStart).toBe(3);
+    expect(input.selectionEnd).toBe(6);
+    expect(input.selectionDirection).toBe('backward');
+    expect(document.activeElement).toBe(input);
+  });
+
+  test('type="email" は値・フォーカスは復元するが setSelectionRange は呼ばない（selection API 非対応。issue #235）', () => {
+    const input = document.createElement('input');
+    input.type = 'email';
+    input.id = 'email-target';
+    input.value = 'from-store@example.com';
+    document.body.append(input);
+    const setSelectionRangeSpy = jest.fn();
+    input.setSelectionRange = setSelectionRangeSpy;
+
+    const snapshot: FocusSnapshot = {
+      element: document.createElement('input'),
+      tagName: 'INPUT',
+      keyType: 'id',
+      restoreKey: 'email-target',
+      value: 'typed@example.com',
+      selectionStart: null,
+      selectionEnd: null,
+      selectionDirection: null,
+    };
+    restoreFocusState(document, snapshot);
+    expect(input.value).toBe('typed@example.com');
+    expect(document.activeElement).toBe(input);
+    expect(setSelectionRangeSpy).not.toHaveBeenCalled();
   });
 
   test('setSelectionRange が throw しても復元処理は継続し、フォーカスは戻る', () => {
