@@ -230,6 +230,19 @@ anchorQuote() ──文字範囲──▶ highlightMap() ──span 座標──
 | `src/app/app.ts` | `dist/app/app.js` |
 | `src/options/options.ts` | `dist/options/options.js` |
 
+- `npm run build:demo`（`webpack --mode development --env demo`）は動画収録用の**デモビルド**を
+  `dist-demo/` へ出力する。`background/service-worker.ts` はそのまま使い、
+  `popup/popup.ts` / `app/app.ts` / `options/options.ts` の 3 エントリだけを
+  `src/demo/popup-entry.ts` / `src/demo/app-entry.ts` / `src/demo/options-entry.ts` へ差し替える
+  （`webpack.config.js` の `isDemo` 分岐。通常の `dev` / `production` ビルドの挙動は変えない）。
+  各デモエントリは起動直後に fetch モック（`src/demo/fetchMock.ts`）をインストールし、
+  `chrome.storage.local`（選択中プロジェクト・ダミー API キー）とインメモリ Sheets ストア
+  （`src/demo/seed.ts`）をシードしてから、実物のエントリ処理（`bootstrapApp` 等）を動的 import する。
+  `src/app/services/factories.ts` / `src/lib/google/auth.ts` / `src/lib/google/identity.ts` /
+  `src/lib/google/picker.ts` の 4 ファイルは `NormalModuleReplacementPlugin` で
+  `src/demo/googleDeps.ts` / `src/demo/auth.ts` / `src/demo/identity.ts` / `src/demo/picker.ts`
+  へビルド設定だけで差し替わる（**既存 `src/` の実装は 1 行も変更しない**）。詳細は
+  `src/demo/*` 各ファイル冒頭のコメントと [video/fixtures/README.md](../video/fixtures/README.md) を参照
 - `pdfjs-dist` の **worker（`pdf.worker.min.mjs`）は `copy-webpack-plugin` で `dist/` へ同梱**（CDN 参照不可、MV3 CSP 準拠）。`GlobalWorkerOptions.workerSrc` は `chrome.runtime.getURL()` で解決
 - **既定 CMap（`cmaps/*.bcmap`）も同様に `dist/cmaps/` へ同梱**し、`getDocument` の `cMapUrl` に `chrome.runtime.getURL('cmaps/')` を渡す（issue #95: 和文 PDF の CID フォントは既定 CMap がないとテキスト抽出がほぼ空になる）
 - **画像デコーダの wasm（`dist/wasm/`）・標準 14 フォント（`dist/standard_fonts/`）・既定 ICC プロファイル（`dist/iccs/`）も同梱**し、`getDocument` にそれぞれ `wasmUrl` / `standardFontDataUrl` / `iccUrl` を渡す。pdfjs-dist 6.x は CCITTFax/JBIG2・JPEG2000・ICC のデコーダが wasm 実装になっており、`wasmUrl` 未指定だと `Jbig2Error` 等で初期化に失敗し、スキャン PDF の該当ページ（CCITTFaxDecode 等）が白紙になる（テキスト層は無事なためハイライトだけ出る症状）。`quickjs-eval.*`（PDF 内 JavaScript の隔離実行用）は本拡張が使わないため同梱から除外する。manifest には `content_security_policy.extension_pages` に `'wasm-unsafe-eval'` を追加している
@@ -237,7 +250,7 @@ anchorQuote() ──文字範囲──▶ highlightMap() ──span 座標──
 
 ### 3.2 npm スクリプト
 
-`dev` / `watch` / `build` / `pack:release` / `lint` / `lint:css` / `typecheck` / `test` / `test:watch` / `test:coverage` / `test:e2e` / `test:e2e:ui` / `manual:check`。
+`dev` / `watch` / `build` / `build:demo` / `pack:release` / `lint` / `lint:css` / `typecheck` / `test` / `test:watch` / `test:coverage` / `test:e2e` / `test:e2e:ui` / `manual:check` / `video:setup` / `video:record` / `video:tts` / `video:assemble`。
 
 `pack:release`（= `tools/release/pack.ps1`）は Chrome ウェブストア提出用 zip を作る。`npm run build` 済みの `dist/` を入力に、事前検証 → `release/*.zip` の全削除（過去ビルドは残さない）→ manifest からの `key` 除去 → zip 化 → 展開し直しての検証、までを行い、検証 NG なら非 0 終了する。運用手順は `.claude/skills/release-build/SKILL.md` が正典。
 
@@ -295,9 +308,15 @@ sr-query-builder と同一（TypeScript strict + `noUncheckedIndexedAccess`、�
 ## 8. 操作解説動画の制作パイプライン（`video/`）
 
 姉妹リポジトリ tiab-review-plugin の `video/`（Playwright 収録 → VOICEVOX で TTS → ffmpeg で
-合成のパイプライン）を移植したもの。`src/` の実装やテストとは独立しており、`npm run dev` の
-`dist/`（または後続 PR で追加予定のデモビルド `dist-demo/`）を実拡張として読み込んで収録する。
+合成のパイプライン）を移植したもの。`src/` の実装やテストとは独立しており、
+`npm run build:demo` の `dist-demo/`（デモビルド。§3.1）を実拡張として読み込んで収録する
+（`video/scripts/config.mjs` の `resolveExtensionDir()` が `dist-demo/` を優先し、無ければ
+`dist/` へフォールバックする）。
 `npm run video:setup` / `video:record` / `video:tts` / `video:assemble` の 4 コマンドで
-「セットアップ → 収録 → 音声合成 → 最終合成」を実行できる。tiab との差分（拡張のページ構成の
-違いに合わせた `ctx.openExtensionPage()`、可視マウスカーソルの追加等）を含め、詳細は
-[video/README.md](../video/README.md) と [video/REQUIREMENTS.md](../video/REQUIREMENTS.md) を参照。
+「セットアップ → 収録 → 音声合成 → 最終合成」を実行できる（`video:setup` の最終ステップで
+`npm run video:fixtures`（= `video/fixtures/build-fixtures.mjs`）も実行し、デモビルドが埋め込む
+架空デモ論文 PDF を HTML フィクスチャから生成する）。
+tiab との差分（拡張のページ構成の違いに合わせた `ctx.openExtensionPage()`、可視マウスカーソルの
+追加等）を含め、詳細は [video/README.md](../video/README.md) と
+[video/REQUIREMENTS.md](../video/REQUIREMENTS.md) を参照。デモビルド層自体（`src/demo/`）の設計は
+§3.1 と [video/fixtures/README.md](../video/fixtures/README.md) を参照。

@@ -11,6 +11,7 @@
 #   2. Playwright Chromium の取得              （PLAYWRIGHT_CHROMIUM_PATH が既存ならスキップ）
 #   3. ffmpeg/ffprobe の取得（BtbN ビルド）     （FFMPEG_PATH 指定 or PATH 上に既存ならスキップ）
 #   4. VOICEVOX エンジンの取得・起動           （VOICEVOX_URL が既に応答するならスキップ）
+#   5. デモビルド用 PDF フィクスチャの生成      （npm run video:fixtures。生成済みならスキップ）
 #
 # ffmpeg・VOICEVOX はいずれも video/tools/ 配下に展開する（.gitignore 済み・git 管理外）。
 
@@ -112,10 +113,16 @@ with py7zr.SevenZipFile('$VIDEO_TOOLS_DIR/voicevox_engine.7z', mode='r') as z:
     fi
 fi
 
+# ----------------------------------------------------------------------------
+# 5. デモビルド用 PDF フィクスチャ（架空のデモ論文。video/fixtures/README.md 参照）
+# ----------------------------------------------------------------------------
+echo "==> [5/5] デモビルド用 PDF フィクスチャ"
+(cd "$REPO_ROOT" && npm run video:fixtures)
+
 echo ""
 echo "セットアップ完了。"
-echo "次のコマンドで動画を生成できます（デモビルドが無い間は npm run dev の dist/ で収録する）:"
-echo "  npm run dev"
+echo "次のコマンドで動画を生成できます:"
+echo "  npm run build:demo"
 echo "  xvfb-run -a -s \"-screen 0 1920x1080x24\" npm run video:record"
 echo "  npm run video:tts"
 echo "  npm run video:assemble"

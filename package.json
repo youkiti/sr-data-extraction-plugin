@@ -11,6 +11,7 @@
     "dev": "webpack --mode development",
     "watch": "webpack --mode development --watch",
     "build": "webpack --mode production",
+    "build:demo": "webpack --mode development --env demo",
     "release": "pwsh -NoProfile -File tools/release/release.ps1",
     "pack:release": "pwsh -NoProfile -File tools/release/pack.ps1",
     "lint": "eslint \"src/**/*.ts\" \"tests/**/*.ts\"",
@@ -23,6 +24,7 @@
     "test:e2e:ui": "playwright test --ui",
     "manual:check": "node tools/selenium/manualCheck.mjs",
     "video:setup": "bash video/scripts/setup.sh",
+    "video:fixtures": "node video/fixtures/build-fixtures.mjs",
     "video:record": "node video/scripts/record.mjs",
     "video:tts": "node video/scripts/tts.mjs",
     "video:assemble": "node video/scripts/assemble.mjs"

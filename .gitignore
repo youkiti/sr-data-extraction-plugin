@@ -1,6 +1,7 @@
 # 依存・ビルド成果物（実装フェーズで使用）
 node_modules/
 dist/
+dist-demo/
 coverage/
 *.zip
 
@@ -44,6 +45,11 @@ experiments/multimodal-bbox-spike
 # いずれも video/scripts/setup.sh とパイプラインの再実行で作り直せるため管理しない。
 video/build/
 video/tools/
+
+# デモビルド用の架空論文 PDF fixture（HTML から生成する生成物。tests/fixtures/pdf/ と同じ運用で
+# バイナリはコミットしない）。生成方法は video/fixtures/README.md を参照
+# （npm run video:fixtures = video/fixtures/build-fixtures.mjs で一括生成）
+video/fixtures/*.pdf
 
 # OS / エディタ
 .DS_Store

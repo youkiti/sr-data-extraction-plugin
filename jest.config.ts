@@ -35,6 +35,12 @@ const config: Config = {
     '!src/app/app.ts',
     '!src/options/options.ts',
     '!src/background/service-worker.ts',
+    // 動画収録用のデモビルド専用コード（src/demo/**）はカバレッジ対象外。
+    // 実データ・実 API・OAuth 画面なしでスクリプト収録できる状態を作るためだけの
+    // 収録専用コードで、Chrome ウェブストアで配布される dist/ には一切含まれない
+    // （webpack.config.js の --env demo 分岐でのみ src/ の実装から差し替わる）。
+    // 上記のエントリファイル除外と同じ「配布物ではない／起動フックのみ」という扱い
+    '!src/demo/**',
   ],
   coverageThreshold: {
     global: {
