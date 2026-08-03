@@ -113,7 +113,10 @@ if ($SkipCiCheck) {
   # gh が無い / 未認証でもリリース自体は止めない（警告に留める）
   $runsJson = $null
   try {
-    $runsJson = gh run list --branch $targetBranch --limit 30 --json headSha, status, conclusion, workflowName 2>$null
+    # --json のフィールド列挙は 1 引数のまま渡す（`headSha, status` のようにスペースを挟むと
+    # PowerShell が配列 → 別引数に展開し、gh が `unknown command "status,"` で常に失敗 =
+    # CI チェックが WARN スキップに退化する。v0.7.0 リリースで露見）
+    $runsJson = gh run list --branch $targetBranch --limit 30 --json 'headSha,status,conclusion,workflowName' 2>$null
     if ($LASTEXITCODE -ne 0) { $runsJson = $null }
   } catch {
     $runsJson = $null
