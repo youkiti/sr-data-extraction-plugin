@@ -3,8 +3,8 @@
 // extract-data skill（features/extraction/skills/extractData.ts）が組み立てるプロンプトから
 // 2 つの手がかりを読み取る:
 // - `=== Document i/N [role] filename ===` の filename → どのデモ論文（DEMO_PAPERS のどの要素）
-//   を読んでいるか。デモは 2 論文あるため、要求された field_id が一致しても「どちらの論文の
-//   FIELD_INSTANCES を返すべきか」を文書名で絞り込まないと、他方の論文の値が混ざってしまう
+//   を読んでいるか。デモは 3 論文あるため、要求された field_id が一致しても「どの論文の
+//   FIELD_INSTANCES を返すべきか」を文書名で絞り込まないと、他の論文の値が混ざってしまう
 // - `- field_id: xxx` 行の集合 → 当該バッチで要求されている項目
 // 該当する論文の FIELD_INSTANCES から、要求された field_id に一致する行だけを
 // EXTRACT_DATA_RESPONSE_SCHEMA と同じ形の JSON 配列で返す。

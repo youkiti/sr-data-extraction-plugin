@@ -64,6 +64,7 @@ export interface PaperDefinition {
 
 export declare const PAPER1: PaperDefinition;
 export declare const PAPER2: PaperDefinition;
+export declare const PAPER3: PaperDefinition;
 export declare const PAPERS: readonly PaperDefinition[];
 
 export declare const DISCUSSION_TEXT: string;

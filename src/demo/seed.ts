@@ -10,13 +10,22 @@
 // 呼び出し前提: installDemoFetchMock() が既にインストール済みで、globalThis.fetch が
 // パッチ済みであること（app-entry.ts / popup-entry.ts / options-entry.ts が起動直後に行う）。
 //
-// 【2 論文構成】デモは架空論文 2 本を扱う（paperContent.ts の DEMO_PAPERS。
-// インデックス 0 = デモ論文 1〔2 群〕、1 = デモ論文 2〔3 群〕）。
-// - デモ論文 1: AI 抽出済み・検証途中・独立二重レビュー済み・裁定待ちまで、フルにシードする
-//   （#/verify 以降の画面が録画開始時点で意味のある内容を持つようにするため）。
+// 【3 論文構成・study ごとの役割分担（PR2 最終ラウンド）】デモは架空論文 3 本を扱う
+// （paperContent.ts の DEMO_PAPERS。インデックス 0 = デモ論文 1〔2 群〕、
+// 1 = デモ論文 2〔3 群〕、2 = デモ論文 3〔2 群〕）。1 study では「owner 自身の検証進捗」と
+// 「κ 一致度レポートの自動ペア確定」を両立できない（pairResolution.ts の
+// resolveAnnotatorPair は human 系 annotator がちょうど 2 名のときだけ 'ready' にするため、
+// owner を交えると 3 名 = 'selectable' に落ちて自動表示されなくなる）。そのため study を
+// 役割ごとに分けている:
+// - デモ論文 1: AI 抽出済み・独立二重レビュー済み・裁定待ちまでフルにシードする。
+//   owner 自身の判定行は持たせない（#/adjudicate の裁定画面・κ 一致度レポートの実演用。
+//   ready を維持するため）
 // - デモ論文 2: Study / Document の取り込みだけをシードし、抽出・群構成確定・検証・裁定は
 //   一切シードしない。#/extract の一括抽出と #/verify の「群構成の確定」ゲート UI を
-//   録画中に実際に動かして見せるための「素の状態」として残す（brief の受け入れ条件）
+//   録画中に実際に動かして見せるための「素の状態」として残す
+// - デモ論文 3: AI 抽出済み・群構成確定済みで、owner 単独（独立二重レビューなし）が
+//   24 セット中 14 セル前後を判定済みの「検証途中」状態にする。#/dashboard の進捗
+//   マトリクス・AI 採用率・AI 精度内訳と、#/export の未検証セル残存警告の実演用
 import { CURRENT_SCHEMA_VERSION } from '../domain/project';
 import { NOT_REPORTED_TOKEN } from '../domain/annotation';
 import type { AnnotatorType, ResultsDataRow, StudyDataRow } from '../domain/annotation';
@@ -43,7 +52,7 @@ import { appendReviewerAssignment } from '../features/project/reviewerRepository
 import { resetDemoStore } from './sheetStore';
 import { DEMO_SCHEMA_FIELDS } from './schema';
 import { DEMO_PAPERS, type FieldInstanceContent } from './paperContent';
-import { PAPER1 } from './paperData.mjs';
+import { PAPER1, PAPER3 } from './paperData.mjs';
 import {
   DEMO_DOCUMENT_IDS,
   DEMO_DRIVE_FOLDER_ID,
@@ -55,6 +64,7 @@ import {
   DEMO_REVIEWER_B_EMAIL,
   DEMO_SCHEMA_VERSION,
   DEMO_SEED_RUN_ID,
+  DEMO_SEED_RUN_ID_STUDY3,
   DEMO_SPREADSHEET_ID,
   DEMO_STUDY_IDS,
   DEMO_TIMESTAMPS,
@@ -109,10 +119,11 @@ function buildEvidenceRows(
   documentId: string,
   fieldInstances: readonly FieldInstanceContent[],
   evidenceIdPrefix: string,
+  runId: string,
 ): Evidence[] {
   return fieldInstances.map((item, index) => ({
     evidenceId: `${evidenceIdPrefix}-${String(index + 1).padStart(3, '0')}`,
-    runId: DEMO_SEED_RUN_ID,
+    runId,
     studyId,
     fieldId: item.fieldId,
     documentId,
@@ -134,7 +145,12 @@ function buildEvidenceRows(
 // ---------------------------------------------------------------------------
 
 /** 'ai' annotator 行（study の値は NOT_REPORTED_TOKEN、それ以外は素の値） */
-function buildAiStudyDataRow(studyId: string, fieldInstances: readonly FieldInstanceContent[]): StudyDataRow {
+function buildAiStudyDataRow(
+  studyId: string,
+  fieldInstances: readonly FieldInstanceContent[],
+  runId: string,
+  finishedAt: string,
+): StudyDataRow {
   const { study } = splitByLevel(fieldInstances);
   const values: Record<string, string | null> = {};
   for (const item of study) {
@@ -146,13 +162,18 @@ function buildAiStudyDataRow(studyId: string, fieldInstances: readonly FieldInst
     annotator: 'ai',
     annotatorType: 'ai',
     schemaVersion: DEMO_SCHEMA_VERSION,
-    runId: DEMO_SEED_RUN_ID,
-    updatedAt: DEMO_TIMESTAMPS.extractionFinishedAt,
+    runId,
+    updatedAt: finishedAt,
     values,
   };
 }
 
-function buildAiResultsDataRows(studyId: string, fieldInstances: readonly FieldInstanceContent[]): ResultsDataRow[] {
+function buildAiResultsDataRows(
+  studyId: string,
+  fieldInstances: readonly FieldInstanceContent[],
+  runId: string,
+  finishedAt: string,
+): ResultsDataRow[] {
   const { results } = splitByLevel(fieldInstances);
   return results.map((item, index) => ({
     resultId: `demo-result-ai-${studyId}-${String(index + 1).padStart(3, '0')}`,
@@ -162,10 +183,10 @@ function buildAiResultsDataRows(studyId: string, fieldInstances: readonly FieldI
     annotatorType: 'ai',
     schemaVersion: DEMO_SCHEMA_VERSION,
     entityKey: item.entityKey,
-    runId: DEMO_SEED_RUN_ID,
+    runId,
     value: item.notReported ? null : item.value,
     notReported: item.notReported,
-    updatedAt: DEMO_TIMESTAMPS.extractionFinishedAt,
+    updatedAt: finishedAt,
   }));
 }
 
@@ -324,6 +345,111 @@ function buildConsensusPlan(
   };
 }
 
+/** owner 単独の「途中まで検証済み」判定プランを構成する 1 セルぶんの指示 */
+interface OwnerPartialDecisionSpec {
+  fieldId: string;
+  entityKey: string;
+  action: DecisionAction;
+  /** action='not_reported' のときは呼び出し側で NOT_REPORTED_TOKEN に読み替える */
+  value: string | null;
+  note: string | null;
+}
+
+/**
+ * owner（human_with_ai）単独の「途中まで検証済み」判定プラン（デモ論文 3 専用）。
+ * `specs` に列挙した field_id × entity_key の組だけを判定済みにし、それ以外は
+ * materializePlan 側で自動的に「未検証」のまま残る（plan.entries に無いキーは skip される）。
+ * デモ論文 1 の独立レビュアー・裁定プラン（buildIndependentPlan / buildConsensusPlan）と違い
+ * 全セルを機械的に埋めないのは、ダッシュボードの進捗マトリクスに「判定途中」を意味のある形で
+ * 残すため（brief の受け入れ条件: 24 セル中 14 セル前後）
+ */
+function buildOwnerPartialPlan(specs: readonly OwnerPartialDecisionSpec[]): AnnotatorDecisionPlan {
+  const entries = new Map<string, { action: DecisionAction; value: string | null; note: string | null }>();
+  for (const spec of specs) {
+    entries.set(planKey(spec.fieldId, spec.entityKey), {
+      action: spec.action,
+      value: spec.action === 'not_reported' ? NOT_REPORTED_TOKEN : spec.value,
+      note: spec.note,
+    });
+  }
+  return {
+    annotator: DEMO_USER_EMAIL,
+    annotatorType: 'human_with_ai',
+    decidedAt: DEMO_TIMESTAMPS.decidedAtOwner3,
+    entries,
+  };
+}
+
+/**
+ * デモ論文 3（owner 単独検証）の判定内訳。24 セル中 14 セルを判定し、
+ * AI 精度内訳（#/dashboard）が意味のある数字になるよう内訳を散らす:
+ * accept 8・edit 3・reject 1・not_reported 2（残り 10 セルは未検証のまま）。
+ * entity_key は utils/entityKey.ts の形式（study は '-'、outcome_result は
+ * `outcome:<slug>|<arm>`）に合わせている
+ */
+const PAPER3_OWNER_DECISION_SPECS: readonly OwnerPartialDecisionSpec[] = [
+  // --- accept 8: AI 値をそのまま承認 ---
+  { fieldId: 'f_country', entityKey: '-', action: 'accept', value: PAPER3.facts.country.value, note: null },
+  { fieldId: 'f_design', entityKey: '-', action: 'accept', value: PAPER3.facts.design.value, note: null },
+  {
+    fieldId: 'f_enrollment_period',
+    entityKey: '-',
+    action: 'accept',
+    value: PAPER3.facts.enrollmentPeriod.value,
+    note: null,
+  },
+  {
+    fieldId: 'f_sample_size_total',
+    entityKey: '-',
+    action: 'accept',
+    value: PAPER3.facts.sampleSizeTotal.value,
+    note: null,
+  },
+  { fieldId: 'f_arm_name', entityKey: 'arm:1', action: 'accept', value: PAPER3.arms[0]?.name ?? null, note: null },
+  { fieldId: 'f_arm_n', entityKey: 'arm:1', action: 'accept', value: PAPER3.arms[0]?.n ?? null, note: null },
+  { fieldId: 'f_arm_name', entityKey: 'arm:2', action: 'accept', value: PAPER3.arms[1]?.name ?? null, note: null },
+  { fieldId: 'f_arm_n', entityKey: 'arm:2', action: 'accept', value: PAPER3.arms[1]?.n ?? null, note: null },
+  // --- edit 3: AI 値を人が修正（AI 不正確 = automation bias 対策の実演） ---
+  {
+    fieldId: 'f_mean_age',
+    entityKey: '-',
+    action: 'edit',
+    value: '61.4',
+    note: '本文の記載に合わせて小数点以下を修正。',
+  },
+  {
+    fieldId: 'f_arm_intervention',
+    entityKey: 'arm:1',
+    action: 'edit',
+    value: PAPER3.arms[0]?.interventionValue ?? null,
+    note: '本文の記載（閾値負荷装置を使用）に合わせて表記を統一。',
+  },
+  {
+    fieldId: 'f_outcome_mean_sd',
+    entityKey: 'outcome:postop_los|arm:1',
+    action: 'edit',
+    value: '6.2 days (SD 1.8)',
+    note: '院内の報告フォーマット（日数を先頭表記）に統一。',
+  },
+  // --- reject 1: AI 値を棄却し、人が別値を入力（AI 誤りの実演） ---
+  {
+    fieldId: 'f_female_percent',
+    entityKey: '-',
+    action: 'reject',
+    value: '35.4',
+    note: 'AI の値は四捨五入で丸められており不正確なため棄却し、本文中の実測値（35.4%）を採用。',
+  },
+  // --- not_reported 2: 人が「報告なし」と判定 ---
+  { fieldId: 'f_funding_source', entityKey: '-', action: 'not_reported', value: null, note: null },
+  {
+    fieldId: 'f_outcome_events',
+    entityKey: 'outcome:postop_los|arm:2',
+    action: 'not_reported',
+    value: null,
+    note: null,
+  },
+];
+
 // ---------------------------------------------------------------------------
 // シード本体
 // ---------------------------------------------------------------------------
@@ -332,14 +458,16 @@ export async function seedDemoData(): Promise<void> {
   resetDemoStore(DEMO_PROJECT_TITLE, buildEmptySheets());
   const deps = demoDeps();
 
-  const [paper1, paper2] = DEMO_PAPERS;
-  if (paper1 === undefined || paper2 === undefined) {
-    throw new Error('[demo] DEMO_PAPERS は 2 件（デモ論文 1・2）を前提にしています');
+  const [paper1, paper2, paper3] = DEMO_PAPERS;
+  if (paper1 === undefined || paper2 === undefined || paper3 === undefined) {
+    throw new Error('[demo] DEMO_PAPERS は 3 件（デモ論文 1・2・3）を前提にしています');
   }
   const study1Id = DEMO_STUDY_IDS[0];
   const study2Id = DEMO_STUDY_IDS[1];
+  const study3Id = DEMO_STUDY_IDS[2];
   const doc1Id = DEMO_DOCUMENT_IDS[0];
   const doc2Id = DEMO_DOCUMENT_IDS[1];
+  const doc3Id = DEMO_DOCUMENT_IDS[2];
 
   // --- Meta ---
   await appendRow(
@@ -363,8 +491,8 @@ export async function seedDemoData(): Promise<void> {
   // （S5 の draft-schema や #/extract の「プロトコル本文」はここを読む。§4.3 プロンプトの
   // Protocol context セクション。rawTextInline が null だと一括抽出が
   // 「プロトコル本文を取得できません」で失敗する）。
-  // デモ論文 1（早期離床）・2（制吐薬の用量比較）の両方が対象になるよう、
-  // 「周術期の介入」という広めのリサーチクエスチョンにしている
+  // デモ論文 1（早期離床）・2（制吐薬の用量比較）・3（呼吸筋トレーニング）のいずれも
+  // 対象になるよう、「周術期の介入」という広めのリサーチクエスチョンにしている
   const protocolText = [
     'リサーチクエスチョン: 周術期（手術前後）に行われる介入（リハビリテーション・薬物療法等）は、',
     '通常ケアやプラセボと比較して術後回復に関するアウトカムを改善するか。',
@@ -391,7 +519,7 @@ export async function seedDemoData(): Promise<void> {
   };
   await appendProtocol(DEMO_SPREADSHEET_ID, protocol, deps);
 
-  // --- Studies / Documents（両論文） ---
+  // --- Studies / Documents（3 論文） ---
   const study1: StudyRecord = {
     studyId: study1Id,
     studyLabel: 'Halvorsen 2026',
@@ -408,7 +536,15 @@ export async function seedDemoData(): Promise<void> {
     createdBy: DEMO_USER_EMAIL,
     note: null,
   };
-  await appendStudies(DEMO_SPREADSHEET_ID, [study1, study2], deps);
+  const study3: StudyRecord = {
+    studyId: study3Id,
+    studyLabel: 'Moreau 2026',
+    registrationId: null,
+    createdAt: DEMO_TIMESTAMPS.documentImportedAt3,
+    createdBy: DEMO_USER_EMAIL,
+    note: null,
+  };
+  await appendStudies(DEMO_SPREADSHEET_ID, [study1, study2, study3], deps);
 
   const document1: DocumentRecord = {
     documentId: doc1Id,
@@ -452,9 +588,30 @@ export async function seedDemoData(): Promise<void> {
     exclusionNote: null,
     excludedAt: null,
   };
-  await appendDocuments(DEMO_SPREADSHEET_ID, [document1, document2], deps);
+  const document3: DocumentRecord = {
+    documentId: doc3Id,
+    studyId: study3Id,
+    documentRole: 'article',
+    driveFileId: DEMO_DRIVE_PDF_FILE_IDS[2],
+    sourceFileId: null,
+    filename: paper3.meta.filename,
+    pmid: paper3.meta.pmid,
+    doi: paper3.meta.doi,
+    textRef: `https://drive.google.com/file/d/${DEMO_DRIVE_TEXT_FILE_IDS[2]}/view`,
+    textStatus: 'ok',
+    pageCount: paper3.pageTexts.length,
+    charCount: paper3.pageTexts.join('').length,
+    importedAt: DEMO_TIMESTAMPS.documentImportedAt3,
+    importedBy: DEMO_USER_EMAIL,
+    note: null,
+    excluded: false,
+    exclusionReason: null,
+    exclusionNote: null,
+    excludedAt: null,
+  };
+  await appendDocuments(DEMO_SPREADSHEET_ID, [document1, document2, document3], deps);
 
-  // --- SchemaVersions / SchemaFields（確定版 1 版。両 study 共通） ---
+  // --- SchemaVersions / SchemaFields（確定版 1 版。3 study 共通） ---
   const schemaVersion: SchemaVersion = {
     schemaVersion: DEMO_SCHEMA_VERSION,
     parentVersion: null,
@@ -490,9 +647,21 @@ export async function seedDemoData(): Promise<void> {
     { ...runBase, status: 'running', finishedAt: null, tokensIn: null, tokensOut: null, costEstimate: null },
     deps,
   );
-  await appendEvidenceRows(DEMO_SPREADSHEET_ID, buildEvidenceRows(study1Id, doc1Id, paper1.fieldInstances, 'demo-evidence-1'), deps);
-  await upsertStudyDataRows(DEMO_SPREADSHEET_ID, [buildAiStudyDataRow(study1Id, paper1.fieldInstances)], deps);
-  await upsertResultsDataRows(DEMO_SPREADSHEET_ID, buildAiResultsDataRows(study1Id, paper1.fieldInstances), deps);
+  await appendEvidenceRows(
+    DEMO_SPREADSHEET_ID,
+    buildEvidenceRows(study1Id, doc1Id, paper1.fieldInstances, 'demo-evidence-1', DEMO_SEED_RUN_ID),
+    deps,
+  );
+  await upsertStudyDataRows(
+    DEMO_SPREADSHEET_ID,
+    [buildAiStudyDataRow(study1Id, paper1.fieldInstances, DEMO_SEED_RUN_ID, DEMO_TIMESTAMPS.extractionFinishedAt)],
+    deps,
+  );
+  await upsertResultsDataRows(
+    DEMO_SPREADSHEET_ID,
+    buildAiResultsDataRows(study1Id, paper1.fieldInstances, DEMO_SEED_RUN_ID, DEMO_TIMESTAMPS.extractionFinishedAt),
+    deps,
+  );
   await appendExtractionRun(
     DEMO_SPREADSHEET_ID,
     {
@@ -604,4 +773,103 @@ export async function seedDemoData(): Promise<void> {
     },
     deps,
   );
+
+  // ===========================================================================
+  // デモ論文 3（2 群）: AI 抽出済み・群構成確定済みで、owner 単独（独立二重レビューなし）が
+  // 24 セル中 14 セル前後を判定済みの「検証途中」までシードする（このモジュール冒頭コメント参照）。
+  // #/dashboard の進捗マトリクス・AI 採用率・AI 精度内訳と、#/export の未検証セル残存警告の
+  // 実演用。study 1 はこの用途には使えない（owner 自身の判定行を持たせると独立二重レビューの
+  // human 系 annotator が 3 名になり κ 一致度レポートが自動表示されなくなるため。study 1 の
+  // 「判定（独立レビュアー 2 名のみ）」ブロック冒頭コメント参照）
+  // ===========================================================================
+
+  // --- ExtractionRuns（2 行プロトコル: running → done。study 1 とは別 run） ---
+  const runBase3: Omit<ExtractionRun, 'status' | 'finishedAt' | 'tokensIn' | 'tokensOut' | 'costEstimate'> = {
+    runId: DEMO_SEED_RUN_ID_STUDY3,
+    runType: 'full',
+    schemaVersion: DEMO_SCHEMA_VERSION,
+    studyIds: [study3Id],
+    provider: 'gemini',
+    requestedModel: 'gemini-3.5-flash',
+    modelVersion: 'gemini-3.5-flash-001',
+    inputMode: 'text_only',
+    startedAt: DEMO_TIMESTAMPS.extractionStartedAt3,
+    fieldIds: null,
+    warnings: null,
+  };
+  await appendExtractionRun(
+    DEMO_SPREADSHEET_ID,
+    { ...runBase3, status: 'running', finishedAt: null, tokensIn: null, tokensOut: null, costEstimate: null },
+    deps,
+  );
+  await appendEvidenceRows(
+    DEMO_SPREADSHEET_ID,
+    buildEvidenceRows(study3Id, doc3Id, paper3.fieldInstances, 'demo-evidence-3', DEMO_SEED_RUN_ID_STUDY3),
+    deps,
+  );
+  await upsertStudyDataRows(
+    DEMO_SPREADSHEET_ID,
+    [
+      buildAiStudyDataRow(
+        study3Id,
+        paper3.fieldInstances,
+        DEMO_SEED_RUN_ID_STUDY3,
+        DEMO_TIMESTAMPS.extractionFinishedAt3,
+      ),
+    ],
+    deps,
+  );
+  await upsertResultsDataRows(
+    DEMO_SPREADSHEET_ID,
+    buildAiResultsDataRows(
+      study3Id,
+      paper3.fieldInstances,
+      DEMO_SEED_RUN_ID_STUDY3,
+      DEMO_TIMESTAMPS.extractionFinishedAt3,
+    ),
+    deps,
+  );
+  await appendExtractionRun(
+    DEMO_SPREADSHEET_ID,
+    {
+      ...runBase3,
+      status: 'done',
+      finishedAt: DEMO_TIMESTAMPS.extractionFinishedAt3,
+      tokensIn: 10420,
+      tokensOut: 2890,
+      costEstimate: 0.005,
+    },
+    deps,
+  );
+
+  // --- ArmStructures（owner 単独で確定。独立二重レビューを行わないためレビュアーの確定行は無い） ---
+  const paper3Arms = PAPER3.arms.map((a) => ({ armKey: a.key, armName: a.name }));
+  await appendArmStructureVersion(
+    DEMO_SPREADSHEET_ID,
+    {
+      studyId: study3Id,
+      arms: paper3Arms,
+      annotator: DEMO_USER_EMAIL,
+      annotatorType: 'human_with_ai',
+      confirmedAt: DEMO_TIMESTAMPS.armConfirmedAtOwner3,
+    },
+    deps,
+  );
+
+  // --- 判定（owner 単独。24 セル中 14 セルだけ判定し、残りは未検証のまま残す） ---
+  // PAPER3_OWNER_DECISION_SPECS 冒頭コメント参照。accept 8 / edit 3 / reject 1 /
+  // not_reported 2 に散らし、ダッシュボードの AI 精度内訳が意味のある数字になるようにする
+  const ownerPlan = buildOwnerPartialPlan(PAPER3_OWNER_DECISION_SPECS);
+  const {
+    decisions: ownerDecisions,
+    studyRow: ownerStudyRow,
+    resultsRows: ownerResultsRows,
+  } = materializePlan(study3Id, paper3.fieldInstances, ownerPlan);
+  if (ownerStudyRow !== null) {
+    await upsertStudyDataRows(DEMO_SPREADSHEET_ID, [ownerStudyRow], deps);
+  }
+  if (ownerResultsRows.length > 0) {
+    await upsertResultsDataRows(DEMO_SPREADSHEET_ID, ownerResultsRows, deps);
+  }
+  await appendDecisionRows(DEMO_SPREADSHEET_ID, ownerDecisions, deps);
 }

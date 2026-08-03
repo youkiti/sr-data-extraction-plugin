@@ -1,12 +1,21 @@
-// デモ論文 2 本ぶんの「事実（facts）」の唯一の正典。
+// デモ論文 3 本ぶんの「事実（facts）」の唯一の正典。
 //
 // 【設計方針・重要】以前の実装は実在論文（PLoS ONE 2023, Zarkesh et al.）の書誌情報を
 // Documents タブに表示しつつ、本文・quote・抽出値は独自の作文だった。これは
 // (1) 実在の著者の論文に架空の抽出値が紐づいた画面が動画に映る、
 // (2) 実ネットワーク環境で実 PDF を取得すると quote が本文と一致せず検証画面の
 //     ハイライトが壊れる、という 2 つの問題があったため不採用にした。
-// 本ファイルは完全に架空の臨床 RCT 論文 2 本（デモ論文 1 = 2 群、デモ論文 2 = 3 群）の
-// 事実（国・症例数・群構成・アウトカム値など）と、そこから機械的に組み立てた文章を持つ。
+// 本ファイルは完全に架空の臨床 RCT 論文 3 本（デモ論文 1 = 2 群、デモ論文 2 = 3 群、
+// デモ論文 3 = 2 群）の事実（国・症例数・群構成・アウトカム値など）と、
+// そこから機械的に組み立てた文章を持つ。
+//
+// 【study ごとの役割分担（PR2 最終ラウンド）】3 本は同じ「周術期の介入」という SR プロジェクトの
+// 中で、それぞれ別の画面を実演する役割を持つ（詳細は各論文の定義直前のコメント参照）:
+// - デモ論文 1（PAPER1）: 独立二重レビュー完了 + 裁定 → 裁定画面・κ 一致度レポートの実演用。
+//   owner（ログインユーザー）自身の判定行は持たない
+// - デモ論文 2（PAPER2）: 取り込みのみで未抽出 → #/extract のライブ抽出・群構成確定ゲートの実演用
+// - デモ論文 3（PAPER3）: owner が単独で途中まで検証済み → ダッシュボード（進捗マトリクス・
+//   AI 採用率・AI 精度内訳）とエクスポートの未検証セル警告の実演用（seed.ts 参照）
 //
 // 【単一の正典であることの意味】ここに定義した「文章（sentence）」は、
 // - video/fixtures/build-fixtures.mjs が HTML フィクスチャ（→ PDF）を生成するときの本文と、
@@ -261,8 +270,117 @@ export const PAPER2 = {
   },
 };
 
-/** 両論文（配列順 = document_index の既定順）。デモの唯一の正典としてここから全体を辿れる */
-export const PAPERS = [PAPER1, PAPER2];
+// ============================================================================
+// デモ論文 3（2 群）: 心臓手術前の呼吸筋トレーニングによる術後在院日数への効果
+// ============================================================================
+//
+// デモ論文 1（早期離床）と同系統の「周術期リハビリテーション」テーマにして、
+// 3 study が同じ SR プロジェクト（周術期の介入レビュー）として辻褄が合うようにしている。
+// アウトカムは連続値（術後在院日数）にし、デモ論文 1 と同じ「二値アウトカムのイベント数は
+// not_reported」の形を踏襲する（seed.ts が owner の判定内訳を組み立てるときの土台）
+
+const PAPER3_ARMS = [
+  arm(
+    'arm:1',
+    'Preoperative Inspiratory Muscle Training group',
+    '48',
+    'Patients in the intervention group received a 2-week preoperative inspiratory muscle training program in addition to standard preoperative care.',
+    'Forty-eight patients were randomized to the inspiratory muscle training group.',
+    'Supervised threshold-loaded inspiratory muscle training for 30 minutes daily for 2 weeks before surgery, in addition to standard preoperative care',
+    'The inspiratory muscle training protocol consisted of supervised threshold-loaded breathing exercises for 30 minutes daily for 2 weeks before surgery, in addition to standard preoperative care.',
+  ),
+  arm(
+    'arm:2',
+    'Standard Preoperative Care group (control)',
+    '48',
+    'Patients in the control group received standard preoperative care without a structured respiratory training protocol.',
+    'The remaining forty-eight patients were allocated to the standard preoperative care group.',
+    'Standard preoperative care without a structured respiratory training protocol',
+    'Standard preoperative care included routine preoperative counselling and analgesia planning, without a structured respiratory training protocol.',
+  ),
+];
+
+export const PAPER3 = {
+  id: 'paper3',
+  filename: 'demo-paper-03.pdf',
+  title:
+    'Effect of Preoperative Inspiratory Muscle Training on Postoperative Length of Hospital Stay after Elective Cardiac Surgery: A Two-Arm Randomized Controlled Trial',
+  journal: 'International Journal of Perioperative Physiotherapy (SR-DEP Demo Fixture)',
+  authors: 'Moreau C, Takahashi R, Osei-Bonsu K, et al.',
+  year: 2026,
+  volumeInfo: 'Int J Periop Physiother (Demo Fixture). 2026;2(4):101-109.',
+  doi: '10.9999/ijpp.2026.0019',
+  disclaimerJa:
+    '本稿は SR Data Extraction Plugin のデモ用に作成した架空のサンプル論文であり、実在の研究ではない。',
+  abstract:
+    'Preoperative inspiratory muscle training (IMT) may reduce postoperative pulmonary complications after cardiac surgery, but its effect on length of hospital stay is less well characterized. ' +
+    'We randomly allocated 96 adults undergoing elective cardiac surgery to a 2-week preoperative IMT program or standard preoperative care. ' +
+    'The IMT group had a significantly shorter postoperative length of hospital stay. ' +
+    'No serious adverse events attributable to the training protocol were observed.',
+  facts: {
+    country: fact(
+      'Belgium',
+      'This randomized controlled trial was conducted in the cardiothoracic surgery department of a university hospital in Belgium.',
+    ),
+    design: fact(
+      'Randomized controlled trial (parallel-group, two-arm)',
+      'Adult patients scheduled for elective cardiac surgery were randomly allocated to receive either a preoperative inspiratory muscle training program or standard preoperative care in this parallel-group, two-arm randomized controlled trial.',
+    ),
+    enrollmentPeriod: fact(
+      'June 2025 to May 2026',
+      'Eligible patients were enrolled between June 2025 and May 2026.',
+    ),
+    followupDuration: fact(
+      'Until postoperative day 10 or hospital discharge, whichever came first',
+      'Patients were followed until postoperative day 10 or hospital discharge, whichever occurred first.',
+    ),
+    sampleSizeTotal: fact(
+      '96',
+      'A total of 96 patients completed the study and were included in the final analysis.',
+    ),
+    meanAge: fact('61.3', 'The mean age of enrolled patients was 61.3 (SD 8.4) years.'),
+    femalePercent: fact('35', 'Of the 96 patients, 34 (35.4%) were female.'),
+    fundingSource: fact(null, null), // not_reported
+  },
+  arms: PAPER3_ARMS,
+  outcome: {
+    slug: 'postop_los',
+    name: fact(
+      'Postoperative length of hospital stay',
+      'The primary outcome was the postoperative length of hospital stay, measured in days from surgery to discharge.',
+    ),
+    timepoint: fact(
+      'At hospital discharge',
+      'Length of stay was assessed at hospital discharge in both groups.',
+    ),
+    perArm: [
+      outcomeArm(
+        'arm:1',
+        fact(null, null), // 連続値アウトカムのためイベント数は not_reported
+        fact(
+          '6.2 (1.8) days',
+          'In the inspiratory muscle training group, the mean postoperative length of hospital stay was 6.2 (SD 1.8) days.',
+        ),
+        fact(
+          'Mean difference -1.4 days (95% CI -2.3 to -0.5, P=0.003)',
+          'The between-group mean difference in postoperative length of hospital stay was -1.4 days (95% CI -2.3 to -0.5), favoring the inspiratory muscle training group (P=0.003).',
+        ),
+      ),
+      outcomeArm(
+        'arm:2',
+        fact(null, null), // 連続値アウトカムのためイベント数は not_reported
+        fact(
+          '7.6 (2.1) days',
+          'In the standard care group, the mean postoperative length of hospital stay was 7.6 (SD 2.1) days.',
+        ),
+        fact(null, null), // 対照群側の effect_size は not_reported（比較の基準のため）
+      ),
+    ],
+  },
+};
+
+/** 3 論文（配列順 = document_index の既定順）。デモの唯一の正典としてここから全体を辿れる */
+export const PAPERS = [PAPER1, PAPER2, PAPER3];
 
 // ============================================================================
 // Discussion / Conclusion / References（quote の出所にはならない flavor 文）

@@ -1,4 +1,4 @@
-// デモ論文 2 本（paperData.mjs）から、Evidence / StudyData / ResultsData の元になる
+// デモ論文 3 本（paperData.mjs）から、Evidence / StudyData / ResultsData の元になる
 // FieldInstanceContent（値・quote・page・confidence・anchor_status）を組み立てる。
 //
 // 【単一の正典】本文の文章は paperData.mjs に定義した 1 か所だけに書かれている。
@@ -7,9 +7,19 @@
 // そこだけ paperData.mjs の正しい文章とは異なる文字列を quote として保存する
 // （video/fixtures/demo-paper-0N.html / .pdf の本文は常に paperData.mjs の正しい文章のまま
 // 生成されるため、この 2 件は「PDF の実テキストとは一致しない quote」を意図的に作れる）。
+// この 2 件はどちらもデモ論文 1（paper1）限定（アンカリング §5 の段階的マッチングの実演用）。
+// デモ論文 2・3 は常に exact になる
 import type { AnchorStatus } from '../domain/anchor';
 import type { Confidence } from '../domain/evidence';
-import { PAPER1, PAPER2, DISCUSSION_TEXT, CONCLUSION_TEXT, referenceEntry, type PaperDefinition } from './paperData.mjs';
+import {
+  PAPER1,
+  PAPER2,
+  PAPER3,
+  DISCUSSION_TEXT,
+  CONCLUSION_TEXT,
+  referenceEntry,
+  type PaperDefinition,
+} from './paperData.mjs';
 
 /** デモ論文の書誌情報（Documents タブ用） */
 export interface DemoPaperMeta {
@@ -61,8 +71,9 @@ function reportedInstance(
 }
 
 /**
- * 1 論文ぶんの PAGE_TEXTS（ページ別本文）+ FIELD_INSTANCES（全 32 件: study 8 + arm 3×N +
- * outcome_result 5×N）を組み立てる。ページ番号（下記 P1〜P6）は
+ * 1 論文ぶんの PAGE_TEXTS（ページ別本文）+ FIELD_INSTANCES（study 8 + arm 3×N +
+ * outcome_result 5×N 件。N = 群数。2 群論文〔paper1・paper3〕は 24 件、3 群論文
+ * 〔paper2〕は 32 件）を組み立てる。ページ番号（下記 P1〜P6）は
  * video/fixtures/build-fixtures.mjs が生成する HTML の明示的な改ページ位置と 1 対 1 で
  * 対応させている（build-fixtures.mjs 側のページ分割コメント参照。ここを変える場合は
  * 両方合わせて直すこと）
@@ -248,6 +259,7 @@ function buildPageTexts(paper: PaperDefinition): string[] {
 
 const PAPER1_BUILT = buildPaperInstances(PAPER1);
 const PAPER2_BUILT = buildPaperInstances(PAPER2);
+const PAPER3_BUILT = buildPaperInstances(PAPER3);
 
 /** デモ論文ごとの、書誌情報・本文・FIELD_INSTANCES 一式（Documents / #/extract 順 = 配列順） */
 export const DEMO_PAPERS: readonly {
@@ -258,4 +270,5 @@ export const DEMO_PAPERS: readonly {
 }[] = [
   { paperId: PAPER1.id, meta: PAPER1_BUILT.meta, pageTexts: PAPER1_BUILT.pageTexts, fieldInstances: PAPER1_BUILT.fieldInstances },
   { paperId: PAPER2.id, meta: PAPER2_BUILT.meta, pageTexts: PAPER2_BUILT.pageTexts, fieldInstances: PAPER2_BUILT.fieldInstances },
+  { paperId: PAPER3.id, meta: PAPER3_BUILT.meta, pageTexts: PAPER3_BUILT.pageTexts, fieldInstances: PAPER3_BUILT.fieldInstances },
 ];

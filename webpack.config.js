@@ -36,7 +36,7 @@ function assertDemoFixturePdfsExist() {
 
 // src/demo/constants.ts の DEMO_FIXTURE_PDF_FILENAMES と同じ値（webpack 設定は TS を import
 // できないため、ここでは文字列配列として重複定義する。値を変える場合は両方直すこと）
-const DEMO_FIXTURE_PDF_FILENAMES = ['demo-paper-01.pdf', 'demo-paper-02.pdf'];
+const DEMO_FIXTURE_PDF_FILENAMES = ['demo-paper-01.pdf', 'demo-paper-02.pdf', 'demo-paper-03.pdf'];
 
 /**
  * pdfjs upsert ポリフィル（src/demo/pdfjsUpsertPolyfill.mjs）の worker 側注入用ソース。
