@@ -57,10 +57,12 @@ import {
   confirmSchema,
   insertSchemaPreset,
   loadSchema,
+  moveEditorRow,
   removeEditorRow,
   runDraftSchema,
   setDraftModel,
   skipRobPrespecDialog,
+  sortEditorRowsBySection,
   startEditorFromCurrent,
   toggleRedraftSelection,
   toggleSampleDocument,
@@ -577,6 +579,12 @@ export async function bootstrapApp(
       },
       onRemoveRow: (index) => {
         removeEditorRow(store, index);
+      },
+      onMoveRow: (from, to) => {
+        moveEditorRow(store, from, to);
+      },
+      onSortBySection: () => {
+        sortEditorRowsBySection(store);
       },
       onInsertPreset: (kind) => {
         insertSchemaPreset(store, kind);

@@ -252,6 +252,7 @@ const emptyToNull = (value: string): string | null => (value.trim() === '' ? nul
 function renderEditorRow(
   row: SchemaEditorRow,
   index: number,
+  rowCount: number,
   invalidColumns: ReadonlySet<string>,
   ctx: ViewContext,
 ): HTMLElement {
@@ -282,6 +283,36 @@ function renderEditorRow(
     attributes: { type: 'button', 'aria-label': t('schema.rowRemoveAria', { row: index + 1 }) },
   });
   removeButton.addEventListener('click', () => ctx.schema.onRemoveRow(index));
+
+  const moveUpButton = el('button', {
+    className: 'schema__row-move-up',
+    text: t('schema.rowMoveUp'),
+    attributes: {
+      type: 'button',
+      'aria-label': t('schema.rowMoveUpAria', { row: index + 1 }),
+      'data-row-index': String(index),
+    },
+  });
+  moveUpButton.disabled = index === 0;
+  moveUpButton.addEventListener('click', () => {
+    ctx.schema.onMoveRow(index, index - 1);
+    focusMovedRow(index - 1, 'up');
+  });
+
+  const moveDownButton = el('button', {
+    className: 'schema__row-move-down',
+    text: t('schema.rowMoveDown'),
+    attributes: {
+      type: 'button',
+      'aria-label': t('schema.rowMoveDownAria', { row: index + 1 }),
+      'data-row-index': String(index),
+    },
+  });
+  moveDownButton.disabled = index === rowCount - 1;
+  moveDownButton.addEventListener('click', () => {
+    ctx.schema.onMoveRow(index, index + 1);
+    focusMovedRow(index + 1, 'down');
+  });
 
   return el('tr', {}, [
     el('td', { className: 'schema__row-index', text: String(index + 1) }),
@@ -319,8 +350,29 @@ function renderEditorRow(
     textCell(row.example ?? '', { ariaLabel: t('schema.rowExampleAria', { row: index + 1 }) }, (value) =>
       edit({ example: emptyToNull(value) }),
     ),
-    el('td', {}, [removeButton]),
+    el('td', {}, [moveUpButton, moveDownButton, removeButton]),
   ]);
+}
+
+/**
+ * 移動ボタン押下後のフォーカス復帰（issue #230）。
+ * store.setState は購読者を同期呼び出しするため（store.ts createStore 参照）、
+ * onMoveRow の呼び出しが戻った時点で contentEl は再描画済みで、DOM から直接引ける。
+ * 移動先が端で当該向きのボタンが disabled になる場合は逆向きのボタンへフォールバックする
+ * （disabled 要素にはフォーカスが当たらないため）
+ */
+function focusMovedRow(newIndex: number, direction: 'up' | 'down'): void {
+  const primarySelector = `[data-row-index="${newIndex}"].schema__row-move-${direction}`;
+  const primary = document.querySelector<HTMLButtonElement>(primarySelector);
+  if (primary !== null && !primary.disabled) {
+    primary.focus();
+    return;
+  }
+  const fallbackDirection = direction === 'up' ? 'down' : 'up';
+  const fallback = document.querySelector<HTMLButtonElement>(
+    `[data-row-index="${newIndex}"].schema__row-move-${fallbackDirection}`,
+  );
+  fallback?.focus();
 }
 
 /** deviation 種別チェックボックスの表示定義（公式 template の列挙順・原文併記） */
@@ -871,7 +923,11 @@ function renderEditor(
   ]);
   const table = el('table', { id: 'schema-editor-table', className: 'schema__table' }, [
     el('thead', {}, [header]),
-    el('tbody', {}, rows.map((row, index) => renderEditorRow(row, index, invalidColumns, ctx))),
+    el(
+      'tbody',
+      {},
+      rows.map((row, index) => renderEditorRow(row, index, rows.length, invalidColumns, ctx)),
+    ),
   ]);
 
   const addRowButton = el('button', {
@@ -880,6 +936,13 @@ function renderEditor(
     attributes: { type: 'button' },
   });
   addRowButton.addEventListener('click', () => ctx.schema.onAddRow());
+  const sortBySectionButton = el('button', {
+    id: 'schema-sort-by-section',
+    text: t('schema.sortBySection'),
+    attributes: { type: 'button' },
+  });
+  sortBySectionButton.disabled = rows.length < 2;
+  sortBySectionButton.addEventListener('click', () => ctx.schema.onSortBySection());
   const presetBinary = el('button', {
     id: 'schema-preset-binary',
     text: t('schema.presetBinary'),
@@ -979,6 +1042,7 @@ function renderEditor(
     el('h3', { text: t('schema.editorTitle', { count: rows.length }) }),
     el('div', { className: 'schema__editor-actions' }, [
       addRowButton,
+      sortBySectionButton,
       presetBinary,
       presetContinuous,
       presetRob2,

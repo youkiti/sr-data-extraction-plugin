@@ -78,6 +78,8 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<VerifyViewCallbac
         onEditRow: jest.fn(),
         onAddRow: jest.fn(),
         onRemoveRow: jest.fn(),
+        onMoveRow: jest.fn(),
+        onSortBySection: jest.fn(),
         onInsertPreset: jest.fn(),
         onUpdatePresetDialog: jest.fn(),
         onConfirmPresetDialog: jest.fn(),

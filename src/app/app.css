@@ -1031,6 +1031,13 @@ section.documents__tiab {
   background: rgb(179 38 30 / 8%);
 }
 
+/* 操作列（上へ / 下へ / 削除）の間隔。issue #230 */
+.schema__row-move-up,
+.schema__row-move-down,
+.schema__row-remove {
+  margin-right: 4px;
+}
+
 .schema__editor-errors {
   margin: 0;
   padding: 12px 16px 12px 32px;

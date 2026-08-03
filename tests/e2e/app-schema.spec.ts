@@ -292,6 +292,28 @@ test('エディタ: 行操作と検証エラー表示、確定ボタンの無効
   await expect(page.locator('#schema-draft-form')).toBeVisible();
 });
 
+test('エディタ: 行を追加 → ↑ で上へ移動 → 表の並びが変わる（issue #230）', async ({ page }) => {
+  await initApp(page, { ...EMPTY_SCHEMA_STATE, editorRows: [makeEditorRow()] });
+
+  await expect(page.locator('#schema-editor-table tbody tr')).toHaveCount(1);
+  await page.locator('#schema-add-row').click();
+  await expect(page.locator('#schema-editor-table tbody tr')).toHaveCount(2);
+
+  // 追加直後の空行（2 行目）に field_name を入力し、移動後にどの行かを判別できるようにする
+  const secondRowFieldName = page.locator('input[aria-label="2 行目の field_name"]');
+  await secondRowFieldName.fill('country');
+  await secondRowFieldName.dispatchEvent('change');
+
+  await page.locator('button[aria-label="2 行目を上へ移動"]').click();
+  // 移動後は 1 行目が country、2 行目が study_design になる
+  await expect(page.locator('input[aria-label="1 行目の field_name"]')).toHaveValue('country');
+  await expect(page.locator('input[aria-label="2 行目の field_name"]')).toHaveValue(
+    'study_design',
+  );
+  // 移動後、先頭行の↑は disabled になるため、フォーカスは逆向き（↓）に戻る
+  await expect(page.locator('button[aria-label="1 行目を下へ移動"]')).toBeFocused();
+});
+
 test('RoB 2 事前設定ダイアログ: rob2_sq の必須検証と adhering の SQ セット切替（issue #103）', async ({
   page,
 }) => {
