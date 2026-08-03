@@ -1,10 +1,16 @@
 // 3 エントリ（app-entry.ts / popup-entry.ts / options-entry.ts）共通の起動前処理。
 //
-// 起動順序が重要: 1) fetch モックを先にインストール → 2) chrome.storage
-// （選択中プロジェクト・API キー）をシード → 3) インメモリ Sheets ストアへ全データをシード →
+// 起動順序が重要: 0) pdfjs upsert ポリフィルをインストール（メインスレッド分。
+// pdfjsUpsertPolyfill.mjs 冒頭コメント参照）→ 1) fetch モックを先にインストール →
+// 2) chrome.storage（選択中プロジェクト・API キー）をシード →
+// 3) インメモリ Sheets ストアへ全データをシード →
 // 4) 各エントリがこの後で実物のエントリ処理（bootstrapApp 等）を動的 import する。
-// 逆順にすると各画面が「まだ何もシードされていない」状態の fetch / storage を読みに行ってしまい、
-// プロジェクト未選択のまま起動してしまう。
+// 逆順にすると各画面が「まだ何もシードされていない」状態の fetch / storage を読みに行って
+// しまう、あるいは pdfjs が未パッチの Map/WeakMap を呼んで例外になる。
+// 0) は本モジュールが import された時点（= 各デモエントリが実物のエントリを動的 import する
+// より確実に前）で同期的に実行する必要があるため、関数呼び出しをモジュールの先頭（トップレベル）
+// に置いている
+import { installPdfjsUpsertPolyfill } from './pdfjsUpsertPolyfill.mjs';
 import { installDemoFetchMock, setDemoDelaysEnabled } from './fetchMock';
 import { seedDemoData } from './seed';
 import { setCurrentProject } from '../features/project/projectStore';
@@ -15,6 +21,11 @@ import {
   DEMO_PROJECT_TITLE,
   DEMO_SPREADSHEET_ID,
 } from './constants';
+
+// 0) 本モジュールが import された時点（= 各デモエントリが実物のエントリを動的 import するより
+// 確実に前）で同期的に実行する。import 文はテキスト上の位置に関わらずモジュール評価前に
+// 解決されるため、呼び出し自体は「最初の実行可能な文」としてここに置く
+installPdfjsUpsertPolyfill();
 
 /** 本物と絶対に混同しないよう、それと分かるダミー文字列にする（本物の API キーは絶対に使わない） */
 const DEMO_GEMINI_API_KEY = 'demo-api-key-not-a-real-secret';

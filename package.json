@@ -24,6 +24,7 @@
     "test:e2e:ui": "playwright test --ui",
     "manual:check": "node tools/selenium/manualCheck.mjs",
     "video:setup": "bash video/scripts/setup.sh",
+    "video:fixtures": "node video/fixtures/build-fixtures.mjs",
     "video:record": "node video/scripts/record.mjs",
     "video:tts": "node video/scripts/tts.mjs",
     "video:assemble": "node video/scripts/assemble.mjs"

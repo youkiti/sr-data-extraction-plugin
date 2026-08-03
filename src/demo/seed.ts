@@ -9,6 +9,14 @@
 //
 // 呼び出し前提: installDemoFetchMock() が既にインストール済みで、globalThis.fetch が
 // パッチ済みであること（app-entry.ts / popup-entry.ts / options-entry.ts が起動直後に行う）。
+//
+// 【2 論文構成】デモは架空論文 2 本を扱う（paperContent.ts の DEMO_PAPERS。
+// インデックス 0 = デモ論文 1〔2 群〕、1 = デモ論文 2〔3 群〕）。
+// - デモ論文 1: AI 抽出済み・検証途中・独立二重レビュー済み・裁定待ちまで、フルにシードする
+//   （#/verify 以降の画面が録画開始時点で意味のある内容を持つようにするため）。
+// - デモ論文 2: Study / Document の取り込みだけをシードし、抽出・群構成確定・検証・裁定は
+//   一切シードしない。#/extract の一括抽出と #/verify の「群構成の確定」ゲート UI を
+//   録画中に実際に動かして見せるための「素の状態」として残す（brief の受け入れ条件）
 import { CURRENT_SCHEMA_VERSION } from '../domain/project';
 import { NOT_REPORTED_TOKEN } from '../domain/annotation';
 import type { AnnotatorType, ResultsDataRow, StudyDataRow } from '../domain/annotation';
@@ -34,13 +42,13 @@ import { appendDecisionRows } from '../features/verification/decisionRepository'
 import { appendReviewerAssignment } from '../features/project/reviewerRepository';
 import { resetDemoStore } from './sheetStore';
 import { DEMO_SCHEMA_FIELDS } from './schema';
-import { DEMO_PAPER_META, FIELD_INSTANCES, PAGE_TEXTS, type FieldInstanceContent } from './paperContent';
+import { DEMO_PAPERS, type FieldInstanceContent } from './paperContent';
+import { PAPER1 } from './paperData.mjs';
 import {
-  DEMO_ARM_KEYS,
-  DEMO_ARM_NAMES,
-  DEMO_DOCUMENT_ID,
-  DEMO_DRIVE_PDF_FILE_ID,
-  DEMO_DRIVE_TEXT_FILE_ID,
+  DEMO_DOCUMENT_IDS,
+  DEMO_DRIVE_FOLDER_ID,
+  DEMO_DRIVE_PDF_FILE_IDS,
+  DEMO_DRIVE_TEXT_FILE_IDS,
   DEMO_PROJECT_ID,
   DEMO_PROJECT_TITLE,
   DEMO_REVIEWER_A_EMAIL,
@@ -48,7 +56,7 @@ import {
   DEMO_SCHEMA_VERSION,
   DEMO_SEED_RUN_ID,
   DEMO_SPREADSHEET_ID,
-  DEMO_STUDY_ID,
+  DEMO_STUDY_IDS,
   DEMO_TIMESTAMPS,
   DEMO_TOKEN,
   DEMO_USER_EMAIL,
@@ -62,14 +70,17 @@ function demoDeps(): GoogleApiDeps {
   };
 }
 
-/** fieldId → SchemaField 逆引き（entity_level / field_name の解決に使う） */
+/** fieldId → SchemaField 逆引き（entity_level / field_name の解決に使う。スキーマは両論文で共通） */
 const FIELD_BY_ID = new Map(DEMO_SCHEMA_FIELDS.map((f) => [f.fieldId, f]));
 
 /** FIELD_INSTANCES を entity_level ごとに振り分ける（study → StudyData、それ以外 → ResultsData） */
-function splitByLevel(): { study: FieldInstanceContent[]; results: FieldInstanceContent[] } {
+function splitByLevel(fieldInstances: readonly FieldInstanceContent[]): {
+  study: FieldInstanceContent[];
+  results: FieldInstanceContent[];
+} {
   const study: FieldInstanceContent[] = [];
   const results: FieldInstanceContent[] = [];
-  for (const item of FIELD_INSTANCES) {
+  for (const item of fieldInstances) {
     const field = FIELD_BY_ID.get(item.fieldId);
     if (field?.entityLevel === 'study') {
       study.push(item);
@@ -93,13 +104,18 @@ function buildEmptySheets(): Record<string, string[][]> {
 // Evidence（AI 根拠。追記型）
 // ---------------------------------------------------------------------------
 
-function buildEvidenceRows(): Evidence[] {
-  return FIELD_INSTANCES.map((item, index) => ({
-    evidenceId: `demo-evidence-${String(index + 1).padStart(3, '0')}`,
+function buildEvidenceRows(
+  studyId: string,
+  documentId: string,
+  fieldInstances: readonly FieldInstanceContent[],
+  evidenceIdPrefix: string,
+): Evidence[] {
+  return fieldInstances.map((item, index) => ({
+    evidenceId: `${evidenceIdPrefix}-${String(index + 1).padStart(3, '0')}`,
     runId: DEMO_SEED_RUN_ID,
-    studyId: DEMO_STUDY_ID,
+    studyId,
     fieldId: item.fieldId,
-    documentId: DEMO_DOCUMENT_ID,
+    documentId,
     entityKey: item.entityKey,
     value: item.value,
     notReported: item.notReported,
@@ -118,15 +134,15 @@ function buildEvidenceRows(): Evidence[] {
 // ---------------------------------------------------------------------------
 
 /** 'ai' annotator 行（study の値は NOT_REPORTED_TOKEN、それ以外は素の値） */
-function buildAiStudyDataRow(): StudyDataRow {
-  const { study } = splitByLevel();
+function buildAiStudyDataRow(studyId: string, fieldInstances: readonly FieldInstanceContent[]): StudyDataRow {
+  const { study } = splitByLevel(fieldInstances);
   const values: Record<string, string | null> = {};
   for (const item of study) {
     const field = FIELD_BY_ID.get(item.fieldId) as { fieldName: string };
     values[field.fieldName] = item.notReported ? NOT_REPORTED_TOKEN : item.value;
   }
   return {
-    studyId: DEMO_STUDY_ID,
+    studyId,
     annotator: 'ai',
     annotatorType: 'ai',
     schemaVersion: DEMO_SCHEMA_VERSION,
@@ -136,11 +152,11 @@ function buildAiStudyDataRow(): StudyDataRow {
   };
 }
 
-function buildAiResultsDataRows(): ResultsDataRow[] {
-  const { results } = splitByLevel();
+function buildAiResultsDataRows(studyId: string, fieldInstances: readonly FieldInstanceContent[]): ResultsDataRow[] {
+  const { results } = splitByLevel(fieldInstances);
   return results.map((item, index) => ({
-    resultId: `demo-result-ai-${String(index + 1).padStart(3, '0')}`,
-    studyId: DEMO_STUDY_ID,
+    resultId: `demo-result-ai-${studyId}-${String(index + 1).padStart(3, '0')}`,
+    studyId,
     fieldId: item.fieldId,
     annotator: 'ai',
     annotatorType: 'ai',
@@ -177,7 +193,11 @@ function planKey(fieldId: string, entityKey: string): string {
  * 判定プランから Decisions 行 + StudyData/ResultsData 行を組み立てる。
  * プランに含まれない field_id × entity_key の組は「未検証」のまま（何も書かない）。
  */
-function materializePlan(plan: AnnotatorDecisionPlan): {
+function materializePlan(
+  studyId: string,
+  fieldInstances: readonly FieldInstanceContent[],
+  plan: AnnotatorDecisionPlan,
+): {
   decisions: Decision[];
   studyRow: StudyDataRow | null;
   resultsRows: ResultsDataRow[];
@@ -187,7 +207,7 @@ function materializePlan(plan: AnnotatorDecisionPlan): {
   const resultsRows: ResultsDataRow[] = [];
   let resultIndex = 0;
 
-  for (const item of FIELD_INSTANCES) {
+  for (const item of fieldInstances) {
     const key = planKey(item.fieldId, item.entityKey);
     const entry = plan.entries.get(key);
     if (entry === undefined) {
@@ -197,7 +217,7 @@ function materializePlan(plan: AnnotatorDecisionPlan): {
     decisions.push({
       decidedAt: plan.decidedAt,
       decidedBy: plan.decidedBy ?? plan.annotator,
-      studyId: DEMO_STUDY_ID,
+      studyId,
       fieldId: item.fieldId,
       entityKey: item.entityKey,
       annotator: plan.annotator,
@@ -212,8 +232,8 @@ function materializePlan(plan: AnnotatorDecisionPlan): {
     } else {
       resultIndex += 1;
       resultsRows.push({
-        resultId: `demo-result-${plan.annotator.split('@')[0]}-${String(resultIndex).padStart(3, '0')}`,
-        studyId: DEMO_STUDY_ID,
+        resultId: `demo-result-${plan.annotator.split('@')[0]}-${studyId}-${String(resultIndex).padStart(3, '0')}`,
+        studyId,
         fieldId: item.fieldId,
         annotator: plan.annotator,
         annotatorType: plan.annotatorType,
@@ -231,7 +251,7 @@ function materializePlan(plan: AnnotatorDecisionPlan): {
     Object.keys(studyValues).length === 0
       ? null
       : {
-          studyId: DEMO_STUDY_ID,
+          studyId,
           annotator: plan.annotator,
           annotatorType: plan.annotatorType,
           schemaVersion: DEMO_SCHEMA_VERSION,
@@ -244,17 +264,18 @@ function materializePlan(plan: AnnotatorDecisionPlan): {
 }
 
 /**
- * 独立レビュアー（human_independent）の判定プラン。全 24 セルを決定する（S12 裁定ゲートの
+ * 独立レビュアー（human_independent）の判定プラン。全セルを決定する（S12 裁定ゲートの
  * 「両者とも進捗 100%」条件を満たすため）。値は FIELD_INSTANCES の正解値をそのまま使い、
  * overrideKey で指定した 1 セルだけ異なる値にする（S12 の不一致 + κ 一致度レポートの実演用）。
  */
 function buildIndependentPlan(
+  fieldInstances: readonly FieldInstanceContent[],
   annotator: string,
   decidedAt: string,
   override: { fieldId: string; entityKey: string; value: string } | null,
 ): AnnotatorDecisionPlan {
   const entries = new Map<string, { action: DecisionAction; value: string | null; note: string | null }>();
-  for (const item of FIELD_INSTANCES) {
+  for (const item of fieldInstances) {
     const key = planKey(item.fieldId, item.entityKey);
     if (override !== null && override.fieldId === item.fieldId && override.entityKey === item.entityKey) {
       entries.set(key, { action: 'accept', value: override.value, note: null });
@@ -273,20 +294,17 @@ function buildIndependentPlan(
  * 裁定（consensus）の判定プラン。independent レビュアー 2 名が一致したセルを
  * 「一致セルの一括採用」（features/adjudication/consensusWrites.ts の buildBulkAcceptWrites と
  * 同じ意味論: action='accept'）として consensus 行へ反映し、skipKeys で指定したセルだけ
- * 意図的に未裁定のまま残す:
- * - f_arm_n × arm:1（独立レビュアー間で不一致のセル）: 裁定者がまだどちらを採るか決めていない、
- *   という自然な状態（#/adjudicate の不一致一覧の実演）
- * - f_funding_source × study（study レベル。study_wide.csv だけがセル単位の「空 = 未検証」を
- *   数える構造のため、study レベルに 1 件だけ未裁定を残さないと #/export の
- *   「未検証セル残存」警告が一度も発火しない。features/export/buildStudyWideCsv.ts 参照）
+ * 意図的に未裁定のまま残す（デモ論文 1 では f_arm_n × arm:1〔独立レビュアー間で不一致のセル〕と
+ * f_funding_source × study〔study レベルの未検証セル残存を export 警告の実演に使う〕）。
  * consensus 行が 1 件も無いと features/export/finalAnnotator.ts が確定 annotator を特定できず
  * 全 study が除外されてしまうため、consensus 行自体は必ず作る（範囲外のセルだけ間引く）
  */
 function buildConsensusPlan(
+  fieldInstances: readonly FieldInstanceContent[],
   skipKeys: readonly { fieldId: string; entityKey: string }[],
 ): AnnotatorDecisionPlan {
   const entries = new Map<string, { action: DecisionAction; value: string | null; note: string | null }>();
-  for (const item of FIELD_INSTANCES) {
+  for (const item of fieldInstances) {
     if (skipKeys.some((skip) => skip.fieldId === item.fieldId && skip.entityKey === item.entityKey)) {
       continue;
     }
@@ -314,6 +332,15 @@ export async function seedDemoData(): Promise<void> {
   resetDemoStore(DEMO_PROJECT_TITLE, buildEmptySheets());
   const deps = demoDeps();
 
+  const [paper1, paper2] = DEMO_PAPERS;
+  if (paper1 === undefined || paper2 === undefined) {
+    throw new Error('[demo] DEMO_PAPERS は 2 件（デモ論文 1・2）を前提にしています');
+  }
+  const study1Id = DEMO_STUDY_IDS[0];
+  const study2Id = DEMO_STUDY_IDS[1];
+  const doc1Id = DEMO_DOCUMENT_IDS[0];
+  const doc2Id = DEMO_DOCUMENT_IDS[1];
+
   // --- Meta ---
   await appendRow(
     DEMO_SPREADSHEET_ID,
@@ -322,7 +349,7 @@ export async function seedDemoData(): Promise<void> {
       DEMO_PROJECT_ID,
       DEMO_PROJECT_TITLE,
       DEMO_SPREADSHEET_ID,
-      'demo-drive-folder-udca-2026',
+      DEMO_DRIVE_FOLDER_ID,
       CURRENT_SCHEMA_VERSION,
       DEMO_TIMESTAMPS.projectCreatedAt,
       DEMO_USER_EMAIL,
@@ -335,12 +362,15 @@ export async function seedDemoData(): Promise<void> {
   // frameworkType 等の構造化列を空のままにし、全文を rawTextInline へ入れる
   // （S5 の draft-schema や #/extract の「プロトコル本文」はここを読む。§4.3 プロンプトの
   // Protocol context セクション。rawTextInline が null だと一括抽出が
-  // 「プロトコル本文を取得できません」で失敗する）
+  // 「プロトコル本文を取得できません」で失敗する）。
+  // デモ論文 1（早期離床）・2（制吐薬の用量比較）の両方が対象になるよう、
+  // 「周術期の介入」という広めのリサーチクエスチョンにしている
   const protocolText = [
-    'リサーチクエスチョン: 正期産児の間接型高ビリルビン血症に対し、光線療法へ薬物補助療法（UDCA 等）を追加することは、光線療法単独と比較して総ビリルビン低下・治療期間を改善するか。',
-    '組み入れ基準: 正期産児（在胎 37 週以降）で間接型高ビリルビン血症により光線療法の適応となった新生児を対象とするランダム化比較試験。',
-    '除外基準: 直接型優位の高ビリルビン血症、溶血性疾患の関与が明らかな症例、早産児。',
-    'デザイン: ランダム化比較試験（並行群間）。',
+    'リサーチクエスチョン: 周術期（手術前後）に行われる介入（リハビリテーション・薬物療法等）は、',
+    '通常ケアやプラセボと比較して術後回復に関するアウトカムを改善するか。',
+    '組み入れ基準: 成人の待機的手術患者を対象とし、周術期の介入を評価するランダム化比較試験。',
+    '除外基準: 症例報告・観察研究・プロトコル論文のみで結果データを含まないもの。',
+    'デザイン: ランダム化比較試験（並行群間。2 群・3 群のいずれも対象）。',
   ].join('\n');
   const protocol: Protocol = {
     version: 1,
@@ -361,30 +391,38 @@ export async function seedDemoData(): Promise<void> {
   };
   await appendProtocol(DEMO_SPREADSHEET_ID, protocol, deps);
 
-  // --- Studies / Documents ---
-  const study: StudyRecord = {
-    studyId: DEMO_STUDY_ID,
-    studyLabel: 'Zarkesh 2023',
+  // --- Studies / Documents（両論文） ---
+  const study1: StudyRecord = {
+    studyId: study1Id,
+    studyLabel: 'Halvorsen 2026',
     registrationId: null,
     createdAt: DEMO_TIMESTAMPS.documentImportedAt,
     createdBy: DEMO_USER_EMAIL,
     note: null,
   };
-  await appendStudies(DEMO_SPREADSHEET_ID, [study], deps);
+  const study2: StudyRecord = {
+    studyId: study2Id,
+    studyLabel: 'Bergstrom 2026',
+    registrationId: null,
+    createdAt: DEMO_TIMESTAMPS.documentImportedAt2,
+    createdBy: DEMO_USER_EMAIL,
+    note: null,
+  };
+  await appendStudies(DEMO_SPREADSHEET_ID, [study1, study2], deps);
 
-  const document: DocumentRecord = {
-    documentId: DEMO_DOCUMENT_ID,
-    studyId: DEMO_STUDY_ID,
+  const document1: DocumentRecord = {
+    documentId: doc1Id,
+    studyId: study1Id,
     documentRole: 'article',
-    driveFileId: DEMO_DRIVE_PDF_FILE_ID,
+    driveFileId: DEMO_DRIVE_PDF_FILE_IDS[0],
     sourceFileId: null,
-    filename: DEMO_PAPER_META.filename,
-    pmid: DEMO_PAPER_META.pmid,
-    doi: DEMO_PAPER_META.doi,
-    textRef: `https://drive.google.com/file/d/${DEMO_DRIVE_TEXT_FILE_ID}/view`,
+    filename: paper1.meta.filename,
+    pmid: paper1.meta.pmid,
+    doi: paper1.meta.doi,
+    textRef: `https://drive.google.com/file/d/${DEMO_DRIVE_TEXT_FILE_IDS[0]}/view`,
     textStatus: 'ok',
-    pageCount: PAGE_TEXTS.length,
-    charCount: PAGE_TEXTS.join('').length,
+    pageCount: paper1.pageTexts.length,
+    charCount: paper1.pageTexts.join('').length,
     importedAt: DEMO_TIMESTAMPS.documentImportedAt,
     importedBy: DEMO_USER_EMAIL,
     note: null,
@@ -393,9 +431,30 @@ export async function seedDemoData(): Promise<void> {
     exclusionNote: null,
     excludedAt: null,
   };
-  await appendDocuments(DEMO_SPREADSHEET_ID, [document], deps);
+  const document2: DocumentRecord = {
+    documentId: doc2Id,
+    studyId: study2Id,
+    documentRole: 'article',
+    driveFileId: DEMO_DRIVE_PDF_FILE_IDS[1],
+    sourceFileId: null,
+    filename: paper2.meta.filename,
+    pmid: paper2.meta.pmid,
+    doi: paper2.meta.doi,
+    textRef: `https://drive.google.com/file/d/${DEMO_DRIVE_TEXT_FILE_IDS[1]}/view`,
+    textStatus: 'ok',
+    pageCount: paper2.pageTexts.length,
+    charCount: paper2.pageTexts.join('').length,
+    importedAt: DEMO_TIMESTAMPS.documentImportedAt2,
+    importedBy: DEMO_USER_EMAIL,
+    note: null,
+    excluded: false,
+    exclusionReason: null,
+    exclusionNote: null,
+    excludedAt: null,
+  };
+  await appendDocuments(DEMO_SPREADSHEET_ID, [document1, document2], deps);
 
-  // --- SchemaVersions / SchemaFields（確定版 1 版） ---
+  // --- SchemaVersions / SchemaFields（確定版 1 版。両 study 共通） ---
   const schemaVersion: SchemaVersion = {
     schemaVersion: DEMO_SCHEMA_VERSION,
     parentVersion: null,
@@ -408,12 +467,16 @@ export async function seedDemoData(): Promise<void> {
   await appendSchemaVersion(DEMO_SPREADSHEET_ID, schemaVersion, deps);
   await appendSchemaFields(DEMO_SPREADSHEET_ID, DEMO_SCHEMA_FIELDS, deps);
 
+  // ===========================================================================
+  // デモ論文 1（2 群）: AI 抽出済み・検証途中・独立二重レビュー済み・裁定待ちまでフルにシードする
+  // ===========================================================================
+
   // --- ExtractionRuns（2 行プロトコル: running → done） ---
   const runBase: Omit<ExtractionRun, 'status' | 'finishedAt' | 'tokensIn' | 'tokensOut' | 'costEstimate'> = {
     runId: DEMO_SEED_RUN_ID,
     runType: 'full',
     schemaVersion: DEMO_SCHEMA_VERSION,
-    studyIds: [DEMO_STUDY_ID],
+    studyIds: [study1Id],
     provider: 'gemini',
     requestedModel: 'gemini-3.5-flash',
     modelVersion: 'gemini-3.5-flash-001',
@@ -427,9 +490,9 @@ export async function seedDemoData(): Promise<void> {
     { ...runBase, status: 'running', finishedAt: null, tokensIn: null, tokensOut: null, costEstimate: null },
     deps,
   );
-  await appendEvidenceRows(DEMO_SPREADSHEET_ID, buildEvidenceRows(), deps);
-  await upsertStudyDataRows(DEMO_SPREADSHEET_ID, [buildAiStudyDataRow()], deps);
-  await upsertResultsDataRows(DEMO_SPREADSHEET_ID, buildAiResultsDataRows(), deps);
+  await appendEvidenceRows(DEMO_SPREADSHEET_ID, buildEvidenceRows(study1Id, doc1Id, paper1.fieldInstances, 'demo-evidence-1'), deps);
+  await upsertStudyDataRows(DEMO_SPREADSHEET_ID, [buildAiStudyDataRow(study1Id, paper1.fieldInstances)], deps);
+  await upsertResultsDataRows(DEMO_SPREADSHEET_ID, buildAiResultsDataRows(study1Id, paper1.fieldInstances), deps);
   await appendExtractionRun(
     DEMO_SPREADSHEET_ID,
     {
@@ -444,23 +507,17 @@ export async function seedDemoData(): Promise<void> {
   );
 
   // --- ArmStructures（owner / reviewer 各自が確定。3 名とも同じ 2 群構成に同意） ---
-  const arms = DEMO_ARM_KEYS.map((armKey) => ({ armKey, armName: DEMO_ARM_NAMES[armKey] }));
+  const paper1Arms = PAPER1.arms.map((a) => ({ armKey: a.key, armName: a.name }));
   await appendArmStructureVersion(
     DEMO_SPREADSHEET_ID,
-    {
-      studyId: DEMO_STUDY_ID,
-      arms,
-      annotator: DEMO_USER_EMAIL,
-      annotatorType: 'human_with_ai',
-      confirmedAt: DEMO_TIMESTAMPS.armConfirmedAtOwner,
-    },
+    { studyId: study1Id, arms: paper1Arms, annotator: DEMO_USER_EMAIL, annotatorType: 'human_with_ai', confirmedAt: DEMO_TIMESTAMPS.armConfirmedAtOwner },
     deps,
   );
   await appendArmStructureVersion(
     DEMO_SPREADSHEET_ID,
     {
-      studyId: DEMO_STUDY_ID,
-      arms,
+      studyId: study1Id,
+      arms: paper1Arms,
       annotator: DEMO_REVIEWER_A_EMAIL,
       annotatorType: 'human_independent',
       confirmedAt: DEMO_TIMESTAMPS.armConfirmedAtReviewerA,
@@ -470,8 +527,8 @@ export async function seedDemoData(): Promise<void> {
   await appendArmStructureVersion(
     DEMO_SPREADSHEET_ID,
     {
-      studyId: DEMO_STUDY_ID,
-      arms,
+      studyId: study1Id,
+      arms: paper1Arms,
       annotator: DEMO_REVIEWER_B_EMAIL,
       annotatorType: 'human_independent',
       confirmedAt: DEMO_TIMESTAMPS.armConfirmedAtReviewerB,
@@ -489,25 +546,23 @@ export async function seedDemoData(): Promise<void> {
   // owner がここへ 1 行でも書くと 3 名（selectable）になり、
   // レビュアー間一致度レポート（features/adjudication/agreement.ts の
   // collectReadyStudyInputs）が `pair.kind === 'ready'` の study だけを拾う仕様上、
-  // この study が対象から外れて κ が算出できなくなる（brief の受け入れ条件 7 が満たせない）。
+  // この study が対象から外れて κ が算出できなくなる（brief の受け入れ条件が満たせない）。
   // 結果として owner から見たこの study は「AI 抽出済み・人手未着手」（進捗 0/24）の状態になる。
-  // これは brief のデモデータ設計にある 3 本目（AI 抽出済み・人手未着手）の状態そのものであり、
-  // 実論文が 1 本のみ（video/fixtures/README.md 参照）という制約の中での妥当な代替である。
   // 群構成（ArmStructures）は判定に数えられないため owner も確定させ、
-  // #/verify を開いたときに arm / outcome タブがダイムされないようにしている（上のブロック）
+  // #/verify を開いたときに arm / outcome タブがディムされないようにしている（上のブロック）
   const mismatchKey = { fieldId: 'f_arm_n', entityKey: 'arm:1' };
-  const reviewerAPlan = buildIndependentPlan(DEMO_REVIEWER_A_EMAIL, DEMO_TIMESTAMPS.decidedAtReviewerA, null);
-  const reviewerBPlan = buildIndependentPlan(DEMO_REVIEWER_B_EMAIL, DEMO_TIMESTAMPS.decidedAtReviewerB, {
+  const reviewerAPlan = buildIndependentPlan(paper1.fieldInstances, DEMO_REVIEWER_A_EMAIL, DEMO_TIMESTAMPS.decidedAtReviewerA, null);
+  const reviewerBPlan = buildIndependentPlan(paper1.fieldInstances, DEMO_REVIEWER_B_EMAIL, DEMO_TIMESTAMPS.decidedAtReviewerB, {
     ...mismatchKey,
     value: '52',
   });
   // 裁定（consensus）: 独立レビュアー 2 名が一致したセルを一括採用し、群のN（arm:1、不一致セル）と
   // 資金源（study レベル）の 2 件だけ未裁定のまま残す（buildConsensusPlan 冒頭コメント参照）
-  const consensusPlan = buildConsensusPlan([mismatchKey, { fieldId: 'f_funding_source', entityKey: '-' }]);
+  const consensusPlan = buildConsensusPlan(paper1.fieldInstances, [mismatchKey, { fieldId: 'f_funding_source', entityKey: '-' }]);
 
   const allDecisions: Decision[] = [];
   for (const plan of [reviewerAPlan, reviewerBPlan, consensusPlan]) {
-    const { decisions, studyRow, resultsRows } = materializePlan(plan);
+    const { decisions, studyRow, resultsRows } = materializePlan(study1Id, paper1.fieldInstances, plan);
     allDecisions.push(...decisions);
     if (studyRow !== null) {
       await upsertStudyDataRows(DEMO_SPREADSHEET_ID, [studyRow], deps);
@@ -518,7 +573,15 @@ export async function seedDemoData(): Promise<void> {
   }
   await appendDecisionRows(DEMO_SPREADSHEET_ID, allDecisions, deps);
 
-  // --- Reviewers（Home のレビュアー管理カードに表示するための最小 2 行） ---
+  // ===========================================================================
+  // デモ論文 2（3 群）: Study / Document の取り込みのみをシードし、抽出・群構成確定・
+  // 検証・裁定は一切行わない（このモジュール冒頭コメント参照）。
+  // #/extract の一括抽出（llmFixtures.ts が paper2 の filename を見て正しい値を返す）と、
+  // #/verify を開いたときの「群構成の確定」ゲート UI（arm/outcome タブがディムされた状態から
+  // 3 群を入力して確定する）を、録画・手動確認のたびに実際に動かして見せられる状態にしておく
+  // ===========================================================================
+
+  // --- Reviewers（Home のレビュアー管理カードに表示するための最小 2 行。プロジェクト共通） ---
   await appendReviewerAssignment(
     DEMO_SPREADSHEET_ID,
     {

@@ -314,7 +314,8 @@ sr-query-builder と同一（TypeScript strict + `noUncheckedIndexedAccess`、�
 `dist/` へフォールバックする）。
 `npm run video:setup` / `video:record` / `video:tts` / `video:assemble` の 4 コマンドで
 「セットアップ → 収録 → 音声合成 → 最終合成」を実行できる（`video:setup` の最終ステップで
-`video/fixtures/fetch-fixtures.sh` も実行し、デモビルドが埋め込む実 PDF フィクスチャを取得する）。
+`npm run video:fixtures`（= `video/fixtures/build-fixtures.mjs`）も実行し、デモビルドが埋め込む
+架空デモ論文 PDF を HTML フィクスチャから生成する）。
 tiab との差分（拡張のページ構成の違いに合わせた `ctx.openExtensionPage()`、可視マウスカーソルの
 追加等）を含め、詳細は [video/README.md](../video/README.md) と
 [video/REQUIREMENTS.md](../video/REQUIREMENTS.md) を参照。デモビルド層自体（`src/demo/`）の設計は

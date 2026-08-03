@@ -1,74 +1,30 @@
-// デモ論文（UDCA RCT）の本文・抽出内容の単一の正典。
+// デモ論文 2 本（paperData.mjs）から、Evidence / StudyData / ResultsData の元になる
+// FieldInstanceContent（値・quote・page・confidence・anchor_status）を組み立てる。
 //
-// 【重要な注意】本 PR の実装セッションはサンドボックス化されたネットワークポリシーにより
-// 出版社・PMC・Europe PMC 等の研究系ドメインへ一切到達できなかった（journals.plos.org /
-// pmc.ncbi.nlm.nih.gov / www.ebi.ac.uk 等、10 以上のホストで CONNECT が組織ポリシーにより
-// 403 拒否されることを確認済み）。そのため本ファイルの PAGE_TEXTS（later 内 loadFixturePdf
-// 経由でローカル専用の代替 PDF 生成にのみ使う）は実論文 PMC10715657
-// （Zarkesh N, et al. "Evaluation of therapeutic effect of oral Ursodeoxycholic Acid on
-// indirect hyperbilirubinemia in term neonates undergoing phototherapy: A randomized
-// controlled clinical trial." PLoS ONE 2023. doi:10.1371/journal.pone.0273516. CC BY 4.0）を
-// 主題・試験デザインの一般的な事実（対象疾患・介入・国・概算症例数等、公知情報から把握できる範囲）
-// を踏まえて**独自に作文した要約文**であり、実論文からの逐語引用ではない。
-//
-// video/fixtures/fetch-fixtures.sh が実ネットワーク環境で実 PDF を取得した後は、
-// 本ファイルの PAGE_TEXTS / FIELD_INSTANCES の quote は実 PDF のテキストと一致しない可能性が高い
-// （抽出時は exact ではなく fuzzy/failed 判定へ後退しうる）。実 PDF 取得後の再検証・
-// quote の再調整は本 PR 後続の申し送り事項（PR レポート参照）。
+// 【単一の正典】本文の文章は paperData.mjs に定義した 1 か所だけに書かれている。
+// ここでは基本的にその文章をそのまま quote として使う（= exact 一致になる）。
+// 唯一の例外が anchor_status を意図的に fuzzy / failed にする 2 件（下記コメント参照）で、
+// そこだけ paperData.mjs の正しい文章とは異なる文字列を quote として保存する
+// （video/fixtures/demo-paper-0N.html / .pdf の本文は常に paperData.mjs の正しい文章のまま
+// 生成されるため、この 2 件は「PDF の実テキストとは一致しない quote」を意図的に作れる）。
 import type { AnchorStatus } from '../domain/anchor';
 import type { Confidence } from '../domain/evidence';
-import { DEMO_ARM_KEYS, DEMO_OUTCOME_ENTITY_KEYS } from './constants';
+import { PAPER1, PAPER2, DISCUSSION_TEXT, CONCLUSION_TEXT, referenceEntry, type PaperDefinition } from './paperData.mjs';
 
-/** デモ論文の書誌情報（Documents タブ用。DOI は既存 tests/fixtures/pdf/README.md に記載の値を踏襲） */
-export const DEMO_PAPER_META = {
-  filename: 'PMC10715657_plosone_udca_rct.pdf',
-  title:
-    'Evaluation of therapeutic effect of oral Ursodeoxycholic Acid on indirect hyperbilirubinemia in term neonates undergoing phototherapy: A randomized controlled clinical trial',
-  doi: '10.1371/journal.pone.0273516',
-  // PMID は本セッションでは検証できなかったため、未確認のまま断定しない（null = 未取得）
-  pmid: null as string | null,
-};
-
-/**
- * ローカル代替 PDF（video/fixtures/*.pdf が実ネットワーク環境で取得されるまでの、
- * このセッション内の動作確認専用フィクスチャ）のページ別本文。
- * 4 ページ構成（Introduction / Methods / Methods 続き / Results 相当）。
- * FIELD_INSTANCES の quote はすべてこのテキストの部分文字列（1 か所を除く。後述）になるよう作文している。
- */
-export const PAGE_TEXTS: readonly string[] = [
-  // page 1: Introduction 相当
-  `Evaluation of therapeutic effect of oral Ursodeoxycholic Acid on indirect hyperbilirubinemia in term neonates undergoing phototherapy: A randomized controlled clinical trial
-
-This randomized controlled trial was conducted in the neonatal ward of a teaching hospital in Ahvaz, Iran. Neonatal indirect hyperbilirubinemia remains a common cause of hospital readmission in term infants, and adjunctive pharmacological therapies to conventional phototherapy continue to be investigated. Term neonates with indirect hyperbilirubinemia were randomly allocated to receive either oral ursodeoxycholic acid plus phototherapy or phototherapy alone in this parallel-group randomized controlled trial. The primary aim was to compare the rate of total serum bilirubin decline between the two groups.`,
-  // page 2: Methods
-  `Methods
-
-Eligible neonates were enrolled between March 2021 and February 2022. Term neonates admitted for indirect hyperbilirubinemia requiring phototherapy were screened, and those meeting eligibility criteria were randomized using a computer-generated sequence. A total of 106 term neonates completed the study and were included in the final analysis. Total serum bilirubin was monitored daily until discharge, up to a maximum of seven days after enrollment.
-
-Neonates in the intervention group received oral ursodeoxycholic acid (10 mg/kg/day, divided into two doses) in addition to conventional phototherapy. Fifty-three neonates were randomized to the ursodeoxycholic acid plus phototherapy group. Neonates in the control group received conventional phototherapy alone, with no additional pharmacological intervention. The remaining fifty-three neonates were allocated to the control group receiving phototherapy alone.`,
-  // page 3: Methods（続き）+ Outcomes
-  `Baseline characteristics did not differ significantly between groups. The mean gestational age of enrolled neonates was 38.4 (SD 1.1) weeks. Of the 106 neonates, 50 (47.2%) were female.
-
-The UDCA dose was 10 mg/kg per day, administered orally in two divided doses, for the duration of phototherapy. Standard blue-light phototherapy was administered continuously except during feeding, identically in both groups.
-
-The primary outcome was the reduction in total serum bilirubin (TSB) from enrollment to 24 hours after starting treatment. TSB levels were reassessed 24 hours after the initiation of treatment in both groups.`,
-  // page 4: Results
-  `Results
-
-In the UDCA plus phototherapy group, TSB decreased by a mean of 6.8 (SD 1.4) mg/dL at 24 hours. In the phototherapy-alone group, the mean TSB reduction at 24 hours was 4.9 (SD 1.6) mg/dL. Mean difference -1.9 mg/dL (95% CI -2.6 to -1.2) favored the UDCA group (P<0.001). No serious adverse events attributable to ursodeoxycholic acid were observed during the study period.`,
-];
+/** デモ論文の書誌情報（Documents タブ用） */
+export interface DemoPaperMeta {
+  filename: string;
+  title: string;
+  doi: string;
+  pmid: string | null;
+}
 
 export interface FieldInstanceContent {
   fieldId: string;
   entityKey: string;
   /** AI が抽出した原本の値。null = not_reported */
   value: string | null;
-  /**
-   * Evidence.quote として保存する文字列（意図的に実テキストと食い違わせている 2 件を含む。
-   * §5 の anchor_status の作り分け: female_percent は数値の丸め違いで fuzzy、
-   * outcome_effect_size(arm:1) は別の数値・文言に差し替えて failed にしている）。
-   * null = not_reported（quote なし）
-   */
+  /** Evidence.quote として保存する文字列。null = not_reported（quote なし） */
   quote: string | null;
   page: number | null;
   confidence: Confidence | null;
@@ -78,271 +34,228 @@ export interface FieldInstanceContent {
 }
 
 const STUDY_ENTITY_KEY = '-';
-const [ARM_1, ARM_2] = DEMO_ARM_KEYS;
-const [OUTCOME_ARM_1, OUTCOME_ARM_2] = DEMO_OUTCOME_ENTITY_KEYS;
+
+/** value === null のときだけ not_reported の行にする（quote 等も合わせて null にする） */
+function reportedInstance(
+  fieldId: string,
+  entityKey: string,
+  value: string | null,
+  quote: string | null,
+  page: number | null,
+  confidence: Confidence,
+  anchorStatus: AnchorStatus,
+): FieldInstanceContent {
+  if (value === null) {
+    return {
+      fieldId,
+      entityKey,
+      value: null,
+      quote: null,
+      page: null,
+      confidence: 'low',
+      anchorStatus: null,
+      notReported: true,
+    };
+  }
+  return { fieldId, entityKey, value, quote, page, confidence, anchorStatus, notReported: false };
+}
 
 /**
- * 全 24 件のフィールドインスタンス（study 8 + arm 3×2 + outcome 5×2）。
- * seed.ts（事前シード済みの Evidence / StudyData / ResultsData）と llmFixtures.ts
- * （#/extract で実際に一括抽出を実行したときの Gemini 応答モック）の両方がこのテーブルを参照する
- * （brief の要請どおり二重定義しない）。
+ * 1 論文ぶんの PAGE_TEXTS（ページ別本文）+ FIELD_INSTANCES（全 32 件: study 8 + arm 3×N +
+ * outcome_result 5×N）を組み立てる。ページ番号（下記 P1〜P6）は
+ * video/fixtures/build-fixtures.mjs が生成する HTML の明示的な改ページ位置と 1 対 1 で
+ * 対応させている（build-fixtures.mjs 側のページ分割コメント参照。ここを変える場合は
+ * 両方合わせて直すこと）
  */
-export const FIELD_INSTANCES: readonly FieldInstanceContent[] = [
+function buildPaperInstances(paper: PaperDefinition): {
+  meta: DemoPaperMeta;
+  pageTexts: readonly string[];
+  fieldInstances: readonly FieldInstanceContent[];
+} {
+  const P1 = 1; // Title / Abstract / Introduction
+  const P2 = 2; // Methods: enrollment / follow-up / N / arm 名称・N（先頭 2 群ぶん）
+  const P3 = 3; // Methods 続き: 3 群目の名称・N（あれば）+ 全群の介入内容
+  const P4 = 4; // Methods 続き: 年齢・性別 + Table 1 + Outcomes 定義
+  const P5 = 5; // Results: アウトカム値・効果量 + アウトカム表
+  // P6（Discussion/Conclusion/References）は quote の出所にならないため未使用
+
+  const items: FieldInstanceContent[] = [];
+
   // --- study level ---
-  {
-    fieldId: 'f_country',
-    entityKey: STUDY_ENTITY_KEY,
-    value: 'Iran',
-    quote:
-      'This randomized controlled trial was conducted in the neonatal ward of a teaching hospital in Ahvaz, Iran.',
-    page: 1,
-    confidence: 'high',
-    anchorStatus: 'exact',
-    notReported: false,
-  },
-  {
-    fieldId: 'f_design',
-    entityKey: STUDY_ENTITY_KEY,
-    value: 'Randomized controlled trial (parallel-group, two-arm)',
-    quote:
-      'Term neonates with indirect hyperbilirubinemia were randomly allocated to receive either oral ursodeoxycholic acid plus phototherapy or phototherapy alone in this parallel-group randomized controlled trial.',
-    page: 1,
-    confidence: 'high',
-    anchorStatus: 'exact',
-    notReported: false,
-  },
-  {
-    fieldId: 'f_enrollment_period',
-    entityKey: STUDY_ENTITY_KEY,
-    value: 'March 2021 to February 2022',
-    quote: 'Eligible neonates were enrolled between March 2021 and February 2022.',
-    page: 2,
-    confidence: 'high',
-    anchorStatus: 'exact',
-    notReported: false,
-  },
-  {
-    fieldId: 'f_followup_duration',
-    entityKey: STUDY_ENTITY_KEY,
-    value: 'Until hospital discharge (up to 7 days)',
-    quote:
-      'Total serum bilirubin was monitored daily until discharge, up to a maximum of seven days after enrollment.',
-    page: 2,
-    confidence: 'medium',
-    anchorStatus: 'exact',
-    notReported: false,
-  },
-  {
-    fieldId: 'f_sample_size_total',
-    entityKey: STUDY_ENTITY_KEY,
-    value: '106',
-    quote: 'A total of 106 term neonates completed the study and were included in the final analysis.',
-    page: 2,
-    confidence: 'high',
-    anchorStatus: 'exact',
-    notReported: false,
-  },
-  {
-    fieldId: 'f_gestational_age',
-    entityKey: STUDY_ENTITY_KEY,
-    value: '38.4',
-    quote: 'The mean gestational age of enrolled neonates was 38.4 (SD 1.1) weeks.',
-    page: 3,
-    confidence: 'high',
-    anchorStatus: 'exact',
-    notReported: false,
-  },
-  {
-    // 意図的に fuzzy: quote は AI が丸めて写した "47%"（実テキストは "47.2%"）
-    fieldId: 'f_female_percent',
-    entityKey: STUDY_ENTITY_KEY,
-    value: '47',
-    quote: 'Of the 106 neonates, 50 (47%) were female.',
-    page: 3,
-    confidence: 'medium',
-    anchorStatus: 'fuzzy',
-    notReported: false,
-  },
-  {
-    fieldId: 'f_funding_source',
-    entityKey: STUDY_ENTITY_KEY,
-    value: null,
-    quote: null,
-    page: null,
-    confidence: 'low',
-    anchorStatus: null,
-    notReported: true,
-  },
-  // --- arm level: arm:1 = UDCA + phototherapy ---
-  {
-    fieldId: 'f_arm_name',
-    entityKey: ARM_1,
-    value: 'UDCA plus phototherapy group',
-    quote:
-      'Neonates in the intervention group received oral ursodeoxycholic acid (10 mg/kg/day, divided into two doses) in addition to conventional phototherapy.',
-    page: 2,
-    confidence: 'high',
-    anchorStatus: 'exact',
-    notReported: false,
-  },
-  {
-    fieldId: 'f_arm_n',
-    entityKey: ARM_1,
-    value: '53',
-    quote: 'Fifty-three neonates were randomized to the ursodeoxycholic acid plus phototherapy group.',
-    page: 2,
-    confidence: 'high',
-    anchorStatus: 'exact',
-    notReported: false,
-  },
-  {
-    fieldId: 'f_arm_intervention',
-    entityKey: ARM_1,
-    value: 'Oral UDCA 10 mg/kg/day (two divided doses) plus conventional phototherapy',
-    quote:
-      'The UDCA dose was 10 mg/kg per day, administered orally in two divided doses, for the duration of phototherapy.',
-    page: 3,
-    confidence: 'high',
-    anchorStatus: 'exact',
-    notReported: false,
-  },
-  // --- arm level: arm:2 = phototherapy alone (control) ---
-  {
-    fieldId: 'f_arm_name',
-    entityKey: ARM_2,
-    value: 'Phototherapy-alone group (control)',
-    quote:
-      'Neonates in the control group received conventional phototherapy alone, with no additional pharmacological intervention.',
-    page: 2,
-    confidence: 'high',
-    anchorStatus: 'exact',
-    notReported: false,
-  },
-  {
-    fieldId: 'f_arm_n',
-    entityKey: ARM_2,
-    value: '53',
-    quote: 'The remaining fifty-three neonates were allocated to the control group receiving phototherapy alone.',
-    page: 2,
-    confidence: 'high',
-    anchorStatus: 'exact',
-    notReported: false,
-  },
-  {
-    fieldId: 'f_arm_intervention',
-    entityKey: ARM_2,
-    value: 'Conventional phototherapy alone',
-    quote:
-      'Standard blue-light phototherapy was administered continuously except during feeding, identically in both groups.',
-    page: 3,
-    confidence: 'medium',
-    anchorStatus: 'exact',
-    notReported: false,
-  },
-  // --- outcome level: outcome:tsb_reduction|arm:1 ---
-  {
-    fieldId: 'f_outcome_name',
-    entityKey: OUTCOME_ARM_1,
-    value: 'Reduction in total serum bilirubin',
-    quote:
-      'The primary outcome was the reduction in total serum bilirubin (TSB) from enrollment to 24 hours after starting treatment.',
-    page: 3,
-    confidence: 'high',
-    anchorStatus: 'exact',
-    notReported: false,
-  },
-  {
-    fieldId: 'f_outcome_timepoint',
-    entityKey: OUTCOME_ARM_1,
-    value: '24 hours after enrollment',
-    quote: 'TSB levels were reassessed 24 hours after the initiation of treatment in both groups.',
-    page: 3,
-    confidence: 'high',
-    anchorStatus: 'exact',
-    notReported: false,
-  },
-  {
-    fieldId: 'f_outcome_events',
-    entityKey: OUTCOME_ARM_1,
-    value: null,
-    quote: null,
-    page: null,
-    confidence: 'low',
-    anchorStatus: null,
-    notReported: true,
-  },
-  {
-    fieldId: 'f_outcome_mean_sd',
-    entityKey: OUTCOME_ARM_1,
-    value: '6.8 (1.4) mg/dL',
-    quote: 'In the UDCA plus phototherapy group, TSB decreased by a mean of 6.8 (SD 1.4) mg/dL at 24 hours.',
-    page: 4,
-    confidence: 'high',
-    anchorStatus: 'exact',
-    notReported: false,
-  },
-  {
-    // 意図的に failed: 実テキスト（page 4）とは異なる数値・文言の quote を保存している
-    // （第9章「quote 再配置（relocate-quote）」の実演用。requirements.md §5）
-    fieldId: 'f_outcome_effect_size',
-    entityKey: OUTCOME_ARM_1,
-    value: 'Mean difference -1.9 mg/dL (95% CI -2.6 to -1.2)',
-    quote: 'Mean difference -3.4 mg/dL (95% CI -4.1 to -2.7), P=0.002',
-    page: 4,
-    confidence: 'low',
-    anchorStatus: 'failed',
-    notReported: false,
-  },
-  // --- outcome level: outcome:tsb_reduction|arm:2 ---
-  {
-    fieldId: 'f_outcome_name',
-    entityKey: OUTCOME_ARM_2,
-    value: 'Reduction in total serum bilirubin',
-    quote:
-      'The primary outcome was the reduction in total serum bilirubin (TSB) from enrollment to 24 hours after starting treatment.',
-    page: 3,
-    confidence: 'high',
-    anchorStatus: 'exact',
-    notReported: false,
-  },
-  {
-    fieldId: 'f_outcome_timepoint',
-    entityKey: OUTCOME_ARM_2,
-    value: '24 hours after enrollment',
-    quote: 'TSB levels were reassessed 24 hours after the initiation of treatment in both groups.',
-    page: 3,
-    confidence: 'high',
-    anchorStatus: 'exact',
-    notReported: false,
-  },
-  {
-    fieldId: 'f_outcome_events',
-    entityKey: OUTCOME_ARM_2,
-    value: null,
-    quote: null,
-    page: null,
-    confidence: 'low',
-    anchorStatus: null,
-    notReported: true,
-  },
-  {
-    fieldId: 'f_outcome_mean_sd',
-    entityKey: OUTCOME_ARM_2,
-    value: '4.9 (1.6) mg/dL',
-    quote: 'In the phototherapy-alone group, the mean TSB reduction at 24 hours was 4.9 (SD 1.6) mg/dL.',
-    page: 4,
-    confidence: 'high',
-    anchorStatus: 'exact',
-    notReported: false,
-  },
-  {
-    fieldId: 'f_outcome_effect_size',
-    entityKey: OUTCOME_ARM_2,
-    value: null,
-    quote: null,
-    page: null,
-    confidence: 'low',
-    anchorStatus: null,
-    notReported: true,
-  },
+  items.push(
+    reportedInstance('f_country', STUDY_ENTITY_KEY, paper.facts.country.value, paper.facts.country.sentence, P1, 'high', 'exact'),
+    reportedInstance('f_design', STUDY_ENTITY_KEY, paper.facts.design.value, paper.facts.design.sentence, P1, 'high', 'exact'),
+    reportedInstance(
+      'f_enrollment_period',
+      STUDY_ENTITY_KEY,
+      paper.facts.enrollmentPeriod.value,
+      paper.facts.enrollmentPeriod.sentence,
+      P2,
+      'high',
+      'exact',
+    ),
+    reportedInstance(
+      'f_followup_duration',
+      STUDY_ENTITY_KEY,
+      paper.facts.followupDuration.value,
+      paper.facts.followupDuration.sentence,
+      P2,
+      'medium',
+      'exact',
+    ),
+    reportedInstance(
+      'f_sample_size_total',
+      STUDY_ENTITY_KEY,
+      paper.facts.sampleSizeTotal.value,
+      paper.facts.sampleSizeTotal.sentence,
+      P2,
+      'high',
+      'exact',
+    ),
+    reportedInstance('f_mean_age', STUDY_ENTITY_KEY, paper.facts.meanAge.value, paper.facts.meanAge.sentence, P4, 'high', 'exact'),
+    // 意図的に fuzzy: quote は AI が丸めて写した値（本文は正確な値のまま。paperData.mjs 参照）
+    reportedInstance(
+      'f_female_percent',
+      STUDY_ENTITY_KEY,
+      paper.facts.femalePercent.value,
+      paper.id === 'paper1'
+        ? 'Of the 112 patients, 48 (43%) were female.' // 実文章は "43.4%"（丸め違いで fuzzy）
+        : paper.facts.femalePercent.sentence,
+      P4,
+      'medium',
+      paper.id === 'paper1' ? 'fuzzy' : 'exact',
+    ),
+    reportedInstance('f_funding_source', STUDY_ENTITY_KEY, paper.facts.fundingSource.value, null, null, 'low', 'exact'),
+  );
+
+  // --- arm level（群数ぶん） ---
+  // 3 群目以降は Methods 続き（P3）に書く（build-fixtures.mjs のページ割りと対応）
+  paper.arms.forEach((armFact, index) => {
+    const namePage = index < 2 ? P2 : P3;
+    const nPage = index < 2 ? P2 : P3;
+    items.push(
+      reportedInstance('f_arm_name', armFact.key, armFact.name, armFact.nameSentence, namePage, 'high', 'exact'),
+      reportedInstance('f_arm_n', armFact.key, armFact.n, armFact.nSentence, nPage, 'high', 'exact'),
+      reportedInstance(
+        'f_arm_intervention',
+        armFact.key,
+        armFact.interventionValue,
+        armFact.interventionSentence,
+        P3,
+        index === 0 ? 'high' : 'medium',
+        'exact',
+      ),
+    );
+  });
+
+  // --- outcome_result level（群数ぶん） ---
+  paper.outcome.perArm.forEach((outcomeArmFact) => {
+    const entityKey = `outcome:${paper.outcome.slug}|${outcomeArmFact.armKey}`;
+    const isArm1 = outcomeArmFact.armKey === 'arm:1';
+    items.push(
+      reportedInstance('f_outcome_name', entityKey, paper.outcome.name.value, paper.outcome.name.sentence, P4, 'high', 'exact'),
+      reportedInstance(
+        'f_outcome_timepoint',
+        entityKey,
+        paper.outcome.timepoint.value,
+        paper.outcome.timepoint.sentence,
+        P4,
+        'high',
+        'exact',
+      ),
+      reportedInstance('f_outcome_events', entityKey, outcomeArmFact.events.value, outcomeArmFact.events.sentence, P5, 'high', 'exact'),
+      reportedInstance(
+        'f_outcome_mean_sd',
+        entityKey,
+        outcomeArmFact.meanSd.value,
+        outcomeArmFact.meanSd.sentence,
+        P5,
+        'high',
+        'exact',
+      ),
+      // 意図的に failed: paper1 の arm:1 だけ、本文と一致しない quote を保存する
+      // （§5「quote 再配置（relocate-quote）」の実演用。requirements.md §5）
+      reportedInstance(
+        'f_outcome_effect_size',
+        entityKey,
+        outcomeArmFact.effectSize.value,
+        paper.id === 'paper1' && isArm1
+          ? 'Mean difference 33.2 m (95% CI 25.0 to 41.4), P=0.004' // 本文中のどこにも一致しない
+          : outcomeArmFact.effectSize.sentence,
+        outcomeArmFact.effectSize.value === null ? null : P5,
+        outcomeArmFact.effectSize.value === null ? 'low' : 'low',
+        paper.id === 'paper1' && isArm1 ? 'failed' : 'exact',
+      ),
+    );
+  });
+
+  const pageTexts = buildPageTexts(paper);
+
+  return {
+    meta: { filename: paper.filename, title: paper.title, doi: paper.doi, pmid: null },
+    pageTexts,
+    fieldInstances: items,
+  };
+}
+
+/**
+ * extracted_texts 相当のページ別本文（fetchMock.ts の Drive テキスト取得・#/extract の
+ * 一括抽出プロンプトの両方が参照する）。build-fixtures.mjs の HTML 生成と同じ文章・同じ
+ * ページ割りにする（このモジュール冒頭コメント参照）。
+ * 6 ページ目（Discussion/Conclusion/References）は quote の出所にならないが、実 PDF の
+ * ページ数（6）と extracted_texts のページ数を一致させるため含めている
+ */
+function buildPageTexts(paper: PaperDefinition): string[] {
+  const armNamesAndN = paper.arms.map((a) => `${a.nameSentence} ${a.nSentence}`);
+  const armInterventions = paper.arms.map((a) => a.interventionSentence);
+  const outcomeEvents = paper.outcome.perArm
+    .map((a) => a.events.sentence)
+    .filter((s): s is string => s !== null);
+  const outcomeMeanSd = paper.outcome.perArm
+    .map((a) => a.meanSd.sentence)
+    .filter((s): s is string => s !== null);
+  const outcomeEffectSizes = paper.outcome.perArm
+    .map((a) => a.effectSize.sentence)
+    .filter((s): s is string => s !== null);
+
+  return [
+    // page 1: Title / Abstract / Introduction
+    [paper.title, paper.abstract, paper.facts.country.sentence, paper.facts.design.sentence].join('\n\n'),
+    // page 2: Methods（登録・追跡・症例数 + 先頭 2 群の名称・N）
+    [
+      'Methods',
+      paper.facts.enrollmentPeriod.sentence,
+      paper.facts.followupDuration.sentence,
+      paper.facts.sampleSizeTotal.sentence,
+      ...armNamesAndN.slice(0, 2),
+    ].join('\n\n'),
+    // page 3: Methods 続き（3 群目以降の名称・N + 全群の介入内容）
+    [...armNamesAndN.slice(2), ...armInterventions].join('\n\n'),
+    // page 4: Methods 続き（年齢・性別）+ Outcomes 定義
+    [
+      paper.facts.meanAge.sentence,
+      paper.facts.femalePercent.sentence,
+      'Outcomes',
+      paper.outcome.name.sentence,
+      paper.outcome.timepoint.sentence,
+    ].join('\n\n'),
+    // page 5: Results（アウトカム値・効果量）
+    ['Results', ...outcomeEvents, ...outcomeMeanSd, ...outcomeEffectSizes].join('\n\n'),
+    // page 6: Discussion / Conclusion / References
+    ['Discussion', DISCUSSION_TEXT, 'Conclusion', CONCLUSION_TEXT, 'References', referenceEntry(paper)].join('\n\n'),
+  ];
+}
+
+const PAPER1_BUILT = buildPaperInstances(PAPER1);
+const PAPER2_BUILT = buildPaperInstances(PAPER2);
+
+/** デモ論文ごとの、書誌情報・本文・FIELD_INSTANCES 一式（Documents / #/extract 順 = 配列順） */
+export const DEMO_PAPERS: readonly {
+  paperId: string;
+  meta: DemoPaperMeta;
+  pageTexts: readonly string[];
+  fieldInstances: readonly FieldInstanceContent[];
+}[] = [
+  { paperId: PAPER1.id, meta: PAPER1_BUILT.meta, pageTexts: PAPER1_BUILT.pageTexts, fieldInstances: PAPER1_BUILT.fieldInstances },
+  { paperId: PAPER2.id, meta: PAPER2_BUILT.meta, pageTexts: PAPER2_BUILT.pageTexts, fieldInstances: PAPER2_BUILT.fieldInstances },
 ];

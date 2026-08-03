@@ -1,12 +1,17 @@
 // デモモード用 Gemini 応答モック（#/extract の一括抽出を実際に実行したときの応答）。
 //
-// extract-data skill（features/extraction/skills/extractData.ts）が組み立てるプロンプトの
-// 「## Fields to extract」セクションから要求された field_id を読み取り、paperContent.ts の
-// FIELD_INSTANCES から該当する項目だけを EXTRACT_DATA_RESPONSE_SCHEMA と同じ形の JSON 配列で返す。
+// extract-data skill（features/extraction/skills/extractData.ts）が組み立てるプロンプトから
+// 2 つの手がかりを読み取る:
+// - `=== Document i/N [role] filename ===` の filename → どのデモ論文（DEMO_PAPERS のどの要素）
+//   を読んでいるか。デモは 2 論文あるため、要求された field_id が一致しても「どちらの論文の
+//   FIELD_INSTANCES を返すべきか」を文書名で絞り込まないと、他方の論文の値が混ざってしまう
+// - `- field_id: xxx` 行の集合 → 当該バッチで要求されている項目
+// 該当する論文の FIELD_INSTANCES から、要求された field_id に一致する行だけを
+// EXTRACT_DATA_RESPONSE_SCHEMA と同じ形の JSON 配列で返す。
 // 本ファイルはスキーマドラフト（draft-schema skill）には対応しない — デモのスキーマは
 // あらかじめ確定済み（seed.ts）で #/schema 画面は「AI がドラフト」を再実行せずに閲覧するだけの
 // シナリオのため。
-import { FIELD_INSTANCES } from './paperContent';
+import { DEMO_PAPERS } from './paperContent';
 
 /** extract-data のユーザープロンプトから `- field_id: xxx` 行を全件拾う */
 function extractRequestedFieldIds(promptText: string): Set<string> {
@@ -17,6 +22,17 @@ function extractRequestedFieldIds(promptText: string): Set<string> {
     ids.add(match[1] as string);
   }
   return ids;
+}
+
+/** プロンプトの `=== Document i/N [role] filename ===` 見出しから文書ファイル名を全件拾う */
+function extractReferencedFilenames(promptText: string): Set<string> {
+  const names = new Set<string>();
+  const re = /^=== Document \d+\/\d+ \[[^\]]+\] (.+?) ===$/gm;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(promptText)) !== null) {
+    names.add((match[1] as string).trim());
+  }
+  return names;
 }
 
 /** Gemini generateContent リクエストボディから全パートのテキストを連結する（contents[].parts[].text） */
@@ -47,22 +63,35 @@ interface ExtractDataResponseItem {
 }
 
 /**
- * extract-data skill が要求した field_id 集合に対する応答項目一覧を組み立てる。
- * FIELD_INSTANCES は study / arm / outcome_result の全エンティティインスタンスを
- * あらかじめ列挙済みなので、要求された field_id に一致する行をそのまま返せばよい
- * （本デモは文書 1 件のみのため document_index は quote ありなら常に 1）。
+ * 参照された文書ファイル名（通常 1 件。プロンプトに一致する DEMO_PAPERS の要素が
+ * 見つからない場合は全論文を対象にする防御的フォールバック）に対応する FIELD_INSTANCES を集め、
+ * 要求された field_id に一致する行だけを応答項目一覧として組み立てる。
+ * 本デモは 1 study = 1 document のため document_index は quote ありなら常に 1
  */
-function buildExtractDataItems(requestedFieldIds: Set<string>): ExtractDataResponseItem[] {
-  return FIELD_INSTANCES.filter((item) => requestedFieldIds.has(item.fieldId)).map((item) => ({
-    field_id: item.fieldId,
-    entity_key: item.entityKey,
-    value: item.value,
-    not_reported: item.notReported,
-    quote: item.quote,
-    page: item.page,
-    document_index: item.quote === null ? null : 1,
-    confidence: item.confidence,
-  }));
+function buildExtractDataItems(
+  requestedFieldIds: Set<string>,
+  referencedFilenames: Set<string>,
+): ExtractDataResponseItem[] {
+  const targetPapers =
+    referencedFilenames.size === 0
+      ? DEMO_PAPERS
+      : DEMO_PAPERS.filter((paper) => referencedFilenames.has(paper.meta.filename));
+  const papers = targetPapers.length > 0 ? targetPapers : DEMO_PAPERS;
+
+  return papers.flatMap((paper) =>
+    paper.fieldInstances
+      .filter((item) => requestedFieldIds.has(item.fieldId))
+      .map((item) => ({
+        field_id: item.fieldId,
+        entity_key: item.entityKey,
+        value: item.value,
+        not_reported: item.notReported,
+        quote: item.quote,
+        page: item.page,
+        document_index: item.quote === null ? null : 1,
+        confidence: item.confidence,
+      })),
+  );
 }
 
 /**
@@ -74,6 +103,7 @@ function buildExtractDataItems(requestedFieldIds: Set<string>): ExtractDataRespo
 export function buildGenerateContentResponseText(body: unknown): string {
   const promptText = extractPromptText(body);
   const requestedFieldIds = extractRequestedFieldIds(promptText);
-  const items = buildExtractDataItems(requestedFieldIds);
+  const referencedFilenames = extractReferencedFilenames(promptText);
+  const items = buildExtractDataItems(requestedFieldIds, referencedFilenames);
   return JSON.stringify(items);
 }

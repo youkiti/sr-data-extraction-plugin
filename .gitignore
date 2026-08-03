@@ -46,8 +46,9 @@ experiments/multimodal-bbox-spike
 video/build/
 video/tools/
 
-# デモビルド用の実論文 PDF fixture（tests/fixtures/pdf/ と同じ運用）。
-# 再取得方法は video/fixtures/README.md を参照（fetch-fixtures.sh で一括取得）
+# デモビルド用の架空論文 PDF fixture（HTML から生成する生成物。tests/fixtures/pdf/ と同じ運用で
+# バイナリはコミットしない）。生成方法は video/fixtures/README.md を参照
+# （npm run video:fixtures = video/fixtures/build-fixtures.mjs で一括生成）
 video/fixtures/*.pdf
 
 # OS / エディタ

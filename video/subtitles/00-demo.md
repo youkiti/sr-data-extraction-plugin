@@ -4,10 +4,10 @@ slug: demo
 ---
 
 ## cue 01
-This is the SR Data Extraction Plugin running on the demo build. We start with a demo project already selected: a systematic review of adjunctive therapies for neonatal hyperbilirubinemia.
+This is the SR Data Extraction Plugin running on the demo build. We start with a demo project already selected: a systematic review of perioperative interventions (all data in this demo is fictional).
 
 ## cue 02
-The document import screen already has a real CC BY article imported: a PLoS One RCT of adjunctive UDCA therapy.
+The document import screen already has two fictional demo papers imported: a two-arm trial and a three-arm trial, so we can also show the arm-structure confirmation UI.
 
 ## cue 03
 On the table design screen, a 16-item extraction schema covering study overview, population, arm structure, and outcomes has already been confirmed.

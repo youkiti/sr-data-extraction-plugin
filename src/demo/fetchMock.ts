@@ -17,12 +17,12 @@ import {
 } from './sheetStore';
 import { buildGenerateContentResponseText } from './llmFixtures';
 import {
-  DEMO_DRIVE_PDF_FILE_ID,
-  DEMO_DRIVE_TEXT_FILE_ID,
-  DEMO_FIXTURE_PDF_FILENAME,
+  DEMO_DRIVE_PDF_FILE_IDS,
+  DEMO_DRIVE_TEXT_FILE_IDS,
+  DEMO_FIXTURE_PDF_FILENAMES,
   DEMO_SPREADSHEET_ID,
 } from './constants';
-import { PAGE_TEXTS } from './paperContent';
+import { DEMO_PAPERS } from './paperContent';
 
 let installed = false;
 
@@ -249,9 +249,9 @@ function routeSheetsApi(pathname: string, url: URL, method: string, body: unknow
 // Google Drive API（lib/google/drive.ts の getFileText / getFileBinary のみ対応）
 // ============================================================
 
-/** 拡張バンドル同梱の実 PDF フィクスチャをバイト列で取得する（chrome-extension:// URL は isPassthroughUrl で実 fetch へ流れる） */
-async function fetchBundledFixturePdfBytes(): Promise<ArrayBuffer> {
-  const resourceUrl = chrome.runtime.getURL(`fixtures/${DEMO_FIXTURE_PDF_FILENAME}`);
+/** 拡張バンドル同梱の実 PDF フィクスチャ（デモ論文ぶん）をバイト列で取得する（chrome-extension:// URL は isPassthroughUrl で実 fetch へ流れる） */
+async function fetchBundledFixturePdfBytes(filename: string): Promise<ArrayBuffer> {
+  const resourceUrl = chrome.runtime.getURL(`fixtures/${filename}`);
   const response = await fetch(resourceUrl);
   if (!response.ok) {
     throw new Error(
@@ -262,23 +262,28 @@ async function fetchBundledFixturePdfBytes(): Promise<ArrayBuffer> {
 }
 
 /** extracted_texts/{document_id}.txt 相当。PAGE_TEXTS を lib/documents/extractedText.ts の形式（form feed 区切り）で結合する */
-function buildExtractedTextBody(): string {
-  return PAGE_TEXTS.join('\f');
+function buildExtractedTextBody(pageTexts: readonly string[]): string {
+  return pageTexts.join('\f');
 }
 
-/** Drive files.get?alt=media（PDF バイナリ / 抽出済みテキスト取得）の応答を組み立てる */
+/** Drive files.get?alt=media（PDF バイナリ / 抽出済みテキスト取得）の応答を組み立てる。
+ * DEMO_DRIVE_PDF_FILE_IDS / DEMO_DRIVE_TEXT_FILE_IDS のインデックス = DEMO_PAPERS のインデックス */
 async function handleDriveMediaDownload(fileId: string): Promise<Response> {
-  if (fileId === DEMO_DRIVE_PDF_FILE_ID) {
+  const pdfIndex = DEMO_DRIVE_PDF_FILE_IDS.indexOf(fileId as (typeof DEMO_DRIVE_PDF_FILE_IDS)[number]);
+  if (pdfIndex !== -1) {
+    const filename = DEMO_FIXTURE_PDF_FILENAMES[pdfIndex] as string;
     try {
-      const bytes = await fetchBundledFixturePdfBytes();
+      const bytes = await fetchBundledFixturePdfBytes(filename);
       return new Response(bytes, { status: 200, headers: { 'Content-Type': 'application/pdf' } });
     } catch (error) {
       console.error('[demo] デモ PDF フィクスチャの読み込みに失敗しました:', error);
       return jsonResponse(500, { error: { code: 500, message: 'demo pdf fixture load failed' } });
     }
   }
-  if (fileId === DEMO_DRIVE_TEXT_FILE_ID) {
-    return new Response(buildExtractedTextBody(), {
+  const textIndex = DEMO_DRIVE_TEXT_FILE_IDS.indexOf(fileId as (typeof DEMO_DRIVE_TEXT_FILE_IDS)[number]);
+  if (textIndex !== -1) {
+    const pageTexts = DEMO_PAPERS[textIndex]?.pageTexts ?? [];
+    return new Response(buildExtractedTextBody(pageTexts), {
       status: 200,
       headers: { 'Content-Type': 'text/plain; charset=utf-8' },
     });

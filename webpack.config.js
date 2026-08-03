@@ -16,24 +16,46 @@ const buildDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2,
 
 /**
  * 動画収録用のデモビルド（`npm run build:demo` = `webpack --mode development --env demo`）で
- * 実 fixture PDF が未取得の場合に、日本語エラーでビルドを止める。
- * `dist-demo/` 生成前に検知したいので CopyWebpackPlugin のパターン列挙前に同期チェックする
- * （実行時に fetchMock が chrome-extension:// 経由で読みに行くのは copy 後の dist-demo/fixtures/）。
+ * 架空デモ論文の生成 PDF（video/fixtures/build-fixtures.mjs の出力）が未生成の場合に、
+ * 日本語エラーでビルドを止める。`dist-demo/` 生成前に検知したいので CopyWebpackPlugin の
+ * パターン列挙前に同期チェックする（実行時に fetchMock が chrome-extension:// 経由で
+ * 読みに行くのは copy 後の dist-demo/fixtures/）。
  */
-function assertDemoFixturePdfExists() {
+function assertDemoFixturePdfsExist() {
   const fs = require('fs');
-  const fixturePath = path.join(__dirname, 'video', 'fixtures', DEMO_FIXTURE_PDF_FILENAME);
-  if (!fs.existsSync(fixturePath)) {
-    throw new Error(
-      `デモビルド用の PDF フィクスチャが見つかりません: ${fixturePath}\n` +
-        'bash video/fixtures/fetch-fixtures.sh を実行してください。',
-    );
+  for (const filename of DEMO_FIXTURE_PDF_FILENAMES) {
+    const fixturePath = path.join(__dirname, 'video', 'fixtures', filename);
+    if (!fs.existsSync(fixturePath)) {
+      throw new Error(
+        `デモビルド用の PDF フィクスチャが見つかりません: ${fixturePath}\n` +
+          'npm run video:fixtures を実行してください。',
+      );
+    }
   }
 }
 
-// src/demo/constants.ts の DEMO_FIXTURE_PDF_FILENAME と同じ値（webpack 設定は TS を import
-// できないため、ここでは文字列として重複定義する。値を変える場合は両方直すこと）
-const DEMO_FIXTURE_PDF_FILENAME = 'PMC10715657_plosone_udca_rct.pdf';
+// src/demo/constants.ts の DEMO_FIXTURE_PDF_FILENAMES と同じ値（webpack 設定は TS を import
+// できないため、ここでは文字列配列として重複定義する。値を変える場合は両方直すこと）
+const DEMO_FIXTURE_PDF_FILENAMES = ['demo-paper-01.pdf', 'demo-paper-02.pdf'];
+
+/**
+ * pdfjs upsert ポリフィル（src/demo/pdfjsUpsertPolyfill.mjs）の worker 側注入用ソース。
+ * worker は import ではなく「バンドル済みスクリプトの先頭へ文字列として連結する」形でしか
+ * 差し込めないため、webpack 設定側でファイルを直接読む（理由・仕様は同ファイル冒頭コメント参照。
+ * メインスレッド側は src/demo/bootShared.ts が同じファイルを通常の import で使う。
+ * 1 つのソースを 2 通りの方法で消費しているだけで、内容の複製・分岐はない）
+ */
+function readDemoPdfjsUpsertPolyfillSource() {
+  const fs = require('fs');
+  const source = fs.readFileSync(
+    path.join(__dirname, 'src', 'demo', 'pdfjsUpsertPolyfill.mjs'),
+    'utf8',
+  );
+  // pdf.worker.min.mjs は type: 'module' の Worker として読み込まれる（pdfjs-dist が workerSrc の
+  // 拡張子から自動判定）ため、`export function ...` を含むこのソースをそのまま module 構文として
+  // 連結できる。末尾で呼び出しまで行い、以降に続く元の worker コードより確実に先に実行させる
+  return `${source}\ninstallPdfjsUpsertPolyfill();\n`;
+}
 
 module.exports = (env, argv) => {
   const isProduction = argv && argv.mode === 'production';
@@ -51,7 +73,7 @@ module.exports = (env, argv) => {
     throw new Error('WEBAUTH_CLIENT_ID が未設定です（.env を確認してください）');
   }
   if (isDemo) {
-    assertDemoFixturePdfExists();
+    assertDemoFixturePdfsExist();
   }
 
   // dev ビルドで拡張名・ヘッダー・タブタイトルへ付けるサフィックス（本番は空文字）。
@@ -150,17 +172,28 @@ module.exports = (env, argv) => {
           { from: '**/*.css', context: 'src' },
           { from: '_locales', to: '_locales', context: 'src' },
           { from: 'icons', to: 'icons', context: 'src' },
-          // デモビルドのみ: #/verify のハイライト実演用の実 PDF フィクスチャ
-          // （video/fixtures/fetch-fixtures.sh で取得。src/demo/fetchMock.ts が
-          // chrome.runtime.getURL('fixtures/...') 経由で読み込む）
+          // デモビルドのみ: #/verify のハイライト実演用の架空デモ論文 PDF（架空データ。
+          // video/fixtures/build-fixtures.mjs が demo-paper-0N.html から生成する。
+          // src/demo/fetchMock.ts が chrome.runtime.getURL('fixtures/...') 経由で読み込む）
           ...(isDemo
-            ? [{ from: `video/fixtures/${DEMO_FIXTURE_PDF_FILENAME}`, to: `fixtures/${DEMO_FIXTURE_PDF_FILENAME}` }]
+            ? DEMO_FIXTURE_PDF_FILENAMES.map((filename) => ({
+                from: `video/fixtures/${filename}`,
+                to: `fixtures/${filename}`,
+              }))
             : []),
           {
             // PDF.js worker は拡張に同梱する（CDN 不可・MV3 CSP 準拠。architecture.md §3.1）。
-            // 実行時は chrome.runtime.getURL('pdf.worker.min.mjs') で解決する
+            // 実行時は chrome.runtime.getURL('pdf.worker.min.mjs') で解決する。
+            // デモビルドだけ、この worker の先頭へ pdfjs upsert ポリフィルを差し込む
+            // （transform 未指定＝通常の dev / production ビルドは 1 バイトも変えない）
             from: 'node_modules/pdfjs-dist/build/pdf.worker.min.mjs',
             to: 'pdf.worker.min.mjs',
+            ...(isDemo
+              ? {
+                  transform: (content) =>
+                    Buffer.concat([Buffer.from(readDemoPdfjsUpsertPolyfillSource(), 'utf8'), content]),
+                }
+              : {}),
           },
           {
             // 既定 CMap（bcmap）も同梱する（issue #95: 和文 PDF の CID フォントの
