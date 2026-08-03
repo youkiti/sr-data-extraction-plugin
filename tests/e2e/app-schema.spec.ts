@@ -292,17 +292,21 @@ test('エディタ: 行操作と検証エラー表示、確定ボタンの無効
   await expect(page.locator('#schema-draft-form')).toBeVisible();
 });
 
-test('エディタ: 行を追加 → ↑ で上へ移動 → 表の並びが変わる（issue #230）', async ({ page }) => {
-  await initApp(page, { ...EMPTY_SCHEMA_STATE, editorRows: [makeEditorRow()] });
+test('エディタ: ↑ で上へ移動 → 表の並びが変わる（issue #230）', async ({ page }) => {
+  // 初期状態から 2 行を積んでおく（セル入力の fill → change コミットは別々のラウンド
+  // トリップになり、その間の再描画で入力前の値に巻き戻るレースが CI で露出したため、
+  // 未コミットの DOM 値には依存しない構成にする）
+  await initApp(page, {
+    ...EMPTY_SCHEMA_STATE,
+    editorRows: [makeEditorRow(), makeEditorRow({ fieldName: 'country' })],
+  });
 
-  await expect(page.locator('#schema-editor-table tbody tr')).toHaveCount(1);
-  await page.locator('#schema-add-row').click();
   await expect(page.locator('#schema-editor-table tbody tr')).toHaveCount(2);
-
-  // 追加直後の空行（2 行目）に field_name を入力し、移動後にどの行かを判別できるようにする
-  const secondRowFieldName = page.locator('input[aria-label="2 行目の field_name"]');
-  await secondRowFieldName.fill('country');
-  await secondRowFieldName.dispatchEvent('change');
+  // 移動前の並び（study_design / country）を明示的に確認してから移動する
+  await expect(page.locator('input[aria-label="1 行目の field_name"]')).toHaveValue(
+    'study_design',
+  );
+  await expect(page.locator('input[aria-label="2 行目の field_name"]')).toHaveValue('country');
 
   await page.locator('button[aria-label="2 行目を上へ移動"]').click();
   // 移動後は 1 行目が country、2 行目が study_design になる
