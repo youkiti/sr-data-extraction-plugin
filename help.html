@@ -3,7 +3,7 @@
      正典はこのファイル（master の hosted/）。デプロイ手順は hosted/README.md を参照。
      内容はワークフローレベルに留める（画面細部はアプリ内のリード文が担う。issue #214 §3）。
      文言は ja / en を両方持ち、表示は lang.js + CSS が片方だけに絞る（併記しない）。
-     version: 2026-08-02 -->
+     version: 2026-08-03 -->
 <html lang="ja">
   <head>
     <meta charset="utf-8" />
@@ -149,6 +149,41 @@
             </li>
           </ol>
         </nav>
+
+        <!-- 操作解説動画（YouTube）。動画を差し替えたときは index.html 側の埋め込みも同時に直す。
+             埋め込み先は youtube-nocookie.com（プライバシー強化モード） -->
+        <section id="video">
+          <h2>
+            <span class="ja" lang="ja">操作解説動画</span>
+            <span class="en" lang="en">Video walkthrough</span>
+          </h2>
+          <p>
+            <span class="ja" lang="ja"
+              >本ガイドの内容を、実際の画面で通しで見られる動画です（全 14 章・約 16
+              分・英語字幕つき）。説明欄のチャプターから各工程へ頭出しできます。</span
+            >
+            <span class="en" lang="en"
+              >A walkthrough of this guide on the actual screens: 14 chapters, about 16 minutes, with English
+              subtitles. The chapter list in the video description jumps to each step.</span
+            >
+          </p>
+          <div class="video-frame">
+            <iframe
+              src="https://www.youtube-nocookie.com/embed/huPK6wk-YZk"
+              title="SR Data Extraction Plugin 操作解説動画"
+              data-en-title="SR Data Extraction Plugin video walkthrough"
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+              allowfullscreen
+              loading="lazy"
+            ></iframe>
+          </div>
+          <p class="video-link">
+            <a href="https://youtu.be/huPK6wk-YZk" target="_blank" rel="noopener noreferrer"
+              ><span class="ja" lang="ja">YouTube で見る →</span
+              ><span class="en" lang="en">Watch on YouTube →</span></a
+            >
+          </p>
+        </section>
 
         <section id="setup">
           <h2>

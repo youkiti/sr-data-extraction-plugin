@@ -2,7 +2,7 @@
 <!-- SR Data Extraction Plugin ランディングページ（GitHub Pages 配信）。
      正典はこのファイル（master の hosted/）。デプロイ手順は hosted/README.md を参照。
      ja / en は両方を持ち、表示は lang.js + CSS が片方だけに絞る（併記しない）。
-     version: 2026-08-02 -->
+     version: 2026-08-03 -->
 <html lang="ja">
   <head>
     <meta charset="utf-8" />
@@ -38,11 +38,51 @@
             ><span class="ja" lang="ja">使い方を見る</span
             ><span class="en" lang="en">Read the user guide</span></a
           >
+          <a class="btn btn-secondary" href="#demo-video"
+            ><span class="ja" lang="ja">操作解説動画を見る</span
+            ><span class="en" lang="en">Watch the walkthrough</span></a
+          >
         </div>
       </div>
     </header>
 
     <main>
+      <!-- 操作解説動画（YouTube）。動画を差し替えたときは help.html 側の埋め込みも同時に直す。
+           埋め込み先は youtube-nocookie.com（プライバシー強化モード。再生するまで
+           トラッキング Cookie を置かない）を使う -->
+      <section class="section section--alt" id="demo-video">
+        <div class="container">
+          <h2>
+            <span class="ja" lang="ja">操作解説動画</span>
+            <span class="en" lang="en">Video walkthrough</span>
+          </h2>
+          <p class="video-lead">
+            <span class="ja" lang="ja"
+              >準備から CSV エクスポートまで、全 14 章・約 16 分で解説しています（英語字幕つき）。</span
+            >
+            <span class="en" lang="en"
+              >A 16-minute walkthrough in 14 chapters, from setup through CSV export (English subtitles available).</span
+            >
+          </p>
+          <div class="video-frame">
+            <iframe
+              src="https://www.youtube-nocookie.com/embed/huPK6wk-YZk"
+              title="SR Data Extraction Plugin 操作解説動画"
+              data-en-title="SR Data Extraction Plugin video walkthrough"
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+              allowfullscreen
+              loading="lazy"
+            ></iframe>
+          </div>
+          <p class="video-link">
+            <a href="https://youtu.be/huPK6wk-YZk" target="_blank" rel="noopener noreferrer"
+              ><span class="ja" lang="ja">YouTube で見る →</span
+              ><span class="en" lang="en">Watch on YouTube →</span></a
+            >
+          </p>
+        </div>
+      </section>
+
       <section class="section">
         <div class="container">
           <h2>
