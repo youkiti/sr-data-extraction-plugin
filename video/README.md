@@ -39,8 +39,10 @@ video/
   をヘッド付きで動かして収録するため。収録コマンドは常に `xvfb-run` 経由で実行する）
 - Python3 + [py7zr](https://pypi.org/project/py7zr/)（`pip install py7zr`）
   （VOICEVOX エンジンの配布形式が 7z のため、`video/scripts/setup.sh` の展開に使用）
+- 日本語フォント（Noto Sans JP 等）。無いと fontconfig が中国語フォントにフォールバックし、
+  収録した動画の日本語が中華フォントで描画されてしまう。`npm run video:setup` が導入まで面倒を見る
 - ネットワーク到達性（初回セットアップ時のみ。Playwright の Chromium、ffmpeg、VOICEVOX
-  エンジンをダウンロードする）
+  エンジン、日本語フォントをダウンロードする）
 - 収録対象の拡張機能ビルド（`npm run dev` の `dist/`。後述の「収録対象ディレクトリ」参照）
 
 ## 使い方（基本の4ステップ）
