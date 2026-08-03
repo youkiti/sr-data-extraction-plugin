@@ -103,16 +103,20 @@ function installCursorScript() {
             transform: 'translate(-100px, -100px) scale(0.4)',
         });
 
-        const mount = () => {
-            // <body> が無い最初期のタイミングでも <html> 直下になら要素を置ける
-            (document.body || document.documentElement).appendChild(cursor);
-            (document.body || document.documentElement).appendChild(ripple);
-        };
-        if (document.body) {
-            mount();
-        } else {
-            document.addEventListener('DOMContentLoaded', mount, { once: true });
-        }
+        // 擬似カーソルは document.body ではなく document.documentElement（<html>）へ
+        // マウントする。zoom.mjs の applyPageZoom() は document.body.style.zoom を
+        // 設定するため、body の子孫はレイアウト上すべて zoom 倍率がかかる。
+        // カーソルは position: fixed + transform: translate(clientX px, clientY px) で
+        // 位置決めしており、body 配下に置くとこの translate 量まで zoom 倍されてしまい、
+        // 実際のポインタ座標（clientX/clientY はビューポート基準で zoom の影響を受けない）
+        // からずれた位置に描画される（例: clientX=950, zoom=1.8 → 描画位置が約1710pxに
+        // ずれる）。<html> 直下なら zoom がかかった祖先の外側になるため、fixed 要素は
+        // ビューポート座標のまま正しく描画される。
+        // documentElement は HTML パース開始直後から存在するため、setup() 冒頭の
+        // requestAnimationFrame 待ちが解決した時点で確実に利用でき、body の存在を
+        // 待つ必要はない。
+        document.documentElement.appendChild(cursor);
+        document.documentElement.appendChild(ripple);
 
         const moveTo = (x, y) => {
             cursor.style.transform = 'translate(' + x + 'px, ' + y + 'px)';
