@@ -36,6 +36,7 @@ the full quote and a "search in text" button.
 
 ## cue 08
 Pressing "relocate with AI" asks the AI to search the document again for the supporting passage.
+This time it succeeds, and the highlight reappears on the PDF text.
 
 ## cue 09
 Decisions are saved one by one, immediately. Human rows start empty, and even accept needs one

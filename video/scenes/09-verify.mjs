@@ -116,11 +116,20 @@ export default {
       await hoverSlow(ctx.page, ctx.page.locator('.verify__quote-search').first(), { durationMs: 500 }).catch(() => {});
     });
 
-    // cue 8: 「AI で再特定」を実際に押す
+    // cue 8: 「AI で再特定」を実際に押す → 再特定成功（Evidence 追記 + ハイライト復活）まで見せる。
+    // デモの Gemini 応答モックは 2〜4 秒の人工遅延 + Sheets 書き込み数回ぶんの遅延を挟むため、
+    // 固定 sleep ではなく「再特定成功時のみ現れる要素（ハイライトへジャンプするボタン）」の
+    // 出現を待つ（見つからない状態のまま次の cue へ進む事故を防ぐ）
     await playCue(8, async () => {
       await hoverSlow(ctx.page, ctx.page.locator('.verify__quote-relocate').first(), { durationMs: 500 }).catch(() => {});
       await ctx.page.locator('.verify__quote-relocate').first().click({ timeout: 5000 }).catch(() => {});
-      await ctx.sleep(2500);
+      await ctx.page
+        .locator('.verify__quote-jump')
+        .first()
+        .waitFor({ state: 'visible', timeout: 10000 })
+        .catch(() => {});
+      // ハイライトへのジャンプ・スクロールが視聴者に見える間を確保
+      await ctx.sleep(1200);
     });
 
     // cue 9: automation bias対策（保存は即時・人の判定は空欄から・acceptにも1操作必須）
