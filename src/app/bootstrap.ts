@@ -6,6 +6,7 @@ import { studyQueryOf, entityQueryOf, findRoute, normalizeHash, ROUTES, type Rou
 import { guardRoute } from './guards';
 import { showToast } from './ui/toast';
 import { captureScrollPositions, restoreScrollPositions } from './ui/preserveScroll';
+import { captureFocusState, restoreFocusState } from './ui/preserveFocus';
 import type { ViewContext } from './views/types';
 import {
   cancelExclusion,
@@ -1148,13 +1149,18 @@ export async function bootstrapApp(
     // （hashchange）と違い同一画面の部分更新なので、退避して復元する（例: パイロットの
     // 論文チェック・モデル選択・判定操作のたびに一覧の先頭へ戻ってしまうのを防ぐ）。
     // 内側のスクロールコンテナ（data-preserve-scroll。検証パネルの右ペイン・PDF ペイン等）も
-    // detach → reattach で 0 にリセットされるため、同じ枠で退避・復元する（issue #192）
+    // detach → reattach で 0 にリセットされるため、同じ枠で退避・復元する（issue #192）。
+    // 同じ理由でフォーカス中のテキスト入力も作り直されるため、入力途中の値・キャレット位置・
+    // フォーカスも同じ枠で退避・復元する（issue #232。復元後の scrollIntoView 副作用を
+    // 下段のスクロール復元で打ち消すため、フォーカス復元を先に行う）
+    const focusSnapshot = captureFocusState(doc);
     const scrollTop = doc.documentElement.scrollTop;
     const scrollLeft = doc.documentElement.scrollLeft;
     const innerScrolls = captureScrollPositions(doc);
     renderHeader(state);
     renderNav(state);
     renderRoute();
+    restoreFocusState(doc, focusSnapshot);
     doc.documentElement.scrollTop = scrollTop;
     doc.documentElement.scrollLeft = scrollLeft;
     restoreScrollPositions(innerScrolls);
