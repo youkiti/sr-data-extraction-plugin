@@ -149,4 +149,4 @@ spreadsheet / pdf モードは `page_version` を検査しない（ready 応答�
    （`picker.html` が従来どおり動くことも合わせて確認）
 4. ストアダッシュボードの「プライバシーポリシー URL」を `privacy-policy.html` へ、「ウェブサイト」欄を
    ルート URL へ設定する（PR ではなく運用作業。[docs/remaining-work-plan.md](../docs/remaining-work-plan.md) の
-   実機 / 運用テスト一覧に記録済み）
+   実機 / 運用テスト一覧に記録済み）— **2026-08-03 に設定済み**なので、URL を変えない限り再更新では不要
