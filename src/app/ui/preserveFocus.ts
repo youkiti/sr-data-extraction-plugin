@@ -23,18 +23,28 @@ export interface FocusSnapshot {
   selectionStart: number | null;
   selectionEnd: number | null;
   /**
-   * text 系 input / textarea に限って記録するため実行時には null にならない
-   * （selectionDirection が null になるのは selection 非対応の input type のときだけ）
+   * selection API 非対応の input type（email 等）では selectionDirection が
+   * null になる（issue #235）。この場合 selectionStart / selectionEnd も null になり、
+   * restoreFocusState 側は setSelectionRange 自体をスキップする（値とフォーカスは復元する）
    */
-  selectionDirection: SelectionDirection;
+  selectionDirection: SelectionDirection | null;
 }
 
-/** textarea、または type が text / 未指定の input だけを対象にする */
+/**
+ * 保護対象にする input type（issue #235）。selection API 対応の text 系
+ * （text / search / url / tel / password）に加えて、selection API 非対応
+ * （setSelectionRange が InvalidStateError を throw する）だが値・フォーカスの
+ * 保持に価値がある email も含める。input.type は type 属性未指定時に 'text' を
+ * 返すため、この Set で判定するだけで「type 未指定も対象」という既存挙動も維持される
+ */
+const TEXT_EDITABLE_INPUT_TYPES = new Set(['text', 'search', 'url', 'tel', 'password', 'email']);
+
+/** textarea、または保護対象 type の input だけを対象にする */
 function isTextEditable(element: Element): element is TextEditableElement {
   if (element instanceof HTMLTextAreaElement) {
     return true;
   }
-  return element instanceof HTMLInputElement && element.type === 'text';
+  return element instanceof HTMLInputElement && TEXT_EDITABLE_INPUT_TYPES.has(element.type);
 }
 
 /** 再描画前に呼ぶ: フォーカス中のテキスト系入力の値・キャレット位置・復元キーを退避する */
@@ -57,7 +67,7 @@ export function captureFocusState(doc: Document): FocusSnapshot | null {
     value: active.value,
     selectionStart: active.selectionStart,
     selectionEnd: active.selectionEnd,
-    selectionDirection: active.selectionDirection as SelectionDirection,
+    selectionDirection: active.selectionDirection,
   };
 }
 
@@ -130,10 +140,18 @@ export function restoreFocusState(doc: Document, snapshot: FocusSnapshot | null)
     node.value = snapshot.value;
     armCommitGuarantee(node, originalValue);
   }
-  try {
-    node.setSelectionRange(snapshot.selectionStart, snapshot.selectionEnd, snapshot.selectionDirection);
-  } catch {
-    // 環境によっては setSelectionRange が対応外で throw しうるため握りつぶす
+  // selection API 非対応の input type（email 等）では selectionStart が null で退避されている。
+  // その型は毎回 setSelectionRange が InvalidStateError を throw するだけなので、
+  // キャレット復元は諦めて値とフォーカスの復元だけ行う（issue #235）
+  if (snapshot.selectionStart !== null) {
+    try {
+      // selectionStart が non-null（= selection API 対応の型）でも、selectionDirection は
+      // null になりうる（Safari 系ブラウザ実装の実例あり）。setSelectionRange の第 3 引数は
+      // SelectionDirection | undefined しか受け付けないため null → undefined に変換する
+      node.setSelectionRange(snapshot.selectionStart, snapshot.selectionEnd, snapshot.selectionDirection ?? undefined);
+    } catch {
+      // 環境によっては setSelectionRange が対応外で throw しうるため握りつぶす
+    }
   }
   node.focus({ preventScroll: true });
 }
