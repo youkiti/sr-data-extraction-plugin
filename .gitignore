@@ -51,6 +51,10 @@ video/tools/
 # （npm run video:fixtures = video/fixtures/build-fixtures.mjs で一括生成）
 video/fixtures/*.pdf
 
+# 動画制作時に画面確認・デバッグのため一時的に置く使い捨てスクリプト。
+# パイプライン本体（config / record / tts / assemble / lib）はアンダースコアで始まらない
+video/scripts/_*.mjs
+
 # OS / エディタ
 .DS_Store
 Thumbs.db
