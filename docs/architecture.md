@@ -23,6 +23,7 @@ sr-data-extraction-plugin/
 │   ├── unit/                      # 単体テスト（src/ 構成をミラー）
 │   └── e2e/                       # Playwright（ルート別 spec + axe）
 ├── hosted/                        # GitHub Pages でホストする Drive Picker ページ（picker.html + README.md）
+├── video/                         # 操作解説動画の制作パイプライン（tiab-review-plugin/video からの移植。§8）
 ├── tools/                         # 開発補助スクリプト（playwright-server.js / selenium/ / release/pack.ps1）
 ├── experiments/                   # 抽出精度ベンチマーク（requirements.md §8。tiab-review の運用を踏襲）
 ├── sr-query-builder-plugin/       # サブモジュール（要件・UI 構成の参照実装）
@@ -290,3 +291,13 @@ sr-query-builder と同一（TypeScript strict + `noUncheckedIndexedAccess`、�
 3. **共通ライブラリ化の範囲**: `lib/google/` / `lib/storage/offlineQueue.ts` / `lib/llm/` を既存 2 拡張からコピーするか npm パッケージへ切り出すか（requirements.md 付記。暫定: MVP はコピー流用、3 拡張が揃った時点で切り出し判断）
 4. **fuzzy マッチの実装**【解決済み 2026-07-02】: 自前 DP（準大域アライメント）を採用。スパイクで 2 論文 × 2 モードの実弾に対し実用十分（§6 の表参照）
 5. **100 % カバレッジ到達が難しいファイル**: 都度 exclude 申請
+
+## 8. 操作解説動画の制作パイプライン（`video/`）
+
+姉妹リポジトリ tiab-review-plugin の `video/`（Playwright 収録 → VOICEVOX で TTS → ffmpeg で
+合成のパイプライン）を移植したもの。`src/` の実装やテストとは独立しており、`npm run dev` の
+`dist/`（または後続 PR で追加予定のデモビルド `dist-demo/`）を実拡張として読み込んで収録する。
+`npm run video:setup` / `video:record` / `video:tts` / `video:assemble` の 4 コマンドで
+「セットアップ → 収録 → 音声合成 → 最終合成」を実行できる。tiab との差分（拡張のページ構成の
+違いに合わせた `ctx.openExtensionPage()`、可視マウスカーソルの追加等）を含め、詳細は
+[video/README.md](../video/README.md) と [video/REQUIREMENTS.md](../video/REQUIREMENTS.md) を参照。
