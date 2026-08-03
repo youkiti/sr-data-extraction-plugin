@@ -7,6 +7,11 @@
 
 import { hoverSlow } from './lib/gestures.mjs';
 import { loadCueDurations, sleepRemainder } from './lib/pacing.mjs';
+import { applyPageZoom } from './lib/zoom.mjs';
+
+// popup.html は幅 320px 固定の中央カラムのため、1920x1080 では文字が小さすぎて読めない
+// （lib/zoom.mjs 冒頭コメント参照）。options.html / app.html は十分に画面を埋めるため対象外。
+const POPUP_ZOOM = 1.8;
 
 export default {
   id: '02',
@@ -27,6 +32,7 @@ export default {
     // --- cue 1: インストール（popup.html のブランド表示を見せる） ---
     await ctx.openExtensionPage('popup/popup.html');
     await ctx.page.locator('#popup-account').waitFor({ state: 'visible', timeout: 15000 });
+    await applyPageZoom(ctx.page, POPUP_ZOOM);
     await ctx.sleep(500);
     await playCue(1, async () => {
       await hoverSlow(ctx.page, ctx.page.locator('.popup__title, h1').first(), { durationMs: 600 });
@@ -46,6 +52,7 @@ export default {
     // --- cue 4: ログイン（popup.html のログイン中表示） ---
     await ctx.openExtensionPage('popup/popup.html');
     await ctx.page.locator('#popup-account').waitFor({ state: 'visible', timeout: 15000 });
+    await applyPageZoom(ctx.page, POPUP_ZOOM);
     await ctx.sleep(400);
     await playCue(4, async () => {
       await hoverSlow(ctx.page, ctx.page.locator('#popup-account'), { durationMs: 700 });

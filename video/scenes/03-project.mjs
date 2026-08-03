@@ -6,6 +6,12 @@
 
 import { hoverSlow } from './lib/gestures.mjs';
 import { loadCueDurations, sleepRemainder } from './lib/pacing.mjs';
+import { applyPageZoom } from './lib/zoom.mjs';
+
+// popup.html は幅 320px 固定の中央カラムのため、1920x1080 では文字が小さすぎて読めない
+// （lib/zoom.mjs 冒頭コメント参照）。app.html（cue 6 で遷移する #/home 以降）は
+// 十分に画面を埋めるため対象外（ページ遷移で zoom は自動的にリセットされる）。
+const POPUP_ZOOM = 1.8;
 
 export default {
   id: '03',
@@ -25,6 +31,7 @@ export default {
 
     await ctx.openExtensionPage('popup/popup.html');
     await ctx.page.locator('#popup-recent-section').waitFor({ state: 'visible', timeout: 15000 });
+    await applyPageZoom(ctx.page, POPUP_ZOOM);
     await ctx.sleep(500);
 
     // cue 1: 1プロジェクト = 1 SR（画面全体を俯瞰させるため account セクションをホバー）

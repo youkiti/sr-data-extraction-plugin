@@ -16,6 +16,10 @@
 // 重要: `zoom` はナビゲーション（page.goto 等）のたびにリセットされる。
 // ctx.openExtensionPage() で popup.html を開くたびに、直後に必ず applyPageZoom() を
 // 呼び直すこと（本ヘルパーは自動では再適用されない）。
+//
+// 可視カーソル（scenes/lib/cursor.mjs）は document.body ではなく
+// document.documentElement（<html>）直下に注入しているため、ここで body にかける
+// zoom の影響を受けず、常に正しいビューポート座標へ描画される。
 
 /**
  * 現在のページ（document.body）に CSS zoom を適用する。
