@@ -1,6 +1,6 @@
 /* SR Data Extraction Plugin 公開ページ共通スタイル（index / help / privacy-policy / terms-of-service）。
    トンマナは拡張本体の src/styles/tokens.css（緑基調）に合わせる。
-   version: 2026-08-02 */
+   version: 2026-08-03 */
 
 :root {
   --primary: #1b5e4a;
@@ -393,6 +393,38 @@ th {
 
 .note > :last-child {
   margin-bottom: 0;
+}
+
+/* 操作解説動画の埋め込み（index の #demo-video / help の #video）。
+   iframe は幅に対して 16:9 を保ち、狭い画面でも横スクロールを起こさない */
+.video-frame {
+  position: relative;
+  width: 100%;
+  max-width: 880px;
+  margin: 0 auto 12px;
+  aspect-ratio: 16 / 9;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  background: #000;
+}
+
+.video-frame iframe {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+
+/* index 側はセクション全体が中央寄せ、help 側は本文と同じ左寄せに従う */
+.section .video-lead,
+.section .video-link {
+  text-align: center;
+}
+
+.video-link {
+  font-size: 0.9rem;
 }
 
 /* ヘルプの目次 */
