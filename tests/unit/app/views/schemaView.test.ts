@@ -34,6 +34,8 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<SchemaViewCallbac
     onEditRow: jest.fn(),
     onAddRow: jest.fn(),
     onRemoveRow: jest.fn(),
+    onMoveRow: jest.fn(),
+    onSortBySection: jest.fn(),
     onInsertPreset: jest.fn(),
     onUpdatePresetDialog: jest.fn(),
     onConfirmPresetDialog: jest.fn(),
@@ -533,6 +535,129 @@ describe('renderSchemaView', () => {
       expect(callbacks.onInsertPreset).toHaveBeenCalledWith('quips');
       (view.querySelector('#schema-editor-cancel') as HTMLButtonElement).click();
       expect(callbacks.onCancelEditor).toHaveBeenCalledTimes(1);
+    });
+
+    test('↑/↓ ボタンが描画され、先頭行の↑・末尾行の↓が disabled になる（issue #230）', () => {
+      const { ctx } = makeCtx();
+      const view = renderSchemaView(
+        makeState({
+          versions: [],
+          editorRows: [
+            makeEditorRow({ fieldName: 'a' }),
+            makeEditorRow({ fieldName: 'b' }),
+            makeEditorRow({ fieldName: 'c' }),
+          ],
+        }),
+        ctx,
+      );
+      const upButtons = Array.from(
+        view.querySelectorAll<HTMLButtonElement>('.schema__row-move-up'),
+      );
+      const downButtons = Array.from(
+        view.querySelectorAll<HTMLButtonElement>('.schema__row-move-down'),
+      );
+      expect(upButtons).toHaveLength(3);
+      expect(downButtons).toHaveLength(3);
+      expect(upButtons.map((button) => button.disabled)).toEqual([true, false, false]);
+      expect(downButtons.map((button) => button.disabled)).toEqual([false, false, true]);
+    });
+
+    test('↑/↓ の click で onMoveRow が正しい引数で呼ばれる（issue #230）', () => {
+      const { ctx, callbacks } = makeCtx();
+      const view = renderSchemaView(
+        makeState({
+          versions: [],
+          editorRows: [
+            makeEditorRow({ fieldName: 'a' }),
+            makeEditorRow({ fieldName: 'b' }),
+            makeEditorRow({ fieldName: 'c' }),
+          ],
+        }),
+        ctx,
+      );
+      const upButtons = view.querySelectorAll<HTMLButtonElement>('.schema__row-move-up');
+      const downButtons = view.querySelectorAll<HTMLButtonElement>('.schema__row-move-down');
+      upButtons[1]?.click();
+      expect(callbacks.onMoveRow).toHaveBeenCalledWith(1, 0);
+      downButtons[1]?.click();
+      expect(callbacks.onMoveRow).toHaveBeenCalledWith(1, 2);
+    });
+
+    test('「section でまとめる」: 描画・rows.length < 2 で disabled・click で onSortBySection（issue #230）', () => {
+      const { ctx: singleRowCtx } = makeCtx();
+      const singleRowView = renderSchemaView(
+        makeState({ versions: [], editorRows: [makeEditorRow()] }),
+        singleRowCtx,
+      );
+      const disabledButton = singleRowView.querySelector(
+        '#schema-sort-by-section',
+      ) as HTMLButtonElement;
+      expect(disabledButton.disabled).toBe(true);
+
+      const { ctx, callbacks } = makeCtx();
+      const view = renderSchemaView(
+        makeState({
+          versions: [],
+          editorRows: [makeEditorRow({ fieldName: 'a' }), makeEditorRow({ fieldName: 'b' })],
+        }),
+        ctx,
+      );
+      const button = view.querySelector('#schema-sort-by-section') as HTMLButtonElement;
+      expect(button.disabled).toBe(false);
+      button.click();
+      expect(callbacks.onSortBySection).toHaveBeenCalledTimes(1);
+    });
+
+    describe('移動後のフォーカス復帰（issue #230。bootstrap.ts の画面全体再描画に備える）', () => {
+      test('端でない移動: 移動先の行の同じ向きのボタンへフォーカスする', () => {
+        const { ctx } = makeCtx();
+        const view = renderSchemaView(
+          makeState({
+            versions: [],
+            editorRows: [
+              makeEditorRow({ fieldName: 'a' }),
+              makeEditorRow({ fieldName: 'b' }),
+              makeEditorRow({ fieldName: 'c' }),
+            ],
+          }),
+          ctx,
+        );
+        document.body.append(view);
+        try {
+          const downButtons = view.querySelectorAll<HTMLButtonElement>('.schema__row-move-down');
+          downButtons[0]?.click(); // 0 行目を下へ（0→1）。移動先の 1 行目の下へは disabled ではない
+          const expected = view.querySelector('[data-row-index="1"].schema__row-move-down');
+          expect(expected).not.toBeNull();
+          expect(document.activeElement).toBe(expected);
+        } finally {
+          view.remove();
+        }
+      });
+
+      test('端での移動: 移動先で当該向きが disabled のときは逆向きへフォールバックする', () => {
+        const { ctx } = makeCtx();
+        const view = renderSchemaView(
+          makeState({
+            versions: [],
+            editorRows: [
+              makeEditorRow({ fieldName: 'a' }),
+              makeEditorRow({ fieldName: 'b' }),
+              makeEditorRow({ fieldName: 'c' }),
+            ],
+          }),
+          ctx,
+        );
+        document.body.append(view);
+        try {
+          const upButtons = view.querySelectorAll<HTMLButtonElement>('.schema__row-move-up');
+          upButtons[1]?.click(); // 1 行目を上へ（1→0）。移動先の 0 行目の上へは disabled なので下へへフォールバック
+          const expected = view.querySelector('[data-row-index="0"].schema__row-move-down');
+          expect(expected).not.toBeNull();
+          expect(document.activeElement).toBe(expected);
+        } finally {
+          view.remove();
+        }
+      });
     });
 
     describe('RoB プリセット事前設定ダイアログ（issue #103。ui-states.md §3）', () => {

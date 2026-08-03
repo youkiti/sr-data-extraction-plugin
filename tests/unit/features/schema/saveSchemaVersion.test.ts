@@ -87,6 +87,37 @@ describe('saveSchemaVersion', () => {
     expect(appendFieldsMock).toHaveBeenCalledWith('sheet-1', fields, google);
   });
 
+  test('並び替え後の配列順で field_index が採番される（issue #230 の回帰防止。field_index は配列位置のみに由来し、fieldId は維持される）', async () => {
+    // S5 エディタの並び替え（moveEditorRow / sortEditorRowsBySection）は editorRows 配列の
+    // 位置を入れ替えるだけで、field_index を直接操作しない。ここでは並び替え後の配列を
+    // そのまま渡し、確定時に新しい並び順どおりに 1 から採番されることを固定する
+    const rows = [
+      makeRow({ fieldId: 'f-a', fieldName: 'a' }),
+      makeRow({ fieldId: 'f-b', fieldName: 'b' }),
+      makeRow({ fieldId: 'f-c', fieldName: 'c' }),
+    ];
+    const reordered = [rows[2] as SchemaEditorRow, rows[0] as SchemaEditorRow, rows[1] as SchemaEditorRow];
+
+    const { fields } = await saveSchemaVersion(
+      {
+        spreadsheetId: 'sheet-1',
+        rows: reordered,
+        parentVersion: 1,
+        protocolVersion: 1,
+        createdByType: 'user_edit',
+        createdBy: 'tester@example.com',
+        note: null,
+      },
+      { google },
+    );
+
+    expect(fields.map((field) => ({ fieldId: field.fieldId, fieldIndex: field.fieldIndex }))).toEqual([
+      { fieldId: 'f-c', fieldIndex: 1 },
+      { fieldId: 'f-a', fieldIndex: 2 },
+      { fieldId: 'f-b', fieldIndex: 3 },
+    ]);
+  });
+
   test('enum 以外の行の許容値は null に落とす（enum は維持）', async () => {
     const { fields } = await saveSchemaVersion(
       {

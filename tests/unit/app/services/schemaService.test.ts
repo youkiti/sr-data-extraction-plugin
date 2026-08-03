@@ -9,10 +9,12 @@ import {
   emptyEditorRow,
   insertSchemaPreset,
   loadSchema,
+  moveEditorRow,
   removeEditorRow,
   runDraftSchema,
   setDraftModel,
   skipRobPrespecDialog,
+  sortEditorRowsBySection,
   startEditorFromCurrent,
   toggleRedraftSelection,
   toggleSampleDocument,
@@ -805,6 +807,107 @@ describe('エディタ操作', () => {
     // 軽量版 rob2 と field_name が衝突するため、この時点ではエラーが検出される
     // （両プリセットは排他利用が前提。robTemplates.test.ts の意図的な衝突確認と対応）
     expect(store.getState().schema.editorErrors.length).toBeGreaterThan(0);
+  });
+
+  describe('moveEditorRow（行の並び替え。issue #230）', () => {
+    test('正常な移動: from の行を to の位置へ挿入し、他行は詰める', () => {
+      const store = makeStore();
+      const rows = [
+        makeEditorRow({ fieldName: 'a' }),
+        makeEditorRow({ fieldName: 'b' }),
+        makeEditorRow({ fieldName: 'c' }),
+      ];
+      store.setState({
+        schema: { ...store.getState().schema, editorRows: rows, editorOrigin: 'ai_draft' },
+      });
+      moveEditorRow(store, 2, 0);
+      const { schema } = store.getState();
+      expect(schema.editorRows?.map((row) => row.fieldName)).toEqual(['c', 'a', 'b']);
+      expect(schema.editorOrigin).toBe('user_edit');
+      expect(schema.editorErrors).toEqual([]);
+    });
+
+    test('editorRows === null は no-op', () => {
+      const store = makeStore();
+      moveEditorRow(store, 0, 1);
+      expect(store.getState().schema.editorRows).toBeNull();
+    });
+
+    test('range外 index（負の値・length 以上）は no-op', () => {
+      const store = makeStore();
+      const rows = [makeEditorRow({ fieldName: 'a' }), makeEditorRow({ fieldName: 'b' })];
+      store.setState({ schema: { ...store.getState().schema, editorRows: rows } });
+
+      moveEditorRow(store, -1, 0);
+      expect(store.getState().schema.editorRows?.map((row) => row.fieldName)).toEqual(['a', 'b']);
+
+      moveEditorRow(store, 0, 2);
+      expect(store.getState().schema.editorRows?.map((row) => row.fieldName)).toEqual(['a', 'b']);
+
+      moveEditorRow(store, 2, 0);
+      expect(store.getState().schema.editorRows?.map((row) => row.fieldName)).toEqual(['a', 'b']);
+    });
+
+    test('from === to は no-op（store を触らない）', () => {
+      const store = makeStore();
+      const rows = [makeEditorRow({ fieldName: 'a' }), makeEditorRow({ fieldName: 'b' })];
+      store.setState({ schema: { ...store.getState().schema, editorRows: rows, editorOrigin: 'ai_draft' } });
+      moveEditorRow(store, 1, 1);
+      const { schema } = store.getState();
+      expect(schema.editorRows).toBe(rows);
+      expect(schema.editorOrigin).toBe('ai_draft');
+    });
+
+    test('editorErrors が移動後の並びで再計算される', () => {
+      const store = makeStore();
+      const invalidRow = makeEditorRow({ fieldName: '' });
+      const rows = [makeEditorRow({ fieldName: 'a' }), invalidRow];
+      store.setState({ schema: { ...store.getState().schema, editorRows: rows } });
+      moveEditorRow(store, 1, 0);
+      const { schema } = store.getState();
+      expect(schema.editorRows?.[0]).toBe(invalidRow);
+      expect(schema.editorErrors.some((error) => error.index === 0)).toBe(true);
+    });
+  });
+
+  describe('sortEditorRowsBySection（issue #230）', () => {
+    test('section の初出順を保ちつつ、同じ section の行を寄せる', () => {
+      const store = makeStore();
+      const rows = [
+        makeEditorRow({ fieldName: 'a', section: 'results' }),
+        makeEditorRow({ fieldName: 'b', section: 'methods' }),
+        makeEditorRow({ fieldName: 'c', section: 'results' }),
+        makeEditorRow({ fieldName: 'd', section: 'methods' }),
+      ];
+      store.setState({
+        schema: { ...store.getState().schema, editorRows: rows, editorOrigin: 'ai_draft' },
+      });
+      sortEditorRowsBySection(store);
+      const { schema } = store.getState();
+      // section 初出順: results → methods。各 section 内は元の相対順序を維持
+      expect(schema.editorRows?.map((row) => row.fieldName)).toEqual(['a', 'c', 'b', 'd']);
+      expect(schema.editorOrigin).toBe('user_edit');
+    });
+
+    test('既にまとまっている配列では store を触らない', () => {
+      const store = makeStore();
+      const rows = [
+        makeEditorRow({ fieldName: 'a', section: 'methods' }),
+        makeEditorRow({ fieldName: 'b', section: 'methods' }),
+        makeEditorRow({ fieldName: 'c', section: 'results' }),
+      ];
+      store.setState({ schema: { ...store.getState().schema, editorRows: rows, editorOrigin: 'ai_draft' } });
+      sortEditorRowsBySection(store);
+      const { schema } = store.getState();
+      expect(schema.editorRows).toBe(rows);
+      expect(schema.editorOrigin).toBe('ai_draft');
+    });
+
+    test('editorRows === null は no-op', () => {
+      const store = makeStore();
+      sortEditorRowsBySection(store);
+      expect(store.getState().schema.editorRows).toBeNull();
+    });
   });
 
   describe('RoB プリセット事前設定ダイアログ（issue #103）', () => {

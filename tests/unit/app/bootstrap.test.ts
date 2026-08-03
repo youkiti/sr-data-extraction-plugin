@@ -1262,6 +1262,51 @@ describe('bootstrapApp', () => {
     expect(document.getElementById('schema-draft-form')).not.toBeNull();
   });
 
+  test('#/schema エディタの行並び替え（↑/↓・section でまとめる）が配線されている（issue #230）', async () => {
+    const rowDesign = { ...EDITOR_ROW, fieldName: 'design', section: 'methods' };
+    const rowAge = { ...EDITOR_ROW, fieldName: 'age', section: 'results' };
+    const rowSex = { ...EDITOR_ROW, fieldName: 'sex', section: 'methods' };
+    const rowNationality = { ...EDITOR_ROW, fieldName: 'nationality', section: 'results' };
+    const stub = createWindowStub({
+      currentProject: PROJECT,
+      counts: { protocolVersions: 1 } as AppState['counts'],
+      schema: {
+        versions: [],
+        editorRows: [rowDesign, rowAge, rowSex, rowNationality],
+      } as unknown as AppState['schema'],
+    });
+    const { deps } = createFakeDeps([[...SHEET_HEADERS.Protocol]]);
+    await bootstrapApp(asWindow(stub), deps);
+    stub.location.hash = '#/schema';
+    stub.fireHashChange();
+    await flush();
+
+    const fieldNamesInOrder = (): string[] =>
+      Array.from(document.querySelectorAll('#schema-editor-table tbody tr')).map((row) => {
+        const input = Array.from(row.querySelectorAll('input')).find((candidate) =>
+          candidate.getAttribute('aria-label')?.includes('field_name'),
+        ) as HTMLInputElement;
+        return input.value;
+      });
+    expect(fieldNamesInOrder()).toEqual(['design', 'age', 'sex', 'nationality']);
+
+    // 2 行目（age）を↑で 1 行目へ（onMoveRow の配線確認）。
+    // 移動先は先頭行のため↑は disabled になり、逆向き（↓）へフォーカスがフォールバックする
+    (document.querySelector('button[aria-label="2 行目を上へ移動"]') as HTMLButtonElement).click();
+    expect(fieldNamesInOrder()).toEqual(['age', 'design', 'sex', 'nationality']);
+    expect(document.activeElement).toBe(
+      document.querySelector('[data-row-index="0"].schema__row-move-down'),
+    );
+
+    // section でまとめる（onSortBySection の配線確認）。移動後の並びは
+    // results(age)・methods(design)・methods(sex)・results(nationality) と section が分断されたまま。
+    // section の初出順（results → methods）を保ったまま同じ section を寄せると
+    // age・nationality（results）→ design・sex（methods）の順に変わり、
+    // 移動直後の並びとは異なる結果になることで onSortBySection の配線を確認する
+    (document.getElementById('schema-sort-by-section') as HTMLButtonElement).click();
+    expect(fieldNamesInOrder()).toEqual(['age', 'nationality', 'design', 'sex']);
+  });
+
   test('#/schema の確定済み画面（新しい版を作る / 再読み込み / サンプル選択）が配線されている', async () => {
     const stub = createWindowStub({
       currentProject: PROJECT,

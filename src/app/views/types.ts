@@ -126,6 +126,10 @@ export interface SchemaViewCallbacks {
   onEditRow(index: number, patch: Partial<SchemaEditorRow>): void;
   onAddRow(): void;
   onRemoveRow(index: number): void;
+  /** エディタ行の並び替え（上下移動）。field_index は配列位置から採番されるため、これが並び順の唯一の変更手段 */
+  onMoveRow(from: number, to: number): void;
+  /** section でまとめる（section の初出順を保った安定ソート） */
+  onSortBySection(): void;
   /** プリセット挿入（二値 / 連続アウトカム・RoB 系。RoB 2 系は事前設定ダイアログを開く — issue #103） */
   onInsertPreset(kind: SchemaPresetKind): void;
   /** RoB プリセット事前設定ダイアログ（issue #103）: 入力の更新 */

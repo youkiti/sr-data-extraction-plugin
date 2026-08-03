@@ -396,6 +396,54 @@ export function removeEditorRow(store: Store, index: number): void {
   });
 }
 
+/** エディタ: 行の上下移動（配列位置がそのまま field_index の採番順になる） */
+export function moveEditorRow(store: Store, from: number, to: number): void {
+  const rows = store.getState().schema.editorRows;
+  if (rows === null) {
+    return;
+  }
+  if (from < 0 || from >= rows.length || to < 0 || to >= rows.length || from === to) {
+    return;
+  }
+  const next = [...rows];
+  const [moved] = next.splice(from, 1);
+  next.splice(to, 0, moved as SchemaEditorRow);
+  patchSchema(store, {
+    editorRows: next,
+    editorOrigin: 'user_edit',
+    editorErrors: validateEditorRows(next),
+  });
+}
+
+/** エディタ: section でまとめる（section の初出順・section 内の相対順序を保つ安定ソート） */
+export function sortEditorRowsBySection(store: Store): void {
+  const rows = store.getState().schema.editorRows;
+  if (rows === null) {
+    return;
+  }
+  const sectionOrder: string[] = [];
+  for (const row of rows) {
+    if (!sectionOrder.includes(row.section)) {
+      sectionOrder.push(row.section);
+    }
+  }
+  const next = rows
+    .map((row, index) => ({ row, index }))
+    .sort((a, b) => {
+      const sectionDiff = sectionOrder.indexOf(a.row.section) - sectionOrder.indexOf(b.row.section);
+      return sectionDiff !== 0 ? sectionDiff : a.index - b.index;
+    })
+    .map(({ row }) => row);
+  if (next.every((row, index) => row === rows[index])) {
+    return;
+  }
+  patchSchema(store, {
+    editorRows: next,
+    editorOrigin: 'user_edit',
+    editorErrors: validateEditorRows(next),
+  });
+}
+
 /**
  * エディタ末尾へ行群を追記して再検証する（プリセット挿入・事前設定ダイアログ確定の共通処理）。
  * 呼び出し元はいずれもエディタ表示中（editorRows !== null）でのみ到達する
