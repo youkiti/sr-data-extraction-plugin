@@ -1307,6 +1307,56 @@ describe('bootstrapApp', () => {
     expect(fieldNamesInOrder()).toEqual(['age', 'nationality', 'design', 'sex']);
   });
 
+  test('#/schema セル入力中に非同期のストア更新が来ても入力途中の値・キャレット位置が保持され、blur で正しくコミットされる（issue #232）', async () => {
+    const stub = createWindowStub({
+      currentProject: PROJECT,
+      counts: { protocolVersions: 1 } as AppState['counts'],
+      schema: { versions: [], editorRows: [EDITOR_ROW] } as unknown as AppState['schema'],
+    });
+    const { deps } = createFakeDeps([[...SHEET_HEADERS.Protocol]]);
+    const store = await bootstrapApp(asWindow(stub), deps);
+    stub.location.hash = '#/schema';
+    stub.fireHashChange();
+    await flush();
+
+    const input = document.querySelector(
+      'input[aria-label="1 行目の field_name"]',
+    ) as HTMLInputElement;
+    input.focus();
+    // 末尾の 'n' を打つ前の状態を模す（= 未コミット。change はまだ発火させない）
+    input.value = 'study_desig';
+    input.setSelectionRange(11, 11);
+
+    // 無関係な非同期ストア更新（例: 進捗カウントの読込完了）が着地し、再描画が走る状況を模す
+    store?.setState({
+      counts: {
+        documents: 0,
+        protocolVersions: 1,
+        schemaVersions: 0,
+        pilotRuns: 0,
+        evidenceRows: 0,
+        dataRows: 0,
+      },
+    });
+
+    // 再描画で <input> は作り直されているが、入力途中の値・キャレット位置・フォーカスは保持される
+    const rerendered = document.querySelector(
+      'input[aria-label="1 行目の field_name"]',
+    ) as HTMLInputElement;
+    expect(rerendered).not.toBe(input);
+    expect(rerendered.value).toBe('study_desig');
+    expect(rerendered.selectionStart).toBe(11);
+    expect(rerendered.selectionEnd).toBe(11);
+    expect(document.activeElement).toBe(rerendered);
+
+    // この時点ではまだストアへコミットされていない（change が発火していないため）
+    expect(store?.getState().schema.editorRows?.[0]?.fieldName).toBe('study_design');
+
+    // フォーカスを外す → 合成 change が発火し、通常どおりの経路でストアへコミットされる
+    rerendered.blur();
+    expect(store?.getState().schema.editorRows?.[0]?.fieldName).toBe('study_desig');
+  });
+
   test('#/schema の確定済み画面（新しい版を作る / 再読み込み / サンプル選択）が配線されている', async () => {
     const stub = createWindowStub({
       currentProject: PROJECT,

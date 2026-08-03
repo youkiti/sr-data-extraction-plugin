@@ -18,7 +18,7 @@ spec が正。実装が追いついていない箇所は以下のとおり（実
 | §3 `#/home` | ✅ 実装済み（起動時に Sheets から進捗カウントを読込〔`values:batchGet` 1 呼び出し〕。読み込み中 / 失敗 + 再読み込み / 通常サマリ。ガードのディム判定も同カウントで実データ化。2026-07-03） |
 | §3 `#/documents` | ✅ 実装済み（読み込み中 / 失敗 / 空 / 取り込み中の進捗行。2026-07-02）。**v0.10 グルーピング UI 実装済み**（2026-07-07: study 単位グループ表示 + study_label / registration_id / document_role インライン編集 + 統合ダイアログ + 統合候補バナー）。Drive Picker のホスト済みページは GitHub Pages へデプロイ済み（[hosted/README.md](../hosted/README.md)）で、2026-07-03 の実機通し確認（[manual-testing.md](manual-testing.md) §1）で Picker の動作を確認済み |
 | §3 `#/protocol` | ✅ 実装済み（プロジェクト未選択 / 読み込み中 / 失敗 / 新規フォーム / 読み取り専用 + 版切替 / 再入力フォーム。2026-07-02） |
-| §3 `#/schema` | ✅ 実装済み（ドラフト前 / 生成中 / 編集中 / 確定済みの 4 状態 + 読み込み中 / 失敗。2026-07-02）。プリセット挿入に「RoB 2（SQ 完全版）」`#schema-preset-rob2-sq`（issue #61。判定 + 根拠 + signaling question 22 問の計 24 項目）を追加（2026-07-12）。RoB 2 系プリセット（rob2 / rob2_sq）に事前設定ダイアログ `#schema-preset-dialog`（issue #103。effect of interest による D2 SQ セット切替 + Review context 注入）を追加（2026-07-13）。**プロトコル改訂後の AI 再ドラフト導線（issue #197。2026-07-24）**を追加: 確定済み画面に陳腐化バナー `#schema-stale-protocol` + 再ドラフトカード `#schema-redraft-form` / `#schema-redraft-run`、AI 再ドラフト結果は現行版があれば差分承認画面（新状態。下表参照）を経由してからエディタへ反映する |
+| §3 `#/schema` | ✅ 実装済み（ドラフト前 / 生成中 / 編集中 / 確定済みの 4 状態 + 読み込み中 / 失敗。2026-07-02）。プリセット挿入に「RoB 2（SQ 完全版）」`#schema-preset-rob2-sq`（issue #61。判定 + 根拠 + signaling question 22 問の計 24 項目）を追加（2026-07-12）。RoB 2 系プリセット（rob2 / rob2_sq）に事前設定ダイアログ `#schema-preset-dialog`（issue #103。effect of interest による D2 SQ セット切替 + Review context 注入）を追加（2026-07-13）。**プロトコル改訂後の AI 再ドラフト導線（issue #197。2026-07-24）**を追加: 確定済み画面に陳腐化バナー `#schema-stale-protocol` + 再ドラフトカード `#schema-redraft-form` / `#schema-redraft-run`、AI 再ドラフト結果は現行版があれば差分承認画面（新状態。下表参照）を経由してからエディタへ反映する。**エディタ表のセル入力中の値・キャレット位置の保持（issue #232。2026-08-03）**を追加: 非同期のストア更新による再描画をまたいでも入力中の文字・キャレット位置・フォーカスを失わない（詳細は §0） |
 | §3 `#/pilot` | ✅ 実装済み（未実行 / 実行中 / 完了 + 埋め込み検証 UI + 群構成の確定カード〔S8 と共有〕。2026-07-02） |
 | §3 `#/verify` | ✅ 実装済み（一覧読み込み中 / 失敗 / 通常〔進捗チップ + ?study= 同期〕/ study 切替 / 複数文書の文書切替タブ + 出所 PDF 自動切替〔v0.10 フェーズ 3 = 2026-07-09〕/ 群構成の確定〔未確定タブディム → 確定 → `ArmStructures` 追記〕/ `?entity=` ディープリンク〔S9 と同時実装。2026-07-02〕）。RoB 2 SQ アルゴリズム提案バッジ（issue #61。2026-07-12）実装済み。with_ai レビューのセルカードに抽出指示の折りたたみ（issue #81）+ フォーカスモードのユニットヘッダに前後移動ボタン（issue #82）を追加（2026-07-12）。anchor failed 項目の「AI で再特定」ボタン（relocate-quote skill。issue #94）を 2026-07-13 追加 |
 | §3 `#/extract` | ✅ 実装済み（読み込み中 / 失敗 / 未実行〔未抽出の既定選択 + 抽出済みバッジ + コスト概算 + 中断バナー = 2026-07-06〕/ 実行確認カード / 実行中〔**study 単位**進捗リスト〕/ 完了〔done / partial_failure + 再試行 = single_study run〕。2026-07-02。v0.10 フェーズ 2 で document 単位 → study 単位へ更新 = 2026-07-09） |
@@ -38,6 +38,7 @@ spec が正。実装が追いついていない箇所は以下のとおり（実
 - `[hidden]` 属性が付いた要素は画面に出ない（`globals.css` の `[hidden] { display: none !important }` で固定）
 - `chrome.*` API が未注入でも HTML 単体が読める（Playwright の `file://` + `addInitScript` 前提）
 - ステータス領域（`#popup-status` / `#options-status` / `#app-status`）は空文字にしない
+- ストア更新による再描画（`replaceChildren`）をまたいでも、フォーカス中のテキスト入力の値・キャレット位置・フォーカスは保持され、フォーカスを外した時点で通常どおりコミットされる（issue #232。`data-preserve-scroll` によるスクロール保持〔issue #192〕と同じ seam）
 
 ## 1. プロジェクト選択 S1 (`src/popup/popup.html`)
 
