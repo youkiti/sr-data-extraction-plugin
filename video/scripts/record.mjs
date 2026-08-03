@@ -121,6 +121,26 @@ function padCue(n) {
     return String(n).padStart(2, '0');
 }
 
+/**
+ * 一時プロファイル/録画ディレクトリの削除ラッパー。
+ *
+ * 収録自体が成功していても、Chromium プロセスの終了（ロックファイル解放）と rmSync の
+ * タイミングが競合し、ディレクトリがまだ空になりきっていない状態で削除しようとして
+ * ENOTEMPTY を投げることが複数回観測された（PR3 の収録時）。rmSync の maxRetries /
+ * retryDelay で数回リトライさせたうえで、それでも失敗する場合は例外を投げず警告ログに
+ * 留める。収録結果（video/build/scenes/ 配下）は既にこの関数の呼び出し時点で書き出し
+ * 済みのため、OS 一時ディレクトリの後片付け失敗でプロセス全体を異常終了させる価値はない
+ * （不要になった一時ディレクトリが OS の再起動やクリーナーで後から片付いても実害がない）。
+ */
+function safeRmSync(targetPath, label) {
+    try {
+        rmSync(targetPath, { recursive: true, force: true, maxRetries: 5, retryDelay: 300 });
+    } catch (err) {
+        console.warn(`[警告] ${label} の削除に失敗しました（無視して続行します）: ${targetPath}`);
+        console.warn(`  理由: ${err && err.message ? err.message : err}`);
+    }
+}
+
 /** video/scenes/ 配下の *.mjs をシーン番号順に列挙する（examples/ 等のサブディレクトリは対象外） */
 function listSceneFiles() {
     if (!existsSync(SCENES_DIR)) return [];
@@ -308,8 +328,8 @@ async function recordScene(sceneFile, extensionDir) {
         // launchPersistentContext は close() で例外時も後始末されるが、二重 close を避けるため
         // isConnected 相当のチェックは行わず try/catch で握りつぶす
         await browserContext.close().catch(() => {});
-        rmSync(profileDir, { recursive: true, force: true });
-        rmSync(videoDir, { recursive: true, force: true });
+        safeRmSync(profileDir, '一時プロファイルディレクトリ');
+        safeRmSync(videoDir, '一時録画ディレクトリ');
     }
 }
 
@@ -327,8 +347,32 @@ async function main() {
     }
     const targetFiles = filterSceneFiles(allFiles, args);
 
+    // launchPersistentContext 直後の browserContext.newPage()（本関数内の mainPage 生成）が、
+    // 収録内容とは無関係に "Protocol error (Target.createTarget): Failed to open a new tab" で
+    // 稀に失敗することがある（サンドボックス環境での Chromium 起動直後の一時的な競合と見られる。
+    // PR4 の収録で複数シーンにわたり断続的に発生・毎回リトライで成功することを確認した）。
+    // 14 章連続収録の途中で 1 章でも失敗すると全体が止まってしまうため、シーン単位で
+    // 数回まで自動リトライする（収録結果はシーンごとに独立しており、リトライしても
+    // 既に成功した先行シーンの結果には影響しない）。
+    const MAX_ATTEMPTS_PER_SCENE = 4;
     for (const sceneFile of targetFiles) {
-        await recordScene(sceneFile, extensionDir);
+        let lastErr;
+        let succeeded = false;
+        for (let attempt = 1; attempt <= MAX_ATTEMPTS_PER_SCENE; attempt += 1) {
+            try {
+                await recordScene(sceneFile, extensionDir);
+                succeeded = true;
+                break;
+            } catch (err) {
+                lastErr = err;
+                console.warn(
+                    `[警告] ${sceneFile} の収録に失敗しました（試行 ${attempt}/${MAX_ATTEMPTS_PER_SCENE}）: ${err && err.message ? err.message : err}`,
+                );
+            }
+        }
+        if (!succeeded) {
+            throw lastErr;
+        }
     }
     console.log(`\n収録完了: ${targetFiles.length} シーン`);
 }
