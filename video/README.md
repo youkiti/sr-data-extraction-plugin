@@ -6,8 +6,13 @@ VOICEVOX による自動音声合成 + ffmpeg による自動合成で作るた�
 からの移植（同一著者・MIT ライセンス）で、本拡張固有の適応点は
 [REQUIREMENTS.md §5](./REQUIREMENTS.md#5-tiab-review-pluginvideo-からの適応点pr1) を参照。
 
-> **現状（PR1）**: パイプライン基盤とスモークシーン（`scenes/examples/00-smoke.mjs`）1本のみ実装済み。
-> 実チャプター（14本）・デモビルド層（`dist-demo/`）は後続 PR で追加される。
+> **現状**: 実チャプター 01〜14（約 16 分）とデモビルド層（`dist-demo/`）まで実装済み。
+> 初版は v0.6.0 時点の画面で収録し、YouTube へ公開済み（https://youtu.be/huPK6wk-YZk ）。
+>
+> **動画を作り直す前に、必ず下の「制作の勘所（DO / DON'T）」の節を読むこと。**
+> 初版で実際に踏んだ失敗（日本語が中華フォントで描画される・撮り直したつもりが撮れていない・
+> webm が壊れたまま合成される 等）と、その確認コマンドをまとめてある。どれも気づかないまま
+> 最後まで進んでしまう種類の失敗で、16 分ぶんの撮り直しに直結する。
 
 ## ディレクトリ構成
 
@@ -16,8 +21,8 @@ video/
 ├── REQUIREMENTS.md    要件定義書
 ├── README.md          本書
 ├── scenes/            Playwright シーンスクリプト（video/scripts/record.mjs が読み込む）
-│   ├── examples/       PR1 時点のスモークシーン（record.mjs のシーン列挙対象外。§「シーンを1本だけ再収録する」参照）
-│   └── lib/            共通ヘルパー（gestures.mjs / pacing.mjs / cursor.mjs）
+│   ├── examples/       スモーク / デモ確認用シーン（シーン番号 00。record.mjs の一括収録対象外）
+│   └── lib/            共通ヘルパー（gestures.mjs / pacing.mjs / cursor.mjs / zoom.mjs）
 ├── narration/          ナレーション原稿（日本語、チャプターごとに1ファイル）
 ├── subtitles/          英語字幕ソース（narration と対になるチャプターごとに1ファイル）
 ├── assets/             タイトルカード・エンドカード・サムネイルテンプレート等の静的素材
@@ -43,16 +48,18 @@ video/
   収録した動画の日本語が中華フォントで描画されてしまう。`npm run video:setup` が導入まで面倒を見る
 - ネットワーク到達性（初回セットアップ時のみ。Playwright の Chromium、ffmpeg、VOICEVOX
   エンジン、日本語フォントをダウンロードする）
-- 収録対象の拡張機能ビルド（`npm run dev` の `dist/`。後述の「収録対象ディレクトリ」参照）
+- 収録対象の拡張機能ビルド（通常は `npm run build:demo` の `dist-demo/`。後述の
+  「収録対象ディレクトリ」参照）
 
 ## 使い方（基本の4ステップ）
 
 ```bash
-# 0. 環境セットアップ（初回のみ。以後は冪等なので再実行しても安全）
+# 0. 環境セットアップ（セッションごとに必要。冪等なので再実行しても安全）
 npm run video:setup
 
-# 1. 拡張機能ビルド（PR1 時点ではデモビルドが無いため、素の dist/ を使う）
-npm run dev
+# 1. デモ論文 PDF の生成 + 収録用デモビルド
+npm run video:fixtures
+npm run build:demo
 
 # 2. シーン収録（Playwright + xvfb）
 xvfb-run -a -s "-screen 0 1920x1080x24" npm run video:record
@@ -66,8 +73,8 @@ npm run video:assemble
 
 生成物は `video/build/` 配下にまとまる（後述）。
 
-**注意**: `npm run video:record` （引数無し）は `video/scenes/` 直下の `*.mjs` だけを対象にし、
-`scenes/examples/` 配下は対象外にする設計のため、PR1 時点のスモークシーンは含まれない。
+**注意**: `npm run video:record` （引数無し）は `video/scenes/` 直下の `*.mjs`（実チャプター 01〜14）
+だけを対象にし、`scenes/examples/` 配下は対象外にする設計のため、スモークシーンは含まれない。
 スモークシーンを収録するには次のように明示的にファイル名を指定する。
 
 ```bash
@@ -81,10 +88,10 @@ xvfb-run -a -s "-screen 0 1920x1080x24" node video/scripts/record.mjs 00-smoke
 [REQUIREMENTS.md §5-1](./REQUIREMENTS.md)）。
 
 1. 環境変数 `EXT_DIST_DIR`（明示指定。存在しなければエラー）
-2. `<repo>/dist-demo`（存在すれば。デモビルド層が後続 PR で追加された場合はこちらが自動的に優先される）
+2. `<repo>/dist-demo`（`npm run build:demo` の出力。存在すればこちらが優先される。通常はこれを使う）
 3. `<repo>/dist`（`npm run dev` / `npm run build` の出力）
 
-いずれも見つからない場合は `npm run dev` の実行を促すエラーで落ちる。
+いずれも見つからない場合は `npm run build:demo` / `npm run dev` の実行を促すエラーで落ちる。
 
 ### ffmpeg / ffprobe の実行ファイル指定
 
@@ -107,6 +114,147 @@ export FFPROBE_PATH="$(pwd)/video/tools/ffmpeg-master-latest-linux64-gpl/bin/ffp
 
 既定は `http://127.0.0.1:50021`、話者は四国めたん（ノーマル・話者ID 2）。変更する場合は
 `VOICEVOX_URL` / `VOICEVOX_SPEAKER` を環境変数で指定する。
+
+## 制作の勘所（DO / DON'T）
+
+初版（v0.6.0 / 全 14 章）を作る過程で実際に踏んだ失敗と、その対処。**次に動画を作り直す人は
+まずここを読むこと。** どれも「気づかないまま最後まで進んでしまう」種類の失敗で、
+16 分ぶんの撮り直し（30〜40 分）に直結する。
+
+### 収録を始める前
+
+- **DO: 日本語フォントが入っているか確認する。** 収録用コンテナに日本語フォントが無いと、
+  Chromium は中国語フォント（WenQuanYi Zen Hei = 文泉驛正黑）で日本語を描画する。字形が
+  中国語になるだけでレイアウトは崩れないため、**完成後に見返すまで気づかない**。初版では
+  全 14 章を撮り終えてから発覚し、丸ごと撮り直した。`npm run video:setup` が Noto Sans JP を
+  導入するが、念のため自分の目で確かめる。
+
+  ```bash
+  fc-match -s "sans-serif:lang=ja" | head -1   # Noto Sans JP が返れば OK
+  ```
+
+  なお `src/styles/tokens.css` の指定（Hiragino → Noto Sans JP → Yu Gothic UI → sans-serif）は
+  正しく、実機の macOS / Windows 利用者には起きない。**収録環境固有の問題なので `src/` は直さない。**
+
+- **DO: 原稿 → TTS → 収録の順を守る。** `scenes/lib/pacing.mjs` の `loadCueDurations()` は
+  `video/build/audio/<key>/index.json`（`tts.mjs` の出力）を読んで各 cue の実尺を得ている。
+  音声を作る前に収録すると、シーン側が待つべき秒数を知らないままナレーションと画面がずれる。
+
+- **DO: 原稿を書く前に実際の画面を見る。** デモビルドを起動してスクリーンショットを撮り、
+  何が表示されるかを確認してから書く。セレクタも実 DOM から取る。
+
+### 原稿の書き方
+
+- **DON'T: 画面に映らないものを「これが〜です」と説明しない。** デモビルドは OAuth 画面を
+  出せないので、ログイン手順は「拡張アイコンをクリックすると、**この**プロジェクト選択画面が
+  新しいタブで開きます。初回はここで『Google でログイン』を押し…」のように、**映っている画面を
+  起点に**説明する。映っていない画面を指して断定すると視聴者が混乱する。
+
+- **DON'T: 章の内容を重複させない。** 初版では第 2 章（準備）と第 13 章（設定）がどちらも
+  設定画面の話になりかけた。02 は「初回セットアップとして API キーを入れる」、13 は
+  「接続方式・レート制限・表示言語といった設定画面そのものの機能」と役割を分けた。
+  新しい章を書く前に、隣接する章の原稿を読むこと。
+
+- **DO: 略語の読みを VOICEVOX に確認させる。** 実測では SR → エスアール、BYOK → ビーワイオーケー、
+  API → エーピーアイ と正しく読まれたので書き下しは不要だったが、不安な語は確認する。
+
+  ```bash
+  curl -sS -X POST "http://127.0.0.1:50021/audio_query?speaker=2&text=$(python3 -c "
+  import urllib.parse; print(urllib.parse.quote('確認したい文'))")" \
+    | python3 -c "import json,sys; q=json.load(sys.stdin); print(''.join(m['text'] for ap in q['accent_phrases'] for m in ap['moras']))"
+  ```
+
+### デモデータの設計（`src/demo/`）
+
+- **DON'T: 実在の論文に架空の抽出値を紐づけない。** 初版では実在論文（CC BY）のタイトルと DOI を
+  出しつつ本文と抽出値は創作、という状態を一度作ってしまった。公開動画で実在の著者に架空データが
+  紐づくのは不可であり、実 PDF が手に入った環境では quote が本文と一致せずハイライトも壊れる。
+  **完全に架空の論文を自作**し、本文と quote を同じ正典（`src/demo/paperData.mjs`）から
+  生成することで「両者がずれ得る構造」自体を無くしてある。
+
+- **DO: 章ごとに study の役割を分ける。** 1 つの study で何もかも見せようとすると衝突する。
+  実例: ダッシュボードの進捗は**ログイン中ユーザー自身の判定行のみ**を数える
+  （`features/verification/dashboard.ts`）一方、κ の自動ペア確定は human 系 annotator が
+  **ちょうど 2 名**のときだけ成立する（`features/adjudication/pairResolution.ts`）。
+  同じ study に owner の判定を足すと κ が自動表示されなくなる。現在は
+  study 1 = 裁定と κ / study 2 = 群構成ゲートとライブ抽出 / study 3 = ダッシュボードと
+  エクスポート警告、と分けてある。
+
+- **DO: 見せたい機能が「成功する」ことを確認する。** 初版では quote 再配置の実演が
+  「AI でも見つかりませんでした」で終わっていた。デモの LLM モックが `relocate-quote` skill の
+  プロンプトに未対応だったため。**機能が失敗する絵をチュートリアルに載せない。**
+  新しい機能を章に入れるときは、`src/demo/llmFixtures.ts` がその skill に対応しているか先に見る。
+
+### シーンスクリプト
+
+- **DO: 幅の狭い画面は `applyPageZoom` で拡大する。** `popup/popup.html` は 320px 固定幅なので、
+  1920x1080 では画面の約 85% が空白になり文字が読めない。`scenes/lib/zoom.mjs` を使う
+  （`video/scenes/03-project.mjs` が実例）。
+
+- **DON'T: 拡大に `transform: scale` を使わない。** `zoom` はレイアウトに影響するプロパティなので
+  `locator.boundingBox()` が拡大後の座標を返し、`gestures.mjs` のホバー計算がそのまま動く。
+  `transform: scale` だと座標がずれる。
+
+- **注意: 可視カーソルは `<html>` 直下にマウントしてある**（`scenes/lib/cursor.mjs`）。`body` に
+  `zoom` を掛けると、`position: fixed` のカーソルの `translate` 量まで倍率がかかって描画位置が
+  ずれるため（実測 clientX 約 950 → 描画 約 1730 = ちょうど 1.8 倍）。マウント先を変えないこと。
+
+- **DO: マウス移動を伴う操作を各 cue に入れる。** ホバーが無いと視聴者はどこを見ればよいか
+  分からない。`gestures.mjs` の `hoverSlow` / `hoverSequence` / `smoothWheel` を使う。
+
+### 収録・合成
+
+- **DO: 「撮り直した」を必ずファイルのタイムスタンプで確認する。** 初版では再収録したつもりが
+  実際には走っておらず、古い映像のまま合成して「直った」と誤認する事故が起きた。総尺が
+  ミリ秒まで一致していたら再収録されていない疑いが濃い。
+
+  ```bash
+  ls -la --time-style=+%H:%M:%S video/build/scenes/*/segment-0.webm
+  ```
+
+- **DO: 合成の前に全 webm の健全性を検査する。** 収録プロセスが途中で止まると webm が
+  finalize されず、ファイルサイズはあるのに `ffprobe` が再生時間を返さない状態になる
+  （`assemble.mjs` がそのシーンで失敗する）。該当章だけ撮り直せばよい。
+
+  ```bash
+  for d in video/build/scenes/*/; do
+    dur=$(ffprobe -v error -show_entries format=duration -of csv=p=0 "$d/segment-0.webm")
+    [ "$dur" = "N/A" ] || [ -z "$dur" ] && echo "❌ 壊れている: $d"
+  done
+  ```
+
+- **DO: 一過性の収録エラーはリトライする。** `Target.createTarget: Failed to open a new tab`
+  （Chromium 起動直後）や、一時プロファイル削除の `ENOTEMPTY` が稀に出る。`record.mjs` は
+  シーン単位で自動リトライし、後片付けの失敗では異常終了しないようにしてあるが、それでも
+  落ちた場合は該当章だけ再実行すれば通る。
+
+- **注意: シーン番号 `00` は `scenes/examples/` 予約。** `assemble.mjs` が `00-` 始まりを最終動画から
+  自動除外する（除外時はログに出る）。`video/build/` は git 管理外で毎回消えるとは限らないため、
+  過去のスモーク収録が残っていても本編に混入しない。
+
+- **DO: 1 章だけ直したいときは該当章だけ収録し直す。** `assemble.mjs` は毎回 `video/build/` 全体から
+  作り直すので、`record.mjs 09` → `assemble.mjs` で済む。原稿を変えた章は `tts.mjs 09-verify` も回す
+  （本文ハッシュが一致する cue は自動でスキップされる）。
+
+### 完成後
+
+- **DO: 章ごとにフレームを切り出して目視確認する。** 「収録が成功した」と「その章の説明対象が
+  実際に映っている」は別物。`timeline.json` に各 cue の絶対時刻が入っているので、確認したい
+  cue の時刻でフレームを抜く。
+
+  ```bash
+  ffmpeg -ss 722 -i video/build/final.mp4 -frames:v 1 /tmp/check.png
+  ```
+
+- **注意: 完成品は 16 分で約 50 MB。** 30 MB 制限のある経路で受け渡すときは、再エンコードせず
+  （`-c copy`）チャプター境界で分割する。画質を落とすと 1080p の文字が読めなくなる。
+
+  ```bash
+  ffmpeg -i final.mp4 -t 531 -c copy part1.mp4
+  ffmpeg -ss 531 -i final.mp4 -c copy part2.mp4
+  # 結合: printf "file 'part1.mp4'\nfile 'part2.mp4'\n" > parts.txt
+  #       ffmpeg -f concat -safe 0 -i parts.txt -c copy final.mp4
+  ```
 
 ## シーンを1本だけ再収録する
 
