@@ -272,3 +272,35 @@ export const DEMO_PAPERS: readonly {
   { paperId: PAPER2.id, meta: PAPER2_BUILT.meta, pageTexts: PAPER2_BUILT.pageTexts, fieldInstances: PAPER2_BUILT.fieldInstances },
   { paperId: PAPER3.id, meta: PAPER3_BUILT.meta, pageTexts: PAPER3_BUILT.pageTexts, fieldInstances: PAPER3_BUILT.fieldInstances },
 ];
+
+/**
+ * relocate-quote skill（llmFixtures.ts）専用: anchor_status を意図的に 'failed' にした
+ * 各項目について、本文（pageTexts）に実在する正しい quote と、それが載っているページを
+ * 対応づける。上の buildPaperInstances 内のコメント「意図的に failed 用の素材」の対になる表で、
+ * FIELD_INSTANCES 側は本文と一致しない quote を保持しているため、正しい quote はここから引く。
+ * 現状デモ全体で該当は 1 件（デモ論文 1・outcome:six_minute_walk|arm:1・f_outcome_effect_size）
+ */
+export interface DemoFailedQuoteCorrection {
+  paperId: string;
+  fieldId: string;
+  entityKey: string;
+  /** 本文に実在する正しい quote（paperData.mjs の sentence をそのまま使う） */
+  correctQuote: string;
+  page: number;
+}
+
+const PAPER1_ARM1_OUTCOME = PAPER1.outcome.perArm.find((a) => a.armKey === 'arm:1');
+if (PAPER1_ARM1_OUTCOME === undefined || PAPER1_ARM1_OUTCOME.effectSize.sentence === null) {
+  // デモ fixture の前提が崩れている（paperData.mjs の構成変更等）ことを起動時に検知するための防御
+  throw new Error('デモ論文1 の arm:1 に effect_size の本文（sentence）が見つかりません');
+}
+
+export const DEMO_FAILED_QUOTE_CORRECTIONS: readonly DemoFailedQuoteCorrection[] = [
+  {
+    paperId: PAPER1.id,
+    fieldId: 'f_outcome_effect_size',
+    entityKey: `outcome:${PAPER1.outcome.slug}|arm:1`,
+    correctQuote: PAPER1_ARM1_OUTCOME.effectSize.sentence,
+    page: 5,
+  },
+];
