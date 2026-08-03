@@ -38,7 +38,7 @@ spec が正。実装が追いついていない箇所は以下のとおり（実
 - `[hidden]` 属性が付いた要素は画面に出ない（`globals.css` の `[hidden] { display: none !important }` で固定）
 - `chrome.*` API が未注入でも HTML 単体が読める（Playwright の `file://` + `addInitScript` 前提）
 - ステータス領域（`#popup-status` / `#options-status` / `#app-status`）は空文字にしない
-- ストア更新による再描画（`replaceChildren`）をまたいでも、フォーカス中のテキスト入力の値・キャレット位置・フォーカスは保持され、フォーカスを外した時点で通常どおりコミットされる（issue #232。`data-preserve-scroll` によるスクロール保持〔issue #192〕と同じ seam）
+- ストア更新による再描画（`replaceChildren`）をまたいでも、フォーカス中のテキスト入力の値・キャレット位置・フォーカスは保持され、フォーカスを外した時点で通常どおりコミットされる（issue #232。`data-preserve-scroll` によるスクロール保持〔issue #192〕と同じ seam）。**新しいテキスト入力を足すときは `id` か `aria-label` を必ず付ける** — 復元先ノードの特定にこの 2 つを使うため、どちらも無い入力は保護対象にならない（`src/app/ui/preserveFocus.ts`）
 
 ## 1. プロジェクト選択 S1 (`src/popup/popup.html`)
 
