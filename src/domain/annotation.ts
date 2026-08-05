@@ -15,7 +15,8 @@ export const NOT_REPORTED_TOKEN = 'NR';
 
 /**
  * StudyData（wide・study レベル）の 1 行 = 1 study × 1 annotator。
- * 更新キーは study_id × annotator（同一キーの重複行はバリデーション違反）
+ * 更新キーは study_id × annotator。シート側で同一キーの行が重複した場合は
+ * updated_at が最新の行を有効として自己修復する（annotationRepository.ts 参照）
  */
 export interface StudyDataRow {
   studyId: string;

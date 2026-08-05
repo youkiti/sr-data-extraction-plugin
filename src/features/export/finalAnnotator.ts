@@ -19,7 +19,12 @@ export function selectFinalAnnotator<T extends AnnotatorTagged>(rows: readonly T
     return consensus[0] as T;
   }
   if (consensus.length > 1) {
-    return null; // 同一キーの重複行はバリデーション違反（§3.2）
+    // 呼び出し側（buildStudyWideCsv.ts:35-36 等）は study_id で絞った行を渡すため、
+    // consensus 行のキーは study_id × annotator='consensus' に一意化されるはずで、
+    // かつリポジトリ層（readStudyDataSheet / readResultsDataRows）がシート側の重複を
+    // winner 1 行へ畳んでから返す（§3.2）。よってこの分岐は通常の読み取り経路からは
+    // 到達しない防御的な分岐
+    return null;
   }
   const humans = rows.filter(
     (row) => row.annotatorType === 'human_with_ai' || row.annotatorType === 'human_independent',

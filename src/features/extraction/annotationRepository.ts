@@ -1,7 +1,12 @@
 // StudyData / ResultsData の annotator 行 I/O（requirements.md §3.2）。
 // - 更新キー: StudyData = study_id × annotator / ResultsData = study_id × annotator × entity_key × field_id
 // - 書き込みは既存行を検索して上書き、なければ追記（annotator 行のみ上書き可。§3.1）
-// - 同一更新キーの重複行はバリデーション違反として throw（シート側・入力側とも）
+// - 更新キーの重複行の扱い:
+//   - シート側（読み込んだ既存行同士）は致命エラーにしない。updated_at の文字列比較で最大の
+//     行を winner として自己修復する（1 組の重複でプロジェクト全体の書き込みが恒久的に
+//     止まるのを防ぐため）。敗者行は削除も書き換えもせずシートに残し、console.warn で警告する
+//   - 入力側（upsert 呼び出しの引数 rows 内の重複）は呼び出し側のコード契約違反のため
+//     従来どおり throw する
 // - StudyData の値列は動的（entity_level = study 項目の field_name）。不足列はヘッダ末尾へ
 //   「追加のみ」行う（削除・改名はしない。§3.2）
 // - 新規行の追記は 1 回の values:append あたり DEFAULT_MAX_ROWS_PER_APPEND 行までに区切り、
@@ -184,6 +189,57 @@ function keyOf(...parts: string[]): string {
   return JSON.stringify(parts);
 }
 
+/**
+ * シート側の重複行（同一更新キーが複数行に存在する状態）を updated_at で解決する
+ * （StudyData / ResultsData 共通ロジック）。updated_at の文字列比較で最大の行を winner とし、
+ * 同着ならシート上でより下の行（rowIndex が大きい方）を winner とする。
+ * 重複を検出したら console.warn で警告する（敗者行はここでは削除も書き換えもしない。呼び出し側が
+ * winner の rowIndex だけを使い続けることで、シート上に残ったままの敗者行に自然と触れなくなる）
+ */
+function resolveDuplicateWinners<T extends { rowIndex: number; updatedAt: string }>(
+  tab: 'StudyData' | 'ResultsData',
+  rows: readonly T[],
+  keyOfRow: (row: T) => string,
+  describeRow: (row: T) => string,
+): Map<string, T> {
+  const groups = new Map<string, T[]>();
+  for (const row of rows) {
+    const key = keyOfRow(row);
+    const group = groups.get(key);
+    if (group === undefined) {
+      groups.set(key, [row]);
+    } else {
+      group.push(row);
+    }
+  }
+
+  const winners = new Map<string, T>();
+  groups.forEach((group, key) => {
+    let winner = group[0]!; // group は必ず 1 件以上（push でしか作られないため）
+    for (let i = 1; i < group.length; i += 1) {
+      const candidate = group[i]!;
+      // 同着（updatedAt が等しい）場合も候補側（シート上でより下の行）を winner にする
+      if (candidate.updatedAt >= winner.updatedAt) {
+        winner = candidate;
+      }
+    }
+    winners.set(key, winner);
+
+    if (group.length > 1) {
+      const loserRowNumbers = group
+        .filter((row) => row !== winner)
+        .map((row) => row.rowIndex)
+        .join(', ');
+      console.warn(
+        `${tab} に同一キー（${describeRow(winner)}）の重複行があります。` +
+          `updated_at が最新の ${winner.rowIndex} 行目を有効とし、${loserRowNumbers} 行目は無視します` +
+          `（敗者行はシートから削除しません）。`,
+      );
+    }
+  });
+  return winners;
+}
+
 // ---------------------------------------------------------------------------
 // StudyData（wide・動的値列）
 // ---------------------------------------------------------------------------
@@ -237,28 +293,39 @@ async function fetchStudySheet(
   return { fieldNames, rows, values };
 }
 
-/** StudyData タブの全行を読み込む（S8 検証・S10 エクスポートの素材） */
+/**
+ * StudyData タブの全行を読み込む（S8 検証・S10 エクスポートの素材）。
+ * シート側に重複キーがあれば updated_at が最新の行（winner）だけを返す。
+ * 生き残った行の並びはシート行順を保つ
+ */
 export async function readStudyDataSheet(
   spreadsheetId: string,
   deps: GoogleApiDeps,
 ): Promise<StudyDataSheet> {
-  const { fieldNames, rows } = await fetchStudySheet(spreadsheetId, deps);
-  return { fieldNames, rows };
+  const snapshot = await fetchStudySheet(spreadsheetId, deps);
+  const index = indexStudyRows(snapshot);
+  const winnerRowIndices = new Set(Array.from(index.values(), (v) => v.rowIndex));
+  const rows = snapshot.rows.filter((_, i) => winnerRowIndices.has(i + 2));
+  return { fieldNames: snapshot.fieldNames, rows };
 }
 
-/** 既存行の更新キー → シート行番号（1 始まり）+ updated_at。重複キーはバリデーション違反 */
+/**
+ * 既存行の更新キー → シート行番号（1 始まり）+ updated_at。
+ * シート側に重複キーがあれば updated_at が最新の行を winner として解決する
+ */
 function indexStudyRows(
   snapshot: StudySheetSnapshot,
 ): Map<string, { rowIndex: number; updatedAt: string }> {
+  const indexedRows = snapshot.rows.map((row, i) => ({ ...row, rowIndex: i + 2 }));
+  const winners = resolveDuplicateWinners(
+    'StudyData',
+    indexedRows,
+    (row) => keyOf(row.studyId, row.annotator),
+    (row) => `study_id=${row.studyId}, annotator=${row.annotator}`,
+  );
   const index = new Map<string, { rowIndex: number; updatedAt: string }>();
-  snapshot.rows.forEach((row, i) => {
-    const key = keyOf(row.studyId, row.annotator);
-    if (index.has(key)) {
-      throw new Error(
-        `StudyData に同一キーの行が複数あります（study_id=${row.studyId}, annotator=${row.annotator}）`,
-      );
-    }
-    index.set(key, { rowIndex: i + 2, updatedAt: row.updatedAt });
+  winners.forEach((row, key) => {
+    index.set(key, { rowIndex: row.rowIndex, updatedAt: row.updatedAt });
   });
   return index;
 }
@@ -415,12 +482,19 @@ async function fetchResultsSheet(
   return { rows };
 }
 
-/** ResultsData タブの全行を読み込む（S8 検証・S10 エクスポートの素材） */
+/**
+ * ResultsData タブの全行を読み込む（S8 検証・S10 エクスポートの素材）。
+ * シート側に重複キーがあれば updated_at が最新の行（winner）だけを返す。
+ * 生き残った行の並びはシート行順を保つ
+ */
 export async function readResultsDataRows(
   spreadsheetId: string,
   deps: GoogleApiDeps,
 ): Promise<ResultsDataRow[]> {
-  return (await fetchResultsSheet(spreadsheetId, deps)).rows;
+  const snapshot = await fetchResultsSheet(spreadsheetId, deps);
+  const index = indexResultsRows(snapshot);
+  const winnerRowIndices = new Set(Array.from(index.values(), (v) => v.rowIndex));
+  return snapshot.rows.filter((_, i) => winnerRowIndices.has(i + 2));
 }
 
 function resultsKeyOf(row: {
@@ -430,6 +504,29 @@ function resultsKeyOf(row: {
   fieldId: string;
 }): string {
   return keyOf(row.studyId, row.annotator, row.entityKey, row.fieldId);
+}
+
+/**
+ * 既存行の更新キー → シート行番号（1 始まり）+ result_id + updated_at。
+ * シート側に重複キーがあれば updated_at が最新の行を winner として解決する
+ * （indexStudyRows と対称の関数として切り出し）
+ */
+function indexResultsRows(
+  snapshot: ResultsSheetSnapshot,
+): Map<string, { rowIndex: number; resultId: string; updatedAt: string }> {
+  const indexedRows = snapshot.rows.map((row, i) => ({ ...row, rowIndex: i + 2 }));
+  const winners = resolveDuplicateWinners(
+    'ResultsData',
+    indexedRows,
+    (row) => resultsKeyOf(row),
+    (row) =>
+      `study_id=${row.studyId}, annotator=${row.annotator}, entity_key=${row.entityKey}, field_id=${row.fieldId}`,
+  );
+  const index = new Map<string, { rowIndex: number; resultId: string; updatedAt: string }>();
+  winners.forEach((row, key) => {
+    index.set(key, { rowIndex: row.rowIndex, resultId: row.resultId, updatedAt: row.updatedAt });
+  });
+  return index;
 }
 
 /**
@@ -475,17 +572,7 @@ export async function upsertResultsDataRows(
     Math.floor(helpers.maxRowsPerAppend ?? DEFAULT_MAX_ROWS_PER_APPEND),
   );
   const snapshot = await fetchResultsSheet(spreadsheetId, deps);
-
-  const index = new Map<string, { rowIndex: number; resultId: string; updatedAt: string }>();
-  snapshot.rows.forEach((row, i) => {
-    const key = resultsKeyOf(row);
-    if (index.has(key)) {
-      throw new Error(
-        `ResultsData に同一キーの行が複数あります（study_id=${row.studyId}, annotator=${row.annotator}, entity_key=${row.entityKey}, field_id=${row.fieldId}）`,
-      );
-    }
-    index.set(key, { rowIndex: i + 2, resultId: row.resultId, updatedAt: row.updatedAt });
-  });
+  const index = indexResultsRows(snapshot);
 
   const inputKeys = new Set<string>();
   for (const row of rows) {

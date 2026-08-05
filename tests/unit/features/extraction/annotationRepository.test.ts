@@ -152,6 +152,22 @@ describe('readStudyDataSheet', () => {
       'schema_version "x" が整数ではありません',
     );
   });
+
+  test('重複を畳んで winner 行だけを返し、残った行の順序はシート行順を保つ', async () => {
+    const deps = makeDeps([
+      [...STUDY_HEADER, 'sample_size_total'],
+      ['doc-0', 'ai', 'ai', '1', '', 't1', '1'],
+      ['doc-1', 'ai', 'ai', '1', '', 't0', '2'], // 敗者
+      ['doc-1', 'ai', 'ai', '1', '', 't1', '3'], // winner
+      ['doc-2', 'ai', 'ai', '1', '', 't1', '4'],
+    ]);
+    const sheet = await readStudyDataSheet('sid', deps);
+    expect(sheet.rows.map((r) => [r.studyId, r.updatedAt, r.values.sample_size_total])).toEqual([
+      ['doc-0', 't1', '1'],
+      ['doc-1', 't1', '3'], // winner のみ（敗者の t0 行は現れない）
+      ['doc-2', 't1', '4'],
+    ]);
+  });
 });
 
 describe('upsertStudyDataRows', () => {
@@ -228,15 +244,39 @@ describe('upsertStudyDataRows', () => {
     expect(body.values).toEqual([['doc-1', 'ai', 'ai', 2, 'run-1', 't2', '120', 'Japan']]);
   });
 
-  test('シート側に同一キーの重複行があれば throw（バリデーション違反）', async () => {
+  test('シート側に同一キーの重複行（3 行）があれば updated_at 最新の行（winner）だけを batchUpdate し、敗者行には書き込まない', async () => {
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
     const deps = makeDeps([
       STUDY_HEADER,
-      ['doc-1', 'ai', 'ai', '1', '', 't0'],
-      ['doc-1', 'ai', 'ai', '1', '', 't0'],
+      ['doc-1', 'ai', 'ai', '1', '', 't1'], // 2 行目: 中間の updated_at（暫定 winner）
+      ['doc-1', 'ai', 'ai', '1', '', 't0'], // 3 行目: 2 行目より古い → winner は変わらない
+      ['doc-1', 'ai', 'ai', '1', '', 't9'], // 4 行目: 最も新しい → winner
     ]);
-    await expect(upsertStudyDataRows('sid', [makeStudyRow()], deps)).rejects.toThrow(
-      'StudyData に同一キーの行が複数あります',
-    );
+    await upsertStudyDataRows('sid', [makeStudyRow()], deps); // makeStudyRow の updatedAt は 't2'（書き込む新しい値）
+    const updates = batchUpdateCallsOf(deps);
+    expect(updates).toHaveLength(1);
+    const body = JSON.parse(updates[0]?.[1].body as string);
+    expect(body.data).toEqual([
+      { range: 'StudyData!A4', values: [['doc-1', 'ai', 'ai', 2, 'run-1', 't2', '120']] }, // winner の 4 行目のみ更新
+    ]);
+    expect(appendCallsOf(deps)).toHaveLength(0);
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('StudyData'));
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('study_id=doc-1, annotator=ai'));
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('2, 3'));
+    warnSpy.mockRestore();
+  });
+
+  test('シート側の重複で updated_at が同着なら、シート上でより下の行が winner になる', async () => {
+    const deps = makeDeps([
+      STUDY_HEADER,
+      ['doc-1', 'ai', 'ai', '1', '', 't0'], // 2 行目: 同着だが上の行 → 敗者
+      ['doc-1', 'ai', 'ai', '1', '', 't0'], // 3 行目: 同着で下の行 → winner
+    ]);
+    await upsertStudyDataRows('sid', [makeStudyRow()], deps);
+    const updates = batchUpdateCallsOf(deps);
+    expect(updates).toHaveLength(1);
+    const body = JSON.parse(updates[0]?.[1].body as string);
+    expect(body.data[0].range).toBe('StudyData!A3'); // 3 行目（下の行）が winner
   });
 
   test('入力側に同一キーの行が複数あれば throw（呼び出し契約違反）', async () => {
@@ -389,6 +429,20 @@ describe('readResultsDataRows', () => {
     const bad = makeDeps([['result_id', 'field_id']]);
     await expect(readResultsDataRows('sid', bad)).rejects.toThrow('2 列目が "study_id"');
   });
+
+  test('重複を畳んで winner 行（result_id も winner のもの）だけを返し、残った行の順序はシート行順を保つ', async () => {
+    const deps = makeDeps([
+      RESULTS_HEADER,
+      ['r-1', 'doc-1', 'f-arm-n', 'ai', 'ai', '1', 'arm:1', '', '1', 'false', 't0'], // 敗者
+      ['r-2', 'doc-1', 'f-arm-n', 'ai', 'ai', '1', 'arm:1', '', '2', 'false', 't1'], // winner
+      ['r-3', 'doc-1', 'f-arm-n', 'ai', 'ai', '1', 'arm:2', '', '3', 'false', 't1'],
+    ]);
+    const rows = await readResultsDataRows('sid', deps);
+    expect(rows.map((r) => [r.resultId, r.entityKey, r.value])).toEqual([
+      ['r-2', 'arm:1', '2'], // winner の result_id・値を保持
+      ['r-3', 'arm:2', '3'],
+    ]);
+  });
 });
 
 describe('upsertResultsDataRows', () => {
@@ -528,15 +582,29 @@ describe('upsertResultsDataRows', () => {
     expect(body.values[0][0]).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-/);
   });
 
-  test('シート側の重複キーは throw、入力側の重複キーも throw', async () => {
+  test('シート側に同一キーの重複行があれば updated_at 最新の行（winner）だけを result_id を保持して batchUpdate する', async () => {
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
     const dup = makeDeps([
       RESULTS_HEADER,
-      ['r-1', 'doc-1', 'f-arm-n', 'ai', 'ai', '1', 'arm:1', '', '1', 'false', 't0'],
-      ['r-2', 'doc-1', 'f-arm-n', 'ai', 'ai', '1', 'arm:1', '', '2', 'false', 't0'],
+      ['r-1', 'doc-1', 'f-arm-n', 'ai', 'ai', '1', 'arm:1', '', '1', 'false', 't0'], // 敗者
+      ['r-2', 'doc-1', 'f-arm-n', 'ai', 'ai', '1', 'arm:1', '', '2', 'false', 't1'], // winner
     ]);
-    await expect(upsertResultsDataRows('sid', [makeResultsRow()], dup)).rejects.toThrow(
-      'ResultsData に同一キーの行が複数あります',
-    );
+    await upsertResultsDataRows('sid', [makeResultsRow()], dup, { newUuid: () => 'r-new' });
+    const updates = batchUpdateCallsOf(dup);
+    expect(updates).toHaveLength(1);
+    const body = JSON.parse(updates[0]?.[1].body as string);
+    expect(body.data).toEqual([
+      {
+        range: 'ResultsData!A3', // winner（r-2）の 3 行目のみ更新
+        values: [['r-2', 'doc-1', 'f-arm-n', 'ai', 'ai', 2, 'arm:1', 'run-1', '60', false, 't2']],
+      },
+    ]);
+    expect(appendCallsOf(dup)).toHaveLength(0);
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('ResultsData'));
+    warnSpy.mockRestore();
+  });
+
+  test('入力側に同一キーの行が複数あれば throw（呼び出し契約違反）', async () => {
     const deps = makeDeps([RESULTS_HEADER]);
     await expect(
       upsertResultsDataRows('sid', [makeResultsRow(), makeResultsRow()], deps),
