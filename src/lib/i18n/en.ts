@@ -953,6 +953,10 @@ export const en: Record<MessageKey, string> = {
   'extraction.errImageUnsupportedModel':
     'The selected model "{model}" does not support image input, so the run cannot start. Choose a different model or deselect the affected documents',
   'extraction.errStudyDocsNotFound': 'Documents of study {id} were not found',
+  'extraction.transferErrorMessage':
+    'AI extraction finished, but the extracted values could not be transferred into the tables (StudyData / ResultsData). Evidence has already been saved. Reason: {reason}',
+  'extraction.toastTransferFailed':
+    'AI extraction finished, but transferring the results into the tables failed. Evidence has already been saved',
   'documents.stageCopy': 'Copy',
   'documents.stageExtract': 'Text extraction',
   'documents.stageSave': 'Saving to Documents',

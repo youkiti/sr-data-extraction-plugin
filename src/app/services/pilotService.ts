@@ -16,7 +16,6 @@ import {
 } from '../../features/documents/studySelection';
 import { makeLoadDocumentPages } from '../../features/documents/loadDocumentPages';
 import { makeLoadDocumentPageImages } from '../../features/documents/loadDocumentPageImages';
-import { buildAiAnnotationRows } from '../../features/extraction/aiAnnotationRows';
 import { readEvidenceRows } from '../../features/extraction/evidenceRepository';
 import {
   filterFieldsBySelection,
@@ -294,20 +293,20 @@ export async function runPilot(store: Store, deps: PilotServiceDeps): Promise<vo
       },
     );
 
-    // 進捗カウントへ反映（pilotRuns / evidenceRows / dataRows。ガードと #/home サマリの素材）
-    const transfer = buildAiAnnotationRows(outcome.result.evidence, fields, {
-      runId: outcome.run.runId,
-      schemaVersion: outcome.plan.schemaVersion,
-      updatedAt: (deps.now ?? nowIso8601)(),
-    });
+    // 進捗カウントへ反映（pilotRuns / evidenceRows / dataRows。ガードと #/home サマリの素材）。
+    // dataRows は outcome.transferredRowCount（実際に Sheets へ書けた ai annotator 行数）を使う。
+    // ここで buildAiAnnotationRows を呼び直さない: runExtraction 内で throw を握っても、
+    // 呼び出し側の再計算が try/catch の外にあると同じ入力で再度 throw して runPilot の
+    // catch へ落ち、専用の転記失敗文言が出せなくなる。加えて、ここは表のデザインの全項目
+    // （fields）を渡していて runExtraction へ渡した extractionFields（run のサブセット）と
+    // 食い違っていたため、この整理でその不整合も解消する
     const after = store.getState();
     store.setState({
       counts: {
         ...after.counts,
         pilotRuns: after.counts.pilotRuns + 1,
         evidenceRows: after.counts.evidenceRows + outcome.result.evidence.length,
-        dataRows:
-          after.counts.dataRows + transfer.studyRows.length + transfer.resultsRows.length,
+        dataRows: after.counts.dataRows + outcome.transferredRowCount,
       },
       pilot: {
         ...after.pilot,
@@ -321,17 +320,29 @@ export async function runPilot(store: Store, deps: PilotServiceDeps): Promise<vo
         // 完了した run を履歴の先頭（最新）へ足し、自動読込済み扱いにする
         history: [outcome.run, ...(after.pilot.history ?? [])],
         historyInitialized: true,
+        // ai 行への転記に失敗していれば既存の #pilot-run-error バナーへ出す（AI 抽出自体は
+        // 成功しており Evidence は保存済みのため、study の抽出失敗と混同させない専用文言にする）
+        runError:
+          outcome.transferError === null
+            ? null
+            : t('extraction.transferErrorMessage', { reason: outcome.transferError }),
       },
     });
     // パイロット完了（done / partial_failure とも）でも #/verify・#/dashboard の読込済み
     // キャッシュを無効化する（PR #190 のレビュー対応。extractService と同じ理由）
     invalidateVerifyTargets(store);
     invalidateDashboard(store);
-    showToast(
-      outcome.run.status === 'done'
-        ? t('pilot.toastDone', { n: outcome.result.evidence.length })
-        : t('pilot.toastPartial'),
-    );
+    if (outcome.transferError !== null) {
+      // 転記失敗は toastDone / toastPartial とは別の専用トーストで知らせる
+      // （「一部の study が失敗したので再試行」という誤解を避けるため）
+      showToast(t('extraction.toastTransferFailed'));
+    } else {
+      showToast(
+        outcome.run.status === 'done'
+          ? t('pilot.toastDone', { n: outcome.result.evidence.length })
+          : t('pilot.toastPartial'),
+      );
+    }
     // 最初の抽出 study を検証 UI に開く（配下の全文書を連結表示。v0.10 フェーズ 3）
     const firstStudyId = outcome.run.studyIds[0];
     if (firstStudyId !== undefined) {

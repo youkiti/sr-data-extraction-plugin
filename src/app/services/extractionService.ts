@@ -4,6 +4,10 @@
 // （requirements.md §4.3 / architecture.md §2）。
 // running 行を Evidence より先に書くことで「Evidence の run_id は必ず ExtractionRuns で
 // 解決できる」不変条件を守る（途中で実行が死んでも running 行が残り、中断として検出できる）。
+// ai annotator 行への転記（StudyData / ResultsData）は Evidence 保存後の別ステップのため、
+// 転記だけが失敗しても LLM 呼び出しの成果（Evidence）を「中断」扱いで捨てないよう、
+// StudyData / ResultsData は独立に try/catch し、完了行の追記まで必ず到達させる
+// （転記失敗は完了行の status を partial_failure に落とし、LLMApiLog にも記録する）。
 // LLM 呼び出しは withRetry(withLogging(createProvider(...))) で包み、
 // 全呼び出し（リトライの各試行を含む）を LLMApiLog + Drive（logs/llm/）に残す
 // Evidence の Sheets 書き込みは executeRun 側で N study ごと（+ 行数キャップ）にまとめられる
@@ -15,7 +19,7 @@ import type { ExtractionRun, RunType } from '../../domain/extractionRun';
 import type { LlmProviderId } from '../../domain/llmApiLog';
 import type { DocumentRecord } from '../../domain/document';
 import type { SchemaField } from '../../domain/schemaField';
-import { buildAiAnnotationRows } from '../../features/extraction/aiAnnotationRows';
+import { buildAiAnnotationRows, type AiAnnotationRows } from '../../features/extraction/aiAnnotationRows';
 import {
   upsertResultsDataRows,
   upsertStudyDataRows,
@@ -59,6 +63,10 @@ import {
 } from '../../lib/llm/rateLimitPolicy';
 import { nowIso8601 } from '../../utils/iso8601';
 import { generateUuid } from '../../utils/uuid';
+
+function toMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
 
 export interface ExtractionServiceDeps {
   google: GoogleApiDeps;
@@ -138,6 +146,20 @@ export interface RunExtractionOutcome {
   plan: RunPlan;
   /** バッチ失敗・要素破棄の内訳と保存済み Evidence（S7 の結果表示用） */
   result: ExecuteRunResult;
+  /**
+   * ai annotator 行への転記（StudyData / ResultsData）で発生したエラー（S6/S7 バナー用）。
+   * 転記が全部成功、または buildAiAnnotationRows 以降に到達しなかった場合は null。
+   * AI 抽出自体（Evidence）は保存済みのため、run を「中断」へは転落させない（§4.3）
+   */
+  transferError: string | null;
+  /**
+   * 実際に Sheets へ書き込めた ai annotator 行数（StudyData + ResultsData の合計）。
+   * upsertStudyDataRows / upsertResultsDataRows が成功したぶんだけ加算し、
+   * 失敗した（＝書けなかった）行は数えない。buildAiAnnotationRows が throw した場合は 0。
+   * 呼び出し側（S6/S7 の進捗カウント dataRows）はこの値を使い、転記結果を自前で
+   * 再計算しない（再計算すると try/catch の外で buildAiAnnotationRows が再度 throw し得るため）
+   */
+  transferredRowCount: number;
 }
 
 /**
@@ -304,22 +326,76 @@ export async function runExtraction(
     },
   );
 
-  // ai annotator 行への転記（§4.3）。Evidence は executeRun 内で保存済み
-  const transfer = buildAiAnnotationRows(result.evidence, params.fields, {
-    runId,
-    schemaVersion: plan.schemaVersion,
-    updatedAt: now(),
-  });
-  await upsertStudyDataRows(params.spreadsheetId, transfer.studyRows, deps.google);
-  await upsertResultsDataRows(params.spreadsheetId, transfer.resultsRows, deps.google, {
-    newUuid: deps.newUuid,
-  });
+  // ai annotator 行への転記（§4.3）。Evidence は executeRun 内で既に保存済みのため、
+  // 転記が失敗しても後続の完了行追記まで必ず到達させる（転記失敗で LLM 呼び出しの成果
+  //〔Evidence〕まで「中断」扱いにして捨てるのは損失が大きすぎるため）。
+  // StudyData / ResultsData の転記は独立に試行し、両方のエラーメッセージを集める
+  const transferErrors: string[] = [];
+  let transfer: AiAnnotationRows | null = null;
+  let transferredRowCount = 0;
+  try {
+    transfer = buildAiAnnotationRows(result.evidence, params.fields, {
+      runId,
+      schemaVersion: plan.schemaVersion,
+      updatedAt: now(),
+    });
+  } catch (err) {
+    // 転記素材そのものが作れない（Evidence に未知の field_id がある等）ため、
+    // StudyData / ResultsData のどちらも試みようがない。このエラー 1 件だけを扱う
+    transferErrors.push(toMessage(err));
+  }
+  if (transfer !== null) {
+    try {
+      await upsertStudyDataRows(params.spreadsheetId, transfer.studyRows, deps.google);
+      transferredRowCount += transfer.studyRows.length;
+    } catch (err) {
+      transferErrors.push(toMessage(err));
+    }
+    try {
+      await upsertResultsDataRows(params.spreadsheetId, transfer.resultsRows, deps.google, {
+        newUuid: deps.newUuid,
+      });
+      transferredRowCount += transfer.resultsRows.length;
+    } catch (err) {
+      transferErrors.push(toMessage(err));
+    }
+  }
+  const transferError = transferErrors.length === 0 ? null : transferErrors.join(' / ');
+  if (transferError !== null) {
+    // 転記失敗を LLMApiLog へ 1 行残す（recordArmWarning と同じ流儀）。
+    // このログ書き込み自体の失敗で run を止めない（完了行の成立を優先する最終安全弁）
+    try {
+      await appendLlmApiLog(
+        params.spreadsheetId,
+        {
+          logId: uuid(),
+          timestamp: now(),
+          provider: baseProvider.providerId,
+          model: params.model,
+          purpose: 'extract_study',
+          promptRef: '',
+          responseRef: '',
+          promptSummary: `[transfer_failed] run ${runId}`,
+          tokensIn: null,
+          tokensOut: null,
+          latencyMs: null,
+          costEstimateUsd: null,
+          error: `転記失敗: ${transferError}`,
+        },
+        deps.google,
+      );
+    } catch {
+      // ログ書き込みの失敗も無視する（完了行の成立を最優先する。上の warnings 再試行と同じ方針）
+    }
+  }
 
-  // 完了行の追記（2 行プロトコルの 2 行目。読み手はこの行の有無で完了 / 中断を判別する）
+  // 完了行の追記（2 行プロトコルの 2 行目。読み手はこの行の有無で完了 / 中断を判別する）。
+  // 転記に 1 件でも失敗があれば partial_failure へ落とす（executeRun が既に partial_failure
+  // ならそのまま。転記が全部成功していれば executeRun の status をそのまま使う）
   const run: ExtractionRun = {
     ...runBase,
     modelVersion: result.modelVersion,
-    status: result.status,
+    status: transferError === null ? result.status : 'partial_failure',
     finishedAt: now(),
     tokensIn: result.tokensIn,
     tokensOut: result.tokensOut,
@@ -339,8 +415,8 @@ export async function runExtraction(
     // 通常サイズは runRepository.warningsToCell の切り詰めで収まる）
     const fallback: ExtractionRun = { ...run, warnings: null };
     await appendExtractionRun(params.spreadsheetId, fallback, deps.google);
-    return { run: fallback, plan, result };
+    return { run: fallback, plan, result, transferError, transferredRowCount };
   }
 
-  return { run, plan, result };
+  return { run, plan, result, transferError, transferredRowCount };
 }

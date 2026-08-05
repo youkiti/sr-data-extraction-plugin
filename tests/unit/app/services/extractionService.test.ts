@@ -1,6 +1,7 @@
 import { runExtraction } from '../../../../src/app/services/extractionService';
 import type { DocumentRecord } from '../../../../src/domain/document';
 import type { SchemaField } from '../../../../src/domain/schemaField';
+import * as aiAnnotationRowsModule from '../../../../src/features/extraction/aiAnnotationRows';
 import { upsertResultsDataRows, upsertStudyDataRows } from '../../../../src/features/extraction/annotationRepository';
 import {
   appendEvidenceRows,
@@ -715,5 +716,226 @@ describe('runExtraction', () => {
     });
     await expect(runExtraction(baseParams(), deps)).rejects.toThrow('ネットワーク断');
     expect(mockedAppendRun).toHaveBeenCalledTimes(2); // running 行 + 失敗した完了行のみ
+  });
+
+  describe('ai annotator 行への転記が失敗しても run を中断させない', () => {
+    beforeEach(() => {
+      // 外側の beforeEach（jest.clearAllMocks）は呼び出し履歴のみをクリアし実装は引き継ぐため、
+      // 直前のテストが個別に設定した実装（mockRejectedValue 等）が後続テストへ漏れないよう
+      // このブロックの既定（すべて成功）を明示する
+      mockedUpsertStudy.mockResolvedValue(undefined);
+      mockedUpsertResults.mockResolvedValue(undefined);
+      mockedAppendRun.mockResolvedValue(undefined);
+    });
+
+    test('StudyData への転記が失敗しても ResultsData は独立に試み、完了行を partial_failure で追記する', async () => {
+      const chat = jest.fn().mockResolvedValue(AI_RESPONSE);
+      const deps = makeDeps(chat);
+      mockedUpsertStudy.mockRejectedValue(new Error('StudyData 書き込み失敗'));
+      const outcome = await runExtraction(baseParams(), deps);
+
+      expect(outcome.transferError).toBe('StudyData 書き込み失敗');
+      expect(outcome.run.status).toBe('partial_failure');
+      // Evidence は executeRun 側で既に保存済み。転記失敗で中断（追記なし）にはしない
+      expect(mockedAppendEvidence).toHaveBeenCalledTimes(1);
+      expect(mockedUpsertResults).toHaveBeenCalledTimes(1); // 片方の失敗でもう片方は試みる
+      expect(mockedAppendRun).toHaveBeenCalledTimes(2); // running 行 + 完了行
+      expect(mockedAppendRun).toHaveBeenNthCalledWith(
+        2,
+        'sid',
+        expect.objectContaining({ status: 'partial_failure' }),
+        GOOGLE,
+      );
+    });
+
+    test('ResultsData への転記のみ失敗しても StudyData 側は実行済みのまま完了行を追記する', async () => {
+      const chat = jest.fn().mockResolvedValue({
+        text: JSON.stringify([
+          {
+            field_id: 'f-study',
+            entity_key: '-',
+            value: '120',
+            not_reported: false,
+            quote: '120 patients',
+            page: 1,
+            confidence: 'high',
+          },
+          {
+            field_id: 'f-arm',
+            entity_key: 'arm:1',
+            value: '60',
+            not_reported: false,
+            quote: '60 patients',
+            page: 1,
+            confidence: 'high',
+          },
+        ]),
+        tokensIn: 10,
+        tokensOut: 5,
+        raw: {},
+      } satisfies ChatResponse);
+      const deps = makeDeps(chat);
+      mockedUpsertResults.mockRejectedValue(new Error('ResultsData 書き込み失敗'));
+      const outcome = await runExtraction(
+        {
+          ...baseParams(),
+          fields: [
+            makeField(),
+            makeField({ fieldId: 'f-arm', fieldName: 'sample_size', entityLevel: 'arm' }),
+          ],
+        },
+        deps,
+      );
+
+      expect(outcome.transferError).toBe('ResultsData 書き込み失敗');
+      expect(outcome.run.status).toBe('partial_failure');
+      // StudyData 側は実行済み（実際の変換結果まで検証する）
+      expect(mockedUpsertStudy).toHaveBeenCalledWith(
+        'sid',
+        [expect.objectContaining({ studyId: 'study-1', values: { sample_size_total: '120' } })],
+        GOOGLE,
+      );
+      // StudyData だけ成功したときは transferredRowCount は studyRows のぶんだけ（1 件）。
+      // ResultsData は失敗して書けていないため resultsRows（1 件）は数えない
+      expect(outcome.transferredRowCount).toBe(1);
+    });
+
+    test('転記が全部成功したとき: transferredRowCount は StudyData + ResultsData の合計になる', async () => {
+      const chat = jest.fn().mockResolvedValue({
+        text: JSON.stringify([
+          {
+            field_id: 'f-study',
+            entity_key: '-',
+            value: '120',
+            not_reported: false,
+            quote: '120 patients',
+            page: 1,
+            confidence: 'high',
+          },
+          {
+            field_id: 'f-arm',
+            entity_key: 'arm:1',
+            value: '60',
+            not_reported: false,
+            quote: '60 patients',
+            page: 1,
+            confidence: 'high',
+          },
+        ]),
+        tokensIn: 10,
+        tokensOut: 5,
+        raw: {},
+      } satisfies ChatResponse);
+      const deps = makeDeps(chat);
+      const outcome = await runExtraction(
+        {
+          ...baseParams(),
+          fields: [
+            makeField(),
+            makeField({ fieldId: 'f-arm', fieldName: 'sample_size', entityLevel: 'arm' }),
+          ],
+        },
+        deps,
+      );
+
+      expect(outcome.transferError).toBeNull();
+      // studyRows（f-study: 1 件）+ resultsRows（f-arm: 1 件）の合計
+      expect(outcome.transferredRowCount).toBe(2);
+    });
+
+    test('buildAiAnnotationRows が throw した場合は転記素材を作れず、そのエラーのみを扱う（StudyData / ResultsData への書き込みは試みない）', async () => {
+      const chat = jest.fn().mockResolvedValue(AI_RESPONSE);
+      const deps = makeDeps(chat);
+      const spy = jest
+        .spyOn(aiAnnotationRowsModule, 'buildAiAnnotationRows')
+        .mockImplementation(() => {
+          throw new Error('未知の field_id');
+        });
+      try {
+        const outcome = await runExtraction(baseParams(), deps);
+        expect(outcome.transferError).toBe('未知の field_id');
+        expect(outcome.run.status).toBe('partial_failure');
+        expect(mockedUpsertStudy).not.toHaveBeenCalled();
+        expect(mockedUpsertResults).not.toHaveBeenCalled();
+        // 転記素材そのものが作れないため、書けた行は 0 件
+        expect(outcome.transferredRowCount).toBe(0);
+      } finally {
+        spy.mockRestore();
+      }
+    });
+
+    test('Error インスタンス以外で reject されても文字列化して扱う', async () => {
+      const chat = jest.fn().mockResolvedValue(AI_RESPONSE);
+      const deps = makeDeps(chat);
+      mockedUpsertStudy.mockRejectedValue('文字列で reject');
+      const outcome = await runExtraction(baseParams(), deps);
+
+      expect(outcome.transferError).toBe('文字列で reject');
+      expect(outcome.run.status).toBe('partial_failure');
+    });
+
+    test('StudyData / ResultsData の両方が失敗すると両方のエラーメッセージを 1 つの文字列にまとめる', async () => {
+      const chat = jest.fn().mockResolvedValue(AI_RESPONSE);
+      const deps = makeDeps(chat);
+      mockedUpsertStudy.mockRejectedValue(new Error('StudyData 失敗'));
+      mockedUpsertResults.mockRejectedValue(new Error('ResultsData 失敗'));
+      const outcome = await runExtraction(baseParams(), deps);
+
+      expect(outcome.transferError).toContain('StudyData 失敗');
+      expect(outcome.transferError).toContain('ResultsData 失敗');
+      expect(outcome.run.status).toBe('partial_failure');
+    });
+
+    test('転記失敗時は LLMApiLog へ「転記失敗」の行を追記する', async () => {
+      const chat = jest.fn().mockResolvedValue(AI_RESPONSE);
+      const deps = makeDeps(chat);
+      mockedUpsertStudy.mockRejectedValue(new Error('StudyData 失敗'));
+      await runExtraction(baseParams(), deps);
+
+      const transferLogEntry = mockedAppendLog.mock.calls
+        .map(([, entry]) => entry)
+        .find((entry) => entry.error?.startsWith('転記失敗'));
+      expect(transferLogEntry).toMatchObject({
+        provider: 'gemini',
+        model: 'gemini-2.5-flash',
+        purpose: 'extract_study',
+        promptRef: '',
+        responseRef: '',
+        tokensIn: null,
+        tokensOut: null,
+        latencyMs: null,
+        costEstimateUsd: null,
+      });
+      expect(transferLogEntry?.error).toBe('転記失敗: StudyData 失敗');
+    });
+
+    test('転記失敗ログの書き込み自体が失敗しても完了行は書かれ run は成立する', async () => {
+      const chat = jest.fn().mockResolvedValue(AI_RESPONSE);
+      const deps = makeDeps(chat);
+      mockedUpsertStudy.mockRejectedValue(new Error('StudyData 失敗'));
+      let callCount = 0;
+      mockedAppendLog.mockImplementation(async () => {
+        callCount += 1;
+        if (callCount === 2) {
+          // 1 回目は withLogging 経由の chat ログ。2 回目（転記失敗ログ）だけ失敗させる
+          throw new Error('LLMApiLog 書き込み失敗');
+        }
+      });
+      const outcome = await runExtraction(baseParams(), deps);
+
+      expect(outcome.transferError).toBe('StudyData 失敗');
+      expect(outcome.run.status).toBe('partial_failure');
+      expect(mockedAppendRun).toHaveBeenCalledTimes(2); // running 行 + 完了行（ログ失敗で中断しない）
+    });
+
+    test('転記が成功したときは transferError が null で status は executeRun の結果のまま（回帰防止）', async () => {
+      const chat = jest.fn().mockResolvedValue(AI_RESPONSE);
+      const deps = makeDeps(chat);
+      const outcome = await runExtraction(baseParams(), deps);
+
+      expect(outcome.transferError).toBeNull();
+      expect(outcome.run.status).toBe('done');
+      expect(outcome.transferredRowCount).toBe(1); // studyRows 1 件のみ
+    });
   });
 });

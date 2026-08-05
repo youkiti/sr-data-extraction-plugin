@@ -372,7 +372,12 @@ function makeStore(patch: {
   return createStore(state);
 }
 
+function toastTexts(): string[] {
+  return Array.from(document.querySelectorAll('.toast')).map((node) => node.textContent ?? '');
+}
+
 beforeEach(() => {
+  document.body.innerHTML = '';
   resolveProtocolMock.mockResolvedValue({
     protocol: { version: 1 } as never,
     text: 'PROTOCOL TEXT',
@@ -575,11 +580,20 @@ describe('runPilot: 実行', () => {
   }
 
   function makeOutcome(
-    overrides: { status?: 'done' | 'partial_failure'; studyIds?: string[]; evidence?: Evidence[] } = {},
+    overrides: {
+      status?: 'done' | 'partial_failure';
+      studyIds?: string[];
+      evidence?: Evidence[];
+      transferError?: string | null;
+      transferredRowCount?: number;
+    } = {},
   ) {
     const status = overrides.status ?? 'done';
     return {
       run: makeRun({ status, studyIds: overrides.studyIds ?? ['study-doc-1'] }),
+      transferError: overrides.transferError ?? null,
+      // 既定 1: makeEvidence() 1 件（entity_level=study の f-total）が StudyData 1 行へ転記される想定
+      transferredRowCount: overrides.transferredRowCount ?? 1,
       plan: {
         schemaVersion: 1,
         model: 'gemini-test',
@@ -656,6 +670,26 @@ describe('runPilot: 実行', () => {
     const loaded = await state.pilot.verification?.loadPdfView('doc-1');
     expect(loaded?.pdf).not.toBeNull();
     expect(getFileBinaryMock).toHaveBeenCalledTimes(1);
+  });
+
+  test('ai 行への転記が失敗した場合: runError に転記失敗の文言を出し、toastDone/toastPartial ではなく専用トーストを出す', async () => {
+    const store = makeReadyStore();
+    runExtractionMock.mockResolvedValue(
+      makeOutcome({ transferError: 'StudyData 書き込み失敗' }),
+    );
+    await runPilot(store, makeDeps());
+
+    const state = store.getState();
+    // AI 抽出自体は成功しているため run・evidence 等は通常どおり反映される
+    expect(state.pilot.running).toBe(false);
+    expect(state.pilot.run?.runId).toBe('run-1');
+    expect(state.pilot.runError).toContain('StudyData 書き込み失敗');
+    expect(state.pilot.runError).toContain('Evidence は保存済みです');
+    const texts = toastTexts();
+    expect(texts).toHaveLength(1);
+    expect(texts[0]).not.toContain('パイロット抽出が完了しました');
+    expect(texts[0]).not.toContain('パイロット抽出が部分的に失敗しました');
+    expect(texts[0]).toContain('転記');
   });
 
   test('除外文書は抽出対象から外れる（issue #181）: 除外 study を選択していても対象文書が渡らない', async () => {

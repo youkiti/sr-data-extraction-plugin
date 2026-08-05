@@ -944,6 +944,10 @@ export const ja = {
   'extraction.errImageUnsupportedModel':
     '選択中のモデル「{model}」は画像入力に対応していないため実行できません。別のモデルを選ぶか、該当する文献の選択を外してください',
   'extraction.errStudyDocsNotFound': 'study {id} の文書が見つかりません',
+  'extraction.transferErrorMessage':
+    'AI 抽出は完了しましたが、抽出結果を表（StudyData / ResultsData）へ転記できませんでした。Evidence は保存済みです。原因: {reason}',
+  'extraction.toastTransferFailed':
+    'AI 抽出は完了しましたが、抽出結果の表への転記に失敗しました。Evidence は保存済みです',
   'documents.stageCopy': 'コピー',
   'documents.stageExtract': 'テキスト抽出',
   'documents.stageSave': 'Documents への保存',

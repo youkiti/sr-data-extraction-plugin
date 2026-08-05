@@ -15,7 +15,6 @@ import {
 } from '../../features/documents/studySelection';
 import { makeLoadDocumentPages } from '../../features/documents/loadDocumentPages';
 import { makeLoadDocumentPageImages } from '../../features/documents/loadDocumentPageImages';
-import { buildAiAnnotationRows } from '../../features/extraction/aiAnnotationRows';
 import {
   filterFieldsBySelection,
   resolveFieldIdsForRun,
@@ -43,7 +42,6 @@ import {
   resolveProviderConfig,
   type ProviderConfig,
 } from '../../lib/llm/providerFactory';
-import { nowIso8601 } from '../../utils/iso8601';
 import type { ExtractState, Store } from '../store';
 import { showToast } from '../ui/toast';
 import { t } from '../../lib/i18n';
@@ -404,18 +402,17 @@ async function performRun(
     },
   );
 
-  // 進捗カウントへ反映（evidenceRows / dataRows。ガードと #/home サマリの素材）
-  const transfer = buildAiAnnotationRows(outcome.result.evidence, params.fields, {
-    runId: outcome.run.runId,
-    schemaVersion: outcome.plan.schemaVersion,
-    updatedAt: (deps.now ?? nowIso8601)(),
-  });
+  // 進捗カウントへ反映（evidenceRows / dataRows。ガードと #/home サマリの素材）。
+  // dataRows は outcome.transferredRowCount（実際に Sheets へ書けた ai annotator 行数）を使う。
+  // ここで buildAiAnnotationRows を呼び直さない: runExtraction 内で throw を握っても、
+  // 呼び出し側の再計算が try/catch の外にあると同じ入力で再度 throw して runExtract の
+  // catch へ落ち、専用の転記失敗文言が出せなくなる
   const after = store.getState();
   store.setState({
     counts: {
       ...after.counts,
       evidenceRows: after.counts.evidenceRows + outcome.result.evidence.length,
-      dataRows: after.counts.dataRows + transfer.studyRows.length + transfer.resultsRows.length,
+      dataRows: after.counts.dataRows + outcome.transferredRowCount,
     },
   });
   // 実行済み run の対象 study は以後「抽出済み」（既定選択・バッジの素材を更新）
@@ -522,17 +519,29 @@ export async function runExtract(store: Store, deps: ExtractServiceDeps): Promis
       rejectedCount: outcome.result.rejectedItems.length,
       // arm completeness 警告（issue #106。#extract-arm-warnings の素材）
       armWarnings: outcome.result.armWarnings,
+      // ai 行への転記に失敗していれば既存の #extract-run-error バナーへ出す（AI 抽出自体は
+      // 成功しており Evidence は保存済みのため、study の抽出失敗と混同させない専用文言にする）
+      runError:
+        outcome.transferError === null
+          ? null
+          : t('extraction.transferErrorMessage', { reason: outcome.transferError }),
     });
     // 抽出完了（done / partial_failure とも）で #/verify・#/dashboard の読込済みキャッシュを
     // 無効化する（PR #190 のレビュー対応）。抽出前に開いていて空一覧のままキャッシュされていても、
     // 再入場時に既存の読込経路（force なし）が自然に最新化する
     invalidateVerifyTargets(store);
     invalidateDashboard(store);
-    showToast(
-      outcome.run.status === 'done'
-        ? t('extract.toastDone', { n: outcome.result.evidence.length })
-        : t('extract.toastPartial'),
-    );
+    if (outcome.transferError !== null) {
+      // 転記失敗は toastDone / toastPartial とは別の専用トーストで知らせる
+      // （「一部の study が失敗したので再試行」という誤解を避けるため）
+      showToast(t('extraction.toastTransferFailed'));
+    } else {
+      showToast(
+        outcome.run.status === 'done'
+          ? t('extract.toastDone', { n: outcome.result.evidence.length })
+          : t('extract.toastPartial'),
+      );
+    }
   } catch (err) {
     patchExtract(store, { running: false, progress: null, runError: toMessage(err) });
   }
@@ -633,15 +642,25 @@ export async function retryExtractStudy(
         ...store.getState().extract.armWarnings.filter((warning) => warning.studyId !== studyId),
         ...outcome.result.armWarnings,
       ],
+      // ai 行への転記に失敗していれば既存の #extract-run-error バナーへ出す（runExtract と同じ扱い）
+      runError:
+        outcome.transferError === null
+          ? null
+          : t('extraction.transferErrorMessage', { reason: outcome.transferError }),
     });
     // 再試行の完了（done / partial_failure とも）でも同様に無効化する（PR #190 のレビュー対応）
     invalidateVerifyTargets(store);
     invalidateDashboard(store);
-    showToast(
-      outcome.run.status === 'done'
-        ? t('extract.toastRetryDone')
-        : t('extract.toastRetryPartial'),
-    );
+    if (outcome.transferError !== null) {
+      // 転記失敗は toastRetryDone / toastRetryPartial とは別の専用トーストで知らせる
+      showToast(t('extraction.toastTransferFailed'));
+    } else {
+      showToast(
+        outcome.run.status === 'done'
+          ? t('extract.toastRetryDone')
+          : t('extract.toastRetryPartial'),
+      );
+    }
   } catch (err) {
     replaceRow({
       studyId,
