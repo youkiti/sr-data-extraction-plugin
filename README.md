@@ -2,11 +2,11 @@
 
 システマティックレビュー（SR）／スコーピングレビューの**データ抽出工程**を支援する、MIT ライセンスの OSS Chrome 拡張です。SR ツール群 3 部作（[sr-query-builder](https://github.com/youkiti/sr-query-builder-plugin) → [tiab-review](https://github.com/youkiti/tiab-review-plugin) → 本拡張）の 3 作目にあたります。
 
-> **開発ステータス**: Chrome ウェブストアで **v0.1.0 を一般公開しました**（2026-07-12）。MVP 機能実装済み（S1〜S10。実機通し確認は 2026-07-03 完了）。正典ドキュメントは [docs/requirements.md](docs/requirements.md) を起点に、残タスクは [docs/remaining-work-plan.md](docs/remaining-work-plan.md) を参照してください。
+> **開発ステータス**: Chrome ウェブストアで **v0.1.0 を一般公開しました**（2026-07-12）。以降も継続的にリリースを重ね、ストア公開は v0.8.0、リポジトリの最新は v0.9.0（zip 作成済み・ストア反映待ち）です。S1〜S12 まで実装済み（MVP の S1〜S10 + Options に加え、RoB テンプレート・独立二重レビュー・S12 裁定画面などを実装）。正典ドキュメントは [docs/requirements.md](docs/requirements.md) を起点に、残タスクは [docs/remaining-work-plan.md](docs/remaining-work-plan.md) を参照してください。実機通し確認の記録は [docs/manual-testing.md](docs/manual-testing.md) にあります。
 
 > **📦 インストール**: [Chrome ウェブストアの掲載ページ](https://chromewebstore.google.com/detail/sr-data-extraction-plugin/ibpbkgffgkmdmflamhadbcfjgfljjgip)から「Chrome に追加」でインストールできます。
 
-> **📖 使い方ガイド**: [https://youkiti.github.io/sr-data-extraction-plugin/help.html](https://youkiti.github.io/sr-data-extraction-plugin/help.html)（[ランディング](https://youkiti.github.io/sr-data-extraction-plugin/) / [プライバシーポリシー](https://youkiti.github.io/sr-data-extraction-plugin/privacy-policy.html) / [利用規約](https://youkiti.github.io/sr-data-extraction-plugin/terms-of-service.html)。ページの実体は [hosted/](hosted/)）
+> **📖 使い方ガイド**: [https://youkiti.github.io/sr-data-extraction-plugin/help.html](https://youkiti.github.io/sr-data-extraction-plugin/help.html)（操作の流れを解説する動画を埋め込み。[ランディング](https://youkiti.github.io/sr-data-extraction-plugin/) / [プライバシーポリシー](https://youkiti.github.io/sr-data-extraction-plugin/privacy-policy.html) / [利用規約](https://youkiti.github.io/sr-data-extraction-plugin/terms-of-service.html)。ページの実体は [hosted/](hosted/)）
 
 ## なにをするツールか
 
@@ -14,7 +14,7 @@
 2. AI が各論文からスキーマに沿ってデータを抽出し、各値に**根拠となる本文箇所（verbatim quote）**を付与
 3. PDF.js ビューア上で根拠箇所を**ハイライト表示**
 4. 研究者がハイライトを目視確認しながら **accept / edit / reject / not_reported** で最終判定（全判断の監査証跡を記録）
-5. 確定データを **CSV エクスポート**（study_wide / results_long / audit の 3 形式）
+5. 確定データを **CSV エクスポート**（study_wide / results_long / audit の 3 形式 + R 解析向けセット〔tab1 / ma / rob / data_dictionary〕）
 
 「AI 事前抽出 + 人間検証」を方法論的に妥当な形（監査証跡・automation bias 対策込み）で完遂できることを狙っています。
 
@@ -47,7 +47,7 @@ flowchart LR
         Sheets[("Google Sheets<br/>（プロジェクト DB）")]
         Drive[("Google Drive<br/>（PDF・抽出テキスト・ログ実体）")]
     end
-    LLM["Gemini API（BYOK）"]
+    LLM["Gemini / Anthropic / OpenRouter / OpenAI 互換 API（BYOK）"]
 
     Ext <-->|"OAuth 2.0<br/>userinfo.email / drive.file スコープのみ"| Sheets
     Ext <-->|PDF コピー・テキスト保存| Drive
@@ -63,7 +63,7 @@ flowchart LR
 ふだんの利用にビルドや開発ツールは不要です。Chrome ウェブストアからインストールして、ご自身の Google アカウントと LLM API キーを設定するだけで使えます。
 
 1. **インストール**: [Chrome ウェブストアの掲載ページ](https://chromewebstore.google.com/detail/sr-data-extraction-plugin/ibpbkgffgkmdmflamhadbcfjgfljjgip)を開き、「Chrome に追加」を押します（一般公開中のため、ストア検索・リンクのどちらからでもインストールできます）。
-2. **LLM 接続の設定**: 拡張のオプション画面を開き、ご自身の **Gemini API キー**、OpenRouter API キー、または OpenAI 互換 Chat Completions API の完全 URL + API キーを保存します。OpenAI 互換 API は HTTPS に加え、`http://localhost`、`http://127.0.0.1`、`http://[::1]` のローカル LLM に対応します。loopback 接続では API キーを省略できます。別マシン上の HTTP API は直接接続せず、[Tailscale Serve](https://tailscale.com/docs/features/tailscale-serve) または [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/) などで HTTPS 化してください。接続先の Chrome 権限を確認し、構造化出力の接続テストを実行できます。キーはブラウザ内にのみ保存され、外部の開発者サーバーへは送信されません（BYOK）。
+2. **LLM 接続の設定**: 拡張のオプション画面を開き、ご自身の **Gemini API キー**、Anthropic API キー、OpenRouter API キー、Azure OpenAI の接続情報、または OpenAI 互換 Chat Completions API の完全 URL + API キーを保存します。OpenAI 互換 API は HTTPS に加え、`http://localhost`、`http://127.0.0.1`、`http://[::1]` のローカル LLM に対応します。loopback 接続では API キーを省略できます。別マシン上の HTTP API は直接接続せず、[Tailscale Serve](https://tailscale.com/docs/features/tailscale-serve) または [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/) などで HTTPS 化してください。Anthropic / OpenRouter / OpenAI 互換の 3 種は「モデル一覧を取得」ボタンで利用可能なモデルを自動取得できます。接続先の Chrome 権限を確認し、構造化出力の接続テストを実行できます。キーはブラウザ内にのみ保存され、外部の開発者サーバーへは送信されません（BYOK）。
    - Gemini API キーは Google AI Studio（<https://aistudio.google.com/apikey>）で取得できます。
 3. **Google アカウント連携（OAuth 同意）**: ポップアップから「ログイン」を押し、Google のアカウント選択・同意画面で **メールアドレス** と **Drive（選択したファイルのみ）** へのアクセスを許可します。要求されるスコープは `userinfo.email` と `drive.file` の 2 つだけです（Drive 全体は読みません。詳細は[データフロー](#データフローサーバーレス構成)）。
 4. これでプロジェクト作成 → PDF 取り込み → スキーマ作成 → AI 抽出 → 検証 → CSV エクスポートまで一通り使えます。
@@ -94,6 +94,11 @@ npm run dev            # dist/ に開発ビルドを生成
 | `npm run lint` / `npm run lint:css` | ESLint / stylelint |
 | `npm test` | jest（`src/` の行・分岐カバレッジ 100% を強制） |
 | `npm run test:e2e` | Playwright E2E（`dist/` を静的配信 + chrome スタブ。詳細: [docs/test-strategy.md](docs/test-strategy.md)） |
+| `npm run build:demo` | 録画用のデモビルド（架空論文 3 本のモックデータで取り込み〜ダッシュボード〜エクスポートを再現） |
+| `npm run release` | 前提チェック → version バンプ → 本番ビルド → zip 化・検証 → push までを一括実行（`tools/release/release.ps1`。PowerShell〔pwsh〕が必要） |
+| `npm run pack:release` | 既存ビルドの zip 化・検証のみ（`tools/release/pack.ps1`） |
+| `npm run manual:check` | 実機通し確認の Selenium 半自動ハーネス（詳細: [docs/manual-testing.md](docs/manual-testing.md)） |
+| `npm run video:*`（`video:setup` / `video:fixtures` / `video:record` / `video:tts` / `video:assemble`） | 操作解説動画の制作パイプライン（詳細: [video/README.md](video/README.md)） |
 
 E2E はローカルの chromium を使います。`npx playwright install chromium` するか、既存バイナリを `PLAYWRIGHT_CHROMIUM_PATH=/path/to/chrome npm run test:e2e` で指定してください。
 
@@ -106,6 +111,9 @@ E2E はローカルの chromium を使います。`npx playwright install chromi
 | [docs/architecture.md](docs/architecture.md) | ディレクトリ構造・ビルド・テスト方針 |
 | [docs/ui-states.md](docs/ui-states.md) | UI 状態マトリクス（target spec + drift 注記） |
 | [docs/test-strategy.md](docs/test-strategy.md) | テスト戦略（jest 100% + Playwright、PDF fixture 運用、CI 計画） |
+| [docs/remaining-work-plan.md](docs/remaining-work-plan.md) | 残作業・実機テスト要否一覧 |
+| [docs/manual-testing.md](docs/manual-testing.md) | 実機通し確認のシナリオと結果記録 |
+| [hosted/README.md](hosted/README.md) | 公開ページ（GitHub Pages）のデプロイ手順 |
 | [experiments/anchor-spike/REPORT.md](experiments/anchor-spike/REPORT.md) | quote アンカリングの技術スパイク結果（anchor 成功率 96.2%） |
 
 ## ライセンス・資金

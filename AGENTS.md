@@ -6,9 +6,9 @@ This file provides guidance to Codex (Codex.ai/code) when working with code in t
 
 ## 現在のフェーズ
 
-**v0.1.0 を Chrome ウェブストアで一般公開済み**（2026-07-12。[掲載ページ](https://chromewebstore.google.com/detail/sr-data-extraction-plugin/ibpbkgffgkmdmflamhadbcfjgfljjgip)）。MVP（S1〜S10 + Options）に加え、P1 前倒し分（RoB テンプレート・独立二重レビュー + 裁定 S12・pdf_native・R セットエクスポート・数値整合性チェック・κ 一致度レポート・Methods 文案カード等）まで実装済み。
+**ストア公開は v0.8.0、リポジトリの最新は v0.9.0**（zip 作成済み・ストア反映待ち。[掲載ページ](https://chromewebstore.google.com/detail/sr-data-extraction-plugin/ibpbkgffgkmdmflamhadbcfjgfljjgip)）。v0.1.0 = 2026-07-12 に一般公開し、以降も v0.9.0 まで継続的にリリースを重ねている。MVP（S1〜S10 + Options）に加え、P1 前倒し分（RoB テンプレート・独立二重レビュー + 裁定 S12・pdf_native・R セットエクスポート・数値整合性チェック・κ 一致度レポート・Methods 文案カード等）、UI 表示言語の英語切り替え（i18n）、LLM プロバイダ拡張（Anthropic・Azure OpenAI 追加）、GitHub Pages 公開ページ（ヘルプ・プライバシーポリシー・利用規約 + 操作解説動画）まで実装済み。v0.2.0 で OAuth スコープ縮小移行（issue #128〜#132）が完遂し、GCP 同意画面からの `spreadsheets` 削除まで完了（2026-07-19。100 人上限・未検証警告の対象外）。
 
-- **現行の作業指示**: [docs/remaining-work-plan.md](docs/remaining-work-plan.md) の「リリース後マイルストーン M1〜M4」。GitHub issue が作業単位で、各 issue が自己完結の指示（背景・方針・受け入れ条件）を持つ。
+- **現行の作業指示**: リリース後マイルストーン M1〜M4 は全 issue クローズ済み（最後にクローズした #141・#127 も 2026-08-01 完了）。残作業の正典は [docs/remaining-work-plan.md](docs/remaining-work-plan.md) の「実機 / 実 API テストが必要な項目」一覧。新規の作業は引き続き GitHub issue 単位で追跡し、各 issue が自己完結の指示（背景・方針・受け入れ条件）を持つ。
 - **実装済み機能の履歴**: [docs/dev-log-mvp.md](docs/dev-log-mvp.md)（〜v0.1.0 の凍結アーカイブ）+ git log / マージ済み PR。
 - **実機 / 実 API テストが必要な項目**: remaining-work-plan.md の同名一覧を参照（ローカルの jest / Playwright だけでは完了確認できないもの）。
 
@@ -16,14 +16,16 @@ This file provides guidance to Codex (Codex.ai/code) when working with code in t
 
 | ドキュメント | 内容 |
 |---|---|
-| [docs/requirements.md](docs/requirements.md) | 要件定義書 v0.12。データ設計（Sheets 15 タブ、study / document 分離、annotator 軸、ArmStructures、rob_domain）・機能要件（S1〜S12）・quote アンカリング方式・未決定事項の解決記録 |
-| [docs/remaining-work-plan.md](docs/remaining-work-plan.md) | 現行の作業指示（M1〜M4 の issue index + 実機テスト要否一覧 + 不採用の記録） |
+| [docs/requirements.md](docs/requirements.md) | 要件定義書 v0.17。データ設計（Sheets 15 タブ、study / document 分離、annotator 軸、ArmStructures、rob_domain）・機能要件（S1〜S12）・quote アンカリング方式・未決定事項の解決記録 |
+| [docs/remaining-work-plan.md](docs/remaining-work-plan.md) | 残作業の正典。M1〜M4 の issue index（クローズ済みの履歴）+ 実機テスト要否一覧（現行の残作業）+ 不採用の記録 |
 | [docs/architecture.md](docs/architecture.md) | `src/` 構成・ビルド・テスト方針 |
 | [docs/ui-states.md](docs/ui-states.md) | UI 状態マトリクス（target spec。実装より先に spec を書く運用） |
 | [docs/ui-flow.md](docs/ui-flow.md) | 画面遷移図（Popup / hash ルーティング / ガード条件） |
 | [docs/test-strategy.md](docs/test-strategy.md) | テスト戦略。jest 100% + Playwright・E2E seam・PDF fixture 2 層運用・CI |
 | [docs/manual-testing.md](docs/manual-testing.md) | 実機通し確認のシナリオと結果記録（Selenium 半自動ハーネス `tools/selenium/manualCheck.mjs`） |
 | [docs/status-and-roadmap-20260711.md](docs/status-and-roadmap-20260711.md) | 現状整理とロードマップのスナップショット（レビュー済み。M1〜M4 の設計判断の経緯） |
+| [hosted/README.md](hosted/README.md) | 公開ページ（GitHub Pages）のデプロイ手順 |
+| [video/README.md](video/README.md) | 操作解説動画の制作パイプライン |
 
 ## 目的（ゴール）
 
@@ -45,7 +47,10 @@ MIT ライセンスの OSS Chrome 拡張 **sr-data-extraction-plugin**。SR ツ�
 - vanilla TypeScript（UI フレームワーク不使用）+ webpack
 - Google OAuth 2.0（`chrome.identity.launchWebAuthFlow` + Web アプリケーション型クライアント。認証は service worker の認証ブローカー `src/background/authBroker.ts` に集約）+ Sheets / Drive API（スコープは `userinfo.email` + `drive.file` のみ。`spreadsheets` はセンシティブスコープの 100 人上限回避のため 2026-07-18 に廃止 — issue #128〜#132、requirements.md §2.1。他人作成の共有シートは初回のみ Picker 許可が必要）
 - PDF 描画: `pdfjs-dist`（worker は拡張に同梱、CDN 不可）
-- LLM: Gemini API + OpenRouter + 利用者指定の OpenAI 互換 Chat Completions API（`LLMProvider` 抽象経由。ローカル LLM = localhost エンドポイントも可。カスタムモデル一覧管理 UI は不採用 — remaining-work-plan.md「不採用（記録）」参照）
+- LLM: Gemini API + Anthropic + OpenRouter + Azure OpenAI + 利用者指定の OpenAI 互換 Chat Completions API（`LLMProvider` 抽象経由。Anthropic は `src/lib/llm/AnthropicProvider.ts`、Azure OpenAI は専用クラスを持たず `OpenAICompatibleProvider` を `authMode: 'azure_api_key'` で再利用。ローカル LLM = localhost エンドポイントも可。モデル一覧の自動取得〔`src/lib/llm/modelListFetcher.ts`〕は Anthropic / OpenRouter / OpenAI 互換のみ対応（Gemini・Azure OpenAI は非対応）。Options で既定の reasoning effort を設定可能〔未設定時は各プロバイダの従来挙動を維持〕。カスタムモデル一覧の手動管理 UI は不採用のまま — remaining-work-plan.md「不採用（記録）」参照。ブラウザ拡張コンテキストからの Anthropic 呼び出しには `anthropic-dangerous-direct-browser-access` ヘッダーが必須〔`Origin` ヘッダー付きリクエストはボディ検査前に 401 になり、host_permissions による CORS 除外では回避できない〕）
+- i18n: UI 表示言語の切り替え（`src/lib/i18n/`。Options から切り替え可能）
+- リリース自動化: `npm run release`（`tools/release/release.ps1`）が前提チェック → version バンプ → 本番ビルド → zip 化・検証 → push まで一気通貫。zip 化のみは `npm run pack:release`（`tools/release/pack.ps1`）。PowerShell（pwsh）が必要
+- デモビルド: `npm run build:demo`（架空論文 3 本のモックデータで取り込み〜ダッシュボード〜エクスポートまでの流れを再現する、録画用のビルド）
 - テスト: jest（jsdom、カバレッジ 100% 強制）+ Playwright + axe
 - Node.js ≥ 18
 
@@ -57,7 +62,7 @@ MIT ライセンスの OSS Chrome 拡張 **sr-data-extraction-plugin**。SR ツ�
 - **quote アンカリング**（§5）が技術的中核: 正規化 → exact / normalized / fuzzy / failed の段階マッチ。`anchor_status` を計測対象にする
 - **automation bias 対策**: human 行は空セル（未検証）から開始、accept にも 1 操作必須、未検証セル残存時のエクスポート警告
 - **著作権**: 学術研究目的のデータ抽出（TDM）は著作権法上の権利制限規定（30 条の 4 等）により適法との整理（確認 UI・記録列・注意書きは持たない）。取り込み画面の注意書きは PDF の外部送信先（LLM API のみ）の説明だけを表示
-- 既定 LLM モデル（Q8）: **工場出荷の既定は `gemini-3.5-flash`**（`src/lib/storage/settingsStore.ts` の `FACTORY_DEFAULT_MODEL`。Options 未設定時に S5 初期値へ注入 → S6/S7 へ伝播）。実データ抽出ベンチマーク（`experiments/extraction-benchmark-real/`、不眠 SR 実 gold・非公開）で最良の項目正確度だったため採用（初回 2026-07-06 REPORT.md: 成功 run 72%）。extract-data プロンプトはセクション並び替え（#89・版数 5）で暗黙 prefix キャッシュ ≈79% ヒットを実測、arm completeness 追記（#97・版数 6）で flash 72.3% / flash-lite 68.4%（v5 で悪化した lite の arm omission を解消。2026-07-13 REPORT-20260713-prompt-v5-ab.md / REPORT-20260713-prompt-v6-lite-fix.md）。事前登録ベンチ（`experiments/extraction-benchmark/`）は別建てで凍結保持
+- 既定 LLM モデル（Q8）: **工場出荷の既定は `gemini-3.5-flash`**（`src/lib/storage/settingsStore.ts` の `FACTORY_DEFAULT_MODEL`。Options 未設定時に S5 初期値へ注入 → S6/S7 へ伝播）。実データ抽出ベンチマーク（`experiments/extraction-benchmark-real/`、不眠 SR 実 gold・非公開）で最良の項目正確度だったため採用（初回 2026-07-06 REPORT.md: 成功 run 72%）。extract-data プロンプト（`EXTRACT_DATA_PROMPT_VERSION`）はセクション並び替え（#89・版数 5）で暗黙 prefix キャッシュ ≈79% ヒットを実測、arm completeness 追記（#97・版数 6）で flash 72.3% / flash-lite 68.4%（v5 で悪化した lite の arm omission を解消。2026-07-13 REPORT-20260713-prompt-v5-ab.md / REPORT-20260713-prompt-v6-lite-fix.md）。版数 7 で原文言語の保持（日本語論文対応、issue #95 層 2）、版数 8 で図表の高精度読み取りモードを追加したが、実 gold ベンチで効果がほぼゼロ（表由来項目の正確度 +0.1pp、全体 +0.2pp）な一方で入力トークン +56%・コスト +14% だったため、2026-07-29（issue #176）に不採用として撤去した（requirements.md v0.16）。現行版数は 9。事前登録ベンチ（`experiments/extraction-benchmark/`）は別建てで凍結保持
 
 ## サブモジュール
 
