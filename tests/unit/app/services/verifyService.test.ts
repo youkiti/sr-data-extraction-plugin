@@ -301,6 +301,15 @@ function makeQueue(): jest.Mocked<OfflineQueue<QueuedDecisionWrite>> {
   };
 }
 
+/** resolve を外から呼べる保留中 Promise（直列化の順序を検証するための deferred な mock 用） */
+function deferred<T = void>(): { promise: Promise<T>; resolve: (value: T) => void } {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((res) => {
+    resolve = res;
+  });
+  return { promise, resolve };
+}
+
 function makeDeps(overrides: Partial<VerificationDeps> = {}): VerificationDeps {
   return {
     google: { fetch: jest.fn(), getAccessToken: jest.fn() },
@@ -1339,6 +1348,77 @@ describe('persistVerifyDecision', () => {
       expect(store.getState().verify.resultsRowUpdatedAt).toEqual({
         [resultsCellKeyOf('arm:1', 'f-arm-n')]: 't-cell-1',
       });
+    });
+  });
+
+  describe('同一スプレッドシートへの書き込みの直列化', () => {
+    test('2 本同時に呼ぶと、2 本目の保存は 1 本目が決着してから始まる', async () => {
+      const store = makeVerifyingStore();
+      const order: string[] = [];
+      const gate = deferred<void>();
+      upsertStudyMock.mockImplementationOnce(async () => {
+        order.push('call-1-start');
+        await gate.promise;
+        order.push('call-1-end');
+      });
+      upsertStudyMock.mockImplementationOnce(async () => {
+        order.push('call-2-start');
+      });
+
+      const p1 = persistVerifyDecision(store, makeDeps(), makeDecision({ decidedAt: 't-1' }));
+      const p2 = persistVerifyDecision(store, makeDeps(), makeDecision({ decidedAt: 't-2' }));
+
+      // 1 本目が gate で止まっている間は 2 本目の保存（upsertStudyDataRows 呼び出し）は
+      // まだ始まらない（直列化）
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(order).toEqual(['call-1-start']);
+
+      gate.resolve();
+      await p1;
+      await p2;
+      expect(order).toEqual(['call-1-start', 'call-1-end', 'call-2-start']);
+    });
+
+    test('偽の競合を起こさない: 2 本目の expectedUpdatedAt は 1 本目の保存で更新された後のトークンになる（ストア読み取りが排他の内側にある証拠）', async () => {
+      const store = makeStore({
+        verify: {
+          targets: [makeTarget()],
+          selectedStudyId: 'study-doc-1',
+          studyValues: { country: 'Japan' },
+          studyRowUpdatedAt: 't-study-0',
+        },
+      });
+      const gate = deferred<void>();
+      upsertStudyMock.mockImplementationOnce(async () => {
+        await gate.promise;
+      });
+      upsertStudyMock.mockImplementationOnce(async () => undefined);
+
+      const p1 = persistVerifyDecision(store, makeDeps(), makeDecision({ decidedAt: 't-study-1' }));
+      const p2 = persistVerifyDecision(store, makeDeps(), makeDecision({ decidedAt: 't-study-2' }));
+
+      gate.resolve();
+      await p1;
+      await p2;
+
+      // 1 本目の保存（expectedUpdatedAt = 呼び出し前の 't-study-0'）で studyRowUpdatedAt が
+      // 't-study-1' へ進んだあと、2 本目はその「更新後」のトークンを expectedUpdatedAt として渡す
+      // （排他の外でストアを読んでいたら、2 本目も古い 't-study-0' のままになり偽の競合を招く）
+      expect(upsertStudyMock).toHaveBeenNthCalledWith(
+        1,
+        'sheet-1',
+        [expect.objectContaining({ expectedUpdatedAt: 't-study-0' })],
+        expect.anything(),
+      );
+      expect(upsertStudyMock).toHaveBeenNthCalledWith(
+        2,
+        'sheet-1',
+        [expect.objectContaining({ expectedUpdatedAt: 't-study-1' })],
+        expect.anything(),
+      );
+      expect(store.getState().verify.studyRowUpdatedAt).toBe('t-study-2');
     });
   });
 });

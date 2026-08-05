@@ -14,6 +14,7 @@ import {
   persistVerifyPaneLayout,
   resultsCellKeyOf,
   saveDecisionWrite,
+  withSpreadsheetWriteLock,
   type VerificationBundleInput,
   type QueuedConsensusWrite,
   type QueuedDecisionWrite,
@@ -170,6 +171,15 @@ function makeQueue(): jest.Mocked<OfflineQueue<QueuedWrite>> {
     enqueue: jest.fn().mockResolvedValue(undefined),
     flush: jest.fn().mockResolvedValue({ flushedCount: 0, remainingCount: 0 }),
   };
+}
+
+/** resolve を外から呼べる保留中 Promise（直列化の順序を検証するための deferred な mock 用） */
+function deferred<T = void>(): { promise: Promise<T>; resolve: (value: T) => void } {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((res) => {
+    resolve = res;
+  });
+  return { promise, resolve };
 }
 
 function makeField(overrides: Partial<SchemaField> = {}): SchemaField {
@@ -720,6 +730,42 @@ describe('persistConsensusWrite（issue #63: S12 裁定の consensus 書き込�
     await expect(
       persistConsensusWrite('sheet-1', item, makeDeps({ decisionQueue: undefined })),
     ).resolves.toEqual({ status: 'saved', remainingCount: 0 });
+  });
+
+  test('判定保存と同じキー空間（withSpreadsheetWriteLock, キー = spreadsheetId）で直列化される: 進行中の排他区間が決着してから始まる', async () => {
+    const order: string[] = [];
+    const gate = deferred<void>();
+    // persistVerifyDecision / persistPilotDecision が判定保存で取る排他区間を模す
+    // （両者・persistConsensusWrite とも同じ withSpreadsheetWriteLock 関数・同じキー
+    // 'sheet-1' を使うため、これで S6 / S8 / S12 が同じキー空間を共有することを検証できる）
+    const decisionLockTask = withSpreadsheetWriteLock('sheet-1', async () => {
+      order.push('decision-start');
+      await gate.promise;
+      order.push('decision-end');
+    });
+
+    const item: QueuedConsensusWrite = {
+      consensusWrites: [makeConsensusWrite()],
+      consensusParams: makeConsensusParams(),
+    };
+    const consensusPromise = persistConsensusWrite(
+      'sheet-1',
+      item,
+      makeDeps({ decisionQueue: makeQueue() }),
+    );
+
+    // 判定保存側が gate で止まっている間は consensus 書き込みはまだ始まらない
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(order).toEqual(['decision-start']);
+    expect(upsertStudyMock).not.toHaveBeenCalled();
+
+    gate.resolve();
+    await decisionLockTask;
+    await consensusPromise;
+    expect(order).toEqual(['decision-start', 'decision-end']);
+    expect(upsertStudyMock).toHaveBeenCalledTimes(1);
   });
 });
 

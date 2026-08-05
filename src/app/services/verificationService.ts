@@ -46,6 +46,7 @@ import type {
   VerificationData,
   VerificationDocumentView,
 } from '../../features/verification/types';
+import { createSerialTaskQueue } from '../../lib/concurrency/serialTask';
 import { getFileText } from '../../lib/google/drive';
 import { getCurrentUserEmail, type ProfileDeps } from '../../lib/google/identity';
 import type { GoogleApiDeps } from '../../lib/google/types';
@@ -151,6 +152,27 @@ export const sharedDecisionQueue = createOfflineQueue<QueuedWrite>({
   getId: decisionWriteId,
   getSortKey: decisionWriteSortKey,
 });
+
+/**
+ * 同一スプレッドシートへの判定・裁定の書き込みを直列化する排他区間（キー = spreadsheetId）。
+ * StudyData / ResultsData の annotator 行 upsert（upsertStudyDataRows / upsertResultsDataRows）は
+ * シート単位のロックを持たない read-modify-write のため、同じキーへの書き込みが同時に走ると
+ * どちらの読み取りも相手の追記を見落として重複行を生みうる。S6（pilotService.persistPilotDecision）/
+ * S8（verifyService.persistVerifyDecision）/ S12 裁定（persistConsensusWrite）はこの同じキュー
+ * インスタンス（= 同じキー空間）を共有し、同一 spreadsheetId への書き込みだけを直列化する
+ * （別シートへの書き込みは互いに待たない）。
+ *
+ * 呼び出し側は「楽観ロックの期待値（expectedUpdatedAt）のストア読み取り」も排他区間の内側で
+ * 行うこと。外に出すと、直列化により順番待ちしている間にシート側の updated_at が
+ * 先行書き込みで進んでしまい、自分が握っている古いトークンで偽の競合（AnnotationConflictError）
+ * を起こす
+ */
+const spreadsheetWriteQueue = createSerialTaskQueue<string>();
+
+/** spreadsheetId をキーに task を直列化して実行する（上記 spreadsheetWriteQueue 参照） */
+export function withSpreadsheetWriteLock<T>(spreadsheetId: string, task: () => Promise<T>): Promise<T> {
+  return spreadsheetWriteQueue.run(spreadsheetId, task);
+}
 
 function toMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
@@ -417,6 +439,11 @@ export type PersistDecisionResult =
  * conflict を返す — 呼び出し側が再読み込み導線（バナー）を出す。それ以外の失敗は従来どおり
  * キュー退避する。再送（flush のコールバック）は expectedUpdatedAt を渡さない
  * （後勝ち冪等のまま。再送をブロックするとオフライン中のデータが宙に浮いてしまうため）
+ *
+ * この関数自体は withSpreadsheetWriteLock で包まない。呼び出し元（verifyService.persistVerifyDecision /
+ * pilotService.persistPilotDecision）が「楽観ロックの期待値の読み取り〜この関数〜結果反映」を
+ * 丸ごと排他区間にしているため、ここでも包むと二重にロックを取ることになり、将来この関数を
+ * 排他区間の内側から呼ぶ経路が増えたときに自己デッドロックする
  */
 export async function persistDecisionWrite(
   spreadsheetId: string,
@@ -459,25 +486,35 @@ export type PersistConsensusResult =
  * 検証側と共有する 'decisions' キューへ退避し、成功時は同キューに残る過去の退避分
  * （判定・裁定どちらも）もあわせて再送する。楽観ロックの概念は consensus 書き込みには
  * 無いため conflict 状態は返さない（applyConsensusWrites に expectedUpdatedAt は渡らない）
+ *
+ * 本体を withSpreadsheetWriteLock で包み、判定保存（persistVerifyDecision /
+ * persistPilotDecision）と同じキー空間で直列化する。理由は 2 つ: (a) applyConsensusWrites も
+ * StudyData / ResultsData の read-modify-write であり同時実行で重複行を生みうる、
+ * (b) queue.flush の多重実行を防ぐ。なお内部から呼ぶ persistDecisionWrite（saveQueuedItem 経由の
+ * 判定再送では使わない）自体は排他で包まない。呼び出し元（persistVerifyDecision /
+ * persistPilotDecision）が既に包んでおり、ここでも包むと将来これらの経路が入れ子で
+ * 呼び合ったときに自己デッドロックする
  */
 export async function persistConsensusWrite(
   spreadsheetId: string,
   item: QueuedConsensusWrite,
   deps: VerificationDeps,
 ): Promise<PersistConsensusResult> {
-  const queue = deps.decisionQueue ?? sharedDecisionQueue;
-  const { decidedBy } = item.consensusParams;
-  try {
-    await applyConsensusWrites(spreadsheetId, item.consensusWrites, item.consensusParams, deps.google);
-  } catch {
-    await queue.enqueue(spreadsheetId, decidedBy, item);
-    showToast(t('verify.toastQueuedAdjudication'));
-    return { status: 'queued' };
-  }
-  const result = await queue.flush(spreadsheetId, decidedBy, (queued) =>
-    saveQueuedItem(spreadsheetId, queued, deps),
-  );
-  return { status: 'saved', remainingCount: result.remainingCount };
+  return withSpreadsheetWriteLock(spreadsheetId, async () => {
+    const queue = deps.decisionQueue ?? sharedDecisionQueue;
+    const { decidedBy } = item.consensusParams;
+    try {
+      await applyConsensusWrites(spreadsheetId, item.consensusWrites, item.consensusParams, deps.google);
+    } catch {
+      await queue.enqueue(spreadsheetId, decidedBy, item);
+      showToast(t('verify.toastQueuedAdjudication'));
+      return { status: 'queued' };
+    }
+    const result = await queue.flush(spreadsheetId, decidedBy, (queued) =>
+      saveQueuedItem(spreadsheetId, queued, deps),
+    );
+    return { status: 'saved', remainingCount: result.remainingCount };
+  });
 }
 
 /**

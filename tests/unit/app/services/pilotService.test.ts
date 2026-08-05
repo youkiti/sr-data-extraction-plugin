@@ -23,6 +23,7 @@ import {
   resultsCellKeyOf,
   type QueuedDecisionWrite,
 } from '../../../../src/app/services/verificationService';
+import { persistVerifyDecision } from '../../../../src/app/services/verifyService';
 import { runExtraction } from '../../../../src/app/services/extractionService';
 import { relocateQuote } from '../../../../src/app/services/relocateQuoteService';
 import { resolveProtocol } from '../../../../src/app/services/schemaService';
@@ -313,6 +314,15 @@ function makeQueue(): jest.Mocked<OfflineQueue<QueuedDecisionWrite>> {
     enqueue: jest.fn().mockResolvedValue(undefined),
     flush: jest.fn().mockResolvedValue({ flushedCount: 0, remainingCount: 0 }),
   };
+}
+
+/** resolve を外から呼べる保留中 Promise（直列化の順序を検証するための deferred な mock 用） */
+function deferred<T = void>(): { promise: Promise<T>; resolve: (value: T) => void } {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((res) => {
+    resolve = res;
+  });
+  return { promise, resolve };
 }
 
 function makeDeps(overrides: Partial<PilotServiceDeps> = {}): PilotServiceDeps {
@@ -1388,6 +1398,93 @@ describe('persistPilotDecision', () => {
         [resultsCellKeyOf('arm:1', 'f-arm-n')]: 't-cell-1',
       });
     });
+  });
+});
+
+describe('S6 / S8 の直列化（persistPilotDecision は verifyService.persistVerifyDecision と同じキー空間を共有する）', () => {
+  /** #/verify（S8）側の最小の判定可能ストア（同じ spreadsheetId 'sheet-1' × study-doc-1） */
+  function makeVerifyStore(): Store {
+    const state = createInitialState();
+    state.currentProject = {
+      projectId: 'p1',
+      spreadsheetId: 'sheet-1',
+      driveFolderId: 'folder-1',
+      name: 'テスト SR',
+    };
+    state.verify = {
+      ...state.verify,
+      targets: [
+        {
+          study: {
+            studyId: 'study-doc-1',
+            studyLabel: 'label-study-doc-1',
+            registrationId: null,
+            createdAt: 't0',
+            createdBy: ME,
+            note: null,
+          },
+          documents: [makeDocument()],
+          evidence: [makeEvidence()],
+          fields: [makeField()],
+          schemaVersion: 1,
+          progress: { decided: 0, total: 1, byTab: [] },
+          armWarnings: [],
+          aiExtractionStatus: 'extracted',
+        },
+      ],
+      selectedStudyId: 'study-doc-1',
+      studyValues: { country: 'Japan' },
+    };
+    return createStore(state);
+  }
+
+  function makePilotStore(): Store {
+    return makeStore({
+      fields: [makeField()],
+      pilot: {
+        run: makeRun(),
+        runFields: [makeField()],
+        evidence: [makeEvidence()],
+        studyValues: { country: 'Japan' },
+      },
+    });
+  }
+
+  test('S8（persistVerifyDecision）の保存中は S6（persistPilotDecision）が待たされ、S8 の決着後に始まる', async () => {
+    const verifyStore = makeVerifyStore();
+    const pilotStore = makePilotStore();
+    const order: string[] = [];
+    const gate = deferred<void>();
+    upsertStudyMock.mockImplementationOnce(async () => {
+      order.push('verify-start');
+      await gate.promise;
+      order.push('verify-end');
+    });
+    upsertStudyMock.mockImplementationOnce(async () => {
+      order.push('pilot-start');
+    });
+
+    const verifyPromise = persistVerifyDecision(
+      verifyStore,
+      makeDeps(),
+      makeDecision({ decidedAt: 't-verify' }),
+    );
+    const pilotPromise = persistPilotDecision(
+      pilotStore,
+      makeDeps(),
+      makeDecision({ decidedAt: 't-pilot' }),
+    );
+
+    // S8 が gate で止まっている間は S6 の保存（upsertStudyDataRows 呼び出し）はまだ始まらない
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(order).toEqual(['verify-start']);
+
+    gate.resolve();
+    await verifyPromise;
+    await pilotPromise;
+    expect(order).toEqual(['verify-start', 'verify-end', 'pilot-start']);
   });
 });
 
