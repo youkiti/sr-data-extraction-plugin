@@ -190,11 +190,16 @@ function makeOutcome(
     evidence?: Evidence[];
     rejectedItems?: unknown[];
     armWarnings?: RunWarning[];
+    transferError?: string | null;
+    transferredRowCount?: number;
   } = {},
 ) {
   const status = overrides.status ?? 'done';
   return {
     run: makeRun({ status, studyIds: overrides.studyIds ?? ['study-doc-1'] }),
+    transferError: overrides.transferError ?? null,
+    // 既定 1: makeEvidence() 1 件（entity_level=study の f-total）が StudyData 1 行へ転記される想定
+    transferredRowCount: overrides.transferredRowCount ?? 1,
     plan: {
       schemaVersion: 1,
       model: 'gemini-test',
@@ -263,7 +268,12 @@ function makeStore(patch: {
   return createStore(state);
 }
 
+function toastTexts(): string[] {
+  return Array.from(document.querySelectorAll('.toast')).map((node) => node.textContent ?? '');
+}
+
 beforeEach(() => {
+  document.body.innerHTML = '';
   resolveProtocolMock.mockResolvedValue({
     protocol: { version: 1 } as never,
     text: 'PROTOCOL TEXT',
@@ -790,6 +800,26 @@ describe('runExtract', () => {
     ]);
   });
 
+  test('ai 行への転記が失敗した場合: runError に転記失敗の文言を出し、toastDone/toastPartial ではなく専用トーストを出す', async () => {
+    const store = makeReadyStore();
+    runExtractionMock.mockResolvedValue(
+      makeOutcome({ transferError: 'ResultsData 書き込み失敗' }),
+    );
+    await runExtract(store, makeDeps());
+
+    const state = store.getState();
+    // AI 抽出自体は成功しているため run・抽出済み等は通常どおり反映される
+    expect(state.extract.running).toBe(false);
+    expect(state.extract.run?.runId).toBe('run-1');
+    expect(state.extract.runError).toContain('ResultsData 書き込み失敗');
+    expect(state.extract.runError).toContain('Evidence は保存済みです');
+    const texts = toastTexts();
+    expect(texts).toHaveLength(1);
+    expect(texts[0]).not.toContain('一括抽出が完了しました');
+    expect(texts[0]).not.toContain('一括抽出が部分的に失敗しました');
+    expect(texts[0]).toContain('転記');
+  });
+
   test('除外文書は抽出対象から外れる（issue #181）: 除外 study を選択していても対象文書が渡らない', async () => {
     const store = makeStore({
       documents: [
@@ -1167,6 +1197,24 @@ describe('retryExtractStudy', () => {
     ]);
     expect(state.extract.extractedStudyIds?.sort()).toEqual(['study-doc-1', 'study-doc-2']);
     expect(state.counts).toMatchObject({ evidenceRows: 1, dataRows: 1 });
+  });
+
+  test('ai 行への転記が失敗した場合: runError に転記失敗の文言を出し、toastRetryDone/toastRetryPartial ではなく専用トーストを出す', async () => {
+    const store = makeFailedStore();
+    runExtractionMock.mockResolvedValue(
+      makeOutcome({ studyIds: ['study-doc-2'], transferError: 'StudyData 書き込み失敗' }),
+    );
+    await retryExtractStudy(store, makeDeps(), 'study-doc-2');
+
+    const state = store.getState();
+    expect(state.extract.retryingStudyId).toBeNull();
+    expect(state.extract.runError).toContain('StudyData 書き込み失敗');
+    expect(state.extract.runError).toContain('Evidence は保存済みです');
+    const texts = toastTexts();
+    expect(texts).toHaveLength(1);
+    expect(texts[0]).not.toContain('再試行が完了しました');
+    expect(texts[0]).not.toContain('再試行が部分的に失敗しました');
+    expect(texts[0]).toContain('転記');
   });
 
   test('A-2: 元 run の fieldIds（lastRunFieldIds）を引き継ぐ。現在のチェックリスト選択は無視する', async () => {
