@@ -457,6 +457,7 @@ SR のデータ抽出は「研究 → 群（arm）→ アウトカム × 時点�
 - **flow 図（mermaid）のプレビュー（issue #109）**: 値が mermaid ソースの項目（QUADAS-3 テンプレートの `quadas3_flow_diagram`。予約 field_name 規約）はセルカードに描画プレビューを持つ（同梱 mermaid・`securityLevel: 'strict'`・構文エラー時はテキスト表示へフォールバック + `mermaid.parse` の保存前チェック〔警告のみ・保存はブロックしない〕）
 - **戻る挙動**: 直近の判定履歴を戻れる（tiab-review の「直近 5 件履歴」仕様を項目単位に読み替えて移植）
 - **保存**: 判定ごとに自分の annotator 行（`StudyData` / `ResultsData`）へ即時書き込み + `Decisions` へ追記。失敗時はオフラインキュー退避
+  - **同一スプレッドシートへの判定・裁定書き込みは直列化する**: annotator 行（`StudyData` / `ResultsData`）の upsert はシート単位のロックを持たない read-modify-write（シートを読む → 既存の annotator 行を探す → 無ければ append）であるため、同じキー（`study_id` × `annotator`）への書き込みが同時に 2 本走ると、双方の読み取りが互いの追記を見落として重複行を生みうる。対策として、S6（パイロット埋め込み検証）・S8（本画面）・S12（裁定）の判定・裁定保存は `spreadsheetId` をキーにした排他区間で直列化する（同一シートへの書き込みだけを順番待ちさせ、別シートは互いに待たない）。**楽観ロックの期待値（保存直前に読む対象行の現在の `updated_at`）のストア読み取りも、この排他区間の内側で行う**必要がある — 排他の外で先に読んでしまうと、直列化で順番待ちしている間に先行操作がシート側の `updated_at` を進めてしまい、自分は古いトークンを握ったまま保存することになり、本来ぶつかっていないのに偽の競合が起きる
 - **独立入力モード（v0.11・`annotator_type = human_independent`）**: `reviewer_independent` ロール向けに AI 出力を一切見せない入力モードをパネルに追加する。quote・ハイライト・「他 n 箇所に一致」・AI 値のプレフィル・anchor failed バナーは描画せず、PDF ビューア（ページ送り / ズーム / テキスト検索）とフィールドラベル + `extraction_instruction`（スキーマ由来のため表示可）のみを残す。操作は `入力`（値を直接入力 → `edit`）/ `not_reported` / `undo` の 3 種（`accept` / `reject` は AI 値が無いため出さない）。群構成・outcome_result インスタンスも AI ドラフトを見せず自分で確定する。対象一覧は `Evidence` 非依存（`Studies` × 最新確定スキーマ）とし、AI 抽出の実施状況自体も盲検対象として見せない（詳細は [docs/design-independent-dual-review.md](design-independent-dual-review.md) §5）
 
 ### 4.3 AI 抽出（extract-data skill）の要件

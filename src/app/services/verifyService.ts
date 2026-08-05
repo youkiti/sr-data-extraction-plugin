@@ -44,6 +44,7 @@ import {
   persistVerifyLayoutMode,
   persistVerifyPaneLayout,
   resultsCellKeyOf,
+  withSpreadsheetWriteLock,
   type QueuedDecisionWrite,
   type VerificationDeps,
 } from './verificationService';
@@ -590,30 +591,39 @@ export async function persistVerifyDecision(
     entityLevel: field.entityLevel,
     studyValues,
   };
-  // 楽観ロックの期待値（issue #64）: study 項目は自分の StudyData 行の updated_at、
-  // それ以外は自分の該当 ResultsData セルの updated_at（無ければ「行が無い」を期待）
-  const expectedUpdatedAt =
-    field.entityLevel === 'study'
-      ? state.verify.studyRowUpdatedAt
-      : (state.verify.resultsRowUpdatedAt[resultsCellKeyOf(decision.entityKey, decision.fieldId)] ??
-        null);
-  const result = await persistDecisionWrite(project.spreadsheetId, write, deps, expectedUpdatedAt);
-  if (result.status === 'queued') {
-    patchVerify(store, { queuedDecisions: store.getState().verify.queuedDecisions + 1 });
-  } else if (result.status === 'conflict') {
-    patchVerify(store, { conflictMessage: result.message });
-  } else {
+  // 楽観ロックの期待値の読み取り → 保存 → 結果反映を丸ごと排他区間にする（キー = spreadsheetId。
+  // withSpreadsheetWriteLock 参照）。期待値の読み取りを排他の外に出すと、直列化で順番待ちして
+  // いる間に先行書き込みでシート側の updated_at が進んでしまい、自分が握っている古いトークンで
+  // 偽の競合（AnnotationConflictError）になる。studyValues の楽観反映と早期 return は
+  // 排他の外のままでよい（JS は単一スレッドのため getState → patchVerify の同期区間は
+  // アトミックで、連続操作でも後続は先行分を含んだ studyValues を作れる）
+  await withSpreadsheetWriteLock(project.spreadsheetId, async () => {
     const current = store.getState().verify;
-    const folded = foldDecisionWriteTokens(result.written, {
-      studyRowUpdatedAt: current.studyRowUpdatedAt,
-      resultsRowUpdatedAt: current.resultsRowUpdatedAt,
-    });
-    patchVerify(store, {
-      queuedDecisions: result.remainingCount,
-      studyRowUpdatedAt: folded.studyRowUpdatedAt,
-      resultsRowUpdatedAt: folded.resultsRowUpdatedAt,
-    });
-  }
+    // 楽観ロックの期待値（issue #64）: study 項目は自分の StudyData 行の updated_at、
+    // それ以外は自分の該当 ResultsData セルの updated_at（無ければ「行が無い」を期待）
+    const expectedUpdatedAt =
+      field.entityLevel === 'study'
+        ? current.studyRowUpdatedAt
+        : (current.resultsRowUpdatedAt[resultsCellKeyOf(decision.entityKey, decision.fieldId)] ??
+          null);
+    const result = await persistDecisionWrite(project.spreadsheetId, write, deps, expectedUpdatedAt);
+    if (result.status === 'queued') {
+      patchVerify(store, { queuedDecisions: store.getState().verify.queuedDecisions + 1 });
+    } else if (result.status === 'conflict') {
+      patchVerify(store, { conflictMessage: result.message });
+    } else {
+      const latest = store.getState().verify;
+      const folded = foldDecisionWriteTokens(result.written, {
+        studyRowUpdatedAt: latest.studyRowUpdatedAt,
+        resultsRowUpdatedAt: latest.resultsRowUpdatedAt,
+      });
+      patchVerify(store, {
+        queuedDecisions: result.remainingCount,
+        studyRowUpdatedAt: folded.studyRowUpdatedAt,
+        resultsRowUpdatedAt: folded.resultsRowUpdatedAt,
+      });
+    }
+  });
 }
 
 /**

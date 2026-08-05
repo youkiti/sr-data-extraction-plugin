@@ -55,6 +55,7 @@ import {
   persistVerifyLayoutMode,
   persistVerifyPaneLayout,
   resultsCellKeyOf,
+  withSpreadsheetWriteLock,
   type QueuedDecisionWrite,
   type VerificationDeps,
 } from './verificationService';
@@ -580,30 +581,40 @@ export async function persistPilotDecision(
     entityLevel: field.entityLevel,
     studyValues,
   };
-  // 楽観ロックの期待値（issue #64）: study 項目は自分の StudyData 行の updated_at、
-  // それ以外は自分の該当 ResultsData セルの updated_at（無ければ「行が無い」を期待）
-  const expectedUpdatedAt =
-    field.entityLevel === 'study'
-      ? state.pilot.studyRowUpdatedAt
-      : (state.pilot.resultsRowUpdatedAt[resultsCellKeyOf(decision.entityKey, decision.fieldId)] ??
-        null);
-  const result = await persistDecisionWrite(project.spreadsheetId, write, deps, expectedUpdatedAt);
-  if (result.status === 'queued') {
-    patchPilot(store, { queuedDecisions: store.getState().pilot.queuedDecisions + 1 });
-  } else if (result.status === 'conflict') {
-    patchPilot(store, { conflictMessage: result.message });
-  } else {
+  // 楽観ロックの期待値の読み取り → 保存 → 結果反映を丸ごと排他区間にする（キー = spreadsheetId。
+  // verifyService.persistVerifyDecision と同じキー空間（verificationService.withSpreadsheetWriteLock）
+  // を共有し、S6 / S8 の同時実行も直列化する。期待値の読み取りを排他の外に出すと、直列化で
+  // 順番待ちしている間に先行書き込みでシート側の updated_at が進んでしまい、自分が握っている
+  // 古いトークンで偽の競合（AnnotationConflictError）になる。studyValues の楽観反映と早期 return は
+  // 排他の外のままでよい（JS は単一スレッドのため getState → patchPilot の同期区間はアトミックで、
+  // 連続操作でも後続は先行分を含んだ studyValues を作れる）
+  await withSpreadsheetWriteLock(project.spreadsheetId, async () => {
     const current = store.getState().pilot;
-    const folded = foldDecisionWriteTokens(result.written, {
-      studyRowUpdatedAt: current.studyRowUpdatedAt,
-      resultsRowUpdatedAt: current.resultsRowUpdatedAt,
-    });
-    patchPilot(store, {
-      queuedDecisions: result.remainingCount,
-      studyRowUpdatedAt: folded.studyRowUpdatedAt,
-      resultsRowUpdatedAt: folded.resultsRowUpdatedAt,
-    });
-  }
+    // 楽観ロックの期待値（issue #64）: study 項目は自分の StudyData 行の updated_at、
+    // それ以外は自分の該当 ResultsData セルの updated_at（無ければ「行が無い」を期待）
+    const expectedUpdatedAt =
+      field.entityLevel === 'study'
+        ? current.studyRowUpdatedAt
+        : (current.resultsRowUpdatedAt[resultsCellKeyOf(decision.entityKey, decision.fieldId)] ??
+          null);
+    const result = await persistDecisionWrite(project.spreadsheetId, write, deps, expectedUpdatedAt);
+    if (result.status === 'queued') {
+      patchPilot(store, { queuedDecisions: store.getState().pilot.queuedDecisions + 1 });
+    } else if (result.status === 'conflict') {
+      patchPilot(store, { conflictMessage: result.message });
+    } else {
+      const latest = store.getState().pilot;
+      const folded = foldDecisionWriteTokens(result.written, {
+        studyRowUpdatedAt: latest.studyRowUpdatedAt,
+        resultsRowUpdatedAt: latest.resultsRowUpdatedAt,
+      });
+      patchPilot(store, {
+        queuedDecisions: result.remainingCount,
+        studyRowUpdatedAt: folded.studyRowUpdatedAt,
+        resultsRowUpdatedAt: folded.resultsRowUpdatedAt,
+      });
+    }
+  });
 }
 
 /**
