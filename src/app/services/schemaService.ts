@@ -5,6 +5,10 @@
 import type { Protocol } from '../../domain/protocol';
 import type { DocumentRecord } from '../../domain/document';
 import { readDocuments } from '../../features/documents/documentRepository';
+// features/schema から features/extraction を直接 import すると「feature 同士は相互 import
+// しない」という本リポジトリの層規約を破るため、両者を束ねるこの app サービス層から呼ぶ
+// （confirmSchema 内で使用。schema と extraction の合成点）
+import { ensureStudyDataColumns } from '../../features/extraction/annotationRepository';
 import {
   makeLoadDocumentPages,
   parseDriveFileId,
@@ -726,6 +730,22 @@ export async function confirmSchema(
       },
       { google: deps.google, newUuid: deps.newUuid, now: deps.now },
     );
+
+    // StudyData のヘッダへ study レベル項目の列を反映する（UI とシートのギャップ解消）。
+    // ベストエフォート: 版そのものは SchemaVersions / SchemaFields へ追記済みでヘッダは派生物に
+    // すぎないため、失敗してもスキーマ確定は失敗させない。upsertStudyDataRows 側の遅延拡張が
+    // 保険として残っており、最終的には追いつく
+    try {
+      const studyFieldNames = fields
+        .filter((field) => field.entityLevel === 'study')
+        .map((field) => field.fieldName);
+      await ensureStudyDataColumns(project.spreadsheetId, studyFieldNames, deps.google);
+    } catch (err) {
+      console.warn(
+        `StudyData のヘッダ列同期に失敗しました（版の確定自体は成功しています）: ${toMessage(err)}`,
+      );
+    }
+
     const after = store.getState();
     const versions = [version, ...(after.schema.versions ?? [])];
     store.setState({

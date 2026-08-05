@@ -42,6 +42,7 @@ import type { Protocol } from '../../../../src/domain/protocol';
 import type { SchemaField } from '../../../../src/domain/schemaField';
 import type { SchemaVersion } from '../../../../src/domain/schemaVersion';
 import { readDocuments } from '../../../../src/features/documents/documentRepository';
+import { ensureStudyDataColumns } from '../../../../src/features/extraction/annotationRepository';
 import { listProtocols } from '../../../../src/features/protocol/protocolRepository';
 import {
   getSchemaFieldsByVersion,
@@ -67,6 +68,9 @@ jest.mock('../../../../src/features/protocol/protocolRepository', () => ({
 jest.mock('../../../../src/features/documents/documentRepository', () => ({
   readDocuments: jest.fn(),
 }));
+jest.mock('../../../../src/features/extraction/annotationRepository', () => ({
+  ensureStudyDataColumns: jest.fn(),
+}));
 jest.mock('../../../../src/lib/google/drive', () => ({
   ensureChildFolder: jest.fn(),
   getFileText: jest.fn(),
@@ -83,6 +87,9 @@ const getFieldsMock = getSchemaFieldsByVersion as jest.MockedFunction<
 const saveVersionMock = saveSchemaVersion as jest.MockedFunction<typeof saveSchemaVersion>;
 const listProtocolsMock = listProtocols as jest.MockedFunction<typeof listProtocols>;
 const readDocumentsMock = readDocuments as jest.MockedFunction<typeof readDocuments>;
+const ensureStudyDataColumnsMock = ensureStudyDataColumns as jest.MockedFunction<
+  typeof ensureStudyDataColumns
+>;
 const ensureChildFolderMock = ensureChildFolder as jest.MockedFunction<typeof ensureChildFolder>;
 const getFileTextMock = getFileText as jest.MockedFunction<typeof getFileText>;
 const uploadTextFileMock = uploadTextFile as jest.MockedFunction<typeof uploadTextFile>;
@@ -270,6 +277,7 @@ beforeEach(() => {
     webViewLink: 'https://drive.google.com/file/d/log-1/view',
   });
   appendLlmApiLogMock.mockResolvedValue(undefined);
+  ensureStudyDataColumnsMock.mockResolvedValue(undefined);
 });
 
 describe('loadSchema', () => {
@@ -1349,6 +1357,12 @@ describe('confirmSchema', () => {
     expect(schema.editorRows).toBeNull();
     expect(counts.schemaVersions).toBe(2);
     expect(toastTexts().some((text) => text.includes('表のデザイン v2 を確定'))).toBe(true);
+    // StudyData のヘッダ同期（study レベル項目のみ）も確定と同じタイミングで呼ばれる
+    expect(ensureStudyDataColumnsMock).toHaveBeenCalledWith(
+      'sheet-1',
+      ['study_design'],
+      deps.google,
+    );
   });
 
   test('note 空文字は null・versions 未読込は初版（parent null）として確定する', async () => {
@@ -1381,5 +1395,96 @@ describe('confirmSchema', () => {
     expect(schema.confirming).toBe(false);
     expect(schema.draftError).toBe('append failed');
     expect(schema.editorRows).not.toBeNull(); // エディタは保持
+  });
+});
+
+describe('confirmSchema: StudyData ヘッダ同期（確定と同時に列を反映。app サービス層での合成）', () => {
+  function seedEditor(store: Store, rows: SchemaEditorRow[]): void {
+    store.setState({
+      protocol: { ...store.getState().protocol, records: [makeProtocol({ version: 3 })] },
+    });
+    store.setState({
+      schema: {
+        ...store.getState().schema,
+        versions: [makeVersion(1)],
+        editorRows: rows,
+        editorOrigin: 'ai_draft',
+      },
+    });
+  }
+
+  test('確定した fields のうち entityLevel === study の fieldName だけを渡す（arm / outcome_result は除く）', async () => {
+    const store = makeStore();
+    seedEditor(store, [makeEditorRow()]);
+    const savedVersion = makeVersion(2, { parentVersion: 1, protocolVersion: 3 });
+    const savedFields = [
+      makeField({
+        schemaVersion: 2,
+        fieldId: 'f-study',
+        fieldName: 'sample_size_total',
+        entityLevel: 'study',
+      }),
+      makeField({
+        schemaVersion: 2,
+        fieldId: 'f-arm',
+        fieldName: 'arm_dose',
+        entityLevel: 'arm',
+      }),
+      makeField({
+        schemaVersion: 2,
+        fieldId: 'f-outcome',
+        fieldName: 'outcome_value',
+        entityLevel: 'outcome_result',
+      }),
+      makeField({
+        schemaVersion: 2,
+        fieldId: 'f-rob',
+        fieldName: 'rob2_judgement',
+        entityLevel: 'rob_domain',
+      }),
+      makeField({
+        schemaVersion: 2,
+        fieldId: 'f-study-2',
+        fieldName: 'country',
+        entityLevel: 'study',
+      }),
+    ];
+    saveVersionMock.mockResolvedValue({ version: savedVersion, fields: savedFields });
+    const { deps } = makeDeps();
+
+    await confirmSchema(store, deps, '');
+
+    expect(ensureStudyDataColumnsMock).toHaveBeenCalledWith(
+      'sheet-1',
+      ['sample_size_total', 'country'],
+      deps.google,
+    );
+  });
+
+  test('ヘッダ同期が失敗しても確定処理は成功扱いで完了する（store の状態遷移は従来どおり・console.warn を残す）', async () => {
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const store = makeStore();
+    seedEditor(store, [makeEditorRow()]);
+    const savedVersion = makeVersion(2, { parentVersion: 1, protocolVersion: 3 });
+    const savedFields = [makeField({ schemaVersion: 2 })];
+    saveVersionMock.mockResolvedValue({ version: savedVersion, fields: savedFields });
+    ensureStudyDataColumnsMock.mockRejectedValue(new Error('batchGet に失敗しました'));
+    const { deps } = makeDeps();
+
+    await confirmSchema(store, deps, '');
+
+    const { schema, counts } = store.getState();
+    // 確定処理そのものは成功扱い（従来の成功時と同じ状態遷移）
+    expect(schema.confirming).toBe(false);
+    expect(schema.versions?.map((v) => v.schemaVersion)).toEqual([2, 1]);
+    expect(schema.currentFields).toBe(savedFields);
+    expect(schema.editorRows).toBeNull();
+    expect(schema.draftError).toBeNull();
+    expect(counts.schemaVersions).toBe(2);
+    expect(toastTexts().some((text) => text.includes('表のデザイン v2 を確定'))).toBe(true);
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('StudyData のヘッダ列同期に失敗しました'),
+    );
+    warnSpy.mockRestore();
   });
 });

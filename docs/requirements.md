@@ -266,7 +266,9 @@ wide シートはセル単位のメタデータ（quote / anchor_status / 判定
 
 #### `StudyData`（wide・study レベル）
 
-1 行 = 1 study × 1 annotator。値列はスキーマの `entity_level = study` 項目から動的生成する（スキーマ版確定時に列を**追加のみ**行い、削除・改名はしない。改名は field_id で追跡）。
+1 行 = 1 study × 1 annotator。値列はスキーマの `entity_level = study` 項目から動的生成する（列は**追加のみ**行い、削除・改名はしない。改名は field_id で追跡）。
+
+列の同期は 2 経路ある。**主経路はスキーマ版の確定時**（`app/services/schemaService.ts` の `confirmSchema` が `annotationRepository.ts` の `ensureStudyDataColumns` を呼ぶ）で、確定した `entity_level = study` 項目の列をヘッダへ即座に反映する（ヘッダ行だけを読み、不足列だけを末尾へ追加する no-op 可能な処理。全行読み込みは行わない）。この同期はベストエフォートであり、失敗してもスキーマ確定そのものは失敗させない（版は `SchemaVersions` / `SchemaFields` へ既に追記済みで、ヘッダは派生物にすぎないため）。**副経路として、`upsertStudyDataRows`（annotator 行の書き込み）内の遅延拡張が保険として残る**: 行の書き込み時にヘッダへ無い `field_name` があれば、その場でヘッダ末尾へ追加する。主経路より前に作られたプロジェクトや、主経路の同期が失敗したケースでも、annotator 行が実際に書かれた時点で最終的にヘッダが追いつく。
 
 **更新キー**: `study_id` × `annotator`。書き込みは既存行を検索して上書き（なければ追記）し、`schema_version` / `updated_at` は書き込み時点の値へ更新する。シート側に同一キーの行が複数存在する状態（重複）は致命エラーにせず、`updated_at` が最新の行を有効行として自己修復する（同着はシート上でより下の行を優先）。古い重複行は読み書きの対象から外れるだけで物理削除はしない。upsert 呼び出しの**入力側**に同一キーの行が複数ある場合は、従来どおり呼び出し契約違反として検出する。
 
