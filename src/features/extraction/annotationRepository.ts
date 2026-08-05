@@ -32,7 +32,13 @@ import {
   STUDY_DATA_FIXED_HEADERS,
   buildStudyDataHeader,
 } from '../../domain/sheetsSchema';
-import { appendRows, batchUpdateRows, getSheetValues, writeHeaderRow } from '../../lib/google/sheets';
+import {
+  appendRows,
+  batchUpdateRows,
+  getBatchValues,
+  getSheetValues,
+  writeHeaderRow,
+} from '../../lib/google/sheets';
 import type { GoogleApiDeps } from '../../lib/google/types';
 import { generateUuid } from '../../utils/uuid';
 import type { NewResultsDataRow } from './aiAnnotationRows';
@@ -256,12 +262,12 @@ interface StudySheetSnapshot extends StudyDataSheet {
   values: string[][];
 }
 
-async function fetchStudySheet(
-  spreadsheetId: string,
-  deps: GoogleApiDeps,
-): Promise<StudySheetSnapshot> {
-  const values = await getSheetValues(spreadsheetId, STUDY_TAB, deps);
-  const header = values[0];
+/**
+ * StudyData ヘッダ行の固定列部分を検証する（fetchStudySheet / ensureStudyDataColumns 共通）。
+ * ヘッダ行が無ければ throw。固定列の並びが崩れていれば throw（形が分からないシートの
+ * ヘッダを誤って扱わないための防衛線）
+ */
+function validateStudyDataHeader(header: string[] | undefined): string[] {
   if (header === undefined) {
     throw new Error('StudyData タブにヘッダ行がありません（プロジェクト初期化が不完全です）');
   }
@@ -272,6 +278,15 @@ async function fetchStudySheet(
       );
     }
   });
+  return header;
+}
+
+async function fetchStudySheet(
+  spreadsheetId: string,
+  deps: GoogleApiDeps,
+): Promise<StudySheetSnapshot> {
+  const values = await getSheetValues(spreadsheetId, STUDY_TAB, deps);
+  const header = validateStudyDataHeader(values[0]);
   const fieldNames = header.slice(STUDY_DATA_FIXED_HEADERS.length);
 
   const rows = values.slice(1).map((raw, i) => {
@@ -373,9 +388,47 @@ function studyRowToSheetRow(
 }
 
 /**
+ * StudyData のヘッダへ不足列を追加する（追加のみ。既存列の並べ替え・改名・削除はしない）。
+ * スキーマ版の確定時（app/services/schemaService.ts の confirmSchema）に呼び、
+ * 「UI では選べるのにシートのヘッダがまだ無い」ギャップを確定のタイミングで埋める。
+ * upsertStudyDataRows 内の遅延拡張（行の書き込み時に不足列を足す既存の保険）とは別経路で、
+ * どちらも残る（本関数が失敗しても、後で annotator 行が書かれた時点で遅延拡張が追いつく）。
+ *
+ * ヘッダ行だけを values:batchGet で読む。StudyData は 40,000 行規模になりうるため
+ * （requirements.md §9 の負荷試験）、ヘッダ同期のためだけに getSheetValues でタブ全体を
+ * 読むのは高すぎる。読んだヘッダの固定列部分が壊れていれば「形が分からないシート」として
+ * 書き込まずに throw する（fetchStudySheet と同じ検証を共有）
+ */
+export async function ensureStudyDataColumns(
+  spreadsheetId: string,
+  fieldNames: readonly string[],
+  deps: GoogleApiDeps,
+): Promise<void> {
+  if (fieldNames.length === 0) {
+    return;
+  }
+  const [headerRows] = await getBatchValues(spreadsheetId, [`${STUDY_TAB}!1:1`], deps);
+  const header = validateStudyDataHeader(headerRows?.[0]);
+  const existingFieldNames = header.slice(STUDY_DATA_FIXED_HEADERS.length);
+
+  const merged = [...existingFieldNames];
+  for (const name of fieldNames) {
+    if (!merged.includes(name)) {
+      merged.push(name);
+    }
+  }
+  if (merged.length === existingFieldNames.length) {
+    return;
+  }
+  await writeHeaderRow(spreadsheetId, STUDY_TAB, buildStudyDataHeader(merged), deps);
+}
+
+/**
  * StudyData の annotator 行を upsert する。
  * 既存行（study_id × annotator 一致）は上書き、なければ追記。
- * 行の values に「ヘッダに無い field_name」があればヘッダ末尾へ列を追加する（追加のみ）
+ * 行の values に「ヘッダに無い field_name」があればヘッダ末尾へ列を追加する（追加のみ。
+ * ensureStudyDataColumns による確定時同期に失敗した場合・それより前に作られたプロジェクトの
+ * 保険として残す遅延拡張）
  */
 export async function upsertStudyDataRows(
   spreadsheetId: string,

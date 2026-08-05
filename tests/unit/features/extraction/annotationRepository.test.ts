@@ -1,5 +1,6 @@
 import {
   AnnotationConflictError,
+  ensureStudyDataColumns,
   readResultsDataRows,
   readStudyDataSheet,
   upsertResultsDataRows,
@@ -382,6 +383,93 @@ describe('upsertStudyDataRows: 楽観ロック（issue #64）', () => {
     const posts = appendCallsOf(deps);
     const body = JSON.parse(posts[0]?.[1].body as string);
     expect(body.values).toEqual([['doc-1', 'ai', 'ai', 2, 'run-1', 't2', '120']]);
+  });
+});
+
+describe('ensureStudyDataColumns', () => {
+  /** getBatchValues（GET .../values:batchGet）と writeHeaderRow（PUT .../values/StudyData!A1）を
+   *  method で出し分けるモック fetch。headerRow が undefined ならヘッダ行なし（空シート）を模す。
+   *  evidenceRepository.test.ts の ensureEvidenceBboxColumns テストと同じ出し分け方式 */
+  function columnsDeps(headerRow: string[] | undefined): MockDeps {
+    const fetch = jest.fn(async (_url: string, init?: RequestInit) => {
+      const method = init?.method ?? 'GET';
+      if (method === 'GET') {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            valueRanges: headerRow === undefined ? [] : [{ values: [headerRow] }],
+          }),
+          text: async () => '',
+        } as Response;
+      }
+      return { ok: true, status: 200, json: async () => ({}), text: async () => '' } as Response;
+    });
+    return { fetch, getAccessToken: jest.fn().mockResolvedValue('token') };
+  }
+
+  function putCallOf(deps: MockDeps): [string, RequestInit] | undefined {
+    return deps.fetch.mock.calls.find(
+      ([, init]) => (init as RequestInit | undefined)?.method === 'PUT',
+    ) as [string, RequestInit] | undefined;
+  }
+
+  test('空配列は no-op（読み込みすら行わない）', async () => {
+    const deps = columnsDeps([...STUDY_HEADER]);
+    await ensureStudyDataColumns('sid', [], deps);
+    expect(deps.fetch).not.toHaveBeenCalled();
+  });
+
+  test('ヘッダ行だけを batchGet で読む（StudyData!1:1 のみ要求。getSheetValues の全行 GET は使わない）', async () => {
+    const deps = columnsDeps([...STUDY_HEADER, 'sample_size_total']);
+    await ensureStudyDataColumns('sid', ['country'], deps);
+    const getCall = deps.fetch.mock.calls.find(
+      ([, init]) => ((init as RequestInit | undefined)?.method ?? 'GET') === 'GET',
+    );
+    expect(getCall).toBeDefined();
+    const [url] = getCall as [string, RequestInit];
+    expect(decodeURIComponent(String(url))).toContain('values:batchGet');
+    expect(decodeURIComponent(String(url))).toContain('ranges=StudyData!1:1');
+  });
+
+  test('不足列が無ければ書き込み API を呼ばない', async () => {
+    const deps = columnsDeps([...STUDY_HEADER, 'sample_size_total', 'country']);
+    await ensureStudyDataColumns('sid', ['country', 'sample_size_total'], deps);
+    expect(putCallOf(deps)).toBeUndefined();
+  });
+
+  test('不足分だけを末尾へ追加し、既存の並び順を保つ', async () => {
+    const deps = columnsDeps([...STUDY_HEADER, 'sample_size_total', 'country']);
+    await ensureStudyDataColumns('sid', ['country', 'design', 'sample_size_total'], deps);
+    const putCall = putCallOf(deps);
+    expect(putCall).toBeDefined();
+    const [url, init] = putCall as [string, RequestInit];
+    expect(decodeURIComponent(url)).toContain('StudyData!A1');
+    const body = JSON.parse(init.body as string) as { values: string[][] };
+    expect(body.values).toEqual([[...STUDY_HEADER, 'sample_size_total', 'country', 'design']]);
+  });
+
+  test('固定ヘッダの並びが崩れていれば throw し、PUT は呼ばない', async () => {
+    const deps = columnsDeps(['study_id', 'annotator_type', 'annotator']);
+    await expect(ensureStudyDataColumns('sid', ['country'], deps)).rejects.toThrow(
+      'StudyData のヘッダ 2 列目が "annotator" ではありません',
+    );
+    expect(putCallOf(deps)).toBeUndefined();
+  });
+
+  test('ヘッダ行が無ければ throw', async () => {
+    const deps = columnsDeps(undefined);
+    await expect(ensureStudyDataColumns('sid', ['country'], deps)).rejects.toThrow(
+      'StudyData タブにヘッダ行がありません',
+    );
+  });
+
+  test('固定列と衝突する field_name は throw（buildStudyDataHeader の検証。既存列を上書きしない）', async () => {
+    const deps = columnsDeps([...STUDY_HEADER]);
+    await expect(ensureStudyDataColumns('sid', ['annotator'], deps)).rejects.toThrow(
+      'StudyData の列名が重複しています: "annotator"',
+    );
+    expect(putCallOf(deps)).toBeUndefined();
   });
 });
 
