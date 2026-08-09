@@ -1020,6 +1020,8 @@ export const en: Record<MessageKey, string> = {
     'Cannot save the decision: field_id {id} is not in the table design',
   'verify.toastQueuedDecision':
     'Saving failed, so the decision was queued offline (it will be resent on recovery)',
+  'verify.toastConflictNotSaved':
+    'This decision was not saved. Reload the page and try again.',
   'verify.toastQueuedAdjudication':
     'Saving failed, so the adjudication was queued offline (it will be resent on recovery)',
   'verify.toastArmSaveFailed': 'Failed to save the arm structure: {reason}',

@@ -228,6 +228,9 @@ export function renderVerifyView(state: AppState, ctx: ViewContext): HTMLElement
         onLayoutModeChange: (mode) => ctx.verify.onChangeLayoutMode(mode),
         paneLayout: verify.paneLayout,
         onPaneLayoutChange: (layout) => ctx.verify.onChangePaneLayout(layout),
+        // 保存の競合検出中（issue #64 のバナー表示中）はフォームペインを読み取り専用にする
+        // （issue #248 案 C）。PDF ペインは対象外
+        readOnly: verify.conflictMessage !== null,
       }),
     );
   }

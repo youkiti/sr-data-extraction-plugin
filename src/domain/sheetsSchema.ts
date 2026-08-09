@@ -1,10 +1,13 @@
-// Google Sheets の 15 タブ定義（requirements.md §3.2 v0.10 + 独立二重レビュー機能の Reviewers タブ）。
+// Google Sheets の 16 タブ定義（requirements.md §3.2 v0.18 + 独立二重レビュー機能の Reviewers タブ）。
 // 実 I/O は lib/google/sheets.ts 側で行う。
 // Meta / Protocol / LLMApiLog は sr-query-builder のスキーマを流用（ProtocolBlocks は持たない）。
 // v0.10 で study / document を分離: Studies を新設し、データ行のキーを document_id → study_id へ改名。
 // Evidence だけは quote の出所を特定するため document_id を保持したまま study_id を併記する。
 // Reviewers は独立二重レビュー機能（docs/design-independent-dual-review.md §2.1）でロール割り当てを
-// 追記する置き場。旧プロジェクトにはタブが無いため、書き込み時に自動作成する（reviewerRepository.ts）
+// 追記する置き場。旧プロジェクトにはタブが無いため、書き込み時に自動作成する（reviewerRepository.ts）。
+// ApiErrorLog（issue #249）は Google API 失敗の診断ログの置き場。旧プロジェクトにはタブが無いため
+// 書き込み時に自動作成する（Reviewers と同じパターン）。lib/ は features/ を import できないため、
+// 実 I/O は features/ 側のリポジトリではなく lib/diagnostics/apiErrorLog.ts に置く（下記コメント参照）
 
 export const SHEET_TABS = [
   'Meta',
@@ -22,6 +25,7 @@ export const SHEET_TABS = [
   'LLMApiLog',
   'ExportLog',
   'Reviewers',
+  'ApiErrorLog',
 ] as const;
 
 export type SheetTabName = (typeof SHEET_TABS)[number];
@@ -238,6 +242,20 @@ export const SHEET_HEADERS: Record<SheetTabName, readonly string[]> = {
     'exported_by',
   ],
   Reviewers: ['email', 'role', 'review_mode', 'assigned_by', 'assigned_at'],
+  // Google API 失敗の診断ログ（issue #249）。詳細は domain/apiErrorLog.ts / lib/diagnostics/apiErrorLog.ts
+  ApiErrorLog: [
+    'log_id',
+    'occurred_at',
+    'logged_by',
+    'context',
+    'api',
+    'http_status',
+    'message',
+    'study_id',
+    'document_id',
+    'retry_count',
+    'app_version',
+  ],
 };
 
 /**

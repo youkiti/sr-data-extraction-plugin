@@ -226,9 +226,28 @@ async function setupRoutes(
   const pdfFetchIds: string[] = [];
   let studyDataReads = 0;
 
+  // 保存の競合検出 E2E の回帰対応（issue #248 回帰 2）: StudyData / ResultsData をステートフルに
+  // する。実 Sheets は append した行がそのまま次の GET で返るが、旧スタブは常にヘッダのみを
+  // 返していたため、判定 2 件目の楽観ロック期待値検証（expectedUpdatedAt）が「サーバ側に行が
+  // 存在しない」という偽の不一致（AnnotationConflictError）を起こしていた。ここではヘッダ行 +
+  // データ行をメモリ上に保持し、append（values/{tab}!A1:append）・行の上書き
+  // （values:batchUpdate）・StudyData のヘッダ拡張（動的値列追加。writeHeaderRow の PUT）を
+  // 実際に反映してから次の GET で返す（`updated_at` 列も書き込まれた値をそのまま返す）。
+  // studyDataConflictAfterFirstRead は既存どおり「意図的に競合を作る」ための seam として残す
+  // （この場合は StudyData の GET をこのステートフル store より優先する）
+  const studySheet = { header: [...STUDY_DATA_HEADERS] as string[], rows: [] as string[][] };
+  const resultsSheet = { header: [...RESULTS_DATA_HEADERS] as string[], rows: [] as string[][] };
+
+  /** appendRows / batchUpdateRows が送る null 混じりの行を Sheets 応答と同じ文字列配列へ揃える */
+  function toSheetRow(row: readonly (string | number | boolean | null | undefined)[]): string[] {
+    return row.map((v) => (v === null || v === undefined ? '' : String(v)));
+  }
+
   await page.route('https://sheets.googleapis.com/**', async (route) => {
-    const url = decodeURIComponent(route.request().url());
-    if (route.request().method() === 'GET') {
+    const req = route.request();
+    const url = decodeURIComponent(req.url());
+    const method = req.method();
+    if (method === 'GET') {
       if (url.includes('fields=sheets.properties.title')) {
         // ArmStructures タブなし（v0.7 より前の既存プロジェクト）→ 書き込み時にタブを作る
         const titles = ['Meta', 'Documents', 'SchemaFields', 'Evidence', 'Decisions'];
@@ -261,15 +280,67 @@ async function setupRoutes(
             },
           });
         } else {
-          await route.fulfill({ json: { values: [STUDY_DATA_HEADERS] } });
+          await route.fulfill({ json: { values: [studySheet.header, ...studySheet.rows] } });
         }
       } else if (url.includes('/values/ResultsData')) {
-        await route.fulfill({ json: { values: [RESULTS_DATA_HEADERS] } });
+        await route.fulfill({ json: { values: [resultsSheet.header, ...resultsSheet.rows] } });
       } else if (url.includes('/values/SchemaFields')) {
         await route.fulfill({ json: { values: [SCHEMA_FIELDS_HEADERS, ...options.schemaRows] } });
       } else {
         await route.fulfill({ json: { values: [] } });
       }
+      return;
+    }
+    // StudyData のヘッダ拡張（動的値列の追加。writeHeaderRow）: PUT `values/StudyData!A1`
+    if (method === 'PUT' && url.includes('/values/StudyData!A1?')) {
+      const body = req.postDataJSON() as { values?: string[][] } | undefined;
+      const newHeader = body?.values?.[0];
+      if (newHeader !== undefined) {
+        studySheet.header = newHeader;
+      }
+      appendUrls.push(url);
+      await route.fulfill({ json: {} });
+      return;
+    }
+    // 行の追記: POST `values/{tab}!A1:append`
+    if (method === 'POST' && url.includes('/values/StudyData!A1:append')) {
+      const body = req.postDataJSON() as { values?: string[][] } | undefined;
+      for (const row of body?.values ?? []) {
+        studySheet.rows.push(toSheetRow(row));
+      }
+      appendUrls.push(url);
+      await route.fulfill({ json: {} });
+      return;
+    }
+    if (method === 'POST' && url.includes('/values/ResultsData!A1:append')) {
+      const body = req.postDataJSON() as { values?: string[][] } | undefined;
+      for (const row of body?.values ?? []) {
+        resultsSheet.rows.push(toSheetRow(row));
+      }
+      appendUrls.push(url);
+      await route.fulfill({ json: {} });
+      return;
+    }
+    // 既存行の上書き: POST `values:batchUpdate`（body の data[].range に `{tab}!A{rowIndex}` が
+    // 入る。rowIndex は 1 始まり・ヘッダが 1 行目なのでデータ配列の index は rowIndex - 2）
+    if (method === 'POST' && url.includes('values:batchUpdate')) {
+      const body = req.postDataJSON() as
+        | { data?: { range: string; values?: string[][] }[] }
+        | undefined;
+      for (const item of body?.data ?? []) {
+        const match = /^(StudyData|ResultsData)!A(\d+)$/.exec(item.range);
+        const newRow = item.values?.[0];
+        if (match === null || newRow === undefined) {
+          continue;
+        }
+        const tab = match[1] as 'StudyData' | 'ResultsData';
+        const rowIndex = Number(match[2]);
+        const dataIndex = rowIndex - 2;
+        const sheet = tab === 'StudyData' ? studySheet : resultsSheet;
+        sheet.rows[dataIndex] = toSheetRow(newRow);
+      }
+      appendUrls.push(url);
+      await route.fulfill({ json: {} });
       return;
     }
     appendUrls.push(url);
@@ -1046,6 +1117,11 @@ test('フォーカスモード: マトリクス表示 → 判定の自動送り 
   // 承認 → 全ユニット判定済み
   await page.locator('#verify-focus-detail .verify__action--accept').click();
   await expect(page.locator('#verify-focus-position')).toHaveText('ユニット 2 / 2（残り 0）');
+
+  // 連続 3 件の承認（死亡率・国・出版年）を通しても、楽観ロックの偽競合（issue #248 回帰 2:
+  // Sheets スタブが append を反映しないと 2 件目以降で偽の AnnotationConflictError が起きる）が
+  // 再発していないことを明示的に確認する（再発時はタイムアウトではなくここで明確に失敗させる）
+  await expect(page.locator('#verify-conflict-warning')).toHaveCount(0);
 
   // 直近判定バー（ユニットをまたいでも直近判定セルへ z / クリックで戻せる）
   const recentBar = page.locator('#verify-focus-recent');

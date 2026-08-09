@@ -558,7 +558,7 @@ describe('persistDecisionWrite', () => {
     expect(result).toEqual({ status: 'saved', remainingCount: 0, written: [write] });
   });
 
-  test('AnnotationConflictError で失敗した場合はキューへ退避せず conflict を返す（トーストも出さない）', async () => {
+  test('AnnotationConflictError で失敗した場合はキューへ退避せず conflict を返し、トーストで明示する（issue #248）', async () => {
     const queue = makeQueue();
     const conflict = new AnnotationConflictError({
       tab: 'StudyData',
@@ -578,7 +578,7 @@ describe('persistDecisionWrite', () => {
     );
     expect(result).toEqual({ status: 'conflict', message: conflict.message });
     expect(queue.enqueue).not.toHaveBeenCalled();
-    expect(showToastMock).not.toHaveBeenCalled();
+    expect(showToastMock).toHaveBeenCalledWith(expect.stringContaining('保存されていません'));
   });
 
   test('AnnotationConflictError 以外の失敗はキューへ退避し、トーストを出す（従来どおり）', async () => {

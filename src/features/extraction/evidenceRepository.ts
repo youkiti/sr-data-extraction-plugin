@@ -13,6 +13,7 @@
 import type { AnchorStatus } from '../../domain/anchor';
 import type { Confidence, Evidence, EvidenceBbox } from '../../domain/evidence';
 import { SHEET_HEADERS } from '../../domain/sheetsSchema';
+import { withApiErrorLogging } from '../../lib/diagnostics/apiErrorLog';
 import { appendRows, getBatchValues, getSheetValues, updateRow } from '../../lib/google/sheets';
 import type { GoogleApiDeps } from '../../lib/google/types';
 
@@ -54,13 +55,22 @@ export function evidenceToRow(evidence: Evidence): (string | number | boolean | 
 /**
  * Evidence をまとめて追記する（1 バッチ = 1 API 呼び出し）。空配列は no-op。
  * 追記のみで更新 API は提供しない（追記型タブ。変更が必要な場合は新しい run を作る）
+ *
+ * issue #249: 失敗を ApiErrorLog（context='evidence_append'）へ記録する（fire-and-forget。
+ * 本処理は必ず rethrow する）。study_id / document_id はバッチ先頭行の値を採る（分かる範囲で）
  */
 export async function appendEvidenceRows(
   spreadsheetId: string,
   evidence: readonly Evidence[],
   deps: GoogleApiDeps,
 ): Promise<void> {
-  await appendRows(spreadsheetId, EVIDENCE_TAB, evidence.map(evidenceToRow), deps);
+  await withApiErrorLogging(
+    'evidence_append',
+    { studyId: evidence[0]?.studyId ?? null, documentId: evidence[0]?.documentId ?? null },
+    async () => {
+      await appendRows(spreadsheetId, EVIDENCE_TAB, evidence.map(evidenceToRow), deps);
+    },
+  );
 }
 
 /**

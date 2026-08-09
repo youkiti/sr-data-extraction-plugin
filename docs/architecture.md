@@ -97,7 +97,7 @@ src/
 │
 ├── features/                      # ドメイン機能（UI に依存しない純粋ロジック）
 │   ├── project/
-│   │   ├── createProject.ts       # スプレッドシート 13 タブ + Drive フォルダ 4 種の生成
+│   │   ├── createProject.ts       # スプレッドシート 16 タブ + Drive フォルダ 4 種の生成
 │   │   ├── selectProject.ts
 │   │   └── projectStore.ts
 │   ├── documents/
@@ -160,9 +160,15 @@ src/
 │   │   ├── providerFactory.ts
 │   │   ├── apiLogger.ts           # LLMApiLog + Drive 保存（プロンプト版数も記録）
 │   │   └── apiLogRepository.ts    # LLMApiLog タブへの行追記（apiLogger の appendLogEntry 実装）
-│   └── storage/
-│       ├── chromeStorage.ts / secretsStore.ts
-│       └── offlineQueue.ts        # tiab-review の実装を共通化して流用
+│   ├── storage/
+│   │   ├── chromeStorage.ts / secretsStore.ts
+│   │   └── offlineQueue.ts        # tiab-review の実装を共通化して流用
+│   └── diagnostics/
+│       ├── apiErrorLog.ts         # Google API 失敗の診断ログ（issue #249）。ApiErrorLog タブへの
+│       │                          #   ローカル退避キュー + フラッシュ + 自動タブ作成をここに実装する
+│       │                          #   （lib/ から features/ を import できないため、reviewerRepository.ts
+│       │                          #   と同じ「タブが無ければ書き込み時に自動作成する」パターンを複製）
+│       └── apiName.ts             # GoogleApiError.endpoint（URL）→ 'drive.files.get' 等の短い API 名
 │
 ├── domain/                        # 型定義・スキーマ（純粋型、runtime 依存ゼロ）
 │   ├── project.ts / document.ts / protocol.ts
@@ -170,8 +176,8 @@ src/
 │   ├── annotation.ts              # annotator / annotator_type と StudyData・ResultsData 行の型
 │   ├── evidence.ts / decision.ts / extractionRun.ts
 │   ├── anchor.ts                  # anchor_status / マッチ結果型
-│   ├── exportLog.ts / llmApiLog.ts
-│   └── sheetsSchema.ts            # 13 タブ（Meta / Protocol / Documents / SchemaVersions / SchemaFields / ExtractionRuns / StudyData / ResultsData / ArmStructures / Evidence / Decisions / LLMApiLog / ExportLog）の列定義。StudyData の値列はスキーマから動的生成
+│   ├── exportLog.ts / llmApiLog.ts / apiErrorLog.ts
+│   └── sheetsSchema.ts            # 16 タブ（Meta / Protocol / Documents / SchemaVersions / SchemaFields / ExtractionRuns / StudyData / ResultsData / ArmStructures / Evidence / Decisions / LLMApiLog / ExportLog / Reviewers / ApiErrorLog）の列定義。StudyData の値列はスキーマから動的生成
 │
 ├── styles/
 │   ├── tokens.css                 # tiab-review トンマナのカラートークン + ハイライト色

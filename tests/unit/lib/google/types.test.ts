@@ -81,9 +81,16 @@ describe('googleFetch', () => {
       expect(e.status).toBe(500);
       expect(e.endpoint).toBe('https://api/x');
       expect(e.responseBody).toBe('server err');
+      // 500 はリトライ対象外（GOOGLE_RETRYABLE_STATUSES に含まれない）なので 1 回目で確定 = 再送 0 回
+      expect(e.retryCount).toBe(0);
       return;
     }
     throw new Error('should have thrown');
+  });
+
+  test('GoogleApiError のコンストラクタは retryCount を省略すると 0 になる（issue #249 前の既存呼び出し互換）', () => {
+    const err = new GoogleApiError('msg', 500, 'https://api/x', 'body');
+    expect(err.retryCount).toBe(0);
   });
 
   test('text() が失敗しても空文字で握りつぶして GoogleApiError を投げる', async () => {
@@ -227,7 +234,8 @@ describe('googleFetch の 429/503 リトライ', () => {
         sleep: noSleep,
         random: zeroRandom,
       }),
-    ).rejects.toMatchObject({ status: 429, responseBody: 'quota exceeded' });
+      // maxAttempts=3 まで再送してから諦める = 3 回試行 = 再送 2 回（issue #249 の retry_count）
+    ).rejects.toMatchObject({ status: 429, responseBody: 'quota exceeded', retryCount: 2 });
     expect(fetch).toHaveBeenCalledTimes(3);
   });
 
@@ -239,7 +247,7 @@ describe('googleFetch の 429/503 リトライ', () => {
 
       await expect(
         googleFetch('https://api/', { method: 'GET' }, deps, { sleep: noSleep }),
-      ).rejects.toMatchObject({ status });
+      ).rejects.toMatchObject({ status, retryCount: 0 });
       expect(fetch).toHaveBeenCalledTimes(1);
     },
   );

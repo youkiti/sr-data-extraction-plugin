@@ -132,6 +132,13 @@ export interface VerificationPanelOptions {
   now?: () => string;
   /** テスト差し替え用（pdfViewer へ渡す） */
   renderPage?: typeof renderPdfPageToCanvas;
+  /**
+   * 保存の競合検出中（issue #64 のバナー表示中。issue #248）はフォームペインを
+   * 読み取り専用にする（未指定 = false）。PDF ペイン（ズーム・文書切替・スクロール）は
+   * 読むために必要なため対象外。renderCachedVerificationPanel がキャッシュ再利用時にも
+   * 毎回 setReadOnly を呼び直して同期する
+   */
+  readOnly?: boolean;
 }
 
 export interface VerificationPanelHandle {
@@ -152,6 +159,14 @@ export interface VerificationPanelHandle {
    * タイミングで、**新規生成時とキャッシュ再利用時の両方で**呼び直す
    */
   syncPaneLayoutMeasurements(): void;
+  /**
+   * フォームペインの読み取り専用状態を切替える（issue #248）。フォームペイン
+   * （`.verify__pane--form`）配下の button / input / select / textarea をまとめて
+   * disabled にし、ルートへ修飾クラス（`verify__pane--readonly`）を付ける。
+   * PDF ペインは対象外。refreshForm でフォーム内容を作り直すたびにも直近の状態を
+   * 再適用する（renderVerificationForm が返す新しい DOM は disabled 属性を持たないため）
+   */
+  setReadOnly(readOnly: boolean): void;
   dispose(): void;
 }
 
@@ -935,6 +950,35 @@ export function createVerificationPanel(
     className: 'verify__pane verify__pane--form',
     attributes: { 'data-preserve-scroll': '' },
   });
+
+  // --- 読み取り専用（issue #248）: 保存の競合検出中はフォームペインの操作を止める ---------
+  // フォームペイン 1 箇所のチョークポイントで一括制御する（個々のボタン生成箇所は変更しない）。
+  // refreshForm がフォーム内容を作り直すたびに disabled 属性が失われるため、そのつど再適用する。
+  // 注意: フォームペインにはユニット送りボタンの端（issue #82）・relocate-quote 実行中
+  // （issue #94）等、readOnly と無関係に元々 disabled な要素が混在する。読み取り専用解除時に
+  // それらまで一律で有効化してしまわないよう、自分が disabled にした要素だけへ
+  // data-readonly-disabled の印を付け、解除時はその印がある要素だけを戻す
+  const READONLY_MARK = 'readonlyDisabled';
+  let readOnlyState = options.readOnly ?? false;
+  function applyReadOnlyState(): void {
+    formPane.classList.toggle('verify__pane--readonly', readOnlyState);
+    const controls = formPane.querySelectorAll<
+      HTMLButtonElement | HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement
+    >('button, input, select, textarea');
+    for (const control of controls) {
+      if (readOnlyState) {
+        if (!control.disabled) {
+          control.dataset[READONLY_MARK] = 'true';
+        }
+        control.disabled = true;
+        control.setAttribute('aria-disabled', 'true');
+      } else if (control.dataset[READONLY_MARK] === 'true') {
+        control.disabled = false;
+        control.removeAttribute('aria-disabled');
+        delete control.dataset[READONLY_MARK];
+      }
+    }
+  }
 
   // --- ペインサイズ調整（issue #193）: スプリッタ 2 種 ---------------------
   // 左右比率（PDF ⇄ 判定項目枠）。ARIA window splitter パターン（role=separator +
@@ -1782,6 +1826,7 @@ export function createVerificationPanel(
     // 常に再付与する（sticky 配置で bottom:0 に固定され続ける）
     formPane.replaceChildren(renderVerificationForm(model, handlers), heightSplitter);
     formPane.scrollTop = savedScrollTop;
+    applyReadOnlyState();
     if (hadFocus && focusedCellKey !== null && editing === null && !tabLocked(activeTab)) {
       // 復元したスクロール位置を尊重しつつ（preventScroll）、フォーカスセルが画面外なら最小移動で見せる
       const element = findCellElement(focusedCellKey);
@@ -1976,6 +2021,11 @@ export function createVerificationPanel(
     if (!root.isConnected || editing !== null || tabLocked(activeTab)) {
       return;
     }
+    // 読み取り専用中（issue #248）はキーボードショートカットでも判定を続けられないようにする
+    // （ボタンの disabled だけだと、キーボード操作は document 直付けのリスナのため素通りしてしまう）
+    if (readOnlyState) {
+      return;
+    }
     if (event.ctrlKey || event.metaKey || event.altKey) {
       return;
     }
@@ -2113,6 +2163,10 @@ export function createVerificationPanel(
     syncPaneLayoutMeasurements() {
       applyPaneLayout();
     },
+    setReadOnly(readOnly: boolean) {
+      readOnlyState = readOnly;
+      applyReadOnlyState();
+    },
     dispose() {
       ownerDoc.removeEventListener('keydown', handleKeydown);
       // issue #193 レビュー指摘 R3: パネルは study 切替のたびに作り直される
@@ -2184,6 +2238,11 @@ export function renderCachedVerificationPanel(options: VerificationPanelOptions)
       syncTarget.syncPaneLayoutMeasurements();
     }
   });
+  // 読み取り専用状態（issue #248）: syncPaneLayoutMeasurements と異なり DOM 接続を要さない
+  // 属性の付け外しのため、microtask を挟まず毎回同期で反映する（新規生成時はコンストラクタ内の
+  // 初回 refreshForm で既に options.readOnly が適用済みだが、キャッシュ再利用時は
+  // このパスでしか状態が更新されないため、if の外（毎回通る場所）に置く）
+  syncTarget.setReadOnly(options.readOnly ?? false);
   if (focusEntityKey !== cachedPanel.appliedFocusEntity) {
     cachedPanel.appliedFocusEntity = focusEntityKey;
     if (focusEntityKey !== null) {

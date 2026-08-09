@@ -8,6 +8,12 @@ import {
   type ResultsDataUpsertRow,
   type StudyDataUpsertRow,
 } from '../../../../src/features/extraction/annotationRepository';
+import {
+  configureApiErrorLog,
+  flushApiErrorLogQueue,
+} from '../../../../src/lib/diagnostics/apiErrorLog';
+import { GoogleApiError } from '../../../../src/lib/google/types';
+import { installChromeMock } from '../../../setup/chrome-mock';
 
 const STUDY_HEADER = [
   'study_id',
@@ -799,5 +805,71 @@ describe('upsertResultsDataRows: 楽観ロック（issue #64）', () => {
     expect(body.values).toEqual([
       ['r-new', 'doc-1', 'f-arm-n', 'ai', 'ai', 2, 'arm:1', 'run-1', '60', false, 't2'],
     ]);
+  });
+});
+
+describe('upsertStudyDataRows / upsertResultsDataRows: ApiErrorLog 連携（issue #249）', () => {
+  beforeEach(() => {
+    installChromeMock();
+    configureApiErrorLog(null);
+  });
+
+  afterEach(() => {
+    configureApiErrorLog(null);
+  });
+
+  test('Google API の書き込み失敗は context=annotation_upsert として ApiErrorLog へ記録される', async () => {
+    const fetch = jest.fn().mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const method = init?.method ?? 'GET';
+      if (method === 'GET') {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ values: [STUDY_HEADER] }),
+          text: async () => '',
+        } as Response;
+      }
+      // 既存行が無いので直接 append へ進む。その POST を失敗させる
+      return { ok: false, status: 500, json: async () => ({}), text: async () => 'server down' } as Response;
+    });
+    const deps = { fetch, getAccessToken: jest.fn().mockResolvedValue('token') };
+
+    await expect(upsertStudyDataRows('sid', [makeStudyRow()], deps)).rejects.toThrow(GoogleApiError);
+    // recordApiErrorLog は fire-and-forget（内部の chrome.storage.local 書き込みを待たない）ため、
+    // マクロタスク境界を 1 回挟んでキュー投入の完了を待つ（apiErrorLog.test.ts と同じ手法）
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    // ApiErrorLog へ書き込むための（別の）deps を設定してフラッシュし、記録されたことを確認する
+    const logDeps = makeDeps([]);
+    configureApiErrorLog({
+      spreadsheetId: 'sid',
+      loggedBy: 'me@example.com',
+      appVersion: '1.0.0',
+      google: logDeps,
+    });
+    const result = await flushApiErrorLogQueue();
+    expect(result.flushedCount).toBe(1);
+    const appendCall = appendCallsOf(logDeps).find(([url]) => url.includes('ApiErrorLog'));
+    expect(appendCall).toBeDefined();
+    const body = JSON.parse(String(appendCall?.[1].body)) as { values: unknown[][] };
+    expect(body.values[0]?.[3]).toBe('annotation_upsert'); // context
+    expect(body.values[0]?.[7]).toBe('doc-1'); // study_id
+  });
+
+  test('AnnotationConflictError（楽観ロック競合）は ApiErrorLog へ記録されない', async () => {
+    const deps = makeDeps([STUDY_HEADER, ['doc-1', 'ai', 'ai', '1', '', 't0']]);
+    configureApiErrorLog({
+      spreadsheetId: 'sid',
+      loggedBy: 'me@example.com',
+      appVersion: '1.0.0',
+      google: deps,
+    });
+    await expect(
+      upsertStudyDataRows('sid', [makeStudyRow({ expectedUpdatedAt: null })], deps),
+    ).rejects.toThrow(AnnotationConflictError);
+
+    const result = await flushApiErrorLogQueue();
+    expect(result).toEqual({ flushedCount: 0, remainingCount: 0 });
+    expect(appendCallsOf(deps).some(([url]) => url.includes('ApiErrorLog'))).toBe(false);
   });
 });

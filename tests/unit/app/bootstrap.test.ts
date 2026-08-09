@@ -3,6 +3,7 @@
 import { installChromeMock, type ChromeMock } from '../../setup/chrome-mock';
 import { bootstrapApp, createChromeAppDeps, seedState, type AppDeps } from '../../../src/app/bootstrap';
 import { BUILD_DATE } from '../../../src/build-info';
+import { configureApiErrorLog, recordApiErrorLog } from '../../../src/lib/diagnostics/apiErrorLog';
 
 // bootstrap → lib/pdf/loadPdf 経由で pdfjs-dist（ESM 専用）が require されるのを防ぐ
 // （loadPdf 自体の挙動は tests/unit/lib/pdf/loadPdf.test.ts で検証済み）
@@ -4282,5 +4283,118 @@ describe('bootstrapApp: ロール解決の初期化順序とフェイルクロ�
     // loadRole 単体では folderAccessMissingCount を計算しない。起動シーケンスから
     // fire-and-forget で呼ばれる checkMissingFileAccess が計算して 0 を立てる
     expect(state?.role.folderAccessMissingCount).toBe(0);
+  });
+});
+
+describe('bootstrapApp: API 失敗診断ログの配線（issue #249）', () => {
+  let chromeMock: ChromeMock;
+
+  beforeEach(() => {
+    chromeMock = installChromeMock();
+    document.body.innerHTML = APP_TEMPLATE;
+  });
+
+  afterEach(() => {
+    // モジュール状態（lib/diagnostics/apiErrorLog.ts の config）を他テストへ持ち越さない
+    configureApiErrorLog(null);
+  });
+
+  test('プロジェクト選択済みで起動すると記録先（spreadsheetId / loggedBy / google）が設定される', async () => {
+    chromeMock.storage.local.data[CURRENT_PROJECT_STORAGE_KEY] = PROJECT; // spreadsheetId: 'sheet-1'
+    const stub = createWindowStub();
+    const { deps, fetchMock } = createFakeDeps([]); // profile は tester@example.com を返す
+    await bootstrapApp(asWindow(stub), deps);
+    await flush();
+
+    fetchMock.mockClear();
+    recordApiErrorLog({
+      context: 'pdf_load',
+      error: new Error('boom'),
+      newUuid: () => 'log-boot',
+      now: () => 't1',
+    });
+    // 設定済みなら recordApiErrorLog 内部の自動フラッシュが、bootstrapApp に渡した
+    // deps.google（＝この fetchMock）を使って ApiErrorLog タブへ書き込みを試みる
+    await flush();
+    const apiErrorLogCall = fetchMock.mock.calls.find(([input]) =>
+      decodeURIComponent(String(input)).includes('ApiErrorLog'),
+    );
+    expect(apiErrorLogCall).toBeDefined();
+  });
+
+  test('chrome.runtime.getManifest が無い環境では appVersion は空文字で設定する', async () => {
+    // getManifest 自体が存在しない環境（jest / 一部 E2E）を模す（exportService.test.ts と同じ手法）
+    (chromeMock.runtime as unknown as Record<string, unknown>).getManifest = undefined;
+    chromeMock.storage.local.data[CURRENT_PROJECT_STORAGE_KEY] = PROJECT;
+    const stub = createWindowStub();
+    const { deps, fetchMock } = createFakeDeps([]);
+    await bootstrapApp(asWindow(stub), deps);
+    await flush();
+
+    fetchMock.mockClear();
+    recordApiErrorLog({
+      context: 'pdf_load',
+      error: new Error('boom'),
+      newUuid: () => 'log-boot-3',
+      now: () => 't1',
+    });
+    await flush();
+    const appendCall = fetchMock.mock.calls.find(
+      ([input, init]) =>
+        decodeURIComponent(String(input)).includes('ApiErrorLog') &&
+        decodeURIComponent(String(input)).includes(':append') &&
+        ((init as RequestInit | undefined)?.method ?? 'GET') === 'POST',
+    );
+    expect(appendCall).toBeDefined();
+    const body = JSON.parse(String((appendCall?.[1] as RequestInit | undefined)?.body)) as {
+      values: unknown[][];
+    };
+    expect(body.values[0]?.[10]).toBe(''); // app_version 列（appendRows は '' を空セルのまま送る）
+  });
+
+  test('サインイン中のメールが取れない場合は loggedBy を空文字にする', async () => {
+    chromeMock.storage.local.data[CURRENT_PROJECT_STORAGE_KEY] = PROJECT;
+    const stub = createWindowStub();
+    const { deps, fetchMock } = createFakeDeps([]);
+    deps.profile = { getProfileUserInfo: async () => ({ email: '', id: '' }) };
+    await bootstrapApp(asWindow(stub), deps);
+    await flush();
+
+    fetchMock.mockClear();
+    recordApiErrorLog({
+      context: 'pdf_load',
+      error: new Error('boom'),
+      newUuid: () => 'log-boot-4',
+      now: () => 't1',
+    });
+    await flush();
+    const appendCall = fetchMock.mock.calls.find(
+      ([input, init]) =>
+        decodeURIComponent(String(input)).includes('ApiErrorLog') &&
+        decodeURIComponent(String(input)).includes(':append') &&
+        ((init as RequestInit | undefined)?.method ?? 'GET') === 'POST',
+    );
+    expect(appendCall).toBeDefined();
+    const body = JSON.parse(String((appendCall?.[1] as RequestInit | undefined)?.body)) as {
+      values: unknown[][];
+    };
+    expect(body.values[0]?.[2]).toBe(''); // logged_by 列
+  });
+
+  test('プロジェクト未選択で起動すると記録先を設定しない（診断ログはローカルへ積むだけで API を呼ばない）', async () => {
+    const stub = createWindowStub();
+    const { deps, fetchMock } = createFakeDeps([]);
+    await bootstrapApp(asWindow(stub), deps);
+    await flush();
+
+    fetchMock.mockClear();
+    recordApiErrorLog({
+      context: 'pdf_load',
+      error: new Error('boom'),
+      newUuid: () => 'log-boot-2',
+      now: () => 't1',
+    });
+    await flush();
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

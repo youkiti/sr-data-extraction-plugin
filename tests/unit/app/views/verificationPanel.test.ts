@@ -654,6 +654,73 @@ describe('createVerificationPanel: 構造', () => {
   });
 });
 
+// 保存の競合検出中（issue #64 のバナー表示中）にフォームペインを読み取り専用にする（issue #248 案 C）。
+// 「消える入力」を構造的に無くすための再現テスト。PDF ペインは対象外にすることも確認する
+describe('createVerificationPanel: 読み取り専用（issue #248 案 C）', () => {
+  test('readOnly: true で生成すると、フォームペインの操作要素が disabled になり修飾クラスが付く', async () => {
+    const { panel } = await createPanel({}, { readOnly: true });
+    const formPane = panel.root.querySelector('.verify__pane--form');
+    expect(formPane?.classList.contains('verify__pane--readonly')).toBe(true);
+    const acceptButton = cellEl(panel.root, KEY_TOTAL)?.querySelector<HTMLButtonElement>(
+      '.verify__action--accept',
+    );
+    expect(acceptButton?.disabled).toBe(true);
+    expect(acceptButton?.getAttribute('aria-disabled')).toBe('true');
+    panel.dispose();
+  });
+
+  test('readOnly: true でも PDF ペイン（ズーム・文書切替タブ）は操作可能なまま', async () => {
+    const { panel } = await createPanel({}, { readOnly: true });
+    const zoomButton = panel.root.querySelector<HTMLButtonElement>('.verify__pane--pdf button');
+    expect(zoomButton?.disabled).toBe(false);
+    panel.dispose();
+  });
+
+  test('setReadOnly(true) → false で disabled 状態が切り替わる（バナーの再読み込みで解除される想定）', async () => {
+    const { panel } = await createPanel();
+    const acceptButton = () =>
+      cellEl(panel.root, KEY_TOTAL)?.querySelector<HTMLButtonElement>('.verify__action--accept');
+    expect(acceptButton()?.disabled).toBe(false);
+
+    panel.setReadOnly(true);
+    expect(acceptButton()?.disabled).toBe(true);
+    expect(panel.root.querySelector('.verify__pane--form')?.classList.contains(
+      'verify__pane--readonly',
+    )).toBe(true);
+
+    panel.setReadOnly(false);
+    expect(acceptButton()?.disabled).toBe(false);
+    expect(panel.root.querySelector('.verify__pane--form')?.classList.contains(
+      'verify__pane--readonly',
+    )).toBe(false);
+    panel.dispose();
+  });
+
+  test('読み取り専用中に refreshForm でフォーム内容が作り直されても disabled 状態を保つ（タブ切替）', async () => {
+    const { panel } = await createPanel();
+    panel.setReadOnly(true);
+    // focusEntity での別タブ着地は内部で refreshForm を再度通す（フォームペインの中身が
+    // 新しい DOM に差し替わる）。KEY_ARM は arm タブのセルなので study タブから切り替わる
+    panel.focusEntity('arm:1');
+    const controls = panel.root.querySelectorAll<HTMLButtonElement>(
+      '.verify__pane--form button, .verify__pane--form input, .verify__pane--form select, .verify__pane--form textarea',
+    );
+    expect(controls.length).toBeGreaterThan(0);
+    for (const control of controls) {
+      expect(control.disabled).toBe(true);
+    }
+    panel.dispose();
+  });
+
+  test('読み取り専用中はキーボードショートカットでも判定を続けられない', async () => {
+    const { panel, onDecision } = await createPanel();
+    panel.setReadOnly(true);
+    pressKey('a');
+    expect(onDecision).not.toHaveBeenCalled();
+    panel.dispose();
+  });
+});
+
 describe('createVerificationPanel: 複数文書ビューア（v0.10 フェーズ 3 + issue #28 案3の遅延ロード）', () => {
   const DOC2_PAGES = [buildPage(1, 'registration enrolled 200 participants total')];
 
