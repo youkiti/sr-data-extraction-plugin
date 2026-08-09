@@ -584,6 +584,28 @@ describe('runExtraction', () => {
     expect(warningEntry?.error).toContain('arm:2 × sample_size');
   });
 
+  test('Evidence 行数不一致（issue #247）: appendEvidenceRows が部分書き込み相当で reject したら run が partial_failure になり、完了行の warnings に evidence_row_count が載る', async () => {
+    const chat = jest.fn().mockResolvedValue(AI_RESPONSE);
+    const deps = makeDeps(chat);
+    mockedAppendEvidence.mockRejectedValueOnce(
+      new Error('要求 1 行に対して 0 行しか追記できませんでした'),
+    );
+    const outcome = await runExtraction(baseParams(), deps);
+
+    const expectedWarning = { kind: 'evidence_row_count', expectedRows: 1, savedRows: 0 };
+    expect(outcome.result.status).toBe('partial_failure');
+    expect(outcome.result.evidenceRowCountWarning).toEqual(expectedWarning);
+    // arm completeness 警告は出ていないため、完了行の warnings には evidence_row_count のみが載る
+    expect(outcome.run.status).toBe('partial_failure');
+    expect(outcome.run.warnings).toEqual([expectedWarning]);
+    expect(mockedAppendRun).toHaveBeenNthCalledWith(
+      2,
+      'sid',
+      expect.objectContaining({ status: 'partial_failure', warnings: [expectedWarning] }),
+      GOOGLE,
+    );
+  });
+
   test('arm completeness 警告: ArmStructures の読み出し失敗は握りつぶし、応答内の自己整合のみでチェックして run を続行する（issue #106）', async () => {
     mockedReadArmRows.mockRejectedValue(new Error('sheets down'));
     // 応答内で arm:2 が outcome に現れるのに arm レベル項目が arm:1 しか無い → 自己整合だけで検出できる

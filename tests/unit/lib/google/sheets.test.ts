@@ -9,6 +9,7 @@ import {
   getSheetValues,
   isSheetsAccessDenied,
   SheetsAccessDeniedError,
+  SheetsPartialAppendError,
   updateRow,
   writeHeaderRow,
 } from '../../../../src/lib/google/sheets';
@@ -153,6 +154,116 @@ describe('appendRows', () => {
     const d = deps();
     await appendRows('sid', 'Evidence', [], d);
     expect(d.fetch).not.toHaveBeenCalled();
+  });
+});
+
+describe('SheetsPartialAppendError（issue #247）', () => {
+  test('tab / requestedRows / updatedRows を保持し、メッセージに要求行数と実行数を含める', () => {
+    const err = new SheetsPartialAppendError('Evidence', 69, 1);
+    expect(err.name).toBe('SheetsPartialAppendError');
+    expect(err.tab).toBe('Evidence');
+    expect(err.requestedRows).toBe(69);
+    expect(err.updatedRows).toBe(1);
+    expect(err.message).toContain('要求 69 行');
+    expect(err.message).toContain('1 行');
+  });
+});
+
+describe('appendRows のレスポンス検証（issue #247: 部分書き込みの検知）', () => {
+  test('updates.updatedRows が送信行数と一致すれば解決する', async () => {
+    const d = deps({ updates: { updatedRange: 'Evidence!A2:Z3', updatedRows: 2 } });
+    await expect(
+      appendRows('sid', 'Evidence', [['a'], ['b']], d),
+    ).resolves.toBeUndefined();
+  });
+
+  test('updates.updatedRows が送信行数より少なければ SheetsPartialAppendError を投げる（issue #247 の再現ケース: Evidence 69 行のうち 1 行しか書けない）', async () => {
+    const rows = Array.from({ length: 69 }, (_, i) => [`row-${i}`]);
+    const d = deps({ updates: { updatedRange: 'Evidence!A70:A70', updatedRows: 1 } });
+    const err = await appendRows('sid', 'Evidence', rows, d).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(SheetsPartialAppendError);
+    const partialErr = err as SheetsPartialAppendError;
+    expect(partialErr.name).toBe('SheetsPartialAppendError');
+    expect(partialErr.tab).toBe('Evidence');
+    expect(partialErr.requestedRows).toBe(69);
+    expect(partialErr.updatedRows).toBe(1);
+    expect(partialErr.message).toContain('要求 69 行');
+    expect(partialErr.message).toContain('1 行');
+  });
+
+  test('updates.updatedRows が無く updates.updatedRange から算出できる場合: 一致すれば解決する', async () => {
+    // Evidence!A70:Z138 は 138-70+1 = 69 行
+    const rows = Array.from({ length: 69 }, (_, i) => [`row-${i}`]);
+    const d = deps({ updates: { updatedRange: 'Evidence!A70:Z138' } });
+    await expect(appendRows('sid', 'Evidence', rows, d)).resolves.toBeUndefined();
+  });
+
+  test('updates.updatedRows が無く updates.updatedRange から算出できる場合: 不一致なら throw する', async () => {
+    // Evidence!A70:Z70 は 1 行のみ
+    const rows = Array.from({ length: 69 }, (_, i) => [`row-${i}`]);
+    const d = deps({ updates: { updatedRange: 'Evidence!A70:Z70' } });
+    const err = await appendRows('sid', 'Evidence', rows, d).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(SheetsPartialAppendError);
+    expect((err as SheetsPartialAppendError).updatedRows).toBe(1);
+  });
+
+  test('updates が無い（既存テストのスタブ形状）場合は検証をスキップし、成功として返す', async () => {
+    const d = deps({});
+    await expect(appendRows('sid', 'Evidence', [['a']], d)).resolves.toBeUndefined();
+  });
+
+  test('レスポンス本文が JSON でない場合も検証をスキップし、成功として返す', async () => {
+    const d: { fetch: jest.Mock; getAccessToken: jest.Mock } = {
+      fetch: jest.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => {
+          throw new Error('not json');
+        },
+        text: async () => 'not json',
+      } as unknown as Response),
+      getAccessToken: jest.fn().mockResolvedValue('token'),
+    };
+    await expect(appendRows('sid', 'Evidence', [['a']], d)).resolves.toBeUndefined();
+  });
+
+  test('updates はあるが updatedRows / updatedRange のどちらも無い場合は判別不能として検証をスキップする', async () => {
+    const d = deps({ updates: {} });
+    await expect(appendRows('sid', 'Evidence', [['a']], d)).resolves.toBeUndefined();
+  });
+
+  test('updates 自体が null の場合も判別不能として検証をスキップする', async () => {
+    const d = deps({ updates: null });
+    await expect(appendRows('sid', 'Evidence', [['a']], d)).resolves.toBeUndefined();
+  });
+
+  test('レスポンス本文がオブジェクトでない（プリミティブ）場合も検証をスキップする', async () => {
+    const d = deps(42);
+    await expect(appendRows('sid', 'Evidence', [['a']], d)).resolves.toBeUndefined();
+  });
+
+  test('updatedRange にタブ名（!）が含まれない形式でも算出できる', async () => {
+    const rows = [['a'], ['b']];
+    const d = deps({ updates: { updatedRange: 'A2:A3' } });
+    await expect(appendRows('sid', 'Evidence', rows, d)).resolves.toBeUndefined();
+  });
+
+  test('updatedRange が想定形式に一致しない場合は判別不能として検証をスキップする', async () => {
+    const d = deps({ updates: { updatedRange: 'Evidence!weird' } });
+    await expect(appendRows('sid', 'Evidence', [['a']], d)).resolves.toBeUndefined();
+  });
+
+  test('updatedRange の終端行が始端行より小さい場合は判別不能として検証をスキップする', async () => {
+    const d = deps({ updates: { updatedRange: 'Evidence!A10:A5' } });
+    await expect(appendRows('sid', 'Evidence', [['a']], d)).resolves.toBeUndefined();
+  });
+
+  test('updatedRows が数値だが有限でない（NaN 等）場合は updatedRange へフォールバックする', async () => {
+    const rows = [['a'], ['b']];
+    const d = deps({
+      updates: { updatedRows: Number.NaN, updatedRange: 'Evidence!A2:A3' },
+    });
+    await expect(appendRows('sid', 'Evidence', rows, d)).resolves.toBeUndefined();
   });
 });
 

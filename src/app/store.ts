@@ -7,7 +7,7 @@ import type { LlmProviderId } from '../domain/llmApiLog';
 import type { StudyRecord } from '../domain/study';
 import type { Evidence } from '../domain/evidence';
 import type { ExportFormat } from '../domain/exportLog';
-import type { ExtractionRun, RunWarning } from '../domain/extractionRun';
+import type { ArmCompletenessRunWarning, ExtractionRun } from '../domain/extractionRun';
 import type { ProjectRole, ReviewerAssignment, ReviewerRole, ReviewMode } from '../domain/reviewer';
 import type { AnnotatorPairResolution } from '../features/adjudication/pairResolution';
 import type { StudyGate } from '../features/adjudication/gate';
@@ -358,7 +358,7 @@ export interface ExtractState {
    * 直近 run の arm completeness 警告（issue #106。`#extract-arm-warnings` の素材）。
    * 再試行（single_study run）は当該 study の警告を差し替える
    */
-  armWarnings: RunWarning[];
+  armWarnings: ArmCompletenessRunWarning[];
   /** 再試行（single_study run）実行中の study_id。null = なし */
   retryingStudyId: string | null;
   /**
@@ -398,7 +398,7 @@ export interface VerifyTarget {
    * 表示する run の当該 study ぶんの arm completeness 警告（issue #106。
    * `#verify-arm-completeness-warning` の素材）。独立入力モードでは常に空配列
    */
-  armWarnings: RunWarning[];
+  armWarnings: ArmCompletenessRunWarning[];
   /**
    * AI 抽出結果の有無。'no_result' = 完了 run（status = done / partial_failure）の対象
    * だったのに Evidence が 1 行も生成されなかった study（応答の途中打ち切り・空応答等に

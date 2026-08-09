@@ -632,6 +632,7 @@ describe('runPilot: 実行', () => {
               ]
             : [],
         armWarnings: [],
+        evidenceRowCountWarning: null,
         tokensIn: 100,
         tokensOut: 50,
         modelVersion: 'gemini-test-001',

@@ -15,7 +15,7 @@
 // 値は tier 連動（レート制限ポリシーの flushEveryNStudies）を優先し、
 // 未解決時のみ DEFAULT_FLUSH_EVERY_N_STUDIES へフォールバックする
 // （docs/handoff-20260710-sheets-write-batching.md）
-import type { ExtractionRun, RunType } from '../../domain/extractionRun';
+import type { ExtractionRun, RunType, RunWarning } from '../../domain/extractionRun';
 import type { LlmProviderId } from '../../domain/llmApiLog';
 import type { DocumentRecord } from '../../domain/document';
 import type { SchemaField } from '../../domain/schemaField';
@@ -392,6 +392,15 @@ export async function runExtraction(
   // 完了行の追記（2 行プロトコルの 2 行目。読み手はこの行の有無で完了 / 中断を判別する）。
   // 転記に 1 件でも失敗があれば partial_failure へ落とす（executeRun が既に partial_failure
   // ならそのまま。転記が全部成功していれば executeRun の status をそのまま使う）
+  // 警告は arm completeness（issue #106）+ Evidence 行数不一致（issue #247）を連結する
+  // （null = 警告なし。空配列は使わない既存規約を守る）。
+  // evidence_row_count を先頭に置く理由: warningsToCell（runRepository.ts）はセルサイズ超過時に
+  // 末尾から警告を切り詰めるため、実データ欠損を示すこの警告を必ず残す（arm_completeness が
+  // 大量に出て末尾から落ちても evidence_row_count は生き残る）
+  const warnings: RunWarning[] = [
+    ...(result.evidenceRowCountWarning === null ? [] : [result.evidenceRowCountWarning]),
+    ...result.armWarnings,
+  ];
   const run: ExtractionRun = {
     ...runBase,
     modelVersion: result.modelVersion,
@@ -399,8 +408,7 @@ export async function runExtraction(
     finishedAt: now(),
     tokensIn: result.tokensIn,
     tokensOut: result.tokensOut,
-    // arm completeness 警告（issue #106）は完了行にのみ記録する（null = 警告なし）
-    warnings: result.armWarnings.length === 0 ? null : result.armWarnings,
+    warnings: warnings.length === 0 ? null : warnings,
   };
   try {
     await appendExtractionRun(params.spreadsheetId, run, deps.google);

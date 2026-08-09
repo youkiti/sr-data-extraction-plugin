@@ -19,7 +19,7 @@ import { resolveProtocol } from '../../../../src/app/services/schemaService';
 import { createInitialState, createStore, type Store } from '../../../../src/app/store';
 import type { DocumentRecord } from '../../../../src/domain/document';
 import type { Evidence } from '../../../../src/domain/evidence';
-import type { ExtractionRun, RunWarning } from '../../../../src/domain/extractionRun';
+import type { ArmCompletenessRunWarning, ExtractionRun } from '../../../../src/domain/extractionRun';
 import type { SchemaField } from '../../../../src/domain/schemaField';
 import type { StudyRecord } from '../../../../src/domain/study';
 import { readDocuments } from '../../../../src/features/documents/documentRepository';
@@ -189,7 +189,7 @@ function makeOutcome(
     studyIds?: string[];
     evidence?: Evidence[];
     rejectedItems?: unknown[];
-    armWarnings?: RunWarning[];
+    armWarnings?: ArmCompletenessRunWarning[];
     transferError?: string | null;
     transferredRowCount?: number;
   } = {},
@@ -217,6 +217,7 @@ function makeOutcome(
       rejectedItems: (overrides.rejectedItems ?? []) as never[],
       batchFailures: [],
       armWarnings: overrides.armWarnings ?? [],
+      evidenceRowCountWarning: null,
       tokensIn: 100,
       tokensOut: 50,
       modelVersion: 'gemini-test-001',
