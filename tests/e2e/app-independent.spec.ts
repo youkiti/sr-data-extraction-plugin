@@ -9,6 +9,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 import { SHEET_HEADERS } from '../../src/domain/sheetsSchema';
+import { createSheetsDataStore } from './helpers/sheetsStore';
 
 const PROJECT = {
   projectId: 'e2e-project',
@@ -79,6 +80,11 @@ async function setupRoutes(page: Page): Promise<RouteRecorder> {
   const appendUrls: string[] = [];
   const getUrls: string[] = [];
   const studyDataBodies: string[] = [];
+  // StudyData / ResultsData をステートフルにする（issue #252: 判定 2 件目以降の偽競合対策）
+  const store = createSheetsDataStore({
+    studyHeader: STUDY_DATA_HEADERS,
+    resultsHeader: RESULTS_DATA_HEADERS,
+  });
 
   await page.route('https://sheets.googleapis.com/**', async (route) => {
     const url = decodeURIComponent(route.request().url());
@@ -95,14 +101,15 @@ async function setupRoutes(page: Page): Promise<RouteRecorder> {
       } else if (url.includes('/values/Decisions')) {
         await route.fulfill({ json: { values: [DECISIONS_HEADERS] } });
       } else if (url.includes('/values/StudyData')) {
-        await route.fulfill({ json: { values: [STUDY_DATA_HEADERS] } });
+        await route.fulfill({ json: { values: store.studyValues() } });
       } else if (url.includes('/values/ResultsData')) {
-        await route.fulfill({ json: { values: [RESULTS_DATA_HEADERS] } });
+        await route.fulfill({ json: { values: store.resultsValues() } });
       } else {
         await route.fulfill({ json: { values: [] } });
       }
       return;
     }
+    store.handleWrite(route.request());
     appendUrls.push(url);
     if (url.includes('StudyData')) {
       studyDataBodies.push(route.request().postData() ?? '');
@@ -226,6 +233,19 @@ test('独立入力モード: Evidence 由来表示が一切出ず、値の直接
     .toBeGreaterThan(0);
   expect(studyDataBodies.some((body) => body.includes('human_independent'))).toBe(true);
   expect(studyDataBodies.some((body) => body.includes('"15"'))).toBe(true);
+
+  // 判定 2 件目でも偽の競合（issue #252: Sheets スタブが append を反映しないと
+  // 楽観ロックの期待値が「行が無い」と食い違う）が起きないことを確認する。
+  // 独立入力モードには accept ボタンが無いため、2 件目も edit で別の値を入力する。
+  // Decisions は判定成功時にのみ最後に追記されるため、その追記数が 2 件目まで
+  // 増えたことをもって保存完了（= 競合していない）を待つ
+  await page.locator('.verify__action--edit').click();
+  await input.fill('16');
+  await page.locator('.verify__edit-confirm').click();
+  await expect
+    .poll(() => appendUrls.filter((url) => url.includes('Decisions') && url.includes(':append')).length)
+    .toBeGreaterThan(1);
+  await expect(page.locator('#verify-conflict-warning')).toHaveCount(0);
 
   // ③ axe
   const results = await new AxeBuilder({ page }).analyze();

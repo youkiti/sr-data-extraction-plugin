@@ -5,6 +5,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 import { SHEET_HEADERS } from '../../src/domain/sheetsSchema';
+import { createSheetsDataStore } from './helpers/sheetsStore';
 
 const QUOTE = 'Mortality was 12 percent';
 
@@ -269,6 +270,13 @@ test('未実行: 文献セレクタ（no_text_layer は既定選択されない�
 
 test('実行 → 完了 → 埋め込み検証 UI（ハイライト + 判定 + Decisions 追記）', async ({ page }) => {
   const appendUrls: string[] = [];
+  // StudyData / ResultsData をステートフルにする（issue #252: 判定 2 件目以降の偽競合対策。
+  // 実 Sheets は append した行がそのまま次の GET で返るため、ヘッダ固定スタブだと楽観ロックの
+  // 期待値検証（expectedUpdatedAt）が「サーバ側に行が無い」という偽の不一致を起こす）
+  const store = createSheetsDataStore({
+    studyHeader: STUDY_DATA_HEADERS,
+    resultsHeader: RESULTS_DATA_HEADERS,
+  });
 
   // Sheets: 読み出しはタブ別ヘッダ、書き込みは記録のみ
   await page.route('https://sheets.googleapis.com/**', async (route) => {
@@ -279,9 +287,9 @@ test('実行 → 完了 → 埋め込み検証 UI（ハイライト + 判定 + D
       } else if (url.includes('Decisions')) {
         await route.fulfill({ json: { values: [DECISIONS_HEADERS] } });
       } else if (url.includes('StudyData')) {
-        await route.fulfill({ json: { values: [STUDY_DATA_HEADERS] } });
+        await route.fulfill({ json: { values: store.studyValues() } });
       } else if (url.includes('ResultsData')) {
-        await route.fulfill({ json: { values: [RESULTS_DATA_HEADERS] } });
+        await route.fulfill({ json: { values: store.resultsValues() } });
       } else if (url.includes('values:batchGet') && url.includes('Evidence')) {
         // Evidence タブのヘッダ拡張チェック（ensureEvidenceBboxColumns。§7.4 PR3）。
         // 既にフルヘッダ（bbox 5 列込み）が書かれている想定にして拡張 PUT を no-op にする
@@ -299,6 +307,7 @@ test('実行 → 完了 → 埋め込み検証 UI（ハイライト + 判定 + D
       }
       return;
     }
+    store.handleWrite(route.request());
     appendUrls.push(url);
     await route.fulfill({ json: {} });
   });
@@ -406,6 +415,18 @@ test('実行 → 完了 → 埋め込み検証 UI（ハイライト + 判定 + D
   // 保存完了（非同期ストア更新の再描画）後もスクロール位置が保持される
   await expect.poll(() => formPane.evaluate((node) => node.scrollTop)).toBe(afterClickScrollTop);
 
+  // 判定 2 件目でも偽の競合（issue #252: Sheets スタブが append を反映しないと
+  // 楽観ロックの期待値が「行が無い」と食い違う）が起きないことを確認する。
+  // Decisions は判定成功時にのみ最後に追記される（saveDecisionWrite の実装参照）ため、
+  // その追記数が 2 件目まで増えたことをもって保存完了（= 競合していない）を待つ
+  await page.locator('.verify__action--edit').click();
+  await page.locator('.verify__edit-input').fill('13');
+  await page.locator('.verify__edit-confirm').click();
+  await expect
+    .poll(() => appendUrls.filter((url) => url.includes('Decisions') && url.includes(':append')).length)
+    .toBeGreaterThan(1);
+  await expect(page.locator('#verify-conflict-warning')).toHaveCount(0);
+
   const results = await new AxeBuilder({ page }).analyze();
   expect(results.violations).toEqual([]);
 });
@@ -430,10 +451,17 @@ test('履歴からの復元: 過去のパイロット結果を自動読込 → �
     'Report overall mortality.', '', 'FALSE', '',
   ];
   const ARM_STRUCTURES_HEADERS = [...SHEET_HEADERS.ArmStructures];
+  // StudyData / ResultsData をステートフルにする（issue #252。このテストは判定操作をしないが、
+  // 他 spec と足並みを揃えてヘルパ経由にしておく）
+  const store = createSheetsDataStore({
+    studyHeader: STUDY_DATA_HEADERS,
+    resultsHeader: RESULTS_DATA_HEADERS,
+  });
 
   await page.route('https://sheets.googleapis.com/**', async (route) => {
     const url = decodeURIComponent(route.request().url());
     if (route.request().method() !== 'GET') {
+      store.handleWrite(route.request());
       await route.fulfill({ json: {} });
       return;
     }
@@ -446,9 +474,9 @@ test('履歴からの復元: 過去のパイロット結果を自動読込 → �
     } else if (url.includes('Decisions')) {
       await route.fulfill({ json: { values: [DECISIONS_HEADERS] } });
     } else if (url.includes('StudyData')) {
-      await route.fulfill({ json: { values: [STUDY_DATA_HEADERS] } });
+      await route.fulfill({ json: { values: store.studyValues() } });
     } else if (url.includes('ResultsData')) {
-      await route.fulfill({ json: { values: [RESULTS_DATA_HEADERS] } });
+      await route.fulfill({ json: { values: store.resultsValues() } });
     } else if (url.includes('ArmStructures')) {
       await route.fulfill({ json: { values: [ARM_STRUCTURES_HEADERS] } });
     } else {
