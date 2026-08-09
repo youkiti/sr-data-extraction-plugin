@@ -91,28 +91,6 @@
   display: none;
 }
 
-.popup__recent {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.popup__recent button {
-  width: 100%;
-  text-align: left;
-  background: var(--color-surface);
-  color: var(--color-text);
-  border-color: var(--color-border);
-  overflow-wrap: anywhere;
-}
-
-.popup__recent button:hover:not(:disabled) {
-  background: var(--color-bg);
-}
-
 .popup__button--text {
   background: transparent;
   color: var(--color-primary);

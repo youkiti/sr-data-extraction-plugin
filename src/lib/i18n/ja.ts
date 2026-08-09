@@ -67,7 +67,10 @@ export const ja = {
     'ログインに失敗しました。ブラウザに Google アカウントが追加されているか確認してください。',
   'popup.loggedInAs': 'ログイン中:',
   'popup.logout': 'ログアウト',
-  'popup.recentTitle': '最近のプロジェクト',
+  'popup.recentTitle': '最近のスプレッドシート',
+  'popup.recentSelectLabel': '最近のスプレッドシート',
+  'popup.recentOpen': '開く',
+  'popup.recentOpening': '開いています…',
   'popup.createTitle': '新規プロジェクト',
   'popup.createLead':
     'データ抽出プロジェクトを作成します（スプレッドシート + Drive フォルダを生成）。',
@@ -91,7 +94,7 @@ export const ja = {
   'popup.openOptions': '設定を開く',
   'popup.openHelp': '使い方',
   'popup.statusLoginRequired': 'ログインが必要です。',
-  'popup.statusPickRecent': '最近のプロジェクトから選ぶか、新しく作成してください。',
+  'popup.statusPickRecent': '最近のスプレッドシートから選ぶか、新しく作成してください。',
   'popup.statusCreateOrOpen':
     '新しいプロジェクトを作成するか、スプレッドシート ID から開いてください。',
   'popup.emailUnknown': '(不明)',

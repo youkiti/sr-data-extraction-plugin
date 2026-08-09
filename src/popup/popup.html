@@ -49,8 +49,19 @@
         </section>
 
         <section class="popup__section" id="popup-recent-section" hidden>
-          <h2 class="popup__section-title" data-i18n="popup.recentTitle">最近のプロジェクト</h2>
-          <ul class="popup__recent" id="popup-recent"></ul>
+          <h2 class="popup__section-title" data-i18n="popup.recentTitle">最近のスプレッドシート</h2>
+          <form id="popup-recent-form" class="popup__form">
+            <label
+              class="popup__visually-hidden"
+              for="popup-recent-select"
+              data-i18n="popup.recentSelectLabel"
+            >
+              最近のスプレッドシート
+            </label>
+            <select id="popup-recent-select" class="popup__input"></select>
+            <button type="submit" class="popup__button" data-i18n="popup.recentOpen">開く</button>
+          </form>
+          <p class="popup__form-error" id="popup-recent-error"></p>
         </section>
 
         <section class="popup__section">
