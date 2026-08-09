@@ -59,7 +59,10 @@ const TRUNCATED_MISSING_ITEMS_LIMIT = 5;
  *    打ち切りマーカー（truncated: true + missingItemsTotal = 元の総件数）を付ける
  * 2. それでも超える間は末尾の警告から順に落とす（少なくとも 1 件は残す）
  * 極端な入力で 1 件でも収まらない場合に備え、完了行の追記失敗時に warnings なしで
- * 1 回だけ再試行する最終安全弁を extractionService 側に持つ
+ * 1 回だけ再試行する最終安全弁を extractionService 側に持つ。
+ * 注記: 上記 2 の切り詰めは常に末尾の警告から行われる（少なくとも 1 件は残る）ため、
+ * 呼び出し側は重要度の高い警告を配列の先頭に置くこと（例: extractionService.ts は
+ * データ欠損を示す evidence_row_count を arm_completeness より先頭に置いている）
  */
 function warningsToCell(warnings: readonly RunWarning[] | null): string {
   if (warnings === null) {
@@ -69,7 +72,10 @@ function warningsToCell(warnings: readonly RunWarning[] | null): string {
   if (full.length <= MAX_WARNINGS_CELL_CHARS) {
     return full;
   }
+  // missingItems の切り詰めは arm completeness 警告のみが対象（evidence_row_count は
+  // missingItems を持たないためそのまま通す）
   let compact: RunWarning[] = warnings.map((warning) =>
+    warning.kind === 'arm_completeness' &&
     warning.missingItems.length > TRUNCATED_MISSING_ITEMS_LIMIT
       ? {
           ...warning,
@@ -87,19 +93,27 @@ function warningsToCell(warnings: readonly RunWarning[] | null): string {
   return json;
 }
 
-/** RunWarning として最低限の形（kind / studyId / 配列 2 種）を満たすか */
+/**
+ * RunWarning として最低限の形を満たすか（kind ごとに必須フィールドが異なる。issue #247 で
+ * evidence_row_count を追加）。未知の kind は false（parseRunWarnings 側で捨てる）
+ */
 function isRunWarning(value: unknown): value is RunWarning {
   if (typeof value !== 'object' || value === null) {
     return false;
   }
   const candidate = value as Record<string, unknown>;
-  return (
-    candidate.kind === 'arm_completeness' &&
-    typeof candidate.studyId === 'string' &&
-    (candidate.section === null || typeof candidate.section === 'string') &&
-    Array.isArray(candidate.expectedArmKeys) &&
-    Array.isArray(candidate.missingItems)
-  );
+  if (candidate.kind === 'arm_completeness') {
+    return (
+      typeof candidate.studyId === 'string' &&
+      (candidate.section === null || typeof candidate.section === 'string') &&
+      Array.isArray(candidate.expectedArmKeys) &&
+      Array.isArray(candidate.missingItems)
+    );
+  }
+  if (candidate.kind === 'evidence_row_count') {
+    return typeof candidate.expectedRows === 'number' && typeof candidate.savedRows === 'number';
+  }
+  return false;
 }
 
 /**

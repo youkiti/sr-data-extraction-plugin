@@ -1,4 +1,9 @@
-import type { ExtractionRun, RunWarning } from '../../../../src/domain/extractionRun';
+import type {
+  ArmCompletenessRunWarning,
+  EvidenceRowCountRunWarning,
+  ExtractionRun,
+  RunWarning,
+} from '../../../../src/domain/extractionRun';
 import { SHEET_HEADERS } from '../../../../src/domain/sheetsSchema';
 import {
   appendExtractionRun,
@@ -22,13 +27,25 @@ const LEGACY_RUN_HEADER = SHEET_HEADERS.ExtractionRuns.slice(0, 14);
 const FIELD_IDS_RUN_HEADER = SHEET_HEADERS.ExtractionRuns.slice(0, 15);
 
 /** arm completeness 警告のフィクスチャ（issue #106） */
-function makeWarning(overrides: Partial<RunWarning> = {}): RunWarning {
+function makeWarning(overrides: Partial<ArmCompletenessRunWarning> = {}): ArmCompletenessRunWarning {
   return {
     kind: 'arm_completeness',
     studyId: 'study-1',
     section: null,
     expectedArmKeys: ['arm:1', 'arm:2'],
     missingItems: [{ armKey: 'arm:2', fieldId: 'f-n' }],
+    ...overrides,
+  };
+}
+
+/** Evidence 行数不一致警告のフィクスチャ（issue #247） */
+function makeRowCountWarning(
+  overrides: Partial<EvidenceRowCountRunWarning> = {},
+): EvidenceRowCountRunWarning {
+  return {
+    kind: 'evidence_row_count',
+    expectedRows: 69,
+    savedRows: 1,
     ...overrides,
   };
 }
@@ -99,13 +116,36 @@ describe('extractionRunToRow', () => {
     const smallWarning = makeWarning({ studyId: 'study-2' });
     const cell = extractionRunToRow(makeRun({ warnings: [bigWarning, smallWarning] }))[15] as string;
     expect(cell.length).toBeLessThanOrEqual(MAX_WARNINGS_CELL_CHARS);
-    const parsed = JSON.parse(cell) as RunWarning[];
+    const parsed = JSON.parse(cell) as ArmCompletenessRunWarning[];
     expect(parsed).toHaveLength(2);
     expect(parsed[0]?.missingItems).toEqual(bigWarning.missingItems.slice(0, 5));
     expect(parsed[0]?.truncated).toBe(true);
     expect(parsed[0]?.missingItemsTotal).toBe(800);
     // 5 件以下の警告は切り詰め対象外（マーカーも付かない）
     expect(parsed[1]).toEqual(smallWarning);
+  });
+
+  test('warnings に evidence_row_count（issue #247）を混ぜても JSON で出力する。missingItems を持たないため切り詰め対象にはならない', () => {
+    const rowCountWarning = makeRowCountWarning();
+    const row = extractionRunToRow(makeRun({ warnings: [makeWarning(), rowCountWarning] }));
+    expect(row[15]).toBe(JSON.stringify([makeWarning(), rowCountWarning]));
+  });
+
+  test('直列化上限超過時、evidence_row_count 警告は missingItems を持たないため素通りする（arm_completeness だけが切り詰め対象）', () => {
+    const bigWarning = makeWarning({
+      missingItems: Array.from({ length: 800 }, (_, i) => ({
+        armKey: 'arm:2',
+        fieldId: `f-${String(i).padStart(34, '0')}`,
+      })),
+    });
+    const rowCountWarning = makeRowCountWarning();
+    const cell = extractionRunToRow(makeRun({ warnings: [bigWarning, rowCountWarning] }))[15] as string;
+    expect(cell.length).toBeLessThanOrEqual(MAX_WARNINGS_CELL_CHARS);
+    const parsed = JSON.parse(cell) as RunWarning[];
+    expect(parsed).toHaveLength(2);
+    expect(parsed[0]).toMatchObject({ truncated: true, missingItemsTotal: 800 });
+    // evidence_row_count はそのまま残る（切り詰め対象外）
+    expect(parsed[1]).toEqual(rowCountWarning);
   });
 
   test('missingItems の切り詰めでも上限を超える間は末尾の警告から削る（先頭側 = 先に処理した study を優先して残す）', () => {
@@ -115,10 +155,25 @@ describe('extractionRunToRow', () => {
     );
     const cell = extractionRunToRow(makeRun({ warnings }))[15] as string;
     expect(cell.length).toBeLessThanOrEqual(MAX_WARNINGS_CELL_CHARS);
-    const parsed = JSON.parse(cell) as RunWarning[];
+    const parsed = JSON.parse(cell) as ArmCompletenessRunWarning[];
     expect(parsed.length).toBeGreaterThan(0);
     expect(parsed.length).toBeLessThan(600);
     expect(parsed[0]?.studyId).toBe('study-0');
+  });
+
+  test('evidence_row_count を先頭に置いておけば、arm_completeness が大量にあり末尾から警告が削られる状況でも生き残る（issue #247 レビュー対応。呼び出し側が重要度の高い警告を先頭に置く前提）', () => {
+    const rowCountWarning = makeRowCountWarning();
+    // 1 警告 ≈ 150 字 × 600 件 ≈ 90,000 字。missingItems は各 1 件のため件数の削減で収める
+    const armWarnings = Array.from({ length: 600 }, (_, i) => makeWarning({ studyId: `study-${i}` }));
+    const cell = extractionRunToRow(
+      makeRun({ warnings: [rowCountWarning, ...armWarnings] }),
+    )[15] as string;
+    expect(cell.length).toBeLessThanOrEqual(MAX_WARNINGS_CELL_CHARS);
+    const parsed = JSON.parse(cell) as RunWarning[];
+    expect(parsed.length).toBeGreaterThan(0);
+    expect(parsed.length).toBeLessThan(601);
+    // 末尾から arm_completeness が落ちても、先頭の evidence_row_count は残る
+    expect(parsed[0]).toEqual(rowCountWarning);
   });
 
   test('1 件でも上限を超える極端な警告はそれ以上切り詰めずに返す（完了行の追記失敗時は extractionService 側の warnings なし再試行が最終安全弁）', () => {
@@ -1002,6 +1057,34 @@ describe('readCompletedRunMetas（issue #80: field 単位合成ビューの素�
     const metas = await readCompletedRunMetas('sheet-1', readDeps(values));
     expect(metas[0]).toMatchObject({ runId: 'r1', warnings: [warning] });
     expect(metas[1]).toMatchObject({ runId: 'r2', warnings: null });
+  });
+
+  test('warnings 列の evidence_row_count（issue #247）を JSON パースする。arm_completeness と混在しても両方拾う', async () => {
+    const armWarning = makeWarning({ section: 'outcomes' });
+    const rowCountWarning = makeRowCountWarning();
+    const values = [
+      [...SHEET_HEADERS.ExtractionRuns],
+      row({ runId: 'r1', warnings: JSON.stringify([armWarning, rowCountWarning]) }),
+    ];
+    const metas = await readCompletedRunMetas('sheet-1', readDeps(values));
+    expect(metas[0]).toMatchObject({ runId: 'r1', warnings: [armWarning, rowCountWarning] });
+  });
+
+  test('evidence_row_count は expectedRows / savedRows が数値でなければ捨てる（issue #247）', async () => {
+    const values = [
+      [...SHEET_HEADERS.ExtractionRuns],
+      row({
+        runId: 'r1',
+        warnings: JSON.stringify([
+          makeRowCountWarning(),
+          { kind: 'evidence_row_count', expectedRows: '69', savedRows: 1 }, // expectedRows が文字列
+          { kind: 'evidence_row_count', expectedRows: 69, savedRows: '1' }, // savedRows が文字列
+          { kind: 'evidence_row_count' }, // 両方欠落
+        ]),
+      }),
+    ];
+    const metas = await readCompletedRunMetas('sheet-1', readDeps(values));
+    expect(metas[0]?.warnings).toEqual([makeRowCountWarning()]);
   });
 
   test('warnings 列の不正値（壊れた JSON / 非配列 / 未知の形の要素）は null に落として読み出しは止めない（issue #106）', async () => {

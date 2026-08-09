@@ -32,8 +32,24 @@ export interface ArmCompletenessRunWarning {
   missingItemsTotal?: number;
 }
 
-/** run 単位の警告（ExtractionRuns.warnings 列に JSON で保持）。現状 arm completeness のみ */
-export type RunWarning = ArmCompletenessRunWarning;
+/**
+ * Evidence 行数不一致の警告（issue #247）。`values.append` が HTTP 2xx を返しつつ実際には
+ * 要求より少ない行しか書けていなかった「部分書き込み」を appendRows のレスポンス検証
+ * （`SheetsPartialAppendError`）で検知できなかった場合に備え、run 終了時に「生成した
+ * Evidence 行数 vs 実際に Sheets へ保存できた行数」を突き合わせる二重チェックとして持つ。
+ * 通常は不一致が起きた時点で `save_failed` の BatchFailure が記録され run は既に
+ * `partial_failure` になっているため、この警告自体は status を左右しない監査記録
+ */
+export interface EvidenceRowCountRunWarning {
+  kind: 'evidence_row_count';
+  /** この run で生成した Evidence 行の総数（書けているはずの行数） */
+  expectedRows: number;
+  /** 実際に Sheets へ書けた Evidence 行数 */
+  savedRows: number;
+}
+
+/** run 単位の警告（ExtractionRuns.warnings 列に JSON で保持）。arm completeness / Evidence 行数不一致の 2 種 */
+export type RunWarning = ArmCompletenessRunWarning | EvidenceRowCountRunWarning;
 
 /**
  * audit.csv の Evidence 結合（buildAuditCsv）と runRepository.readRunAuditInfos が共有する

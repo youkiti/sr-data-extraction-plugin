@@ -549,6 +549,7 @@ describe('executeRun の正常系', () => {
       rejectedItems: [],
       batchFailures: [],
       armWarnings: [],
+      evidenceRowCountWarning: null,
       tokensIn: null,
       tokensOut: null,
       modelVersion: null,
@@ -928,6 +929,47 @@ describe('executeRun の partial_failure', () => {
       { studyId: 'd1', section: null, reason: 'save_failed', detail: 'sheets quota', failureKind: null },
     ]);
     expect(result.evidence).toHaveLength(0);
+  });
+
+  // issue #247: appendEvidence が部分書き込み相当（SheetsPartialAppendError 等）で throw した
+  // ときに、run が partial_failure になり、evidenceRowCountWarning に「生成した行数」と
+  // 「実際に保存できた行数」が入ることを固定する
+  test('Evidence 追記が部分書き込み相当で throw したら partial_failure になり、evidenceRowCountWarning に期待行数と保存行数が入る', async () => {
+    const { provider } = providerOf([chatResponse([DESIGN_ITEM])]);
+    const { deps } = makeDeps(provider);
+    deps.appendEvidence = async () => {
+      throw new Error('要求 1 行に対して 0 行しか追記できませんでした');
+    };
+    const result = await execute(
+      {
+        runId: 'run-1',
+        plan: makePlan([makeBatch({ studyId: 'd1', fieldIds: ['f_design'] })]),
+        fields: FIELDS,
+      },
+      deps,
+    );
+    expect(result.status).toBe('partial_failure');
+    expect(result.evidence).toHaveLength(0);
+    expect(result.evidenceRowCountWarning).toEqual({
+      kind: 'evidence_row_count',
+      expectedRows: 1,
+      savedRows: 0,
+    });
+  });
+
+  test('Evidence 追記が全部成功していれば evidenceRowCountWarning は null（生成行数と保存行数が一致）', async () => {
+    const { provider } = providerOf([chatResponse([DESIGN_ITEM])]);
+    const { deps } = makeDeps(provider);
+    const result = await execute(
+      {
+        runId: 'run-1',
+        plan: makePlan([makeBatch({ studyId: 'd1', fieldIds: ['f_design'] })]),
+        fields: FIELDS,
+      },
+      deps,
+    );
+    expect(result.status).toBe('done');
+    expect(result.evidenceRowCountWarning).toBeNull();
   });
 });
 

@@ -2,7 +2,7 @@
 // 状態: 読み込み中 / 読み込み失敗 / 未実行（対象 study 選択 + コスト概算 + 実行）/
 // 実行確認カード / 実行中（study 単位の進捗リスト）/ 完了（done / partial_failure + 再試行）
 import type { DocumentRecord } from '../../domain/document';
-import type { RunWarning } from '../../domain/extractionRun';
+import type { ArmCompletenessRunWarning } from '../../domain/extractionRun';
 import {
   areAllUnextractedStudiesSelected,
   buildExtractionCandidates,
@@ -525,7 +525,7 @@ function renderProgress(state: AppState, ctx: ViewContext): HTMLElement {
  * arm completeness 警告 1 件の表示行（issue #106）。study_label + section + 欠落一覧。
  * 項目名は現行スキーマの field_id → field_name で解決する（見つからなければ id のまま）
  */
-function armWarningLineOf(state: AppState, warning: RunWarning): string {
+function armWarningLineOf(state: AppState, warning: ArmCompletenessRunWarning): string {
   const fieldNameById = new Map(
     (state.schema.currentFields ?? []).map((field) => [field.fieldId, field.fieldName]),
   );

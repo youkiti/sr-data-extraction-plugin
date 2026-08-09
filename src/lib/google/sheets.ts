@@ -27,6 +27,29 @@ export class SheetsAccessDeniedError extends Error {
 }
 
 /**
+ * `values.append` が HTTP 2xx を返したのに、実際には要求した行数より少ない行しか
+ * 書けていなかった（部分書き込み）ときに投げる例外（issue #247）。
+ * `tab` / `requestedRows` / `updatedRows` はすべて常に判明している値。`updatedRows` は
+ * appendRows がレスポンスから判別できた実際の書き込み行数で、この例外は「不一致と
+ * 判別できたとき」にしか投げないため、常に具体的な行数を持つ。
+ */
+export class SheetsPartialAppendError extends Error {
+  readonly tab: string;
+  readonly requestedRows: number;
+  readonly updatedRows: number;
+
+  constructor(tab: string, requestedRows: number, updatedRows: number) {
+    super(
+      `Sheets への追記が要求 ${requestedRows} 行に対して ${updatedRows} 行しか追記できませんでした（tab: ${tab}）`
+    );
+    this.name = 'SheetsPartialAppendError';
+    this.tab = tab;
+    this.requestedRows = requestedRows;
+    this.updatedRows = updatedRows;
+  }
+}
+
+/**
  * Sheets API のエラーがアクセス拒否（Picker 誘導の対象）かを判定する。
  * - 404: 常に対象（上記のとおり不存在と未許可を区別できない）
  * - 403: responseBody の reason が権限系のときのみ対象。API 無効化・クォータ等の
@@ -177,9 +200,72 @@ export async function appendRow(
 }
 
 /**
+ * `updates.updatedRange`（例 `"Evidence!A70:Z138"`）から書き込まれた行数を算出する。
+ * 形式が想定と違う・パースできない場合は null（呼び出し側は「判別できなかった」として扱う）
+ */
+function rowCountFromUpdatedRange(updatedRange: unknown): number | null {
+  if (typeof updatedRange !== 'string') {
+    return null;
+  }
+  const rangePart = updatedRange.includes('!')
+    ? updatedRange.slice(updatedRange.indexOf('!') + 1)
+    : updatedRange;
+  const match = /^[A-Z]+(\d+):[A-Z]+(\d+)$/.exec(rangePart);
+  if (match === null) {
+    return null;
+  }
+  // 正規表現が \d+ で数字のみに絞っているため、start/end は常に非負整数になる
+  // （Number.isInteger の追加チェックは不要）
+  const start = Number(match[1]);
+  const end = Number(match[2]);
+  return end < start ? null : end - start + 1;
+}
+
+/**
+ * `values.append` のレスポンス JSON から実際に書き込めた行数を判別する。
+ * 優先順は `updates.updatedRows`（数値ならそのまま採用） → `updates.updatedRange` から算出
+ * → どちらも無い / 形が不正なら null（＝判別不能。呼び出し側は検証をスキップする）
+ */
+function determineUpdatedRowCount(json: unknown): number | null {
+  if (typeof json !== 'object' || json === null) {
+    return null;
+  }
+  const updates = (json as { updates?: unknown }).updates;
+  if (typeof updates !== 'object' || updates === null) {
+    return null;
+  }
+  const updatedRows = (updates as { updatedRows?: unknown }).updatedRows;
+  if (typeof updatedRows === 'number' && Number.isFinite(updatedRows)) {
+    return updatedRows;
+  }
+  return rowCountFromUpdatedRange((updates as { updatedRange?: unknown }).updatedRange);
+}
+
+/**
  * 指定タブに複数行をまとめて追記する（1 API 呼び出し）。
  * Evidence のバッチ追記など「行数が多く 1 行ずつの往復が高くつく」用途向け。
- * 空配列は no-op（API を呼ばない）。null は空文字に変換する
+ * 空配列は no-op（API を呼ばない）。null は空文字に変換する。
+ * `appendRow`（単一行）も本関数経由のため、以下の検証・再送に関する注意はすべての
+ * 呼び出し箇所（Evidence / Decisions / ExtractionRuns 等）に等しく効く。
+ *
+ * **部分書き込み検知（issue #247）**: `values.append` は HTTP 2xx を返しても、実際には
+ * 要求より少ない行しか書けていないことがある（実運用で Evidence 69 行のうち 1 行しか
+ * 入らず run が `done` のまま終わった事象）。レスポンス JSON から書けた行数を判別できた
+ * ときだけ `rows.length` と突き合わせ、不一致なら {@link SheetsPartialAppendError} を
+ * 投げる。**判別できなかった（null）場合は検証せず従来どおり成功として返す** —
+ * 実 API は必ず `updates.updatedRows` を返すため実運用での検知力はこれで落ちないが、
+ * `updates` を持たないレスポンスを返すのは既存テストのスタブだけであり、そこで throw
+ * すると検証と無関係な多数のテストが壊れるため、この分だけ残存ギャップとして許容している。
+ * JSON のパース自体に失敗した場合（body が JSON でない等）も同様に null 扱いにする。
+ *
+ * **再送設計への注意**: throw した時点で「1 行も書けていない」とは限らない（部分書き込みの
+ * 可能性がある）。そのため呼び出し側が同じ行をそのまま自動再送すると重複行が生まれうる。
+ * 本関数・本モジュールは自動再送を一切行わない（リトライは googleFetch の 429/503 バックオフに
+ * 限定され、そこでは自動リトライ後も 2xx かつ部分書き込みという今回のケースは救えない）。
+ * 呼び出し側の再送方針は各リポジトリの責務: Evidence（evidenceRepository 経由）は
+ * throw を `save_failed` の BatchFailure として記録するだけで自動再送はせず、
+ * S7 の再試行（= 新しい run_id での再実行）で拾う設計になっている
+ * （features/extraction/executeRun.ts の performFlush）。
  */
 export async function appendRows(
   spreadsheetId: string,
@@ -192,7 +278,7 @@ export async function appendRows(
   }
   const range = `${tab}!A1`;
   const url = `${API_BASE}/${spreadsheetId}/values/${encodeURIComponent(range)}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`;
-  await googleFetch(
+  const res = await googleFetch(
     url,
     {
       method: 'POST',
@@ -203,6 +289,11 @@ export async function appendRows(
     },
     deps
   );
+  const json = await res.json().catch(() => null);
+  const updatedRows = determineUpdatedRowCount(json);
+  if (updatedRows !== null && updatedRows !== rows.length) {
+    throw new SheetsPartialAppendError(tab, rows.length, updatedRows);
+  }
 }
 
 /**

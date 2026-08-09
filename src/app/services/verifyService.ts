@@ -8,7 +8,7 @@
 import type { Decision } from '../../domain/decision';
 import type { DocumentRecord } from '../../domain/document';
 import type { Evidence } from '../../domain/evidence';
-import type { RunWarning } from '../../domain/extractionRun';
+import type { ArmCompletenessRunWarning } from '../../domain/extractionRun';
 import { annotatorTypeForRole } from '../../domain/reviewer';
 import type { StudyRecord } from '../../domain/study';
 import type { ConfirmedArmStructure } from '../../domain/armStructure';
@@ -131,7 +131,7 @@ export interface ComposedEvidenceByStudy {
    * 上記の最新完了 run の warnings のうち当該 study ぶん（issue #106:
    * arm completeness。S8 の `#verify-arm-completeness-warning` の素材）
    */
-  armWarnings: RunWarning[];
+  armWarnings: ArmCompletenessRunWarning[];
 }
 
 /**
@@ -241,9 +241,12 @@ export function composeEvidenceByStudy(
       schemaVersion: latestMeta.schemaVersion,
       runId: latestRunId,
       evidence: items.filter((item) => item.runId === resolveWinner(item.fieldId)),
-      // 最新完了 run の arm completeness 警告から当該 study ぶんを抜き出す（issue #106）
+      // 最新完了 run の arm completeness 警告から当該 study ぶんを抜き出す（issue #106）。
+      // warnings は union（issue #247 で evidence_row_count を追加）のため、
+      // kind で絞ってから studyId を持つ arm_completeness のみを対象にする
       armWarnings: (latestMeta.warnings ?? []).filter(
-        (warning) => warning.studyId === studyId,
+        (warning): warning is ArmCompletenessRunWarning =>
+          warning.kind === 'arm_completeness' && warning.studyId === studyId,
       ),
     });
   }

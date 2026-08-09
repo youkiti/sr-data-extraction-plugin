@@ -14,7 +14,11 @@
 import type { NormalizedPage } from '../../domain/anchor';
 import type { DocumentRecord } from '../../domain/document';
 import type { Evidence } from '../../domain/evidence';
-import type { ArmCompletenessRunWarning, RunStatus } from '../../domain/extractionRun';
+import type {
+  ArmCompletenessRunWarning,
+  EvidenceRowCountRunWarning,
+  RunStatus,
+} from '../../domain/extractionRun';
 import type { SchemaField } from '../../domain/schemaField';
 import { LlmProviderError } from '../../lib/llm/LLMProvider';
 import type {
@@ -175,6 +179,13 @@ export interface ExecuteRunResult {
    * （warning に留める設計判断。ExtractionRuns.warnings への記録と S7/S8 表示の素材）
    */
   armWarnings: ArmCompletenessRunWarning[];
+  /**
+   * Evidence 行数不一致の警告（issue #247）。「バッファへ積んだ = 生成した Evidence 行数」と
+   * 「実際に Sheets へ保存できた行数（= evidence.length）」を突き合わせ、不一致なら 1 件作る。
+   * **status を決める要素ではない**（不一致時は通常 appendEvidence の throw により既に
+   * `save_failed` で partial_failure になっている。あくまで監査記録の二重化）。一致していれば null
+   */
+  evidenceRowCountWarning: EvidenceRowCountRunWarning | null;
   /** 実測合計（ExtractionRuns.tokens_in/out）。プロバイダが一度も返さなければ null */
   tokensIn: number | null;
   tokensOut: number | null;
@@ -357,6 +368,10 @@ export async function executeRun(
   const rejectedItems: RejectedBatchItem[] = [];
   const batchFailures: BatchFailure[] = [];
   const armWarnings: ArmCompletenessRunWarning[] = [];
+  // Evidence 行数不一致の警告（issue #247）用: バッファへ push した Evidence 行の累計
+  // （= 生成した行数。フラッシュの成否に関わらず数える）。run 終了時に evidence.length
+  // （= 実際に保存できた行数）と突き合わせる
+  let generatedEvidenceRowCount = 0;
   // 進行中の Promise をキャッシュする（値ではなく Promise を持つことで、並行実行時に
   // 同一 document を複数バッチが同時に miss しても loadDocumentPages を 1 回に抑える）
   const loadedDocuments = new Map<string, Promise<LoadedDocument>>();
@@ -668,6 +683,7 @@ export async function executeRun(
     // 成功/失敗の reportProgress はフラッシュ確定後に行う（「保存できた」ことの通知にするため。
     // フラッシュ失敗時に「成功」を報告してしまうと study 単位進捗が誤って done になる）
     buffer.push({ batch, rows });
+    generatedEvidenceRowCount += rows.length;
     await maybeFlush();
   };
 
@@ -676,6 +692,16 @@ export async function executeRun(
   await runWithConcurrency(input.plan.batches, concurrency, processBatch);
   // 全バッチ処理後、閾値未満のまま残っていた分をまとめて書く（全 study 完了時のフラッシュ）
   await flushRemaining();
+
+  // Evidence 行数不一致の警告（issue #247）。一致していれば null
+  const evidenceRowCountWarning: EvidenceRowCountRunWarning | null =
+    generatedEvidenceRowCount === evidence.length
+      ? null
+      : {
+          kind: 'evidence_row_count',
+          expectedRows: generatedEvidenceRowCount,
+          savedRows: evidence.length,
+        };
 
   return {
     runId: input.runId,
@@ -687,6 +713,7 @@ export async function executeRun(
     rejectedItems,
     batchFailures,
     armWarnings,
+    evidenceRowCountWarning,
     tokensIn,
     tokensOut,
     modelVersion,
