@@ -398,6 +398,9 @@ function renderVerification(run: ExtractionRun, state: AppState, ctx: ViewContex
         onLayoutModeChange: (mode) => ctx.pilot.onChangeLayoutMode(mode),
         paneLayout: state.pilot.paneLayout,
         onPaneLayoutChange: (layout) => ctx.pilot.onChangePaneLayout(layout),
+        // 保存の競合検出中（issue #64 のバナー表示中）はフォームペインを読み取り専用にする
+        // （issue #248 案 C）。PDF ペインは対象外
+        readOnly: state.pilot.conflictMessage !== null,
       }),
     );
   }

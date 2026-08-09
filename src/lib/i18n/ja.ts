@@ -1011,6 +1011,8 @@ export const ja = {
   'verify.errFieldNotInSchema': '判定を保存できません: field_id {id} が表のデザインにありません',
   'verify.toastQueuedDecision':
     '保存に失敗したため、判定をオフラインキューへ退避しました（復帰後に再送されます）',
+  'verify.toastConflictNotSaved':
+    'この判定は保存されていません。再読み込みしてからやり直してください',
   'verify.toastQueuedAdjudication':
     '保存に失敗したため、裁定をオフラインキューへ退避しました（復帰後に再送されます）',
   'verify.toastArmSaveFailed': '群構成の保存に失敗しました: {reason}',

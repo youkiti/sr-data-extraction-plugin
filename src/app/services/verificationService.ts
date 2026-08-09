@@ -435,9 +435,13 @@ export type PersistDecisionResult =
  * 保存が通ったら過去の退避分も再送する（tiab-review と同じ復帰動作）。
  *
  * expectedUpdatedAt（省略可。issue #64）は即時保存にのみ適用する楽観ロックの期待値。
- * 即時保存が AnnotationConflictError で失敗した場合はキューへ退避せず（トーストも出さず）
- * conflict を返す — 呼び出し側が再読み込み導線（バナー）を出す。それ以外の失敗は従来どおり
- * キュー退避する。再送（flush のコールバック）は expectedUpdatedAt を渡さない
+ * 即時保存が AnnotationConflictError で失敗した場合はキューへ退避せず、トーストで
+ * 「この判定は保存されていません」と明示した上で conflict を返す（issue #248。競合した
+ * 1 件は失われたままにする設計 — 保留キューへ積んで後で再適用する案は不採用）。
+ * 呼び出し側（verifyService.persistVerifyDecision / pilotService.persistPilotDecision）は
+ * conflictMessage を store へ置き、再読み込み導線（バナー）とフォームペインの読み取り専用化
+ * （verificationPanel.ts の setReadOnly）を出す。それ以外の失敗は従来どおりキュー退避する。
+ * 再送（flush のコールバック）は expectedUpdatedAt を渡さない
  * （後勝ち冪等のまま。再送をブロックするとオフライン中のデータが宙に浮いてしまうため）
  *
  * この関数自体は withSpreadsheetWriteLock で包まない。呼び出し元（verifyService.persistVerifyDecision /
@@ -456,6 +460,9 @@ export async function persistDecisionWrite(
     await saveDecisionWrite(spreadsheetId, write, deps, expectedUpdatedAt);
   } catch (err) {
     if (err instanceof AnnotationConflictError) {
+      // 案 A（issue #248）: 楽観更新済みの画面上には判定が入って見えるが、実際は
+      // シートにもキューにも残らない。バナーだけに頼らずトーストでも明示する
+      showToast(t('verify.toastConflictNotSaved'));
       return { status: 'conflict', message: err.message };
     }
     await queue.enqueue(spreadsheetId, write.decision.annotator, write);

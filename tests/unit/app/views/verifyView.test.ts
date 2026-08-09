@@ -687,7 +687,28 @@ describe('renderVerifyView', () => {
     expect(callbacks.onReloadVerification).toHaveBeenCalledTimes(1);
   });
 
-  test('conflictMessage が null ならバナーを表示しない', () => {
+  // issue #248 案 C: バナー表示中はフォームペインを読み取り専用にし、判定を続けられなくする
+  test('保存の競合検出バナー表示中はフォームペインが読み取り専用になり、PDF ペインは操作可能なまま', () => {
+    const { ctx } = makeCtx();
+    const verification = makeVerification();
+    const root = render(
+      makeState({
+        targets: [makeTarget()],
+        selectedStudyId: 'study-1',
+        verification,
+        conflictMessage: '読み込み後に別の場所で更新されています。再読み込みしてから判定し直してください',
+      }),
+      ctx,
+    );
+    const formPane = root.querySelector('.verify__pane--form');
+    expect(formPane?.classList.contains('verify__pane--readonly')).toBe(true);
+    const formControl = formPane?.querySelector<HTMLButtonElement>('button');
+    expect(formControl?.disabled).toBe(true);
+    const pdfControl = root.querySelector<HTMLButtonElement>('.verify__pane--pdf button');
+    expect(pdfControl?.disabled).toBe(false);
+  });
+
+  test('conflictMessage が null ならバナーを表示せず、フォームペインも読み取り専用にしない', () => {
     const { ctx } = makeCtx();
     const verification = makeVerification();
     const root = render(
@@ -695,6 +716,9 @@ describe('renderVerifyView', () => {
       ctx,
     );
     expect(root.querySelector('#verify-conflict-warning')).toBeNull();
+    expect(
+      root.querySelector('.verify__pane--form')?.classList.contains('verify__pane--readonly'),
+    ).toBe(false);
   });
 
   test('アウトカム追加宣言が onInstanceDeclare へ委譲される', () => {

@@ -1809,6 +1809,21 @@ section.documents__tiab {
   overflow-y: auto;
 }
 
+/* 保存の競合検出中（issue #64 のバナー表示中。issue #248）の読み取り専用状態。
+   disabled 属性自体は verificationPanel.ts 側で個々の操作要素へ付与するため、
+   ここでは「読み取り専用と分かる」見た目だけを足す。E2E の axe（Tier 3。
+   docs/test-strategy.md）に color-contrast 違反で落ちたため opacity は使わない
+   （不透明度を下げると通常テキストの実効コントラスト比が WCAG AA を割る。disabled な
+   コントロールはブラウザ標準の無効表示 + axe の除外対象のため影響しない）。
+   競合バナー（.verify__conflict-warning）と同じ warning 系トークンで背景・枠を付け、
+   カーソルだけ not-allowed にする */
+.verify__pane--readonly {
+  background: var(--color-warning-bg);
+  border: 1px solid var(--color-warning-border);
+  border-radius: 8px;
+  cursor: not-allowed;
+}
+
 /* ペインサイズ調整スプリッタ（issue #193）共通 */
 .verify__splitter {
   background: transparent;

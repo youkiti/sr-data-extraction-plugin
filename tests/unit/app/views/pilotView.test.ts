@@ -694,12 +694,17 @@ describe('完了（サマリ + 埋め込み検証）', () => {
     expect(banner?.textContent).toContain('読み込み後に別の場所で更新されています');
     (root.querySelector('#verify-conflict-reload') as HTMLButtonElement).click();
     expect(callbacks.onReloadVerification).toHaveBeenCalledTimes(1);
+    // issue #248 案 C: バナー表示中はパネルへ readOnly: true が渡る
+    const options = renderPanelMock.mock.calls[0]?.[0];
+    expect(options?.readOnly).toBe(true);
   });
 
-  test('conflictMessage が null ならバナーを表示しない', () => {
+  test('conflictMessage が null ならバナーを表示せず、パネルへ readOnly: false が渡る', () => {
     const verification = makeVerification();
     const { root } = render(makeState({ pilot: { run: makeRun(), verification } }));
     expect(root.querySelector('#verify-conflict-warning')).toBeNull();
+    const options = renderPanelMock.mock.calls[0]?.[0];
+    expect(options?.readOnly).toBe(false);
   });
 
   test('run が無ければサマリ・検証セクションは出さない', () => {
