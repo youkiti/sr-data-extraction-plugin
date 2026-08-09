@@ -40,7 +40,7 @@ const helpers = {
 };
 
 describe('createProject', () => {
-  test('Drive フォルダ 4 種 + 13 タブのスプレッドシート + Meta 行を生成する', async () => {
+  test('Drive フォルダ 4 種 + 16 タブのスプレッドシート + Meta 行を生成する', async () => {
     const { deps, calls } = makeGoogleStub();
     const result = await createProject(
       { projectTitle: '肺炎 SR', createdBy: 'me@example.com' },
@@ -67,7 +67,7 @@ describe('createProject', () => {
     expect(folderBodies[4].parents).toEqual(['folder-1']);
     expect(folderBodies[5].parents).toEqual(['folder-5']);
 
-    // スプレッドシートは 13 タブで初期化
+    // スプレッドシートは SHEET_TABS.length 分のタブで初期化（現在 16 タブ）
     const createSheet = calls.find((c) => c.url === 'https://sheets.googleapis.com/v4/spreadsheets');
     const sheetBody = JSON.parse(createSheet?.body ?? '{}');
     expect(sheetBody.properties.title).toBe('肺炎 SR');
@@ -75,7 +75,7 @@ describe('createProject', () => {
       [...SHEET_TABS],
     );
 
-    // 13 タブすべてにヘッダ行を書き込む（:append は追記なので除外）
+    // 全タブにヘッダ行を書き込む（:append は追記なので除外）
     const headerCalls = calls.filter(
       (c) => c.url.includes('?valueInputOption=RAW') && !c.url.includes(':append'),
     );

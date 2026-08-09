@@ -20,7 +20,7 @@ export interface EvidenceBbox {
 
 /**
  * 1 行 = 1 run × 1 study × 1 field × 1 entity_key（+ quote の出所 document）。
- * 14 タブ中このタブだけが document_id を持ち続ける（quote は特定 PDF の中にあるため。§3.2）
+ * 16 タブ中このタブだけが document_id を持ち続ける（quote は特定 PDF の中にあるため。§3.2）
  */
 export interface Evidence {
   evidenceId: string;

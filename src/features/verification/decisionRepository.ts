@@ -4,6 +4,7 @@
 import type { AnnotatorType } from '../../domain/annotation';
 import type { Decision, DecisionAction } from '../../domain/decision';
 import { SHEET_HEADERS } from '../../domain/sheetsSchema';
+import { withApiErrorLogging } from '../../lib/diagnostics/apiErrorLog';
 import { appendRows, getSheetValues } from '../../lib/google/sheets';
 import type { GoogleApiDeps } from '../../lib/google/types';
 
@@ -53,13 +54,23 @@ export function decisionToRow(decision: Decision): (string | number | null)[] {
 /**
  * Decisions をまとめて追記する。空配列は no-op。
  * 追記のみで更新 API は提供しない（追記型タブ。取り消しは action=undo の追記で表現する）
+ *
+ * issue #249: 失敗を ApiErrorLog（context='decision_save'）へ記録する（fire-and-forget。
+ * 本処理は必ず rethrow する）。study_id はバッチ先頭行の値を採る（分かる範囲で。document_id は
+ * Decisions が持たないため常に空）
  */
 export async function appendDecisionRows(
   spreadsheetId: string,
   decisions: readonly Decision[],
   deps: GoogleApiDeps,
 ): Promise<void> {
-  await appendRows(spreadsheetId, DECISIONS_TAB, decisions.map(decisionToRow), deps);
+  await withApiErrorLogging(
+    'decision_save',
+    { studyId: decisions[0]?.studyId ?? null },
+    async () => {
+      await appendRows(spreadsheetId, DECISIONS_TAB, decisions.map(decisionToRow), deps);
+    },
+  );
 }
 
 function parseAction(value: string, context: string): DecisionAction {

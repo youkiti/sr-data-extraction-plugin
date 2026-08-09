@@ -7,7 +7,7 @@ import {
 } from '../../../src/domain/sheetsSchema';
 
 describe('SHEET_TABS', () => {
-  test('requirements.md §3.2 + 独立二重レビュー機能の 15 タブを定義順に持つ', () => {
+  test('requirements.md §3.2 + 独立二重レビュー機能 + 診断ログ機能の 16 タブを定義順に持つ', () => {
     expect(SHEET_TABS).toEqual([
       'Meta',
       'Protocol',
@@ -24,6 +24,7 @@ describe('SHEET_TABS', () => {
       'LLMApiLog',
       'ExportLog',
       'Reviewers',
+      'ApiErrorLog',
     ]);
   });
 
@@ -129,6 +130,22 @@ describe('SHEET_HEADERS', () => {
       'review_mode',
       'assigned_by',
       'assigned_at',
+    ]);
+  });
+
+  test('ApiErrorLog は Google API 失敗の診断情報（issue #249）を持つ', () => {
+    expect(SHEET_HEADERS.ApiErrorLog).toEqual([
+      'log_id',
+      'occurred_at',
+      'logged_by',
+      'context',
+      'api',
+      'http_status',
+      'message',
+      'study_id',
+      'document_id',
+      'retry_count',
+      'app_version',
     ]);
   });
 });

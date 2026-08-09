@@ -24,13 +24,26 @@ export class GoogleApiError extends Error {
   readonly status: number;
   readonly endpoint: string;
   readonly responseBody: string;
+  /**
+   * googleFetch が最終的に諦めるまでに行った再試行回数（初回の呼び出しは含まない。0 = 再送なし）。
+   * issue #249（ApiErrorLog の retry_count 列）で追加。既存呼び出し元・テストへの影響を避けるため
+   * 省略可能にし、省略時は 0（従来どおり再試行情報なし）にする
+   */
+  readonly retryCount: number;
 
-  constructor(message: string, status: number, endpoint: string, responseBody: string) {
+  constructor(
+    message: string,
+    status: number,
+    endpoint: string,
+    responseBody: string,
+    retryCount = 0
+  ) {
     super(message);
     this.name = 'GoogleApiError';
     this.status = status;
     this.endpoint = endpoint;
     this.responseBody = responseBody;
+    this.retryCount = retryCount;
   }
 }
 
@@ -112,7 +125,10 @@ export async function googleFetch(
         `Google API failed: HTTP ${res.status}`,
         res.status,
         url,
-        body
+        body,
+        // attempt は 1 始まりの「今回の失敗が何回目の試行だったか」。retryCount は「初回を除いた
+        // 再送回数」なので attempt - 1（例: 1 回目で確定 = 再送 0 回、3 回目で確定 = 再送 2 回）
+        attempt - 1
       );
     }
     const serverDelayMs = parseRetryAfterMs(res.headers.get('Retry-After'));

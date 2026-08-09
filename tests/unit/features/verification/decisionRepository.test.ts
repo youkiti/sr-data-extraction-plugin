@@ -100,6 +100,12 @@ describe('appendDecisionRows', () => {
     // appendRows は null を空セル（''）へ変換して送る
     expect(body.values).toEqual([decisionToRow(makeDecision()).map((value) => value ?? '')]);
   });
+
+  test('空配列は no-op（appendRows を呼ばない）', async () => {
+    const deps = makeDeps();
+    await appendDecisionRows('sheet-1', [], deps);
+    expect(postCalls(deps)).toHaveLength(0);
+  });
 });
 
 describe('readDecisionsByStudy', () => {

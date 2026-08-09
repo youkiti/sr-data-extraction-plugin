@@ -1,4 +1,5 @@
 // sr-query-builder-plugin の lib/google/drive.ts をコピー流用（architecture.md §7-3）
+import { withApiErrorLogging } from '../diagnostics/apiErrorLog';
 import { googleFetch, type GoogleApiDeps } from './types';
 
 const METADATA_API = 'https://www.googleapis.com/drive/v3/files';
@@ -237,11 +238,16 @@ export async function getFileText(fileId: string, deps: GoogleApiDeps): Promise<
 
 /**
  * ファイル ID を指定してバイナリ実体を取得する（PDF のダウンロード用）。`alt=media`。
+ *
+ * issue #249: 「特定の文献だけ PDF が表示されない」という問い合わせの主経路のため、
+ * 失敗を ApiErrorLog（context='pdf_load'）へ記録する（fire-and-forget。本処理は必ず rethrow する）
  */
 export async function getFileBinary(fileId: string, deps: GoogleApiDeps): Promise<ArrayBuffer> {
-  const url = `${METADATA_API}/${encodeURIComponent(fileId)}?alt=media`;
-  const res = await googleFetch(url, { method: 'GET' }, deps);
-  return await res.arrayBuffer();
+  return withApiErrorLogging('pdf_load', {}, async () => {
+    const url = `${METADATA_API}/${encodeURIComponent(fileId)}?alt=media`;
+    const res = await googleFetch(url, { method: 'GET' }, deps);
+    return await res.arrayBuffer();
+  });
 }
 
 /** listRecentSpreadsheets が返す 1 件分（S1 最近のスプレッドシート。issue #245） */

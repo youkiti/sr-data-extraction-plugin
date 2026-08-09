@@ -32,6 +32,7 @@ import {
   STUDY_DATA_FIXED_HEADERS,
   buildStudyDataHeader,
 } from '../../domain/sheetsSchema';
+import { withApiErrorLogging } from '../../lib/diagnostics/apiErrorLog';
 import {
   appendRows,
   batchUpdateRows,
@@ -439,57 +440,71 @@ export async function upsertStudyDataRows(
   if (rows.length === 0) {
     return;
   }
-  const maxRowsPerAppend = Math.max(
-    1,
-    Math.floor(helpers.maxRowsPerAppend ?? DEFAULT_MAX_ROWS_PER_APPEND),
-  );
-  const snapshot = await fetchStudySheet(spreadsheetId, deps);
-  const index = indexStudyRows(snapshot);
-
-  // 入力側の重複キーは呼び出し契約違反
-  const inputKeys = new Set<string>();
-  for (const row of rows) {
-    const key = keyOf(row.studyId, row.annotator);
-    if (inputKeys.has(key)) {
-      throw new Error(
-        `upsertStudyDataRows の入力に同一キーの行が複数あります（study_id=${row.studyId}, annotator=${row.annotator}）`,
+  // issue #249: 失敗を ApiErrorLog（context='annotation_upsert'）へ記録する（fire-and-forget。
+  // 本処理は必ず rethrow する）。AnnotationConflictError（issue #64 の楽観ロック競合）は
+  // Google API の障害ではなく、複数 reviewer が同時編集すれば通常運用でも起こりうるため、
+  // ApiErrorLog を「本当に Google API が落ちている」ノイズ源にしないよう記録対象から除く
+  await withApiErrorLogging(
+    'annotation_upsert',
+    {
+      // 直前の rows.length === 0 ガードを通過しているため rows[0] は必ず存在する
+      studyId: rows[0]!.studyId,
+      shouldLog: (error) => !(error instanceof AnnotationConflictError),
+    },
+    async () => {
+      const maxRowsPerAppend = Math.max(
+        1,
+        Math.floor(helpers.maxRowsPerAppend ?? DEFAULT_MAX_ROWS_PER_APPEND),
       );
-    }
-    inputKeys.add(key);
-  }
+      const snapshot = await fetchStudySheet(spreadsheetId, deps);
+      const index = indexStudyRows(snapshot);
 
-  // 楽観ロックの期待値検証（issue #64）。書き込み（ヘッダ追加・updateRow・append）を
-  // 1 件も行う前に全行を検証し、不一致があれば throw する（部分書き込みを起こさない）
-  for (const row of rows) {
-    checkStudyRowConflict(row, index.get(keyOf(row.studyId, row.annotator)));
-  }
-
-  // 不足列をヘッダ末尾へ追加（buildStudyDataHeader が固定列との衝突・重複を検証する）
-  const fieldNames = [...snapshot.fieldNames];
-  for (const row of rows) {
-    for (const name of Object.keys(row.values)) {
-      if (!fieldNames.includes(name)) {
-        fieldNames.push(name);
+      // 入力側の重複キーは呼び出し契約違反
+      const inputKeys = new Set<string>();
+      for (const row of rows) {
+        const key = keyOf(row.studyId, row.annotator);
+        if (inputKeys.has(key)) {
+          throw new Error(
+            `upsertStudyDataRows の入力に同一キーの行が複数あります（study_id=${row.studyId}, annotator=${row.annotator}）`,
+          );
+        }
+        inputKeys.add(key);
       }
-    }
-  }
-  if (fieldNames.length > snapshot.fieldNames.length) {
-    await writeHeaderRow(spreadsheetId, STUDY_TAB, buildStudyDataHeader(fieldNames), deps);
-  }
 
-  const appends: (string | number | null)[][] = [];
-  const updates: { rowIndex: number; row: (string | number | null)[] }[] = [];
-  for (const row of rows) {
-    const sheetRow = studyRowToSheetRow(row, fieldNames);
-    const existing = index.get(keyOf(row.studyId, row.annotator));
-    if (existing === undefined) {
-      appends.push(sheetRow);
-    } else {
-      updates.push({ rowIndex: existing.rowIndex, row: sheetRow });
-    }
-  }
-  await updateRowsInChunks(spreadsheetId, STUDY_TAB, updates, deps, maxRowsPerAppend);
-  await appendRowsInChunks(spreadsheetId, STUDY_TAB, appends, deps, maxRowsPerAppend);
+      // 楽観ロックの期待値検証（issue #64）。書き込み（ヘッダ追加・updateRow・append）を
+      // 1 件も行う前に全行を検証し、不一致があれば throw する（部分書き込みを起こさない）
+      for (const row of rows) {
+        checkStudyRowConflict(row, index.get(keyOf(row.studyId, row.annotator)));
+      }
+
+      // 不足列をヘッダ末尾へ追加（buildStudyDataHeader が固定列との衝突・重複を検証する）
+      const fieldNames = [...snapshot.fieldNames];
+      for (const row of rows) {
+        for (const name of Object.keys(row.values)) {
+          if (!fieldNames.includes(name)) {
+            fieldNames.push(name);
+          }
+        }
+      }
+      if (fieldNames.length > snapshot.fieldNames.length) {
+        await writeHeaderRow(spreadsheetId, STUDY_TAB, buildStudyDataHeader(fieldNames), deps);
+      }
+
+      const appends: (string | number | null)[][] = [];
+      const updates: { rowIndex: number; row: (string | number | null)[] }[] = [];
+      for (const row of rows) {
+        const sheetRow = studyRowToSheetRow(row, fieldNames);
+        const existing = index.get(keyOf(row.studyId, row.annotator));
+        if (existing === undefined) {
+          appends.push(sheetRow);
+        } else {
+          updates.push({ rowIndex: existing.rowIndex, row: sheetRow });
+        }
+      }
+      await updateRowsInChunks(spreadsheetId, STUDY_TAB, updates, deps, maxRowsPerAppend);
+      await appendRowsInChunks(spreadsheetId, STUDY_TAB, appends, deps, maxRowsPerAppend);
+    },
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -619,59 +634,71 @@ export async function upsertResultsDataRows(
   if (rows.length === 0) {
     return;
   }
-  const uuid = helpers.newUuid ?? generateUuid;
-  const maxRowsPerAppend = Math.max(
-    1,
-    Math.floor(helpers.maxRowsPerAppend ?? DEFAULT_MAX_ROWS_PER_APPEND),
-  );
-  const snapshot = await fetchResultsSheet(spreadsheetId, deps);
-  const index = indexResultsRows(snapshot);
-
-  const inputKeys = new Set<string>();
-  for (const row of rows) {
-    const key = resultsKeyOf(row);
-    if (inputKeys.has(key)) {
-      throw new Error(
-        `upsertResultsDataRows の入力に同一キーの行が複数あります（study_id=${row.studyId}, annotator=${row.annotator}, entity_key=${row.entityKey}, field_id=${row.fieldId}）`,
+  // issue #249: 失敗を ApiErrorLog（context='annotation_upsert'）へ記録する（fire-and-forget。
+  // 本処理は必ず rethrow する）。AnnotationConflictError は upsertStudyDataRows と同じ理由で除外する
+  await withApiErrorLogging(
+    'annotation_upsert',
+    {
+      // 直前の rows.length === 0 ガードを通過しているため rows[0] は必ず存在する
+      studyId: rows[0]!.studyId,
+      shouldLog: (error) => !(error instanceof AnnotationConflictError),
+    },
+    async () => {
+      const uuid = helpers.newUuid ?? generateUuid;
+      const maxRowsPerAppend = Math.max(
+        1,
+        Math.floor(helpers.maxRowsPerAppend ?? DEFAULT_MAX_ROWS_PER_APPEND),
       );
-    }
-    inputKeys.add(key);
-  }
+      const snapshot = await fetchResultsSheet(spreadsheetId, deps);
+      const index = indexResultsRows(snapshot);
 
-  // 楽観ロックの期待値検証（issue #64）。書き込み（updateRow・append）を 1 件も行う前に
-  // 全行を検証し、不一致があれば throw する（部分書き込みを起こさない）
-  for (const row of rows) {
-    if (row.expectedUpdatedAt === undefined) {
-      continue;
-    }
-    const existing = index.get(resultsKeyOf(row));
-    const actualUpdatedAt = existing?.updatedAt ?? null;
-    if (row.expectedUpdatedAt !== actualUpdatedAt) {
-      throw new AnnotationConflictError({
-        tab: 'ResultsData',
-        studyId: row.studyId,
-        annotator: row.annotator,
-        entityKey: row.entityKey,
-        fieldId: row.fieldId,
-        expectedUpdatedAt: row.expectedUpdatedAt,
-        actualUpdatedAt,
-      });
-    }
-  }
+      const inputKeys = new Set<string>();
+      for (const row of rows) {
+        const key = resultsKeyOf(row);
+        if (inputKeys.has(key)) {
+          throw new Error(
+            `upsertResultsDataRows の入力に同一キーの行が複数あります（study_id=${row.studyId}, annotator=${row.annotator}, entity_key=${row.entityKey}, field_id=${row.fieldId}）`,
+          );
+        }
+        inputKeys.add(key);
+      }
 
-  const appends: (string | number | boolean | null)[][] = [];
-  const updates: { rowIndex: number; row: (string | number | boolean | null)[] }[] = [];
-  for (const row of rows) {
-    const existing = index.get(resultsKeyOf(row));
-    if (existing === undefined) {
-      appends.push(resultsRowToSheetRow({ ...row, resultId: uuid() }));
-    } else {
-      updates.push({
-        rowIndex: existing.rowIndex,
-        row: resultsRowToSheetRow({ ...row, resultId: existing.resultId }),
-      });
-    }
-  }
-  await updateRowsInChunks(spreadsheetId, RESULTS_TAB, updates, deps, maxRowsPerAppend);
-  await appendRowsInChunks(spreadsheetId, RESULTS_TAB, appends, deps, maxRowsPerAppend);
+      // 楽観ロックの期待値検証（issue #64）。書き込み（updateRow・append）を 1 件も行う前に
+      // 全行を検証し、不一致があれば throw する（部分書き込みを起こさない）
+      for (const row of rows) {
+        if (row.expectedUpdatedAt === undefined) {
+          continue;
+        }
+        const existing = index.get(resultsKeyOf(row));
+        const actualUpdatedAt = existing?.updatedAt ?? null;
+        if (row.expectedUpdatedAt !== actualUpdatedAt) {
+          throw new AnnotationConflictError({
+            tab: 'ResultsData',
+            studyId: row.studyId,
+            annotator: row.annotator,
+            entityKey: row.entityKey,
+            fieldId: row.fieldId,
+            expectedUpdatedAt: row.expectedUpdatedAt,
+            actualUpdatedAt,
+          });
+        }
+      }
+
+      const appends: (string | number | boolean | null)[][] = [];
+      const updates: { rowIndex: number; row: (string | number | boolean | null)[] }[] = [];
+      for (const row of rows) {
+        const existing = index.get(resultsKeyOf(row));
+        if (existing === undefined) {
+          appends.push(resultsRowToSheetRow({ ...row, resultId: uuid() }));
+        } else {
+          updates.push({
+            rowIndex: existing.rowIndex,
+            row: resultsRowToSheetRow({ ...row, resultId: existing.resultId }),
+          });
+        }
+      }
+      await updateRowsInChunks(spreadsheetId, RESULTS_TAB, updates, deps, maxRowsPerAppend);
+      await appendRowsInChunks(spreadsheetId, RESULTS_TAB, appends, deps, maxRowsPerAppend);
+    },
+  );
 }

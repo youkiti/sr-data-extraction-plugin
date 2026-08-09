@@ -171,7 +171,8 @@ import type { ProjectRole } from '../domain/reviewer';
 import { loadCurrentProject } from '../features/project/projectStore';
 import { extractDocxText } from '../lib/docx/extractDocxText';
 import { BUILD_DATE, withDevSuffix } from '../build-info';
-import { createChromeProfileDeps } from '../lib/google/identity';
+import { configureApiErrorLog } from '../lib/diagnostics/apiErrorLog';
+import { createChromeProfileDeps, getCurrentUserEmail } from '../lib/google/identity';
 import { createChromePickerDeps } from '../lib/google/picker';
 import { createProvider } from '../lib/llm/providerFactory';
 import { loadDisposablePdf } from '../lib/pdf/loadPdf';
@@ -382,6 +383,18 @@ export function createChromeAppDeps(): AppDeps {
   };
 }
 
+/**
+ * ApiErrorLog.app_version（issue #249）の既定取得実装。
+ * chrome 拡張ランタイム上でのみ値を返し、それ以外（jest / 一部 E2E 環境）では空文字にする
+ * （app/services/exportService.ts の defaultGetToolVersion と同じガード方式）
+ */
+function currentAppVersion(): string {
+  if (typeof chrome !== 'undefined' && chrome.runtime && typeof chrome.runtime.getManifest === 'function') {
+    return chrome.runtime.getManifest().version;
+  }
+  return '';
+}
+
 /** 起動配線を行い、後続の画面実装（services 層）が使うストアを返す */
 export async function bootstrapApp(
   win: Window,
@@ -421,6 +434,20 @@ export async function bootstrapApp(
   applyStaticI18n();
 
   const store = createStore(await seedState(win));
+
+  // API 失敗の診断ログ（issue #249）: プロジェクト選択済みなら記録先を設定する。
+  // 未設定（プロジェクト未選択）でも lib/diagnostics/apiErrorLog 側がローカルへ積むだけで
+  // フラッシュをスキップするだけなので壊れない
+  const seededProject = store.getState().currentProject;
+  if (seededProject) {
+    configureApiErrorLog({
+      spreadsheetId: seededProject.spreadsheetId,
+      loggedBy: (await getCurrentUserEmail(deps.profile)) ?? '',
+      appVersion: currentAppVersion(),
+      google: deps.google,
+    });
+  }
+
   let currentHash: RouteHash = '#/home';
   // 防御の多重化: 直近にガード評価したロール（ロールが確定・変化したときだけ現在ルートを再ガードする）
   let lastGuardedRole: ProjectRole | null = null;
