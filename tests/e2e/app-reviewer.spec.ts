@@ -6,6 +6,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 import { SHEET_HEADERS } from '../../src/domain/sheetsSchema';
+import { createSheetsDataStore } from './helpers/sheetsStore';
 
 const PROJECT = {
   projectId: 'e2e-project',
@@ -251,6 +252,11 @@ const RESULTS_DATA_HEADERS = [...SHEET_HEADERS.ResultsData];
 
 async function setupVerifyRoutes(page: Page): Promise<{ appendUrls: string[] }> {
   const appendUrls: string[] = [];
+  // StudyData / ResultsData をステートフルにする（issue #252: 判定 2 件目以降の偽競合対策）
+  const store = createSheetsDataStore({
+    studyHeader: STUDY_DATA_HEADERS,
+    resultsHeader: RESULTS_DATA_HEADERS,
+  });
   await page.route('https://sheets.googleapis.com/**', async (route) => {
     const url = decodeURIComponent(route.request().url());
     if (route.request().method() === 'GET') {
@@ -265,9 +271,9 @@ async function setupVerifyRoutes(page: Page): Promise<{ appendUrls: string[] }> 
       } else if (url.includes('/values/Decisions')) {
         await route.fulfill({ json: { values: [DECISIONS_HEADERS] } });
       } else if (url.includes('/values/StudyData')) {
-        await route.fulfill({ json: { values: [STUDY_DATA_HEADERS] } });
+        await route.fulfill({ json: { values: store.studyValues() } });
       } else if (url.includes('/values/ResultsData')) {
-        await route.fulfill({ json: { values: [RESULTS_DATA_HEADERS] } });
+        await route.fulfill({ json: { values: store.resultsValues() } });
       } else if (url.includes('/values/SchemaFields')) {
         await route.fulfill({ json: { values: [SCHEMA_FIELDS_HEADERS, STUDY_FIELD_ROW] } });
       } else {
@@ -275,6 +281,7 @@ async function setupVerifyRoutes(page: Page): Promise<{ appendUrls: string[] }> 
       }
       return;
     }
+    store.handleWrite(route.request());
     appendUrls.push(url);
     await route.fulfill({ json: {} });
   });
@@ -378,6 +385,18 @@ test('reviewer_with_ai は付与済みなら #/verify で判定でき、自分�
     .toBeGreaterThan(0);
   const decisionsAppend = appendUrls.filter((url) => url.includes('Decisions') && url.includes(':append'));
   expect(decisionsAppend.length).toBeGreaterThan(0);
+
+  // 判定 2 件目でも偽の競合（issue #252: Sheets スタブが append を反映しないと
+  // 楽観ロックの期待値が「行が無い」と食い違う）が起きないことを確認する。
+  // Decisions は判定成功時にのみ最後に追記されるため、その追記数が 2 件目まで
+  // 増えたことをもって保存完了（= 競合していない）を待つ
+  await page.locator('.verify__action--edit').click();
+  await page.locator('.verify__edit-input').fill('13');
+  await page.locator('.verify__edit-confirm').click();
+  await expect
+    .poll(() => appendUrls.filter((url) => url.includes('Decisions') && url.includes(':append')).length)
+    .toBeGreaterThan(1);
+  await expect(page.locator('#verify-conflict-warning')).toHaveCount(0);
 
   const results = await new AxeBuilder({ page }).analyze();
   expect(results.violations).toEqual([]);

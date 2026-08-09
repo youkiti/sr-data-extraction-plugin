@@ -55,6 +55,29 @@ sr-query-builder では後付けになって手戻りしたため、スケルト
 - E2E: `page.route()` で Gemini API を stub
 - **抽出「精度」はテストスイートの対象外** — `experiments/` のベンチマーク（requirements.md §8 / Q8)に分離し、jest / Playwright は配管の正しさだけを見る
 
+### 2.5 E2E の Sheets スタブは書き込みを次の GET に反映する【運用ルール。issue #252】
+
+判定 UI（#/verify・#/pilot 埋め込み）を通す E2E spec の Sheets スタブは、StudyData /
+ResultsData をヘッダ行固定で返してはいけない。実 Google Sheets は append / batchUpdate で
+書き込んだ行がそのまま次の GET に返るが、ヘッダ固定スタブは「サーバ側に該当 annotator 行が
+存在しない」ことになる。判定 1 件目の成功後、`foldDecisionWriteTokens`
+（`src/app/services/verifyService.ts` / `pilotService.ts`）が書き込み時点の `updated_at` を
+store へ畳み込み、判定 2 件目はそれを `expectedUpdatedAt` としてサーバへ渡すため、
+`annotationRepository.ts` の `checkStudyRowConflict` / `upsertResultsDataRows` の期待値検証が
+不一致と判定し、偽の `AnnotationConflictError`（競合バナー）が発生する（判定 1 件までしか
+判定しない spec ではこの不忠実さは表面化しないため見落としやすい）。
+
+- StudyData / ResultsData を扱う spec は [tests/e2e/helpers/sheetsStore.ts](../tests/e2e/helpers/sheetsStore.ts)
+  の `createSheetsDataStore()` でメモリ上の状態を保持し、GET 応答は `studyValues()` /
+  `resultsValues()` を、書き込みは `handleWrite(request)` を経由させる（`route.fulfill` 自体は
+  各 spec 側で呼ぶ）
+- 判定操作を伴う spec（app-verify / app-pilot / app-reviewer / app-independent）は、判定
+  **2 件目**を追加し、競合バナー（`#verify-conflict-warning`）が出ないことを回帰ガードとして
+  assert する。保存完了（Decisions 追記数の増加など）を待ってからバナー不在を確認すること —
+  保存の非同期完了を待たずに `toHaveCount(0)` だけ見ると、実際は競合していても偽陰性になる
+- 意図的に競合を発生させたい seam（`studyDataConflictAfterFirstRead` 等）は、この store より
+  優先させてよい（app-verify.spec.ts 参照）
+
 ## 3. フェーズ計画
 
 architecture.md §7 のチェックポイントと対応させる：
