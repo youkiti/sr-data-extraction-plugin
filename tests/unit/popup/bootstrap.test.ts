@@ -29,7 +29,11 @@ const POPUP_TEMPLATE = `
       <p id="popup-account-note" hidden></p>
       <button id="logout-button" type="button">ログアウト</button>
       <section id="popup-recent-section" hidden>
-        <ul id="popup-recent"></ul>
+        <form id="popup-recent-form">
+          <select id="popup-recent-select"></select>
+          <button type="submit">開く</button>
+        </form>
+        <p id="popup-recent-error"></p>
       </section>
       <form id="popup-create-form">
         <input type="text" id="popup-create-title" />
@@ -339,34 +343,324 @@ describe('bootstrapPopup', () => {
     });
   });
 
-  test('状態 B-N: 最近のプロジェクトを新しい順に列挙し、クリックで選択 + メインビューを開く', async () => {
-    await setCurrentProject({
-      projectId: 'aaaaaaaa-1111',
-      spreadsheetId: 's1',
-      driveFolderId: 'f1',
-      name: '肺炎 SR',
-    });
-    await setCurrentProject({
-      projectId: 'bbbbbbbb-2222',
-      spreadsheetId: 's2',
-      driveFolderId: 'f2',
-      name: 'ECMO SR',
-    });
-    const deps = makeDeps();
-    await bootstrapPopup(document, deps);
-    expect(el('popup-status').textContent).toBe(
-      '最近のプロジェクトから選ぶか、新しく作成してください。',
-    );
-    expect(el('popup-recent-section').hidden).toBe(false);
-    const buttons = el('popup-recent').querySelectorAll('button');
-    expect(buttons).toHaveLength(2);
-    expect(buttons[0]?.textContent).toBe('ECMO SR — bbbbbbbb');
-    expect(buttons[1]?.textContent).toBe('肺炎 SR — aaaaaaaa');
+  describe('最近のスプレッドシート（issue #245。Drive recency 一覧 + ローカル履歴のマージ）', () => {
+    /** listRecentSpreadsheets（orderBy=recency）だけ差し替え、他は base に委譲する google スタブ */
+    function withDriveRecent(
+      files: { id: string; name: string }[],
+      base: GoogleApiDeps = makeGoogle(),
+    ): GoogleApiDeps {
+      return {
+        getAccessToken: async () => 'tok',
+        fetch: (async (input: RequestInfo | URL, init?: RequestInit) => {
+          const url = String(input);
+          if (url.includes('orderBy=recency')) {
+            const json = { files };
+            return {
+              ok: true,
+              status: 200,
+              json: async () => json,
+              text: async () => JSON.stringify(json),
+            } as Response;
+          }
+          return (base.fetch as typeof fetch)(input, init);
+        }) as typeof fetch,
+      };
+    }
 
-    buttons[1]?.click();
-    await flush();
-    await expect(loadCurrentProject()).resolves.toMatchObject({ projectId: 'aaaaaaaa-1111' });
-    expect(deps.openAppTab).toHaveBeenCalledTimes(1);
+    /** listRecentSpreadsheets だけ必ず失敗させる google スタブ（フォールバック確認用） */
+    function withDriveFailing(base: GoogleApiDeps = makeGoogle()): GoogleApiDeps {
+      return {
+        getAccessToken: async () => 'tok',
+        fetch: (async (input: RequestInfo | URL, init?: RequestInit) => {
+          const url = String(input);
+          if (url.includes('orderBy=recency')) {
+            throw new Error('network down');
+          }
+          return (base.fetch as typeof fetch)(input, init);
+        }) as typeof fetch,
+      };
+    }
+
+    function selectOptions(): HTMLOptionElement[] {
+      return Array.from(el<HTMLSelectElement>('popup-recent-select').querySelectorAll('option'));
+    }
+
+    function submitRecent(id: string): void {
+      el<HTMLSelectElement>('popup-recent-select').value = id;
+      el<HTMLFormElement>('popup-recent-form').dispatchEvent(
+        new Event('submit', { cancelable: true }),
+      );
+    }
+
+    test('マージ順と重複排除: Drive の recency 順を先頭に、無い ID だけローカル履歴を末尾に足す', async () => {
+      // ローカル履歴は [B, A]（後に set した B が先頭）。B は Drive 未収録、A は Drive にも同一 ID で存在
+      await setCurrentProject({
+        projectId: 'aaaaaaaa-1111',
+        spreadsheetId: 'sA',
+        driveFolderId: 'fA',
+        name: 'ローカル A',
+      });
+      await setCurrentProject({
+        projectId: 'bbbbbbbb-2222',
+        spreadsheetId: 'sB',
+        driveFolderId: 'fB',
+        name: 'ローカル B',
+      });
+      const deps = makeDeps({
+        google: withDriveRecent([
+          { id: 'sA', name: 'Drive 版 A' },
+          { id: 'sC', name: 'Drive 専用 C' },
+          // Drive 応答自体に同じ ID が重複していても 1 件にまとめる（防御的分岐）
+          { id: 'sC', name: 'Drive 専用 C（重複）' },
+        ]),
+      });
+      await bootstrapPopup(document, deps);
+      expect(el('popup-status').textContent).toBe(
+        '最近のスプレッドシートから選ぶか、新しく作成してください。',
+      );
+      expect(el('popup-recent-section').hidden).toBe(false);
+      const options = selectOptions();
+      expect(options).toHaveLength(3);
+      // ラベルは Drive のファイル名（sA はローカルにも同一 ID があるが、ラベルは Drive 側を使う）+
+      // 同名プロジェクトを区別するための spreadsheet ID 先頭 8 文字
+      expect(options.map((o) => [o.value, o.textContent])).toEqual([
+        ['sA', 'Drive 版 A — sA'],
+        ['sC', 'Drive 専用 C — sC'],
+        ['sB', 'ローカル B — sB'],
+      ]);
+    });
+
+    test('Drive API 失敗時はエラーを出さずローカル履歴のみで一覧を作る', async () => {
+      await setCurrentProject({
+        projectId: 'local-1',
+        spreadsheetId: 'sX',
+        driveFolderId: 'fX',
+        name: 'ローカルのみ',
+      });
+      const deps = makeDeps({ google: withDriveFailing() });
+      await bootstrapPopup(document, deps);
+      expect(el('popup-recent-section').hidden).toBe(false);
+      expect(el('popup-recent-error').textContent).toBe('');
+      const options = selectOptions();
+      expect(options).toHaveLength(1);
+      expect(options[0]?.value).toBe('sX');
+      expect(options[0]?.textContent).toBe('ローカルのみ — sX');
+    });
+
+    test('候補 0 件（Drive・ローカルとも無し）ではセクションを隠す', async () => {
+      const deps = makeDeps({ google: withDriveRecent([]) });
+      await bootstrapPopup(document, deps);
+      expect(el('popup-recent-section').hidden).toBe(true);
+      expect(selectOptions()).toHaveLength(0);
+      expect(el('popup-status').textContent).toBe(
+        '新しいプロジェクトを作成するか、スプレッドシート ID から開いてください。',
+      );
+    });
+
+    test('ローカル既知 ID を開くと loadExistingProject を呼ばずローカル参照のまま遷移する', async () => {
+      // Sheets API を全滅させておき、もし loadExistingProject 経由で開いていたら
+      // 失敗する（= エラー表示 + openAppTab 不発）状況を作って区別する
+      await setCurrentProject({
+        projectId: 'local-1',
+        spreadsheetId: 'LOCAL-SID',
+        driveFolderId: 'f1',
+        name: 'ローカル SR',
+      });
+      const google: GoogleApiDeps = {
+        getAccessToken: async () => 'tok',
+        fetch: (async (input: RequestInfo | URL) => {
+          const url = String(input);
+          if (url.includes('orderBy=recency')) {
+            const json = { files: [{ id: 'LOCAL-SID', name: 'Drive 表示名' }] };
+            return {
+              ok: true,
+              status: 200,
+              json: async () => json,
+              text: async () => JSON.stringify(json),
+            } as Response;
+          }
+          return {
+            ok: false,
+            status: 500,
+            json: async () => ({}),
+            text: async () => 'boom',
+          } as Response;
+        }) as typeof fetch,
+      };
+      const deps = makeDeps({ google });
+      await bootstrapPopup(document, deps);
+      const options = selectOptions();
+      expect(options).toHaveLength(1);
+      // ラベルは Drive のファイル名 + id 先頭 8 文字だが、開いたときの実体はローカルの ProjectRef を優先する
+      expect(options[0]?.textContent).toBe('Drive 表示名 — LOCAL-SI');
+      submitRecent('LOCAL-SID');
+      await flush();
+      expect(el('popup-recent-error').textContent).toBe('');
+      expect(deps.openAppTab).toHaveBeenCalledTimes(1);
+      await expect(loadCurrentProject()).resolves.toMatchObject({ name: 'ローカル SR' });
+    });
+
+    test('Drive のみの ID を開くと loadExistingProject を経由してメインビューへ遷移する', async () => {
+      const deps = makeDeps({
+        google: withDriveRecent([{ id: 'SID-9', name: 'Drive 専用シート' }]),
+      });
+      await bootstrapPopup(document, deps);
+      submitRecent('SID-9');
+      await flush();
+      expect(el('popup-recent-error').textContent).toBe('');
+      expect(deps.openAppTab).toHaveBeenCalledTimes(1);
+      // ローカル履歴に無い ID だったため Meta タブ検証（loadExistingProject）を経由しており、
+      // プロジェクト名は Drive のファイル名ではなく Meta タブの projectTitle になる
+      await expect(loadCurrentProject()).resolves.toMatchObject({
+        projectId: 'pid-9',
+        name: '既存 SR',
+      });
+    });
+
+    test('検証エラー（別ツールのシート）は #popup-recent-error に表示しタブを開かない', async () => {
+      const google: GoogleApiDeps = {
+        getAccessToken: async () => 'tok',
+        fetch: (async (input: RequestInfo | URL) => {
+          const url = String(input);
+          if (url.includes('orderBy=recency')) {
+            const json = { files: [{ id: 'OTHER-SID', name: '別ツールのシート' }] };
+            return {
+              ok: true,
+              status: 200,
+              json: async () => json,
+              text: async () => JSON.stringify(json),
+            } as Response;
+          }
+          // Documents / SchemaFields タブが無い別ツールのシート
+          const json = { sheets: [{ properties: { title: 'Meta' } }] };
+          return {
+            ok: true,
+            status: 200,
+            json: async () => json,
+            text: async () => JSON.stringify(json),
+          } as Response;
+        }) as typeof fetch,
+      };
+      const deps = makeDeps({ google });
+      await bootstrapPopup(document, deps);
+      submitRecent('OTHER-SID');
+      await flush();
+      expect(el('popup-recent-error').textContent).toContain(
+        'sr-data-extraction のプロジェクトではありません',
+      );
+      expect(deps.openAppTab).not.toHaveBeenCalled();
+    });
+
+    test('SheetsAccessDeniedError では popup.accessNeeded のみ表示し、許可ボタンは出さない', async () => {
+      const google: GoogleApiDeps = {
+        getAccessToken: async () => 'tok',
+        fetch: (async (input: RequestInfo | URL) => {
+          const url = String(input);
+          if (url.includes('orderBy=recency')) {
+            const json = { files: [{ id: 'DENIED-SID', name: '権限未取得のシート' }] };
+            return {
+              ok: true,
+              status: 200,
+              json: async () => json,
+              text: async () => JSON.stringify(json),
+            } as Response;
+          }
+          return {
+            ok: false,
+            status: 404,
+            json: async () => ({}),
+            text: async () => 'not found',
+          } as Response;
+        }) as typeof fetch,
+      };
+      const deps = makeDeps({ google });
+      await bootstrapPopup(document, deps);
+      submitRecent('DENIED-SID');
+      await flush();
+      expect(el('popup-recent-error').textContent).toContain('権限がまだありません');
+      expect(deps.openAppTab).not.toHaveBeenCalled();
+      // このセクションには「Google で許可する」ボタンを持たない（誘導は ID/URL セクションへ一本化）。
+      // #popup-recent-form 内のボタンが submit の 1 つだけであること、既存の許可ボタン
+      // （ID/URL セクションの #popup-open-grant）が非表示のままであることで確認する
+      expect(el<HTMLFormElement>('popup-recent-form').querySelectorAll('button')).toHaveLength(1);
+      expect(el<HTMLButtonElement>('popup-open-grant').hidden).toBe(true);
+    });
+
+    test('選択値が空のまま送信しても何もしない', async () => {
+      const deps = makeDeps({
+        google: withDriveRecent([{ id: 'SID-9', name: 'Drive シート' }]),
+      });
+      await bootstrapPopup(document, deps);
+      // ブラウザ操作では通常空値は選べないが、防御的分岐（ガード）を直接検証する
+      el<HTMLSelectElement>('popup-recent-select').value = '';
+      el<HTMLFormElement>('popup-recent-form').dispatchEvent(
+        new Event('submit', { cancelable: true }),
+      );
+      await flush();
+      expect(deps.openAppTab).not.toHaveBeenCalled();
+    });
+
+    test('実行中は「開いています…」+ disabled、完了で復帰する', async () => {
+      let resolveMeta: () => void = () => undefined;
+      const google: GoogleApiDeps = {
+        getAccessToken: async () => 'tok',
+        fetch: (async (input: RequestInfo | URL, init?: RequestInit) => {
+          const url = String(input);
+          if (url.includes('orderBy=recency')) {
+            const json = { files: [{ id: 'SID-9', name: 'Drive シート' }] };
+            return {
+              ok: true,
+              status: 200,
+              json: async () => json,
+              text: async () => JSON.stringify(json),
+            } as Response;
+          }
+          if (url.endsWith('/values/Meta')) {
+            await new Promise<void>((resolve) => {
+              resolveMeta = resolve;
+            });
+          }
+          return (makeGoogle().fetch as typeof fetch)(input, init);
+        }) as typeof fetch,
+      };
+      const deps = makeDeps({ google });
+      await bootstrapPopup(document, deps);
+      submitRecent('SID-9');
+      const submit = document.querySelector(
+        '#popup-recent-form button[type="submit"]',
+      ) as HTMLButtonElement;
+      expect(submit.disabled).toBe(true);
+      expect(submit.textContent).toBe('開いています…');
+      // getSheetTitles（1 本目の fetch）分の非同期チェーンを消化し、getSheetValues('Meta')
+      // の pending promise（resolveMeta の再代入）まで進めてから、実際に解決する
+      await flush();
+      resolveMeta();
+      await flush();
+      expect(submit.disabled).toBe(false);
+      expect(submit.textContent).toBe('開く');
+      expect(deps.openAppTab).toHaveBeenCalledTimes(1);
+    });
+
+    test('ログアウトで選択状態をクリアすると再描画で最近のスプレッドシートが消える', async () => {
+      await setCurrentProject({
+        projectId: 'p1',
+        spreadsheetId: 's1',
+        driveFolderId: 'f1',
+        name: 'SR',
+      });
+      const isAuthenticated = jest.fn<Promise<boolean>, []>().mockResolvedValue(true);
+      const deps = makeDeps({ isAuthenticated });
+      await bootstrapPopup(document, deps);
+      expect(el('popup-recent-section').hidden).toBe(false);
+      expect(selectOptions()).toHaveLength(1);
+
+      el<HTMLButtonElement>('logout-button').click();
+      await flush();
+      // clearProjectSelection でローカル履歴が消え、Drive も既定スタブで 0 件のため
+      // 再描画（refresh）後は候補 0 件になる
+      expect(el('popup-recent-section').hidden).toBe(true);
+      expect(selectOptions()).toHaveLength(0);
+    });
   });
 
   test('E-Popup-4: ログアウトで選択状態をクリアして未ログイン表示に戻る', async () => {
@@ -1135,7 +1429,11 @@ describe('bootstrapPopup（表示言語 en。issue #93）', () => {
         <p id="popup-account-note" hidden></p>
         <button id="logout-button" type="button" data-i18n="popup.logout">ログアウト</button>
         <section id="popup-recent-section" hidden>
-          <ul id="popup-recent"></ul>
+          <form id="popup-recent-form">
+            <select id="popup-recent-select"></select>
+            <button type="submit">開く</button>
+          </form>
+          <p id="popup-recent-error"></p>
         </section>
         <form id="popup-create-form">
           <input

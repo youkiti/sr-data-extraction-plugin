@@ -7,6 +7,7 @@ import {
   getFileMd5,
   getFileText,
   listFolderPdfs,
+  listRecentSpreadsheets,
   moveFileToFolder,
   shareFileWithUser,
   uploadBinaryFile,
@@ -345,6 +346,39 @@ describe('listFolderPdfs', () => {
     const fetch = jest.fn().mockResolvedValueOnce(okJson({}));
     const deps = { fetch, getAccessToken: jest.fn().mockResolvedValue('t') };
     await expect(listFolderPdfs('EMPTY', deps)).resolves.toEqual([]);
+  });
+});
+
+describe('listRecentSpreadsheets', () => {
+  test('スプレッドシート限定 + recency 順 + pageSize を 1 回だけ要求する', async () => {
+    const fetch = jest.fn().mockResolvedValueOnce(
+      okJson({
+        files: [
+          { id: 's1', name: 'シート1' },
+          { id: 's2', name: 'シート2' },
+        ],
+      }),
+    );
+    const deps = { fetch, getAccessToken: jest.fn().mockResolvedValue('t') };
+    await expect(listRecentSpreadsheets(15, deps)).resolves.toEqual([
+      { id: 's1', name: 'シート1' },
+      { id: 's2', name: 'シート2' },
+    ]);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    const [url] = fetch.mock.calls[0] as [string, RequestInit];
+    const decoded = decodeURIComponent(url).replace(/\+/g, ' ');
+    expect(decoded).toContain("mimeType='application/vnd.google-apps.spreadsheet'");
+    expect(decoded).toContain('trashed=false');
+    expect(decoded).toContain('orderBy=recency');
+    expect(decoded).toContain('pageSize=15');
+    expect(decoded).toContain('fields=files(id,name)');
+    expect(url).not.toContain('pageToken');
+  });
+
+  test('files 欠落は空配列として扱う', async () => {
+    const fetch = jest.fn().mockResolvedValueOnce(okJson({}));
+    const deps = { fetch, getAccessToken: jest.fn().mockResolvedValue('t') };
+    await expect(listRecentSpreadsheets(15, deps)).resolves.toEqual([]);
   });
 });
 

@@ -66,7 +66,10 @@ export const en: Record<MessageKey, string> = {
   'popup.loginFailed': 'Sign-in failed. Make sure a Google account is added to your browser.',
   'popup.loggedInAs': 'Signed in as:',
   'popup.logout': 'Sign out',
-  'popup.recentTitle': 'Recent projects',
+  'popup.recentTitle': 'Recent spreadsheets',
+  'popup.recentSelectLabel': 'Recent spreadsheets',
+  'popup.recentOpen': 'Open',
+  'popup.recentOpening': 'Opening…',
   'popup.createTitle': 'New project',
   'popup.createLead':
     'Creates a data extraction project (generates a spreadsheet and a Drive folder).',
@@ -90,7 +93,7 @@ export const en: Record<MessageKey, string> = {
   'popup.openOptions': 'Open settings',
   'popup.openHelp': 'User guide',
   'popup.statusLoginRequired': 'Sign-in required.',
-  'popup.statusPickRecent': 'Choose a recent project or create a new one.',
+  'popup.statusPickRecent': 'Choose a recent spreadsheet or create a new one.',
   'popup.statusCreateOrOpen': 'Create a new project or open one from a spreadsheet ID.',
   'popup.emailUnknown': '(unknown)',
   'popup.accountMismatch':

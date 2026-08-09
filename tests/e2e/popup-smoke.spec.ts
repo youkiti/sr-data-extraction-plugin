@@ -56,16 +56,23 @@ test('未ログイン: ログインセクションのみ表示される', async 
   await expect(page.locator('#login-button')).toBeVisible();
 });
 
-test('ログイン済 + 最近 2 件: recent リストと各フォームが表示される', async ({ page }) => {
+test('ログイン済 + 最近 2 件: recent セレクタと各フォームが表示される', async ({ page }) => {
+  // Drive API の最近のスプレッドシート一覧（issue #245）は 0 件を返し、
+  // ローカル履歴（recentProjects）だけで一覧が組まれることを確認する
+  await page.route('https://www.googleapis.com/drive/v3/files**', async (route) => {
+    await route.fulfill({ json: { files: [] } });
+  });
   await page.addInitScript(chromeStub({ authed: true, seedRecent: true }));
   await page.goto('/popup/popup.html');
   await expect(page.locator('#popup-status')).toHaveText(
-    '最近のプロジェクトから選ぶか、新しく作成してください。',
+    '最近のスプレッドシートから選ぶか、新しく作成してください。',
   );
   await expect(page.locator('#popup-auth')).toBeHidden();
   await expect(page.locator('#popup-email')).toHaveText('e2e@example.com');
-  await expect(page.locator('#popup-recent li')).toHaveCount(2);
-  await expect(page.locator('#popup-recent li').first()).toContainText('E2E プロジェクト');
+  await expect(page.locator('#popup-recent-select option')).toHaveCount(2);
+  await expect(page.locator('#popup-recent-select option').first()).toContainText(
+    'E2E プロジェクト',
+  );
   await expect(page.locator('#popup-create-form')).toBeVisible();
   await expect(page.locator('#popup-open-form')).toBeVisible();
 });
@@ -88,9 +95,12 @@ test('フッタに使い方ガイドへの外部リンクがある（未ログ�
 });
 
 test('アクセシビリティ違反がない（axe・ログイン済状態）', async ({ page }) => {
+  await page.route('https://www.googleapis.com/drive/v3/files**', async (route) => {
+    await route.fulfill({ json: { files: [] } });
+  });
   await page.addInitScript(chromeStub({ authed: true, seedRecent: true }));
   await page.goto('/popup/popup.html');
-  await expect(page.locator('#popup-recent li')).toHaveCount(2);
+  await expect(page.locator('#popup-recent-select option')).toHaveCount(2);
   const results = await new AxeBuilder({ page }).analyze();
   expect(results.violations).toEqual([]);
 });

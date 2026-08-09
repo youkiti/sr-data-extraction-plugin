@@ -244,6 +244,44 @@ export async function getFileBinary(fileId: string, deps: GoogleApiDeps): Promis
   return await res.arrayBuffer();
 }
 
+/** listRecentSpreadsheets が返す 1 件分（S1 最近のスプレッドシート。issue #245） */
+export interface DriveSpreadsheetEntry {
+  id: string;
+  name: string;
+}
+
+interface DriveSpreadsheetListResponse {
+  files?: DriveSpreadsheetEntry[];
+}
+
+/**
+ * 最近使用したスプレッドシートを Drive の recency 順で取得する（S1 の「最近のスプレッドシート」
+ * プルダウン。issue #245）。ページングはせず 1 回だけ取得する（履歴用途のため最新
+ * `maxResults` 件で十分）。
+ *
+ * `drive.file` スコープでは「この拡張が作成した」または「ユーザーが Picker で明示的に許可した」
+ * ファイルだけが対象になる。裏を返せば、Picker 許可済みであれば他人が共有したスプレッドシートも
+ * ここに出てくる（= ローカル履歴 recentProjects に無い共有シートの再選択導線になる）。
+ */
+export async function listRecentSpreadsheets(
+  maxResults: number,
+  deps: GoogleApiDeps
+): Promise<DriveSpreadsheetEntry[]> {
+  const params = new URLSearchParams({
+    q: "mimeType='application/vnd.google-apps.spreadsheet' and trashed=false",
+    orderBy: 'recency',
+    pageSize: String(maxResults),
+    fields: 'files(id,name)',
+  });
+  const url = `${METADATA_API}?${params.toString()}`;
+  // S1 の描画を待たせないため、履歴用途のこの呼び出しだけは再送を 1 回に抑える
+  // （既定の 5 回・指数バックオフのままだと 429 時に最大約 15 秒 UI を止めてしまう。
+  // 失敗してもローカル履歴だけで一覧は成立するので、そこまで粘る価値がない）
+  const res = await googleFetch(url, { method: 'GET' }, deps, { maxAttempts: 2 });
+  const body = (await res.json()) as DriveSpreadsheetListResponse;
+  return body.files ?? [];
+}
+
 /**
  * 指定フォルダの直下にある PDF を全件列挙する（フォルダ単位の文献取り込み。S3）。
  * drive.file スコープでも、ユーザーが Picker で選択したフォルダの配下は列挙できる。

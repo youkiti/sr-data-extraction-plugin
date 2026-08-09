@@ -18,6 +18,7 @@ import {
   getAccessToken,
   signOut as brokerSignOut,
 } from '../lib/google/auth';
+import { listRecentSpreadsheets, type DriveSpreadsheetEntry } from '../lib/google/drive';
 import {
   createChromeProfileDeps,
   getChromeProfileEmail,
@@ -134,7 +135,10 @@ interface PopupElements {
   accountNote: HTMLElement;
   logoutButton: HTMLButtonElement;
   recentSection: HTMLElement;
-  recentList: HTMLElement;
+  recentForm: HTMLFormElement;
+  recentSelect: HTMLSelectElement;
+  recentSubmit: HTMLButtonElement;
+  recentError: HTMLElement;
   createForm: HTMLFormElement;
   createTitle: HTMLInputElement;
   createSubmit: HTMLButtonElement;
@@ -163,7 +167,10 @@ function collectElements(doc: Document): PopupElements | null {
     accountNote: doc.getElementById('popup-account-note'),
     logoutButton: doc.getElementById('logout-button'),
     recentSection: doc.getElementById('popup-recent-section'),
-    recentList: doc.getElementById('popup-recent'),
+    recentForm: doc.getElementById('popup-recent-form'),
+    recentSelect: doc.getElementById('popup-recent-select'),
+    recentSubmit: doc.querySelector('#popup-recent-form button[type="submit"]'),
+    recentError: doc.getElementById('popup-recent-error'),
     createForm: doc.getElementById('popup-create-form'),
     createTitle: doc.getElementById('popup-create-title'),
     createSubmit: doc.querySelector('#popup-create-form button[type="submit"]'),
@@ -213,18 +220,28 @@ export async function bootstrapPopup(doc: Document, deps: PopupDeps): Promise<vo
   if (buildDateEl) {
     buildDateEl.textContent = `build ${BUILD_DATE}`;
   }
-  bindLoginButton(doc, els, deps);
-  bindLogoutButton(doc, els, deps);
+  // 最近のスプレッドシート（issue #245）。select の value（spreadsheet ID）から
+  // 「どちらを優先して開くか」を引けるよう、refresh() のたびに renderRecent が
+  // このマップを作り直す（bindRecentForm と同じ Map インスタンスを参照させる）
+  const recentEntries = new Map<string, RecentEntry>();
+  bindLoginButton(doc, els, deps, recentEntries);
+  bindLogoutButton(doc, els, deps, recentEntries);
   els.openOptionsButton.addEventListener('click', () => {
     deps.openOptions();
   });
   bindCreateForm(els, deps);
   bindOpenForm(els, deps);
   bindTiabHandoff(els, deps);
-  await refresh(doc, els, deps);
+  bindRecentForm(els, deps, recentEntries);
+  await refresh(doc, els, deps, recentEntries);
 }
 
-async function refresh(doc: Document, els: PopupElements, deps: PopupDeps): Promise<void> {
+async function refresh(
+  doc: Document,
+  els: PopupElements,
+  deps: PopupDeps,
+  recentEntries: Map<string, RecentEntry>
+): Promise<void> {
   const authed = await deps.isAuthenticated();
   els.auth.hidden = authed;
   els.projects.hidden = !authed;
@@ -235,10 +252,9 @@ async function refresh(doc: Document, els: PopupElements, deps: PopupDeps): Prom
   }
 
   await renderAccount(els, deps);
-  const recent = await loadRecentProjects();
-  renderRecent(doc, els, recent, deps);
+  await renderRecent(doc, els, deps, recentEntries);
   els.status.textContent =
-    recent.length > 0 ? t('popup.statusPickRecent') : t('popup.statusCreateOrOpen');
+    recentEntries.size > 0 ? t('popup.statusPickRecent') : t('popup.statusCreateOrOpen');
 }
 
 async function renderAccount(els: PopupElements, deps: PopupDeps): Promise<void> {
@@ -267,34 +283,143 @@ async function renderAccount(els: PopupElements, deps: PopupDeps): Promise<void>
   }
 }
 
-function renderRecent(
+/** listRecentSpreadsheets に渡す取得件数。履歴用途のプルダウンなので多くは要らない */
+const RECENT_SPREADSHEETS_MAX = 15;
+
+/**
+ * 「最近のスプレッドシート」select の 1 option 分（issue #245）。
+ * `localRef` があれば開く際にローカル履歴（検証スキップの速い経路）を優先する。
+ * Drive のみで見つかった ID は `localRef: null`（開く際に loadExistingProject で検証する）
+ */
+interface RecentEntry {
+  id: string;
+  /** ファイル名のみ（識別子はここに含めない。option 生成時に id の先頭 8 文字を付ける） */
+  label: string;
+  localRef: ProjectRef | null;
+}
+
+/**
+ * ローカル履歴（recentProjects）と Drive の最近のスプレッドシート一覧をマージして
+ * select を組み立てる（issue #245）。
+ *
+ * マージ規則: Drive の返却順（recency 降順）を先頭に、Drive に無いローカル履歴を
+ * 末尾に追加する。両方にある ID は Drive 側の位置に 1 つだけ出し、ラベルは Drive の
+ * ファイル名を使う（開く際の実体はローカルの ProjectRef を優先 — openRecentEntry 参照）。
+ * 同名プロジェクトを区別できるよう、option の表示テキストは末尾に spreadsheet ID の
+ * 先頭 8 文字を付ける（旧 UI の `${name} — ${projectId.slice(0, 8)}` に相当。
+ * createProject はファイル名にそのまま projectTitle を使うため、同名タイトルで
+ * 作った複数プロジェクトがファイル名だけでは区別できない）。
+ *
+ * Drive 呼び出し失敗（権限未取得・オフライン等）はセクションを消さず、ローカル履歴のみで
+ * 一覧を作る（アクセストークン等の機微情報を含みうるため詳細はログにのみ残す）。
+ */
+async function renderRecent(
   doc: Document,
   els: PopupElements,
-  recent: ProjectRef[],
-  deps: PopupDeps
-): void {
-  els.recentList.replaceChildren();
-  if (recent.length === 0) {
+  deps: PopupDeps,
+  recentEntries: Map<string, RecentEntry>
+): Promise<void> {
+  recentEntries.clear();
+  els.recentSelect.replaceChildren();
+
+  const local = await loadRecentProjects();
+  let driveFiles: DriveSpreadsheetEntry[] = [];
+  try {
+    driveFiles = await listRecentSpreadsheets(RECENT_SPREADSHEETS_MAX, deps.google);
+  } catch (err) {
+    console.error('[popup] 最近のスプレッドシート（Drive）の取得に失敗しました', err);
+  }
+
+  const localById = new Map(local.map((ref) => [ref.spreadsheetId, ref]));
+  const merged: RecentEntry[] = [];
+  const seen = new Set<string>();
+  for (const file of driveFiles) {
+    if (seen.has(file.id)) {
+      continue;
+    }
+    seen.add(file.id);
+    merged.push({ id: file.id, label: file.name, localRef: localById.get(file.id) ?? null });
+  }
+  for (const ref of local) {
+    if (seen.has(ref.spreadsheetId)) {
+      continue;
+    }
+    seen.add(ref.spreadsheetId);
+    merged.push({ id: ref.spreadsheetId, label: ref.name, localRef: ref });
+  }
+
+  if (merged.length === 0) {
     els.recentSection.hidden = true;
     return;
   }
   els.recentSection.hidden = false;
-  for (const entry of recent) {
-    const li = doc.createElement('li');
-    const btn = doc.createElement('button');
-    btn.type = 'button';
-    btn.textContent = `${entry.name} — ${entry.projectId.slice(0, 8)}`;
-    btn.addEventListener('click', () => {
-      void setCurrentProject(entry).then(() => {
-        deps.openAppTab();
-      });
-    });
-    li.appendChild(btn);
-    els.recentList.appendChild(li);
+  for (const entry of merged) {
+    recentEntries.set(entry.id, entry);
+    const option = doc.createElement('option');
+    option.value = entry.id;
+    // 同名プロジェクト（同名スプレッドシート）を区別できるよう id の先頭 8 文字を付ける
+    option.textContent = `${entry.label} — ${entry.id.slice(0, 8)}`;
+    els.recentSelect.appendChild(option);
   }
 }
 
-function bindLoginButton(doc: Document, els: PopupElements, deps: PopupDeps): void {
+/**
+ * 選択したスプレッドシートを開く（issue #245）。
+ * ローカル履歴に一致すればそれを優先し（検証をスキップできる速い経路）、
+ * Drive のみで見つかった場合は loadExistingProject で検証してから開く。
+ */
+async function openRecentEntry(
+  id: string,
+  entry: RecentEntry | undefined,
+  deps: PopupDeps
+): Promise<void> {
+  if (entry?.localRef) {
+    await setCurrentProject(entry.localRef);
+    return;
+  }
+  await loadExistingProject(id, { google: deps.google, profile: deps.profile });
+}
+
+function bindRecentForm(
+  els: PopupElements,
+  deps: PopupDeps,
+  recentEntries: Map<string, RecentEntry>
+): void {
+  els.recentForm.addEventListener('submit', (event) => {
+    event.preventDefault();
+    els.recentError.textContent = '';
+    const id = els.recentSelect.value;
+    if (id === '') {
+      return;
+    }
+    els.recentSubmit.disabled = true;
+    els.recentSubmit.textContent = t('popup.recentOpening');
+    void openRecentEntry(id, recentEntries.get(id), deps)
+      .then(() => {
+        deps.openAppTab();
+      })
+      .catch((err: unknown) => {
+        if (err instanceof SheetsAccessDeniedError) {
+          // このセクションには許可導線（Picker ボタン）を持たない。
+          // 許可が必要な場合は「スプレッドシート ID / URL で開く」セクションへ誘導する
+          els.recentError.textContent = t('popup.accessNeeded');
+          return;
+        }
+        els.recentError.textContent = formatError(err);
+      })
+      .finally(() => {
+        els.recentSubmit.disabled = false;
+        els.recentSubmit.textContent = t('popup.recentOpen');
+      });
+  });
+}
+
+function bindLoginButton(
+  doc: Document,
+  els: PopupElements,
+  deps: PopupDeps,
+  recentEntries: Map<string, RecentEntry>
+): void {
   els.loginButton.addEventListener('click', () => {
     els.loginError.textContent = '';
     // 状態 C（ログイン処理中）: ボタンを無効化して Google 認可ウィンドウの結果を待つ
@@ -306,12 +431,17 @@ function bindLoginButton(doc: Document, els: PopupElements, deps: PopupDeps): vo
         els.loginError.textContent = t('popup.loginFailed');
         return;
       }
-      await refresh(doc, els, deps);
+      await refresh(doc, els, deps, recentEntries);
     });
   });
 }
 
-function bindLogoutButton(doc: Document, els: PopupElements, deps: PopupDeps): void {
+function bindLogoutButton(
+  doc: Document,
+  els: PopupElements,
+  deps: PopupDeps,
+  recentEntries: Map<string, RecentEntry>
+): void {
   els.logoutButton.addEventListener('click', () => {
     // E-Popup-4: 処理中の再クリックを防ぐ
     els.logoutButton.disabled = true;
@@ -320,7 +450,7 @@ function bindLogoutButton(doc: Document, els: PopupElements, deps: PopupDeps): v
       // プロジェクト選択状態もユーザーに紐付くため一緒にクリアする
       // （別アカウントでログインし直しても他人の recent が残らない）
       .then(() => clearProjectSelection())
-      .then(() => refresh(doc, els, deps))
+      .then(() => refresh(doc, els, deps, recentEntries))
       .finally(() => {
         els.logoutButton.disabled = false;
       });
