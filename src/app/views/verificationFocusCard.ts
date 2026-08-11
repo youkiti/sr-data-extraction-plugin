@@ -22,6 +22,7 @@ import {
   type CellCardModel,
   type CellHighlightInfo,
 } from './verificationCellCard';
+import { allowedValuesWarningText, renderAllowedValuesBadge } from './enumChoiceEditor';
 
 /** renderVerificationFocusCard が要求するハンドラ集合（詳細ストリップ・マトリクスの双方で使う） */
 export interface VerificationFocusCardHandlers extends CellCardHandlers {
@@ -76,6 +77,10 @@ export interface VerificationFocusCardModel {
    * 詳細ストリップ（renderCell）へそのまま渡す
    */
   mermaidWarnings?: ReadonlyMap<string, string>;
+  /** enum 項目の「その他（自由入力）」候補（issue #254）。詳細ストリップ（renderCell）へそのまま渡す */
+  enumCandidates?: ReadonlyMap<string, readonly string[]>;
+  /** 「許容値外」警告に `#/schema` 導線を出してよいか（issue #254。owner のみ true） */
+  canEditSchema?: boolean;
 }
 
 /**
@@ -192,6 +197,15 @@ function renderMatrixDataCell(
     attributes['aria-label'] = `${attributes['aria-label']}${t('verify.robAriaSuffix', { message: robMessage })}`;
     titleParts.push(robMessage);
   }
+  // 許容値外の警告（issue #254・形態 B）。#65 / #61 と同じバッジ + aria-label / title のパターン
+  const enumWarning = allowedValuesWarningText(cell.field, cell.state.value);
+  if (enumWarning !== null) {
+    trailing.push(renderAllowedValuesBadge());
+    const enumMessage = enumWarning.replace(/^⚠ /, '');
+    attributes['aria-label'] =
+      `${attributes['aria-label']}${t('verify.enumAriaSuffix', { message: enumMessage })}`;
+    titleParts.push(enumMessage);
+  }
   if (titleParts.length > 0) {
     attributes['title'] = titleParts.join('\n');
   }
@@ -286,6 +300,10 @@ function renderDetailStrip(
     canRelocateQuote: model.canRelocateQuote,
     relocateStatus: model.relocateStatus,
     mermaidWarnings: model.mermaidWarnings,
+    // CellCardModel はフィールドごとの明示コピーのため、モデル追加時はここへの配線が要る
+    // （「renderCell 再利用で自動追随」は描画ロジックだけの話。issue #254 レビュー指摘）
+    enumCandidates: model.enumCandidates,
+    canEditSchema: model.canEditSchema,
   };
   return el('div', { id: 'verify-focus-detail', className: 'focus-card__detail' }, [
     renderCell(cell, cellCardModel, handlers),

@@ -506,6 +506,8 @@ export async function loadPilotVerification(
         evidence: evidence.filter((row) => row.studyId === studyId),
         schemaVersion: run.schemaVersion,
         annotatorType: annotatorTypeForRole(state.role.role ?? 'owner'),
+        // 「許容値外」警告の `#/schema` 導線は owner だけに出す（issue #254）
+        canEditSchema: (state.role.role ?? 'owner') === 'owner',
       },
       deps,
     );

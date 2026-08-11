@@ -718,6 +718,15 @@ export const ja = {
   'verify.editConfirmIndependent': '入力して確定',
   'verify.editConfirm': '修正して確定',
   'verify.rejectConfirm': '棄却して確定',
+  // enum 項目の許容値チップ（issue #254）
+  'verify.enumChooseAria': '{label} の選択肢',
+  'verify.enumOther': 'その他（自由入力）',
+  'verify.enumBackToChoices': '選択肢に戻る',
+  'verify.enumHint': '選択肢をクリック、または数字キー（1〜9）で確定します。',
+  'verify.enumOutOfRange':
+    '⚠ 「{value}」は「表のデザイン」で設定した選択肢にありません（選択肢: {allowed}）。',
+  'verify.enumOutOfRangeLink': '表のデザインを見直す',
+  'verify.enumAriaSuffix': '（許容値外: {message}）',
   'verify.actionInput': '入力 (e)',
   'verify.actionEdit': '修正 (e)',
   'verify.actionAccept': '承認 (a)',

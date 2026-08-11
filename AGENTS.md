@@ -1,6 +1,6 @@
 # AGENTS.md
 
-This file provides guidance to Codex (Codex.ai/code) when working with code in this repository.
+This file provides guidance to OpenAI Codex when working with code in this repository. Claude Code 向けの同内容は [CLAUDE.md](CLAUDE.md)（両ファイルは本文を同期させる）。
 
 > **注意**: 本ファイルは feature PR で編集しない（作業原則 9）。プロセスや正典ポインタの変更だけを、単独の PR で行う。
 
@@ -69,9 +69,9 @@ MIT ライセンスの OSS Chrome 拡張 **sr-data-extraction-plugin**。SR ツ�
 | パス | 役割 | 参照すべきドキュメント |
 |---|---|---|
 | [tiab-review-plugin/](tiab-review-plugin/) | 技術スタック・オフライン同期・判定 UI トンマナ・LLM ベンチマーク運用の参照実装 | [tiab-review-plugin/AGENTS.md](tiab-review-plugin/AGENTS.md) |
-| [sr-query-builder-plugin/](sr-query-builder-plugin/) | メインビュー構成・プロトコル入力画面・Sheets/Drive データ設計の参照実装（アルファ配布は zip 運用だが本拡張は踏襲せず Chrome ウェブストア公開を採用。2026-07-12 に v0.1.0 を一般公開） | [sr-query-builder-plugin/AGENTS.md](sr-query-builder-plugin/AGENTS.md) |
+| [sr-query-builder-plugin/](sr-query-builder-plugin/) | メインビュー構成・プロトコル入力画面・Sheets/Drive データ設計の参照実装（アルファ配布は zip 運用だが本拡張は踏襲せず Chrome ウェブストア公開を採用。2026-07-12 に v0.1.0 を一般公開） | [sr-query-builder-plugin/CLAUDE.md](sr-query-builder-plugin/CLAUDE.md) |
 
-サブモジュール内で作業するときは、そのサブモジュールの AGENTS.md / AGENTS.md を最優先する。OAuth / Sheets / Drive クライアント・オフラインキュー・LLM 抽象は既存 2 拡張からコピー流用する（npm 切り出しは 3 拡張が揃ってから判断。architecture.md §7-3）。
+サブモジュール内で作業するときは、そのサブモジュールの CLAUDE.md / AGENTS.md を最優先する。OAuth / Sheets / Drive クライアント・オフラインキュー・LLM 抽象は既存 2 拡張からコピー流用する（npm 切り出しは 3 拡張が揃ってから判断。architecture.md §7-3）。
 
 ## 作業上の原則（tiab-review-plugin/AGENTS.md より継承 + 並列開発の運用）
 
@@ -83,6 +83,6 @@ MIT ライセンスの OSS Chrome 拡張 **sr-data-extraction-plugin**。SR ツ�
 6. **自動化の限界**: ツール実行が複数回失敗したら執拗に再試行せず、状況を報告する。
 7. **テスト通過後の dev ビルド検証**: `npm test` が通ったら、完了報告前に必ず `npm run dev` で webpack の成功を確認する。
 8. **UI 変更時は E2E も回す**: 画面・CSS・ルーティングに触れたら `npm run test:e2e` まで通す。
-9. **AGENTS.md は feature PR で編集しない**: 本ファイルは全並列 PR が衝突する競合源だったため、機能実装の記録先にしない。実装の記録は該当 issue / PR / git log と、関連 docs（requirements / ui-states 等）の更新で行う。本ファイル自体の変更（プロセス・正典ポインタ）は単独 PR で行う。
-10. **実機 / 実 API テストの要否を PR 本文に明記**: 「実機不要（jest / E2E で完結）」か「実機確認が必要（何を・なぜ）」かを必ず書く。実機不要の PR は統合担当（ローカル環境の Codex）が CI green + code-review 後にマージする。実機が必要な確認は remaining-work-plan.md の一覧に集約し、まとめて実施する。
+9. **CLAUDE.md / AGENTS.md は feature PR で編集しない**: この 2 ファイルは全並列 PR が衝突する競合源だったため、機能実装の記録先にしない。実装の記録は該当 issue / PR / git log と、関連 docs（requirements / ui-states 等）の更新で行う。両ファイル自体の変更（プロセス・正典ポインタ）は単独 PR で行う。
+10. **実機 / 実 API テストの要否を PR 本文に明記**: 「実機不要（jest / E2E で完結）」か「実機確認が必要（何を・なぜ）」かを必ず書く。実機不要の PR は統合担当（ローカル環境の Claude）が CI green + code-review 後にマージする。実機が必要な確認は remaining-work-plan.md の一覧に集約し、まとめて実施する。
 11. **共有ホットスポットの申告**: `src/app/store.ts` / `src/app/bootstrap.ts` / `src/app/app.css` / `src/app/views/types.ts` は全機能が触る競合源。これらに触る PR は変更を最小に保ち、PR 本文で該当ファイルを申告する（並列 PR の衝突解消は統合担当が行う）。

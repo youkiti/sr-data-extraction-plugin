@@ -723,6 +723,15 @@ export const en: Record<MessageKey, string> = {
   'verify.editConfirmIndependent': 'Confirm input',
   'verify.editConfirm': 'Confirm edit',
   'verify.rejectConfirm': 'Reject and confirm',
+  // enum 項目の許容値チップ（issue #254）
+  'verify.enumChooseAria': 'Choices for {label}',
+  'verify.enumOther': 'Other (free text)',
+  'verify.enumBackToChoices': 'Back to choices',
+  'verify.enumHint': 'Click a choice, or press a number key (1-9) to confirm.',
+  'verify.enumOutOfRange':
+    '⚠ "{value}" is not one of the choices defined in Table design (choices: {allowed}).',
+  'verify.enumOutOfRangeLink': 'Review the table design',
+  'verify.enumAriaSuffix': ' (outside the allowed values: {message})',
   'verify.actionInput': 'Input (e)',
   'verify.actionEdit': 'Edit (e)',
   'verify.actionAccept': 'Accept (a)',

@@ -518,3 +518,100 @@ test('履歴からの復元: 過去のパイロット結果を自動読込 → �
   const results = await new AxeBuilder({ page }).analyze();
   expect(results.violations).toEqual([]);
 });
+
+test('S6 埋め込み検証: enum 項目は許容値チップで判定でき、許容値外の確定には警告が出る（issue #254）', async ({
+  page,
+}) => {
+  const EXTRACTION_RUNS_HEADERS = [...SHEET_HEADERS.ExtractionRuns];
+  const RUN_ROW = [
+    'run-1', 'pilot', '1', 'study-1', 'gemini', 'gemini-test', 'gemini-test-001', 'text_only',
+    'done', '2026-07-05T00:00:00Z', '2026-07-05T00:01:00Z', '100', '20', '0.01',
+  ];
+  const EVIDENCE_HEADERS = [...SHEET_HEADERS.Evidence];
+  const EVIDENCE_ROW = ['ev-1', 'run-1', 'study-1', 'f-rob-d1', 'doc-1', '-', 'low', 'FALSE', QUOTE, '1', 'high', 'exact'];
+  const SCHEMA_FIELDS_HEADERS = [
+    'schema_version', 'field_id', 'field_index', 'section', 'field_name', 'field_label',
+    'entity_level', 'data_type', 'unit', 'allowed_values', 'required', 'extraction_instruction',
+    'example', 'ai_generated', 'note',
+  ];
+  const ENUM_FIELD_ROW = [
+    '1', 'f-rob-d1', '1', 'risk_of_bias', 'rob_d1_judgement', 'D1 判定', 'study', 'enum', '',
+    'low|some_concerns|high', 'TRUE', 'ドメイン 1 のバイアスリスク判定', '', 'FALSE', '',
+  ];
+  const ARM_STRUCTURES_HEADERS = [...SHEET_HEADERS.ArmStructures];
+  const store = createSheetsDataStore({
+    studyHeader: STUDY_DATA_HEADERS,
+    resultsHeader: RESULTS_DATA_HEADERS,
+  });
+  const appendUrls: string[] = [];
+
+  await page.route('https://sheets.googleapis.com/**', async (route) => {
+    const url = decodeURIComponent(route.request().url());
+    if (route.request().method() !== 'GET') {
+      store.handleWrite(route.request());
+      appendUrls.push(url);
+      await route.fulfill({ json: {} });
+      return;
+    }
+    if (url.includes('ExtractionRuns')) {
+      await route.fulfill({ json: { values: [EXTRACTION_RUNS_HEADERS, RUN_ROW] } });
+    } else if (url.includes('Evidence')) {
+      await route.fulfill({ json: { values: [EVIDENCE_HEADERS, EVIDENCE_ROW] } });
+    } else if (url.includes('SchemaFields')) {
+      await route.fulfill({ json: { values: [SCHEMA_FIELDS_HEADERS, ENUM_FIELD_ROW] } });
+    } else if (url.includes('Decisions')) {
+      await route.fulfill({ json: { values: [DECISIONS_HEADERS] } });
+    } else if (url.includes('StudyData')) {
+      await route.fulfill({ json: { values: store.studyValues() } });
+    } else if (url.includes('ResultsData')) {
+      await route.fulfill({ json: { values: store.resultsValues() } });
+    } else if (url.includes('ArmStructures')) {
+      await route.fulfill({ json: { values: [ARM_STRUCTURES_HEADERS] } });
+    } else {
+      await route.fulfill({ json: { values: [] } });
+    }
+  });
+
+  await page.route('https://www.googleapis.com/**', async (route) => {
+    const url = decodeURIComponent(route.request().url());
+    if (url.includes('/drive/v3/files/txt-1?alt=media')) {
+      await route.fulfill({ contentType: 'text/plain', body: QUOTE });
+      return;
+    }
+    if (url.includes('/drive/v3/files/drive-1?alt=media')) {
+      await route.fulfill({ contentType: 'application/pdf', body: minimalPdf(QUOTE) });
+      return;
+    }
+    if (url.includes('/drive/v3/files?q=')) {
+      const name = /name = '([^']+)'/.exec(url)?.[1] ?? 'folder';
+      await route.fulfill({
+        json: { files: [{ id: `${name}-id`, webViewLink: `https://drive.example/${name}` }] },
+      });
+      return;
+    }
+    await route.fulfill({ json: {} });
+  });
+
+  await initApp(page, { pilot: { history: null, historyInitialized: false, run: null } });
+  await expect(page.locator('.verify__panes')).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator('.verify__cell-label')).toHaveText('D1 判定');
+
+  // 修正 → 許容値チップ列（S8 と同じ共有コンポーネント）
+  const detail = page.locator('#verify-focus-detail');
+  await detail.locator('.verify__action--edit').click();
+  await expect(detail.locator('.verify__enum-chip')).toHaveCount(4);
+  await expect(detail.locator('.verify__edit-input')).toHaveCount(0);
+
+  // 「その他」で許容値外を確定 → 保存はブロックせず警告のみ（判定操作は増えない）
+  await detail.locator('.verify__enum-chip--other').click();
+  await detail.locator('.verify__edit-input').fill('low risk');
+  await detail.locator('.verify__edit-confirm').click();
+  await expect(detail.locator('.verify__current-value')).toHaveText('確定値: low risk');
+  await expect(page.locator('.verify__enum-out-of-range')).toHaveCount(1);
+  await expect
+    .poll(() => appendUrls.filter((url) => url.includes('Decisions') && url.includes(':append')).length)
+    .toBeGreaterThan(0);
+
+  const results = await new AxeBuilder({ page }).analyze();
+  expect(results.violations).toEqual([]);
+});

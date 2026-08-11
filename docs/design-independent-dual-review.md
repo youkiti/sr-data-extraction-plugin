@@ -115,7 +115,8 @@ flowchart LR
 `verificationPanel` に `panelMode: 'review' | 'independent'` を追加：
 
 - **描画しない**: Evidence quote・ハイライト・「他 n 箇所に一致」・AI 値のプレフィル・anchor failed バナー
-- **残す**: PDF ビューア（ページ送り / ズーム / **テキスト検索** — 自力で根拠を探す道具）、フォーカスモードのマトリクス、フィールドのラベル + extraction_instruction（何を抽出するかの定義はスキーマ由来であり AI 出力ではないため表示可）
+- **残す**: PDF ビューア（ページ送り / ズーム / **テキスト検索** — 自力で根拠を探す道具）、フォーカスモードのマトリクス、フィールドのラベル + extraction_instruction（何を抽出するかの定義はスキーマ由来であり AI 出力ではないため表示可）、**enum 項目の許容値チップ**（issue #254。許容値も extraction_instruction と同じくスキーマ由来であり AI 出力ではないため表示可。白紙スタートの独立入力でこそ効く）
+- **候補リストの盲検保護**（issue #254）: 「その他（自由入力）」の `<datalist>` に出す過去入力値は、`annotator` と **`annotator_type` の完全一致**で絞る（`startsWith('human_')` のような緩い絞りは不可）。`accept` は AI 値をそのまま `Decision.value` に保存し、同一 email はモードを変更できるため、緩く絞ると **`with_ai` 時代の AI 値が `independent` の候補に現れる**。なお、セル現在値・編集初期値・進捗・群構成など**他の経路**が `annotator`（email）のみで絞っている既存の穴は #254 のスコープ外で、**issue #255** で扱う（本項が保証するのは候補リストに漏れないことだけ）
 - **操作**: `入力`（値を直接入力 → `action='edit'`）/ `not_reported` / `undo` の 3 種。`accept` / `reject` は AI 値が無いので出さない（キーボード a / x も無効化）
 - **書き込み**: `annotator_type='human_independent'` で自分の annotator 行 upsert + Decisions 追記。経路は既存と同一で、現在 4 箇所にハードコードされている `'human_with_ai'`（verificationPanel / verifyService / pilotService / armStructureRepository 呼び出し）を bundle の `annotatorType` に差し替える
 
@@ -155,6 +156,7 @@ RoB タブ（`rob_domain`）と study タブは群構成に依存しないため
 - 左: セル一覧。「不一致のみ」フィルタ既定 ON。各行 = フィールド名 / owner の値 / reviewer の値 / 状態チップ
 - 右: PDF ビューア（既存 `pdfViewer` + study の文書切替タブをそのまま流用）。**裁定フェーズは盲検解除後なので、AI の Evidence ハイライトと両者の判定メモ（`Decisions.note`）を表示してよい**（根拠探しの補助）
 - セルごとの裁定アクション: **A を採用 / B を採用 / 第 3 の値を入力 / not_reported / スキップ**（スキップ = consensus セルを作らない。片側だけのインスタンスを「採用しない」場合に使う）
+- 「第 3 の値を入力」は `data_type = enum` の項目では**検証画面と同じ許容値チップ UI** になる（issue #254。`.adjudicate__custom-input` を `enumChoiceEditor` へ差し替え）。裁定済みセルには許容値外の警告（形態 A）を出す。候補（「その他」の `<datalist>`）は **過去の consensus 値**とする — `buildChoiceWrite`（A/B 採用）と `buildCustomValueWrite`（第 3 の値）はどちらも `action:'edit'` を書くため、現データからは第 3 の値だけを厳密に識別できない。「A/B 採用を含む過去 consensus 値」という正直な規則を採る。**`<datalist>` の id はモジュール内連番**にする（S12 は全 visible セルの入力欄を同時描画し、同じ `field_id` が複数 `entity_key` へ展開されるため、`field_id` 由来の id は必ず衝突し axe `duplicate-id` になる）
 - 一致セルは「**一致セルを一括採用**」ボタンで 1 操作確定（1 セル = 1 Decisions 行を batch 追記。automation bias 対策の「1 操作必須」原則は一括操作 1 回で満たすと整理する）
 
 ### 6.5 書き込み

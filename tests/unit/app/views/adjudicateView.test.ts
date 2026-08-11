@@ -13,6 +13,7 @@ import type { AdjudicationCell } from '../../../../src/features/adjudication/cel
 import type { Evidence } from '../../../../src/domain/evidence';
 import type { SchemaField } from '../../../../src/domain/schemaField';
 import type { StudyRecord } from '../../../../src/domain/study';
+import type { Decision } from '../../../../src/domain/decision';
 
 function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<AdjudicateViewCallbacks> } {
   const callbacks: jest.Mocked<AdjudicateViewCallbacks> = {
@@ -1178,5 +1179,131 @@ describe('renderAdjudicateView（表示言語 en。issue #93）', () => {
     expect(root.querySelector('#adjudicate-agreement-card h3')?.textContent).toBe(
       'Inter-reviewer agreement',
     );
+  });
+});
+
+describe('enum 項目の第 3 の値 UI（issue #254）', () => {
+  const ENUM_FIELD: Partial<SchemaField> = {
+    fieldId: 'f-rob',
+    fieldLabel: 'D1 判定',
+    dataType: 'enum',
+    allowedValues: 'low|some_concerns|high',
+  };
+
+  function makeEnumCell(overrides: Partial<AdjudicationCell> = {}): AdjudicationCell {
+    return makeCell({
+      cellKey: JSON.stringify(['f-rob', '-']),
+      field: makeField(ENUM_FIELD),
+      valueA: 'low',
+      valueB: 'high',
+      ...overrides,
+    });
+  }
+
+  function makeConsensusDecision(value: string): Decision {
+    return {
+      decidedAt: '2026-08-11T00:00:00.000Z',
+      decidedBy: 'adjudicator@example.com',
+      studyId: 'study-1',
+      fieldId: 'f-rob',
+      entityKey: 'other',
+      annotator: 'consensus',
+      annotatorType: 'consensus',
+      schemaVersion: 1,
+      action: 'edit',
+      value,
+      note: null,
+    };
+  }
+
+  test('enum 項目は自由入力ではなく許容値チップ列を出し、クリックで onCustomValue を呼ぶ', () => {
+    const { ctx, callbacks } = makeCtx();
+    const cell = makeEnumCell();
+    const root = render(
+      makeState({ rows: [makeRow()], working: makeWorking({ cells: [cell] }), mismatchOnlyFilter: false }),
+      ctx,
+    );
+    expect(root.querySelector('.adjudicate__custom-input')).toBeNull();
+    (root.querySelectorAll('.verify__enum-chip')[1] as HTMLButtonElement).click();
+    expect(callbacks.onCustomValue).toHaveBeenCalledWith(cell.cellKey, 'some_concerns');
+  });
+
+  test('編集モードの概念が無い画面のためキャンセルボタンを出さない', () => {
+    const { ctx } = makeCtx();
+    const root = render(
+      makeState({
+        rows: [makeRow()],
+        working: makeWorking({ cells: [makeEnumCell()] }),
+        mismatchOnlyFilter: false,
+      }),
+      ctx,
+    );
+    expect(root.querySelector('.verify__edit-cancel')).toBeNull();
+  });
+
+  test('「その他」の候補は過去の consensus 値のうち許容値外だけ（design §6.4）', () => {
+    const { ctx } = makeCtx();
+    const root = render(
+      makeState({
+        rows: [makeRow()],
+        working: makeWorking({
+          cells: [makeEnumCell()],
+          // 'low' は許容値内なので候補に出さない
+          consensusDecisions: [makeConsensusDecision('low'), makeConsensusDecision('low risk')],
+        }),
+        mismatchOnlyFilter: false,
+      }),
+      ctx,
+    );
+    (root.querySelector('.verify__enum-chip--other') as HTMLButtonElement).click();
+    const listId = (root.querySelector('.verify__edit-input') as HTMLInputElement).getAttribute(
+      'list',
+    ) as string;
+    const options = [
+      ...(root.querySelector(`#${listId}`) as HTMLElement).querySelectorAll('option'),
+    ].map((option) => option.value);
+    expect(options).toEqual(['low risk']);
+  });
+
+  test('裁定済みセルの確定値が許容値外なら role=note の警告を出す（owner には `#/schema` 導線）', () => {
+    const { ctx } = makeCtx();
+    const cell = makeEnumCell();
+    const decided: Decision = { ...makeConsensusDecision('low risk'), entityKey: cell.entityKey };
+    const root = render(
+      makeState({
+        rows: [makeRow()],
+        working: makeWorking({ cells: [cell], consensusDecisions: [decided] }),
+        mismatchOnlyFilter: false,
+      }),
+      ctx,
+    );
+    const note = root.querySelector('.verify__enum-out-of-range');
+    expect(note?.getAttribute('role')).toBe('note');
+    expect(note?.querySelector('a')?.getAttribute('href')).toBe('#/schema');
+  });
+
+  test('裁定済みセルの確定値が許容値内なら警告を出さない', () => {
+    const { ctx } = makeCtx();
+    const cell = makeEnumCell();
+    const decided: Decision = { ...makeConsensusDecision('high'), entityKey: cell.entityKey };
+    const root = render(
+      makeState({
+        rows: [makeRow()],
+        working: makeWorking({ cells: [cell], consensusDecisions: [decided] }),
+        mismatchOnlyFilter: false,
+      }),
+      ctx,
+    );
+    expect(root.querySelector('.verify__enum-out-of-range')).toBeNull();
+  });
+
+  test('enum 以外の項目は従来どおり自由入力のまま', () => {
+    const { ctx } = makeCtx();
+    const root = render(
+      makeState({ rows: [makeRow()], working: makeWorking({ cells: [makeCell()] }), mismatchOnlyFilter: false }),
+      ctx,
+    );
+    expect(root.querySelector('.adjudicate__custom-input')).not.toBeNull();
+    expect(root.querySelector('.verify__enum-choices')).toBeNull();
   });
 });

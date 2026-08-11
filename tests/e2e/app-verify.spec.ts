@@ -221,6 +221,8 @@ async function setupRoutes(
      * upsert 内の再読込 GET）は「別の場所で既に更新済み」の行を返す
      */
     studyDataConflictAfterFirstRead?: boolean;
+    /** Decisions タブの初期行（enum 候補・過去判定の再現用。省略時はヘッダのみ） */
+    decisionsRows?: string[][];
   },
 ): Promise<RouteRecorder> {
   const appendUrls: string[] = [];
@@ -263,7 +265,9 @@ async function setupRoutes(
       } else if (url.includes('/values/ExtractionRuns')) {
         await route.fulfill({ json: { values: [RUNS_HEADERS, RUN_ROW] } });
       } else if (url.includes('/values/Decisions')) {
-        await route.fulfill({ json: { values: [DECISIONS_HEADERS] } });
+        await route.fulfill({
+          json: { values: [DECISIONS_HEADERS, ...(options.decisionsRows ?? [])] },
+        });
       } else if (url.includes('/values/StudyData')) {
         studyDataReads += 1;
         if (options.studyDataConflictAfterFirstRead === true && studyDataReads > 1) {
@@ -2198,6 +2202,73 @@ test('抽出前に #/verify を開くと空状態 → 抽出実行 → #/verify 
   await expect(select).toBeVisible({ timeout: 15_000 });
   await expect(select.locator('option')).toHaveCount(1);
   await expect(select.locator('option').nth(0)).toContainText('Smith 2020');
+
+  const results = await new AxeBuilder({ page }).analyze();
+  expect(results.violations).toEqual([]);
+});
+
+test('enum 項目の値入力（issue #254）: 許容値チップ → 数字キー確定 → 「その他」で許容値外 → 警告 + `#/schema` 導線', async ({
+  page,
+}) => {
+  const ENUM_FIELD_ROW = [
+    '1', 'f-rob-d1', '1', 'risk_of_bias', 'rob_d1_judgement', 'D1 判定', 'study', 'enum',
+    '', 'low|some_concerns|high', 'TRUE', 'ドメイン 1 のバイアスリスク判定', '', 'FALSE', '',
+  ];
+  const ENUM_EVIDENCE_ROW = [
+    'ev-rob', 'run-1', 'study-1', 'f-rob-d1', 'doc-1', '-', 'low', 'FALSE', QUOTE, '1', 'high', 'exact',
+  ];
+  // 同一 annotator × 同一 annotator_type の過去入力（許容値外）は「その他」の候補に出す
+  const PAST_DECISION_ROW = [
+    't0', 'e2e@example.com', 'study-9', 'f-rob-d1', '-', 'e2e@example.com', 'human_with_ai',
+    '1', 'edit', 'low risk', '',
+  ];
+  const { appendUrls } = await setupRoutes(page, {
+    schemaRows: [ENUM_FIELD_ROW],
+    evidenceRows: [ENUM_EVIDENCE_ROW],
+    decisionsRows: [PAST_DECISION_ROW],
+  });
+  await initApp(page, '#/verify?study=study-1');
+  await expect(page.locator('.verify__panes')).toBeVisible({ timeout: 15_000 });
+
+  const detail = page.locator('#verify-focus-detail');
+  await expect(detail.locator('.verify__cell-label')).toHaveText('D1 判定');
+
+  // 修正 (e) で自由入力ではなく許容値チップ列が出る。既定選択は置かない（1 操作必須の維持）
+  await detail.locator('.verify__action--edit').click();
+  const chips = detail.locator('.verify__enum-chip');
+  await expect(chips).toHaveCount(4); // 許容値 3 + 「その他（自由入力）」
+  await expect(detail.locator('.verify__edit-input')).toHaveCount(0);
+  await expect(detail.locator('.verify__enum-choices')).toHaveAttribute('aria-label', /D1 判定/);
+  await expect(chips.first()).toBeFocused(); // e キーの着地先は先頭チップ
+
+  // エディタ展開状態で axe（チップ列のロール・アクセシブルネームの検証）
+  const editorAxe = await new AxeBuilder({ page }).analyze();
+  expect(editorAxe.violations).toEqual([]);
+
+  // 数字キー 3 で 3 番目の許容値（high）を確定する
+  await page.keyboard.press('3');
+  await expect(detail.locator('.verify__current-value')).toHaveText('確定値: high');
+  await expect(page.locator('.verify__enum-out-of-range')).toHaveCount(0);
+  await expect
+    .poll(() => appendUrls.filter((url) => url.includes('Decisions') && url.includes(':append')).length)
+    .toBeGreaterThan(0);
+
+  // 「その他（自由入力）」から許容値外の値を入れる。候補（過去の許容値外入力）が datalist に載る
+  await detail.locator('.verify__action--edit').click();
+  await detail.locator('.verify__enum-chip--other').click();
+  const input = detail.locator('.verify__edit-input');
+  const listId = await input.getAttribute('list');
+  await expect(page.locator(`#${listId} option`)).toHaveCount(1);
+  await expect(page.locator(`#${listId} option`)).toHaveAttribute('value', 'low risk');
+  await input.fill('low risk');
+  await detail.locator('.verify__edit-confirm').click();
+
+  // 保存はブロックしない。確定後に「許容値外」警告 + owner 向けの `#/schema` 導線を出す
+  await expect(detail.locator('.verify__current-value')).toHaveText('確定値: low risk');
+  const note = page.locator('.verify__enum-out-of-range');
+  await expect(note).toHaveAttribute('role', 'note');
+  await expect(note).toContainText('low / some_concerns / high');
+  await expect(note.locator('a')).toHaveAttribute('href', '#/schema');
 
   const results = await new AxeBuilder({ page }).analyze();
   expect(results.violations).toEqual([]);

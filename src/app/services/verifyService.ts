@@ -518,6 +518,9 @@ export async function openVerifyStudy(
         evidence: target.evidence,
         schemaVersion: target.schemaVersion,
         annotatorType: annotatorTypeForRole(state.role.role ?? 'owner'),
+        // 「許容値外」警告の `#/schema` 導線は owner だけに出す（issue #254。reviewer 系
+        // ロールは guards.ts が `#/home` / `#/verify` 以外を弾くため死んだリンクになる）
+        canEditSchema: (state.role.role ?? 'owner') === 'owner',
       },
       deps,
     );

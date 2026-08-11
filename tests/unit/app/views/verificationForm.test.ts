@@ -1035,3 +1035,36 @@ describe('renderVerificationForm: レイアウトモード（issue #38）', () =
     expect(root.querySelector('#verify-focus-card')).toBeNull();
   });
 });
+
+describe('判定済みコンパクト行の許容値外バッジ（issue #254・形態 B）', () => {
+  function makeOutOfRangeCell(value: string): VerificationCell {
+    return makeCell({
+      field: makeField({
+        fieldId: 'f-rob',
+        fieldLabel: 'D1 判定',
+        dataType: 'enum',
+        allowedValues: 'low|some_concerns|high',
+      }),
+      state: { ...emptyCellState(), status: 'edit', value },
+    });
+  }
+
+  test('許容値外の確定値には aria-hidden バッジと aria-label / title への警告連結を付ける', () => {
+    // コンパクト行は <button> そのもののため <a> を入れ子にできない（axe: nested-interactive）
+    const { root } = render(makeModel([makeOutOfRangeCell('low risk')]));
+    const row = root.querySelector('.verify__cell--decided') as HTMLElement;
+    const badge = row.querySelector('.verify__enum-badge') as HTMLElement;
+    expect(badge.getAttribute('aria-hidden')).toBe('true');
+    expect(row.querySelector('a')).toBeNull();
+    expect(row.getAttribute('aria-label')).toContain('low risk');
+    expect(row.getAttribute('title')).toContain('low risk');
+  });
+
+  test('許容値内の確定値にはバッジも aria-label も付けない（従来どおりの title のまま）', () => {
+    const { root } = render(makeModel([makeOutOfRangeCell('low')]));
+    const row = root.querySelector('.verify__cell--decided') as HTMLElement;
+    expect(row.querySelector('.verify__enum-badge')).toBeNull();
+    expect(row.getAttribute('aria-label')).toBeNull();
+    expect(row.getAttribute('title')).toBe('クリックで詳細を表示');
+  });
+});

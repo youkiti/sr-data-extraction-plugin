@@ -76,7 +76,10 @@ interface RouteRecorder {
   studyDataBodies: string[];
 }
 
-async function setupRoutes(page: Page): Promise<RouteRecorder> {
+async function setupRoutes(
+  page: Page,
+  options: { schemaRows?: string[][]; decisionsRows?: string[][] } = {},
+): Promise<RouteRecorder> {
   const appendUrls: string[] = [];
   const getUrls: string[] = [];
   const studyDataBodies: string[] = [];
@@ -97,9 +100,13 @@ async function setupRoutes(page: Page): Promise<RouteRecorder> {
       } else if (url.includes('/values/SchemaVersions')) {
         await route.fulfill({ json: { values: [SCHEMA_VERSIONS_HEADERS, SCHEMA_VERSION_ROW] } });
       } else if (url.includes('/values/SchemaFields')) {
-        await route.fulfill({ json: { values: [SCHEMA_FIELDS_HEADERS, STUDY_FIELD_ROW] } });
+        await route.fulfill({
+          json: { values: [SCHEMA_FIELDS_HEADERS, ...(options.schemaRows ?? [STUDY_FIELD_ROW])] },
+        });
       } else if (url.includes('/values/Decisions')) {
-        await route.fulfill({ json: { values: [DECISIONS_HEADERS] } });
+        await route.fulfill({
+          json: { values: [DECISIONS_HEADERS, ...(options.decisionsRows ?? [])] },
+        });
       } else if (url.includes('/values/StudyData')) {
         await route.fulfill({ json: { values: store.studyValues() } });
       } else if (url.includes('/values/ResultsData')) {
@@ -275,4 +282,61 @@ test('独立入力モード: 確定済みスキーマが無ければ AI 抽出�
   await expect(page.locator('#verify-empty')).toBeVisible({ timeout: 15_000 });
   await expect(page.locator('#verify-empty')).toContainText('オーナーが表のデザイン（スキーマ）を確定するまで');
   await expect(page.locator('#verify-empty')).not.toContainText('AI 抽出');
+});
+
+test('独立入力モード × enum（issue #254）: 許容値は表示するが、候補には AI 値・他 reviewer・自分の with_ai 時代の値を出さない', async ({
+  page,
+}) => {
+  const ENUM_FIELD_ROW = [
+    '1', 'f-rob-d1', '1', 'risk_of_bias', 'rob_d1_judgement', 'D1 判定', 'study', 'enum',
+    '', 'low|some_concerns|high', 'TRUE', 'ドメイン 1 のバイアスリスク判定', '', 'FALSE', '',
+  ];
+  const decision = (
+    annotator: string,
+    annotatorType: string,
+    action: string,
+    value: string,
+  ): string[] => [
+    't0', annotator, 'study-9', 'f-rob-d1', '-', annotator, annotatorType, '1', action, value, '',
+  ];
+  const { appendUrls } = await setupRoutes(page, {
+    schemaRows: [ENUM_FIELD_ROW],
+    decisionsRows: [
+      // 自分（reviewer2）の独立入力の過去値 → 候補に出す
+      decision('reviewer2@example.com', 'human_independent', 'edit', '自分の独立入力'),
+      // 同一 email でも with_ai 時代の accept（＝ AI 抽出値がそのまま value に入る）→ 出してはいけない
+      decision('reviewer2@example.com', 'human_with_ai', 'accept', 'AI が出した値'),
+      // 他 reviewer の値 → 出してはいけない
+      decision('reviewer1@example.com', 'human_independent', 'edit', '他人の入力'),
+    ],
+  });
+  await initApp(page);
+  await expect(page.locator('.verify__panes')).toBeVisible({ timeout: 15_000 });
+
+  // 許容値はスキーマ由来（AI 出力ではない）ため独立入力モードでも表示する（design §5.2）
+  await page.locator('.verify__action--edit').click();
+  await expect(page.locator('.verify__enum-chip')).toHaveCount(4);
+  await expect(page.locator('.verify__enum-chip').nth(0)).toContainText('low');
+
+  // 「その他（自由入力）」の候補は annotator × annotator_type 完全一致のみ
+  await page.locator('.verify__enum-chip--other').click();
+  const listId = await page.locator('.verify__edit-input').getAttribute('list');
+  const options = page.locator(`#${listId} option`);
+  await expect(options).toHaveCount(1);
+  await expect(options).toHaveAttribute('value', '自分の独立入力');
+
+  // 盲検の実弾確認: AI 値・他 reviewer の値は DOM のどこにも現れない
+  await expect(page.locator('body')).not.toContainText('AI が出した値');
+  await expect(page.locator('body')).not.toContainText('他人の入力');
+
+  // 選択肢からの確定は従来どおり Decisions へ追記される
+  await page.locator('.verify__enum-back').click();
+  await page.locator('.verify__enum-chip').nth(1).click();
+  await expect(page.locator('.verify__current-value')).toHaveText('確定値: some_concerns');
+  await expect
+    .poll(() => appendUrls.filter((url) => url.includes('Decisions') && url.includes(':append')).length)
+    .toBeGreaterThan(0);
+
+  const results = await new AxeBuilder({ page }).analyze();
+  expect(results.violations).toEqual([]);
 });

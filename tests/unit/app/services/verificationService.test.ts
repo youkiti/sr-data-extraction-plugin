@@ -24,7 +24,7 @@ import {
 import type { ConsensusCellWrite, ConsensusWriteParams } from '../../../../src/features/adjudication/consensusWrites';
 import {
   appendDecisionRows,
-  readDecisionsByStudy,
+  readAllDecisions,
 } from '../../../../src/features/verification/decisionRepository';
 import { readArmStructuresByStudy } from '../../../../src/features/verification/armStructureRepository';
 import {
@@ -40,7 +40,7 @@ import type { OfflineQueue } from '../../../../src/lib/storage/offlineQueue';
 
 jest.mock('../../../../src/features/verification/decisionRepository', () => ({
   appendDecisionRows: jest.fn(),
-  readDecisionsByStudy: jest.fn(),
+  readAllDecisions: jest.fn(),
 }));
 jest.mock('../../../../src/features/verification/armStructureRepository', () => ({
   ...jest.requireActual('../../../../src/features/verification/armStructureRepository'),
@@ -62,9 +62,7 @@ jest.mock('../../../../src/app/ui/toast', () => ({
 }));
 
 const appendDecisionRowsMock = appendDecisionRows as jest.MockedFunction<typeof appendDecisionRows>;
-const readDecisionsByStudyMock = readDecisionsByStudy as jest.MockedFunction<
-  typeof readDecisionsByStudy
->;
+const readAllDecisionsMock = readAllDecisions as jest.MockedFunction<typeof readAllDecisions>;
 const readArmStructuresByStudyMock = readArmStructuresByStudy as jest.MockedFunction<
   typeof readArmStructuresByStudy
 >;
@@ -136,6 +134,7 @@ function makeBundleInput(overrides: Partial<VerificationBundleInput> = {}): Veri
     evidence: [],
     schemaVersion: 1,
     annotatorType: 'human_with_ai',
+    canEditSchema: true,
     ...overrides,
   };
 }
@@ -231,7 +230,7 @@ beforeEach(() => {
   readResultsDataRowsMock.mockResolvedValue([]);
   upsertResultsMock.mockResolvedValue(undefined);
   upsertStudyMock.mockResolvedValue(undefined);
-  readDecisionsByStudyMock.mockResolvedValue([]);
+  readAllDecisionsMock.mockResolvedValue([]);
   readArmStructuresByStudyMock.mockResolvedValue([]);
   getFileBinaryMock.mockResolvedValue(new ArrayBuffer(8));
   getFileTextMock.mockResolvedValue('');
@@ -244,6 +243,40 @@ describe('loadVerificationBundle', () => {
       makeDeps(),
     );
     expect(verification.annotatorType).toBe('human_independent');
+  });
+
+  test('Decisions は 1 回の読み込みから当該 study ぶんへ絞り、enum 候補はプロジェクト横断で作る（issue #254）', async () => {
+    const decision = {
+      decidedAt: '2026-08-11T00:00:00.000Z',
+      decidedBy: 'me@example.com',
+      fieldId: 'f-rob',
+      entityKey: 'rob:d1',
+      annotator: 'me@example.com',
+      annotatorType: 'human_with_ai' as const,
+      schemaVersion: 1,
+      action: 'edit' as const,
+      note: null,
+    };
+    readAllDecisionsMock.mockResolvedValue([
+      { ...decision, studyId: 'study-1', value: 'low risk' },
+      // 別 study の判定: decisions からは外れるが、enum 候補には入る（横断で集める）
+      { ...decision, studyId: 'study-2', value: 'some concerns' },
+      // 別 annotator_type は候補に入れない（盲検保護。design §5.2）
+      { ...decision, studyId: 'study-2', annotatorType: 'human_independent', value: '漏れてはいけない値' },
+    ]);
+    const { verification } = await loadVerificationBundle(makeBundleInput(), makeDeps());
+    // Decisions は 1 回の GET のみ（従来の readDecisionsByStudy 相当の絞り込みはクライアント側）
+    expect(readAllDecisionsMock).toHaveBeenCalledTimes(1);
+    expect(verification.decisions.map((row) => row.studyId)).toEqual(['study-1']);
+    expect(verification.enumCandidates?.get('f-rob')).toEqual(['low risk', 'some concerns']);
+  });
+
+  test('canEditSchema は呼び出し側の入力をそのまま束へ渡す（issue #254）', async () => {
+    const { verification } = await loadVerificationBundle(
+      makeBundleInput({ canEditSchema: false }),
+      makeDeps(),
+    );
+    expect(verification.canEditSchema).toBe(false);
   });
 
   test('PDF バイナリを 1 件も読まず、extracted_texts だけを先読みする（issue #28 案3）', async () => {

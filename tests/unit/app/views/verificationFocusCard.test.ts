@@ -385,3 +385,62 @@ describe('renderVerificationFocusCard', () => {
     ).toBe(true);
   });
 });
+
+describe('マトリクスの許容値外バッジ（issue #254・形態 B）', () => {
+  function makeOutOfRangeModel(value: string): VerificationFocusCardModel {
+    const field = makeField({
+      fieldId: 'f-rob',
+      fieldLabel: 'D1 判定',
+      dataType: 'enum',
+      allowedValues: 'low|some_concerns|high',
+    });
+    const cell = makeCell({ field, state: { ...emptyCellState(), status: 'edit', value } });
+    return makeModel({
+      unit: makeUnit({ rows: [{ field, cells: [cell] }] }),
+      focusedCellKey: cell.cellKey,
+    });
+  }
+
+  test('許容値外の確定値はマトリクスボタンにバッジ + aria-label / title へ警告を連結する', () => {
+    const { root } = render(makeOutOfRangeModel('low risk'));
+    const button = root.querySelector('.focus-card__matrix-btn') as HTMLElement;
+    expect(button.querySelector('.verify__enum-badge')?.getAttribute('aria-hidden')).toBe('true');
+    expect(button.getAttribute('aria-label')).toContain('許容値外');
+    expect(button.getAttribute('title')).toContain('low risk');
+    // ボタン自体が対話要素のため <a> は入れ子にしない（axe: nested-interactive）
+    expect(button.querySelector('a')).toBeNull();
+  });
+
+  test('許容値内の確定値にはバッジを出さない', () => {
+    const { root } = render(makeOutOfRangeModel('high'));
+    const button = root.querySelector('.focus-card__matrix-btn') as HTMLElement;
+    expect(button.querySelector('.verify__enum-badge')).toBeNull();
+    expect(button.getAttribute('title')).toBeNull();
+  });
+
+  test('詳細ストリップ（renderCell）へ enumCandidates / canEditSchema を明示的に配線する', () => {
+    const field = makeField({
+      fieldId: 'f-rob',
+      fieldLabel: 'D1 判定',
+      dataType: 'enum',
+      allowedValues: 'low|some_concerns|high',
+    });
+    // AI 値なし = 編集初期値が空 → チップ列から始まる（許容値外の初期値なら自由入力側で開く）
+    const cell = makeCell({ field, evidence: null });
+    const { root } = render(
+      makeModel({
+        unit: makeUnit({ rows: [{ field, cells: [cell] }] }),
+        focusedCellKey: cell.cellKey,
+        editing: { cellKey: cell.cellKey, action: 'edit' },
+        enumCandidates: new Map([['f-rob', ['low risk']]]),
+        canEditSchema: true,
+      }),
+    );
+    const detail = root.querySelector('#verify-focus-detail') as HTMLElement;
+    (detail.querySelector('.verify__enum-chip--other') as HTMLButtonElement).click();
+    const listId = (detail.querySelector('.verify__edit-input') as HTMLInputElement).getAttribute(
+      'list',
+    ) as string;
+    expect((detail.querySelector(`#${listId}`) as HTMLElement).querySelectorAll('option')).toHaveLength(1);
+  });
+});

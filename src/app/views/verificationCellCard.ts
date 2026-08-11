@@ -12,8 +12,10 @@ import {
   renderMermaid,
 } from '../../features/verification/mermaidPreview';
 import type { RobAlgorithmInfo } from '../../features/verification/robAlgorithm';
+import { collectOtherValues } from '../../features/verification/enumOptions';
 import { t, type MessageKey } from '../../lib/i18n';
 import { el } from '../ui/dom';
+import { renderAllowedValuesNote, renderEnumChoiceEditor } from './enumChoiceEditor';
 
 /** セルに対応するハイライトの表示情報（0 件 = ハイライトなし → フォールバック UI） */
 export interface CellHighlightInfo {
@@ -67,6 +69,17 @@ export interface CellCardModel {
    * （警告表示のみで保存はブロックしない。ui-states.md §3）。省略時は空扱い
    */
   mermaidWarnings?: ReadonlyMap<string, string>;
+  /**
+   * enum 項目の「その他（自由入力）」候補（issue #254）。field_id → 過去入力値。
+   * サービス層が buildEnumCandidates で作り（annotator × annotator_type 完全一致 = 盲検保護）、
+   * verificationPanel が VerificationData からそのまま渡す。省略時は空扱い
+   */
+  enumCandidates?: ReadonlyMap<string, readonly string[]>;
+  /**
+   * 「許容値外」警告に `#/schema` 導線を出してよいか（issue #254）。owner のみ true。
+   * 省略時 false = 導線を出さない（フェイルセーフ）
+   */
+  canEditSchema?: boolean;
 }
 
 /** renderCell が実際に呼び出す最小のハンドラ集合 */
@@ -394,17 +407,63 @@ function renderQuote(
   return el('div', { className: 'verify__quote' }, children);
 }
 
+/**
+ * 編集欄の初期値。edit は現在値（未検証なら AI 値）から修正し、reject は白紙から手入力する（§4.2）。
+ * 独立入力モードは AI 値を一切見せないため、確定値が無ければ空欄から始める（design §5.2）
+ */
+function editorInitialValue(
+  cell: VerificationCell,
+  action: 'edit' | 'reject',
+  mode: 'review' | 'independent',
+): string | null {
+  if (action !== 'edit') {
+    return null;
+  }
+  const aiValue = mode === 'independent' ? null : (cell.evidence?.value ?? null);
+  return cell.state.value ?? aiValue;
+}
+
+/** 確定ボタンの文言（独立入力モードは「AI 値の修正」ではなく「自分で値を入力する」ため言い換える） */
+function confirmLabelOf(action: 'edit' | 'reject', mode: 'review' | 'independent'): string {
+  if (mode === 'independent') {
+    return t('verify.editConfirmIndependent');
+  }
+  return action === 'edit' ? t('verify.editConfirm') : t('verify.rejectConfirm');
+}
+
 function renderEditor(
   cell: VerificationCell,
   action: 'edit' | 'reject',
   handlers: CellCardHandlers,
   mode: 'review' | 'independent',
+  model: CellCardModel,
 ): HTMLElement {
   // mermaid プレビュー対象フィールド（quadas3_flow_diagram 等）だけ複数行 textarea にする
   // （issue #170）。改行を保つ必要があるのはこのフィールド限定のため、それ以外は 1 行 input を
   // 現状維持する（Enter 確定を含め挙動を変えない）
   const isMultiline = isMermaidPreviewField(cell.field.fieldName);
   const ariaLabel = t('verify.editValueAria', { label: cell.field.fieldLabel });
+  if (!isMultiline) {
+    // enum 項目は許容値チップ列（issue #254）。**mermaid 分岐の後**に置くことで、
+    // S5 で dataType を自由に変えられる（validateField は mermaid 予約名 + enum の併存を
+    // 禁じていない）状況でも issue #170 の複数行編集を保護する。
+    // enum でない・許容値が取れない項目では null が返るので従来の 1 行 input へ落ちる
+    const enumEditor = renderEnumChoiceEditor({
+      field: cell.field,
+      currentValue: editorInitialValue(cell, action, mode),
+      candidates: collectOtherValues(
+        cell.field,
+        model.enumCandidates?.get(cell.field.fieldId) ?? [],
+      ),
+      ariaLabel,
+      confirmLabel: confirmLabelOf(action, mode),
+      onConfirm: (value) => handlers.onConfirmEdit(cell.cellKey, action, value),
+      onCancel: () => handlers.onCancelEdit(),
+    });
+    if (enumEditor !== null) {
+      return enumEditor;
+    }
+  }
   // ヒント段落と textarea を aria-describedby で関連付ける固定 id。cellKey（cellKeyOf が返す
   // JSON 文字列。entity_key 由来の空白を含みうる）は空白区切りの ID 参照リストである
   // aria-describedby と相性が悪いため使わない。編集中セルは常に 1 件のため固定 id で足りる
@@ -418,22 +477,12 @@ function renderEditor(
         className: 'verify__edit-input',
         attributes: { type: 'text', 'aria-label': ariaLabel },
       });
-  // edit は現在値（未検証なら AI 値）から修正し、reject は白紙から手入力する（§4.2）。
-  // 独立入力モードは AI 値を一切見せないため、確定値が無ければ空欄から始める（design §5.2）
-  if (action === 'edit') {
-    const aiValue = mode === 'independent' ? undefined : cell.evidence?.value;
-    input.value = cell.state.value ?? aiValue ?? '';
-  }
+  input.value = editorInitialValue(cell, action, mode) ?? '';
   // 独立入力モードは「AI 値の修正」ではなく「自分で値を入力する」ため文言を言い換える
   // （reject は独立入力モードでは到達しない操作。renderActions が棄却ボタンを出さない）
   const confirmButton = el('button', {
     className: 'verify__edit-confirm',
-    text:
-      mode === 'independent'
-        ? t('verify.editConfirmIndependent')
-        : action === 'edit'
-          ? t('verify.editConfirm')
-          : t('verify.rejectConfirm'),
+    text: confirmLabelOf(action, mode),
     attributes: { type: 'button' },
   });
   confirmButton.addEventListener('click', () =>
@@ -599,6 +648,16 @@ export function renderCell(
       }),
     );
   }
+  // 許容値外の警告（issue #254・形態 A）。確定値だけを対象にする（AI 値は判定前の情報であり、
+  // 人の確定値ではないため警告しない）。保存はブロックせず情報提示のみ
+  const enumNote = renderAllowedValuesNote(
+    cell.field,
+    cell.state.value,
+    model.canEditSchema === true,
+  );
+  if (enumNote !== null) {
+    children.push(enumNote);
+  }
   const quote = mode === 'independent' ? null : renderQuote(cell, model, handlers);
   if (quote !== null) {
     children.push(quote);
@@ -614,7 +673,7 @@ export function renderCell(
     children.push(mermaidWarning);
   }
   if (model.editing !== null && model.editing.cellKey === cell.cellKey) {
-    children.push(renderEditor(cell, model.editing.action, handlers, mode));
+    children.push(renderEditor(cell, model.editing.action, handlers, mode, model));
   } else {
     children.push(renderActions(cell, handlers, mode));
   }

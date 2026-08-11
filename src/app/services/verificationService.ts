@@ -37,8 +37,9 @@ import {
 } from '../../features/verification/armStructureRepository';
 import {
   appendDecisionRows,
-  readDecisionsByStudy,
+  readAllDecisions,
 } from '../../features/verification/decisionRepository';
+import { buildEnumCandidates } from '../../features/verification/enumOptions';
 import { isEntityInstanceDeclaration } from '../../features/verification/instanceDeclarations';
 import { createPdfViewCache } from '../../features/verification/pdfViewCache';
 import type {
@@ -199,6 +200,11 @@ export interface VerificationBundleInput {
   schemaVersion: number;
   /** 判定を書き込む annotator_type（呼び出し側がロールから導出して渡す。design §5.2） */
   annotatorType: 'human_with_ai' | 'human_independent';
+  /**
+   * 「許容値外」警告からスキーマ画面（`#/schema`）への導線を出してよいか（issue #254）。
+   * 呼び出し側がロールから導出して渡す（owner のみ true）
+   */
+  canEditSchema: boolean;
 }
 
 export interface VerificationBundle {
@@ -267,7 +273,13 @@ export async function loadVerificationBundle(
 ): Promise<VerificationBundle> {
   const { spreadsheetId, study } = input;
   const annotator = (await getCurrentUserEmail(deps.profile)) ?? '';
-  const decisions = await readDecisionsByStudy(spreadsheetId, study.studyId, deps.google);
+  // 全 study ぶんを 1 回で読み、当該 study ぶん（従来の readDecisionsByStudy 相当）と
+  // enum 候補（issue #254。プロジェクト横断で集める）を同時に導出する。
+  // readDecisionsByStudy 自体が readAllDecisions + クライアント側フィルタの実装なので
+  // **GET 数は変わらない**
+  const allDecisions = await readAllDecisions(spreadsheetId, deps.google);
+  const decisions = allDecisions.filter((decision) => decision.studyId === study.studyId);
+  const enumCandidates = buildEnumCandidates(allDecisions, annotator, input.annotatorType);
   const studySheet = await readStudyDataSheet(spreadsheetId, deps.google);
   const myStudyRow = studySheet.rows.find(
     (row) => row.studyId === study.studyId && row.annotator === annotator,
@@ -335,6 +347,8 @@ export async function loadVerificationBundle(
     annotatorType: input.annotatorType,
     schemaVersion: input.schemaVersion,
     armStructure,
+    enumCandidates,
+    canEditSchema: input.canEditSchema,
     loadPdfView,
     retryPdfView,
     disposePdf,
