@@ -19,11 +19,13 @@ import { indexEvidenceByCellKey, type AdjudicationCell } from '../../features/ad
 import type { StudyGate } from '../../features/adjudication/gate';
 import { entityKeyLabel } from '../../features/verification/cells';
 import { deriveCellStates, emptyCellState, type CellState } from '../../features/verification/cellState';
+import { buildEnumCandidates, collectOtherValues } from '../../features/verification/enumOptions';
 import { t, type MessageKey } from '../../lib/i18n';
 import { STUDY_ENTITY_KEY } from '../../utils/entityKey';
 import type { AdjudicateStudyRow, AdjudicateWorking, AppState } from '../store';
 import { el } from '../ui/dom';
 import { focusAdjudicateEvidence, renderAdjudicatePdfPane } from './adjudicatePdfPane';
+import { renderAllowedValuesNote, renderEnumChoiceEditor } from './enumChoiceEditor';
 import type { ViewContext } from './types';
 
 type ChipStatus = 'match' | 'mismatch' | 'accept' | 'edit' | 'reject' | 'not_reported' | 'skipped';
@@ -347,12 +349,24 @@ function valueCellChildren(value: string, note: string | null, side: 'A' | 'B'):
   return children;
 }
 
+/**
+ * enum 項目の選択 UI（issue #254）に必要な、行をまたいで共通の素材。
+ * renderCellSection が 1 度だけ組み立てて各行へ配る（行ごとに judgments を舐め直さない）
+ */
+interface AdjudicateEnumContext {
+  /** field_id → 過去の consensus 値（A/B 採用を含む。design §6.4 の規則） */
+  candidates: ReadonlyMap<string, readonly string[]>;
+  /** 「許容値外」警告に `#/schema` 導線を出してよいか（owner のみ。adjudicator は不可） */
+  canEditSchema: boolean;
+}
+
 function renderCellRow(
   cell: AdjudicationCell,
   working: AdjudicateWorking,
   consensusStates: Map<string, CellState>,
   armLocked: boolean,
   hasEvidence: boolean,
+  enumContext: AdjudicateEnumContext,
   ctx: ViewContext,
 ): HTMLElement {
   const consensusState = consensusStates.get(cell.cellKey) ?? emptyCellState();
@@ -420,6 +434,15 @@ function renderCellRow(
       }),
       undo,
     );
+    // 許容値外の警告（issue #254・形態 A）。裁定済みセルは <td> 直下のため <a> を置ける
+    const enumNote = renderAllowedValuesNote(
+      cell.field,
+      consensusState.value,
+      enumContext.canEditSchema,
+    );
+    if (enumNote !== null) {
+      actionsCell.append(enumNote);
+    }
   } else if (skipped) {
     const unskip = el('button', {
       className: 'adjudicate__action adjudicate__action--unskip',
@@ -447,19 +470,39 @@ function renderCellRow(
       },
     });
     chooseB.addEventListener('click', () => ctx.adjudicate.onChooseB(cell.cellKey));
-    const customInput = el('input', {
-      className: 'adjudicate__custom-input',
-      attributes: {
-        type: 'text',
-        'aria-label': t('adjudicate.customAria', { label: cell.field.fieldLabel }),
-      },
-    }) as HTMLInputElement;
-    const customConfirm = el('button', {
-      className: 'adjudicate__action adjudicate__action--custom',
-      text: t('verify.editConfirmIndependent'),
-      attributes: { type: 'button' },
+    // 「第 3 の値」の入力欄。enum 項目は検証画面と同じ許容値チップ UI に差し替える
+    // （issue #254）。enum でなければ null が返るので従来の自由入力へ落ちる。
+    // 編集モードから抜ける概念が無い画面のため onCancel は渡さない（キャンセルボタンを出さない）
+    const customAriaLabel = t('adjudicate.customAria', { label: cell.field.fieldLabel });
+    const enumEditor = renderEnumChoiceEditor({
+      field: cell.field,
+      currentValue: null,
+      candidates: collectOtherValues(
+        cell.field,
+        enumContext.candidates.get(cell.field.fieldId) ?? [],
+      ),
+      ariaLabel: customAriaLabel,
+      confirmLabel: t('verify.editConfirmIndependent'),
+      onConfirm: (value) => ctx.adjudicate.onCustomValue(cell.cellKey, value),
     });
-    customConfirm.addEventListener('click', () => ctx.adjudicate.onCustomValue(cell.cellKey, customInput.value));
+    const customNodes: HTMLElement[] = [];
+    if (enumEditor === null) {
+      const customInput = el('input', {
+        className: 'adjudicate__custom-input',
+        attributes: { type: 'text', 'aria-label': customAriaLabel },
+      }) as HTMLInputElement;
+      const customConfirm = el('button', {
+        className: 'adjudicate__action adjudicate__action--custom',
+        text: t('verify.editConfirmIndependent'),
+        attributes: { type: 'button' },
+      });
+      customConfirm.addEventListener('click', () =>
+        ctx.adjudicate.onCustomValue(cell.cellKey, customInput.value),
+      );
+      customNodes.push(customInput, customConfirm);
+    } else {
+      customNodes.push(enumEditor);
+    }
     const notReported = el('button', {
       className: 'adjudicate__action adjudicate__action--not-reported',
       text: t('verify.statusNotReported'),
@@ -472,7 +515,7 @@ function renderCellRow(
       attributes: { type: 'button' },
     });
     skip.addEventListener('click', () => ctx.adjudicate.onSkip(cell.cellKey));
-    actionsCell.append(chooseA, chooseB, customInput, customConfirm, notReported, skip);
+    actionsCell.append(chooseA, chooseB, ...customNodes, notReported, skip);
   }
   row.push(actionsCell);
   return el('tr', { className: `adjudicate__cell-row adjudicate__cell-row--${status}` }, row);
@@ -482,6 +525,14 @@ function renderCellSection(state: AppState, ctx: ViewContext, working: Adjudicat
   const consensusStates = deriveCellStates(working.consensusDecisions);
   // issue #63: セルごとに「根拠を表示」ボタンを出すかどうかの判定に使う（AI の Evidence があるか）
   const evidenceIndex = indexEvidenceByCellKey(working.evidence);
+  // enum 項目の「その他」候補（issue #254）。裁定画面の候補は **過去の consensus 値**とする —
+  // A/B 採用（buildChoiceWrite）と第 3 の値（buildCustomValueWrite）はどちらも action='edit' を
+  // 書くため、現データからは第 3 の値だけを厳密には識別できない（design §6.4）
+  const enumContext: AdjudicateEnumContext = {
+    candidates: buildEnumCandidates(working.consensusDecisions, 'consensus', 'consensus'),
+    // `#/schema` は owner のみ到達可能（guards.ts）。adjudicator には導線を出さない
+    canEditSchema: (state.role.role ?? 'owner') === 'owner',
+  };
   const mismatchOnly = state.adjudicate.mismatchOnlyFilter;
   const armLocked = working.needsArmConfirmation && working.consensusArmStructure === null;
   const matchCount = working.cells.filter((cell) => cell.matches).length;
@@ -521,7 +572,15 @@ function renderCellSection(state: AppState, ctx: ViewContext, working: Adjudicat
             'tbody',
             {},
             visibleCells.map((cell) =>
-              renderCellRow(cell, working, consensusStates, armLocked, evidenceIndex.has(cell.cellKey), ctx),
+              renderCellRow(
+                cell,
+                working,
+                consensusStates,
+                armLocked,
+                evidenceIndex.has(cell.cellKey),
+                enumContext,
+                ctx,
+              ),
             ),
           ),
         ]);

@@ -481,6 +481,9 @@ export function createVerificationPanel(
       canRelocateQuote,
       relocateStatus,
       mermaidWarnings,
+      // enum 項目の許容値チップ・許容値外警告（issue #254）
+      enumCandidates: data.enumCandidates,
+      canEditSchema: data.canEditSchema,
     };
   }
 
@@ -1544,8 +1547,9 @@ export function createVerificationPanel(
       editing = { cellKey, action };
       focusedCellKey = cellKey;
       refreshForm();
-      // 値入力へ即フォーカス（e キーの操作感。ui-flow.md §7）
-      formPane.querySelector<HTMLElement>('.verify__edit-input')?.focus();
+      // 値入力へ即フォーカス（e キーの操作感。ui-flow.md §7）。enum 項目は入力欄ではなく
+      // 許容値チップ列が出るため、先頭チップを着地先にする（issue #254）
+      formPane.querySelector<HTMLElement>('.verify__edit-input, .verify__enum-chip')?.focus();
     },
     onConfirmEdit(cellKey, action, value) {
       const cell = findCell(cellKey);
@@ -1821,6 +1825,9 @@ export function createVerificationPanel(
       relocateStatus,
       // flow 図（mermaid）の保存時構文チェック警告（issue #109）
       mermaidWarnings,
+      // enum 項目の許容値チップ・許容値外警告（issue #254）
+      enumCandidates: data.enumCandidates,
+      canEditSchema: data.canEditSchema,
     };
     // heightSplitter（issue #193）は refreshForm のたびに作り直される内容の末尾へ
     // 常に再付与する（sticky 配置で bottom:0 に固定され続ける）

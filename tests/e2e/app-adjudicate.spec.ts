@@ -178,6 +178,8 @@ interface SetupRoutesOptions {
    * だけをネットワーク失敗（route.abort）にし、以降は通常どおり成功させる
    */
   failFirstAppendMatching?: RegExp;
+  /** SchemaFields タブの行を差し替える（issue #254: enum 項目の裁定 UI の検証用） */
+  schemaRows?: string[][];
 }
 
 async function setupRoutes(page: Page, options: SetupRoutesOptions = {}): Promise<RouteRecorder> {
@@ -193,7 +195,14 @@ async function setupRoutes(page: Page, options: SetupRoutesOptions = {}): Promis
       } else if (url.includes('/values/SchemaVersions')) {
         await route.fulfill({ json: { values: [SCHEMA_VERSIONS_HEADERS, SCHEMA_VERSION_ROW] } });
       } else if (url.includes('/values/SchemaFields')) {
-        await route.fulfill({ json: { values: [SCHEMA_FIELDS_HEADERS, FIELD_MORTALITY, FIELD_AGE, FIELD_ARM] } });
+        await route.fulfill({
+          json: {
+            values: [
+              SCHEMA_FIELDS_HEADERS,
+              ...(options.schemaRows ?? [FIELD_MORTALITY, FIELD_AGE, FIELD_ARM]),
+            ],
+          },
+        });
       } else if (url.includes('/values/StudyData')) {
         await route.fulfill({
           json: {
@@ -582,4 +591,48 @@ test('表示言語の切替: 裁定中の PDF ペインが同一 study のまま
   await page.locator('#ui-language').selectOption('ja');
   await page.locator('#app-nav a[href="#/adjudicate"]').click();
   await expect(page.locator('.adjudicate__pane--pdf')).toContainText('前のページ');
+});
+
+test('enum 項目の「第 3 の値」（issue #254）: 自由入力ではなく許容値チップから裁定できる', async ({ page }) => {
+  // mean_age（A=45 / B=50 の不一致セル）を enum 項目に差し替える。
+  // 第 3 の値の候補として許容値 60 を用意する
+  const FIELD_AGE_ENUM = [
+    '1', 'f-age', '2', 'population', 'mean_age', '平均年齢', 'study', 'enum', '', '45|50|60',
+    'FALSE', '平均年齢を抽出', '', 'FALSE', '',
+  ];
+  const { appends } = await setupRoutes(page, {
+    schemaRows: [FIELD_MORTALITY, FIELD_AGE_ENUM, FIELD_ARM],
+  });
+  await initApp(page);
+
+  await expect(page.locator('#adjudicate-list')).toBeVisible({ timeout: 15_000 });
+  await page.locator('tr[data-study-id="study-1"] .adjudicate__open-button').click();
+  await expect(page.locator('#adjudicate-working')).toBeVisible();
+  await page.locator('#adjudicate-arm-adopt').click();
+
+  // 既定の「不一致のみ」フィルタで残るのは mean_age の 1 行
+  const row = page.locator('.adjudicate__cell-row--mismatch');
+  await expect(row).toHaveCount(1);
+  await expect(row).toContainText('平均年齢');
+
+  // enum 項目は自由入力欄ではなく許容値チップ列になる。
+  // 常時表示の入力欄のためキャンセルボタンは出さない（編集モードから抜ける概念がない）
+  await expect(row.locator('.adjudicate__custom-input')).toHaveCount(0);
+  await expect(row.locator('.verify__enum-chip')).toHaveCount(4); // 許容値 3 + その他
+  await expect(row.locator('.verify__edit-cancel')).toHaveCount(0);
+  // A / B の採用ボタンは従来どおり残る
+  await expect(row.locator('.adjudicate__action--choose-a')).toHaveCount(1);
+
+  // 第 3 の値（60）をチップから確定 → consensus 行 + Decisions（action='edit'）追記
+  const before = appends.filter((a) => a.url.includes('Decisions') && a.url.includes(':append')).length;
+  await row.locator('.verify__enum-chip').nth(2).click();
+  await expect
+    .poll(() => appends.filter((a) => a.url.includes('Decisions') && a.url.includes(':append')).length)
+    .toBeGreaterThan(before);
+  await expect(page.locator('.adjudicate__cell-row--edit')).toContainText('確定値: 60');
+  const lastStudyData = appends.filter((a) => a.url.includes('StudyData') && a.url.includes(':append')).slice(-1)[0];
+  expect((lastStudyData?.body['values'] as unknown[][])[0]).toContain('60');
+
+  const results = await new AxeBuilder({ page }).analyze();
+  expect(results.violations).toEqual([]);
 });

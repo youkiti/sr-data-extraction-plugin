@@ -51,7 +51,6 @@ import {
 import {
   appendDecisionRows,
   readAllDecisions,
-  readDecisionsByStudy,
 } from '../../../../src/features/verification/decisionRepository';
 import { getFileBinary, getFileText } from '../../../../src/lib/google/drive';
 import { getCurrentUserEmail } from '../../../../src/lib/google/identity';
@@ -88,7 +87,6 @@ jest.mock('../../../../src/features/schema/schemaRepository', () => ({
 jest.mock('../../../../src/features/verification/decisionRepository', () => ({
   appendDecisionRows: jest.fn(),
   readAllDecisions: jest.fn(),
-  readDecisionsByStudy: jest.fn(),
 }));
 jest.mock('../../../../src/features/verification/armStructureRepository', () => ({
   ...jest.requireActual('../../../../src/features/verification/armStructureRepository'),
@@ -123,9 +121,6 @@ const getSchemaFieldsMock = getSchemaFieldsByVersion as jest.MockedFunction<
 const listSchemaVersionsMock = listSchemaVersions as jest.MockedFunction<typeof listSchemaVersions>;
 const appendDecisionsMock = appendDecisionRows as jest.MockedFunction<typeof appendDecisionRows>;
 const readAllDecisionsMock = readAllDecisions as jest.MockedFunction<typeof readAllDecisions>;
-const readDecisionsMock = readDecisionsByStudy as jest.MockedFunction<
-  typeof readDecisionsByStudy
->;
 const appendArmVersionMock = appendArmStructureVersion as jest.MockedFunction<
   typeof appendArmStructureVersion
 >;
@@ -369,7 +364,7 @@ beforeEach(() => {
   readEvidenceRowsMock.mockResolvedValue([makeEvidence()]);
   readCompletedRunMetasMock.mockResolvedValue([makeCompletedRunMeta()]);
   readAllDecisionsMock.mockResolvedValue([]);
-  readDecisionsMock.mockResolvedValue([]);
+  readAllDecisionsMock.mockResolvedValue([]);
   readStudyDataSheetMock.mockResolvedValue({ fieldNames: [], rows: [] });
   readResultsDataRowsMock.mockResolvedValue([]);
   readAllArmStructuresMock.mockResolvedValue([]);
@@ -1093,7 +1088,7 @@ describe('openVerifyStudy', () => {
     const store = makeStore({ verify: { targets: [makeTarget()] } });
     await openVerifyStudy(store, makeDeps(), 'study-9');
     expect(store.getState().verify.verifyError).toContain('study-9 が見つかりません');
-    expect(readDecisionsMock).not.toHaveBeenCalled();
+    expect(readAllDecisionsMock).not.toHaveBeenCalled();
   });
 
   test('プロジェクト未選択・一覧未読込・読込中はスキップする', async () => {
@@ -1104,7 +1099,7 @@ describe('openVerifyStudy', () => {
       makeDeps(),
       'study-doc-1',
     );
-    expect(readDecisionsMock).not.toHaveBeenCalled();
+    expect(readAllDecisionsMock).not.toHaveBeenCalled();
   });
 
   test('study 切替時は前の PDF を破棄する', async () => {
@@ -1134,7 +1129,7 @@ describe('openVerifyStudy', () => {
 
   test('読み込み失敗は verifyError に落ちる', async () => {
     const store = makeStore({ verify: { targets: [makeTarget()] } });
-    readDecisionsMock.mockRejectedValue(new Error('権限がありません'));
+    readAllDecisionsMock.mockRejectedValue(new Error('権限がありません'));
     await openVerifyStudy(store, makeDeps(), 'study-doc-1');
     expect(store.getState().verify.verifyError).toBe('権限がありません');
     expect(store.getState().verify.verifyLoading).toBe(false);

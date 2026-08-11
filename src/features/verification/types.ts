@@ -71,6 +71,19 @@ export interface VerificationData {
    * 重複排除を行うため、同じ documentId への複数回呼び出しは安全（throw しない設計）
    */
   loadPdfView(documentId: string): Promise<LoadedPdfView>;
+  /**
+   * enum 項目の「その他（自由入力）」に出す候補（issue #254）。field_id → 過去入力値。
+   * サービス層が `buildEnumCandidates` で作る（**プロジェクト横断**の判定履歴から、
+   * `annotator` と `annotator_type` の完全一致で絞る = 盲検保護。design §5.2）。
+   * 省略時は空扱い（既存フィクスチャの互換のため optional）
+   */
+  enumCandidates?: ReadonlyMap<string, readonly string[]>;
+  /**
+   * 「許容値外」警告に `#/schema` への導線を出してよいか（issue #254）。
+   * reviewer 系 3 ロールは `#/home` / `#/verify` 以外へ遷移できない（app/guards.ts）ため、
+   * owner のときだけ true にする。**省略時 false = 導線を出さない**（フェイルセーフ）
+   */
+  canEditSchema?: boolean;
   /** documentId の PDF 読込を再試行する（失敗時のキャッシュを捨てて読み直す） */
   retryPdfView(documentId: string): Promise<LoadedPdfView>;
   /** 差し替え時にサービス層が呼ぶ後始末（PDF キャッシュ全体の pdfjs destroy）。パネルは触らない */

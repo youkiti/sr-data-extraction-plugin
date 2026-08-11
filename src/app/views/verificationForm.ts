@@ -23,6 +23,7 @@ import {
   renderStatusChip,
   type CellHighlightInfo,
 } from './verificationCellCard';
+import { allowedValuesWarningText, renderAllowedValuesBadge } from './enumChoiceEditor';
 import {
   renderVerificationFocusCard,
   type VerificationFocusCardModel,
@@ -123,6 +124,10 @@ export interface VerificationFormModel {
    * verificationPanel が編集保存時に parseMermaid で検査して載せる（保存はブロックしない）
    */
   mermaidWarnings?: ReadonlyMap<string, string>;
+  /** enum 項目の「その他（自由入力）」候補（issue #254）。verificationCellCard.CellCardModel 参照 */
+  enumCandidates?: ReadonlyMap<string, readonly string[]>;
+  /** 「許容値外」警告に `#/schema` 導線を出してよいか（issue #254。owner のみ true） */
+  canEditSchema?: boolean;
 }
 
 export interface VerificationFormHandlers {
@@ -201,18 +206,22 @@ function renderDecidedRow(
   if (entry.heading !== '') {
     children.push(el('span', { className: 'verify__decided-heading', text: entry.heading }));
   }
-  children.push(
-    el('span', {
-      className: 'verify__decided-value',
-      text: t('verify.decidedValue', { value: cell.state.value ?? t('verify.valueEmpty') }),
-    }),
-  );
+  const valueText = t('verify.decidedValue', { value: cell.state.value ?? t('verify.valueEmpty') });
+  children.push(el('span', { className: 'verify__decided-value', text: valueText }));
+  // 許容値外の警告（issue #254・形態 B）。この行自体が <button> のため <a> は入れ子にできない
+  // （axe: nested-interactive）。非対話バッジ + aria-label / title への連結で伝える
+  const enumWarning = allowedValuesWarningText(cell.field, cell.state.value);
+  const attributes: Record<string, string> = { type: 'button', title: t('verify.decidedRowTitle') };
+  if (enumWarning !== null) {
+    children.push(renderAllowedValuesBadge());
+    const message = enumWarning.replace(/^⚠ /, '');
+    attributes['aria-label'] =
+      `${cell.field.fieldLabel}: ${valueText}${t('verify.enumAriaSuffix', { message })}`;
+    attributes['title'] = `${t('verify.decidedRowTitle')}\n${message}`;
+  }
   const row = el(
     'button',
-    {
-      className: 'verify__cell verify__cell--decided',
-      attributes: { type: 'button', title: t('verify.decidedRowTitle') },
-    },
+    { className: 'verify__cell verify__cell--decided', attributes },
     children,
   );
   row.dataset['cellKey'] = cell.cellKey;

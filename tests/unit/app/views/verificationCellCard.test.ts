@@ -353,3 +353,101 @@ describe('flow 図（mermaid）の保存時構文チェック警告', () => {
     ).toBeNull();
   });
 });
+
+describe('enum 項目の許容値チップ（issue #254）', () => {
+  const ENUM_FIELD: Partial<SchemaField> = {
+    fieldId: 'f-rob',
+    fieldName: 'rob_d1_judgement',
+    fieldLabel: 'D1 判定',
+    dataType: 'enum',
+    allowedValues: 'low|some_concerns|high',
+  };
+
+  function makeEnumCell(overrides: Partial<VerificationCell> = {}): VerificationCell {
+    const field = makeField(ENUM_FIELD);
+    return makeCell({
+      field,
+      evidence: makeEvidence({ fieldId: field.fieldId, value: 'low' }),
+      ...overrides,
+    });
+  }
+
+  test('修正モードでは自由入力ではなく許容値チップ列が出る', () => {
+    const cell = makeEnumCell();
+    const root = render(cell, makeModel({ editing: { cellKey: cell.cellKey, action: 'edit' } }));
+    expect(root.querySelector('.verify__enum-choices')).not.toBeNull();
+    expect(root.querySelector('.verify__edit-input')).toBeNull();
+  });
+
+  test('チップのクリックで onConfirmEdit がその値で呼ばれる', () => {
+    const cell = makeEnumCell();
+    const handlers = makeHandlers();
+    const node = renderCell(
+      cell,
+      makeModel({ editing: { cellKey: cell.cellKey, action: 'edit' } }),
+      handlers,
+    );
+    document.body.replaceChildren(node);
+    (node.querySelectorAll('.verify__enum-chip')[2] as HTMLButtonElement).click();
+    expect(handlers.onConfirmEdit).toHaveBeenCalledWith(cell.cellKey, 'edit', 'high');
+  });
+
+  test('キャンセルボタンは onCancelEdit を呼ぶ', () => {
+    const cell = makeEnumCell();
+    const handlers = makeHandlers();
+    const node = renderCell(
+      cell,
+      makeModel({ editing: { cellKey: cell.cellKey, action: 'edit' } }),
+      handlers,
+    );
+    document.body.replaceChildren(node);
+    (node.querySelector('.verify__edit-cancel') as HTMLButtonElement).click();
+    expect(handlers.onCancelEdit).toHaveBeenCalled();
+  });
+
+  test('「その他」の候補は model.enumCandidates の許容値外だけを載せる', () => {
+    const cell = makeEnumCell();
+    const root = render(
+      cell,
+      makeModel({
+        editing: { cellKey: cell.cellKey, action: 'edit' },
+        // 'low' は許容値内なので候補に出さない
+        enumCandidates: new Map([['f-rob', ['low', 'low risk']]]),
+      }),
+    );
+    (root.querySelector('.verify__enum-chip--other') as HTMLButtonElement).click();
+    const listId = (root.querySelector('.verify__edit-input') as HTMLInputElement).getAttribute(
+      'list',
+    ) as string;
+    const options = [
+      ...(root.querySelector(`#${listId}`) as HTMLElement).querySelectorAll('option'),
+    ].map((option) => option.value);
+    expect(options).toEqual(['low risk']);
+  });
+
+  test('mermaid 対象フィールドが enum でも複数行 textarea を優先する（issue #170 の保護）', () => {
+    const field = makeField({ ...ENUM_FIELD, fieldName: 'quadas3_flow_diagram' });
+    const cell = makeCell({ field, evidence: makeEvidence({ fieldId: field.fieldId }) });
+    const root = render(cell, makeModel({ editing: { cellKey: cell.cellKey, action: 'edit' } }));
+    expect(root.querySelector('.verify__enum-choices')).toBeNull();
+    expect(root.querySelector('.verify__edit-input--multiline')).not.toBeNull();
+  });
+
+  test('確定値が許容値外なら role=note の警告を出す（owner には `#/schema` 導線つき）', () => {
+    const cell = makeEnumCell({
+      state: { ...emptyCellState(), status: 'edit', value: 'low risk' },
+    });
+    const root = render(cell, makeModel({ canEditSchema: true }));
+    const note = root.querySelector('.verify__enum-out-of-range');
+    expect(note?.getAttribute('role')).toBe('note');
+    expect(note?.querySelector('a')?.getAttribute('href')).toBe('#/schema');
+  });
+
+  test('確定値が許容値内・未判定なら警告を出さない', () => {
+    const decided = makeEnumCell({ state: { ...emptyCellState(), status: 'accept', value: 'low' } });
+    expect(render(decided).querySelector('.verify__enum-out-of-range')).toBeNull();
+    // 未判定セルは AI 値が許容値外でも警告しない（人の確定値ではないため）
+    const unverified = makeEnumCell({ evidence: makeEvidence({ fieldId: 'f-rob', value: 'low risk' }) });
+    expect(render(unverified).querySelector('.verify__enum-out-of-range')).toBeNull();
+  });
+});

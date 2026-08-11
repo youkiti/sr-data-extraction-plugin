@@ -53,7 +53,7 @@ import {
 } from '../../../../src/features/verification/armStructureRepository';
 import {
   appendDecisionRows,
-  readDecisionsByStudy,
+  readAllDecisions,
 } from '../../../../src/features/verification/decisionRepository';
 import type { VerificationData } from '../../../../src/features/verification/types';
 import { ensureChildFolder, getFileBinary, getFileText } from '../../../../src/lib/google/drive';
@@ -102,7 +102,7 @@ jest.mock('../../../../src/features/extraction/annotationRepository', () => ({
 }));
 jest.mock('../../../../src/features/verification/decisionRepository', () => ({
   appendDecisionRows: jest.fn(),
-  readDecisionsByStudy: jest.fn(),
+  readAllDecisions: jest.fn(),
 }));
 jest.mock('../../../../src/features/verification/armStructureRepository', () => ({
   // latestArmStructure は純粋関数なので実物を使う
@@ -136,9 +136,7 @@ const upsertResultsMock = upsertResultsDataRows as jest.MockedFunction<
   typeof upsertResultsDataRows
 >;
 const appendDecisionsMock = appendDecisionRows as jest.MockedFunction<typeof appendDecisionRows>;
-const readDecisionsMock = readDecisionsByStudy as jest.MockedFunction<
-  typeof readDecisionsByStudy
->;
+const readAllDecisionsMock = readAllDecisions as jest.MockedFunction<typeof readAllDecisions>;
 const appendArmVersionMock = appendArmStructureVersion as jest.MockedFunction<
   typeof appendArmStructureVersion
 >;
@@ -396,7 +394,7 @@ beforeEach(() => {
     id: `${name}-id`,
     webViewLink: `https://drive.example/${name}`,
   }));
-  readDecisionsMock.mockResolvedValue([]);
+  readAllDecisionsMock.mockResolvedValue([]);
   readStudiesMock.mockResolvedValue([]);
   readStudyDataSheetMock.mockResolvedValue({ fieldNames: [], rows: [] });
   readResultsDataRowsMock.mockResolvedValue([]);
@@ -879,7 +877,7 @@ describe('runPilot: 実行', () => {
     runExtractionMock.mockResolvedValue(makeOutcome({ studyIds: [], evidence: [] }));
     await runPilot(store, makeDeps());
     expect(store.getState().pilot.verification).toBeNull();
-    expect(readDecisionsMock).not.toHaveBeenCalled();
+    expect(readAllDecisionsMock).not.toHaveBeenCalled();
   });
 
   test('実行の失敗は runError に落ちる', async () => {
@@ -979,7 +977,7 @@ describe('loadPilotVerification', () => {
   test('run 未実行・プロジェクト未選択のときは何もしない', async () => {
     await loadPilotVerification(makeStore({ withProject: false }), makeDeps(), 'study-doc-1');
     await loadPilotVerification(makeStore({}), makeDeps(), 'study-doc-1');
-    expect(readDecisionsMock).not.toHaveBeenCalled();
+    expect(readAllDecisionsMock).not.toHaveBeenCalled();
   });
 
   test('study が見つからないときは verifyError', async () => {
@@ -1090,7 +1088,7 @@ describe('loadPilotVerification', () => {
 
   test('Decisions の読み込み失敗は verifyError', async () => {
     const store = makeRanStore();
-    readDecisionsMock.mockRejectedValue(new Error('権限がありません'));
+    readAllDecisionsMock.mockRejectedValue(new Error('権限がありません'));
     await loadPilotVerification(store, makeDeps(), 'study-doc-1');
     expect(store.getState().pilot.verifyError).toBe('権限がありません');
     expect(store.getState().pilot.verifyLoading).toBe(false);
@@ -1776,7 +1774,7 @@ describe('loadPilotRun', () => {
     await loadPilotRun(store, makeDeps(), 'run-empty');
     expect(store.getState().pilot.run?.runId).toBe('run-empty');
     expect(store.getState().pilot.verification).toBeNull();
-    expect(readDecisionsMock).not.toHaveBeenCalled();
+    expect(readAllDecisionsMock).not.toHaveBeenCalled();
   });
 
   test('読み込み失敗は historyError に落とし loadingRunId を戻す', async () => {
