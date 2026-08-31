@@ -12,6 +12,7 @@ import {
   EXTRACT_DATA_TEMPERATURE,
   MAX_FAILURE_DETAIL_BODY_CHARS,
   executeRun,
+  groupBatchesByStudy,
   type ExecuteRunDeps,
   type ExecuteRunInput,
   type RunProgress,
@@ -154,6 +155,7 @@ function chatResponse(
     text: JSON.stringify(items),
     tokensIn: null,
     tokensOut: null,
+    cachedTokensIn: null,
     raw: {},
     ...extra,
   };
@@ -364,6 +366,7 @@ describe('executeRun の正常系', () => {
       chatResponse([DESIGN_ITEM, ARM_ITEM, NOT_REPORTED_ITEM], {
         tokensIn: 100,
         tokensOut: 50,
+        cachedTokensIn: null,
         raw: { modelVersion: 'gemini-2.5-pro-001' },
       }),
     ]);
@@ -789,7 +792,7 @@ describe('executeRun の partial_failure', () => {
 
   test('JSON としてパースできない応答は format_error', async () => {
     const { provider } = providerOf([
-      { text: 'これは JSON ではありません', tokensIn: 5, tokensOut: 5, raw: {} },
+      { text: 'これは JSON ではありません', tokensIn: 5, tokensOut: 5, cachedTokensIn: null, raw: {} },
     ]);
     const { deps } = makeDeps(provider);
     const result = await execute(
@@ -1389,8 +1392,9 @@ describe('executeRun の並行実行（maxConcurrency）', () => {
     expect(peak()).toBe(1);
   });
 
-  test('並行実行でも同一 document は 1 回だけロードする（Promise キャッシュ）', async () => {
-    // 同一 study の 2 バッチ（section 分割）が同時に同じ document を miss しても loadPages は 1 回
+  test('同一 study の section バッチをまたいでも同一 document のロードは 1 回だけ', async () => {
+    // ワーカーへは study 単位で配るので同一 study の 2 バッチ（section 分割）は逐次に流れる。
+    // 2 バッチ目は 1 バッチ目が入れた Promise キャッシュに当たるため loadPages は 1 回のまま
     const { provider } = providerOf([chatResponse([DESIGN_ITEM]), chatResponse([DESIGN_ITEM])]);
     const { deps, loadPages } = makeDeps(provider);
     deps.maxConcurrency = 2;
@@ -1407,6 +1411,86 @@ describe('executeRun の並行実行（maxConcurrency）', () => {
     );
     expect(loadPages).toHaveBeenCalledTimes(1);
     expect(result.evidence).toHaveLength(2);
+  });
+
+  // 並行の単位は「バッチ」ではなく「study」。同一 study の section バッチは
+  // system + protocol + 本文という巨大な共通プレフィックスを共有しており、同時に飛ばすと
+  // 1 本目がプロンプトキャッシュを書き終える前に他が到達して全部 cold miss になる
+  test('同一 study の section バッチは maxConcurrency を上げても同時実行しない', async () => {
+    const { provider, peak, releaseAll } = gatedProvider();
+    const { deps } = makeDeps(provider);
+    deps.maxConcurrency = 4;
+    const runPromise = execute(
+      {
+        runId: 'run-1',
+        plan: makePlan([
+          makeBatch({ studyId: 'd1', section: 'methods', fieldIds: ['f_design'] }),
+          makeBatch({ studyId: 'd1', section: 'population', fieldIds: ['f_design'] }),
+          makeBatch({ studyId: 'd1', section: 'outcomes', fieldIds: ['f_design'] }),
+        ]),
+        fields: FIELDS,
+      },
+      deps,
+    );
+    await drain(runPromise, releaseAll);
+    const result = await runPromise;
+    // 1 study しか無いので同時実行は 1 本まで（従来は 3 本同時に飛んでいた）
+    expect(peak()).toBe(1);
+    expect(result.evidence).toHaveLength(3);
+    expect(result.status).toBe('done');
+  });
+
+  test('study が違えば maxConcurrency まで同時実行する（跨 study の並列度は落とさない）', async () => {
+    const { provider, peak, releaseAll } = gatedProvider();
+    const { deps } = makeDeps(provider);
+    deps.maxConcurrency = 3;
+    const runPromise = execute(
+      {
+        runId: 'run-1',
+        plan: makePlan([
+          makeBatch({ studyId: 'd1', section: 'methods', fieldIds: ['f_design'] }),
+          makeBatch({ studyId: 'd1', section: 'population', fieldIds: ['f_design'] }),
+          makeBatch({ studyId: 'd2', section: 'methods', fieldIds: ['f_design'] }),
+          makeBatch({ studyId: 'd3', section: 'methods', fieldIds: ['f_design'] }),
+        ]),
+        fields: FIELDS,
+      },
+      deps,
+    );
+    await drain(runPromise, releaseAll);
+    const result = await runPromise;
+    // 3 study あるので 3 本まで並ぶ（同一 study の 2 バッチは互いに逐次）
+    expect(peak()).toBe(3);
+    expect(result.evidence).toHaveLength(4);
+  });
+});
+
+describe('groupBatchesByStudy', () => {
+  test('study の初出順・グループ内のバッチ順を保つ', () => {
+    const b = (studyId: string, section: string): PlannedBatch =>
+      makeBatch({ studyId, section, fieldIds: ['f_design'] });
+    // 平坦な配列が study-major でなくても（= 将来 planRun の並びが変わっても）
+    // study 単位にまとまることを固定する
+    const groups = groupBatchesByStudy([
+      b('d2', 'methods'),
+      b('d1', 'methods'),
+      b('d2', 'outcomes'),
+      b('d1', 'population'),
+    ]);
+    expect(groups.map((g) => g.map((batch) => [batch.studyId, batch.section]))).toEqual([
+      [
+        ['d2', 'methods'],
+        ['d2', 'outcomes'],
+      ],
+      [
+        ['d1', 'methods'],
+        ['d1', 'population'],
+      ],
+    ]);
+  });
+
+  test('バッチが空なら空配列', () => {
+    expect(groupBatchesByStudy([])).toEqual([]);
   });
 });
 

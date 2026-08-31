@@ -55,6 +55,13 @@ interface OpenRouterResponse {
     prompt_tokens?: number;
     completion_tokens?: number;
     total_tokens?: number;
+    /**
+     * OpenAI 互換の usage 詳細。`cached_tokens` は自動プロンプトキャッシュでヒットした
+     * 入力トークン数で、`prompt_tokens` の**内数**（OpenAI 公式 cookbook / Azure 公式
+     * ドキュメントのレスポンス例で `prompt_tokens + completion_tokens = total_tokens` が
+     * 閉じており内数であることを確認。2026-08-31）
+     */
+    prompt_tokens_details?: { cached_tokens?: number };
   };
 }
 
@@ -235,6 +242,12 @@ export class OpenRouterProvider implements LLMProvider {
       text: content,
       tokensIn: json.usage?.prompt_tokens ?? null,
       tokensOut: json.usage?.completion_tokens ?? null,
+      // usage が返っていれば「計測できている」と見なし、prompt_tokens_details が
+      // 省略されている＝ヒット 0 件として 0 に倒す（usage ごと無い場合だけ null = 不明）
+      cachedTokensIn:
+        json.usage === undefined
+          ? null
+          : (json.usage.prompt_tokens_details?.cached_tokens ?? 0),
       raw: json,
     };
   }
@@ -251,6 +264,10 @@ export class OpenRouterProvider implements LLMProvider {
     const body: Record<string, unknown> = {
       model: this.model,
       messages: mapped,
+      // OpenRouter はキャッシュ関連の usage（prompt_tokens_details.cached_tokens 等）を
+      // opt-in でしか返さない。これを送らないと「キャッシュが効いていない」のか
+      // 「計測できていない」のかが応答から区別できず、cachedTokensIn が常に 0 に見える
+      usage: { include: true },
     };
     if (options.temperature !== undefined) {
       body['temperature'] = options.temperature;

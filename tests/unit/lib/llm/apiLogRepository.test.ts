@@ -13,6 +13,7 @@ function makeEntry(overrides: Partial<LlmApiLogEntry> = {}): LlmApiLogEntry {
     promptSummary: '[system] Extract…',
     tokensIn: 1000,
     tokensOut: 200,
+    cachedTokensIn: 800,
     latencyMs: 1234,
     costEstimateUsd: 0.01,
     error: null,
@@ -36,6 +37,8 @@ describe('logEntryToRow', () => {
       1234,
       0.01,
       null,
+      // 後付け列 cached_tokens_in はヘッダー末尾なので行の末尾に来る
+      800,
     ]);
   });
 
@@ -45,12 +48,13 @@ describe('logEntryToRow', () => {
         promptSummary: null,
         tokensIn: null,
         tokensOut: null,
+        cachedTokensIn: null,
         latencyMs: null,
         costEstimateUsd: null,
         error: 'boom (status=503)',
       }),
     );
-    expect(row.slice(7)).toEqual([null, null, null, null, null, 'boom (status=503)']);
+    expect(row.slice(7)).toEqual([null, null, null, null, null, 'boom (status=503)', null]);
   });
 });
 

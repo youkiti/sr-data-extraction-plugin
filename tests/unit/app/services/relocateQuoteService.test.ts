@@ -95,6 +95,7 @@ function makeDeps(overrides: Partial<RelocateQuoteDeps> = {}): {
     }),
     tokensIn: 10,
     tokensOut: 5,
+    cachedTokensIn: null,
     raw: {},
   }));
   const deps: RelocateQuoteDeps = {
@@ -177,6 +178,7 @@ describe('relocateQuote', () => {
       text: JSON.stringify({ found: false, quote: null, page: null }),
       tokensIn: 5,
       tokensOut: 2,
+      cachedTokensIn: null,
       raw: {},
     }));
     deps.buildProvider = (config) => ({
@@ -198,6 +200,7 @@ describe('relocateQuote', () => {
       text: JSON.stringify({ found: true, quote: 'this text does not exist anywhere', page: 3 }),
       tokensIn: 5,
       tokensOut: 2,
+      cachedTokensIn: null,
       raw: {},
     }));
     deps.buildProvider = (config) => ({
@@ -254,6 +257,7 @@ describe('relocateQuote', () => {
       text: 'not json at all',
       tokensIn: 1,
       tokensOut: 1,
+      cachedTokensIn: null,
       raw: {},
     }));
     deps.buildProvider = (config) => ({

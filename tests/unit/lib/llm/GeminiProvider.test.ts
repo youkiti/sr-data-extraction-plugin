@@ -41,6 +41,8 @@ describe('GeminiProvider.chat', () => {
       text: 'Hello!',
       tokensIn: 10,
       tokensOut: 20,
+      // usage が返っているので 0（計測できてヒット 0 件）。null は usage ごと無い場合
+      cachedTokensIn: 0,
       raw: expect.any(Object),
     });
     expect(provider.providerId).toBe('gemini');
@@ -576,4 +578,36 @@ describe('toGeminiSchema', () => {
   test('enum が配列でない場合はそのまま通す（プロバイダ側でエラーにさせる）', () => {
     expect(toGeminiSchema({ enum: 'oops' })).toEqual({ enum: 'oops' });
   });
+
+  // プロンプトキャッシュのヒット計測。Gemini の promptTokenCount はキャッシュ分を内数として
+  // 含むため tokensIn はそのまま総入力になり、cachedContentTokenCount がその内訳になる
+  test('cachedContentTokenCount を cachedTokensIn として返す（promptTokenCount は総入力のまま）', async () => {
+    const fetch = jest.fn().mockResolvedValue(
+      jsonResponse({
+        candidates: [{ content: { parts: [{ text: 'ok' }] }, finishReason: 'STOP' }],
+        usageMetadata: {
+          promptTokenCount: 12_000,
+          candidatesTokenCount: 800,
+          cachedContentTokenCount: 9_480,
+        },
+      }),
+    );
+    const provider = new GeminiProvider({ apiKey: 'k', fetch });
+    const result = await provider.chat([{ role: 'user', content: 'hi' }]);
+    expect(result.tokensIn).toBe(12_000);
+    expect(result.cachedTokensIn).toBe(9_480);
+  });
+
+  test('usageMetadata ごと無ければ cachedTokensIn は null（0 件ではなく「不明」）', async () => {
+    const fetch = jest.fn().mockResolvedValue(
+      jsonResponse({
+        candidates: [{ content: { parts: [{ text: 'ok' }] }, finishReason: 'STOP' }],
+      }),
+    );
+    const provider = new GeminiProvider({ apiKey: 'k', fetch });
+    const result = await provider.chat([{ role: 'user', content: 'hi' }]);
+    expect(result.tokensIn).toBeNull();
+    expect(result.cachedTokensIn).toBeNull();
+  });
+
 });

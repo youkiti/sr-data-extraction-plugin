@@ -3,7 +3,7 @@ import type { ChatResponse, LLMProvider } from '../../../../src/lib/llm/LLMProvi
 import { withThrottle } from '../../../../src/lib/llm/throttle';
 
 function okResponse(text = 'ok'): ChatResponse {
-  return { text, tokensIn: 1, tokensOut: 1, raw: {} };
+  return { text, tokensIn: 1, tokensOut: 1, cachedTokensIn: null, raw: {} };
 }
 
 /** 呼び出し時刻（仮想クロック値）を記録する fake provider */

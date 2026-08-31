@@ -59,20 +59,37 @@ describe('estimateCostUsd', () => {
     expect(APPROX_IMAGE_TOKENS_PER_PAGE).toBe(1_100);
   });
 
-  // issue #127 PR2: docs/requirements.md §10 Q11 で確認済みの Anthropic 3 モデルの単価転記
-  it('claude-opus-5 は入力 $5.00 / 出力 $25.00 per 1M で概算する', () => {
-    expect(MODEL_PRICING['claude-opus-5']).toEqual({ inputPerMillion: 5.0, outputPerMillion: 25.0 });
+  // issue #127 PR2 で転記し、2026-08-31 に公式料金ページで再確認した Anthropic 3 モデルの単価。
+  // キャッシュ read は 3 モデルとも入力単価の 0.1 倍
+  it('claude-opus-5 は入力 $5.00 / 出力 $25.00 / キャッシュ $0.50 per 1M で概算する', () => {
+    expect(MODEL_PRICING['claude-opus-5']).toEqual({
+      inputPerMillion: 5.0,
+      outputPerMillion: 25.0,
+      cachedInputPerMillion: 0.5,
+    });
     // 1,000,000 入力 + 1,000,000 出力 = 5.00 + 25.00 = 30.00 USD
     expect(estimateCostUsd('claude-opus-5', 1_000_000, 1_000_000)).toBeCloseTo(30.0, 10);
   });
 
-  it('claude-sonnet-5 は入力 $3.00 / 出力 $15.00 per 1M（導入価格ではなく通常価格）で概算する', () => {
-    expect(MODEL_PRICING['claude-sonnet-5']).toEqual({ inputPerMillion: 3.0, outputPerMillion: 15.0 });
-    expect(estimateCostUsd('claude-sonnet-5', 1_000_000, 1_000_000)).toBeCloseTo(18.0, 10);
+  // 2026-08-31 に公式料金ページで確認: $2/$10 は導入価格ではなく**標準価格として恒久化**され、
+  // 予定されていた $3/$15 への改定は行われないと明記された。旧テストは「導入価格ではなく
+  // 通常価格 $3/$15」を期待していたが、その前提が失効したため実価格へ更新した（作業原則 3 の
+  // 「意図した仕様変更」。実装のバグではなく外部価格の改定を追随したもの）
+  it('claude-sonnet-5 は入力 $2.00 / 出力 $10.00 / キャッシュ $0.20 per 1M で概算する', () => {
+    expect(MODEL_PRICING['claude-sonnet-5']).toEqual({
+      inputPerMillion: 2.0,
+      outputPerMillion: 10.0,
+      cachedInputPerMillion: 0.2,
+    });
+    expect(estimateCostUsd('claude-sonnet-5', 1_000_000, 1_000_000)).toBeCloseTo(12.0, 10);
   });
 
-  it('claude-haiku-4-5 は入力 $1.00 / 出力 $5.00 per 1M で概算する', () => {
-    expect(MODEL_PRICING['claude-haiku-4-5']).toEqual({ inputPerMillion: 1.0, outputPerMillion: 5.0 });
+  it('claude-haiku-4-5 は入力 $1.00 / 出力 $5.00 / キャッシュ $0.10 per 1M で概算する', () => {
+    expect(MODEL_PRICING['claude-haiku-4-5']).toEqual({
+      inputPerMillion: 1.0,
+      outputPerMillion: 5.0,
+      cachedInputPerMillion: 0.1,
+    });
     expect(estimateCostUsd('claude-haiku-4-5', 1_000_000, 1_000_000)).toBeCloseTo(6.0, 10);
   });
 });
@@ -120,5 +137,40 @@ describe('resolveModelImageInputSupport（画像非対応モデルの実行ブ�
     // gemini-2.5-pro を openrouter 経由（google/gemini-2.5-pro 等ではなくモデル名そのまま送る
     // ローカル互換サーバ等を想定）で叩く場合も実測が無いため unknown
     expect(resolveModelImageInputSupport('openrouter', 'gemini-2.5-pro')).toBe('unknown');
+  });
+});
+
+describe('estimateCostUsd のキャッシュヒット割引', () => {
+  // tokensIn は「キャッシュ分を含む総入力」という契約（ChatResponse.tokensIn の JSDoc）。
+  // 渡さないと満額で二重計上され、実費の数倍を表示することになる
+  it('cachedTokensIn 分をキャッシュ単価で積み、残りを入力単価で積む', () => {
+    // gemini-3.5-flash: 入力 $1.50 / キャッシュ $0.15 / 出力 $9.00 per 1M
+    // 総入力 1,000,000 のうち 800,000 がヒット
+    //   → 200,000 × 1.50 + 800,000 × 0.15 = 0.30 + 0.12 = 0.42（+ 出力 0）
+    expect(estimateCostUsd('gemini-3.5-flash', 1_000_000, 0, 800_000)).toBeCloseTo(0.42, 10);
+  });
+
+  it('cachedTokensIn を渡さない既存の呼び出しは従来どおり全量を入力単価で積む', () => {
+    // 引数 3 つの呼び出しが 1 セントも変わらないことの回帰の砦
+    expect(estimateCostUsd('gemini-3.5-flash', 1_000_000, 0)).toBeCloseTo(1.5, 10);
+    expect(estimateCostUsd('gemini-3.5-flash', 1_000_000, 0, null)).toBeCloseTo(1.5, 10);
+  });
+
+  it('キャッシュ単価が未設定のモデルは入力単価で積む（割引を見込まない安全側）', () => {
+    // gemini-2.5-pro は cachedInputPerMillion 未設定（公式ページに到達できず未確認）
+    expect(estimateCostUsd('gemini-2.5-pro', 1_000_000, 0, 800_000)).toBeCloseTo(1.25, 10);
+  });
+
+  it('cachedTokensIn が総入力を超えても負のコストにならない（総入力で頭打ち）', () => {
+    // 全量がキャッシュ扱いになるだけ: 1,000,000 × 0.15 = 0.15
+    expect(estimateCostUsd('gemini-3.5-flash', 1_000_000, 0, 5_000_000)).toBeCloseTo(0.15, 10);
+  });
+
+  it('cachedTokensIn が負値でも 0 として扱う', () => {
+    expect(estimateCostUsd('gemini-3.5-flash', 1_000_000, 0, -100)).toBeCloseTo(1.5, 10);
+  });
+
+  it('tokensIn が null なら cachedTokensIn があっても出力ぶんだけで概算する', () => {
+    expect(estimateCostUsd('gemini-3.5-flash', null, 1_000_000, 500)).toBeCloseTo(9.0, 10);
   });
 });

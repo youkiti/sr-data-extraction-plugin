@@ -694,4 +694,33 @@ describe('OpenAICompatibleProvider', () => {
       globalThis.fetch = original;
     }
   });
+
+  // OpenAI 互換の prompt_tokens はキャッシュ分を内数として含む（OpenAI 公式 cookbook /
+  // Azure 公式ドキュメントのレスポンス例で prompt + completion = total が閉じることを確認）
+  test('prompt_tokens_details.cached_tokens を cachedTokensIn として返す', async () => {
+    const fetchMock = jest.fn().mockResolvedValue(
+      response({
+        choices: [{ message: { content: 'ok' } }],
+        usage: {
+          prompt_tokens: 12_000,
+          completion_tokens: 800,
+          prompt_tokens_details: { cached_tokens: 9_480 },
+        },
+      }),
+    );
+    const provider = new OpenAICompatibleProvider({ apiKey: 'secret', model: 'org/model', endpoint: 'https://llm.example/v1/chat/completions', fetch: fetchMock });
+    const result = await provider.chat([{ role: 'user', content: 'u' }]);
+    expect(result.tokensIn).toBe(12_000);
+    expect(result.cachedTokensIn).toBe(9_480);
+  });
+
+  test('usage ごと無ければ cachedTokensIn は null（不明）', async () => {
+    const fetchMock = jest.fn().mockResolvedValue(
+      response({ choices: [{ message: { content: 'ok' } }] }),
+    );
+    const provider = new OpenAICompatibleProvider({ apiKey: 'secret', model: 'org/model', endpoint: 'https://llm.example/v1/chat/completions', fetch: fetchMock });
+    const result = await provider.chat([{ role: 'user', content: 'u' }]);
+    expect(result.cachedTokensIn).toBeNull();
+  });
+
 });

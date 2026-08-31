@@ -217,6 +217,7 @@ function makeDeps(overrides: Partial<SchemaServiceDeps> = {}): {
     text: JSON.stringify([DRAFTED_ITEM]),
     tokensIn: 100,
     tokensOut: 50,
+    cachedTokensIn: null,
     raw: {},
   }));
   const deps: SchemaServiceDeps = {
@@ -593,7 +594,7 @@ describe('runDraftSchema', () => {
       await jest.advanceTimersByTimeAsync(2000);
       expect(store.getState().schema.draftElapsedSeconds).toBe(2);
 
-      resolveChat({ text: JSON.stringify([DRAFTED_ITEM]), tokensIn: 1, tokensOut: 1, raw: {} });
+      resolveChat({ text: JSON.stringify([DRAFTED_ITEM]), tokensIn: 1, tokensOut: 1, cachedTokensIn: null, raw: {} });
       await promise;
       expect(store.getState().schema.drafting).toBe(false);
 
