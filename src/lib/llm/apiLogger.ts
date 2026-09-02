@@ -134,12 +134,16 @@ export function withLogging(
           promptSummary: buildPromptSummary(messages),
           tokensIn: response?.tokensIn ?? null,
           tokensOut: response?.tokensOut ?? null,
+          cachedTokensIn: response?.cachedTokensIn ?? null,
           latencyMs,
           // モデル単価表（pricing.ts）から概算コストを算出。未知モデルは null。
+          // キャッシュヒット分はキャッシュ単価で積む（tokensIn はキャッシュ分を含む総入力
+          // という契約なので、これを渡さないとヒット分を満額で二重計上してしまう）
           costEstimateUsd: estimateCostUsd(
             provider.model,
             response?.tokensIn ?? null,
             response?.tokensOut ?? null,
+            response?.cachedTokensIn ?? null,
           ),
           error: errorMessage,
         };

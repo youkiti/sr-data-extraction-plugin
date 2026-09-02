@@ -50,6 +50,8 @@ describe('OpenRouterProvider.chat', () => {
       text: 'Hello!',
       tokensIn: 10,
       tokensOut: 20,
+      // usage が返っているので 0（計測できてヒット 0 件）。null は usage ごと無い場合
+      cachedTokensIn: 0,
       raw: expect.any(Object),
     });
     expect(provider.providerId).toBe('openrouter');
@@ -103,7 +105,12 @@ describe('OpenRouterProvider.chat', () => {
       const provider = new OpenRouterProvider({ apiKey: 'k', model: 'm/x', fetch });
       await provider.chat([{ role: 'user', content: 'q' }]);
       const body = JSON.parse((fetch.mock.calls[0][1] as RequestInit).body as string);
-      expect(body).toEqual({ model: 'm/x', messages: [{ role: 'user', content: 'q' }] });
+      // usage.include は常時送る（キャッシュ関連 usage が opt-in のため）
+      expect(body).toEqual({
+        model: 'm/x',
+        messages: [{ role: 'user', content: 'q' }],
+        usage: { include: true },
+      });
       expect(body).not.toHaveProperty('reasoning_effort');
     });
 
@@ -599,4 +606,33 @@ describe('OpenRouterProvider.chat', () => {
       }
     }
   });
+
+  // OpenRouter はキャッシュ関連 usage を opt-in（body の usage.include）でしか返さないため、
+  // 常時送っている。返ってきた cached_tokens は prompt_tokens の内数
+  test('prompt_tokens_details.cached_tokens を cachedTokensIn として返す', async () => {
+    const fetch = jest.fn().mockResolvedValue(
+      jsonResponse({
+        choices: [{ message: { content: 'ok' }, finish_reason: 'stop' }],
+        usage: {
+          prompt_tokens: 12_000,
+          completion_tokens: 800,
+          prompt_tokens_details: { cached_tokens: 9_480 },
+        },
+      }),
+    );
+    const provider = new OpenRouterProvider({ apiKey: 'k', model: 'm/x', fetch });
+    const result = await provider.chat([{ role: 'user', content: 'q' }]);
+    expect(result.tokensIn).toBe(12_000);
+    expect(result.cachedTokensIn).toBe(9_480);
+  });
+
+  test('usage ごと無ければ cachedTokensIn は null（不明）', async () => {
+    const fetch = jest.fn().mockResolvedValue(
+      jsonResponse({ choices: [{ message: { content: 'ok' }, finish_reason: 'stop' }] }),
+    );
+    const provider = new OpenRouterProvider({ apiKey: 'k', model: 'm/x', fetch });
+    const result = await provider.chat([{ role: 'user', content: 'q' }]);
+    expect(result.cachedTokensIn).toBeNull();
+  });
+
 });

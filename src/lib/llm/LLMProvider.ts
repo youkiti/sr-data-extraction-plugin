@@ -103,10 +103,33 @@ export interface ChatOptions {
 export interface ChatResponse {
   /** モデル出力テキスト（responseFormat=json でも文字列のまま） */
   text: string;
-  /** プロンプト側のトークン数。プロバイダが返さなければ null */
+  /**
+   * プロンプト側の**総**トークン数（プロンプトキャッシュから読まれた分を**含む**）。
+   * プロバイダが返さなければ null。
+   *
+   * 「含む」を契約として固定しているのは、provider ごとに素の意味が割れているため:
+   * - Gemini `promptTokenCount` / OpenAI 互換・OpenRouter `usage.prompt_tokens` は
+   *   キャッシュ分を**内数として含む**（そのまま渡せる）
+   * - Anthropic `usage.input_tokens` は最後のブレークポイントより後ろだけの
+   *   **外数**で、総入力は `input_tokens + cache_read_input_tokens +
+   *   cache_creation_input_tokens`（AnthropicProvider が足してから渡す）
+   *
+   * 正規化を provider 境界で済ませるのは `failureKind` / `retryable` と同じ方針で、
+   * これより上（apiLogger / pricing）が provider を意識しないで済むようにするため
+   */
   tokensIn: number | null;
   /** 生成側のトークン数。同上 */
   tokensOut: number | null;
+  /**
+   * `tokensIn` のうちプロンプトキャッシュから読まれた分（**内数**）。
+   * キャッシュ単価（多くのプロバイダで入力単価の 0.1 倍）で課金されるため、
+   * `estimateCostUsd` はこの分を割り引いて概算する。
+   *
+   * null は「プロバイダがキャッシュ情報を返さなかった（不明）」で、0 は
+   * 「返したうえでヒット 0 件」。区別を残すのは、キャッシュが効かなくなった退行と
+   * 計測できていないだけの状態を後から切り分けられるようにするため
+   */
+  cachedTokensIn: number | null;
   /** プロバイダ生レスポンス（apiLogger が Drive へそのまま保存する） */
   raw: unknown;
 }

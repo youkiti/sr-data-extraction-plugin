@@ -120,6 +120,7 @@ describe('withLogging', () => {
       text: 'ok',
       tokensIn: 5,
       tokensOut: 7,
+      cachedTokensIn: null,
       raw: { candidates: ['x'] },
     };
     const provider = makeProvider(async () => response);
@@ -153,7 +154,7 @@ describe('withLogging', () => {
   });
 
   test('promptVersion を渡すと prompt payload に記録される（§4.3 プロンプト版数）', async () => {
-    const provider = makeProvider(async () => ({ text: 'ok', tokensIn: 1, tokensOut: 1, raw: {} }));
+    const provider = makeProvider(async () => ({ text: 'ok', tokensIn: 1, tokensOut: 1, cachedTokensIn: null, raw: {} }));
     const { deps, recorded } = makeDeps();
     const logged = withLogging(provider, 'extract_study', { ...deps, promptVersion: 3 });
     await logged.chat([{ role: 'user', content: 'q' }], { temperature: 0 });
@@ -166,7 +167,7 @@ describe('withLogging', () => {
   });
 
   test('promptVersion 未指定なら prompt payload には null で記録される', async () => {
-    const provider = makeProvider(async () => ({ text: 'ok', tokensIn: 1, tokensOut: 1, raw: {} }));
+    const provider = makeProvider(async () => ({ text: 'ok', tokensIn: 1, tokensOut: 1, cachedTokensIn: null, raw: {} }));
     const { deps, recorded } = makeDeps();
     const logged = withLogging(provider, 'other', deps);
     await logged.chat([{ role: 'user', content: 'q' }]);
@@ -230,7 +231,7 @@ describe('withLogging', () => {
       providerId: 'gemini',
       model: 'unknown-model-x',
       supportsImageInput: true,
-      chat: async () => ({ text: 'ok', tokensIn: 100, tokensOut: 50, raw: {} }),
+      chat: async () => ({ text: 'ok', tokensIn: 100, tokensOut: 50, cachedTokensIn: null, raw: {} }),
     };
     const { deps, recorded } = makeDeps();
     const logged = withLogging(provider, 'other', deps);
@@ -243,6 +244,7 @@ describe('withLogging', () => {
       text: 'ok',
       tokensIn: null,
       tokensOut: null,
+      cachedTokensIn: null,
       raw: {},
     }));
     const { deps, recorded } = makeDeps();
@@ -256,6 +258,7 @@ describe('withLogging', () => {
       text: 'ok',
       tokensIn: null,
       tokensOut: null,
+      cachedTokensIn: null,
       raw: {},
     }));
     const logged = withLogging(provider, 'other', {
@@ -268,7 +271,7 @@ describe('withLogging', () => {
   });
 
   test('supportsImageInput を元プロバイダから引き継ぐ', async () => {
-    const provider = makeProvider(async () => ({ text: 'ok', tokensIn: 1, tokensOut: 1, raw: {} }));
+    const provider = makeProvider(async () => ({ text: 'ok', tokensIn: 1, tokensOut: 1, cachedTokensIn: null, raw: {} }));
     const { deps } = makeDeps();
     const logged = withLogging(provider, 'other', deps);
     expect(logged.supportsImageInput).toBe(true);
@@ -276,7 +279,7 @@ describe('withLogging', () => {
 
   test('画像パートを含む prompt を保存するとき、Drive へ保存する JSON から base64 本体が除かれる', async () => {
     const base64 = 'QQ=='.repeat(100_000);
-    const provider = makeProvider(async () => ({ text: 'ok', tokensIn: 1, tokensOut: 1, raw: {} }));
+    const provider = makeProvider(async () => ({ text: 'ok', tokensIn: 1, tokensOut: 1, cachedTokensIn: null, raw: {} }));
     const { deps, recorded } = makeDeps();
     const logged = withLogging(provider, 'other', deps);
     await logged.chat([
@@ -291,5 +294,39 @@ describe('withLogging', () => {
     const promptUpload = recorded.uploads[0]!.content;
     expect(promptUpload).not.toContain(base64);
     expect(promptUpload).toContain(`<image image/png ${base64.length} chars redacted>`);
+  });
+});
+
+describe('withLogging のキャッシュヒット計測', () => {
+  test('cachedTokensIn をログ行へ残し、コスト概算からも割り引く', async () => {
+    const provider = makeProvider(async () => ({
+      text: 'ok',
+      tokensIn: 1_000_000,
+      tokensOut: 0,
+      cachedTokensIn: 800_000,
+      raw: {},
+    }));
+    const { deps, recorded } = makeDeps();
+    const logged = withLogging({ ...provider, model: 'gemini-3.5-flash' }, 'extract_study', deps);
+    await logged.chat([{ role: 'user', content: 'q' }]);
+    const entry = recorded.entries[0];
+    expect(entry?.cachedTokensIn).toBe(800_000);
+    // 200,000 × $1.50 + 800,000 × $0.15 = 0.42。割り引かなければ 1.50 になる
+    expect(entry?.costEstimateUsd).toBeCloseTo(0.42, 10);
+  });
+
+  test('provider がキャッシュ情報を返さなければ cachedTokensIn は null のまま記録する', async () => {
+    const provider = makeProvider(async () => ({
+      text: 'ok',
+      tokensIn: 1_000_000,
+      tokensOut: 0,
+      cachedTokensIn: null,
+      raw: {},
+    }));
+    const { deps, recorded } = makeDeps();
+    const logged = withLogging({ ...provider, model: 'gemini-3.5-flash' }, 'extract_study', deps);
+    await logged.chat([{ role: 'user', content: 'q' }]);
+    expect(recorded.entries[0]?.cachedTokensIn).toBeNull();
+    expect(recorded.entries[0]?.costEstimateUsd).toBeCloseTo(1.5, 10);
   });
 });

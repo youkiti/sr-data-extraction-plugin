@@ -231,6 +231,9 @@ export const SHEET_HEADERS: Record<SheetTabName, readonly string[]> = {
     'latency_ms',
     'cost_estimate_usd',
     'error',
+    // 後付け列（プロンプトキャッシュのヒット計測）。既存プロジェクトのシートには
+    // この列が無いが、追記型のタブなので新しい行にだけ値が入る（旧行は空 = 不明）
+    'cached_tokens_in',
   ],
   ExportLog: [
     'export_id',

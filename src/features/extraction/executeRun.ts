@@ -310,6 +310,34 @@ interface PendingFlushItem {
 }
 
 /**
+ * plan.batches を study 単位のグループへまとめる（study の初出順・グループ内はバッチ順を保つ）。
+ *
+ * これがワーカープールへ流す単位である理由: plan.batches は planRun が study ごとに
+ * section バッチを連続で push した study-major 順の平坦な配列なので、そのまま
+ * runWithConcurrency へ渡すと maxConcurrency ≥ 2 のときに**同一 study の section バッチが
+ * 同時に発火する**。同一 study のバッチは system + protocol + 本文という巨大な共通
+ * プレフィックスを共有しており（extractData.ts のセクション順は issue #89 でこの共有を
+ * 狙って並べ替えた）、同時に飛ばすと 1 本目がプロバイダのプロンプトキャッシュを
+ * 書き終える前に他が到達して全部 cold miss になる。study 単位で配って**グループ内は逐次**
+ * にすれば、2 本目以降がキャッシュヒットする一方、並列度は study 数で決まるため
+ * 跨 study のスループット（docs/handoff-20260710-throughput.md の狙い）は落ちない。
+ */
+export function groupBatchesByStudy(
+  batches: readonly PlannedBatch[],
+): readonly (readonly PlannedBatch[])[] {
+  const groups = new Map<string, PlannedBatch[]>();
+  for (const batch of batches) {
+    const group = groups.get(batch.studyId);
+    if (group === undefined) {
+      groups.set(batch.studyId, [batch]);
+    } else {
+      group.push(batch);
+    }
+  }
+  return [...groups.values()];
+}
+
+/**
  * items を最大 limit 本まで同時に worker へ流すワーカープール。
  * limit=1 なら 1 本のワーカーが index 順に逐次処理する（＝ for...of と同一挙動）。
  * worker は失敗も自身で握りつぶす前提（processBatch はバッチ失敗として記録し throw しない）。
@@ -689,7 +717,17 @@ export async function executeRun(
 
   // maxConcurrency=1 なら逐次（従来と同一挙動 = 回帰の砦）、2 以上でバッチを並行実行する
   const concurrency = Math.max(1, Math.floor(deps.maxConcurrency ?? 1));
-  await runWithConcurrency(input.plan.batches, concurrency, processBatch);
+  // ワーカーへ配る単位は「1 バッチ」ではなく「1 study のバッチ列」。同一 study 内を
+  // 逐次にしてプロンプトキャッシュのヒットを保つ（groupBatchesByStudy の JSDoc 参照）
+  await runWithConcurrency(
+    groupBatchesByStudy(input.plan.batches),
+    concurrency,
+    async (batchesOfStudy) => {
+      for (const batch of batchesOfStudy) {
+        await processBatch(batch);
+      }
+    },
+  );
   // 全バッチ処理後、閾値未満のまま残っていた分をまとめて書く（全 study 完了時のフラッシュ）
   await flushRemaining();
 

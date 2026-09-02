@@ -103,6 +103,7 @@ const AI_RESPONSE: ChatResponse = {
   ]),
   tokensIn: 1000,
   tokensOut: 200,
+  cachedTokensIn: null,
   raw: { modelVersion: 'gemini-2.5-flash-001' },
 };
 
@@ -534,6 +535,7 @@ describe('runExtraction', () => {
       ]),
       tokensIn: 10,
       tokensOut: 5,
+      cachedTokensIn: null,
       raw: {},
     } satisfies ChatResponse);
     const deps = makeDeps(chat);
@@ -632,6 +634,7 @@ describe('runExtraction', () => {
       ]),
       tokensIn: 10,
       tokensOut: 5,
+      cachedTokensIn: null,
       raw: {},
     } satisfies ChatResponse);
     const deps = makeDeps(chat);
@@ -693,6 +696,7 @@ describe('runExtraction', () => {
       ]),
       tokensIn: 10,
       tokensOut: 5,
+      cachedTokensIn: null,
       raw: {},
     } satisfies ChatResponse);
     return {
@@ -794,6 +798,7 @@ describe('runExtraction', () => {
         ]),
         tokensIn: 10,
         tokensOut: 5,
+        cachedTokensIn: null,
         raw: {},
       } satisfies ChatResponse);
       const deps = makeDeps(chat);
@@ -846,6 +851,7 @@ describe('runExtraction', () => {
         ]),
         tokensIn: 10,
         tokensOut: 5,
+        cachedTokensIn: null,
         raw: {},
       } satisfies ChatResponse);
       const deps = makeDeps(chat);

@@ -20,7 +20,7 @@ import {
 import { setUiLanguage } from '../../../../src/lib/i18n';
 
 function okResponse(text = 'ok'): ChatResponse {
-  return { text, tokensIn: 1, tokensOut: 1, raw: {} };
+  return { text, tokensIn: 1, tokensOut: 1, cachedTokensIn: null, raw: {} };
 }
 
 describe('tier カタログ', () => {

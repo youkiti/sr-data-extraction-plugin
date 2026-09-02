@@ -35,7 +35,8 @@ describe('AnthropicProvider.chat', () => {
     );
     const provider = new AnthropicProvider({ apiKey: 'sk-ant-xxx', model: 'claude-opus-5', fetch });
     const result = await provider.chat([{ role: 'user', content: 'hi' }]);
-    expect(result).toEqual({ text: 'Hello!', tokensIn: 10, tokensOut: 20, raw: expect.any(Object) });
+    // usage が返っているので cachedTokensIn は 0（= 計測できてヒット 0 件）。null は usage ごと無い場合
+    expect(result).toEqual({ text: 'Hello!', tokensIn: 10, tokensOut: 20, cachedTokensIn: 0, raw: expect.any(Object) });
     expect(provider.providerId).toBe('anthropic');
     expect(provider.model).toBe('claude-opus-5');
     expect(provider.supportsImageInput).toBe(true);
@@ -666,4 +667,36 @@ describe('toAnthropicSchema', () => {
     });
     expect((items['required'] as string[]).includes('box_2d')).toBe(true);
   });
+
+  // Anthropic の input_tokens は最後のブレークポイントより後ろだけの「外数」なので、
+  // 他 provider と揃えるため provider 境界で 3 項を足して総入力にする
+  test('tokensIn は input_tokens + cache_read + cache_creation の総入力（cachedTokensIn は read 分）', async () => {
+    const fetch = jest.fn().mockResolvedValue(
+      jsonResponse({
+        content: [{ type: 'text', text: 'ok' }],
+        stop_reason: 'end_turn',
+        usage: {
+          input_tokens: 50,
+          output_tokens: 20,
+          cache_read_input_tokens: 9_000,
+          cache_creation_input_tokens: 1_000,
+        },
+      }),
+    );
+    const provider = new AnthropicProvider({ apiKey: 'sk-ant-xxx', model: 'claude-opus-5', fetch });
+    const result = await provider.chat([{ role: 'user', content: 'hi' }]);
+    expect(result.tokensIn).toBe(10_050);
+    expect(result.cachedTokensIn).toBe(9_000);
+  });
+
+  test('usage ごと無ければ tokensIn / cachedTokensIn とも null（不明）', async () => {
+    const fetch = jest.fn().mockResolvedValue(
+      jsonResponse({ content: [{ type: 'text', text: 'ok' }], stop_reason: 'end_turn' }),
+    );
+    const provider = new AnthropicProvider({ apiKey: 'sk-ant-xxx', model: 'claude-opus-5', fetch });
+    const result = await provider.chat([{ role: 'user', content: 'hi' }]);
+    expect(result.tokensIn).toBeNull();
+    expect(result.cachedTokensIn).toBeNull();
+  });
+
 });

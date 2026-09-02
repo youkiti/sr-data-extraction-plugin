@@ -161,9 +161,39 @@ interface AnthropicResponse {
   stop_reason?: string;
   stop_details?: AnthropicStopDetails | null;
   usage?: {
+    /**
+     * 最後の `cache_control` ブレークポイントより**後ろ**のトークンだけ（外数）。
+     * 総入力は `input_tokens + cache_read_input_tokens + cache_creation_input_tokens`
+     * （公式ドキュメントの定義式。2026-08-31 確認）で、他 provider と意味が逆なので
+     * `ChatResponse.tokensIn` へ渡す前にここで足し合わせる
+     */
     input_tokens?: number;
     output_tokens?: number;
+    /** キャッシュから読まれた分（入力単価の 0.1 倍で課金） */
+    cache_read_input_tokens?: number;
+    /** 今回キャッシュへ書き込んだ分（5 分 TTL で入力単価の 1.25 倍で課金） */
+    cache_creation_input_tokens?: number;
   };
+}
+
+/**
+ * Anthropic の `usage` から**総**入力トークン数を求める（`ChatResponse.tokensIn` の契約に合わせる）。
+ * `input_tokens` はキャッシュ分を含まない外数なので、公式の定義式
+ * `total_input_tokens = cache_read_input_tokens + cache_creation_input_tokens + input_tokens`
+ * のとおり 3 つを足す。`usage` ごと無ければ null（不明）。
+ *
+ * 現状この拡張は `cache_control` を送らないため後ろ 2 項は常に 0 だが、式のまま足しておく
+ * （将来キャッシュを入れたときに tokensIn が静かに過小計上へ倒れるのを防ぐ）
+ */
+function totalInputTokens(usage: AnthropicResponse['usage']): number | null {
+  if (usage === undefined) {
+    return null;
+  }
+  return (
+    (usage.input_tokens ?? 0) +
+    (usage.cache_read_input_tokens ?? 0) +
+    (usage.cache_creation_input_tokens ?? 0)
+  );
 }
 
 /** エラー詳細（responseBody）に載せる応答ボディ抜粋の最大長（他 provider と同じ方針） */
@@ -276,8 +306,9 @@ export class AnthropicProvider implements LLMProvider {
     }
     return {
       text,
-      tokensIn: json.usage?.input_tokens ?? null,
+      tokensIn: totalInputTokens(json.usage),
       tokensOut: json.usage?.output_tokens ?? null,
+      cachedTokensIn: json.usage === undefined ? null : (json.usage.cache_read_input_tokens ?? 0),
       raw: json,
     };
   }

@@ -23,6 +23,7 @@ export function logEntryToRow(entry: LlmApiLogEntry): (string | number | null)[]
     entry.latencyMs,
     entry.costEstimateUsd,
     entry.error,
+    entry.cachedTokensIn,
   ];
 }
 

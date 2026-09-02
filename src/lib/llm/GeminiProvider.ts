@@ -48,6 +48,13 @@ interface GeminiResponse {
     promptTokenCount?: number;
     candidatesTokenCount?: number;
     totalTokenCount?: number;
+    /**
+     * 暗黙 prefix キャッシュ（implicit caching）でヒットした入力トークン数。
+     * `promptTokenCount` の**内数**（ヒット時も promptTokenCount は総入力のまま）。
+     * ヒット 0 件のときはフィールドごと省略されるため、`?? null` ではなく
+     * 「フィールドが無い = 0 件」と読み替えないよう注意（下の parse を参照）
+     */
+    cachedContentTokenCount?: number;
   };
 }
 
@@ -186,6 +193,13 @@ export class GeminiProvider implements LLMProvider {
       text,
       tokensIn: json.usageMetadata?.promptTokenCount ?? null,
       tokensOut: json.usageMetadata?.candidatesTokenCount ?? null,
+      // Gemini は暗黙キャッシュがヒットしなかった呼び出しで cachedContentTokenCount を
+      // 省略する。usageMetadata 自体が返っていれば「計測できている」と見なして 0 に倒し、
+      // usageMetadata ごと無い場合だけ null（不明）にする
+      cachedTokensIn:
+        json.usageMetadata === undefined
+          ? null
+          : (json.usageMetadata.cachedContentTokenCount ?? 0),
       raw: json,
     };
   }
