@@ -20,7 +20,12 @@ import {
   PROMPT_SCAFFOLD_CHARS,
   planRun,
 } from '../../../../src/features/extraction/planRun';
-import { APPROX_IMAGE_TOKENS_PER_PAGE, estimateCostUsd } from '../../../../src/lib/llm/pricing';
+import {
+  APPROX_IMAGE_TOKENS_PER_PAGE,
+  DEFAULT_THINKING_OUTPUT_MULTIPLIER,
+  estimateCostUsd,
+  resolveThinkingOutputMultiplier,
+} from '../../../../src/lib/llm/pricing';
 import { EXTRACT_DATA_ARM_COMPLETENESS_RULE } from '../../../../src/features/extraction/skills/extractData';
 
 function makeField(
@@ -147,7 +152,7 @@ describe('planRun のバッチ分割', () => {
       overBudget: false,
     });
     expect(plan.inputMode).toBe('text_only');
-    expect(plan.warnings).toHaveLength(0);
+    expect(plan.warnings).toEqual([expect.stringContaining('思考（thinking）')]);
   });
 
   it('全項目バッチの fieldIds は fieldIndex 昇順に並ぶ', () => {
@@ -187,7 +192,7 @@ describe('planRun のバッチ分割', () => {
       fieldIds: ['f_o1'],
       overBudget: false,
     });
-    expect(plan.warnings).toHaveLength(0);
+    expect(plan.warnings).toEqual([expect.stringContaining('思考（thinking）')]);
   });
 
   it('section 分割後も予算超過なら overBudget を立てて警告する', () => {
@@ -205,6 +210,7 @@ describe('planRun のバッチ分割', () => {
     expect(plan.batches[0]?.overBudget).toBe(true);
     expect(plan.batches[1]?.overBudget).toBe(false);
     expect(plan.warnings).toEqual([
+      expect.stringContaining('思考（thinking）'),
       'section 分割後もトークン予算を超えるバッチが 1 件あります（応答の欠落・打ち切りに注意）',
     ]);
   });
@@ -223,6 +229,7 @@ describe('planRun のバッチ分割', () => {
     expect(plan.batches).toHaveLength(2);
     expect(plan.batches.every((batch) => batch.overBudget)).toBe(true);
     expect(plan.warnings).toEqual([
+      expect.stringContaining('思考（thinking）'),
       'section 分割後もトークン予算を超えるバッチが 2 件あります（応答の欠落・打ち切りに注意）',
     ]);
   });
@@ -307,7 +314,10 @@ describe('planRun のトークン概算', () => {
     expect(plan.batches[0]?.tokensInEstimate).toBe(
       expectedTokensIn(5 * FALLBACK_CHARS_PER_PAGE, STUDY_FIELD_CHARS),
     );
-    expect(plan.warnings).toEqual(['文字数が未取得の文献 1 件は既定値で概算しています']);
+    expect(plan.warnings).toEqual([
+      expect.stringContaining('思考（thinking）'),
+      '文字数が未取得の文献 1 件は既定値で概算しています',
+    ]);
   });
 
   it('char_count / page_count とも欠損時は既定文字数で概算する', () => {
@@ -535,7 +545,11 @@ describe('planRun のコスト概算と画像入力（pdf_native）の警告', (
       model: 'gemini-2.5-pro',
     });
     expect(plan.costEstimateUsd).toBe(
-      estimateCostUsd('gemini-2.5-pro', plan.tokensInEstimate, plan.tokensOutEstimate),
+      estimateCostUsd(
+        'gemini-2.5-pro',
+        plan.tokensInEstimate,
+        plan.tokensOutEstimate * resolveThinkingOutputMultiplier('gemini-2.5-pro'),
+      ),
     );
     expect(plan.costEstimateUsd).toBeGreaterThan(0);
   });
@@ -557,7 +571,7 @@ describe('planRun のコスト概算と画像入力（pdf_native）の警告', (
       model: 'gemini-2.5-pro',
     });
     expect(plan.inputMode).toBe('text_only');
-    expect(plan.warnings).toHaveLength(0);
+    expect(plan.warnings).toEqual([expect.stringContaining('思考（thinking）')]);
   });
 
   it('テキスト層がない文献は画像入力として含め、pdf_native の警告を出す（対象外にはしない）', () => {
@@ -579,6 +593,7 @@ describe('planRun のコスト概算と画像入力（pdf_native）の警告', (
     expect(plan.batches.find((b) => b.studyId === 'd2')?.imageDocumentIds).toEqual(['d2']);
     expect(plan.inputMode).toBe('pdf_native');
     expect(plan.warnings).toEqual([
+      expect.stringContaining('思考（thinking）'),
       'テキスト層がない文献 1 件はページ画像として LLM へ送信します（pdf_native。画像トークンぶんコストが増えます）',
     ]);
   });
@@ -601,6 +616,7 @@ describe('planRun のコスト概算と画像入力（pdf_native）の警告', (
     expect(plan.tokensInEstimate).toBeGreaterThan(0);
     expect(plan.inputMode).toBe('pdf_native');
     expect(plan.warnings).toEqual([
+      expect.stringContaining('思考（thinking）'),
       'テキスト層がない文献 1 件はページ画像として LLM へ送信します（pdf_native。画像トークンぶんコストが増えます）',
     ]);
   });
@@ -654,5 +670,51 @@ describe('既定トークン予算', () => {
       maxInputTokensPerCall: 200_000,
       maxOutputTokensPerCall: 8_000,
     });
+  });
+});
+
+describe('planRun の思考出力倍率（issue #261）', () => {
+  it.each(['gemini-3.5-flash', 'gemini-3.8-flash', 'gemini-3.1-flash-lite'])(
+    '%s の思考倍率はコストにのみ適用し、本文トークンと分割は変えない',
+    (model) => {
+      const input = {
+        documents: [makeDocument({ documentId: 'd1' })],
+        fields: [STUDY_FIELD],
+        budget: { maxOutputTokensPerCall: STUDY_TOKENS_OUT },
+      };
+      const plan = planRun({ ...input, model });
+      const baseline = planRun({ ...input, model: 'gemini-3.1-flash-lite' });
+      const multiplier = resolveThinkingOutputMultiplier(model);
+      expect(plan.thinkingOutputMultiplier).toBe(multiplier);
+      expect(plan.tokensOutEstimate).toBe(STUDY_TOKENS_OUT);
+      expect(plan.batches).toEqual(baseline.batches);
+      expect(plan.batches).toHaveLength(1);
+      expect(plan.batches[0]?.overBudget).toBe(false);
+      expect(plan.costEstimateUsd).toBe(
+        estimateCostUsd(model, plan.tokensInEstimate, STUDY_TOKENS_OUT * multiplier),
+      );
+      if (multiplier > 1) {
+        expect(plan.warnings).toEqual([
+          '思考（thinking）トークンを見込み、コスト概算では出力トークンに ' +
+            `×${multiplier.toFixed(2)} を掛けています` +
+            '（表示の出力トークン数は応答本文ぶんのみ）',
+        ]);
+      } else {
+        expect(plan.warnings).toEqual([]);
+      }
+    },
+  );
+
+  it('単価表に無いモデルは既定倍率を持つが、思考の警告は出さない', () => {
+    const plan = planRun({
+      documents: [makeDocument({ documentId: 'd1' })],
+      fields: [STUDY_FIELD],
+      model: 'unknown-model',
+    });
+    expect(plan.thinkingOutputMultiplier).toBe(DEFAULT_THINKING_OUTPUT_MULTIPLIER);
+    expect(plan.costEstimateUsd).toBeNull();
+    expect(plan.warnings).toEqual([
+      'モデル「unknown-model」は単価表に無いためコストを概算できません',
+    ]);
   });
 });

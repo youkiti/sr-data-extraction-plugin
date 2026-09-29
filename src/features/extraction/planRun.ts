@@ -17,6 +17,7 @@ import {
   APPROX_IMAGE_TOKENS_PER_PAGE,
   estimateCostUsd,
   resolveModelImageInputSupport,
+  resolveThinkingOutputMultiplier,
 } from '../../lib/llm/pricing';
 import { resolveProviderId } from '../../lib/llm/providerFactory';
 import {
@@ -115,6 +116,8 @@ export interface RunPlan {
   /** 全バッチ合計（ExtractionRuns.cost_estimate と S7 表示の素材） */
   tokensInEstimate: number;
   tokensOutEstimate: number;
+  /** コスト計算の出力推定にのみ適用する思考倍率。表示トークン数と分割判定には適用しない */
+  thinkingOutputMultiplier: number;
   /** 単価表（lib/llm/pricing.ts）に無いモデルは null（UI は「概算不可」表示） */
   costEstimateUsd: number | null;
   /** UI にそのまま表示できる注意事項 */
@@ -341,10 +344,20 @@ export function planRun(input: PlanRunInput): RunPlan {
 
   const tokensInEstimate = batches.reduce((sum, batch) => sum + batch.tokensInEstimate, 0);
   const tokensOutEstimate = batches.reduce((sum, batch) => sum + batch.tokensOutEstimate, 0);
-  const costEstimateUsd = estimateCostUsd(input.model, tokensInEstimate, tokensOutEstimate);
+  const thinkingOutputMultiplier = resolveThinkingOutputMultiplier(input.model);
+  const costEstimateUsd = estimateCostUsd(
+    input.model,
+    tokensInEstimate,
+    tokensOutEstimate * thinkingOutputMultiplier,
+  );
   const inputMode: InputMode = imageDocumentIds.size > 0 ? 'pdf_native' : 'text_only';
 
   const warnings: string[] = [];
+  if (thinkingOutputMultiplier > 1 && costEstimateUsd !== null) {
+    warnings.push(
+      `思考（thinking）トークンを見込み、コスト概算では出力トークンに ×${thinkingOutputMultiplier.toFixed(2)} を掛けています（表示の出力トークン数は応答本文ぶんのみ）`,
+    );
+  }
   if (imageDocumentIds.size > 0) {
     warnings.push(
       `テキスト層がない文献 ${imageDocumentIds.size} 件はページ画像として LLM へ送信します（pdf_native。画像トークンぶんコストが増えます）`,
@@ -384,6 +397,7 @@ export function planRun(input: PlanRunInput): RunPlan {
     inputMode,
     tokensInEstimate,
     tokensOutEstimate,
+    thinkingOutputMultiplier,
     costEstimateUsd,
     warnings,
   };

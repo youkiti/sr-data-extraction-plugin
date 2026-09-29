@@ -1,6 +1,7 @@
 // GeminiProvider（API キー方式 / systemInstruction 分離 / 構造化出力）の単体テスト
 // （sr-query-builder から流用。nullable union → nullable 変換のテストを追加）
 import { GeminiProvider, toGeminiSchema } from '../../../../src/lib/llm/GeminiProvider';
+import { estimateCostUsd } from '../../../../src/lib/llm/pricing';
 import { LlmProviderError } from '../../../../src/lib/llm/LLMProvider';
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -23,6 +24,38 @@ function errorResponse(status: number, body = 'err', retryAfter: string | null =
 }
 
 describe('GeminiProvider.chat', () => {
+  test.each([
+    [{ candidatesTokenCount: 20, thoughtsTokenCount: 30 }, 50],
+    [{ candidatesTokenCount: 20 }, 20],
+    [{ thoughtsTokenCount: 30 }, 30],
+    [{ candidatesTokenCount: 0, thoughtsTokenCount: 0 }, 0],
+    [{}, null],
+    [undefined, null],
+  ])('出力トークンは思考を含め、両方未取得なら null: %j', async (usageMetadata, expected) => {
+    const raw = {
+      candidates: [{ content: { parts: [{ text: 'ok' }] } }],
+      usageMetadata,
+    };
+    const fetch = jest.fn().mockResolvedValue(jsonResponse(raw));
+    const provider = new GeminiProvider({ apiKey: 'k', fetch });
+    const result = await provider.chat([{ role: 'user', content: 'q' }]);
+    expect(result.tokensOut).toBe(expected);
+    expect(result.raw).toEqual(raw);
+  });
+
+  test('Gemini の実測コストには思考トークンも出力単価で含まれる', async () => {
+    const fetch = jest.fn().mockResolvedValue(jsonResponse({
+      candidates: [{ content: { parts: [{ text: 'ok' }] } }],
+      usageMetadata: { promptTokenCount: 100, candidatesTokenCount: 20, thoughtsTokenCount: 30 },
+    }));
+    const provider = new GeminiProvider({ apiKey: 'k', fetch });
+    const result = await provider.chat([{ role: 'user', content: 'q' }]);
+    expect(estimateCostUsd(provider.model, result.tokensIn, result.tokensOut)).toBeCloseTo(
+      (100 * 1.5 + 50 * 9) / 1_000_000,
+      10,
+    );
+  });
+
   test('user メッセージを contents に渡し、テキストを返す', async () => {
     const fetch = jest.fn().mockResolvedValue(
       jsonResponse({
