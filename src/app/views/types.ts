@@ -32,6 +32,8 @@ export interface HomeViewCallbacks {
   onConfirmReviewerChange(): void;
   /** owner: モード変更確認ダイアログの「キャンセル」 */
   onCancelReviewerChange(): void;
+  /** owner: モード変更ブロック通知の「閉じる」 */
+  onDismissReviewerBlocked(): void;
   /** owner: レビュアーの登録解除（revoked 行の追記） */
   onRevokeReviewer(email: string): void;
   /** owner: レビュー相手への依頼文をクリップボードへコピー */

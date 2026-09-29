@@ -104,6 +104,8 @@ export interface ReviewersState {
   saveError: string | null;
   /** モード変更確認ダイアログ（既存 reviewer のモードを変える送信時に表示）。null = 非表示 */
   confirmingChange: ReviewerFormInput | null;
+  /** モード変更ブロック通知。作業済み email の実効 annotator_type を変える登録を拒否したときに表示。null = 非表示 */
+  blockedChange: { email: string } | null;
 }
 
 /** 取り込み進捗 1 行の段階（ui-states.md §3「コピー → テキスト抽出の 2 段階表示」+ 前後の状態 + 重複スキップ〔issue #102〕） */
@@ -695,6 +697,7 @@ export function createInitialState(): AppState {
       saving: false,
       saveError: null,
       confirmingChange: null,
+      blockedChange: null,
     },
     documents: {
       records: null,

@@ -53,7 +53,12 @@ flowchart LR
 | assigned_at | ISO8601 | ✓ | |
 
 - owner 自身は登録不要（`Meta.created_by` で解決）。
-- **モード変更は原則禁止**（`independent` → `with_ai` へ変えると盲検が事後的に破れるため）。UI では既存判定がある email のモード変更時に警告 + 監査行が残る（追記型なので履歴は自動的に残る）。
+- **モード変更は、作業の痕跡がある email についてハードブロックする**（2026-09-29 決定・issue #255 案 C。それまでの「原則禁止・警告 + 監査行のみ」を強制に改めた）。
+  - **判定基準**: 登録しようとする行の**実効 annotator_type**（`role = reviewer` × `review_mode = independent` → `human_independent`、`reviewer` × `with_ai` と `adjudicator` → `human_with_ai`。`revoked` は作業しないので対象外）が、その email を `annotator` とする既存の判定（`Decisions`）・データ行（`StudyData` / `ResultsData`）・群構成（`ArmStructures`）の `annotator_type`（`human_with_ai` / `human_independent`）と 1 件でも食い違えば、Reviewers への追記を拒否する。比べる相手は直前の登録行ではなく**実データ**なので、「解除（`revoked`）→ 別モードで再登録」「reviewer ↔ adjudicator の往復」といった迂回路も同じく塞がる。
+  - **理由**: 読み出し側（検証パネルのセル状態・独立モードの進捗・群構成）と `StudyData` / `ResultsData` の更新キーは `annotator`（email）だけで絞り、`annotator_type` を含まない。`accept` は AI 値をそのまま `Decision.value` に保存するため、`with_ai` → `independent` に変えると過去に承認した AI 値が独立入力画面の現在値・編集初期値・進捗・群構成として現れる（独立二重抽出と κ の比較可能性が崩れる）。`independent` → `with_ai` では独立に入れた値が AI 表示と並び、盲検が事後的に破れる。
+  - 実データが 1 件も無い email（登録直後で未着手）のモード変更は、従来どおり警告ダイアログ（`#reviewer-mode-confirm`）を経て許可する。誤登録の訂正の余地は**着手前に限って**残す。
+  - 登録のたびに 4 タブを読み直して判定する（Home のキャッシュは使わない。`StudyData` / `ResultsData` は重複キーの敗者行も含めて全行を見る）。警告ダイアログの「変更する」でも確定直前にもう一度読み直す（ダイアログ表示中に作業が始まった場合に備える）。読み込みに失敗したら登録しない（フェイルクローズ）。
+  - **受け入れた割り切り**: (1) 着手後の誤登録を訂正する逃げ道は無い。別モードで作業させたいときは別の Google アカウント（email）で登録する。(2) 本決定より前のモード変更で既に `annotator_type` が混在している email・プロジェクトは救済しない（混在を検出する警告バナー等 = 案 D の追加分も持たない）。混在した email はどちらのモードにも再登録できず、解除だけができる。データは追記型のまま残し、書き換えない。(3) 読み出し側を `annotator_type` で絞る案（案 A）と、`StudyData` / `ResultsData` の行キーに `annotator_type` を加える案（案 B・データ設計変更 + 移行が必要）は採らない。(4) Sheets を直接編集して `Reviewers` タブを書き換えることは防げない（§0「盲検の担保範囲」と同じ割り切り）。(5) ロールはメインビュー起動時に 1 回だけ解決するため、未着手の email のモードを変えた時点で相手がアプリを開いたままだと、その画面は変更前のモードで保存を続けうる（混在が生じる）。書き込み経路での再検証は持たず、警告ダイアログの文言で「変更後に開き直してもらう」よう owner に案内する運用で補う。
 - 旧プロジェクトにはタブが無い → 書き込み時に自動作成（`ArmStructures` 導入時の `sheets.addSheetTab` パターンを踏襲）。読み出しでタブ欠如は「登録なし」として扱う。
 
 ### 2.2 consensus 行のキー規約
@@ -116,7 +121,7 @@ flowchart LR
 
 - **描画しない**: Evidence quote・ハイライト・「他 n 箇所に一致」・AI 値のプレフィル・anchor failed バナー
 - **残す**: PDF ビューア（ページ送り / ズーム / **テキスト検索** — 自力で根拠を探す道具）、フォーカスモードのマトリクス、フィールドのラベル + extraction_instruction（何を抽出するかの定義はスキーマ由来であり AI 出力ではないため表示可）、**enum 項目の許容値チップ**（issue #254。許容値も extraction_instruction と同じくスキーマ由来であり AI 出力ではないため表示可。白紙スタートの独立入力でこそ効く）
-- **候補リストの盲検保護**（issue #254）: 「その他（自由入力）」の `<datalist>` に出す過去入力値は、`annotator` と **`annotator_type` の完全一致**で絞る（`startsWith('human_')` のような緩い絞りは不可）。`accept` は AI 値をそのまま `Decision.value` に保存し、同一 email はモードを変更できるため、緩く絞ると **`with_ai` 時代の AI 値が `independent` の候補に現れる**。なお、セル現在値・編集初期値・進捗・群構成など**他の経路**が `annotator`（email）のみで絞っている既存の穴は #254 のスコープ外で、**issue #255** で扱う（本項が保証するのは候補リストに漏れないことだけ）
+- **候補リストの盲検保護**（issue #254）: 「その他（自由入力）」の `<datalist>` に出す過去入力値は、`annotator` と **`annotator_type` の完全一致**で絞る（`startsWith('human_')` のような緩い絞りは不可）。`accept` は AI 値をそのまま `Decision.value` に保存し、同一 email はモードを変更できるため、緩く絞ると **`with_ai` 時代の AI 値が `independent` の候補に現れる**。なお、セル現在値・編集初期値・進捗・群構成など**他の経路**は `annotator`（email）のみで絞っている。この経路への漏えいは、読み出し側ではなく**作業の痕跡がある email のモード変更をハードブロックする**ことで防ぐ（issue #255。§2.1）
 - **操作**: `入力`（値を直接入力 → `action='edit'`）/ `not_reported` / `undo` の 3 種。`accept` / `reject` は AI 値が無いので出さない（キーボード a / x も無効化）
 - **書き込み**: `annotator_type='human_independent'` で自分の annotator 行 upsert + Decisions 追記。経路は既存と同一で、現在 4 箇所にハードコードされている `'human_with_ai'`（verificationPanel / verifyService / pilotService / armStructureRepository 呼び出し）を bundle の `annotatorType` に差し替える
 

@@ -309,6 +309,14 @@ async function fetchStudySheet(
   return { fieldNames, rows, values };
 }
 
+/** 重複キーの敗者を含む StudyData 全行を返す。監査用途のモード変更チェックに使う（issue #255） */
+export async function readAllStudyDataRows(
+  spreadsheetId: string,
+  deps: GoogleApiDeps,
+): Promise<StudyDataRow[]> {
+  return (await fetchStudySheet(spreadsheetId, deps)).rows;
+}
+
 /**
  * StudyData タブの全行を読み込む（S8 検証・S10 エクスポートの素材）。
  * シート側に重複キーがあれば updated_at が最新の行（winner）だけを返す。
@@ -548,6 +556,14 @@ async function fetchResultsSheet(
     };
   });
   return { rows };
+}
+
+/** 重複キーの敗者を含む ResultsData 全行を返す。監査用途のモード変更チェックに使う（issue #255） */
+export async function readAllResultsDataRows(
+  spreadsheetId: string,
+  deps: GoogleApiDeps,
+): Promise<ResultsDataRow[]> {
+  return (await fetchResultsSheet(spreadsheetId, deps)).rows;
 }
 
 /**

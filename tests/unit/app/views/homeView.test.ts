@@ -13,6 +13,7 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<HomeViewCallbacks
     onAddReviewer: jest.fn(),
     onConfirmReviewerChange: jest.fn(),
     onCancelReviewerChange: jest.fn(),
+    onDismissReviewerBlocked: jest.fn(),
     onRevokeReviewer: jest.fn(),
     onCopyInvite: jest.fn(),
   };
@@ -439,4 +440,23 @@ describe('renderHomeView（表示言語 en。issue #93）', () => {
       'Grant access to the project files (select all files in the picker)',
     );
   });
+});
+
+
+test('モード変更ブロックの理由を通知し、閉じる操作を渡す', () => {
+  const { ctx, callbacks } = makeCtx();
+  const state = makeState();
+  state.currentProject = { projectId: 'p', spreadsheetId: 's', driveFolderId: 'f', name: '試験' };
+  state.reviewers.blockedChange = { email: 'r1@example.com' };
+  const view = renderHomeView(state, ctx);
+  const notice = view.querySelector('#reviewer-mode-blocked');
+  expect(notice?.getAttribute('role')).toBe('alert');
+  expect(notice?.textContent).toContain('r1@example.com');
+  expect(notice?.textContent).toContain('別の Google アカウント');
+  expect(view.querySelector('#reviewer-mode-blocked-title')?.textContent).toBe('レビューモードを変更できません');
+  (view.querySelector('#reviewer-mode-blocked-dismiss') as HTMLButtonElement).click();
+  expect(callbacks.onDismissReviewerBlocked).toHaveBeenCalledTimes(1);
+  state.reviewers.saving = true;
+  const savingView = renderHomeView(state, ctx);
+  expect((savingView.querySelector('#reviewer-add-submit') as HTMLButtonElement).disabled).toBe(true);
 });

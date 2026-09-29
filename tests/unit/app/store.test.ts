@@ -34,6 +34,7 @@ describe('createInitialState', () => {
         saving: false,
         saveError: null,
         confirmingChange: null,
+        blockedChange: null,
       },
       documents: {
         records: null,

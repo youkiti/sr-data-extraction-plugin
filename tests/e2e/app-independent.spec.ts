@@ -340,3 +340,74 @@ test('独立入力モード × enum（issue #254）: 許容値は表示するが
   const results = await new AxeBuilder({ page }).analyze();
   expect(results.violations).toEqual([]);
 });
+
+// issue #255: 同じ email の AI 由来値が独立入力画面へ持ち越される経路は、作業後のモード変更。
+// この経路を登録時にブロックすることを確認する。
+test('作業済みレビュアーを独立モードへ変更すると登録も共有も行わず通知する', async ({ page }) => {
+  await installChromeStub(page, 'owner@example.com');
+  const email = 'reviewer2@example.com';
+  const appendUrls: string[] = [];
+  const permissionUrls: string[] = [];
+  const tabs: Record<string, string[][]> = {
+    Reviewers: [[...SHEET_HEADERS.Reviewers], [email, 'reviewer', 'with_ai', 'owner@example.com', 't0']],
+    Decisions: [
+      [...SHEET_HEADERS.Decisions],
+      [
+        't1',
+        email,
+        'study-1',
+        'f-total',
+        'study',
+        email,
+        'human_with_ai',
+        '1',
+        'accept',
+        'AI が出した値',
+        '',
+      ],
+    ],
+    StudyData: [[...SHEET_HEADERS.StudyData]],
+    ResultsData: [[...SHEET_HEADERS.ResultsData]],
+    ArmStructures: [[...SHEET_HEADERS.ArmStructures]],
+  };
+  await page.route('https://sheets.googleapis.com/**', async (route) => {
+    const url = decodeURIComponent(route.request().url());
+    if (route.request().method() !== 'GET') {
+      appendUrls.push(url);
+      await route.fulfill({ json: {} });
+    } else if (url.includes('fields=sheets.properties.title')) {
+      await route.fulfill({
+        json: {
+          sheets: Object.keys(tabs).map((title) => ({ properties: { title } })),
+        },
+      });
+    } else {
+      const tab = Object.keys(tabs).find((name) => url.includes(`/values/${name}`));
+      await route.fulfill({ json: { values: tab ? tabs[tab] : [] } });
+    }
+  });
+  await page.route('https://www.googleapis.com/drive/v3/**', async (route) => {
+    permissionUrls.push(route.request().url());
+    await route.fulfill({ json: {} });
+  });
+  await page.addInitScript((project) => {
+    const win = window as unknown as Record<string, unknown>;
+    // reviewers.assignments を null にして「未読込」とし、#/home 入場時に Reviewers タブを実際に読ませる
+    // （seam の既定は「読込済み 0 件」）
+    win.__E2E_PRELOADED_STATE__ = { currentProject: project, reviewers: { assignments: null } };
+  }, PROJECT);
+  await page.goto('/app/app.html#/home');
+  await expect(page.locator('#home-reviewers-list')).toContainText(email);
+  await page.locator('#reviewer-email').fill(email);
+  await page.locator('#reviewer-mode').selectOption('independent');
+  await page.locator('#reviewer-add-submit').click();
+  await expect(page.locator('#reviewer-mode-blocked')).toBeVisible();
+  await expect(page.locator('#reviewer-mode-blocked')).toContainText(email);
+  await expect(page.locator('#reviewer-mode-confirm')).toHaveCount(0);
+  expect(appendUrls.filter((url) => url.includes('Reviewers') && url.includes(':append'))).toEqual([]);
+  expect(permissionUrls).toEqual([]);
+  await expect(page.locator('#home-reviewers-list tbody tr')).toHaveCount(1);
+  await expect(page.locator('#home-reviewers-list tbody tr')).toContainText('① AI の結果をレビュー');
+  const results = await new AxeBuilder({ page }).analyze();
+  expect(results.violations).toEqual([]);
+});
