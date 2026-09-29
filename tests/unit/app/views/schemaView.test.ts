@@ -58,6 +58,7 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<SchemaViewCallbac
     onAddReviewer: jest.fn(),
     onConfirmReviewerChange: jest.fn(),
     onCancelReviewerChange: jest.fn(),
+    onDismissReviewerBlocked: jest.fn(),
     onRevokeReviewer: jest.fn(),
     onCopyInvite: jest.fn(),
   },

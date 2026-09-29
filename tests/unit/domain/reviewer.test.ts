@@ -1,4 +1,4 @@
-import { annotatorTypeForRole } from '../../../src/domain/reviewer';
+import { annotatorTypeForRole, annotatorTypeForAssignment } from '../../../src/domain/reviewer';
 
 describe('annotatorTypeForRole', () => {
   test('reviewer_independent は human_independent', () => {
@@ -11,4 +11,16 @@ describe('annotatorTypeForRole', () => {
       expect(annotatorTypeForRole(role)).toBe('human_with_ai');
     },
   );
+});
+
+
+describe('annotatorTypeForAssignment', () => {
+  test.each([
+    ['reviewer', 'independent', 'human_independent'],
+    ['reviewer', 'with_ai', 'human_with_ai'],
+    ['adjudicator', 'independent', 'human_with_ai'],
+    ['adjudicator', 'with_ai', 'human_with_ai'],
+  ] as const)('%s / %s は %s', (role, mode, expected) => {
+    expect(annotatorTypeForAssignment(role, mode)).toBe(expected);
+  });
 });

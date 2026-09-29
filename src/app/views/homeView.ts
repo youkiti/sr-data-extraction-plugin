@@ -108,8 +108,31 @@ function renderReviewerModeConfirm(pending: ReviewerFormInput, ctx: ViewContext)
   );
 }
 
+/** モード変更ブロック通知（作業済み email の異なるモードでの登録を拒否したとき） */
+function renderReviewerModeBlocked(email: string, ctx: ViewContext): HTMLElement {
+  const dismiss = el('button', {
+    id: 'reviewer-mode-blocked-dismiss',
+    text: t('home.modeBlockedDismiss'),
+    attributes: { type: 'button' },
+  });
+  dismiss.addEventListener('click', () => ctx.home.onDismissReviewerBlocked());
+  return el(
+    'div',
+    {
+      id: 'reviewer-mode-blocked',
+      className: 'reviewers__confirm',
+      attributes: { role: 'alert', 'aria-labelledby': 'reviewer-mode-blocked-title' },
+    },
+    [
+      el('h3', { id: 'reviewer-mode-blocked-title', text: t('home.modeBlockedTitle') }),
+      el('p', { text: t('home.modeBlockedBody', { email }) }),
+      el('div', { className: 'reviewers__confirm-actions' }, [dismiss]),
+    ],
+  );
+}
+
 /** レビュアー追加フォーム（uncontrolled。送信時に値をまとめて onAddReviewer へ渡す） */
-function renderReviewerForm(ctx: ViewContext): HTMLFormElement {
+function renderReviewerForm(ctx: ViewContext, saving: boolean): HTMLFormElement {
   const form = el('form', { id: 'reviewer-add-form', className: 'reviewers__form' }) as HTMLFormElement;
   const emailInput = el('input', {
     id: 'reviewer-email',
@@ -140,7 +163,8 @@ function renderReviewerForm(ctx: ViewContext): HTMLFormElement {
     id: 'reviewer-add-submit',
     text: t('home.addSubmit'),
     attributes: { type: 'submit' },
-  });
+  }) as HTMLButtonElement;
+  submit.disabled = saving;
   form.append(
     // email / role / review_mode はシートの列名（コード用語）のため翻訳しない
     el('label', { className: 'reviewers__form-field' }, [el('span', { text: 'email' }), emailInput]),
@@ -217,7 +241,10 @@ function renderReviewerAdminCard(state: AppState, ctx: ViewContext): HTMLElement
       }),
     );
   }
-  children.push(renderReviewerForm(ctx));
+  children.push(renderReviewerForm(ctx, reviewers.saving));
+  if (reviewers.blockedChange !== null) {
+    children.push(renderReviewerModeBlocked(reviewers.blockedChange.email, ctx));
+  }
   if (reviewers.confirmingChange !== null) {
     children.push(renderReviewerModeConfirm(reviewers.confirmingChange, ctx));
   }

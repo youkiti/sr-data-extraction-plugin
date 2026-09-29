@@ -50,3 +50,13 @@ export type ProjectRole =
 export function annotatorTypeForRole(role: ProjectRole): 'human_with_ai' | 'human_independent' {
   return role === 'reviewer_independent' ? 'human_independent' : 'human_with_ai';
 }
+
+/** 登録する役割・モードから、作業行に使う annotator_type を導出する（解除は対象外） */
+export function annotatorTypeForAssignment(
+  role: Exclude<ReviewerRole, 'revoked'>,
+  reviewMode: ReviewMode,
+): 'human_with_ai' | 'human_independent' {
+  return annotatorTypeForRole(
+    role === 'reviewer' && reviewMode === 'independent' ? 'reviewer_independent' : 'reviewer_with_ai',
+  );
+}

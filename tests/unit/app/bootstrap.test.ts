@@ -1369,9 +1369,15 @@ describe('bootstrapApp', () => {
         saving: false,
         saveError: null,
         confirmingChange: null,
+        blockedChange: null,
       } as AppState['reviewers'],
     });
-    const { deps } = createFakeDeps([[...SHEET_HEADERS.Reviewers]]);
+    const { deps } = createTabRoutingDeps({
+      Reviewers: [[...SHEET_HEADERS.Reviewers]],
+      Decisions: [[...SHEET_HEADERS.Decisions]],
+      StudyData: [[...SHEET_HEADERS.StudyData]],
+      ResultsData: [[...SHEET_HEADERS.ResultsData]],
+    });
     const store = await bootstrapApp(asWindow(stub), deps);
 
     const input = document.getElementById('reviewer-email') as HTMLInputElement;
@@ -3850,10 +3856,20 @@ describe('bootstrapApp: 独立二重レビュー機能', () => {
         saving: false,
         saveError: null,
         confirmingChange: null,
+        blockedChange: { email: 'r1@example.com' },
       } as AppState['reviewers'],
     });
-    const { deps, fetchMock } = createFakeDeps([[...SHEET_HEADERS.Reviewers]]);
+    const { deps, fetchMock } = createTabRoutingDeps({
+      Reviewers: [[...SHEET_HEADERS.Reviewers]],
+      Decisions: [[...SHEET_HEADERS.Decisions]],
+      StudyData: [[...SHEET_HEADERS.StudyData]],
+      ResultsData: [[...SHEET_HEADERS.ResultsData]],
+    });
     await bootstrapApp(asWindow(stub), deps);
+
+    expect(document.getElementById('reviewer-mode-blocked')).not.toBeNull();
+    (document.getElementById('reviewer-mode-blocked-dismiss') as HTMLButtonElement).click();
+    expect(document.getElementById('reviewer-mode-blocked')).toBeNull();
 
     // 新規追加（onAddReviewer）
     const email = document.getElementById('reviewer-email') as HTMLInputElement;
@@ -3898,6 +3914,7 @@ describe('bootstrapApp: 独立二重レビュー機能', () => {
     (document.getElementById('reviewer-add-form') as HTMLFormElement).dispatchEvent(
       new Event('submit', { cancelable: true }),
     );
+    await flush();
     (document.getElementById('reviewer-mode-confirm-ok') as HTMLButtonElement).click();
     await flush();
     expect(toastTexts()).toContain(
@@ -3926,6 +3943,7 @@ describe('bootstrapApp: 独立二重レビュー機能', () => {
         saving: false,
         saveError: null,
         confirmingChange: null,
+        blockedChange: null,
       } as AppState['reviewers'],
     });
     let call = 0;

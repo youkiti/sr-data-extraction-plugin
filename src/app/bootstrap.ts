@@ -142,6 +142,7 @@ import {
 } from './services/adjudicationService';
 import {
   cancelReviewerChange,
+  dismissReviewerBlocked,
   confirmReviewerChange,
   copyReviewInvite,
   loadReviewers,
@@ -475,6 +476,9 @@ export async function bootstrapApp(
       },
       onCancelReviewerChange: () => {
         cancelReviewerChange(store);
+      },
+      onDismissReviewerBlocked: () => {
+        dismissReviewerBlocked(store);
       },
       onRevokeReviewer: (email) => {
         void revokeReviewer(store, deps, email);

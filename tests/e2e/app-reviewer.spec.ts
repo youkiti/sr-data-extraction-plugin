@@ -420,7 +420,9 @@ test('owner のレビュアー管理カードで追加すると Reviewers タブ
         await route.fulfill({ json: { sheets: titles.map((title) => ({ properties: { title } })) } });
         return;
       }
-      await route.fulfill({ json: { values: [] } });
+      const workTab = (['Decisions', 'StudyData', 'ResultsData'] as const)
+        .find((tab) => url.includes(`/values/${tab}`));
+      await route.fulfill({ json: { values: workTab ? [[...SHEET_HEADERS[workTab]]] : [] } });
       return;
     }
     if (url.includes(':batchUpdate')) {

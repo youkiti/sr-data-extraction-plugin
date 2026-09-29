@@ -129,7 +129,15 @@ export const ja = {
   'home.copyInviteTitle': 'レビュー依頼文をコピー',
   'home.modeConfirmTitle': 'レビューモードを変更しますか？',
   'home.modeConfirmBody':
-    '{email} は既に登録済みです。モード変更（盲検の前提）は事後的に盲検を破る可能性があります。',
+    '{email} は既に登録済みです。まだ判定・データ・群構成が 1 件も無いため変更できますが、作業を始めた後はモードを変更できなくなります。',
+  'home.modeCheckFailed':
+    'レビューモードの変更可否を確認できなかったため、登録しませんでした: {reason}',
+  'home.modeBlockedTitle':
+    'レビューモードを変更できません',
+  'home.modeBlockedBody':
+    '{email} はこのプロジェクトで既に判定・データ・群構成を記録しているため、レビューモード（AI の結果をレビュー / AI 抜きでレビュー）や役割を変えて登録し直すことはできません。変更すると、AI を見て確定した値が独立入力の画面に現れる（またはその逆の）ため、盲検が崩れます。別のモードで作業してもらう場合は、別の Google アカウントで登録してください。',
+  'home.modeBlockedDismiss':
+    '閉じる',
   'home.modeConfirmOk': '続行して変更する',
   'home.addReviewerEmailAria': '追加するレビュアーの email',
   'home.addReviewerRoleAria': '役割（role）',

@@ -3,13 +3,19 @@
 // 追加・モード変更の確定時には、スプレッドシート（編集可）とプロジェクトフォルダ（閲覧）を
 // 対象 email へ自動共有する（drive.file スコープで permissions.create。tiab-review と同方式）。
 // 共有失敗は登録行を残したまま警告に縮退する。解除では自動アンシェアはしない（破壊的操作のため）
-import type { ReviewerAssignment, ReviewerRole, ReviewMode } from '../../domain/reviewer';
+import {
+  annotatorTypeForAssignment,
+  type ReviewerAssignment,
+  type ReviewerRole,
+  type ReviewMode,
+} from '../../domain/reviewer';
 import {
   appendReviewerAssignment,
   foldReviewerAssignments,
   latestReviewerAssignment,
   readReviewerAssignments,
 } from '../../features/project/reviewerRepository';
+import { readAnnotatorTypesForEmail } from '../../features/project/reviewerWorkRepository';
 import { shareFileWithUser } from '../../lib/google/drive';
 import { getCurrentUserEmail, type ProfileDeps } from '../../lib/google/identity';
 import type { GoogleApiDeps } from '../../lib/google/types';
@@ -28,6 +34,8 @@ export interface ReviewerAdminServiceDeps {
   google: GoogleApiDeps;
   profile: ProfileDeps;
   now?: () => string;
+  /** 既定は features/project/reviewerWorkRepository の実装。テストは fake を注入する */
+  readAnnotatorTypesForEmail?: typeof readAnnotatorTypesForEmail;
   /**
    * レビュアー追加時にプロジェクトのシート（編集可）とフォルダ（閲覧）を email へ共有する。
    * 既定は lib/google/drive の shareFileWithUser を使う実装。テストは fake を注入する
@@ -117,8 +125,9 @@ function toAssignmentInput(input: AddReviewerFormInput): {
 }
 
 /**
- * レビュアー追加フォームの送信。既存登録があり、role='reviewer' のまま review_mode だけを
- * 変える場合は「モード変更は盲検を破る可能性がある」旨の確認ダイアログを先に出す（§2.1）。
+ * レビュアー追加フォームの送信。記録済みの作業モードと食い違う登録は拒否する。
+ * 未着手で既存登録があり、role='reviewer' のまま review_mode だけを
+ * 変える場合は確認ダイアログを先に出す（§2.1）。
  * それ以外（新規登録・role 変更・同一内容の再送信）はそのまま追記する
  */
 export async function requestAddReviewer(
@@ -126,12 +135,32 @@ export async function requestAddReviewer(
   deps: ReviewerAdminServiceDeps,
   rawInput: AddReviewerFormInput,
 ): Promise<void> {
+  patchReviewers(store, { blockedChange: null, confirmingChange: null });
   const email = rawInput.email.trim();
   if (email === '') {
     showToast(t('home.toastEmailRequired'));
     return;
   }
+  const project = store.getState().currentProject;
+  if (!project) {
+    return;
+  }
   const input: AddReviewerFormInput = { ...rawInput, email };
+  patchReviewers(store, { saving: true, saveError: null });
+  try {
+    const readTypes = deps.readAnnotatorTypesForEmail ?? readAnnotatorTypesForEmail;
+    const types = await readTypes(project.spreadsheetId, email, deps.google);
+    const nextType = annotatorTypeForAssignment(input.role, input.reviewMode);
+    if ([...types].some((type) => type !== nextType)) {
+      patchReviewers(store, { saving: false, blockedChange: { email } });
+      return;
+    }
+  } catch (err) {
+    const message = t('home.modeCheckFailed', { reason: toMessage(err) });
+    patchReviewers(store, { saving: false, saveError: message });
+    showToast(message);
+    return;
+  }
   const existing = latestReviewerAssignment(store.getState().reviewers.assignments ?? [], email);
   const isModeChange =
     existing !== null &&
@@ -140,7 +169,7 @@ export async function requestAddReviewer(
     existing.reviewMode !== null &&
     existing.reviewMode !== input.reviewMode;
   if (isModeChange) {
-    patchReviewers(store, { confirmingChange: toAssignmentInput(input) });
+    patchReviewers(store, { saving: false, confirmingChange: toAssignmentInput(input) });
     return;
   }
   await submitReviewerAssignment(store, deps, toAssignmentInput(input));
@@ -162,6 +191,11 @@ export async function confirmReviewerChange(
 /** モード変更確認ダイアログの「キャンセル」 */
 export function cancelReviewerChange(store: Store): void {
   patchReviewers(store, { confirmingChange: null });
+}
+
+/** モード変更ブロック通知の「閉じる」 */
+export function dismissReviewerBlocked(store: Store): void {
+  patchReviewers(store, { blockedChange: null });
 }
 
 /** Reviewers への 1 行追記（追加・モード変更・解除で共通）。成功で一覧へ反映、失敗はトースト */

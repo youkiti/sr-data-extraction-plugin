@@ -1,6 +1,7 @@
 import {
   buildReviewInvite,
   cancelReviewerChange,
+  dismissReviewerBlocked,
   confirmReviewerChange,
   copyReviewInvite,
   loadReviewers,
@@ -14,6 +15,14 @@ import {
   appendReviewerAssignment,
   readReviewerAssignments,
 } from '../../../../src/features/project/reviewerRepository';
+
+import { readAllDecisions } from '../../../../src/features/verification/decisionRepository';
+import { readStudyDataSheet, readResultsDataRows } from '../../../../src/features/extraction/annotationRepository';
+import { readAllArmStructures } from '../../../../src/features/verification/armStructureRepository';
+
+jest.mock('../../../../src/features/verification/decisionRepository');
+jest.mock('../../../../src/features/extraction/annotationRepository');
+jest.mock('../../../../src/features/verification/armStructureRepository');
 
 jest.mock('../../../../src/features/project/reviewerRepository', () => ({
   ...jest.requireActual('../../../../src/features/project/reviewerRepository'),
@@ -42,6 +51,7 @@ const deps: ReviewerAdminServiceDeps = {
   profile: { getProfileUserInfo: async () => ({ email: 'owner@example.com', id: 'uid' }) },
   now: () => 't-now',
   shareProjectWithReviewer: shareProjectWithReviewerMock,
+  readAnnotatorTypesForEmail: async () => new Set(),
 };
 
 function makeStore(withProject = true): Store {
@@ -323,6 +333,7 @@ describe('レビュアー追加時の Drive 自動共有', () => {
       google: { fetch, getAccessToken: jest.fn().mockResolvedValue('t') },
       profile: deps.profile,
       now: deps.now,
+      readAnnotatorTypesForEmail: async () => new Set(),
     };
     const store = makeStore();
     await requestAddReviewer(store, depsDefault, addInput);
@@ -465,6 +476,7 @@ describe('submitReviewerAssignment（内部）の異常系', () => {
       google: deps.google,
       profile: { getProfileUserInfo: async () => ({ email: '', id: 'uid' }) },
       now: deps.now,
+      readAnnotatorTypesForEmail: async () => new Set(),
     };
     await revokeReviewer(store, depsWithoutEmail, 'r1@example.com');
     expect(appendReviewerAssignmentMock).toHaveBeenCalledWith(
@@ -486,4 +498,105 @@ describe('submitReviewerAssignment（内部）の異常系', () => {
     const [, input] = call;
     expect(input.assignedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
   });
+});
+
+
+describe('作業済み email のモード変更制限', () => {
+  const email = 'r1@example.com';
+  const input = { email, role: 'reviewer' as const, reviewMode: 'independent' as const };
+
+  test.each([
+    ['with_ai', 'reviewer', 'independent', ['human_with_ai']],
+    ['independent', 'reviewer', 'with_ai', ['human_independent']],
+    ['revoked', 'reviewer', 'independent', ['human_with_ai']],
+    ['independent', 'adjudicator', 'with_ai', ['human_independent']],
+    ['with_ai', 'reviewer', 'with_ai', ['human_with_ai', 'human_independent']],
+    ['independent', 'reviewer', 'independent', ['human_with_ai', 'human_independent']],
+    ['with_ai', 'adjudicator', 'with_ai', ['human_with_ai', 'human_independent']],
+  ] as const)('%s → %s/%s は異種の実データがあれば拒否する', async (oldMode, role, reviewMode, types) => {
+    const store = makeStore();
+    store.setState({ reviewers: { ...store.getState().reviewers, assignments: [{
+      email, role: oldMode === 'revoked' ? 'revoked' : 'reviewer',
+      reviewMode: oldMode === 'revoked' ? null : oldMode, assignedBy: 'owner', assignedAt: 't0',
+    }] } });
+    const read = jest.fn(async () => new Set(types));
+    await requestAddReviewer(store, { ...deps, readAnnotatorTypesForEmail: read }, { email, role, reviewMode });
+    expect(read).toHaveBeenCalledWith(PROJECT.spreadsheetId, email, deps.google);
+    expect(store.getState().reviewers.blockedChange).toEqual({ email });
+    expect(store.getState().reviewers.confirmingChange).toBeNull();
+    expect(store.getState().reviewers.saving).toBe(false);
+    expect(appendReviewerAssignmentMock).not.toHaveBeenCalled();
+    expect(shareProjectWithReviewerMock).not.toHaveBeenCalled();
+  });
+
+  test('同じ作業型の再登録は許可する', async () => {
+    const store = makeStore();
+    await requestAddReviewer(store, { ...deps,
+      readAnnotatorTypesForEmail: async () => new Set(['human_independent']),
+    }, input);
+    expect(appendReviewerAssignmentMock).toHaveBeenCalledTimes(1);
+    expect(store.getState().reviewers.blockedChange).toBeNull();
+  });
+
+  test('読込中は saving、失敗時は理由を表示して追記・共有しない', async () => {
+    const store = makeStore();
+    const read = jest.fn(async () => {
+      expect(store.getState().reviewers.saving).toBe(true);
+      throw new Error('確認用の読込失敗');
+    });
+    await requestAddReviewer(store, { ...deps, readAnnotatorTypesForEmail: read }, input);
+    expect(store.getState().reviewers.saveError).toBe(
+      'レビューモードの変更可否を確認できなかったため、登録しませんでした: 確認用の読込失敗',
+    );
+    expect(store.getState().reviewers.saving).toBe(false);
+    expect(appendReviewerAssignmentMock).not.toHaveBeenCalled();
+    expect(shareProjectWithReviewerMock).not.toHaveBeenCalled();
+  });
+
+  test('閉じる操作と次の送信でブロック通知を消し、毎回読み直す', async () => {
+    const store = makeStore();
+    const read = jest.fn<ReturnType<NonNullable<ReviewerAdminServiceDeps['readAnnotatorTypesForEmail']>>, []>()
+      .mockResolvedValueOnce(new Set(['human_with_ai']))
+      .mockResolvedValueOnce(new Set(['human_with_ai']))
+      .mockResolvedValueOnce(new Set());
+    const testDeps = { ...deps, readAnnotatorTypesForEmail: read };
+    await requestAddReviewer(store, testDeps, input);
+    dismissReviewerBlocked(store);
+    expect(store.getState().reviewers.blockedChange).toBeNull();
+    await requestAddReviewer(store, testDeps, input);
+    const pending = requestAddReviewer(store, testDeps, input);
+    expect(store.getState().reviewers.blockedChange).toBeNull();
+    await pending;
+    expect(read).toHaveBeenCalledTimes(3);
+    expect(appendReviewerAssignmentMock).toHaveBeenCalledTimes(1);
+  });
+
+  test('空 email とプロジェクト未選択では読まず、解除もチェックしない', async () => {
+    const read = jest.fn().mockRejectedValue(new Error('呼ばれてはいけない'));
+    const testDeps = { ...deps, readAnnotatorTypesForEmail: read };
+    await requestAddReviewer(makeStore(), testDeps, { ...input, email: ' ' });
+    await requestAddReviewer(makeStore(false), testDeps, input);
+    await revokeReviewer(makeStore(), testDeps, email);
+    expect(read).not.toHaveBeenCalled();
+    expect(appendReviewerAssignmentMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+
+test('既定 reader は Decisions の accept だけでも独立モードへの変更を拒否する', async () => {
+  jest.mocked(readAllDecisions).mockResolvedValue([{
+    decidedAt: 't', decidedBy: 'r1@example.com', studyId: 'study', fieldId: 'field',
+    entityKey: 'study', annotator: 'r1@example.com', annotatorType: 'human_with_ai',
+    schemaVersion: 1, action: 'accept', value: 'AI が出した値', note: '',
+  }]);
+  jest.mocked(readStudyDataSheet).mockResolvedValue({ fieldNames: [], rows: [] });
+  jest.mocked(readResultsDataRows).mockResolvedValue([]);
+  jest.mocked(readAllArmStructures).mockResolvedValue([]);
+  const store = makeStore();
+  await requestAddReviewer(store, { ...deps, readAnnotatorTypesForEmail: undefined }, {
+    email: 'r1@example.com', role: 'reviewer', reviewMode: 'independent',
+  });
+  expect(store.getState().reviewers.blockedChange).toEqual({ email: 'r1@example.com' });
+  expect(appendReviewerAssignmentMock).not.toHaveBeenCalled();
+  expect(shareProjectWithReviewerMock).not.toHaveBeenCalled();
 });
