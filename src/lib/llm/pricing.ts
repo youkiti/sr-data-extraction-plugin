@@ -48,11 +48,17 @@ export const MODEL_PRICING: Readonly<Record<string, ModelPricing>> = {
   // cachedInputPerMillion は入力単価の 0.10 倍（= 90% 割引）。tiab-review-plugin の
   // experiments/gemini-prompt-cache/report.md §3.4 が 2026-09-01 に料金ページで確認した表
   // （gemini-3.5-flash のキャッシュ入力 $0.15 等）が根拠で、3 モデルとも 0.10 倍だった。
-  // 3.6-flash / 3.5-flash-lite は同倍率を当てはめた導出値（個別の確認は取れていない）。
+  // 3.5-flash-lite は同倍率を当てはめた導出値（個別の確認は取れていない）。
   'gemini-3.5-flash': { inputPerMillion: 1.5, outputPerMillion: 9.0, cachedInputPerMillion: 0.15 },
   'gemini-3.1-flash-lite': { inputPerMillion: 0.25, outputPerMillion: 1.5, cachedInputPerMillion: 0.025 },
-  // 2026-07-22 追加。Gemini 3.6 Flash / gemini-3.5-flash-lite（公式料金ページで確認・更新）。
-  'gemini-3.6-flash': { inputPerMillion: 1.5, outputPerMillion: 7.5, cachedInputPerMillion: 0.15 },
+  // 2026-09-21 確認（issue #261、公式 Gemini 料金表。3.7 / 3.8 は API モデル一覧でも確認）。
+  // 3.6 / 3.7 / 3.8 Flash は 2026-12-31 まで入力 $0.75 / 出力 $3.75 per 1M。
+  // 2027-01-01 に $1.50 / $7.50 へ切り替わるため、その時点で表の更新が必要。
+  // キャッシュ入力 $0.075 は既存の入力単価 × 0.10 の慣例による導出値。
+  'gemini-3.6-flash': { inputPerMillion: 0.75, outputPerMillion: 3.75, cachedInputPerMillion: 0.075 },
+  'gemini-3.7-flash': { inputPerMillion: 0.75, outputPerMillion: 3.75, cachedInputPerMillion: 0.075 },
+  'gemini-3.8-flash': { inputPerMillion: 0.75, outputPerMillion: 3.75, cachedInputPerMillion: 0.075 },
+  // 2026-07-22 追加（公式料金ページで確認）。
   'gemini-3.5-flash-lite': { inputPerMillion: 0.3, outputPerMillion: 2.5, cachedInputPerMillion: 0.03 },
   // **要再確認（2026-08-31）**: OpenRouter 経由の 2 モデルは openrouter.ai へ到達できず
   // 突き合わせができていない。第三者が取得したエンドポイント別単価のダンプ（2026-08-02）では
@@ -76,6 +82,38 @@ export const MODEL_PRICING: Readonly<Record<string, ModelPricing>> = {
   'claude-sonnet-5': { inputPerMillion: 2.0, outputPerMillion: 10.0, cachedInputPerMillion: 0.2 },
   'claude-haiku-4-5': { inputPerMillion: 1.0, outputPerMillion: 5.0, cachedInputPerMillion: 0.1 },
 };
+
+/**
+ * 未測定モデルは観測された最悪ケースを仮定し、楽観的なコスト表示を避ける。
+ * 最大実測倍率は Gemini 3.5 Flash（下記の 2026-09-21 ベンチマーク）。
+ */
+export const DEFAULT_THINKING_OUTPUT_MULTIPLIER = (10_758 + 11_628) / 10_758;
+
+/**
+ * 応答本文の出力推定を、思考込みの課金対象出力へ換算する倍率。
+ * 出典: issue #261、2026-09-21 の experiments/extraction-benchmark-real、プロンプト v9 再実行。
+ * 不眠 SR 10 論文、各論文 1 呼び出し、テキスト入力、10 回平均。
+ * 詳細は非公開 REPORT-20260921-prompt-v9-rerun.md。
+ */
+export const THINKING_OUTPUT_MULTIPLIER: Readonly<Record<string, number>> = {
+  'gemini-3.5-flash': DEFAULT_THINKING_OUTPUT_MULTIPLIER,
+  'gemini-3.8-flash': (12_348 + 2_688) / 12_348,
+  // 実測レスポンスに thoughtsTokenCount が無い。
+  'gemini-3.1-flash-lite': 1.0,
+  // 実測レスポンスに thoughtsTokenCount が無い。
+  'gemini-3.5-flash-lite': 1.0,
+  // 思考モデルではない。
+  'gemini-2.0-flash': 1.0,
+  // Instruct-2507 は非思考バリアント。
+  'qwen/qwen3-235b-a22b-2507': 1.0,
+  // thinking budget を明示しない限り思考しない（AnthropicProvider の MODELS_WITHOUT_EFFORT_SUPPORT）。
+  'claude-haiku-4-5': 1.0,
+};
+
+/** モデル別の思考出力倍率。未測定・未知モデルは保守的な既定値を返す */
+export function resolveThinkingOutputMultiplier(model: string): number {
+  return THINKING_OUTPUT_MULTIPLIER[model] ?? DEFAULT_THINKING_OUTPUT_MULTIPLIER;
+}
 
 /**
  * ページ画像 1 枚あたりの入力トークン概算（pdf_native / no_text_layer 文書のページ画像添付。
@@ -153,6 +191,8 @@ export const MODEL_IMAGE_CAPABILITY: Readonly<Record<string, ModelImageCapabilit
   'gemini-3.5-flash': { provider: 'gemini', support: 'supported' },
   'gemini-3.1-flash-lite': { provider: 'gemini', support: 'supported' },
   'gemini-3.6-flash': { provider: 'gemini', support: 'supported' },
+  'gemini-3.7-flash': { provider: 'gemini', support: 'supported' },
+  'gemini-3.8-flash': { provider: 'gemini', support: 'supported' },
   'gemini-3.5-flash-lite': { provider: 'gemini', support: 'supported' },
   'qwen/qwen3-235b-a22b-2507': { provider: 'openrouter', support: 'unsupported' },
   'deepseek/deepseek-v4-flash': { provider: 'openrouter', support: 'unsupported' },

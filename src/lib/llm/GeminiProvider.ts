@@ -47,6 +47,8 @@ interface GeminiResponse {
   usageMetadata?: {
     promptTokenCount?: number;
     candidatesTokenCount?: number;
+    /** 出力単価で課金される思考トークン数。思考しないモデル（flash-lite 等）では省略される */
+    thoughtsTokenCount?: number;
     totalTokenCount?: number;
     /**
      * 暗黙 prefix キャッシュ（implicit caching）でヒットした入力トークン数。
@@ -189,10 +191,15 @@ export class GeminiProvider implements LLMProvider {
         blockReason !== undefined ? (BLOCK_REASON_FAILURE_KIND[blockReason] ?? null) : null,
       );
     }
+    const candidatesTokens = json.usageMetadata?.candidatesTokenCount;
+    const thoughtsTokens = json.usageMetadata?.thoughtsTokenCount;
     return {
       text,
       tokensIn: json.usageMetadata?.promptTokenCount ?? null,
-      tokensOut: json.usageMetadata?.candidatesTokenCount ?? null,
+      tokensOut:
+        candidatesTokens === undefined && thoughtsTokens === undefined
+          ? null
+          : (candidatesTokens ?? 0) + (thoughtsTokens ?? 0),
       // Gemini は暗黙キャッシュがヒットしなかった呼び出しで cachedContentTokenCount を
       // 省略する。usageMetadata 自体が返っていれば「計測できている」と見なして 0 に倒し、
       // usageMetadata ごと無い場合だけ null（不明）にする

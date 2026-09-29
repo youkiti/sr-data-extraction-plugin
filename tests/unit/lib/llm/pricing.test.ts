@@ -2,6 +2,9 @@
 import {
   APPROX_IMAGE_TOKENS_PER_PAGE,
   estimateCostUsd,
+  DEFAULT_THINKING_OUTPUT_MULTIPLIER,
+  THINKING_OUTPUT_MULTIPLIER,
+  resolveThinkingOutputMultiplier,
   MODEL_IMAGE_CAPABILITY,
   MODEL_PRICING,
   resolveModelImageInputSupport,
@@ -173,4 +176,47 @@ describe('estimateCostUsd のキャッシュヒット割引', () => {
   it('tokensIn が null なら cachedTokensIn があっても出力ぶんだけで概算する', () => {
     expect(estimateCostUsd('gemini-3.5-flash', null, 1_000_000, 500)).toBeCloseTo(9.0, 10);
   });
+});
+
+describe('resolveThinkingOutputMultiplier', () => {
+  it.each([
+    ['gemini-3.5-flash', (10_758 + 11_628) / 10_758],
+    ['gemini-3.8-flash', (12_348 + 2_688) / 12_348],
+    ['gemini-3.1-flash-lite', 1],
+    ['gemini-3.5-flash-lite', 1],
+    ['gemini-2.0-flash', 1],
+    ['qwen/qwen3-235b-a22b-2507', 1],
+    ['claude-haiku-4-5', 1],
+  ])('%s の測定値または非思考倍率を返す', (model, multiplier) => {
+    expect(resolveThinkingOutputMultiplier(model)).toBe(multiplier);
+  });
+
+  it.each([
+    'gemini-2.5-pro',
+    'gemini-3.6-flash',
+    'gemini-3.7-flash',
+    'claude-opus-5',
+    'claude-sonnet-5',
+    'deepseek/deepseek-v4-flash',
+    'unknown-model',
+  ])('未測定の %s は最大実測倍率を使う', (model) => {
+    expect(resolveThinkingOutputMultiplier(model)).toBe(DEFAULT_THINKING_OUTPUT_MULTIPLIER);
+    expect(DEFAULT_THINKING_OUTPUT_MULTIPLIER).toBe(THINKING_OUTPUT_MULTIPLIER['gemini-3.5-flash']);
+    expect(DEFAULT_THINKING_OUTPUT_MULTIPLIER).toBe(
+      Math.max(...Object.values(THINKING_OUTPUT_MULTIPLIER)),
+    );
+  });
+
+  it.each(['gemini-3.6-flash', 'gemini-3.7-flash', 'gemini-3.8-flash'])(
+    '%s は現行価格と導出キャッシュ単価を持ち、画像入力に対応する',
+    (model) => {
+      expect(MODEL_PRICING[model]).toEqual({
+        inputPerMillion: 0.75,
+        outputPerMillion: 3.75,
+        cachedInputPerMillion: 0.075,
+      });
+      expect(estimateCostUsd(model, 1_000_000, 1_000_000)).toBe(4.5);
+      expect(resolveModelImageInputSupport('gemini', model)).toBe('supported');
+    },
+  );
 });

@@ -118,7 +118,12 @@ export interface ChatResponse {
    * これより上（apiLogger / pricing）が provider を意識しないで済むようにするため
    */
   tokensIn: number | null;
-  /** 生成側のトークン数。同上 */
+  /**
+   * 思考・推論トークンを含む課金対象出力の合計。取得できない場合は null。
+   * Gemini は provider で candidatesTokenCount に thoughtsTokenCount を加算する。
+   * Anthropic の usage.output_tokens、OpenAI 互換 / OpenRouter の usage.completion_tokens は
+   * 既に推論ぶんを含むため、そのまま渡す。
+   */
   tokensOut: number | null;
   /**
    * `tokensIn` のうちプロンプトキャッシュから読まれた分（**内数**）。

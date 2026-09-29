@@ -609,6 +609,7 @@ describe('runPilot: 実行', () => {
         inputMode: 'text_only' as const,
         tokensInEstimate: 100,
         tokensOutEstimate: 10,
+        thinkingOutputMultiplier: 1,
         costEstimateUsd: 0.01,
         warnings: [],
       },

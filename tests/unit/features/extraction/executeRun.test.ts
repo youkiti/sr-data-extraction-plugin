@@ -120,6 +120,7 @@ function makePlan(batches: PlannedBatch[]): RunPlan {
     inputMode: 'text_only',
     tokensInEstimate: 0,
     tokensOutEstimate: 0,
+    thinkingOutputMultiplier: 1,
     costEstimateUsd: 0,
     warnings: [],
   };
