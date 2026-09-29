@@ -476,6 +476,7 @@ function renderEditor(
     });
     if (enumEditor !== null) {
       noteInput.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter' && (event.isComposing || event.keyCode === 229)) return;
         if (event.key === 'Enter') {
           event.preventDefault();
           event.stopPropagation();
@@ -526,6 +527,7 @@ function renderEditor(
   // listener 引数が Event に弱まるため、HTMLElement 型の変数経由で購読する
   const keyTarget: HTMLElement = input;
   keyTarget.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' && (event.isComposing || event.keyCode === 229)) return;
     if (isMultiline) {
       // textarea は Enter 単独で改行を許す（preventDefault しない）。確定は
       // Ctrl+Enter / Cmd(Meta)+Enter のみ。Escape は 1 行 input と同じくキャンセル
@@ -543,6 +545,7 @@ function renderEditor(
     }
   });
   noteInput.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' && (event.isComposing || event.keyCode === 229)) return;
     if (event.key === 'Enter') {
       event.preventDefault();
       event.stopPropagation();

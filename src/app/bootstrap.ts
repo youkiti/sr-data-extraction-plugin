@@ -75,6 +75,7 @@ import { runPilotRevision } from './services/pilotRevisionService';
 import {
   autoLoadLatestPilotRun,
   initPilotSelection,
+  refreshPilotDecisions,
   loadPilotHistory,
   loadPilotRun,
   loadPilotVerification,
@@ -1082,6 +1083,7 @@ export async function bootstrapApp(
     if (currentHash === '#/pilot') {
       // フィールド選択チェックリスト（issue #80）は画面入場のたびに全選択へリセットする（A-4）
       resetPilotFieldSelection(store);
+      void refreshPilotDecisions(store, deps);
       // 文献 + スキーマ + パイロット履歴の読込後に、既定選択（テキスト層ありの先頭 3 本）を
       // 一度だけ適用し、既存のパイロット結果があれば最新 run を一度だけ自動読込する
       void Promise.all([

@@ -537,6 +537,10 @@ export const en: Record<MessageKey, string> = {
   'pilot.reviseEmpty':
     'There are no judgments (edits, rejections, or not reported) available for revision yet',
   'pilot.reviseProgress': 'Drafting revisions… ({n} seconds)',
+  'pilot.reviseSchemaChanged':
+    'The schema changed while revisions were being generated, so the proposal was discarded. Please generate it again',
+  'pilot.reviseQueuedDecisions':
+    'There are {n} unsent judgments in the offline queue. Please wait until they have been sent before generating revisions',
   'pilot.reviseNoChanges': 'The model proposed no revisions',
   'pilot.studyUsed': 'Used in a previous pilot',
   'pilot.studyRevisionUsed': 'Used for a revision',

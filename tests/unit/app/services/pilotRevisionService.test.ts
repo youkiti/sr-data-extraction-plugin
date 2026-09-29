@@ -283,3 +283,58 @@ test('経過時間を更新し、成功・失敗後はタイマーを止める',
   expect(jest.getTimerCount()).toBe(0);
   jest.useRealTimers();
 });
+
+test.each(['version', 'fields'] as const)(
+  '作成中に現行スキーマが更新されたら提案を破棄する（%s）',
+  async (change) => {
+    const store = makeStore();
+    const { deps, chat } = makeDeps();
+    chat.mockImplementationOnce(async () => {
+      const schema = store.getState().schema;
+      store.setState({
+        schema: {
+          ...schema,
+          ...(change === 'fields'
+            ? { currentFields: [...schema.currentFields!] }
+            : {
+                versions: [
+                  {
+                    schemaVersion: 2,
+                    parentVersion: 1,
+                    protocolVersion: 1,
+                    createdByType: 'user_edit',
+                    createdAt: 'now',
+                    createdBy: 'me',
+                    note: null,
+                  },
+                ],
+              }),
+        },
+      });
+      return {
+        text: JSON.stringify({ revisions: [revision] }),
+        tokensIn: null,
+        tokensOut: null,
+        cachedTokensIn: null,
+        raw: {},
+      };
+    });
+    expect(await runPilotRevision(store, deps)).toBe(false);
+    expect(store.getState().schema.redraft).toBeNull();
+    expect(store.getState().pilot.reviseError).toBe(
+      '改訂案の作成中に表のデザインが更新されたため、改訂案を破棄しました。もう一度作成してください',
+    );
+  },
+);
+
+test('未送信のオフライン判定があればシートも LLM も呼び出さない', async () => {
+  const store = makeStore();
+  store.setState({ pilot: { ...store.getState().pilot, queuedDecisions: 2 } });
+  const { deps, chat } = makeDeps();
+  expect(await runPilotRevision(store, deps)).toBe(false);
+  expect(readAllDecisions).not.toHaveBeenCalled();
+  expect(chat).not.toHaveBeenCalled();
+  expect(store.getState().pilot.reviseError).toBe(
+    '未送信の判定（オフライン: 2 件）があります。送信が終わってから改訂案を作成してください',
+  );
+});

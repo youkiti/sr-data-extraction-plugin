@@ -57,10 +57,13 @@ export async function runPilotRevision(store: Store, deps: SchemaServiceDeps): P
   try {
     const resolution = await resolveProviderConfig(model, deps);
     if (resolution.config === null) throw new Error(missingApiKeyMessage(resolution.provider));
+    // 未送信判定の件数はパイロットの保存・再送結果から更新される。
     // 直前の判定保存が終わってからシートを読み、未保存の楽観状態を材料にしない。
-    const decisions = await withSpreadsheetWriteLock(project.spreadsheetId, () =>
-      readAllDecisions(project.spreadsheetId, deps.google),
-    );
+    const decisions = await withSpreadsheetWriteLock(project.spreadsheetId, () => {
+      const queued = store.getState().pilot.queuedDecisions;
+      if (queued > 0) throw new Error(t('pilot.reviseQueuedDecisions', { n: queued }));
+      return readAllDecisions(project.spreadsheetId, deps.google);
+    });
     const runDecisions = decisions.filter((decision) => run.studyIds.includes(decision.studyId));
     const annotator = (await getCurrentUserEmail(deps.profile)) ?? '';
     const feedback = buildPilotFeedback({
@@ -80,6 +83,7 @@ export async function runPilotRevision(store: Store, deps: SchemaServiceDeps): P
     const currentFields = store.getState().schema.currentFields;
     if (currentFields === null)
       throw new Error(store.getState().schema.loadError ?? t('extraction.errNoSchema'));
+    const currentVersion = store.getState().schema.versions?.[0]?.schemaVersion;
     const logsFolder = await ensureChildFolder('logs', project.driveFolderId, deps.google);
     const llmFolder = await ensureChildFolder('llm', logsFolder.id, deps.google);
     const policy = await (deps.resolveRateLimitPolicy ?? (async () => UNLIMITED_POLICY))();
@@ -109,6 +113,12 @@ export async function runPilotRevision(store: Store, deps: SchemaServiceDeps): P
       ],
       { responseFormat: 'json', responseSchema: REVISE_PILOT_INSTRUCTIONS_RESPONSE_SCHEMA },
     );
+    const after = store.getState().schema;
+    if (
+      after.versions?.[0]?.schemaVersion !== currentVersion ||
+      after.currentFields !== currentFields
+    )
+      throw new Error(t('pilot.reviseSchemaChanged'));
     const { revisions } = parseRevisePilotInstructionsResponse(response.text, currentFields);
     if (revisions.length === 0) throw new Error(t('pilot.reviseNoChanges'));
     const diff = buildRedraftDiff(currentFields, toRevisionEditorRows(currentFields, revisions), {

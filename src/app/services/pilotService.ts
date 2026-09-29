@@ -26,6 +26,7 @@ import {
   toggleFieldSelection,
 } from '../../features/extraction/fieldSelection';
 import { defaultPilotStudyIds, usedPilotStudyIds } from '../../features/extraction/pilotSelection';
+import { readAllDecisions } from '../../features/verification/decisionRepository';
 import { readPilotRuns } from '../../features/extraction/runRepository';
 import { getSchemaFieldsByVersion } from '../../features/schema/schemaRepository';
 import { ensureChildFolder } from '../../lib/google/drive';
@@ -84,6 +85,9 @@ function patchPilot(store: Store, patch: Partial<PilotState>): void {
  */
 export function initPilotSelection(store: Store): void {
   const state = store.getState();
+  if (state.pilot.model === '' && state.schema.model !== '') {
+    patchPilot(store, { model: state.schema.model });
+  }
   if (
     state.pilot.selectionTouched ||
     (state.pilot.selectionInitialized &&
@@ -102,7 +106,6 @@ export function initPilotSelection(store: Store): void {
     selectionInitialized: true,
     selectionHistoryApplied: state.pilot.history !== null,
     selectedStudyIds: defaults,
-    model: state.pilot.model === '' ? state.schema.model : state.pilot.model,
   });
 }
 
@@ -328,6 +331,9 @@ export async function runPilot(store: Store, deps: PilotServiceDeps): Promise<vo
         // 完了した run を履歴の先頭（最新）へ足し、自動読込済み扱いにする
         history: [outcome.run, ...(after.pilot.history ?? [])],
         historyInitialized: true,
+        selectionTouched: false,
+        selectionInitialized: false,
+        selectionHistoryApplied: false,
         // ai 行への転記に失敗していれば既存の #pilot-run-error バナーへ出す（AI 抽出自体は
         // 成功しており Evidence は保存済みのため、study の抽出失敗と混同させない専用文言にする）
         runError:
@@ -336,6 +342,7 @@ export async function runPilot(store: Store, deps: PilotServiceDeps): Promise<vo
             : t('extraction.transferErrorMessage', { reason: outcome.transferError }),
       },
     });
+    initPilotSelection(store);
     // パイロット完了（done / partial_failure とも）でも #/verify・#/dashboard の読込済み
     // キャッシュを無効化する（PR #190 のレビュー対応。extractService と同じ理由）
     invalidateVerifyTargets(store);
@@ -715,4 +722,24 @@ export async function persistPilotRelocateQuote(
     },
     deps,
   );
+}
+
+/** S8 の判定も反映するため入場時に再読込する。失敗時は現在のキャッシュを保持する。 */
+export async function refreshPilotDecisions(store: Store, deps: PilotServiceDeps): Promise<void> {
+  const {
+    currentProject: project,
+    pilot: { run },
+  } = store.getState();
+  if (project === null || run === null) return;
+  try {
+    const decisions = await readAllDecisions(project.spreadsheetId, deps.google);
+    const after = store.getState();
+    if (after.currentProject?.spreadsheetId !== project.spreadsheetId || after.pilot.run !== run)
+      return;
+    patchPilot(store, {
+      decisions: decisions.filter((decision) => run.studyIds.includes(decision.studyId)),
+    });
+  } catch {
+    // 背景更新の失敗で検証済みキャッシュや画面のエラーを上書きしない。
+  }
 }

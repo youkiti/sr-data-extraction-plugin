@@ -541,3 +541,35 @@ test('enum のメモはチップ・自由入力の切替後も保持し、Enter 
     .dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
   expect(handlers.onConfirmEdit).toHaveBeenCalledTimes(2);
 });
+
+test.each([true, false])(
+  'IME の変換確定 Enter はメモと値の保存操作にしない（列挙値: %s）',
+  (enumMode) => {
+    const cell = makeCell({
+      evidence: null,
+      field: makeField({
+        fieldName: 'value',
+        dataType: enumMode ? 'enum' : 'text',
+        allowedValues: enumMode ? 'low|high' : null,
+      }),
+    });
+    const handlers = makeHandlers();
+    const node = renderCell(
+      cell,
+      makeModel({ editing: { cellKey: cell.cellKey, action: 'edit' } }),
+      handlers,
+    );
+    if (enumMode) (node.querySelector('.verify__enum-chip--other') as HTMLButtonElement).click();
+    const note = node.querySelector<HTMLInputElement>('.verify__note-input')!;
+    const input = node.querySelector<HTMLInputElement>('.verify__edit-input')!;
+    note.value = '理由';
+    input.value = '値';
+    for (const target of [note, input]) {
+      target.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', isComposing: true }));
+      target.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 229 }));
+    }
+    expect(handlers.onConfirmEdit).not.toHaveBeenCalled();
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
+    expect(handlers.onConfirmEdit).toHaveBeenCalledWith(cell.cellKey, 'edit', '値', '理由');
+  },
+);

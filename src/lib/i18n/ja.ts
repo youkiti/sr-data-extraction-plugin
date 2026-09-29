@@ -535,6 +535,10 @@ export const ja = {
   'pilot.reviseInstructions': '判定から指示文の改訂案を作る',
   'pilot.reviseEmpty': '改訂に使える判定（修正・棄却・未報告）がまだありません',
   'pilot.reviseProgress': '改訂案を作成しています…（{n} 秒）',
+  'pilot.reviseSchemaChanged':
+    '改訂案の作成中に表のデザインが更新されたため、改訂案を破棄しました。もう一度作成してください',
+  'pilot.reviseQueuedDecisions':
+    '未送信の判定（オフライン: {n} 件）があります。送信が終わってから改訂案を作成してください',
   'pilot.reviseNoChanges': '改訂が必要な項目は提案されませんでした',
   'pilot.studyUsed': '過去のパイロットで使用',
   'pilot.studyRevisionUsed': '改訂に使った論文',
