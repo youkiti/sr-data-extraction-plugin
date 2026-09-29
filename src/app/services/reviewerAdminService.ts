@@ -124,6 +124,34 @@ function toAssignmentInput(input: AddReviewerFormInput): {
   };
 }
 
+/** 登録直前に作業型を読み直す。異種の作業や読込失敗があれば保存を止める */
+async function checkReviewerWork(
+  store: Store,
+  deps: ReviewerAdminServiceDeps,
+  email: string,
+  nextType: ReturnType<typeof annotatorTypeForAssignment>,
+): Promise<boolean> {
+  const project = store.getState().currentProject;
+  if (!project) {
+    return false;
+  }
+  patchReviewers(store, { saving: true, saveError: null });
+  try {
+    const readTypes = deps.readAnnotatorTypesForEmail ?? readAnnotatorTypesForEmail;
+    const types = await readTypes(project.spreadsheetId, email, deps.google);
+    if ([...types].some((type) => type !== nextType)) {
+      patchReviewers(store, { saving: false, blockedChange: { email } });
+      return false;
+    }
+    return true;
+  } catch (err) {
+    const message = t('home.modeCheckFailed', { reason: toMessage(err) });
+    patchReviewers(store, { saving: false, saveError: message });
+    showToast(message);
+    return false;
+  }
+}
+
 /**
  * レビュアー追加フォームの送信。記録済みの作業モードと食い違う登録は拒否する。
  * 未着手で既存登録があり、role='reviewer' のまま review_mode だけを
@@ -141,24 +169,9 @@ export async function requestAddReviewer(
     showToast(t('home.toastEmailRequired'));
     return;
   }
-  const project = store.getState().currentProject;
-  if (!project) {
-    return;
-  }
   const input: AddReviewerFormInput = { ...rawInput, email };
-  patchReviewers(store, { saving: true, saveError: null });
-  try {
-    const readTypes = deps.readAnnotatorTypesForEmail ?? readAnnotatorTypesForEmail;
-    const types = await readTypes(project.spreadsheetId, email, deps.google);
-    const nextType = annotatorTypeForAssignment(input.role, input.reviewMode);
-    if ([...types].some((type) => type !== nextType)) {
-      patchReviewers(store, { saving: false, blockedChange: { email } });
-      return;
-    }
-  } catch (err) {
-    const message = t('home.modeCheckFailed', { reason: toMessage(err) });
-    patchReviewers(store, { saving: false, saveError: message });
-    showToast(message);
+  const nextType = annotatorTypeForAssignment(input.role, input.reviewMode);
+  if (!(await checkReviewerWork(store, deps, email, nextType))) {
     return;
   }
   const existing = latestReviewerAssignment(store.getState().reviewers.assignments ?? [], email);
@@ -184,7 +197,12 @@ export async function confirmReviewerChange(
   if (pending === null) {
     return;
   }
-  patchReviewers(store, { confirmingChange: null });
+  patchReviewers(store, { confirmingChange: null, blockedChange: null });
+  // 確認ダイアログの保留入力は reviewer のモード変更のみ。
+  const nextType = annotatorTypeForAssignment('reviewer', pending.reviewMode as ReviewMode);
+  if (!(await checkReviewerWork(store, deps, pending.email, nextType))) {
+    return;
+  }
   await submitReviewerAssignment(store, deps, pending);
 }
 

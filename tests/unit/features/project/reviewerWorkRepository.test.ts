@@ -3,7 +3,7 @@ import {
   readAnnotatorTypesForEmail,
 } from '../../../../src/features/project/reviewerWorkRepository';
 import { readAllDecisions } from '../../../../src/features/verification/decisionRepository';
-import { readStudyDataSheet, readResultsDataRows } from '../../../../src/features/extraction/annotationRepository';
+import { readAllStudyDataRows, readAllResultsDataRows } from '../../../../src/features/extraction/annotationRepository';
 import { readAllArmStructures } from '../../../../src/features/verification/armStructureRepository';
 
 jest.mock('../../../../src/features/verification/decisionRepository');
@@ -15,8 +15,8 @@ const email = 'reviewer@example.com';
 
 beforeEach(() => {
   jest.mocked(readAllDecisions).mockResolvedValue([]);
-  jest.mocked(readStudyDataSheet).mockResolvedValue({ fieldNames: [], rows: [] });
-  jest.mocked(readResultsDataRows).mockResolvedValue([]);
+  jest.mocked(readAllStudyDataRows).mockResolvedValue([]);
+  jest.mocked(readAllResultsDataRows).mockResolvedValue([]);
   jest.mocked(readAllArmStructures).mockResolvedValue([]);
 });
 
@@ -41,13 +41,13 @@ test.each(['Decisions', 'StudyData', 'ResultsData', 'ArmStructures'] as const)(
       version: 1, armKey: 'arm:1', armName: '群', confirmedAt: 't',
     };
     if (source === 'Decisions') jest.mocked(readAllDecisions).mockResolvedValue([row]);
-    if (source === 'StudyData') jest.mocked(readStudyDataSheet).mockResolvedValue({ fieldNames: [], rows: [row] });
-    if (source === 'ResultsData') jest.mocked(readResultsDataRows).mockResolvedValue([row]);
+    if (source === 'StudyData') jest.mocked(readAllStudyDataRows).mockResolvedValue([row]);
+    if (source === 'ResultsData') jest.mocked(readAllResultsDataRows).mockResolvedValue([row]);
     if (source === 'ArmStructures') jest.mocked(readAllArmStructures).mockResolvedValue([row]);
     for (let i = 0; i < 2; i++) {
       expect(await readAnnotatorTypesForEmail('sheet', email, google)).toEqual(new Set(['human_with_ai']));
     }
-    for (const reader of [readAllDecisions, readStudyDataSheet, readResultsDataRows, readAllArmStructures]) {
+    for (const reader of [readAllDecisions, readAllStudyDataRows, readAllResultsDataRows, readAllArmStructures]) {
       expect(reader).toHaveBeenCalledTimes(2);
       expect(reader).toHaveBeenCalledWith('sheet', google);
     }
@@ -57,4 +57,16 @@ test.each(['Decisions', 'StudyData', 'ResultsData', 'ArmStructures'] as const)(
 test('読み込み失敗は呼び出し元に伝える', async () => {
   jest.mocked(readAllArmStructures).mockRejectedValueOnce(new Error('読込失敗'));
   await expect(readAnnotatorTypesForEmail('sheet', email, google)).rejects.toThrow('読込失敗');
+});
+
+
+test('別 email・大文字違い・前後空白の行だけにある作業型は集めない', () => {
+  const types = collectAnnotatorTypesForEmail([
+    { annotator: email, annotatorType: 'human_with_ai' },
+    { annotator: email.toUpperCase(), annotatorType: 'human_independent' },
+    { annotator: ` ${email} `, annotatorType: 'human_independent' },
+    { annotator: 'other@example.com', annotatorType: 'human_independent' },
+  ], email);
+  expect(types).toEqual(new Set(['human_with_ai']));
+  expect(types.has('human_independent')).toBe(false);
 });

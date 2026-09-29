@@ -127,13 +127,13 @@ export const en: Record<MessageKey, string> = {
   'home.copyInviteTitle': 'Copy the review invitation',
   'home.modeConfirmTitle': 'Change the review mode?',
   'home.modeConfirmBody':
-    '{email} is already registered. The mode can be changed because no judgments, data, or arm structures have been recorded yet; once work starts, the mode can no longer be changed.',
+    '{email} is already registered. The mode can be changed because no judgments, data, or arm structures have been recorded yet; once work starts, the mode can no longer be changed. If this person has the app open, ask them to reopen it after the change (a screen left open keeps saving in the previous mode).',
   'home.modeCheckFailed':
     'Registration was not saved because eligibility to change the review mode could not be checked: {reason}',
   'home.modeBlockedTitle':
     'The review mode cannot be changed',
   'home.modeBlockedBody':
-    '{email} has already recorded judgments, data, or arm structures in this project, so it cannot be re-registered with a different review mode (review AI results / review without AI) or role. Changing it would let values confirmed while viewing AI output appear on the independent-input screen (or the reverse), breaking blinding. To have this person work in the other mode, register a different Google account.',
+    '{email} has already recorded judgments, data, or arm structures in this project, so it cannot be re-registered in a way that changes the kind of work (confirming values while viewing AI results / entering values without AI) — for example, changing the review mode, or turning an independent reviewer into an adjudicator. Doing so would let values confirmed while viewing AI output appear on the independent-input screen (or the reverse), breaking blinding. To have this person work the other way, register a different Google account.',
   'home.modeBlockedDismiss':
     'Close',
   'home.modeConfirmOk': 'Continue and change',

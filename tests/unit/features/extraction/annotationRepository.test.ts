@@ -1,6 +1,8 @@
 import {
   AnnotationConflictError,
   ensureStudyDataColumns,
+  readAllStudyDataRows,
+  readAllResultsDataRows,
   readResultsDataRows,
   readStudyDataSheet,
   upsertResultsDataRows,
@@ -871,5 +873,36 @@ describe('upsertStudyDataRows / upsertResultsDataRows: ApiErrorLog 連携（issu
     const result = await flushApiErrorLogQueue();
     expect(result).toEqual({ flushedCount: 0, remainingCount: 0 });
     expect(appendCallsOf(deps).some(([url]) => url.includes('ApiErrorLog'))).toBe(false);
+  });
+});
+
+
+describe('監査用の全行 reader', () => {
+  test('StudyData は異なる作業型の重複キー敗者もシート順に返す', async () => {
+    const deps = makeDeps([
+      [...STUDY_HEADER, 'sample_size_total'],
+      ['doc-1', 'r@example.com', 'human_with_ai', '1', '', 't0', '120'],
+      ['doc-1', 'r@example.com', 'human_independent', '1', '', 't1', '130'],
+    ]);
+    const rows = await readAllStudyDataRows('sid', deps);
+    expect(rows.map((row) => [row.studyId, row.annotator, row.annotatorType, row.values])).toEqual([
+      ['doc-1', 'r@example.com', 'human_with_ai', { sample_size_total: '120' }],
+      ['doc-1', 'r@example.com', 'human_independent', { sample_size_total: '130' }],
+    ]);
+    expect(callsOf(deps, 'GET')[0]?.[0]).toContain('/values/StudyData');
+  });
+
+  test('ResultsData は異なる作業型の重複キー敗者もシート順に返す', async () => {
+    const deps = makeDeps([
+      RESULTS_HEADER,
+      ['r-1', 'doc-1', 'f-arm-n', 'r@example.com', 'human_with_ai', '1', 'arm:1', '', '60', 'false', 't0'],
+      ['r-2', 'doc-1', 'f-arm-n', 'r@example.com', 'human_independent', '1', 'arm:1', '', '65', 'false', 't1'],
+    ]);
+    const rows = await readAllResultsDataRows('sid', deps);
+    expect(rows.map((row) => [row.resultId, row.annotatorType, row.value])).toEqual([
+      ['r-1', 'human_with_ai', '60'],
+      ['r-2', 'human_independent', '65'],
+    ]);
+    expect(callsOf(deps, 'GET')[0]?.[0]).toContain('/values/ResultsData');
   });
 });

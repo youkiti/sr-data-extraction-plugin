@@ -1,10 +1,10 @@
 // 判定・データ・群構成の作業型を読み、モード変更をハードブロックする
 // （issue #255・docs/design-independent-dual-review.md §2.1）。
-// StudyData / ResultsData の reader は winner 行のみを返すが、Decisions は追記型の全行を
-// 読むため、過去に記録された作業型も収集できる。
+// StudyData / ResultsData は重複キーの敗者も含めて全行を読み、Decisions / ArmStructures
+// の追記履歴と併せて記録済みの作業型を収集する。
 import type { AnnotatorType } from '../../domain/annotation';
 import type { GoogleApiDeps } from '../../lib/google/types';
-import { readStudyDataSheet, readResultsDataRows } from '../extraction/annotationRepository';
+import { readAllStudyDataRows, readAllResultsDataRows } from '../extraction/annotationRepository';
 import { readAllDecisions } from '../verification/decisionRepository';
 import { readAllArmStructures } from '../verification/armStructureRepository';
 
@@ -35,9 +35,9 @@ export async function readAnnotatorTypesForEmail(
 ): Promise<Set<HumanWorkType>> {
   const [decisions, study, results, arms] = await Promise.all([
     readAllDecisions(spreadsheetId, google),
-    readStudyDataSheet(spreadsheetId, google),
-    readResultsDataRows(spreadsheetId, google),
+    readAllStudyDataRows(spreadsheetId, google),
+    readAllResultsDataRows(spreadsheetId, google),
     readAllArmStructures(spreadsheetId, google),
   ]);
-  return collectAnnotatorTypesForEmail([...decisions, ...study.rows, ...results, ...arms], email);
+  return collectAnnotatorTypesForEmail([...decisions, ...study, ...results, ...arms], email);
 }

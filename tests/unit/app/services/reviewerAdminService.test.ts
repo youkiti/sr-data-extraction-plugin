@@ -17,7 +17,7 @@ import {
 } from '../../../../src/features/project/reviewerRepository';
 
 import { readAllDecisions } from '../../../../src/features/verification/decisionRepository';
-import { readStudyDataSheet, readResultsDataRows } from '../../../../src/features/extraction/annotationRepository';
+import { readAllStudyDataRows, readAllResultsDataRows } from '../../../../src/features/extraction/annotationRepository';
 import { readAllArmStructures } from '../../../../src/features/verification/armStructureRepository';
 
 jest.mock('../../../../src/features/verification/decisionRepository');
@@ -589,8 +589,8 @@ test('既定 reader は Decisions の accept だけでも独立モードへの�
     entityKey: 'study', annotator: 'r1@example.com', annotatorType: 'human_with_ai',
     schemaVersion: 1, action: 'accept', value: 'AI が出した値', note: '',
   }]);
-  jest.mocked(readStudyDataSheet).mockResolvedValue({ fieldNames: [], rows: [] });
-  jest.mocked(readResultsDataRows).mockResolvedValue([]);
+  jest.mocked(readAllStudyDataRows).mockResolvedValue([]);
+  jest.mocked(readAllResultsDataRows).mockResolvedValue([]);
   jest.mocked(readAllArmStructures).mockResolvedValue([]);
   const store = makeStore();
   await requestAddReviewer(store, { ...deps, readAnnotatorTypesForEmail: undefined }, {
@@ -599,4 +599,56 @@ test('既定 reader は Decisions の accept だけでも独立モードへの�
   expect(store.getState().reviewers.blockedChange).toEqual({ email: 'r1@example.com' });
   expect(appendReviewerAssignmentMock).not.toHaveBeenCalled();
   expect(shareProjectWithReviewerMock).not.toHaveBeenCalled();
+});
+
+
+describe('モード変更の続行時の再確認', () => {
+  const email = 'r1@example.com';
+
+  function storeWithReviewer(): Store {
+    const store = makeStore();
+    store.setState({ reviewers: { ...store.getState().reviewers, assignments: [{
+      email, role: 'reviewer', reviewMode: 'with_ai', assignedBy: 'owner', assignedAt: 't0',
+    }] } });
+    return store;
+  }
+
+  test('確認待ちの間に作業が始まったら続行しても登録・共有を拒否する', async () => {
+    const store = storeWithReviewer();
+    const read = jest.fn<ReturnType<NonNullable<ReviewerAdminServiceDeps['readAnnotatorTypesForEmail']>>, []>()
+      .mockResolvedValueOnce(new Set())
+      .mockImplementationOnce(async () => {
+        expect(store.getState().reviewers.saving).toBe(true);
+        return new Set(['human_with_ai']);
+      });
+    const testDeps = { ...deps, readAnnotatorTypesForEmail: read };
+    await requestAddReviewer(store, testDeps, { email, role: 'reviewer', reviewMode: 'independent' });
+    expect(store.getState().reviewers.confirmingChange).not.toBeNull();
+    await confirmReviewerChange(store, testDeps);
+    expect(read).toHaveBeenCalledTimes(2);
+    expect(read).toHaveBeenLastCalledWith(PROJECT.spreadsheetId, email, deps.google);
+    expect(store.getState().reviewers.blockedChange).toEqual({ email });
+    expect(store.getState().reviewers.confirmingChange).toBeNull();
+    expect(store.getState().reviewers.saving).toBe(false);
+    expect(appendReviewerAssignmentMock).not.toHaveBeenCalled();
+    expect(shareProjectWithReviewerMock).not.toHaveBeenCalled();
+  });
+
+  test('続行時の読込失敗も saveError とトーストを出して登録・共有しない', async () => {
+    const store = storeWithReviewer();
+    const read = jest.fn<ReturnType<NonNullable<ReviewerAdminServiceDeps['readAnnotatorTypesForEmail']>>, []>()
+      .mockResolvedValueOnce(new Set())
+      .mockRejectedValueOnce(new Error('再確認の読込失敗'));
+    const testDeps = { ...deps, readAnnotatorTypesForEmail: read };
+    await requestAddReviewer(store, testDeps, { email, role: 'reviewer', reviewMode: 'independent' });
+    await confirmReviewerChange(store, testDeps);
+    const message = 'レビューモードの変更可否を確認できなかったため、登録しませんでした: 再確認の読込失敗';
+    expect(read).toHaveBeenCalledTimes(2);
+    expect(store.getState().reviewers.saveError).toBe(message);
+    expect(document.querySelector('#toast-container .toast:last-child')?.textContent).toBe(message);
+    expect(store.getState().reviewers.saving).toBe(false);
+    expect(store.getState().reviewers.confirmingChange).toBeNull();
+    expect(appendReviewerAssignmentMock).not.toHaveBeenCalled();
+    expect(shareProjectWithReviewerMock).not.toHaveBeenCalled();
+  });
 });
