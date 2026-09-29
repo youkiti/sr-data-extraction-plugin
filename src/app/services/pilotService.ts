@@ -25,6 +25,7 @@ import {
   toggleFieldSection,
   toggleFieldSelection,
 } from '../../features/extraction/fieldSelection';
+import { defaultPilotStudyIds, usedPilotStudyIds } from '../../features/extraction/pilotSelection';
 import { readPilotRuns } from '../../features/extraction/runRepository';
 import { getSchemaFieldsByVersion } from '../../features/schema/schemaRepository';
 import { ensureChildFolder } from '../../lib/google/drive';
@@ -78,25 +79,28 @@ function patchPilot(store: Store, patch: Partial<PilotState>): void {
 }
 
 /**
- * 初回表示時の既定選択: テキスト層のある study の先頭 3 件（ui-states.md §3「既定 2〜3 本」・v0.10）。
- * モデル名は S5 のドラフトフォームの入力があれば引き継ぐ。一度初期化したら再実行しない
+ * 初回表示では未使用のテキスト付き study を最大 3 件選び、皆無なら使用済みに戻す。
+ * 選択未操作で履歴が後着したときだけ一度選び直す。モデル名は S5 の入力を引き継ぐ
  */
 export function initPilotSelection(store: Store): void {
   const state = store.getState();
   if (
-    state.pilot.selectionInitialized ||
+    state.pilot.selectionTouched ||
+    (state.pilot.selectionInitialized &&
+      (state.pilot.history === null || state.pilot.selectionHistoryApplied)) ||
     state.documents.records === null ||
     state.documents.studies === null
   ) {
     return;
   }
   // ガードで documents.records / studies は非 null。除外文書は既定選択の候補から外す（issue #181）
-  const defaults = buildExtractionCandidates(state.documents.studies, state.documents.records)
-    .filter((item) => item.hasTextLayer)
-    .slice(0, 3)
-    .map((item) => item.study.studyId);
+  const defaults = defaultPilotStudyIds(
+    buildExtractionCandidates(state.documents.studies, state.documents.records),
+    usedPilotStudyIds(state.pilot.history ?? []),
+  );
   patchPilot(store, {
     selectionInitialized: true,
+    selectionHistoryApplied: state.pilot.history !== null,
     selectedStudyIds: defaults,
     model: state.pilot.model === '' ? state.schema.model : state.pilot.model,
   });
@@ -104,6 +108,7 @@ export function initPilotSelection(store: Store): void {
 
 /** 対象 study チェックボックスの切替（最大 3 study。超過は無視して案内） */
 export function togglePilotStudy(store: Store, studyId: string, selected: boolean): void {
+  patchPilot(store, { selectionTouched: true });
   const current = store.getState().pilot.selectedStudyIds;
   if (!selected) {
     patchPilot(store, { selectedStudyIds: current.filter((id) => id !== studyId) });
@@ -201,7 +206,7 @@ async function resolveStudies(
 export async function runPilot(store: Store, deps: PilotServiceDeps): Promise<void> {
   const state = store.getState();
   const project = state.currentProject;
-  if (!project || state.pilot.running) {
+  if (!project || state.pilot.running || state.pilot.revising) {
     return;
   }
   const fields = state.schema.currentFields;
@@ -316,6 +321,8 @@ export async function runPilot(store: Store, deps: PilotServiceDeps): Promise<vo
         run: outcome.run,
         runFields: [...fields],
         evidence: outcome.result.evidence,
+        decisions: null,
+        reviseError: null,
         batchFailures: outcome.result.batchFailures,
         rejectedCount: outcome.result.rejectedItems.length,
         // 完了した run を履歴の先頭（最新）へ足し、自動読込済み扱いにする
@@ -375,6 +382,7 @@ export async function loadPilotHistory(
   try {
     const history = await readPilotRuns(project.spreadsheetId, deps.google);
     patchPilot(store, { historyLoading: false, history });
+    initPilotSelection(store);
   } catch (err) {
     patchPilot(store, { historyLoading: false, historyError: toMessage(err) });
   }
@@ -412,7 +420,12 @@ export async function loadPilotRun(
 ): Promise<void> {
   const state = store.getState();
   const project = state.currentProject;
-  if (!project || state.pilot.running || state.pilot.loadingRunId !== null) {
+  if (
+    !project ||
+    state.pilot.running ||
+    state.pilot.revising ||
+    state.pilot.loadingRunId !== null
+  ) {
     return;
   }
   const run = state.pilot.history?.find((candidate) => candidate.runId === runId);
@@ -427,6 +440,8 @@ export async function loadPilotRun(
     historyError: null,
     runError: null,
     run: null,
+    decisions: null,
+    reviseError: null,
     runFields: null,
     evidence: null,
     // 履歴 run はバッチ失敗の内訳を再構成できないため空にする（サマリは run.status で表示）
@@ -514,6 +529,7 @@ export async function loadPilotVerification(
     patchPilot(store, {
       verifyLoading: false,
       verification: bundle.verification,
+      decisions: bundle.allDecisions.filter((decision) => run.studyIds.includes(decision.studyId)),
       studyValues: bundle.studyValues,
       layoutMode: bundle.layoutMode,
       paneLayout: bundle.paneLayout,
@@ -572,6 +588,7 @@ export async function persistPilotDecision(
     showToast(t('verify.errFieldNotInSchema', { id: decision.fieldId }));
     return;
   }
+  patchPilot(store, { decisions: [...(state.pilot.decisions ?? []), decision] });
   let studyValues: Record<string, string | null> | null = null;
   if (field.entityLevel === 'study') {
     studyValues = { ...(state.pilot.studyValues ?? {}), [field.fieldName]: decision.value };

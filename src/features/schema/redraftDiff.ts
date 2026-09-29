@@ -43,7 +43,7 @@ export interface RedraftAddedItem {
 export interface RedraftChangedItem {
   /** 現行版の項目（fieldId を持つ） */
   current: SchemaField;
-  /** AI 提案行（fieldId は null） */
+  /** AI 提案行（部分提案では既存の fieldId を保持） */
   proposed: SchemaEditorRow;
   changes: RedraftAttributeChange[];
 }
@@ -136,16 +136,17 @@ function stringifyAttr(key: RedraftComparedKey, source: ComparableSource): strin
  * 除外し常に維持する。除外しないとプリセット行が数十件まるごと
  * 「削除候補」として並んでしまい、承認 UI が使い物にならなくなる
  */
-function isProtectedField(field: SchemaField): boolean {
+export function isProtectedField(field: SchemaField): boolean {
   return field.entityLevel === 'rob_domain' || field.section.trim().startsWith('risk_of_bias');
 }
 
 function computeChanges(
   current: ComparableSource,
   proposed: ComparableSource,
+  keys: readonly RedraftComparedKey[],
 ): RedraftAttributeChange[] {
   const changes: RedraftAttributeChange[] = [];
-  for (const key of COMPARED_KEYS) {
+  for (const key of keys) {
     const before = stringifyAttr(key, current);
     const after = stringifyAttr(key, proposed);
     if (before !== after) {
@@ -165,6 +166,7 @@ function computeChanges(
 export function buildRedraftDiff(
   current: readonly SchemaField[],
   drafted: readonly SchemaEditorRow[],
+  options?: { partial?: boolean },
 ): RedraftDiff {
   const protectedNames = new Set<string>();
   for (const field of current) {
@@ -202,17 +204,35 @@ export function buildRedraftDiff(
       continue;
     }
     const name = field.fieldName.trim();
-    const proposed = draftedByName.get(name);
+    const draft = draftedByName.get(name);
+    // 部分提案では許可した属性だけを反映し、比較対象外の変更も保存へ流さない。
+    const proposed =
+      options?.partial && draft !== undefined
+        ? {
+            ...schemaFieldToEditorRow(field),
+            extractionInstruction: draft.extractionInstruction,
+            example: draft.example,
+          }
+        : draft;
     if (proposed === undefined) {
+      if (options?.partial) {
+        unchanged.push(field);
+        currentEntries.push({ kind: 'unchanged', field });
+        continue;
+      }
       const item: RedraftRemovedItem = { current: field };
       removed.push(item);
       currentEntries.push({ kind: 'removed', item });
       continue;
     }
     // 現行版とマッチした AI 提案は「added」候補から除く（added に残るのは未消費分のみ）。
-    // 同名の current が複数ある場合、2 件目以降はこの delete 済みのため必ず removed になる
+    // 同名の current が複数ある場合、2 件目以降は削除候補（部分提案では変更なし）になる
     draftedByName.delete(name);
-    const rowChanges = computeChanges(field, proposed);
+    const rowChanges = computeChanges(
+      field,
+      proposed,
+      options?.partial ? ['extractionInstruction', 'example'] : COMPARED_KEYS,
+    );
     if (rowChanges.length > 0) {
       const item: RedraftChangedItem = { current: field, proposed, changes: rowChanges };
       changed.push(item);
@@ -224,7 +244,9 @@ export function buildRedraftDiff(
   }
 
   // 残った draftedByName は current に無い新規提案（drafted の出現順を維持する Map の性質を利用）
-  const added: RedraftAddedItem[] = Array.from(draftedByName.values()).map((row) => ({ row }));
+  const added: RedraftAddedItem[] = options?.partial
+    ? []
+    : Array.from(draftedByName.values()).map((row) => ({ row }));
 
   return { added, changed, removed, unchanged, protectedFields, currentEntries };
 }

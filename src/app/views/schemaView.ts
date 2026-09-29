@@ -33,6 +33,7 @@ import type { SchemaEditorRow } from '../../features/schema/types';
 import type { FieldValidationError } from '../../features/schema/validateField';
 import { t, type MessageKey } from '../../lib/i18n';
 import { el } from '../ui/dom';
+import { formatPilotRunDate } from '../ui/formatPilotRunDate';
 import { createModelSelect } from '../ui/modelSelect';
 import type { AppState, RedraftReviewState, SchemaState } from '../store';
 import type { ViewContext } from './types';
@@ -1011,6 +1012,12 @@ function renderEditor(
       'aria-label': t('schema.noteAria'),
     },
   });
+  if (schema.pilotRevision !== null) {
+    noteInput.value = t('schema.pilotRevisionNote', {
+      runId: schema.pilotRevision.runId,
+      n: schema.pilotRevision.decisionCount,
+    });
+  }
   const confirmButton = el('button', {
     id: 'schema-confirm',
     className: 'schema__primary schema__confirm',
@@ -1159,6 +1166,11 @@ function renderConfirmed(
   newVersionButton.addEventListener('click', () => ctx.schema.onStartNewVersion());
   children.push(el('div', { className: 'schema__actions' }, [newVersionButton, reloadButton(ctx)]));
 
+  if (schema.lastConfirmedPilotRevision) {
+    children.push(
+      el('a', { id: 'schema-repilot', text: t('schema.repilot'), attributes: { href: '#/pilot' } }),
+    );
+  }
   // 再ドラフト導線（issue #197）: 版履歴の手前に置く
   children.push(renderRedraftForm(state, ctx));
 
@@ -1268,6 +1280,7 @@ function renderRedraftChanged(
   items: readonly RedraftChangedItem[],
   selection: Record<string, boolean>,
   ctx: ViewContext,
+  pilotRevision: AppState['schema']['pilotRevision'],
 ): HTMLElement {
   const rows = items.map((item) => {
     const fieldName = item.current.fieldName.trim();
@@ -1282,7 +1295,11 @@ function renderRedraftChanged(
     const heading = el('span', {
       text: t('schema.redraftItemHeading', { fieldLabel: item.current.fieldLabel, fieldName }),
     });
-    return el('li', {}, [el('label', {}, [checkbox, heading]), renderRedraftChangeList(item.changes)]);
+    const children = [el('label', {}, [checkbox, heading]), renderRedraftChangeList(item.changes)];
+    const rationale = pilotRevision?.rationales[fieldName];
+    if (rationale !== undefined)
+      children.push(el('p', { className: 'schema__redraft-rationale', text: rationale }));
+    return el('li', {}, children);
   });
   return el('ul', { id: 'schema-redraft-changed', className: 'schema__redraft-list' }, rows);
 }
@@ -1326,11 +1343,26 @@ function renderRedraftRemoved(
  * 差分承認画面（issue #197）: AI 再ドラフト結果と現行版の差分を提示し、
  * 追加 / 変更 / 削除の承認を経てからエディタへ反映する
  */
-function renderRedraftReview(redraft: RedraftReviewState, ctx: ViewContext): HTMLElement {
+function renderRedraftReview(
+  redraft: RedraftReviewState,
+  ctx: ViewContext,
+  pilotRevision: AppState['schema']['pilotRevision'],
+): HTMLElement {
   const { diff, selection } = redraft;
 
   const children: HTMLElement[] = [
     el('h3', { text: t('schema.redraftReviewTitle') }),
+    ...(pilotRevision === null
+      ? []
+      : [
+          el('p', {
+            id: 'schema-redraft-pilot-source',
+            text: t('schema.pilotRevisionSource', {
+              date: formatPilotRunDate(pilotRevision.runStartedAt),
+              n: pilotRevision.decisionCount,
+            }),
+          }),
+        ]),
     el('p', {
       id: 'schema-redraft-summary',
       text: t('schema.redraftSummary', {
@@ -1344,7 +1376,7 @@ function renderRedraftReview(redraft: RedraftReviewState, ctx: ViewContext): HTM
     el('h4', { text: t('schema.redraftAddedTitle') }),
     renderRedraftAdded(diff.added, selection.added, ctx),
     el('h4', { text: t('schema.redraftChangedTitle') }),
-    renderRedraftChanged(diff.changed, selection.changed, ctx),
+    renderRedraftChanged(diff.changed, selection.changed, ctx, pilotRevision),
     el('h4', { text: t('schema.redraftRemovedTitle') }),
     ...renderRedraftRemoved(diff.removed, selection.removed, ctx),
     el('p', {
@@ -1402,7 +1434,7 @@ function renderBody(state: AppState, ctx: ViewContext): HTMLElement {
   // 差分承認画面（issue #197）はエディタと併存しない（redraft はエディタへ反映するまで
   // editorRows を書き換えない。applyRedraft / cancelRedraft のいずれかで redraft は null に戻る）
   if (schema.redraft !== null) {
-    return renderRedraftReview(schema.redraft, ctx);
+    return renderRedraftReview(schema.redraft, ctx, schema.pilotRevision);
   }
   if (schema.editorRows !== null) {
     return renderEditor(schema.editorRows, schema, ctx);

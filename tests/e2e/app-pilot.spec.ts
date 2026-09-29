@@ -615,3 +615,185 @@ test('S6 埋め込み検証: enum 項目は許容値チップで判定でき、�
   const results = await new AxeBuilder({ page }).analyze();
   expect(results.violations).toEqual([]);
 });
+
+test('パイロットの判定メモから部分改訂案を承認し、pilot_revision 版を確定する', async ({
+  page,
+}) => {
+  const runRow = [
+    'run-1',
+    'pilot',
+    '1',
+    'study-1',
+    'gemini',
+    'gemini-test',
+    'gemini-test-001',
+    'text_only',
+    'done',
+    '2026-07-05T00:00:00Z',
+    '2026-07-05T00:01:00Z',
+    '100',
+    '20',
+    '0.01',
+  ];
+  const fieldRow = [
+    '1',
+    'f-total',
+    '1',
+    'results',
+    'mortality_pct',
+    '死亡率',
+    'study',
+    'text',
+    '',
+    '',
+    'TRUE',
+    'Report overall mortality.',
+    '',
+    'FALSE',
+    '',
+  ];
+  const evidenceRow = [
+    'ev-1',
+    'run-1',
+    'study-1',
+    'f-total',
+    'doc-1',
+    '-',
+    '12',
+    'FALSE',
+    QUOTE,
+    '1',
+    'high',
+    'exact',
+  ];
+  const memo = '全体と群別の結果を区別する';
+  const decisionRows: unknown[][] = [];
+  const versionRows: unknown[][] = [];
+  const llmBodies: string[] = [];
+  const dataStore = createSheetsDataStore({
+    studyHeader: STUDY_DATA_HEADERS,
+    resultsHeader: RESULTS_DATA_HEADERS,
+  });
+  await page.route('https://sheets.googleapis.com/**', async (route) => {
+    const request = route.request();
+    const url = decodeURIComponent(request.url());
+    if (request.method() !== 'GET') {
+      dataStore.handleWrite(request);
+      if (url.includes('Decisions') && url.includes(':append')) {
+        decisionRows.push(...(request.postDataJSON() as { values: unknown[][] }).values);
+      }
+      if (url.includes('SchemaVersions') && url.includes(':append')) {
+        versionRows.push(...(request.postDataJSON() as { values: unknown[][] }).values);
+      }
+      await route.fulfill({ json: {} });
+      return;
+    }
+    if (url.includes('ExtractionRuns')) {
+      await route.fulfill({ json: { values: [[...SHEET_HEADERS.ExtractionRuns], runRow] } });
+    } else if (url.includes('Evidence')) {
+      await route.fulfill({ json: { values: [[...SHEET_HEADERS.Evidence], evidenceRow] } });
+    } else if (url.includes('SchemaFields')) {
+      await route.fulfill({ json: { values: [[...SHEET_HEADERS.SchemaFields], fieldRow] } });
+    } else if (url.includes('SchemaVersions')) {
+      await route.fulfill({
+        json: {
+          values: [
+            [...SHEET_HEADERS.SchemaVersions],
+            ['1', '', '1', 'user_edit', '2026-07-01T00:00:00Z', 'e2e@example.com', ''],
+          ],
+        },
+      });
+    } else if (url.includes('Decisions')) {
+      await route.fulfill({ json: { values: [DECISIONS_HEADERS, ...decisionRows] } });
+    } else if (url.includes('StudyData')) {
+      await route.fulfill({ json: { values: dataStore.studyValues() } });
+    } else if (url.includes('ResultsData')) {
+      await route.fulfill({ json: { values: dataStore.resultsValues() } });
+    } else if (url.includes('ArmStructures')) {
+      await route.fulfill({ json: { values: [[...SHEET_HEADERS.ArmStructures]] } });
+    } else if (url.includes('Protocol')) {
+      await route.fulfill({ json: { values: [PROTOCOL_HEADERS, PROTOCOL_ROW] } });
+    } else {
+      await route.fulfill({ json: { values: [] } });
+    }
+  });
+  await page.route('https://www.googleapis.com/**', async (route) => {
+    const url = decodeURIComponent(route.request().url());
+    if (url.includes('/upload/drive/v3/files')) {
+      await route.fulfill({ json: { id: 'log', webViewLink: 'https://drive.example/log' } });
+    } else if (url.includes('/drive/v3/files?q=')) {
+      const name = /name = '([^']+)'/.exec(url)?.[1] ?? 'folder';
+      await route.fulfill({ json: { files: [{ id: `${name}-id` }] } });
+    } else if (url.includes('/drive/v3/files/txt-1?alt=media')) {
+      await route.fulfill({ contentType: 'text/plain', body: QUOTE });
+    } else if (url.includes('/drive/v3/files/drive-1?alt=media')) {
+      await route.fulfill({ contentType: 'application/pdf', body: minimalPdf(QUOTE) });
+    } else {
+      await route.fulfill({ json: {} });
+    }
+  });
+  await page.route('https://generativelanguage.googleapis.com/**', async (route) => {
+    llmBodies.push(route.request().postData() ?? '');
+    await route.fulfill({
+      json: {
+        candidates: [
+          {
+            content: {
+              parts: [
+                {
+                  text: JSON.stringify({
+                    revisions: [
+                      {
+                        field_name: 'mortality_pct',
+                        extraction_instruction:
+                          'Report overall mortality, distinguishing it from group-specific results.',
+                        example: null,
+                        rationale: '全体と群別の値の取り違えを防ぐ',
+                      },
+                    ],
+                  }),
+                },
+              ],
+            },
+          },
+        ],
+        usageMetadata: { promptTokenCount: 100, candidatesTokenCount: 20 },
+        modelVersion: 'gemini-test-001',
+      },
+    });
+  });
+  await initApp(page, {
+    apiKey: 'e2e-api-key',
+    documents: [DOCUMENT],
+    pilot: { history: null, historyInitialized: false, run: null },
+  });
+  await expect(page.locator('.verify__panes')).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator('#pilot-revise-instructions')).toBeDisabled();
+  await page.locator('.verify__action--edit').click();
+  await page.locator('.verify__edit-input').fill('13');
+  await page.locator('.verify__note-input').fill(`  ${memo}  `);
+  await page.locator('.verify__note-input').press('Enter');
+  await expect.poll(() => decisionRows.length).toBe(1);
+  expect(decisionRows[0]?.[DECISIONS_HEADERS.indexOf('note')]).toBe(memo);
+  await expect(page.locator('#pilot-revise-instructions')).toBeEnabled();
+  await page.locator('#pilot-revise-instructions').click();
+  await expect(page.locator('#schema-redraft-review')).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator('#schema-redraft-pilot-source')).toContainText('判定 1 件');
+  await expect(page.locator('#schema-redraft-changed > li')).toHaveCount(1);
+  await expect(page.locator('.schema__redraft-rationale')).toHaveText(
+    '全体と群別の値の取り違えを防ぐ',
+  );
+  await expect(page.locator('#schema-redraft-removed li')).toHaveCount(0);
+  expect(llmBodies).toHaveLength(1);
+  expect(llmBodies[0]).toContain('Do NOT embed pilot-specific values');
+  expect(llmBodies[0]).toContain(memo);
+  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+  await page.locator('#schema-redraft-apply').click();
+  await expect(page.locator('#schema-note')).toHaveValue('pilot run run-1 の判定 1 件に基づく改訂');
+  await page.locator('#schema-confirm').click();
+  await expect.poll(() => versionRows.length).toBe(1);
+  expect(versionRows[0]?.[SHEET_HEADERS.SchemaVersions.indexOf('created_by_type')]).toBe(
+    'pilot_revision',
+  );
+  await expect(page.locator('#schema-repilot')).toHaveAttribute('href', '#/pilot');
+});

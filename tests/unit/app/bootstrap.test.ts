@@ -2,6 +2,10 @@
 // 実 window ではなくスタブ（location / addEventListener のみ実装）を注入する
 import { installChromeMock, type ChromeMock } from '../../setup/chrome-mock';
 import { bootstrapApp, createChromeAppDeps, seedState, type AppDeps } from '../../../src/app/bootstrap';
+import { runPilotRevision } from '../../../src/app/services/pilotRevisionService';
+jest.mock('../../../src/app/services/pilotRevisionService', () => ({
+  runPilotRevision: jest.fn(),
+}));
 import { BUILD_DATE } from '../../../src/build-info';
 import { configureApiErrorLog, recordApiErrorLog } from '../../../src/lib/diagnostics/apiErrorLog';
 
@@ -1843,6 +1847,46 @@ describe('bootstrapApp: #/pilot', () => {
     };
   }
 
+  test.each([true, false])(
+    '改訂ボタンはサービス成功時だけスキーマへ遷移する: %s',
+    async (success) => {
+      (runPilotRevision as jest.Mock).mockResolvedValueOnce(success);
+      const stub = createWindowStub(
+        pilotPreloaded({
+          run: { ...RUN, provider: 'gemini' },
+          runFields: [FIELD],
+          evidence: [],
+          history: [],
+          historyInitialized: true,
+          decisions: [
+            {
+              decidedAt: 't1',
+              decidedBy: '',
+              annotator: '',
+              annotatorType: 'human_with_ai',
+              studyId: 'study-1',
+              fieldId: 'f-total',
+              entityKey: '-',
+              schemaVersion: 1,
+              action: 'edit',
+              value: '修正',
+              note: 'メモ',
+            },
+          ],
+        }),
+      );
+      const { deps } = createFakeDeps([[...SHEET_HEADERS.Documents]]);
+      const store = await bootstrapApp(asWindow(stub), deps);
+      stub.location.hash = '#/pilot';
+      stub.fireHashChange();
+      await flush();
+      (document.getElementById('pilot-revise-instructions') as HTMLButtonElement).click();
+      await flush();
+      expect(runPilotRevision).toHaveBeenCalledWith(store, deps);
+      expect(stub.location.hash).toBe(success ? '#/schema' : '#/pilot');
+    },
+  );
+
   test('seedState は pilot スライスも部分注入でマージする', async () => {
     const stub = createWindowStub({ pilot: { model: 'gemini-x' } as AppState['pilot'] });
     const state = await seedState(asWindow(stub));
@@ -3234,6 +3278,7 @@ describe('bootstrapApp: #/export', () => {
           providers: ['Gemini'],
           pilotStudyCount: 3,
           scannedDocumentCount: 0,
+          pilotRevisionCount: 0,
         },
       }),
     );

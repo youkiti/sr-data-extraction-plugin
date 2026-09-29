@@ -111,6 +111,7 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<ExtractViewCallba
         onToggleField: jest.fn(),
         onToggleFieldSection: jest.fn(),
         onToggleFieldSectionCollapse: jest.fn(),
+        onReviseInstructions: jest.fn(),
         onRun: jest.fn(),
         onSelectRun: jest.fn(),
         onReloadHistory: jest.fn(),

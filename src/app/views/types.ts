@@ -157,6 +157,8 @@ export interface SchemaViewCallbacks {
 
 /** #/pilot（S6）のユーザー操作コールバック */
 export interface PilotViewCallbacks {
+  /** パイロット判定から抽出指示の改訂案を作る */
+  onReviseInstructions(): void;
   /** 対象 study チェックボックスの切替（最大 3 study） */
   onToggleStudy(studyId: string, selected: boolean): void;
   /** requested_model の変更 */

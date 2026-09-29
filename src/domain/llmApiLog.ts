@@ -12,6 +12,7 @@ export type LlmProviderId = 'gemini' | 'openrouter' | 'openai_compatible' | 'ant
 
 export type LlmPurpose =
   | 'draft_schema'
+  | 'revise_schema_pilot'
   | 'suggest_study_label'
   | 'extract_study'
   | 'relocate_quote'

@@ -462,6 +462,10 @@ export const ja = {
   'schema.redraftLead':
     '最新のプロトコルとサンプル論文をもとに AI が表のデザインを作り直し、現行版との差分を提示します。既存の項目は、あなたが承認しない限り消えません。',
   'schema.redraftReviewTitle': '再ドラフトの差分を確認',
+  'schema.pilotRevisionSource':
+    'パイロット run（{date}）の判定 {n} 件に基づく改訂案です。変える項目だけを提案しています',
+  'schema.pilotRevisionNote': 'pilot run {runId} の判定 {n} 件に基づく改訂',
+  'schema.repilot': '再パイロットへ',
   'schema.redraftSummary':
     '追加 {added} 件 / 変更 {changed} 件 / 削除候補 {removed} 件 / 変更なし {unchanged} 件 / 保持 {protectedCount} 件',
   'schema.redraftAddedTitle': '追加',
@@ -528,6 +532,12 @@ export const ja = {
   'pilot.failureUnknown': '失敗の内訳は保存されていません（履歴から読み込んだ実行）。',
   'pilot.runDone': '抽出が完了しました。',
   'pilot.reviseSchema': '表のデザインを改訂して再パイロット',
+  'pilot.reviseInstructions': '判定から指示文の改訂案を作る',
+  'pilot.reviseEmpty': '改訂に使える判定（修正・棄却・未報告）がまだありません',
+  'pilot.reviseProgress': '改訂案を作成しています…（{n} 秒）',
+  'pilot.reviseNoChanges': '改訂が必要な項目は提案されませんでした',
+  'pilot.studyUsed': '過去のパイロットで使用',
+  'pilot.studyRevisionUsed': '改訂に使った論文',
   'pilot.verifyTitle': '検証（S8 と同じ操作）',
   'pilot.verifyError': '検証データを読み込めませんでした: {reason}',
   'pilot.historyTitle': '過去のパイロット結果',
@@ -725,6 +735,8 @@ export const ja = {
   'verify.editMultilineHint': 'Enter で改行 / Ctrl+Enter（Mac は Cmd+Enter）で確定',
   'verify.editConfirmIndependent': '入力して確定',
   'verify.editConfirm': '修正して確定',
+  'verify.noteAria': '判定メモ（任意）',
+  'verify.notePlaceholder': '判定の理由や、抽出指示の改善点（任意）',
   'verify.rejectConfirm': '棄却して確定',
   // enum 項目の許容値チップ（issue #254）
   'verify.enumChooseAria': '{label} の選択肢',

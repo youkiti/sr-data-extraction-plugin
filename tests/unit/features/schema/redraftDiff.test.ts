@@ -433,3 +433,47 @@ describe('isRedraftSelectionPristine', () => {
     expect(isRedraftSelectionPristine(diff, { added: {}, changed: {}, removed: {} })).toBe(true);
   });
 });
+
+test('部分提案は欠落を保持し、未知名を除外し、指示と例だけ比較・反映する', () => {
+  const fields = [makeField(), makeField({ fieldId: 'f2', fieldName: 'other' })];
+  const diff = buildRedraftDiff(
+    fields,
+    [
+      makeRow({
+        extractionInstruction: '新しい指示',
+        example: '架空例',
+        section: '変更不可',
+        dataType: 'integer',
+        required: false,
+      }),
+      makeRow({ fieldName: 'unknown' }),
+    ],
+    { partial: true },
+  );
+  expect(diff.added).toEqual([]);
+  expect(diff.removed).toEqual([]);
+  expect(diff.unchanged).toEqual([fields[1]]);
+  expect(diff.changed[0]?.changes.map((change) => change.key)).toEqual([
+    'extractionInstruction',
+    'example',
+  ]);
+  const selection = defaultRedraftSelection(diff);
+  expect(isRedraftSelectionPristine(diff, selection)).toBe(true);
+  const rows = applyRedraftDiff(diff, selection);
+  expect(rows[0]).toMatchObject({
+    fieldId: 'f-1',
+    section: 'methods',
+    dataType: 'text',
+    required: true,
+    extractionInstruction: '新しい指示',
+    example: '架空例',
+  });
+  expect(rows[1]?.fieldName).toBe('other');
+  selection.changed.study_design = false;
+  expect(isRedraftSelectionPristine(diff, selection)).toBe(false);
+  expect(applyRedraftDiff(diff, selection)[0]?.extractionInstruction).toBe('Report the design.');
+  expect(
+    buildRedraftDiff(fields, [makeRow({ fieldLabel: '無視', section: '無視' })], { partial: true })
+      .unchanged,
+  ).toEqual(fields);
+});

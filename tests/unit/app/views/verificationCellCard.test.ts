@@ -252,6 +252,7 @@ describe('mermaid 対象フィールドの複数行編集入力（issue #170）'
     const editor = root.querySelector('.verify__editor');
     const order = Array.from(editor?.children ?? []).map((node) => node.className);
     expect(order).toEqual([
+      'verify__note-input',
       'verify__edit-input verify__edit-input--multiline',
       'verify__edit-hint',
       'verify__edit-confirm',
@@ -281,7 +282,7 @@ describe('mermaid 対象フィールドの複数行編集入力（issue #170）'
     const multiline = 'flowchart TD\n  A --> B\n  B --> C';
     textarea.value = multiline;
     textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true }));
-    expect(handlers.onConfirmEdit).toHaveBeenCalledWith(cell.cellKey, 'edit', multiline);
+    expect(handlers.onConfirmEdit).toHaveBeenCalledWith(cell.cellKey, 'edit', multiline, null);
   });
 
   test('Cmd(Meta)+Enter でも確定する', () => {
@@ -292,7 +293,12 @@ describe('mermaid 対象フィールドの複数行編集入力（issue #170）'
     const textarea = node.querySelector<HTMLTextAreaElement>('.verify__edit-input') as HTMLTextAreaElement;
     textarea.value = 'flowchart TD\n  A --> B';
     textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', metaKey: true, bubbles: true }));
-    expect(handlers.onConfirmEdit).toHaveBeenCalledWith(cell.cellKey, 'edit', 'flowchart TD\n  A --> B');
+    expect(handlers.onConfirmEdit).toHaveBeenCalledWith(
+      cell.cellKey,
+      'edit',
+      'flowchart TD\n  A --> B',
+      null,
+    );
   });
 
   test('Enter 単独では onConfirmEdit が呼ばれず、preventDefault もされない（改行を許す）', () => {
@@ -326,7 +332,12 @@ describe('mermaid 対象フィールドの複数行編集入力（issue #170）'
     expect(textarea.value).toBe('');
     textarea.value = 'flowchart TD\n  X --> Y';
     textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true }));
-    expect(handlers.onConfirmEdit).toHaveBeenCalledWith(cell.cellKey, 'reject', 'flowchart TD\n  X --> Y');
+    expect(handlers.onConfirmEdit).toHaveBeenCalledWith(
+      cell.cellKey,
+      'reject',
+      'flowchart TD\n  X --> Y',
+      null,
+    );
   });
 });
 
@@ -389,7 +400,7 @@ describe('enum 項目の許容値チップ（issue #254）', () => {
     );
     document.body.replaceChildren(node);
     (node.querySelectorAll('.verify__enum-chip')[2] as HTMLButtonElement).click();
-    expect(handlers.onConfirmEdit).toHaveBeenCalledWith(cell.cellKey, 'edit', 'high');
+    expect(handlers.onConfirmEdit).toHaveBeenCalledWith(cell.cellKey, 'edit', 'high', null);
   });
 
   test('キャンセルボタンは onCancelEdit を呼ぶ', () => {
@@ -450,4 +461,83 @@ describe('enum 項目の許容値チップ（issue #254）', () => {
     const unverified = makeEnumCell({ evidence: makeEvidence({ fieldId: 'f-rob', value: 'low risk' }) });
     expect(render(unverified).querySelector('.verify__enum-out-of-range')).toBeNull();
   });
+});
+
+test.each(['edit', 'reject'] as const)(
+  'メモをすべての確定経路で渡し、Escape で破棄する（%s）',
+  (action) => {
+    const cell = makeCell({ field: makeField({ fieldName: 'value' }) });
+    const handlers = makeHandlers();
+    const node = renderCell(
+      cell,
+      makeModel({ editing: { cellKey: cell.cellKey, action } }),
+      handlers,
+    );
+    const note = node.querySelector<HTMLInputElement>('.verify__note-input')!;
+    const input = node.querySelector<HTMLInputElement>('.verify__edit-input')!;
+    expect(note.getAttribute('aria-label')).toBe('判定メモ（任意）');
+    expect(note.getAttribute('placeholder')).toBe('判定の理由や、抽出指示の改善点（任意）');
+    note.value = '  判定メモ  ';
+    input.value = '値';
+    note.dispatchEvent(new KeyboardEvent('keydown', { key: 'a', bubbles: true }));
+    expect(handlers.onConfirmEdit).not.toHaveBeenCalled();
+    note.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    expect(handlers.onConfirmEdit).toHaveBeenLastCalledWith(cell.cellKey, action, '値', '判定メモ');
+    (node.querySelector('.verify__edit-confirm') as HTMLButtonElement).click();
+    expect(handlers.onConfirmEdit).toHaveBeenLastCalledWith(cell.cellKey, action, '値', '判定メモ');
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
+    expect(handlers.onConfirmEdit).toHaveBeenLastCalledWith(cell.cellKey, action, '値', '判定メモ');
+    note.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    expect(handlers.onCancelEdit).toHaveBeenCalledTimes(1);
+  },
+);
+
+test('enum のメモはチップ・自由入力の切替後も保持し、Enter と Escape を扱う', () => {
+  const cell = makeCell({
+    field: makeField({ fieldName: 'value', dataType: 'enum', allowedValues: 'low|high' }),
+    evidence: makeEvidence({ value: 'low' }),
+  });
+  const handlers = makeHandlers();
+  const node = renderCell(
+    cell,
+    makeModel({ editing: { cellKey: cell.cellKey, action: 'edit' } }),
+    handlers,
+  );
+  const note = node.querySelector<HTMLInputElement>('.verify__note-input')!;
+  note.value = ' チップのメモ ';
+  note.dispatchEvent(new KeyboardEvent('keydown', { key: 'j', bubbles: true }));
+  expect(handlers.onConfirmEdit).not.toHaveBeenCalled();
+  const enter = new KeyboardEvent('keydown', { key: 'Enter', cancelable: true });
+  note.dispatchEvent(enter);
+  expect(enter.defaultPrevented).toBe(true);
+  expect(handlers.onConfirmEdit).not.toHaveBeenCalled();
+  (node.querySelector('.verify__enum-chip') as HTMLButtonElement).click();
+  expect(handlers.onConfirmEdit).toHaveBeenLastCalledWith(
+    cell.cellKey,
+    'edit',
+    'low',
+    'チップのメモ',
+  );
+  (node.querySelector('.verify__enum-chip--other') as HTMLButtonElement).click();
+  expect(node.querySelector('.verify__note-input')).toBe(note);
+  node.querySelector<HTMLInputElement>('.verify__edit-input')!.value = 'custom';
+  note.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
+  expect(handlers.onConfirmEdit).toHaveBeenLastCalledWith(
+    cell.cellKey,
+    'edit',
+    'custom',
+    'チップのメモ',
+  );
+  note.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+  expect(handlers.onCancelEdit).toHaveBeenCalledTimes(1);
+  const emptyCell = makeCell({ field: cell.field, evidence: null });
+  const empty = renderCell(
+    emptyCell,
+    makeModel({ editing: { cellKey: emptyCell.cellKey, action: 'edit' } }),
+    handlers,
+  );
+  empty
+    .querySelector('.verify__note-input')!
+    .dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
+  expect(handlers.onConfirmEdit).toHaveBeenCalledTimes(2);
 });

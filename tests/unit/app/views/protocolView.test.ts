@@ -108,6 +108,7 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<ProtocolViewCallb
         onToggleField: jest.fn(),
         onToggleFieldSection: jest.fn(),
         onToggleFieldSectionCollapse: jest.fn(),
+        onReviseInstructions: jest.fn(),
         onRun: jest.fn(),
         onSelectRun: jest.fn(),
         onReloadHistory: jest.fn(),

@@ -36,6 +36,7 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<PilotViewCallback
     onToggleField: jest.fn(),
     onToggleFieldSection: jest.fn(),
     onToggleFieldSectionCollapse: jest.fn(),
+    onReviseInstructions: jest.fn(),
     onRun: jest.fn(),
     onSelectRun: jest.fn(),
     onReloadHistory: jest.fn(),
@@ -837,4 +838,73 @@ describe('renderPilotView（表示言語 en。issue #93）', () => {
       'No studies yet. Import documents first on the Documents screen.',
     );
   });
+});
+
+test('run 全 study の最終判定で改訂ボタンを制御し、進捗・失敗を表示する', () => {
+  const field = makeField();
+  const decision = {
+    studyId: 'study-1',
+    fieldId: field.fieldId,
+    entityKey: '-',
+    decidedAt: 't1',
+    decidedBy: 'me',
+    annotator: 'me',
+    annotatorType: 'human_with_ai' as const,
+    schemaVersion: 1,
+    action: 'edit' as const,
+    value: '修正',
+    note: 'メモ',
+  };
+  const state = makeState({
+    pilot: {
+      run: makeRun(),
+      runFields: [field],
+      evidence: [],
+      decisions: [decision],
+      verification: { annotator: 'me' } as VerificationData,
+    },
+  });
+  const { root, callbacks } = render(state);
+  const button = root.querySelector<HTMLButtonElement>('#pilot-revise-instructions')!;
+  expect(button.disabled).toBe(false);
+  expect(root.querySelector('#pilot-revise-instructions-empty')).toBeNull();
+  button.click();
+  expect(callbacks.onReviseInstructions).toHaveBeenCalledTimes(1);
+  state.pilot.revising = true;
+  state.pilot.reviseElapsedSeconds = 2;
+  state.pilot.reviseError = '改訂失敗';
+  const busy = render(state).root;
+  expect(busy.querySelector<HTMLButtonElement>('#pilot-revise-instructions')!.disabled).toBe(true);
+  expect(busy.querySelector('#pilot-revise-progress')?.textContent).toBe(
+    '改訂案を作成しています…（2 秒）',
+  );
+  expect(busy.querySelector('#pilot-revise-error')?.getAttribute('role')).toBe('alert');
+  state.pilot.revising = false;
+  state.pilot.decisions = [{ ...decision, action: 'accept' }];
+  expect(
+    render(state).root.querySelector<HTMLButtonElement>('#pilot-revise-instructions')!.disabled,
+  ).toBe(true);
+});
+
+test('履歴の使用済みと改訂使用 study をバッジで表示する', () => {
+  const state = makeState({
+    pilot: {
+      run: makeRun({ runId: 'new', startedAt: 't3' }),
+      history: [makeRun({ startedAt: 't1' })],
+    },
+  });
+  state.schema.versions = [
+    {
+      schemaVersion: 2,
+      parentVersion: 1,
+      protocolVersion: 1,
+      createdByType: 'pilot_revision',
+      createdAt: 't2',
+      createdBy: 'me',
+      note: null,
+    },
+  ];
+  const { root } = render(state);
+  expect(root.querySelector('.pilot__study-used')?.textContent).toBe('過去のパイロットで使用');
+  expect(root.querySelector('.pilot__study-revision-used')?.textContent).toBe('改訂に使った論文');
 });

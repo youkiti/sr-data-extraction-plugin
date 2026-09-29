@@ -109,6 +109,7 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<ExportViewCallbac
         onToggleField: jest.fn(),
         onToggleFieldSection: jest.fn(),
         onToggleFieldSectionCollapse: jest.fn(),
+        onReviseInstructions: jest.fn(),
         onRun: jest.fn(),
         onSelectRun: jest.fn(),
         onReloadHistory: jest.fn(),
@@ -575,6 +576,7 @@ describe('renderExportView: 論文 Methods 記載例カード（issue #67）', (
     providers: ['Gemini'],
     pilotStudyCount: 3,
     scannedDocumentCount: 0,
+    pilotRevisionCount: 0,
   };
 
   test('methodsFacts 未読込（null）はカード自体を出さない', () => {

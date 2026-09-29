@@ -71,6 +71,7 @@ import {
   updateRobPrespecDialog,
   type SchemaServiceDeps,
 } from './services/schemaService';
+import { runPilotRevision } from './services/pilotRevisionService';
 import {
   autoLoadLatestPilotRun,
   initPilotSelection,
@@ -653,6 +654,11 @@ export async function bootstrapApp(
       },
     },
     pilot: {
+      onReviseInstructions: () => {
+        void runPilotRevision(store, deps).then((success) => {
+          if (success) win.location.hash = '#/schema';
+        });
+      },
       onToggleStudy: (studyId, selected) => {
         togglePilotStudy(store, studyId, selected);
       },

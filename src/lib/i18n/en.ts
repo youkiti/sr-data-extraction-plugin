@@ -461,6 +461,10 @@ export const en: Record<MessageKey, string> = {
   'schema.redraftLead':
     'AI redesigns the table using the latest protocol and sample articles, and shows you the differences from the current version. Existing fields are never removed unless you approve it.',
   'schema.redraftReviewTitle': 'Review the redraft differences',
+  'schema.pilotRevisionSource':
+    'These proposals are based on {n} judgments in the pilot run ({date}). Only fields to change are proposed.',
+  'schema.pilotRevisionNote': 'Revision based on {n} judgments in pilot run {runId}',
+  'schema.repilot': 'Back to pilot',
   'schema.redraftSummary':
     'Added {added} / Changed {changed} / Removal candidates {removed} / Unchanged {unchanged} / Kept {protectedCount}',
   'schema.redraftAddedTitle': 'Added',
@@ -529,6 +533,13 @@ export const en: Record<MessageKey, string> = {
   'pilot.failureUnknown': 'Failure details are not stored (run loaded from history).',
   'pilot.runDone': 'Extraction completed.',
   'pilot.reviseSchema': 'Revise the table design and re-run the pilot',
+  'pilot.reviseInstructions': 'Draft instruction revisions from judgments',
+  'pilot.reviseEmpty':
+    'There are no judgments (edits, rejections, or not reported) available for revision yet',
+  'pilot.reviseProgress': 'Drafting revisions… ({n} seconds)',
+  'pilot.reviseNoChanges': 'The model proposed no revisions',
+  'pilot.studyUsed': 'Used in a previous pilot',
+  'pilot.studyRevisionUsed': 'Used for a revision',
   'pilot.verifyTitle': 'Verification (same operations as S8)',
   'pilot.verifyError': 'Failed to load verification data: {reason}',
   'pilot.historyTitle': 'Past pilot results',
@@ -730,6 +741,9 @@ export const en: Record<MessageKey, string> = {
   'verify.editMultilineHint': 'Enter inserts a line break; Ctrl+Enter (Cmd+Enter on Mac) confirms',
   'verify.editConfirmIndependent': 'Confirm input',
   'verify.editConfirm': 'Confirm edit',
+  'verify.noteAria': 'Judgment note (optional)',
+  'verify.notePlaceholder':
+    'Why you changed it, or how the instruction could be improved (optional)',
   'verify.rejectConfirm': 'Reject and confirm',
   // enum 項目の許容値チップ（issue #254）
   'verify.enumChooseAria': 'Choices for {label}',

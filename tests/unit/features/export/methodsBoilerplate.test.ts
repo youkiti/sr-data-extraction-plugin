@@ -10,6 +10,7 @@ function makeFacts(overrides: Partial<MethodsFacts> = {}): MethodsFacts {
     providers: [],
     pilotStudyCount: 0,
     scannedDocumentCount: 0,
+    pilotRevisionCount: 0,
     ...overrides,
   };
 }
@@ -155,3 +156,19 @@ describe('buildMethodsText', () => {
     expect(result.unresolved).toEqual(['n_sample', 'reviewer_initials', 'supplement_ref']);
   });
 });
+
+test.each(['ja', 'en'] as const)(
+  '改訂回数が正のときだけ正典の追加文を末尾へ付ける（%s）',
+  (language) => {
+    const sentence =
+      language === 'ja'
+        ? 'パイロットでの判定に基づき、抽出指示を 2 回改訂した。改訂案は LLM が項目の抽出指示と例に限って作成し、著者らが確認・承認したうえで本抽出に用いた。'
+        : "Based on the reviewers' judgments during the pilot, the extraction instructions were revised 2 time(s); the LLM drafted revision proposals limited to item instructions and examples, which the authors reviewed and approved before full extraction.";
+    const withRevision = buildMethodsText(language, 'single', makeFacts({ pilotRevisionCount: 2 }));
+    expect(withRevision.text.endsWith(sentence)).toBe(true);
+    expect(withRevision.unresolved).not.toContain('n_pilot_revision');
+    expect(buildMethodsText(language, 'single', makeFacts()).text).not.toContain(
+      sentence.split('2')[0],
+    );
+  },
+);

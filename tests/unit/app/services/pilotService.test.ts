@@ -960,6 +960,17 @@ describe('runPilot: 実行', () => {
 });
 
 describe('loadPilotVerification', () => {
+  test('表示 run の全 study の判定を保持し、対象外 study を除外する', async () => {
+    const store = makeRanStore();
+    const judgments = [
+      makeDecision({ studyId: 'study-doc-1' }),
+      makeDecision({ studyId: 'study-doc-2' }),
+    ];
+    readAllDecisionsMock.mockResolvedValue([...judgments, makeDecision({ studyId: 'outside' })]);
+    await loadPilotVerification(store, makeDeps(), 'study-doc-1');
+    expect(store.getState().pilot.decisions).toEqual(judgments);
+  });
+
   function makeRanStore(): Store {
     return makeStore({
       documents: [makeDocument(), makeDocument({ documentId: 'doc-2', driveFileId: 'drive-2' })],
@@ -1842,4 +1853,31 @@ describe('autoLoadLatestPilotRun', () => {
     expect(store.getState().pilot.run?.runId).toBe('run-1');
     expect(readEvidenceRowsMock).toHaveBeenCalled();
   });
+});
+
+test('履歴到着後は未操作の既定選択を一度だけ未使用 study に選び直す', async () => {
+  const docs = [makeDocument({ documentId: 'd1' }), makeDocument({ documentId: 'd2' })];
+  const store = makeStore({ documents: docs });
+  initPilotSelection(store);
+  const usedId = store.getState().pilot.selectedStudyIds[0]!;
+  readPilotRunsMock.mockResolvedValue([makeRun({ studyIds: [usedId] })]);
+  await loadPilotHistory(store, makeDeps());
+  expect(store.getState().pilot.selectedStudyIds).toEqual([docs[1]!.studyId]);
+  expect(store.getState().pilot.selectionHistoryApplied).toBe(true);
+  readPilotRunsMock.mockResolvedValue([]);
+  await loadPilotHistory(store, makeDeps(), { force: true });
+  expect(store.getState().pilot.selectedStudyIds).toEqual([docs[1]!.studyId]);
+  const touched = makeStore({ documents: docs });
+  initPilotSelection(touched);
+  togglePilotStudy(touched, usedId, false);
+  readPilotRunsMock.mockResolvedValue([]);
+  await loadPilotHistory(touched, makeDeps());
+  expect(touched.getState().pilot.selectedStudyIds).toEqual([docs[1]!.studyId]);
+});
+
+test('改訂実行中は新しい抽出と履歴 run の読込を開始しない', async () => {
+  const store = makeStore({ pilot: { revising: true } });
+  await runPilot(store, makeDeps());
+  await loadPilotRun(store, makeDeps(), 'r');
+  expect(runExtractionMock).not.toHaveBeenCalled();
 });

@@ -106,6 +106,7 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<SchemaViewCallbac
         onToggleField: jest.fn(),
         onToggleFieldSection: jest.fn(),
         onToggleFieldSectionCollapse: jest.fn(),
+        onReviseInstructions: jest.fn(),
         onRun: jest.fn(),
         onSelectRun: jest.fn(),
         onReloadHistory: jest.fn(),
@@ -1520,4 +1521,60 @@ describe('renderSchemaView（表示言語 en。issue #93）', () => {
       'Select the effect of interest (assignment / adhering)',
     );
   });
+});
+
+test('部分提案の出所と理由、エディタの版メモ、確定後の再パイロット導線を表示する', () => {
+  const { ctx } = makeCtx();
+  const field = makeField();
+  const diff = buildRedraftDiff(
+    [field],
+    [makeEditorRow({ fieldName: field.fieldName, extractionInstruction: '改訂指示' })],
+    { partial: true },
+  );
+  const pilotRevision = {
+    runId: 'r',
+    runStartedAt: '2026-01-01',
+    decisionCount: 2,
+    rationales: { [field.fieldName]: '単位の扱いを明示する' },
+  };
+  const review = renderSchemaView(
+    makeState({
+      versions: [makeVersion(1)],
+      redraft: { diff, selection: defaultRedraftSelection(diff) },
+      pilotRevision,
+    }),
+    ctx,
+  );
+  expect(review.querySelector('#schema-redraft-pilot-source')?.textContent).toContain(
+    new Intl.DateTimeFormat('ja', { dateStyle: 'medium', timeStyle: 'short' }).format(
+      new Date('2026-01-01'),
+    ),
+  );
+  expect(review.querySelector('#schema-redraft-pilot-source')?.textContent).toContain('判定 2 件');
+  expect(review.querySelector('.schema__redraft-rationale')?.textContent).toBe(
+    '単位の扱いを明示する',
+  );
+  expect(review.querySelectorAll('#schema-redraft-removed li')).toHaveLength(0);
+  const unknown = renderSchemaView(
+    makeState({
+      versions: [makeVersion(1)],
+      redraft: { diff, selection: defaultRedraftSelection(diff) },
+      pilotRevision: { ...pilotRevision, runStartedAt: null, rationales: {} },
+    }),
+    ctx,
+  );
+  expect(unknown.querySelector('#schema-redraft-pilot-source')?.textContent).toContain('日時不明');
+  expect(unknown.querySelector('.schema__redraft-rationale')).toBeNull();
+  const editor = renderSchemaView(
+    makeState({ versions: [makeVersion(1)], editorRows: [makeEditorRow()], pilotRevision }),
+    ctx,
+  );
+  expect(editor.querySelector<HTMLInputElement>('#schema-note')?.value).toBe(
+    'pilot run r の判定 2 件に基づく改訂',
+  );
+  const confirmed = renderSchemaView(
+    makeState({ versions: [makeVersion(2)], lastConfirmedPilotRevision: true }),
+    ctx,
+  );
+  expect(confirmed.querySelector('#schema-repilot')?.getAttribute('href')).toBe('#/pilot');
 });

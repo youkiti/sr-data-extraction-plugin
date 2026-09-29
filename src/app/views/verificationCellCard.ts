@@ -87,7 +87,12 @@ export interface CellCardHandlers {
   onFocusCell(cellKey: string): void;
   onAccept(cellKey: string): void;
   onStartEdit(cellKey: string, action: 'edit' | 'reject'): void;
-  onConfirmEdit(cellKey: string, action: 'edit' | 'reject', value: string): void;
+  onConfirmEdit(
+    cellKey: string,
+    action: 'edit' | 'reject',
+    value: string,
+    note: string | null,
+  ): void;
   onCancelEdit(): void;
   onNotReported(cellKey: string): void;
   onUndo(cellKey: string): void;
@@ -441,6 +446,15 @@ function renderEditor(
   // mermaid プレビュー対象フィールド（quadas3_flow_diagram 等）だけ複数行 textarea にする
   // （issue #170）。改行を保つ必要があるのはこのフィールド限定のため、それ以外は 1 行 input を
   // 現状維持する（Enter 確定を含め挙動を変えない）
+  const noteInput = el('input', {
+    className: 'verify__note-input',
+    attributes: {
+      type: 'text',
+      'aria-label': t('verify.noteAria'),
+      placeholder: t('verify.notePlaceholder'),
+    },
+  });
+  const noteValue = (): string | null => noteInput.value.trim() || null;
   const isMultiline = isMermaidPreviewField(cell.field.fieldName);
   const ariaLabel = t('verify.editValueAria', { label: cell.field.fieldLabel });
   if (!isMultiline) {
@@ -457,11 +471,25 @@ function renderEditor(
       ),
       ariaLabel,
       confirmLabel: confirmLabelOf(action, mode),
-      onConfirm: (value) => handlers.onConfirmEdit(cell.cellKey, action, value),
+      onConfirm: (value) => handlers.onConfirmEdit(cell.cellKey, action, value, noteValue()),
       onCancel: () => handlers.onCancelEdit(),
     });
     if (enumEditor !== null) {
-      return enumEditor;
+      noteInput.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          event.stopPropagation();
+          const input = enumEditor.querySelector<HTMLInputElement>('.verify__edit-input');
+          // チップ未選択の Enter では値を確定しない（既定選択を置かない）。
+          if (input !== null) {
+            handlers.onConfirmEdit(cell.cellKey, action, input.value, noteValue());
+          }
+        } else if (event.key === 'Escape') {
+          event.stopPropagation();
+          handlers.onCancelEdit();
+        }
+      });
+      return el('div', {}, [noteInput, enumEditor]);
     }
   }
   // ヒント段落と textarea を aria-describedby で関連付ける固定 id。cellKey（cellKeyOf が返す
@@ -486,7 +514,7 @@ function renderEditor(
     attributes: { type: 'button' },
   });
   confirmButton.addEventListener('click', () =>
-    handlers.onConfirmEdit(cell.cellKey, action, input.value),
+    handlers.onConfirmEdit(cell.cellKey, action, input.value, noteValue()),
   );
   const cancelButton = el('button', {
     className: 'verify__edit-cancel',
@@ -502,15 +530,25 @@ function renderEditor(
       // textarea は Enter 単独で改行を許す（preventDefault しない）。確定は
       // Ctrl+Enter / Cmd(Meta)+Enter のみ。Escape は 1 行 input と同じくキャンセル
       if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
-        handlers.onConfirmEdit(cell.cellKey, action, input.value);
+        handlers.onConfirmEdit(cell.cellKey, action, input.value, noteValue());
       } else if (event.key === 'Escape') {
         handlers.onCancelEdit();
       }
       return;
     }
     if (event.key === 'Enter') {
-      handlers.onConfirmEdit(cell.cellKey, action, input.value);
+      handlers.onConfirmEdit(cell.cellKey, action, input.value, noteValue());
     } else if (event.key === 'Escape') {
+      handlers.onCancelEdit();
+    }
+  });
+  noteInput.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      event.stopPropagation();
+      handlers.onConfirmEdit(cell.cellKey, action, input.value, noteValue());
+    } else if (event.key === 'Escape') {
+      event.stopPropagation();
       handlers.onCancelEdit();
     }
   });
@@ -520,7 +558,7 @@ function renderEditor(
   const children: HTMLElement[] = isMultiline
     ? [input, el('p', { className: 'verify__edit-hint', id: hintId, text: t('verify.editMultilineHint') }), confirmButton, cancelButton]
     : [input, confirmButton, cancelButton];
-  return el('div', { className: 'verify__editor' }, children);
+  return el('div', { className: 'verify__editor' }, [noteInput, ...children]);
 }
 
 /** 独立入力モードの「入力 (e)」ボタン（承認・棄却は AI 値が無いため出さない。design §5.2） */

@@ -4238,3 +4238,19 @@ describe('createVerificationPanel: ペインサイズ調整（issue #193）', ()
     panel.dispose();
   });
 });
+
+test('メモ入力中にショートカットを発火せず、確定メモを Decision へ保存する', async () => {
+  const { panel, onDecision } = await createPanel();
+  (panel.root.querySelector('.verify__action--edit') as HTMLButtonElement).click();
+  const note = panel.root.querySelector<HTMLInputElement>('.verify__note-input')!;
+  note.value = '  単位を確認  ';
+  panel.root.querySelector<HTMLInputElement>('.verify__edit-input')!.value = '99';
+  note.dispatchEvent(new KeyboardEvent('keydown', { key: 'a', bubbles: true }));
+  expect(onDecision).not.toHaveBeenCalled();
+  note.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+  expect(onDecision).toHaveBeenCalledWith(
+    expect.objectContaining({ action: 'edit', value: '99', note: '単位を確認' }),
+  );
+  expect(panel.root.querySelector('.verify__note-input')).toBeNull();
+  panel.dispose();
+});
