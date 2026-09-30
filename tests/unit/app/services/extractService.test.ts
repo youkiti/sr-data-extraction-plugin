@@ -104,6 +104,7 @@ function makeDocument(overrides: Partial<DocumentRecord> = {}): DocumentRecord {
 function makeStudy(studyId: string, overrides: Partial<StudyRecord> = {}): StudyRecord {
   return {
     studyId,
+    reviewSet: null,
     studyLabel: `label-${studyId}`,
     registrationId: null,
     createdAt: 't0',
@@ -1448,4 +1449,48 @@ describe('retryExtractStudy', () => {
       expect(store.getState().dashboard.data).not.toBeNull();
     });
   });
+});
+
+describe('予算の読込は抽出画面を待たせない', () => {
+  test.each(['初回', '再入場', '実行完了', '再試行完了'])(
+    '予算 API が保留でも %s の処理は終了する',
+    async (mode) => {
+      const resolveResponses: ((response: Response) => void)[] = [];
+      const fetch = jest.fn(
+        () =>
+          new Promise<Response>((resolve) => {
+            resolveResponses.push(resolve);
+          }),
+      );
+      const deps = makeDeps({ google: { fetch, getAccessToken: async () => 'token' } });
+      const store = makeStore({
+        documents: [makeDocument()],
+        fields: [makeField()],
+        extract: {
+          model: 'gemini-test',
+          selectedStudyIds: ['study-doc-1'],
+          confirming: true,
+          extractedStudyIds: mode === '初回' ? null : [],
+        },
+      });
+      if (mode === '初回' || mode === '再入場') {
+        await loadExtractTargets(store, deps);
+      } else {
+        runExtractionMock.mockResolvedValue(makeOutcome());
+        if (mode === '実行完了') await runExtract(store, deps);
+        else await retryExtractStudy(store, deps, 'study-doc-1');
+      }
+      expect(store.getState().extract).toMatchObject({
+        loading: false,
+        running: false,
+        retryingStudyId: null,
+        budget: null,
+      });
+      expect(fetch).toHaveBeenCalledTimes(2);
+      // 保留した偽 API を解放する。実 API は呼ばない。
+      for (const resolve of resolveResponses) {
+        resolve({ ok: true, json: async () => ({ values: [] }) } as Response);
+      }
+    },
+  );
 });

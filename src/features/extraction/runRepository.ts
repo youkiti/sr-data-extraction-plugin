@@ -292,6 +292,40 @@ export async function readRunAuditInfos(
 /** 完了行の status（2 行プロトコルの 2 行目）。running 行しかない run は中断とみなす */
 const COMPLETED_STATUSES: ReadonlySet<string> = new Set(['done', 'partial_failure']);
 
+/** 使用量集計の run 情報。完了行のない running は中断として含める。 */
+export interface UsageRun extends Pick<
+  ExtractionRun,
+  'runId' | 'runType' | 'studyIds' | 'requestedModel' | 'startedAt' | 'finishedAt'
+> {
+  status: 'running' | 'done' | 'partial_failure';
+}
+
+/** 完了行と中断 run を読む。時刻推定に使うのは完了 run だけ。 */
+export async function readUsageRuns(
+  spreadsheetId: string,
+  deps: GoogleApiDeps,
+): Promise<UsageRun[]> {
+  const rows = await readRunRows(spreadsheetId, deps);
+  const completedIds = new Set(
+    rows.filter((raw) => COMPLETED_STATUSES.has(raw[8] ?? '')).map((raw) => raw[0] ?? ''),
+  );
+  return rows
+    .filter(
+      (raw) =>
+        COMPLETED_STATUSES.has(raw[8] ?? '') ||
+        (raw[8] === 'running' && !completedIds.has(raw[0] ?? '')),
+    )
+    .map((raw) => ({
+      runId: raw[0] ?? '',
+      runType: (raw[1] ?? '') as ExtractionRun['runType'],
+      status: raw[8] as UsageRun['status'],
+      studyIds: parseStudyIds(raw[3]),
+      requestedModel: raw[5] ?? '',
+      startedAt: emptyToNull(raw[9]),
+      finishedAt: raw[8] === 'running' ? null : emptyToNull(raw[10]),
+    }));
+}
+
 /** study_ids 列（4 列目）のカンマ区切りを分解する（§3.2）。ラグ配列の欠落セルは空扱い */
 function parseStudyIds(cell: string | null | undefined): string[] {
   return (cell ?? '').split(',').filter((id) => id !== '');

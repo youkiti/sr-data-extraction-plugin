@@ -524,6 +524,7 @@ export async function seedDemoData(): Promise<void> {
   // --- Studies / Documents（3 論文） ---
   const study1: StudyRecord = {
     studyId: study1Id,
+    reviewSet: null,
     studyLabel: 'Halvorsen 2026',
     registrationId: null,
     createdAt: DEMO_TIMESTAMPS.documentImportedAt,
@@ -532,6 +533,7 @@ export async function seedDemoData(): Promise<void> {
   };
   const study2: StudyRecord = {
     studyId: study2Id,
+    reviewSet: null,
     studyLabel: 'Bergstrom 2026',
     registrationId: null,
     createdAt: DEMO_TIMESTAMPS.documentImportedAt2,
@@ -540,6 +542,7 @@ export async function seedDemoData(): Promise<void> {
   };
   const study3: StudyRecord = {
     studyId: study3Id,
+    reviewSet: null,
     studyLabel: 'Moreau 2026',
     registrationId: null,
     createdAt: DEMO_TIMESTAMPS.documentImportedAt3,

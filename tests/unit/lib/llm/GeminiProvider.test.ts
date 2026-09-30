@@ -40,6 +40,11 @@ describe('GeminiProvider.chat', () => {
     const provider = new GeminiProvider({ apiKey: 'k', fetch });
     const result = await provider.chat([{ role: 'user', content: 'q' }]);
     expect(result.tokensOut).toBe(expected);
+    expect(result.thoughtsTokensOut).toBe(
+      usageMetadata === undefined
+        ? null
+        : ((usageMetadata as { thoughtsTokenCount?: number }).thoughtsTokenCount ?? 0),
+    );
     expect(result.raw).toEqual(raw);
   });
 
@@ -69,13 +74,16 @@ describe('GeminiProvider.chat', () => {
       }),
     );
     const provider = new GeminiProvider({ apiKey: 'k', fetch });
-    const result = await provider.chat([{ role: 'user', content: 'hi' }]);
+    const result = await provider.chat([{ role: 'user', content: 'hi' }], {
+      logContext: { studyId: 'study-1', section: 'methods' },
+    });
     expect(result).toEqual({
       text: 'Hello!',
       tokensIn: 10,
       tokensOut: 20,
       // usage が返っているので 0（計測できてヒット 0 件）。null は usage ごと無い場合
       cachedTokensIn: 0,
+      thoughtsTokensOut: 0,
       raw: expect.any(Object),
     });
     expect(provider.providerId).toBe('gemini');
@@ -85,6 +93,8 @@ describe('GeminiProvider.chat', () => {
     expect(url).toContain('key=k');
     const body = JSON.parse((init as RequestInit).body as string);
     expect(body.contents).toEqual([{ role: 'user', parts: [{ text: 'hi' }] }]);
+    expect(JSON.stringify(body)).not.toContain('logContext');
+    expect(JSON.stringify(body)).not.toContain('study-1');
     expect(body.systemInstruction).toBeUndefined();
     expect(body.generationConfig).toBeUndefined();
   });
@@ -643,4 +653,55 @@ describe('toGeminiSchema', () => {
     expect(result.cachedTokensIn).toBeNull();
   });
 
+});
+
+describe('GeminiProvider のエラー使用量', () => {
+  test.each(['MAX_TOKENS', 'SAFETY', 'OTHER', 'STOP'])(
+    '応答内容エラーでも正規化した課金対象使用量を保持する: %s',
+    async (reason) => {
+      const fetch = jest.fn().mockResolvedValue(
+        jsonResponse({
+          candidates: [{ finishReason: reason }],
+          usageMetadata: {
+            promptTokenCount: 100,
+            candidatesTokenCount: 20,
+            thoughtsTokenCount: 30,
+            cachedContentTokenCount: 80,
+          },
+        }),
+      );
+      const provider = new GeminiProvider({ apiKey: 'k', model: 'test-model', fetch });
+      await expect(provider.chat([{ role: 'user', content: 'q' }])).rejects.toMatchObject({
+        usage: {
+          tokensIn: 100,
+          tokensOut: 50,
+          cachedTokensIn: 80,
+          thoughtsTokensOut: 30,
+        },
+      });
+    },
+  );
+
+  test('使用量なしの解析済み応答は全内訳を不明にする', async () => {
+    const fetch = jest.fn().mockResolvedValue(jsonResponse({}));
+    const provider = new GeminiProvider({ apiKey: 'k', model: 'test-model', fetch });
+    await expect(provider.chat([])).rejects.toMatchObject({
+      usage: { tokensIn: null, tokensOut: null, cachedTokensIn: null, thoughtsTokensOut: null },
+    });
+  });
+
+  test('HTTP エラーと解析不能な本文では使用量を取得しない', async () => {
+    const fetch = jest
+      .fn()
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 400,
+        text: async () => '{"usage":{}}',
+        headers: { get: () => null },
+      } as unknown as Response)
+      .mockResolvedValueOnce({ ok: true, status: 200, text: async () => '{' } as Response);
+    const provider = new GeminiProvider({ apiKey: 'k', model: 'test-model', fetch });
+    await expect(provider.chat([])).rejects.toMatchObject({ usage: null });
+    await expect(provider.chat([])).rejects.toMatchObject({ usage: null });
+  });
 });

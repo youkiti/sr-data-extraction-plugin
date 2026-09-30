@@ -9,6 +9,7 @@ import type { ReviewerAssignment, ReviewerRole, ReviewMode } from '../../domain/
 import { t, type MessageKey } from '../../lib/i18n';
 import { el, svgIcon } from '../ui/dom';
 import type { AppState, ReviewerFormInput } from '../store';
+import { renderReviewSetsCard } from './reviewSetsCard';
 import type { ViewContext } from './types';
 
 // 表示言語に追従させるため、ラベルは描画時に t() で解決する（キー対応表のみ固定。issue #93）
@@ -299,7 +300,7 @@ function renderOwnerHome(state: AppState, ctx: ViewContext): HTMLElement {
   }
 
   if (state.currentProject !== null) {
-    children.push(renderReviewerAdminCard(state, ctx));
+    children.push(renderReviewerAdminCard(state, ctx), renderReviewSetsCard(state, ctx));
   }
 
   return el('section', { className: 'view view--home' }, children);
@@ -319,6 +320,37 @@ function renderReviewerHome(state: AppState, ctx: ViewContext): HTMLElement {
       }),
     ]),
   ];
+
+  if (state.home.assignedProgressLoading) {
+    children.push(
+      el('p', { id: 'home-assigned-progress-loading', text: t('home.assignedProgressLoading') }),
+    );
+  } else if (state.home.assignedProgressError !== null) {
+    const retry = el('button', {
+      id: 'home-assigned-progress-reload',
+      text: t('common.retry'),
+      attributes: { type: 'button' },
+    });
+    retry.addEventListener('click', () => ctx.home.onReloadAssignedProgress());
+    children.push(
+      el('p', {
+        id: 'home-assigned-progress-error',
+        attributes: { role: 'alert' },
+        text: state.home.assignedProgressError,
+      }),
+      retry,
+    );
+  } else if (state.home.assignedProgress !== null) {
+    children.push(
+      el('p', {
+        id: 'home-assigned-progress',
+        text: t('home.assignedProgress', {
+          n: state.home.assignedProgress.total,
+          m: state.home.assignedProgress.done,
+        }),
+      }),
+    );
+  }
 
   // 差分付与の不足件数（issue #141）。null / 0 は「不足なし」として従来表示のまま変えない
   const missingCount = state.role.folderAccessMissingCount;

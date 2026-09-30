@@ -4,8 +4,12 @@ import type { ConfirmedArmStructure } from '../domain/armStructure';
 import type { Decision } from '../domain/decision';
 import type { DocumentRecord, ExclusionReason } from '../domain/document';
 import type { LlmProviderId } from '../domain/llmApiLog';
+import type { ReviewSetRow } from '../domain/reviewSet';
+import type { ReviewerSetProgress } from '../features/review/reviewSets';
 import type { StudyRecord } from '../domain/study';
 import type { Evidence } from '../domain/evidence';
+import type { UsageSummary } from '../features/usage/aggregateUsage';
+import type { ProjectBudget } from '../features/project/projectBudget';
 import type { ExportFormat } from '../domain/exportLog';
 import type { ArmCompletenessRunWarning, ExtractionRun } from '../domain/extractionRun';
 import type { ProjectRole, ReviewerAssignment, ReviewerRole, ReviewMode } from '../domain/reviewer';
@@ -13,7 +17,8 @@ import type { AnnotatorPairResolution } from '../features/adjudication/pairResol
 import type { StudyGate } from '../features/adjudication/gate';
 import type { AdjudicationCell } from '../features/adjudication/cellMatch';
 import type { DraftArmRow } from '../features/adjudication/armMatch';
-import type { AgreementReport } from '../features/adjudication/agreement';
+import type { AskPaperTurn, AskPaperSourceDocument } from '../features/verification/askPaper';
+import type { AgreementReport, CalibrationPairAgreement } from '../features/adjudication/agreement';
 import type { BuiltExport, ClassicExportFormat } from '../features/export/buildExport';
 import type {
   MethodsFacts,
@@ -50,6 +55,9 @@ export type { ProgressCounts };
 
 /** #/home + ガードが使う進捗カウントの読込状態（counts 本体は AppState.counts） */
 export interface HomeState {
+  assignedProgress: { done: number; total: number } | null;
+  assignedProgressLoading: boolean;
+  assignedProgressError: string | null;
   /** Sheets からの読込が完了したか（E2E seam の counts 注入時も true = 再読込しない） */
   countsLoaded: boolean;
   countsLoading: boolean;
@@ -108,6 +116,17 @@ export interface ReviewersState {
   blockedChange: { email: string } | null;
 }
 
+/** 担当セットの読み込み・保存・再分割確認の状態 */
+export interface ReviewSetsState {
+  sets: ReviewSetRow[] | null;
+  ignoredCount: number;
+  loading: boolean;
+  error: string | null;
+  saving: boolean;
+  saveError: string | null;
+  confirmingResplit: { calibrationCount: number; groupCount: number } | null;
+}
+
 /** 取り込み進捗 1 行の段階（ui-states.md §3「コピー → テキスト抽出の 2 段階表示」+ 前後の状態 + 重複スキップ〔issue #102〕） */
 export type ImportRowStatus = 'queued' | 'copy' | 'extract' | 'done' | 'failed' | 'skipped';
 
@@ -122,6 +141,8 @@ export interface ImportRow {
 
 /** 統合ダイアログ（S3 グルーピング。§4.5）の状態 */
 export interface MergeDialogState {
+  /** 未指定は統合元からの継承、null は明示的な未割当 */
+  reviewSet?: string | null;
   /** 統合する study_id（2 件以上） */
   studyIds: string[];
   /** 統合後の study_label（編集可・既定 = 最初に取り込まれた study の値） */
@@ -267,10 +288,14 @@ export interface SchemaState {
 
 /** #/pilot（S6）の画面状態。run の結果と埋め込み検証 UI の素材はタブのセッション内で保持する */
 export interface PilotState {
-  /** 対象 study の選択。初回表示時にテキスト層ありの先頭 3 study を既定選択する（ui-states.md §3・v0.10） */
+  /** 対象 study の選択。未使用のテキスト付き study を最大 3 件優先する */
   selectedStudyIds: string[];
   /** 既定選択を一度だけ行うためのフラグ（ユーザーの選択解除を上書きしない） */
   selectionInitialized: boolean;
+  /** 利用者が対象 study の選択を操作したか（既定選択の上書き防止） */
+  selectionTouched: boolean;
+  /** 履歴到着後の既定選び直しを一度だけ行う */
+  selectionHistoryApplied: boolean;
   model: string;
   running: boolean;
   progress: RunProgress | null;
@@ -331,6 +356,8 @@ export interface PilotState {
 
 /** #/extract（S7）の画面状態。run の結果はタブのセッション内で保持する */
 export interface ExtractState {
+  /** 予算警告用の全 purpose の累積費用。未読込・読込失敗は null */
+  budget: { budgetUsd: number | null; spentUsd: number; unknownPriceCalls: number } | null;
   /** 対象 study の選択。初回表示時に「未抽出の全件」を既定選択する（ui-states.md §3・v0.10） */
   selectedStudyIds: string[];
   /** 既定選択を一度だけ行うためのフラグ（ユーザーの選択解除を上書きしない） */
@@ -414,6 +441,7 @@ export interface VerifyTarget {
 
 /** #/verify（S8）の画面状態 */
 export interface VerifyState {
+  assignedOnly: boolean;
   /** 検証対象一覧。null = 未読込（画面表示時に読み込む） */
   targets: VerifyTarget[] | null;
   loading: boolean;
@@ -468,8 +496,14 @@ export interface RSetResultInfo {
 
 /** #/export（S10）の画面状態 */
 export interface ExportState {
+  /** 使用量 CSV は形式選択と独立した生成状態を持つ */
+  usage: {
+    generating: boolean;
+    error: string | null;
+    result: { filename: string; fileRef: string; csv: string } | null;
+  } | null;
   /** 選択中の形式（`r_set` を含む） */
-  format: ExportFormat;
+  format: Exclude<ExportFormat, 'usage'>;
   /** 従来 3 形式の構築結果。null = 未読込（画面表示時に読み込む） */
   built: Record<ClassicExportFormat, BuiltExport> | null;
   /**
@@ -510,6 +544,7 @@ export interface AdjudicatePairOption {
 
 /** `#/adjudicate`（S12。docs/design-independent-dual-review.md §6）一覧 1 study ぶんの行 */
 export interface AdjudicateStudyRow {
+  outsideAnnotators: string[];
   study: StudyRecord;
   pair: AnnotatorPairResolution;
   /** pair.kind === 'ready' のときのみ非 null */
@@ -527,6 +562,8 @@ export interface AdjudicateWorking {
   study: StudyRecord;
   /** study 配下の文書（role 固定順 → 取り込み順） */
   documents: DocumentRecord[];
+  /** 文書本文と定義だけを質問パネルに渡すための軽量素材 */
+  askPaperDocuments: AskPaperSourceDocument[];
   annotatorA: string;
   annotatorB: string;
   /** 突き合わせに使う表のデザイン（最新確定版）の全項目 */
@@ -572,6 +609,8 @@ export interface AdjudicateWorking {
 
 /** `#/adjudicate`（S12）の画面状態 */
 export interface AdjudicateState {
+  agreementOutsideCount: number;
+  calibrationAgreement: CalibrationPairAgreement[] | null;
   /** study 一覧（ゲート付き）。null = 未読込 */
   rows: AdjudicateStudyRow[] | null;
   loading: boolean;
@@ -613,10 +652,32 @@ export interface AdjudicateState {
 
 /** #/dashboard（S9）の画面状態 */
 export interface DashboardState {
+  reviewSetProgress: ReviewerSetProgress[] | null;
+  /** 費用と予算は検証進捗と独立して読み込む */
+  usage: {
+    summary: UsageSummary | null;
+    budget: ProjectBudget | null;
+    loading: boolean;
+    loadError: string | null;
+    budgetSaving: boolean;
+    budgetError: string | null;
+    /** 未編集なら null。再描画でも入力下書きを保持する。 */
+    budgetDraft: string | null;
+  };
   /** 集計結果。null = 未読込（画面表示時に読み込む） */
   data: DashboardData | null;
   loading: boolean;
   loadError: string | null;
+}
+
+/** 論文への質問。会話はタブ内のみ、利用済み study の識別子はローカル保存から復元する。 */
+export interface AskPaperState {
+  conversations: Record<string, AskPaperTurn[]>;
+  sending: boolean;
+  error: string | null;
+  usedStudyIds: string[];
+  /** Options から解決した概算用のモデル。未解決時は null */
+  model: string | null;
 }
 
 export interface AppState {
@@ -627,12 +688,14 @@ export interface AppState {
   role: RoleState;
   /** owner の「レビュアー管理」カード（Home）の状態 */
   reviewers: ReviewersState;
+  reviewSets: ReviewSetsState;
   documents: DocumentsState;
   protocol: ProtocolState;
   schema: SchemaState;
   pilot: PilotState;
   extract: ExtractState;
   verify: VerifyState;
+  askPaper: AskPaperState;
   dashboard: DashboardState;
   export: ExportState;
   /** `#/adjudicate`（S12）の画面状態 */
@@ -676,6 +739,9 @@ export function createInitialState(): AppState {
       dataRows: 0,
     },
     home: {
+      assignedProgress: null,
+      assignedProgressLoading: false,
+      assignedProgressError: null,
       countsLoaded: false,
       countsLoading: false,
       countsError: null,
@@ -689,6 +755,15 @@ export function createInitialState(): AppState {
       folderAccessChecking: false,
       folderAccessError: null,
       folderAccessMissingCount: null,
+    },
+    reviewSets: {
+      sets: null,
+      ignoredCount: 0,
+      loading: false,
+      error: null,
+      saving: false,
+      saveError: null,
+      confirmingResplit: null,
     },
     reviewers: {
       assignments: null,
@@ -756,6 +831,8 @@ export function createInitialState(): AppState {
     pilot: {
       selectedStudyIds: [],
       selectionInitialized: false,
+      selectionTouched: false,
+      selectionHistoryApplied: false,
       model: '',
       running: false,
       progress: null,
@@ -785,6 +862,7 @@ export function createInitialState(): AppState {
       collapsedFieldSections: [],
     },
     extract: {
+      budget: null,
       selectedStudyIds: [],
       selectionInitialized: false,
       model: '',
@@ -806,7 +884,9 @@ export function createInitialState(): AppState {
       lastRunFieldIds: null,
       fieldSubsetBadges: {},
     },
+    askPaper: { conversations: {}, sending: false, error: null, usedStudyIds: [], model: null },
     verify: {
+      assignedOnly: false,
       targets: null,
       loading: false,
       loadError: null,
@@ -824,11 +904,23 @@ export function createInitialState(): AppState {
       conflictMessage: null,
     },
     dashboard: {
+      reviewSetProgress: null,
+      usage: {
+        summary: null,
+        budget: null,
+        loading: false,
+        loadError: null,
+        budgetSaving: false,
+        budgetError: null,
+        budgetDraft: null,
+      },
       data: null,
       loading: false,
       loadError: null,
     },
     adjudicate: {
+      agreementOutsideCount: 0,
+      calibrationAgreement: null,
       rows: null,
       loading: false,
       loadError: null,
@@ -845,6 +937,7 @@ export function createInitialState(): AppState {
       agreementError: null,
     },
     export: {
+      usage: null,
       format: 'study_wide',
       built: null,
       rSetMaterials: null,

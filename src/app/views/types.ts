@@ -12,6 +12,7 @@ import type { PresetDialogPatch } from '../../features/schema/presets/prespecDia
 import type { SchemaEditorRow } from '../../features/schema/types';
 import type { VerifyLayoutMode, VerifyPaneLayout } from '../../lib/storage/settingsStore';
 import type { ExclusionDialogState } from '../store';
+import type { AskPaperParams } from '../services/askPaperService';
 import type { RelocateQuoteOutcome } from '../services/relocateQuoteService';
 
 /** #/home のユーザー操作コールバック（owner のレビュアー管理カード + reviewer の縮退版 Home を含む） */
@@ -38,6 +39,15 @@ export interface HomeViewCallbacks {
   onRevokeReviewer(email: string): void;
   /** owner: レビュー相手への依頼文をクリップボードへコピー */
   onCopyInvite(email: string): void;
+  /** 担当セットと担当進捗の再読み込み */
+  onReloadReviewSets(): void;
+  onReloadAssignedProgress(): void;
+  /** 担当セットの分割・再分割確認・担当者編集・個別割り当て */
+  onSplitReviewSets(input: { calibrationCount: number; groupCount: number }): void;
+  onConfirmResplit(): void;
+  onCancelResplit(): void;
+  onSaveReviewSetEmails(setId: string, emails: string[]): void;
+  onAssignStudyReviewSet(studyId: string, setId: string | null): void;
 }
 
 /** #/documents（S3）のユーザー操作コールバック */
@@ -66,6 +76,8 @@ export interface DocumentsViewCallbacks {
   onUpdateMergeLabel(label: string): void;
   /** 統合ダイアログの registration_id 入力 */
   onUpdateMergeRegistration(registrationId: string): void;
+  /** 統合元の担当セットが異なるときの選択 */
+  onUpdateMergeReviewSet(reviewSet: string | null): void;
   /** 統合の確定（新 study_id 発行 + Documents 付け替え） */
   onConfirmMerge(): void;
   /** 統合ダイアログのキャンセル */
@@ -226,6 +238,8 @@ export interface ExtractViewCallbacks {
 
 /** #/verify（S8）のユーザー操作コールバック */
 export interface VerifyViewCallbacks {
+  /** owner の「自分の担当のみ」切り替え */
+  onAssignedOnlyChange(value: boolean): void;
   /** study セレクタの切替（URL ?study= と同期する） */
   onSelectStudy(studyId: string): void;
   /** 一覧読み込み失敗時の再試行 */
@@ -248,6 +262,14 @@ export interface VerifyViewCallbacks {
 
 /** #/dashboard（S9）のユーザー操作コールバック（セルクリックはハッシュ遷移のためここに持たない） */
 export interface DashboardViewCallbacks {
+  /** 費用だけを再読み込み */
+  onReloadUsage(): void;
+  /** 予算入力の下書きを保持し、前のエラーを解除 */
+  onBudgetDraftChange(value: string): void;
+  /** 不正な予算入力のエラーを保持 */
+  onBudgetError(reason: string): void;
+  /** 予算保存。null は解除 */
+  onSaveBudget(value: number | null): void;
   /** 読み込み失敗時の再読み込み（強制再取得） */
   onReload(): void;
 }
@@ -293,8 +315,11 @@ export interface AdjudicateViewCallbacks {
 
 /** #/export（S10）のユーザー操作コールバック */
 export interface ExportViewCallbacks {
+  /** 使用量 CSV の独立した生成・ローカル保存 */
+  onGenerateUsage(): void;
+  onDownloadUsage(): void;
   /** 形式選択ラジオの切替（サマリ・プレビューが追随する） */
-  onSelectFormat(format: ExportFormat): void;
+  onSelectFormat(format: Exclude<ExportFormat, 'usage'>): void;
   /** 「CSV を生成して Drive に保存」: 未検証セルが残っていれば警告ダイアログを開く */
   onGenerate(): void;
   /** 警告ダイアログの「続行して生成」 */
@@ -313,7 +338,12 @@ export interface ExportViewCallbacks {
   onCopyMethods(): void;
 }
 
+export interface AskPaperViewCallbacks {
+  onSend(params: Omit<AskPaperParams, 'spreadsheetId' | 'history'> & { studyId: string }): void;
+}
+
 export interface ViewContext {
+  askPaper?: AskPaperViewCallbacks;
   home: HomeViewCallbacks;
   documents: DocumentsViewCallbacks;
   protocol: ProtocolViewCallbacks;

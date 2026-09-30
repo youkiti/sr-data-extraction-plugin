@@ -208,6 +208,8 @@ export interface VerificationBundleInput {
 }
 
 export interface VerificationBundle {
+  /** 全 study の取得済み判定（パイロットの改訂材料に再利用） */
+  allDecisions: Decision[];
   verification: VerificationData;
   /** 自分の StudyData 行の values 全量（判定時のスナップショット更新用） */
   studyValues: Record<string, string | null>;
@@ -238,7 +240,7 @@ export interface VerificationBundle {
  * （no_text_layer）は失敗ではなく空配列とし、読み込み失敗は extractedTextError へ持つ
  * （throw しない。bundle 全体を失敗させないため）
  */
-async function loadExtractedPages(
+export async function loadExtractedPages(
   document: DocumentRecord,
   deps: VerificationDeps,
 ): Promise<{ extractedPages: readonly ExtractedPage[]; extractedTextError: string | null }> {
@@ -355,7 +357,15 @@ export async function loadVerificationBundle(
   };
   const layoutMode = await (deps.loadVerifyLayoutMode ?? loadVerifyLayoutMode)();
   const paneLayout = await (deps.loadVerifyPaneLayout ?? loadVerifyPaneLayout)();
-  return { verification, studyValues, layoutMode, paneLayout, studyRowUpdatedAt, resultsRowUpdatedAt };
+  return {
+    allDecisions,
+    verification,
+    studyValues,
+    layoutMode,
+    paneLayout,
+    studyRowUpdatedAt,
+    resultsRowUpdatedAt,
+  };
 }
 
 /**

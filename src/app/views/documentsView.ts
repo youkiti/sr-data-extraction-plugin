@@ -18,6 +18,8 @@ import type {
   TiabPlanItemStatus,
   TiabScreeningPhase,
 } from '../../features/documents/tiabReview';
+import { isReviewSetsActive, inheritReviewSet, reviewSetForStudy } from '../../features/review/reviewSets';
+import { resolveActiveStudies } from '../../features/documents/studyRepository';
 import { t, type MessageKey } from '../../lib/i18n';
 import { activeStudyGroups, visibleMergeCandidates } from '../services/documentsService';
 import { el } from '../ui/dom';
@@ -712,6 +714,34 @@ function renderMergeDialog(dialog: MergeDialogState, state: AppState, ctx: ViewC
     el('label', {}, [el('span', { text: `${t('documents.mergeLabelLabel')}: ` }), labelInput]),
     el('label', {}, [el('span', { text: `${t('documents.mergeRegistrationLabel')}: ` }), regInput]),
   ];
+  const studies = state.documents.studies ?? [];
+  const sourceStudies = studies.filter((study) => dialog.studyIds.includes(study.studyId));
+  const reviewSets = state.reviewSets.sets ?? [];
+  const active = resolveActiveStudies(studies, state.documents.records ?? []);
+  if (
+    isReviewSetsActive(active, reviewSets) &&
+    new Set(sourceStudies.map((study) => reviewSetForStudy(study, reviewSets))).size > 1
+  ) {
+    const select = el('select', { id: 'merge-review-set' }) as HTMLSelectElement;
+    const sets = [
+      ...new Set(
+        sourceStudies
+          .map((study) => reviewSetForStudy(study, reviewSets))
+          .filter((setId): setId is string => setId !== null && setId !== ''),
+      ),
+    ];
+    select.append(
+      el('option', { text: t('reviewSets.unassigned'), attributes: { value: '' } }),
+      ...sets.map((setId) => el('option', { text: setId, attributes: { value: setId } })),
+    );
+    select.value = inheritReviewSet(sourceStudies, dialog.reviewSet, reviewSets) ?? '';
+    select.disabled = state.documents.merging;
+    select.addEventListener('change', () =>
+      ctx.documents.onUpdateMergeReviewSet(select.value === '' ? null : select.value),
+    );
+    children.push(el('label', {}, [el('span', { text: t('documents.mergeReviewSet') }), select]));
+  }
+
   if (dialog.hasExtractedData) {
     children.push(
       el('p', {

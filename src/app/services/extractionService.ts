@@ -51,7 +51,7 @@ import {
 } from '../../features/extraction/skills/extractData';
 import { uploadTextFile } from '../../lib/google/drive';
 import type { GoogleApiDeps } from '../../lib/google/types';
-import { appendLlmApiLog } from '../../lib/llm/apiLogRepository';
+import { appendLlmApiLog, ensureLlmApiLogColumns } from '../../lib/llm/apiLogRepository';
 import { withLogging } from '../../lib/llm/apiLogger';
 import type { LLMProvider } from '../../lib/llm/LLMProvider';
 import { createProvider, type ProviderConfig } from '../../lib/llm/providerFactory';
@@ -198,6 +198,7 @@ export async function runExtraction(
   // throttle が RPM 間隔でバッチ連射を間引き、retry が 429/5xx を（サーバ提示の retryDelay も
   // 尊重して）指数バックオフで再送する（docs/requirements.md §4.3）
   const policy = await (deps.resolveRateLimitPolicy ?? (async () => UNLIMITED_POLICY))();
+  const runId = uuid();
   const provider = applyRateLimitPolicy(
     withLogging(baseProvider, 'extract_study', {
       uploadJson: async ({ filename, content }) => {
@@ -213,6 +214,7 @@ export async function runExtraction(
         return { webViewLink: file.webViewLink };
       },
       appendLogEntry: (entry) => appendLlmApiLog(params.spreadsheetId, entry, deps.google),
+      runId,
       promptVersion: EXTRACT_DATA_PROMPT_VERSION,
       newUuid: deps.newUuid,
       now: deps.now,
@@ -221,7 +223,6 @@ export async function runExtraction(
     deps.rateLimitClock,
   );
 
-  const runId = uuid();
   const startedAt = now();
   // 実際に実行対象となる study（1 バッチ = 1 study だが section 分割で同一 study が
   // 複数バッチになりうるため一意化する）。no_text_layer 文書もページ画像で抽出対象になる
@@ -248,6 +249,7 @@ export async function runExtraction(
   // 後方互換移行。issue #80 / #106）。running 行より前に行う
   // （bbox 列と同じ理由: 怠ると旧ヘッダのまま列がずれる）
   await ensureRunOptionalColumns(params.spreadsheetId, deps.google);
+  await ensureLlmApiLogColumns(params.spreadsheetId, deps.google);
 
   // arm completeness 警告（issue #106）の説明文用: field_id → field_name の解決表
   const fieldNameById = new Map(params.fields.map((field) => [field.fieldId, field.fieldName]));
@@ -301,6 +303,32 @@ export async function runExtraction(
       // 優先順は 明示注入（deps.flushEveryNStudies）> tier のポリシー値 > 最終フォールバック
       flushEveryNStudies:
         deps.flushEveryNStudies ?? policy.flushEveryNStudies ?? DEFAULT_FLUSH_EVERY_N_STUDIES,
+      recordBatchFailure: (failure) =>
+        appendLlmApiLog(
+          params.spreadsheetId,
+          {
+            logId: uuid(),
+            timestamp: now(),
+            provider: baseProvider.providerId,
+            model: params.model,
+            purpose: 'extract_study',
+            promptRef: '',
+            responseRef: '',
+            promptSummary: `[batch_failed] run ${runId}`,
+            tokensIn: null,
+            tokensOut: null,
+            cachedTokensIn: null,
+            runId,
+            studyId: failure.studyId,
+            section: failure.section,
+            promptVersion: null,
+            thoughtsTokensOut: null,
+            latencyMs: null,
+            costEstimateUsd: null,
+            error: `バッチ失敗（${failure.kind}）: ${failure.detail}`,
+          },
+          deps.google,
+        ),
       // arm completeness 警告（issue #106）を LLMApiLog へも残す（エラー列に「警告」明記。
       // フル payload は無い = prompt_ref / response_ref は空。監査時の一次手掛かり用）
       recordArmWarning: (warning) =>
@@ -318,6 +346,11 @@ export async function runExtraction(
             tokensIn: null,
             tokensOut: null,
             cachedTokensIn: null,
+            runId,
+            studyId: warning.studyId,
+            section: warning.section,
+            promptVersion: null,
+            thoughtsTokensOut: null,
             latencyMs: null,
             costEstimateUsd: null,
             error: `警告（arm_completeness）: ${describeArmCompletenessWarning(warning, fieldNameById)}`,
@@ -380,6 +413,11 @@ export async function runExtraction(
           tokensIn: null,
           tokensOut: null,
           cachedTokensIn: null,
+          runId,
+          studyId: null,
+          section: null,
+          promptVersion: null,
+          thoughtsTokensOut: null,
           latencyMs: null,
           costEstimateUsd: null,
           error: `転記失敗: ${transferError}`,

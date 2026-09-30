@@ -1,3 +1,4 @@
+import { makeAskTurn } from '../askPaperFixtures';
 import { renderAdjudicateView } from '../../../../src/app/views/adjudicateView';
 import { setUiLanguage, t } from '../../../../src/lib/i18n';
 import { disposeAdjudicatePdfPaneCache } from '../../../../src/app/views/adjudicatePdfPane';
@@ -41,6 +42,13 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<AdjudicateViewCal
   return {
     ctx: {
       home: {
+        onReloadReviewSets: jest.fn(),
+        onReloadAssignedProgress: jest.fn(),
+        onSplitReviewSets: jest.fn(),
+        onConfirmResplit: jest.fn(),
+        onCancelResplit: jest.fn(),
+        onSaveReviewSetEmails: jest.fn(),
+        onAssignStudyReviewSet: jest.fn(),
         onReload: jest.fn(),
         onGrantFolderAccess: jest.fn(),
         onSkipMissingFiles: jest.fn(),
@@ -53,6 +61,7 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<AdjudicateViewCal
         onCopyInvite: jest.fn(),
       },
       documents: {
+        onUpdateMergeReviewSet: jest.fn(),
         onImport: jest.fn(),
         onImportFiles: jest.fn(),
         onReload: jest.fn(),
@@ -143,6 +152,7 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<AdjudicateViewCal
         onReloadTargets: jest.fn(),
       },
       verify: {
+        onAssignedOnlyChange: jest.fn(),
         onSelectStudy: jest.fn(),
         onRetryLoad: jest.fn(),
         onDecision: jest.fn(),
@@ -152,7 +162,13 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<AdjudicateViewCal
         onReloadVerification: jest.fn(),
         onRelocateQuote: jest.fn(),
       },
-      dashboard: { onReload: jest.fn() },
+      dashboard: {
+        onReload: jest.fn(),
+        onReloadUsage: jest.fn(),
+        onSaveBudget: jest.fn(),
+        onBudgetDraftChange: jest.fn(),
+        onBudgetError: jest.fn(),
+      },
       export: {
         onSelectFormat: jest.fn(),
         onGenerate: jest.fn(),
@@ -163,6 +179,8 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<AdjudicateViewCal
         onChangeMethodsLanguage: jest.fn(),
         onChangeMethodsWorkflow: jest.fn(),
         onCopyMethods: jest.fn(),
+        onGenerateUsage: jest.fn(),
+        onDownloadUsage: jest.fn(),
       },
       adjudicate: callbacks,
     },
@@ -173,6 +191,7 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<AdjudicateViewCal
 function makeStudy(overrides: Partial<StudyRecord> = {}): StudyRecord {
   return {
     studyId: 'study-1',
+    reviewSet: null,
     studyLabel: 'Smith 2020',
     registrationId: null,
     createdAt: 't0',
@@ -246,6 +265,7 @@ function makeEvidence(overrides: Partial<Evidence> = {}): Evidence {
 
 function makeRow(overrides: Partial<AdjudicateStudyRow> = {}): AdjudicateStudyRow {
   return {
+    outsideAnnotators: [],
     study: makeStudy(),
     pair: { kind: 'ready', annotatorA: 'a@example.com', annotatorB: 'b@example.com' },
     gate: {
@@ -266,6 +286,7 @@ function makeSelectableRow(overrides: Partial<AdjudicateStudyRow> = {}): Adjudic
     ready: true,
   });
   return {
+    outsideAnnotators: [],
     study: makeStudy(),
     pair: { kind: 'selectable', annotators: ['a@example.com', 'b@example.com', 'c@example.com'] },
     gate: null,
@@ -289,6 +310,7 @@ function makeSelectableRow(overrides: Partial<AdjudicateStudyRow> = {}): Adjudic
 function makeWorking(overrides: Partial<AdjudicateWorking> = {}): AdjudicateWorking {
   return {
     study: makeStudy(),
+    askPaperDocuments: [],
     documents: [],
     annotatorA: 'a@example.com',
     annotatorB: 'b@example.com',
@@ -1310,4 +1332,90 @@ describe('enum 項目の第 3 の値 UI（issue #254）', () => {
     expect(root.querySelector('.adjudicate__custom-input')).not.toBeNull();
     expect(root.querySelector('.verify__enum-choices')).toBeNull();
   });
+});
+
+test('担当外判定は ready と waiting の行に注記する', () => {
+  const { ctx } = makeCtx();
+  const state = makeState({
+    rows: [
+      makeRow({ outsideAnnotators: ['c@example.com', 'd@example.com'] }),
+      makeRow({ pair: { kind: 'waiting', annotators: [] }, outsideAnnotators: ['c@example.com'] }),
+    ],
+  });
+  const view = renderAdjudicateView(state, ctx);
+  expect(view.querySelectorAll('.adjudicate__outside-note')).toHaveLength(2);
+  expect(view.textContent).toContain(
+    '担当外の判定（c@example.com, d@example.com）は裁定と一致度から除外しています',
+  );
+});
+test('calibration は本体が空でも全ペアの一致度を表示する', () => {
+  const { ctx } = makeCtx();
+  const report = makeAgreementReport();
+  const state = makeState({
+    rows: [makeRow()],
+    agreement: report,
+    agreementOutsideCount: 2,
+    calibrationAgreement: [
+      {
+        annotatorA: 'a@example.com',
+        annotatorB: 'b@example.com',
+        studyCount: 2,
+        agreementRate: 0.75,
+        kappa: 0.5,
+        report,
+      },
+      {
+        annotatorA: 'a@example.com',
+        annotatorB: 'c@example.com',
+        studyCount: 1,
+        agreementRate: null,
+        kappa: null,
+        report,
+      },
+    ],
+  });
+  let view = renderAdjudicateView(state, ctx);
+  expect(view.querySelector('#adjudicate-agreement-outside')?.textContent).toContain('2 件');
+  const cells = [...view.querySelectorAll('#adjudicate-calibration-agreement tbody td')].map(
+    (td) => td.textContent,
+  );
+  expect(cells).toEqual(['2', '75.0%', '0.50', '1', '—', '—']);
+  state.adjudicate.agreement = makeAgreementReport({
+    studyCount: 0,
+    fields: [],
+    overall: { pairCount: 0, agreementCount: 0, agreementRate: null, kappa: null },
+  });
+  view = renderAdjudicateView(state, ctx);
+  expect(view.querySelector('#adjudicate-calibration-agreement')).not.toBeNull();
+  state.adjudicate.calibrationAgreement = [];
+  state.adjudicate.agreementOutsideCount = 0;
+  view = renderAdjudicateView(state, ctx);
+  expect(view.querySelector('#adjudicate-calibration-agreement')).toBeNull();
+  expect(view.querySelector('#adjudicate-agreement-outside')).toBeNull();
+});
+
+test('裁定中の質問パネルは本文素材を渡し、引用をPDFペインへ渡す', () => {
+  const { ctx } = makeCtx();
+  ctx.askPaper = { onSend: jest.fn() };
+  const state = makeState({ rows: [], working: makeWorking() });
+  state.role.role = 'adjudicator';
+  state.askPaper.conversations['study-1'] = [makeAskTurn()];
+  const root = render(state, ctx);
+  expect(root.querySelector('#ask-paper')).not.toBeNull();
+  (root.querySelector('.ask-paper__citation') as HTMLButtonElement).click();
+  const input = root.querySelector('#ask-paper-input') as HTMLTextAreaElement;
+  input.value = '何人？';
+  input.dispatchEvent(new Event('input'));
+  (root.querySelector('#ask-paper-send') as HTMLButtonElement).click();
+  expect(ctx.askPaper.onSend).toHaveBeenCalledWith(
+    expect.objectContaining({ studyId: 'study-1', documents: [], fields: expect.any(Array) }),
+  );
+});
+
+test('プロジェクト未選択の描画でも裁定中の質問パネルは空の参照で安全に組み立てる', () => {
+  const { ctx } = makeCtx();
+  const state = makeState({ rows: [], working: makeWorking() });
+  state.role.role = 'adjudicator';
+  state.currentProject = null;
+  expect(render(state, ctx).querySelector('#ask-paper')).not.toBeNull();
 });

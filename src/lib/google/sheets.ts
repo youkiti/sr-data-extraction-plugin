@@ -330,6 +330,26 @@ export async function updateRow(
   );
 }
 
+/** 指定した A1 範囲だけを RAW で上書きする。null は空セルへ変換する。 */
+export async function updateRange(
+  spreadsheetId: string,
+  rangeA1: string,
+  rows: readonly (readonly (string | number | boolean | null)[])[],
+  deps: GoogleApiDeps,
+): Promise<void> {
+  const url =
+    `${API_BASE}/${spreadsheetId}/values/${encodeURIComponent(rangeA1)}` + '?valueInputOption=RAW';
+  await googleFetch(
+    url,
+    {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ values: rows.map((row) => row.map((v) => (v === null ? '' : v))) }),
+    },
+    deps,
+  );
+}
+
 /**
  * 複数行を 1 API 呼び出しでまとめて上書きする（values:batchUpdate）。
  * tiab-review 取り込み（issue #68）の study_label / pmid / doi 一括反映のように、

@@ -29,10 +29,19 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<ExportViewCallbac
     onChangeMethodsLanguage: jest.fn(),
     onChangeMethodsWorkflow: jest.fn(),
     onCopyMethods: jest.fn(),
+    onGenerateUsage: jest.fn(),
+    onDownloadUsage: jest.fn(),
   };
   return {
     ctx: {
       home: {
+    onReloadReviewSets: jest.fn(),
+    onReloadAssignedProgress: jest.fn(),
+    onSplitReviewSets: jest.fn(),
+    onConfirmResplit: jest.fn(),
+    onCancelResplit: jest.fn(),
+    onSaveReviewSetEmails: jest.fn(),
+    onAssignStudyReviewSet: jest.fn(),
     onReload: jest.fn(),
     onGrantFolderAccess: jest.fn(),
     onSkipMissingFiles: jest.fn(),
@@ -45,6 +54,7 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<ExportViewCallbac
     onCopyInvite: jest.fn(),
   },
       documents: {
+        onUpdateMergeReviewSet: jest.fn(),
         onImport: jest.fn(),
         onImportFiles: jest.fn(),
         onReload: jest.fn(),
@@ -135,6 +145,7 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<ExportViewCallbac
         onReloadTargets: jest.fn(),
       },
       verify: {
+        onAssignedOnlyChange: jest.fn(),
         onSelectStudy: jest.fn(),
         onRetryLoad: jest.fn(),
         onDecision: jest.fn(),
@@ -144,7 +155,13 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<ExportViewCallbac
         onReloadVerification: jest.fn(),
         onRelocateQuote: jest.fn(),
       },
-      dashboard: { onReload: jest.fn() },
+      dashboard: {
+        onReload: jest.fn(),
+        onReloadUsage: jest.fn(),
+        onSaveBudget: jest.fn(),
+        onBudgetDraftChange: jest.fn(),
+        onBudgetError: jest.fn(),
+      },
       export: callbacks,
       adjudicate: {
         onSelectStudy: jest.fn(),
@@ -575,6 +592,8 @@ describe('renderExportView: 論文 Methods 記載例カード（issue #67）', (
     providers: ['Gemini'],
     pilotStudyCount: 3,
     scannedDocumentCount: 0,
+    pilotRevisionCount: 0,
+    chatAssistDecisionCount: 0,
   };
 
   test('methodsFacts 未読込（null）はカード自体を出さない', () => {
@@ -669,5 +688,42 @@ describe('renderExportView（表示言語 en。issue #93）', () => {
     expect(errorView.querySelector('#export-load-error')?.textContent).toBe(
       'Failed to load the export materials: HTTP 500',
     );
+  });
+});
+
+describe('独立した使用量 CSV カード', () => {
+  test('進捗素材の読込状態に関係なく生成でき、生成中はボタンを無効にする', () => {
+    const { ctx, callbacks } = makeCtx();
+    const state = createInitialState();
+    const view = renderExportView(state, ctx);
+    view.querySelector<HTMLButtonElement>('#export-usage-generate')?.click();
+    expect(callbacks.onGenerateUsage).toHaveBeenCalled();
+    expect(view.querySelector('input[value="usage"]')).toBeNull();
+    state.export.usage = { generating: true, error: null, result: null };
+    const generating = renderExportView(state, ctx);
+    expect(generating.querySelector('#export-usage-generating')).not.toBeNull();
+    expect(generating.querySelector<HTMLButtonElement>('#export-usage-generate')?.disabled)
+      .toBe(true);
+  });
+
+  test('独立した失敗・Drive リンク・ローカル保存と非 owner 非表示を扱う', () => {
+    const { ctx, callbacks } = makeCtx();
+    const state = createInitialState();
+    state.export.usage = { generating: false, error: '失敗', result: null };
+    expect(renderExportView(state, ctx).querySelector('#export-usage-error')?.getAttribute('role'))
+      .toBe('alert');
+    state.export.usage = { generating: false, error: null,
+      result: { filename: 'usage.csv', fileRef: 'https://drive.test/csv', csv: 'csv' } };
+    const result = renderExportView(state, ctx);
+    expect(result.querySelector('#export-usage-result-link')?.getAttribute('target')).toBe('_blank');
+    result.querySelector<HTMLButtonElement>('#export-usage-download')?.click();
+    expect(callbacks.onDownloadUsage).toHaveBeenCalled();
+    state.role.role = 'reviewer_with_ai';
+    expect(renderExportView(state, ctx).querySelector('#export-usage')).toBeNull();
+    state.export.loadError = '読込失敗';
+    expect(renderExportView(state, ctx).querySelector('#export-usage')).toBeNull();
+    state.export.loadError = null;
+    state.export.built = makeBuiltAll();
+    expect(renderExportView(state, ctx).querySelector('#export-usage')).toBeNull();
   });
 });

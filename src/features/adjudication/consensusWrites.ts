@@ -24,6 +24,8 @@ export interface ConsensusWriteParams {
   decidedAt: string;
   /** consensus 行 / Decision に記録する schema_version（裁定に使った表のデザインの版） */
   schemaVersion: number;
+  /** 質問後の印など、オフライン再送でも維持する監査メモ */
+  note?: string | null;
 }
 
 /** ConsensusCellWrite → Decision（annotator は常に 'consensus'） */
@@ -39,7 +41,7 @@ export function toConsensusDecision(write: ConsensusCellWrite, params: Consensus
     schemaVersion: params.schemaVersion,
     action: write.action,
     value: write.value,
-    note: null,
+    note: params.note ?? null,
   };
 }
 

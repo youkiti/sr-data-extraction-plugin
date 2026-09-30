@@ -131,6 +131,13 @@ export interface ExecuteRunDeps {
    * 際限なく育ちうるため、行数でも発火条件を持たせる（docs/handoff-20260710-sheets-write-batching.md）
    */
   maxRowsPerFlush?: number;
+  /** バッチ失敗の補助監査。全失敗種別を記録し、記録失敗は run を止めない。 */
+  recordBatchFailure?: (failure: {
+    studyId: string;
+    section: string | null;
+    kind: BatchFailureReason | 'all_items_rejected';
+    detail: string;
+  }) => Promise<void>;
   /**
    * arm completeness 警告の外部記録（issue #106。extractionService が LLMApiLog への
    * 追記を注入する）。補助的な監査記録のため、失敗しても run は止めない（握りつぶす）
@@ -457,12 +464,28 @@ export async function executeRun(
     return loading;
   };
 
-  const failBatch = (
+  const recordBatchFailure = async (
+    batch: PlannedBatch,
+    kind: BatchFailureReason | 'all_items_rejected',
+    detail: string,
+  ): Promise<void> => {
+    try {
+      await deps.recordBatchFailure?.({
+        studyId: batch.studyId,
+        section: batch.section,
+        kind,
+        detail,
+      });
+    } catch {
+      // 補助監査の失敗は抽出結果や進捗の通知を妨げない。
+    }
+  };
+  const failBatch = async (
     batch: PlannedBatch,
     reason: BatchFailureReason,
     detail: string,
     failureKind: LlmFailureKind | null = null,
-  ): BatchFailure => {
+  ): Promise<BatchFailure> => {
     const failure: BatchFailure = {
       studyId: batch.studyId,
       section: batch.section,
@@ -471,6 +494,7 @@ export async function executeRun(
       failureKind,
     };
     batchFailures.push(failure);
+    await recordBatchFailure(batch, reason, detail);
     return failure;
   };
   const reportProgress = (batch: PlannedBatch, failure: BatchFailure | null = null): void => {
@@ -518,7 +542,7 @@ export async function executeRun(
     } catch (err) {
       const detail = toDetail(err);
       for (const item of items) {
-        reportProgress(item.batch, failBatch(item.batch, 'save_failed', detail));
+        reportProgress(item.batch, await failBatch(item.batch, 'save_failed', detail));
       }
       return;
     }
@@ -613,7 +637,7 @@ export async function executeRun(
     if (resolved.length === 0) {
       reportProgress(
         batch,
-        failBatch(batch, 'load_failed', firstLoadError ?? '本文を取得できる文書がありません'),
+        await failBatch(batch, 'load_failed', firstLoadError ?? '本文を取得できる文書がありません'),
       );
       return;
     }
@@ -645,6 +669,7 @@ export async function executeRun(
     let response: ChatResponse;
     try {
       response = await deps.provider.chat(messages, {
+        logContext: { studyId: batch.studyId, section: batch.section },
         temperature: EXTRACT_DATA_TEMPERATURE,
         responseSchema: extractDataResponseSchema(requestBox),
       });
@@ -652,7 +677,11 @@ export async function executeRun(
       // failureKind は provider が構造化フィールドから判別できたときだけ持つ
       // （LlmProviderError 以外・不明時は null。BatchFailure のコメント参照）
       const failureKind = err instanceof LlmProviderError ? err.failureKind : null;
-      reportProgress(batch, failBatch(batch, 'api_error', toDetail(err), failureKind));
+      if (err instanceof LlmProviderError && err.usage !== null) {
+        tokensIn = addTokens(tokensIn, err.usage.tokensIn);
+        tokensOut = addTokens(tokensOut, err.usage.tokensOut);
+      }
+      reportProgress(batch, await failBatch(batch, 'api_error', toDetail(err), failureKind));
       return;
     }
     tokensIn = addTokens(tokensIn, response.tokensIn);
@@ -663,11 +692,19 @@ export async function executeRun(
     try {
       validated = parseExtractDataResponse(response.text, batchFields, resolved.length);
     } catch (err) {
-      reportProgress(batch, failBatch(batch, 'format_error', toDetail(err)));
+      reportProgress(batch, await failBatch(batch, 'format_error', toDetail(err)));
       return;
     }
     for (const item of validated.rejected) {
       rejectedItems.push({ ...item, studyId: batch.studyId, section: batch.section });
+    }
+    if (validated.items.length === 0 && validated.rejected.length > 0) {
+      // 要素破棄の状態・進捗は変えず、成果のない呼出を費用集計の補助監査へ残す。
+      await recordBatchFailure(
+        batch,
+        'all_items_rejected',
+        `応答要素をすべて破棄しました（${validated.rejected.length} 件）`,
+      );
     }
 
     // arm completeness チェック（issue #106）: 応答内の自己整合（arm:n が出現するのに

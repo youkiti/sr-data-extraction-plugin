@@ -3,12 +3,16 @@
 // study の切替は URL クエリ ?study= と同期する（セレクタ変更 → hash 書き換え → サービス層が読込）。
 // ?entity=（S9 ダッシュボードのセル単位ディープリンク）は該当タブへの切替 + 先頭セルへの
 // スクロール・フォーカスとしてパネルへ渡す。2 ペイン本体は #/pilot と同じ verificationPanel を使う
+import { isReviewSetsActive } from '../../features/review/reviewSets';
+import { resolveActiveStudies } from '../../features/documents/studyRepository';
+import { canAskPaper } from '../../features/verification/chatAssist';
 import { t } from '../../lib/i18n';
 import { el } from '../ui/dom';
 import type { AppState, VerifyTarget } from '../store';
+import { renderAskPaperPanel } from './askPaperPanel';
 import { renderConflictWarning } from './conflictWarning';
 import type { ViewContext } from './types';
-import { renderCachedVerificationPanel } from './verificationPanel';
+import { renderCachedVerificationPanel, showVerificationCitation } from './verificationPanel';
 
 function selectorLabel(target: VerifyTarget): string {
   const { progress } = target;
@@ -152,6 +156,26 @@ export function renderVerifyView(state: AppState, ctx: ViewContext): HTMLElement
     return el('section', { className: 'view view--verify' }, children);
   }
 
+  const studies = state.documents.studies ?? verify.targets.map((target) => target.study);
+  const active =
+    state.documents.records === null
+      ? studies
+      : resolveActiveStudies(studies, state.documents.records);
+  if (state.role.role === 'owner' && isReviewSetsActive(active, state.reviewSets.sets ?? [])) {
+    const toggle = el('input', {
+      id: 'verify-assigned-only',
+      attributes: { type: 'checkbox' },
+    }) as HTMLInputElement;
+    toggle.checked = verify.assignedOnly;
+    toggle.addEventListener('change', () => ctx.verify.onAssignedOnlyChange(toggle.checked));
+    children.push(
+      el('label', { className: 'verify__assigned-only' }, [
+        toggle,
+        el('span', { text: t('verify.assignedOnly') }),
+      ]),
+    );
+  }
+
   if (verify.targets.length === 0) {
     // 独立入力モードは「確定済みスキーマが無い」「Studies が 0 件」のいずれでも一覧が空になる
     // （design §5.1）。AI 抽出の有無を前提にした案内は出さない
@@ -233,6 +257,27 @@ export function renderVerifyView(state: AppState, ctx: ViewContext): HTMLElement
         readOnly: verify.conflictMessage !== null,
       }),
     );
+    if (canAskPaper(state.role.role)) {
+      const bundle = verify.verification;
+      children.push(
+        renderAskPaperPanel(
+          state.askPaper,
+          {
+            spreadsheetId: state.currentProject?.spreadsheetId ?? '',
+            studyId: bundle.study.studyId,
+            fields: bundle.fields,
+            documents: bundle.documents.map(({ document, extractedPages }) => ({
+              documentId: document.documentId,
+              role: document.documentRole,
+              filename: document.filename,
+              pages: extractedPages,
+            })),
+          },
+          ctx.askPaper,
+          (citation) => showVerificationCitation(bundle.study.studyId, citation),
+        ),
+      );
+    }
   }
   return el('section', { className: 'view view--verify' }, children);
 }

@@ -220,6 +220,7 @@ async function initApp(page: Page, hash: string): Promise<void> {
         studies: [
           {
             studyId: 'study-1',
+            reviewSet: null,
             studyLabel: 'Smith 2020',
             registrationId: null,
             createdAt: '2026-07-01T00:00:00Z',
@@ -228,6 +229,7 @@ async function initApp(page: Page, hash: string): Promise<void> {
           },
           {
             studyId: 'study-2',
+            reviewSet: null,
             studyLabel: 'Jones 2021',
             registrationId: null,
             createdAt: '2026-07-01T00:00:00Z',
@@ -308,4 +310,74 @@ test('?entity= 直リンクで該当 entity のタブへ切替え、先頭セル
 
   const results = await new AxeBuilder({ page }).analyze();
   expect(results.violations).toEqual([]);
+});
+
+test.describe('owner の費用と予算', () => {
+  test('旧ログを推定集計し、予算保存で Meta の末尾列と監査値を更新する', async ({ page }) => {
+    await setupRoutes(page);
+    const base = ['p', '費用プロジェクト', 'v', 't', 'e2e@example.com', 'folder', ''];
+    const meta = [[...SHEET_HEADERS.Meta], [...base]];
+    const writes: { range: string; values: unknown[] }[] = [];
+    await page.route('https://sheets.googleapis.com/**', async (route) => {
+      const url = decodeURIComponent(route.request().url());
+      if (url.includes('/values/Meta')) {
+        if (route.request().method() === 'PUT') {
+          const rows = (route.request().postDataJSON() as { values: string[][] }).values;
+          const values = rows[0]!;
+          const range = url.split('/values/')[1]!.split('?')[0]!;
+          expect(['Meta!H1:J1', 'Meta!H2:J2', 'Meta!H1:J2']).toContain(range);
+          writes.push({ range, values: rows.length === 1 ? values : rows });
+          const rowIndex = range === 'Meta!H2:J2' ? 1 : 0;
+          rows.forEach((row, i) => {
+            const target = meta[rowIndex + i]!;
+            target.splice(SHEET_HEADERS.Meta.length, 3, ...row);
+            // Sheets の GET と同様に行末の空セルを省く。
+            while (target.at(-1) === '') target.pop();
+          });
+          await route.fulfill({ json: {} });
+        } else {
+          await route.fulfill({ json: { values: meta } });
+        }
+      } else if (url.includes('/values/LLMApiLog')) {
+        await route.fulfill({ json: { values: [SHEET_HEADERS.LLMApiLog,
+          ['old', '2026-07-02T00:00:00Z', 'gemini', 'model', 'extract_study',
+            'prompt', 'response', '', '100', '20', '1', '0.5', '', '80'],
+          ['new', '2026-07-02T00:00:00Z', 'gemini', 'model', 'draft_schema',
+            'prompt', 'response', '', '50', '10', '1', '0.25', '', '0', '', '', '', '9', '0'],
+        ] } });
+      } else if (url.includes('/values/ExtractionRuns')) {
+        const row = [...RUN_ROW];
+        row[9] = '2026-07-01T00:00:00Z';
+        row[10] = '2026-07-03T00:00:00Z';
+        await route.fulfill({ json: { values: [RUNS_HEADERS, row] } });
+      } else {
+        await route.fallback();
+      }
+    });
+    await initApp(page, '#/dashboard');
+    await expect(page.locator('#dashboard-usage-summary')).toContainText('$0.7500');
+    await expect(page.locator('#dashboard-usage-summary')).toContainText('150');
+    await expect(page.locator('#dashboard-usage-estimated')).toContainText('推定');
+    await expect(page.locator('#dashboard-usage-undercount')).toContainText('過小計上');
+    await expect(page.locator('#dashboard-usage-by-run')).toContainText('推定');
+    await expect(page.locator('#dashboard-loading')).toHaveCount(0);
+    await expect(page.locator('#dashboard-summary')).toBeVisible();
+    await page.locator('#dashboard-budget-input').fill('10.25');
+    await page.locator('#dashboard-budget-save').click();
+    await expect(page.locator('#dashboard-budget-status')).toContainText('$10.2500');
+    expect(writes[0]).toEqual({ range: 'Meta!H1:J1',
+      values: ['budget_usd', 'budget_updated_by', 'budget_updated_at'] });
+    expect(writes[1]?.range).toBe('Meta!H2:J2');
+    expect(writes[1]?.values.slice(0, 2)).toEqual([10.25, 'e2e@example.com']);
+    expect(writes[1]?.values[2]).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    expect(meta[0]).toHaveLength(10);
+    expect(meta[1]?.slice(0, 7)).toEqual(base);
+    await page.locator('#dashboard-budget-clear').click();
+    await expect(page.locator('#dashboard-budget-status')).toContainText('未設定');
+    expect(writes).toHaveLength(3);
+    expect(writes[2]).toEqual({ range: 'Meta!H1:J2', values: [['', '', ''], ['', '', '']] });
+    expect(meta[0]).toEqual(SHEET_HEADERS.Meta);
+    expect(meta[1]).toEqual(base.slice(0, -1));
+    await expect(page.locator('#dashboard-budget-clear')).toHaveCount(0);
+  });
 });

@@ -403,3 +403,30 @@ test('R セット選択 → サマリ/プレビュー → 生成で Drive フォ
   const resultsAfter = await new AxeBuilder({ page }).analyze();
   expect(resultsAfter.violations).toEqual([]);
 });
+
+test.describe('独立した使用量 CSV', () => {
+  test('未検証セルを確認せず usage ファイルを保存し、ExportLog に記録する', async ({ page }) => {
+    const captured = await setupRoutes(page, { unverifiedStudy: true });
+    await page.route('https://sheets.googleapis.com/**', async (route) => {
+      if (decodeURIComponent(route.request().url()).includes('/values/LLMApiLog')) {
+        await route.fulfill({ json: { values: [SHEET_HEADERS.LLMApiLog,
+          ['log', '2026-07-02T00:00:00Z', 'gemini', 'model', 'extract_study',
+            'prompt', 'response', '', '100', '20', '1', '0.5', '', '0',
+            'run-1', 'study-1', 'results', '9', '0']] } });
+      } else {
+        await route.fallback();
+      }
+    });
+    await initApp(page, '#/export');
+    await expect(page.locator('#export-usage')).toBeVisible();
+    await page.locator('#export-usage-generate').click();
+    await expect(page.locator('#export-usage-result')).toBeVisible();
+    await expect(page.locator('#export-usage-result-link')).toHaveAttribute('target', '_blank');
+    expect(captured.uploadedFileNames).toHaveLength(1);
+    expect(captured.uploadedFileNames[0]).toMatch(/^usage_\d{8}-\d{6}\.csv$/);
+    expect(captured.exportLogBodies[0]?.values[0]?.[1]).toBe('usage');
+    expect(captured.exportLogBodies[0]?.values[0]?.[2]).toBe(1);
+    expect(captured.exportLogBodies[0]?.values[0]?.[3]).toBe(1);
+    await expect(page.locator('#export-warning')).toHaveCount(0);
+  });
+});

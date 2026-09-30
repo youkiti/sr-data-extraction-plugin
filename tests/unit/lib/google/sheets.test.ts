@@ -11,6 +11,7 @@ import {
   SheetsAccessDeniedError,
   SheetsPartialAppendError,
   updateRow,
+  updateRange,
   writeHeaderRow,
 } from '../../../../src/lib/google/sheets';
 import { GoogleApiError } from '../../../../src/lib/google/types';
@@ -125,6 +126,22 @@ describe('updateRow', () => {
     expect((init as RequestInit).method).toBe('PUT');
     const body = JSON.parse((init as RequestInit).body as string);
     expect(body.values).toEqual([['x', '', true]]);
+  });
+});
+
+describe('updateRange', () => {
+  test('指定範囲だけを PUT し、複数行と null の空セル変換を保つ', async () => {
+    const d = deps();
+    await updateRange('sid', 'Meta!H2:J3', [['x', null, true], [1, 'y', null]], d);
+    const [url, init] = d.fetch.mock.calls[0];
+    expect(decodeURIComponent(url as string)).toContain(
+      '/sid/values/Meta!H2:J3?valueInputOption=RAW',
+    );
+    expect((init as RequestInit).method).toBe('PUT');
+    expect(((init as RequestInit).headers as Headers).get('Content-Type')).toBe('application/json');
+    expect(JSON.parse((init as RequestInit).body as string).values).toEqual([
+      ['x', '', true], [1, 'y', ''],
+    ]);
   });
 });
 

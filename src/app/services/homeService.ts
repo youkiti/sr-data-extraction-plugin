@@ -8,6 +8,20 @@ import { readProgressCounts } from '../../features/project/progressCounts';
 import type { GoogleApiDeps } from '../../lib/google/types';
 import type { HomeState, Store } from '../store';
 
+import { computeAnnotatorProgress } from '../../features/adjudication/gate';
+import { isReviewSetsActive } from '../../features/review/reviewSets';
+import { readDocuments } from '../../features/documents/documentRepository';
+import { resolveActiveStudies } from '../../features/documents/studyRepository';
+import { getCurrentUserEmail } from '../../lib/google/identity';
+import {
+  readReviewSetProgressMaterials,
+  filterReviewSetStudies,
+  reviewSetsForFiltering,
+  requireReviewSets,
+  reviewSetStudies,
+  type ReviewSetServiceDeps,
+} from './reviewSetService';
+
 export interface HomeServiceDeps {
   google: GoogleApiDeps;
 }
@@ -50,5 +64,56 @@ export async function loadProgressCounts(
     });
   } catch (err) {
     patchHome(store, { countsLoading: false, countsError: toMessage(err) });
+  }
+}
+
+/** reviewer 系 Home には自分の担当 study の完了数だけを読み込む */
+export async function loadAssignedProgress(
+  store: Store,
+  deps: ReviewSetServiceDeps,
+): Promise<void> {
+  const state = store.getState();
+  const project = state.currentProject;
+  if (
+    !project ||
+    state.role.role === null ||
+    state.role.role === 'owner' ||
+    state.home.assignedProgressLoading
+  )
+    return;
+  patchHome(store, { assignedProgressLoading: true, assignedProgressError: null });
+  try {
+    await requireReviewSets(store, deps);
+    const studies = await reviewSetStudies(store, deps);
+    const documents =
+      store.getState().documents.records ??
+      (await readDocuments(project.spreadsheetId, deps.google));
+    const sets = reviewSetsForFiltering(store, true);
+    if (!isReviewSetsActive(resolveActiveStudies(studies, documents), sets)) {
+      patchHome(store, { assignedProgressLoading: false, assignedProgress: null });
+      return;
+    }
+    const email = (await getCurrentUserEmail(deps.profile)) ?? '';
+    const material = await readReviewSetProgressMaterials(store, deps);
+    const ownStudies = filterReviewSetStudies(store, material.studies, documents, email, true);
+    const done = ownStudies.filter(
+      (study) =>
+        computeAnnotatorProgress(
+          email,
+          material.fields,
+          material.decisions.filter((decision) => decision.studyId === study.studyId),
+          material.armStructures.get(study.studyId)?.get(email) ?? null,
+        ).complete,
+    ).length;
+    patchHome(store, {
+      assignedProgressLoading: false,
+      assignedProgress: { done, total: ownStudies.length },
+    });
+  } catch (error) {
+    patchHome(store, {
+      assignedProgressLoading: false,
+      assignedProgress: null,
+      assignedProgressError: toMessage(error),
+    });
   }
 }

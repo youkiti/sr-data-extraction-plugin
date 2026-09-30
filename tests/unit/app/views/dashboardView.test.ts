@@ -5,10 +5,23 @@ import type { DashboardViewCallbacks, ViewContext } from '../../../../src/app/vi
 import type { DashboardData } from '../../../../src/features/verification/dashboard';
 
 function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<DashboardViewCallbacks> } {
-  const callbacks = { onReload: jest.fn() };
+  const callbacks = {
+    onReload: jest.fn(),
+    onReloadUsage: jest.fn(),
+    onSaveBudget: jest.fn(),
+    onBudgetDraftChange: jest.fn(),
+    onBudgetError: jest.fn(),
+  };
   return {
     ctx: {
       home: {
+    onReloadReviewSets: jest.fn(),
+    onReloadAssignedProgress: jest.fn(),
+    onSplitReviewSets: jest.fn(),
+    onConfirmResplit: jest.fn(),
+    onCancelResplit: jest.fn(),
+    onSaveReviewSetEmails: jest.fn(),
+    onAssignStudyReviewSet: jest.fn(),
     onReload: jest.fn(),
     onGrantFolderAccess: jest.fn(),
     onSkipMissingFiles: jest.fn(),
@@ -21,6 +34,7 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<DashboardViewCall
     onCopyInvite: jest.fn(),
   },
       documents: {
+        onUpdateMergeReviewSet: jest.fn(),
         onImport: jest.fn(),
         onImportFiles: jest.fn(),
         onReload: jest.fn(),
@@ -111,6 +125,7 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<DashboardViewCall
         onReloadTargets: jest.fn(),
       },
       verify: {
+        onAssignedOnlyChange: jest.fn(),
         onSelectStudy: jest.fn(),
         onRetryLoad: jest.fn(),
         onDecision: jest.fn(),
@@ -131,6 +146,8 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<DashboardViewCall
         onChangeMethodsLanguage: jest.fn(),
         onChangeMethodsWorkflow: jest.fn(),
         onCopyMethods: jest.fn(),
+        onGenerateUsage: jest.fn(),
+        onDownloadUsage: jest.fn(),
       },
       adjudicate: {
         onSelectStudy: jest.fn(),
@@ -319,5 +336,55 @@ describe('renderDashboardView（表示言語 en。issue #93）', () => {
     );
     // 率は en の半角括弧表記になる
     expect(rateText({ numerator: 1, denominator: 2 })).toBe('1 / 2 (50%)');
+  });
+});
+
+test('担当進捗は数値順の全セットを列にし、担当外を横棒にする', () => {
+  const { ctx } = makeCtx();
+  const state = makeState({
+    data: makeData(),
+    reviewSetProgress: [
+      { email: 'b@example.com', setId: 'group-10', done: 1, total: 2 },
+      { email: 'a@example.com', setId: 'group-2', done: 0, total: 1 },
+      { email: 'a@example.com', setId: 'calibration', done: 1, total: 1 },
+    ],
+  });
+  state.reviewSets.sets = ['group-10', 'group-2', 'calibration', 'group-1'].map((setId) => ({
+    setId,
+    studyIds: ['study-1'],
+    reviewerEmails: [],
+    seed: '42',
+    updatedBy: 'owner@example.com',
+    updatedAt: 't0',
+  }));
+  const view = renderDashboardView(state, ctx);
+  const table = view.querySelector('#dashboard-review-sets')!;
+  expect([...table.querySelectorAll('thead th')].map((th) => th.textContent)).toEqual([
+    '担当者',
+    'calibration',
+    'group-1',
+    'group-2',
+    'group-10',
+  ]);
+  expect(
+    [...table.querySelectorAll('tbody tr:first-child td')].map((td) => td.textContent),
+  ).toEqual(['完了 1 / 担当 1', '—', '完了 0 / 担当 1', '—']);
+  state.dashboard.data = makeData({ rows: [] });
+  expect(renderDashboardView(state, ctx).querySelector('#dashboard-review-sets')).not.toBeNull();
+  state.reviewSets.sets = null;
+  state.dashboard.reviewSetProgress = [];
+  expect(
+    renderDashboardView(state, ctx).querySelector('#dashboard-review-sets tbody tr'),
+  ).toBeNull();
+});
+
+describe('費用カードのロール制限', () => {
+  test('owner は全状態で末尾に費用カードを持ち、非 owner は描画しない', () => {
+    const { ctx } = makeCtx();
+    const state = makeState();
+    state.role.role = 'owner';
+    expect(renderDashboardView(state, ctx).lastElementChild?.id).toBe('dashboard-usage');
+    state.role.role = 'reviewer_with_ai';
+    expect(renderDashboardView(state, ctx).querySelector('#dashboard-usage')).toBeNull();
   });
 });

@@ -20,6 +20,7 @@ import {
   needsArmConfirmation,
   type DraftArm,
 } from '../../features/verification/armDraft';
+import type { AnchoredCitation } from '../../features/verification/askPaper';
 import {
   availableTabs,
   buildTabModel,
@@ -76,6 +77,7 @@ import { getUiLanguage, t, type UiLanguage } from '../../lib/i18n';
 import { nowIso8601 } from '../../utils/iso8601';
 import { nextOutcomeId } from '../../utils/entityKey';
 import { documentRoleLabel } from '../ui/documentRoleLabel';
+import { buildAskPaperHighlight } from '../ui/askPaperHighlight';
 import { el } from '../ui/dom';
 import { createPdfViewer, type PdfViewerHandle, type ViewerHighlight } from '../ui/pdfViewer';
 import { createTextViewer, type TextViewerSnippet } from '../ui/textViewer';
@@ -144,6 +146,7 @@ export interface VerificationPanelOptions {
 
 export interface VerificationPanelHandle {
   root: HTMLElement;
+  showCitationHighlight(citation: AnchoredCitation): void;
   /** 指定 entity のタブへ切替え、先頭セルへスクロール・フォーカスする（?entity= ディープリンク） */
   focusEntity(entityKey: string): void;
   /**
@@ -573,6 +576,7 @@ export function createVerificationPanel(
 
   let viewer: PdfViewerHandle | null = null;
   let viewerDocId: string | null = null;
+  let citationHighlight: AnchoredCitation | null = null;
   /**
    * documentId ごとの矩形ハイライト（rects 実体化済み）。対象文書の textPages がロードされた
    * 時点で不変なので、applyLoadedPdf で 1 回だけ計算してメモ化する（syncViewer は判定・
@@ -609,9 +613,12 @@ export function createVerificationPanel(
    * ジャンプし、ロード中・未着手なら「保留ジャンプ」として予約する（ロード解決後に 1 回だけ適用）
    */
   function focusHighlightNowOrPending(cellKey: string): void {
-    selectedQuoteKey = resolvedQuoteKey(cellKey);
-    ensureActiveDocumentForCell(cellKey);
-    cellKey = selectedQuoteKey;
+    // 論文への質問パネルの引用ハイライト（ask-paper:）は Evidence に対応しないため、引用の選択として扱わない
+    if (!cellKey.startsWith('ask-paper:')) {
+      selectedQuoteKey = resolvedQuoteKey(cellKey);
+      ensureActiveDocumentForCell(cellKey);
+      cellKey = selectedQuoteKey;
+    }
     if (viewer !== null && viewerDocId === activeDocumentId) {
       viewer.focusHighlight(cellKey);
     } else {
@@ -755,6 +762,8 @@ export function createVerificationPanel(
           document: loaded.pdf,
           pages: loaded.textPages,
           onHighlightClick: (id) => {
+            // 論文への質問パネルの引用ハイライト（ask-paper:）はセルに対応しないため、フォーカスを動かさない
+            if (id.startsWith('ask-paper:')) return;
             focusCell(cellKeyFromQuoteKey(id), { jump: false, domFocus: true, quoteKey: id });
             selectedQuoteKey = id;
             syncTextViewer(id);
@@ -1431,7 +1440,7 @@ export function createVerificationPanel(
     }
     const docHighlights = rectHighlightsByDoc.get(activeDocumentId) as EvidenceHighlight[];
     const states = deriveCellStates(ownDecisions);
-    return docHighlights.map((highlight) => {
+    const highlights: ViewerHighlight[] = docHighlights.map((highlight) => {
       const [fieldId] = JSON.parse(highlight.cellKey) as [string, string];
       const status = states.get(highlight.cellKey)?.status ?? 'unverified';
       // ハイライトは evidence 由来のため対応する Evidence が必ず存在する
@@ -1451,6 +1460,14 @@ export function createVerificationPanel(
         occurrence: highlight.occurrences[index] as HighlightOccurrence,
       };
     });
+    if (citationHighlight !== null && citationHighlight.documentId === activeDocumentId) {
+      const extra = buildAskPaperHighlight(
+        citationHighlight,
+        textPagesByDoc.get(activeDocumentId) as readonly TextLayerPage[],
+      );
+      if (extra !== null) highlights.push(extra);
+    }
+    return highlights;
   }
 
   /**
@@ -1588,12 +1605,12 @@ export function createVerificationPanel(
       // 許容値チップ列が出るため、先頭チップを着地先にする（issue #254）
       formPane.querySelector<HTMLElement>('.verify__edit-input, .verify__enum-chip')?.focus();
     },
-    onConfirmEdit(cellKey, action, value) {
+    onConfirmEdit(cellKey, action, value, note) {
       const cell = findCell(cellKey);
       editing = null;
       const trimmed = value.trim();
       const saved = trimmed === '' ? null : trimmed;
-      commit(cell, action, saved);
+      commit(cell, action, saved, note);
       // flow 図（mermaid）の保存時構文チェック（issue #109）: 警告表示のみで保存はブロック
       // しない（commit を先に済ませてから非同期チェックの結果だけを重ねる）
       if (saved !== null && isMermaidPreviewField(cell.field.fieldName)) {
@@ -1996,7 +2013,12 @@ export function createVerificationPanel(
     refreshForm();
   }
 
-  function commit(cell: VerificationCell, action: DecisionAction, value: string | null): void {
+  function commit(
+    cell: VerificationCell,
+    action: DecisionAction,
+    value: string | null,
+    note: string | null = null,
+  ): void {
     if (isMermaidPreviewField(cell.field.fieldName)) {
       // mermaid 構文チェック警告は「直近に保存した値」に対する表示のため、次の判定
       // （undo・未報告・再編集を含む）で一旦消す（エラーが残る値なら onConfirmEdit 側の
@@ -2014,7 +2036,7 @@ export function createVerificationPanel(
       schemaVersion: data.schemaVersion,
       action,
       value,
-      note: null,
+      note,
     };
     ownDecisions.push(decision);
     // 判定済みブロックの制御: 直近判定の 1 件だけ元の位置へ残す（見直し・戻す (z) 用）。
@@ -2208,6 +2230,19 @@ export function createVerificationPanel(
 
   return {
     root,
+    showCitationHighlight(citation) {
+      if (
+        panelMode === 'independent' ||
+        citation.documentId === null ||
+        !data.documents.some((view) => view.document.documentId === citation.documentId)
+      )
+        return;
+      citationHighlight = citation;
+      setViewMode('pdf');
+      setActiveDocument(citation.documentId);
+      syncViewer();
+      focusHighlightNowOrPending(`ask-paper:${citation.documentId}`);
+    },
     focusEntity,
     scrollFocusedIntoView() {
       // issue #51: #/pilot 埋め込み文脈ではパネルの手前に「過去のパイロット結果」「抽出が
@@ -2324,4 +2359,10 @@ export function renderCachedVerificationPanel(options: VerificationPanelOptions)
 export function disposeVerificationPanelCache(): void {
   cachedPanel?.handle.dispose();
   cachedPanel = null;
+}
+
+/** 表示中の検証パネルへ質問の一時引用を渡す。別 study の古いコールバックは無視する。 */
+export function showVerificationCitation(studyId: string, citation: AnchoredCitation): void {
+  if (cachedPanel?.data.study.studyId === studyId)
+    cachedPanel.handle.showCitationHighlight(citation);
 }

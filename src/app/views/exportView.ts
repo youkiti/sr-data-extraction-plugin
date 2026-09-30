@@ -3,7 +3,6 @@
 // + 論文 Methods 記載例カード）+ 未検証セル警告ダイアログ / 生成中 / 生成失敗 / 生成完了カード。
 // R セット（issue #60・design-r-export.md）は 8 ファイルを一括生成する第 4 の形式で、
 // サマリ・プレビュー・結果カードは従来 3 形式と別レンダリング（renderRSet* 系）を使う
-import type { ExportFormat } from '../../domain/exportLog';
 import type { BuiltExport } from '../../features/export/buildExport';
 import { PREVIEW_ROW_LIMIT } from '../../features/export/buildExport';
 import {
@@ -17,11 +16,12 @@ import { countRSetUnverifiedCells, rSetDataRowCount } from '../../features/expor
 import { t, type MessageKey } from '../../lib/i18n';
 import { el } from '../ui/dom';
 import type { AppState, ExportState } from '../store';
+import { renderExportUsage } from './exportUsage';
 import type { ViewContext } from './types';
 
 /** 形式選択ラジオの表示順と用途説明（requirements.md §4.4 の用途列。ラベルは描画時に解決） */
 const FORMAT_OPTIONS: ReadonlyArray<{
-  format: ExportFormat;
+  format: ExportState['format'];
   /** ファイル名はコード用語のため翻訳せず、R セットだけ辞書キーで解決する */
   label: string | null;
   labelKey: MessageKey | null;
@@ -401,6 +401,8 @@ export function renderExportView(state: AppState, ctx: ViewContext): HTMLElement
     }),
   ];
   const exportState = state.export;
+  const usageCard = (state.role.role ?? 'owner') === 'owner'
+    ? renderExportUsage(exportState.usage, ctx.export) : null;
 
   if (exportState.loadError !== null) {
     const reload = el('button', {
@@ -418,11 +420,13 @@ export function renderExportView(state: AppState, ctx: ViewContext): HTMLElement
       }),
       reload,
     );
+    if (usageCard !== null) children.push(usageCard);
     return el('section', { className: 'view view--export' }, children);
   }
 
   if (exportState.built === null || exportState.loading) {
     children.push(el('p', { id: 'export-loading', text: t('export.loading') }));
+    if (usageCard !== null) children.push(usageCard);
     return el('section', { className: 'view view--export' }, children);
   }
 
@@ -431,6 +435,8 @@ export function renderExportView(state: AppState, ctx: ViewContext): HTMLElement
   if (methodsCard !== null) {
     children.push(methodsCard);
   }
+
+  if (usageCard !== null) children.push(usageCard);
 
   if (exportState.format === 'r_set') {
     // rSet は built と同じ patchExport 呼び出しで常に同時に設定されるため、built !== null な

@@ -6,6 +6,13 @@ import { setUiLanguage } from '../../../../src/lib/i18n';
 /** homeView は home コールバックしか使わないため、他はダミーで埋める */
 function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<HomeViewCallbacks> } {
   const callbacks: jest.Mocked<HomeViewCallbacks> = {
+    onReloadReviewSets: jest.fn(),
+    onReloadAssignedProgress: jest.fn(),
+    onSplitReviewSets: jest.fn(),
+    onConfirmResplit: jest.fn(),
+    onCancelResplit: jest.fn(),
+    onSaveReviewSetEmails: jest.fn(),
+    onAssignStudyReviewSet: jest.fn(),
     onReload: jest.fn(),
     onGrantFolderAccess: jest.fn(),
     onSkipMissingFiles: jest.fn(),
@@ -459,4 +466,36 @@ test('モード変更ブロックの理由を通知し、閉じる操作を渡�
   state.reviewers.saving = true;
   const savingView = renderHomeView(state, ctx);
   expect((savingView.querySelector('#reviewer-add-submit') as HTMLButtonElement).disabled).toBe(true);
+});
+
+test('担当セットカードはレビュアー管理の直後に置く', () => {
+  const { ctx } = makeCtx();
+  const state = makeState();
+  state.reviewSets.sets = [];
+  state.documents.records = [];
+  state.documents.studies = [];
+  const view = renderHomeView(state, ctx);
+  expect(view.querySelector('#home-reviewers')?.nextElementSibling?.id).toBe('home-review-sets');
+});
+test('reviewer の本人進捗・ロード・エラー・再試行を表示する', () => {
+  const { ctx, callbacks } = makeCtx();
+  const state = makeState();
+  state.role.role = 'reviewer_with_ai';
+  state.home.assignedProgress = { done: 1, total: 3 };
+  let view = renderHomeView(state, ctx);
+  expect(view.querySelector('#home-assigned-progress')?.textContent).toBe('担当 3 件中 1 件完了');
+  expect(view.querySelector('#home-review-sets')).toBeNull();
+  state.home.assignedProgressLoading = true;
+  view = renderHomeView(state, ctx);
+  expect(view.querySelector('#home-assigned-progress-loading')).not.toBeNull();
+  expect(view.querySelector('#home-assigned-progress')).toBeNull();
+  state.home.assignedProgressLoading = false;
+  state.home.assignedProgressError = '読込失敗';
+  view = renderHomeView(state, ctx);
+  expect(view.querySelector('#home-assigned-progress-error')?.getAttribute('role')).toBe('alert');
+  (view.querySelector('#home-assigned-progress-reload') as HTMLButtonElement).click();
+  expect(callbacks.onReloadAssignedProgress).toHaveBeenCalled();
+  state.home.assignedProgressError = null;
+  state.home.assignedProgress = null;
+  expect(renderHomeView(state, ctx).querySelector('#home-assigned-progress')).toBeNull();
 });

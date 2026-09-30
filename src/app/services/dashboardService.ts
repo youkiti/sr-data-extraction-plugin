@@ -6,6 +6,19 @@ import type { DashboardState, Store } from '../store';
 import type { VerificationDeps } from './verificationService';
 import { readVerifyTargetMaterials } from './verifyService';
 
+import {
+  isReviewSetsActive,
+  reviewSetForStudy,
+  reviewerSetProgress,
+  currentReviewSets,
+} from '../../features/review/reviewSets';
+import {
+  foldReviewerAssignments,
+  readReviewerAssignments,
+} from '../../features/project/reviewerRepository';
+import { CALIBRATION_SET_ID } from '../../domain/reviewSet';
+import { readReviewSetProgressMaterials, requireReviewSets } from './reviewSetService';
+
 function toMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
@@ -22,7 +35,17 @@ function patchDashboard(store: Store, patch: Partial<DashboardState>): void {
  * `loading` は触らない
  */
 export function invalidateDashboard(store: Store): void {
-  patchDashboard(store, { data: null, loadError: null });
+  patchDashboard(store, {
+    data: null,
+    reviewSetProgress: null,
+    loadError: null,
+    usage: {
+      ...store.getState().dashboard.usage,
+      summary: null,
+      budget: null,
+      loadError: null,
+    },
+  });
 }
 
 /**
@@ -44,10 +67,12 @@ export async function loadDashboard(
   }
   patchDashboard(store, { loading: true, loadError: null });
   try {
+    await requireReviewSets(store, deps);
     const { materials, runStartedAt } = await readVerifyTargetMaterials(
       store,
       deps,
       project.spreadsheetId,
+      { assignedOnly: false, force: options.force },
     );
     // 表示ラベルは target.study（Studies 由来。v0.10）
     const data = buildDashboard(
@@ -61,7 +86,41 @@ export async function loadDashboard(
       })),
       runStartedAt,
     );
-    patchDashboard(store, { loading: false, data });
+    let progress = null;
+    let sets = store.getState().reviewSets.sets ?? [];
+    if (sets.length > 0) {
+      const material = await readReviewSetProgressMaterials(store, deps, options);
+      if (isReviewSetsActive(material.studies, sets)) {
+        // 登録済みの担当者は、まだ判定を始めていなくても calibration の行に含める。
+        sets = currentReviewSets(material.studies, sets);
+        const calibrationIds = new Set(
+          material.studies
+            .filter((study) => reviewSetForStudy(study, sets) === CALIBRATION_SET_ID)
+            .map((study) => study.studyId),
+        );
+        const emails = new Set(
+          sets
+            .filter((set) => set.setId !== CALIBRATION_SET_ID)
+            .flatMap((set) => set.reviewerEmails),
+        );
+        for (const decision of material.decisions) {
+          if (
+            calibrationIds.has(decision.studyId) &&
+            (decision.annotatorType === 'human_with_ai' ||
+              decision.annotatorType === 'human_independent')
+          )
+            emails.add(decision.annotator);
+        }
+        const registered = foldReviewerAssignments(
+          await readReviewerAssignments(project.spreadsheetId, deps.google),
+        );
+        for (const reviewer of registered) {
+          if (reviewer.role !== 'revoked') emails.add(reviewer.email);
+        }
+        progress = reviewerSetProgress({ ...material, sets, reviewerEmails: [...emails].sort() });
+      }
+    }
+    patchDashboard(store, { loading: false, data, reviewSetProgress: progress });
   } catch (err) {
     patchDashboard(store, { loading: false, loadError: toMessage(err) });
   }

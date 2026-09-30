@@ -284,6 +284,7 @@ function makeVerificationData(overrides: Partial<VerificationData> = {}): Verifi
   return {
     study: {
       studyId: 'study-doc-1',
+      reviewSet: null,
       studyLabel: 'Smith 2020',
       registrationId: null,
       createdAt: 't0',
@@ -345,6 +346,7 @@ function studiesFor(documents: readonly DocumentRecord[]): StudyRecord[] {
   const ids = [...new Set(documents.map((d) => d.studyId))];
   return ids.map((studyId) => ({
     studyId,
+    reviewSet: null,
     studyLabel: `label-${studyId}`,
     registrationId: null,
     createdAt: 't0',
@@ -641,6 +643,21 @@ describe('runPilot: 実行', () => {
       },
     };
   }
+
+  test('完了したパイロットの使用済み study を外し、未使用の study を既定選択する', async () => {
+    const documents = ['s1', 's2', 's3', 's4'].map((studyId) =>
+      makeDocument({ documentId: studyId, studyId }),
+    );
+    const store = makeStore({ documents, fields: [makeField()], pilot: { model: 'gemini-test' } });
+    initPilotSelection(store);
+    expect(store.getState().pilot.selectedStudyIds).toEqual(['s1', 's2', 's3']);
+    togglePilotStudy(store, 's1', true);
+    runExtractionMock.mockResolvedValue(makeOutcome({ studyIds: ['s1', 's2', 's3'] }));
+    await runPilot(store, makeDeps());
+    expect(store.getState().pilot.selectedStudyIds).toEqual(['s4']);
+    expect(store.getState().pilot.selectionTouched).toBe(false);
+    expect(store.getState().pilot.selectionHistoryApplied).toBe(true);
+  });
 
   test('runExtraction を pilot 設定で呼び、counts と run 結果を反映して検証データを読み込む', async () => {
     const store = makeReadyStore();
@@ -1005,6 +1022,7 @@ describe('loadPilotVerification', () => {
     readStudiesMock.mockResolvedValue([
       {
         studyId: 'study-doc-1',
+        reviewSet: null,
         studyLabel: 'label',
         registrationId: null,
         createdAt: 't0',
@@ -1420,6 +1438,7 @@ describe('S6 / S8 の直列化（persistPilotDecision は verifyService.persistV
         {
           study: {
             studyId: 'study-doc-1',
+            reviewSet: null,
             studyLabel: 'label-study-doc-1',
             registrationId: null,
             createdAt: 't0',
@@ -1845,4 +1864,37 @@ describe('autoLoadLatestPilotRun', () => {
     expect(store.getState().pilot.run?.runId).toBe('run-1');
     expect(readEvidenceRowsMock).toHaveBeenCalled();
   });
+});
+
+test('履歴到着後は未操作の既定選択を一度だけ未使用 study に選び直す', async () => {
+  const docs = [makeDocument({ documentId: 'd1' }), makeDocument({ documentId: 'd2' })];
+  const store = makeStore({ documents: docs });
+  initPilotSelection(store);
+  const usedId = store.getState().pilot.selectedStudyIds[0]!;
+  readPilotRunsMock.mockResolvedValue([makeRun({ studyIds: [usedId] })]);
+  await loadPilotHistory(store, makeDeps());
+  expect(store.getState().pilot.selectedStudyIds).toEqual([docs[1]!.studyId]);
+  expect(store.getState().pilot.selectionHistoryApplied).toBe(true);
+  readPilotRunsMock.mockResolvedValue([]);
+  await loadPilotHistory(store, makeDeps(), { force: true });
+  expect(store.getState().pilot.selectedStudyIds).toEqual([docs[1]!.studyId]);
+  const touched = makeStore({ documents: docs });
+  initPilotSelection(touched);
+  togglePilotStudy(touched, usedId, false);
+  readPilotRunsMock.mockResolvedValue([]);
+  await loadPilotHistory(touched, makeDeps());
+  expect(touched.getState().pilot.selectedStudyIds).toEqual([docs[1]!.studyId]);
+});
+
+test('選択が初期化済み・操作済みでも後着したスキーマのモデルを空欄へ引き継ぐ', () => {
+  const store = makeStore({ documents: [makeDocument()] });
+  initPilotSelection(store);
+  togglePilotStudy(store, 'study-doc-1', false);
+  store.setState({ schema: { ...store.getState().schema, model: 'late-model' } });
+  initPilotSelection(store);
+  expect(store.getState().pilot.model).toBe('late-model');
+  expect(store.getState().pilot.selectedStudyIds).toEqual([]);
+  store.setState({ schema: { ...store.getState().schema, model: 'another-model' } });
+  initPilotSelection(store);
+  expect(store.getState().pilot.model).toBe('late-model');
 });

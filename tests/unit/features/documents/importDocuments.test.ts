@@ -123,6 +123,7 @@ describe('importDocuments（Drive Picker 経由）', () => {
     expect(result.importedStudies).toEqual([
       {
         studyId: 'u2',
+        reviewSet: null,
         studyLabel: 'smith2020',
         registrationId: null, // 'page text' に登録番号なし
         createdAt: 'NOW',

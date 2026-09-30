@@ -10,6 +10,8 @@ function makeFacts(overrides: Partial<MethodsFacts> = {}): MethodsFacts {
     providers: [],
     pilotStudyCount: 0,
     scannedDocumentCount: 0,
+    pilotRevisionCount: 0,
+    chatAssistDecisionCount: 0,
     ...overrides,
   };
 }
@@ -155,3 +157,38 @@ describe('buildMethodsText', () => {
     expect(result.unresolved).toEqual(['n_sample', 'reviewer_initials', 'supplement_ref']);
   });
 });
+
+test.each(['ja', 'en'] as const)(
+  '改訂回数が正のときだけ正典の追加文を末尾へ付ける（%s）',
+  (language) => {
+    const sentence =
+      language === 'ja'
+        ? 'パイロットでの判定に基づき、抽出指示を 2 回改訂した。改訂案は LLM が項目の抽出指示と例に限って作成し、著者らが確認・承認したうえで本抽出に用いた。'
+        : "Based on the reviewers' judgments during the pilot, the extraction instructions were revised 2 time(s); the LLM drafted revision proposals limited to item instructions and examples, which the authors reviewed and approved before full extraction.";
+    const withRevision = buildMethodsText(language, 'single', makeFacts({ pilotRevisionCount: 2 }));
+    expect(withRevision.text.endsWith(sentence)).toBe(true);
+    expect(withRevision.unresolved).not.toContain('n_pilot_revision');
+    expect(buildMethodsText(language, 'single', makeFacts()).text).not.toContain(
+      sentence.split('2')[0],
+    );
+  },
+);
+test.each(['en', 'ja'] as const)(
+  '質問後の判定があるときだけ正典のオプション文を末尾へ加える: %s',
+  (language) => {
+    const sentence =
+      language === 'en'
+        ? 'During verification, reviewers could additionally ask an LLM questions about the full text of the study under review; answers were constrained to verbatim quotations that the tool located in the source text, were not entered into the dataset automatically, and decisions made after such questions were flagged in the audit trail.'
+        : '検証中、レビュアーは検証対象の研究の本文について LLM に質問することもできた。回答にはツールが原文中で照合した逐語的な引用を必須とし、回答が自動でデータに入力されることはなく、質問後の判定は監査証跡に印を付けて記録した。';
+    for (const workflow of ['single', 'dual'] as const) {
+      expect(buildMethodsText(language, workflow, makeFacts()).text).not.toContain(sentence);
+      expect(
+        buildMethodsText(
+          language,
+          workflow,
+          makeFacts({ chatAssistDecisionCount: 2 }),
+        ).text.endsWith(sentence),
+      ).toBe(true);
+    }
+  },
+);

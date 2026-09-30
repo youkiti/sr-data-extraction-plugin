@@ -1,8 +1,15 @@
 // メインビュー起動配線のテスト。hashchange の発火タイミングを決定的に制御するため、
 // 実 window ではなくスタブ（location / addEventListener のみ実装）を注入する
+import { sendAskPaperQuestion } from '../../../src/app/services/askPaperUiService';
+import { disposeAskPaperPanelCache } from '../../../src/app/views/askPaperPanel';
+jest.mock('../../../src/app/services/askPaperUiService', () => ({
+  sendAskPaperQuestion: jest.fn(),
+}));
+import { askPaperUsedStudiesStorageKey } from '../../../src/lib/storage/askPaperStore';
 import { installChromeMock, type ChromeMock } from '../../setup/chrome-mock';
 import { bootstrapApp, createChromeAppDeps, seedState, type AppDeps } from '../../../src/app/bootstrap';
 import { BUILD_DATE } from '../../../src/build-info';
+import * as reviewSetServices from '../../../src/app/services/reviewSetService';
 import { configureApiErrorLog, recordApiErrorLog } from '../../../src/lib/diagnostics/apiErrorLog';
 
 // bootstrap → lib/pdf/loadPdf 経由で pdfjs-dist（ESM 専用）が require されるのを防ぐ
@@ -11,6 +18,17 @@ jest.mock('pdfjs-dist', () => ({
   GlobalWorkerOptions: { workerSrc: '' },
   getDocument: jest.fn(),
 }));
+// 費用カードのコールバック配線はサービス単体のテストから分離する。
+jest.mock('../../../src/app/services/usageService', () => ({
+  ...jest.requireActual('../../../src/app/services/usageService'),
+  loadUsage: jest.fn(), saveBudget: jest.fn(),
+}));
+jest.mock('../../../src/app/services/usageExportService', () => ({
+  generateUsageExport: jest.fn(), downloadUsageExport: jest.fn(),
+}));
+import { loadUsage, saveBudget } from '../../../src/app/services/usageService';
+import { generateUsageExport, downloadUsageExport } from '../../../src/app/services/usageExportService';
+import { aggregateUsage } from '../../../src/features/usage/aggregateUsage';
 // #/export の配線テストはサービス呼び出しの委譲だけを見る（実処理は exportService.test.ts）
 jest.mock('../../../src/app/services/exportService', () => ({
   loadExportData: jest.fn(),
@@ -273,6 +291,19 @@ describe('seedState', () => {
     expect(state.counts.documents).toBe(0);
   });
 
+  test('質問用モデルをOptionsから読み込み、会話sliceの部分注入もマージする', async () => {
+    chromeMock.storage.local.data['settings.defaultModel'] = 'options-model';
+    const state = await seedState(
+      asWindow(createWindowStub({ askPaper: { error: 'テスト' } as AppState['askPaper'] })),
+    );
+    expect(state.askPaper).toEqual({
+      conversations: {},
+      usedStudyIds: [],
+      sending: false,
+      error: 'テスト',
+      model: 'options-model',
+    });
+  });
   test('chrome.storage.local の currentProject を読み込む', async () => {
     const project = { projectId: 'p1', spreadsheetId: 's1', driveFolderId: 'f1', name: '保存済みプロジェクト' };
     chromeMock.storage.local.data[CURRENT_PROJECT_STORAGE_KEY] = project;
@@ -673,8 +704,8 @@ describe('bootstrapApp', () => {
   });
 
   test('#/documents のグルーピング操作（role / registration / 統合 / 候補）が配線されている', async () => {
-    const study1 = { studyId: 'study-1', studyLabel: 'Smith 2020', registrationId: 'NCT01234567', createdAt: 't', createdBy: 'e', note: null };
-    const study2 = { studyId: 'study-2', studyLabel: 'Jones 2021', registrationId: 'NCT01234567', createdAt: 't', createdBy: 'e', note: null };
+    const study1 = { studyId: 'study-1', reviewSet: null, studyLabel: 'Smith 2020', registrationId: 'NCT01234567', createdAt: 't', createdBy: 'e', note: null };
+    const study2 = { studyId: 'study-2', reviewSet: null, studyLabel: 'Jones 2021', registrationId: 'NCT01234567', createdAt: 't', createdBy: 'e', note: null };
     const doc1 = { documentId: 'doc-1', studyId: 'study-1', documentRole: 'article' as const, driveFileId: 'd1', sourceFileId: 's1', filename: 'a.pdf', pmid: null, doi: null, textRef: 't1', textStatus: 'ok' as const, pageCount: 1, charCount: 1, importedAt: 't', importedBy: 'e', note: null };
     const doc2 = { ...doc1, documentId: 'doc-2', studyId: 'study-2', filename: 'b.pdf' };
     const stub = createWindowStub({
@@ -756,7 +787,7 @@ describe('bootstrapApp', () => {
   });
 
   test('#/documents の文献除外機能（study / document の除外・解除・ダイアログ操作）が配線されている（issue #181）', async () => {
-    const study1 = { studyId: 'study-1', studyLabel: 'Smith 2020', registrationId: null, createdAt: 't', createdBy: 'e', note: null };
+    const study1 = { studyId: 'study-1', reviewSet: null, studyLabel: 'Smith 2020', registrationId: null, createdAt: 't', createdBy: 'e', note: null };
     const doc1 = { documentId: 'doc-1', studyId: 'study-1', documentRole: 'article' as const, driveFileId: 'd1', sourceFileId: 's1', filename: 'a.pdf', pmid: null, doi: null, textRef: 't1', textStatus: 'ok' as const, pageCount: 1, charCount: 1, importedAt: 't', importedBy: 'e', note: null, excluded: false, exclusionReason: null, exclusionNote: null, excludedAt: null };
     const doc2 = { ...doc1, documentId: 'doc-2', filename: 'b.pdf' };
     const stub = createWindowStub({
@@ -914,6 +945,7 @@ describe('bootstrapApp', () => {
       studyUpdates: [
         {
           studyId: 'study-1',
+          reviewSet: null,
           studyLabel: 'Smith (2020)',
           registrationId: null,
           createdAt: 't',
@@ -1080,7 +1112,11 @@ describe('bootstrapApp', () => {
   });
 
   test('#/protocol 入場で全 version を読み込む（0 件 → 新規フォーム表示）', async () => {
-    const stub = createWindowStub({ currentProject: PROJECT, home: COUNTS_LOADED });
+    const stub = createWindowStub({
+      currentProject: PROJECT,
+      home: COUNTS_LOADED,
+      documents: { ...createInitialState().documents, records: [], studies: [] },
+    });
     const { deps, fetchMock } = createFakeDeps([[...SHEET_HEADERS.Protocol]]);
     await bootstrapApp(asWindow(stub), deps);
 
@@ -1682,7 +1718,10 @@ describe('bootstrapApp: 進捗カウントの起動時読込', () => {
   }
 
   test('起動時に batchGet 1 回で counts を読み、サマリとガードのディム解除へ反映する', async () => {
-    const stub = createWindowStub({ currentProject: PROJECT });
+    const stub = createWindowStub({
+      currentProject: PROJECT,
+      documents: { ...createInitialState().documents, records: [], studies: [] },
+    });
     const { deps, fetchMock } = createCountsDeps();
     const store = await bootstrapApp(asWindow(stub), deps);
     await flush();
@@ -1705,7 +1744,10 @@ describe('bootstrapApp: 進捗カウントの起動時読込', () => {
   });
 
   test('読込失敗は #home-counts-error + 再読み込みで force 再取得して復帰する', async () => {
-    const stub = createWindowStub({ currentProject: PROJECT });
+    const stub = createWindowStub({
+      currentProject: PROJECT,
+      documents: { ...createInitialState().documents, records: [], studies: [] },
+    });
     const { deps, fetchMock } = createCountsDeps({ failFirst: true });
     const store = await bootstrapApp(asWindow(stub), deps);
     await flush();
@@ -1727,6 +1769,7 @@ describe('bootstrapApp: 進捗カウントの起動時読込', () => {
     const stub = createWindowStub({
       currentProject: PROJECT,
       counts: { documents: 4 } as AppState['counts'],
+      documents: { ...createInitialState().documents, records: [], studies: [] },
     });
     const { deps, fetchMock } = createCountsDeps();
     await bootstrapApp(asWindow(stub), deps);
@@ -1795,6 +1838,7 @@ describe('bootstrapApp: #/pilot', () => {
 
   const STUDY_RECORD = {
     studyId: 'study-1',
+    reviewSet: null,
     studyLabel: 'Smith 2020',
     registrationId: null,
     createdAt: 't0',
@@ -2441,6 +2485,7 @@ describe('bootstrapApp: #/extract', () => {
 
   const STUDY_RECORD = {
     studyId: 'study-1',
+    reviewSet: null,
     studyLabel: 'Smith 2020',
     registrationId: null,
     createdAt: 't0',
@@ -2491,8 +2536,8 @@ describe('bootstrapApp: #/extract', () => {
     stub.fireHashChange();
     await flush();
 
-    // ExtractionRuns を読んで既定選択（未抽出の全 study = study-1）
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    // ExtractionRuns と予算・全用途の使用量を読んで既定選択する。
+    expect(fetchMock).toHaveBeenCalledTimes(3);
     expect(store?.getState().extract.selectedStudyIds).toEqual(['study-1']);
 
     // 選択解除 / 再選択の配線
@@ -2805,6 +2850,38 @@ describe('bootstrapApp: #/verify・#/dashboard', () => {
     Studies: [[...SHEET_HEADERS.Studies], STUDY_ROW],
   };
 
+  test('質問送信コールバックが送信サービスへ配線され、入力と開閉を再描画で保持する', async () => {
+    disposeAskPaperPanelCache();
+    const stub = createWindowStub(verifyPreloaded());
+    const { deps } = createVerifyFakeDeps(BASE_TABS);
+    const store = await bootstrapApp(asWindow(stub), deps);
+    stub.location.hash = '#/verify';
+    stub.fireHashChange();
+    await flush();
+    await flush();
+    const details = document.querySelector('#ask-paper') as HTMLDetailsElement;
+    details.open = true;
+    const input = document.querySelector('#ask-paper-input') as HTMLTextAreaElement;
+    input.value = '人数を教えて';
+    input.dispatchEvent(new Event('input'));
+    input.blur();
+    store!.setState({});
+    expect((document.querySelector('#ask-paper') as HTMLDetailsElement).open).toBe(true);
+    expect((document.querySelector('#ask-paper-input') as HTMLTextAreaElement).value).toBe(
+      '人数を教えて',
+    );
+    (document.querySelector('#ask-paper-send') as HTMLButtonElement).click();
+    expect(sendAskPaperQuestion).toHaveBeenCalledWith(
+      store,
+      deps,
+      expect.objectContaining({
+        studyId: 'study-1',
+        question: '人数を教えて',
+        fields: expect.any(Array),
+        documents: expect.any(Array),
+      }),
+    );
+  });
   test('#/verify 入場で一覧を読み込み、?study= なしは先頭 study を開く', async () => {
     const stub = createWindowStub(verifyPreloaded());
     const { deps } = createVerifyFakeDeps(BASE_TABS);
@@ -2968,6 +3045,266 @@ describe('bootstrapApp: #/verify・#/dashboard', () => {
     await flush();
     await flush();
     expect(store?.getState().verify.selectedStudyId).toBe('study-2');
+  });
+
+  test('owner の自分の担当のみ切替は対象を読み直す', async () => {
+    const initial = createInitialState();
+    const stub = createWindowStub({
+      ...verifyPreloaded(),
+      reviewSets: {
+        ...initial.reviewSets,
+        sets: [
+          {
+            setId: 'group-1',
+            studyIds: ['study-1'],
+            reviewerEmails: ['other@example.com'],
+            seed: null,
+            updatedBy: 'owner@example.com',
+            updatedAt: 't0',
+          },
+        ],
+      },
+    });
+    const { deps } = createVerifyFakeDeps({
+      ...BASE_TABS,
+      Documents: [[...SHEET_HEADERS.Documents], DOC_ROW],
+      Studies: [[...SHEET_HEADERS.Studies], [...STUDY_ROW.slice(0, 6), 'group-1']],
+    });
+    const store = (await bootstrapApp(asWindow(stub), deps))!;
+    stub.location.hash = '#/verify';
+    stub.fireHashChange();
+    await flush();
+    await flush();
+    const toggle = document.getElementById('verify-assigned-only') as HTMLInputElement;
+    toggle.checked = true;
+    toggle.dispatchEvent(new Event('change'));
+    await flush();
+    await flush();
+    expect(store.getState().verify.assignedOnly).toBe(true);
+    expect(store.getState().verify.targets).toEqual([]);
+  });
+
+  test.each(['owner', 'reviewer_with_ai', 'reviewer_independent', 'adjudicator'] as const)(
+    '担当外の深いリンクは %s の先頭の担当研究へ退避する',
+    async (role) => {
+      const initial = createInitialState();
+      const stub = createWindowStub({
+        ...verifyPreloaded([DOC_RECORD_1, { ...DOC_RECORD_2, studyId: 'outside' }]),
+        role: { ...initial.role, role, folderAccessGranted: true },
+        reviewSets: {
+          ...initial.reviewSets,
+          sets: [
+            {
+              setId: 'group-1',
+              studyIds: ['study-1'],
+              reviewerEmails: ['tester@example.com'],
+              seed: null,
+              updatedBy: 'tester@example.com',
+              updatedAt: 't0',
+            },
+          ],
+        },
+        verify: { ...initial.verify, assignedOnly: role === 'owner' },
+      });
+      const { deps } = createVerifyFakeDeps({
+        ...BASE_TABS,
+        Studies: [
+          [...SHEET_HEADERS.Studies],
+          [...STUDY_ROW.slice(0, 6), 'group-1'],
+          ['outside', ...STUDY_ROW.slice(1, 6), 'group-2'],
+        ],
+        Evidence: [
+          [...SHEET_HEADERS.Evidence],
+          EVIDENCE_ROW,
+          ['ev-2', 'run-1', 'outside', 'f-total', 'doc-2', ...EVIDENCE_ROW.slice(5)],
+        ],
+        SchemaVersions: [
+          [...SHEET_HEADERS.SchemaVersions],
+          ['1', '', '1', 'user_edit', 't0', 'tester@example.com', ''],
+        ],
+      });
+      const store = await bootstrapApp(asWindow(stub), deps);
+      stub.location.hash = '#/verify?study=outside&entity=arm:1';
+      stub.fireHashChange();
+      await flush();
+      await flush();
+      expect(store?.getState().verify.selectedStudyId).toBe('study-1');
+      expect(stub.location.hash).toBe('#/verify?study=study-1&entity=arm%3A1');
+      expect(store?.getState().verify.verifyError).toBeNull();
+    },
+  );
+
+  test.each(['owner', 'reviewer_with_ai', 'reviewer_independent', 'adjudicator'] as const)(
+    '起動時は %s の担当セットを素材ローダーより先に読み込む',
+    async (role) => {
+      const initial = createInitialState();
+      const stub = createWindowStub({
+        ...verifyPreloaded(),
+        role: { ...initial.role, role, folderAccessGranted: true },
+        reviewSets: { ...initial.reviewSets },
+      });
+      const { deps, fetchMock } = createVerifyFakeDeps({
+        ...BASE_TABS,
+        Meta: [
+          [...SHEET_HEADERS.Meta],
+          ['p1', 'テスト SR', 'sheet-1', 'folder-1', '1.0', 't0', 'owner@example.com'],
+        ],
+        Documents: [[...SHEET_HEADERS.Documents], DOC_ROW],
+        ReviewSets: [
+          [...SHEET_HEADERS.ReviewSets],
+          ['group-1', 'tester@example.com', '', 'owner@example.com', 't0', 'study-1'],
+          ['group-2', 'tester@example.com', '', 'tampered@example.com', 't0', 'study-1'],
+        ],
+        Studies: [[...SHEET_HEADERS.Studies], [...STUDY_ROW.slice(0, 6), 'group-1']],
+        SchemaVersions: [
+          [...SHEET_HEADERS.SchemaVersions],
+          ['1', '', '1', 'user_edit', 't0', 'owner@example.com', ''],
+        ],
+      });
+      const store = await bootstrapApp(asWindow(stub), deps);
+      await flush();
+      expect(store?.getState().reviewSets).toMatchObject({
+        sets: [expect.objectContaining({ setId: 'group-1' })],
+        ignoredCount: 1,
+      });
+      stub.location.hash = '#/verify';
+      stub.fireHashChange();
+      await flush();
+      await flush();
+      expect(store?.getState().verify.targets).toHaveLength(1);
+      const urls = fetchMock.mock.calls.map(([url]) => decodeURIComponent(String(url)));
+      const setsIndex = urls.findIndex((url) => url.includes('/values/ReviewSets'));
+      expect(setsIndex).toBeGreaterThanOrEqual(0);
+      expect(urls.findIndex((url) => url.includes('/values/Decisions'))).toBeGreaterThan(setsIndex);
+    },
+  );
+  test('非 owner は起動時のセット読込失敗を Home と検証に表示して対象を出さない', async () => {
+    const initial = createInitialState();
+    const stub = createWindowStub({
+      ...verifyPreloaded(),
+      role: { ...initial.role, role: 'reviewer_with_ai', folderAccessGranted: true },
+      reviewSets: { ...initial.reviewSets },
+    });
+    const { deps, fetchMock } = createVerifyFakeDeps({
+      ...BASE_TABS,
+      Documents: [[...SHEET_HEADERS.Documents]],
+    });
+    const store = await bootstrapApp(asWindow(stub), deps);
+    await flush();
+    expect(store?.getState().home.assignedProgressError).toContain('Meta タブが空');
+    stub.location.hash = '#/verify';
+    stub.fireHashChange();
+    await flush();
+    expect(store?.getState().verify.targets).toBeNull();
+    expect(store?.getState().verify.loadError).toContain('Meta タブが空');
+    expect(
+      fetchMock.mock.calls.some(([url]) =>
+        decodeURIComponent(String(url)).includes('/values/Evidence'),
+      ),
+    ).toBe(false);
+  });
+
+  test('非 owner の検証再試行はセットを強制読込して担当範囲だけを復元する', async () => {
+    const initial = createInitialState();
+    const stub = createWindowStub({
+      ...verifyPreloaded(),
+      role: { ...initial.role, role: 'reviewer_with_ai', folderAccessGranted: true },
+      reviewSets: { ...initial.reviewSets, error: 'セット読込失敗' },
+    });
+    const { deps, fetchMock } = createVerifyFakeDeps({
+      ...BASE_TABS,
+      Meta: [
+        [...SHEET_HEADERS.Meta],
+        ['p1', 'テスト SR', 'sheet-1', 'folder-1', '1.0', 't0', 'owner@example.com'],
+      ],
+      Documents: [[...SHEET_HEADERS.Documents], DOC_ROW],
+      ReviewSets: [
+        [...SHEET_HEADERS.ReviewSets],
+        ['group-1', 'tester@example.com', '42', 'owner@example.com', 't0'],
+      ],
+      Studies: [[...SHEET_HEADERS.Studies], [...STUDY_ROW.slice(0, 6), 'group-1']],
+    });
+    const store = (await bootstrapApp(asWindow(stub), deps))!;
+    stub.location.hash = '#/verify';
+    stub.fireHashChange();
+    await flush();
+    expect(document.getElementById('verify-error')?.textContent).toContain('セット読込失敗');
+    (document.getElementById('verify-retry') as HTMLButtonElement).click();
+    await flush();
+    await flush();
+    expect(store.getState().reviewSets.error).toBeNull();
+    expect(store.getState().verify.targets?.map((target) => target.study.studyId)).toEqual([
+      'study-1',
+    ]);
+    const urls = fetchMock.mock.calls.map(([url]) => decodeURIComponent(String(url)));
+    expect(urls.findIndex((url) => url.includes('/values/ReviewSets'))).toBeLessThan(
+      urls.findIndex((url) => url.includes('/values/Evidence')),
+    );
+  });
+
+  test('文書一覧が未キャッシュで entity 未指定でも担当外リンクを退避する', async () => {
+    const initial = createInitialState();
+    const stub = createWindowStub({
+      ...verifyPreloaded(),
+      documents: { ...initial.documents },
+      verify: { ...initial.verify, assignedOnly: true },
+      reviewSets: {
+        ...initial.reviewSets,
+        sets: [
+          {
+            setId: 'calibration',
+            studyIds: ['study-1'],
+            reviewerEmails: [],
+            seed: null,
+            updatedBy: 'tester@example.com',
+            updatedAt: 't0',
+          },
+        ],
+      },
+    });
+    const { deps } = createVerifyFakeDeps({
+      ...BASE_TABS,
+      Documents: [[...SHEET_HEADERS.Documents], DOC_ROW],
+      Studies: [[...SHEET_HEADERS.Studies], [...STUDY_ROW.slice(0, 6), 'calibration']],
+    });
+    const store = await bootstrapApp(asWindow(stub), deps);
+    stub.location.hash = '#/verify?study=outside';
+    stub.fireHashChange();
+    await flush();
+    await flush();
+    expect(store?.getState().verify.selectedStudyId).toBe('study-1');
+    expect(stub.location.hash).toBe('#/verify?study=study-1');
+  });
+  test('owner のセット読込失敗時は従来の未知 study エラーを維持する', async () => {
+    const initial = createInitialState();
+    const stub = createWindowStub({
+      ...verifyPreloaded(),
+      reviewSets: { ...initial.reviewSets, error: 'セット読込失敗' },
+      verify: { ...initial.verify, assignedOnly: true },
+    });
+    const { deps } = createVerifyFakeDeps(BASE_TABS);
+    const store = await bootstrapApp(asWindow(stub), deps);
+    stub.location.hash = '#/verify?study=outside';
+    stub.fireHashChange();
+    await flush();
+    await flush();
+    expect(store?.getState().verify.verifyError).toContain('outside が見つかりません');
+  });
+  test('セットロード中にロールが失効したら進捗ローダーへ進まない', async () => {
+    const spy = jest
+      .spyOn(reviewSetServices, 'loadReviewSets')
+      .mockImplementationOnce(async (store) => {
+        store.setState({ role: { ...store.getState().role, error: '失効' } });
+      });
+    try {
+      const stub = createWindowStub(verifyPreloaded());
+      const { deps, fetchMock } = createVerifyFakeDeps(BASE_TABS);
+      await bootstrapApp(asWindow(stub), deps);
+      expect(document.getElementById('app-role-error')).not.toBeNull();
+      expect(fetchMock).not.toHaveBeenCalled();
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   test('?study= が存在しない study なら #verify-error を出し、選び直せる', async () => {
@@ -3245,6 +3582,8 @@ describe('bootstrapApp: #/export', () => {
           providers: ['Gemini'],
           pilotStudyCount: 3,
           scannedDocumentCount: 0,
+          pilotRevisionCount: 0,
+          chatAssistDecisionCount: 0,
         },
       }),
     );
@@ -3374,7 +3713,8 @@ describe('bootstrapApp: #/adjudicate', () => {
 
   function makeWorking(): AdjudicateWorking {
     return {
-      study: { studyId: 'study-1', studyLabel: 'Smith 2020', registrationId: null, createdAt: 't0', createdBy: 'o@example.com', note: null },
+      askPaperDocuments: [],
+      study: { studyId: 'study-1', reviewSet: null, studyLabel: 'Smith 2020', registrationId: null, createdAt: 't0', createdBy: 'o@example.com', note: null },
       documents: [],
       annotatorA: 'a@example.com',
       annotatorB: 'b@example.com',
@@ -3441,7 +3781,10 @@ describe('bootstrapApp: #/adjudicate', () => {
     stub.fireHashChange();
     expect(document.getElementById('adjudicate-error')?.textContent).toContain('権限がありません');
     (document.getElementById('adjudicate-retry') as HTMLButtonElement).click();
-    expect(loadAdjudicateTargetsMock).toHaveBeenCalledWith(expect.anything(), deps, { force: true });
+    await flush();
+    expect(loadAdjudicateTargetsMock).toHaveBeenCalledWith(expect.anything(), deps, {
+      force: true,
+    });
   });
 
   test('一覧の「裁定を開始」は ?study= 付きハッシュへ遷移する', async () => {
@@ -3452,7 +3795,16 @@ describe('bootstrapApp: #/adjudicate', () => {
         ...createInitialState().adjudicate,
         rows: [
           {
-            study: { studyId: 'study-9', studyLabel: 'S9', registrationId: null, createdAt: 't0', createdBy: 'o@example.com', note: null },
+            outsideAnnotators: [],
+            study: {
+              studyId: 'study-9',
+              reviewSet: null,
+              studyLabel: 'S9',
+              registrationId: null,
+              createdAt: 't0',
+              createdBy: 'o@example.com',
+              note: null,
+            },
             pair: { kind: 'ready', annotatorA: 'a@example.com', annotatorB: 'b@example.com' },
             gate: {
               progressA: { annotator: 'a@example.com', decided: 1, total: 1, complete: true },
@@ -3701,8 +4053,20 @@ describe('bootstrapApp: #/adjudicate', () => {
         ...createInitialState().adjudicate,
         rows: [
           {
-            study: { studyId: 'study-9', studyLabel: 'S9', registrationId: null, createdAt: 't0', createdBy: 'o@example.com', note: null },
-            pair: { kind: 'selectable', annotators: ['a@example.com', 'b@example.com', 'c@example.com'] },
+            outsideAnnotators: [],
+            study: {
+              studyId: 'study-9',
+              reviewSet: null,
+              studyLabel: 'S9',
+              registrationId: null,
+              createdAt: 't0',
+              createdBy: 'o@example.com',
+              note: null,
+            },
+            pair: {
+              kind: 'selectable',
+              annotators: ['a@example.com', 'b@example.com', 'c@example.com'],
+            },
             gate: null,
             pairOptions: [{ annotatorA: 'a@example.com', annotatorB: 'b@example.com', gate }],
           },
@@ -4426,5 +4790,305 @@ describe('bootstrapApp: API 失敗診断ログの配線（issue #249）', () => 
     });
     await flush();
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+
+describe('費用・予算・使用量出力の起動配線', () => {
+  beforeEach(() => {
+    installChromeMock();
+    document.body.innerHTML = APP_TEMPLATE;
+  });
+  test('部分注入でも usage の既定値を維持する', async () => {
+    const stub = createWindowStub({ dashboard: {
+      usage: { budgetError: '注入' },
+    } as AppState['dashboard'] });
+    const state = await seedState(asWindow(stub));
+    expect(state.dashboard.usage.budgetError).toBe('注入');
+    expect(state.dashboard.usage.loading).toBe(false);
+    expect(state.dashboard.usage.budgetDraft).toBeNull();
+  });
+
+  test('dashboard 入場・全体再読込・費用再読込・予算保存を配線する', async () => {
+    const dashboard = createInitialState().dashboard;
+    dashboard.usage.summary = aggregateUsage({ logs: [], runs: [] });
+    const stub = createWindowStub({ currentProject: PROJECT, home: COUNTS_LOADED, dashboard });
+    const { deps } = createFakeDeps([[...SHEET_HEADERS.Documents]]);
+    const store = await bootstrapApp(asWindow(stub), deps);
+    stub.location.hash = '#/dashboard';
+    stub.fireHashChange();
+    await flush();
+    expect(loadUsage).toHaveBeenCalledWith(store, deps);
+    (document.getElementById('dashboard-usage-reload') as HTMLButtonElement).click();
+    expect(loadUsage).toHaveBeenCalledWith(store, deps, { force: true });
+    store!.setState({ dashboard: { ...store!.getState().dashboard, loadError: '失敗' } });
+    (document.getElementById('dashboard-reload') as HTMLButtonElement).click();
+    expect(loadUsage).toHaveBeenCalledWith(store, deps, { force: true });
+    (document.getElementById('dashboard-budget-save') as HTMLButtonElement).click();
+    expect(store!.getState().dashboard.usage.budgetError).toBe(
+      '0 より大きい有限の金額を入力してください',
+    );
+    store!.setState({ counts: { ...store!.getState().counts, dataRows: 1 } });
+    expect(document.getElementById('dashboard-budget-error')?.textContent).toContain(
+      '0 より大きい有限の金額',
+    );
+    const input = document.getElementById('dashboard-budget-input') as HTMLInputElement;
+    input.value = '12';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    expect(store!.getState().dashboard.usage.budgetError).toBeNull();
+    (document.getElementById('dashboard-budget-save') as HTMLButtonElement).click();
+    expect(saveBudget).toHaveBeenCalledWith(store, deps, 12);
+  });
+
+  test('予算入力後に進捗が再描画されても入力値を保存できる', async () => {
+    const dashboard = createInitialState().dashboard;
+    dashboard.usage.summary = aggregateUsage({ logs: [], runs: [] });
+    const stub = createWindowStub({ currentProject: PROJECT, home: COUNTS_LOADED, dashboard });
+    const { deps } = createFakeDeps([[...SHEET_HEADERS.Documents]]);
+    const store = await bootstrapApp(asWindow(stub), deps);
+    stub.location.hash = '#/dashboard';
+    stub.fireHashChange();
+    await flush();
+    const input = document.getElementById('dashboard-budget-input') as HTMLInputElement;
+    input.focus();
+    input.value = '10.25';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    store!.setState({ dashboard: { ...store!.getState().dashboard, loadError: '進捗読込失敗' } });
+    const restored = document.getElementById('dashboard-budget-input') as HTMLInputElement;
+    expect(restored.value).toBe('10.25');
+    expect(document.activeElement).toBe(restored);
+    (document.getElementById('dashboard-budget-save') as HTMLButtonElement).click();
+    expect(saveBudget).toHaveBeenCalledWith(store, deps, 10.25);
+  });
+
+  test('予算の入力途中の小数点・キャレット・選択範囲を毎回の再描画で保持する', async () => {
+    const dashboard = createInitialState().dashboard;
+    dashboard.usage.summary = aggregateUsage({ logs: [], runs: [] });
+    const stub = createWindowStub({ currentProject: PROJECT, home: COUNTS_LOADED, dashboard });
+    const { deps } = createFakeDeps([[...SHEET_HEADERS.Documents]]);
+    const store = await bootstrapApp(asWindow(stub), deps);
+    stub.location.hash = '#/dashboard';
+    stub.fireHashChange();
+    await flush();
+    for (const value of ['1', '10', '10.', '10.25']) {
+      const input = document.getElementById('dashboard-budget-input') as HTMLInputElement;
+      input.focus();
+      input.value = value;
+      input.setSelectionRange(value.length, value.length);
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      const restored = document.getElementById('dashboard-budget-input') as HTMLInputElement;
+      expect(restored.value).toBe(value);
+      expect(restored.selectionStart).toBe(value.length);
+      expect(restored.selectionEnd).toBe(value.length);
+      expect(document.activeElement).toBe(restored);
+      expect(store!.getState().dashboard.usage.budgetDraft).toBe(value);
+    }
+    const input = document.getElementById('dashboard-budget-input') as HTMLInputElement;
+    input.setSelectionRange(1, 4, 'backward');
+    store!.setState({ dashboard: { ...store!.getState().dashboard, loadError: '進捗読込失敗' } });
+    const restored = document.getElementById('dashboard-budget-input') as HTMLInputElement;
+    expect(restored.selectionStart).toBe(1);
+    expect(restored.selectionEnd).toBe(4);
+    expect(restored.selectionDirection).toBe('backward');
+    (document.getElementById('dashboard-budget-save') as HTMLButtonElement).click();
+    expect(saveBudget).toHaveBeenCalledWith(store, deps, 10.25);
+  });
+
+  test('使用量の生成とダウンロードを配線する', async () => {
+    const state = createInitialState();
+    state.export.usage = { generating: false, error: null,
+      result: { filename: 'usage.csv', fileRef: 'https://drive.test/csv', csv: 'csv' } };
+    const stub = createWindowStub({ currentProject: PROJECT, home: COUNTS_LOADED,
+      counts: { ...state.counts, dataRows: 1, schemaVersions: 1 }, export: state.export });
+    const { deps } = createFakeDeps([[...SHEET_HEADERS.Documents]]);
+    const store = await bootstrapApp(asWindow(stub), deps);
+    stub.location.hash = '#/export';
+    stub.fireHashChange();
+    await flush();
+    (document.getElementById('export-usage-generate') as HTMLButtonElement).click();
+    expect(generateUsageExport).toHaveBeenCalledWith(store, deps);
+    (document.getElementById('export-usage-download') as HTMLButtonElement).click();
+    expect(downloadUsageExport).toHaveBeenCalledWith(store);
+  });
+});
+test.each(['#/verify', '#/adjudicate'] as const)(
+  '画面入場でアカウント別の質問済みIDを復元する: %s',
+  async (route) => {
+    const chromeMock = installChromeMock();
+    document.body.innerHTML = APP_TEMPLATE;
+    chromeMock.storage.local.data[
+      askPaperUsedStudiesStorageKey(PROJECT.spreadsheetId, 'tester@example.com')
+    ] = ['asked-before-reload'];
+    const stub = createWindowStub({
+      currentProject: PROJECT,
+      counts: { ...createInitialState().counts, schemaVersions: 1, documents: 1 },
+      home: COUNTS_LOADED,
+      role: { ...createInitialState().role, role: 'owner' },
+    });
+    const { deps } = createFakeDeps([]);
+    const store = await bootstrapApp(asWindow(stub), deps);
+    stub.location.hash = route;
+    stub.fireHashChange();
+    await flush();
+    await flush();
+    expect(store?.getState().askPaper.usedStudyIds).toContain('asked-before-reload');
+    expect(store?.getState().askPaper.conversations).toEqual({});
+  },
+);
+// 担当セットの操作が DOM からサービスへ渡ることを確認する。
+describe('bootstrapApp: 担当セットの配線', () => {
+  function fixture(): Partial<AppState> {
+    const state = createInitialState();
+    state.currentProject = PROJECT;
+    state.home.countsLoaded = true;
+    state.counts.documents = 2;
+    state.role.role = 'owner';
+    state.documents.studies = ['study-1', 'study-2'].map((studyId, index) => ({
+      studyId,
+      studyLabel: studyId,
+      registrationId: null,
+      createdAt: 't0',
+      createdBy: 'tester@example.com',
+      note: null,
+      reviewSet: index === 0 ? 'group-1' : null,
+    }));
+    state.documents.records = state.documents.studies.map((study) => ({
+      documentId: study.studyId,
+      studyId: study.studyId,
+      documentRole: 'article',
+      driveFileId: 'pdf',
+      sourceFileId: null,
+      filename: '論文.pdf',
+      pmid: null,
+      doi: null,
+      textRef: null,
+      textStatus: 'ok',
+      pageCount: null,
+      charCount: null,
+      importedAt: 't0',
+      importedBy: 'tester@example.com',
+      note: null,
+      excluded: false,
+      exclusionReason: null,
+      exclusionNote: null,
+      excludedAt: null,
+    }));
+    state.reviewSets.sets = [
+      {
+        setId: 'group-1',
+        studyIds: ['study-1'],
+        reviewerEmails: ['tester@example.com'],
+        seed: '42',
+        updatedBy: 'tester@example.com',
+        updatedAt: 't0',
+      },
+    ];
+    return state;
+  }
+  test('分割・確認・キャンセル・担当者保存・手動割当・再読込を委譲する', async () => {
+    const split = jest.spyOn(reviewSetServices, 'splitReviewSets').mockResolvedValue();
+    const confirm = jest.spyOn(reviewSetServices, 'confirmResplit').mockResolvedValue();
+    const cancel = jest
+      .spyOn(reviewSetServices, 'cancelResplit')
+      .mockImplementation(() => undefined);
+    const save = jest.spyOn(reviewSetServices, 'saveReviewSetEmails').mockResolvedValue();
+    const assign = jest.spyOn(reviewSetServices, 'assignStudyReviewSet').mockResolvedValue();
+    const load = jest.spyOn(reviewSetServices, 'loadReviewSets').mockResolvedValue();
+    try {
+      const stub = createWindowStub(fixture());
+      const { deps, fetchMock } = createTabRoutingDeps({
+        Documents: [[...SHEET_HEADERS.Documents], DOC_ROW],
+        Studies: [[...SHEET_HEADERS.Studies], STUDY_ROW],
+        ExtractionRuns: [[...SHEET_HEADERS.ExtractionRuns]],
+      });
+      const store = (await bootstrapApp(asWindow(stub), deps))!;
+      (document.getElementById('review-sets-calibration') as HTMLInputElement).value = '1';
+      document
+        .getElementById('review-sets-split-form')!
+        .dispatchEvent(new Event('submit', { cancelable: true }));
+      expect(split).toHaveBeenCalledWith(store, deps, { calibrationCount: 1, groupCount: 1 });
+      (document.querySelector('.review-sets__emails') as HTMLInputElement).value =
+        'a@example.com,b@example.com';
+      (document.querySelector('.review-sets__save') as HTMLButtonElement).click();
+      expect(save).toHaveBeenCalledWith(store, deps, 'group-1', ['a@example.com', 'b@example.com']);
+      const select = document.querySelector('.review-sets__assign') as HTMLSelectElement;
+      select.value = 'group-1';
+      select.dispatchEvent(new Event('change'));
+      expect(assign).toHaveBeenCalledWith(store, deps, 'study-2', 'group-1');
+      store.setState({
+        reviewSets: {
+          ...store.getState().reviewSets,
+          confirmingResplit: { calibrationCount: 1, groupCount: 1 },
+        },
+      });
+      (document.getElementById('review-sets-resplit-ok') as HTMLButtonElement).click();
+      (document.getElementById('review-sets-resplit-cancel') as HTMLButtonElement).click();
+      expect(confirm).toHaveBeenCalledWith(store, deps);
+      expect(cancel).toHaveBeenCalledWith(store);
+      store.setState({ reviewSets: { ...store.getState().reviewSets, error: '読込失敗' } });
+      (document.getElementById('review-sets-reload') as HTMLButtonElement).click();
+      await flush();
+      expect(load).toHaveBeenCalledWith(store, deps, { force: true });
+      expect(
+        fetchMock.mock.calls.some(([url]) =>
+          decodeURIComponent(String(url)).includes('/values/Documents'),
+        ),
+      ).toBe(true);
+    } finally {
+      [split, confirm, cancel, save, assign, load].forEach((spy) => spy.mockRestore());
+    }
+  });
+  test('reviewer の進捗再試行はセットを強制再読込してから進捗を計算する', async () => {
+    const initial = fixture();
+    initial.role = {
+      ...createInitialState().role,
+      role: 'reviewer_with_ai',
+      folderAccessGranted: true,
+    };
+    initial.home = {
+      ...createInitialState().home,
+      countsLoaded: true,
+      assignedProgressError: '担当読込失敗',
+    };
+    const load = jest.spyOn(reviewSetServices, 'loadReviewSets').mockResolvedValue();
+    try {
+      const stub = createWindowStub(initial);
+      const { deps } = createTabRoutingDeps({
+        SchemaVersions: [[...SHEET_HEADERS.SchemaVersions]],
+        Decisions: [[...SHEET_HEADERS.Decisions]],
+        ArmStructures: [[...SHEET_HEADERS.ArmStructures]],
+      });
+      const store = (await bootstrapApp(asWindow(stub), deps))!;
+      await flush();
+      store.setState({ home: { ...store.getState().home, assignedProgressError: '担当読込失敗' } });
+      (document.getElementById('home-assigned-progress-reload') as HTMLButtonElement).click();
+      await flush();
+      expect(load).toHaveBeenCalledWith(store, deps, { force: true });
+      expect(store.getState().home.assignedProgressError).toBeNull();
+    } finally {
+      load.mockRestore();
+    }
+  });
+  test('異なる担当セットを統合する選択値をダイアログへ保存する', async () => {
+    const state = fixture();
+    state.documents = {
+      ...state.documents!,
+      mergeDialog: {
+        studyIds: ['study-1', 'study-2'],
+        label: '統合研究',
+        registrationId: '',
+        hasExtractedData: false,
+      },
+    };
+    const stub = createWindowStub(state);
+    const { deps } = createFakeDeps([]);
+    const store = (await bootstrapApp(asWindow(stub), deps))!;
+    stub.location.hash = '#/documents';
+    stub.fireHashChange();
+    await flush();
+    const select = document.getElementById('merge-review-set') as HTMLSelectElement;
+    select.value = '';
+    select.dispatchEvent(new Event('change'));
+    expect(store.getState().documents.mergeDialog?.reviewSet).toBeNull();
   });
 });

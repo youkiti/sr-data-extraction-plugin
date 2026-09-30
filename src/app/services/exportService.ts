@@ -31,6 +31,7 @@ import {
 } from '../../features/export/rset/buildRSet';
 import { deriveReviewMode } from '../../features/export/rset/reviewMode';
 import { listSchemaVersions, getSchemaFieldsByVersion } from '../../features/schema/schemaRepository';
+import { hasChatAssistMarker } from '../../features/verification/chatAssist';
 import { readAllDecisions } from '../../features/verification/decisionRepository';
 import { readAllArmStructures } from '../../features/verification/armStructureRepository';
 import { ensureChildFolder, uploadTextFile } from '../../lib/google/drive';
@@ -124,6 +125,8 @@ function buildMethodsFacts(
   documents: readonly DocumentRecord[],
   runFacts: readonly MethodsRunFact[],
   toolVersion: string | null,
+  pilotRevisionCount: number,
+  chatAssistDecisionCount: number,
 ): MethodsFacts {
   const fullFacts = runFacts.filter((fact) => fact.runType === 'full');
   const modelIds = dedupe(
@@ -154,6 +157,8 @@ function buildMethodsFacts(
     providers: providerIds.map(providerDisplayName),
     pilotStudyCount: pilotStudyIds.size,
     scannedDocumentCount,
+    pilotRevisionCount,
+    chatAssistDecisionCount,
   };
 }
 
@@ -228,7 +233,13 @@ export async function loadExportData(
       fields,
     });
     const toolVersion = (deps.getToolVersion ?? defaultGetToolVersion)();
-    const methodsFacts = buildMethodsFacts(documents, methodsRunFacts, toolVersion);
+    const methodsFacts = buildMethodsFacts(
+      documents,
+      methodsRunFacts,
+      toolVersion,
+      versions.filter((version) => version.createdByType === 'pilot_revision').length,
+      decisions.filter((decision) => hasChatAssistMarker(decision.note)).length,
+    );
 
     // R セット（issue #60）。素材は generateExport が正確な exported_at で再構築できるよう保持し、
     // ここでの構築結果はサマリ・プレビュー表示専用（rSetMaterials 参照。design-r-export.md §13）
@@ -263,7 +274,7 @@ export async function loadExportData(
 }
 
 /** 形式選択ラジオの切替（生成中はラジオを無効化しているが、防御として no-op にする） */
-export function selectExportFormat(store: Store, format: ExportFormat): void {
+export function selectExportFormat(store: Store, format: Exclude<ExportFormat, 'usage'>): void {
   if (store.getState().export.generating) {
     return;
   }

@@ -394,6 +394,7 @@ describe('executeRun の正常系', () => {
     // 単一文書の連結見出し
     expect(userMessage?.content).toContain('=== Document 1/1 [article] d1.pdf ===');
     expect(calls[0]!.options).toEqual({
+      logContext: { studyId: 'd1', section: null },
       temperature: EXTRACT_DATA_TEMPERATURE,
       responseSchema: EXTRACT_DATA_RESPONSE_SCHEMA,
     });
@@ -1941,4 +1942,159 @@ test('引用超過を記録しても done を維持し、各引用を別の Evid
     ['研究デザイン; 対象', '研究デザイン', 1, 'exact'],
     ['研究デザイン; 対象', '対象', 2, 'exact'],
   ]);
+});
+
+describe('executeRun のエラー使用量', () => {
+  test.each([null, 0, 30])('失敗バッチの課金対象使用量を成功分と合算する: %j', async (tokens) => {
+    const { provider, calls } = providerOf([
+      new LlmProviderError('打ち切り', 'gemini', 200, '', null, false, 'output_limit', {
+        tokensIn: tokens,
+        tokensOut: tokens,
+        cachedTokensIn: null,
+        thoughtsTokensOut: null,
+      }),
+      chatResponse([ARM_ITEM], { tokensIn: 10, tokensOut: 20 }),
+    ]);
+    const { deps } = makeDeps(provider);
+    const result = await execute(
+      {
+        runId: 'run-1',
+        plan: makePlan([
+          makeBatch({ studyId: 'd1', section: 'methods', fieldIds: ['f_design'] }),
+          makeBatch({ studyId: 'd1', section: 'population', fieldIds: ['f_n'] }),
+        ]),
+        fields: FIELDS,
+      },
+      deps,
+    );
+    expect(result.status).toBe('partial_failure');
+    expect(result.tokensIn).toBe(10 + (tokens ?? 0));
+    expect(result.tokensOut).toBe(20 + (tokens ?? 0));
+    expect(result.batchFailures[0]).toMatchObject({ reason: 'api_error' });
+    expect(calls.map((call) => call.options?.logContext)).toEqual([
+      { studyId: 'd1', section: 'methods' },
+      { studyId: 'd1', section: 'population' },
+    ]);
+  });
+});
+
+describe('バッチ失敗の補助監査', () => {
+  test.each(['記録成功', '記録失敗'])(
+    '全要素破棄を補助監査にだけ残し、run の状態と進捗は変えない: %s',
+    async (mode) => {
+      const { provider } = providerOf([
+        chatResponse([{ ...DESIGN_ITEM, field_id: 'f_ghost' }], { tokensIn: 10, tokensOut: 5 }),
+      ]);
+      const { deps, saved, progress } = makeDeps(provider);
+      const record = jest.fn().mockResolvedValue(undefined);
+      if (mode === '記録失敗') record.mockRejectedValue(new Error('監査記録失敗'));
+      const result = await execute(
+        {
+          runId: 'r',
+          plan: makePlan([
+            makeBatch({ studyId: 'd1', fieldIds: ['f_design'], section: 'methods' }),
+          ]),
+          fields: FIELDS,
+        },
+        { ...deps, recordBatchFailure: record },
+      );
+      expect(record).toHaveBeenCalledTimes(1);
+      expect(record).toHaveBeenCalledWith({
+        studyId: 'd1',
+        section: 'methods',
+        kind: 'all_items_rejected',
+        detail: '応答要素をすべて破棄しました（1 件）',
+      });
+      expect(result).toMatchObject({
+        status: 'partial_failure',
+        batchFailures: [],
+        evidence: [],
+        tokensIn: 10,
+        tokensOut: 5,
+      });
+      expect(result.rejectedItems).toHaveLength(1);
+      expect(saved).toHaveLength(0);
+      expect(progress).toEqual([
+        { totalBatches: 1, completedBatches: 1, studyId: 'd1', section: 'methods', failure: null },
+      ]);
+    },
+  );
+
+  test('要素のない応答は全要素破棄の補助監査へ数えない', async () => {
+    const { provider } = providerOf([chatResponse([])]);
+    const { deps } = makeDeps(provider);
+    const record = jest.fn();
+    const result = await execute(
+      {
+        runId: 'r',
+        plan: makePlan([makeBatch({ studyId: 'd1', fieldIds: ['f_design'] })]),
+        fields: FIELDS,
+      },
+      { ...deps, recordBatchFailure: record },
+    );
+    expect(record).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ status: 'done', batchFailures: [], rejectedItems: [] });
+  });
+
+  test.each(['load_failed', 'api_error', 'format_error', 'save_failed'] as const)(
+    '全失敗経路で study・section・種別・詳細を記録する: %s',
+    async (kind) => {
+      const response =
+        kind === 'api_error'
+          ? new Error('API 失敗')
+          : kind === 'format_error'
+            ? { ...chatResponse([]), text: 'JSON でない' }
+            : chatResponse([DESIGN_ITEM]);
+      const { provider } = providerOf([response]);
+      const { deps, loadPages } = makeDeps(provider);
+      if (kind === 'load_failed') loadPages.mockRejectedValue(new Error('本文失敗'));
+      if (kind === 'save_failed') {
+        deps.appendEvidence = jest.fn().mockRejectedValue(new Error('保存失敗'));
+      }
+      const record = jest.fn().mockResolvedValue(undefined);
+      const result = await execute(
+        {
+          runId: 'r',
+          plan: makePlan([
+            makeBatch({ studyId: 'd1', fieldIds: ['f_design'], section: 'methods' }),
+          ]),
+          fields: FIELDS,
+        },
+        { ...deps, recordBatchFailure: record },
+      );
+      expect(result.status).toBe('partial_failure');
+      expect(record).toHaveBeenCalledTimes(1);
+      expect(record).toHaveBeenCalledWith({
+        studyId: 'd1',
+        section: 'methods',
+        kind,
+        detail: result.batchFailures[0]!.detail,
+      });
+    },
+  );
+
+  test('監査の非同期失敗・同期例外は握りつぶし、進捗と完了結果を返す', async () => {
+    const { provider } = providerOf([new Error('API 失敗'), new Error('API 失敗')]);
+    const { deps, progress } = makeDeps(provider);
+    const record = jest
+      .fn()
+      .mockRejectedValueOnce(new Error('記録失敗'))
+      .mockImplementationOnce(() => {
+        throw new Error('同期例外');
+      });
+    const result = await execute(
+      {
+        runId: 'r',
+        plan: makePlan([
+          makeBatch({ studyId: 'd1', fieldIds: ['f_design'] }),
+          makeBatch({ studyId: 'd2', fieldIds: ['f_design'] }),
+        ]),
+        fields: FIELDS,
+      },
+      { ...deps, recordBatchFailure: record },
+    );
+    expect(result.batchFailures).toHaveLength(2);
+    expect(progress).toHaveLength(2);
+    expect(result.status).toBe('partial_failure');
+  });
 });

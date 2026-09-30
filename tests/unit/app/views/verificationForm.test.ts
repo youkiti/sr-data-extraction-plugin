@@ -266,7 +266,7 @@ describe('renderVerificationForm', () => {
     expect(root.querySelector('.verify__edit-confirm')?.textContent).toBe('入力して確定');
     input!.value = '99';
     root.querySelector<HTMLButtonElement>('.verify__edit-confirm')?.click();
-    expect(handlers.onConfirmEdit).toHaveBeenCalledWith(cell.cellKey, 'edit', '99');
+    expect(handlers.onConfirmEdit).toHaveBeenCalledWith(cell.cellKey, 'edit', '99', null);
   });
 
   test('独立入力モードの群構成カードは AI ドラフトではなく自分で確定する案内文言になる（design §5.3）', () => {
@@ -556,7 +556,7 @@ describe('renderVerificationForm', () => {
     expect(root.querySelector('.verify__actions')).toBeNull();
     input!.value = '150';
     root.querySelector<HTMLButtonElement>('.verify__edit-confirm')?.click();
-    expect(handlers.onConfirmEdit).toHaveBeenCalledWith(cell.cellKey, 'edit', '150');
+    expect(handlers.onConfirmEdit).toHaveBeenCalledWith(cell.cellKey, 'edit', '150', null);
   });
 
   test('edit の初期値は確定値を優先し、AI 値も無ければ空', () => {
@@ -587,7 +587,7 @@ describe('renderVerificationForm', () => {
     expect(root.querySelector('.verify__edit-confirm')?.textContent).toBe('棄却して確定');
     input!.value = '手入力値';
     input!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
-    expect(handlers.onConfirmEdit).toHaveBeenCalledWith(cell.cellKey, 'reject', '手入力値');
+    expect(handlers.onConfirmEdit).toHaveBeenCalledWith(cell.cellKey, 'reject', '手入力値', null);
     input!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
     expect(handlers.onCancelEdit).toHaveBeenCalledTimes(1);
     input!.dispatchEvent(new KeyboardEvent('keydown', { key: 'a' })); // 他キーは無視

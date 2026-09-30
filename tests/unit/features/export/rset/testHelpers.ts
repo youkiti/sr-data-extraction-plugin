@@ -10,6 +10,7 @@ import type { StudyRecord } from '../../../../../src/domain/study';
 export function makeStudy(overrides: Partial<StudyRecord> = {}): StudyRecord {
   return {
     studyId: 'study-1',
+    reviewSet: null,
     studyLabel: 'Smith 2020',
     registrationId: null,
     createdAt: '2026-07-01T00:00:00Z',

@@ -52,6 +52,13 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<PilotViewCallback
   return {
     ctx: {
       home: {
+    onReloadReviewSets: jest.fn(),
+    onReloadAssignedProgress: jest.fn(),
+    onSplitReviewSets: jest.fn(),
+    onConfirmResplit: jest.fn(),
+    onCancelResplit: jest.fn(),
+    onSaveReviewSetEmails: jest.fn(),
+    onAssignStudyReviewSet: jest.fn(),
     onReload: jest.fn(),
     onGrantFolderAccess: jest.fn(),
     onSkipMissingFiles: jest.fn(),
@@ -64,6 +71,7 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<PilotViewCallback
     onCopyInvite: jest.fn(),
   },
       documents: {
+        onUpdateMergeReviewSet: jest.fn(),
         onImport: jest.fn(),
         onImportFiles: jest.fn(),
         onReload: jest.fn(),
@@ -137,6 +145,7 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<PilotViewCallback
         onReloadTargets: jest.fn(),
       },
       verify: {
+        onAssignedOnlyChange: jest.fn(),
         onSelectStudy: jest.fn(),
         onRetryLoad: jest.fn(),
         onDecision: jest.fn(),
@@ -146,7 +155,13 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<PilotViewCallback
         onReloadVerification: jest.fn(),
         onRelocateQuote: jest.fn(),
       },
-      dashboard: { onReload: jest.fn() },
+      dashboard: {
+        onReload: jest.fn(),
+        onReloadUsage: jest.fn(),
+        onSaveBudget: jest.fn(),
+        onBudgetDraftChange: jest.fn(),
+        onBudgetError: jest.fn(),
+      },
       export: {
         onSelectFormat: jest.fn(),
         onGenerate: jest.fn(),
@@ -157,6 +172,8 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<PilotViewCallback
         onChangeMethodsLanguage: jest.fn(),
         onChangeMethodsWorkflow: jest.fn(),
         onCopyMethods: jest.fn(),
+        onGenerateUsage: jest.fn(),
+        onDownloadUsage: jest.fn(),
       },
       adjudicate: {
         onSelectStudy: jest.fn(),
@@ -257,6 +274,7 @@ function makeRun(overrides: Partial<ExtractionRun> = {}): ExtractionRun {
 function makeStudy(studyId: string, label = `試験-${studyId}`): StudyRecord {
   return {
     studyId,
+    reviewSet: null,
     studyLabel: label,
     registrationId: null,
     createdAt: 't0',
@@ -838,4 +856,27 @@ describe('renderPilotView（表示言語 en。issue #93）', () => {
       'No studies yet. Import documents first on the Documents screen.',
     );
   });
+});
+
+test('履歴の使用済みと改訂使用 study をバッジで表示する', () => {
+  const state = makeState({
+    pilot: {
+      run: makeRun({ runId: 'new', startedAt: 't3' }),
+      history: [makeRun({ startedAt: 't1' })],
+    },
+  });
+  state.schema.versions = [
+    {
+      schemaVersion: 2,
+      parentVersion: 1,
+      protocolVersion: 1,
+      createdByType: 'pilot_revision',
+      createdAt: 't2',
+      createdBy: 'me',
+      note: null,
+    },
+  ];
+  const { root } = render(state);
+  expect(root.querySelector('.pilot__study-used')?.textContent).toBe('過去のパイロットで使用');
+  expect(root.querySelector('.pilot__study-revision-used')?.textContent).toBe('改訂に使った論文');
 });
