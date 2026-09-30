@@ -1,7 +1,6 @@
 import {
   autoLoadLatestPilotRun,
   initPilotSelection,
-  refreshPilotDecisions,
   loadPilotHistory,
   loadPilotRun,
   loadPilotVerification,
@@ -976,17 +975,6 @@ describe('runPilot: 実行', () => {
 });
 
 describe('loadPilotVerification', () => {
-  test('表示 run の全 study の判定を保持し、対象外 study を除外する', async () => {
-    const store = makeRanStore();
-    const judgments = [
-      makeDecision({ studyId: 'study-doc-1' }),
-      makeDecision({ studyId: 'study-doc-2' }),
-    ];
-    readAllDecisionsMock.mockResolvedValue([...judgments, makeDecision({ studyId: 'outside' })]);
-    await loadPilotVerification(store, makeDeps(), 'study-doc-1');
-    expect(store.getState().pilot.decisions).toEqual(judgments);
-  });
-
   function makeRanStore(): Store {
     return makeStore({
       documents: [makeDocument(), makeDocument({ documentId: 'doc-2', driveFileId: 'drive-2' })],
@@ -1891,13 +1879,6 @@ test('履歴到着後は未操作の既定選択を一度だけ未使用 study �
   expect(touched.getState().pilot.selectedStudyIds).toEqual([docs[1]!.studyId]);
 });
 
-test('改訂実行中は新しい抽出と履歴 run の読込を開始しない', async () => {
-  const store = makeStore({ pilot: { revising: true } });
-  await runPilot(store, makeDeps());
-  await loadPilotRun(store, makeDeps(), 'r');
-  expect(runExtractionMock).not.toHaveBeenCalled();
-});
-
 test('選択が初期化済み・操作済みでも後着したスキーマのモデルを空欄へ引き継ぐ', () => {
   const store = makeStore({ documents: [makeDocument()] });
   initPilotSelection(store);
@@ -1909,37 +1890,4 @@ test('選択が初期化済み・操作済みでも後着したスキーマの�
   store.setState({ schema: { ...store.getState().schema, model: 'another-model' } });
   initPilotSelection(store);
   expect(store.getState().pilot.model).toBe('late-model');
-});
-
-test('入場時の判定再読込は run の study に絞り、失敗時はキャッシュを保持する', async () => {
-  const decision = makeDecision({ action: 'edit' });
-  const store = makeStore({ pilot: { run: makeRun(), decisions: [] } });
-  readAllDecisionsMock.mockResolvedValueOnce([decision, makeDecision({ studyId: 'outside' })]);
-  await refreshPilotDecisions(store, makeDeps());
-  expect(store.getState().pilot.decisions).toEqual([decision]);
-  readAllDecisionsMock.mockRejectedValueOnce(new Error('offline'));
-  await refreshPilotDecisions(store, makeDeps());
-  expect(store.getState().pilot.decisions).toEqual([decision]);
-});
-
-test('未選択のプロジェクト・run と読込中の画面切替では判定キャッシュを更新しない', async () => {
-  await refreshPilotDecisions(makeStore({ withProject: false }), makeDeps());
-  await refreshPilotDecisions(makeStore({}), makeDeps());
-  for (const change of ['project', 'run', 'no-project'] as const) {
-    const store = makeStore({ pilot: { run: makeRun(), decisions: [] } });
-    const pending = deferred<Decision[]>();
-    readAllDecisionsMock.mockReturnValueOnce(pending.promise);
-    const refreshing = refreshPilotDecisions(store, makeDeps());
-    if (change === 'run') store.setState({ pilot: { ...store.getState().pilot, run: null } });
-    else
-      store.setState({
-        currentProject:
-          change === 'no-project'
-            ? null
-            : { ...store.getState().currentProject!, spreadsheetId: 'other' },
-      });
-    pending.resolve([makeDecision()]);
-    await refreshing;
-    expect(store.getState().pilot.decisions).toEqual([]);
-  }
 });

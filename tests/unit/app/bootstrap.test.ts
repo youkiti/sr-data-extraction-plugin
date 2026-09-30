@@ -2,11 +2,6 @@
 // 実 window ではなくスタブ（location / addEventListener のみ実装）を注入する
 import { installChromeMock, type ChromeMock } from '../../setup/chrome-mock';
 import { bootstrapApp, createChromeAppDeps, seedState, type AppDeps } from '../../../src/app/bootstrap';
-import * as pilotService from '../../../src/app/services/pilotService';
-import { runPilotRevision } from '../../../src/app/services/pilotRevisionService';
-jest.mock('../../../src/app/services/pilotRevisionService', () => ({
-  runPilotRevision: jest.fn(),
-}));
 import { BUILD_DATE } from '../../../src/build-info';
 import { configureApiErrorLog, recordApiErrorLog } from '../../../src/lib/diagnostics/apiErrorLog';
 
@@ -1847,68 +1842,6 @@ describe('bootstrapApp: #/pilot', () => {
       pilot: pilotPatch as AppState['pilot'],
     };
   }
-
-  test('パイロットへの再入場時に他画面で保存された判定を背景更新する', async () => {
-    const refresh = jest.spyOn(pilotService, 'refreshPilotDecisions').mockResolvedValue(undefined);
-    try {
-      const stub = createWindowStub(
-        pilotPreloaded({
-          run: { ...RUN, provider: 'gemini' },
-          historyInitialized: true,
-          history: [],
-        }),
-      );
-      const { deps } = createFakeDeps([]);
-      await bootstrapApp(asWindow(stub), deps);
-      stub.location.hash = '#/pilot';
-      stub.fireHashChange();
-      await flush();
-      expect(refresh).toHaveBeenCalledWith(expect.anything(), deps);
-      expect(refresh.mock.calls[0]?.[0].getState().pilot.run).toEqual(RUN);
-    } finally {
-      refresh.mockRestore();
-    }
-  });
-
-  test.each([true, false])(
-    '改訂ボタンはサービス成功時だけスキーマへ遷移する: %s',
-    async (success) => {
-      (runPilotRevision as jest.Mock).mockResolvedValueOnce(success);
-      const stub = createWindowStub(
-        pilotPreloaded({
-          run: { ...RUN, provider: 'gemini' },
-          runFields: [FIELD],
-          evidence: [],
-          history: [],
-          historyInitialized: true,
-          decisions: [
-            {
-              decidedAt: 't1',
-              decidedBy: '',
-              annotator: '',
-              annotatorType: 'human_with_ai',
-              studyId: 'study-1',
-              fieldId: 'f-total',
-              entityKey: '-',
-              schemaVersion: 1,
-              action: 'edit',
-              value: '修正',
-              note: 'メモ',
-            },
-          ],
-        }),
-      );
-      const { deps } = createFakeDeps([[...SHEET_HEADERS.Documents]]);
-      const store = await bootstrapApp(asWindow(stub), deps);
-      stub.location.hash = '#/pilot';
-      stub.fireHashChange();
-      await flush();
-      (document.getElementById('pilot-revise-instructions') as HTMLButtonElement).click();
-      await flush();
-      expect(runPilotRevision).toHaveBeenCalledWith(store, deps);
-      expect(stub.location.hash).toBe(success ? '#/schema' : '#/pilot');
-    },
-  );
 
   test('seedState は pilot スライスも部分注入でマージする', async () => {
     const stub = createWindowStub({ pilot: { model: 'gemini-x' } as AppState['pilot'] });

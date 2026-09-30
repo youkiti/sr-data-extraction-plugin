@@ -462,10 +462,6 @@ export const ja = {
   'schema.redraftLead':
     '最新のプロトコルとサンプル論文をもとに AI が表のデザインを作り直し、現行版との差分を提示します。既存の項目は、あなたが承認しない限り消えません。',
   'schema.redraftReviewTitle': '再ドラフトの差分を確認',
-  'schema.pilotRevisionSource':
-    'パイロット run（{date}）の判定 {n} 件に基づく改訂案です。変える項目だけを提案しています',
-  'schema.pilotRevisionNote': 'pilot run {runId} の判定 {n} 件に基づく改訂',
-  'schema.repilot': '再パイロットへ',
   'schema.redraftSummary':
     '追加 {added} 件 / 変更 {changed} 件 / 削除候補 {removed} 件 / 変更なし {unchanged} 件 / 保持 {protectedCount} 件',
   'schema.redraftAddedTitle': '追加',
@@ -532,20 +528,6 @@ export const ja = {
   'pilot.failureUnknown': '失敗の内訳は保存されていません（履歴から読み込んだ実行）。',
   'pilot.runDone': '抽出が完了しました。',
   'pilot.reviseSchema': '表のデザインを改訂して再パイロット',
-  'pilot.reviseInstructions': '判定から指示文の改訂案を作る',
-  'pilot.reviseEmpty': '改訂に使える判定（修正・棄却・未報告）がまだありません',
-  'pilot.reviseProgress': '改訂案を作成しています…（{n} 秒）',
-  'pilot.reviseSchemaChanged':
-    '改訂案の作成中に表のデザインが更新されたため、改訂案を破棄しました。もう一度作成してください',
-  'pilot.reviseQueuedDecisions':
-    '未送信の判定（オフライン: {n} 件）があります。送信が終わってから改訂案を作成してください',
-  'pilot.reviseInsufficientStudies':
-    '2 本以上の論文で修正・棄却・未報告があった項目がないため、改訂案は作りません。パイロットの論文を増やすか、スキーマ画面で直接編集してください',
-  'pilot.reviseAllLeaked': 'パイロットの値を含んでいたため、すべての改訂案を除外しました',
-  'schema.pilotRevisionSingleStudy': '1 本の論文だけの誤りだった {n} 項目は対象外にしました',
-  'schema.pilotRevisionLeaked': 'パイロットの値を含んでいた {n} 項目の提案は除外しました',
-  'schema.pilotRevisionRemovedSentences': '既存の指示から {n} 文が削除されています',
-  'pilot.reviseNoChanges': '改訂が必要な項目は提案されませんでした',
   'pilot.studyUsed': '過去のパイロットで使用',
   'pilot.studyRevisionUsed': '改訂に使った論文',
   'pilot.verifyTitle': '検証（S8 と同じ操作）',

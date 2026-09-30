@@ -24,7 +24,7 @@ import type { BuiltRSet, RSetMaterials } from '../features/export/rset/buildRSet
 import type { ProjectRef } from '../domain/project';
 import type { Protocol } from '../domain/protocol';
 import type { SchemaField } from '../domain/schemaField';
-import type { SchemaCreatedByType, SchemaVersion } from '../domain/schemaVersion';
+import type { SchemaVersion } from '../domain/schemaVersion';
 import type { BatchFailure, RunProgress } from '../features/extraction/executeRun';
 import type { FieldSelection, FieldSubsetBadge } from '../features/extraction/fieldSelection';
 import type { ExtractStudyRow } from '../features/extraction/studyProgress';
@@ -252,8 +252,8 @@ export interface SchemaState {
   /** エディタ行。null = エディタ非表示 */
   editorRows: SchemaEditorRow[] | null;
   editorErrors: FieldValidationError[];
-  /** 確定時の出所（パイロット改訂は手編集後も pilot_revision を保持） */
-  editorOrigin: SchemaCreatedByType;
+  /** 確定時の created_by_type（AI ドラフト直後 = ai_draft。人が触ったら user_edit） */
+  editorOrigin: 'ai_draft' | 'user_edit';
   confirming: boolean;
   /** RoB プリセット事前設定ダイアログ（issue #103。ui-states.md §3）。null = 非表示 */
   presetDialog: PresetDialogState | null;
@@ -263,17 +263,6 @@ export interface SchemaState {
    * ユーザーが追加 / 変更 / 削除を承認してからエディタへ流し込む
    */
   redraft: RedraftReviewState | null;
-  /** パイロットからの部分提案の出所。エディタ反映後も確定まで保持する */
-  pilotRevision: {
-    runId: string;
-    runStartedAt: string | null;
-    decisionCount: number;
-    excludedSingleStudyCount: number;
-    leakedProposalCount: number;
-    rationales: Record<string, string>;
-  } | null;
-  /** 直前にパイロット改訂版を確定した場合に再パイロット導線を表示する */
-  lastConfirmedPilotRevision: boolean;
 }
 
 /** #/pilot（S6）の画面状態。run の結果と埋め込み検証 UI の素材はタブのセッション内で保持する */
@@ -290,14 +279,6 @@ export interface PilotState {
   running: boolean;
   progress: RunProgress | null;
   runError: string | null;
-  /** パイロット判定からの改訂案を生成中か */
-  revising: boolean;
-  /** 改訂案の生成開始からの経過秒数 */
-  reviseElapsedSeconds: number;
-  /** 改訂案の生成失敗・提案なしの案内（null は非表示） */
-  reviseError: string | null;
-  /** 表示中 run の全 study の判定。ボタンの有効判定と undo の畳み込みに使う */
-  decisions: Decision[] | null;
   /** 直近のパイロット run（完了後に埋め込み検証 UI と再パイロット導線を出す） */
   run: ExtractionRun | null;
   /** 直近 run に使ったスキーマ項目（判定保存時の field_name / entity_level 解決に使う） */
@@ -775,8 +756,6 @@ export function createInitialState(): AppState {
       confirming: false,
       presetDialog: null,
       redraft: null,
-      pilotRevision: null,
-      lastConfirmedPilotRevision: false,
     },
     pilot: {
       selectedStudyIds: [],
@@ -787,10 +766,6 @@ export function createInitialState(): AppState {
       running: false,
       progress: null,
       runError: null,
-      revising: false,
-      reviseElapsedSeconds: 0,
-      reviseError: null,
-      decisions: null,
       run: null,
       runFields: null,
       evidence: null,

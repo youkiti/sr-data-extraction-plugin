@@ -616,14 +616,12 @@ test('S6 埋め込み検証: enum 項目は許容値チップで判定でき、�
   expect(results.violations).toEqual([]);
 });
 
-test('パイロットの判定メモから部分改訂案を承認し、pilot_revision 版を確定する', async ({
-  page,
-}) => {
+test('パイロットの検証で判定メモを入力し、Decisions の note 列へ保存する', async ({ page }) => {
   const runRow = [
     'run-1',
     'pilot',
     '1',
-    'study-1,study-2',
+    'study-1',
     'gemini',
     'gemini-test',
     'gemini-test-001',
@@ -668,8 +666,6 @@ test('パイロットの判定メモから部分改訂案を承認し、pilot_re
   ];
   const memo = '全体と群別の結果を区別する: 42.70 と "Sleep hygiene"';
   const decisionRows: unknown[][] = [];
-  const versionRows: unknown[][] = [];
-  const llmBodies: string[] = [];
   const dataStore = createSheetsDataStore({
     studyHeader: STUDY_DATA_HEADERS,
     resultsHeader: RESULTS_DATA_HEADERS,
@@ -681,9 +677,6 @@ test('パイロットの判定メモから部分改訂案を承認し、pilot_re
       dataStore.handleWrite(request);
       if (url.includes('Decisions') && url.includes(':append')) {
         decisionRows.push(...(request.postDataJSON() as { values: unknown[][] }).values);
-      }
-      if (url.includes('SchemaVersions') && url.includes(':append')) {
-        versionRows.push(...(request.postDataJSON() as { values: unknown[][] }).values);
       }
       await route.fulfill({ json: {} });
       return;
@@ -719,12 +712,7 @@ test('パイロットの判定メモから部分改訂案を承認し、pilot_re
   });
   await page.route('https://www.googleapis.com/**', async (route) => {
     const url = decodeURIComponent(route.request().url());
-    if (url.includes('/upload/drive/v3/files')) {
-      await route.fulfill({ json: { id: 'log', webViewLink: 'https://drive.example/log' } });
-    } else if (url.includes('/drive/v3/files?q=')) {
-      const name = /name = '([^']+)'/.exec(url)?.[1] ?? 'folder';
-      await route.fulfill({ json: { files: [{ id: `${name}-id` }] } });
-    } else if (url.includes('/drive/v3/files/txt-1?alt=media')) {
+    if (url.includes('/drive/v3/files/txt-1?alt=media')) {
       await route.fulfill({ contentType: 'text/plain', body: QUOTE });
     } else if (url.includes('/drive/v3/files/drive-1?alt=media')) {
       await route.fulfill({ contentType: 'application/pdf', body: minimalPdf(QUOTE) });
@@ -732,81 +720,16 @@ test('パイロットの判定メモから部分改訂案を承認し、pilot_re
       await route.fulfill({ json: {} });
     }
   });
-  await page.route('https://generativelanguage.googleapis.com/**', async (route) => {
-    llmBodies.push(route.request().postData() ?? '');
-    await route.fulfill({
-      json: {
-        candidates: [
-          {
-            content: {
-              parts: [
-                {
-                  text: JSON.stringify({
-                    revisions: [
-                      {
-                        field_name: 'mortality_pct',
-                        extraction_instruction:
-                          'Report overall mortality, distinguishing it from group-specific results.',
-                        example: null,
-                        rationale: '全体と群別の値の取り違えを防ぐ',
-                      },
-                    ],
-                  }),
-                },
-              ],
-            },
-          },
-        ],
-        usageMetadata: { promptTokenCount: 100, candidatesTokenCount: 20 },
-        modelVersion: 'gemini-test-001',
-      },
-    });
-  });
   await initApp(page, {
-    apiKey: 'e2e-api-key',
     documents: [DOCUMENT],
     pilot: { history: null, historyInitialized: false, run: null },
   });
   await expect(page.locator('.verify__panes')).toBeVisible({ timeout: 15_000 });
-  await expect(page.locator('#pilot-revise-instructions')).toBeDisabled();
   await page.locator('.verify__action--edit').click();
   await page.locator('.verify__edit-input').fill('13');
   await page.locator('.verify__note-input').fill(`  ${memo}  `);
   await page.locator('.verify__note-input').press('Enter');
   await expect.poll(() => decisionRows.length).toBe(1);
   expect(decisionRows[0]?.[DECISIONS_HEADERS.indexOf('note')]).toBe(memo);
-  const second = [...decisionRows[0]!];
-  second[DECISIONS_HEADERS.indexOf('study_id')] = 'study-2';
-  decisionRows.push(second);
-  await expect(page.locator('#pilot-revise-instructions')).toBeEnabled();
-  await page.locator('#pilot-revise-instructions').click();
-  await expect(page.locator('#schema-redraft-review')).toBeVisible({ timeout: 15_000 });
-  await expect(page.locator('#schema-redraft-pilot-source')).toContainText('判定 2 件');
-  await expect(page.locator('#schema-redraft-changed > li')).toHaveCount(1);
-  await expect(page.locator('.schema__redraft-rationale')).toHaveText(
-    '全体と群別の値の取り違えを防ぐ',
-  );
-  await expect(page.locator('#schema-redraft-removed li')).toHaveCount(0);
-  expect(llmBodies).toHaveLength(1);
-  expect(llmBodies[0]).toContain('Do NOT embed pilot-specific values');
-  expect(llmBodies[0]).not.toContain('42.70');
-  expect(llmBodies[0]).not.toContain('Sleep hygiene');
-  expect(llmBodies[0]).not.toContain('aiValue');
-  const sent = JSON.parse(llmBodies[0]!) as { contents: Array<{ parts: Array<{ text: string }> }> };
-  const userText = sent.contents
-    .flatMap((content) => content.parts.map((part) => part.text))
-    .join('\n');
-  expect(userText).not.toContain('12');
-  await expect(page.locator('#schema-redraft-changed ins').first()).toBeVisible();
-  // スタブの改訂案は文の追記だけなので、削除部分は出ない
-  await expect(page.locator('#schema-redraft-changed del')).toHaveCount(0);
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
-  await page.locator('#schema-redraft-apply').click();
-  await expect(page.locator('#schema-note')).toHaveValue('pilot run run-1 の判定 2 件に基づく改訂');
-  await page.locator('#schema-confirm').click();
-  await expect.poll(() => versionRows.length).toBe(1);
-  expect(versionRows[0]?.[SHEET_HEADERS.SchemaVersions.indexOf('created_by_type')]).toBe(
-    'pilot_revision',
-  );
-  await expect(page.locator('#schema-repilot')).toHaveAttribute('href', '#/pilot');
 });

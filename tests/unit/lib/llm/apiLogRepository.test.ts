@@ -77,9 +77,3 @@ describe('appendLlmApiLog', () => {
     expect(body.values[0][0]).toBe('log-1');
   });
 });
-
-test('パイロット改訂の purpose をログ行へ保持する', () => {
-  expect(logEntryToRow(makeEntry({ purpose: 'revise_schema_pilot' }))[4]).toBe(
-    'revise_schema_pilot',
-  );
-});

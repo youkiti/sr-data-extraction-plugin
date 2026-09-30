@@ -331,7 +331,6 @@ export async function runDraftSchema(store: Store, deps: SchemaServiceDeps): Pro
         editorRows: rows,
         editorErrors: [],
         editorOrigin: 'ai_draft',
-        pilotRevision: null,
       });
       showToast(t('schema.toastDrafted', { n: rows.length }));
     } else {
@@ -339,7 +338,6 @@ export async function runDraftSchema(store: Store, deps: SchemaServiceDeps): Pro
       patchSchema(store, {
         drafting: false,
         redraft: { diff, selection: defaultRedraftSelection(diff) },
-        pilotRevision: null,
       });
       showToast(
         t('schema.toastRedrafted', {
@@ -356,12 +354,7 @@ export async function runDraftSchema(store: Store, deps: SchemaServiceDeps): Pro
   }
 }
 
-/** パイロット改訂由来の版は手編集後も出所を保持する。 */
-function editedOrigin(store: Store): SchemaState['editorOrigin'] {
-  return store.getState().schema.editorOrigin === 'pilot_revision' ? 'pilot_revision' : 'user_edit';
-}
-
-/** エディタ: 行の編集（通常は user_edit、パイロット改訂由来は出所を保持） */
+/** エディタ: 行の編集（人が触った時点で created_by_type は user_edit へ） */
 export function updateEditorRow(
   store: Store,
   index: number,
@@ -374,7 +367,7 @@ export function updateEditorRow(
   const next = rows.map((row, i) => (i === index ? { ...row, ...patch } : row));
   patchSchema(store, {
     editorRows: next,
-    editorOrigin: editedOrigin(store),
+    editorOrigin: 'user_edit',
     editorErrors: validateEditorRows(next),
   });
 }
@@ -388,7 +381,7 @@ export function addEditorRow(store: Store): void {
   const next = [...rows, emptyEditorRow()];
   patchSchema(store, {
     editorRows: next,
-    editorOrigin: editedOrigin(store),
+    editorOrigin: 'user_edit',
     editorErrors: validateEditorRows(next),
   });
 }
@@ -402,7 +395,7 @@ export function removeEditorRow(store: Store, index: number): void {
   const next = rows.filter((_, i) => i !== index);
   patchSchema(store, {
     editorRows: next,
-    editorOrigin: editedOrigin(store),
+    editorOrigin: 'user_edit',
     editorErrors: validateEditorRows(next),
   });
 }
@@ -421,7 +414,7 @@ export function moveEditorRow(store: Store, from: number, to: number): void {
   next.splice(to, 0, moved as SchemaEditorRow);
   patchSchema(store, {
     editorRows: next,
-    editorOrigin: editedOrigin(store),
+    editorOrigin: 'user_edit',
     editorErrors: validateEditorRows(next),
   });
 }
@@ -450,7 +443,7 @@ export function sortEditorRowsBySection(store: Store): void {
   }
   patchSchema(store, {
     editorRows: next,
-    editorOrigin: editedOrigin(store),
+    editorOrigin: 'user_edit',
     editorErrors: validateEditorRows(next),
   });
 }
@@ -468,7 +461,7 @@ function appendEditorRows(store: Store, added: readonly SchemaEditorRow[]): void
   const next = [...rows, ...added];
   patchSchema(store, {
     editorRows: next,
-    editorOrigin: editedOrigin(store),
+    editorOrigin: 'user_edit',
     editorErrors: validateEditorRows(next),
   });
 }
@@ -631,7 +624,6 @@ export function startEditorFromCurrent(store: Store): void {
     })),
     editorErrors: [],
     editorOrigin: 'user_edit',
-    pilotRevision: null,
   });
 }
 
@@ -643,7 +635,6 @@ export function cancelEditor(store: Store): void {
     draftError: null,
     presetDialog: null,
     redraft: null,
-    pilotRevision: null,
   });
 }
 
@@ -676,7 +667,7 @@ export function toggleRedraftSelection(
  * （applyEditorOrigin は confirmSchema がそのまま editorOrigin を使う）
  */
 export function applyRedraft(store: Store): void {
-  const { redraft, pilotRevision } = store.getState().schema;
+  const { redraft } = store.getState().schema;
   if (redraft === null) {
     return;
   }
@@ -684,19 +675,14 @@ export function applyRedraft(store: Store): void {
   patchSchema(store, {
     editorRows: rows,
     editorErrors: validateEditorRows(rows),
-    editorOrigin:
-      pilotRevision !== null
-        ? 'pilot_revision'
-        : isRedraftSelectionPristine(redraft.diff, redraft.selection)
-          ? 'ai_draft'
-          : 'user_edit',
+    editorOrigin: isRedraftSelectionPristine(redraft.diff, redraft.selection) ? 'ai_draft' : 'user_edit',
     redraft: null,
   });
 }
 
 /** 差分承認画面: 「破棄して戻る」（エディタは開かず確定済み画面へ戻る。issue #197） */
 export function cancelRedraft(store: Store): void {
-  patchSchema(store, { redraft: null, pilotRevision: null });
+  patchSchema(store, { redraft: null });
 }
 
 /**
@@ -772,8 +758,6 @@ export async function confirmSchema(
         editorErrors: [],
         draftError: null,
         presetDialog: null,
-        pilotRevision: null,
-        lastConfirmedPilotRevision: state.schema.editorOrigin === 'pilot_revision',
       },
       counts: { ...after.counts, schemaVersions: versions.length },
     });

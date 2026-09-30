@@ -26,7 +26,6 @@ import {
   toggleFieldSelection,
 } from '../../features/extraction/fieldSelection';
 import { defaultPilotStudyIds, usedPilotStudyIds } from '../../features/extraction/pilotSelection';
-import { readAllDecisions } from '../../features/verification/decisionRepository';
 import { readPilotRuns } from '../../features/extraction/runRepository';
 import { getSchemaFieldsByVersion } from '../../features/schema/schemaRepository';
 import { ensureChildFolder } from '../../lib/google/drive';
@@ -209,7 +208,7 @@ async function resolveStudies(
 export async function runPilot(store: Store, deps: PilotServiceDeps): Promise<void> {
   const state = store.getState();
   const project = state.currentProject;
-  if (!project || state.pilot.running || state.pilot.revising) {
+  if (!project || state.pilot.running) {
     return;
   }
   const fields = state.schema.currentFields;
@@ -324,8 +323,6 @@ export async function runPilot(store: Store, deps: PilotServiceDeps): Promise<vo
         run: outcome.run,
         runFields: [...fields],
         evidence: outcome.result.evidence,
-        decisions: null,
-        reviseError: null,
         batchFailures: outcome.result.batchFailures,
         rejectedCount: outcome.result.rejectedItems.length,
         // 完了した run を履歴の先頭（最新）へ足し、自動読込済み扱いにする
@@ -427,12 +424,7 @@ export async function loadPilotRun(
 ): Promise<void> {
   const state = store.getState();
   const project = state.currentProject;
-  if (
-    !project ||
-    state.pilot.running ||
-    state.pilot.revising ||
-    state.pilot.loadingRunId !== null
-  ) {
+  if (!project || state.pilot.running || state.pilot.loadingRunId !== null) {
     return;
   }
   const run = state.pilot.history?.find((candidate) => candidate.runId === runId);
@@ -447,8 +439,6 @@ export async function loadPilotRun(
     historyError: null,
     runError: null,
     run: null,
-    decisions: null,
-    reviseError: null,
     runFields: null,
     evidence: null,
     // 履歴 run はバッチ失敗の内訳を再構成できないため空にする（サマリは run.status で表示）
@@ -536,7 +526,6 @@ export async function loadPilotVerification(
     patchPilot(store, {
       verifyLoading: false,
       verification: bundle.verification,
-      decisions: bundle.allDecisions.filter((decision) => run.studyIds.includes(decision.studyId)),
       studyValues: bundle.studyValues,
       layoutMode: bundle.layoutMode,
       paneLayout: bundle.paneLayout,
@@ -595,7 +584,6 @@ export async function persistPilotDecision(
     showToast(t('verify.errFieldNotInSchema', { id: decision.fieldId }));
     return;
   }
-  patchPilot(store, { decisions: [...(state.pilot.decisions ?? []), decision] });
   let studyValues: Record<string, string | null> | null = null;
   if (field.entityLevel === 'study') {
     studyValues = { ...(state.pilot.studyValues ?? {}), [field.fieldName]: decision.value };
@@ -722,24 +710,4 @@ export async function persistPilotRelocateQuote(
     },
     deps,
   );
-}
-
-/** S8 の判定も反映するため入場時に再読込する。失敗時は現在のキャッシュを保持する。 */
-export async function refreshPilotDecisions(store: Store, deps: PilotServiceDeps): Promise<void> {
-  const {
-    currentProject: project,
-    pilot: { run },
-  } = store.getState();
-  if (project === null || run === null) return;
-  try {
-    const decisions = await readAllDecisions(project.spreadsheetId, deps.google);
-    const after = store.getState();
-    if (after.currentProject?.spreadsheetId !== project.spreadsheetId || after.pilot.run !== run)
-      return;
-    patchPilot(store, {
-      decisions: decisions.filter((decision) => run.studyIds.includes(decision.studyId)),
-    });
-  } catch {
-    // 背景更新の失敗で検証済みキャッシュや画面のエラーを上書きしない。
-  }
 }

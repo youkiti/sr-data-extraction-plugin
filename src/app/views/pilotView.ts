@@ -15,7 +15,6 @@ import {
   resolveFieldIdsForRun,
 } from '../../features/extraction/fieldSelection';
 import { planRun } from '../../features/extraction/planRun';
-import { buildPilotFeedback } from '../../features/schema/pilotFeedback';
 import { revisionUsedStudyIds, usedPilotStudyIds } from '../../features/extraction/pilotSelection';
 import { t, type MessageKey } from '../../lib/i18n';
 import { el } from '../ui/dom';
@@ -219,8 +218,7 @@ function renderSetup(state: AppState, ctx: ViewContext): HTMLElement {
     text: t('pilot.run'),
     attributes: { type: 'button' },
   });
-  runButton.disabled =
-    state.pilot.revising || hasZeroFieldsSelected(state.pilot.selectedFieldIds, fields);
+  runButton.disabled = hasZeroFieldsSelected(state.pilot.selectedFieldIds, fields);
   runButton.addEventListener('click', () => ctx.pilot.onRun());
 
   const fieldSelector = renderFieldSelector(state, ctx);
@@ -285,7 +283,7 @@ function studyLabelOf(state: AppState, studyId: string): string {
   return studyLabelMap(state.documents.studies ?? []).get(studyId) ?? studyId;
 }
 
-function renderRunSummary(run: ExtractionRun, state: AppState, ctx: ViewContext): HTMLElement {
+function renderRunSummary(run: ExtractionRun, state: AppState): HTMLElement {
   const { batchFailures, rejectedCount } = state.pilot;
   const children: HTMLElement[] = [];
   if (run.status === 'partial_failure') {
@@ -333,45 +331,6 @@ function renderRunSummary(run: ExtractionRun, state: AppState, ctx: ViewContext)
       ]),
     );
   }
-  const feedback = buildPilotFeedback({
-    runStudyIds: run.studyIds,
-    schemaVersion: run.schemaVersion,
-    fields: state.pilot.runFields ?? [],
-    evidence: state.pilot.evidence ?? [],
-    decisions: state.pilot.decisions ?? [],
-    annotator: state.pilot.verification?.annotator ?? '',
-  });
-  const revise = el('button', {
-    id: 'pilot-revise-instructions',
-    text: t('pilot.reviseInstructions'),
-    attributes: { type: 'button' },
-  });
-  revise.disabled = state.pilot.revising || feedback.decisionCount === 0;
-  revise.addEventListener('click', () => ctx.pilot.onReviseInstructions());
-  if (feedback.decisionCount === 0)
-    children.push(
-      el('p', {
-        id: 'pilot-revise-instructions-empty',
-        text: t('pilot.reviseEmpty'),
-      }),
-    );
-  if (state.pilot.revising)
-    children.push(
-      el('p', {
-        id: 'pilot-revise-progress',
-        attributes: { 'aria-live': 'polite' },
-        text: t('pilot.reviseProgress', { n: state.pilot.reviseElapsedSeconds }),
-      }),
-    );
-  if (state.pilot.reviseError !== null)
-    children.push(
-      el('p', {
-        id: 'pilot-revise-error',
-        className: 'pilot__error',
-        attributes: { role: 'alert' },
-        text: state.pilot.reviseError,
-      }),
-    );
   // 「表のデザインを改訂して再パイロット」導線は完了後は常に可視（ui-states.md §3）
   children.push(
     el('p', {}, [
@@ -381,8 +340,6 @@ function renderRunSummary(run: ExtractionRun, state: AppState, ctx: ViewContext)
         text: t('pilot.reviseSchema'),
         attributes: { href: '#/schema' },
       }),
-      ' ',
-      revise,
     ]),
   );
   return el('section', { className: 'pilot__summary' }, children);
@@ -534,7 +491,7 @@ function renderHistory(state: AppState, ctx: ViewContext): HTMLElement | null {
       ],
     );
     // 読み込み中はすべて無効化（二重起動防止）。表示中の run は選び直せない
-    open.disabled = state.pilot.revising || loadingRunId !== null || isCurrent;
+    open.disabled = loadingRunId !== null || isCurrent;
     open.addEventListener('click', () => ctx.pilot.onSelectRun(entry.runId));
     const parts: HTMLElement[] = [open];
     if (isCurrent) {
@@ -577,7 +534,7 @@ export function renderPilotView(state: AppState, ctx: ViewContext): HTMLElement 
   // 読み込み済みの結果（履歴の自動 / 手動読込 or 実行直後）を履歴の直下に出す
   if (state.pilot.run !== null) {
     children.push(
-      renderRunSummary(state.pilot.run, state, ctx),
+      renderRunSummary(state.pilot.run, state),
       renderVerification(state.pilot.run, state, ctx),
     );
   }

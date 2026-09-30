@@ -461,10 +461,6 @@ export const en: Record<MessageKey, string> = {
   'schema.redraftLead':
     'AI redesigns the table using the latest protocol and sample articles, and shows you the differences from the current version. Existing fields are never removed unless you approve it.',
   'schema.redraftReviewTitle': 'Review the redraft differences',
-  'schema.pilotRevisionSource':
-    'These proposals are based on {n} judgments in the pilot run ({date}). Only fields to change are proposed.',
-  'schema.pilotRevisionNote': 'Revision based on {n} judgments in pilot run {runId}',
-  'schema.repilot': 'Back to pilot',
   'schema.redraftSummary':
     'Added {added} / Changed {changed} / Removal candidates {removed} / Unchanged {unchanged} / Kept {protectedCount}',
   'schema.redraftAddedTitle': 'Added',
@@ -533,23 +529,6 @@ export const en: Record<MessageKey, string> = {
   'pilot.failureUnknown': 'Failure details are not stored (run loaded from history).',
   'pilot.runDone': 'Extraction completed.',
   'pilot.reviseSchema': 'Revise the table design and re-run the pilot',
-  'pilot.reviseInstructions': 'Draft instruction revisions from judgments',
-  'pilot.reviseEmpty':
-    'There are no judgments (edits, rejections, or not reported) available for revision yet',
-  'pilot.reviseProgress': 'Drafting revisions… ({n} seconds)',
-  'pilot.reviseSchemaChanged':
-    'The schema changed while revisions were being generated, so the proposal was discarded. Please generate it again',
-  'pilot.reviseQueuedDecisions':
-    'There are {n} unsent judgments in the offline queue. Please wait until they have been sent before generating revisions',
-  'pilot.reviseInsufficientStudies':
-    'No fields have edit, reject or not-reported judgments in at least two studies. Add pilot studies or edit the schema directly.',
-  'pilot.reviseAllLeaked':
-    'All revision proposals were excluded because they contained pilot values.',
-  'schema.pilotRevisionSingleStudy': 'Excluded {n} fields with errors in only one study.',
-  'schema.pilotRevisionLeaked': 'Excluded {n} proposals containing pilot values.',
-  'schema.pilotRevisionRemovedSentences':
-    '{n} sentences have been removed from the existing instruction.',
-  'pilot.reviseNoChanges': 'The model proposed no revisions',
   'pilot.studyUsed': 'Used in a previous pilot',
   'pilot.studyRevisionUsed': 'Used for a revision',
   'pilot.verifyTitle': 'Verification (same operations as S8)',

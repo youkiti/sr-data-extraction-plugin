@@ -29,12 +29,10 @@ import type {
   Rob2DeviationType,
   RobinsIEffect,
 } from '../../features/schema/presets/robTemplates';
-import { diffText, removedInstructionSentences } from '../../features/schema/textDiff';
 import type { SchemaEditorRow } from '../../features/schema/types';
 import type { FieldValidationError } from '../../features/schema/validateField';
 import { t, type MessageKey } from '../../lib/i18n';
 import { el } from '../ui/dom';
-import { formatPilotRunDate } from '../ui/formatPilotRunDate';
 import { createModelSelect } from '../ui/modelSelect';
 import type { AppState, RedraftReviewState, SchemaState } from '../store';
 import type { ViewContext } from './types';
@@ -1013,12 +1011,6 @@ function renderEditor(
       'aria-label': t('schema.noteAria'),
     },
   });
-  if (schema.pilotRevision !== null) {
-    noteInput.value = t('schema.pilotRevisionNote', {
-      runId: schema.pilotRevision.runId,
-      n: schema.pilotRevision.decisionCount,
-    });
-  }
   const confirmButton = el('button', {
     id: 'schema-confirm',
     className: 'schema__primary schema__confirm',
@@ -1167,11 +1159,6 @@ function renderConfirmed(
   newVersionButton.addEventListener('click', () => ctx.schema.onStartNewVersion());
   children.push(el('div', { className: 'schema__actions' }, [newVersionButton, reloadButton(ctx)]));
 
-  if (schema.lastConfirmedPilotRevision) {
-    children.push(
-      el('a', { id: 'schema-repilot', text: t('schema.repilot'), attributes: { href: '#/pilot' } }),
-    );
-  }
   // 再ドラフト導線（issue #197）: 版履歴の手前に置く
   children.push(renderRedraftForm(state, ctx));
 
@@ -1235,33 +1222,20 @@ function redraftAttrLabel(key: RedraftComparedKey): string {
   return messageKey !== undefined ? t(messageKey) : (literals[key] as string);
 }
 
-/** 差分承認画面: 変更項目の属性別差分。指示と例は変更トークンを強調し、大きい差分は全文並記する */
+/** 差分承認画面: 変更項目 1 件の属性別差分リスト（属性名: before → after。null は「—」表示） */
 function renderRedraftChangeList(changes: readonly RedraftAttributeChange[]): HTMLElement {
   return el(
     'ul',
     { className: 'schema__redraft-changes' },
-    changes.map((change) => {
-      if (change.key === 'extractionInstruction' || change.key === 'example') {
-        const parts = diffText(change.before ?? '', change.after ?? '');
-        if (parts !== null)
-          return el('li', {}, [
-            el('span', { text: `${redraftAttrLabel(change.key)}: ` }),
-            ...parts.map((part) =>
-              el(part.kind === 'equal' ? 'span' : part.kind, {
-                className: `schema__diff-${part.kind}`,
-                text: part.text,
-              }),
-            ),
-          ]);
-      }
-      return el('li', {
+    changes.map((change) =>
+      el('li', {
         text: t('schema.redraftChangeLine', {
           label: redraftAttrLabel(change.key),
           before: change.before ?? '—',
           after: change.after ?? '—',
         }),
-      });
-    }),
+      }),
+    ),
   );
 }
 
@@ -1294,7 +1268,6 @@ function renderRedraftChanged(
   items: readonly RedraftChangedItem[],
   selection: Record<string, boolean>,
   ctx: ViewContext,
-  pilotRevision: AppState['schema']['pilotRevision'],
 ): HTMLElement {
   const rows = items.map((item) => {
     const fieldName = item.current.fieldName.trim();
@@ -1309,28 +1282,7 @@ function renderRedraftChanged(
     const heading = el('span', {
       text: t('schema.redraftItemHeading', { fieldLabel: item.current.fieldLabel, fieldName }),
     });
-    const children = [el('label', {}, [checkbox, heading]), renderRedraftChangeList(item.changes)];
-    if (pilotRevision !== null) {
-      const removed = removedInstructionSentences(
-        item.current.extractionInstruction,
-        item.proposed.extractionInstruction,
-      );
-      if (removed.length > 0)
-        children.push(
-          el('div', { className: 'schema__redraft-note' }, [
-            el('p', { text: t('schema.pilotRevisionRemovedSentences', { n: removed.length }) }),
-            el(
-              'ul',
-              {},
-              removed.map((text) => el('li', { text })),
-            ),
-          ]),
-        );
-    }
-    const rationale = pilotRevision?.rationales[fieldName];
-    if (rationale !== undefined)
-      children.push(el('p', { className: 'schema__redraft-rationale', text: rationale }));
-    return el('li', {}, children);
+    return el('li', {}, [el('label', {}, [checkbox, heading]), renderRedraftChangeList(item.changes)]);
   });
   return el('ul', { id: 'schema-redraft-changed', className: 'schema__redraft-list' }, rows);
 }
@@ -1374,46 +1326,11 @@ function renderRedraftRemoved(
  * 差分承認画面（issue #197）: AI 再ドラフト結果と現行版の差分を提示し、
  * 追加 / 変更 / 削除の承認を経てからエディタへ反映する
  */
-function renderRedraftReview(
-  redraft: RedraftReviewState,
-  ctx: ViewContext,
-  pilotRevision: AppState['schema']['pilotRevision'],
-): HTMLElement {
+function renderRedraftReview(redraft: RedraftReviewState, ctx: ViewContext): HTMLElement {
   const { diff, selection } = redraft;
 
   const children: HTMLElement[] = [
     el('h3', { text: t('schema.redraftReviewTitle') }),
-    ...(pilotRevision === null
-      ? []
-      : [
-          el('p', {
-            id: 'schema-redraft-pilot-source',
-            text: t('schema.pilotRevisionSource', {
-              date: formatPilotRunDate(pilotRevision.runStartedAt),
-              n: pilotRevision.decisionCount,
-            }),
-          }),
-        ]),
-    ...(pilotRevision !== null
-      ? [
-          ...(pilotRevision.excludedSingleStudyCount > 0
-            ? [
-                el('p', {
-                  text: t('schema.pilotRevisionSingleStudy', {
-                    n: pilotRevision.excludedSingleStudyCount,
-                  }),
-                }),
-              ]
-            : []),
-          ...(pilotRevision.leakedProposalCount > 0
-            ? [
-                el('p', {
-                  text: t('schema.pilotRevisionLeaked', { n: pilotRevision.leakedProposalCount }),
-                }),
-              ]
-            : []),
-        ]
-      : []),
     el('p', {
       id: 'schema-redraft-summary',
       text: t('schema.redraftSummary', {
@@ -1427,7 +1344,7 @@ function renderRedraftReview(
     el('h4', { text: t('schema.redraftAddedTitle') }),
     renderRedraftAdded(diff.added, selection.added, ctx),
     el('h4', { text: t('schema.redraftChangedTitle') }),
-    renderRedraftChanged(diff.changed, selection.changed, ctx, pilotRevision),
+    renderRedraftChanged(diff.changed, selection.changed, ctx),
     el('h4', { text: t('schema.redraftRemovedTitle') }),
     ...renderRedraftRemoved(diff.removed, selection.removed, ctx),
     el('p', {
@@ -1485,7 +1402,7 @@ function renderBody(state: AppState, ctx: ViewContext): HTMLElement {
   // 差分承認画面（issue #197）はエディタと併存しない（redraft はエディタへ反映するまで
   // editorRows を書き換えない。applyRedraft / cancelRedraft のいずれかで redraft は null に戻る）
   if (schema.redraft !== null) {
-    return renderRedraftReview(schema.redraft, ctx, schema.pilotRevision);
+    return renderRedraftReview(schema.redraft, ctx);
   }
   if (schema.editorRows !== null) {
     return renderEditor(schema.editorRows, schema, ctx);
