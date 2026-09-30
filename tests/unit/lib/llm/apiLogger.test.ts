@@ -2,6 +2,7 @@
 // （sr-query-builder から流用。purpose は本拡張の enum、promptVersion 記録のテストを追加）
 import type { LlmApiLogEntry } from '../../../../src/domain/llmApiLog';
 import { buildPromptSummary, redactMessagesForLog, withLogging } from '../../../../src/lib/llm/apiLogger';
+import { OpenRouterProvider } from '../../../../src/lib/llm/OpenRouterProvider';
 import {
   LlmProviderError,
   type ChatMessage,
@@ -47,6 +48,58 @@ function makeDeps(now = '2026-07-01T00:00:00.000Z'): {
     },
   };
 }
+
+describe('OpenRouter の報告費用', () => {
+  test.each([
+    [0.00207214, 0.00207214], [0, 0], [undefined, 0.000308],
+    [null, 0.000308], ['0.1', 0.000308], [-1, 0.000308],
+    [true, 0.000308], [{}, 0.000308],
+  ])('usage.cost=%j の費用を記録する', async (cost, expected) => {
+    const provider = new OpenRouterProvider({
+      apiKey: 'k', model: 'deepseek/deepseek-v4-flash',
+      fetch: jest.fn().mockResolvedValue({
+        ok: true,
+        text: async () => JSON.stringify({
+          choices: [{ message: { content: '回答' } }],
+          usage: { prompt_tokens: 1000, completion_tokens: 1000,
+            prompt_tokens_details: { cached_tokens: 1000 }, cost },
+        }),
+      }),
+    });
+    const { deps, recorded } = makeDeps();
+    await withLogging(provider, 'extract_study', deps).chat([]);
+    expect(recorded.entries[0]!.costEstimateUsd).toBeCloseTo(expected as number, 12);
+  });
+
+  test('応答内容エラーでも報告費用を記録する', async () => {
+    const provider = new OpenRouterProvider({
+      apiKey: 'k', model: 'unknown',
+      fetch: jest.fn().mockResolvedValue({
+        ok: true,
+        text: async () => JSON.stringify({
+          choices: [{ message: { content: null }, finish_reason: 'length' }],
+          usage: { cost: 0.00207214 },
+        }),
+      }),
+    });
+    const { deps, recorded } = makeDeps();
+    await expect(withLogging(provider, 'extract_study', deps).chat([])).rejects.toThrow();
+    expect(recorded.entries[0]!.costEstimateUsd).toBe(0.00207214);
+  });
+
+  test.each(['1e999', '-1e999'])('非有限の JSON 数値 %s は単価表へ戻す', async (cost) => {
+    const provider = new OpenRouterProvider({
+      apiKey: 'k', model: 'deepseek/deepseek-v4-flash',
+      fetch: jest.fn().mockResolvedValue({
+        ok: true,
+        text: async () => `{"choices":[{"message":{"content":"回答"}}],"usage":{"prompt_tokens":1000,"completion_tokens":1000,"cost":${cost}}}`,
+      }),
+    });
+    const { deps, recorded } = makeDeps();
+    await withLogging(provider, 'extract_study', deps).chat([]);
+    expect(recorded.entries[0]!.costEstimateUsd).toBeCloseTo(0.00042, 12);
+  });
+});
 
 describe('buildPromptSummary', () => {
   test('ロール付きで連結し、空白を畳む', () => {

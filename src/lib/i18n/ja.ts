@@ -618,7 +618,7 @@ export const ja = {
   'dashboard.budgetTitle': 'プロジェクト予算',
   'dashboard.budgetUnset': '未設定',
   'dashboard.budgetStatus': '上限 {budget} / 累計 {spent}（{percent}%）/ 最終更新: {by} {at}',
-  'dashboard.budgetNote': '予算は抽出時の警告のみで実行を妨げません。設定すると Meta に列を追加するため、旧版の拡張ではプロジェクトを開けなくなります。',
+  'dashboard.budgetNote': '予算は抽出時の警告のみで実行を妨げません。設定すると旧版の拡張ではこのプロジェクトを開けなくなります。解除すると再び開けます。',
   'dashboard.budgetClear': '予算を解除',
   'dashboard.budgetOver': '累計費用が予算を超えています',
   'dashboard.usageTitle': '費用・使用量（価格表による推定）',

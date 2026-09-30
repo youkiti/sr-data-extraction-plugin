@@ -622,7 +622,7 @@ export const en: Record<MessageKey, string> = {
   'dashboard.budgetStatus':
     'Budget {budget} / spent {spent} ({percent}%) / last updated: {by} {at}',
   'dashboard.budgetNote':
-    'The budget only warns during extraction and never blocks runs; setting it adds Meta columns that prevent older extension versions from opening the project.',
+    'The budget only warns during extraction and never blocks runs. Setting it prevents older extension versions from opening this project. Clearing it lets them open the project again.',
   'dashboard.budgetClear': 'Clear budget',
   'dashboard.budgetOver': 'Cumulative cost exceeds the budget',
   'dashboard.usageTitle': 'Cost and usage (estimated from the price table)',

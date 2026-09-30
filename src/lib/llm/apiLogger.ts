@@ -147,10 +147,10 @@ export function withLogging(
           promptVersion: deps.promptVersion ?? null,
           thoughtsTokensOut: usage?.thoughtsTokensOut ?? null,
           latencyMs,
-          // モデル単価表（pricing.ts）から概算コストを算出。未知モデルは null。
+          // プロバイダの報告費用を優先し、未報告ならモデル単価表から概算する。未知モデルは null。
           // キャッシュヒット分はキャッシュ単価で積む（tokensIn はキャッシュ分を含む総入力
           // という契約なので、これを渡さないとヒット分を満額で二重計上してしまう）
-          costEstimateUsd: estimateCostUsd(
+          costEstimateUsd: usage?.costUsd ?? estimateCostUsd(
             provider.model,
             usage?.tokensIn ?? null,
             usage?.tokensOut ?? null,

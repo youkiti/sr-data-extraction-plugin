@@ -60,15 +60,10 @@ export const MODEL_PRICING: Readonly<Record<string, ModelPricing>> = {
   'gemini-3.8-flash': { inputPerMillion: 0.75, outputPerMillion: 3.75, cachedInputPerMillion: 0.075 },
   // 2026-07-22 追加（公式料金ページで確認）。
   'gemini-3.5-flash-lite': { inputPerMillion: 0.3, outputPerMillion: 2.5, cachedInputPerMillion: 0.03 },
-  // **要再確認（2026-08-31）**: OpenRouter 経由の 2 モデルは openrouter.ai へ到達できず
-  // 突き合わせができていない。第三者が取得したエンドポイント別単価のダンプ（2026-08-02）では
-  // qwen の出力が最安プロバイダでも 0.55 で、下記の 0.1 はどのエンドポイントとも一致しない
-  // （= 過小表示の疑いが濃い）。ただし代わりに置ける確かな値が無いため**推測で書き換えず**
-  // 現状値を残す。OpenRouter はマルチプロバイダで単価がレンジを持ち、既定ルーティングは
-  // 最安固定ではないため、確認時は「どの値を採るか（最安 / 中央値）」も併せて決めること。
-  // remaining-work-plan.md の実 API 確認項目に計上済み。
-  'qwen/qwen3-235b-a22b-2507': { inputPerMillion: 0.09, outputPerMillion: 0.1 },
-  'deepseek/deepseek-v4-flash': { inputPerMillion: 0.07, outputPerMillion: 0.14 },
+  // 2026-09-30 確認: OpenRouter models API（https://openrouter.ai/api/v1/models）。
+  // 実行前と費用未報告時の概算用。実行後は応答の usage.cost を優先する。
+  'qwen/qwen3-235b-a22b-2507': { inputPerMillion: 0.0875, outputPerMillion: 0.35, cachedInputPerMillion: 0.0175 },
+  'deepseek/deepseek-v4-flash': { inputPerMillion: 0.14, outputPerMillion: 0.28, cachedInputPerMillion: 0.028 },
   // Anthropic 3 モデル。issue #127 PR2 で Options 配線とあわせて追加。
   // **2026-08-31 に公式料金ページで再確認**（https://platform.claude.com/docs/en/about-claude/pricing）:
   // claude-sonnet-5 の $2/$10 は「2026-08-31 までの導入価格」ではなく**標準価格として恒久化**され、

@@ -63,6 +63,13 @@ export async function saveProjectBudget(
   // 基本 7 列という配置はテストでも固定し、更新範囲を予算 3 列に限定する。
   const firstColumn = String.fromCharCode(65 + base.length);
   const lastColumn = String.fromCharCode(65 + base.length + META_BUDGET_COLUMNS.length - 1);
+  if (budget.budgetUsd === null) {
+    if (header.length > base.length) {
+      const empty = META_BUDGET_COLUMNS.map(() => '');
+      await updateRange(spreadsheetId, `Meta!${firstColumn}1:${lastColumn}2`, [empty, empty], deps);
+    }
+    return;
+  }
   if (header.length < base.length + META_BUDGET_COLUMNS.length) {
     await updateRange(
       spreadsheetId,

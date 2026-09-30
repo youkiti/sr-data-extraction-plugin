@@ -139,6 +139,8 @@ export interface ChatResponse {
   cachedTokensIn: number | null;
   /** tokensOut のうち思考トークン数（内数）。未指定・null は個別の報告なし */
   thoughtsTokensOut?: number | null;
+  /** プロバイダが報告した費用（USD）。有限の非負数のみ。未指定は単価表で概算する */
+  costUsd?: number;
   /** プロバイダ生レスポンス（apiLogger が Drive へそのまま保存する） */
   raw: unknown;
 }
@@ -176,6 +178,8 @@ export type LlmFailureKind =
 
 /** 成功・応答内容エラーで共通の課金対象使用量。各トークン数は ChatResponse と同契約 */
 export interface LlmUsage {
+  /** プロバイダが報告した費用（USD）。有限の非負数のみ */
+  costUsd?: number;
   tokensIn: number | null;
   tokensOut: number | null;
   cachedTokensIn: number | null;

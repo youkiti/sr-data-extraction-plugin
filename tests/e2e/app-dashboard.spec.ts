@@ -320,12 +320,18 @@ test.describe('owner の費用と予算', () => {
       const url = decodeURIComponent(route.request().url());
       if (url.includes('/values/Meta')) {
         if (route.request().method() === 'PUT') {
-          const values = (route.request().postDataJSON() as { values: string[][] }).values[0]!;
+          const rows = (route.request().postDataJSON() as { values: string[][] }).values;
+          const values = rows[0]!;
           const range = url.split('/values/')[1]!.split('?')[0]!;
-          expect(['Meta!H1:J1', 'Meta!H2:J2']).toContain(range);
-          writes.push({ range, values });
-          const rowIndex = range === 'Meta!H1:J1' ? 0 : 1;
-          meta[rowIndex]!.splice(SHEET_HEADERS.Meta.length, 3, ...values);
+          expect(['Meta!H1:J1', 'Meta!H2:J2', 'Meta!H1:J2']).toContain(range);
+          writes.push({ range, values: rows.length === 1 ? values : rows });
+          const rowIndex = range === 'Meta!H2:J2' ? 1 : 0;
+          rows.forEach((row, i) => {
+            const target = meta[rowIndex + i]!;
+            target.splice(SHEET_HEADERS.Meta.length, 3, ...row);
+            // Sheets の GET と同様に行末の空セルを省く。
+            while (target.at(-1) === '') target.pop();
+          });
           await route.fulfill({ json: {} });
         } else {
           await route.fulfill({ json: { values: meta } });
@@ -364,5 +370,12 @@ test.describe('owner の費用と予算', () => {
     expect(writes[1]?.values[2]).toMatch(/^\d{4}-\d{2}-\d{2}T/);
     expect(meta[0]).toHaveLength(10);
     expect(meta[1]?.slice(0, 7)).toEqual(base);
+    await page.locator('#dashboard-budget-clear').click();
+    await expect(page.locator('#dashboard-budget-status')).toContainText('未設定');
+    expect(writes).toHaveLength(3);
+    expect(writes[2]).toEqual({ range: 'Meta!H1:J2', values: [['', '', ''], ['', '', '']] });
+    expect(meta[0]).toEqual(SHEET_HEADERS.Meta);
+    expect(meta[1]).toEqual(base.slice(0, -1));
+    await expect(page.locator('#dashboard-budget-clear')).toHaveCount(0);
   });
 });

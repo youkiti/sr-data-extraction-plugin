@@ -85,20 +85,46 @@ describe('saveProjectBudget', () => {
     expect(values[0]).toHaveLength(3);
   });
 
-  test('null は予算解除でも更新者と日時を残す', async () => {
-    const deps = makeDeps([FULL_HEADER, BASE]);
+  test('解除は予算ヘッダと値を空にし、再設定でヘッダを戻す', async () => {
+    const rows = [FULL_HEADER, [...BASE, '12.5', 'owner', '更新日時']];
+    const deps = makeDeps(rows);
     await saveProjectBudget('sid', { ...BUDGET, budgetUsd: null }, deps);
-    const [, init] = deps.fetch.mock.calls[1]!;
+    expect(deps.fetch).toHaveBeenCalledTimes(2);
+    const [url, init] = deps.fetch.mock.calls[1]!;
+    expect(decodeURIComponent(url as string)).toContain('/sid/values/Meta!H1:J2');
     expect(JSON.parse((init as RequestInit).body as string).values).toEqual([
-      ['', 'owner', '更新日時'],
+      ['', '', ''], ['', '', ''],
     ]);
+    // Sheets の GET は行末の空セルを返さない。
+    rows[0] = [...SHEET_HEADERS.Meta];
+    rows[1] = [...BASE];
+    expect(await readProjectBudget('sid', deps)).toEqual({
+      budgetUsd: null, updatedBy: null, updatedAt: null,
+    });
+    deps.fetch.mockClear();
+    await saveProjectBudget('sid', BUDGET, deps);
+    expect(deps.fetch).toHaveBeenCalledTimes(3);
+    expect(decodeURIComponent(deps.fetch.mock.calls[1]![0] as string)).toContain('Meta!H1:J1');
+    expect(JSON.parse((deps.fetch.mock.calls[1]![1] as RequestInit).body as string).values)
+      .toEqual([META_BUDGET_COLUMNS]);
+    expect(decodeURIComponent(deps.fetch.mock.calls[2]![0] as string)).toContain('Meta!H2:J2');
+    expect(JSON.parse((deps.fetch.mock.calls[2]![1] as RequestInit).body as string).values)
+      .toEqual([[12.5, 'owner', '更新日時']]);
   });
 
-  test('基本行がなくても予算列だけを更新し、null の監査情報は空セルにする', async () => {
+  test('予算ヘッダがない状態の解除は何も書き込まない', async () => {
+    const deps = makeDeps([[...SHEET_HEADERS.Meta], BASE]);
+    await saveProjectBudget('sid', { ...BUDGET, budgetUsd: null }, deps);
+    expect(deps.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  test('基本行がなくても予算ヘッダと値を消去する', async () => {
     const deps = makeDeps([FULL_HEADER]);
     await saveProjectBudget('sid', { budgetUsd: null, updatedBy: null, updatedAt: null }, deps);
     const [, init] = deps.fetch.mock.calls[1]!;
-    expect(JSON.parse((init as RequestInit).body as string).values).toEqual([Array(3).fill('')]);
+    expect(JSON.parse((init as RequestInit).body as string).values).toEqual([
+      ['', '', ''], ['', '', ''],
+    ]);
   });
 
   test('基本 7 列の同時編集を戻さず、予算 3 列だけを PUT する', async () => {

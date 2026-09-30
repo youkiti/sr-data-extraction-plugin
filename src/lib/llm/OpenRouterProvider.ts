@@ -56,6 +56,7 @@ interface OpenRouterResponse {
     prompt_tokens?: number;
     completion_tokens?: number;
     total_tokens?: number;
+    cost?: unknown;
     /**
      * OpenAI 互換の usage 詳細。`cached_tokens` は自動プロンプトキャッシュでヒットした
      * 入力トークン数で、`prompt_tokens` の**内数**（OpenAI 公式 cookbook / Azure 公式
@@ -251,13 +252,16 @@ export class OpenRouterProvider implements LLMProvider {
       tokensIn: usage.tokensIn,
       tokensOut: usage.tokensOut,
       cachedTokensIn: usage.cachedTokensIn,
+      ...('costUsd' in usage ? { costUsd: usage.costUsd } : {}),
       raw: json,
     };
   }
 
   /** 応答の使用量を成功・応答内容エラーで同じ規則に正規化する。 */
   private parseUsage(json: OpenRouterResponse): LlmUsage {
+    const cost = json.usage?.cost;
     return {
+      ...(typeof cost === 'number' && Number.isFinite(cost) && cost >= 0 ? { costUsd: cost } : {}),
       tokensIn: json.usage?.prompt_tokens ?? null,
       tokensOut: json.usage?.completion_tokens ?? null,
       // usage が返っていれば「計測できている」と見なし、prompt_tokens_details が
