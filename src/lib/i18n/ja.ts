@@ -539,6 +539,12 @@ export const ja = {
     '改訂案の作成中に表のデザインが更新されたため、改訂案を破棄しました。もう一度作成してください',
   'pilot.reviseQueuedDecisions':
     '未送信の判定（オフライン: {n} 件）があります。送信が終わってから改訂案を作成してください',
+  'pilot.reviseInsufficientStudies':
+    '2 本以上の論文で修正・棄却・未報告があった項目がないため、改訂案は作りません。パイロットの論文を増やすか、スキーマ画面で直接編集してください',
+  'pilot.reviseAllLeaked': 'パイロットの値を含んでいたため、すべての改訂案を除外しました',
+  'schema.pilotRevisionSingleStudy': '1 本の論文だけの誤りだった {n} 項目は対象外にしました',
+  'schema.pilotRevisionLeaked': 'パイロットの値を含んでいた {n} 項目の提案は除外しました',
+  'schema.pilotRevisionRemovedSentences': '既存の指示から {n} 文が削除されています',
   'pilot.reviseNoChanges': '改訂が必要な項目は提案されませんでした',
   'pilot.studyUsed': '過去のパイロットで使用',
   'pilot.studyRevisionUsed': '改訂に使った論文',

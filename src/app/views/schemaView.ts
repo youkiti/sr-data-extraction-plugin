@@ -29,6 +29,7 @@ import type {
   Rob2DeviationType,
   RobinsIEffect,
 } from '../../features/schema/presets/robTemplates';
+import { diffText, removedInstructionSentences } from '../../features/schema/textDiff';
 import type { SchemaEditorRow } from '../../features/schema/types';
 import type { FieldValidationError } from '../../features/schema/validateField';
 import { t, type MessageKey } from '../../lib/i18n';
@@ -1234,20 +1235,33 @@ function redraftAttrLabel(key: RedraftComparedKey): string {
   return messageKey !== undefined ? t(messageKey) : (literals[key] as string);
 }
 
-/** 差分承認画面: 変更項目 1 件の属性別差分リスト（属性名: before → after。null は「—」表示） */
+/** 差分承認画面: 変更項目の属性別差分。指示と例は変更トークンを強調し、大きい差分は全文並記する */
 function renderRedraftChangeList(changes: readonly RedraftAttributeChange[]): HTMLElement {
   return el(
     'ul',
     { className: 'schema__redraft-changes' },
-    changes.map((change) =>
-      el('li', {
+    changes.map((change) => {
+      if (change.key === 'extractionInstruction' || change.key === 'example') {
+        const parts = diffText(change.before ?? '', change.after ?? '');
+        if (parts !== null)
+          return el('li', {}, [
+            el('span', { text: `${redraftAttrLabel(change.key)}: ` }),
+            ...parts.map((part) =>
+              el(part.kind === 'equal' ? 'span' : part.kind, {
+                className: `schema__diff-${part.kind}`,
+                text: part.text,
+              }),
+            ),
+          ]);
+      }
+      return el('li', {
         text: t('schema.redraftChangeLine', {
           label: redraftAttrLabel(change.key),
           before: change.before ?? '—',
           after: change.after ?? '—',
         }),
-      }),
-    ),
+      });
+    }),
   );
 }
 
@@ -1296,6 +1310,23 @@ function renderRedraftChanged(
       text: t('schema.redraftItemHeading', { fieldLabel: item.current.fieldLabel, fieldName }),
     });
     const children = [el('label', {}, [checkbox, heading]), renderRedraftChangeList(item.changes)];
+    if (pilotRevision !== null) {
+      const removed = removedInstructionSentences(
+        item.current.extractionInstruction,
+        item.proposed.extractionInstruction,
+      );
+      if (removed.length > 0)
+        children.push(
+          el('div', { className: 'schema__redraft-note' }, [
+            el('p', { text: t('schema.pilotRevisionRemovedSentences', { n: removed.length }) }),
+            el(
+              'ul',
+              {},
+              removed.map((text) => el('li', { text })),
+            ),
+          ]),
+        );
+    }
     const rationale = pilotRevision?.rationales[fieldName];
     if (rationale !== undefined)
       children.push(el('p', { className: 'schema__redraft-rationale', text: rationale }));
@@ -1363,6 +1394,26 @@ function renderRedraftReview(
             }),
           }),
         ]),
+    ...(pilotRevision !== null
+      ? [
+          ...(pilotRevision.excludedSingleStudyCount > 0
+            ? [
+                el('p', {
+                  text: t('schema.pilotRevisionSingleStudy', {
+                    n: pilotRevision.excludedSingleStudyCount,
+                  }),
+                }),
+              ]
+            : []),
+          ...(pilotRevision.leakedProposalCount > 0
+            ? [
+                el('p', {
+                  text: t('schema.pilotRevisionLeaked', { n: pilotRevision.leakedProposalCount }),
+                }),
+              ]
+            : []),
+        ]
+      : []),
     el('p', {
       id: 'schema-redraft-summary',
       text: t('schema.redraftSummary', {

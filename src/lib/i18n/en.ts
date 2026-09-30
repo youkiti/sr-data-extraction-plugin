@@ -541,6 +541,14 @@ export const en: Record<MessageKey, string> = {
     'The schema changed while revisions were being generated, so the proposal was discarded. Please generate it again',
   'pilot.reviseQueuedDecisions':
     'There are {n} unsent judgments in the offline queue. Please wait until they have been sent before generating revisions',
+  'pilot.reviseInsufficientStudies':
+    'No fields have edit, reject or not-reported judgments in at least two studies. Add pilot studies or edit the schema directly.',
+  'pilot.reviseAllLeaked':
+    'All revision proposals were excluded because they contained pilot values.',
+  'schema.pilotRevisionSingleStudy': 'Excluded {n} fields with errors in only one study.',
+  'schema.pilotRevisionLeaked': 'Excluded {n} proposals containing pilot values.',
+  'schema.pilotRevisionRemovedSentences':
+    '{n} sentences have been removed from the existing instruction.',
   'pilot.reviseNoChanges': 'The model proposed no revisions',
   'pilot.studyUsed': 'Used in a previous pilot',
   'pilot.studyRevisionUsed': 'Used for a revision',

@@ -268,6 +268,8 @@ export interface SchemaState {
     runId: string;
     runStartedAt: string | null;
     decisionCount: number;
+    excludedSingleStudyCount: number;
+    leakedProposalCount: number;
     rationales: Record<string, string>;
   } | null;
   /** 直前にパイロット改訂版を確定した場合に再パイロット導線を表示する */

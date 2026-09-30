@@ -40,7 +40,7 @@ const revision = {
 
 test('指示・例だけの一般化と正解漏れ防止、言語保持の制約を固定する', () => {
   expect(REVISE_PILOT_INSTRUCTIONS_SKILL_NAME).toBe('revise-pilot-instructions');
-  expect(REVISE_PILOT_INSTRUCTIONS_PROMPT_VERSION).toBe(1);
+  expect(REVISE_PILOT_INSTRUCTIONS_PROMPT_VERSION).toBe(2);
   for (const phrase of [
     'Only revise extraction_instruction and example.',
     'Never add or remove fields, never change field_name, data type, allowed values, unit, entity level, section.',
@@ -48,6 +48,13 @@ test('指示・例だけの一般化と正解漏れ防止、言語保持の制�
     "Do NOT embed pilot-specific values, numbers, drug names, study names, quotations or other literal strings from the pilot papers or the reviewers' values into the instruction or the example.",
     "The example must be a generic, invented illustration, never a reviewer's value copied verbatim.",
     'Reviewer notes are hints about what went wrong; turn them into general guidance.',
+    'Keep every existing rule, definition, priority order and exclusion',
+    'Never change what the field measures (its meaning, time point, population or denominator).',
+    'Do not add rules that belong to other fields.',
+    'Change the example only when the current example is itself misleading.',
+    'for enum fields, do not use an allowed value as the whole example.',
+    'Do not guess or reconstruct the original values.',
+    'Write the rationale in the UI language specified in the user message.',
     'Keep the existing language of each instruction (if the current instruction is Japanese, answer in Japanese).',
   ])
     expect(REVISE_PILOT_INSTRUCTIONS_SYSTEM_PROMPT).toContain(phrase);
@@ -57,7 +64,7 @@ test('指示・例だけの一般化と正解漏れ防止、言語保持の制�
   });
 });
 
-test('対象の項目定義・判定・承認数を含め、引用を300文字に制限する', () => {
+test('対象の項目定義と承認数を保ち、値・引用・識別子を送信しない', () => {
   const item = {
     fieldId: 'f-1',
     fieldName: 'study_design',
@@ -84,6 +91,7 @@ test('対象の項目定義・判定・承認数を含め、引用を300文字�
     ],
   };
   const userPrompt = buildRevisePilotInstructionsUserPrompt({
+    rationaleLanguage: 'Japanese',
     fields: [
       makeField(),
       makeField({ fieldId: 'protected', entityLevel: 'rob_domain' }),
@@ -95,7 +103,7 @@ test('対象の項目定義・判定・承認数を含め、引用を300文字�
     },
   });
   expect(userPrompt).toContain('acceptCount counts cells accepted as-is');
-  expect(userPrompt).toContain('pilot data to learn from, not to copy');
+  expect(userPrompt).toContain('shapes and relationships');
   const prompt = JSON.parse(userPrompt.split('\n\n')[1]!);
   expect(prompt).toHaveLength(1);
   expect(prompt[0]).toEqual({
@@ -108,7 +116,24 @@ test('対象の項目定義・判定・承認数を含め、引用を300文字�
     extraction_instruction: 'Report the design.',
     example: null,
     acceptCount: 2,
-    entries: [{ ...item.entries[0], quote: 'あ'.repeat(300) }, item.entries[1]],
+    entries: [
+      {
+        study: 'S1',
+        action: 'edit',
+        ai_shape: 'text(1)',
+        human_shape: 'text(1)',
+        discrepancy: 'text_different',
+        note: 'メモ',
+      },
+      {
+        study: 'S2',
+        action: 'reject',
+        ai_shape: 'empty',
+        human_shape: null,
+        discrepancy: null,
+        note: null,
+      },
+    ],
   });
 });
 

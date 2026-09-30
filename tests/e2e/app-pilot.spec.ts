@@ -623,7 +623,7 @@ test('パイロットの判定メモから部分改訂案を承認し、pilot_re
     'run-1',
     'pilot',
     '1',
-    'study-1',
+    'study-1,study-2',
     'gemini',
     'gemini-test',
     'gemini-test-001',
@@ -666,7 +666,7 @@ test('パイロットの判定メモから部分改訂案を承認し、pilot_re
     'high',
     'exact',
   ];
-  const memo = '全体と群別の結果を区別する';
+  const memo = '全体と群別の結果を区別する: 42.70 と "Sleep hygiene"';
   const decisionRows: unknown[][] = [];
   const versionRows: unknown[][] = [];
   const llmBodies: string[] = [];
@@ -775,10 +775,13 @@ test('パイロットの判定メモから部分改訂案を承認し、pilot_re
   await page.locator('.verify__note-input').press('Enter');
   await expect.poll(() => decisionRows.length).toBe(1);
   expect(decisionRows[0]?.[DECISIONS_HEADERS.indexOf('note')]).toBe(memo);
+  const second = [...decisionRows[0]!];
+  second[DECISIONS_HEADERS.indexOf('study_id')] = 'study-2';
+  decisionRows.push(second);
   await expect(page.locator('#pilot-revise-instructions')).toBeEnabled();
   await page.locator('#pilot-revise-instructions').click();
   await expect(page.locator('#schema-redraft-review')).toBeVisible({ timeout: 15_000 });
-  await expect(page.locator('#schema-redraft-pilot-source')).toContainText('判定 1 件');
+  await expect(page.locator('#schema-redraft-pilot-source')).toContainText('判定 2 件');
   await expect(page.locator('#schema-redraft-changed > li')).toHaveCount(1);
   await expect(page.locator('.schema__redraft-rationale')).toHaveText(
     '全体と群別の値の取り違えを防ぐ',
@@ -786,10 +789,20 @@ test('パイロットの判定メモから部分改訂案を承認し、pilot_re
   await expect(page.locator('#schema-redraft-removed li')).toHaveCount(0);
   expect(llmBodies).toHaveLength(1);
   expect(llmBodies[0]).toContain('Do NOT embed pilot-specific values');
-  expect(llmBodies[0]).toContain(memo);
+  expect(llmBodies[0]).not.toContain('42.70');
+  expect(llmBodies[0]).not.toContain('Sleep hygiene');
+  expect(llmBodies[0]).not.toContain('aiValue');
+  const sent = JSON.parse(llmBodies[0]!) as { contents: Array<{ parts: Array<{ text: string }> }> };
+  const userText = sent.contents
+    .flatMap((content) => content.parts.map((part) => part.text))
+    .join('\n');
+  expect(userText).not.toContain('12');
+  await expect(page.locator('#schema-redraft-changed ins').first()).toBeVisible();
+  // スタブの改訂案は文の追記だけなので、削除部分は出ない
+  await expect(page.locator('#schema-redraft-changed del')).toHaveCount(0);
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
   await page.locator('#schema-redraft-apply').click();
-  await expect(page.locator('#schema-note')).toHaveValue('pilot run run-1 の判定 1 件に基づく改訂');
+  await expect(page.locator('#schema-note')).toHaveValue('pilot run run-1 の判定 2 件に基づく改訂');
   await page.locator('#schema-confirm').click();
   await expect.poll(() => versionRows.length).toBe(1);
   expect(versionRows[0]?.[SHEET_HEADERS.SchemaVersions.indexOf('created_by_type')]).toBe(

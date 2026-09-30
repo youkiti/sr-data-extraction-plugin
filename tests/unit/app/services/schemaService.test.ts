@@ -1504,6 +1504,8 @@ test('パイロット改訂の出所は編集・追加・削除・移動・整�
         runId: 'r',
         runStartedAt: null,
         decisionCount: 1,
+        excludedSingleStudyCount: 0,
+        leakedProposalCount: 0,
         rationales: { study_design: '理由' },
       },
     },
@@ -1529,7 +1531,14 @@ test('パイロット改訂を確定すると再パイロット導線を残し�
       ...store.getState().schema,
       editorRows: [makeEditorRow()],
       editorOrigin: 'pilot_revision',
-      pilotRevision: { runId: 'r', runStartedAt: 't', decisionCount: 1, rationales: {} },
+      pilotRevision: {
+        runId: 'r',
+        runStartedAt: 't',
+        decisionCount: 1,
+        excludedSingleStudyCount: 0,
+        leakedProposalCount: 0,
+        rationales: {},
+      },
     },
   });
   listProtocolsMock.mockResolvedValue([makeProtocol()]);

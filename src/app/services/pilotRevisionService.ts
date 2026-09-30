@@ -1,6 +1,10 @@
 // パイロットの最終判定から抽出指示の部分改訂案を作るサービス。
 // 現行スキーマへ適用する提案だけを差分承認へ渡し、通信と監査ログをここで配線する。
 import { buildPilotFeedback } from '../../features/schema/pilotFeedback';
+import {
+  filterLeakingRevisions,
+  selectRevisionFeedback,
+} from '../../features/schema/pilotRevisionSafety';
 import { buildRedraftDiff, defaultRedraftSelection } from '../../features/schema/redraftDiff';
 import {
   buildRevisePilotInstructionsUserPrompt,
@@ -13,7 +17,7 @@ import {
 import { readAllDecisions } from '../../features/verification/decisionRepository';
 import { ensureChildFolder, uploadTextFile } from '../../lib/google/drive';
 import { getCurrentUserEmail } from '../../lib/google/identity';
-import { t } from '../../lib/i18n';
+import { getUiLanguage, t } from '../../lib/i18n';
 import { withLogging } from '../../lib/llm/apiLogger';
 import { appendLlmApiLog } from '../../lib/llm/apiLogRepository';
 import { missingApiKeyMessage } from '../../lib/llm/modelCatalog';
@@ -66,7 +70,7 @@ export async function runPilotRevision(store: Store, deps: SchemaServiceDeps): P
     });
     const runDecisions = decisions.filter((decision) => run.studyIds.includes(decision.studyId));
     const annotator = (await getCurrentUserEmail(deps.profile)) ?? '';
-    const feedback = buildPilotFeedback({
+    const rawFeedback = buildPilotFeedback({
       runStudyIds: run.studyIds,
       schemaVersion: run.schemaVersion,
       fields: runFields,
@@ -77,12 +81,20 @@ export async function runPilotRevision(store: Store, deps: SchemaServiceDeps): P
     patchPilot(store, {
       decisions: runDecisions,
     });
-    if (feedback.decisionCount === 0) throw new Error(t('pilot.reviseEmpty'));
+    if (rawFeedback.decisionCount === 0) throw new Error(t('pilot.reviseEmpty'));
     if (store.getState().schema.currentFields === null)
       await loadSchema(store, deps, { force: true });
     const currentFields = store.getState().schema.currentFields;
     if (currentFields === null)
       throw new Error(store.getState().schema.loadError ?? t('extraction.errNoSchema'));
+    const { feedback, excludedSingleStudyCount } = selectRevisionFeedback(
+      rawFeedback,
+      currentFields,
+    );
+    if (feedback.items.length === 0) throw new Error(t('pilot.reviseInsufficientStudies'));
+    const targetFields = currentFields.filter((field) =>
+      feedback.items.some((item) => item.fieldId === field.fieldId),
+    );
     const currentVersion = store.getState().schema.versions?.[0]?.schemaVersion;
     const logsFolder = await ensureChildFolder('logs', project.driveFolderId, deps.google);
     const llmFolder = await ensureChildFolder('llm', logsFolder.id, deps.google);
@@ -108,7 +120,11 @@ export async function runPilotRevision(store: Store, deps: SchemaServiceDeps): P
         { role: 'system', content: REVISE_PILOT_INSTRUCTIONS_SYSTEM_PROMPT },
         {
           role: 'user',
-          content: buildRevisePilotInstructionsUserPrompt({ fields: currentFields, feedback }),
+          content: buildRevisePilotInstructionsUserPrompt({
+            fields: targetFields,
+            feedback,
+            rationaleLanguage: getUiLanguage() === 'ja' ? 'Japanese' : 'English',
+          }),
         },
       ],
       { responseFormat: 'json', responseSchema: REVISE_PILOT_INSTRUCTIONS_RESPONSE_SCHEMA },
@@ -119,7 +135,14 @@ export async function runPilotRevision(store: Store, deps: SchemaServiceDeps): P
       after.currentFields !== currentFields
     )
       throw new Error(t('pilot.reviseSchemaChanged'));
-    const { revisions } = parseRevisePilotInstructionsResponse(response.text, currentFields);
+    const parsed = parseRevisePilotInstructionsResponse(response.text, targetFields);
+    const { revisions, droppedFieldNames } = filterLeakingRevisions(
+      parsed.revisions,
+      targetFields,
+      feedback,
+    );
+    if (revisions.length === 0 && droppedFieldNames.length > 0)
+      throw new Error(t('pilot.reviseAllLeaked'));
     if (revisions.length === 0) throw new Error(t('pilot.reviseNoChanges'));
     const diff = buildRedraftDiff(currentFields, toRevisionEditorRows(currentFields, revisions), {
       partial: true,
@@ -134,6 +157,8 @@ export async function runPilotRevision(store: Store, deps: SchemaServiceDeps): P
           runId: run.runId,
           runStartedAt: run.startedAt,
           decisionCount: feedback.decisionCount,
+          excludedSingleStudyCount,
+          leakedProposalCount: droppedFieldNames.length,
           rationales: Object.fromEntries(
             revisions.map((revision) => [revision.fieldName, revision.rationale]),
           ),

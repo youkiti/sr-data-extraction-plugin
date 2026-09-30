@@ -1535,6 +1535,8 @@ test('部分提案の出所と理由、エディタの版メモ、確定後の�
     runId: 'r',
     runStartedAt: '2026-01-01',
     decisionCount: 2,
+    excludedSingleStudyCount: 0,
+    leakedProposalCount: 0,
     rationales: { [field.fieldName]: '単位の扱いを明示する' },
   };
   const review = renderSchemaView(
@@ -1559,7 +1561,13 @@ test('部分提案の出所と理由、エディタの版メモ、確定後の�
     makeState({
       versions: [makeVersion(1)],
       redraft: { diff, selection: defaultRedraftSelection(diff) },
-      pilotRevision: { ...pilotRevision, runStartedAt: null, rationales: {} },
+      pilotRevision: {
+        ...pilotRevision,
+        runStartedAt: null,
+        excludedSingleStudyCount: 0,
+        leakedProposalCount: 0,
+        rationales: {},
+      },
     }),
     ctx,
   );
@@ -1577,4 +1585,95 @@ test('部分提案の出所と理由、エディタの版メモ、確定後の�
     ctx,
   );
   expect(confirmed.querySelector('#schema-repilot')?.getAttribute('href')).toBe('#/pilot');
+});
+
+test('差分の追加削除・削除文警告・除外件数を表示しチェック状態を維持する', () => {
+  const { ctx } = makeCtx();
+  const field = makeField({
+    extractionInstruction: 'Keep priorities. Old rule.',
+    example: 'Old example',
+  });
+  const diff = buildRedraftDiff(
+    [field],
+    [
+      makeEditorRow({
+        fieldName: field.fieldName,
+        extractionInstruction: 'Keep priorities. New rule.',
+        example: 'New example',
+      }),
+    ],
+    { partial: true },
+  );
+  const pilotRevision = {
+    runId: 'r',
+    runStartedAt: null,
+    decisionCount: 2,
+    excludedSingleStudyCount: 1,
+    leakedProposalCount: 2,
+    rationales: {},
+  };
+  const view = renderSchemaView(
+    makeState({
+      versions: [makeVersion(1)],
+      redraft: { diff, selection: defaultRedraftSelection(diff) },
+      pilotRevision,
+    }),
+    ctx,
+  );
+  expect(view.querySelector('del')?.textContent).toBe('Old');
+  expect(view.querySelector('ins')?.textContent).toBe('New');
+  expect(view.textContent).toContain('既存の指示から 1 文が削除されています');
+  expect(view.textContent).toContain('Old rule');
+  expect(view.textContent).toContain('1 本の論文だけの誤りだった 1 項目');
+  expect(view.textContent).toContain('パイロットの値を含んでいた 2 項目');
+  expect(view.querySelector<HTMLInputElement>('.schema__redraft-check')?.checked).toBe(true);
+  const unchanged = buildRedraftDiff(
+    [field],
+    [
+      makeEditorRow({
+        fieldName: field.fieldName,
+        extractionInstruction: field.extractionInstruction,
+        example: 'New example',
+      }),
+    ],
+    { partial: true },
+  );
+  const noWarning = renderSchemaView(
+    makeState({
+      versions: [makeVersion(1)],
+      redraft: { diff: unchanged, selection: defaultRedraftSelection(unchanged) },
+      pilotRevision,
+    }),
+    ctx,
+  );
+  expect(noWarning.textContent).not.toContain('文が削除');
+});
+test('長い指示は全文並記、null の例は追加削除として表示する', () => {
+  const { ctx } = makeCtx();
+  for (const [before, after] of [
+    [null, 'example'],
+    ['example', null],
+  ] as const) {
+    const field = makeField({ extractionInstruction: 'あ'.repeat(501), example: before });
+    const diff = buildRedraftDiff(
+      [field],
+      [
+        makeEditorRow({
+          fieldName: field.fieldName,
+          extractionInstruction: 'い'.repeat(500),
+          example: after,
+        }),
+      ],
+    );
+    const view = renderSchemaView(
+      makeState({
+        versions: [makeVersion(1)],
+        redraft: { diff, selection: defaultRedraftSelection(diff) },
+      }),
+      ctx,
+    );
+    expect(view.querySelector('.schema__redraft-changes')?.textContent).toContain('→');
+    expect(view.querySelector(before === null ? 'ins' : 'del')?.textContent).toBe('example');
+    expect(view.textContent).not.toContain('文が削除');
+  }
 });

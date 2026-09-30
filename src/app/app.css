@@ -3944,3 +3944,15 @@ section.documents__tiab {
   margin-bottom: 0.5rem;
   padding: 0.4rem;
 }
+
+.schema__diff-del {
+  color: var(--color-danger);
+  background: #fde8e8;
+  text-decoration: line-through;
+}
+
+.schema__diff-ins {
+  color: #146c43;
+  background: var(--color-success-bg);
+  text-decoration: underline;
+}

@@ -1,3 +1,4 @@
+import { setUiLanguage } from '../../../../src/lib/i18n';
 import { runPilotRevision } from '../../../../src/app/services/pilotRevisionService';
 import { loadSchema, type SchemaServiceDeps } from '../../../../src/app/services/schemaService';
 import { createInitialState, createStore, type Store } from '../../../../src/app/store';
@@ -49,7 +50,7 @@ function run(overrides: Partial<ExtractionRun> = {}): ExtractionRun {
     runId: 'r',
     runType: 'pilot',
     schemaVersion: 1,
-    studyIds: ['s1'],
+    studyIds: ['s1', 's2'],
     provider: 'gemini',
     requestedModel: 'model',
     modelVersion: null,
@@ -130,6 +131,7 @@ beforeEach(() => {
   jest.clearAllMocks();
   (readAllDecisions as jest.Mock).mockResolvedValue([
     judgment,
+    { ...judgment, studyId: 's2' },
     { ...judgment, studyId: 'outside' },
   ]);
   (getCurrentUserEmail as jest.Mock).mockResolvedValue('me');
@@ -158,17 +160,19 @@ test('現行版への部分提案と出所を保持し、プロンプト版付�
   expect(store.getState().schema.pilotRevision).toEqual({
     runId: 'r',
     runStartedAt: '01',
-    decisionCount: 1,
+    decisionCount: 2,
+    excludedSingleStudyCount: 0,
+    leakedProposalCount: 0,
     rationales: { study_design: '理由' },
   });
-  expect(store.getState().pilot.decisions).toEqual([judgment]);
+  expect(store.getState().pilot.decisions).toEqual([judgment, { ...judgment, studyId: 's2' }]);
   expect(appendLlmApiLog).toHaveBeenCalledWith(
     'sheet',
     expect.objectContaining({ purpose: 'revise_schema_pilot' }),
     deps.google,
   );
   expect(uploadTextFile).toHaveBeenCalledWith(
-    expect.objectContaining({ content: expect.stringContaining('"promptVersion": 1') }),
+    expect.objectContaining({ content: expect.stringContaining('"promptVersion": 2') }),
     deps.google,
   );
   expect(store.getState().pilot.revising).toBe(false);
@@ -337,4 +341,57 @@ test('未送信のオフライン判定があればシートも LLM も呼び出
   expect(store.getState().pilot.reviseError).toBe(
     '未送信の判定（オフライン: 2 件）があります。送信が終わってから改訂案を作成してください',
   );
+});
+
+test('1 study のみなら LLM を呼ばず専用エラーにする', async () => {
+  (readAllDecisions as jest.Mock).mockResolvedValue([judgment]);
+  const store = makeStore();
+  const { deps, chat } = makeDeps();
+  expect(await runPilotRevision(store, deps)).toBe(false);
+  expect(chat).not.toHaveBeenCalled();
+  expect(store.getState().pilot.reviseError).toContain('2 本以上');
+});
+test('漏れで全提案を除外した場合の専用エラー', async () => {
+  (readAllDecisions as jest.Mock).mockResolvedValue(
+    ['s1', 's2'].map((studyId) => ({ ...judgment, studyId, value: '42.70' })),
+  );
+  const store = makeStore();
+  const { deps, chat } = makeDeps();
+  chat.mockResolvedValueOnce({
+    text: JSON.stringify({ revisions: [{ ...revision, example: '42.7' }] }),
+    tokensIn: null,
+    tokensOut: null,
+    cachedTokensIn: null,
+    raw: {},
+  });
+  expect(await runPilotRevision(store, deps)).toBe(false);
+  expect(store.getState().pilot.reviseError).toContain('すべての改訂案を除外');
+});
+
+test('英語 UI の理由を指定し、1 study 項目の除外と送信件数を保持する', async () => {
+  setUiLanguage('en');
+  try {
+    const store = makeStore();
+    store.setState({
+      pilot: {
+        ...store.getState().pilot,
+        runFields: [makeField(), makeField({ fieldId: 'f2', fieldName: 'other' })],
+      },
+    });
+    (readAllDecisions as jest.Mock).mockResolvedValue([
+      judgment,
+      { ...judgment, studyId: 's2' },
+      { ...judgment, fieldId: 'f2' },
+    ]);
+    const { deps, chat } = makeDeps();
+    expect(await runPilotRevision(store, deps)).toBe(true);
+    expect(chat.mock.calls[0]?.[0][1]?.content).toContain('Write the rationale in English');
+    expect(chat.mock.calls[0]?.[0][1]?.content).not.toContain('"field_name": "other"');
+    expect(store.getState().schema.pilotRevision).toMatchObject({
+      decisionCount: 2,
+      excludedSingleStudyCount: 1,
+    });
+  } finally {
+    setUiLanguage('ja');
+  }
 });
