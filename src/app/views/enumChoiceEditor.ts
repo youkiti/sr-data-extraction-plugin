@@ -79,6 +79,7 @@ function renderOtherInput(
   const input = el('input', { className: 'verify__edit-input', attributes }) as HTMLInputElement;
   input.value = initialValue;
   input.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' && (event.isComposing || event.keyCode === 229)) return;
     if (event.key === 'Enter') {
       options.onConfirm(input.value);
     } else if (event.key === 'Escape') {

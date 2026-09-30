@@ -567,6 +567,8 @@ export const ja = {
   'pilot.failureUnknown': '失敗の内訳は保存されていません（履歴から読み込んだ実行）。',
   'pilot.runDone': '抽出が完了しました。',
   'pilot.reviseSchema': '表のデザインを改訂して再パイロット',
+  'pilot.studyUsed': '過去のパイロットで使用',
+  'pilot.studyRevisionUsed': '改訂に使った論文',
   'pilot.verifyTitle': '検証（S8 と同じ操作）',
   'pilot.verifyError': '検証データを読み込めませんでした: {reason}',
   'pilot.historyTitle': '過去のパイロット結果',
@@ -764,6 +766,8 @@ export const ja = {
   'verify.editMultilineHint': 'Enter で改行 / Ctrl+Enter（Mac は Cmd+Enter）で確定',
   'verify.editConfirmIndependent': '入力して確定',
   'verify.editConfirm': '修正して確定',
+  'verify.noteAria': '判定メモ（任意）',
+  'verify.notePlaceholder': '判定の理由や、抽出指示の改善点（任意）',
   'verify.rejectConfirm': '棄却して確定',
   // enum 項目の許容値チップ（issue #254）
   'verify.enumChooseAria': '{label} の選択肢',

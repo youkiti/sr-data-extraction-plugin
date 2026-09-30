@@ -572,6 +572,8 @@ export const en: Record<MessageKey, string> = {
   'pilot.failureUnknown': 'Failure details are not stored (run loaded from history).',
   'pilot.runDone': 'Extraction completed.',
   'pilot.reviseSchema': 'Revise the table design and re-run the pilot',
+  'pilot.studyUsed': 'Used in a previous pilot',
+  'pilot.studyRevisionUsed': 'Used for a revision',
   'pilot.verifyTitle': 'Verification (same operations as S8)',
   'pilot.verifyError': 'Failed to load verification data: {reason}',
   'pilot.historyTitle': 'Past pilot results',
@@ -773,6 +775,9 @@ export const en: Record<MessageKey, string> = {
   'verify.editMultilineHint': 'Enter inserts a line break; Ctrl+Enter (Cmd+Enter on Mac) confirms',
   'verify.editConfirmIndependent': 'Confirm input',
   'verify.editConfirm': 'Confirm edit',
+  'verify.noteAria': 'Judgment note (optional)',
+  'verify.notePlaceholder':
+    'Why you changed it, or how the instruction could be improved (optional)',
   'verify.rejectConfirm': 'Reject and confirm',
   // enum 項目の許容値チップ（issue #254）
   'verify.enumChooseAria': 'Choices for {label}',

@@ -3957,3 +3957,11 @@ section.documents__tiab {
   align-items: center;
   margin-bottom: 12px;
 }
+
+.verify__note-input {
+  box-sizing: border-box;
+  width: 100%;
+  flex-basis: 100%;
+  margin-bottom: 0.5rem;
+  padding: 0.4rem;
+}
