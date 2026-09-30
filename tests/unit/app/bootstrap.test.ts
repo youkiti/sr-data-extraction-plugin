@@ -3245,6 +3245,7 @@ describe('bootstrapApp: #/export', () => {
           providers: ['Gemini'],
           pilotStudyCount: 3,
           scannedDocumentCount: 0,
+          pilotRevisionCount: 0,
         },
       }),
     );

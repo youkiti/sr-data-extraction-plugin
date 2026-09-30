@@ -269,10 +269,14 @@ export interface SchemaState {
 
 /** #/pilot（S6）の画面状態。run の結果と埋め込み検証 UI の素材はタブのセッション内で保持する */
 export interface PilotState {
-  /** 対象 study の選択。初回表示時にテキスト層ありの先頭 3 study を既定選択する（ui-states.md §3・v0.10） */
+  /** 対象 study の選択。未使用のテキスト付き study を最大 3 件優先する */
   selectedStudyIds: string[];
   /** 既定選択を一度だけ行うためのフラグ（ユーザーの選択解除を上書きしない） */
   selectionInitialized: boolean;
+  /** 利用者が対象 study の選択を操作したか（既定選択の上書き防止） */
+  selectionTouched: boolean;
+  /** 履歴到着後の既定選び直しを一度だけ行う */
+  selectionHistoryApplied: boolean;
   model: string;
   running: boolean;
   progress: RunProgress | null;
@@ -777,6 +781,8 @@ export function createInitialState(): AppState {
     pilot: {
       selectedStudyIds: [],
       selectionInitialized: false,
+      selectionTouched: false,
+      selectionHistoryApplied: false,
       model: '',
       running: false,
       progress: null,

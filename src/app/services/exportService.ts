@@ -124,6 +124,7 @@ function buildMethodsFacts(
   documents: readonly DocumentRecord[],
   runFacts: readonly MethodsRunFact[],
   toolVersion: string | null,
+  pilotRevisionCount: number,
 ): MethodsFacts {
   const fullFacts = runFacts.filter((fact) => fact.runType === 'full');
   const modelIds = dedupe(
@@ -154,6 +155,7 @@ function buildMethodsFacts(
     providers: providerIds.map(providerDisplayName),
     pilotStudyCount: pilotStudyIds.size,
     scannedDocumentCount,
+    pilotRevisionCount,
   };
 }
 
@@ -228,7 +230,12 @@ export async function loadExportData(
       fields,
     });
     const toolVersion = (deps.getToolVersion ?? defaultGetToolVersion)();
-    const methodsFacts = buildMethodsFacts(documents, methodsRunFacts, toolVersion);
+    const methodsFacts = buildMethodsFacts(
+      documents,
+      methodsRunFacts,
+      toolVersion,
+      versions.filter((version) => version.createdByType === 'pilot_revision').length,
+    );
 
     // R セット（issue #60）。素材は generateExport が正確な exported_at で再構築できるよう保持し、
     // ここでの構築結果はサマリ・プレビュー表示専用（rSetMaterials 参照。design-r-export.md §13）
