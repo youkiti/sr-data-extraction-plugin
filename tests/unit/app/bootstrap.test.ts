@@ -1,5 +1,11 @@
 // メインビュー起動配線のテスト。hashchange の発火タイミングを決定的に制御するため、
 // 実 window ではなくスタブ（location / addEventListener のみ実装）を注入する
+import { sendAskPaperQuestion } from '../../../src/app/services/askPaperUiService';
+import { disposeAskPaperPanelCache } from '../../../src/app/views/askPaperPanel';
+jest.mock('../../../src/app/services/askPaperUiService', () => ({
+  sendAskPaperQuestion: jest.fn(),
+}));
+import { askPaperUsedStudiesStorageKey } from '../../../src/lib/storage/askPaperStore';
 import { installChromeMock, type ChromeMock } from '../../setup/chrome-mock';
 import { bootstrapApp, createChromeAppDeps, seedState, type AppDeps } from '../../../src/app/bootstrap';
 import { BUILD_DATE } from '../../../src/build-info';
@@ -12,6 +18,17 @@ jest.mock('pdfjs-dist', () => ({
   GlobalWorkerOptions: { workerSrc: '' },
   getDocument: jest.fn(),
 }));
+// 費用カードのコールバック配線はサービス単体のテストから分離する。
+jest.mock('../../../src/app/services/usageService', () => ({
+  ...jest.requireActual('../../../src/app/services/usageService'),
+  loadUsage: jest.fn(), saveBudget: jest.fn(),
+}));
+jest.mock('../../../src/app/services/usageExportService', () => ({
+  generateUsageExport: jest.fn(), downloadUsageExport: jest.fn(),
+}));
+import { loadUsage, saveBudget } from '../../../src/app/services/usageService';
+import { generateUsageExport, downloadUsageExport } from '../../../src/app/services/usageExportService';
+import { aggregateUsage } from '../../../src/features/usage/aggregateUsage';
 // #/export の配線テストはサービス呼び出しの委譲だけを見る（実処理は exportService.test.ts）
 jest.mock('../../../src/app/services/exportService', () => ({
   loadExportData: jest.fn(),
@@ -274,6 +291,19 @@ describe('seedState', () => {
     expect(state.counts.documents).toBe(0);
   });
 
+  test('質問用モデルをOptionsから読み込み、会話sliceの部分注入もマージする', async () => {
+    chromeMock.storage.local.data['settings.defaultModel'] = 'options-model';
+    const state = await seedState(
+      asWindow(createWindowStub({ askPaper: { error: 'テスト' } as AppState['askPaper'] })),
+    );
+    expect(state.askPaper).toEqual({
+      conversations: {},
+      usedStudyIds: [],
+      sending: false,
+      error: 'テスト',
+      model: 'options-model',
+    });
+  });
   test('chrome.storage.local の currentProject を読み込む', async () => {
     const project = { projectId: 'p1', spreadsheetId: 's1', driveFolderId: 'f1', name: '保存済みプロジェクト' };
     chromeMock.storage.local.data[CURRENT_PROJECT_STORAGE_KEY] = project;
@@ -2495,8 +2525,8 @@ describe('bootstrapApp: #/extract', () => {
     stub.fireHashChange();
     await flush();
 
-    // ExtractionRuns を読んで既定選択（未抽出の全 study = study-1）
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    // ExtractionRuns と予算・全用途の使用量を読んで既定選択する。
+    expect(fetchMock).toHaveBeenCalledTimes(3);
     expect(store?.getState().extract.selectedStudyIds).toEqual(['study-1']);
 
     // 選択解除 / 再選択の配線
@@ -2809,6 +2839,38 @@ describe('bootstrapApp: #/verify・#/dashboard', () => {
     Studies: [[...SHEET_HEADERS.Studies], STUDY_ROW],
   };
 
+  test('質問送信コールバックが送信サービスへ配線され、入力と開閉を再描画で保持する', async () => {
+    disposeAskPaperPanelCache();
+    const stub = createWindowStub(verifyPreloaded());
+    const { deps } = createVerifyFakeDeps(BASE_TABS);
+    const store = await bootstrapApp(asWindow(stub), deps);
+    stub.location.hash = '#/verify';
+    stub.fireHashChange();
+    await flush();
+    await flush();
+    const details = document.querySelector('#ask-paper') as HTMLDetailsElement;
+    details.open = true;
+    const input = document.querySelector('#ask-paper-input') as HTMLTextAreaElement;
+    input.value = '人数を教えて';
+    input.dispatchEvent(new Event('input'));
+    input.blur();
+    store!.setState({});
+    expect((document.querySelector('#ask-paper') as HTMLDetailsElement).open).toBe(true);
+    expect((document.querySelector('#ask-paper-input') as HTMLTextAreaElement).value).toBe(
+      '人数を教えて',
+    );
+    (document.querySelector('#ask-paper-send') as HTMLButtonElement).click();
+    expect(sendAskPaperQuestion).toHaveBeenCalledWith(
+      store,
+      deps,
+      expect.objectContaining({
+        studyId: 'study-1',
+        question: '人数を教えて',
+        fields: expect.any(Array),
+        documents: expect.any(Array),
+      }),
+    );
+  });
   test('#/verify 入場で一覧を読み込み、?study= なしは先頭 study を開く', async () => {
     const stub = createWindowStub(verifyPreloaded());
     const { deps } = createVerifyFakeDeps(BASE_TABS);
@@ -3510,6 +3572,7 @@ describe('bootstrapApp: #/export', () => {
           pilotStudyCount: 3,
           scannedDocumentCount: 0,
           pilotRevisionCount: 0,
+          chatAssistDecisionCount: 0,
         },
       }),
     );
@@ -3638,6 +3701,7 @@ describe('bootstrapApp: #/adjudicate', () => {
 
   function makeWorking(): AdjudicateWorking {
     return {
+      askPaperDocuments: [],
       study: { studyId: 'study-1', reviewSet: null, studyLabel: 'Smith 2020', registrationId: null, createdAt: 't0', createdBy: 'o@example.com', note: null },
       documents: [],
       annotatorA: 'a@example.com',
@@ -4717,6 +4781,148 @@ describe('bootstrapApp: API 失敗診断ログの配線（issue #249）', () => 
   });
 });
 
+
+describe('費用・予算・使用量出力の起動配線', () => {
+  beforeEach(() => {
+    installChromeMock();
+    document.body.innerHTML = APP_TEMPLATE;
+  });
+  test('部分注入でも usage の既定値を維持する', async () => {
+    const stub = createWindowStub({ dashboard: {
+      usage: { budgetError: '注入' },
+    } as AppState['dashboard'] });
+    const state = await seedState(asWindow(stub));
+    expect(state.dashboard.usage.budgetError).toBe('注入');
+    expect(state.dashboard.usage.loading).toBe(false);
+    expect(state.dashboard.usage.budgetDraft).toBeNull();
+  });
+
+  test('dashboard 入場・全体再読込・費用再読込・予算保存を配線する', async () => {
+    const dashboard = createInitialState().dashboard;
+    dashboard.usage.summary = aggregateUsage({ logs: [], runs: [] });
+    const stub = createWindowStub({ currentProject: PROJECT, home: COUNTS_LOADED, dashboard });
+    const { deps } = createFakeDeps([[...SHEET_HEADERS.Documents]]);
+    const store = await bootstrapApp(asWindow(stub), deps);
+    stub.location.hash = '#/dashboard';
+    stub.fireHashChange();
+    await flush();
+    expect(loadUsage).toHaveBeenCalledWith(store, deps);
+    (document.getElementById('dashboard-usage-reload') as HTMLButtonElement).click();
+    expect(loadUsage).toHaveBeenCalledWith(store, deps, { force: true });
+    store!.setState({ dashboard: { ...store!.getState().dashboard, loadError: '失敗' } });
+    (document.getElementById('dashboard-reload') as HTMLButtonElement).click();
+    expect(loadUsage).toHaveBeenCalledWith(store, deps, { force: true });
+    (document.getElementById('dashboard-budget-save') as HTMLButtonElement).click();
+    expect(store!.getState().dashboard.usage.budgetError).toBe(
+      '0 より大きい有限の金額を入力してください',
+    );
+    store!.setState({ counts: { ...store!.getState().counts, dataRows: 1 } });
+    expect(document.getElementById('dashboard-budget-error')?.textContent).toContain(
+      '0 より大きい有限の金額',
+    );
+    const input = document.getElementById('dashboard-budget-input') as HTMLInputElement;
+    input.value = '12';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    expect(store!.getState().dashboard.usage.budgetError).toBeNull();
+    (document.getElementById('dashboard-budget-save') as HTMLButtonElement).click();
+    expect(saveBudget).toHaveBeenCalledWith(store, deps, 12);
+  });
+
+  test('予算入力後に進捗が再描画されても入力値を保存できる', async () => {
+    const dashboard = createInitialState().dashboard;
+    dashboard.usage.summary = aggregateUsage({ logs: [], runs: [] });
+    const stub = createWindowStub({ currentProject: PROJECT, home: COUNTS_LOADED, dashboard });
+    const { deps } = createFakeDeps([[...SHEET_HEADERS.Documents]]);
+    const store = await bootstrapApp(asWindow(stub), deps);
+    stub.location.hash = '#/dashboard';
+    stub.fireHashChange();
+    await flush();
+    const input = document.getElementById('dashboard-budget-input') as HTMLInputElement;
+    input.focus();
+    input.value = '10.25';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    store!.setState({ dashboard: { ...store!.getState().dashboard, loadError: '進捗読込失敗' } });
+    const restored = document.getElementById('dashboard-budget-input') as HTMLInputElement;
+    expect(restored.value).toBe('10.25');
+    expect(document.activeElement).toBe(restored);
+    (document.getElementById('dashboard-budget-save') as HTMLButtonElement).click();
+    expect(saveBudget).toHaveBeenCalledWith(store, deps, 10.25);
+  });
+
+  test('予算の入力途中の小数点・キャレット・選択範囲を毎回の再描画で保持する', async () => {
+    const dashboard = createInitialState().dashboard;
+    dashboard.usage.summary = aggregateUsage({ logs: [], runs: [] });
+    const stub = createWindowStub({ currentProject: PROJECT, home: COUNTS_LOADED, dashboard });
+    const { deps } = createFakeDeps([[...SHEET_HEADERS.Documents]]);
+    const store = await bootstrapApp(asWindow(stub), deps);
+    stub.location.hash = '#/dashboard';
+    stub.fireHashChange();
+    await flush();
+    for (const value of ['1', '10', '10.', '10.25']) {
+      const input = document.getElementById('dashboard-budget-input') as HTMLInputElement;
+      input.focus();
+      input.value = value;
+      input.setSelectionRange(value.length, value.length);
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      const restored = document.getElementById('dashboard-budget-input') as HTMLInputElement;
+      expect(restored.value).toBe(value);
+      expect(restored.selectionStart).toBe(value.length);
+      expect(restored.selectionEnd).toBe(value.length);
+      expect(document.activeElement).toBe(restored);
+      expect(store!.getState().dashboard.usage.budgetDraft).toBe(value);
+    }
+    const input = document.getElementById('dashboard-budget-input') as HTMLInputElement;
+    input.setSelectionRange(1, 4, 'backward');
+    store!.setState({ dashboard: { ...store!.getState().dashboard, loadError: '進捗読込失敗' } });
+    const restored = document.getElementById('dashboard-budget-input') as HTMLInputElement;
+    expect(restored.selectionStart).toBe(1);
+    expect(restored.selectionEnd).toBe(4);
+    expect(restored.selectionDirection).toBe('backward');
+    (document.getElementById('dashboard-budget-save') as HTMLButtonElement).click();
+    expect(saveBudget).toHaveBeenCalledWith(store, deps, 10.25);
+  });
+
+  test('使用量の生成とダウンロードを配線する', async () => {
+    const state = createInitialState();
+    state.export.usage = { generating: false, error: null,
+      result: { filename: 'usage.csv', fileRef: 'https://drive.test/csv', csv: 'csv' } };
+    const stub = createWindowStub({ currentProject: PROJECT, home: COUNTS_LOADED,
+      counts: { ...state.counts, dataRows: 1, schemaVersions: 1 }, export: state.export });
+    const { deps } = createFakeDeps([[...SHEET_HEADERS.Documents]]);
+    const store = await bootstrapApp(asWindow(stub), deps);
+    stub.location.hash = '#/export';
+    stub.fireHashChange();
+    await flush();
+    (document.getElementById('export-usage-generate') as HTMLButtonElement).click();
+    expect(generateUsageExport).toHaveBeenCalledWith(store, deps);
+    (document.getElementById('export-usage-download') as HTMLButtonElement).click();
+    expect(downloadUsageExport).toHaveBeenCalledWith(store);
+  });
+});
+test.each(['#/verify', '#/adjudicate'] as const)(
+  '画面入場でアカウント別の質問済みIDを復元する: %s',
+  async (route) => {
+    const chromeMock = installChromeMock();
+    document.body.innerHTML = APP_TEMPLATE;
+    chromeMock.storage.local.data[
+      askPaperUsedStudiesStorageKey(PROJECT.spreadsheetId, 'tester@example.com')
+    ] = ['asked-before-reload'];
+    const stub = createWindowStub({
+      currentProject: PROJECT,
+      counts: { ...createInitialState().counts, schemaVersions: 1, documents: 1 },
+      home: COUNTS_LOADED,
+      role: { ...createInitialState().role, role: 'owner' },
+    });
+    const { deps } = createFakeDeps([]);
+    const store = await bootstrapApp(asWindow(stub), deps);
+    stub.location.hash = route;
+    stub.fireHashChange();
+    await flush();
+    await flush();
+    expect(store?.getState().askPaper.usedStudyIds).toContain('asked-before-reload');
+    expect(store?.getState().askPaper.conversations).toEqual({});
+  },
+);
 // 担当セットの操作が DOM からサービスへ渡ることを確認する。
 describe('bootstrapApp: 担当セットの配線', () => {
   function fixture(): Partial<AppState> {

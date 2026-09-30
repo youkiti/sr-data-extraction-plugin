@@ -27,6 +27,7 @@ import {
   latestArmStructure,
   readAllArmStructures,
 } from '../../features/verification/armStructureRepository';
+import { withChatAssistMarker } from '../../features/verification/chatAssist';
 import { readAllDecisions } from '../../features/verification/decisionRepository';
 import { verificationProgress } from '../../features/verification/progress';
 import { getCurrentUserEmail } from '../../lib/google/identity';
@@ -670,7 +671,9 @@ export async function persistVerifyDecision(
     patchVerify(store, { studyValues });
   }
   const write: QueuedDecisionWrite = {
-    decision,
+    decision: state.askPaper.usedStudyIds.includes(decision.studyId)
+      ? { ...decision, note: withChatAssistMarker(decision.note) }
+      : decision,
     fieldName: field.fieldName,
     entityLevel: field.entityLevel,
     studyValues,

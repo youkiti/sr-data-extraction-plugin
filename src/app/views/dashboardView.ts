@@ -15,6 +15,7 @@ import { resolveActiveStudies } from '../../features/documents/studyRepository';
 import { t } from '../../lib/i18n';
 import { el } from '../ui/dom';
 import type { AppState } from '../store';
+import { renderDashboardUsage } from './dashboardUsage';
 import type { ViewContext } from './types';
 
 /** 率の表示（分母 0 は「—」。ui-states.md §3 `#/dashboard`） */
@@ -177,6 +178,12 @@ export function renderDashboardView(state: AppState, ctx: ViewContext): HTMLElem
     }),
   ];
   const dashboard = state.dashboard;
+  const finish = (): HTMLElement => {
+    if ((state.role.role ?? 'owner') === 'owner') {
+      children.push(renderDashboardUsage(dashboard.usage, ctx.dashboard));
+    }
+    return el('section', { className: 'view view--dashboard' }, children);
+  };
 
   if (dashboard.loadError !== null) {
     const reload = el('button', {
@@ -194,12 +201,12 @@ export function renderDashboardView(state: AppState, ctx: ViewContext): HTMLElem
       }),
       reload,
     );
-    return el('section', { className: 'view view--dashboard' }, children);
+    return finish();
   }
 
   if (dashboard.data === null || dashboard.loading) {
     children.push(el('p', { id: 'dashboard-loading', text: t('dashboard.loading') }));
-    return el('section', { className: 'view view--dashboard' }, children);
+    return finish();
   }
 
   const reviewSets = renderReviewSetProgress(state);
@@ -212,9 +219,9 @@ export function renderDashboardView(state: AppState, ctx: ViewContext): HTMLElem
         el('a', { text: t('dashboard.emptyLink'), attributes: { href: '#/extract' } }),
       ]),
     );
-    return el('section', { className: 'view view--dashboard' }, children);
+    return finish();
   }
 
   children.push(renderSummary(dashboard.data), renderMatrix(dashboard.data));
-  return el('section', { className: 'view view--dashboard' }, children);
+  return finish();
 }

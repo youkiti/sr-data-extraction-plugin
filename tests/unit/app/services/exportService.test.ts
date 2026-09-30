@@ -343,9 +343,23 @@ describe('loadExportData', () => {
       pilotStudyCount: 3, // s1 / s2 / s3 の和集合
       scannedDocumentCount: 2, // d2 / d3
       pilotRevisionCount: 0,
+      chatAssistDecisionCount: 0,
     });
   });
 
+  test('既に読み込んだ判定から質問後の件数を集計し、追加の読み込みをしない', async () => {
+    readAllDecisionsMock.mockResolvedValue([
+      { note: '[chat-assist]' },
+      { note: '[chat-assist] メモ' },
+      { note: null },
+      { note: '通常メモ' },
+      { note: '文中の[chat-assist]' },
+    ]);
+    const store = makeStore();
+    await loadExportData(store, makeDeps());
+    expect(store.getState().export.methodsFacts?.chatAssistDecisionCount).toBe(2);
+    expect(readAllDecisionsMock).toHaveBeenCalledTimes(1);
+  });
   test('getToolVersion 未指定は chrome.runtime.getManifest().version を既定で使う', async () => {
     const chromeMock: ChromeMock = installChromeMock();
     chromeMock.runtime.getManifest.mockReturnValue({ version: '9.9.9' });
@@ -764,6 +778,7 @@ describe('copyMethodsText', () => {
     pilotStudyCount: 3,
     scannedDocumentCount: 0,
     pilotRevisionCount: 0,
+    chatAssistDecisionCount: 0,
   };
 
   test('現在の言語 / ワークフロー / 実績値から文案を組み立ててクリップボードへ書き込む', async () => {

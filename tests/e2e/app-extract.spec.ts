@@ -325,6 +325,10 @@ test('実行確認 → 一部失敗 → 再試行成功 → 完了（ExtractionR
         await route.fulfill({
           json: { valueRanges: [{ values: [[...SHEET_HEADERS.Evidence]] }] },
         });
+      } else if (url.includes('LLMApiLog')) {
+        await route.fulfill({ json: url.includes('values:batchGet')
+          ? { valueRanges: [{ values: [[...SHEET_HEADERS.LLMApiLog]] }] }
+          : { values: [[...SHEET_HEADERS.LLMApiLog]] } });
       } else if (url.includes('values:batchGet') && url.includes('ExtractionRuns')) {
         // ExtractionRuns タブのヘッダ拡張チェック（ensureRunFieldIdsColumn。issue #80）。
         // 既にフルヘッダ（field_ids 込み 15 列）が書かれている想定にして拡張 PUT を no-op にする
@@ -486,6 +490,10 @@ test('対象項目チェックリスト: 一部解除 → 確認カードに反�
         await route.fulfill({
           json: { valueRanges: [{ values: [[...SHEET_HEADERS.Evidence]] }] },
         });
+      } else if (url.includes('LLMApiLog')) {
+        await route.fulfill({ json: url.includes('values:batchGet')
+          ? { valueRanges: [{ values: [[...SHEET_HEADERS.LLMApiLog]] }] }
+          : { values: [[...SHEET_HEADERS.LLMApiLog]] } });
       } else if (url.includes('values:batchGet') && url.includes('ExtractionRuns')) {
         await route.fulfill({
           json: { valueRanges: [{ values: [[...SHEET_HEADERS.ExtractionRuns]] }] },
@@ -592,4 +600,33 @@ test('対象項目チェックリスト: 一部解除 → 確認カードに反�
 
   const results = await new AxeBuilder({ page }).analyze();
   expect(results.violations).toEqual([]);
+});
+
+test.describe('予算超過の警告', () => {
+  test('累計と概算が予算を超えても実行ボタンは有効である', async ({ page }) => {
+    await page.route('https://sheets.googleapis.com/**', async (route) => {
+      const url = decodeURIComponent(route.request().url());
+      if (url.includes('/values/ExtractionRuns')) {
+        await route.fulfill({ json: { values: [[...SHEET_HEADERS.ExtractionRuns]] } });
+      } else if (url.includes('/values/Meta')) {
+        await route.fulfill({ json: { values: [[...SHEET_HEADERS.Meta,
+          'budget_usd', 'budget_updated_by', 'budget_updated_at'],
+        ['p', '費用テスト', 'v', 't', 'e2e@example.com', 'folder', '', '0.1', '', '']] } });
+      } else if (url.includes('/values/LLMApiLog')) {
+        await route.fulfill({ json: { values: [SHEET_HEADERS.LLMApiLog,
+          ['log', '2026-07-02T00:00:00Z', 'gemini', 'model', 'draft_schema',
+            'prompt', 'response', '', '100', '20', '1', '0.5', '']] } });
+      } else {
+        await route.fulfill({ json: { values: [] } });
+      }
+    });
+    await initApp(page, { documents: [DOC_OK], apiKey: 'test-key' });
+    await page.locator('#extract-model').selectOption('gemini-2.0-flash');
+    await expect(page.locator('#extract-budget-warning')).toContainText('実行は妨げません');
+    await expect(page.locator('#extract-budget-warning')).toContainText('$0.5000');
+    await expect(page.locator('#extract-run')).toBeEnabled();
+    await page.locator('#extract-run').click();
+    await expect(page.locator('#extract-confirm-budget-warning')).toBeVisible();
+    await expect(page.locator('#extract-confirm-run')).toBeEnabled();
+  });
 });

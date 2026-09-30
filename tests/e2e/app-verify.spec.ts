@@ -2274,3 +2274,79 @@ test('enum 項目の値入力（issue #254）: 許容値チップ → 数字キ�
   const results = await new AxeBuilder({ page }).analyze();
   expect(results.violations).toEqual([]);
 });
+
+test('論文への質問: 引用照合・PDFジャンプ・判定の印・本文非保存とアクセシビリティ', async ({
+  page,
+}) => {
+  await setupRoutes(page, { schemaRows: [STUDY_FIELD_ROW], evidenceRows: [EVIDENCE_ROW_1] });
+  const decisionBodies: unknown[][] = [];
+  const logBodies: unknown[][] = [];
+  const payloadUploads: string[] = [];
+  page.on('request', (request) => {
+    const url = decodeURIComponent(request.url());
+    if (request.method() === 'POST' && url.includes(':append')) {
+      const body = request.postDataJSON() as { values: unknown[][] };
+      if (url.includes('Decisions!')) decisionBodies.push(...body.values);
+      if (url.includes('LLMApiLog!')) logBodies.push(...body.values);
+    }
+    if (url.includes('/upload/drive/') && request.postData()?.includes('.prompt.json'))
+      payloadUploads.push(url);
+  });
+  await page.route('https://generativelanguage.googleapis.com/**', async (route) => {
+    await route.fulfill({
+      json: {
+        candidates: [
+          {
+            content: {
+              parts: [
+                {
+                  text: JSON.stringify({
+                    answer: '死亡率は12%です。',
+                    found: true,
+                    citations: [
+                      { document_index: 1, quote: QUOTE, page: 1 },
+                      {
+                        document_index: 1,
+                        quote: 'This quotation is not present anywhere in the paper.',
+                        page: 1,
+                      },
+                    ],
+                  }),
+                },
+              ],
+            },
+          },
+        ],
+        usageMetadata: { promptTokenCount: 100, candidatesTokenCount: 50 },
+        modelVersion: 'gemini-test-001',
+      },
+    });
+  });
+  await initApp(page, '#/verify?study=study-1', defaultDocuments(), { apiKey: 'e2e-api-key' });
+  await expect(page.locator('.verify__panes')).toBeVisible();
+  await page.locator('#ask-paper summary').click();
+  await page.locator('#ask-paper-input').fill('死亡率は？');
+  await page.locator('#ask-paper-send').click();
+  await expect(page.locator('.ask-paper__citation')).toHaveCount(1);
+  await expect(page.locator('.ask-paper__citation--unanchored')).toHaveCount(1);
+  await expect(page.locator('.ask-paper__citation--unanchored')).toContainText(
+    '本文で確認できません',
+  );
+  await page.locator('.ask-paper__citation').click();
+  await expect(page.locator('.pdf-viewer__hl[aria-label*="質問の回答の引用"]')).toBeVisible();
+  await page.locator('.verify__action--accept').click();
+  await expect.poll(() => decisionBodies.length).toBe(1);
+  expect(decisionBodies[0]?.[SHEET_HEADERS.Decisions.indexOf('note')]).toBe('[chat-assist]');
+  expect(logBodies).toHaveLength(1);
+  const row = logBodies[0] as unknown[];
+  expect(row[SHEET_HEADERS.LLMApiLog.indexOf('purpose')]).toBe('ask_paper');
+  expect(row[SHEET_HEADERS.LLMApiLog.indexOf('prompt_ref')]).toBe('');
+  expect(row[SHEET_HEADERS.LLMApiLog.indexOf('response_ref')]).toBe('');
+  // null は Sheets への追記で空セルになる
+  expect(row[SHEET_HEADERS.LLMApiLog.indexOf('prompt_summary')]).toBe('');
+  expect(JSON.stringify(row)).not.toContain('死亡率は？');
+  expect(JSON.stringify(row)).not.toContain('死亡率は12%です。');
+  expect(payloadUploads).toEqual([]);
+  const results = await new AxeBuilder({ page }).analyze();
+  expect(results.violations).toEqual([]);
+});

@@ -77,6 +77,7 @@ import {
 } from '../../features/verification/armStructureRepository';
 import { needsArmConfirmation } from '../../features/verification/armDraft';
 import { deriveCellStates, emptyCellState, type CellState } from '../../features/verification/cellState';
+import { withChatAssistMarker } from '../../features/verification/chatAssist';
 import { readAllDecisions } from '../../features/verification/decisionRepository';
 import { createPdfViewCache } from '../../features/verification/pdfViewCache';
 import { getCurrentUserEmail, type ProfileDeps } from '../../lib/google/identity';
@@ -96,7 +97,7 @@ import { t } from '../../lib/i18n';
 import { requireReviewSets } from './reviewSetService';
 import { timestampForFilename } from './exportService';
 import { latestRunEvidenceByStudy } from './verifyService';
-import { persistConsensusWrite, type QueuedWrite } from './verificationService';
+import { loadExtractedPages, persistConsensusWrite, type QueuedWrite } from './verificationService';
 
 export interface AdjudicationServiceDeps {
   google: GoogleApiDeps;
@@ -397,6 +398,14 @@ export async function openAdjudicateStudy(
     const working: AdjudicateWorking = {
       study: item.study,
       documents: item.documents,
+      askPaperDocuments: await Promise.all(
+        item.documents.map(async (document) => ({
+          documentId: document.documentId,
+          role: document.documentRole,
+          filename: document.filename,
+          pages: (await loadExtractedPages(document, deps)).extractedPages,
+        })),
+      ),
       annotatorA,
       annotatorB,
       fields,
@@ -641,6 +650,9 @@ async function applyWrites(
       decidedBy,
       decidedAt,
       schemaVersion: working.schemaVersion,
+      ...(store.getState().askPaper.usedStudyIds.includes(working.study.studyId)
+        ? { note: withChatAssistMarker(null) }
+        : {}),
     };
     // 即時保存に失敗しても persistConsensusWrite が 'decisions' オフラインキューへ退避し
     // 'queued' を返す（throw しない。issue #63）。人間の判断はこの時点で確定しているため、

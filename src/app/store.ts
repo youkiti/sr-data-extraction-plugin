@@ -8,6 +8,8 @@ import type { ReviewSetRow } from '../domain/reviewSet';
 import type { ReviewerSetProgress } from '../features/review/reviewSets';
 import type { StudyRecord } from '../domain/study';
 import type { Evidence } from '../domain/evidence';
+import type { UsageSummary } from '../features/usage/aggregateUsage';
+import type { ProjectBudget } from '../features/project/projectBudget';
 import type { ExportFormat } from '../domain/exportLog';
 import type { ArmCompletenessRunWarning, ExtractionRun } from '../domain/extractionRun';
 import type { ProjectRole, ReviewerAssignment, ReviewerRole, ReviewMode } from '../domain/reviewer';
@@ -15,6 +17,7 @@ import type { AnnotatorPairResolution } from '../features/adjudication/pairResol
 import type { StudyGate } from '../features/adjudication/gate';
 import type { AdjudicationCell } from '../features/adjudication/cellMatch';
 import type { DraftArmRow } from '../features/adjudication/armMatch';
+import type { AskPaperTurn, AskPaperSourceDocument } from '../features/verification/askPaper';
 import type { AgreementReport, CalibrationPairAgreement } from '../features/adjudication/agreement';
 import type { BuiltExport, ClassicExportFormat } from '../features/export/buildExport';
 import type {
@@ -353,6 +356,8 @@ export interface PilotState {
 
 /** #/extract（S7）の画面状態。run の結果はタブのセッション内で保持する */
 export interface ExtractState {
+  /** 予算警告用の全 purpose の累積費用。未読込・読込失敗は null */
+  budget: { budgetUsd: number | null; spentUsd: number; unknownPriceCalls: number } | null;
   /** 対象 study の選択。初回表示時に「未抽出の全件」を既定選択する（ui-states.md §3・v0.10） */
   selectedStudyIds: string[];
   /** 既定選択を一度だけ行うためのフラグ（ユーザーの選択解除を上書きしない） */
@@ -491,8 +496,14 @@ export interface RSetResultInfo {
 
 /** #/export（S10）の画面状態 */
 export interface ExportState {
+  /** 使用量 CSV は形式選択と独立した生成状態を持つ */
+  usage: {
+    generating: boolean;
+    error: string | null;
+    result: { filename: string; fileRef: string; csv: string } | null;
+  } | null;
   /** 選択中の形式（`r_set` を含む） */
-  format: ExportFormat;
+  format: Exclude<ExportFormat, 'usage'>;
   /** 従来 3 形式の構築結果。null = 未読込（画面表示時に読み込む） */
   built: Record<ClassicExportFormat, BuiltExport> | null;
   /**
@@ -551,6 +562,8 @@ export interface AdjudicateWorking {
   study: StudyRecord;
   /** study 配下の文書（role 固定順 → 取り込み順） */
   documents: DocumentRecord[];
+  /** 文書本文と定義だけを質問パネルに渡すための軽量素材 */
+  askPaperDocuments: AskPaperSourceDocument[];
   annotatorA: string;
   annotatorB: string;
   /** 突き合わせに使う表のデザイン（最新確定版）の全項目 */
@@ -640,10 +653,31 @@ export interface AdjudicateState {
 /** #/dashboard（S9）の画面状態 */
 export interface DashboardState {
   reviewSetProgress: ReviewerSetProgress[] | null;
+  /** 費用と予算は検証進捗と独立して読み込む */
+  usage: {
+    summary: UsageSummary | null;
+    budget: ProjectBudget | null;
+    loading: boolean;
+    loadError: string | null;
+    budgetSaving: boolean;
+    budgetError: string | null;
+    /** 未編集なら null。再描画でも入力下書きを保持する。 */
+    budgetDraft: string | null;
+  };
   /** 集計結果。null = 未読込（画面表示時に読み込む） */
   data: DashboardData | null;
   loading: boolean;
   loadError: string | null;
+}
+
+/** 論文への質問。会話はタブ内のみ、利用済み study の識別子はローカル保存から復元する。 */
+export interface AskPaperState {
+  conversations: Record<string, AskPaperTurn[]>;
+  sending: boolean;
+  error: string | null;
+  usedStudyIds: string[];
+  /** Options から解決した概算用のモデル。未解決時は null */
+  model: string | null;
 }
 
 export interface AppState {
@@ -661,6 +695,7 @@ export interface AppState {
   pilot: PilotState;
   extract: ExtractState;
   verify: VerifyState;
+  askPaper: AskPaperState;
   dashboard: DashboardState;
   export: ExportState;
   /** `#/adjudicate`（S12）の画面状態 */
@@ -827,6 +862,7 @@ export function createInitialState(): AppState {
       collapsedFieldSections: [],
     },
     extract: {
+      budget: null,
       selectedStudyIds: [],
       selectionInitialized: false,
       model: '',
@@ -848,6 +884,7 @@ export function createInitialState(): AppState {
       lastRunFieldIds: null,
       fieldSubsetBadges: {},
     },
+    askPaper: { conversations: {}, sending: false, error: null, usedStudyIds: [], model: null },
     verify: {
       assignedOnly: false,
       targets: null,
@@ -868,6 +905,15 @@ export function createInitialState(): AppState {
     },
     dashboard: {
       reviewSetProgress: null,
+      usage: {
+        summary: null,
+        budget: null,
+        loading: false,
+        loadError: null,
+        budgetSaving: false,
+        budgetError: null,
+        budgetDraft: null,
+      },
       data: null,
       loading: false,
       loadError: null,
@@ -891,6 +937,7 @@ export function createInitialState(): AppState {
       agreementError: null,
     },
     export: {
+      usage: null,
       format: 'study_wide',
       built: null,
       rSetMaterials: null,

@@ -35,7 +35,17 @@ function patchDashboard(store: Store, patch: Partial<DashboardState>): void {
  * `loading` は触らない
  */
 export function invalidateDashboard(store: Store): void {
-  patchDashboard(store, { data: null, reviewSetProgress: null, loadError: null });
+  patchDashboard(store, {
+    data: null,
+    reviewSetProgress: null,
+    loadError: null,
+    usage: {
+      ...store.getState().dashboard.usage,
+      summary: null,
+      budget: null,
+      loadError: null,
+    },
+  });
 }
 
 /**

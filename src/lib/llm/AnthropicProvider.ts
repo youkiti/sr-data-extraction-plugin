@@ -19,6 +19,7 @@ import {
   type ChatResponse,
   type JsonSchema,
   type LLMProvider,
+  type LlmUsage,
   type ReasoningEffort,
 } from './LLMProvider';
 import { parseRetryAfterMs } from './retry';
@@ -268,6 +269,7 @@ export class AnthropicProvider implements LLMProvider {
         'malformed',
       );
     }
+    const usage = this.parseUsage(json);
     const stopReason = json.stop_reason;
     const diagnostics = JSON.stringify({
       stop_reason: stopReason ?? null,
@@ -282,6 +284,7 @@ export class AnthropicProvider implements LLMProvider {
         null,
         false,
         'content_filter',
+        usage,
       );
     }
     if (stopReason === 'max_tokens') {
@@ -293,6 +296,7 @@ export class AnthropicProvider implements LLMProvider {
         null,
         false,
         'output_limit',
+        usage,
       );
     }
     const text = extractText(json);
@@ -302,14 +306,28 @@ export class AnthropicProvider implements LLMProvider {
         this.providerId,
         res.status,
         diagnostics,
+        null,
+        false,
+        null,
+        usage,
       );
     }
     return {
       text,
+      tokensIn: usage.tokensIn,
+      tokensOut: usage.tokensOut,
+      cachedTokensIn: usage.cachedTokensIn,
+      raw: json,
+    };
+  }
+
+  /** 応答の使用量を成功・応答内容エラーで同じ規則に正規化する。 */
+  private parseUsage(json: AnthropicResponse): LlmUsage {
+    return {
       tokensIn: totalInputTokens(json.usage),
       tokensOut: json.usage?.output_tokens ?? null,
       cachedTokensIn: json.usage === undefined ? null : (json.usage.cache_read_input_tokens ?? 0),
-      raw: json,
+      thoughtsTokensOut: null,
     };
   }
 

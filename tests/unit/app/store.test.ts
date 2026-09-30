@@ -136,6 +136,7 @@ describe('createInitialState', () => {
         collapsedFieldSections: [],
       },
       extract: {
+        budget: null,
         selectedStudyIds: [],
         selectionInitialized: false,
         model: '',
@@ -157,6 +158,7 @@ describe('createInitialState', () => {
         lastRunFieldIds: null,
         fieldSubsetBadges: {},
       },
+      askPaper: { conversations: {}, sending: false, error: null, usedStudyIds: [], model: null },
       verify: {
         assignedOnly: false,
         targets: null,
@@ -176,6 +178,15 @@ describe('createInitialState', () => {
         conflictMessage: null,
       },
       dashboard: {
+        usage: {
+          summary: null,
+          budget: null,
+          loading: false,
+          loadError: null,
+          budgetSaving: false,
+          budgetError: null,
+          budgetDraft: null,
+        },
         reviewSetProgress: null,
         data: null,
         loading: false,
@@ -200,6 +211,7 @@ describe('createInitialState', () => {
         agreementError: null,
       },
       export: {
+        usage: null,
         format: 'study_wide',
         built: null,
         rSetMaterials: null,

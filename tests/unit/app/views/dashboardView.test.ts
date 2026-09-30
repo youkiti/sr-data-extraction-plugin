@@ -5,7 +5,13 @@ import type { DashboardViewCallbacks, ViewContext } from '../../../../src/app/vi
 import type { DashboardData } from '../../../../src/features/verification/dashboard';
 
 function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<DashboardViewCallbacks> } {
-  const callbacks = { onReload: jest.fn() };
+  const callbacks = {
+    onReload: jest.fn(),
+    onReloadUsage: jest.fn(),
+    onSaveBudget: jest.fn(),
+    onBudgetDraftChange: jest.fn(),
+    onBudgetError: jest.fn(),
+  };
   return {
     ctx: {
       home: {
@@ -140,6 +146,8 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<DashboardViewCall
         onChangeMethodsLanguage: jest.fn(),
         onChangeMethodsWorkflow: jest.fn(),
         onCopyMethods: jest.fn(),
+        onGenerateUsage: jest.fn(),
+        onDownloadUsage: jest.fn(),
       },
       adjudicate: {
         onSelectStudy: jest.fn(),
@@ -368,4 +376,15 @@ test('担当進捗は数値順の全セットを列にし、担当外を横棒�
   expect(
     renderDashboardView(state, ctx).querySelector('#dashboard-review-sets tbody tr'),
   ).toBeNull();
+});
+
+describe('費用カードのロール制限', () => {
+  test('owner は全状態で末尾に費用カードを持ち、非 owner は描画しない', () => {
+    const { ctx } = makeCtx();
+    const state = makeState();
+    state.role.role = 'owner';
+    expect(renderDashboardView(state, ctx).lastElementChild?.id).toBe('dashboard-usage');
+    state.role.role = 'reviewer_with_ai';
+    expect(renderDashboardView(state, ctx).querySelector('#dashboard-usage')).toBeNull();
+  });
 });

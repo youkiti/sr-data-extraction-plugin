@@ -143,7 +143,13 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<ExtractViewCallba
         onReloadVerification: jest.fn(),
         onRelocateQuote: jest.fn(),
       },
-      dashboard: { onReload: jest.fn() },
+      dashboard: {
+        onReload: jest.fn(),
+        onReloadUsage: jest.fn(),
+        onSaveBudget: jest.fn(),
+        onBudgetDraftChange: jest.fn(),
+        onBudgetError: jest.fn(),
+      },
       export: {
         onSelectFormat: jest.fn(),
         onGenerate: jest.fn(),
@@ -154,6 +160,8 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<ExtractViewCallba
         onChangeMethodsLanguage: jest.fn(),
         onChangeMethodsWorkflow: jest.fn(),
         onCopyMethods: jest.fn(),
+        onGenerateUsage: jest.fn(),
+        onDownloadUsage: jest.fn(),
       },
       adjudicate: {
         onSelectStudy: jest.fn(),
@@ -1221,5 +1229,49 @@ describe('renderExtractView（表示言語 en。issue #93）', () => {
     expect(errorView.querySelector('#extract-load-error')?.textContent).toBe(
       'Failed to load extraction targets: HTTP 500',
     );
+  });
+});
+
+describe('予算警告は実行を妨げない', () => {
+  beforeEach(() => {
+    setUiLanguage('ja');
+    const actual = jest.requireActual<typeof import('../../../../src/features/extraction/planRun')>(
+      '../../../../src/features/extraction/planRun',
+    );
+    planRunMock.mockImplementation(actual.planRun);
+  });
+  test('累計と今回の概算を表示し、確認カードにも別 ID で同じ警告を表示する', () => {
+    const state = makeState({ extract: { model: 'gemini-2.5-pro',
+      budget: { budgetUsd: 1, spentUsd: 2, unknownPriceCalls: 3 } } });
+    const { root } = render(state);
+    expect(root.querySelector('#extract-budget-warning')?.textContent).toContain('実行は妨げません');
+    expect(root.querySelector('#extract-budget-warning')?.textContent).toContain('3 回');
+    expect(root.querySelector<HTMLButtonElement>('#extract-run')?.disabled).toBe(false);
+    state.extract.confirming = true;
+    const confirming = render(state).root;
+    expect(confirming.querySelectorAll('#extract-budget-warning')).toHaveLength(1);
+    expect(confirming.querySelector('#extract-confirm-budget-warning')).not.toBeNull();
+    expect(confirming.querySelector<HTMLButtonElement>('#extract-confirm-run')?.disabled).toBe(false);
+  });
+
+  test('価格不明でも累計だけで超過すれば警告し、価格不明呼出がなければ注記しない', () => {
+    const state = makeState({ extract: { model: 'unknown-model',
+      budget: { budgetUsd: 1, spentUsd: 2, unknownPriceCalls: 0 } } });
+    state.role.role = 'owner';
+    const { root } = render(state);
+    expect(root.querySelector('#extract-budget-warning')?.textContent).toContain('今回の費用を含みません');
+    expect(root.querySelector('#extract-budget-warning')?.textContent).not.toContain('回は含まれて');
+  });
+
+  test('予算以下・未設定・非 owner には警告を出さない', () => {
+    const state = makeState({ extract: { model: 'gemini-2.5-pro',
+      budget: { budgetUsd: 100, spentUsd: 0, unknownPriceCalls: 0 } } });
+    expect(render(state).root.querySelector('#extract-budget-warning')).toBeNull();
+    state.extract.budget!.budgetUsd = null;
+    expect(render(state).root.querySelector('#extract-budget-warning')).toBeNull();
+    state.extract.budget!.budgetUsd = 1;
+    state.extract.budget!.spentUsd = 2;
+    state.role.role = 'reviewer_with_ai';
+    expect(render(state).root.querySelector('#extract-budget-warning')).toBeNull();
   });
 });

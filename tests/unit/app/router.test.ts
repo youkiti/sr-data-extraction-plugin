@@ -125,7 +125,13 @@ const stubCtx: ViewContext = {
     onReloadVerification: jest.fn(),
     onRelocateQuote: jest.fn(),
   },
-  dashboard: { onReload: jest.fn() },
+  dashboard: {
+    onReload: jest.fn(),
+    onReloadUsage: jest.fn(),
+    onSaveBudget: jest.fn(),
+    onBudgetDraftChange: jest.fn(),
+    onBudgetError: jest.fn(),
+  },
   export: {
     onSelectFormat: jest.fn(),
     onGenerate: jest.fn(),
@@ -136,6 +142,8 @@ const stubCtx: ViewContext = {
     onChangeMethodsLanguage: jest.fn(),
     onChangeMethodsWorkflow: jest.fn(),
     onCopyMethods: jest.fn(),
+    onGenerateUsage: jest.fn(),
+    onDownloadUsage: jest.fn(),
   },
   adjudicate: {
     onSelectStudy: jest.fn(),

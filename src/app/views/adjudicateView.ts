@@ -18,13 +18,19 @@ import { unmappedBArms } from '../../features/adjudication/armMatch';
 import { indexEvidenceByCellKey, type AdjudicationCell } from '../../features/adjudication/cellMatch';
 import type { StudyGate } from '../../features/adjudication/gate';
 import { entityKeyLabel } from '../../features/verification/cells';
+import { canAskPaper } from '../../features/verification/chatAssist';
 import { deriveCellStates, emptyCellState, type CellState } from '../../features/verification/cellState';
 import { buildEnumCandidates, collectOtherValues } from '../../features/verification/enumOptions';
 import { t, type MessageKey } from '../../lib/i18n';
 import { STUDY_ENTITY_KEY } from '../../utils/entityKey';
 import type { AdjudicateStudyRow, AdjudicateWorking, AppState } from '../store';
 import { el } from '../ui/dom';
-import { focusAdjudicateEvidence, renderAdjudicatePdfPane } from './adjudicatePdfPane';
+import {
+  focusAdjudicateEvidence,
+  renderAdjudicatePdfPane,
+  showAdjudicateCitation,
+} from './adjudicatePdfPane';
+import { renderAskPaperPanel } from './askPaperPanel';
 import { renderAllowedValuesNote, renderEnumChoiceEditor } from './enumChoiceEditor';
 import type { ViewContext } from './types';
 
@@ -651,6 +657,21 @@ function renderWorking(state: AppState, ctx: ViewContext, working: AdjudicateWor
     children.push(renderArmCard(working, ctx));
   }
   children.push(renderCellSection(state, ctx, working));
+  if (canAskPaper(state.role.role)) {
+    children.push(
+      renderAskPaperPanel(
+        state.askPaper,
+        {
+          spreadsheetId: state.currentProject?.spreadsheetId ?? '',
+          studyId: working.study.studyId,
+          documents: working.askPaperDocuments,
+          fields: working.fields,
+        },
+        ctx.askPaper,
+        (citation) => showAdjudicateCitation(working, citation),
+      ),
+    );
+  }
   return el('div', { id: 'adjudicate-working', className: 'adjudicate__working' }, children);
 }
 

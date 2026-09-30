@@ -724,3 +724,68 @@ describe('OpenAICompatibleProvider', () => {
   });
 
 });
+
+describe('OpenAICompatibleProvider のエラー使用量', () => {
+  test.each(['length', 'content_filter', 'stop'])(
+    '応答内容エラーでも正規化した課金対象使用量を保持する: %s',
+    async (reason) => {
+      const fetch = jest.fn().mockResolvedValue(
+        response({
+          choices: [{ finish_reason: reason, message: { content: null } }],
+          usage: {
+            prompt_tokens: 100,
+            completion_tokens: 20,
+            prompt_tokens_details: { cached_tokens: 80 },
+          },
+        }),
+      );
+      const provider = new OpenAICompatibleProvider({
+        apiKey: 'k',
+        model: 'test-model',
+        fetch,
+        endpoint: 'https://example.test/v1/chat/completions',
+      });
+      await expect(provider.chat([{ role: 'user', content: 'q' }])).rejects.toMatchObject({
+        usage: {
+          tokensIn: 100,
+          tokensOut: 20,
+          cachedTokensIn: 80,
+          thoughtsTokensOut: null,
+        },
+      });
+    },
+  );
+
+  test('使用量なしの解析済み応答は全内訳を不明にする', async () => {
+    const fetch = jest.fn().mockResolvedValue(response({}));
+    const provider = new OpenAICompatibleProvider({
+      apiKey: 'k',
+      model: 'test-model',
+      fetch,
+      endpoint: 'https://example.test/v1/chat/completions',
+    });
+    await expect(provider.chat([])).rejects.toMatchObject({
+      usage: { tokensIn: null, tokensOut: null, cachedTokensIn: null, thoughtsTokensOut: null },
+    });
+  });
+
+  test('HTTP エラーと解析不能な本文では使用量を取得しない', async () => {
+    const fetch = jest
+      .fn()
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 400,
+        text: async () => '{"usage":{}}',
+        headers: { get: () => null },
+      } as unknown as Response)
+      .mockResolvedValueOnce({ ok: true, status: 200, text: async () => '{' } as Response);
+    const provider = new OpenAICompatibleProvider({
+      apiKey: 'k',
+      model: 'test-model',
+      fetch,
+      endpoint: 'https://example.test/v1/chat/completions',
+    });
+    await expect(provider.chat([])).rejects.toMatchObject({ usage: null });
+    await expect(provider.chat([])).rejects.toMatchObject({ usage: null });
+  });
+});

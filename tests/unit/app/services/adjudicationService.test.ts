@@ -1742,6 +1742,25 @@ describe('downloadAgreementCsv（issue #66）', () => {
   });
 });
 
+test.each([false, true])(
+  '裁定の印は利用済みstudyだけに付け、キューと楽観状態にも保持する: %s',
+  async (used) => {
+    const store = seedStore();
+    await openReadyStudy(store);
+    store.setState({
+      askPaper: { ...store.getState().askPaper, usedStudyIds: used ? ['study-1'] : ['other'] },
+    });
+    const queue = makeQueue();
+    applyConsensusWritesMock.mockRejectedValue(new Error('offline'));
+    await acceptAllMatchingCells(store, makeDeps({ decisionQueue: queue }));
+    const expected = used ? '[chat-assist]' : null;
+    expect(store.getState().adjudicate.working?.consensusDecisions[0]?.note).toBe(expected);
+    const queued = queue.enqueue.mock.calls[0]?.[2];
+    expect(
+      queued && 'consensusParams' in queued ? (queued.consensusParams.note ?? null) : undefined,
+    ).toBe(expected);
+  },
+);
 describe('担当ペアと calibration のサービス集計', () => {
   function assignedStore() {
     const store = seedStore();

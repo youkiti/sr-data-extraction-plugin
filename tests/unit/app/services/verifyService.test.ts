@@ -1165,6 +1165,30 @@ describe('persistVerifyDecision', () => {
     });
   }
 
+  test.each([false, true])('質問したstudyだけ印を付け、失敗時のキューにも残す: %s', async (used) => {
+    const store = makeVerifyingStore();
+    store.setState({
+      askPaper: { ...store.getState().askPaper, usedStudyIds: used ? ['study-doc-1'] : ['other'] },
+    });
+    const deps = makeDeps();
+    const decision = makeDecision({ note: '確認メモ' });
+    await persistVerifyDecision(store, deps, decision);
+    expect(appendDecisionsMock).toHaveBeenCalledWith(
+      'sheet-1',
+      [expect.objectContaining({ note: used ? '[chat-assist] 確認メモ' : '確認メモ' })],
+      deps.google,
+    );
+    upsertStudyMock.mockRejectedValueOnce(new Error('offline'));
+    await persistVerifyDecision(store, deps, decision);
+    expect(deps.decisionQueue?.enqueue).toHaveBeenCalledWith(
+      'sheet-1',
+      ME,
+      expect.objectContaining({
+        decision: expect.objectContaining({ note: used ? '[chat-assist] 確認メモ' : '確認メモ' }),
+      }),
+    );
+    expect(decision.note).toBe('確認メモ');
+  });
   test('プロジェクト未選択は何もしない', async () => {
     await persistVerifyDecision(makeStore({ withProject: false }), makeDeps(), makeDecision());
     expect(appendDecisionsMock).not.toHaveBeenCalled();

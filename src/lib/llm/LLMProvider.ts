@@ -80,6 +80,8 @@ export type JsonSchema = Record<string, unknown>;
 export type ReasoningEffort = 'low' | 'medium' | 'high';
 
 export interface ChatOptions {
+  /** withLogging だけが読む監査用の文脈。プロバイダは無視し、送信しない */
+  logContext?: { studyId: string | null; section: string | null };
   temperature?: number;
   maxOutputTokens?: number;
   /** `'json'` を指定すると JSON モードを要求する。skill 側で構造化出力にしたいときに使う */
@@ -135,6 +137,10 @@ export interface ChatResponse {
    * 計測できていないだけの状態を後から切り分けられるようにするため
    */
   cachedTokensIn: number | null;
+  /** tokensOut のうち思考トークン数（内数）。未指定・null は個別の報告なし */
+  thoughtsTokensOut?: number | null;
+  /** プロバイダが報告した費用（USD）。有限の非負数のみ。未指定は単価表で概算する */
+  costUsd?: number;
   /** プロバイダ生レスポンス（apiLogger が Drive へそのまま保存する） */
   raw: unknown;
 }
@@ -170,6 +176,16 @@ export type LlmFailureKind =
   | 'content_filter'
   | 'malformed';
 
+/** 成功・応答内容エラーで共通の課金対象使用量。各トークン数は ChatResponse と同契約 */
+export interface LlmUsage {
+  /** プロバイダが報告した費用（USD）。有限の非負数のみ */
+  costUsd?: number;
+  tokensIn: number | null;
+  tokensOut: number | null;
+  cachedTokensIn: number | null;
+  thoughtsTokensOut: number | null;
+}
+
 /** プロバイダ呼び出し時の例外（4xx/5xx と応答内容の異常を統一的に表す） */
 export class LlmProviderError extends Error {
   readonly providerId: LlmProviderId;
@@ -194,6 +210,9 @@ export class LlmProviderError extends Error {
    */
   readonly failureKind: LlmFailureKind | null;
 
+  /** 応答に含まれる課金対象使用量。HTTP エラー・解析不能の応答は null */
+  readonly usage: LlmUsage | null;
+
   constructor(
     message: string,
     providerId: LlmProviderId,
@@ -202,6 +221,7 @@ export class LlmProviderError extends Error {
     retryAfterMs: number | null = null,
     retryable = false,
     failureKind: LlmFailureKind | null = null,
+    usage: LlmUsage | null = null,
   ) {
     super(message);
     this.name = 'LlmProviderError';
@@ -211,5 +231,6 @@ export class LlmProviderError extends Error {
     this.retryAfterMs = retryAfterMs;
     this.retryable = retryable;
     this.failureKind = failureKind;
+    this.usage = usage;
   }
 }

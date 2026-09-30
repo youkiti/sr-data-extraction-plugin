@@ -118,6 +118,10 @@ import {
   setVerifyPaneLayout,
   setVerifyAssignedOnly,
 } from './services/verifyService';
+import { sendAskPaperQuestion } from './services/askPaperUiService';
+import { loadAskPaperUsedStudyIds } from './services/askPaperMetadataService';
+import { loadUsage, saveBudget } from './services/usageService';
+import { generateUsageExport, downloadUsageExport } from './services/usageExportService';
 import { loadDashboard } from './services/dashboardService';
 import {
   assignStudyReviewSet,
@@ -196,6 +200,8 @@ import {
 } from '../lib/storage/secretsStore';
 import {
   loadLlmConnectionSettings,
+  loadDefaultModel,
+  FACTORY_DEFAULT_MODEL,
   loadUiLanguage,
   resolveRateLimitPolicy,
 } from '../lib/storage/settingsStore';
@@ -311,6 +317,7 @@ function renderRoleErrorBlock(
 
 export async function seedState(win: Window): Promise<AppState> {
   const state = createInitialState();
+  state.askPaper.model = (await loadDefaultModel()) ?? FACTORY_DEFAULT_MODEL;
   const storedProject = await loadCurrentProject();
   if (storedProject) {
     state.currentProject = storedProject;
@@ -358,7 +365,12 @@ export async function seedState(win: Window): Promise<AppState> {
       pilot: { ...state.pilot, ...(preloaded.pilot ?? {}) },
       extract: { ...state.extract, ...(preloaded.extract ?? {}) },
       verify: { ...state.verify, ...(preloaded.verify ?? {}) },
-      dashboard: { ...state.dashboard, ...(preloaded.dashboard ?? {}) },
+      askPaper: { ...state.askPaper, ...(preloaded.askPaper ?? {}) },
+      dashboard: {
+        ...state.dashboard,
+        ...(preloaded.dashboard ?? {}),
+        usage: { ...state.dashboard.usage, ...(preloaded.dashboard?.usage ?? {}) },
+      },
       export: { ...state.export, ...(preloaded.export ?? {}) },
       adjudicate: { ...state.adjudicate, ...(preloaded.adjudicate ?? {}) },
     };
@@ -470,6 +482,11 @@ export async function bootstrapApp(
 
   // view のユーザー操作をサービス層へ委譲するコンテキスト（views/types.ts）
   const viewContext: ViewContext = {
+    askPaper: {
+      onSend: (params) => {
+        void sendAskPaperQuestion(store, deps, params);
+      },
+    },
     home: {
       onReload: () => {
         void loadProgressCounts(store, deps, { force: true });
@@ -830,11 +847,42 @@ export async function bootstrapApp(
       },
     },
     dashboard: {
+      onBudgetDraftChange: (value) => {
+        const dashboard = store.getState().dashboard;
+        store.setState({
+          dashboard: {
+            ...dashboard,
+            usage: { ...dashboard.usage, budgetDraft: value, budgetError: null },
+          },
+        });
+      },
+      onBudgetError: (reason) => {
+        const dashboard = store.getState().dashboard;
+        store.setState({
+          dashboard: {
+            ...dashboard,
+            usage: { ...dashboard.usage, budgetError: reason },
+          },
+        });
+      },
+      onReloadUsage: () => {
+        void loadUsage(store, deps, { force: true });
+      },
+      onSaveBudget: (value) => {
+        void saveBudget(store, deps, value);
+      },
       onReload: () => {
         void loadDashboard(store, deps, { force: true });
+        void loadUsage(store, deps, { force: true });
       },
     },
     export: {
+      onGenerateUsage: () => {
+        void generateUsageExport(store, deps);
+      },
+      onDownloadUsage: () => {
+        downloadUsageExport(store);
+      },
       onSelectFormat: (format) => {
         selectExportFormat(store, format);
       },
@@ -945,6 +993,7 @@ export async function bootstrapApp(
       });
     }
     await loadVerifyTargets(store, deps);
+    await loadAskPaperUsedStudyIds(store, deps);
     const verify = store.getState().verify;
     const targets = verify.targets;
     if (targets === null || targets.length === 0) {
@@ -1001,6 +1050,7 @@ export async function bootstrapApp(
    */
   const syncAdjudicateRoute = async (): Promise<void> => {
     await loadAdjudicateTargets(store, deps);
+    await loadAskPaperUsedStudyIds(store, deps);
     const desired = studyQueryOf(win.location.hash);
     if (desired !== null && desired !== store.getState().adjudicate.selectedStudyId) {
       await openAdjudicateStudy(store, deps, desired);
@@ -1183,6 +1233,7 @@ export async function bootstrapApp(
     if (currentHash === '#/dashboard') {
       // 初回表示時に集計を読み込む（読込済みなら loadDashboard 側で no-op）
       void loadDashboard(store, deps);
+      void loadUsage(store, deps);
     }
     if (currentHash === '#/export') {
       // 初回表示時に素材を読み込んで 3 形式の CSV を構築（読込済みなら loadExportData 側で no-op）

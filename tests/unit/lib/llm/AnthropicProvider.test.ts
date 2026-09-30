@@ -700,3 +700,55 @@ describe('toAnthropicSchema', () => {
   });
 
 });
+
+describe('AnthropicProvider のエラー使用量', () => {
+  test.each(['max_tokens', 'refusal', 'end_turn'])(
+    '応答内容エラーでも正規化した課金対象使用量を保持する: %s',
+    async (reason) => {
+      const fetch = jest.fn().mockResolvedValue(
+        jsonResponse({
+          stop_reason: reason,
+          content: [],
+          usage: {
+            input_tokens: 10,
+            output_tokens: 20,
+            cache_read_input_tokens: 80,
+            cache_creation_input_tokens: 10,
+          },
+        }),
+      );
+      const provider = new AnthropicProvider({ apiKey: 'k', model: 'test-model', fetch });
+      await expect(provider.chat([{ role: 'user', content: 'q' }])).rejects.toMatchObject({
+        usage: {
+          tokensIn: 100,
+          tokensOut: 20,
+          cachedTokensIn: 80,
+          thoughtsTokensOut: null,
+        },
+      });
+    },
+  );
+
+  test('使用量なしの解析済み応答は全内訳を不明にする', async () => {
+    const fetch = jest.fn().mockResolvedValue(jsonResponse({}));
+    const provider = new AnthropicProvider({ apiKey: 'k', model: 'test-model', fetch });
+    await expect(provider.chat([])).rejects.toMatchObject({
+      usage: { tokensIn: null, tokensOut: null, cachedTokensIn: null, thoughtsTokensOut: null },
+    });
+  });
+
+  test('HTTP エラーと解析不能な本文では使用量を取得しない', async () => {
+    const fetch = jest
+      .fn()
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 400,
+        text: async () => '{"usage":{}}',
+        headers: { get: () => null },
+      } as unknown as Response)
+      .mockResolvedValueOnce({ ok: true, status: 200, text: async () => '{' } as Response);
+    const provider = new AnthropicProvider({ apiKey: 'k', model: 'test-model', fetch });
+    await expect(provider.chat([])).rejects.toMatchObject({ usage: null });
+    await expect(provider.chat([])).rejects.toMatchObject({ usage: null });
+  });
+});
