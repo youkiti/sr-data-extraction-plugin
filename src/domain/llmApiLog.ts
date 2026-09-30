@@ -15,6 +15,7 @@ export type LlmPurpose =
   | 'suggest_study_label'
   | 'extract_study'
   | 'relocate_quote'
+  | 'ask_paper'
   | 'other';
 
 export interface LlmApiLogEntry {

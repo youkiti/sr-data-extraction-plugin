@@ -29,6 +29,9 @@ S10（`#/export`）に表示する「論文の Methods セクションにこう�
 - パイロットの判定から抽出指示を改訂した（`SchemaVersions.created_by_type = pilot_revision` の版が 1 件以上ある）プロジェクト（issue #266）:
 
   > Based on the reviewers' judgments during the pilot, the extraction instructions were revised {{n_pilot_revision}} time(s); the LLM drafted revision proposals limited to item instructions and examples, which the authors reviewed and approved before full extraction.
+- 論文への質問パネルを使った判定がある（`Decisions.note` が `[chat-assist]` で始まる判定が 1 件以上ある）プロジェクト（issue #264）:
+
+  > During verification, reviewers could additionally ask an LLM questions about the full text of the study under review; answers were constrained to verbatim quotations that the tool located in the source text, were not entered into the dataset automatically, and decisions made after such questions were flagged in the audit trail.
 
 ## 2. 日本語
 
@@ -53,6 +56,9 @@ S10（`#/export`）に表示する「論文の Methods セクションにこう�
 - パイロットの判定から抽出指示を改訂したプロジェクト（issue #266）:
 
   > パイロットでの判定に基づき、抽出指示を {{n_pilot_revision}} 回改訂した。改訂案は LLM が項目の抽出指示と例に限って作成し、著者らが確認・承認したうえで本抽出に用いた。
+- 論文への質問パネルを使った判定があるプロジェクト（issue #264）:
+
+  > 検証中、レビュアーは検証対象の研究の本文について LLM に質問することもできた。回答にはツールが原文中で照合した逐語的な引用を必須とし、回答が自動でデータに入力されることはなく、質問後の判定は監査証跡に印を付けて記録した。
 
 ## 3. プレースホルダ一覧と自動反映元
 

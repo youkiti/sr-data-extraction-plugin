@@ -20,6 +20,7 @@ import {
   needsArmConfirmation,
   type DraftArm,
 } from '../../features/verification/armDraft';
+import type { AnchoredCitation } from '../../features/verification/askPaper';
 import {
   availableTabs,
   buildTabModel,
@@ -75,6 +76,7 @@ import { getUiLanguage, t, type UiLanguage } from '../../lib/i18n';
 import { nowIso8601 } from '../../utils/iso8601';
 import { nextOutcomeId } from '../../utils/entityKey';
 import { documentRoleLabel } from '../ui/documentRoleLabel';
+import { buildAskPaperHighlight } from '../ui/askPaperHighlight';
 import { el } from '../ui/dom';
 import { createPdfViewer, type PdfViewerHandle, type ViewerHighlight } from '../ui/pdfViewer';
 import { createTextViewer, type TextViewerSnippet } from '../ui/textViewer';
@@ -143,6 +145,7 @@ export interface VerificationPanelOptions {
 
 export interface VerificationPanelHandle {
   root: HTMLElement;
+  showCitationHighlight(citation: AnchoredCitation): void;
   /** 指定 entity のタブへ切替え、先頭セルへスクロール・フォーカスする（?entity= ディープリンク） */
   focusEntity(entityKey: string): void;
   /**
@@ -551,6 +554,7 @@ export function createVerificationPanel(
 
   let viewer: PdfViewerHandle | null = null;
   let viewerDocId: string | null = null;
+  let citationHighlight: AnchoredCitation | null = null;
   /**
    * documentId ごとの矩形ハイライト（rects 実体化済み）。対象文書の textPages がロードされた
    * 時点で不変なので、applyLoadedPdf で 1 回だけ計算してメモ化する（syncViewer は判定・
@@ -728,7 +732,9 @@ export function createVerificationPanel(
         viewer = createPdfViewer({
           document: loaded.pdf,
           pages: loaded.textPages,
-          onHighlightClick: (id) => focusCell(id, { jump: false, domFocus: true }),
+          onHighlightClick: (id) => {
+            if (!id.startsWith('ask-paper:')) focusCell(id, { jump: false, domFocus: true });
+          },
           renderPage: options.renderPage,
         });
       } else if (viewerDocId !== documentId) {
@@ -1396,7 +1402,7 @@ export function createVerificationPanel(
     }
     const docHighlights = rectHighlightsByDoc.get(activeDocumentId) as EvidenceHighlight[];
     const states = deriveCellStates(ownDecisions);
-    return docHighlights.map((highlight) => {
+    const highlights: ViewerHighlight[] = docHighlights.map((highlight) => {
       const [fieldId] = JSON.parse(highlight.cellKey) as [string, string];
       const status = states.get(highlight.cellKey)?.status ?? 'unverified';
       // ハイライトは evidence 由来のため対応する Evidence が必ず存在する
@@ -1416,6 +1422,14 @@ export function createVerificationPanel(
         occurrence: highlight.occurrences[index] as HighlightOccurrence,
       };
     });
+    if (citationHighlight !== null && citationHighlight.documentId === activeDocumentId) {
+      const extra = buildAskPaperHighlight(
+        citationHighlight,
+        textPagesByDoc.get(activeDocumentId) as readonly TextLayerPage[],
+      );
+      if (extra !== null) highlights.push(extra);
+    }
+    return highlights;
   }
 
   /**
@@ -2159,6 +2173,19 @@ export function createVerificationPanel(
 
   return {
     root,
+    showCitationHighlight(citation) {
+      if (
+        panelMode === 'independent' ||
+        citation.documentId === null ||
+        !data.documents.some((view) => view.document.documentId === citation.documentId)
+      )
+        return;
+      citationHighlight = citation;
+      setViewMode('pdf');
+      setActiveDocument(citation.documentId);
+      syncViewer();
+      focusHighlightNowOrPending(`ask-paper:${citation.documentId}`);
+    },
     focusEntity,
     scrollFocusedIntoView() {
       // issue #51: #/pilot 埋め込み文脈ではパネルの手前に「過去のパイロット結果」「抽出が
@@ -2275,4 +2302,10 @@ export function renderCachedVerificationPanel(options: VerificationPanelOptions)
 export function disposeVerificationPanelCache(): void {
   cachedPanel?.handle.dispose();
   cachedPanel = null;
+}
+
+/** 表示中の検証パネルへ質問の一時引用を渡す。別 study の古いコールバックは無視する。 */
+export function showVerificationCitation(studyId: string, citation: AnchoredCitation): void {
+  if (cachedPanel?.data.study.studyId === studyId)
+    cachedPanel.handle.showCitationHighlight(citation);
 }

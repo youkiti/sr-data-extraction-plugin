@@ -1,5 +1,11 @@
 // メインビュー起動配線のテスト。hashchange の発火タイミングを決定的に制御するため、
 // 実 window ではなくスタブ（location / addEventListener のみ実装）を注入する
+import { sendAskPaperQuestion } from '../../../src/app/services/askPaperUiService';
+import { disposeAskPaperPanelCache } from '../../../src/app/views/askPaperPanel';
+jest.mock('../../../src/app/services/askPaperUiService', () => ({
+  sendAskPaperQuestion: jest.fn(),
+}));
+import { askPaperUsedStudiesStorageKey } from '../../../src/lib/storage/askPaperStore';
 import { installChromeMock, type ChromeMock } from '../../setup/chrome-mock';
 import { bootstrapApp, createChromeAppDeps, seedState, type AppDeps } from '../../../src/app/bootstrap';
 import { BUILD_DATE } from '../../../src/build-info';
@@ -284,6 +290,19 @@ describe('seedState', () => {
     expect(state.counts.documents).toBe(0);
   });
 
+  test('質問用モデルをOptionsから読み込み、会話sliceの部分注入もマージする', async () => {
+    chromeMock.storage.local.data['settings.defaultModel'] = 'options-model';
+    const state = await seedState(
+      asWindow(createWindowStub({ askPaper: { error: 'テスト' } as AppState['askPaper'] })),
+    );
+    expect(state.askPaper).toEqual({
+      conversations: {},
+      usedStudyIds: [],
+      sending: false,
+      error: 'テスト',
+      model: 'options-model',
+    });
+  });
   test('chrome.storage.local の currentProject を読み込む', async () => {
     const project = { projectId: 'p1', spreadsheetId: 's1', driveFolderId: 'f1', name: '保存済みプロジェクト' };
     chromeMock.storage.local.data[CURRENT_PROJECT_STORAGE_KEY] = project;
@@ -2805,6 +2824,38 @@ describe('bootstrapApp: #/verify・#/dashboard', () => {
     Studies: [[...SHEET_HEADERS.Studies], STUDY_ROW],
   };
 
+  test('質問送信コールバックが送信サービスへ配線され、入力と開閉を再描画で保持する', async () => {
+    disposeAskPaperPanelCache();
+    const stub = createWindowStub(verifyPreloaded());
+    const { deps } = createVerifyFakeDeps(BASE_TABS);
+    const store = await bootstrapApp(asWindow(stub), deps);
+    stub.location.hash = '#/verify';
+    stub.fireHashChange();
+    await flush();
+    await flush();
+    const details = document.querySelector('#ask-paper') as HTMLDetailsElement;
+    details.open = true;
+    const input = document.querySelector('#ask-paper-input') as HTMLTextAreaElement;
+    input.value = '人数を教えて';
+    input.dispatchEvent(new Event('input'));
+    input.blur();
+    store!.setState({});
+    expect((document.querySelector('#ask-paper') as HTMLDetailsElement).open).toBe(true);
+    expect((document.querySelector('#ask-paper-input') as HTMLTextAreaElement).value).toBe(
+      '人数を教えて',
+    );
+    (document.querySelector('#ask-paper-send') as HTMLButtonElement).click();
+    expect(sendAskPaperQuestion).toHaveBeenCalledWith(
+      store,
+      deps,
+      expect.objectContaining({
+        studyId: 'study-1',
+        question: '人数を教えて',
+        fields: expect.any(Array),
+        documents: expect.any(Array),
+      }),
+    );
+  });
   test('#/verify 入場で一覧を読み込み、?study= なしは先頭 study を開く', async () => {
     const stub = createWindowStub(verifyPreloaded());
     const { deps } = createVerifyFakeDeps(BASE_TABS);
@@ -3246,6 +3297,7 @@ describe('bootstrapApp: #/export', () => {
           pilotStudyCount: 3,
           scannedDocumentCount: 0,
           pilotRevisionCount: 0,
+          chatAssistDecisionCount: 0,
         },
       }),
     );
@@ -3375,6 +3427,7 @@ describe('bootstrapApp: #/adjudicate', () => {
   function makeWorking(): AdjudicateWorking {
     return {
       study: { studyId: 'study-1', studyLabel: 'Smith 2020', registrationId: null, createdAt: 't0', createdBy: 'o@example.com', note: null },
+      askPaperDocuments: [],
       documents: [],
       annotatorA: 'a@example.com',
       annotatorB: 'b@example.com',
@@ -4547,3 +4600,27 @@ describe('費用・予算・使用量出力の起動配線', () => {
     expect(downloadUsageExport).toHaveBeenCalledWith(store);
   });
 });
+test.each(['#/verify', '#/adjudicate'] as const)(
+  '画面入場でアカウント別の質問済みIDを復元する: %s',
+  async (route) => {
+    const chromeMock = installChromeMock();
+    document.body.innerHTML = APP_TEMPLATE;
+    chromeMock.storage.local.data[
+      askPaperUsedStudiesStorageKey(PROJECT.spreadsheetId, 'tester@example.com')
+    ] = ['asked-before-reload'];
+    const stub = createWindowStub({
+      currentProject: PROJECT,
+      counts: { ...createInitialState().counts, schemaVersions: 1, documents: 1 },
+      home: COUNTS_LOADED,
+      role: { ...createInitialState().role, role: 'owner' },
+    });
+    const { deps } = createFakeDeps([]);
+    const store = await bootstrapApp(asWindow(stub), deps);
+    stub.location.hash = route;
+    stub.fireHashChange();
+    await flush();
+    await flush();
+    expect(store?.getState().askPaper.usedStudyIds).toContain('asked-before-reload');
+    expect(store?.getState().askPaper.conversations).toEqual({});
+  },
+);

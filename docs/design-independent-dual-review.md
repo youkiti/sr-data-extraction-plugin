@@ -87,6 +87,7 @@ flowchart LR
 | `#/extract` / `#/pilot` / `#/dashboard` / `#/documents` / `#/protocol` / `#/schema` | 同上 | **reviewer には非表示**。①検証に不要 ②mode② では AI の実行状況・anchor 率自体が盲検対象 ③編集系（文献・スキーマ）は owner の責務、の 3 点から一律で隠す |
 | Home の進捗カウント | Decisions 総数などが見える（値は見えない） | reviewer には**縮退版 Home**（プロジェクト名 + 自分の検証進捗 + 検証への導線のみ）を出す |
 | mode② への AI 情報 | — | Evidence・ハイライト・AI 値・AI ドラフト（群構成）を独立入力モードで一切描画しない（§6） |
+| 論文への質問パネル（issue #264） | — | **reviewer_independent には出さない**（質問で値を聞けば実質的に AI 抽出になり `human_independent` の区分が崩れるため）。owner / reviewer_with_ai / adjudicator の `#/verify` と `#/adjudicate` だけに出す。文脈は 1 study の本文とスキーマ定義だけで、Evidence・データ行・他の人の Decisions は入れない。質問と回答の本文は共有フォルダ（`logs/llm/`）にも `LLMApiLog.prompt_summary` / `error` にも残さない（質問文からもう一方の reviewer へ関心の向きが漏れるのを避けるため）。質問後の判定には `Decisions.note` に `[chat-assist]` を付ける |
 | スプレッドシートの直接閲覧 | 防げない | 運用ルール（protocol 明記）。設計上のスコープ外と明記 |
 
 ### 3.1 reviewer 用シェル

@@ -31,6 +31,7 @@ import {
 } from '../../features/export/rset/buildRSet';
 import { deriveReviewMode } from '../../features/export/rset/reviewMode';
 import { listSchemaVersions, getSchemaFieldsByVersion } from '../../features/schema/schemaRepository';
+import { hasChatAssistMarker } from '../../features/verification/chatAssist';
 import { readAllDecisions } from '../../features/verification/decisionRepository';
 import { readAllArmStructures } from '../../features/verification/armStructureRepository';
 import { ensureChildFolder, uploadTextFile } from '../../lib/google/drive';
@@ -125,6 +126,7 @@ function buildMethodsFacts(
   runFacts: readonly MethodsRunFact[],
   toolVersion: string | null,
   pilotRevisionCount: number,
+  chatAssistDecisionCount: number,
 ): MethodsFacts {
   const fullFacts = runFacts.filter((fact) => fact.runType === 'full');
   const modelIds = dedupe(
@@ -156,6 +158,7 @@ function buildMethodsFacts(
     pilotStudyCount: pilotStudyIds.size,
     scannedDocumentCount,
     pilotRevisionCount,
+    chatAssistDecisionCount,
   };
 }
 
@@ -235,6 +238,7 @@ export async function loadExportData(
       methodsRunFacts,
       toolVersion,
       versions.filter((version) => version.createdByType === 'pilot_revision').length,
+      decisions.filter((decision) => hasChatAssistMarker(decision.note)).length,
     );
 
     // R セット（issue #60）。素材は generateExport が正確な exported_at で再構築できるよう保持し、

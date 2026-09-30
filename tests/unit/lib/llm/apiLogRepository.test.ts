@@ -273,3 +273,11 @@ describe('readLlmApiLogEntries', () => {
     expect(await readLlmApiLogEntries('sid', depsFor([]))).toEqual([]);
   });
 });
+
+test('質問用途と空の参照をシート行に維持する', () => {
+  expect(
+    logEntryToRow(
+      makeEntry({ purpose: 'ask_paper', promptRef: '', responseRef: '', promptSummary: null }),
+    ).slice(4, 8),
+  ).toEqual(['ask_paper', '', '', null]);
+});

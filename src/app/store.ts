@@ -15,6 +15,7 @@ import type { AnnotatorPairResolution } from '../features/adjudication/pairResol
 import type { StudyGate } from '../features/adjudication/gate';
 import type { AdjudicationCell } from '../features/adjudication/cellMatch';
 import type { DraftArmRow } from '../features/adjudication/armMatch';
+import type { AskPaperTurn, AskPaperSourceDocument } from '../features/verification/askPaper';
 import type { AgreementReport } from '../features/adjudication/agreement';
 import type { BuiltExport, ClassicExportFormat } from '../features/export/buildExport';
 import type {
@@ -541,6 +542,8 @@ export interface AdjudicateWorking {
   study: StudyRecord;
   /** study 配下の文書（role 固定順 → 取り込み順） */
   documents: DocumentRecord[];
+  /** 文書本文と定義だけを質問パネルに渡すための軽量素材 */
+  askPaperDocuments: AskPaperSourceDocument[];
   annotatorA: string;
   annotatorB: string;
   /** 突き合わせに使う表のデザイン（最新確定版）の全項目 */
@@ -644,6 +647,16 @@ export interface DashboardState {
   loadError: string | null;
 }
 
+/** 論文への質問。会話はタブ内のみ、利用済み study の識別子はローカル保存から復元する。 */
+export interface AskPaperState {
+  conversations: Record<string, AskPaperTurn[]>;
+  sending: boolean;
+  error: string | null;
+  usedStudyIds: string[];
+  /** Options から解決した概算用のモデル。未解決時は null */
+  model: string | null;
+}
+
 export interface AppState {
   currentProject: ProjectRef | null;
   counts: ProgressCounts;
@@ -658,6 +671,7 @@ export interface AppState {
   pilot: PilotState;
   extract: ExtractState;
   verify: VerifyState;
+  askPaper: AskPaperState;
   dashboard: DashboardState;
   export: ExportState;
   /** `#/adjudicate`（S12）の画面状態 */
@@ -834,6 +848,7 @@ export function createInitialState(): AppState {
       lastRunFieldIds: null,
       fieldSubsetBadges: {},
     },
+    askPaper: { conversations: {}, sending: false, error: null, usedStudyIds: [], model: null },
     verify: {
       targets: null,
       loading: false,

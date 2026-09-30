@@ -497,3 +497,83 @@ describe('withLogging の文脈・エラー使用量', () => {
     });
   });
 });
+test('本文省略時は uploadJson を呼ばず質問と回答の本文を記録しない', async () => {
+  const { deps, recorded } = makeDeps();
+  const provider = withLogging(
+    makeProvider(async () => ({
+      text: '秘密の回答',
+      raw: '秘密の応答',
+      tokensIn: 100,
+      tokensOut: 20,
+      cachedTokensIn: 50,
+    })),
+    'ask_paper',
+    { ...deps, omitPayload: true },
+  );
+  await provider.chat([{ role: 'user', content: '秘密の質問' }]);
+  expect(recorded.uploads).toEqual([]);
+  expect(recorded.entries[0]).toMatchObject({
+    purpose: 'ask_paper',
+    promptRef: '',
+    responseRef: '',
+    promptSummary: null,
+    tokensIn: 100,
+    tokensOut: 20,
+    cachedTokensIn: 50,
+    costEstimateUsd: expect.any(Number),
+    latencyMs: expect.any(Number),
+    error: null,
+  });
+  expect(JSON.stringify(recorded.entries)).not.toContain('秘密');
+});
+
+test('本文省略時はエラー本文を保存せずメタデータだけ保持する', async () => {
+  const { deps, recorded } = makeDeps();
+  const error = new LlmProviderError('失敗', 'gemini', 400, '応答本文');
+  const provider = withLogging(
+    makeProvider(async () => {
+      throw error;
+    }),
+    'ask_paper',
+    { ...deps, omitPayload: true },
+  );
+  await expect(provider.chat([{ role: 'user', content: '秘密の質問' }])).rejects.toBe(error);
+  expect(recorded.uploads).toEqual([]);
+  expect(recorded.entries[0]).toMatchObject({
+    promptRef: '',
+    responseRef: '',
+    promptSummary: null,
+    tokensIn: null,
+    tokensOut: null,
+    error: 'LlmProviderError (status=400)',
+  });
+});
+
+test.each([
+  new LlmProviderError(
+    'Gemini 応答ボディが JSON として読めません',
+    'gemini',
+    200,
+    '秘密の回答本文',
+  ),
+  new LlmProviderError('finishReason=秘密の回答本文', 'gemini', null, '秘密の回答本文'),
+  new Error('秘密の質問と回答本文'),
+  '秘密の質問と回答本文',
+])('本文省略時は解析失敗やmessage中の本文も記録しない: %s', async (error) => {
+  const { deps, recorded } = makeDeps();
+  const provider = withLogging(
+    makeProvider(async () => {
+      throw error;
+    }),
+    'ask_paper',
+    { ...deps, omitPayload: true },
+  );
+  await expect(provider.chat([{ role: 'user', content: '秘密の質問' }])).rejects.toBe(error);
+  expect(JSON.stringify(recorded.entries)).not.toContain('秘密');
+  expect(recorded.entries[0]?.error).toBe(
+    error instanceof LlmProviderError
+      ? `LlmProviderError (status=${error.status ?? 'n/a'})`
+      : 'Error',
+  );
+  expect(recorded.uploads).toEqual([]);
+});

@@ -15,7 +15,9 @@
 // （renderCachedVerificationPanel と同じ考え方。キャッシュキーは studyId）
 import type { DocumentRecord } from '../../domain/document';
 import type { Evidence } from '../../domain/evidence';
+import type { TextLayerPage } from '../../domain/textLayer';
 import { indexEvidenceByCellKey } from '../../features/adjudication/cellMatch';
+import type { AnchoredCitation } from '../../features/verification/askPaper';
 import {
   buildDocumentHighlights,
   type EvidenceHighlight,
@@ -23,12 +25,16 @@ import {
 } from '../../features/verification/highlights';
 import { getUiLanguage, t, type UiLanguage } from '../../lib/i18n';
 import type { AdjudicateWorking } from '../store';
+import { buildAskPaperHighlight } from '../ui/askPaperHighlight';
 import { documentRoleLabel } from '../ui/documentRoleLabel';
 import { el } from '../ui/dom';
 import { createPdfViewer, type PdfViewerHandle, type ViewerHighlight } from '../ui/pdfViewer';
 
 interface CachedPane {
   studyId: string;
+  citation: AnchoredCitation | null;
+  textPages: readonly TextLayerPage[];
+  highlights: ViewerHighlight[];
   /**
    * ペイン生成時の表示言語（issue #93）。言語切替では studyId が変わらず、同一 study の
    * `#/adjudicate?study=` 再入場も syncAdjudicateRoute の同一 study ガードで再読込しないため、
@@ -101,6 +107,7 @@ function toViewerHighlights(
 }
 
 async function loadIntoPane(pane: CachedPane, working: AdjudicateWorking, documentId: string): Promise<void> {
+  pane.viewer = null;
   pane.bodyEl.replaceChildren(
     el('p', { className: 'adjudicate__pdf-loading', text: t('verify.pdfLoading') }),
   );
@@ -129,7 +136,10 @@ async function loadIntoPane(pane: CachedPane, working: AdjudicateWorking, docume
     view.textPages,
   );
   pane.viewer = createPdfViewer({ document: view.pdf, pages: view.textPages });
-  pane.viewer.setHighlights(toViewerHighlights(working, docHighlights), null);
+  pane.textPages = view.textPages;
+  pane.highlights = toViewerHighlights(working, docHighlights);
+  pane.viewer.setHighlights(pane.highlights, null);
+  applyCitation(pane);
   pane.bodyEl.replaceChildren(pane.viewer.root);
 
   // 保留ジャンプ（ロード中に focusAdjudicateEvidence が呼ばれていた場合）を 1 回だけ適用する
@@ -177,6 +187,9 @@ export function renderAdjudicatePdfPane(working: AdjudicateWorking): HTMLElement
     const firstDocumentId = working.documents[0]?.documentId ?? null;
     const pane: CachedPane = {
       studyId: working.study.studyId,
+      citation: null,
+      textPages: [],
+      highlights: [],
       language: getUiLanguage(),
       activeDocumentId: firstDocumentId,
       viewer: null,
@@ -232,4 +245,34 @@ export function focusAdjudicateEvidence(working: AdjudicateWorking, cellKey: str
 /** テスト・study 一覧への離脱時の後始末 */
 export function disposeAdjudicatePdfPaneCache(): void {
   cached = null;
+}
+
+function applyCitation(pane: CachedPane): void {
+  if (
+    pane.viewer === null ||
+    pane.citation === null ||
+    pane.citation.documentId !== pane.activeDocumentId
+  )
+    return;
+  const highlight = buildAskPaperHighlight(pane.citation, pane.textPages);
+  if (highlight === null) return;
+  pane.viewer.setHighlights([...pane.highlights, highlight], highlight.id);
+  pane.viewer.focusHighlight(highlight.id);
+}
+
+/** 引用の文書へ切替え、PDF 読込完了時にも一時ハイライトとページジャンプを適用する。 */
+export function showAdjudicateCitation(
+  working: AdjudicateWorking,
+  citation: AnchoredCitation,
+): void {
+  if (
+    cached === null ||
+    citation.documentId === null ||
+    cached.studyId !== working.study.studyId ||
+    !working.documents.some((doc) => doc.documentId === citation.documentId)
+  )
+    return;
+  cached.citation = citation;
+  selectDocument(cached, working, citation.documentId);
+  applyCitation(cached);
 }

@@ -715,6 +715,23 @@ export const en: Record<MessageKey, string> = {
   'verify.viewToggleAria': 'Left pane view switch',
   'verify.noTextNote':
     'This document has no extracted text (no_text_layer, or the extraction failed)',
+  'askPaper.title': 'Ask the paper (AI)',
+  'askPaper.notice':
+    'Answers are for reference. Check the PDF before entering values yourself. Questions and answers are kept per study while this tab is open, disappear when you close or reload it, and are never saved in the shared folder.',
+  'askPaper.input': 'Question about the paper',
+  'askPaper.send': 'Send',
+  'askPaper.estimatePending': 'Preparing estimate…',
+  'askPaper.estimate': 'Estimated input tokens: {tokens} / {cost}',
+  'askPaper.cost': 'About ${cost}',
+  'askPaper.costUnknown': 'Cost estimate unavailable',
+  'askPaper.warning':
+    'No citations could be verified in the text. Do not rely on the answer without checking it.',
+  'askPaper.notFound': 'No relevant passage was found in the text.',
+  'askPaper.citation': 'p.{page}: {quote}',
+  'askPaper.unanchored': 'Could not be verified in the text',
+  'askPaper.progress': 'Waiting for an answer…',
+  'askPaper.citationHighlight': 'Citation supporting the answer',
+  'askPaper.formatError': 'The answer to the paper question has an invalid format',
   'verify.noTextTitle': 'This document has no extracted text',
   'verify.pdfOpenError': 'Cannot open the PDF: {reason}',
   'verify.pdfErrorUnknown': 'unknown cause',

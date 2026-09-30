@@ -3,12 +3,14 @@
 // study の切替は URL クエリ ?study= と同期する（セレクタ変更 → hash 書き換え → サービス層が読込）。
 // ?entity=（S9 ダッシュボードのセル単位ディープリンク）は該当タブへの切替 + 先頭セルへの
 // スクロール・フォーカスとしてパネルへ渡す。2 ペイン本体は #/pilot と同じ verificationPanel を使う
+import { canAskPaper } from '../../features/verification/chatAssist';
 import { t } from '../../lib/i18n';
 import { el } from '../ui/dom';
 import type { AppState, VerifyTarget } from '../store';
+import { renderAskPaperPanel } from './askPaperPanel';
 import { renderConflictWarning } from './conflictWarning';
 import type { ViewContext } from './types';
-import { renderCachedVerificationPanel } from './verificationPanel';
+import { renderCachedVerificationPanel, showVerificationCitation } from './verificationPanel';
 
 function selectorLabel(target: VerifyTarget): string {
   const { progress } = target;
@@ -233,6 +235,27 @@ export function renderVerifyView(state: AppState, ctx: ViewContext): HTMLElement
         readOnly: verify.conflictMessage !== null,
       }),
     );
+    if (canAskPaper(state.role.role)) {
+      const bundle = verify.verification;
+      children.push(
+        renderAskPaperPanel(
+          state.askPaper,
+          {
+            spreadsheetId: state.currentProject?.spreadsheetId ?? '',
+            studyId: bundle.study.studyId,
+            fields: bundle.fields,
+            documents: bundle.documents.map(({ document, extractedPages }) => ({
+              documentId: document.documentId,
+              role: document.documentRole,
+              filename: document.filename,
+              pages: extractedPages,
+            })),
+          },
+          ctx.askPaper,
+          (citation) => showVerificationCitation(bundle.study.studyId, citation),
+        ),
+      );
+    }
   }
   return el('section', { className: 'view view--verify' }, children);
 }

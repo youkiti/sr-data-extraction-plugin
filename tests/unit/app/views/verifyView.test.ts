@@ -1,3 +1,4 @@
+import { makeAskTurn } from '../askPaperFixtures';
 import { renderVerifyView } from '../../../../src/app/views/verifyView';
 import { disposeVerificationPanelCache } from '../../../../src/app/views/verificationPanel';
 import { createInitialState, type AppState, type VerifyTarget } from '../../../../src/app/store';
@@ -773,4 +774,46 @@ describe('renderVerifyView（表示言語 en。issue #93）', () => {
       'No AI-extracted studies. Run an extraction first on the Pilot or Full extraction screen.',
     );
   });
+});
+
+test.each(['owner', 'reviewer_with_ai', 'adjudicator', 'reviewer_independent'] as const)(
+  '質問パネルは許可ロールにだけDOMを生成する: %s',
+  (role) => {
+    const { ctx } = makeCtx();
+    ctx.askPaper = { onSend: jest.fn() };
+    const bundle = makeVerification();
+    const state = makeState(
+      { targets: [makeTarget()], selectedStudyId: 'study-1', verification: bundle },
+      { role },
+    );
+    state.askPaper.conversations['study-1'] = [makeAskTurn()];
+    const root = render(state, ctx);
+    expect(root.querySelectorAll('#ask-paper')).toHaveLength(
+      role === 'reviewer_independent' ? 0 : 1,
+    );
+    if (role !== 'reviewer_independent') {
+      (root.querySelector('.ask-paper__citation') as HTMLButtonElement).click();
+      const input = root.querySelector('textarea#ask-paper-input') as HTMLTextAreaElement;
+      input.value = '何人？';
+      input.dispatchEvent(new Event('input'));
+      (root.querySelector('#ask-paper-send') as HTMLButtonElement).click();
+      expect(ctx.askPaper.onSend).toHaveBeenCalledWith(
+        expect.objectContaining({
+          studyId: bundle.study.studyId,
+          fields: bundle.fields,
+          documents: expect.any(Array),
+        }),
+      );
+    }
+  },
+);
+
+test('プロジェクト未選択の描画でも質問パネルは空の参照で安全に組み立てる', () => {
+  const { ctx } = makeCtx();
+  const state = makeState(
+    { targets: [makeTarget()], selectedStudyId: 'study-1', verification: makeVerification() },
+    { role: 'owner' },
+  );
+  state.currentProject = null;
+  expect(render(state, ctx).querySelector('#ask-paper')).not.toBeNull();
 });

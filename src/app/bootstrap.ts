@@ -117,6 +117,8 @@ import {
   setVerifyLayoutMode,
   setVerifyPaneLayout,
 } from './services/verifyService';
+import { sendAskPaperQuestion } from './services/askPaperUiService';
+import { loadAskPaperUsedStudyIds } from './services/askPaperMetadataService';
 import { loadUsage, saveBudget } from './services/usageService';
 import { generateUsageExport, downloadUsageExport } from './services/usageExportService';
 import { loadDashboard } from './services/dashboardService';
@@ -188,6 +190,8 @@ import {
 } from '../lib/storage/secretsStore';
 import {
   loadLlmConnectionSettings,
+  loadDefaultModel,
+  FACTORY_DEFAULT_MODEL,
   loadUiLanguage,
   resolveRateLimitPolicy,
 } from '../lib/storage/settingsStore';
@@ -303,6 +307,7 @@ function renderRoleErrorBlock(
 
 export async function seedState(win: Window): Promise<AppState> {
   const state = createInitialState();
+  state.askPaper.model = (await loadDefaultModel()) ?? FACTORY_DEFAULT_MODEL;
   const storedProject = await loadCurrentProject();
   if (storedProject) {
     state.currentProject = storedProject;
@@ -345,6 +350,7 @@ export async function seedState(win: Window): Promise<AppState> {
       pilot: { ...state.pilot, ...(preloaded.pilot ?? {}) },
       extract: { ...state.extract, ...(preloaded.extract ?? {}) },
       verify: { ...state.verify, ...(preloaded.verify ?? {}) },
+      askPaper: { ...state.askPaper, ...(preloaded.askPaper ?? {}) },
       dashboard: {
         ...state.dashboard,
         ...(preloaded.dashboard ?? {}),
@@ -461,6 +467,11 @@ export async function bootstrapApp(
 
   // view のユーザー操作をサービス層へ委譲するコンテキスト（views/types.ts）
   const viewContext: ViewContext = {
+    askPaper: {
+      onSend: (params) => {
+        void sendAskPaperQuestion(store, deps, params);
+      },
+    },
     home: {
       onReload: () => {
         void loadProgressCounts(store, deps, { force: true });
@@ -932,6 +943,7 @@ export async function bootstrapApp(
       });
     }
     await loadVerifyTargets(store, deps);
+    await loadAskPaperUsedStudyIds(store, deps);
     const verify = store.getState().verify;
     const targets = verify.targets;
     if (targets === null || targets.length === 0) {
@@ -969,6 +981,7 @@ export async function bootstrapApp(
    */
   const syncAdjudicateRoute = async (): Promise<void> => {
     await loadAdjudicateTargets(store, deps);
+    await loadAskPaperUsedStudyIds(store, deps);
     const desired = studyQueryOf(win.location.hash);
     if (desired !== null && desired !== store.getState().adjudicate.selectedStudyId) {
       await openAdjudicateStudy(store, deps, desired);

@@ -1,7 +1,9 @@
+import { makeCitation, makeAskPage } from '../askPaperFixtures';
 import {
   disposeAdjudicatePdfPaneCache,
   focusAdjudicateEvidence,
   renderAdjudicatePdfPane,
+  showAdjudicateCitation,
 } from '../../../../src/app/views/adjudicatePdfPane';
 import type { AdjudicateWorking } from '../../../../src/app/store';
 import type { DocumentRecord } from '../../../../src/domain/document';
@@ -143,6 +145,7 @@ function makeField(overrides: Partial<SchemaField> = {}): SchemaField {
 function makeWorking(overrides: Partial<AdjudicateWorking> = {}): AdjudicateWorking {
   return {
     study: makeStudy(),
+    askPaperDocuments: [],
     documents: [makeDocument()],
     annotatorA: 'a@example.com',
     annotatorB: 'b@example.com',
@@ -480,4 +483,30 @@ describe('focusAdjudicateEvidence（issue #63: セル選択 → 該当文書へ�
     focusAdjudicateEvidence(working, CELL_KEY); // 2 回目も安全に呼べる
     expect(root.querySelector('.pdf-viewer__hl--active')).not.toBeNull();
   });
+});
+
+test('質問引用は別文書へ切替後に矩形化し、未読込時のジャンプも適用する', async () => {
+  const working = makeWorking({
+    documents: [makeDocument(), makeDocument({ documentId: 'doc-2' })],
+    loadPdfView: jest
+      .fn()
+      .mockResolvedValue({ pdf: makePdfDocument(), pdfError: null, textPages: [makeAskPage()] }),
+  });
+  const root = renderAdjudicatePdfPane(working);
+  document.body.replaceChildren(root);
+  showAdjudicateCitation(working, makeCitation());
+  await flush();
+  expect(root.querySelector('.pdf-viewer__hl')).not.toBeNull();
+  showAdjudicateCitation(working, makeCitation({ documentId: 'doc-2' }));
+  await flush();
+  expect(root.querySelector('.pdf-viewer__hl')?.getAttribute('aria-label')).toContain(
+    '質問の回答の引用',
+  );
+  showAdjudicateCitation(working, makeCitation({ documentId: 'doc-2' }));
+  showAdjudicateCitation(working, makeCitation({ documentId: 'doc-2', quote: 'ない文章' }));
+  showAdjudicateCitation(working, makeCitation({ documentId: null }));
+  showAdjudicateCitation(working, makeCitation({ documentId: 'missing' }));
+  showAdjudicateCitation(makeWorking({ study: makeStudy({ studyId: 'other' }) }), makeCitation());
+  disposeAdjudicatePdfPaneCache();
+  showAdjudicateCitation(working, makeCitation());
 });

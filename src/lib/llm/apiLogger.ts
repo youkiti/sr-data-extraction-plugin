@@ -19,12 +19,12 @@ import {
 } from './LLMProvider';
 import { estimateCostUsd } from './pricing';
 
-export interface ApiLoggerDeps {
-  /** Drive に JSON ファイルをアップロードして webViewLink を返す */
-  uploadJson: (params: {
-    filename: string;
-    content: string;
-  }) => Promise<{ webViewLink: string }>;
+type UploadJson = (params: {
+  filename: string;
+  content: string;
+}) => Promise<{ webViewLink: string }>;
+
+export type ApiLoggerDeps = {
   /** Sheets の LLMApiLog タブに 1 行追記する */
   appendLogEntry: (entry: LlmApiLogEntry) => Promise<void>;
   /** ラップしたプロバイダの生存期間を通して固定する抽出実行の識別子 */
@@ -35,8 +35,11 @@ export interface ApiLoggerDeps {
   newUuid?: () => string;
   /** テスト時に差し替え可能な現在時刻 */
   now?: () => string;
-}
-
+} &
+  // 本文を省略するときだけアップロード依存を不要にする。
+  (
+    { omitPayload: true; uploadJson?: UploadJson } | { omitPayload?: false; uploadJson: UploadJson }
+  );
 /** プロンプト先頭 500 文字をプレビューとして抜粋 */
 const PROMPT_SUMMARY_LENGTH = 500;
 
@@ -104,40 +107,47 @@ export function withLogging(
         usage = response;
         return response;
       } catch (err) {
-        errorMessage = formatError(err);
+        errorMessage = deps.omitPayload ? formatPayloadFreeError(err) : formatError(err);
         usage = err instanceof LlmProviderError ? err.usage : null;
         throw err;
       } finally {
         const latencyMs = Date.now() - startMs;
-        const promptUpload = await deps.uploadJson({
-          filename: `${logId}.prompt.json`,
-          content: JSON.stringify(
-            {
-              promptVersion: deps.promptVersion ?? null,
-              messages: redactMessagesForLog(messages),
-              options,
-            },
-            null,
-            2,
-          ),
-        });
-        const responseUpload = await deps.uploadJson({
-          filename: `${logId}.response.json`,
-          content: JSON.stringify(
-            response !== null ? response.raw : { error: errorMessage },
-            null,
-            2,
-          ),
-        });
+        // 質問パネルでは本文も要約も保存せず、利用量などのメタデータだけを残す。
+        let promptRef = '';
+        let responseRef = '';
+        if (!deps.omitPayload) {
+          const promptUpload = await deps.uploadJson({
+            filename: `${logId}.prompt.json`,
+            content: JSON.stringify(
+              {
+                promptVersion: deps.promptVersion ?? null,
+                messages: redactMessagesForLog(messages),
+                options,
+              },
+              null,
+              2,
+            ),
+          });
+          const responseUpload = await deps.uploadJson({
+            filename: `${logId}.response.json`,
+            content: JSON.stringify(
+              response !== null ? response.raw : { error: errorMessage },
+              null,
+              2,
+            ),
+          });
+          promptRef = promptUpload.webViewLink;
+          responseRef = responseUpload.webViewLink;
+        }
         const entry: LlmApiLogEntry = {
           logId,
           timestamp: startedAt,
           provider: provider.providerId,
           model: provider.model,
           purpose,
-          promptRef: promptUpload.webViewLink,
-          responseRef: responseUpload.webViewLink,
-          promptSummary: buildPromptSummary(messages),
+          promptRef,
+          responseRef,
+          promptSummary: deps.omitPayload ? null : buildPromptSummary(messages),
           tokensIn: usage?.tokensIn ?? null,
           tokensOut: usage?.tokensOut ?? null,
           cachedTokensIn: usage?.cachedTokensIn ?? null,
@@ -175,4 +185,12 @@ function formatError(err: unknown): string {
     return err.message;
   }
   return String(err);
+}
+
+/** 応答由来の finish/stop reason が message にも入るため、本文省略時は固定の種別だけを残す。 */
+function formatPayloadFreeError(err: unknown): string {
+  if (err instanceof LlmProviderError) {
+    return `LlmProviderError (status=${err.status ?? 'n/a'})`;
+  }
+  return 'Error';
 }
