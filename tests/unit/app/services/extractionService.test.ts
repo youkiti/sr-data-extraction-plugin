@@ -11,11 +11,11 @@ import {
   appendExtractionRun,
   ensureRunOptionalColumns,
 } from '../../../../src/features/extraction/runRepository';
-import type { ExtractDataPage } from '../../../../src/features/extraction/skills/extractData';
+import { EXTRACT_DATA_PROMPT_VERSION, type ExtractDataPage } from '../../../../src/features/extraction/skills/extractData';
 import { readAllArmStructures } from '../../../../src/features/verification/armStructureRepository';
 import { uploadTextFile } from '../../../../src/lib/google/drive';
 import type { GoogleApiDeps } from '../../../../src/lib/google/types';
-import { appendLlmApiLog } from '../../../../src/lib/llm/apiLogRepository';
+import { appendLlmApiLog, ensureLlmApiLogColumns } from '../../../../src/lib/llm/apiLogRepository';
 import type { ChatResponse, LLMProvider } from '../../../../src/lib/llm/LLMProvider';
 import type { RateLimitPolicy } from '../../../../src/lib/llm/rateLimitPolicy';
 
@@ -27,6 +27,7 @@ jest.mock('../../../../src/lib/google/drive');
 jest.mock('../../../../src/lib/llm/apiLogRepository');
 
 const mockedUpload = jest.mocked(uploadTextFile);
+const mockedEnsureLogColumns = jest.mocked(ensureLlmApiLogColumns);
 const mockedAppendLog = jest.mocked(appendLlmApiLog);
 const mockedAppendEvidence = jest.mocked(appendEvidenceRows);
 const mockedEnsureBboxColumns = jest.mocked(ensureEvidenceBboxColumns);
@@ -204,6 +205,15 @@ describe('runExtraction', () => {
     expect(mockedEnsureRunOptionalColumns.mock.invocationCallOrder[0]).toBeLessThan(
       mockedAppendRun.mock.invocationCallOrder[0] as number,
     );
+
+    expect(mockedEnsureLogColumns).toHaveBeenCalledWith('sid', GOOGLE);
+    expect(mockedEnsureLogColumns.mock.invocationCallOrder[0]).toBeLessThan(
+      mockedAppendRun.mock.invocationCallOrder[0] as number,
+    );
+    expect(mockedAppendLog.mock.calls[0]?.[1]).toMatchObject({
+      logId: 'u2', runId: 'u1', studyId: 'study-1', section: null,
+      promptVersion: EXTRACT_DATA_PROMPT_VERSION, thoughtsTokensOut: null,
+    });
 
     // Evidence はアンカリング確定済みで追記される
     expect(mockedAppendEvidence).toHaveBeenCalledTimes(1);
@@ -581,6 +591,11 @@ describe('runExtraction', () => {
       promptRef: '',
       responseRef: '',
       promptSummary: `[arm_completeness] run ${outcome.run.runId}`,
+      runId: outcome.run.runId,
+      studyId: expectedWarning.studyId,
+      section: expectedWarning.section,
+      promptVersion: null,
+      thoughtsTokensOut: null,
     });
     expect(warningEntry?.error).toContain('警告（arm_completeness）');
     expect(warningEntry?.error).toContain('arm:2 × sample_size');
@@ -918,7 +933,7 @@ describe('runExtraction', () => {
       const chat = jest.fn().mockResolvedValue(AI_RESPONSE);
       const deps = makeDeps(chat);
       mockedUpsertStudy.mockRejectedValue(new Error('StudyData 失敗'));
-      await runExtraction(baseParams(), deps);
+      const outcome = await runExtraction(baseParams(), deps);
 
       const transferLogEntry = mockedAppendLog.mock.calls
         .map(([, entry]) => entry)
@@ -933,6 +948,10 @@ describe('runExtraction', () => {
         tokensOut: null,
         latencyMs: null,
         costEstimateUsd: null,
+      });
+      expect(transferLogEntry).toMatchObject({
+        runId: outcome.run.runId, studyId: null, section: null,
+        promptVersion: null, thoughtsTokensOut: null,
       });
       expect(transferLogEntry?.error).toBe('転記失敗: StudyData 失敗');
     });
@@ -965,5 +984,34 @@ describe('runExtraction', () => {
       expect(outcome.run.status).toBe('done');
       expect(outcome.transferredRowCount).toBe(1); // studyRows 1 件のみ
     });
+  });
+});
+
+describe('バッチ失敗のログ配線', () => {
+  test('API を呼べない失敗も run・study・section を持つ警告専用行に記録する', async () => {
+    const deps = makeDeps(jest.fn());
+    deps.loadDocumentPages.mockRejectedValue(new Error('本文失敗'));
+    const outcome = await runExtraction(baseParams(), deps);
+    expect(mockedAppendLog).toHaveBeenCalledWith(
+      'sid',
+      expect.objectContaining({
+        promptSummary: `[batch_failed] run ${outcome.run.runId}`,
+        error: 'バッチ失敗（load_failed）: 本文失敗',
+        purpose: 'extract_study',
+        runId: outcome.run.runId,
+        studyId: 'study-1',
+        section: null,
+        promptRef: '',
+        responseRef: '',
+        tokensIn: null,
+        tokensOut: null,
+        cachedTokensIn: null,
+        thoughtsTokensOut: null,
+        promptVersion: null,
+        costEstimateUsd: null,
+      }),
+      GOOGLE,
+    );
+    expect(outcome.run.status).toBe('partial_failure');
   });
 });

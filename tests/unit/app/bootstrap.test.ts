@@ -17,6 +17,17 @@ jest.mock('pdfjs-dist', () => ({
   GlobalWorkerOptions: { workerSrc: '' },
   getDocument: jest.fn(),
 }));
+// 費用カードのコールバック配線はサービス単体のテストから分離する。
+jest.mock('../../../src/app/services/usageService', () => ({
+  ...jest.requireActual('../../../src/app/services/usageService'),
+  loadUsage: jest.fn(), saveBudget: jest.fn(),
+}));
+jest.mock('../../../src/app/services/usageExportService', () => ({
+  generateUsageExport: jest.fn(), downloadUsageExport: jest.fn(),
+}));
+import { loadUsage, saveBudget } from '../../../src/app/services/usageService';
+import { generateUsageExport, downloadUsageExport } from '../../../src/app/services/usageExportService';
+import { aggregateUsage } from '../../../src/features/usage/aggregateUsage';
 // #/export の配線テストはサービス呼び出しの委譲だけを見る（実処理は exportService.test.ts）
 jest.mock('../../../src/app/services/exportService', () => ({
   loadExportData: jest.fn(),
@@ -2499,8 +2510,8 @@ describe('bootstrapApp: #/extract', () => {
     stub.fireHashChange();
     await flush();
 
-    // ExtractionRuns を読んで既定選択（未抽出の全 study = study-1）
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    // ExtractionRuns と予算・全用途の使用量を読んで既定選択する。
+    expect(fetchMock).toHaveBeenCalledTimes(3);
     expect(store?.getState().extract.selectedStudyIds).toEqual(['study-1']);
 
     // 選択解除 / 再選択の配線
@@ -4471,6 +4482,124 @@ describe('bootstrapApp: API 失敗診断ログの配線（issue #249）', () => 
   });
 });
 
+
+describe('費用・予算・使用量出力の起動配線', () => {
+  beforeEach(() => {
+    installChromeMock();
+    document.body.innerHTML = APP_TEMPLATE;
+  });
+  test('部分注入でも usage の既定値を維持する', async () => {
+    const stub = createWindowStub({ dashboard: {
+      usage: { budgetError: '注入' },
+    } as AppState['dashboard'] });
+    const state = await seedState(asWindow(stub));
+    expect(state.dashboard.usage.budgetError).toBe('注入');
+    expect(state.dashboard.usage.loading).toBe(false);
+    expect(state.dashboard.usage.budgetDraft).toBeNull();
+  });
+
+  test('dashboard 入場・全体再読込・費用再読込・予算保存を配線する', async () => {
+    const dashboard = createInitialState().dashboard;
+    dashboard.usage.summary = aggregateUsage({ logs: [], runs: [] });
+    const stub = createWindowStub({ currentProject: PROJECT, home: COUNTS_LOADED, dashboard });
+    const { deps } = createFakeDeps([[...SHEET_HEADERS.Documents]]);
+    const store = await bootstrapApp(asWindow(stub), deps);
+    stub.location.hash = '#/dashboard';
+    stub.fireHashChange();
+    await flush();
+    expect(loadUsage).toHaveBeenCalledWith(store, deps);
+    (document.getElementById('dashboard-usage-reload') as HTMLButtonElement).click();
+    expect(loadUsage).toHaveBeenCalledWith(store, deps, { force: true });
+    store!.setState({ dashboard: { ...store!.getState().dashboard, loadError: '失敗' } });
+    (document.getElementById('dashboard-reload') as HTMLButtonElement).click();
+    expect(loadUsage).toHaveBeenCalledWith(store, deps, { force: true });
+    (document.getElementById('dashboard-budget-save') as HTMLButtonElement).click();
+    expect(store!.getState().dashboard.usage.budgetError).toBe(
+      '0 より大きい有限の金額を入力してください',
+    );
+    store!.setState({ counts: { ...store!.getState().counts, dataRows: 1 } });
+    expect(document.getElementById('dashboard-budget-error')?.textContent).toContain(
+      '0 より大きい有限の金額',
+    );
+    const input = document.getElementById('dashboard-budget-input') as HTMLInputElement;
+    input.value = '12';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    expect(store!.getState().dashboard.usage.budgetError).toBeNull();
+    (document.getElementById('dashboard-budget-save') as HTMLButtonElement).click();
+    expect(saveBudget).toHaveBeenCalledWith(store, deps, 12);
+  });
+
+  test('予算入力後に進捗が再描画されても入力値を保存できる', async () => {
+    const dashboard = createInitialState().dashboard;
+    dashboard.usage.summary = aggregateUsage({ logs: [], runs: [] });
+    const stub = createWindowStub({ currentProject: PROJECT, home: COUNTS_LOADED, dashboard });
+    const { deps } = createFakeDeps([[...SHEET_HEADERS.Documents]]);
+    const store = await bootstrapApp(asWindow(stub), deps);
+    stub.location.hash = '#/dashboard';
+    stub.fireHashChange();
+    await flush();
+    const input = document.getElementById('dashboard-budget-input') as HTMLInputElement;
+    input.focus();
+    input.value = '10.25';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    store!.setState({ dashboard: { ...store!.getState().dashboard, loadError: '進捗読込失敗' } });
+    const restored = document.getElementById('dashboard-budget-input') as HTMLInputElement;
+    expect(restored.value).toBe('10.25');
+    expect(document.activeElement).toBe(restored);
+    (document.getElementById('dashboard-budget-save') as HTMLButtonElement).click();
+    expect(saveBudget).toHaveBeenCalledWith(store, deps, 10.25);
+  });
+
+  test('予算の入力途中の小数点・キャレット・選択範囲を毎回の再描画で保持する', async () => {
+    const dashboard = createInitialState().dashboard;
+    dashboard.usage.summary = aggregateUsage({ logs: [], runs: [] });
+    const stub = createWindowStub({ currentProject: PROJECT, home: COUNTS_LOADED, dashboard });
+    const { deps } = createFakeDeps([[...SHEET_HEADERS.Documents]]);
+    const store = await bootstrapApp(asWindow(stub), deps);
+    stub.location.hash = '#/dashboard';
+    stub.fireHashChange();
+    await flush();
+    for (const value of ['1', '10', '10.', '10.25']) {
+      const input = document.getElementById('dashboard-budget-input') as HTMLInputElement;
+      input.focus();
+      input.value = value;
+      input.setSelectionRange(value.length, value.length);
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      const restored = document.getElementById('dashboard-budget-input') as HTMLInputElement;
+      expect(restored.value).toBe(value);
+      expect(restored.selectionStart).toBe(value.length);
+      expect(restored.selectionEnd).toBe(value.length);
+      expect(document.activeElement).toBe(restored);
+      expect(store!.getState().dashboard.usage.budgetDraft).toBe(value);
+    }
+    const input = document.getElementById('dashboard-budget-input') as HTMLInputElement;
+    input.setSelectionRange(1, 4, 'backward');
+    store!.setState({ dashboard: { ...store!.getState().dashboard, loadError: '進捗読込失敗' } });
+    const restored = document.getElementById('dashboard-budget-input') as HTMLInputElement;
+    expect(restored.selectionStart).toBe(1);
+    expect(restored.selectionEnd).toBe(4);
+    expect(restored.selectionDirection).toBe('backward');
+    (document.getElementById('dashboard-budget-save') as HTMLButtonElement).click();
+    expect(saveBudget).toHaveBeenCalledWith(store, deps, 10.25);
+  });
+
+  test('使用量の生成とダウンロードを配線する', async () => {
+    const state = createInitialState();
+    state.export.usage = { generating: false, error: null,
+      result: { filename: 'usage.csv', fileRef: 'https://drive.test/csv', csv: 'csv' } };
+    const stub = createWindowStub({ currentProject: PROJECT, home: COUNTS_LOADED,
+      counts: { ...state.counts, dataRows: 1, schemaVersions: 1 }, export: state.export });
+    const { deps } = createFakeDeps([[...SHEET_HEADERS.Documents]]);
+    const store = await bootstrapApp(asWindow(stub), deps);
+    stub.location.hash = '#/export';
+    stub.fireHashChange();
+    await flush();
+    (document.getElementById('export-usage-generate') as HTMLButtonElement).click();
+    expect(generateUsageExport).toHaveBeenCalledWith(store, deps);
+    (document.getElementById('export-usage-download') as HTMLButtonElement).click();
+    expect(downloadUsageExport).toHaveBeenCalledWith(store);
+  });
+});
 test.each(['#/verify', '#/adjudicate'] as const)(
   '画面入場でアカウント別の質問済みIDを復元する: %s',
   async (route) => {

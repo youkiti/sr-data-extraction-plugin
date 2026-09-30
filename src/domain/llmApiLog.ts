@@ -40,4 +40,22 @@ export interface LlmApiLogEntry {
   latencyMs: number | null;
   costEstimateUsd: number | null;
   error: string | null;
+  /** 抽出実行の識別子。抽出以外の呼び出し・旧行は null */
+  runId: string | null;
+  /** 呼び出し対象の study。対象なし・旧行は null */
+  studyId: string | null;
+  /** 呼び出し対象のセクション。分割なし・対象なし・旧行は null */
+  section: string | null;
+  /** 呼び出し元プロンプトの版数。警告専用行・旧行は null */
+  promptVersion: number | null;
+  /**
+   * tokensOut のうち思考トークン数（内数）。
+   * null = 個別の報告なし（Gemini 以外、または usageMetadata なし）。
+   */
+  thoughtsTokensOut: number | null;
+}
+
+/** 旧行には他の識別マーカーがないため、両 payload 参照が空の行を警告専用と判定する。 */
+export function isWarningOnlyLogEntry(entry: LlmApiLogEntry): boolean {
+  return entry.promptRef === '' && entry.responseRef === '';
 }

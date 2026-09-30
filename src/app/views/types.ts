@@ -249,6 +249,14 @@ export interface VerifyViewCallbacks {
 
 /** #/dashboard（S9）のユーザー操作コールバック（セルクリックはハッシュ遷移のためここに持たない） */
 export interface DashboardViewCallbacks {
+  /** 費用だけを再読み込み */
+  onReloadUsage(): void;
+  /** 予算入力の下書きを保持し、前のエラーを解除 */
+  onBudgetDraftChange(value: string): void;
+  /** 不正な予算入力のエラーを保持 */
+  onBudgetError(reason: string): void;
+  /** 予算保存。null は解除 */
+  onSaveBudget(value: number | null): void;
   /** 読み込み失敗時の再読み込み（強制再取得） */
   onReload(): void;
 }
@@ -294,8 +302,11 @@ export interface AdjudicateViewCallbacks {
 
 /** #/export（S10）のユーザー操作コールバック */
 export interface ExportViewCallbacks {
+  /** 使用量 CSV の独立した生成・ローカル保存 */
+  onGenerateUsage(): void;
+  onDownloadUsage(): void;
   /** 形式選択ラジオの切替（サマリ・プレビューが追随する） */
-  onSelectFormat(format: ExportFormat): void;
+  onSelectFormat(format: Exclude<ExportFormat, 'usage'>): void;
   /** 「CSV を生成して Drive に保存」: 未検証セルが残っていれば警告ダイアログを開く */
   onGenerate(): void;
   /** 警告ダイアログの「続行して生成」 */

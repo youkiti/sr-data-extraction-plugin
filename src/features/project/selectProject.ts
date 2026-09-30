@@ -85,7 +85,8 @@ export async function loadProjectMeta(
   const header = rows[0] as string[];
   const dataRows = rows.slice(1);
   const expected = SHEET_HEADERS.Meta;
-  if (!sameArray(header, expected)) {
+  // 予算などの後付け列を持つプロジェクトも開けるよう、先頭の基本列だけを検証する。
+  if (!sameArray(header.slice(0, expected.length), expected)) {
     throw new ProjectSchemaError(
       `Meta タブの列構成が想定と異なります。期待: [${expected.join(', ')}]`
     );

@@ -20,6 +20,7 @@ import {
   type ChatResponse,
   type JsonSchema,
   type LLMProvider,
+  type LlmUsage,
   type LlmFailureKind,
 } from './LLMProvider';
 import { parseRetryAfterMs } from './retry';
@@ -157,6 +158,7 @@ export class GeminiProvider implements LLMProvider {
         'malformed',
       );
     }
+    const usage = this.parseUsage(json);
     const finishReason = json.candidates?.[0]?.finishReason;
     const diagnostics = JSON.stringify({
       finishReason: finishReason ?? null,
@@ -172,6 +174,7 @@ export class GeminiProvider implements LLMProvider {
         null,
         false,
         FINISH_REASON_FAILURE_KIND[finishReason] ?? null,
+        usage,
       );
     }
     const text = extractText(json);
@@ -189,12 +192,21 @@ export class GeminiProvider implements LLMProvider {
         null,
         false,
         blockReason !== undefined ? (BLOCK_REASON_FAILURE_KIND[blockReason] ?? null) : null,
+        usage,
       );
     }
+    return {
+      text,
+      ...usage,
+      raw: json,
+    };
+  }
+
+  /** 応答の使用量を成功・応答内容エラーで同じ規則に正規化する。 */
+  private parseUsage(json: GeminiResponse): LlmUsage {
     const candidatesTokens = json.usageMetadata?.candidatesTokenCount;
     const thoughtsTokens = json.usageMetadata?.thoughtsTokenCount;
     return {
-      text,
       tokensIn: json.usageMetadata?.promptTokenCount ?? null,
       tokensOut:
         candidatesTokens === undefined && thoughtsTokens === undefined
@@ -207,7 +219,8 @@ export class GeminiProvider implements LLMProvider {
         json.usageMetadata === undefined
           ? null
           : (json.usageMetadata.cachedContentTokenCount ?? 0),
-      raw: json,
+      thoughtsTokensOut:
+        json.usageMetadata === undefined ? null : (json.usageMetadata.thoughtsTokenCount ?? 0),
     };
   }
 

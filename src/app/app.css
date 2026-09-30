@@ -3937,6 +3937,11 @@ section.documents__tiab {
   font-size: 12px;
 }
 
+/* 費用表は横幅の狭い画面でも列を読めるよう横スクロールする。 */
+.dashboard__usage-table-wrap {
+  overflow-x: auto;
+}
+
 .verify__note-input {
   box-sizing: border-box;
   width: 100%;

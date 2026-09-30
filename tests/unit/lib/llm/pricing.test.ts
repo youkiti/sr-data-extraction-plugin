@@ -11,6 +11,14 @@ import {
 } from '../../../../src/lib/llm/pricing';
 
 describe('estimateCostUsd', () => {
+  test.each([
+    ['deepseek/deepseek-v4-flash', 0.14, 0.28, 0.028],
+    ['qwen/qwen3-235b-a22b-2507', 0.0875, 0.35, 0.0175],
+  ] as const)('確認済み OpenRouter 単価: %s', (model, input, output, cached) => {
+    expect(estimateCostUsd(model, 1_000_000, 0)).toBe(input);
+    expect(estimateCostUsd(model, 0, 1_000_000)).toBe(output);
+    expect(estimateCostUsd(model, 1_000_000, 0, 1_000_000)).toBe(cached);
+  });
   it('gemini-2.5-pro は入力 $1.25 / 出力 $10.00 per 1M で概算する', () => {
     // 1,000,000 入力 + 500,000 出力 = 1.25 + 5.00 = 6.25 USD
     expect(estimateCostUsd('gemini-2.5-pro', 1_000_000, 500_000)).toBeCloseTo(6.25, 10);

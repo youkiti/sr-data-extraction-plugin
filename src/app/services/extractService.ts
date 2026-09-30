@@ -47,6 +47,7 @@ import { showToast } from '../ui/toast';
 import { t } from '../../lib/i18n';
 import { runExtraction, type RunExtractionOutcome } from './extractionService';
 import { resolveProtocol, type SchemaServiceDeps } from './schemaService';
+import { loadExtractBudget } from './usageService';
 import { invalidateDashboard } from './dashboardService';
 import { invalidateVerifyTargets } from './verifyService';
 
@@ -99,6 +100,7 @@ export async function loadExtractTargets(
     return;
   }
   if (state.extract.extractedStudyIds !== null && options.force !== true) {
+    void loadExtractBudget(store, deps);
     return;
   }
   patchExtract(store, { loading: true, loadError: null });
@@ -111,6 +113,7 @@ export async function loadExtractTargets(
       deps.google,
       coverage.latestCompletedRunByStudy,
     );
+    void loadExtractBudget(store, deps);
     // 選択リスト表示のため documents スライスへも反映（未読込だったときのみ）
     const after = store.getState().documents;
     store.setState({
@@ -531,6 +534,7 @@ export async function runExtract(store: Store, deps: ExtractServiceDeps): Promis
     // 再入場時に既存の読込経路（force なし）が自然に最新化する
     invalidateVerifyTargets(store);
     invalidateDashboard(store);
+    void loadExtractBudget(store, deps);
     if (outcome.transferError !== null) {
       // 転記失敗は toastDone / toastPartial とは別の専用トーストで知らせる
       // （「一部の study が失敗したので再試行」という誤解を避けるため）
@@ -651,6 +655,7 @@ export async function retryExtractStudy(
     // 再試行の完了（done / partial_failure とも）でも同様に無効化する（PR #190 のレビュー対応）
     invalidateVerifyTargets(store);
     invalidateDashboard(store);
+    void loadExtractBudget(store, deps);
     if (outcome.transferError !== null) {
       // 転記失敗は toastRetryDone / toastRetryPartial とは別の専用トーストで知らせる
       showToast(t('extraction.toastTransferFailed'));
