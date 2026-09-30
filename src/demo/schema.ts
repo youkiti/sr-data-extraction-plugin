@@ -28,6 +28,7 @@ export const DEMO_SCHEMA_FIELDS: readonly SchemaField[] = [
     example: 'Portugal',
     aiGenerated: true,
     note: null,
+    maxQuotes: null,
   },
   {
     schemaVersion: DEMO_SCHEMA_VERSION,
@@ -45,6 +46,7 @@ export const DEMO_SCHEMA_FIELDS: readonly SchemaField[] = [
     example: 'Randomized controlled trial (parallel-group, two-arm)',
     aiGenerated: true,
     note: null,
+    maxQuotes: null,
   },
   {
     schemaVersion: DEMO_SCHEMA_VERSION,
@@ -62,6 +64,7 @@ export const DEMO_SCHEMA_FIELDS: readonly SchemaField[] = [
     example: 'March 2021 to February 2022',
     aiGenerated: true,
     note: null,
+    maxQuotes: null,
   },
   {
     schemaVersion: DEMO_SCHEMA_VERSION,
@@ -79,6 +82,7 @@ export const DEMO_SCHEMA_FIELDS: readonly SchemaField[] = [
     example: 'Until hospital discharge',
     aiGenerated: true,
     note: null,
+    maxQuotes: null,
   },
   {
     schemaVersion: DEMO_SCHEMA_VERSION,
@@ -96,6 +100,7 @@ export const DEMO_SCHEMA_FIELDS: readonly SchemaField[] = [
     example: '106',
     aiGenerated: true,
     note: null,
+    maxQuotes: null,
   },
   {
     schemaVersion: DEMO_SCHEMA_VERSION,
@@ -113,6 +118,7 @@ export const DEMO_SCHEMA_FIELDS: readonly SchemaField[] = [
     example: '58.6',
     aiGenerated: true,
     note: null,
+    maxQuotes: null,
   },
   {
     schemaVersion: DEMO_SCHEMA_VERSION,
@@ -130,6 +136,7 @@ export const DEMO_SCHEMA_FIELDS: readonly SchemaField[] = [
     example: '43.4',
     aiGenerated: true,
     note: null,
+    maxQuotes: null,
   },
   {
     schemaVersion: DEMO_SCHEMA_VERSION,
@@ -147,6 +154,7 @@ export const DEMO_SCHEMA_FIELDS: readonly SchemaField[] = [
     example: null,
     aiGenerated: true,
     note: null,
+    maxQuotes: null,
   },
   // --- arm level ---
   {
@@ -165,6 +173,7 @@ export const DEMO_SCHEMA_FIELDS: readonly SchemaField[] = [
     example: 'Structured Early Mobilization Program group',
     aiGenerated: true,
     note: null,
+    maxQuotes: null,
   },
   {
     schemaVersion: DEMO_SCHEMA_VERSION,
@@ -182,6 +191,7 @@ export const DEMO_SCHEMA_FIELDS: readonly SchemaField[] = [
     example: '56',
     aiGenerated: true,
     note: null,
+    maxQuotes: null,
   },
   {
     schemaVersion: DEMO_SCHEMA_VERSION,
@@ -199,6 +209,7 @@ export const DEMO_SCHEMA_FIELDS: readonly SchemaField[] = [
     example: 'Supervised out-of-bed mobilization within 6 hours postoperatively',
     aiGenerated: true,
     note: null,
+    maxQuotes: null,
   },
   // --- outcome_result level ---
   {
@@ -217,6 +228,7 @@ export const DEMO_SCHEMA_FIELDS: readonly SchemaField[] = [
     example: 'Six-Minute Walk Test (6MWT) distance',
     aiGenerated: true,
     note: null,
+    maxQuotes: null,
   },
   {
     schemaVersion: DEMO_SCHEMA_VERSION,
@@ -234,6 +246,7 @@ export const DEMO_SCHEMA_FIELDS: readonly SchemaField[] = [
     example: 'Postoperative day 5',
     aiGenerated: true,
     note: null,
+    maxQuotes: null,
   },
   {
     schemaVersion: DEMO_SCHEMA_VERSION,
@@ -251,6 +264,7 @@ export const DEMO_SCHEMA_FIELDS: readonly SchemaField[] = [
     example: '12/60',
     aiGenerated: true,
     note: null,
+    maxQuotes: null,
   },
   {
     schemaVersion: DEMO_SCHEMA_VERSION,
@@ -268,6 +282,7 @@ export const DEMO_SCHEMA_FIELDS: readonly SchemaField[] = [
     example: '62.4 (14.1) m',
     aiGenerated: true,
     note: null,
+    maxQuotes: null,
   },
   {
     schemaVersion: DEMO_SCHEMA_VERSION,
@@ -285,5 +300,6 @@ export const DEMO_SCHEMA_FIELDS: readonly SchemaField[] = [
     example: 'Mean difference 20.7 m (95% CI 14.9 to 26.5)',
     aiGenerated: true,
     note: null,
+    maxQuotes: null,
   },
 ];

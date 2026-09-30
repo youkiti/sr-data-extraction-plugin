@@ -29,6 +29,7 @@ const study = (studyId: string, studyLabel: string): StudyRecord => ({
 });
 
 const field = (fieldId: string, fieldName: string, fieldIndex: number): SchemaField => ({
+  maxQuotes: null,
   schemaVersion: 1,
   fieldId,
   fieldIndex,
@@ -77,6 +78,8 @@ const evidence = (
   entityKey: string,
   overrides: Partial<Evidence> = {},
 ): Evidence => ({
+  quoteTheme: null,
+  quoteSeq: null,
   evidenceId,
   runId,
   studyId,

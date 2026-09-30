@@ -12,6 +12,7 @@ import { cellKeyOf, emptyCellState, type CellState } from '../../../../src/featu
 
 function makeField(overrides: Partial<SchemaField> = {}): SchemaField {
   return {
+    maxQuotes: null,
     schemaVersion: 1,
     fieldId: 'f-1',
     fieldIndex: 1,
@@ -33,6 +34,8 @@ function makeField(overrides: Partial<SchemaField> = {}): SchemaField {
 
 function makeEvidence(overrides: Partial<Evidence> = {}): Evidence {
   return {
+    quoteTheme: null,
+    quoteSeq: null,
     evidenceId: 'ev-1',
     runId: 'run-1',
     studyId: 'study-1',

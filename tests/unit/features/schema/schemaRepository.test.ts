@@ -6,13 +6,15 @@ import {
   listSchemaVersions,
 } from '../../../../src/features/schema/schemaRepository';
 import { SHEET_HEADERS } from '../../../../src/domain/sheetsSchema';
-import { appendRow, appendRows, getSheetValues } from '../../../../src/lib/google/sheets';
+import { appendRow, appendRows, getBatchValues, getSheetValues, updateRow } from '../../../../src/lib/google/sheets';
 import type { SchemaField } from '../../../../src/domain/schemaField';
 
 jest.mock('../../../../src/lib/google/sheets', () => ({
   appendRow: jest.fn(),
   appendRows: jest.fn(),
   getSheetValues: jest.fn(),
+  getBatchValues: jest.fn(),
+  updateRow: jest.fn(),
 }));
 
 const appendRowMock = appendRow as jest.MockedFunction<typeof appendRow>;
@@ -58,6 +60,7 @@ function fieldRow(overrides: Record<string, string> = {}): string[] {
 }
 
 const FIELD: SchemaField = {
+  maxQuotes: null,
   schemaVersion: 2,
   fieldId: 'f-9',
   fieldIndex: 3,
@@ -77,6 +80,7 @@ const FIELD: SchemaField = {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  jest.mocked(getBatchValues).mockResolvedValue([[FIELDS_HEADER]]);
 });
 
 describe('getNextSchemaVersion', () => {
@@ -161,6 +165,7 @@ describe('appendSchemaVersion / appendSchemaFields', () => {
           null,
           false,
           null,
+          null,
         ],
       ],
       deps,
@@ -240,6 +245,7 @@ describe('getSchemaFieldsByVersion', () => {
       'rob_domain',
     ]);
     expect(fields[0]).toEqual({
+      maxQuotes: null,
       schemaVersion: 1,
       fieldId: 'f-1',
       fieldIndex: 1,
@@ -279,5 +285,32 @@ describe('getSchemaFieldsByVersion', () => {
       [],
     ]);
     await expect(getSchemaFieldsByVersion('sheet-1', 0, deps)).resolves.toEqual([]);
+  });
+});
+
+describe('max_quotes の後方互換', () => {
+  test('旧ヘッダで OFF なら 15 列のまま追記する', async () => {
+    jest.mocked(getBatchValues).mockResolvedValue([[FIELDS_HEADER.slice(0, 15)]]);
+    await appendSchemaFields('s', [FIELD], deps);
+    expect(updateRow).not.toHaveBeenCalled();
+    expect(appendRowsMock.mock.calls[0]?.[2][0]).toHaveLength(15);
+  });
+  test.each([15, 16])('ON の保存で %p 列ヘッダを必要なときだけ拡張する', async (length) => {
+    jest.mocked(getBatchValues).mockResolvedValue([[FIELDS_HEADER.slice(0, length)]]);
+    await appendSchemaFields('s', [{ ...FIELD, dataType: 'text', maxQuotes: 10 }], deps);
+    expect(updateRow).toHaveBeenCalledTimes(length === 15 ? 1 : 0);
+    expect(appendRowsMock.mock.calls[0]?.[2][0]?.[15]).toBe(10);
+  });
+  test.each([[], [[]], [[['wrong']]], [[ [...FIELDS_HEADER.slice(0, 15), 'wrong'] ]]].map((headers) => ({ headers })))('不正ヘッダを拒否する %p', async ({ headers }) => {
+    jest.mocked(getBatchValues).mockResolvedValue(headers as string[][][]);
+    await expect(appendSchemaFields('s', [FIELD], deps)).rejects.toThrow('SchemaFields');
+  });
+  test.each(['', '2.5', 'bad', '10', '  '])('上限セル %p を読む', async (value) => {
+    getSheetValuesMock.mockResolvedValue([FIELDS_HEADER, fieldRow({ max_quotes: value })]);
+    expect((await getSchemaFieldsByVersion('s', 1, deps))[0]?.maxQuotes).toBe(value === '10' ? 10 : null);
+  });
+  test('旧 15 列の行は OFF', async () => {
+    getSheetValuesMock.mockResolvedValue([FIELDS_HEADER.slice(0, 15), fieldRow().slice(0, 15)]);
+    expect((await getSchemaFieldsByVersion('s', 1, deps))[0]?.maxQuotes).toBeNull();
   });
 });

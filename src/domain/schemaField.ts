@@ -32,4 +32,6 @@ export interface SchemaField {
   /** 監査用（AI ドラフト由来か） */
   aiGenerated: boolean;
   note: string | null;
+  /** 複数引用の上限（text のみ 2〜20）。null は通常の 1 引用 */
+  maxQuotes: number | null;
 }

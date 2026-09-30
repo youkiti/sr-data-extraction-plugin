@@ -12,6 +12,7 @@ import type { SchemaEditorRow } from '../../../../src/features/schema/types';
 
 function makeField(overrides: Partial<SchemaField> = {}): SchemaField {
   return {
+    maxQuotes: null,
     schemaVersion: 1,
     fieldId: 'f-1',
     fieldIndex: 1,
@@ -33,6 +34,7 @@ function makeField(overrides: Partial<SchemaField> = {}): SchemaField {
 
 function makeRow(overrides: Partial<SchemaEditorRow> = {}): SchemaEditorRow {
   return {
+    maxQuotes: null,
     fieldId: null,
     section: 'methods',
     fieldName: 'study_design',
@@ -86,6 +88,7 @@ describe('buildRedraftDiff', () => {
       example: null,
     });
     const row = makeRow({
+      maxQuotes: null,
       fieldName: field.fieldName,
       section: 'outcomes',
       fieldLabel: 'ラベル新',
@@ -432,4 +435,14 @@ describe('isRedraftSelectionPristine', () => {
     const diff = buildRedraftDiff([], []);
     expect(isRedraftSelectionPristine(diff, { added: {}, changed: {}, removed: {} })).toBe(true);
   });
+});
+
+test('再ドラフトは現行の引用上限を継承し、それだけで変更扱いにしない', () => {
+  const field = makeField({ maxQuotes: 12 });
+  const unchanged = buildRedraftDiff([field], [makeRow()]);
+  expect(unchanged.changed).toEqual([]);
+  expect(applyRedraftDiff(unchanged, defaultRedraftSelection(unchanged))[0]?.maxQuotes).toBe(12);
+  const changed = buildRedraftDiff([field], [makeRow({ fieldLabel: '変更' })]);
+  expect(changed.changed[0]?.proposed.maxQuotes).toBe(12);
+  expect(applyRedraftDiff(changed, defaultRedraftSelection(changed))[0]?.maxQuotes).toBe(12);
 });

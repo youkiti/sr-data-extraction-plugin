@@ -3,7 +3,7 @@
 // （requirements.md §4.3 / architecture.md「実行・進捗・partial_failure 処理」）。
 // - LLMApiLog への記録は withLogging 済み provider を注入することで賄う（lib/llm/apiLogger.ts）
 // - バッチ失敗（API エラー / 応答形式不正 / 本文取得失敗 / 保存失敗）と要素破棄（validateAiOutput
-//   の rejected）はどちらも partial_failure。失敗したバッチを飛ばして残りは続行する
+//   の rejected、引用上限超過を除く）はどちらも partial_failure。失敗したバッチを飛ばして残りは続行する
 // - ExtractionRuns 行の作成・status/tokens の書き込み、ai annotator 行への転記（§4.3）は
 //   呼び出し側（サービス層）の責務。本関数は素材（ExecuteRunResult）を返すだけ
 // - Evidence の Sheets 書き込みは「バッチごとに即書き」ではなく、メモリバッファに貯めて
@@ -168,7 +168,7 @@ export interface ExecuteRunInput {
 
 export interface ExecuteRunResult {
   runId: string;
-  /** バッチ失敗・要素破棄が 1 件でもあれば partial_failure（§4.3） */
+  /** バッチ失敗・不正要素の破棄があれば partial_failure（引用上限超過は除く。§4.3） */
   status: Extract<RunStatus, 'done' | 'partial_failure'>;
   /** 保存済みの全 Evidence。ai annotator 行への転記（§4.3）の素材 */
   evidence: Evidence[];
@@ -271,6 +271,8 @@ function buildEvidenceRow(
     bbox: hasBbox ? item.box : null,
     // 通常抽出の行は relocate-quote（issue #94）由来ではないため常に null
     relocatedFrom: null,
+    quoteTheme: item.quoteTheme,
+    quoteSeq: item.quoteSeq,
   };
 }
 
@@ -746,7 +748,7 @@ export async function executeRun(
     // arm completeness 警告（armWarnings）は status に影響させない（issue #106 の設計判断:
     // 過検出リスクを許容する warning に留め、partial_failure = 再試行対象とは区別する）
     status:
-      batchFailures.length === 0 && rejectedItems.length === 0 ? 'done' : 'partial_failure',
+      batchFailures.length === 0 && rejectedItems.every((item) => item.reason === 'quote_limit') ? 'done' : 'partial_failure',
     evidence,
     rejectedItems,
     batchFailures,

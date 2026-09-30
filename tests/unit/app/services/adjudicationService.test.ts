@@ -136,6 +136,7 @@ function makeStudy(overrides: Partial<StudyRecord> = {}): StudyRecord {
 
 function makeField(overrides: Partial<SchemaField> = {}): SchemaField {
   return {
+    maxQuotes: null,
     schemaVersion: 1,
     fieldId: 'f-1',
     fieldIndex: 1,
@@ -231,6 +232,8 @@ function makeArmRow(overrides: Partial<ArmStructureRow> = {}): ArmStructureRow {
 
 function makeEvidence(overrides: Partial<Evidence> = {}): Evidence {
   return {
+    quoteTheme: null,
+    quoteSeq: null,
     evidenceId: 'ev-1',
     runId: 'run-1',
     studyId: 'study-1',

@@ -123,6 +123,7 @@ function makeVersion(schemaVersion: number, overrides: Partial<SchemaVersion> = 
 
 function makeField(overrides: Partial<SchemaField> = {}): SchemaField {
   return {
+    maxQuotes: null,
     schemaVersion: 1,
     fieldId: 'f-1',
     fieldIndex: 1,
@@ -144,6 +145,7 @@ function makeField(overrides: Partial<SchemaField> = {}): SchemaField {
 
 function makeEditorRow(overrides: Partial<SchemaEditorRow> = {}): SchemaEditorRow {
   return {
+    maxQuotes: null,
     fieldId: null,
     section: 'methods',
     fieldName: 'study_design',
@@ -1268,11 +1270,12 @@ describe('エディタ操作', () => {
     expect(store.getState().schema.editorRows).toBeNull();
 
     store.setState({
-      schema: { ...store.getState().schema, currentFields: [makeField({ fieldId: 'f-keep' })] },
+      schema: { ...store.getState().schema, currentFields: [makeField({ fieldId: 'f-keep', maxQuotes: 12 })] },
     });
     startEditorFromCurrent(store);
     expect(store.getState().schema.editorRows?.[0]).toMatchObject({
       fieldId: 'f-keep',
+      maxQuotes: 12,
       fieldName: 'study_design',
     });
   });

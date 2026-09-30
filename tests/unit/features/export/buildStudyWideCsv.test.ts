@@ -20,6 +20,7 @@ const field = (
   fieldIndex: number,
   entityLevel: SchemaField['entityLevel'] = 'study',
 ): SchemaField => ({
+  maxQuotes: null,
   schemaVersion: 1,
   fieldId,
   fieldIndex,

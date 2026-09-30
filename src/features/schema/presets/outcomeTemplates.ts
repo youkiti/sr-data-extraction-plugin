@@ -19,6 +19,7 @@ function presetRow(
     required: true,
     aiGenerated: false,
     note: null,
+    maxQuotes: null,
     ...patch,
   };
 }

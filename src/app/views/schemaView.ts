@@ -60,6 +60,7 @@ const CREATED_BY_TYPE_LABEL_KEYS: Record<SchemaVersion['createdByType'], Message
 /** 検証エラーの列名（field_name 等のコード用語はそのまま。和名列だけ翻訳する） */
 function errorColumnLabel(column: FieldValidationError['column']): string {
   const keys: Partial<Record<FieldValidationError['column'], MessageKey>> = {
+    max_quotes: 'schema.maxQuotes',
     allowedValues: 'schema.colAllowedValues',
     extractionInstruction: 'schema.colExtractionInstruction',
   };
@@ -277,6 +278,32 @@ function renderEditorRow(
   }
   instruction.addEventListener('change', () => edit({ extractionInstruction: instruction.value }));
 
+  const instructionChildren: HTMLElement[] = [instruction];
+  if (row.dataType === 'text') {
+    const checkbox = el('input', {
+      className: 'schema__multi-quote',
+      attributes: { type: 'checkbox' },
+    });
+    checkbox.checked = row.maxQuotes !== null;
+    checkbox.addEventListener('change', () => edit({ maxQuotes: checkbox.checked ? 10 : null }));
+    const maximum = el('input', {
+      className: 'schema__max-quotes',
+      attributes: { type: 'number', min: '2', max: '20' },
+    });
+    maximum.disabled = row.maxQuotes === null;
+    maximum.value = row.maxQuotes === null ? '' : String(row.maxQuotes);
+    if (invalid('max_quotes')) {
+      maximum.setAttribute('aria-invalid', 'true');
+      maximum.classList.add('schema__cell-input--error');
+    }
+    maximum.addEventListener('change', () => edit({ maxQuotes: maximum.valueAsNumber }));
+    instructionChildren.push(
+      el('label', {}, [checkbox, t('schema.multiQuote')]),
+      el('label', {}, [t('schema.maxQuotes'), maximum]),
+      el('p', { className: 'schema__multi-quote-hint', text: t('schema.multiQuoteHint') }),
+    );
+  }
+
   const removeButton = el('button', {
     className: 'schema__row-remove',
     text: t('schema.rowRemove'),
@@ -335,7 +362,7 @@ function renderEditorRow(
       edit({ entityLevel: value as EntityLevel }),
     ),
     selectCell(DATA_TYPES, row.dataType, t('schema.rowDataTypeAria', { row: index + 1 }), (value) =>
-      edit({ dataType: value as FieldDataType }),
+      edit({ dataType: value as FieldDataType, maxQuotes: value === 'text' ? row.maxQuotes : null }),
     ),
     textCell(row.unit ?? '', { ariaLabel: t('schema.rowUnitAria', { row: index + 1 }) }, (value) =>
       edit({ unit: emptyToNull(value) }),
@@ -346,7 +373,7 @@ function renderEditorRow(
       (value) => edit({ allowedValues: emptyToNull(value) }),
     ),
     el('td', { className: 'schema__row-required' }, [requiredCheckbox]),
-    el('td', {}, [instruction]),
+    el('td', {}, instructionChildren),
     textCell(row.example ?? '', { ariaLabel: t('schema.rowExampleAria', { row: index + 1 }) }, (value) =>
       edit({ example: emptyToNull(value) }),
     ),
@@ -1082,7 +1109,8 @@ function renderCurrentFieldRow(field: SchemaField): HTMLElement {
     el('td', { text: field.fieldName }),
     el('td', { text: field.fieldLabel }),
     el('td', { text: field.entityLevel }),
-    el('td', { text: field.dataType }),
+    el('td', { text: field.maxQuotes === null ? field.dataType :
+      `${field.dataType} — ${t('schema.multiQuoteSummary', { max: field.maxQuotes })}` }),
     el('td', { text: field.required ? t('schema.requiredYes') : '—' }),
   ]);
 }
@@ -1217,6 +1245,7 @@ function redraftAttrLabel(key: RedraftComparedKey): string {
     fieldLabel: 'field_label',
     entityLevel: 'entity_level',
     dataType: 'data_type',
+    maxQuotes: 'max_quotes',
   };
   const messageKey = keys[key];
   return messageKey !== undefined ? t(messageKey) : (literals[key] as string);

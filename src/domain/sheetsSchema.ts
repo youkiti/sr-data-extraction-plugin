@@ -131,6 +131,7 @@ export const SHEET_HEADERS: Record<SheetTabName, readonly string[]> = {
     'example',
     'ai_generated',
     'note',
+    'max_quotes',
   ],
   ExtractionRuns: [
     'run_id',
@@ -203,6 +204,8 @@ export const SHEET_HEADERS: Record<SheetTabName, readonly string[]> = {
     // relocate-quote skill（issue #94）で再特定した行の出所（元 evidence_id）。既存プロジェクトは
     // この列を持たないため、bbox 列と同じ後方互換パターン（末尾追加・読み書き側で許容）を取る
     'relocated_from',
+    'quote_theme',
+    'quote_seq',
   ],
   Decisions: [
     'decided_at',

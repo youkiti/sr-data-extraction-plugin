@@ -10,6 +10,7 @@
 // - 書き込み（ensureEvidenceBboxColumns / ensureEvidenceRelocatedFromColumn）: ヘッダが
 //   未拡張のプロジェクトへは実行前にヘッダ行をフルヘッダへ拡張する
 //   （呼び出しは extractionService.ts / relocateQuoteService.ts の責務）
+// - quote_theme / quote_seq は appendEvidenceRows が必要なときだけ追加する
 import type { AnchorStatus } from '../../domain/anchor';
 import type { Confidence, Evidence, EvidenceBbox } from '../../domain/evidence';
 import { SHEET_HEADERS } from '../../domain/sheetsSchema';
@@ -49,6 +50,8 @@ export function evidenceToRow(evidence: Evidence): (string | number | boolean | 
     evidence.bbox?.ymax ?? null,
     evidence.bbox?.xmax ?? null,
     evidence.relocatedFrom,
+    evidence.quoteTheme,
+    evidence.quoteSeq,
   ];
 }
 
@@ -68,17 +71,23 @@ export async function appendEvidenceRows(
     'evidence_append',
     { studyId: evidence[0]?.studyId ?? null, documentId: evidence[0]?.documentId ?? null },
     async () => {
-      await appendRows(spreadsheetId, EVIDENCE_TAB, evidence.map(evidenceToRow), deps);
+      const multipleQuotes = evidence.some((item) => item.quoteSeq !== null);
+      if (multipleQuotes) await ensureEvidenceQuoteColumns(spreadsheetId, deps);
+      const rows = evidence.map((item) => {
+        const row = evidenceToRow(item);
+        return multipleQuotes ? row : row.slice(0, 18);
+      });
+      await appendRows(spreadsheetId, EVIDENCE_TAB, rows, deps);
     },
   );
 }
 
 /**
- * Evidence タブのヘッダ行を bbox 5 列込みの 17 列へ拡張する（既存プロジェクトの後方互換移行）。
+ * Evidence タブのヘッダ行を bbox 5 列と relocated_from 込みの 18 列へ拡張する（既存プロジェクトの後方互換移行）。
  * - 先頭 12 列（旧ヘッダ）が SHEET_HEADERS.Evidence と食い違う場合は throw
  *   （想定外のタブ・壊れたプロジェクトへの書き込み事故を防ぐ）
  * - 既に 13 列以上（= 拡張済み）なら no-op
- * - それ以外（旧 12 列のまま）はヘッダ行を SHEET_HEADERS.Evidence のフル 17 列で上書きする
+ * - それ以外（旧 12 列のまま）はヘッダ行を SHEET_HEADERS.Evidence の先頭 18 列で上書きする
  *
  * runExtraction が running 行の追記より前に毎回呼ぶ（extractionService.ts）。
  * ヘッダ行だけを読むため getBatchValues で `Evidence!1:1` のみ取得する（全行 GET は避ける）
@@ -100,7 +109,7 @@ export async function ensureEvidenceBboxColumns(
     // 既に拡張済み（17 列以上）。no-op
     return;
   }
-  await updateRow(spreadsheetId, EVIDENCE_TAB, 1, [...SHEET_HEADERS.Evidence], deps);
+  await updateRow(spreadsheetId, EVIDENCE_TAB, 1, SHEET_HEADERS.Evidence.slice(0, 18), deps);
 }
 
 /**
@@ -132,6 +141,23 @@ export async function ensureEvidenceRelocatedFromColumn(
     // 既に拡張済み（18 列）。no-op
     return;
   }
+  await updateRow(spreadsheetId, EVIDENCE_TAB, 1, SHEET_HEADERS.Evidence.slice(0, 18), deps);
+}
+
+/** 複数引用を初めて保存するときだけ、bbox / relocated_from を含む末尾列を補う。 */
+export async function ensureEvidenceQuoteColumns(
+  spreadsheetId: string,
+  deps: GoogleApiDeps,
+): Promise<void> {
+  const [headerRows] = await getBatchValues(spreadsheetId, [`${EVIDENCE_TAB}!1:1`], deps);
+  const header = headerRows?.[0] ?? [];
+  SHEET_HEADERS.Evidence.slice(0, LEGACY_COLUMN_COUNT).forEach((name, index) => {
+    if (cellAt(header, index) !== name) {
+      throw new Error(`Evidence のヘッダ ${index + 1} 列目が "${name}" ではありません`);
+    }
+  });
+  validateExtendedHeaderColumns(header, 'Evidence のヘッダ');
+  if (header.length >= SHEET_HEADERS.Evidence.length) return;
   await updateRow(spreadsheetId, EVIDENCE_TAB, 1, [...SHEET_HEADERS.Evidence], deps);
 }
 
@@ -305,6 +331,8 @@ export async function readEvidenceRows(
       confidence: parseConfidence(cellAt(raw, 10), context),
       anchorStatus: parseAnchorStatus(cellAt(raw, 11), context),
       relocatedFrom: emptyToNull(cellAt(raw, 17)),
+      quoteTheme: emptyToNull(cellAt(raw, 18)),
+      quoteSeq: cellAt(raw, 19) === '' ? null : parsePositiveInt(cellAt(raw, 19), 'quote_seq', context),
       bboxPage,
       bbox,
     };

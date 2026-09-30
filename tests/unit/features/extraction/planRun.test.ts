@@ -32,6 +32,7 @@ function makeField(
   overrides: Pick<SchemaField, 'fieldId' | 'fieldName'> & Partial<SchemaField>,
 ): SchemaField {
   return {
+    maxQuotes: null,
     schemaVersion: 1,
     fieldIndex: 0,
     section: 'methods',
@@ -717,4 +718,12 @@ describe('planRun の思考出力倍率（issue #261）', () => {
       'モデル「unknown-model」は単価表に無いためコストを概算できません',
     ]);
   });
+});
+
+test('複数引用では出力を上限件数ぶん見積もり、入力にも設定行を含める', () => {
+  const input = { documents: [makeDocument({ documentId: 'd' })], fields: [STUDY_FIELD], model: 'gemini-2.5-pro' };
+  const single = planRun(input);
+  const multi = planRun({ ...input, fields: [{ ...STUDY_FIELD, maxQuotes: 10 }] });
+  expect(multi.tokensOutEstimate).toBe(single.tokensOutEstimate * 10);
+  expect(multi.tokensInEstimate).toBeGreaterThan(single.tokensInEstimate);
 });

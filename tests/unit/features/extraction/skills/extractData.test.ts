@@ -26,6 +26,7 @@ function makeField(
     Partial<SchemaField>,
 ): SchemaField {
   return {
+    maxQuotes: null,
     schemaVersion: 1,
     fieldIndex: 0,
     section: 'methods',
@@ -109,8 +110,8 @@ const DOCS = [makeDoc()];
 describe('extract-data skill 定数', () => {
   it('skill 名とプロンプト版数を公開する（LLMApiLog 記録用）', () => {
     expect(EXTRACT_DATA_SKILL_NAME).toBe('extract-data');
-    // v9: 高精度読み取りモード（issue #176）不採用に伴い v8 の画像併用規約を撤去
-    expect(EXTRACT_DATA_PROMPT_VERSION).toBe(9);
+    // v10: 複数箇所の引用とテーマに対応
+    expect(EXTRACT_DATA_PROMPT_VERSION).toBe(10);
   });
 
   it('システムプロンプトに verbatim quote の規約（300 文字上限）と document_index の規約を含む', () => {
@@ -135,7 +136,7 @@ describe('extract-data skill 定数', () => {
     expect(EXTRACT_DATA_SYSTEM_PROMPT).toContain('verbatim transcription');
   });
 
-  it('構造化出力スキーマは応答 8 キー（document_index 込み）すべてを required にする', () => {
+  it('構造化出力スキーマは応答 9 キー（theme 込み）すべてを required にする', () => {
     const items = EXTRACT_DATA_RESPONSE_SCHEMA['items'] as Record<string, unknown>;
     expect(items['required']).toEqual([
       'field_id',
@@ -143,6 +144,7 @@ describe('extract-data skill 定数', () => {
       'value',
       'not_reported',
       'quote',
+      'theme',
       'page',
       'document_index',
       'confidence',
@@ -188,6 +190,7 @@ describe('extractDataResponseSchema（box_2d 込みスキーマ。§7.4 PR3）',
       'value',
       'not_reported',
       'quote',
+      'theme',
       'page',
       'document_index',
       'confidence',
@@ -299,6 +302,7 @@ describe('buildExtractDataUserPrompt', () => {
 
   it('unit / allowed_values / instruction / example を設定した項目は行として描画する', () => {
     const field = makeField({
+      maxQuotes: null,
       fieldId: 'f_dose',
       fieldName: 'dose',
       entityLevel: 'arm',
@@ -567,4 +571,18 @@ describe('parseExtractDataResponse', () => {
     expect(result.items).toHaveLength(0);
     expect(result.rejected[0]?.reason).toBe('invalid_document_index');
   });
+});
+
+test('ON の項目だけ max_quotes を指示し、theme を両応答スキーマで要求する', () => {
+  const field = makeField({ fieldId: 'f', fieldName: 'themes', entityLevel: 'study', dataType: 'text', maxQuotes: 12 });
+  const prompt = buildExtractDataUserPrompt({ fields: [field], documents: [makeDoc()] });
+  expect(prompt).toContain('max_quotes: 12');
+  expect(prompt).toContain('"theme"');
+  expect(buildExtractDataUserPrompt({ fields: [{ ...field, maxQuotes: null }], documents: [makeDoc()] }))
+    .not.toContain('max_quotes:');
+  for (const box of [false, true]) {
+    const schema = extractDataResponseSchema(box).items as { properties: Record<string, unknown>; required: string[] };
+    expect(schema.properties.theme).toEqual({ type: ['string', 'null'] });
+    expect(schema.required).toContain('theme');
+  }
 });

@@ -255,6 +255,7 @@ function makeDocument(overrides: Partial<DocumentRecord> = {}): DocumentRecord {
 
 function makeEditorRow(overrides: Partial<SchemaEditorRow> = {}): SchemaEditorRow {
   return {
+    maxQuotes: null,
     fieldId: null,
     section: 'methods',
     fieldName: 'study_design',
@@ -287,6 +288,7 @@ function makeVersion(schemaVersion: number, overrides: Partial<SchemaVersion> = 
 
 function makeField(overrides: Partial<SchemaField> = {}): SchemaField {
   return {
+    maxQuotes: null,
     schemaVersion: 1,
     fieldId: 'f-1',
     fieldIndex: 1,
@@ -462,7 +464,7 @@ describe('renderSchemaView', () => {
       ) as HTMLSelectElement;
       typeSelect.value = 'enum';
       typeSelect.dispatchEvent(new Event('change'));
-      expect(callbacks.onEditRow).toHaveBeenCalledWith(0, { dataType: 'enum' });
+      expect(callbacks.onEditRow).toHaveBeenCalledWith(0, { dataType: 'enum', maxQuotes: null });
 
       const requiredCheckbox = view.querySelector(
         'input[aria-label="1 行目の必須"]',
@@ -1519,5 +1521,57 @@ describe('renderSchemaView（表示言語 en。issue #93）', () => {
     expect(enView.querySelector('#schema-prespec-error')?.textContent).toBe(
       'Select the effect of interest (assignment / adhering)',
     );
+  });
+});
+
+describe('複数引用の設定 UI', () => {
+  test('チェックの ON/OFF、件数変更と空入力を更新値として渡す', () => {
+    const { ctx, callbacks } = makeCtx();
+    const render = (maxQuotes: number | null) => renderSchemaView(makeState({
+      versions: [], editorRows: [makeEditorRow({ maxQuotes })],
+    }), ctx);
+    const off = render(null);
+    expect((off.querySelector('.schema__max-quotes') as HTMLInputElement).disabled).toBe(true);
+    const check = off.querySelector('.schema__multi-quote') as HTMLInputElement;
+    check.checked = true;
+    check.dispatchEvent(new Event('change'));
+    expect(callbacks.onEditRow).toHaveBeenLastCalledWith(0, { maxQuotes: 10 });
+    const on = render(10);
+    const maximum = on.querySelector('.schema__max-quotes') as HTMLInputElement;
+    expect(maximum.disabled).toBe(false);
+    expect([maximum.min, maximum.max, maximum.value]).toEqual(['2', '20', '10']);
+    for (const value of ['12', '21', '2.5', '']) {
+      maximum.value = value;
+      maximum.dispatchEvent(new Event('change'));
+      expect(callbacks.onEditRow).toHaveBeenLastCalledWith(0, { maxQuotes: value === '' ? NaN : Number(value) });
+    }
+    const uncheck = on.querySelector('.schema__multi-quote') as HTMLInputElement;
+    uncheck.checked = false;
+    uncheck.dispatchEvent(new Event('change'));
+    expect(callbacks.onEditRow).toHaveBeenLastCalledWith(0, { maxQuotes: null });
+    expect(on.querySelector('.schema__multi-quote-hint')?.textContent).toContain('抽出指示');
+  });
+  test('text 以外では非表示にし、型変更で設定を解除する', () => {
+    const { ctx, callbacks } = makeCtx();
+    const view = renderSchemaView(makeState({ versions: [], editorRows: [makeEditorRow({ maxQuotes: 12 })] }), ctx);
+    const select = view.querySelector('select[aria-label="1 行目の data_type"]') as HTMLSelectElement;
+    select.value = 'text';
+    select.dispatchEvent(new Event('change'));
+    expect(callbacks.onEditRow).toHaveBeenLastCalledWith(0, { dataType: 'text', maxQuotes: 12 });
+    select.value = 'integer';
+    select.dispatchEvent(new Event('change'));
+    expect(callbacks.onEditRow).toHaveBeenLastCalledWith(0, { dataType: 'integer', maxQuotes: null });
+    const nonText = renderSchemaView(makeState({ versions: [], editorRows: [makeEditorRow({ dataType: 'integer' })] }), ctx);
+    expect(nonText.querySelector('.schema__multi-quote')).toBeNull();
+  });
+  test('上限エラーを既存の検証表示へ渡し、確定済みテーブルにも上限を表示する', () => {
+    const { ctx } = makeCtx();
+    const view = renderSchemaView(makeState({ versions: [], editorRows: [makeEditorRow({ maxQuotes: 21 })],
+      editorErrors: [{ index: 0, column: 'max_quotes', message: '最大件数が不正です' }],
+    }), ctx);
+    expect(view.querySelector('.schema__max-quotes')?.getAttribute('aria-invalid')).toBe('true');
+    expect(view.querySelector('#schema-editor-errors')?.textContent).toContain('最大件数が不正です');
+    const confirmed = renderSchemaView(makeState({ versions: [makeVersion(1)], currentFields: [makeField({ maxQuotes: 12 })] }), ctx);
+    expect(confirmed.textContent).toContain('複数の引用（最大 12）');
   });
 });

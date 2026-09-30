@@ -48,8 +48,9 @@ export const EXTRACT_DATA_SKILL_NAME = 'extract-data';
  * v9（2026-07-29）: 高精度読み取りモード（issue #176）の不採用決定に伴い v8 の画像併用規約を
  *   撤去。出力プロンプトは v7 と同一内容に戻る（実 gold ベンチで効果が誤差範囲だったため。
  *   experiments/extraction-benchmark-real の REPORT-20260729 参照）
+ * v10（2026-09-30）: max_quotes を持つ項目で複数箇所の引用と theme を返す（issue #275）。
  */
-export const EXTRACT_DATA_PROMPT_VERSION = 9;
+export const EXTRACT_DATA_PROMPT_VERSION = 10;
 
 /** text_only モードで LLM へ渡すページ別本文（extracted_texts/{id}.txt 由来） */
 export interface ExtractDataPage {
@@ -134,7 +135,9 @@ Rules:
 - When documents disagree on a value, prefer the main article, lower your "confidence", and take the quote from the document you actually read the value from.
 - "confidence": self-assess each item as "high", "medium" or "low".
 - "field_id" is the matching key: echo it exactly as listed. Never invent field_ids.
-- Return one item for EVERY listed field and EVERY entity instance it applies to (see the entity_key rules).
+- Return at least one item for EVERY listed field and EVERY entity instance it applies to (see the entity_key rules).
+- For a field with "max_quotes: N", when multiple original passages support the field, return up to N items for the same field_id and entity_key. Give each item's "theme" a short heading describing what that passage supports, and copy only that passage VERBATIM into "quote".
+- For every other field, return exactly one item per entity instance and set "theme" to null.
 `.trim();
 
 /**
@@ -189,7 +192,7 @@ const ENTITY_LEVEL_ORDER: readonly EntityLevel[] = ['study', 'arm', 'outcome_res
 export const EXTRACT_DATA_ARM_COMPLETENESS_RULE = `
 ## Completeness check (arm-level fields)
 
-Before returning, verify your JSON array is COMPLETE for arm-level fields: for EVERY arm-level field listed under "## Fields to extract", return one item for EVERY arm that appears in the documents ("arm:1", "arm:2", ...). If the study has A arms and this batch lists F arm-level fields, your array must contain exactly A x F arm-level items (plus the items for other levels). Do NOT stop after the first arm; arms 2, 3, ... require the same complete set of items as arm 1.
+Before returning, verify your JSON array is COMPLETE for arm-level fields: for EVERY arm-level field listed under "## Fields to extract", return at least one item for EVERY arm that appears in the documents ("arm:1", "arm:2", ...). If the study has A arms and this batch lists F arm-level fields, your array must contain at least A x F arm-level items (plus the items for other levels); additional quotes are allowed only for fields with max_quotes, up to that limit per field and arm. Do NOT stop after the first arm; arms 2, 3, ... require the same complete set of items as arm 1.
 `.trim();
 
 /** 1 項目ぶんの定義ブロック。null / 空の補助情報は行ごと省略する */
@@ -200,6 +203,9 @@ function renderField(field: SchemaField): string {
     `  entity_level: ${field.entityLevel}`,
     `  data_type: ${field.dataType}`,
   ];
+  if (field.maxQuotes !== null) {
+    lines.push(`  max_quotes: ${field.maxQuotes}`);
+  }
   if (field.unit !== null) {
     lines.push(`  unit: ${field.unit} (report the value as written even if the article uses a different unit)`);
   }
@@ -296,7 +302,7 @@ function buildSuffixSections(input: ExtractDataPromptInput): string[] {
   const total = input.documents.length;
   const outputFormatFields =
     `{ "field_id": "<as listed>", "entity_key": "<per the rules>", "value": "<as reported>" | null, ` +
-    `"not_reported": true | false, "quote": "<verbatim, <=300 chars>" | null, "page": <1-indexed> | null, ` +
+    `"theme": "<short heading>" | null, "not_reported": true | false, "quote": "<verbatim, <=300 chars>" | null, "page": <1-indexed> | null, ` +
     `"document_index": <1..${total}> | null, "confidence": "high" | "medium" | "low"` +
     (input.requestBox === true ? `, "box_2d": [ymin, xmin, ymax, xmax] | null` : '') +
     ' }';
@@ -374,6 +380,7 @@ export const EXTRACT_DATA_RESPONSE_SCHEMA: Record<string, unknown> = {
       value: { type: ['string', 'null'] },
       not_reported: { type: 'boolean' },
       quote: { type: ['string', 'null'] },
+      theme: { type: ['string', 'null'] },
       page: { type: ['integer', 'null'] },
       document_index: { type: ['integer', 'null'] },
       confidence: { type: ['string', 'null'], enum: ['high', 'medium', 'low', null] },
@@ -384,6 +391,7 @@ export const EXTRACT_DATA_RESPONSE_SCHEMA: Record<string, unknown> = {
       'value',
       'not_reported',
       'quote',
+      'theme',
       'page',
       'document_index',
       'confidence',

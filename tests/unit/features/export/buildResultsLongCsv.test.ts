@@ -19,6 +19,7 @@ const field = (
   fieldIndex: number,
   unit: string | null = null,
 ): SchemaField => ({
+  maxQuotes: null,
   schemaVersion: 1,
   fieldId,
   fieldIndex,

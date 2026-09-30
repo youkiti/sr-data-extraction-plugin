@@ -15,6 +15,7 @@ export type RedraftComparedKey =
   | 'allowedValues'
   | 'required'
   | 'extractionInstruction'
+  | 'maxQuotes'
   | 'example';
 
 /** 比較する順序（差分表示の列順に対応させる） */
@@ -27,6 +28,7 @@ const COMPARED_KEYS: readonly RedraftComparedKey[] = [
   'allowedValues',
   'required',
   'extractionInstruction',
+  'maxQuotes',
   'example',
 ];
 
@@ -93,6 +95,7 @@ type ComparableSource = Pick<
   | 'allowedValues'
   | 'required'
   | 'extractionInstruction'
+  | 'maxQuotes'
   | 'example'
 >;
 
@@ -124,6 +127,8 @@ function stringifyAttr(key: RedraftComparedKey, source: ComparableSource): strin
     case 'extractionInstruction':
       // section / fieldLabel と同じ理由（saveSchemaVersion.ts が trim して保存する）
       return source.extractionInstruction.trim();
+    case 'maxQuotes':
+      return source.maxQuotes === null ? null : String(source.maxQuotes);
     case 'example':
       return source.example;
   }
@@ -212,9 +217,11 @@ export function buildRedraftDiff(
     // 現行版とマッチした AI 提案は「added」候補から除く（added に残るのは未消費分のみ）。
     // 同名の current が複数ある場合、2 件目以降はこの delete 済みのため必ず removed になる
     draftedByName.delete(name);
-    const rowChanges = computeChanges(field, proposed);
+    const inherited = proposed.maxQuotes === field.maxQuotes
+      ? proposed : { ...proposed, maxQuotes: field.maxQuotes };
+    const rowChanges = computeChanges(field, inherited);
     if (rowChanges.length > 0) {
-      const item: RedraftChangedItem = { current: field, proposed, changes: rowChanges };
+      const item: RedraftChangedItem = { current: field, proposed: inherited, changes: rowChanges };
       changed.push(item);
       currentEntries.push({ kind: 'changed', item });
     } else {
@@ -272,6 +279,7 @@ function schemaFieldToEditorRow(field: SchemaField): SchemaEditorRow {
     example: field.example,
     aiGenerated: field.aiGenerated,
     note: field.note,
+    maxQuotes: field.maxQuotes,
   };
 }
 

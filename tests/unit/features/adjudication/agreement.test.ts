@@ -13,6 +13,7 @@ import { STUDY_ENTITY_KEY } from '../../../../src/utils/entityKey';
 
 function field(overrides: Partial<SchemaField> = {}): SchemaField {
   return {
+    maxQuotes: null,
     schemaVersion: 1,
     fieldId: 'f-1',
     fieldIndex: 1,

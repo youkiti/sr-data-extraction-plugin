@@ -1,5 +1,6 @@
 // スキーマエディタ行のバリデーション（ui-states.md §3「編集中」:
 // field_name の snake_case・重複エラーほか）。「版として確定」前に全行を検査する
+import { t } from '../../lib/i18n';
 import { STUDY_DATA_FIXED_HEADERS } from '../../domain/sheetsSchema';
 import type { SchemaEditorRow } from './types';
 
@@ -7,7 +8,7 @@ import type { SchemaEditorRow } from './types';
 export interface FieldValidationError {
   /** エディタ行の 0 始まり index */
   index: number;
-  column: 'fieldName' | 'fieldLabel' | 'section' | 'allowedValues' | 'extractionInstruction';
+  column: 'fieldName' | 'fieldLabel' | 'section' | 'allowedValues' | 'extractionInstruction' | 'max_quotes';
   message: string;
 }
 
@@ -67,6 +68,15 @@ export function validateEditorRows(rows: readonly SchemaEditorRow[]): FieldValid
         column: 'extractionInstruction',
         message: 'extraction_instruction は必須です',
       });
+    }
+
+    if (row.maxQuotes !== null) {
+      if (row.dataType !== 'text') {
+        errors.push({ index, column: 'max_quotes', message: t('schema.maxQuotesTextOnly') });
+      }
+      if (!Number.isInteger(row.maxQuotes) || row.maxQuotes < 2 || row.maxQuotes > 20) {
+        errors.push({ index, column: 'max_quotes', message: t('schema.maxQuotesRange') });
+      }
     }
 
     if (row.dataType === 'enum') {

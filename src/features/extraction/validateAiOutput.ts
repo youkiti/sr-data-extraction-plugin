@@ -27,6 +27,7 @@ export type ForcedLowReason =
   | 'value_with_not_reported'; // not_reported=true なのに値がある
 
 export type RejectReason =
+  | 'quote_limit'
   | 'invalid_shape'
   | 'unknown_field_id'
   | 'entity_key_mismatch'
@@ -39,6 +40,8 @@ export interface ValidatedAiItem {
   value: string | null;
   notReported: boolean;
   quote: string | null;
+  quoteTheme: string | null;
+  quoteSeq: number | null;
   page: number | null;
   /**
    * quote の出所文書の 1 始まり番号（1..documentCount へ解決済み）。
@@ -52,7 +55,7 @@ export interface ValidatedAiItem {
   box: EvidenceBbox | null;
 }
 
-/** 破棄した要素。呼び出し側（executeRun）が partial_failure として記録する */
+/** 破棄した要素。quote_limit 以外は partial_failure の原因として記録する */
 export interface RejectedAiItem {
   /** 応答配列内の位置 */
   index: number;
@@ -101,6 +104,7 @@ const aiOutputItemSchema = z.object({
   // 整数でない・0 以下などの形式不正だけを null へ落とす
   document_index: z.number().int().min(1).nullable().catch(null),
   quote: quoteSchema,
+  theme: z.string().nullish().transform((value) => value?.trim() || null),
   confidence: z.enum(['high', 'medium', 'low']).nullable().catch(null),
   // box_2d（bbox。requestBox=true のときだけモデルが返す）は形は問わず素通しし、
   // validateBox() が別途厳密に検証する（壊れていても要素自体は破棄しない。§7.4 PR3）
@@ -234,6 +238,7 @@ export function validateAiOutput(
   const fieldById = new Map(fields.map((field) => [field.fieldId, field]));
   const items: ValidatedAiItem[] = [];
   const rejected: RejectedAiItem[] = [];
+  const sourceByItem = new Map<ValidatedAiItem, { index: number; raw: unknown }>();
   raw.forEach((element, index) => {
     const parsed = aiOutputItemSchema.safeParse(element);
     if (!parsed.success) {
@@ -286,18 +291,55 @@ export function validateAiOutput(
       return;
     }
     const forcedLowReasons = detectContradictions(parsed.data);
-    items.push({
+    const item: ValidatedAiItem = {
       fieldId: parsed.data.field_id,
       entityKey,
       value: parsed.data.value,
       notReported: parsed.data.not_reported,
       quote: parsed.data.quote,
+      quoteTheme: field.maxQuotes === null ? null : parsed.data.theme,
+      quoteSeq: null,
       page: parsed.data.page,
       documentIndex,
       confidence: forcedLowReasons.length > 0 ? 'low' : parsed.data.confidence,
       forcedLowReasons,
       box: validateBox(parsed.data.box_2d),
-    });
+    };
+    items.push(item);
+    sourceByItem.set(item, { index, raw: element });
   });
-  return { items, rejected };
+  const groups = new Map<string, ValidatedAiItem[]>();
+  for (const item of items) {
+    const field = fieldById.get(item.fieldId) as SchemaField;
+    if (field.maxQuotes === null) continue;
+    const key = JSON.stringify([item.fieldId, item.entityKey]);
+    const group = groups.get(key);
+    if (group === undefined) groups.set(key, [item]);
+    else group.push(item);
+  }
+  const removed = new Set<ValidatedAiItem>();
+  for (const group of groups.values()) {
+    const first = group[0] as ValidatedAiItem;
+    const limit = (fieldById.get(first.fieldId) as SchemaField).maxQuotes as number;
+    const reported = group.filter((item) => !item.notReported);
+    if (reported.length === 0) {
+      group.slice(1).forEach((item) => removed.add(item));
+      first.quoteTheme = null;
+      continue;
+    }
+    group.filter((item) => item.notReported).forEach((item) => removed.add(item));
+    for (const item of reported.slice(limit)) {
+      removed.add(item);
+      const source = sourceByItem.get(item) as { index: number; raw: unknown };
+      rejected.push({ ...source, reason: 'quote_limit', detail: `max_quotes (${limit}) を超えた引用` });
+    }
+    const kept = reported.slice(0, limit);
+    const value = kept.map((item) => item.quoteTheme ?? item.value?.trim() ?? '')
+      .filter((part) => part !== '').join('; ') || null;
+    kept.forEach((item, index) => {
+      item.value = value;
+      item.quoteSeq = index + 1;
+    });
+  }
+  return { items: items.filter((item) => !removed.has(item)), rejected };
 }

@@ -18,6 +18,7 @@ function makeField(
   overrides: Pick<SchemaField, 'fieldId' | 'fieldName'> & Partial<SchemaField>,
 ): SchemaField {
   return {
+    maxQuotes: null,
     schemaVersion: 1,
     fieldIndex: 0,
     section: 'population',
@@ -51,6 +52,8 @@ const OUTCOME_EVENTS = makeField({
 
 function makeItem(overrides: Pick<ValidatedAiItem, 'fieldId' | 'entityKey'>): ValidatedAiItem {
   return {
+    quoteTheme: null,
+    quoteSeq: null,
     value: 'v',
     notReported: false,
     quote: null,

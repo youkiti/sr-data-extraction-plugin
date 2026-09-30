@@ -46,6 +46,7 @@ describe('buildDataDictionaryCsv', () => {
       'a|b',
       'false',
       '抽出指示',
+      '',
       '120',
       '1',
     ]);
@@ -61,7 +62,13 @@ describe('buildDataDictionaryCsv', () => {
       'true',
       '抽出指示',
       '',
+      '',
       '1',
     ]);
   });
+});
+
+test('最大引用件数をデータ辞書へ出力する', () => {
+  const records = parseCsv(buildDataDictionaryCsv([makeField({ maxQuotes: 12 })]).csv);
+  expect(records[1]?.[DATA_DICTIONARY_HEADER.indexOf('max_quotes')]).toBe('12');
 });

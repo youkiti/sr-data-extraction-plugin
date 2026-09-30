@@ -28,6 +28,7 @@ function emptyPrespec(): Quadas3Prespec {
 
 function makeRow(patch: Partial<SchemaEditorRow>): SchemaEditorRow {
   return {
+    maxQuotes: null,
     fieldId: null,
     section: 'risk_of_bias_quadas3',
     fieldName: 'x',

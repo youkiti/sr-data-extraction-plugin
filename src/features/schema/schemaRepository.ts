@@ -3,7 +3,7 @@
 import type { SchemaField, EntityLevel, FieldDataType } from '../../domain/schemaField';
 import type { SchemaCreatedByType, SchemaVersion } from '../../domain/schemaVersion';
 import { SHEET_HEADERS } from '../../domain/sheetsSchema';
-import { appendRow, appendRows, getSheetValues } from '../../lib/google/sheets';
+import { appendRow, appendRows, getBatchValues, getSheetValues, updateRow } from '../../lib/google/sheets';
 import type { GoogleApiDeps } from '../../lib/google/types';
 
 const VERSIONS_HEADER = SHEET_HEADERS.SchemaVersions;
@@ -56,6 +56,20 @@ export async function appendSchemaFields(
   fields: readonly SchemaField[],
   deps: GoogleApiDeps,
 ): Promise<void> {
+  const [headerRows] = await getBatchValues(spreadsheetId, ['SchemaFields!1:1'], deps);
+  let header = headerRows?.[0] ?? [];
+  FIELDS_HEADER.slice(0, 15).forEach((name, index) => {
+    if (header[index] !== name) {
+      throw new Error(`SchemaFields のヘッダ ${index + 1} 列目が "${name}" ではありません`);
+    }
+  });
+  if (header.length > 15 && header[15] !== 'max_quotes') {
+    throw new Error('SchemaFields のヘッダ 16 列目が "max_quotes" ではありません');
+  }
+  if (fields.some((field) => field.maxQuotes !== null) && header.length === 15) {
+    header = [...FIELDS_HEADER];
+    await updateRow(spreadsheetId, 'SchemaFields', 1, header, deps);
+  }
   const rows = fields.map((field) => {
     const map: Record<string, string | number | boolean | null> = {
       schema_version: field.schemaVersion,
@@ -73,8 +87,9 @@ export async function appendSchemaFields(
       example: field.example,
       ai_generated: field.aiGenerated,
       note: field.note,
+      max_quotes: field.maxQuotes,
     };
-    return FIELDS_HEADER.map((key) => map[key] ?? null);
+    return header.map((key) => map[key] ?? null);
   });
   await appendRows(spreadsheetId, 'SchemaFields', rows, deps);
 }
@@ -109,7 +124,7 @@ export async function getSchemaFieldsByVersion(
   for (const row of rows.slice(1)) {
     const cell = row[versionIdx] ?? '';
     if (Number.parseInt(cell, 10) === schemaVersion) {
-      result.push(fromFieldRow(row));
+      result.push(fromFieldRow((rows[0] as string[])[15] === 'max_quotes' ? row : row.slice(0, 15)));
     }
   }
   return result.sort((a, b) => a.fieldIndex - b.fieldIndex);
@@ -161,6 +176,8 @@ function fromFieldRow(row: readonly string[]): SchemaField {
     example: emptyToNull(cell('example')),
     aiGenerated: toBool(cell('ai_generated')),
     note: emptyToNull(cell('note')),
+    maxQuotes: cell('max_quotes').trim() !== '' && Number.isInteger(Number(cell('max_quotes')))
+      ? Number(cell('max_quotes')) : null,
   };
 }
 

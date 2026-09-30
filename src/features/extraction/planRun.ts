@@ -174,7 +174,8 @@ function fieldPromptChars(field: SchemaField): number {
     (field.unit?.length ?? 0) +
     (field.allowedValues?.length ?? 0) +
     field.extractionInstruction.length +
-    (field.example?.length ?? 0)
+    (field.example?.length ?? 0) +
+    (field.maxQuotes === null ? 0 : `  max_quotes: ${field.maxQuotes}\n`.length)
   );
 }
 
@@ -210,7 +211,7 @@ function estimateBatch(
     fields.reduce((sum, field) => sum + fieldPromptChars(field), 0) +
     textBodyChars +
     armCompletenessChars;
-  const items = fields.reduce((sum, field) => sum + ENTITY_INSTANCE_ESTIMATE[field.entityLevel], 0);
+  const items = fields.reduce((sum, field) => sum + ENTITY_INSTANCE_ESTIMATE[field.entityLevel] * (field.maxQuotes ?? 1), 0);
   const imageTokens = imageDocs.reduce((sum, doc) => sum + imageDocumentTokens(doc), 0);
   return {
     tokensIn: Math.ceil(promptChars / APPROX_CHARS_PER_TOKEN) + imageTokens,

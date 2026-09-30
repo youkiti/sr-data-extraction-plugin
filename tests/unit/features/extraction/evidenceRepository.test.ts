@@ -2,6 +2,7 @@ import type { Evidence } from '../../../../src/domain/evidence';
 import {
   appendEvidenceRows,
   ensureEvidenceBboxColumns,
+  ensureEvidenceQuoteColumns,
   ensureEvidenceRelocatedFromColumn,
   evidenceToRow,
   readEvidenceRows,
@@ -15,6 +16,8 @@ const BBOX_ONLY_HEADER = SHEET_HEADERS.Evidence.slice(0, 17);
 
 function makeEvidence(overrides: Partial<Evidence> = {}): Evidence {
   return {
+    quoteTheme: null,
+    quoteSeq: null,
     evidenceId: 'ev-1',
     runId: 'run-1',
     studyId: 'study-1',
@@ -47,7 +50,7 @@ function deps(): { fetch: jest.Mock; getAccessToken: jest.Mock } {
 }
 
 describe('evidenceToRow', () => {
-  test('SHEET_HEADERS.Evidence の列順に対応する（bbox 5 列 + relocated_from 込みで 18 セル）', () => {
+  test('SHEET_HEADERS.Evidence の列順に対応する（bbox 5 列 + relocated_from 込みで 20 セル）', () => {
     expect(evidenceToRow(makeEvidence())).toEqual([
       'ev-1',
       'run-1',
@@ -67,10 +70,12 @@ describe('evidenceToRow', () => {
       null,
       null,
       null,
+      null,
+      null,
     ]);
   });
 
-  test('relocated_from（issue #94）は末尾セルへそのまま書く', () => {
+  test('relocated_from（issue #94）は 18 列目へそのまま書く', () => {
     expect(evidenceToRow(makeEvidence({ relocatedFrom: 'ev-original' }))).toEqual([
       'ev-1',
       'run-1',
@@ -90,6 +95,8 @@ describe('evidenceToRow', () => {
       null,
       null,
       'ev-original',
+      null,
+      null,
     ]);
   });
 
@@ -114,6 +121,8 @@ describe('evidenceToRow', () => {
       '-',
       null,
       true,
+      null,
+      null,
       null,
       null,
       null,
@@ -153,6 +162,8 @@ describe('evidenceToRow', () => {
       200,
       300,
       400,
+      null,
+      null,
       null,
     ]);
   });
@@ -222,6 +233,8 @@ describe('readEvidenceRows', () => {
     expect(rows[0]).toEqual(makeEvidence());
     expect(rows[1]).toEqual(
       makeEvidence({
+        quoteTheme: null,
+        quoteSeq: null,
         evidenceId: 'ev-2',
         value: null,
         notReported: true,
@@ -406,7 +419,7 @@ describe('ensureEvidenceBboxColumns', () => {
     const [url, init] = putCall as [string, RequestInit];
     expect(decodeURIComponent(url)).toContain('/sid/values/Evidence!A1');
     const body = JSON.parse(init.body as string) as { values: string[][] };
-    expect(body.values).toEqual([[...SHEET_HEADERS.Evidence]]);
+    expect(body.values).toEqual([SHEET_HEADERS.Evidence.slice(0, 18)]);
   });
 
   test('既に 17 列（拡張済み）なら no-op（PUT を呼ばない）', async () => {
@@ -466,7 +479,7 @@ describe('ensureEvidenceRelocatedFromColumn（issue #94）', () => {
     const [url, init] = putCall as [string, RequestInit];
     expect(decodeURIComponent(url)).toContain('/sid/values/Evidence!A1');
     const body = JSON.parse(init.body as string) as { values: string[][] };
-    expect(body.values).toEqual([[...SHEET_HEADERS.Evidence]]);
+    expect(body.values).toEqual([SHEET_HEADERS.Evidence.slice(0, 18)]);
   });
 
   test('17 列ヘッダ（bbox 拡張済み・relocated_from 未拡張）もフルヘッダ（18 列）へ拡張する（PUT）', async () => {
@@ -476,7 +489,7 @@ describe('ensureEvidenceRelocatedFromColumn（issue #94）', () => {
     expect(putCall).toBeDefined();
     const [, init] = putCall as [string, RequestInit];
     const body = JSON.parse(init.body as string) as { values: string[][] };
-    expect(body.values).toEqual([[...SHEET_HEADERS.Evidence]]);
+    expect(body.values).toEqual([SHEET_HEADERS.Evidence.slice(0, 18)]);
   });
 
   test('既に 18 列（拡張済み）なら no-op（PUT を呼ばない）', async () => {
@@ -511,5 +524,47 @@ describe('ensureEvidenceRelocatedFromColumn（issue #94）', () => {
     await expect(ensureEvidenceRelocatedFromColumn('sid', d)).rejects.toThrow(
       'Evidence のヘッダ 1 列目が "evidence_id" ではありません',
     );
+  });
+});
+
+describe('複数引用の Evidence 列', () => {
+  function quoteDeps(headerRows: string[][][] = [[[]]]) {
+    const d = deps();
+    d.fetch.mockImplementation(async (_url: string, init?: RequestInit) => ({
+      ok: true, status: 200, text: async () => '',
+      json: async () => init?.method === 'GET'
+        ? { valueRanges: headerRows.map((values) => ({ values })) } : {},
+    }));
+    return d;
+  }
+  test.each([12, 17, 18, 19, 20])('%p 列から順序を保って必要な列を追加する', async (length) => {
+    const d = quoteDeps([[SHEET_HEADERS.Evidence.slice(0, length)]]);
+    await ensureEvidenceQuoteColumns('sid', d);
+    const puts = d.fetch.mock.calls.filter(([, init]) => init?.method === 'PUT');
+    expect(puts).toHaveLength(length === 20 ? 0 : 1);
+    if (length !== 20) expect(JSON.parse(puts[0]?.[1].body as string).values).toEqual([[...SHEET_HEADERS.Evidence]]);
+  });
+  test.each([[], [[]], [[[]]], [[['broken']]], [[ [...SHEET_HEADERS.Evidence.slice(0, 18), 'broken'] ]]].map((headers) => ({ headers })))('壊れたヘッダを拒否する %p', async ({ headers }) => {
+    const d = quoteDeps(headers as string[][][]);
+    await expect(ensureEvidenceQuoteColumns('sid', d)).rejects.toThrow('Evidence');
+    expect(d.fetch.mock.calls.some(([, init]) => init?.method === 'PUT')).toBe(false);
+  });
+  test('quoteSeq がある行の追記前にヘッダを拡張し、20 列で保存する', async () => {
+    const d = quoteDeps([[SHEET_HEADERS.Evidence.slice(0, 18)]]);
+    await appendEvidenceRows('sid', [makeEvidence({ quoteTheme: 'テーマ', quoteSeq: 1 })], d);
+    expect(d.fetch.mock.calls.map(([, init]) => init?.method ?? 'GET')).toEqual(['GET', 'PUT', 'POST']);
+    const body = JSON.parse(d.fetch.mock.calls[2]?.[1].body as string);
+    expect(body.values[0].slice(18)).toEqual(['テーマ', 1]);
+  });
+  test.each([12, 17, 18, 20])('%p 列ヘッダの行を読む', async (length) => {
+    const d = deps();
+    const row = evidenceToRow(makeEvidence({ quoteTheme: 'テーマ', quoteSeq: 2 }))
+      .map((cell) => cell === null ? '' : String(cell)).slice(0, length);
+    d.fetch.mockResolvedValue({ ok: true, status: 200,
+      json: async () => ({ values: [SHEET_HEADERS.Evidence.slice(0, length), row] }),
+    });
+    expect((await readEvidenceRows('sid', d))[0]).toMatchObject({
+      quoteTheme: length === 20 ? 'テーマ' : null, quoteSeq: length === 20 ? 2 : null,
+    });
   });
 });

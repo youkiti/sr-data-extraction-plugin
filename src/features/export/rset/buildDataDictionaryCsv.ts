@@ -16,6 +16,7 @@ export const DATA_DICTIONARY_HEADER = [
   'allowed_values',
   'required',
   'extraction_instruction',
+  'max_quotes',
   'example',
   'schema_version',
 ] as const;
@@ -38,6 +39,7 @@ export function buildDataDictionaryCsv(fields: readonly SchemaField[]): DataDict
     field.allowedValues ?? '',
     String(field.required),
     field.extractionInstruction,
+    field.maxQuotes === null ? '' : String(field.maxQuotes),
     field.example ?? '',
     String(field.schemaVersion),
   ]);
