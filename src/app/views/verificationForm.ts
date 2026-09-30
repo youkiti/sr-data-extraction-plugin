@@ -147,7 +147,7 @@ export interface VerificationFormHandlers {
   /** 現在項目のハイライトへ PDF をスクロール（f） */
   onJump(cellKey: string): void;
   /** quote を PDF.js テキスト検索へ投入（anchor failed のフォールバック） */
-  onSearchQuote(quote: string): void;
+  onSearchQuote(quote: string, quoteKey?: string): void;
   /** 「他 n 箇所に一致」の切替 */
   onCycleMatch(cellKey: string): void;
   /** 「AI で再特定」ボタン（issue #94） */

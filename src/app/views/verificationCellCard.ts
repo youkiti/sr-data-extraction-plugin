@@ -7,6 +7,7 @@
 import { NOT_REPORTED_TOKEN } from '../../domain/annotation';
 import type { VerificationCell } from '../../features/verification/cells';
 import type { CellStatus } from '../../features/verification/cellState';
+import { quoteKeyOf } from '../../features/verification/evidenceBundles';
 import {
   isMermaidPreviewField,
   renderMermaid,
@@ -96,10 +97,10 @@ export interface CellCardHandlers {
   onCancelEdit(): void;
   onNotReported(cellKey: string): void;
   onUndo(cellKey: string): void;
-  /** 現在項目のハイライトへ PDF をスクロール（f） */
-  onJump(cellKey: string): void;
+  /** セルキー（代表）または引用キーのハイライトへスクロール（f） */
+  onJump(quoteKey: string): void;
   /** quote を PDF.js テキスト検索へ投入（anchor failed のフォールバック） */
-  onSearchQuote(quote: string): void;
+  onSearchQuote(quote: string, quoteKey?: string): void;
   /** 「他 n 箇所に一致」の切替 */
   onCycleMatch(cellKey: string): void;
   /**
@@ -342,19 +343,42 @@ function renderQuote(
   model: CellCardModel,
   handlers: CellCardHandlers,
 ): HTMLElement | null {
-  const { evidence } = cell;
-  if (evidence === null || evidence.quote === null) {
+  if (cell.quotes.length > 0) {
+    return el('div', { className: 'verify__quote' }, [
+      el('p', { text: t('verify.quotesCount', { n: cell.quotes.length }) }),
+      el('ol', { className: 'verify__quotes' }, cell.quotes.map((evidence) =>
+        el('li', { className: 'verify__quotes-item' }, [
+          el('strong', {
+            className: 'verify__quotes-theme',
+            text: evidence.quoteTheme ?? t('verify.noTheme'),
+          }),
+          renderSingleQuote({ ...cell, cellKey: quoteKeyOf(evidence), evidence }, model, handlers),
+        ]),
+      )),
+    ]);
+  }
+  if (cell.evidence === null || cell.evidence.quote === null) {
     return null;
   }
+  return renderSingleQuote(cell, model, handlers);
+}
+
+function renderSingleQuote(
+  cell: VerificationCell,
+  model: CellCardModel,
+  handlers: CellCardHandlers,
+): HTMLElement {
+  // 呼び出し元で根拠の存在を確認済み。
+  const evidence = cell.evidence!;
   const info = model.highlightInfo.get(cell.cellKey);
   const anchored = info !== undefined && info.matchCount > 0;
   const children: Array<HTMLElement | string> = [
-    el('blockquote', { className: 'verify__quote-text', text: evidence.quote }),
+    el('blockquote', { className: 'verify__quote-text', text: evidence.quote ?? '' }),
   ];
   if (anchored) {
     const jumpButton = el('button', {
       className: 'verify__quote-jump',
-      text: t('verify.jumpToHighlight'),
+      text: t(evidence.quoteSeq === null ? 'verify.jumpToHighlight' : 'verify.quoteJump'),
       attributes: { type: 'button' },
     });
     jumpButton.addEventListener('click', () => handlers.onJump(cell.cellKey));
@@ -374,21 +398,27 @@ function renderQuote(
     }
   } else {
     children.push(
-      el('span', { className: 'verify__quote-unanchored', text: t('verify.unanchored') }),
+      el('span', { className: 'verify__quote-unanchored', text: t(evidence.quoteSeq === null ? 'verify.unanchored' : 'verify.quoteNotLocated') }),
     );
     if (model.canSearchText) {
-      const quoteText = evidence.quote;
+      const quoteText = evidence.quote ?? '';
       const searchButton = el('button', {
         className: 'verify__quote-search',
         text: t('verify.searchInText'),
         attributes: { type: 'button' },
       });
-      searchButton.addEventListener('click', () => handlers.onSearchQuote(quoteText));
+      searchButton.addEventListener('click', () => {
+        if (evidence.quoteSeq === null) {
+          handlers.onSearchQuote(quoteText);
+        } else {
+          handlers.onSearchQuote(quoteText, cell.cellKey);
+        }
+      });
       children.push(searchButton);
     }
     // 「AI で再特定」（issue #94）: anchor_status が実際に 'failed' のセルにのみ出す
     // （unanchored 分岐は理論上それ以外の理由でも通りうるため、ボタンの対象は明示的に絞る）
-    if (model.canRelocateQuote === true && evidence.anchorStatus === 'failed') {
+    if (model.canRelocateQuote === true && evidence.anchorStatus === 'failed' && evidence.quoteSeq === null) {
       const status = model.relocateStatus?.get(cell.cellKey);
       const relocateButton = el('button', {
         className: 'verify__quote-relocate',

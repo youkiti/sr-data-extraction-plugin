@@ -1196,6 +1196,7 @@ describe('bootstrapApp', () => {
   });
 
   const EDITOR_ROW = {
+    maxQuotes: null,
     fieldId: null,
     section: 'methods',
     fieldName: 'study_design',
@@ -1524,6 +1525,7 @@ describe('bootstrapApp', () => {
 
   test('#/schema の差分承認画面（追加 / 変更 / 削除候補のチェック切替・反映・キャンセル。issue #197）が配線されている', async () => {
     const currentField: SchemaField = {
+      maxQuotes: null,
       schemaVersion: 1,
       fieldId: 'f-1',
       fieldIndex: 1,
@@ -1592,6 +1594,7 @@ describe('bootstrapApp', () => {
 
   test('#/schema の差分承認画面: 「破棄して戻る」でエディタを開かず確定済みへ戻る（issue #197）', async () => {
     const currentField: SchemaField = {
+      maxQuotes: null,
       schemaVersion: 1,
       fieldId: 'f-1',
       fieldIndex: 1,
@@ -1797,6 +1800,7 @@ describe('bootstrapApp: #/pilot', () => {
   });
 
   const FIELD = {
+    maxQuotes: null,
     schemaVersion: 1,
     fieldId: 'f-total',
     fieldIndex: 1,
@@ -2052,6 +2056,8 @@ describe('bootstrapApp: #/pilot', () => {
       fields: [FIELD, ARM_FIELD, OUTCOME_FIELD],
       evidence: [
         {
+          quoteTheme: null,
+          quoteSeq: null,
           evidenceId: 'ev-1',
           runId: 'run-1',
           studyId: 'study-1',
@@ -2068,6 +2074,8 @@ describe('bootstrapApp: #/pilot', () => {
           bbox: null,
         },
         {
+          quoteTheme: null,
+          quoteSeq: null,
           evidenceId: 'ev-arm',
           runId: 'run-1',
           studyId: 'study-1',
@@ -2164,6 +2172,8 @@ describe('bootstrapApp: #/pilot', () => {
       fields: [FIELD],
       evidence: [
         {
+          quoteTheme: null,
+          quoteSeq: null,
           evidenceId: 'ev-1',
           runId: 'run-1',
           studyId: 'study-1',
@@ -2437,6 +2447,7 @@ describe('bootstrapApp: #/extract', () => {
   });
 
   const FIELD = {
+    maxQuotes: null,
     schemaVersion: 1,
     fieldId: 'f-total',
     fieldIndex: 1,
@@ -3672,6 +3683,7 @@ describe('bootstrapApp: #/adjudicate', () => {
   const CELL = {
     cellKey: JSON.stringify(['f-1', '-']),
     field: {
+      maxQuotes: null,
       schemaVersion: 1,
       fieldId: 'f-1',
       fieldIndex: 1,

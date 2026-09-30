@@ -15,6 +15,7 @@ import {
 
 function makeField(overrides: Partial<SchemaField> = {}): SchemaField {
   return {
+    maxQuotes: null,
     schemaVersion: 1,
     fieldId: 'f-1',
     fieldIndex: 1,
@@ -36,6 +37,8 @@ function makeField(overrides: Partial<SchemaField> = {}): SchemaField {
 
 function makeEvidence(overrides: Partial<Evidence> = {}): Evidence {
   return {
+    quoteTheme: null,
+    quoteSeq: null,
     evidenceId: 'ev-1',
     runId: 'run-1',
     studyId: 'study-1',
@@ -75,6 +78,7 @@ function makeDecision(overrides: Partial<Decision> = {}): Decision {
 /** 手組みの VerificationCell（buildTabModel を経由しない防御系テスト用） */
 function makeCell(field: SchemaField, entityKey: string, overrides: Partial<VerificationCell> = {}): VerificationCell {
   return {
+    quotes: [],
     cellKey: cellKeyOf(field.fieldId, entityKey),
     field,
     entityKey,

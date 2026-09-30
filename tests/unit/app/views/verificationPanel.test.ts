@@ -21,6 +21,87 @@ import { setUiLanguage } from '../../../../src/lib/i18n';
 import type { VerificationCell } from '../../../../src/features/verification/cells';
 import type { FocusUnit } from '../../../../src/features/verification/focusUnits';
 import * as highlightsModule from '../../../../src/features/verification/highlights';
+import { quoteKeyOf } from '../../../../src/features/verification/evidenceBundles';
+
+test('テキスト表示で別文書の引用へジャンプすると文書タブとスニペットが切り替わる', async () => {
+  const documents = [makeDocFixture(), makeDocFixture({
+    document: makeDocumentRecord({ documentId: 'doc-2', filename: 'other.pdf' }),
+    textPages: [buildPage(1, 'other quote')],
+  })];
+  const loadPdfView = jest.fn(makeLoadPdfView(documents));
+  const { panel } = await createPanel({
+    fields: [makeField({ dataType: 'text', maxQuotes: 2 })],
+    evidence: [
+      makeEvidence({ quoteSeq: 1, quote: 'mortality' }),
+      makeEvidence({ quoteSeq: 2, quote: 'other quote', documentId: 'doc-2' }),
+    ],
+    documents,
+    loadPdfView,
+  });
+  panel.root.querySelectorAll<HTMLButtonElement>('.verify__view-toggle-btn')[1]!.click();
+  panel.root.querySelectorAll<HTMLButtonElement>('.verify__quote-jump')[1]!.click();
+  await flush();
+  expect(panel.root.querySelectorAll('.verify__doc-tab')[1]?.getAttribute('aria-selected')).toBe('true');
+  expect(panel.root.querySelector('.text-viewer__mark')?.textContent).toBe('other quote');
+  expect(loadPdfView.mock.calls).toEqual([['doc-1'], ['doc-2']]);
+  panel.dispose();
+});
+
+test('PDF 表示で同じ文書の別引用へジャンプした後のテキスト表示もその引用になる', async () => {
+  const loadPdfView = jest.fn(makeLoadPdfView([makeDocFixture()]));
+  const { panel } = await createPanel({
+    fields: [makeField({ dataType: 'text', maxQuotes: 2 })],
+    evidence: [
+      makeEvidence({ quoteSeq: 1, quote: 'mortality' }),
+      makeEvidence({ quoteSeq: 2, quote: 'in total' }),
+    ],
+    loadPdfView,
+  });
+  panel.root.querySelectorAll<HTMLButtonElement>('.verify__quote-jump')[1]!.click();
+  panel.root.querySelectorAll<HTMLButtonElement>('.verify__view-toggle-btn')[1]!.click();
+  expect(panel.root.querySelector('.text-viewer__mark')?.textContent).toBe('in total');
+  expect(loadPdfView.mock.calls).toEqual([['doc-1']]);
+  panel.dispose();
+});
+
+test('引用ごとのハイライト ID・色・クリックと文書間ジャンプ、抽出テキストを同期する', async () => {
+  const first = makeEvidence({ quoteSeq: 1, quoteTheme: '一', quote: 'mortality' });
+  const second = makeEvidence({ quoteSeq: 2, quoteTheme: '二', quote: 'in total', confidence: 'low' });
+  const third = makeEvidence({ quoteSeq: 3, quote: 'other quote', documentId: 'doc-2' });
+  const failed = makeEvidence({ quoteSeq: 4, quote: 'missing quote', documentId: 'doc-2', anchorStatus: 'failed' });
+  const { panel } = await createPanel({
+    fields: [makeField({ maxQuotes: 4 })],
+    evidence: [makeEvidence({ runId: 'old', quote: 'intro' }), first, second, third, failed],
+    documents: [makeDocFixture(), makeDocFixture({
+      document: makeDocumentRecord({ documentId: 'doc-2', filename: 'other.pdf' }),
+      textPages: [buildPage(1, 'other quote')],
+    })],
+  });
+  const matches = highlightsModule.buildStudyTextMatches(makeData().documents, [first, second]);
+  expect(matches.map((match) => match.quoteKey)).toEqual([quoteKeyOf(first), quoteKeyOf(second)]);
+  expect(panel.root.querySelectorAll('.pdf-viewer__hl')).toHaveLength(2);
+  expect(panel.root.querySelectorAll('.pdf-viewer__hl--low')).toHaveLength(1);
+  panel.root.querySelector<HTMLButtonElement>('.verify__quote-search')!.click();
+  await flush();
+  expect(panel.root.querySelector<HTMLInputElement>('.pdf-viewer__search-input')?.value).toBe('missing quote');
+  const jumps = () => panel.root.querySelectorAll<HTMLButtonElement>('.verify__quote-jump');
+  jumps()[1]!.click();
+  await flush();
+  expect(panel.root.querySelector('.pdf-viewer__hl--low')?.classList.contains('pdf-viewer__hl--active')).toBe(true);
+  panel.root.querySelector<HTMLButtonElement>('.pdf-viewer__hl--low')!.click();
+  expect(panel.root.querySelector<HTMLElement>('.verify__cell--focused')?.dataset['cellKey']).toBe(cellKeyOf(first.fieldId, first.entityKey));
+  jumps()[2]!.click();
+  await flush();
+  expect(panel.root.querySelectorAll('.verify__doc-tab')[1]?.classList.contains('verify__doc-tab--active')).toBe(true);
+  expect(panel.root.querySelectorAll('.pdf-viewer__hl--active')).toHaveLength(1);
+  panel.root.querySelectorAll<HTMLButtonElement>('.verify__view-toggle-btn')[1]!.click();
+  expect(panel.root.querySelector('.text-viewer__mark')?.textContent).toBe('other quote');
+  jumps()[1]!.click();
+  expect(panel.root.querySelector('.text-viewer__mark')?.textContent).toBe('in total');
+  panel.root.querySelector<HTMLButtonElement>('.verify__quote-search')!.click();
+  expect(panel.root.querySelector('.text-viewer__quote-full')?.textContent).toBe('missing quote');
+  panel.dispose();
+});
 import type {
   LoadedPdfView,
   VerificationData,
@@ -112,6 +193,7 @@ function makeStudy(overrides: Partial<StudyRecord> = {}): StudyRecord {
 
 function makeField(overrides: Partial<SchemaField> = {}): SchemaField {
   return {
+    maxQuotes: null,
     schemaVersion: 1,
     fieldId: 'f-total',
     fieldIndex: 1,
@@ -133,6 +215,8 @@ function makeField(overrides: Partial<SchemaField> = {}): SchemaField {
 
 function makeEvidence(overrides: Partial<Evidence> = {}): Evidence {
   return {
+    quoteTheme: null,
+    quoteSeq: null,
     evidenceId: 'ev-1',
     runId: 'run-1',
     studyId: 'study-1',
@@ -183,6 +267,8 @@ const EVIDENCE = [
   makeEvidence(),
   // アンカー失敗（フォールバック UI）+ low confidence
   makeEvidence({
+    quoteTheme: null,
+    quoteSeq: null,
     evidenceId: 'ev-2',
     fieldId: 'f-country',
     value: 'Japan',
@@ -381,7 +467,7 @@ afterEach(() => {
 /** 手組みの VerificationCell（focusUnits.test.ts と同じ流儀で防御分岐を直接検証する用） */
 function makeFocusCell(fieldId: string, entityKey: string): VerificationCell {
   const field = makeField({ fieldId });
-  return { cellKey: cellKeyOf(fieldId, entityKey), field, entityKey, evidence: null, state: emptyCellState() };
+  return { cellKey: cellKeyOf(fieldId, entityKey), field, entityKey, evidence: null, quotes: [], state: emptyCellState() };
 }
 
 describe('locateCellInUnit / stepUnitPosition（issue #38 フォーカスモードのユニット内ナビゲーション）', () => {
@@ -751,6 +837,8 @@ describe('createVerificationPanel: 複数文書ビューア（v0.10 フェーズ
     return [
       makeEvidence(), // f-total, doc-1
       makeEvidence({
+        quoteTheme: null,
+        quoteSeq: null,
         evidenceId: 'ev-c',
         fieldId: 'f-country',
         value: '200',
@@ -1097,6 +1185,8 @@ describe('左ペイン表示切替（PDF / 抽出テキスト。issue #28 案2�
       textPages: [],
     });
     const evidenceOnDoc2 = makeEvidence({
+      quoteTheme: null,
+      quoteSeq: null,
       evidenceId: 'ev-doc2',
       fieldId: 'f-country',
       documentId: 'doc-2',
@@ -1709,6 +1799,8 @@ describe('群構成の確定ゲート（arm 未確定時。ui-states.md §3 `#/v
       evidence: [
         ...EVIDENCE,
         makeEvidence({
+          quoteTheme: null,
+          quoteSeq: null,
           evidenceId: 'ev-name',
           fieldId: 'f-arm-name',
           entityKey: 'arm:1',
@@ -1778,6 +1870,8 @@ describe('群構成の確定ゲート（arm 未確定時。ui-states.md §3 `#/v
       armStructure: null,
       evidence: [
         makeEvidence({
+          quoteTheme: null,
+          quoteSeq: null,
           evidenceId: 'ev-named',
           fieldId: 'f-arm-n',
           entityKey: 'arm:intervention',
@@ -1799,6 +1893,8 @@ describe('群構成の確定ゲート（arm 未確定時。ui-states.md §3 `#/v
       armStructure: null,
       evidence: [
         makeEvidence({
+          quoteTheme: null,
+          quoteSeq: null,
           evidenceId: 'ev-out',
           fieldId: 'f-arm-n',
           entityKey: 'outcome:mortality|arm:2|time:30d',
@@ -1848,6 +1944,8 @@ describe('群構成の確定ゲート（arm 未確定時。ui-states.md §3 `#/v
       evidence: [
         ...EVIDENCE,
         makeEvidence({
+          quoteTheme: null,
+          quoteSeq: null,
           evidenceId: 'ev-rob',
           fieldId: 'f-rob',
           entityKey: 'rob:d1_randomization',
@@ -3060,6 +3158,8 @@ describe('「AI で再特定」（relocate-quote。issue #94）', () => {
    * 実際に buildDocumentHighlights / buildStudyTextMatches がハイライトを組めることまで確認する */
   function makeRelocatedEvidence(overrides: Partial<Evidence> = {}): Evidence {
     return makeEvidence({
+      quoteTheme: null,
+      quoteSeq: null,
       evidenceId: 'ev-2-relocated',
       fieldId: 'f-country',
       value: 'Japan',

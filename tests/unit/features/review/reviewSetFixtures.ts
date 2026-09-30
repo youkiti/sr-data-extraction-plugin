@@ -46,6 +46,7 @@ export function field(overrides: Partial<SchemaField> = {}): SchemaField {
     example: null,
     aiGenerated: false,
     note: null,
+    maxQuotes: null,
     ...overrides,
   };
 }

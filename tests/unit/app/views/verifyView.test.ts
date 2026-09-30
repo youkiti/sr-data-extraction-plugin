@@ -222,6 +222,7 @@ function makeStudy(overrides: Partial<StudyRecord> = {}): StudyRecord {
 
 function makeField(overrides: Partial<SchemaField> = {}): SchemaField {
   return {
+    maxQuotes: null,
     schemaVersion: 1,
     fieldId: 'f-total',
     fieldIndex: 1,
@@ -616,6 +617,8 @@ describe('renderVerifyView', () => {
       ],
       evidence: [
         {
+          quoteTheme: null,
+          quoteSeq: null,
           evidenceId: 'ev-arm',
           runId: 'run-1',
           studyId: 'study-1',
@@ -659,6 +662,8 @@ describe('renderVerifyView', () => {
       ],
       evidence: [
         {
+          quoteTheme: null,
+          quoteSeq: null,
           evidenceId: 'ev-arm',
           runId: 'run-1',
           studyId: 'study-1',

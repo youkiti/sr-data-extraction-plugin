@@ -13,6 +13,32 @@ import type { Evidence } from '../../../../src/domain/evidence';
 import type { SchemaField } from '../../../../src/domain/schemaField';
 import type { VerificationCell } from '../../../../src/features/verification/cells';
 import { cellKeyOf, emptyCellState } from '../../../../src/features/verification/cellState';
+import { quoteKeyOf } from '../../../../src/features/verification/evidenceBundles';
+
+test('引用一覧はテーマ・全文・引用別ジャンプと失敗時検索を持ち、再特定は出さない', () => {
+  const first = makeEvidence({ quoteSeq: 1, quoteTheme: 'テーマ', quote: 'first' });
+  const second = makeEvidence({ quoteSeq: 2, quote: 'second', anchorStatus: 'failed' });
+  const third = makeEvidence({ quoteSeq: 3, quote: null, anchorStatus: 'failed' });
+  const cell = makeCell({ field: makeField({ fieldName: 'themes' }), evidence: first, quotes: [first, second, third] });
+  const model = makeModel({
+    canRelocateQuote: true,
+    highlightInfo: new Map([[quoteKeyOf(first), { matchCount: 2, matchIndex: 0 }]]),
+  });
+  const handlers = makeHandlers();
+  const root = renderCell(cell, model, handlers);
+  expect(root.textContent).toContain('引用 3 件');
+  expect(root.querySelectorAll('ol.verify__quotes > li.verify__quotes-item')).toHaveLength(3);
+  expect(root.querySelectorAll('.verify__quotes-theme')[1]?.textContent).toBe('（テーマ名なし）');
+  expect(root.textContent).toContain('照合できませんでした');
+  root.querySelector<HTMLButtonElement>('.verify__quote-jump')!.click();
+  expect(handlers.onJump).toHaveBeenCalledWith(quoteKeyOf(first));
+  root.querySelector<HTMLButtonElement>('.verify__quote-cycle')!.click();
+  expect(handlers.onCycleMatch).toHaveBeenCalledWith(quoteKeyOf(first));
+  root.querySelector<HTMLButtonElement>('.verify__quote-search')!.click();
+  expect(handlers.onSearchQuote).toHaveBeenCalledWith('second', quoteKeyOf(second));
+  expect(root.querySelector('.verify__quote-relocate')).toBeNull();
+  expect(renderCell(cell, { ...model, mode: 'independent' }, handlers).querySelector('.verify__quotes')).toBeNull();
+});
 
 const mockInitialize = jest.fn();
 const mockParse = jest.fn();
@@ -27,6 +53,7 @@ const FLOW_SOURCE = 'flowchart TD\n  A[Enrolled 100] --> B[Analyzed 90]';
 
 function makeField(overrides: Partial<SchemaField> = {}): SchemaField {
   return {
+    maxQuotes: null,
     schemaVersion: 1,
     fieldId: 'f-flow',
     fieldIndex: 1,
@@ -48,6 +75,8 @@ function makeField(overrides: Partial<SchemaField> = {}): SchemaField {
 
 function makeEvidence(overrides: Partial<Evidence> = {}): Evidence {
   return {
+    quoteTheme: null,
+    quoteSeq: null,
     evidenceId: 'ev-flow',
     runId: 'run-1',
     studyId: 'study-1',
@@ -71,6 +100,7 @@ function makeCell(overrides: Partial<VerificationCell> = {}): VerificationCell {
   const field = overrides.field ?? makeField();
   const entityKey = overrides.entityKey ?? '-';
   return {
+    quotes: [],
     cellKey: cellKeyOf(field.fieldId, entityKey),
     field,
     entityKey,

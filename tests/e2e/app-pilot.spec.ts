@@ -188,6 +188,7 @@ async function initApp(
           ],
           currentFields: [
             {
+              maxQuotes: null,
               schemaVersion: 1,
               fieldId: 'f-total',
               fieldIndex: 1,

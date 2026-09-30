@@ -225,6 +225,7 @@ export function parseDraftSchemaResponse(text: string): SchemaEditorRow[] {
     example: item.example,
     aiGenerated: true,
     note: null,
+    maxQuotes: null,
   }));
   return resolveReservedFieldNameCollisions(rows);
 }

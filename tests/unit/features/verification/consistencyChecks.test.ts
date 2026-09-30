@@ -13,6 +13,7 @@ const ENTITY_KEY = 'outcome:pain|arm:1';
 
 function makeField(fieldName: string, dataType: FieldDataType): SchemaField {
   return {
+    maxQuotes: null,
     schemaVersion: 1,
     fieldId: `f-${fieldName}`,
     fieldIndex: 1,
@@ -33,6 +34,8 @@ function makeField(fieldName: string, dataType: FieldDataType): SchemaField {
 
 function makeEvidence(fieldId: string, value: string): Evidence {
   return {
+    quoteTheme: null,
+    quoteSeq: null,
     evidenceId: `ev-${fieldId}`,
     runId: 'run-1',
     studyId: 'study-1',
@@ -68,7 +71,7 @@ function makeCell(
   const evidence = aiValue === null ? null : { ...makeEvidence(field.fieldId, aiValue), entityKey };
   const state: CellState =
     stateValue === undefined ? emptyCellState() : { status: 'edit', value: stateValue, stack: [] };
-  return { cellKey: cellKeyOf(field.fieldId, entityKey), field, entityKey, evidence, state };
+  return { cellKey: cellKeyOf(field.fieldId, entityKey), field, entityKey, evidence, quotes: [], state };
 }
 
 function group(cells: VerificationCell[]): CellGroup {

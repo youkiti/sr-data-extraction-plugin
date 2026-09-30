@@ -35,6 +35,8 @@ function buildPage(page: number, text: string): TextLayerPage {
 
 function makeEvidence(overrides: Partial<Evidence> = {}): Evidence {
   return {
+    quoteTheme: null,
+    quoteSeq: null,
     evidenceId: 'ev-1',
     runId: 'run-1',
     studyId: 'study-1',
@@ -194,6 +196,7 @@ describe('buildDocumentHighlights の bbox 経路（pdf_native の box_2d。§7.
       evidenceId: 'ev-1',
       documentId: 'doc-1',
       cellKey: cellKeyOf('f-1', '-'),
+      quoteKey: cellKeyOf('f-1', '-'),
       status: null,
       source: 'bbox',
       occurrences: [

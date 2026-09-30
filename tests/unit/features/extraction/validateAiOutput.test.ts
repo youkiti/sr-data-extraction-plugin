@@ -14,6 +14,7 @@ function makeField(
     Partial<SchemaField>,
 ): SchemaField {
   return {
+    maxQuotes: null,
     schemaVersion: 1,
     fieldIndex: 0,
     section: 'methods',
@@ -80,6 +81,8 @@ describe('validateAiOutput', () => {
 
     it('矛盾のない要素は自己申告 confidence を保持する（field_name 補助キーは無視）', () => {
       expect(result.items[0]).toEqual({
+        quoteTheme: null,
+        quoteSeq: null,
         fieldId: 'f_design',
         entityKey: '-',
         value: 'randomized controlled trial',
@@ -94,11 +97,15 @@ describe('validateAiOutput', () => {
         box: null,
       });
       // 数値の value は文字列化して保持
-      expect(result.items[1]).toMatchObject({ value: '128', confidence: 'high', forcedLowReasons: [] });
+      expect(result.items[1]).toMatchObject({
+      quoteTheme: null,
+      quoteSeq: null, value: '128', confidence: 'high', forcedLowReasons: [] });
     });
 
     it('値の数値が quote に無い要素は confidence=low を強制する（page 0 は null に落ちる）', () => {
       expect(result.items[2]).toMatchObject({
+        quoteTheme: null,
+        quoteSeq: null,
         value: '142',
         page: null,
         confidence: 'low',
@@ -108,6 +115,8 @@ describe('validateAiOutput', () => {
 
     it('値があるのに quote が無い要素は confidence=low を強制する', () => {
       expect(result.items[3]).toMatchObject({
+        quoteTheme: null,
+        quoteSeq: null,
         entityKey: 'arm:1',
         quote: null,
         confidence: 'low',
@@ -117,6 +126,8 @@ describe('validateAiOutput', () => {
 
     it('not_reported=true なのに値がある要素は confidence=low を強制する（中黒小数点 −12·5 は 12.5 と照合できる）', () => {
       expect(result.items[4]).toMatchObject({
+        quoteTheme: null,
+        quoteSeq: null,
         confidence: 'low',
         forcedLowReasons: ['value_with_not_reported'],
       });
@@ -124,6 +135,8 @@ describe('validateAiOutput', () => {
 
     it('未知の confidence 値は null に落とし、矛盾がなければ強制しない', () => {
       expect(result.items[5]).toMatchObject({
+        quoteTheme: null,
+        quoteSeq: null,
         fieldId: 'f_country',
         confidence: null,
         forcedLowReasons: [],
@@ -153,6 +166,61 @@ describe('validateAiOutput', () => {
   });
 
   describe('要素の形状検証（zod）', () => {
+    it('残りの応答が entity_key に飲み込まれた要素を invalid_shape として破棄する', () => {
+      const element = {
+        field_id: 'f_design',
+        entity_key: '-", "value": "explore the experiences of participants", "not_reported": false, "quote": "participants described challenges" }, {"field_id": "f_country", "value": "Japan" }',
+      };
+      const raw: unknown = JSON.parse(JSON.stringify([element]));
+      expect(validateAiOutput(raw, FIELDS, 1)).toEqual({
+        items: [],
+        rejected: [{ index: 0, reason: 'invalid_shape', detail: expect.any(String), raw: element }],
+      });
+    });
+
+    it.each(['"', '\n', '\r'])(
+      'entity_key に不正文字 %p がある要素は正規化せず破棄する',
+      (character) => {
+        const element = { field_id: 'f_design', entity_key: `-${character}`, value: null };
+        expect(validateAiOutput([element], FIELDS, 1)).toEqual({
+          items: [],
+          rejected: [{
+            index: 0, reason: 'invalid_shape', detail: expect.stringContaining('entity_key'), raw: element,
+          }],
+        });
+      },
+    );
+
+    it('抽出内容の 3 キーがすべて欠けた要素を破棄する', () => {
+      const element = { field_id: 'f_design', entity_key: '-' };
+      expect(validateAiOutput([element], FIELDS, 1)).toEqual({
+        items: [],
+        rejected: [{
+          index: 0, reason: 'invalid_shape',
+          detail: expect.stringContaining('value / not_reported / quote'), raw: element,
+        }],
+      });
+    });
+
+    it.each([
+      [{ not_reported: true }, true],
+      [{ value: null }, false],
+      [{ quote: null }, false],
+      [{ not_reported: true, value: null, quote: null }, true],
+    ])('抽出内容のキーがある要素 %p は従来どおり通す', (content, notReported) => {
+      const result = validateAiOutput([{ field_id: 'f_design', entity_key: '-', ...content }], FIELDS, 1);
+      expect(result.rejected).toEqual([]);
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0]).toMatchObject({ value: null, quote: null, notReported });
+    });
+
+    it('null の要素は invalid_shape として破棄する', () => {
+      expect(validateAiOutput([null], FIELDS, 1)).toEqual({
+        items: [],
+        rejected: [{ index: 0, reason: 'invalid_shape', detail: expect.any(String), raw: null }],
+      });
+    });
+
     it('オブジェクトでない要素は invalid_shape（パスなし issue のメッセージ整形）', () => {
       const { rejected } = validateAiOutput(['oops'], FIELDS, 1);
       expect(rejected).toEqual([
@@ -269,7 +337,9 @@ describe('validateAiOutput', () => {
   describe('値と quote の矛盾 → confidence=low 強制', () => {
     it('矛盾検出時は自己申告 high でも low へ上書きする', () => {
       const { items } = runOne({ value: '42', quote: 'forty-two participants', confidence: 'high' });
-      expect(items[0]).toMatchObject({ confidence: 'low', forcedLowReasons: ['number_not_in_quote'] });
+      expect(items[0]).toMatchObject({
+      quoteTheme: null,
+      quoteSeq: null, confidence: 'low', forcedLowReasons: ['number_not_in_quote'] });
     });
 
     it('not_reported=true + 値あり + quote なしは理由を 2 件とも記録する', () => {
@@ -279,7 +349,9 @@ describe('validateAiOutput', () => {
 
     it('not_reported=true で値が無ければ強制しない', () => {
       const { items } = runOne({ value: null, not_reported: true, confidence: 'medium' });
-      expect(items[0]).toMatchObject({ confidence: 'medium', forcedLowReasons: [] });
+      expect(items[0]).toMatchObject({
+      quoteTheme: null,
+      quoteSeq: null, confidence: 'medium', forcedLowReasons: [] });
     });
 
     it('数値を含まない値は quote に数値がなくても矛盾にしない', () => {
@@ -410,5 +482,55 @@ describe('validateAiOutput', () => {
       const { items } = runOne({});
       expect(items[0]?.box).toBeNull();
     });
+  });
+});
+
+describe('複数の引用', () => {
+  const field = makeField({ fieldId: 'themes', fieldName: 'themes', entityLevel: 'arm', dataType: 'text', maxQuotes: 2 });
+  const item = (patch: Record<string, unknown> = {}) => ({
+    field_id: 'themes', entity_key: 'arm:1', value: '10', quote: '10 participants',
+    confidence: 'high', theme: ' 第一 ', ...patch,
+  });
+  test('セルごとに未報告を除き、先頭 N 件のテーマを連結する', () => {
+    const result = validateAiOutput([
+      item({ not_reported: true, value: null, quote: null }),
+      item(), item({ theme: '第二', value: '20', quote: '20 participants' }),
+      item({ theme: '超過' }), item({ entity_key: 'arm:2', theme: '別の群' }),
+    ], [field], 1);
+    expect(result.items.map((i) => [i.value, i.quoteTheme, i.quoteSeq, i.confidence])).toEqual([
+      ['第一; 第二', '第一', 1, 'high'], ['第一; 第二', '第二', 2, 'high'],
+      ['別の群', '別の群', 1, 'high'],
+    ]);
+    expect(result.rejected).toEqual([expect.objectContaining({ index: 3, reason: 'quote_limit' })]);
+  });
+  test('空のテーマは値へフォールバックし、どちらも空なら連結から除く', () => {
+    const result = validateAiOutput([
+      item({ theme: ' ', value: ' 内容 ', quote: '内容' }),
+      item({ theme: null, value: null, quote: null }),
+    ], [field], 1);
+    expect(result.items.map((i) => [i.value, i.quoteTheme, i.quoteSeq]))
+      .toEqual([['内容', null, 1], ['内容', null, 2]]);
+    expect(validateAiOutput([item({ theme: '', value: ' ' })], [field], 1).items[0]?.value).toBeNull();
+  });
+  test('未報告だけなら先頭だけを残して通常行にする', () => {
+    const result = validateAiOutput([item({ not_reported: true }), item({ not_reported: true })], [field], 1);
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0]).toMatchObject({ quoteTheme: null, quoteSeq: null });
+  });
+  test('矛盾検出は他の引用や連結後のテーマではなく要素自身の値を使う', () => {
+    const result = validateAiOutput([
+      item({ theme: '20', value: '10', quote: '10 people' }),
+      item({ theme: '10', value: '30', quote: '20 people' }),
+    ], [field], 1);
+    expect(result.items[0]?.forcedLowReasons).toEqual([]);
+    expect(result.items[1]?.forcedLowReasons).toEqual(['number_not_in_quote']);
+  });
+  test('theme 欠落も受理し、OFF の項目は theme と重複をそのまま無視する', () => {
+    const legacy = item();
+    delete (legacy as Record<string, unknown>).theme;
+    expect(validateAiOutput([legacy], [field], 1).items[0]).toMatchObject({ quoteTheme: null, value: '10' });
+    const result = validateAiOutput([item(), item()], [{ ...field, maxQuotes: null }], 1);
+    expect(result.items).toHaveLength(2);
+    expect(result.items.every((i) => i.quoteSeq === null && i.quoteTheme === null && i.value === '10')).toBe(true);
   });
 });

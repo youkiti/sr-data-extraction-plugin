@@ -40,6 +40,8 @@ export function buildAskPaperHighlight(
         bboxPage: null,
         bbox: null,
         relocatedFrom: null,
+        quoteTheme: null,
+        quoteSeq: null,
       },
     ],
     pages,

@@ -4,6 +4,7 @@
 // フォーム検証・エディタ操作・確定フローの配線と各状態の描画を検証する
 import { expect, test, type Page } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
+import { SHEET_HEADERS } from '../../src/domain/sheetsSchema';
 
 const SCHEMA_VERSIONS_HEADERS = [
   'schema_version', 'parent_version', 'protocol_version', 'created_by_type',
@@ -23,6 +24,7 @@ const PROTOCOL_ROW = [
 
 function makeEditorRow(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
+    maxQuotes: null,
     fieldId: null,
     section: 'methods',
     fieldName: 'study_design',
@@ -443,6 +445,10 @@ test('版として確定が SchemaVersions + SchemaFields の追記まで到達�
   await page.route('https://sheets.googleapis.com/**', async (route) => {
     const url = route.request().url();
     if (route.request().method() === 'GET') {
+      if (url.includes('batchGet') && url.includes('SchemaFields')) {
+        await route.fulfill({ json: { valueRanges: [{ values: [[...SHEET_HEADERS.SchemaFields]] }] } });
+        return;
+      }
       if (url.includes('Protocol')) {
         await route.fulfill({ json: { values: [PROTOCOL_HEADERS, PROTOCOL_ROW] } });
         return;
@@ -494,6 +500,7 @@ test('確定済み: 現行版サマリから「新しい版を作る」でエデ
       ],
       currentFields: [
         {
+          maxQuotes: null,
           schemaVersion: 2,
           fieldId: 'f-1',
           fieldIndex: 1,
@@ -543,6 +550,7 @@ const CONFIRMED_SCHEMA_STATE = {
   ],
   currentFields: [
     {
+      maxQuotes: null,
       schemaVersion: 1,
       fieldId: 'f-1',
       fieldIndex: 1,
@@ -582,6 +590,7 @@ test('差分承認画面: 追加は既定チェック・削除候補は既定未
   page,
 }) => {
   const currentField = {
+    maxQuotes: null,
     schemaVersion: 1,
     fieldId: 'f-1',
     fieldIndex: 1,

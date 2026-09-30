@@ -137,6 +137,8 @@ function buildEvidenceRows(
     bboxPage: null,
     bbox: null,
     relocatedFrom: null,
+    quoteTheme: null,
+    quoteSeq: null,
   }));
 }
 

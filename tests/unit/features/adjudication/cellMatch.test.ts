@@ -5,8 +5,15 @@ import type { Evidence } from '../../../../src/domain/evidence';
 import type { SchemaField } from '../../../../src/domain/schemaField';
 import { buildAdjudicationCells, indexEvidenceByCellKey } from '../../../../src/features/adjudication/cellMatch';
 
+test('裁定の代表は最新 run の最小 seq の引用になる', () => {
+  const first = evidence({ quoteSeq: 1 });
+  const second = evidence({ quoteSeq: 2, evidenceId: 'second' });
+  expect([...indexEvidenceByCellKey([evidence({ runId: 'old' }), first, second]).values()]).toEqual([first]);
+});
+
 function field(overrides: Partial<SchemaField> = {}): SchemaField {
   return {
+    maxQuotes: null,
     schemaVersion: 1,
     fieldId: 'f-study',
     fieldIndex: 1,
@@ -75,6 +82,8 @@ function decision(overrides: Partial<Decision> = {}): Decision {
 
 function evidence(overrides: Partial<Evidence> = {}): Evidence {
   return {
+    quoteTheme: null,
+    quoteSeq: null,
     evidenceId: 'ev-1',
     runId: 'run-1',
     studyId: 'study-1',

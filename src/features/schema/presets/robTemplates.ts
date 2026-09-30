@@ -48,6 +48,7 @@ function presetRow(
     unit: null,
     aiGenerated: false,
     note: null,
+    maxQuotes: null,
     ...rest,
   };
 }

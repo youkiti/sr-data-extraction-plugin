@@ -18,4 +18,6 @@ export interface SchemaEditorRow {
   /** 監査用（AI ドラフト由来の行か。人間が値を書き換えても維持する） */
   aiGenerated: boolean;
   note: string | null;
+  /** 複数引用の上限（text のみ 2〜20）。null は通常の 1 引用 */
+  maxQuotes: number | null;
 }

@@ -184,6 +184,8 @@ export async function relocateQuote(
       bboxPage: null,
       bbox: null,
       relocatedFrom: params.evidence.evidenceId,
+      quoteTheme: null,
+      quoteSeq: null,
     };
     await ensureEvidenceRelocatedFromColumn(params.spreadsheetId, deps.google);
     await appendEvidenceRows(params.spreadsheetId, [relocated], deps.google);

@@ -26,6 +26,7 @@ const field: SchemaField = {
   example: 'DATA_ROW_SECRET',
   aiGenerated: true,
   note: 'DECISION_SECRET',
+  maxQuotes: null,
 };
 
 test('本文と定義だけを入力契約に持ち、監査属性やデータ行を含めない', () => {

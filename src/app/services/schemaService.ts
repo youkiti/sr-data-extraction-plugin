@@ -132,6 +132,7 @@ export function emptyEditorRow(): SchemaEditorRow {
     example: null,
     aiGenerated: false,
     note: null,
+    maxQuotes: null,
   };
 }
 
@@ -621,6 +622,7 @@ export function startEditorFromCurrent(store: Store): void {
       example: field.example,
       aiGenerated: field.aiGenerated,
       note: field.note,
+      maxQuotes: field.maxQuotes,
     })),
     editorErrors: [],
     editorOrigin: 'user_edit',

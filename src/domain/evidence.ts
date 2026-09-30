@@ -58,4 +58,8 @@ export interface Evidence {
    * ため relocated_from が付く行には現れない）をそのまま持つ（§5 参照。requirements.md §3.2）
    */
   relocatedFrom: string | null;
+  /** 引用が支えるテーマ。通常の単一引用では null */
+  quoteTheme: string | null;
+  /** 同じセル内の 1 始まり連番。通常行・未報告行では null */
+  quoteSeq: number | null;
 }

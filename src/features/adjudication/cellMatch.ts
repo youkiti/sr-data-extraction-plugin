@@ -9,6 +9,7 @@ import type { Evidence } from '../../domain/evidence';
 import type { EntityLevel, SchemaField } from '../../domain/schemaField';
 import { parseEntityKey, STUDY_ENTITY_KEY } from '../../utils/entityKey';
 import { cellKeyOf } from '../verification/cellState';
+import { bundleEvidence } from '../verification/evidenceBundles';
 
 export interface AdjudicationCell {
   cellKey: string;
@@ -187,14 +188,8 @@ export function buildAdjudicationCells(
 
 /**
  * study の Evidence（AI 根拠）を cellKey（field_id × entity_key）で引けるようにする
- * （issue #63: 裁定 PDF ペインの根拠ハイライト用）。1 run 内で同一セルへの Evidence は
- * 高々 1 件の想定（executeRun が field_id × entity_key ごとに 1 行を生成するため）。
- * 複数見つかった場合はシート行順で後勝ち（追記順 = 新しいものを優先）
+ * （裁定 PDF ペインの根拠ハイライト用）。複数引用では束の先頭を代表にする。
  */
 export function indexEvidenceByCellKey(evidence: readonly Evidence[]): Map<string, Evidence> {
-  const index = new Map<string, Evidence>();
-  for (const item of evidence) {
-    index.set(cellKeyOf(item.fieldId, item.entityKey), item);
-  }
-  return index;
+  return new Map([...bundleEvidence(evidence)].map(([key, bundle]) => [key, bundle.evidence]));
 }

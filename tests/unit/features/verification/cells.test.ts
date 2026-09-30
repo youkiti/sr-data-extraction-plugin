@@ -11,8 +11,18 @@ import {
 } from '../../../../src/features/verification/cells';
 import { cellKeyOf } from '../../../../src/features/verification/cellState';
 
+test('複数引用は seq 昇順の一覧と先頭の代表でセルを作る', () => {
+  const first = makeEvidence({ quoteSeq: 1 });
+  const second = makeEvidence({ quoteSeq: 2, evidenceId: 'second' });
+  const model = buildTabModel('study', [makeField({ maxQuotes: 2 })], [first, second], []);
+  expect(model.cells[0]?.evidence).toBe(first);
+  expect(model.cells[0]?.quotes).toEqual([first, second]);
+  expect(buildTabModel('study', [makeField()], [makeEvidence()], []).cells[0]?.quotes).toEqual([]);
+});
+
 function makeField(overrides: Partial<SchemaField> = {}): SchemaField {
   return {
+    maxQuotes: null,
     schemaVersion: 1,
     fieldId: 'f-1',
     fieldIndex: 1,
@@ -34,6 +44,8 @@ function makeField(overrides: Partial<SchemaField> = {}): SchemaField {
 
 function makeEvidence(overrides: Partial<Evidence> = {}): Evidence {
   return {
+    quoteTheme: null,
+    quoteSeq: null,
     evidenceId: 'ev-1',
     runId: 'run-1',
     studyId: 'study-1',

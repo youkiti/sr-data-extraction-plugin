@@ -12,7 +12,7 @@ const QUOTE = 'Mortality was 12 percent';
 const SCHEMA_FIELDS_HEADERS = [
   'schema_version', 'field_id', 'field_index', 'section', 'field_name', 'field_label',
   'entity_level', 'data_type', 'unit', 'allowed_values', 'required', 'extraction_instruction',
-  'example', 'ai_generated', 'note',
+  'example', 'ai_generated', 'note', 'max_quotes',
 ];
 
 const STUDY_FIELD_ROW = [
@@ -36,6 +36,25 @@ const OUTCOME_FIELD_ROW = [
 ];
 
 const EVIDENCE_HEADERS = [...SHEET_HEADERS.Evidence];
+
+test('複数引用セルは一覧を表示し、2 件目のジャンプで対応ハイライトを選択する', async ({ page }) => {
+  const rows = [1, 2].map((seq) => EVIDENCE_HEADERS.map((header) => {
+    const values: Record<string, string> = {
+      evidence_id: `quote-${seq}`, run_id: 'run-1', study_id: 'study-1', field_id: 'f-total',
+      document_id: 'doc-1', entity_key: '-', value: '死亡率; 割合', not_reported: 'FALSE',
+      quote: seq === 1 ? QUOTE : '12 percent', page: '1', confidence: 'high', anchor_status: 'exact',
+      quote_seq: String(seq), quote_theme: seq === 1 ? '死亡率' : '割合',
+    };
+    return values[header] ?? '';
+  }));
+  await setupRoutes(page, { schemaRows: [[...STUDY_FIELD_ROW, '2']], evidenceRows: rows });
+  await initApp(page, '#/verify?study=study-1');
+  await expect(page.locator('.verify__quotes-item')).toHaveCount(2);
+  await expect(page.locator('.pdf-viewer__hl')).toHaveCount(2);
+  await page.locator('.verify__quotes-item').nth(1).locator('.verify__quote-jump').click();
+  await expect(page.locator('.pdf-viewer__hl').nth(1)).toHaveClass(/pdf-viewer__hl--active/);
+  await expect(page.locator('.pdf-viewer__hl').nth(0)).not.toHaveClass(/pdf-viewer__hl--active/);
+});
 
 // Evidence は study_id（col 3）+ document_id（col 5）の 2 キー構成。1 文書 = 1 study
 const EVIDENCE_ROW_1 = ['ev-1', 'run-1', 'study-1', 'f-total', 'doc-1', '-', '12', 'FALSE', QUOTE, '1', 'high', 'exact'];
@@ -2144,6 +2163,7 @@ test('抽出前に #/verify を開くと空状態 → 抽出実行 → #/verify 
         ],
         currentFields: [
           {
+            maxQuotes: null,
             schemaVersion: 1,
             fieldId: 'f-total',
             fieldIndex: 1,

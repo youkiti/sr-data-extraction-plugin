@@ -60,6 +60,7 @@ describe('parseDraftSchemaResponse', () => {
     const rows = parseDraftSchemaResponse(JSON.stringify([DRAFTED_ITEM]));
     expect(rows).toEqual([
       {
+        maxQuotes: null,
         fieldId: null,
         section: 'population',
         fieldName: 'sample_size_total',

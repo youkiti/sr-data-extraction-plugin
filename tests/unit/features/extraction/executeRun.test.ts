@@ -37,6 +37,7 @@ function makeField(
   overrides: Pick<SchemaField, 'fieldId' | 'fieldName'> & Partial<SchemaField>,
 ): SchemaField {
   return {
+    maxQuotes: null,
     schemaVersion: 1,
     fieldIndex: 0,
     section: 'methods',
@@ -402,6 +403,8 @@ describe('executeRun の正常系', () => {
     expect(result.runId).toBe('run-1');
     expect(result.evidence).toEqual([
       {
+        quoteTheme: null,
+        quoteSeq: null,
         evidenceId: 'ev-1',
         runId: 'run-1',
         studyId: 'd1',
@@ -419,6 +422,8 @@ describe('executeRun の正常系', () => {
         relocatedFrom: null,
       },
       {
+        quoteTheme: null,
+        quoteSeq: null,
         evidenceId: 'ev-2',
         runId: 'run-1',
         studyId: 'd1',
@@ -437,6 +442,8 @@ describe('executeRun の正常系', () => {
       },
       // quote が無い要素（not_reported）はアンカリング対象外
       {
+        quoteTheme: null,
+        quoteSeq: null,
         evidenceId: 'ev-3',
         runId: 'run-1',
         studyId: 'd1',
@@ -1916,6 +1923,26 @@ describe('executeRun の arm completeness チェック（issue #106）', () => {
   });
 });
 
+
+test('引用超過を記録しても done を維持し、各引用を別の Evidence に保存する', async () => {
+  const { provider } = providerOf([chatResponse([
+    { ...DESIGN_ITEM, theme: '研究デザイン' },
+    { ...DESIGN_ITEM, theme: '対象', value: 'adults', quote: 'adults' },
+    { ...DESIGN_ITEM, theme: '超過' },
+  ])]);
+  const { deps, saved } = makeDeps(provider);
+  const result = await execute({
+    runId: 'run-multi',
+    plan: makePlan([makeBatch({ studyId: 'd1', fieldIds: ['f_design'] })]),
+    fields: [{ ...STUDY_FIELD, maxQuotes: 2 }],
+  }, deps);
+  expect(result.status).toBe('done');
+  expect(result.rejectedItems).toEqual([expect.objectContaining({ reason: 'quote_limit' })]);
+  expect(saved.flat().map((e) => [e.value, e.quoteTheme, e.quoteSeq, e.anchorStatus])).toEqual([
+    ['研究デザイン; 対象', '研究デザイン', 1, 'exact'],
+    ['研究デザイン; 対象', '対象', 2, 'exact'],
+  ]);
+});
 
 describe('executeRun のエラー使用量', () => {
   test.each([null, 0, 30])('失敗バッチの課金対象使用量を成功分と合算する: %j', async (tokens) => {

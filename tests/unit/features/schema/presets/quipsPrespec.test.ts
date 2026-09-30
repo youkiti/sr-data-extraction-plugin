@@ -26,6 +26,7 @@ function emptyPrespec(): QuipsPrespec {
 
 function makeRow(patch: Partial<SchemaEditorRow>): SchemaEditorRow {
   return {
+    maxQuotes: null,
     fieldId: null,
     section: 'risk_of_bias_quips',
     fieldName: 'x',

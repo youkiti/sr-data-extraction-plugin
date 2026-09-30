@@ -15,6 +15,7 @@ function cell(overrides: Partial<AdjudicationCell> = {}): AdjudicationCell {
   return {
     cellKey: JSON.stringify(['f-1', '-']),
     field: {
+      maxQuotes: null,
       schemaVersion: 1,
       fieldId: 'f-1',
       fieldIndex: 1,

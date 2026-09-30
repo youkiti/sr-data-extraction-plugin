@@ -3,6 +3,7 @@ import { validateEditorRows } from '../../../../src/features/schema/validateFiel
 
 function makeRow(overrides: Partial<SchemaEditorRow> = {}): SchemaEditorRow {
   return {
+    maxQuotes: null,
     fieldId: null,
     section: 'methods',
     fieldName: 'study_design',
@@ -84,5 +85,20 @@ describe('validateEditorRows', () => {
       1,
     );
     expect(validateEditorRows([makeRow({ dataType: 'text', allowedValues: '  ' })])).toEqual([]);
+  });
+});
+
+describe('複数の引用の上限', () => {
+  test.each([1, 21, 2.5, NaN])('不正な上限 %p はエラー', (maxQuotes) => {
+    expect(validateEditorRows([makeRow({ maxQuotes })])).toEqual([
+      expect.objectContaining({ column: 'max_quotes' }),
+    ]);
+  });
+  test.each([null, 2, 20])('有効な上限 %p', (maxQuotes) => {
+    expect(validateEditorRows([makeRow({ maxQuotes })])).toEqual([]);
+  });
+  test('text 以外では指定できない', () => {
+    expect(validateEditorRows([makeRow({ dataType: 'integer', maxQuotes: 10 })]))
+      .toEqual([expect.objectContaining({ column: 'max_quotes' })]);
   });
 });

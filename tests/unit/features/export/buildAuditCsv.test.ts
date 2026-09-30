@@ -14,6 +14,31 @@ import {
 } from '../../../../src/features/verification/instanceDeclarations';
 import { CSV_BOM } from '../../../../src/features/export/csvEncode';
 
+test('引用 JSON は選択 run の束を昇順に添付し、通常は空・根拠なしは欠損にする', () => {
+  const first = evidence('first', 'new', 'd1', 'f1', '-', { quoteSeq: 1, quoteTheme: 'テーマ,一' });
+  const second = evidence('second', 'new', 'd1', 'f1', '-', { quoteSeq: 2, documentId: 'other', anchorStatus: 'failed' });
+  const rows = [evidence('old', 'old', 'd1', 'f1', '-', { quoteSeq: 3 }), first, second];
+  const studies = [study('d1', 'study')];
+  const fields = [field('f1', 'themes', 1)];
+  const runs = [run('old', 1, 't0'), run('new', 2, 't1')];
+  const json = JSON.stringify([first, second].map((item) => ({
+    seq: item.quoteSeq, theme: item.quoteTheme, quote: item.quote,
+    page: item.page, document_id: item.documentId, anchor_status: item.anchorStatus,
+  })));
+  const expectedEnd = `,"${json.replace(/"/g, '""')}"\r\n`;
+  const placeholder = buildAuditCsv(studies, [], rows, runs, fields);
+  expect(AUDIT_HEADER.at(-1)).toBe('quotes_json');
+  expect(placeholder.undecidedCellCount).toBe(1);
+  expect(placeholder.csv).toContain(',new,first,');
+  expect(placeholder.csv.endsWith(expectedEnd)).toBe(true);
+  const decided = buildAuditCsv(studies, [decision('d1', 'f1', '-', 'accept', 't2', { schemaVersion: 2 })], rows, runs, fields);
+  expect(decided.csv.endsWith(expectedEnd)).toBe(true);
+  const normal = buildAuditCsv(studies, [], [evidence('normal', 'old', 'd1', 'f1', '-')], runs, fields);
+  expect(dataRows(normal.csv)[0]?.at(-1)).toBe('');
+  const missing = buildAuditCsv(studies, [decision('d1', 'f1', '-', 'accept', 't2', { schemaVersion: 3 })], rows, runs, fields);
+  expect(dataRows(missing.csv)[0]?.at(-1)).toBe('.');
+});
+
 /** 構造的欠損トークン（可読性のための短縮名） */
 const NA = AUDIT_MISSING_TOKEN;
 /** 構造的欠損の Evidence 列ブロック（run_id〜anchor_status の 8 列 + bbox 5 列 = 13 列。§7.4 PR3） */
@@ -30,6 +55,7 @@ const study = (studyId: string, studyLabel: string): StudyRecord => ({
 });
 
 const field = (fieldId: string, fieldName: string, fieldIndex: number): SchemaField => ({
+  maxQuotes: null,
   schemaVersion: 1,
   fieldId,
   fieldIndex,
@@ -78,6 +104,8 @@ const evidence = (
   entityKey: string,
   overrides: Partial<Evidence> = {},
 ): Evidence => ({
+  quoteTheme: null,
+  quoteSeq: null,
   evidenceId,
   runId,
   studyId,
@@ -200,7 +228,7 @@ describe('buildAuditCsv', () => {
     expect(rows[0]?.[6]).toBe('1'); // schema_version は代表 Evidence の run から
     expect(rows[0]?.[7]).toBe(NA); // annotator が構造的欠損 = 未検証の明示
     // 判定列ブロック（decision_seq〜note）も構造的欠損（study_id 列の追加で開始位置は 22）
-    expect(rows[0]?.slice(22)).toEqual([NA, NA, NA, NA, NA, NA]);
+    expect(rows[0]?.slice(22)).toEqual([NA, NA, NA, NA, NA, NA, '']);
     expect(result.undecidedCellCount).toBe(1);
   });
 

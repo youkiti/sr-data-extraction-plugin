@@ -6,6 +6,8 @@ import type { StudyRecord } from '../../domain/study';
 import type { Evidence } from '../../domain/evidence';
 import type { RunAuditInfo } from '../../domain/extractionRun';
 import type { SchemaField } from '../../domain/schemaField';
+import { bundleEvidence, type EvidenceBundle } from '../verification/evidenceBundles';
+import { cellKeyOf } from '../verification/cellState';
 import { isEntityInstanceDeclaration } from '../verification/instanceDeclarations';
 import { buildCsv, CSV_BOM } from './csvEncode';
 
@@ -38,6 +40,7 @@ export const AUDIT_HEADER = [
   'decided_by',
   'decided_at',
   'note',
+  'quotes_json',
 ] as const;
 
 /**
@@ -90,14 +93,31 @@ export function buildAuditCsv(
    * `>=`（同値は後着優先）にしておかないと、常に先に追記された元の failed 行が「best」のまま
    * 残ってしまい、audit.csv が再特定前の quote を出し続ける回帰になる
    */
-  const latestEvidence = (candidates: readonly Evidence[]): Evidence | null => {
+  const latestEvidence = (candidates: readonly Evidence[]): EvidenceBundle | null => {
     let best: Evidence | null = null;
     for (const candidate of candidates) {
       if (best === null || startedAtOf(candidate.runId) >= startedAtOf(best.runId)) {
         best = candidate;
       }
     }
-    return best;
+    if (best === null) {
+      return null;
+    }
+    return bundleEvidence(candidates.filter((item) => item.runId === best.runId))
+      .get(cellKeyOf(best.fieldId, best.entityKey))!;
+  };
+  const quotesJson = (bundle: EvidenceBundle | null): string => {
+    if (bundle === null) {
+      return AUDIT_MISSING_TOKEN;
+    }
+    return bundle.quotes.length === 0 ? '' : JSON.stringify(bundle.quotes.map((item) => ({
+      seq: item.quoteSeq,
+      theme: item.quoteTheme,
+      quote: item.quote,
+      page: item.page,
+      document_id: item.documentId,
+      anchor_status: item.anchorStatus,
+    })));
   };
   const evidenceColumns = (evidence: Evidence): string[] => [
     evidence.runId,
@@ -180,20 +200,21 @@ export function buildAuditCsv(
             study.studyLabel,
             study.studyId,
             // document_id は quote の出所文書（Evidence 由来）。添付 Evidence がなければ構造的欠損（§4.4 v0.10）
-            attached === null ? AUDIT_MISSING_TOKEN : attached.documentId,
+            attached === null ? AUDIT_MISSING_TOKEN : attached.evidence.documentId,
             decision.entityKey,
             decision.fieldId,
             field.fieldName,
             String(decision.schemaVersion),
             decision.annotator,
             decision.annotatorType,
-            ...(attached === null ? MISSING_EVIDENCE_COLUMNS : evidenceColumns(attached)),
+            ...(attached === null ? MISSING_EVIDENCE_COLUMNS : evidenceColumns(attached.evidence)),
             String(seq),
             decision.action,
             decision.value ?? '',
             decision.decidedBy,
             decision.decidedAt,
             decision.note ?? '',
+            quotesJson(attached),
           ],
         });
       });
@@ -204,7 +225,8 @@ export function buildAuditCsv(
       if (decidedCells.has(key)) {
         continue;
       }
-      const representative = latestEvidence(cellEvidences) as Evidence; // セルは 1 件以上で構築される
+      const bundle = latestEvidence(cellEvidences) as EvidenceBundle;
+      const representative = bundle.evidence; // セルは 1 件以上で構築される
       const field = fieldById.get(representative.fieldId);
       if (field === undefined) {
         droppedRowCount++;
@@ -233,6 +255,7 @@ export function buildAuditCsv(
           AUDIT_MISSING_TOKEN,
           AUDIT_MISSING_TOKEN,
           AUDIT_MISSING_TOKEN,
+          quotesJson(bundle),
         ],
       });
     }

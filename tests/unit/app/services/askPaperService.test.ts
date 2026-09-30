@@ -55,6 +55,7 @@ const params: AskPaperParams = {
       example: null,
       aiGenerated: true,
       note: 'EVIDENCE_DECISION_SECRET',
+      maxQuotes: null,
     },
   ],
 };

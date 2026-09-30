@@ -344,6 +344,12 @@ export const ja = {
   'protocol.loading': 'プロトコルを読み込んでいます…',
 
   // S5 表のデザイン（schemaView.ts）
+  'schema.multiQuote': '複数の引用を許可',
+  'schema.maxQuotes': '最大件数',
+  'schema.multiQuoteHint': '主に質的なデータ（テーマの抽出など）を取りたいときに使います。AI がテーマごとに根拠の箇所を 1 つずつ引用し、値はテーマ名の一覧になります。引用の選び方（参加者の語りだけを採る等）は抽出指示に書いてください',
+  'schema.multiQuoteSummary': '複数の引用（最大 {max}）',
+  'schema.maxQuotesTextOnly': '複数の引用は data_type = text のときだけ指定できます',
+  'schema.maxQuotesRange': '最大件数は 2〜20 の整数にしてください',
   'schema.lead':
     '抽出したい項目のリストをこのページで作成します。スプレッドシートでいえば 1 行目の見出し（列の名前）にあたります。例:「著者名」「出版年」「対象患者数」など。これを設計する工程を表のデザインと呼んでいます。',
   'schema.loadError': '表のデザインを読み込めませんでした: {reason}',
@@ -832,6 +838,10 @@ export const ja = {
   'verify.mermaidError': 'mermaid の構文エラーのため描画できません: {reason}',
   'verify.mermaidSaveWarning': '⚠ 保存した値に mermaid の構文エラーがあります: {reason}',
   'verify.jumpToHighlight': 'ハイライトへ移動',
+  'verify.quoteJump': 'ハイライトへ',
+  'verify.quotesCount': '引用 {n} 件',
+  'verify.noTheme': '（テーマ名なし）',
+  'verify.quoteNotLocated': '照合できませんでした',
   'verify.cycleMatch': '他 {others} 箇所に一致（{index} / {total}）',
   'verify.unanchored': 'ハイライト位置を特定できません',
   'verify.searchInText': '本文内を検索',

@@ -348,6 +348,12 @@ export const en: Record<MessageKey, string> = {
   'protocol.loading': 'Loading the protocol…',
 
   // S5 表のデザイン
+  'schema.multiQuote': 'Allow multiple quotes',
+  'schema.maxQuotes': 'Max quotes',
+  'schema.multiQuoteHint': 'Use this mainly for qualitative data, such as extracting themes. AI quotes one supporting passage per theme, and the value becomes a list of theme names. Describe how to choose quotes (for example, participant accounts only) in the extraction instruction.',
+  'schema.multiQuoteSummary': 'Multiple quotes (max {max})',
+  'schema.maxQuotesTextOnly': 'Multiple quotes are only available for data_type = text',
+  'schema.maxQuotesRange': 'Max quotes must be an integer from 2 to 20',
   'schema.lead':
     'Build the list of items to extract on this page. In spreadsheet terms, these are the header row (column names) — e.g. "Authors", "Publication year", "Number of participants". We call designing this list the table design.',
   'schema.loadError': 'Failed to load the table design: {reason}',
@@ -845,6 +851,10 @@ export const en: Record<MessageKey, string> = {
   'verify.mermaidError': 'Cannot render because of a mermaid syntax error: {reason}',
   'verify.mermaidSaveWarning': '⚠ The saved value has a mermaid syntax error: {reason}',
   'verify.jumpToHighlight': 'Jump to highlight',
+  'verify.quoteJump': 'Jump to highlight',
+  'verify.quotesCount': '{n} quotes',
+  'verify.noTheme': '(no theme)',
+  'verify.quoteNotLocated': 'Could not be located',
   'verify.cycleMatch': '{others} other matches ({index} / {total})',
   'verify.unanchored': 'Cannot locate the highlight',
   'verify.searchInText': 'Search the text',

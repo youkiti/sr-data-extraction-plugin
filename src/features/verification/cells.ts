@@ -15,6 +15,7 @@ import {
 } from '../../utils/entityKey';
 import { cellKeyOf, deriveCellStates, emptyCellState, type CellState } from './cellState';
 import { robOverrideFieldNames } from './robEstimateFields';
+import { bundleEvidence, type EvidenceBundle } from './evidenceBundles';
 
 export interface VerificationCell {
   cellKey: string;
@@ -22,6 +23,7 @@ export interface VerificationCell {
   entityKey: string;
   /** 対応する AI 根拠。AI 未抽出セルは null（手入力のみ可能） */
   evidence: Evidence | null;
+  quotes: Evidence[];
   state: CellState;
 }
 
@@ -82,19 +84,10 @@ function outcomeInstanceLabel(outcome: string, arm: string | null, time: string 
   return label;
 }
 
-/** fieldId × entityKey → Evidence。同一セルに複数あれば後勝ち（後の行が新しい） */
-function indexEvidence(evidence: readonly Evidence[]): Map<string, Evidence> {
-  const index = new Map<string, Evidence>();
-  for (const item of evidence) {
-    index.set(cellKeyOf(item.fieldId, item.entityKey), item);
-  }
-  return index;
-}
-
 function makeCell(
   field: SchemaField,
   entityKey: string,
-  evidenceIndex: Map<string, Evidence>,
+  evidenceIndex: Map<string, EvidenceBundle>,
   states: Map<string, CellState>,
 ): VerificationCell {
   const cellKey = cellKeyOf(field.fieldId, entityKey);
@@ -102,7 +95,8 @@ function makeCell(
     cellKey,
     field,
     entityKey,
-    evidence: evidenceIndex.get(cellKey) ?? null,
+    evidence: evidenceIndex.get(cellKey)?.evidence ?? null,
+    quotes: evidenceIndex.get(cellKey)?.quotes ?? [],
     state: states.get(cellKey) ?? emptyCellState(),
   };
 }
@@ -282,7 +276,7 @@ export function buildTabModel(
   const tabFields = fields
     .filter((field) => field.entityLevel === tab)
     .sort((a, b) => a.fieldIndex - b.fieldIndex);
-  const evidenceIndex = indexEvidence(evidence);
+  const evidenceIndex = bundleEvidence(evidence);
   const states = deriveCellStates(decisions);
 
   const groups: CellGroup[] = [];
