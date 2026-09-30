@@ -25,6 +25,7 @@ import {
   toggleFieldSection,
   toggleFieldSelection,
 } from '../../features/extraction/fieldSelection';
+import { defaultPilotStudyIds, usedPilotStudyIds } from '../../features/extraction/pilotSelection';
 import { readPilotRuns } from '../../features/extraction/runRepository';
 import { getSchemaFieldsByVersion } from '../../features/schema/schemaRepository';
 import { ensureChildFolder } from '../../lib/google/drive';
@@ -78,32 +79,38 @@ function patchPilot(store: Store, patch: Partial<PilotState>): void {
 }
 
 /**
- * 初回表示時の既定選択: テキスト層のある study の先頭 3 件（ui-states.md §3「既定 2〜3 本」・v0.10）。
- * モデル名は S5 のドラフトフォームの入力があれば引き継ぐ。一度初期化したら再実行しない
+ * 初回表示では未使用のテキスト付き study を最大 3 件選び、皆無なら使用済みに戻す。
+ * 選択未操作で履歴が後着したときだけ一度選び直す。モデル名は S5 の入力を引き継ぐ
  */
 export function initPilotSelection(store: Store): void {
   const state = store.getState();
+  if (state.pilot.model === '' && state.schema.model !== '') {
+    patchPilot(store, { model: state.schema.model });
+  }
   if (
-    state.pilot.selectionInitialized ||
+    state.pilot.selectionTouched ||
+    (state.pilot.selectionInitialized &&
+      (state.pilot.history === null || state.pilot.selectionHistoryApplied)) ||
     state.documents.records === null ||
     state.documents.studies === null
   ) {
     return;
   }
   // ガードで documents.records / studies は非 null。除外文書は既定選択の候補から外す（issue #181）
-  const defaults = buildExtractionCandidates(state.documents.studies, state.documents.records)
-    .filter((item) => item.hasTextLayer)
-    .slice(0, 3)
-    .map((item) => item.study.studyId);
+  const defaults = defaultPilotStudyIds(
+    buildExtractionCandidates(state.documents.studies, state.documents.records),
+    usedPilotStudyIds(state.pilot.history ?? []),
+  );
   patchPilot(store, {
     selectionInitialized: true,
+    selectionHistoryApplied: state.pilot.history !== null,
     selectedStudyIds: defaults,
-    model: state.pilot.model === '' ? state.schema.model : state.pilot.model,
   });
 }
 
 /** 対象 study チェックボックスの切替（最大 3 study。超過は無視して案内） */
 export function togglePilotStudy(store: Store, studyId: string, selected: boolean): void {
+  patchPilot(store, { selectionTouched: true });
   const current = store.getState().pilot.selectedStudyIds;
   if (!selected) {
     patchPilot(store, { selectedStudyIds: current.filter((id) => id !== studyId) });
@@ -321,6 +328,9 @@ export async function runPilot(store: Store, deps: PilotServiceDeps): Promise<vo
         // 完了した run を履歴の先頭（最新）へ足し、自動読込済み扱いにする
         history: [outcome.run, ...(after.pilot.history ?? [])],
         historyInitialized: true,
+        selectionTouched: false,
+        selectionInitialized: false,
+        selectionHistoryApplied: false,
         // ai 行への転記に失敗していれば既存の #pilot-run-error バナーへ出す（AI 抽出自体は
         // 成功しており Evidence は保存済みのため、study の抽出失敗と混同させない専用文言にする）
         runError:
@@ -329,6 +339,7 @@ export async function runPilot(store: Store, deps: PilotServiceDeps): Promise<vo
             : t('extraction.transferErrorMessage', { reason: outcome.transferError }),
       },
     });
+    initPilotSelection(store);
     // パイロット完了（done / partial_failure とも）でも #/verify・#/dashboard の読込済み
     // キャッシュを無効化する（PR #190 のレビュー対応。extractService と同じ理由）
     invalidateVerifyTargets(store);
@@ -375,6 +386,7 @@ export async function loadPilotHistory(
   try {
     const history = await readPilotRuns(project.spreadsheetId, deps.google);
     patchPilot(store, { historyLoading: false, history });
+    initPilotSelection(store);
   } catch (err) {
     patchPilot(store, { historyLoading: false, historyError: toMessage(err) });
   }

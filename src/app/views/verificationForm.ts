@@ -135,7 +135,12 @@ export interface VerificationFormHandlers {
   onFocusCell(cellKey: string): void;
   onAccept(cellKey: string): void;
   onStartEdit(cellKey: string, action: 'edit' | 'reject'): void;
-  onConfirmEdit(cellKey: string, action: 'edit' | 'reject', value: string): void;
+  onConfirmEdit(
+    cellKey: string,
+    action: 'edit' | 'reject',
+    value: string,
+    note: string | null,
+  ): void;
   onCancelEdit(): void;
   onNotReported(cellKey: string): void;
   onUndo(cellKey: string): void;
