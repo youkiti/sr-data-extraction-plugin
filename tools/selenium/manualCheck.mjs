@@ -7,7 +7,7 @@
 // CI では実行しない。
 //
 // 前提（Chrome 137+ は --load-extension が使えないため、プロファイル方式を採る）:
-//   1. npm run dev（dist/ を生成。.env の OAUTH_CLIENT_ID 必須）
+//   1. npm run dev（dist/ を生成。.env の WEBAUTH_CLIENT_ID または LOCAL_WEBAUTH_CLIENT_ID 必須）
 //   2. node tools/selenium/manualCheck.mjs prepare
 //      → 専用プロファイル（.selenium-profile/）の Chrome が開くので、
 //        chrome://extensions でデベロッパーモード → dist/ を手動で 1 回読み込み、
@@ -16,6 +16,8 @@
 //      → login → project → picker → home を順に実行
 //
 // 個別実行: node tools/selenium/manualCheck.mjs picker home
+// ローカル: node tools/selenium/manualCheck.mjs upload --file /path/to/paper.pdf
+// ヘッダ:   node tools/selenium/manualCheck.mjs sheet-headers --sheet Documents
 // エッジ:   node tools/selenium/manualCheck.mjs cancel
 // 通し確認: node tools/selenium/manualCheck.mjs options protocol schema pilot extract verify dashboard export offline
 //   （§2 の S4→S10。ユーザー操作が要る箇所は Enter ではなく DOM の状態変化で自動検知する）
@@ -43,6 +45,9 @@ const PICKER_ORIGIN = 'https://youkiti.github.io';
 const SHOTS_DIR = path.join(ROOT, 'docs', 'store', 'screenshots');
 // --shots が付いたか（main で設定）
 let shotsEnabled = false;
+// upload の PDF パスと sheet-headers の対象タブ（main で設定）
+let uploadFilePath = null;
+let headerSheets = ['SchemaFields', 'Evidence'];
 
 // ---------------------------------------------------------------------------
 // ユーティリティ
@@ -424,6 +429,23 @@ async function scenePrepare(driver) {
 
 async function sceneLogin(driver) {
   log('\n[login] Popup ログイン（手順書 §1-1 #1〜2）');
+  // 再ビルド後の永続プロファイルでも service worker を起動し直す。
+  // 拡張ページが閉じてもセッションが終了しないよう、通常タブを残す。
+  await driver.get('about:blank');
+  const keepAliveHandle = await driver.getWindowHandle();
+  await driver.switchTo().newWindow('tab');
+  await driver.get(POPUP_URL);
+  await driver.wait(until.elementLocated(By.css('#popup-status')), 10000);
+  const reloadHandle = await driver.getWindowHandle();
+  // WebDriver への応答を返した後にリロードし、実行コンテキスト消失を避ける。
+  await driver.executeScript('setTimeout(() => chrome.runtime.reload(), 100);');
+  await driver.sleep(3000);
+  await driver.switchTo().window(keepAliveHandle);
+  if ((await driver.getAllWindowHandles()).includes(reloadHandle)) {
+    await driver.switchTo().window(reloadHandle);
+    await driver.close();
+    await driver.switchTo().window(keepAliveHandle);
+  }
   await driver.get(POPUP_URL);
   await driver.wait(until.elementLocated(By.css('#popup-status')), 10000);
   // 認証状態の判定が終わるまで（#popup-auth / #popup-projects のどちらかが出る）
@@ -526,6 +548,11 @@ async function scenePicker(driver) {
     ng('取り込みが始まりませんでした（キャンセル or 選択が伝わっていない）');
     throw new Error('picker 失敗');
   }
+  await verifyImportResult(driver);
+}
+
+/** 取り込み完了の進捗と study カード内の文献一覧を確認する（Picker / PC 共通） */
+async function verifyImportResult(driver) {
   ok('取り込み開始（進捗行を表示）');
   // 完了 = 取り込みボタンが再度有効になる（importing = false）。
   // 進捗更新のたびに再描画されるため、要素は毎回取り直し stale は「未完了」扱いにする
@@ -547,27 +574,82 @@ async function scenePicker(driver) {
       ng(`進捗行: ${text}`);
     }
   }
+  // 既存文献が残っていても、今回の失敗や全件スキップを成功扱いにしない。
+  const failed = await driver.findElements(By.css('.documents__progress-status--failed'));
+  const completed = await driver.findElements(By.css('.documents__progress-status--done'));
+  if (failed.length > 0 || completed.length === 0) {
+    ng('取り込みに失敗した文献があるか、今回取り込みが完了した文献がありません');
+    throw new Error('取り込み失敗');
+  }
   const tableRows = await retryOnStale(async () => {
-    const rows = await driver.findElements(By.css('#documents-table tbody tr'));
+    const rows = await driver.findElements(
+      By.css('.documents__study-group .documents__docs-table:not(.documents__docs-table--excluded) tbody tr'),
+    );
     const result = [];
     for (const row of rows) {
-      const cells = await row.findElements(By.css('td'));
       result.push({
-        filename: await cells[1].getText(),
-        badge: (await cells[2].getText()).replace(/\s+/g, ' '),
+        filename: await row.findElement(By.css('.documents__doc-filename')).getText(),
+        badge: await row.findElement(By.css('.documents__badge')).getText(),
       });
     }
     return result;
   });
   if (tableRows.length === 0) {
     ng('一覧に文献が表示されていません');
-    throw new Error('picker 失敗');
+    throw new Error('取り込み失敗');
   }
   for (const row of tableRows) {
     ok(`一覧: ${row.filename} / text_status = ${row.badge}`);
   }
   await shot(driver, 's3-documents');
   log('  → 手順書 §1-2 の裏取り（Sheets の Documents タブ / Drive の documents/ + extracted_texts/）は目視で確認してください');
+}
+
+/** Picker を使わず、PC からのファイル選択で PDF を取り込む */
+async function sceneUploadLocal(driver) {
+  log('\n[upload] PC から PDF を取り込み');
+  await switchToApp(driver, '#/documents');
+  await driver.wait(async () => {
+    const button = await findVisible(driver, '#documents-local-import');
+    return button !== null && await button.isEnabled();
+  }, 30000, 'PC からの取り込みボタンが有効になりません');
+  const input = await driver.findElement(By.css('#documents-file-input[type="file"]'));
+  await input.sendKeys(uploadFilePath);
+  await driver.wait(until.elementLocated(By.css('#documents-progress')), 30000, '取り込みが始まりません');
+  await verifyImportResult(driver);
+}
+
+/** プロジェクトのシートのヘッダ行を、ブラウザの Google セッションで gviz HTML から読む */
+async function sceneSheetHeaders(driver) {
+  log('\n[sheet-headers] シートのヘッダ行');
+  await switchToApp(driver, '#/home');
+  const id = await driver.executeAsyncScript(
+    'const done = arguments[arguments.length - 1]; chrome.storage.local.get("currentProject", (items) => done(items.currentProject?.spreadsheetId ?? null));',
+  );
+  if (typeof id !== 'string' || !/^[A-Za-z0-9_-]+$/.test(id)) {
+    throw new Error('現在のプロジェクトの spreadsheetId が見つかりません');
+  }
+  const appHandle = await driver.getWindowHandle();
+  await driver.switchTo().newWindow('tab');
+  try {
+    for (const sheet of headerSheets) {
+      await driver.get(
+        `https://docs.google.com/spreadsheets/d/${id}/gviz/tq?tqx=out:html&sheet=${encodeURIComponent(sheet)}&range=1:1&headers=0`,
+      );
+      const headers = await driver.executeScript(
+        'return Array.from(document.querySelectorAll("table tbody tr:first-child td"), (cell) => cell.textContent.trim());',
+      );
+      log(`  ${sheet} ヘッダ: ${headers.join(' / ')}`);
+      if (headers.length === 0 || headers.some((header) => header === '')) {
+        ng(`${sheet} のヘッダ行が無いか、空欄があります`);
+        throw new Error('sheet-headers 失敗');
+      }
+      ok(`${sheet}: ヘッダ ${headers.length} 列を確認`);
+    }
+  } finally {
+    await driver.close();
+    await driver.switchTo().window(appHandle);
+  }
 }
 
 async function sceneCancel(driver) {
@@ -1215,6 +1297,8 @@ const SCENES = {
   login: sceneLogin,
   project: sceneProject,
   picker: scenePicker,
+  upload: sceneUploadLocal,
+  'sheet-headers': sceneSheetHeaders,
   cancel: sceneCancel,
   home: sceneHome,
   options: sceneOptions,
@@ -1246,10 +1330,18 @@ async function main() {
   if (profileArg !== null && profileArg !== '') {
     PROFILE_DIR = path.isAbsolute(profileArg) ? profileArg : path.join(ROOT, profileArg);
   }
-  // 位置引数（シーン名）から、フラグと `--profile` の値を除外する
+  const fileArg = readOptionValue(rawArgs, '--file');
+  if (fileArg !== null && fileArg !== '') {
+    uploadFilePath = path.resolve(ROOT, fileArg);
+  }
+  const sheetArg = readOptionValue(rawArgs, '--sheet');
+  if (sheetArg !== null && sheetArg !== '') {
+    headerSheets = [sheetArg];
+  }
+  // 位置引数（シーン名）から、フラグとオプションの値を除外する
   const consumed = new Set();
   for (let i = 0; i < rawArgs.length; i++) {
-    if (rawArgs[i] === '--profile') {
+    if (['--profile', '--file', '--sheet'].includes(rawArgs[i])) {
       consumed.add(i);
       consumed.add(i + 1);
     }
@@ -1262,20 +1354,23 @@ async function main() {
       process.exit(1);
     }
   }
+  if (names.includes('upload') && (uploadFilePath === null || !existsSync(uploadFilePath))) {
+    console.error('upload には --file で存在する PDF のパスを指定してください（相対パスはリポジトリルート基準）');
+    process.exit(1);
+  }
   if (!existsSync(path.join(DIST_DIR, 'manifest.json'))) {
     console.error('dist/ がありません。先に npm run dev を実行してください');
     process.exit(1);
   }
-  const distManifest = JSON.parse(readFileSync(path.join(DIST_DIR, 'manifest.json'), 'utf8'));
-  const distClientId = distManifest.oauth2?.client_id ?? '';
-  if (distClientId === '' || distClientId.includes('__OAUTH_CLIENT_ID__')) {
-    // 本番ビルド（npm run build）は LOCAL_OAUTH_CLIENT_ID を注入しないため
-    // client_id が空の dist になり、Chrome が「Invalid value for 'oauth2.client_id'」で
-    // 拡張を読み込めなくなる。実機確認は必ず npm run dev で dist を作り直すこと
+  // launchWebAuthFlow のクライアント ID は DefinePlugin で service worker に埋め込まれる。
+  const workerPath = path.join(DIST_DIR, 'background', 'service-worker.js');
+  if (
+    !existsSync(workerPath) ||
+    !/[0-9]+-[a-z0-9]+\.apps\.googleusercontent\.com/.test(readFileSync(workerPath, 'utf8'))
+  ) {
     console.error(
-      'dist/manifest.json の client_id が空/未設定です。' +
-        'npm run build（本番ビルド）で上書きされた可能性があります。' +
-        '.env に LOCAL_OAUTH_CLIENT_ID を用意して npm run dev で dist を作り直してください',
+      'dist/background/service-worker.js が無いか、有効な形式のクライアント ID が埋め込まれていません。' +
+        'WEBAUTH_CLIENT_ID または LOCAL_WEBAUTH_CLIENT_ID を設定して npm run dev で dist を作り直してください',
     );
     process.exit(1);
   }

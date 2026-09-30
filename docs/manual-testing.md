@@ -18,29 +18,29 @@ GitHub Pages（gh-pages ブランチ）へデプロイ済み。以下は GCP コ
 - [ ] Sheets API / Drive API が有効化されている（プロジェクト作成・取り込みで使う）
 - [ ] Picker 用ブラウザキーの制限: HTTP リファラー `https://youkiti.github.io/*` を許可している
   （無制限キーの場合はこの項目はスキップ可）
-- [ ] OAuth クライアント（**Chrome 拡張機能**タイプ）が存在し、「アイテム ID」に拡張 ID（後述 0-3）が
-  登録されている
+- [ ] OAuth クライアント（**Web アプリケーション**タイプ）が存在し、承認済みリダイレクト URI に
+  `https://<拡張ID>.chromiumapp.org/`（拡張 ID は後述 0-3）が登録されている
 - [ ] OAuth 同意画面がテストモードの場合、確認に使う Google アカウントが**テストユーザー**に登録されている
 
 ### 0-2. ビルドと拡張の読み込み
 
 ```
-# .env に OAuth クライアント ID を設定（.env.example 参照。
-# dev ビルド用に別クライアントを使う場合のみ LOCAL_OAUTH_CLIENT_ID も設定）
+# .env に WEBAUTH_CLIENT_ID を設定（.env.example 参照。
+# dev ビルド用に別クライアントを使う場合のみ LOCAL_WEBAUTH_CLIENT_ID も設定）
 npm install
 npm run dev
 ```
 
-- [ ] `dist/manifest.json` の `oauth2.client_id` が実値になっている（`__OAUTH_CLIENT_ID__` のままなら .env 未設定）
+- [ ] `dist/background/service-worker.js` に Web アプリケーション型クライアント ID が埋め込まれている
+  （`[0-9]+-[a-z0-9]+\.apps\.googleusercontent\.com` 形式。manifest に `oauth2` は持たない）
 - [ ] `chrome://extensions` → デベロッパーモード ON → 「パッケージ化されていない拡張機能を読み込む」で
   `dist/` を読み込む
 
 ### 0-3. 拡張 ID の確認
 
 - [ ] `chrome://extensions` で拡張 ID を控える。manifest.json に `key` を固定してあるため、
-  どの端末で読み込んでも**同じ ID** になるはず。この ID が
-  - GCP の OAuth クライアント（Chrome 拡張機能タイプ）の「アイテム ID」
-  と一致していることを確認する（不一致だとログインが `bad client id` 系で失敗する）
+  どの端末で読み込んでも**同じ ID** になるはず。GCP の Web アプリケーション型 OAuth クライアントに
+  `https://<拡張ID>.chromiumapp.org/` が承認済みリダイレクト URI として登録されていることを確認する
 
 ### 0-4. テスト素材
 
@@ -57,10 +57,13 @@ npm run dev
 コンソールが都度案内する（タブが閉じたことなどは自動検知する）。
 
 ```
-npm run dev                 # dist/ を生成（.env の OAUTH_CLIENT_ID 必須）
+npm run dev                 # dist/ を生成（.env の WEBAUTH_CLIENT_ID または LOCAL_WEBAUTH_CLIENT_ID 必須）
 npm run manual:check -- prepare   # 初回のみ: 専用プロファイルに拡張を手動読込 + Google ログイン
 npm run manual:check              # login → project → picker → home を順に実行
 npm run manual:check -- cancel    # §1-3 のキャンセル系エッジ
+npm run manual:check -- upload --file /path/to/paper.pdf  # Picker を使わず PC の PDF を取り込む
+npm run manual:check -- sheet-headers  # SchemaFields / Evidence のヘッダ行を確認
+npm run manual:check -- sheet-headers --sheet Documents  # 別のタブを指定して確認
 # §2 の通し確認（S4→S10）。ユーザー操作（キー入力・エディタ確認・判定・目視）は
 # Enter 待ちではなく DOM の状態変化で自動検知する
 npm run manual:check -- options protocol schema pilot extract verify dashboard export offline
@@ -68,12 +71,24 @@ npm run manual:check -- options protocol schema pilot extract verify dashboard e
 
 - Chrome 137+ は `--load-extension` フラグが使えないため、`prepare` で開く専用プロファイル
   （`.selenium-profile/`。gitignore 済み）に **chrome://extensions から dist/ を 1 回手動で読み込む**。
-  以後の実行はこのプロファイルを再利用するため再読込は不要（`npm run dev` し直しても
-  同じフォルダを指すので、chrome://extensions の「更新」だけでよい）
+  以後はこのプロファイルを再利用する。`login` は最初に Popup から `chrome.runtime.reload()` を実行し、
+  3 秒待って Popup を開き直してから認証を続ける（再ビルド後の service worker を再起動する）。
+  リロードで拡張ページが閉じても通常タブを残して継続する。`login` を省略する場合は、
+  再ビルド後に chrome://extensions の「更新」を手動で行う
 - 拡張 ID は manifest.json の `key` から決定的に導出され `ibpbkgffgkmdmflamhadbcfjgfljjgip`。
-  ハーネスが起動時に表示するので、GCP の OAuth クライアント「アイテム ID」との一致確認（§0-3）に使う
+  ハーネスが起動時に表示するので、GCP の OAuth クライアントのリダイレクト URI 確認（§0-3）に使う
+- 起動前に service worker の出力ファイルと上記形式のクライアント ID を検査し、無ければ理由と
+  再ビルド手順を表示して停止する。形式検査であり、Google 側の登録の有効性までは確認しない。
+- `picker` / `upload` は取り込みボタンの再有効化後、進捗に失敗が無く、今回の完了が 1 件以上あることを確認する。
+  全件スキップも正常系の取り込み成功には数えない。study カード内の除外されていない文献行から
+  ファイル名と `text_status` を取得し、一覧が空なら失敗とする。
+- `upload` の `--file` は絶対パス、またはリポジトリルートからの相対パスで指定する。
+  既存文献があっても取り込みを実行する。`sheet-headers` は現在のプロジェクトのヘッダ行を
+  Google ログイン済みのブラウザから gviz（`tqx=out:html`）で読み、列名を表示する。
+  ヘッダ行の欠落・空欄は失敗とする（列名の仕様との一致検査は行わない）。
 - シーン対応: `login` = §1-1 #1〜2 / `project` = #3 / `picker` = #4〜9 + §1-2 #3 の一部 /
   `home` = §1-2 #3（`#/home` の batchGet 実弾）/ `cancel` = §1-3 #1〜2 /
+  `upload` = PC からの PDF 取り込み / `sheet-headers` = §1-2 #1 のヘッダ行確認 /
   `options`〜`offline` = §2 #1〜#10（`verify` は S8 検証画面 = §2 #7）。
   §1-2 #1〜2（Sheets タブ・Drive フォルダの裏取り）と §1-3 #4、§2 の Sheets / Drive 裏取りは目視で行う
 - 失敗時はブラウザを開いたまま停止するので、そのまま目視確認 → §3 の結果メモへ記録する
