@@ -19,6 +19,7 @@ import {
 } from '../../features/extraction/fieldSelection';
 import type { ExtractStudyRow, ExtractStudyStatus } from '../../features/extraction/studyProgress';
 import { planRun } from '../../features/extraction/planRun';
+import { budgetStatus } from '../../features/usage/aggregateUsage';
 import { t, type MessageKey } from '../../lib/i18n';
 import type { LlmFailureKind } from '../../lib/llm/LLMProvider';
 import { isRunBlockedByImageUnsupportedModel } from '../../lib/llm/providerFactory';
@@ -185,7 +186,7 @@ function renderStudySelector(state: AppState, ctx: ViewContext): HTMLElement {
   return el('div', { className: 'extract__study-selector' }, [toolbar, list]);
 }
 
-function renderEstimate(state: AppState): HTMLElement {
+function renderEstimate(state: AppState, budgetWarningId = 'extract-budget-warning'): HTMLElement {
   const fields = state.schema.currentFields;
   const selected = selectedDocuments(state);
   if (fields === null || fields.length === 0 || selected.length === 0) {
@@ -234,6 +235,33 @@ function renderEstimate(state: AppState): HTMLElement {
         text: t('extraction.estimateNote'),
       }),
     ];
+    const budget = state.extract.budget;
+    if (budget !== null && (state.role.role ?? 'owner') === 'owner') {
+      const status = budgetStatus({ ...budget, estimateUsd: plan.costEstimateUsd });
+      if (status.exceeds) {
+        const message = t(
+          status.usesSpentOnly ? 'extraction.budgetWarningSpentOnly' : 'extraction.budgetWarning',
+          {
+            budget: (budget.budgetUsd as number).toFixed(4),
+            spent: budget.spentUsd.toFixed(4),
+            estimate: (plan.costEstimateUsd ?? 0).toFixed(4),
+            projected: (status.projectedUsd as number).toFixed(4),
+          },
+        );
+        lines.push(
+          el('p', {
+            id: budgetWarningId,
+            className: 'extract__estimate-warning',
+            attributes: { role: 'status' },
+            text:
+              message +
+              (budget.unknownPriceCalls > 0
+                ? t('extraction.budgetUnknown', { n: budget.unknownPriceCalls })
+                : ''),
+          }),
+        );
+      }
+    }
     for (const warning of plan.warnings) {
       lines.push(
         el('p', {
@@ -384,7 +412,7 @@ function renderConfirm(state: AppState, ctx: ViewContext): HTMLElement {
           ),
         }),
       }),
-      renderEstimate(state),
+      renderEstimate(state, 'extract-confirm-budget-warning'),
       el('div', { className: 'extract__confirm-actions' }, [confirmButton, cancelButton]),
     ],
   );

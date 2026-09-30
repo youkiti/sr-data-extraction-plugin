@@ -15,6 +15,7 @@ import {
   type ChatOptions,
   type ChatResponse,
   type LLMProvider,
+  type LlmUsage,
 } from './LLMProvider';
 import { estimateCostUsd } from './pricing';
 
@@ -26,7 +27,9 @@ export interface ApiLoggerDeps {
   }) => Promise<{ webViewLink: string }>;
   /** Sheets の LLMApiLog タブに 1 行追記する */
   appendLogEntry: (entry: LlmApiLogEntry) => Promise<void>;
-  /** 呼び出し元 skill のプロンプト版数。prompt payload に記録する */
+  /** ラップしたプロバイダの生存期間を通して固定する抽出実行の識別子 */
+  runId?: string | null;
+  /** 呼び出し元 skill のプロンプト版数。prompt payload とログ列に記録する */
   promptVersion?: number;
   /** テスト時に差し替え可能な UUID 発番 */
   newUuid?: () => string;
@@ -94,12 +97,15 @@ export function withLogging(
       const startedAt = now();
       const startMs = Date.now();
       let response: ChatResponse | null = null;
+      let usage: ChatResponse | LlmUsage | null = null;
       let errorMessage: string | null = null;
       try {
         response = await provider.chat(messages, options);
+        usage = response;
         return response;
       } catch (err) {
         errorMessage = formatError(err);
+        usage = err instanceof LlmProviderError ? err.usage : null;
         throw err;
       } finally {
         const latencyMs = Date.now() - startMs;
@@ -132,18 +138,23 @@ export function withLogging(
           promptRef: promptUpload.webViewLink,
           responseRef: responseUpload.webViewLink,
           promptSummary: buildPromptSummary(messages),
-          tokensIn: response?.tokensIn ?? null,
-          tokensOut: response?.tokensOut ?? null,
-          cachedTokensIn: response?.cachedTokensIn ?? null,
+          tokensIn: usage?.tokensIn ?? null,
+          tokensOut: usage?.tokensOut ?? null,
+          cachedTokensIn: usage?.cachedTokensIn ?? null,
+          runId: deps.runId ?? null,
+          studyId: options?.logContext?.studyId ?? null,
+          section: options?.logContext?.section ?? null,
+          promptVersion: deps.promptVersion ?? null,
+          thoughtsTokensOut: usage?.thoughtsTokensOut ?? null,
           latencyMs,
           // モデル単価表（pricing.ts）から概算コストを算出。未知モデルは null。
           // キャッシュヒット分はキャッシュ単価で積む（tokensIn はキャッシュ分を含む総入力
           // という契約なので、これを渡さないとヒット分を満額で二重計上してしまう）
           costEstimateUsd: estimateCostUsd(
             provider.model,
-            response?.tokensIn ?? null,
-            response?.tokensOut ?? null,
-            response?.cachedTokensIn ?? null,
+            usage?.tokensIn ?? null,
+            usage?.tokensOut ?? null,
+            usage?.cachedTokensIn ?? null,
           ),
           error: errorMessage,
         };

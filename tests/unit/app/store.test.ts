@@ -122,6 +122,7 @@ describe('createInitialState', () => {
         collapsedFieldSections: [],
       },
       extract: {
+        budget: null,
         selectedStudyIds: [],
         selectionInitialized: false,
         model: '',
@@ -161,6 +162,15 @@ describe('createInitialState', () => {
         conflictMessage: null,
       },
       dashboard: {
+        usage: {
+          summary: null,
+          budget: null,
+          loading: false,
+          loadError: null,
+          budgetSaving: false,
+          budgetError: null,
+          budgetDraft: null,
+        },
         data: null,
         loading: false,
         loadError: null,
@@ -182,6 +192,7 @@ describe('createInitialState', () => {
         agreementError: null,
       },
       export: {
+        usage: null,
         format: 'study_wide',
         built: null,
         rSetMaterials: null,

@@ -6,6 +6,8 @@ import type { DocumentRecord, ExclusionReason } from '../domain/document';
 import type { LlmProviderId } from '../domain/llmApiLog';
 import type { StudyRecord } from '../domain/study';
 import type { Evidence } from '../domain/evidence';
+import type { UsageSummary } from '../features/usage/aggregateUsage';
+import type { ProjectBudget } from '../features/project/projectBudget';
 import type { ExportFormat } from '../domain/exportLog';
 import type { ArmCompletenessRunWarning, ExtractionRun } from '../domain/extractionRun';
 import type { ProjectRole, ReviewerAssignment, ReviewerRole, ReviewMode } from '../domain/reviewer';
@@ -331,6 +333,8 @@ export interface PilotState {
 
 /** #/extract（S7）の画面状態。run の結果はタブのセッション内で保持する */
 export interface ExtractState {
+  /** 予算警告用の全 purpose の累積費用。未読込・読込失敗は null */
+  budget: { budgetUsd: number | null; spentUsd: number; unknownPriceCalls: number } | null;
   /** 対象 study の選択。初回表示時に「未抽出の全件」を既定選択する（ui-states.md §3・v0.10） */
   selectedStudyIds: string[];
   /** 既定選択を一度だけ行うためのフラグ（ユーザーの選択解除を上書きしない） */
@@ -468,8 +472,14 @@ export interface RSetResultInfo {
 
 /** #/export（S10）の画面状態 */
 export interface ExportState {
+  /** 使用量 CSV は形式選択と独立した生成状態を持つ */
+  usage: {
+    generating: boolean;
+    error: string | null;
+    result: { filename: string; fileRef: string; csv: string } | null;
+  } | null;
   /** 選択中の形式（`r_set` を含む） */
-  format: ExportFormat;
+  format: Exclude<ExportFormat, 'usage'>;
   /** 従来 3 形式の構築結果。null = 未読込（画面表示時に読み込む） */
   built: Record<ClassicExportFormat, BuiltExport> | null;
   /**
@@ -613,6 +623,17 @@ export interface AdjudicateState {
 
 /** #/dashboard（S9）の画面状態 */
 export interface DashboardState {
+  /** 費用と予算は検証進捗と独立して読み込む */
+  usage: {
+    summary: UsageSummary | null;
+    budget: ProjectBudget | null;
+    loading: boolean;
+    loadError: string | null;
+    budgetSaving: boolean;
+    budgetError: string | null;
+    /** 未編集なら null。再描画でも入力下書きを保持する。 */
+    budgetDraft: string | null;
+  };
   /** 集計結果。null = 未読込（画面表示時に読み込む） */
   data: DashboardData | null;
   loading: boolean;
@@ -785,6 +806,7 @@ export function createInitialState(): AppState {
       collapsedFieldSections: [],
     },
     extract: {
+      budget: null,
       selectedStudyIds: [],
       selectionInitialized: false,
       model: '',
@@ -824,6 +846,15 @@ export function createInitialState(): AppState {
       conflictMessage: null,
     },
     dashboard: {
+      usage: {
+        summary: null,
+        budget: null,
+        loading: false,
+        loadError: null,
+        budgetSaving: false,
+        budgetError: null,
+        budgetDraft: null,
+      },
       data: null,
       loading: false,
       loadError: null,
@@ -845,6 +876,7 @@ export function createInitialState(): AppState {
       agreementError: null,
     },
     export: {
+      usage: null,
       format: 'study_wide',
       built: null,
       rSetMaterials: null,

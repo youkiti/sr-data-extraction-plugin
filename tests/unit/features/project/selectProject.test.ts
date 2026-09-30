@@ -90,6 +90,13 @@ describe('loadProjectMeta', () => {
     });
   });
 
+  test('基本 7 列が一致すれば予算などの後続列があっても開ける', async () => {
+    const deps = makeDeps({
+      rows: [[...META_HEADER, 'budget_usd', '将来の列'], [...META_ROW, '10', '値']],
+    });
+    expect(await loadProjectMeta('SID', deps)).toMatchObject({ projectId: 'pid-1' });
+  });
+
   test('欠損セルは空文字で埋める', async () => {
     const deps = makeDeps({ rows: [META_HEADER, ['pid-1', 'T']] });
     await expect(loadProjectMeta('SID', deps)).rejects.toThrow(/サポート外のスキーマバージョン/);

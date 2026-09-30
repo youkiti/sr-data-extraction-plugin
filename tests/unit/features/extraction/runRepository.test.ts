@@ -17,6 +17,7 @@ import {
   readRunAuditInfos,
   readRunStudyCoverage,
   readRunSchemaVersions,
+  readUsageRuns,
   type CompletedRunStudySummary,
 } from '../../../../src/features/extraction/runRepository';
 
@@ -1266,6 +1267,96 @@ describe('ensureRunOptionalColumns（issue #80 / #106: 既存プロジェクト�
     const d = optionalColumnsDeps(undefined);
     await expect(ensureRunOptionalColumns('sid', d)).rejects.toThrow(
       'ExtractionRuns のヘッダ 1 列目が "run_id" ではありません',
+    );
+  });
+});
+
+describe('readUsageRuns', () => {
+  function depsFor(rows: unknown[][]) {
+    return {
+      getAccessToken: jest.fn().mockResolvedValue('token'),
+      fetch: jest.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({ values: rows }),
+      } as Response),
+    };
+  }
+
+  test('完了行のある running・queued を除外し、完了行と中断だけを読む', async () => {
+    const done = makeRun();
+    const partial = makeRun({
+      runId: 'run-2',
+      runType: 'single_study',
+      status: 'partial_failure',
+      studyIds: ['doc-2'],
+      startedAt: null,
+      finishedAt: null,
+    });
+    const result = await readUsageRuns(
+      'sid',
+      depsFor([
+        [...LEGACY_RUN_HEADER],
+        extractionRunToRow(makeRun({ status: 'running' })),
+        extractionRunToRow(done),
+        extractionRunToRow(makeRun({ status: 'queued' })),
+        extractionRunToRow(partial),
+        [],
+      ]),
+    );
+    expect(result).toEqual([
+      {
+        runId: done.runId,
+        runType: 'full',
+        status: 'done',
+        studyIds: ['doc-1', 'doc-2'],
+        requestedModel: done.requestedModel,
+        startedAt: 't1',
+        finishedAt: 't2',
+      },
+      {
+        runId: 'run-2',
+        runType: 'single_study',
+        status: 'partial_failure',
+        studyIds: ['doc-2'],
+        requestedModel: partial.requestedModel,
+        startedAt: null,
+        finishedAt: null,
+      },
+    ]);
+  });
+
+  test('完了行の欠落セルは空・null で返す', async () => {
+    const raw: (string | null)[] = Array(9).fill(null);
+    raw[8] = 'done';
+    expect(await readUsageRuns('sid', depsFor([[...SHEET_HEADERS.ExtractionRuns], raw]))).toEqual([
+      {
+        runId: '',
+        runType: '',
+        status: 'done',
+        studyIds: [],
+        requestedModel: '',
+        startedAt: null,
+        finishedAt: null,
+      },
+    ]);
+  });
+
+  test('完了行のない running は中断として含め、終了時刻は常に null にする', async () => {
+    const running = makeRun({ runId: 'interrupted', status: 'running', finishedAt: '無視する' });
+    const noId = extractionRunToRow(running);
+    noId[0] = null;
+    const result = await readUsageRuns('sid', depsFor([
+      [...SHEET_HEADERS.ExtractionRuns], extractionRunToRow(running), noId,
+    ]));
+    expect(result.map((row) => [row.runId, row.status, row.finishedAt])).toEqual([
+      ['interrupted', 'running', null], ['', 'running', null],
+    ]);
+  });
+
+  test('基本ヘッダの検証を既存の読み取りと共有する', async () => {
+    await expect(readUsageRuns('sid', depsFor([['異なるヘッダ']]))).rejects.toThrow(
+      /ExtractionRuns のヘッダ/,
     );
   });
 });

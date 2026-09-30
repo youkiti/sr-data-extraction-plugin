@@ -5,6 +5,7 @@ import {
   type ChatOptions,
   type ChatResponse,
   type LLMProvider,
+  type LlmUsage,
   type LlmFailureKind,
   type ReasoningEffort,
 } from './LLMProvider';
@@ -204,6 +205,7 @@ export class OpenRouterProvider implements LLMProvider {
         'malformed',
       );
     }
+    const usage = this.parseUsage(json);
     const choice = json.choices?.[0];
     const finishReason = choice?.finish_reason;
     const content = choice?.message?.content;
@@ -216,6 +218,7 @@ export class OpenRouterProvider implements LLMProvider {
         null,
         true, // 上流プロバイダの一時障害の可能性があるため再試行対象
         classifyChoiceErrorFailureKind(choice),
+        usage,
       );
     }
     if (finishReason === 'length' || finishReason === 'content_filter') {
@@ -228,6 +231,7 @@ export class OpenRouterProvider implements LLMProvider {
         null,
         false,
         finishReason === 'length' ? 'output_limit' : 'content_filter',
+        usage,
       );
     }
     if (content === undefined || content === null || content === '') {
@@ -236,10 +240,24 @@ export class OpenRouterProvider implements LLMProvider {
         this.providerId,
         res.status,
         describeChoice(choice),
+        null,
+        false,
+        null,
+        usage,
       );
     }
     return {
       text: content,
+      tokensIn: usage.tokensIn,
+      tokensOut: usage.tokensOut,
+      cachedTokensIn: usage.cachedTokensIn,
+      raw: json,
+    };
+  }
+
+  /** 応答の使用量を成功・応答内容エラーで同じ規則に正規化する。 */
+  private parseUsage(json: OpenRouterResponse): LlmUsage {
+    return {
       tokensIn: json.usage?.prompt_tokens ?? null,
       tokensOut: json.usage?.completion_tokens ?? null,
       // usage が返っていれば「計測できている」と見なし、prompt_tokens_details が
@@ -248,7 +266,7 @@ export class OpenRouterProvider implements LLMProvider {
         json.usage === undefined
           ? null
           : (json.usage.prompt_tokens_details?.cached_tokens ?? 0),
-      raw: json,
+      thoughtsTokensOut: null,
     };
   }
 

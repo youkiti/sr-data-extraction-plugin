@@ -263,7 +263,7 @@ export async function loadExportData(
 }
 
 /** 形式選択ラジオの切替（生成中はラジオを無効化しているが、防御として no-op にする） */
-export function selectExportFormat(store: Store, format: ExportFormat): void {
+export function selectExportFormat(store: Store, format: Exclude<ExportFormat, 'usage'>): void {
   if (store.getState().export.generating) {
     return;
   }

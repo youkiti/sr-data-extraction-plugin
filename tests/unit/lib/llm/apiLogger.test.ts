@@ -330,3 +330,117 @@ describe('withLogging のキャッシュヒット計測', () => {
     expect(recorded.entries[0]?.costEstimateUsd).toBeCloseTo(1.5, 10);
   });
 });
+
+describe('withLogging の文脈・エラー使用量', () => {
+  test('実行と呼び出しの文脈、プロンプト版数、思考内訳をログ列へ記録する', async () => {
+    const response: ChatResponse = {
+      text: 'ok',
+      tokensIn: 100,
+      tokensOut: 50,
+      cachedTokensIn: 80,
+      thoughtsTokensOut: 30,
+      raw: {},
+    };
+    const chat = jest.fn().mockResolvedValue(response);
+    const { deps, recorded } = makeDeps();
+    const logged = withLogging(makeProvider(chat), 'extract_study', {
+      ...deps,
+      runId: 'run-1',
+      promptVersion: 9,
+    });
+    const options = { logContext: { studyId: 'study-1', section: 'methods' } };
+    await logged.chat([], options);
+    expect(chat).toHaveBeenCalledWith([], options);
+    expect(recorded.entries[0]).toMatchObject({
+      runId: 'run-1',
+      studyId: 'study-1',
+      section: 'methods',
+      promptVersion: 9,
+      thoughtsTokensOut: 30,
+    });
+    await logged.chat([], { logContext: { studyId: 'study-2', section: null } });
+    expect(recorded.entries[1]).toMatchObject({
+      runId: 'run-1',
+      studyId: 'study-2',
+      section: null,
+    });
+  });
+
+  test('文脈・版数・思考内訳が未指定なら null を記録する', async () => {
+    const provider = makeProvider(async () => ({
+      text: 'ok',
+      tokensIn: null,
+      tokensOut: null,
+      cachedTokensIn: null,
+      raw: {},
+    }));
+    const { deps, recorded } = makeDeps();
+    await withLogging(provider, 'draft_schema', deps).chat([]);
+    expect(recorded.entries[0]).toMatchObject({
+      runId: null,
+      studyId: null,
+      section: null,
+      promptVersion: null,
+      thoughtsTokensOut: null,
+    });
+  });
+
+  test('エラーに付随する使用量で成功時と同じ概算費用を計算し、元の例外を再送出する', async () => {
+    const usage = {
+      tokensIn: 100,
+      tokensOut: 50,
+      cachedTokensIn: 80,
+      thoughtsTokensOut: 30,
+    };
+    const error = new LlmProviderError(
+      '打ち切り',
+      'gemini',
+      200,
+      'details',
+      null,
+      false,
+      'output_limit',
+      usage,
+    );
+    const { deps, recorded } = makeDeps();
+    const success = withLogging(
+      makeProvider(async () => ({
+        ...usage,
+        text: 'ok',
+        raw: {},
+      })),
+      'extract_study',
+      deps,
+    );
+    await success.chat([]);
+    const logged = withLogging(
+      makeProvider(async () => {
+        throw error;
+      }),
+      'extract_study',
+      {
+        ...deps,
+        runId: 'run-1',
+        promptVersion: 9,
+      },
+    );
+    await expect(
+      logged.chat([], {
+        logContext: { studyId: 'study-1', section: 'methods' },
+      }),
+    ).rejects.toBe(error);
+    expect(recorded.entries[1]).toMatchObject({
+      ...usage,
+      costEstimateUsd: recorded.entries[0]!.costEstimateUsd,
+      error: '打ち切り (status=200): details',
+      runId: 'run-1',
+      studyId: 'study-1',
+      section: 'methods',
+      promptVersion: 9,
+    });
+    expect(recorded.entries[1]!.costEstimateUsd).not.toBeNull();
+    expect(JSON.parse(recorded.uploads[3]!.content)).toEqual({
+      error: '打ち切り (status=200): details',
+    });
+  });
+});

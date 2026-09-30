@@ -17,7 +17,7 @@ import { parseCsv } from './parseCsv';
  * `r_set`（issue #60）は 8 ファイルを返す別オーケストレータ（rset/buildRSet.ts）が担当し、
  * ここでは扱わない
  */
-export type ClassicExportFormat = Exclude<ExportFormat, 'r_set'>;
+export type ClassicExportFormat = Exclude<ExportFormat, 'r_set' | 'usage'>;
 
 /** 形式選択ラジオの表示順（ui-states.md §3 `#/export`） */
 export const EXPORT_FORMATS: readonly ClassicExportFormat[] = ['study_wide', 'results_long', 'audit'];
