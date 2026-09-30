@@ -1616,12 +1616,12 @@ export function createVerificationPanel(
     },
     onJump(cellKey) {
       selectedQuoteKey = resolvedQuoteKey(cellKey);
-      // f キー / 「ハイライトへ移動」: PDF モードはページジャンプ、テキストモードは
-      // 当該セルの根拠へスニペットを差し替える（フォーカスは動かさない。issue #28 案2）
-      if (viewMode === 'text') {
-        syncTextViewer(cellKey);
-      } else {
-        focusHighlightNowOrPending(cellKey);
+      ensureActiveDocumentForCell(selectedQuoteKey);
+      syncTextViewer(selectedQuoteKey);
+      // 文書とスニペットは両モードで同期し、PDF モードではハイライトへ移動する。
+      // 移動先文書は切替済みのため、移動処理内の文書確認では再ロードされない。
+      if (viewMode === 'pdf') {
+        focusHighlightNowOrPending(selectedQuoteKey);
       }
     },
     onSearchQuote(quote, quoteKey) {

@@ -21,6 +21,47 @@ import type { FocusUnit } from '../../../../src/features/verification/focusUnits
 import * as highlightsModule from '../../../../src/features/verification/highlights';
 import { quoteKeyOf } from '../../../../src/features/verification/evidenceBundles';
 
+test('テキスト表示で別文書の引用へジャンプすると文書タブとスニペットが切り替わる', async () => {
+  const documents = [makeDocFixture(), makeDocFixture({
+    document: makeDocumentRecord({ documentId: 'doc-2', filename: 'other.pdf' }),
+    textPages: [buildPage(1, 'other quote')],
+  })];
+  const loadPdfView = jest.fn(makeLoadPdfView(documents));
+  const { panel } = await createPanel({
+    fields: [makeField({ dataType: 'text', maxQuotes: 2 })],
+    evidence: [
+      makeEvidence({ quoteSeq: 1, quote: 'mortality' }),
+      makeEvidence({ quoteSeq: 2, quote: 'other quote', documentId: 'doc-2' }),
+    ],
+    documents,
+    loadPdfView,
+  });
+  panel.root.querySelectorAll<HTMLButtonElement>('.verify__view-toggle-btn')[1]!.click();
+  panel.root.querySelectorAll<HTMLButtonElement>('.verify__quote-jump')[1]!.click();
+  await flush();
+  expect(panel.root.querySelectorAll('.verify__doc-tab')[1]?.getAttribute('aria-selected')).toBe('true');
+  expect(panel.root.querySelector('.text-viewer__mark')?.textContent).toBe('other quote');
+  expect(loadPdfView.mock.calls).toEqual([['doc-1'], ['doc-2']]);
+  panel.dispose();
+});
+
+test('PDF 表示で同じ文書の別引用へジャンプした後のテキスト表示もその引用になる', async () => {
+  const loadPdfView = jest.fn(makeLoadPdfView([makeDocFixture()]));
+  const { panel } = await createPanel({
+    fields: [makeField({ dataType: 'text', maxQuotes: 2 })],
+    evidence: [
+      makeEvidence({ quoteSeq: 1, quote: 'mortality' }),
+      makeEvidence({ quoteSeq: 2, quote: 'in total' }),
+    ],
+    loadPdfView,
+  });
+  panel.root.querySelectorAll<HTMLButtonElement>('.verify__quote-jump')[1]!.click();
+  panel.root.querySelectorAll<HTMLButtonElement>('.verify__view-toggle-btn')[1]!.click();
+  expect(panel.root.querySelector('.text-viewer__mark')?.textContent).toBe('in total');
+  expect(loadPdfView.mock.calls).toEqual([['doc-1']]);
+  panel.dispose();
+});
+
 test('引用ごとのハイライト ID・色・クリックと文書間ジャンプ、抽出テキストを同期する', async () => {
   const first = makeEvidence({ quoteSeq: 1, quoteTheme: '一', quote: 'mortality' });
   const second = makeEvidence({ quoteSeq: 2, quoteTheme: '二', quote: 'in total', confidence: 'low' });

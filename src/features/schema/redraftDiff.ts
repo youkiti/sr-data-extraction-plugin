@@ -217,8 +217,9 @@ export function buildRedraftDiff(
     // 現行版とマッチした AI 提案は「added」候補から除く（added に残るのは未消費分のみ）。
     // 同名の current が複数ある場合、2 件目以降はこの delete 済みのため必ず removed になる
     draftedByName.delete(name);
-    const inherited = proposed.maxQuotes === field.maxQuotes
-      ? proposed : { ...proposed, maxQuotes: field.maxQuotes };
+    const maxQuotes = proposed.dataType === 'text' ? field.maxQuotes : null;
+    const inherited = proposed.maxQuotes === maxQuotes
+      ? proposed : { ...proposed, maxQuotes };
     const rowChanges = computeChanges(field, inherited);
     if (rowChanges.length > 0) {
       const item: RedraftChangedItem = { current: field, proposed: inherited, changes: rowChanges };

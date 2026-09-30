@@ -9,6 +9,7 @@ import {
 } from '../../../../src/features/schema/redraftDiff';
 import type { SchemaField } from '../../../../src/domain/schemaField';
 import type { SchemaEditorRow } from '../../../../src/features/schema/types';
+import { validateEditorRows } from '../../../../src/features/schema/validateField';
 
 function makeField(overrides: Partial<SchemaField> = {}): SchemaField {
   return {
@@ -445,4 +446,17 @@ test('再ドラフトは現行の引用上限を継承し、それだけで変�
   const changed = buildRedraftDiff([field], [makeRow({ fieldLabel: '変更' })]);
   expect(changed.changed[0]?.proposed.maxQuotes).toBe(12);
   expect(applyRedraftDiff(changed, defaultRedraftSelection(changed))[0]?.maxQuotes).toBe(12);
+});
+
+test('複数引用の text 項目を integer に再ドラフトすると引用上限を解除して確定できる', () => {
+  const field = makeField({ maxQuotes: 12 });
+  const diff = buildRedraftDiff([field], [makeRow({ dataType: 'integer' })]);
+  expect(diff.changed[0]?.changes).toEqual([
+    { key: 'dataType', before: 'text', after: 'integer' },
+    { key: 'maxQuotes', before: '12', after: null },
+  ]);
+  const rows = applyRedraftDiff(diff, defaultRedraftSelection(diff));
+  expect(rows[0]?.dataType).toBe('integer');
+  expect(rows[0]?.maxQuotes).toBeNull();
+  expect(validateEditorRows(rows)).toEqual([]);
 });
