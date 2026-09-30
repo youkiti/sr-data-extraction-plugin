@@ -143,6 +143,7 @@ describe('createInitialState', () => {
         lastRunFieldIds: null,
         fieldSubsetBadges: {},
       },
+      askPaper: { conversations: {}, sending: false, error: null, usedStudyIds: [], model: null },
       verify: {
         targets: null,
         loading: false,

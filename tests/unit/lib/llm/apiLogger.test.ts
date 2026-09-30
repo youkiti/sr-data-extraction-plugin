@@ -330,3 +330,55 @@ describe('withLogging のキャッシュヒット計測', () => {
     expect(recorded.entries[0]?.costEstimateUsd).toBeCloseTo(1.5, 10);
   });
 });
+
+test('本文省略時は uploadJson を呼ばず質問と回答の本文を記録しない', async () => {
+  const { deps, recorded } = makeDeps();
+  const provider = withLogging(
+    makeProvider(async () => ({
+      text: '秘密の回答',
+      raw: '秘密の応答',
+      tokensIn: 100,
+      tokensOut: 20,
+      cachedTokensIn: 50,
+    })),
+    'ask_paper',
+    { ...deps, omitPayload: true },
+  );
+  await provider.chat([{ role: 'user', content: '秘密の質問' }]);
+  expect(recorded.uploads).toEqual([]);
+  expect(recorded.entries[0]).toMatchObject({
+    purpose: 'ask_paper',
+    promptRef: '',
+    responseRef: '',
+    promptSummary: null,
+    tokensIn: 100,
+    tokensOut: 20,
+    cachedTokensIn: 50,
+    costEstimateUsd: expect.any(Number),
+    latencyMs: expect.any(Number),
+    error: null,
+  });
+  expect(JSON.stringify(recorded.entries)).not.toContain('秘密');
+});
+
+test('本文省略時でも provider のエラー本文とメタデータは保持する', async () => {
+  const { deps, recorded } = makeDeps();
+  const error = new LlmProviderError('失敗', 'gemini', 400, '応答本文');
+  const provider = withLogging(
+    makeProvider(async () => {
+      throw error;
+    }),
+    'ask_paper',
+    { ...deps, omitPayload: true },
+  );
+  await expect(provider.chat([{ role: 'user', content: '秘密の質問' }])).rejects.toBe(error);
+  expect(recorded.uploads).toEqual([]);
+  expect(recorded.entries[0]).toMatchObject({
+    promptRef: '',
+    responseRef: '',
+    promptSummary: null,
+    tokensIn: null,
+    tokensOut: null,
+    error: '失敗 (status=400): 応答本文',
+  });
+});

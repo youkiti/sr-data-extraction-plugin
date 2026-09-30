@@ -12,6 +12,7 @@ import type { PresetDialogPatch } from '../../features/schema/presets/prespecDia
 import type { SchemaEditorRow } from '../../features/schema/types';
 import type { VerifyLayoutMode, VerifyPaneLayout } from '../../lib/storage/settingsStore';
 import type { ExclusionDialogState } from '../store';
+import type { AskPaperParams } from '../services/askPaperService';
 import type { RelocateQuoteOutcome } from '../services/relocateQuoteService';
 
 /** #/home のユーザー操作コールバック（owner のレビュアー管理カード + reviewer の縮退版 Home を含む） */
@@ -313,7 +314,12 @@ export interface ExportViewCallbacks {
   onCopyMethods(): void;
 }
 
+export interface AskPaperViewCallbacks {
+  onSend(params: Omit<AskPaperParams, 'spreadsheetId' | 'history'> & { studyId: string }): void;
+}
+
 export interface ViewContext {
+  askPaper?: AskPaperViewCallbacks;
   home: HomeViewCallbacks;
   documents: DocumentsViewCallbacks;
   protocol: ProtocolViewCallbacks;

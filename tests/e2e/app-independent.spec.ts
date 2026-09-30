@@ -213,6 +213,7 @@ test('独立入力モード: Evidence 由来表示が一切出ず、値の直接
   await expect(page.locator('.verify__cell-label')).toHaveText('死亡率');
   await expect(page.locator('.verify__quote')).toHaveCount(0);
   await expect(page.locator('.verify__ai')).toHaveCount(0);
+  await expect(page.locator('#ask-paper')).toHaveCount(0);
   await expect(page.locator('.verify__action--accept')).toHaveCount(0);
   await expect(page.locator('.verify__action--reject')).toHaveCount(0);
   await expect(page.locator('.pdf-viewer__hl')).toHaveCount(0);

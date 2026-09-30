@@ -1,5 +1,7 @@
+import { makeCitation, makeAskPage } from '../askPaperFixtures';
 import {
   createVerificationPanel,
+  showVerificationCitation,
   disposeVerificationPanelCache,
   firstCellKeyOfUnit,
   locateCellInUnit,
@@ -4237,4 +4239,51 @@ describe('createVerificationPanel: ペインサイズ調整（issue #193）', ()
     expect(focusSpy).not.toHaveBeenCalled();
     panel.dispose();
   });
+});
+
+test('質問引用を一時矩形にし、文書切替・遅延読込・テキスト表示からのジャンプに対応する', async () => {
+  const docs = [
+    makeDocFixture({ document: makeDocumentRecord(), textPages: [makeAskPage()] }),
+    makeDocFixture({
+      document: makeDocumentRecord({ documentId: 'doc-2' }),
+      textPages: [makeAskPage()],
+    }),
+  ];
+  const { panel } = await createPanel({ documents: docs, evidence: [] });
+  panel.showCitationHighlight(makeCitation());
+  expect(panel.root.querySelector('.pdf-viewer__hl')?.getAttribute('aria-label')).toContain(
+    '質問の回答の引用',
+  );
+  (panel.root.querySelector('.pdf-viewer__hl') as HTMLButtonElement).click();
+  const textButton = panel.root.querySelectorAll<HTMLButtonElement>('.verify__view-toggle-btn')[1];
+  textButton?.click();
+  panel.showCitationHighlight(makeCitation({ documentId: 'doc-2' }));
+  await flush();
+  expect(panel.root.querySelector('.pdf-viewer__hl')?.getAttribute('aria-label')).toContain(
+    '質問の回答の引用',
+  );
+  expect((panel.root.querySelector('.verify__pdf-body') as HTMLElement)?.hidden).not.toBe(true);
+  panel.showCitationHighlight(makeCitation({ documentId: 'missing' }));
+  panel.showCitationHighlight(makeCitation({ documentId: 'doc-1', highlightable: false }));
+  await flush();
+  expect(panel.root.querySelector('.pdf-viewer__hl')).toBeNull();
+});
+
+test('独立入力のパネルは質問引用も描画せず、古いstudyへの引用要求も無視する', async () => {
+  const { panel } = await createPanel({
+    annotatorType: 'human_independent',
+    textPages: [makeAskPage()],
+  });
+  panel.showCitationHighlight(makeCitation());
+  expect(panel.root.querySelector('.pdf-viewer__hl')).toBeNull();
+  disposeVerificationPanelCache();
+  showVerificationCitation('study-1', makeCitation());
+  const data = makeData({ textPages: [makeAskPage()], evidence: [] });
+  const root = renderCachedVerificationPanel({ data, onDecision: jest.fn(), renderPage });
+  document.body.replaceChildren(root);
+  await flush();
+  showVerificationCitation('other', makeCitation());
+  expect(root.querySelector('.pdf-viewer__hl')).toBeNull();
+  showVerificationCitation(data.study.studyId, makeCitation());
+  expect(root.querySelector('.pdf-viewer__hl')).not.toBeNull();
 });

@@ -18,12 +18,12 @@ import {
 } from './LLMProvider';
 import { estimateCostUsd } from './pricing';
 
-export interface ApiLoggerDeps {
-  /** Drive に JSON ファイルをアップロードして webViewLink を返す */
-  uploadJson: (params: {
-    filename: string;
-    content: string;
-  }) => Promise<{ webViewLink: string }>;
+type UploadJson = (params: {
+  filename: string;
+  content: string;
+}) => Promise<{ webViewLink: string }>;
+
+export type ApiLoggerDeps = {
   /** Sheets の LLMApiLog タブに 1 行追記する */
   appendLogEntry: (entry: LlmApiLogEntry) => Promise<void>;
   /** 呼び出し元 skill のプロンプト版数。prompt payload に記録する */
@@ -32,8 +32,11 @@ export interface ApiLoggerDeps {
   newUuid?: () => string;
   /** テスト時に差し替え可能な現在時刻 */
   now?: () => string;
-}
-
+} &
+  // 本文を省略するときだけアップロード依存を不要にする。
+  (
+    { omitPayload: true; uploadJson?: UploadJson } | { omitPayload?: false; uploadJson: UploadJson }
+  );
 /** プロンプト先頭 500 文字をプレビューとして抜粋 */
 const PROMPT_SUMMARY_LENGTH = 500;
 
@@ -103,35 +106,42 @@ export function withLogging(
         throw err;
       } finally {
         const latencyMs = Date.now() - startMs;
-        const promptUpload = await deps.uploadJson({
-          filename: `${logId}.prompt.json`,
-          content: JSON.stringify(
-            {
-              promptVersion: deps.promptVersion ?? null,
-              messages: redactMessagesForLog(messages),
-              options,
-            },
-            null,
-            2,
-          ),
-        });
-        const responseUpload = await deps.uploadJson({
-          filename: `${logId}.response.json`,
-          content: JSON.stringify(
-            response !== null ? response.raw : { error: errorMessage },
-            null,
-            2,
-          ),
-        });
+        // 質問パネルでは本文も要約も保存せず、利用量などのメタデータだけを残す。
+        let promptRef = '';
+        let responseRef = '';
+        if (!deps.omitPayload) {
+          const promptUpload = await deps.uploadJson({
+            filename: `${logId}.prompt.json`,
+            content: JSON.stringify(
+              {
+                promptVersion: deps.promptVersion ?? null,
+                messages: redactMessagesForLog(messages),
+                options,
+              },
+              null,
+              2,
+            ),
+          });
+          const responseUpload = await deps.uploadJson({
+            filename: `${logId}.response.json`,
+            content: JSON.stringify(
+              response !== null ? response.raw : { error: errorMessage },
+              null,
+              2,
+            ),
+          });
+          promptRef = promptUpload.webViewLink;
+          responseRef = responseUpload.webViewLink;
+        }
         const entry: LlmApiLogEntry = {
           logId,
           timestamp: startedAt,
           provider: provider.providerId,
           model: provider.model,
           purpose,
-          promptRef: promptUpload.webViewLink,
-          responseRef: responseUpload.webViewLink,
-          promptSummary: buildPromptSummary(messages),
+          promptRef,
+          responseRef,
+          promptSummary: deps.omitPayload ? null : buildPromptSummary(messages),
           tokensIn: response?.tokensIn ?? null,
           tokensOut: response?.tokensOut ?? null,
           cachedTokensIn: response?.cachedTokensIn ?? null,

@@ -238,7 +238,7 @@ export interface VerificationBundle {
  * （no_text_layer）は失敗ではなく空配列とし、読み込み失敗は extractedTextError へ持つ
  * （throw しない。bundle 全体を失敗させないため）
  */
-async function loadExtractedPages(
+export async function loadExtractedPages(
   document: DocumentRecord,
   deps: VerificationDeps,
 ): Promise<{ extractedPages: readonly ExtractedPage[]; extractedTextError: string | null }> {

@@ -117,6 +117,7 @@ import {
   setVerifyLayoutMode,
   setVerifyPaneLayout,
 } from './services/verifyService';
+import { sendAskPaperQuestion } from './services/askPaperUiService';
 import { loadDashboard } from './services/dashboardService';
 import { loadProgressCounts } from './services/homeService';
 import {
@@ -186,6 +187,8 @@ import {
 } from '../lib/storage/secretsStore';
 import {
   loadLlmConnectionSettings,
+  loadDefaultModel,
+  FACTORY_DEFAULT_MODEL,
   loadUiLanguage,
   resolveRateLimitPolicy,
 } from '../lib/storage/settingsStore';
@@ -301,6 +304,7 @@ function renderRoleErrorBlock(
 
 export async function seedState(win: Window): Promise<AppState> {
   const state = createInitialState();
+  state.askPaper.model = (await loadDefaultModel()) ?? FACTORY_DEFAULT_MODEL;
   const storedProject = await loadCurrentProject();
   if (storedProject) {
     state.currentProject = storedProject;
@@ -343,6 +347,7 @@ export async function seedState(win: Window): Promise<AppState> {
       pilot: { ...state.pilot, ...(preloaded.pilot ?? {}) },
       extract: { ...state.extract, ...(preloaded.extract ?? {}) },
       verify: { ...state.verify, ...(preloaded.verify ?? {}) },
+      askPaper: { ...state.askPaper, ...(preloaded.askPaper ?? {}) },
       dashboard: { ...state.dashboard, ...(preloaded.dashboard ?? {}) },
       export: { ...state.export, ...(preloaded.export ?? {}) },
       adjudicate: { ...state.adjudicate, ...(preloaded.adjudicate ?? {}) },
@@ -455,6 +460,11 @@ export async function bootstrapApp(
 
   // view のユーザー操作をサービス層へ委譲するコンテキスト（views/types.ts）
   const viewContext: ViewContext = {
+    askPaper: {
+      onSend: (params) => {
+        void sendAskPaperQuestion(store, deps, params);
+      },
+    },
     home: {
       onReload: () => {
         void loadProgressCounts(store, deps, { force: true });

@@ -1,3 +1,4 @@
+import { makeAskTurn } from '../askPaperFixtures';
 import { renderAdjudicateView } from '../../../../src/app/views/adjudicateView';
 import { setUiLanguage, t } from '../../../../src/lib/i18n';
 import { disposeAdjudicatePdfPaneCache } from '../../../../src/app/views/adjudicatePdfPane';
@@ -286,6 +287,7 @@ function makeSelectableRow(overrides: Partial<AdjudicateStudyRow> = {}): Adjudic
 function makeWorking(overrides: Partial<AdjudicateWorking> = {}): AdjudicateWorking {
   return {
     study: makeStudy(),
+    askPaperDocuments: [],
     documents: [],
     annotatorA: 'a@example.com',
     annotatorB: 'b@example.com',
@@ -1307,4 +1309,30 @@ describe('enum 項目の第 3 の値 UI（issue #254）', () => {
     expect(root.querySelector('.adjudicate__custom-input')).not.toBeNull();
     expect(root.querySelector('.verify__enum-choices')).toBeNull();
   });
+});
+
+test('裁定中の質問パネルは本文素材を渡し、引用をPDFペインへ渡す', () => {
+  const { ctx } = makeCtx();
+  ctx.askPaper = { onSend: jest.fn() };
+  const state = makeState({ rows: [], working: makeWorking() });
+  state.role.role = 'adjudicator';
+  state.askPaper.conversations['study-1'] = [makeAskTurn()];
+  const root = render(state, ctx);
+  expect(root.querySelector('#ask-paper')).not.toBeNull();
+  (root.querySelector('.ask-paper__citation') as HTMLButtonElement).click();
+  const input = root.querySelector('#ask-paper-input') as HTMLTextAreaElement;
+  input.value = '何人？';
+  input.dispatchEvent(new Event('input'));
+  (root.querySelector('#ask-paper-send') as HTMLButtonElement).click();
+  expect(ctx.askPaper.onSend).toHaveBeenCalledWith(
+    expect.objectContaining({ studyId: 'study-1', documents: [], fields: expect.any(Array) }),
+  );
+});
+
+test('プロジェクト未選択の描画でも裁定中の質問パネルは空の参照で安全に組み立てる', () => {
+  const { ctx } = makeCtx();
+  const state = makeState({ rows: [], working: makeWorking() });
+  state.role.role = 'adjudicator';
+  state.currentProject = null;
+  expect(render(state, ctx).querySelector('#ask-paper')).not.toBeNull();
 });

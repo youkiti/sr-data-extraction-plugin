@@ -3936,3 +3936,58 @@ section.documents__tiab {
   color: var(--color-text-muted);
   font-size: 12px;
 }
+
+/* 論文への質問。既存のペインと同じ余白・色を使い、長い引用を折り返す。 */
+.ask-paper {
+  margin-block: 1rem;
+  padding: 1rem;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+}
+
+.ask-paper__summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.ask-paper__notice,
+#ask-paper-estimate {
+  font-size: 0.875rem;
+  color: var(--color-text-muted);
+}
+
+#ask-paper-input {
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+}
+
+.ask-paper__turn {
+  margin-block: 1rem;
+  border-top: 1px solid var(--color-border);
+  overflow-wrap: anywhere;
+}
+
+.ask-paper__question {
+  font-weight: 600;
+}
+
+.ask-paper__answer {
+  white-space: pre-wrap;
+}
+
+.ask-paper__citation,
+.ask-paper__citation--unanchored {
+  display: block;
+  margin-block: 0.5rem;
+  max-width: 100%;
+  text-align: left;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.ask-paper__warning,
+.ask-paper__citation--unanchored,
+#ask-paper-error {
+  color: var(--color-danger);
+}
