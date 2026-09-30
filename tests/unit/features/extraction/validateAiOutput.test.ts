@@ -166,6 +166,61 @@ describe('validateAiOutput', () => {
   });
 
   describe('要素の形状検証（zod）', () => {
+    it('残りの応答が entity_key に飲み込まれた要素を invalid_shape として破棄する', () => {
+      const element = {
+        field_id: 'f_design',
+        entity_key: '-", "value": "explore the experiences of participants", "not_reported": false, "quote": "participants described challenges" }, {"field_id": "f_country", "value": "Japan" }',
+      };
+      const raw: unknown = JSON.parse(JSON.stringify([element]));
+      expect(validateAiOutput(raw, FIELDS, 1)).toEqual({
+        items: [],
+        rejected: [{ index: 0, reason: 'invalid_shape', detail: expect.any(String), raw: element }],
+      });
+    });
+
+    it.each(['"', '\n', '\r'])(
+      'entity_key に不正文字 %p がある要素は正規化せず破棄する',
+      (character) => {
+        const element = { field_id: 'f_design', entity_key: `-${character}`, value: null };
+        expect(validateAiOutput([element], FIELDS, 1)).toEqual({
+          items: [],
+          rejected: [{
+            index: 0, reason: 'invalid_shape', detail: expect.stringContaining('entity_key'), raw: element,
+          }],
+        });
+      },
+    );
+
+    it('抽出内容の 3 キーがすべて欠けた要素を破棄する', () => {
+      const element = { field_id: 'f_design', entity_key: '-' };
+      expect(validateAiOutput([element], FIELDS, 1)).toEqual({
+        items: [],
+        rejected: [{
+          index: 0, reason: 'invalid_shape',
+          detail: expect.stringContaining('value / not_reported / quote'), raw: element,
+        }],
+      });
+    });
+
+    it.each([
+      [{ not_reported: true }, true],
+      [{ value: null }, false],
+      [{ quote: null }, false],
+      [{ not_reported: true, value: null, quote: null }, true],
+    ])('抽出内容のキーがある要素 %p は従来どおり通す', (content, notReported) => {
+      const result = validateAiOutput([{ field_id: 'f_design', entity_key: '-', ...content }], FIELDS, 1);
+      expect(result.rejected).toEqual([]);
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0]).toMatchObject({ value: null, quote: null, notReported });
+    });
+
+    it('null の要素は invalid_shape として破棄する', () => {
+      expect(validateAiOutput([null], FIELDS, 1)).toEqual({
+        items: [],
+        rejected: [{ index: 0, reason: 'invalid_shape', detail: expect.any(String), raw: null }],
+      });
+    });
+
     it('オブジェクトでない要素は invalid_shape（パスなし issue のメッセージ整形）', () => {
       const { rejected } = validateAiOutput(['oops'], FIELDS, 1);
       expect(rejected).toEqual([

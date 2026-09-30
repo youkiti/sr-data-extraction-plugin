@@ -240,9 +240,32 @@ export function validateAiOutput(
   const rejected: RejectedAiItem[] = [];
   const sourceByItem = new Map<ValidatedAiItem, { index: number; raw: unknown }>();
   raw.forEach((element, index) => {
+    // 既定値で欠落を隠さないよう、生の要素で抽出内容のキーの存在を確認する。
+    if (
+      typeof element === 'object' && element !== null &&
+      !['value', 'not_reported', 'quote'].some((key) => Object.prototype.hasOwnProperty.call(element, key))
+    ) {
+      rejected.push({
+        index,
+        reason: 'invalid_shape',
+        detail: 'value / not_reported / quote がすべて欠落しています',
+        raw: element,
+      });
+      return;
+    }
     const parsed = aiOutputItemSchema.safeParse(element);
     if (!parsed.success) {
       rejected.push({ index, reason: 'invalid_shape', detail: formatIssues(parsed.error), raw: element });
+      return;
+    }
+    // 応答の残りが文字列に飲み込まれた破損を、study キーの正規化より前に検出する。
+    if (/["\n\r]/.test(parsed.data.entity_key)) {
+      rejected.push({
+        index,
+        reason: 'invalid_shape',
+        detail: 'entity_key にダブルクォートまたは改行が含まれています',
+        raw: element,
+      });
       return;
     }
     const field = fieldById.get(parsed.data.field_id);
