@@ -2,6 +2,7 @@
 // （sr-query-builder から流用。purpose は本拡張の enum、promptVersion 記録のテストを追加）
 import type { LlmApiLogEntry } from '../../../../src/domain/llmApiLog';
 import { buildPromptSummary, redactMessagesForLog, withLogging } from '../../../../src/lib/llm/apiLogger';
+import { OpenRouterProvider } from '../../../../src/lib/llm/OpenRouterProvider';
 import {
   LlmProviderError,
   type ChatMessage,
@@ -47,6 +48,58 @@ function makeDeps(now = '2026-07-01T00:00:00.000Z'): {
     },
   };
 }
+
+describe('OpenRouter の報告費用', () => {
+  test.each([
+    [0.00207214, 0.00207214], [0, 0], [undefined, 0.000308],
+    [null, 0.000308], ['0.1', 0.000308], [-1, 0.000308],
+    [true, 0.000308], [{}, 0.000308],
+  ])('usage.cost=%j の費用を記録する', async (cost, expected) => {
+    const provider = new OpenRouterProvider({
+      apiKey: 'k', model: 'deepseek/deepseek-v4-flash',
+      fetch: jest.fn().mockResolvedValue({
+        ok: true,
+        text: async () => JSON.stringify({
+          choices: [{ message: { content: '回答' } }],
+          usage: { prompt_tokens: 1000, completion_tokens: 1000,
+            prompt_tokens_details: { cached_tokens: 1000 }, cost },
+        }),
+      }),
+    });
+    const { deps, recorded } = makeDeps();
+    await withLogging(provider, 'extract_study', deps).chat([]);
+    expect(recorded.entries[0]!.costEstimateUsd).toBeCloseTo(expected as number, 12);
+  });
+
+  test('応答内容エラーでも報告費用を記録する', async () => {
+    const provider = new OpenRouterProvider({
+      apiKey: 'k', model: 'unknown',
+      fetch: jest.fn().mockResolvedValue({
+        ok: true,
+        text: async () => JSON.stringify({
+          choices: [{ message: { content: null }, finish_reason: 'length' }],
+          usage: { cost: 0.00207214 },
+        }),
+      }),
+    });
+    const { deps, recorded } = makeDeps();
+    await expect(withLogging(provider, 'extract_study', deps).chat([])).rejects.toThrow();
+    expect(recorded.entries[0]!.costEstimateUsd).toBe(0.00207214);
+  });
+
+  test.each(['1e999', '-1e999'])('非有限の JSON 数値 %s は単価表へ戻す', async (cost) => {
+    const provider = new OpenRouterProvider({
+      apiKey: 'k', model: 'deepseek/deepseek-v4-flash',
+      fetch: jest.fn().mockResolvedValue({
+        ok: true,
+        text: async () => `{"choices":[{"message":{"content":"回答"}}],"usage":{"prompt_tokens":1000,"completion_tokens":1000,"cost":${cost}}}`,
+      }),
+    });
+    const { deps, recorded } = makeDeps();
+    await withLogging(provider, 'extract_study', deps).chat([]);
+    expect(recorded.entries[0]!.costEstimateUsd).toBeCloseTo(0.00042, 12);
+  });
+});
 
 describe('buildPromptSummary', () => {
   test('ロール付きで連結し、空白を畳む', () => {
@@ -328,5 +381,119 @@ describe('withLogging のキャッシュヒット計測', () => {
     await logged.chat([{ role: 'user', content: 'q' }]);
     expect(recorded.entries[0]?.cachedTokensIn).toBeNull();
     expect(recorded.entries[0]?.costEstimateUsd).toBeCloseTo(1.5, 10);
+  });
+});
+
+describe('withLogging の文脈・エラー使用量', () => {
+  test('実行と呼び出しの文脈、プロンプト版数、思考内訳をログ列へ記録する', async () => {
+    const response: ChatResponse = {
+      text: 'ok',
+      tokensIn: 100,
+      tokensOut: 50,
+      cachedTokensIn: 80,
+      thoughtsTokensOut: 30,
+      raw: {},
+    };
+    const chat = jest.fn().mockResolvedValue(response);
+    const { deps, recorded } = makeDeps();
+    const logged = withLogging(makeProvider(chat), 'extract_study', {
+      ...deps,
+      runId: 'run-1',
+      promptVersion: 9,
+    });
+    const options = { logContext: { studyId: 'study-1', section: 'methods' } };
+    await logged.chat([], options);
+    expect(chat).toHaveBeenCalledWith([], options);
+    expect(recorded.entries[0]).toMatchObject({
+      runId: 'run-1',
+      studyId: 'study-1',
+      section: 'methods',
+      promptVersion: 9,
+      thoughtsTokensOut: 30,
+    });
+    await logged.chat([], { logContext: { studyId: 'study-2', section: null } });
+    expect(recorded.entries[1]).toMatchObject({
+      runId: 'run-1',
+      studyId: 'study-2',
+      section: null,
+    });
+  });
+
+  test('文脈・版数・思考内訳が未指定なら null を記録する', async () => {
+    const provider = makeProvider(async () => ({
+      text: 'ok',
+      tokensIn: null,
+      tokensOut: null,
+      cachedTokensIn: null,
+      raw: {},
+    }));
+    const { deps, recorded } = makeDeps();
+    await withLogging(provider, 'draft_schema', deps).chat([]);
+    expect(recorded.entries[0]).toMatchObject({
+      runId: null,
+      studyId: null,
+      section: null,
+      promptVersion: null,
+      thoughtsTokensOut: null,
+    });
+  });
+
+  test('エラーに付随する使用量で成功時と同じ概算費用を計算し、元の例外を再送出する', async () => {
+    const usage = {
+      tokensIn: 100,
+      tokensOut: 50,
+      cachedTokensIn: 80,
+      thoughtsTokensOut: 30,
+    };
+    const error = new LlmProviderError(
+      '打ち切り',
+      'gemini',
+      200,
+      'details',
+      null,
+      false,
+      'output_limit',
+      usage,
+    );
+    const { deps, recorded } = makeDeps();
+    const success = withLogging(
+      makeProvider(async () => ({
+        ...usage,
+        text: 'ok',
+        raw: {},
+      })),
+      'extract_study',
+      deps,
+    );
+    await success.chat([]);
+    const logged = withLogging(
+      makeProvider(async () => {
+        throw error;
+      }),
+      'extract_study',
+      {
+        ...deps,
+        runId: 'run-1',
+        promptVersion: 9,
+      },
+    );
+    await expect(
+      logged.chat([], {
+        logContext: { studyId: 'study-1', section: 'methods' },
+      }),
+    ).rejects.toBe(error);
+    expect(recorded.entries[1]).toMatchObject({
+      ...usage,
+      costEstimateUsd: recorded.entries[0]!.costEstimateUsd,
+      error: '打ち切り (status=200): details',
+      runId: 'run-1',
+      studyId: 'study-1',
+      section: 'methods',
+      promptVersion: 9,
+    });
+    expect(recorded.entries[1]!.costEstimateUsd).not.toBeNull();
+    expect(JSON.parse(recorded.uploads[3]!.content)).toEqual({
+      error: '打ち切り (status=200): details',
+    });
   });
 });

@@ -143,7 +143,11 @@ export async function relocateQuote(
           }),
         },
       ],
-      { temperature: RELOCATE_QUOTE_TEMPERATURE, responseSchema: RELOCATE_QUOTE_RESPONSE_SCHEMA },
+      {
+        temperature: RELOCATE_QUOTE_TEMPERATURE,
+        responseSchema: RELOCATE_QUOTE_RESPONSE_SCHEMA,
+        logContext: { studyId: params.evidence.studyId, section: null },
+      },
     );
     const parsed = parseRelocateQuoteResponse(response.text);
     if (!parsed.found || parsed.quote === null) {

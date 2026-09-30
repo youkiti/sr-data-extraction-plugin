@@ -1,11 +1,12 @@
 // ExportLog タブに対応する型（requirements.md §3.2）
 
 /**
+ * usage は全体・run・月別の費用と使用量を独立カードから出力する単一 CSV。
  * CSV エクスポートの形式（§4.4）。`r_set` は issue #60（design-r-export.md）で追加した
  * R 解析向けの複数ファイル形式（tab1 / ma / rob / data_dictionary / export_issues の
  * 5 CSV + ステータスミラー表 2 種 + export_manifest.json の計 8 ファイル）
  */
-export type ExportFormat = 'study_wide' | 'results_long' | 'audit' | 'r_set';
+export type ExportFormat = 'study_wide' | 'results_long' | 'audit' | 'r_set' | 'usage';
 
 export interface ExportLogEntry {
   exportId: string;
@@ -13,6 +14,7 @@ export interface ExportLogEntry {
   schemaVersion: number;
   /**
    * CSV に行が出た study 数（v0.10 で document_count から改名）。
+   * usage は全体の重複しない成功 study 数を使う。
    * r_set は既存列で表現するため tab1.csv の行数（= 確定 annotator を特定できた study 数）を使う
    */
   studyCount: number;

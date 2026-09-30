@@ -117,6 +117,8 @@ import {
   setVerifyLayoutMode,
   setVerifyPaneLayout,
 } from './services/verifyService';
+import { loadUsage, saveBudget } from './services/usageService';
+import { generateUsageExport, downloadUsageExport } from './services/usageExportService';
 import { loadDashboard } from './services/dashboardService';
 import { loadProgressCounts } from './services/homeService';
 import {
@@ -343,7 +345,11 @@ export async function seedState(win: Window): Promise<AppState> {
       pilot: { ...state.pilot, ...(preloaded.pilot ?? {}) },
       extract: { ...state.extract, ...(preloaded.extract ?? {}) },
       verify: { ...state.verify, ...(preloaded.verify ?? {}) },
-      dashboard: { ...state.dashboard, ...(preloaded.dashboard ?? {}) },
+      dashboard: {
+        ...state.dashboard,
+        ...(preloaded.dashboard ?? {}),
+        usage: { ...state.dashboard.usage, ...(preloaded.dashboard?.usage ?? {}) },
+      },
       export: { ...state.export, ...(preloaded.export ?? {}) },
       adjudicate: { ...state.adjudicate, ...(preloaded.adjudicate ?? {}) },
     };
@@ -782,11 +788,42 @@ export async function bootstrapApp(
       },
     },
     dashboard: {
+      onBudgetDraftChange: (value) => {
+        const dashboard = store.getState().dashboard;
+        store.setState({
+          dashboard: {
+            ...dashboard,
+            usage: { ...dashboard.usage, budgetDraft: value, budgetError: null },
+          },
+        });
+      },
+      onBudgetError: (reason) => {
+        const dashboard = store.getState().dashboard;
+        store.setState({
+          dashboard: {
+            ...dashboard,
+            usage: { ...dashboard.usage, budgetError: reason },
+          },
+        });
+      },
+      onReloadUsage: () => {
+        void loadUsage(store, deps, { force: true });
+      },
+      onSaveBudget: (value) => {
+        void saveBudget(store, deps, value);
+      },
       onReload: () => {
         void loadDashboard(store, deps, { force: true });
+        void loadUsage(store, deps, { force: true });
       },
     },
     export: {
+      onGenerateUsage: () => {
+        void generateUsageExport(store, deps);
+      },
+      onDownloadUsage: () => {
+        downloadUsageExport(store);
+      },
       onSelectFormat: (format) => {
         selectExportFormat(store, format);
       },
@@ -1106,6 +1143,7 @@ export async function bootstrapApp(
     if (currentHash === '#/dashboard') {
       // 初回表示時に集計を読み込む（読込済みなら loadDashboard 側で no-op）
       void loadDashboard(store, deps);
+      void loadUsage(store, deps);
     }
     if (currentHash === '#/export') {
       // 初回表示時に素材を読み込んで 3 形式の CSV を構築（読込済みなら loadExportData 側で no-op）

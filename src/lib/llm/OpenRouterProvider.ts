@@ -5,6 +5,7 @@ import {
   type ChatOptions,
   type ChatResponse,
   type LLMProvider,
+  type LlmUsage,
   type LlmFailureKind,
   type ReasoningEffort,
 } from './LLMProvider';
@@ -55,6 +56,7 @@ interface OpenRouterResponse {
     prompt_tokens?: number;
     completion_tokens?: number;
     total_tokens?: number;
+    cost?: unknown;
     /**
      * OpenAI 互換の usage 詳細。`cached_tokens` は自動プロンプトキャッシュでヒットした
      * 入力トークン数で、`prompt_tokens` の**内数**（OpenAI 公式 cookbook / Azure 公式
@@ -204,6 +206,7 @@ export class OpenRouterProvider implements LLMProvider {
         'malformed',
       );
     }
+    const usage = this.parseUsage(json);
     const choice = json.choices?.[0];
     const finishReason = choice?.finish_reason;
     const content = choice?.message?.content;
@@ -216,6 +219,7 @@ export class OpenRouterProvider implements LLMProvider {
         null,
         true, // 上流プロバイダの一時障害の可能性があるため再試行対象
         classifyChoiceErrorFailureKind(choice),
+        usage,
       );
     }
     if (finishReason === 'length' || finishReason === 'content_filter') {
@@ -228,6 +232,7 @@ export class OpenRouterProvider implements LLMProvider {
         null,
         false,
         finishReason === 'length' ? 'output_limit' : 'content_filter',
+        usage,
       );
     }
     if (content === undefined || content === null || content === '') {
@@ -236,10 +241,27 @@ export class OpenRouterProvider implements LLMProvider {
         this.providerId,
         res.status,
         describeChoice(choice),
+        null,
+        false,
+        null,
+        usage,
       );
     }
     return {
       text: content,
+      tokensIn: usage.tokensIn,
+      tokensOut: usage.tokensOut,
+      cachedTokensIn: usage.cachedTokensIn,
+      ...('costUsd' in usage ? { costUsd: usage.costUsd } : {}),
+      raw: json,
+    };
+  }
+
+  /** 応答の使用量を成功・応答内容エラーで同じ規則に正規化する。 */
+  private parseUsage(json: OpenRouterResponse): LlmUsage {
+    const cost = json.usage?.cost;
+    return {
+      ...(typeof cost === 'number' && Number.isFinite(cost) && cost >= 0 ? { costUsd: cost } : {}),
       tokensIn: json.usage?.prompt_tokens ?? null,
       tokensOut: json.usage?.completion_tokens ?? null,
       // usage が返っていれば「計測できている」と見なし、prompt_tokens_details が
@@ -248,7 +270,7 @@ export class OpenRouterProvider implements LLMProvider {
         json.usage === undefined
           ? null
           : (json.usage.prompt_tokens_details?.cached_tokens ?? 0),
-      raw: json,
+      thoughtsTokensOut: null,
     };
   }
 

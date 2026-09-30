@@ -168,6 +168,9 @@ describe('relocateQuote', () => {
     expect(appendEvidenceRowsMock).toHaveBeenCalledWith('sheet-1', [outcome.evidence], deps.google);
     // LLMApiLog（withLogging）記録
     expect(appendLlmApiLogMock).toHaveBeenCalledTimes(1);
+    expect(appendLlmApiLogMock.mock.calls[0]?.[1]).toMatchObject({
+      runId: null, studyId: 'study-1', section: null,
+    });
     expect(appendLlmApiLogMock.mock.calls[0]?.[1]).toMatchObject({ purpose: 'relocate_quote' });
     expect(chatMock).toHaveBeenCalledTimes(1);
   });

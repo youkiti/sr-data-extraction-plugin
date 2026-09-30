@@ -125,7 +125,13 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<VerifyViewCallbac
         onReloadTargets: jest.fn(),
       },
       verify: callbacks,
-      dashboard: { onReload: jest.fn() },
+      dashboard: {
+        onReload: jest.fn(),
+        onReloadUsage: jest.fn(),
+        onSaveBudget: jest.fn(),
+        onBudgetDraftChange: jest.fn(),
+        onBudgetError: jest.fn(),
+      },
       export: {
         onSelectFormat: jest.fn(),
         onGenerate: jest.fn(),
@@ -136,6 +142,8 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<VerifyViewCallbac
         onChangeMethodsLanguage: jest.fn(),
         onChangeMethodsWorkflow: jest.fn(),
         onCopyMethods: jest.fn(),
+        onGenerateUsage: jest.fn(),
+        onDownloadUsage: jest.fn(),
       },
       adjudicate: {
         onSelectStudy: jest.fn(),

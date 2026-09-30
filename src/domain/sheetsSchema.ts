@@ -43,6 +43,9 @@ export const STUDY_DATA_FIXED_HEADERS = [
   'updated_at',
 ] as const;
 
+/** 初回予算保存時だけ Meta の末尾へ追加する。未設定の新規プロジェクトは旧クライアントでも開ける */
+export const META_BUDGET_COLUMNS = ['budget_usd', 'budget_updated_by', 'budget_updated_at'] as const;
+
 /**
  * 各タブのヘッダー行（列名）定義。スプレッドシート初期化時にここから書き込む。
  * StudyData は固定列のみ（値列は buildStudyDataHeader で動的生成）。
@@ -234,6 +237,12 @@ export const SHEET_HEADERS: Record<SheetTabName, readonly string[]> = {
     // 後付け列（プロンプトキャッシュのヒット計測）。既存プロジェクトのシートには
     // この列が無いが、追記型のタブなので新しい行にだけ値が入る（旧行は空 = 不明）
     'cached_tokens_in',
+    // 後付け列（実行・study の文脈と使用量の内訳）。旧行は空 = 不明
+    'run_id',
+    'study_id',
+    'section',
+    'prompt_version',
+    'thoughts_tokens_out',
   ],
   ExportLog: [
     'export_id',
