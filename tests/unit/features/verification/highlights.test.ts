@@ -196,6 +196,7 @@ describe('buildDocumentHighlights の bbox 経路（pdf_native の box_2d。§7.
       evidenceId: 'ev-1',
       documentId: 'doc-1',
       cellKey: cellKeyOf('f-1', '-'),
+      quoteKey: cellKeyOf('f-1', '-'),
       status: null,
       source: 'bbox',
       occurrences: [

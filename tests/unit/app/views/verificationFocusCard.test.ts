@@ -58,6 +58,7 @@ function makeCell(overrides: Partial<VerificationCell> = {}): VerificationCell {
   const field = overrides.field ?? makeField();
   const entityKey = overrides.entityKey ?? 'outcome:pain|arm:1';
   return {
+    quotes: [],
     cellKey: cellKeyOf(field.fieldId, entityKey),
     field,
     entityKey,

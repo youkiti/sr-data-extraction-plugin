@@ -850,6 +850,7 @@ function makeSqCell(
       ? emptyCellState()
       : { status: options.status ?? 'edit', value: options.stateValue, stack: [] };
   return {
+    quotes: [],
     cellKey: cellKeyOf(field.fieldId, entityKey),
     field,
     entityKey,

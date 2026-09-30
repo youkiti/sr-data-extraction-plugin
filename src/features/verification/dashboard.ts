@@ -52,7 +52,7 @@ export interface DashboardRow {
   accuracy: AccuracyBreakdown;
   /** anchor 失敗率: 分子 = anchor_status = failed、分母 = anchor_status 非 null（アンカリング対象） */
   anchor: RateCount;
-  /** not_reported 率: 分子 = not_reported = TRUE、分母 = Evidence 総数 */
+  /** not_reported 率: quoteSeq が null または 1 の行を対象に、分子 = not_reported = TRUE、分母 = 対象行数 */
   notReported: RateCount;
 }
 
@@ -182,6 +182,7 @@ function buildRow(
     }
   }
   const anchored = input.evidence.filter((item) => item.anchorStatus !== null);
+  const reportedRows = input.evidence.filter((item) => item.quoteSeq === null || item.quoteSeq === 1);
   return {
     studyId: input.studyId,
     studyLabel: input.studyLabel,
@@ -193,8 +194,8 @@ function buildRow(
       denominator: anchored.length,
     },
     notReported: {
-      numerator: input.evidence.filter((item) => item.notReported).length,
-      denominator: input.evidence.length,
+      numerator: reportedRows.filter((item) => item.notReported).length,
+      denominator: reportedRows.length,
     },
   };
 }

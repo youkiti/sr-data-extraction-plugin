@@ -125,7 +125,7 @@ async function loadIntoPane(pane: CachedPane, working: AdjudicateWorking, docume
   }
   const docHighlights = buildDocumentHighlights(
     documentId,
-    working.evidence.filter((item) => item.documentId === documentId),
+    [...pane.evidenceIndex.values()].filter((item) => item.documentId === documentId),
     view.textPages,
   );
   pane.viewer = createPdfViewer({ document: view.pdf, pages: view.textPages });

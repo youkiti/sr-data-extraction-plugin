@@ -71,7 +71,7 @@ function makeCell(
   const evidence = aiValue === null ? null : { ...makeEvidence(field.fieldId, aiValue), entityKey };
   const state: CellState =
     stateValue === undefined ? emptyCellState() : { status: 'edit', value: stateValue, stack: [] };
-  return { cellKey: cellKeyOf(field.fieldId, entityKey), field, entityKey, evidence, state };
+  return { cellKey: cellKeyOf(field.fieldId, entityKey), field, entityKey, evidence, quotes: [], state };
 }
 
 function group(cells: VerificationCell[]): CellGroup {

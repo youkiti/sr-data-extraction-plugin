@@ -78,6 +78,7 @@ function makeDecision(overrides: Partial<Decision> = {}): Decision {
 /** 手組みの VerificationCell（buildTabModel を経由しない防御系テスト用） */
 function makeCell(field: SchemaField, entityKey: string, overrides: Partial<VerificationCell> = {}): VerificationCell {
   return {
+    quotes: [],
     cellKey: cellKeyOf(field.fieldId, entityKey),
     field,
     entityKey,

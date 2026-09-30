@@ -19,6 +19,46 @@ import { setUiLanguage } from '../../../../src/lib/i18n';
 import type { VerificationCell } from '../../../../src/features/verification/cells';
 import type { FocusUnit } from '../../../../src/features/verification/focusUnits';
 import * as highlightsModule from '../../../../src/features/verification/highlights';
+import { quoteKeyOf } from '../../../../src/features/verification/evidenceBundles';
+
+test('引用ごとのハイライト ID・色・クリックと文書間ジャンプ、抽出テキストを同期する', async () => {
+  const first = makeEvidence({ quoteSeq: 1, quoteTheme: '一', quote: 'mortality' });
+  const second = makeEvidence({ quoteSeq: 2, quoteTheme: '二', quote: 'in total', confidence: 'low' });
+  const third = makeEvidence({ quoteSeq: 3, quote: 'other quote', documentId: 'doc-2' });
+  const failed = makeEvidence({ quoteSeq: 4, quote: 'missing quote', documentId: 'doc-2', anchorStatus: 'failed' });
+  const { panel } = await createPanel({
+    fields: [makeField({ maxQuotes: 4 })],
+    evidence: [makeEvidence({ runId: 'old', quote: 'intro' }), first, second, third, failed],
+    documents: [makeDocFixture(), makeDocFixture({
+      document: makeDocumentRecord({ documentId: 'doc-2', filename: 'other.pdf' }),
+      textPages: [buildPage(1, 'other quote')],
+    })],
+  });
+  const matches = highlightsModule.buildStudyTextMatches(makeData().documents, [first, second]);
+  expect(matches.map((match) => match.quoteKey)).toEqual([quoteKeyOf(first), quoteKeyOf(second)]);
+  expect(panel.root.querySelectorAll('.pdf-viewer__hl')).toHaveLength(2);
+  expect(panel.root.querySelectorAll('.pdf-viewer__hl--low')).toHaveLength(1);
+  panel.root.querySelector<HTMLButtonElement>('.verify__quote-search')!.click();
+  await flush();
+  expect(panel.root.querySelector<HTMLInputElement>('.pdf-viewer__search-input')?.value).toBe('missing quote');
+  const jumps = () => panel.root.querySelectorAll<HTMLButtonElement>('.verify__quote-jump');
+  jumps()[1]!.click();
+  await flush();
+  expect(panel.root.querySelector('.pdf-viewer__hl--low')?.classList.contains('pdf-viewer__hl--active')).toBe(true);
+  panel.root.querySelector<HTMLButtonElement>('.pdf-viewer__hl--low')!.click();
+  expect(panel.root.querySelector<HTMLElement>('.verify__cell--focused')?.dataset['cellKey']).toBe(cellKeyOf(first.fieldId, first.entityKey));
+  jumps()[2]!.click();
+  await flush();
+  expect(panel.root.querySelectorAll('.verify__doc-tab')[1]?.classList.contains('verify__doc-tab--active')).toBe(true);
+  expect(panel.root.querySelectorAll('.pdf-viewer__hl--active')).toHaveLength(1);
+  panel.root.querySelectorAll<HTMLButtonElement>('.verify__view-toggle-btn')[1]!.click();
+  expect(panel.root.querySelector('.text-viewer__mark')?.textContent).toBe('other quote');
+  jumps()[1]!.click();
+  expect(panel.root.querySelector('.text-viewer__mark')?.textContent).toBe('in total');
+  panel.root.querySelector<HTMLButtonElement>('.verify__quote-search')!.click();
+  expect(panel.root.querySelector('.text-viewer__quote-full')?.textContent).toBe('missing quote');
+  panel.dispose();
+});
 import type {
   LoadedPdfView,
   VerificationData,
@@ -383,7 +423,7 @@ afterEach(() => {
 /** 手組みの VerificationCell（focusUnits.test.ts と同じ流儀で防御分岐を直接検証する用） */
 function makeFocusCell(fieldId: string, entityKey: string): VerificationCell {
   const field = makeField({ fieldId });
-  return { cellKey: cellKeyOf(fieldId, entityKey), field, entityKey, evidence: null, state: emptyCellState() };
+  return { cellKey: cellKeyOf(fieldId, entityKey), field, entityKey, evidence: null, quotes: [], state: emptyCellState() };
 }
 
 describe('locateCellInUnit / stepUnitPosition（issue #38 フォーカスモードのユニット内ナビゲーション）', () => {

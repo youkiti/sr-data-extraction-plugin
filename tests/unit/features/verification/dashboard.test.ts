@@ -8,6 +8,38 @@ import type { SchemaField } from '../../../../src/domain/schemaField';
 
 const ME = 'me@example.com';
 
+test('anchor は引用全行、not_reported は複数引用セルを 1 件として数える', () => {
+  const input = makeInput({ evidence: [
+    makeEvidence({ quoteSeq: 1 }),
+    makeEvidence({ quoteSeq: 2, anchorStatus: 'failed' }),
+    makeEvidence({ quoteSeq: 3 }),
+  ] });
+  const result = buildDashboard([input], new Map());
+  expect(result.totals.anchor).toEqual({ numerator: 1, denominator: 3 });
+  expect(result.totals.notReported).toEqual({ numerator: 0, denominator: 1 });
+});
+
+test('同じセル・同じ run の再特定前後の通常行を両方とも率に数える', () => {
+  const input = makeInput({ evidence: [
+    makeEvidence({ evidenceId: 'failed', anchorStatus: 'failed' }),
+    makeEvidence({ evidenceId: 'relocated', relocatedFrom: 'failed', anchorStatus: 'exact' }),
+  ] });
+  const result = buildDashboard([input], new Map());
+  expect(result.totals.anchor).toEqual({ numerator: 1, denominator: 2 });
+  expect(result.totals.notReported).toEqual({ numerator: 0, denominator: 2 });
+});
+
+test('旧 run の引用も anchor に数え、quoteSeq が 2 以上の not_reported は率から除く', () => {
+  const input = makeInput({ evidence: [
+    makeEvidence({ runId: 'old', quoteSeq: 3, anchorStatus: 'failed', notReported: true }),
+    makeEvidence({ quoteSeq: 1, notReported: true, anchorStatus: null }),
+    makeEvidence({ quoteSeq: 2, notReported: true, anchorStatus: null }),
+  ] });
+  const result = buildDashboard([input], new Map());
+  expect(result.totals.anchor).toEqual({ numerator: 1, denominator: 1 });
+  expect(result.totals.notReported).toEqual({ numerator: 1, denominator: 1 });
+});
+
 function makeField(overrides: Partial<SchemaField> = {}): SchemaField {
   return {
     maxQuotes: null,

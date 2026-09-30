@@ -36,6 +36,7 @@ import {
   type CellState,
 } from '../../features/verification/cellState';
 import { collectConsistencyWarnings } from '../../features/verification/consistencyChecks';
+import { bundleEvidence, quoteKeyOf, cellKeyFromQuoteKey } from '../../features/verification/evidenceBundles';
 import { collectRobAlgorithmInfo } from '../../features/verification/robAlgorithm';
 import {
   buildFocusUnits,
@@ -306,7 +307,7 @@ export function createVerificationPanel(
   // VerificationData が保持する元の evidence（下記 baseEvidence）は判定・群構成と同じく
   // パネル生存中は不変のスナップショットとして扱うため、ownDecisions と同じ
   // 「ローカルへ積んで後勝ちで重ねる」流儀で別配列に持つ
-  // （cells.ts の indexEvidence は配列の後ろほど新しいとみなす後勝ち畳み込みのため、
+  // （bundleEvidence は配列の後ろほど新しいとみなす後勝ち畳み込みのため、
   // 元の evidence 配列の後ろへ連結するだけで対応する cellKey の元行を自動的に上書きできる）
   const relocatedEvidence: Evidence[] = [];
   /** relocate-quote の実行状態（issue #94）。cellKey → 'running' / 'not_found' */
@@ -324,18 +325,39 @@ export function createVerificationPanel(
     relocatedEvidence.length === 0 ? baseEvidence : [...baseEvidence, ...relocatedEvidence];
   // テキストのみで再特定した出現位置（rects なし。study 全文書ぶんを一度だけ計算し、
   // PDF のロード状態に関係なく matchCount / ページ表示に使う。issue #28 案3）。
-  // relocate-quote 成功時は recomputeTextMatches で作り直す（let で保持）
-  let textMatches = buildStudyTextMatches(data.documents, currentEvidence());
-  let textMatchByCell = new Map(textMatches.map((m) => [m.cellKey, m]));
-  function recomputeTextMatches(): void {
-    textMatches = buildStudyTextMatches(data.documents, currentEvidence());
-    textMatchByCell = new Map(textMatches.map((m) => [m.cellKey, m]));
+  // 表示用の配列・検索 Map とともに保持し、relocate-quote 成功時だけ作り直す
+  let visibleEvidence: Evidence[] = [];
+  let evidenceByKey = new Map<string, Evidence>();
+  const evidenceByCell = new Map<string, Evidence>();
+  const evidenceForKey = (key: string): Evidence | undefined =>
+    evidenceByKey.get(key);
+  const resolvedQuoteKey = (key: string): string => {
+    const evidence = evidenceForKey(key);
+    return evidence === undefined ? key : quoteKeyOf(evidence);
+  };
+  let selectedQuoteKey: string | null = null;
+  let textMatches: EvidenceTextMatch[] = [];
+  let textMatchByCell = new Map<string, EvidenceTextMatch>();
+  function recomputeEvidence(): void {
+    const bundles = bundleEvidence(currentEvidence());
+    visibleEvidence = [...bundles.values()]
+      .flatMap((bundle) => bundle.quotes.length > 0 ? bundle.quotes : [bundle.evidence]);
+    for (const [key, bundle] of bundles) {
+      evidenceByCell.set(key, bundle.evidence);
+    }
+    for (const evidence of relocatedEvidence) {
+      evidenceByCell.set(cellKeyOf(evidence.fieldId, evidence.entityKey), evidence);
+    }
+    evidenceByKey = new Map(visibleEvidence.map((item) => [quoteKeyOf(item), item]));
+    for (const [key, evidence] of evidenceByCell) {
+      evidenceByKey.set(key, evidence);
+    }
+    textMatches = buildStudyTextMatches(data.documents, visibleEvidence);
+    textMatchByCell = new Map(textMatches.map((m) => [m.quoteKey, m]));
   }
-  const evidenceByCell = new Map<string, Evidence>(
-    currentEvidence().map((item) => [cellKeyOf(item.fieldId, item.entityKey), item]),
-  );
+  recomputeEvidence();
   const fieldLabelById = new Map(data.fields.map((field) => [field.fieldId, field.fieldLabel]));
-  /** 複数一致の表示中出現（cellKey → occurrences の index）。未設定は selectedIndex */
+  /** 複数一致の表示中出現（quoteKey → occurrences の index）。未設定は selectedIndex */
   const matchSelection = new Map<string, number>();
 
   // --- 群構成（arm 確定ゲート。requirements.md §4.2 / ui-states.md §3） -----
@@ -572,6 +594,7 @@ export function createVerificationPanel(
    * 文書切替が発生したときの「保留ジャンプ」。適用したら null に戻す）
    */
   let pendingJumpCellKey: string | null = null;
+  let pendingQuoteSearch: string | null = null;
 
   function renderPdfLoadingPlaceholder(): HTMLElement {
     return el('p', {
@@ -586,6 +609,9 @@ export function createVerificationPanel(
    * ジャンプし、ロード中・未着手なら「保留ジャンプ」として予約する（ロード解決後に 1 回だけ適用）
    */
   function focusHighlightNowOrPending(cellKey: string): void {
+    selectedQuoteKey = resolvedQuoteKey(cellKey);
+    ensureActiveDocumentForCell(cellKey);
+    cellKey = selectedQuoteKey;
     if (viewer !== null && viewerDocId === activeDocumentId) {
       viewer.focusHighlight(cellKey);
     } else {
@@ -716,7 +742,7 @@ export function createVerificationPanel(
         ? []
         : buildDocumentHighlights(
             documentId,
-            currentEvidence().filter((item) => item.documentId === documentId),
+            visibleEvidence.filter((item) => item.documentId === documentId),
             loaded.textPages,
           ),
     );
@@ -728,7 +754,12 @@ export function createVerificationPanel(
         viewer = createPdfViewer({
           document: loaded.pdf,
           pages: loaded.textPages,
-          onHighlightClick: (id) => focusCell(id, { jump: false, domFocus: true }),
+          onHighlightClick: (id) => {
+            focusCell(cellKeyFromQuoteKey(id), { jump: false, domFocus: true, quoteKey: id });
+            selectedQuoteKey = id;
+            syncTextViewer(id);
+            syncViewer();
+          },
           renderPage: options.renderPage,
         });
       } else if (viewerDocId !== documentId) {
@@ -736,6 +767,10 @@ export function createVerificationPanel(
       }
       viewerDocId = documentId;
       viewerBody.replaceChildren(viewer.root);
+      if (pendingQuoteSearch !== null) {
+        viewer.search(pendingQuoteSearch);
+        pendingQuoteSearch = null;
+      }
     } else {
       viewerBody.replaceChildren(pdfErrorCard(documentId, loaded.pdfError));
     }
@@ -789,7 +824,7 @@ export function createVerificationPanel(
     if (relocateStatus.get(cellKey) === 'running') {
       return;
     }
-    const evidence = evidenceByCell.get(cellKey);
+    const evidence = evidenceForKey(cellKey);
     /* istanbul ignore if -- ボタンは cell.evidence（buildTabModel が currentEvidence() から
        導出）が非 null のセルにしか出ず、evidenceByCell も同じ currentEvidence() を単一の
        情報源として同期更新するため、実行時にここが undefined になることはない（防御のみ） */
@@ -806,8 +841,7 @@ export function createVerificationPanel(
     }
     if (outcome.status === 'relocated') {
       relocatedEvidence.push(outcome.evidence);
-      evidenceByCell.set(cellKeyOf(outcome.evidence.fieldId, outcome.evidence.entityKey), outcome.evidence);
-      recomputeTextMatches();
+      recomputeEvidence();
       recomputeRectHighlights(outcome.evidence.documentId, outcome.evidence);
       relocateStatus.delete(cellKey);
       refreshForm();
@@ -923,6 +957,7 @@ export function createVerificationPanel(
       return;
     }
     activeDocumentId = documentId;
+    pendingQuoteSearch = null;
     renderActiveDocumentChrome();
     loadActiveDocumentPdf();
     syncTextViewer();
@@ -934,7 +969,7 @@ export function createVerificationPanel(
    * 切替えを実行したら true を返す（初期マウント時の二重ロード回避に使う）
    */
   function ensureActiveDocumentForCell(cellKey: string): boolean {
-    const evidence = evidenceByCell.get(cellKey);
+    const evidence = evidenceForKey(cellKey);
     if (
       evidence !== undefined &&
       evidence.documentId !== activeDocumentId &&
@@ -1366,16 +1401,16 @@ export function createVerificationPanel(
     }
     const info = new Map<string, CellHighlightInfo>();
     for (const match of textMatches) {
-      info.set(match.cellKey, {
+      info.set(match.quoteKey, {
         matchCount: match.occurrences.length,
-        matchIndex: matchSelection.get(match.cellKey) ?? match.selectedIndex,
+        matchIndex: matchSelection.get(match.quoteKey) ?? match.selectedIndex,
       });
     }
-    for (const item of currentEvidence()) {
+    for (const item of visibleEvidence) {
       if (item.bbox === null || item.bboxPage === null) {
         continue;
       }
-      const cellKey = cellKeyOf(item.fieldId, item.entityKey);
+      const cellKey = quoteKeyOf(item);
       if (!info.has(cellKey)) {
         info.set(cellKey, { matchCount: 1, matchIndex: 0 });
       }
@@ -1400,15 +1435,15 @@ export function createVerificationPanel(
       const [fieldId] = JSON.parse(highlight.cellKey) as [string, string];
       const status = states.get(highlight.cellKey)?.status ?? 'unverified';
       // ハイライトは evidence 由来のため対応する Evidence が必ず存在する
-      const confidence = (evidenceByCell.get(highlight.cellKey) as Evidence).confidence;
-      const selected = matchSelection.get(highlight.cellKey) ?? highlight.selectedIndex;
+      const confidence = (evidenceForKey(highlight.quoteKey) as Evidence).confidence;
+      const selected = matchSelection.get(highlight.quoteKey) ?? highlight.selectedIndex;
       // matchSelection の剰余はテキストマッチ（extracted_texts 由来）の件数で取られている。
       // extracted_texts と PDF テキスト層は同一系で通常一致するが、万一件数がズレた場合
       // （取り込み後に Drive 上の PDF が差し替えられた等）の undefined 参照を防ぐため、
       // rect 側の occurrences 長でもクランプする（0 件は buildDocumentHighlights が除外済み）
       const index = selected % highlight.occurrences.length;
       return {
-        id: highlight.cellKey,
+        id: highlight.quoteKey,
         label: fieldLabelById.get(fieldId) ?? fieldId,
         // 色分け: 検証済み = 緑 / low confidence = 橙 / 未検証 = 黄（requirements.md §5-4）
         kind:
@@ -1425,7 +1460,7 @@ export function createVerificationPanel(
    */
   function syncViewer(): void {
     if (viewer !== null && viewerDocId === activeDocumentId) {
-      viewer.setHighlights(viewerHighlights(), focusedCellKey);
+      viewer.setHighlights(viewerHighlights(), selectedQuoteKey ?? (focusedCellKey === null ? null : resolvedQuoteKey(focusedCellKey)));
     }
   }
 
@@ -1442,12 +1477,12 @@ export function createVerificationPanel(
    * 「ハイライトへ移動」ボタン / f キー（onJump）は、フォーカスを動かさず指定セルの根拠だけを
    * 表示するため cellKey を明示的に渡せる（PDF モードの viewer.focusHighlight と同じ位置付け）
    */
-  function syncTextViewer(cellKey: string | null = focusedCellKey): void {
+  function syncTextViewer(cellKey: string | null = selectedQuoteKey ?? focusedCellKey): void {
     if (cellKey === null) {
       textViewer.setSnippet(null);
       return;
     }
-    const evidence = evidenceByCell.get(cellKey);
+    const evidence = evidenceForKey(cellKey);
     if (evidence === undefined || evidence.quote === null) {
       textViewer.setSnippet(null);
       return;
@@ -1528,6 +1563,7 @@ export function createVerificationPanel(
     onSelectTab(tab) {
       activeTab = tab;
       focusedCellKey = computeInitialFocusKey(tab);
+      selectedQuoteKey = null;
       editing = null;
       refreshForm();
       syncViewer();
@@ -1546,6 +1582,7 @@ export function createVerificationPanel(
     onStartEdit(cellKey, action) {
       editing = { cellKey, action };
       focusedCellKey = cellKey;
+      selectedQuoteKey = null;
       refreshForm();
       // 値入力へ即フォーカス（e キーの操作感。ui-flow.md §7）。enum 項目は入力欄ではなく
       // 許容値チップ列が出るため、先頭チップを着地先にする（issue #254）
@@ -1578,6 +1615,7 @@ export function createVerificationPanel(
       commit(cell, 'undo', undoRevertValue(cell.state));
     },
     onJump(cellKey) {
+      selectedQuoteKey = resolvedQuoteKey(cellKey);
       // f キー / 「ハイライトへ移動」: PDF モードはページジャンプ、テキストモードは
       // 当該セルの根拠へスニペットを差し替える（フォーカスは動かさない。issue #28 案2）
       if (viewMode === 'text') {
@@ -1586,10 +1624,21 @@ export function createVerificationPanel(
         focusHighlightNowOrPending(cellKey);
       }
     },
-    onSearchQuote(quote) {
+    onSearchQuote(quote, quoteKey) {
+      if (quoteKey !== undefined) {
+        selectedQuoteKey = quoteKey;
+        ensureActiveDocumentForCell(quoteKey);
+        syncTextViewer(quoteKey);
+        if (viewerDocId !== activeDocumentId) {
+          pendingQuoteSearch = quote;
+          return;
+        }
+      }
       viewer?.search(quote);
     },
     onCycleMatch(cellKey) {
+      cellKey = resolvedQuoteKey(cellKey);
+      selectedQuoteKey = cellKey;
       // 切替ボタンは matchCount > 1 のセルにしか出ないため、対応するテキストマッチが必ず存在する
       const match = textMatchByCell.get(cellKey) as EvidenceTextMatch;
       const current = matchSelection.get(cellKey) ?? match.selectedIndex;
@@ -1606,6 +1655,7 @@ export function createVerificationPanel(
       // コンパクト行は判定操作ボタンを含まないため、click 発火後の再構築で安全に展開できる
       expandedDecidedKey = cellKey;
       focusedCellKey = cellKey;
+      selectedQuoteKey = null;
       refreshForm();
       ensureActiveDocumentForCell(cellKey);
       syncViewer();
@@ -1718,6 +1768,7 @@ export function createVerificationPanel(
       const nextModel = currentTabModel();
       // 宣言を ownDecisions に追加済みなので、直後のセルモデルには必ず同じ entity_key が現れる
       focusedCellKey = nextModel.cells.find((cell) => cell.entityKey === firstEntityKey)!.cellKey;
+      selectedQuoteKey = null;
       editing = null;
       refreshForm();
       syncViewer();
@@ -1764,6 +1815,7 @@ export function createVerificationPanel(
       const nextModel = currentTabModel();
       // 宣言を ownDecisions に追加済みなので、直後のセルモデルには必ず同じ entity_key が現れる
       focusedCellKey = nextModel.cells.find((cell) => cell.entityKey === entityKey)!.cellKey;
+      selectedQuoteKey = null;
       editing = null;
       refreshForm();
       syncViewer();
@@ -1848,7 +1900,7 @@ export function createVerificationPanel(
    */
   function focusCell(
     cellKey: string,
-    behavior: { jump: boolean; domFocus: boolean },
+    behavior: { jump: boolean; domFocus: boolean; quoteKey?: string },
   ): void {
     if (cellKey === focusedCellKey) {
       return;
@@ -1859,6 +1911,7 @@ export function createVerificationPanel(
       return;
     }
     focusedCellKey = cellKey;
+    selectedQuoteKey = behavior.quoteKey ?? null;
     // 判定済みブロックのコンパクト行へ着地するとき（ビューアクリック / j・k / ディープリンク）は
     // 展開して通常カードを見せる。コンパクト行は focusin リスナを持たないため、
     // ここでの再構築が click をキャンセルする経路は通常カードの focusin だけに限られ、
@@ -1886,7 +1939,7 @@ export function createVerificationPanel(
       applyFocusClasses();
     }
     // 別文書由来のセルなら出所 PDF へ自動切替してからハイライトへ（v0.10 フェーズ 3）
-    ensureActiveDocumentForCell(cellKey);
+    ensureActiveDocumentForCell(behavior.quoteKey ?? cellKey);
     syncViewer();
     syncTextViewer();
     if (behavior.jump) {
@@ -1996,6 +2049,7 @@ export function createVerificationPanel(
       }
     }
     focusedCellKey = movedTo ?? cell.cellKey;
+    selectedQuoteKey = null;
     refreshForm();
     syncViewer();
     syncTextViewer();

@@ -24,6 +24,7 @@ import {
   toRawRange,
   type NormalizedTextMap,
 } from '../anchoring/normalizeText';
+import { quoteKeyOf } from './evidenceBundles';
 import { cellKeyOf } from './cellState';
 
 /** 1 出現ぶんのハイライト（1 ページ内の矩形集合） */
@@ -45,6 +46,7 @@ export interface EvidenceHighlight {
   documentId: string;
   /** 対応する検証セル（fieldId × entityKey）。フォーム側との双方向ジャンプに使う */
   cellKey: string;
+  quoteKey: string;
   /** bbox 由来（source: 'bbox'）は機械検証不能のため anchor_status を持たず null */
   status: Exclude<AnchorStatus, 'failed'> | null;
   /** 出現位置（ページ昇順）。exact / normalized は複数になりうる */
@@ -195,6 +197,7 @@ export function buildDocumentHighlights(
         evidenceId: item.evidenceId,
         documentId,
         cellKey: cellKeyOf(item.fieldId, item.entityKey),
+        quoteKey: quoteKeyOf(item),
         status: null,
         source: 'bbox',
         occurrences: [
@@ -236,6 +239,7 @@ export function buildDocumentHighlights(
       evidenceId: item.evidenceId,
       documentId,
       cellKey: cellKeyOf(item.fieldId, item.entityKey),
+      quoteKey: quoteKeyOf(item),
       status: item.anchorStatus,
       source: 'anchor',
       occurrences,
@@ -252,6 +256,7 @@ export interface EvidenceTextMatch {
   documentId: string;
   /** 対応する検証セル（fieldId × entityKey） */
   cellKey: string;
+  quoteKey: string;
   status: Exclude<AnchorStatus, 'failed'>;
   /** 出現位置（ページ昇順）。exact / normalized は複数になりうる */
   occurrences: Array<{ page: number; range: CharRange }>;
@@ -304,6 +309,7 @@ export function buildDocumentTextMatches<P extends { page: number; text: string 
       evidenceId: item.evidenceId,
       documentId,
       cellKey: cellKeyOf(item.fieldId, item.entityKey),
+      quoteKey: quoteKeyOf(item),
       status: item.anchorStatus,
       occurrences,
       selectedIndex: nearestIndex(occurrences, item.page),
