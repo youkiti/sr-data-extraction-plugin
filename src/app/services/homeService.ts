@@ -9,12 +9,14 @@ import type { GoogleApiDeps } from '../../lib/google/types';
 import type { HomeState, Store } from '../store';
 
 import { computeAnnotatorProgress } from '../../features/adjudication/gate';
-import { isReviewSetsActive, visibleStudyIdsForReviewer } from '../../features/review/reviewSets';
+import { isReviewSetsActive } from '../../features/review/reviewSets';
 import { readDocuments } from '../../features/documents/documentRepository';
 import { resolveActiveStudies } from '../../features/documents/studyRepository';
 import { getCurrentUserEmail } from '../../lib/google/identity';
 import {
   readReviewSetProgressMaterials,
+  filterReviewSetStudies,
+  reviewSetsForFiltering,
   requireReviewSets,
   reviewSetStudies,
   type ReviewSetServiceDeps,
@@ -86,16 +88,14 @@ export async function loadAssignedProgress(
     const documents =
       store.getState().documents.records ??
       (await readDocuments(project.spreadsheetId, deps.google));
-    // requireReviewSets の通過後、非 owner のセットは必ず読込済み。
-    const sets = store.getState().reviewSets.sets!;
+    const sets = reviewSetsForFiltering(store, true);
     if (!isReviewSetsActive(resolveActiveStudies(studies, documents), sets)) {
       patchHome(store, { assignedProgressLoading: false, assignedProgress: null });
       return;
     }
     const email = (await getCurrentUserEmail(deps.profile)) ?? '';
     const material = await readReviewSetProgressMaterials(store, deps);
-    const visible = new Set(visibleStudyIdsForReviewer(email, material.studies, sets));
-    const ownStudies = material.studies.filter((study) => visible.has(study.studyId));
+    const ownStudies = filterReviewSetStudies(store, material.studies, documents, email, true);
     const done = ownStudies.filter(
       (study) =>
         computeAnnotatorProgress(

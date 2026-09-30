@@ -8,6 +8,8 @@ export interface ReviewSetRow {
   setId: string;
   reviewerEmails: string[];
   seed: string | null;
+  /** 担当者の編集後も保持する、seed を記録した分割の日時（メモリ内のみ） */
+  splitUpdatedAt?: string;
   updatedBy: string;
   updatedAt: string;
 }

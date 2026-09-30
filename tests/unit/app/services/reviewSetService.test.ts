@@ -23,6 +23,7 @@ import {
   appendReviewSetRows,
   readReviewSetRows,
 } from '../../../../src/features/project/reviewSetRepository';
+import { readReviewerAssignments } from '../../../../src/features/project/reviewerRepository';
 import { loadProjectMeta } from '../../../../src/features/project/selectProject';
 import {
   getSchemaFieldsByVersion,
@@ -34,6 +35,7 @@ import { getCurrentUserEmail } from '../../../../src/lib/google/identity';
 import { readVerifyTargetMaterials } from '../../../../src/app/services/verifyService';
 import type { ProjectRole } from '../../../../src/domain/reviewer';
 import type { DocumentRecord } from '../../../../src/domain/document';
+import { currentReviewSets } from '../../../../src/features/review/reviewSets';
 import { decision, field, reviewSet, study } from '../../features/review/reviewSetFixtures';
 
 jest.mock('../../../../src/features/documents/documentRepository', () => ({
@@ -48,6 +50,10 @@ jest.mock('../../../../src/features/project/reviewSetRepository', () => ({
   ...jest.requireActual('../../../../src/features/project/reviewSetRepository'),
   readReviewSetRows: jest.fn(),
   appendReviewSetRows: jest.fn(),
+}));
+jest.mock('../../../../src/features/project/reviewerRepository', () => ({
+  ...jest.requireActual('../../../../src/features/project/reviewerRepository'),
+  readReviewerAssignments: jest.fn(),
 }));
 jest.mock('../../../../src/features/project/selectProject', () => ({ loadProjectMeta: jest.fn() }));
 jest.mock('../../../../src/features/schema/schemaRepository', () => ({
@@ -135,6 +141,7 @@ beforeEach(() => {
     createdAt: 't0',
     createdBy: 'owner@example.com',
   });
+  jest.mocked(readReviewerAssignments).mockResolvedValue([]);
   jest.mocked(readReviewSetRows).mockResolvedValue([]);
   jest.mocked(readDocuments).mockResolvedValue([doc()]);
   jest.mocked(readStudies).mockResolvedValue([study()]);
@@ -544,6 +551,7 @@ describe('Home と dashboard の担当進捗', () => {
     await loadDashboard(result, deps);
     expect(readVerifyTargetMaterials).toHaveBeenCalledWith(result, deps, 'sid', {
       assignedOnly: false,
+      force: undefined,
     });
     expect(
       result.getState().dashboard.reviewSetProgress?.map((p) => [p.email, p.setId, p.done]),
@@ -579,4 +587,220 @@ test('owner のセット読込失敗時は dashboard を従来の集計へ縮退
   await loadDashboard(result, deps);
   expect(result.getState().dashboard.loadError).toBeNull();
   expect(result.getState().dashboard.reviewSetProgress).toBeNull();
+});
+
+describe('再読込と割当変更の防御', () => {
+  test.each([null, '並行読込失敗'])(
+    '絞り込み直前の未ロード・エラーでは非 owner の対象を出さない（%s）',
+    (error) => {
+      const result = activeStore('reviewer_with_ai');
+      result.setState({
+        reviewSets: {
+          ...result.getState().reviewSets,
+          sets: error === null ? null : result.getState().reviewSets.sets,
+          error,
+        },
+      });
+      expect(() => filterReviewSetStudies(result, [study()], [doc()], '', true)).toThrow(
+        error ?? '担当セット',
+      );
+      expect(filterReviewSetStudies(result, [study()], [doc()], '', false)).toEqual([study()]);
+      result.setState({ role: { ...result.getState().role, role: 'owner' } });
+      expect(filterReviewSetStudies(result, [study()], [doc()], '', true)).toEqual([study()]);
+    },
+  );
+  test.each([false, true])(
+    'セット変更または成功した force は派生キャッシュを無効化する（force=%s）',
+    async (force) => {
+      const result = activeStore();
+      const dispose = jest.fn();
+      result.setState({
+        home: { ...result.getState().home, assignedProgress: { done: 1, total: 2 } },
+        verify: {
+          ...result.getState().verify,
+          selectedStudyId: 's1',
+          verification: { disposePdf: dispose } as unknown as NonNullable<
+            ReturnType<typeof result.getState>['verify']['verification']
+          >,
+        },
+        dashboard: {
+          ...result.getState().dashboard,
+          reviewSetProgress: [{ email: 'a', setId: 'group-1', done: 1, total: 2 }],
+        },
+        adjudicate: {
+          ...result.getState().adjudicate,
+          rows: [],
+          agreementOutsideCount: 2,
+          calibrationAgreement: [],
+        },
+      });
+      const old = result.getState().reviewSets.sets!;
+      jest
+        .mocked(readReviewSetRows)
+        .mockResolvedValue(force ? old : [reviewSet({ reviewerEmails: ['new@example.com'] })]);
+      if (!force) result.setState({ reviewSets: { ...result.getState().reviewSets, sets: null } });
+      await loadReviewSets(result, deps, { force });
+      expect(dispose).toHaveBeenCalledTimes(1);
+      expect(result.getState().verify.selectedStudyId).toBeNull();
+      expect(result.getState().home.assignedProgress).toBeNull();
+      expect(result.getState().dashboard.reviewSetProgress).toBeNull();
+      expect(result.getState().adjudicate.rows).toBeNull();
+      expect(result.getState().adjudicate.calibrationAgreement).toBeNull();
+      expect(result.getState().documents.studies).toBeNull();
+    },
+  );
+  test('同じセットを自然再読込した場合は表示中のキャッシュを残す', async () => {
+    const result = activeStore();
+    result.setState({
+      reviewSets: { ...result.getState().reviewSets, error: '前回失敗', sets: null },
+    });
+    jest.mocked(readReviewSetRows).mockResolvedValue([]);
+    await loadReviewSets(result, deps);
+    const progress = { done: 0, total: 1 };
+    result.setState({ home: { ...result.getState().home, assignedProgress: progress } });
+    await loadReviewSets(result, deps);
+    expect(result.getState().home.assignedProgress).toBe(progress);
+  });
+  test('Studies の force はキャッシュとセット未使用状態を越えて実値を読む', async () => {
+    const result = activeStore();
+    const next = study({ studyId: 'new' });
+    jest.mocked(readStudies).mockResolvedValue([next]);
+    expect(await reviewSetStudies(result, deps, { force: true })).toEqual([next]);
+    result.setState({ reviewSets: { ...result.getState().reviewSets, sets: [] } });
+    const material = await readReviewSetProgressMaterials(result, deps, { force: true });
+    expect(readDocuments).toHaveBeenCalled();
+    expect(material.studies).toEqual([]);
+  });
+  test.each([false, true])(
+    'Home は進捗素材の取得中のセット失敗でも全件を表示しない（null=%s）',
+    async (missing) => {
+      const result = activeStore('reviewer_with_ai');
+      jest.mocked(readAllDecisions).mockImplementationOnce(async () => {
+        result.setState({
+          reviewSets: {
+            ...result.getState().reviewSets,
+            sets: missing ? null : result.getState().reviewSets.sets,
+            error: '並行読込失敗',
+          },
+        });
+        return [];
+      });
+      await loadAssignedProgress(result, deps);
+      expect(result.getState().home.assignedProgress).toBeNull();
+      expect(result.getState().home.assignedProgressError).toBe('並行読込失敗');
+    },
+  );
+  test.each(['セット', '研究', '復旧読込'] as const)(
+    '分割の %s 失敗後は両タブを読み直して保存エラーを残す',
+    async (step) => {
+      const result = store();
+      const oldStudy = study();
+      jest.mocked(readStudies).mockResolvedValue([oldStudy]);
+      if (step === 'セット')
+        jest.mocked(appendReviewSetRows).mockRejectedValueOnce(new Error('セット保存失敗'));
+      else jest.mocked(updateStudyReviewSets).mockRejectedValueOnce(new Error('研究保存失敗'));
+      if (step === '復旧読込')
+        jest
+          .mocked(readStudies)
+          .mockResolvedValueOnce([oldStudy])
+          .mockRejectedValueOnce(new Error('復旧読込失敗'));
+      jest.mocked(readReviewSetRows).mockResolvedValue(step === 'セット' ? [] : [reviewSet()]);
+      await splitReviewSets(result, deps, { calibrationCount: 0, groupCount: 1 });
+      expect(readReviewSetRows).toHaveBeenCalledTimes(1);
+      expect(readStudies).toHaveBeenCalledTimes(2);
+      expect(result.getState().reviewSets.saveError).toBe(
+        step === 'セット' ? 'セット保存失敗' : '研究保存失敗',
+      );
+      expect(result.getState().reviewSets.saving).toBe(false);
+      if (step === 'セット') expect(updateStudyReviewSets).not.toHaveBeenCalled();
+      else
+        expect(jest.mocked(appendReviewSetRows).mock.invocationCallOrder[0]).toBeLessThan(
+          jest.mocked(updateStudyReviewSets).mock.invocationCallOrder[0]!,
+        );
+      if (step === '復旧読込') expect(result.getState().documents.loadError).toBe('復旧読込失敗');
+      else expect(result.getState().documents.studies).toEqual([oldStudy]);
+    },
+  );
+  test('dashboard は登録のみの reviewer と adjudicator を校正の行へ含め、最新 revoked は含めない', async () => {
+    const result = activeStore();
+    jest.mocked(readReviewerAssignments).mockResolvedValue([
+      {
+        email: 'new@example.com',
+        role: 'reviewer',
+        reviewMode: 'independent',
+        assignedBy: 'owner',
+        assignedAt: 't0',
+      },
+      {
+        email: 'judge@example.com',
+        role: 'adjudicator',
+        reviewMode: null,
+        assignedBy: 'owner',
+        assignedAt: 't0',
+      },
+      {
+        email: 'revoked@example.com',
+        role: 'reviewer',
+        reviewMode: 'with_ai',
+        assignedBy: 'owner',
+        assignedAt: 't0',
+      },
+      {
+        email: 'revoked@example.com',
+        role: 'revoked',
+        reviewMode: null,
+        assignedBy: 'owner',
+        assignedAt: 't1',
+      },
+    ]);
+    await loadDashboard(result, deps);
+    expect(result.getState().dashboard.reviewSetProgress).toEqual(
+      expect.arrayContaining([
+        { email: 'new@example.com', setId: 'calibration', done: 0, total: 1 },
+        { email: 'judge@example.com', setId: 'calibration', done: 0, total: 1 },
+      ]),
+    );
+    expect(
+      result
+        .getState()
+        .dashboard.reviewSetProgress?.some((row) => row.email === 'revoked@example.com'),
+    ).toBe(false);
+  });
+});
+
+test('グループを減らした再分割は旧グループを退役させ、残す担当者の seed 履歴を保持する', async () => {
+  const result = activeStore();
+  result.setState({
+    reviewSets: {
+      ...result.getState().reviewSets,
+      sets: [...result.getState().reviewSets.sets!, reviewSet({ setId: 'group-2' })],
+    },
+  });
+  await splitReviewSets(result, deps, { calibrationCount: 1, groupCount: 1 });
+  await confirmResplit(result, deps);
+  expect(
+    currentReviewSets(result.getState().documents.studies!, result.getState().reviewSets.sets!).map(
+      (set) => set.setId,
+    ),
+  ).toEqual(['calibration', 'group-1']);
+  await saveReviewSetEmails(result, deps, 'group-1', ['new@example.com']);
+  expect(
+    currentReviewSets(result.getState().documents.studies!, result.getState().reviewSets.sets!).map(
+      (set) => set.setId,
+    ),
+  ).toEqual(['calibration', 'group-1']);
+  expect(
+    result.getState().reviewSets.sets?.find((set) => set.setId === 'group-1')?.splitUpdatedAt,
+  ).toBe('t9');
+});
+
+test('セットの再読込中に取得した新しい Studies は破棄しない', async () => {
+  const result = activeStore();
+  const fresh = [study({ studyId: 'new' })];
+  jest.mocked(readReviewSetRows).mockImplementationOnce(async () => {
+    result.setState({ documents: { ...result.getState().documents, studies: fresh } });
+    return [reviewSet()];
+  });
+  await loadReviewSets(result, deps, { force: true });
+  expect(result.getState().documents.studies).toBe(fresh);
 });

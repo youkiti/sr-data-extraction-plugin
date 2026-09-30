@@ -29,6 +29,7 @@ import {
   buildAgreementDisagreementsCsv,
   type AgreementStudyInput,
   type CalibrationPairAgreement,
+  type CalibrationArmRemap,
 } from '../../features/adjudication/agreement';
 import {
   armKeysInUse,
@@ -120,18 +121,26 @@ async function resolveDocuments(
   store: Store,
   deps: AdjudicationServiceDeps,
   spreadsheetId: string,
+  force = false,
 ): Promise<readonly DocumentRecord[]> {
   const cached = store.getState().documents.records;
-  return cached ?? (await readDocuments(spreadsheetId, deps.google));
+  if (!force && cached !== null) return cached;
+  const records = await readDocuments(spreadsheetId, deps.google);
+  if (force) store.setState({ documents: { ...store.getState().documents, records } });
+  return records;
 }
 
 async function resolveStudies(
   store: Store,
   deps: AdjudicationServiceDeps,
   spreadsheetId: string,
+  force = false,
 ): Promise<readonly StudyRecord[]> {
   const cached = store.getState().documents.studies;
-  return cached ?? (await readStudies(spreadsheetId, deps.google));
+  if (!force && cached !== null) return cached;
+  const studies = await readStudies(spreadsheetId, deps.google);
+  if (force) store.setState({ documents: { ...store.getState().documents, studies } });
+  return studies;
 }
 
 /**
@@ -153,13 +162,13 @@ export async function loadAdjudicateTargets(
   patchAdjudicate(store, { loading: true, loadError: null });
   try {
     await requireReviewSets(store, deps);
-    if (state.adjudicate.rows !== null && options.force !== true) {
+    if (store.getState().adjudicate.rows !== null && options.force !== true) {
       patchAdjudicate(store, { loading: false });
       return;
     }
     const { spreadsheetId } = project;
-    const documents = await resolveDocuments(store, deps, spreadsheetId);
-    const studies = await resolveStudies(store, deps, spreadsheetId);
+    const documents = await resolveDocuments(store, deps, spreadsheetId, options.force);
+    const studies = await resolveStudies(store, deps, spreadsheetId, options.force);
     const studySheet = await readStudyDataSheet(spreadsheetId, deps.google);
     const resultsRows = await readResultsDataRows(spreadsheetId, deps.google);
     const decisions = await readAllDecisions(spreadsheetId, deps.google);
@@ -802,10 +811,37 @@ async function collectReadyStudyInputs(
   const calibrationStudies = selection
     .map((item) => item.study)
     .filter((study) => study.reviewSet === CALIBRATION_SET_ID);
+  const armRemaps = new Map<string, CalibrationArmRemap>();
+  for (const study of calibrationStudies) {
+    const remap = parseArmKeyRemapNote(
+      latestArmStructureNote(
+        armRows.filter((row) => row.studyId === study.studyId),
+        'consensus',
+      ),
+    );
+    if (remap === null) continue;
+    const resolved = resolveAnnotatorPair({
+      studyId: study.studyId,
+      studyDataRows: studySheet.rows,
+      resultsDataRows: resultsRows,
+      decisions,
+    });
+    const pair =
+      store.getState().adjudicate.pairSelections[study.studyId] ??
+      (resolved.kind === 'ready' ? resolved : null);
+    // 3 名以上で選択ペアがないとき、保存辞書の対象者を推測して他ペアへ適用しない。
+    if (pair !== null)
+      armRemaps.set(study.studyId, {
+        annotatorA: pair.annotatorA,
+        annotatorB: pair.annotatorB,
+        remap,
+      });
+  }
   const calibration =
     active && calibrationStudies.length > 0
       ? computeCalibrationAgreement({
           studies: calibrationStudies,
+          armRemaps,
           fields,
           studyDataRows: studySheet.rows,
           resultsDataRows: resultsRows,

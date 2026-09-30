@@ -27,7 +27,12 @@ import { getLocal, setLocal } from '../../lib/storage/chromeStorage';
 import type { RoleState, Store } from '../store';
 import { showToast } from '../ui/toast';
 import { t } from '../../lib/i18n';
-import { filterReviewSetStudies, requireReviewSets, reviewSetStudies } from './reviewSetService';
+import {
+  filterReviewSetStudies,
+  requireReviewSets,
+  reviewSetStudies,
+  reviewSetsForFiltering,
+} from './reviewSetService';
 
 export interface RoleServiceDeps {
   google: GoogleApiDeps;
@@ -253,9 +258,7 @@ async function documentsForFileAccess(
     filterReviewSetStudies(store, studies, documents, email, true).map((study) => study.studyId),
   );
   // 有効化していなければ従来どおり。Studies 未読込の旧プロジェクトもここへ入る。
-  const sets = store.getState().reviewSets.sets;
-  if (sets === null)
-    throw new Error(store.getState().reviewSets.error ?? t('reviewSets.notLoaded'));
+  const sets = reviewSetsForFiltering(store, true);
   if (!isReviewSetsActive(resolveActiveStudies(studies, documents), sets)) return documents;
   return documents.filter((doc) => allowed.has(doc.studyId));
 }

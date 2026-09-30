@@ -23,6 +23,7 @@
 // 【項目の集計単位】study によって human annotator ペアが異なりうるが、v1 は「2 名の評価者間一致」
 // として全 ready study をプールして fieldId ごとに集計する（study ごとの κ を出して平均する、
 // といった加重はしない素朴な集計）。
+import { remapArmEntityKey } from './armMatch';
 import type { StudyDataRow, ResultsDataRow } from '../../domain/annotation';
 import type { Decision } from '../../domain/decision';
 import { CALIBRATION_SET_ID } from '../../domain/reviewSet';
@@ -219,7 +220,15 @@ export function buildAgreementDisagreementsCsv(report: AgreementReport): string 
   return buildCsv(header, rows);
 }
 
+export interface CalibrationArmRemap {
+  annotatorA: string;
+  annotatorB: string;
+  remap: ReadonlyMap<string, string>;
+}
+
 export interface CalibrationAgreementInput {
+  /** 保存された群対応は、その対応を確定したペアにだけ適用する */
+  armRemaps?: ReadonlyMap<string, CalibrationArmRemap>;
   studies: readonly StudyRecord[];
   fields: readonly SchemaField[];
   studyDataRows: readonly StudyDataRow[];
@@ -269,14 +278,40 @@ export function computeCalibrationAgreement(
           pair = { annotatorA, annotatorB, studies: [] };
           pairs.set(key, pair);
         }
+        const saved = input.armRemaps?.get(study.studyId);
+        const remap =
+          saved !== undefined &&
+          [annotatorA, annotatorB].includes(saved.annotatorA) &&
+          [annotatorA, annotatorB].includes(saved.annotatorB)
+            ? saved
+            : null;
+        const mapped = <T extends ResultsDataRow | Decision>(rows: T[], annotator: string): T[] =>
+          remap !== null && annotator === remap.annotatorB
+            ? rows.map((row) => ({
+                ...row,
+                entityKey: remapArmEntityKey(row.entityKey, remap.remap),
+              }))
+            : rows;
         const cells = buildAdjudicationCells(
           input.fields,
           studyRows.filter((row) => row.annotator === annotatorA).at(-1) ?? null,
           studyRows.filter((row) => row.annotator === annotatorB).at(-1) ?? null,
-          resultRows.filter((row) => row.annotator === annotatorA),
-          resultRows.filter((row) => row.annotator === annotatorB),
-          decisions.filter((row) => row.annotator === annotatorA),
-          decisions.filter((row) => row.annotator === annotatorB),
+          mapped(
+            resultRows.filter((row) => row.annotator === annotatorA),
+            annotatorA,
+          ),
+          mapped(
+            resultRows.filter((row) => row.annotator === annotatorB),
+            annotatorB,
+          ),
+          mapped(
+            decisions.filter((row) => row.annotator === annotatorA),
+            annotatorA,
+          ),
+          mapped(
+            decisions.filter((row) => row.annotator === annotatorB),
+            annotatorB,
+          ),
         );
         pair.studies.push({ studyId: study.studyId, studyLabel: study.studyLabel, cells });
       }

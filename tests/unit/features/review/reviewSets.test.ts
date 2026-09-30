@@ -1,6 +1,7 @@
 // 担当セットの分割再現性・表示対象・継承・レビュアーごとの進捗を検証する。
 import {
   assignedPairForStudy,
+  currentReviewSets,
   generateSeed,
   inheritReviewSet,
   isReviewSetsActive,
@@ -207,4 +208,27 @@ describe('レビュアー × セットの進捗', () => {
       1,
     );
   });
+});
+
+test('現在のグループは最新 seed の分割とアクティブ研究の割当で決まる', () => {
+  const old = reviewSet({ setId: 'group-3', seed: '1', updatedAt: 't0' });
+  const rows = [
+    old,
+    reviewSet({ seed: '2', updatedAt: 't2' }),
+    reviewSet({ setId: 'group-2', seed: '1', splitUpdatedAt: 't0', updatedAt: 't9' }),
+    reviewSet({ setId: 'calibration', seed: '2', updatedAt: 't2' }),
+  ];
+  expect(currentReviewSets([], rows).map((set) => set.setId)).toEqual(['group-1', 'calibration']);
+  const assigned = study({ reviewSet: 'group-3' });
+  expect(currentReviewSets([assigned], rows).map((set) => set.setId)).toEqual([
+    'group-3',
+    'group-1',
+    'calibration',
+  ]);
+  expect(visibleStudyIdsForReviewer('a@example.com', [assigned], rows)).toEqual(['s1']);
+  expect(assignedPairForStudy(assigned, rows)).toEqual(['a@example.com', 'b@example.com']);
+  expect(currentReviewSets([], [reviewSet({ seed: null })])).toEqual([]);
+  expect(
+    currentReviewSets([study({ reviewSet: 'group-1' })], [reviewSet({ seed: null })]),
+  ).toHaveLength(1);
 });

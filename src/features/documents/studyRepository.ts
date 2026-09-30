@@ -116,7 +116,7 @@ export async function appendStudies(
   await appendRows(spreadsheetId, STUDIES_TAB, studies.map(studyToRow), deps);
 }
 
-/** 既存行（study_id 一致）を丸ごと上書きする（study_label / registration_id / note / review_set 編集）。見つからなければ throw */
+/** メタデータの先頭 6 列だけを更新する。担当セットは専用更新以外で上書きしない */
 export async function updateStudy(
   spreadsheetId: string,
   study: StudyRecord,
@@ -127,7 +127,13 @@ export async function updateStudy(
   if (rowIndex === undefined) {
     throw new Error(`Studies に study_id "${study.studyId}" の行がありません`);
   }
-  await updateRow(spreadsheetId, STUDIES_TAB, rowIndex, studyToRow(study), deps);
+  await updateRow(
+    spreadsheetId,
+    STUDIES_TAB,
+    rowIndex,
+    studyToRow(study).slice(0, LEGACY_COLUMN_COUNT),
+    deps,
+  );
 }
 
 /**
@@ -148,7 +154,7 @@ export async function updateStudies(
     if (rowIndex === undefined) {
       throw new Error(`Studies に study_id "${study.studyId}" の行がありません`);
     }
-    return { rowIndex, row: studyToRow(study) };
+    return { rowIndex, row: studyToRow(study).slice(0, LEGACY_COLUMN_COUNT) };
   });
   await batchUpdateRows(spreadsheetId, STUDIES_TAB, updates, deps);
 }

@@ -268,7 +268,7 @@ describe('担当セット列の後方互換と更新', () => {
     );
   });
 
-  test('単行更新・一括更新・追記で担当セット値を保持する', async () => {
+  test('古いキャッシュのメタデータ更新は担当セット列を書かず、新規追記だけに含める', async () => {
     const study = makeStudy({ reviewSet: 'group-2' });
     expect(studyToRow(study)[6]).toBe('group-2');
     const deps = makeDeps([HEADER, [...ROW, 'group-1']]);
@@ -284,7 +284,13 @@ describe('担当セット列の後方互換と更新', () => {
         const body = JSON.parse(String((init as RequestInit).body));
         return (body.values ?? body.data[0].values)[0][6];
       }),
-    ).toEqual(['group-2', 'group-2', 'group-2']);
+    ).toEqual([undefined, undefined, 'group-2']);
+    expect(
+      writes.slice(0, 2).map(([, init]) => {
+        const body = JSON.parse(String((init as RequestInit).body));
+        return (body.values ?? body.data[0].values)[0].length;
+      }),
+    ).toEqual([6, 6]);
   });
 
   test('セットを一括更新し、未割当の null と他のメタデータを保持する', async () => {
@@ -324,3 +330,28 @@ describe('担当セット列の後方互換と更新', () => {
     ).toBe(true);
   });
 });
+
+test.each([false, true])(
+  '古い担当セットを持つ編集でも実際のシートの割当を維持する（一括=%s）',
+  async (batch) => {
+    const row = [...ROW, 'group-9'];
+    const deps = makeDeps([HEADER, row]);
+    deps.fetch.mockImplementation(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === 'PUT' || init?.method === 'POST') {
+        const body = JSON.parse(String(init.body));
+        const values = (body.values ?? body.data[0].values)[0] as string[];
+        values.forEach((value, index) => {
+          row[index] = value;
+        });
+      }
+      return { ok: true, json: async () => ({ values: [HEADER, row] }), text: async () => '' };
+    });
+    const stale = makeStudy({ studyLabel: '編集済み', reviewSet: 'group-1' });
+    if (batch) await updateStudies('sid', [stale], deps);
+    else await updateStudy('sid', stale, deps);
+    expect((await readStudies('sid', deps))[0]).toMatchObject({
+      studyLabel: '編集済み',
+      reviewSet: 'group-9',
+    });
+  },
+);

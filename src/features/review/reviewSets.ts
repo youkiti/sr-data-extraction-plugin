@@ -23,6 +23,29 @@ export function isReviewSetsActive(
   );
 }
 
+/** 最新の分割に含まれるグループと、現在も研究が割り当てられたグループを残す */
+export function currentReviewSets(
+  studies: readonly StudyRecord[],
+  sets: readonly ReviewSetRow[],
+): ReviewSetRow[] {
+  const seeded = sets.filter((set) => set.seed !== null);
+  const latest = seeded.reduce<ReviewSetRow | null>(
+    (previous, set) =>
+      previous === null ||
+      (set.splitUpdatedAt ?? set.updatedAt) > (previous.splitUpdatedAt ?? previous.updatedAt)
+        ? set
+        : previous,
+    null,
+  );
+  const assigned = new Set(studies.map((study) => study.reviewSet));
+  return sets.filter(
+    (set) =>
+      !isGroupSetId(set.setId) ||
+      (latest !== null && set.seed === latest.seed) ||
+      assigned.has(set.setId),
+  );
+}
+
 export function generateSeed(random: () => number = Math.random): string {
   return String(Math.floor(random() * 0x100000000) >>> 0);
 }
@@ -76,7 +99,9 @@ export function visibleStudyIdsForReviewer(
   sets: readonly ReviewSetRow[],
 ): string[] {
   const assigned = new Set(
-    sets.filter((set) => set.reviewerEmails.includes(email)).map((set) => set.setId),
+    currentReviewSets(studies, sets)
+      .filter((set) => set.reviewerEmails.includes(email))
+      .map((set) => set.setId),
   );
   return studies
     .filter(
@@ -92,7 +117,7 @@ export function assignedPairForStudy(
   sets: readonly ReviewSetRow[],
 ): [string, string] | null {
   if (study.reviewSet === null || !isGroupSetId(study.reviewSet)) return null;
-  const set = sets.find((row) => row.setId === study.reviewSet);
+  const set = currentReviewSets([study], sets).find((row) => row.setId === study.reviewSet);
   if (set === undefined || set.reviewerEmails.length !== 2) return null;
   return [...set.reviewerEmails].sort((a, b) => a.localeCompare(b)) as [string, string];
 }
@@ -127,7 +152,9 @@ export interface ReviewerSetProgress {
 /** 担当外の組み合わせは返さない。calibration は渡された全 reviewer を対象にする */
 export function reviewerSetProgress(input: ReviewerSetProgressInput): ReviewerSetProgress[] {
   const progress: ReviewerSetProgress[] = [];
-  const sets = [...input.sets].sort((a, b) => compareReviewSetIds(a.setId, b.setId));
+  const sets = currentReviewSets(input.studies, input.sets).sort((a, b) =>
+    compareReviewSetIds(a.setId, b.setId),
+  );
   for (const email of new Set(input.reviewerEmails)) {
     for (const set of sets) {
       if (set.setId !== CALIBRATION_SET_ID && !set.reviewerEmails.includes(email)) continue;

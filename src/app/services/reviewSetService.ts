@@ -76,8 +76,15 @@ export async function loadReviewSets(
         loadProjectMeta(project.spreadsheetId, deps.google),
       ]);
       const folded = foldReviewSets(rows, meta.createdBy);
+      // キャッシュ済みなら冒頭で終了する。実際に再取得した成功結果は派生値を更新する。
+      invalidateAssignments(store);
+      // 並行した文献再読込が新しい Studies を反映済みなら、その結果は保持する。
+      if (store.getState().documents.studies === state.documents.studies) {
+        store.setState({ documents: { ...store.getState().documents, studies: null } });
+      }
       patch(store, { ...folded, loading: false });
     } catch (error) {
+      invalidateAssignments(store);
       patch(store, { sets: null, loading: false, error: message(error) });
     }
   })();
@@ -106,14 +113,33 @@ export async function requireReviewSets(
 export async function reviewSetStudies(
   store: Store,
   deps: Pick<ReviewSetServiceDeps, 'google'>,
+  options: { force?: boolean } = {},
 ): Promise<StudyRecord[]> {
   const state = store.getState();
-  if (state.documents.studies !== null) return state.documents.studies;
+  if (state.documents.studies !== null && !options.force) return state.documents.studies;
   const project = state.currentProject;
-  if (!project || state.reviewSets.sets === null || state.reviewSets.sets.length === 0) return [];
+  if (
+    !project ||
+    (!options.force && (state.reviewSets.sets === null || state.reviewSets.sets.length === 0))
+  )
+    return [];
   const studies = await readStudies(project.spreadsheetId, deps.google);
   store.setState({ documents: { ...store.getState().documents, studies } });
   return studies;
+}
+
+/** 非 owner は絞り込みの直前にもロード状態を確認する */
+export function reviewSetsForFiltering(store: Store, assignedOnly: boolean): ReviewSetRow[] {
+  const state = store.getState();
+  if (
+    assignedOnly &&
+    state.role.role !== null &&
+    state.role.role !== 'owner' &&
+    (state.reviewSets.sets === null || state.reviewSets.error !== null)
+  ) {
+    throw new Error(state.reviewSets.error ?? t('reviewSets.notLoaded'));
+  }
+  return state.reviewSets.error === null ? (state.reviewSets.sets ?? []) : [];
 }
 
 /** 担当対象を返す。非有効化プロジェクトは従来の全件を維持する */
@@ -124,7 +150,7 @@ export function filterReviewSetStudies(
   email: string,
   assignedOnly: boolean,
 ): StudyRecord[] {
-  const sets = store.getState().reviewSets.sets ?? [];
+  const sets = reviewSetsForFiltering(store, assignedOnly);
   const active = resolveActiveStudies(studies, documents);
   if (!assignedOnly || !isReviewSetsActive(active, sets)) return [...studies];
   const visible = new Set(visibleStudyIdsForReviewer(email, active, sets));
@@ -135,12 +161,15 @@ export function filterReviewSetStudies(
 export async function readReviewSetProgressMaterials(
   store: Store,
   deps: Pick<ReviewSetServiceDeps, 'google'>,
+  options: { force?: boolean } = {},
 ) {
   const project = store.getState().currentProject;
   if (!project) throw new Error(t('reviewSets.notLoaded'));
-  const documents =
-    store.getState().documents.records ?? (await readDocuments(project.spreadsheetId, deps.google));
-  const studies = await reviewSetStudies(store, deps);
+  const documents = options.force
+    ? await readDocuments(project.spreadsheetId, deps.google)
+    : (store.getState().documents.records ??
+      (await readDocuments(project.spreadsheetId, deps.google)));
+  const studies = await reviewSetStudies(store, deps, options);
   const active = resolveActiveStudies(studies, documents);
   const versions = await listSchemaVersions(project.spreadsheetId, deps.google);
   const fields =
@@ -181,8 +210,13 @@ function invalidateAssignments(store: Store): void {
       selectedStudyId: null,
       verification: null,
       loadError: null,
+      verifyError: null,
+      studyValues: null,
+      studyRowUpdatedAt: null,
+      resultsRowUpdatedAt: {},
+      conflictMessage: null,
     },
-    home: { ...state.home, assignedProgress: null },
+    home: { ...state.home, assignedProgress: null, assignedProgressError: null },
     dashboard: { ...state.dashboard, data: null, reviewSetProgress: null },
     adjudicate: {
       ...state.adjudicate,
@@ -243,12 +277,6 @@ async function executeSplit(
       active.map((study) => study.studyId),
       { ...input, seed },
     );
-    // updateStudyReviewSets がヘッダー移行を済ませてから全対象を一括更新する。
-    await updateStudyReviewSets(
-      spreadsheetId,
-      [...assignments].map(([studyId, reviewSet]) => ({ studyId, reviewSet })),
-      deps.google,
-    );
     const existing = store.getState().reviewSets.sets!;
     const ids = [
       CALIBRATION_SET_ID,
@@ -262,7 +290,27 @@ async function executeSplit(
       updatedBy: email,
       updatedAt,
     }));
-    await appendReviewSetRows(spreadsheetId, rows, deps.google);
+    try {
+      await appendReviewSetRows(spreadsheetId, rows, deps.google);
+      // updateStudyReviewSets がヘッダー移行を済ませてから全対象を一括更新する。
+      await updateStudyReviewSets(
+        spreadsheetId,
+        [...assignments].map(([studyId, reviewSet]) => ({ studyId, reviewSet })),
+        deps.google,
+      );
+    } catch (error) {
+      // 片方だけ保存できた場合も、シートの実値へ戻してから元の保存エラーを表示する。
+      await loadReviewSets(store, deps, { force: true });
+      store.setState({ documents: { ...store.getState().documents, studies: null } });
+      try {
+        await reviewSetStudies(store, deps, { force: true });
+      } catch (reloadError) {
+        store.setState({
+          documents: { ...store.getState().documents, loadError: message(reloadError) },
+        });
+      }
+      throw error;
+    }
     store.setState({
       documents: {
         ...store.getState().documents,

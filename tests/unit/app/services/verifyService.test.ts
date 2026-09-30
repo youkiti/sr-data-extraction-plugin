@@ -1645,6 +1645,8 @@ describe('担当セットによる検証対象', () => {
         ],
       },
     });
+    readDocumentsMock.mockResolvedValue(documents);
+    readStudiesMock.mockResolvedValue(studies);
     readEvidenceRowsMock.mockResolvedValue([]);
     readCompletedRunMetasMock.mockResolvedValue([
       makeCompletedRunMeta({ studyIds: studies.map((study) => study.studyId) }),
@@ -1668,6 +1670,70 @@ describe('担当セットによる検証対象', () => {
       ]);
     },
   );
+  test.each(['reviewer_with_ai', 'reviewer_independent', 'adjudicator'] as const)(
+    '%s は require 通過後の並行読込失敗でも対象を出さない',
+    async (role) => {
+      const store = assignedStore(role);
+      readAllDecisionsMock.mockImplementationOnce(async () => {
+        store.setState({
+          reviewSets: { ...store.getState().reviewSets, sets: null, error: '並行読込失敗' },
+        });
+        return [];
+      });
+      await loadVerifyTargets(store, makeDeps());
+      expect(store.getState().verify.targets).toBeNull();
+      expect(store.getState().verify.loadError).toBe('並行読込失敗');
+    },
+  );
+  test('強制再読込はキャッシュより新しい Studies と Documents を使う', async () => {
+    const store = assignedStore('reviewer_independent');
+    await loadVerifyTargets(store, makeDeps());
+    const next = makeStudy({ studyId: 'new', reviewSet: 'calibration' });
+    readStudiesMock.mockResolvedValue([next]);
+    readDocumentsMock.mockResolvedValue([makeDocument({ studyId: 'new' })]);
+    await loadVerifyTargets(store, makeDeps(), { force: true });
+    expect(store.getState().verify.targets?.map((target) => target.study.studyId)).toEqual(['new']);
+  });
+  test('キャッシュ済みの対象でも現在の担当外なら検証束を開かない', async () => {
+    const store = assignedStore('reviewer_with_ai');
+    await loadVerifyTargets(store, makeDeps());
+    store.setState({
+      reviewSets: {
+        ...store.getState().reviewSets,
+        sets: [{ ...store.getState().reviewSets.sets![0]!, reviewerEmails: ['other@example.com'] }],
+      },
+    });
+    await openVerifyStudy(store, makeDeps(), 'study-1');
+    expect(store.getState().verify.selectedStudyId).toBeNull();
+    expect(store.getState().verify.verifyError).toContain('見つかりません');
+    expect(getFileBinaryMock).not.toHaveBeenCalled();
+  });
+  test('検証束の読込中に担当が失われたら PDF を破棄して表示しない', async () => {
+    const store = assignedStore('reviewer_with_ai');
+    await loadVerifyTargets(store, makeDeps());
+    jest.mocked(readArmStructuresByStudy).mockImplementationOnce(async () => {
+      store.setState({ reviewSets: { ...store.getState().reviewSets, error: '並行読込失敗' } });
+      return [];
+    });
+    await openVerifyStudy(store, makeDeps(), 'study-1');
+    expect(store.getState().verify.verification).toBeNull();
+    expect(store.getState().verify.selectedStudyId).toBeNull();
+    expect(store.getState().verify.verifyError).toBe('並行読込失敗');
+  });
+  test('email を取得できなければグループの研究を開かない', async () => {
+    const store = assignedStore('reviewer_with_ai');
+    await loadVerifyTargets(store, makeDeps());
+    getCurrentUserEmailMock.mockResolvedValueOnce(null);
+    await openVerifyStudy(store, makeDeps(), 'study-1');
+    expect(store.getState().verify.verifyError).toContain('見つかりません');
+    expect(store.getState().verify.verification).toBeNull();
+  });
+  test('非 owner も担当内の study は開ける', async () => {
+    const store = assignedStore('reviewer_with_ai');
+    await loadVerifyTargets(store, makeDeps());
+    await openVerifyStudy(store, makeDeps(), 'study-1');
+    expect(store.getState().verify.verification).not.toBeNull();
+  });
   test('owner の切り替えと集計用の全件指定', async () => {
     const store = assignedStore('owner');
     await loadVerifyTargets(store, makeDeps());

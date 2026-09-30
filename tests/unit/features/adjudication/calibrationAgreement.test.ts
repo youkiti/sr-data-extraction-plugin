@@ -196,3 +196,68 @@ describe('calibration の全ペア一致度', () => {
     ).toEqual([]);
   });
 });
+
+test.each([false, true])(
+  '保存した群対応で逆順の群を比較する（判定メモあり=%s）',
+  (onlyDecisions) => {
+    const results = [
+      resultRow(a, 's1', '10'),
+      { ...resultRow(a, 's1', '20'), entityKey: 'arm:2' },
+      resultRow(b, 's1', '20'),
+      { ...resultRow(b, 's1', '10'), entityKey: 'arm:2' },
+      resultRow(c, 's1', '10'),
+      { ...resultRow(c, 's1', '20'), entityKey: 'arm:2' },
+    ];
+    const input = {
+      ...empty,
+      studies: [study({ reviewSet: 'calibration' })],
+      fields: [field({ fieldId: 'arm-field', entityLevel: 'arm' })],
+      resultsDataRows: results,
+      decisions: onlyDecisions
+        ? results.map((row) =>
+            decision({
+              studyId: row.studyId,
+              annotator: row.annotator,
+              fieldId: row.fieldId,
+              entityKey: row.entityKey,
+              value: row.value,
+            }),
+          )
+        : [],
+    };
+    expect(computeCalibrationAgreement(input)[0]?.agreementRate).toBe(0);
+    const mapped = {
+      ...input,
+      armRemaps: new Map([
+        [
+          's1',
+          {
+            annotatorA: a,
+            annotatorB: b,
+            remap: new Map([
+              ['arm:1', 'arm:2'],
+              ['arm:2', 'arm:1'],
+            ]),
+          },
+        ],
+      ]),
+    };
+    expect(computeCalibrationAgreement(mapped).map((pair) => pair.agreementRate)).toEqual([
+      1, 1, 0,
+    ]);
+    expect(
+      computeCalibrationAgreement({
+        ...mapped,
+        armRemaps: new Map([['s1', { ...mapped.armRemaps.get('s1')!, annotatorA: 'unknown' }]]),
+      })[0]?.agreementRate,
+    ).toBe(0);
+    expect(
+      computeCalibrationAgreement({
+        ...mapped,
+        armRemaps: new Map([
+          ['s1', { annotatorA: b, annotatorB: a, remap: mapped.armRemaps.get('s1')!.remap }],
+        ]),
+      })[0]?.agreementRate,
+    ).toBe(1);
+  },
+);

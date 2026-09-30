@@ -7,6 +7,7 @@ import {
 } from '../../domain/reviewSet';
 import type { StudyRecord } from '../../domain/study';
 import { resolveActiveStudies } from '../../features/documents/studyRepository';
+import { currentReviewSets } from '../../features/review/reviewSets';
 import { t } from '../../lib/i18n';
 import type { AppState } from '../store';
 import { el } from '../ui/dom';
@@ -210,7 +211,9 @@ export function renderReviewSetsCard(state: AppState, ctx: ViewContext): HTMLEle
     return card();
   }
   const studies = resolveActiveStudies(documents.studies, documents.records);
-  const sets = [...reviewSets.sets].sort((a, b) => compareReviewSetIds(a.setId, b.setId));
+  const sets = currentReviewSets(studies, reviewSets.sets).sort((a, b) =>
+    compareReviewSetIds(a.setId, b.setId),
+  );
   if (sets.length > 0) {
     const seed = sets.find((set) => set.seed !== null)?.seed ?? '—';
     children.push(

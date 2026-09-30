@@ -136,3 +136,26 @@ describe('担当セットの畳み込み', () => {
     });
   });
 });
+
+test('担当者の編集は分割 seed とその日時を保持し、次の分割で更新する', () => {
+  const split = reviewSet({ updatedAt: 't1' });
+  const edit = reviewSet({ seed: null, updatedAt: 't9', reviewerEmails: ['c@example.com'] });
+  const first = foldReviewSets([split, edit], 'owner@example.com').sets;
+  expect(first).toEqual([
+    reviewSet({
+      seed: '42',
+      splitUpdatedAt: 't1',
+      updatedAt: 't9',
+      reviewerEmails: ['c@example.com'],
+    }),
+  ]);
+  expect(
+    foldReviewSets([...first, { ...edit, updatedAt: 't10' }], 'owner@example.com').sets[0]
+      ?.splitUpdatedAt,
+  ).toBe('t1');
+  expect(
+    foldReviewSets([...first, reviewSet({ seed: '99', updatedAt: 't11' })], 'owner@example.com')
+      .sets,
+  ).toEqual([reviewSet({ seed: '99', updatedAt: 't11' })]);
+  expect(foldReviewSets([edit], 'owner@example.com').sets).toEqual([edit]);
+});

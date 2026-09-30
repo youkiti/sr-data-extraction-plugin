@@ -75,7 +75,16 @@ export function foldReviewSets(
       ignoredCount++;
       continue;
     }
-    latest.set(row.setId, { ...row, reviewerEmails: normalizeEmails(row.reviewerEmails) });
+    const previous = latest.get(row.setId);
+    const split =
+      row.seed === null && previous?.seed != null
+        ? { seed: previous.seed, splitUpdatedAt: previous.splitUpdatedAt ?? previous.updatedAt }
+        : {};
+    latest.set(row.setId, {
+      ...row,
+      ...split,
+      reviewerEmails: normalizeEmails(row.reviewerEmails),
+    });
   }
   return {
     sets: [...latest.values()].sort((a, b) => compareReviewSetIds(a.setId, b.setId)),

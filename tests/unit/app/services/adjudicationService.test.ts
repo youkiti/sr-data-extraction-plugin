@@ -1,3 +1,4 @@
+import { serializeArmKeyRemap } from '../../../../src/features/adjudication/armMatch';
 import {
   acceptAllMatchingCells,
   addAdjudicateArmDraftRow,
@@ -1790,6 +1791,73 @@ describe('担当ペアと calibration のサービス集計', () => {
     getSchemaFieldsMock.mockResolvedValue([makeField()]);
     return store;
   }
+  test('一覧の force はキャッシュより新しい研究を反映する', async () => {
+    const store = assignedStore();
+    await loadAdjudicateTargets(store, makeDeps());
+    store.setState({
+      documents: {
+        ...store.getState().documents,
+        studies: [makeStudy()],
+        records: [makeDocument()],
+      },
+    });
+    readStudiesMock.mockResolvedValue([makeStudy({ studyId: 'new', reviewSet: 'calibration' })]);
+    readDocumentsMock.mockResolvedValue([makeDocument({ studyId: 'new' })]);
+    await loadAdjudicateTargets(store, makeDeps(), { force: true });
+    expect(store.getState().adjudicate.rows?.map((row) => row.study.studyId)).toEqual(['new']);
+    await loadAgreementReport(store, makeDeps());
+    expect(store.getState().adjudicate.agreement?.studyCount).toBe(0);
+  });
+  test.each([false, true])(
+    '校正の保存済み群対応は確定できるペアへ渡す（選択済み=%s）',
+    async (selected) => {
+      const store = assignedStore();
+      readStudiesMock.mockResolvedValue([makeStudy({ reviewSet: 'calibration' })]);
+      readDocumentsMock.mockResolvedValue([makeDocument()]);
+      const annotators = selected ? [A, B, C] : [A, B];
+      readStudyDataSheetMock.mockResolvedValue({ fieldNames: [], rows: [] });
+      readResultsDataRowsMock.mockResolvedValue(
+        annotators.flatMap((annotator) => [
+          makeResultsRow({ annotator, entityKey: 'arm:1', value: annotator === B ? '20' : '10' }),
+          makeResultsRow({ annotator, entityKey: 'arm:2', value: annotator === B ? '10' : '20' }),
+        ]),
+      );
+      readAllDecisionsMock.mockResolvedValue([]);
+      getSchemaFieldsMock.mockResolvedValue([makeField({ entityLevel: 'arm' })]);
+      readAllArmStructuresMock.mockResolvedValue([
+        makeArmRow({
+          annotator: 'consensus',
+          annotatorType: 'consensus',
+          note: serializeArmKeyRemap(
+            new Map([
+              ['arm:1', 'arm:2'],
+              ['arm:2', 'arm:1'],
+            ]),
+          ),
+        }),
+      ]);
+      if (selected)
+        store.setState({
+          adjudicate: {
+            ...store.getState().adjudicate,
+            pairSelections: { 'study-1': { annotatorA: A, annotatorB: B } },
+          },
+        });
+      await loadAgreementReport(store, makeDeps());
+      expect(
+        store
+          .getState()
+          .adjudicate.calibrationAgreement?.find(
+            (pair) => pair.annotatorA === A && pair.annotatorB === B,
+          )?.agreementRate,
+      ).toBe(1);
+      if (selected) {
+        store.setState({ adjudicate: { ...store.getState().adjudicate, pairSelections: {} } });
+        await loadAgreementReport(store, makeDeps());
+        expect(store.getState().adjudicate.calibrationAgreement?.[0]?.agreementRate).toBe(0);
+      }
+    },
+  );
   test('担当外の行があっても担当ペアは ready、一覧は calibration・未割当も残す', async () => {
     const store = assignedStore();
     await loadAdjudicateTargets(store, makeDeps());

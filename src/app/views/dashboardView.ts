@@ -10,6 +10,8 @@ import type {
   DashboardSectionCell,
   RateCount,
 } from '../../features/verification/dashboard';
+import { currentReviewSets } from '../../features/review/reviewSets';
+import { resolveActiveStudies } from '../../features/documents/studyRepository';
 import { t } from '../../lib/i18n';
 import { el } from '../ui/dom';
 import type { AppState } from '../store';
@@ -130,7 +132,13 @@ function renderReviewSetProgress(state: AppState): HTMLElement | null {
   const progress = state.dashboard.reviewSetProgress;
   if (progress === null) return null;
   const emails = [...new Set(progress.map((row) => row.email))].sort();
-  const sets = (state.reviewSets.sets ?? []).map((set) => set.setId).sort(compareReviewSetIds);
+  const studies = resolveActiveStudies(
+    state.documents.studies ?? [],
+    state.documents.records ?? [],
+  );
+  const sets = currentReviewSets(studies, state.reviewSets.sets ?? [])
+    .map((set) => set.setId)
+    .sort(compareReviewSetIds);
   return el('table', { id: 'dashboard-review-sets', className: 'reviewers__table' }, [
     el('caption', { text: t('dashboard.reviewSetsTitle') }),
     el('thead', {}, [

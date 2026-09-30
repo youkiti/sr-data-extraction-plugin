@@ -173,3 +173,27 @@ test('空文字の未割当と保存エラー中の無効化にも対応する',
   expect(view.querySelector('.review-sets__assign')).not.toBeNull();
   expect((view.querySelector('#review-sets-reload') as HTMLButtonElement).disabled).toBe(true);
 });
+
+test('再分割で退役したグループは表・割当選択肢・既定グループ数から除く', () => {
+  const f = fixture(true);
+  f.state.reviewSets.sets = [
+    reviewSet({ seed: '2', updatedAt: 't2' }),
+    reviewSet({ setId: 'calibration', seed: '2', updatedAt: 't2' }),
+    reviewSet({ setId: 'group-10', seed: '1', updatedAt: 't1' }),
+  ];
+  const view = f.render();
+  expect(
+    [...view.querySelectorAll('#review-sets-list tbody th')].map((cell) => cell.textContent),
+  ).toEqual(['calibration', 'group-1']);
+  expect(
+    [...view.querySelectorAll('.review-sets__assign option')].map(
+      (option) => (option as HTMLOptionElement).value,
+    ),
+  ).toEqual(['', 'calibration', 'group-1']);
+  expect((view.querySelector('#review-sets-groups') as HTMLInputElement).value).toBe('1');
+  f.state.documents.studies = f.state.documents.studies!.map((study) =>
+    study.studyId === 's1' ? { ...study, reviewSet: 'group-10' } : study,
+  );
+  expect(f.render().querySelector('#review-sets-list')?.textContent).toContain('group-10');
+  expect((f.render().querySelector('#review-sets-groups') as HTMLInputElement).value).toBe('2');
+});

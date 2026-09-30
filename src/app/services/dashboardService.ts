@@ -6,7 +6,15 @@ import type { DashboardState, Store } from '../store';
 import type { VerificationDeps } from './verificationService';
 import { readVerifyTargetMaterials } from './verifyService';
 
-import { isReviewSetsActive, reviewerSetProgress } from '../../features/review/reviewSets';
+import {
+  isReviewSetsActive,
+  reviewerSetProgress,
+  currentReviewSets,
+} from '../../features/review/reviewSets';
+import {
+  foldReviewerAssignments,
+  readReviewerAssignments,
+} from '../../features/project/reviewerRepository';
 import { CALIBRATION_SET_ID } from '../../domain/reviewSet';
 import { readReviewSetProgressMaterials, requireReviewSets } from './reviewSetService';
 
@@ -53,7 +61,7 @@ export async function loadDashboard(
       store,
       deps,
       project.spreadsheetId,
-      { assignedOnly: false },
+      { assignedOnly: false, force: options.force },
     );
     // 表示ラベルは target.study（Studies 由来。v0.10）
     const data = buildDashboard(
@@ -68,11 +76,12 @@ export async function loadDashboard(
       runStartedAt,
     );
     let progress = null;
-    const sets = store.getState().reviewSets.sets ?? [];
+    let sets = store.getState().reviewSets.sets ?? [];
     if (sets.length > 0) {
-      const material = await readReviewSetProgressMaterials(store, deps);
+      const material = await readReviewSetProgressMaterials(store, deps, options);
       if (isReviewSetsActive(material.studies, sets)) {
-        // グループの担当者に加え、calibration で実際に判定した human annotator を行にする。
+        // 登録済みの担当者は、まだ判定を始めていなくても calibration の行に含める。
+        sets = currentReviewSets(material.studies, sets);
         const calibrationIds = new Set(
           material.studies
             .filter((study) => study.reviewSet === CALIBRATION_SET_ID)
@@ -90,6 +99,12 @@ export async function loadDashboard(
               decision.annotatorType === 'human_independent')
           )
             emails.add(decision.annotator);
+        }
+        const registered = foldReviewerAssignments(
+          await readReviewerAssignments(project.spreadsheetId, deps.google),
+        );
+        for (const reviewer of registered) {
+          if (reviewer.role !== 'revoked') emails.add(reviewer.email);
         }
         progress = reviewerSetProgress({ ...material, sets, reviewerEmails: [...emails].sort() });
       }
