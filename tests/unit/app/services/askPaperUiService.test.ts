@@ -7,6 +7,9 @@ import { sendAskPaperQuestion } from '../../../../src/app/services/askPaperUiSer
 import { askPaper, type AskPaperDeps } from '../../../../src/app/services/askPaperService';
 import { createInitialState, createStore } from '../../../../src/app/store';
 import { loadDefaultModel, FACTORY_DEFAULT_MODEL } from '../../../../src/lib/storage/settingsStore';
+import { installChromeMock } from '../../../setup/chrome-mock';
+import { askPaperUsedStudiesStorageKey } from '../../../../src/lib/storage/askPaperStore';
+import type { ProfileDeps } from '../../../../src/lib/google/identity';
 import { makeAskParams, makeAskTurn } from '../askPaperFixtures';
 
 jest.mock('../../../../src/app/services/askPaperService', () => ({ askPaper: jest.fn() }));
@@ -15,6 +18,9 @@ jest.mock('../../../../src/lib/storage/settingsStore', () => ({
   loadDefaultModel: jest.fn(async () => null),
 }));
 const ask = jest.mocked(askPaper);
+beforeEach(() => {
+  installChromeMock();
+});
 function setup() {
   const initial = createInitialState();
   initial.currentProject = {
@@ -25,7 +31,8 @@ function setup() {
   };
   initial.role.role = 'owner';
   const store = createStore(initial);
-  const deps: AskPaperDeps = {
+  const deps: AskPaperDeps & { profile: ProfileDeps } = {
+    profile: { getProfileUserInfo: async () => ({ email: 'owner@example.com', id: 'owner' }) },
     google: { fetch: jest.fn(), getAccessToken: jest.fn() },
     loadApiKey: jest.fn(),
     buildProvider: jest.fn(),
@@ -149,3 +156,60 @@ test.each(['answered', 'error'] as const)(
     ).toBe('別の質問');
   },
 );
+
+test('送信ごとにOptionsを読み直し、次の質問と概算のモデルを更新する', async () => {
+  const { store, deps } = setup();
+  const load = jest.fn().mockResolvedValueOnce('old-model').mockResolvedValueOnce('new-model');
+  deps.loadDefaultModel = load;
+  await sendAskPaperQuestion(store, deps, makeAskParams());
+  expect(await ask.mock.calls[0]?.[1].loadDefaultModel?.()).toBe('old-model');
+  await sendAskPaperQuestion(store, deps, makeAskParams());
+  expect(await ask.mock.calls[1]?.[1].loadDefaultModel?.()).toBe('new-model');
+  expect(store.getState().askPaper.model).toBe('new-model');
+  expect(load).toHaveBeenCalledTimes(2);
+});
+
+test('回答待ちに入力した次の質問は成功後も消さない', async () => {
+  disposeAskPaperPanelCache();
+  const { store, deps } = setup();
+  const params = makeAskParams();
+  let resolve: (result: Awaited<ReturnType<typeof askPaper>>) => void = () => undefined;
+  ask.mockImplementation(
+    async () =>
+      new Promise((r) => {
+        resolve = r;
+      }),
+  );
+  const renderPanel = (): void => {
+    document.body.replaceChildren(
+      renderAskPaperPanel(store.getState().askPaper, params, undefined, jest.fn()),
+    );
+  };
+  renderPanel();
+  (document.querySelector('textarea') as HTMLTextAreaElement).value = params.question;
+  store.subscribe(renderPanel);
+  const pending = sendAskPaperQuestion(store, deps, params);
+  while (ask.mock.calls.length === 0) await Promise.resolve();
+  (document.querySelector('textarea') as HTMLTextAreaElement).value = '次の質問';
+  resolve({ status: 'answered', turn: makeAskTurn() });
+  await pending;
+  expect((document.querySelector('textarea') as HTMLTextAreaElement).value).toBe('次の質問');
+});
+
+test('送信は質問済みIDのみを保存し、保存失敗でも質問と判定用の印は保持する', async () => {
+  const chromeMock = installChromeMock();
+  const { store, deps } = setup();
+  await sendAskPaperQuestion(store, deps, makeAskParams());
+  expect(
+    chromeMock.storage.local.data[askPaperUsedStudiesStorageKey('sheet-1', 'owner@example.com')],
+  ).toEqual(['study-1']);
+  expect(JSON.stringify(chromeMock.storage.local.data)).not.toContain('何人');
+  expect(JSON.stringify(chromeMock.storage.local.data)).not.toContain('120人');
+  chromeMock.storage.local.set.mockRejectedValueOnce(new Error('保存失敗'));
+  const warning = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+  await sendAskPaperQuestion(store, deps, { ...makeAskParams(), studyId: 'study-2' });
+  expect(ask).toHaveBeenCalledTimes(2);
+  expect(store.getState().askPaper.usedStudyIds).toContain('study-2');
+  expect(warning).toHaveBeenCalled();
+  warning.mockRestore();
+});

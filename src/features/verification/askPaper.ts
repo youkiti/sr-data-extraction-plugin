@@ -19,7 +19,7 @@ export interface AskPaperSourceDocument extends AskPaperDocument {
 export interface AnchoredCitation {
   /** プロンプトと同じ 1 始まりの文書番号 */
   documentIndex: number;
-  documentId: string;
+  documentId: string | null;
   quote: string;
   page: number | null;
   anchorStatus: AnchorStatus;
@@ -39,22 +39,33 @@ export function anchorAskPaperCitations(
   citations: readonly AskPaperCitation[],
   documents: readonly AskPaperSourceDocument[],
 ): AnchoredCitation[] {
-  return citations.flatMap((citation) => {
-    const document = documents[citation.document_index - 1];
-    if (!Number.isInteger(citation.document_index) || document === undefined) return [];
-    const pages = document.pages.map(({ page, text }) => ({ page, text: normalizeText(text) }));
-    const anchor = anchorQuote(normalizeText(citation.quote), pages, citation.page);
-    return [
-      {
+  return citations.map((citation) => {
+    const document = Number.isInteger(citation.document_index)
+      ? documents[citation.document_index - 1]
+      : undefined;
+    // 範囲外の文書も捨てず、本文で確認できない引用として利用者に示す。
+    if (document === undefined) {
+      return {
         documentIndex: citation.document_index,
-        documentId: document.documentId,
+        documentId: null,
         quote: citation.quote,
         page: citation.page,
-        anchorStatus: anchor.status,
-        anchoredPage: anchor.page,
-        highlightable: anchor.status !== 'failed',
-      },
-    ];
+        anchorStatus: 'failed',
+        anchoredPage: null,
+        highlightable: false,
+      };
+    }
+    const pages = document.pages.map(({ page, text }) => ({ page, text: normalizeText(text) }));
+    const anchor = anchorQuote(normalizeText(citation.quote), pages, citation.page);
+    return {
+      documentIndex: citation.document_index,
+      documentId: document.documentId,
+      quote: citation.quote,
+      page: citation.page,
+      anchorStatus: anchor.status,
+      anchoredPage: anchor.page,
+      highlightable: anchor.status !== 'failed',
+    };
   });
 }
 

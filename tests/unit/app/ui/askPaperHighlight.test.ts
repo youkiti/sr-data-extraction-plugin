@@ -10,6 +10,7 @@ test('既存の引用アンカリングで質問引用の矩形を作る', () =>
 });
 
 test.each([
+  { documentId: null },
   { highlightable: false },
   { anchorStatus: 'failed' as const },
   { anchoredPage: null },

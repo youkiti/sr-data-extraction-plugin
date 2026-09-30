@@ -96,7 +96,7 @@ export const ASK_PAPER_RESPONSE_SCHEMA: Record<string, unknown> = {
 };
 
 const citationSchema = z.object({
-  document_index: z.number().int().min(1),
+  document_index: z.number().int(),
   quote: z.string().refine((quote) => quote.trim().length > 0),
   page: z.number().int().min(1).nullable().catch(null),
 });
@@ -119,7 +119,8 @@ export class AskPaperFormatError extends Error {
   }
 }
 
-export function parseAskPaperResponse(text: string, documentCount: number): AskPaperResponse {
+/** 文書番号は後段のアンカリングで判定し、範囲外も警告用に保持する。 */
+export function parseAskPaperResponse(text: string, _documentCount: number): AskPaperResponse {
   const trimmed = text.trim();
   const fence = /^```(?:json)?\s*\n?([\s\S]*?)\n?```$/.exec(trimmed);
   let raw: unknown;
@@ -135,7 +136,7 @@ export function parseAskPaperResponse(text: string, documentCount: number): AskP
   if (found) {
     for (const item of result.data.citations) {
       const citation = citationSchema.safeParse(item);
-      if (citation.success && citation.data.document_index <= documentCount) {
+      if (citation.success) {
         // 長すぎる引用も切り詰めず保持し、後段で実際の本文との照合を行う。
         citations.push(citation.data);
       }

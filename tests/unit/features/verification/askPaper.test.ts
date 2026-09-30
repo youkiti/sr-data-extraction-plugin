@@ -39,7 +39,7 @@ test('全ページで日本語・正規化・曖昧一致を照合し、未照�
       { documentId: 'd3', role: 'supplement', filename: '画像.pdf', pages: [] },
     ],
   );
-  expect(result).toHaveLength(5);
+  expect(result).toHaveLength(9);
   expect(result[0]).toEqual({
     documentIndex: 1,
     documentId: 'd1',
@@ -60,6 +60,17 @@ test('全ページで日本語・正規化・曖昧一致を照合し、未照�
     anchoredPage: 8,
     highlightable: true,
   });
+  expect(result.slice(5)).toEqual(
+    [0, -1, 1.5, 4].map((documentIndex) => ({
+      documentIndex,
+      documentId: null,
+      quote: '無効',
+      page: 1,
+      anchorStatus: 'failed',
+      anchoredPage: null,
+      highlightable: false,
+    })),
+  );
   expect(result.slice(3)).toEqual(
     expect.arrayContaining([
       expect.objectContaining({ anchorStatus: 'failed', anchoredPage: null, highlightable: false }),

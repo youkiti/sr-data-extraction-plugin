@@ -184,3 +184,29 @@ test('本文と定義の概算は入力のたびに連結せず、参照変更�
   expect(builder).toHaveBeenCalledTimes(3);
   builder.mockRestore();
 });
+
+test('範囲外文書の引用は消さず未照合表示と警告を出す', () => {
+  const { root } = render({
+    conversations: {
+      'study-1': [
+        makeAskTurn({
+          anchoredCount: 0,
+          citations: [
+            makeCitation({
+              documentIndex: 99,
+              documentId: null,
+              anchorStatus: 'failed',
+              anchoredPage: null,
+              highlightable: false,
+            }),
+          ],
+        }),
+      ],
+    },
+  });
+  expect(root.querySelectorAll('.ask-paper__citation')).toHaveLength(0);
+  expect(root.querySelector('.ask-paper__citation--unanchored')?.textContent).toContain(
+    '本文で確認できません',
+  );
+  expect(root.querySelector('.ask-paper__warning')).not.toBeNull();
+});

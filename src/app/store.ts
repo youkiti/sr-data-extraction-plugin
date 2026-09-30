@@ -622,7 +622,7 @@ export interface DashboardState {
   loadError: string | null;
 }
 
-/** 論文への質問。会話と利用済み study はタブのセッション内のみで保持する。 */
+/** 論文への質問。会話はタブ内のみ、利用済み study の識別子はローカル保存から復元する。 */
 export interface AskPaperState {
   conversations: Record<string, AskPaperTurn[]>;
   sending: boolean;

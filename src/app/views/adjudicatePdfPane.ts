@@ -267,6 +267,7 @@ export function showAdjudicateCitation(
 ): void {
   if (
     cached === null ||
+    citation.documentId === null ||
     cached.studyId !== working.study.studyId ||
     !working.documents.some((doc) => doc.documentId === citation.documentId)
   )

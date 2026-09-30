@@ -652,7 +652,7 @@ export const en: Record<MessageKey, string> = {
     'This document has no extracted text (no_text_layer, or the extraction failed)',
   'askPaper.title': 'Ask the paper (AI)',
   'askPaper.notice':
-    'Answers are for reference. Check the PDF before entering values yourself. Questions and answers disappear when you leave this screen and are not saved in the shared folder.',
+    'Answers are for reference. Check the PDF before entering values yourself. Questions and answers are kept per study while this tab is open, disappear when you close or reload it, and are never saved in the shared folder.',
   'askPaper.input': 'Question about the paper',
   'askPaper.send': 'Send',
   'askPaper.estimatePending': 'Preparing estimate…',

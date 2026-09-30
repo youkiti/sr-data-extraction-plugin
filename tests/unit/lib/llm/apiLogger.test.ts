@@ -361,7 +361,7 @@ test('本文省略時は uploadJson を呼ばず質問と回答の本文を記�
   expect(JSON.stringify(recorded.entries)).not.toContain('秘密');
 });
 
-test('本文省略時でも provider のエラー本文とメタデータは保持する', async () => {
+test('本文省略時はエラー本文を保存せずメタデータだけ保持する', async () => {
   const { deps, recorded } = makeDeps();
   const error = new LlmProviderError('失敗', 'gemini', 400, '応答本文');
   const provider = withLogging(
@@ -379,6 +379,35 @@ test('本文省略時でも provider のエラー本文とメタデータは保�
     promptSummary: null,
     tokensIn: null,
     tokensOut: null,
-    error: '失敗 (status=400): 応答本文',
+    error: 'LlmProviderError (status=400)',
   });
+});
+
+test.each([
+  new LlmProviderError(
+    'Gemini 応答ボディが JSON として読めません',
+    'gemini',
+    200,
+    '秘密の回答本文',
+  ),
+  new LlmProviderError('finishReason=秘密の回答本文', 'gemini', null, '秘密の回答本文'),
+  new Error('秘密の質問と回答本文'),
+  '秘密の質問と回答本文',
+])('本文省略時は解析失敗やmessage中の本文も記録しない: %s', async (error) => {
+  const { deps, recorded } = makeDeps();
+  const provider = withLogging(
+    makeProvider(async () => {
+      throw error;
+    }),
+    'ask_paper',
+    { ...deps, omitPayload: true },
+  );
+  await expect(provider.chat([{ role: 'user', content: '秘密の質問' }])).rejects.toBe(error);
+  expect(JSON.stringify(recorded.entries)).not.toContain('秘密');
+  expect(recorded.entries[0]?.error).toBe(
+    error instanceof LlmProviderError
+      ? `LlmProviderError (status=${error.status ?? 'n/a'})`
+      : 'Error',
+  );
+  expect(recorded.uploads).toEqual([]);
 });

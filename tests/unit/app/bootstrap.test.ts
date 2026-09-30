@@ -5,6 +5,7 @@ import { disposeAskPaperPanelCache } from '../../../src/app/views/askPaperPanel'
 jest.mock('../../../src/app/services/askPaperUiService', () => ({
   sendAskPaperQuestion: jest.fn(),
 }));
+import { askPaperUsedStudiesStorageKey } from '../../../src/lib/storage/askPaperStore';
 import { installChromeMock, type ChromeMock } from '../../setup/chrome-mock';
 import { bootstrapApp, createChromeAppDeps, seedState, type AppDeps } from '../../../src/app/bootstrap';
 import { BUILD_DATE } from '../../../src/build-info';
@@ -4468,3 +4469,28 @@ describe('bootstrapApp: API 失敗診断ログの配線（issue #249）', () => 
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });
+
+test.each(['#/verify', '#/adjudicate'] as const)(
+  '画面入場でアカウント別の質問済みIDを復元する: %s',
+  async (route) => {
+    const chromeMock = installChromeMock();
+    document.body.innerHTML = APP_TEMPLATE;
+    chromeMock.storage.local.data[
+      askPaperUsedStudiesStorageKey(PROJECT.spreadsheetId, 'tester@example.com')
+    ] = ['asked-before-reload'];
+    const stub = createWindowStub({
+      currentProject: PROJECT,
+      counts: { ...createInitialState().counts, schemaVersions: 1, documents: 1 },
+      home: COUNTS_LOADED,
+      role: { ...createInitialState().role, role: 'owner' },
+    });
+    const { deps } = createFakeDeps([]);
+    const store = await bootstrapApp(asWindow(stub), deps);
+    stub.location.hash = route;
+    stub.fireHashChange();
+    await flush();
+    await flush();
+    expect(store?.getState().askPaper.usedStudyIds).toContain('asked-before-reload');
+    expect(store?.getState().askPaper.conversations).toEqual({});
+  },
+);

@@ -102,7 +102,7 @@ export function withLogging(
         response = await provider.chat(messages, options);
         return response;
       } catch (err) {
-        errorMessage = formatError(err);
+        errorMessage = deps.omitPayload ? formatPayloadFreeError(err) : formatError(err);
         throw err;
       } finally {
         const latencyMs = Date.now() - startMs;
@@ -174,4 +174,12 @@ function formatError(err: unknown): string {
     return err.message;
   }
   return String(err);
+}
+
+/** 応答由来の finish/stop reason が message にも入るため、本文省略時は固定の種別だけを残す。 */
+function formatPayloadFreeError(err: unknown): string {
+  if (err instanceof LlmProviderError) {
+    return `LlmProviderError (status=${err.status ?? 'n/a'})`;
+  }
+  return 'Error';
 }

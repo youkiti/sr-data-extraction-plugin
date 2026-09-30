@@ -23,10 +23,14 @@ function documentPrefixLength(params: Pick<AskPaperParams, 'documents' | 'fields
   return length;
 }
 
-/** 成功した質問の下書きを消す。再描画前に既存入力も消してフォーカス復元で戻らないようにする。 */
-export function clearAskPaperQuestionDraft(spreadsheetId: string, studyId: string): void {
+/** 送信した質問と同じ下書きだけを消す。再描画前に消してフォーカス復元で戻らないようにする。 */
+export function clearAskPaperQuestionDraft(
+  spreadsheetId: string,
+  studyId: string,
+  question: string,
+): void {
   const panel = panels.get(JSON.stringify([spreadsheetId, studyId]));
-  if (panel !== undefined) panel.input.value = '';
+  if (panel !== undefined && panel.input.value.trim() === question.trim()) panel.input.value = '';
 }
 
 export function disposeAskPaperPanelCache(): void {

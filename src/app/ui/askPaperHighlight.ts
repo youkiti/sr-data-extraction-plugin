@@ -13,6 +13,7 @@ export function buildAskPaperHighlight(
   pages: readonly TextLayerPage[],
 ): ViewerHighlight | null {
   if (
+    citation.documentId === null ||
     !citation.highlightable ||
     citation.anchorStatus === 'failed' ||
     citation.anchoredPage === null

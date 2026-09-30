@@ -2171,6 +2171,7 @@ export function createVerificationPanel(
     showCitationHighlight(citation) {
       if (
         panelMode === 'independent' ||
+        citation.documentId === null ||
         !data.documents.some((view) => view.document.documentId === citation.documentId)
       )
         return;

@@ -4263,6 +4263,7 @@ test('質問引用を一時矩形にし、文書切替・遅延読込・テキ�
     '質問の回答の引用',
   );
   expect((panel.root.querySelector('.verify__pdf-body') as HTMLElement)?.hidden).not.toBe(true);
+  panel.showCitationHighlight(makeCitation({ documentId: null }));
   panel.showCitationHighlight(makeCitation({ documentId: 'missing' }));
   panel.showCitationHighlight(makeCitation({ documentId: 'doc-1', highlightable: false }));
   await flush();

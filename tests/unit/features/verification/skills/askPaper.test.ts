@@ -126,6 +126,7 @@ test('余分なキーを許容し、不正な引用だけを除外して原文�
       { document_index: 2, quote: '有効', page: null },
       { document_index: 2, quote: 'ページ不明', page: null },
       { document_index: 2, quote: 'ページ省略', page: null },
+      ...[0, -1, 3].map((document_index) => ({ document_index, quote: '無効', page: 1 })),
     ],
   });
 });

@@ -191,7 +191,7 @@ test.each([new Error('API失敗'), 'API失敗'])(
     expect(appendLlmApiLog).toHaveBeenCalledWith(
       'sheet',
       expect.objectContaining({
-        error: 'API失敗',
+        error: 'Error',
         promptRef: '',
         responseRef: '',
         promptSummary: null,
@@ -217,4 +217,36 @@ test('履歴概算は送信と同じ最後の5往復だけを数える', () => {
       questionChars: params.question.length,
     }),
   );
+});
+
+test('範囲外の文書番号も失敗引用として回答に保持する', async () => {
+  const { deps, chat } = setup();
+  chat.mockResolvedValue({
+    text: JSON.stringify({
+      answer: '要確認',
+      found: true,
+      citations: [{ document_index: 99, quote: '原文候補', page: 1 }],
+    }),
+    tokensIn: 10,
+    tokensOut: 5,
+    cachedTokensIn: null,
+    raw: {},
+  });
+  expect(await askPaper(params, deps)).toMatchObject({
+    status: 'answered',
+    turn: {
+      anchoredCount: 0,
+      citations: [
+        {
+          documentIndex: 99,
+          documentId: null,
+          quote: '原文候補',
+          page: 1,
+          anchorStatus: 'failed',
+          anchoredPage: null,
+          highlightable: false,
+        },
+      ],
+    },
+  });
 });

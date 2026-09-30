@@ -1,9 +1,11 @@
 // 質問パネルの送信状態と study 別の会話をセッション内で管理する。
 // 文脈は本文とスキーマ定義のみ。会話 payload はストレージへ保存しない。
 import { canAskPaper } from '../../features/verification/chatAssist';
+import type { ProfileDeps } from '../../lib/google/identity';
 import { FACTORY_DEFAULT_MODEL, loadDefaultModel } from '../../lib/storage/settingsStore';
 import type { Store } from '../store';
 import { clearAskPaperQuestionDraft } from '../views/askPaperPanel';
+import { rememberAskPaperStudy } from './askPaperMetadataService';
 import { askPaper, type AskPaperDeps, type AskPaperParams } from './askPaperService';
 
 export type AskPaperQuestionParams = Omit<AskPaperParams, 'spreadsheetId' | 'history'> & {
@@ -12,7 +14,7 @@ export type AskPaperQuestionParams = Omit<AskPaperParams, 'spreadsheetId' | 'his
 
 export async function sendAskPaperQuestion(
   store: Store,
-  deps: AskPaperDeps,
+  deps: AskPaperDeps & { profile?: ProfileDeps },
   params: AskPaperQuestionParams,
 ): Promise<void> {
   const state = store.getState();
@@ -33,10 +35,8 @@ export async function sendAskPaperQuestion(
     },
   });
   try {
-    const model =
-      state.askPaper.model ??
-      (await (deps.loadDefaultModel ?? loadDefaultModel)()) ??
-      FACTORY_DEFAULT_MODEL;
+    await rememberAskPaperStudy(store, deps, params.studyId);
+    const model = (await (deps.loadDefaultModel ?? loadDefaultModel)()) ?? FACTORY_DEFAULT_MODEL;
     store.setState({ askPaper: { ...store.getState().askPaper, model } });
     const result = await askPaper(
       {
@@ -47,7 +47,11 @@ export async function sendAskPaperQuestion(
       { ...deps, loadDefaultModel: async () => model },
     );
     if (result.status === 'answered') {
-      clearAskPaperQuestionDraft(state.currentProject.spreadsheetId, params.studyId);
+      clearAskPaperQuestionDraft(
+        state.currentProject.spreadsheetId,
+        params.studyId,
+        params.question,
+      );
     }
     const latest = store.getState().askPaper;
     store.setState({

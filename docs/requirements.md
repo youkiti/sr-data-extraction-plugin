@@ -368,7 +368,7 @@ AI 抽出の根拠情報。ハイライト表示（§5）と audit.csv の素材
 
 #### `LLMApiLog` / `ExportLog`
 
-- `LLMApiLog`: sr-query-builder のスキーマをそのまま流用。`purpose` enum は `draft_schema` / `suggest_study_label` / `extract_study` / `relocate_quote` / `ask_paper`（v0.23。論文への質問パネル。**この purpose の行は `prompt_ref` / `response_ref` / `prompt_summary` を空にし、質問と回答の本文を残さない**）/ `other`（v0.10 で `extract_document` → `extract_study` へ改名）
+- `LLMApiLog`: sr-query-builder のスキーマをそのまま流用。`purpose` enum は `draft_schema` / `suggest_study_label` / `extract_study` / `relocate_quote` / `ask_paper`（v0.23。論文への質問パネル。**この purpose の行は `prompt_ref` / `response_ref` / `prompt_summary` を空にし、`error` にもプロバイダの応答本文を含めず、質問と回答の本文を残さない**）/ `other`（v0.10 で `extract_document` → `extract_study` へ改名）
 - `ExportLog`: `export_id` / `format`（`study_wide` / `results_long` / `audit`）/ `schema_version` / `study_count`（CSV に行が出た study 数。v0.10 で `document_count` から改名）/ `file_ref`（Drive に保存した CSV の URL）/ `exported_at` / `exported_by`
 
 #### `Reviewers`（v0.11 新設。14 → 15 タブ）

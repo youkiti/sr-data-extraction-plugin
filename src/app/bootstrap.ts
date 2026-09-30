@@ -118,6 +118,7 @@ import {
   setVerifyPaneLayout,
 } from './services/verifyService';
 import { sendAskPaperQuestion } from './services/askPaperUiService';
+import { loadAskPaperUsedStudyIds } from './services/askPaperMetadataService';
 import { loadDashboard } from './services/dashboardService';
 import { loadProgressCounts } from './services/homeService';
 import {
@@ -905,6 +906,7 @@ export async function bootstrapApp(
       });
     }
     await loadVerifyTargets(store, deps);
+    await loadAskPaperUsedStudyIds(store, deps);
     const verify = store.getState().verify;
     const targets = verify.targets;
     if (targets === null || targets.length === 0) {
@@ -942,6 +944,7 @@ export async function bootstrapApp(
    */
   const syncAdjudicateRoute = async (): Promise<void> => {
     await loadAdjudicateTargets(store, deps);
+    await loadAskPaperUsedStudyIds(store, deps);
     const desired = studyQueryOf(win.location.hash);
     if (desired !== null && desired !== store.getState().adjudicate.selectedStudyId) {
       await openAdjudicateStudy(store, deps, desired);

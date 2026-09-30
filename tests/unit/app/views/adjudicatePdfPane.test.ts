@@ -504,6 +504,7 @@ test('質問引用は別文書へ切替後に矩形化し、未読込時のジ�
   );
   showAdjudicateCitation(working, makeCitation({ documentId: 'doc-2' }));
   showAdjudicateCitation(working, makeCitation({ documentId: 'doc-2', quote: 'ない文章' }));
+  showAdjudicateCitation(working, makeCitation({ documentId: null }));
   showAdjudicateCitation(working, makeCitation({ documentId: 'missing' }));
   showAdjudicateCitation(makeWorking({ study: makeStudy({ studyId: 'other' }) }), makeCitation());
   disposeAdjudicatePdfPaneCache();
