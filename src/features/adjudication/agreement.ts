@@ -23,9 +23,14 @@
 // 【項目の集計単位】study によって human annotator ペアが異なりうるが、v1 は「2 名の評価者間一致」
 // として全 ready study をプールして fieldId ごとに集計する（study ごとの κ を出して平均する、
 // といった加重はしない素朴な集計）。
+import type { StudyDataRow, ResultsDataRow } from '../../domain/annotation';
+import type { Decision } from '../../domain/decision';
+import { CALIBRATION_SET_ID } from '../../domain/reviewSet';
+import type { StudyRecord } from '../../domain/study';
 import type { SchemaField } from '../../domain/schemaField';
 import { buildCsv } from '../export/csvEncode';
-import type { AdjudicationCell } from './cellMatch';
+import { buildAdjudicationCells, type AdjudicationCell } from './cellMatch';
+import { resolveAnnotatorPair } from './pairResolution';
 
 /** 1 study ぶんの突き合わせ済みセル（cellMatch.buildAdjudicationCells の出力をそのまま渡す） */
 export interface AgreementStudyInput {
@@ -212,4 +217,85 @@ export function buildAgreementDisagreementsCsv(report: AgreementReport): string 
     item.valueB ?? '',
   ]);
   return buildCsv(header, rows);
+}
+
+export interface CalibrationAgreementInput {
+  studies: readonly StudyRecord[];
+  fields: readonly SchemaField[];
+  studyDataRows: readonly StudyDataRow[];
+  resultsDataRows: readonly ResultsDataRow[];
+  decisions: readonly Decision[];
+}
+
+export interface CalibrationPairAgreement {
+  annotatorA: string;
+  annotatorB: string;
+  studyCount: number;
+  agreementRate: number | null;
+  kappa: number | null;
+  report: AgreementReport;
+}
+
+/** calibration の各 study に共存する human annotator の全ペアを、既存の一致度計算で集計する */
+export function computeCalibrationAgreement(
+  input: CalibrationAgreementInput,
+): CalibrationPairAgreement[] {
+  const pairs = new Map<
+    string,
+    { annotatorA: string; annotatorB: string; studies: AgreementStudyInput[] }
+  >();
+  for (const study of input.studies) {
+    if (study.reviewSet !== CALIBRATION_SET_ID) continue;
+    const human = (row: StudyDataRow | ResultsDataRow | Decision): boolean =>
+      row.studyId === study.studyId &&
+      (row.annotatorType === 'human_with_ai' || row.annotatorType === 'human_independent');
+    const studyRows = input.studyDataRows.filter(human);
+    const resultRows = input.resultsDataRows.filter(human);
+    const decisions = input.decisions.filter(human);
+    const resolved = resolveAnnotatorPair({
+      studyId: study.studyId,
+      studyDataRows: studyRows,
+      resultsDataRows: resultRows,
+      decisions,
+    });
+    const annotators =
+      resolved.kind === 'ready' ? [resolved.annotatorA, resolved.annotatorB] : resolved.annotators;
+    for (let i = 0; i < annotators.length; i++) {
+      const annotatorA = annotators[i] as string;
+      for (const annotatorB of annotators.slice(i + 1)) {
+        const key = JSON.stringify([annotatorA, annotatorB]);
+        let pair = pairs.get(key);
+        if (pair === undefined) {
+          pair = { annotatorA, annotatorB, studies: [] };
+          pairs.set(key, pair);
+        }
+        const cells = buildAdjudicationCells(
+          input.fields,
+          studyRows.filter((row) => row.annotator === annotatorA).at(-1) ?? null,
+          studyRows.filter((row) => row.annotator === annotatorB).at(-1) ?? null,
+          resultRows.filter((row) => row.annotator === annotatorA),
+          resultRows.filter((row) => row.annotator === annotatorB),
+          decisions.filter((row) => row.annotator === annotatorA),
+          decisions.filter((row) => row.annotator === annotatorB),
+        );
+        pair.studies.push({ studyId: study.studyId, studyLabel: study.studyLabel, cells });
+      }
+    }
+  }
+  return [...pairs.values()]
+    .sort(
+      (a, b) =>
+        a.annotatorA.localeCompare(b.annotatorA) || a.annotatorB.localeCompare(b.annotatorB),
+    )
+    .map(({ annotatorA, annotatorB, studies }) => {
+      const report = buildAgreementReport(input.fields, studies);
+      return {
+        annotatorA,
+        annotatorB,
+        studyCount: report.studyCount,
+        agreementRate: report.overall.agreementRate,
+        kappa: report.overall.kappa,
+        report,
+      };
+    });
 }

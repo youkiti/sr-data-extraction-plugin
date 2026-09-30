@@ -182,6 +182,7 @@ export async function importDocuments(
     const studyId = uuid();
     importedStudies.push({
       studyId,
+      reviewSet: null,
       studyLabel: defaultStudyLabel(selection.filename),
       registrationId,
       createdAt: now(),

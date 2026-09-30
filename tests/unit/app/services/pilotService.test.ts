@@ -281,6 +281,7 @@ function makeVerificationData(overrides: Partial<VerificationData> = {}): Verifi
   return {
     study: {
       studyId: 'study-doc-1',
+      reviewSet: null,
       studyLabel: 'Smith 2020',
       registrationId: null,
       createdAt: 't0',
@@ -342,6 +343,7 @@ function studiesFor(documents: readonly DocumentRecord[]): StudyRecord[] {
   const ids = [...new Set(documents.map((d) => d.studyId))];
   return ids.map((studyId) => ({
     studyId,
+    reviewSet: null,
     studyLabel: `label-${studyId}`,
     registrationId: null,
     createdAt: 't0',
@@ -1002,6 +1004,7 @@ describe('loadPilotVerification', () => {
     readStudiesMock.mockResolvedValue([
       {
         studyId: 'study-doc-1',
+        reviewSet: null,
         studyLabel: 'label',
         registrationId: null,
         createdAt: 't0',
@@ -1417,6 +1420,7 @@ describe('S6 / S8 の直列化（persistPilotDecision は verifyService.persistV
         {
           study: {
             studyId: 'study-doc-1',
+            reviewSet: null,
             studyLabel: 'label-study-doc-1',
             registrationId: null,
             createdAt: 't0',

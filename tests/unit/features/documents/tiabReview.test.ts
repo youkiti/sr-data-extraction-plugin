@@ -43,6 +43,7 @@ function makeDecision(overrides: Partial<TiabDecision> = {}): TiabDecision {
 function makeStudy(overrides: Partial<StudyRecord> = {}): StudyRecord {
   return {
     studyId: 'study-1',
+    reviewSet: null,
     studyLabel: 'smith2020',
     registrationId: null,
     createdAt: 't1',

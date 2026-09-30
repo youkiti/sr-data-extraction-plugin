@@ -5,6 +5,7 @@
 // サービス層（documentsService）の責務
 import type { DocumentRecord } from '../../domain/document';
 import type { StudyRecord } from '../../domain/study';
+import { inheritReviewSet } from '../review/reviewSets';
 
 /** Documents 1 行の study_id 付け替え指示 */
 export interface StudyReassignment {
@@ -32,6 +33,8 @@ export interface MergeStudiesInput {
   targetStudyIds: readonly string[];
   /** 統合後のラベル（未指定 = 最初に取り込まれた study の値。§4.5） */
   label?: string;
+  /** 統合元の担当セットが異なるときの選択値 */
+  reviewSet?: string | null;
   /** 統合後の登録番号（未指定 = 最初に取り込まれた study の値。§4.5） */
   registrationId?: string | null;
   createdBy: string;
@@ -60,6 +63,7 @@ export function mergeStudies(input: MergeStudiesInput): GroupingResult {
   const newStudy: StudyRecord = {
     studyId: input.newStudyId,
     studyLabel: input.label ?? first.studyLabel,
+    reviewSet: inheritReviewSet(ordered, input.reviewSet),
     registrationId:
       input.registrationId !== undefined ? input.registrationId : first.registrationId,
     createdAt: input.createdAt,
@@ -77,6 +81,8 @@ export function mergeStudies(input: MergeStudiesInput): GroupingResult {
 }
 
 export interface SeparateDocumentsInput {
+  /** 作成順の study 行。未指定は旧呼び出し元との互換用（未割当） */
+  studies?: readonly StudyRecord[];
   documents: readonly DocumentRecord[];
   /** 独立させる文書 */
   documentIds: readonly string[];
@@ -107,6 +113,9 @@ export function separateDocuments(input: SeparateDocumentsInput): GroupingResult
   const newStudy: StudyRecord = {
     studyId: input.newStudyId,
     studyLabel: input.label,
+    reviewSet: inheritReviewSet(
+      (input.studies ?? []).filter((study) => supersededStudyIds.includes(study.studyId)),
+    ),
     registrationId: input.registrationId ?? null,
     createdAt: input.createdAt,
     createdBy: input.createdBy,

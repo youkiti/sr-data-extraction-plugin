@@ -17,6 +17,7 @@ import { setUiLanguage } from '../../../../src/lib/i18n';
 function makeStudy(overrides: Partial<StudyRecord> = {}): StudyRecord {
   return {
     studyId: 'study-1',
+    reviewSet: null,
     studyLabel: 'Smith 2020',
     registrationId: null,
     createdAt: '2026-07-02T00:00:00Z',
@@ -53,6 +54,7 @@ function makeDoc(overrides: Partial<DocumentRecord> = {}): DocumentRecord {
 
 function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<DocumentsViewCallbacks> } {
   const callbacks: jest.Mocked<DocumentsViewCallbacks> = {
+    onUpdateMergeReviewSet: jest.fn(),
     onImport: jest.fn(),
     onImportFiles: jest.fn(),
     onReload: jest.fn(),
@@ -85,6 +87,13 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<DocumentsViewCall
   return {
     ctx: {
       home: {
+    onReloadReviewSets: jest.fn(),
+    onReloadAssignedProgress: jest.fn(),
+    onSplitReviewSets: jest.fn(),
+    onConfirmResplit: jest.fn(),
+    onCancelResplit: jest.fn(),
+    onSaveReviewSetEmails: jest.fn(),
+    onAssignStudyReviewSet: jest.fn(),
     onReload: jest.fn(),
     onGrantFolderAccess: jest.fn(),
     onSkipMissingFiles: jest.fn(),
@@ -158,6 +167,7 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<DocumentsViewCall
         onReloadTargets: jest.fn(),
       },
       verify: {
+        onAssignedOnlyChange: jest.fn(),
         onSelectStudy: jest.fn(),
         onRetryLoad: jest.fn(),
         onDecision: jest.fn(),
@@ -1431,5 +1441,84 @@ describe('renderDocumentsView（表示言語 en。issue #93）', () => {
       'On hold',
       'Other (add free text)',
     ]);
+  });
+});
+
+describe('統合時の担当セット選択', () => {
+  function fixture() {
+    const state = makeState({
+      records: [makeDoc(), makeDoc({ documentId: 'doc-2', studyId: 'study-2' })],
+      studies: [
+        makeStudy({ reviewSet: 'group-2' }),
+        makeStudy({ studyId: 'study-2', reviewSet: 'group-1' }),
+      ],
+      mergeDialog: {
+        studyIds: ['study-2', 'study-1'],
+        label: '統合',
+        registrationId: '',
+        hasExtractedData: false,
+      },
+    });
+    state.reviewSets.sets = ['group-1', 'group-2'].map((setId) => ({
+      setId,
+      reviewerEmails: [],
+      seed: null,
+      updatedBy: 'owner@example.com',
+      updatedAt: 't0',
+    }));
+    return state;
+  }
+  test('最初に取り込まれたセットを既定にし、選択・解除をコールバックへ渡す', () => {
+    const { ctx, callbacks } = makeCtx();
+    const state = fixture();
+    const view = renderDocumentsView(state, ctx);
+    const select = view.querySelector('#merge-review-set') as HTMLSelectElement;
+    expect(select.value).toBe('group-2');
+    expect([...select.options].map((option) => option.value)).toEqual(['', 'group-2', 'group-1']);
+    select.value = 'group-1';
+    select.dispatchEvent(new Event('change'));
+    expect(callbacks.onUpdateMergeReviewSet).toHaveBeenCalledWith('group-1');
+    select.value = '';
+    select.dispatchEvent(new Event('change'));
+    expect(callbacks.onUpdateMergeReviewSet).toHaveBeenLastCalledWith(null);
+    state.documents.mergeDialog!.reviewSet = null;
+    state.documents.merging = true;
+    const cleared = renderDocumentsView(state, ctx).querySelector(
+      '#merge-review-set',
+    ) as HTMLSelectElement;
+    expect(cleared.value).toBe('');
+    expect(cleared.disabled).toBe(true);
+  });
+  test('同じ値・未有効・すべて未割当なら選択欄を出さない', () => {
+    const { ctx } = makeCtx();
+    const state = fixture();
+    state.documents.studies![1]!.reviewSet = 'group-2';
+    expect(renderDocumentsView(state, ctx).querySelector('#merge-review-set')).toBeNull();
+    state.documents.studies![1]!.reviewSet = null;
+    state.reviewSets.sets = [];
+    expect(renderDocumentsView(state, ctx).querySelector('#merge-review-set')).toBeNull();
+    state.reviewSets.sets = [
+      {
+        setId: 'group-2',
+        reviewerEmails: [],
+        seed: null,
+        updatedBy: 'owner@example.com',
+        updatedAt: 't0',
+      },
+    ];
+    state.documents.studies![0]!.reviewSet = null;
+    expect(renderDocumentsView(state, ctx).querySelector('#merge-review-set')).toBeNull();
+  });
+  test('元セットに null・空文字があっても未割当の選択肢を重複させない', () => {
+    const { ctx } = makeCtx();
+    const state = fixture();
+    state.documents.studies![1]!.reviewSet = null;
+    expect(
+      renderDocumentsView(state, ctx).querySelectorAll('#merge-review-set option'),
+    ).toHaveLength(2);
+    state.documents.studies![1]!.reviewSet = '';
+    expect(
+      renderDocumentsView(state, ctx).querySelectorAll('#merge-review-set option'),
+    ).toHaveLength(2);
   });
 });

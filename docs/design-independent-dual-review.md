@@ -234,7 +234,7 @@ RoB タブ（`rob_domain`）と study タブは群構成に依存しないため
 ## 11. スコープ外（明示）
 
 - サテライトシートによるハード盲検（案 B）— 不採用決定
-- ~~3 人以上のレビュアー~~ → **2026-07-13（issue #63）にペア選択方式で解消**（§13）。担当セット分割（tiab-review の担当セット思想の移植）は引き続き将来対応
+- ~~3 人以上のレビュアー~~ → **2026-07-13（issue #63）にペア選択方式で解消**（§13）。担当セット分割（tiab-review の担当セット思想の移植）は 2026-09-30 に issue #263 で実装（§14）
 - ~~一致率 / κ 統計の表示（裁定画面のサマリに件数のみ。統計量は P2）~~ → **2026-07-12（issue #66）に解消**（`#/adjudicate` 一覧のオンデマンド計算カード。項目単位の一致率・Cohen's κ・不一致セル一覧 + CSV 2 種の保存。§13）
 - ~~arm の並べ替えマッピング UI（v1 は位置対応固定）~~ → **2026-07-13（issue #63）に解消**（§13）
 - ~~Drive 共有操作のアプリ内実行（追加スコープ回避のため案内のみ）~~ → **2026-07-11 にスコープ外から撤回し実装**（§7.1・§13。`drive.file` で共有可能と判明したため）
@@ -269,3 +269,17 @@ RoB タブ（`rob_domain`）と study タブは群構成に依存しないため
   2. **B 素通しキーと写像先の衝突検知**: B の `ResultsData`/`Decisions` に「B の確定 `ArmStructures` に無い arm キー」（evidence 由来の旧データ等）が残っていると、辞書はそれを素通しし、写像された別の B 群キーと衝突した場合に `indexResultsRows` の `Map` で後勝ちの 1 行が他方を無言で潰す不具合があった。`escapeArmKeyRemapCollisions`（`armMatch.ts`）で衝突を検知し、衝突する素通しキーだけを衝突しない新規 `arm:n` へ退避する。衝突を検知した場合はトースト（`adjudicate.toastArmKeyCollision`）で裁定者に知らせる
   3. **一致度レポート（issue #66）へのマッピング適用**: 裁定画面は arm マッピングで並べ替え後に一致するセルが、一致度統計（`agreement.ts` が集計元にする `collectReadyStudyInputs`）では B の生 entity_key のまま位置対応で突き合わせていたため不一致計上され、画面と統計が食い違っていた。`collectReadyStudyInputs` で consensus 版 `ArmStructures` の note に**永続化済みの**マッピングがあればそれを適用するよう修正（`app/services/adjudicationService.ts`）。マッピング未確定（consensus 群構成が未確定）の study は、裁定者の判断が入っていないため既定マッピングへのフォールバックはせず、従来どおり B の生キーで比較する挙動を維持する
   4. **本節（§6.2）の残置記述の是正**: 本節の「v1 は位置対応固定」の記述を、上記の解消結果に合わせて修正した（本追記）。あわせて UI にも「ペア選択はセッション内のみで永続化しない」旨の注記（`.adjudicate__pair-session-note`。一覧に選択可能な study が 1 件以上あるとき表示）と、arm マッピングテーブルで B に同名の群が複数あるときの選択肢のキー併記（`adjudicate.armMapOptionWithKey`）を追加した
+
+## 14. 担当セット（issue #263・2026-09-30）
+
+3 人以上のチームで「誰がどの study をやるか」をアプリ内で決めるため、tiab-review-plugin と同じ**担当セット**を導入した。割り当ての単位は study ではなくセット（姉妹ツールと操作をそろえるため）。
+
+- **データ**: `Studies.review_set`（`calibration` / `group-n` / 空）+ 追記型の `ReviewSets` タブ（`set_id` / `reviewer_emails` / `seed` / `updated_by` / `updated_at`。requirements.md §3.2）。`updated_by` が `Meta.created_by` と違う行は無視して owner に警告する。
+- **有効化の条件**: `ReviewSets` に有効な行があり、かつ `review_set` が 1 件以上埋まっているプロジェクトだけが担当セットを使う。どちらかが欠けるプロジェクトは従来どおり（全件表示・実データからの推定ペア）。
+- **作成（owner のみ・Home のレビュアー管理カードの下）**: キャリブレーション本数 c とグループ数 n を指定して一括で分ける。アクティブな study を乱数種付きでシャッフルし（種は `ReviewSets.seed` に記録して再現できる）、先頭 c 本を `calibration`、残りを `group-1` … `group-n` へ順に配る。各グループの担当者（既定 2 名・同じ人が複数グループに入ってよい）は後から編集できる。後から取り込んだ study は未割当になり、owner が 1 件ずつセットを選ぶ。一括分割のやり直しは確認ダイアログを経て全件を上書きする（`review_set` は上書き列。履歴は `ReviewSets` の追記行に残る）。
+- **表示の絞り込み**: owner 以外（reviewer_with_ai / reviewer_independent / adjudicator）の `#/verify` 対象一覧・Home の進捗には、自分が担当者に含まれるセットの study と `calibration` の study だけを出す（担当セットが 1 つも無い人は calibration だけ）。Picker で許可を求めるファイル（`collectRequiredFileIds`）も同じ範囲に絞る。**adjudicator は裁定のため全 study の PDF が必要なので、Picker の範囲だけは全件のまま**にする（`#/adjudicate` の一覧も全件）。owner には `#/verify` に「自分の担当のみ」切り替えを出す。
+- **裁定と一致度**: 担当者がちょうど 2 名のグループに属する study は、その 2 名を担当ペアとして `resolveAnnotatorPair` に渡す。担当ペアの両方が判定行を持てば他の人の行があっても ready、片方が未入力なら waiting。担当外の人の判定はその study の裁定・一致率 / κ から除外し、一覧と一致度カードで警告する。calibration・未割当・担当者 2 名以外のグループは従来の推定（2 名 = ready、3 名以上 = selectable）。**calibration セットの一致度は、その study に判定行を持つ全員の全ペアについて別枠で出す**（キャリブレーションの目的どおり。本体の κ には含めない）。R1 / R2 に意味は持たせない（with_ai / independent は既存どおり reviewer ごとの `review_mode` で決まる）。
+- **進捗**: owner のダッシュボードに reviewer × セットの完了数（`computeAnnotatorProgress` を担当ごとに回す）。reviewer の Home には「担当 n 件中 m 件完了」だけを出し、他人の進捗は見せない。
+- **統合・分離**: 新しい study_id を発行するとき、元の study の `review_set` を引き継ぐ。統合元どうしでセットが違うときは統合ダイアログで owner に選ばせる（既定 = 最初に取り込まれた study の値）。分離は元の study の値をそのまま各新 study に引き継ぐ。
+- **割り切り**: reviewer は Sheets を直接開けば `ReviewSets` / `review_set` を書き換えられる（`updated_by` の不一致だけは検出して無視する）。Sheets の保護範囲（`addProtectedRange`）が `drive.file` で使えるかは実機で確認できたら別 issue にする。
+

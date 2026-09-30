@@ -53,6 +53,7 @@ import {
   type RelocateQuoteDeps,
   type RelocateQuoteOutcome,
 } from './relocateQuoteService';
+import { filterReviewSetStudies, requireReviewSets } from './reviewSetService';
 
 function toMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
@@ -80,7 +81,10 @@ async function resolveStudies(
   spreadsheetId: string,
 ): Promise<readonly StudyRecord[]> {
   const cached = store.getState().documents.studies;
-  return cached ?? (await readStudies(spreadsheetId, deps.google));
+  if (cached !== null) return cached;
+  const studies = await readStudies(spreadsheetId, deps.google);
+  store.setState({ documents: { ...store.getState().documents, studies } });
+  return studies;
 }
 
 /**
@@ -299,7 +303,10 @@ async function readIndependentVerifyTargetMaterials(
   const annotator = (await getCurrentUserEmail(deps.profile)) ?? '';
 
   const materials: VerifyTargetMaterial[] = [];
-  for (const item of buildStudySelection(studies, documents)) {
+  for (const item of buildStudySelection(
+    filterReviewSetStudies(store, studies, documents, annotator, true),
+    documents,
+  )) {
     const ownDecisions = allDecisions.filter(
       (decision) => decision.studyId === item.study.studyId && decision.annotator === annotator,
     );
@@ -343,7 +350,9 @@ export async function readVerifyTargetMaterials(
   store: Store,
   deps: VerificationDeps,
   spreadsheetId: string,
+  options: { assignedOnly?: boolean } = {},
 ): Promise<VerifyTargetMaterialsResult> {
+  await requireReviewSets(store, deps);
   const role = store.getState().role.role ?? 'owner';
   if (role === 'reviewer_independent') {
     const materials = await readIndependentVerifyTargetMaterials(store, deps, spreadsheetId);
@@ -368,7 +377,16 @@ export async function readVerifyTargetMaterials(
   const fieldsByVersion = new Map<number, SchemaField[]>();
   const materials: VerifyTargetMaterial[] = [];
   // アクティブ study を作成順で。配下文書は role 固定順 → 取り込み順（buildStudySelection）
-  for (const item of buildStudySelection(studies, documents)) {
+  for (const item of buildStudySelection(
+    filterReviewSetStudies(
+      store,
+      studies,
+      documents,
+      annotator,
+      role !== 'owner' || (options.assignedOnly ?? store.getState().verify.assignedOnly),
+    ),
+    documents,
+  )) {
     const entry = byStudy.get(item.study.studyId);
     // entry が無い（Evidence が 1 行も無い。孤児 Evidence のみ含む場合を含む）study のうち、
     // 完了 run の対象に一度も含まれていないものは、従来どおり「未抽出」として一覧から除外する。
@@ -463,15 +481,17 @@ export async function loadVerifyTargets(
   if (!project || state.verify.loading) {
     return;
   }
-  if (state.verify.targets !== null && options.force !== true) {
-    return;
-  }
   patchVerify(store, { loading: true, loadError: null });
   try {
+    await requireReviewSets(store, deps);
+    if (state.verify.targets !== null && options.force !== true) {
+      patchVerify(store, { loading: false });
+      return;
+    }
     const { materials } = await readVerifyTargetMaterials(store, deps, project.spreadsheetId);
     patchVerify(store, { loading: false, targets: materials.map((material) => material.target) });
   } catch (err) {
-    patchVerify(store, { loading: false, loadError: toMessage(err) });
+    patchVerify(store, { loading: false, targets: null, loadError: toMessage(err) });
   }
 }
 
@@ -708,4 +728,12 @@ export async function persistVerifyRelocateQuote(
     },
     deps,
   );
+}
+
+/** owner の検証一覧を担当分だけに切り替え、URL 同期で対象を選び直せる状態にする */
+export function setVerifyAssignedOnly(store: Store, value: boolean): void {
+  const state = store.getState();
+  if (state.role.role !== 'owner' || state.verify.assignedOnly === value) return;
+  invalidateVerifyTargets(store);
+  patchVerify(store, { assignedOnly: value });
 }

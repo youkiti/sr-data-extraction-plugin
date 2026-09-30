@@ -360,6 +360,7 @@ function docRecord(
 function studyRecord(studyId: string, studyLabel: string): Record<string, unknown> {
   return {
     studyId,
+    reviewSet: null,
     studyLabel,
     registrationId: null,
     createdAt: '2026-07-01T00:00:00Z',

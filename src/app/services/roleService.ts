@@ -8,9 +8,11 @@
 import type { DocumentRecord } from '../../domain/document';
 import type { ProjectRole } from '../../domain/reviewer';
 import { readDocuments } from '../../features/documents/documentRepository';
+import { resolveActiveStudies } from '../../features/documents/studyRepository';
 import { parseDriveFileId } from '../../features/documents/loadDocumentPages';
 import { loadProjectMeta } from '../../features/project/selectProject';
 import { latestReviewerAssignment, readReviewerAssignments } from '../../features/project/reviewerRepository';
+import { isReviewSetsActive } from '../../features/review/reviewSets';
 import { getFileMd5, getFileText } from '../../lib/google/drive';
 import { getCurrentUserEmail, type ProfileDeps } from '../../lib/google/identity';
 import {
@@ -25,6 +27,7 @@ import { getLocal, setLocal } from '../../lib/storage/chromeStorage';
 import type { RoleState, Store } from '../store';
 import { showToast } from '../ui/toast';
 import { t } from '../../lib/i18n';
+import { filterReviewSetStudies, requireReviewSets, reviewSetStudies } from './reviewSetService';
 
 export interface RoleServiceDeps {
   google: GoogleApiDeps;
@@ -235,6 +238,28 @@ export function collectRequiredFileIds(documents: readonly DocumentRecord[]): {
   return { ids: [...ids], sampleTextId };
 }
 
+/** Picker と差分検知は同じ担当範囲を使う。裁定者と owner は全件を保持する */
+async function documentsForFileAccess(
+  store: Store,
+  deps: RoleServiceDeps,
+  documents: DocumentRecord[],
+  email: string,
+): Promise<DocumentRecord[]> {
+  await requireReviewSets(store, deps);
+  const role = store.getState().role.role;
+  if (role !== 'reviewer_with_ai' && role !== 'reviewer_independent') return documents;
+  const studies = await reviewSetStudies(store, deps);
+  const allowed = new Set(
+    filterReviewSetStudies(store, studies, documents, email, true).map((study) => study.studyId),
+  );
+  // 有効化していなければ従来どおり。Studies 未読込の旧プロジェクトもここへ入る。
+  const sets = store.getState().reviewSets.sets;
+  if (sets === null)
+    throw new Error(store.getState().reviewSets.error ?? t('reviewSets.notLoaded'));
+  if (!isReviewSetsActive(resolveActiveStudies(studies, documents), sets)) return documents;
+  return documents.filter((doc) => allowed.has(doc.studyId));
+}
+
 /**
  * reviewer オンボーディングのファイルアクセス付与ステップ（§7.2 手順 4・issue #139・#141）。
  * 共有フォルダの Picker 選択では drive.file の読み取りが配下ファイルへ付与されないことが
@@ -287,7 +312,12 @@ export async function grantFolderAccess(store: Store, deps: RoleServiceDeps): Pr
 
   let documents: DocumentRecord[];
   try {
-    documents = await readDocuments(project.spreadsheetId, deps.google);
+    documents = await documentsForFileAccess(
+      store,
+      deps,
+      await readDocuments(project.spreadsheetId, deps.google),
+      email,
+    );
   } catch (err) {
     fail(toMessage(err));
     return;
@@ -421,7 +451,12 @@ export async function skipMissingFileAccess(store: Store, deps: RoleServiceDeps)
 
   let documents: DocumentRecord[];
   try {
-    documents = await readDocuments(project.spreadsheetId, deps.google);
+    documents = await documentsForFileAccess(
+      store,
+      deps,
+      await readDocuments(project.spreadsheetId, deps.google),
+      email,
+    );
   } catch (err) {
     fail(toMessage(err));
     return;
@@ -494,6 +529,12 @@ export async function checkMissingFileAccess(store: Store, deps: RoleServiceDeps
 
   try {
     const email = (await getCurrentUserEmail(deps.profile)) ?? '';
+    try {
+      await requireReviewSets(store, deps);
+    } catch (err) {
+      patchRole(store, { folderAccessError: toMessage(err) });
+      return;
+    }
     const raw = await loadFileAccessRecordRaw(project.spreadsheetId, email);
     if (raw === undefined) {
       // レガシー（旧 boolean のみで付与した既存 reviewer）はレコードが無いため検知対象外
@@ -502,7 +543,12 @@ export async function checkMissingFileAccess(store: Store, deps: RoleServiceDeps
       return;
     }
     const record = toFileAccessRecord(raw);
-    const documents = await readDocuments(project.spreadsheetId, deps.google);
+    const documents = await documentsForFileAccess(
+      store,
+      deps,
+      await readDocuments(project.spreadsheetId, deps.google),
+      email,
+    );
     const { ids: requiredIds } = collectRequiredFileIds(documents);
     const grantedSet = new Set(record.granted);
     const skippedSet = new Set(record.skipped);

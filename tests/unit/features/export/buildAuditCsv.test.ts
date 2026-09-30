@@ -21,6 +21,7 @@ const NA_EVIDENCE = [NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA, NA];
 
 const study = (studyId: string, studyLabel: string): StudyRecord => ({
   studyId,
+  reviewSet: null,
   studyLabel,
   registrationId: null,
   createdAt: '2026-07-02T00:00:00Z',

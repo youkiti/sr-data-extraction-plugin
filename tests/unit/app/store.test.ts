@@ -13,6 +13,9 @@ describe('createInitialState', () => {
         dataRows: 0,
       },
       home: {
+        assignedProgress: null,
+        assignedProgressLoading: false,
+        assignedProgressError: null,
         countsLoaded: false,
         countsLoading: false,
         countsError: null,
@@ -26,6 +29,15 @@ describe('createInitialState', () => {
         folderAccessChecking: false,
         folderAccessError: null,
         folderAccessMissingCount: null,
+      },
+      reviewSets: {
+        sets: null,
+        ignoredCount: 0,
+        loading: false,
+        error: null,
+        saving: false,
+        saveError: null,
+        confirmingResplit: null,
       },
       reviewers: {
         assignments: null,
@@ -144,6 +156,7 @@ describe('createInitialState', () => {
         fieldSubsetBadges: {},
       },
       verify: {
+        assignedOnly: false,
         targets: null,
         loading: false,
         loadError: null,
@@ -161,11 +174,14 @@ describe('createInitialState', () => {
         conflictMessage: null,
       },
       dashboard: {
+        reviewSetProgress: null,
         data: null,
         loading: false,
         loadError: null,
       },
       adjudicate: {
+        agreementOutsideCount: 0,
+        calibrationAgreement: null,
         rows: null,
         loading: false,
         loadError: null,

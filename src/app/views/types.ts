@@ -38,6 +38,15 @@ export interface HomeViewCallbacks {
   onRevokeReviewer(email: string): void;
   /** owner: レビュー相手への依頼文をクリップボードへコピー */
   onCopyInvite(email: string): void;
+  /** 担当セットと担当進捗の再読み込み */
+  onReloadReviewSets(): void;
+  onReloadAssignedProgress(): void;
+  /** 担当セットの分割・再分割確認・担当者編集・個別割り当て */
+  onSplitReviewSets(input: { calibrationCount: number; groupCount: number }): void;
+  onConfirmResplit(): void;
+  onCancelResplit(): void;
+  onSaveReviewSetEmails(setId: string, emails: string[]): void;
+  onAssignStudyReviewSet(studyId: string, setId: string | null): void;
 }
 
 /** #/documents（S3）のユーザー操作コールバック */
@@ -66,6 +75,8 @@ export interface DocumentsViewCallbacks {
   onUpdateMergeLabel(label: string): void;
   /** 統合ダイアログの registration_id 入力 */
   onUpdateMergeRegistration(registrationId: string): void;
+  /** 統合元の担当セットが異なるときの選択 */
+  onUpdateMergeReviewSet(reviewSet: string | null): void;
   /** 統合の確定（新 study_id 発行 + Documents 付け替え） */
   onConfirmMerge(): void;
   /** 統合ダイアログのキャンセル */
@@ -226,6 +237,8 @@ export interface ExtractViewCallbacks {
 
 /** #/verify（S8）のユーザー操作コールバック */
 export interface VerifyViewCallbacks {
+  /** owner の「自分の担当のみ」切り替え */
+  onAssignedOnlyChange(value: boolean): void;
   /** study セレクタの切替（URL ?study= と同期する） */
   onSelectStudy(studyId: string): void;
   /** 一覧読み込み失敗時の再試行 */

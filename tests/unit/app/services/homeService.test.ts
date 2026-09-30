@@ -48,6 +48,9 @@ describe('loadProgressCounts', () => {
     expect(readCountsMock).toHaveBeenCalledWith('sheet-1', deps.google);
     expect(store.getState().counts).toEqual(COUNTS);
     expect(store.getState().home).toEqual({
+      assignedProgress: null,
+      assignedProgressLoading: false,
+      assignedProgressError: null,
       countsLoaded: true,
       countsLoading: false,
       countsError: null,
@@ -106,6 +109,9 @@ describe('loadProgressCounts', () => {
     const store = makeStore();
     await loadProgressCounts(store, deps);
     expect(store.getState().home).toEqual({
+      assignedProgress: null,
+      assignedProgressLoading: false,
+      assignedProgressError: null,
       countsLoaded: false,
       countsLoading: false,
       countsError: 'HTTP 403: 権限がありません',

@@ -48,6 +48,7 @@ function makeDocument(overrides: Partial<DocumentRecord> = {}): DocumentRecord {
 function makeStudy(overrides: Partial<StudyRecord> = {}): StudyRecord {
   return {
     studyId: 'study-doc-1',
+    reviewSet: null,
     studyLabel: 'Smith 2020',
     registrationId: null,
     createdAt: 't0',
@@ -134,6 +135,7 @@ function makeStore(patch: {
   dashboard?: Partial<ReturnType<typeof createInitialState>['dashboard']>;
 } = {}): Store {
   const state = createInitialState();
+  state.reviewSets.sets = [];
   if (patch.withProject !== false) {
     state.currentProject = {
       projectId: 'p1',
@@ -183,7 +185,9 @@ describe('loadDashboard', () => {
     const store = makeStore();
     await loadDashboard(store, makeDeps());
     const { dashboard } = store.getState();
-    expect(readMaterialsMock).toHaveBeenCalledWith(store, expect.anything(), 'sheet-1');
+    expect(readMaterialsMock).toHaveBeenCalledWith(store, expect.anything(), 'sheet-1', {
+      assignedOnly: false,
+    });
     expect(dashboard.loading).toBe(false);
     expect(dashboard.data?.sections).toEqual(['methods']);
     expect(dashboard.data?.rows[0]).toMatchObject({

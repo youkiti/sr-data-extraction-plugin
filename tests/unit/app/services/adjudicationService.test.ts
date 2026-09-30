@@ -125,6 +125,7 @@ function makeDocument(overrides: Partial<DocumentRecord> = {}): DocumentRecord {
 function makeStudy(overrides: Partial<StudyRecord> = {}): StudyRecord {
   return {
     studyId: 'study-1',
+    reviewSet: null,
     studyLabel: 'Smith 2020',
     registrationId: null,
     createdAt: 't0',
@@ -399,7 +400,13 @@ function makeFakePdfCache(): { load: jest.Mock; retry: jest.Mock; disposeAll: je
 
 function seedStore(): Store {
   const state = createInitialState();
-  state.currentProject = { projectId: 'p1', spreadsheetId: 'sheet-1', driveFolderId: 'f1', name: 'P' };
+  state.reviewSets.sets = [];
+  state.currentProject = {
+    projectId: 'p1',
+    spreadsheetId: 'sheet-1',
+    driveFolderId: 'f1',
+    name: 'P',
+  };
   return createStore(state);
 }
 
@@ -452,7 +459,13 @@ describe('loadAdjudicateTargets', () => {
     await loadAdjudicateTargets(store, makeDeps());
     expect(getSchemaFieldsMock).not.toHaveBeenCalled();
     expect(store.getState().adjudicate.rows).toEqual([
-      { study: makeStudy(), pair: { kind: 'waiting', annotators: [] }, gate: null, pairOptions: null },
+      {
+        outsideAnnotators: [],
+        study: makeStudy(),
+        pair: { kind: 'waiting', annotators: [] },
+        gate: null,
+        pairOptions: null,
+      },
     ]);
   });
 
@@ -1726,4 +1739,167 @@ describe('downloadAgreementCsv（issue #66）', () => {
     const [filename] = (downloadTextFile as jest.Mock).mock.calls[0] as [string, string, string];
     expect(filename).toMatch(/^agreement_summary_\d{8}-\d{6}\.csv$/);
   });
+});
+
+describe('担当ペアと calibration のサービス集計', () => {
+  function assignedStore() {
+    const store = seedStore();
+    store.setState({
+      role: { ...store.getState().role, role: 'adjudicator' },
+      reviewSets: {
+        ...store.getState().reviewSets,
+        sets: [
+          {
+            setId: 'group-1',
+            reviewerEmails: [B, A],
+            seed: null,
+            updatedBy: JUDGE,
+            updatedAt: 't0',
+          },
+        ],
+      },
+    });
+    const studies = [
+      makeStudy({ reviewSet: 'group-1' }),
+      makeStudy({ studyId: 'cal', reviewSet: 'calibration' }),
+      makeStudy({ studyId: 'unassigned' }),
+    ];
+    readStudiesMock.mockResolvedValue(studies);
+    readDocumentsMock.mockResolvedValue(
+      studies.map((study) =>
+        makeDocument({ studyId: study.studyId, documentId: `doc-${study.studyId}` }),
+      ),
+    );
+    readStudyDataSheetMock.mockResolvedValue({
+      fieldNames: ['sample_size'],
+      rows: studies.flatMap((study) =>
+        [A, B, ...(study.studyId === 'unassigned' ? [] : [C])].map((annotator) =>
+          makeStudyDataRow({ studyId: study.studyId, annotator }),
+        ),
+      ),
+    });
+    readAllDecisionsMock.mockResolvedValue(
+      studies.flatMap((study) =>
+        [A, B, ...(study.studyId === 'unassigned' ? [] : [C])].map((annotator) =>
+          makeDecision({ studyId: study.studyId, annotator }),
+        ),
+      ),
+    );
+    readResultsDataRowsMock.mockResolvedValue([]);
+    listSchemaVersionsMock.mockResolvedValue([makeSchemaVersion()]);
+    getSchemaFieldsMock.mockResolvedValue([makeField()]);
+    return store;
+  }
+  test('担当外の行があっても担当ペアは ready、一覧は calibration・未割当も残す', async () => {
+    const store = assignedStore();
+    await loadAdjudicateTargets(store, makeDeps());
+    const rows = store.getState().adjudicate.rows!;
+    expect(rows).toHaveLength(3);
+    expect(rows[0]).toMatchObject({
+      pair: { kind: 'ready', annotatorA: A, annotatorB: B },
+      outsideAnnotators: [C],
+    });
+    expect(rows[1]).toMatchObject({ pair: { kind: 'selectable' }, outsideAnnotators: [] });
+    expect(rows[2]).toMatchObject({ pair: { kind: 'ready' }, outsideAnnotators: [] });
+  });
+  test('担当ペアの片方が未入力なら他の二人がいても waiting', async () => {
+    const store = assignedStore();
+    readStudyDataSheetMock.mockResolvedValue({
+      fieldNames: ['sample_size'],
+      rows: [makeStudyDataRow({ annotator: A }), makeStudyDataRow({ annotator: C })],
+    });
+    readAllDecisionsMock.mockResolvedValue([
+      makeDecision({ annotator: A }),
+      makeDecision({ annotator: C }),
+    ]);
+    await loadAdjudicateTargets(store, makeDeps());
+    expect(store.getState().adjudicate.rows?.[0]).toMatchObject({
+      pair: { kind: 'waiting', annotators: [A] },
+      outsideAnnotators: [C],
+    });
+    await loadAgreementReport(store, makeDeps());
+    expect(store.getState().adjudicate.agreement?.studyCount).toBe(0);
+    expect(store.getState().adjudicate.agreementOutsideCount).toBe(1);
+  });
+  test('本体の κ は calibration と担当外を除外し、別枠に三人の三ペアを出す', async () => {
+    const store = assignedStore();
+    const decisions = await readAllDecisionsMock('sheet-1', makeDeps().google);
+    readAllDecisionsMock.mockResolvedValue([
+      ...decisions,
+      makeDecision({ annotator: C, action: 'edit' }),
+      makeDecision({ annotator: C, annotatorType: 'ai' }),
+    ]);
+    await loadAgreementReport(store, makeDeps());
+    const state = store.getState().adjudicate;
+    expect(state.agreement?.studyCount).toBe(2);
+    expect(state.agreement?.overall.agreementRate).toBe(1);
+    expect(state.agreementOutsideCount).toBe(2);
+    expect(
+      state.calibrationAgreement?.map((pair) => [
+        pair.annotatorA,
+        pair.annotatorB,
+        pair.studyCount,
+        pair.agreementRate,
+      ]),
+    ).toEqual([
+      [A, B, 1, 1],
+      [A, C, 1, 1],
+      [B, C, 1, 1],
+    ]);
+  });
+  test('calibration が無ければ別枠は null、担当セット無効なら従来の推定', async () => {
+    const store = assignedStore();
+    readStudiesMock.mockResolvedValue([makeStudy({ reviewSet: 'group-1' })]);
+    await loadAgreementReport(store, makeDeps());
+    expect(store.getState().adjudicate.calibrationAgreement).toBeNull();
+    const inactive = assignedStore();
+    inactive.setState({ reviewSets: { ...inactive.getState().reviewSets, sets: [] } });
+    await loadAdjudicateTargets(inactive, makeDeps());
+    expect(inactive.getState().adjudicate.rows?.[0]?.pair.kind).toBe('selectable');
+    await loadAgreementReport(inactive, makeDeps());
+    expect(inactive.getState().adjudicate.agreement?.studyCount).toBe(1);
+    expect(inactive.getState().adjudicate.agreementOutsideCount).toBe(0);
+    expect(inactive.getState().adjudicate.calibrationAgreement).toBeNull();
+  });
+  test('非 owner のセット読込失敗は一覧と一致度のエラーへ', async () => {
+    const store = assignedStore();
+    store.setState({
+      reviewSets: { ...store.getState().reviewSets, sets: null, error: 'セット読込失敗' },
+      adjudicate: { ...store.getState().adjudicate, rows: [] },
+    });
+    await loadAdjudicateTargets(store, makeDeps());
+    expect(store.getState().adjudicate.rows).toBeNull();
+    expect(store.getState().adjudicate.loadError).toBe('セット読込失敗');
+    await loadAgreementReport(store, makeDeps());
+    expect(store.getState().adjudicate.agreementError).toBe('セット読込失敗');
+    expect(readStudiesMock).not.toHaveBeenCalled();
+  });
+});
+
+test('owner はセット読込失敗時も従来の推定ペアと一致度を読み込む', async () => {
+  const store = seedStore();
+  setupTwoAnnotatorsReady();
+  store.setState({
+    role: { ...store.getState().role, role: 'owner' },
+    reviewSets: { ...store.getState().reviewSets, sets: null, error: 'セット読込失敗' },
+  });
+  await loadAdjudicateTargets(store, makeDeps());
+  expect(store.getState().adjudicate.rows?.[0]?.pair.kind).toBe('ready');
+  await loadAgreementReport(store, makeDeps());
+  expect(store.getState().adjudicate.agreement?.studyCount).toBe(1);
+});
+
+test('セット読込失敗時は以前の一致度も隠し、未有効の calibration は本体に残す', async () => {
+  const store = seedStore();
+  setupTwoAnnotatorsReady();
+  readStudiesMock.mockResolvedValue([makeStudy({ reviewSet: 'calibration' })]);
+  await loadAgreementReport(store, makeDeps());
+  expect(store.getState().adjudicate.agreement?.studyCount).toBe(1);
+  store.setState({
+    role: { ...store.getState().role, role: 'adjudicator' },
+    reviewSets: { ...store.getState().reviewSets, sets: null, error: '失敗' },
+  });
+  await loadAgreementReport(store, makeDeps());
+  expect(store.getState().adjudicate.agreement).toBeNull();
+  expect(store.getState().adjudicate.agreementError).toBe('失敗');
 });

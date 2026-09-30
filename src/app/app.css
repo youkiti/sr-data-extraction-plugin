@@ -3936,3 +3936,24 @@ section.documents__tiab {
   color: var(--color-text-muted);
   font-size: 12px;
 }
+
+/* 担当セットの編集と、担当外判定の注記 */
+.review-sets__emails {
+  max-width: 100%;
+  width: 260px;
+  margin-right: 8px;
+}
+
+.review-sets__pair-note,
+.adjudicate__outside-note {
+  color: var(--color-text-muted);
+  font-size: 0.875rem;
+  margin: 8px 0;
+}
+
+.verify__assigned-only {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 12px;
+}

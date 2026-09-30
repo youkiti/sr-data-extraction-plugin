@@ -155,6 +155,7 @@ function documentsSlice(): Record<string, unknown> {
     studies: [
       {
         studyId: 'study-1',
+        reviewSet: null,
         studyLabel: 'Smith 2020',
         registrationId: null,
         createdAt: '2026-07-01T00:00:00Z',

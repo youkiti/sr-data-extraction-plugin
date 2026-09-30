@@ -44,6 +44,7 @@ function makeRecord(seed: DocumentSeed): Record<string, unknown> {
 function makeStudy(studyId: string, studyLabel: string, registrationId: string | null): Record<string, unknown> {
   return {
     studyId,
+    reviewSet: null,
     studyLabel,
     registrationId,
     createdAt: '2026-07-02T00:00:00Z',

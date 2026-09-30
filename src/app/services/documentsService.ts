@@ -30,6 +30,7 @@ import {
 import type { DisposablePdfDocument } from '../../features/documents/extractTextLayer';
 import {
   appendStudies,
+  ensureStudyReviewSetColumn,
   readStudies,
   resolveActiveStudies,
   updateStudy,
@@ -663,12 +664,15 @@ export async function confirmMerge(
       studies,
       documents: records,
       targetStudyIds: dialog.studyIds,
+      reviewSet: dialog.reviewSet,
       label: dialog.label.trim() === '' ? undefined : dialog.label.trim(),
       registrationId: dialog.registrationId.trim() === '' ? null : dialog.registrationId.trim(),
       createdBy,
       createdAt: (deps.now ?? nowIso8601)(),
       newStudyId: (deps.newUuid ?? generateUuid)(),
     });
+    if (result.newStudy.reviewSet !== null)
+      await ensureStudyReviewSetColumn(project.spreadsheetId, deps.google);
     await appendStudies(project.spreadsheetId, [result.newStudy], deps.google);
     // reassignments は records から生成されるため対応 document は必ず存在する
     const byId = new Map(records.map((doc) => [doc.documentId, doc]));

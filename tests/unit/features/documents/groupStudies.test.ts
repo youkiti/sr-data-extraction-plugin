@@ -11,6 +11,7 @@ import {
 function makeStudy(overrides: Partial<StudyRecord> = {}): StudyRecord {
   return {
     studyId: 'study-1',
+    reviewSet: null,
     studyLabel: 'Smith 2020',
     registrationId: null,
     createdAt: 't1',
@@ -67,6 +68,7 @@ describe('mergeStudies', () => {
     });
     expect(result.newStudy).toEqual({
       studyId: 'study-new',
+      reviewSet: null,
       studyLabel: 'Smith 2020', // study-1（作成順先頭）の値
       registrationId: 'NCT01234567',
       createdAt: 't2',
@@ -153,6 +155,7 @@ describe('separateDocuments', () => {
     });
     expect(result.newStudy).toEqual({
       studyId: 'study-new',
+      reviewSet: null,
       studyLabel: 'Split study',
       registrationId: 'NCT99999999',
       createdAt: 't2',
@@ -232,5 +235,56 @@ describe('ignoredCandidateKey', () => {
   test('study_id をソートして向き非依存のキーにする', () => {
     expect(ignoredCandidateKey(['s2', 's1'])).toBe('s1|s2');
     expect(ignoredCandidateKey(['s1', 's2'])).toBe('s1|s2');
+  });
+});
+
+describe('担当セットを引き継ぐグルーピング', () => {
+  const base = {
+    documents: [],
+    targetStudyIds: ['s2', 's1'],
+    createdBy: 'owner@example.com',
+    createdAt: 't2',
+    newStudyId: 'merged',
+  };
+  test('共通セットを保持し、異なるセットでは明示値か作成順先頭を使う', () => {
+    const sources = [
+      makeStudy({ studyId: 's1', reviewSet: 'group-2' }),
+      makeStudy({ studyId: 's2', reviewSet: 'group-1' }),
+    ];
+    expect(mergeStudies({ ...base, studies: sources }).newStudy.reviewSet).toBe('group-2');
+    expect(
+      mergeStudies({ ...base, studies: sources, reviewSet: 'calibration' }).newStudy.reviewSet,
+    ).toBe('calibration');
+    expect(
+      mergeStudies({ ...base, studies: sources, reviewSet: null }).newStudy.reviewSet,
+    ).toBeNull();
+    expect(
+      mergeStudies({
+        ...base,
+        studies: sources.map((s) => ({ ...s, reviewSet: 'group-1' })),
+        reviewSet: null,
+      }).newStudy.reviewSet,
+    ).toBe('group-1');
+  });
+  test('分離元のセットを引き継ぎ、無関係の study を使わない', () => {
+    const input = {
+      documents: [makeDoc()],
+      documentIds: ['doc-1'],
+      label: '分離後',
+      createdBy: 'owner@example.com',
+      createdAt: 't2',
+      newStudyId: 'separated',
+    };
+    expect(
+      separateDocuments({
+        ...input,
+        studies: [
+          makeStudy({ studyId: 'other', reviewSet: 'group-2' }),
+          makeStudy({ reviewSet: 'calibration' }),
+        ],
+      }).newStudy.reviewSet,
+    ).toBe('calibration');
+    expect(separateDocuments({ ...input, studies: [makeStudy()] }).newStudy.reviewSet).toBeNull();
+    expect(separateDocuments(input).newStudy.reviewSet).toBeNull();
   });
 });

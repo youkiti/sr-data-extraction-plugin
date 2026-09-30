@@ -41,6 +41,7 @@ import {
 import { importDocuments } from '../../../../src/features/documents/importDocuments';
 import {
   appendStudies,
+  ensureStudyReviewSetColumn,
   readStudies,
   updateStudy,
 } from '../../../../src/features/documents/studyRepository';
@@ -65,6 +66,7 @@ jest.mock('../../../../src/features/documents/studyRepository', () => {
     ...actual,
     readStudies: jest.fn(),
     appendStudies: jest.fn(),
+    ensureStudyReviewSetColumn: jest.fn(),
     updateStudy: jest.fn(),
   };
 });
@@ -121,6 +123,7 @@ function makeDoc(overrides: Partial<DocumentRecord> = {}): DocumentRecord {
 function makeStudy(overrides: Partial<StudyRecord> = {}): StudyRecord {
   return {
     studyId: 'study-1',
+    reviewSet: null,
     studyLabel: 'Smith 2020',
     registrationId: null,
     createdAt: 't1',
@@ -1588,4 +1591,39 @@ describe('文献除外機能（issue #181）', () => {
       expect(store.getState().documents.records).toEqual([]);
     });
   });
+});
+
+describe('統合時の担当セット継承', () => {
+  test.each([undefined, 'calibration', null])(
+    '異なる元セットから選択値 %s を渡し、非空ならヘッダーを先に移行する',
+    async (reviewSet) => {
+      const store = makeStore();
+      setDocs(store, {
+        studies: [
+          makeStudy({ reviewSet: 'group-1' }),
+          makeStudy({ studyId: 'study-2', reviewSet: 'group-2' }),
+        ],
+        records: [makeDoc(), makeDoc({ documentId: 'doc-2', studyId: 'study-2' })],
+      });
+      openMergeCandidate(store, ['study-2', 'study-1']);
+      updateMergeDialog(store, { reviewSet });
+      mockAppendStudies.mockResolvedValue(undefined);
+      mockUpdateDocument.mockResolvedValue(undefined);
+      mockReadDocuments.mockResolvedValue([]);
+      mockReadStudies.mockResolvedValue([]);
+      await confirmMerge(store, makeDeps());
+      expect(mockAppendStudies).toHaveBeenCalledWith(
+        'sheet-1',
+        [expect.objectContaining({ reviewSet: reviewSet === undefined ? 'group-1' : reviewSet })],
+        expect.anything(),
+      );
+      if (reviewSet === null) expect(ensureStudyReviewSetColumn).not.toHaveBeenCalled();
+      else {
+        expect(ensureStudyReviewSetColumn).toHaveBeenCalledWith('sheet-1', expect.anything());
+        expect(jest.mocked(ensureStudyReviewSetColumn).mock.invocationCallOrder[0]).toBeLessThan(
+          mockAppendStudies.mock.invocationCallOrder[0]!,
+        );
+      }
+    },
+  );
 });

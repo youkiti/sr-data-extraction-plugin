@@ -41,6 +41,13 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<AdjudicateViewCal
   return {
     ctx: {
       home: {
+        onReloadReviewSets: jest.fn(),
+        onReloadAssignedProgress: jest.fn(),
+        onSplitReviewSets: jest.fn(),
+        onConfirmResplit: jest.fn(),
+        onCancelResplit: jest.fn(),
+        onSaveReviewSetEmails: jest.fn(),
+        onAssignStudyReviewSet: jest.fn(),
         onReload: jest.fn(),
         onGrantFolderAccess: jest.fn(),
         onSkipMissingFiles: jest.fn(),
@@ -53,6 +60,7 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<AdjudicateViewCal
         onCopyInvite: jest.fn(),
       },
       documents: {
+        onUpdateMergeReviewSet: jest.fn(),
         onImport: jest.fn(),
         onImportFiles: jest.fn(),
         onReload: jest.fn(),
@@ -143,6 +151,7 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<AdjudicateViewCal
         onReloadTargets: jest.fn(),
       },
       verify: {
+        onAssignedOnlyChange: jest.fn(),
         onSelectStudy: jest.fn(),
         onRetryLoad: jest.fn(),
         onDecision: jest.fn(),
@@ -173,6 +182,7 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<AdjudicateViewCal
 function makeStudy(overrides: Partial<StudyRecord> = {}): StudyRecord {
   return {
     studyId: 'study-1',
+    reviewSet: null,
     studyLabel: 'Smith 2020',
     registrationId: null,
     createdAt: 't0',
@@ -243,6 +253,7 @@ function makeEvidence(overrides: Partial<Evidence> = {}): Evidence {
 
 function makeRow(overrides: Partial<AdjudicateStudyRow> = {}): AdjudicateStudyRow {
   return {
+    outsideAnnotators: [],
     study: makeStudy(),
     pair: { kind: 'ready', annotatorA: 'a@example.com', annotatorB: 'b@example.com' },
     gate: {
@@ -263,6 +274,7 @@ function makeSelectableRow(overrides: Partial<AdjudicateStudyRow> = {}): Adjudic
     ready: true,
   });
   return {
+    outsideAnnotators: [],
     study: makeStudy(),
     pair: { kind: 'selectable', annotators: ['a@example.com', 'b@example.com', 'c@example.com'] },
     gate: null,
@@ -1307,4 +1319,64 @@ describe('enum 項目の第 3 の値 UI（issue #254）', () => {
     expect(root.querySelector('.adjudicate__custom-input')).not.toBeNull();
     expect(root.querySelector('.verify__enum-choices')).toBeNull();
   });
+});
+
+test('担当外判定は ready と waiting の行に注記する', () => {
+  const { ctx } = makeCtx();
+  const state = makeState({
+    rows: [
+      makeRow({ outsideAnnotators: ['c@example.com', 'd@example.com'] }),
+      makeRow({ pair: { kind: 'waiting', annotators: [] }, outsideAnnotators: ['c@example.com'] }),
+    ],
+  });
+  const view = renderAdjudicateView(state, ctx);
+  expect(view.querySelectorAll('.adjudicate__outside-note')).toHaveLength(2);
+  expect(view.textContent).toContain(
+    '担当外の判定（c@example.com, d@example.com）は裁定と一致度から除外しています',
+  );
+});
+test('calibration は本体が空でも全ペアの一致度を表示する', () => {
+  const { ctx } = makeCtx();
+  const report = makeAgreementReport();
+  const state = makeState({
+    rows: [makeRow()],
+    agreement: report,
+    agreementOutsideCount: 2,
+    calibrationAgreement: [
+      {
+        annotatorA: 'a@example.com',
+        annotatorB: 'b@example.com',
+        studyCount: 2,
+        agreementRate: 0.75,
+        kappa: 0.5,
+        report,
+      },
+      {
+        annotatorA: 'a@example.com',
+        annotatorB: 'c@example.com',
+        studyCount: 1,
+        agreementRate: null,
+        kappa: null,
+        report,
+      },
+    ],
+  });
+  let view = renderAdjudicateView(state, ctx);
+  expect(view.querySelector('#adjudicate-agreement-outside')?.textContent).toContain('2 件');
+  const cells = [...view.querySelectorAll('#adjudicate-calibration-agreement tbody td')].map(
+    (td) => td.textContent,
+  );
+  expect(cells).toEqual(['2', '75.0%', '0.50', '1', '—', '—']);
+  state.adjudicate.agreement = makeAgreementReport({
+    studyCount: 0,
+    fields: [],
+    overall: { pairCount: 0, agreementCount: 0, agreementRate: null, kappa: null },
+  });
+  view = renderAdjudicateView(state, ctx);
+  expect(view.querySelector('#adjudicate-calibration-agreement')).not.toBeNull();
+  state.adjudicate.calibrationAgreement = [];
+  state.adjudicate.agreementOutsideCount = 0;
+  view = renderAdjudicateView(state, ctx);
+  expect(view.querySelector('#adjudicate-calibration-agreement')).toBeNull();
+  expect(view.querySelector('#adjudicate-agreement-outside')).toBeNull();
 });

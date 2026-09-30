@@ -5,6 +5,13 @@ import { setUiLanguage } from '../../../src/lib/i18n';
 
 const stubCtx: ViewContext = {
   home: {
+    onReloadReviewSets: jest.fn(),
+    onReloadAssignedProgress: jest.fn(),
+    onSplitReviewSets: jest.fn(),
+    onConfirmResplit: jest.fn(),
+    onCancelResplit: jest.fn(),
+    onSaveReviewSetEmails: jest.fn(),
+    onAssignStudyReviewSet: jest.fn(),
     onReload: jest.fn(),
     onGrantFolderAccess: jest.fn(),
     onSkipMissingFiles: jest.fn(),
@@ -17,6 +24,7 @@ const stubCtx: ViewContext = {
     onCopyInvite: jest.fn(),
   },
   documents: {
+    onUpdateMergeReviewSet: jest.fn(),
     onImport: jest.fn(),
     onImportFiles: jest.fn(),
     onReload: jest.fn(),
@@ -107,6 +115,7 @@ const stubCtx: ViewContext = {
     onReloadTargets: jest.fn(),
   },
   verify: {
+    onAssignedOnlyChange: jest.fn(),
     onSelectStudy: jest.fn(),
     onRetryLoad: jest.fn(),
     onDecision: jest.fn(),

@@ -9,6 +9,7 @@ import {
   persistVerifyInstanceDeclarations,
   persistVerifyRelocateQuote,
   readVerifyTargetMaterials,
+  setVerifyAssignedOnly,
   setVerifyLayoutMode,
   setVerifyPaneLayout,
 } from '../../../../src/app/services/verifyService';
@@ -169,6 +170,7 @@ function makeDocument(overrides: Partial<DocumentRecord> = {}): DocumentRecord {
 function makeStudy(overrides: Partial<StudyRecord> = {}): StudyRecord {
   return {
     studyId: 'study-doc-1',
+    reviewSet: null,
     studyLabel: 'Smith 2020',
     registrationId: null,
     createdAt: 't0',
@@ -339,6 +341,7 @@ function makeStore(patch: {
   role?: ReturnType<typeof createInitialState>['role']['role'];
 }): Store {
   const state = createInitialState();
+  state.reviewSets.sets = [];
   if (patch.withProject !== false) {
     state.currentProject = {
       projectId: 'p1',
@@ -1611,5 +1614,111 @@ describe('setVerifyPaneLayout（issue #193）', () => {
     await setVerifyPaneLayout(store, makeDeps({ saveVerifyPaneLayout }), layout);
     expect(store.getState().verify.paneLayout).toEqual(layout);
     expect(saveVerifyPaneLayout).toHaveBeenCalledWith(layout);
+  });
+});
+
+describe('担当セットによる検証対象', () => {
+  function assignedStore(
+    role: 'owner' | 'reviewer_with_ai' | 'reviewer_independent' | 'adjudicator',
+  ) {
+    const studies = ['study-1', 'study-2', 'cal', 'unassigned'].map((studyId, index) =>
+      makeStudy({
+        studyId,
+        reviewSet: ['group-1', 'group-2', 'calibration', null][index] as string | null,
+      }),
+    );
+    const documents = studies.map((study) =>
+      makeDocument({ studyId: study.studyId, documentId: `doc-${study.studyId}` }),
+    );
+    const store = makeStore({ role, documents, studies });
+    store.setState({
+      reviewSets: {
+        ...store.getState().reviewSets,
+        sets: [
+          {
+            setId: 'group-1',
+            reviewerEmails: [ME, 'other@example.com'],
+            seed: null,
+            updatedBy: ME,
+            updatedAt: 't0',
+          },
+        ],
+      },
+    });
+    readEvidenceRowsMock.mockResolvedValue([]);
+    readCompletedRunMetasMock.mockResolvedValue([
+      makeCompletedRunMeta({ studyIds: studies.map((study) => study.studyId) }),
+    ]);
+    listSchemaVersionsMock.mockResolvedValue([makeSchemaVersion()]);
+    return store;
+  }
+  test.each(['reviewer_with_ai', 'reviewer_independent', 'adjudicator'] as const)(
+    '%s は本人のグループと calibration のみ',
+    async (role) => {
+      const store = assignedStore(role);
+      await loadVerifyTargets(store, makeDeps());
+      expect(store.getState().verify.targets?.map((target) => target.study.studyId)).toEqual([
+        'study-1',
+        'cal',
+      ]);
+      getCurrentUserEmailMock.mockResolvedValueOnce('nobody@example.com');
+      await loadVerifyTargets(store, makeDeps(), { force: true });
+      expect(store.getState().verify.targets?.map((target) => target.study.studyId)).toEqual([
+        'cal',
+      ]);
+    },
+  );
+  test('owner の切り替えと集計用の全件指定', async () => {
+    const store = assignedStore('owner');
+    await loadVerifyTargets(store, makeDeps());
+    expect(store.getState().verify.targets).toHaveLength(4);
+    setVerifyAssignedOnly(store, true);
+    expect(store.getState().verify.targets).toBeNull();
+    await loadVerifyTargets(store, makeDeps());
+    expect(store.getState().verify.targets).toHaveLength(2);
+    const all = await readVerifyTargetMaterials(store, makeDeps(), 'sheet-1', {
+      assignedOnly: false,
+    });
+    expect(all.materials).toHaveLength(4);
+    setVerifyAssignedOnly(store, true);
+    expect(store.getState().verify.targets).toHaveLength(2);
+    setVerifyAssignedOnly(store, false);
+    expect(store.getState().verify.assignedOnly).toBe(false);
+    const reviewer = assignedStore('reviewer_with_ai');
+    setVerifyAssignedOnly(reviewer, true);
+    expect(reviewer.getState().verify.assignedOnly).toBe(false);
+  });
+  test.each(['reviewer_with_ai', 'reviewer_independent', 'adjudicator'] as const)(
+    '%s のセット読込失敗はキャッシュ済み一覧も隠す',
+    async (role) => {
+      const store = assignedStore(role);
+      store.setState({
+        reviewSets: { ...store.getState().reviewSets, sets: null, error: 'セット読込失敗' },
+        verify: { ...store.getState().verify, targets: [makeTarget()] },
+      });
+      await loadVerifyTargets(store, makeDeps());
+      expect(store.getState().verify.targets).toBeNull();
+      expect(store.getState().verify.loadError).toBe('セット読込失敗');
+      expect(readEvidenceRowsMock).not.toHaveBeenCalled();
+    },
+  );
+  test('owner の読込失敗と空の review_set は従来の全件', async () => {
+    const store = assignedStore('owner');
+    store.setState({
+      reviewSets: { ...store.getState().reviewSets, sets: null, error: 'セット読込失敗' },
+    });
+    await loadVerifyTargets(store, makeDeps());
+    expect(store.getState().verify.targets).toHaveLength(4);
+    const empty = assignedStore('reviewer_with_ai');
+    empty.setState({
+      documents: {
+        ...empty.getState().documents,
+        studies: empty
+          .getState()
+          .documents.studies!.map((study) => ({ ...study, reviewSet: null })),
+      },
+    });
+    await loadVerifyTargets(empty, makeDeps());
+    expect(empty.getState().verify.targets).toHaveLength(4);
   });
 });

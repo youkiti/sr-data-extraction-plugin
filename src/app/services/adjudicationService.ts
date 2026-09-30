@@ -19,13 +19,16 @@
 //   docstring 参照（一致度レポートへの arm マッピング適用）
 import type { ConfirmedArmStructure } from '../../domain/armStructure';
 import type { DocumentRecord } from '../../domain/document';
+import { CALIBRATION_SET_ID } from '../../domain/reviewSet';
 import type { SchemaField } from '../../domain/schemaField';
 import type { StudyRecord } from '../../domain/study';
 import {
   buildAgreementReport,
+  computeCalibrationAgreement,
   buildAgreementSummaryCsv,
   buildAgreementDisagreementsCsv,
   type AgreementStudyInput,
+  type CalibrationPairAgreement,
 } from '../../features/adjudication/agreement';
 import {
   armKeysInUse,
@@ -60,7 +63,11 @@ import type { DisposablePdfDocument } from '../../features/documents/extractText
 import { readResultsDataRows, readStudyDataSheet } from '../../features/extraction/annotationRepository';
 import { readEvidenceRows } from '../../features/extraction/evidenceRepository';
 import { readRunSchemaVersions } from '../../features/extraction/runRepository';
-import { getSchemaFieldsByVersion, listSchemaVersions } from '../../features/schema/schemaRepository';
+import { assignedPairForStudy, isReviewSetsActive } from '../../features/review/reviewSets';
+import {
+  getSchemaFieldsByVersion,
+  listSchemaVersions,
+} from '../../features/schema/schemaRepository';
 import {
   latestArmStructure,
   latestArmStructureNote,
@@ -85,6 +92,7 @@ import type {
 import { downloadTextFile } from '../ui/download';
 import { showToast } from '../ui/toast';
 import { t } from '../../lib/i18n';
+import { requireReviewSets } from './reviewSetService';
 import { timestampForFilename } from './exportService';
 import { latestRunEvidenceByStudy } from './verifyService';
 import { persistConsensusWrite, type QueuedWrite } from './verificationService';
@@ -142,11 +150,13 @@ export async function loadAdjudicateTargets(
   if (!project || state.adjudicate.loading) {
     return;
   }
-  if (state.adjudicate.rows !== null && options.force !== true) {
-    return;
-  }
   patchAdjudicate(store, { loading: true, loadError: null });
   try {
+    await requireReviewSets(store, deps);
+    if (state.adjudicate.rows !== null && options.force !== true) {
+      patchAdjudicate(store, { loading: false });
+      return;
+    }
     const { spreadsheetId } = project;
     const documents = await resolveDocuments(store, deps, spreadsheetId);
     const studies = await resolveStudies(store, deps, spreadsheetId);
@@ -158,12 +168,19 @@ export async function loadAdjudicateTargets(
     const latest = versions[0];
     const fields = latest === undefined ? [] : await getSchemaFieldsByVersion(spreadsheetId, latest.schemaVersion, deps.google);
 
+    const selection = buildStudySelection(studies, documents);
+    const sets = store.getState().reviewSets.sets ?? [];
+    const active = isReviewSetsActive(
+      selection.map((item) => item.study),
+      sets,
+    );
     const rows: AdjudicateStudyRow[] = [];
-    for (const item of buildStudySelection(studies, documents)) {
+    for (const item of selection) {
       const { study } = item;
       const studyDecisions = decisions.filter((decision) => decision.studyId === study.studyId);
       const pair = resolveAnnotatorPair({
         studyId: study.studyId,
+        assignedPair: active ? assignedPairForStudy(study, sets) : null,
         studyDataRows: studySheet.rows,
         resultsDataRows: resultsRows,
         decisions,
@@ -198,11 +215,11 @@ export async function loadAdjudicateTargets(
           }
         }
       }
-      rows.push({ study, pair, gate, pairOptions });
+      rows.push({ study, pair, gate, pairOptions, outsideAnnotators: pair.outside ?? [] });
     }
     patchAdjudicate(store, { loading: false, rows });
   } catch (err) {
-    patchAdjudicate(store, { loading: false, loadError: toMessage(err) });
+    patchAdjudicate(store, { loading: false, rows: null, loadError: toMessage(err) });
   }
 }
 
@@ -764,7 +781,11 @@ async function collectReadyStudyInputs(
   deps: AdjudicationServiceDeps,
   spreadsheetId: string,
   fields: readonly SchemaField[],
-): Promise<AgreementStudyInput[]> {
+): Promise<{
+  inputs: AgreementStudyInput[];
+  outsideCount: number;
+  calibration: CalibrationPairAgreement[] | null;
+}> {
   const documents = await resolveDocuments(store, deps, spreadsheetId);
   const studies = await resolveStudies(store, deps, spreadsheetId);
   const studySheet = await readStudyDataSheet(spreadsheetId, deps.google);
@@ -772,15 +793,45 @@ async function collectReadyStudyInputs(
   const decisions = await readAllDecisions(spreadsheetId, deps.google);
   const armRows = await readAllArmStructures(spreadsheetId, deps.google);
 
+  const selection = buildStudySelection(studies, documents);
+  const sets = store.getState().reviewSets.sets ?? [];
+  const active = isReviewSetsActive(
+    selection.map((item) => item.study),
+    sets,
+  );
+  const calibrationStudies = selection
+    .map((item) => item.study)
+    .filter((study) => study.reviewSet === CALIBRATION_SET_ID);
+  const calibration =
+    active && calibrationStudies.length > 0
+      ? computeCalibrationAgreement({
+          studies: calibrationStudies,
+          fields,
+          studyDataRows: studySheet.rows,
+          resultsDataRows: resultsRows,
+          decisions,
+        })
+      : null;
+  let outsideCount = 0;
   const inputs: AgreementStudyInput[] = [];
-  for (const item of buildStudySelection(studies, documents)) {
+  for (const item of selection) {
     const { study } = item;
+    if (active && study.reviewSet === CALIBRATION_SET_ID) continue;
     const pair = resolveAnnotatorPair({
       studyId: study.studyId,
+      assignedPair: active ? assignedPairForStudy(study, sets) : null,
       studyDataRows: studySheet.rows,
       resultsDataRows: resultsRows,
       decisions,
     });
+    const outside = new Set(pair.outside);
+    outsideCount += decisions.filter(
+      (decision) =>
+        decision.studyId === study.studyId &&
+        outside.has(decision.annotator) &&
+        (decision.annotatorType === 'human_with_ai' ||
+          decision.annotatorType === 'human_independent'),
+    ).length;
     if (pair.kind !== 'ready') {
       continue;
     }
@@ -799,7 +850,7 @@ async function collectReadyStudyInputs(
     const cells = buildAdjudicationCells(fields, studyDataRowA, studyDataRowB, resultsRowsA, remappedResultsRowsB);
     inputs.push({ studyId: study.studyId, studyLabel: study.studyLabel, cells });
   }
-  return inputs;
+  return { inputs, outsideCount, calibration };
 }
 
 /**
@@ -816,13 +867,36 @@ export async function loadAgreementReport(store: Store, deps: AdjudicationServic
   }
   patchAdjudicate(store, { agreementLoading: true, agreementError: null });
   try {
+    try {
+      await requireReviewSets(store, deps);
+    } catch (error) {
+      patchAdjudicate(store, {
+        agreement: null,
+        agreementOutsideCount: 0,
+        calibrationAgreement: null,
+      });
+      throw error;
+    }
     const { spreadsheetId } = project;
     const versions = await listSchemaVersions(spreadsheetId, deps.google);
     const latest = versions[0];
-    const fields = latest === undefined ? [] : await getSchemaFieldsByVersion(spreadsheetId, latest.schemaVersion, deps.google);
-    const studyInputs = await collectReadyStudyInputs(store, deps, spreadsheetId, fields);
-    const report = buildAgreementReport(fields, studyInputs);
-    patchAdjudicate(store, { agreementLoading: false, agreement: report });
+    const fields =
+      latest === undefined
+        ? []
+        : await getSchemaFieldsByVersion(spreadsheetId, latest.schemaVersion, deps.google);
+    const { inputs, outsideCount, calibration } = await collectReadyStudyInputs(
+      store,
+      deps,
+      spreadsheetId,
+      fields,
+    );
+    const report = buildAgreementReport(fields, inputs);
+    patchAdjudicate(store, {
+      agreementLoading: false,
+      agreement: report,
+      agreementOutsideCount: outsideCount,
+      calibrationAgreement: calibration,
+    });
   } catch (err) {
     patchAdjudicate(store, { agreementLoading: false, agreementError: toMessage(err) });
   }

@@ -116,9 +116,18 @@ import {
   persistVerifyRelocateQuote,
   setVerifyLayoutMode,
   setVerifyPaneLayout,
+  setVerifyAssignedOnly,
 } from './services/verifyService';
 import { loadDashboard } from './services/dashboardService';
-import { loadProgressCounts } from './services/homeService';
+import {
+  assignStudyReviewSet,
+  cancelResplit,
+  confirmResplit,
+  loadReviewSets,
+  saveReviewSetEmails,
+  splitReviewSets,
+} from './services/reviewSetService';
+import { loadAssignedProgress, loadProgressCounts } from './services/homeService';
 import {
   acceptAllMatchingCells,
   addAdjudicateArmDraftRow,
@@ -169,6 +178,7 @@ import {
 } from './services/exportService';
 import { createChromeGoogleApiDeps } from './services/factories';
 import type { ProjectRole } from '../domain/reviewer';
+import { isReviewSetsActive } from '../features/review/reviewSets';
 import { loadCurrentProject } from '../features/project/projectStore';
 import { extractDocxText } from '../lib/docx/extractDocxText';
 import { BUILD_DATE, withDevSuffix } from '../build-info';
@@ -321,8 +331,12 @@ export async function seedState(win: Window): Promise<AppState> {
       mergedProject !== null
         ? { ...state.role, role: 'owner', resolving: false, error: null, folderAccessGranted: true }
         : state.role;
-    // レビュアー一覧も同じ考え方: 明示注入が無ければ「読込済み（0 件）」として扱い、
-    // #/home 入場時の自動読込（owner のレビュアー管理カード）を抑止する
+    // 担当セットも明示注入が無ければ未使用扱い。未解決ロールの起動テストは実ロードする。
+    const defaultReviewSets: AppState['reviewSets'] =
+      mergedProject !== null && preloaded.role?.role !== null
+        ? { ...state.reviewSets, sets: [] }
+        : state.reviewSets;
+    // レビュアー一覧は明示注入が無ければ読込済み（0 件）として自動読込を抑止する。
     const defaultReviewers: AppState['reviewers'] =
       mergedProject !== null ? { ...state.reviewers, assignments: [] } : state.reviewers;
     return {
@@ -337,6 +351,7 @@ export async function seedState(win: Window): Promise<AppState> {
       },
       role: { ...defaultRole, ...(preloaded.role ?? {}) },
       reviewers: { ...defaultReviewers, ...(preloaded.reviewers ?? {}) },
+      reviewSets: { ...defaultReviewSets, ...(preloaded.reviewSets ?? {}) },
       documents: { ...state.documents, ...(preloaded.documents ?? {}) },
       protocol: { ...state.protocol, ...(preloaded.protocol ?? {}) },
       schema: { ...state.schema, ...(preloaded.schema ?? {}) },
@@ -486,6 +501,30 @@ export async function bootstrapApp(
       onCopyInvite: (email) => {
         void copyReviewInvite(store, deps, email);
       },
+      onReloadReviewSets: () => {
+        void loadReviewSets(store, deps, { force: true });
+        void loadDocuments(store, deps, { force: true });
+      },
+      onReloadAssignedProgress: () => {
+        void loadReviewSets(store, deps, { force: true }).then(() =>
+          loadAssignedProgress(store, deps),
+        );
+      },
+      onSplitReviewSets: (input) => {
+        void splitReviewSets(store, deps, input);
+      },
+      onConfirmResplit: () => {
+        void confirmResplit(store, deps);
+      },
+      onCancelResplit: () => {
+        cancelResplit(store);
+      },
+      onSaveReviewSetEmails: (setId, emails) => {
+        void saveReviewSetEmails(store, deps, setId, emails);
+      },
+      onAssignStudyReviewSet: (studyId, setId) => {
+        void assignStudyReviewSet(store, deps, studyId, setId);
+      },
     },
     documents: {
       onImport: () => {
@@ -523,6 +562,9 @@ export async function bootstrapApp(
       },
       onUpdateMergeRegistration: (registrationId) => {
         updateMergeDialog(store, { registrationId });
+      },
+      onUpdateMergeReviewSet: (reviewSet) => {
+        updateMergeDialog(store, { reviewSet });
       },
       onConfirmMerge: () => {
         void confirmMerge(store, deps);
@@ -750,12 +792,18 @@ export async function bootstrapApp(
       },
     },
     verify: {
+      onAssignedOnlyChange: (value) => {
+        setVerifyAssignedOnly(store, value);
+        void syncVerifyRoute();
+      },
       onSelectStudy: (studyId) => {
         // hash 書き換え → hashchange → syncVerifyRoute の一本道（直リンクと同じ経路を通す）
         win.location.hash = `#/verify?study=${encodeURIComponent(studyId)}`;
       },
       onRetryLoad: () => {
-        void loadVerifyTargets(store, deps, { force: true }).then(() => syncVerifyRoute());
+        void loadReviewSets(store, deps, { force: true })
+          .then(() => loadVerifyTargets(store, deps, { force: true }))
+          .then(() => syncVerifyRoute());
       },
       onDecision: (decision) => {
         void persistVerifyDecision(store, deps, decision);
@@ -828,7 +876,9 @@ export async function bootstrapApp(
         win.location.hash = '#/adjudicate';
       },
       onRetryLoad: () => {
-        void loadAdjudicateTargets(store, deps, { force: true });
+        void loadReviewSets(store, deps, { force: true }).then(() =>
+          loadAdjudicateTargets(store, deps, { force: true }),
+        );
       },
       onArmMappingChange: (index, bArmKey) => {
         setAdjudicateArmMapping(store, index, bArmKey);
@@ -900,10 +950,29 @@ export async function bootstrapApp(
     if (targets === null || targets.length === 0) {
       return;
     }
-    const desired =
+    let desired =
       studyQueryOf(win.location.hash) ??
       verify.selectedStudyId ??
       (targets[0] as VerifyTarget).study.studyId;
+    const state = store.getState();
+    const assigned = state.role.role !== 'owner' || state.verify.assignedOnly;
+    const sets = state.reviewSets.sets ?? [];
+    if (
+      assigned &&
+      isReviewSetsActive(
+        targets.map((target) => target.study),
+        sets,
+      ) &&
+      !targets.some((target) => target.study.studyId === desired)
+    ) {
+      desired = (targets[0] as VerifyTarget).study.studyId;
+      const entityQuery = entity !== null ? `&entity=${encodeURIComponent(entity)}` : '';
+      win.history.replaceState(
+        null,
+        '',
+        `#/verify?study=${encodeURIComponent(desired)}${entityQuery}`,
+      );
+    }
     // 読み込み中の再入は openVerifyStudy 側の verifyLoading ガードが弾く
     const alreadyShown =
       desired === verify.selectedStudyId &&
@@ -1058,6 +1127,14 @@ export async function bootstrapApp(
       void loadProgressCounts(store, deps);
       // owner のレビュアー管理カード（reviewer 系ロールには reviewerAdminService 側のガードでも守る）
       void loadReviewers(store, deps);
+      void loadAssignedProgress(store, deps);
+      const state = store.getState();
+      if (
+        state.role.role === 'owner' &&
+        (state.documents.records === null || state.documents.studies === null)
+      ) {
+        void loadDocuments(store, deps, { force: state.documents.records !== null });
+      }
     }
     if (currentHash === '#/documents') {
       // 初回表示時に一覧を読み込む（読込済みなら loadDocuments 側で no-op）
@@ -1122,7 +1199,14 @@ export async function bootstrapApp(
    * counts の読込は loadProgressCounts 側でも no-op 判定される（プロジェクト未選択 /
    * countsLoaded / reviewer 系ロール）
    */
-  const startRouting = (): void => {
+  const startRouting = async (): Promise<void> => {
+    if (roleBlockOf(store.getState()) !== null) {
+      handleHashChange();
+      return;
+    }
+    await loadReviewSets(store, deps);
+    // 起動時の不足検知も、担当セットの読込完了後に開始する。
+    void checkMissingFileAccess(store, deps);
     handleHashChange();
     // 盲検のフェイルクローズ: ロールを確認できないまま counts（Decisions 総数等）を読まない
     if (roleBlockOf(store.getState()) === null) {
@@ -1134,7 +1218,7 @@ export async function bootstrapApp(
   const retryRole = (): void => {
     void loadRole(store, deps).then(() => {
       if (roleBlockOf(store.getState()) === null) {
-        startRouting();
+        void startRouting();
       }
     });
   };
@@ -1143,7 +1227,7 @@ export async function bootstrapApp(
   const grantRole = (): void => {
     void grantSpreadsheetAccess(store, deps).then(() => {
       if (roleBlockOf(store.getState()) === null) {
-        startRouting();
+        void startRouting();
       }
     });
   };
@@ -1206,10 +1290,7 @@ export async function bootstrapApp(
     renderNav(store.getState());
     renderRoute();
     await loadRole(store, deps);
-    // 起動時の差分検知（issue #141）: owner が後から取り込んだ文献の不足を reviewer に
-    // 気づかせる banner を静かに準備する。fire-and-forget（起動をブロックしない）
-    void checkMissingFileAccess(store, deps);
   }
-  startRouting();
+  await startRouting();
   return store;
 }

@@ -81,9 +81,25 @@ function openButton(studyId: string, ctx: ViewContext): HTMLElement {
   return open;
 }
 
+function studyLabelCell(row: AdjudicateStudyRow): HTMLElement {
+  const cell = el('td', { className: 'adjudicate__list-label', text: row.study.studyLabel });
+  if (row.outsideAnnotators.length > 0)
+    cell.append(
+      el('p', {
+        className: 'adjudicate__outside-note',
+        text: t('adjudicate.outsideNote', { email: row.outsideAnnotators.join(', ') }),
+      }),
+    );
+  return cell;
+}
+
 /** 3 名以上の study（issue #63）: 裁定する 2 名の組を選ぶセレクト + 選択ペアの完了状況 */
-function renderSelectablePairRow(row: AdjudicateStudyRow, state: AppState, ctx: ViewContext): HTMLElement {
-  const cells: HTMLElement[] = [el('td', { className: 'adjudicate__list-label', text: row.study.studyLabel })];
+function renderSelectablePairRow(
+  row: AdjudicateStudyRow,
+  state: AppState,
+  ctx: ViewContext,
+): HTMLElement {
+  const cells: HTMLElement[] = [studyLabelCell(row)];
   const options = row.pairOptions ?? [];
   const selection = state.adjudicate.pairSelections[row.study.studyId];
   const selectedIndex =
@@ -141,7 +157,7 @@ function renderListRow(row: AdjudicateStudyRow, state: AppState, ctx: ViewContex
     return renderSelectablePairRow(row, state, ctx);
   }
 
-  const cells: HTMLElement[] = [el('td', { className: 'adjudicate__list-label', text: row.study.studyLabel })];
+  const cells: HTMLElement[] = [studyLabelCell(row)];
 
   if (row.pair.kind === 'waiting') {
     cells.push(
@@ -751,6 +767,49 @@ function renderAgreementCard(state: AppState, ctx: ViewContext): HTMLElement {
   if (adjudicate.agreementLoading) {
     children.push(el('p', { id: 'agreement-loading', text: t('adjudicate.agreementLoading') }));
     return el('section', { id: 'adjudicate-agreement-card', className: 'adjudicate__agreement-card' }, children);
+  }
+
+  if (adjudicate.agreementOutsideCount > 0)
+    children.push(
+      el('p', {
+        id: 'adjudicate-agreement-outside',
+        className: 'view__notice',
+        text: t('adjudicate.agreementOutside', { n: adjudicate.agreementOutsideCount }),
+      }),
+    );
+  if (adjudicate.calibrationAgreement !== null && adjudicate.calibrationAgreement.length > 0) {
+    children.push(
+      el(
+        'table',
+        { id: 'adjudicate-calibration-agreement', className: 'adjudicate__agreement-table' },
+        [
+          el('caption', { text: t('adjudicate.calibrationTitle') }),
+          el('thead', {}, [
+            el('tr', {}, [
+              el('th', { text: t('adjudicate.calibrationPair') }),
+              el('th', { text: t('adjudicate.calibrationStudies') }),
+              el('th', { text: t('adjudicate.agreementHeadAgreement') }),
+              el('th', { text: 'κ' }),
+            ]),
+          ]),
+          el(
+            'tbody',
+            {},
+            adjudicate.calibrationAgreement.map((pair) =>
+              el('tr', {}, [
+                el('th', {
+                  text: `${pair.annotatorA} / ${pair.annotatorB}`,
+                  attributes: { scope: 'row' },
+                }),
+                el('td', { text: String(pair.studyCount) }),
+                el('td', { text: formatAgreementPercent(pair.agreementRate) }),
+                el('td', { text: formatKappa(pair.kappa) }),
+              ]),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   if (adjudicate.agreement !== null) {
