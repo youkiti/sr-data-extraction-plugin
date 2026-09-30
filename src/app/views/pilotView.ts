@@ -15,8 +15,10 @@ import {
   resolveFieldIdsForRun,
 } from '../../features/extraction/fieldSelection';
 import { planRun } from '../../features/extraction/planRun';
+import { revisionUsedStudyIds, usedPilotStudyIds } from '../../features/extraction/pilotSelection';
 import { t, type MessageKey } from '../../lib/i18n';
 import { el } from '../ui/dom';
+import { formatPilotRunDate } from '../ui/formatPilotRunDate';
 import { createModelSelect } from '../ui/modelSelect';
 import type { AppState } from '../store';
 import { renderConflictWarning } from './conflictWarning';
@@ -55,6 +57,7 @@ function renderStudySelector(state: AppState, ctx: ViewContext): HTMLElement {
   if (records === null || studies === null || loading) {
     return el('p', { id: 'pilot-documents-loading', text: t('pilot.documentsLoading') });
   }
+  const used = usedPilotStudyIds(state.pilot.history ?? []);
   const items = selectionOf(state).map((item) => {
     const studyId = item.study.studyId;
     const checkbox = el('input', {
@@ -73,6 +76,9 @@ function renderStudySelector(state: AppState, ctx: ViewContext): HTMLElement {
       checkbox,
       el('span', { className: 'pilot__doc-label', text: item.study.studyLabel }),
     ];
+    if (used.has(studyId)) {
+      head.push(el('small', { className: 'pilot__study-used', text: t('pilot.studyUsed') }));
+    }
     if (!item.hasTextLayer) {
       head.push(
         el('small', {
@@ -311,6 +317,20 @@ function renderRunSummary(run: ExtractionRun, state: AppState): HTMLElement {
       el('p', { id: 'pilot-run-done', className: 'pilot__run-done', text: t('pilot.runDone') }),
     );
   }
+  const usedForRevision = revisionUsedStudyIds(
+    run,
+    state.pilot.history ?? [],
+    state.schema.versions ?? [],
+  );
+  for (const studyId of usedForRevision) {
+    children.push(
+      el('p', {}, [
+        studyLabelOf(state, studyId),
+        ' ',
+        el('span', { className: 'pilot__study-revision-used', text: t('pilot.studyRevisionUsed') }),
+      ]),
+    );
+  }
   // 「表のデザインを改訂して再パイロット」導線は完了後は常に可視（ui-states.md §3）
   children.push(
     el('p', {}, [
@@ -451,7 +471,7 @@ function renderHistory(state: AppState, ctx: ViewContext): HTMLElement | null {
   }
   const items = history.map((entry) => {
     const isCurrent = run?.runId === entry.runId;
-    const when = entry.finishedAt ?? entry.startedAt ?? t('pilot.whenUnknown');
+    const when = formatPilotRunDate(entry.finishedAt ?? entry.startedAt);
     const statusKey = RUN_STATUS_LABEL_KEYS[entry.status];
     const statusLabel = statusKey === undefined ? entry.status : t(statusKey);
     const open = el(

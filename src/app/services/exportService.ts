@@ -125,6 +125,7 @@ function buildMethodsFacts(
   documents: readonly DocumentRecord[],
   runFacts: readonly MethodsRunFact[],
   toolVersion: string | null,
+  pilotRevisionCount: number,
   chatAssistDecisionCount: number,
 ): MethodsFacts {
   const fullFacts = runFacts.filter((fact) => fact.runType === 'full');
@@ -156,6 +157,7 @@ function buildMethodsFacts(
     providers: providerIds.map(providerDisplayName),
     pilotStudyCount: pilotStudyIds.size,
     scannedDocumentCount,
+    pilotRevisionCount,
     chatAssistDecisionCount,
   };
 }
@@ -235,6 +237,7 @@ export async function loadExportData(
       documents,
       methodsRunFacts,
       toolVersion,
+      versions.filter((version) => version.createdByType === 'pilot_revision').length,
       decisions.filter((decision) => hasChatAssistMarker(decision.note)).length,
     );
 

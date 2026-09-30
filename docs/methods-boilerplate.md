@@ -26,6 +26,9 @@ S10（`#/export`）に表示する「論文の Methods セクションにこう�
 
   > For {{n_scanned}} studies available only as scanned PDFs without a text layer, the PDF was submitted directly to the LLM; supporting quotations for these studies could not be highlighted and were verified against the quoted text and reported page numbers.
 
+- パイロットの判定から抽出指示を改訂した（`SchemaVersions.created_by_type = pilot_revision` の版が 1 件以上ある）プロジェクト（issue #266）:
+
+  > Based on the reviewers' judgments during the pilot, the extraction instructions were revised {{n_pilot_revision}} time(s); the LLM drafted revision proposals limited to item instructions and examples, which the authors reviewed and approved before full extraction.
 - 論文への質問パネルを使った判定がある（`Decisions.note` が `[chat-assist]` で始まる判定が 1 件以上ある）プロジェクト（issue #264）:
 
   > During verification, reviewers could additionally ask an LLM questions about the full text of the study under review; answers were constrained to verbatim quotations that the tool located in the source text, were not entered into the dataset automatically, and decisions made after such questions were flagged in the audit trail.
@@ -50,6 +53,9 @@ S10（`#/export`）に表示する「論文の Methods セクションにこう�
 
   > テキスト層を持たないスキャン PDF のみ入手可能であった {{n_scanned}} 本については、PDF を直接 LLM に送信して抽出した。これらの研究では引用箇所のハイライト表示ができないため、引用文と報告ページ番号に基づいて原文と照合した。
 
+- パイロットの判定から抽出指示を改訂したプロジェクト（issue #266）:
+
+  > パイロットでの判定に基づき、抽出指示を {{n_pilot_revision}} 回改訂した。改訂案は LLM が項目の抽出指示と例に限って作成し、著者らが確認・承認したうえで本抽出に用いた。
 - 論文への質問パネルを使った判定があるプロジェクト（issue #264）:
 
   > 検証中、レビュアーは検証対象の研究の本文について LLM に質問することもできた。回答にはツールが原文中で照合した逐語的な引用を必須とし、回答が自動でデータに入力されることはなく、質問後の判定は監査証跡に印を付けて記録した。
@@ -64,6 +70,7 @@ S10（`#/export`）に表示する「論文の Methods セクションにこう�
 | `{{n_sample}}` | スキーマドラフトに渡したサンプル論文数 | draft-schema 実行記録（なければプレースホルダのまま） |
 | `{{n_pilot}}` | パイロット抽出の対象研究数 | `ExtractionRuns` の `run_type = pilot` の対象 document 数（重複除去） |
 | `{{n_scanned}}` | `no_text_layer` の document 数 | `Documents.text_status` の集計。0 件ならオプション文自体を出さない |
+| `{{n_pilot_revision}}` | パイロットの判定に基づく抽出指示の改訂回数 | `SchemaVersions` の `created_by_type = pilot_revision` の版数。0 件ならオプション文自体を出さない |
 | `{{reviewer_initials}}` | レビュアーのイニシャル | 自動反映しない（人間の annotator 数から人数の整合チェックのみ行う） |
 | `{{adjudicator_initials}}` | 裁定者のイニシャル | 自動反映しない |
 | `{{supplement_ref}}` | audit.csv を載せる補足資料の番号（例: Supplementary Table S1） | 自動反映しない |

@@ -3937,6 +3937,14 @@ section.documents__tiab {
   font-size: 12px;
 }
 
+.verify__note-input {
+  box-sizing: border-box;
+  width: 100%;
+  flex-basis: 100%;
+  margin-bottom: 0.5rem;
+  padding: 0.4rem;
+}
+
 /* 論文への質問。既存のペインと同じ余白・色を使い、長い引用を折り返す。 */
 .ask-paper {
   margin-block: 1rem;

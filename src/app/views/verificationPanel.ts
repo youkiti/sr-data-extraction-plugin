@@ -1565,12 +1565,12 @@ export function createVerificationPanel(
       // 許容値チップ列が出るため、先頭チップを着地先にする（issue #254）
       formPane.querySelector<HTMLElement>('.verify__edit-input, .verify__enum-chip')?.focus();
     },
-    onConfirmEdit(cellKey, action, value) {
+    onConfirmEdit(cellKey, action, value, note) {
       const cell = findCell(cellKey);
       editing = null;
       const trimmed = value.trim();
       const saved = trimmed === '' ? null : trimmed;
-      commit(cell, action, saved);
+      commit(cell, action, saved, note);
       // flow 図（mermaid）の保存時構文チェック（issue #109）: 警告表示のみで保存はブロック
       // しない（commit を先に済ませてから非同期チェックの結果だけを重ねる）
       if (saved !== null && isMermaidPreviewField(cell.field.fieldName)) {
@@ -1957,7 +1957,12 @@ export function createVerificationPanel(
     refreshForm();
   }
 
-  function commit(cell: VerificationCell, action: DecisionAction, value: string | null): void {
+  function commit(
+    cell: VerificationCell,
+    action: DecisionAction,
+    value: string | null,
+    note: string | null = null,
+  ): void {
     if (isMermaidPreviewField(cell.field.fieldName)) {
       // mermaid 構文チェック警告は「直近に保存した値」に対する表示のため、次の判定
       // （undo・未報告・再編集を含む）で一旦消す（エラーが残る値なら onConfirmEdit 側の
@@ -1975,7 +1980,7 @@ export function createVerificationPanel(
       schemaVersion: data.schemaVersion,
       action,
       value,
-      note: null,
+      note,
     };
     ownDecisions.push(decision);
     // 判定済みブロックの制御: 直近判定の 1 件だけ元の位置へ残す（見直し・戻す (z) 用）。

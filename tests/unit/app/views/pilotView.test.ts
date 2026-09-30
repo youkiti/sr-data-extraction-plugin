@@ -838,3 +838,26 @@ describe('renderPilotView（表示言語 en。issue #93）', () => {
     );
   });
 });
+
+test('履歴の使用済みと改訂使用 study をバッジで表示する', () => {
+  const state = makeState({
+    pilot: {
+      run: makeRun({ runId: 'new', startedAt: 't3' }),
+      history: [makeRun({ startedAt: 't1' })],
+    },
+  });
+  state.schema.versions = [
+    {
+      schemaVersion: 2,
+      parentVersion: 1,
+      protocolVersion: 1,
+      createdByType: 'pilot_revision',
+      createdAt: 't2',
+      createdBy: 'me',
+      note: null,
+    },
+  ];
+  const { root } = render(state);
+  expect(root.querySelector('.pilot__study-used')?.textContent).toBe('過去のパイロットで使用');
+  expect(root.querySelector('.pilot__study-revision-used')?.textContent).toBe('改訂に使った論文');
+});

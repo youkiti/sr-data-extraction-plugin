@@ -93,6 +93,8 @@ describe('createInitialState', () => {
       pilot: {
         selectedStudyIds: [],
         selectionInitialized: false,
+        selectionTouched: false,
+        selectionHistoryApplied: false,
         model: '',
         running: false,
         progress: null,

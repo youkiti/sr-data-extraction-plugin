@@ -17,6 +17,8 @@ export interface MethodsFacts {
   pilotStudyCount: number;
   /** text_status = no_text_layer の document 数（0 ならオプション文自体を出さない） */
   scannedDocumentCount: number;
+  /** pilot_revision として確定した版数（0 ならオプション文を出さない） */
+  pilotRevisionCount: number;
   /** 質問後の印が付いた判定の件数。0 ならオプション文を出さない */
   chatAssistDecisionCount: number;
 }
@@ -56,6 +58,11 @@ const PARAGRAPH_2_DUAL: Record<MethodsLanguage, string> = {
 const OPTIONAL_SCANNED: Record<MethodsLanguage, string> = {
   en: 'For {{n_scanned}} studies available only as scanned PDFs without a text layer, the PDF was submitted directly to the LLM; supporting quotations for these studies could not be highlighted and were verified against the quoted text and reported page numbers.',
   ja: 'テキスト層を持たないスキャン PDF のみ入手可能であった {{n_scanned}} 本については、PDF を直接 LLM に送信して抽出した。これらの研究では引用箇所のハイライト表示ができないため、引用文と報告ページ番号に基づいて原文と照合した。',
+};
+
+const OPTIONAL_PILOT_REVISION: Record<MethodsLanguage, string> = {
+  en: "Based on the reviewers' judgments during the pilot, the extraction instructions were revised {{n_pilot_revision}} time(s); the LLM drafted revision proposals limited to item instructions and examples, which the authors reviewed and approved before full extraction.",
+  ja: 'パイロットでの判定に基づき、抽出指示を {{n_pilot_revision}} 回改訂した。改訂案は LLM が項目の抽出指示と例に限って作成し、著者らが確認・承認したうえで本抽出に用いた。',
 };
 
 const OPTIONAL_CHAT_ASSIST: Record<MethodsLanguage, string> = {
@@ -98,6 +105,9 @@ export function buildMethodsText(
   if (facts.scannedDocumentCount > 0) {
     parts.push(OPTIONAL_SCANNED[language]);
   }
+  if (facts.pilotRevisionCount > 0) {
+    parts.push(OPTIONAL_PILOT_REVISION[language]);
+  }
   if (facts.chatAssistDecisionCount > 0) {
     parts.push(OPTIONAL_CHAT_ASSIST[language]);
   }
@@ -123,6 +133,7 @@ export function buildMethodsText(
     'n_scanned',
     facts.scannedDocumentCount > 0 ? String(facts.scannedDocumentCount) : null,
   );
+  text = applyPlaceholder(text, 'n_pilot_revision', String(facts.pilotRevisionCount));
   // n_sample / reviewer_initials / adjudicator_initials / supplement_ref は常に自動反映しない（§3）
   return { text, unresolved: findUnresolvedPlaceholders(text) };
 }

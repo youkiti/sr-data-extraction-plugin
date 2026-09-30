@@ -342,6 +342,7 @@ describe('loadExportData', () => {
       providers: ['Gemini', 'OpenRouter', 'OpenAI-compatible', 'Anthropic', 'Azure OpenAI'],
       pilotStudyCount: 3, // s1 / s2 / s3 の和集合
       scannedDocumentCount: 2, // d2 / d3
+      pilotRevisionCount: 0,
       chatAssistDecisionCount: 0,
     });
   });
@@ -776,6 +777,7 @@ describe('copyMethodsText', () => {
     providers: ['Gemini'],
     pilotStudyCount: 3,
     scannedDocumentCount: 0,
+    pilotRevisionCount: 0,
     chatAssistDecisionCount: 0,
   };
 
@@ -815,4 +817,16 @@ describe('copyMethodsText', () => {
     await copyMethodsText(store, makeDeps());
     expect(writeText).toHaveBeenCalledTimes(1);
   });
+});
+
+test('既に読み込んだスキーマ履歴から pilot_revision だけを数える', async () => {
+  listSchemaVersionsMock.mockResolvedValue([
+    { schemaVersion: 4, createdByType: 'pilot_revision' },
+    { schemaVersion: 3, createdByType: 'user_edit' },
+    { schemaVersion: 2, createdByType: 'pilot_revision' },
+    { schemaVersion: 1, createdByType: 'ai_draft' },
+  ]);
+  const store = makeStore();
+  await loadExportData(store, makeDeps());
+  expect(store.getState().export.methodsFacts?.pilotRevisionCount).toBe(2);
 });

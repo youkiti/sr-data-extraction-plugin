@@ -299,3 +299,14 @@ describe('許容値外の警告', () => {
     expect(badge.getAttribute('aria-hidden')).toBe('true');
   });
 });
+
+test('その他の入力では IME の変換確定 Enter を保存と取り違えない', () => {
+  const onConfirm = jest.fn();
+  const node = render({ currentValue: 'custom', onConfirm });
+  const input = node.querySelector<HTMLInputElement>('.verify__edit-input')!;
+  input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', isComposing: true }));
+  input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 229 }));
+  expect(onConfirm).not.toHaveBeenCalled();
+  input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
+  expect(onConfirm).toHaveBeenCalledWith('custom');
+});
