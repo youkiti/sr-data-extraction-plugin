@@ -35,6 +35,13 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<ExtractViewCallba
   return {
     ctx: {
       home: {
+    onReloadReviewSets: jest.fn(),
+    onReloadAssignedProgress: jest.fn(),
+    onSplitReviewSets: jest.fn(),
+    onConfirmResplit: jest.fn(),
+    onCancelResplit: jest.fn(),
+    onSaveReviewSetEmails: jest.fn(),
+    onAssignStudyReviewSet: jest.fn(),
     onReload: jest.fn(),
     onGrantFolderAccess: jest.fn(),
     onSkipMissingFiles: jest.fn(),
@@ -47,6 +54,7 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<ExtractViewCallba
     onCopyInvite: jest.fn(),
   },
       documents: {
+        onUpdateMergeReviewSet: jest.fn(),
         onImport: jest.fn(),
         onImportFiles: jest.fn(),
         onReload: jest.fn(),
@@ -125,6 +133,7 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<ExtractViewCallba
       },
       extract: callbacks,
       verify: {
+        onAssignedOnlyChange: jest.fn(),
         onSelectStudy: jest.fn(),
         onRetryLoad: jest.fn(),
         onDecision: jest.fn(),
@@ -210,6 +219,7 @@ function makeDocument(overrides: Partial<DocumentRecord> = {}): DocumentRecord {
 function makeStudy(studyId: string, label = `試験-${studyId}`): StudyRecord {
   return {
     studyId,
+    reviewSet: null,
     studyLabel: label,
     registrationId: null,
     createdAt: 't0',

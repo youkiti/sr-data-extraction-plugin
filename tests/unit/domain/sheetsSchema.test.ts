@@ -7,7 +7,7 @@ import {
 } from '../../../src/domain/sheetsSchema';
 
 describe('SHEET_TABS', () => {
-  test('requirements.md §3.2 + 独立二重レビュー機能 + 診断ログ機能の 16 タブを定義順に持つ', () => {
+  test('requirements.md §3.2 + 独立二重レビュー機能 + 診断ログ機能の 17 タブを定義順に持つ', () => {
     expect(SHEET_TABS).toEqual([
       'Meta',
       'Protocol',
@@ -24,6 +24,7 @@ describe('SHEET_TABS', () => {
       'LLMApiLog',
       'ExportLog',
       'Reviewers',
+      'ReviewSets',
       'ApiErrorLog',
     ]);
   });
@@ -84,6 +85,7 @@ describe('SHEET_HEADERS', () => {
       'created_at',
       'created_by',
       'note',
+      'review_set',
     ]);
   });
 
@@ -130,6 +132,17 @@ describe('SHEET_HEADERS', () => {
       'review_mode',
       'assigned_by',
       'assigned_at',
+    ]);
+  });
+
+  test('ReviewSets は担当者と更新履歴を持つ', () => {
+    expect(SHEET_HEADERS.ReviewSets).toEqual([
+      'set_id',
+      'reviewer_emails',
+      'seed',
+      'updated_by',
+      'updated_at',
+      'study_ids',
     ]);
   });
 

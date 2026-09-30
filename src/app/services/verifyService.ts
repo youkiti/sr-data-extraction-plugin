@@ -54,6 +54,7 @@ import {
   type RelocateQuoteDeps,
   type RelocateQuoteOutcome,
 } from './relocateQuoteService';
+import { filterReviewSetStudies, requireReviewSets } from './reviewSetService';
 
 function toMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
@@ -69,9 +70,13 @@ async function resolveDocuments(
   store: Store,
   deps: VerificationDeps,
   spreadsheetId: string,
+  force = false,
 ): Promise<readonly DocumentRecord[]> {
   const cached = store.getState().documents.records;
-  return cached ?? (await readDocuments(spreadsheetId, deps.google));
+  if (!force && cached !== null) return cached;
+  const records = await readDocuments(spreadsheetId, deps.google);
+  if (force) store.setState({ documents: { ...store.getState().documents, records } });
+  return records;
 }
 
 /** Studies 一覧を解決する（documents スライスに読込済みならそれを使う） */
@@ -79,9 +84,13 @@ async function resolveStudies(
   store: Store,
   deps: VerificationDeps,
   spreadsheetId: string,
+  force = false,
 ): Promise<readonly StudyRecord[]> {
   const cached = store.getState().documents.studies;
-  return cached ?? (await readStudies(spreadsheetId, deps.google));
+  if (cached !== null && !force) return cached;
+  const studies = await readStudies(spreadsheetId, deps.google);
+  store.setState({ documents: { ...store.getState().documents, studies } });
+  return studies;
 }
 
 /**
@@ -286,9 +295,10 @@ async function readIndependentVerifyTargetMaterials(
   store: Store,
   deps: VerificationDeps,
   spreadsheetId: string,
+  force: boolean,
 ): Promise<VerifyTargetMaterial[]> {
-  const documents = await resolveDocuments(store, deps, spreadsheetId);
-  const studies = await resolveStudies(store, deps, spreadsheetId);
+  const documents = await resolveDocuments(store, deps, spreadsheetId, force);
+  const studies = await resolveStudies(store, deps, spreadsheetId, force);
   const versions = await listSchemaVersions(spreadsheetId, deps.google);
   const latest = versions[0];
   if (latest === undefined) {
@@ -300,7 +310,10 @@ async function readIndependentVerifyTargetMaterials(
   const annotator = (await getCurrentUserEmail(deps.profile)) ?? '';
 
   const materials: VerifyTargetMaterial[] = [];
-  for (const item of buildStudySelection(studies, documents)) {
+  for (const item of buildStudySelection(
+    filterReviewSetStudies(store, studies, documents, annotator, true),
+    documents,
+  )) {
     const ownDecisions = allDecisions.filter(
       (decision) => decision.studyId === item.study.studyId && decision.annotator === annotator,
     );
@@ -344,14 +357,21 @@ export async function readVerifyTargetMaterials(
   store: Store,
   deps: VerificationDeps,
   spreadsheetId: string,
+  options: { assignedOnly?: boolean; force?: boolean } = {},
 ): Promise<VerifyTargetMaterialsResult> {
+  await requireReviewSets(store, deps);
   const role = store.getState().role.role ?? 'owner';
   if (role === 'reviewer_independent') {
-    const materials = await readIndependentVerifyTargetMaterials(store, deps, spreadsheetId);
+    const materials = await readIndependentVerifyTargetMaterials(
+      store,
+      deps,
+      spreadsheetId,
+      options.force === true,
+    );
     return { materials, runStartedAt: new Map() };
   }
-  const documents = await resolveDocuments(store, deps, spreadsheetId);
-  const studies = await resolveStudies(store, deps, spreadsheetId);
+  const documents = await resolveDocuments(store, deps, spreadsheetId, options.force);
+  const studies = await resolveStudies(store, deps, spreadsheetId, options.force);
   const allEvidence = await readEvidenceRows(spreadsheetId, deps.google);
   const completedRuns = await readCompletedRunMetas(spreadsheetId, deps.google);
   const allDecisions = await readAllDecisions(spreadsheetId, deps.google);
@@ -369,7 +389,16 @@ export async function readVerifyTargetMaterials(
   const fieldsByVersion = new Map<number, SchemaField[]>();
   const materials: VerifyTargetMaterial[] = [];
   // アクティブ study を作成順で。配下文書は role 固定順 → 取り込み順（buildStudySelection）
-  for (const item of buildStudySelection(studies, documents)) {
+  for (const item of buildStudySelection(
+    filterReviewSetStudies(
+      store,
+      studies,
+      documents,
+      annotator,
+      role !== 'owner' || (options.assignedOnly ?? store.getState().verify.assignedOnly),
+    ),
+    documents,
+  )) {
     const entry = byStudy.get(item.study.studyId);
     // entry が無い（Evidence が 1 行も無い。孤児 Evidence のみ含む場合を含む）study のうち、
     // 完了 run の対象に一度も含まれていないものは、従来どおり「未抽出」として一覧から除外する。
@@ -422,7 +451,19 @@ export async function readVerifyTargetMaterials(
   // Sheets の GET を追加せず、既読の completedRuns から run_id → started_at map を作るだけ
   // （dashboard.ts のセル単位 AI 精度判定に使う。PR #190 レビュー対応）
   const runStartedAt = new Map(completedRuns.map((meta) => [meta.runId, meta.startedAt]));
-  return { materials, runStartedAt };
+  const visible = new Set(
+    filterReviewSetStudies(
+      store,
+      studies,
+      documents,
+      annotator,
+      role !== 'owner' || (options.assignedOnly ?? store.getState().verify.assignedOnly),
+    ).map((study) => study.studyId),
+  );
+  return {
+    materials: materials.filter((material) => visible.has(material.target.study.studyId)),
+    runStartedAt,
+  };
 }
 
 /**
@@ -464,15 +505,22 @@ export async function loadVerifyTargets(
   if (!project || state.verify.loading) {
     return;
   }
-  if (state.verify.targets !== null && options.force !== true) {
-    return;
-  }
   patchVerify(store, { loading: true, loadError: null });
   try {
-    const { materials } = await readVerifyTargetMaterials(store, deps, project.spreadsheetId);
+    await requireReviewSets(store, deps);
+    if (store.getState().verify.targets !== null && options.force !== true) {
+      patchVerify(store, { loading: false });
+      return;
+    }
+    const { materials } = await readVerifyTargetMaterials(
+      store,
+      deps,
+      project.spreadsheetId,
+      options,
+    );
     patchVerify(store, { loading: false, targets: materials.map((material) => material.target) });
   } catch (err) {
-    patchVerify(store, { loading: false, loadError: toMessage(err) });
+    patchVerify(store, { loading: false, targets: null, loadError: toMessage(err) });
   }
 }
 
@@ -494,6 +542,29 @@ export async function openVerifyStudy(
   const target = targets.find((candidate) => candidate.study.studyId === studyId);
   if (target === undefined) {
     patchVerify(store, { verifyError: `study ${studyId} が見つかりません` });
+    return;
+  }
+  const checkVisibility = async (): Promise<void> => {
+    if ((store.getState().role.role ?? 'owner') === 'owner') return;
+    await requireReviewSets(store, deps);
+    const studies = await resolveStudies(store, deps, project.spreadsheetId);
+    const documents = await resolveDocuments(store, deps, project.spreadsheetId);
+    const email = (await getCurrentUserEmail(deps.profile)) ?? '';
+    if (
+      !filterReviewSetStudies(store, studies, documents, email, true).some(
+        (study) => study.studyId === studyId,
+      )
+    )
+      throw new Error(`study ${studyId} が見つかりません`);
+  };
+  try {
+    await checkVisibility();
+  } catch (error) {
+    patchVerify(store, {
+      selectedStudyId: null,
+      verification: null,
+      verifyError: toMessage(error),
+    });
     return;
   }
   // 前の study の PDF を破棄してから読み込む（pdfjs のメモリ解放）
@@ -525,6 +596,13 @@ export async function openVerifyStudy(
       },
       deps,
     );
+    try {
+      await checkVisibility();
+    } catch (error) {
+      await bundle.verification.disposePdf?.();
+      patchVerify(store, { selectedStudyId: null });
+      throw error;
+    }
     patchVerify(store, {
       verifyLoading: false,
       verification: bundle.verification,
@@ -711,4 +789,12 @@ export async function persistVerifyRelocateQuote(
     },
     deps,
   );
+}
+
+/** owner の検証一覧を担当分だけに切り替え、URL 同期で対象を選び直せる状態にする */
+export function setVerifyAssignedOnly(store: Store, value: boolean): void {
+  const state = store.getState();
+  if (state.role.role !== 'owner' || state.verify.assignedOnly === value) return;
+  invalidateVerifyTargets(store);
+  patchVerify(store, { assignedOnly: value });
 }

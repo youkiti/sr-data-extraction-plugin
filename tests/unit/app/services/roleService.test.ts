@@ -13,6 +13,7 @@ import {
 import { createInitialState, createStore, type Store } from '../../../../src/app/store';
 import { loadProjectMeta } from '../../../../src/features/project/selectProject';
 import { readReviewerAssignments } from '../../../../src/features/project/reviewerRepository';
+import * as studyRepository from '../../../../src/features/documents/studyRepository';
 import { readDocuments } from '../../../../src/features/documents/documentRepository';
 import type { DocumentRecord } from '../../../../src/domain/document';
 import { getFileMd5, getFileText } from '../../../../src/lib/google/drive';
@@ -184,6 +185,7 @@ describe('loadRole', () => {
 
   test('既に解決済みなら no-op', async () => {
     const state = createInitialState();
+    state.reviewSets.sets = [];
     state.currentProject = PROJECT;
     state.role = { ...state.role, role: 'owner' };
     const store = createStore(state);
@@ -193,6 +195,7 @@ describe('loadRole', () => {
 
   test('解決中なら no-op（二重解決しない）', async () => {
     const state = createInitialState();
+    state.reviewSets.sets = [];
     state.currentProject = PROJECT;
     state.role = { ...state.role, resolving: true };
     const store = createStore(state);
@@ -202,6 +205,7 @@ describe('loadRole', () => {
 
   test('owner を解決したら folderAccessGranted=true を無条件で立てる（storage.local を見ない）', async () => {
     const state = createInitialState();
+    state.reviewSets.sets = [];
     state.currentProject = PROJECT;
     const store = createStore(state);
     await loadRole(store, makeDeps('owner@example.com'));
@@ -224,6 +228,7 @@ describe('loadRole', () => {
     ]);
     getLocalMock.mockResolvedValue(true);
     const state = createInitialState();
+    state.reviewSets.sets = [];
     state.currentProject = PROJECT;
     const store = createStore(state);
     await loadRole(store, makeDeps('r1@example.com'));
@@ -234,6 +239,7 @@ describe('loadRole', () => {
 
   test('email が取得できないときは空文字キーで読む（防御的フォールバック）', async () => {
     const state = createInitialState();
+    state.reviewSets.sets = [];
     state.currentProject = PROJECT;
     const store = createStore(state);
     await loadRole(store, makeDeps(''));
@@ -246,6 +252,7 @@ describe('loadRole', () => {
     ]);
     getLocalMock.mockResolvedValue(undefined);
     const state = createInitialState();
+    state.reviewSets.sets = [];
     state.currentProject = PROJECT;
     const store = createStore(state);
     await loadRole(store, makeDeps('r1@example.com'));
@@ -255,6 +262,7 @@ describe('loadRole', () => {
   test('失敗時は error を記録し role は null のまま', async () => {
     loadProjectMetaMock.mockRejectedValue(new Error('HTTP 500'));
     const state = createInitialState();
+    state.reviewSets.sets = [];
     state.currentProject = PROJECT;
     const store = createStore(state);
     await loadRole(store, makeDeps('owner@example.com'));
@@ -273,6 +281,7 @@ describe('loadRole', () => {
   test('Error 以外の throw も文字列化する', async () => {
     loadProjectMetaMock.mockRejectedValue('boom');
     const state = createInitialState();
+    state.reviewSets.sets = [];
     state.currentProject = PROJECT;
     const store = createStore(state);
     await loadRole(store, makeDeps('owner@example.com'));
@@ -282,6 +291,7 @@ describe('loadRole', () => {
   test('SheetsAccessDeniedError なら accessDenied=true（許可導線を出す。issue #131）', async () => {
     loadProjectMetaMock.mockRejectedValue(new SheetsAccessDeniedError('sheet-1', 404));
     const state = createInitialState();
+    state.reviewSets.sets = [];
     state.currentProject = PROJECT;
     const store = createStore(state);
     await loadRole(store, makeDeps('r1@example.com'));
@@ -291,6 +301,7 @@ describe('loadRole', () => {
 
   test('解決を開始したら前回の accessDenied をリセットする', async () => {
     const state = createInitialState();
+    state.reviewSets.sets = [];
     state.currentProject = PROJECT;
     state.role = { ...state.role, error: null, accessDenied: true };
     const store = createStore(state);
@@ -311,6 +322,7 @@ describe('folderAccessStorageKey', () => {
 describe('grantFolderAccess（issue #139: ファイル単位付与・issue #141: 差分付与）', () => {
   function makeStore(patch: Partial<ReturnType<typeof createInitialState>['role']> = {}): Store {
     const state = createInitialState();
+    state.reviewSets.sets = [];
     state.currentProject = PROJECT;
     state.role = { ...state.role, ...patch };
     return createStore(state);
@@ -679,6 +691,7 @@ describe('fileAccessRecordStorageKey', () => {
 describe('skipMissingFileAccess（issue #141 課題 2: 削除済みファイルの恒久ブロック回避）', () => {
   function makeStore(patch: Partial<ReturnType<typeof createInitialState>['role']> = {}): Store {
     const state = createInitialState();
+    state.reviewSets.sets = [];
     state.currentProject = PROJECT;
     state.role = { ...state.role, ...patch };
     return createStore(state);
@@ -802,6 +815,7 @@ describe('skipMissingFileAccess（issue #141 課題 2: 削除済みファイル�
 describe('checkMissingFileAccess（issue #141 課題 1: 起動時の差分検知）', () => {
   function makeStore(patch: Partial<ReturnType<typeof createInitialState>['role']> = {}): Store {
     const state = createInitialState();
+    state.reviewSets.sets = [];
     state.currentProject = PROJECT;
     state.role = { ...state.role, role: 'reviewer_with_ai', folderAccessGranted: true, ...patch };
     return createStore(state);
@@ -942,6 +956,7 @@ describe('checkMissingFileAccess（issue #141 課題 1: 起動時の差分検知
 describe('grantSpreadsheetAccess（issue #131。docs/ui-states.md §3 ロール解決）', () => {
   function makeDeniedStore(): Store {
     const state = createInitialState();
+    state.reviewSets.sets = [];
     state.currentProject = PROJECT;
     state.role = {
       ...state.role,
@@ -1046,5 +1061,141 @@ describe('grantSpreadsheetAccess（issue #131。docs/ui-states.md §3 ロール�
     } finally {
       jest.useRealTimers();
     }
+  });
+});
+
+describe('担当セットとファイル許可', () => {
+  function assignedStore(
+    role: 'reviewer_with_ai' | 'reviewer_independent' | 'adjudicator' | 'owner',
+  ) {
+    const state = createInitialState();
+    state.currentProject = PROJECT;
+    state.role.role = role;
+    state.role.folderAccessGranted = true;
+    state.reviewSets.sets = [
+      {
+        setId: 'group-1',
+        studyIds: ['assigned'],
+        reviewerEmails: ['r1@example.com'],
+        seed: null,
+        updatedBy: META.createdBy,
+        updatedAt: 't0',
+      },
+          { setId: 'calibration', studyIds: ['cal'], reviewerEmails: [], seed: null, updatedBy: META.createdBy, updatedAt: 't0' },
+    ];
+    state.documents.studies = ['assigned', 'outside', 'cal'].map((studyId, index) => ({
+      studyId,
+      studyLabel: studyId,
+      reviewSet: ['group-1', 'group-2', 'calibration'][index]!,
+      registrationId: null,
+      createdAt: 't0',
+      createdBy: META.createdBy,
+      note: null,
+    }));
+    const documents: DocumentRecord[] = state.documents.studies.map((study) => ({
+      documentId: study.studyId,
+      studyId: study.studyId,
+      documentRole: 'article',
+      driveFileId: `pdf-${study.studyId}`,
+      sourceFileId: null,
+      filename: '研究.pdf',
+      pmid: null,
+      doi: null,
+      textRef: null,
+      textStatus: 'ok',
+      pageCount: null,
+      charCount: null,
+      importedAt: 't0',
+      importedBy: META.createdBy,
+      note: null,
+      excluded: false,
+      exclusionReason: null,
+      exclusionNote: null,
+      excludedAt: null,
+    }));
+    readDocumentsMock.mockResolvedValue(documents);
+    getLocalMock.mockResolvedValue({ granted: [], skipped: [] });
+    getFileMd5Mock.mockRejectedValue(new Error('未許可'));
+    openProjectFilesPickerMock.mockResolvedValue(null);
+    return createStore(state);
+  }
+  test.each(['reviewer_with_ai', 'reviewer_independent', 'adjudicator', 'owner'] as const)(
+    '%s の Picker は必要な範囲だけ',
+    async (role) => {
+      const store = assignedStore(role);
+      await grantFolderAccess(store, makeDeps('r1@example.com'));
+      const expected =
+        role === 'adjudicator' || role === 'owner'
+          ? ['pdf-assigned', 'pdf-outside', 'pdf-cal']
+          : ['pdf-assigned', 'pdf-cal'];
+      expect(openProjectFilesPickerMock.mock.calls[0]?.[1]).toEqual(expected);
+    },
+  );
+  test.each(['reviewer_with_ai', 'reviewer_independent', 'adjudicator'] as const)(
+    '%s の起動時不足数も同じ範囲',
+    async (role) => {
+      const store = assignedStore(role);
+      await checkMissingFileAccess(store, makeDeps('r1@example.com'));
+      expect(store.getState().role.folderAccessMissingCount).toBe(role === 'adjudicator' ? 3 : 2);
+      expect(getFileMd5Mock.mock.calls.map(([id]) => id)).toEqual(
+        role === 'adjudicator'
+          ? ['pdf-assigned', 'pdf-outside', 'pdf-cal']
+          : ['pdf-assigned', 'pdf-cal'],
+      );
+    },
+  );
+  test('不足をスキップするときも担当外のファイルを記録しない', async () => {
+    const store = assignedStore('reviewer_independent');
+    await skipMissingFileAccess(store, makeDeps('r1@example.com'));
+    expect(setLocalMock).toHaveBeenCalledWith(
+      fileAccessRecordStorageKey('sheet-1', 'r1@example.com'),
+      { granted: [], skipped: ['pdf-assigned', 'pdf-cal'] },
+    );
+  });
+  test('studyIds が全て空なら従来の全件', async () => {
+    const store = assignedStore('reviewer_with_ai');
+    store.setState({
+      documents: {
+        ...store.getState().documents,
+        studies: store
+          .getState()
+          .documents.studies!.map((study) => ({ ...study, reviewSet: null })),
+      },
+    });
+    store.setState({ reviewSets: { ...store.getState().reviewSets, sets: store.getState().reviewSets.sets!.map((set) => ({ ...set, studyIds: [] })) } });
+    await checkMissingFileAccess(store, makeDeps('r1@example.com'));
+    expect(store.getState().role.folderAccessMissingCount).toBe(3);
+  });
+  test.each([null, '並行読込失敗'])(
+    'Studies 読込中にセットが失われても権限を広げない（%s）',
+    async (error) => {
+      const store = assignedStore('reviewer_with_ai');
+      const studies = store.getState().documents.studies!;
+      store.setState({ documents: { ...store.getState().documents, studies: null } });
+      const spy = jest.spyOn(studyRepository, 'readStudies').mockImplementationOnce(async () => {
+        store.setState({ reviewSets: { ...store.getState().reviewSets, sets: null, error } });
+        return studies;
+      });
+      try {
+        await grantFolderAccess(store, makeDeps('r1@example.com'));
+        expect(store.getState().role.folderAccessError).toContain(error ?? '担当セット');
+        expect(openProjectFilesPickerMock).not.toHaveBeenCalled();
+      } finally {
+        spy.mockRestore();
+      }
+    },
+  );
+  test('セット読込失敗は起動・付与・スキップの全経路で閉じる', async () => {
+    const store = assignedStore('reviewer_with_ai');
+    store.setState({
+      reviewSets: { ...store.getState().reviewSets, sets: null, error: 'セット読込失敗' },
+    });
+    await checkMissingFileAccess(store, makeDeps('r1@example.com'));
+    expect(store.getState().role.folderAccessError).toBe('セット読込失敗');
+    await grantFolderAccess(store, makeDeps('r1@example.com'));
+    await skipMissingFileAccess(store, makeDeps('r1@example.com'));
+    expect(openProjectFilesPickerMock).not.toHaveBeenCalled();
+    expect(setLocalMock).not.toHaveBeenCalled();
+    expect(getFileMd5Mock).not.toHaveBeenCalled();
   });
 });

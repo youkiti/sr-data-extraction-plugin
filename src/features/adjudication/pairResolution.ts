@@ -13,12 +13,14 @@ function isHuman(type: AnnotatorType): boolean {
 }
 
 export type AnnotatorPairResolution =
-  | { kind: 'ready'; annotatorA: string; annotatorB: string }
-  | { kind: 'waiting'; annotators: readonly string[] }
-  | { kind: 'selectable'; annotators: readonly string[] };
+  | { outside?: string[]; kind: 'ready'; annotatorA: string; annotatorB: string }
+  | { outside?: string[]; kind: 'waiting'; annotators: readonly string[] }
+  | { outside?: string[]; kind: 'selectable'; annotators: readonly string[] };
 
 export interface ResolveAnnotatorPairInput {
   studyId: string;
+  /** 指定時は担当ペアだけで ready / waiting を判定し、担当外を outside に返す */
+  assignedPair?: readonly [string, string] | null;
   studyDataRows: readonly StudyDataRow[];
   resultsDataRows: readonly ResultsDataRow[];
   decisions: readonly Decision[];
@@ -47,6 +49,20 @@ export function resolveAnnotatorPair(input: ResolveAnnotatorPairInput): Annotato
     }
   }
   const sorted = [...emails].sort((a, b) => a.localeCompare(b));
+  if (input.assignedPair != null) {
+    const pair = [...input.assignedPair].sort((a, b) => a.localeCompare(b));
+    const outside = sorted.filter((email) => !pair.includes(email));
+    const present = pair.filter((email) => emails.has(email));
+    if (present.length === 2) {
+      return {
+        kind: 'ready',
+        annotatorA: pair[0] as string,
+        annotatorB: pair[1] as string,
+        outside,
+      };
+    }
+    return { kind: 'waiting', annotators: present, outside };
+  }
   if (sorted.length === 2) {
     return { kind: 'ready', annotatorA: sorted[0] as string, annotatorB: sorted[1] as string };
   }

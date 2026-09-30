@@ -220,6 +220,7 @@ async function initApp(page: Page, hash: string): Promise<void> {
         studies: [
           {
             studyId: 'study-1',
+            reviewSet: null,
             studyLabel: 'Smith 2020',
             registrationId: null,
             createdAt: '2026-07-01T00:00:00Z',
@@ -228,6 +229,7 @@ async function initApp(page: Page, hash: string): Promise<void> {
           },
           {
             studyId: 'study-2',
+            reviewSet: null,
             studyLabel: 'Jones 2021',
             registrationId: null,
             createdAt: '2026-07-01T00:00:00Z',

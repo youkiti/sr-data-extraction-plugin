@@ -71,6 +71,7 @@ const HANDOFF_SHEET_ID = 'tiab-handoff-sheet-id-1';
 function makeStudy(overrides: Partial<StudyRecord> = {}): StudyRecord {
   return {
     studyId: 'study-1',
+    reviewSet: null,
     studyLabel: 'smith2020',
     registrationId: null,
     createdAt: 't1',

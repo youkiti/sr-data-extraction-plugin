@@ -171,6 +171,7 @@ async function initCcittApp(page: Page): Promise<void> {
         studies: [
           {
             studyId: 'study-ccitt',
+            reviewSet: null,
             studyLabel: 'CCITT Scan 2026',
             registrationId: null,
             createdAt: '2026-07-01T00:00:00Z',

@@ -145,3 +145,72 @@ describe('resolveAnnotatorPair', () => {
     expect(result).toEqual({ kind: 'ready', annotatorA: 'a@example.com', annotatorB: 'b@example.com' });
   });
 });
+
+
+describe('担当ペアによる解決', () => {
+  const base = { studyId: 'study-1', studyDataRows: [], resultsDataRows: [], decisions: [] };
+  test('担当ペアが揃えば 3 人目がいても ready、担当外を重複なく昇順で返す', () => {
+    expect(
+      resolveAnnotatorPair({
+        ...base,
+        assignedPair: ['b@example.com', 'a@example.com'],
+        studyDataRows: [studyRow(), studyRow({ annotator: 'z@example.com' })],
+        resultsDataRows: [
+          resultsRow({ annotator: 'b@example.com' }),
+          resultsRow({ annotator: 'c@example.com' }),
+        ],
+        decisions: [
+          decision({ annotator: 'z@example.com' }),
+          decision({ annotator: 'ai', annotatorType: 'ai' }),
+          decision({ studyId: 'other', annotator: 'x@example.com' }),
+        ],
+      }),
+    ).toEqual({
+      kind: 'ready',
+      annotatorA: 'a@example.com',
+      annotatorB: 'b@example.com',
+      outside: ['c@example.com', 'z@example.com'],
+    });
+  });
+  test('担当ペアの片方または両方が未入力なら担当外が揃っていても waiting', () => {
+    const input = {
+      ...base,
+      assignedPair: ['b@example.com', 'a@example.com'] as const,
+      studyDataRows: [
+        studyRow({ annotator: 'x@example.com' }),
+        studyRow({ annotator: 'z@example.com' }),
+      ],
+    };
+    expect(resolveAnnotatorPair(input)).toEqual({
+      kind: 'waiting',
+      annotators: [],
+      outside: ['x@example.com', 'z@example.com'],
+    });
+    expect(
+      resolveAnnotatorPair({ ...input, decisions: [decision({ annotator: 'b@example.com' })] }),
+    ).toEqual({
+      kind: 'waiting',
+      annotators: ['b@example.com'],
+      outside: ['x@example.com', 'z@example.com'],
+    });
+  });
+  test('担当外がなければ空配列、null 指定なら従来の推定を使う', () => {
+    const input = {
+      ...base,
+      studyDataRows: [studyRow(), studyRow({ annotator: 'b@example.com' })],
+    };
+    expect(
+      resolveAnnotatorPair({ ...input, assignedPair: ['a@example.com', 'b@example.com'] }),
+    ).toEqual({
+      kind: 'ready',
+      annotatorA: 'a@example.com',
+      annotatorB: 'b@example.com',
+      outside: [],
+    });
+    expect(resolveAnnotatorPair({ ...input, assignedPair: null })).toEqual({
+      kind: 'ready',
+      annotatorA: 'a@example.com',
+      annotatorB: 'b@example.com',
+    });
+  });
+});

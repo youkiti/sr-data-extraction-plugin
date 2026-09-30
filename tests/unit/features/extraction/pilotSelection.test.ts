@@ -49,6 +49,7 @@ function candidate(id: string, hasTextLayer = true): StudySelectionItem {
       createdAt: '01',
       registrationId: null,
       note: null,
+      reviewSet: null,
     },
     documents: [],
     hasTextLayer,

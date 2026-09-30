@@ -3,6 +3,8 @@ import type { StudyRecord } from '../../../../src/domain/study';
 import { SHEET_HEADERS } from '../../../../src/domain/sheetsSchema';
 import {
   appendStudies,
+  ensureStudyReviewSetColumn,
+  updateStudyReviewSets,
   readStudies,
   resolveActiveStudies,
   studyLabelMap,
@@ -23,7 +25,11 @@ function makeDeps(values: string[][]): MockDeps {
     .fn()
     .mockImplementation(async (_input: RequestInfo | URL, init?: RequestInit) => {
       const method = init?.method ?? 'GET';
-      const json = method === 'GET' ? { values } : {};
+      const json = String(_input).includes('values:batchGet')
+        ? { valueRanges: [{ values: values.length === 0 ? [] : [values[0]] }] }
+        : method === 'GET'
+          ? { values }
+          : {};
       return {
         ok: true,
         status: 200,
@@ -37,6 +43,7 @@ function makeDeps(values: string[][]): MockDeps {
 function makeStudy(overrides: Partial<StudyRecord> = {}): StudyRecord {
   return {
     studyId: 'study-1',
+    reviewSet: null,
     studyLabel: 'Smith 2020',
     registrationId: 'NCT01234567',
     createdAt: 't1',
@@ -94,6 +101,7 @@ describe('readStudies', () => {
       makeStudy(),
       makeStudy({
         studyId: 'study-2',
+        reviewSet: null,
         studyLabel: 'Scan 1999',
         registrationId: null,
         createdAt: 't2',
@@ -218,3 +226,132 @@ describe('studyLabelMap', () => {
     expect(map.get('missing')).toBeUndefined();
   });
 });
+
+
+describe('担当セット列の後方互換と更新', () => {
+  test('旧 6 列ヘッダは未割当、7 列ヘッダは担当セットを読み込む', async () => {
+    await expect(readStudies('sid', makeDeps([HEADER.slice(0, 6), ROW]))).resolves.toEqual([
+      makeStudy(),
+    ]);
+    await expect(readStudies('sid', makeDeps([HEADER, [...ROW, 'group-2']]))).resolves.toEqual([
+      makeStudy({ reviewSet: 'group-2' }),
+    ]);
+    const bad = [...HEADER];
+    bad[6] = 'wrong';
+    await expect(readStudies('sid', makeDeps([bad, ROW]))).rejects.toThrow('7 列目が "review_set"');
+  });
+
+  test('旧ヘッダを範囲指定で読み、7 列のヘッダで上書きする', async () => {
+    const deps = makeDeps([HEADER.slice(0, 6)]);
+    await ensureStudyReviewSetColumn('sid', deps);
+    expect(deps.fetch).toHaveBeenCalledTimes(2);
+    expect(decodeURIComponent(String(deps.fetch.mock.calls[0]?.[0]))).toContain(
+      '/values:batchGet?ranges=Studies!1:1',
+    );
+    const [url, init] = deps.fetch.mock.calls[1] as [string, RequestInit];
+    expect(decodeURIComponent(url)).toContain('Studies!A1?valueInputOption=RAW');
+    expect(init.method).toBe('PUT');
+    expect(JSON.parse(String(init.body))).toEqual({ values: [HEADER] });
+  });
+
+  test('拡張済みなら書かず、不正ヘッダや欠落は移行を中止する', async () => {
+    const deps = makeDeps([HEADER]);
+    await ensureStudyReviewSetColumn('sid', deps);
+    expect(deps.fetch).toHaveBeenCalledTimes(1);
+    for (const header of [[], ['wrong'], [...HEADER.slice(0, 6), 'wrong']]) {
+      const invalid = makeDeps([header]);
+      await expect(ensureStudyReviewSetColumn('sid', invalid)).rejects.toThrow('Studies のヘッダ');
+      expect(invalid.fetch).toHaveBeenCalledTimes(1);
+    }
+    await expect(ensureStudyReviewSetColumn('sid', makeDeps([]))).rejects.toThrow(
+      'Studies のヘッダ',
+    );
+  });
+
+  test('古いキャッシュのメタデータ更新は担当セット列を書かず、新規追記だけに含める', async () => {
+    const study = makeStudy({ reviewSet: 'group-2' });
+    expect(studyToRow(study)[6]).toBe('group-2');
+    const deps = makeDeps([HEADER, [...ROW, 'group-1']]);
+    await updateStudy('sid', study, deps);
+    await updateStudies('sid', [study], deps);
+    await appendStudies('sid', [study], deps);
+    const writes = deps.fetch.mock.calls.filter(([, init]) =>
+      ['POST', 'PUT'].includes((init as RequestInit).method ?? ''),
+    );
+    expect(writes).toHaveLength(3);
+    expect(
+      writes.map(([, init]) => {
+        const body = JSON.parse(String((init as RequestInit).body));
+        return (body.values ?? body.data[0].values)[0][6];
+      }),
+    ).toEqual([undefined, undefined, 'group-2']);
+    expect(
+      writes.slice(0, 2).map(([, init]) => {
+        const body = JSON.parse(String((init as RequestInit).body));
+        return (body.values ?? body.data[0].values)[0].length;
+      }),
+    ).toEqual([6, 6]);
+  });
+
+  test('セットを一括更新し、未割当の null と他のメタデータを保持する', async () => {
+    const row2 = ['study-2', '別の研究', '', 't2', 'other@example.com', 'メモ', 'calibration'];
+    const deps = makeDeps([HEADER.slice(0, 6), ROW, row2]);
+    await updateStudyReviewSets(
+      'sid',
+      [
+        { studyId: 'study-2', reviewSet: null },
+        { studyId: 'study-1', reviewSet: 'group-1' },
+      ],
+      deps,
+    );
+    const writes = deps.fetch.mock.calls.filter(
+      ([, init]) => (init as RequestInit).method === 'POST',
+    );
+    expect(writes).toHaveLength(1);
+    expect(JSON.parse(String((writes[0]?.[1] as RequestInit).body))).toEqual({
+      valueInputOption: 'RAW',
+      data: [
+        { range: 'Studies!A3', values: [[...row2.slice(0, 6), '']] },
+        { range: 'Studies!A2', values: [[...ROW, 'group-1']] },
+      ],
+    });
+  });
+
+  test('空配列は API を呼ばず、未知の study はデータ更新をしない', async () => {
+    const empty = makeDeps([]);
+    await updateStudyReviewSets('sid', [], empty);
+    expect(empty.fetch).not.toHaveBeenCalled();
+    const missing = makeDeps([HEADER, ROW]);
+    await expect(
+      updateStudyReviewSets('sid', [{ studyId: 'unknown', reviewSet: 'group-1' }], missing),
+    ).rejects.toThrow('study_id "unknown" の行がありません');
+    expect(
+      missing.fetch.mock.calls.every(([, init]) => (init as RequestInit).method === 'GET'),
+    ).toBe(true);
+  });
+});
+
+test.each([false, true])(
+  '古い担当セットを持つ編集でも実際のシートの割当を維持する（一括=%s）',
+  async (batch) => {
+    const row = [...ROW, 'group-9'];
+    const deps = makeDeps([HEADER, row]);
+    deps.fetch.mockImplementation(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === 'PUT' || init?.method === 'POST') {
+        const body = JSON.parse(String(init.body));
+        const values = (body.values ?? body.data[0].values)[0] as string[];
+        values.forEach((value, index) => {
+          row[index] = value;
+        });
+      }
+      return { ok: true, json: async () => ({ values: [HEADER, row] }), text: async () => '' };
+    });
+    const stale = makeStudy({ studyLabel: '編集済み', reviewSet: 'group-1' });
+    if (batch) await updateStudies('sid', [stale], deps);
+    else await updateStudy('sid', stale, deps);
+    expect((await readStudies('sid', deps))[0]).toMatchObject({
+      studyLabel: '編集済み',
+      reviewSet: 'group-9',
+    });
+  },
+);

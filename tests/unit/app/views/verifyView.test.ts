@@ -11,6 +11,7 @@ import type { VerificationData } from '../../../../src/features/verification/typ
 
 function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<VerifyViewCallbacks> } {
   const callbacks = {
+    onAssignedOnlyChange: jest.fn(),
     onSelectStudy: jest.fn(),
     onRetryLoad: jest.fn(),
     onDecision: jest.fn(),
@@ -24,6 +25,13 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<VerifyViewCallbac
   return {
     ctx: {
       home: {
+    onReloadReviewSets: jest.fn(),
+    onReloadAssignedProgress: jest.fn(),
+    onSplitReviewSets: jest.fn(),
+    onConfirmResplit: jest.fn(),
+    onCancelResplit: jest.fn(),
+    onSaveReviewSetEmails: jest.fn(),
+    onAssignStudyReviewSet: jest.fn(),
     onReload: jest.fn(),
     onGrantFolderAccess: jest.fn(),
     onSkipMissingFiles: jest.fn(),
@@ -36,6 +44,7 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<VerifyViewCallbac
     onCopyInvite: jest.fn(),
   },
       documents: {
+        onUpdateMergeReviewSet: jest.fn(),
         onImport: jest.fn(),
         onImportFiles: jest.fn(),
         onReload: jest.fn(),
@@ -201,6 +210,7 @@ function makeDocument(overrides: Partial<DocumentRecord> = {}): DocumentRecord {
 function makeStudy(overrides: Partial<StudyRecord> = {}): StudyRecord {
   return {
     studyId: 'study-1',
+    reviewSet: null,
     studyLabel: 'Smith 2020',
     registrationId: null,
     createdAt: 't0',
@@ -774,6 +784,42 @@ describe('renderVerifyView（表示言語 en。issue #93）', () => {
       'No AI-extracted studies. Run an extraction first on the Pilot or Full extraction screen.',
     );
   });
+});
+
+test('owner の担当のみ切り替えは有効時だけ出し、空一覧からも解除できる', () => {
+  const { ctx, callbacks } = makeCtx();
+  const target = makeTarget({ study: makeStudy({ reviewSet: 'group-1' }) });
+  const state = makeState({ targets: [target] }, { role: 'owner' });
+  state.reviewSets.sets = [
+    {
+      setId: 'group-1',
+      studyIds: ['study-1'],
+      reviewerEmails: [],
+      seed: null,
+      updatedBy: 'owner@example.com',
+      updatedAt: 't0',
+    },
+  ];
+  let view = renderVerifyView(state, ctx);
+  const toggle = view.querySelector('#verify-assigned-only') as HTMLInputElement;
+  expect(toggle.checked).toBe(false);
+  expect(toggle.parentElement?.textContent).toBe('自分の担当のみ');
+  toggle.checked = true;
+  toggle.dispatchEvent(new Event('change'));
+  expect(callbacks.onAssignedOnlyChange).toHaveBeenCalledWith(true);
+  state.verify.targets = [];
+  state.verify.assignedOnly = true;
+  state.documents.studies = [target.study];
+  state.documents.records = [makeDocument()];
+  view = renderVerifyView(state, ctx);
+  expect((view.querySelector('#verify-assigned-only') as HTMLInputElement).checked).toBe(true);
+  expect(view.querySelector('#verify-empty')).not.toBeNull();
+  state.role.role = 'reviewer_with_ai';
+  expect(renderVerifyView(state, ctx).querySelector('#verify-assigned-only')).toBeNull();
+  state.role.role = 'owner';
+  state.documents.studies = [makeStudy()];
+  state.reviewSets.sets![0]!.studyIds = [];
+  expect(renderVerifyView(state, ctx).querySelector('#verify-assigned-only')).toBeNull();
 });
 
 test.each(['owner', 'reviewer_with_ai', 'adjudicator', 'reviewer_independent'] as const)(

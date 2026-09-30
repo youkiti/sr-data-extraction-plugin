@@ -2,6 +2,7 @@
 // 状態: 読み込み中 / 読み込み失敗 / 0 件 / 通常（サマリ + study × section マトリクス）。
 // セルクリックは `#/verify?study={study_id}&entity={entity_key}` へのハッシュ遷移
 // （ui-flow.md §3 のセル単位ディープリンク）で、コールバックを介さない
+import { compareReviewSetIds } from '../../domain/reviewSet';
 import type {
   AccuracyBreakdown,
   DashboardData,
@@ -9,6 +10,8 @@ import type {
   DashboardSectionCell,
   RateCount,
 } from '../../features/verification/dashboard';
+import { currentReviewSets } from '../../features/review/reviewSets';
+import { resolveActiveStudies } from '../../features/documents/studyRepository';
 import { t } from '../../lib/i18n';
 import { el } from '../ui/dom';
 import type { AppState } from '../store';
@@ -125,6 +128,47 @@ function renderMatrix(data: DashboardData): HTMLElement {
   ]);
 }
 
+/** 担当していない組み合わせを横棒で示す reviewer × セット表 */
+function renderReviewSetProgress(state: AppState): HTMLElement | null {
+  const progress = state.dashboard.reviewSetProgress;
+  if (progress === null) return null;
+  const emails = [...new Set(progress.map((row) => row.email))].sort();
+  const studies = resolveActiveStudies(
+    state.documents.studies ?? [],
+    state.documents.records ?? [],
+  );
+  const sets = currentReviewSets(studies, state.reviewSets.sets ?? [])
+    .map((set) => set.setId)
+    .sort(compareReviewSetIds);
+  return el('table', { id: 'dashboard-review-sets', className: 'reviewers__table' }, [
+    el('caption', { text: t('dashboard.reviewSetsTitle') }),
+    el('thead', {}, [
+      el('tr', {}, [
+        el('th', { text: t('reviewSets.headReviewers'), attributes: { scope: 'col' } }),
+        ...sets.map((setId) => el('th', { text: setId, attributes: { scope: 'col' } })),
+      ]),
+    ]),
+    el(
+      'tbody',
+      {},
+      emails.map((email) =>
+        el('tr', {}, [
+          el('th', { text: email, attributes: { scope: 'row' } }),
+          ...sets.map((setId) => {
+            const row = progress.find((entry) => entry.email === email && entry.setId === setId);
+            return el('td', {
+              text:
+                row === undefined
+                  ? '—'
+                  : t('dashboard.reviewSetsCell', { m: row.done, n: row.total }),
+            });
+          }),
+        ]),
+      ),
+    ),
+  ]);
+}
+
 export function renderDashboardView(state: AppState, ctx: ViewContext): HTMLElement {
   const children: HTMLElement[] = [
     el('h2', { text: t('app.navDashboard') }),
@@ -164,6 +208,9 @@ export function renderDashboardView(state: AppState, ctx: ViewContext): HTMLElem
     children.push(el('p', { id: 'dashboard-loading', text: t('dashboard.loading') }));
     return finish();
   }
+
+  const reviewSets = renderReviewSetProgress(state);
+  if (reviewSets !== null) children.push(reviewSets);
 
   if (dashboard.data.rows.length === 0) {
     children.push(

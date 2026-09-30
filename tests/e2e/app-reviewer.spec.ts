@@ -350,6 +350,7 @@ test('reviewer_with_ai は付与済みなら #/verify で判定でき、自分�
         studies: [
           {
             studyId: 'study-1',
+            reviewSet: null,
             studyLabel: 'Smith 2020',
             registrationId: null,
             createdAt: '2026-07-01T00:00:00Z',

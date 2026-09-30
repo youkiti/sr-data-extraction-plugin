@@ -30,6 +30,7 @@ import {
 import type { DisposablePdfDocument } from '../../features/documents/extractTextLayer';
 import {
   appendStudies,
+  ensureStudyReviewSetColumn,
   readStudies,
   resolveActiveStudies,
   updateStudy,
@@ -57,6 +58,8 @@ import type {
   TiabHandoffState,
 } from '../store';
 import { showToast } from '../ui/toast';
+import { isReviewSetsActive } from '../../features/review/reviewSets';
+import { requireReviewSets, replaceReviewSetStudies } from './reviewSetService';
 import { t, type MessageKey } from '../../lib/i18n';
 
 export interface DocumentsServiceDeps {
@@ -659,16 +662,22 @@ export async function confirmMerge(
   patchDocuments(store, { merging: true, mergeError: null });
   try {
     const createdBy = (await getCurrentUserEmail(deps.profile)) ?? '';
+    await requireReviewSets(store, deps);
+    const reviewSets = store.getState().reviewSets.sets ?? [];
     const result = mergeStudies({
       studies,
+      reviewSets,
       documents: records,
       targetStudyIds: dialog.studyIds,
+      reviewSet: dialog.reviewSet,
       label: dialog.label.trim() === '' ? undefined : dialog.label.trim(),
       registrationId: dialog.registrationId.trim() === '' ? null : dialog.registrationId.trim(),
       createdBy,
       createdAt: (deps.now ?? nowIso8601)(),
       newStudyId: (deps.newUuid ?? generateUuid)(),
     });
+    if (result.newStudy.reviewSet !== null)
+      await ensureStudyReviewSetColumn(project.spreadsheetId, deps.google);
     await appendStudies(project.spreadsheetId, [result.newStudy], deps.google);
     // reassignments は records から生成されるため対応 document は必ず存在する
     const byId = new Map(records.map((doc) => [doc.documentId, doc]));
@@ -676,6 +685,15 @@ export async function confirmMerge(
       const doc = byId.get(reassign.documentId) as DocumentRecord;
       await updateDocument(project.spreadsheetId, { ...doc, studyId: reassign.studyId }, deps.google);
     }
+    if (isReviewSetsActive(resolveActiveStudies(studies, records), reviewSets))
+      await replaceReviewSetStudies(
+        store,
+        deps,
+        result.supersededStudyIds,
+        result.newStudy.studyId,
+        result.newStudy.reviewSet,
+        createdBy,
+      );
     patchDocuments(store, { merging: false, mergeDialog: null, selectedStudyIds: [] });
     showToast(t('documents.toastMerged'));
     await loadDocuments(store, deps, { force: true });

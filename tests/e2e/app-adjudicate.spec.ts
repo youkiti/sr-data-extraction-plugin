@@ -277,7 +277,7 @@ function docRecord(documentId: string, studyId: string, driveFileId: string, fil
 }
 
 function studyRecord(studyId: string, studyLabel: string): Record<string, unknown> {
-  return { studyId, studyLabel, registrationId: null, createdAt: '2026-07-01T00:00:00Z', createdBy: OWNER, note: null };
+  return { studyId, reviewSet: null, studyLabel, registrationId: null, createdAt: '2026-07-01T00:00:00Z', createdBy: OWNER, note: null };
 }
 
 function documentsSlice(): Record<string, unknown> {

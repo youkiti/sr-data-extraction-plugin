@@ -37,6 +37,7 @@ function makeDocument(overrides: Partial<DocumentRecord> & { documentId: string 
 function makeStudy(studyId: string): StudyRecord {
   return {
     studyId,
+    reviewSet: null,
     studyLabel: `label-${studyId}`,
     registrationId: null,
     createdAt: 't0',

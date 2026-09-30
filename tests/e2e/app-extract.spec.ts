@@ -177,6 +177,7 @@ async function initApp(page: Page, options: InitOptions = {}): Promise<void> {
           records: documents,
           studies: documents.map((doc) => ({
             studyId: doc.studyId,
+            reviewSet: null,
             studyLabel: doc.filename,
             registrationId: null,
             createdAt: '2026-07-01T00:00:00Z',

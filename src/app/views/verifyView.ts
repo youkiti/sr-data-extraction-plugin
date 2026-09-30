@@ -3,6 +3,8 @@
 // study の切替は URL クエリ ?study= と同期する（セレクタ変更 → hash 書き換え → サービス層が読込）。
 // ?entity=（S9 ダッシュボードのセル単位ディープリンク）は該当タブへの切替 + 先頭セルへの
 // スクロール・フォーカスとしてパネルへ渡す。2 ペイン本体は #/pilot と同じ verificationPanel を使う
+import { isReviewSetsActive } from '../../features/review/reviewSets';
+import { resolveActiveStudies } from '../../features/documents/studyRepository';
 import { canAskPaper } from '../../features/verification/chatAssist';
 import { t } from '../../lib/i18n';
 import { el } from '../ui/dom';
@@ -152,6 +154,26 @@ export function renderVerifyView(state: AppState, ctx: ViewContext): HTMLElement
   if (verify.targets === null || verify.loading) {
     children.push(el('p', { id: 'verify-loading', text: t('verify.loading') }));
     return el('section', { className: 'view view--verify' }, children);
+  }
+
+  const studies = state.documents.studies ?? verify.targets.map((target) => target.study);
+  const active =
+    state.documents.records === null
+      ? studies
+      : resolveActiveStudies(studies, state.documents.records);
+  if (state.role.role === 'owner' && isReviewSetsActive(active, state.reviewSets.sets ?? [])) {
+    const toggle = el('input', {
+      id: 'verify-assigned-only',
+      attributes: { type: 'checkbox' },
+    }) as HTMLInputElement;
+    toggle.checked = verify.assignedOnly;
+    toggle.addEventListener('change', () => ctx.verify.onAssignedOnlyChange(toggle.checked));
+    children.push(
+      el('label', { className: 'verify__assigned-only' }, [
+        toggle,
+        el('span', { text: t('verify.assignedOnly') }),
+      ]),
+    );
   }
 
   if (verify.targets.length === 0) {

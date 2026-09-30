@@ -4,6 +4,8 @@ import type { ConfirmedArmStructure } from '../domain/armStructure';
 import type { Decision } from '../domain/decision';
 import type { DocumentRecord, ExclusionReason } from '../domain/document';
 import type { LlmProviderId } from '../domain/llmApiLog';
+import type { ReviewSetRow } from '../domain/reviewSet';
+import type { ReviewerSetProgress } from '../features/review/reviewSets';
 import type { StudyRecord } from '../domain/study';
 import type { Evidence } from '../domain/evidence';
 import type { UsageSummary } from '../features/usage/aggregateUsage';
@@ -16,7 +18,7 @@ import type { StudyGate } from '../features/adjudication/gate';
 import type { AdjudicationCell } from '../features/adjudication/cellMatch';
 import type { DraftArmRow } from '../features/adjudication/armMatch';
 import type { AskPaperTurn, AskPaperSourceDocument } from '../features/verification/askPaper';
-import type { AgreementReport } from '../features/adjudication/agreement';
+import type { AgreementReport, CalibrationPairAgreement } from '../features/adjudication/agreement';
 import type { BuiltExport, ClassicExportFormat } from '../features/export/buildExport';
 import type {
   MethodsFacts,
@@ -53,6 +55,9 @@ export type { ProgressCounts };
 
 /** #/home + ガードが使う進捗カウントの読込状態（counts 本体は AppState.counts） */
 export interface HomeState {
+  assignedProgress: { done: number; total: number } | null;
+  assignedProgressLoading: boolean;
+  assignedProgressError: string | null;
   /** Sheets からの読込が完了したか（E2E seam の counts 注入時も true = 再読込しない） */
   countsLoaded: boolean;
   countsLoading: boolean;
@@ -111,6 +116,17 @@ export interface ReviewersState {
   blockedChange: { email: string } | null;
 }
 
+/** 担当セットの読み込み・保存・再分割確認の状態 */
+export interface ReviewSetsState {
+  sets: ReviewSetRow[] | null;
+  ignoredCount: number;
+  loading: boolean;
+  error: string | null;
+  saving: boolean;
+  saveError: string | null;
+  confirmingResplit: { calibrationCount: number; groupCount: number } | null;
+}
+
 /** 取り込み進捗 1 行の段階（ui-states.md §3「コピー → テキスト抽出の 2 段階表示」+ 前後の状態 + 重複スキップ〔issue #102〕） */
 export type ImportRowStatus = 'queued' | 'copy' | 'extract' | 'done' | 'failed' | 'skipped';
 
@@ -125,6 +141,8 @@ export interface ImportRow {
 
 /** 統合ダイアログ（S3 グルーピング。§4.5）の状態 */
 export interface MergeDialogState {
+  /** 未指定は統合元からの継承、null は明示的な未割当 */
+  reviewSet?: string | null;
   /** 統合する study_id（2 件以上） */
   studyIds: string[];
   /** 統合後の study_label（編集可・既定 = 最初に取り込まれた study の値） */
@@ -423,6 +441,7 @@ export interface VerifyTarget {
 
 /** #/verify（S8）の画面状態 */
 export interface VerifyState {
+  assignedOnly: boolean;
   /** 検証対象一覧。null = 未読込（画面表示時に読み込む） */
   targets: VerifyTarget[] | null;
   loading: boolean;
@@ -525,6 +544,7 @@ export interface AdjudicatePairOption {
 
 /** `#/adjudicate`（S12。docs/design-independent-dual-review.md §6）一覧 1 study ぶんの行 */
 export interface AdjudicateStudyRow {
+  outsideAnnotators: string[];
   study: StudyRecord;
   pair: AnnotatorPairResolution;
   /** pair.kind === 'ready' のときのみ非 null */
@@ -589,6 +609,8 @@ export interface AdjudicateWorking {
 
 /** `#/adjudicate`（S12）の画面状態 */
 export interface AdjudicateState {
+  agreementOutsideCount: number;
+  calibrationAgreement: CalibrationPairAgreement[] | null;
   /** study 一覧（ゲート付き）。null = 未読込 */
   rows: AdjudicateStudyRow[] | null;
   loading: boolean;
@@ -630,6 +652,7 @@ export interface AdjudicateState {
 
 /** #/dashboard（S9）の画面状態 */
 export interface DashboardState {
+  reviewSetProgress: ReviewerSetProgress[] | null;
   /** 費用と予算は検証進捗と独立して読み込む */
   usage: {
     summary: UsageSummary | null;
@@ -665,6 +688,7 @@ export interface AppState {
   role: RoleState;
   /** owner の「レビュアー管理」カード（Home）の状態 */
   reviewers: ReviewersState;
+  reviewSets: ReviewSetsState;
   documents: DocumentsState;
   protocol: ProtocolState;
   schema: SchemaState;
@@ -715,6 +739,9 @@ export function createInitialState(): AppState {
       dataRows: 0,
     },
     home: {
+      assignedProgress: null,
+      assignedProgressLoading: false,
+      assignedProgressError: null,
       countsLoaded: false,
       countsLoading: false,
       countsError: null,
@@ -728,6 +755,15 @@ export function createInitialState(): AppState {
       folderAccessChecking: false,
       folderAccessError: null,
       folderAccessMissingCount: null,
+    },
+    reviewSets: {
+      sets: null,
+      ignoredCount: 0,
+      loading: false,
+      error: null,
+      saving: false,
+      saveError: null,
+      confirmingResplit: null,
     },
     reviewers: {
       assignments: null,
@@ -850,6 +886,7 @@ export function createInitialState(): AppState {
     },
     askPaper: { conversations: {}, sending: false, error: null, usedStudyIds: [], model: null },
     verify: {
+      assignedOnly: false,
       targets: null,
       loading: false,
       loadError: null,
@@ -867,6 +904,7 @@ export function createInitialState(): AppState {
       conflictMessage: null,
     },
     dashboard: {
+      reviewSetProgress: null,
       usage: {
         summary: null,
         budget: null,
@@ -881,6 +919,8 @@ export function createInitialState(): AppState {
       loadError: null,
     },
     adjudicate: {
+      agreementOutsideCount: 0,
+      calibrationAgreement: null,
       rows: null,
       loading: false,
       loadError: null,
