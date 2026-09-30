@@ -34,7 +34,10 @@ test('句読点・改行で文を区切り、空白を正規化して消えた�
 });
 test('小数点と略語の "." では文を区切らない', () => {
   expect(
-    removedInstructionSentences('Use 0.5 mg, e.g. tablets. Drop this.', 'Use 0.5 mg, e.g. tablets.'),
+    removedInstructionSentences(
+      'Use 0.5 mg, e.g. tablets. Drop this.',
+      'Use 0.5 mg, e.g. tablets.',
+    ),
   ).toEqual(['Drop this']);
 });
 test('同じ種類が続くトークンは 1 つの部分にまとめる', () => {
@@ -43,4 +46,9 @@ test('同じ種類が続くトークンは 1 つの部分にまとめる', () =>
     { kind: 'ins', text: 'x y ' },
     { kind: 'equal', text: 'b' },
   ]);
+});
+test('"e.g." を含む文が消えたときは 1 文として返す', () => {
+  expect(
+    removedInstructionSentences('Pick a category (e.g. primary, other). Keep this.', 'Keep this.'),
+  ).toEqual(['Pick a category (e.g. primary, other)']);
 });

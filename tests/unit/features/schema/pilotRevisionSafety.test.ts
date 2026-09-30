@@ -211,3 +211,26 @@ test('語の途中への一致は漏れとしない・数値は符号を捨て�
   expect(drop('Ages 18-65 only', '65')).toEqual(['design']);
   expect(drop('Report (a)', '(a)')).toEqual(['design']);
 });
+test('スキーマ内のどれかの項目の定義にある語・数値は漏れとしない', () => {
+  const feedbackOf = {
+    items: [{ ...item, entries: [{ ...entry, aiValue: 'ISI', humanValue: '12', note: null }] }],
+    decisionCount: 1,
+  };
+  const other = {
+    ...field,
+    fieldId: 'other',
+    fieldName: 'scale',
+    extractionInstruction: 'ISI > SCI',
+    unit: '12',
+  };
+  const run = (instruction: string, schema = [field, other]) =>
+    filterLeakingRevisions(
+      [{ ...revision, extractionInstruction: instruction, example: null }],
+      [field],
+      feedbackOf,
+      schema,
+    ).droppedFieldNames;
+  expect(run('Use ISI and 12')).toEqual([]);
+  expect(run('Use ISI', [field])).toEqual(['design']);
+  expect(run('Use 12', [field])).toEqual(['design']);
+});

@@ -39,8 +39,9 @@ export function removedInstructionSentences(before: string, after: string): stri
   const normalize = (text: string) => text.replace(/\s+/g, ' ').trim();
   const next = normalize(after);
   return before
-    // "." は後ろが空白か末尾のときだけ文末とみなす（小数点・"e.g." で文を割らない）
-    .split(/(?:[。!?！？;；\r\n]|\.(?=\s|$))+/)
+    // "." は後ろが空白か末尾のときだけ文末とみなす（小数点で割らない）。
+    // 1 文字の語の直後の "."（"e.g." の 2 つ目・"i.e."）も文末にしない
+    .split(/(?:[。!?！？;；\r\n]|(?<!(?:^|[\s.(])[A-Za-z])\.(?=\s|$))+/)
     .map(normalize)
     .filter((sentence) => sentence !== '' && !next.includes(sentence));
 }

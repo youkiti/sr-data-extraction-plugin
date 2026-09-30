@@ -108,7 +108,16 @@ export function filterLeakingRevisions(
   revisions: readonly PilotInstructionRevision[],
   fields: readonly SchemaField[],
   feedback: PilotFeedback,
+  schemaFields: readonly SchemaField[] = fields,
 ): { revisions: PilotInstructionRevision[]; droppedFieldNames: string[] } {
+  // どれかの項目の定義・選択肢に既に出てくる語・数値は、パイロット由来の漏れとみなさない
+  // （"ISI"・"DSM-5" のような一般的な語との偶然の一致で提案を捨てないため）
+  const definitions = schemaFields.flatMap((f) =>
+    [f.extractionInstruction, f.example, f.fieldLabel, f.allowedValues, f.unit].map((v) =>
+      (v ?? '').toLowerCase(),
+    ),
+  );
+  const existingNumbers = definitions.flatMap(extractNumbers);
   const strings = feedback.items
     .flatMap((item) =>
       item.entries.flatMap((entry) => [
@@ -123,17 +132,9 @@ export function filterLeakingRevisions(
   const kept = revisions.filter((revision) => {
     const field = fields.find((f) => f.fieldName.trim() === revision.fieldName);
     if (!field) return false;
-    const definitions = [
-      field.extractionInstruction,
-      field.example,
-      field.fieldLabel,
-      field.allowedValues,
-      field.unit,
-    ].map((v) => (v ?? '').toLowerCase());
     const proposed = [revision.extractionInstruction, revision.example ?? '']
       .join('\n')
       .toLowerCase();
-    const existingNumbers = definitions.flatMap(extractNumbers);
     const pilotNumbers = feedback.items
       .filter((item) => item.fieldId === field.fieldId)
       .flatMap((item) =>

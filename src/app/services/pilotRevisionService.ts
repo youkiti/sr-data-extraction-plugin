@@ -140,6 +140,7 @@ export async function runPilotRevision(store: Store, deps: SchemaServiceDeps): P
       parsed.revisions,
       targetFields,
       feedback,
+      currentFields,
     );
     if (revisions.length === 0 && droppedFieldNames.length > 0)
       throw new Error(t('pilot.reviseAllLeaked'));
