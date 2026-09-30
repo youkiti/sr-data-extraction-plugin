@@ -408,7 +408,13 @@ export async function replaceReviewSetStudies(
   email: string,
 ): Promise<void> {
   const state = store.getState();
-  const sets = state.reviewSets.sets ?? [];
+  const spreadsheetId = state.currentProject!.spreadsheetId;
+  const [latestRows, meta] = await Promise.all([
+    readReviewSetRows(spreadsheetId, deps.google),
+    loadProjectMeta(spreadsheetId, deps.google),
+  ]);
+  const sets = foldReviewSets(latestRows, meta.createdBy).sets;
+  // 再取得から追記までに別タブが保存する競合は残る。
   const rows = sets
     .filter((set) => set.setId === setId || set.studyIds?.some((id) => sourceIds.includes(id)))
     .map((set): ReviewSetRow => ({
@@ -421,7 +427,7 @@ export async function replaceReviewSetStudies(
       updatedBy: email,
       updatedAt: (deps.now ?? nowIso8601)(),
     }));
-  await appendReviewSetRows(state.currentProject!.spreadsheetId, rows, deps.google);
-  patch(store, { sets: foldReviewSets([...sets, ...rows], sets[0]?.updatedBy ?? email).sets });
+  await appendReviewSetRows(spreadsheetId, rows, deps.google);
+  patch(store, foldReviewSets([...latestRows, ...rows], meta.createdBy));
   invalidateAssignments(store);
 }

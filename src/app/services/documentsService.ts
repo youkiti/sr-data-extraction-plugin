@@ -679,6 +679,12 @@ export async function confirmMerge(
     if (result.newStudy.reviewSet !== null)
       await ensureStudyReviewSetColumn(project.spreadsheetId, deps.google);
     await appendStudies(project.spreadsheetId, [result.newStudy], deps.google);
+    // reassignments は records から生成されるため対応 document は必ず存在する
+    const byId = new Map(records.map((doc) => [doc.documentId, doc]));
+    for (const reassign of result.reassignments) {
+      const doc = byId.get(reassign.documentId) as DocumentRecord;
+      await updateDocument(project.spreadsheetId, { ...doc, studyId: reassign.studyId }, deps.google);
+    }
     if (isReviewSetsActive(resolveActiveStudies(studies, records), reviewSets))
       await replaceReviewSetStudies(
         store,
@@ -688,12 +694,6 @@ export async function confirmMerge(
         result.newStudy.reviewSet,
         createdBy,
       );
-    // reassignments は records から生成されるため対応 document は必ず存在する
-    const byId = new Map(records.map((doc) => [doc.documentId, doc]));
-    for (const reassign of result.reassignments) {
-      const doc = byId.get(reassign.documentId) as DocumentRecord;
-      await updateDocument(project.spreadsheetId, { ...doc, studyId: reassign.studyId }, deps.google);
-    }
     patchDocuments(store, { merging: false, mergeDialog: null, selectedStudyIds: [] });
     showToast(t('documents.toastMerged'));
     await loadDocuments(store, deps, { force: true });

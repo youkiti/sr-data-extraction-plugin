@@ -1,6 +1,6 @@
 import { reviewSet as makeReviewSet } from '../../features/review/reviewSetFixtures';
-import { appendReviewSetRows } from '../../../../src/features/project/reviewSetRepository';
-jest.mock('../../../../src/features/project/reviewSetRepository', () => ({ ...jest.requireActual('../../../../src/features/project/reviewSetRepository'), appendReviewSetRows: jest.fn() }));
+import { appendReviewSetRows, readReviewSetRows } from '../../../../src/features/project/reviewSetRepository';
+jest.mock('../../../../src/features/project/reviewSetRepository', () => ({ ...jest.requireActual('../../../../src/features/project/reviewSetRepository'), appendReviewSetRows: jest.fn(), readReviewSetRows: jest.fn() }));
 // documentsService（S3 グルーピング）のテスト。lib/google / features/documents の I/O は
 // モジュールモックで置き換え、studyRepository の純粋関数（resolveActiveStudies / studyLabelMap）は
 // requireActual で本物を使う。ストア遷移とトースト文言を検証する
@@ -32,6 +32,12 @@ import {
   visibleMergeCandidates,
   type DocumentsServiceDeps,
 } from '../../../../src/app/services/documentsService';
+import { loadProjectMeta } from '../../../../src/features/project/selectProject';
+import { renderReviewSetsCard } from '../../../../src/app/views/reviewSetsCard';
+import type { ViewContext } from '../../../../src/app/views/types';
+import { assignStudyReviewSet } from '../../../../src/app/services/reviewSetService';
+import { reviewSetForStudy, reviewSetMismatchCount } from '../../../../src/features/review/reviewSets';
+jest.mock('../../../../src/features/project/selectProject', () => ({ loadProjectMeta: jest.fn() }));
 import type { DocumentRecord } from '../../../../src/domain/document';
 import type { StudyRecord } from '../../../../src/domain/study';
 import { dedupSelections } from '../../../../src/features/documents/dedupSelections';
@@ -47,6 +53,7 @@ import {
   ensureStudyReviewSetColumn,
   readStudies,
   updateStudy,
+  updateStudyReviewSets,
 } from '../../../../src/features/documents/studyRepository';
 import { readRunStudyCoverage } from '../../../../src/features/extraction/runRepository';
 import { loadTiabHandoff } from '../../../../src/features/project/tiabHandoffStore';
@@ -71,6 +78,7 @@ jest.mock('../../../../src/features/documents/studyRepository', () => {
     appendStudies: jest.fn(),
     ensureStudyReviewSetColumn: jest.fn(),
     updateStudy: jest.fn(),
+    updateStudyReviewSets: jest.fn(),
   };
 });
 jest.mock('../../../../src/features/extraction/runRepository');
@@ -180,6 +188,12 @@ beforeEach(() => {
   jest.clearAllMocks();
   document.body.innerHTML = '';
   mockGetCurrentUserEmail.mockResolvedValue('tester@example.com');
+  jest.mocked(readReviewSetRows).mockResolvedValue([]);
+  jest.mocked(appendReviewSetRows).mockResolvedValue(undefined);
+  jest.mocked(loadProjectMeta).mockResolvedValue({
+    projectId: 'p1', projectTitle: 'テスト SR', spreadsheetId: 'sheet-1',
+    driveFolderId: 'folder-1', schemaVersion: '1.0', createdAt: 't0', createdBy: 'tester@example.com',
+  });
   // 既定は素通し（重複なし）。重複スキップのシナリオは各テストで差し替える
   mockDedupSelections.mockImplementation(async ({ selections }) => ({
     accepted: [...selections],
@@ -1609,6 +1623,12 @@ describe('統合時の担当セット継承', () => {
         records: [makeDoc(), makeDoc({ documentId: 'doc-2', studyId: 'study-2' })],
       });
       store.setState({ reviewSets: { ...store.getState().reviewSets, sets: [makeReviewSet({ studyIds: ['study-1'] }), makeReviewSet({ setId: 'group-2', studyIds: ['study-2'] }), makeReviewSet({ setId: 'calibration', studyIds: [] })] } });
+      jest.mocked(readReviewSetRows).mockResolvedValue(store.getState().reviewSets.sets!);
+      jest.mocked(loadProjectMeta).mockResolvedValue({
+        projectId: 'p1', projectTitle: 'テスト SR', spreadsheetId: 'sheet-1',
+        driveFolderId: 'folder-1', schemaVersion: '1.0', createdAt: 't0', createdBy: 'owner@example.com',
+      });
+      mockGetCurrentUserEmail.mockResolvedValue('owner@example.com');
       openMergeCandidate(store, ['study-2', 'study-1']);
       updateMergeDialog(store, { reviewSet });
       mockAppendStudies.mockResolvedValue(undefined);
@@ -1636,4 +1656,57 @@ describe('統合時の担当セット継承', () => {
       }
     },
   );
+});
+
+
+describe('統合の途中失敗', () => {
+  test.each(['文書', '所属'] as const)('%s の保存失敗で元の所属を保持する', async (step) => {
+    const store = makeStore();
+    store.setState({ role: { ...store.getState().role, role: 'owner' } });
+    const sets = [makeReviewSet({ studyIds: ['study-1', 'study-2'], updatedBy: 'tester@example.com' })];
+    store.setState({ reviewSets: { ...store.getState().reviewSets, sets } });
+    const studies = [makeStudy({ reviewSet: 'group-1' }), makeStudy({ studyId: 'study-2', reviewSet: 'group-1' })];
+    const records = [makeDoc(), makeDoc({ documentId: 'doc-2', studyId: 'study-2' })];
+    setDocs(store, { studies, records });
+    jest.mocked(readReviewSetRows).mockResolvedValue(sets);
+    mockAppendStudies.mockResolvedValue(undefined);
+    mockUpdateDocument.mockResolvedValue(undefined);
+    if (step === '文書') {
+      mockUpdateDocument.mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error('文書保存失敗'));
+    } else {
+      jest.mocked(appendReviewSetRows).mockRejectedValueOnce(new Error('所属保存失敗'));
+    }
+    openMergeCandidate(store, ['study-1', 'study-2']);
+    await confirmMerge(store, makeDeps());
+    expect(mockUpdateDocument).toHaveBeenCalledTimes(2);
+    expect(store.getState().reviewSets.sets).toEqual(sets);
+    expect(store.getState().documents.mergeError).toBe(step + '保存失敗');
+    expect(store.getState().documents.merging).toBe(false);
+    expect(toastTexts().join('')).toContain(step + '保存失敗');
+    if (step === '文書') {
+      expect(appendReviewSetRows).not.toHaveBeenCalled();
+      expect(readReviewSetRows).not.toHaveBeenCalled();
+      expect(reviewSetForStudy(studies[1]!, sets)).toBe('group-1');
+    } else {
+      expect(mockUpdateDocument.mock.invocationCallOrder[1]).toBeLessThan(jest.mocked(appendReviewSetRows).mock.invocationCallOrder[0]!);
+      const newStudy = mockAppendStudies.mock.calls[0]![1][0]!;
+      mockReadStudies.mockResolvedValue([...studies, newStudy]);
+      mockReadDocuments.mockResolvedValue(records.map((doc) => ({ ...doc, studyId: newStudy.studyId })));
+      await loadDocuments(store, makeDeps(), { force: true });
+      expect(reviewSetForStudy(newStudy, store.getState().reviewSets.sets!)).toBeNull();
+      expect(reviewSetMismatchCount([newStudy], store.getState().reviewSets.sets!)).toBe(1);
+      const ctx = { home: {} } as ViewContext;
+      const card = renderReviewSetsCard(store.getState(), ctx);
+      expect(card.querySelector('#review-sets-mismatch')?.textContent).toContain('1 件');
+      expect(card.querySelector('#review-sets-unassigned')).not.toBeNull();
+
+      await assignStudyReviewSet(store, makeDeps(), newStudy.studyId, 'group-1');
+      expect(store.getState().reviewSets.saveError).toBeNull();
+      expect(reviewSetForStudy(newStudy, store.getState().reviewSets.sets!)).toBe('group-1');
+      expect(reviewSetMismatchCount([newStudy], store.getState().reviewSets.sets!)).toBe(0);
+      expect(renderReviewSetsCard(store.getState(), ctx).querySelector('#review-sets-mismatch')).toBeNull();
+      expect(renderReviewSetsCard(store.getState(), ctx).querySelector('#review-sets-unassigned')).toBeNull();
+      expect(updateStudyReviewSets).toHaveBeenCalledWith('sheet-1', [{ studyId: newStudy.studyId, reviewSet: 'group-1' }], expect.anything());
+    }
+  });
 });

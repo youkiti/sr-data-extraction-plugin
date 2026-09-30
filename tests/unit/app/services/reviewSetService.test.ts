@@ -817,12 +817,14 @@ test('個別移動・解除は移動元と移動先の所属全体を追記す�
     reviewSet({ setId: 'calibration', studyIds: ['cal'], reviewerEmails: [] }),
     reviewSet({ setId: 'group-2', studyIds: null }),
   ] } });
+  jest.mocked(readReviewSetRows).mockResolvedValue(result.getState().reviewSets.sets!);
   await assignStudyReviewSet(result, { ...deps, now: undefined }, 's1', 'group-2');
   expect(appendReviewSetRows).toHaveBeenLastCalledWith('sid', [
     expect.objectContaining({ setId: 'group-1', studyIds: ['keep'] }),
     expect.objectContaining({ setId: 'group-2', studyIds: ['s1'] }),
   ], deps.google);
   expect(jest.mocked(appendReviewSetRows).mock.calls[0]![1][0]!.updatedAt).toMatch(/^\d{4}-/);
+  jest.mocked(readReviewSetRows).mockResolvedValue(result.getState().reviewSets.sets!);
   await assignStudyReviewSet(result, deps, 's1', null);
   expect(appendReviewSetRows).toHaveBeenLastCalledWith('sid', [expect.objectContaining({ setId: 'group-2', studyIds: [] })], deps.google);
   expect(result.getState().reviewSets.sets!.find((set) => set.setId === 'group-1')!.studyIds).toEqual(['keep']);
@@ -834,6 +836,7 @@ test('所属未取得の置換は行を作らず、非 owner の置換行は採�
   await replaceReviewSetStudies(result, deps, ['s1'], 'new', null, 'owner@example.com');
   expect(appendReviewSetRows).toHaveBeenLastCalledWith('sid', [], deps.google);
   result.setState({ reviewSets: { ...result.getState().reviewSets, sets: [reviewSet(), reviewSet({ setId: 'group-2', studyIds: null })] } });
+  jest.mocked(readReviewSetRows).mockResolvedValue(result.getState().reviewSets.sets!);
   await replaceReviewSetStudies(result, deps, ['s1'], 'new', 'group-1', 'reviewer@example.com');
   expect(result.getState().reviewSets.sets![0]!.studyIds).toEqual(['s1']);
 });
@@ -848,4 +851,45 @@ test('分け直しで旧セットを空にし、保存された所属だけで�
   const saved = new Map(rows.flatMap((row) => row.studyIds!.map((id) => [id, row.setId])));
   expect([...saved.keys()].sort()).toEqual(['cal', 's1']);
   expect(jest.mocked(updateStudyReviewSets).mock.calls[0]![1]).toEqual(expect.arrayContaining([...saved].map(([studyId, reviewSet]) => ({ studyId, reviewSet }))));
+});
+
+
+test('古いキャッシュからの個別割当でも最新の所属・担当者と別セットを保持する', async () => {
+  const result = activeStore();
+  result.setState({ documents: { ...result.getState().documents, studies: [study({ studyId: 's3' })] } });
+  const latest = [
+    reviewSet({ studyIds: ['s1', 's2'], reviewerEmails: ['latest@example.com'] }),
+    reviewSet({ setId: 'group-2', studyIds: ['other'] }),
+    reviewSet({ studyIds: ['fake'], updatedBy: 'intruder@example.com' }),
+  ];
+  jest.mocked(readReviewSetRows).mockResolvedValue(latest);
+  await assignStudyReviewSet(result, deps, 's3', 'group-1');
+  expect(loadProjectMeta).toHaveBeenCalledWith('sid', deps.google);
+  expect(appendReviewSetRows).toHaveBeenCalledWith('sid', [
+    expect.objectContaining({ studyIds: ['s1', 's2', 's3'], reviewerEmails: ['latest@example.com'] }),
+  ], deps.google);
+  expect(result.getState().reviewSets.sets).toEqual([
+    expect.objectContaining({ setId: 'group-1', studyIds: ['s1', 's2', 's3'] }),
+    expect.objectContaining({ setId: 'group-2', studyIds: ['other'] }),
+  ]);
+  expect(result.getState().reviewSets.ignoredCount).toBe(1);
+});
+
+test.each(['所属', 'owner'])('置換直前の %s 読込失敗は伝播し、追記しない', async (step) => {
+  const result = activeStore();
+  const before = result.getState().reviewSets;
+  const error = new Error('再取得失敗');
+  if (step === '所属') jest.mocked(readReviewSetRows).mockRejectedValueOnce(error);
+  else jest.mocked(loadProjectMeta).mockRejectedValueOnce(error);
+  await expect(replaceReviewSetStudies(result, deps, ['s1'], 'new', 'group-1', 'owner@example.com')).rejects.toBe(error);
+  expect(appendReviewSetRows).not.toHaveBeenCalled();
+  expect(result.getState().reviewSets).toBe(before);
+});
+
+test('owner はキャッシュの署名者ではなく Meta から確定する', async () => {
+  const result = activeStore();
+  result.setState({ reviewSets: { ...result.getState().reviewSets, sets: [reviewSet({ updatedBy: 'intruder@example.com' })] } });
+  jest.mocked(readReviewSetRows).mockResolvedValue([reviewSet()]);
+  await replaceReviewSetStudies(result, deps, ['s1'], 'new', 'group-1', 'owner@example.com');
+  expect(result.getState().reviewSets.sets![0]!.studyIds).toEqual(['new']);
 });
