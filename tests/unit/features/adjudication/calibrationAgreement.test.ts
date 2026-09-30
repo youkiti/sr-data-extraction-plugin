@@ -38,6 +38,7 @@ const a = 'a@example.com';
 const b = 'b@example.com';
 const c = 'c@example.com';
 const empty: CalibrationAgreementInput = {
+  sets: [{ setId: 'calibration', studyIds: ['s1', 's2'], reviewerEmails: [], seed: null, updatedBy: 'owner', updatedAt: 't0' }],
   studies: [],
   fields: [field()],
   studyDataRows: [],
@@ -181,6 +182,7 @@ describe('calibration の全ペア一致度', () => {
       computeCalibrationAgreement({
         ...empty,
         studies: [study({ reviewSet: 'group-1' })],
+        sets: [],
         studyDataRows: [studyRow(a, 's1', '日本'), studyRow(b, 's1', '日本')],
       }),
     ).toEqual([]);
@@ -261,3 +263,10 @@ test.each([false, true])(
     ).toBe(1);
   },
 );
+
+
+test('Studies の担当列が group でも calibration の所属記録で集計する', () => {
+  const input = { ...empty, studies: [study({ reviewSet: 'group-9' })], studyDataRows: [studyRow(a, 's1', '日本'), studyRow(b, 's1', '日本')] };
+  expect(computeCalibrationAgreement(input)[0]?.agreementRate).toBe(1);
+  expect(computeCalibrationAgreement({ ...input, sets: [] })).toEqual([]);
+});

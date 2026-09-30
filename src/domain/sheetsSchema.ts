@@ -249,7 +249,7 @@ export const SHEET_HEADERS: Record<SheetTabName, readonly string[]> = {
     'exported_by',
   ],
   Reviewers: ['email', 'role', 'review_mode', 'assigned_by', 'assigned_at'],
-  ReviewSets: ['set_id', 'reviewer_emails', 'seed', 'updated_by', 'updated_at'],
+  ReviewSets: ['set_id', 'reviewer_emails', 'seed', 'updated_by', 'updated_at', 'study_ids'],
   // Google API 失敗の診断ログ（issue #249）。詳細は domain/apiErrorLog.ts / lib/diagnostics/apiErrorLog.ts
   ApiErrorLog: [
     'log_id',

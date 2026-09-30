@@ -1752,11 +1752,13 @@ describe('担当ペアと calibration のサービス集計', () => {
         sets: [
           {
             setId: 'group-1',
+            studyIds: ['study-1'],
             reviewerEmails: [B, A],
             seed: null,
             updatedBy: JUDGE,
             updatedAt: 't0',
           },
+          { setId: 'calibration', studyIds: ['cal'], reviewerEmails: [], seed: null, updatedBy: JUDGE, updatedAt: 't0' },
         ],
       },
     });
@@ -1812,6 +1814,7 @@ describe('担当ペアと calibration のサービス集計', () => {
     '校正の保存済み群対応は確定できるペアへ渡す（選択済み=%s）',
     async (selected) => {
       const store = assignedStore();
+      store.setState({ reviewSets: { ...store.getState().reviewSets, sets: store.getState().reviewSets.sets!.map((set) => ({ ...set, studyIds: set.setId === 'calibration' ? ['study-1'] : [] })) } });
       readStudiesMock.mockResolvedValue([makeStudy({ reviewSet: 'calibration' })]);
       readDocumentsMock.mockResolvedValue([makeDocument()]);
       const annotators = selected ? [A, B, C] : [A, B];

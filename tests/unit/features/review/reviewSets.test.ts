@@ -6,6 +6,7 @@ import {
   inheritReviewSet,
   isReviewSetsActive,
   reviewerSetProgress,
+  reviewSetMismatchCount,
   splitIntoReviewSets,
   visibleStudyIdsForReviewer,
 } from '../../../../src/features/review/reviewSets';
@@ -17,7 +18,8 @@ describe('担当セットの有効判定', () => {
   test('有効なセットとセット付きのアクティブ study の両方が必要', () => {
     expect(isReviewSetsActive([], [reviewSet()])).toBe(false);
     expect(isReviewSetsActive([study({ reviewSet: 'group-1' })], [])).toBe(false);
-    expect(isReviewSetsActive([study(), study({ reviewSet: '  ' })], [reviewSet()])).toBe(false);
+    expect(isReviewSetsActive([study(), study({ reviewSet: '  ' })], [reviewSet()])).toBe(true);
+    expect(isReviewSetsActive([study()], [reviewSet({ studyIds: null })])).toBe(false);
     expect(isReviewSetsActive([study({ reviewSet: 'group-1' })], [reviewSet()])).toBe(true);
   });
 });
@@ -97,12 +99,12 @@ describe('担当者の表示対象とペア', () => {
     study({ studyId: 'unknown', reviewSet: 'group-3' }),
     study({ studyId: 'empty' }),
   ];
-  const sets = [reviewSet(), reviewSet({ setId: 'group-2', reviewerEmails: ['c@example.com'] })];
+  const sets = [reviewSet({ studyIds: ['g1'] }), reviewSet({ setId: 'group-2', studyIds: ['g2'], reviewerEmails: ['c@example.com'] }), reviewSet({ setId: 'calibration', studyIds: ['cal'] })];
   test('担当セットと全 calibration を作成順で返す', () => {
     expect(visibleStudyIdsForReviewer('a@example.com', studies, sets)).toEqual(['cal', 'g1']);
     expect(visibleStudyIdsForReviewer('c@example.com', studies, sets)).toEqual(['cal', 'g2']);
     expect(visibleStudyIdsForReviewer('未登録', studies, sets)).toEqual(['cal']);
-    expect(visibleStudyIdsForReviewer('a@example.com', studies, [])).toEqual(['cal']);
+    expect(visibleStudyIdsForReviewer('a@example.com', studies, [])).toEqual([]);
   });
   test('2 名グループのみ担当ペアをソートして返し、元データは変更しない', () => {
     const row = reviewSet({ reviewerEmails: ['z@example.com', 'a@example.com'] });
@@ -124,15 +126,16 @@ describe('統合時の担当セット継承', () => {
     expect(inheritReviewSet([])).toBeNull();
     expect(inheritReviewSet([study(), study()], 'group-9')).toBeNull();
     expect(
-      inheritReviewSet([study({ reviewSet: 'group-1' }), study({ reviewSet: 'group-1' })], null),
+      inheritReviewSet([study(), study()], null, [reviewSet()]),
     ).toBe('group-1');
     const sources = [
-      study({ reviewSet: 'group-2', createdAt: 't9' }),
+      study({ studyId: 's2', reviewSet: 'group-2', createdAt: 't9' }),
       study({ reviewSet: 'group-1', createdAt: 't0' }),
     ];
-    expect(inheritReviewSet(sources)).toBe('group-2');
-    expect(inheritReviewSet(sources, 'calibration')).toBe('calibration');
-    expect(inheritReviewSet(sources, null)).toBeNull();
+    const sets = [reviewSet(), reviewSet({ setId: 'group-2', studyIds: ['s2'] })];
+    expect(inheritReviewSet(sources, undefined, sets)).toBe('group-2');
+    expect(inheritReviewSet(sources, 'calibration', sets)).toBe('calibration');
+    expect(inheritReviewSet(sources, null, sets)).toBeNull();
   });
 });
 
@@ -144,12 +147,12 @@ describe('レビュアー × セットの進捗', () => {
         study({ reviewSet: 'group-1' }),
         study({ studyId: 's2', reviewSet: 'group-1' }),
         study({ studyId: 'cal', reviewSet: 'calibration' }),
-        study(),
+        study({ studyId: 'unassigned' }),
       ],
       sets: [
-        reviewSet(),
-        reviewSet({ setId: 'group-2', reviewerEmails: ['c@example.com'] }),
-        reviewSet({ setId: 'calibration', reviewerEmails: [] }),
+        reviewSet({ studyIds: ['s1', 's2'] }),
+        reviewSet({ setId: 'group-2', studyIds: [], reviewerEmails: ['c@example.com'] }),
+        reviewSet({ setId: 'calibration', studyIds: ['cal'], reviewerEmails: [] }),
       ],
       fields: [field()],
       decisions: [
@@ -214,9 +217,9 @@ test('現在のグループは最新 seed の分割とアクティブ研究の�
   const old = reviewSet({ setId: 'group-3', seed: '1', updatedAt: 't0' });
   const rows = [
     old,
-    reviewSet({ seed: '2', updatedAt: 't2' }),
-    reviewSet({ setId: 'group-2', seed: '1', splitUpdatedAt: 't0', updatedAt: 't9' }),
-    reviewSet({ setId: 'calibration', seed: '2', updatedAt: 't2' }),
+    reviewSet({ seed: '2', updatedAt: 't2', studyIds: [] }),
+    reviewSet({ setId: 'group-2', studyIds: [], seed: '1', splitUpdatedAt: 't0', updatedAt: 't9' }),
+    reviewSet({ setId: 'calibration', studyIds: [], seed: '2', updatedAt: 't2' }),
   ];
   expect(currentReviewSets([], rows).map((set) => set.setId)).toEqual(['group-1', 'calibration']);
   const assigned = study({ reviewSet: 'group-3' });
@@ -231,4 +234,22 @@ test('現在のグループは最新 seed の分割とアクティブ研究の�
   expect(
     currentReviewSets([study({ reviewSet: 'group-1' })], [reviewSet({ seed: null })]),
   ).toHaveLength(1);
+});
+
+
+test('担当列の直接変更を無視し、所属の食い違いを数える', () => {
+  const studies = [study({ reviewSet: 'calibration' }), study({ studyId: 'cal', reviewSet: 'group-9' }), study({ studyId: 'outside', reviewSet: 'calibration' }), study({ studyId: 'new', reviewSet: '' })];
+  const sets = [reviewSet(), reviewSet({ setId: 'calibration', studyIds: ['cal'], reviewerEmails: [] }), reviewSet({ setId: 'group-2', studyIds: ['outside'], reviewerEmails: ['c'] }), reviewSet({ setId: 'group-3', studyIds: null })];
+  expect(reviewSetMismatchCount(studies, sets)).toBe(3);
+  expect(reviewSetMismatchCount([study({ reviewSet: 'group-1' }), study({ studyId: 'new' })], sets)).toBe(0);
+  expect(visibleStudyIdsForReviewer('a@example.com', studies, sets)).toEqual(['s1', 'cal']);
+  expect(assignedPairForStudy(studies[0]!, sets)).toEqual(['a@example.com', 'b@example.com']);
+  expect(assignedPairForStudy(studies[1]!, sets)).toBeNull();
+  expect(assignedPairForStudy(studies[2]!, sets)).toBeNull();
+  expect(assignedPairForStudy(studies[3]!, [reviewSet({ studyIds: null })])).toBeNull();
+  expect(reviewerSetProgress({ studies, sets, reviewerEmails: ['a@example.com'], fields: [field()], decisions: [decision()], armStructures: new Map() })).toEqual([
+    { email: 'a@example.com', setId: 'calibration', done: 0, total: 1 },
+    { email: 'a@example.com', setId: 'group-1', done: 1, total: 1 },
+    { email: 'a@example.com', setId: 'group-3', done: 0, total: 0 },
+  ]);
 });

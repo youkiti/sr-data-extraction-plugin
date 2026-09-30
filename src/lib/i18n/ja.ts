@@ -121,6 +121,7 @@ export const ja = {
   'reviewSets.unassignedTitle': '未割当の study',
   'reviewSets.unassigned': '未割当',
   'reviewSets.assignAria': '{study} の担当セット',
+  'reviewSets.mismatch': 'Studies の担当列が担当セットの記録と食い違う study が {n} 件あります（担当セットの記録を優先しています）',
   'reviewSets.tampered': 'owner 以外が更新した {n} 行を無視しました。',
   'reviewSets.confirmTitle': '担当セットを分け直す',
   'reviewSets.confirmBody': 'すべてのアクティブな study の担当セットを上書きします。続行しますか？',

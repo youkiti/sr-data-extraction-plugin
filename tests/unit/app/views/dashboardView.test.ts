@@ -343,6 +343,7 @@ test('担当進捗は数値順の全セットを列にし、担当外を横棒�
   });
   state.reviewSets.sets = ['group-10', 'group-2', 'calibration', 'group-1'].map((setId) => ({
     setId,
+    studyIds: ['study-1'],
     reviewerEmails: [],
     seed: '42',
     updatedBy: 'owner@example.com',

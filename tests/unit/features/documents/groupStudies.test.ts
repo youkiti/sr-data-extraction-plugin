@@ -1,3 +1,4 @@
+import { reviewSet } from '../review/reviewSetFixtures';
 import type { DocumentRecord } from '../../../../src/domain/document';
 import type { StudyRecord } from '../../../../src/domain/study';
 import {
@@ -240,6 +241,7 @@ describe('ignoredCandidateKey', () => {
 
 describe('担当セットを引き継ぐグルーピング', () => {
   const base = {
+    reviewSets: [reviewSet({ studyIds: ['s2'] }), reviewSet({ setId: 'group-2', studyIds: ['s1'] })],
     documents: [],
     targetStudyIds: ['s2', 's1'],
     createdBy: 'owner@example.com',
@@ -261,7 +263,8 @@ describe('担当セットを引き継ぐグルーピング', () => {
     expect(
       mergeStudies({
         ...base,
-        studies: sources.map((s) => ({ ...s, reviewSet: 'group-1' })),
+        studies: sources,
+        reviewSets: [reviewSet({ studyIds: ['s1', 's2'] })],
         reviewSet: null,
       }).newStudy.reviewSet,
     ).toBe('group-1');
@@ -282,6 +285,7 @@ describe('担当セットを引き継ぐグルーピング', () => {
           makeStudy({ studyId: 'other', reviewSet: 'group-2' }),
           makeStudy({ reviewSet: 'calibration' }),
         ],
+        reviewSets: [reviewSet({ setId: 'calibration', studyIds: ['study-1'] })],
       }).newStudy.reviewSet,
     ).toBe('calibration');
     expect(separateDocuments({ ...input, studies: [makeStudy()] }).newStudy.reviewSet).toBeNull();

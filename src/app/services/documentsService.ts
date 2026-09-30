@@ -58,6 +58,8 @@ import type {
   TiabHandoffState,
 } from '../store';
 import { showToast } from '../ui/toast';
+import { isReviewSetsActive } from '../../features/review/reviewSets';
+import { requireReviewSets, replaceReviewSetStudies } from './reviewSetService';
 import { t, type MessageKey } from '../../lib/i18n';
 
 export interface DocumentsServiceDeps {
@@ -660,8 +662,11 @@ export async function confirmMerge(
   patchDocuments(store, { merging: true, mergeError: null });
   try {
     const createdBy = (await getCurrentUserEmail(deps.profile)) ?? '';
+    await requireReviewSets(store, deps);
+    const reviewSets = store.getState().reviewSets.sets ?? [];
     const result = mergeStudies({
       studies,
+      reviewSets,
       documents: records,
       targetStudyIds: dialog.studyIds,
       reviewSet: dialog.reviewSet,
@@ -674,6 +679,15 @@ export async function confirmMerge(
     if (result.newStudy.reviewSet !== null)
       await ensureStudyReviewSetColumn(project.spreadsheetId, deps.google);
     await appendStudies(project.spreadsheetId, [result.newStudy], deps.google);
+    if (isReviewSetsActive(resolveActiveStudies(studies, records), reviewSets))
+      await replaceReviewSetStudies(
+        store,
+        deps,
+        result.supersededStudyIds,
+        result.newStudy.studyId,
+        result.newStudy.reviewSet,
+        createdBy,
+      );
     // reassignments は records から生成されるため対応 document は必ず存在する
     const byId = new Map(records.map((doc) => [doc.documentId, doc]));
     for (const reassign of result.reassignments) {

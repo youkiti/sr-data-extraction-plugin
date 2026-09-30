@@ -1637,11 +1637,13 @@ describe('担当セットによる検証対象', () => {
         sets: [
           {
             setId: 'group-1',
+            studyIds: ['study-1'],
             reviewerEmails: [ME, 'other@example.com'],
             seed: null,
             updatedBy: ME,
             updatedAt: 't0',
           },
+          { setId: 'calibration', studyIds: ['cal'], reviewerEmails: [], seed: null, updatedBy: ME, updatedAt: 't0' },
         ],
       },
     });
@@ -1768,7 +1770,7 @@ describe('担当セットによる検証対象', () => {
       expect(readEvidenceRowsMock).not.toHaveBeenCalled();
     },
   );
-  test('owner の読込失敗と空の review_set は従来の全件', async () => {
+  test('owner の読込失敗と空の studyIds は従来の全件', async () => {
     const store = assignedStore('owner');
     store.setState({
       reviewSets: { ...store.getState().reviewSets, sets: null, error: 'セット読込失敗' },
@@ -1784,6 +1786,7 @@ describe('担当セットによる検証対象', () => {
           .documents.studies!.map((study) => ({ ...study, reviewSet: null })),
       },
     });
+    empty.setState({ reviewSets: { ...empty.getState().reviewSets, sets: empty.getState().reviewSets.sets!.map((set) => ({ ...set, studyIds: [] })) } });
     await loadVerifyTargets(empty, makeDeps());
     expect(empty.getState().verify.targets).toHaveLength(4);
   });

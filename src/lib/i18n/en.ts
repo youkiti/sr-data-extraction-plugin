@@ -121,6 +121,7 @@ export const en: Record<MessageKey, string> = {
   'reviewSets.unassignedTitle': 'Unassigned studies',
   'reviewSets.unassigned': 'Unassigned',
   'reviewSets.assignAria': 'Review set for {study}',
+  'reviewSets.mismatch': 'The assignment column in Studies differs from the review set records for {n} studies (review set records take precedence).',
   'reviewSets.tampered': 'Ignored {n} rows updated by someone other than the owner.',
   'reviewSets.confirmTitle': 'Split review sets again',
   'reviewSets.confirmBody': 'This overwrites the review set of every active study. Continue?',

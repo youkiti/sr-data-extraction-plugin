@@ -142,6 +142,7 @@ describe('SHEET_HEADERS', () => {
       'seed',
       'updated_by',
       'updated_at',
+      'study_ids',
     ]);
   });
 

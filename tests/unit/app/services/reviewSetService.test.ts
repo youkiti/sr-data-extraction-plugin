@@ -9,6 +9,7 @@ import {
   readReviewSetProgressMaterials,
   requireReviewSets,
   reviewSetStudies,
+  replaceReviewSetStudies,
   saveReviewSetEmails,
   splitReviewSets,
 } from '../../../../src/app/services/reviewSetService';
@@ -121,7 +122,7 @@ function activeStore(role: ProjectRole = 'owner') {
     },
     reviewSets: {
       ...result.getState().reviewSets,
-      sets: [reviewSet(), reviewSet({ setId: 'calibration', reviewerEmails: [] })],
+      sets: [reviewSet(), reviewSet({ setId: 'calibration', studyIds: ['cal'], reviewerEmails: [] })],
     },
   });
   return result;
@@ -319,6 +320,7 @@ describe('owner の操作', () => {
         setId,
         reviewerEmails: [],
         seed: '2147483648',
+        studyIds: expect.any(Array),
         updatedBy: 'owner@example.com',
         updatedAt: 't9',
       })),
@@ -374,6 +376,7 @@ describe('owner の操作', () => {
           setId: 'group-1',
           reviewerEmails: ['c@example.com', 'd@example.com'],
           seed: null,
+          studyIds: null,
           updatedBy: 'owner@example.com',
           updatedAt: 't9',
         },
@@ -566,6 +569,7 @@ describe('Home と dashboard の担当進捗', () => {
     emptyAssignments.setState({
       documents: { ...emptyAssignments.getState().documents, studies: [study()] },
     });
+    emptyAssignments.setState({ reviewSets: { ...emptyAssignments.getState().reviewSets, sets: [reviewSet({ studyIds: [] })] } });
     await loadDashboard(emptyAssignments, deps);
     expect(emptyAssignments.getState().dashboard.reviewSetProgress).toBeNull();
   });
@@ -773,7 +777,7 @@ test('グループを減らした再分割は旧グループを退役させ、�
   result.setState({
     reviewSets: {
       ...result.getState().reviewSets,
-      sets: [...result.getState().reviewSets.sets!, reviewSet({ setId: 'group-2' })],
+      sets: [...result.getState().reviewSets.sets!, reviewSet({ setId: 'group-2', studyIds: [] })],
     },
   });
   await splitReviewSets(result, deps, { calibrationCount: 1, groupCount: 1 });
@@ -803,4 +807,45 @@ test('セットの再読込中に取得した新しい Studies は破棄しな�
   });
   await loadReviewSets(result, deps, { force: true });
   expect(result.getState().documents.studies).toBe(fresh);
+});
+
+
+test('個別移動・解除は移動元と移動先の所属全体を追記する', async () => {
+  const result = activeStore();
+  result.setState({ reviewSets: { ...result.getState().reviewSets, sets: [
+    reviewSet({ studyIds: ['s1', 'keep'] }),
+    reviewSet({ setId: 'calibration', studyIds: ['cal'], reviewerEmails: [] }),
+    reviewSet({ setId: 'group-2', studyIds: null }),
+  ] } });
+  await assignStudyReviewSet(result, { ...deps, now: undefined }, 's1', 'group-2');
+  expect(appendReviewSetRows).toHaveBeenLastCalledWith('sid', [
+    expect.objectContaining({ setId: 'group-1', studyIds: ['keep'] }),
+    expect.objectContaining({ setId: 'group-2', studyIds: ['s1'] }),
+  ], deps.google);
+  expect(jest.mocked(appendReviewSetRows).mock.calls[0]![1][0]!.updatedAt).toMatch(/^\d{4}-/);
+  await assignStudyReviewSet(result, deps, 's1', null);
+  expect(appendReviewSetRows).toHaveBeenLastCalledWith('sid', [expect.objectContaining({ setId: 'group-2', studyIds: [] })], deps.google);
+  expect(result.getState().reviewSets.sets!.find((set) => set.setId === 'group-1')!.studyIds).toEqual(['keep']);
+});
+
+test('所属未取得の置換は行を作らず、非 owner の置換行は採用しない', async () => {
+  const result = store();
+  result.setState({ reviewSets: { ...result.getState().reviewSets, sets: null } });
+  await replaceReviewSetStudies(result, deps, ['s1'], 'new', null, 'owner@example.com');
+  expect(appendReviewSetRows).toHaveBeenLastCalledWith('sid', [], deps.google);
+  result.setState({ reviewSets: { ...result.getState().reviewSets, sets: [reviewSet(), reviewSet({ setId: 'group-2', studyIds: null })] } });
+  await replaceReviewSetStudies(result, deps, ['s1'], 'new', 'group-1', 'reviewer@example.com');
+  expect(result.getState().reviewSets.sets![0]!.studyIds).toEqual(['s1']);
+});
+
+test('分け直しで旧セットを空にし、保存された所属だけで全研究の割当を再現できる', async () => {
+  const result = activeStore();
+  result.setState({ reviewSets: { ...result.getState().reviewSets, sets: [reviewSet({ setId: 'group-9', studyIds: ['s1', 'cal'] })] } });
+  await splitReviewSets(result, deps, { calibrationCount: 1, groupCount: 1 });
+  await confirmResplit(result, deps);
+  const rows = jest.mocked(appendReviewSetRows).mock.calls[0]![1];
+  expect(rows.find((row) => row.setId === 'group-9')!.studyIds).toEqual([]);
+  const saved = new Map(rows.flatMap((row) => row.studyIds!.map((id) => [id, row.setId])));
+  expect([...saved.keys()].sort()).toEqual(['cal', 's1']);
+  expect(jest.mocked(updateStudyReviewSets).mock.calls[0]![1]).toEqual(expect.arrayContaining([...saved].map(([studyId, reviewSet]) => ({ studyId, reviewSet }))));
 });

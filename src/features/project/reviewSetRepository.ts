@@ -35,6 +35,7 @@ export async function readReviewSetRows(
     seed: row[2] || null,
     updatedBy: row[3] ?? '',
     updatedAt: row[4] ?? '',
+    studyIds: row[5] ? row[5].split(';').map((id) => id.trim()).filter(Boolean) : null,
   }));
 }
 
@@ -58,6 +59,7 @@ export async function appendReviewSetRows(
       row.seed,
       row.updatedBy,
       row.updatedAt,
+      row.studyIds === null ? null : row.studyIds.join(';') || ';',
     ]),
     deps,
   );
@@ -83,6 +85,7 @@ export function foldReviewSets(
     latest.set(row.setId, {
       ...row,
       ...split,
+      studyIds: row.studyIds ?? previous?.studyIds ?? null,
       reviewerEmails: normalizeEmails(row.reviewerEmails),
     });
   }

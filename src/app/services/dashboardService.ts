@@ -8,6 +8,7 @@ import { readVerifyTargetMaterials } from './verifyService';
 
 import {
   isReviewSetsActive,
+  reviewSetForStudy,
   reviewerSetProgress,
   currentReviewSets,
 } from '../../features/review/reviewSets';
@@ -84,7 +85,7 @@ export async function loadDashboard(
         sets = currentReviewSets(material.studies, sets);
         const calibrationIds = new Set(
           material.studies
-            .filter((study) => study.reviewSet === CALIBRATION_SET_ID)
+            .filter((study) => reviewSetForStudy(study, sets) === CALIBRATION_SET_ID)
             .map((study) => study.studyId),
         );
         const emails = new Set(

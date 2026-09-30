@@ -22,6 +22,7 @@ export function reviewSet(overrides: Partial<ReviewSetRow> = {}): ReviewSetRow {
     setId: 'group-1',
     reviewerEmails: ['a@example.com', 'b@example.com'],
     seed: '42',
+    studyIds: ['s1'],
     updatedBy: 'owner@example.com',
     updatedAt: 't0',
     ...overrides,

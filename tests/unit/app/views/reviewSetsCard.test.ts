@@ -30,8 +30,8 @@ function fixture(used = false) {
   const state = createInitialState();
   state.reviewSets.sets = used
     ? [
-        reviewSet({ setId: 'group-10', reviewerEmails: ['c@example.com'], seed: '42' }),
-        reviewSet({ setId: 'calibration', reviewerEmails: [], seed: null }),
+        reviewSet({ setId: 'group-10', studyIds: [], reviewerEmails: ['c@example.com'], seed: '42' }),
+        reviewSet({ setId: 'calibration', studyIds: ['cal'], reviewerEmails: [], seed: null }),
         reviewSet({ seed: null }),
       ]
     : [];
@@ -115,7 +115,7 @@ test('使用中は seed・数値順の表・全員・二人でない注記・未
 });
 test('seed が無い・未割当が無いセットも崩れない', () => {
   const f = fixture(true);
-  f.state.reviewSets.sets = [reviewSet({ setId: 'calibration', seed: null })];
+  f.state.reviewSets.sets = [reviewSet({ setId: 'calibration', studyIds: ['s1'], seed: null })];
   f.state.documents.studies = [study({ reviewSet: 'calibration' })];
   const view = f.render();
   expect(view.querySelector('#review-sets-seed')?.textContent).toBe('乱数種: —');
@@ -178,8 +178,8 @@ test('再分割で退役したグループは表・割当選択肢・既定グ�
   const f = fixture(true);
   f.state.reviewSets.sets = [
     reviewSet({ seed: '2', updatedAt: 't2' }),
-    reviewSet({ setId: 'calibration', seed: '2', updatedAt: 't2' }),
-    reviewSet({ setId: 'group-10', seed: '1', updatedAt: 't1' }),
+    reviewSet({ setId: 'calibration', studyIds: ['cal'], seed: '2', updatedAt: 't2' }),
+    reviewSet({ setId: 'group-10', studyIds: [], seed: '1', updatedAt: 't1' }),
   ];
   const view = f.render();
   expect(
@@ -194,6 +194,17 @@ test('再分割で退役したグループは表・割当選択肢・既定グ�
   f.state.documents.studies = f.state.documents.studies!.map((study) =>
     study.studyId === 's1' ? { ...study, reviewSet: 'group-10' } : study,
   );
+  f.state.reviewSets.sets![0]!.studyIds = [];
+  f.state.reviewSets.sets![2]!.studyIds = ['s1'];
   expect(f.render().querySelector('#review-sets-list')?.textContent).toContain('group-10');
   expect((f.render().querySelector('#review-sets-groups') as HTMLInputElement).value).toBe('2');
+});
+
+
+test('アクティブ study の所属の食い違いだけを owner カードに警告する', () => {
+  const f = fixture(true);
+  expect(f.render().querySelector('#review-sets-mismatch')).toBeNull();
+  f.state.documents.studies![0]!.reviewSet = 'calibration';
+  f.state.documents.studies![3]!.reviewSet = 'group-9';
+  expect(f.render().querySelector('#review-sets-mismatch')?.textContent).toBe('Studies の担当列が担当セットの記録と食い違う study が 1 件あります（担当セットの記録を優先しています）');
 });

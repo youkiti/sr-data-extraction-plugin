@@ -784,6 +784,7 @@ test('owner の担当のみ切り替えは有効時だけ出し、空一覧か�
   state.reviewSets.sets = [
     {
       setId: 'group-1',
+      studyIds: ['study-1'],
       reviewerEmails: [],
       seed: null,
       updatedBy: 'owner@example.com',
@@ -808,5 +809,6 @@ test('owner の担当のみ切り替えは有効時だけ出し、空一覧か�
   expect(renderVerifyView(state, ctx).querySelector('#verify-assigned-only')).toBeNull();
   state.role.role = 'owner';
   state.documents.studies = [makeStudy()];
+  state.reviewSets.sets![0]!.studyIds = [];
   expect(renderVerifyView(state, ctx).querySelector('#verify-assigned-only')).toBeNull();
 });

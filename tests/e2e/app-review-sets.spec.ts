@@ -227,6 +227,9 @@ test('owner は校正 1 件と 1 グループへ分割し、seed と研究の割
   const seed = append.body.values![0]![2]!;
   expect(seed).toMatch(/^\d+$/);
   expect(append.body.values![1]![2]).toBe(seed);
+  const memberships = new Map(append.body.values!.flatMap((row) => row[5]!.split(';').filter(Boolean).map((id) => [id, row[0]])));
+  for (const item of batch.body.data!) expect(memberships.get(item.values[0]![0]!)).toBe(item.values[0]![6]);
+  expect(memberships.size).toBe(4);
   await expect(page.locator('#review-sets-seed')).toContainText(seed);
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
 });
@@ -240,10 +243,10 @@ test('reviewer の検証一覧は校正と担当グループだけで、非 owne
     'reviewer_with_ai',
     ['calibration', 'group-1', 'group-2'],
     [
-      ['calibration', '', '42', OWNER, 't0'],
-      ['group-1', 'r1@example.com;r2@example.com', '42', OWNER, 't0'],
-      ['group-2', 'r3@example.com;r4@example.com', '42', OWNER, 't0'],
-      ['group-2', 'r1@example.com', '', 'r1@example.com', 't1'],
+      ['calibration', '', '42', OWNER, 't0', 'study-1'],
+      ['group-1', 'r1@example.com;r2@example.com', '42', OWNER, 't0', 'study-2'],
+      ['group-2', 'r3@example.com;r4@example.com', '42', OWNER, 't0', 'study-3'],
+      ['group-2', 'r1@example.com', '', 'r1@example.com', 't1', ''],
     ],
   );
   await page.goto('/app/app.html#/verify');
@@ -265,7 +268,7 @@ test('担当ペアが完了済みなら第三者の判定があっても ready �
     OWNER,
     'owner',
     ['group-1'],
-    [['group-1', 'r1@example.com;r2@example.com', '42', OWNER, 't0']],
+    [['group-1', 'r1@example.com;r2@example.com', '42', OWNER, 't0', 'study-1']],
   );
   tabs.StudyData = [[...SHEET_HEADERS.StudyData, 'mortality']];
   for (const email of ['r1@example.com', 'r2@example.com', 'r3@example.com']) {
@@ -290,4 +293,25 @@ test('担当ペアが完了済みなら第三者の判定があっても ready �
   await expect(row.locator('.adjudicate__pair-select')).toHaveCount(0);
   await expect(row.locator('.adjudicate__outside-note')).toContainText('r3@example.com');
   await expect(row.locator('button')).toBeEnabled();
+});
+
+
+test('Studies の担当列を書き換えても担当外は表示せず owner に食い違いを警告する', async ({ page, context }) => {
+  const rows = [
+    ['calibration', '', '42', OWNER, 't0', 'study-1'],
+    ['group-1', 'r1@example.com;r2@example.com', '42', OWNER, 't0', 'study-2'],
+    ['group-2', 'r3@example.com;r4@example.com', '42', OWNER, 't0', 'study-3'],
+  ];
+  const { tabs } = await setup(page, 'r1@example.com', 'reviewer_with_ai', ['calibration', 'group-1', 'group-2'], rows);
+  tabs.Studies![3]![6] = 'calibration';
+  await page.goto('/app/app.html#/verify?study=study-3');
+  await expect(page.locator('#verify-study option')).toHaveCount(2);
+  await expect(page.locator('#verify-study option[value="study-3"]')).toHaveCount(0);
+  await page.goto('/app/app.html#/home');
+  await expect(page.locator('#home-assigned-progress')).toBeVisible();
+  await expect(page.locator('#review-sets-mismatch')).toHaveCount(0);
+  const ownerPage = await context.newPage();
+  await setup(ownerPage, OWNER, 'owner', tabs.Studies!.slice(1).map((row) => row[6]!), rows);
+  await ownerPage.goto('/app/app.html#/home');
+  await expect(ownerPage.locator('#review-sets-mismatch')).toHaveText('Studies の担当列が担当セットの記録と食い違う study が 1 件あります（担当セットの記録を優先しています）');
 });

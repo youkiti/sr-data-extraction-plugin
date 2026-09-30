@@ -2983,6 +2983,7 @@ describe('bootstrapApp: #/verify・#/dashboard', () => {
         sets: [
           {
             setId: 'group-1',
+            studyIds: ['study-1'],
             reviewerEmails: ['other@example.com'],
             seed: null,
             updatedBy: 'owner@example.com',
@@ -3022,6 +3023,7 @@ describe('bootstrapApp: #/verify・#/dashboard', () => {
           sets: [
             {
               setId: 'group-1',
+              studyIds: ['study-1'],
               reviewerEmails: ['tester@example.com'],
               seed: null,
               updatedBy: 'tester@example.com',
@@ -3077,8 +3079,8 @@ describe('bootstrapApp: #/verify・#/dashboard', () => {
         Documents: [[...SHEET_HEADERS.Documents], DOC_ROW],
         ReviewSets: [
           [...SHEET_HEADERS.ReviewSets],
-          ['group-1', 'tester@example.com', '', 'owner@example.com', 't0'],
-          ['group-2', 'tester@example.com', '', 'tampered@example.com', 't0'],
+          ['group-1', 'tester@example.com', '', 'owner@example.com', 't0', 'study-1'],
+          ['group-2', 'tester@example.com', '', 'tampered@example.com', 't0', 'study-1'],
         ],
         Studies: [[...SHEET_HEADERS.Studies], [...STUDY_ROW.slice(0, 6), 'group-1']],
         SchemaVersions: [
@@ -3178,6 +3180,7 @@ describe('bootstrapApp: #/verify・#/dashboard', () => {
         sets: [
           {
             setId: 'calibration',
+            studyIds: ['study-1'],
             reviewerEmails: [],
             seed: null,
             updatedBy: 'tester@example.com',
@@ -4754,6 +4757,7 @@ describe('bootstrapApp: 担当セットの配線', () => {
     state.reviewSets.sets = [
       {
         setId: 'group-1',
+        studyIds: ['study-1'],
         reviewerEmails: ['tester@example.com'],
         seed: '42',
         updatedBy: 'tester@example.com',

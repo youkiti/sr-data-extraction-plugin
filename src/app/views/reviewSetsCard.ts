@@ -7,7 +7,7 @@ import {
 } from '../../domain/reviewSet';
 import type { StudyRecord } from '../../domain/study';
 import { resolveActiveStudies } from '../../features/documents/studyRepository';
-import { currentReviewSets } from '../../features/review/reviewSets';
+import { currentReviewSets, reviewSetForStudy, reviewSetMismatchCount } from '../../features/review/reviewSets';
 import { t } from '../../lib/i18n';
 import type { AppState } from '../store';
 import { el } from '../ui/dom';
@@ -25,7 +25,7 @@ function splitForm(
     attributes: { type: 'number', min: '0', step: '1', required: '' },
   }) as HTMLInputElement;
   calibration.value = String(
-    studies.filter((study) => study.reviewSet === CALIBRATION_SET_ID).length,
+    studies.filter((study) => reviewSetForStudy(study, sets) === CALIBRATION_SET_ID).length,
   );
   const groups = el('input', {
     id: 'review-sets-groups',
@@ -93,7 +93,7 @@ function setRow(
   }
   return el('tr', {}, [
     el('th', { text: set.setId, attributes: { scope: 'row' } }),
-    el('td', { text: String(studies.filter((study) => study.reviewSet === set.setId).length) }),
+    el('td', { text: String(studies.filter((study) => set.studyIds?.includes(study.studyId)).length) }),
     reviewers,
   ]);
 }
@@ -211,6 +211,16 @@ export function renderReviewSetsCard(state: AppState, ctx: ViewContext): HTMLEle
     return card();
   }
   const studies = resolveActiveStudies(documents.studies, documents.records);
+  const mismatchCount = reviewSetMismatchCount(studies, reviewSets.sets);
+  if (mismatchCount > 0)
+    children.push(
+      el('p', {
+        id: 'review-sets-mismatch',
+        className: 'view__notice',
+        attributes: { role: 'alert' },
+        text: t('reviewSets.mismatch', { n: mismatchCount }),
+      }),
+    );
   const sets = currentReviewSets(studies, reviewSets.sets).sort((a, b) =>
     compareReviewSetIds(a.setId, b.setId),
   );
@@ -243,7 +253,7 @@ export function renderReviewSetsCard(state: AppState, ctx: ViewContext): HTMLEle
       ]),
     );
     const unassigned = studies.filter(
-      (study) => study.reviewSet === null || study.reviewSet === '',
+      (study) => reviewSetForStudy(study, sets) === null,
     );
     if (unassigned.length > 0)
       children.push(unassignedStudies(unassigned, sets, reviewSets.saving, ctx));

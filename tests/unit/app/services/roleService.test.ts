@@ -1075,11 +1075,13 @@ describe('担当セットとファイル許可', () => {
     state.reviewSets.sets = [
       {
         setId: 'group-1',
+        studyIds: ['assigned'],
         reviewerEmails: ['r1@example.com'],
         seed: null,
         updatedBy: META.createdBy,
         updatedAt: 't0',
       },
+          { setId: 'calibration', studyIds: ['cal'], reviewerEmails: [], seed: null, updatedBy: META.createdBy, updatedAt: 't0' },
     ];
     state.documents.studies = ['assigned', 'outside', 'cal'].map((studyId, index) => ({
       studyId,
@@ -1150,7 +1152,7 @@ describe('担当セットとファイル許可', () => {
       { granted: [], skipped: ['pdf-assigned', 'pdf-cal'] },
     );
   });
-  test('review_set が全て空なら従来の全件', async () => {
+  test('studyIds が全て空なら従来の全件', async () => {
     const store = assignedStore('reviewer_with_ai');
     store.setState({
       documents: {
@@ -1160,6 +1162,7 @@ describe('担当セットとファイル許可', () => {
           .documents.studies!.map((study) => ({ ...study, reviewSet: null })),
       },
     });
+    store.setState({ reviewSets: { ...store.getState().reviewSets, sets: store.getState().reviewSets.sets!.map((set) => ({ ...set, studyIds: [] })) } });
     await checkMissingFileAccess(store, makeDeps('r1@example.com'));
     expect(store.getState().role.folderAccessMissingCount).toBe(3);
   });

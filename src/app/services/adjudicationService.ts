@@ -64,7 +64,7 @@ import type { DisposablePdfDocument } from '../../features/documents/extractText
 import { readResultsDataRows, readStudyDataSheet } from '../../features/extraction/annotationRepository';
 import { readEvidenceRows } from '../../features/extraction/evidenceRepository';
 import { readRunSchemaVersions } from '../../features/extraction/runRepository';
-import { assignedPairForStudy, isReviewSetsActive } from '../../features/review/reviewSets';
+import { assignedPairForStudy, isReviewSetsActive, reviewSetForStudy } from '../../features/review/reviewSets';
 import {
   getSchemaFieldsByVersion,
   listSchemaVersions,
@@ -810,7 +810,7 @@ async function collectReadyStudyInputs(
   );
   const calibrationStudies = selection
     .map((item) => item.study)
-    .filter((study) => study.reviewSet === CALIBRATION_SET_ID);
+    .filter((study) => reviewSetForStudy(study, sets) === CALIBRATION_SET_ID);
   const armRemaps = new Map<string, CalibrationArmRemap>();
   for (const study of calibrationStudies) {
     const remap = parseArmKeyRemapNote(
@@ -841,6 +841,7 @@ async function collectReadyStudyInputs(
     active && calibrationStudies.length > 0
       ? computeCalibrationAgreement({
           studies: calibrationStudies,
+          sets,
           armRemaps,
           fields,
           studyDataRows: studySheet.rows,
@@ -852,7 +853,7 @@ async function collectReadyStudyInputs(
   const inputs: AgreementStudyInput[] = [];
   for (const item of selection) {
     const { study } = item;
-    if (active && study.reviewSet === CALIBRATION_SET_ID) continue;
+    if (active && reviewSetForStudy(study, sets) === CALIBRATION_SET_ID) continue;
     const pair = resolveAnnotatorPair({
       studyId: study.studyId,
       assignedPair: active ? assignedPairForStudy(study, sets) : null,

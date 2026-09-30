@@ -4,6 +4,7 @@
 // 本モジュールは純粋関数のみ。Sheets への書き込み（Studies 追記 + Documents の study_id 付け替え）は
 // サービス層（documentsService）の責務
 import type { DocumentRecord } from '../../domain/document';
+import type { ReviewSetRow } from '../../domain/reviewSet';
 import type { StudyRecord } from '../../domain/study';
 import { inheritReviewSet } from '../review/reviewSets';
 
@@ -25,6 +26,7 @@ export interface GroupingResult {
 }
 
 export interface MergeStudiesInput {
+  reviewSets?: readonly ReviewSetRow[];
   /** 全 study（作成順。デフォルト値の解決に使う） */
   studies: readonly StudyRecord[];
   /** 全 document（付け替え対象の解決に使う） */
@@ -63,7 +65,7 @@ export function mergeStudies(input: MergeStudiesInput): GroupingResult {
   const newStudy: StudyRecord = {
     studyId: input.newStudyId,
     studyLabel: input.label ?? first.studyLabel,
-    reviewSet: inheritReviewSet(ordered, input.reviewSet),
+    reviewSet: inheritReviewSet(ordered, input.reviewSet, input.reviewSets),
     registrationId:
       input.registrationId !== undefined ? input.registrationId : first.registrationId,
     createdAt: input.createdAt,
@@ -81,6 +83,7 @@ export function mergeStudies(input: MergeStudiesInput): GroupingResult {
 }
 
 export interface SeparateDocumentsInput {
+  reviewSets?: readonly ReviewSetRow[];
   /** 作成順の study 行。未指定は旧呼び出し元との互換用（未割当） */
   studies?: readonly StudyRecord[];
   documents: readonly DocumentRecord[];
@@ -115,6 +118,8 @@ export function separateDocuments(input: SeparateDocumentsInput): GroupingResult
     studyLabel: input.label,
     reviewSet: inheritReviewSet(
       (input.studies ?? []).filter((study) => supersededStudyIds.includes(study.studyId)),
+      undefined,
+      input.reviewSets,
     ),
     registrationId: input.registrationId ?? null,
     createdAt: input.createdAt,

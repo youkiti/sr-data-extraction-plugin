@@ -46,6 +46,7 @@ describe('担当セットの読み込み', () => {
           '42',
           'owner@example.com',
           't0',
+          's1',
         ],
         ['calibration', '', '', 'owner@example.com', 't1'],
         [],
@@ -53,8 +54,8 @@ describe('担当セットの読み込み', () => {
     );
     await expect(readReviewSetRows('sid', deps)).resolves.toEqual([
       reviewSet({ reviewerEmails: ['b@example.com', 'a@example.com'] }),
-      reviewSet({ setId: 'calibration', reviewerEmails: [], seed: null, updatedAt: 't1' }),
-      reviewSet({ setId: '', reviewerEmails: [], seed: null, updatedBy: '', updatedAt: '' }),
+      reviewSet({ setId: 'calibration', studyIds: null, reviewerEmails: [], seed: null, updatedAt: 't1' }),
+      reviewSet({ setId: '', studyIds: null, reviewerEmails: [], seed: null, updatedBy: '', updatedAt: '' }),
     ]);
   });
   test('ヘッダ欠落と不正ヘッダはエラー', async () => {
@@ -87,8 +88,8 @@ describe('担当セットの追記', () => {
     const [url, init] = deps.fetch.mock.calls[1] as [string, RequestInit];
     expect(decodeURIComponent(url)).toContain('ReviewSets!A1:append');
     expect(JSON.parse(String(init.body)).values).toEqual([
-      ['group-1', 'a@example.com;b@example.com', '42', 'owner@example.com', 't0'],
-      ['calibration', '', '', 'owner@example.com', 't0'],
+      ['group-1', 'a@example.com;b@example.com', '42', 'owner@example.com', 't0', 's1'],
+      ['calibration', '', '', 'owner@example.com', 't0', 's1'],
     ]);
   });
   test('旧プロジェクトはタブ作成・ヘッダ書き込み後に追記する', async () => {
@@ -158,4 +159,20 @@ test('担当者の編集は分割 seed とその日時を保持し、次の分�
       .sets,
   ).toEqual([reviewSet({ seed: '99', updatedAt: 't11' })]);
   expect(foldReviewSets([edit], 'owner@example.com').sets).toEqual([edit]);
+});
+
+
+test('所属の一覧・引き継ぎ・空集合を保存後の再読込と畳み込みで区別する', async () => {
+  const rows = [reviewSet({ studyIds: ['s1', 's2'] }), reviewSet({ seed: null, studyIds: null }), reviewSet({ studyIds: [] })];
+  const deps = makeDeps(['ReviewSets']);
+  await appendReviewSetRows('sid', rows, deps);
+  const values = JSON.parse(String(deps.fetch.mock.calls[1]![1].body)).values as string[][];
+  expect(values.map((row) => row[5])).toEqual(['s1;s2', '', ';']);
+  const read = await readReviewSetRows('sid', makeDeps(['ReviewSets'], [HEADER, ...values]));
+  expect(read.map((row) => row.studyIds)).toEqual([['s1', 's2'], null, []]);
+  expect(foldReviewSets(read.slice(0, 2), 'owner@example.com').sets[0]!.studyIds).toEqual(['s1', 's2']);
+  expect(foldReviewSets(read, 'owner@example.com').sets[0]!.studyIds).toEqual([]);
+  expect(foldReviewSets([rows[1]!], 'owner@example.com').sets[0]!.studyIds).toBeNull();
+  expect(foldReviewSets([rows[0]!, { ...rows[2]!, updatedBy: 'reviewer' }, rows[1]!], 'owner@example.com').sets[0]!.studyIds).toEqual(['s1', 's2']);
+  await expect(readReviewSetRows('sid', makeDeps(['ReviewSets'], [HEADER.slice(0, 5)]))).rejects.toThrow('study_ids');
 });

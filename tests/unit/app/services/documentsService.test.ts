@@ -1,3 +1,6 @@
+import { reviewSet as makeReviewSet } from '../../features/review/reviewSetFixtures';
+import { appendReviewSetRows } from '../../../../src/features/project/reviewSetRepository';
+jest.mock('../../../../src/features/project/reviewSetRepository', () => ({ ...jest.requireActual('../../../../src/features/project/reviewSetRepository'), appendReviewSetRows: jest.fn() }));
 // documentsService（S3 グルーピング）のテスト。lib/google / features/documents の I/O は
 // モジュールモックで置き換え、studyRepository の純粋関数（resolveActiveStudies / studyLabelMap）は
 // requireActual で本物を使う。ストア遷移とトースト文言を検証する
@@ -1605,6 +1608,7 @@ describe('統合時の担当セット継承', () => {
         ],
         records: [makeDoc(), makeDoc({ documentId: 'doc-2', studyId: 'study-2' })],
       });
+      store.setState({ reviewSets: { ...store.getState().reviewSets, sets: [makeReviewSet({ studyIds: ['study-1'] }), makeReviewSet({ setId: 'group-2', studyIds: ['study-2'] }), makeReviewSet({ setId: 'calibration', studyIds: [] })] } });
       openMergeCandidate(store, ['study-2', 'study-1']);
       updateMergeDialog(store, { reviewSet });
       mockAppendStudies.mockResolvedValue(undefined);
@@ -1617,6 +1621,12 @@ describe('統合時の担当セット継承', () => {
         [expect.objectContaining({ reviewSet: reviewSet === undefined ? 'group-1' : reviewSet })],
         expect.anything(),
       );
+      expect(appendReviewSetRows).toHaveBeenCalledWith('sheet-1', expect.arrayContaining([expect.objectContaining({ setId: 'group-2', studyIds: [] })]), expect.anything());
+      const rows = jest.mocked(appendReviewSetRows).mock.calls[0]![1];
+      expect(rows.every((row) => !row.studyIds!.includes('study-1') && !row.studyIds!.includes('study-2'))).toBe(true);
+      const destination = reviewSet === undefined ? 'group-1' : reviewSet;
+      expect(rows.flatMap((row) => row.studyIds!)).toEqual(destination === null ? [] : ['study-new']);
+      if (destination !== null) expect(rows.find((row) => row.setId === destination)!.studyIds).toEqual(['study-new']);
       if (reviewSet === null) expect(ensureStudyReviewSetColumn).not.toHaveBeenCalled();
       else {
         expect(ensureStudyReviewSetColumn).toHaveBeenCalledWith('sheet-1', expect.anything());

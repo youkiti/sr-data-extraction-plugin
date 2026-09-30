@@ -283,13 +283,16 @@ async function executeSplit(
       ...Array.from({ length: input.groupCount }, (_, i) => groupSetId(i + 1)),
     ];
     const updatedAt = (deps.now ?? nowIso8601)();
-    const rows = ids.map((setId): ReviewSetRow => ({
-      setId,
-      reviewerEmails: existing.find((set) => set.setId === setId)?.reviewerEmails ?? [],
-      seed,
-      updatedBy: email,
-      updatedAt,
-    }));
+    const rows = [...new Set([...ids, ...existing.map((set) => set.setId)])].map(
+      (setId): ReviewSetRow => ({
+        setId,
+        reviewerEmails: existing.find((set) => set.setId === setId)?.reviewerEmails ?? [],
+        seed: ids.includes(setId) ? seed : null,
+        studyIds: [...assignments].filter(([, assigned]) => assigned === setId).map(([id]) => id),
+        updatedBy: email,
+        updatedAt,
+      }),
+    );
     try {
       await appendReviewSetRows(spreadsheetId, rows, deps.google);
       // updateStudyReviewSets がヘッダー移行を済ませてから全対象を一括更新する。
@@ -360,6 +363,7 @@ export async function saveReviewSetEmails(
       setId,
       reviewerEmails: [...new Set(normalized)],
       seed: null,
+      studyIds: null,
       updatedBy: email,
       updatedAt: (deps.now ?? nowIso8601)(),
     };
@@ -373,7 +377,7 @@ export async function assignStudyReviewSet(
   studyId: string,
   setId: string | null,
 ): Promise<void> {
-  await save(store, deps, async (spreadsheetId) => {
+  await save(store, deps, async (spreadsheetId, email) => {
     const sets = store.getState().reviewSets.sets!;
     if (setId !== null && !sets.some((set) => set.setId === setId))
       throw new Error(t('reviewSets.unknownSet'));
@@ -381,6 +385,7 @@ export async function assignStudyReviewSet(
       store.getState().documents.studies ?? (await readStudies(spreadsheetId, deps.google));
     if (!studies.some((study) => study.studyId === studyId))
       throw new Error(t('reviewSets.unknownStudy'));
+    await replaceReviewSetStudies(store, deps, [studyId], studyId, setId, email);
     await updateStudyReviewSets(spreadsheetId, [{ studyId, reviewSet: setId }], deps.google);
     store.setState({
       documents: {
@@ -391,4 +396,32 @@ export async function assignStudyReviewSet(
       },
     });
   });
+}
+
+/** 統合・個別割当で影響するセットの所属を追記し、派生値を破棄する */
+export async function replaceReviewSetStudies(
+  store: Store,
+  deps: Pick<ReviewSetServiceDeps, 'google' | 'now'>,
+  sourceIds: readonly string[],
+  studyId: string,
+  setId: string | null,
+  email: string,
+): Promise<void> {
+  const state = store.getState();
+  const sets = state.reviewSets.sets ?? [];
+  const rows = sets
+    .filter((set) => set.setId === setId || set.studyIds?.some((id) => sourceIds.includes(id)))
+    .map((set): ReviewSetRow => ({
+      ...set,
+      seed: null,
+      studyIds: [
+        ...(set.studyIds ?? []).filter((id) => !sourceIds.includes(id)),
+        ...(set.setId === setId ? [studyId] : []),
+      ],
+      updatedBy: email,
+      updatedAt: (deps.now ?? nowIso8601)(),
+    }));
+  await appendReviewSetRows(state.currentProject!.spreadsheetId, rows, deps.google);
+  patch(store, { sets: foldReviewSets([...sets, ...rows], sets[0]?.updatedBy ?? email).sets });
+  invalidateAssignments(store);
 }

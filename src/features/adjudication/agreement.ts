@@ -26,9 +26,10 @@
 import { remapArmEntityKey } from './armMatch';
 import type { StudyDataRow, ResultsDataRow } from '../../domain/annotation';
 import type { Decision } from '../../domain/decision';
-import { CALIBRATION_SET_ID } from '../../domain/reviewSet';
+import { CALIBRATION_SET_ID, type ReviewSetRow } from '../../domain/reviewSet';
 import type { StudyRecord } from '../../domain/study';
 import type { SchemaField } from '../../domain/schemaField';
+import { reviewSetForStudy } from '../review/reviewSets';
 import { buildCsv } from '../export/csvEncode';
 import { buildAdjudicationCells, type AdjudicationCell } from './cellMatch';
 import { resolveAnnotatorPair } from './pairResolution';
@@ -227,6 +228,7 @@ export interface CalibrationArmRemap {
 }
 
 export interface CalibrationAgreementInput {
+  sets: readonly ReviewSetRow[];
   /** 保存された群対応は、その対応を確定したペアにだけ適用する */
   armRemaps?: ReadonlyMap<string, CalibrationArmRemap>;
   studies: readonly StudyRecord[];
@@ -254,7 +256,7 @@ export function computeCalibrationAgreement(
     { annotatorA: string; annotatorB: string; studies: AgreementStudyInput[] }
   >();
   for (const study of input.studies) {
-    if (study.reviewSet !== CALIBRATION_SET_ID) continue;
+    if (reviewSetForStudy(study, input.sets) !== CALIBRATION_SET_ID) continue;
     const human = (row: StudyDataRow | ResultsDataRow | Decision): boolean =>
       row.studyId === study.studyId &&
       (row.annotatorType === 'human_with_ai' || row.annotatorType === 'human_independent');

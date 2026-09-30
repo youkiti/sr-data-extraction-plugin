@@ -17,10 +17,25 @@ export function isReviewSetsActive(
   studies: readonly StudyRecord[],
   sets: readonly ReviewSetRow[],
 ): boolean {
-  return (
-    sets.length > 0 &&
-    studies.some((study) => study.reviewSet !== null && study.reviewSet.trim() !== '')
-  );
+  return studies.some((study) => reviewSetForStudy(study, sets) !== null);
+}
+
+/** 所属の正は owner の担当セット記録に置く */
+export function reviewSetForStudy(
+  study: StudyRecord,
+  sets: readonly ReviewSetRow[],
+): string | null {
+  return sets.find((set) => set.studyIds?.includes(study.studyId))?.setId ?? null;
+}
+
+/** 呼び出し側でアクティブな study に絞る */
+export function reviewSetMismatchCount(
+  studies: readonly StudyRecord[],
+  sets: readonly ReviewSetRow[],
+): number {
+  return studies.filter(
+    (study) => (study.reviewSet?.trim() || null) !== reviewSetForStudy(study, sets),
+  ).length;
 }
 
 /** 最新の分割に含まれるグループと、現在も研究が割り当てられたグループを残す */
@@ -37,7 +52,7 @@ export function currentReviewSets(
         : previous,
     null,
   );
-  const assigned = new Set(studies.map((study) => study.reviewSet));
+  const assigned = new Set(studies.map((study) => reviewSetForStudy(study, sets)));
   return sets.filter(
     (set) =>
       !isGroupSetId(set.setId) ||
@@ -100,25 +115,19 @@ export function visibleStudyIdsForReviewer(
 ): string[] {
   const assigned = new Set(
     currentReviewSets(studies, sets)
-      .filter((set) => set.reviewerEmails.includes(email))
-      .map((set) => set.setId),
+      .filter((set) => set.setId === CALIBRATION_SET_ID || set.reviewerEmails.includes(email))
+      .flatMap((set) => set.studyIds ?? []),
   );
-  return studies
-    .filter(
-      (study) =>
-        study.reviewSet === CALIBRATION_SET_ID ||
-        (study.reviewSet !== null && assigned.has(study.reviewSet)),
-    )
-    .map((study) => study.studyId);
+  return studies.filter((study) => assigned.has(study.studyId)).map((study) => study.studyId);
 }
 
 export function assignedPairForStudy(
   study: StudyRecord,
   sets: readonly ReviewSetRow[],
 ): [string, string] | null {
-  if (study.reviewSet === null || !isGroupSetId(study.reviewSet)) return null;
-  const set = currentReviewSets([study], sets).find((row) => row.setId === study.reviewSet);
-  if (set === undefined || set.reviewerEmails.length !== 2) return null;
+  const set = sets.find((row) => row.studyIds?.includes(study.studyId));
+  if (set === undefined || !isGroupSetId(set.setId) || set.reviewerEmails.length !== 2)
+    return null;
   return [...set.reviewerEmails].sort((a, b) => a.localeCompare(b)) as [string, string];
 }
 
@@ -126,9 +135,10 @@ export function assignedPairForStudy(
 export function inheritReviewSet(
   sourceStudies: readonly StudyRecord[],
   chosen?: string | null,
+  sets: readonly ReviewSetRow[] = [],
 ): string | null {
-  const first = sourceStudies[0]?.reviewSet ?? null;
-  if (sourceStudies.every((study) => study.reviewSet === first)) return first;
+  const first = sourceStudies[0] === undefined ? null : reviewSetForStudy(sourceStudies[0], sets);
+  if (sourceStudies.every((study) => reviewSetForStudy(study, sets) === first)) return first;
   return chosen === undefined ? first : chosen;
 }
 
@@ -158,7 +168,7 @@ export function reviewerSetProgress(input: ReviewerSetProgressInput): ReviewerSe
   for (const email of new Set(input.reviewerEmails)) {
     for (const set of sets) {
       if (set.setId !== CALIBRATION_SET_ID && !set.reviewerEmails.includes(email)) continue;
-      const studies = input.studies.filter((study) => study.reviewSet === set.setId);
+      const studies = input.studies.filter((study) => reviewSetForStudy(study, input.sets) === set.setId);
       const done = studies.filter(
         (study) =>
           computeAnnotatorProgress(

@@ -1461,6 +1461,7 @@ describe('統合時の担当セット選択', () => {
     });
     state.reviewSets.sets = ['group-1', 'group-2'].map((setId) => ({
       setId,
+      studyIds: [setId === 'group-1' ? 'study-2' : 'study-1'],
       reviewerEmails: [],
       seed: null,
       updatedBy: 'owner@example.com',
@@ -1492,7 +1493,8 @@ describe('統合時の担当セット選択', () => {
   test('同じ値・未有効・すべて未割当なら選択欄を出さない', () => {
     const { ctx } = makeCtx();
     const state = fixture();
-    state.documents.studies![1]!.reviewSet = 'group-2';
+    state.reviewSets.sets![0]!.studyIds = [];
+    state.reviewSets.sets![1]!.studyIds = ['study-1', 'study-2'];
     expect(renderDocumentsView(state, ctx).querySelector('#merge-review-set')).toBeNull();
     state.documents.studies![1]!.reviewSet = null;
     state.reviewSets.sets = [];
@@ -1500,6 +1502,7 @@ describe('統合時の担当セット選択', () => {
     state.reviewSets.sets = [
       {
         setId: 'group-2',
+        studyIds: [],
         reviewerEmails: [],
         seed: null,
         updatedBy: 'owner@example.com',
@@ -1513,6 +1516,7 @@ describe('統合時の担当セット選択', () => {
     const { ctx } = makeCtx();
     const state = fixture();
     state.documents.studies![1]!.reviewSet = null;
+    state.reviewSets.sets![0]!.studyIds = [];
     expect(
       renderDocumentsView(state, ctx).querySelectorAll('#merge-review-set option'),
     ).toHaveLength(2);
