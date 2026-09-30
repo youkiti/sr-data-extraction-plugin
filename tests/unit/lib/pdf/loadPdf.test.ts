@@ -23,7 +23,7 @@ beforeEach(() => {
 
 describe('configurePdfWorker', () => {
   test('未設定なら chrome.runtime.getURL で worker を解決する（同梱・CDN 不可）', () => {
-    configurePdfWorker();
+    configurePdfWorker(GlobalWorkerOptions);
     expect(GlobalWorkerOptions.workerSrc).toBe(
       `chrome-extension://test-extension-id/${PDF_WORKER_ASSET}`,
     );
@@ -31,7 +31,7 @@ describe('configurePdfWorker', () => {
 
   test('設定済みなら上書きしない（E2E の chrome スタブ差し替えを壊さない）', () => {
     GlobalWorkerOptions.workerSrc = '/pdf.worker.min.mjs';
-    configurePdfWorker();
+    configurePdfWorker(GlobalWorkerOptions);
     expect(GlobalWorkerOptions.workerSrc).toBe('/pdf.worker.min.mjs');
   });
 });
@@ -97,5 +97,40 @@ describe('loadDisposablePdf', () => {
     expect(doc.getPage).toHaveBeenCalledWith(1);
     await disposable.destroy();
     expect(destroy).toHaveBeenCalled();
+  });
+});
+
+describe('遅延ロード', () => {
+  test('利用前にはロードせず、同時呼び出しと次回呼び出しでロード結果を共有する', async () => {
+    jest.resetModules();
+    const factory = jest.fn(() => ({
+      GlobalWorkerOptions: { workerSrc: '' },
+      getDocument: jest.fn().mockReturnValue({ promise: Promise.resolve({ numPages: 1 }) }),
+    }));
+    jest.doMock('pdfjs-dist', factory);
+    const wrapper = await import('../../../../src/lib/pdf/loadPdf');
+    expect(factory).not.toHaveBeenCalled();
+    await Promise.all([
+      wrapper.loadPdf(new ArrayBuffer(1)),
+      wrapper.loadPdf(new ArrayBuffer(2)),
+    ]);
+    await wrapper.loadPdf(new ArrayBuffer(3));
+    expect(factory).toHaveBeenCalledTimes(1);
+  });
+
+  test('チャンク取得失敗を呼び出し元へ伝え、次回は再試行する', async () => {
+    jest.resetModules();
+    const factory = jest.fn(() => ({
+      GlobalWorkerOptions: { workerSrc: '' },
+      getDocument: jest.fn().mockReturnValue({ promise: Promise.resolve({ numPages: 1 }) }),
+    }));
+    factory.mockImplementationOnce(() => {
+      throw new Error('chunk load failed');
+    });
+    jest.doMock('pdfjs-dist', factory);
+    const wrapper = await import('../../../../src/lib/pdf/loadPdf');
+    await expect(wrapper.loadPdf(new ArrayBuffer(1))).rejects.toThrow('chunk load failed');
+    await expect(wrapper.loadPdf(new ArrayBuffer(2))).resolves.toEqual({ numPages: 1 });
+    expect(factory).toHaveBeenCalledTimes(2);
   });
 });

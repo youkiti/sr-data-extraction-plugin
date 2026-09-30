@@ -2,7 +2,22 @@
 // worker は dist/ に同梱した pdf.worker.min.mjs を chrome.runtime.getURL で解決する
 // （CDN 参照不可・MV3 CSP 準拠。experiments/anchor-spike の MV3 検証で確定した方式）。
 // E2E では chrome スタブ側が getURL を相対パスへ差し替える（test-strategy.md §2.1）
-import { GlobalWorkerOptions, getDocument, type PDFDocumentProxy } from 'pdfjs-dist';
+import type { PDFDocumentProxy } from 'pdfjs-dist';
+
+type PdfjsApi = typeof import('pdfjs-dist');
+
+let pdfjsLoad: Promise<PdfjsApi> | null = null;
+
+/** 初回利用時だけロードし、取得失敗時は次の呼び出しで再試行する */
+function loadPdfjs(): Promise<PdfjsApi> {
+  if (pdfjsLoad === null) {
+    pdfjsLoad = import(/* webpackChunkName: "pdfjs" */ 'pdfjs-dist');
+    pdfjsLoad.catch(() => {
+      pdfjsLoad = null;
+    });
+  }
+  return pdfjsLoad;
+}
 
 export const PDF_WORKER_ASSET = 'pdf.worker.min.mjs';
 
@@ -45,7 +60,7 @@ export interface DisposablePdf {
 }
 
 /** worker URL を未設定のときだけ解決する（複数回呼んでも安全） */
-export function configurePdfWorker(): void {
+export function configurePdfWorker(GlobalWorkerOptions: PdfjsApi['GlobalWorkerOptions']): void {
   if (GlobalWorkerOptions.workerSrc === '') {
     GlobalWorkerOptions.workerSrc = chrome.runtime.getURL(PDF_WORKER_ASSET);
   }
@@ -56,7 +71,8 @@ export function configurePdfWorker(): void {
  * 呼び出し側は使用後に `doc.loadingTask.destroy()` を呼ぶこと（メモリ解放）
  */
 export async function loadPdf(data: ArrayBuffer): Promise<PDFDocumentProxy> {
-  configurePdfWorker();
+  const { GlobalWorkerOptions, getDocument } = await loadPdfjs();
+  configurePdfWorker(GlobalWorkerOptions);
   return getDocument({
     data: new Uint8Array(data),
     cMapUrl: chrome.runtime.getURL(PDF_CMAP_DIR),

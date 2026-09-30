@@ -250,6 +250,7 @@ anchorQuote() ──文字範囲──▶ highlightMap() ──span 座標──
   `src/demo/googleDeps.ts` / `src/demo/auth.ts` / `src/demo/identity.ts` / `src/demo/picker.ts`
   へビルド設定だけで差し替わる（**既存 `src/` の実装は 1 行も変更しない**）。詳細は
   `src/demo/*` 各ファイル冒頭のコメントと [video/fixtures/README.md](../video/fixtures/README.md) を参照
+- `mammoth` / `pdfjs-dist` 本体は dynamic import で `dist/chunks/mammoth.js` / `dist/chunks/pdfjs.js` へ分割し、docx テキスト抽出 / PDF ロードの初回呼び出し時に取得する。ロード中の Promise は共有し、取得失敗時には次回呼び出しで再試行する。
 - `pdfjs-dist` の **worker（`pdf.worker.min.mjs`）は `copy-webpack-plugin` で `dist/` へ同梱**（CDN 参照不可、MV3 CSP 準拠）。`GlobalWorkerOptions.workerSrc` は `chrome.runtime.getURL()` で解決
 - **既定 CMap（`cmaps/*.bcmap`）も同様に `dist/cmaps/` へ同梱**し、`getDocument` の `cMapUrl` に `chrome.runtime.getURL('cmaps/')` を渡す（issue #95: 和文 PDF の CID フォントは既定 CMap がないとテキスト抽出がほぼ空になる）
 - **画像デコーダの wasm（`dist/wasm/`）・標準 14 フォント（`dist/standard_fonts/`）・既定 ICC プロファイル（`dist/iccs/`）も同梱**し、`getDocument` にそれぞれ `wasmUrl` / `standardFontDataUrl` / `iccUrl` を渡す。pdfjs-dist 6.x は CCITTFax/JBIG2・JPEG2000・ICC のデコーダが wasm 実装になっており、`wasmUrl` 未指定だと `Jbig2Error` 等で初期化に失敗し、スキャン PDF の該当ページ（CCITTFaxDecode 等）が白紙になる（テキスト層は無事なためハイライトだけ出る症状）。`quickjs-eval.*`（PDF 内 JavaScript の隔離実行用）は本拡張が使わないため同梱から除外する。manifest には `content_security_policy.extension_pages` に `'wasm-unsafe-eval'` を追加している
@@ -257,7 +258,9 @@ anchorQuote() ──文字範囲──▶ highlightMap() ──span 座標──
 
 ### 3.2 npm スクリプト
 
-`dev` / `watch` / `build` / `build:demo` / `pack:release` / `lint` / `lint:css` / `typecheck` / `test` / `test:watch` / `test:coverage` / `test:e2e` / `test:e2e:ui` / `manual:check` / `video:setup` / `video:record` / `video:tts` / `video:assemble`。
+`dev` / `watch` / `build` / `bundle:report` / `build:demo` / `pack:release` / `lint` / `lint:css` / `typecheck` / `test` / `test:watch` / `test:coverage` / `test:e2e` / `test:e2e:ui` / `manual:check` / `video:setup` / `video:record` / `video:tts` / `video:assemble`。
+
+`bundle:report` は `npm run bundle:report -- /tmp/stats.json` で webpack stats のエントリ資産・チャンク別に npm パッケージと `src/` の寄与を表示する。stats は本番ビルドに `--profile --json=/tmp/stats.json` を追加して生成する（本番用の `WEBAUTH_CLIENT_ID` が必要）。資産サイズは圧縮後、モジュールの寄与は圧縮前の KB（1024 bytes）で、合計値は一致しない。
 
 `pack:release`（= `tools/release/pack.ps1`）は Chrome ウェブストア提出用 zip を作る。`npm run build` 済みの `dist/` を入力に、事前検証 → `release/*.zip` の全削除（過去ビルドは残さない）→ manifest からの `key` 除去 → zip 化 → 展開し直しての検証、までを行い、検証 NG なら非 0 終了する。運用手順は `.claude/skills/release-build/SKILL.md` が正典。
 
