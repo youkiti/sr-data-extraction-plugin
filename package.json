@@ -11,6 +11,7 @@
     "dev": "webpack --mode development",
     "watch": "webpack --mode development --watch",
     "build": "webpack --mode production",
+    "bundle:report": "node tools/bundle/sizeReport.mjs",
     "build:demo": "webpack --mode development --env demo",
     "release": "pwsh -NoProfile -File tools/release/release.ps1",
     "pack:release": "pwsh -NoProfile -File tools/release/pack.ps1",
