@@ -16,7 +16,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 | ドキュメント | 内容 |
 |---|---|
-| [docs/requirements.md](docs/requirements.md) | 要件定義書 v0.17。データ設計（Sheets 15 タブ、study / document 分離、annotator 軸、ArmStructures、rob_domain）・機能要件（S1〜S12）・quote アンカリング方式・未決定事項の解決記録 |
+| [docs/requirements.md](docs/requirements.md) | 要件定義書 v0.28。データ設計（Sheets 15 タブ、study / document 分離、annotator 軸、ArmStructures、rob_domain）・機能要件（S1〜S12）・quote アンカリング方式・未決定事項の解決記録 |
 | [docs/remaining-work-plan.md](docs/remaining-work-plan.md) | 残作業の正典。M1〜M4 の issue index（クローズ済みの履歴）+ 実機テスト要否一覧（現行の残作業）+ 不採用の記録 |
 | [docs/architecture.md](docs/architecture.md) | `src/` 構成・ビルド・テスト方針 |
 | [docs/ui-states.md](docs/ui-states.md) | UI 状態マトリクス（target spec。実装より先に spec を書く運用） |
@@ -62,7 +62,7 @@ MIT ライセンスの OSS Chrome 拡張 **sr-data-extraction-plugin**。SR ツ�
 - **quote アンカリング**（§5）が技術的中核: 正規化 → exact / normalized / fuzzy / failed の段階マッチ。`anchor_status` を計測対象にする
 - **automation bias 対策**: human 行は空セル（未検証）から開始、accept にも 1 操作必須、未検証セル残存時のエクスポート警告
 - **著作権**: 学術研究目的のデータ抽出（TDM）は著作権法上の権利制限規定（30 条の 4 等）により適法との整理（確認 UI・記録列・注意書きは持たない）。取り込み画面の注意書きは PDF の外部送信先（LLM API のみ）の説明だけを表示
-- 既定 LLM モデル（Q8）: **工場出荷の既定は `gemini-3.5-flash`**（`src/lib/storage/settingsStore.ts` の `FACTORY_DEFAULT_MODEL`。Options 未設定時に S5 初期値へ注入 → S6/S7 へ伝播）。実データ抽出ベンチマーク（`experiments/extraction-benchmark-real/`、不眠 SR 実 gold・非公開）で最良の項目正確度だったため採用（初回 2026-07-06 REPORT.md: 成功 run 72%）。extract-data プロンプト（`EXTRACT_DATA_PROMPT_VERSION`）はセクション並び替え（#89・版数 5）で暗黙 prefix キャッシュ ≈79% ヒットを実測、arm completeness 追記（#97・版数 6）で flash 72.3% / flash-lite 68.4%（v5 で悪化した lite の arm omission を解消。2026-07-13 REPORT-20260713-prompt-v5-ab.md / REPORT-20260713-prompt-v6-lite-fix.md）。版数 7 で原文言語の保持（日本語論文対応、issue #95 層 2）、版数 8 で図表の高精度読み取りモードを追加したが、実 gold ベンチで効果がほぼゼロ（表由来項目の正確度 +0.1pp、全体 +0.2pp）な一方で入力トークン +56%・コスト +14% だったため、2026-07-29（issue #176）に不採用として撤去した（requirements.md v0.16）。現行版数は 9。事前登録ベンチ（`experiments/extraction-benchmark/`）は別建てで凍結保持
+- 既定 LLM モデル（Q8）: **工場出荷の既定は `gemini-3.8-flash`**（`src/lib/storage/settingsStore.ts` の `FACTORY_DEFAULT_MODEL`。Options 未設定時に S5 初期値へ注入 → S6/S7 へ伝播）。2026-10-04 に `gemini-3.5-flash` から切り替えた（issue #295・PR #296）。根拠は実データ抽出ベンチマーク（`experiments/extraction-benchmark-real/`、不眠 SR 実 gold・非公開）の 2026-09-21 の run（各 1 反復）: 項目正確度 75.4% 対 72.5%（差は誤差の範囲）、1 論文の費用 0.07 対 0.23 USD、応答時間 32 対 75 秒、引用の照合成功率は断片照合（#294）を入れた再照合で 92.3% 対 94.7%。3 反復での比べ直しと、抽出以外の skill での確認は未実施（経緯は requirements.md の Q8）。3.5-flash は初回ベンチ（2026-07-06 REPORT.md: 成功 run 72%）で最良の項目正確度だったため採用していた。extract-data プロンプト（`EXTRACT_DATA_PROMPT_VERSION`）はセクション並び替え（#89・版数 5）で暗黙 prefix キャッシュ ≈79% ヒットを実測、arm completeness 追記（#97・版数 6）で flash 72.3% / flash-lite 68.4%（v5 で悪化した lite の arm omission を解消。2026-07-13 REPORT-20260713-prompt-v5-ab.md / REPORT-20260713-prompt-v6-lite-fix.md）。版数 7 で原文言語の保持（日本語論文対応、issue #95 層 2）、版数 8 で図表の高精度読み取りモードを追加したが、実 gold ベンチで効果がほぼゼロ（表由来項目の正確度 +0.1pp、全体 +0.2pp）な一方で入力トークン +56%・コスト +14% だったため、2026-07-29（issue #176）に不採用として撤去した（requirements.md v0.16）。版数 10 で `max_quotes` を持つ項目の複数引用（issue #275）を追加。現行版数は 10。事前登録ベンチ（`experiments/extraction-benchmark/`）は別建てで凍結保持
 
 ## サブモジュール
 
