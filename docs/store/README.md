@@ -73,13 +73,18 @@ Chrome Web Store API v2 で zip のアップロード・審査提出・公開版
 
 1. GCP プロジェクトを選ぶ（拡張本体の OAuth 同意画面と分けるため、リリース用に別プロジェクトを推奨）: https://console.cloud.google.com/projectcreate
 2. Chrome Web Store API を有効にする: https://console.cloud.google.com/apis/library/chromewebstore.googleapis.com
-3. OAuth 同意画面を「外部」で設定し、テストユーザーに発行元アカウントのアドレスを追加する（追加しないと承認時に「エラー 403: access_denied」になる）: https://console.cloud.google.com/auth/audience
+3. OAuth 同意画面を「外部」で設定し、公開ステータスを「本番環境」にする（「テスト中」のままだとリフレッシュトークンが 7 日で失効する）。
+   1. 「ブランディング」（https://console.cloud.google.com/auth/branding）で、アプリケーションのホームページに `https://youkiti.github.io/sr-data-extraction-plugin/`、プライバシーポリシーのリンクに `https://youkiti.github.io/sr-data-extraction-plugin/privacy-policy.html`、承認済みドメインに `youkiti.github.io` を入れて保存する。必須印の無い欄だが、空のままだと次の「アプリを公開」ボタンが無効のままになる（コンソールは「ブランディング ページで構成を完了する必要があります」としか表示しない）。
+   2. 「対象」（https://console.cloud.google.com/auth/audience）で「アプリを公開」を押す。Google の審査は申請しない。承認するのは発行元アカウントだけで、承認時に「未確認のアプリ」の警告が出るが、そのまま進められる。
+   - 「テスト中」のまま使う場合は、テストユーザーに発行元アカウントのアドレスを追加する（追加しないと承認時に「エラー 403: access_denied」になる）。
 4. OAuth クライアントを「ウェブ アプリケーション」で作り、承認済みのリダイレクト URI に `https://developers.google.com/oauthplayground` を追加する: https://console.cloud.google.com/apis/credentials
 5. OAuth Playground（https://developers.google.com/oauthplayground）の歯車 →「Use your own OAuth credentials」に ID とシークレットを入れ、スコープ `https://www.googleapis.com/auth/chromewebstore` を承認し、「Exchange authorization code for tokens」で refresh token を得る。
 6. 発行元 ID をデベロッパーダッシュボード（https://chrome.google.com/webstore/devconsole）のアカウント設定で確認する。
 7. リポジトリルートの `.env` に `CWS_CLIENT_ID` / `CWS_CLIENT_SECRET` / `CWS_REFRESH_TOKEN` / `CWS_PUBLISHER_ID` を書く（`.env` は gitignore 済み）。`npm run store:status` で確認する。
 
-同意画面が「テスト中」のままだとリフレッシュトークンは 7 日で失効する（Google OAuth の一般仕様）。`invalid_grant` で止まったら手順 5 をやり直し、`.env` の `CWS_REFRESH_TOKEN` を入れ直す。「本番環境」に切り替えた場合の挙動はこのプロジェクトでは未確認。
+同意画面が「テスト中」のままだとリフレッシュトークンは 7 日で失効する（Google OAuth の一般仕様）。`invalid_grant` で止まったら手順 5 をやり直し、`.env` の `CWS_REFRESH_TOKEN` を入れ直す。
+
+リリース用プロジェクト（`chromestore-cli`）の同意画面は 2026-10-05 に「本番環境」へ切り替えた。「テスト中」に発行したトークンは切り替え後も 7 日で失効するので、切り替えたあとに手順 5 で発行し直す。発行し直したトークンが 7 日を超えて使えることは、このプロジェクトではまだ確かめていない（2026-10-12 以降に `npm run store:status` が通れば確認できる）。「本番環境」でも、6 か月使わなかったとき・Google アカウントのパスワードを変えたとき・アクセス権を取り消したときは失効する。
 
 ### コマンド
 
