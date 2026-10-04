@@ -1,4 +1,4 @@
-import { createPdfViewer, type ViewerHighlight } from '../../../../src/app/ui/pdfViewer';
+import { createPdfViewer, type PdfViewerOptions, type ViewerHighlight } from '../../../../src/app/ui/pdfViewer';
 import type { TextLayerPage } from '../../../../src/domain/textLayer';
 import type {
   PdfViewerDocument,
@@ -70,6 +70,262 @@ const flush = async (): Promise<void> => {
   await Promise.resolve();
   await Promise.resolve();
 };
+
+describe('選択用テキスト層', () => {
+  const textPage = (): RenderablePdfPage => ({
+    getViewport: ({ scale }) => ({ width: 612 * scale, height: 792 * scale }),
+    getTextContent: jest.fn().mockResolvedValue({ items: [], styles: {} }),
+    render: () => ({ promise: Promise.resolve() }),
+  });
+  const setup = (renderTextLayer: NonNullable<PdfViewerOptions['renderTextLayer']> = jest.fn((_page, container: HTMLElement, _scale) => {
+    container.innerHTML = '<span>alpha beta</span>';
+    return { promise: Promise.resolve(), cancel: jest.fn() };
+  }), onTextSelected: jest.Mock | undefined = jest.fn()) => {
+    const page = textPage();
+    const doc = { numPages: 2, getPage: jest.fn().mockResolvedValue(page) };
+    const viewer = createPdfViewer({
+      document: doc, pages: PAGES, renderPage: makeRenderPage().renderPage,
+      renderTextLayer, onTextSelected,
+    });
+    document.body.append(viewer.root);
+    return { viewer, page, doc, renderTextLayer, onTextSelected };
+  };
+  afterEach(() => {
+    document.body.replaceChildren();
+    jest.restoreAllMocks();
+  });
+
+  test('現在のページ・倍率で描画し、ページ送り・ズーム・文書変更で作り直す', async () => {
+    const { viewer, page, doc, renderTextLayer } = setup();
+    await flush();
+    expect(renderTextLayer).toHaveBeenLastCalledWith(page, viewer.root.querySelector('.textLayer'), 1);
+    viewer.root.querySelector<HTMLButtonElement>('.pdf-viewer__next')!.click();
+    await flush();
+    expect(doc.getPage).toHaveBeenLastCalledWith(2);
+    const zoom = viewer.root.querySelector<HTMLSelectElement>('select')!;
+    zoom.value = '3';
+    zoom.dispatchEvent(new Event('change'));
+    await flush();
+    expect(renderTextLayer).toHaveBeenLastCalledWith(page, viewer.root.querySelector('.textLayer'), 3);
+    const next = textPage();
+    viewer.setDocument({ numPages: 1, getPage: async () => next }, []);
+    await flush();
+    expect(renderTextLayer).toHaveBeenLastCalledWith(next, viewer.root.querySelector('.textLayer'), 3);
+    expect(renderTextLayer).toHaveBeenCalledTimes(4);
+  });
+
+  test('メソッドのない fake は描画しない', async () => {
+    const renderTextLayer = jest.fn();
+    createPdfViewer({ document: makeDocument(), pages: PAGES, renderPage: makeRenderPage().renderPage, renderTextLayer });
+    await flush();
+    expect(renderTextLayer).not.toHaveBeenCalled();
+  });
+
+  test.each([false, true])('テキスト描画失敗でもエラー表示しない（同期例外: %s）', async (synchronous) => {
+    const renderTextLayer = jest.fn(() => {
+      if (synchronous) throw new Error('text');
+      return { promise: Promise.reject(new Error('text')), cancel: jest.fn() };
+    });
+    const { viewer } = setup(renderTextLayer);
+    await flush();
+    expect(viewer.root.querySelector<HTMLElement>('.pdf-viewer__error')!.hidden).toBe(true);
+    viewer.setHighlights([makeHighlight()], null);
+    expect(viewer.root.querySelector('.pdf-viewer__hl')).not.toBeNull();
+  });
+
+  test('進行中の描画をキャンセルし、古い完了は新しい層を上書きしない', async () => {
+    const pending: { container: HTMLElement; resolve: () => void; cancel: jest.Mock }[] = [];
+    const renderTextLayer = jest.fn((_page, container: HTMLElement, _scale) => {
+      const cancel = jest.fn();
+      const promise = new Promise<void>((resolve) => pending.push({ container, resolve, cancel }));
+      return { promise, cancel };
+    });
+    const { viewer } = setup(renderTextLayer);
+    await flush();
+    viewer.root.querySelector<HTMLButtonElement>('.pdf-viewer__next')!.click();
+    await flush();
+    expect(pending[0]!.cancel).toHaveBeenCalledTimes(1);
+    pending[0]!.container.textContent = 'old';
+    pending[0]!.resolve();
+    await flush();
+    expect(viewer.root.querySelector('.textLayer')!.textContent).toBe('');
+    viewer.setDocument({ numPages: 1, getPage: async () => textPage() }, []);
+    await flush();
+    expect(pending[1]!.cancel).toHaveBeenCalledTimes(1);
+    pending[1]!.resolve();
+    pending[2]!.resolve();
+    await flush();
+  });
+
+  test('getPage 待機中に文書を変更すると旧ページのテキスト描画を始めない', async () => {
+    let resolve!: (page: RenderablePdfPage) => void;
+    const renderTextLayer = jest.fn();
+    const viewer = createPdfViewer({
+      document: { numPages: 1, getPage: () => new Promise((done) => { resolve = done; }) },
+      pages: [], renderPage: makeRenderPage().renderPage, renderTextLayer,
+    });
+    viewer.setDocument(makeDocument(), []);
+    resolve(textPage());
+    await flush();
+    expect(renderTextLayer).not.toHaveBeenCalled();
+  });
+
+  test('層の両端を確認し、空白正規化・解除・重複抑止・clearSelection を通知する', async () => {
+    const { viewer, onTextSelected } = setup();
+    await flush();
+    const node = viewer.root.querySelector('.textLayer span')!.firstChild!;
+    const removeAllRanges = jest.fn();
+    let text = '  alpha\n  beta  ';
+    const selected = { anchorNode: node, focusNode: node, toString: () => text, removeAllRanges };
+    const spy = jest.spyOn(document, 'getSelection').mockReturnValue(selected as unknown as Selection);
+    const change = () => document.dispatchEvent(new Event('selectionchange'));
+    change();
+    expect(onTextSelected).toHaveBeenLastCalledWith({ page: 1, text: 'alpha beta' });
+    viewer.root.dispatchEvent(new MouseEvent('mouseup'));
+    expect(onTextSelected).toHaveBeenCalledTimes(1);
+    text = 'beta';
+    change();
+    expect(onTextSelected).toHaveBeenLastCalledWith({ page: 1, text: 'beta' });
+    selected.focusNode = document.body;
+    change();
+    expect(onTextSelected).toHaveBeenLastCalledWith({ page: 1, text: 'beta' });
+    change();
+    expect(onTextSelected).toHaveBeenCalledTimes(2);
+    selected.focusNode = node;
+    selected.anchorNode = document.body;
+    change();
+    expect(onTextSelected).toHaveBeenCalledTimes(2);
+    selected.anchorNode = node;
+    text = '\n  ';
+    change();
+    expect(onTextSelected).toHaveBeenCalledTimes(3);
+    expect(onTextSelected).toHaveBeenLastCalledWith(null);
+    text = 'alpha';
+    change();
+    viewer.clearSelection();
+    expect(removeAllRanges).toHaveBeenCalledTimes(1);
+    expect(onTextSelected).toHaveBeenLastCalledWith(null);
+    spy.mockReturnValue(null);
+    change();
+    viewer.clearSelection();
+    expect(onTextSelected).toHaveBeenCalledTimes(5);
+    spy.mockReturnValue(selected as unknown as Selection);
+    change();
+    viewer.root.remove();
+    change();
+    expect(onTextSelected).toHaveBeenCalledTimes(6);
+    document.body.append(viewer.root);
+    viewer.root.querySelector<HTMLButtonElement>('.pdf-viewer__next')!.click();
+    expect(onTextSelected).toHaveBeenLastCalledWith(null);
+    await flush();
+    selected.anchorNode = selected.focusNode = viewer.root.querySelector('.textLayer span')!.firstChild!;
+    change();
+    expect(onTextSelected).toHaveBeenLastCalledWith({ page: 2, text: 'alpha' });
+    const zoom = viewer.root.querySelector<HTMLSelectElement>('select')!;
+    zoom.dispatchEvent(new Event('change'));
+    expect(onTextSelected).toHaveBeenLastCalledWith(null);
+    await flush();
+    selected.anchorNode = selected.focusNode = viewer.root.querySelector('.textLayer span')!.firstChild!;
+    change();
+    viewer.setDocument(makeDocument(), []);
+    expect(onTextSelected).toHaveBeenLastCalledWith(null);
+    await flush();
+  });
+
+  test('外側の入力欄・選択なしへの移動では選択を保持する', async () => {
+    const { viewer, onTextSelected } = setup();
+    await flush();
+    const selection = document.getSelection()!;
+    const range = document.createRange();
+    range.selectNodeContents(viewer.root.querySelector('.textLayer span')!);
+    selection.removeAllRanges();
+    selection.addRange(range);
+    document.dispatchEvent(new Event('selectionchange'));
+    const input = document.createElement('input');
+    document.body.append(input);
+    input.focus();
+    selection.removeAllRanges();
+    document.dispatchEvent(new Event('selectionchange'));
+    selection.selectAllChildren(document.body);
+    document.dispatchEvent(new Event('selectionchange'));
+    expect(onTextSelected).toHaveBeenCalledTimes(1);
+    expect(onTextSelected).toHaveBeenLastCalledWith({ page: 1, text: 'alpha beta' });
+    viewer.clearSelection();
+    expect(onTextSelected).toHaveBeenLastCalledWith(null);
+  });
+
+  test('テキスト層のクリックを矩形内の最前面へ委譲し、ドラッグ・矩形外・検索表示を除外する', async () => {
+    const onHighlightClick = jest.fn();
+    const viewer = createPdfViewer({
+      document: { numPages: 2, getPage: async () => textPage() }, pages: PAGES,
+      renderPage: makeRenderPage().renderPage, onHighlightClick,
+      renderTextLayer: (_page, container) => {
+        container.innerHTML = '<span>alpha</span>';
+        return { promise: Promise.resolve(), cancel: jest.fn() };
+      },
+    });
+    document.body.append(viewer.root);
+    await flush();
+    const wrap = viewer.root.querySelector('.pdf-viewer__page')!;
+    expect(wrap.classList.contains('pdf-viewer__page--selectable')).toBe(true);
+    viewer.search('alpha');
+    await flush();
+    viewer.setHighlights([makeHighlight(), makeHighlight({ id: 'top' })], null);
+    const buttons = viewer.root.querySelectorAll<HTMLButtonElement>('button.pdf-viewer__hl');
+    buttons.forEach((button) => jest.spyOn(button, 'getBoundingClientRect').mockReturnValue(
+      { left: 10, right: 30, top: 20, bottom: 40 } as DOMRect,
+    ));
+    const span = viewer.root.querySelector('.textLayer span')!;
+    document.getSelection()!.removeAllRanges();
+    for (const [clientX, clientY] of [[9, 25], [31, 25], [20, 19], [20, 41]]) {
+      span.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX, clientY }));
+    }
+    expect(onHighlightClick).not.toHaveBeenCalled();
+    span.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 20, clientY: 25 }));
+    expect(onHighlightClick).toHaveBeenLastCalledWith('top');
+    expect(onHighlightClick).toHaveBeenCalledTimes(1);
+    document.getSelection()!.selectAllChildren(span);
+    span.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 20, clientY: 25 }));
+    expect(onHighlightClick).toHaveBeenCalledTimes(1);
+    // jsdom は Enter の既定動作を実行しないため、ブラウザが生成する detail=0 の click を再現する。
+    buttons[0]!.focus();
+    buttons[0]!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    buttons[0]!.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 0 }));
+    expect(document.activeElement).toBe(buttons[0]);
+    expect(buttons[0]!.tabIndex).toBe(0);
+    expect(onHighlightClick).toHaveBeenLastCalledWith('cell-1');
+    jest.spyOn(document, 'getSelection').mockReturnValue(null);
+    span.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 10, clientY: 40 }));
+    expect(onHighlightClick).toHaveBeenLastCalledWith('top');
+    viewer.setDocument(makeDocument(), PAGES);
+    expect(wrap.classList.contains('pdf-viewer__page--selectable')).toBe(false);
+    await flush();
+    expect(wrap.classList.contains('pdf-viewer__page--selectable')).toBe(false);
+  });
+
+  test('空のテキスト層ではハイライトボタンが直接クリックを受け取る', async () => {
+    const onHighlightClick = jest.fn();
+    const viewer = createPdfViewer({
+      document: { numPages: 1, getPage: async () => textPage() }, pages: PAGES,
+      renderPage: makeRenderPage().renderPage, onHighlightClick,
+      renderTextLayer: () => ({ promise: Promise.resolve(), cancel: jest.fn() }),
+    });
+    await flush();
+    expect(viewer.root.querySelector('.pdf-viewer__page--selectable')).toBeNull();
+    viewer.setHighlights([makeHighlight()], null);
+    viewer.root.querySelector<HTMLButtonElement>('.pdf-viewer__hl')!.click();
+    expect(onHighlightClick).toHaveBeenCalledWith('cell-1');
+  });
+
+  test('回収済みコールバックの document リスナを除去する', () => {
+    const deref = jest.spyOn(WeakRef.prototype, 'deref').mockReturnValue(undefined);
+    const remove = jest.spyOn(document, 'removeEventListener');
+    setup();
+    document.dispatchEvent(new Event('selectionchange'));
+    expect(remove).toHaveBeenCalledWith('selectionchange', expect.any(Function));
+    deref.mockRestore();
+  });
+});
 
 describe('createPdfViewer', () => {
   test('初期表示: 1 ページ目・前へは無効・ページ表示・canvas 描画', async () => {

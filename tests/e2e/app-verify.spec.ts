@@ -9,6 +9,36 @@ import { createSheetsDataStore } from './helpers/sheetsStore';
 
 const QUOTE = 'Mortality was 12 percent';
 
+test('実 PDF のテキスト層で選んだ文字列を根拠として追加できる', async ({ page }) => {
+  await setupRoutes(page, { schemaRows: [STUDY_FIELD_ROW], evidenceRows: [EVIDENCE_ROW_1],
+    pdfBuilder: () => minimalPdf('Human selected sentence'), extractedText: 'Human selected sentence' });
+  await initApp(page, '#/verify?study=study-1');
+  const span = page.locator('.pdf-viewer__text-layer span').first();
+  await expect(span).toBeAttached();
+  const selected = await span.evaluate((node) => {
+    const range = document.createRange();
+    range.selectNodeContents(node);
+    const selection = document.getSelection()!;
+    selection.removeAllRanges();
+    selection.addRange(range);
+    node.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+    return selection.toString();
+  });
+  expect(selected.trim()).not.toBe('');
+  await expect(page.locator('.verify__quote-add')).toBeVisible();
+  const appended = page.waitForRequest((request) =>
+    decodeURIComponent(request.url()).includes('/values/QuoteSets!A1:append'));
+  await page.locator('.verify__quote-add-section').click();
+  await page.locator('.verify__quote-add-section').pressSequentially('Results');
+  await page.locator('.verify__quote-add-confirm').click();
+  const rows = (await appended).postDataJSON().values as string[][];
+  const human = rows.find((row) => row[SHEET_HEADERS.QuoteSets.indexOf('source')] === 'human')!;
+  expect(human[SHEET_HEADERS.QuoteSets.indexOf('kind')]).toBe('quote');
+  expect(human[SHEET_HEADERS.QuoteSets.indexOf('quote')]).toBe(selected);
+  expect(human[SHEET_HEADERS.QuoteSets.indexOf('section')]).toBe('Results');
+  await expect(page.locator('.verify__quote-source')).toHaveText('人が追加');
+});
+
 const SCHEMA_FIELDS_HEADERS = [
   'schema_version', 'field_id', 'field_index', 'section', 'field_name', 'field_label',
   'entity_level', 'data_type', 'unit', 'allowed_values', 'required', 'extraction_instruction',
@@ -1042,7 +1072,12 @@ test('和文 fixture: 抽出テキスト → アンカリング（exact）→ �
   expect(box.height).toBeGreaterThan(0);
 
   // ハイライトクリック → フォームへジャンプ（英文と同じ導線が和文でも壊れないこと）
-  await highlight.click();
+  await highlight.scrollIntoViewIfNeeded();
+  const clickBox = (await highlight.boundingBox())!;
+  await page.mouse.click(clickBox.x + clickBox.width / 2, clickBox.y + clickBox.height / 2);
+  await expect(page.locator('#verify-focus-detail .verify__quote-jump')).toBeVisible();
+  await highlight.focus();
+  await highlight.press('Enter');
   await expect(page.locator('#verify-focus-detail .verify__quote-jump')).toBeVisible();
 });
 

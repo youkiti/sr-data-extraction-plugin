@@ -203,6 +203,62 @@ async function initApp(page: Page): Promise<void> {
   await page.goto('/app/app.html#/verify');
 }
 
+test('独立入力で実 PDF の選択を自分の引用として保存し、AI の引用を表示しない', async ({ page }) => {
+  const { getUrls } = await setupRoutes(page);
+  const aiQuote = 'AI evidence must remain hidden';
+  await page.route(/sheets\.googleapis\.com\/.*\/values\/Evidence/, async (route) => {
+    await route.fulfill({ json: { values: [SHEET_HEADERS.Evidence,
+      SHEET_HEADERS.Evidence.map((key) => key === 'quote' ? aiQuote : '')] } });
+  });
+  const text = 'Independently selected sentence';
+  const stream = `BT /F1 12 Tf 72 720 Td (${text}) Tj ET`;
+  const objects = [
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>',
+    `<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`,
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+  ];
+  let pdf = '%PDF-1.4\n';
+  const offsets = [0];
+  objects.forEach((object, index) => {
+    offsets.push(pdf.length);
+    pdf += `${index + 1} 0 obj\n${object}\nendobj\n`;
+  });
+  const xref = pdf.length;
+  pdf += 'xref\n0 6\n0000000000 65535 f \n';
+  for (const offset of offsets.slice(1)) pdf += `${String(offset).padStart(10, '0')} 00000 n \n`;
+  pdf += `trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`;
+  await page.route(/www\.googleapis\.com\/.*\/files\/drive-1\?alt=media/, async (route) => {
+    await route.fulfill({ contentType: 'application/pdf', body: Buffer.from(pdf, 'latin1') });
+  });
+  await initApp(page);
+  const span = page.locator('.pdf-viewer__text-layer span').first();
+  await expect(span).toBeAttached();
+  const selected = await span.evaluate((node) => {
+    const range = document.createRange();
+    range.selectNodeContents(node);
+    const selection = document.getSelection()!;
+    selection.removeAllRanges();
+    selection.addRange(range);
+    node.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+    return selection.toString();
+  });
+  await expect(page.locator('.verify__quote-add')).toBeVisible();
+  const appended = page.waitForRequest((request) =>
+    decodeURIComponent(request.url()).includes('/values/QuoteSets!A1:append'));
+  await page.locator('.verify__quote-add-confirm').click();
+  const rows = (await appended).postDataJSON().values as string[][];
+  expect(rows).toHaveLength(1);
+  const row = Object.fromEntries(SHEET_HEADERS.QuoteSets.map((key, index) => [key, rows[0]![index]]));
+  expect(row).toMatchObject({ kind: 'quote', source: 'human', quote: selected,
+    annotator: 'reviewer2@example.com', annotator_type: 'human_independent' });
+  await expect(page.locator('.verify__quote-source')).toHaveText('人が追加');
+  await expect(page.locator('body')).not.toContainText(aiQuote);
+  await expect(page.locator('.verify__ai, .verify__quote-reset, .verify__quote-newer, .verify__quote-relocate')).toHaveCount(0);
+  expect(getUrls.some((url) => url.includes('/values/Evidence'))).toBe(false);
+});
+
 test('独立入力モード: Evidence 由来表示が一切出ず、値の直接入力で human_independent 行 + Decisions 追記まで実弾検証', async ({
   page,
 }) => {

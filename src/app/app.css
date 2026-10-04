@@ -3119,9 +3119,80 @@ section.documents__tiab {
   display: block;
 }
 
+/* pdf.js の textLayer 規則。文字配置・回転は viewport が出す属性と変数に従う。 */
+.pdf-viewer__text-layer {
+  --scale-round-x: 1px;
+  --scale-round-y: 1px;
+  --min-font-size: 1;
+  --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
+  --min-font-size-inv: calc(1 / var(--min-font-size));
+
+  position: absolute;
+  inset: 0;
+  overflow: clip;
+  text-align: initial;
+  line-height: 1;
+  letter-spacing: normal;
+  word-spacing: normal;
+  text-size-adjust: none;
+  forced-color-adjust: none;
+  transform-origin: 0 0;
+  z-index: 1;
+}
+
+.pdf-viewer__text-layer :is(span, br) {
+  color: transparent;
+  position: absolute;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0% 0%;
+  user-select: text;
+}
+
+.pdf-viewer__text-layer > :not(.markedContent),
+.pdf-viewer__text-layer .markedContent span:not(.markedContent) {
+  --font-height: 0;
+  --scale-x: 1;
+  --rotate: 0deg;
+
+  z-index: 1;
+  font-size: calc(var(--text-scale-factor) * var(--font-height));
+  transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv));
+}
+
+.pdf-viewer__text-layer .markedContent {
+  display: contents;
+}
+
+.pdf-viewer__text-layer[data-main-rotation="90"] {
+  transform: rotate(90deg) translateY(-100%);
+}
+
+.pdf-viewer__text-layer[data-main-rotation="180"] {
+  transform: rotate(180deg) translate(-100%, -100%);
+}
+
+.pdf-viewer__text-layer[data-main-rotation="270"] {
+  transform: rotate(270deg) translateX(-100%);
+}
+
+.pdf-viewer__text-layer ::selection {
+  background: var(--color-highlight-active);
+}
+
+.pdf-viewer__text-layer br::selection {
+  background: transparent;
+}
+
 .pdf-viewer__overlay {
   position: absolute;
   inset: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.pdf-viewer__overlay button {
+  pointer-events: auto;
 }
 
 .pdf-viewer__hl {
@@ -3131,6 +3202,10 @@ section.documents__tiab {
   border-radius: 2px;
   cursor: pointer;
   background: none;
+}
+
+.pdf-viewer__page--selectable .pdf-viewer__hl {
+  pointer-events: none;
 }
 
 /* globals.css の button:hover（緑塗り。詳細度 0,2,1）がクラス指定に勝つため、
@@ -4103,4 +4178,24 @@ section.documents__tiab {
 
 .verify__quote-error {
   color: var(--color-danger);
+}
+
+.verify__quote-add {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+
+.verify__quote-add-text {
+  flex-basis: 100%;
+  overflow-wrap: anywhere;
+}
+
+.verify__quote-add-note {
+  color: var(--color-text-muted);
+  margin: 0;
 }

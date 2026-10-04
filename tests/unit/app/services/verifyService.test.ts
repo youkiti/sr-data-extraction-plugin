@@ -1845,13 +1845,18 @@ describe('引用履歴の読み込みと保存', () => {
     expect(store.getState().verify.verification?.evidence).toEqual([latest]);
   });
 
-  test('独立入力では引用履歴と Evidence を読まない', async () => {
+  test('独立入力でも自分の同じモード・study の引用だけを読み、Evidence は読まない', async () => {
+    const own = quoteRow({ studyId: 'study-doc-1', annotator: ME, annotatorType: 'human_independent', source: 'human' });
+    jest.mocked(readQuoteSetRows).mockResolvedValue([own,
+      { ...own, studyId: 'other' }, { ...own, annotator: 'other' },
+      { ...own, annotatorType: 'human_with_ai' }, { ...own, annotatorType: 'consensus' }]);
     const store = makeStore({ role: 'reviewer_independent', documents: [makeDocument()],
       verify: { targets: [makeTarget({ evidence: [] })] } });
     await openVerifyStudy(store, makeDeps(), 'study-doc-1');
-    expect(readQuoteSetRows).not.toHaveBeenCalled();
+    expect(readQuoteSetRows).toHaveBeenCalledTimes(1);
     expect(readEvidenceRows).not.toHaveBeenCalled();
-    expect(store.getState().verify.verification?.quoteSetRows).toEqual([]);
+    expect(store.getState().verify.verification?.quoteSetRows).toEqual([own]);
+    expect(store.getState().verify.verification?.quoteEvidence).toEqual([]);
   });
 
   test('同じシートへの保存は直列化し、失敗をそのまま返す', async () => {
