@@ -1389,6 +1389,34 @@ describe('bootstrapApp', () => {
     expect(fieldNamesInOrder()).toEqual(['age', 'nationality', 'design', 'sex']);
   });
 
+  test('#/schema 行移動直後の無関係なストア更新でも移動ボタンのフォーカスを保持する', async () => {
+    const stub = createWindowStub({
+      currentProject: PROJECT,
+      counts: { protocolVersions: 1 } as AppState['counts'],
+      schema: {
+        versions: [],
+        editorRows: [EDITOR_ROW, { ...EDITOR_ROW, fieldName: 'age' }],
+      } as unknown as AppState['schema'],
+    });
+    const { deps } = createFakeDeps([[...SHEET_HEADERS.Protocol]]);
+    const store = await bootstrapApp(asWindow(stub), deps);
+    stub.location.hash = '#/schema';
+    stub.fireHashChange();
+    await flush();
+
+    (document.querySelector('button[aria-label="2 行目を上へ移動"]') as HTMLButtonElement).click();
+    const movedButton = document.querySelector('button[aria-label="1 行目を下へ移動"]');
+    expect(document.activeElement).toBe(movedButton);
+    expect(store?.getState().schema.editorRows?.map((row) => row.fieldName)).toEqual(['age', 'study_design']);
+
+    // 行移動と無関係な進捗カウントの更新で画面全体を作り直す。
+    store?.setState({ counts: { ...store.getState().counts, documents: 1 } });
+    const rerendered = document.querySelector('button[aria-label="1 行目を下へ移動"]');
+    expect(rerendered).not.toBeNull();
+    expect(rerendered).not.toBe(movedButton);
+    expect(document.activeElement).toBe(rerendered);
+  });
+
   test('#/schema セル入力中に非同期のストア更新が来ても入力途中の値・キャレット位置が保持され、blur で正しくコミットされる（issue #232）', async () => {
     const stub = createWindowStub({
       currentProject: PROJECT,

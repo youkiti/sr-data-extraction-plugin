@@ -409,3 +409,75 @@ describe('restoreFocusState', () => {
     expect(focusSpy).toHaveBeenCalledWith({ preventScroll: true });
   });
 });
+
+describe('印つきボタンのフォーカス保持', () => {
+  function makeButton(): HTMLButtonElement {
+    const button = document.createElement('button');
+    button.setAttribute('data-preserve-focus', '');
+    button.setAttribute('aria-label', '1 行目を下へ移動 "引用符"');
+    return button;
+  }
+
+  test.each(['aria-label', 'id'])('%s で別インスタンスへフォーカスだけを復元する', (key) => {
+    const button = makeButton();
+    if (key === 'id') button.id = 'move-button';
+    button.value = '退避前';
+    document.body.append(button);
+    button.focus();
+    const snapshot = captureFocusState(document);
+    expect(snapshot).not.toBeNull();
+    expect(snapshot?.value).toBeUndefined();
+    const replacement = button.cloneNode() as HTMLButtonElement;
+    replacement.value = '再描画後';
+    if (key === 'id') replacement.setAttribute('aria-label', '別のラベル');
+    const input = document.createElement('input');
+    input.setAttribute('aria-label', button.getAttribute('aria-label') as string);
+    const otherButton = makeButton();
+    otherButton.setAttribute('aria-label', '別のボタン');
+    document.body.replaceChildren(input, otherButton, replacement);
+    const focus = jest.spyOn(replacement, 'focus');
+    const change = jest.fn();
+    replacement.addEventListener('change', change);
+    restoreFocusState(document, snapshot);
+    expect(document.activeElement).toBe(replacement);
+    expect(focus).toHaveBeenCalledWith({ preventScroll: true });
+    expect(replacement.value).toBe('再描画後');
+    replacement.blur();
+    expect(change).not.toHaveBeenCalled();
+  });
+
+  test.each(['印なし', 'キーなし'])('%s のボタンは退避しない', (condition) => {
+    const button = makeButton();
+    if (condition === '印なし') button.removeAttribute('data-preserve-focus');
+    else button.removeAttribute('aria-label');
+    document.body.append(button);
+    button.focus();
+    expect(captureFocusState(document)).toBeNull();
+  });
+
+  test.each(['disabled', '印なし', '見つからない', '同一インスタンス', 'id のタグ不一致'])(
+    '復元先が %s なら何もしない', (condition) => {
+      const button = makeButton();
+      if (condition === 'id のタグ不一致') button.id = 'move-button';
+      document.body.append(button);
+      button.focus();
+      const snapshot = captureFocusState(document);
+      expect(snapshot).not.toBeNull();
+      const replacement = condition === '同一インスタンス' ? button : button.cloneNode() as HTMLButtonElement;
+      if (condition === 'disabled') replacement.disabled = true;
+      if (condition === '印なし') replacement.removeAttribute('data-preserve-focus');
+      if (condition === '見つからない') replacement.setAttribute('aria-label', '別のラベル');
+      if (condition === 'id のタグ不一致') {
+        const input = document.createElement('input');
+        input.id = button.id;
+        document.body.replaceChildren(input);
+      } else {
+        document.body.replaceChildren(replacement);
+      }
+      const focus = jest.spyOn(replacement, 'focus');
+      restoreFocusState(document, snapshot);
+      expect(focus).not.toHaveBeenCalled();
+      expect(document.activeElement).toBe(document.body);
+    },
+  );
+});

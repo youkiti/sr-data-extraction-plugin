@@ -605,6 +605,9 @@ describe('renderSchemaView', () => {
       const downButtons = Array.from(
         view.querySelectorAll<HTMLButtonElement>('.schema__row-move-down'),
       );
+      for (const button of [...upButtons, ...downButtons]) {
+        expect(button.hasAttribute('data-preserve-focus')).toBe(true);
+      }
       expect(upButtons).toHaveLength(3);
       expect(downButtons).toHaveLength(3);
       expect(upButtons.map((button) => button.disabled)).toEqual([true, false, false]);

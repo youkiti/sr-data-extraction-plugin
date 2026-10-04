@@ -4,21 +4,25 @@
 // store.subscribe が route 全体を replaceChildren で作り直すため、入力中の <input> /
 // <textarea> は毎回新しいノードに差し替わり、value がストア由来の値へ巻き戻る
 // = 入力途中の文字が消える。preserveScroll.ts（issue #192）と同じ seam に、
-// 同じ流儀で「フォーカス中のテキスト系入力」の退避・復元を足す
+// 同じ流儀でテキスト系入力と data-preserve-focus 付きボタンのフォーカスを退避・復元する
 
 /** 復元キーの種別。id があれば id、無ければ aria-label を使う */
 type RestoreKeyType = 'id' | 'ariaLabel';
 
-/** captureFocusState / restoreFocusState が対象にする要素（テキスト系のみ） */
+/** 値・キャレット位置の保持対象にするテキスト系要素 */
 type TextEditableElement = HTMLInputElement | HTMLTextAreaElement;
 
-export interface FocusSnapshot {
+interface FocusSnapshotBase {
   /** 退避時の要素参照。復元時に「同一インスタンスが再接続されただけ」かどうかの判定に使う */
   element: Element;
   /** 復元時にタグ名の一致を要求する（id 流用・aria-label 重複による誤復元を防ぐ） */
   tagName: string;
   keyType: RestoreKeyType;
   restoreKey: string;
+}
+
+interface TextFocusSnapshot extends FocusSnapshotBase {
+  kind?: 'text';
   value: string;
   selectionStart: number | null;
   selectionEnd: number | null;
@@ -28,6 +32,18 @@ export interface FocusSnapshot {
    * restoreFocusState 側は setSelectionRange 自体をスキップする（値とフォーカスは復元する）
    */
   selectionDirection: SelectionDirection | null;
+}
+
+interface ButtonFocusSnapshot extends FocusSnapshotBase {
+  kind: 'button';
+  value?: never;
+}
+
+export type FocusSnapshot = TextFocusSnapshot | ButtonFocusSnapshot;
+
+/** 明示的にフォーカス保持を指定したボタンだけを対象にする */
+function isPreservedButton(element: Element): element is HTMLButtonElement {
+  return element instanceof HTMLButtonElement && element.hasAttribute('data-preserve-focus');
 }
 
 /**
@@ -47,10 +63,10 @@ function isTextEditable(element: Element): element is TextEditableElement {
   return element instanceof HTMLInputElement && TEXT_EDITABLE_INPUT_TYPES.has(element.type);
 }
 
-/** 再描画前に呼ぶ: フォーカス中のテキスト系入力の値・キャレット位置・復元キーを退避する */
+/** 再描画前に呼ぶ: テキスト系入力の値・キャレット位置、対象ボタンの復元キーを退避する */
 export function captureFocusState(doc: Document): FocusSnapshot | null {
   const active = doc.activeElement;
-  if (active === null || !isTextEditable(active)) {
+  if (active === null || (!isTextEditable(active) && !isPreservedButton(active))) {
     return null;
   }
   const id = active.id;
@@ -59,11 +75,17 @@ export function captureFocusState(doc: Document): FocusSnapshot | null {
     // 復元キーが無い要素は復元先を特定できないため退避しない
     return null;
   }
-  return {
+  const base: FocusSnapshotBase = {
     element: active,
     tagName: active.tagName,
     keyType: id !== '' ? 'id' : 'ariaLabel',
     restoreKey: id !== '' ? id : (ariaLabel as string),
+  };
+  if (isPreservedButton(active)) {
+    return { ...base, kind: 'button' };
+  }
+  return {
+    ...base,
     value: active.value,
     selectionStart: active.selectionStart,
     selectionEnd: active.selectionEnd,
@@ -74,18 +96,20 @@ export function captureFocusState(doc: Document): FocusSnapshot | null {
 /**
  * 復元先ノードを探す。CSS セレクタ文字列は組み立てない
  * （aria-label は日本語で引用符等が入りうるためエスケープ事故になる）。
- * id は doc.getElementById、aria-label は input / textarea を総当たりして属性値を文字列比較する。
+ * id は doc.getElementById、aria-label は対象種別の要素を総当たりして属性値を文字列比較する。
  * どちらもタグ名が一致しないものは対象外
  */
-function findRestoreTarget(doc: Document, snapshot: FocusSnapshot): TextEditableElement | null {
+function findRestoreTarget(doc: Document, snapshot: FocusSnapshot): TextEditableElement | HTMLButtonElement | null {
   if (snapshot.keyType === 'id') {
     const node = doc.getElementById(snapshot.restoreKey);
     if (node === null || node.tagName !== snapshot.tagName) {
       return null;
     }
-    return node as TextEditableElement;
+    return node as TextEditableElement | HTMLButtonElement;
   }
-  const candidates = doc.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>('input, textarea');
+  const candidates = doc.querySelectorAll<TextEditableElement | HTMLButtonElement>(
+    snapshot.kind === 'button' ? 'button' : 'input, textarea',
+  );
   for (const candidate of Array.from(candidates)) {
     if (
       candidate.tagName === snapshot.tagName &&
@@ -121,20 +145,27 @@ function armCommitGuarantee(node: TextEditableElement, originalValue: string): v
 
 /**
  * 再描画後に呼ぶ: 復元先ノードが見つかり、かつ退避時と別インスタンス（= 作り直された）の
- * ときだけ、値・キャレット位置・フォーカスを復元する。同一インスタンスがそのまま
+ * ときだけ、値・キャレット位置・フォーカスを復元する（ボタンはフォーカスのみ）。同一インスタンスがそのまま
  * 再接続された場合は何もしない（preserveScroll の isConnected 判定と同じ考え方）
  */
 export function restoreFocusState(doc: Document, snapshot: FocusSnapshot | null): void {
   if (snapshot === null) {
     return;
   }
-  const node = findRestoreTarget(doc, snapshot);
-  if (node === null) {
+  const target = findRestoreTarget(doc, snapshot);
+  if (target === null) {
     return;
   }
-  if (node === snapshot.element) {
+  if (target === snapshot.element) {
     return;
   }
+  if (snapshot.kind === 'button') {
+    if (isPreservedButton(target) && !target.disabled) {
+      target.focus({ preventScroll: true });
+    }
+    return;
+  }
+  const node = target as TextEditableElement;
   const originalValue = node.value;
   if (originalValue !== snapshot.value) {
     node.value = snapshot.value;
