@@ -221,9 +221,18 @@ module.exports = (env, argv) => {
             // pdfjs 6.x は画像デコーダ（CCITTFax/JBIG2・JPEG2000・ICC）が wasm 実装なので同梱する。
             // 未同梱だとスキャン PDF の該当ページが白紙になる。実行時は chrome.runtime.getURL('wasm/') で解決する。
             // quickjs-eval.* は PDF 内 JavaScript の隔離実行（pdf.sandbox）用で本拡張は使わないため除外する
+            // manifest の CSP が wasm を許可し、正常に初期化できる環境では JavaScript 版は読まれないため除外する。
+            // CSP から 'wasm-unsafe-eval' を外すか、getDocument に useWasm: false を渡す場合は同梱に戻す。
             from: 'node_modules/pdfjs-dist/wasm',
             to: 'wasm',
-            globOptions: { ignore: ['**/quickjs-eval.js', '**/quickjs-eval.wasm'] },
+            globOptions: {
+              ignore: [
+                '**/quickjs-eval.js',
+                '**/quickjs-eval.wasm',
+                '**/jbig2_nowasm_fallback.js',
+                '**/openjpeg_nowasm_fallback.js',
+              ],
+            },
           },
           {
             // 標準 14 フォント（非埋め込み PDF 用）

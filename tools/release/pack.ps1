@@ -216,6 +216,20 @@ try {
   $cmapCount = (Get-ChildItem (Join-Path $verifyDir 'cmaps') -File).Count
   Write-Ok "同梱物を確認（$($requiredEntries -join ' / ')、cmaps $cmapCount ファイル）"
 
+  $wasmDir = Join-Path $verifyDir 'wasm'
+  $requiredWasmFiles = @('jbig2.wasm', 'openjpeg.wasm', 'qcms_bg.wasm')
+  $missingWasmFiles = $requiredWasmFiles | Where-Object { -not (Test-Path (Join-Path $wasmDir $_) -PathType Leaf) }
+  if ($missingWasmFiles) {
+    Stop-WithError "zip の wasm/ に画像デコーダの同梱漏れがあります: $($missingWasmFiles -join ', ')"
+  }
+  Write-Ok "wasm 画像デコーダの同梱を確認（$($requiredWasmFiles -join ' / ')）"
+
+  $fallbackFiles = @(Get-ChildItem $wasmDir -Recurse -File -Filter '*_nowasm_fallback.js')
+  if ($fallbackFiles.Count -gt 0) {
+    Stop-WithError "zip の wasm/ に JavaScript 版フォールバックが混入しています: $($fallbackFiles.Name -join ', ')"
+  }
+  Write-Ok 'wasm/ に JavaScript 版フォールバックなし'
+
   $zipPlaceholderHits = Get-ChildItem $verifyDir -Recurse -File -Include $textFilePatterns |
     Where-Object { Select-String -Path $_.FullName -Pattern '__WEBAUTH_CLIENT_ID__' -SimpleMatch -Quiet }
   if ($zipPlaceholderHits) {

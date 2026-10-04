@@ -33,6 +33,7 @@ export const PDF_CMAP_DIR = 'cmaps/';
  * pdfjs-dist 6.x はこれらのデコーダを wasm 実装へ切り替えており、`wasmUrl` 未指定だと
  * `#instantiateWasm: Ensure that the wasmUrl API parameter is provided` で初期化に失敗し、
  * スキャン PDF の該当ページ（CCITTFaxDecode 等）が白紙になる（実測済み）
+ * manifest の CSP が wasm を許可する前提で、JavaScript 版のフォールバックは同梱していない。
  */
 export const PDF_WASM_DIR = 'wasm/';
 
