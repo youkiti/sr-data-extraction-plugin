@@ -1,4 +1,4 @@
-# CI-1（docs/test-strategy.md §4）: typecheck + jest（カバレッジ 100% 込み）+ lint + lint:css + dev ビルド。
+# CI-1（docs/test-strategy.md §4）: typecheck + jest（カバレッジ 100% 込み）+ test:tools + lint + lint:css + dev ビルド。
 # CI-2 導入済み（2026-07-03）: Playwright E2E を e2e ジョブとして check と並列実行する
 name: CI
 
@@ -30,6 +30,8 @@ jobs:
         run: npm run lint:css
       - name: jest（カバレッジ 100% 強制）
         run: npm test
+      - name: ストア API ツールの単体テスト
+        run: npm run test:tools
       - name: dev ビルド検証（作業原則 7）
         run: npm run dev
 

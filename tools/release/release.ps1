@@ -10,6 +10,7 @@
     4. npm run build（production）
     5. tools/release/pack.ps1（key 除去・zip 化・検証）
     6. origin/master へ push
+    7. -Submit 指定時のみストアへアップロード・審査提出
 
   version バンプの差分は version 3 ファイルと現在値・ヘルプ対象版の文書 2 ファイルで、直前の master は CI green
   （手順 1 で機械チェックする）。そのため PR / CI 待ちを挟まず master へ直接コミットする
@@ -36,10 +37,14 @@
 .PARAMETER IncludeKeyPem
   zip へ key.pem を同梱する（初回アップロード専用。2026-07-10 に完了済みなので通常は不要）。
 
+.PARAMETER Submit
+  push 後にストアへアップロード・審査提出する。-NoPush / -IncludeKeyPem とは併用不可。
+
 .EXAMPLE
   npm run release -- minor      # 機能追加を含むリリース
   npm run release -- patch      # 修正のみのリリース
   npm run release -- 1.0.0      # version を明示
+  npm run release -- minor -Submit # 審査提出まで進める
 #>
 [CmdletBinding()]
 param(
@@ -48,7 +53,8 @@ param(
   [switch]$NoPush,
   [switch]$SkipCiCheck,
   [switch]$Force,
-  [switch]$IncludeKeyPem
+  [switch]$IncludeKeyPem,
+  [switch]$Submit
 )
 
 Set-StrictMode -Version Latest
@@ -81,6 +87,13 @@ Set-Location $repoRoot
 # 1. 前提チェック
 # ---------------------------------------------------------------------------
 Write-Host '=== 1. 前提チェック ===' -ForegroundColor Cyan
+
+if ($Submit -and $NoPush) {
+  Stop-WithError '-Submit と -NoPush は併用できません（push していない版は審査へ提出できません）'
+}
+if ($Submit -and $IncludeKeyPem) {
+  Stop-WithError '-Submit と -IncludeKeyPem は併用できません（key.pem 同梱の zip は初回専用です）'
+}
 
 $branch = (git rev-parse --abbrev-ref HEAD).Trim()
 if ($branch -ne $targetBranch) {
@@ -148,6 +161,14 @@ if (-not (Test-Path $envPath) -or -not (Select-String -Path $envPath -Pattern '^
   Stop-WithError '.env に WEBAUTH_CLIENT_ID がありません（本番ビルドが停止します）'
 }
 Write-Ok '.env の WEBAUTH_CLIENT_ID を確認'
+
+if ($Submit) {
+  node tools/release/storeApi.mjs status --require-submittable
+  if ($LASTEXITCODE -ne 0) {
+    Stop-WithError 'ストアの認証または提出可否の確認に失敗しました（-Force でも解除できません）'
+  }
+  Write-Ok 'ストアの認証と提出可否を確認'
+}
 
 # ---------------------------------------------------------------------------
 # 2. version バンプ
@@ -271,5 +292,16 @@ if ($NoPush) {
 $zipPath = Join-Path $repoRoot "release\sr-data-extraction-plugin-$next.zip"
 Write-Host ''
 Write-Host "提出用 zip: $zipPath" -ForegroundColor Cyan
-Write-Host '次: https://chrome.google.com/webstore/devconsole でアップロード → 審査へ提出'
-Write-Host '    「リモートコードを使用していますか」→ いいえ（.claude/skills/release-build 手順 3）'
+if ($Submit) {
+  Write-Host '=== 7. ストアへ提出 ===' -ForegroundColor Cyan
+  node tools/release/storeApi.mjs submit "--zip=$zipPath"
+  if ($LASTEXITCODE -eq 3) {
+    Stop-WithError '結果不明。npm run store:status で確認する。zip 作成と push は完了済み'
+  } elseif ($LASTEXITCODE -ne 0) {
+    Stop-WithError '提出に失敗。zip 作成と push は完了済み。原因を解消したら npm run store:submit で提出だけやり直せる（version は上げ直さない）'
+  }
+  Write-Ok 'ストアへ審査提出済み'
+} else {
+  Write-Host '次: npm run store:submit で審査へ提出（先に npm run store:submit -- --dry-run で確認できる）。ダッシュボードから手で出す場合は https://chrome.google.com/webstore/devconsole'
+  Write-Host '    「リモートコードを使用していますか」→ いいえ（.claude/skills/release-build 手順 3）'
+}

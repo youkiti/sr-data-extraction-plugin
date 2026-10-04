@@ -1,6 +1,6 @@
 ---
 name: release-build
-description: Chrome Web Store 提出用のリリースビルドと zip 作成。`npm run release -- minor` 一発で 前提チェック → version バンプ → 本番ビルド → zip 化・検証 → push まで通す。「リリースビルド」「ストア用 zip」「提出用パッケージ」「Store 更新」で使用。
+description: Chrome Web Store 提出用のリリースビルドと zip 作成。`npm run release -- minor` 一発で 前提チェック → version バンプ → 本番ビルド → zip 化・検証 → push まで通す。`-Submit` を付けると審査提出まで進む。「リリースビルド」「ストア用 zip」「提出用パッケージ」「Store 更新」で使用。
 ---
 
 # リリースビルド（Chrome Web Store 提出用 zip 作成）
@@ -13,10 +13,13 @@ Chrome Web Store へ提出・更新する zip を作る手順。**Store は mani
 npm run release -- minor    # 機能追加を含む ／ patch = 修正のみ ／ major ／ 0.7.3 のような明示指定も可
 ```
 
+`npm run release -- minor -Submit` なら push 後にアップロード・審査提出まで進む。初期設定は [docs/store/README.md](../../../docs/store/README.md) の「ストア API での提出（CLI）」を参照。`-Submit` を付けない場合は従来どおり zip 作成と push まで。
+
 [`tools/release/release.ps1`](../../../tools/release/release.ps1) が **前提チェック → version バンプ（3 ファイル）+ `docs/project-facts.md` 再生成・`hosted/help.html` 対象バージョン更新（2 ファイル）→ commit → `npm run build` → `pack.ps1`（key 除去・zip 化・検証）→ origin/master へ push** まで通す。所要 1 分弱。**どこかで NG が出れば非 0 終了する**ので、壊れた提出物も、検証を飛ばした push も発生しない。人間が判断するのは「どのバンプ種別か」と、出来た zip を Store へ出す（手順 3）ことだけ。
 
 - **なぜ PR を経由しないか**: 差分が version 3 ファイルと現在値・ヘルプ対象版の文書 2 ファイルで、直前の master が CI green であることをスクリプトが `gh run list` で機械チェックするため。**CLAUDE.md 作業原則 1（master で直接作業しない）の明示的な例外**であり、version バンプ commit にのみ適用する。機能変更を混ぜようとしても作業ツリーの汚れチェックで止まる。
 - 主なオプション（`npm run release -- patch -NoPush` のように渡す）:
+  - `-Submit` — push 後にストアへ審査提出（`-NoPush`・`-IncludeKeyPem` と併用不可。バンプ前の認証・提出可否チェックは `-Force` でも解除不可）
   - `-NoPush` — push せずローカル commit + zip まで
   - `-SkipCiCheck` — gh が無い / 未認証の環境
   - `-Force` — master 以外のブランチ・origin と不一致・CI が green でないときの停止を警告に落とす（作業ツリーの汚れチェックだけは解除されない）
@@ -94,7 +97,8 @@ pwsh -NoProfile -File tools/release/pack.ps1 -IncludeKeyPem
 
 - 提出後・ストア反映後に掲載ページを確認し、`docs/store/store-status.json` を手で更新して `npm run facts` を実行する。公開版は実際に反映された版を記録する。
 
-- https://chrome.google.com/webstore/devconsole でアイテムを開き、新しい zip をアップロード → 審査へ提出。
+- `npm run store:submit -- --dry-run` で確認してから、`npm run store:submit` で作成済み zip をアップロード → 審査へ提出する。`npm run store:status` で公開版と審査状況を確認できる。
+- 手動提出する場合は https://chrome.google.com/webstore/devconsole でアイテムを開き、新しい zip をアップロード → 審査へ提出する。
 - 掲載メタ情報・権限の使用理由・単一用途の原稿は [docs/store/README.md](../../../docs/store/README.md) と [docs/store/permissions-justification.md](../../../docs/store/permissions-justification.md) が正典。
 - 「リモートコードを使用していますか」→ **いいえ**（全 script はローカルバンドル。Picker の Google JS は youkiti.github.io 側 = 拡張パッケージ外で実行）。
 - 提出後、掲載ページの拡張 ID が `ibpbkgffgkmdmflamhadbcfjgfljjgip` と一致することを確認する。
@@ -103,6 +107,9 @@ pwsh -NoProfile -File tools/release/pack.ps1 -IncludeKeyPem
 
 | 症状 | 原因と対処 |
 |---|---|
+| リフレッシュトークン失効（`invalid_grant`） | OAuth 同意画面が「テスト中」だと 7 日で失効する。`docs/store/README.md` の初期設定手順 5 で再承認し、`.env` の `CWS_REFRESH_TOKEN` を入れ直す |
+| 審査中の提出があって止まる | `PENDING_REVIEW` / `STAGED` は提出不可。`npm run store:status` で確認し、既存の提出の審査・公開を待つ |
+| 「結果不明」で終わった | サーバー側で成立している可能性がある。再実行の前に `npm run store:status` で確認する。自動では再実行しない |
 | 「マニフェストでは key フィールドを使用できません」 | manifest から `key` を除去し忘れ。`npm run release` / `npm run pack:release` を通していれば起きない（zip 検証が止める） |
 | `dist が dev ビルドです` で停止 | 直前に `npm run dev` / `npm run watch` を回して dist が dev のまま。`npm run build` からやり直す |
 | ビルドが `WEBAUTH_CLIENT_ID が未設定です` で停止 | `.env` の `WEBAUTH_CLIENT_ID` 未設定（`LOCAL_WEBAUTH_CLIENT_ID` だけでは production に入らない）。手順 0-3 を確認して 1 をやり直す。※旧 `OAUTH_CLIENT_ID`（getAuthToken 時代）は issue #129 で廃止済みで、いくら設定しても読まれない |
