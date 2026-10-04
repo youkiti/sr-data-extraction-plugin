@@ -9,6 +9,23 @@ import { createSheetsDataStore } from './helpers/sheetsStore';
 
 const QUOTE = 'Mortality was 12 percent';
 
+test('実 PDF のテキスト層で文字列を選択できる', async ({ page }) => {
+  await setupRoutes(page, { schemaRows: [STUDY_FIELD_ROW], evidenceRows: [EVIDENCE_ROW_1] });
+  await initApp(page, '#/verify?study=study-1');
+  const span = page.locator('.pdf-viewer__text-layer span').first();
+  await expect(span).toBeAttached();
+  const selected = await span.evaluate((node) => {
+    const range = document.createRange();
+    range.selectNodeContents(node);
+    const selection = document.getSelection()!;
+    selection.removeAllRanges();
+    selection.addRange(range);
+    node.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+    return selection.toString();
+  });
+  expect(selected.trim()).not.toBe('');
+});
+
 const SCHEMA_FIELDS_HEADERS = [
   'schema_version', 'field_id', 'field_index', 'section', 'field_name', 'field_label',
   'entity_level', 'data_type', 'unit', 'allowed_values', 'required', 'extraction_instruction',

@@ -14,6 +14,7 @@ import {
   type PdfViewerDocument,
 } from '../../lib/pdf/renderPage';
 import { toDisplayRect } from '../../lib/pdf/viewportRect';
+import { renderPdfTextLayer } from '../../lib/pdf/renderTextLayer';
 import { searchPages, type HighlightOccurrence } from '../../features/verification/highlights';
 import { t } from '../../lib/i18n';
 import { el } from './dom';
@@ -38,6 +39,8 @@ export interface PdfViewerOptions {
   onHighlightClick?: (id: string) => void;
   /** テスト差し替え用（既定は renderPdfPageToCanvas） */
   renderPage?: typeof renderPdfPageToCanvas;
+  renderTextLayer?: typeof renderPdfTextLayer;
+  onTextSelected?: (selection: { page: number; text: string } | null) => void;
 }
 
 export interface PdfViewerHandle {
@@ -54,6 +57,18 @@ export interface PdfViewerHandle {
    */
   setDocument(document: PdfViewerDocument, pages: readonly TextLayerPage[]): void;
   getCurrentPage(): number;
+  clearSelection(): void;
+}
+
+/** document のリスナが、破棄されたビューアを保持し続けないよう弱参照で中継する。 */
+function listenForSelection(owner: Document, callback: () => void): void {
+  const reference = new WeakRef(callback);
+  const listener = (): void => {
+    const current = reference.deref();
+    if (current) current();
+    else owner.removeEventListener('selectionchange', listener);
+  };
+  owner.addEventListener('selectionchange', listener);
 }
 
 // issue #51: 小さい画面でも文字を追えるよう、上限を 200% → 300% まで広げる
@@ -62,6 +77,7 @@ const ZOOM_LEVELS = ['0.75', '1', '1.25', '1.5', '1.75', '2', '2.5', '3'] as con
 
 export function createPdfViewer(options: PdfViewerOptions): PdfViewerHandle {
   const renderPage = options.renderPage ?? renderPdfPageToCanvas;
+  const renderTextLayer = options.renderTextLayer ?? renderPdfTextLayer;
   let document = options.document;
   let pages = options.pages;
   let numPages = document.numPages;
@@ -76,6 +92,8 @@ export function createPdfViewer(options: PdfViewerOptions): PdfViewerHandle {
   let renderSeq = 0;
   /** 進行中の pdfjs RenderTask（新しい描画開始前・setDocument 時にキャンセルする） */
   let currentRenderTask: { cancel(): void } | null = null;
+  let currentTextTask: { cancel(): void } | null = null;
+  let lastSelection: { page: number; text: string } | null = null;
 
   // --- ツールバー ---------------------------------------------------------
   const prevButton = el('button', {
@@ -114,8 +132,9 @@ export function createPdfViewer(options: PdfViewerOptions): PdfViewerHandle {
 
   // --- 本体 ---------------------------------------------------------------
   const canvas = el('canvas', { className: 'pdf-viewer__canvas' });
+  let textLayer = el('div', { className: 'pdf-viewer__text-layer textLayer' });
   const overlay = el('div', { className: 'pdf-viewer__overlay' });
-  const pageWrap = el('div', { className: 'pdf-viewer__page' }, [canvas, overlay]);
+  const pageWrap = el('div', { className: 'pdf-viewer__page' }, [canvas, textLayer, overlay]);
   const errorEl = el('p', { className: 'pdf-viewer__error', attributes: { role: 'alert' } });
   errorEl.hidden = true;
   // スクロール領域はキーボードで到達可能にする（axe: scrollable-region-focusable。
@@ -146,6 +165,29 @@ export function createPdfViewer(options: PdfViewerOptions): PdfViewerHandle {
     ]),
     scroller,
   ]);
+
+  function notifySelection(next: typeof lastSelection): void {
+    if (lastSelection?.page === next?.page && lastSelection?.text === next?.text) return;
+    lastSelection = next;
+    options.onTextSelected?.(next);
+  }
+
+  function readSelection(): void {
+    if (!root.isConnected) return;
+    const selection = root.ownerDocument.getSelection();
+    const text = selection?.toString().replace(/\s+/g, ' ').trim();
+    if (text && textLayer.contains(selection!.anchorNode) && textLayer.contains(selection!.focusNode)) {
+      notifySelection({ page: currentPage, text });
+    } else {
+      notifySelection(null);
+    }
+  }
+
+  // mouseup のリスナがコールバックの寿命を root に結び付ける。脱着中は通知しない。
+  if (options.onTextSelected) {
+    root.addEventListener('mouseup', readSelection);
+    listenForSelection(root.ownerDocument, readSelection);
+  }
 
   /** 現在ページのテキスト層（テキスト層が無いページ番号は canvas 描画後の寸法に任せる） */
   function currentTextLayerPage(): TextLayerPage | null {
@@ -220,6 +262,14 @@ export function createPdfViewer(options: PdfViewerOptions): PdfViewerHandle {
 
   function redrawCanvas(): void {
     const seq = ++renderSeq;
+    const renderScale = scale;
+    currentTextTask?.cancel();
+    currentTextTask = null;
+    notifySelection(null);
+    // 非同期描画は世代ごとの要素へ隔離し、古いタスクが現ページを書き換えないようにする。
+    const nextTextLayer = el('div', { className: 'pdf-viewer__text-layer textLayer' });
+    textLayer.replaceWith(nextTextLayer);
+    textLayer = nextTextLayer;
     // 直前の描画（別ページ・別文書向け）はもう不要なのでキャンセルする。連番ガードと併用のため、
     // キャンセルに伴う rejection（pdfjs の RenderingCancelledException）は下の catch で
     // seq 不一致として無視される
@@ -228,6 +278,22 @@ export function createPdfViewer(options: PdfViewerOptions): PdfViewerHandle {
     void (async () => {
       try {
         const page = await document.getPage(currentPage);
+        if (seq === renderSeq && page.getTextContent) {
+          void (async () => {
+            try {
+              const task = renderTextLayer(
+                page as Parameters<typeof renderTextLayer>[0], nextTextLayer, renderScale,
+              );
+              currentTextTask = task;
+              await task.promise;
+            } catch {
+              // 選択用テキストの失敗は canvas と根拠ハイライトの表示に影響させない。
+              nextTextLayer.replaceChildren();
+            } finally {
+              if (seq === renderSeq) currentTextTask = null;
+            }
+          })();
+        }
         const { promise, cancel } = renderPage(page, canvas, scale);
         if (seq === renderSeq) {
           currentRenderTask = { cancel };
@@ -307,6 +373,10 @@ export function createPdfViewer(options: PdfViewerOptions): PdfViewerHandle {
 
   return {
     root,
+    clearSelection() {
+      root.ownerDocument.getSelection()?.removeAllRanges();
+      notifySelection(null);
+    },
     getCurrentPage: () => currentPage,
     setHighlights(next, nextActiveId) {
       highlights = next;

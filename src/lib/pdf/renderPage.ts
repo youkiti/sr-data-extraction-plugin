@@ -32,6 +32,7 @@ export interface RenderTaskLike {
 
 /** pdfjs の PDFPageProxy のうち描画に使う部分 */
 export interface RenderablePdfPage {
+  getTextContent?: import('pdfjs-dist').PDFPageProxy['getTextContent'];
   getViewport(options: { scale: number }): PdfPageViewport;
   render(options: { canvas: HTMLCanvasElement; viewport: PdfPageViewport }): RenderTaskLike;
 }
