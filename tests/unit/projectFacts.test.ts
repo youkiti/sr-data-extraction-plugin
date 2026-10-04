@@ -20,6 +20,14 @@ function expectCopies(file: string, pattern: RegExp, expected: string): void {
 }
 
 describe('文書に転記した現在の値', () => {
+  test('hosted/help.html の更新日はデプロイ時に置き換える印を3か所に保持する', () => {
+    const help = read('hosted/help.html');
+    expect(help.match(/__DEPLOY_DATE__/g)).toHaveLength(3);
+    for (const prefix of ['最終更新: ', 'Last updated: ', 'version: ']) {
+      expect(help).toContain(`${prefix}__DEPLOY_DATE__`);
+    }
+  });
+
   test('docs/project-facts.md の5項目は正の値と一致する（npm run facts で更新）', () => {
     const requirements = read('docs/requirements.md').split(/\r?\n/)[0];
     const heading = requirements?.match(/^# sr-data-extraction-plugin 要件定義書（(v\d+\.\d+)）$/);
