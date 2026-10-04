@@ -714,7 +714,7 @@ export async function persistPilotRelocateQuote(
   if (field === undefined || documentView === undefined) {
     return { status: 'not_found', message: t('pilot.relocateNoTarget') };
   }
-  return relocateQuote(
+  const outcome = await relocateQuote(
     {
       spreadsheetId: project.spreadsheetId,
       driveFolderId: project.driveFolderId,
@@ -724,4 +724,11 @@ export async function persistPilotRelocateQuote(
     },
     deps,
   );
+  // 再特定できた根拠を run の Evidence にも足す（項目 × 論文マトリクスが、検証パネルと同じく
+  // 最新の根拠でアンカリングの成否を判定できるようにする。同じセルは後ろの行が優先される）
+  const runEvidence = store.getState().pilot.evidence;
+  if (outcome.status === 'relocated' && runEvidence !== null) {
+    patchPilot(store, { evidence: [...runEvidence, outcome.evidence] });
+  }
+  return outcome;
 }
