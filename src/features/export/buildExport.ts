@@ -7,6 +7,10 @@ import type { Evidence } from '../../domain/evidence';
 import type { ExportFormat } from '../../domain/exportLog';
 import type { RunAuditInfo } from '../../domain/extractionRun';
 import type { SchemaField } from '../../domain/schemaField';
+import type { DocumentRecord } from '../../domain/document';
+import type { QuoteSetRow } from '../../domain/quoteSet';
+import type { EvidenceBundle } from '../verification/evidenceBundles';
+import { buildEvidenceQuotesCsv } from './buildEvidenceQuotesCsv';
 import { buildAuditCsv } from './buildAuditCsv';
 import { buildResultsLongCsv } from './buildResultsLongCsv';
 import { buildStudyWideCsv } from './buildStudyWideCsv';
@@ -20,7 +24,7 @@ import { parseCsv } from './parseCsv';
 export type ClassicExportFormat = Exclude<ExportFormat, 'r_set' | 'usage'>;
 
 /** 形式選択ラジオの表示順（ui-states.md §3 `#/export`） */
-export const EXPORT_FORMATS: readonly ClassicExportFormat[] = ['study_wide', 'results_long', 'audit'];
+export const EXPORT_FORMATS: readonly ClassicExportFormat[] = ['study_wide', 'results_long', 'audit', 'evidence_quotes'];
 
 /** プレビューに出すデータ行の上限（ui-states.md §3: 先頭 10 行） */
 export const PREVIEW_ROW_LIMIT = 10;
@@ -28,6 +32,9 @@ export const PREVIEW_ROW_LIMIT = 10;
 /** 3 形式の CSV 構築に必要な素材一式（exportService が Sheets から読み込む）。studies は
  * アクティブ study（Documents から 1 件以上参照）のみ・作成順で渡す（非アクティブは除外・§4.5） */
 export interface ExportMaterials {
+  documents: readonly DocumentRecord[];
+  quoteSetRows: readonly QuoteSetRow[];
+  bundlesByStudy: ReadonlyMap<string, ReadonlyMap<string, EvidenceBundle>>;
   studies: readonly StudyRecord[];
   studyRows: readonly StudyDataRow[];
   resultsRows: readonly ResultsDataRow[];
@@ -120,6 +127,12 @@ export function buildExport(format: ClassicExportFormat, materials: ExportMateri
         result.droppedRowCount,
       );
     }
+    case 'evidence_quotes': {
+      const result = buildEvidenceQuotesCsv({ ...materials,
+        studyDataRows: materials.studyRows, resultsDataRows: materials.resultsRows });
+      const audit = buildAuditCsv(studies, materials.decisions, materials.evidences, materials.runs, fields);
+      return finish(format, result.csv, result.studyCount, audit.undecidedCellCount, [], 0);
+    }
     case 'audit': {
       const result = buildAuditCsv(
         studies,
@@ -141,5 +154,6 @@ export function buildAllExports(
     study_wide: buildExport('study_wide', materials),
     results_long: buildExport('results_long', materials),
     audit: buildExport('audit', materials),
+    evidence_quotes: buildExport('evidence_quotes', materials),
   };
 }

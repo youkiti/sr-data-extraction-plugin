@@ -98,7 +98,7 @@ src/
 │
 ├── features/                      # ドメイン機能（UI に依存しない純粋ロジック）
 │   ├── project/
-│   │   ├── createProject.ts       # スプレッドシート 16 タブ + Drive フォルダ 4 種の生成
+│   │   ├── createProject.ts       # スプレッドシートの全タブ + Drive フォルダ 4 種の生成
 │   │   ├── selectProject.ts
 │   │   └── projectStore.ts
 │   ├── documents/

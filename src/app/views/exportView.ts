@@ -51,6 +51,12 @@ const FORMAT_OPTIONS: ReadonlyArray<{
     labelKey: 'export.formatRSetLabel',
     descriptionKey: 'export.formatRSetDesc',
   },
+  {
+    format: 'evidence_quotes',
+    label: null,
+    labelKey: 'export.formatEvidenceQuotesLabel',
+    descriptionKey: 'export.formatEvidenceQuotesDesc',
+  },
 ];
 
 function renderFormatSelector(exportState: ExportState, ctx: ViewContext): HTMLElement {

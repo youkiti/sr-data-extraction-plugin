@@ -1,7 +1,8 @@
-// 判定・データ・群構成の作業型を読み、モード変更をハードブロックする
+// 判定・データ・群構成・引用の作業型を読み、モード変更をハードブロックする
 // （issue #255・docs/design-independent-dual-review.md §2.1）。
-// StudyData / ResultsData は重複キーの敗者も含めて全行を読み、Decisions / ArmStructures
+// StudyData / ResultsData は重複キーの敗者も含めて全行を読み、Decisions / ArmStructures / QuoteSets
 // の追記履歴と併せて記録済みの作業型を収集する。
+import { readQuoteSetRows } from '../verification/quoteSetRepository';
 import type { AnnotatorType } from '../../domain/annotation';
 import type { GoogleApiDeps } from '../../lib/google/types';
 import { readAllStudyDataRows, readAllResultsDataRows } from '../extraction/annotationRepository';
@@ -27,17 +28,18 @@ export function collectAnnotatorTypesForEmail(
   return types;
 }
 
-/** 登録の都度、判定・データ・群構成を読み直す。読込失敗は呼び出し元へ伝播する */
+/** 登録の都度、判定・データ・群構成・引用を読み直す。読込失敗は呼び出し元へ伝播する */
 export async function readAnnotatorTypesForEmail(
   spreadsheetId: string,
   email: string,
   google: GoogleApiDeps,
 ): Promise<Set<HumanWorkType>> {
-  const [decisions, study, results, arms] = await Promise.all([
+  const [decisions, study, results, arms, quotes] = await Promise.all([
     readAllDecisions(spreadsheetId, google),
     readAllStudyDataRows(spreadsheetId, google),
     readAllResultsDataRows(spreadsheetId, google),
     readAllArmStructures(spreadsheetId, google),
+    readQuoteSetRows(spreadsheetId, google),
   ]);
-  return collectAnnotatorTypesForEmail([...decisions, ...study, ...results, ...arms], email);
+  return collectAnnotatorTypesForEmail([...decisions, ...study, ...results, ...arms, ...quotes], email);
 }

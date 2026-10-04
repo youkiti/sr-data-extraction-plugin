@@ -129,6 +129,8 @@ function makeStudy(overrides: Partial<StudyRecord> = {}): StudyRecord {
 function makeBundleInput(overrides: Partial<VerificationBundleInput> = {}): VerificationBundleInput {
   return {
     spreadsheetId: 'sheet-1',
+    quoteEvidence: [],
+    quoteSetRows: [],
     study: makeStudy(),
     documents: [makeDocument()],
     fields: [],

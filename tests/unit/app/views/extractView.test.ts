@@ -134,6 +134,7 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<ExtractViewCallba
       extract: callbacks,
       verify: {
         onAssignedOnlyChange: jest.fn(),
+        onQuoteSetSave: jest.fn().mockResolvedValue(undefined),
         onSelectStudy: jest.fn(),
         onRetryLoad: jest.fn(),
         onDecision: jest.fn(),

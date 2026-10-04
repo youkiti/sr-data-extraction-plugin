@@ -146,6 +146,7 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<PilotViewCallback
       },
       verify: {
         onAssignedOnlyChange: jest.fn(),
+        onQuoteSetSave: jest.fn().mockResolvedValue(undefined),
         onSelectStudy: jest.fn(),
         onRetryLoad: jest.fn(),
         onDecision: jest.fn(),
@@ -569,7 +570,7 @@ describe('実行中', () => {
 
 describe('完了（サマリ + 埋め込み検証）', () => {
   function makeVerification(): VerificationData {
-    return { document: makeDocument() } as unknown as VerificationData;
+    return { document: makeDocument(), quoteSetRows: [] } as unknown as VerificationData;
   }
 
   test('done は完了文言 + 再パイロット導線', () => {

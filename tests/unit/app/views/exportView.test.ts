@@ -146,6 +146,7 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<ExportViewCallbac
       },
       verify: {
         onAssignedOnlyChange: jest.fn(),
+        onQuoteSetSave: jest.fn().mockResolvedValue(undefined),
         onSelectStudy: jest.fn(),
         onRetryLoad: jest.fn(),
         onDecision: jest.fn(),
@@ -215,6 +216,7 @@ function makeBuiltAll(
       ...(overrides.results_long ?? {}),
     }),
     audit: makeBuilt('audit', overrides.audit ?? {}),
+    evidence_quotes: makeBuilt('evidence_quotes', overrides.evidence_quotes ?? {}),
   };
 }
 
@@ -282,7 +284,7 @@ describe('renderExportView', () => {
     const { ctx, callbacks } = makeCtx();
     const view = renderExportView(makeState({ built: makeBuiltAll() }), ctx);
     const radios = view.querySelectorAll<HTMLInputElement>('#export-format input[type=radio]');
-    expect(radios).toHaveLength(4); // study_wide / results_long / audit / r_set（issue #60）
+    expect(radios).toHaveLength(5);
     expect(radios[0]?.checked).toBe(true); // 既定 = study_wide
 
     const summary = view.querySelector('#export-summary');
@@ -304,6 +306,9 @@ describe('renderExportView', () => {
     (radios[2] as HTMLInputElement).checked = true;
     radios[2]?.dispatchEvent(new Event('change'));
     expect(callbacks.onSelectFormat).toHaveBeenCalledWith('audit');
+    expect(view.textContent).toContain('根拠の表（evidence_quotes.csv）');
+    radios[4]?.dispatchEvent(new Event('change'));
+    expect(callbacks.onSelectFormat).toHaveBeenCalledWith('evidence_quotes');
 
     (radios[3] as HTMLInputElement).checked = true;
     radios[3]?.dispatchEvent(new Event('change'));

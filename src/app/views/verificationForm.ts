@@ -23,6 +23,7 @@ import {
   renderCell,
   renderStatusChip,
   type CellHighlightInfo,
+  type QuoteEditState,
 } from './verificationCellCard';
 import { allowedValuesWarningText, renderAllowedValuesBadge } from './enumChoiceEditor';
 import {
@@ -69,6 +70,7 @@ export interface RobEstimateAddModel {
 }
 
 export interface VerificationFormModel {
+  quoteEdit?: ReadonlyMap<string, QuoteEditState>;
   tabs: EntityLevel[];
   activeTab: EntityLevel;
   tabModel: TabModel;
@@ -132,6 +134,9 @@ export interface VerificationFormModel {
 }
 
 export interface VerificationFormHandlers {
+  onQuoteRemove?(cellKey: string, quoteId: string): void;
+  onQuoteTheme?(cellKey: string, quoteId: string, theme: string): void;
+  onQuoteReset?(cellKey: string): void;
   onSelectTab(tab: EntityLevel): void;
   onFocusCell(cellKey: string): void;
   onAccept(cellKey: string): void;

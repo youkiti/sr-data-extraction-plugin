@@ -1,3 +1,8 @@
+import { getSheetTitles, getSheetValues } from '../../../../src/lib/google/sheets';
+jest.mock('../../../../src/lib/google/sheets');
+import { quoteRow } from '../verification/quoteSetFixtures';
+import { readQuoteSetRows } from '../../../../src/features/verification/quoteSetRepository';
+jest.mock('../../../../src/features/verification/quoteSetRepository');
 import {
   collectAnnotatorTypesForEmail,
   readAnnotatorTypesForEmail,
@@ -14,6 +19,7 @@ const google = { fetch: jest.fn(), getAccessToken: jest.fn() };
 const email = 'reviewer@example.com';
 
 beforeEach(() => {
+  jest.mocked(readQuoteSetRows).mockResolvedValue([]);
   jest.mocked(readAllDecisions).mockResolvedValue([]);
   jest.mocked(readAllStudyDataRows).mockResolvedValue([]);
   jest.mocked(readAllResultsDataRows).mockResolvedValue([]);
@@ -69,4 +75,23 @@ test('別 email・大文字違い・前後空白の行だけにある作業型�
   ], email);
   expect(types).toEqual(new Set(['human_with_ai']));
   expect(types.has('human_independent')).toBe(false);
+});
+
+test('引用だけの作業も本人のモードを保持し、他人の行とタブ無しは痕跡なし', async () => {
+  jest.mocked(readQuoteSetRows).mockResolvedValue([quoteRow({ annotator: email })]);
+  expect(await readAnnotatorTypesForEmail('sheet', email, google)).toEqual(new Set(['human_with_ai']));
+  jest.mocked(readQuoteSetRows).mockResolvedValue([quoteRow({ annotator: 'other' })]);
+  expect(await readAnnotatorTypesForEmail('sheet', email, google)).toEqual(new Set());
+  jest.mocked(readQuoteSetRows).mockResolvedValue([]);
+  expect(await readAnnotatorTypesForEmail('sheet', email, google)).toEqual(new Set());
+});
+
+test('QuoteSets タブが無いプロジェクトは実際の reader でも痕跡なしになる', async () => {
+  jest.mocked(getSheetTitles).mockResolvedValue([]);
+  jest.mocked(readQuoteSetRows).mockImplementationOnce(
+    jest.requireActual<typeof import('../../../../src/features/verification/quoteSetRepository')>(
+      '../../../../src/features/verification/quoteSetRepository').readQuoteSetRows,
+  );
+  expect(await readAnnotatorTypesForEmail('sheet', email, google)).toEqual(new Set());
+  expect(getSheetValues).not.toHaveBeenCalled();
 });

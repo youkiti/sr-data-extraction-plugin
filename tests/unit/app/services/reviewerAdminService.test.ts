@@ -16,6 +16,8 @@ import {
   readReviewerAssignments,
 } from '../../../../src/features/project/reviewerRepository';
 
+import { readQuoteSetRows } from '../../../../src/features/verification/quoteSetRepository';
+jest.mock('../../../../src/features/verification/quoteSetRepository');
 import { readAllDecisions } from '../../../../src/features/verification/decisionRepository';
 import { readAllStudyDataRows, readAllResultsDataRows } from '../../../../src/features/extraction/annotationRepository';
 import { readAllArmStructures } from '../../../../src/features/verification/armStructureRepository';
@@ -63,6 +65,7 @@ function makeStore(withProject = true): Store {
 }
 
 beforeEach(() => {
+  jest.mocked(readQuoteSetRows).mockResolvedValue([]);
   jest.clearAllMocks();
   appendReviewerAssignmentMock.mockResolvedValue(undefined);
   shareProjectWithReviewerMock.mockResolvedValue(undefined);

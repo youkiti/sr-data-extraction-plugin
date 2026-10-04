@@ -4087,3 +4087,20 @@ section.documents__tiab {
 #ask-paper-error {
   color: var(--color-danger);
 }
+
+.verify__quote-remove,
+.verify__quote-reset,
+.verify__quote-theme-select,
+.verify__quote-theme-input {
+  margin: 4px;
+}
+
+.verify__quote-source,
+.verify__quote-empty,
+.verify__quote-newer {
+  color: var(--color-text-muted);
+}
+
+.verify__quote-error {
+  color: var(--color-danger);
+}

@@ -7,7 +7,7 @@ import {
 } from '../../../src/domain/sheetsSchema';
 
 describe('SHEET_TABS', () => {
-  test('requirements.md §3.2 + 独立二重レビュー機能 + 診断ログ機能の 17 タブを定義順に持つ', () => {
+  test('引用一覧を含む 18 タブを定義順に持つ', () => {
     expect(SHEET_TABS).toEqual([
       'Meta',
       'Protocol',
@@ -25,6 +25,7 @@ describe('SHEET_TABS', () => {
       'ExportLog',
       'Reviewers',
       'ReviewSets',
+      'QuoteSets',
       'ApiErrorLog',
     ]);
   });

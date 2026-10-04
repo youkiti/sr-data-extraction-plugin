@@ -5,6 +5,8 @@
 //   一切読まず、Studies × 最新確定スキーマから対象一覧を組む（readIndependentVerifyTargetMaterials）
 // - study の選択（?study= 直リンク / セレクタ切替）: verificationService.loadVerificationBundle
 // - 判定・群構成確定の永続化: verificationService へ委譲
+import type { QuoteSetRow } from '../../domain/quoteSet';
+import { appendQuoteSetRows, readQuoteSetRows } from '../../features/verification/quoteSetRepository';
 import type { Decision } from '../../domain/decision';
 import type { DocumentRecord } from '../../domain/document';
 import type { Evidence } from '../../domain/evidence';
@@ -326,6 +328,7 @@ async function readIndependentVerifyTargetMaterials(
         study: item.study,
         documents: item.documents,
         evidence: [],
+        quoteEvidence: [],
         fields,
         schemaVersion: latest.schemaVersion,
         progress: verificationProgress(fields, [], ownDecisions, { armStructure }),
@@ -438,6 +441,7 @@ export async function readVerifyTargetMaterials(
         study: item.study,
         documents: item.documents,
         evidence,
+        quoteEvidence: allEvidence.filter((row) => row.studyId === item.study.studyId),
         fields,
         schemaVersion,
         progress: verificationProgress(fields, evidence, ownDecisions, { armStructure }),
@@ -588,6 +592,9 @@ export async function openVerifyStudy(
         documents: target.documents,
         fields: target.fields,
         evidence: target.evidence,
+        quoteEvidence: target.quoteEvidence,
+        quoteSetRows: annotatorTypeForRole(state.role.role ?? 'owner') === 'human_with_ai'
+          ? await readQuoteSetRows(project.spreadsheetId, deps.google) : [],
         schemaVersion: target.schemaVersion,
         annotatorType: annotatorTypeForRole(state.role.role ?? 'owner'),
         // 「許容値外」警告の `#/schema` 導線は owner だけに出す（issue #254。reviewer 系
@@ -797,4 +804,14 @@ export function setVerifyAssignedOnly(store: Store, value: boolean): void {
   if (state.role.role !== 'owner' || state.verify.assignedOnly === value) return;
   invalidateVerifyTargets(store);
   patchVerify(store, { assignedOnly: value });
+}
+
+/** 引用一覧を排他制御下で追記し、失敗をパネルへ返す。 */
+export async function persistVerifyQuoteSet(
+  store: Store, deps: VerificationDeps, rows: readonly QuoteSetRow[],
+): Promise<void> {
+  const project = store.getState().currentProject;
+  if (!project) throw new Error('プロジェクトが選択されていません');
+  await withSpreadsheetWriteLock(project.spreadsheetId, () =>
+    appendQuoteSetRows(project.spreadsheetId, rows, deps.google));
 }

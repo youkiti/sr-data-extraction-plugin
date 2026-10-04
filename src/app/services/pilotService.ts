@@ -521,6 +521,8 @@ export async function loadPilotVerification(
         study: item.study,
         documents: item.documents,
         fields: runFields,
+        quoteSetRows: [],
+        quoteEvidence: [],
         evidence: evidence.filter((row) => row.studyId === studyId),
         schemaVersion: run.schemaVersion,
         annotatorType: annotatorTypeForRole(state.role.role ?? 'owner'),

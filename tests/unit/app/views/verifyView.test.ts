@@ -12,6 +12,7 @@ import type { VerificationData } from '../../../../src/features/verification/typ
 function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<VerifyViewCallbacks> } {
   const callbacks = {
     onAssignedOnlyChange: jest.fn(),
+    onQuoteSetSave: jest.fn().mockResolvedValue(undefined),
     onSelectStudy: jest.fn(),
     onRetryLoad: jest.fn(),
     onDecision: jest.fn(),
@@ -245,6 +246,7 @@ function makeField(overrides: Partial<SchemaField> = {}): SchemaField {
 
 function makeTarget(overrides: Partial<VerifyTarget> = {}): VerifyTarget {
   return {
+    quoteEvidence: [],
     study: makeStudy(),
     documents: [makeDocument()],
     evidence: [],
@@ -259,6 +261,7 @@ function makeTarget(overrides: Partial<VerifyTarget> = {}): VerifyTarget {
 
 function makeVerification(): VerificationData {
   return {
+    quoteSetRows: [],
     study: makeStudy(),
     documents: [{ document: makeDocument(), extractedPages: [], extractedTextError: null }],
     loadPdfView: async () => ({ pdf: null, pdfError: 'テストでは PDF なし', textPages: [] }),

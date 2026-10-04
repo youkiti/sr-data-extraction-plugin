@@ -87,6 +87,14 @@ export const enApp: Record<keyof typeof jaApp, string> = {
   'reviewSets.confirmBody': 'This overwrites the review set of every active study. Continue?',
   'home.assignedProgress': 'Completed {m} of {n} assigned studies',
   'home.assignedProgressLoading': 'Loading assigned progress…',
+  'verify.quoteRemove': 'Remove',
+  'verify.quoteRemoveAria': 'Remove this quote',
+  'verify.quoteReset': 'Restore AI quotes',
+  'verify.quoteAllRemoved': 'All quotes have been removed',
+  'verify.quoteNewerAi': 'Newer AI quotes are available for this field. Select “Restore AI quotes” to use them.',
+  'verify.quoteSaveError': 'Failed to save quotes. Please try again.',
+  'verify.quoteThemeAria': 'Quote option or theme',
+  'verify.quoteSourceHuman': 'Added by a person',
   'verify.assignedOnly': 'Only my assigned studies',
   'documents.mergeReviewSet': 'Review set',
   'adjudicate.outsideNote':
@@ -914,6 +922,8 @@ export const enApp: Record<keyof typeof jaApp, string> = {
   'export.formatStudyWideDesc': '1 row = 1 study. For drafting Table 1 and visual checks in Excel',
   'export.formatResultsLongDesc':
     '1 row = 1 result cell. For meta-analysis preprocessing in R (per-arm outcomes, RoB)',
+  'export.formatEvidenceQuotesLabel': 'Evidence quotes (evidence_quotes.csv)',
+  'export.formatEvidenceQuotesDesc': 'One row per quote: text, page, section, theme, whether it is an AI or human-edited quote, and whether it is final evidence.',
   'export.formatAuditDesc':
     '1 row = 1 decision event + AI evidence. For audits, supplementary materials, and extraction accuracy research',
   'export.formatRSetLabel': 'R set (recommended)',

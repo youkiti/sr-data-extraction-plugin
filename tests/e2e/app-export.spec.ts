@@ -225,7 +225,7 @@ test('形式選択 + サマリ + プレビュー → 生成で Drive 保存 + Ex
   // 通常表示: 形式ラジオ（既定 = study_wide。study_wide / results_long / audit / r_set の 4 種）+ サマリ + プレビュー
   const formats = page.locator('#export-format');
   await expect(formats).toBeVisible({ timeout: 15_000 });
-  await expect(formats.locator('input[type=radio]')).toHaveCount(4);
+  await expect(formats.locator('input[type=radio]')).toHaveCount(5);
   const summary = page.locator('#export-summary');
   await expect(summary).toContainText('データ行数');
   await expect(summary).toContainText('1');
@@ -429,4 +429,13 @@ test.describe('独立した使用量 CSV', () => {
     expect(captured.exportLogBodies[0]?.values[0]?.[3]).toBe(1);
     await expect(page.locator('#export-warning')).toHaveCount(0);
   });
+});
+
+test('根拠の表のプレビューは study_label を先頭に 17 列を表示する', async ({ page }) => {
+  await setupRoutes(page);
+  await initApp(page, '#/export');
+  await page.locator('#export-format input[value=evidence_quotes]').check();
+  const headers = page.locator('#export-preview thead th');
+  await expect(headers).toHaveCount(17);
+  await expect(headers.first()).toHaveText('study_label');
 });

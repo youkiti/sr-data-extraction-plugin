@@ -115,6 +115,7 @@ function makeMaterial(): VerifyTargetMaterial {
       schemaVersion: 1,
       progress: { decided: 0, total: 1, byTab: [{ tab: 'study', decided: 0, total: 1 }] },
       armWarnings: [],
+      quoteEvidence: [],
       aiExtractionStatus: 'extracted',
     },
     ownDecisions: [],

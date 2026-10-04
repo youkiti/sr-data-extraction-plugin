@@ -2094,6 +2094,7 @@ describe('bootstrapApp: #/pilot', () => {
       entityLevel: 'outcome_result' as const,
     };
     const verification = {
+      quoteSetRows: [],
       study: STUDY_RECORD,
       documents: [{ document: DOC_RECORD, extractedPages: [], extractedTextError: null }],
       loadPdfView: async () => ({ pdf: null, pdfError: 'テストでは PDF なし', textPages: [] }),
@@ -2206,6 +2207,7 @@ describe('bootstrapApp: #/pilot', () => {
     // persistPilotRelocateQuote → relocateQuoteService.relocateQuote までの配線を
     // 実 LLM 呼び出し無しで確認できる
     const verification = {
+      quoteSetRows: [],
       study: STUDY_RECORD,
       documents: [
         {
@@ -2275,6 +2277,7 @@ describe('bootstrapApp: #/pilot', () => {
 
   test('#/pilot のレイアウトモードトグルが onChangeLayoutMode（setPilotLayoutMode）に配線されている', async () => {
     const verification = {
+      quoteSetRows: [],
       study: STUDY_RECORD,
       documents: [{ document: DOC_RECORD, extractedPages: [], extractedTextError: null }],
       loadPdfView: async () => ({ pdf: null, pdfError: 'テストでは PDF なし', textPages: [] }),
@@ -2332,6 +2335,7 @@ describe('bootstrapApp: #/pilot', () => {
 
   test('#/pilot の保存競合検出バナー（issue #64）の「再読み込み」は埋め込み検証を読み直す', async () => {
     const verification = {
+      quoteSetRows: [],
       study: STUDY_RECORD,
       documents: [{ document: DOC_RECORD, extractedPages: [], extractedTextError: null }],
       loadPdfView: async () => ({ pdf: null, pdfError: 'テストでは PDF なし', textPages: [] }),
@@ -2375,6 +2379,7 @@ describe('bootstrapApp: #/pilot', () => {
 
   test('#/pilot の保存競合検出バナーの「再読み込み」は verifyStudyId が無ければ何もしない', async () => {
     const verification = {
+      quoteSetRows: [],
       study: STUDY_RECORD,
       documents: [{ document: DOC_RECORD, extractedPages: [], extractedTextError: null }],
       loadPdfView: async () => ({ pdf: null, pdfError: 'テストでは PDF なし', textPages: [] }),
@@ -3457,6 +3462,24 @@ describe('bootstrapApp: #/verify・#/dashboard', () => {
     expect(decisionAppendCount()).toBeGreaterThan(beforeOutcomeAdd);
   });
 
+  test('引用の削除が QuoteSets への追記まで配線されている', async () => {
+    const stub = createWindowStub(verifyPreloaded());
+    const { deps, fetchMock } = createVerifyFakeDeps({ ...BASE_TABS,
+      Evidence: [[...SHEET_HEADERS.Evidence], [...EVIDENCE_ROW.slice(0, 8), 'quote', '1', 'high', 'exact']],
+    });
+    await bootstrapApp(asWindow(stub), deps);
+    stub.location.hash = '#/verify';
+    stub.fireHashChange();
+    await flush();
+    await flush();
+    document.querySelector<HTMLButtonElement>('.verify__quote-remove')!.click();
+    await flush();
+    await flush();
+    expect(fetchMock.mock.calls.some(([url]) => decodeURIComponent(String(url)).includes('QuoteSets!A1:append'))).toBe(true);
+    expect(document.querySelector('.verify__quote-empty')).not.toBeNull();
+    expect(document.querySelector('.verify__quote-error')).toBeNull();
+  });
+
   test('#/verify の「AI で再特定」（issue #94）が persistVerifyRelocateQuote に配線されている', async () => {
     // createFakeDeps 系の既定 fetch では Drive のテキスト取得も API キーも用意されないため、
     // relocateQuoteService はいずれかの早期 not_found 経路（extracted_texts 空 or API キー未設定）
@@ -3623,6 +3646,7 @@ describe('bootstrapApp: #/export', () => {
           study_wide: makeBuilt('study_wide'),
           results_long: makeBuilt('results_long'),
           audit: makeBuilt('audit'),
+          evidence_quotes: makeBuilt('evidence_quotes'),
         },
         schemaVersion: 2,
         methodsFacts: {

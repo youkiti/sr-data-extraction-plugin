@@ -284,6 +284,7 @@ function makePdf(): DisposablePdfDocument {
 /** persistPilotRelocateQuote のテスト用最小 VerificationData（issue #94） */
 function makeVerificationData(overrides: Partial<VerificationData> = {}): VerificationData {
   return {
+    quoteSetRows: [],
     study: {
       studyId: 'study-doc-1',
       reviewSet: null,
@@ -1453,6 +1454,7 @@ describe('S6 / S8 の直列化（persistPilotDecision は verifyService.persistV
           schemaVersion: 1,
           progress: { decided: 0, total: 1, byTab: [] },
           armWarnings: [],
+          quoteEvidence: [],
           aiExtractionStatus: 'extracted',
         },
       ],

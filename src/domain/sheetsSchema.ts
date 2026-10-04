@@ -1,4 +1,4 @@
-// Google Sheets の 17 タブ定義（requirements.md §3.2 v0.24）。
+// Google Sheets の 18 タブ定義。
 // 実 I/O は lib/google/sheets.ts 側で行う。
 // Meta / Protocol / LLMApiLog は sr-query-builder のスキーマを流用（ProtocolBlocks は持たない）。
 // v0.10 で study / document を分離: Studies を新設し、データ行のキーを document_id → study_id へ改名。
@@ -27,6 +27,7 @@ export const SHEET_TABS = [
   'ExportLog',
   'Reviewers',
   'ReviewSets',
+  'QuoteSets',
   'ApiErrorLog',
 ] as const;
 
@@ -266,6 +267,12 @@ export const SHEET_HEADERS: Record<SheetTabName, readonly string[]> = {
   ],
   Reviewers: ['email', 'role', 'review_mode', 'assigned_by', 'assigned_at'],
   ReviewSets: ['set_id', 'reviewer_emails', 'seed', 'updated_by', 'updated_at', 'study_ids'],
+  QuoteSets: [
+    'set_id', 'saved_at', 'saved_by', 'annotator', 'annotator_type',
+    'study_id', 'field_id', 'entity_key', 'schema_version', 'kind', 'seq',
+    'quote_id', 'source', 'evidence_id', 'origin_annotator', 'document_id',
+    'quote', 'page', 'section', 'theme', 'anchor_status', 'base_run_id',
+  ],
   // Google API 失敗の診断ログ（issue #249）。詳細は domain/apiErrorLog.ts / lib/diagnostics/apiErrorLog.ts
   ApiErrorLog: [
     'log_id',
