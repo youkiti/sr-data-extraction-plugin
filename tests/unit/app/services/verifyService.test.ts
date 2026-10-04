@@ -1,3 +1,7 @@
+import { quoteRow } from '../../features/verification/quoteSetFixtures';
+import { persistVerifyQuoteSet } from '../../../../src/app/services/verifyService';
+import { appendQuoteSetRows, readQuoteSetRows } from '../../../../src/features/verification/quoteSetRepository';
+jest.mock('../../../../src/features/verification/quoteSetRepository');
 import {
   composeEvidenceByStudy,
   invalidateVerifyTargets,
@@ -326,6 +330,7 @@ function makeDeps(overrides: Partial<VerificationDeps> = {}): VerificationDeps {
 
 function makeTarget(overrides: Partial<VerifyTarget> = {}): VerifyTarget {
   return {
+    quoteEvidence: [],
     study: makeStudy(),
     documents: [makeDocument()],
     evidence: [makeEvidence()],
@@ -369,6 +374,7 @@ function makeStore(patch: {
 }
 
 beforeEach(() => {
+  jest.mocked(readQuoteSetRows).mockResolvedValue([]);
   readEvidenceRowsMock.mockResolvedValue([makeEvidence()]);
   readCompletedRunMetasMock.mockResolvedValue([makeCompletedRunMeta()]);
   readAllDecisionsMock.mockResolvedValue([]);
@@ -911,6 +917,7 @@ describe('readVerifyTargetMaterials: 独立入力モード（reviewer_independen
     expect(getSchemaFieldsMock).toHaveBeenCalledWith('sheet-1', 2, expect.anything());
     expect(materials).toHaveLength(1);
     expect(materials[0]?.target.evidence).toEqual([]);
+    expect(materials[0]?.target.quoteEvidence).toEqual([]);
     expect(materials[0]?.target.schemaVersion).toBe(2);
     expect(materials[0]?.target.study.studyId).toBe('study-doc-1');
     // 独立入力モードは AI 抽出の実施状況を一切見せない盲検レビューのため常に 'extracted' 固定
@@ -1532,6 +1539,7 @@ describe('persistVerifyInstanceDeclarations', () => {
 /** persistVerifyRelocateQuote のテスト用最小 VerificationData（issue #94） */
 function makeVerificationData(overrides: Partial<VerificationData> = {}): VerificationData {
   return {
+    quoteSetRows: [],
     study: makeStudy(),
     documents: [
       {
@@ -1819,4 +1827,65 @@ describe('担当セットによる検証対象', () => {
     await loadVerifyTargets(empty, makeDeps());
     expect(empty.getState().verify.targets).toHaveLength(4);
   });
+});
+
+describe('引用履歴の読み込みと保存', () => {
+  test('study・annotator・annotatorType が完全一致する行だけをパネルへ渡す', async () => {
+    const own = quoteRow({ studyId: 'study-doc-1', annotator: ME });
+    jest.mocked(readQuoteSetRows).mockResolvedValue([own,
+      { ...own, studyId: 'other' }, { ...own, annotator: 'other' },
+      { ...own, annotatorType: 'human_independent' }, { ...own, annotatorType: 'consensus' }]);
+    const old = makeEvidence({ evidenceId: 'old', runId: 'old' });
+    const latest = makeEvidence();
+    const store = makeStore({ verify: { targets: [makeTarget({ quoteEvidence: [old, latest] })] } });
+    await openVerifyStudy(store, makeDeps(), 'study-doc-1');
+    expect(store.getState().verify.verification?.quoteSetRows).toEqual([own]);
+    expect(store.getState().verify.verification?.quoteEvidence).toEqual([old, latest]);
+    expect(readEvidenceRows).not.toHaveBeenCalled();
+    expect(store.getState().verify.verification?.evidence).toEqual([latest]);
+  });
+
+  test('独立入力では引用履歴と Evidence を読まない', async () => {
+    const store = makeStore({ role: 'reviewer_independent', documents: [makeDocument()],
+      verify: { targets: [makeTarget({ evidence: [] })] } });
+    await openVerifyStudy(store, makeDeps(), 'study-doc-1');
+    expect(readQuoteSetRows).not.toHaveBeenCalled();
+    expect(readEvidenceRows).not.toHaveBeenCalled();
+    expect(store.getState().verify.verification?.quoteSetRows).toEqual([]);
+  });
+
+  test('同じシートへの保存は直列化し、失敗をそのまま返す', async () => {
+    let finish!: () => void;
+    jest.mocked(appendQuoteSetRows).mockImplementationOnce(() => new Promise<void>((resolve) => { finish = resolve; }));
+    const store = makeStore({});
+    const deps = makeDeps();
+    const rows = [quoteRow()];
+    const first = persistVerifyQuoteSet(store, deps, rows);
+    const second = persistVerifyQuoteSet(store, deps, rows);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(appendQuoteSetRows).toHaveBeenCalledTimes(1);
+    finish();
+    await Promise.all([first, second]);
+    expect(appendQuoteSetRows).toHaveBeenCalledTimes(2);
+    expect(appendQuoteSetRows).toHaveBeenLastCalledWith('sheet-1', rows, deps.google);
+    const failure = new Error('保存失敗');
+    jest.mocked(appendQuoteSetRows).mockRejectedValueOnce(failure);
+    await expect(persistVerifyQuoteSet(store, deps, rows)).rejects.toBe(failure);
+    await expect(persistVerifyQuoteSet(makeStore({ withProject: false }), deps, rows)).rejects.toThrow('プロジェクト');
+  });
+});
+
+test('対象一覧で全 run の根拠を study ごとに保持し、study を開き直しても再取得しない', async () => {
+  const old = makeEvidence({ evidenceId: 'old', runId: 'old' });
+  const latest = makeEvidence();
+  readEvidenceRowsMock.mockResolvedValue([old, latest, makeEvidence({ studyId: 'other' })]);
+  const store = makeStore({ documents: [makeDocument()] });
+  await loadVerifyTargets(store, makeDeps());
+  expect(store.getState().verify.targets?.[0]?.quoteEvidence).toEqual([old, latest]);
+  await openVerifyStudy(store, makeDeps(), 'study-doc-1');
+  await openVerifyStudy(store, makeDeps(), 'study-doc-1');
+  expect(readEvidenceRowsMock).toHaveBeenCalledTimes(1);
+  expect(readQuoteSetRows).toHaveBeenCalledTimes(2);
+  expect(store.getState().verify.verification?.quoteEvidence).toEqual([old, latest]);
 });

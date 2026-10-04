@@ -3,6 +3,7 @@
 import type { Decision } from '../../domain/decision';
 import type { DocumentRole } from '../../domain/document';
 import type { Evidence } from '../../domain/evidence';
+import type { QuoteSetRow } from '../../domain/quoteSet';
 import type { ExportFormat } from '../../domain/exportLog';
 import type { ReviewMode } from '../../domain/reviewer';
 import type { MethodsLanguage, MethodsWorkflow } from '../../features/export/methodsBoilerplate';
@@ -240,6 +241,8 @@ export interface ExtractViewCallbacks {
 
 /** #/verify（S8）のユーザー操作コールバック */
 export interface VerifyViewCallbacks {
+  /** 引用スナップショットを保存する。 */
+  onQuoteSetSave(rows: readonly QuoteSetRow[]): Promise<void>;
   /** owner の「自分の担当のみ」切り替え */
   onAssignedOnlyChange(value: boolean): void;
   /** study セレクタの切替（URL ?study= と同期する） */

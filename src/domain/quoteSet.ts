@@ -1,3 +1,5 @@
+// セルごとの引用一覧と、人による編集スナップショットの型。
+// AI の根拠行を保持したまま、表示する引用を別に管理する。
 import type { AnchorStatus } from './anchor';
 import type { AnnotatorType } from './annotation';
 import type { Confidence, EvidenceBbox } from './evidence';
@@ -49,6 +51,7 @@ export interface CellQuote {
   confidence: Confidence | null;
 }
 
+/** 表示に使う引用一覧と編集・再抽出の状態。 */
 export interface ResolvedCellQuotes {
   quotes: CellQuote[];
   edited: boolean;

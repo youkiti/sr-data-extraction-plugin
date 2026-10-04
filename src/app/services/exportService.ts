@@ -6,6 +6,10 @@
 // クリップボードコピーも担う
 import type { LlmProviderId } from '../../domain/llmApiLog';
 import type { DocumentRecord } from '../../domain/document';
+import { readQuoteSetRows } from '../../features/verification/quoteSetRepository';
+import { readCompletedRunMetas } from '../../features/extraction/runRepository';
+import { bundleEvidence } from '../../features/verification/evidenceBundles';
+import { composeEvidenceByStudy } from './verifyService';
 import type { ExportFormat, ExportLogEntry } from '../../domain/exportLog';
 import { readDocuments } from '../../features/documents/documentRepository';
 import { readStudies, resolveActiveStudies } from '../../features/documents/studyRepository';
@@ -203,6 +207,8 @@ export async function loadExportData(
       runs,
       versions,
       methodsRunFacts,
+      quoteSetRows,
+      completedRuns,
     ] = await Promise.all([
       readDocuments(spreadsheetId, deps.google),
       readStudies(spreadsheetId, deps.google),
@@ -214,6 +220,8 @@ export async function loadExportData(
       readRunAuditInfos(spreadsheetId, deps.google),
       listSchemaVersions(spreadsheetId, deps.google),
       readMethodsRunFacts(spreadsheetId, deps.google),
+      readQuoteSetRows(spreadsheetId, deps.google),
+      readCompletedRunMetas(spreadsheetId, deps.google),
     ]);
     const latest = versions[0]; // listSchemaVersions は降順
     if (latest === undefined) {
@@ -223,7 +231,12 @@ export async function loadExportData(
     const fields = await getSchemaFieldsByVersion(spreadsheetId, latest.schemaVersion, deps.google);
     // エクスポートはアクティブ study（Documents から参照される study）のみ・作成順（§4.5）
     const studies = resolveActiveStudies(allStudies, documents);
+    const bundlesByStudy = new Map([...composeEvidenceByStudy(evidences, completedRuns)]
+      .map(([studyId, entry]) => [studyId, bundleEvidence(entry.evidence)]));
     const built = buildAllExports({
+      documents,
+      quoteSetRows,
+      bundlesByStudy,
       studies,
       studyRows: studySheet.rows,
       resultsRows,

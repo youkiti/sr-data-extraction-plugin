@@ -1,3 +1,5 @@
+// QuoteSets タブの作成・追記・読み込みを扱う。
+// 不正なデータ行は読み飛ばし、ヘッダの不整合はエラーとして通知する。
 import type { QuoteSetRow } from '../../domain/quoteSet';
 import { SHEET_HEADERS } from '../../domain/sheetsSchema';
 import { addSheetTab, appendRows, getSheetTitles, getSheetValues, writeHeaderRow } from '../../lib/google/sheets';
@@ -10,6 +12,7 @@ const COLUMNS = [
   'originAnnotator', 'documentId', 'quote', 'page', 'section', 'theme', 'anchorStatus', 'baseRunId',
 ] as const;
 
+/** QuoteSets タブが無ければヘッダ付きで作成する。 */
 export async function ensureQuoteSetsTab(spreadsheetId: string, deps: GoogleApiDeps): Promise<void> {
   const titles = await getSheetTitles(spreadsheetId, deps);
   if (titles.includes(TAB)) return;
@@ -17,6 +20,7 @@ export async function ensureQuoteSetsTab(spreadsheetId: string, deps: GoogleApiD
   await writeHeaderRow(spreadsheetId, TAB, SHEET_HEADERS.QuoteSets, deps);
 }
 
+/** 引用スナップショットの行をシートへ追記する。 */
 export async function appendQuoteSetRows(
   spreadsheetId: string, rows: readonly QuoteSetRow[], deps: GoogleApiDeps,
 ): Promise<void> {
@@ -25,6 +29,7 @@ export async function appendQuoteSetRows(
   await appendRows(spreadsheetId, TAB, rows.map((row) => COLUMNS.map((key) => row[key])), deps);
 }
 
+/** 有効な引用スナップショット行をシート順に読み込む。 */
 export async function readQuoteSetRows(spreadsheetId: string, deps: GoogleApiDeps): Promise<QuoteSetRow[]> {
   const titles = await getSheetTitles(spreadsheetId, deps);
   if (!titles.includes(TAB)) return [];
@@ -45,16 +50,17 @@ export async function readQuoteSetRows(spreadsheetId: string, deps: GoogleApiDep
       const value = cell(index);
       if (value === '') return null;
       const parsed = Number(value);
-      if (!Number.isInteger(parsed)) throw new Error(`QuoteSets の ${index + 1} 列目が整数ではありません`);
       return parsed;
     };
     const row: Record<string, string | number | null> = Object.fromEntries(
       COLUMNS.map((key, index) => [key, index < 10 ? cell(index) : cell(index) || null]),
     );
     row.schemaVersion = integer(8);
-    if (row.schemaVersion === null) throw new Error('QuoteSets の schema_version が整数ではありません');
     row.seq = integer(10);
     row.page = integer(17);
+    if (!Number.isInteger(row.schemaVersion) ||
+        (row.seq !== null && !Number.isInteger(row.seq)) ||
+        (row.page !== null && !Number.isInteger(row.page))) continue;
     result.push(row as unknown as QuoteSetRow);
   }
   return result;

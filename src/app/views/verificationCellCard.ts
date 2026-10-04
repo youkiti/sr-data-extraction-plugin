@@ -4,8 +4,10 @@
 // 変更せず、参照する状態・ハンドラを実際に使う分だけへ最小化した型（CellCardModel /
 // CellCardHandlers）を公開する — VerificationFormModel / VerificationFormHandlers は
 // フィールドを維持したまま構造的にこの部分型を満たすため、呼び出し側の変更は不要
+import type { CellQuote, ResolvedCellQuotes } from '../../domain/quoteSet';
+import type { Evidence } from '../../domain/evidence';
 import { NOT_REPORTED_TOKEN } from '../../domain/annotation';
-import { formatMultiSelectForDisplay, isMultiSelectField } from '../../domain/multiSelect';
+import { formatMultiSelectForDisplay, isMultiSelectField, splitPipeList } from '../../domain/multiSelect';
 import { renderMultiEnumChoiceEditor } from './multiEnumChoiceEditor';
 import type { VerificationCell } from '../../features/verification/cells';
 import type { CellStatus } from '../../features/verification/cellState';
@@ -26,8 +28,16 @@ export interface CellHighlightInfo {
   matchIndex: number;
 }
 
+/** 有効な引用とセル単位の保存状態。 */
+export interface QuoteEditState extends ResolvedCellQuotes {
+  evidence: Evidence[];
+  saving: boolean;
+  error: string | null;
+}
+
 /** renderCell が実際に参照する最小の状態 */
 export interface CellCardModel {
+  quoteEdit?: ReadonlyMap<string, QuoteEditState>;
   focusedCellKey: string | null;
   /** 値入力中のセル（edit = AI 値の修正 / reject = 棄却して手入力） */
   editing: { cellKey: string; action: 'edit' | 'reject' } | null;
@@ -87,6 +97,9 @@ export interface CellCardModel {
 
 /** renderCell が実際に呼び出す最小のハンドラ集合 */
 export interface CellCardHandlers {
+  onQuoteRemove?(cellKey: string, quoteId: string): void;
+  onQuoteTheme?(cellKey: string, quoteId: string, theme: string): void;
+  onQuoteReset?(cellKey: string): void;
   onFocusCell(cellKey: string): void;
   onAccept(cellKey: string): void;
   onStartEdit(cellKey: string, action: 'edit' | 'reject'): void;
@@ -340,7 +353,74 @@ function renderMermaidWarning(cell: VerificationCell, model: CellCardModel): HTM
   });
 }
 
+/** 引用の編集操作を、引用元の表示と同じ一覧へ付ける。 */
+function renderQuoteControls(
+  cell: VerificationCell, quote: CellQuote, state: QuoteEditState, handlers: CellCardHandlers,
+): HTMLElement[] {
+  const controls: HTMLElement[] = [];
+  if (quote.source === 'human') controls.push(el('span', {
+    className: 'verify__quote-source', text: t('verify.quoteSourceHuman'),
+  }));
+  const remove = el('button', {
+    className: 'verify__quote-remove', text: t('verify.quoteRemove'),
+    attributes: { type: 'button', 'aria-label': t('verify.quoteRemoveAria') },
+  });
+  remove.disabled = state.saving;
+  remove.addEventListener('click', () => handlers.onQuoteRemove!(cell.cellKey, quote.quoteId));
+  controls.push(remove);
+  if (isMultiSelectField(cell.field)) {
+    const select = el('select', { className: 'verify__quote-theme-select',
+      attributes: { 'aria-label': t('verify.quoteThemeAria') } });
+    const values = splitPipeList(cell.field.allowedValues);
+    const theme = quote.theme ?? '';
+    if (!values.includes(theme)) values.push(theme);
+    for (const value of values) select.append(el('option', { text: value, attributes: { value } }));
+    select.value = theme;
+    select.disabled = state.saving;
+    select.addEventListener('change', () => handlers.onQuoteTheme!(cell.cellKey, quote.quoteId, select.value));
+    controls.push(select);
+  } else if (cell.field.maxQuotes !== null) {
+    const input = el('input', { className: 'verify__quote-theme-input',
+      attributes: { type: 'text', 'aria-label': t('verify.quoteThemeAria') } });
+    input.value = quote.theme ?? '';
+    input.disabled = state.saving;
+    input.addEventListener('change', () => handlers.onQuoteTheme!(cell.cellKey, quote.quoteId, input.value));
+    controls.push(input);
+  }
+  return controls;
+}
+
 function renderQuote(
+  cell: VerificationCell, model: CellCardModel, handlers: CellCardHandlers,
+): HTMLElement | null {
+  const state = model.quoteEdit?.get(cell.cellKey);
+  if (state === undefined) return renderQuoteContent(cell, model, handlers);
+  const displayCell = state.edited ? { ...cell, quotes: state.evidence } : cell;
+  const content = state.edited && state.quotes.length === 0
+    ? el('p', { className: 'verify__quote-empty', text: t('verify.quoteAllRemoved') })
+    : renderQuoteContent(displayCell, model, handlers);
+  if (content === null) return null;
+  const rows = displayCell.quotes.length > 0
+    ? [...content.querySelectorAll<HTMLElement>('.verify__quotes-item')] : [content];
+  state.quotes.forEach((quote, index) => {
+    rows[index]!.append(...renderQuoteControls(cell, quote, state, handlers));
+  });
+  const children = [content];
+  if (state.edited) {
+    const reset = el('button', { className: 'verify__quote-reset', text: t('verify.quoteReset'),
+      attributes: { type: 'button' } });
+    reset.disabled = state.saving;
+    reset.addEventListener('click', () => handlers.onQuoteReset!(cell.cellKey));
+    children.push(reset);
+  }
+  if (state.newerAiAvailable) children.push(el('p', { className: 'verify__quote-newer',
+    text: t('verify.quoteNewerAi'), attributes: { role: 'note' } }));
+  if (state.error !== null) children.push(el('p', { className: 'verify__quote-error',
+    text: state.error, attributes: { role: 'alert' } }));
+  return el('div', {}, children);
+}
+
+function renderQuoteContent(
   cell: VerificationCell,
   model: CellCardModel,
   handlers: CellCardHandlers,

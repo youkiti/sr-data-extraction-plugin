@@ -418,6 +418,8 @@ export interface ExtractState {
 
 /** #/verify（S8）の一覧 1 study ぶんの検証素材（Evidence がある study のみ。v0.10 フェーズ 3） */
 export interface VerifyTarget {
+  /** 引用の参照解決用に保持する、この study の全 run の根拠 */
+  quoteEvidence: Evidence[];
   study: StudyRecord;
   /** study 配下の文書（role 固定順 → 取り込み順） */
   documents: DocumentRecord[];

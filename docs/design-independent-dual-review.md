@@ -90,6 +90,8 @@ flowchart LR
 | 論文への質問パネル（issue #264） | — | **reviewer_independent には出さない**（質問で値を聞けば実質的に AI 抽出になり `human_independent` の区分が崩れるため）。owner / reviewer_with_ai / adjudicator の `#/verify` と `#/adjudicate` だけに出す。文脈は 1 study の本文とスキーマ定義だけで、Evidence・データ行・他の人の Decisions は入れない。質問と回答の本文は共有フォルダ（`logs/llm/`）にも `LLMApiLog.prompt_summary` / `error` にも残さない（質問文からもう一方の reviewer へ関心の向きが漏れるのを避けるため）。質問後の判定には `Decisions.note` に `[chat-assist]` を付ける |
 | スプレッドシートの直接閲覧 | 防げない | 運用ルール（protocol 明記）。設計上のスコープ外と明記 |
 
+> **引用の一覧（`QuoteSets`。issue #307・2026-10-05 追記）**: 人が直した引用の一覧も盲検の対象。S8 は `QuoteSets` のうち `annotator` と `annotator_type` の両方が自分と一致する行だけをパネルへ渡す（同じ email がモードを変えた場合に、with_ai のときの一覧が independent 側へ流れ込まないよう、型まで一致させる）。独立入力モードでは `QuoteSets` も `Evidence` も読まず、「あとから抽出された AI の引用があります」のような AI の実行状況が分かる表示も出さない。引用だけを直して判定をまだ残していない人も、モード変更ガード（作業の痕跡）の対象にする。
+
 ### 3.1 reviewer 用シェル
 
 `bootstrap` のロール解決結果を `AppState.role`（`owner` / `reviewer_with_ai` / `reviewer_independent` / `adjudicator`）に置き、ナビゲーション構築と `guardRoute` に食わせる：

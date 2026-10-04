@@ -114,6 +114,7 @@ import {
   openVerifyStudy,
   persistVerifyArmConfirmation,
   persistVerifyDecision,
+  persistVerifyQuoteSet,
   persistVerifyInstanceDeclarations,
   persistVerifyRelocateQuote,
   setVerifyLayoutMode,
@@ -816,6 +817,7 @@ export async function bootstrapApp(
       },
     },
     verify: {
+      onQuoteSetSave: (rows) => persistVerifyQuoteSet(store, deps, rows),
       onAssignedOnlyChange: (value) => {
         setVerifyAssignedOnly(store, value);
         void syncVerifyRoute();

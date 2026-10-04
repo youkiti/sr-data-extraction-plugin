@@ -6,7 +6,7 @@
  * R 解析向けの複数ファイル形式（tab1 / ma / rob / data_dictionary / export_issues の
  * 5 CSV + ステータスミラー表 2 種 + export_manifest.json の計 8 ファイル）
  */
-export type ExportFormat = 'study_wide' | 'results_long' | 'audit' | 'r_set' | 'usage';
+export type ExportFormat = 'study_wide' | 'results_long' | 'audit' | 'evidence_quotes' | 'r_set' | 'usage';
 
 export interface ExportLogEntry {
   exportId: string;

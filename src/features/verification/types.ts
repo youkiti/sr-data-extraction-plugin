@@ -10,6 +10,7 @@
 import type { ConfirmedArmStructure } from '../../domain/armStructure';
 import type { Decision } from '../../domain/decision';
 import type { DocumentRecord } from '../../domain/document';
+import type { QuoteSetRow } from '../../domain/quoteSet';
 import type { Evidence } from '../../domain/evidence';
 import type { SchemaField } from '../../domain/schemaField';
 import type { StudyRecord } from '../../domain/study';
@@ -51,6 +52,10 @@ export interface VerificationData {
   evidence: readonly Evidence[];
   /** 当該 study の判定履歴（全 annotator。パネル側で自分の行に絞る） */
   decisions: readonly Decision[];
+  /** 自分の判定者種別と study が一致する引用スナップショット。 */
+  quoteSetRows: readonly QuoteSetRow[];
+  /** 引用の座標復元用に読み込んだ当該 study の全 Evidence。 */
+  quoteEvidence?: readonly Evidence[];
   /** 自分（判定者）の email。annotator 行の annotator になる */
   annotator: string;
   /**

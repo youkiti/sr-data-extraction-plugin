@@ -289,6 +289,8 @@ async function setupRoutes(
   const appendUrls: string[] = [];
   const pdfFetchIds: string[] = [];
   let studyDataReads = 0;
+  const titles = ['Meta', 'Documents', 'SchemaFields', 'Evidence', 'Decisions'];
+  const quoteValues: string[][] = [];
 
   // 保存の競合検出 E2E の回帰対応（issue #248 回帰 2 / issue #252）: StudyData / ResultsData を
   // 共有ヘルパ（sheetsStore）でステートフルにする。実 Sheets は append した行がそのまま次の
@@ -309,7 +311,7 @@ async function setupRoutes(
     if (method === 'GET') {
       if (url.includes('fields=sheets.properties.title')) {
         // ArmStructures タブなし（v0.7 より前の既存プロジェクト）→ 書き込み時にタブを作る
-        const titles = ['Meta', 'Documents', 'SchemaFields', 'Evidence', 'Decisions'];
+
         await route.fulfill({
           json: { sheets: titles.map((title) => ({ properties: { title } })) },
         });
@@ -321,6 +323,8 @@ async function setupRoutes(
         await route.fulfill({
           json: { valueRanges: [{ values: [[...SHEET_HEADERS.Evidence]] }] },
         });
+      } else if (url.includes('/values/QuoteSets')) {
+        await route.fulfill({ json: { values: quoteValues } });
       } else if (url.includes('/values/Evidence')) {
         await route.fulfill({ json: { values: [EVIDENCE_HEADERS, ...options.evidenceRows] } });
       } else if (url.includes('/values/ExtractionRuns')) {
@@ -351,6 +355,17 @@ async function setupRoutes(
         await route.fulfill({ json: { values: [] } });
       }
       return;
+    }
+    if (url.includes(':batchUpdate') && !url.includes('values:batchUpdate')) {
+      const body = req.postDataJSON() as { requests?: Array<{ addSheet?: { properties: { title: string } } }> };
+      for (const item of body.requests ?? []) {
+        if (item.addSheet) titles.push(item.addSheet.properties.title);
+      }
+    }
+    if (url.includes('/values/QuoteSets!A1')) {
+      const body = req.postDataJSON() as { values: string[][] };
+      if (method === 'PUT') quoteValues[0] = body.values[0]!;
+      else quoteValues.push(...body.values);
     }
     store.handleWrite(req);
     appendUrls.push(url);
@@ -2092,6 +2107,7 @@ test('抽出前に #/verify を開くと空状態 → 抽出実行 → #/verify 
         await route.fulfill({
           json: { valueRanges: [{ values: [[...SHEET_HEADERS.ExtractionRuns]] }] },
         });
+
       } else if (url.includes('/values/Evidence')) {
         // 抽出前は空、抽出完了後は実際に追記された行を反映する（#/verify 再読込の実弾検証のため）
         await route.fulfill({ json: { values: [EVIDENCE_HEADERS, ...evidenceRowsAccum] } });
@@ -2456,4 +2472,30 @@ test('論文への質問: 引用照合・PDFジャンプ・判定の印・本文
   expect(payloadUploads).toEqual([]);
   const results = await new AxeBuilder({ page }).analyze();
   expect(results.violations).toEqual([]);
+});
+
+test('引用の全削除と AI への復元はタブを作成して空・リセットを追記する', async ({ page }) => {
+  await setupRoutes(page, { schemaRows: [STUDY_FIELD_ROW], evidenceRows: [EVIDENCE_ROW_1] });
+  await initApp(page, '#/verify?study=study-1');
+  await expect(page.locator('.pdf-viewer__hl')).toHaveCount(1);
+  const card = page.locator('#verify-focus-detail');
+  const added = page.waitForRequest((req) => req.method() === 'POST' &&
+    req.url().includes(':batchUpdate') && req.postData()?.includes('"title":"QuoteSets"') === true);
+  const header = page.waitForRequest((req) => req.method() === 'PUT' &&
+    decodeURIComponent(req.url()).includes('/values/QuoteSets!A1'));
+  const waitAppend = () => page.waitForRequest((req) => req.method() === 'POST' &&
+    decodeURIComponent(req.url()).includes('/values/QuoteSets!A1:append'));
+  const removed = waitAppend();
+  await card.locator('.verify__quote-remove').click();
+  expect((await added).postDataJSON()).toEqual({ requests: [{ addSheet: { properties: { title: 'QuoteSets' } } }] });
+  expect((await header).postDataJSON()).toEqual({ values: [SHEET_HEADERS.QuoteSets] });
+  expect((await removed).postDataJSON().values[0][SHEET_HEADERS.QuoteSets.indexOf('kind')]).toBe('empty');
+  await expect(card).toContainText('引用はすべて外されています');
+  await expect(card).not.toContainText(QUOTE);
+  await expect(page.locator('.pdf-viewer__hl')).toHaveCount(0);
+  const reset = waitAppend();
+  await card.locator('.verify__quote-reset').click();
+  expect((await reset).postDataJSON().values[0][SHEET_HEADERS.QuoteSets.indexOf('kind')]).toBe('reset');
+  await expect(card).toContainText(QUOTE);
+  await expect(page.locator('.pdf-viewer__hl')).toHaveCount(1);
 });

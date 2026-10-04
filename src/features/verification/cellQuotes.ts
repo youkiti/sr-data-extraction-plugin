@@ -1,8 +1,11 @@
+// AI の引用と追記されたスナップショットから、有効な引用一覧を解決する。
+// 削除・テーマ変更・リセットは新しいスナップショットとして保存する。
 import type { AnnotatorType } from '../../domain/annotation';
 import type { Evidence } from '../../domain/evidence';
 import type { CellQuote, QuoteSetRow, ResolvedCellQuotes } from '../../domain/quoteSet';
 import type { EvidenceBundle } from './evidenceBundles';
 
+/** セルの最新スナップショットを構成する行と保存情報。 */
 export interface QuoteSnapshot {
   setId: string;
   kind: QuoteSetRow['kind'];
@@ -12,6 +15,7 @@ export interface QuoteSnapshot {
   savedBy: string;
 }
 
+/** study・セル・判定者の組を一意なキーにする。 */
 export function quoteSetKeyOf(parts: {
   studyId: string; fieldId: string; entityKey: string;
   annotator: string; annotatorType: AnnotatorType;
@@ -42,6 +46,7 @@ export function foldQuoteSets(rows: readonly QuoteSetRow[]): Map<string, QuoteSn
   }]));
 }
 
+/** AI の引用束を共通の引用形式へ変換する。 */
 export function aiCellQuotes(bundle: EvidenceBundle | null): CellQuote[] {
   if (bundle === null) return [];
   const rows = bundle.quotes.length > 0
@@ -55,6 +60,7 @@ export function aiCellQuotes(bundle: EvidenceBundle | null): CellQuote[] {
   }));
 }
 
+/** 最新スナップショットから引用一覧と AI 座標情報を復元する。 */
 export function resolveCellQuotes(
   bundle: EvidenceBundle | null,
   snapshot: QuoteSnapshot | null,
@@ -83,10 +89,12 @@ export function resolveCellQuotes(
     baseRunId: snapshot.baseRunId };
 }
 
+/** 指定した引用を一覧から取り除く。 */
 export function removeCellQuote(quotes: readonly CellQuote[], quoteId: string): CellQuote[] {
   return quotes.filter((quote) => quote.quoteId !== quoteId);
 }
 
+/** 指定した引用のテーマを更新する。 */
 export function setCellQuoteTheme(
   quotes: readonly CellQuote[], quoteId: string, theme: string | null,
 ): CellQuote[] {
@@ -94,6 +102,7 @@ export function setCellQuoteTheme(
     ? { ...quote, theme: theme?.trim() || null } : quote);
 }
 
+/** 引用一覧を保存するスナップショット行を作る。 */
 export function buildQuoteSetRows(params: {
   setId: string; savedAt: string; savedBy: string;
   annotator: string; annotatorType: AnnotatorType;
@@ -111,6 +120,7 @@ export function buildQuoteSetRows(params: {
   }));
 }
 
+/** AI の引用へ戻すためのリセット行を作る。 */
 export function buildQuoteSetResetRow(
   params: Omit<Parameters<typeof buildQuoteSetRows>[0], 'quotes'>,
 ): QuoteSetRow {

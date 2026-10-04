@@ -86,8 +86,8 @@ test.each([undefined, [], [...header.slice(0, 21), 'wrong']])('ヘッダ欠損�
   await expect(readQuoteSetRows('sid', deps)).rejects.toThrow('QuoteSets');
 });
 
-test.each([[8, ''], [8, '1.5'], [10, 'NaN'], [17, '1.2']])('整数列の不正値は throw: %s %s', async (index, value) => {
+test.each([[8, ''], [8, '1.5'], [10, 'NaN'], [17, '1.2']])('整数列の不正値はその行だけ読み飛ばす: %s %s', async (index, value) => {
   const row = [...raw]; row[Number(index)] = String(value);
-  jest.mocked(getSheetValues).mockResolvedValue([header, row]);
-  await expect(readQuoteSetRows('sid', deps)).rejects.toThrow('整数ではありません');
+  jest.mocked(getSheetValues).mockResolvedValue([header, row, raw]);
+  await expect(readQuoteSetRows('sid', deps)).resolves.toEqual([quoteRow()]);
 });

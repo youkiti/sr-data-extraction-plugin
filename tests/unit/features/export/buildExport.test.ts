@@ -1,3 +1,4 @@
+import { bundleEvidence } from '../../../../src/features/verification/evidenceBundles';
 import type { ResultsDataRow, StudyDataRow } from '../../../../src/domain/annotation';
 import type { Decision } from '../../../../src/domain/decision';
 import type { StudyRecord } from '../../../../src/domain/study';
@@ -120,6 +121,9 @@ function makeEvidence(overrides: Partial<Evidence> = {}): Evidence {
 
 function makeMaterials(overrides: Partial<ExportMaterials> = {}): ExportMaterials {
   return {
+    documents: [],
+    quoteSetRows: [],
+    bundlesByStudy: new Map(),
     studies: [makeStudy()],
     studyRows: [makeStudyRow()],
     resultsRows: [
@@ -218,4 +222,14 @@ describe('toStudyLabels', () => {
       'doc-ghost',
     ]);
   });
+});
+
+test('根拠の表は引用を 17 列で出し、audit と同じ未検証警告を持つ', () => {
+  const materials = makeMaterials({ bundlesByStudy: new Map([['doc-1', bundleEvidence([makeEvidence()])]]) });
+  const built = buildExport('evidence_quotes', materials);
+  expect(built.header[0]).toBe('study_label');
+  expect(built.header).toHaveLength(17);
+  expect(built.rowCount).toBe(1);
+  expect(built.studyCount).toBe(1);
+  expect(built.unverifiedCellCount).toBe(buildExport('audit', materials).unverifiedCellCount);
 });

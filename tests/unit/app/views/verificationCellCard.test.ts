@@ -1,3 +1,5 @@
+import { aiCellQuotes } from '../../../../src/features/verification/cellQuotes';
+import type { QuoteEditState } from '../../../../src/app/views/verificationCellCard';
 // flow 図（mermaid）の描画プレビュー（issue #109 PR5）のセルカード統合テスト。
 // renderCell の従来挙動は verificationForm.test.ts / verificationFocusCard.test.ts /
 // verificationPanel.test.ts が担うため、ここではプレビュートグルと保存時警告の分岐だけを
@@ -662,3 +664,48 @@ test.each([true, false])(
     expect(handlers.onConfirmEdit).toHaveBeenCalledWith(cell.cellKey, 'edit', '値', '理由');
   },
 );
+
+test.each([null, 'A', 'outside'])('引用の選択肢は現在値を保持し、変更・削除を引用 ID で通知する: %s', (theme) => {
+  const evidence = makeEvidence({ quote: 'text', quoteTheme: theme });
+  const cell = makeCell({ field: makeField({ dataType: 'enum', allowedValues: 'A|B',
+    multiSelect: { exclusiveValues: [], freeTextValues: [] } }), evidence });
+  const state: QuoteEditState = { quotes: aiCellQuotes({ evidence, quotes: [] }), evidence: [evidence],
+    edited: false, newerAiAvailable: false, saving: false, error: null, baseRunId: 'run-1' };
+  const onQuoteTheme = jest.fn();
+  const onQuoteRemove = jest.fn();
+  const root = renderCell(cell, makeModel({ quoteEdit: new Map([[cell.cellKey, state]]) }),
+    { ...makeHandlers(), onQuoteTheme, onQuoteRemove });
+  const select = root.querySelector<HTMLSelectElement>('.verify__quote-theme-select')!;
+  expect(select.value).toBe(theme ?? '');
+  select.value = 'B';
+  select.dispatchEvent(new Event('change'));
+  expect(onQuoteTheme).toHaveBeenCalledWith(cell.cellKey, evidence.evidenceId, 'B');
+  root.querySelector<HTMLButtonElement>('.verify__quote-remove')!.click();
+  expect(onQuoteRemove).toHaveBeenCalledWith(cell.cellKey, evidence.evidenceId);
+});
+
+test('人が追加した引用のバッジとテーマ入力を表示する', () => {
+  const evidence = makeEvidence({ quote: 'human text', quoteSeq: 1 });
+  const cell = makeCell({ field: makeField({ maxQuotes: 3 }), evidence });
+  const quotes = aiCellQuotes({ evidence, quotes: [] }).map((quote) => ({ ...quote, source: 'human' as const }));
+  const state: QuoteEditState = { quotes, evidence: [evidence], edited: true,
+    newerAiAvailable: false, saving: false, error: null, baseRunId: null };
+  const onQuoteTheme = jest.fn();
+  const root = renderCell(cell, makeModel({ quoteEdit: new Map([[cell.cellKey, state]]) }),
+    { ...makeHandlers(), onQuoteTheme });
+  expect(root.querySelector('.verify__quote-source')?.textContent).toBe('人が追加');
+  const input = root.querySelector<HTMLInputElement>('.verify__quote-theme-input')!;
+  expect(input.value).toBe('');
+  input.value = 'theme';
+  input.dispatchEvent(new Event('change'));
+  expect(onQuoteTheme).toHaveBeenCalledWith(cell.cellKey, evidence.evidenceId, 'theme');
+});
+
+test('空の未編集引用モデルは従来どおり引用領域を出さない', () => {
+  const cell = makeCell({ evidence: null });
+  const state: QuoteEditState = { quotes: [], evidence: [], edited: false,
+    newerAiAvailable: false, saving: false, error: null, baseRunId: null };
+  const root = renderCell(cell, makeModel({ quoteEdit: new Map([[cell.cellKey, state]]) }), makeHandlers());
+  expect(root.querySelector('.verify__quote')).toBeNull();
+  expect(root.querySelector('.verify__quote-remove')).toBeNull();
+});

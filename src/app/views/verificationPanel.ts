@@ -8,6 +8,10 @@
 // ストア再描画（route render）とライフサイクルの整合は renderCachedVerificationPanel が取る:
 // 同じ VerificationData 参照なら同一インスタンス（DOM / PDF canvas / 判定の楽観状態）を返し、
 // データが差し替わったときだけ作り直す
+import type { CellQuote, QuoteSetRow } from '../../domain/quoteSet';
+import { foldQuoteSets, quoteSetKeyOf, resolveCellQuotes, removeCellQuote, setCellQuoteTheme, buildQuoteSetRows, buildQuoteSetResetRow } from '../../features/verification/cellQuotes';
+import { generateUuid } from '../../utils/uuid';
+import type { QuoteEditState } from './verificationCellCard';
 import { NOT_REPORTED_TOKEN } from '../../domain/annotation';
 import type { ConfirmedArmStructure } from '../../domain/armStructure';
 import type { Decision, DecisionAction } from '../../domain/decision';
@@ -95,6 +99,8 @@ export type { RelocateQuoteOutcome } from '../services/relocateQuoteService';
 
 export interface VerificationPanelOptions {
   data: VerificationData;
+  /** 引用一覧の保存。未注入なら編集操作を出さない。 */
+  onQuoteSetSave?: (rows: readonly QuoteSetRow[]) => Promise<void>;
   /** 判定 1 操作ごとに呼ばれる（永続化 + オフラインキュー退避はサービス層の責務） */
   onDecision: (decision: Decision) => void;
   /** 群構成の確定・改訂ごとに呼ばれる（ArmStructures への追記はサービス層の責務） */
@@ -313,6 +319,11 @@ export function createVerificationPanel(
   // （bundleEvidence は配列の後ろほど新しいとみなす後勝ち畳み込みのため、
   // 元の evidence 配列の後ろへ連結するだけで対応する cellKey の元行を自動的に上書きできる）
   const relocatedEvidence: Evidence[] = [];
+  const canEditQuotes = panelMode === 'review' && options.onQuoteSetSave !== undefined;
+  let ownQuoteSets = canEditQuotes ? [...data.quoteSetRows] : [];
+  const quoteEdit = new Map<string, QuoteEditState>();
+  const quoteSaving = new Set<string>();
+  const quoteErrors = new Map<string, string>();
   /** relocate-quote の実行状態（issue #94）。cellKey → 'running' / 'not_found' */
   const relocateStatus = new Map<string, 'running' | 'not_found'>();
   /**
@@ -328,7 +339,7 @@ export function createVerificationPanel(
     relocatedEvidence.length === 0 ? baseEvidence : [...baseEvidence, ...relocatedEvidence];
   // テキストのみで再特定した出現位置（rects なし。study 全文書ぶんを一度だけ計算し、
   // PDF のロード状態に関係なく matchCount / ページ表示に使う。issue #28 案3）。
-  // 表示用の配列・検索 Map とともに保持し、relocate-quote 成功時だけ作り直す
+  // 表示用の配列・検索 Map とともに保持し、再特定と引用編集の反映時に作り直す
   let visibleEvidence: Evidence[] = [];
   let evidenceByKey = new Map<string, Evidence>();
   const evidenceByCell = new Map<string, Evidence>();
@@ -343,8 +354,38 @@ export function createVerificationPanel(
   let textMatchByCell = new Map<string, EvidenceTextMatch>();
   function recomputeEvidence(): void {
     const bundles = bundleEvidence(currentEvidence());
-    visibleEvidence = [...bundles.values()]
-      .flatMap((bundle) => bundle.quotes.length > 0 ? bundle.quotes : [bundle.evidence]);
+    quoteEdit.clear();
+    const snapshots = foldQuoteSets(ownQuoteSets);
+    const evidenceById = new Map([...(data.quoteEvidence ?? data.evidence), ...relocatedEvidence]
+      .map((row) => [row.evidenceId, row]));
+    visibleEvidence = [];
+    const cellKeys = new Set(bundles.keys());
+    for (const snapshotKey of snapshots.keys()) {
+      const [, fieldId, entityKey] = JSON.parse(snapshotKey) as string[];
+      cellKeys.add(cellKeyOf(fieldId!, entityKey!));
+    }
+    for (const key of cellKeys) {
+      const bundle = bundles.get(key) ?? null;
+      const [fieldId, entityKey] = JSON.parse(key) as [string, string];
+      const original = bundle === null ? [] : bundle.quotes.length > 0 ? bundle.quotes : [bundle.evidence];
+      if (!canEditQuotes) {
+        visibleEvidence.push(...original);
+        continue;
+      }
+      const resolved = resolveCellQuotes(bundle, snapshots.get(quoteSetKeyOf({
+        studyId: data.study.studyId, fieldId, entityKey,
+        annotator: data.annotator, annotatorType: data.annotatorType,
+      })) ?? null, evidenceById);
+      const evidence = resolved.edited ? resolved.quotes.map((quote, index): Evidence => ({
+        ...quote, evidenceId: quote.evidenceId ?? quote.quoteId,
+        runId: resolved.baseRunId ?? '', value: null, notReported: false, relocatedFrom: null,
+        documentId: quote.documentId ?? '', quoteTheme: quote.theme, quoteSeq: index + 1,
+      })) : original;
+      if (resolved.edited || resolved.quotes.length > 0) quoteEdit.set(key, {
+        ...resolved, evidence, saving: quoteSaving.has(key), error: quoteErrors.get(key) ?? null,
+      });
+      visibleEvidence.push(...evidence);
+    }
     for (const [key, bundle] of bundles) {
       evidenceByCell.set(key, bundle.evidence);
     }
@@ -354,6 +395,11 @@ export function createVerificationPanel(
     evidenceByKey = new Map(visibleEvidence.map((item) => [quoteKeyOf(item), item]));
     for (const [key, evidence] of evidenceByCell) {
       evidenceByKey.set(key, evidence);
+    }
+    for (const [key, edited] of quoteEdit) {
+      if (!edited.edited) continue;
+      evidenceByKey.delete(key);
+      if (edited.evidence.length > 0) evidenceByKey.set(key, edited.evidence[0]!);
     }
     textMatches = buildStudyTextMatches(data.documents, visibleEvidence);
     textMatchByCell = new Map(textMatches.map((m) => [m.quoteKey, m]));
@@ -498,6 +544,7 @@ export function createVerificationPanel(
       focusedCellKey,
       editing,
       highlightInfo: highlightInfo(),
+      quoteEdit,
       canSearchText: activeDocument().extractedPages.some((page) => page.text !== ''),
       recentCell,
       mode: panelMode,
@@ -851,6 +898,11 @@ export function createVerificationPanel(
     if (outcome.status === 'relocated') {
       relocatedEvidence.push(outcome.evidence);
       recomputeEvidence();
+      if (quoteEdit.get(cellKey)?.edited) {
+        relocateStatus.delete(cellKey);
+        refreshQuotes(cellKey);
+        return;
+      }
       recomputeRectHighlights(outcome.evidence.documentId, outcome.evidence);
       relocateStatus.delete(cellKey);
       refreshForm();
@@ -1477,7 +1529,9 @@ export function createVerificationPanel(
    */
   function syncViewer(): void {
     if (viewer !== null && viewerDocId === activeDocumentId) {
-      viewer.setHighlights(viewerHighlights(), selectedQuoteKey ?? (focusedCellKey === null ? null : resolvedQuoteKey(focusedCellKey)));
+      const focused = focusedCellKey === null || (quoteEdit.get(focusedCellKey)?.edited &&
+        quoteEdit.get(focusedCellKey)!.quotes.length === 0) ? null : resolvedQuoteKey(focusedCellKey);
+      viewer.setHighlights(viewerHighlights(), selectedQuoteKey ?? focused);
     }
   }
 
@@ -1575,7 +1629,58 @@ export function createVerificationPanel(
     return `arm:${max + 1}`;
   }
 
+  /** 引用の選択を破棄し、表示用の一覧から矩形とカードを作り直す。 */
+  function refreshQuotes(cellKey: string): void {
+    if (selectedQuoteKey !== null && cellKeyFromQuoteKey(selectedQuoteKey) === cellKey) {
+      selectedQuoteKey = null;
+    }
+    for (const key of matchSelection.keys()) {
+      if (cellKeyFromQuoteKey(key) === cellKey) matchSelection.delete(key);
+    }
+    recomputeEvidence();
+    for (const [documentId, pages] of textPagesByDoc) {
+      rectHighlightsByDoc.set(documentId, buildDocumentHighlights(documentId,
+        visibleEvidence.filter((row) => row.documentId === documentId), pages));
+    }
+    refreshForm();
+    syncViewer();
+    syncTextViewer();
+  }
+
+  /** 保存中はセル単位で操作を止め、失敗したスナップショットだけを取り消す。 */
+  async function saveQuotes(cellKey: string, quotes: readonly CellQuote[] | null): Promise<void> {
+    if (quoteSaving.has(cellKey)) return;
+    const resolved = quoteEdit.get(cellKey)!;
+    const [fieldId, entityKey] = JSON.parse(cellKey) as [string, string];
+    const metadata = { setId: generateUuid(), savedAt: now(), savedBy: data.annotator,
+      annotator: data.annotator, annotatorType: data.annotatorType, studyId: data.study.studyId,
+      fieldId, entityKey, schemaVersion: data.schemaVersion, baseRunId: resolved.baseRunId };
+    const rows = quotes === null ? [buildQuoteSetResetRow(metadata)] : buildQuoteSetRows({ ...metadata, quotes });
+    quoteSaving.add(cellKey);
+    quoteErrors.delete(cellKey);
+    ownQuoteSets.push(...rows);
+    refreshQuotes(cellKey);
+    try {
+      await options.onQuoteSetSave!(rows);
+    } catch {
+      ownQuoteSets = ownQuoteSets.filter((row) => row.setId !== metadata.setId);
+      quoteErrors.set(cellKey, t('verify.quoteSaveError'));
+    } finally {
+      quoteSaving.delete(cellKey);
+      refreshQuotes(cellKey);
+    }
+  }
+
   const handlers: VerificationFormHandlers = {
+    onQuoteRemove(cellKey, quoteId) {
+      void saveQuotes(cellKey, removeCellQuote(quoteEdit.get(cellKey)!.quotes, quoteId));
+    },
+    onQuoteTheme(cellKey, quoteId, theme) {
+      void saveQuotes(cellKey, setCellQuoteTheme(quoteEdit.get(cellKey)!.quotes, quoteId, theme));
+    },
+    onQuoteReset(cellKey) {
+      void saveQuotes(cellKey, null);
+    },
     // ロック中タブの排他は verificationForm 側が担う（disabled ボタンにはリスナを付けない）
     onSelectTab(tab) {
       activeTab = tab;
@@ -1862,6 +1967,7 @@ export function createVerificationPanel(
       recentDecidedKey,
       expandedDecidedKey,
       highlightInfo: highlightInfo(),
+      quoteEdit,
       // 「本文内を検索」は表示中文書に対して走る。フォーカスは出所文書へ切替わるため、
       // 表示中文書のテキスト層有無で出し分ける（v0.10 フェーズ 3。extracted_texts 基準）
       canSearchText: activeDocument().extractedPages.some((page) => page.text !== ''),

@@ -22,6 +22,7 @@ import {
   type CellCardHandlers,
   type CellCardModel,
   type CellHighlightInfo,
+  type QuoteEditState,
 } from './verificationCellCard';
 import { allowedValuesWarningText, renderAllowedValuesBadge } from './enumChoiceEditor';
 
@@ -37,6 +38,7 @@ export interface VerificationFocusCardHandlers extends CellCardHandlers {
 }
 
 export interface VerificationFocusCardModel {
+  quoteEdit?: ReadonlyMap<string, QuoteEditState>;
   /** 表示中のユニット（verificationPanel が focusedCellKey から解決する） */
   unit: FocusUnit;
   /** タブ内でのユニット位置（1 始まり） */
@@ -290,6 +292,7 @@ function renderDetailStrip(
     });
   }
   const cellCardModel: CellCardModel = {
+    quoteEdit: model.quoteEdit,
     focusedCellKey: model.focusedCellKey,
     editing: model.editing,
     expandedDecidedKey: null,

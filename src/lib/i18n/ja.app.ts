@@ -84,6 +84,14 @@ export const jaApp = {
   'reviewSets.confirmBody': 'すべてのアクティブな study の担当セットを上書きします。続行しますか？',
   'home.assignedProgress': '担当 {n} 件中 {m} 件完了',
   'home.assignedProgressLoading': '担当の進捗を読み込んでいます…',
+  'verify.quoteRemove': '削除',
+  'verify.quoteRemoveAria': 'この引用を削除',
+  'verify.quoteReset': 'AI の引用に戻す',
+  'verify.quoteAllRemoved': '引用はすべて外されています',
+  'verify.quoteNewerAi': 'この項目には、あとから抽出された AI の引用があります。「AI の引用に戻す」で切り替えられます',
+  'verify.quoteSaveError': '引用の保存に失敗しました。もう一度お試しください',
+  'verify.quoteThemeAria': '引用の選択肢／テーマ',
+  'verify.quoteSourceHuman': '人が追加',
   'verify.assignedOnly': '自分の担当のみ',
   'documents.mergeReviewSet': '担当セット',
   'adjudicate.outsideNote': '担当外の判定（{email}）は裁定と一致度から除外しています',
@@ -895,6 +903,8 @@ export const jaApp = {
   'export.formatStudyWideDesc': '1 行 = 1 study。Table 1 の下書き・Excel での目視確認に',
   'export.formatResultsLongDesc':
     '1 行 = 1 結果セル。R でのメタ解析前処理（arm 別アウトカム・RoB）に',
+  'export.formatEvidenceQuotesLabel': '根拠の表（evidence_quotes.csv）',
+  'export.formatEvidenceQuotesDesc': '引用 1 件 = 1 行。文・頁・節・選択肢と、AI の引用か人が直した引用か、最終の根拠かどうかを出します',
   'export.formatAuditDesc': '1 行 = 1 判定イベント + AI 根拠。監査・supplementary・抽出精度研究に',
   'export.formatRSetLabel': 'R セット（推奨）',
   'export.formatRSetDesc':

@@ -1,3 +1,4 @@
+import { evidence } from '../../features/verification/quoteSetFixtures';
 import {
   cancelExportWarning,
   changeMethodsLanguage,
@@ -12,6 +13,10 @@ import {
   type ExportServiceDeps,
 } from '../../../../src/app/services/exportService';
 import { createInitialState, createStore, type ExportState, type Store } from '../../../../src/app/store';
+import { getSheetTitles } from '../../../../src/lib/google/sheets';
+jest.mock('../../../../src/lib/google/sheets', () => ({
+  ...jest.requireActual('../../../../src/lib/google/sheets'), getSheetTitles: jest.fn(),
+}));
 import { readDocuments } from '../../../../src/features/documents/documentRepository';
 import { readStudies } from '../../../../src/features/documents/studyRepository';
 import {
@@ -19,7 +24,7 @@ import {
   readStudyDataSheet,
 } from '../../../../src/features/extraction/annotationRepository';
 import { readEvidenceRows } from '../../../../src/features/extraction/evidenceRepository';
-import { readMethodsRunFacts, readRunAuditInfos } from '../../../../src/features/extraction/runRepository';
+import { readCompletedRunMetas, readMethodsRunFacts, readRunAuditInfos } from '../../../../src/features/extraction/runRepository';
 import type { BuiltExport, ClassicExportFormat } from '../../../../src/features/export/buildExport';
 import { appendExportLog } from '../../../../src/features/export/exportLogRepository';
 import type { BuiltRSet, RSetFile, RSetMaterials } from '../../../../src/features/export/rset/buildRSet';
@@ -51,6 +56,7 @@ jest.mock('../../../../src/features/extraction/evidenceRepository', () => ({
 }));
 jest.mock('../../../../src/features/extraction/runRepository', () => ({
   readRunAuditInfos: jest.fn(),
+  readCompletedRunMetas: jest.fn(),
   readMethodsRunFacts: jest.fn(),
 }));
 jest.mock('../../../../src/features/export/exportLogRepository', () => ({
@@ -130,6 +136,7 @@ function makeBuiltAll(
     study_wide: makeBuilt('study_wide', overrides.study_wide ?? {}),
     results_long: makeBuilt('results_long', { unverifiedCellCount: null, ...(overrides.results_long ?? {}) }),
     audit: makeBuilt('audit', overrides.audit ?? {}),
+    evidence_quotes: makeBuilt('evidence_quotes', overrides.evidence_quotes ?? {}),
   };
 }
 
@@ -197,6 +204,8 @@ function makeStore(patch: {
 }
 
 beforeEach(() => {
+  jest.mocked(getSheetTitles).mockResolvedValue([]);
+  jest.mocked(readCompletedRunMetas).mockResolvedValue([]);
   readDocumentsMock.mockResolvedValue([]);
   readStudiesMock.mockResolvedValue([]);
   readStudyDataSheetMock.mockResolvedValue({ fieldNames: [], rows: [] });
@@ -233,6 +242,9 @@ describe('loadExportData', () => {
     expect(exportState.built?.study_wide.format).toBe('study_wide');
     expect(exportState.built?.results_long.format).toBe('results_long');
     expect(exportState.built?.audit.format).toBe('audit');
+    expect(exportState.loadError).toBeNull();
+    expect(exportState.built?.evidence_quotes.header).toHaveLength(17);
+    expect(getSheetTitles).toHaveBeenCalled();
     // R セット（issue #60）: 8 ファイルが構築され、素材（rSetMaterials）も再生成用に保持される
     expect(exportState.rSetMaterials).not.toBeNull();
     expect(exportState.rSet?.files.map((file) => file.name)).toEqual([
@@ -829,4 +841,43 @@ test('既に読み込んだスキーマ履歴から pilot_revision だけを数�
   const store = makeStore();
   await loadExportData(store, makeDeps());
   expect(store.getState().export.methodsFacts?.pilotRevisionCount).toBe(2);
+});
+
+test('根拠の表をタイムスタンプ付きファイル名で保存し、ログとダウンロードへ渡す', async () => {
+  const store = makeStore({ export: { format: 'evidence_quotes', built: makeBuiltAll(), schemaVersion: 2 } });
+  ensureChildFolderMock.mockResolvedValue({ id: 'folder' });
+  uploadTextFileMock.mockResolvedValue({ webViewLink: 'https://drive/file' });
+  await requestExportGenerate(store, makeDeps());
+  expect(store.getState().export.generateError).toBeNull();
+  expect(uploadTextFileMock).toHaveBeenCalledWith(expect.objectContaining({ name: 'evidence_quotes_20260703-090000.csv' }), expect.anything());
+  expect(appendExportLogMock).toHaveBeenCalledWith('sheet-1', expect.objectContaining({ format: 'evidence_quotes' }), expect.anything());
+  downloadExportResult(store);
+  expect(downloadTextFileMock).toHaveBeenCalledWith('evidence_quotes_20260703-090000.csv', makeBuilt('evidence_quotes').csv, 'text/csv');
+});
+
+test('根拠の表は S8 と同じ完了 run の項目別合成を使い、非アクティブ研究を除外する', async () => {
+  readStudiesMock.mockResolvedValue(['study', 'inactive'].map((studyId) => ({ studyId, studyLabel: studyId, createdAt: 't0' })));
+  readDocumentsMock.mockResolvedValue([{ documentId: 'doc', studyId: 'study', filename: 'paper.pdf' }]);
+  getSchemaFieldsByVersionMock.mockResolvedValue(['field', 'other'].map((fieldId, fieldIndex) => ({
+    schemaVersion: 2, fieldId, fieldIndex, fieldName: fieldId, entityLevel: 'study', dataType: 'text',
+  })));
+  readEvidenceRowsMock.mockResolvedValue([
+    evidence({ runId: 'old', quote: '保持する引用' }),
+    evidence({ runId: 'new', evidenceId: 'new', fieldId: 'other', quote: '新しい項目の引用' }),
+    evidence({ runId: 'unfinished', evidenceId: 'unfinished', quote: '未完了の引用' }),
+    evidence({ studyId: 'inactive', quote: '非アクティブの引用' }),
+  ]);
+  jest.mocked(readCompletedRunMetas).mockResolvedValue([
+    { runId: 'old', schemaVersion: 2, startedAt: 't1', studyIds: ['study'], fieldIds: null, warnings: null },
+    { runId: 'new', schemaVersion: 2, startedAt: 't2', studyIds: ['study'], fieldIds: ['other'], warnings: null },
+  ]);
+  const store = makeStore();
+  await loadExportData(store, makeDeps());
+  expect(store.getState().export.loadError).toBeNull();
+  const csv = store.getState().export.built!.evidence_quotes.csv;
+  expect(csv).toContain('保持する引用');
+  expect(csv).toContain('新しい項目の引用');
+  expect(csv).not.toContain('未完了の引用');
+  expect(csv).not.toContain('非アクティブの引用');
+  expect(csv).toContain('paper.pdf');
 });

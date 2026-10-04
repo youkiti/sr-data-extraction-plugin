@@ -1,3 +1,5 @@
+// AI と人の引用一覧を、出所と最終採用の情報を含む CSV にする。
+// セルのスナップショットと判定者から、引用ごとの採用状態を求める。
 import type { AnnotatorType, ResultsDataRow, StudyDataRow } from '../../domain/annotation';
 import type { DocumentRecord } from '../../domain/document';
 import type { Evidence } from '../../domain/evidence';
@@ -15,6 +17,7 @@ export const EVIDENCE_QUOTES_HEADER = [
   'document_id', 'document_filename', 'anchor_status', 'is_final',
 ] as const;
 
+/** 引用の出所と最終採用状態を含む CSV を生成する。 */
 export function buildEvidenceQuotesCsv(params: {
   studies: readonly StudyRecord[];
   fields: readonly SchemaField[];

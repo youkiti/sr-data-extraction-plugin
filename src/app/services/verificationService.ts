@@ -14,6 +14,7 @@ import { NOT_REPORTED_TOKEN } from '../../domain/annotation';
 import type { ConfirmedArmStructure } from '../../domain/armStructure';
 import type { Decision } from '../../domain/decision';
 import type { DocumentRecord } from '../../domain/document';
+import type { QuoteSetRow } from '../../domain/quoteSet';
 import type { Evidence } from '../../domain/evidence';
 import type { EntityLevel, SchemaField } from '../../domain/schemaField';
 import type { StudyRecord } from '../../domain/study';
@@ -197,6 +198,8 @@ export interface VerificationBundleInput {
   fields: readonly SchemaField[];
   /** study の全文書ぶんの AI 根拠（表示する run のもの。各行は document_id で出所を持つ） */
   evidence: readonly Evidence[];
+  quoteEvidence: readonly Evidence[];
+  quoteSetRows: readonly QuoteSetRow[];
   schemaVersion: number;
   /** 判定を書き込む annotator_type（呼び出し側がロールから導出して渡す。design §5.2） */
   annotatorType: 'human_with_ai' | 'human_independent';
@@ -340,6 +343,9 @@ export async function loadVerificationBundle(
   const disposePdf: VerificationData['disposePdf'] = () => pdfCache.disposeAll();
 
   const verification: VerificationData = {
+    quoteSetRows: input.quoteSetRows.filter((row) => row.studyId === study.studyId &&
+      row.annotator === annotator && row.annotatorType === input.annotatorType),
+    quoteEvidence: input.quoteEvidence,
     study,
     documents,
     fields: input.fields,
