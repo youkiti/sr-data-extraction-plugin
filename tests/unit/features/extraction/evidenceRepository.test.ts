@@ -556,6 +556,21 @@ describe('複数引用の Evidence 列', () => {
     const body = JSON.parse(d.fetch.mock.calls[2]?.[1].body as string);
     expect(body.values[0].slice(18)).toEqual(['テーマ', 1]);
   });
+  test('テーマの無い断片でもヘッダを拡張し、元の値と連番を保存する', async () => {
+    const d = quoteDeps([[SHEET_HEADERS.Evidence.slice(0, 18)]]);
+    const rows = [
+      makeEvidence({ quote: 'Age, M (SD)', value: '46.53', quoteSeq: 1 }),
+      makeEvidence({ evidenceId: 'ev-2', quote: '46.53 (6.31)', value: '46.53', quoteSeq: 2, page: 5 }),
+    ];
+    await appendEvidenceRows('sid', rows, d);
+    expect(d.fetch.mock.calls.map(([, init]) => init?.method ?? 'GET')).toEqual(['GET', 'PUT', 'POST']);
+    expect(JSON.parse(d.fetch.mock.calls[1]?.[1].body as string).values).toEqual([[...SHEET_HEADERS.Evidence]]);
+    const values = JSON.parse(d.fetch.mock.calls[2]?.[1].body as string).values as unknown[][];
+    expect(values.map((value) => [value.length, value[6], value[8], value[9], value[18], value[19]])).toEqual([
+      [20, '46.53', 'Age, M (SD)', 3, '', 1],
+      [20, '46.53', '46.53 (6.31)', 5, '', 2],
+    ]);
+  });
   test.each([12, 17, 18, 20])('%p 列ヘッダの行を読む', async (length) => {
     const d = deps();
     const row = evidenceToRow(makeEvidence({ quoteTheme: 'テーマ', quoteSeq: 2 }))

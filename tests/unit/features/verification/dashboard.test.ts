@@ -8,6 +8,17 @@ import type { SchemaField } from '../../../../src/domain/schemaField';
 
 const ME = 'me@example.com';
 
+test('断片のセルは anchor で断片数、not_reported でセル数として数える', () => {
+  const input = makeInput({ evidence: [
+    makeEvidence({ quoteSeq: 1, quote: 'Age, M (SD)', value: '46.53' }),
+    makeEvidence({ quoteSeq: 2, quote: '46.53 (6.31)', value: '46.53', page: 5, anchorStatus: 'fuzzy' }),
+    makeEvidence({ fieldId: 'other', quote: null, notReported: true, anchorStatus: null }),
+  ] });
+  const result = buildDashboard([input], new Map());
+  expect(result.totals.anchor).toEqual({ numerator: 0, denominator: 2 });
+  expect(result.totals.notReported).toEqual({ numerator: 1, denominator: 2 });
+});
+
 test('anchor は引用全行、not_reported は複数引用セルを 1 件として数える', () => {
   const input = makeInput({ evidence: [
     makeEvidence({ quoteSeq: 1 }),

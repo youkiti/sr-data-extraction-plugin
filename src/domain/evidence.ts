@@ -20,6 +20,7 @@ export interface EvidenceBbox {
 
 /**
  * 1 行 = 1 run × 1 study × 1 field × 1 entity_key（+ quote の出所 document）。
+ * 複数引用・分割した断片は同じセルに quoteSeq 付きの行を持つ。
  * 16 タブ中このタブだけが document_id を持ち続ける（quote は特定 PDF の中にあるため。§3.2）
  */
 export interface Evidence {
@@ -37,7 +38,7 @@ export interface Evidence {
   notReported: boolean;
   /** verbatim 引用（根拠箇所）。ハイライトの元データ */
   quote: string | null;
-  /** 1-indexed ページヒント */
+  /** 1-indexed ページヒント。分割した断片は実際に照合されたページ */
   page: number | null;
   confidence: Confidence | null;
   /** quote アンカリング結果（§5）。Evidence 保存時に確定する */
@@ -58,7 +59,7 @@ export interface Evidence {
    * ため relocated_from が付く行には現れない）をそのまま持つ（§5 参照。requirements.md §3.2）
    */
   relocatedFrom: string | null;
-  /** 引用が支えるテーマ。通常の単一引用では null */
+  /** 引用が支えるテーマ。通常の単一引用・分割した断片では null */
   quoteTheme: string | null;
   /** 同じセル内の 1 始まり連番。通常行・未報告行では null */
   quoteSeq: number | null;

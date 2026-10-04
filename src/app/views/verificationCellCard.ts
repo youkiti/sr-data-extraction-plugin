@@ -348,10 +348,10 @@ function renderQuote(
       el('p', { text: t('verify.quotesCount', { n: cell.quotes.length }) }),
       el('ol', { className: 'verify__quotes' }, cell.quotes.map((evidence) =>
         el('li', { className: 'verify__quotes-item' }, [
-          el('strong', {
+          ...(cell.field.maxQuotes !== null ? [el('strong', {
             className: 'verify__quotes-theme',
             text: evidence.quoteTheme ?? t('verify.noTheme'),
-          }),
+          })] : []),
           renderSingleQuote({ ...cell, cellKey: quoteKeyOf(evidence), evidence }, model, handlers),
         ]),
       )),

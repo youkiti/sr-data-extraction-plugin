@@ -199,7 +199,7 @@ export function toggleSampleDocument(store: Store, documentId: string, selected:
   patchSchema(store, { selectedDocumentIds: [...current, documentId] });
 }
 
-/** ドラフトフォーム: requested_model の変更（未設定時の初期値は FACTORY_DEFAULT_MODEL = gemini-3.5-flash） */
+/** ドラフトフォーム: requested_model の変更（未設定時の初期値は FACTORY_DEFAULT_MODEL = gemini-3.8-flash） */
 export function setDraftModel(store: Store, model: string): void {
   patchSchema(store, { model: model.trim() });
 }

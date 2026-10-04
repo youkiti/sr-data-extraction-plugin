@@ -35,6 +35,18 @@ test('複数引用は全引用失敗だけを外れと数え、entity は重複�
   expect(build().cells[0]!.entities).toHaveLength(1);
 });
 
+test('断片のセルも entity と抽出文献を重複計上しない', () => {
+  const evidence = [
+    makeEvidence({ quoteSeq: 1, quote: 'Age, M (SD)', value: '46.53' }),
+    makeEvidence({ quoteSeq: 2, quote: '46.53 (6.31)', value: '46.53', page: 5, anchorStatus: 'fuzzy' }),
+  ];
+  const row = buildPilotMatrix(['study-1'], [makeField({ maxQuotes: null })], evidence, [])[0]!;
+  expect(row.cells[0]!.entities).toHaveLength(1);
+  expect(row.cells[0]!.status).toBe('unverified');
+  expect(row.extractedStudies).toBe(1);
+  expect(row.misses).toBe(0);
+});
+
 test.each(['arm', 'outcome_result', 'rob_domain'] as const)('%s の複数 entity と論文分母を区別する', (entityLevel) => {
   const evidence = Array.from({ length: 5 }, (_, i) => makeEvidence({ entityKey: `entity-${i}` }));
   const decisions = [0, 1].map((i) => makeDecision({ entityKey: `entity-${i}`, action: 'edit' }));

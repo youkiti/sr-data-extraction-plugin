@@ -11,10 +11,10 @@ import {
 } from '../../../../src/features/verification/cells';
 import { cellKeyOf } from '../../../../src/features/verification/cellState';
 
-test('複数引用は seq 昇順の一覧と先頭の代表でセルを作る', () => {
+test.each([2, null])('複数引用・断片は seq 昇順の一覧と先頭の代表でセルを作る: %j', (maxQuotes) => {
   const first = makeEvidence({ quoteSeq: 1 });
   const second = makeEvidence({ quoteSeq: 2, evidenceId: 'second' });
-  const model = buildTabModel('study', [makeField({ maxQuotes: 2 })], [first, second], []);
+  const model = buildTabModel('study', [makeField({ maxQuotes })], [first, second], []);
   expect(model.cells[0]?.evidence).toBe(first);
   expect(model.cells[0]?.quotes).toEqual([first, second]);
   expect(buildTabModel('study', [makeField()], [makeEvidence()], []).cells[0]?.quotes).toEqual([]);

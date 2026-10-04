@@ -136,12 +136,15 @@ export function resolveStoredEndpoint(
 /**
  * 工場出荷の既定モデル。ユーザーが Options で既定モデルを未設定のとき、S5 スキーマ画面の
  * 初期値として使う（下流の S6 パイロット / S7 一括抽出も S5 のモデルを引き継ぐ）。
- * 実データ抽出ベンチマーク（experiments/extraction-benchmark-real/REPORT.md, 2026-07-06）で
- * gemini-3.5-flash が最良の項目正確度（成功 run 72%）だったため採用。
+ * 2026-10-04 に gemini-3.5-flash から切り替えた（issue #295）。実データ抽出ベンチマークの
+ * 2026-09-21 の run（各 1 反復）で、項目正確度が同程度以上（75.4% 対 72.5%。差は誤差の範囲）、
+ * 1 論文の費用と応答時間が小さく（0.07 USD・32 秒 対 0.23 USD・75 秒）、
+ * 引用の照合成功率の差が断片照合（issue #294）で 2.4 ポイントまで縮んだため（92.3% 対 94.7%）。
+ * 経緯は requirements.md の Q8。
  * これは注入側（schemaService）で使う定数で、loadDefaultModel は未設定時 null のまま
  * （Options UI が「保存済み / 未設定」を区別できるようにするため）。
  */
-export const FACTORY_DEFAULT_MODEL = 'gemini-3.5-flash';
+export const FACTORY_DEFAULT_MODEL = 'gemini-3.8-flash';
 
 /** 既定モデル設定を読み出す（未設定は null） */
 export async function loadDefaultModel(): Promise<string | null> {

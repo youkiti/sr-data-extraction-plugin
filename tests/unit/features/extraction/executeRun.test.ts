@@ -24,6 +24,7 @@ import {
   type ExtractDataImagePage,
   type ExtractDataPage,
 } from '../../../../src/features/extraction/skills/extractData';
+import { bundleEvidence } from '../../../../src/features/verification/evidenceBundles';
 import { LlmProviderError } from '../../../../src/lib/llm/LLMProvider';
 import type {
   ChatContentPart,
@@ -310,6 +311,127 @@ const NOT_REPORTED_ITEM = {
   document_index: null,
   confidence: null,
 };
+
+describe('離れた引用断片の保存', () => {
+  const heading = 'Sleep efficiency (%)';
+  const data = 'CBT-I 66.12 (1.37) 82.64 (1.35)';
+  const plan = makePlan([makeBatch({ studyId: 'd1', fieldIds: ['f_design'] })]);
+
+  test.each(['exact', 'normalized', 'fuzzy'] as const)('断片ごとの照合結果とページを保存する: %s', async (status) => {
+    const page = status === 'exact' ? 2 : 5;
+    const { provider } = providerOf([chatResponse([{ ...DESIGN_ITEM, quote: `${heading}\n${data}` }])]);
+    const { deps, saved, loadPages } = makeDeps(provider);
+    loadPages.mockResolvedValue([
+      { page: 1, text: heading },
+      { page, text: status === 'fuzzy' ? data.replace('66.12', '66.13') : data },
+    ]);
+    const result = await execute({ runId: 'run-1', plan, fields: FIELDS }, deps);
+    const common = {
+      runId: 'run-1', studyId: 'd1', documentId: 'd1', fieldId: 'f_design', entityKey: '-',
+      value: DESIGN_ITEM.value, notReported: false, confidence: 'high',
+      bboxPage: null, bbox: null, relocatedFrom: null, quoteTheme: null,
+    };
+    expect(result.evidence).toEqual([
+      { ...common, evidenceId: 'ev-1', quote: heading, quoteSeq: 1, page: 1, anchorStatus: 'exact' },
+      { ...common, evidenceId: 'ev-2', quote: data, quoteSeq: 2, page, anchorStatus: status },
+    ]);
+    expect(saved.flat()).toEqual(result.evidence);
+  });
+
+  test.each([
+    ['先だけが断片化可能', true, false],
+    ['後だけが断片化可能', false, true],
+    ['両方が断片化可能', true, true],
+  ] as const)('同じセルの通常項目は最後だけを断片化する: %s', async (_label, firstSegments, lastSegments) => {
+    const splitQuote = `${heading}\n${data}`;
+    const firstQuote = firstSegments ? splitQuote : heading;
+    const lastQuote = lastSegments ? splitQuote : heading;
+    const { provider } = providerOf([chatResponse([
+      { ...DESIGN_ITEM, value: 'old', quote: firstQuote },
+      { ...DESIGN_ITEM, value: 'new', quote: lastQuote },
+    ])]);
+    const { deps, loadPages } = makeDeps(provider);
+    loadPages.mockResolvedValue([{ page: 1, text: heading }, { page: 2, text: data }]);
+    const result = await execute({ runId: 'run-1', plan, fields: FIELDS }, deps);
+    expect(result.evidence).toHaveLength(lastSegments ? 3 : 2);
+    expect(result.evidence.map(({ quoteSeq, quote, value, anchorStatus }) => ({
+      quoteSeq, quote, value, anchorStatus,
+    }))).toEqual([
+      { quoteSeq: null, quote: firstQuote, value: 'old', anchorStatus: firstSegments ? 'failed' : 'exact' },
+      ...(lastSegments ? [
+        { quoteSeq: 1, quote: heading, value: 'new', anchorStatus: 'exact' },
+        { quoteSeq: 2, quote: data, value: 'new', anchorStatus: 'exact' },
+      ] : [
+        { quoteSeq: null, quote: lastQuote, value: 'new', anchorStatus: 'exact' },
+      ]),
+    ]);
+    if (!lastSegments) {
+      const bundles = [...bundleEvidence(result.evidence).values()];
+      expect(bundles).toHaveLength(1);
+      expect(bundles[0]).toMatchObject({ evidence: { value: 'new' }, quotes: [] });
+    }
+  });
+
+  test.each(['entityKey', 'fieldId'] as const)('別セルの通常項目はそれぞれ断片化する: %s', async (differentKey) => {
+    const fields = [
+      { ...ARM_FIELD, section: 'methods' },
+      { ...ARM_FIELD, section: 'methods', fieldId: 'f_other', fieldName: 'other' },
+    ];
+    const secondFieldId = differentKey === 'fieldId' ? 'f_other' : 'f_n';
+    const secondEntityKey = differentKey === 'entityKey' ? 'arm:2' : 'arm:1';
+    const quote = `${heading}\n${data}`;
+    const { provider } = providerOf([chatResponse([
+      { ...ARM_ITEM, page: 1, value: 'old', quote },
+      { ...ARM_ITEM, page: 1, field_id: secondFieldId, entity_key: secondEntityKey, value: 'new', quote },
+    ])]);
+    const { deps, loadPages } = makeDeps(provider);
+    loadPages.mockResolvedValue([{ page: 1, text: heading }, { page: 2, text: data }]);
+    const result = await execute({
+      runId: 'run-1',
+      plan: makePlan([makeBatch({ studyId: 'd1', fieldIds: fields.map((field) => field.fieldId) })]),
+      fields,
+    }, deps);
+    expect(result.evidence).toHaveLength(4);
+    expect(result.evidence.map(({ fieldId, entityKey, quoteSeq, quote, value, anchorStatus }) => ({
+      fieldId, entityKey, quoteSeq, quote, value, anchorStatus,
+    }))).toEqual([
+      { fieldId: 'f_n', entityKey: 'arm:1', quoteSeq: 1, quote: heading, value: 'old', anchorStatus: 'exact' },
+      { fieldId: 'f_n', entityKey: 'arm:1', quoteSeq: 2, quote: data, value: 'old', anchorStatus: 'exact' },
+      { fieldId: secondFieldId, entityKey: secondEntityKey, quoteSeq: 1, quote: heading, value: 'new', anchorStatus: 'exact' },
+      { fieldId: secondFieldId, entityKey: secondEntityKey, quoteSeq: 2, quote: data, value: 'new', anchorStatus: 'exact' },
+    ]);
+  });
+
+  test.each([null, 2])('一部失敗した通常引用・max_quotes の引用は分割しない: %j', async (maxQuotes) => {
+    const quote = maxQuotes === null ? `${heading}\ncompletely missing content` : `${heading}\n${data}`;
+    const { provider } = providerOf([chatResponse([{ ...DESIGN_ITEM, quote }])]);
+    const { deps, loadPages } = makeDeps(provider);
+    loadPages.mockResolvedValue([{ page: 1, text: heading }, { page: 5, text: data }]);
+    const result = await execute({ runId: 'run-1', plan, fields: [{ ...STUDY_FIELD, maxQuotes }] }, deps);
+    expect(result.evidence).toHaveLength(1);
+    expect(result.evidence[0]).toMatchObject({
+      quote, quoteSeq: maxQuotes === null ? null : 1, page: 1, anchorStatus: 'failed',
+      value: DESIGN_ITEM.value,
+    });
+  });
+
+  test.each(['exact', 'normalized', 'fuzzy'] as const)('全体照合成功時は生の引用とヒントを含め従来の 1 行を保持する: %s', async (status) => {
+    const quote = `${heading}\n${data}`;
+    const { provider } = providerOf([chatResponse([{ ...DESIGN_ITEM, quote }])]);
+    const { deps, loadPages } = makeDeps(provider);
+    loadPages.mockResolvedValue([{
+      page: status === 'exact' ? 1 : 5,
+      text: status === 'fuzzy' ? quote.replace('66.12', '66.13') : quote,
+    }]);
+    const result = await execute({ runId: 'run-1', plan, fields: FIELDS }, deps);
+    expect(result.evidence).toEqual([{
+      evidenceId: 'ev-1', runId: 'run-1', studyId: 'd1', documentId: 'd1', fieldId: 'f_design',
+      entityKey: '-', value: DESIGN_ITEM.value, notReported: false, quote, page: 1,
+      confidence: 'high', anchorStatus: status, bboxPage: null, bbox: null,
+      relocatedFrom: null, quoteTheme: null, quoteSeq: null,
+    }]);
+  });
+});
 
 describe('executeRun の入力検証', () => {
   test('plan と異なる schema_version の項目が混ざっていたら投げる', async () => {
