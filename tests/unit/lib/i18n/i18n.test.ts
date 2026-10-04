@@ -1,8 +1,13 @@
 // i18n 基盤（issue #93）: 辞書のキー集合一致（受け入れ条件）+ t のフォールバック +
 // 言語切替の購読 + data-i18n 属性の DOM 反映
 import { en } from '../../../../src/lib/i18n/en';
+import { jaPages } from '../../../../src/lib/i18n/ja.pages';
+import { enPages } from '../../../../src/lib/i18n/en.pages';
+import { jaApp } from '../../../../src/lib/i18n/ja.app';
+import { enApp } from '../../../../src/lib/i18n/en.app';
 import { ja } from '../../../../src/lib/i18n/ja';
 import {
+  registerMessages,
   getUiLanguage,
   isUiLanguage,
   localizeDom,
@@ -67,11 +72,13 @@ describe('t', () => {
     const dict = en as unknown as Record<string, string | undefined>;
     const saved = dict['home.title'];
     delete dict['home.title'];
+    registerMessages({ ja: {}, en: { 'home.title': dict['home.title'] } });
     try {
       setUiLanguage('en');
       expect(t('home.title')).toBe(ja['home.title']);
     } finally {
       dict['home.title'] = saved;
+      registerMessages({ ja: {}, en: { 'home.title': saved } });
     }
   });
 
@@ -118,5 +125,32 @@ describe('localizeDom', () => {
     expect(document.querySelector('input')?.getAttribute('placeholder')).toBe(
       'プロジェクトタイトル',
     );
+  });
+});
+
+describe('辞書の分割と登録', () => {
+  test('各群の両言語が一致し、群間で重複せず、分割前のキー数を保つ', () => {
+    expect(Object.keys(enPages).sort()).toEqual(Object.keys(jaPages).sort());
+    expect(Object.keys(enApp).sort()).toEqual(Object.keys(jaApp).sort());
+    expect(Object.keys(jaPages).filter((key) => key in jaApp)).toEqual([]);
+    // 分割前の ja.ts のオブジェクトプロパティを TypeScript AST で数えた値。
+    expect(Object.keys(ja)).toHaveLength(1125);
+    expect(Object.keys(jaPages).length + Object.keys(jaApp).length).toBe(1125);
+  });
+
+  test('未登録では app キーをそのまま返し、登録後は両言語の文言を返す', () => {
+    jest.isolateModules(() => {
+      const i18n: typeof import('../../../../src/lib/i18n') = jest.requireActual('../../../../src/lib/i18n');
+      expect(i18n.t('common.cancel')).toBe(jaPages['common.cancel']);
+      expect(i18n.t('app.statusProject')).toBe('app.statusProject');
+      i18n.setUiLanguage('en');
+      expect(i18n.t('common.cancel')).toBe(enPages['common.cancel']);
+      expect(i18n.t('app.statusProject')).toBe('app.statusProject');
+      i18n.registerMessages({ ja: jaApp, en: enApp });
+      expect(i18n.t('app.statusProject', { name: 'test' })).toBe('Project: test');
+      i18n.setUiLanguage('ja');
+      expect(i18n.t('app.statusProject', { name: 'test' })).toBe('プロジェクト: test');
+      expect(i18n.t('common.cancel')).toBe(jaPages['common.cancel']);
+    });
   });
 });

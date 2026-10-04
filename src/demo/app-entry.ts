@@ -1,5 +1,6 @@
 // デモビルド用エントリ（src/app/app.ts の代わり。webpack.config.js が --env demo のときだけ
 // この entry を app/app.js としてビルドする）。起動前処理は bootShared.ts を参照。
+import '../lib/i18n/registerAppMessages';
 import { seedDemoState } from './bootShared';
 
 async function bootDemo(): Promise<void> {

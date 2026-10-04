@@ -250,6 +250,7 @@ anchorQuote() ──文字範囲──▶ highlightMap() ──span 座標──
   `src/demo/googleDeps.ts` / `src/demo/auth.ts` / `src/demo/identity.ts` / `src/demo/picker.ts`
   へビルド設定だけで差し替わる（**既存 `src/` の実装は 1 行も変更しない**）。詳細は
   `src/demo/*` 各ファイル冒頭のコメントと [video/fixtures/README.md](../video/fixtures/README.md) を参照
+- UI 文言辞書はページ共通群（`popup.` / `options.` / `common.` / `modelSelect.`）と app 群に分割し、popup / options にはページ共通群だけを同梱、app 起動時に app 群を登録する。新しいキーを popup / options から参照する場合はページ共通群へ置き、取りこぼしは unit テストで参照元とともに検出する。
 - `mammoth` / `pdfjs-dist` 本体は dynamic import で `dist/chunks/mammoth.js` / `dist/chunks/pdfjs.js` へ分割し、docx テキスト抽出 / PDF ロードの初回呼び出し時に取得する。ロード中の Promise は共有し、取得失敗時には次回呼び出しで再試行する。
 - mermaid はフロー図に必要なチャンクだけを出力する。動的 import の許可判定は `tools/bundle/mermaidFlowchartOnly.js` に置き、webpack の全ビルドで適用する。
 - `pdfjs-dist` の **worker（`pdf.worker.min.mjs`）は `copy-webpack-plugin` で `dist/` へ同梱**（CDN 参照不可、MV3 CSP 準拠）。`GlobalWorkerOptions.workerSrc` は `chrome.runtime.getURL()` で解決
