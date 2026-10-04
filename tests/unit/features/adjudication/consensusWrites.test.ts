@@ -47,6 +47,16 @@ function cell(overrides: Partial<AdjudicationCell> = {}): AdjudicationCell {
 }
 
 describe('toConsensusDecision', () => {
+  test('複数選択の A・B・第三の値・一括採用と監査値を正準化する', () => {
+    const target = cell({ valueA: 'B|A', valueB: 'b|a', field: { ...cell().field, dataType: 'enum',
+      allowedValues: 'A|B', multiSelect: { exclusiveValues: [], freeTextValues: [] } } });
+    const writes = [buildChoiceWrite(target, 'A'), buildChoiceWrite(target, 'B'),
+      buildCustomValueWrite(target, ' B|A '), ...buildBulkAcceptWrites([target], new Map())];
+    for (const write of writes) {
+      expect(write.value).toBe('A|B');
+      expect(toConsensusDecision(write, { studyId: 's', decidedBy: 'a', decidedAt: 't', schemaVersion: 1 }).value).toBe('A|B');
+    }
+  });
   test('annotator は常に consensus 固定・decided_by は裁定者', () => {
     const decision = toConsensusDecision(
       { field: cell().field, entityKey: '-', action: 'accept', value: '120' },

@@ -846,6 +846,10 @@ export const enApp: Record<keyof typeof jaApp, string> = {
   'verify.enumOther': 'Other (free text)',
   'verify.enumBackToChoices': 'Back to choices',
   'verify.enumHint': 'Click a choice, or press a number key (1-9) to confirm.',
+  'verify.multiEnumHint': 'Click or press a number key to toggle choices, then press Enter to confirm.',
+  'verify.multiExclusiveTitle': 'Cannot be selected with other choices',
+  'verify.multiFreeTextAria': 'Details for {option}',
+  'verify.quoteSection': 'Section: {section}',
   'verify.enumOutOfRange':
     '⚠ "{value}" is not one of the choices defined in Table design (choices: {allowed}).',
   'verify.enumOutOfRangeLink': 'Review the table design',

@@ -42,6 +42,41 @@ test('引用一覧はテーマ・全文・引用別ジャンプと失敗時検�
 
 const mockInitialize = jest.fn();
 
+test('複数選択はテーマと節と整形値を表示し、メモ欄 Enter で選択全体を保存する', () => {
+  const field = makeField({ fieldName: 'sources', dataType: 'enum', allowedValues: 'A|B|Other',
+    multiSelect: { exclusiveValues: [], freeTextValues: ['Other'] } });
+  const evidence = makeEvidence({ value: 'A|Other: 初期', quoteSeq: 1, quoteTheme: 'A', section: 'Methods' });
+  const cell = makeCell({ field, evidence, quotes: [evidence], state: { ...emptyCellState(), status: 'edit', value: 'A|Other: 初期' } });
+  const handlers = makeHandlers();
+  const root = renderCell(cell, makeModel({ editing: { cellKey: cell.cellKey, action: 'edit' } }), handlers);
+  expect(root.querySelector('.verify__ai-value')!.textContent).toBe('A | Other: 初期');
+  expect(root.querySelector('.verify__current-value')!.textContent).toContain('A | Other: 初期');
+  expect(root.querySelector('.verify__quotes-theme')!.textContent).toBe('A');
+  expect(root.querySelector('.verify__quote-section')!.textContent).toBe('節: Methods');
+  const note = root.querySelector<HTMLInputElement>('.verify__note-input')!;
+  root.querySelector<HTMLInputElement>('.verify__multi-free-text')!.value = '説明';
+  note.value = 'メモ';
+  for (const init of [{ isComposing: true }, { keyCode: 229 }]) {
+    note.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', ...init }));
+  }
+  note.dispatchEvent(new KeyboardEvent('keydown', { key: 'x' }));
+  expect(handlers.onConfirmEdit).not.toHaveBeenCalled();
+  const parentKey = jest.fn();
+  root.addEventListener('keydown', parentKey);
+  const enter = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true });
+  note.dispatchEvent(enter);
+  expect(enter.defaultPrevented).toBe(true);
+  expect(parentKey).not.toHaveBeenCalled();
+  expect(handlers.onConfirmEdit).toHaveBeenLastCalledWith(cell.cellKey, 'edit', 'A|Other: 説明', 'メモ');
+  note.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  root.querySelector<HTMLButtonElement>('.verify__edit-cancel')!.click();
+  expect(handlers.onCancelEdit).toHaveBeenCalledTimes(2);
+  const blank = renderCell(makeCell({ field, evidence: null }), makeModel({ mode: 'independent', editing: { cellKey: cell.cellKey, action: 'edit' } }), handlers);
+  blank.querySelector('.verify__note-input')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
+  expect(handlers.onConfirmEdit).toHaveBeenCalledTimes(1);
+  expect(renderCell(cell, makeModel({ mode: 'independent' }), handlers).querySelector('.verify__quote-section')).toBeNull();
+});
+
 test.each([null, 2])('引用一覧のテーマ名は項目定義が複数引用のときだけ表示する: %j', (maxQuotes) => {
   const quotes = [
     makeEvidence({ evidenceId: 'first', quoteSeq: 1, quote: 'Sleep efficiency (%)' }),

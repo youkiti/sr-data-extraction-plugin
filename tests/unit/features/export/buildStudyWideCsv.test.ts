@@ -56,6 +56,39 @@ const studyRow = (
 });
 
 describe('buildStudyWideCsv', () => {
+  test('空文字の複数選択値は選択肢列と自由記述列をすべて空欄にする', () => {
+    const multi: SchemaField = {
+      ...field('f', 'design', 1), dataType: 'enum', allowedValues: 'A|B|Other',
+      multiSelect: { exclusiveValues: [], freeTextValues: ['Other'] },
+    };
+    const result = buildStudyWideCsv([study('s1', 'Study')],
+      [studyRow('s1', 'consensus', { design: '' })], [multi]);
+    expect(result.csv).toBe(CSV_BOM +
+      'study_label,design,design__a,design__b,design__other,design__other_text\r\nStudy,,,,,\r\n');
+  });
+
+  test('複数選択の列を直後に展開し、ヘッダ全体の衝突を連番で避ける', () => {
+    const multi: SchemaField = { ...field('f', 'x', 1), dataType: 'enum',
+      allowedValues: 'A!|A?|Other|Other text|日本語|unclear',
+      multiSelect: { exclusiveValues: ['unclear'], freeTextValues: ['Other'] } };
+    const fields = [multi, field('f2', 'x__a', 2), field('f3', 'x__a_2', 3)];
+    const values = [null, 'NR', 'unclear', 'A!|Other: 説明|未知', 'Other', 'Other text', ''];
+    const result = buildStudyWideCsv(values.map((_, i) => study(String(i), String(i))),
+      values.map((x, i) => studyRow(String(i), 'consensus', { x, x__a: 'v', x__a_2: 'w' })), fields);
+    expect(result.csv).toBe(CSV_BOM + [
+      'study_label,x,x__a_3,x__a_4,x__other,x__other_text,x__other_text_2,x__opt5,x__unclear,x__a,x__a_2',
+      '0,,,,,,,,,v,w',
+      '1,NR,,,,,,,,v,w',
+      '2,unclear,0,0,0,,0,0,1,v,w',
+      '3,A!|Other: 説明|未知,1,0,1,説明,0,0,0,v,w',
+      '4,Other,0,0,1,,0,0,0,v,w',
+      '5,Other text,0,0,0,,1,0,0,v,w',
+      '6,,,,,,,,,v,w',
+      '',
+    ].join('\r\n'));
+    expect(result.unverifiedCellCount).toBe(1);
+    expect(result.studyCount).toBe(7);
+  });
   test('確定 annotator 行を field_index 順の study レベル列で出力する', () => {
     const studies = [study('d1', 'Smith 2020'), study('d2', 'Tanaka, 2021')];
     const fields = [

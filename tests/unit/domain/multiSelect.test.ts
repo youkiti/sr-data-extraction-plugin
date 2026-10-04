@@ -1,5 +1,5 @@
 import {
-  canonicalizeMultiSelectValue, formatMultiSelectValue, isMultiSelectField,
+  canonicalizeMultiSelectValue, formatMultiSelectValue, formatMultiSelectForDisplay, isMultiSelectField,
   parseMultiSelectValue, sanitizeFreeText, splitPipeList, toggleMultiSelectOption,
 } from '../../../src/domain/multiSelect';
 import type { SchemaField } from '../../../src/domain/schemaField';
@@ -14,6 +14,10 @@ const field: SchemaField = {
 const known = (option: string, text: string | null = null) => ({ option, text, known: true });
 const unknown = (option: string) => ({ option, text: null, known: false });
 
+test('画面表示は選択肢の間に空白を入れ、自由記述と未知の要素も表示する', () => {
+  expect(formatMultiSelectForDisplay(field, 'A|Other: 説明|B|未知')).toBe('B | A | Other: 説明 | 未知');
+});
+
 test('区切り一覧を trim・空除去・初出順で重複除去する', () => {
   expect(splitPipeList(null)).toEqual([]);
   expect(splitPipeList('')).toEqual([]);
@@ -23,6 +27,7 @@ test('区切り一覧を trim・空除去・初出順で重複除去する', () 
 test.each([null, '', 'NR'])('空値と未報告を保持する: %p', (value) => {
   expect(parseMultiSelectValue(field, value)).toEqual([]);
   expect(canonicalizeMultiSelectValue(field, value)).toBe(value);
+  expect(formatMultiSelectForDisplay(field, value)).toBe(value);
 });
 
 test('完全一致・最長の自由記述接頭辞・大小文字一致・未知と重複を解釈する', () => {
@@ -65,5 +70,6 @@ test.each([
   expect(parseMultiSelectValue(single, 'A')).toEqual([]);
   expect(formatMultiSelectValue(single, [known('A')])).toBeNull();
   expect(canonicalizeMultiSelectValue(single, 'A')).toBe('A');
+  expect(formatMultiSelectForDisplay(single, 'A')).toBe('A');
   expect(toggleMultiSelectOption(single, [], 'A')).toEqual([]);
 });

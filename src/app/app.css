@@ -2525,7 +2525,8 @@ section.documents__tiab {
 }
 
 /* enum 項目の許容値チップ（issue #254）。既定選択は置かない設計のため、
-   選択済みを表す修飾（aria-pressed / --selected）は持たない */
+   選択済みを表す修飾（aria-pressed / --selected）は持たない。
+   複数選択では付け外しの状態を aria-pressed で表す */
 .verify__enum-choices {
   display: flex;
   flex-wrap: wrap;
@@ -2560,6 +2561,38 @@ section.documents__tiab {
 
 .verify__enum-chip--other {
   border-style: dashed;
+}
+
+.verify__enum-chip[aria-pressed="true"],
+.verify__enum-chip[aria-pressed="true"]:hover:not(:disabled) {
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+}
+
+.verify__enum-chip[aria-pressed="true"] .verify__enum-chip-key {
+  color: var(--color-on-primary);
+}
+
+.verify__enum-chip--exclusive {
+  border-radius: 3px;
+}
+
+.verify__enum-chip--unknown {
+  border-style: dashed;
+}
+
+.verify__multi-free-text {
+  flex-basis: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+.verify__quote-section {
+  color: var(--color-text-muted);
+  font-size: 12px;
 }
 
 .verify__enum-hint {

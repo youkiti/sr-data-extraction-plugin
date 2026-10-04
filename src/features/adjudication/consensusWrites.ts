@@ -3,6 +3,7 @@
 // 一意性を構造的に保証する）。action の読み替え: 一致セルの一括採用 = accept、A/B いずれか採用・
 // 第 3 の値 = edit、not_reported 裁定 = not_reported、取り消し = undo（cellState の畳み込みに乗る）
 import { NOT_REPORTED_TOKEN } from '../../domain/annotation';
+import { canonicalizeMultiSelectValue } from '../../domain/multiSelect';
 import type { Decision, DecisionAction } from '../../domain/decision';
 import type { SchemaField } from '../../domain/schemaField';
 import { type CellState, undoRevertValue } from '../verification/cellState';
@@ -40,7 +41,7 @@ export function toConsensusDecision(write: ConsensusCellWrite, params: Consensus
     annotatorType: 'consensus',
     schemaVersion: params.schemaVersion,
     action: write.action,
-    value: write.value,
+    value: canonicalizeMultiSelectValue(write.field, write.value),
     note: params.note ?? null,
   };
 }
@@ -60,7 +61,7 @@ export function buildBulkAcceptWrites(
       field: cell.field,
       entityKey: cell.entityKey,
       action: 'accept' as const,
-      value: cell.valueA,
+      value: canonicalizeMultiSelectValue(cell.field, cell.valueA),
     }));
 }
 
@@ -70,7 +71,7 @@ export function buildChoiceWrite(cell: AdjudicationCell, choice: 'A' | 'B'): Con
     field: cell.field,
     entityKey: cell.entityKey,
     action: 'edit',
-    value: choice === 'A' ? cell.valueA : cell.valueB,
+    value: canonicalizeMultiSelectValue(cell.field, choice === 'A' ? cell.valueA : cell.valueB),
   };
 }
 
@@ -81,7 +82,7 @@ export function buildCustomValueWrite(cell: AdjudicationCell, rawValue: string):
     field: cell.field,
     entityKey: cell.entityKey,
     action: 'edit',
-    value: trimmed === '' ? null : trimmed,
+    value: canonicalizeMultiSelectValue(cell.field, trimmed === '' ? null : trimmed),
   };
 }
 

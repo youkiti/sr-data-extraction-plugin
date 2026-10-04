@@ -4,6 +4,7 @@
 import { NOT_REPORTED_TOKEN, type AnnotatorType } from '../../domain/annotation';
 import type { Decision } from '../../domain/decision';
 import type { SchemaField } from '../../domain/schemaField';
+import { isMultiSelectField, parseMultiSelectValue } from '../../domain/multiSelect';
 
 /**
  * チップ列で並べる許容値の上限。これを超える項目はチップ列を出さず
@@ -44,6 +45,9 @@ export function isOutOfAllowedValues(field: SchemaField, value: string | null): 
     return false;
   }
   const allowed = parseAllowedValues(field);
+  if (isMultiSelectField(field)) {
+    return parseMultiSelectValue(field, value).some((element) => !element.known);
+  }
   return allowed !== null && !allowed.includes(value);
 }
 

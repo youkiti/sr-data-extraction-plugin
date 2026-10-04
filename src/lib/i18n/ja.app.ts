@@ -829,6 +829,10 @@ export const jaApp = {
   'verify.enumOther': 'その他（自由入力）',
   'verify.enumBackToChoices': '選択肢に戻る',
   'verify.enumHint': '選択肢をクリック、または数字キー（1〜9）で確定します。',
+  'verify.multiEnumHint': '数字キーかクリックで付け外し、Enter で確定します。',
+  'verify.multiExclusiveTitle': 'ほかの選択肢と同時に選べません',
+  'verify.multiFreeTextAria': '{option} の内容',
+  'verify.quoteSection': '節: {section}',
   'verify.enumOutOfRange':
     '⚠ 「{value}」は「表のデザイン」で設定した選択肢にありません（選択肢: {allowed}）。',
   'verify.enumOutOfRangeLink': '表のデザインを見直す',

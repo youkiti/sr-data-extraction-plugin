@@ -54,7 +54,7 @@ export const EXTRACT_DATA_SKILL_NAME = 'extract-data';
  *   名前を書かない）を含めた。arm レベルの項目が無いバッチ（section 単位分割でできる
  *   outcome_result だけのバッチ等）にも番号づけの規則が出るようにするため（issue #293）。
  *   outcome_result の項目を含まないバッチのプロンプトは変わらない
- * v12: 複数選択で選択肢ごとの要素を返し、全要素に section を返す（issue #307）。
+ * v12（2026-10-04）: 複数選択で選択肢ごとの要素を返し、全要素に section を返す（issue #307）。
  */
 export const EXTRACT_DATA_PROMPT_VERSION = 12;
 

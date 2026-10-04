@@ -73,6 +73,14 @@ export function canonicalizeMultiSelectValue(field: SchemaField, value: string |
   return formatMultiSelectValue(field, parseMultiSelectValue(field, value));
 }
 
+/** 複数選択の保存値を画面表示用に整える（要素を ` | ` でつなぐ）。 */
+export function formatMultiSelectForDisplay(field: SchemaField, value: string | null): string | null {
+  if (!isMultiSelectField(field) || value === null || value === '' || value === NOT_REPORTED_TOKEN) return value;
+  return parseMultiSelectValue(field, value).map(({ option, text }) =>
+    text === null ? option : `${option}: ${text}`,
+  ).join(' | ');
+}
+
 /** 単独選択の制約を保って選択肢の選択状態を切り替える。 */
 export function toggleMultiSelectOption(
   field: SchemaField,

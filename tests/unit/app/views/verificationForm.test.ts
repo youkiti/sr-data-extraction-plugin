@@ -627,6 +627,24 @@ describe('renderVerificationForm', () => {
 });
 
 describe('renderVerificationForm: 判定済みブロック（未判定を上・判定済みを下部へ）', () => {
+  test.each(['A|B', 'A|未知'])('複数選択の判定済み値 %s を整形し、警告時の読み上げにも反映する', (value) => {
+    const cell = makeCell({
+      field: makeField({
+        dataType: 'enum', allowedValues: 'A|B',
+        multiSelect: { exclusiveValues: [], freeTextValues: [] },
+      }),
+      state: { status: 'accept', value, stack: [] },
+    });
+    const { root } = render(makeModel([cell]));
+    const row = root.querySelector('.verify__cell--decided');
+    const expected = value === 'A|B' ? '確定値: A | B' : '確定値: A | 未知';
+    expect(row?.querySelector('.verify__decided-value')?.textContent).toBe(expected);
+    if (value === 'A|未知') {
+      expect(row?.getAttribute('aria-label')).toContain(`総サンプルサイズ: ${expected}`);
+      expect(row?.getAttribute('title')).toContain('未知');
+    }
+  });
+
   const accepted: CellState = { status: 'accept', value: '120', stack: [] };
 
   function makeDecidedModel(overrides: Partial<VerificationFormModel> = {}): {

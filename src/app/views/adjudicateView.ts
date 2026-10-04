@@ -32,6 +32,8 @@ import {
 } from './adjudicatePdfPane';
 import { renderAskPaperPanel } from './askPaperPanel';
 import { renderAllowedValuesNote, renderEnumChoiceEditor } from './enumChoiceEditor';
+import { renderMultiEnumChoiceEditor } from './multiEnumChoiceEditor';
+import { formatMultiSelectForDisplay } from '../../domain/multiSelect';
 import type { ViewContext } from './types';
 
 type ChipStatus = 'match' | 'mismatch' | 'accept' | 'edit' | 'reject' | 'not_reported' | 'skipped';
@@ -425,8 +427,8 @@ function renderCellRow(
   const row: HTMLElement[] = [
     el('td', { text: heading }),
     el('td', {}, fieldChildren),
-    el('td', {}, valueCellChildren(displayValue(cell.valueA), cell.noteA, 'A')),
-    el('td', {}, valueCellChildren(displayValue(cell.valueB), cell.noteB, 'B')),
+    el('td', {}, valueCellChildren(displayValue(formatMultiSelectForDisplay(cell.field, cell.valueA)), cell.noteA, 'A')),
+    el('td', {}, valueCellChildren(displayValue(formatMultiSelectForDisplay(cell.field, cell.valueB)), cell.noteB, 'B')),
     el(
       'td',
       {},
@@ -452,7 +454,7 @@ function renderCellRow(
     actionsCell.append(
       el('span', {
         className: 'adjudicate__current-value',
-        text: t('verify.decidedValue', { value: displayValue(consensusState.value) }),
+        text: t('verify.decidedValue', { value: displayValue(formatMultiSelectForDisplay(cell.field, consensusState.value)) }),
       }),
       undo,
     );
@@ -496,7 +498,12 @@ function renderCellRow(
     // （issue #254）。enum でなければ null が返るので従来の自由入力へ落ちる。
     // 編集モードから抜ける概念が無い画面のため onCancel は渡さない（キャンセルボタンを出さない）
     const customAriaLabel = t('adjudicate.customAria', { label: cell.field.fieldLabel });
-    const enumEditor = renderEnumChoiceEditor({
+    const enumEditor = renderMultiEnumChoiceEditor({
+      field: cell.field,
+      currentValue: null,
+      confirmLabel: t('verify.editConfirmIndependent'),
+      onConfirm: (value) => ctx.adjudicate.onCustomValue(cell.cellKey, value),
+    })?.element ?? renderEnumChoiceEditor({
       field: cell.field,
       currentValue: null,
       candidates: collectOtherValues(
