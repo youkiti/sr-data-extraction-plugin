@@ -3808,7 +3808,7 @@ describe('bootstrapApp: #/adjudicate', () => {
       evidence: [],
       skippedCellKeys: [],
       rebuildCells: jest.fn(() => []),
-    quoteSetRows: [], quoteEvidence: [], annotatorTypeA: 'human_with_ai', annotatorTypeB: 'human_independent',
+    quoteSetRows: [], quoteEvidence: [], quoteAiEvidence: [], annotatorTypeA: 'human_with_ai', annotatorTypeB: 'human_independent',
     quoteArmRemap: () => new Map(), quoteSaving: [], quoteErrors: [],
       loadPdfView: jest.fn().mockResolvedValue({ pdf: null, pdfError: 'テストでは PDF なし', textPages: [] }),
       retryPdfView: jest.fn().mockResolvedValue({ pdf: null, pdfError: 'テストでは PDF なし', textPages: [] }),

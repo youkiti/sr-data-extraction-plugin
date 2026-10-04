@@ -9,6 +9,7 @@ import { el } from '../ui/dom';
 
 interface QuoteAddTarget { cellKey: string; field: SchemaField; entityKey: string }
 
+/** 引用を追加できない理由を返す。 */
 export function quoteAddReason(input: {
   target: QuoteAddTarget | undefined; busy: boolean; text: string; documentId: string | null;
   quotes: readonly CellQuote[]; theme: string;
@@ -22,6 +23,7 @@ export function quoteAddReason(input: {
   return null;
 }
 
+/** PDF で選んだ文の追加先と入力欄を描画する。 */
 export function createQuoteAddBar(input: {
   prefix: 'verify' | 'adjudicate'; target: QuoteAddTarget | undefined; section: string;
   onTheme(value: string): void; onSection(value: string): void;
@@ -63,6 +65,7 @@ export function createQuoteAddBar(input: {
     attributes: { role: 'group', 'aria-label': t('verify.quoteAddAria') } }, children);
 }
 
+/** 選択した文と追加可否を表示へ反映する。 */
 export function updateQuoteAddBar(host: HTMLElement, prefix: 'verify' | 'adjudicate',
   text: string, reason: string | null): void {
   host.querySelector('.' + prefix + '__quote-add-text')!.textContent =

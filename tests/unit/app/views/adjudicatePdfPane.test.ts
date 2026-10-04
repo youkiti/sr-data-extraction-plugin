@@ -173,7 +173,7 @@ function makeWorking(overrides: Partial<AdjudicateWorking> = {}): AdjudicateWork
     evidence: [],
     skippedCellKeys: [],
     rebuildCells: jest.fn(() => []),
-    quoteSetRows: [], quoteEvidence: [], annotatorTypeA: 'human_with_ai', annotatorTypeB: 'human_independent',
+    quoteSetRows: [], quoteEvidence: [], quoteAiEvidence: [], annotatorTypeA: 'human_with_ai', annotatorTypeB: 'human_independent',
     quoteArmRemap: () => new Map(), quoteSaving: [], quoteErrors: [],
     loadPdfView: jest.fn().mockResolvedValue({ pdf: makePdfDocument(), pdfError: null, textPages: [] }),
     retryPdfView: jest.fn().mockResolvedValue({ pdf: makePdfDocument(), pdfError: null, textPages: [] }),

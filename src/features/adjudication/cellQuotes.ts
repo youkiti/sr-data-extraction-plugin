@@ -1,6 +1,6 @@
+// 裁定セルの両者の引用と、独立した最終の根拠を解決する。
 import type { Decision } from '../../domain/decision';
 import type { AnchoredCitation } from '../verification/askPaper';
-// 裁定セルの両者の引用と、独立した最終の根拠を解決する。
 import type { AnnotatorType, StudyDataRow, ResultsDataRow } from '../../domain/annotation';
 import type { Evidence } from '../../domain/evidence';
 import type { CellQuote, QuoteSetRow } from '../../domain/quoteSet';
@@ -10,11 +10,13 @@ import { cellKeyOf } from '../verification/cellState';
 import { bundleEvidence } from '../verification/evidenceBundles';
 import { remapArmEntityKey } from './armMatch';
 
+/** 同じ文書の引用を正規化して同一性を判定する。 */
 export function sameAdjudicateQuote(a: CellQuote, b: CellQuote): boolean {
   return a.quoteId === b.quoteId ||
     (a.documentId === b.documentId && normalizeText(a.quote) === normalizeText(b.quote));
 }
 
+/** 両者の引用の出所と最終一覧への採用状態。 */
 export interface AdjudicateQuoteCandidate {
   quote: CellQuote;
   owner: 'A' | 'B' | 'both';
@@ -22,6 +24,7 @@ export interface AdjudicateQuoteCandidate {
   adopted: boolean;
 }
 
+/** 両者の編集済み引用または AI 引用と、最終の根拠を解決する。 */
 export function resolveAdjudicateQuotes(input: {
   studyId: string; fieldId: string; entityKey: string;
   annotatorA: string; annotatorB: string;
@@ -33,9 +36,13 @@ export function resolveAdjudicateQuotes(input: {
   const snapshots = foldQuoteSets(input.quoteSetRows.map((row) => row.annotator === input.annotatorB
     ? { ...row, entityKey: remapArmEntityKey(row.entityKey, input.armKeyRemap) } : row));
   const evidenceById = new Map(input.quoteEvidence.map((row) => [row.evidenceId, row]));
-  const bundle = bundleEvidence(input.evidence).get(cellKeyOf(input.fieldId, input.entityKey)) ?? null;
+  const key = cellKeyOf(input.fieldId, input.entityKey);
+  const bundleA = bundleEvidence(input.evidence).get(key) ?? null;
+  const bundleB = bundleEvidence(input.evidence.map((row) => ({
+    ...row, entityKey: remapArmEntityKey(row.entityKey, input.armKeyRemap),
+  }))).get(key) ?? null;
   const resolve = (annotator: string, annotatorType: AnnotatorType) => resolveCellQuotes(
-    annotatorType === 'human_with_ai' ? bundle : null,
+    annotatorType === 'human_with_ai' ? (annotator === input.annotatorB ? bundleB : bundleA) : null,
     snapshots.get(quoteSetKeyOf({ ...input, annotator, annotatorType })) ?? null, evidenceById);
   const quotesA = resolve(input.annotatorA, input.annotatorTypeA).quotes;
   const quotesB = resolve(input.annotatorB, input.annotatorTypeB).quotes;
@@ -71,6 +78,7 @@ export function reviewerQuoteType(
   return (valueRow ?? decision)?.annotatorType === 'human_with_ai' ? 'human_with_ai' : 'human_independent';
 }
 
+/** 引用を PDF の一時ハイライト用の参照へ変換する。 */
 export function quoteCitation(quote: CellQuote): AnchoredCitation {
   return { documentIndex: 1, documentId: quote.documentId, quote: quote.quote, page: quote.page,
     anchorStatus: quote.anchorStatus ?? 'failed', anchoredPage: quote.page,

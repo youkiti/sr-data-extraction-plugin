@@ -1,5 +1,5 @@
-import { quotesForCell } from './adjudicateQuoteData';
 // 裁定セルの引用一覧。採用と削除は値の裁定コールバックから独立させる。
+import { quotesForCell } from './adjudicateQuoteData';
 import type { CellQuote } from '../../domain/quoteSet';
 import { sameAdjudicateQuote, quoteCitation } from '../../features/adjudication/cellQuotes';
 import type { AdjudicationCell } from '../../features/adjudication/cellMatch';
@@ -14,11 +14,12 @@ function quoteContent(quote: CellQuote): HTMLElement[] {
   if (quote.source === 'human') nodes.push(el('span', { text: t('verify.quoteSourceHuman') }));
   if (quote.theme !== null) nodes.push(el('span', { text: quote.theme }));
   nodes.push(el('blockquote', { text: quote.quote }));
-  if (quote.page !== null) nodes.push(el('span', { text: String(quote.page) }));
-  if (quote.section !== null) nodes.push(el('span', { text: quote.section }));
+  if (quote.page !== null) nodes.push(el('span', { text: `p.${quote.page}` }));
+  if (quote.section !== null) nodes.push(el('span', { text: t('verify.quoteSection', { section: quote.section }) }));
   return nodes;
 }
 
+/** 両者の引用候補と最終の根拠の採用・削除操作を描画する。 */
 export function renderAdjudicateQuotes(cell: AdjudicationCell, working: AdjudicateWorking,
   locked: boolean, callbacks: AdjudicateViewCallbacks): HTMLElement | null {
   const resolved = quotesForCell(working, cell);

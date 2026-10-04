@@ -46,7 +46,7 @@ import { readDocuments } from '../../../../src/features/documents/documentReposi
 import { readStudies } from '../../../../src/features/documents/studyRepository';
 import { readResultsDataRows, readStudyDataSheet } from '../../../../src/features/extraction/annotationRepository';
 import { readEvidenceRows } from '../../../../src/features/extraction/evidenceRepository';
-import { readRunSchemaVersions } from '../../../../src/features/extraction/runRepository';
+import { readCompletedRunMetas, readRunSchemaVersions } from '../../../../src/features/extraction/runRepository';
 import { getSchemaFieldsByVersion, listSchemaVersions } from '../../../../src/features/schema/schemaRepository';
 import {
   appendArmStructureVersion,
@@ -71,7 +71,7 @@ jest.mock('../../../../src/features/extraction/annotationRepository', () => ({
   readResultsDataRows: jest.fn(),
 }));
 jest.mock('../../../../src/features/extraction/evidenceRepository', () => ({ readEvidenceRows: jest.fn() }));
-jest.mock('../../../../src/features/extraction/runRepository', () => ({ readRunSchemaVersions: jest.fn() }));
+jest.mock('../../../../src/features/extraction/runRepository', () => ({ readRunSchemaVersions: jest.fn(), readCompletedRunMetas: jest.fn() }));
 jest.mock('../../../../src/features/schema/schemaRepository', () => ({
   listSchemaVersions: jest.fn(),
   getSchemaFieldsByVersion: jest.fn(),
@@ -435,6 +435,7 @@ beforeEach(() => {
   applyConsensusWritesMock.mockResolvedValue(undefined);
   readEvidenceRowsMock.mockResolvedValue([]);
   readRunSchemaVersionsMock.mockResolvedValue(new Map());
+  jest.mocked(readCompletedRunMetas).mockResolvedValue([]);
   // issue #117 件3: collectReadyStudyInputs も readAllArmStructures を読むため既定は空配列にしておく
   // （arm マッピングを検証するテストは各自 mockResolvedValue で上書きする）
   readAllArmStructuresMock.mockResolvedValue([]);
@@ -2220,4 +2221,56 @@ test('B の素通し群キーの退避を引用にも使う', async () => {
   setAdjudicateArmMapping(store, 0, 'arm:5');
   working = store.getState().adjudicate.working!;
   expect(working.quoteArmRemap().get('arm:1')).toBe('arm:2');
+});
+
+
+test('未編集の引用は項目ごとの最新完了 run を使い、補助ハイライトは従来の最新 run を保つ', async () => {
+  setupTwoAnnotatorsReady();
+  const old = makeEvidence({ evidenceId: 'old', runId: 'old', quote: 'Old X quote' });
+  const latest = makeEvidence({ evidenceId: 'latest', runId: 'latest', fieldId: 'f-y', quote: 'New Y quote' });
+  const running = makeEvidence({ evidenceId: 'running', runId: 'running', quote: 'Unfinished X quote' });
+  readEvidenceRowsMock.mockResolvedValue([old, latest, running]);
+  readRunSchemaVersionsMock.mockResolvedValue(new Map([['old', 1], ['latest', 1], ['running', 1]]));
+  jest.mocked(readCompletedRunMetas).mockResolvedValue([
+    { runId: 'old', schemaVersion: 1, startedAt: 't1', studyIds: ['study-1'], fieldIds: ['f-1'], warnings: null },
+    { runId: 'latest', schemaVersion: 1, startedAt: 't2', studyIds: ['study-1'], fieldIds: ['f-y'], warnings: null },
+  ]);
+  const store = seedStore(); const deps = makeDeps();
+  await loadAdjudicateTargets(store, deps);
+  await openAdjudicateStudy(store, deps, 'study-1');
+  const working = store.getState().adjudicate.working!;
+  expect(working.evidence).toEqual([running]);
+  expect(working.quoteAiEvidence).toEqual([old, latest]);
+  const resolved = quotesForCell(working, working.cells.find((cell) => cell.field.fieldId === 'f-1')!);
+  expect(resolved.quotesA.map((quote) => quote.quote)).toEqual(['Old X quote']);
+  expect(resolved.quotesB.map((quote) => quote.quote)).toEqual(['Old X quote']);
+  expect(resolved.candidates).toHaveLength(1);
+  expect(readEvidenceRowsMock).toHaveBeenCalledTimes(1);
+  expect(readCompletedRunMetas).toHaveBeenCalledTimes(1);
+});
+
+test('AI 引用だけの素通し群キーもセルと同じ辞書で退避し、B の引用を混ぜない', async () => {
+  setupCollisionArms();
+  const evidence = [
+    makeEvidence({ fieldId: 'f-arm', entityKey: 'arm:1', evidenceId: 'stray', quote: 'Stray source' }),
+    makeEvidence({ fieldId: 'f-arm', entityKey: 'arm:2', evidenceId: 'ai-only', quote: 'AI only source' }),
+    makeEvidence({ fieldId: 'f-arm', entityKey: 'arm:6', evidenceId: 'mapped', quote: 'Mapped source' }),
+  ];
+  readEvidenceRowsMock.mockResolvedValue(evidence);
+  jest.mocked(readCompletedRunMetas).mockResolvedValue([
+    { runId: 'run-1', schemaVersion: 1, startedAt: 't1', studyIds: ['study-1'], fieldIds: null, warnings: null },
+  ]);
+  const store = seedStore(); const deps = makeDeps();
+  await loadAdjudicateTargets(store, deps);
+  await openAdjudicateStudy(store, deps, 'study-1');
+  const working = store.getState().adjudicate.working!;
+  expect(working.quoteArmRemap().get('arm:1')).toBe('arm:3');
+  expect(working.quoteArmRemap().get('arm:2')).toBe('arm:4');
+  const canonical = working.cells.find((cell) => cell.field.fieldId === 'f-arm' && cell.entityKey === 'arm:1')!;
+  const resolved = quotesForCell(working, canonical);
+  expect(resolved.quotesA.map((quote) => quote.quote)).toEqual(['Stray source']);
+  expect(resolved.quotesB.map((quote) => quote.quote)).toEqual(['Mapped source']);
+  expect(resolved.candidates.map((candidate) => candidate.owner)).toEqual(['A', 'B']);
+  const escaped = working.cells.find((cell) => cell.field.fieldId === 'f-arm' && cell.entityKey === 'arm:3')!;
+  expect(quotesForCell(working, escaped).quotesB.map((quote) => quote.quote)).toEqual(['Stray source']);
 });

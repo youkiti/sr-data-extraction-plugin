@@ -81,3 +81,17 @@ test('照合情報を一時ハイライト用に変換する', () => {
   expect(quoteCitation({ ...quote, anchorStatus: null })).toMatchObject({ highlightable: false, anchorStatus: 'failed' });
   expect(quoteCitation({ ...quote, anchorStatus: 'failed' }).highlightable).toBe(false);
 });
+
+
+test.each([false, true])('未編集 B の AI 引用を群対応で読み替える（恒等: %s）', (identity) => {
+  const evidenceA = { ...evidence, entityKey: 'arm:1', evidenceId: 'a-ai', quote: 'A source' };
+  const evidenceB = { ...evidence, entityKey: 'arm:2', evidenceId: 'b-ai', quote: 'B source' };
+  const result = resolveAdjudicateQuotes({ ...input, entityKey: 'arm:1', annotatorTypeB: 'human_with_ai',
+    evidence: [evidenceA, evidenceB], quoteEvidence: [evidenceA, evidenceB],
+    armKeyRemap: new Map(identity ? [['arm:1', 'arm:1'], ['arm:2', 'arm:2']]
+      : [['arm:2', 'arm:1'], ['arm:1', 'arm:2']]),
+  });
+  expect(result.quotesA[0]).toMatchObject({ quote: 'A source', entityKey: 'arm:1' });
+  expect(result.quotesB[0]).toMatchObject({ quote: identity ? 'A source' : 'B source', entityKey: 'arm:1' });
+  expect(result.candidates.map((candidate) => candidate.owner)).toEqual(identity ? ['both'] : ['A', 'B']);
+});

@@ -334,7 +334,7 @@ function makeWorking(overrides: Partial<AdjudicateWorking> = {}): AdjudicateWork
     evidence: [],
     skippedCellKeys: [],
     rebuildCells: jest.fn(() => []),
-    quoteSetRows: [], quoteEvidence: [], annotatorTypeA: 'human_with_ai', annotatorTypeB: 'human_independent',
+    quoteSetRows: [], quoteEvidence: [], quoteAiEvidence: [], annotatorTypeA: 'human_with_ai', annotatorTypeB: 'human_independent',
     quoteArmRemap: () => new Map(), quoteSaving: [], quoteErrors: [],
     loadPdfView: jest.fn().mockResolvedValue({ pdf: null, pdfError: 'テストでは PDF なし', textPages: [] }),
     retryPdfView: jest.fn().mockResolvedValue({ pdf: null, pdfError: 'テストでは PDF なし', textPages: [] }),
@@ -1451,7 +1451,7 @@ test('プロジェクト未選択の描画でも裁定中の質問パネルは�
 describe('最終の根拠', () => {
   function withQuotes(overrides: Partial<AdjudicateWorking> = {}): AdjudicateWorking {
     const evidence = makeEvidence();
-    return makeWorking({ evidence: [evidence], quoteEvidence: [evidence], ...overrides });
+    return makeWorking({ evidence: [evidence], quoteEvidence: [evidence], quoteAiEvidence: [evidence], ...overrides });
   }
   function snapshot(working: AdjudicateWorking, empty = false) {
     return buildQuoteSetRows({ setId: 'chosen', savedAt: 'now', savedBy: 'judge', annotator: 'consensus',
@@ -1496,6 +1496,8 @@ describe('最終の根拠', () => {
     expect(root.textContent).toContain(t('adjudicate.quotesAddedByAdjudicator'));
     expect(root.textContent).toContain('Theme');
     expect(root.textContent).toContain('Results');
+    expect(root.textContent).toContain(t('verify.quoteSection', { section: 'Results' }));
+    expect(root.textContent).toContain('p.1');
     root.querySelector<HTMLButtonElement>('.adjudicate__quote-remove')!.click();
     expect(callbacks.onConsensusQuotesChange).toHaveBeenCalledWith(working.cells[0]!.cellKey, []);
     expect(render(makeState({ rows: [makeRow()], working: makeWorking() }), ctx).querySelector('.adjudicate__quotes')).toBeNull();
@@ -1549,7 +1551,7 @@ describe('最終の根拠', () => {
 
 test('セル単位で解決された型が study の既定型より優先される', () => {
   const { ctx } = makeCtx();
-  const working = makeWorking({ evidence: [makeEvidence()],
+  const working = makeWorking({ evidence: [makeEvidence()], quoteAiEvidence: [makeEvidence()],
     quoteTypesForCell: () => ({ annotatorTypeA: 'human_independent', annotatorTypeB: 'human_with_ai' }) });
   const root = render(makeState({ rows: [makeRow()], working }), ctx);
   expect(root.querySelector('.adjudicate__quote-owner')?.textContent).toBe('B');

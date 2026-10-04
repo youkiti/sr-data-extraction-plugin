@@ -69,7 +69,7 @@ import { buildStudySelection } from '../../features/documents/studySelection';
 import type { DisposablePdfDocument } from '../../features/documents/extractTextLayer';
 import { readResultsDataRows, readStudyDataSheet } from '../../features/extraction/annotationRepository';
 import { readEvidenceRows } from '../../features/extraction/evidenceRepository';
-import { readRunSchemaVersions } from '../../features/extraction/runRepository';
+import { readCompletedRunMetas, readRunSchemaVersions } from '../../features/extraction/runRepository';
 import { assignedPairForStudy, isReviewSetsActive, reviewSetForStudy } from '../../features/review/reviewSets';
 import {
   getSchemaFieldsByVersion,
@@ -102,7 +102,7 @@ import { showToast } from '../ui/toast';
 import { t } from '../../lib/i18n';
 import { requireReviewSets } from './reviewSetService';
 import { timestampForFilename } from './exportService';
-import { latestRunEvidenceByStudy } from './verifyService';
+import { composeEvidenceByStudy, latestRunEvidenceByStudy } from './verifyService';
 import { loadExtractedPages, persistConsensusWrite, type QueuedWrite } from './verificationService';
 
 export interface AdjudicationServiceDeps {
@@ -347,6 +347,8 @@ export async function openAdjudicateStudy(
     const quoteSetRows = (await readQuoteSetRows(spreadsheetId, deps.google)).filter((quote) =>
       quote.studyId === studyId && [annotatorA, annotatorB, 'consensus'].includes(quote.annotator));
     const runVersions = await readRunSchemaVersions(spreadsheetId, deps.google);
+    const completedRuns = await readCompletedRunMetas(spreadsheetId, deps.google);
+    const quoteAiEvidence = composeEvidenceByStudy(allEvidence, completedRuns).get(studyId)?.evidence ?? [];
     const evidenceByStudy = latestRunEvidenceByStudy(allEvidence, new Set(runVersions.keys()));
     const studyEvidence = evidenceByStudy.get(studyId)?.evidence ?? [];
 
@@ -382,6 +384,8 @@ export async function openAdjudicateStudy(
     const actualBArmKeys = armKeysInUse([
       ...resultsRowsB.map((r) => r.entityKey),
       ...decisionsB.map((d) => d.entityKey),
+      // 未編集の B が参照する AI 引用だけの群キーも同じ辞書で衝突を退避する。
+      ...quoteAiEvidence.map((evidence) => evidence.entityKey),
     ]);
     let quoteArmRemap: ReadonlyMap<string, string> = armKeyRemap;
     const rebuildCells = (remap: ReadonlyMap<string, string>): AdjudicationCell[] => {
@@ -407,6 +411,7 @@ export async function openAdjudicateStudy(
     const driveFileIdByDocument = new Map(item.documents.map((doc) => [doc.documentId, doc.driveFileId]));
     const working: AdjudicateWorking = {
       quoteSetRows,
+      quoteAiEvidence,
       quoteEvidence: allEvidence.filter((evidence) => evidence.studyId === studyId),
       // 現在値と同じ StudyData の先頭行を優先し、無ければ ResultsData の最終行を使う。
       annotatorTypeA: (studyDataRowA ?? resultsRowsA.at(-1) ?? decisionsA.at(-1))?.annotatorType === 'human_with_ai'

@@ -567,6 +567,8 @@ export interface AdjudicateStudyRow {
  * （features/verification/pdfViewCache の LRU キャッシュを内部に閉じ込める）
  */
 export interface AdjudicateWorking {
+  /** 項目ごとの最新の完了 run から合成した、未編集レビュアー用の AI 引用。 */
+  quoteAiEvidence: Evidence[];
   quoteSetRows: QuoteSetRow[];
   quoteEvidence: Evidence[];
   annotatorTypeA: 'human_with_ai' | 'human_independent';
