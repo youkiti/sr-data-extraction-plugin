@@ -1,3 +1,4 @@
+import { saveConsensusQuotes } from '../../../src/app/services/adjudicationService';
 // メインビュー起動配線のテスト。hashchange の発火タイミングを決定的に制御するため、
 // 実 window ではなくスタブ（location / addEventListener のみ実装）を注入する
 import { sendAskPaperQuestion } from '../../../src/app/services/askPaperUiService';
@@ -56,6 +57,7 @@ import {
 } from '../../../src/app/services/exportService';
 // #/adjudicate（S12）の配線テストもサービス呼び出しの委譲だけを見る（実処理は adjudicationService.test.ts）
 jest.mock('../../../src/app/services/adjudicationService', () => ({
+  saveConsensusQuotes: jest.fn(),
   loadAdjudicateTargets: jest.fn(),
   openAdjudicateStudy: jest.fn(),
   backToAdjudicateList: jest.fn(),
@@ -3806,11 +3808,35 @@ describe('bootstrapApp: #/adjudicate', () => {
       evidence: [],
       skippedCellKeys: [],
       rebuildCells: jest.fn(() => []),
+    quoteSetRows: [], quoteEvidence: [], annotatorTypeA: 'human_with_ai', annotatorTypeB: 'human_independent',
+    quoteArmRemap: () => new Map(), quoteSaving: [], quoteErrors: [],
       loadPdfView: jest.fn().mockResolvedValue({ pdf: null, pdfError: 'テストでは PDF なし', textPages: [] }),
       retryPdfView: jest.fn().mockResolvedValue({ pdf: null, pdfError: 'テストでは PDF なし', textPages: [] }),
       disposePdf: jest.fn().mockResolvedValue(undefined),
     };
   }
+
+
+  test('最終の根拠の採用を引用保存サービスへ委譲する', async () => {
+    const working = makeWorking();
+    working.quoteSetRows = [{
+      setId: 'b', savedAt: 't0', savedBy: working.annotatorB, annotator: working.annotatorB,
+      annotatorType: 'human_independent', studyId: 'study-1', fieldId: CELL.field.fieldId, entityKey: '-',
+      schemaVersion: 1, kind: 'quote', seq: 1, quoteId: 'q', source: 'human', evidenceId: null,
+      originAnnotator: null, documentId: null, quote: 'quote text', page: null, section: null, theme: null,
+      anchorStatus: null, baseRunId: null,
+    }];
+    const stub = createWindowStub({ currentProject: PROJECT, home: COUNTS_LOADED,
+      adjudicate: { ...createInitialState().adjudicate, rows: [], working } });
+    const { deps } = createFakeDeps([]);
+    const store = await bootstrapApp(asWindow(stub), deps);
+    stub.location.hash = '#/adjudicate';
+    stub.fireHashChange();
+    await flush();
+    document.querySelector<HTMLInputElement>('.adjudicate__quote-adopt')!.click();
+    expect(saveConsensusQuotes).toHaveBeenCalledWith(store, deps, CELL.cellKey,
+      [expect.objectContaining({ quoteId: 'q', originAnnotator: working.annotatorB })]);
+  });
 
   test('#/adjudicate 入場で一覧読込を起動する', async () => {
     const stub = createWindowStub({ currentProject: PROJECT, home: COUNTS_LOADED });

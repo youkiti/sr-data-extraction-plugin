@@ -225,6 +225,8 @@ async function setupRoutes(page: Page, options: SetupRoutesOptions = {}): Promis
         await route.fulfill({ json: { values: [DECISIONS_HEADERS, ...STUDY1_DECISIONS, ...STUDY3_DECISIONS] } });
       } else if (url.includes('/values/ExtractionRuns')) {
         await route.fulfill({ json: { values: [EXTRACTION_RUNS_HEADERS, EXTRACTION_RUN_ROW] } });
+      } else if (url.includes('/values/QuoteSets')) {
+        await route.fulfill({ json: { values: [[...SHEET_HEADERS.QuoteSets]] } });
       } else if (url.includes('/values/Evidence')) {
         await route.fulfill({ json: { values: [EVIDENCE_HEADERS, EVIDENCE_ROW_AGE] } });
       } else {
@@ -635,4 +637,20 @@ test('enum 項目の「第 3 の値」（issue #254）: 自由入力ではなく
 
   const results = await new AxeBuilder({ page }).analyze();
   expect(results.violations).toEqual([]);
+});
+
+test('両者の引用から最終の根拠を選び consensus の引用スナップショットへ保存する', async ({ page }) => {
+  const { appends } = await setupRoutes(page);
+  await initApp(page);
+  await page.locator('tr[data-study-id="study-1"] .adjudicate__open-button').click();
+  const block = page.locator('.adjudicate__quotes');
+  await expect(block).toContainText('Smith 2020');
+  await block.locator('.adjudicate__quote-adopt').check();
+  await expect.poll(() => appends.filter((entry) => entry.url.includes('QuoteSets')).length).toBe(1);
+  const row = (appends.find((entry) => entry.url.includes('QuoteSets'))!.body['values'] as unknown[][])[0]!;
+  expect(row[3]).toBe('consensus');
+  expect(row[4]).toBe('consensus');
+  expect(row[9]).toBe('quote');
+  expect(row[14]).toBe(REVIEWER_A);
+  await expect(block).toContainText('最終の根拠 1 件');
 });

@@ -1,3 +1,9 @@
+import { reviewerQuoteType } from '../../features/adjudication/cellQuotes';
+import type { CellQuote } from '../../domain/quoteSet';
+import { buildQuoteSetRows } from '../../features/verification/cellQuotes';
+import { readQuoteSetRows, appendQuoteSetRows } from '../../features/verification/quoteSetRepository';
+import { generateUuid } from '../../utils/uuid';
+import { withSpreadsheetWriteLock } from './verificationService';
 // `#/adjudicate`（S12。docs/design-independent-dual-review.md §6・§9 PR3・§13）のサービス層。
 // - study 一覧の読込: 対象 annotator ペアの解決 + study 単位ゲート（progress 100%）。
 //   3 名以上の study は全 2 名組合せのゲートを事前計算し（pairOptions）、裁定者が一覧で
@@ -338,6 +344,8 @@ export async function openAdjudicateStudy(
     // こちらでは出るのに S8/S9 では出ない、という食い違いを許容する割り切り。
     // 必要になったら合成へ揃える）
     const allEvidence = await readEvidenceRows(spreadsheetId, deps.google);
+    const quoteSetRows = (await readQuoteSetRows(spreadsheetId, deps.google)).filter((quote) =>
+      quote.studyId === studyId && [annotatorA, annotatorB, 'consensus'].includes(quote.annotator));
     const runVersions = await readRunSchemaVersions(spreadsheetId, deps.google);
     const evidenceByStudy = latestRunEvidenceByStudy(allEvidence, new Set(runVersions.keys()));
     const studyEvidence = evidenceByStudy.get(studyId)?.evidence ?? [];
@@ -375,8 +383,10 @@ export async function openAdjudicateStudy(
       ...resultsRowsB.map((r) => r.entityKey),
       ...decisionsB.map((d) => d.entityKey),
     ]);
+    let quoteArmRemap: ReadonlyMap<string, string> = armKeyRemap;
     const rebuildCells = (remap: ReadonlyMap<string, string>): AdjudicationCell[] => {
       const { remap: safeRemap, collisions } = escapeArmKeyRemapCollisions(remap, actualBArmKeys);
+      quoteArmRemap = safeRemap;
       if (collisions.length > 0) {
         showToast(t('adjudicate.toastArmKeyCollision', { keys: collisions.join(', ') }));
       }
@@ -396,6 +406,23 @@ export async function openAdjudicateStudy(
     const pdfCache = createPdfViewCache({ google: deps.google, loadPdf: deps.loadPdf });
     const driveFileIdByDocument = new Map(item.documents.map((doc) => [doc.documentId, doc.driveFileId]));
     const working: AdjudicateWorking = {
+      quoteSetRows,
+      quoteEvidence: allEvidence.filter((evidence) => evidence.studyId === studyId),
+      // 現在値と同じ StudyData の先頭行を優先し、無ければ ResultsData の最終行を使う。
+      annotatorTypeA: (studyDataRowA ?? resultsRowsA.at(-1) ?? decisionsA.at(-1))?.annotatorType === 'human_with_ai'
+        ? 'human_with_ai' : 'human_independent',
+      annotatorTypeB: (studyDataRowB ?? resultsRowsB.at(-1) ?? decisionsB.at(-1))?.annotatorType === 'human_with_ai'
+        ? 'human_with_ai' : 'human_independent',
+      quoteArmRemap: () => quoteArmRemap,
+      quoteTypesForCell: (fieldId, entityKey, remap) => ({
+        annotatorTypeA: reviewerQuoteType(studyDataRowA, resultsRowsA, decisionsA, fieldId, entityKey),
+        annotatorTypeB: reviewerQuoteType(studyDataRowB,
+          resultsRowsB.map((row) => ({ ...row, entityKey: remapArmEntityKey(row.entityKey, remap) })),
+          decisionsB.map((row) => ({ ...row, entityKey: remapArmEntityKey(row.entityKey, remap) })),
+          fieldId, entityKey),
+      }),
+      quoteSaving: [],
+      quoteErrors: [],
       study: item.study,
       documents: item.documents,
       askPaperDocuments: await Promise.all(
@@ -970,5 +997,41 @@ export function downloadAgreementCsv(
     download(`agreement_summary_${timestamp}.csv`, buildAgreementSummaryCsv(report), 'text/csv');
   } else {
     download(`agreement_disagreements_${timestamp}.csv`, buildAgreementDisagreementsCsv(report), 'text/csv');
+  }
+}
+
+/** 値の判定とは独立に、consensus の引用一覧だけを追記する。 */
+export async function saveConsensusQuotes(
+  store: Store, deps: AdjudicationServiceDeps, cellKey: string, quotes: readonly CellQuote[],
+): Promise<void> {
+  const { currentProject: project, adjudicate } = store.getState();
+  const working = adjudicate.working;
+  const cell = working?.cells.find((candidate) => candidate.cellKey === cellKey);
+  if (!project || !working || !cell || adjudicate.saving ||
+      isArmLocked(working, cell) || working.quoteSaving.includes(cellKey)) return;
+  const setId = generateUuid();
+  const patch = (update: (current: AdjudicateWorking) => AdjudicateWorking): void => {
+    const current = store.getState().adjudicate.working;
+    if (current !== null && current.loadPdfView === working.loadPdfView) {
+      patchAdjudicate(store, { working: update(current) });
+    }
+  };
+  patch((current) => ({ ...current, quoteSaving: [...current.quoteSaving, cellKey],
+    quoteErrors: current.quoteErrors.filter((key) => key !== cellKey) }));
+  try {
+    const savedBy = (await getCurrentUserEmail(deps.profile)) ?? '';
+    const rows = buildQuoteSetRows({ setId, savedAt: (deps.now ?? nowIso8601)(), savedBy,
+      annotator: 'consensus', annotatorType: 'consensus', studyId: working.study.studyId,
+      fieldId: cell.field.fieldId, entityKey: cell.entityKey, schemaVersion: working.schemaVersion,
+      baseRunId: null, quotes });
+    patch((current) => ({ ...current, quoteSetRows: [...current.quoteSetRows, ...rows] }));
+    await withSpreadsheetWriteLock(project.spreadsheetId,
+      () => appendQuoteSetRows(project.spreadsheetId, rows, deps.google));
+  } catch {
+    patch((current) => ({ ...current,
+      quoteSetRows: current.quoteSetRows.filter((row) => row.setId !== setId),
+      quoteErrors: [...current.quoteErrors, cellKey] }));
+  } finally {
+    patch((current) => ({ ...current, quoteSaving: current.quoteSaving.filter((key) => key !== cellKey) }));
   }
 }

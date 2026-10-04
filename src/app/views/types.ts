@@ -1,3 +1,4 @@
+import type { CellQuote } from '../../domain/quoteSet';
 // view が受け取る共通コンテキスト。view は render(state, ctx) の純粋関数のまま、
 // 副作用（サービス呼び出し）はコールバック経由で bootstrap へ委譲する（architecture.md §2.2）
 import type { Decision } from '../../domain/decision';
@@ -281,6 +282,7 @@ export interface DashboardViewCallbacks {
 
 /** `#/adjudicate`（S12）のユーザー操作コールバック */
 export interface AdjudicateViewCallbacks {
+  onConsensusQuotesChange(cellKey: string, quotes: readonly CellQuote[]): void;
   /** 一覧からの study 選択（URL ?study= と同期する） */
   onSelectStudy(studyId: string): void;
   /** 3 名以上の study で裁定する 2 名の組を選択（null = 選択解除。issue #63） */

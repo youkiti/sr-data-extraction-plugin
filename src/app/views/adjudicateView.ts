@@ -1,3 +1,4 @@
+import { renderAdjudicateQuotes } from './adjudicateQuotes';
 // `#/adjudicate`: 裁定（S12。docs/design-independent-dual-review.md §6・§9 PR3・§13）。
 // owner / adjudicator のみ到達可能（guards.ts）。状態: 読み込み中 / 失敗 / study 一覧
 // （ゲート付き。両者の完了状況のみ表示し値・判定内訳は見せない）/ 裁定中（群構成突き合わせ →
@@ -389,6 +390,7 @@ function renderCellRow(
   working: AdjudicateWorking,
   consensusStates: Map<string, CellState>,
   armLocked: boolean,
+  quoteLocked: boolean,
   hasEvidence: boolean,
   enumContext: AdjudicateEnumContext,
   ctx: ViewContext,
@@ -423,6 +425,10 @@ function renderCellRow(
     evidenceButton.addEventListener('click', () => focusAdjudicateEvidence(working, cell.cellKey));
     fieldChildren.push(evidenceButton);
   }
+
+  const quotes = renderAdjudicateQuotes(cell, working, quoteLocked ||
+    (armLocked && (cell.field.entityLevel === 'arm' || cell.field.entityLevel === 'outcome_result')), ctx.adjudicate);
+  if (quotes !== null) fieldChildren.push(quotes);
 
   const row: HTMLElement[] = [
     el('td', { text: heading }),
@@ -606,6 +612,7 @@ function renderCellSection(state: AppState, ctx: ViewContext, working: Adjudicat
                 working,
                 consensusStates,
                 armLocked,
+                state.adjudicate.saving,
                 evidenceIndex.has(cell.cellKey),
                 enumContext,
                 ctx,
@@ -615,7 +622,7 @@ function renderCellSection(state: AppState, ctx: ViewContext, working: Adjudicat
         ]);
 
   return el('div', { className: 'adjudicate__panes' }, [
-    el('div', { className: 'adjudicate__pane--pdf' }, [renderAdjudicatePdfPane(working)]),
+    el('div', { className: 'adjudicate__pane--pdf' }, [renderAdjudicatePdfPane(working, ctx.adjudicate, state.adjudicate.saving)]),
     el('div', { className: 'adjudicate__pane--cells' }, [
       el('div', { className: 'adjudicate__cells-toolbar' }, [
         el('label', { className: 'adjudicate__filter-label' }, [

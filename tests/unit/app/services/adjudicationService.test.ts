@@ -1,3 +1,12 @@
+import { quotesForCell } from '../../../../src/app/views/adjudicateQuoteData';
+import { reviewerQuoteType } from '../../../../src/features/adjudication/cellQuotes';
+import { saveConsensusQuotes } from '../../../../src/app/services/adjudicationService';
+import { aiCellQuotes, buildQuoteSetRows } from '../../../../src/features/verification/cellQuotes';
+import { bundleEvidence } from '../../../../src/features/verification/evidenceBundles';
+import { readQuoteSetRows, appendQuoteSetRows } from '../../../../src/features/verification/quoteSetRepository';
+jest.mock('../../../../src/features/verification/quoteSetRepository', () => ({
+  readQuoteSetRows: jest.fn(), appendQuoteSetRows: jest.fn(),
+}));
 import { serializeArmKeyRemap } from '../../../../src/features/adjudication/armMatch';
 import {
   acceptAllMatchingCells,
@@ -417,6 +426,8 @@ function seedStore(): Store {
 }
 
 beforeEach(() => {
+  (readQuoteSetRows as jest.Mock).mockResolvedValue([]);
+  (appendQuoteSetRows as jest.Mock).mockResolvedValue(undefined);
   jest.clearAllMocks();
   document.body.innerHTML = ''; // issue #117 件2: トースト検証テストが前のテストの残骸を拾わないようにする
   getCurrentUserEmailMock.mockResolvedValue(JUDGE);
@@ -1997,4 +2008,216 @@ test('セット読込失敗時は以前の一致度も隠し、未有効の cali
   await loadAgreementReport(store, makeDeps());
   expect(store.getState().adjudicate.agreement).toBeNull();
   expect(store.getState().adjudicate.agreementError).toBe('失敗');
+});
+
+describe('consensus の引用保存', () => {
+  async function ready() {
+    setupTwoAnnotatorsReady();
+    const store = seedStore();
+    const deps = makeDeps();
+    await loadAdjudicateTargets(store, deps);
+    await openAdjudicateStudy(store, deps, 'study-1');
+    return { store, deps, working: store.getState().adjudicate.working! };
+  }
+  test('最終一覧だけを保存し、A・B のスナップショットや値の裁定に書き込まない', async () => {
+    const { store, deps, working } = await ready();
+    const quote = aiCellQuotes([...bundleEvidence([makeEvidence()]).values()][0]!)[0]!;
+    const own = buildQuoteSetRows({ setId: 'a', savedAt: 't', savedBy: A, annotator: A,
+      annotatorType: 'human_with_ai', studyId: 'study-1', fieldId: 'f-1', entityKey: '-',
+      schemaVersion: 1, baseRunId: null, quotes: [quote] });
+    working.quoteSetRows = own;
+    let finish!: () => void;
+    (appendQuoteSetRows as jest.Mock).mockImplementationOnce(() => new Promise<void>((resolve) => { finish = resolve; }));
+    const saving = saveConsensusQuotes(store, deps, working.cells[0]!.cellKey,
+      [{ ...quote, originAnnotator: A }]);
+    await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+    expect(store.getState().adjudicate.working!.quoteSaving).toEqual([working.cells[0]!.cellKey]);
+    expect(store.getState().adjudicate.working!.quoteSetRows).toEqual([...own, expect.objectContaining({
+      annotator: 'consensus', annotatorType: 'consensus', savedBy: JUDGE, kind: 'quote', originAnnotator: A,
+      baseRunId: null, schemaVersion: working.schemaVersion, entityKey: '-',
+    })]);
+    await saveConsensusQuotes(store, deps, working.cells[0]!.cellKey, []);
+    expect(appendQuoteSetRows).toHaveBeenCalledTimes(1);
+    finish(); await saving;
+    expect(store.getState().adjudicate.working!.quoteSaving).toEqual([]);
+    expect(store.getState().adjudicate.working!.consensusDecisions).toEqual(working.consensusDecisions);
+    expect(applyConsensusWritesMock).not.toHaveBeenCalled();
+    await saveConsensusQuotes(store, deps, working.cells[0]!.cellKey, []);
+    expect(store.getState().adjudicate.working!.quoteSetRows.at(-1)).toMatchObject({ kind: 'empty' });
+  });
+  test('保存失敗はその set だけ取り除いてエラーを残し、再保存で解消する', async () => {
+    const { store, deps, working } = await ready();
+    (appendQuoteSetRows as jest.Mock).mockRejectedValueOnce(new Error('offline'));
+    await saveConsensusQuotes(store, deps, working.cells[0]!.cellKey, []);
+    expect(store.getState().adjudicate.working!.quoteSetRows).toEqual([]);
+    expect(store.getState().adjudicate.working!.quoteErrors).toEqual([working.cells[0]!.cellKey]);
+    await saveConsensusQuotes(store, { ...deps, now: undefined }, working.cells[0]!.cellKey, []);
+    expect(store.getState().adjudicate.working!.quoteErrors).toEqual([]);
+  });
+  test('認証失敗もエラーとし、遷移した study には保存結果を混ぜない', async () => {
+    const { store, deps, working } = await ready();
+    getCurrentUserEmailMock.mockRejectedValueOnce(new Error('profile unavailable'));
+    await saveConsensusQuotes(store, deps, working.cells[0]!.cellKey, []);
+    expect(store.getState().adjudicate.working!.quoteErrors).toHaveLength(1);
+    (appendQuoteSetRows as jest.Mock).mockImplementationOnce(async () => {
+      backToAdjudicateList(store);
+      throw new Error('offline');
+    });
+    await saveConsensusQuotes(store, deps, working.cells[0]!.cellKey, []);
+    expect(store.getState().adjudicate.working).toBeNull();
+  });
+  test('対象なし・ロック・値の保存中は書き込まない', async () => {
+    await saveConsensusQuotes(createStore(), makeDeps(), 'missing', []);
+    const { store, deps, working } = await ready();
+    await saveConsensusQuotes(store, deps, 'missing', []);
+    store.setState({ adjudicate: { ...store.getState().adjudicate, saving: true } });
+    await saveConsensusQuotes(store, deps, working.cells[0]!.cellKey, []);
+    store.setState({ adjudicate: { ...store.getState().adjudicate, saving: false } });
+    working.cells[0]!.field.entityLevel = 'arm';
+    await saveConsensusQuotes(store, deps, working.cells[0]!.cellKey, []);
+    expect(appendQuoteSetRows).not.toHaveBeenCalled();
+    working.cells[0]!.field.entityLevel = 'study';
+    getCurrentUserEmailMock.mockResolvedValueOnce(null);
+    await saveConsensusQuotes(store, deps, working.cells[0]!.cellKey, []);
+    expect(store.getState().adjudicate.working!.quoteSetRows.at(-1)?.savedBy).toBe('');
+  });
+  test('全 run の根拠は再読込せず保持し、QuoteSets は study とペアで絞る', async () => {
+    setupTwoAnnotatorsReady();
+    const old = makeEvidence({ evidenceId: 'old', runId: 'old-run' });
+    const latest = makeEvidence({ evidenceId: 'new', runId: 'new-run' });
+    readEvidenceRowsMock.mockResolvedValue([old, latest, makeEvidence({ studyId: 'other' })]);
+    readRunSchemaVersionsMock.mockResolvedValue(new Map([['old-run', 1], ['new-run', 1]]));
+    const metadata = { setId: 'set', savedAt: 'now', savedBy: JUDGE, annotator: A,
+      annotatorType: 'human_with_ai' as const, studyId: 'study-1', fieldId: 'f-1', entityKey: '-',
+      schemaVersion: 1, baseRunId: null, quotes: [] };
+    const rows = [A, B, 'consensus', C].flatMap((annotator) => buildQuoteSetRows({ ...metadata, annotator }));
+    rows.push(...buildQuoteSetRows({ ...metadata, studyId: 'other' }));
+    (readQuoteSetRows as jest.Mock).mockResolvedValue(rows);
+    const store = seedStore(); const deps = makeDeps();
+    await loadAdjudicateTargets(store, deps);
+    expect(readQuoteSetRows).not.toHaveBeenCalled();
+    await openAdjudicateStudy(store, deps, 'study-1');
+    const working = store.getState().adjudicate.working!;
+    expect(working.quoteEvidence).toEqual([old, latest]);
+    expect(readEvidenceRowsMock).toHaveBeenCalledTimes(1);
+    expect(working.quoteSetRows.map((row) => row.annotator)).toEqual([A, B, 'consensus']);
+    expect(working.annotatorTypeA).toBe('human_with_ai');
+  });
+  test('入場不可の study は引用を読まない', async () => {
+    setupTwoAnnotatorsReady();
+    readAllDecisionsMock.mockResolvedValue([]);
+    const store = seedStore(); const deps = makeDeps();
+    await loadAdjudicateTargets(store, deps);
+    await openAdjudicateStudy(store, deps, 'study-1');
+    expect(readQuoteSetRows).not.toHaveBeenCalled();
+    expect(store.getState().adjudicate.working).toBeNull();
+  });
+});
+
+test('判定者型は現在値の行を優先し、行が無いときは同じセルの最後の判定を使う', () => {
+  const study = makeStudyDataRow({ annotatorType: 'human_independent' });
+  const independent = makeResultsRow({ entityKey: 'arm:1', annotatorType: 'human_independent' });
+  const ai = makeResultsRow({ entityKey: 'arm:1', annotatorType: 'human_with_ai' });
+  const decisions = [
+    makeDecision({ decidedAt: 't2', annotatorType: 'human_independent' }),
+    makeDecision({ decidedAt: 't1', annotatorType: 'human_with_ai' }),
+  ];
+  expect(reviewerQuoteType(study, [ai], decisions, 'f-1', '-')).toBe('human_independent');
+  expect(reviewerQuoteType(null, [independent, ai], [], 'f-1', 'arm:1')).toBe('human_with_ai');
+  expect(reviewerQuoteType(null, [ai, independent], [], 'f-1', 'arm:1')).toBe('human_independent');
+  expect(reviewerQuoteType(null, [], decisions, 'f-1', '-')).toBe('human_independent');
+  expect(reviewerQuoteType(null, [], [decisions[1]!], 'f-1', '-')).toBe('human_with_ai');
+  expect(reviewerQuoteType(null, [ai], decisions, 'other', 'arm:2')).toBe('human_independent');
+});
+
+test.each(['results', 'decisions', 'absent'] as const)('StudyData が無いときの型の補完（%s）', async (source) => {
+  setupTwoAnnotatorsReady();
+  const store = seedStore(); const deps = makeDeps();
+  await loadAdjudicateTargets(store, deps);
+  readStudyDataSheetMock.mockResolvedValue({ fieldNames: [], rows: [] });
+  readResultsDataRowsMock.mockResolvedValue(source === 'results' ? [
+    makeResultsRow({ annotator: A, annotatorType: 'human_independent' }),
+    makeResultsRow({ annotator: B, annotatorType: 'human_independent' }),
+  ] : []);
+  readAllDecisionsMock.mockResolvedValue(source === 'absent' ? [] : [
+    makeDecision({ annotator: A, annotatorType: 'human_independent' }),
+    makeDecision({ annotator: B, annotatorType: 'human_independent' }),
+  ]);
+  await openAdjudicateStudy(store, deps, 'study-1');
+  const working = store.getState().adjudicate.working!;
+  expect(working.annotatorTypeA).toBe('human_independent');
+  expect(working.annotatorTypeB).toBe('human_independent');
+  expect(working.quoteTypesForCell!('f-1', '-', working.quoteArmRemap())).toEqual({
+    annotatorTypeA: 'human_independent', annotatorTypeB: 'human_independent',
+  });
+});
+
+test('混在した型と B の群対応をセルの現在値と同じ規則で解決する', async () => {
+  setupReversedArms();
+  const store = seedStore(); const deps = makeDeps();
+  await loadAdjudicateTargets(store, deps);
+  const results = await readResultsDataRowsMock.mock.results[0]!.value as ResultsDataRow[];
+  readResultsDataRowsMock.mockResolvedValue([...results, makeResultsRow({
+    annotator: B, fieldId: 'f-arm', entityKey: 'arm:2', annotatorType: 'human_independent',
+  })]);
+  await openAdjudicateStudy(store, deps, 'study-1');
+  let working = store.getState().adjudicate.working!;
+  expect(working.quoteTypesForCell!('f-arm', 'arm:1', working.quoteArmRemap()).annotatorTypeB)
+    .toBe('human_independent');
+  setAdjudicateArmMapping(store, 0, 'arm:1');
+  working = store.getState().adjudicate.working!;
+  expect(working.quoteTypesForCell!('f-arm', 'arm:1', working.quoteArmRemap()).annotatorTypeB)
+    .toBe('human_with_ai');
+});
+
+test('B の引用を正準 arm セルで採用保存し、型と元のスナップショットを保持する', async () => {
+  setupReversedArms();
+  const quote = aiCellQuotes([...bundleEvidence([makeEvidence({
+    fieldId: 'f-arm', entityKey: 'arm:2', quote: 'B source',
+  })]).values()][0]!)[0]!;
+  const rows = buildQuoteSetRows({ setId: 'b', savedAt: 't', savedBy: B, annotator: B,
+    annotatorType: 'human_with_ai', studyId: 'study-1', fieldId: 'f-arm', entityKey: 'arm:2',
+    schemaVersion: 1, baseRunId: null, quotes: [quote] });
+  (readQuoteSetRows as jest.Mock).mockResolvedValue(rows);
+  const store = seedStore(); const deps = makeDeps();
+  await loadAdjudicateTargets(store, deps);
+  await openAdjudicateStudy(store, deps, 'study-1');
+  const working = store.getState().adjudicate.working!;
+  working.consensusArmStructure = { version: 1, arms: working.armsA };
+  const cell = working.cells.find((row) => row.field.fieldId === 'f-arm' && row.entityKey === 'arm:1')!;
+  const candidate = quotesForCell(working, cell).candidates[0]!;
+  expect(candidate).toMatchObject({ owner: 'B', quote: { entityKey: 'arm:1' } });
+  await saveConsensusQuotes(store, deps, cell.cellKey, [{
+    ...candidate.quote, originAnnotator: candidate.originAnnotator,
+  }]);
+  expect(store.getState().adjudicate.working!.quoteSetRows).toEqual([...rows, expect.objectContaining({
+    annotator: 'consensus', entityKey: 'arm:1', originAnnotator: B,
+  })]);
+  expect(applyConsensusWritesMock).not.toHaveBeenCalled();
+});
+
+test('同じ study を開き直しても以前の引用保存完了で新しいセッションを変更しない', async () => {
+  setupTwoAnnotatorsReady();
+  const store = seedStore(); const deps = makeDeps();
+  await loadAdjudicateTargets(store, deps);
+  await openAdjudicateStudy(store, deps, 'study-1');
+  const working = store.getState().adjudicate.working!;
+  (appendQuoteSetRows as jest.Mock).mockImplementationOnce(async () => {
+    await openAdjudicateStudy(store, deps, 'study-1');
+  });
+  await saveConsensusQuotes(store, deps, working.cells[0]!.cellKey, []);
+  expect(store.getState().adjudicate.working!.quoteSetRows).toEqual([]);
+  expect(store.getState().adjudicate.working!.quoteSaving).toEqual([]);
+});
+
+test('B の素通し群キーの退避を引用にも使う', async () => {
+  setupCollisionArms();
+  const store = seedStore(); const deps = makeDeps();
+  await loadAdjudicateTargets(store, deps);
+  await openAdjudicateStudy(store, deps, 'study-1');
+  let working = store.getState().adjudicate.working!;
+  expect(working.quoteArmRemap().get('arm:1')).toBe('arm:3');
+  setAdjudicateArmMapping(store, 0, 'arm:5');
+  working = store.getState().adjudicate.working!;
+  expect(working.quoteArmRemap().get('arm:1')).toBe('arm:2');
 });

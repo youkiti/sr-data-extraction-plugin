@@ -1,3 +1,4 @@
+import { saveConsensusQuotes } from './services/adjudicationService';
 // メインビューの起動配線: ストアのシード → ヘッダ / サイドバー描画 → ルーティング開始。
 // E2E seam（test-strategy.md §2.1）: window.__E2E_PRELOADED_STATE__ があれば
 // ストアのシードへ上書きマージする（本番動作には影響しない）
@@ -954,6 +955,9 @@ export async function bootstrapApp(
       },
       onAcceptAllMatches: () => {
         void acceptAllMatchingCells(store, deps);
+      },
+      onConsensusQuotesChange: (cellKey, quotes) => {
+        void saveConsensusQuotes(store, deps, cellKey, quotes);
       },
       onChooseA: (cellKey) => {
         void adjudicateCellChoice(store, deps, cellKey, 'A');
