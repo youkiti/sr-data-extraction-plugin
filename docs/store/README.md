@@ -22,6 +22,49 @@
   - ページの実体は [hosted/privacy-policy.html](../../hosted/privacy-policy.html)（[privacy-policy.md](privacy-policy.md) の HTML 転記 + 英訳併記）。**内容の正典は md 側**なので、更新時は両方を直す（[hosted/README.md](../../hosted/README.md#更新時に守ること)）。
 - **ウェブサイト**: `https://youkiti.github.io/sr-data-extraction-plugin/`（ランディング [hosted/index.html](../../hosted/index.html)）。**2026-08-03 に設定済み**。使い方ガイドは `https://youkiti.github.io/sr-data-extraction-plugin/help.html`。
 
+### 英語の掲載文（issue #259）
+
+英語圏の利用者向けの掲載文の原稿。英語 [README.en.md](../../README.en.md) の「What it does」「Methodological features at a glance」を要約したもので、内容を変えるときは README.en.md と揃える。
+
+- **ストアへの反映は未実施**。Chrome ウェブストアは、拡張が `_locales/` に持つロケールごとに掲載文を入力させる。現在の拡張は `src/_locales/ja/` だけを持つので、英語の掲載文を出すには `src/_locales/en/messages.json`（`appDescription` の英語版）を足したビルドを提出したうえで、デベロッパーダッシュボードの「ストアの掲載情報」で言語を English に切り替えて下記を入力する（ダッシュボード側の挙動は未確認。入力欄が出なければこの前提を見直す）。
+- **概要（英語・132 字以内）**: `src/_locales/en/messages.json` の `appDescription` に入れる文面。
+
+  ```
+  Supports data extraction for systematic reviews: AI pre-extraction, quote highlighting in the PDF, human verification, CSV export.
+  ```
+
+- **詳細説明（英語）**: ダッシュボードの「説明」欄へ貼り付ける（プレーンテキスト。Markdown は描画されない）。
+
+  ```
+  SR Data Extraction supports the data extraction stage of systematic reviews and scoping reviews. It is free, open source (MIT License), and serverless: your data stay in your own Google Drive and Google Sheets.
+
+  HOW IT WORKS
+  1. From the included full-text PDFs in your Google Drive and your review protocol, an LLM drafts the extraction schema (coding sheet).
+  2. The LLM extracts data from every study and attaches a verbatim quote (the supporting passage) to each value.
+  3. The extension locates each quote in the PDF and highlights it in the built-in viewer.
+  4. Reviewers check the highlight and decide for each value: accept, edit, reject, or not reported. Every decision is written to an append-only audit trail.
+  5. Confirmed data are exported as CSV (study-wide, results-long, and audit layouts) plus an R-ready set.
+
+  FEATURES
+  - Risk-of-bias templates (RoB 2, ROBINS-I)
+  - Independent dual review with adjudication, and agreement rates with Cohen's kappa
+  - Safeguards against automation bias: human cells start empty, accepting a value requires an explicit action, and exports warn about unverified cells
+  - Several reports of one trial can be grouped into a single study
+  - Numeric consistency checks and a copy-ready Methods paragraph for your manuscript
+  - English and Japanese user interface
+
+  WHAT YOU NEED
+  - A Google account (Google Sheets is the database; Google Drive holds the PDFs)
+  - Your own LLM API key: Gemini, Anthropic, OpenRouter, Azure OpenAI, or any OpenAI-compatible endpoint, including a local model on localhost
+
+  PRIVACY
+  The extension has no server of its own. It requests only the userinfo.email and drive.file scopes, so it can access only the files you create with it or explicitly select. PDF content is sent only to the LLM API you configure.
+
+  User guide: https://youkiti.github.io/sr-data-extraction-plugin/help.html?lang=en
+  Privacy policy: https://youkiti.github.io/sr-data-extraction-plugin/privacy-policy.html?lang=en
+  Source code: https://github.com/youkiti/sr-data-extraction-plugin
+  ```
+
 ## 必要な画像
 
 Chrome ウェブストアの掲載に必要な画像。**スクリーンショットは実データを含めない**（テスト用プロジェクトで撮る）。
