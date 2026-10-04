@@ -258,13 +258,14 @@ function buildEvidenceRows(
   documentId: string,
   normalizedPages: NormalizedPage[] | null,
   targetIsImage: boolean,
+  allowSegmentAnchoring: boolean,
   uuid: () => string,
 ): Evidence[] {
   const anchorStatus =
     item.quote === null || normalizedPages === null
       ? null
       : anchorQuote(normalizeText(item.quote), normalizedPages, item.page).status;
-  if (anchorStatus === 'failed' && item.quoteSeq === null) {
+  if (allowSegmentAnchoring && anchorStatus === 'failed') {
     const segments = anchorQuoteSegments(item.quote as string, normalizedPages as NormalizedPage[], item.page);
     if (segments !== null) {
       return segments.map((segment, index) => ({
@@ -755,9 +756,17 @@ export async function executeRun(
       }
     }
 
+    // 同じセルの通常項目は最後の応答だけを断片化し、代表値と引用の出所を揃える。
+    const lastNormalItemIndex = new Map<string, number>();
+    validated.items.forEach((item, index) => {
+      if (item.quoteSeq === null) {
+        lastNormalItemIndex.set(JSON.stringify([item.fieldId, item.entityKey]), index);
+      }
+    });
+
     // document_index（1..resolved.length）が指す文書でアンカリングし、その documentId を Evidence に書く。
     // 画像入力（pdf_native）の文書にはテキスト層が無いため normalizedPages が無く、anchorStatus は null になる
-    const rows = validated.items.flatMap((item) => {
+    const rows = validated.items.flatMap((item, index) => {
       const target = resolved[item.documentIndex - 1] as ResolvedDocument;
       return buildEvidenceRows(
         item,
@@ -766,6 +775,7 @@ export async function executeRun(
         target.documentId,
         target.mode === 'text' ? target.normalizedPages : null,
         target.mode === 'image',
+        lastNormalItemIndex.get(JSON.stringify([item.fieldId, item.entityKey])) === index,
         uuid,
       );
     });
