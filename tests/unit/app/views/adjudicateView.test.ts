@@ -1,3 +1,5 @@
+import { buildQuoteSetRows, aiCellQuotes } from '../../../../src/features/verification/cellQuotes';
+import { bundleEvidence } from '../../../../src/features/verification/evidenceBundles';
 import { makeAskTurn } from '../askPaperFixtures';
 import { renderAdjudicateView } from '../../../../src/app/views/adjudicateView';
 import { setUiLanguage, t } from '../../../../src/lib/i18n';
@@ -28,6 +30,7 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<AdjudicateViewCal
     onArmDraftRemove: jest.fn(),
     onConfirmArms: jest.fn(),
     onAcceptAllMatches: jest.fn(),
+    onConsensusQuotesChange: jest.fn(),
     onChooseA: jest.fn(),
     onChooseB: jest.fn(),
     onCustomValue: jest.fn(),
@@ -331,6 +334,8 @@ function makeWorking(overrides: Partial<AdjudicateWorking> = {}): AdjudicateWork
     evidence: [],
     skippedCellKeys: [],
     rebuildCells: jest.fn(() => []),
+    quoteSetRows: [], quoteEvidence: [], quoteAiEvidence: [], annotatorTypeA: 'human_with_ai', annotatorTypeB: 'human_independent',
+    quoteArmRemap: () => new Map(), quoteSaving: [], quoteErrors: [],
     loadPdfView: jest.fn().mockResolvedValue({ pdf: null, pdfError: 'テストでは PDF なし', textPages: [] }),
     retryPdfView: jest.fn().mockResolvedValue({ pdf: null, pdfError: 'テストでは PDF なし', textPages: [] }),
     disposePdf: jest.fn().mockResolvedValue(undefined),
@@ -1441,4 +1446,113 @@ test('プロジェクト未選択の描画でも裁定中の質問パネルは�
   state.role.role = 'adjudicator';
   state.currentProject = null;
   expect(render(state, ctx).querySelector('#ask-paper')).not.toBeNull();
+});
+
+describe('最終の根拠', () => {
+  function withQuotes(overrides: Partial<AdjudicateWorking> = {}): AdjudicateWorking {
+    const evidence = makeEvidence();
+    return makeWorking({ evidence: [evidence], quoteEvidence: [evidence], quoteAiEvidence: [evidence], ...overrides });
+  }
+  function snapshot(working: AdjudicateWorking, empty = false) {
+    return buildQuoteSetRows({ setId: 'chosen', savedAt: 'now', savedBy: 'judge', annotator: 'consensus',
+      annotatorType: 'consensus', studyId: working.study.studyId, fieldId: 'f-1', entityKey: '-',
+      schemaVersion: 1, baseRunId: null,
+      quotes: empty ? [] : aiCellQuotes([...bundleEvidence(working.evidence).values()][0]!) });
+  }
+  test('未裁定でも採用でき、両者にある引用は A の出所で保存する', () => {
+    const { ctx, callbacks } = makeCtx();
+    const working = withQuotes({ annotatorTypeB: 'human_with_ai' });
+    const root = render(makeState({ rows: [makeRow()], working }), ctx);
+    expect(root.querySelectorAll('.adjudicate__quote')).toHaveLength(1);
+    expect(root.querySelector('.adjudicate__quote-owner')?.textContent).toBe('A・B');
+    expect(root.querySelector('.adjudicate__quotes-status')?.textContent).toBe(t('adjudicate.quotesNotChosen'));
+    root.querySelector<HTMLInputElement>('.adjudicate__quote-adopt')!.click();
+    expect(callbacks.onConsensusQuotesChange).toHaveBeenCalledWith(working.cells[0]!.cellKey,
+      [expect.objectContaining({ quoteId: working.evidence[0]!.evidenceId, originAnnotator: working.annotatorA })]);
+    expect(callbacks.onChooseA).not.toHaveBeenCalled();
+    expect(callbacks.onChooseB).not.toHaveBeenCalled();
+    root.querySelector<HTMLButtonElement>('.adjudicate__quote-jump')!.click();
+  });
+  test('採用解除と空の最終一覧、保存エラーを表示する', () => {
+    const { ctx, callbacks } = makeCtx();
+    const working = withQuotes();
+    working.quoteSetRows = snapshot(working);
+    const root = render(makeState({ rows: [makeRow()], working }), ctx);
+    expect(root.querySelector<HTMLInputElement>('.adjudicate__quote-adopt')!.checked).toBe(true);
+    root.querySelector<HTMLInputElement>('.adjudicate__quote-adopt')!.click();
+    expect(callbacks.onConsensusQuotesChange).toHaveBeenCalledWith(working.cells[0]!.cellKey, []);
+    working.quoteSetRows = snapshot(working, true);
+    working.quoteErrors = [working.cells[0]!.cellKey];
+    const empty = render(makeState({ rows: [makeRow()], working }), ctx);
+    expect(empty.textContent).toContain('最終の根拠 0 件');
+    expect(empty.querySelector('.adjudicate__quote-error')?.getAttribute('role')).toBe('alert');
+  });
+  test('裁定者の引用は別一覧で表示し削除できる。引用が空のセルにはブロックを出さない', () => {
+    const { ctx, callbacks } = makeCtx();
+    const working = withQuotes();
+    working.quoteSetRows = snapshot(working).map((row) => ({ ...row, quoteId: 'human', quote: 'Added quote',
+      source: 'human', theme: 'Theme', section: 'Results', anchorStatus: null }));
+    const root = render(makeState({ rows: [makeRow()], working }), ctx);
+    expect(root.textContent).toContain(t('adjudicate.quotesAddedByAdjudicator'));
+    expect(root.textContent).toContain('Theme');
+    expect(root.textContent).toContain('Results');
+    expect(root.textContent).toContain(t('verify.quoteSection', { section: 'Results' }));
+    expect(root.textContent).toContain('p.1');
+    root.querySelector<HTMLButtonElement>('.adjudicate__quote-remove')!.click();
+    expect(callbacks.onConsensusQuotesChange).toHaveBeenCalledWith(working.cells[0]!.cellKey, []);
+    expect(render(makeState({ rows: [makeRow()], working: makeWorking() }), ctx).querySelector('.adjudicate__quotes')).toBeNull();
+  });
+  test.each([null, 'failed'] as const)('照合不能（%s）はジャンプを出さない', (anchorStatus) => {
+    const { ctx } = makeCtx();
+    const working = withQuotes();
+    working.quoteSetRows = snapshot(working).map((row) => ({
+      ...row, annotator: working.annotatorA, annotatorType: 'human_with_ai', anchorStatus, page: null,
+    }));
+    expect(render(makeState({ rows: [makeRow()], working }), ctx).querySelector('.adjudicate__quote-jump')).toBeNull();
+  });
+  test('保存中・群構成未確定は編集できず、表示は残る', () => {
+    const { ctx } = makeCtx();
+    const working = withQuotes();
+    working.quoteSaving = [working.cells[0]!.cellKey];
+    let root = render(makeState({ rows: [makeRow()], working }), ctx);
+    expect(root.querySelector<HTMLInputElement>('.adjudicate__quote-adopt')!.disabled).toBe(true);
+    expect(root.querySelector<HTMLButtonElement>('.adjudicate__quote-add-target')!.disabled).toBe(true);
+    root = render(makeState({ rows: [makeRow()], working, saving: true }), ctx);
+    expect(root.querySelector<HTMLInputElement>('.adjudicate__quote-adopt')!.disabled).toBe(true);
+    working.quoteSaving = [];
+    working.needsArmConfirmation = true;
+    working.cells[0]!.field = makeField({ entityLevel: 'arm' });
+    root = render(makeState({ rows: [makeRow()], working }), ctx);
+    expect(root.querySelector<HTMLInputElement>('.adjudicate__quote-adopt')!.disabled).toBe(true);
+  });
+  test('PDF 追加対象は一つだけ、再押下で解除し再描画でも保持する', () => {
+    const { ctx } = makeCtx();
+    const working = withQuotes();
+    working.cells.push({ ...working.cells[0]!, cellKey: 'second' });
+    let root = render(makeState({ rows: [makeRow()], working }), ctx);
+    let buttons = root.querySelectorAll<HTMLButtonElement>('.adjudicate__quote-add-target');
+    buttons[0]!.click();
+    expect(buttons[0]!.getAttribute('aria-pressed')).toBe('true');
+    buttons[1]!.click();
+    expect(buttons[0]!.getAttribute('aria-pressed')).toBe('false');
+    root = render(makeState({ rows: [makeRow()], working }), ctx);
+    buttons = root.querySelectorAll<HTMLButtonElement>('.adjudicate__quote-add-target');
+    expect(buttons[1]!.getAttribute('aria-pressed')).toBe('true');
+    buttons[1]!.click();
+    expect(buttons[1]!.getAttribute('aria-pressed')).toBe('false');
+  });
+  test('未完了 study の一覧には引用情報を表示しない', () => {
+    const { ctx } = makeCtx();
+    const root = render(makeState({ rows: [makeRow()], working: null }), ctx);
+    expect(root.querySelector('.adjudicate__quotes')).toBeNull();
+    expect(root.querySelector('.adjudicate__quote')).toBeNull();
+  });
+});
+
+test('セル単位で解決された型が study の既定型より優先される', () => {
+  const { ctx } = makeCtx();
+  const working = makeWorking({ evidence: [makeEvidence()], quoteAiEvidence: [makeEvidence()],
+    quoteTypesForCell: () => ({ annotatorTypeA: 'human_independent', annotatorTypeB: 'human_with_ai' }) });
+  const root = render(makeState({ rows: [makeRow()], working }), ctx);
+  expect(root.querySelector('.adjudicate__quote-owner')?.textContent).toBe('B');
 });

@@ -1,3 +1,11 @@
+import { anchorQuote } from '../../features/anchoring/anchorQuote';
+import { normalizeText } from '../../features/anchoring/normalizeText';
+import type { CellQuote } from '../../domain/quoteSet';
+import { generateUuid } from '../../utils/uuid';
+import { createQuoteAddBar, quoteAddReason, updateQuoteAddBar } from './quoteAddBar';
+import { quotesForCell } from './adjudicateQuoteData';
+import { quoteCitation } from '../../features/adjudication/cellQuotes';
+import type { AdjudicateViewCallbacks } from './types';
 // PDF 参照ペイン（S12 裁定画面。docs/design-independent-dual-review.md §6.4）。
 // 検証パネルの PDF ビューア（app/ui/pdfViewer）+ 文書切替タブ（verify__doc-tabs 相当）を流用する。
 // v1（〜2026-07-11）は PDF 表示 + ページ送り / ズーム / テキスト検索のみの簡略版だったが、
@@ -31,6 +39,14 @@ import { el } from '../ui/dom';
 import { createPdfViewer, type PdfViewerHandle, type ViewerHighlight } from '../ui/pdfViewer';
 
 interface CachedPane {
+  working: AdjudicateWorking;
+  quoteCallbacks: AdjudicateViewCallbacks | undefined;
+  quoteLocked: boolean;
+  quoteTarget: string | null;
+  quoteSelection: { page: number; text: string } | null;
+  quoteTheme: string;
+  quoteSection: string;
+  quoteAddHost: HTMLElement;
   studyId: string;
   citation: AnchoredCitation | null;
   textPages: readonly TextLayerPage[];
@@ -108,6 +124,8 @@ function toViewerHighlights(
 
 async function loadIntoPane(pane: CachedPane, working: AdjudicateWorking, documentId: string): Promise<void> {
   pane.viewer = null;
+  pane.quoteSelection = null;
+  pane.quoteAddHost.replaceChildren();
   pane.bodyEl.replaceChildren(
     el('p', { className: 'adjudicate__pdf-loading', text: t('verify.pdfLoading') }),
   );
@@ -135,7 +153,12 @@ async function loadIntoPane(pane: CachedPane, working: AdjudicateWorking, docume
     [...pane.evidenceIndex.values()].filter((item) => item.documentId === documentId),
     view.textPages,
   );
-  pane.viewer = createPdfViewer({ document: view.pdf, pages: view.textPages });
+  pane.viewer = createPdfViewer({ document: view.pdf, pages: view.textPages,
+    onTextSelected: (selection) => {
+      pane.quoteSelection = pane.quoteTarget === null ? null : selection;
+      renderQuoteAdd(pane);
+    },
+  });
   pane.textPages = view.textPages;
   pane.highlights = toViewerHighlights(working, docHighlights);
   pane.viewer.setHighlights(pane.highlights, null);
@@ -165,7 +188,8 @@ function selectDocument(pane: CachedPane, working: AdjudicateWorking, documentId
  * study の PDF 参照ペインを返す（同じ studyId + 同じ表示言語への再描画は同一インスタンスを
  * 再利用する）。study が切り替わった・表示言語が切り替わったら破棄して作り直す（issue #93）
  */
-export function renderAdjudicatePdfPane(working: AdjudicateWorking): HTMLElement {
+export function renderAdjudicatePdfPane(working: AdjudicateWorking,
+  callbacks?: AdjudicateViewCallbacks, locked = false): HTMLElement {
   if (
     cached === null ||
     cached.studyId !== working.study.studyId ||
@@ -173,7 +197,8 @@ export function renderAdjudicatePdfPane(working: AdjudicateWorking): HTMLElement
   ) {
     const tabsEl = el('div', {});
     const bodyEl = el('div', { className: 'adjudicate__pdf-body' });
-    const children: HTMLElement[] = [tabsEl];
+    const quoteAddHost = el('div');
+    const children: HTMLElement[] = [tabsEl, quoteAddHost];
     if (working.evidence.length === 0) {
       children.push(
         el('p', {
@@ -186,6 +211,8 @@ export function renderAdjudicatePdfPane(working: AdjudicateWorking): HTMLElement
     const root = el('div', { className: 'adjudicate__pdf-pane' }, children);
     const firstDocumentId = working.documents[0]?.documentId ?? null;
     const pane: CachedPane = {
+      working, quoteCallbacks: callbacks, quoteLocked: locked, quoteTarget: null,
+      quoteSelection: null, quoteTheme: '', quoteSection: '', quoteAddHost,
       studyId: working.study.studyId,
       citation: null,
       textPages: [],
@@ -209,6 +236,10 @@ export function renderAdjudicatePdfPane(working: AdjudicateWorking): HTMLElement
       pane.bodyEl.replaceChildren(el('p', { text: t('adjudicate.noDocuments') }));
     }
   }
+  cached.working = working;
+  cached.quoteCallbacks = callbacks;
+  cached.quoteLocked = locked;
+  renderQuoteAdd(cached);
   return cached.root;
 }
 
@@ -275,4 +306,60 @@ export function showAdjudicateCitation(
   cached.citation = citation;
   selectDocument(cached, working, citation.documentId);
   applyCitation(cached);
+}
+
+export function getAdjudicateQuoteTarget(working: AdjudicateWorking): string | null {
+  return cached?.studyId === working.study.studyId ? cached.quoteTarget : null;
+}
+
+export function setAdjudicateQuoteTarget(working: AdjudicateWorking, cellKey: string | null): void {
+  if (cached === null || cached.studyId !== working.study.studyId) return;
+  cached.quoteTarget = cellKey;
+  cached.quoteSelection = null;
+  cached.quoteTheme = '';
+  cached.quoteSection = '';
+  cached.viewer?.clearSelection();
+  cached.quoteAddHost.replaceChildren();
+}
+
+function renderQuoteAdd(pane: CachedPane): void {
+  const selection = pane.quoteSelection;
+  if (selection === null) {
+    pane.quoteAddHost.replaceChildren();
+    return;
+  }
+  const cell = pane.working.cells.find((candidate) => candidate.cellKey === pane.quoteTarget);
+  const reason = (): string | null => quoteAddReason({ target: cell,
+    busy: pane.quoteLocked || (cell !== undefined &&
+      (pane.working.quoteSaving.includes(cell.cellKey) ||
+        ((cell.field.entityLevel === 'arm' || cell.field.entityLevel === 'outcome_result') &&
+          pane.working.consensusArmStructure === null))),
+    text: pane.quoteSelection!.text, documentId: pane.activeDocumentId, theme: pane.quoteTheme,
+    quotes: cell === undefined ? [] : quotesForCell(pane.working, cell).consensus.quotes });
+  if (pane.quoteAddHost.childElementCount === 0) {
+    pane.quoteTheme = '';
+    pane.quoteAddHost.append(createQuoteAddBar({ prefix: 'adjudicate', target: cell, section: pane.quoteSection,
+      onTheme: (value) => { pane.quoteTheme = value; renderQuoteAdd(pane); },
+      onSection: (value) => { pane.quoteSection = value; },
+      onCancel: () => pane.viewer!.clearSelection(),
+      onConfirm: () => {
+        // 保存や文書切替後の状態を改めて確認する。
+        if (pane.quoteSelection === null || reason() !== null || pane.quoteCallbacks === undefined) return;
+        const selected = pane.quoteSelection;
+        const target = cell!;
+        const match = anchorQuote(normalizeText(selected.text), pane.textPages.map((page) =>
+          ({ page: page.page, text: normalizeText(page.text) })), selected.page);
+        const quote: CellQuote = { quoteId: generateUuid(), source: 'human', evidenceId: null,
+          originAnnotator: null, studyId: pane.studyId, fieldId: target.field.fieldId, entityKey: target.entityKey,
+          documentId: pane.activeDocumentId, quote: selected.text, page: match.page ?? selected.page,
+          section: pane.quoteSection.trim() || null, theme: pane.quoteTheme.trim() || null,
+          anchorStatus: match.status, bboxPage: null, bbox: null, confidence: null };
+        pane.quoteCallbacks.onConsensusQuotesChange(target.cellKey,
+          [...quotesForCell(pane.working, target).consensus.quotes, quote]);
+        pane.viewer!.clearSelection();
+        showAdjudicateCitation(pane.working, quoteCitation(quote));
+      },
+    }));
+  }
+  updateQuoteAddBar(pane.quoteAddHost, 'adjudicate', selection.text, reason());
 }

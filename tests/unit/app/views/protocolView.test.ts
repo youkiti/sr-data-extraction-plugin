@@ -184,6 +184,7 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<ProtocolViewCallb
         onArmDraftRemove: jest.fn(),
         onConfirmArms: jest.fn(),
         onAcceptAllMatches: jest.fn(),
+        onConsensusQuotesChange: jest.fn(),
         onChooseA: jest.fn(),
         onChooseB: jest.fn(),
         onCustomValue: jest.fn(),

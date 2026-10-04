@@ -1,3 +1,4 @@
+import { createQuoteAddBar, quoteAddReason as sharedQuoteAddReason, updateQuoteAddBar } from './quoteAddBar';
 // 検証パネル（S8 の 2 ペイン UI 基盤。S6 パイロットへ埋め込み、S8 単独画面でも再利用する）。
 // - 左ペイン: pdfViewer（根拠ハイライト + クリックで対応項目へフォーカス）
 // - 右ペイン: verificationForm（判定チップ / 判定操作 / anchor failed フォールバック）
@@ -9,7 +10,7 @@
 // 同じ VerificationData 参照なら同一インスタンス（DOM / PDF canvas / 判定の楽観状態）を返し、
 // データが差し替わったときだけ作り直す
 import type { CellQuote, QuoteSetRow } from '../../domain/quoteSet';
-import { isMultiSelectField, splitPipeList } from '../../domain/multiSelect';
+import { isMultiSelectField } from '../../domain/multiSelect';
 import { anchorQuote } from '../../features/anchoring/anchorQuote';
 import { normalizeText } from '../../features/anchoring/normalizeText';
 import { foldQuoteSets, quoteSetKeyOf, resolveCellQuotes, removeCellQuote, setCellQuoteTheme, buildQuoteSetRows, buildQuoteSetResetRow } from '../../features/verification/cellQuotes';
@@ -1657,15 +1658,10 @@ export function createVerificationPanel(
 
   /** 対象セル・選択文字列・保存状態から追加できない理由を返す。 */
   function quoteAddReason(cell: VerificationCell | undefined): string | null {
-    if (cell === undefined) return t('verify.quoteAddNoTarget');
-    if (editing !== null || quoteSaving.has(cell.cellKey) || readOnlyState) return t('verify.quoteAddBusy');
-    if (textSelection!.text.length > 1000) return t('verify.quoteAddTooLong');
-    if (quoteEdit.get(cell.cellKey)?.quotes.some((quote) =>
-      quote.documentId === activeDocumentId && normalizeText(quote.quote) === normalizeText(textSelection!.text))) {
-      return t('verify.quoteAddDuplicate');
-    }
-    if (isMultiSelectField(cell.field) && quoteAddTheme === '') return t('verify.quoteAddChooseOption');
-    return null;
+    return sharedQuoteAddReason({ target: cell,
+      busy: editing !== null || (cell !== undefined && quoteSaving.has(cell.cellKey)) || readOnlyState,
+      text: textSelection!.text, documentId: activeDocumentId,
+      quotes: cell === undefined ? [] : quoteEdit.get(cell.cellKey)?.quotes ?? [], theme: quoteAddTheme });
   }
 
   /** 入力欄は対象セルが変わったときだけ作り直し、フォーム更新から独立させる。 */
@@ -1678,33 +1674,12 @@ export function createVerificationPanel(
     if (quoteAddCellKey !== focusedCellKey || quoteAddHost.childElementCount === 0) {
       quoteAddCellKey = focusedCellKey;
       quoteAddTheme = '';
-      const children: HTMLElement[] = [
-        el('span', { className: 'verify__quote-add-text' }),
-        el('span', { text: cell === undefined ? t('verify.quoteAddNoTarget') : t('verify.quoteAddTarget', {
-          label: `${cell.field.fieldLabel}${cell.entityKey === '-' ? '' : ` (${entityKeyLabel(cell.entityKey)})`}`,
-        }) }),
-      ];
-      if (cell !== undefined && isMultiSelectField(cell.field)) {
-        const theme = el('select', { className: 'verify__quote-add-theme',
-          attributes: { 'aria-label': t('verify.quoteAddChooseOption') } }, [
-          el('option', { text: t('verify.quoteAddChooseOption'), attributes: { value: '' } }),
-          ...splitPipeList(cell.field.allowedValues).map((value) => el('option', { text: value, attributes: { value } })),
-        ]);
-        theme.addEventListener('change', () => { quoteAddTheme = theme.value; renderQuoteAdd(); });
-        children.push(theme);
-      } else if (cell !== undefined && cell.field.maxQuotes !== null) {
-        const theme = el('input', { className: 'verify__quote-add-theme',
-          attributes: { type: 'text', 'aria-label': t('verify.quoteAddTheme'), placeholder: t('verify.quoteAddTheme') } });
-        theme.addEventListener('input', () => { quoteAddTheme = theme.value; });
-        children.push(theme);
-      }
-      const section = el('input', { className: 'verify__quote-add-section',
-        attributes: { type: 'text', 'aria-label': t('verify.quoteAddSection'), placeholder: t('verify.quoteAddSection') } });
-      section.value = quoteAddSection;
-      section.addEventListener('input', () => { quoteAddSection = section.value; });
-      const confirm = el('button', { className: 'verify__quote-add-confirm', text: t('verify.quoteAddConfirm'),
-        attributes: { type: 'button' } });
-      confirm.addEventListener('click', () => {
+      quoteAddHost.replaceChildren(createQuoteAddBar({
+        prefix: 'verify', target: cell, section: quoteAddSection,
+        onTheme: (value) => { quoteAddTheme = value; renderQuoteAdd(); },
+        onSection: (value) => { quoteAddSection = value; },
+        onCancel: () => viewer!.clearSelection(),
+        onConfirm: () => {
         if (textSelection === null || quoteAddReason(cell) !== null) return;
         const target = cell!;
         const match = anchorQuote(normalizeText(textSelection.text), activeDocument().extractedPages.map((page) =>
@@ -1722,19 +1697,11 @@ export function createVerificationPanel(
         selectedQuoteKey = quoteKeyOf(quoteEdit.get(target.cellKey)!.evidence.at(-1)!);
         syncViewer();
         viewer!.focusHighlight(selectedQuoteKey);
-      });
-      const cancel = el('button', { className: 'verify__quote-add-cancel', text: t('verify.quoteAddCancel'),
-        attributes: { type: 'button' } });
-      cancel.addEventListener('click', () => viewer!.clearSelection());
-      children.push(section, confirm, cancel, el('p', { className: 'verify__quote-add-note' }));
-      quoteAddHost.replaceChildren(el('div', { className: 'verify__quote-add',
-        attributes: { role: 'group', 'aria-label': t('verify.quoteAddAria') } }, children));
+
+        },
+      }));
     }
-    quoteAddHost.querySelector('.verify__quote-add-text')!.textContent =
-      textSelection.text.slice(0, 80) + (textSelection.text.length > 80 ? '…' : '');
-    const reason = quoteAddReason(cell);
-    quoteAddHost.querySelector<HTMLButtonElement>('.verify__quote-add-confirm')!.disabled = reason !== null;
-    quoteAddHost.querySelector('.verify__quote-add-note')!.textContent = reason ?? '';
+    updateQuoteAddBar(quoteAddHost, 'verify', textSelection.text, quoteAddReason(cell));
   }
 
   /** 保存中はセル単位で操作を止め、失敗したスナップショットだけを取り消す。 */

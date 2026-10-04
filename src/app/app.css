@@ -4199,3 +4199,47 @@ section.documents__tiab {
   color: var(--color-text-muted);
   margin: 0;
 }
+
+.adjudicate__quotes {
+  margin-top: 0.5rem;
+  padding: 0.5rem;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+
+.adjudicate__quote {
+  margin-bottom: 0.5rem;
+  overflow-wrap: anywhere;
+}
+
+.adjudicate__quote blockquote {
+  margin: 0.25rem 0;
+  white-space: pre-wrap;
+}
+
+.adjudicate__quote-owner {
+  font-weight: 600;
+}
+
+.adjudicate__quote-error {
+  color: var(--color-danger);
+}
+
+.adjudicate__quote-add {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0.5rem;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+
+.adjudicate__quote-add-text,
+.adjudicate__quote-add-note {
+  flex-basis: 100%;
+  overflow-wrap: anywhere;
+}
+
+.adjudicate__quote-add-note {
+  color: var(--color-text-muted);
+}

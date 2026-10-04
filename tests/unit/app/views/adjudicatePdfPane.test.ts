@@ -1,3 +1,7 @@
+import { getAdjudicateQuoteTarget, setAdjudicateQuoteTarget } from '../../../../src/app/views/adjudicatePdfPane';
+import type { AdjudicateViewCallbacks } from '../../../../src/app/views/types';
+import { buildQuoteSetRows } from '../../../../src/features/verification/cellQuotes';
+import type { CellQuote } from '../../../../src/domain/quoteSet';
 import { makeCitation, makeAskPage } from '../askPaperFixtures';
 import {
   disposeAdjudicatePdfPaneCache,
@@ -169,6 +173,8 @@ function makeWorking(overrides: Partial<AdjudicateWorking> = {}): AdjudicateWork
     evidence: [],
     skippedCellKeys: [],
     rebuildCells: jest.fn(() => []),
+    quoteSetRows: [], quoteEvidence: [], quoteAiEvidence: [], annotatorTypeA: 'human_with_ai', annotatorTypeB: 'human_independent',
+    quoteArmRemap: () => new Map(), quoteSaving: [], quoteErrors: [],
     loadPdfView: jest.fn().mockResolvedValue({ pdf: makePdfDocument(), pdfError: null, textPages: [] }),
     retryPdfView: jest.fn().mockResolvedValue({ pdf: makePdfDocument(), pdfError: null, textPages: [] }),
     disposePdf: jest.fn().mockResolvedValue(undefined),
@@ -515,4 +521,140 @@ test('質問引用は別文書へ切替後に矩形化し、未読込時のジ�
   showAdjudicateCitation(makeWorking({ study: makeStudy({ studyId: 'other' }) }), makeCitation());
   disposeAdjudicatePdfPaneCache();
   showAdjudicateCitation(working, makeCitation());
+});
+
+describe('裁定 PDF から最終の根拠へ追加', () => {
+  const text = 'mortality was 12 percent';
+  function select(root: HTMLElement, value: string): void {
+    const layer = root.querySelector('.pdf-viewer__text-layer')!;
+    const span = document.createElement('span');
+    span.textContent = value;
+    layer.replaceChildren(span);
+    const range = document.createRange();
+    range.selectNodeContents(span);
+    const selection = document.getSelection()!;
+    selection.removeAllRanges();
+    selection.addRange(range);
+    span.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+  }
+  const confirm = (root: HTMLElement) => root.querySelector<HTMLButtonElement>('.adjudicate__quote-add-confirm')!;
+  async function ready(field: Partial<SchemaField> = {}, callbacksEnabled = true) {
+    const onConsensusQuotesChange = jest.fn();
+    const callbacks = { onConsensusQuotesChange } as unknown as AdjudicateViewCallbacks;
+    const working = makeWorking({ cells: [makeCell({ field: makeField(field) })],
+      loadPdfView: jest.fn().mockResolvedValue({ pdf: makePdfDocument(), pdfError: null,
+        textPages: [buildPage(1, text)] }) });
+    const root = renderAdjudicatePdfPane(working, callbacksEnabled ? callbacks : undefined);
+    document.body.replaceChildren(root);
+    await flush();
+    return { working, root, callbacks, onConsensusQuotesChange };
+  }
+  test('対象無しではバーを出さず、対象セルの人の引用として追加して一時ハイライトする', async () => {
+    const { working, root, onConsensusQuotesChange } = await ready();
+    select(root, text);
+    expect(root.querySelector('.adjudicate__quote-add')).toBeNull();
+    setAdjudicateQuoteTarget(working, working.cells[0]!.cellKey);
+    select(root, text);
+    expect(root.querySelector('.adjudicate__quote-add')).not.toBeNull();
+    const section = root.querySelector<HTMLInputElement>('.adjudicate__quote-add-section')!;
+    section.value = ' Results ';
+    section.dispatchEvent(new Event('input'));
+    confirm(root).click();
+    expect(onConsensusQuotesChange).toHaveBeenCalledWith(working.cells[0]!.cellKey,
+      [expect.objectContaining({ source: 'human', originAnnotator: null, quote: text, documentId: 'doc-1',
+        section: 'Results', theme: null, anchorStatus: 'exact' })]);
+    expect(root.querySelector('.adjudicate__quote-add')).toBeNull();
+    expect(root.querySelector('.pdf-viewer__hl')?.getAttribute('aria-label')).toContain('質問の回答の引用');
+  });
+  test('選択肢必須・任意テーマ・重複・文字数上限は共有規則で制御する', async () => {
+    const { working, root, callbacks, onConsensusQuotesChange } = await ready({
+      dataType: 'enum', multiSelect: { exclusiveValues: [], freeTextValues: [] }, allowedValues: 'A|B',
+    });
+    setAdjudicateQuoteTarget(working, working.cells[0]!.cellKey);
+    select(root, text);
+    expect(confirm(root).disabled).toBe(true);
+    const theme = root.querySelector<HTMLSelectElement>('.adjudicate__quote-add-theme')!;
+    theme.value = 'A'; theme.dispatchEvent(new Event('change'));
+    expect(confirm(root).disabled).toBe(false);
+    select(root, 'x'.repeat(1001));
+    expect(confirm(root).disabled).toBe(true);
+    select(root, text);
+    confirm(root).click();
+    select(root, 'another selection');
+    expect(confirm(root).disabled).toBe(true);
+    expect(root.querySelector<HTMLSelectElement>('.adjudicate__quote-add-theme')!.value).toBe('');
+    const quotes = onConsensusQuotesChange.mock.calls[0]![1] as CellQuote[];
+    expect(quotes[0]!.theme).toBe('A');
+    working.quoteSetRows = buildQuoteSetRows({ setId: 'saved', savedAt: 'now', savedBy: 'judge',
+      annotator: 'consensus', annotatorType: 'consensus', studyId: working.study.studyId,
+      fieldId: 'f-1', entityKey: '-', schemaVersion: 1, baseRunId: null, quotes });
+    renderAdjudicatePdfPane(working, callbacks);
+    select(root, text);
+    expect(confirm(root).disabled).toBe(true);
+    expect(root.querySelector('.adjudicate__quote-add-note')?.textContent).toContain('追加済み');
+    root.querySelector<HTMLButtonElement>('.adjudicate__quote-add-cancel')!.click();
+    expect(root.querySelector('.adjudicate__quote-add')).toBeNull();
+  });
+  test('保存中と群ロックは追加不可、保存後は同じ入力のまま再開する', async () => {
+    const { working, root, callbacks } = await ready({ maxQuotes: 3 });
+    setAdjudicateQuoteTarget(working, working.cells[0]!.cellKey);
+    select(root, text);
+    const theme = root.querySelector<HTMLInputElement>('.adjudicate__quote-add-theme')!;
+    theme.value = ' Theme '; theme.dispatchEvent(new Event('input'));
+    working.quoteSaving = [working.cells[0]!.cellKey];
+    renderAdjudicatePdfPane(working, callbacks);
+    expect(confirm(root).disabled).toBe(true);
+    working.quoteSaving = [];
+    renderAdjudicatePdfPane(working, callbacks, true);
+    expect(confirm(root).disabled).toBe(true);
+    renderAdjudicatePdfPane(working, callbacks);
+    expect(confirm(root).disabled).toBe(false);
+    working.cells[0]!.field.entityLevel = 'arm';
+    renderAdjudicatePdfPane(working, callbacks);
+    expect(confirm(root).disabled).toBe(true);
+    working.cells[0]!.field.entityLevel = 'outcome_result';
+    renderAdjudicatePdfPane(working, callbacks);
+    expect(confirm(root).disabled).toBe(true);
+    working.cells[0]!.field.entityLevel = 'study';
+    renderAdjudicatePdfPane(working, callbacks);
+    confirm(root).click();
+    expect(callbacks.onConsensusQuotesChange).toHaveBeenCalledWith(working.cells[0]!.cellKey,
+      [expect.objectContaining({ theme: 'Theme', section: null })]);
+  });
+  test('対象不明、保存コールバック無し、選択取り消し後の旧ボタンは何もしない', async () => {
+    const { working, root } = await ready({}, false);
+    setAdjudicateQuoteTarget(working, 'missing');
+    select(root, text);
+    expect(confirm(root).disabled).toBe(true);
+    setAdjudicateQuoteTarget(working, working.cells[0]!.cellKey);
+    select(root, 'unmatched words');
+    const button = confirm(root);
+    button.click();
+    setAdjudicateQuoteTarget(working, null);
+    button.click();
+    expect(root.querySelector('.adjudicate__quote-add')).toBeNull();
+    disposeAdjudicatePdfPaneCache();
+    expect(getAdjudicateQuoteTarget(working)).toBeNull();
+    setAdjudicateQuoteTarget(working, 'missing');
+    renderAdjudicatePdfPane(working);
+    const other = { ...working, study: makeStudy({ studyId: 'other' }) };
+    setAdjudicateQuoteTarget(other, 'missing');
+    expect(getAdjudicateQuoteTarget(other)).toBeNull();
+  });
+  test('未照合の追加は選択ページを保持し、文書切替で入力を消す', async () => {
+    const { working, root, callbacks, onConsensusQuotesChange } = await ready();
+    working.documents.push(makeDocument({ documentId: 'doc-2' }));
+    setAdjudicateQuoteTarget(working, working.cells[0]!.cellKey);
+    select(root, 'absent text');
+    confirm(root).click();
+    expect(onConsensusQuotesChange.mock.calls[0]![1][0]).toMatchObject({ page: 1, anchorStatus: 'failed' });
+    select(root, text);
+    const button = confirm(root);
+    renderAdjudicatePdfPane(working, callbacks, true);
+    button.disabled = false;
+    button.click();
+    expect(onConsensusQuotesChange).toHaveBeenCalledTimes(1);
+    showAdjudicateCitation(working, makeCitation({ documentId: 'doc-2' }));
+    expect(root.querySelector('.adjudicate__quote-add')).toBeNull();
+  });
 });

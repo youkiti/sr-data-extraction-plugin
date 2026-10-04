@@ -1,3 +1,4 @@
+import type { QuoteSetRow } from '../domain/quoteSet';
 // メインビューの中央ストア（単方向フロー）。view は render(state) の純粋関数とし、
 // 状態変更は必ず setState 経由で行う（architecture.md §2.2）
 import type { ConfirmedArmStructure } from '../domain/armStructure';
@@ -566,6 +567,21 @@ export interface AdjudicateStudyRow {
  * （features/verification/pdfViewCache の LRU キャッシュを内部に閉じ込める）
  */
 export interface AdjudicateWorking {
+  /** 項目ごとの最新の完了 run から合成した、未編集レビュアー用の AI 引用。 */
+  quoteAiEvidence: Evidence[];
+  quoteSetRows: QuoteSetRow[];
+  quoteEvidence: Evidence[];
+  annotatorTypeA: 'human_with_ai' | 'human_independent';
+  annotatorTypeB: 'human_with_ai' | 'human_independent';
+  /** セル突き合わせと共通の、衝突を退避した B → 正準キー辞書。 */
+  quoteArmRemap(): ReadonlyMap<string, string>;
+  /** 型混在時はセルの現在値の行を優先する。 */
+  quoteTypesForCell?(fieldId: string, entityKey: string, remap: ReadonlyMap<string, string>): {
+    annotatorTypeA: 'human_with_ai' | 'human_independent';
+    annotatorTypeB: 'human_with_ai' | 'human_independent';
+  };
+  quoteSaving: string[];
+  quoteErrors: string[];
   study: StudyRecord;
   /** study 配下の文書（role 固定順 → 取り込み順） */
   documents: DocumentRecord[];

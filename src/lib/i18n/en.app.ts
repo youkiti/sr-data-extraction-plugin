@@ -108,6 +108,15 @@ export const enApp: Record<keyof typeof jaApp, string> = {
   'verify.quoteSourceHuman': 'Added by a person',
   'verify.assignedOnly': 'Only my assigned studies',
   'documents.mergeReviewSet': 'Review set',
+  'adjudicate.quotesHeading': 'Evidence',
+  'adjudicate.quotesNotChosen': 'Final quotes have not been chosen',
+  'adjudicate.quotesChosen': 'Final quotes: {n}',
+  'adjudicate.quoteAdoptAria': 'Adopt as final evidence',
+  'adjudicate.quoteOwnerBoth': 'A & B',
+  'adjudicate.quoteAddTarget': 'Add from PDF',
+  'adjudicate.quoteAddTargetAria': 'Add quotes from PDF to this cell',
+  'adjudicate.quoteJump': 'Go to highlight',
+  'adjudicate.quotesAddedByAdjudicator': 'Added by adjudicator',
   'adjudicate.outsideNote':
     'Judgments outside the assigned pair ({email}) are excluded from adjudication and agreement.',
   'adjudicate.agreementOutside':
