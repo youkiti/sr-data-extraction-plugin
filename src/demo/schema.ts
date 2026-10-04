@@ -29,6 +29,7 @@ export const DEMO_SCHEMA_FIELDS: readonly SchemaField[] = [
     aiGenerated: true,
     note: null,
     maxQuotes: null,
+    multiSelect: null,
   },
   {
     schemaVersion: DEMO_SCHEMA_VERSION,
@@ -47,6 +48,7 @@ export const DEMO_SCHEMA_FIELDS: readonly SchemaField[] = [
     aiGenerated: true,
     note: null,
     maxQuotes: null,
+    multiSelect: null,
   },
   {
     schemaVersion: DEMO_SCHEMA_VERSION,
@@ -65,6 +67,7 @@ export const DEMO_SCHEMA_FIELDS: readonly SchemaField[] = [
     aiGenerated: true,
     note: null,
     maxQuotes: null,
+    multiSelect: null,
   },
   {
     schemaVersion: DEMO_SCHEMA_VERSION,
@@ -83,6 +86,7 @@ export const DEMO_SCHEMA_FIELDS: readonly SchemaField[] = [
     aiGenerated: true,
     note: null,
     maxQuotes: null,
+    multiSelect: null,
   },
   {
     schemaVersion: DEMO_SCHEMA_VERSION,
@@ -101,6 +105,7 @@ export const DEMO_SCHEMA_FIELDS: readonly SchemaField[] = [
     aiGenerated: true,
     note: null,
     maxQuotes: null,
+    multiSelect: null,
   },
   {
     schemaVersion: DEMO_SCHEMA_VERSION,
@@ -119,6 +124,7 @@ export const DEMO_SCHEMA_FIELDS: readonly SchemaField[] = [
     aiGenerated: true,
     note: null,
     maxQuotes: null,
+    multiSelect: null,
   },
   {
     schemaVersion: DEMO_SCHEMA_VERSION,
@@ -137,6 +143,7 @@ export const DEMO_SCHEMA_FIELDS: readonly SchemaField[] = [
     aiGenerated: true,
     note: null,
     maxQuotes: null,
+    multiSelect: null,
   },
   {
     schemaVersion: DEMO_SCHEMA_VERSION,
@@ -155,6 +162,7 @@ export const DEMO_SCHEMA_FIELDS: readonly SchemaField[] = [
     aiGenerated: true,
     note: null,
     maxQuotes: null,
+    multiSelect: null,
   },
   // --- arm level ---
   {
@@ -174,6 +182,7 @@ export const DEMO_SCHEMA_FIELDS: readonly SchemaField[] = [
     aiGenerated: true,
     note: null,
     maxQuotes: null,
+    multiSelect: null,
   },
   {
     schemaVersion: DEMO_SCHEMA_VERSION,
@@ -192,6 +201,7 @@ export const DEMO_SCHEMA_FIELDS: readonly SchemaField[] = [
     aiGenerated: true,
     note: null,
     maxQuotes: null,
+    multiSelect: null,
   },
   {
     schemaVersion: DEMO_SCHEMA_VERSION,
@@ -210,6 +220,7 @@ export const DEMO_SCHEMA_FIELDS: readonly SchemaField[] = [
     aiGenerated: true,
     note: null,
     maxQuotes: null,
+    multiSelect: null,
   },
   // --- outcome_result level ---
   {
@@ -229,6 +240,7 @@ export const DEMO_SCHEMA_FIELDS: readonly SchemaField[] = [
     aiGenerated: true,
     note: null,
     maxQuotes: null,
+    multiSelect: null,
   },
   {
     schemaVersion: DEMO_SCHEMA_VERSION,
@@ -247,6 +259,7 @@ export const DEMO_SCHEMA_FIELDS: readonly SchemaField[] = [
     aiGenerated: true,
     note: null,
     maxQuotes: null,
+    multiSelect: null,
   },
   {
     schemaVersion: DEMO_SCHEMA_VERSION,
@@ -265,6 +278,7 @@ export const DEMO_SCHEMA_FIELDS: readonly SchemaField[] = [
     aiGenerated: true,
     note: null,
     maxQuotes: null,
+    multiSelect: null,
   },
   {
     schemaVersion: DEMO_SCHEMA_VERSION,
@@ -283,6 +297,7 @@ export const DEMO_SCHEMA_FIELDS: readonly SchemaField[] = [
     aiGenerated: true,
     note: null,
     maxQuotes: null,
+    multiSelect: null,
   },
   {
     schemaVersion: DEMO_SCHEMA_VERSION,
@@ -301,5 +316,6 @@ export const DEMO_SCHEMA_FIELDS: readonly SchemaField[] = [
     aiGenerated: true,
     note: null,
     maxQuotes: null,
+    multiSelect: null,
   },
 ];

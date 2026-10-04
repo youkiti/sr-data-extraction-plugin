@@ -34,6 +34,7 @@ const DECISIONS_HEADER = [
 function field(overrides: Partial<SchemaField> = {}): SchemaField {
   return {
     maxQuotes: null,
+    multiSelect: null,
     schemaVersion: 1,
     fieldId: 'f-1',
     fieldIndex: 1,

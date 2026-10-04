@@ -226,6 +226,9 @@ export function parseDraftSchemaResponse(text: string): SchemaEditorRow[] {
     aiGenerated: true,
     note: null,
     maxQuotes: null,
+    multiSelect: false,
+    exclusiveValues: null,
+    freeTextValues: null,
   }));
   return resolveReservedFieldNameCollisions(rows);
 }

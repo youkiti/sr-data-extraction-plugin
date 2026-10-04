@@ -14,6 +14,7 @@ import { validateEditorRows } from '../../../../src/features/schema/validateFiel
 function makeField(overrides: Partial<SchemaField> = {}): SchemaField {
   return {
     maxQuotes: null,
+    multiSelect: null,
     schemaVersion: 1,
     fieldId: 'f-1',
     fieldIndex: 1,
@@ -36,6 +37,9 @@ function makeField(overrides: Partial<SchemaField> = {}): SchemaField {
 function makeRow(overrides: Partial<SchemaEditorRow> = {}): SchemaEditorRow {
   return {
     maxQuotes: null,
+    multiSelect: false,
+    exclusiveValues: null,
+    freeTextValues: null,
     fieldId: null,
     section: 'methods',
     fieldName: 'study_design',
@@ -90,6 +94,7 @@ describe('buildRedraftDiff', () => {
     });
     const row = makeRow({
       maxQuotes: null,
+      multiSelect: false,
       fieldName: field.fieldName,
       section: 'outcomes',
       fieldLabel: 'ラベル新',
@@ -459,4 +464,23 @@ test('複数引用の text 項目を integer に再ドラフトすると引用�
   expect(rows[0]?.dataType).toBe('integer');
   expect(rows[0]?.maxQuotes).toBeNull();
   expect(validateEditorRows(rows)).toEqual([]);
+});
+
+
+test('再ドラフトは複数選択を引き継ぎ、消えた許容値を設定から除く', () => {
+  const field = makeField({ dataType: 'enum', allowedValues: 'A|NA|Other',
+    multiSelect: { exclusiveValues: ['NA'], freeTextValues: ['Other'] } });
+  const same = buildRedraftDiff([field], [makeRow({ dataType: 'enum', allowedValues: field.allowedValues })]);
+  expect(same.unchanged).toEqual([field]);
+  expect(applyRedraftDiff(same, defaultRedraftSelection(same))[0]).toMatchObject({
+    multiSelect: true, exclusiveValues: 'NA', freeTextValues: 'Other',
+  });
+  const changed = buildRedraftDiff([field], [makeRow({ dataType: 'enum', allowedValues: 'A|B' })]);
+  expect(changed.changed[0]?.proposed).toMatchObject({ multiSelect: true, exclusiveValues: null, freeTextValues: null });
+  expect(changed.changed[0]?.changes).toContainEqual({ key: 'multiSelect', before: '単独: NA / 自由記述: Other', after: '単独:  / 自由記述: ' });
+  const text = buildRedraftDiff([field], [makeRow()]);
+  expect(text.changed[0]?.proposed.multiSelect).toBe(false);
+  const empty = makeField({ dataType: 'enum', allowedValues: 'A|B', multiSelect: { exclusiveValues: [], freeTextValues: [] } });
+  const unchanged = buildRedraftDiff([empty], [makeRow({ dataType: 'enum', allowedValues: 'A|B' })]);
+  expect(applyRedraftDiff(unchanged, defaultRedraftSelection(unchanged))[0]).toMatchObject({ multiSelect: true, exclusiveValues: null, freeTextValues: null });
 });

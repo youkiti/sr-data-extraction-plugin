@@ -39,6 +39,7 @@ function makeField(
 ): SchemaField {
   return {
     maxQuotes: null,
+    multiSelect: null,
     schemaVersion: 1,
     fieldIndex: 0,
     section: 'methods',

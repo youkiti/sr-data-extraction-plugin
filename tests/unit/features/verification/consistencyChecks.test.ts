@@ -14,6 +14,7 @@ const ENTITY_KEY = 'outcome:pain|arm:1';
 function makeField(fieldName: string, dataType: FieldDataType): SchemaField {
   return {
     maxQuotes: null,
+    multiSelect: null,
     schemaVersion: 1,
     fieldId: `f-${fieldName}`,
     fieldIndex: 1,

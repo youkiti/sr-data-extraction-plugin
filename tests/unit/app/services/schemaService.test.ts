@@ -124,6 +124,7 @@ function makeVersion(schemaVersion: number, overrides: Partial<SchemaVersion> = 
 function makeField(overrides: Partial<SchemaField> = {}): SchemaField {
   return {
     maxQuotes: null,
+    multiSelect: null,
     schemaVersion: 1,
     fieldId: 'f-1',
     fieldIndex: 1,
@@ -146,6 +147,9 @@ function makeField(overrides: Partial<SchemaField> = {}): SchemaField {
 function makeEditorRow(overrides: Partial<SchemaEditorRow> = {}): SchemaEditorRow {
   return {
     maxQuotes: null,
+    multiSelect: false,
+    exclusiveValues: null,
+    freeTextValues: null,
     fieldId: null,
     section: 'methods',
     fieldName: 'study_design',
@@ -1490,5 +1494,19 @@ describe('confirmSchema: StudyData ヘッダ同期（確定と同時に列を反
       expect.stringContaining('StudyData のヘッダ列同期に失敗しました'),
     );
     warnSpy.mockRestore();
+  });
+});
+
+
+test.each([
+  { exclusiveValues: ['NA'], freeTextValues: ['Other'] },
+  { exclusiveValues: [], freeTextValues: [] },
+])('現行版の複数選択設定をエディタへ復元する: %p', (multiSelect) => {
+  const store = makeStore();
+  store.setState({ schema: { ...store.getState().schema, currentFields: [makeField({ dataType: 'enum', multiSelect })] } });
+  startEditorFromCurrent(store);
+  expect(store.getState().schema.editorRows?.[0]).toMatchObject({
+    multiSelect: true, exclusiveValues: multiSelect.exclusiveValues.join('|') || null,
+    freeTextValues: multiSelect.freeTextValues.join('|') || null,
   });
 });

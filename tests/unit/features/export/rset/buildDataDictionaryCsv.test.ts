@@ -47,6 +47,9 @@ describe('buildDataDictionaryCsv', () => {
       'false',
       '抽出指示',
       '',
+      '',
+      '',
+      '',
       '120',
       '1',
     ]);
@@ -63,6 +66,9 @@ describe('buildDataDictionaryCsv', () => {
       '抽出指示',
       '',
       '',
+      '',
+      '',
+      '',
       '1',
     ]);
   });
@@ -71,4 +77,13 @@ describe('buildDataDictionaryCsv', () => {
 test('最大引用件数をデータ辞書へ出力する', () => {
   const records = parseCsv(buildDataDictionaryCsv([makeField({ maxQuotes: 12 })]).csv);
   expect(records[1]?.[DATA_DICTIONARY_HEADER.indexOf('max_quotes')]).toBe('12');
+});
+
+
+test('複数選択の設定をデータ辞書に出力する', () => {
+  const records = parseCsv(buildDataDictionaryCsv([makeField({
+    multiSelect: { exclusiveValues: ['NA', 'unclear'], freeTextValues: ['Other'] },
+  })]).csv);
+  expect(records[1]?.slice(DATA_DICTIONARY_HEADER.indexOf('multi_select'), DATA_DICTIONARY_HEADER.indexOf('multi_select') + 3))
+    .toEqual(['TRUE', 'NA|unclear', 'Other']);
 });

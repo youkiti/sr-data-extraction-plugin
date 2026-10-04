@@ -5,6 +5,14 @@ export type EntityLevel = 'study' | 'arm' | 'outcome_result' | 'rob_domain';
 
 export type FieldDataType = 'text' | 'integer' | 'float' | 'boolean' | 'enum' | 'date';
 
+/** 複数選択の設定（enum 項目のみ）。配列は allowed_values の部分集合 */
+export interface MultiSelectConfig {
+  /** ほかの選択肢と同時に選べない選択肢 */
+  exclusiveValues: string[];
+  /** 自由記述を付けられる選択肢 */
+  freeTextValues: string[];
+}
+
 export interface SchemaField {
   schemaVersion: number;
   /** 版をまたいで同一項目は同じ ID を維持（改名追跡用） */
@@ -34,4 +42,5 @@ export interface SchemaField {
   note: string | null;
   /** 複数引用の上限（text のみ 2〜20）。null は通常の 1 引用 */
   maxQuotes: number | null;
+  multiSelect: MultiSelectConfig | null;
 }

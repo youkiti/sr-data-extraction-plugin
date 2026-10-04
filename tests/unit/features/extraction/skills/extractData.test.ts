@@ -27,6 +27,7 @@ function makeField(
 ): SchemaField {
   return {
     maxQuotes: null,
+    multiSelect: null,
     schemaVersion: 1,
     fieldIndex: 0,
     section: 'methods',
@@ -303,6 +304,7 @@ describe('buildExtractDataUserPrompt', () => {
   it('unit / allowed_values / instruction / example を設定した項目は行として描画する', () => {
     const field = makeField({
       maxQuotes: null,
+      multiSelect: null,
       fieldId: 'f_dose',
       fieldName: 'dose',
       entityLevel: 'arm',

@@ -133,6 +133,9 @@ export function emptyEditorRow(): SchemaEditorRow {
     aiGenerated: false,
     note: null,
     maxQuotes: null,
+    multiSelect: false,
+    exclusiveValues: null,
+    freeTextValues: null,
   };
 }
 
@@ -623,6 +626,9 @@ export function startEditorFromCurrent(store: Store): void {
       aiGenerated: field.aiGenerated,
       note: field.note,
       maxQuotes: field.maxQuotes,
+      multiSelect: field.multiSelect !== null,
+      exclusiveValues: field.multiSelect?.exclusiveValues.join('|') || null,
+      freeTextValues: field.multiSelect?.freeTextValues.join('|') || null,
     })),
     editorErrors: [],
     editorOrigin: 'user_edit',

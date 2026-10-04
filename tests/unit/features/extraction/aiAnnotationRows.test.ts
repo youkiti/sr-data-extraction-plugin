@@ -6,6 +6,7 @@ import { buildAiAnnotationRows } from '../../../../src/features/extraction/aiAnn
 function makeField(overrides: Partial<SchemaField> = {}): SchemaField {
   return {
     maxQuotes: null,
+    multiSelect: null,
     schemaVersion: 2,
     fieldId: 'f-study',
     fieldIndex: 1,

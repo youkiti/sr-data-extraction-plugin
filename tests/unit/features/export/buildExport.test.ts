@@ -27,6 +27,7 @@ function makeStudy(overrides: Partial<StudyRecord> = {}): StudyRecord {
 function makeField(overrides: Partial<SchemaField> = {}): SchemaField {
   return {
     maxQuotes: null,
+    multiSelect: null,
     schemaVersion: 2,
     fieldId: 'f-total',
     fieldIndex: 1,

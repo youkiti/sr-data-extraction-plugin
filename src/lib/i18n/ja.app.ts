@@ -301,6 +301,16 @@ export const jaApp = {
   'protocol.loading': 'プロトコルを読み込んでいます…',
 
   // S5 表のデザイン（schemaView.ts）
+  'schema.multiSelect': '複数選択',
+  'schema.exclusiveValues': '単独選択肢（| 区切り）',
+  'schema.freeTextValues': '自由記述付き選択肢（| 区切り）',
+  'schema.multiSelectHint': '単独選択肢はほかの選択肢と同時に選べません。自由記述付き選択肢には説明を添えられます。',
+  'schema.multiSelectEnumOnly': '複数選択は data_type = enum のときだけ指定できます',
+  'schema.multiSelectRequired': '複数選択を有効にしてください',
+  'schema.multiSelectUnknown': '許容値にある選択肢を指定してください',
+  'schema.multiSelectOverlap': '単独選択肢に自由記述は付けられません',
+  'schema.multiSelectNr': '未報告は「未報告」ボタンで付けるため、NR を選択肢に入れないでください',
+  'schema.multiSelectAmbiguous': '自由記述付き選択肢 + 「: 」で始まる許容値は使えません',
   'schema.multiQuote': '複数の引用を許可',
   'schema.maxQuotes': '最大件数',
   'schema.multiQuoteHint': '主に質的なデータ（テーマの抽出など）を取りたいときに使います。AI がテーマごとに根拠の箇所を 1 つずつ引用し、値はテーマ名の一覧になります。引用の選び方（参加者の語りだけを採る等）は抽出指示に書いてください',

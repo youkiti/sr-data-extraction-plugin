@@ -47,6 +47,7 @@ export function field(overrides: Partial<SchemaField> = {}): SchemaField {
     aiGenerated: false,
     note: null,
     maxQuotes: null,
+    multiSelect: null,
     ...overrides,
   };
 }

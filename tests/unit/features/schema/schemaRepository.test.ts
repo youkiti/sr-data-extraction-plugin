@@ -61,6 +61,7 @@ function fieldRow(overrides: Record<string, string> = {}): string[] {
 
 const FIELD: SchemaField = {
   maxQuotes: null,
+  multiSelect: null,
   schemaVersion: 2,
   fieldId: 'f-9',
   fieldIndex: 3,
@@ -166,6 +167,9 @@ describe('appendSchemaVersion / appendSchemaFields', () => {
           false,
           null,
           null,
+          null,
+          null,
+          null,
         ],
       ],
       deps,
@@ -246,6 +250,7 @@ describe('getSchemaFieldsByVersion', () => {
     ]);
     expect(fields[0]).toEqual({
       maxQuotes: null,
+      multiSelect: null,
       schemaVersion: 1,
       fieldId: 'f-1',
       fieldIndex: 1,
@@ -312,5 +317,48 @@ describe('max_quotes の後方互換', () => {
   test('旧 15 列の行は OFF', async () => {
     getSheetValuesMock.mockResolvedValue([FIELDS_HEADER.slice(0, 15), fieldRow().slice(0, 15)]);
     expect((await getSchemaFieldsByVersion('s', 1, deps))[0]?.maxQuotes).toBeNull();
+  });
+});
+
+
+describe('複数選択のシート互換', () => {
+  test.each([15, 16, 19])('単一選択は既存 %i 列を維持する', async (width) => {
+    jest.mocked(getBatchValues).mockResolvedValue([[FIELDS_HEADER.slice(0, width)]]);
+    await appendSchemaFields('s', [FIELD], deps);
+    expect(updateRow).not.toHaveBeenCalled();
+    expect(appendRowsMock.mock.calls[0]?.[2][0]).toHaveLength(width);
+  });
+  test('複数引用だけなら 16 列までしか拡張しない', async () => {
+    jest.mocked(getBatchValues).mockResolvedValue([[FIELDS_HEADER.slice(0, 15)]]);
+    await appendSchemaFields('s', [{ ...FIELD, maxQuotes: 3 }], deps);
+    expect(updateRow).toHaveBeenCalledWith('s', 'SchemaFields', 1, FIELDS_HEADER.slice(0, 16), deps);
+    expect(appendRowsMock.mock.calls[0]?.[2][0]).toHaveLength(16);
+  });
+  test.each([15, 16, 17, 18, 19])('複数選択は %i 列から必要時だけ拡張する', async (width) => {
+    jest.mocked(getBatchValues).mockResolvedValue([[FIELDS_HEADER.slice(0, width)]]);
+    await appendSchemaFields('s', [
+      { ...FIELD, multiSelect: { exclusiveValues: ['NA', 'unclear'], freeTextValues: ['Other'] } },
+      { ...FIELD, multiSelect: { exclusiveValues: [], freeTextValues: [] } },
+    ], deps);
+    expect(updateRow).toHaveBeenCalledTimes(width < 19 ? 1 : 0);
+    expect(appendRowsMock.mock.calls[0]?.[2].map((row) => row.slice(16))).toEqual([
+      [true, 'NA|unclear', 'Other'], [true, null, null],
+    ]);
+  });
+  test.each([15, 16, 19])('%i 列から一致した範囲だけ読み込む', async (width) => {
+    getSheetValuesMock.mockResolvedValue([FIELDS_HEADER.slice(0, width), fieldRow({
+      max_quotes: '3', multi_select: 'TRUE', exclusive_values: ' NA |NA|unclear', free_text_values: 'Other',
+    })]);
+    const [field] = await getSchemaFieldsByVersion('s', 1, deps);
+    expect(field?.maxQuotes).toBe(width >= 16 ? 3 : null);
+    expect(field?.multiSelect).toEqual(width === 19 ? { exclusiveValues: ['NA', 'unclear'], freeTextValues: ['Other'] } : null);
+  });
+  test('途中の不一致以降は読まず、書き込みは拒否する', async () => {
+    const header = [...FIELDS_HEADER];
+    header[17] = 'wrong';
+    getSheetValuesMock.mockResolvedValue([header, fieldRow({ multi_select: 'TRUE', exclusive_values: 'NA', free_text_values: 'Other' })]);
+    expect((await getSchemaFieldsByVersion('s', 1, deps))[0]?.multiSelect).toEqual({ exclusiveValues: [], freeTextValues: [] });
+    jest.mocked(getBatchValues).mockResolvedValue([[header]]);
+    await expect(appendSchemaFields('s', [FIELD], deps)).rejects.toThrow('18 列目');
   });
 });

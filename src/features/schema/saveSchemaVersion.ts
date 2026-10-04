@@ -1,6 +1,7 @@
 // 「版として確定」パイプライン（S5）: エディタ行を検証し、
 // SchemaVersions（1 行）+ SchemaFields（N 行）を新しい schema_version で追記する。
 // 追記型のため過去版は常に保持される（requirements.md §3.1）
+import { splitPipeList } from '../../domain/multiSelect';
 import type { SchemaField } from '../../domain/schemaField';
 import type { SchemaCreatedByType, SchemaVersion } from '../../domain/schemaVersion';
 import type { GoogleApiDeps } from '../../lib/google/types';
@@ -98,6 +99,10 @@ export async function saveSchemaVersion(
     aiGenerated: row.aiGenerated,
     note: row.note,
     maxQuotes: row.maxQuotes,
+    multiSelect: row.dataType === 'enum' && row.multiSelect ? {
+      exclusiveValues: splitPipeList(row.exclusiveValues),
+      freeTextValues: splitPipeList(row.freeTextValues),
+    } : null,
   }));
 
   await appendSchemaVersion(params.spreadsheetId, version, deps.google);

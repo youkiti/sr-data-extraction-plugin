@@ -4,6 +4,9 @@ import { validateEditorRows } from '../../../../src/features/schema/validateFiel
 function makeRow(overrides: Partial<SchemaEditorRow> = {}): SchemaEditorRow {
   return {
     maxQuotes: null,
+    multiSelect: false,
+    exclusiveValues: null,
+    freeTextValues: null,
     fieldId: null,
     section: 'methods',
     fieldName: 'study_design',
@@ -100,5 +103,26 @@ describe('複数の引用の上限', () => {
   test('text 以外では指定できない', () => {
     expect(validateEditorRows([makeRow({ dataType: 'integer', maxQuotes: 10 })]))
       .toEqual([expect.objectContaining({ column: 'max_quotes' })]);
+  });
+});
+
+
+describe('複数選択の検証', () => {
+  const multi = { dataType: 'enum' as const, multiSelect: true, allowedValues: 'A|Other|NA' };
+  test.each([
+    [{ multiSelect: true }, 'multiSelect'],
+    [{ exclusiveValues: 'NA' }, 'exclusiveValues'],
+    [{ freeTextValues: 'Other' }, 'freeTextValues'],
+    [{ ...multi, exclusiveValues: 'na' }, 'exclusiveValues'],
+    [{ ...multi, freeTextValues: 'other' }, 'freeTextValues'],
+    [{ ...multi, exclusiveValues: 'Other', freeTextValues: 'Other' }, 'freeTextValues'],
+    [{ ...multi, allowedValues: 'A|NR' }, 'allowedValues'],
+    [{ ...multi, allowedValues: 'Other|Other: detail', freeTextValues: 'Other' }, 'allowedValues'],
+  ] as const)('不正設定 %p を該当列へ出す', (patch, column) => {
+    expect(validateEditorRows([makeRow(patch)])).toEqual([expect.objectContaining({ column })]);
+  });
+  test('空欄・trim 後の許容値部分集合を受け入れる', () => {
+    expect(validateEditorRows([makeRow({ ...multi, exclusiveValues: ' NA | NA ', freeTextValues: ' Other ' })])).toEqual([]);
+    expect(validateEditorRows([makeRow({ exclusiveValues: ' ', freeTextValues: '' })])).toEqual([]);
   });
 });

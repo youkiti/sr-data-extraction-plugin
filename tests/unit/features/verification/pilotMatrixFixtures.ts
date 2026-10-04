@@ -5,6 +5,7 @@ import type { ExtractionRun } from '../../../../src/domain/extractionRun';
 export function makeField(overrides: Partial<SchemaField> = {}): SchemaField {
   return {
     maxQuotes: null,
+    multiSelect: null,
     schemaVersion: 1,
     fieldId: 'f-1',
     fieldIndex: 1,

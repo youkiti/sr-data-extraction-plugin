@@ -17,6 +17,9 @@ export const DATA_DICTIONARY_HEADER = [
   'required',
   'extraction_instruction',
   'max_quotes',
+  'multi_select',
+  'exclusive_values',
+  'free_text_values',
   'example',
   'schema_version',
 ] as const;
@@ -40,6 +43,9 @@ export function buildDataDictionaryCsv(fields: readonly SchemaField[]): DataDict
     String(field.required),
     field.extractionInstruction,
     field.maxQuotes === null ? '' : String(field.maxQuotes),
+    field.multiSelect !== null ? 'TRUE' : '',
+    field.multiSelect?.exclusiveValues.join('|') ?? '',
+    field.multiSelect?.freeTextValues.join('|') ?? '',
     field.example ?? '',
     String(field.schemaVersion),
   ]);

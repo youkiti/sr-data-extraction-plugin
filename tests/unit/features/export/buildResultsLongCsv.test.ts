@@ -21,6 +21,7 @@ const field = (
   unit: string | null = null,
 ): SchemaField => ({
   maxQuotes: null,
+  multiSelect: null,
   schemaVersion: 1,
   fieldId,
   fieldIndex,

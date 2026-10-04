@@ -4,6 +4,7 @@
 // RoB プリセット事前設定ダイアログ〔issue #103〕）/
 // 確定済み（現行版サマリ + 版履歴 + 新しい版を作る）。
 // データは AppState.schema（schemaService が更新）から描く
+import { splitPipeList } from '../../domain/multiSelect';
 import type { EntityLevel, FieldDataType, SchemaField } from '../../domain/schemaField';
 import type { SchemaVersion } from '../../domain/schemaVersion';
 import type { PresetDialogState } from '../../features/schema/presets/prespecDialog';
@@ -72,6 +73,9 @@ const CREATED_BY_TYPE_LABEL_KEYS: Record<SchemaVersion['createdByType'], Message
 function errorColumnLabel(column: FieldValidationError['column']): string {
   const keys: Partial<Record<FieldValidationError['column'], MessageKey>> = {
     max_quotes: 'schema.maxQuotes',
+    multiSelect: 'schema.multiSelect',
+    exclusiveValues: 'schema.exclusiveValues',
+    freeTextValues: 'schema.freeTextValues',
     allowedValues: 'schema.colAllowedValues',
     extractionInstruction: 'schema.colExtractionInstruction',
   };
@@ -321,6 +325,47 @@ function renderEditorRow(
     );
   }
 
+  if (row.dataType === 'enum') {
+    const checkbox = el('input', {
+      className: 'schema__multi-select', attributes: { type: 'checkbox' },
+    });
+    checkbox.checked = row.multiSelect;
+    if (invalid('multiSelect')) {
+      checkbox.setAttribute('aria-invalid', 'true');
+      checkbox.classList.add('schema__cell-input--error');
+    }
+    checkbox.addEventListener('change', () => {
+      if (!checkbox.checked) {
+        edit({ multiSelect: false, exclusiveValues: null, freeTextValues: null });
+      } else if (!(row.exclusiveValues ?? '').trim() && !(row.freeTextValues ?? '').trim()) {
+        const allowed = splitPipeList(row.allowedValues);
+        edit({
+          multiSelect: true,
+          exclusiveValues: allowed.filter((value) => ['na', 'n/a', 'unclear'].includes(value.toLowerCase())).join('|') || null,
+          freeTextValues: allowed.filter((value) => value.toLowerCase() === 'other').join('|') || null,
+        });
+      } else {
+        edit({ multiSelect: true });
+      }
+    });
+    instructionChildren.push(el('label', {}, [checkbox, t('schema.multiSelect')]));
+    for (const [column, className] of [
+      ['exclusiveValues', 'schema__exclusive-values'],
+      ['freeTextValues', 'schema__free-text-values'],
+    ] as const) {
+      const input = el('input', { className, attributes: { type: 'text' } });
+      input.disabled = !row.multiSelect;
+      input.value = row[column] ?? '';
+      if (invalid(column)) {
+        input.setAttribute('aria-invalid', 'true');
+        input.classList.add('schema__cell-input--error');
+      }
+      input.addEventListener('change', () => edit({ [column]: emptyToNull(input.value) }));
+      instructionChildren.push(el('label', {}, [t(`schema.${column}`), input]));
+    }
+    instructionChildren.push(el('p', { className: 'schema__multi-quote-hint', text: t('schema.multiSelectHint') }));
+  }
+
   const removeButton = el('button', {
     className: 'schema__row-remove',
     text: t('schema.rowRemove'),
@@ -379,7 +424,10 @@ function renderEditorRow(
       edit({ entityLevel: value as EntityLevel }),
     ),
     selectCell(DATA_TYPES, row.dataType, t('schema.rowDataTypeAria', { row: index + 1 }), (value) =>
-      edit({ dataType: value as FieldDataType, maxQuotes: value === 'text' ? row.maxQuotes : null }),
+      edit({ dataType: value as FieldDataType, maxQuotes: value === 'text' ? row.maxQuotes : null,
+        multiSelect: value === 'enum' ? row.multiSelect : false,
+        exclusiveValues: value === 'enum' ? row.exclusiveValues : null,
+        freeTextValues: value === 'enum' ? row.freeTextValues : null }),
     ),
     textCell(row.unit ?? '', { ariaLabel: t('schema.rowUnitAria', { row: index + 1 }) }, (value) =>
       edit({ unit: emptyToNull(value) }),
@@ -1127,7 +1175,8 @@ function renderCurrentFieldRow(field: SchemaField): HTMLElement {
     el('td', { text: field.fieldName }),
     el('td', { text: field.fieldLabel }),
     el('td', { text: field.entityLevel }),
-    el('td', { text: field.maxQuotes === null ? field.dataType :
+    el('td', { text: field.dataType === 'enum' && field.multiSelect !== null
+      ? `${field.dataType} — ${t('schema.multiSelect')}` : field.maxQuotes === null ? field.dataType :
       `${field.dataType} — ${t('schema.multiQuoteSummary', { max: field.maxQuotes })}` }),
     el('td', { text: field.required ? t('schema.requiredYes') : '—' }),
   ]);
@@ -1264,6 +1313,7 @@ function redraftAttrLabel(key: RedraftComparedKey): string {
     entityLevel: 'entity_level',
     dataType: 'data_type',
     maxQuotes: 'max_quotes',
+    multiSelect: t('schema.multiSelect'),
   };
   const messageKey = keys[key];
   return messageKey !== undefined ? t(messageKey) : (literals[key] as string);

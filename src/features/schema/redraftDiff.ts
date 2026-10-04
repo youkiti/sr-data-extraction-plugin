@@ -2,6 +2,7 @@
 // プロトコル改訂後に AI へ表デザインを再ドラフトさせた結果（SchemaEditorRow[]）と、
 // 現行スキーマ版（SchemaField[]）を突き合わせて差分を作る純粋関数群。
 // DOM・store・ネットワークには一切依存しない（差分画面の描画・サービス配線は Chunk B）
+import { splitPipeList } from '../../domain/multiSelect';
 import type { SchemaField } from '../../domain/schemaField';
 import type { SchemaEditorRow } from './types';
 
@@ -15,6 +16,7 @@ export type RedraftComparedKey =
   | 'allowedValues'
   | 'required'
   | 'extractionInstruction'
+  | 'multiSelect'
   | 'maxQuotes'
   | 'example';
 
@@ -29,6 +31,7 @@ const COMPARED_KEYS: readonly RedraftComparedKey[] = [
   'required',
   'extractionInstruction',
   'maxQuotes',
+  'multiSelect',
   'example',
 ];
 
@@ -95,6 +98,7 @@ type ComparableSource = Pick<
   | 'allowedValues'
   | 'required'
   | 'extractionInstruction'
+  | 'multiSelect'
   | 'maxQuotes'
   | 'example'
 >;
@@ -127,6 +131,9 @@ function stringifyAttr(key: RedraftComparedKey, source: ComparableSource): strin
     case 'extractionInstruction':
       // section / fieldLabel と同じ理由（saveSchemaVersion.ts が trim して保存する）
       return source.extractionInstruction.trim();
+    case 'multiSelect':
+      return source.dataType === 'enum' && source.multiSelect !== null
+        ? `単独: ${source.multiSelect.exclusiveValues.join('|')} / 自由記述: ${source.multiSelect.freeTextValues.join('|')}` : '';
     case 'maxQuotes':
       return source.maxQuotes === null ? null : String(source.maxQuotes);
     case 'example':
@@ -218,9 +225,21 @@ export function buildRedraftDiff(
     // 同名の current が複数ある場合、2 件目以降はこの delete 済みのため必ず removed になる
     draftedByName.delete(name);
     const maxQuotes = proposed.dataType === 'text' ? field.maxQuotes : null;
-    const inherited = proposed.maxQuotes === maxQuotes
-      ? proposed : { ...proposed, maxQuotes };
-    const rowChanges = computeChanges(field, inherited);
+    const allowed = splitPipeList(proposed.allowedValues);
+    const multiSelect = proposed.dataType === 'enum' && field.multiSelect !== null ? {
+      exclusiveValues: field.multiSelect.exclusiveValues.filter((value) => allowed.includes(value)),
+      freeTextValues: field.multiSelect.freeTextValues.filter((value) => allowed.includes(value)),
+    } : null;
+    const patch = {
+      maxQuotes,
+      multiSelect: multiSelect !== null,
+      exclusiveValues: multiSelect?.exclusiveValues.join('|') || null,
+      freeTextValues: multiSelect?.freeTextValues.join('|') || null,
+    };
+    const inherited = proposed.maxQuotes === patch.maxQuotes && proposed.multiSelect === patch.multiSelect
+      && proposed.exclusiveValues === patch.exclusiveValues && proposed.freeTextValues === patch.freeTextValues
+      ? proposed : { ...proposed, ...patch };
+    const rowChanges = computeChanges(field, { ...inherited, multiSelect });
     if (rowChanges.length > 0) {
       const item: RedraftChangedItem = { current: field, proposed: inherited, changes: rowChanges };
       changed.push(item);
@@ -281,6 +300,9 @@ function schemaFieldToEditorRow(field: SchemaField): SchemaEditorRow {
     aiGenerated: field.aiGenerated,
     note: field.note,
     maxQuotes: field.maxQuotes,
+    multiSelect: field.multiSelect !== null,
+    exclusiveValues: field.multiSelect?.exclusiveValues.join('|') || null,
+    freeTextValues: field.multiSelect?.freeTextValues.join('|') || null,
   };
 }
 

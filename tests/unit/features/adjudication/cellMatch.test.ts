@@ -20,6 +20,7 @@ test('テーマの無い断片も先頭引用と元の値を裁定の代表に�
 function field(overrides: Partial<SchemaField> = {}): SchemaField {
   return {
     maxQuotes: null,
+    multiSelect: null,
     schemaVersion: 1,
     fieldId: 'f-study',
     fieldIndex: 1,

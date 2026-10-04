@@ -2,6 +2,7 @@
 // 追記型・上書き禁止: 版の確定は常に新しい schema_version の行群を追記する
 import type { SchemaField, EntityLevel, FieldDataType } from '../../domain/schemaField';
 import type { SchemaCreatedByType, SchemaVersion } from '../../domain/schemaVersion';
+import { splitPipeList } from '../../domain/multiSelect';
 import { SHEET_HEADERS } from '../../domain/sheetsSchema';
 import { appendRow, appendRows, getBatchValues, getSheetValues, updateRow } from '../../lib/google/sheets';
 import type { GoogleApiDeps } from '../../lib/google/types';
@@ -63,11 +64,16 @@ export async function appendSchemaFields(
       throw new Error(`SchemaFields のヘッダ ${index + 1} 列目が "${name}" ではありません`);
     }
   });
-  if (header.length > 15 && header[15] !== 'max_quotes') {
-    throw new Error('SchemaFields のヘッダ 16 列目が "max_quotes" ではありません');
-  }
-  if (fields.some((field) => field.maxQuotes !== null) && header.length === 15) {
-    header = [...FIELDS_HEADER];
+  header.slice(15).forEach((name, offset) => {
+    const index = offset + 15;
+    if (name !== FIELDS_HEADER[index]) {
+      throw new Error(`SchemaFields のヘッダ ${index + 1} 列目が "${FIELDS_HEADER[index]}" ではありません`);
+    }
+  });
+  const requiredWidth = fields.some((field) => field.multiSelect !== null) ? 19
+    : fields.some((field) => field.maxQuotes !== null) ? 16 : header.length;
+  if (header.length < requiredWidth) {
+    header = FIELDS_HEADER.slice(0, requiredWidth);
     await updateRow(spreadsheetId, 'SchemaFields', 1, header, deps);
   }
   const rows = fields.map((field) => {
@@ -88,6 +94,9 @@ export async function appendSchemaFields(
       ai_generated: field.aiGenerated,
       note: field.note,
       max_quotes: field.maxQuotes,
+      multi_select: field.multiSelect !== null ? true : null,
+      exclusive_values: field.multiSelect?.exclusiveValues.join('|') || null,
+      free_text_values: field.multiSelect?.freeTextValues.join('|') || null,
     };
     return header.map((key) => map[key] ?? null);
   });
@@ -121,10 +130,13 @@ export async function getSchemaFieldsByVersion(
   }
   const versionIdx = FIELDS_HEADER.indexOf('schema_version');
   const result: SchemaField[] = [];
+  const header = rows[0] as string[];
+  const mismatch = FIELDS_HEADER.findIndex((name, index) => header[index] !== name);
+  const width = mismatch < 0 ? FIELDS_HEADER.length : mismatch;
   for (const row of rows.slice(1)) {
     const cell = row[versionIdx] ?? '';
     if (Number.parseInt(cell, 10) === schemaVersion) {
-      result.push(fromFieldRow((rows[0] as string[])[15] === 'max_quotes' ? row : row.slice(0, 15)));
+      result.push(fromFieldRow(row.slice(0, width)));
     }
   }
   return result.sort((a, b) => a.fieldIndex - b.fieldIndex);
@@ -178,6 +190,10 @@ function fromFieldRow(row: readonly string[]): SchemaField {
     note: emptyToNull(cell('note')),
     maxQuotes: cell('max_quotes').trim() !== '' && Number.isInteger(Number(cell('max_quotes')))
       ? Number(cell('max_quotes')) : null,
+    multiSelect: toBool(cell('multi_select')) ? {
+      exclusiveValues: splitPipeList(cell('exclusive_values')),
+      freeTextValues: splitPipeList(cell('free_text_values')),
+    } : null,
   };
 }
 
