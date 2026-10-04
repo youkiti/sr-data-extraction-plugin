@@ -27,7 +27,7 @@ const config: Config = {
       },
     ],
   },
-  setupFiles: ['<rootDir>/tests/setup/chrome-mock.ts'],
+  setupFiles: ['<rootDir>/tests/setup/chrome-mock.ts', '<rootDir>/tests/setup/i18n-app-messages.ts'],
   clearMocks: true,
   collectCoverageFrom: [
     'src/**/*.ts',

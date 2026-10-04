@@ -6,8 +6,21 @@
 //   （アプリのストア再描画・options.html の本文再構築）が即時反映する
 // - 永続化（settings.uiLanguage）は lib/storage/settingsStore が担う（本モジュールは
 //   storage に依存しない一方向依存）
-import { en } from './en';
-import { ja, type MessageKey } from './ja';
+// 辞書はページ共通群と app 群に分割し、popup / options は app 群を持たない。
+// 新しいキーが popup / options から参照されるならページ共通群へ置く。
+// 迷った場合は取りこぼし検査（pageMessages.test.ts）が参照元を示す。
+import { enPages } from './en.pages';
+import { jaPages } from './ja.pages';
+import type { MessageKey } from './ja';
+
+const ja: Partial<Record<MessageKey, string>> = { ...jaPages };
+const en: Partial<Record<MessageKey, string>> = { ...enPages };
+
+/** app 起動時に追加の文言を登録する。ページ共通群はそのまま保持する。 */
+export function registerMessages(messages: Record<UiLanguage, Partial<Record<MessageKey, string>>>): void {
+  Object.assign(ja, messages.ja);
+  Object.assign(en, messages.en);
+}
 
 export type { MessageKey };
 
