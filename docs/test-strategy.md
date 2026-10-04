@@ -93,6 +93,8 @@ Playwright をフェーズ 0 で入れるのは、後付けにすると chrome �
 
 ## 4. CI【決定済み 2026-07-02: 段階導入】
 
+`tools/release/storeApi.mjs` は `src/` 外なので jest の対象外。`node:test`（`npm run test:tools`）で実ネットワーク・実ファイルを使わず検査し、CI の `check` ジョブでも実行する。
+
 sr-query-builder（CI なし・ローカル規律運用）とは異なり、本拡張は GitHub Actions を段階導入する：
 
 | 段階 | タイミング | ジョブ |

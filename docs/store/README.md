@@ -65,6 +65,40 @@
   Source code: https://github.com/youkiti/sr-data-extraction-plugin
   ```
 
+## ストア API での提出（CLI）
+
+Chrome Web Store API v2 で zip のアップロード・審査提出・公開版と審査状況の確認ができる。掲載文・スクリーンショット・プライバシー項目・権限の使用理由の編集は API に無いため、デベロッパーダッシュボードで行う。
+
+### 初期設定
+
+1. GCP プロジェクトを選ぶ（拡張本体の OAuth 同意画面と分けるため、リリース用に別プロジェクトを推奨）: https://console.cloud.google.com/projectcreate
+2. Chrome Web Store API を有効にする: https://console.cloud.google.com/apis/library/chromewebstore.googleapis.com
+3. OAuth 同意画面を「外部」で設定し、テストユーザーに発行元アカウントのアドレスを追加する（追加しないと承認時に「エラー 403: access_denied」になる）: https://console.cloud.google.com/auth/audience
+4. OAuth クライアントを「ウェブ アプリケーション」で作り、承認済みのリダイレクト URI に `https://developers.google.com/oauthplayground` を追加する: https://console.cloud.google.com/apis/credentials
+5. OAuth Playground（https://developers.google.com/oauthplayground）の歯車 →「Use your own OAuth credentials」に ID とシークレットを入れ、スコープ `https://www.googleapis.com/auth/chromewebstore` を承認し、「Exchange authorization code for tokens」で refresh token を得る。
+6. 発行元 ID をデベロッパーダッシュボード（https://chrome.google.com/webstore/devconsole）のアカウント設定で確認する。
+7. リポジトリルートの `.env` に `CWS_CLIENT_ID` / `CWS_CLIENT_SECRET` / `CWS_REFRESH_TOKEN` / `CWS_PUBLISHER_ID` を書く（`.env` は gitignore 済み）。`npm run store:status` で確認する。
+
+同意画面が「テスト中」のままだとリフレッシュトークンは 7 日で失効する（Google OAuth の一般仕様）。`invalid_grant` で止まったら手順 5 をやり直し、`.env` の `CWS_REFRESH_TOKEN` を入れ直す。「本番環境」に切り替えた場合の挙動はこのプロジェクトでは未確認。
+
+### コマンド
+
+```bash
+npm run store:status
+npm run store:submit
+npm run release -- <bump> -Submit
+```
+
+`store:status` は読み取り専用。`-- --json` で公開鍵を除いた伏せ字済み JSON、`-- --require-submittable` で提出可否を確認できる。公開停止中・審査中（`PENDING_REVIEW`）・公開待ち（`STAGED`）は提出不可となる。
+
+`store:submit` は再ビルドせず、`package.json` の版に対応する `release/sr-data-extraction-plugin-<version>.zip` を提出する。先に `npm run store:submit -- --dry-run` で認証・提出可否・版・zip を確認できる（アップロード・審査提出は行わない）。別の zip は `-- --zip=<path>` で指定する。ファイル名は `sr-data-extraction-plugin-x.y.z.zip` が必要で、公開中のどのチャネルの版よりも新しい版だけを提出できる。
+
+通常の `npm run release -- <bump>` は zip 作成と push まで。`-Submit` を付けた場合だけ、バンプ前に認証と提出可否を確認し、push 後にアップロード → 審査提出へ進む。`-NoPush` / `-IncludeKeyPem` とは併用できず、ストアの事前チェックは `-Force` でも解除できない。提出だけが失敗したら、原因を解消して `npm run store:submit` でやり直す（version を上げ直さない）。
+
+認証情報は環境変数を優先し、未設定のキーは `.env` から読む。別ファイルは各コマンドに `-- --env-file=<path>` で指定できる。4 キーは CLI 専用で、拡張のビルドには注入されない。
+
+終了コードは 0 = 成功（dry-run を含む）、1 = 失敗・提出不可、2 = 設定・引数不備、3 = 結果不明。upload / publish は自動再試行しない。「結果不明」ならサーバー側で成立している可能性があるため、再実行の前に `npm run store:status` で状況を確認して判断する。反映後は `docs/store/store-status.json` を手で更新し、`npm run facts` を実行する。
+
 ## 必要な画像
 
 Chrome ウェブストアの掲載に必要な画像。**スクリーンショットは実データを含めない**（テスト用プロジェクトで撮る）。

@@ -76,6 +76,7 @@ M1〜M4 のうち、**ローカルの jest / Playwright だけでは完了確認
 
 | 対象 | 種別 | 何を確認するか |
 |---|---|---|
+| ストア API による提出 | 実 API（Chrome Web Store） | upload / publish は実 API でしか確認できないため、v0.12.0 の提出で初回確認する。fetchStatus とトークン更新は 2026-10-04 に実 API で確認済み |
 | mammoth / pdfjs の遅延チャンク | 実機（拡張の実インストール） | **未実施**: docx プロトコル取り込みと PDF 表示を行い、拡張の CSP 下で `chrome-extension://` URL から `chunks/mammoth.js` / `chunks/pdfjs.js` を取得して動作することを確認する（jest のモック・HTTP 配信の E2E では拡張オリジンの挙動を確認できない） |
 | #267 | 実機・実 API（実プロジェクト） | **✅ 完了（2026-09-30。オーナーが実施・issue クローズ）**: S9 の同期間の費用合計が Google AI Studio の請求額から大きく乖離しないか確認する（jest では実請求を確認できず、価格表と思考トークン倍率は推定）。予算設定後の Meta を旧版拡張で開くとヘッダエラーになること（owner 了承済み）、新版では開けることも確認する。 |
 | #62 | **実機（実 Google アカウント 2 つ）** | **✅ 完了（2026-07-19）**: §7.3 の設計成立条件は「共有フォルダの Picker 選択では配下ファイルが読めない」= 不成立が確定（2026-07-18）→ ファイル単位付与（issue #139・PR #140。hosted picker `view=files` + `setFileIds` 全選択）へ設計変更して決着。招待 → Drive 自動共有 → シート許可 → ファイルアクセス付与 → `#/verify` 読出し（2026-07-18）に続き、検証（with_ai / independent）→ arm マッピング → 裁定 → consensus エクスポートの通しも全項目問題なし（2026-07-19。記録は [manual-testing.md](manual-testing.md) §5-6-1・§5-6-2） |
