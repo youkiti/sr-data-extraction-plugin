@@ -6,6 +6,8 @@
 // 'strict'、描画は本モジュールの明示 API 経由のみ（startOnLoad: false）。
 // jest では 'mermaid' パッケージを jest.mock し、本モジュール経由の分岐だけを検証する
 
+import { t } from '../../lib/i18n';
+
 /**
  * 描画プレビュー対象の予約 field_name（robFields.ts と同じ「予約名規約」方式）。
  * 現状は QUADAS-3 テンプレートの flow 図のみ（robTemplates.ts の QUADAS3_FLOW_DIAGRAM_ROW）
@@ -48,6 +50,13 @@ function reasonOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+/** mermaid の flowDiagram を共有する検出器だけを許可する。判定不能時の例外は呼び出し元で返す。 */
+function assertFlowchart(mermaid: MermaidApi, source: string): void {
+  if (!['flowchart', 'flowchart-v2', 'flowchart-elk'].includes(mermaid.detectType(source))) {
+    throw new Error(t('verify.mermaidUnsupportedType'));
+  }
+}
+
 /**
  * 構文チェック（`mermaid.parse`）。編集保存前チェック（警告表示のみ・保存はブロックしない。
  * ui-states.md §3）に使うため、構文エラー・ロード失敗のいずれでも throw せず結果で返す
@@ -55,6 +64,7 @@ function reasonOf(error: unknown): string {
 export async function parseMermaid(source: string): Promise<MermaidParseResult> {
   try {
     const mermaid = await loadMermaid();
+    assertFlowchart(mermaid, source);
     await mermaid.parse(source);
     return { valid: true };
   } catch (error) {
@@ -75,6 +85,7 @@ export async function renderMermaid(
 ): Promise<MermaidRenderResult> {
   try {
     const mermaid = await loadMermaid();
+    assertFlowchart(mermaid, source);
     renderSeq += 1;
     const { svg } = await mermaid.render(`sr-mermaid-preview-${renderSeq}`, source);
     container.innerHTML = svg;

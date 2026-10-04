@@ -6,10 +6,20 @@
 const mockInitialize = jest.fn();
 const mockParse = jest.fn();
 const mockRender = jest.fn();
+const mockDetectType = jest.fn();
+
+beforeEach(() => {
+  mockDetectType.mockReset().mockReturnValue('flowchart-v2');
+});
 
 jest.mock('mermaid', () => ({
   __esModule: true,
-  default: { initialize: mockInitialize, parse: mockParse, render: mockRender },
+  default: {
+    initialize: mockInitialize,
+    parse: mockParse,
+    render: mockRender,
+    detectType: mockDetectType,
+  },
 }));
 
 type Wrapper = typeof import('../../../../src/features/verification/mermaidPreview');
@@ -85,8 +95,16 @@ describe('renderMermaid', () => {
     expect(container.querySelector('svg[data-kind="flow"]')).not.toBeNull();
     // 同一画面で複数回プレビューしても id が衝突しない（連番）
     await wrapper.renderMermaid('flowchart TD\n  B --> C', container);
-    expect(mockRender).toHaveBeenNthCalledWith(1, 'sr-mermaid-preview-1', 'flowchart TD\n  A --> B');
-    expect(mockRender).toHaveBeenNthCalledWith(2, 'sr-mermaid-preview-2', 'flowchart TD\n  B --> C');
+    expect(mockRender).toHaveBeenNthCalledWith(
+      1,
+      'sr-mermaid-preview-1',
+      'flowchart TD\n  A --> B',
+    );
+    expect(mockRender).toHaveBeenNthCalledWith(
+      2,
+      'sr-mermaid-preview-2',
+      'flowchart TD\n  B --> C',
+    );
   });
 
   test('構文エラー: 理由つきの ok:false を返し、container は書き換えない', async () => {
@@ -100,4 +118,49 @@ describe('renderMermaid', () => {
     });
     expect(container.textContent).toBe('描画中…');
   });
+});
+
+test.each(['flowchart', 'flowchart-v2', 'flowchart-elk'])('%s は検査・描画できる', async (type) => {
+  const wrapper = await loadWrapper();
+  mockDetectType.mockReturnValue(type);
+  mockParse.mockResolvedValue({ diagramType: type });
+  mockRender.mockResolvedValue({ svg: '<svg></svg>' });
+  await expect(wrapper.parseMermaid('flowchart TD')).resolves.toEqual({ valid: true });
+  await expect(
+    wrapper.renderMermaid('flowchart TD', document.createElement('div')),
+  ).resolves.toEqual({ ok: true });
+  expect(mockParse).toHaveBeenCalled();
+  expect(mockRender).toHaveBeenCalled();
+});
+
+test('未対応図種は検査・描画せず理由を返す', async () => {
+  const wrapper = await loadWrapper();
+  mockDetectType.mockReturnValue('pie');
+  const source = 'pie title X';
+  const error = '対応する構文はフロー図（flowchart）のみです（他の図種は未対応）';
+  await expect(wrapper.parseMermaid(source)).resolves.toEqual({ valid: false, error });
+  await expect(wrapper.renderMermaid(source, document.createElement('div'))).resolves.toEqual({
+    ok: false,
+    error,
+  });
+  expect(mockDetectType).toHaveBeenCalledWith(source);
+  expect(mockParse).not.toHaveBeenCalled();
+  expect(mockRender).not.toHaveBeenCalled();
+});
+
+test('図種を判定できないときは mermaid 自身の理由を返す', async () => {
+  const wrapper = await loadWrapper();
+  mockDetectType.mockImplementation(() => {
+    throw new Error('No diagram type detected');
+  });
+  await expect(wrapper.parseMermaid('unknown')).resolves.toEqual({
+    valid: false,
+    error: 'No diagram type detected',
+  });
+  await expect(wrapper.renderMermaid('unknown', document.createElement('div'))).resolves.toEqual({
+    ok: false,
+    error: 'No diagram type detected',
+  });
+  expect(mockParse).not.toHaveBeenCalled();
+  expect(mockRender).not.toHaveBeenCalled();
 });

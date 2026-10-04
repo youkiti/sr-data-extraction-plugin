@@ -862,6 +862,7 @@ export const ja = {
   'verify.instructionToggle': '指示を表示',
   'verify.mermaidToggle': '図をプレビュー',
   'verify.mermaidRendering': '図を描画しています…',
+  'verify.mermaidUnsupportedType': '対応する構文はフロー図（flowchart）のみです（他の図種は未対応）',
   'verify.mermaidError': 'mermaid の構文エラーのため描画できません: {reason}',
   'verify.mermaidSaveWarning': '⚠ 保存した値に mermaid の構文エラーがあります: {reason}',
   'verify.jumpToHighlight': 'ハイライトへ移動',

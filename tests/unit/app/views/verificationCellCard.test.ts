@@ -68,7 +68,12 @@ const mockRender = jest.fn();
 
 jest.mock('mermaid', () => ({
   __esModule: true,
-  default: { initialize: mockInitialize, parse: mockParse, render: mockRender },
+  default: {
+    initialize: mockInitialize,
+    detectType: () => 'flowchart-v2',
+    parse: mockParse,
+    render: mockRender,
+  },
 }));
 
 const FLOW_SOURCE = 'flowchart TD\n  A[Enrolled 100] --> B[Analyzed 90]';

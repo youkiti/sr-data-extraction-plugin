@@ -251,6 +251,7 @@ anchorQuote() ──文字範囲──▶ highlightMap() ──span 座標──
   へビルド設定だけで差し替わる（**既存 `src/` の実装は 1 行も変更しない**）。詳細は
   `src/demo/*` 各ファイル冒頭のコメントと [video/fixtures/README.md](../video/fixtures/README.md) を参照
 - `mammoth` / `pdfjs-dist` 本体は dynamic import で `dist/chunks/mammoth.js` / `dist/chunks/pdfjs.js` へ分割し、docx テキスト抽出 / PDF ロードの初回呼び出し時に取得する。ロード中の Promise は共有し、取得失敗時には次回呼び出しで再試行する。
+- mermaid はフロー図に必要なチャンクだけを出力する。動的 import の許可判定は `tools/bundle/mermaidFlowchartOnly.js` に置き、webpack の全ビルドで適用する。
 - `pdfjs-dist` の **worker（`pdf.worker.min.mjs`）は `copy-webpack-plugin` で `dist/` へ同梱**（CDN 参照不可、MV3 CSP 準拠）。`GlobalWorkerOptions.workerSrc` は `chrome.runtime.getURL()` で解決
 - **既定 CMap（`cmaps/*.bcmap`）も同様に `dist/cmaps/` へ同梱**し、`getDocument` の `cMapUrl` に `chrome.runtime.getURL('cmaps/')` を渡す（issue #95: 和文 PDF の CID フォントは既定 CMap がないとテキスト抽出がほぼ空になる）
 - **画像デコーダの wasm（`dist/wasm/`）・標準 14 フォント（`dist/standard_fonts/`）・既定 ICC プロファイル（`dist/iccs/`）も同梱**し、`getDocument` にそれぞれ `wasmUrl` / `standardFontDataUrl` / `iccUrl` を渡す。pdfjs-dist 6.x は CCITTFax/JBIG2・JPEG2000・ICC のデコーダが wasm 実装になっており、`wasmUrl` 未指定だと `Jbig2Error` 等で初期化に失敗し、スキャン PDF の該当ページ（CCITTFaxDecode 等）が白紙になる（テキスト層は無事なためハイライトだけ出る症状）。`quickjs-eval.*`（PDF 内 JavaScript の隔離実行用）は本拡張が使わないため同梱から除外する。manifest には `content_security_policy.extension_pages` に `'wasm-unsafe-eval'` を追加している
