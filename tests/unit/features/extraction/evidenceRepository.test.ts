@@ -18,6 +18,7 @@ function makeEvidence(overrides: Partial<Evidence> = {}): Evidence {
   return {
     quoteTheme: null,
     quoteSeq: null,
+    section: null,
     evidenceId: 'ev-1',
     runId: 'run-1',
     studyId: 'study-1',
@@ -50,7 +51,7 @@ function deps(): { fetch: jest.Mock; getAccessToken: jest.Mock } {
 }
 
 describe('evidenceToRow', () => {
-  test('SHEET_HEADERS.Evidence の列順に対応する（bbox 5 列 + relocated_from 込みで 20 セル）', () => {
+  test('SHEET_HEADERS.Evidence の列順に対応する（bbox 5 列 + relocated_from section 込みで 21 セル）', () => {
     expect(evidenceToRow(makeEvidence())).toEqual([
       'ev-1',
       'run-1',
@@ -64,6 +65,7 @@ describe('evidenceToRow', () => {
       3,
       'high',
       'exact',
+      null,
       null,
       null,
       null,
@@ -97,6 +99,7 @@ describe('evidenceToRow', () => {
       'ev-original',
       null,
       null,
+      null,
     ]);
   });
 
@@ -121,6 +124,7 @@ describe('evidenceToRow', () => {
       '-',
       null,
       true,
+      null,
       null,
       null,
       null,
@@ -165,6 +169,7 @@ describe('evidenceToRow', () => {
       null,
       null,
       null,
+      null,
     ]);
   });
 });
@@ -178,6 +183,7 @@ describe('appendEvidenceRows', () => {
     expect(decodeURIComponent(url as string)).toContain('/sid/values/Evidence!A1:append');
     const body = JSON.parse((init as RequestInit).body as string);
     expect(body.values).toHaveLength(2);
+    expect(body.values.every((row: unknown[]) => row.length === 18)).toBe(true);
     expect(body.values[0][0]).toBe('ev-1');
     expect(body.values[1][0]).toBe('ev-2');
   });
@@ -235,6 +241,7 @@ describe('readEvidenceRows', () => {
       makeEvidence({
         quoteTheme: null,
         quoteSeq: null,
+        section: null,
         evidenceId: 'ev-2',
         value: null,
         notReported: true,
@@ -542,7 +549,7 @@ describe('複数引用の Evidence 列', () => {
     await ensureEvidenceQuoteColumns('sid', d);
     const puts = d.fetch.mock.calls.filter(([, init]) => init?.method === 'PUT');
     expect(puts).toHaveLength(length === 20 ? 0 : 1);
-    if (length !== 20) expect(JSON.parse(puts[0]?.[1].body as string).values).toEqual([[...SHEET_HEADERS.Evidence]]);
+    if (length !== 20) expect(JSON.parse(puts[0]?.[1].body as string).values).toEqual([SHEET_HEADERS.Evidence.slice(0, 20)]);
   });
   test.each([[], [[]], [[[]]], [[['broken']]], [[ [...SHEET_HEADERS.Evidence.slice(0, 18), 'broken'] ]]].map((headers) => ({ headers })))('壊れたヘッダを拒否する %p', async ({ headers }) => {
     const d = quoteDeps(headers as string[][][]);
@@ -564,22 +571,42 @@ describe('複数引用の Evidence 列', () => {
     ];
     await appendEvidenceRows('sid', rows, d);
     expect(d.fetch.mock.calls.map(([, init]) => init?.method ?? 'GET')).toEqual(['GET', 'PUT', 'POST']);
-    expect(JSON.parse(d.fetch.mock.calls[1]?.[1].body as string).values).toEqual([[...SHEET_HEADERS.Evidence]]);
+    expect(JSON.parse(d.fetch.mock.calls[1]?.[1].body as string).values).toEqual([SHEET_HEADERS.Evidence.slice(0, 20)]);
     const values = JSON.parse(d.fetch.mock.calls[2]?.[1].body as string).values as unknown[][];
     expect(values.map((value) => [value.length, value[6], value[8], value[9], value[18], value[19]])).toEqual([
       [20, '46.53', 'Age, M (SD)', 3, '', 1],
       [20, '46.53', '46.53 (6.31)', 5, '', 2],
     ]);
   });
-  test.each([12, 17, 18, 20])('%p 列ヘッダの行を読む', async (length) => {
+  test.each([12, 17, 18, 20, 21])('%p 列ヘッダの行を読む', async (length) => {
     const d = deps();
-    const row = evidenceToRow(makeEvidence({ quoteTheme: 'テーマ', quoteSeq: 2 }))
+    const row = evidenceToRow(makeEvidence({ quoteTheme: 'テーマ', quoteSeq: 2, section: 'Methods' }))
       .map((cell) => cell === null ? '' : String(cell)).slice(0, length);
     d.fetch.mockResolvedValue({ ok: true, status: 200,
       json: async () => ({ values: [SHEET_HEADERS.Evidence.slice(0, length), row] }),
     });
     expect((await readEvidenceRows('sid', d))[0]).toMatchObject({
-      quoteTheme: length === 20 ? 'テーマ' : null, quoteSeq: length === 20 ? 2 : null,
+      quoteTheme: length >= 20 ? 'テーマ' : null, quoteSeq: length >= 20 ? 2 : null,
+      section: length === 21 ? 'Methods' : null,
     });
   });
+  test.each([18, 20, 21])('section があれば %p 列から21列まで拡張する', async (length) => {
+    const d = quoteDeps([[SHEET_HEADERS.Evidence.slice(0, length)]]);
+    await appendEvidenceRows('sid', [makeEvidence({ section: 'Methods' })], d);
+    const puts = d.fetch.mock.calls.filter(([, init]) => init?.method === 'PUT');
+    expect(puts).toHaveLength(length === 21 ? 0 : 1);
+    if (length !== 21) expect(JSON.parse(puts[0]?.[1].body as string).values[0]).toEqual(SHEET_HEADERS.Evidence);
+    const post = d.fetch.mock.calls.find(([, init]) => init?.method === 'POST');
+    const row = JSON.parse(post?.[1].body as string).values[0];
+    expect(row).toHaveLength(21);
+    expect(row[20]).toBe('Methods');
+  });
+  test('存在する section 列の名前が違えば読み取りを拒否する', async () => {
+    const d = deps();
+    d.fetch.mockResolvedValue({ ok: true, status: 200,
+      json: async () => ({ values: [[...SHEET_HEADERS.Evidence.slice(0, 20), 'broken']] }),
+    });
+    await expect(readEvidenceRows('sid', d)).rejects.toThrow('21');
+  });
+
 });

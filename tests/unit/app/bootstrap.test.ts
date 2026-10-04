@@ -2103,6 +2103,7 @@ describe('bootstrapApp: #/pilot', () => {
         {
           quoteTheme: null,
           quoteSeq: null,
+          section: null,
           evidenceId: 'ev-1',
           runId: 'run-1',
           studyId: 'study-1',
@@ -2121,6 +2122,7 @@ describe('bootstrapApp: #/pilot', () => {
         {
           quoteTheme: null,
           quoteSeq: null,
+          section: null,
           evidenceId: 'ev-arm',
           runId: 'run-1',
           studyId: 'study-1',
@@ -2219,6 +2221,7 @@ describe('bootstrapApp: #/pilot', () => {
         {
           quoteTheme: null,
           quoteSeq: null,
+          section: null,
           evidenceId: 'ev-1',
           runId: 'run-1',
           studyId: 'study-1',

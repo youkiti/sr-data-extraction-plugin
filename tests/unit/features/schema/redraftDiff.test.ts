@@ -477,7 +477,7 @@ test('再ドラフトは複数選択を引き継ぎ、消えた許容値を設�
   });
   const changed = buildRedraftDiff([field], [makeRow({ dataType: 'enum', allowedValues: 'A|B' })]);
   expect(changed.changed[0]?.proposed).toMatchObject({ multiSelect: true, exclusiveValues: null, freeTextValues: null });
-  expect(changed.changed[0]?.changes).toContainEqual({ key: 'multiSelect', before: '単独: NA / 自由記述: Other', after: '単独:  / 自由記述: ' });
+  expect(changed.changed[0]?.changes).toContainEqual({ key: 'multiSelect', before: 'exclusive_values=NA; free_text_values=Other', after: 'exclusive_values=; free_text_values=' });
   const text = buildRedraftDiff([field], [makeRow()]);
   expect(text.changed[0]?.proposed.multiSelect).toBe(false);
   const empty = makeField({ dataType: 'enum', allowedValues: 'A|B', multiSelect: { exclusiveValues: [], freeTextValues: [] } });

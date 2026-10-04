@@ -1,3 +1,5 @@
+// 複数選択の値は選択肢を | で連結し、自由記述は「選択肢: 説明」で保存する。
+// 既知の選択肢は許容値の順、未知の選択肢は文字列順に正準化する。
 import { NOT_REPORTED_TOKEN } from './annotation';
 import type { SchemaField } from './schemaField';
 
@@ -15,10 +17,12 @@ export function splitPipeList(value: string | null): string[] {
   return [...new Set((value ?? '').split('|').map((part) => part.trim()).filter(Boolean))];
 }
 
+/** 複数選択として扱える enum 項目か判定する。 */
 export function isMultiSelectField(field: SchemaField): boolean {
   return field.dataType === 'enum' && field.multiSelect !== null && splitPipeList(field.allowedValues).length > 0;
 }
 
+/** 自由記述の区切り文字と改行を保存可能な表記に置き換える。 */
 export function sanitizeFreeText(text: string | null): string | null {
   return text?.replace(/\|/g, '/').replace(/\r\n|\r|\n/g, ' ').trim() || null;
 }
@@ -40,6 +44,7 @@ function canonicalElements(field: SchemaField, elements: readonly MultiSelectEle
   });
 }
 
+/** 保存値を既知・未知の選択肢と自由記述へ分解する。 */
 export function parseMultiSelectValue(field: SchemaField, value: string | null): MultiSelectElement[] {
   if (!isMultiSelectField(field) || value === NOT_REPORTED_TOKEN) return [];
   const allowed = splitPipeList(field.allowedValues);
@@ -53,6 +58,7 @@ export function parseMultiSelectValue(field: SchemaField, value: string | null):
   }));
 }
 
+/** 選択肢と自由記述を正準順の保存値に変換する。 */
 export function formatMultiSelectValue(field: SchemaField, elements: readonly MultiSelectElement[]): string | null {
   if (!isMultiSelectField(field)) return null;
   return canonicalElements(field, elements).map((element) => {
@@ -61,11 +67,13 @@ export function formatMultiSelectValue(field: SchemaField, elements: readonly Mu
   }).join('|') || null;
 }
 
+/** 未報告や空値を保持し、複数選択の保存値を正準化する。 */
 export function canonicalizeMultiSelectValue(field: SchemaField, value: string | null): string | null {
   if (!isMultiSelectField(field) || value === null || value === '' || value === NOT_REPORTED_TOKEN) return value;
   return formatMultiSelectValue(field, parseMultiSelectValue(field, value));
 }
 
+/** 単独選択の制約を保って選択肢の選択状態を切り替える。 */
 export function toggleMultiSelectOption(
   field: SchemaField,
   elements: readonly MultiSelectElement[],

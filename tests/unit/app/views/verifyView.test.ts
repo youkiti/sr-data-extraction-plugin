@@ -620,6 +620,7 @@ describe('renderVerifyView', () => {
         {
           quoteTheme: null,
           quoteSeq: null,
+          section: null,
           evidenceId: 'ev-arm',
           runId: 'run-1',
           studyId: 'study-1',
@@ -665,6 +666,7 @@ describe('renderVerifyView', () => {
         {
           quoteTheme: null,
           quoteSeq: null,
+          section: null,
           evidenceId: 'ev-arm',
           runId: 'run-1',
           studyId: 'study-1',

@@ -814,6 +814,7 @@ function makeEvidence(fieldId: string, entityKey: string, value: string | null):
   return {
     quoteTheme: null,
     quoteSeq: null,
+    section: null,
     evidenceId: `ev-${fieldId}-${entityKey}`,
     runId: 'run-1',
     studyId: 'study-1',

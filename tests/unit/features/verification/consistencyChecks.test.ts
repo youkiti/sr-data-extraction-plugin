@@ -37,6 +37,7 @@ function makeEvidence(fieldId: string, value: string): Evidence {
   return {
     quoteTheme: null,
     quoteSeq: null,
+    section: null,
     evidenceId: `ev-${fieldId}`,
     runId: 'run-1',
     studyId: 'study-1',

@@ -133,7 +133,7 @@ function stringifyAttr(key: RedraftComparedKey, source: ComparableSource): strin
       return source.extractionInstruction.trim();
     case 'multiSelect':
       return source.dataType === 'enum' && source.multiSelect !== null
-        ? `単独: ${source.multiSelect.exclusiveValues.join('|')} / 自由記述: ${source.multiSelect.freeTextValues.join('|')}` : '';
+        ? `exclusive_values=${source.multiSelect.exclusiveValues.join('|')}; free_text_values=${source.multiSelect.freeTextValues.join('|')}` : '';
     case 'maxQuotes':
       return source.maxQuotes === null ? null : String(source.maxQuotes);
     case 'example':

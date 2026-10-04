@@ -42,6 +42,7 @@ export function buildAskPaperHighlight(
         relocatedFrom: null,
         quoteTheme: null,
         quoteSeq: null,
+        section: null,
       },
     ],
     pages,

@@ -139,6 +139,7 @@ function buildEvidenceRows(
     relocatedFrom: null,
     quoteTheme: null,
     quoteSeq: null,
+    section: null,
   }));
 }
 

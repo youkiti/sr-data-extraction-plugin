@@ -286,6 +286,7 @@ function buildEvidenceRows(
         relocatedFrom: null,
         quoteTheme: null,
         quoteSeq: index + 1,
+        section: item.section,
       }));
     }
   }
@@ -309,6 +310,7 @@ function buildEvidenceRows(
     relocatedFrom: null,
     quoteTheme: item.quoteTheme,
     quoteSeq: item.quoteSeq,
+    section: item.section,
   }];
 }
 
@@ -823,7 +825,7 @@ export async function executeRun(
     // arm completeness 警告（armWarnings）は status に影響させない（issue #106 の設計判断:
     // 過検出リスクを許容する warning に留め、partial_failure = 再試行対象とは区別する）
     status:
-      batchFailures.length === 0 && rejectedItems.every((item) => item.reason === 'quote_limit') ? 'done' : 'partial_failure',
+      batchFailures.length === 0 && rejectedItems.every((item) => (item.reason === 'quote_limit' || item.reason === 'duplicate_option')) ? 'done' : 'partial_failure',
     evidence,
     rejectedItems,
     batchFailures,

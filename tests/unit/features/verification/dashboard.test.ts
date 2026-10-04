@@ -78,6 +78,7 @@ function makeEvidence(overrides: Partial<Evidence> = {}): Evidence {
   return {
     quoteTheme: null,
     quoteSeq: null,
+    section: null,
     evidenceId: 'ev-1',
     runId: 'run-1',
     studyId: 'study-1',
@@ -139,6 +140,7 @@ function makeInput(overrides: Partial<DashboardStudyInput> = {}): DashboardStudy
       makeEvidence({
         quoteTheme: null,
         quoteSeq: null,
+        section: null,
         evidenceId: 'ev-3',
         fieldId: 'f-arm-n',
         entityKey: 'arm:1',

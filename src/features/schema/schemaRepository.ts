@@ -64,7 +64,7 @@ export async function appendSchemaFields(
       throw new Error(`SchemaFields のヘッダ ${index + 1} 列目が "${name}" ではありません`);
     }
   });
-  header.slice(15).forEach((name, offset) => {
+  header.slice(15, FIELDS_HEADER.length).forEach((name, offset) => {
     const index = offset + 15;
     if (name !== FIELDS_HEADER[index]) {
       throw new Error(`SchemaFields のヘッダ ${index + 1} 列目が "${FIELDS_HEADER[index]}" ではありません`);
@@ -132,7 +132,7 @@ export async function getSchemaFieldsByVersion(
   const result: SchemaField[] = [];
   const header = rows[0] as string[];
   const mismatch = FIELDS_HEADER.findIndex((name, index) => header[index] !== name);
-  const width = mismatch < 0 ? FIELDS_HEADER.length : mismatch;
+  const width = Math.max(15, mismatch < 0 ? FIELDS_HEADER.length : mismatch);
   for (const row of rows.slice(1)) {
     const cell = row[versionIdx] ?? '';
     if (Number.parseInt(cell, 10) === schemaVersion) {

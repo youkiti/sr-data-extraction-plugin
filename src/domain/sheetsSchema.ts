@@ -216,6 +216,7 @@ export const SHEET_HEADERS: Record<SheetTabName, readonly string[]> = {
     'relocated_from',
     'quote_theme',
     'quote_seq',
+    'section',
   ],
   Decisions: [
     'decided_at',

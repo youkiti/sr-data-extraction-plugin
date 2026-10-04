@@ -1301,6 +1301,7 @@ function redraftItemSummary(row: {
  */
 function redraftAttrLabel(key: RedraftComparedKey): string {
   const keys: Partial<Record<RedraftComparedKey, MessageKey>> = {
+    multiSelect: 'schema.multiSelect',
     unit: 'schema.headUnit',
     allowedValues: 'schema.colAllowedValues',
     required: 'schema.headRequired',
@@ -1313,7 +1314,6 @@ function redraftAttrLabel(key: RedraftComparedKey): string {
     entityLevel: 'entity_level',
     dataType: 'data_type',
     maxQuotes: 'max_quotes',
-    multiSelect: t('schema.multiSelect'),
   };
   const messageKey = keys[key];
   return messageKey !== undefined ? t(messageKey) : (literals[key] as string);

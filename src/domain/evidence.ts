@@ -63,4 +63,6 @@ export interface Evidence {
   quoteTheme: string | null;
   /** 同じセル内の 1 始まり連番。通常行・未報告行では null */
   quoteSeq: number | null;
+  /** 引用の直上にある原文のセクション見出し */
+  section: string | null;
 }

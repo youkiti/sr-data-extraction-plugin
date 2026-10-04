@@ -362,3 +362,19 @@ describe('複数選択のシート互換', () => {
     await expect(appendSchemaFields('s', [FIELD], deps)).rejects.toThrow('18 列目');
   });
 });
+
+
+test('先頭15列のヘッダが異なっても従来の位置で読み取る', async () => {
+  getSheetValuesMock.mockResolvedValue([['different', ...FIELDS_HEADER.slice(1)], fieldRow({ note: '保持する注記' })]);
+  expect((await getSchemaFieldsByVersion('sheet-1', 1, deps))[0]).toMatchObject({
+    fieldId: 'f-1', note: '保持する注記', allowedValues: 'rct|observational',
+  });
+});
+
+test('20列目以降の利用者追加列は検査せず空セルを追記する', async () => {
+  jest.mocked(getBatchValues).mockResolvedValue([[[...FIELDS_HEADER, 'custom', 'another']]]);
+  await appendSchemaFields('sheet-1', [FIELD], deps);
+  expect(appendRowsMock.mock.calls[0]?.[2][0]).toHaveLength(21);
+  expect(appendRowsMock.mock.calls[0]?.[2][0]?.slice(19)).toEqual([null, null]);
+  expect(updateRow).not.toHaveBeenCalled();
+});

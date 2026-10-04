@@ -55,6 +55,7 @@ function makeItem(overrides: Pick<ValidatedAiItem, 'fieldId' | 'entityKey'>): Va
   return {
     quoteTheme: null,
     quoteSeq: null,
+    section: null,
     value: 'v',
     notReported: false,
     quote: null,
