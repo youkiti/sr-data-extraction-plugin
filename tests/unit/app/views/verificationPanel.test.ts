@@ -123,7 +123,6 @@ jest.mock('mermaid', () => ({
   __esModule: true,
   default: {
     initialize: mockMermaidInitialize,
-    detectType: () => 'flowchart-v2',
     parse: mockMermaidParse,
     render: mockMermaidRender,
   },

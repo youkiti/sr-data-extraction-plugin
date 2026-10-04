@@ -876,6 +876,7 @@ export const en: Record<MessageKey, string> = {
   'verify.mermaidToggle': 'Preview diagram',
   'verify.mermaidRendering': 'Rendering the diagram…',
   'verify.mermaidUnsupportedType': 'Only flowchart syntax is supported (other diagram types are unsupported)',
+  'verify.mermaidUnsupportedMath': 'Labels containing math ($$…$$) are not supported',
   'verify.mermaidError': 'Cannot render because of a mermaid syntax error: {reason}',
   'verify.mermaidSaveWarning': '⚠ The saved value has a mermaid syntax error: {reason}',
   'verify.jumpToHighlight': 'Jump to highlight',

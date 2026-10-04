@@ -6,11 +6,6 @@
 const mockInitialize = jest.fn();
 const mockParse = jest.fn();
 const mockRender = jest.fn();
-const mockDetectType = jest.fn();
-
-beforeEach(() => {
-  mockDetectType.mockReset().mockReturnValue('flowchart-v2');
-});
 
 jest.mock('mermaid', () => ({
   __esModule: true,
@@ -18,7 +13,6 @@ jest.mock('mermaid', () => ({
     initialize: mockInitialize,
     parse: mockParse,
     render: mockRender,
-    detectType: mockDetectType,
   },
 }));
 
@@ -120,47 +114,48 @@ describe('renderMermaid', () => {
   });
 });
 
-test.each(['flowchart', 'flowchart-v2', 'flowchart-elk'])('%s は検査・描画できる', async (type) => {
+test.each([
+  ['モジュール不足の code と message', Object.assign(
+    new Error("Cannot find module './chunks/mermaid.core/pieDiagram-X.mjs'"),
+    { code: 'MODULE_NOT_FOUND' },
+  ), '対応する構文はフロー図（flowchart）のみです（他の図種は未対応）'],
+  ['モジュール不足の code のみ', Object.assign(new Error('missing diagram'), {
+    code: 'MODULE_NOT_FOUND',
+  }), '対応する構文はフロー図（flowchart）のみです（他の図種は未対応）'],
+  ['モジュール不足の message のみ', new Error("Cannot find module './chunks/mermaid.core/pieDiagram-X.mjs'"),
+    '対応する構文はフロー図（flowchart）のみです（他の図種は未対応）'],
+  ['数式モジュール不足の code と message', Object.assign(new Error("Cannot find module 'katex'"), {
+    code: 'MODULE_NOT_FOUND',
+  }), '数式（$$…$$）を含むラベルには対応していません'],
+  ['数式モジュール不足の message のみ', new Error("Cannot find module 'katex'"),
+    '数式（$$…$$）を含むラベルには対応していません'],
+  ['別の code のエラー', Object.assign(new Error('chunk load failed'), { code: 'CHUNK_LOAD_FAILED' }),
+    'chunk load failed'],
+  ['非 Error の reject', 'mermaid version mismatch', 'mermaid version mismatch'],
+  ['非 Error のモジュール不足文字列', "Cannot find module 'katex'", "Cannot find module 'katex'"],
+  ['非 Error の code 付きオブジェクト', { code: 'MODULE_NOT_FOUND' }, '[object Object]'],
+  ['null の reject', null, 'null'],
+])('%s は検査・描画で同じ理由を返す', async (_label, rejection, error) => {
   const wrapper = await loadWrapper();
-  mockDetectType.mockReturnValue(type);
-  mockParse.mockResolvedValue({ diagramType: type });
-  mockRender.mockResolvedValue({ svg: '<svg></svg>' });
-  await expect(wrapper.parseMermaid('flowchart TD')).resolves.toEqual({ valid: true });
-  await expect(
-    wrapper.renderMermaid('flowchart TD', document.createElement('div')),
-  ).resolves.toEqual({ ok: true });
-  expect(mockParse).toHaveBeenCalled();
-  expect(mockRender).toHaveBeenCalled();
-});
-
-test('未対応図種は検査・描画せず理由を返す', async () => {
-  const wrapper = await loadWrapper();
-  mockDetectType.mockReturnValue('pie');
-  const source = 'pie title X';
-  const error = '対応する構文はフロー図（flowchart）のみです（他の図種は未対応）';
+  mockParse.mockRejectedValue(rejection);
+  mockRender.mockRejectedValue(rejection);
+  const source = 'flowchart TD\n  A --> B';
   await expect(wrapper.parseMermaid(source)).resolves.toEqual({ valid: false, error });
   await expect(wrapper.renderMermaid(source, document.createElement('div'))).resolves.toEqual({
     ok: false,
     error,
   });
-  expect(mockDetectType).toHaveBeenCalledWith(source);
-  expect(mockParse).not.toHaveBeenCalled();
-  expect(mockRender).not.toHaveBeenCalled();
 });
 
-test('図種を判定できないときは mermaid 自身の理由を返す', async () => {
+test('先頭に空行のある frontmatter 付きソースをそのまま検査・描画へ渡す', async () => {
   const wrapper = await loadWrapper();
-  mockDetectType.mockImplementation(() => {
-    throw new Error('No diagram type detected');
+  const source = '\n---\ntitle: Test\n---\nflowchart TD\n  A --> B';
+  mockParse.mockResolvedValue({ diagramType: 'flowchart-v2' });
+  mockRender.mockResolvedValue({ svg: '<svg></svg>' });
+  await expect(wrapper.parseMermaid(source)).resolves.toEqual({ valid: true });
+  await expect(wrapper.renderMermaid(source, document.createElement('div'))).resolves.toEqual({
+    ok: true,
   });
-  await expect(wrapper.parseMermaid('unknown')).resolves.toEqual({
-    valid: false,
-    error: 'No diagram type detected',
-  });
-  await expect(wrapper.renderMermaid('unknown', document.createElement('div'))).resolves.toEqual({
-    ok: false,
-    error: 'No diagram type detected',
-  });
-  expect(mockParse).not.toHaveBeenCalled();
-  expect(mockRender).not.toHaveBeenCalled();
+  expect(mockParse).toHaveBeenCalledWith(source);
+  expect(mockRender).toHaveBeenCalledWith('sr-mermaid-preview-1', source);
 });

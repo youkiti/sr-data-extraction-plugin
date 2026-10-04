@@ -50,11 +50,18 @@ function reasonOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-/** mermaid の flowDiagram を共有する検出器だけを許可する。判定不能時の例外は呼び出し元で返す。 */
-function assertFlowchart(mermaid: MermaidApi, source: string): void {
-  if (!['flowchart', 'flowchart-v2', 'flowchart-elk'].includes(mermaid.detectType(source))) {
-    throw new Error(t('verify.mermaidUnsupportedType'));
+/** 同梱対象外のモジュール読み込み失敗を、利用者向けの未対応理由に置き換える。 */
+function mermaidErrorReason(error: unknown): string {
+  const reason = reasonOf(error);
+  if (
+    error instanceof Error &&
+    (('code' in error && error.code === 'MODULE_NOT_FOUND') || reason.includes('Cannot find module'))
+  ) {
+    return reason.includes('katex')
+      ? t('verify.mermaidUnsupportedMath')
+      : t('verify.mermaidUnsupportedType');
   }
+  return reason;
 }
 
 /**
@@ -64,11 +71,10 @@ function assertFlowchart(mermaid: MermaidApi, source: string): void {
 export async function parseMermaid(source: string): Promise<MermaidParseResult> {
   try {
     const mermaid = await loadMermaid();
-    assertFlowchart(mermaid, source);
     await mermaid.parse(source);
     return { valid: true };
   } catch (error) {
-    return { valid: false, error: reasonOf(error) };
+    return { valid: false, error: mermaidErrorReason(error) };
   }
 }
 
@@ -85,12 +91,11 @@ export async function renderMermaid(
 ): Promise<MermaidRenderResult> {
   try {
     const mermaid = await loadMermaid();
-    assertFlowchart(mermaid, source);
     renderSeq += 1;
     const { svg } = await mermaid.render(`sr-mermaid-preview-${renderSeq}`, source);
     container.innerHTML = svg;
     return { ok: true };
   } catch (error) {
-    return { ok: false, error: reasonOf(error) };
+    return { ok: false, error: mermaidErrorReason(error) };
   }
 }
