@@ -2593,6 +2593,9 @@ section.documents__tiab {
 .verify__quote-section {
   color: var(--color-text-muted);
   font-size: 12px;
+
+  /* 直後に並ぶ「照合できませんでした」やボタンとくっつかないようにする */
+  margin-right: 8px;
 }
 
 .verify__enum-hint {
