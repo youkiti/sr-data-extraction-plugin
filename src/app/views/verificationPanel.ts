@@ -9,6 +9,9 @@
 // 同じ VerificationData 参照なら同一インスタンス（DOM / PDF canvas / 判定の楽観状態）を返し、
 // データが差し替わったときだけ作り直す
 import type { CellQuote, QuoteSetRow } from '../../domain/quoteSet';
+import { isMultiSelectField, splitPipeList } from '../../domain/multiSelect';
+import { anchorQuote } from '../../features/anchoring/anchorQuote';
+import { normalizeText } from '../../features/anchoring/normalizeText';
 import { foldQuoteSets, quoteSetKeyOf, resolveCellQuotes, removeCellQuote, setCellQuoteTheme, buildQuoteSetRows, buildQuoteSetResetRow } from '../../features/verification/cellQuotes';
 import { generateUuid } from '../../utils/uuid';
 import type { QuoteEditState } from './verificationCellCard';
@@ -300,11 +303,11 @@ export function createVerificationPanel(
   const now = options.now ?? nowIso8601;
   // 独立入力モード（独立二重レビュー機能。design §5.2）: data.annotatorType から導出する
   // （panelMode は annotatorType の派生であり、パネル外から直接指定はしない）。
-  // Evidence quote・ハイライト・AI 値・accept/reject 操作を一切描画しない
+  // AI の引用・ハイライト・値・accept/reject 操作を一切描画しない
   const panelMode: 'review' | 'independent' =
     data.annotatorType === 'human_independent' ? 'independent' : 'review';
   // relocate-quote（issue #94）: options.onRelocateQuote が注入されているときだけボタンを出す
-  // （独立入力モードは quote 自体を描画しないため、ここで false でも実害はない）
+  // 人が追加した引用は再特定の対象にしない
   const canRelocateQuote = options.onRelocateQuote !== undefined;
 
   // --- パネル内状態 -------------------------------------------------------
@@ -319,7 +322,7 @@ export function createVerificationPanel(
   // （bundleEvidence は配列の後ろほど新しいとみなす後勝ち畳み込みのため、
   // 元の evidence 配列の後ろへ連結するだけで対応する cellKey の元行を自動的に上書きできる）
   const relocatedEvidence: Evidence[] = [];
-  const canEditQuotes = panelMode === 'review' && options.onQuoteSetSave !== undefined;
+  const canEditQuotes = options.onQuoteSetSave !== undefined;
   let ownQuoteSets = canEditQuotes ? [...data.quoteSetRows] : [];
   const quoteEdit = new Map<string, QuoteEditState>();
   const quoteSaving = new Set<string>();
@@ -353,7 +356,7 @@ export function createVerificationPanel(
   let textMatches: EvidenceTextMatch[] = [];
   let textMatchByCell = new Map<string, EvidenceTextMatch>();
   function recomputeEvidence(): void {
-    const bundles = bundleEvidence(currentEvidence());
+    const bundles = bundleEvidence(panelMode === 'independent' ? [] : currentEvidence());
     quoteEdit.clear();
     const snapshots = foldQuoteSets(ownQuoteSets);
     const evidenceById = new Map([...(data.quoteEvidence ?? data.evidence), ...relocatedEvidence]
@@ -364,6 +367,7 @@ export function createVerificationPanel(
       const [, fieldId, entityKey] = JSON.parse(snapshotKey) as string[];
       cellKeys.add(cellKeyOf(fieldId!, entityKey!));
     }
+    for (const key of quoteErrors.keys()) cellKeys.add(key);
     for (const key of cellKeys) {
       const bundle = bundles.get(key) ?? null;
       const [fieldId, entityKey] = JSON.parse(key) as [string, string];
@@ -376,12 +380,15 @@ export function createVerificationPanel(
         studyId: data.study.studyId, fieldId, entityKey,
         annotator: data.annotator, annotatorType: data.annotatorType,
       })) ?? null, evidenceById);
+      if (panelMode === 'independent') {
+        resolved.quotes = resolved.quotes.filter((quote) => quote.source === 'human');
+      }
       const evidence = resolved.edited ? resolved.quotes.map((quote, index): Evidence => ({
         ...quote, evidenceId: quote.evidenceId ?? quote.quoteId,
         runId: resolved.baseRunId ?? '', value: null, notReported: false, relocatedFrom: null,
         documentId: quote.documentId ?? '', quoteTheme: quote.theme, quoteSeq: index + 1,
       })) : original;
-      if (resolved.edited || resolved.quotes.length > 0) quoteEdit.set(key, {
+      if (resolved.edited || resolved.quotes.length > 0 || quoteErrors.has(key)) quoteEdit.set(key, {
         ...resolved, evidence, saving: quoteSaving.has(key), error: quoteErrors.get(key) ?? null,
       });
       visibleEvidence.push(...evidence);
@@ -389,7 +396,7 @@ export function createVerificationPanel(
     for (const [key, bundle] of bundles) {
       evidenceByCell.set(key, bundle.evidence);
     }
-    for (const evidence of relocatedEvidence) {
+    for (const evidence of panelMode === 'independent' ? [] : relocatedEvidence) {
       evidenceByCell.set(cellKeyOf(evidence.fieldId, evidence.entityKey), evidence);
     }
     evidenceByKey = new Map(visibleEvidence.map((item) => [quoteKeyOf(item), item]));
@@ -756,10 +763,15 @@ export function createVerificationPanel(
     attributes: { 'data-preserve-scroll': '' },
   }, [textViewer.root]);
   const leftChildren: HTMLElement[] = [];
+  const quoteAddHost = el('div');
+  let textSelection: { page: number; text: string } | null = null;
+  let quoteAddCellKey: string | null = null;
+  let quoteAddTheme = '';
+  let quoteAddSection = '';
   if (docTabsBar !== null) {
     leftChildren.push(docTabsBar);
   }
-  leftChildren.push(viewToggleBar, textModeNote, noTextBanner, viewerBody, textViewerBody);
+  leftChildren.push(viewToggleBar, textModeNote, noTextBanner, quoteAddHost, viewerBody, textViewerBody);
   const leftPane = el('div', { className: 'verify__pane verify__pane--pdf' }, leftChildren);
 
   /**
@@ -808,6 +820,10 @@ export function createVerificationPanel(
         viewer = createPdfViewer({
           document: loaded.pdf,
           pages: loaded.textPages,
+          ...(canEditQuotes ? { onTextSelected: (selection: { page: number; text: string } | null) => {
+            textSelection = selection;
+            renderQuoteAdd();
+          } } : {}),
           onHighlightClick: (id) => {
             // 論文への質問パネルの引用ハイライト（ask-paper:）はセルに対応しないため、フォーカスを動かさない
             if (id.startsWith('ask-paper:')) return;
@@ -1456,15 +1472,11 @@ export function createVerificationPanel(
    * bbox は常に 1 出現（切替の概念が無い）ため matchIndex は常に 0
    */
   function highlightInfo(): Map<string, CellHighlightInfo> {
-    if (panelMode === 'independent') {
-      // 独立入力モードは「他 n 箇所に一致」等の AI 根拠由来の情報を一切出さない（design §5.2）
-      return new Map();
-    }
     const info = new Map<string, CellHighlightInfo>();
     for (const match of textMatches) {
       info.set(match.quoteKey, {
-        matchCount: match.occurrences.length,
-        matchIndex: matchSelection.get(match.quoteKey) ?? match.selectedIndex,
+        matchCount: panelMode === 'independent' ? Math.min(1, match.occurrences.length) : match.occurrences.length,
+        matchIndex: panelMode === 'independent' ? 0 : matchSelection.get(match.quoteKey) ?? match.selectedIndex,
       });
     }
     for (const item of visibleEvidence) {
@@ -1486,10 +1498,6 @@ export function createVerificationPanel(
    * states / kind / 選択出現の反映は呼び出しごとに行う（判定・切替で変わるため）
    */
   function viewerHighlights(): ViewerHighlight[] {
-    if (panelMode === 'independent') {
-      // 独立入力モードは PDF 上の根拠ハイライトを一切描画しない（design §5.2）
-      return [];
-    }
     const docHighlights = rectHighlightsByDoc.get(activeDocumentId) as EvidenceHighlight[];
     const states = deriveCellStates(ownDecisions);
     const highlights: ViewerHighlight[] = docHighlights.map((highlight) => {
@@ -1497,7 +1505,7 @@ export function createVerificationPanel(
       const status = states.get(highlight.cellKey)?.status ?? 'unverified';
       // ハイライトは evidence 由来のため対応する Evidence が必ず存在する
       const confidence = (evidenceForKey(highlight.quoteKey) as Evidence).confidence;
-      const selected = matchSelection.get(highlight.quoteKey) ?? highlight.selectedIndex;
+      const selected = panelMode === 'independent' ? 0 : matchSelection.get(highlight.quoteKey) ?? highlight.selectedIndex;
       // matchSelection の剰余はテキストマッチ（extracted_texts 由来）の件数で取られている。
       // extracted_texts と PDF テキスト層は同一系で通常一致するが、万一件数がズレた場合
       // （取り込み後に Drive 上の PDF が差し替えられた等）の undefined 参照を防ぐため、
@@ -1647,14 +1655,96 @@ export function createVerificationPanel(
     syncTextViewer();
   }
 
+  /** 対象セル・選択文字列・保存状態から追加できない理由を返す。 */
+  function quoteAddReason(cell: VerificationCell | undefined): string | null {
+    if (cell === undefined) return t('verify.quoteAddNoTarget');
+    if (editing !== null || quoteSaving.has(cell.cellKey) || readOnlyState) return t('verify.quoteAddBusy');
+    if (textSelection!.text.length > 1000) return t('verify.quoteAddTooLong');
+    if (quoteEdit.get(cell.cellKey)?.quotes.some((quote) =>
+      quote.documentId === activeDocumentId && normalizeText(quote.quote) === normalizeText(textSelection!.text))) {
+      return t('verify.quoteAddDuplicate');
+    }
+    if (isMultiSelectField(cell.field) && quoteAddTheme === '') return t('verify.quoteAddChooseOption');
+    return null;
+  }
+
+  /** 入力欄は対象セルが変わったときだけ作り直し、フォーム更新から独立させる。 */
+  function renderQuoteAdd(): void {
+    if (textSelection === null) {
+      quoteAddHost.replaceChildren();
+      return;
+    }
+    const cell = currentTabModel().cells.find((item) => item.cellKey === focusedCellKey);
+    if (quoteAddCellKey !== focusedCellKey || quoteAddHost.childElementCount === 0) {
+      quoteAddCellKey = focusedCellKey;
+      quoteAddTheme = '';
+      const children: HTMLElement[] = [
+        el('span', { className: 'verify__quote-add-text' }),
+        el('span', { text: cell === undefined ? t('verify.quoteAddNoTarget') : t('verify.quoteAddTarget', {
+          label: `${cell.field.fieldLabel}${cell.entityKey === '-' ? '' : ` (${entityKeyLabel(cell.entityKey)})`}`,
+        }) }),
+      ];
+      if (cell !== undefined && isMultiSelectField(cell.field)) {
+        const theme = el('select', { className: 'verify__quote-add-theme',
+          attributes: { 'aria-label': t('verify.quoteAddChooseOption') } }, [
+          el('option', { text: t('verify.quoteAddChooseOption'), attributes: { value: '' } }),
+          ...splitPipeList(cell.field.allowedValues).map((value) => el('option', { text: value, attributes: { value } })),
+        ]);
+        theme.addEventListener('change', () => { quoteAddTheme = theme.value; renderQuoteAdd(); });
+        children.push(theme);
+      } else if (cell !== undefined && cell.field.maxQuotes !== null) {
+        const theme = el('input', { className: 'verify__quote-add-theme',
+          attributes: { type: 'text', 'aria-label': t('verify.quoteAddTheme'), placeholder: t('verify.quoteAddTheme') } });
+        theme.addEventListener('input', () => { quoteAddTheme = theme.value; });
+        children.push(theme);
+      }
+      const section = el('input', { className: 'verify__quote-add-section',
+        attributes: { type: 'text', 'aria-label': t('verify.quoteAddSection'), placeholder: t('verify.quoteAddSection') } });
+      section.value = quoteAddSection;
+      section.addEventListener('input', () => { quoteAddSection = section.value; });
+      const confirm = el('button', { className: 'verify__quote-add-confirm', text: t('verify.quoteAddConfirm'),
+        attributes: { type: 'button' } });
+      confirm.addEventListener('click', () => {
+        if (textSelection === null || quoteAddReason(cell) !== null) return;
+        const target = cell!;
+        const match = anchorQuote(normalizeText(textSelection.text), activeDocument().extractedPages.map((page) =>
+          ({ page: page.page, text: normalizeText(page.text) })), textSelection.page);
+        const quote: CellQuote = {
+          quoteId: generateUuid(), source: 'human', evidenceId: null, originAnnotator: null,
+          studyId: data.study.studyId, fieldId: target.field.fieldId, entityKey: target.entityKey,
+          documentId: activeDocumentId, quote: textSelection.text, page: match.page ?? textSelection.page,
+          section: quoteAddSection.trim() || null,
+          theme: isMultiSelectField(target.field) || target.field.maxQuotes !== null ? quoteAddTheme.trim() || null : null,
+          anchorStatus: match.status, bboxPage: null, bbox: null, confidence: null,
+        };
+        void saveQuotes(target.cellKey, [...(quoteEdit.get(target.cellKey)?.quotes ?? []), quote]);
+        viewer!.clearSelection();
+        selectedQuoteKey = quoteKeyOf(quoteEdit.get(target.cellKey)!.evidence.at(-1)!);
+        syncViewer();
+        viewer!.focusHighlight(selectedQuoteKey);
+      });
+      const cancel = el('button', { className: 'verify__quote-add-cancel', text: t('verify.quoteAddCancel'),
+        attributes: { type: 'button' } });
+      cancel.addEventListener('click', () => viewer!.clearSelection());
+      children.push(section, confirm, cancel, el('p', { className: 'verify__quote-add-note' }));
+      quoteAddHost.replaceChildren(el('div', { className: 'verify__quote-add',
+        attributes: { role: 'group', 'aria-label': t('verify.quoteAddAria') } }, children));
+    }
+    quoteAddHost.querySelector('.verify__quote-add-text')!.textContent =
+      textSelection.text.slice(0, 80) + (textSelection.text.length > 80 ? '…' : '');
+    const reason = quoteAddReason(cell);
+    quoteAddHost.querySelector<HTMLButtonElement>('.verify__quote-add-confirm')!.disabled = reason !== null;
+    quoteAddHost.querySelector('.verify__quote-add-note')!.textContent = reason ?? '';
+  }
+
   /** 保存中はセル単位で操作を止め、失敗したスナップショットだけを取り消す。 */
   async function saveQuotes(cellKey: string, quotes: readonly CellQuote[] | null): Promise<void> {
     if (quoteSaving.has(cellKey)) return;
-    const resolved = quoteEdit.get(cellKey)!;
+    const resolved = quoteEdit.get(cellKey);
     const [fieldId, entityKey] = JSON.parse(cellKey) as [string, string];
     const metadata = { setId: generateUuid(), savedAt: now(), savedBy: data.annotator,
       annotator: data.annotator, annotatorType: data.annotatorType, studyId: data.study.studyId,
-      fieldId, entityKey, schemaVersion: data.schemaVersion, baseRunId: resolved.baseRunId };
+      fieldId, entityKey, schemaVersion: data.schemaVersion, baseRunId: resolved?.baseRunId ?? null };
     const rows = quotes === null ? [buildQuoteSetResetRow(metadata)] : buildQuoteSetRows({ ...metadata, quotes });
     quoteSaving.add(cellKey);
     quoteErrors.delete(cellKey);
@@ -1957,8 +2047,9 @@ export function createVerificationPanel(
   };
 
   function refreshForm(): void {
+    renderQuoteAdd();
     const doc = root.ownerDocument;
-    const hadFocus = root.contains(doc.activeElement);
+    const hadFocus = formPane.contains(doc.activeElement);
     // フォームペイン全体を作り直すためスクロール位置が 0 へクランプされる。退避して復元する
     const savedScrollTop = formPane.scrollTop;
     const tabModel = currentTabModel();
@@ -2064,6 +2155,7 @@ export function createVerificationPanel(
       refreshForm();
     } else {
       applyFocusClasses();
+      renderQuoteAdd();
     }
     // 別文書由来のセルなら出所 PDF へ自動切替してからハイライトへ（v0.10 フェーズ 3）
     ensureActiveDocumentForCell(behavior.quoteKey ?? cellKey);
@@ -2372,6 +2464,7 @@ export function createVerificationPanel(
     setReadOnly(readOnly: boolean) {
       readOnlyState = readOnly;
       applyReadOnlyState();
+      renderQuoteAdd();
     },
     dispose() {
       ownerDoc.removeEventListener('keydown', handleKeydown);

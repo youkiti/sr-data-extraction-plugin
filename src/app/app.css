@@ -4175,3 +4175,23 @@ section.documents__tiab {
 .verify__quote-error {
   color: var(--color-danger);
 }
+
+.verify__quote-add {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+
+.verify__quote-add-text {
+  flex-basis: 100%;
+  overflow-wrap: anywhere;
+}
+
+.verify__quote-add-note {
+  color: var(--color-text-muted);
+  margin: 0;
+}

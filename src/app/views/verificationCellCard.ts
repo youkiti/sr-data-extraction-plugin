@@ -394,27 +394,33 @@ function renderQuote(
   cell: VerificationCell, model: CellCardModel, handlers: CellCardHandlers,
 ): HTMLElement | null {
   const state = model.quoteEdit?.get(cell.cellKey);
+  if (model.mode === 'independent' && (state === undefined || state.quotes.length === 0)) {
+    return state?.error ? el('p', { className: 'verify__quote-error', text: state.error,
+      attributes: { role: 'alert' } }) : null;
+  }
   if (state === undefined) return renderQuoteContent(cell, model, handlers);
   const disabled = state.saving || model.editing !== null;
   const displayCell = state.edited ? { ...cell, quotes: state.evidence } : cell;
   const content = state.edited && state.quotes.length === 0
     ? el('p', { className: 'verify__quote-empty', text: t('verify.quoteAllRemoved') })
     : renderQuoteContent(displayCell, model, handlers);
-  if (content === null) return null;
+  if (content === null) return state.error === null ? null : el('p', {
+    className: 'verify__quote-error', text: state.error, attributes: { role: 'alert' },
+  });
   const rows = displayCell.quotes.length > 0
     ? [...content.querySelectorAll<HTMLElement>('.verify__quotes-item')] : [content];
   state.quotes.forEach((quote, index) => {
     rows[index]!.append(...renderQuoteControls(cell, quote, handlers, disabled));
   });
   const children = [content];
-  if (state.edited) {
+  if (state.edited && model.mode !== 'independent') {
     const reset = el('button', { className: 'verify__quote-reset', text: t('verify.quoteReset'),
       attributes: { type: 'button' } });
     reset.disabled = disabled;
     reset.addEventListener('click', () => handlers.onQuoteReset!(cell.cellKey));
     children.push(reset);
   }
-  if (state.newerAiAvailable) children.push(el('p', { className: 'verify__quote-newer',
+  if (state.newerAiAvailable && model.mode !== 'independent') children.push(el('p', { className: 'verify__quote-newer',
     text: t('verify.quoteNewerAi'), attributes: { role: 'note' } }));
   if (state.error !== null) children.push(el('p', { className: 'verify__quote-error',
     text: state.error, attributes: { role: 'alert' } }));
@@ -804,7 +810,7 @@ export function renderCell(
   }
   const header = el('div', { className: 'verify__cell-header' }, headerChildren);
   const mode = model.mode ?? 'review';
-  // 独立入力モード（design §5.2）: AI 値・quote・ハイライトは一切描画しない
+  // 独立入力モード（design §5.2）: AI 値・AI の引用は一切描画しない
   // （出所文書の分岐に依らず、mode で明示的にゲートする）。代わりにスキーマ由来の
   // extraction_instruction を出す（AI 出力ではないため表示してよい）
   const children: HTMLElement[] = [
@@ -842,7 +848,7 @@ export function renderCell(
   if (enumNote !== null) {
     children.push(enumNote);
   }
-  const quote = mode === 'independent' ? null : renderQuote(cell, model, handlers);
+  const quote = renderQuote(cell, model, handlers);
   if (quote !== null) {
     children.push(quote);
   }

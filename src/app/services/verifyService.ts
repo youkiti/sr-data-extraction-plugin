@@ -593,8 +593,7 @@ export async function openVerifyStudy(
         fields: target.fields,
         evidence: target.evidence,
         quoteEvidence: target.quoteEvidence,
-        quoteSetRows: annotatorTypeForRole(state.role.role ?? 'owner') === 'human_with_ai'
-          ? await readQuoteSetRows(project.spreadsheetId, deps.google) : [],
+        quoteSetRows: await readQuoteSetRows(project.spreadsheetId, deps.google),
         schemaVersion: target.schemaVersion,
         annotatorType: annotatorTypeForRole(state.role.role ?? 'owner'),
         // 「許容値外」警告の `#/schema` 導線は owner だけに出す（issue #254。reviewer 系

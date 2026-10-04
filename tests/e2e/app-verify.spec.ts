@@ -9,8 +9,9 @@ import { createSheetsDataStore } from './helpers/sheetsStore';
 
 const QUOTE = 'Mortality was 12 percent';
 
-test('実 PDF のテキスト層で文字列を選択できる', async ({ page }) => {
-  await setupRoutes(page, { schemaRows: [STUDY_FIELD_ROW], evidenceRows: [EVIDENCE_ROW_1] });
+test('実 PDF のテキスト層で選んだ文字列を根拠として追加できる', async ({ page }) => {
+  await setupRoutes(page, { schemaRows: [STUDY_FIELD_ROW], evidenceRows: [EVIDENCE_ROW_1],
+    pdfBuilder: () => minimalPdf('Human selected sentence'), extractedText: 'Human selected sentence' });
   await initApp(page, '#/verify?study=study-1');
   const span = page.locator('.pdf-viewer__text-layer span').first();
   await expect(span).toBeAttached();
@@ -24,6 +25,15 @@ test('実 PDF のテキスト層で文字列を選択できる', async ({ page }
     return selection.toString();
   });
   expect(selected.trim()).not.toBe('');
+  await expect(page.locator('.verify__quote-add')).toBeVisible();
+  const appended = page.waitForRequest((request) =>
+    decodeURIComponent(request.url()).includes('/values/QuoteSets!A1:append'));
+  await page.locator('.verify__quote-add-confirm').click();
+  const rows = (await appended).postDataJSON().values as string[][];
+  const human = rows.find((row) => row[SHEET_HEADERS.QuoteSets.indexOf('source')] === 'human')!;
+  expect(human[SHEET_HEADERS.QuoteSets.indexOf('kind')]).toBe('quote');
+  expect(human[SHEET_HEADERS.QuoteSets.indexOf('quote')]).toBe(selected);
+  await expect(page.locator('.verify__quote-source')).toHaveText('人が追加');
 });
 
 const SCHEMA_FIELDS_HEADERS = [

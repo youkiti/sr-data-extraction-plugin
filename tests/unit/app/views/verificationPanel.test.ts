@@ -1,4 +1,5 @@
 import * as verificationFormModule from '../../../../src/app/views/verificationForm';
+import * as pdfViewerModule from '../../../../src/app/ui/pdfViewer';
 import { aiCellQuotes, buildQuoteSetRows } from '../../../../src/features/verification/cellQuotes';
 import { makeCitation, makeAskPage } from '../askPaperFixtures';
 import {
@@ -4425,6 +4426,220 @@ function editedQuotes(evidence: Evidence[], overrides: Partial<Parameters<typeof
     schemaVersion: 1, baseRunId: 'run-1',
     quotes: aiCellQuotes({ evidence: evidence[0]!, quotes: evidence }), ...overrides });
 }
+
+describe('PDF で選んだ文の追加', () => {
+  const click = (root: HTMLElement, selector: string) => root.querySelector<HTMLButtonElement>(selector)!.click();
+  const confirm = (root: HTMLElement) => root.querySelector<HTMLButtonElement>('.verify__quote-add-confirm')!;
+  const input = (root: HTMLElement, selector: string, value: string) => {
+    const node = root.querySelector<HTMLInputElement>(selector)!;
+    node.value = value;
+    node.dispatchEvent(new Event('input', { bubbles: true }));
+  };
+  function select(root: HTMLElement, text: string): void {
+    const layer = root.querySelector('.pdf-viewer__text-layer')!;
+    const span = document.createElement('span');
+    span.textContent = text;
+    layer.replaceChildren(span);
+    const range = document.createRange();
+    range.selectNodeContents(span);
+    const selection = document.getSelection()!;
+    selection.removeAllRanges();
+    selection.addRange(range);
+    span.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+  }
+
+  test('通常項目では AI 引用の末尾へ追加し、元の値・出所を保持してハイライトする', async () => {
+    const onQuoteSetSave = jest.fn().mockResolvedValue(undefined);
+    const { panel, onDecision } = await createPanel({ fields: [makeField()], evidence: [makeEvidence()] }, { onQuoteSetSave });
+    expect(panel.root.querySelector('.verify__quote-add')).toBeNull();
+    select(panel.root, 'in total');
+    expect(panel.root.querySelector('.verify__quote-add')?.getAttribute('role')).toBe('group');
+    expect(panel.root.querySelector('.verify__quote-add')?.textContent).toContain('「総サンプルサイズ」の根拠に追加');
+    expect(panel.root.querySelector('.verify__quote-add-theme')).toBeNull();
+    input(panel.root, '.verify__quote-add-section', '  Results  ');
+    confirm(panel.root).click();
+    expect(panel.root.querySelector('.verify__quote-add')).toBeNull();
+    expect(document.getSelection()?.toString()).toBe('');
+    expect(onQuoteSetSave.mock.calls[0]![0]).toEqual([
+      expect.objectContaining({ source: 'ai', quote: makeEvidence().quote }),
+      expect.objectContaining({ source: 'human', evidenceId: null, originAnnotator: null,
+        quote: 'in total', documentId: 'doc-1', page: 1, section: 'Results', theme: null, anchorStatus: 'exact' }),
+    ]);
+    expect(panel.root.querySelectorAll('.verify__quote-source')).toHaveLength(1);
+    expect(panel.root.querySelector('.verify__quote-source')?.textContent).toBe('人が追加');
+    expect(panel.root.querySelectorAll('.pdf-viewer__hl')).toHaveLength(2);
+    expect(panel.root.querySelector('.pdf-viewer__hl--active')?.classList.contains('pdf-viewer__hl--unverified')).toBe(true);
+    await flush();
+    click(panel.root, '.verify__action--accept');
+    expect(onDecision).toHaveBeenCalledWith(expect.objectContaining({ value: '12' }));
+    expect(panel.root.querySelectorAll('.pdf-viewer__hl--verified')).toHaveLength(2);
+    click(panel.root, '.verify__quote-reset');
+    await flush();
+    expect(panel.root.querySelector('.verify__quote-source')).toBeNull();
+    expect(panel.root.querySelectorAll('.verify__quote-text')).toHaveLength(1);
+    panel.dispose();
+  });
+
+  test.each([false, true])('引用なしセルへ追加でき、照合失敗も保存する: 失敗=%s', async (failed) => {
+    const onQuoteSetSave = jest.fn().mockResolvedValue(undefined);
+    const { panel } = await createPanel({ fields: [makeField()], evidence: [] }, { onQuoteSetSave, onRelocateQuote: jest.fn() });
+    select(panel.root, failed ? 'unmatched sentence xyz' : 'in total');
+    confirm(panel.root).click();
+    await flush();
+    expect(onQuoteSetSave.mock.calls[0]![0]).toEqual([expect.objectContaining({ source: 'human',
+      baseRunId: null, page: 1, section: null, theme: null, anchorStatus: failed ? 'failed' : 'exact' })]);
+    expect(panel.root.querySelectorAll('.pdf-viewer__hl')).toHaveLength(failed ? 0 : 1);
+    expect(panel.root.querySelector('.verify__quote-relocate')).toBeNull();
+    expect(panel.root.querySelector('.verify__quote-source')?.textContent).toBe('人が追加');
+    panel.dispose();
+  });
+
+  test('対象なし・長すぎる選択・正規化後の重複・取り消し・読み取り専用', async () => {
+    const empty = await createPanel({ fields: [], evidence: [] }, { onQuoteSetSave: jest.fn() });
+    select(empty.panel.root, 'text');
+    expect(confirm(empty.panel.root).disabled).toBe(true);
+    expect(empty.panel.root.querySelector('.verify__quote-add-note')?.textContent).toBe('根拠を付ける項目を選んでください');
+    confirm(empty.panel.root).dispatchEvent(new MouseEvent('click'));
+    empty.panel.dispose();
+    const { panel } = await createPanel({ fields: [makeField()], evidence: [makeEvidence()] }, { onQuoteSetSave: jest.fn() });
+    select(panel.root, 'x'.repeat(1001));
+    expect(confirm(panel.root).disabled).toBe(true);
+    expect(panel.root.querySelector('.verify__quote-add-text')?.textContent).toBe('x'.repeat(80) + '…');
+    expect(panel.root.querySelector('.verify__quote-add-note')?.textContent).toContain('1,000');
+    select(panel.root, 'mortality was 12 percent');
+    expect(confirm(panel.root).disabled).toBe(true);
+    expect(panel.root.querySelector('.verify__quote-add-note')?.textContent).toContain('追加済み');
+    select(panel.root, 'in total');
+    expect(confirm(panel.root).disabled).toBe(false);
+    panel.setReadOnly(true);
+    expect(confirm(panel.root).disabled).toBe(true);
+    panel.setReadOnly(false);
+    const staleConfirm = confirm(panel.root);
+    click(panel.root, '.verify__quote-add-cancel');
+    staleConfirm.dispatchEvent(new MouseEvent('click'));
+    expect(panel.root.querySelector('.verify__quote-add')).toBeNull();
+    panel.dispose();
+  });
+
+  test.each(['choice', 'theme', 'empty'] as const)('選択肢または任意テーマを保存する: %s', async (kind) => {
+    const onQuoteSetSave = jest.fn().mockResolvedValue(undefined);
+    const field = kind === 'choice'
+      ? makeField({ dataType: 'enum', allowedValues: 'A|B', multiSelect: { exclusiveValues: [], freeTextValues: [] } })
+      : makeField({ maxQuotes: 3 });
+    const { panel } = await createPanel({ fields: [field], evidence: [] }, { onQuoteSetSave });
+    select(panel.root, 'in total');
+    if (kind === 'choice') {
+      expect(confirm(panel.root).disabled).toBe(true);
+      const theme = panel.root.querySelector<HTMLSelectElement>('.verify__quote-add-theme')!;
+      expect([...theme.options].map((option) => option.value)).toEqual(['', 'A', 'B']);
+      theme.value = 'B';
+      theme.dispatchEvent(new Event('change'));
+    } else {
+      input(panel.root, '.verify__quote-add-theme', kind === 'theme' ? '  テーマ  ' : ' ');
+    }
+    expect(confirm(panel.root).disabled).toBe(false);
+    confirm(panel.root).click();
+    await flush();
+    expect(onQuoteSetSave.mock.calls[0]![0][0].theme).toBe(kind === 'choice' ? 'B' : kind === 'theme' ? 'テーマ' : null);
+    panel.dispose();
+  });
+
+  test('値の編集中と保存中は追加できず、再描画でも入力を保持する', async () => {
+    let finish!: () => void;
+    const onQuoteSetSave = jest.fn(() => new Promise<void>((resolve) => { finish = resolve; }));
+    const { panel } = await createPanel({ fields: [makeField({ maxQuotes: 2 })], evidence: [] }, { onQuoteSetSave });
+    select(panel.root, 'in total');
+    input(panel.root, '.verify__quote-add-theme', 'テーマ');
+    input(panel.root, '.verify__quote-add-section', '節');
+    click(panel.root, '.verify__action--edit');
+    expect(confirm(panel.root).disabled).toBe(true);
+    expect(panel.root.querySelector('.verify__quote-add-note')?.textContent).toContain('入力中');
+    click(panel.root, '.verify__edit-cancel');
+    expect(panel.root.querySelector<HTMLInputElement>('.verify__quote-add-theme')?.value).toBe('テーマ');
+    expect(panel.root.querySelector<HTMLInputElement>('.verify__quote-add-section')?.value).toBe('節');
+    confirm(panel.root).click();
+    select(panel.root, 'intro');
+    expect(confirm(panel.root).disabled).toBe(true);
+    confirm(panel.root).dispatchEvent(new MouseEvent('click'));
+    expect(onQuoteSetSave).toHaveBeenCalledTimes(1);
+    finish();
+    await flush();
+    expect(confirm(panel.root).disabled).toBe(false);
+    panel.dispose();
+  });
+
+  test.each(['human_with_ai', 'human_independent'] as const)('保存失敗は空のセルへ戻しエラーを表示する: %s', async (annotatorType) => {
+    const { panel } = await createPanel({ fields: [makeField()], evidence: [], annotatorType },
+      { onQuoteSetSave: jest.fn().mockRejectedValue(new Error('保存失敗')) });
+    select(panel.root, 'in total');
+    confirm(panel.root).click();
+    await flush();
+    expect(panel.root.querySelector('.verify__quote-source')).toBeNull();
+    expect(panel.root.querySelector('.verify__quote-error')).not.toBeNull();
+    expect(panel.root.querySelector('.pdf-viewer__hl')).toBeNull();
+    panel.dispose();
+  });
+
+  test('独立入力では混入した AI 行を除外し、自分の引用だけ追加・表示・削除する', async () => {
+    const onQuoteSetSave = jest.fn().mockResolvedValue(undefined);
+    const ai = makeEvidence({ quote: 'AI secret', value: 'AI value secret' });
+    const human = { ...aiCellQuotes({ evidence: makeEvidence(), quotes: [] })[0]!,
+      source: 'human' as const, evidenceId: null, quoteId: 'human-1', quote: 'mortality' };
+    const { panel } = await createPanel({ fields: [makeField({ maxQuotes: 3 })], annotatorType: 'human_independent',
+      evidence: [ai], quoteEvidence: [ai], quoteSetRows: editedQuotes([ai], {
+        annotatorType: 'human_independent', baseRunId: 'old', quotes: [human, ...aiCellQuotes({ evidence: ai, quotes: [] })],
+      }) }, { onQuoteSetSave, onRelocateQuote: jest.fn() });
+    expect(panel.root.textContent).not.toContain('AI secret');
+    expect(panel.root.textContent).not.toContain('AI value secret');
+    expect(panel.root.querySelectorAll('.pdf-viewer__hl')).toHaveLength(1);
+    for (const selector of ['.verify__quote-reset', '.verify__quote-newer', '.verify__quote-cycle', '.verify__quote-relocate', '.verify__ai']) {
+      expect(panel.root.querySelector(selector)).toBeNull();
+    }
+    select(panel.root, 'in total');
+    confirm(panel.root).click();
+    await flush();
+    expect(onQuoteSetSave.mock.calls[0]![0].map((row: { source: string }) => row.source)).toEqual(['human', 'human']);
+    expect(panel.root.querySelectorAll('.pdf-viewer__hl')).toHaveLength(2);
+    expect(panel.root.querySelectorAll('.verify__quote-source')).toHaveLength(2);
+    click(panel.root, '.verify__quote-remove');
+    await flush();
+    click(panel.root, '.verify__quote-remove');
+    await flush();
+    expect(panel.root.querySelector('.verify__quote')).toBeNull();
+    expect(panel.root.querySelector('.verify__quote-empty')).toBeNull();
+    expect(panel.root.querySelector('.pdf-viewer__hl')).toBeNull();
+    panel.dispose();
+  });
+
+  test('対象セルを切り替えると群の表示とテーマ欄を更新し、節は保持する', async () => {
+    const onQuoteSetSave = jest.fn().mockResolvedValue(undefined);
+    const { panel } = await createPanel({ fields: [makeField({ maxQuotes: 2 }),
+      makeField({ fieldId: 'f-arm', fieldLabel: '群の N', entityLevel: 'arm' })], evidence: [] }, { onQuoteSetSave });
+    select(panel.root, 'in total');
+    input(panel.root, '.verify__quote-add-theme', '前のテーマ');
+    input(panel.root, '.verify__quote-add-section', 'Results');
+    panel.root.querySelectorAll<HTMLButtonElement>('.verify__tab')[1]!.click();
+    expect(panel.root.querySelector('.verify__quote-add')?.textContent).toContain('群の N (群 1)');
+    expect(panel.root.querySelector('.verify__quote-add-theme')).toBeNull();
+    expect(panel.root.querySelector<HTMLInputElement>('.verify__quote-add-section')?.value).toBe('Results');
+    confirm(panel.root).click();
+    await flush();
+    expect(onQuoteSetSave.mock.calls[0]![0]).toEqual([expect.objectContaining({
+      fieldId: 'f-arm', entityKey: 'arm:1', theme: null, section: 'Results',
+    })]);
+    panel.dispose();
+  });
+
+  test('保存経路が未注入なら選択通知も追加バーもない', async () => {
+    const spy = jest.spyOn(pdfViewerModule, 'createPdfViewer');
+    const { panel } = await createPanel();
+    expect(spy.mock.calls.at(-1)![0].onTextSelected).toBeUndefined();
+    select(panel.root, 'in total');
+    expect(panel.root.querySelector('.verify__quote-add')).toBeNull();
+    spy.mockRestore();
+    panel.dispose();
+  });
+});
 
 describe('引用一覧の編集', () => {
   const save = () => jest.fn().mockResolvedValue(undefined);
