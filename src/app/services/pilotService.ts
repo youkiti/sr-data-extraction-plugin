@@ -61,6 +61,7 @@ import {
   type VerificationDeps,
 } from './verificationService';
 import { invalidateVerifyTargets } from './verifyService';
+import { emptyPilotMatrix, loadPilotMatrix } from './pilotMatrixService';
 
 export interface PilotServiceDeps extends VerificationDeps, ProviderResolutionDeps {
   /** provider 生成（実行時は lib/llm/providerFactory.createProvider。テストは fake を注入） */
@@ -321,6 +322,7 @@ export async function runPilot(store: Store, deps: PilotServiceDeps): Promise<vo
         running: false,
         progress: null,
         run: outcome.run,
+        matrix: emptyPilotMatrix(),
         runFields: [...fields],
         evidence: outcome.result.evidence,
         batchFailures: outcome.result.batchFailures,
@@ -360,6 +362,7 @@ export async function runPilot(store: Store, deps: PilotServiceDeps): Promise<vo
     if (firstStudyId !== undefined) {
       await loadPilotVerification(store, deps, firstStudyId);
     }
+    if (store.getState().pilot.matrix?.runId !== outcome.run.runId) await loadPilotMatrix(store, deps);
   } catch (err) {
     patchPilot(store, { running: false, progress: null, runError: toMessage(err) });
   }
@@ -439,6 +442,7 @@ export async function loadPilotRun(
     historyError: null,
     runError: null,
     run: null,
+    matrix: emptyPilotMatrix(),
     runFields: null,
     evidence: null,
     // 履歴 run はバッチ失敗の内訳を再構成できないため空にする（サマリは run.status で表示）
@@ -466,8 +470,9 @@ export async function loadPilotRun(
     // run は study 単位（studyIds）。最初の study を検証 UI に開く（配下の全文書を連結表示）
     const firstStudyId = run.studyIds[0];
     if (firstStudyId !== undefined) {
-      await loadPilotVerification(store, deps, firstStudyId);
+      await loadPilotVerification(store, deps, firstStudyId, allEvidence);
     }
+    if (store.getState().pilot.matrix?.runId !== run.runId) await loadPilotMatrix(store, deps);
   } catch (err) {
     patchPilot(store, { loadingRunId: null, historyError: toMessage(err) });
   }
@@ -482,6 +487,7 @@ export async function loadPilotVerification(
   store: Store,
   deps: PilotServiceDeps,
   studyId: string,
+  allEvidence?: Evidence[],
 ): Promise<void> {
   const state = store.getState();
   const project = state.currentProject;
@@ -523,6 +529,9 @@ export async function loadPilotVerification(
       },
       deps,
     );
+    await loadPilotMatrix(store, deps, {
+      decisions: bundle.allDecisions, annotator: bundle.verification.annotator, evidence: allEvidence,
+    });
     patchPilot(store, {
       verifyLoading: false,
       verification: bundle.verification,
@@ -534,6 +543,7 @@ export async function loadPilotVerification(
     });
   } catch (err) {
     patchPilot(store, { verifyLoading: false, verifyError: toMessage(err) });
+    await loadPilotMatrix(store, deps);
   }
 }
 
@@ -612,6 +622,10 @@ export async function persistPilotDecision(
         : (current.resultsRowUpdatedAt[resultsCellKeyOf(decision.entityKey, decision.fieldId)] ??
           null);
     const result = await persistDecisionWrite(project.spreadsheetId, write, deps, expectedUpdatedAt);
+    if (result.status !== 'conflict') {
+      const matrix = store.getState().pilot.matrix ?? emptyPilotMatrix();
+      patchPilot(store, { matrix: { ...matrix, decisions: [...matrix.decisions, decision] } });
+    }
     if (result.status === 'queued') {
       patchPilot(store, { queuedDecisions: store.getState().pilot.queuedDecisions + 1 });
     } else if (result.status === 'conflict') {
@@ -700,7 +714,7 @@ export async function persistPilotRelocateQuote(
   if (field === undefined || documentView === undefined) {
     return { status: 'not_found', message: t('pilot.relocateNoTarget') };
   }
-  return relocateQuote(
+  const outcome = await relocateQuote(
     {
       spreadsheetId: project.spreadsheetId,
       driveFolderId: project.driveFolderId,
@@ -710,4 +724,11 @@ export async function persistPilotRelocateQuote(
     },
     deps,
   );
+  // 再特定できた根拠を run の Evidence にも足す（項目 × 論文マトリクスが、検証パネルと同じく
+  // 最新の根拠でアンカリングの成否を判定できるようにする。同じセルは後ろの行が優先される）
+  const runEvidence = store.getState().pilot.evidence;
+  if (outcome.status === 'relocated' && runEvidence !== null) {
+    patchPilot(store, { evidence: [...runEvidence, outcome.evidence] });
+  }
+  return outcome;
 }

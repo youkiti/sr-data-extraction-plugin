@@ -1680,6 +1680,26 @@ describe('persistPilotRelocateQuote（issue #94）', () => {
     );
   });
 
+  test('再特定できた根拠を run の Evidence の末尾へ足す（見つからない・run の Evidence 未読込では足さない）', async () => {
+    const evidence = makeEvidence({ anchorStatus: 'failed', quote: null, page: null });
+    const relocated = makeEvidence({ evidenceId: 'ev-relocated', relocatedFrom: evidence.evidenceId });
+    const verification = makeVerificationData({ evidence: [evidence] });
+
+    relocateQuoteMock.mockResolvedValue({ status: 'relocated', evidence: relocated });
+    const store = makeStore({ pilot: { verification, evidence: [evidence] } });
+    await persistPilotRelocateQuote(store, makeDeps(), evidence);
+    expect(store.getState().pilot.evidence).toEqual([evidence, relocated]);
+
+    const unloaded = makeStore({ pilot: { verification, evidence: null } });
+    await persistPilotRelocateQuote(unloaded, makeDeps(), evidence);
+    expect(unloaded.getState().pilot.evidence).toBeNull();
+
+    relocateQuoteMock.mockResolvedValue({ status: 'not_found' });
+    const notFound = makeStore({ pilot: { verification, evidence: [evidence] } });
+    await persistPilotRelocateQuote(notFound, makeDeps(), evidence);
+    expect(notFound.getState().pilot.evidence).toEqual([evidence]);
+  });
+
   test('プロジェクト未選択・検証データ未読込では relocateQuote を呼ばず not_found を返す', async () => {
     const evidence = makeEvidence();
     const outcome1 = await persistPilotRelocateQuote(

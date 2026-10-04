@@ -36,6 +36,17 @@ import { el } from '../ui/dom';
 import { createModelSelect } from '../ui/modelSelect';
 import type { AppState, RedraftReviewState, SchemaState } from '../store';
 import type { ViewContext } from './types';
+import { renderSchemaPilotMisses } from './pilotMatrixView';
+
+/** 再描画のスクロール復元後に、リンク先の編集欄へ移動する。 */
+export function focusSchemaField(doc: Document, fieldId: string): void {
+  const target = [...doc.querySelectorAll<HTMLTextAreaElement>('[data-schema-field]')]
+    .find((element) => element.dataset.schemaField === fieldId);
+  if (target) {
+    target.scrollIntoView?.({ block: 'center' });
+    target.focus();
+  }
+}
 
 const ENTITY_LEVELS: readonly EntityLevel[] = ['study', 'arm', 'outcome_result', 'rob_domain'];
 const DATA_TYPES: readonly FieldDataType[] = ['text', 'integer', 'float', 'boolean', 'enum', 'date'];
@@ -256,6 +267,7 @@ function renderEditorRow(
   rowCount: number,
   invalidColumns: ReadonlySet<string>,
   ctx: ViewContext,
+  state: AppState,
 ): HTMLElement {
   const invalid = (column: FieldValidationError['column']): boolean =>
     invalidColumns.has(`${index}:${column}`);
@@ -272,6 +284,7 @@ function renderEditorRow(
     attributes: { rows: '2', 'aria-label': t('schema.rowInstructionAria', { row: index + 1 }) },
   });
   instruction.value = row.extractionInstruction;
+  if (row.fieldId !== null) instruction.dataset.schemaField = row.fieldId;
   if (invalid('extractionInstruction')) {
     instruction.setAttribute('aria-invalid', 'true');
     instruction.classList.add('schema__cell-input--error');
@@ -279,6 +292,10 @@ function renderEditorRow(
   instruction.addEventListener('change', () => edit({ extractionInstruction: instruction.value }));
 
   const instructionChildren: HTMLElement[] = [instruction];
+  if (row.fieldId !== null && row.fieldId === state.schema.pilotFieldId) {
+    const misses = renderSchemaPilotMisses(state, row.fieldId);
+    if (misses !== null) instructionChildren.push(misses);
+  }
   if (row.dataType === 'text') {
     const checkbox = el('input', {
       className: 'schema__multi-quote',
@@ -929,6 +946,7 @@ function renderEditor(
   rows: readonly SchemaEditorRow[],
   schema: SchemaState,
   ctx: ViewContext,
+  state: AppState,
 ): HTMLElement {
   const invalidColumns = new Set(
     schema.editorErrors.map((error) => `${error.index}:${error.column}`),
@@ -953,7 +971,7 @@ function renderEditor(
     el(
       'tbody',
       {},
-      rows.map((row, index) => renderEditorRow(row, index, rows.length, invalidColumns, ctx)),
+      rows.map((row, index) => renderEditorRow(row, index, rows.length, invalidColumns, ctx, state)),
     ),
   ]);
 
@@ -1434,7 +1452,7 @@ function renderBody(state: AppState, ctx: ViewContext): HTMLElement {
     return renderRedraftReview(schema.redraft, ctx);
   }
   if (schema.editorRows !== null) {
-    return renderEditor(schema.editorRows, schema, ctx);
+    return renderEditor(schema.editorRows, schema, ctx, state);
   }
   const latest = schema.versions[0];
   if (latest === undefined) {

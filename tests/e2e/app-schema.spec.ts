@@ -643,6 +643,18 @@ test('アクセシビリティ違反がない（axe・ドラフト前）', async
   expect(results.violations).toEqual([]);
 });
 
+test('field クエリの項目へフォーカスし、不明な ID は無視する', async ({ page }) => {
+  const field = { ...makeEditorRow({ fieldId: 'field / 1' }), schemaVersion: 1, fieldIndex: 1 };
+  await initApp(page, { ...EMPTY_SCHEMA_STATE, currentFields: [field],
+    editorRows: [makeEditorRow({ fieldId: 'field / 1' })] });
+  await page.evaluate(() => { location.hash = '#/schema?field=field%20%2F%201'; });
+  await expect(page.locator('[data-schema-field="field / 1"]')).toBeFocused();
+  await expect(page.locator('.schema__pilot-misses')).toHaveCount(0);
+  await page.evaluate(() => { location.hash = '#/schema?field=missing'; });
+  await expect(page.locator('#schema-editor')).toBeVisible();
+  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+});
+
 test('アクセシビリティ違反がない（axe・エディタ）', async ({ page }) => {
   await initApp(page, { ...EMPTY_SCHEMA_STATE, editorRows: [makeEditorRow()] });
   await expect(page.locator('#schema-editor')).toBeVisible();

@@ -2,6 +2,7 @@
 // 状態変更は必ず setState 経由で行う（architecture.md §2.2）
 import type { ConfirmedArmStructure } from '../domain/armStructure';
 import type { Decision } from '../domain/decision';
+import type { PilotMatrixState } from './services/pilotMatrixService';
 import type { DocumentRecord, ExclusionReason } from '../domain/document';
 import type { LlmProviderId } from '../domain/llmApiLog';
 import type { ReviewSetRow } from '../domain/reviewSet';
@@ -257,6 +258,8 @@ export interface RedraftReviewState {
 
 /** #/schema（S5）の画面状態 */
 export interface SchemaState {
+  /** パイロットから移動した項目。通常の入場時は未設定。 */
+  pilotFieldId?: string | null;
   /** SchemaVersions タブの全版（降順）。null = 未読込 */
   versions: SchemaVersion[] | null;
   /** 最新版（versions[0]）の項目。確定済みサマリに使う */
@@ -288,6 +291,8 @@ export interface SchemaState {
 
 /** #/pilot（S6）の画面状態。run の結果と埋め込み検証 UI の素材はタブのセッション内で保持する */
 export interface PilotState {
+  /** 完了 run の表示時に初期化する、保存しない集計素材。 */
+  matrix?: PilotMatrixState;
   /** 対象 study の選択。未使用のテキスト付き study を最大 3 件優先する */
   selectedStudyIds: string[];
   /** 既定選択を一度だけ行うためのフラグ（ユーザーの選択解除を上書きしない） */

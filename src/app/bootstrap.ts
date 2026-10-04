@@ -2,7 +2,9 @@
 // E2E seam（test-strategy.md §2.1）: window.__E2E_PRELOADED_STATE__ があれば
 // ストアのシードへ上書きマージする（本番動作には影響しない）
 import { createInitialState, createStore, type AppState, type Store, type VerifyTarget } from './store';
-import { studyQueryOf, entityQueryOf, findRoute, normalizeHash, ROUTES, type RouteHash } from './router';
+import { studyQueryOf, fieldQueryOf, entityQueryOf, findRoute, normalizeHash, ROUTES, type RouteHash } from './router';
+import { emptyPilotMatrix, loadPilotMatrix } from './services/pilotMatrixService';
+import { focusSchemaField } from './views/schemaView';
 import { guardRoute } from './guards';
 import { showToast } from './ui/toast';
 import { captureScrollPositions, restoreScrollPositions } from './ui/preserveScroll';
@@ -712,6 +714,11 @@ export async function bootstrapApp(
       },
     },
     pilot: {
+      onRetryMatrix: () => { void loadPilotMatrix(store, deps); },
+      onSortMatrix: () => {
+        const pilot = store.getState().pilot;
+        store.setState({ pilot: { ...pilot, matrix: { ...(pilot.matrix ?? emptyPilotMatrix()), sortByMisses: !pilot.matrix?.sortByMisses } } });
+      },
       onToggleStudy: (studyId, selected) => {
         togglePilotStudy(store, studyId, selected);
       },
@@ -1196,7 +1203,18 @@ export async function bootstrapApp(
     }
     if (currentHash === '#/schema') {
       // スキーマ一覧に加え、ドラフトフォームが使う文献一覧・プロトコルも先読みする
-      void loadSchema(store, deps);
+      void loadSchema(store, deps).then(() => {
+        if (currentHash !== '#/schema') return;
+        const field = fieldQueryOf(win.location.hash);
+        const schema = store.getState().schema;
+        if (field !== null && schema.currentFields?.some((item) => item.fieldId === field)) {
+          if (schema.editorRows === null) startEditorFromCurrent(store);
+          store.setState({ schema: { ...store.getState().schema, pilotFieldId: field } });
+          focusSchemaField(doc, field);
+        } else {
+          store.setState({ schema: { ...schema, pilotFieldId: null } });
+        }
+      });
       void loadDocuments(store, deps);
       void loadProtocols(store, deps);
     }

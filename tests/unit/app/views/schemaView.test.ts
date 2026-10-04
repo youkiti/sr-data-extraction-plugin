@@ -1,9 +1,32 @@
 // #/schema view の描画テスト（ui-states.md §3 の各状態）。
 // render は純粋関数のため、状態を組み立てて DOM を検証する
-import { renderSchemaView } from '../../../../src/app/views/schemaView';
+import { focusSchemaField, renderSchemaView } from '../../../../src/app/views/schemaView';
+import { emptyPilotMatrix } from '../../../../src/app/services/pilotMatrixService';
+import { makeEvidence as matrixEvidence, makeDecision as matrixDecision, makeRun as matrixRun } from '../../features/verification/pilotMatrixFixtures';
 import type { SchemaViewCallbacks, ViewContext } from '../../../../src/app/views/types';
 import { createInitialState, type AppState } from '../../../../src/app/store';
 import type { DocumentRecord } from '../../../../src/domain/document';
+
+test('項目編集欄の参考情報とクエリ先フォーカス', () => {
+  const field = makeField({ fieldId: 'f-1' });
+  const state = makeState({ versions: [], editorRows: [field], pilotFieldId: 'f-1' });
+  state.pilot = { ...state.pilot, run: matrixRun(), runFields: [field], evidence: [matrixEvidence()],
+    matrix: { ...emptyPilotMatrix(), runId: 'run-1', decisions: [matrixDecision({ action: 'edit', value: '99', note: '表 2' })] } };
+  const { ctx } = makeCtx();
+  document.body.replaceChildren(renderSchemaView(state, ctx));
+  expect(document.querySelector('.schema__pilot-misses')?.textContent).toContain('120 → 99 (表 2)');
+  const target = document.querySelector<HTMLTextAreaElement>('[data-schema-field]')!;
+  target.scrollIntoView = jest.fn();
+  focusSchemaField(document, 'f-1');
+  expect(document.activeElement).toBe(target);
+  expect(target.scrollIntoView).toHaveBeenCalledWith({ block: 'center' });
+  focusSchemaField(document, 'missing');
+  state.pilot.matrix = undefined;
+  document.body.replaceChildren(renderSchemaView(state, ctx));
+  expect(document.querySelector('.schema__pilot-misses')).toBeNull();
+  focusSchemaField(document, 'f-1');
+  document.body.replaceChildren();
+});
 import type { Protocol } from '../../../../src/domain/protocol';
 import type { SchemaField } from '../../../../src/domain/schemaField';
 import type { SchemaVersion } from '../../../../src/domain/schemaVersion';
