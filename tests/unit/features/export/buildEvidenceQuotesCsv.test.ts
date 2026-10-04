@@ -58,10 +58,10 @@ test('同名の別 annotator_type と別の人の引用を最終扱いにしな�
     .toEqual([['reviewer', 'human_with_ai']]);
 });
 
-test('StudyData があるときはそれだけを使い、無いときは ResultsData の組を一意化する', () => {
+test('study の引用は ResultsData で代用せず StudyData だけで確定する', () => {
   const resultsDataRows = [result(), result({ fieldId: 'second' }), result({ annotator: 'ai', annotatorType: 'ai' }),
     result({ studyId: 'inactive', annotator: 'other' })];
-  expect(lines(input({ resultsDataRows }))[0]?.[16]).toBe('TRUE');
+  expect(lines(input({ resultsDataRows }))[0]?.[16]).toBe('FALSE');
   expect(lines(input({ resultsDataRows, studyDataRows: [human('ai', 'ai')] }))[0]?.[16]).toBe('FALSE');
   expect(lines(input({ resultsDataRows, studyDataRows: [human(), { ...human(), studyId: 'inactive' }] }))[0]?.[16]).toBe('TRUE');
 });
@@ -109,4 +109,31 @@ test('文書名と CSV の特殊文字を保持し、対象が無ければヘッ
   expect(buildEvidenceQuotesCsv(input({ studies: [] }))).toEqual({
     csv: '\uFEFF' + EVIDENCE_QUOTES_HEADER.join(',') + '\r\n', rowCount: 0, studyCount: 0,
   });
+});
+
+
+test.each(['arm', 'outcome_result', 'rob_domain'] as const)('AI の StudyData と人の ResultsData を階層ごとに選ぶ: %s', (entityLevel) => {
+  const evidences = [evidence(), evidence({ fieldId: 'result', entityKey: 'arm:1' })];
+  const params = input({ fields: [field(), { ...field('result', 2), entityLevel }],
+    bundlesByStudy: new Map([['study', bundleEvidence(evidences)]]),
+    studyDataRows: [human('ai', 'ai')],
+    resultsDataRows: [result(), result({ fieldId: 'result' }), result({ studyId: 'other', annotator: 'other' })],
+  });
+  expect(lines(params).map((row) => [row[3], row[16]])).toEqual([['field', 'FALSE'], ['result', 'TRUE']]);
+  expect(lines({ ...params, resultsDataRows: [] }).map((row) => row[16])).toEqual(['FALSE', 'FALSE']);
+});
+
+test('study は人の引用、arm は ResultsData の consensus の引用を採用する', () => {
+  const evidences = [evidence(), evidence({ fieldId: 'arm', entityKey: 'arm:1' })];
+  const quoteSetRows = [quoteRow(), quoteRow({ fieldId: 'arm', entityKey: 'arm:1' }),
+    quoteRow({ fieldId: 'arm', entityKey: 'arm:1', annotator: 'consensus', annotatorType: 'consensus' })];
+  const rows = lines(input({ fields: [field(), { ...field('arm', 2), entityLevel: 'arm' }],
+    bundlesByStudy: new Map([['study', bundleEvidence(evidences)]]), quoteSetRows,
+    studyDataRows: [human()], resultsDataRows: [result(), result({ annotator: 'consensus', annotatorType: 'consensus' }),
+      result({ fieldId: 'other', annotator: 'consensus', annotatorType: 'consensus' })],
+  }));
+  expect(rows.map((row) => [row[3], row[5], row[16]])).toEqual([
+    ['field', 'ai', 'FALSE'], ['field', 'reviewer', 'TRUE'],
+    ['arm', 'ai', 'FALSE'], ['arm', 'consensus', 'TRUE'], ['arm', 'reviewer', 'FALSE'],
+  ]);
 });

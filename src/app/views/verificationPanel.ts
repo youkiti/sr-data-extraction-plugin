@@ -1673,12 +1673,15 @@ export function createVerificationPanel(
 
   const handlers: VerificationFormHandlers = {
     onQuoteRemove(cellKey, quoteId) {
+      if (editing !== null) return;
       void saveQuotes(cellKey, removeCellQuote(quoteEdit.get(cellKey)!.quotes, quoteId));
     },
     onQuoteTheme(cellKey, quoteId, theme) {
+      if (editing !== null) return;
       void saveQuotes(cellKey, setCellQuoteTheme(quoteEdit.get(cellKey)!.quotes, quoteId, theme));
     },
     onQuoteReset(cellKey) {
+      if (editing !== null) return;
       void saveQuotes(cellKey, null);
     },
     // ロック中タブの排他は verificationForm 側が担う（disabled ボタンにはリスナを付けない）
@@ -1702,6 +1705,7 @@ export function createVerificationPanel(
       commit(cell, 'accept', cell.evidence.notReported ? NOT_REPORTED_TOKEN : cell.evidence.value);
     },
     onStartEdit(cellKey, action) {
+      if (quoteSaving.size > 0) return;
       editing = { cellKey, action };
       focusedCellKey = cellKey;
       selectedQuoteKey = null;

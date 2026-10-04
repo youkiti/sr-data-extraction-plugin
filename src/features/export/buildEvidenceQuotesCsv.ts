@@ -40,8 +40,8 @@ export function buildEvidenceQuotesCsv(params: {
     const resultAnnotators = new Map(params.resultsDataRows
       .filter((row) => row.studyId === study.studyId)
       .map((row) => [JSON.stringify([row.annotator, row.annotatorType]), row]));
-    const final = studyRows.length > 0 ? selectFinalAnnotator(studyRows)
-      : selectFinalAnnotator([...resultAnnotators.values()]);
+    const studyFinal = selectFinalAnnotator(studyRows);
+    const resultsFinal = selectFinalAnnotator([...resultAnnotators.values()]);
     const items: { quote: CellQuote; annotator: string; annotatorType: AnnotatorType; field: SchemaField }[] = [];
     const add = (quotes: CellQuote[], annotator: string, annotatorType: AnnotatorType): void => {
       for (const quote of quotes) {
@@ -65,6 +65,7 @@ export function buildEvidenceQuotesCsv(params: {
       || compareText(a.annotator, b.annotator));
     if (items.length > 0) studyCount++;
     for (const { quote, annotator, annotatorType, field } of items) {
+      const final = field.entityLevel === 'study' ? studyFinal : resultsFinal;
       let isFinal = false;
       if (final !== null) {
         const snapshot = snapshots.get(quoteSetKeyOf({ ...quote,

@@ -1,3 +1,4 @@
+import * as verificationFormModule from '../../../../src/app/views/verificationForm';
 import { aiCellQuotes, buildQuoteSetRows } from '../../../../src/features/verification/cellQuotes';
 import { makeCitation, makeAskPage } from '../askPaperFixtures';
 import {
@@ -4648,5 +4649,71 @@ test('引用の全削除は AI の群ドラフト・entity・タブのセルを�
   expect(arm.querySelector('.verify__ai-value')?.textContent).toBe('50');
   arm.querySelector<HTMLButtonElement>('.verify__action--accept')!.click();
   expect(onDecision).toHaveBeenCalledWith(expect.objectContaining({ entityKey: 'arm:1', fieldId: 'f-arm-n', value: '50' }));
+  panel.dispose();
+});
+
+
+test.each(['edit', 'reject'] as const)('値の %s 入力中は別セルを含め引用操作と直接ハンドラを止める', async (action) => {
+  const formSpy = jest.spyOn(verificationFormModule, 'renderVerificationForm');
+  const onQuoteSetSave = jest.fn().mockResolvedValue(undefined);
+  const evidences = [makeEvidence(), makeEvidence({ evidenceId: 'other', fieldId: 'f-country' })];
+  const { panel } = await createPanel({
+    fields: [makeField({ maxQuotes: 2 }), makeField({ fieldId: 'f-country', dataType: 'enum', allowedValues: 'A|B',
+      multiSelect: { exclusiveValues: [], freeTextValues: [] } })],
+    evidence: evidences, quoteSetRows: evidences.flatMap((item) =>
+      editedQuotes([item], { setId: item.fieldId, fieldId: item.fieldId })),
+  }, { onQuoteSetSave });
+  const handlers = formSpy.mock.calls[formSpy.mock.calls.length - 1]![1];
+  handlers.onStartEdit(KEY_TOTAL, action);
+  const value = panel.root.querySelector<HTMLInputElement>('.verify__edit-input')!;
+  const note = panel.root.querySelector<HTMLInputElement>('.verify__note-input')!;
+  value.value = '456';
+  note.value = '入力途中';
+  for (const key of [KEY_TOTAL, KEY_COUNTRY]) {
+    const card = cellEl(panel.root, key)!;
+    const controls = card.querySelectorAll<HTMLButtonElement | HTMLInputElement | HTMLSelectElement>(
+      '.verify__quote-remove, .verify__quote-theme-input, .verify__quote-theme-select, .verify__quote-reset');
+    expect(controls).toHaveLength(3);
+    for (const control of controls) expect(control.disabled).toBe(true);
+    handlers.onQuoteRemove!(key, 'unused');
+    handlers.onQuoteTheme!(key, 'unused', 'B');
+    handlers.onQuoteReset!(key);
+  }
+  await flush();
+  expect(onQuoteSetSave).not.toHaveBeenCalled();
+  expect(panel.root.querySelector('.verify__edit-input')).toBe(value);
+  expect(value.value).toBe('456');
+  expect(note.value).toBe('入力途中');
+  handlers.onCancelEdit();
+  expect(panel.root.querySelector<HTMLButtonElement>('.verify__quote-remove')!.disabled).toBe(false);
+  panel.dispose();
+  formSpy.mockRestore();
+});
+
+test.each(['list', 'focus'] as const)('引用保存中は修正・棄却と e / x を止め、保存後に解除する: %s', async (layoutMode) => {
+  let resolve!: () => void;
+  const onQuoteSetSave = jest.fn(() => new Promise<void>((done) => { resolve = done; }));
+  const { panel } = await createPanel({ fields: [makeField()], evidence: [makeEvidence()] }, { onQuoteSetSave, layoutMode });
+  const staleEdit = panel.root.querySelector<HTMLButtonElement>('.verify__action--edit')!;
+  panel.root.querySelector<HTMLButtonElement>('.verify__quote-remove')!.click();
+  for (const action of ['edit', 'reject']) {
+    const button = panel.root.querySelector<HTMLButtonElement>('.verify__action--' + action)!;
+    expect(button.disabled).toBe(true);
+    button.click();
+  }
+  staleEdit.click();
+  pressKey('e');
+  pressKey('x');
+  expect(panel.root.querySelector('.verify__editor')).toBeNull();
+  resolve();
+  await flush();
+  for (const action of ['edit', 'reject']) {
+    expect(panel.root.querySelector<HTMLButtonElement>('.verify__action--' + action)!.disabled).toBe(false);
+  }
+  pressKey('e');
+  expect(panel.root.querySelector('.verify__editor')).not.toBeNull();
+  panel.root.querySelector<HTMLButtonElement>('.verify__edit-cancel')!.click();
+  pressKey('x');
+  expect(panel.root.querySelector('.verify__editor')).not.toBeNull();
   panel.dispose();
 });

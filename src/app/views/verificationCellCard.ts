@@ -355,7 +355,7 @@ function renderMermaidWarning(cell: VerificationCell, model: CellCardModel): HTM
 
 /** 引用の編集操作を、引用元の表示と同じ一覧へ付ける。 */
 function renderQuoteControls(
-  cell: VerificationCell, quote: CellQuote, state: QuoteEditState, handlers: CellCardHandlers,
+  cell: VerificationCell, quote: CellQuote, handlers: CellCardHandlers, disabled: boolean,
 ): HTMLElement[] {
   const controls: HTMLElement[] = [];
   if (quote.source === 'human') controls.push(el('span', {
@@ -365,7 +365,7 @@ function renderQuoteControls(
     className: 'verify__quote-remove', text: t('verify.quoteRemove'),
     attributes: { type: 'button', 'aria-label': t('verify.quoteRemoveAria') },
   });
-  remove.disabled = state.saving;
+  remove.disabled = disabled;
   remove.addEventListener('click', () => handlers.onQuoteRemove!(cell.cellKey, quote.quoteId));
   controls.push(remove);
   if (isMultiSelectField(cell.field)) {
@@ -376,14 +376,14 @@ function renderQuoteControls(
     if (!values.includes(theme)) values.push(theme);
     for (const value of values) select.append(el('option', { text: value, attributes: { value } }));
     select.value = theme;
-    select.disabled = state.saving;
+    select.disabled = disabled;
     select.addEventListener('change', () => handlers.onQuoteTheme!(cell.cellKey, quote.quoteId, select.value));
     controls.push(select);
   } else if (cell.field.maxQuotes !== null) {
     const input = el('input', { className: 'verify__quote-theme-input',
       attributes: { type: 'text', 'aria-label': t('verify.quoteThemeAria') } });
     input.value = quote.theme ?? '';
-    input.disabled = state.saving;
+    input.disabled = disabled;
     input.addEventListener('change', () => handlers.onQuoteTheme!(cell.cellKey, quote.quoteId, input.value));
     controls.push(input);
   }
@@ -395,6 +395,7 @@ function renderQuote(
 ): HTMLElement | null {
   const state = model.quoteEdit?.get(cell.cellKey);
   if (state === undefined) return renderQuoteContent(cell, model, handlers);
+  const disabled = state.saving || model.editing !== null;
   const displayCell = state.edited ? { ...cell, quotes: state.evidence } : cell;
   const content = state.edited && state.quotes.length === 0
     ? el('p', { className: 'verify__quote-empty', text: t('verify.quoteAllRemoved') })
@@ -403,13 +404,13 @@ function renderQuote(
   const rows = displayCell.quotes.length > 0
     ? [...content.querySelectorAll<HTMLElement>('.verify__quotes-item')] : [content];
   state.quotes.forEach((quote, index) => {
-    rows[index]!.append(...renderQuoteControls(cell, quote, state, handlers));
+    rows[index]!.append(...renderQuoteControls(cell, quote, handlers, disabled));
   });
   const children = [content];
   if (state.edited) {
     const reset = el('button', { className: 'verify__quote-reset', text: t('verify.quoteReset'),
       attributes: { type: 'button' } });
-    reset.disabled = state.saving;
+    reset.disabled = disabled;
     reset.addEventListener('click', () => handlers.onQuoteReset!(cell.cellKey));
     children.push(reset);
   }
@@ -703,12 +704,13 @@ function renderEditor(
 }
 
 /** 独立入力モードの「入力 (e)」ボタン（承認・棄却は AI 値が無いため出さない。design §5.2） */
-function renderEditButton(cell: VerificationCell, handlers: CellCardHandlers, label: string): HTMLElement {
+function renderEditButton(cell: VerificationCell, handlers: CellCardHandlers, label: string, disabled = false): HTMLElement {
   const edit = el('button', {
     className: 'verify__action verify__action--edit',
     text: label,
     attributes: { type: 'button' },
   });
+  edit.disabled = disabled;
   edit.addEventListener('click', () => handlers.onStartEdit(cell.cellKey, 'edit'));
   return edit;
 }
@@ -738,6 +740,7 @@ function renderActions(
   cell: VerificationCell,
   handlers: CellCardHandlers,
   mode: 'review' | 'independent',
+  model: CellCardModel,
 ): HTMLElement {
   if (mode === 'independent') {
     // 独立入力モード（design §5.2）: 承認 / 棄却は AI 値が無いため出さない。
@@ -756,16 +759,18 @@ function renderActions(
   accept.disabled = cell.evidence === null;
   accept.addEventListener('click', () => handlers.onAccept(cell.cellKey));
 
+  const quoteSaving = [...(model.quoteEdit?.values() ?? [])].some((state) => state.saving);
   const reject = el('button', {
     className: 'verify__action verify__action--reject',
     text: t('verify.actionReject'),
     attributes: { type: 'button' },
   });
+  reject.disabled = quoteSaving;
   reject.addEventListener('click', () => handlers.onStartEdit(cell.cellKey, 'reject'));
 
   return el('div', { className: 'verify__actions' }, [
     accept,
-    renderEditButton(cell, handlers, t('verify.actionEdit')),
+    renderEditButton(cell, handlers, t('verify.actionEdit'), quoteSaving),
     reject,
     renderNotReportedButton(cell, handlers),
     renderUndoButton(cell, handlers),
@@ -854,7 +859,7 @@ export function renderCell(
   if (model.editing !== null && model.editing.cellKey === cell.cellKey) {
     children.push(renderEditor(cell, model.editing.action, handlers, mode, model));
   } else {
-    children.push(renderActions(cell, handlers, mode));
+    children.push(renderActions(cell, handlers, mode, model));
   }
   const node = el('div', { className: 'verify__cell', attributes: { tabindex: '-1' } }, children);
   node.dataset['cellKey'] = cell.cellKey;
