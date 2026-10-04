@@ -6,6 +6,8 @@
 // 'strict'、描画は本モジュールの明示 API 経由のみ（startOnLoad: false）。
 // jest では 'mermaid' パッケージを jest.mock し、本モジュール経由の分岐だけを検証する
 
+import { t } from '../../lib/i18n';
+
 /**
  * 描画プレビュー対象の予約 field_name（robFields.ts と同じ「予約名規約」方式）。
  * 現状は QUADAS-3 テンプレートの flow 図のみ（robTemplates.ts の QUADAS3_FLOW_DIAGRAM_ROW）
@@ -48,6 +50,20 @@ function reasonOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+/** 同梱対象外のモジュール読み込み失敗を、利用者向けの未対応理由に置き換える。 */
+function mermaidErrorReason(error: unknown): string {
+  const reason = reasonOf(error);
+  if (
+    error instanceof Error &&
+    (('code' in error && error.code === 'MODULE_NOT_FOUND') || reason.includes('Cannot find module'))
+  ) {
+    return reason.includes('katex')
+      ? t('verify.mermaidUnsupportedMath')
+      : t('verify.mermaidUnsupportedType');
+  }
+  return reason;
+}
+
 /**
  * 構文チェック（`mermaid.parse`）。編集保存前チェック（警告表示のみ・保存はブロックしない。
  * ui-states.md §3）に使うため、構文エラー・ロード失敗のいずれでも throw せず結果で返す
@@ -58,7 +74,7 @@ export async function parseMermaid(source: string): Promise<MermaidParseResult> 
     await mermaid.parse(source);
     return { valid: true };
   } catch (error) {
-    return { valid: false, error: reasonOf(error) };
+    return { valid: false, error: mermaidErrorReason(error) };
   }
 }
 
@@ -80,6 +96,6 @@ export async function renderMermaid(
     container.innerHTML = svg;
     return { ok: true };
   } catch (error) {
-    return { ok: false, error: reasonOf(error) };
+    return { ok: false, error: mermaidErrorReason(error) };
   }
 }

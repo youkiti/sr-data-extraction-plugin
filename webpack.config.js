@@ -7,6 +7,7 @@ require('dotenv').config();
 const path = require('path');
 const webpack = require('webpack');
 const CopyWebpackPlugin = require('copy-webpack-plugin');
+const { shouldIgnoreMermaidImport } = require('./tools/bundle/mermaidFlowchartOnly');
 
 // ビルド日（ローカル時刻の YYYY-MM-DD）。アプリ名の下に表示する
 const now = new Date();
@@ -127,6 +128,21 @@ module.exports = (env, argv) => {
       ],
     },
     plugins: [
+      // フロー図しか使わないため、不要な図種・レイアウトを除いて zip を小さくする。
+      // mermaid 更新時はフロー図の E2E と dist/chunks/ に不要な依存が戻っていないことを確認する。
+      // IgnorePlugin の引数には依存種別がないため、同じ beforeResolve で動的 import のみを判定する。
+      {
+        apply(compiler) {
+          compiler.hooks.normalModuleFactory.tap('MermaidFlowchartOnly', (factory) => {
+            factory.hooks.beforeResolve.tap('MermaidFlowchartOnly', (data) => {
+              if (data.dependencies.some((dependency) =>
+                shouldIgnoreMermaidImport(data.request, data.context, dependency.type))) {
+                return false;
+              }
+            });
+          });
+        },
+      },
       new webpack.DefinePlugin({
         __BUILD_DATE__: JSON.stringify(buildDate),
         __DEV_NAME_SUFFIX__: JSON.stringify(devNameSuffix),

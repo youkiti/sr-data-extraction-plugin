@@ -1922,6 +1922,51 @@ test('flow 図（mermaid）プレビュー: 構文エラーはメッセージへ
   expect(results.violations).toEqual([]);
 });
 
+test('flow 図（mermaid）プレビュー: 旧記法 graph TD でも SVG を描画する', async ({ page }) => {
+  const evidence = [...FLOW_EVIDENCE_ROW];
+  evidence[6] = 'graph TD\n  A[Enrolled 100] --> B[Analyzed 90]';
+  await setupRoutes(page, { schemaRows: [FLOW_FIELD_ROW], evidenceRows: [evidence] });
+  await initApp(page, '#/verify?study=study-1');
+  await expect(page.locator('.verify__panes')).toBeVisible({ timeout: 15_000 });
+  await page.locator('#verify-focus-detail .verify__mermaid-toggle summary').click();
+  await expect(page.locator('.verify__mermaid-preview svg')).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator('.verify__mermaid-error')).toHaveCount(0);
+});
+
+test('flow 図（mermaid）プレビュー: frontmatter 付きのフロー図でも SVG を描画する', async ({ page }) => {
+  const evidence = [...FLOW_EVIDENCE_ROW];
+  evidence[6] = '---\ntitle: Test\n---\nflowchart TD\n  A --> B';
+  await setupRoutes(page, { schemaRows: [FLOW_FIELD_ROW], evidenceRows: [evidence] });
+  await initApp(page, '#/verify?study=study-1');
+  await expect(page.locator('.verify__panes')).toBeVisible({ timeout: 15_000 });
+  await page.locator('#verify-focus-detail .verify__mermaid-toggle summary').click();
+  await expect(page.locator('.verify__mermaid-preview svg')).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator('.verify__mermaid-error')).toHaveCount(0);
+});
+
+test('flow 図（mermaid）プレビュー: 数式ラベルは未対応の理由を表示する', async ({ page }) => {
+  const evidence = [...FLOW_EVIDENCE_ROW];
+  evidence[6] = 'flowchart TD\n  A["$$n=100$$"] --> B';
+  await setupRoutes(page, { schemaRows: [FLOW_FIELD_ROW], evidenceRows: [evidence] });
+  await initApp(page, '#/verify?study=study-1');
+  await expect(page.locator('.verify__panes')).toBeVisible({ timeout: 15_000 });
+  await page.locator('#verify-focus-detail .verify__mermaid-toggle summary').click();
+  await expect(page.locator('.verify__mermaid-error')).toContainText('数式', { timeout: 15_000 });
+});
+
+test('flow 図（mermaid）プレビュー: 他の図種は未対応の理由を表示する', async ({ page }) => {
+  const evidence = [...FLOW_EVIDENCE_ROW];
+  evidence[6] = 'pie title X\n  "A" : 1';
+  await setupRoutes(page, { schemaRows: [FLOW_FIELD_ROW], evidenceRows: [evidence] });
+  await initApp(page, '#/verify?study=study-1');
+  await expect(page.locator('.verify__panes')).toBeVisible({ timeout: 15_000 });
+  await page.locator('#verify-focus-detail .verify__mermaid-toggle summary').click();
+  await expect(page.locator('.verify__mermaid-error')).toContainText(
+    '他の図種は未対応', { timeout: 15_000 },
+  );
+  await expect(page.locator('.verify__mermaid-preview svg')).toHaveCount(0);
+});
+
 test('flow 図（mermaid）プレビュー: 編集入力は複数行 textarea で改行が保持され、Ctrl+Enter 確定後も描画できる（issue #170）', async ({
   page,
 }) => {

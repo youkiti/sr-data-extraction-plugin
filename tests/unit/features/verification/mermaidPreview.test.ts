@@ -9,7 +9,11 @@ const mockRender = jest.fn();
 
 jest.mock('mermaid', () => ({
   __esModule: true,
-  default: { initialize: mockInitialize, parse: mockParse, render: mockRender },
+  default: {
+    initialize: mockInitialize,
+    parse: mockParse,
+    render: mockRender,
+  },
 }));
 
 type Wrapper = typeof import('../../../../src/features/verification/mermaidPreview');
@@ -85,8 +89,16 @@ describe('renderMermaid', () => {
     expect(container.querySelector('svg[data-kind="flow"]')).not.toBeNull();
     // 同一画面で複数回プレビューしても id が衝突しない（連番）
     await wrapper.renderMermaid('flowchart TD\n  B --> C', container);
-    expect(mockRender).toHaveBeenNthCalledWith(1, 'sr-mermaid-preview-1', 'flowchart TD\n  A --> B');
-    expect(mockRender).toHaveBeenNthCalledWith(2, 'sr-mermaid-preview-2', 'flowchart TD\n  B --> C');
+    expect(mockRender).toHaveBeenNthCalledWith(
+      1,
+      'sr-mermaid-preview-1',
+      'flowchart TD\n  A --> B',
+    );
+    expect(mockRender).toHaveBeenNthCalledWith(
+      2,
+      'sr-mermaid-preview-2',
+      'flowchart TD\n  B --> C',
+    );
   });
 
   test('構文エラー: 理由つきの ok:false を返し、container は書き換えない', async () => {
@@ -100,4 +112,50 @@ describe('renderMermaid', () => {
     });
     expect(container.textContent).toBe('描画中…');
   });
+});
+
+test.each([
+  ['モジュール不足の code と message', Object.assign(
+    new Error("Cannot find module './chunks/mermaid.core/pieDiagram-X.mjs'"),
+    { code: 'MODULE_NOT_FOUND' },
+  ), '対応する構文はフロー図（flowchart）のみです（他の図種は未対応）'],
+  ['モジュール不足の code のみ', Object.assign(new Error('missing diagram'), {
+    code: 'MODULE_NOT_FOUND',
+  }), '対応する構文はフロー図（flowchart）のみです（他の図種は未対応）'],
+  ['モジュール不足の message のみ', new Error("Cannot find module './chunks/mermaid.core/pieDiagram-X.mjs'"),
+    '対応する構文はフロー図（flowchart）のみです（他の図種は未対応）'],
+  ['数式モジュール不足の code と message', Object.assign(new Error("Cannot find module 'katex'"), {
+    code: 'MODULE_NOT_FOUND',
+  }), '数式（$$…$$）を含むラベルには対応していません'],
+  ['数式モジュール不足の message のみ', new Error("Cannot find module 'katex'"),
+    '数式（$$…$$）を含むラベルには対応していません'],
+  ['別の code のエラー', Object.assign(new Error('chunk load failed'), { code: 'CHUNK_LOAD_FAILED' }),
+    'chunk load failed'],
+  ['非 Error の reject', 'mermaid version mismatch', 'mermaid version mismatch'],
+  ['非 Error のモジュール不足文字列', "Cannot find module 'katex'", "Cannot find module 'katex'"],
+  ['非 Error の code 付きオブジェクト', { code: 'MODULE_NOT_FOUND' }, '[object Object]'],
+  ['null の reject', null, 'null'],
+])('%s は検査・描画で同じ理由を返す', async (_label, rejection, error) => {
+  const wrapper = await loadWrapper();
+  mockParse.mockRejectedValue(rejection);
+  mockRender.mockRejectedValue(rejection);
+  const source = 'flowchart TD\n  A --> B';
+  await expect(wrapper.parseMermaid(source)).resolves.toEqual({ valid: false, error });
+  await expect(wrapper.renderMermaid(source, document.createElement('div'))).resolves.toEqual({
+    ok: false,
+    error,
+  });
+});
+
+test('先頭に空行のある frontmatter 付きソースをそのまま検査・描画へ渡す', async () => {
+  const wrapper = await loadWrapper();
+  const source = '\n---\ntitle: Test\n---\nflowchart TD\n  A --> B';
+  mockParse.mockResolvedValue({ diagramType: 'flowchart-v2' });
+  mockRender.mockResolvedValue({ svg: '<svg></svg>' });
+  await expect(wrapper.parseMermaid(source)).resolves.toEqual({ valid: true });
+  await expect(wrapper.renderMermaid(source, document.createElement('div'))).resolves.toEqual({
+    ok: true,
+  });
+  expect(mockParse).toHaveBeenCalledWith(source);
+  expect(mockRender).toHaveBeenCalledWith('sr-mermaid-preview-1', source);
 });
