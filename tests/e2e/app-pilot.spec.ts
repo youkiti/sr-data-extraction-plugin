@@ -389,6 +389,16 @@ test('実行 → 完了 → 埋め込み検証 UI（ハイライト + 判定 + D
   await expect(page.locator('.pdf-viewer__page-indicator')).toHaveText('1 / 1 ページ');
   await expect(page.locator('.pdf-viewer__hl--unverified')).toHaveCount(1, { timeout: 15_000 });
 
+  await expect(page.locator('#pilot-matrix table')).toBeVisible();
+  await expect(page.locator('#pilot-matrix details')).toHaveAttribute('open', '');
+  await expect(page.locator('#pilot-matrix tbody td').first()).toHaveText('·');
+  await expect(page.locator('#pilot-matrix td button')).toHaveCount(0);
+  await page.locator('#pilot-matrix-sort').click();
+  await expect(page.locator('#pilot-matrix-sort')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('#pilot-matrix details')).toHaveCount(0);
+  await page.locator('#pilot-matrix-sort').click();
+  await expect(page.locator('#pilot-matrix details')).toHaveCount(1);
+
   // スクロール保持（issue #192）: #/pilot 埋め込みでも判定保存の非同期ストア更新
   // （detach → reattach）で右ペインのスクロール位置が先頭へ戻らないことを見る。
   // 中間位置を使う（末尾だと承認後にセル内容が縮んで最大値へクランプされ得るため）
@@ -428,9 +438,14 @@ test('実行 → 完了 → 埋め込み検証 UI（ハイライト + 判定 + D
     .poll(() => appendUrls.filter((url) => url.includes('Decisions') && url.includes(':append')).length)
     .toBeGreaterThan(1);
   await expect(page.locator('#verify-conflict-warning')).toHaveCount(0);
+  await expect(page.locator('#pilot-matrix tbody td').first()).toHaveText('✎');
 
   const results = await new AxeBuilder({ page }).analyze();
   expect(results.violations).toEqual([]);
+  await page.locator('#pilot-matrix tbody a').first().click();
+  await expect(page).toHaveURL(/#\/schema\?field=f-total$/);
+  await expect(page.locator('[data-schema-field="f-total"]')).toBeFocused();
+  await expect(page.locator('.schema__pilot-misses')).toContainText('12 → 13');
 });
 
 test('履歴からの復元: 過去のパイロット結果を自動読込 → 検証 UI が戻る', async ({ page }) => {

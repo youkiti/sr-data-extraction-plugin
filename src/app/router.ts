@@ -93,6 +93,11 @@ export function studyQueryOf(rawHash: string): string | null {
   return queryParamOf(rawHash, 'study');
 }
 
+/** パイロットから編集する項目の ID。 */
+export function fieldQueryOf(rawHash: string): string | null {
+  return queryParamOf(rawHash, 'field');
+}
+
 /**
  * `#/verify?study=...&entity={entity_key}` の entity クエリを取り出す（ui-flow.md §3 の
  * セル単位ディープリンク。S9 ダッシュボードのセルクリックが遷移元）

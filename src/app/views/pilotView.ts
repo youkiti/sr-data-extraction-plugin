@@ -25,6 +25,7 @@ import { renderConflictWarning } from './conflictWarning';
 import { hasZeroFieldsSelected, renderFieldSelectionChecklist } from './fieldSelectionChecklist';
 import type { ViewContext } from './types';
 import { renderCachedVerificationPanel } from './verificationPanel';
+import { renderPilotMatrix } from './pilotMatrixView';
 
 // 表示言語に追従させるため、ラベルは描画時に t() で解決する（キー対応表のみ固定。issue #93）
 const DOCUMENT_ROLE_LABEL_KEYS: Readonly<Record<DocumentRecord['documentRole'], MessageKey>> = {
@@ -535,6 +536,7 @@ export function renderPilotView(state: AppState, ctx: ViewContext): HTMLElement 
   if (state.pilot.run !== null) {
     children.push(
       renderRunSummary(state.pilot.run, state),
+      renderPilotMatrix(state, ctx),
       renderVerification(state.pilot.run, state, ctx),
     );
   }

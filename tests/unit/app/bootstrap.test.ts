@@ -9,6 +9,8 @@ import { askPaperUsedStudiesStorageKey } from '../../../src/lib/storage/askPaper
 import { installChromeMock, type ChromeMock } from '../../setup/chrome-mock';
 import { bootstrapApp, createChromeAppDeps, seedState, type AppDeps } from '../../../src/app/bootstrap';
 import { BUILD_DATE } from '../../../src/build-info';
+import { makeField as matrixField, makeRun as matrixRun, makeEvidence as matrixEvidence } from '../features/verification/pilotMatrixFixtures';
+import { emptyPilotMatrix } from '../../../src/app/services/pilotMatrixService';
 import * as reviewSetServices from '../../../src/app/services/reviewSetService';
 import { configureApiErrorLog, recordApiErrorLog } from '../../../src/lib/diagnostics/apiErrorLog';
 
@@ -423,6 +425,43 @@ describe('seedState', () => {
 });
 
 describe('bootstrapApp', () => {
+  test('パイロットの並べ替え・再試行と項目編集クエリを配線する', async () => {
+    const state = createInitialState();
+    state.currentProject = PROJECT;
+    state.role.role = 'owner';
+    state.home.countsLoaded = true;
+    state.protocol.records = [];
+    state.documents.records = [];
+    state.documents.studies = [];
+    state.counts = { ...state.counts, documents: 1, schemaVersions: 1, protocolVersions: 1 };
+    state.schema.versions = [];
+    state.schema.currentFields = [matrixField()];
+    state.pilot = { ...state.pilot, run: matrixRun(), runFields: [matrixField()], evidence: [matrixEvidence()],
+      history: [], historyInitialized: true, matrix: { ...emptyPilotMatrix(), runId: 'run-1' } };
+    const stub = createWindowStub(state);
+    const { deps } = createFakeDeps([]);
+    const store = (await bootstrapApp(asWindow(stub), deps))!;
+    stub.location.hash = '#/pilot'; stub.fireHashChange(); await flush();
+    (document.getElementById('pilot-matrix-sort') as HTMLButtonElement).click();
+    expect(store.getState().pilot.matrix?.sortByMisses).toBe(true);
+    const oldSort = document.getElementById('pilot-matrix-sort') as HTMLButtonElement;
+    store.setState({ pilot: { ...store.getState().pilot, matrix: undefined } });
+    oldSort.click();
+    expect(store.getState().pilot.matrix?.sortByMisses).toBe(true);
+    store.setState({ pilot: { ...store.getState().pilot, matrix: { ...emptyPilotMatrix(), error: 'error' } } });
+    (document.getElementById('pilot-matrix-retry') as HTMLButtonElement).click(); await flush();
+    expect(document.getElementById('pilot-matrix-error')).not.toBeNull();
+    stub.location.hash = '#/schema?field=f-1'; stub.fireHashChange(); await flush();
+    expect(store.getState().schema.pilotFieldId).toBe('f-1');
+    expect(document.activeElement?.getAttribute('data-schema-field')).toBe('f-1');
+    stub.fireHashChange(); await flush();
+    expect(document.activeElement?.getAttribute('data-schema-field')).toBe('f-1');
+    stub.location.hash = '#/schema?field=missing'; stub.fireHashChange(); await flush();
+    expect(store.getState().schema.pilotFieldId).toBeNull();
+    stub.location.hash = '#/schema?field=f-1'; stub.fireHashChange();
+    stub.location.hash = '#/home'; stub.fireHashChange(); await flush();
+    expect(store.getState().schema.pilotFieldId).toBeNull();
+  });
   beforeEach(() => {
     installChromeMock();
     document.body.innerHTML = APP_TEMPLATE;

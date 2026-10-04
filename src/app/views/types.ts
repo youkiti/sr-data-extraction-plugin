@@ -169,6 +169,8 @@ export interface SchemaViewCallbacks {
 
 /** #/pilot（S6）のユーザー操作コールバック */
 export interface PilotViewCallbacks {
+  onRetryMatrix?(): void;
+  onSortMatrix?(): void;
   /** 対象 study チェックボックスの切替（最大 3 study） */
   onToggleStudy(studyId: string, selected: boolean): void;
   /** requested_model の変更 */
