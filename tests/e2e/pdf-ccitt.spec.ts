@@ -9,6 +9,7 @@
 // 「暗い画素の比率」という広い閾値で白紙化の回帰を検出する。
 import { expect, test, type Page } from '@playwright/test';
 import { SHEET_HEADERS } from '../../src/domain/sheetsSchema';
+import manifest from '../../src/manifest.json';
 
 /**
  * CCITTFaxDecode（K=-1・BlackIs1 true）の 1bit 画像を持つ 240×120pt・1 ページの合成 PDF（base64）。
@@ -229,12 +230,8 @@ async function darkOpaquePixelRatio(canvas: import('@playwright/test').Locator):
   });
 }
 
-test('CCITTFaxDecode 圧縮のスキャン PDF が白紙化しない（実 pdf.js 描画・wasm 資産の同梱回帰検知）', async ({
-  page,
-}) => {
-  await setupCcittRoutes(page);
-  await initCcittApp(page);
-
+/** 描画完了を待ち、黒帯が描かれて白紙になっていないことを確認する */
+async function expectCcittRendered(page: Page): Promise<void> {
   await expect(page.locator('.verify__panes')).toBeVisible({ timeout: 15_000 });
   // no_text_layer 文書はバナー表示になる（既存 E2E と同じ確認だが、ここでは canvas 描画が主眼）
   await expect(page.locator('.verify__banner')).toBeVisible({ timeout: 15_000 });
@@ -250,9 +247,51 @@ test('CCITTFaxDecode 圧縮のスキャン PDF が白紙化しない（実 pdf.j
   await expect
     .poll(async () => darkOpaquePixelRatio(canvas), { timeout: 15_000 })
     .toBeGreaterThan(0.1);
+}
+
+test('CCITTFaxDecode 圧縮のスキャン PDF が白紙化しない（実 pdf.js 描画・wasm 資産の同梱回帰検知）', async ({
+  page,
+}) => {
+  await setupCcittRoutes(page);
+  await initCcittApp(page);
+  await expectCcittRendered(page);
 });
 
-test('pdfjs の画像デコーダ wasm / 標準フォント / ICC プロファイルが dist/ に同梱され HTTP 200 で取得できる', async ({
+test('manifest と同じ CSP の下で JavaScript 版フォールバックなしでもスキャン PDF が白紙化しない', async ({
+  page,
+}) => {
+  // worker は自身の応答の CSP に従うため、HTML と worker の両方へ同じポリシーを付ける。
+  for (const resourcePath of ['**/app/app.html', '**/pdf.worker.min.mjs']) {
+    await page.route(resourcePath, async (route) => {
+      const response = await route.fetch();
+      await route.fulfill({
+        response,
+        headers: {
+          ...response.headers(),
+          'content-security-policy': manifest.content_security_policy.extension_pages,
+        },
+      });
+    });
+  }
+  await setupCcittRoutes(page);
+  await initCcittApp(page);
+
+  // CSP が掛からないままの成功を防ぐため、インラインスクリプトが拒否されることを確かめる
+  // （script-src 'self' はインラインを許可しない。page.evaluate 内の new Function は
+  // この CSP の下でも拒否されなかったため、判定には使えない）
+  const inlineScriptBlocked = await page.evaluate(() => {
+    const win = window as unknown as Record<string, unknown>;
+    const script = document.createElement('script');
+    script.textContent = 'window.__cspProbe = true;';
+    document.head.appendChild(script);
+    script.remove();
+    return win.__cspProbe !== true;
+  });
+  expect(inlineScriptBlocked).toBe(true);
+  await expectCcittRendered(page);
+});
+
+test('pdfjs の必要な資産は HTTP 200、不要な JavaScript 版フォールバックと quickjs は 404 になる', async ({
   page,
 }) => {
   // web_accessible_resources を追加していないが、拡張自身のページ（chrome-extension://）からの
@@ -270,4 +309,9 @@ test('pdfjs の画像デコーダ wasm / 標準フォント / ICC プロファ�
   // pdf.sandbox 用の quickjs-eval.* は本拡張が使わないため同梱から除外している（webpack.config.js）
   const quickjsResponse = await page.request.get('/wasm/quickjs-eval.wasm');
   expect(quickjsResponse.status()).toBe(404);
+  // wasm を使うため、画像デコーダの JavaScript 版フォールバックも同梱しない。
+  const jbig2FallbackResponse = await page.request.get('/wasm/jbig2_nowasm_fallback.js');
+  expect(jbig2FallbackResponse.status()).toBe(404);
+  const openjpegFallbackResponse = await page.request.get('/wasm/openjpeg_nowasm_fallback.js');
+  expect(openjpegFallbackResponse.status()).toBe(404);
 });
