@@ -28,11 +28,14 @@ test('実 PDF のテキスト層で選んだ文字列を根拠として追加で
   await expect(page.locator('.verify__quote-add')).toBeVisible();
   const appended = page.waitForRequest((request) =>
     decodeURIComponent(request.url()).includes('/values/QuoteSets!A1:append'));
+  await page.locator('.verify__quote-add-section').click();
+  await page.locator('.verify__quote-add-section').pressSequentially('Results');
   await page.locator('.verify__quote-add-confirm').click();
   const rows = (await appended).postDataJSON().values as string[][];
   const human = rows.find((row) => row[SHEET_HEADERS.QuoteSets.indexOf('source')] === 'human')!;
   expect(human[SHEET_HEADERS.QuoteSets.indexOf('kind')]).toBe('quote');
   expect(human[SHEET_HEADERS.QuoteSets.indexOf('quote')]).toBe(selected);
+  expect(human[SHEET_HEADERS.QuoteSets.indexOf('section')]).toBe('Results');
   await expect(page.locator('.verify__quote-source')).toHaveText('人が追加');
 });
 
@@ -1069,7 +1072,12 @@ test('和文 fixture: 抽出テキスト → アンカリング（exact）→ �
   expect(box.height).toBeGreaterThan(0);
 
   // ハイライトクリック → フォームへジャンプ（英文と同じ導線が和文でも壊れないこと）
-  await highlight.click();
+  await highlight.scrollIntoViewIfNeeded();
+  const clickBox = (await highlight.boundingBox())!;
+  await page.mouse.click(clickBox.x + clickBox.width / 2, clickBox.y + clickBox.height / 2);
+  await expect(page.locator('#verify-focus-detail .verify__quote-jump')).toBeVisible();
+  await highlight.focus();
+  await highlight.press('Enter');
   await expect(page.locator('#verify-focus-detail .verify__quote-jump')).toBeVisible();
 });
 

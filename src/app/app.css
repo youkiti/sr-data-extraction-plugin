@@ -3204,6 +3204,10 @@ section.documents__tiab {
   background: none;
 }
 
+.pdf-viewer__page--selectable .pdf-viewer__hl {
+  pointer-events: none;
+}
+
 /* globals.css の button:hover（緑塗り。詳細度 0,2,1）がクラス指定に勝つため、
    ハイライトのボタン本体は hover 中も透明を明示的に維持する */
 .pdf-viewer__hl:hover:not(:disabled) {

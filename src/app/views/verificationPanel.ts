@@ -1476,7 +1476,7 @@ export function createVerificationPanel(
     for (const match of textMatches) {
       info.set(match.quoteKey, {
         matchCount: panelMode === 'independent' ? Math.min(1, match.occurrences.length) : match.occurrences.length,
-        matchIndex: panelMode === 'independent' ? 0 : matchSelection.get(match.quoteKey) ?? match.selectedIndex,
+        matchIndex: panelMode === 'independent' ? match.selectedIndex : matchSelection.get(match.quoteKey) ?? match.selectedIndex,
       });
     }
     for (const item of visibleEvidence) {
@@ -1505,7 +1505,7 @@ export function createVerificationPanel(
       const status = states.get(highlight.cellKey)?.status ?? 'unverified';
       // ハイライトは evidence 由来のため対応する Evidence が必ず存在する
       const confidence = (evidenceForKey(highlight.quoteKey) as Evidence).confidence;
-      const selected = panelMode === 'independent' ? 0 : matchSelection.get(highlight.quoteKey) ?? highlight.selectedIndex;
+      const selected = panelMode === 'independent' ? highlight.selectedIndex : matchSelection.get(highlight.quoteKey) ?? highlight.selectedIndex;
       // matchSelection の剰余はテキストマッチ（extracted_texts 由来）の件数で取られている。
       // extracted_texts と PDF テキスト層は同一系で通常一致するが、万一件数がズレた場合
       // （取り込み後に Drive 上の PDF が差し替えられた等）の undefined 参照を防ぐため、

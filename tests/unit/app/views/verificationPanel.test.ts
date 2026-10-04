@@ -4456,6 +4456,11 @@ describe('PDF で選んだ文の追加', () => {
     expect(panel.root.querySelector('.verify__quote-add')?.getAttribute('role')).toBe('group');
     expect(panel.root.querySelector('.verify__quote-add')?.textContent).toContain('「総サンプルサイズ」の根拠に追加');
     expect(panel.root.querySelector('.verify__quote-add-theme')).toBeNull();
+    const section = panel.root.querySelector<HTMLInputElement>('.verify__quote-add-section')!;
+    section.click();
+    section.focus();
+    document.getSelection()!.removeAllRanges();
+    document.dispatchEvent(new Event('selectionchange'));
     input(panel.root, '.verify__quote-add-section', '  Results  ');
     confirm(panel.root).click();
     expect(panel.root.querySelector('.verify__quote-add')).toBeNull();
@@ -4577,6 +4582,31 @@ describe('PDF で選んだ文の追加', () => {
     expect(panel.root.querySelector('.verify__quote-source')).toBeNull();
     expect(panel.root.querySelector('.verify__quote-error')).not.toBeNull();
     expect(panel.root.querySelector('.pdf-viewer__hl')).toBeNull();
+    panel.dispose();
+  });
+
+  test('独立入力でも選択した二ページ目に近い一致を表示し、ジャンプする', async () => {
+    const onQuoteSetSave = jest.fn().mockResolvedValue(undefined);
+    const { panel } = await createPanel({
+      fields: [makeField()], evidence: [], annotatorType: 'human_independent',
+      textPages: [buildPage(1, 'in total'), buildPage(2, 'in total')],
+    }, { onQuoteSetSave });
+    click(panel.root, '.pdf-viewer__next');
+    await flush();
+    select(panel.root, 'in total');
+    confirm(panel.root).click();
+    await flush();
+    expect(onQuoteSetSave.mock.calls[0]![0]).toEqual([
+      expect.objectContaining({ source: 'human', page: 2, quote: 'in total' }),
+    ]);
+    expect(panel.root.querySelector('.pdf-viewer__page-indicator')?.textContent).toBe('2 / 2 ページ');
+    expect(panel.root.querySelectorAll('.pdf-viewer__hl')).toHaveLength(1);
+    expect(panel.root.querySelector('.verify__quote-cycle')).toBeNull();
+    click(panel.root, '.pdf-viewer__prev');
+    expect(panel.root.querySelector('.pdf-viewer__hl')).toBeNull();
+    click(panel.root, '.verify__quote-jump');
+    expect(panel.root.querySelector('.pdf-viewer__page-indicator')?.textContent).toBe('2 / 2 ページ');
+    expect(panel.root.querySelectorAll('.pdf-viewer__hl')).toHaveLength(1);
     panel.dispose();
   });
 

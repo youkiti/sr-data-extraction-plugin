@@ -175,13 +175,24 @@ export function createPdfViewer(options: PdfViewerOptions): PdfViewerHandle {
   function readSelection(): void {
     if (!root.isConnected) return;
     const selection = root.ownerDocument.getSelection();
-    const text = selection?.toString().replace(/\s+/g, ' ').trim();
-    if (text && textLayer.contains(selection!.anchorNode) && textLayer.contains(selection!.focusNode)) {
-      notifySelection({ page: currentPage, text });
-    } else {
-      notifySelection(null);
-    }
+    if (!selection || !textLayer.contains(selection.anchorNode) || !textLayer.contains(selection.focusNode)) return;
+    const text = selection.toString().replace(/\s+/g, ' ').trim();
+    notifySelection(text ? { page: currentPage, text } : null);
   }
+
+  // 文字選択を優先し、ドラッグしていないクリックだけを最前面の根拠へ委譲する。
+  pageWrap.addEventListener('click', (event) => {
+    if (!textLayer.contains(event.target as Node) || root.ownerDocument.getSelection()?.toString()) return;
+    const buttons = Array.from(overlay.querySelectorAll<HTMLButtonElement>('button.pdf-viewer__hl'));
+    for (const button of buttons.reverse()) {
+      const rect = button.getBoundingClientRect();
+      if (event.clientX >= rect.left && event.clientX <= rect.right &&
+          event.clientY >= rect.top && event.clientY <= rect.bottom) {
+        button.click();
+        return;
+      }
+    }
+  });
 
   // mouseup のリスナがコールバックの寿命を root に結び付ける。脱着中は通知しない。
   if (options.onTextSelected) {
@@ -266,6 +277,7 @@ export function createPdfViewer(options: PdfViewerOptions): PdfViewerHandle {
     currentTextTask?.cancel();
     currentTextTask = null;
     notifySelection(null);
+    pageWrap.classList.remove('pdf-viewer__page--selectable');
     // 非同期描画は世代ごとの要素へ隔離し、古いタスクが現ページを書き換えないようにする。
     const nextTextLayer = el('div', { className: 'pdf-viewer__text-layer textLayer' });
     textLayer.replaceWith(nextTextLayer);
@@ -290,7 +302,10 @@ export function createPdfViewer(options: PdfViewerOptions): PdfViewerHandle {
               // 選択用テキストの失敗は canvas と根拠ハイライトの表示に影響させない。
               nextTextLayer.replaceChildren();
             } finally {
-              if (seq === renderSeq) currentTextTask = null;
+              if (seq === renderSeq) {
+                currentTextTask = null;
+                pageWrap.classList.toggle('pdf-viewer__page--selectable', nextTextLayer.querySelector('span') !== null);
+              }
             }
           })();
         }
