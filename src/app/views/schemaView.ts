@@ -380,6 +380,7 @@ function renderEditorRow(
       type: 'button',
       'aria-label': t('schema.rowMoveUpAria', { row: index + 1 }),
       'data-row-index': String(index),
+      'data-preserve-focus': '',
     },
   });
   moveUpButton.disabled = index === 0;
@@ -395,6 +396,7 @@ function renderEditorRow(
       type: 'button',
       'aria-label': t('schema.rowMoveDownAria', { row: index + 1 }),
       'data-row-index': String(index),
+      'data-preserve-focus': '',
     },
   });
   moveDownButton.disabled = index === rowCount - 1;
