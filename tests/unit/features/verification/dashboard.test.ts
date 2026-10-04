@@ -43,6 +43,9 @@ test('旧 run の引用も anchor に数え、quoteSeq が 2 以上の not_repor
 function makeField(overrides: Partial<SchemaField> = {}): SchemaField {
   return {
     maxQuotes: null,
+    locationHint: null,
+    rules: null,
+    hintSource: null,
     schemaVersion: 1,
     fieldId: 'f-total',
     fieldIndex: 1,

@@ -61,6 +61,9 @@ describe('parseDraftSchemaResponse', () => {
     expect(rows).toEqual([
       {
         maxQuotes: null,
+        locationHint: null,
+        rules: null,
+        hintSource: null,
         fieldId: null,
         section: 'population',
         fieldName: 'sample_size_total',

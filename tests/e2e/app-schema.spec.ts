@@ -25,6 +25,9 @@ const PROTOCOL_ROW = [
 function makeEditorRow(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     maxQuotes: null,
+    locationHint: null,
+    rules: null,
+    hintSource: null,
     fieldId: null,
     section: 'methods',
     fieldName: 'study_design',
@@ -501,6 +504,9 @@ test('確定済み: 現行版サマリから「新しい版を作る」でエデ
       currentFields: [
         {
           maxQuotes: null,
+          locationHint: null,
+          rules: null,
+          hintSource: null,
           schemaVersion: 2,
           fieldId: 'f-1',
           fieldIndex: 1,
@@ -551,6 +557,9 @@ const CONFIRMED_SCHEMA_STATE = {
   currentFields: [
     {
       maxQuotes: null,
+      locationHint: null,
+      rules: null,
+      hintSource: null,
       schemaVersion: 1,
       fieldId: 'f-1',
       fieldIndex: 1,
@@ -591,6 +600,9 @@ test('差分承認画面: 追加は既定チェック・削除候補は既定未
 }) => {
   const currentField = {
     maxQuotes: null,
+    locationHint: null,
+    rules: null,
+    hintSource: null,
     schemaVersion: 1,
     fieldId: 'f-1',
     fieldIndex: 1,

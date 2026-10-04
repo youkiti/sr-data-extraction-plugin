@@ -133,6 +133,9 @@ export function emptyEditorRow(): SchemaEditorRow {
     aiGenerated: false,
     note: null,
     maxQuotes: null,
+    locationHint: null,
+    rules: null,
+    hintSource: null,
   };
 }
 
@@ -623,6 +626,9 @@ export function startEditorFromCurrent(store: Store): void {
       aiGenerated: field.aiGenerated,
       note: field.note,
       maxQuotes: field.maxQuotes,
+      locationHint: field.locationHint,
+      rules: field.rules,
+      hintSource: field.hintSource,
     })),
     editorErrors: [],
     editorOrigin: 'user_edit',

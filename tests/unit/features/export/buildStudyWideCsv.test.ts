@@ -22,6 +22,9 @@ const field = (
   entityLevel: SchemaField['entityLevel'] = 'study',
 ): SchemaField => ({
   maxQuotes: null,
+  locationHint: null,
+  rules: null,
+  hintSource: null,
   schemaVersion: 1,
   fieldId,
   fieldIndex,

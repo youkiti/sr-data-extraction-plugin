@@ -139,6 +139,9 @@ export const SHEET_HEADERS: Record<SheetTabName, readonly string[]> = {
     'ai_generated',
     'note',
     'max_quotes',
+    'location_hint',
+    'rules',
+    'hint_source',
   ],
   ExtractionRuns: [
     'run_id',

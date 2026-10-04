@@ -49,8 +49,9 @@ export const EXTRACT_DATA_SKILL_NAME = 'extract-data';
  *   撤去。出力プロンプトは v7 と同一内容に戻る（実 gold ベンチで効果が誤差範囲だったため。
  *   experiments/extraction-benchmark-real の REPORT-20260729 参照）
  * v10（2026-09-30）: max_quotes を持つ項目で複数箇所の引用と theme を返す（issue #275）。
+ * v11（2026-10-04）: 探索先と出力制約を項目定義の別行で渡す（issue #285）。
  */
-export const EXTRACT_DATA_PROMPT_VERSION = 10;
+export const EXTRACT_DATA_PROMPT_VERSION = 11;
 
 /** text_only モードで LLM へ渡すページ別本文（extracted_texts/{id}.txt 由来） */
 export interface ExtractDataPage {
@@ -214,6 +215,12 @@ function renderField(field: SchemaField): string {
   }
   if (field.extractionInstruction !== '') {
     lines.push(`  instruction: ${field.extractionInstruction}`);
+  }
+  if (field.locationHint !== null && field.locationHint !== '') {
+    lines.push(`  where_to_look: ${field.locationHint}`);
+  }
+  if (field.rules !== null && field.rules !== '') {
+    lines.push(`  rules: ${field.rules}`);
   }
   if (field.example !== null) {
     lines.push(`  example: ${field.example}`);

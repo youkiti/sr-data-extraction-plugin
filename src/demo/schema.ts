@@ -29,6 +29,9 @@ export const DEMO_SCHEMA_FIELDS: readonly SchemaField[] = [
     aiGenerated: true,
     note: null,
     maxQuotes: null,
+    locationHint: null,
+    rules: null,
+    hintSource: null,
   },
   {
     schemaVersion: DEMO_SCHEMA_VERSION,
@@ -47,6 +50,9 @@ export const DEMO_SCHEMA_FIELDS: readonly SchemaField[] = [
     aiGenerated: true,
     note: null,
     maxQuotes: null,
+    locationHint: null,
+    rules: null,
+    hintSource: null,
   },
   {
     schemaVersion: DEMO_SCHEMA_VERSION,
@@ -65,6 +71,9 @@ export const DEMO_SCHEMA_FIELDS: readonly SchemaField[] = [
     aiGenerated: true,
     note: null,
     maxQuotes: null,
+    locationHint: null,
+    rules: null,
+    hintSource: null,
   },
   {
     schemaVersion: DEMO_SCHEMA_VERSION,
@@ -83,6 +92,9 @@ export const DEMO_SCHEMA_FIELDS: readonly SchemaField[] = [
     aiGenerated: true,
     note: null,
     maxQuotes: null,
+    locationHint: null,
+    rules: null,
+    hintSource: null,
   },
   {
     schemaVersion: DEMO_SCHEMA_VERSION,
@@ -101,6 +113,9 @@ export const DEMO_SCHEMA_FIELDS: readonly SchemaField[] = [
     aiGenerated: true,
     note: null,
     maxQuotes: null,
+    locationHint: null,
+    rules: null,
+    hintSource: null,
   },
   {
     schemaVersion: DEMO_SCHEMA_VERSION,
@@ -119,6 +134,9 @@ export const DEMO_SCHEMA_FIELDS: readonly SchemaField[] = [
     aiGenerated: true,
     note: null,
     maxQuotes: null,
+    locationHint: null,
+    rules: null,
+    hintSource: null,
   },
   {
     schemaVersion: DEMO_SCHEMA_VERSION,
@@ -137,6 +155,9 @@ export const DEMO_SCHEMA_FIELDS: readonly SchemaField[] = [
     aiGenerated: true,
     note: null,
     maxQuotes: null,
+    locationHint: null,
+    rules: null,
+    hintSource: null,
   },
   {
     schemaVersion: DEMO_SCHEMA_VERSION,
@@ -155,6 +176,9 @@ export const DEMO_SCHEMA_FIELDS: readonly SchemaField[] = [
     aiGenerated: true,
     note: null,
     maxQuotes: null,
+    locationHint: null,
+    rules: null,
+    hintSource: null,
   },
   // --- arm level ---
   {
@@ -174,6 +198,9 @@ export const DEMO_SCHEMA_FIELDS: readonly SchemaField[] = [
     aiGenerated: true,
     note: null,
     maxQuotes: null,
+    locationHint: null,
+    rules: null,
+    hintSource: null,
   },
   {
     schemaVersion: DEMO_SCHEMA_VERSION,
@@ -192,6 +219,9 @@ export const DEMO_SCHEMA_FIELDS: readonly SchemaField[] = [
     aiGenerated: true,
     note: null,
     maxQuotes: null,
+    locationHint: null,
+    rules: null,
+    hintSource: null,
   },
   {
     schemaVersion: DEMO_SCHEMA_VERSION,
@@ -210,6 +240,9 @@ export const DEMO_SCHEMA_FIELDS: readonly SchemaField[] = [
     aiGenerated: true,
     note: null,
     maxQuotes: null,
+    locationHint: null,
+    rules: null,
+    hintSource: null,
   },
   // --- outcome_result level ---
   {
@@ -229,6 +262,9 @@ export const DEMO_SCHEMA_FIELDS: readonly SchemaField[] = [
     aiGenerated: true,
     note: null,
     maxQuotes: null,
+    locationHint: null,
+    rules: null,
+    hintSource: null,
   },
   {
     schemaVersion: DEMO_SCHEMA_VERSION,
@@ -247,6 +283,9 @@ export const DEMO_SCHEMA_FIELDS: readonly SchemaField[] = [
     aiGenerated: true,
     note: null,
     maxQuotes: null,
+    locationHint: null,
+    rules: null,
+    hintSource: null,
   },
   {
     schemaVersion: DEMO_SCHEMA_VERSION,
@@ -265,6 +304,9 @@ export const DEMO_SCHEMA_FIELDS: readonly SchemaField[] = [
     aiGenerated: true,
     note: null,
     maxQuotes: null,
+    locationHint: null,
+    rules: null,
+    hintSource: null,
   },
   {
     schemaVersion: DEMO_SCHEMA_VERSION,
@@ -283,6 +325,9 @@ export const DEMO_SCHEMA_FIELDS: readonly SchemaField[] = [
     aiGenerated: true,
     note: null,
     maxQuotes: null,
+    locationHint: null,
+    rules: null,
+    hintSource: null,
   },
   {
     schemaVersion: DEMO_SCHEMA_VERSION,
@@ -301,5 +346,8 @@ export const DEMO_SCHEMA_FIELDS: readonly SchemaField[] = [
     aiGenerated: true,
     note: null,
     maxQuotes: null,
+    locationHint: null,
+    rules: null,
+    hintSource: null,
   },
 ];

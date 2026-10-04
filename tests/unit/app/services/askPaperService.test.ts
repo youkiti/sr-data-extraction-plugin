@@ -56,6 +56,9 @@ const params: AskPaperParams = {
       aiGenerated: true,
       note: 'EVIDENCE_DECISION_SECRET',
       maxQuotes: null,
+      locationHint: null,
+      rules: null,
+      hintSource: null,
     },
   ],
 };

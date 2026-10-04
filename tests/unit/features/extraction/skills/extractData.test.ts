@@ -27,6 +27,9 @@ function makeField(
 ): SchemaField {
   return {
     maxQuotes: null,
+    locationHint: null,
+    rules: null,
+    hintSource: null,
     schemaVersion: 1,
     fieldIndex: 0,
     section: 'methods',
@@ -111,7 +114,7 @@ describe('extract-data skill 定数', () => {
   it('skill 名とプロンプト版数を公開する（LLMApiLog 記録用）', () => {
     expect(EXTRACT_DATA_SKILL_NAME).toBe('extract-data');
     // v10: 複数箇所の引用とテーマに対応
-    expect(EXTRACT_DATA_PROMPT_VERSION).toBe(10);
+    expect(EXTRACT_DATA_PROMPT_VERSION).toBe(11);
   });
 
   it('システムプロンプトに verbatim quote の規約（300 文字上限）と document_index の規約を含む', () => {
@@ -303,6 +306,9 @@ describe('buildExtractDataUserPrompt', () => {
   it('unit / allowed_values / instruction / example を設定した項目は行として描画する', () => {
     const field = makeField({
       maxQuotes: null,
+      locationHint: null,
+      rules: null,
+      hintSource: null,
       fieldId: 'f_dose',
       fieldName: 'dose',
       entityLevel: 'arm',
@@ -585,4 +591,21 @@ test('ON の項目だけ max_quotes を指示し、theme を両応答スキー�
     expect(schema.properties.theme).toEqual({ type: ['string', 'null'] });
     expect(schema.required).toContain('theme');
   }
+});
+
+
+test('探索先・制約を instruction と example の間の別行に置く（由来は渡さない）', () => {
+  const prompt = buildExtractDataUserPrompt({ fields: [{ ...STUDY_FIELD,
+    extractionInstruction: 'instruction text', locationHint: 'Methods', rules: 'analyzed N',
+    hintSource: 'ai_edited', example: 'example text',
+  }], documents: [makeDoc()] });
+  expect(prompt).toContain('  instruction: instruction text\n  where_to_look: Methods\n  rules: analyzed N\n  example: example text');
+  expect(prompt).not.toContain('hint_source');
+  expect(prompt).not.toContain('ai_edited');
+});
+
+test.each([null, ''])('探索先・制約が %p なら行を省く', (value) => {
+  const prompt = buildExtractDataUserPrompt({ fields: [{ ...STUDY_FIELD, locationHint: value, rules: value }], documents: [makeDoc()] });
+  expect(prompt).not.toContain('where_to_look:');
+  expect(prompt).not.toContain('  rules:');
 });

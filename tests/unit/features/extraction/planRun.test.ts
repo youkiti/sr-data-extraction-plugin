@@ -33,6 +33,9 @@ function makeField(
 ): SchemaField {
   return {
     maxQuotes: null,
+    locationHint: null,
+    rules: null,
+    hintSource: null,
     schemaVersion: 1,
     fieldIndex: 0,
     section: 'methods',
@@ -726,4 +729,14 @@ test('複数引用では出力を上限件数ぶん見積もり、入力にも�
   const multi = planRun({ ...input, fields: [{ ...STUDY_FIELD, maxQuotes: 10 }] });
   expect(multi.tokensOutEstimate).toBe(single.tokensOutEstimate * 10);
   expect(multi.tokensInEstimate).toBeGreaterThan(single.tokensInEstimate);
+});
+
+
+test('探索先・制約の入力トークンをそれぞれ概算に含める', () => {
+  const input = { documents: [makeDocument({ documentId: 'd1' })], fields: [STUDY_FIELD], model: 'gemini-3.5-flash' };
+  const base = planRun(input);
+  for (const hints of [{ locationHint: 'Methods'.repeat(100) }, { rules: 'analyzed N'.repeat(100) }]) {
+    expect(planRun({ ...input, fields: [{ ...STUDY_FIELD, ...hints }] }).tokensInEstimate).toBeGreaterThan(base.tokensInEstimate);
+  }
+  expect(planRun({ ...input, fields: [{ ...STUDY_FIELD, locationHint: '', rules: '' }] }).tokensInEstimate).toBe(base.tokensInEstimate);
 });

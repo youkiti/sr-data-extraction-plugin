@@ -15,6 +15,9 @@ import type { SchemaField } from '../../../../src/domain/schemaField';
 function makeField(overrides: Partial<SchemaField> = {}): SchemaField {
   return {
     maxQuotes: null,
+    locationHint: null,
+    rules: null,
+    hintSource: null,
     schemaVersion: 1,
     fieldId: 'f-rob',
     fieldIndex: 1,

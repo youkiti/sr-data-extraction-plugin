@@ -8,7 +8,7 @@ import type { SchemaEditorRow } from './types';
 export interface FieldValidationError {
   /** エディタ行の 0 始まり index */
   index: number;
-  column: 'fieldName' | 'fieldLabel' | 'section' | 'allowedValues' | 'extractionInstruction' | 'max_quotes';
+  column: 'fieldName' | 'fieldLabel' | 'section' | 'allowedValues' | 'extractionInstruction' | 'max_quotes' | 'hintSource';
   message: string;
 }
 
@@ -68,6 +68,11 @@ export function validateEditorRows(rows: readonly SchemaEditorRow[]): FieldValid
         column: 'extractionInstruction',
         message: 'extraction_instruction は必須です',
       });
+    }
+
+    const hasHints = row.locationHint !== null || row.rules !== null;
+    if (hasHints !== (row.hintSource !== null)) {
+      errors.push({ index, column: 'hintSource', message: '探索先・制約の有無と hint_source の有無を一致させてください' });
     }
 
     if (row.maxQuotes !== null) {

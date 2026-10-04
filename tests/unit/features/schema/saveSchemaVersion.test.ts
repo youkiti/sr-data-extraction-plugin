@@ -24,6 +24,9 @@ const google = { fetch: jest.fn() as unknown as typeof fetch, getAccessToken: as
 function makeRow(overrides: Partial<SchemaEditorRow> = {}): SchemaEditorRow {
   return {
     maxQuotes: null,
+    locationHint: null,
+    rules: null,
+    hintSource: null,
     fieldId: null,
     section: ' methods ',
     fieldName: ' study_design ',
@@ -50,7 +53,7 @@ describe('saveSchemaVersion', () => {
   test('検証を通った行を新版として追記する（新規行は UUID 採番・既存 ID は維持・trim 済み）', async () => {
     const rows = [
       makeRow(),
-      makeRow({ fieldId: 'f-old', fieldName: 'country', fieldLabel: '国', maxQuotes: 12 }),
+      makeRow({ fieldId: 'f-old', fieldName: 'country', fieldLabel: '国', maxQuotes: 12, locationHint: 'Methods', rules: '原文どおり', hintSource: 'human' }),
     ];
     const { version, fields } = await saveSchemaVersion(
       {
@@ -83,7 +86,7 @@ describe('saveSchemaVersion', () => {
       fieldLabel: '研究デザイン',
       extractionInstruction: 'Report the design.',
     });
-    expect(fields[1]).toMatchObject({ fieldId: 'f-old', fieldIndex: 2, maxQuotes: 12 });
+    expect(fields[1]).toMatchObject({ fieldId: 'f-old', fieldIndex: 2, maxQuotes: 12, locationHint: 'Methods', rules: '原文どおり', hintSource: 'human' });
     expect(appendVersionMock).toHaveBeenCalledWith('sheet-1', version, google);
     expect(appendFieldsMock).toHaveBeenCalledWith('sheet-1', fields, google);
   });

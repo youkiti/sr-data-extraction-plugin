@@ -75,6 +75,9 @@ const SCHEMA_SLICE = {
   currentFields: [
     {
       maxQuotes: null,
+      locationHint: null,
+      rules: null,
+      hintSource: null,
       schemaVersion: 1,
       fieldId: 'f-total',
       fieldIndex: 1,

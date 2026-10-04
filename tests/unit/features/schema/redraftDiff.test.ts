@@ -14,6 +14,9 @@ import { validateEditorRows } from '../../../../src/features/schema/validateFiel
 function makeField(overrides: Partial<SchemaField> = {}): SchemaField {
   return {
     maxQuotes: null,
+    locationHint: null,
+    rules: null,
+    hintSource: null,
     schemaVersion: 1,
     fieldId: 'f-1',
     fieldIndex: 1,
@@ -36,6 +39,9 @@ function makeField(overrides: Partial<SchemaField> = {}): SchemaField {
 function makeRow(overrides: Partial<SchemaEditorRow> = {}): SchemaEditorRow {
   return {
     maxQuotes: null,
+    locationHint: null,
+    rules: null,
+    hintSource: null,
     fieldId: null,
     section: 'methods',
     fieldName: 'study_design',
@@ -90,6 +96,9 @@ describe('buildRedraftDiff', () => {
     });
     const row = makeRow({
       maxQuotes: null,
+      locationHint: null,
+      rules: null,
+      hintSource: null,
       fieldName: field.fieldName,
       section: 'outcomes',
       fieldLabel: 'ラベル新',

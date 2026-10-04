@@ -23,6 +23,9 @@ test('複数引用は seq 昇順の一覧と先頭の代表でセルを作る', 
 function makeField(overrides: Partial<SchemaField> = {}): SchemaField {
   return {
     maxQuotes: null,
+    locationHint: null,
+    rules: null,
+    hintSource: null,
     schemaVersion: 1,
     fieldId: 'f-1',
     fieldIndex: 1,

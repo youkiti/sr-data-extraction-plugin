@@ -273,6 +273,9 @@ function makeDocument(overrides: Partial<DocumentRecord> = {}): DocumentRecord {
 function makeEditorRow(overrides: Partial<SchemaEditorRow> = {}): SchemaEditorRow {
   return {
     maxQuotes: null,
+    locationHint: null,
+    rules: null,
+    hintSource: null,
     fieldId: null,
     section: 'methods',
     fieldName: 'study_design',
@@ -306,6 +309,9 @@ function makeVersion(schemaVersion: number, overrides: Partial<SchemaVersion> = 
 function makeField(overrides: Partial<SchemaField> = {}): SchemaField {
   return {
     maxQuotes: null,
+    locationHint: null,
+    rules: null,
+    hintSource: null,
     schemaVersion: 1,
     fieldId: 'f-1',
     fieldIndex: 1,

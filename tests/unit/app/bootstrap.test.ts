@@ -1197,6 +1197,9 @@ describe('bootstrapApp', () => {
 
   const EDITOR_ROW = {
     maxQuotes: null,
+    locationHint: null,
+    rules: null,
+    hintSource: null,
     fieldId: null,
     section: 'methods',
     fieldName: 'study_design',
@@ -1526,6 +1529,9 @@ describe('bootstrapApp', () => {
   test('#/schema の差分承認画面（追加 / 変更 / 削除候補のチェック切替・反映・キャンセル。issue #197）が配線されている', async () => {
     const currentField: SchemaField = {
       maxQuotes: null,
+      locationHint: null,
+      rules: null,
+      hintSource: null,
       schemaVersion: 1,
       fieldId: 'f-1',
       fieldIndex: 1,
@@ -1595,6 +1601,9 @@ describe('bootstrapApp', () => {
   test('#/schema の差分承認画面: 「破棄して戻る」でエディタを開かず確定済みへ戻る（issue #197）', async () => {
     const currentField: SchemaField = {
       maxQuotes: null,
+      locationHint: null,
+      rules: null,
+      hintSource: null,
       schemaVersion: 1,
       fieldId: 'f-1',
       fieldIndex: 1,
@@ -1801,6 +1810,9 @@ describe('bootstrapApp: #/pilot', () => {
 
   const FIELD = {
     maxQuotes: null,
+    locationHint: null,
+    rules: null,
+    hintSource: null,
     schemaVersion: 1,
     fieldId: 'f-total',
     fieldIndex: 1,
@@ -2375,8 +2387,11 @@ describe('bootstrapApp: #/pilot', () => {
         run: null,
       } as unknown as Partial<AppState['pilot']>),
     );
-    // Evidence ヘッダを返す fake（自動読込は Evidence + SchemaFields を読む）
-    const { deps } = createFakeDeps([[...SHEET_HEADERS.Evidence]]);
+    // 自動読込に必要なタブごとの正しいヘッダを返す
+    const { deps } = createTabRoutingDeps({
+      Evidence: [[...SHEET_HEADERS.Evidence]],
+      SchemaFields: [[...SHEET_HEADERS.SchemaFields]],
+    });
     const store = await bootstrapApp(asWindow(stub), deps);
     stub.location.hash = '#/pilot';
     stub.fireHashChange();
@@ -2399,7 +2414,10 @@ describe('bootstrapApp: #/pilot', () => {
         run: null,
       } as unknown as Partial<AppState['pilot']>),
     );
-    const { deps } = createFakeDeps([[...SHEET_HEADERS.Evidence]]);
+    const { deps } = createTabRoutingDeps({
+      Evidence: [[...SHEET_HEADERS.Evidence]],
+      SchemaFields: [[...SHEET_HEADERS.SchemaFields]],
+    });
     const store = await bootstrapApp(asWindow(stub), deps);
     stub.location.hash = '#/pilot';
     stub.fireHashChange();
@@ -2448,6 +2466,9 @@ describe('bootstrapApp: #/extract', () => {
 
   const FIELD = {
     maxQuotes: null,
+    locationHint: null,
+    rules: null,
+    hintSource: null,
     schemaVersion: 1,
     fieldId: 'f-total',
     fieldIndex: 1,
@@ -3684,6 +3705,9 @@ describe('bootstrapApp: #/adjudicate', () => {
     cellKey: JSON.stringify(['f-1', '-']),
     field: {
       maxQuotes: null,
+      locationHint: null,
+      rules: null,
+      hintSource: null,
       schemaVersion: 1,
       fieldId: 'f-1',
       fieldIndex: 1,

@@ -54,6 +54,9 @@ const FLOW_SOURCE = 'flowchart TD\n  A[Enrolled 100] --> B[Analyzed 90]';
 function makeField(overrides: Partial<SchemaField> = {}): SchemaField {
   return {
     maxQuotes: null,
+    locationHint: null,
+    rules: null,
+    hintSource: null,
     schemaVersion: 1,
     fieldId: 'f-flow',
     fieldIndex: 1,

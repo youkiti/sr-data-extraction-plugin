@@ -61,6 +61,9 @@ function fieldRow(overrides: Record<string, string> = {}): string[] {
 
 const FIELD: SchemaField = {
   maxQuotes: null,
+  locationHint: null,
+  rules: null,
+  hintSource: null,
   schemaVersion: 2,
   fieldId: 'f-9',
   fieldIndex: 3,
@@ -166,6 +169,9 @@ describe('appendSchemaVersion / appendSchemaFields', () => {
           false,
           null,
           null,
+          null,
+          null,
+          null,
         ],
       ],
       deps,
@@ -246,6 +252,9 @@ describe('getSchemaFieldsByVersion', () => {
     ]);
     expect(fields[0]).toEqual({
       maxQuotes: null,
+      locationHint: null,
+      rules: null,
+      hintSource: null,
       schemaVersion: 1,
       fieldId: 'f-1',
       fieldIndex: 1,
@@ -312,5 +321,76 @@ describe('max_quotes の後方互換', () => {
   test('旧 15 列の行は OFF', async () => {
     getSheetValuesMock.mockResolvedValue([FIELDS_HEADER.slice(0, 15), fieldRow().slice(0, 15)]);
     expect((await getSchemaFieldsByVersion('s', 1, deps))[0]?.maxQuotes).toBeNull();
+  });
+});
+
+
+describe('探索先・制約の後方互換', () => {
+  test.each([15, 16, 19])('%i 列を読み書きし、未指定なら拡張しない', async (length) => {
+    const header = FIELDS_HEADER.slice(0, length);
+    getSheetValuesMock.mockResolvedValue([header, fieldRow()]);
+    expect((await getSchemaFieldsByVersion('s', 1, deps))[0]).toMatchObject({
+      locationHint: null, rules: null, hintSource: null,
+    });
+    jest.mocked(getBatchValues).mockResolvedValue([[header]]);
+    await appendSchemaFields('s', [FIELD], deps);
+    expect(updateRow).not.toHaveBeenCalled();
+    expect(appendRowsMock.mock.calls[0]?.[2][0]).toHaveLength(length);
+  });
+  test.each([15, 16, 19])('%i 列にヒントを保存する前に必要なら全列へ拡張する', async (length) => {
+    jest.mocked(getBatchValues).mockResolvedValue([[FIELDS_HEADER.slice(0, length)]]);
+    await appendSchemaFields('s', [{ ...FIELD, locationHint: 'Methods', rules: 'analyzed N', hintSource: 'ai' }], deps);
+    expect(updateRow).toHaveBeenCalledTimes(length < 19 ? 1 : 0);
+    if (length < 19) expect(updateRow).toHaveBeenCalledWith('s', 'SchemaFields', 1, FIELDS_HEADER, deps);
+    expect(appendRowsMock.mock.calls[0]?.[2][0]?.slice(16)).toEqual(['Methods', 'analyzed N', 'ai']);
+  });
+  test.each([{ rules: 'analyzed N' }, { hintSource: 'human' as const }])('新プロパティ単独でも拡張判定する %p', async (value) => {
+    jest.mocked(getBatchValues).mockResolvedValue([[FIELDS_HEADER.slice(0, 16)]]);
+    await appendSchemaFields('s', [{ ...FIELD, ...value }], deps);
+    expect(updateRow).toHaveBeenCalledTimes(1);
+  });
+  test.each([17, 18, 20])('%i 列への書き込みは拒否する', async (length) => {
+    const header = [...FIELDS_HEADER, 'extra'].slice(0, length);
+    jest.mocked(getBatchValues).mockResolvedValue([[header]]);
+    await expect(appendSchemaFields('s', [FIELD], deps)).rejects.toThrow('SchemaFields');
+  });
+  test.each([15, 16, 17, 18])('%i 番目の列名不一致への書き込みは拒否する', async (index) => {
+    const header = [...FIELDS_HEADER];
+    header[index] = 'wrong';
+    jest.mocked(getBatchValues).mockResolvedValue([[header]]);
+    await expect(appendSchemaFields('s', [FIELD], deps)).rejects.toThrow('SchemaFields');
+  });
+  // 読み取りはヘッダが想定外でも止めない（既存プロジェクトを開けなくしない）
+  test.each([
+    [17, 10, null], [18, 10, null], [20, 10, 'Methods'],
+  ])('%i 列のヘッダは、名前が一致する列までを読む', async (length, maxQuotes, locationHint) => {
+    const header = [...FIELDS_HEADER, 'extra'].slice(0, length);
+    const row = [...fieldRow({ data_type: 'text', max_quotes: '10', location_hint: 'Methods', hint_source: 'ai' }), 'x'];
+    getSheetValuesMock.mockResolvedValue([header, row]);
+    expect((await getSchemaFieldsByVersion('s', 1, deps))[0]).toMatchObject({ maxQuotes, locationHint });
+  });
+  test.each([
+    [15, null, null], [16, 10, null], [17, 10, null], [18, 10, null],
+  ])('%i 番目の列名が違うヘッダは、その手前で読める範囲までを読む', async (index, maxQuotes, locationHint) => {
+    const header = [...FIELDS_HEADER];
+    header[index] = 'wrong';
+    const row = fieldRow({ data_type: 'text', max_quotes: '10', location_hint: 'Methods', hint_source: 'ai' });
+    getSheetValuesMock.mockResolvedValue([header, row]);
+    expect((await getSchemaFieldsByVersion('s', 1, deps))[0]).toMatchObject({ maxQuotes, locationHint });
+  });
+  test.each([
+    ['', '', 'ai', null], ['Methods', '', 'ai', 'ai'], ['', 'analyzed N', 'ai_edited', 'ai_edited'],
+    ['Methods', '', '', 'human'], ['Methods', '', 'unknown', 'human'], ['Methods', '', 'human', 'human'],
+  ])('ヒントの由来を正規化する %p %p %p', async (location, rules, source, expected) => {
+    getSheetValuesMock.mockResolvedValue([FIELDS_HEADER, fieldRow({
+      location_hint: location as string, rules: rules as string, hint_source: source as string,
+    })]);
+    expect((await getSchemaFieldsByVersion('s', 1, deps))[0]).toMatchObject({
+      locationHint: location || null, rules: rules || null, hintSource: expected,
+    });
+  });
+  test('シートが空なら空配列', async () => {
+    getSheetValuesMock.mockResolvedValue([]);
+    await expect(getSchemaFieldsByVersion('s', 1, deps)).resolves.toEqual([]);
   });
 });

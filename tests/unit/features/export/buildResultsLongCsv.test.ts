@@ -21,6 +21,9 @@ const field = (
   unit: string | null = null,
 ): SchemaField => ({
   maxQuotes: null,
+  locationHint: null,
+  rules: null,
+  hintSource: null,
   schemaVersion: 1,
   fieldId,
   fieldIndex,

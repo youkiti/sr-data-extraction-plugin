@@ -56,6 +56,9 @@ const study = (studyId: string, studyLabel: string): StudyRecord => ({
 
 const field = (fieldId: string, fieldName: string, fieldIndex: number): SchemaField => ({
   maxQuotes: null,
+  locationHint: null,
+  rules: null,
+  hintSource: null,
   schemaVersion: 1,
   fieldId,
   fieldIndex,

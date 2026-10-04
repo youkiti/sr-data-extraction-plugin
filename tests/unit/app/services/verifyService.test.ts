@@ -188,6 +188,9 @@ function studiesFor(documents: readonly DocumentRecord[]): StudyRecord[] {
 function makeField(overrides: Partial<SchemaField> = {}): SchemaField {
   return {
     maxQuotes: null,
+    locationHint: null,
+    rules: null,
+    hintSource: null,
     schemaVersion: 1,
     fieldId: 'f-total',
     fieldIndex: 1,

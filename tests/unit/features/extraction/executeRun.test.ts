@@ -38,6 +38,9 @@ function makeField(
 ): SchemaField {
   return {
     maxQuotes: null,
+    locationHint: null,
+    rules: null,
+    hintSource: null,
     schemaVersion: 1,
     fieldIndex: 0,
     section: 'methods',

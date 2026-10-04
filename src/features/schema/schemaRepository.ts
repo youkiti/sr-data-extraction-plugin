@@ -58,15 +58,11 @@ export async function appendSchemaFields(
 ): Promise<void> {
   const [headerRows] = await getBatchValues(spreadsheetId, ['SchemaFields!1:1'], deps);
   let header = headerRows?.[0] ?? [];
-  FIELDS_HEADER.slice(0, 15).forEach((name, index) => {
-    if (header[index] !== name) {
-      throw new Error(`SchemaFields のヘッダ ${index + 1} 列目が "${name}" ではありません`);
-    }
-  });
-  if (header.length > 15 && header[15] !== 'max_quotes') {
-    throw new Error('SchemaFields のヘッダ 16 列目が "max_quotes" ではありません');
-  }
-  if (fields.some((field) => field.maxQuotes !== null) && header.length === 15) {
+  validateFieldsHeader(header);
+  const needsHints = fields.some((field) =>
+    field.locationHint !== null || field.rules !== null || field.hintSource !== null);
+  if ((needsHints && header.length < 19) ||
+      (fields.some((field) => field.maxQuotes !== null) && header.length === 15)) {
     header = [...FIELDS_HEADER];
     await updateRow(spreadsheetId, 'SchemaFields', 1, header, deps);
   }
@@ -88,6 +84,9 @@ export async function appendSchemaFields(
       ai_generated: field.aiGenerated,
       note: field.note,
       max_quotes: field.maxQuotes,
+      location_hint: field.locationHint,
+      rules: field.rules,
+      hint_source: field.hintSource,
     };
     return header.map((key) => map[key] ?? null);
   });
@@ -119,12 +118,15 @@ export async function getSchemaFieldsByVersion(
   if (rows.length <= 1) {
     return [];
   }
+  // 読み取りはヘッダを検証せず、名前が一致する列までを読む（想定外の列があっても
+  // 既存プロジェクトを開けなくしない。ヘッダの検証は書き込み側だけで行う）
+  const columns = readableFieldColumns(rows[0] as string[]);
   const versionIdx = FIELDS_HEADER.indexOf('schema_version');
   const result: SchemaField[] = [];
   for (const row of rows.slice(1)) {
     const cell = row[versionIdx] ?? '';
     if (Number.parseInt(cell, 10) === schemaVersion) {
-      result.push(fromFieldRow((rows[0] as string[])[15] === 'max_quotes' ? row : row.slice(0, 15)));
+      result.push(fromFieldRow(row.slice(0, columns)));
     }
   }
   return result.sort((a, b) => a.fieldIndex - b.fieldIndex);
@@ -158,11 +160,19 @@ function fromFieldRow(row: readonly string[]): SchemaField {
     if (idx < 0) return '';
     return row[idx] ?? '';
   };
+  const locationHint = emptyToNull(cell('location_hint'));
+  const rules = emptyToNull(cell('rules'));
+  const source = cell('hint_source');
+  const hintSource = locationHint === null && rules === null ? null
+    : source === 'ai' || source === 'ai_edited' ? source : 'human';
   const fieldIndex = Number.parseInt(cell('field_index'), 10);
   return {
     // 呼び出し元（getSchemaFieldsByVersion）が version 一致行だけを渡すため必ず数値
     schemaVersion: Number.parseInt(cell('schema_version'), 10),
     fieldId: cell('field_id'),
+    locationHint,
+    rules,
+    hintSource,
     fieldIndex: Number.isFinite(fieldIndex) ? fieldIndex : 0,
     section: cell('section'),
     fieldName: cell('field_name'),
@@ -204,4 +214,24 @@ function parseDataType(value: string): FieldDataType {
   return ['integer', 'float', 'boolean', 'enum', 'date'].includes(value)
     ? (value as FieldDataType)
     : 'text';
+}
+
+/** 読み取りに使う列数。ヒント 3 列がそろっていれば 19、max_quotes までなら 16、それ以外は 15 */
+function readableFieldColumns(header: readonly string[]): number {
+  if (FIELDS_HEADER.slice(15).every((name, offset) => header[15 + offset] === name)) {
+    return FIELDS_HEADER.length;
+  }
+  return header[15] === 'max_quotes' ? 16 : 15;
+}
+
+/** 新しいヒント列は一括追加のため、部分的なヘッダは受け入れない。 */
+function validateFieldsHeader(header: readonly string[]): void {
+  FIELDS_HEADER.slice(0, Math.max(15, header.length)).forEach((name, index) => {
+    if (header[index] !== name) {
+      throw new Error(`SchemaFields のヘッダ ${index + 1} 列目が "${name}" ではありません`);
+    }
+  });
+  if (![15, 16, 19].includes(header.length)) {
+    throw new Error('SchemaFields のヘッダは 15・16・19 列のいずれかである必要があります');
+  }
 }

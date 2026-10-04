@@ -20,6 +20,9 @@ function presetRow(
     aiGenerated: false,
     note: null,
     maxQuotes: null,
+    locationHint: null,
+    rules: null,
+    hintSource: null,
     ...patch,
   };
 }

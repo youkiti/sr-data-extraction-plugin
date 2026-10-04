@@ -4,6 +4,9 @@ import { validateEditorRows } from '../../../../src/features/schema/validateFiel
 function makeRow(overrides: Partial<SchemaEditorRow> = {}): SchemaEditorRow {
   return {
     maxQuotes: null,
+    locationHint: null,
+    rules: null,
+    hintSource: null,
     fieldId: null,
     section: 'methods',
     fieldName: 'study_design',
@@ -101,4 +104,15 @@ describe('複数の引用の上限', () => {
     expect(validateEditorRows([makeRow({ dataType: 'integer', maxQuotes: 10 })]))
       .toEqual([expect.objectContaining({ column: 'max_quotes' })]);
   });
+});
+
+
+test.each([
+  [{ locationHint: 'Methods', hintSource: 'human' }, false],
+  [{ rules: 'analyzed N', hintSource: 'ai_edited' }, false],
+  [{ locationHint: 'Methods' }, true], [{ rules: 'analyzed N' }, true],
+  [{ hintSource: 'ai' }, true],
+] as [Partial<SchemaEditorRow>, boolean][])('探索先・制約と由来の整合性 %p', (values, invalid) => {
+  const errors = validateEditorRows([makeRow(values)]);
+  expect(errors.map((error) => error.column)).toEqual(invalid ? ['hintSource'] : []);
 });

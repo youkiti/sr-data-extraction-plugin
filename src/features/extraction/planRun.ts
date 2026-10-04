@@ -175,6 +175,8 @@ function fieldPromptChars(field: SchemaField): number {
     (field.allowedValues?.length ?? 0) +
     field.extractionInstruction.length +
     (field.example?.length ?? 0) +
+    (field.locationHint ? `  where_to_look: ${field.locationHint}\n`.length : 0) +
+    (field.rules ? `  rules: ${field.rules}\n`.length : 0) +
     (field.maxQuotes === null ? 0 : `  max_quotes: ${field.maxQuotes}\n`.length)
   );
 }

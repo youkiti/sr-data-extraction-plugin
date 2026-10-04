@@ -34,4 +34,10 @@ export interface SchemaField {
   note: string | null;
   /** 複数引用の上限（text のみ 2〜20）。null は通常の 1 引用 */
   maxQuotes: number | null;
+  /** 根拠を探す節・表・図の種類 */
+  locationHint: string | null;
+  /** 出力の硬い制約 */
+  rules: string | null;
+  /** 探索先と制約の由来。両方未指定なら null */
+  hintSource: 'ai' | 'human' | 'ai_edited' | null;
 }

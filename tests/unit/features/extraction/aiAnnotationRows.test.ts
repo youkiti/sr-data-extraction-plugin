@@ -6,6 +6,9 @@ import { buildAiAnnotationRows } from '../../../../src/features/extraction/aiAnn
 function makeField(overrides: Partial<SchemaField> = {}): SchemaField {
   return {
     maxQuotes: null,
+    locationHint: null,
+    rules: null,
+    hintSource: null,
     schemaVersion: 2,
     fieldId: 'f-study',
     fieldIndex: 1,

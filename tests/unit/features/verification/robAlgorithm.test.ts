@@ -787,6 +787,9 @@ describe('judgeOverallRobinsI（Table 2）', () => {
 function makeField(overrides: Partial<SchemaField> = {}): SchemaField {
   return {
     maxQuotes: null,
+    locationHint: null,
+    rules: null,
+    hintSource: null,
     schemaVersion: 1,
     fieldId: 'f-rob2-judgement',
     fieldIndex: 1,

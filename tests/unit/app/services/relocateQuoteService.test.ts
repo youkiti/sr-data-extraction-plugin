@@ -60,6 +60,9 @@ function makeEvidence(overrides: Partial<Evidence> = {}): Evidence {
 function makeField(overrides: Partial<SchemaField> = {}): SchemaField {
   return {
     maxQuotes: null,
+    locationHint: null,
+    rules: null,
+    hintSource: null,
     schemaVersion: 1,
     fieldId: 'f-1',
     fieldIndex: 1,

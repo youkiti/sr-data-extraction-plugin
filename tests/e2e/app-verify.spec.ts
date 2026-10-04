@@ -2164,6 +2164,9 @@ test('抽出前に #/verify を開くと空状態 → 抽出実行 → #/verify 
         currentFields: [
           {
             maxQuotes: null,
+            locationHint: null,
+            rules: null,
+            hintSource: null,
             schemaVersion: 1,
             fieldId: 'f-total',
             fieldIndex: 1,

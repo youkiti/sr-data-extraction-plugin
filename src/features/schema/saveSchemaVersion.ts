@@ -98,6 +98,9 @@ export async function saveSchemaVersion(
     aiGenerated: row.aiGenerated,
     note: row.note,
     maxQuotes: row.maxQuotes,
+    locationHint: row.locationHint,
+    rules: row.rules,
+    hintSource: row.hintSource,
   }));
 
   await appendSchemaVersion(params.spreadsheetId, version, deps.google);

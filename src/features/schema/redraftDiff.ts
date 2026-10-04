@@ -281,6 +281,9 @@ function schemaFieldToEditorRow(field: SchemaField): SchemaEditorRow {
     aiGenerated: field.aiGenerated,
     note: field.note,
     maxQuotes: field.maxQuotes,
+    locationHint: field.locationHint,
+    rules: field.rules,
+    hintSource: field.hintSource,
   };
 }
 
