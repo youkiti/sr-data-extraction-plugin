@@ -49,7 +49,7 @@ npm run release -- minor    # 機能追加を含む ／ patch = 修正のみ ／
    grep -c '^WEBAUTH_CLIENT_ID=.' .env   # 1 なら OK
    ```
 4. 直前の master の CI が green であること（`gh run list --branch master --limit 5`）。ローカルで確かめるなら `npm run typecheck` / `npm test` / `npm run lint` / `npm run lint:css`。
-5. **これだけは自動化されていない**: `hosted/picker.html` に変更が入ったリリースなら、gh-pages のデプロイ版が最新であることを確認する（新拡張は nonce echo を必須検証するため、古いページのままだと Picker 付与が失敗する。手順: hosted/README.md）:
+5. **これだけは自動化されていない**: `hosted/picker.html` に変更が入ったリリースなら、gh-pages のデプロイ版が最新であることを確認する（新拡張は nonce echo を必須検証するため、古いページのままだと Picker 付与が失敗する。手順: hosted/README.md）。公開ページは `npm run deploy:pages` でデプロイできる。拡張リリース前に実行し、反映を確認する:
    ```bash
    curl -s https://youkiti.github.io/sr-data-extraction-plugin/picker.html | grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}[a-z]?'
    # 出力されたバージョンコメントが src 側 hosted/picker.html の最新コメントと一致すること
@@ -89,6 +89,8 @@ pwsh -NoProfile -File tools/release/pack.ps1 -IncludeKeyPem
 ```
 
 ### 3. 提出
+
+- 公開ページのデプロイは `npm run deploy:pages` で行う。先に `npm run deploy:pages -- --dry-run` で差分を確認できる。
 
 - 提出後・ストア反映後に掲載ページを確認し、`docs/store/store-status.json` を手で更新して `npm run facts` を実行する。公開版は実際に反映された版を記録する。
 

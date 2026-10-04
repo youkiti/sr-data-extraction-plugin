@@ -111,6 +111,8 @@ sr-query-builder（CI なし・ローカル規律運用）とは異なり、本�
 `npm run facts` で `docs/project-facts.md` を生成し、CI の `npm run facts:check` で鮮度を検査する。
 `tests/unit/projectFacts.test.ts` は実物の値から生成物・ヘルプ・要件本文の転記と README の手書き版の再発を検査する。
 リリース時は `--stamp-help` が自動実行され、現在値の再生成とヘルプの対象バージョン更新を行う。
+ヘルプの最終更新と冒頭の `version:` はデプロイ時に日付を入れる。
+`tests/unit/projectFacts.test.ts` は `__DEPLOY_DATE__` がちょうど 3 件あり、日英の最終更新と `version:` の直後にあることを検査する。
 
 ## 5. 未決定・実装フェーズで判断する点
 

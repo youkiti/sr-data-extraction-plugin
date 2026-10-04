@@ -15,6 +15,7 @@
     "build:demo": "webpack --mode development --env demo",
     "release": "pwsh -NoProfile -File tools/release/release.ps1",
     "pack:release": "pwsh -NoProfile -File tools/release/pack.ps1",
+    "deploy:pages": "node tools/pages/deployPages.mjs",
     "facts": "node tools/facts/generateProjectFacts.mjs",
     "facts:check": "node tools/facts/generateProjectFacts.mjs --check",
     "lint": "eslint \"src/**/*.ts\" \"tests/**/*.ts\"",

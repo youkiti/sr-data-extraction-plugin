@@ -73,7 +73,7 @@ spreadsheet / pdf モードは `page_version` を検査しない（ready 応答�
 ## デプロイ手順（更新時）
 
 1. `picker.html` の HTML 冒頭コメントの `version:` を更新日に書き換える（デプロイ版の識別用）
-2. `gh-pages` ブランチの `picker.html` を本ファイルの内容で上書きして push
+2. `npm run deploy:pages` で公開ページと一緒に `picker.html` もデプロイする（下記の公開ページの手順を参照）
 3. デプロイ後、`https://youkiti.github.io/sr-data-extraction-plugin/picker.html` をブラウザで開き、
    ページソースの `version:` コメントが一致することを確認する
 
@@ -135,16 +135,18 @@ spreadsheet / pdf モードは `page_version` を検査しない（ready 応答�
 - 文言を足すときは **ja / en の両方**を書く（`.ja` / `.en` の span 対、または `data-en-*` 属性）。
   「日本語 / English」のような 1 要素内での併記は作らない（切替で片方だけを見せられなくなる）
 - `help.html` の内容は**ワークフローレベル**に留める（画面細部はアプリ内のリード文・Options の
-  ヘルプ文言が担う）。対象バージョンは `npm run release` が自動で書き換える。最終更新の日付とファイル冒頭の
-  `version:` は、内容を変えたときに手で更新する。gh-pages へのデプロイは従来どおり手動
-- 各ファイル冒頭コメントの `version:` を更新日に書き換える（デプロイ版の識別用。picker.html と同じ運用）
+  ヘルプ文言が担う）。対象バージョンは `npm run release` が自動で書き換える。ヘルプページの最終更新と冒頭の
+  `version:` はデプロイ時に自動で入る（master 側は `__DEPLOY_DATE__` のまま）。
+- プライバシーポリシー・利用規約の最終更新は規約の改定日なので、本文を変えたときに手で更新する。
+  他のファイルの `version:` も内容を変えたときに手で更新する。
 
-### デプロイ手順（手動。picker.html と同じ運用）
+### デプロイ手順（picker.html も同時に配信）
 
-1. 上記「更新時に守ること」を反映する
-2. `gh-pages` ブランチのルートへ `index.html` / `help.html` / `privacy-policy.html` /
-   `terms-of-service.html` / `style.css` / `lang.js` / `screenshots/`（4 枚）を本ディレクトリの内容で
-   上書きして push
+1. 上記「更新時に守ること」を反映して master へマージし、HEAD を `origin/master` と一致させる。
+   `hosted/` に未コミットの変更がないことを確認する。
+2. `npm run deploy:pages -- --dry-run` で差分の要約を確認し、`npm run deploy:pages` で配信する。
+   ヘルプの最終更新には実行マシンのローカル日付が入る。日付を指定する場合は `-- --date=YYYY-MM-DD` を付ける。
+   `--force` は HEAD の不一致だけを警告にし、未コミットの変更は許可しない。
 3. デプロイ後、各 URL をブラウザで開き、相互リンク・スクリーンショット表示・言語切替（切替ボタン・
    `?lang=en`・ページ遷移後の保持）を PC 幅とスマホ幅で確認する
    （`picker.html` が従来どおり動くことも合わせて確認）
