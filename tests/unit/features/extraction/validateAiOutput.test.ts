@@ -534,3 +534,61 @@ describe('複数の引用', () => {
     expect(result.items.every((i) => i.quoteSeq === null && i.quoteTheme === null && i.value === '10')).toBe(true);
   });
 });
+
+describe('AI 応答の群の番号検証', () => {
+  const fields = [
+    ...FIELDS,
+    makeField({ fieldId: 'f_rob', fieldName: 'rob', entityLevel: 'rob_domain', dataType: 'text' }),
+  ];
+
+  it.each([
+    ['f_arm_n', 'arm:dcbt_i'],
+    ['f_arm_n', 'arm:1a'],
+    ['f_mean_change', 'outcome:isi|arm:dcbt_i|time:post_treatment'],
+    ['f_mean_change', 'outcome:isi|arm:0'],
+    ['f_mean_change', 'outcome:isi|arm:01'],
+    ['f_rob', 'rob:d1|outcome:isi|arm:book'],
+  ])('正の整数でない群を破棄する（%s / %s）', (fieldId, entityKey) => {
+    const element = { field_id: fieldId, entity_key: entityKey, not_reported: true };
+    const result = validateAiOutput([element], fields, 1);
+    expect(result.items).toEqual([]);
+    expect(result.rejected).toEqual([{
+      index: 0,
+      reason: 'entity_key_mismatch',
+      detail: expect.stringContaining('番号ではありません'),
+      raw: element,
+    }]);
+  });
+
+  it.each([
+    ['f_arm_n', 'arm:1'],
+    ['f_arm_n', 'arm:12'],
+    ['f_mean_change', 'outcome:isi|arm:2|time:post'],
+    ['f_mean_change', 'outcome:isi'],
+    ['f_mean_change', 'outcome:isi|time:post'],
+    ['f_rob', 'rob:d1'],
+    ['f_rob', 'rob:d1|outcome:isi'],
+    ['f_rob', 'rob:d1|outcome:isi|arm:1'],
+  ])('番号の群と群なしのキーは通す（%s / %s）', (fieldId, entityKey) => {
+    const result = validateAiOutput(
+      [{ field_id: fieldId, entity_key: entityKey, not_reported: true }], fields, 1,
+    );
+    expect(result.rejected).toEqual([]);
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0]).toMatchObject({ fieldId, entityKey });
+  });
+
+  it('番号と名前が混在する応答では名前の要素だけを破棄する', () => {
+    const raw = ['arm:1', 'arm:dcbt_i', 'arm:12'].map((entityKey) => ({
+      field_id: 'f_arm_n', entity_key: entityKey, not_reported: true,
+    }));
+    const result = validateAiOutput(raw, fields, 1);
+    expect(result.items.map((item) => item.entityKey)).toEqual(['arm:1', 'arm:12']);
+    expect(result.rejected).toEqual([{
+      index: 1,
+      reason: 'entity_key_mismatch',
+      detail: expect.stringContaining('番号ではありません'),
+      raw: raw[1],
+    }]);
+  });
+});

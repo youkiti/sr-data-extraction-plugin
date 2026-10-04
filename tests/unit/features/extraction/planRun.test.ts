@@ -26,7 +26,7 @@ import {
   estimateCostUsd,
   resolveThinkingOutputMultiplier,
 } from '../../../../src/lib/llm/pricing';
-import { EXTRACT_DATA_ARM_COMPLETENESS_RULE } from '../../../../src/features/extraction/skills/extractData';
+import { buildExtractDataUserPrompt, EXTRACT_DATA_ARM_COMPLETENESS_RULE } from '../../../../src/features/extraction/skills/extractData';
 
 function makeField(
   overrides: Pick<SchemaField, 'fieldId' | 'fieldName'> & Partial<SchemaField>,
@@ -726,4 +726,38 @@ test('複数引用では出力を上限件数ぶん見積もり、入力にも�
   const multi = planRun({ ...input, fields: [{ ...STUDY_FIELD, maxQuotes: 10 }] });
   expect(multi.tokensOutEstimate).toBe(single.tokensOutEstimate * 10);
   expect(multi.tokensInEstimate).toBeGreaterThan(single.tokensInEstimate);
+});
+
+describe('section 分割されたアウトカムバッチのプロンプト', () => {
+  it('既定の出力予算を超えたスキーマでも outcome_result だけのバッチに番号づけ規約を含める', () => {
+    const fields = [
+      makeField({ fieldId: 'study', fieldName: 'design', section: 'identification' }),
+      makeField({ fieldId: 'arm', fieldName: 'group', entityLevel: 'arm', section: 'intervention' }),
+      ...Array.from({ length: 26 }, (_, index) => makeField({
+        fieldId: `outcome_${index}`,
+        fieldName: `result_${index}`,
+        fieldIndex: index + 2,
+        entityLevel: 'outcome_result',
+        section: 'outcomes',
+      })),
+    ];
+    // study 1 + arm 2 + outcome_result 26 × 4 = 107 要素、8,025 トークン。
+    const plan = planRun({
+      documents: [makeDocument({ documentId: 'doc' })], fields, model: 'unknown',
+    });
+    expect(plan.tokensOutEstimate).toBe(8_025);
+    expect(plan.tokensOutEstimate).toBeGreaterThan(DEFAULT_RUN_TOKEN_BUDGET.maxOutputTokensPerCall);
+    expect(plan.batches.map((batch) => batch.section)).toEqual(['identification', 'intervention', 'outcomes']);
+    const batch = plan.batches.find((candidate) => candidate.section === 'outcomes')!;
+    const outcomeFields = fields.filter((field) => batch.fieldIds.includes(field.fieldId));
+    expect(outcomeFields).toHaveLength(26);
+    expect(batch.fieldIds).toEqual(outcomeFields.map((field) => field.fieldId));
+    expect(outcomeFields.every((field) => field.entityLevel === 'outcome_result')).toBe(true);
+    const prompt = buildExtractDataUserPrompt({
+      fields: outcomeFields,
+      documents: [{ role: 'article', filename: 'trial.pdf', mode: 'text', pages: [{ page: 1, text: 'Trial' }] }],
+    });
+    expect(prompt).toContain("<n> is the arm NUMBER, never the arm's name");
+    expect(prompt).toContain('in order of first appearance');
+  });
 });

@@ -49,8 +49,12 @@ export const EXTRACT_DATA_SKILL_NAME = 'extract-data';
  *   撤去。出力プロンプトは v7 と同一内容に戻る（実 gold ベンチで効果が誤差範囲だったため。
  *   experiments/extraction-benchmark-real の REPORT-20260729 参照）
  * v10（2026-09-30）: max_quotes を持つ項目で複数箇所の引用と theme を返す（issue #275）。
+ * v11（2026-10-04）: outcome_result の entity_key 規約に群の番号づけ（初出順・arm レベルと同じ番号・
+ *   名前を書かない）を含めた。arm レベルの項目が無いバッチ（section 単位分割でできる
+ *   outcome_result だけのバッチ等）にも番号づけの規則が出るようにするため（issue #293）。
+ *   outcome_result の項目を含まないバッチのプロンプトは変わらない
  */
-export const EXTRACT_DATA_PROMPT_VERSION = 10;
+export const EXTRACT_DATA_PROMPT_VERSION = 11;
 
 /** text_only モードで LLM へ渡すページ別本文（extracted_texts/{id}.txt 由来） */
 export interface ExtractDataPage {
@@ -167,7 +171,7 @@ const ENTITY_KEY_RULES: Record<EntityLevel, string> = {
   study: '- study level: "entity_key" is always "-" (one instance per article).',
   arm: '- arm level: identify every study arm (group), number them in order of first appearance, and use "arm:1", "arm:2", ... Keep the same numbering consistent across all arm-level and outcome-level items.',
   outcome_result:
-    '- outcome_result level: use "outcome:<slug>", appending "|arm:<n>" when the value is arm-specific and "|time:<token>" when a timepoint applies (e.g. "outcome:mortality|arm:1|time:30d"). <slug> is a short lowercase snake_case name; never use "|" or ":" inside segment values; reuse the identical slug for the same outcome across fields.',
+    '- outcome_result level: use "outcome:<slug>", appending "|arm:<n>" when the value is arm-specific and "|time:<token>" when a timepoint applies (e.g. "outcome:mortality|arm:1|time:30d"). <n> is the arm NUMBER, never the arm\'s name: number the study arms (groups) 1, 2, ... in order of first appearance in the documents, and use the same number for the same arm in every item (the same numbering as the arm-level keys "arm:1", "arm:2", ...). <slug> is a short lowercase snake_case name; never use "|" or ":" inside segment values; reuse the identical slug for the same outcome across fields.',
   rob_domain: '- rob_domain level: use "rob:<domain_id>" (e.g. "rob:domain_1").',
 };
 

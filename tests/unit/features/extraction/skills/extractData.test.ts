@@ -110,8 +110,8 @@ const DOCS = [makeDoc()];
 describe('extract-data skill 定数', () => {
   it('skill 名とプロンプト版数を公開する（LLMApiLog 記録用）', () => {
     expect(EXTRACT_DATA_SKILL_NAME).toBe('extract-data');
-    // v10: 複数箇所の引用とテーマに対応
-    expect(EXTRACT_DATA_PROMPT_VERSION).toBe(10);
+    // v11: outcome_result だけのバッチにも群の番号づけ規約を提示
+    expect(EXTRACT_DATA_PROMPT_VERSION).toBe(11);
   });
 
   it('システムプロンプトに verbatim quote の規約（300 文字上限）と document_index の規約を含む', () => {
@@ -585,4 +585,36 @@ test('ON の項目だけ max_quotes を指示し、theme を両応答スキー�
     expect(schema.properties.theme).toEqual({ type: ['string', 'null'] });
     expect(schema.required).toContain('theme');
   }
+});
+
+describe('バッチごとの群の番号づけ規約', () => {
+  it('outcome_result だけでも番号づけを示し、arm 専用の規則と完全性確認は含めない', () => {
+    const prompt = buildExtractDataUserPrompt({ fields: [OUTCOME_FIELD], documents: DOCS });
+    expect(prompt).toContain("<n> is the arm NUMBER, never the arm's name");
+    expect(prompt).toContain('in order of first appearance');
+    expect(prompt).not.toContain('- arm level:');
+    expect(prompt).not.toContain('Completeness check');
+  });
+
+  it.each([
+    {
+      name: 'study のみ',
+      fields: [STUDY_FIELD],
+      rules: '- study level: "entity_key" is always "-" (one instance per article).',
+    },
+    {
+      name: 'arm のみ',
+      fields: [ARM_FIELD],
+      rules: '- arm level: identify every study arm (group), number them in order of first appearance, and use "arm:1", "arm:2", ... Keep the same numbering consistent across all arm-level and outcome-level items.',
+    },
+    {
+      name: 'study と arm',
+      fields: [STUDY_FIELD, ARM_FIELD],
+      rules: '- study level: "entity_key" is always "-" (one instance per article).\n- arm level: identify every study arm (group), number them in order of first appearance, and use "arm:1", "arm:2", ... Keep the same numbering consistent across all arm-level and outcome-level items.',
+    },
+  ])('$name の entity_key 規約は従来の文面と完全一致する', ({ fields, rules }) => {
+    const prompt = buildExtractDataUserPrompt({ fields, documents: DOCS });
+    const section = prompt.split('## entity_key rules\n\n')[1]?.split('\n\n## ')[0];
+    expect(section).toBe(rules);
+  });
 });

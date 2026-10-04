@@ -1,7 +1,7 @@
 // AI 抽出応答（extract-data skill）のクライアント側バリデーション（requirements.md §4.3）
 // 1) zod による要素単位の形状検証。不正要素は破棄し、partial_failure の素材として返す
 // 2) field_id が当該 schema_version の SchemaFields に存在しない要素は破棄（§4.3）
-// 3) entity_key が field の entity_level と整合しない要素も同様に破棄
+// 3) entity_key が field の entity_level と整合しない要素も同様に破棄。群の番号が正の整数でない要素も破棄する
 // 4) document_index（v0.10）: quote があるのに欠落・範囲外の要素は破棄（field_id 不明と同じ扱い）。
 //    not_reported=true の要素は document_index 不要。1..documentCount の値へ解決して返す
 // 5) 値と quote の矛盾（quote 欠落 / 値中の数値が quote に無い / not_reported なのに値あり）は
@@ -292,6 +292,16 @@ export function validateAiOutput(
           index,
           reason: 'entity_key_mismatch',
           detail: `entity_key "${parsed.data.entity_key}" が entity_level "${field.entityLevel}"（${field.fieldName}）と整合しません`,
+          raw: element,
+        });
+        return;
+      }
+      const arm = entity.arm;
+      if (arm !== undefined && arm !== null && !/^[1-9]\d*$/.test(arm)) {
+        rejected.push({
+          index,
+          reason: 'entity_key_mismatch',
+          detail: `entity_key "${parsed.data.entity_key}" の群（arm）が番号ではありません（"arm:1" のような正の整数で指定します）`,
           raw: element,
         });
         return;
