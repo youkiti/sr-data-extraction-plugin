@@ -9,7 +9,7 @@
 // - fetch を注入できるので OAuth / network 無しでテスト可能
 // - `ChatOptions.reasoningEffort`（issue #127 PR5）は**意図的に未対応**: Gemini の thinking は
 //   budget（トークン数）で制御する方言で、`low`/`medium`/`high` の 3 段階へ機械的に変換できる
-//   公式な対応表が無い。`gemini-3.5-flash` は工場出荷の既定モデル（全利用者の既定経路）のため、
+//   公式な対応表が無い。工場出荷の既定モデル（`gemini-3.8-flash`）は全利用者の既定経路のため、
 //   実測に基づかない budget 値を勝手に決めて投入しない。対応するには、まず budget 値の妥当性を
 //   実データ抽出ベンチマーク（experiments/extraction-benchmark-real/）で検証する必要がある
 //   （別 issue で判断）。このファイルはこのオプションを一切参照しない（構造上、渡されても無視される）

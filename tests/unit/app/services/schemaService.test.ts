@@ -347,10 +347,10 @@ describe('loadSchema の既定モデル注入（S11。ui-states.md §2「既定�
     expect(store.getState().schema.model).toBe('gemini-2.5-pro');
   });
 
-  test('既定モデル未設定（null）なら工場出荷の既定モデル（gemini-3.5-flash）で埋める', async () => {
+  test('既定モデル未設定（null）なら工場出荷の既定モデル（gemini-3.8-flash）で埋める', async () => {
     const store = makeStore();
     await loadSchema(store, makeDeps({ loadDefaultModel: async () => null }).deps);
-    expect(store.getState().schema.model).toBe('gemini-3.5-flash');
+    expect(store.getState().schema.model).toBe('gemini-3.8-flash');
   });
 
   test('ユーザーが入力済みの model は上書きしない（設定の読み出し自体を行わない）', async () => {
