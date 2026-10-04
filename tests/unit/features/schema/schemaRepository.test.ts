@@ -378,3 +378,12 @@ test('20列目以降の利用者追加列は検査せず空セルを追記する
   expect(appendRowsMock.mock.calls[0]?.[2][0]?.slice(19)).toEqual([null, null]);
   expect(updateRow).not.toHaveBeenCalled();
 });
+
+test.each([15, 16])('旧版の設定プロパティがない項目では %i 列のヘッダを拡張しない', async (width) => {
+  const { multiSelect: _omit, ...legacy } = FIELD;
+  void _omit;
+  jest.mocked(getBatchValues).mockResolvedValue([[FIELDS_HEADER.slice(0, width)]]);
+  await appendSchemaFields('sheet-1', [legacy as SchemaField], deps);
+  expect(updateRow).not.toHaveBeenCalled();
+  expect(appendRowsMock.mock.calls[0]?.[2][0]).toHaveLength(width);
+});

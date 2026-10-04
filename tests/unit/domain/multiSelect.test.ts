@@ -73,3 +73,12 @@ test.each([
   expect(formatMultiSelectForDisplay(single, 'A')).toBe('A');
   expect(toggleMultiSelectOption(single, [], 'A')).toEqual([]);
 });
+
+test('旧版の設定プロパティがない項目は単一選択として値を保持する', () => {
+  const { multiSelect: _omit, ...legacy } = field;
+  void _omit;
+  const single = legacy as SchemaField;
+  expect(isMultiSelectField(single)).toBe(false);
+  expect(parseMultiSelectValue(single, 'A|B')).toEqual([]);
+  expect(canonicalizeMultiSelectValue(single, 'A|B')).toBe('A|B');
+});

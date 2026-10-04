@@ -1,4 +1,4 @@
-import { NOT_REPORTED_TOKEN } from '../../../../src/domain/annotation';
+import { NOT_REPORTED_TOKEN, type StudyDataRow } from '../../../../src/domain/annotation';
 import type { SchemaField } from '../../../../src/domain/schemaField';
 import {
   buildAgreementDisagreementsCsv,
@@ -7,7 +7,7 @@ import {
   type AgreementReport,
   type AgreementStudyInput,
 } from '../../../../src/features/adjudication/agreement';
-import type { AdjudicationCell } from '../../../../src/features/adjudication/cellMatch';
+import { buildAdjudicationCells, type AdjudicationCell } from '../../../../src/features/adjudication/cellMatch';
 import { CSV_BOM } from '../../../../src/features/export/csvEncode';
 import { STUDY_ENTITY_KEY } from '../../../../src/utils/entityKey';
 
@@ -387,4 +387,34 @@ describe('buildAgreementDisagreementsCsv', () => {
     expect(csv).toContain('"Smith, 2020"');
     expect(csv).toContain('"""引用""あり"');
   });
+});
+
+test('複数選択の順序をそろえた周辺分布で一致率 2/3・κ 0.4 を計算する', () => {
+  const f = field({ dataType: 'enum', allowedValues: 'A|B|C',
+    multiSelect: { exclusiveValues: [], freeTextValues: [] } });
+  const inputs = [['A|B', 'B|A'], ['A|B', 'C'], ['C', 'C']].map(([a, b], index) => {
+    const row = (value: string, annotator: string): StudyDataRow => ({
+      studyId: String(index), annotator, annotatorType: 'human_independent',
+      schemaVersion: 1, runId: null, updatedAt: 't', values: { [f.fieldName]: value },
+    });
+    return study({ studyId: String(index),
+      cells: buildAdjudicationCells([f], row(a as string, 'a'), row(b as string, 'b'), [], [], [], []) });
+  });
+  const report = buildAgreementReport([f], inputs);
+  for (const stats of [report.fields[0], report.overall]) {
+    expect(stats).toEqual(expect.objectContaining({
+      pairCount: 3, agreementCount: 2, agreementRate: 2 / 3, kappa: expect.closeTo(0.4, 10),
+    }));
+  }
+});
+
+test('複数選択の不一致一覧と CSV は保存された順序を保持する', () => {
+  const f = field({ dataType: 'enum', allowedValues: 'A|B|C',
+    multiSelect: { exclusiveValues: [], freeTextValues: [] } });
+  const report = buildAgreementReport([f], [study({ cells: [
+    cell({ field: f, valueA: 'B|A', valueB: 'C' }),
+    cell({ field: f, valueA: ' | ', valueB: ' | ' }),
+  ] })]);
+  expect(report.disagreements[0]).toEqual(expect.objectContaining({ valueA: 'B|A', valueB: 'C' }));
+  expect(buildAgreementDisagreementsCsv(report)).toContain('B|A,C');
 });

@@ -2,7 +2,7 @@
 // 追記型・上書き禁止: 版の確定は常に新しい schema_version の行群を追記する
 import type { SchemaField, EntityLevel, FieldDataType } from '../../domain/schemaField';
 import type { SchemaCreatedByType, SchemaVersion } from '../../domain/schemaVersion';
-import { splitPipeList } from '../../domain/multiSelect';
+import { multiSelectConfigOf, splitPipeList } from '../../domain/multiSelect';
 import { SHEET_HEADERS } from '../../domain/sheetsSchema';
 import { appendRow, appendRows, getBatchValues, getSheetValues, updateRow } from '../../lib/google/sheets';
 import type { GoogleApiDeps } from '../../lib/google/types';
@@ -70,7 +70,7 @@ export async function appendSchemaFields(
       throw new Error(`SchemaFields のヘッダ ${index + 1} 列目が "${FIELDS_HEADER[index]}" ではありません`);
     }
   });
-  const requiredWidth = fields.some((field) => field.multiSelect !== null) ? 19
+  const requiredWidth = fields.some((field) => multiSelectConfigOf(field) !== null) ? 19
     : fields.some((field) => field.maxQuotes !== null) ? 16 : header.length;
   if (header.length < requiredWidth) {
     header = FIELDS_HEADER.slice(0, requiredWidth);
@@ -94,9 +94,9 @@ export async function appendSchemaFields(
       ai_generated: field.aiGenerated,
       note: field.note,
       max_quotes: field.maxQuotes,
-      multi_select: field.multiSelect !== null ? true : null,
-      exclusive_values: field.multiSelect?.exclusiveValues.join('|') || null,
-      free_text_values: field.multiSelect?.freeTextValues.join('|') || null,
+      multi_select: multiSelectConfigOf(field) !== null ? true : null,
+      exclusive_values: multiSelectConfigOf(field)?.exclusiveValues.join('|') || null,
+      free_text_values: multiSelectConfigOf(field)?.freeTextValues.join('|') || null,
     };
     return header.map((key) => map[key] ?? null);
   });

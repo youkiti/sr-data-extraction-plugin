@@ -12,7 +12,7 @@
 //
 // 【Cohen's κ（Cohen, J. 1960. "A coefficient of agreement for nominal scales."
 // Educational and Psychological Measurement, 20(1), 37-46.）】
-// カテゴリ = trim 後の値文字列（NOT_REPORTED_TOKEN も 1 カテゴリとして扱う。自由記述・数値項目でも
+// カテゴリ = 複数選択を正準化して trim 後の値文字列（NOT_REPORTED_TOKEN も 1 カテゴリとして扱う。自由記述・数値項目でも
 // 「trim 後に完全一致した文字列 = 同じカテゴリ」という形式的な定義で κ を計算できる、という整理）。
 //   po（観測一致率） = agreementCount / pairCount
 //   pe（偶然一致率） = Σ_v pA(v)・pB(v)（pA / pB は各レビュアーのカテゴリ周辺分布。v は両者の値の和集合）
@@ -23,6 +23,7 @@
 // 【項目の集計単位】study によって human annotator ペアが異なりうるが、v1 は「2 名の評価者間一致」
 // として全 ready study をプールして fieldId ごとに集計する（study ごとの κ を出して平均する、
 // といった加重はしない素朴な集計）。
+import { canonicalizeMultiSelectValue } from '../../domain/multiSelect';
 import { remapArmEntityKey } from './armMatch';
 import type { StudyDataRow, ResultsDataRow } from '../../domain/annotation';
 import type { Decision } from '../../domain/decision';
@@ -83,8 +84,8 @@ const KAPPA_DENOM_EPSILON = 1e-9;
 
 /**
  * セル集合から一致率・κ を計算する（分母は両者とも入力済みのセルのみ。ファイル冒頭コメント参照）。
- * cell.matches（cellMatch.ts の trim 完全一致判定）をそのまま観測一致率へ採用し、
- * κ のカテゴリ分布だけこの関数内で trim 後の値文字列として組み直す
+ * cell.matches（cellMatch.ts の複数選択正準化・trim 後の一致判定）をそのまま観測一致率へ採用し、
+ * κ のカテゴリ分布だけこの関数内で複数選択を正準化して trim 後の値文字列として組み直す
  */
 function computeAgreementStats(cells: readonly AdjudicationCell[]): AgreementStats {
   const paired = cells.filter((cell) => cell.valueA !== null && cell.valueB !== null);
@@ -99,8 +100,8 @@ function computeAgreementStats(cells: readonly AdjudicationCell[]): AgreementSta
   const countsB = new Map<string, number>();
   for (const cell of paired) {
     // pairCount 分母のフィルタ済みなので valueA / valueB は非 null
-    const a = (cell.valueA as string).trim();
-    const b = (cell.valueB as string).trim();
+    const a = (canonicalizeMultiSelectValue(cell.field, cell.valueA) ?? '').trim();
+    const b = (canonicalizeMultiSelectValue(cell.field, cell.valueB) ?? '').trim();
     countsA.set(a, (countsA.get(a) ?? 0) + 1);
     countsB.set(b, (countsB.get(b) ?? 0) + 1);
   }

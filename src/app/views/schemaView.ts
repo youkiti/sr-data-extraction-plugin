@@ -4,7 +4,7 @@
 // RoB プリセット事前設定ダイアログ〔issue #103〕）/
 // 確定済み（現行版サマリ + 版履歴 + 新しい版を作る）。
 // データは AppState.schema（schemaService が更新）から描く
-import { splitPipeList } from '../../domain/multiSelect';
+import { multiSelectConfigOf, splitPipeList } from '../../domain/multiSelect';
 import type { EntityLevel, FieldDataType, SchemaField } from '../../domain/schemaField';
 import type { SchemaVersion } from '../../domain/schemaVersion';
 import type { PresetDialogState } from '../../features/schema/presets/prespecDialog';
@@ -1175,7 +1175,7 @@ function renderCurrentFieldRow(field: SchemaField): HTMLElement {
     el('td', { text: field.fieldName }),
     el('td', { text: field.fieldLabel }),
     el('td', { text: field.entityLevel }),
-    el('td', { text: field.dataType === 'enum' && field.multiSelect !== null
+    el('td', { text: field.dataType === 'enum' && multiSelectConfigOf(field) !== null
       ? `${field.dataType} — ${t('schema.multiSelect')}` : field.maxQuotes === null ? field.dataType :
       `${field.dataType} — ${t('schema.multiQuoteSummary', { max: field.maxQuotes })}` }),
     el('td', { text: field.required ? t('schema.requiredYes') : '—' }),

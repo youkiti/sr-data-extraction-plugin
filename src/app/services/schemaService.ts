@@ -1,3 +1,4 @@
+import { multiSelectConfigOf } from '../../domain/multiSelect';
 // #/schema（S5）のサービス層。features/schema + lib/llm を 1 段抽象化し、
 // 画面状態（AppState.schema）の遷移を一手に引き受ける（architecture.md §2.2）。
 // LLM 呼び出しは extractionService と同じくレート制限ポリシーとログ記録で包み、
@@ -626,9 +627,9 @@ export function startEditorFromCurrent(store: Store): void {
       aiGenerated: field.aiGenerated,
       note: field.note,
       maxQuotes: field.maxQuotes,
-      multiSelect: field.multiSelect !== null,
-      exclusiveValues: field.multiSelect?.exclusiveValues.join('|') || null,
-      freeTextValues: field.multiSelect?.freeTextValues.join('|') || null,
+      multiSelect: multiSelectConfigOf(field) !== null,
+      exclusiveValues: multiSelectConfigOf(field)?.exclusiveValues.join('|') || null,
+      freeTextValues: multiSelectConfigOf(field)?.freeTextValues.join('|') || null,
     })),
     editorErrors: [],
     editorOrigin: 'user_edit',

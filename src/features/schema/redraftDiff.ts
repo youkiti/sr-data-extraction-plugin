@@ -2,7 +2,7 @@
 // プロトコル改訂後に AI へ表デザインを再ドラフトさせた結果（SchemaEditorRow[]）と、
 // 現行スキーマ版（SchemaField[]）を突き合わせて差分を作る純粋関数群。
 // DOM・store・ネットワークには一切依存しない（差分画面の描画・サービス配線は Chunk B）
-import { splitPipeList } from '../../domain/multiSelect';
+import { multiSelectConfigOf, splitPipeList } from '../../domain/multiSelect';
 import type { SchemaField } from '../../domain/schemaField';
 import type { SchemaEditorRow } from './types';
 
@@ -131,9 +131,11 @@ function stringifyAttr(key: RedraftComparedKey, source: ComparableSource): strin
     case 'extractionInstruction':
       // section / fieldLabel と同じ理由（saveSchemaVersion.ts が trim して保存する）
       return source.extractionInstruction.trim();
-    case 'multiSelect':
-      return source.dataType === 'enum' && source.multiSelect !== null
-        ? `exclusive_values=${source.multiSelect.exclusiveValues.join('|')}; free_text_values=${source.multiSelect.freeTextValues.join('|')}` : '';
+    case 'multiSelect': {
+      const config = multiSelectConfigOf(source);
+      return source.dataType === 'enum' && config !== null
+        ? `exclusive_values=${config.exclusiveValues.join('|')}; free_text_values=${config.freeTextValues.join('|')}` : '';
+    }
     case 'maxQuotes':
       return source.maxQuotes === null ? null : String(source.maxQuotes);
     case 'example':
@@ -226,9 +228,10 @@ export function buildRedraftDiff(
     draftedByName.delete(name);
     const maxQuotes = proposed.dataType === 'text' ? field.maxQuotes : null;
     const allowed = splitPipeList(proposed.allowedValues);
-    const multiSelect = proposed.dataType === 'enum' && field.multiSelect !== null ? {
-      exclusiveValues: field.multiSelect.exclusiveValues.filter((value) => allowed.includes(value)),
-      freeTextValues: field.multiSelect.freeTextValues.filter((value) => allowed.includes(value)),
+    const config = multiSelectConfigOf(field);
+    const multiSelect = proposed.dataType === 'enum' && config !== null ? {
+      exclusiveValues: config.exclusiveValues.filter((value) => allowed.includes(value)),
+      freeTextValues: config.freeTextValues.filter((value) => allowed.includes(value)),
     } : null;
     const patch = {
       maxQuotes,
@@ -300,9 +303,9 @@ function schemaFieldToEditorRow(field: SchemaField): SchemaEditorRow {
     aiGenerated: field.aiGenerated,
     note: field.note,
     maxQuotes: field.maxQuotes,
-    multiSelect: field.multiSelect !== null,
-    exclusiveValues: field.multiSelect?.exclusiveValues.join('|') || null,
-    freeTextValues: field.multiSelect?.freeTextValues.join('|') || null,
+    multiSelect: multiSelectConfigOf(field) !== null,
+    exclusiveValues: multiSelectConfigOf(field)?.exclusiveValues.join('|') || null,
+    freeTextValues: multiSelectConfigOf(field)?.freeTextValues.join('|') || null,
   };
 }
 

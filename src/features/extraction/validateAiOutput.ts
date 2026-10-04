@@ -12,7 +12,7 @@
 // 突合キーになる field_id / entity_key / value / not_reported / document_index は厳格に検証し、
 // 補助ヒントの page / confidence / box_2d は寛容にパースして不正値を null へ落とす
 import { z } from 'zod';
-import { isMultiSelectField, parseMultiSelectValue, formatMultiSelectValue, sanitizeFreeText, splitPipeList } from '../../domain/multiSelect';
+import { isMultiSelectField, multiSelectConfigOf, parseMultiSelectValue, formatMultiSelectValue, sanitizeFreeText, splitPipeList } from '../../domain/multiSelect';
 import type { Confidence, EvidenceBbox } from '../../domain/evidence';
 import type { SchemaField } from '../../domain/schemaField';
 import { parseEntityKey, STUDY_ENTITY_KEY } from '../../utils/entityKey';
@@ -380,15 +380,17 @@ export function validateAiOutput(
       item.quoteSeq = index + 1;
     });
   }
-  const multiGroups = new Map<string, ValidatedAiItem[]>();
+  const multiGroups = new Map<string, { items: ValidatedAiItem[]; config: NonNullable<SchemaField['multiSelect']> }>();
   for (const item of items) {
-    if (!isMultiSelectField(fieldById.get(item.fieldId) as SchemaField)) continue;
+    const field = fieldById.get(item.fieldId) as SchemaField;
+    const config = multiSelectConfigOf(field);
+    if (config === null || !isMultiSelectField(field)) continue;
     const key = JSON.stringify([item.fieldId, item.entityKey]);
     const group = multiGroups.get(key);
-    if (group === undefined) multiGroups.set(key, [item]);
-    else group.push(item);
+    if (group === undefined) multiGroups.set(key, { items: [item], config });
+    else group.items.push(item);
   }
-  for (const group of multiGroups.values()) {
+  for (const { items: group, config } of multiGroups.values()) {
     const first = group[0] as ValidatedAiItem;
     const field = fieldById.get(first.fieldId) as SchemaField;
     const reported = group.filter((item) => !item.notReported && item.value !== null);
@@ -402,7 +404,7 @@ export function validateAiOutput(
     const entries = reported.map((item) => {
       let elements = parseMultiSelectValue(field, item.value);
       const [only] = elements;
-      if (elements.length === 1 && field.multiSelect!.freeTextValues.includes(only!.option)
+      if (elements.length === 1 && config.freeTextValues.includes(only!.option)
         && only!.text === null && item.quoteTheme !== null) {
         only!.text = sanitizeFreeText(item.quoteTheme);
       }
@@ -415,7 +417,7 @@ export function validateAiOutput(
       elements.forEach((element) => seen.add(element.option));
       return { item, elements };
     });
-    const exclusive = field.multiSelect!.exclusiveValues;
+    const exclusive = config.exclusiveValues;
     const selectedExclusive = splitPipeList(field.allowedValues).filter((option) => exclusive.includes(option) && seen.has(option));
     const hasOrdinary = [...seen].some((option) => !exclusive.includes(option));
     const conflict = selectedExclusive.length > 0 && (hasOrdinary || selectedExclusive.length > 1);

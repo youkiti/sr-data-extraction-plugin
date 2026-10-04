@@ -4,7 +4,7 @@
 // - 抽出対象論文は英語を主想定のため、プロンプト本文は英語（requirements.md §6）
 // - LLM 呼び出し自体は executeRun 側の責務（lib/llm 移植後に配線）。ここは
 //   「プロンプト構築 → 構造化出力スキーマ → 応答パース（validateAiOutput へ委譲）」の純粋関数のみ
-import { isMultiSelectField } from '../../../domain/multiSelect';
+import { isMultiSelectField, multiSelectConfigOf } from '../../../domain/multiSelect';
 import type { DocumentRole } from '../../../domain/document';
 import type { EntityLevel, SchemaField } from '../../../domain/schemaField';
 import type { ChatContentPart } from '../../../lib/llm/LLMProvider';
@@ -221,13 +221,14 @@ function renderField(field: SchemaField): string {
     const constraint = isMultiSelectField(field)
       ? `(each item's "value" must be exactly one of these)` : '("value" must be one of these)';
     lines.push(`  allowed_values: ${field.allowedValues} ${constraint}`);
-    if (isMultiSelectField(field)) {
+    const config = multiSelectConfigOf(field);
+    if (config !== null && isMultiSelectField(field)) {
       lines.push('  multi_select: true');
-      if (field.multiSelect!.exclusiveValues.length > 0) {
-        lines.push(`  exclusive_values: ${field.multiSelect!.exclusiveValues.join('|')}`);
+      if (config.exclusiveValues.length > 0) {
+        lines.push(`  exclusive_values: ${config.exclusiveValues.join('|')}`);
       }
-      if (field.multiSelect!.freeTextValues.length > 0) {
-        lines.push(`  free_text_values: ${field.multiSelect!.freeTextValues.join('|')}`);
+      if (config.freeTextValues.length > 0) {
+        lines.push(`  free_text_values: ${config.freeTextValues.join('|')}`);
       }
     }
   }

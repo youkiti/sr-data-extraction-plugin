@@ -10,7 +10,7 @@
 //   入力形式を出し分ける）。トークン概算はテキスト文書ぶん（文字数 ÷ 4）と画像文書ぶん
 //   （ページ数 × 画像トークン単価）を別建てで計算してから合算する
 // - 実行（API 呼び出し・進捗・partial_failure）は executeRun の責務。ここは純粋関数のみ
-import { isMultiSelectField, splitPipeList } from '../../domain/multiSelect';
+import { isMultiSelectField, multiSelectConfigOf, splitPipeList } from '../../domain/multiSelect';
 import { DOCUMENT_ROLE_ORDER, type DocumentRecord } from '../../domain/document';
 import type { InputMode } from '../../domain/extractionRun';
 import type { EntityLevel, SchemaField } from '../../domain/schemaField';
@@ -170,14 +170,15 @@ function imageDocumentTokens(doc: DocumentRecord): number {
 
 /** 1 項目の定義ブロックの文字数概算（renderField の可変部 + 固定行ぶん） */
 function fieldPromptChars(field: SchemaField): number {
+  const config = multiSelectConfigOf(field);
   let multiSelectChars = 0;
-  if (isMultiSelectField(field)) {
+  if (config !== null && isMultiSelectField(field)) {
     multiSelectChars += '  multi_select: true\n'.length;
-    if (field.multiSelect!.exclusiveValues.length > 0) {
-      multiSelectChars += `  exclusive_values: ${field.multiSelect!.exclusiveValues.join('|')}\n`.length;
+    if (config.exclusiveValues.length > 0) {
+      multiSelectChars += `  exclusive_values: ${config.exclusiveValues.join('|')}\n`.length;
     }
-    if (field.multiSelect!.freeTextValues.length > 0) {
-      multiSelectChars += `  free_text_values: ${field.multiSelect!.freeTextValues.join('|')}\n`.length;
+    if (config.freeTextValues.length > 0) {
+      multiSelectChars += `  free_text_values: ${config.freeTextValues.join('|')}\n`.length;
     }
   }
   return (
@@ -225,9 +226,12 @@ function estimateBatch(
     fields.reduce((sum, field) => sum + fieldPromptChars(field), 0) +
     textBodyChars +
     armCompletenessChars;
-  const items = fields.reduce((sum, field) => sum + ENTITY_INSTANCE_ESTIMATE[field.entityLevel] * (isMultiSelectField(field)
-    ? Math.max(1, splitPipeList(field.allowedValues).filter((option) => !field.multiSelect!.exclusiveValues.includes(option)).length)
-    : (field.maxQuotes ?? 1)), 0);
+  const items = fields.reduce((sum, field) => {
+    const config = multiSelectConfigOf(field);
+    return sum + ENTITY_INSTANCE_ESTIMATE[field.entityLevel] * (config !== null && isMultiSelectField(field)
+    ? Math.max(1, splitPipeList(field.allowedValues).filter((option) => !config.exclusiveValues.includes(option)).length)
+    : (field.maxQuotes ?? 1));
+  }, 0);
   const imageTokens = imageDocs.reduce((sum, doc) => sum + imageDocumentTokens(doc), 0);
   return {
     tokensIn: Math.ceil(promptChars / APPROX_CHARS_PER_TOKEN) + imageTokens,

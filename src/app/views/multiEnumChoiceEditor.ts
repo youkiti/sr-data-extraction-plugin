@@ -2,7 +2,7 @@
 // 選択・排他・自由記述の判定規則は src/domain/multiSelect.ts を正典とし、ここでは描画と操作を担う。
 import type { SchemaField } from '../../domain/schemaField';
 import {
-  formatMultiSelectValue, isMultiSelectField, parseMultiSelectValue,
+  formatMultiSelectValue, isMultiSelectField, multiSelectConfigOf, parseMultiSelectValue,
   splitPipeList, toggleMultiSelectOption,
 } from '../../domain/multiSelect';
 import { t } from '../../lib/i18n';
@@ -27,7 +27,9 @@ export interface MultiEnumChoiceEditor {
 /** 複数選択でなければ null を返し、呼び出し側の既存エディタへ落とす。 */
 export function renderMultiEnumChoiceEditor(options: MultiEnumChoiceEditorOptions): MultiEnumChoiceEditor | null {
   const { field } = options;
-  if (!isMultiSelectField(field)) return null;
+  const config = multiSelectConfigOf(field);
+  if (config === null || !isMultiSelectField(field)) return null;
+  const { exclusiveValues, freeTextValues } = config;
   const allowed = splitPipeList(field.allowedValues);
   let selected = parseMultiSelectValue(field, options.currentValue);
   // 描画し直す前に現在値を読むため、入力イベントの有無に依存しない。
@@ -59,7 +61,7 @@ export function renderMultiEnumChoiceEditor(options: MultiEnumChoiceEditorOption
       attributes: { role: 'group', 'aria-label': t('verify.enumChooseAria', { label: field.fieldLabel }) },
     });
     values.forEach((option, index) => {
-      const exclusive = field.multiSelect!.exclusiveValues.includes(option);
+      const exclusive = exclusiveValues.includes(option);
       const known = allowed.includes(option);
       const chip = el('button', {
         className: `verify__enum-chip${exclusive ? ' verify__enum-chip--exclusive' : ''}${known ? '' : ' verify__enum-chip--unknown'}`,
@@ -96,7 +98,7 @@ export function renderMultiEnumChoiceEditor(options: MultiEnumChoiceEditorOption
     });
     const children: HTMLElement[] = [group];
     for (const item of selected) {
-      if (!field.multiSelect!.freeTextValues.includes(item.option)) continue;
+      if (!freeTextValues.includes(item.option)) continue;
       const input = el('input', {
         className: 'verify__multi-free-text',
         attributes: { type: 'text', 'aria-label': t('verify.multiFreeTextAria', { option: item.option }) },

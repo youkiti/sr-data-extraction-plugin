@@ -164,3 +164,16 @@ describe('buildUndoWrite', () => {
     });
   });
 });
+
+test('旧版の設定プロパティがない裁定の書き込みと再送は元の値を保持する', () => {
+  const { multiSelect: _omit, ...legacy } = cell().field;
+  void _omit;
+  const target = cell({ field: { ...legacy, dataType: 'enum', allowedValues: 'A|B' } as AdjudicationCell['field'],
+    valueA: 'B|A', valueB: 'A|B' });
+  expect(buildChoiceWrite(target, 'A').value).toBe('B|A');
+  expect(buildChoiceWrite(target, 'B').value).toBe('A|B');
+  expect(toConsensusDecision(
+    { field: target.field, entityKey: '-', action: 'accept', value: 'B|A' },
+    { studyId: 's', decidedBy: 'a', decidedAt: 't', schemaVersion: 1 },
+  ).value).toBe('B|A');
+});
