@@ -10,7 +10,7 @@
 // - 書き込み（ensureEvidenceBboxColumns / ensureEvidenceRelocatedFromColumn）: ヘッダが
 //   未拡張のプロジェクトへは実行前にヘッダ行をフルヘッダへ拡張する
 //   （呼び出しは extractionService.ts / relocateQuoteService.ts の責務）
-// - quote_theme / quote_seq は appendEvidenceRows が必要なときだけ追加する
+// - quote_theme / quote_seq / section は appendEvidenceRows が必要な幅までだけ追加する
 import type { AnchorStatus } from '../../domain/anchor';
 import type { Confidence, Evidence, EvidenceBbox } from '../../domain/evidence';
 import { SHEET_HEADERS } from '../../domain/sheetsSchema';
@@ -52,6 +52,7 @@ export function evidenceToRow(evidence: Evidence): (string | number | boolean | 
     evidence.relocatedFrom,
     evidence.quoteTheme,
     evidence.quoteSeq,
+    evidence.section,
   ];
 }
 
@@ -71,11 +72,12 @@ export async function appendEvidenceRows(
     'evidence_append',
     { studyId: evidence[0]?.studyId ?? null, documentId: evidence[0]?.documentId ?? null },
     async () => {
-      const multipleQuotes = evidence.some((item) => item.quoteSeq !== null);
-      if (multipleQuotes) await ensureEvidenceQuoteColumns(spreadsheetId, deps);
+      const width = evidence.some((item) => item.section !== null) ? 21
+        : evidence.some((item) => item.quoteSeq !== null) ? 20 : 18;
+      if (width > 18) await ensureEvidenceQuoteColumns(spreadsheetId, deps, width);
       const rows = evidence.map((item) => {
         const row = evidenceToRow(item);
-        return multipleQuotes ? row : row.slice(0, 18);
+        return row.slice(0, width);
       });
       await appendRows(spreadsheetId, EVIDENCE_TAB, rows, deps);
     },
@@ -144,10 +146,11 @@ export async function ensureEvidenceRelocatedFromColumn(
   await updateRow(spreadsheetId, EVIDENCE_TAB, 1, SHEET_HEADERS.Evidence.slice(0, 18), deps);
 }
 
-/** 複数引用を初めて保存するときだけ、bbox / relocated_from を含む末尾列を補う。 */
+/** 複数引用や見出しを初めて保存するときだけ、必要な幅まで末尾列を補う。 */
 export async function ensureEvidenceQuoteColumns(
   spreadsheetId: string,
   deps: GoogleApiDeps,
+  width = 20,
 ): Promise<void> {
   const [headerRows] = await getBatchValues(spreadsheetId, [`${EVIDENCE_TAB}!1:1`], deps);
   const header = headerRows?.[0] ?? [];
@@ -157,8 +160,8 @@ export async function ensureEvidenceQuoteColumns(
     }
   });
   validateExtendedHeaderColumns(header, 'Evidence のヘッダ');
-  if (header.length >= SHEET_HEADERS.Evidence.length) return;
-  await updateRow(spreadsheetId, EVIDENCE_TAB, 1, [...SHEET_HEADERS.Evidence], deps);
+  if (header.length >= width) return;
+  await updateRow(spreadsheetId, EVIDENCE_TAB, 1, SHEET_HEADERS.Evidence.slice(0, width), deps);
 }
 
 /** Sheets の values はラグ配列（末尾の空セルが落ちる）。欠けたセルは空文字として読む */
@@ -331,6 +334,7 @@ export async function readEvidenceRows(
       confidence: parseConfidence(cellAt(raw, 10), context),
       anchorStatus: parseAnchorStatus(cellAt(raw, 11), context),
       relocatedFrom: emptyToNull(cellAt(raw, 17)),
+      section: emptyToNull(cellAt(raw, 20)),
       quoteTheme: emptyToNull(cellAt(raw, 18)),
       quoteSeq: cellAt(raw, 19) === '' ? null : parsePositiveInt(cellAt(raw, 19), 'quote_seq', context),
       bboxPage,

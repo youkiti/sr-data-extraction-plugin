@@ -24,6 +24,9 @@ const google = { fetch: jest.fn() as unknown as typeof fetch, getAccessToken: as
 function makeRow(overrides: Partial<SchemaEditorRow> = {}): SchemaEditorRow {
   return {
     maxQuotes: null,
+    multiSelect: false,
+    exclusiveValues: null,
+    freeTextValues: null,
     fieldId: null,
     section: ' methods ',
     fieldName: ' study_design ',
@@ -174,4 +177,14 @@ describe('saveSchemaVersion', () => {
     ).rejects.toThrow(SchemaValidationError);
     expect(appendVersionMock).not.toHaveBeenCalled();
   });
+});
+
+
+test('複数選択の設定を trim・重複除去して保存する', async () => {
+  const { fields } = await saveSchemaVersion({
+    spreadsheetId: 's', rows: [makeRow({ dataType: 'enum', allowedValues: 'A|NA|Other', multiSelect: true,
+      exclusiveValues: ' NA |NA', freeTextValues: ' Other ' })],
+    parentVersion: null, protocolVersion: 1, createdByType: 'user_edit', createdBy: 'test', note: null,
+  }, { google });
+  expect(fields[0]?.multiSelect).toEqual({ exclusiveValues: ['NA'], freeTextValues: ['Other'] });
 });

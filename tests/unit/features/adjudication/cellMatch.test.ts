@@ -17,9 +17,20 @@ test('テーマの無い断片も先頭引用と元の値を裁定の代表に�
   expect([...indexEvidenceByCellKey([first, second]).values()]).toEqual([first]);
 });
 
+test('複数選択は順序と大文字小文字を正準化して一致判定する', () => {
+  const multi = field({ dataType: 'enum', allowedValues: 'A|B|Other',
+    multiSelect: { exclusiveValues: [], freeTextValues: ['Other'] } });
+  const a = studyRow({ values: { sample_size: 'B|A|Other: 内容' } });
+  const b = studyRow({ values: { sample_size: 'a|B|Other: 内容' } });
+  expect(buildAdjudicationCells([multi], a, b, [], [])[0]!.matches).toBe(true);
+  expect(buildAdjudicationCells([{ ...multi, multiSelect: null }], a, b, [], [])[0]!.matches).toBe(false);
+  expect(buildAdjudicationCells([multi], a, studyRow({ values: { sample_size: 'A' } }), [], [])[0]!.matches).toBe(false);
+});
+
 function field(overrides: Partial<SchemaField> = {}): SchemaField {
   return {
     maxQuotes: null,
+    multiSelect: null,
     schemaVersion: 1,
     fieldId: 'f-study',
     fieldIndex: 1,
@@ -90,6 +101,7 @@ function evidence(overrides: Partial<Evidence> = {}): Evidence {
   return {
     quoteTheme: null,
     quoteSeq: null,
+    section: null,
     evidenceId: 'ev-1',
     runId: 'run-1',
     studyId: 'study-1',

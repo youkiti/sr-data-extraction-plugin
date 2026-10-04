@@ -39,6 +39,7 @@ function makeField(
 ): SchemaField {
   return {
     maxQuotes: null,
+    multiSelect: null,
     schemaVersion: 1,
     fieldIndex: 0,
     section: 'methods',
@@ -319,7 +320,7 @@ describe('離れた引用断片の保存', () => {
 
   test.each(['exact', 'normalized', 'fuzzy'] as const)('断片ごとの照合結果とページを保存する: %s', async (status) => {
     const page = status === 'exact' ? 2 : 5;
-    const { provider } = providerOf([chatResponse([{ ...DESIGN_ITEM, quote: `${heading}\n${data}` }])]);
+    const { provider } = providerOf([chatResponse([{ ...DESIGN_ITEM, quote: `${heading}\n${data}`, section: 'Results' }])]);
     const { deps, saved, loadPages } = makeDeps(provider);
     loadPages.mockResolvedValue([
       { page: 1, text: heading },
@@ -329,7 +330,7 @@ describe('離れた引用断片の保存', () => {
     const common = {
       runId: 'run-1', studyId: 'd1', documentId: 'd1', fieldId: 'f_design', entityKey: '-',
       value: DESIGN_ITEM.value, notReported: false, confidence: 'high',
-      bboxPage: null, bbox: null, relocatedFrom: null, quoteTheme: null,
+      bboxPage: null, bbox: null, relocatedFrom: null, quoteTheme: null, section: 'Results',
     };
     expect(result.evidence).toEqual([
       { ...common, evidenceId: 'ev-1', quote: heading, quoteSeq: 1, page: 1, anchorStatus: 'exact' },
@@ -428,7 +429,7 @@ describe('離れた引用断片の保存', () => {
       evidenceId: 'ev-1', runId: 'run-1', studyId: 'd1', documentId: 'd1', fieldId: 'f_design',
       entityKey: '-', value: DESIGN_ITEM.value, notReported: false, quote, page: 1,
       confidence: 'high', anchorStatus: status, bboxPage: null, bbox: null,
-      relocatedFrom: null, quoteTheme: null, quoteSeq: null,
+      relocatedFrom: null, quoteTheme: null, quoteSeq: null, section: null,
     }]);
   });
 });
@@ -527,6 +528,7 @@ describe('executeRun の正常系', () => {
       {
         quoteTheme: null,
         quoteSeq: null,
+        section: null,
         evidenceId: 'ev-1',
         runId: 'run-1',
         studyId: 'd1',
@@ -546,6 +548,7 @@ describe('executeRun の正常系', () => {
       {
         quoteTheme: null,
         quoteSeq: null,
+        section: null,
         evidenceId: 'ev-2',
         runId: 'run-1',
         studyId: 'd1',
@@ -566,6 +569,7 @@ describe('executeRun の正常系', () => {
       {
         quoteTheme: null,
         quoteSeq: null,
+        section: null,
         evidenceId: 'ev-3',
         runId: 'run-1',
         studyId: 'd1',
@@ -2219,4 +2223,22 @@ describe('バッチ失敗の補助監査', () => {
     expect(progress).toHaveLength(2);
     expect(result.status).toBe('partial_failure');
   });
+});
+
+
+test('重複選択肢を破棄しても done を維持し、section を保存する', async () => {
+  const { provider } = providerOf([chatResponse([
+    { ...DESIGN_ITEM, value: 'RCT', section: 'Methods' },
+    { ...DESIGN_ITEM, value: 'RCT', section: 'Results' },
+  ])]);
+  const { deps, saved } = makeDeps(provider);
+  const result = await execute({ runId: 'run-multi',
+    plan: makePlan([makeBatch({ studyId: 'd1', fieldIds: ['f_design'] })]),
+    fields: [{ ...STUDY_FIELD, dataType: 'enum', allowedValues: 'RCT|Other',
+      multiSelect: { exclusiveValues: [], freeTextValues: [] } }],
+  }, deps);
+  expect(result.status).toBe('done');
+  expect(result.rejectedItems).toEqual([expect.objectContaining({ reason: 'duplicate_option' })]);
+  expect(saved.flat()).toHaveLength(1);
+  expect(saved.flat()[0]).toMatchObject({ section: 'Methods', quoteSeq: 1, quoteTheme: 'RCT' });
 });

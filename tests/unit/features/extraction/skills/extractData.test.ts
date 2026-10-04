@@ -27,6 +27,7 @@ function makeField(
 ): SchemaField {
   return {
     maxQuotes: null,
+    multiSelect: null,
     schemaVersion: 1,
     fieldIndex: 0,
     section: 'methods',
@@ -111,7 +112,7 @@ describe('extract-data skill 定数', () => {
   it('skill 名とプロンプト版数を公開する（LLMApiLog 記録用）', () => {
     expect(EXTRACT_DATA_SKILL_NAME).toBe('extract-data');
     // v11: outcome_result だけのバッチにも群の番号づけ規約を提示
-    expect(EXTRACT_DATA_PROMPT_VERSION).toBe(11);
+    expect(EXTRACT_DATA_PROMPT_VERSION).toBe(12);
   });
 
   it('システムプロンプトに verbatim quote の規約（300 文字上限）と document_index の規約を含む', () => {
@@ -136,7 +137,7 @@ describe('extract-data skill 定数', () => {
     expect(EXTRACT_DATA_SYSTEM_PROMPT).toContain('verbatim transcription');
   });
 
-  it('構造化出力スキーマは応答 9 キー（theme 込み）すべてを required にする', () => {
+  it('構造化出力スキーマは応答 10 キー（theme・section 込み）すべてを required にする', () => {
     const items = EXTRACT_DATA_RESPONSE_SCHEMA['items'] as Record<string, unknown>;
     expect(items['required']).toEqual([
       'field_id',
@@ -146,6 +147,7 @@ describe('extract-data skill 定数', () => {
       'quote',
       'theme',
       'page',
+      'section',
       'document_index',
       'confidence',
     ]);
@@ -192,6 +194,7 @@ describe('extractDataResponseSchema（box_2d 込みスキーマ。§7.4 PR3）',
       'quote',
       'theme',
       'page',
+      'section',
       'document_index',
       'confidence',
       'box_2d',
@@ -303,6 +306,7 @@ describe('buildExtractDataUserPrompt', () => {
   it('unit / allowed_values / instruction / example を設定した項目は行として描画する', () => {
     const field = makeField({
       maxQuotes: null,
+      multiSelect: null,
       fieldId: 'f_dose',
       fieldName: 'dose',
       entityLevel: 'arm',
@@ -617,4 +621,33 @@ describe('バッチごとの群の番号づけ規約', () => {
     const section = prompt.split('## entity_key rules\n\n')[1]?.split('\n\n## ')[0];
     expect(section).toBe(rules);
   });
+});
+
+
+test.each([
+  { exclusiveValues: [], freeTextValues: [] },
+  { exclusiveValues: ['None'], freeTextValues: ['Other'] },
+])('複数選択の定義行を出し分ける %p', (multiSelect) => {
+  const prompt = buildExtractDataUserPrompt({ fields: [{ ...STUDY_FIELD, dataType: 'enum', allowedValues: 'Students|Other|None', multiSelect }],
+    documents: [{ role: 'article', filename: 'paper', mode: 'text', pages: [{ page: 1, text: 'text' }] }] });
+  expect(prompt).toContain(`  allowed_values: Students|Other|None (each item's "value" must be exactly one of these)\n  multi_select: true`);
+  expect(prompt.includes('  exclusive_values: None')).toBe(multiSelect.exclusiveValues.length > 0);
+  expect(prompt.includes('  free_text_values: Other')).toBe(multiSelect.freeTextValues.length > 0);
+});
+
+test('通常項目の定義ブロックは従来の文字列と一致する', () => {
+  const prompt = buildExtractDataUserPrompt({ fields: [{ ...STUDY_FIELD, dataType: 'enum', allowedValues: 'RCT|Other',
+    unit: 'unit', extractionInstruction: 'instruction', example: 'RCT' }],
+    documents: [{ role: 'article', filename: 'paper', mode: 'text', pages: [{ page: 1, text: 'text' }] }] });
+  expect(prompt.split('## Fields to extract\n\n')[1]?.split('\n\n')[0]).toBe([
+    '- field_id: f_design', '  field_name: study_design', '  entity_level: study', '  data_type: enum',
+    '  unit: unit (report the value as written even if the article uses a different unit)',
+    '  allowed_values: RCT|Other ("value" must be one of these)', '  instruction: instruction', '  example: RCT',
+  ].join('\n'));
+});
+
+test.each([false, true])('section は構造化出力で必須にする（box=%p）', (box) => {
+  const schema = extractDataResponseSchema(box).items as { properties: Record<string, unknown>; required: string[] };
+  expect(schema.properties.section).toEqual({ type: ['string', 'null'] });
+  expect(schema.required[schema.required.indexOf('page') + 1]).toBe('section');
 });

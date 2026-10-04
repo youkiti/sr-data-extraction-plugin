@@ -6,7 +6,7 @@ const row = (overrides: Partial<Evidence> = {}): Evidence => ({
   evidenceId: 'ev', runId: 'run', studyId: 'study', documentId: 'doc',
   fieldId: 'field', entityKey: '-', value: 'themes', notReported: false,
   quote: 'quote', page: 1, confidence: 'high', anchorStatus: 'exact',
-  bbox: null, bboxPage: null, relocatedFrom: null, quoteTheme: null, quoteSeq: null,
+  bbox: null, bboxPage: null, relocatedFrom: null, quoteTheme: null, quoteSeq: null, section: null,
   ...overrides,
 });
 

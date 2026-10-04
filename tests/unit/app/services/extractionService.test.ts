@@ -70,6 +70,7 @@ function makeDocument(overrides: Partial<DocumentRecord> = {}): DocumentRecord {
 function makeField(overrides: Partial<SchemaField> = {}): SchemaField {
   return {
     maxQuotes: null,
+    multiSelect: null,
     schemaVersion: 2,
     fieldId: 'f-study',
     fieldIndex: 1,
@@ -284,7 +285,7 @@ describe('runExtraction', () => {
     expect(promptCall?.parentId).toBe('folder-logs');
     expect(promptCall?.mimeType).toBe('application/json');
     expect(promptCall?.name).toMatch(/\.prompt\.json$/);
-    expect(JSON.parse(promptCall?.content ?? '{}').promptVersion).toBe(11); // EXTRACT_DATA_PROMPT_VERSION
+    expect(JSON.parse(promptCall?.content ?? '{}').promptVersion).toBe(12); // EXTRACT_DATA_PROMPT_VERSION
     expect(mockedUpload.mock.calls[1]?.[0].name).toMatch(/\.response\.json$/);
 
     expect(mockedAppendLog).toHaveBeenCalledTimes(1);

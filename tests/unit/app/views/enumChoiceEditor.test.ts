@@ -15,6 +15,7 @@ import type { SchemaField } from '../../../../src/domain/schemaField';
 function makeField(overrides: Partial<SchemaField> = {}): SchemaField {
   return {
     maxQuotes: null,
+    multiSelect: null,
     schemaVersion: 1,
     fieldId: 'f-rob',
     fieldIndex: 1,
@@ -33,6 +34,14 @@ function makeField(overrides: Partial<SchemaField> = {}): SchemaField {
     ...overrides,
   };
 }
+
+test('複数選択の警告は許容値外の要素だけを列挙する', () => {
+  const field = makeField({ multiSelect: { exclusiveValues: [], freeTextValues: [] } });
+  expect(allowedValuesWarningText(field, 'high|low')).toBeNull();
+  const message = allowedValuesWarningText(field, 'low|outside|unknown')!;
+  expect(message).toContain('outside | unknown');
+  expect(message).not.toContain('low | outside');
+});
 
 function makeOptions(overrides: Partial<EnumChoiceEditorOptions> = {}): EnumChoiceEditorOptions {
   return {

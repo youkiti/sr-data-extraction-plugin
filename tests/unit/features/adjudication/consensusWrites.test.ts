@@ -16,6 +16,7 @@ function cell(overrides: Partial<AdjudicationCell> = {}): AdjudicationCell {
     cellKey: JSON.stringify(['f-1', '-']),
     field: {
       maxQuotes: null,
+      multiSelect: null,
       schemaVersion: 1,
       fieldId: 'f-1',
       fieldIndex: 1,
@@ -46,6 +47,16 @@ function cell(overrides: Partial<AdjudicationCell> = {}): AdjudicationCell {
 }
 
 describe('toConsensusDecision', () => {
+  test('複数選択の A・B・第三の値・一括採用と監査値を正準化する', () => {
+    const target = cell({ valueA: 'B|A', valueB: 'b|a', field: { ...cell().field, dataType: 'enum',
+      allowedValues: 'A|B', multiSelect: { exclusiveValues: [], freeTextValues: [] } } });
+    const writes = [buildChoiceWrite(target, 'A'), buildChoiceWrite(target, 'B'),
+      buildCustomValueWrite(target, ' B|A '), ...buildBulkAcceptWrites([target], new Map())];
+    for (const write of writes) {
+      expect(write.value).toBe('A|B');
+      expect(toConsensusDecision(write, { studyId: 's', decidedBy: 'a', decidedAt: 't', schemaVersion: 1 }).value).toBe('A|B');
+    }
+  });
   test('annotator は常に consensus 固定・decided_by は裁定者', () => {
     const decision = toConsensusDecision(
       { field: cell().field, entityKey: '-', action: 'accept', value: '120' },
@@ -152,4 +163,17 @@ describe('buildUndoWrite', () => {
       value: null, // スタックが 1 件だけなので取り消すと未検証（空セル）に戻る
     });
   });
+});
+
+test('旧版の設定プロパティがない裁定の書き込みと再送は元の値を保持する', () => {
+  const { multiSelect: _omit, ...legacy } = cell().field;
+  void _omit;
+  const target = cell({ field: { ...legacy, dataType: 'enum', allowedValues: 'A|B' } as AdjudicationCell['field'],
+    valueA: 'B|A', valueB: 'A|B' });
+  expect(buildChoiceWrite(target, 'A').value).toBe('B|A');
+  expect(buildChoiceWrite(target, 'B').value).toBe('A|B');
+  expect(toConsensusDecision(
+    { field: target.field, entityKey: '-', action: 'accept', value: 'B|A' },
+    { studyId: 's', decidedBy: 'a', decidedAt: 't', schemaVersion: 1 },
+  ).value).toBe('B|A');
 });

@@ -38,6 +38,9 @@ function makeDialog(patch: Partial<RobPrespecDialogState> = {}): RobPrespecDialo
 function makeRow(patch: Partial<SchemaEditorRow>): SchemaEditorRow {
   return {
     maxQuotes: null,
+    multiSelect: false,
+    exclusiveValues: null,
+    freeTextValues: null,
     fieldId: null,
     section: 'risk_of_bias',
     fieldName: 'x',

@@ -56,6 +56,7 @@ export function makeAskParams(): AskPaperParams & { studyId: string } {
         aiGenerated: true,
         note: '秘密メモ',
         maxQuotes: null,
+        multiSelect: null,
       },
     ],
   };

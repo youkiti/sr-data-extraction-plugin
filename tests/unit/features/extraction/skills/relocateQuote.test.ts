@@ -13,6 +13,7 @@ import type { ExtractDataPage } from '../../../../../src/features/extraction/ski
 function makeField(overrides: Partial<SchemaField> = {}): SchemaField {
   return {
     maxQuotes: null,
+    multiSelect: null,
     schemaVersion: 1,
     fieldId: 'f-1',
     fieldIndex: 1,

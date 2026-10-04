@@ -15,6 +15,7 @@ function makeField(
 ): SchemaField {
   return {
     maxQuotes: null,
+    multiSelect: null,
     schemaVersion: 1,
     fieldIndex: 0,
     section: 'methods',
@@ -83,6 +84,7 @@ describe('validateAiOutput', () => {
       expect(result.items[0]).toEqual({
         quoteTheme: null,
         quoteSeq: null,
+        section: null,
         fieldId: 'f_design',
         entityKey: '-',
         value: 'randomized controlled trial',
@@ -106,6 +108,7 @@ describe('validateAiOutput', () => {
       expect(result.items[2]).toMatchObject({
         quoteTheme: null,
         quoteSeq: null,
+        section: null,
         value: '142',
         page: null,
         confidence: 'low',
@@ -117,6 +120,7 @@ describe('validateAiOutput', () => {
       expect(result.items[3]).toMatchObject({
         quoteTheme: null,
         quoteSeq: null,
+        section: null,
         entityKey: 'arm:1',
         quote: null,
         confidence: 'low',
@@ -128,6 +132,7 @@ describe('validateAiOutput', () => {
       expect(result.items[4]).toMatchObject({
         quoteTheme: null,
         quoteSeq: null,
+        section: null,
         confidence: 'low',
         forcedLowReasons: ['value_with_not_reported'],
       });
@@ -137,6 +142,7 @@ describe('validateAiOutput', () => {
       expect(result.items[5]).toMatchObject({
         quoteTheme: null,
         quoteSeq: null,
+        section: null,
         fieldId: 'f_country',
         confidence: null,
         forcedLowReasons: [],
@@ -591,4 +597,117 @@ describe('AI 応答の群の番号検証', () => {
       raw: raw[1],
     }]);
   });
+});
+
+
+describe('複数選択の応答', () => {
+  const field = makeField({ fieldId: 'multi', fieldName: 'participants', entityLevel: 'study', dataType: 'enum',
+    allowedValues: 'Students|Teachers|Other|None|NA',
+    multiSelect: { exclusiveValues: ['None', 'NA'], freeTextValues: ['Other'] } });
+  const item = (value: string | null, extra: Record<string, unknown> = {}) => ({
+    field_id: 'multi', entity_key: '-', value, quote: 'passage', confidence: 'high', ...extra,
+  });
+  const run = (raw: unknown[]) => validateAiOutput(raw, [field], 1);
+
+  test.each([
+    ['未報告だけ', [item(null, { not_reported: true, theme: 'unused' }), item(null, { not_reported: true })]],
+    ['値なしだけ', [item(null, { theme: 'unused' }), item(null)]],
+  ])('%s は先頭だけ残して番号とテーマを付けない', (_name, raw) => {
+    const result = run(raw);
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0]).toMatchObject({ value: null, quoteTheme: null, quoteSeq: null });
+    expect(result.rejected).toEqual([]);
+  });
+  test('報告あり一件でも選択肢名と番号を付ける', () => {
+    expect(run([item('Students')]).items[0]).toMatchObject({ value: 'Students', quoteTheme: 'Students', quoteSeq: 1 });
+  });
+  test('報告あり複数は正準順の番号と共通値を持ち、応答順を維持する', () => {
+    const result = run([item('Teachers'), item('Students')]);
+    expect(result.items.map(({ value, quoteTheme, quoteSeq }) => [value, quoteTheme, quoteSeq])).toEqual([
+      ['Students|Teachers', 'Teachers', 2], ['Students|Teachers', 'Students', 1],
+    ]);
+  });
+  test('報告ありと未報告・値なしの混在では報告ありだけ残す', () => {
+    const result = run([item(null, { not_reported: true }), item('Students'), item(null)]);
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0]?.value).toBe('Students');
+    expect(result.rejected).toEqual([]);
+  });
+  test.each([
+    ['同じ選択肢', 'Students', 'Students'],
+    ['大文字小文字違い', 'students', 'STUDENTS'],
+    ['説明が違う自由記述', 'Other: first', 'Other: second'],
+  ])('%s の重複は二件目を破棄する', (_name, a, b) => {
+    const raw = [item(a), item(b)];
+    const result = run(raw);
+    expect(result.items).toHaveLength(1);
+    expect(result.rejected).toEqual([{ index: 1, raw: raw[1], reason: 'duplicate_option', detail: expect.any(String) }]);
+  });
+  test('連結された値も拾い、一部重複は未出の選択肢だけ残す', () => {
+    const result = run([item('Teachers|Students'), item('Students|Other: patients')]);
+    expect(result.items.map(({ value, quoteTheme, quoteSeq }) => [value, quoteTheme, quoteSeq])).toEqual([
+      ['Students|Teachers|Other: patients', 'Students|Teachers', 1],
+      ['Students|Teachers|Other: patients', 'Other: patients', 2],
+    ]);
+    expect(result.rejected).toEqual([]);
+  });
+  test.each([
+    [['Unknown'], 'Unknown'], [['zeta', 'Students', 'alpha'], 'Students|alpha|zeta'],
+  ])('許容値外も失わない %p', (values, expected) => {
+    expect(run(values.map((value) => item(value))).items.every((row) => row.value === expected)).toBe(true);
+  });
+  test.each([
+    [['None', 'Students'], 'Students'],
+    [['None|Students', 'Teachers'], 'Students|Teachers'],
+    [['NA', 'None'], 'None'],
+    [['NA|None'], 'None'],
+    [['None', 'Unknown'], 'Unknown'],
+  ])('単独選択の競合 %p を解消して残った全要素を low にする', (values, expected) => {
+    const result = run(values.map((value) => item(value)));
+    expect(result.items.length).toBeGreaterThan(0);
+    expect(result.items.every((row) => row.value === expected && row.confidence === 'low'
+      && row.forcedLowReasons.includes('exclusive_conflict'))).toBe(true);
+    expect(result.rejected).toEqual([]);
+  });
+  test('単独選択一件は競合しない', () => {
+    expect(run([item('None')]).items[0]).toMatchObject({ value: 'None', confidence: 'high', forcedLowReasons: [] });
+  });
+  test.each([
+    ['Other', ' Standardized patients | simulated\npatients ', 'Other: Standardized patients / simulated patients'],
+    ['Other: direct', 'ignored', 'Other: direct'],
+    ['Other', null, 'Other'],
+    ['Other', ' ', 'Other'],
+    ['Students', 'ignored', 'Students'],
+    ['Other|Students', 'ignored', 'Students|Other'],
+  ])('自由記述 %s / %s を保存する', (value, theme, expected) => {
+    const row = run([item(value, { theme })]).items[0];
+    expect(row).toMatchObject({ value: expected, quoteTheme: expected, quoteSeq: 1 });
+  });
+  test.each([
+    [['high', 'medium'], 'medium'], [['low', 'high'], 'low'], [[null, 'high'], 'high'], [[null, null], null],
+  ])('確信度 %p は最低の非 null 値に揃える', (confidence, expected) => {
+    expect(run([item('Students', { confidence: confidence[0] }), item('Teachers', { confidence: confidence[1] })])
+      .items.map((row) => row.confidence)).toEqual([expected, expected]);
+  });
+  test('強制 low の理由があれば全要素を low にする', () => {
+    const result = run([item('Students', { quote: null }), item('Teachers')]);
+    expect(result.items.map((row) => row.confidence)).toEqual(['low', 'low']);
+    expect(result.items[0]?.forcedLowReasons).toContain('missing_quote');
+  });
+  test('field と entity が違うグループは独立する', () => {
+    const fields = [field, { ...field, fieldId: 'arms', entityLevel: 'arm' as const }];
+    const result = validateAiOutput([item('Students'), item('Teachers', { field_id: 'arms', entity_key: 'arm:1' }),
+      item('Other', { field_id: 'arms', entity_key: 'arm:2' })], fields, 1);
+    expect(result.items.map((row) => row.value)).toEqual(['Students', 'Teachers', 'Other']);
+  });
+  test('通常 enum は従来どおり値を保持して theme を捨てる', () => {
+    const result = validateAiOutput([item('Students|Teachers', { theme: 'ignored' })], [{ ...field, multiSelect: null }], 1);
+    expect(result.items[0]).toMatchObject({ value: 'Students|Teachers', quoteTheme: null, quoteSeq: null });
+  });
+});
+
+test.each([
+  [undefined, 'quote', null], [null, 'quote', null], [' ', 'quote', null], [' Methods ', 'quote', 'Methods'], ['Methods', null, null],
+])('section %p と quote %p を正規化する', (section, quote, expected) => {
+  expect(runOne({ value: null, quote, section }).items[0]?.section).toBe(expected);
 });

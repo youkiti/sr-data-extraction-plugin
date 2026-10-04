@@ -61,6 +61,9 @@ describe('parseDraftSchemaResponse', () => {
     expect(rows).toEqual([
       {
         maxQuotes: null,
+        multiSelect: false,
+    exclusiveValues: null,
+    freeTextValues: null,
         fieldId: null,
         section: 'population',
         fieldName: 'sample_size_total',

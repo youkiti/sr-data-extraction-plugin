@@ -15,7 +15,7 @@ import {
 import { CSV_BOM } from '../../../../src/features/export/csvEncode';
 
 test('引用 JSON は選択 run の束を昇順に添付し、通常は空・根拠なしは欠損にする', () => {
-  const first = evidence('first', 'new', 'd1', 'f1', '-', { quoteSeq: 1, quoteTheme: 'テーマ,一' });
+  const first = evidence('first', 'new', 'd1', 'f1', '-', { quoteSeq: 1, quoteTheme: 'テーマ,一', section: 'Methods' });
   const second = evidence('second', 'new', 'd1', 'f1', '-', { quoteSeq: 2, documentId: 'other', anchorStatus: 'failed' });
   const rows = [evidence('old', 'old', 'd1', 'f1', '-', { quoteSeq: 3 }), first, second];
   const studies = [study('d1', 'study')];
@@ -23,11 +23,11 @@ test('引用 JSON は選択 run の束を昇順に添付し、通常は空・根
   const runs = [run('old', 1, 't0'), run('new', 2, 't1')];
   const json = JSON.stringify([first, second].map((item) => ({
     seq: item.quoteSeq, theme: item.quoteTheme, quote: item.quote,
-    page: item.page, document_id: item.documentId, anchor_status: item.anchorStatus,
+    page: item.page, document_id: item.documentId, anchor_status: item.anchorStatus, section: item.section,
   })));
-  const expectedEnd = `,"${json.replace(/"/g, '""')}"\r\n`;
+  const expectedEnd = `,"${json.replace(/"/g, '""')}",Methods\r\n`;
   const placeholder = buildAuditCsv(studies, [], rows, runs, fields);
-  expect(AUDIT_HEADER.at(-1)).toBe('quotes_json');
+  expect(AUDIT_HEADER.slice(-2)).toEqual(['quotes_json', 'section']);
   expect(placeholder.undecidedCellCount).toBe(1);
   expect(placeholder.csv).toContain(',new,first,');
   expect(placeholder.csv.endsWith(expectedEnd)).toBe(true);
@@ -46,10 +46,10 @@ test('断片のセルは元の値と先頭引用を保ち、quotes_json に全�
   expect(result.undecidedCellCount).toBe(1);
   expect(result.csv).toContain(',r,first,46.53,false,"Age, M (SD)",1,');
   const json = JSON.stringify([
-    { seq: 1, theme: null, quote: first.quote, page: 1, document_id: first.documentId, anchor_status: 'exact' },
-    { seq: 2, theme: null, quote: second.quote, page: 5, document_id: second.documentId, anchor_status: 'fuzzy' },
+    { seq: 1, theme: null, quote: first.quote, page: 1, document_id: first.documentId, anchor_status: 'exact', section: null },
+    { seq: 2, theme: null, quote: second.quote, page: 5, document_id: second.documentId, anchor_status: 'fuzzy', section: null },
   ]);
-  expect(result.csv.endsWith(`,"${json.replace(/"/g, '""')}"\r\n`)).toBe(true);
+  expect(result.csv.endsWith(`,"${json.replace(/"/g, '""')}",\r\n`)).toBe(true);
 });
 /** 構造的欠損トークン（可読性のための短縮名） */
 const NA = AUDIT_MISSING_TOKEN;
@@ -68,6 +68,7 @@ const study = (studyId: string, studyLabel: string): StudyRecord => ({
 
 const field = (fieldId: string, fieldName: string, fieldIndex: number): SchemaField => ({
   maxQuotes: null,
+  multiSelect: null,
   schemaVersion: 1,
   fieldId,
   fieldIndex,
@@ -118,6 +119,7 @@ const evidence = (
 ): Evidence => ({
   quoteTheme: null,
   quoteSeq: null,
+  section: null,
   evidenceId,
   runId,
   studyId,
@@ -240,7 +242,7 @@ describe('buildAuditCsv', () => {
     expect(rows[0]?.[6]).toBe('1'); // schema_version は代表 Evidence の run から
     expect(rows[0]?.[7]).toBe(NA); // annotator が構造的欠損 = 未検証の明示
     // 判定列ブロック（decision_seq〜note）も構造的欠損（study_id 列の追加で開始位置は 22）
-    expect(rows[0]?.slice(22)).toEqual([NA, NA, NA, NA, NA, NA, '']);
+    expect(rows[0]?.slice(22)).toEqual([NA, NA, NA, NA, NA, NA, '', '']);
     expect(result.undecidedCellCount).toBe(1);
   });
 

@@ -37,6 +37,47 @@ const OUTCOME_FIELD_ROW = [
 
 const EVIDENCE_HEADERS = [...SHEET_HEADERS.Evidence];
 
+test('複数選択は選択肢別の引用を表示し、排他選択と自由記述を保存できる', async ({ page }) => {
+  const schemaValues: Record<string, string> = {
+    schema_version: '1', field_id: 'f-total', field_index: '1', section: 'methods',
+    field_name: 'sources', field_label: '情報源', entity_level: 'study', data_type: 'enum',
+    allowed_values: 'Students|Records themselves|Other|unclear', required: 'FALSE',
+    extraction_instruction: '情報源を選ぶ', ai_generated: 'FALSE', multi_select: 'TRUE',
+    exclusive_values: 'unclear', free_text_values: 'Other',
+  };
+  const rows = ['Students', 'Records themselves'].map((option, index) => EVIDENCE_HEADERS.map((header) => {
+    const values: Record<string, string> = {
+      evidence_id: `multi-${index}`, run_id: 'run-1', study_id: 'study-1', field_id: 'f-total',
+      document_id: 'doc-1', entity_key: '-', value: 'Students|Records themselves', not_reported: 'FALSE',
+      quote: index === 0 ? QUOTE : '12 percent', page: '1', confidence: 'high', anchor_status: 'exact',
+      quote_seq: String(index + 1), quote_theme: option,
+    };
+    return values[header] ?? '';
+  }));
+  await setupRoutes(page, {
+    schemaHeaders: [...SHEET_HEADERS.SchemaFields],
+    schemaRows: [SHEET_HEADERS.SchemaFields.map((header) => schemaValues[header] ?? '')],
+    evidenceRows: rows,
+  });
+  await initApp(page, '#/verify?study=study-1');
+  await expect(page.locator('.verify__quotes-theme')).toHaveText(['Students', 'Records themselves']);
+  await page.locator('#verify-focus-detail .verify__action--edit').click();
+  const chip = (option: string) => page.locator(`.verify__enum-chip[aria-label="${option}"]`);
+  await expect(chip('Students')).toHaveAttribute('aria-pressed', 'true');
+  await expect(chip('Records themselves')).toHaveAttribute('aria-pressed', 'true');
+  await chip('unclear').click();
+  await expect(chip('Students')).toHaveAttribute('aria-pressed', 'false');
+  await expect(chip('Records themselves')).toHaveAttribute('aria-pressed', 'false');
+  await chip('Other').click();
+  await expect(chip('unclear')).toHaveAttribute('aria-pressed', 'false');
+  await page.locator('.verify__multi-free-text').fill('家族への聞き取り');
+  const saved = page.waitForRequest((request) => request.method() === 'POST' &&
+    decodeURIComponent(request.url()).includes('Decisions!A1:append'));
+  await page.locator('.verify__edit-confirm').click();
+  const payload = (await saved).postDataJSON() as { values: string[][] };
+  expect(payload.values[0]![SHEET_HEADERS.Decisions.indexOf('value')]).toBe('Other: 家族への聞き取り');
+});
+
 test('複数引用セルは一覧を表示し、2 件目のジャンプで対応ハイライトを選択する', async ({ page }) => {
   const rows = [1, 2].map((seq) => EVIDENCE_HEADERS.map((header) => {
     const values: Record<string, string> = {
@@ -224,6 +265,7 @@ async function setupRoutes(
   page: Page,
   options: {
     schemaRows: string[][];
+    schemaHeaders?: string[];
     evidenceRows: string[][];
     rotatedPdf?: boolean;
     /** PDF 本体の差し替え（§7.4 PR4: テキスト層なし PDF の bbox テスト用）。省略時は minimalPdf */
@@ -304,7 +346,7 @@ async function setupRoutes(
       } else if (url.includes('/values/ResultsData')) {
         await route.fulfill({ json: { values: store.resultsValues() } });
       } else if (url.includes('/values/SchemaFields')) {
-        await route.fulfill({ json: { values: [SCHEMA_FIELDS_HEADERS, ...options.schemaRows] } });
+        await route.fulfill({ json: { values: [options.schemaHeaders ?? SCHEMA_FIELDS_HEADERS, ...options.schemaRows] } });
       } else {
         await route.fulfill({ json: { values: [] } });
       }

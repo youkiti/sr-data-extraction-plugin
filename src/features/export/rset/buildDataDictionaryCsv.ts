@@ -1,3 +1,4 @@
+import { multiSelectConfigOf } from '../../../domain/multiSelect';
 // data_dictionary.csv（issue #60 design-r-export.md §2）: 1 行 = 1 スキーマ項目。
 // エクスポートに使う最新確定版の SchemaFields 全項目を、CSV 列名（field_name）↔ field_id の
 // 対応表を兼ねて出力する（R 側の型付け・列選択の正典）。ma.csv の rob_tool / rob_overall_judgement は
@@ -17,6 +18,9 @@ export const DATA_DICTIONARY_HEADER = [
   'required',
   'extraction_instruction',
   'max_quotes',
+  'multi_select',
+  'exclusive_values',
+  'free_text_values',
   'example',
   'schema_version',
 ] as const;
@@ -40,6 +44,9 @@ export function buildDataDictionaryCsv(fields: readonly SchemaField[]): DataDict
     String(field.required),
     field.extractionInstruction,
     field.maxQuotes === null ? '' : String(field.maxQuotes),
+    multiSelectConfigOf(field) !== null ? 'TRUE' : '',
+    multiSelectConfigOf(field)?.exclusiveValues.join('|') ?? '',
+    multiSelectConfigOf(field)?.freeTextValues.join('|') ?? '',
     field.example ?? '',
     String(field.schemaVersion),
   ]);

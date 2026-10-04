@@ -12,6 +12,7 @@
 // 突合キーになる field_id / entity_key / value / not_reported / document_index は厳格に検証し、
 // 補助ヒントの page / confidence / box_2d は寛容にパースして不正値を null へ落とす
 import { z } from 'zod';
+import { isMultiSelectField, multiSelectConfigOf, parseMultiSelectValue, formatMultiSelectValue, sanitizeFreeText, splitPipeList } from '../../domain/multiSelect';
 import type { Confidence, EvidenceBbox } from '../../domain/evidence';
 import type { SchemaField } from '../../domain/schemaField';
 import { parseEntityKey, STUDY_ENTITY_KEY } from '../../utils/entityKey';
@@ -22,11 +23,13 @@ export class AiOutputFormatError extends Error {}
 
 /** confidence=low を強制した理由（Evidence 保存前の UI 表示・ログ用） */
 export type ForcedLowReason =
+  | 'exclusive_conflict' // 単独選択肢と他の選択肢が競合
   | 'missing_quote' // 値があるのに quote が無い
   | 'number_not_in_quote' // 値に含まれる数値が quote 内に見つからない
   | 'value_with_not_reported'; // not_reported=true なのに値がある
 
 export type RejectReason =
+  | 'duplicate_option'
   | 'quote_limit'
   | 'invalid_shape'
   | 'unknown_field_id'
@@ -42,6 +45,7 @@ export interface ValidatedAiItem {
   quote: string | null;
   quoteTheme: string | null;
   quoteSeq: number | null;
+  section: string | null;
   page: number | null;
   /**
    * quote の出所文書の 1 始まり番号（1..documentCount へ解決済み）。
@@ -55,7 +59,7 @@ export interface ValidatedAiItem {
   box: EvidenceBbox | null;
 }
 
-/** 破棄した要素。quote_limit 以外は partial_failure の原因として記録する */
+/** 破棄した要素。quote_limit / duplicate_option 以外は partial_failure の原因として記録する */
 export interface RejectedAiItem {
   /** 応答配列内の位置 */
   index: number;
@@ -104,6 +108,7 @@ const aiOutputItemSchema = z.object({
   // 整数でない・0 以下などの形式不正だけを null へ落とす
   document_index: z.number().int().min(1).nullable().catch(null),
   quote: quoteSchema,
+  section: z.string().nullish().transform((value) => value?.trim() || null),
   theme: z.string().nullish().transform((value) => value?.trim() || null),
   confidence: z.enum(['high', 'medium', 'low']).nullable().catch(null),
   // box_2d（bbox。requestBox=true のときだけモデルが返す）は形は問わず素通しし、
@@ -330,8 +335,9 @@ export function validateAiOutput(
       value: parsed.data.value,
       notReported: parsed.data.not_reported,
       quote: parsed.data.quote,
-      quoteTheme: field.maxQuotes === null ? null : parsed.data.theme,
+      quoteTheme: field.maxQuotes !== null || isMultiSelectField(field) ? parsed.data.theme : null,
       quoteSeq: null,
+      section: parsed.data.quote === null ? null : parsed.data.section,
       page: parsed.data.page,
       documentIndex,
       confidence: forcedLowReasons.length > 0 ? 'low' : parsed.data.confidence,
@@ -372,6 +378,70 @@ export function validateAiOutput(
     kept.forEach((item, index) => {
       item.value = value;
       item.quoteSeq = index + 1;
+    });
+  }
+  const multiGroups = new Map<string, { items: ValidatedAiItem[]; config: NonNullable<SchemaField['multiSelect']> }>();
+  for (const item of items) {
+    const field = fieldById.get(item.fieldId) as SchemaField;
+    const config = multiSelectConfigOf(field);
+    if (config === null || !isMultiSelectField(field)) continue;
+    const key = JSON.stringify([item.fieldId, item.entityKey]);
+    const group = multiGroups.get(key);
+    if (group === undefined) multiGroups.set(key, { items: [item], config });
+    else group.items.push(item);
+  }
+  for (const { items: group, config } of multiGroups.values()) {
+    const first = group[0] as ValidatedAiItem;
+    const field = fieldById.get(first.fieldId) as SchemaField;
+    const reported = group.filter((item) => !item.notReported && item.value !== null);
+    if (reported.length === 0) {
+      group.slice(1).forEach((item) => removed.add(item));
+      first.quoteTheme = null;
+      continue;
+    }
+    group.filter((item) => !reported.includes(item)).forEach((item) => removed.add(item));
+    const seen = new Set<string>();
+    const entries = reported.map((item) => {
+      let elements = parseMultiSelectValue(field, item.value);
+      const [only] = elements;
+      if (elements.length === 1 && config.freeTextValues.includes(only!.option)
+        && only!.text === null && item.quoteTheme !== null) {
+        only!.text = sanitizeFreeText(item.quoteTheme);
+      }
+      elements = elements.filter((element) => !seen.has(element.option));
+      if (elements.length === 0) {
+        removed.add(item);
+        const source = sourceByItem.get(item) as { index: number; raw: unknown };
+        rejected.push({ ...source, reason: 'duplicate_option', detail: '先行する要素と選択肢が重複しています' });
+      }
+      elements.forEach((element) => seen.add(element.option));
+      return { item, elements };
+    });
+    const exclusive = config.exclusiveValues;
+    const selectedExclusive = splitPipeList(field.allowedValues).filter((option) => exclusive.includes(option) && seen.has(option));
+    const hasOrdinary = [...seen].some((option) => !exclusive.includes(option));
+    const conflict = selectedExclusive.length > 0 && (hasOrdinary || selectedExclusive.length > 1);
+    if (conflict) {
+      for (const entry of entries) {
+        entry.elements = entry.elements.filter((element) => !exclusive.includes(element.option)
+          || (!hasOrdinary && element.option === selectedExclusive[0]));
+        if (entry.elements.length === 0) removed.add(entry.item);
+      }
+    }
+    const kept = entries.filter(({ item }) => !removed.has(item));
+    const elements = kept.flatMap((entry) => entry.elements);
+    const value = formatMultiSelectValue(field, elements);
+    const canonical = parseMultiSelectValue(field, value).map((element) => element.option);
+    kept.sort((a, b) => canonical.indexOf(a.elements[0]!.option) - canonical.indexOf(b.elements[0]!.option));
+    if (conflict) kept.forEach(({ item }) => item.forcedLowReasons.push('exclusive_conflict'));
+    const confidences: Confidence[] = ['low', 'medium', 'high'];
+    const confidence = kept.some(({ item }) => item.forcedLowReasons.length > 0) ? 'low'
+      : confidences.find((candidate) => kept.some(({ item }) => item.confidence === candidate)) ?? null;
+    kept.forEach(({ item, elements: own }, index) => {
+      item.value = value;
+      item.quoteTheme = formatMultiSelectValue(field, own);
+      item.quoteSeq = index + 1;
+      item.confidence = confidence;
     });
   }
   return { items: items.filter((item) => !removed.has(item)), rejected };

@@ -4,6 +4,7 @@
 // - 抽出対象論文は英語を主想定のため、プロンプト本文は英語（requirements.md §6）
 // - LLM 呼び出し自体は executeRun 側の責務（lib/llm 移植後に配線）。ここは
 //   「プロンプト構築 → 構造化出力スキーマ → 応答パース（validateAiOutput へ委譲）」の純粋関数のみ
+import { isMultiSelectField, multiSelectConfigOf } from '../../../domain/multiSelect';
 import type { DocumentRole } from '../../../domain/document';
 import type { EntityLevel, SchemaField } from '../../../domain/schemaField';
 import type { ChatContentPart } from '../../../lib/llm/LLMProvider';
@@ -53,8 +54,9 @@ export const EXTRACT_DATA_SKILL_NAME = 'extract-data';
  *   名前を書かない）を含めた。arm レベルの項目が無いバッチ（section 単位分割でできる
  *   outcome_result だけのバッチ等）にも番号づけの規則が出るようにするため（issue #293）。
  *   outcome_result の項目を含まないバッチのプロンプトは変わらない
+ * v12（2026-10-04）: 複数選択で選択肢ごとの要素を返し、全要素に section を返す（issue #307）。
  */
-export const EXTRACT_DATA_PROMPT_VERSION = 11;
+export const EXTRACT_DATA_PROMPT_VERSION = 12;
 
 /** text_only モードで LLM へ渡すページ別本文（extracted_texts/{id}.txt 由来） */
 export interface ExtractDataPage {
@@ -141,7 +143,9 @@ Rules:
 - "field_id" is the matching key: echo it exactly as listed. Never invent field_ids.
 - Return at least one item for EVERY listed field and EVERY entity instance it applies to (see the entity_key rules).
 - For a field with "max_quotes: N", when multiple original passages support the field, return up to N items for the same field_id and entity_key. Give each item's "theme" a short heading describing what that passage supports, and copy only that passage VERBATIM into "quote".
+- For a field with "multi_select: true", return ONE item for EACH allowed value that applies, all with the same field_id and entity_key: put exactly one of the allowed values in "value" (never join several values in one item), and copy the passage that supports THAT value VERBATIM into "quote". A value listed in "exclusive_values" must be the only item for that field and entity. For a value listed in "free_text_values", put a short description of what it stands for in "theme"; otherwise set "theme" to null. If none of the allowed values is reported, return a single item with "not_reported": true.
 - For every other field, return exactly one item per entity instance and set "theme" to null.
+- "section": the heading of the section in which the quote appears, copied as written in the document (e.g. "Methods", "2.3 Data collection"). Use the nearest heading above the quote. Set it to null when "quote" is null or when no heading can be identified.
 `.trim();
 
 /**
@@ -196,7 +200,7 @@ const ENTITY_LEVEL_ORDER: readonly EntityLevel[] = ['study', 'arm', 'outcome_res
 export const EXTRACT_DATA_ARM_COMPLETENESS_RULE = `
 ## Completeness check (arm-level fields)
 
-Before returning, verify your JSON array is COMPLETE for arm-level fields: for EVERY arm-level field listed under "## Fields to extract", return at least one item for EVERY arm that appears in the documents ("arm:1", "arm:2", ...). If the study has A arms and this batch lists F arm-level fields, your array must contain at least A x F arm-level items (plus the items for other levels); additional quotes are allowed only for fields with max_quotes, up to that limit per field and arm. Do NOT stop after the first arm; arms 2, 3, ... require the same complete set of items as arm 1.
+Before returning, verify your JSON array is COMPLETE for arm-level fields: for EVERY arm-level field listed under "## Fields to extract", return at least one item for EVERY arm that appears in the documents ("arm:1", "arm:2", ...). If the study has A arms and this batch lists F arm-level fields, your array must contain at least A x F arm-level items (plus the items for other levels); additional items are allowed only for fields with max_quotes (up to that limit per field and arm) and for fields with multi_select (one per applicable allowed value). Do NOT stop after the first arm; arms 2, 3, ... require the same complete set of items as arm 1.
 `.trim();
 
 /** 1 項目ぶんの定義ブロック。null / 空の補助情報は行ごと省略する */
@@ -214,7 +218,19 @@ function renderField(field: SchemaField): string {
     lines.push(`  unit: ${field.unit} (report the value as written even if the article uses a different unit)`);
   }
   if (field.allowedValues !== null) {
-    lines.push(`  allowed_values: ${field.allowedValues} ("value" must be one of these)`);
+    const constraint = isMultiSelectField(field)
+      ? `(each item's "value" must be exactly one of these)` : '("value" must be one of these)';
+    lines.push(`  allowed_values: ${field.allowedValues} ${constraint}`);
+    const config = multiSelectConfigOf(field);
+    if (config !== null && isMultiSelectField(field)) {
+      lines.push('  multi_select: true');
+      if (config.exclusiveValues.length > 0) {
+        lines.push(`  exclusive_values: ${config.exclusiveValues.join('|')}`);
+      }
+      if (config.freeTextValues.length > 0) {
+        lines.push(`  free_text_values: ${config.freeTextValues.join('|')}`);
+      }
+    }
   }
   if (field.extractionInstruction !== '') {
     lines.push(`  instruction: ${field.extractionInstruction}`);
@@ -306,7 +322,7 @@ function buildSuffixSections(input: ExtractDataPromptInput): string[] {
   const total = input.documents.length;
   const outputFormatFields =
     `{ "field_id": "<as listed>", "entity_key": "<per the rules>", "value": "<as reported>" | null, ` +
-    `"theme": "<short heading>" | null, "not_reported": true | false, "quote": "<verbatim, <=300 chars>" | null, "page": <1-indexed> | null, ` +
+    `"theme": "<short heading>" | null, "not_reported": true | false, "quote": "<verbatim, <=300 chars>" | null, "page": <1-indexed> | null, "section": "<section heading>" | null, ` +
     `"document_index": <1..${total}> | null, "confidence": "high" | "medium" | "low"` +
     (input.requestBox === true ? `, "box_2d": [ymin, xmin, ymax, xmax] | null` : '') +
     ' }';
@@ -386,6 +402,7 @@ export const EXTRACT_DATA_RESPONSE_SCHEMA: Record<string, unknown> = {
       quote: { type: ['string', 'null'] },
       theme: { type: ['string', 'null'] },
       page: { type: ['integer', 'null'] },
+      section: { type: ['string', 'null'] },
       document_index: { type: ['integer', 'null'] },
       confidence: { type: ['string', 'null'], enum: ['high', 'medium', 'low', null] },
     },
@@ -397,6 +414,7 @@ export const EXTRACT_DATA_RESPONSE_SCHEMA: Record<string, unknown> = {
       'quote',
       'theme',
       'page',
+      'section',
       'document_index',
       'confidence',
     ],

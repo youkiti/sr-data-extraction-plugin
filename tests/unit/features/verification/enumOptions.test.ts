@@ -14,6 +14,7 @@ import {
 function makeField(overrides: Partial<SchemaField> = {}): SchemaField {
   return {
     maxQuotes: null,
+    multiSelect: null,
     schemaVersion: 1,
     fieldId: 'f-rob',
     fieldIndex: 1,
@@ -32,6 +33,16 @@ function makeField(overrides: Partial<SchemaField> = {}): SchemaField {
     ...overrides,
   };
 }
+
+test('複数選択は未知の要素だけを許容値外とし、空値・NR と自由記述は許容する', () => {
+  const field = makeField({ allowedValues: 'A|B|Other',
+    multiSelect: { exclusiveValues: [], freeTextValues: ['Other'] } });
+  for (const value of [null, '', 'NR', 'b|a', 'Other: 説明|A']) {
+    expect(isOutOfAllowedValues(field, value)).toBe(false);
+  }
+  expect(isOutOfAllowedValues(field, 'A|unknown')).toBe(true);
+  expect(isOutOfAllowedValues({ ...field, multiSelect: null }, 'A|B')).toBe(true);
+});
 
 function makeDecision(overrides: Partial<Decision> = {}): Decision {
   return {

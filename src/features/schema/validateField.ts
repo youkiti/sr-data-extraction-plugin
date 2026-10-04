@@ -1,5 +1,7 @@
 // スキーマエディタ行のバリデーション（ui-states.md §3「編集中」:
 // field_name の snake_case・重複エラーほか）。「版として確定」前に全行を検査する
+import { splitPipeList } from '../../domain/multiSelect';
+import { NOT_REPORTED_TOKEN } from '../../domain/annotation';
 import { t } from '../../lib/i18n';
 import { STUDY_DATA_FIXED_HEADERS } from '../../domain/sheetsSchema';
 import type { SchemaEditorRow } from './types';
@@ -8,7 +10,7 @@ import type { SchemaEditorRow } from './types';
 export interface FieldValidationError {
   /** エディタ行の 0 始まり index */
   index: number;
-  column: 'fieldName' | 'fieldLabel' | 'section' | 'allowedValues' | 'extractionInstruction' | 'max_quotes';
+  column: 'fieldName' | 'fieldLabel' | 'section' | 'allowedValues' | 'extractionInstruction' | 'max_quotes' | 'multiSelect' | 'exclusiveValues' | 'freeTextValues';
   message: string;
 }
 
@@ -76,6 +78,34 @@ export function validateEditorRows(rows: readonly SchemaEditorRow[]): FieldValid
       }
       if (!Number.isInteger(row.maxQuotes) || row.maxQuotes < 2 || row.maxQuotes > 20) {
         errors.push({ index, column: 'max_quotes', message: t('schema.maxQuotesRange') });
+      }
+    }
+
+    const allowed = splitPipeList(row.allowedValues);
+    const exclusive = splitPipeList(row.exclusiveValues);
+    const freeText = splitPipeList(row.freeTextValues);
+    if (row.multiSelect && row.dataType !== 'enum') {
+      errors.push({ index, column: 'multiSelect', message: t('schema.multiSelectEnumOnly') });
+    } else if (!row.multiSelect) {
+      for (const column of ['exclusiveValues', 'freeTextValues'] as const) {
+        if ((row[column] ?? '').trim() !== '') {
+          errors.push({ index, column, message: t('schema.multiSelectRequired') });
+        }
+      }
+    } else {
+      for (const column of ['exclusiveValues', 'freeTextValues'] as const) {
+        if (splitPipeList(row[column]).some((value) => !allowed.includes(value))) {
+          errors.push({ index, column, message: t('schema.multiSelectUnknown') });
+        }
+      }
+      if (freeText.some((value) => exclusive.includes(value))) {
+        errors.push({ index, column: 'freeTextValues', message: t('schema.multiSelectOverlap') });
+      }
+      if (allowed.includes(NOT_REPORTED_TOKEN)) {
+        errors.push({ index, column: 'allowedValues', message: t('schema.multiSelectNr') });
+      }
+      if (allowed.some((value) => freeText.some((ft) => value.startsWith(`${ft}: `)))) {
+        errors.push({ index, column: 'allowedValues', message: t('schema.multiSelectAmbiguous') });
       }
     }
 

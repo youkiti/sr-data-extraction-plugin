@@ -41,6 +41,7 @@ export const AUDIT_HEADER = [
   'decided_at',
   'note',
   'quotes_json',
+  'section',
 ] as const;
 
 /**
@@ -117,6 +118,7 @@ export function buildAuditCsv(
       page: item.page,
       document_id: item.documentId,
       anchor_status: item.anchorStatus,
+      section: item.section,
     })));
   };
   const evidenceColumns = (evidence: Evidence): string[] => [
@@ -215,6 +217,7 @@ export function buildAuditCsv(
             decision.decidedAt,
             decision.note ?? '',
             quotesJson(attached),
+            attached === null ? AUDIT_MISSING_TOKEN : attached.evidence.section ?? '',
           ],
         });
       });
@@ -256,6 +259,7 @@ export function buildAuditCsv(
           AUDIT_MISSING_TOKEN,
           AUDIT_MISSING_TOKEN,
           quotesJson(bundle),
+          representative.section ?? '',
         ],
       });
     }

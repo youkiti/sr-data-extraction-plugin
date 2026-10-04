@@ -6,6 +6,7 @@
 // 判定規則そのもの（許容値のパース・許容値外判定・候補の絞り込み）は DOM を持たない
 // features/verification/enumOptions.ts が正典で、本モジュールは描画と操作だけを担う
 import type { SchemaField } from '../../domain/schemaField';
+import { isMultiSelectField, parseMultiSelectValue } from '../../domain/multiSelect';
 import {
   ENUM_CHIP_MAX,
   isOutOfAllowedValues,
@@ -261,7 +262,10 @@ export function allowedValuesWarningText(field: SchemaField, value: string | nul
   }
   // isOutOfAllowedValues が true = 許容値が取れている（parseAllowedValues は非 null）
   const allowed = parseAllowedValues(field) as string[];
-  return t('verify.enumOutOfRange', { value, allowed: allowed.join(' / ') });
+  const outside = isMultiSelectField(field)
+    ? parseMultiSelectValue(field, value).filter((element) => !element.known).map((element) => element.option).join(' | ')
+    : value;
+  return t('verify.enumOutOfRange', { value: outside, allowed: allowed.join(' / ') });
 }
 
 /**

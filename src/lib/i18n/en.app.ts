@@ -308,6 +308,16 @@ export const enApp: Record<keyof typeof jaApp, string> = {
   'protocol.loading': 'Loading the protocol…',
 
   // S5 表のデザイン
+  'schema.multiSelect': 'Multiple selection',
+  'schema.exclusiveValues': 'Exclusive options (separated by |)',
+  'schema.freeTextValues': 'Options with free text (separated by |)',
+  'schema.multiSelectHint': 'Exclusive options cannot be combined with other options. Free-text options can include an explanation.',
+  'schema.multiSelectEnumOnly': 'Multiple selection requires data_type = enum',
+  'schema.multiSelectRequired': 'Enable multiple selection to configure these options',
+  'schema.multiSelectUnknown': 'Use options from the allowed values',
+  'schema.multiSelectOverlap': 'Exclusive options cannot have free text',
+  'schema.multiSelectNr': 'Use the Not reported button for missing data; do not include NR as an option',
+  'schema.multiSelectAmbiguous': 'Allowed values cannot start with a free-text option followed by ": "',
   'schema.multiQuote': 'Allow multiple quotes',
   'schema.maxQuotes': 'Max quotes',
   'schema.multiQuoteHint': 'Use this mainly for qualitative data, such as extracting themes. AI quotes one supporting passage per theme, and the value becomes a list of theme names. Describe how to choose quotes (for example, participant accounts only) in the extraction instruction.',
@@ -836,6 +846,10 @@ export const enApp: Record<keyof typeof jaApp, string> = {
   'verify.enumOther': 'Other (free text)',
   'verify.enumBackToChoices': 'Back to choices',
   'verify.enumHint': 'Click a choice, or press a number key (1-9) to confirm.',
+  'verify.multiEnumHint': 'Click or press a number key to toggle choices, then press Enter to confirm.',
+  'verify.multiExclusiveTitle': 'Cannot be selected with other choices',
+  'verify.multiFreeTextAria': 'Details for {option}',
+  'verify.quoteSection': 'Section: {section}',
   'verify.enumOutOfRange':
     '⚠ "{value}" is not one of the choices defined in Table design (choices: {allowed}).',
   'verify.enumOutOfRangeLink': 'Review the table design',

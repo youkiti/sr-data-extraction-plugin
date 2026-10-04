@@ -33,6 +33,7 @@ function makeField(
 ): SchemaField {
   return {
     maxQuotes: null,
+    multiSelect: null,
     schemaVersion: 1,
     fieldIndex: 0,
     section: 'methods',
@@ -724,7 +725,7 @@ test('複数引用では出力を上限件数ぶん見積もり、入力にも�
   const input = { documents: [makeDocument({ documentId: 'd' })], fields: [STUDY_FIELD], model: 'gemini-2.5-pro' };
   const single = planRun(input);
   const multi = planRun({ ...input, fields: [{ ...STUDY_FIELD, maxQuotes: 10 }] });
-  expect(multi.tokensOutEstimate).toBe(single.tokensOutEstimate * 10);
+  expect(multi.tokensOutEstimate).toBe(Math.ceil(OUTPUT_CHARS_PER_ITEM * 10 / APPROX_CHARS_PER_TOKEN));
   expect(multi.tokensInEstimate).toBeGreaterThan(single.tokensInEstimate);
 });
 
@@ -745,7 +746,7 @@ describe('section 分割されたアウトカムバッチのプロンプト', ()
     const plan = planRun({
       documents: [makeDocument({ documentId: 'doc' })], fields, model: 'unknown',
     });
-    expect(plan.tokensOutEstimate).toBe(8_025);
+    expect(plan.tokensOutEstimate).toBe(8_962);
     expect(plan.tokensOutEstimate).toBeGreaterThan(DEFAULT_RUN_TOKEN_BUDGET.maxOutputTokensPerCall);
     expect(plan.batches.map((batch) => batch.section)).toEqual(['identification', 'intervention', 'outcomes']);
     const batch = plan.batches.find((candidate) => candidate.section === 'outcomes')!;
@@ -760,4 +761,23 @@ describe('section 分割されたアウトカムバッチのプロンプト', ()
     expect(prompt).toContain("<n> is the arm NUMBER, never the arm's name");
     expect(prompt).toContain('in order of first appearance');
   });
+});
+
+
+test.each([
+  { exclusiveValues: [], freeTextValues: [] },
+  { exclusiveValues: ['None'], freeTextValues: ['Other'] },
+  { exclusiveValues: ['Students', 'Other', 'None'], freeTextValues: [] },
+])('複数選択の追加定義行と応答要素数を概算する %p', (multiSelect) => {
+  const field = makeField({ fieldId: 'multi', fieldName: 'participants', dataType: 'enum', allowedValues: 'Students|Other|None', multiSelect });
+  const documents = [makeDocument({ documentId: 'd' })];
+  const actual = planRun({ fields: [field], documents, model: 'unknown' });
+  const extra = '  multi_select: true\n'.length
+    + (multiSelect.exclusiveValues.length ? `  exclusive_values: ${multiSelect.exclusiveValues.join('|')}\n`.length : 0)
+    + (multiSelect.freeTextValues.length ? `  free_text_values: ${multiSelect.freeTextValues.join('|')}\n`.length : 0);
+  const chars = PROMPT_SCAFFOLD_CHARS + FIELD_PROMPT_OVERHEAD_CHARS + field.fieldId.length + field.fieldName.length
+    + field.allowedValues!.length + DOCUMENT_SEPARATOR_CHARS + documents[0]!.charCount! + extra;
+  expect(actual.tokensInEstimate).toBe(Math.ceil(chars / APPROX_CHARS_PER_TOKEN));
+  expect(actual.tokensOutEstimate).toBe(Math.ceil(Math.max(1, 3 - multiSelect.exclusiveValues.length) * OUTPUT_CHARS_PER_ITEM / APPROX_CHARS_PER_TOKEN));
+  expect(OUTPUT_CHARS_PER_ITEM).toBe(335);
 });

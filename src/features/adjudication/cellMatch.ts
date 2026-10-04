@@ -1,10 +1,11 @@
 // セル突き合わせ（docs/design-independent-dual-review.md §6.3）。
 // 素材は StudyData / ResultsData の両 annotator 行の「現在値」（判定履歴ではない）。
 // セル集合は両者の entity_key × field_id の和集合。片側にしかないセルは相手側「未入力」として
-// 不一致扱いになる。一致判定は trim 後の完全文字列一致（NOT_REPORTED トークン同士も一致）。
+// 不一致扱いになる。一致判定は複数選択を正準化してから trim 後の完全一致（NR 同士も一致）。
 // schema_version が両行で異なるセルは警告フラグを立てるがブロックしない（Q-d）
 import { NOT_REPORTED_TOKEN, type ResultsDataRow, type StudyDataRow } from '../../domain/annotation';
 import type { Decision } from '../../domain/decision';
+import { canonicalizeMultiSelectValue } from '../../domain/multiSelect';
 import type { Evidence } from '../../domain/evidence';
 import type { EntityLevel, SchemaField } from '../../domain/schemaField';
 import { parseEntityKey, STUDY_ENTITY_KEY } from '../../utils/entityKey';
@@ -21,7 +22,7 @@ export interface AdjudicationCell {
   valueB: string | null;
   schemaVersionA: number | null;
   schemaVersionB: number | null;
-  /** trim 後の完全文字列一致 */
+  /** 複数選択は正準化し、trim 後の完全文字列一致 */
   matches: boolean;
   /** 両行が存在し、かつ schema_version が異なる */
   schemaVersionMismatch: boolean;
@@ -108,7 +109,7 @@ function makeCell(
     valueB,
     schemaVersionA,
     schemaVersionB,
-    matches: normalize(valueA) === normalize(valueB),
+    matches: normalize(canonicalizeMultiSelectValue(field, valueA)) === normalize(canonicalizeMultiSelectValue(field, valueB)),
     schemaVersionMismatch:
       schemaVersionA !== null && schemaVersionB !== null && schemaVersionA !== schemaVersionB,
     noteA: latestNoteFor(decisionsA, field.fieldId, entityKey),

@@ -129,13 +129,13 @@ describe('localizeDom', () => {
 });
 
 describe('辞書の分割と登録', () => {
-  test('各群の両言語が一致し、群間で重複せず、分割前のキー数を保つ', () => {
+  test('各群の両言語が一致し、群間で重複せず、登録キー数を保つ', () => {
     expect(Object.keys(enPages).sort()).toEqual(Object.keys(jaPages).sort());
     expect(Object.keys(enApp).sort()).toEqual(Object.keys(jaApp).sort());
     expect(Object.keys(jaPages).filter((key) => key in jaApp)).toEqual([]);
-    // 分割前の ja.ts のオブジェクトプロパティを TypeScript AST で数えた値。
-    expect(Object.keys(ja)).toHaveLength(1125);
-    expect(Object.keys(jaPages).length + Object.keys(jaApp).length).toBe(1125);
+    // 複数選択の項目設定・判定操作の文言を含む登録キー数。
+    expect(Object.keys(ja)).toHaveLength(1139);
+    expect(Object.keys(jaPages).length + Object.keys(jaApp).length).toBe(1139);
   });
 
   test('未登録では app キーをそのまま返し、登録後は両言語の文言を返す', () => {

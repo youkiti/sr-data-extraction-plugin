@@ -5,6 +5,8 @@
 // CellCardHandlers）を公開する — VerificationFormModel / VerificationFormHandlers は
 // フィールドを維持したまま構造的にこの部分型を満たすため、呼び出し側の変更は不要
 import { NOT_REPORTED_TOKEN } from '../../domain/annotation';
+import { formatMultiSelectForDisplay, isMultiSelectField } from '../../domain/multiSelect';
+import { renderMultiEnumChoiceEditor } from './multiEnumChoiceEditor';
 import type { VerificationCell } from '../../features/verification/cells';
 import type { CellStatus } from '../../features/verification/cellState';
 import { quoteKeyOf } from '../../features/verification/evidenceBundles';
@@ -138,7 +140,7 @@ function renderAiSummary(cell: VerificationCell): HTMLElement {
       className: 'verify__ai-value',
       text: evidence.notReported
         ? t('verify.aiNotReported', { token: NOT_REPORTED_TOKEN })
-        : (evidence.value ?? t('verify.aiValueNone')),
+        : (formatMultiSelectForDisplay(cell.field, evidence.value) ?? t('verify.aiValueNone')),
     }),
   ];
   if (evidence.confidence !== null) {
@@ -348,7 +350,7 @@ function renderQuote(
       el('p', { text: t('verify.quotesCount', { n: cell.quotes.length }) }),
       el('ol', { className: 'verify__quotes' }, cell.quotes.map((evidence) =>
         el('li', { className: 'verify__quotes-item' }, [
-          ...(cell.field.maxQuotes !== null ? [el('strong', {
+          ...(cell.field.maxQuotes !== null || isMultiSelectField(cell.field) ? [el('strong', {
             className: 'verify__quotes-theme',
             text: evidence.quoteTheme ?? t('verify.noTheme'),
           })] : []),
@@ -375,6 +377,11 @@ function renderSingleQuote(
   const children: Array<HTMLElement | string> = [
     el('blockquote', { className: 'verify__quote-text', text: evidence.quote ?? '' }),
   ];
+  if (evidence.section !== null) {
+    children.push(el('span', {
+      className: 'verify__quote-section', text: t('verify.quoteSection', { section: evidence.section }),
+    }));
+  }
   if (anchored) {
     const jumpButton = el('button', {
       className: 'verify__quote-jump',
@@ -488,6 +495,27 @@ function renderEditor(
   const isMultiline = isMermaidPreviewField(cell.field.fieldName);
   const ariaLabel = t('verify.editValueAria', { label: cell.field.fieldLabel });
   if (!isMultiline) {
+    const multiEditor = renderMultiEnumChoiceEditor({
+      field: cell.field,
+      currentValue: editorInitialValue(cell, action, mode),
+      confirmLabel: confirmLabelOf(action, mode),
+      onConfirm: (value) => handlers.onConfirmEdit(cell.cellKey, action, value, noteValue()),
+      onCancel: () => handlers.onCancelEdit(),
+    });
+    if (multiEditor !== null) {
+      noteInput.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter' && (event.isComposing || event.keyCode === 229)) return;
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          event.stopPropagation();
+          multiEditor.confirm();
+        } else if (event.key === 'Escape') {
+          event.stopPropagation();
+          handlers.onCancelEdit();
+        }
+      });
+      return el('div', {}, [noteInput, multiEditor.element]);
+    }
     // enum 項目は許容値チップ列（issue #254）。**mermaid 分岐の後**に置くことで、
     // S5 で dataType を自由に変えられる（validateField は mermaid 予約名 + enum の併存を
     // 禁じていない）状況でも issue #170 の複数行編集を保護する。
@@ -715,7 +743,7 @@ export function renderCell(
     children.push(
       el('p', {
         className: 'verify__current-value',
-        text: t('verify.decidedValue', { value: cell.state.value ?? t('verify.valueEmpty') }),
+        text: t('verify.decidedValue', { value: formatMultiSelectForDisplay(cell.field, cell.state.value) ?? t('verify.valueEmpty') }),
       }),
     );
   }

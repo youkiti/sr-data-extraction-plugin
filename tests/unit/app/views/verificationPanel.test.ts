@@ -194,6 +194,7 @@ function makeStudy(overrides: Partial<StudyRecord> = {}): StudyRecord {
 function makeField(overrides: Partial<SchemaField> = {}): SchemaField {
   return {
     maxQuotes: null,
+    multiSelect: null,
     schemaVersion: 1,
     fieldId: 'f-total',
     fieldIndex: 1,
@@ -217,6 +218,7 @@ function makeEvidence(overrides: Partial<Evidence> = {}): Evidence {
   return {
     quoteTheme: null,
     quoteSeq: null,
+    section: null,
     evidenceId: 'ev-1',
     runId: 'run-1',
     studyId: 'study-1',
@@ -269,6 +271,7 @@ const EVIDENCE = [
   makeEvidence({
     quoteTheme: null,
     quoteSeq: null,
+    section: null,
     evidenceId: 'ev-2',
     fieldId: 'f-country',
     value: 'Japan',
@@ -839,6 +842,7 @@ describe('createVerificationPanel: 複数文書ビューア（v0.10 フェーズ
       makeEvidence({
         quoteTheme: null,
         quoteSeq: null,
+        section: null,
         evidenceId: 'ev-c',
         fieldId: 'f-country',
         value: '200',
@@ -1187,6 +1191,7 @@ describe('左ペイン表示切替（PDF / 抽出テキスト。issue #28 案2�
     const evidenceOnDoc2 = makeEvidence({
       quoteTheme: null,
       quoteSeq: null,
+      section: null,
       evidenceId: 'ev-doc2',
       fieldId: 'f-country',
       documentId: 'doc-2',
@@ -1801,6 +1806,7 @@ describe('群構成の確定ゲート（arm 未確定時。ui-states.md §3 `#/v
         makeEvidence({
           quoteTheme: null,
           quoteSeq: null,
+          section: null,
           evidenceId: 'ev-name',
           fieldId: 'f-arm-name',
           entityKey: 'arm:1',
@@ -1872,6 +1878,7 @@ describe('群構成の確定ゲート（arm 未確定時。ui-states.md §3 `#/v
         makeEvidence({
           quoteTheme: null,
           quoteSeq: null,
+          section: null,
           evidenceId: 'ev-named',
           fieldId: 'f-arm-n',
           entityKey: 'arm:intervention',
@@ -1895,6 +1902,7 @@ describe('群構成の確定ゲート（arm 未確定時。ui-states.md §3 `#/v
         makeEvidence({
           quoteTheme: null,
           quoteSeq: null,
+          section: null,
           evidenceId: 'ev-out',
           fieldId: 'f-arm-n',
           entityKey: 'outcome:mortality|arm:2|time:30d',
@@ -1946,6 +1954,7 @@ describe('群構成の確定ゲート（arm 未確定時。ui-states.md §3 `#/v
         makeEvidence({
           quoteTheme: null,
           quoteSeq: null,
+          section: null,
           evidenceId: 'ev-rob',
           fieldId: 'f-rob',
           entityKey: 'rob:d1_randomization',
@@ -3160,6 +3169,7 @@ describe('「AI で再特定」（relocate-quote。issue #94）', () => {
     return makeEvidence({
       quoteTheme: null,
       quoteSeq: null,
+      section: null,
       evidenceId: 'ev-2-relocated',
       fieldId: 'f-country',
       value: 'Japan',

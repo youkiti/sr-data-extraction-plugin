@@ -7,6 +7,7 @@ import type { StudyRecord } from '../../domain/study';
 import type { SchemaField } from '../../domain/schemaField';
 import { buildCsv, CSV_BOM } from './csvEncode';
 import { selectFinalAnnotator } from './finalAnnotator';
+import { buildMultiSelectColumns, multiSelectColumnValues } from './multiSelectColumns';
 
 export interface StudyWideCsvResult {
   csv: string;
@@ -26,7 +27,11 @@ export function buildStudyWideCsv(
   const studyFields = fields
     .filter((field) => field.entityLevel === 'study')
     .sort((a, b) => a.fieldIndex - b.fieldIndex);
-  const header = ['study_label', ...studyFields.map((field) => field.fieldName)];
+  const used = new Set(['study_label', ...fields.map((field) => field.fieldName)]);
+  const columns = studyFields.map((field) => buildMultiSelectColumns(field, used));
+  const header = ['study_label', ...studyFields.flatMap((field, index) =>
+    [field.fieldName, ...columns[index]!.map((column) => column.name)],
+  )];
 
   const csvRows: string[][] = [];
   const skippedStudyIds: string[] = [];
@@ -39,12 +44,13 @@ export function buildStudyWideCsv(
       continue;
     }
     const line = [study.studyLabel];
-    for (const field of studyFields) {
+    for (const [index, field] of studyFields.entries()) {
       const value = finalRow.values[field.fieldName] ?? null;
       if (value === null) {
         unverifiedCellCount++; // 空セル = 未検証（NR は「未報告」でありここに含めない）
       }
       line.push(value ?? '');
+      line.push(...multiSelectColumnValues(field, value, columns[index]!));
     }
     csvRows.push(line);
   }

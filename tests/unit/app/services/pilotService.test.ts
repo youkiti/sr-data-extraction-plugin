@@ -182,6 +182,7 @@ function makeDocument(overrides: Partial<DocumentRecord> = {}): DocumentRecord {
 function makeField(overrides: Partial<SchemaField> = {}): SchemaField {
   return {
     maxQuotes: null,
+    multiSelect: null,
     schemaVersion: 1,
     fieldId: 'f-total',
     fieldIndex: 1,
@@ -205,6 +206,7 @@ function makeEvidence(overrides: Partial<Evidence> = {}): Evidence {
   return {
     quoteTheme: null,
     quoteSeq: null,
+    section: null,
     evidenceId: 'ev-1',
     runId: 'run-1',
     studyId: 'study-doc-1',

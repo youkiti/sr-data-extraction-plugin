@@ -9,7 +9,7 @@ import type { DocumentRecord } from '../../../../src/domain/document';
 
 test('項目編集欄の参考情報とクエリ先フォーカス', () => {
   const field = makeField({ fieldId: 'f-1' });
-  const state = makeState({ versions: [], editorRows: [field], pilotFieldId: 'f-1' });
+  const state = makeState({ versions: [], editorRows: [makeEditorRow({ fieldId: field.fieldId })], pilotFieldId: 'f-1' });
   state.pilot = { ...state.pilot, run: matrixRun(), runFields: [field], evidence: [matrixEvidence()],
     matrix: { ...emptyPilotMatrix(), runId: 'run-1', decisions: [matrixDecision({ action: 'edit', value: '99', note: '表 2' })] } };
   const { ctx } = makeCtx();
@@ -296,6 +296,9 @@ function makeDocument(overrides: Partial<DocumentRecord> = {}): DocumentRecord {
 function makeEditorRow(overrides: Partial<SchemaEditorRow> = {}): SchemaEditorRow {
   return {
     maxQuotes: null,
+    multiSelect: false,
+    exclusiveValues: null,
+    freeTextValues: null,
     fieldId: null,
     section: 'methods',
     fieldName: 'study_design',
@@ -329,6 +332,7 @@ function makeVersion(schemaVersion: number, overrides: Partial<SchemaVersion> = 
 function makeField(overrides: Partial<SchemaField> = {}): SchemaField {
   return {
     maxQuotes: null,
+    multiSelect: null,
     schemaVersion: 1,
     fieldId: 'f-1',
     fieldIndex: 1,
@@ -504,7 +508,7 @@ describe('renderSchemaView', () => {
       ) as HTMLSelectElement;
       typeSelect.value = 'enum';
       typeSelect.dispatchEvent(new Event('change'));
-      expect(callbacks.onEditRow).toHaveBeenCalledWith(0, { dataType: 'enum', maxQuotes: null });
+      expect(callbacks.onEditRow).toHaveBeenCalledWith(0, { dataType: 'enum', maxQuotes: null, multiSelect: false, exclusiveValues: null, freeTextValues: null });
 
       const requiredCheckbox = view.querySelector(
         'input[aria-label="1 行目の必須"]',
@@ -1597,10 +1601,10 @@ describe('複数引用の設定 UI', () => {
     const select = view.querySelector('select[aria-label="1 行目の data_type"]') as HTMLSelectElement;
     select.value = 'text';
     select.dispatchEvent(new Event('change'));
-    expect(callbacks.onEditRow).toHaveBeenLastCalledWith(0, { dataType: 'text', maxQuotes: 12 });
+    expect(callbacks.onEditRow).toHaveBeenLastCalledWith(0, { dataType: 'text', maxQuotes: 12, multiSelect: false, exclusiveValues: null, freeTextValues: null });
     select.value = 'integer';
     select.dispatchEvent(new Event('change'));
-    expect(callbacks.onEditRow).toHaveBeenLastCalledWith(0, { dataType: 'integer', maxQuotes: null });
+    expect(callbacks.onEditRow).toHaveBeenLastCalledWith(0, { dataType: 'integer', maxQuotes: null, multiSelect: false, exclusiveValues: null, freeTextValues: null });
     const nonText = renderSchemaView(makeState({ versions: [], editorRows: [makeEditorRow({ dataType: 'integer' })] }), ctx);
     expect(nonText.querySelector('.schema__multi-quote')).toBeNull();
   });
@@ -1613,5 +1617,63 @@ describe('複数引用の設定 UI', () => {
     expect(view.querySelector('#schema-editor-errors')?.textContent).toContain('最大件数が不正です');
     const confirmed = renderSchemaView(makeState({ versions: [makeVersion(1)], currentFields: [makeField({ maxQuotes: 12 })] }), ctx);
     expect(confirmed.textContent).toContain('複数の引用（最大 12）');
+  });
+});
+
+
+describe('複数選択の項目設定', () => {
+  test.each([
+    [' A | NA | n/a | Unclear | OTHER ', 'NA|n/a|Unclear', 'OTHER'],
+    ['A|B', null, null],
+    [null, null, null],
+  ])('ON の初期入力: %p', (allowedValues, exclusiveValues, freeTextValues) => {
+    const { ctx, callbacks } = makeCtx();
+    const view = renderSchemaView(makeState({ versions: [], editorRows: [makeEditorRow({ dataType: 'enum', allowedValues })] }), ctx);
+    expect(view.querySelector<HTMLInputElement>('.schema__exclusive-values')?.disabled).toBe(true);
+    const checkbox = view.querySelector<HTMLInputElement>('.schema__multi-select')!;
+    checkbox.checked = true;
+    checkbox.dispatchEvent(new Event('change'));
+    expect(callbacks.onEditRow).toHaveBeenLastCalledWith(0, { multiSelect: true, exclusiveValues, freeTextValues });
+  });
+  test.each([{ exclusiveValues: 'NA' }, { freeTextValues: 'Other' }])('既存入力は ON 時に上書きしない: %p', (patch) => {
+    const { ctx, callbacks } = makeCtx();
+    const view = renderSchemaView(makeState({ versions: [], editorRows: [makeEditorRow({ dataType: 'enum', ...patch })] }), ctx);
+    const checkbox = view.querySelector<HTMLInputElement>('.schema__multi-select')!;
+    checkbox.checked = true;
+    checkbox.dispatchEvent(new Event('change'));
+    expect(callbacks.onEditRow).toHaveBeenLastCalledWith(0, { multiSelect: true });
+  });
+  test('OFF・入力変更・型変更・検証エラー・確定済み要約', () => {
+    const { ctx, callbacks } = makeCtx();
+    const row = makeEditorRow({ dataType: 'enum', multiSelect: true, exclusiveValues: 'NA', freeTextValues: 'Other' });
+    const view = renderSchemaView(makeState({ versions: [], editorRows: [row], editorErrors:
+      (['multiSelect', 'exclusiveValues', 'freeTextValues'] as const).map((column) => ({ index: 0, column, message: '不正' })),
+    }), ctx);
+    for (const name of ['multi-select', 'exclusive-values', 'free-text-values']) {
+      const input = view.querySelector<HTMLInputElement>(`.schema__${name}`)!;
+      expect(input.getAttribute('aria-invalid')).toBe('true');
+      expect(input.classList.contains('schema__cell-input--error')).toBe(true);
+      expect(input.disabled).toBe(false);
+    }
+    for (const [name, column] of [['exclusive-values', 'exclusiveValues'], ['free-text-values', 'freeTextValues']]) {
+      const input = view.querySelector<HTMLInputElement>(`.schema__${name}`)!;
+      input.value = ' A ';
+      input.dispatchEvent(new Event('change'));
+      expect(callbacks.onEditRow).toHaveBeenLastCalledWith(0, { [column!]: 'A' });
+    }
+    const checkbox = view.querySelector<HTMLInputElement>('.schema__multi-select')!;
+    checkbox.checked = false;
+    checkbox.dispatchEvent(new Event('change'));
+    expect(callbacks.onEditRow).toHaveBeenLastCalledWith(0, { multiSelect: false, exclusiveValues: null, freeTextValues: null });
+    const select = view.querySelector<HTMLSelectElement>('select[aria-label="行 1 data_type"]')
+      ?? view.querySelectorAll<HTMLSelectElement>('tbody select')[1]!;
+    select.value = 'enum';
+    select.dispatchEvent(new Event('change'));
+    expect(callbacks.onEditRow).toHaveBeenLastCalledWith(0, { dataType: 'enum', maxQuotes: null, multiSelect: true, exclusiveValues: 'NA', freeTextValues: 'Other' });
+    select.value = 'text';
+    select.dispatchEvent(new Event('change'));
+    expect(callbacks.onEditRow).toHaveBeenLastCalledWith(0, { dataType: 'text', maxQuotes: null, multiSelect: false, exclusiveValues: null, freeTextValues: null });
+    const confirmed = renderSchemaView(makeState({ versions: [makeVersion(1)], currentFields: [makeField({ dataType: 'enum', multiSelect: { exclusiveValues: [], freeTextValues: [] } })] }), ctx);
+    expect(confirmed.textContent).toContain('enum — 複数選択');
   });
 });

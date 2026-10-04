@@ -204,6 +204,7 @@ function makeStudy(overrides: Partial<StudyRecord> = {}): StudyRecord {
 function makeField(overrides: Partial<SchemaField> = {}): SchemaField {
   return {
     maxQuotes: null,
+    multiSelect: null,
     schemaVersion: 1,
     fieldId: 'f-1',
     fieldIndex: 1,
@@ -244,6 +245,7 @@ function makeEvidence(overrides: Partial<Evidence> = {}): Evidence {
   return {
     quoteTheme: null,
     quoteSeq: null,
+    section: null,
     evidenceId: 'ev-1',
     runId: 'run-1',
     studyId: 'study-1',
@@ -1252,6 +1254,26 @@ describe('enum 項目の第 3 の値 UI（issue #254）', () => {
     expect(root.querySelector('.adjudicate__custom-input')).toBeNull();
     (root.querySelectorAll('.verify__enum-chip')[1] as HTMLButtonElement).click();
     expect(callbacks.onCustomValue).toHaveBeenCalledWith(cell.cellKey, 'some_concerns');
+  });
+
+  test('複数選択の第三の値は未選択で開始し、A・B と裁定値を整形表示する', () => {
+    const { ctx, callbacks } = makeCtx();
+    const cell = makeEnumCell({ field: makeField({ ...ENUM_FIELD,
+      multiSelect: { exclusiveValues: [], freeTextValues: [] } }), valueA: 'low|high', valueB: 'low|some_concerns' });
+    const state = makeState({ rows: [makeRow()], working: makeWorking({ cells: [cell] }), mismatchOnlyFilter: false });
+    const root = render(state, ctx);
+    expect(root.textContent).toContain('low | high');
+    expect(root.textContent).toContain('low | some_concerns');
+    expect(root.querySelectorAll('[aria-pressed="true"]')).toHaveLength(0);
+    expect(root.querySelector('.verify__edit-cancel')).toBeNull();
+    root.querySelector<HTMLButtonElement>('.verify__enum-chip[aria-label="low"]')!.click();
+    root.querySelector<HTMLButtonElement>('.verify__enum-chip[aria-label="high"]')!.click();
+    expect(callbacks.onCustomValue).not.toHaveBeenCalled();
+    root.querySelector<HTMLButtonElement>('.verify__edit-confirm')!.click();
+    expect(callbacks.onCustomValue).toHaveBeenCalledWith(cell.cellKey, 'low|high');
+    const decided = { ...makeConsensusDecision('low|high'), entityKey: cell.entityKey };
+    const resolved = render(makeState({ rows: [makeRow()], working: makeWorking({ cells: [cell], consensusDecisions: [decided] }), mismatchOnlyFilter: false }), ctx);
+    expect(resolved.querySelector('.adjudicate__current-value')!.textContent).toContain('low | high');
   });
 
   test('編集モードの概念が無い画面のためキャンセルボタンを出さない', () => {

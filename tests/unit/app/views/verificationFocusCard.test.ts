@@ -12,6 +12,7 @@ import {
 function makeField(overrides: Partial<SchemaField> = {}): SchemaField {
   return {
     maxQuotes: null,
+    multiSelect: null,
     schemaVersion: 1,
     fieldId: 'f-mean',
     fieldIndex: 1,
@@ -35,6 +36,7 @@ function makeEvidence(overrides: Partial<Evidence> = {}): Evidence {
   return {
     quoteTheme: null,
     quoteSeq: null,
+    section: null,
     evidenceId: 'ev-1',
     runId: 'run-1',
     studyId: 'study-1',
@@ -123,6 +125,24 @@ function render(model: VerificationFocusCardModel, handlers = makeHandlers()) {
 }
 
 describe('renderVerificationFocusCard', () => {
+  test.each(['ai', 'human'])('複数選択の %s 値をマトリクス・読み上げ・直近判定で整形する', (source) => {
+    const field = makeField({
+      dataType: 'enum', allowedValues: 'A|B',
+      multiSelect: { exclusiveValues: [], freeTextValues: [] },
+    });
+    const cell = makeCell({
+      field,
+      evidence: makeEvidence({ value: 'A|B' }),
+      state: source === 'ai' ? emptyCellState() : { status: 'accept', value: 'A|B', stack: [] },
+    });
+    const recentCell = makeCell({ field, state: { status: 'accept', value: 'A|B', stack: [] } });
+    const unit = makeUnit({ rows: [{ field, cells: [cell] }] });
+    const { root } = render(makeModel({ unit, recentCell }));
+    expect(root.querySelector('.focus-card__matrix-value')?.textContent).toBe('A | B');
+    expect(root.querySelector('.focus-card__matrix-btn')?.getAttribute('aria-label')).toBe('平均値 × 介入群: A | B');
+    expect(root.querySelector('.focus-card__recent-value')?.textContent).toBe('= A | B');
+  });
+
   test('ユニットヘッダに位置（n / m・残り r）と見出しを表示する', () => {
     const { root } = render(makeModel({ unitIndex: 2, totalUnits: 5, remainingUnits: 3 }));
     expect(root.querySelector('#verify-focus-position')?.textContent).toBe('ユニット 2 / 5（残り 3）');
