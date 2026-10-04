@@ -218,8 +218,21 @@ export function buildRedraftDiff(
     // 同名の current が複数ある場合、2 件目以降はこの delete 済みのため必ず removed になる
     draftedByName.delete(name);
     const maxQuotes = proposed.dataType === 'text' ? field.maxQuotes : null;
-    const inherited = proposed.maxQuotes === maxQuotes
-      ? proposed : { ...proposed, maxQuotes };
+    // 探し方・規則は AI 再ドラフトの対象外（draft-schema は出さない）。変更を採用しても
+    // 消えないよう、現行の値を提案側へ引き継ぐ
+    const inherited =
+      proposed.maxQuotes === maxQuotes &&
+      proposed.locationHint === field.locationHint &&
+      proposed.rules === field.rules &&
+      proposed.hintSource === field.hintSource
+        ? proposed
+        : {
+            ...proposed,
+            maxQuotes,
+            locationHint: field.locationHint,
+            rules: field.rules,
+            hintSource: field.hintSource,
+          };
     const rowChanges = computeChanges(field, inherited);
     if (rowChanges.length > 0) {
       const item: RedraftChangedItem = { current: field, proposed: inherited, changes: rowChanges };

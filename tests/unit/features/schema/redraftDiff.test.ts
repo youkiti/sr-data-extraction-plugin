@@ -457,6 +457,19 @@ test('再ドラフトは現行の引用上限を継承し、それだけで変�
   expect(applyRedraftDiff(changed, defaultRedraftSelection(changed))[0]?.maxQuotes).toBe(12);
 });
 
+test('再ドラフトは現行の探し方・規則を継承し、変更を採用しても消さない', () => {
+  const hints = { locationHint: 'Methods', rules: 'analyzed N', hintSource: 'ai_edited' as const };
+  const field = makeField(hints);
+  const unchanged = buildRedraftDiff([field], [makeRow()]);
+  expect(unchanged.changed).toEqual([]);
+  expect(applyRedraftDiff(unchanged, defaultRedraftSelection(unchanged))[0]).toMatchObject(hints);
+  const changed = buildRedraftDiff([field], [makeRow({ fieldLabel: '変更' })]);
+  expect(changed.changed[0]?.changes).toEqual([{ key: 'fieldLabel', before: field.fieldLabel, after: '変更' }]);
+  const selection = defaultRedraftSelection(changed);
+  selection.changed[field.fieldName] = true;
+  expect(applyRedraftDiff(changed, selection)[0]).toMatchObject({ ...hints, fieldLabel: '変更' });
+});
+
 test('複数引用の text 項目を integer に再ドラフトすると引用上限を解除して確定できる', () => {
   const field = makeField({ maxQuotes: 12 });
   const diff = buildRedraftDiff([field], [makeRow({ dataType: 'integer' })]);
