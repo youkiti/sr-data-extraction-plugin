@@ -107,7 +107,7 @@ pwsh -NoProfile -File tools/release/pack.ps1 -IncludeKeyPem
 
 | 症状 | 原因と対処 |
 |---|---|
-| リフレッシュトークン失効（`invalid_grant`） | OAuth 同意画面が「テスト中」だと 7 日で失効する。`docs/store/README.md` の初期設定手順 5 で再承認し、`.env` の `CWS_REFRESH_TOKEN` を入れ直す |
+| リフレッシュトークン失効（`invalid_grant`） | OAuth 同意画面が「テスト中」だと 7 日で失効する（2026-10-05 に「本番環境」へ切り替え済み。7 日を超えて使えるかは未確認）。`docs/store/README.md` の初期設定手順 5 で再承認し、`.env` の `CWS_REFRESH_TOKEN` を入れ直す。「本番環境」でも 6 か月の未使用やパスワード変更で失効する |
 | 審査中の提出があって止まる | `PENDING_REVIEW` / `STAGED` は提出不可。`npm run store:status` で確認し、既存の提出の審査・公開を待つ |
 | 「結果不明」で終わった | サーバー側で成立している可能性がある。再実行の前に `npm run store:status` で確認する。自動では再実行しない |
 | 「マニフェストでは key フィールドを使用できません」 | manifest から `key` を除去し忘れ。`npm run release` / `npm run pack:release` を通していれば起きない（zip 検証が止める） |
