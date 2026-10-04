@@ -13,15 +13,15 @@ Chrome Web Store へ提出・更新する zip を作る手順。**Store は mani
 npm run release -- minor    # 機能追加を含む ／ patch = 修正のみ ／ major ／ 0.7.3 のような明示指定も可
 ```
 
-[`tools/release/release.ps1`](../../../tools/release/release.ps1) が **前提チェック → version バンプ（3 ファイル）→ commit → `npm run build` → `pack.ps1`（key 除去・zip 化・検証）→ origin/master へ push** まで通す。所要 1 分弱。**どこかで NG が出れば非 0 終了する**ので、壊れた提出物も、検証を飛ばした push も発生しない。人間が判断するのは「どのバンプ種別か」と、出来た zip を Store へ出す（手順 3）ことだけ。
+[`tools/release/release.ps1`](../../../tools/release/release.ps1) が **前提チェック → version バンプ（3 ファイル）+ `docs/project-facts.md` 再生成・`hosted/help.html` 対象バージョン更新（2 ファイル）→ commit → `npm run build` → `pack.ps1`（key 除去・zip 化・検証）→ origin/master へ push** まで通す。所要 1 分弱。**どこかで NG が出れば非 0 終了する**ので、壊れた提出物も、検証を飛ばした push も発生しない。人間が判断するのは「どのバンプ種別か」と、出来た zip を Store へ出す（手順 3）ことだけ。
 
-- **なぜ PR を経由しないか**: 差分が version 文字列 3 箇所だけで、直前の master が CI green であることをスクリプトが `gh run list` で機械チェックするため。**CLAUDE.md 作業原則 1（master で直接作業しない）の明示的な例外**であり、version バンプ commit にのみ適用する。機能変更を混ぜようとしても作業ツリーの汚れチェックで止まる。
+- **なぜ PR を経由しないか**: 差分が version 3 ファイルと現在値・ヘルプ対象版の文書 2 ファイルで、直前の master が CI green であることをスクリプトが `gh run list` で機械チェックするため。**CLAUDE.md 作業原則 1（master で直接作業しない）の明示的な例外**であり、version バンプ commit にのみ適用する。機能変更を混ぜようとしても作業ツリーの汚れチェックで止まる。
 - 主なオプション（`npm run release -- patch -NoPush` のように渡す）:
   - `-NoPush` — push せずローカル commit + zip まで
   - `-SkipCiCheck` — gh が無い / 未認証の環境
   - `-Force` — master 以外のブランチ・origin と不一致・CI が green でないときの停止を警告に落とす（作業ツリーの汚れチェックだけは解除されない）
   - `-IncludeKeyPem` — 初回アップロード専用（2026-07-10 に使用済み。通常は不要）
-- **失敗時の後始末**: build / pack で落ちた場合、push はまだなので origin は無傷。ローカルのバンプ commit だけが残るので `git reset --hard HEAD~1` で戻せる（差分は version のみ）。
+- **失敗時の後始末**: build / pack で落ちた場合、push はまだなので origin は無傷。ローカルのバンプ commit だけが残るので `git reset --hard HEAD~1` で戻せる（version 3 ファイル + 文書 2 ファイルの計 5 ファイルを戻す）。
 
 以下は、この一発コマンドが内部で何を確認しているか（＝手で追うときの手順）と、Store 提出の手順。パッケージング部分は [`tools/release/pack.ps1`](../../../tools/release/pack.ps1) 単体でも `npm run pack:release` として実行できる。
 
@@ -43,7 +43,7 @@ npm run release -- minor    # 機能追加を含む ／ patch = 修正のみ ／
 `npm run release` が 1〜4 を自動で行う（NG なら停止）。手で追う場合は以下。
 
 1. `master` が最新（`origin/master` と一致）で、リリース対象の変更がすべてマージ済みであることを確認する。
-2. **version バンプ**: `src/manifest.json` / `package.json` / `package-lock.json` の `version` を**3 箇所とも**上げる（Store は既存と同じ version の再アップロードを拒否する。初回 = 0.1.0）。lock は手で書かず `npm version <new> --no-git-tag-version` で追随させる。
+2. **version バンプ**: `src/manifest.json` / `package.json` / `package-lock.json` の `version` を**3 箇所とも**上げる（Store は既存と同じ version の再アップロードを拒否する。初回 = 0.1.0）。lock は手で書かず `npm version <new> --no-git-tag-version` で追随させる。続けて `node tools/facts/generateProjectFacts.mjs --stamp-help` で `docs/project-facts.md` を再生成し、`hosted/help.html` の対象バージョンを更新する（`npm run release` は自動実行）。
 3. `.env` に `WEBAUTH_CLIENT_ID` が設定されていることを確認する（値は出力しない。キー名の存在確認のみ）:
    ```bash
    grep -c '^WEBAUTH_CLIENT_ID=.' .env   # 1 なら OK
@@ -90,6 +90,8 @@ pwsh -NoProfile -File tools/release/pack.ps1 -IncludeKeyPem
 
 ### 3. 提出
 
+- 提出後・ストア反映後に掲載ページを確認し、`docs/store/store-status.json` を手で更新して `npm run facts` を実行する。公開版は実際に反映された版を記録する。
+
 - https://chrome.google.com/webstore/devconsole でアイテムを開き、新しい zip をアップロード → 審査へ提出。
 - 掲載メタ情報・権限の使用理由・単一用途の原稿は [docs/store/README.md](../../../docs/store/README.md) と [docs/store/permissions-justification.md](../../../docs/store/permissions-justification.md) が正典。
 - 「リモートコードを使用していますか」→ **いいえ**（全 script はローカルバンドル。Picker の Google JS は youkiti.github.io 側 = 拡張パッケージ外で実行）。
@@ -103,7 +105,7 @@ pwsh -NoProfile -File tools/release/pack.ps1 -IncludeKeyPem
 | `dist が dev ビルドです` で停止 | 直前に `npm run dev` / `npm run watch` を回して dist が dev のまま。`npm run build` からやり直す |
 | ビルドが `WEBAUTH_CLIENT_ID が未設定です` で停止 | `.env` の `WEBAUTH_CLIENT_ID` 未設定（`LOCAL_WEBAUTH_CLIENT_ID` だけでは production に入らない）。手順 0-3 を確認して 1 をやり直す。※旧 `OAUTH_CLIENT_ID`（getAuthToken 時代）は issue #129 で廃止済みで、いくら設定しても読まれない |
 | `package.json の version が manifest と一致しません` で停止 | 3 箇所のバンプ漏れ。手順 0-2 |
-| `作業ツリーが汚れています` で停止 | 未コミットの変更がある（前回の失敗で version 編集が残っている場合は `git checkout -- src/manifest.json package.json package-lock.json`）。機能変更を release コマンドで master へ持ち込ませないための停止なので、`-Force` でも解除されない |
+| `作業ツリーが汚れています` で停止 | 未コミットの変更がある（前回の失敗で version 編集が残っている場合は `git checkout -- src/manifest.json package.json package-lock.json docs/project-facts.md hosted/help.html`）。機能変更を release コマンドで master へ持ち込ませないための停止なので、`-Force` でも解除されない |
 | `master の CI がまだ実行中です` / `失敗しています` で停止 | CI の完了を待つ。急ぐなら `-Force`（自己責任）、gh が使えない環境なら `-SkipCiCheck` |
 | `manifest の version 行を一意に特定できません` で停止 | `src/manifest.json` の整形が変わった（トップレベルのインデントは半角 2 個が前提）。`tools/release/release.ps1` の `$versionLinePattern` を追随させる |
 | `manifest の key 行を一意に特定できません` で停止 | dist/manifest.json の整形が変わった（webpack の `transformManifest` は `JSON.stringify(manifest, null, 2)` 前提でトップレベルのインデントは半角 2 個）。webpack.config.js の変更を確認し、必要なら `tools/release/pack.ps1` の `$keyLinePattern` を追随させる |

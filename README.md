@@ -4,7 +4,7 @@
 
 システマティックレビュー（SR）／スコーピングレビューの**データ抽出工程**を支援する、MIT ライセンスの OSS Chrome 拡張です。SR ツール群 3 部作（[sr-query-builder](https://github.com/youkiti/sr-query-builder-plugin) → [tiab-review](https://github.com/youkiti/tiab-review-plugin) → 本拡張）の 3 作目にあたります。
 
-> **開発ステータス**: Chrome ウェブストアで **v0.1.0 を一般公開しました**（2026-07-12）。以降も継続的にリリースを重ね、ストア公開は v0.8.0、リポジトリの最新は v0.9.0（zip 作成済み・ストア反映待ち）です。S1〜S12 まで実装済み（MVP の S1〜S10 + Options に加え、RoB テンプレート・独立二重レビュー・S12 裁定画面などを実装）。正典ドキュメントは [docs/requirements.md](docs/requirements.md) を起点に、残タスクは [docs/remaining-work-plan.md](docs/remaining-work-plan.md) を参照してください。実機通し確認の記録は [docs/manual-testing.md](docs/manual-testing.md) にあります。
+> **開発ステータス**: Chrome ウェブストアで **v0.1.0 を一般公開しました**（2026-07-12）。以降も継続的にリリースを重ねています。現在のストア公開版とリポジトリの版は [docs/project-facts.md](docs/project-facts.md) を参照してください。S1〜S12 まで実装済み（MVP の S1〜S10 + Options に加え、RoB テンプレート・独立二重レビュー・S12 裁定画面などを実装）。正典ドキュメントは [docs/requirements.md](docs/requirements.md) を起点に、残タスクは [docs/remaining-work-plan.md](docs/remaining-work-plan.md) を参照してください。実機通し確認の記録は [docs/manual-testing.md](docs/manual-testing.md) にあります。
 
 > **📦 インストール**: [Chrome ウェブストアの掲載ページ](https://chromewebstore.google.com/detail/sr-data-extraction-plugin/ibpbkgffgkmdmflamhadbcfjgfljjgip)から「Chrome に追加」でインストールできます。
 

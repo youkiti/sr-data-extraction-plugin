@@ -103,6 +103,15 @@ sr-query-builder（CI なし・ローカル規律運用）とは異なり、本�
 - 理由: カバレッジ 100% 強制と dev ビルド検証（作業原則 7）は CI がないと形骸化しやすい一方、E2E は画面が安定する前に CI に入れると flaky 対応コストが先行する
 - CI 導入後もローカルの `typecheck → test → test:e2e → lint → dev` を完了報告前の定型フローとして維持する（CI は安全網であって代替ではない）
 
+### 4.1 変わる値の転記検査
+
+版は `package.json`、既定モデルは `src/lib/storage/settingsStore.ts`、プロンプト版数は
+`src/features/extraction/skills/extractData.ts`、要件版は `docs/requirements.md` の見出しを正とする。
+ストア公開版は掲載ページを確認して `docs/store/store-status.json` に手で記録する。
+`npm run facts` で `docs/project-facts.md` を生成し、CI の `npm run facts:check` で鮮度を検査する。
+`tests/unit/projectFacts.test.ts` は実物の値から生成物・ヘルプ・要件本文の転記と README の手書き版の再発を検査する。
+リリース時は `--stamp-help` が自動実行され、現在値の再生成とヘルプの対象バージョン更新を行う。
+
 ## 5. 未決定・実装フェーズで判断する点
 
 1. worker seam A 案（chrome スタブ解決）の実機確認 — チェックポイント 2 で PDF.js バージョンと同時に
