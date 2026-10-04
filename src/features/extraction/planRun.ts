@@ -31,8 +31,9 @@ export const APPROX_CHARS_PER_TOKEN = 4;
 /**
  * プロンプトの固定部（システムプロンプト + セクション見出し + entity_key 規約 + 出力形式）の
  * 文字数概算。extractData.ts のプロンプト構成に対応する
+ * outcome_result の群の番号づけ規約が約 300 文字増えたぶんを含める
  */
-export const PROMPT_SCAFFOLD_CHARS = EXTRACT_DATA_SYSTEM_PROMPT.length + 1_200;
+export const PROMPT_SCAFFOLD_CHARS = EXTRACT_DATA_SYSTEM_PROMPT.length + 1_500;
 
 /** 1 項目の定義ブロック（renderField）の固定行ぶんの文字数概算 */
 export const FIELD_PROMPT_OVERHEAD_CHARS = 120;
