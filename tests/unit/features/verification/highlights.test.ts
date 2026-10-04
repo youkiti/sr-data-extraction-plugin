@@ -57,6 +57,20 @@ function makeEvidence(overrides: Partial<Evidence> = {}): Evidence {
 }
 
 describe('buildDocumentHighlights', () => {
+  test('別ページにある断片を引用別キーで描画し、fuzzy は保存された照合ページを使う', () => {
+    const evidence = [
+      makeEvidence({ quoteSeq: 1, quote: 'Age, M (SD)', page: 1 }),
+      makeEvidence({ evidenceId: 'ev-2', quoteSeq: 2, quote: '46.53 (6.31)', page: 5, anchorStatus: 'fuzzy' }),
+    ];
+    const highlights = buildDocumentHighlights('doc-1', evidence, [
+      buildPage(1, 'Age, M (SD)'), buildPage(5, '46.53 (6.32)'),
+    ]);
+    expect(highlights).toHaveLength(2);
+    expect(highlights.map((h) => h.cellKey)).toEqual([cellKeyOf('f-1', '-'), cellKeyOf('f-1', '-')]);
+    expect(new Set(highlights.map((h) => h.quoteKey)).size).toBe(2);
+    expect(highlights.map((h) => h.occurrences.map((o) => o.page))).toEqual([[1], [5]]);
+    expect(highlights.every((h) => h.occurrences[0]!.rects.length > 0)).toBe(true);
+  });
   const pages = [
     buildPage(1, 'in this trial mortality was 12 percent overall'),
     buildPage(2, 'we repeat: mortality was 12 percent in both arms'),

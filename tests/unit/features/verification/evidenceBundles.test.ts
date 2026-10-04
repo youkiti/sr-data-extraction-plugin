@@ -16,6 +16,14 @@ test('空配列・通常セルは後勝ちで引用一覧は空', () => {
   expect([...bundleEvidence([row(), latest]).values()]).toEqual([{ evidence: latest, quotes: [] }]);
 });
 
+test('テーマの無い断片も同じ run のセルへ束ね、先頭を代表にする', () => {
+  const first = row({ evidenceId: 'first', quoteSeq: 1, quote: 'Age, M (SD)', value: '46.53', page: 1 });
+  const second = row({ evidenceId: 'second', quoteSeq: 2, quote: '46.53 (6.31)', value: '46.53', page: 5 });
+  expect([...bundleEvidence([row({ runId: 'old' }), first, second]).values()]).toEqual([
+    { evidence: first, quotes: [first, second] },
+  ]);
+});
+
 test('最後の行の run だけを seq ごとに後勝ちにして昇順に束ねる', () => {
   const first = row({ quoteSeq: 1, evidenceId: 'first' });
   const second = row({ quoteSeq: 2, evidenceId: 'second' });

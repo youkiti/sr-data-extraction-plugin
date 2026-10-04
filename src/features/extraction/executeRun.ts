@@ -29,6 +29,7 @@ import type {
 } from '../../lib/llm/LLMProvider';
 import { generateUuid } from '../../utils/uuid';
 import { anchorQuote } from '../anchoring/anchorQuote';
+import { anchorQuoteSegments } from '../anchoring/anchorQuoteSegments';
 import { normalizeText } from '../anchoring/normalizeText';
 import { detectArmCompletenessWarning } from './armCompleteness';
 import type { PlannedBatch, RunPlan } from './planRun';
@@ -246,8 +247,11 @@ function toDetail(err: unknown): string {
  * かつ box_2d の検証（validateBox）を通過し、かつ page ヒントがあるときだけ書く。
  * それ以外（テキスト文書由来・box 欠落・box 不正・page 欠落）は両方 null に落とす
  * （bbox は機械検証できないため、他条件は緩めず厳格に AND を取る）
+ *
+ * 引用全体の照合が failed の通常引用（quoteSeq なし）は断片照合（§5-2。issue #294）を試し、
+ * 全断片が照合できたときだけ、全体の行の代わりに断片ごとの行（quoteSeq 付き）を返す
  */
-function buildEvidenceRow(
+function buildEvidenceRows(
   item: ValidatedAiItem,
   runId: string,
   studyId: string,
@@ -255,13 +259,37 @@ function buildEvidenceRow(
   normalizedPages: NormalizedPage[] | null,
   targetIsImage: boolean,
   uuid: () => string,
-): Evidence {
+): Evidence[] {
   const anchorStatus =
     item.quote === null || normalizedPages === null
       ? null
       : anchorQuote(normalizeText(item.quote), normalizedPages, item.page).status;
+  if (anchorStatus === 'failed' && item.quoteSeq === null) {
+    const segments = anchorQuoteSegments(item.quote as string, normalizedPages as NormalizedPage[], item.page);
+    if (segments !== null) {
+      return segments.map((segment, index) => ({
+        evidenceId: uuid(),
+        runId,
+        studyId,
+        documentId,
+        fieldId: item.fieldId,
+        entityKey: item.entityKey,
+        value: item.value,
+        notReported: item.notReported,
+        quote: segment.quote,
+        page: segment.anchor.page,
+        confidence: item.confidence,
+        anchorStatus: segment.anchor.status,
+        bboxPage: null,
+        bbox: null,
+        relocatedFrom: null,
+        quoteTheme: null,
+        quoteSeq: index + 1,
+      }));
+    }
+  }
   const hasBbox = targetIsImage && item.box !== null && item.page !== null;
-  return {
+  return [{
     evidenceId: uuid(),
     runId,
     studyId,
@@ -280,7 +308,7 @@ function buildEvidenceRow(
     relocatedFrom: null,
     quoteTheme: item.quoteTheme,
     quoteSeq: item.quoteSeq,
-  };
+  }];
 }
 
 /**
@@ -729,9 +757,9 @@ export async function executeRun(
 
     // document_index（1..resolved.length）が指す文書でアンカリングし、その documentId を Evidence に書く。
     // 画像入力（pdf_native）の文書にはテキスト層が無いため normalizedPages が無く、anchorStatus は null になる
-    const rows = validated.items.map((item) => {
+    const rows = validated.items.flatMap((item) => {
       const target = resolved[item.documentIndex - 1] as ResolvedDocument;
-      return buildEvidenceRow(
+      return buildEvidenceRows(
         item,
         input.runId,
         batch.studyId,

@@ -11,6 +11,12 @@ test('裁定の代表は最新 run の最小 seq の引用になる', () => {
   expect([...indexEvidenceByCellKey([evidence({ runId: 'old' }), first, second]).values()]).toEqual([first]);
 });
 
+test('テーマの無い断片も先頭引用と元の値を裁定の代表にする', () => {
+  const first = evidence({ quoteSeq: 1, quote: 'Age, M (SD)', value: '46.53' });
+  const second = evidence({ quoteSeq: 2, evidenceId: 'second', quote: '46.53 (6.31)', value: '46.53', page: 5 });
+  expect([...indexEvidenceByCellKey([first, second]).values()]).toEqual([first]);
+});
+
 function field(overrides: Partial<SchemaField> = {}): SchemaField {
   return {
     maxQuotes: null,

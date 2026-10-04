@@ -19,7 +19,7 @@ test('引用一覧はテーマ・全文・引用別ジャンプと失敗時検�
   const first = makeEvidence({ quoteSeq: 1, quoteTheme: 'テーマ', quote: 'first' });
   const second = makeEvidence({ quoteSeq: 2, quote: 'second', anchorStatus: 'failed' });
   const third = makeEvidence({ quoteSeq: 3, quote: null, anchorStatus: 'failed' });
-  const cell = makeCell({ field: makeField({ fieldName: 'themes' }), evidence: first, quotes: [first, second, third] });
+  const cell = makeCell({ field: makeField({ fieldName: 'themes', maxQuotes: 3 }), evidence: first, quotes: [first, second, third] });
   const model = makeModel({
     canRelocateQuote: true,
     highlightInfo: new Map([[quoteKeyOf(first), { matchCount: 2, matchIndex: 0 }]]),
@@ -41,6 +41,28 @@ test('引用一覧はテーマ・全文・引用別ジャンプと失敗時検�
 });
 
 const mockInitialize = jest.fn();
+
+test.each([null, 2])('引用一覧のテーマ名は項目定義が複数引用のときだけ表示する: %j', (maxQuotes) => {
+  const quotes = [
+    makeEvidence({ evidenceId: 'first', quoteSeq: 1, quote: 'Sleep efficiency (%)' }),
+    makeEvidence({ evidenceId: 'second', quoteSeq: 2, quote: 'CBT-I 66.12 (1.37)', page: 5 }),
+  ];
+  const cell = makeCell({ field: makeField({ maxQuotes }), evidence: quotes[0]!, quotes });
+  const handlers = makeHandlers();
+  const root = renderCell(cell, makeModel({
+    canRelocateQuote: true,
+    highlightInfo: new Map(quotes.map((quote) => [quoteKeyOf(quote), { matchCount: 1, matchIndex: 0 }])),
+  }), handlers);
+  expect(root.querySelectorAll('.verify__quotes-theme')).toHaveLength(maxQuotes === null ? 0 : 2);
+  expect(root.textContent).toContain('引用 2 件');
+  const buttons = root.querySelectorAll<HTMLButtonElement>('.verify__quote-jump');
+  expect(buttons).toHaveLength(2);
+  buttons.forEach((button, index) => {
+    button.click();
+    expect(handlers.onJump).toHaveBeenLastCalledWith(quoteKeyOf(quotes[index]!));
+  });
+  expect(root.querySelector('.verify__quote-relocate')).toBeNull();
+});
 const mockParse = jest.fn();
 const mockRender = jest.fn();
 

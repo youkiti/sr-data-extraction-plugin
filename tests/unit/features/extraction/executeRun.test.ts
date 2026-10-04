@@ -311,6 +311,63 @@ const NOT_REPORTED_ITEM = {
   confidence: null,
 };
 
+describe('離れた引用断片の保存', () => {
+  const heading = 'Sleep efficiency (%)';
+  const data = 'CBT-I 66.12 (1.37) 82.64 (1.35)';
+  const plan = makePlan([makeBatch({ studyId: 'd1', fieldIds: ['f_design'] })]);
+
+  test.each(['exact', 'normalized', 'fuzzy'] as const)('断片ごとの照合結果とページを保存する: %s', async (status) => {
+    const page = status === 'exact' ? 2 : 5;
+    const { provider } = providerOf([chatResponse([{ ...DESIGN_ITEM, quote: `${heading}\n${data}` }])]);
+    const { deps, saved, loadPages } = makeDeps(provider);
+    loadPages.mockResolvedValue([
+      { page: 1, text: heading },
+      { page, text: status === 'fuzzy' ? data.replace('66.12', '66.13') : data },
+    ]);
+    const result = await execute({ runId: 'run-1', plan, fields: FIELDS }, deps);
+    const common = {
+      runId: 'run-1', studyId: 'd1', documentId: 'd1', fieldId: 'f_design', entityKey: '-',
+      value: DESIGN_ITEM.value, notReported: false, confidence: 'high',
+      bboxPage: null, bbox: null, relocatedFrom: null, quoteTheme: null,
+    };
+    expect(result.evidence).toEqual([
+      { ...common, evidenceId: 'ev-1', quote: heading, quoteSeq: 1, page: 1, anchorStatus: 'exact' },
+      { ...common, evidenceId: 'ev-2', quote: data, quoteSeq: 2, page, anchorStatus: status },
+    ]);
+    expect(saved.flat()).toEqual(result.evidence);
+  });
+
+  test.each([null, 2])('一部失敗した通常引用・max_quotes の引用は分割しない: %j', async (maxQuotes) => {
+    const quote = maxQuotes === null ? `${heading}\ncompletely missing content` : `${heading}\n${data}`;
+    const { provider } = providerOf([chatResponse([{ ...DESIGN_ITEM, quote }])]);
+    const { deps, loadPages } = makeDeps(provider);
+    loadPages.mockResolvedValue([{ page: 1, text: heading }, { page: 5, text: data }]);
+    const result = await execute({ runId: 'run-1', plan, fields: [{ ...STUDY_FIELD, maxQuotes }] }, deps);
+    expect(result.evidence).toHaveLength(1);
+    expect(result.evidence[0]).toMatchObject({
+      quote, quoteSeq: maxQuotes === null ? null : 1, page: 1, anchorStatus: 'failed',
+      value: DESIGN_ITEM.value,
+    });
+  });
+
+  test.each(['exact', 'normalized', 'fuzzy'] as const)('全体照合成功時は生の引用とヒントを含め従来の 1 行を保持する: %s', async (status) => {
+    const quote = `${heading}\n${data}`;
+    const { provider } = providerOf([chatResponse([{ ...DESIGN_ITEM, quote }])]);
+    const { deps, loadPages } = makeDeps(provider);
+    loadPages.mockResolvedValue([{
+      page: status === 'exact' ? 1 : 5,
+      text: status === 'fuzzy' ? quote.replace('66.12', '66.13') : quote,
+    }]);
+    const result = await execute({ runId: 'run-1', plan, fields: FIELDS }, deps);
+    expect(result.evidence).toEqual([{
+      evidenceId: 'ev-1', runId: 'run-1', studyId: 'd1', documentId: 'd1', fieldId: 'f_design',
+      entityKey: '-', value: DESIGN_ITEM.value, notReported: false, quote, page: 1,
+      confidence: 'high', anchorStatus: status, bboxPage: null, bbox: null,
+      relocatedFrom: null, quoteTheme: null, quoteSeq: null,
+    }]);
+  });
+});
+
 describe('executeRun の入力検証', () => {
   test('plan と異なる schema_version の項目が混ざっていたら投げる', async () => {
     const { provider } = providerOf([]);

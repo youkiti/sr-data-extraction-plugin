@@ -39,6 +39,18 @@ test('引用 JSON は選択 run の束を昇順に添付し、通常は空・根
   expect(dataRows(missing.csv)[0]?.at(-1)).toBe('.');
 });
 
+test('断片のセルは元の値と先頭引用を保ち、quotes_json に全断片を出す', () => {
+  const first = evidence('first', 'r', 'd1', 'f1', '-', { value: '46.53', quote: 'Age, M (SD)', quoteSeq: 1, page: 1 });
+  const second = evidence('second', 'r', 'd1', 'f1', '-', { value: '46.53', quote: '46.53 (6.31)', quoteSeq: 2, page: 5, anchorStatus: 'fuzzy' });
+  const result = buildAuditCsv([study('d1', 'study')], [], [first, second], [run('r', 1, 't1')], [field('f1', 'age', 1)]);
+  expect(result.undecidedCellCount).toBe(1);
+  expect(result.csv).toContain(',r,first,46.53,false,"Age, M (SD)",1,');
+  const json = JSON.stringify([
+    { seq: 1, theme: null, quote: first.quote, page: 1, document_id: first.documentId, anchor_status: 'exact' },
+    { seq: 2, theme: null, quote: second.quote, page: 5, document_id: second.documentId, anchor_status: 'fuzzy' },
+  ]);
+  expect(result.csv.endsWith(`,"${json.replace(/"/g, '""')}"\r\n`)).toBe(true);
+});
 /** 構造的欠損トークン（可読性のための短縮名） */
 const NA = AUDIT_MISSING_TOKEN;
 /** 構造的欠損の Evidence 列ブロック（run_id〜anchor_status の 8 列 + bbox 5 列 = 13 列。§7.4 PR3） */

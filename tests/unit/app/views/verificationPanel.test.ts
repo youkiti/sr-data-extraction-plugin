@@ -47,10 +47,10 @@ test('テキスト表示で別文書の引用へジャンプすると文書タ�
   panel.dispose();
 });
 
-test('PDF 表示で同じ文書の別引用へジャンプした後のテキスト表示もその引用になる', async () => {
+test.each([2, null])('PDF 表示で同じ文書の別引用・断片へジャンプした後のテキスト表示もその引用になる: %j', async (maxQuotes) => {
   const loadPdfView = jest.fn(makeLoadPdfView([makeDocFixture()]));
   const { panel } = await createPanel({
-    fields: [makeField({ dataType: 'text', maxQuotes: 2 })],
+    fields: [makeField({ dataType: 'text', maxQuotes })],
     evidence: [
       makeEvidence({ quoteSeq: 1, quote: 'mortality' }),
       makeEvidence({ quoteSeq: 2, quote: 'in total' }),
