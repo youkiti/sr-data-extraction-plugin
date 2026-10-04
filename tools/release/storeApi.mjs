@@ -4,6 +4,7 @@
 import { readFileSync, realpathSync } from 'node:fs';
 import { basename, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { inflateRawSync } from 'node:zlib';
 import { parse } from 'dotenv';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
@@ -86,6 +87,57 @@ export function compareVersions(left, right) {
   return 0;
 }
 
+export function readZipVersion(bytes) {
+  const unreadable = () => new StoreError('zip 内の manifest.json から版を読み取れません', 2);
+  try {
+    const checkRange = (offset, length, end = bytes.length) => {
+      if (offset < 0 || length < 0 || offset + length > end) throw unreadable();
+    };
+    let eocd = -1;
+    for (let offset = bytes.length - 22; offset >= Math.max(0, bytes.length - 22 - 0xffff); offset--) {
+      if (bytes.readUInt32LE(offset) === 0x06054b50 && offset + 22 + bytes.readUInt16LE(offset + 20) === bytes.length) {
+        eocd = offset;
+        break;
+      }
+    }
+    if (eocd < 0) throw unreadable();
+    const count = bytes.readUInt16LE(eocd + 10);
+    let offset = bytes.readUInt32LE(eocd + 16);
+    const directoryEnd = offset + bytes.readUInt32LE(eocd + 12);
+    checkRange(offset, directoryEnd - offset, eocd);
+    if (bytes.readUInt16LE(eocd + 4) !== 0 || bytes.readUInt16LE(eocd + 6) !== 0 || bytes.readUInt16LE(eocd + 8) !== count) throw unreadable();
+    let manifest;
+    for (let i = 0; i < count; i++) {
+      checkRange(offset, 46, directoryEnd);
+      if (bytes.readUInt32LE(offset) !== 0x02014b50) throw unreadable();
+      const nameLength = bytes.readUInt16LE(offset + 28);
+      const entryLength = 46 + nameLength + bytes.readUInt16LE(offset + 30) + bytes.readUInt16LE(offset + 32);
+      checkRange(offset, entryLength, directoryEnd);
+      if (bytes.subarray(offset + 46, offset + 46 + nameLength).toString('utf8') === 'manifest.json') {
+        const method = bytes.readUInt16LE(offset + 10);
+        const size = bytes.readUInt32LE(offset + 20);
+        const local = bytes.readUInt32LE(offset + 42);
+        checkRange(local, 30, bytes.readUInt32LE(eocd + 16));
+        if (bytes.readUInt32LE(local) !== 0x04034b50 || (bytes.readUInt16LE(offset + 8) & 1)) throw unreadable();
+        // データ記述子つき zip でも読めるよう、圧縮方式とサイズはセントラルディレクトリから取得する。
+        const start = local + 30 + bytes.readUInt16LE(local + 26) + bytes.readUInt16LE(local + 28);
+        checkRange(start, size, bytes.readUInt32LE(eocd + 16));
+        const data = bytes.subarray(start, start + size);
+        if (method === 0) manifest = data;
+        else if (method === 8) manifest = inflateRawSync(data);
+        else throw unreadable();
+      }
+      offset += entryLength;
+    }
+    if (!manifest || offset !== directoryEnd) throw unreadable();
+    const version = JSON.parse(manifest.toString('utf8').replace(/^\uFEFF/, '')).version;
+    if (typeof version !== 'string') throw unreadable();
+    return version;
+  } catch {
+    throw unreadable();
+  }
+}
+
 export function selectZip(zip, readFile, repoRoot = root) {
   try {
     const path = zip ? resolve(zip) : resolve(repoRoot, 'release', `sr-data-extraction-plugin-${JSON.parse(readFile(resolve(repoRoot, 'package.json'), 'utf8')).version}.zip`);
@@ -93,6 +145,7 @@ export function selectZip(zip, readFile, repoRoot = root) {
     if (!match) throw new StoreError('zip 名は sr-data-extraction-plugin-x.y.z.zip にしてください', 2);
     const bytes = readFile(path);
     if (!bytes.length) throw new StoreError('zip が空です', 2);
+    if (readZipVersion(bytes) !== match[1]) throw new StoreError('zip のファイル名の版と manifest.json の版が一致しません', 2);
     return { path, bytes, version: match[1] };
   } catch (error) {
     if (error instanceof StoreError) throw error;

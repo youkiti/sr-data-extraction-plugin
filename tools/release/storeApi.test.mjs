@@ -2,11 +2,57 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { resolve } from 'node:path';
-import { main, compareVersions, redact, submittableReason } from './storeApi.mjs';
+import { deflateRawSync } from 'node:zlib';
+import { main, compareVersions, redact, submittableReason, readZipVersion, StoreError } from './storeApi.mjs';
+
+function makeZip(entries, method = 0, descriptor = false) {
+  const locals = [], central = [];
+  let offset = 0;
+  for (const [name, content] of entries) {
+    const filename = Buffer.from(name);
+    const data = Buffer.from(content);
+    const compressed = method === 8 ? deflateRawSync(data) : data;
+    const local = Buffer.alloc(30);
+    local.writeUInt32LE(0x04034b50);
+    local.writeUInt16LE(20, 4);
+    local.writeUInt16LE(descriptor ? 8 : 0, 6);
+    local.writeUInt16LE(method, 8);
+    local.writeUInt32LE(descriptor ? 0 : compressed.length, 18);
+    local.writeUInt32LE(descriptor ? 0 : data.length, 22);
+    local.writeUInt16LE(filename.length, 26);
+    const trailer = Buffer.alloc(descriptor ? 16 : 0);
+    if (descriptor) {
+      trailer.writeUInt32LE(0x08074b50);
+      trailer.writeUInt32LE(compressed.length, 8);
+      trailer.writeUInt32LE(data.length, 12);
+    }
+    const entry = Buffer.alloc(46);
+    entry.writeUInt32LE(0x02014b50);
+    entry.writeUInt16LE(20, 4);
+    entry.writeUInt16LE(20, 6);
+    entry.writeUInt16LE(descriptor ? 8 : 0, 8);
+    entry.writeUInt16LE(method, 10);
+    entry.writeUInt32LE(compressed.length, 20);
+    entry.writeUInt32LE(data.length, 24);
+    entry.writeUInt16LE(filename.length, 28);
+    entry.writeUInt32LE(offset, 42);
+    locals.push(local, filename, compressed, trailer);
+    central.push(entry, filename);
+    offset += local.length + filename.length + compressed.length + trailer.length;
+  }
+  const directory = Buffer.concat(central);
+  const end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50);
+  end.writeUInt16LE(entries.length, 8);
+  end.writeUInt16LE(entries.length, 10);
+  end.writeUInt32LE(directory.length, 12);
+  end.writeUInt32LE(offset, 16);
+  return Buffer.concat([...locals, directory, end]);
+}
 
 const env = { CWS_CLIENT_ID: 'client-secret-id', CWS_CLIENT_SECRET: 'client-secret-value', CWS_REFRESH_TOKEN: 'refresh-secret-value', CWS_PUBLISHER_ID: 'publisher-secret-id' };
 const accessToken = 'access-secret-value';
-const zipBytes = Buffer.from([0x50, 0x4b, 3, 4]);
+const zipBytes = makeZip([['manifest.json', '{"version":"0.12.0"}']]);
 const published = { publishedItemRevisionStatus: { state: 'PUBLISHED', distributionChannels: [{ crxVersion: '0.9.0', deployPercentage: 100 }] } };
 const ok = (data, status = 200) => ({ status, ok: status >= 200 && status < 300, json: async () => data });
 const token = () => ok({ access_token: accessToken });
@@ -36,6 +82,60 @@ async function run(args, responses = [], overrides = {}) {
   });
   return { code, calls, logs, waits, reads, text: logs.join('\n') };
 }
+
+test('無圧縮・deflate・データ記述子つき zip から版を読む', () => {
+  for (const method of [0, 8]) {
+    for (const descriptor of [false, true]) {
+      assert.equal(readZipVersion(makeZip([['manifest.json', '{"version":"0.12.0"}']], method, descriptor)), '0.12.0');
+    }
+  }
+});
+
+test('先行エントリと BOM を許容し、ルートの manifest.json だけを読む', () => {
+  assert.equal(readZipVersion(makeZip([['sub/manifest.json', '{"version":"0.11.0"}'], ['manifest.json', '\uFEFF{"version":"0.12.0"}']])), '0.12.0');
+  assert.throws(() => readZipVersion(makeZip([['sub/manifest.json', '{"version":"0.12.0"}']])), (error) => error instanceof StoreError && error.code === 2);
+});
+
+test('壊れた zip・JSON・版の欠落は終了コード 2 で通信しない', async () => {
+  const brokenCentral = Buffer.from(zipBytes);
+  brokenCentral.writeUInt32LE(0, brokenCentral.readUInt32LE(brokenCentral.length - 6));
+  const brokenLocal = Buffer.from(zipBytes);
+  brokenLocal.writeUInt32LE(0);
+  const outOfRange = Buffer.from(zipBytes);
+  outOfRange.writeUInt32LE(0xffffffff, outOfRange.readUInt32LE(outOfRange.length - 6) + 20);
+  for (const bytes of [Buffer.from('zip ではありません'), zipBytes.subarray(0, 12), brokenCentral, brokenLocal, outOfRange,
+    makeZip([['manifest.json', 'JSON ではありません']]), makeZip([['manifest.json', '{}']]),
+    makeZip([['manifest.json', '{"version":12}']]), makeZip([['sub/manifest.json', '{}']]),
+    makeZip([['manifest.json', '{"version":"0.12.0"}']], 99)]) {
+    const result = await run(['submit', '--zip=sr-data-extraction-plugin-0.12.0.zip'], [], { readFile: (path) => path.endsWith('.env') ? '' : bytes });
+    assert.equal(result.code, 2);
+    assert.equal(result.text, 'zip 内の manifest.json から版を読み取れません');
+    assert.equal(result.calls.length, 0);
+  }
+});
+
+for (const dryRun of [false, true]) {
+  test(`版が食い違う zip は submit${dryRun ? ' --dry-run' : ''} で認証前に止まる`, async () => {
+    for (const version of ['0.11.0', '0.12.0.0']) {
+      const bytes = makeZip([['manifest.json', JSON.stringify({ version })]]);
+      const result = await run(['submit', '--zip=sr-data-extraction-plugin-0.12.0.zip', ...(dryRun ? ['--dry-run'] : [])],
+        [token(), ok(published), upload(), publish(), ok(published)], { readFile: (path) => path.endsWith('.env') ? '' : bytes });
+      assert.equal(result.calls.length, 0);
+      assert.equal(result.code, 2);
+      assert.equal(result.text, 'zip のファイル名の版と manifest.json の版が一致しません');
+    }
+  });
+}
+
+test('版が食い違う zip は IN_PROGRESS の応答列でも upload・publish へ進まない', async () => {
+  const bytes = makeZip([['manifest.json', '{"version":"0.11.0"}']]);
+  const result = await run(['submit', '--zip=sr-data-extraction-plugin-0.12.0.zip'],
+    [token(), ok(published), ok({ uploadState: 'IN_PROGRESS' }), ok({ lastAsyncUploadState: 'SUCCEEDED' }), publish(), ok(published)],
+    { readFile: (path) => path.endsWith('.env') ? '' : bytes });
+  assert.deepEqual(result.calls.map((call) => call.url.split('/').pop().split(':').pop()), []);
+  assert.equal(result.code, 2);
+  assert.equal(result.text, 'zip のファイル名の版と manifest.json の版が一致しません');
+});
 
 test('不足キーのみを示し、設定値を漏らさない', async () => {
   for (const key of Object.keys(env)) {
@@ -171,7 +271,7 @@ test('zip 名・欠落・空ファイルを検査し、既定パスは package.j
   const result = await run(['submit', '--dry-run'], [token(), ok(published)]);
   assert.equal(result.code, 0);
   assert.ok(result.reads.includes(resolve('fake-repository/release/sr-data-extraction-plugin-0.12.0.zip')));
-  assert.match(result.text, /4 バイト/);
+  assert.ok(result.text.includes(`${zipBytes.length} バイト`));
   assert.match(result.text, /アップロード → 審査提出/);
   assert.equal(result.calls.length, 2);
   assert.ok(result.calls.every((call) => !/:upload|:publish/.test(call.url)));

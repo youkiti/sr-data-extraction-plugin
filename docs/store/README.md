@@ -91,7 +91,7 @@ npm run release -- <bump> -Submit
 
 `store:status` は読み取り専用。`-- --json` で公開鍵を除いた伏せ字済み JSON、`-- --require-submittable` で提出可否を確認できる。公開停止中・審査中（`PENDING_REVIEW`）・公開待ち（`STAGED`）は提出不可となる。
 
-`store:submit` は再ビルドせず、`package.json` の版に対応する `release/sr-data-extraction-plugin-<version>.zip` を提出する。先に `npm run store:submit -- --dry-run` で認証・提出可否・版・zip を確認できる（アップロード・審査提出は行わない）。別の zip は `-- --zip=<path>` で指定する。ファイル名は `sr-data-extraction-plugin-x.y.z.zip` が必要で、公開中のどのチャネルの版よりも新しい版だけを提出できる。
+`store:submit` は再ビルドせず、`package.json` の版に対応する `release/sr-data-extraction-plugin-<version>.zip` を提出する。先に `npm run store:submit -- --dry-run` で認証・提出可否・版・zip を確認できる（アップロード・審査提出は行わない）。別の zip は `-- --zip=<path>` で指定する。ファイル名は `sr-data-extraction-plugin-x.y.z.zip` が必要で、公開中のどのチャネルの版よりも新しい版だけを提出できる。アップロードの前に zip 内の `manifest.json` の版とファイル名の版を照合し、食い違えば停止する。
 
 通常の `npm run release -- <bump>` は zip 作成と push まで。`-Submit` を付けた場合だけ、バンプ前に認証と提出可否を確認し、push 後にアップロード → 審査提出へ進む。`-NoPush` / `-IncludeKeyPem` とは併用できず、ストアの事前チェックは `-Force` でも解除できない。提出だけが失敗したら、原因を解消して `npm run store:submit` でやり直す（version を上げ直さない）。
 
