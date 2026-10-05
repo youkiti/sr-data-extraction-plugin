@@ -586,6 +586,37 @@ test('確定済み: プロトコルが改訂されていると陳腐化バナー
   await expect(page.locator('#schema-sample-list')).toBeVisible();
 });
 
+test('確定済み: 相談用ドキュメントを Google ドキュメントとして作成し、リンクを新しいタブで開く', async ({ page }) => {
+  const uploads: string[] = [];
+  await page.route('https://sheets.googleapis.com/**', async (route) => {
+    // 項目・実行履歴とも空の表（見出しのみ）を返す。パイロットなしの版として作る
+    const header = route.request().url().includes('ExtractionRuns')
+      ? [...SHEET_HEADERS.ExtractionRuns]
+      : [...SHEET_HEADERS.SchemaFields];
+    await route.fulfill({ json: { values: [header], valueRanges: [{ values: [header] }] } });
+  });
+  await page.route('https://www.googleapis.com/upload/drive/v3/files**', async (route) => {
+    uploads.push(route.request().postData() ?? '');
+    await route.fulfill({ json: { id: 'doc-1', webViewLink: 'https://docs.google.com/document/d/doc-1/edit' } });
+  });
+  await initApp(page, CONFIRMED_SCHEMA_STATE, { schemaVersions: 1 });
+
+  await expect(page.locator('#schema-consult-doc')).toBeVisible();
+  await expect(page.locator('#schema-consult-version')).toHaveValue('1');
+  await page.locator('#schema-consult-create').click();
+
+  const link = page.locator('#schema-consult-link');
+  await expect(link).toHaveAttribute('href', 'https://docs.google.com/document/d/doc-1/edit');
+  await expect(link).toHaveAttribute('target', '_blank');
+  await expect(link).toHaveAttribute('rel', 'noopener');
+  expect(uploads).toHaveLength(1);
+  expect(uploads[0]).toContain('application/vnd.google-apps.document');
+  expect(uploads[0]).toContain('スキーマ v1 相談用');
+  expect(uploads[0]).toContain('この版のパイロット抽出はありません');
+  const results = await new AxeBuilder({ page }).include('#schema-consult-doc').analyze();
+  expect(results.violations).toEqual([]);
+});
+
 test('差分承認画面: 追加は既定チェック・削除候補は既定未チェックで描画され、反映でエディタへ遷移する（issue #197）', async ({
   page,
 }) => {

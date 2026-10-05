@@ -504,6 +504,16 @@ export const enApp: Record<keyof typeof jaApp, string> = {
   'schema.newVersion': 'Create a new version (edit from the current one)',
   'schema.historyTitle': 'Version history',
   'schema.historyDerived': ' / derived from v{parent}',
+  'schema.consultDocTitle': 'Document for consulting co-researchers',
+  'schema.consultDocLead':
+    "Creates a Google Doc in the project's Drive folder that summarizes the selected version's schema fields, the AI's pilot extraction examples, the per-field decision breakdown, and pre-specification settings such as RoB. Share it from Google Docs. Each export creates a new file.",
+  'schema.consultDocVersionLabel': 'Schema version',
+  'schema.consultDocVersionOption': 'v{version}',
+  'schema.consultDocCreate': 'Create consultation document',
+  'schema.consultDocCreating': 'Creating…',
+  'schema.consultDocOpen': 'Open the document (new tab)',
+  'schema.consultDocDone': 'Created.',
+  'schema.consultDocVersionMissing': 'Schema v{version} was not found. Please reload.',
   'schema.redraftTitle': 'Have AI redraft with the new protocol',
   'schema.redraftLead':
     'AI redesigns the table using the latest protocol and sample articles, and shows you the differences from the current version. Existing fields are never removed unless you approve it.',

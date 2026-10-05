@@ -116,6 +116,25 @@ describe('uploadTextFile', () => {
     await uploadTextFile({ name: 'note.txt', content: 'hi', parentId: 'P' }, deps);
     const body = (fetch.mock.calls[0][1] as RequestInit).body as string;
     expect(body).toContain('text/plain; charset=UTF-8');
+    expect(body).not.toContain('"mimeType"');
+  });
+
+  test('targetMimeType を指定するとメタデータの mimeType に入り、content 側は変換元のまま', async () => {
+    const fetch = jest.fn().mockResolvedValue(okJson({ id: 'f', webViewLink: 'https://docs/x' }));
+    const deps = { fetch, getAccessToken: jest.fn().mockResolvedValue('t') };
+    await uploadTextFile(
+      {
+        name: '相談用',
+        content: '<html></html>',
+        parentId: 'P',
+        mimeType: 'text/html',
+        targetMimeType: 'application/vnd.google-apps.document',
+      },
+      deps,
+    );
+    const body = (fetch.mock.calls[0][1] as RequestInit).body as string;
+    expect(body).toContain('"mimeType":"application/vnd.google-apps.document"');
+    expect(body).toContain('text/html; charset=UTF-8');
   });
 });
 

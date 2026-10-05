@@ -101,6 +101,7 @@ describe('createInitialState', () => {
         confirming: false,
         presetDialog: null,
         redraft: null,
+        consultDoc: { version: null, exporting: false, error: null, link: null },
       },
       pilot: {
         selectedStudyIds: [],

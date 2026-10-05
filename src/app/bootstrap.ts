@@ -74,6 +74,7 @@ import {
   updateRobPrespecDialog,
   type SchemaServiceDeps,
 } from './services/schemaService';
+import { exportSchemaConsultDoc, selectConsultDocVersion } from './services/schemaConsultDocService';
 import {
   autoLoadLatestPilotRun,
   initPilotSelection,
@@ -713,6 +714,12 @@ export async function bootstrapApp(
       },
       onCancelRedraft: () => {
         cancelRedraft(store);
+      },
+      onSelectConsultDocVersion: (version) => {
+        selectConsultDocVersion(store, version);
+      },
+      onExportConsultDoc: (version) => {
+        void exportSchemaConsultDoc(store, deps, version);
       },
     },
     pilot: {

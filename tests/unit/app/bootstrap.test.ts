@@ -32,6 +32,12 @@ jest.mock('../../../src/app/services/usageExportService', () => ({
 import { loadUsage, saveBudget } from '../../../src/app/services/usageService';
 import { generateUsageExport, downloadUsageExport } from '../../../src/app/services/usageExportService';
 import { aggregateUsage } from '../../../src/features/usage/aggregateUsage';
+// 相談用ドキュメントの配線テストもサービス呼び出しの委譲だけを見る（実処理は schemaConsultDocService.test.ts）
+jest.mock('../../../src/app/services/schemaConsultDocService', () => ({
+  selectConsultDocVersion: jest.fn(),
+  exportSchemaConsultDoc: jest.fn(),
+}));
+import { exportSchemaConsultDoc, selectConsultDocVersion } from '../../../src/app/services/schemaConsultDocService';
 // #/export の配線テストはサービス呼び出しの委譲だけを見る（実処理は exportService.test.ts）
 jest.mock('../../../src/app/services/exportService', () => ({
   loadExportData: jest.fn(),
@@ -1387,6 +1393,32 @@ describe('bootstrapApp', () => {
     // 移動直後の並びとは異なる結果になることで onSortBySection の配線を確認する
     (document.getElementById('schema-sort-by-section') as HTMLButtonElement).click();
     expect(fieldNamesInOrder()).toEqual(['age', 'nationality', 'design', 'sex']);
+  });
+
+  test('#/schema 相談用ドキュメントの版選択と作成がサービスへ委譲される', async () => {
+    const stub = createWindowStub({
+      currentProject: PROJECT,
+      counts: { protocolVersions: 1 } as AppState['counts'],
+      schema: {
+        versions: [
+          { schemaVersion: 2, parentVersion: 1, protocolVersion: 1, createdByType: 'user_edit', createdAt: 't', createdBy: 'a', note: null },
+          { schemaVersion: 1, parentVersion: null, protocolVersion: 1, createdByType: 'ai_draft', createdAt: 't', createdBy: 'a', note: null },
+        ],
+        currentFields: [],
+      } as unknown as AppState['schema'],
+    });
+    const { deps } = createFakeDeps([[...SHEET_HEADERS.Protocol]]);
+    const store = await bootstrapApp(asWindow(stub), deps);
+    stub.location.hash = '#/schema';
+    stub.fireHashChange();
+    await flush();
+
+    const select = document.getElementById('schema-consult-version') as HTMLSelectElement;
+    select.value = '1';
+    select.dispatchEvent(new Event('change'));
+    expect(selectConsultDocVersion).toHaveBeenCalledWith(store, 1);
+    (document.getElementById('schema-consult-create') as HTMLButtonElement).click();
+    expect(exportSchemaConsultDoc).toHaveBeenCalledWith(store, deps, 2);
   });
 
   test('#/schema 行移動直後の無関係なストア更新でも移動ボタンのフォーカスを保持する', async () => {

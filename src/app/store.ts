@@ -288,6 +288,18 @@ export interface SchemaState {
    * ユーザーが追加 / 変更 / 削除を承認してからエディタへ流し込む
    */
   redraft: RedraftReviewState | null;
+  /** 確定済み画面の「共同研究者との相談用ドキュメント」作成の状態 */
+  consultDoc: ConsultDocState;
+}
+
+/** 相談用ドキュメント（Google ドキュメント）作成の画面状態 */
+export interface ConsultDocState {
+  /** 選択中のスキーマ版。null = 最新版（既定） */
+  version: number | null;
+  exporting: boolean;
+  error: string | null;
+  /** 作成済みドキュメントの webViewLink。null = 未作成 */
+  link: string | null;
 }
 
 /** #/pilot（S6）の画面状態。run の結果と埋め込み検証 UI の素材はタブのセッション内で保持する */
@@ -850,6 +862,7 @@ export function createInitialState(): AppState {
       confirming: false,
       presetDialog: null,
       redraft: null,
+      consultDoc: { version: null, exporting: false, error: null, link: null },
     },
     pilot: {
       selectedStudyIds: [],

@@ -129,6 +129,8 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<PilotViewCallback
         onToggleRedraft: jest.fn(),
         onApplyRedraft: jest.fn(),
         onCancelRedraft: jest.fn(),
+        onSelectConsultDocVersion: jest.fn(),
+        onExportConsultDoc: jest.fn(),
       },
       pilot: callbacks,
       extract: {
