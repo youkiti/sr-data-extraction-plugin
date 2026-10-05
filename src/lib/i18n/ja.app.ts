@@ -498,6 +498,16 @@ export const jaApp = {
   'schema.newVersion': '新しい版を作る(現行版から編集)',
   'schema.historyTitle': '版履歴',
   'schema.historyDerived': ' / v{parent} から派生',
+  'schema.consultDocTitle': '共同研究者との相談用ドキュメント',
+  'schema.consultDocLead':
+    '選んだ版のスキーマ項目、パイロットでの AI の抽出例、項目ごとの判定の内訳、RoB などの事前設定をまとめた Google ドキュメントを、プロジェクトの Drive フォルダに作成します。共有は Google ドキュメント側で行ってください。作成のたびに新しいファイルになります。',
+  'schema.consultDocVersionLabel': 'スキーマ版',
+  'schema.consultDocVersionOption': 'v{version}',
+  'schema.consultDocCreate': '相談用ドキュメントを作成',
+  'schema.consultDocCreating': '作成中…',
+  'schema.consultDocOpen': 'ドキュメントを開く（新しいタブ）',
+  'schema.consultDocDone': '作成しました。',
+  'schema.consultDocVersionMissing': 'スキーマ v{version} が見つかりません。再読み込みしてください。',
   'schema.redraftTitle': '新しいプロトコルで AI に再ドラフトさせる',
   'schema.redraftLead':
     '最新のプロトコルとサンプル論文をもとに AI が表のデザインを作り直し、現行版との差分を提示します。既存の項目は、あなたが承認しない限り消えません。',

@@ -70,6 +70,8 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<SchemaViewCallbac
     onToggleRedraft: jest.fn(),
     onApplyRedraft: jest.fn(),
     onCancelRedraft: jest.fn(),
+    onSelectConsultDocVersion: jest.fn(),
+    onExportConsultDoc: jest.fn(),
   };
   return {
     ctx: {
@@ -1281,6 +1283,63 @@ describe('renderSchemaView', () => {
       expect(callbacks.onRunDraft).toHaveBeenCalledTimes(1);
       // 版履歴の手前に置かれる（版履歴は versions.length > 1 のときだけ出るため、ここは history 無し）
       expect(view.querySelector('#schema-history')).toBeNull();
+    });
+
+    describe('相談用ドキュメント', () => {
+      const consult = (patch: Partial<AppState['schema']['consultDoc']> = {}) =>
+        makeState({
+          versions: [makeVersion(2), makeVersion(1)],
+          currentFields: [makeField()],
+          consultDoc: { version: null, exporting: false, error: null, link: null, ...patch },
+        });
+
+      test('既定は最新版を選択し、ボタンで選択版の作成を依頼する', () => {
+        const { ctx, callbacks } = makeCtx();
+        const view = renderSchemaView(consult(), ctx);
+        const select = view.querySelector('#schema-consult-version') as HTMLSelectElement;
+        expect([...select.options].map((option) => option.textContent)).toEqual(['v2', 'v1']);
+        expect(select.value).toBe('2');
+        expect(view.querySelector('#schema-consult-doc h3')?.textContent).toBe('共同研究者との相談用ドキュメント');
+        expect(view.querySelector('#schema-consult-error')).toBeNull();
+        expect(view.querySelector('#schema-consult-done')).toBeNull();
+        (view.querySelector('#schema-consult-create') as HTMLButtonElement).click();
+        expect(callbacks.onExportConsultDoc).toHaveBeenCalledWith(2);
+        select.value = '1';
+        select.dispatchEvent(new Event('change'));
+        expect(callbacks.onSelectConsultDocVersion).toHaveBeenCalledWith(1);
+      });
+
+      test('選択中の版が一覧に無ければ最新版へ戻し、そのボタンは最新版を依頼する', () => {
+        const { ctx, callbacks } = makeCtx();
+        const view = renderSchemaView(consult({ version: 9 }), ctx);
+        expect((view.querySelector('#schema-consult-version') as HTMLSelectElement).value).toBe('2');
+        (view.querySelector('#schema-consult-create') as HTMLButtonElement).click();
+        expect(callbacks.onExportConsultDoc).toHaveBeenCalledWith(2);
+      });
+
+      test('選択済みの版を反映し、作成中は無効化して文言を変える', () => {
+        const { ctx, callbacks } = makeCtx();
+        const view = renderSchemaView(consult({ version: 1, exporting: true }), ctx);
+        expect((view.querySelector('#schema-consult-version') as HTMLSelectElement).value).toBe('1');
+        expect((view.querySelector('#schema-consult-version') as HTMLSelectElement).disabled).toBe(true);
+        const button = view.querySelector('#schema-consult-create') as HTMLButtonElement;
+        expect(button.disabled).toBe(true);
+        expect(button.textContent).toBe('作成中…');
+        expect(callbacks.onExportConsultDoc).not.toHaveBeenCalled();
+      });
+
+      test('失敗は role=alert、成功は新しいタブで開くリンクを出す', () => {
+        const { ctx } = makeCtx();
+        const failed = renderSchemaView(consult({ error: '権限がありません' }), ctx);
+        const alert = failed.querySelector('#schema-consult-error');
+        expect(alert?.getAttribute('role')).toBe('alert');
+        expect(alert?.textContent).toBe('権限がありません');
+        const done = renderSchemaView(consult({ link: 'https://docs.google.com/document/d/x' }), ctx);
+        const link = done.querySelector('#schema-consult-link') as HTMLAnchorElement;
+        expect(link.getAttribute('href')).toBe('https://docs.google.com/document/d/x');
+        expect(link.getAttribute('target')).toBe('_blank');
+        expect(link.getAttribute('rel')).toBe('noopener');
+      });
     });
   });
 

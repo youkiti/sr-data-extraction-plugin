@@ -167,6 +167,10 @@ export interface SchemaViewCallbacks {
   onApplyRedraft: () => void;
   /** 差分をキャンセルして確定済み画面へ戻る */
   onCancelRedraft: () => void;
+  /** 相談用ドキュメント: 対象のスキーマ版の選択 */
+  onSelectConsultDocVersion: (version: number) => void;
+  /** 相談用ドキュメント: 選択中の版で Google ドキュメントを作成 */
+  onExportConsultDoc: (version: number) => void;
 }
 
 /** #/pilot（S6）のユーザー操作コールバック */

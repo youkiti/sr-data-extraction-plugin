@@ -82,6 +82,8 @@ const stubCtx: ViewContext = {
     onToggleRedraft: jest.fn(),
     onApplyRedraft: jest.fn(),
     onCancelRedraft: jest.fn(),
+    onSelectConsultDocVersion: jest.fn(),
+    onExportConsultDoc: jest.fn(),
   },
   pilot: {
     onToggleStudy: jest.fn(),

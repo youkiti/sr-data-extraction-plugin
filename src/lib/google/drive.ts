@@ -129,14 +129,23 @@ export async function uploadTextFile(
     content: string;
     parentId: string;
     mimeType?: string;
+    /**
+     * Drive 上に作るファイルの種別（メタデータ側の mimeType）。content を text/html で送り
+     * `application/vnd.google-apps.document` を指定すると、Drive が Google ドキュメントへ変換する。
+     * 未指定なら変換せず content の mimeType のまま保存する
+     */
+    targetMimeType?: string;
   },
   deps: GoogleApiDeps
 ): Promise<DriveFileRef> {
   const mimeType = params.mimeType ?? 'text/plain';
-  const metadata = {
+  const metadata: { name: string; parents: string[]; mimeType?: string } = {
     name: params.name,
     parents: [params.parentId],
   };
+  if (params.targetMimeType !== undefined) {
+    metadata.mimeType = params.targetMimeType;
+  }
   const boundary = `boundary-${Math.random().toString(36).slice(2)}`;
   const body =
     `--${boundary}\r\n` +

@@ -219,6 +219,77 @@ function renderRedraftForm(state: AppState, ctx: ViewContext): HTMLElement {
   return el('section', { id: 'schema-redraft-form', className: 'schema__redraft-form' }, children);
 }
 
+/** 確定済み画面: 共同研究者との相談用ドキュメント（Google ドキュメント）の作成 */
+function renderConsultDocSection(
+  versions: readonly SchemaVersion[],
+  latest: SchemaVersion,
+  state: AppState,
+  ctx: ViewContext,
+): HTMLElement {
+  const consultDoc = state.schema.consultDoc;
+  const requested = consultDoc.version;
+  // 選択中の版が一覧に無いときは最新版へ戻す（select に無い版を書き出さない）
+  const selected =
+    requested !== null && versions.some((version) => version.schemaVersion === requested)
+      ? requested
+      : latest.schemaVersion;
+  const select = el('select', {
+    id: 'schema-consult-version',
+    attributes: { 'aria-label': t('schema.consultDocVersionLabel') },
+  });
+  for (const version of versions) {
+    const option = el('option', {
+      text: t('schema.consultDocVersionOption', { version: version.schemaVersion }),
+      attributes: { value: String(version.schemaVersion) },
+    });
+    option.selected = version.schemaVersion === selected;
+    select.append(option);
+  }
+  select.disabled = consultDoc.exporting;
+  select.addEventListener('change', () => ctx.schema.onSelectConsultDocVersion(Number(select.value)));
+
+  const button = el('button', {
+    id: 'schema-consult-create',
+    className: 'schema__primary',
+    text: consultDoc.exporting ? t('schema.consultDocCreating') : t('schema.consultDocCreate'),
+    attributes: { type: 'button' },
+  });
+  button.disabled = consultDoc.exporting;
+  button.addEventListener('click', () => ctx.schema.onExportConsultDoc(selected));
+
+  const children: HTMLElement[] = [
+    el('h3', { text: t('schema.consultDocTitle') }),
+    el('p', { className: 'view__lead', text: t('schema.consultDocLead') }),
+    el('div', { className: 'schema__actions' }, [
+      el('label', { text: t('schema.consultDocVersionLabel') }, [select]),
+      button,
+    ]),
+  ];
+  if (consultDoc.error !== null) {
+    children.push(
+      el('p', {
+        id: 'schema-consult-error',
+        className: 'schema__error',
+        text: consultDoc.error,
+        attributes: { role: 'alert' },
+      }),
+    );
+  }
+  if (consultDoc.link !== null) {
+    children.push(
+      el('p', { id: 'schema-consult-done', className: 'schema__status', attributes: { role: 'status' } }, [
+        el('span', { text: `${t('schema.consultDocDone')} ` }),
+        el('a', {
+          id: 'schema-consult-link',
+          text: t('schema.consultDocOpen'),
+          attributes: { href: consultDoc.link, target: '_blank', rel: 'noopener' },
+        }),
+      ]),
+    );
+  }
+  return el('section', { id: 'schema-consult-doc', className: 'schema__redraft-form schema__consult-doc' }, children);
+}
+
 /** ドラフト生成中: 経過時間つき進捗（store 管理のため他の再描画でも消えない） */
 function renderDraftProgress(schema: SchemaState): HTMLElement {
   return el('p', {
@@ -1258,6 +1329,8 @@ function renderConfirmed(
 
   // 再ドラフト導線（issue #197）: 版履歴の手前に置く
   children.push(renderRedraftForm(state, ctx));
+
+  children.push(renderConsultDocSection(versions, latest, state, ctx));
 
   if (versions.length > 1) {
     const items = versions.map((version) =>
