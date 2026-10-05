@@ -514,6 +514,22 @@ export const enApp: Record<keyof typeof jaApp, string> = {
   'schema.consultDocOpen': 'Open the document (new tab)',
   'schema.consultDocDone': 'Created.',
   'schema.consultDocVersionMissing': 'Schema v{version} was not found. Please reload.',
+  'schema.revertTitle': 'Revert to an earlier version',
+  'schema.revertLead':
+    'Copies the fields of the selected version, shows the differences from the latest version, and then saves them as a new version. Version numbers are not rolled back, and earlier versions are kept. Shared fields keep the same IDs, so their extraction results and decisions stay connected.',
+  'schema.revertVersionLabel': 'Version to revert to',
+  'schema.revertStart': 'Create a new version from this version',
+  'schema.revertLoading': 'Loading…',
+  'schema.revertVersionMissing': 'The fields of schema v{version} were not found. Please reload.',
+  'schema.revertReviewTitle': 'Review the differences for reverting to v{version}',
+  'schema.revertSummary':
+    'Only in the source {added} / Changed {changed} / Only in the latest version {removed} / Unchanged {unchanged}',
+  'schema.revertAddedTitle': 'Fields only in the source version (bring back)',
+  'schema.revertChangedTitle': 'Fields whose settings differ (checked = use the source version settings)',
+  'schema.revertRemovedTitle': 'Fields only in the latest version (checked = remove from the new version)',
+  'schema.revertRemovedNote':
+    'Checked fields are removed from the new version. Their extraction results and decisions stay in the sheet, but they no longer appear on the verification screen or in exports. Uncheck any field you want to keep.',
+  'schema.revertNoteDefault': 'Revert to the contents of v{version}',
   'schema.redraftTitle': 'Have AI redraft with the new protocol',
   'schema.redraftLead':
     'AI redesigns the table using the latest protocol and sample articles, and shows you the differences from the current version. Existing fields are never removed unless you approve it.',

@@ -171,6 +171,10 @@ export interface SchemaViewCallbacks {
   onSelectConsultDocVersion: (version: number) => void;
   /** 相談用ドキュメント: 選択中の版で Google ドキュメントを作成 */
   onExportConsultDoc: (version: number) => void;
+  /** 前の版の内容に戻す（issue #318）: 戻し元の版の選択 */
+  onSelectRevertVersion: (version: number) => void;
+  /** 前の版の内容に戻す: 選択中の版を読み込み、最新版との差分承認画面を開く */
+  onStartRevert: (version: number) => void;
 }
 
 /** #/pilot（S6）のユーザー操作コールバック */

@@ -1,8 +1,11 @@
 // AI 再ドラフト差分ロジック（issue #197 Chunk A）のテスト
 import {
   applyRedraftDiff,
+  applyRevertDiff,
   buildRedraftDiff,
+  buildRevertDiff,
   defaultRedraftSelection,
+  defaultRevertSelection,
   isRedraftSelectionPristine,
   type RedraftDiff,
   type RedraftSelection,
@@ -483,4 +486,96 @@ test('再ドラフトは複数選択を引き継ぎ、消えた許容値を設�
   const empty = makeField({ dataType: 'enum', allowedValues: 'A|B', multiSelect: { exclusiveValues: [], freeTextValues: [] } });
   const unchanged = buildRedraftDiff([empty], [makeRow({ dataType: 'enum', allowedValues: 'A|B' })]);
   expect(applyRedraftDiff(unchanged, defaultRedraftSelection(unchanged))[0]).toMatchObject({ multiSelect: true, exclusiveValues: null, freeTextValues: null });
+});
+
+// 「前の版に戻す」（issue #318）: 戻し元の版と最新版を field_id で突き合わせる
+describe('buildRevertDiff', () => {
+  const kept = makeField({ fieldId: 'f-keep', fieldName: 'keep_me', schemaVersion: 1 });
+  const sourceChanged = makeField({
+    fieldId: 'f-change',
+    fieldName: 'old_name',
+    extractionInstruction: 'Old instruction.',
+    note: 'x'.repeat(10),
+    schemaVersion: 1,
+  });
+  const sourceOnly = makeField({ fieldId: 'f-gone', fieldName: 'dropped_later', schemaVersion: 1 });
+  const latestChanged = makeField({
+    fieldId: 'f-change',
+    fieldName: 'new_name',
+    extractionInstruction: 'New instruction.',
+    note: null,
+    schemaVersion: 3,
+  });
+  const latestOnly = makeField({ fieldId: 'f-new', fieldName: 'added_later', schemaVersion: 3 });
+  const source = [sourceOnly, sourceChanged, kept];
+  const current = [{ ...kept, schemaVersion: 3 }, latestChanged, latestOnly];
+
+  it('field_id で突き合わせ、追加・変更・削除・変更なしに分ける', () => {
+    const diff = buildRevertDiff(current, source);
+    expect(diff.added.map((item) => item.row.fieldId)).toEqual(['f-gone']);
+    expect(diff.removed.map((item) => item.current.fieldId)).toEqual(['f-new']);
+    expect(diff.unchanged.map((field) => field.fieldId)).toEqual(['f-keep']);
+    expect(diff.protectedFields).toEqual([]);
+    expect(diff.currentEntries.map((entry) => entry.kind)).toEqual(['unchanged', 'changed', 'removed']);
+  });
+
+  it('項目名と note の違いも変更として数え、比較の向きは最新版 → 戻し元', () => {
+    const diff = buildRevertDiff(current, source);
+    const [item] = diff.changed;
+    expect(item?.current.fieldId).toBe('f-change');
+    expect(item?.proposed).toMatchObject({ fieldId: 'f-change', fieldName: 'old_name', note: 'x'.repeat(10) });
+    expect(item?.changes).toEqual([
+      { key: 'fieldName', before: 'new_name', after: 'old_name' },
+      { key: 'extractionInstruction', before: 'New instruction.', after: 'Old instruction.' },
+      { key: 'note', before: null, after: 'x'.repeat(10) },
+    ]);
+  });
+
+  it('RoB テンプレート由来の項目も保持扱いにせず、通常の項目として比べる', () => {
+    const rob = makeField({ fieldId: 'f-rob', fieldName: 'rob_d1', entityLevel: 'rob_domain', section: 'risk_of_bias' });
+    const diff = buildRevertDiff([rob], []);
+    expect(diff.protectedFields).toEqual([]);
+    expect(diff.removed.map((item) => item.current.fieldId)).toEqual(['f-rob']);
+  });
+
+  it('既定の選択はすべて採用（削除候補も削除する）', () => {
+    const diff = buildRevertDiff(current, source);
+    expect(defaultRevertSelection(diff)).toEqual({
+      added: { dropped_later: true },
+      changed: { new_name: true },
+      removed: { added_later: true },
+    });
+  });
+
+  it('既定の選択で適用すると、戻し元の版と同じ並び・同じ field_id・同じ note になる', () => {
+    const diff = buildRevertDiff(current, source);
+    const rows = applyRevertDiff(diff, defaultRevertSelection(diff), source);
+    expect(rows.map((row) => [row.fieldId, row.fieldName, row.note])).toEqual([
+      ['f-gone', 'dropped_later', null],
+      ['f-change', 'old_name', 'x'.repeat(10)],
+      ['f-keep', 'keep_me', null],
+    ]);
+    expect(validateEditorRows(rows)).toEqual([]);
+  });
+
+  it('チェックを外した項目は最新版の値のまま残し、残す削除候補は末尾に置く', () => {
+    const diff = buildRevertDiff(current, source);
+    const rows = applyRevertDiff(
+      diff,
+      { added: { dropped_later: false }, changed: { new_name: false }, removed: { added_later: false } },
+      source,
+    );
+    expect(rows.map((row) => [row.fieldId, row.fieldName])).toEqual([
+      ['f-change', 'new_name'],
+      ['f-keep', 'keep_me'],
+      ['f-new', 'added_later'],
+    ]);
+  });
+
+  it('選択に無いキーは採用しない扱いにする', () => {
+    const diff = buildRevertDiff(current, source);
+    const rows = applyRevertDiff(diff, { added: {}, changed: {}, removed: {} }, source);
+    expect(rows.map((row) => row.fieldId)).toEqual(['f-change', 'f-keep', 'f-new']);
+    expect(rows[0]?.fieldName).toBe('new_name');
+  });
 });

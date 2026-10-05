@@ -6,8 +6,14 @@ import { multiSelectConfigOf, splitPipeList } from '../../domain/multiSelect';
 import type { SchemaField } from '../../domain/schemaField';
 import type { SchemaEditorRow } from './types';
 
-/** 差分計算で比較する属性（fieldId / note / aiGenerated は比較しない） */
+/**
+ * 差分計算で比較する属性（fieldId / aiGenerated は比較しない）。
+ * fieldName / note は「前の版に戻す」（issue #318）だけが比較する。AI 再ドラフトは
+ * field_name で突き合わせるため fieldName は常に一致し、note（RoB の事前設定など）は AI が提案しない
+ */
 export type RedraftComparedKey =
+  | 'fieldName'
+  | 'note'
   | 'section'
   | 'fieldLabel'
   | 'entityLevel'
@@ -90,6 +96,8 @@ export interface RedraftDiff {
 /** 比較対象の属性をエディタ表示用の文字列へ変換する（boolean は 'true'/'false'、null はそのまま） */
 type ComparableSource = Pick<
   SchemaField,
+  | 'fieldName'
+  | 'note'
   | 'section'
   | 'fieldLabel'
   | 'entityLevel'
@@ -105,6 +113,10 @@ type ComparableSource = Pick<
 
 function stringifyAttr(key: RedraftComparedKey, source: ComparableSource): string | null {
   switch (key) {
+    case 'fieldName':
+      return source.fieldName.trim();
+    case 'note':
+      return source.note;
     case 'section':
       // saveSchemaVersion.ts は保存時に section を trim する。current 側（＝保存済みの現行版）は
       // 既に trim 済みだが、AI 提案（proposed）は trim 前のままここに渡ってくるため、
@@ -157,9 +169,10 @@ function isProtectedField(field: SchemaField): boolean {
 function computeChanges(
   current: ComparableSource,
   proposed: ComparableSource,
+  keys: readonly RedraftComparedKey[] = COMPARED_KEYS,
 ): RedraftAttributeChange[] {
   const changes: RedraftAttributeChange[] = [];
-  for (const key of COMPARED_KEYS) {
+  for (const key of keys) {
     const before = stringifyAttr(key, current);
     const after = stringifyAttr(key, proposed);
     if (before !== after) {
@@ -378,4 +391,104 @@ export function isRedraftSelectionPristine(diff: RedraftDiff, selection: Redraft
     sortedEntries(selection.changed) === sortedEntries(defaults.changed) &&
     sortedEntries(selection.removed) === sortedEntries(defaults.removed)
   );
+}
+
+/** 「前の版に戻す」（issue #318）で比較する属性。項目名の変更と note（事前設定）の違いも差分に出す */
+const REVERT_COMPARED_KEYS: readonly RedraftComparedKey[] = ['fieldName', ...COMPARED_KEYS, 'note'];
+
+/** 「前の版に戻す」の戻し元（差分承認画面の状態に持たせ、反映時の並び順に使う） */
+export interface RevertSource {
+  sourceVersion: number;
+  sourceFields: readonly SchemaField[];
+}
+
+/**
+ * 戻し元の版（source）と最新版（current）の差分を作る（issue #318）。
+ * 突き合わせキーは field_id（版をまたいで同じ項目を追跡する ID。requirements.md §3.2）。
+ * - current にも source にもある項目: 属性が違えば changed、同じなら unchanged
+ * - current にだけある項目（後の版で足した項目）: removed
+ * - source にだけある項目（後の版で消した項目）: added（field_id は戻し元のまま）
+ * RoB テンプレート由来の項目も通常の項目として扱う（戻すときは RoB の行も戻し元に合わせる）
+ */
+export function buildRevertDiff(
+  current: readonly SchemaField[],
+  source: readonly SchemaField[],
+): RedraftDiff {
+  const sourceById = new Map(source.map((field) => [field.fieldId, field]));
+  const currentIds = new Set(current.map((field) => field.fieldId));
+  const changed: RedraftChangedItem[] = [];
+  const removed: RedraftRemovedItem[] = [];
+  const unchanged: SchemaField[] = [];
+  const currentEntries: RedraftEntry[] = [];
+  for (const field of current) {
+    const sourceField = sourceById.get(field.fieldId);
+    if (sourceField === undefined) {
+      const item: RedraftRemovedItem = { current: field };
+      removed.push(item);
+      currentEntries.push({ kind: 'removed', item });
+      continue;
+    }
+    const changes = computeChanges(field, sourceField, REVERT_COMPARED_KEYS);
+    if (changes.length > 0) {
+      const item: RedraftChangedItem = { current: field, proposed: schemaFieldToEditorRow(sourceField), changes };
+      changed.push(item);
+      currentEntries.push({ kind: 'changed', item });
+    } else {
+      unchanged.push(field);
+      currentEntries.push({ kind: 'unchanged', field });
+    }
+  }
+  const added: RedraftAddedItem[] = source
+    .filter((field) => !currentIds.has(field.fieldId))
+    .map((field) => ({ row: schemaFieldToEditorRow(field) }));
+  return { added, changed, removed, unchanged, protectedFields: [], currentEntries };
+}
+
+/**
+ * 「前の版に戻す」の既定の選択。戻すことが目的なので、追加・変更・削除をすべて採用する
+ * （AI 再ドラフトと違い、削除候補も既定で削除する。issue #318 の決定事項）
+ */
+export function defaultRevertSelection(diff: RedraftDiff): RedraftSelection {
+  const all = (names: readonly string[]): Record<string, boolean> =>
+    Object.fromEntries(names.map((name) => [name.trim(), true]));
+  return {
+    added: all(diff.added.map((item) => item.row.fieldName)),
+    changed: all(diff.changed.map((item) => item.current.fieldName)),
+    removed: all(diff.removed.map((item) => item.current.fieldName)),
+  };
+}
+
+/**
+ * 「前の版に戻す」の選択を適用してエディタ行を返す（issue #318）。
+ * - 並び順は戻し元の版に合わせる。採用しなかった変更は最新版の値のまま同じ位置に置く
+ * - 削除しなかった項目（後の版で足した項目）は末尾に最新版の値で残す
+ * - field_id・note・ai_generated は採用した側の値をそのまま使う（note には RoB の事前設定が入る）
+ */
+export function applyRevertDiff(
+  diff: RedraftDiff,
+  selection: RedraftSelection,
+  source: readonly SchemaField[],
+): SchemaEditorRow[] {
+  const changedById = new Map(diff.changed.map((item) => [item.current.fieldId, item]));
+  const addedIds = new Set(diff.added.map((item) => item.row.fieldId));
+  const rows: SchemaEditorRow[] = [];
+  for (const field of source) {
+    const changedItem = changedById.get(field.fieldId);
+    if (changedItem !== undefined) {
+      const approved = selection.changed[changedItem.current.fieldName.trim()] ?? false;
+      rows.push(schemaFieldToEditorRow(approved ? field : changedItem.current));
+    } else if (addedIds.has(field.fieldId)) {
+      if (selection.added[field.fieldName.trim()] ?? false) {
+        rows.push(schemaFieldToEditorRow(field));
+      }
+    } else {
+      rows.push(schemaFieldToEditorRow(field));
+    }
+  }
+  for (const item of diff.removed) {
+    if (!(selection.removed[item.current.fieldName.trim()] ?? false)) {
+      rows.push(schemaFieldToEditorRow(item.current));
+    }
+  }
+  return rows;
 }

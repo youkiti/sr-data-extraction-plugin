@@ -13,6 +13,7 @@ import { BUILD_DATE } from '../../../src/build-info';
 import { makeField as matrixField, makeRun as matrixRun, makeEvidence as matrixEvidence } from '../features/verification/pilotMatrixFixtures';
 import { emptyPilotMatrix } from '../../../src/app/services/pilotMatrixService';
 import * as reviewSetServices from '../../../src/app/services/reviewSetService';
+import * as schemaServices from '../../../src/app/services/schemaService';
 import { configureApiErrorLog, recordApiErrorLog } from '../../../src/lib/diagnostics/apiErrorLog';
 
 // bootstrap → lib/pdf/loadPdf 経由で pdfjs-dist（ESM 専用）が require されるのを防ぐ
@@ -1419,6 +1420,38 @@ describe('bootstrapApp', () => {
     expect(selectConsultDocVersion).toHaveBeenCalledWith(store, 1);
     (document.getElementById('schema-consult-create') as HTMLButtonElement).click();
     expect(exportSchemaConsultDoc).toHaveBeenCalledWith(store, deps, 2);
+  });
+
+  test('#/schema 前の版に戻す: 版選択と開始がサービスへ委譲される（issue #318）', async () => {
+    const select = jest.spyOn(schemaServices, 'selectRevertVersion');
+    const start = jest.spyOn(schemaServices, 'startRevertFromVersion').mockResolvedValue();
+    const stub = createWindowStub({
+      currentProject: PROJECT,
+      counts: { protocolVersions: 1 } as AppState['counts'],
+      schema: {
+        versions: [
+          { schemaVersion: 3, parentVersion: 2, protocolVersion: 1, createdByType: 'user_edit', createdAt: 't', createdBy: 'a', note: null },
+          { schemaVersion: 2, parentVersion: 1, protocolVersion: 1, createdByType: 'user_edit', createdAt: 't', createdBy: 'a', note: null },
+          { schemaVersion: 1, parentVersion: null, protocolVersion: 1, createdByType: 'ai_draft', createdAt: 't', createdBy: 'a', note: null },
+        ],
+        currentFields: [],
+      } as unknown as AppState['schema'],
+    });
+    const { deps } = createFakeDeps([[...SHEET_HEADERS.Protocol]]);
+    const store = await bootstrapApp(asWindow(stub), deps);
+    stub.location.hash = '#/schema';
+    stub.fireHashChange();
+    await flush();
+
+    const versionSelect = document.getElementById('schema-revert-version') as HTMLSelectElement;
+    versionSelect.value = '1';
+    versionSelect.dispatchEvent(new Event('change'));
+    expect(select).toHaveBeenCalledWith(store, 1);
+    await flush();
+    (document.getElementById('schema-revert-start') as HTMLButtonElement).click();
+    expect(start).toHaveBeenCalledWith(store, deps, 1);
+    select.mockRestore();
+    start.mockRestore();
   });
 
   test('#/schema 行移動直後の無関係なストア更新でも移動ボタンのフォーカスを保持する', async () => {

@@ -617,6 +617,118 @@ test('確定済み: 相談用ドキュメントを Google ドキュメントと�
   expect(results.violations).toEqual([]);
 });
 
+test('確定済み: 前の版の内容に戻す → 差分を確認 → 戻し元を派生元として新しい版を確定する（issue #318）', async ({ page }) => {
+  const fieldRow = (version: number, fieldId: string, fieldName: string, instruction: string): string[] => {
+    const values: Record<string, string> = {
+      schema_version: String(version),
+      field_id: fieldId,
+      field_index: '1',
+      section: 'methods',
+      field_name: fieldName,
+      field_label: fieldName,
+      entity_level: 'study',
+      data_type: 'text',
+      required: 'TRUE',
+      extraction_instruction: instruction,
+      ai_generated: 'TRUE',
+    };
+    return SHEET_HEADERS.SchemaFields.map((name) => values[name] ?? '');
+  };
+  const versionRow = (version: number, parent: string): string[] => [
+    String(version), parent, '1', 'user_edit', '2026-07-01T00:00:00Z', 'e2e@example.com', '',
+  ];
+  const appendBodies: string[] = [];
+  await page.route('https://sheets.googleapis.com/**', async (route) => {
+    const url = decodeURIComponent(route.request().url());
+    if (route.request().method() !== 'GET') {
+      appendBodies.push(route.request().postData() ?? '');
+      await route.fulfill({ json: {} });
+      return;
+    }
+    if (url.includes('batchGet') && url.includes('SchemaFields')) {
+      await route.fulfill({ json: { valueRanges: [{ values: [[...SHEET_HEADERS.SchemaFields]] }] } });
+    } else if (url.includes('SchemaFields')) {
+      await route.fulfill({
+        json: {
+          values: [
+            [...SHEET_HEADERS.SchemaFields],
+            fieldRow(1, 'f-1', 'study_design', 'Old instruction.'),
+            fieldRow(2, 'f-1', 'study_design', 'New instruction.'),
+            fieldRow(2, 'f-2', 'age', 'Report age.'),
+          ],
+        },
+      });
+    } else if (url.includes('Protocol')) {
+      await route.fulfill({ json: { values: [PROTOCOL_HEADERS, PROTOCOL_ROW] } });
+    } else {
+      await route.fulfill({ json: { values: [SCHEMA_VERSIONS_HEADERS, versionRow(1, ''), versionRow(2, '1')] } });
+    }
+  });
+  const field = (fieldId: string, fieldName: string, instruction: string): Record<string, unknown> => ({
+    maxQuotes: null,
+    multiSelect: null,
+    schemaVersion: 2,
+    fieldId,
+    fieldIndex: 1,
+    section: 'methods',
+    fieldName,
+    fieldLabel: fieldName,
+    entityLevel: 'study',
+    dataType: 'text',
+    unit: null,
+    allowedValues: null,
+    required: true,
+    extractionInstruction: instruction,
+    example: null,
+    aiGenerated: true,
+    note: null,
+  });
+  const version = (schemaVersion: number, parentVersion: number | null): Record<string, unknown> => ({
+    schemaVersion,
+    parentVersion,
+    protocolVersion: 1,
+    createdByType: 'user_edit',
+    createdAt: '2026-07-01T00:00:00Z',
+    createdBy: 'e2e@example.com',
+    note: null,
+  });
+  await initApp(
+    page,
+    {
+      ...EMPTY_SCHEMA_STATE,
+      versions: [version(2, 1), version(1, null)],
+      currentFields: [field('f-1', 'study_design', 'New instruction.'), field('f-2', 'age', 'Report age.')],
+    },
+    { schemaVersions: 2 },
+  );
+
+  await expect(page.locator('#schema-revert-version')).toHaveValue('1');
+  const axe = await new AxeBuilder({ page }).include('#schema-revert').analyze();
+  expect(axe.violations).toEqual([]);
+  await page.locator('#schema-revert-start').click();
+
+  await expect(page.locator('#schema-redraft-review h3')).toHaveText('v1 に戻す差分を確認');
+  await expect(page.locator('#schema-redraft-summary')).toHaveText(
+    '戻し元にだけある項目 0 件 / 変更 1 件 / 最新版にだけある項目 1 件 / 変更なし 0 件',
+  );
+  await expect(page.locator('#schema-redraft-removed input')).toBeChecked();
+  const reviewAxe = await new AxeBuilder({ page }).include('#schema-redraft-review').analyze();
+  expect(reviewAxe.violations).toEqual([]);
+  await page.locator('#schema-redraft-apply').click();
+
+  await expect(page.locator('#schema-note')).toHaveValue('v1 の内容に戻す');
+  await page.locator('#schema-confirm').click();
+  await expect(page.locator('.toast').last()).toHaveText('表のデザイン v3 を確定しました（1 項目）');
+  await expect(page.locator('#schema-current-meta')).toContainText('現行版: v3');
+  // SchemaVersions へは派生元 = v1 と改訂理由、SchemaFields へは v1 の抽出指示と同じ field_id で追記する
+  const versionAppend = appendBodies.find((body) => body.includes('v1 の内容に戻す'));
+  expect(versionAppend).toBeDefined();
+  expect(JSON.parse(versionAppend as string).values[0].slice(0, 2)).toEqual([3, 1]);
+  const fieldsAppend = appendBodies.find((body) => body.includes('Old instruction.'));
+  expect(fieldsAppend).toContain('f-1');
+  expect(fieldsAppend).not.toContain('age');
+});
+
 test('差分承認画面: 追加は既定チェック・削除候補は既定未チェックで描画され、反映でエディタへ遷移する（issue #197）', async ({
   page,
 }) => {

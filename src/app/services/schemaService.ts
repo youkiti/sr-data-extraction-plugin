@@ -25,8 +25,11 @@ import {
 } from '../../features/schema/skills/draftSchema';
 import {
   applyRedraftDiff,
+  applyRevertDiff,
   buildRedraftDiff,
+  buildRevertDiff,
   defaultRedraftSelection,
+  defaultRevertSelection,
   isRedraftSelectionPristine,
 } from '../../features/schema/redraftDiff';
 import {
@@ -633,7 +636,57 @@ export function startEditorFromCurrent(store: Store): void {
     })),
     editorErrors: [],
     editorOrigin: 'user_edit',
+    editorParentVersion: null,
   });
+}
+
+/** 「前の版の内容に戻す」: 戻し元の版の選択（読み込み中は変えない。前回のエラーは消す） */
+export function selectRevertVersion(store: Store, version: number): void {
+  const { revertFrom } = store.getState().schema;
+  if (revertFrom.loading) {
+    return;
+  }
+  patchSchema(store, { revertFrom: { ...revertFrom, version, error: null } });
+}
+
+/**
+ * 「前の版の内容に戻す」（issue #318）: 戻し元の版の項目を読み込み、最新版との差分承認画面を開く。
+ * 版の番号は巻き戻さず、差分を反映したエディタから「版として確定」で新しい版を追記する。
+ * 最新版そのものを選んだときは「新しい版を作る」と同じ（差分が無いため）
+ */
+export async function startRevertFromVersion(
+  store: Store,
+  deps: Pick<SchemaServiceDeps, 'google'>,
+  version: number,
+): Promise<void> {
+  const state = store.getState();
+  const project = state.currentProject;
+  const { currentFields, versions, revertFrom } = state.schema;
+  if (!project || currentFields === null || versions === null || revertFrom.loading) {
+    return;
+  }
+  if (versions[0]?.schemaVersion === version) {
+    startEditorFromCurrent(store);
+    return;
+  }
+  patchSchema(store, { revertFrom: { version, loading: true, error: null } });
+  try {
+    const sourceFields = await getSchemaFieldsByVersion(project.spreadsheetId, version, deps.google);
+    if (sourceFields.length === 0) {
+      throw new Error(t('schema.revertVersionMissing', { version }));
+    }
+    const diff = buildRevertDiff(currentFields, sourceFields);
+    patchSchema(store, {
+      revertFrom: { version, loading: false, error: null },
+      redraft: {
+        diff,
+        selection: defaultRevertSelection(diff),
+        revert: { sourceVersion: version, sourceFields },
+      },
+    });
+  } catch (err) {
+    patchSchema(store, { revertFrom: { version, loading: false, error: toMessage(err) } });
+  }
 }
 
 /** エディタを閉じる（下書きは破棄。開いたままの事前設定ダイアログ・差分承認も閉じる） */
@@ -644,6 +697,7 @@ export function cancelEditor(store: Store): void {
     draftError: null,
     presetDialog: null,
     redraft: null,
+    editorParentVersion: null,
   });
 }
 
@@ -680,11 +734,26 @@ export function applyRedraft(store: Store): void {
   if (redraft === null) {
     return;
   }
+  // 「前の版に戻す」（issue #318）: 戻し元の版の並び順で組み立て、確定時の parent_version を
+  // 戻し元にする。created_by_type は user_edit（人が選んだ版の内容を確定するため。新しい値を
+  // 足すと旧版の拡張でシートを読めなくなる）
+  if (redraft.revert !== undefined) {
+    const rows = applyRevertDiff(redraft.diff, redraft.selection, redraft.revert.sourceFields);
+    patchSchema(store, {
+      editorRows: rows,
+      editorErrors: validateEditorRows(rows),
+      editorOrigin: 'user_edit',
+      editorParentVersion: redraft.revert.sourceVersion,
+      redraft: null,
+    });
+    return;
+  }
   const rows = applyRedraftDiff(redraft.diff, redraft.selection);
   patchSchema(store, {
     editorRows: rows,
     editorErrors: validateEditorRows(rows),
     editorOrigin: isRedraftSelectionPristine(redraft.diff, redraft.selection) ? 'ai_draft' : 'user_edit',
+    editorParentVersion: null,
     redraft: null,
   });
 }
@@ -726,7 +795,8 @@ export async function confirmSchema(
       {
         spreadsheetId: project.spreadsheetId,
         rows,
-        parentVersion: state.schema.versions?.[0]?.schemaVersion ?? null,
+        // 「前の版に戻す」（issue #318）でエディタへ入ったときは戻し元の版、それ以外は最新版
+        parentVersion: state.schema.editorParentVersion ?? state.schema.versions?.[0]?.schemaVersion ?? null,
         // 確定時は常に「その時点の最新プロトコル版」を刻む（親版の protocolVersion を
         // 継承しない。issue #197 でユーザーが確定した方針）。継承すると
         // SchemaVersions.protocol_version が単調でなくなり、監査で「どのプロトコルの下で
@@ -765,6 +835,7 @@ export async function confirmSchema(
         currentFields: fields,
         editorRows: null,
         editorErrors: [],
+        editorParentVersion: null,
         draftError: null,
         presetDialog: null,
       },

@@ -12,10 +12,12 @@ import {
   moveEditorRow,
   removeEditorRow,
   runDraftSchema,
+  selectRevertVersion,
   setDraftModel,
   skipRobPrespecDialog,
   sortEditorRowsBySection,
   startEditorFromCurrent,
+  startRevertFromVersion,
   toggleRedraftSelection,
   toggleSampleDocument,
   updateEditorRow,
@@ -1508,5 +1510,157 @@ test.each([
   expect(store.getState().schema.editorRows?.[0]).toMatchObject({
     multiSelect: true, exclusiveValues: multiSelect.exclusiveValues.join('|') || null,
     freeTextValues: multiSelect.freeTextValues.join('|') || null,
+  });
+});
+
+// 「前の版の内容に戻す」（issue #318）
+describe('前の版の内容に戻す（issue #318）', () => {
+  const latestFields = [
+    makeField({ schemaVersion: 3, fieldId: 'f-keep', fieldName: 'keep_me' }),
+    makeField({ schemaVersion: 3, fieldId: 'f-new', fieldName: 'added_later' }),
+  ];
+  const sourceFields = [
+    makeField({ schemaVersion: 1, fieldId: 'f-gone', fieldName: 'dropped_later' }),
+    makeField({ schemaVersion: 1, fieldId: 'f-keep', fieldName: 'keep_me' }),
+  ];
+
+  function seedConfirmed(store: Store): void {
+    store.setState({
+      schema: {
+        ...store.getState().schema,
+        versions: [makeVersion(3), makeVersion(2), makeVersion(1)],
+        currentFields: latestFields,
+      },
+    });
+  }
+
+  describe('selectRevertVersion', () => {
+    test('版を選び、前回のエラーを消す', () => {
+      const store = makeStore();
+      store.setState({
+        schema: { ...store.getState().schema, revertFrom: { version: 2, loading: false, error: 'e' } },
+      });
+      selectRevertVersion(store, 1);
+      expect(store.getState().schema.revertFrom).toEqual({ version: 1, loading: false, error: null });
+    });
+
+    test('読み込み中は変えない', () => {
+      const store = makeStore();
+      store.setState({
+        schema: { ...store.getState().schema, revertFrom: { version: 2, loading: true, error: null } },
+      });
+      selectRevertVersion(store, 1);
+      expect(store.getState().schema.revertFrom.version).toBe(2);
+    });
+  });
+
+  describe('startRevertFromVersion', () => {
+    test('プロジェクト未選択・版未読込・読み込み中は何もしない', async () => {
+      const { deps } = makeDeps();
+      await startRevertFromVersion(makeStore(false), deps, 1);
+      const unloaded = makeStore();
+      await startRevertFromVersion(unloaded, deps, 1);
+      const noVersions = makeStore();
+      noVersions.setState({ schema: { ...noVersions.getState().schema, currentFields: latestFields } });
+      await startRevertFromVersion(noVersions, deps, 1);
+      const busy = makeStore();
+      seedConfirmed(busy);
+      busy.setState({ schema: { ...busy.getState().schema, revertFrom: { version: 1, loading: true, error: null } } });
+      await startRevertFromVersion(busy, deps, 1);
+      expect(getFieldsMock).not.toHaveBeenCalled();
+      expect(busy.getState().schema.redraft).toBeNull();
+    });
+
+    test('最新版を選んだときは「新しい版を作る」と同じくエディタへ直行する', async () => {
+      const store = makeStore();
+      seedConfirmed(store);
+      await startRevertFromVersion(store, makeDeps().deps, 3);
+      const { schema } = store.getState();
+      expect(getFieldsMock).not.toHaveBeenCalled();
+      expect(schema.editorRows?.map((row) => row.fieldId)).toEqual(['f-keep', 'f-new']);
+      expect(schema.editorParentVersion).toBeNull();
+    });
+
+    test('戻し元の版を読み込み、既定ですべて採用の差分承認画面を開く', async () => {
+      const store = makeStore();
+      seedConfirmed(store);
+      getFieldsMock.mockResolvedValue(sourceFields);
+      const { deps } = makeDeps();
+      await startRevertFromVersion(store, deps, 1);
+      expect(getFieldsMock).toHaveBeenCalledWith('sheet-1', 1, deps.google);
+      const { schema } = store.getState();
+      expect(schema.revertFrom).toEqual({ version: 1, loading: false, error: null });
+      expect(schema.redraft?.revert).toEqual({ sourceVersion: 1, sourceFields });
+      expect(schema.redraft?.selection).toEqual({
+        added: { dropped_later: true },
+        changed: {},
+        removed: { added_later: true },
+      });
+    });
+
+    test('戻し元の項目が 0 件・読み込み失敗はカードにエラーを出す', async () => {
+      const store = makeStore();
+      seedConfirmed(store);
+      getFieldsMock.mockResolvedValue([]);
+      await startRevertFromVersion(store, makeDeps().deps, 2);
+      expect(store.getState().schema.revertFrom).toEqual({
+        version: 2,
+        loading: false,
+        error: 'スキーマ v2 の項目が見つかりません。再読み込みしてください。',
+      });
+      getFieldsMock.mockRejectedValue(new Error('sheets down'));
+      await startRevertFromVersion(store, makeDeps().deps, 1);
+      expect(store.getState().schema.revertFrom).toEqual({ version: 1, loading: false, error: 'sheets down' });
+      expect(store.getState().schema.redraft).toBeNull();
+    });
+  });
+
+  describe('反映と確定', () => {
+    async function openRevert(store: Store): Promise<void> {
+      seedConfirmed(store);
+      getFieldsMock.mockResolvedValue(sourceFields);
+      await startRevertFromVersion(store, makeDeps().deps, 1);
+    }
+
+    test('反映すると戻し元の並び順でエディタを開き、確定時の派生元を戻し元にする', async () => {
+      const store = makeStore();
+      await openRevert(store);
+      applyRedraft(store);
+      const { schema } = store.getState();
+      expect(schema.redraft).toBeNull();
+      expect(schema.editorOrigin).toBe('user_edit');
+      expect(schema.editorParentVersion).toBe(1);
+      expect(schema.editorRows?.map((row) => row.fieldId)).toEqual(['f-gone', 'f-keep']);
+
+      store.setState({ protocol: { ...store.getState().protocol, records: [makeProtocol({ version: 2 })] } });
+      saveVersionMock.mockResolvedValue({ version: makeVersion(4, { parentVersion: 1 }), fields: sourceFields });
+      await confirmSchema(store, makeDeps().deps, 'v1 の内容に戻す');
+      expect(saveVersionMock).toHaveBeenCalledWith(
+        expect.objectContaining({ parentVersion: 1, createdByType: 'user_edit', note: 'v1 の内容に戻す' }),
+        expect.anything(),
+      );
+      expect(store.getState().schema.editorParentVersion).toBeNull();
+    });
+
+    test('エディタを閉じる・AI 再ドラフトを反映する・新しい版を作るでは派生元を最新版に戻す', async () => {
+      const store = makeStore();
+      await openRevert(store);
+      applyRedraft(store);
+      cancelEditor(store);
+      expect(store.getState().schema.editorParentVersion).toBeNull();
+
+      await openRevert(store);
+      applyRedraft(store);
+      startEditorFromCurrent(store);
+      expect(store.getState().schema.editorParentVersion).toBeNull();
+
+      store.setState({ schema: { ...store.getState().schema, editorParentVersion: 1 } });
+      const diff = buildRedraftDiff(latestFields, [makeEditorRow({ fieldName: 'keep_me' })]);
+      store.setState({
+        schema: { ...store.getState().schema, redraft: { diff, selection: defaultRedraftSelection(diff) } },
+      });
+      applyRedraft(store);
+      expect(store.getState().schema.editorParentVersion).toBeNull();
+    });
   });
 });

@@ -40,7 +40,7 @@ import type { TiabImportPlan } from '../features/documents/tiabReview';
 import type { DashboardData } from '../features/verification/dashboard';
 import type { LoadedPdfView } from '../features/verification/pdfViewCache';
 import type { PresetDialogState } from '../features/schema/presets/prespecDialog';
-import type { RedraftDiff, RedraftSelection } from '../features/schema/redraftDiff';
+import type { RedraftDiff, RedraftSelection, RevertSource } from '../features/schema/redraftDiff';
 import type { SchemaEditorRow } from '../features/schema/types';
 import type { FieldValidationError } from '../features/schema/validateField';
 import type { VerificationProgress } from '../features/verification/progress';
@@ -255,6 +255,20 @@ export interface ProtocolState {
 export interface RedraftReviewState {
   diff: RedraftDiff;
   selection: RedraftSelection;
+  /**
+   * 「前の版に戻す」（issue #318）の差分のときの戻し元。未設定 = AI 再ドラフトの差分。
+   * 反映時の並び順（戻し元の版の順）と、確定時の parent_version に使う
+   */
+  revert?: RevertSource;
+}
+
+/** 確定済み画面の「前の版の内容に戻す」カードの状態（issue #318） */
+export interface RevertFromState {
+  /** 選択中の戻し元の版。null = 未選択（最新の 1 つ前の版を既定にする） */
+  version: number | null;
+  /** 戻し元の版の項目を読み込み中 */
+  loading: boolean;
+  error: string | null;
 }
 
 /** #/schema（S5）の画面状態 */
@@ -279,6 +293,11 @@ export interface SchemaState {
   editorErrors: FieldValidationError[];
   /** 確定時の created_by_type（AI ドラフト直後 = ai_draft。人が触ったら user_edit） */
   editorOrigin: 'ai_draft' | 'user_edit';
+  /**
+   * 確定時の parent_version。null = 最新版（versions[0]）から派生する通常の改訂。
+   * 「前の版に戻す」（issue #318）でエディタへ入ったときだけ戻し元の版が入る
+   */
+  editorParentVersion: number | null;
   confirming: boolean;
   /** RoB プリセット事前設定ダイアログ（issue #103。ui-states.md §3）。null = 非表示 */
   presetDialog: PresetDialogState | null;
@@ -290,6 +309,8 @@ export interface SchemaState {
   redraft: RedraftReviewState | null;
   /** 確定済み画面の「共同研究者との相談用ドキュメント」作成の状態 */
   consultDoc: ConsultDocState;
+  /** 確定済み画面の「前の版の内容に戻す」の状態（issue #318） */
+  revertFrom: RevertFromState;
 }
 
 /** 相談用ドキュメント（Google ドキュメント）作成の画面状態 */
@@ -859,10 +880,12 @@ export function createInitialState(): AppState {
       editorRows: null,
       editorErrors: [],
       editorOrigin: 'user_edit',
+      editorParentVersion: null,
       confirming: false,
       presetDialog: null,
       redraft: null,
       consultDoc: { version: null, exporting: false, error: null, link: null },
+      revertFrom: { version: null, loading: false, error: null },
     },
     pilot: {
       selectedStudyIds: [],

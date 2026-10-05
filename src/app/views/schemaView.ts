@@ -290,6 +290,70 @@ function renderConsultDocSection(
   return el('section', { id: 'schema-consult-doc', className: 'schema__redraft-form schema__consult-doc' }, children);
 }
 
+/**
+ * 確定済み画面の「前の版の内容に戻す」カード（issue #318）。過去の版（最新版以外）が
+ * 1 つ以上あるときだけ出す。最新版から編集する操作は「新しい版を作る」が担うため選択肢に含めない
+ */
+function renderRevertSection(
+  versions: readonly SchemaVersion[],
+  state: AppState,
+  ctx: ViewContext,
+): HTMLElement | null {
+  const older = versions.slice(1);
+  const fallback = older[0];
+  if (fallback === undefined) {
+    return null;
+  }
+  const revertFrom = state.schema.revertFrom;
+  const requested = revertFrom.version;
+  const selected =
+    requested !== null && older.some((version) => version.schemaVersion === requested)
+      ? requested
+      : fallback.schemaVersion;
+  const select = el('select', {
+    id: 'schema-revert-version',
+    attributes: { 'aria-label': t('schema.revertVersionLabel') },
+  });
+  for (const version of older) {
+    const option = el('option', {
+      text: t('schema.consultDocVersionOption', { version: version.schemaVersion }),
+      attributes: { value: String(version.schemaVersion) },
+    });
+    option.selected = version.schemaVersion === selected;
+    select.append(option);
+  }
+  select.disabled = revertFrom.loading;
+  select.addEventListener('change', () => ctx.schema.onSelectRevertVersion(Number(select.value)));
+
+  const button = el('button', {
+    id: 'schema-revert-start',
+    text: revertFrom.loading ? t('schema.revertLoading') : t('schema.revertStart'),
+    attributes: { type: 'button' },
+  });
+  button.disabled = revertFrom.loading;
+  button.addEventListener('click', () => ctx.schema.onStartRevert(selected));
+
+  const children: HTMLElement[] = [
+    el('h3', { text: t('schema.revertTitle') }),
+    el('p', { className: 'view__lead', text: t('schema.revertLead') }),
+    el('div', { className: 'schema__actions' }, [
+      el('label', { text: t('schema.revertVersionLabel') }, [select]),
+      button,
+    ]),
+  ];
+  if (revertFrom.error !== null) {
+    children.push(
+      el('p', {
+        id: 'schema-revert-error',
+        className: 'schema__error',
+        text: revertFrom.error,
+        attributes: { role: 'alert' },
+      }),
+    );
+  }
+  return el('section', { id: 'schema-revert', className: 'schema__redraft-form schema__revert' }, children);
+}
+
 /** ドラフト生成中: 経過時間つき進捗（store 管理のため他の再描画でも消えない） */
 function renderDraftProgress(schema: SchemaState): HTMLElement {
   return el('p', {
@@ -1176,7 +1240,12 @@ function renderEditor(
       placeholder: t('schema.notePlaceholder'),
       'aria-label': t('schema.noteAria'),
     },
-  });
+  }) as HTMLInputElement;
+  // 「前の版に戻す」（issue #318）でエディタへ入ったときは、戻したことが版の履歴で分かるよう
+  // 改訂理由を初期入力する（利用者は書き換えられる）
+  if (schema.editorParentVersion !== null) {
+    noteInput.value = t('schema.revertNoteDefault', { version: schema.editorParentVersion });
+  }
   const confirmButton = el('button', {
     id: 'schema-confirm',
     className: 'schema__primary schema__confirm',
@@ -1332,6 +1401,11 @@ function renderConfirmed(
 
   children.push(renderConsultDocSection(versions, latest, state, ctx));
 
+  const revertSection = renderRevertSection(versions, state, ctx);
+  if (revertSection !== null) {
+    children.push(revertSection);
+  }
+
   if (versions.length > 1) {
     const items = versions.map((version) =>
       el('li', {
@@ -1389,9 +1463,23 @@ function redraftAttrLabel(key: RedraftComparedKey): string {
     entityLevel: 'entity_level',
     dataType: 'data_type',
     maxQuotes: 'max_quotes',
+    fieldName: 'field_name',
+    note: 'note',
   };
   const messageKey = keys[key];
   return messageKey !== undefined ? t(messageKey) : (literals[key] as string);
+}
+
+/** note（RoB の事前設定の JSON が入る）の差分表示の上限文字数。超えた分は「…」で省く */
+const NOTE_PREVIEW_LENGTH = 80;
+
+function changeValueText(change: RedraftAttributeChange, value: string | null): string {
+  if (value === null) {
+    return '—';
+  }
+  return change.key === 'note' && value.length > NOTE_PREVIEW_LENGTH
+    ? `${value.slice(0, NOTE_PREVIEW_LENGTH)}…`
+    : value;
 }
 
 /** 差分承認画面: 変更項目 1 件の属性別差分リスト（属性名: before → after。null は「—」表示） */
@@ -1403,8 +1491,8 @@ function renderRedraftChangeList(changes: readonly RedraftAttributeChange[]): HT
       el('li', {
         text: t('schema.redraftChangeLine', {
           label: redraftAttrLabel(change.key),
-          before: change.before ?? '—',
-          after: change.after ?? '—',
+          before: changeValueText(change, change.before),
+          after: changeValueText(change, change.after),
         }),
       }),
     ),
@@ -1469,6 +1557,7 @@ function renderRedraftRemoved(
   items: readonly RedraftRemovedItem[],
   selection: Record<string, boolean>,
   ctx: ViewContext,
+  noteKey: MessageKey,
 ): HTMLElement[] {
   if (items.length === 0) {
     return [el('p', { id: 'schema-redraft-removed', text: t('schema.redraftRemovedEmpty') })];
@@ -1476,7 +1565,7 @@ function renderRedraftRemoved(
   const note = el('p', {
     id: 'schema-redraft-removed-note',
     className: 'schema__redraft-note',
-    text: t('schema.redraftRemovedNote'),
+    text: t(noteKey),
   });
   const rows = items.map((item) => {
     const fieldName = item.current.fieldName.trim();
@@ -1499,26 +1588,42 @@ function renderRedraftRemoved(
  * 追加 / 変更 / 削除の承認を経てからエディタへ反映する
  */
 function renderRedraftReview(redraft: RedraftReviewState, ctx: ViewContext): HTMLElement {
-  const { diff, selection } = redraft;
+  const { diff, selection, revert } = redraft;
+  const counts = {
+    added: diff.added.length,
+    changed: diff.changed.length,
+    removed: diff.removed.length,
+    unchanged: diff.unchanged.length,
+  };
+  // 「前の版に戻す」（issue #318）の差分は、同じ部品を見出しと説明だけ替えて使う
+  const heading =
+    revert === undefined
+      ? {
+          title: t('schema.redraftReviewTitle'),
+          summary: t('schema.redraftSummary', { ...counts, protectedCount: diff.protectedFields.length }),
+          added: t('schema.redraftAddedTitle'),
+          changed: t('schema.redraftChangedTitle'),
+          removed: t('schema.redraftRemovedTitle'),
+          removedNote: 'schema.redraftRemovedNote' as MessageKey,
+        }
+      : {
+          title: t('schema.revertReviewTitle', { version: revert.sourceVersion }),
+          summary: t('schema.revertSummary', counts),
+          added: t('schema.revertAddedTitle'),
+          changed: t('schema.revertChangedTitle'),
+          removed: t('schema.revertRemovedTitle'),
+          removedNote: 'schema.revertRemovedNote' as MessageKey,
+        };
 
   const children: HTMLElement[] = [
-    el('h3', { text: t('schema.redraftReviewTitle') }),
-    el('p', {
-      id: 'schema-redraft-summary',
-      text: t('schema.redraftSummary', {
-        added: diff.added.length,
-        changed: diff.changed.length,
-        removed: diff.removed.length,
-        unchanged: diff.unchanged.length,
-        protectedCount: diff.protectedFields.length,
-      }),
-    }),
-    el('h4', { text: t('schema.redraftAddedTitle') }),
+    el('h3', { text: heading.title }),
+    el('p', { id: 'schema-redraft-summary', text: heading.summary }),
+    el('h4', { text: heading.added }),
     renderRedraftAdded(diff.added, selection.added, ctx),
-    el('h4', { text: t('schema.redraftChangedTitle') }),
+    el('h4', { text: heading.changed }),
     renderRedraftChanged(diff.changed, selection.changed, ctx),
-    el('h4', { text: t('schema.redraftRemovedTitle') }),
-    ...renderRedraftRemoved(diff.removed, selection.removed, ctx),
+    el('h4', { text: heading.removed }),
+    ...renderRedraftRemoved(diff.removed, selection.removed, ctx, heading.removedNote),
     el('p', {
       id: 'schema-redraft-unchanged',
       text: t('schema.redraftUnchangedCount', { count: diff.unchanged.length }),
