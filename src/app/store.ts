@@ -41,6 +41,7 @@ import type { DashboardData } from '../features/verification/dashboard';
 import type { LoadedPdfView } from '../features/verification/pdfViewCache';
 import type { PresetDialogState } from '../features/schema/presets/prespecDialog';
 import type { RedraftDiff, RedraftSelection, RevertSource } from '../features/schema/redraftDiff';
+import type { SchemaExportSource } from '../features/schema/schemaTransfer';
 import type { SchemaEditorRow } from '../features/schema/types';
 import type { FieldValidationError } from '../features/schema/validateField';
 import type { VerificationProgress } from '../features/verification/progress';
@@ -260,6 +261,18 @@ export interface RedraftReviewState {
    * 反映時の並び順（戻し元の版の順）と、確定時の parent_version に使う
    */
   revert?: RevertSource;
+  /** ファイルから読み込む差分（issue #316）のときの書き出し元。未設定 = 読み込みではない */
+  imported?: SchemaExportSource;
+}
+
+/** 確定済み画面の「スキーマのファイル（JSON）」カードの状態（issue #316） */
+export interface SchemaTransferState {
+  /** 書き出す版。null = 最新版（既定） */
+  exportVersion: number | null;
+  exporting: boolean;
+  exportError: string | null;
+  importing: boolean;
+  importError: string | null;
 }
 
 /** 確定済み画面の「前の版の内容に戻す」カードの状態（issue #318） */
@@ -298,6 +311,11 @@ export interface SchemaState {
    * 「前の版に戻す」（issue #318）でエディタへ入ったときだけ戻し元の版が入る
    */
   editorParentVersion: number | null;
+  /**
+   * エディタの改訂理由（#schema-note）の初期値。null = 空。
+   * 「前の版に戻す」（issue #318）・ファイルからの読み込み（issue #316）でエディタへ入ったときに入る
+   */
+  editorNoteDefault: string | null;
   confirming: boolean;
   /** RoB プリセット事前設定ダイアログ（issue #103。ui-states.md §3）。null = 非表示 */
   presetDialog: PresetDialogState | null;
@@ -311,6 +329,8 @@ export interface SchemaState {
   consultDoc: ConsultDocState;
   /** 確定済み画面の「前の版の内容に戻す」の状態（issue #318） */
   revertFrom: RevertFromState;
+  /** 確定済み画面の「スキーマのファイル（JSON）」の状態（issue #316） */
+  transfer: SchemaTransferState;
 }
 
 /** 相談用ドキュメント（Google ドキュメント）作成の画面状態 */
@@ -881,11 +901,13 @@ export function createInitialState(): AppState {
       editorErrors: [],
       editorOrigin: 'user_edit',
       editorParentVersion: null,
+      editorNoteDefault: null,
       confirming: false,
       presetDialog: null,
       redraft: null,
       consultDoc: { version: null, exporting: false, error: null, link: null },
       revertFrom: { version: null, loading: false, error: null },
+      transfer: { exportVersion: null, exporting: false, exportError: null, importing: false, importError: null },
     },
     pilot: {
       selectedStudyIds: [],

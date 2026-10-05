@@ -116,6 +116,9 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<ExtractViewCallba
         onExportConsultDoc: jest.fn(),
         onSelectRevertVersion: jest.fn(),
         onStartRevert: jest.fn(),
+        onSelectSchemaExportVersion: jest.fn(),
+        onExportSchemaFile: jest.fn(),
+        onImportSchemaFile: jest.fn(),
       },
       pilot: {
         onToggleStudy: jest.fn(),

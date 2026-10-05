@@ -1,7 +1,9 @@
 // AI 再ドラフト差分ロジック（issue #197 Chunk A）のテスト
 import {
+  applyImportDiff,
   applyRedraftDiff,
   applyRevertDiff,
+  buildImportDiff,
   buildRedraftDiff,
   buildRevertDiff,
   defaultRedraftSelection,
@@ -586,5 +588,80 @@ describe('buildRevertDiff', () => {
     const rows = applyRevertDiff(diff, { added: {}, changed: {}, removed: {} }, source);
     expect(rows.map((row) => row.fieldId)).toEqual(['f-change', 'f-keep', 'f-new']);
     expect(rows[0]?.fieldName).toBe('new_name');
+  });
+});
+
+// ファイルからの読み込み（issue #316）: 最新版と field_name で突き合わせる
+describe('buildImportDiff / applyImportDiff', () => {
+  const current = [
+    makeField({ fieldId: 'f-same', fieldName: 'same', schemaVersion: 2 }),
+    makeField({
+      fieldId: 'f-diff',
+      fieldName: 'diff',
+      dataType: 'enum',
+      allowedValues: 'A|B|NA',
+      multiSelect: { exclusiveValues: ['NA'], freeTextValues: [] },
+      note: null,
+      schemaVersion: 2,
+    }),
+    makeField({ fieldId: 'f-only', fieldName: 'only_latest', entityLevel: 'rob_domain', section: 'risk_of_bias', schemaVersion: 2 }),
+  ];
+  const imported = [
+    makeRow({ fieldName: 'new_field', fieldId: 'ignored-id' }),
+    makeRow({ fieldName: 'same', fieldId: 'other-project-id' }),
+    makeRow({
+      fieldName: 'diff',
+      dataType: 'enum',
+      allowedValues: 'A|B|NA',
+      multiSelect: true,
+      exclusiveValues: 'NA',
+      freeTextValues: null,
+      note: '{"type":"rob2_prespec"}',
+      aiGenerated: false,
+    }),
+    makeRow({ fieldName: 'new_field', fieldLabel: '2 件目は捨てる' }),
+  ];
+
+  test('同名は比べ（複数選択の設定は同じ形に直して比べる）、無いものは追加・削除候補にする。RoB も通常の項目', () => {
+    const diff = buildImportDiff(current, imported);
+    expect(diff.unchanged.map((field) => field.fieldId)).toEqual(['f-same']);
+    expect(diff.changed).toHaveLength(1);
+    expect(diff.changed[0]?.changes).toEqual([{ key: 'note', before: null, after: '{"type":"rob2_prespec"}' }]);
+    expect(diff.changed[0]?.proposed.fieldId).toBe('f-diff');
+    expect(diff.removed.map((item) => item.current.fieldId)).toEqual(['f-only']);
+    expect(diff.protectedFields).toEqual([]);
+    expect(diff.added.map((item) => [item.row.fieldName, item.row.fieldId, item.row.fieldLabel])).toEqual([
+      ['new_field', null, '研究デザイン'],
+    ]);
+  });
+
+  test('既定の選択（追加・変更は採用、削除候補は残す）で、最新版の並びを保ち追加分を末尾に置く', () => {
+    const diff = buildImportDiff(current, imported);
+    const rows = applyImportDiff(diff, defaultRedraftSelection(diff));
+    expect(rows.map((row) => [row.fieldId, row.fieldName, row.note])).toEqual([
+      ['f-same', 'same', null],
+      ['f-diff', 'diff', '{"type":"rob2_prespec"}'],
+      ['f-only', 'only_latest', null],
+      [null, 'new_field', null],
+    ]);
+    expect(rows[1]?.aiGenerated).toBe(false);
+  });
+
+  test('変更を採用しない・削除候補を消す・追加しない選択も反映する', () => {
+    const diff = buildImportDiff(current, imported);
+    const rows = applyImportDiff(diff, {
+      added: { new_field: false },
+      changed: { diff: false },
+      removed: { only_latest: true },
+    });
+    expect(rows.map((row) => [row.fieldId, row.note])).toEqual([
+      ['f-same', null],
+      ['f-diff', null],
+    ]);
+    expect(applyImportDiff(diff, { added: {}, changed: {}, removed: {} }).map((row) => row.fieldId)).toEqual([
+      'f-same',
+      'f-diff',
+      'f-only',
+    ]);
   });
 });

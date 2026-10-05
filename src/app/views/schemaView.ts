@@ -189,6 +189,13 @@ function renderDraftForm(state: AppState, ctx: ViewContext): HTMLElement {
   });
   runButton.addEventListener('click', () => ctx.schema.onRunDraft());
   children.push(el('div', { className: 'schema__actions' }, [runButton]));
+  // 別のプロジェクトで書き出したスキーマから始める（issue #316）
+  children.push(
+    el('div', { id: 'schema-draft-import', className: 'schema__draft-import' }, [
+      el('p', { className: 'view__lead', text: t('schema.transferDraftLead') }),
+      ...renderSchemaImportField(state, ctx),
+    ]),
+  );
 
   return el('div', { id: 'schema-draft-form', className: 'schema__draft-form' }, children);
 }
@@ -288,6 +295,96 @@ function renderConsultDocSection(
     );
   }
   return el('section', { id: 'schema-consult-doc', className: 'schema__redraft-form schema__consult-doc' }, children);
+}
+
+/** JSON ファイルの読み込み欄（ドラフト前の画面と確定済み画面のカードで共有。issue #316） */
+function renderSchemaImportField(state: AppState, ctx: ViewContext): HTMLElement[] {
+  const transfer = state.schema.transfer;
+  const input = el('input', {
+    id: 'schema-import-file',
+    attributes: { type: 'file', accept: '.json,application/json' },
+  }) as HTMLInputElement;
+  input.disabled = transfer.importing;
+  input.addEventListener('change', () => {
+    const file = input.files?.[0];
+    if (file !== undefined) {
+      ctx.schema.onImportSchemaFile(file);
+    }
+  });
+  const children: HTMLElement[] = [
+    el('label', { className: 'schema__field' }, [
+      el('span', { text: transfer.importing ? t('schema.transferImporting') : t('schema.transferImportLabel') }),
+      input,
+    ]),
+  ];
+  if (transfer.importError !== null) {
+    children.push(
+      el('p', {
+        id: 'schema-import-error',
+        className: 'schema__error',
+        text: transfer.importError,
+        attributes: { role: 'alert' },
+      }),
+    );
+  }
+  return children;
+}
+
+/** 確定済み画面の「スキーマのファイル（JSON）」カード（issue #316）: 書き出しと読み込み */
+function renderTransferSection(
+  versions: readonly SchemaVersion[],
+  latest: SchemaVersion,
+  state: AppState,
+  ctx: ViewContext,
+): HTMLElement {
+  const transfer = state.schema.transfer;
+  const requested = transfer.exportVersion;
+  const selected =
+    requested !== null && versions.some((version) => version.schemaVersion === requested)
+      ? requested
+      : latest.schemaVersion;
+  const select = el('select', {
+    id: 'schema-export-version',
+    attributes: { 'aria-label': t('schema.transferExportLabel') },
+  });
+  for (const version of versions) {
+    const option = el('option', {
+      text: t('schema.consultDocVersionOption', { version: version.schemaVersion }),
+      attributes: { value: String(version.schemaVersion) },
+    });
+    option.selected = version.schemaVersion === selected;
+    select.append(option);
+  }
+  select.disabled = transfer.exporting;
+  select.addEventListener('change', () => ctx.schema.onSelectSchemaExportVersion(Number(select.value)));
+  const button = el('button', {
+    id: 'schema-export-file',
+    text: transfer.exporting ? t('schema.transferExporting') : t('schema.transferExport'),
+    attributes: { type: 'button' },
+  });
+  button.disabled = transfer.exporting;
+  button.addEventListener('click', () => ctx.schema.onExportSchemaFile(selected));
+
+  const children: HTMLElement[] = [
+    el('h3', { text: t('schema.transferTitle') }),
+    el('p', { className: 'view__lead', text: t('schema.transferLead') }),
+    el('div', { className: 'schema__actions' }, [
+      el('label', { text: t('schema.transferExportLabel') }, [select]),
+      button,
+    ]),
+  ];
+  if (transfer.exportError !== null) {
+    children.push(
+      el('p', {
+        id: 'schema-export-error',
+        className: 'schema__error',
+        text: transfer.exportError,
+        attributes: { role: 'alert' },
+      }),
+    );
+  }
+  children.push(...renderSchemaImportField(state, ctx));
+  return el('section', { id: 'schema-transfer', className: 'schema__redraft-form schema__transfer' }, children);
 }
 
 /**
@@ -1241,11 +1338,9 @@ function renderEditor(
       'aria-label': t('schema.noteAria'),
     },
   }) as HTMLInputElement;
-  // 「前の版に戻す」（issue #318）でエディタへ入ったときは、戻したことが版の履歴で分かるよう
-  // 改訂理由を初期入力する（利用者は書き換えられる）
-  if (schema.editorParentVersion !== null) {
-    noteInput.value = t('schema.revertNoteDefault', { version: schema.editorParentVersion });
-  }
+  // 「前の版に戻す」（issue #318）・ファイルからの読み込み（issue #316）でエディタへ入ったときは、
+  // 版の履歴で経緯が分かるよう改訂理由を初期入力する（利用者は書き換えられる）
+  noteInput.value = schema.editorNoteDefault ?? '';
   const confirmButton = el('button', {
     id: 'schema-confirm',
     className: 'schema__primary schema__confirm',
@@ -1400,6 +1495,7 @@ function renderConfirmed(
   children.push(renderRedraftForm(state, ctx));
 
   children.push(renderConsultDocSection(versions, latest, state, ctx));
+  children.push(renderTransferSection(versions, latest, state, ctx));
 
   const revertSection = renderRevertSection(versions, state, ctx);
   if (revertSection !== null) {
@@ -1587,7 +1683,7 @@ function renderRedraftRemoved(
  * 追加 / 変更 / 削除の承認を経てからエディタへ反映する
  */
 function renderRedraftReview(redraft: RedraftReviewState, ctx: ViewContext): HTMLElement {
-  const { diff, selection, revert } = redraft;
+  const { diff, selection, revert, imported } = redraft;
   const counts = {
     added: diff.added.length,
     changed: diff.changed.length,
@@ -1596,7 +1692,16 @@ function renderRedraftReview(redraft: RedraftReviewState, ctx: ViewContext): HTM
   };
   // 「前の版に戻す」（issue #318）の差分は、同じ部品を見出しと説明だけ替えて使う
   const heading =
-    revert === undefined
+    imported !== undefined
+      ? {
+          title: t('schema.importReviewTitle'),
+          summary: t('schema.importSummary', counts),
+          added: t('schema.importAddedTitle'),
+          changed: t('schema.importChangedTitle'),
+          removed: t('schema.importRemovedTitle'),
+          removedNote: 'schema.importRemovedNote' as MessageKey,
+        }
+      : revert === undefined
       ? {
           title: t('schema.redraftReviewTitle'),
           summary: t('schema.redraftSummary', { ...counts, protectedCount: diff.protectedFields.length }),
@@ -1616,6 +1721,18 @@ function renderRedraftReview(redraft: RedraftReviewState, ctx: ViewContext): HTM
 
   const children: HTMLElement[] = [
     el('h3', { text: heading.title }),
+    ...(imported === undefined
+      ? []
+      : [
+          el('p', {
+            id: 'schema-import-source',
+            text: t('schema.importSource', {
+              projectName: imported.projectName,
+              version: imported.schemaVersion,
+              exportedAt: imported.exportedAt.slice(0, 10),
+            }),
+          }),
+        ]),
     el('p', { id: 'schema-redraft-summary', text: heading.summary }),
     el('h4', { text: heading.added }),
     renderRedraftAdded(diff.added, selection.added, ctx),

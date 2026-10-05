@@ -44,6 +44,7 @@ import { createQuipsPrespecDialogState } from '../../../../src/features/schema/p
 import { setUiLanguage } from '../../../../src/lib/i18n';
 import type { SchemaEditorRow } from '../../../../src/features/schema/types';
 import {
+  buildImportDiff,
   buildRedraftDiff,
   buildRevertDiff,
   defaultRedraftSelection,
@@ -76,6 +77,9 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<SchemaViewCallbac
     onExportConsultDoc: jest.fn(),
     onSelectRevertVersion: jest.fn(),
     onStartRevert: jest.fn(),
+    onSelectSchemaExportVersion: jest.fn(),
+    onExportSchemaFile: jest.fn(),
+    onImportSchemaFile: jest.fn(),
   };
   return {
     ctx: {
@@ -1828,7 +1832,7 @@ describe('前の版の内容に戻す（issue #318）', () => {
   test('戻してエディタへ入ったときは改訂理由を初期入力する（通常の改訂は空のまま）', () => {
     const { ctx, callbacks } = makeCtx();
     const reverted = renderSchemaView(
-      makeState({ versions: [makeVersion(2), makeVersion(1)], editorRows: [makeEditorRow()], editorParentVersion: 1 }),
+      makeState({ versions: [makeVersion(2), makeVersion(1)], editorRows: [makeEditorRow()], editorParentVersion: 1, editorNoteDefault: 'v1 の内容に戻す' }),
       ctx,
     );
     const note = reverted.querySelector('#schema-note') as HTMLInputElement;
@@ -1837,5 +1841,107 @@ describe('前の版の内容に戻す（issue #318）', () => {
     expect(callbacks.onConfirm).toHaveBeenCalledWith('v1 の内容に戻す');
     const normal = renderSchemaView(makeState({ versions: [makeVersion(1)], editorRows: [makeEditorRow()] }), ctx);
     expect((normal.querySelector('#schema-note') as HTMLInputElement).value).toBe('');
+  });
+});
+
+// スキーマのファイル（JSON。issue #316）
+describe('スキーマのファイル（issue #316）', () => {
+  const transferState = (patch: Partial<AppState['schema']['transfer']> = {}) =>
+    makeState({
+      versions: [makeVersion(2), makeVersion(1)],
+      currentFields: [makeField()],
+      transfer: { exportVersion: null, exporting: false, exportError: null, importing: false, importError: null, ...patch },
+    });
+
+  test('確定済み画面のカード: 既定は最新版。版の選択・書き出しを親へ伝え、エラーは出さない', () => {
+    const { ctx, callbacks } = makeCtx();
+    const view = renderSchemaView(transferState(), ctx);
+    expect(view.querySelector('#schema-transfer h3')?.textContent).toBe('スキーマのファイル（JSON）');
+    const select = view.querySelector('#schema-export-version') as HTMLSelectElement;
+    expect([...select.options].map((option) => option.textContent)).toEqual(['v2', 'v1']);
+    expect(select.value).toBe('2');
+    (view.querySelector('#schema-export-file') as HTMLButtonElement).click();
+    expect(callbacks.onExportSchemaFile).toHaveBeenCalledWith(2);
+    select.value = '1';
+    select.dispatchEvent(new Event('change'));
+    expect(callbacks.onSelectSchemaExportVersion).toHaveBeenCalledWith(1);
+    expect(view.querySelector('#schema-export-error')).toBeNull();
+    expect(view.querySelector('#schema-import-error')).toBeNull();
+  });
+
+  test('選択済みの版を反映し、一覧に無い版は最新版に戻す', () => {
+    const { ctx, callbacks } = makeCtx();
+    const chosen = renderSchemaView(transferState({ exportVersion: 1 }), ctx);
+    expect((chosen.querySelector('#schema-export-version') as HTMLSelectElement).value).toBe('1');
+    const missing = renderSchemaView(transferState({ exportVersion: 9 }), ctx);
+    (missing.querySelector('#schema-export-file') as HTMLButtonElement).click();
+    expect(callbacks.onExportSchemaFile).toHaveBeenCalledWith(2);
+  });
+
+  test('書き出し中・読み込み中は無効化して文言を変え、失敗は role=alert で出す', () => {
+    const { ctx } = makeCtx();
+    const busy = renderSchemaView(transferState({ exporting: true, importing: true }), ctx);
+    const button = busy.querySelector('#schema-export-file') as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    expect(button.textContent).toBe('書き出し中…');
+    expect((busy.querySelector('#schema-export-version') as HTMLSelectElement).disabled).toBe(true);
+    expect((busy.querySelector('#schema-import-file') as HTMLInputElement).disabled).toBe(true);
+    expect(busy.textContent).toContain('読み込み中…');
+    const failed = renderSchemaView(transferState({ exportError: '書けません', importError: '読めません' }), ctx);
+    expect(failed.querySelector('#schema-export-error')?.getAttribute('role')).toBe('alert');
+    expect(failed.querySelector('#schema-export-error')?.textContent).toBe('書けません');
+    expect(failed.querySelector('#schema-import-error')?.textContent).toBe('読めません');
+  });
+
+  test('ファイルを選ぶと親へ渡し、選ばずに閉じたときは何もしない', () => {
+    const { ctx, callbacks } = makeCtx();
+    const view = renderSchemaView(transferState(), ctx);
+    const input = view.querySelector('#schema-import-file') as HTMLInputElement;
+    expect(input.getAttribute('accept')).toBe('.json,application/json');
+    input.dispatchEvent(new Event('change'));
+    expect(callbacks.onImportSchemaFile).not.toHaveBeenCalled();
+    const file = new File(['{}'], 'schema.json', { type: 'application/json' });
+    Object.defineProperty(input, 'files', { value: [file] });
+    input.dispatchEvent(new Event('change'));
+    expect(callbacks.onImportSchemaFile).toHaveBeenCalledWith(file);
+  });
+
+  test('ドラフト前の画面にも読み込み欄を出す', () => {
+    const { ctx } = makeCtx();
+    const view = renderSchemaView(makeState({ versions: [] }), ctx);
+    expect(view.querySelector('#schema-draft-import #schema-import-file')).not.toBeNull();
+    expect(view.querySelector('#schema-draft-import')?.textContent).toContain('別のプロジェクトで書き出したスキーマ');
+  });
+
+  test('差分承認画面は読み込み用の見出し・出所・説明で出す', () => {
+    const current = [makeField({ fieldId: 'f-1', fieldName: 'only_latest' })];
+    const diff = buildImportDiff(current, [makeEditorRow({ fieldName: 'from_file' })]);
+    const { ctx } = makeCtx();
+    const view = renderSchemaView(
+      makeState({
+        versions: [makeVersion(1)],
+        currentFields: current,
+        redraft: {
+          diff,
+          selection: defaultRedraftSelection(diff),
+          imported: {
+            projectName: '別の SR',
+            schemaVersion: 4,
+            exportedAt: '2026-09-30T00:00:00Z',
+            exportedBy: 'a',
+            extractPromptVersion: 12,
+            appVersion: null,
+          },
+        },
+      }),
+      ctx,
+    );
+    expect(view.querySelector('#schema-redraft-review h3')?.textContent).toBe('ファイルから読み込む差分を確認');
+    expect(view.querySelector('#schema-import-source')?.textContent).toBe('ファイル: 別の SR の v4（2026-09-30）');
+    expect(view.querySelector('#schema-redraft-summary')?.textContent).toBe(
+      'ファイルにだけある項目 1 件 / 変更 0 件 / 最新版にだけある項目 1 件 / 変更なし 0 件',
+    );
+    expect(view.querySelector('#schema-redraft-removed-note')?.textContent).toContain('既定では残します');
+    expect((view.querySelector('#schema-redraft-removed input') as HTMLInputElement).checked).toBe(false);
   });
 });
