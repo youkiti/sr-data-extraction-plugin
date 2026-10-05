@@ -12,6 +12,7 @@ import type { ProtocolSubmitInput } from '../../features/protocol/submitInput';
 import type { SchemaPresetKind } from '../../features/schema/presets';
 import type { PresetDialogPatch } from '../../features/schema/presets/prespecDialog';
 import type { SchemaEditorRow } from '../../features/schema/types';
+import type { SchemaImportFile } from '../services/schemaTransferService';
 import type { VerifyLayoutMode, VerifyPaneLayout } from '../../lib/storage/settingsStore';
 import type { ExclusionDialogState } from '../store';
 import type { AskPaperParams } from '../services/askPaperService';
@@ -175,6 +176,12 @@ export interface SchemaViewCallbacks {
   onSelectRevertVersion: (version: number) => void;
   /** 前の版の内容に戻す: 選択中の版を読み込み、最新版との差分承認画面を開く */
   onStartRevert: (version: number) => void;
+  /** スキーマのファイル（issue #316）: 書き出す版の選択 */
+  onSelectSchemaExportVersion: (version: number) => void;
+  /** スキーマのファイル: 選択中の版を JSON でダウンロード */
+  onExportSchemaFile: (version: number) => void;
+  /** スキーマのファイル: 選んだ JSON ファイルを読み込む */
+  onImportSchemaFile: (file: SchemaImportFile) => void;
 }
 
 /** #/pilot（S6）のユーザー操作コールバック */

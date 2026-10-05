@@ -3,6 +3,7 @@
 // 現行スキーマ版（SchemaField[]）を突き合わせて差分を作る純粋関数群。
 // DOM・store・ネットワークには一切依存しない（差分画面の描画・サービス配線は Chunk B）
 import { multiSelectConfigOf, splitPipeList } from '../../domain/multiSelect';
+import type { MultiSelectConfig } from '../../domain/schemaField';
 import type { SchemaField } from '../../domain/schemaField';
 import type { SchemaEditorRow } from './types';
 
@@ -494,6 +495,87 @@ export function applyRevertDiff(
   for (const item of diff.removed) {
     if (!(selection.removed[item.current.fieldName.trim()] ?? false)) {
       rows.push(schemaFieldToEditorRow(item.current));
+    }
+  }
+  return rows;
+}
+
+/** エディタ行の複数選択の設定を SchemaField と同じ形にする（比較用） */
+function rowMultiSelect(row: SchemaEditorRow): MultiSelectConfig | null {
+  return row.dataType === 'enum' && row.multiSelect
+    ? { exclusiveValues: splitPipeList(row.exclusiveValues), freeTextValues: splitPipeList(row.freeTextValues) }
+    : null;
+}
+
+/**
+ * ファイルから読み込んだスキーマ（imported）と最新版（current）の差分を作る（issue #316）。
+ * 突き合わせは field_name（ファイルの field_id は使わない。AI 再ドラフトと同じ規則）。
+ * - 同名の項目: note（事前設定）も含めて比べ、違えば changed（採用すると最新版の field_id を引き継ぐ）
+ * - 最新版にだけある項目: removed（既定は残す）
+ * - ファイルにだけある項目: added（確定時に新しい field_id が振られる）
+ * RoB テンプレート由来の項目も通常の項目として比べる（ファイルの RoB 設定を持ち込めるようにする）
+ */
+export function buildImportDiff(
+  current: readonly SchemaField[],
+  imported: readonly SchemaEditorRow[],
+): RedraftDiff {
+  const importedByName = new Map<string, SchemaEditorRow>();
+  for (const row of imported) {
+    const name = row.fieldName.trim();
+    if (!importedByName.has(name)) {
+      importedByName.set(name, row);
+    }
+  }
+  const changed: RedraftChangedItem[] = [];
+  const removed: RedraftRemovedItem[] = [];
+  const unchanged: SchemaField[] = [];
+  const currentEntries: RedraftEntry[] = [];
+  for (const field of current) {
+    const name = field.fieldName.trim();
+    const row = importedByName.get(name);
+    if (row === undefined) {
+      const item: RedraftRemovedItem = { current: field };
+      removed.push(item);
+      currentEntries.push({ kind: 'removed', item });
+      continue;
+    }
+    importedByName.delete(name);
+    const changes = computeChanges(field, { ...row, multiSelect: rowMultiSelect(row) }, REVERT_COMPARED_KEYS);
+    if (changes.length > 0) {
+      const item: RedraftChangedItem = { current: field, proposed: { ...row, fieldId: field.fieldId }, changes };
+      changed.push(item);
+      currentEntries.push({ kind: 'changed', item });
+    } else {
+      unchanged.push(field);
+      currentEntries.push({ kind: 'unchanged', field });
+    }
+  }
+  const added: RedraftAddedItem[] = Array.from(importedByName.values()).map((row) => ({ row: { ...row, fieldId: null } }));
+  return { added, changed, removed, unchanged, protectedFields: [], currentEntries };
+}
+
+/**
+ * 読み込みの選択を適用してエディタ行を返す（issue #316）。最新版の並び順を保ち、追加分を末尾に置く。
+ * 採用した変更はファイルの設定（note を含む）で最新版の field_id を引き継ぐ
+ */
+export function applyImportDiff(diff: RedraftDiff, selection: RedraftSelection): SchemaEditorRow[] {
+  const rows: SchemaEditorRow[] = [];
+  for (const entry of diff.currentEntries) {
+    if (entry.kind === 'changed') {
+      const approved = selection.changed[entry.item.current.fieldName.trim()] ?? false;
+      rows.push(approved ? { ...entry.item.proposed } : schemaFieldToEditorRow(entry.item.current));
+    } else if (entry.kind === 'removed') {
+      if (!(selection.removed[entry.item.current.fieldName.trim()] ?? false)) {
+        rows.push(schemaFieldToEditorRow(entry.item.current));
+      }
+    } else {
+      // buildImportDiff は protected を作らないため、ここに来るのは unchanged だけ
+      rows.push(schemaFieldToEditorRow(entry.field));
+    }
+  }
+  for (const item of diff.added) {
+    if (selection.added[item.row.fieldName.trim()] ?? false) {
+      rows.push({ ...item.row });
     }
   }
   return rows;

@@ -430,6 +430,20 @@
             </li>
             <li>
               <span class="ja" lang="ja"
+                >確定した版は、確定済みの画面の「スキーマのファイル（JSON）」で JSON ファイルに書き出せます。RoB などの事前設定も含まれ、論文のデータや判定は含まれません。別のプロジェクトでは、同じカード（スキーマがまだ無いときはドラフト前の画面）でそのファイルを読み込みます。スキーマが既にあるプロジェクトでは、最新版との差分（ファイルにだけある項目・設定が違う項目・最新版にだけある項目）を確認してから反映します。最新版にだけある項目は、既定では残ります。同じ名前の項目は、今のプロジェクトの項目として引き継がれます。</span
+              >
+              <span class="en" lang="en"
+                >You can export a confirmed version as a JSON file under “Schema file (JSON)” on the confirmed screen. It
+                includes pre-specification settings such as RoB, but not study data or decisions. In another project,
+                import the file from the same card (or from the screen before drafting if there is no schema yet). If the
+                project already has a schema, you review the differences from the latest version (fields only in the file,
+                fields with different settings, and fields only in the latest version) before applying them. Fields only in
+                the latest version are kept by default. Fields with the same name are carried over as the project's existing
+                fields.</span
+              >
+            </li>
+            <li>
+              <span class="ja" lang="ja"
                 >テキスト型の項目では「複数の引用を許可」を ON にできます（既定は OFF。最大件数は 2〜20）。主に質的なデータ（テーマの抽出など）を取りたいときに使います。AI
                 はテーマごとに根拠の箇所を 1 つずつ引用し、値はテーマ名の一覧（「A; B; C」）になります。検証画面では引用を一覧で確認し、判定は項目ごとに 1
                 回です。AI が拾えなかったテーマは値を修正して書き足し、根拠はメモに書いてください。</span

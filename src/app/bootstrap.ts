@@ -77,6 +77,7 @@ import {
   type SchemaServiceDeps,
 } from './services/schemaService';
 import { exportSchemaConsultDoc, selectConsultDocVersion } from './services/schemaConsultDocService';
+import { exportSchemaFile, importSchemaFile, selectSchemaExportVersion } from './services/schemaTransferService';
 import {
   autoLoadLatestPilotRun,
   initPilotSelection,
@@ -728,6 +729,15 @@ export async function bootstrapApp(
       },
       onStartRevert: (version) => {
         void startRevertFromVersion(store, deps, version);
+      },
+      onSelectSchemaExportVersion: (version) => {
+        selectSchemaExportVersion(store, version);
+      },
+      onExportSchemaFile: (version) => {
+        void exportSchemaFile(store, deps, version);
+      },
+      onImportSchemaFile: (file) => {
+        void importSchemaFile(store, file);
       },
     },
     pilot: {

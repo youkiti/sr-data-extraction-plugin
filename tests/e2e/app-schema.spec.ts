@@ -5,6 +5,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 import { SHEET_HEADERS } from '../../src/domain/sheetsSchema';
+import { serializeSchemaExport } from '../../src/features/schema/schemaTransfer';
 
 const SCHEMA_VERSIONS_HEADERS = [
   'schema_version', 'parent_version', 'protocol_version', 'created_by_type',
@@ -727,6 +728,105 @@ test('確定済み: 前の版の内容に戻す → 差分を確認 → 戻し�
   const fieldsAppend = appendBodies.find((body) => body.includes('Old instruction.'));
   expect(fieldsAppend).toContain('f-1');
   expect(fieldsAppend).not.toContain('age');
+});
+
+const IMPORT_FILE = serializeSchemaExport(
+  [
+    {
+      maxQuotes: null,
+      multiSelect: { exclusiveValues: ['NA'], freeTextValues: ['Other'] },
+      schemaVersion: 4,
+      fieldId: 'other-project-id',
+      fieldIndex: 1,
+      section: 'methods',
+      fieldName: 'data_source',
+      fieldLabel: 'データの取得元',
+      entityLevel: 'study',
+      dataType: 'enum',
+      unit: null,
+      allowedValues: 'Students|Faculty|Other|NA',
+      required: true,
+      extractionInstruction: 'Select all sources.',
+      example: null,
+      aiGenerated: true,
+      note: null,
+    },
+  ],
+  {
+    projectName: '別の SR',
+    schemaVersion: 4,
+    exportedAt: '2026-09-30T00:00:00Z',
+    exportedBy: 'other@example.com',
+    extractPromptVersion: 12,
+    appVersion: '0.13.0',
+  },
+);
+
+test('スキーマのファイル: 確定済みの版を JSON で書き出す（issue #316）', async ({ page }) => {
+  await initApp(page, CONFIRMED_SCHEMA_STATE, { schemaVersions: 1 });
+  await expect(page.locator('#schema-transfer')).toBeVisible();
+  await expect(page.locator('#schema-export-version')).toHaveValue('1');
+  const axe = await new AxeBuilder({ page }).include('#schema-transfer').analyze();
+  expect(axe.violations).toEqual([]);
+  const [download] = await Promise.all([page.waitForEvent('download'), page.locator('#schema-export-file').click()]);
+  expect(download.suggestedFilename()).toMatch(/^schema-v1-E2E-\d{4}-\d{2}-\d{2}\.json$/);
+  const stream = await download.createReadStream();
+  const chunks: Buffer[] = [];
+  for await (const chunk of stream) chunks.push(chunk as Buffer);
+  const json = JSON.parse(Buffer.concat(chunks).toString('utf-8'));
+  expect(json.format).toBe('sr-data-extraction-schema');
+  expect(json.source).toMatchObject({ projectName: 'E2E プロジェクト', schemaVersion: 1, exportedBy: 'e2e@example.com' });
+  expect(json.fields.map((field: { fieldName: string }) => field.fieldName)).toEqual(['study_design']);
+  expect(json.fields[0]).not.toHaveProperty('fieldId');
+});
+
+test('スキーマのファイル: 版が無いプロジェクトはエディタへ直接読み込み、出所を改訂理由にして確定する（issue #316）', async ({ page }) => {
+  const appendBodies: string[] = [];
+  await page.route('https://sheets.googleapis.com/**', async (route) => {
+    const url = route.request().url();
+    if (route.request().method() === 'GET') {
+      if (url.includes('batchGet') && url.includes('SchemaFields')) {
+        await route.fulfill({ json: { valueRanges: [{ values: [[...SHEET_HEADERS.SchemaFields]] }] } });
+      } else if (url.includes('Protocol')) {
+        await route.fulfill({ json: { values: [PROTOCOL_HEADERS, PROTOCOL_ROW] } });
+      } else {
+        await route.fulfill({ json: { values: [SCHEMA_VERSIONS_HEADERS] } });
+      }
+      return;
+    }
+    appendBodies.push(route.request().postData() ?? '');
+    await route.fulfill({ json: {} });
+  });
+  await initApp(page, EMPTY_SCHEMA_STATE);
+  await page.locator('#schema-draft-import #schema-import-file').setInputFiles({
+    name: 'schema.json',
+    mimeType: 'application/json',
+    buffer: Buffer.from(IMPORT_FILE, 'utf-8'),
+  });
+  await expect(page.locator('.toast').last()).toHaveText('ファイルから 1 項目を読み込みました');
+  await expect(page.locator('#schema-note')).toHaveValue('別の SR の v4（2026-09-30）から読み込み');
+  await page.locator('#schema-confirm').click();
+  await expect(page.locator('#schema-current-meta')).toContainText('現行版: v1');
+  const fieldsAppend = appendBodies.find((body) => body.includes('data_source'));
+  expect(fieldsAppend).toBeDefined();
+  expect(fieldsAppend).not.toContain('other-project-id');
+  expect(fieldsAppend).toContain('Other');
+  expect(appendBodies.some((body) => body.includes('別の SR の v4'))).toBe(true);
+});
+
+test('スキーマのファイル: 版があるプロジェクトは差分を確認してから読み込む。読めないファイルは理由を出す（issue #316）', async ({ page }) => {
+  await initApp(page, CONFIRMED_SCHEMA_STATE, { schemaVersions: 1 });
+  const input = page.locator('#schema-transfer #schema-import-file');
+  await input.setInputFiles({ name: 'bad.json', mimeType: 'application/json', buffer: Buffer.from('nope') });
+  await expect(page.locator('#schema-import-error')).toHaveText('JSON として読めませんでした。');
+  await input.setInputFiles({ name: 'schema.json', mimeType: 'application/json', buffer: Buffer.from(IMPORT_FILE, 'utf-8') });
+  await expect(page.locator('#schema-redraft-review h3')).toHaveText('ファイルから読み込む差分を確認');
+  await expect(page.locator('#schema-import-source')).toHaveText('ファイル: 別の SR の v4（2026-09-30）');
+  await expect(page.locator('#schema-redraft-removed input')).not.toBeChecked();
+  const axe = await new AxeBuilder({ page }).include('#schema-redraft-review').analyze();
+  expect(axe.violations).toEqual([]);
+  await page.locator('#schema-redraft-apply').click();
+  await expect(page.locator('#schema-note')).toHaveValue('別の SR の v4（2026-09-30）から読み込み');
 });
 
 test('差分承認画面: 追加は既定チェック・削除候補は既定未チェックで描画され、反映でエディタへ遷移する（issue #197）', async ({

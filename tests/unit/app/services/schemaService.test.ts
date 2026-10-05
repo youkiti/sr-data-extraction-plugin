@@ -1658,6 +1658,7 @@ describe('前の版の内容に戻す（issue #318）', () => {
       expect(schema.redraft).toBeNull();
       expect(schema.editorOrigin).toBe('user_edit');
       expect(schema.editorParentVersion).toBe(1);
+      expect(schema.editorNoteDefault).toBe('v1 の内容に戻す');
       expect(schema.editorRows?.map((row) => row.fieldId)).toEqual(['f-gone', 'f-keep']);
 
       store.setState({ protocol: { ...store.getState().protocol, records: [makeProtocol({ version: 2 })] } });
@@ -1668,6 +1669,7 @@ describe('前の版の内容に戻す（issue #318）', () => {
         expect.anything(),
       );
       expect(store.getState().schema.editorParentVersion).toBeNull();
+      expect(store.getState().schema.editorNoteDefault).toBeNull();
     });
 
     test('エディタを閉じる・AI 再ドラフトを反映する・新しい版を作るでは派生元を最新版に戻す', async () => {

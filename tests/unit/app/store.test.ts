@@ -99,11 +99,13 @@ describe('createInitialState', () => {
         editorErrors: [],
         editorOrigin: 'user_edit',
         editorParentVersion: null,
+        editorNoteDefault: null,
         confirming: false,
         presetDialog: null,
         redraft: null,
         consultDoc: { version: null, exporting: false, error: null, link: null },
         revertFrom: { version: null, loading: false, error: null },
+        transfer: { exportVersion: null, exporting: false, exportError: null, importing: false, importError: null },
       },
       pilot: {
         selectedStudyIds: [],

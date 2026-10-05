@@ -14,6 +14,7 @@ import { makeField as matrixField, makeRun as matrixRun, makeEvidence as matrixE
 import { emptyPilotMatrix } from '../../../src/app/services/pilotMatrixService';
 import * as reviewSetServices from '../../../src/app/services/reviewSetService';
 import * as schemaServices from '../../../src/app/services/schemaService';
+import * as schemaTransferServices from '../../../src/app/services/schemaTransferService';
 import { configureApiErrorLog, recordApiErrorLog } from '../../../src/lib/diagnostics/apiErrorLog';
 
 // bootstrap → lib/pdf/loadPdf 経由で pdfjs-dist（ESM 専用）が require されるのを防ぐ
@@ -1452,6 +1453,44 @@ describe('bootstrapApp', () => {
     expect(start).toHaveBeenCalledWith(store, deps, 1);
     select.mockRestore();
     start.mockRestore();
+  });
+
+  test('#/schema スキーマのファイル: 版選択・書き出し・読み込みがサービスへ委譲される（issue #316）', async () => {
+    const select = jest.spyOn(schemaTransferServices, 'selectSchemaExportVersion');
+    const exportFile = jest.spyOn(schemaTransferServices, 'exportSchemaFile').mockResolvedValue();
+    const importFile = jest.spyOn(schemaTransferServices, 'importSchemaFile').mockResolvedValue();
+    const stub = createWindowStub({
+      currentProject: PROJECT,
+      counts: { protocolVersions: 1 } as AppState['counts'],
+      schema: {
+        versions: [
+          { schemaVersion: 2, parentVersion: 1, protocolVersion: 1, createdByType: 'user_edit', createdAt: 't', createdBy: 'a', note: null },
+          { schemaVersion: 1, parentVersion: null, protocolVersion: 1, createdByType: 'ai_draft', createdAt: 't', createdBy: 'a', note: null },
+        ],
+        currentFields: [],
+      } as unknown as AppState['schema'],
+    });
+    const { deps } = createFakeDeps([[...SHEET_HEADERS.Protocol]]);
+    const store = await bootstrapApp(asWindow(stub), deps);
+    stub.location.hash = '#/schema';
+    stub.fireHashChange();
+    await flush();
+
+    const versionSelect = document.getElementById('schema-export-version') as HTMLSelectElement;
+    versionSelect.value = '1';
+    versionSelect.dispatchEvent(new Event('change'));
+    expect(select).toHaveBeenCalledWith(store, 1);
+    await flush();
+    (document.getElementById('schema-export-file') as HTMLButtonElement).click();
+    expect(exportFile).toHaveBeenCalledWith(store, deps, 1);
+    const input = document.getElementById('schema-import-file') as HTMLInputElement;
+    const file = new File(['{}'], 'schema.json');
+    Object.defineProperty(input, 'files', { value: [file] });
+    input.dispatchEvent(new Event('change'));
+    expect(importFile).toHaveBeenCalledWith(store, file);
+    select.mockRestore();
+    exportFile.mockRestore();
+    importFile.mockRestore();
   });
 
   test('#/schema 行移動直後の無関係なストア更新でも移動ボタンのフォーカスを保持する', async () => {

@@ -24,6 +24,7 @@ import {
   type DraftSchemaSamplePaper,
 } from '../../features/schema/skills/draftSchema';
 import {
+  applyImportDiff,
   applyRedraftDiff,
   applyRevertDiff,
   buildRedraftDiff,
@@ -37,6 +38,7 @@ import {
   listSchemaVersions,
 } from '../../features/schema/schemaRepository';
 import { saveSchemaVersion } from '../../features/schema/saveSchemaVersion';
+import { importNoteDefault } from '../../features/schema/schemaTransfer';
 import { SCHEMA_PRESETS, type SchemaPresetKind } from '../../features/schema/presets';
 import { mergePresetDialogPatch } from '../../features/schema/presets/prespecDialog';
 import type {
@@ -637,6 +639,7 @@ export function startEditorFromCurrent(store: Store): void {
     editorErrors: [],
     editorOrigin: 'user_edit',
     editorParentVersion: null,
+    editorNoteDefault: null,
   });
 }
 
@@ -711,6 +714,7 @@ export function cancelEditor(store: Store): void {
     presetDialog: null,
     redraft: null,
     editorParentVersion: null,
+    editorNoteDefault: null,
   });
 }
 
@@ -757,6 +761,21 @@ export function applyRedraft(store: Store): void {
       editorErrors: validateEditorRows(rows),
       editorOrigin: 'user_edit',
       editorParentVersion: redraft.revert.sourceVersion,
+      editorNoteDefault: t('schema.revertNoteDefault', { version: redraft.revert.sourceVersion }),
+      redraft: null,
+    });
+    return;
+  }
+  // ファイルからの読み込み（issue #316）: 最新版の並び順を保ち、追加分を末尾に置く。
+  // 出所を改訂理由の初期値に残す
+  if (redraft.imported !== undefined) {
+    const rows = applyImportDiff(redraft.diff, redraft.selection);
+    patchSchema(store, {
+      editorRows: rows,
+      editorErrors: validateEditorRows(rows),
+      editorOrigin: 'user_edit',
+      editorParentVersion: null,
+      editorNoteDefault: importNoteDefault(redraft.imported),
       redraft: null,
     });
     return;
@@ -767,6 +786,7 @@ export function applyRedraft(store: Store): void {
     editorErrors: validateEditorRows(rows),
     editorOrigin: isRedraftSelectionPristine(redraft.diff, redraft.selection) ? 'ai_draft' : 'user_edit',
     editorParentVersion: null,
+    editorNoteDefault: null,
     redraft: null,
   });
 }
@@ -849,6 +869,7 @@ export async function confirmSchema(
         editorRows: null,
         editorErrors: [],
         editorParentVersion: null,
+        editorNoteDefault: null,
         draftError: null,
         presetDialog: null,
       },
