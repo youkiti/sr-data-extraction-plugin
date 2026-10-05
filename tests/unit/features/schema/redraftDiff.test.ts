@@ -519,16 +519,25 @@ describe('buildRevertDiff', () => {
     expect(diff.currentEntries.map((entry) => entry.kind)).toEqual(['unchanged', 'changed', 'removed']);
   });
 
-  it('項目名と note の違いも変更として数え、比較の向きは最新版 → 戻し元', () => {
+  it('note の違いも変更として数え、比較の向きは最新版 → 戻し元。項目名は最新版のまま', () => {
     const diff = buildRevertDiff(current, source);
     const [item] = diff.changed;
     expect(item?.current.fieldId).toBe('f-change');
-    expect(item?.proposed).toMatchObject({ fieldId: 'f-change', fieldName: 'old_name', note: 'x'.repeat(10) });
+    expect(item?.proposed).toMatchObject({ fieldId: 'f-change', fieldName: 'new_name', note: 'x'.repeat(10) });
     expect(item?.changes).toEqual([
-      { key: 'fieldName', before: 'new_name', after: 'old_name' },
       { key: 'extractionInstruction', before: 'New instruction.', after: 'Old instruction.' },
       { key: 'note', before: null, after: 'x'.repeat(10) },
     ]);
+  });
+
+  it('項目名だけが違う項目は変更なしとし、反映後も最新版の名前を使う（StudyData の列は項目名で決まるため）', () => {
+    const renamedSource = [makeField({ fieldId: 'f-1', fieldName: 'old_name' })];
+    const renamedCurrent = [makeField({ fieldId: 'f-1', fieldName: 'new_name', schemaVersion: 2 })];
+    const diff = buildRevertDiff(renamedCurrent, renamedSource);
+    expect(diff.changed).toEqual([]);
+    expect(diff.unchanged.map((field) => field.fieldId)).toEqual(['f-1']);
+    const rows = applyRevertDiff(diff, defaultRevertSelection(diff), renamedSource);
+    expect(rows.map((row) => [row.fieldId, row.fieldName])).toEqual([['f-1', 'new_name']]);
   });
 
   it('RoB テンプレート由来の項目も保持扱いにせず、通常の項目として比べる', () => {
@@ -550,10 +559,10 @@ describe('buildRevertDiff', () => {
   it('既定の選択で適用すると、戻し元の版と同じ並び・同じ field_id・同じ note になる', () => {
     const diff = buildRevertDiff(current, source);
     const rows = applyRevertDiff(diff, defaultRevertSelection(diff), source);
-    expect(rows.map((row) => [row.fieldId, row.fieldName, row.note])).toEqual([
-      ['f-gone', 'dropped_later', null],
-      ['f-change', 'old_name', 'x'.repeat(10)],
-      ['f-keep', 'keep_me', null],
+    expect(rows.map((row) => [row.fieldId, row.fieldName, row.note, row.extractionInstruction])).toEqual([
+      ['f-gone', 'dropped_later', null, 'Report the design.'],
+      ['f-change', 'new_name', 'x'.repeat(10), 'Old instruction.'],
+      ['f-keep', 'keep_me', null, 'Report the design.'],
     ]);
     expect(validateEditorRows(rows)).toEqual([]);
   });

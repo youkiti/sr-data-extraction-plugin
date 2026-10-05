@@ -1463,7 +1463,6 @@ function redraftAttrLabel(key: RedraftComparedKey): string {
     entityLevel: 'entity_level',
     dataType: 'data_type',
     maxQuotes: 'max_quotes',
-    fieldName: 'field_name',
     note: 'note',
   };
   const messageKey = keys[key];

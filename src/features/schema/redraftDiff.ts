@@ -7,12 +7,10 @@ import type { SchemaField } from '../../domain/schemaField';
 import type { SchemaEditorRow } from './types';
 
 /**
- * 差分計算で比較する属性（fieldId / aiGenerated は比較しない）。
- * fieldName / note は「前の版に戻す」（issue #318）だけが比較する。AI 再ドラフトは
- * field_name で突き合わせるため fieldName は常に一致し、note（RoB の事前設定など）は AI が提案しない
+ * 差分計算で比較する属性（fieldId / fieldName / aiGenerated は比較しない）。
+ * note は「前の版に戻す」（issue #318）だけが比較する（note の RoB の事前設定などは AI が提案しない）
  */
 export type RedraftComparedKey =
-  | 'fieldName'
   | 'note'
   | 'section'
   | 'fieldLabel'
@@ -96,7 +94,6 @@ export interface RedraftDiff {
 /** 比較対象の属性をエディタ表示用の文字列へ変換する（boolean は 'true'/'false'、null はそのまま） */
 type ComparableSource = Pick<
   SchemaField,
-  | 'fieldName'
   | 'note'
   | 'section'
   | 'fieldLabel'
@@ -113,8 +110,6 @@ type ComparableSource = Pick<
 
 function stringifyAttr(key: RedraftComparedKey, source: ComparableSource): string | null {
   switch (key) {
-    case 'fieldName':
-      return source.fieldName.trim();
     case 'note':
       return source.note;
     case 'section':
@@ -393,8 +388,18 @@ export function isRedraftSelectionPristine(diff: RedraftDiff, selection: Redraft
   );
 }
 
-/** 「前の版に戻す」（issue #318）で比較する属性。項目名の変更と note（事前設定）の違いも差分に出す */
-const REVERT_COMPARED_KEYS: readonly RedraftComparedKey[] = ['fieldName', ...COMPARED_KEYS, 'note'];
+/**
+ * 「前の版に戻す」（issue #318）で比較する属性。note（事前設定）の違いも差分に出す。
+ * field_name は比較しない（戻さない）: StudyData は項目名の列に値を持ち、書き出しも項目名で
+ * 値を引くため、名前を旧名へ戻すと旧名の列に残った古い値が警告なく出てしまう。
+ * 共通する項目は最新版の field_name のまま、ほかの設定だけを戻し元に合わせる
+ */
+const REVERT_COMPARED_KEYS: readonly RedraftComparedKey[] = [...COMPARED_KEYS, 'note'];
+
+/** 戻し元の項目の設定を、最新版の field_name のままエディタ行にする（共通する項目用） */
+function revertedRow(source: SchemaField, current: SchemaField): SchemaEditorRow {
+  return { ...schemaFieldToEditorRow(source), fieldName: current.fieldName };
+}
 
 /** 「前の版に戻す」の戻し元（差分承認画面の状態に持たせ、反映時の並び順に使う） */
 export interface RevertSource {
@@ -430,7 +435,7 @@ export function buildRevertDiff(
     }
     const changes = computeChanges(field, sourceField, REVERT_COMPARED_KEYS);
     if (changes.length > 0) {
-      const item: RedraftChangedItem = { current: field, proposed: schemaFieldToEditorRow(sourceField), changes };
+      const item: RedraftChangedItem = { current: field, proposed: revertedRow(sourceField, field), changes };
       changed.push(item);
       currentEntries.push({ kind: 'changed', item });
     } else {
@@ -461,6 +466,7 @@ export function defaultRevertSelection(diff: RedraftDiff): RedraftSelection {
 /**
  * 「前の版に戻す」の選択を適用してエディタ行を返す（issue #318）。
  * - 並び順は戻し元の版に合わせる。採用しなかった変更は最新版の値のまま同じ位置に置く
+ * - 共通する項目の field_name は最新版のまま（REVERT_COMPARED_KEYS のコメント参照）
  * - 削除しなかった項目（後の版で足した項目）は末尾に最新版の値で残す
  * - field_id・note・ai_generated は採用した側の値をそのまま使う（note には RoB の事前設定が入る）
  */
@@ -470,18 +476,18 @@ export function applyRevertDiff(
   source: readonly SchemaField[],
 ): SchemaEditorRow[] {
   const changedById = new Map(diff.changed.map((item) => [item.current.fieldId, item]));
-  const addedIds = new Set(diff.added.map((item) => item.row.fieldId));
+  const unchangedById = new Map(diff.unchanged.map((field) => [field.fieldId, field]));
   const rows: SchemaEditorRow[] = [];
   for (const field of source) {
     const changedItem = changedById.get(field.fieldId);
+    const unchangedCurrent = unchangedById.get(field.fieldId);
     if (changedItem !== undefined) {
       const approved = selection.changed[changedItem.current.fieldName.trim()] ?? false;
-      rows.push(schemaFieldToEditorRow(approved ? field : changedItem.current));
-    } else if (addedIds.has(field.fieldId)) {
-      if (selection.added[field.fieldName.trim()] ?? false) {
-        rows.push(schemaFieldToEditorRow(field));
-      }
-    } else {
+      rows.push(approved ? changedItem.proposed : schemaFieldToEditorRow(changedItem.current));
+    } else if (unchangedCurrent !== undefined) {
+      rows.push(revertedRow(field, unchangedCurrent));
+    } else if (selection.added[field.fieldName.trim()] ?? false) {
+      // 戻し元にだけある項目（後の版で消した項目）。名前も ID も戻し元のまま
       rows.push(schemaFieldToEditorRow(field));
     }
   }

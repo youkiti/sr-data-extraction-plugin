@@ -510,7 +510,7 @@ export const jaApp = {
   'schema.consultDocVersionMissing': 'スキーマ v{version} が見つかりません。再読み込みしてください。',
   'schema.revertTitle': '前の版の内容に戻す',
   'schema.revertLead':
-    '選んだ版の項目設定をコピーし、最新版との差分を確認してから新しい版として確定します。版の番号は巻き戻さず、過去の版もそのまま残ります。共通する項目は同じ ID のまま引き継ぐので、抽出結果と判定もつながったまま使えます。',
+    '選んだ版の項目設定をコピーし、最新版との差分を確認してから新しい版として確定します。版の番号は巻き戻さず、過去の版もそのまま残ります。共通する項目は同じ ID と最新版の項目名のまま引き継ぐので、抽出結果と判定もつながったまま使えます。',
   'schema.revertVersionLabel': '戻し元の版',
   'schema.revertStart': 'この版の内容から新しい版を作る',
   'schema.revertLoading': '読み込み中…',
@@ -522,7 +522,7 @@ export const jaApp = {
   'schema.revertChangedTitle': '戻し元と最新版で設定が違う項目（チェックすると戻し元の設定にする）',
   'schema.revertRemovedTitle': '最新版にだけある項目（チェックすると新しい版から消す）',
   'schema.revertRemovedNote':
-    'チェックした項目は新しい版から消えます。その項目の抽出結果と判定はシートに残りますが、判定画面と書き出しには出なくなります。残したい項目はチェックを外してください。',
+    'チェックした項目は新しい版に含まれません。その項目の抽出結果と判定はシートに残り、書き出しには出なくなります。判定画面は、新しい版で抽出し直すまで、抽出したときの版の項目を表示します。残したい項目はチェックを外してください。',
   'schema.revertNoteDefault': 'v{version} の内容に戻す',
   'schema.redraftTitle': '新しいプロトコルで AI に再ドラフトさせる',
   'schema.redraftLead':

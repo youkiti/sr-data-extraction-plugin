@@ -516,7 +516,7 @@ export const enApp: Record<keyof typeof jaApp, string> = {
   'schema.consultDocVersionMissing': 'Schema v{version} was not found. Please reload.',
   'schema.revertTitle': 'Revert to an earlier version',
   'schema.revertLead':
-    'Copies the fields of the selected version, shows the differences from the latest version, and then saves them as a new version. Version numbers are not rolled back, and earlier versions are kept. Shared fields keep the same IDs, so their extraction results and decisions stay connected.',
+    'Copies the fields of the selected version, shows the differences from the latest version, and then saves them as a new version. Version numbers are not rolled back, and earlier versions are kept. Shared fields keep the same IDs and their latest field names, so their extraction results and decisions stay connected.',
   'schema.revertVersionLabel': 'Version to revert to',
   'schema.revertStart': 'Create a new version from this version',
   'schema.revertLoading': 'Loading…',
@@ -528,7 +528,7 @@ export const enApp: Record<keyof typeof jaApp, string> = {
   'schema.revertChangedTitle': 'Fields whose settings differ (checked = use the source version settings)',
   'schema.revertRemovedTitle': 'Fields only in the latest version (checked = remove from the new version)',
   'schema.revertRemovedNote':
-    'Checked fields are removed from the new version. Their extraction results and decisions stay in the sheet, but they no longer appear on the verification screen or in exports. Uncheck any field you want to keep.',
+    'Checked fields are not included in the new version. Their extraction results and decisions stay in the sheet and no longer appear in exports. The verification screen keeps showing the fields of the version used for extraction until you extract again with the new version. Uncheck any field you want to keep.',
   'schema.revertNoteDefault': 'Revert to the contents of v{version}',
   'schema.redraftTitle': 'Have AI redraft with the new protocol',
   'schema.redraftLead':

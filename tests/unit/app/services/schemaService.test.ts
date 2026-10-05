@@ -1598,6 +1598,34 @@ describe('前の版の内容に戻す（issue #318）', () => {
       });
     });
 
+    test.each([
+      ['「新しい版を作る」でエディタを開いた', (store: Store) => startEditorFromCurrent(store)],
+      ['AI 再ドラフトが始まった', (store: Store) => store.setState({ schema: { ...store.getState().schema, drafting: true } })],
+      ['別の差分承認画面が開いた', (store: Store) => {
+        const diff = buildRedraftDiff(latestFields, []);
+        store.setState({ schema: { ...store.getState().schema, redraft: { diff, selection: defaultRedraftSelection(diff) } } });
+      }],
+      ['新しい版が確定して最新版の項目が替わった', (store: Store) =>
+        store.setState({ schema: { ...store.getState().schema, currentFields: [...latestFields] } })],
+      ['プロジェクトを切り替えた', (store: Store) => store.setState({ currentProject: null })],
+    ])('読み込み中に%sときは、結果を捨てて差分画面を出さない', async (_label, interrupt) => {
+      const store = makeStore();
+      seedConfirmed(store);
+      let resolve: (fields: SchemaField[]) => void = () => undefined;
+      getFieldsMock.mockReturnValue(new Promise((r) => { resolve = r; }));
+      const pending = startRevertFromVersion(store, makeDeps().deps, 1);
+      interrupt(store);
+      const editorBefore = store.getState().schema.editorRows;
+      const redraftBefore = store.getState().schema.redraft;
+      resolve(sourceFields);
+      await pending;
+      const { schema } = store.getState();
+      expect(schema.revertFrom).toEqual({ version: 1, loading: false, error: null });
+      expect(schema.redraft).toBe(redraftBefore);
+      expect(schema.editorRows).toBe(editorBefore);
+      expect(schema.editorParentVersion).toBeNull();
+    });
+
     test('戻し元の項目が 0 件・読み込み失敗はカードにエラーを出す', async () => {
       const store = makeStore();
       seedConfirmed(store);

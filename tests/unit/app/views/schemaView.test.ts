@@ -1799,7 +1799,7 @@ describe('前の版の内容に戻す（issue #318）', () => {
     expect(alert?.textContent).toBe('読めません');
   });
 
-  test('差分承認画面は戻す用の見出しと説明で出し、項目名と note の差（長い note は省略）も示す', () => {
+  test('差分承認画面は戻す用の見出しと説明で出し、note の差（長い note は省略）も示す', () => {
     const current = [
       makeField({ fieldId: 'f-1', fieldName: 'new_name', note: null }),
       makeField({ fieldId: 'f-later', fieldName: 'added_later' }),
@@ -1819,13 +1819,10 @@ describe('前の版の内容に戻す（issue #318）', () => {
     expect(view.querySelector('#schema-redraft-summary')?.textContent).toBe(
       '戻し元にだけある項目 0 件 / 変更 1 件 / 最新版にだけある項目 1 件 / 変更なし 0 件',
     );
-    expect(view.querySelector('#schema-redraft-removed-note')?.textContent).toContain('判定画面と書き出しには出なくなります');
+    expect(view.querySelector('#schema-redraft-removed-note')?.textContent).toContain('書き出しには出なくなります');
     expect((view.querySelector('#schema-redraft-removed input') as HTMLInputElement).checked).toBe(true);
     const lines = [...view.querySelectorAll('.schema__redraft-changes li')].map((li) => li.textContent);
-    expect(lines).toEqual([
-      'field_name: new_name → old_name',
-      `note: — → ${'n'.repeat(80)}…`,
-    ]);
+    expect(lines).toEqual([`note: — → ${'n'.repeat(80)}…`]);
   });
 
   test('戻してエディタへ入ったときは改訂理由を初期入力する（通常の改訂は空のまま）', () => {

@@ -672,6 +672,19 @@ export async function startRevertFromVersion(
   patchSchema(store, { revertFrom: { version, loading: true, error: null } });
   try {
     const sourceFields = await getSchemaFieldsByVersion(project.spreadsheetId, version, deps.google);
+    // 読み込み中に別の操作（「新しい版を作る」・AI 再ドラフト・プロジェクト切替・新しい版の確定）が
+    // 始まっていたら、結果を捨てる。そのまま差分画面を出すと、編集中の内容を上書きしてしまう
+    const after = store.getState();
+    if (
+      after.currentProject?.spreadsheetId !== project.spreadsheetId ||
+      after.schema.currentFields !== currentFields ||
+      after.schema.editorRows !== null ||
+      after.schema.redraft !== null ||
+      after.schema.drafting
+    ) {
+      patchSchema(store, { revertFrom: { version, loading: false, error: null } });
+      return;
+    }
     if (sourceFields.length === 0) {
       throw new Error(t('schema.revertVersionMissing', { version }));
     }
