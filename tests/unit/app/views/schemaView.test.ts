@@ -45,7 +45,9 @@ import { setUiLanguage } from '../../../../src/lib/i18n';
 import type { SchemaEditorRow } from '../../../../src/features/schema/types';
 import {
   buildRedraftDiff,
+  buildRevertDiff,
   defaultRedraftSelection,
+  defaultRevertSelection,
 } from '../../../../src/features/schema/redraftDiff';
 
 function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<SchemaViewCallbacks> } {
@@ -72,6 +74,8 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<SchemaViewCallbac
     onCancelRedraft: jest.fn(),
     onSelectConsultDocVersion: jest.fn(),
     onExportConsultDoc: jest.fn(),
+    onSelectRevertVersion: jest.fn(),
+    onStartRevert: jest.fn(),
   };
   return {
     ctx: {
@@ -1739,5 +1743,99 @@ describe('複数選択の項目設定', () => {
     expect(callbacks.onEditRow).toHaveBeenLastCalledWith(0, { dataType: 'text', maxQuotes: null, multiSelect: false, exclusiveValues: null, freeTextValues: null });
     const confirmed = renderSchemaView(makeState({ versions: [makeVersion(1)], currentFields: [makeField({ dataType: 'enum', multiSelect: { exclusiveValues: [], freeTextValues: [] } })] }), ctx);
     expect(confirmed.textContent).toContain('enum — 複数選択');
+  });
+});
+
+// 「前の版の内容に戻す」（issue #318）
+describe('前の版の内容に戻す（issue #318）', () => {
+  const revertState = (patch: Partial<AppState['schema']['revertFrom']> = {}, versions = [makeVersion(3), makeVersion(2), makeVersion(1)]) =>
+    makeState({
+      versions,
+      currentFields: [makeField()],
+      revertFrom: { version: null, loading: false, error: null, ...patch },
+    });
+
+  test('版が 1 つだけならカードを出さない', () => {
+    const { ctx } = makeCtx();
+    const view = renderSchemaView(revertState({}, [makeVersion(1)]), ctx);
+    expect(view.querySelector('#schema-revert')).toBeNull();
+  });
+
+  test('最新版を除く過去の版を並べ、既定は 1 つ前の版。選択とボタンを親へ伝える', () => {
+    const { ctx, callbacks } = makeCtx();
+    const view = renderSchemaView(revertState(), ctx);
+    expect(view.querySelector('#schema-revert h3')?.textContent).toBe('前の版の内容に戻す');
+    const select = view.querySelector('#schema-revert-version') as HTMLSelectElement;
+    expect([...select.options].map((option) => option.textContent)).toEqual(['v2', 'v1']);
+    expect(select.value).toBe('2');
+    (view.querySelector('#schema-revert-start') as HTMLButtonElement).click();
+    expect(callbacks.onStartRevert).toHaveBeenCalledWith(2);
+    select.value = '1';
+    select.dispatchEvent(new Event('change'));
+    expect(callbacks.onSelectRevertVersion).toHaveBeenCalledWith(1);
+    expect(view.querySelector('#schema-revert-error')).toBeNull();
+  });
+
+  test('選択済みの版を反映し、一覧に無い版（最新版を含む）は既定に戻す', () => {
+    const { ctx, callbacks } = makeCtx();
+    const chosen = renderSchemaView(revertState({ version: 1 }), ctx);
+    expect((chosen.querySelector('#schema-revert-version') as HTMLSelectElement).value).toBe('1');
+    const latest = renderSchemaView(revertState({ version: 3 }), ctx);
+    expect((latest.querySelector('#schema-revert-version') as HTMLSelectElement).value).toBe('2');
+    (latest.querySelector('#schema-revert-start') as HTMLButtonElement).click();
+    expect(callbacks.onStartRevert).toHaveBeenCalledWith(2);
+  });
+
+  test('読み込み中は無効化して文言を変え、失敗は role=alert で出す', () => {
+    const { ctx } = makeCtx();
+    const loading = renderSchemaView(revertState({ version: 1, loading: true }), ctx);
+    const button = loading.querySelector('#schema-revert-start') as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    expect(button.textContent).toBe('読み込み中…');
+    expect((loading.querySelector('#schema-revert-version') as HTMLSelectElement).disabled).toBe(true);
+    const failed = renderSchemaView(revertState({ error: '読めません' }), ctx);
+    const alert = failed.querySelector('#schema-revert-error');
+    expect(alert?.getAttribute('role')).toBe('alert');
+    expect(alert?.textContent).toBe('読めません');
+  });
+
+  test('差分承認画面は戻す用の見出しと説明で出し、note の差（長い note は省略）も示す', () => {
+    const current = [
+      makeField({ fieldId: 'f-1', fieldName: 'new_name', note: null }),
+      makeField({ fieldId: 'f-later', fieldName: 'added_later' }),
+    ];
+    const source = [makeField({ fieldId: 'f-1', fieldName: 'old_name', note: 'n'.repeat(100) })];
+    const diff = buildRevertDiff(current, source);
+    const { ctx } = makeCtx();
+    const view = renderSchemaView(
+      makeState({
+        versions: [makeVersion(2), makeVersion(1)],
+        currentFields: current,
+        redraft: { diff, selection: defaultRevertSelection(diff), revert: { sourceVersion: 1, sourceFields: source } },
+      }),
+      ctx,
+    );
+    expect(view.querySelector('#schema-redraft-review h3')?.textContent).toBe('v1 に戻す差分を確認');
+    expect(view.querySelector('#schema-redraft-summary')?.textContent).toBe(
+      '戻し元にだけある項目 0 件 / 変更 1 件 / 最新版にだけある項目 1 件 / 変更なし 0 件',
+    );
+    expect(view.querySelector('#schema-redraft-removed-note')?.textContent).toContain('書き出しには出なくなります');
+    expect((view.querySelector('#schema-redraft-removed input') as HTMLInputElement).checked).toBe(true);
+    const lines = [...view.querySelectorAll('.schema__redraft-changes li')].map((li) => li.textContent);
+    expect(lines).toEqual([`note: — → ${'n'.repeat(80)}…`]);
+  });
+
+  test('戻してエディタへ入ったときは改訂理由を初期入力する（通常の改訂は空のまま）', () => {
+    const { ctx, callbacks } = makeCtx();
+    const reverted = renderSchemaView(
+      makeState({ versions: [makeVersion(2), makeVersion(1)], editorRows: [makeEditorRow()], editorParentVersion: 1 }),
+      ctx,
+    );
+    const note = reverted.querySelector('#schema-note') as HTMLInputElement;
+    expect(note.value).toBe('v1 の内容に戻す');
+    (reverted.querySelector('#schema-confirm') as HTMLButtonElement).click();
+    expect(callbacks.onConfirm).toHaveBeenCalledWith('v1 の内容に戻す');
+    const normal = renderSchemaView(makeState({ versions: [makeVersion(1)], editorRows: [makeEditorRow()] }), ctx);
+    expect((normal.querySelector('#schema-note') as HTMLInputElement).value).toBe('');
   });
 });

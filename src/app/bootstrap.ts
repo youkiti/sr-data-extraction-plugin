@@ -68,6 +68,8 @@ import {
   skipRobPrespecDialog,
   sortEditorRowsBySection,
   startEditorFromCurrent,
+  selectRevertVersion,
+  startRevertFromVersion,
   toggleRedraftSelection,
   toggleSampleDocument,
   updateEditorRow,
@@ -720,6 +722,12 @@ export async function bootstrapApp(
       },
       onExportConsultDoc: (version) => {
         void exportSchemaConsultDoc(store, deps, version);
+      },
+      onSelectRevertVersion: (version) => {
+        selectRevertVersion(store, version);
+      },
+      onStartRevert: (version) => {
+        void startRevertFromVersion(store, deps, version);
       },
     },
     pilot: {

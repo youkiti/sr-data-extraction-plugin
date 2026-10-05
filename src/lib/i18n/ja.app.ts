@@ -508,6 +508,22 @@ export const jaApp = {
   'schema.consultDocOpen': 'ドキュメントを開く（新しいタブ）',
   'schema.consultDocDone': '作成しました。',
   'schema.consultDocVersionMissing': 'スキーマ v{version} が見つかりません。再読み込みしてください。',
+  'schema.revertTitle': '前の版の内容に戻す',
+  'schema.revertLead':
+    '選んだ版の項目設定をコピーし、最新版との差分を確認してから新しい版として確定します。版の番号は巻き戻さず、過去の版もそのまま残ります。共通する項目は同じ ID と最新版の項目名のまま引き継ぐので、抽出結果と判定もつながったまま使えます。',
+  'schema.revertVersionLabel': '戻し元の版',
+  'schema.revertStart': 'この版の内容から新しい版を作る',
+  'schema.revertLoading': '読み込み中…',
+  'schema.revertVersionMissing': 'スキーマ v{version} の項目が見つかりません。再読み込みしてください。',
+  'schema.revertReviewTitle': 'v{version} に戻す差分を確認',
+  'schema.revertSummary':
+    '戻し元にだけある項目 {added} 件 / 変更 {changed} 件 / 最新版にだけある項目 {removed} 件 / 変更なし {unchanged} 件',
+  'schema.revertAddedTitle': '戻し元にだけある項目（新しい版に戻す）',
+  'schema.revertChangedTitle': '戻し元と最新版で設定が違う項目（チェックすると戻し元の設定にする）',
+  'schema.revertRemovedTitle': '最新版にだけある項目（チェックすると新しい版から消す）',
+  'schema.revertRemovedNote':
+    'チェックした項目は新しい版に含まれません。その項目の抽出結果と判定はシートに残り、書き出しには出なくなります。判定画面は、新しい版で抽出し直すまで、抽出したときの版の項目を表示します。残したい項目はチェックを外してください。',
+  'schema.revertNoteDefault': 'v{version} の内容に戻す',
   'schema.redraftTitle': '新しいプロトコルで AI に再ドラフトさせる',
   'schema.redraftLead':
     '最新のプロトコルとサンプル論文をもとに AI が表のデザインを作り直し、現行版との差分を提示します。既存の項目は、あなたが承認しない限り消えません。',
