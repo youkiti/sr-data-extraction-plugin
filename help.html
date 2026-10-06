@@ -3,7 +3,7 @@
      正典はこのファイル（master の hosted/）。デプロイ手順は hosted/README.md を参照。
      内容はワークフローレベルに留める（画面細部はアプリ内のリード文が担う。issue #214 §3）。
      文言は ja / en を両方持ち、表示は lang.js + CSS が片方だけに絞る（併記しない）。
-     version: 2026-10-04 -->
+     version: 2026-10-07 -->
 <html lang="ja">
   <head>
     <meta charset="utf-8" />
@@ -53,8 +53,8 @@
           <span class="en" lang="en">User guide</span>
         </h1>
         <p class="last-updated">
-          <span class="ja" lang="ja">最終更新: 2026-10-04 / 対象バージョン: v0.12.0</span>
-          <span class="en" lang="en">Last updated: 2026-10-04 / Covers v0.12.0</span>
+          <span class="ja" lang="ja">最終更新: 2026-10-07 / 対象バージョン: v0.14.0</span>
+          <span class="en" lang="en">Last updated: 2026-10-07 / Covers v0.14.0</span>
         </p>
 
         <nav class="toc" aria-label="目次" data-en-aria-label="Table of contents">
@@ -407,6 +407,43 @@
             </li>
             <li>
               <span class="ja" lang="ja"
+                >確定した版は、共同研究者と相談するための Google ドキュメントとして Drive に書き出せます（項目の一覧、
+                パイロットでの AI の抽出例、項目ごとの判定の内訳、RoB などの事前設定）。共有は Google
+                ドキュメント側で行います。</span
+              >
+              <span class="en" lang="en"
+                >You can export a confirmed version as a Google Doc in Drive for consulting co-researchers (the field
+                list, AI examples from the pilot, per-field decision breakdown, and pre-specification settings such as
+                RoB). Share it from Google Docs.</span
+              >
+            </li>
+            <li>
+              <span class="ja" lang="ja"
+                >前の版の設定に戻したいときは、確定済みの画面の「前の版の内容に戻す」で版を選びます。最新版との差分（戻す項目・設定が違う項目・消える項目）を確認してから、その内容を新しい版として確定します。版の番号は巻き戻さず、過去の版も残ります。共通する項目は最新版の項目名のまま、抽出結果と判定もそのまま引き継がれます。</span
+              >
+              <span class="en" lang="en"
+                >To go back to an earlier version, choose it under “Revert to an earlier version” on the confirmed screen.
+                Review the differences from the latest version (fields brought back, fields with different settings, and
+                fields to remove), then save the contents as a new version. Version numbers are not rolled back and earlier
+                versions are kept. Shared fields keep their latest field names, and their extraction results and decisions carry over.</span
+              >
+            </li>
+            <li>
+              <span class="ja" lang="ja"
+                >確定した版は、確定済みの画面の「スキーマのファイル（JSON）」で JSON ファイルに書き出せます。RoB などの事前設定も含まれ、論文のデータや判定は含まれません。別のプロジェクトでは、同じカード（スキーマがまだ無いときはドラフト前の画面）でそのファイルを読み込みます。スキーマが既にあるプロジェクトでは、最新版との差分（ファイルにだけある項目・設定が違う項目・最新版にだけある項目）を確認してから反映します。最新版にだけある項目は、既定では残ります。同じ名前の項目は、今のプロジェクトの項目として引き継がれます。</span
+              >
+              <span class="en" lang="en"
+                >You can export a confirmed version as a JSON file under “Schema file (JSON)” on the confirmed screen. It
+                includes pre-specification settings such as RoB, but not study data or decisions. In another project,
+                import the file from the same card (or from the screen before drafting if there is no schema yet). If the
+                project already has a schema, you review the differences from the latest version (fields only in the file,
+                fields with different settings, and fields only in the latest version) before applying them. Fields only in
+                the latest version are kept by default. Fields with the same name are carried over as the project's existing
+                fields.</span
+              >
+            </li>
+            <li>
+              <span class="ja" lang="ja"
                 >テキスト型の項目では「複数の引用を許可」を ON にできます（既定は OFF。最大件数は 2〜20）。主に質的なデータ（テーマの抽出など）を取りたいときに使います。AI
                 はテーマごとに根拠の箇所を 1 つずつ引用し、値はテーマ名の一覧（「A; B; C」）になります。検証画面では引用を一覧で確認し、判定は項目ごとに 1
                 回です。AI が拾えなかったテーマは値を修正して書き足し、根拠はメモに書いてください。</span
@@ -434,7 +471,36 @@
                 subtheme”.</span
               >
             </li>
+            <li>
+              <span class="ja" lang="ja"
+                >data_type が enum（決まった選択肢から選ぶ）の項目では「複数選択」を ON にできます。当てはまる選択肢をすべて選ぶ項目に使います。AI
+                は選んだ選択肢ごとに根拠の箇所を 1 つずつ引用します。「単独選択肢（| 区切り）」には、ほかの選択肢と同時に選べない選択肢（例:
+                <code>NA|unclear</code>）を書きます。「自由記述付き選択肢（| 区切り）」には、説明を添えられる選択肢（例:
+                <code>Other</code>）を書きます。ON にしたとき 2 つの欄が空なら、許容値の NA・N/A・unclear が単独選択肢に、Other
+                が自由記述付き選択肢に自動で入ります。</span
+              >
+              <span class="en" lang="en"
+                >For fields whose data_type is enum (choose from fixed options) you can turn on “Multiple selection”. Use it
+                when every option that applies should be chosen. AI quotes one supporting passage per chosen option. Under
+                “Exclusive options (separated by |)”, list options that cannot be combined with any other (e.g.
+                <code>NA|unclear</code>). Under “Options with free text (separated by |)”, list options that take a short
+                description (e.g. <code>Other</code>). When you turn it on with both boxes empty, NA, N/A and unclear from
+                the allowed values go into the exclusive options and Other goes into the options with free text.</span
+              >
+            </li>
           </ul>
+          <div class="note">
+            <p>
+              <span class="ja" lang="ja"
+                >複数選択の項目では、許容値に <code>NR</code> を入れないでください（検証エラーになります）。論文に記載が無いときは、検証画面の「未報告」ボタンで付けます。</span
+              >
+              <span class="en" lang="en"
+                >Do not include <code>NR</code> in the allowed values of a multiple-selection field (it is a validation
+                error). When the paper does not report it, use the “Not reported” button on the verification
+                screen.</span
+              >
+            </p>
+          </div>
         </section>
 
         <section id="pilot">
@@ -589,6 +655,106 @@
               >
             </li>
           </ul>
+          <h3>
+            <span class="ja" lang="ja">複数選択の項目</span>
+            <span class="en" lang="en">Multiple-selection fields</span>
+          </h3>
+          <ul>
+            <li>
+              <span class="ja" lang="ja"
+                >引用の一覧には、AI が選んだ選択肢ごとに選択肢名と引用が並びます。引用に節の見出しがあれば、引用文の下に出ます。</span
+              >
+              <span class="en" lang="en"
+                >The quote list shows each option AI chose with its own quote. If a quote has a section heading, it
+                appears under the quote.</span
+              >
+            </li>
+            <li>
+              <span class="ja" lang="ja"
+                >修正（<code>e</code>）・棄却（<code>x</code>）で値を入れるときは、チップを付け外しして選びます。クリック・Space・数字キー
+                <code>1</code>〜<code>9</code> で付け外しし、Enter で確定します。単独選択肢を選ぶと、ほかの選択肢はすべて外れます。自由記述付きの選択肢を選ぶと、説明の入力欄が出ます。1
+                つも選んでいない間は確定できません。</span
+              >
+              <span class="en" lang="en"
+                >When you enter a value with edit (<code>e</code>) or reject (<code>x</code>), toggle the option chips.
+                Click, Space or the number keys <code>1</code>–<code>9</code> toggle a chip, and Enter confirms. Choosing an
+                exclusive option clears all the others. Choosing an option with free text shows a box for the
+                description. You cannot confirm until at least one option is chosen.</span
+              >
+            </li>
+            <li>
+              <span class="ja" lang="ja"
+                >判定は項目ごとに 1 回です。選択肢ごとには判定しません。</span
+              >
+              <span class="en" lang="en"
+                >You make one decision per field, not one per option.</span
+              >
+            </li>
+          </ul>
+          <h3>
+            <span class="ja" lang="ja">根拠（ハイライト）を直す</span>
+            <span class="en" lang="en">Editing the evidence (highlights)</span>
+          </h3>
+          <ul>
+            <li>
+              <span class="ja" lang="ja"
+                >AI の引用が違うときは、各引用の「削除」で外せます。複数選択の項目では選択肢を、複数の引用を許可した項目ではテーマを、引用ごとに付け替えられます。</span
+              >
+              <span class="en" lang="en"
+                >If an AI quote is wrong, take it off with “Remove”. For multiple-selection fields you can reassign each
+                quote to another option, and for fields that allow multiple quotes you can change its theme.</span
+              >
+            </li>
+            <li>
+              <span class="ja" lang="ja"
+                >一度直した項目には「AI の引用に戻す」が出ます。引用をすべて外すと「引用はすべて外されています」と表示し、ハイライトも出ません。</span
+              >
+              <span class="en" lang="en"
+                >Once you edit a field’s quotes, “Restore AI quotes” appears. If you remove every quote, the field shows
+                “All quotes have been removed” and no highlight is drawn.</span
+              >
+            </li>
+            <li>
+              <span class="ja" lang="ja"
+                >PDF で文を選んで根拠に足すこともできます。右のフォームで項目を選んでから、PDF の文をドラッグで選びます。PDF
+                の上に出るバーで、複数選択の項目なら選択肢を選び（必須）、節を入れて（任意）、「追加」を押します。AI
+                が引用を付けなかった項目にも足せます。足した引用には「人が追加」と表示されます。</span
+              >
+              <span class="en" lang="en"
+                >You can also add evidence by selecting text in the PDF. Pick the field in the form on the right, then drag
+                to select the sentence in the PDF. In the bar that appears above the PDF, choose the option for a
+                multiple-selection field (required), enter the section (optional) and press “Add”. You can add quotes to
+                fields AI gave no quote for. Quotes you add are labeled “Added by a person”.</span
+              >
+            </li>
+            <li>
+              <span class="ja" lang="ja"
+                >選べる文は 1,000 文字までです。スキャン PDF などテキストの無いページでは選べません。本文と照合できなかった文も保存されますが、ハイライトは出ません。</span
+              >
+              <span class="en" lang="en"
+                >A selection can be up to 1,000 characters. Pages without text, such as scanned PDFs, cannot be selected.
+                Text that cannot be matched to the paper is still saved, but no highlight is drawn.</span
+              >
+            </li>
+            <li>
+              <span class="ja" lang="ja"
+                >引用を直しても、値と判定は変わりません。判定の前でも後でも直せます。</span
+              >
+              <span class="en" lang="en"
+                >Editing quotes does not change the value or the decision. You can edit them before or after
+                deciding.</span
+              >
+            </li>
+            <li>
+              <span class="ja" lang="ja"
+                >独立入力モード（<a href="#dual-review">→ 10</a>）では AI の引用は見えません。一覧とハイライトには、自分で足した引用だけが出ます。</span
+              >
+              <span class="en" lang="en"
+                >In independent mode (<a href="#dual-review">→ 10</a>) AI quotes are hidden. The list and highlights show
+                only the quotes you added yourself.</span
+              >
+            </li>
+          </ul>
         </section>
 
         <section id="dashboard">
@@ -646,6 +812,36 @@
                 >Once both reviewers are done, the adjudication screen matches the arm structures, bulk-accepts agreeing
                 cells and lets you settle each disagreement into a consensus row. Inter-reviewer agreement (κ) is shown
                 as well.</span
+              >
+            </li>
+            <li>
+              <span class="ja" lang="ja"
+                >裁定画面では、セルごとに 2 名の根拠を並べ、誰の一覧にある引用か（A / B / A・B）を示します。AI
+                抽出を見ながら検証した人は、引用を直していなければ AI の引用が、独立入力の人は自分で足した引用が並びます。最終の根拠に採用する引用にチェックを入れます。最初に操作するまでは「最終の根拠はまだ選ばれていません」と表示し、自動では採用しません。</span
+              >
+              <span class="en" lang="en"
+                >On the adjudication screen, each cell lists both reviewers’ evidence and shows whose list each quote is in
+                (A / B / A &amp; B). For a reviewer who verified with AI, this is the AI quotes unless they edited them; for an
+                independent reviewer, it is the quotes they added. Tick the quotes to adopt as final evidence. Until you
+                do, the cell shows “Final quotes have not been chosen”; nothing is adopted automatically.</span
+              >
+            </li>
+            <li>
+              <span class="ja" lang="ja"
+                >「PDF から追加」でセルを選んでから PDF の文を選ぶと、裁定者が引用を足せます（操作は検証画面と同じです）。根拠の選択は値の裁定とは別の操作で、どちらを先にしてもかまいません。</span
+              >
+              <span class="en" lang="en"
+                >Press “Add from PDF” on a cell, then select text in the PDF to add your own quote as adjudicator (it works
+                the same way as on the verification screen). Choosing evidence is separate from settling the value, so
+                you can do either first.</span
+              >
+            </li>
+            <li>
+              <span class="ja" lang="ja"
+                >複数選択の項目は、選択肢の並び順をそろえてから一致を判定します。</span
+              >
+              <span class="en" lang="en"
+                >For multiple-selection fields, the options are put in the same order before checking agreement.</span
               >
             </li>
           </ul>
@@ -706,6 +902,17 @@
                     <span class="en" lang="en">Audit trail, supplementary material, accuracy studies</span>
                   </td>
                 </tr>
+                <tr>
+                  <td><code>evidence_quotes</code></td>
+                  <td>
+                    <span class="ja" lang="ja">1 引用</span>
+                    <span class="en" lang="en">one quote</span>
+                  </td>
+                  <td>
+                    <span class="ja" lang="ja">根拠の表（文・頁・節）・投稿時の supplementary</span>
+                    <span class="en" lang="en">Evidence table (text, page, section), supplementary material</span>
+                  </td>
+                </tr>
               </tbody>
             </table>
           </div>
@@ -721,6 +928,49 @@
               remain.</span
             >
           </p>
+          <ul>
+            <li>
+              <span class="ja" lang="ja"
+                >複数選択の項目は、<code>study_wide.csv</code> では項目の列の直後に、選択肢ごとの 1/0 の列（<code>項目名__選択肢</code>。選択肢は小文字にし、英数字以外は <code>_</code> にします）が並びます。自由記述付きの選択肢には、説明の列（<code>…_text</code>）も付きます。未検証のセルと
+                <code>NR</code> のセルでは、これらの列は空になります。単独選択肢（NA など）が選ばれた論文では、ほかの選択肢の列が
+                0 になるため、割合を出すときは集計側で除いてください。<code>results_long.csv</code> と R セットには、選択肢を
+                <code>|</code> でつないだ値のまま出ます。</span
+              >
+              <span class="en" lang="en"
+                >For multiple-selection fields, <code>study_wide.csv</code> adds a 1/0 column per option
+                (<code>fieldname__option</code>, with the option lowercased and anything other than letters and digits turned into <code>_</code>) right after the field’s own column. Options with free text also get a
+                description column (<code>…_text</code>). These columns are empty for unverified cells and for
+                <code>NR</code> cells. Papers where an exclusive option (such as NA) was chosen get 0 in the other option
+                columns, so exclude them when you compute proportions. <code>results_long.csv</code> and the R set keep the
+                options joined with <code>|</code>.</span
+              >
+            </li>
+            <li>
+              <span class="ja" lang="ja"
+                ><code>evidence_quotes.csv</code> は、引用 1 件を 1 行にした根拠の表です。引用の文・頁・節・選択肢／テーマ・出所の文書と、AI
+                の引用か人が足した引用か、誰の一覧か、最終の根拠か（<code>is_final</code>）を出します。AI の引用と、各レビュアー・裁定（consensus）が直した一覧の両方が並びます。</span
+              >
+              <span class="en" lang="en"
+                ><code>evidence_quotes.csv</code> is the evidence table with one row per quote. It gives the quote text,
+                page, section, option or theme, source document, whether it is an AI or a human-added quote, whose list it
+                belongs to, and whether it is final evidence (<code>is_final</code>). It includes both the AI quotes and
+                the lists edited by each reviewer and by adjudication (consensus).</span
+              >
+            </li>
+            <li>
+              <span class="ja" lang="ja"
+                ><code>is_final</code> が TRUE になるのは、確定版（consensus、無ければ唯一の人の行）の一覧にある引用です。裁定した試験で最終の根拠を選んでいないセルには、TRUE の行はありません。人の行が確定版で、その人が引用を直していないセルでは、AI
+                抽出を見ながら検証した人なら AI の引用が TRUE になり、独立入力の人なら TRUE の行はありません。確定版を決められない試験（2 名が検証し、裁定がまだの試験など）は、すべて FALSE です。<code>audit.csv</code>
+                には、人が直した引用は載りません。</span
+              >
+              <span class="en" lang="en"
+                ><code>is_final</code> is TRUE for quotes in the final annotator’s list (consensus, or the only human
+                reviewer if there is no consensus). In an adjudicated study, a cell whose final evidence was not chosen has no TRUE row. When the final annotator is a single reviewer, for cells that reviewer did not edit, the AI quotes are TRUE if they
+                verified with AI; if they entered data independently, no row is TRUE. If the final annotator cannot be determined (for example, two reviewers and no adjudication yet), every row is FALSE. <code>audit.csv</code> does not
+                include quotes edited by people.</span
+              >
+            </li>
+          </ul>
         </section>
 
         <section id="options">
