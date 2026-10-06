@@ -140,6 +140,15 @@ spreadsheet / pdf モードは `page_version` を検査しない（ready 応答�
 - プライバシーポリシー・利用規約の最終更新は規約の改定日なので、本文を変えたときに手で更新する。
   他のファイルの `version:` も内容を変えたときに手で更新する。
 
+### ヘルプの見出しと画面の対応
+
+- 見出し・節の id はアプリと外部から参照されるため変更しない。変更が必要な場合は、
+  [対応表](../src/lib/help/topics.ts)と[照合テスト](../tests/unit/lib/help/topics.test.ts)も一緒に直す。
+- 見出しを足すときは、所属する `<section>` の id に `-` を付けた接頭辞を持つ id を付け、
+  空でない `span.ja[lang="ja"]` と `span.en[lang="en"]` の両方を書く。
+- 画面（ルート）を足したら、先にヘルプへ節と id を足し、`src/lib/help/topics.ts` の対応表へ
+  追加する。対応が欠けると `tests/unit/lib/help/topics.test.ts` が落ちる。
+
 ### デプロイ手順（picker.html も同時に配信）
 
 1. 上記「更新時に守ること」を反映して master へマージし、HEAD を `origin/master` と一致させる。
