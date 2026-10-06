@@ -171,8 +171,8 @@ describe('AnthropicProvider.chat', () => {
     expect(body.max_tokens).toBe(8096);
   });
 
-  // 接続テスト回帰（issue #127 PR2 レビュー対応）: Options 接続テストは maxOutputTokens: 64 の
-  // ような小さい「本文予算」を送ってくる。claude-opus-5 / claude-sonnet-5 は thinking が既定 ON
+  // 小さい「本文予算」の回帰テスト（Options 接続テストの現在の上限は 4096）。
+  // claude-opus-5 / claude-sonnet-5 は thinking が既定 ON
   // で max_tokens が thinking + 本文の合計に対する上限のため、64 をそのまま max_tokens に送ると
   // thinking だけで使い切り stop_reason:'max_tokens' で打ち切られてしまう。文字通り 64 を
   // 送ってはいけない（余地を上乗せする）ことを固定する

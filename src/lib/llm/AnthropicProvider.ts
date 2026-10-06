@@ -91,7 +91,7 @@ const DEFAULT_MAX_TOKENS = 16000;
  * 背景: `ChatOptions.maxOutputTokens` は他 3 provider（Gemini / OpenRouter / OpenAI 互換）
  * では素直に「応答本文のトークン数」だが、Anthropic では `max_tokens` が thinking を含む
  * 合計の上限として働く。claude-opus-5 / claude-sonnet-5 は thinking が既定 ON のため、
- * 呼び出し側が小さい値（例: Options 接続テストの `maxOutputTokens: 64`）をそのまま
+ * 呼び出し側が小さい値（例: `maxOutputTokens: 64`。Options 接続テストは現在 4096）をそのまま
  * `max_tokens` に渡すと thinking だけで使い切り、本文が `stop_reason:'max_tokens'` で
  * 打ち切られる。呼び出し側の契約（「本文トークン数」の意味）は他 provider と共通のため
  * 変更せず、provider 境界のこちらで吸収する。
