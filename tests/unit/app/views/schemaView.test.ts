@@ -365,6 +365,12 @@ function makeField(overrides: Partial<SchemaField> = {}): SchemaField {
 }
 
 describe('renderSchemaView', () => {
+
+  test('画面の該当節へのヘルプリンクを表示する', () => {
+    const { ctx } = makeCtx();
+    const view = renderSchemaView(makeState(), ctx);
+    expect(view.querySelector('[data-help="schema"]')).not.toBeNull();
+  });
   test('プロジェクト未選択: 見出しと案内のみ', () => {
     const { ctx } = makeCtx();
     const view = renderSchemaView(makeState({}, { withProject: false }), ctx);
@@ -372,7 +378,7 @@ describe('renderSchemaView', () => {
     expect(view.querySelector('#schema-no-project')).not.toBeNull();
     expect(view.querySelector('#schema-draft-form')).toBeNull();
     // 見出し直下の説明文はプロジェクト未選択時も常時表示（issue #31）
-    expect(view.querySelector('h2 + .view__lead')?.textContent).toContain(
+    expect(view.querySelector('.heading-with-help:has(> h2) + .view__lead')?.textContent).toContain(
       'これを設計する工程を表のデザインと呼んでいます。',
     );
   });

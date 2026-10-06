@@ -356,6 +356,12 @@ afterEach(() => {
 });
 
 describe('読み込み中 / 失敗', () => {
+
+  test('画面の該当節へのヘルプリンクを表示する', () => {
+    const { ctx } = makeCtx();
+    const view = renderExtractView(makeState(), ctx);
+    expect(view.querySelector('[data-help="extract"]')).not.toBeNull();
+  });
   test('文献・抽出済み run の読み込み中は #extract-loading を出す', () => {
     for (const state of [
       makeState({ documents: null }),

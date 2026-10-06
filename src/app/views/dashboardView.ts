@@ -14,6 +14,7 @@ import { currentReviewSets } from '../../features/review/reviewSets';
 import { resolveActiveStudies } from '../../features/documents/studyRepository';
 import { t } from '../../lib/i18n';
 import { el } from '../ui/dom';
+import { headingWithHelp } from '../ui/helpButton';
 import type { AppState } from '../store';
 import { renderDashboardUsage } from './dashboardUsage';
 import type { ViewContext } from './types';
@@ -171,7 +172,7 @@ function renderReviewSetProgress(state: AppState): HTMLElement | null {
 
 export function renderDashboardView(state: AppState, ctx: ViewContext): HTMLElement {
   const children: HTMLElement[] = [
-    el('h2', { text: t('app.navDashboard') }),
+    headingWithHelp('h2', t('app.navDashboard'), 'dashboard'),
     el('p', {
       className: 'view__lead',
       text: t('dashboard.lead'),

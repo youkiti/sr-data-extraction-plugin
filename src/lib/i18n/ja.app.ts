@@ -1,5 +1,6 @@
 // UI 文言辞書（日本語・app 群）。
 export const jaApp = {
+  'help.openTopic': 'この項目のヘルプを開く（新しいタブ）',
   'pilot.matrixTitle': '項目 × 論文',
   'pilot.matrixAccept': '採用',
   'pilot.matrixEdit': '修正',

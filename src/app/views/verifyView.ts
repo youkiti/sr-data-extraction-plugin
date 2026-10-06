@@ -9,6 +9,7 @@ import { resolveActiveStudies } from '../../features/documents/studyRepository';
 import { canAskPaper } from '../../features/verification/chatAssist';
 import { t } from '../../lib/i18n';
 import { el } from '../ui/dom';
+import { headingWithHelp } from '../ui/helpButton';
 import type { AppState, VerifyTarget } from '../store';
 import { renderAskPaperPanel } from './askPaperPanel';
 import { renderConflictWarning } from './conflictWarning';
@@ -126,7 +127,7 @@ export function renderVerifyView(state: AppState, ctx: ViewContext): HTMLElement
   // 冒頭の説明文・空状態メッセージを AI 抽出前提の文言から入れ替える
   const independent = state.role.role === 'reviewer_independent';
   const children: HTMLElement[] = [
-    el('h2', { text: t('app.navVerify') }),
+    headingWithHelp('h2', t('app.navVerify'), 'verify'),
     el('p', {
       className: 'view__lead',
       text: independent ? t('verify.leadIndependent') : t('verify.lead'),

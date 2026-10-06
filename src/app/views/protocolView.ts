@@ -7,6 +7,7 @@ import type { Protocol, ProtocolSourceType } from '../../domain/protocol';
 import type { ProtocolSubmitInput } from '../../features/protocol/submitInput';
 import { t, type MessageKey } from '../../lib/i18n';
 import { el } from '../ui/dom';
+import { headingWithHelp } from '../ui/helpButton';
 import type { AppState, ProtocolState } from '../store';
 import type { ViewContext } from './types';
 
@@ -284,7 +285,7 @@ function renderBody(state: AppState, ctx: ViewContext): HTMLElement {
 }
 
 export function renderProtocolView(state: AppState, ctx: ViewContext): HTMLElement {
-  const children: HTMLElement[] = [el('h2', { text: t('protocol.title') })];
+  const children: HTMLElement[] = [headingWithHelp('h2', t('protocol.title'), 'protocol')];
   if (state.currentProject === null) {
     children.push(
       el('p', {

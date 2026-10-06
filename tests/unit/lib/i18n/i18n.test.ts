@@ -134,8 +134,8 @@ describe('辞書の分割と登録', () => {
     expect(Object.keys(enApp).sort()).toEqual(Object.keys(jaApp).sort());
     expect(Object.keys(jaPages).filter((key) => key in jaApp)).toEqual([]);
     // 引用一覧の編集操作の文言を含む登録キー数。
-    expect(Object.keys(ja)).toHaveLength(1216);
-    expect(Object.keys(jaPages).length + Object.keys(jaApp).length).toBe(1216);
+    expect(Object.keys(ja)).toHaveLength(1217);
+    expect(Object.keys(jaPages).length + Object.keys(jaApp).length).toBe(1217);
   });
 
   test('未登録では app キーをそのまま返し、登録後は両言語の文言を返す', () => {

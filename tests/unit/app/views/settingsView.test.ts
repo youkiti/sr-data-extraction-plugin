@@ -12,6 +12,11 @@ const flush = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 
 const stubCtx = {} as ViewContext;
 
 describe('renderSettingsView', () => {
+
+  test('画面の該当節へのヘルプリンクを表示する', () => {
+    const view = renderSettingsView(createInitialState(), stubCtx);
+    expect(view.querySelector('[data-help="options"]')).not.toBeNull();
+  });
   let chromeMock: ChromeMock;
 
   beforeEach(() => {

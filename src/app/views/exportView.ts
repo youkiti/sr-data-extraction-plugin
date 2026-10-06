@@ -15,6 +15,7 @@ import type { BuiltRSet, RSetFile } from '../../features/export/rset/buildRSet';
 import { countRSetUnverifiedCells, rSetDataRowCount } from '../../features/export/rset/buildRSet';
 import { t, type MessageKey } from '../../lib/i18n';
 import { el } from '../ui/dom';
+import { headingWithHelp } from '../ui/helpButton';
 import type { AppState, ExportState } from '../store';
 import { renderExportUsage } from './exportUsage';
 import type { ViewContext } from './types';
@@ -400,7 +401,7 @@ function renderResultCard(exportState: ExportState, ctx: ViewContext): HTMLEleme
 
 export function renderExportView(state: AppState, ctx: ViewContext): HTMLElement {
   const children: Array<HTMLElement | string> = [
-    el('h2', { text: t('app.navExport') }),
+    headingWithHelp('h2', t('app.navExport'), 'export'),
     el('p', {
       className: 'view__lead',
       text: t('export.lead'),

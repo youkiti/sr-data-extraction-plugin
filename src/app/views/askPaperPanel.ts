@@ -5,6 +5,7 @@ import { t } from '../../lib/i18n';
 import type { AskPaperParams } from '../services/askPaperService';
 import type { AskPaperState } from '../store';
 import { el } from '../ui/dom';
+import { createHelpButton } from '../ui/helpButton';
 import type { AskPaperViewCallbacks } from './types';
 
 // フォーカスを外した下書きも再描画で失わない。study 切替では別の入力・開閉状態を使う。
@@ -137,6 +138,7 @@ export function renderAskPaperPanel(
   }
   details.append(
     el('summary', { className: 'ask-paper__summary', text: t('askPaper.title') }),
+    createHelpButton('ask-paper'),
     el('p', { className: 'ask-paper__notice', text: t('askPaper.notice') }),
     input,
     estimate,

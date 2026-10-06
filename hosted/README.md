@@ -145,6 +145,8 @@ spreadsheet / pdf モードは `page_version` を検査しない（ready 応答�
 
 ### ヘルプの見出しと画面の対応
 
+- 画面・カードを足したら、見出しを `headingWithHelp` で作り、対応表にトピックを足す。
+
 - 見出し・節の id はアプリと外部から参照されるため変更しない。変更が必要な場合は、
   [対応表](../src/lib/help/topics.ts)と[照合テスト](../tests/unit/lib/help/topics.test.ts)も一緒に直す。
 - 見出しを足すときは、所属する `<section>` の id に `-` を付けた接頭辞を持つ id を付け、

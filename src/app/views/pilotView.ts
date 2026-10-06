@@ -19,6 +19,7 @@ import { planRun } from '../../features/extraction/planRun';
 import { revisionUsedStudyIds, usedPilotStudyIds } from '../../features/extraction/pilotSelection';
 import { t, type MessageKey } from '../../lib/i18n';
 import { el } from '../ui/dom';
+import { headingWithHelp } from '../ui/helpButton';
 import { formatPilotRunDate } from '../ui/formatPilotRunDate';
 import { createModelSelect } from '../ui/modelSelect';
 import type { AppState } from '../store';
@@ -348,7 +349,7 @@ function renderRunSummary(run: ExtractionRun, state: AppState): HTMLElement {
 }
 
 function renderVerification(run: ExtractionRun, state: AppState, ctx: ViewContext): HTMLElement {
-  const children: HTMLElement[] = [el('h3', { text: t('pilot.verifyTitle') })];
+  const children: HTMLElement[] = [headingWithHelp('h3', t('pilot.verifyTitle'), 'pilot-notes')];
 
   const select = el('select', {
     id: 'pilot-verify-study',
@@ -520,7 +521,7 @@ function renderHistory(state: AppState, ctx: ViewContext): HTMLElement | null {
 
 export function renderPilotView(state: AppState, ctx: ViewContext): HTMLElement {
   const children: HTMLElement[] = [
-    el('h2', { text: t('app.navPilot') }),
+    headingWithHelp('h2', t('app.navPilot'), 'pilot'),
     el('p', {
       className: 'view__lead',
       text: t('pilot.lead'),

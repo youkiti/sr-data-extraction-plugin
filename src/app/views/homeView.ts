@@ -8,6 +8,7 @@
 import type { ReviewerAssignment, ReviewerRole, ReviewMode } from '../../domain/reviewer';
 import { t, type MessageKey } from '../../lib/i18n';
 import { el, svgIcon } from '../ui/dom';
+import { headingWithHelp } from '../ui/helpButton';
 import type { AppState, ReviewerFormInput } from '../store';
 import { renderReviewSetsCard } from './reviewSetsCard';
 import type { ViewContext } from './types';
@@ -257,7 +258,7 @@ function renderOwnerHome(state: AppState, ctx: ViewContext): HTMLElement {
   const { counts, home } = state;
   const projectName = state.currentProject?.name ?? t('home.projectNone');
   const children: Array<HTMLElement | string> = [
-    el('h2', { text: t('home.title') }),
+    headingWithHelp('h2', t('home.title'), 'home'),
     el('p', { className: 'view__lead', text: t('app.statusProject', { name: projectName }) }),
     // プロジェクト切替: S1 プロジェクト選択ページへ同一タブで遷移する（新規タブは開かない）
     el('p', {}, [
@@ -310,7 +311,7 @@ function renderOwnerHome(state: AppState, ctx: ViewContext): HTMLElement {
 function renderReviewerHome(state: AppState, ctx: ViewContext): HTMLElement {
   const projectName = state.currentProject?.name ?? t('home.projectNone');
   const children: Array<HTMLElement | string> = [
-    el('h2', { text: t('home.title') }),
+    headingWithHelp('h2', t('home.title'), 'home'),
     el('p', { className: 'view__lead', text: t('app.statusProject', { name: projectName }) }),
     el('p', {}, [
       el('a', {

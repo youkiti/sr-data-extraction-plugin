@@ -5,6 +5,7 @@ import { bootstrapOptions } from '../../options/bootstrap';
 import { buildSettingsSections } from '../../options/settingsSections';
 import { t } from '../../lib/i18n';
 import { el } from '../ui/dom';
+import { headingWithHelp } from '../ui/helpButton';
 import type { AppState } from '../store';
 import type { ViewContext } from './types';
 
@@ -16,7 +17,7 @@ export function renderSettingsView(state: AppState, _ctx: ViewContext): HTMLElem
   // 戻る（直接 #/options を開いた場合など。ハッシュリンクなので同一タブ内で遷移する）
   const returnHash = state.settingsReturnHash ?? '#/home';
   const header = el('div', { className: 'settings__header' }, [
-    el('h2', { text: t('settings.title') }),
+    headingWithHelp('h2', t('settings.title'), 'options'),
     el('a', {
       className: 'settings__back',
       text: t('settings.back'),

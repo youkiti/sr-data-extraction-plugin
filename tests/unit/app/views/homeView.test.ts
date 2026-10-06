@@ -40,6 +40,12 @@ function makeState(patch: Partial<AppState['home']> = {}): AppState {
 }
 
 describe('renderHomeView（owner）', () => {
+
+  test('画面の該当節へのヘルプリンクを表示する', () => {
+    const { ctx } = makeCtx();
+    const view = renderHomeView(makeState(), ctx);
+    expect(view.querySelector('[data-help="home"]')).not.toBeNull();
+  });
   test('通常: プロジェクト名 + 進捗サマリ 5 項目（0 件でも崩れない）', () => {
     const { ctx } = makeCtx();
     const view = renderHomeView(makeState(), ctx);

@@ -347,6 +347,12 @@ function render(state: AppState, ctxPair = makeCtx()) {
 }
 
 describe('未実行（setup）', () => {
+
+  test('画面の該当節へのヘルプリンクを表示する', () => {
+    const { ctx } = makeCtx();
+    const view = renderPilotView(makeState(), ctx);
+    expect(view.querySelector('[data-help="pilot"]')).not.toBeNull();
+  });
   test('文献一覧の読み込み中・失敗・空の状態表示', () => {
     const loading = render(makeState({ documents: null }));
     expect(loading.root.querySelector('#pilot-documents-loading')).not.toBeNull();

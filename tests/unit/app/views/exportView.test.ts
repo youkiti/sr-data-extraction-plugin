@@ -267,6 +267,12 @@ function makeState(patch: Partial<ExportState> = {}): AppState {
 }
 
 describe('renderExportView', () => {
+
+  test('画面の該当節へのヘルプリンクを表示する', () => {
+    const { ctx } = makeCtx();
+    const view = renderExportView(makeState(), ctx);
+    expect(view.querySelector('[data-help="export"]')).not.toBeNull();
+  });
   test('読み込み中（未読込）は #export-loading を出す', () => {
     const { ctx } = makeCtx();
     const view = renderExportView(makeState(), ctx);

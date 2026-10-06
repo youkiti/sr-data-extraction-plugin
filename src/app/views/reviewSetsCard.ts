@@ -11,6 +11,7 @@ import { currentReviewSets, reviewSetForStudy, reviewSetMismatchCount } from '..
 import { t } from '../../lib/i18n';
 import type { AppState } from '../store';
 import { el } from '../ui/dom';
+import { headingWithHelp } from '../ui/helpButton';
 import type { ViewContext } from './types';
 
 function splitForm(
@@ -162,7 +163,7 @@ function resplitConfirm(saving: boolean, ctx: ViewContext): HTMLElement {
 
 export function renderReviewSetsCard(state: AppState, ctx: ViewContext): HTMLElement {
   const { reviewSets, documents } = state;
-  const children: HTMLElement[] = [el('h3', { text: t('reviewSets.title') })];
+  const children: HTMLElement[] = [headingWithHelp('h3', t('reviewSets.title'), 'review-sets')];
   const card = () =>
     el('section', { id: 'home-review-sets', className: 'home__reviewers' }, children);
   if (reviewSets.ignoredCount > 0)

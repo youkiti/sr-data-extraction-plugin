@@ -23,6 +23,7 @@ import { resolveActiveStudies } from '../../features/documents/studyRepository';
 import { t, type MessageKey } from '../../lib/i18n';
 import { activeStudyGroups, visibleMergeCandidates } from '../services/documentsService';
 import { el } from '../ui/dom';
+import { headingWithHelp } from '../ui/helpButton';
 import type {
   AppState,
   ExclusionDialogState,
@@ -933,7 +934,7 @@ export function renderDocumentsView(state: AppState, ctx: ViewContext): HTMLElem
   reloadButton.addEventListener('click', () => ctx.documents.onReload());
 
   const children: HTMLElement[] = [
-    el('h2', { text: t('documents.title') }),
+    headingWithHelp('h2', t('documents.title'), 'documents'),
     el('p', {
       className: 'view__notice',
       text: t('documents.notice'),

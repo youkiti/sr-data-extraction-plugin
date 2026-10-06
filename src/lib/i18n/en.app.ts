@@ -2,6 +2,7 @@
 import type { jaApp } from './ja.app';
 
 export const enApp: Record<keyof typeof jaApp, string> = {
+  'help.openTopic': 'Open help for this item (new tab)',
   'pilot.matrixTitle': 'Fields × studies',
   'pilot.matrixAccept': 'Accepted',
   'pilot.matrixEdit': 'Edited',
