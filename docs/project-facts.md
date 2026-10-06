@@ -5,7 +5,7 @@
 
 | 項目 | 値 | 正の場所 |
 |---|---|---|
-| リポジトリの版 | v0.13.0 | `package.json` の `version` |
+| リポジトリの版 | v0.14.0 | `package.json` の `version` |
 | ストアの公開版 | v0.11.0（掲載ページの更新日 2026-09-30。2026-10-04 に確認） | `docs/store/store-status.json`（手で更新する） |
 | 工場出荷の既定モデル | `gemini-3.8-flash` | `src/lib/storage/settingsStore.ts` の `FACTORY_DEFAULT_MODEL` |
 | extract-data プロンプトの版数 | 12 | `src/features/extraction/skills/extractData.ts` の `EXTRACT_DATA_PROMPT_VERSION` |
