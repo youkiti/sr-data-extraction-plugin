@@ -797,6 +797,7 @@ export const enApp: Record<keyof typeof jaApp, string> = {
   'verify.armWarnOmitted': ' ({n} more omitted)',
   'verify.studyLabel': 'Study: ',
   'verify.studyAria': 'Study to verify',
+  'verify.saving': 'Saving ({n})',
   'verify.queued': 'Offline: {n} queued',
   'verify.loadError': 'Failed to load verification targets: {reason}',
   'verify.loading': 'Loading verification targets…',

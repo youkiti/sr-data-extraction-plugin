@@ -76,6 +76,7 @@ M1〜M4 のうち、**ローカルの jest / Playwright だけでは完了確認
 
 | 対象 | 種別 | 何を確認するか |
 |---|---|---|
+| #322 | 実機・実 API（実 Sheets） | **未実施**: `tools/selenium/issue307Check.mjs` の `verify-all` で判定を 2.2 秒間隔で連続して押し、「保存中（n 件）」の件数が増えていくこと（待ちが溜まること）と、全件がシートに入ってから表示が消えることを確認する |
 | ストア API による提出 | 実 API（Chrome Web Store） | upload / publish は実 API でしか確認できないため、v0.12.0 の提出で初回確認する。fetchStatus とトークン更新は 2026-10-04 に実 API で確認済み |
 | mammoth / pdfjs の遅延チャンク | 実機（拡張の実インストール） | **未実施**: docx プロトコル取り込みと PDF 表示を行い、拡張の CSP 下で `chrome-extension://` URL から `chunks/mammoth.js` / `chunks/pdfjs.js` を取得して動作することを確認する（jest のモック・HTTP 配信の E2E では拡張オリジンの挙動を確認できない） |
 | #267 | 実機・実 API（実プロジェクト） | **✅ 完了（2026-09-30。オーナーが実施・issue クローズ）**: S9 の同期間の費用合計が Google AI Studio の請求額から大きく乖離しないか確認する（jest では実請求を確認できず、価格表と思考トークン倍率は推定）。予算設定後の Meta を旧版拡張で開くとヘッダエラーになること（owner 了承済み）、新版では開けることも確認する。 |

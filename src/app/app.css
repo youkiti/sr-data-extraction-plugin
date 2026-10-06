@@ -3006,6 +3006,14 @@ section.documents__tiab {
   margin-bottom: 12px;
 }
 
+.saving-badge {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  padding: 2px 10px;
+  font-size: 12px;
+}
+
 .verify__queued {
   background: var(--color-warning-bg);
   border: 1px solid var(--color-warning-border);

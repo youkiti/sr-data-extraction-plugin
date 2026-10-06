@@ -784,6 +784,7 @@ export const jaApp = {
   'verify.armWarnOmitted': '（他 {n} 件省略）',
   'verify.studyLabel': '研究: ',
   'verify.studyAria': '検証する研究',
+  'verify.saving': '保存中（{n} 件）',
   'verify.queued': 'オフライン: {n} 件キュー中',
   'verify.loadError': '検証対象を読み込めませんでした: {reason}',
   'verify.loading': '検証対象を読み込んでいます…',

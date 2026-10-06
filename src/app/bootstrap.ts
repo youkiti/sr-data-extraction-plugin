@@ -1,4 +1,6 @@
 import { saveConsensusQuotes } from './services/adjudicationService';
+import { getPendingWriteCount, subscribePendingWrites } from './services/pendingWrites';
+import { updateSavingBadges } from './ui/savingBadge';
 // メインビューの起動配線: ストアのシード → ヘッダ / サイドバー描画 → ルーティング開始。
 // E2E seam（test-strategy.md §2.1）: window.__E2E_PRELOADED_STATE__ があれば
 // ストアのシードへ上書きマージする（本番動作には影響しない）
@@ -1345,6 +1347,13 @@ export async function bootstrapApp(
   // #app-open-popup はプロジェクト選択ページ（popup.html）への同一タブ遷移アンカー
   // （app.html 側の href="../popup/popup.html"）。JS の配線は不要
   win.addEventListener('hashchange', handleHashChange);
+  subscribePendingWrites(() => updateSavingBadges(doc));
+  win.addEventListener('beforeunload', (event) => {
+    if (getPendingWriteCount() > 0) {
+      event.preventDefault();
+      event.returnValue = 'saving';
+    }
+  });
   store.subscribe((state) => {
     // 防御の多重化（盲検のフェイルクローズ）: ロールが確定・変化したタイミングで現在ルートを
     // 再ガードし、不許可になっていたら描画前に #/home へ退避する（セッション中のロール変化への備え）

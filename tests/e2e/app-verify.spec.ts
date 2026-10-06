@@ -298,6 +298,7 @@ async function setupRoutes(
     schemaHeaders?: string[];
     evidenceRows: string[][];
     rotatedPdf?: boolean;
+    writeDelayMs?: number;
     /** PDF 本体の差し替え（§7.4 PR4: テキスト層なし PDF の bbox テスト用）。省略時は minimalPdf */
     pdfBuilder?: () => Buffer;
     /**
@@ -396,6 +397,9 @@ async function setupRoutes(
       const body = req.postDataJSON() as { values: string[][] };
       if (method === 'PUT') quoteValues[0] = body.values[0]!;
       else quoteValues.push(...body.values);
+    }
+    if (options.writeDelayMs && (url.includes(':append') || method === 'PUT')) {
+      await new Promise((resolve) => setTimeout(resolve, options.writeDelayMs));
     }
     store.handleWrite(req);
     appendUrls.push(url);
@@ -2533,4 +2537,25 @@ test('引用の全削除と AI への復元はタブを作成して空・リセ�
   expect((await reset).postDataJSON().values[0][SHEET_HEADERS.QuoteSets.indexOf('kind')]).toBe('reset');
   await expect(card).toContainText(QUOTE);
   await expect(page.locator('.pdf-viewer__hl')).toHaveCount(1);
+});
+
+
+test('判定の保存中は件数と離脱確認を表示し、決着後に解除する', async ({ page }) => {
+  await setupRoutes(page, {
+    schemaRows: [STUDY_FIELD_ROW], evidenceRows: [EVIDENCE_ROW_1], writeDelayMs: 1500,
+  });
+  await initApp(page, '#/verify?study=study-1');
+  await page.locator('#verify-focus-detail .verify__action--accept').click();
+  await expect(page.locator('#verify-saving')).toBeVisible();
+  await expect(page.locator('#verify-saving')).toContainText('保存中');
+  const prevented = () => page.evaluate(() => {
+    const event = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(event);
+    return event.defaultPrevented;
+  });
+  expect(await prevented()).toBe(true);
+  await expect(page.locator('#verify-saving')).toBeHidden({ timeout: 15000 });
+  expect(await prevented()).toBe(false);
+  const results = await new AxeBuilder({ page }).analyze();
+  expect(results.violations).toEqual([]);
 });

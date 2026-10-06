@@ -1,3 +1,4 @@
+import { createSavingBadge } from '../ui/savingBadge';
 import { renderAdjudicateQuotes } from './adjudicateQuotes';
 // `#/adjudicate`: 裁定（S12。docs/design-independent-dual-review.md §6・§9 PR3・§13）。
 // owner / adjudicator のみ到達可能（guards.ts）。状態: 読み込み中 / 失敗 / study 一覧
@@ -659,6 +660,7 @@ function renderWorking(state: AppState, ctx: ViewContext, working: AdjudicateWor
       }),
     );
   }
+  headerActions.push(createSavingBadge('adjudicate-saving'));
   headerActions.push(back);
 
   const children: HTMLElement[] = [

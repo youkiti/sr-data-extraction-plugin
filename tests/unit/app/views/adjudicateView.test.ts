@@ -1,3 +1,4 @@
+import { withSpreadsheetWriteLock } from '../../../../src/app/services/verificationService';
 import { buildQuoteSetRows, aiCellQuotes } from '../../../../src/features/verification/cellQuotes';
 import { bundleEvidence } from '../../../../src/features/verification/evidenceBundles';
 import { makeAskTurn } from '../askPaperFixtures';
@@ -1562,4 +1563,23 @@ test('セル単位で解決された型が study の既定型より優先され�
     quoteTypesForCell: () => ({ annotatorTypeA: 'human_independent', annotatorTypeB: 'human_with_ai' }) });
   const root = render(makeState({ rows: [makeRow()], working }), ctx);
   expect(root.querySelector('.adjudicate__quote-owner')?.textContent).toBe('B');
+});
+
+
+test('保存バッジは 0 件で隠れ、再描画時の未決着件数を表示する', async () => {
+  const draw = () => render(makeState({ rows: [makeRow()], working: makeWorking() }), makeCtx().ctx);
+  expect(draw().querySelector<HTMLElement>('#adjudicate-saving')!.hidden).toBe(true);
+  let resolve!: () => void;
+  const promise = new Promise<void>((done) => { resolve = done; });
+  const write = withSpreadsheetWriteLock('badge-test', () => promise);
+  try {
+    const badge = draw().querySelector<HTMLElement>('#adjudicate-saving')!;
+    expect(badge.hidden).toBe(false);
+    expect(badge.textContent).toBe('保存中（1 件）');
+    expect(badge.getAttribute('role')).toBe('status');
+  } finally {
+    resolve();
+    await write;
+  }
+  expect(draw().querySelector<HTMLElement>('#adjudicate-saving')!.hidden).toBe(true);
 });
