@@ -645,6 +645,7 @@ test('両者の引用から最終の根拠を選び consensus の引用スナッ
   await page.locator('tr[data-study-id="study-1"] .adjudicate__open-button').click();
   const block = page.locator('.adjudicate__quotes');
   await expect(block).toContainText('Smith 2020');
+  expect((await block.boundingBox())!.width).toBeGreaterThanOrEqual(280);
   await block.locator('.adjudicate__quote-adopt').check();
   await expect.poll(() => appends.filter((entry) => entry.url.includes('QuoteSets')).length).toBe(1);
   const row = (appends.find((entry) => entry.url.includes('QuoteSets'))!.body['values'] as unknown[][])[0]!;

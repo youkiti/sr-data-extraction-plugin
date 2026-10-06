@@ -85,7 +85,7 @@ export function resolveCellQuotes(
       };
     });
   return { quotes, edited: true,
-    newerAiAvailable: bundle !== null && snapshot.baseRunId !== bundle.evidence.runId,
+    newerAiAvailable: bundle !== null && aiCellQuotes(bundle).length > 0 && snapshot.baseRunId !== bundle.evidence.runId,
     baseRunId: snapshot.baseRunId };
 }
 
