@@ -1,0 +1,146 @@
+import {
+  GUIDE_PROGRESS_STORAGE_KEY, availableTours, completeTour, createEmptyGuideProgress,
+  decideProgressSync, dismissTour, isTourUnavailable, nextStepIndex, parseGuideProgress,
+  serializeGuideProgress, setActiveStep, shouldAdvance, shouldSuggest, startTour,
+  suppressSuggestions, tourToSuggestOnEvent, visibleStepPosition,
+} from '../../../../src/lib/guide/tourProgress';
+import { GUIDE_TOURS, type GuideTourId, type TourDefinition, type TourStep } from '../../../../src/lib/guide/tours';
+
+const ID = 'getting-started';
+const NOW = '2026-10-07T00:00:00.000Z';
+const original = GUIDE_TOURS[ID];
+const steps: TourStep[] = [
+  { id: 'import', target: 'import', textKey: 'import', route: '#/documents', skipIf: 'has-documents', advance: { type: 'events', events: ['route-opened-documents'] } },
+  { id: 'protocol', target: 'protocol', textKey: 'protocol', skipIf: 'has-protocol', advance: { type: 'next' } },
+  { id: 'finish', target: 'finish', textKey: 'finish', advance: { type: 'next' } },
+];
+const tour: TourDefinition = { ...original, draft: undefined, steps, suggestOn: 'route-opened-home' };
+const empty = createEmptyGuideProgress;
+
+beforeEach(() => { GUIDE_TOURS[ID] = tour; });
+afterEach(() => { GUIDE_TOURS[ID] = original; });
+
+test('保存キーと既定値。不正な値・記録は読み飛ばす', () => {
+  expect(GUIDE_PROGRESS_STORAGE_KEY).toBe('guide_progress');
+  for (const raw of [undefined, null, 'x', 3, [], { tours: 'x', active: 5 }]) {
+    expect(parseGuideProgress(raw)).toEqual(empty());
+  }
+  for (const value of [null, [], { status: 'invalid', at: NOW }, { status: 'done', at: 1 }]) {
+    expect(parseGuideProgress({ tours: { [ID]: value, unknown: { status: 'done', at: NOW } } })).toEqual(empty());
+  }
+  for (const status of ['done', 'dismissed']) {
+    expect(parseGuideProgress({ tours: { [ID]: { status, at: NOW } }, suppressSuggestions: true, extra: 1 }))
+      .toEqual({ tours: { [ID]: { status, at: NOW } }, active: null, suppressSuggestions: true });
+  }
+});
+
+test('再開は添字より手順 ID を優先し、旧形式は整数の範囲内だけを読む', () => {
+  expect(parseGuideProgress({ active: { tourId: ID, stepId: 'finish', stepIndex: 99 } }).active)
+    .toEqual({ tourId: ID, stepId: 'finish', stepIndex: 2 });
+  for (const active of [
+    { tourId: 'unknown', stepIndex: 0 }, { tourId: ID, stepId: 'removed', stepIndex: 0 },
+    ...[undefined, '1', -1, 1.5, 3, NaN].map(stepIndex => ({ tourId: ID, stepIndex })),
+  ]) {
+    const parsed = parseGuideProgress({ active, tours: { [ID]: { status: 'done', at: NOW } } });
+    expect(parsed.active).toBeNull();
+    expect(parsed.tours[ID]).toEqual({ status: 'done', at: NOW });
+  }
+  expect(parseGuideProgress({ active: { tourId: ID, stepIndex: 1 } }).active)
+    .toEqual({ tourId: ID, stepId: 'protocol', stepIndex: 1 });
+});
+
+test('直列化の往復と状態遷移は元の状態を書き換えない', () => {
+  const base = empty();
+  const started = startTour(base, ID);
+  expect(started.active).toEqual({ tourId: ID, stepId: 'import', stepIndex: 0 });
+  const moved = setActiveStep(started, 2);
+  expect(moved.active).toEqual({ tourId: ID, stepId: 'finish', stepIndex: 2 });
+  expect(parseGuideProgress(JSON.parse(JSON.stringify(serializeGuideProgress(moved))))).toEqual(moved);
+  expect(serializeGuideProgress(moved).active).not.toBe(moved.active);
+  expect(serializeGuideProgress(moved).tours).not.toBe(moved.tours);
+  expect(serializeGuideProgress(base)).toEqual(base);
+  expect(setActiveStep(base, 1)).toBe(base);
+  expect(startTour(moved, ID, 1).active?.stepIndex).toBe(1);
+  expect(startTour(base, ID, 99).active?.stepId).toBe('');
+  expect(completeTour(moved, ID, NOW)).toEqual({ ...base, tours: { [ID]: { status: 'done', at: NOW } } });
+  expect(dismissTour(started, ID, NOW).tours[ID]).toEqual({ status: 'dismissed', at: NOW });
+  expect(completeTour(base, ID, NOW).active).toBeNull();
+  // 将来別のツアーが追加された場合も、実行中でないツアーの終了は表示を消さない。
+  const other = 'another-tour' as GuideTourId;
+  expect(completeTour(moved, other, NOW).active).toEqual(moved.active);
+  expect(suppressSuggestions(moved).suppressSuggestions).toBe(true);
+  expect(base).toEqual(empty());
+  expect(started.active?.stepIndex).toBe(0);
+});
+
+test('条件に応じて連続した手順を飛ばし、最後を過ぎると終了する', () => {
+  expect(nextStepIndex(tour, -1, {})).toBe(0);
+  expect(nextStepIndex(tour, 0, { 'has-documents': true, 'has-protocol': true })).toBe(2);
+  expect(nextStepIndex(tour, 0, new Set(['has-documents']))).toBe(1);
+  expect(nextStepIndex(tour, 0, new Set())).toBe(0);
+  expect(nextStepIndex(tour, 3, {})).toBeNull();
+  expect(nextStepIndex({ steps: steps.slice(0, 2) }, 0, { 'has-documents': true, 'has-protocol': true })).toBeNull();
+  expect(nextStepIndex({ steps: [] }, 0, {})).toBeNull();
+});
+
+test('表示番号は飛ばされない手順だけで数え、先頭を飛ばす場合は最低 1、全部なら 0', () => {
+  expect(visibleStepPosition(tour, 0, {})).toEqual({ position: 1, total: 3 });
+  expect(visibleStepPosition(tour, 2, {})).toEqual({ position: 3, total: 3 });
+  expect(visibleStepPosition(tour, 0, { 'has-documents': true })).toEqual({ position: 1, total: 2 });
+  expect(visibleStepPosition(tour, 1, new Set(['has-protocol']))).toEqual({ position: 1, total: 2 });
+  expect(visibleStepPosition({ steps: steps.slice(0, 2) }, 0, { 'has-documents': true, 'has-protocol': true }))
+    .toEqual({ position: 0, total: 0 });
+});
+
+test('events は一致イベントだけで進み、optional でも同じ。next はイベントでは進まない', () => {
+  for (const optional of [undefined, true] as const) {
+    const step: TourStep = { ...steps[0]!, advance: { type: 'events', events: ['route-opened-documents'], optional } };
+    expect(shouldAdvance(step, 'route-opened-documents')).toBe(true);
+    expect(shouldAdvance(step, 'route-opened-home')).toBe(false);
+  }
+  expect(shouldAdvance(steps[2]!, 'route-opened-home')).toBe(false);
+});
+
+test('利用可能性は draft と任意の条件で判定する', () => {
+  const unavailable: TourDefinition = { ...tour, unavailableIf: 'has-confirmed-schema' };
+  expect(availableTours([original, tour])).toEqual([tour]);
+  expect(availableTours()).toEqual([tour]);
+  expect(availableTours([unavailable])).toEqual([unavailable]);
+  expect(availableTours([unavailable], { 'has-confirmed-schema': true })).toEqual([]);
+  expect(availableTours([unavailable], {})).toEqual([unavailable]);
+  expect(isTourUnavailable(tour, {})).toBe(false);
+  expect(isTourUnavailable(unavailable, new Set(['has-confirmed-schema']))).toBe(true);
+  expect(isTourUnavailable(unavailable, {})).toBe(false);
+});
+
+test('初回提案は画面・延期・抑止・実行中・完了・却下を考慮する', () => {
+  const context = { screen: 'home' as const };
+  expect(shouldSuggest(empty(), context)).toBe(true);
+  expect(shouldSuggest(empty(), { screen: 'other' })).toBe(false);
+  expect(shouldSuggest(empty(), { ...context, postponedThisSession: true })).toBe(false);
+  for (const progress of [suppressSuggestions(empty()), startTour(empty(), ID), completeTour(empty(), ID, NOW), dismissTour(empty(), ID, NOW)]) {
+    expect(shouldSuggest(progress, context)).toBe(false);
+  }
+  GUIDE_TOURS[ID] = original;
+  expect(shouldSuggest(empty(), context)).toBe(false);
+});
+
+test('イベント提案は一致する未完了ツアーだけを返す', () => {
+  expect(tourToSuggestOnEvent(empty(), 'route-opened-home')).toBe(tour);
+  expect(tourToSuggestOnEvent(empty(), 'route-opened-documents', [tour])).toBeNull();
+  expect(tourToSuggestOnEvent(empty(), 'route-opened-home', [{ ...tour, suggestOn: undefined }])).toBeNull();
+  expect(tourToSuggestOnEvent(empty(), 'route-opened-home', [original])).toBeNull();
+  expect(tourToSuggestOnEvent(empty(), 'route-opened-home', [{ ...tour, unavailableIf: 'is-owner' }], { 'is-owner': true })).toBeNull();
+  for (const progress of [suppressSuggestions(empty()), startTour(empty(), ID), completeTour(empty(), ID, NOW), dismissTour(empty(), ID, NOW)]) {
+    expect(tourToSuggestOnEvent(progress, 'route-opened-home', [tour])).toBeNull();
+  }
+});
+
+test('同期は保存値を正として、同じ手順なら維持、違えば切替、終了・別ツアーなら閉じる', () => {
+  const active = startTour(empty(), ID).active!;
+  expect(decideProgressSync(active, null)).toEqual({ type: 'none' });
+  expect(decideProgressSync(null, active)).toEqual({ type: 'close' });
+  expect(decideProgressSync(active, { tourId: 'another-tour' as GuideTourId, stepIndex: 0 })).toEqual({ type: 'close' });
+  expect(decideProgressSync(active, active)).toEqual({ type: 'none' });
+  expect(decideProgressSync({ ...active, stepIndex: 2 }, active)).toEqual({ type: 'switch', stepIndex: 2 });
+});
