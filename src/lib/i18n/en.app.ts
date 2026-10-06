@@ -21,7 +21,7 @@ export const enApp: Record<keyof typeof jaApp, string> = {
   'guide.tourGettingStartedStepOpenDocuments': 'Select “Documents” to open the PDF import screen.',
   'guide.tourGettingStartedStepImportDocuments': 'Select “Choose PDFs / a folder from Drive” and choose the included papers. The tour continues when import finishes.',
   'guide.tourGettingStartedStepOpenProtocol': 'Select “Protocol” to open the research protocol screen.',
-  'guide.tourGettingStartedStepEnterProtocol': 'Enter your protocol or choose a file, then select “Save”. The tour continues once it is saved.',
+  'guide.tourGettingStartedStepEnterProtocol': 'Enter your protocol or choose a file first, then select this “Save” button. The tour continues once it is saved.',
   'guide.tourGettingStartedStepOpenSchema': 'Select “Table design” to choose the fields to extract.',
   'guide.tourGettingStartedStepDraftSchema': '“Have AI draft the table design” creates a draft (API charges apply). Review and edit the draft, then select “Next” to continue the tour.',
   'guide.tourGettingStartedStepConfirmSchema': 'Select “Confirm as a version” after reviewing the fields to save the extraction schema. Select “Skip this action” if you are not ready to confirm.',

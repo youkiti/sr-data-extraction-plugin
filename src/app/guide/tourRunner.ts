@@ -22,11 +22,11 @@ export function createTourRunner(host: TourRunnerHost, { doc, win }: { doc: Docu
 
   function stop(): void { cleanup(); running = null; }
 
-  function show(tour: TourDefinition, index: number, followed: boolean): void {
+  function show(tour: TourDefinition, index: number, followed: boolean, focus = true): void {
     stop();
     running = { tour, index, followed };
     const step = tour.steps[index]!;
-    let needsScroll = true;
+    let needsScroll = focus;
     const card = doc.createElement('section');
     card.className = 'guide-tour-card';
     card.dataset.guideStep = step.id;
@@ -93,6 +93,11 @@ export function createTourRunner(host: TourRunnerHost, { doc, win }: { doc: Docu
     const timer = win.setInterval(reposition, 400);
     win.addEventListener('resize', reposition);
     win.addEventListener('scroll', reposition, true);
+    const onTargetClick = (event: MouseEvent): void => {
+      if (isSatisfiedByRoute(step, host.currentRoute()) && event.target instanceof Element &&
+          event.target.closest(`[data-tour="${step.target}"]`)) advance();
+    };
+    doc.addEventListener('click', onTargetClick);
     const unsubscribe = subscribeGuideProgressChange(() => {
       const action = decideProgressSync(getGuideProgress().active, { tourId: tour.id, stepIndex: index });
       if (action.type === 'close') stop();
@@ -103,11 +108,16 @@ export function createTourRunner(host: TourRunnerHost, { doc, win }: { doc: Docu
       win.clearInterval(timer);
       win.removeEventListener('resize', reposition);
       win.removeEventListener('scroll', reposition, true);
+      doc.removeEventListener('click', onTargetClick);
       unsubscribe();
       card.remove(); highlight.remove(); block.remove();
     };
     reposition();
-    (next.hidden ? end : next).focus({ preventScroll: true });
+    if (focus) (next.hidden ? end : next).focus({ preventScroll: true });
+  }
+
+  function rerender(): void {
+    if (running) show(running.tour, running.index, running.followed, false);
   }
 
   function goTo(tour: TourDefinition, index: number | null): void {
@@ -157,5 +167,5 @@ export function createTourRunner(host: TourRunnerHost, { doc, win }: { doc: Docu
     const next = nextLocalStepIndex(tour, index);
     if (next !== index) goTo(tour, next);
   }
-  return { start, resume, handleEvent, stop };
+  return { start, resume, handleEvent, stop, rerender };
 }

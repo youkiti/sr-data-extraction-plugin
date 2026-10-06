@@ -102,7 +102,7 @@ function renderForm(protocol: ProtocolState, ctx: ViewContext, hasVersions: bool
     id: 'protocol-submit',
     className: 'protocol__submit',
     text: hasVersions ? t('protocol.submitNew') : t('protocol.submit'),
-    attributes: { type: 'submit' },
+    attributes: { type: 'submit', 'data-tour': 'protocol-save' },
   });
   submitButton.disabled = protocol.saving;
 
@@ -147,7 +147,7 @@ function renderForm(protocol: ProtocolState, ctx: ViewContext, hasVersions: bool
   }
   children.push(el('div', { className: 'protocol__actions' }, actions));
 
-  const form = el('form', { id: 'protocol-form', className: 'protocol__form', attributes: { 'data-tour': 'protocol-input' } }, children);
+  const form = el('form', { id: 'protocol-form', className: 'protocol__form' }, children);
   form.addEventListener('submit', (event) => {
     event.preventDefault();
     errorBox.textContent = '';

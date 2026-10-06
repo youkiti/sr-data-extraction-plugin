@@ -3,6 +3,7 @@ import { createStore, createInitialState, type Store } from '../../../../src/app
 import { createEmptyGuideProgress, type GuideProgress } from '../../../../src/lib/guide/tourProgress';
 import * as storage from '../../../../src/lib/storage/guideProgressStore';
 import { createTourRunner } from '../../../../src/app/guide/tourRunner';
+import { setUiLanguage, t } from '../../../../src/lib/i18n';
 
 jest.mock('../../../../src/lib/storage/guideProgressStore');
 jest.mock('../../../../src/app/guide/tourRunner');
@@ -10,7 +11,7 @@ let store: Store;
 let progress: GuideProgress;
 let postponed: boolean;
 let listeners: Set<() => void>;
-const runner = { start: jest.fn(), resume: jest.fn(), stop: jest.fn(), handleEvent: jest.fn() };
+const runner = { start: jest.fn(), resume: jest.fn(), stop: jest.fn(), handleEvent: jest.fn(), rerender: jest.fn() };
 const band = (): HTMLElement | null => document.getElementById('guide-suggest-band');
 const click = (name: string): void => document.querySelector<HTMLButtonElement>(`#guide-suggest-band [data-guide-action="${name}"]`)!.click();
 beforeEach(() => {
@@ -76,6 +77,27 @@ test('Home 以外や owner 以外では提案しない', async () => {
   expect(band()).toBeNull();
   store.setState({ role: { ...store.getState().role, role: 'owner' } });
   expect(band()).not.toBeNull();
+});
+
+test('言語変更でカードの再描画と帯・開いている一覧の翻訳を行い、終了時に購読解除する', async () => {
+  await initGuide({ store, win: window, doc: document });
+  document.getElementById('app-open-tours')!.click();
+  const saved = JSON.parse(JSON.stringify(progress)) as GuideProgress;
+  const writes = jest.mocked(storage.updateGuideProgress); writes.mockClear();
+  try {
+    setUiLanguage('en');
+    expect(runner.rerender).toHaveBeenCalledTimes(1);
+    expect(band()?.querySelector('p')?.textContent).toBe(t('guide.suggest'));
+    expect(band()?.querySelector('[data-guide-action="start"]')?.textContent).toBe('Take the tour');
+    expect(document.querySelector('#guide-tour-list h2')?.textContent).toBe('Getting started');
+    expect(document.querySelector('#guide-tour-list [data-guide-action="close-list"]')?.textContent).toBe('Close list');
+    expect(progress).toEqual(saved); expect(writes).not.toHaveBeenCalled();
+    click('postpone'); setUiLanguage('ja');
+    expect(band()).toBeNull();
+    window.dispatchEvent(new Event('pagehide'));
+    runner.rerender.mockClear(); setUiLanguage('en');
+    expect(runner.rerender).not.toHaveBeenCalled();
+  } finally { setUiLanguage('ja'); }
 });
 
 test.each(['store', 'hashchange', 'progress', 'observer', 'pagehide'] as const)('初期化の %s で失敗したら、それまでの購読をすべて解除する', async stage => {

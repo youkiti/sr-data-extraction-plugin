@@ -22,7 +22,7 @@ export const GETTING_STARTED_TOUR: TourFor<GettingStartedEvent, GettingStartedCo
     { id: 'open-protocol', target: 'nav-protocol', textKey: stepKey(BASE, 'open-protocol'),
       skipIf: 'has-protocol',
       advance: { type: 'events', events: ['route-opened-protocol'] } },
-    { id: 'enter-protocol', target: 'protocol-input', textKey: stepKey(BASE, 'enter-protocol'),
+    { id: 'enter-protocol', target: 'protocol-save', textKey: stepKey(BASE, 'enter-protocol'),
       route: '#/protocol', dynamicTarget: true,
       skipIf: 'has-protocol',
       advance: { type: 'events', events: ['protocol-saved'] } },

@@ -2,6 +2,7 @@ import { createTourRunner } from '../../../../src/app/guide/tourRunner';
 import { GUIDE_TOURS, type TourDefinition } from '../../../../src/lib/guide/tours';
 import { createEmptyGuideProgress, startTour, setActiveStep, type GuideProgress, type GuideConditionValues } from '../../../../src/lib/guide/tourProgress';
 import * as storage from '../../../../src/lib/storage/guideProgressStore';
+import { setUiLanguage, t } from '../../../../src/lib/i18n';
 
 jest.mock('../../../../src/lib/storage/guideProgressStore');
 const original = GUIDE_TOURS['getting-started'];
@@ -198,4 +199,64 @@ test('他タブ追従では現在のルートを満たす手順も保存値ど�
   runner.handleEvent('route-opened-home');
   expect(card()?.dataset.guideStep).toBe('open-protocol');
   expect(writes).not.toHaveBeenCalled();
+});
+
+test.each([true, false])('現在の画面を開く手順の対象クリックで一度だけ進み保存する（追従: %s）', followed => {
+  runner.start('getting-started', 'open-protocol');
+  route = '#/protocol';
+  if (followed) {
+    progress = setActiveStep(progress, 0); [...listeners].forEach(listener => listener());
+    progress = setActiveStep(progress, 2); [...listeners].forEach(listener => listener());
+  }
+  const writes = jest.mocked(storage.updateGuideProgress); writes.mockClear();
+  target('nav-protocol').remove();
+  const replacement = target('nav-protocol');
+  const child = document.createElement('span'); replacement.append(child);
+  document.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  target('outside').click();
+  expect(writes).not.toHaveBeenCalled();
+  child.click();
+  expect(card()?.dataset.guideStep).toBe('enter-protocol');
+  expect(progress.active?.stepId).toBe('enter-protocol');
+  expect(writes).toHaveBeenCalledTimes(1);
+  runner.handleEvent('route-opened-protocol');
+  expect(writes).toHaveBeenCalledTimes(1);
+  runner.stop(); replacement.click();
+  expect(writes).toHaveBeenCalledTimes(1);
+});
+
+test('別画面では対象クリックで進めず、ルートイベントで進む', () => {
+  runner.start('getting-started', 'open-protocol');
+  const writes = jest.mocked(storage.updateGuideProgress); writes.mockClear();
+  target('nav-protocol').click();
+  expect(card()?.dataset.guideStep).toBe('open-protocol');
+  expect(writes).not.toHaveBeenCalled();
+  route = '#/protocol'; runner.handleEvent('route-opened-protocol');
+  expect(card()?.dataset.guideStep).toBe('enter-protocol');
+  expect(writes).toHaveBeenCalledTimes(1);
+});
+
+test('言語による再描画は手順・追従・保存値を保ちフォーカスとスクロールを移さない', () => {
+  runner.rerender();
+  runner.start('getting-started');
+  route = '#/protocol'; progress = setActiveStep(progress, 2);
+  [...listeners].forEach(listener => listener());
+  const node = target('nav-protocol');
+  const input = document.createElement('input'); document.body.append(input); input.focus();
+  const saved = JSON.parse(JSON.stringify(progress)) as GuideProgress;
+  const writes = jest.mocked(storage.updateGuideProgress); writes.mockClear();
+  try {
+    setUiLanguage('en'); runner.rerender();
+    expect(card()?.querySelector('h2')?.textContent).toBe('Getting started');
+    expect(card()?.querySelector('p')?.textContent).toBe(t('guide.tourGettingStartedStepOpenProtocol'));
+    expect(action('end').textContent).toBe('End tour');
+    expect(action('go-route').textContent).toBe('Go to this screen');
+    expect(card()?.dataset.guideStep).toBe('open-protocol');
+    expect(document.activeElement).toBe(input);
+    expect(node.scrollIntoView).not.toHaveBeenCalled();
+    runner.handleEvent('route-opened-home');
+    expect(progress).toEqual(saved); expect(writes).not.toHaveBeenCalled();
+    runner.start('getting-started', 'draft-schema'); runner.rerender();
+    expect(action('next').textContent).toBe('Next');
+  } finally { setUiLanguage('ja'); }
 });

@@ -7,6 +7,7 @@ import { createTourRunner } from './tourRunner';
 import { createTourEntry } from './tourEntry';
 import { createSuggestBand } from './suggestBand';
 import { guideEvents, routeGuideEvent } from './guideEvents';
+import { onUiLanguageChange } from '../../lib/i18n';
 
 export async function initGuide({ store, win, doc }: { store: Store; win: Window; doc: Document }): Promise<void> {
   const anchor = doc.getElementById('app-open-tours');
@@ -58,6 +59,12 @@ export async function initGuide({ store, win, doc }: { store: Store; win: Window
     cleanups.push(() => win.removeEventListener('hashchange', onRoute));
     const unsubscribeProgress = subscribeGuideProgressChange(() => { entry.refresh(); refresh(); });
     cleanups.push(unsubscribeProgress);
+    cleanups.push(onUiLanguageChange(() => {
+      runner.rerender();
+      doc.getElementById('guide-suggest-band')?.remove();
+      refresh();
+      entry.refresh();
+    }));
     // ルートの replaceChildren 後に帯を戻す。自分の挿入では重複させない。
     const observer = new MutationObserver(refresh);
     cleanups.push(() => observer.disconnect());

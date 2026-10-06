@@ -19,7 +19,7 @@ export const jaApp = {
   'guide.tourGettingStartedStepOpenDocuments': '「文献取り込み」を押して、論文 PDF を取り込む画面を開きます。',
   'guide.tourGettingStartedStepImportDocuments': '「Drive から PDF / フォルダを選択」を押し、採用した論文の PDF を選びます。取り込みが完了すると次へ進みます。',
   'guide.tourGettingStartedStepOpenProtocol': '「プロトコル」を押して、研究計画の入力画面を開きます。',
-  'guide.tourGettingStartedStepEnterProtocol': 'プロトコルを入力するかファイルを選び、「保存する」を押します。保存すると次へ進みます。',
+  'guide.tourGettingStartedStepEnterProtocol': 'プロトコルを入力するかファイルを選んでから、この「保存する」ボタンを押します。保存すると次へ進みます。',
   'guide.tourGettingStartedStepOpenSchema': '「表のデザイン」を押して、抽出する項目を決める画面を開きます。',
   'guide.tourGettingStartedStepDraftSchema': '「AI に表のデザインをドラフトさせる」で AI がドラフトを作ります（API の費用がかかります）。作ったら内容を確かめて直し、「次へ」で案内を進めてください。',
   'guide.tourGettingStartedStepConfirmSchema': '内容を確認して「版として確定」を押すと、抽出に使うスキーマを保存します。今は確定しない場合は「押さずに次へ」で進めます。',
