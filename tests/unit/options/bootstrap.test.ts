@@ -571,6 +571,41 @@ describe('bootstrapOptions（LLM 接続先。Issue #27）', () => {
     expect(JSON.parse(init.body as string).response_format.type).toBe('json_schema');
   });
 
+  test('Gemini の接続テストは思考を含む出力上限 4096 を送信する', async () => {
+    globalThis.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      text: async () => JSON.stringify({
+        candidates: [{ content: { parts: [{ text: '{"ok":true}' }] }, finishReason: 'STOP' }],
+      }),
+    }) as unknown as typeof fetch;
+    chromeMock.storage.local.data['secrets.geminiApiKey'] = 'gemini-key';
+    await bootstrapOptions(document);
+    provider().value = 'gemini';
+    testConnection().click();
+    await flush();
+    await flush();
+    expect(connectionStatus().textContent).toBe('接続テストに成功しました。');
+    const init = (globalThis.fetch as jest.Mock).mock.calls[0]?.[1] as RequestInit;
+    expect(JSON.parse(init.body as string).generationConfig.maxOutputTokens).toBe(4096);
+  });
+
+  test('OpenAI 互換 API の接続テストは思考を含む出力上限 4096 を送信する', async () => {
+    globalThis.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      text: async () => JSON.stringify({ choices: [{ message: { content: '{"ok":true}' } }] }),
+    }) as unknown as typeof fetch;
+    await bootstrapOptions(document);
+    provider().value = 'openai_compatible';
+    endpoint().value = 'https://llm.example/v1/chat/completions';
+    key().value = 'key';
+    testConnection().click();
+    await flush();
+    await flush();
+    expect(connectionStatus().textContent).toBe('接続テストに成功しました。');
+    const init = (globalThis.fetch as jest.Mock).mock.calls[0]?.[1] as RequestInit;
+    expect(JSON.parse(init.body as string).max_tokens).toBe(4096);
+  });
+
   test('接続テストの権限拒否、非準拠応答、JSON エラーを表示する', async () => {
     globalThis.fetch = jest.fn().mockResolvedValue({
       ok: true,

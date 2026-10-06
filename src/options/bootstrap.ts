@@ -226,6 +226,11 @@ async function bootstrapReasoningEffortSection(root: ParentNode): Promise<void> 
   });
 }
 
+// 思考つきモデルは思考トークンも出力上限に数えるため、64 では本文に届く前に打ち切られる。
+// 2026-10-07 の実測では Gemini 3.5 / 3.6 / 3.8 Flash が上限 64 で各 3 回中 3 / 3 / 2 回失敗し、
+// 4096 では各 3 回とも成功した。構造化出力を守らないローカル LLM などの出力を止めるため、上限は残す。
+const CONNECTION_TEST_MAX_OUTPUT_TOKENS = 4_096;
+
 const CONNECTION_TEST_SCHEMA = {
   type: 'object',
   properties: { ok: { type: 'boolean' } },
@@ -450,7 +455,11 @@ async function bootstrapLlmConnectionSection(root: ParentNode): Promise<void> {
             { role: 'system', content: 'Return JSON matching the supplied schema.' },
             { role: 'user', content: 'Return {"ok":true}.' },
           ],
-          { responseSchema: CONNECTION_TEST_SCHEMA, maxOutputTokens: 64, temperature: 0 },
+          {
+            responseSchema: CONNECTION_TEST_SCHEMA,
+            maxOutputTokens: CONNECTION_TEST_MAX_OUTPUT_TOKENS,
+            temperature: 0,
+          },
         );
         const parsed = JSON.parse(response.text) as { ok?: unknown };
         if (parsed.ok !== true) {
