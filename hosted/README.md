@@ -129,6 +129,9 @@ spreadsheet / pdf モードは `page_version` を検査しない（ready 応答�
 
 ### 更新時に守ること
 
+`npm run help:gaps` は、前回のリリースコミット以降に画面のソースを変え、同じ PR（または直接コミット）で `hosted/help.html` を変えていない候補を一覧する。既存画面の中の小さな変更によるヘルプの抜けはテストでは検出できないため、この一覧で拾う。道具は一覧を出すだけで、ヘルプが十分かは人が判断する。
+リリースが候補ありで止まったら一覧を見てヘルプを直し、追記不要と確認できたら `npm run release -- patch -HelpReviewed` のように続行する（`-Force` では解除されない）。別の PR でヘルプを修正しても元の候補は残るので、修正内容を確認したうえで `-HelpReviewed` を使う。
+
 - **プライバシーポリシーの正典は [docs/store/privacy-policy.md](../docs/store/privacy-policy.md)**。
   `privacy-policy.html` はその転記 + 英訳なので、**内容を変えるときは両方を直す**（乖離すると
   ストア審査で参照される URL の内容と リポジトリの原稿がずれる）
