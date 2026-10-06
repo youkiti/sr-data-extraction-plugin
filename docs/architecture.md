@@ -229,6 +229,15 @@ anchorQuote() ──文字範囲──▶ highlightMap() ──span 座標──
 
 - アンカリングは**取り込み済みテキスト層（extracted_texts）に対して実行**し、結果（`anchor_status` + 文字オフセット）を `Evidence` 保存時に確定する。ビューア表示時は座標写像のみ行う（再計算しない）
 
+### 2.4 操作ツアーの追加と並列作業
+
+定義は `src/lib/guide/tours/<名前>.ts`、固有条件と状態の立ち上がりイベントは `src/app/guide/adapters/<名前>.ts` に置く。登録順が一覧の表示順になる。空の枠は `draft: true`・`steps: []` とし、一覧・提案・開始から除外する。
+
+追加済みの枠に手順を入れる順序は、定義を書く → 固有の条件・イベントを自分の型とアダプタに足す → 対象に `data-tour` を付ける → 日英辞書の自分の区画の Desc 直後に文言を足す（i18n テストの登録キー数の固定値も合わせる）→ `draft: true` を外す → テスト、とする。新しい ID の枠を増やす場合は、先に共有ファイルの型・登録・条件合成を別の変更で整える。
+
+- 並列作業で触ってよいのは、自分の `src/lib/guide/tours/<名前>.ts`、自分の `src/app/guide/adapters/<名前>.ts`、日英辞書の自分の区画、対象画面への `data-tour` 属性の追加、自分のテストファイル。
+- 共有ファイルへの変更は別に分ける: `tours/index.ts`・`tours/types.ts`・`tourConditions.ts`・`guideEvents.ts`・`adapters/index.ts`・実行部（`tourRunner.ts`・`placement.ts`・`index.ts`）・`tourProgress.ts`。i18n の登録キー数の固定値は共有テストにあるため、並列作業の統合時に合算する。
+
 ## 3. ビルド構成
 
 ### 3.1 webpack エントリ

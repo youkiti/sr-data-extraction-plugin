@@ -260,3 +260,11 @@ test('言語による再描画は手順・追従・保存値を保ちフォー�
     expect(action('next').textContent).toBe('Next');
   } finally { setUiLanguage('ja'); }
 });
+
+test('登録した空の枠は直接開始しても進行状態とカードを作らない', () => {
+  for (const tour of Object.values(GUIDE_TOURS).filter(tour => tour.id !== 'getting-started')) {
+    runner.start(tour.id);
+    expect(progress.active).toBeNull();
+    expect(card()).toBeNull();
+  }
+});

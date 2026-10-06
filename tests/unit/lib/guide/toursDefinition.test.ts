@@ -5,7 +5,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 test('登録 ID と定義は一致し、未知の値や継承プロパティを ID と認めない', () => {
-  expect(GUIDE_TOUR_IDS).toEqual(['getting-started']);
+  expect(GUIDE_TOUR_IDS).toEqual(['getting-started', 'pilot-and-extract', 'verify-basics', 'dual-review', 'export-data']);
   for (const [id, tour] of Object.entries(GUIDE_TOURS)) {
     expect(tour.id).toBe(id);
     expect(isGuideTourId(id)).toBe(true);
@@ -75,5 +75,20 @@ test('公開ツアーの全対象・本文・ルートが画面と日英辞書�
     for (const key of [tour.titleKey, tour.descriptionKey, ...tour.steps.map(step => step.textKey)]) {
       for (const dict of [jaApp, enApp]) expect((dict as Record<string, string>)[key]).toBeTruthy();
     }
+  }
+});
+
+test.each([['ja', jaApp], ['en', enApp]])('%s のツアー区画は登録順で連続し、見出しと説明から始まる', (_language, dictionary) => {
+  const keys = Object.keys(dictionary);
+  let previousEnd = -1;
+  for (const tour of Object.values(GUIDE_TOURS)) {
+    const base = tourKeyBase(tour.id);
+    const section = keys.filter(key => key.startsWith(base));
+    const start = keys.indexOf(tour.titleKey);
+    expect(section.slice(0, 2)).toEqual([tour.titleKey, tour.descriptionKey]);
+    expect(keys.slice(start, start + section.length)).toEqual(section);
+    expect(start).toBeGreaterThan(previousEnd);
+    expect(section.slice(2)).toEqual(tour.steps.map(step => step.textKey));
+    previousEnd = start + section.length - 1;
   }
 });

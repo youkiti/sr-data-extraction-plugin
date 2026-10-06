@@ -1,4 +1,9 @@
-export type GuideTourId = 'getting-started';
+export type GuideTourId =
+  | 'getting-started'
+  | 'pilot-and-extract'
+  | 'verify-basics'
+  | 'dual-review'
+  | 'export-data';
 
 /**
  * 全ツアーで共通のイベント名。画面側が投げる、ツアーを進める（または提案する）ためのイベント。
