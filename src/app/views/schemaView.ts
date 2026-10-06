@@ -186,7 +186,7 @@ function renderDraftForm(state: AppState, ctx: ViewContext): HTMLElement {
     id: 'schema-draft-run',
     className: 'schema__primary',
     text: t('schema.draftTitle'),
-    attributes: { type: 'button' },
+    attributes: { type: 'button', 'data-tour': 'schema-draft' },
   });
   runButton.addEventListener('click', () => ctx.schema.onRunDraft());
   children.push(el('div', { className: 'schema__actions' }, [runButton]));
@@ -1346,7 +1346,7 @@ function renderEditor(
     id: 'schema-confirm',
     className: 'schema__primary schema__confirm',
     text: schema.confirming ? t('schema.confirming') : t('schema.confirm'),
-    attributes: { type: 'button' },
+    attributes: { type: 'button', 'data-tour': 'schema-confirm' },
   });
   confirmButton.disabled = schema.confirming || schema.editorErrors.length > 0;
   confirmButton.addEventListener('click', () => ctx.schema.onConfirm(noteInput.value));

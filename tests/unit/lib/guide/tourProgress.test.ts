@@ -14,7 +14,7 @@ const steps: TourStep[] = [
   { id: 'protocol', target: 'protocol', textKey: 'protocol', skipIf: 'has-protocol', advance: { type: 'next' } },
   { id: 'finish', target: 'finish', textKey: 'finish', advance: { type: 'next' } },
 ];
-const tour: TourDefinition = { ...original, draft: undefined, steps, suggestOn: 'route-opened-home' };
+const tour: TourDefinition = { id: ID, titleKey: 'title', descriptionKey: 'description', steps, suggestOn: 'route-opened-home' };
 const empty = createEmptyGuideProgress;
 
 beforeEach(() => { GUIDE_TOURS[ID] = tour; });
@@ -103,7 +103,7 @@ test('events は一致イベントだけで進み、optional でも同じ。next
 
 test('利用可能性は draft と任意の条件で判定する', () => {
   const unavailable: TourDefinition = { ...tour, unavailableIf: 'has-confirmed-schema' };
-  expect(availableTours([original, tour])).toEqual([tour]);
+  expect(availableTours([{ ...tour, draft: true }, tour])).toEqual([tour]);
   expect(availableTours()).toEqual([tour]);
   expect(availableTours([unavailable])).toEqual([unavailable]);
   expect(availableTours([unavailable], { 'has-confirmed-schema': true })).toEqual([]);
@@ -121,7 +121,7 @@ test('初回提案は画面・延期・抑止・実行中・完了・却下を�
   for (const progress of [suppressSuggestions(empty()), startTour(empty(), ID), completeTour(empty(), ID, NOW), dismissTour(empty(), ID, NOW)]) {
     expect(shouldSuggest(progress, context)).toBe(false);
   }
-  GUIDE_TOURS[ID] = original;
+  GUIDE_TOURS[ID] = { ...tour, draft: true };
   expect(shouldSuggest(empty(), context)).toBe(false);
 });
 
@@ -129,7 +129,7 @@ test('イベント提案は一致する未完了ツアーだけを返す', () =>
   expect(tourToSuggestOnEvent(empty(), 'route-opened-home')).toBe(tour);
   expect(tourToSuggestOnEvent(empty(), 'route-opened-documents', [tour])).toBeNull();
   expect(tourToSuggestOnEvent(empty(), 'route-opened-home', [{ ...tour, suggestOn: undefined }])).toBeNull();
-  expect(tourToSuggestOnEvent(empty(), 'route-opened-home', [original])).toBeNull();
+  expect(tourToSuggestOnEvent(empty(), 'route-opened-home', [{ ...tour, draft: true }])).toBeNull();
   expect(tourToSuggestOnEvent(empty(), 'route-opened-home', [{ ...tour, unavailableIf: 'is-owner' }], { 'is-owner': true })).toBeNull();
   for (const progress of [suppressSuggestions(empty()), startTour(empty(), ID), completeTour(empty(), ID, NOW), dismissTour(empty(), ID, NOW)]) {
     expect(tourToSuggestOnEvent(progress, 'route-opened-home', [tour])).toBeNull();

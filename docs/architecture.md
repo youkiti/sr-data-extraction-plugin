@@ -74,6 +74,7 @@ src/
 │   │   ├── extractionService.ts   # pilot / full / single_document の実行管理
 │   │   ├── verifyService.ts       # 判定保存 + undo 履歴
 │   │   └── exportService.ts
+│   ├── guide/                     # 操作ツアーのカード・配置・一覧・提案とストアからのイベント生成
 │   ├── views/                     # 各ルートの描画関数（render(state, ctx): HTMLElement。ctx は views/types.ts の ViewContext）
 │   │   ├── homeView.ts
 │   │   ├── documentsView.ts

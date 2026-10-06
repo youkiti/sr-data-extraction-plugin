@@ -106,3 +106,17 @@ test('あとでの抑止はセッション内だけで保存しない', () => {
   expect(mock.storage.local.set).not.toHaveBeenCalled();
   expect(store.getGuideProgress()).toEqual(createEmptyGuideProgress());
 });
+
+test.each([undefined, {}, { storage: {} }])('変更通知 API がない環境でも購読と解除は何もしない: %j', value => {
+  const originalChrome = globalThis.chrome;
+  try {
+    Object.defineProperty(globalThis, 'chrome', { configurable: true, writable: true, value });
+    const listener = jest.fn();
+    const unsubscribe = store.subscribeGuideProgressChange(listener);
+    expect(unsubscribe).not.toThrow();
+    expect(listener).not.toHaveBeenCalled();
+    expect(listeners.size).toBe(0);
+  } finally {
+    Object.defineProperty(globalThis, 'chrome', { configurable: true, writable: true, value: originalChrome });
+  }
+});

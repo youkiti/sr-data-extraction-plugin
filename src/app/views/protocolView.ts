@@ -147,7 +147,7 @@ function renderForm(protocol: ProtocolState, ctx: ViewContext, hasVersions: bool
   }
   children.push(el('div', { className: 'protocol__actions' }, actions));
 
-  const form = el('form', { id: 'protocol-form', className: 'protocol__form' }, children);
+  const form = el('form', { id: 'protocol-form', className: 'protocol__form', attributes: { 'data-tour': 'protocol-input' } }, children);
   form.addEventListener('submit', (event) => {
     event.preventDefault();
     errorBox.textContent = '';
