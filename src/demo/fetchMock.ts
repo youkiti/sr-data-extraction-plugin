@@ -26,6 +26,9 @@ import { DEMO_PAPERS } from './paperContent';
 
 let installed = false;
 
+// 空のデモで取り込んだ論文の抽出テキストを、ドラフト時に読み戻すために保持する。
+const uploadedTexts = new Map<string, string>();
+
 /**
  * 人工遅延の有効フラグ。既定 true（実運用らしい待ち時間を入れる）。
  * seed.ts が起動時の初期シード投入（数十回の Sheets 呼び出し）を行う間だけ
@@ -269,6 +272,10 @@ function buildExtractedTextBody(pageTexts: readonly string[]): string {
 /** Drive files.get?alt=media（PDF バイナリ / 抽出済みテキスト取得）の応答を組み立てる。
  * DEMO_DRIVE_PDF_FILE_IDS / DEMO_DRIVE_TEXT_FILE_IDS のインデックス = DEMO_PAPERS のインデックス */
 async function handleDriveMediaDownload(fileId: string): Promise<Response> {
+  const uploaded = uploadedTexts.get(fileId);
+  if (uploaded !== undefined) {
+    return new Response(uploaded, { headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
+  }
   const pdfIndex = DEMO_DRIVE_PDF_FILE_IDS.indexOf(fileId as (typeof DEMO_DRIVE_PDF_FILE_IDS)[number]);
   if (pdfIndex !== -1) {
     const filename = DEMO_FIXTURE_PDF_FILENAMES[pdfIndex] as string;
@@ -304,12 +311,13 @@ function nextDemoDriveFileId(): string {
  * lib/google/drive.ts の createFolder が呼ぶ。デモでは常に新規作成扱いにする
  * （ensureChildFolder 側の検索 GET を常に空応答にしているため、毎回ここを通る）
  */
-function handleDriveCreate(): Response {
+function handleDriveCreate(text?: string): Response {
   const id = nextDemoDriveFileId();
+  if (text !== undefined) uploadedTexts.set(id, text);
   return jsonResponse(200, { id, webViewLink: `https://drive.google.com/file/d/${id}/view` });
 }
 
-function routeGoogleApis(pathname: string, url: URL, method: string): Response | null | Promise<Response | null> {
+function routeGoogleApis(pathname: string, url: URL, method: string, init?: RequestInit): Response | null | Promise<Response | null> {
   // #/export の「Drive に保存」（features/export/exportLogRepository.ts 経由）が使う
   // exports フォルダの検索・作成・CSV アップロード。デモでは実体を持たず、常に
   // 「まだ無い（検索は空）→ 新規作成」の経路を通す（フォルダ・アップロード実体の永続化はしない）
@@ -326,6 +334,18 @@ function routeGoogleApis(pathname: string, url: URL, method: string): Response |
   if (pathname === '/upload/drive/v3/files') {
     // uploadTextFile / アップロード系（multipart）。中身は検証せず ID だけ払い出す
     if (method !== 'POST') return null;
+    if (new URLSearchParams(window.location.search).get('demoState') === 'empty' && typeof init?.body === 'string') {
+      // uploadTextFile の multipart/related（メタデータ + テキスト）の境界を外す。
+      const boundary = new Headers(init.headers).get('Content-Type')?.match(/boundary=([^;]+)/)?.[1];
+      if (boundary) {
+        const part = init.body.split(`--${boundary}`)[2];
+        const start = part?.indexOf('\r\n\r\n') ?? -1;
+        if (part !== undefined && start >= 0 && part.endsWith('\r\n')) {
+          return handleDriveCreate(part.slice(start + 4, -2));
+        }
+      }
+      return jsonResponse(400, { error: { message: 'Demo: invalid text upload' } });
+    }
     return handleDriveCreate();
   }
 
@@ -405,7 +425,7 @@ export function installDemoFetchMock(): void {
         const response = routeSheetsApi(url.pathname, url, method, body);
         if (response) return response;
       } else if (url.hostname === 'www.googleapis.com') {
-        const response = await routeGoogleApis(url.pathname, url, method);
+        const response = await routeGoogleApis(url.pathname, url, method, init);
         if (response) return response;
       } else if (url.hostname === 'generativelanguage.googleapis.com') {
         // LLM 抽出は 1 論文（1 バッチ）あたり 2〜4 秒程度の人工遅延を入れる
