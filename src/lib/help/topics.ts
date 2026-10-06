@@ -19,6 +19,12 @@ export const HELP_TOPICS = {
   export: { route: '#/export', helpAnchor: 'export' },
   adjudicate: { route: '#/adjudicate', helpAnchor: 'dual-review' },
   options: { route: '#/options', helpAnchor: 'options' },
+  'ask-paper': { helpAnchor: 'verify-ask-paper' },
+  'review-sets': { helpAnchor: 'project-review-sets' },
+  usage: { helpAnchor: 'dashboard-usage' },
+  'usage-export': { helpAnchor: 'export-usage' },
+  'pilot-matrix': { helpAnchor: 'pilot-matrix' },
+  'pilot-notes': { helpAnchor: 'pilot-notes' },
 } as const satisfies Record<string, HelpTopic>;
 
 export type HelpTopicId = keyof typeof HELP_TOPICS;
