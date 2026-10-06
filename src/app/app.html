@@ -7,6 +7,7 @@
     <link rel="stylesheet" href="../styles/tokens.css" />
     <link rel="stylesheet" href="../styles/globals.css" />
     <link rel="stylesheet" href="app.css" />
+    <link rel="stylesheet" href="guide/guide.css" />
   </head>
   <body>
     <div class="app">
@@ -22,6 +23,11 @@
         <!-- 使い方ガイド（GitHub Pages）。URL の正典は src/lib/publicPages.ts の HELP_URL
              （一致は tests/unit/lib/publicPages.test.ts が検査する）。
              data-public-page: 表示言語を ?lang= で引き継ぐ目印（applyPublicPageLanguage） -->
+        <button id="app-open-tours" type="button" class="app__options-link" data-tour="tour-list"
+          data-i18n-title="guide.openTours" data-i18n-aria-label="guide.openTours">
+          <span class="app__options-icon" aria-hidden="true">▤</span>
+          <span class="app__options-text" data-i18n="guide.tours">ツアー</span>
+        </button>
         <a
           id="app-open-help"
           class="app__options-link"

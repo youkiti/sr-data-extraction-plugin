@@ -1,4 +1,4 @@
-import { GETTING_STARTED_TOUR } from './gettingStarted';
+import { GETTING_STARTED_TOUR, type GettingStartedEvent, type GettingStartedCondition } from './gettingStarted';
 import type {
   CommonGuideCondition,
   CommonGuideEventName,
@@ -11,8 +11,8 @@ import type {
 export type { CommonGuideCondition, CommonGuideEventName, GuideTourId } from './types';
 export { stepKey, tourDescKey, tourKeyBase, tourTitleKey } from './keys';
 
-export type GuideEventName = CommonGuideEventName;
-export type GuideCondition = CommonGuideCondition;
+export type GuideEventName = CommonGuideEventName | GettingStartedEvent;
+export type GuideCondition = CommonGuideCondition | GettingStartedCondition;
 export type TourStep = TourStepOf<GuideEventName, GuideCondition>;
 export type TourDefinition = TourDefinitionOf<GuideEventName, GuideCondition>;
 export type GuideTourAdvance = TourAdvance<GuideEventName>;

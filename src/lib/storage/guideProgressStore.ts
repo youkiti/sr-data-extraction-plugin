@@ -37,13 +37,15 @@ export function updateGuideProgress(update: (current: GuideProgress) => GuidePro
 
 /** 保存の変更を保持値へ反映して通知する。追従では保存せず、通知の往復を防ぐ。 */
 export function subscribeGuideProgressChange(listener: () => void): () => void {
+  const source = typeof chrome === 'undefined' ? undefined : chrome.storage?.onChanged;
+  if (!source) return () => {};
   const onChanged = (changes: Record<string, chrome.storage.StorageChange>, areaName: string): void => {
     if (areaName !== 'local' || !Object.prototype.hasOwnProperty.call(changes, GUIDE_PROGRESS_STORAGE_KEY)) return;
     progress = parseGuideProgress(changes[GUIDE_PROGRESS_STORAGE_KEY]!.newValue);
     listener();
   };
-  chrome.storage.onChanged.addListener(onChanged);
-  return () => { chrome.storage.onChanged.removeListener(onChanged); };
+  source.addListener(onChanged);
+  return () => { source.removeListener(onChanged); };
 }
 
 export function isGuidePostponed(): boolean {

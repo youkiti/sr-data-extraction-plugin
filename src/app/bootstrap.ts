@@ -1,3 +1,4 @@
+import { initGuide } from './guide';
 import { saveConsensusQuotes } from './services/adjudicationService';
 import { getPendingWriteCount, subscribePendingWrites } from './services/pendingWrites';
 import { updateSavingBadges } from './ui/savingBadge';
@@ -1137,6 +1138,7 @@ export async function bootstrapApp(
       const guard = guardRoute(route.hash, state, role);
       const link = doc.createElement('a');
       link.href = route.hash;
+      link.dataset.tour = `nav-${route.hash.slice(2)}`;
       link.textContent = route.label;
       link.className = 'app__nav-link';
       if (route.hash === currentHash) {
@@ -1401,5 +1403,6 @@ export async function bootstrapApp(
     await loadRole(store, deps);
   }
   await startRouting();
+  void initGuide({ store, win, doc }).catch(error => console.warn('[guide] 起動に失敗:', error));
   return store;
 }

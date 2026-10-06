@@ -919,7 +919,7 @@ export function renderDocumentsView(state: AppState, ctx: ViewContext): HTMLElem
     id: 'documents-import',
     className: 'documents__import',
     text: t('documents.importDrive'),
-    attributes: { type: 'button' },
+    attributes: { type: 'button', 'data-tour': 'documents-import' },
   });
   importButton.disabled = disabled;
   importButton.addEventListener('click', () => ctx.documents.onImport());

@@ -102,7 +102,7 @@ function renderForm(protocol: ProtocolState, ctx: ViewContext, hasVersions: bool
     id: 'protocol-submit',
     className: 'protocol__submit',
     text: hasVersions ? t('protocol.submitNew') : t('protocol.submit'),
-    attributes: { type: 'submit' },
+    attributes: { type: 'submit', 'data-tour': 'protocol-save' },
   });
   submitButton.disabled = protocol.saving;
 
