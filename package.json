@@ -19,7 +19,7 @@
     "deploy:pages": "node tools/pages/deployPages.mjs",
     "store:status": "node tools/release/storeApi.mjs status",
     "store:submit": "node tools/release/storeApi.mjs submit",
-    "test:tools": "node --test tools/release/storeApi.test.mjs tools/help/listHelpGaps.test.mjs tools/guide-tour-check/*.test.mjs",
+    "test:tools": "node --test tools/release/storeApi.test.mjs tools/help/listHelpGaps.test.mjs tools/guide-tour-check/check.test.mjs",
     "facts": "node tools/facts/generateProjectFacts.mjs",
     "facts:check": "node tools/facts/generateProjectFacts.mjs --check",
     "help:gaps": "node tools/help/listHelpGaps.mjs",
