@@ -2,6 +2,8 @@
 import type { jaApp } from './ja.app';
 
 export const enApp: Record<keyof typeof jaApp, string> = {
+  'guide.tourGettingStartedTitle': 'Getting started',
+  'guide.tourGettingStartedDesc': 'Follow step-by-step guidance on screen, from importing documents to confirming your schema.',
   'pilot.matrixTitle': 'Fields × studies',
   'pilot.matrixAccept': 'Accepted',
   'pilot.matrixEdit': 'Edited',

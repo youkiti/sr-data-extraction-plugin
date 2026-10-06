@@ -1,5 +1,7 @@
 // UI 文言辞書（日本語・app 群）。
 export const jaApp = {
+  'guide.tourGettingStartedTitle': 'はじめての流れ',
+  'guide.tourGettingStartedDesc': '文献の取り込みからスキーマの確定までを、画面の上で順に案内します。',
   'pilot.matrixTitle': '項目 × 論文',
   'pilot.matrixAccept': '採用',
   'pilot.matrixEdit': '修正',
