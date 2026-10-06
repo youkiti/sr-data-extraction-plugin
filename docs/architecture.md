@@ -143,6 +143,8 @@ src/
 │       └── csvEncode.ts           # UTF-8 BOM 付き
 │
 ├── lib/                           # 外部 API / 低レベルユーティリティ
+│   ├── help/topics.ts             # 画面・機能とヘルプの対応表の正本。説明は hosted/help.html を
+│   │                              #   唯一の正本とし、アプリ側の対応表に説明文を持たない
 │   ├── google/
 │   │   ├── auth.ts / sheets.ts / drive.ts / identity.ts   # 既存 2 拡張から流用
 │   │   └── picker.ts              # Drive Picker（drive.file スコープ）。MV3 は apis.google.com を
