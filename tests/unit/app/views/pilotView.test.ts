@@ -1,3 +1,4 @@
+import { withSpreadsheetWriteLock } from '../../../../src/app/services/verificationService';
 import { renderPilotView } from '../../../../src/app/views/pilotView';
 import { renderCachedVerificationPanel } from '../../../../src/app/views/verificationPanel';
 import type { PilotViewCallbacks, ViewContext } from '../../../../src/app/views/types';
@@ -889,4 +890,23 @@ test('履歴の使用済みと改訂使用 study をバッジで表示する', (
   const { root } = render(state);
   expect(root.querySelector('.pilot__study-used')?.textContent).toBe('過去のパイロットで使用');
   expect(root.querySelector('.pilot__study-revision-used')?.textContent).toBe('改訂に使った論文');
+});
+
+
+test('保存バッジは 0 件で隠れ、再描画時の未決着件数を表示する', async () => {
+  const draw = () => render(makeState({ pilot: { run: makeRun() } })).root;
+  expect(draw().querySelector<HTMLElement>('#pilot-saving')!.hidden).toBe(true);
+  let resolve!: () => void;
+  const promise = new Promise<void>((done) => { resolve = done; });
+  const write = withSpreadsheetWriteLock('badge-test', () => promise);
+  try {
+    const badge = draw().querySelector<HTMLElement>('#pilot-saving')!;
+    expect(badge.hidden).toBe(false);
+    expect(badge.textContent).toBe('保存中（1 件）');
+    expect(badge.getAttribute('role')).toBe('status');
+  } finally {
+    resolve();
+    await write;
+  }
+  expect(draw().querySelector<HTMLElement>('#pilot-saving')!.hidden).toBe(true);
 });

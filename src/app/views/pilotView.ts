@@ -1,3 +1,4 @@
+import { createSavingBadge } from '../ui/savingBadge';
 // #/pilot: パイロット抽出（S6 / ui-states.md §3）。
 // 状態: 未実行（対象文献セレクタ + コスト概算 + 実行）/ 実行中（進捗バー）/
 // 完了（結果サマリ + 埋め込み検証 UI + 「表のデザインを改訂して再パイロット」導線）。
@@ -382,6 +383,7 @@ function renderVerification(run: ExtractionRun, state: AppState, ctx: ViewContex
       }),
     );
   }
+  header.push(createSavingBadge('pilot-saving'));
   children.push(el('div', { className: 'pilot__verify-header' }, header));
 
   if (state.pilot.verifyLoading) {

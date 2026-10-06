@@ -49,6 +49,7 @@ import type {
   VerificationDocumentView,
 } from '../../features/verification/types';
 import { createSerialTaskQueue } from '../../lib/concurrency/serialTask';
+import { trackPendingWrite } from './pendingWrites';
 import { getFileText } from '../../lib/google/drive';
 import { getCurrentUserEmail, type ProfileDeps } from '../../lib/google/identity';
 import type { GoogleApiDeps } from '../../lib/google/types';
@@ -173,7 +174,7 @@ const spreadsheetWriteQueue = createSerialTaskQueue<string>();
 
 /** spreadsheetId をキーに task を直列化して実行する（上記 spreadsheetWriteQueue 参照） */
 export function withSpreadsheetWriteLock<T>(spreadsheetId: string, task: () => Promise<T>): Promise<T> {
-  return spreadsheetWriteQueue.run(spreadsheetId, task);
+  return trackPendingWrite(() => spreadsheetWriteQueue.run(spreadsheetId, task));
 }
 
 function toMessage(err: unknown): string {

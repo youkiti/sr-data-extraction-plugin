@@ -1,3 +1,5 @@
+import { withSpreadsheetWriteLock } from '../../../src/app/services/verificationService';
+import { createSavingBadge } from '../../../src/app/ui/savingBadge';
 import { saveConsensusQuotes } from '../../../src/app/services/adjudicationService';
 // メインビュー起動配線のテスト。hashchange の発火タイミングを決定的に制御するため、
 // 実 window ではなくスタブ（location / addEventListener のみ実装）を注入する
@@ -435,6 +437,44 @@ describe('seedState', () => {
 });
 
 describe('bootstrapApp', () => {
+  test('未決着の書き込みだけで離脱確認し、バッジを再描画せず更新する', async () => {
+    const state = createInitialState();
+    state.verify.queuedDecisions = 3;
+    state.adjudicate.queuedWrites = 2;
+    const stub = createWindowStub(state);
+    const { deps } = createFakeDeps([]);
+    const store = (await bootstrapApp(asWindow(stub), deps))!;
+    const handlers = stub.addEventListener.mock.calls.filter(([type]) => type === 'beforeunload');
+    expect(handlers).toHaveLength(1);
+    const handler = handlers[0]![1] as (event: BeforeUnloadEvent) => void;
+    const fire = () => {
+      const event = { preventDefault: jest.fn(), returnValue: '' };
+      handler(event as unknown as BeforeUnloadEvent);
+      return event;
+    };
+    expect(fire()).toEqual({ preventDefault: expect.any(Function), returnValue: '' });
+    expect(fire().preventDefault).not.toHaveBeenCalled();
+    const badge = createSavingBadge('verify-saving');
+    document.body.append(badge);
+    const updated = jest.fn();
+    const unsubscribe = store.subscribe(updated);
+    let resolve!: () => void;
+    const promise = new Promise<void>((done) => { resolve = done; });
+    const write = withSpreadsheetWriteLock('unload-test', () => promise);
+    const during = fire();
+    expect(during.preventDefault).toHaveBeenCalledTimes(1);
+    expect(during.returnValue).not.toBe('');
+    expect(badge.hidden).toBe(false);
+    expect(badge.textContent).toBe('保存中（1 件）');
+    resolve();
+    await write;
+    expect(fire().preventDefault).not.toHaveBeenCalled();
+    expect(fire().returnValue).toBe('');
+    expect(badge.hidden).toBe(true);
+    expect(document.getElementById('verify-saving')).toBe(badge);
+    expect(updated).not.toHaveBeenCalled();
+    unsubscribe();
+  });
   test('パイロットの並べ替え・再試行と項目編集クエリを配線する', async () => {
     const state = createInitialState();
     state.currentProject = PROJECT;
