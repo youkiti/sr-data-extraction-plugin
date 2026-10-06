@@ -1,19 +1,16 @@
 import type { GuideCondition, GuideEventName, TourStep } from '../../lib/guide/tours';
 import type { RouteHash } from '../router';
+import { GUIDE_ADAPTERS } from './adapters';
 
-const EVENTS = {
-  'has-documents': 'documents-imported',
-  'has-protocol': 'protocol-saved',
-  'has-confirmed-schema': 'schema-confirmed',
-} as const;
+const EVENTS = Object.values(GUIDE_ADAPTERS).flatMap(adapter => Object.entries(adapter.risingEvents)) as Array<[GuideCondition, GuideEventName]>;
 
 /** 状態の立ち上がりだけを通知する。サービスの成功経路には依存しない。 */
 export function guideEvents(
   before: Record<GuideCondition, boolean>, after: Record<GuideCondition, boolean>,
 ): GuideEventName[] {
-  return (Object.keys(EVENTS) as Array<keyof typeof EVENTS>)
-    .filter(condition => !before[condition] && after[condition])
-    .map(condition => EVENTS[condition]);
+  return EVENTS
+    .filter(([condition]) => !before[condition] && after[condition])
+    .map(([, event]) => event);
 }
 
 export function routeGuideEvent(route: RouteHash): GuideEventName {

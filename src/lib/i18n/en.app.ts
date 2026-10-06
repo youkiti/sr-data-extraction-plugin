@@ -3,6 +3,7 @@ import type { jaApp } from './ja.app';
 
 export const enApp: Record<keyof typeof jaApp, string> = {
   'help.openTopic': 'Open help for this item (new tab)',
+  // ツアー共通
   'guide.openTours': 'Open guided tours',
   'guide.tours': 'Tours',
   'guide.suggest': 'Take a guided tour, starting with importing documents.',
@@ -18,6 +19,9 @@ export const enApp: Record<keyof typeof jaApp, string> = {
   'guide.complete': 'Finish',
   'guide.next': 'Next',
   'guide.end': 'End tour',
+  // ツアー: getting-started（手順の本文は、この区画の Desc の直後に足す）
+  'guide.tourGettingStartedTitle': 'Getting started',
+  'guide.tourGettingStartedDesc': 'Follow step-by-step guidance on screen, from importing documents to confirming your schema.',
   'guide.tourGettingStartedStepOpenDocuments': 'Select “Documents” to open the PDF import screen.',
   'guide.tourGettingStartedStepImportDocuments': 'Select “Choose PDFs / a folder from Drive” and choose the included papers. The tour continues when import finishes.',
   'guide.tourGettingStartedStepOpenProtocol': 'Select “Protocol” to open the research protocol screen.',
@@ -26,8 +30,18 @@ export const enApp: Record<keyof typeof jaApp, string> = {
   'guide.tourGettingStartedStepDraftSchema': '“Have AI draft the table design” creates a draft (API charges apply). Review and edit the draft, then select “Next” to continue the tour.',
   'guide.tourGettingStartedStepConfirmSchema': 'Select “Confirm as a version” after reviewing the fields to save the extraction schema. Select “Skip this action” if you are not ready to confirm.',
   'guide.tourGettingStartedStepFinish': 'You have reached the end of this introduction. You can start a tour again from “Tours” at any time.',
-  'guide.tourGettingStartedTitle': 'Getting started',
-  'guide.tourGettingStartedDesc': 'Follow step-by-step guidance on screen, from importing documents to confirming your schema.',
+  // ツアー: pilot-and-extract（手順の本文は、この区画の Desc の直後に足す）
+  'guide.tourPilotAndExtractTitle': 'Pilot and full extraction',
+  'guide.tourPilotAndExtractDesc': 'Check the pilot extraction results, then run full extraction.',
+  // ツアー: verify-basics（手順の本文は、この区画の Desc の直後に足す）
+  'guide.tourVerifyBasicsTitle': 'Verification basics',
+  'guide.tourVerifyBasicsDesc': 'Review extracted values while checking the highlighted evidence.',
+  // ツアー: dual-review（手順の本文は、この区画の Desc の直後に足す）
+  'guide.tourDualReviewTitle': 'Dual review and adjudication',
+  'guide.tourDualReviewDesc': 'Register reviewers, split assignment sets, and adjudicate disagreements.',
+  // ツアー: export-data（手順の本文は、この区画の Desc の直後に足す）
+  'guide.tourExportDataTitle': 'Export data',
+  'guide.tourExportDataDesc': 'Check progress and export CSV files and an R set.',
   'pilot.matrixTitle': 'Fields × studies',
   'pilot.matrixAccept': 'Accepted',
   'pilot.matrixEdit': 'Edited',

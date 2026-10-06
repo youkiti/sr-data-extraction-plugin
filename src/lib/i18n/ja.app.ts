@@ -1,6 +1,7 @@
 // UI 文言辞書（日本語・app 群）。
 export const jaApp = {
   'help.openTopic': 'この項目のヘルプを開く（新しいタブ）',
+  // ツアー共通
   'guide.openTours': '操作ツアーの一覧を開く',
   'guide.tours': 'ツアー',
   'guide.suggest': '操作ツアーで、文献の取り込みから始めましょう。',
@@ -16,6 +17,9 @@ export const jaApp = {
   'guide.complete': '完了',
   'guide.next': '次へ',
   'guide.end': 'ツアーを終える',
+  // ツアー: getting-started（手順の本文は、この区画の Desc の直後に足す）
+  'guide.tourGettingStartedTitle': 'はじめての流れ',
+  'guide.tourGettingStartedDesc': '文献の取り込みからスキーマの確定までを、画面の上で順に案内します。',
   'guide.tourGettingStartedStepOpenDocuments': '「文献取り込み」を押して、論文 PDF を取り込む画面を開きます。',
   'guide.tourGettingStartedStepImportDocuments': '「Drive から PDF / フォルダを選択」を押し、採用した論文の PDF を選びます。取り込みが完了すると次へ進みます。',
   'guide.tourGettingStartedStepOpenProtocol': '「プロトコル」を押して、研究計画の入力画面を開きます。',
@@ -24,8 +28,18 @@ export const jaApp = {
   'guide.tourGettingStartedStepDraftSchema': '「AI に表のデザインをドラフトさせる」で AI がドラフトを作ります（API の費用がかかります）。作ったら内容を確かめて直し、「次へ」で案内を進めてください。',
   'guide.tourGettingStartedStepConfirmSchema': '内容を確認して「版として確定」を押すと、抽出に使うスキーマを保存します。今は確定しない場合は「押さずに次へ」で進めます。',
   'guide.tourGettingStartedStepFinish': 'ここまでで最初の流れは終了です。「ツアー」から、いつでも案内を始められます。',
-  'guide.tourGettingStartedTitle': 'はじめての流れ',
-  'guide.tourGettingStartedDesc': '文献の取り込みからスキーマの確定までを、画面の上で順に案内します。',
+  // ツアー: pilot-and-extract（手順の本文は、この区画の Desc の直後に足す）
+  'guide.tourPilotAndExtractTitle': 'パイロットと一括抽出',
+  'guide.tourPilotAndExtractDesc': 'パイロット抽出で結果を確かめ、一括抽出を実行するまでを案内します。',
+  // ツアー: verify-basics（手順の本文は、この区画の Desc の直後に足す）
+  'guide.tourVerifyBasicsTitle': '検証の進めかた',
+  'guide.tourVerifyBasicsDesc': '根拠のハイライトを見ながら、抽出された値を判定する流れを案内します。',
+  // ツアー: dual-review（手順の本文は、この区画の Desc の直後に足す）
+  'guide.tourDualReviewTitle': '二重レビューと裁定',
+  'guide.tourDualReviewDesc': 'レビュアーの登録、担当セットの分割、不一致の裁定までを案内します。',
+  // ツアー: export-data（手順の本文は、この区画の Desc の直後に足す）
+  'guide.tourExportDataTitle': 'エクスポート',
+  'guide.tourExportDataDesc': '進捗を確かめ、CSV と R セットを書き出すまでを案内します。',
   'pilot.matrixTitle': '項目 × 論文',
   'pilot.matrixAccept': '採用',
   'pilot.matrixEdit': '修正',
