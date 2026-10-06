@@ -111,7 +111,14 @@ describe('ヘルプの URL とトピック検索', () => {
 
   test('一致するルートのトピックを返し、該当しなければ null を返す', () => {
     for (const [topicId, topic] of Object.entries(HELP_TOPICS)) {
-      expect(helpTopicForRoute(topic.route)).toBe(topicId);
+      if ('route' in topic) {
+        expect(helpTopicForRoute(topic.route)).toBe(topicId);
+      } else {
+        for (const route of [...ROUTES, SETTINGS_ROUTE]) {
+          expect(helpTopicForRoute(route.hash)).not.toBe(topicId);
+        }
+        expect(helpTopicForRoute(`#/${topicId}`)).toBeNull();
+      }
     }
     expect(helpTopicForRoute('#/unknown')).toBeNull();
     expect(helpTopicForRoute('')).toBeNull();
