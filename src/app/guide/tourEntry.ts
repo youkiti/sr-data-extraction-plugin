@@ -3,6 +3,7 @@ import { availableTours, type GuideConditionValues } from '../../lib/guide/tourP
 import type { GuideTourId } from '../../lib/guide/tours';
 import { getGuideProgress } from '../../lib/storage/guideProgressStore';
 import { guideButton } from './suggestBand';
+import { createHelpButton } from '../ui/helpButton';
 
 export function createTourEntry(doc: Document, anchor: HTMLElement, conditions: () => GuideConditionValues, start: (id: GuideTourId) => void) {
   const panel = doc.createElement('section');
@@ -17,7 +18,7 @@ export function createTourEntry(doc: Document, anchor: HTMLElement, conditions: 
   }
   function refresh(): void {
     panel.setAttribute('aria-label', t('guide.openTours'));
-    panel.replaceChildren(guideButton(doc, 'close-list', t('guide.closeList'), () => { close(); anchor.focus(); }));
+    panel.replaceChildren(guideButton(doc, 'close-list', t('guide.closeList'), () => { close(); anchor.focus(); }), createHelpButton('tours'));
     for (const tour of availableTours(undefined, conditions())) {
       const title = doc.createElement('h2');
       title.textContent = t(tour.titleKey as MessageKey);

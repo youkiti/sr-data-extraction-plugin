@@ -145,6 +145,7 @@ spreadsheet / pdf モードは `page_version` を検査しない（ready 応答�
 
 ### ヘルプの見出しと画面の対応
 
+- 画面の操作部を作り変えるとき、その要素に `data-tour` が付いていたら、ツアーの定義（`src/lib/guide/tours/`）とヘルプのツアーの説明も確かめる。`data-tour` を消す・値を変えると `tests/unit/lib/guide/toursDefinition.test.ts` が落ちる。
 - 画面・カードを足したら、見出しを `headingWithHelp` で作り、対応表にトピックを足す。
 
 - 見出し・節の id はアプリと外部から参照されるため変更しない。変更が必要な場合は、

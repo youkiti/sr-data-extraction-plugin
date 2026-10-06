@@ -21,6 +21,7 @@ export const HELP_TOPICS = {
   options: { route: '#/options', helpAnchor: 'options' },
   'ask-paper': { helpAnchor: 'verify-ask-paper' },
   'review-sets': { helpAnchor: 'project-review-sets' },
+  tours: { helpAnchor: 'project-tours' },
   usage: { helpAnchor: 'dashboard-usage' },
   'usage-export': { helpAnchor: 'export-usage' },
   'pilot-matrix': { helpAnchor: 'pilot-matrix' },
