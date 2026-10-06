@@ -52,7 +52,7 @@ export async function seedDemoState(): Promise<void> {
     });
     // Options が「設定済み」状態で映るようにする（デモ用ダミー値。本物のキーは絶対に埋め込まない）
     await saveGeminiApiKey(DEMO_GEMINI_API_KEY);
-    await seedDemoData();
+    await seedDemoData(new URLSearchParams(window.location.search).get('demoState') === 'empty');
   } finally {
     setDemoDelaysEnabled(true);
   }

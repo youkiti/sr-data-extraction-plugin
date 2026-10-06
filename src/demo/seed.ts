@@ -457,7 +457,7 @@ const PAPER3_OWNER_DECISION_SPECS: readonly OwnerPartialDecisionSpec[] = [
 // シード本体
 // ---------------------------------------------------------------------------
 
-export async function seedDemoData(): Promise<void> {
+export async function seedDemoData(empty = false): Promise<void> {
   resetDemoStore(DEMO_PROJECT_TITLE, buildEmptySheets());
   const deps = demoDeps();
 
@@ -487,6 +487,9 @@ export async function seedDemoData(): Promise<void> {
     ],
     deps,
   );
+
+  // 空のデモはヘッダとオーナー情報だけを持ち、以降は画面操作でデータを作る。
+  if (empty) return;
 
   // --- Protocol ---
   // features/protocol/saveProtocol.ts の実装に合わせる: 手入力（sourceType='manual'）は
