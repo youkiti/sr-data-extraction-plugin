@@ -4,7 +4,7 @@
 
 .DESCRIPTION
   master が green な状態から Chrome ウェブストア提出物を作るまでを 1 コマンドにまとめる:
-    1. 前提チェック（ブランチ / 作業ツリー / origin 同期 / master の CI / .env）
+    1. 前提チェック（ブランチ / 作業ツリー / origin 同期 / ヘルプ未記載の候補 / master の CI / .env）
     2. version バンプ（src/manifest.json + package.json + package-lock.json の 3 ファイル）+ 文書 2 ファイルの自動更新
     3. バンプ commit（ローカル）
     4. npm run build（production）
@@ -32,7 +32,10 @@
 
 .PARAMETER Force
   前提チェックの警告（master 以外のブランチ / origin と不一致 / CI が green でない）を
-  停止ではなく警告に落とす。作業ツリーが汚れている場合の停止だけは解除しない。
+  停止ではなく警告に落とす。作業ツリーの汚れ・ヘルプ確認による停止は解除しない。
+
+.PARAMETER HelpReviewed
+  ヘルプ未記載の候補を確認済みとして続行する。候補の取得失敗は解除しない。
 
 .PARAMETER IncludeKeyPem
   zip へ key.pem を同梱する（初回アップロード専用。2026-07-10 に完了済みなので通常は不要）。
@@ -45,6 +48,7 @@
   npm run release -- patch      # 修正のみのリリース
   npm run release -- 1.0.0      # version を明示
   npm run release -- minor -Submit # 審査提出まで進める
+  npm run release -- patch -HelpReviewed # ヘルプ未記載の候補を確認済みとして続行
 #>
 [CmdletBinding()]
 param(
@@ -53,6 +57,7 @@ param(
   [switch]$NoPush,
   [switch]$SkipCiCheck,
   [switch]$Force,
+  [switch]$HelpReviewed,
   [switch]$IncludeKeyPem,
   [switch]$Submit
 )
@@ -118,6 +123,19 @@ if ($headSha -ne $remoteSha) {
   Stop-Unless-Force "ローカル $targetBranch が origin/$targetBranch と一致しません（未 push / 要 pull）"
 } else {
   Write-Ok "origin/$targetBranch と同期済み（$($headSha.Substring(0, 7))）"
+}
+
+node tools/help/listHelpGaps.mjs --fail-on-gaps
+if ($LASTEXITCODE -eq 0) {
+  Write-Ok 'ヘルプ未記載の候補はありません'
+} elseif ($LASTEXITCODE -eq 2) {
+  if ($HelpReviewed) {
+    Write-Warn 'ヘルプ未記載の候補を確認済みとして続行（-HelpReviewed）'
+  } else {
+    Stop-WithError 'ヘルプ未記載の候補があります。hosted/help.html を直すか、確認済みなら -HelpReviewed を付けてください（-Force では解除できません）'
+  }
+} else {
+  Stop-WithError 'ヘルプ未記載の候補の取得に失敗しました（-HelpReviewed でも -Force でも解除できません）'
 }
 
 if ($SkipCiCheck) {
