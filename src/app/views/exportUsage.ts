@@ -2,6 +2,7 @@
 import { t } from '../../lib/i18n';
 import type { ExportState } from '../store';
 import { el } from '../ui/dom';
+import { headingWithHelp } from '../ui/helpButton';
 import type { ExportViewCallbacks } from './types';
 
 export function renderExportUsage(
@@ -16,7 +17,7 @@ export function renderExportUsage(
   generate.disabled = usage?.generating ?? false;
   generate.addEventListener('click', () => callbacks.onGenerateUsage());
   const children: HTMLElement[] = [
-    el('h3', { text: t('export.usageTitle') }),
+    headingWithHelp('h3', t('export.usageTitle'), 'usage-export'),
     el('p', { text: t('export.usageDescription') }),
     generate,
   ];

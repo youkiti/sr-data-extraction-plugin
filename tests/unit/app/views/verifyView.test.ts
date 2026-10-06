@@ -315,6 +315,12 @@ afterEach(() => {
 });
 
 describe('renderVerifyView', () => {
+
+  test('画面の該当節へのヘルプリンクを表示する', () => {
+    const { ctx } = makeCtx();
+    const view = renderVerifyView(makeState(), ctx);
+    expect(view.querySelector('[data-help="verify"]')).not.toBeNull();
+  });
   test('一覧読み込み中（targets 未読込）は #verify-loading', () => {
     const { ctx } = makeCtx();
     const root = render(makeState(), ctx);

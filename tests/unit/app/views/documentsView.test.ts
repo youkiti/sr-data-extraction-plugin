@@ -257,6 +257,12 @@ afterEach(() => {
 });
 
 describe('renderDocumentsView', () => {
+
+  test('画面の該当節へのヘルプリンクを表示する', () => {
+    const { ctx } = makeCtx();
+    const view = renderDocumentsView(makeState(), ctx);
+    expect(view.querySelector('[data-help="documents"]')).not.toBeNull();
+  });
   test('LLM 送信に関する注意書きを常時表示する（チェック UI は持たない）', () => {
     const { ctx } = makeCtx();
     const view = renderDocumentsView(makeState(), ctx);

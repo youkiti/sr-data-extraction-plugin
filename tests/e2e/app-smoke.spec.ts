@@ -71,3 +71,14 @@ test('アクセシビリティ違反がない（axe）', async ({ page }) => {
   const results = await new AxeBuilder({ page }).analyze();
   expect(results.violations).toEqual([]);
 });
+
+test('画面の「?」が表示言語と該当節を指す', async ({ page }) => {
+  await page.goto('/app/app.html#/home');
+  const help = page.locator('#app-content [data-help="home"]');
+  await expect(help).toBeVisible();
+  await expect(help).toHaveAttribute(
+    'href',
+    'https://youkiti.github.io/sr-data-extraction-plugin/help.html?lang=ja#project',
+  );
+  await expect(help).toHaveAttribute('target', '_blank');
+});

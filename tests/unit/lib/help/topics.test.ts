@@ -1,3 +1,4 @@
+import * as ts from 'typescript';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -124,4 +125,31 @@ describe('ヘルプの URL とトピック検索', () => {
     expect(helpTopicForRoute('')).toBeNull();
     expect(helpTopicForRoute('#/verify?study=example')).toBeNull();
   });
+});
+
+
+test('画面で使うヘルプ ID が対応表と一致し、全トピックを使っている', () => {
+  const files = ['app', 'popup', 'options'].flatMap((directory) =>
+    sourceFiles(join(repoRoot, 'src', directory)),
+  );
+  expect(files.length).toBeGreaterThan(0);
+  const used = new Set<string>();
+  for (const file of files) {
+    const source = readFileSync(file, 'utf8');
+    for (const match of source.matchAll(/data-help="([^"]+)"/g)) used.add(match[1]!);
+    if (!file.endsWith('.ts')) continue;
+    const tree = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true);
+    const visit = (node: ts.Node): void => {
+      if (ts.isCallExpression(node) && ts.isIdentifier(node.expression)) {
+        const name = node.expression.text;
+        const argument = name === 'createHelpButton' ? node.arguments[0]
+          : name === 'headingWithHelp' ? node.arguments[2] : undefined;
+        if (argument && ts.isStringLiteral(argument)) used.add(argument.text);
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(tree);
+  }
+  for (const id of used) expect(isHelpTopicId(id)).toBe(true);
+  expect([...used].sort()).toEqual(Object.keys(HELP_TOPICS).sort());
 });

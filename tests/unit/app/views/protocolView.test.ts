@@ -260,6 +260,12 @@ function errorText(view: HTMLElement): string {
 }
 
 describe('renderProtocolView', () => {
+
+  test('画面の該当節へのヘルプリンクを表示する', () => {
+    const { ctx } = makeCtx();
+    const view = renderProtocolView(makeState(), ctx);
+    expect(view.querySelector('[data-help="protocol"]')).not.toBeNull();
+  });
   test('プロジェクト未選択: 見出しと案内のみ表示し、フォームは出さない', () => {
     const { ctx } = makeCtx();
     const view = renderProtocolView(makeState({}, false), ctx);

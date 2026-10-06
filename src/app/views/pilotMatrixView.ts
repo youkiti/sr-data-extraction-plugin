@@ -5,6 +5,7 @@ import { entityKeyLabel } from '../../features/verification/cells';
 import { t, type MessageKey } from '../../lib/i18n';
 import type { AppState } from '../store';
 import { el } from '../ui/dom';
+import { headingWithHelp } from '../ui/helpButton';
 import type { ViewContext } from './types';
 
 const statusKeys: Record<PilotCellStatus, MessageKey> = {
@@ -26,7 +27,7 @@ function ratio(row: PilotMatrixRow): string {
 export function renderPilotMatrix(state: AppState, ctx: ViewContext): HTMLElement {
   const { run, evidence } = state.pilot;
   const matrix = state.pilot.matrix ?? emptyPilotMatrix();
-  const section = el('section', { id: 'pilot-matrix' }, [el('h3', { text: t('pilot.matrixTitle') })]);
+  const section = el('section', { id: 'pilot-matrix' }, [headingWithHelp('h3', t('pilot.matrixTitle'), 'pilot-matrix')]);
   if (matrix.error !== null) {
     const retry = el('button', { id: 'pilot-matrix-retry', text: t('common.retry'), attributes: { type: 'button' } });
     retry.addEventListener('click', () => ctx.pilot.onRetryMatrix?.());

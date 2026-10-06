@@ -4260,3 +4260,41 @@ section.documents__tiab {
 .adjudicate__quote-add-note {
   color: var(--color-text-muted);
 }
+
+/* 見出しに隣接する公開ヘルプへのリンク */
+.heading-with-help {
+  display: flex;
+  align-items: center;
+  gap: 0.4em;
+  margin: 0 0 1.25em;
+}
+
+/* 見出しの余白は包み側で持つ（h3 は上にも空ける。包む前の見出しの余白に合わせる） */
+.heading-with-help:has(> h3) {
+  margin: 1.17em 0;
+}
+
+.heading-with-help > :is(h2, h3) {
+  margin: 0;
+}
+
+.help-button {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 1.25em;
+  height: 1.25em;
+  border: 1px solid currentcolor;
+  border-radius: 50%;
+  background: var(--color-surface);
+  color: var(--color-primary);
+  font-size: 1rem;
+  line-height: 1;
+  text-decoration: none;
+}
+
+.help-button:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}

@@ -3,6 +3,7 @@ import type { UsageSummary } from '../../features/usage/aggregateUsage';
 import { t, type MessageKey } from '../../lib/i18n';
 import type { DashboardState } from '../store';
 import { el } from '../ui/dom';
+import { headingWithHelp } from '../ui/helpButton';
 import type { DashboardViewCallbacks } from './types';
 
 function usd(value: number | null): string {
@@ -182,7 +183,7 @@ export function renderDashboardUsage(
   usage: DashboardState['usage'],
   callbacks: DashboardViewCallbacks,
 ): HTMLElement {
-  const children: HTMLElement[] = [el('h3', { text: t('dashboard.usageTitle') })];
+  const children: HTMLElement[] = [headingWithHelp('h3', t('dashboard.usageTitle'), 'usage')];
   const reload = el('button', {
     id: 'dashboard-usage-reload',
     text: t('common.reload'),

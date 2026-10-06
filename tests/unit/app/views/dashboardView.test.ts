@@ -234,6 +234,12 @@ function makeState(patch: Partial<AppState['dashboard']> = {}): AppState {
 }
 
 describe('rateText', () => {
+
+  test('画面の該当節へのヘルプリンクを表示する', () => {
+    const { ctx } = makeCtx();
+    const view = renderDashboardView(makeState(), ctx);
+    expect(view.querySelector('[data-help="dashboard"]')).not.toBeNull();
+  });
   test('分母 0 は「—」、それ以外は n / m（%）', () => {
     expect(rateText({ numerator: 0, denominator: 0 })).toBe('—');
     expect(rateText({ numerator: 1, denominator: 4 })).toBe('1 / 4（25%）');

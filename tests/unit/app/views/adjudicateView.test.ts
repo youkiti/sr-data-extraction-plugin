@@ -400,6 +400,12 @@ afterEach(() => {
 });
 
 describe('renderAdjudicateView: 読み込み系状態', () => {
+
+  test('画面の該当節へのヘルプリンクを表示する', () => {
+    const { ctx } = makeCtx();
+    const view = renderAdjudicateView(makeState(), ctx);
+    expect(view.querySelector('[data-help="adjudicate"]')).not.toBeNull();
+  });
   test('loadError は再試行ボタン付きで表示する', () => {
     const { ctx, callbacks } = makeCtx();
     const root = render(makeState({ loadError: 'boom' }), ctx);

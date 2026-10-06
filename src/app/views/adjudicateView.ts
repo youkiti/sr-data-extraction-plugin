@@ -27,6 +27,7 @@ import { t, type MessageKey } from '../../lib/i18n';
 import { STUDY_ENTITY_KEY } from '../../utils/entityKey';
 import type { AdjudicateStudyRow, AdjudicateWorking, AppState } from '../store';
 import { el } from '../ui/dom';
+import { headingWithHelp } from '../ui/helpButton';
 import {
   focusAdjudicateEvidence,
   renderAdjudicatePdfPane,
@@ -893,7 +894,7 @@ function renderAgreementCard(state: AppState, ctx: ViewContext): HTMLElement {
 export function renderAdjudicateView(state: AppState, ctx: ViewContext): HTMLElement {
   const { adjudicate } = state;
   const children: HTMLElement[] = [
-    el('h2', { text: t('app.navAdjudicate') }),
+    headingWithHelp('h2', t('app.navAdjudicate'), 'adjudicate'),
     el('p', {
       className: 'view__lead',
       text: t('adjudicate.lead'),

@@ -24,6 +24,7 @@ import { t, type MessageKey } from '../../lib/i18n';
 import type { LlmFailureKind } from '../../lib/llm/LLMProvider';
 import { isRunBlockedByImageUnsupportedModel } from '../../lib/llm/providerFactory';
 import { el } from '../ui/dom';
+import { headingWithHelp } from '../ui/helpButton';
 import { createModelSelect } from '../ui/modelSelect';
 import type { AppState } from '../store';
 import {
@@ -648,7 +649,7 @@ function renderSummary(state: AppState, ctx: ViewContext): HTMLElement {
 
 export function renderExtractView(state: AppState, ctx: ViewContext): HTMLElement {
   const children: HTMLElement[] = [
-    el('h2', { text: t('app.navExtract') }),
+    headingWithHelp('h2', t('app.navExtract'), 'extract'),
     el('p', {
       className: 'view__lead',
       text: t('extract.lead'),

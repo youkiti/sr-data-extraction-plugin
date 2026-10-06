@@ -1,5 +1,6 @@
 // UI 文言辞書（日本語・app 群）。
 export const jaApp = {
+  'help.openTopic': 'この項目のヘルプを開く（新しいタブ）',
   'guide.tourGettingStartedTitle': 'はじめての流れ',
   'guide.tourGettingStartedDesc': '文献の取り込みからスキーマの確定までを、画面の上で順に案内します。',
   'pilot.matrixTitle': '項目 × 論文',

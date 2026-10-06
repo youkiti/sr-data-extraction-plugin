@@ -34,6 +34,7 @@ import type { SchemaEditorRow } from '../../features/schema/types';
 import type { FieldValidationError } from '../../features/schema/validateField';
 import { t, type MessageKey } from '../../lib/i18n';
 import { el } from '../ui/dom';
+import { headingWithHelp } from '../ui/helpButton';
 import { createModelSelect } from '../ui/modelSelect';
 import type { AppState, RedraftReviewState, SchemaState } from '../store';
 import type { ViewContext } from './types';
@@ -1809,7 +1810,7 @@ function renderBody(state: AppState, ctx: ViewContext): HTMLElement {
 
 export function renderSchemaView(state: AppState, ctx: ViewContext): HTMLElement {
   const children: HTMLElement[] = [
-    el('h2', { text: t('app.navSchema') }),
+    headingWithHelp('h2', t('app.navSchema'), 'schema'),
     el('p', {
       className: 'view__lead',
       text: t('schema.lead'),
