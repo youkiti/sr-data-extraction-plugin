@@ -912,6 +912,14 @@ async function sceneTextLayer(driver) {
  * owner（with_ai）として、--file の文献の群構成を確定し、未判定のセルをすべて判定する（§9 #7 の準備）。
  * AI の値があるセルは accept、無いセルは not_reported。Sheets の書き込み上限（毎分 60 回）に収まる間隔で押す
  */
+/** 検証画面の「保存中（n 件）」の n。表示が無い・隠れているときは 0 */
+async function savingCount(driver) {
+  return driver.executeScript(
+    'const el = document.querySelector("#verify-saving"); if (!el || el.hidden) return 0;' +
+      'const m = el.textContent.match(/\\d+/); return m ? Number(m[0]) : -1;',
+  );
+}
+
 async function sceneVerifyAll(driver) {
   const file = optionValue('--file', '');
   log(`\n[verify-all] ${file}: 群構成の確定と全セルの判定（owner・with_ai）`);
@@ -938,6 +946,7 @@ async function sceneVerifyAll(driver) {
     return;
   }
   const counts = { accept: 0, not_reported: 0 };
+  const savingTrace = [];
   let lastKey = '';
   let repeats = 0;
   for (let guard = 0, tab = 0; guard < 400; guard++) {
@@ -965,8 +974,17 @@ async function sceneVerifyAll(driver) {
     counts[step.action]++;
     if (optionValue('--trace', '') === 'yes') log(`    ${step.action}: ${step.key.slice(0, 60)}`);
     await driver.sleep(Number(optionValue('--pace', '2200')));
+    // 保存中（順番待ち + 実行中）の件数。押す間隔より保存が遅いと増えていく（issue #322）
+    const saving = await savingCount(driver);
+    savingTrace.push(saving);
   }
   log(`  押した判定: accept ${counts.accept} 件 / not_reported ${counts.not_reported} 件`);
+  log(`  保存中の件数（判定を押した ${optionValue('--pace', '2200')} ms 後）: ${savingTrace.join(' ')}`);
+  log(`  保存中の件数の最大: ${savingTrace.length === 0 ? 0 : Math.max(...savingTrace)} 件`);
+  // 保存が全部終わるまで待つ（「保存中」の表示が消えるまで。閉じるのはそのあと）
+  const waitStart = Date.now();
+  await driver.wait(async () => (await savingCount(driver)) === 0, 300000, '保存中の表示が消えません');
+  log(`  最後の判定から、保存中の表示が消えるまで: ${((Date.now() - waitStart) / 1000).toFixed(1)} 秒`);
   await driver.sleep(5000);
   log(`  進捗の表示: ${(await textOf(driver, '.verify__progress, .verify__tabs + *')).replace(/\s+/g, ' ').slice(0, 160)}`);
   const errors = await driver.executeScript('return [...document.querySelectorAll(".verify__error, .verify__queued, [role=alert], .toast")].map((el) => el.textContent.trim()).filter((t) => t !== "");');
