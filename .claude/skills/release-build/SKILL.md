@@ -22,7 +22,8 @@ npm run release -- minor    # 機能追加を含む ／ patch = 修正のみ ／
   - `-Submit` — push 後にストアへ審査提出（`-NoPush`・`-IncludeKeyPem` と併用不可。バンプ前の認証・提出可否チェックは `-Force` でも解除不可）
   - `-NoPush` — push せずローカル commit + zip まで
   - `-SkipCiCheck` — gh が無い / 未認証の環境
-  - `-Force` — master 以外のブランチ・origin と不一致・CI が green でないときの停止を警告に落とす（作業ツリーの汚れチェックだけは解除されない）
+  - `-Force` — master 以外のブランチ・origin と不一致・CI が green でないときの停止を警告に落とす（作業ツリーの汚れ・ヘルプ確認による停止は解除されない）
+  - `-HelpReviewed` — ヘルプ未記載の候補を確認済みとして続行する（候補の取得失敗は解除されない）
   - `-IncludeKeyPem` — 初回アップロード専用（2026-07-10 に使用済み。通常は不要）
 - **失敗時の後始末**: build / pack で落ちた場合、push はまだなので origin は無傷。ローカルのバンプ commit だけが残るので `git reset --hard HEAD~1` で戻せる（version 3 ファイル + 文書 2 ファイルの計 5 ファイルを戻す）。
 
@@ -44,6 +45,8 @@ npm run release -- minor    # 機能追加を含む ／ patch = 修正のみ ／
 ### 0. 前提チェック
 
 `npm run release` が 1〜4 を自動で行う（NG なら停止）。手で追う場合は以下。
+
+origin 同期確認の直後に `node tools/help/listHelpGaps.mjs --fail-on-gaps` で前回リリース以降のヘルプ未記載の候補を一覧し、候補があれば停止する。ヘルプが十分かは人が判断する。
 
 1. `master` が最新（`origin/master` と一致）で、リリース対象の変更がすべてマージ済みであることを確認する。
 2. **version バンプ**: `src/manifest.json` / `package.json` / `package-lock.json` の `version` を**3 箇所とも**上げる（Store は既存と同じ version の再アップロードを拒否する。初回 = 0.1.0）。lock は手で書かず `npm version <new> --no-git-tag-version` で追随させる。続けて `node tools/facts/generateProjectFacts.mjs --stamp-help` で `docs/project-facts.md` を再生成し、`hosted/help.html` の対象バージョンを更新する（`npm run release` は自動実行）。
@@ -115,6 +118,7 @@ pwsh -NoProfile -File tools/release/pack.ps1 -IncludeKeyPem
 | ビルドが `WEBAUTH_CLIENT_ID が未設定です` で停止 | `.env` の `WEBAUTH_CLIENT_ID` 未設定（`LOCAL_WEBAUTH_CLIENT_ID` だけでは production に入らない）。手順 0-3 を確認して 1 をやり直す。※旧 `OAUTH_CLIENT_ID`（getAuthToken 時代）は issue #129 で廃止済みで、いくら設定しても読まれない |
 | `package.json の version が manifest と一致しません` で停止 | 3 箇所のバンプ漏れ。手順 0-2 |
 | `作業ツリーが汚れています` で停止 | 未コミットの変更がある（前回の失敗で version 編集が残っている場合は `git checkout -- src/manifest.json package.json package-lock.json docs/project-facts.md hosted/help.html`）。機能変更を release コマンドで master へ持ち込ませないための停止なので、`-Force` でも解除されない |
+| `ヘルプ未記載の候補があります` で停止 | 一覧を見て `hosted/help.html` を直す。追記不要と確かめたら `-HelpReviewed`。別の PR で修正済みでも元の候補は残るため、確認後に同オプションを使う。`-Force` では解除されない |
 | `master の CI がまだ実行中です` / `失敗しています` で停止 | CI の完了を待つ。急ぐなら `-Force`（自己責任）、gh が使えない環境なら `-SkipCiCheck` |
 | `manifest の version 行を一意に特定できません` で停止 | `src/manifest.json` の整形が変わった（トップレベルのインデントは半角 2 個が前提）。`tools/release/release.ps1` の `$versionLinePattern` を追随させる |
 | `manifest の key 行を一意に特定できません` で停止 | dist/manifest.json の整形が変わった（webpack の `transformManifest` は `JSON.stringify(manifest, null, 2)` 前提でトップレベルのインデントは半角 2 個）。webpack.config.js の変更を確認し、必要なら `tools/release/pack.ps1` の `$keyLinePattern` を追随させる |
