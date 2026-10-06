@@ -298,6 +298,87 @@
               missing when clicked.</span
             >
           </p>
+
+          <h3 id="project-review-sets">
+            <span class="ja" lang="ja">担当セットで分担する</span>
+            <span class="en" lang="en">Assign studies with review sets</span>
+          </h3>
+          <p>
+            <span class="ja" lang="ja"
+              >文献を取り込んだら、オーナーが Home の「担当セット」で「キャリブレーション本数」と「グループ数」を入力し、「分ける」を押します。文献が無作為に分割され、キャリブレーションは全員の対象になります。各グループには担当者のメールアドレスをカンマ区切りで入力し、「保存」を押します。</span
+            >
+            <span class="en" lang="en"
+              >After importing studies, the owner opens “Review sets” on Home, enters “Calibration studies” and “Number of groups”, then presses “Split”. Studies are randomly divided, with calibration studies assigned to everyone. Enter comma-separated reviewer email addresses for each group and press “Save”.</span
+            >
+          </p>
+          <p>
+            <span class="ja" lang="ja"
+              >担当セットを使うと、レビュアーの検証対象はキャリブレーションと自分の担当グループに絞られます。オーナーは検証画面の「自分の担当のみ」で絞り込めます。追加した文献は「未割当の study」から割り当てます。「分け直す」は確認後、すべてのアクティブな試験の担当セットを上書きします。</span
+            >
+            <span class="en" lang="en"
+              >With review sets in use, reviewers see calibration studies and their assigned groups in verification. The owner can filter with “Only my assigned studies”. Assign newly added studies under “Unassigned studies”. After confirmation, “Split again” replaces the assignments for all active studies.</span
+            >
+          </p>
+          <p>
+            <span class="ja" lang="ja"
+              >グループに担当者をちょうど 2 名指定すると、その 2 名を裁定のペアとして使います。それ以外は実データからペアを推定します。担当外の判定は裁定・一致度から除外されます。裁定画面で「一致度を計算」を押すと、「キャリブレーションの一致度」でペア別の一致度も確認できます。</span
+            >
+            <span class="en" lang="en"
+              >A group with exactly two assigned reviewers uses those reviewers as its adjudication pair; otherwise, the pair is inferred from recorded data. Judgments outside the assigned pair are excluded from adjudication and agreement. Press “Compute agreement” on the adjudication screen to also see agreement by pair under “Calibration agreement”.</span
+            >
+          </p>
+          <h3 id="project-tours">
+            <span class="ja" lang="ja">操作ツアーで最初の流れをたどる</span>
+            <span class="en" lang="en">Follow the first steps with a guided tour</span>
+          </h3>
+          <p>
+            <span class="ja" lang="ja"
+              >操作ツアーは、画面の上で次に押す場所を枠で示し、近くに説明のカードを出して順に案内します。ヘッダの「ツアー」で一覧を開き、「始める」を押してください。「はじめての流れ」はプロジェクトのオーナーにだけ表示されます。</span
+            >
+            <span class="en" lang="en"
+              >Guided tours outline the next control to use and show an explanation card nearby, guiding you step by step on screen. Open the list with “Tours” in the header and select “Start”. “Getting started” is shown only to the project owner.</span
+            >
+          </p>
+          <p>
+            <span class="ja" lang="ja"
+              >オーナーが初めて Home を開いたときは、先頭に案内の帯が出ます（ツアーが未実施・未終了で、実行中でも提案停止中でもない場合）。「ツアーで進める」で開始し、「あとで」で現在のセッションの提案を止め、「今後表示しない」で以後の自動提案を止めます。提案を止めても一覧から始められます。</span
+            >
+            <span class="en" lang="en"
+              >When the owner first opens Home, a suggestion band appears at the top, provided the tour has not been taken or ended, is not running, and suggestions have not been paused or disabled. “Take the tour” starts it, “Later” pauses suggestions for the current session, and “Do not suggest again” disables future automatic suggestions. You can still start from the list.</span
+            >
+          </p>
+          <p>
+            <span class="ja" lang="ja"
+              >「はじめての流れ」は、文献の取り込み → プロトコル → 表のデザインのドラフトと確定を案内します。すでに文献・プロトコル・確定済みの表のデザインがあれば、対応する手順を飛ばします。「AI に表のデザインをドラフトさせる」を押すかどうかは自分で決められます（API の費用がかかります）。この手順の案内は「次へ」で進めます。</span
+            >
+            <span class="en" lang="en"
+              >“Getting started” guides you through importing documents, entering a protocol, and drafting and confirming the table design. Steps are skipped when documents, a protocol, or a confirmed table design already exist. You decide whether to select “Have AI draft the table design” (API charges apply). Select “Next” to continue the tour from this step.</span
+            >
+          </p>
+          <p>
+            <span class="ja" lang="ja"
+              >画面の移動・取り込み・保存・確定など、案内された操作をすると自動で次へ進みます。「次へ」は案内を進めるボタンです。まだ確定しない場合は「押さずに次へ」で確定せずに進めます。最後の「完了」で案内を完了し、「ツアーを終える」で途中終了します。</span
+            >
+            <span class="en" lang="en"
+              >The tour advances automatically when you perform the guided navigation, import, save, or confirmation action. “Next” advances the guidance. If you are not ready to confirm, “Skip this action” continues without confirming. “Finish” completes the tour at the last step; “End tour” stops it early.</span
+            >
+          </p>
+          <p>
+            <span class="ja" lang="ja"
+              >対象が画面に無い・見えないときは「対象が表示されるのを待っています。」と表示されます。対象の画面が指定されていて、今いる画面と違う場合は「この画面へ移動」で移動できます。</span
+            >
+            <span class="en" lang="en"
+              >If the target is missing or not visible, the card displays “Waiting for the target to appear.” If a target screen is specified and differs from the current screen, select “Go to this screen” to navigate there.</span
+            >
+          </p>
+          <p>
+            <span class="ja" lang="ja"
+              >ツアーの途中でタブを閉じても、開き直すと保存済みの手順から再開します。「ツアーを終える」で終了した場合は続きからの再開にはなりません。完了・途中終了したツアーも一覧からもう一度始められます。</span
+            >
+            <span class="en" lang="en"
+              >If you close the tab during a tour, reopening it resumes from the saved step. Selecting “End tour” ends it without keeping a step to resume. You can start completed or ended tours again from the list.</span
+            >
+          </p>
         </section>
 
         <section id="documents">
@@ -518,6 +599,48 @@
               output quality on the spot, revise the schema and pilot again. Past pilot runs are kept.</span
             >
           </p>
+
+          <h3 id="pilot-notes">
+            <span class="ja" lang="ja">判定メモと再パイロット</span>
+            <span class="en" lang="en">Judgment notes and repeat pilots</span>
+          </h3>
+          <p>
+            <span class="ja" lang="ja"
+              >パイロット結果を修正・棄却するときは、「判定メモ（任意）」に理由や抽出指示の改善点を入力してから値を確定できます。メモはその判定とともに保存されます。</span
+            >
+            <span class="en" lang="en"
+              >When editing or rejecting a pilot result, enter a reason or a suggested instruction improvement in “Judgment note (optional)” before confirming the value. The note is saved with that judgment.</span
+            >
+          </p>
+          <p>
+            <span class="ja" lang="ja"
+              >再パイロットの既定選択では、テキスト層があり、過去のパイロットで未使用の試験を最大 3 件優先します。未使用の候補が無い場合だけ使用済みの試験から選びます。「過去のパイロットで使用」の表示を参考に、チェックボックスで対象を変更できます。</span
+            >
+            <span class="en" lang="en"
+              >The default selection for a repeat pilot prioritizes up to three studies with text layers that have not been used in a pilot. Previously used studies are selected only when no unused candidates remain. Use the “Used in a previous pilot” labels and checkboxes to adjust the selection.</span
+            >
+          </p>
+
+          <h3 id="pilot-matrix">
+            <span class="ja" lang="ja">項目ごとの外れを確認する</span>
+            <span class="en" lang="en">Find fields that need attention</span>
+          </h3>
+          <p>
+            <span class="ja" lang="ja"
+              >パイロット結果の「項目 × 論文」では、行が抽出項目、列が試験です。採用・修正・棄却・未報告・根拠の位置特定失敗などを凡例と照らして確認します。群やアウトカムなど、1 試験に複数の値がある項目は、外れ数と判定対象数で表示します。外れには修正、棄却、AI が値を出したものを未報告とした判定、未判定で全引用の位置特定に失敗したものを数えます。</span
+            >
+            <span class="en" lang="en"
+              >In “Fields × studies”, rows are extraction fields and columns are studies. Use the legend to read accepted, edited, rejected, not-reported and anchoring states. Fields with multiple values per study, such as arms or outcomes, show misses out of the number of entities. Misses include edits, rejections, values supplied by AI but judged not reported, and unreviewed values whose quotes all failed anchoring.</span
+            >
+          </p>
+          <p>
+            <span class="ja" lang="ja"
+              >「外れが多い順」で外れた論文の割合が高い項目から確認し、項目名を押すと表のデザインの該当項目へ移動できます。編集欄には外れた論文の AI の値・判定後の値・判定メモが参考表示されます。「前回」列では前のパイロットとの変化を確認できますが、対象論文が違う場合はその違いも割合に影響します。</span
+            >
+            <span class="en" lang="en"
+              >Use “Most misses first” to start with fields having the highest proportion of studies with misses. Click a field name to open it in the schema editor, where the missed studies’ AI values, reviewed values and judgment notes appear for reference. The “Previous” column compares pilot runs; when the studies differ, those differences also affect the proportions.</span
+            >
+          </p>
         </section>
 
         <section id="extract">
@@ -607,7 +730,7 @@
               </tbody>
             </table>
           </div>
-          <h3>
+          <h3 id="verify-workflow">
             <span class="ja" lang="ja">進めかた</span>
             <span class="en" lang="en">How to work through it</span>
           </h3>
@@ -655,7 +778,7 @@
               >
             </li>
           </ul>
-          <h3>
+          <h3 id="verify-multiple-selection">
             <span class="ja" lang="ja">複数選択の項目</span>
             <span class="en" lang="en">Multiple-selection fields</span>
           </h3>
@@ -691,7 +814,7 @@
               >
             </li>
           </ul>
-          <h3>
+          <h3 id="verify-edit-evidence">
             <span class="ja" lang="ja">根拠（ハイライト）を直す</span>
             <span class="en" lang="en">Editing the evidence (highlights)</span>
           </h3>
@@ -755,6 +878,61 @@
               >
             </li>
           </ul>
+
+          <h3 id="verify-ask-paper">
+            <span class="ja" lang="ja">論文に質問する</span>
+            <span class="en" lang="en">Ask questions about a paper</span>
+          </h3>
+          <p>
+            <span class="ja" lang="ja"
+              >検証画面または裁定画面で試験を開き、「論文に質問（AI）」を展開します。質問を入力し、入力トークン数と費用の概算を確認して「送信」を押します。オーナー・AI を使うレビュアー・裁定者が利用でき、独立入力のレビュアーには表示されません。</span
+            >
+            <span class="en" lang="en"
+              >Open a study in verification or adjudication and expand “Ask the paper (AI)”. Enter a question, check the estimated input tokens and cost, then press “Send”. The panel is available to the owner, reviewers working with AI and adjudicators; it is hidden from independent reviewers.</span
+            >
+          </p>
+          <p>
+            <span class="ja" lang="ja"
+              >回答には選択中の 1 試験の本文（付随する文書を含む）と抽出項目の定義を使い、他の試験やレビュアーの判定は参照しません。回答の引用は本文と照合され、移動できる引用を押すと PDF の該当箇所が表示されます。照合できない引用は区別して表示され、回答の引用が 1 件も照合できなければ警告が出ます。</span
+            >
+            <span class="en" lang="en"
+              >Answers use the selected study’s text, including its associated documents, and the extraction field definitions. Other studies and reviewers’ judgments are not used. Citations are checked against the text; click a linked citation to view the passage in the PDF. Unverified citations are marked separately, and a warning appears if none of an answer’s citations can be verified.</span
+            >
+          </p>
+          <p>
+            <span class="ja" lang="ja"
+              >回答は参考情報です。PDF で根拠を確認してから、自分で値を入力・判定してください。質問と回答はこのタブの中だけに保持され、閉じるか再読み込みすると消えます。共有フォルダには保存されません。</span
+            >
+            <span class="en" lang="en"
+              >Treat answers as reference material. Check the evidence in the PDF before entering or judging a value yourself. Questions and answers remain only in this tab and disappear when it is closed or reloaded; they are not saved in the shared folder.</span
+            >
+          </p>
+
+          <h3 id="verify-enum-choices">
+            <span class="ja" lang="ja">単一選択の許容値チップ</span>
+            <span class="en" lang="en">Allowed-value chips for single selection</span>
+          </h3>
+          <p>
+            <span class="ja" lang="ja"
+              >単一選択の enum 項目を修正・棄却するときは、許容値が 9 個以下ならチップをクリックするか数字キー（1〜9）で値を確定できます。「その他（自由入力）」から別の値も入力できます。許容値が多い場合は入力欄を使います。パイロットの検証・独立入力・裁定の値入力でも同じ選択方式を使います。</span
+            >
+            <span class="en" lang="en"
+              >When editing or rejecting a single-selection enum field with up to nine allowed values, click a chip or press a number key (1–9) to confirm the value. “Other (free text)” lets you enter a different value. Fields with more options use a text input. The same controls are used in pilot verification, independent entry and adjudication.</span
+            >
+          </p>
+
+          <h3 id="verify-saving">
+            <span class="ja" lang="ja">判定の保存完了を確認する</span>
+            <span class="en" lang="en">Wait for judgments to finish saving</span>
+          </h3>
+          <p>
+            <span class="ja" lang="ja"
+              >検証・パイロット・裁定の画面には、保存中の件数が「保存中（1 件）」のように表示されます。表示が消えるまでタブを開いておいてください。保存中に閉じる・再読み込みなどでページを離れようとすると、ブラウザが確認を求めます。</span
+            >
+            <span class="en" lang="en"
+              >Verification, pilot and adjudication screens show the number of pending saves, for example “Saving (1)”. Keep the tab open until the indicator disappears. If you try to close, reload or otherwise leave the page while saves are pending, the browser asks for confirmation.</span
+            >
+          </p>
         </section>
 
         <section id="dashboard">
@@ -770,6 +948,27 @@
             <span class="en" lang="en"
               >A study × section progress matrix plus AI acceptance rate (values approved unchanged), anchor failure rate
               and not_reported rate. Click a cell to jump straight to that spot in the verification screen.</span
+            >
+          </p>
+
+          <h3 id="dashboard-usage">
+            <span class="ja" lang="ja">費用の集計と予算</span>
+            <span class="en" lang="en">Track usage and set a budget</span>
+          </h3>
+          <p>
+            <span class="ja" lang="ja"
+              >オーナーはダッシュボードの「費用・使用量（価格表による推定）」で、累計の費用・呼び出し数・トークン数・キャッシュヒット率と、実行別・用途別・モデル別・月別の内訳を確認できます。呼び出しで取得できたキャッシュ使用量と価格表のキャッシュ単価は、記録する費用の概算に反映されます。価格不明の呼び出しは別途件数が表示され、費用の合計には含まれません。</span
+            >
+            <span class="en" lang="en"
+              >The owner can open “Cost and usage (estimated from the price table)” on the dashboard to see cumulative cost, calls, tokens and cache hit rate, with breakdowns by run, purpose, model and month. Recorded cost estimates account for reported cache usage and the price table’s cache rates when available. Calls with unknown prices are counted separately and excluded from the cost total.</span
+            >
+          </p>
+          <p>
+            <span class="ja" lang="ja"
+              >「プロジェクト予算 (USD)」に 0 より大きい金額を入力し、「予算を保存」を押します。一括抽出では累計と今回の推定費用が予算を超える見込みなら警告しますが、実行は止めません。価格不明の呼び出しがあると費用を把握しきれないため、契約先の請求額も確認してください。「予算を解除」で設定を取り消せます。予算を設定すると旧版の拡張ではプロジェクトを開けなくなり、解除すると再び開けます。</span
+            >
+            <span class="en" lang="en"
+              >Enter an amount greater than zero in “Project budget (USD)” and press “Save budget”. Full extraction warns when cumulative spending plus the new estimate is likely to exceed the budget, but does not block the run. Unknown prices leave gaps in the estimate, so also check your provider’s billing. Use “Clear budget” to remove the setting. Older extension versions cannot open a project with a budget set; clearing it restores access.</span
             >
           </p>
         </section>
@@ -845,6 +1044,19 @@
               >
             </li>
           </ul>
+
+          <h3 id="dual-review-mode-change">
+            <span class="ja" lang="ja">作業開始後のレビューモード</span>
+            <span class="en" lang="en">Review modes after work has started</span>
+          </h3>
+          <p>
+            <span class="ja" lang="ja"
+              >Home でレビュアーを登録するときは、作業を始める前にモードを決めてください。同じメールアドレスで判定・データ・群構成を記録した後は、AI を見る作業と独立入力を切り替える登録はできません。独立入力のレビュアーから裁定者への変更も対象です。別の種類で作業する場合は別の Google アカウントを登録します。未着手でモードを変更した場合は、相手に画面を開き直してもらってください。</span
+            >
+            <span class="en" lang="en"
+              >Choose the review mode on Home before the reviewer starts work. Once judgments, data or arm structures have been recorded for an email address, registration cannot switch that person between working with AI and independent entry. This also applies to changing an independent reviewer to an adjudicator. Register a different Google account for the other type of work. If you change the mode before work starts, ask the reviewer to reopen the screen.</span
+            >
+          </p>
         </section>
 
         <section id="export">
@@ -971,6 +1183,19 @@
               >
             </li>
           </ul>
+
+          <h3 id="export-usage">
+            <span class="ja" lang="ja">使用量を CSV に出す</span>
+            <span class="en" lang="en">Export usage as CSV</span>
+          </h3>
+          <p>
+            <span class="ja" lang="ja"
+              >オーナーはエクスポート画面の「費用・使用量 CSV」で「使用量 CSV を生成」を押します。全用途の累計・実行別・月別の呼び出し数、トークン数、推定費用を <code>usage.csv</code> に出し、Drive に保存します。生成後は「ローカル保存」も使えます。データのエクスポートとは別操作で、未検証セルの確認にかかわらず生成できます。</span
+            >
+            <span class="en" lang="en"
+              >On the export screen, the owner presses “Generate usage CSV” under “Cost and usage CSV”. This writes calls, tokens and estimated costs for all purposes, as totals and by run and month, to <code>usage.csv</code> in Drive. After generation, “Save locally” is also available. This is separate from exporting extracted data and does not require confirmation about unverified cells.</span
+            >
+          </p>
         </section>
 
         <section id="options">
@@ -1042,7 +1267,7 @@
             <span class="en" lang="en">13. Troubleshooting</span>
           </h2>
 
-          <h3>
+          <h3 id="troubleshooting-project-permission">
             <span class="ja" lang="ja">共有されたプロジェクトが「開く権限がありません」になる</span>
             <span class="en" lang="en">“You don’t have permission to open this spreadsheet”</span>
           </h3>
@@ -1060,7 +1285,7 @@
             >
           </p>
 
-          <h3>
+          <h3 id="troubleshooting-reviewer-pdf">
             <span class="ja" lang="ja">レビュアーとして PDF が開けない</span>
             <span class="en" lang="en">As a reviewer, the PDFs will not open</span>
           </h3>
@@ -1075,7 +1300,7 @@
             >
           </p>
 
-          <h3>
+          <h3 id="troubleshooting-rate-limit">
             <span class="ja" lang="ja">一括抽出が 429（レート制限）で失敗する</span>
             <span class="en" lang="en">Full extraction fails with 429 (rate limited)</span>
           </h3>
@@ -1091,7 +1316,7 @@
             >
           </p>
 
-          <h3>
+          <h3 id="troubleshooting-missing-highlight">
             <span class="ja" lang="ja">ハイライトが出ない / 根拠が見つからない</span>
             <span class="en" lang="en">No highlight appears / the quote cannot be found</span>
           </h3>
@@ -1108,7 +1333,7 @@
             >
           </p>
 
-          <h3>
+          <h3 id="troubleshooting-empty-extraction">
             <span class="ja" lang="ja">AI 抽出の結果が空だった</span>
             <span class="en" lang="en">The AI extraction came back empty</span>
           </h3>
@@ -1122,7 +1347,7 @@
             >
           </p>
 
-          <h3>
+          <h3 id="troubleshooting-save-offline">
             <span class="ja" lang="ja">保存に失敗した / オフラインになった</span>
             <span class="en" lang="en">Saving failed / you went offline</span>
           </h3>
@@ -1133,6 +1358,27 @@
             <span class="en" lang="en"
               >Decisions are queued and resent automatically when the connection returns; the queue size is shown at the
               top of the screen. If your sign-in expired, you will be prompted to sign in again.</span
+            >
+          </p>
+
+          <h3 id="troubleshooting-save-conflict">
+            <span class="ja" lang="ja">保存の競合と API エラーの記録</span>
+            <span class="en" lang="en">Save conflicts and API error records</span>
+          </h3>
+          <p>
+            <span class="ja" lang="ja"
+              >保存の競合が表示されている間は、検証の入力操作が止まります。PDF は引き続き確認できます。画面の案内に従って再読み込みし、保存されなかった判定をやり直してください。</span
+            >
+            <span class="en" lang="en"
+              >When a save conflict is displayed, verification input is disabled while the PDF remains available to read. Follow the on-screen instructions to reload, then repeat any judgment that was not saved.</span
+            >
+          </p>
+          <p>
+            <span class="ja" lang="ja"
+              >Google API の失敗の診断には、プロジェクトのスプレッドシートにある <code>ApiErrorLog</code> タブも確認できます。記録先へ送れない間はブラウザ内で待機するため、直後にはシートに反映されないことがあります。</span
+            >
+            <span class="en" lang="en"
+              >For diagnostics on Google API failures, check the <code>ApiErrorLog</code> tab in the project spreadsheet. Entries wait in the browser when they cannot be sent, so they may not appear in the sheet immediately.</span
             >
           </p>
         </section>
