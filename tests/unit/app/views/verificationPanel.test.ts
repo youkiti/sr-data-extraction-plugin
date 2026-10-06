@@ -4771,6 +4771,19 @@ describe('引用一覧の編集', () => {
     panel.dispose();
   });
 
+  test('未報告のセルに人が引用を足しても新しい AI の引用の注記を出さない', async () => {
+    const quotes = aiCellQuotes({ evidence: makeEvidence({ quote: 'mortality' }), quotes: [] })
+      .map((quote) => ({ ...quote, source: 'human' as const, evidenceId: null }));
+    const missing = makeEvidence({ quote: null, notReported: true });
+    const { panel } = await createPanel({ fields: [makeField()], evidence: [missing],
+      quoteSetRows: editedQuotes([missing], { quotes, baseRunId: null }),
+    }, { onQuoteSetSave: save() });
+    expect(texts(panel.root)).toEqual(['mortality']);
+    expect(panel.root.querySelector('.verify__quote-source')).not.toBeNull();
+    expect(panel.root.querySelector('.verify__quote-newer')).toBeNull();
+    panel.dispose();
+  });
+
   test.each([false, true])('編集済みセルでは再特定を出さず、保存ハンドラなしなら従来表示: %s', async (editable) => {
     const original = makeEvidence({ quote: 'missing', anchorStatus: 'failed' });
     const { panel } = await createPanel({ fields: [makeField()], evidence: [original], quoteSetRows: editedQuotes([original]) },

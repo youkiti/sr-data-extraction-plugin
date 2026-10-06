@@ -29,6 +29,19 @@ test.each(['empty', 'quote'] as const)('%s は AI の有無にかかわらず編
   }
 });
 
+test.each([null, 'old'])('AI の引用が無ければ基準 run が %s でも新しい引用の注記を出さない', (baseRunId) => {
+  const saved = snapshot([quoteRow({ baseRunId })]);
+  const missing = evidence({ quote: null, notReported: true });
+  expect(resolveCellQuotes({ evidence: missing, quotes: [] }, saved, new Map()).newerAiAvailable).toBe(false);
+});
+
+test('複数引用の全行が null なら新しい引用の注記を出さない', () => {
+  const missing = evidence({ quote: null, notReported: true, quoteSeq: 1 });
+  const quotes = [missing, evidence({ quote: null, notReported: true, quoteSeq: 2 })];
+  const saved = snapshot([quoteRow({ baseRunId: 'old' })]);
+  expect(resolveCellQuotes({ evidence: missing, quotes }, saved, new Map()).newerAiAvailable).toBe(false);
+});
+
 test('後勝ちは時刻によらず、同じ set の quote 行だけを連番順に採る', () => {
   const rows = [quoteRow({ setId: 'old', savedAt: 'z' }),
     quoteRow({ seq: 3, quoteId: 'third' }), quoteRow({ kind: 'empty' }),

@@ -419,7 +419,7 @@ Gemini API キーを保存しておく（S5 以降で使用。**キーはスク�
 |---|---|---|
 | （未実施） | — | — |
 
-## 9. 複数選択・引用の編集・PDF からの追加（issue #307）の実機確認（2026-10-05 実施。裁定のみ未実施）
+## 9. 複数選択・引用の編集・PDF からの追加（issue #307）の実機確認（2026-10-05・06 実施。実在の 2 アカウントでの裁定のみ未実施）
 
 背景: issue #307（PR #308・#309・#311・#312）で、enum 項目の複数選択、全引用の節の見出し、人による引用の編集（`QuoteSets` タブ）、PDF で文を選んでの追加、裁定での最終の根拠の選択、根拠の表の書き出しを入れた。既存プロジェクトでのヘッダ・タブの自動追加と、実 PDF でのテキスト層は、jest / Playwright（モックの Sheets）では確かめられない。
 
@@ -433,8 +433,9 @@ Gemini API キーを保存しておく（S5 以降で使用。**キーはスク�
 | 4 | 引用が 1 件のセルで「削除」→ 再読み込み →「AI の引用に戻す」 | `QuoteSets` タブ（22 列）が作られ `kind = empty` の行が入る。「引用はすべて外されています」と出て AI の引用は出ず、再読み込み後も保たれる。戻すと AI の引用が出て `kind = reset` の行が入る | [x] |
 | 5 | PDF の 1 ページ目で文を選ぶ →（複数選択のセルを対象に）選択肢を選び、節を入力して「追加」 | テキスト層の文字が紙面の文字と重なる（100% 表示で目視）。選択肢を選ぶまで「追加」が押せない。節の入力欄へ入力してもバーが消えない。一覧の末尾に「人が追加」の引用が増え、`QuoteSets` に `source = human`・選んだ選択肢・節・`anchor_status = exact` で入り、PDF 上にハイライトが出る | [x] |
 | 6 | `#/export` で study_wide と evidence_quotes のプレビュー | study_wide: `data_source` の直後に選択肢ごとの列 7 個（6 選択肢 + `data_source__other_text`）。値は `1 / 0 / 0 / 0 / 1 / Standardized patients / 0`。evidence_quotes: 17 列 | [x] |
-| 7 | 2 アカウント（with_ai と independent）で同じ study を検証 → `#/adjudicate` で両者の引用が並ぶ・群のマッピングを変えた study で B の引用が正しいセルに出る・採用した引用が evidence_quotes で `is_final = TRUE` になる | （同左） | [ ] |
-| 8 | `/Rotate` 付きのページ・2 段組・表の中の文字・ズーム 150% 以上で文を選ぶ。スキャン PDF では選択できないこと | テキスト層の位置が合い、選んだ文が照合されてハイライトされる | [ ] |
+| 7a | **架空の 2 人目**で裁定画面を確かめる: owner（with_ai）が 1 study の群構成を確定して全セルを判定し、study レベルと群レベルのセルに PDF から引用を足す → 2 人目（independent。実在しないアドレス）の判定・群構成・引用を、owner の行を写してシートへ直接書き込む（群の順序は逆、2 セルは値を変える）→ `#/adjudicate` | 一覧に両者の完了状況（34/34）が出て裁定を開始できる。順序を逆にした群が名称の一致で対応づく。study レベルのセルに A だけ・B だけ・両者（同じ文）の引用が印つきで並ぶ。B が自分の `arm:2`（= A の `arm:1`）に付けた引用が A の `arm:1` のセルにだけ出る。採用した 3 件が `QuoteSets` に `annotator = consensus`・A の番号の `entity_key`・`origin_annotator` つきで入り、再入場後も採用の印が残り、evidence_quotes で `is_final = TRUE` になる | [x] |
+| 7b | **実在の 2 アカウント**（with_ai と independent）で同じ study を検証 → 裁定。7a では確かめられない点: 2 人目のアカウントが共有されたシートと PDF を読めること、independent の人が PDF から足した引用が保存され、裁定まで相手に見えないこと | （同左） | [ ] |
+| 8 | `/Rotate` 付きのページ・2 段組・表の中の文字・ズーム 150% 以上で文を選ぶ。スキャン PDF では選択できないこと | テキスト層の位置が合い、選んだ文が照合されてハイライトされる | [x] |
 
 **結果メモ**
 
@@ -442,3 +443,63 @@ Gemini API キーを保存しておく（S5 以降で使用。**キーはスク�
 |---|---|---|
 | 2026-10-05 | Claude（Selenium・owner 1 アカウント） | #1〜#6 は期待どおり。抽出は 1 文献・22 項目で 13 行追記（うち `section` あり 10 行）。#7 は 2 つ目のアカウントが要るため未実施。#8 は 1 段組の 1 ページ目・100% 表示だけ確認し、回転・2 段組・表・高倍率・スキャン PDF は未実施 |
 | 2026-10-05 | 同上 | **気づいた点**: ①引用の下の「節: …」と「照合できませんでした」が間隔なしでつながって表示される → 同じ PR で `.verify__quote-section` に右の余白を足した ②PDF から足した引用のハイライトは描かれるが、保存の完了時に強調（`.pdf-viewer__hl--active`）が外れる（引用を編集したら選択状態を破棄する規則が、保存完了時の再描画にも掛かるため。実害は小さい。未修正）③AI の引用が行末のハイフン（`resi- dents`）を含むと照合に失敗する（従来からの挙動。複数選択の項目の引用は分割照合の対象外）④evidence_quotes のプレビューは先頭 10 行だけなので、人が足した引用の行の `is_final` は画面では見ていない（jest で固定済み） |
+| 2026-10-06 | Claude（Selenium・owner 1 アカウント + 架空の 2 人目） | #7a と #8 は期待どおり（内訳は下の「2026-10-06 の実施内容」）。#7b は 2 つ目の実アカウントが要るため未実施 |
+| 2026-10-06 | 同上 | **気づいた点**（下の「2026-10-06 に気づいた点」に 7 件。うち #307 の機能の不具合は 1・2 で、同じ PR で修正して実機で確認した。5 は issue #322） |
+
+### 2026-10-06 の実施内容（#7a・#8）
+
+**実施方法**: master `9df0e23` の dev ビルドを、同じ専用プロファイル（owner 1 アカウント）で操作した。プロジェクトは同じ「実機確認 20260930-1621」。確認用の PDF 4 本を PC からの取り込みで足し、gemini-3.8-flash で一括抽出した（実 API。テキストあり 3 本で 1 run、スキャン 1 本は `pdf_native` で 1 run）。シートの読み書きは、拡張のページから拡張自身のトークンで Sheets API を呼んで行った（gviz の HTML は数値列のヘッダが空になるため使っていない）。シーンは `tools/selenium/issue307Check.mjs` の `upload` / `extract` / `textlayer` / `verify-all` / `seed-b` / `adjudicate` / `export-quotes`。スクリーンショットは `C:/tmp/srde307-realtest2/`（リポジトリ外）。
+
+| PDF | 中身 | 用途 |
+|---|---|---|
+| `rct-plos.pdf` | `tests/fixtures/pdf` の PLOS One の RCT（1 段組・10 ページ） | #7a |
+| `rct-frontiers.pdf` | 同 Frontiers の RCT（2 段組・表あり・14 ページ） | #8 |
+| `rotated.pdf` | Frontiers の先頭 4 ページ。2 ページ目に `/Rotate 90`、3 ページ目に `/Rotate 270` を付けた（PyMuPDF で加工） | #8 |
+| `scanned.pdf` | PLOS の先頭 2 ページを 150 dpi の画像にして貼り直した（テキスト層なし。取り込み時の `text_status = no_text_layer`） | #8 |
+
+**#8 の内訳**: 各ケースで、テキスト層の span を選んで「資金源」のセルの根拠に追加し、次の 3 点を見た。(a) 選んだ span の矩形に入る canvas の暗い画素の割合（紙面の文字と重なっているか）、(b) 追加後に描かれたハイライトが span を覆う割合、(c) `QuoteSets` に入ったページと `anchor_status`。あわせて、テキスト層の文字を赤い半透明にした画面を目で見た。
+
+| PDF・ページ | 条件 | 選んだ文 | (a) 暗い画素 | (b) 覆う割合 | (c) 照合 |
+|---|---|---|---|---|---|
+| Frontiers p.3 | 2 段組の右段・100%・2 span | The intervention consisted of local thermotherapy… | 18% / 17% | 81% / 82% | exact |
+| Frontiers p.3 | 表の中・150%・1 span | Moderate COVID-19 | 19% | 85% | exact |
+| Frontiers p.3 | 表の中・200%・2 span（見出しのセル + 内容のセル） | Critical COVID-19 Patient with ARDS… | 18% / 18% | 85% / 85% | exact |
+| Frontiers p.6 | 表の題 + 表の見出し・125%・2 span | Baseline characteristics of the participants. Total | 17% / 0% | 80% / 80% | exact |
+| rotated p.2 | `/Rotate 90`・100%・2 span | Coronavirus disease (COVID-19), caused by… | 18% / 18% | 75% / 75% | exact |
+| rotated p.2 | `/Rotate 90`・150%・2 span | Hyperthermia (also thermotherapy) consists of… | 19% / 16% | 76% / 77% | exact |
+| rotated p.3 | `/Rotate 270`・表の中・150%・1 span | Severe COVID-19 | 15% | 86% | exact |
+| rotated p.3 | `/Rotate 270`・表の中・200%・1 span | Critical COVID-19 | 15% | 85% | exact |
+| PLOS p.1 | 1 段組・100%・行末がハイフンの行 | This randomized controlled clinical trial … with jaun- | 27% | 79% | fuzzy |
+| PLOS p.3 | 1 段組・100%・群レベルのセル（割付人数・群 1）へ追加 | The intervention group received 10 mg/kg/day… | 21% | 80% | exact |
+| scanned p.1 | スキャン PDF・100% | — | テキスト層の span 0 個・選択可の印なし・追加バーなし | — | — |
+
+- (a) の 0% は Frontiers p.6 の表の見出し「Total」（灰色の帯に白い文字）。暗い画素を数える方法では測れないだけで、画面ではハイライトが文字の上に載っている
+- (b) が 100% にならないのは、span の矩形（行の高さ）がハイライトの矩形より上下に少し大きいため。回転ページでも同じ割合になった
+- このほか rotated で 3 件（p.2 の 100% と 150%、p.3 の 200%）を追加したが、(b) を記録できていない。2 件は実行を途中で止めたためで、1 件は AI の引用が同じ行を塗っていて区別できなかった（その後ハーネスを直した）
+- スキャン PDF は、未抽出のままでは検証画面で開けない（一覧に出ない）。抽出してから確かめた
+
+**#7a の内訳**（対象 = `rct-plos.pdf`。全 34 セル = study 10 + 群 8 + アウトカム 16）
+
+| 確かめたこと | 結果 |
+|---|---|
+| 一覧 | 「A（owner）: 34/34・B（架空の 2 人目）: 34/34」と出て「裁定を開始」できる |
+| 群の対応づけ | A の Intervention group ↔ B の `arm:2`、A の Control group ↔ B の `arm:1`。「本数・名称が一致しています」→「このまま採用」で確定 |
+| 引用の並び（資金源・study レベル） | `[A]` AI の引用 / `[A・B]` 両者が足した同じ文（1 件にまとまる）/ `[B]` B だけの文 |
+| 引用の並び（割付人数・群レベル） | 群 1 のセルに `[A]` 2 件と `[B]` 1 件。B が自分の `arm:2` に付けた引用は群 1 にだけ出て、群 2 には出ない |
+| 採用 | 3 件にチェック →「最終の根拠 2 件」「最終の根拠 1 件」。`QuoteSets` に `annotator = consensus`・`saved_by` = owner・`origin_annotator` = 元の人で入る。群レベルの行の `entity_key` は `arm:1`（A の番号） |
+| 値の裁定 | 一致 32 セルを一括採用、不一致 2 セルは A を採用。consensus の行: `ArmStructures` 2・`StudyData` 1・`ResultsData` 24・`Decisions` 34 |
+| 再入場 | 採用した 3 件に印が残る |
+| evidence_quotes | 全 138 行・17 列。この study は 30 行で、`is_final = TRUE` は採用した 3 件だけ（`annotator = consensus`） |
+
+- 2 人目は `zz-seeded-reviewer-b@example.com`（予約ドメイン。レビュアー登録・共有はしていない）。書き込んだ行は `ArmStructures` 2・`StudyData` 1・`ResultsData` 24・`Decisions` 34・`QuoteSets` 3 で、`Decisions.note` に「issue #307 実機確認: 架空の 2 人目」と入れた。**この行はプロジェクトに残っている**
+- 2 人目の引用の `anchor_status` は `exact` と書き込んだ値で、拡張が照合した結果ではない
+
+### 2026-10-06 に気づいた点
+
+1. **AI の引用が 0 件のセルに人が引用を足すと、再抽出していないのに「この項目には、あとから抽出された AI の引用があります」と「AI の引用に戻す」が出る**。AI が未報告（NR）と返したセルで再現（rotated の「資金源」）。保存された `QuoteSets` の `base_run_id` が空になっている。引用を持たないセルは編集状態（`verificationPanel.ts` の `quoteEdit`）に登録されず、保存時に基準の run を引けないためとみられる。**修正済み**（同じ PR。注記は、いまの AI の引用が 1 件以上あるときだけ出す。`base_run_id` が空のまま保存された行も注記が出なくなる。修正後のビルドで、rotated の「資金源」〔AI は未報告・人が足した引用 7 件〕に注記が出ないことを実機で確認）
+2. **裁定画面で、引用の一覧が幅の狭い「項目」の列に入る**。文が 1 行 6〜8 文字で折り返され、「ハイライトへ」のボタンが縦書きになる（窓幅 1500px）。**修正済み**（同じ PR。引用の一覧に最小幅 18rem を与え、操作ボタンの文字を折り返さないようにした。修正後のビルドで、引用文が 1 行に数十文字入り、ボタンが横書きになることを実機で確認。A・B の値の列は狭いままで、長いメモは数文字ごとに折り返される）
+3. evidence_quotes で、2 人目自身の行の `entity_key` は 2 人目の群番号のまま（上の例では `arm:2`）。最終の行（consensus）は A の番号（`arm:1`）。要件定義書の書き方どおりだが、同じ群が行によって別の番号で出る
+4. 行末がハイフンで終わる行を選ぶと `anchor_status = fuzzy` になる（ハイライトの位置は合っている）
+5. owner の判定 34 件を 2.2 秒間隔で押し、5 秒後に窓を閉じたら、最後の 6 件が `Decisions` に入っていなかった（1 件は `ResultsData` だけ入っていた）。画面にエラーや保留の表示は出ていなかった。開き直すと 28/34 で、3 秒間隔で押し直すと入った。原因は未調査（書き込み上限に当たった再試行の途中で閉じた可能性）。issue #322
+6. 検証画面の読み込みが `Google API failed: HTTP 429` で止まることが 1 回あった（ハーネスを 3 回続けて起動した直後。時間を置いて開き直すと読めた）
+7. テキストあり 3 本の一括抽出の run が `partial_failure` で記録された。3 本とも `Evidence` はあり、`LLMApiLog` にエラーは無い。画面は「一括抽出が完了しました」を表示していた。原因は未調査
