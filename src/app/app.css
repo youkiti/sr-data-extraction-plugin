@@ -3953,6 +3953,11 @@ section.documents__tiab {
   align-items: center;
 }
 
+/* 列が狭くなっても、ボタンの文字を 1 文字ずつ折り返さない */
+.adjudicate__cell-actions .adjudicate__action {
+  white-space: nowrap;
+}
+
 .adjudicate__custom-input {
   flex: 1 1 120px;
   min-width: 100px;
