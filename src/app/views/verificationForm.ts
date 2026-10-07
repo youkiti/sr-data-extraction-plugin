@@ -288,7 +288,7 @@ function renderProgress(progress: VerificationProgress, activeTab: EntityLevel):
     {
       id: 'verify-progress',
       className: 'verify__progress',
-      attributes: { role: 'status', 'aria-live': 'polite' },
+      attributes: { role: 'status', 'aria-live': 'polite', 'data-tour': 'verify-basics-progress' },
     },
     children,
   );

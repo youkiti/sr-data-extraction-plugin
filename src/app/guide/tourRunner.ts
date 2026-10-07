@@ -22,6 +22,10 @@ export function createTourRunner(host: TourRunnerHost, { doc, win }: { doc: Docu
 
   function stop(): void { cleanup(); running = null; }
 
+  function syncAvailability(): void {
+    if (running && isTourUnavailable(running.tour, host.computeConditions())) stop();
+  }
+
   function show(tour: TourDefinition, index: number, followed: boolean, focus = true): void {
     stop();
     running = { tour, index, followed };
@@ -98,6 +102,19 @@ export function createTourRunner(host: TourRunnerHost, { doc, win }: { doc: Docu
           event.target.closest(`[data-tour="${step.target}"]`)) advance();
     };
     doc.addEventListener('click', onTargetClick);
+    const blockTarget = (event: Event): void => {
+      if (event instanceof KeyboardEvent && event.key !== 'Enter' && event.key !== ' ') return;
+      // 暗黙のフォーム送信も、送信元ボタンが対象内の場合だけ遮断する。
+      const source = event instanceof SubmitEvent ? event.submitter : event.target;
+      if (source instanceof Element && source.closest(`[data-tour="${step.target}"]`)) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+      }
+    };
+    const blockedEvents = ['click', 'keydown', 'submit'] as const;
+    if (step.blockTarget) {
+      blockedEvents.forEach(type => doc.addEventListener(type, blockTarget, true));
+    }
     const unsubscribe = subscribeGuideProgressChange(() => {
       const action = decideProgressSync(getGuideProgress().active, { tourId: tour.id, stepIndex: index });
       if (action.type === 'close') stop();
@@ -109,6 +126,9 @@ export function createTourRunner(host: TourRunnerHost, { doc, win }: { doc: Docu
       win.removeEventListener('resize', reposition);
       win.removeEventListener('scroll', reposition, true);
       doc.removeEventListener('click', onTargetClick);
+      if (step.blockTarget) {
+        blockedEvents.forEach(type => doc.removeEventListener(type, blockTarget, true));
+      }
       unsubscribe();
       card.remove(); highlight.remove(); block.remove();
     };
@@ -167,5 +187,5 @@ export function createTourRunner(host: TourRunnerHost, { doc, win }: { doc: Docu
     const next = nextLocalStepIndex(tour, index);
     if (next !== index) goTo(tour, next);
   }
-  return { start, resume, handleEvent, stop, rerender };
+  return { start, resume, syncAvailability, handleEvent, stop, rerender };
 }

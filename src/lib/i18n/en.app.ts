@@ -44,6 +44,13 @@ export const enApp: Record<keyof typeof jaApp, string> = {
   // ツアー: verify-basics（手順の本文は、この区画の Desc の直後に足す）
   'guide.tourVerifyBasicsTitle': 'Verification basics',
   'guide.tourVerifyBasicsDesc': 'Review extracted values while checking the highlighted evidence.',
+  'guide.tourVerifyBasicsStepOpenVerify': 'Select “Verification” to open the screen for checking extracted values and evidence.',
+  'guide.tourVerifyBasicsStepPickStudy': 'Select a study with AI extraction results from the study list to open its verification panel.',
+  'guide.tourVerifyBasicsStepReadEvidence': 'Select “PDF” to switch to the paper view. Select a field and compare the highlighted evidence in the PDF with the extracted value.',
+  'guide.tourVerifyBasicsStepDecide': 'Check the evidence, then choose “Accept (a)”, “Edit (e)”, “Reject (x)”, or “Not reported (n)”. Accepting also requires one action.',
+  'guide.tourVerifyBasicsStepEditEvidence': '“Remove” removes a quote from the evidence (disabled during this step). Select text in the PDF and select “Add” to add it as evidence.',
+  'guide.tourVerifyBasicsStepCheckProgress': 'Check the progress display for remaining unverified cells. Exporting with unverified cells remaining displays a warning.',
+  'guide.tourVerifyBasicsStepFinish': 'Select “Tours” to start a tour again from the list at any time.',
   // ツアー: dual-review（手順の本文は、この区画の Desc の直後に足す）
   'guide.tourDualReviewTitle': 'Dual review and adjudication',
   'guide.tourDualReviewDesc': 'Register reviewers, split assignment sets, and adjudicate disagreements.',
