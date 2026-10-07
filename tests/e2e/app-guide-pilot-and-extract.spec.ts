@@ -28,7 +28,6 @@ test('一覧からパイロットと一括抽出を開始・終了でき、カ�
   const card = page.locator('.guide-tour-card');
   await expect(card).toHaveAttribute('data-guide-step', 'open-pilot');
   await expect(card).toHaveAttribute('data-guide-waiting', 'false');
-  const nav = page.locator('[data-tour="nav-pilot"]');
   await expect(page.locator('.guide-tour-highlight')).toBeVisible();
   // 枠は対象の位置に追従する（再配置は一拍遅れることがある）。同じ瞬間に両方を読み、重なるまで待つ
   await expect

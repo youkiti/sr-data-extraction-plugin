@@ -28,7 +28,6 @@ test('検証ツアーを一覧から開始し、対象の強調と axe を確認
   const card = page.locator('.guide-tour-card');
   await expect(card).toHaveAttribute('data-guide-step', 'open-verify');
   await expect(card).toHaveAttribute('data-guide-waiting', 'false');
-  const nav = page.locator('[data-tour="nav-verify"]');
   await expect(page.locator('.guide-tour-highlight')).toBeVisible();
   // 枠は対象の位置に追従する（再配置は一拍遅れることがある）。同じ瞬間に両方を読み、重なるまで待つ
   await expect
