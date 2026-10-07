@@ -1,12 +1,139 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readdirSync } from 'node:fs';
+import { readdirSync, rmSync, existsSync } from 'node:fs';
+import path from 'node:path';
+import os from 'node:os';
 import { parseArgs } from './lib/options.mjs';
 import { defineScenario, selectScenarios } from './lib/scenario.mjs';
 import { executeScenarios, summarize } from './lib/results.mjs';
 import { resolveDemoDir } from './lib/paths.mjs';
 import { Run } from './lib/run.mjs';
 import { expectUnchanged, expectTargetBlocked } from './lib/blocked.mjs';
+import { withFreshBrowser, stopProfileProcesses } from './lib/browser.mjs';
+
+test('終了待ちと後始末はシナリオの成否を変えず、対象プロファイルだけを渡す', async () => {
+    for (const mode of ['normal', 'timeout', 'scenario-failure', 'stop-failure', 'remove-failure', 'close-failure']) {
+        const messages = [];
+        const stopped = [];
+        let profile;
+        const failure = new Error('シナリオの元の失敗');
+        try {
+            const result = withFreshBrowser({ name: 'sample', run: async () => {
+                if (mode === 'scenario-failure') throw failure;
+            } }, parseArgs([]), 'fake-demo', [], {
+                launch: async directory => {
+                    profile = directory;
+                    return {
+                        serviceWorkers: () => [{ url: () => 'chrome-extension://fake/worker.js' }],
+                        newPage: async () => ({ setDefaultTimeout() {} }),
+                        close: () => {
+                            if (mode === 'close-failure') throw new Error('終了失敗');
+                            return mode === 'normal' ? Promise.resolve() : new Promise(() => {});
+                        },
+                    };
+                },
+                closeTimeoutMs: 5,
+                warn: message => messages.push(message),
+                stopProcesses: directory => {
+                    stopped.push(directory);
+                    if (mode === 'stop-failure') throw new Error('停止失敗');
+                },
+                removeProfile: (directory, options) => {
+                    assert.equal(directory, profile);
+                    assert.deepEqual(options, { recursive: true, force: true });
+                    if (mode === 'remove-failure') throw Object.assign(new Error('削除失敗'), { code: 'EPERM' });
+                    rmSync(directory, options);
+                },
+            });
+            if (mode === 'scenario-failure') await assert.rejects(result, error => error === failure);
+            else await result;
+            assert.equal(path.dirname(profile), path.resolve(os.tmpdir()));
+            assert.ok(path.basename(profile).startsWith('sr-tour-check-'));
+            if (mode === 'normal') {
+                assert.deepEqual(messages, []);
+                assert.deepEqual(stopped, []);
+            } else if (mode === 'close-failure') {
+                assert.deepEqual(stopped, []);
+                assert.match(messages[0], /sample: ブラウザの終了に失敗/);
+            } else {
+                assert.deepEqual(stopped, [profile]);
+                assert.match(messages[0], /sample: ブラウザの終了が 0.005 秒以内に戻らなかった/);
+                assert.equal(messages.length, ['stop-failure', 'remove-failure'].includes(mode) ? 2 : 1);
+            }
+            assert.equal(existsSync(profile), mode === 'remove-failure');
+        } finally {
+            if (profile) rmSync(profile, { recursive: true, force: true });
+        }
+    }
+});
+
+test('Windows は専用プロファイルのパスを含む PID だけを停止する', () => {
+    const profile = "C:\\Temp\\記号 ' $ & [x]\\sr-tour-check-abc";
+    const calls = [];
+    const messages = [];
+    stopProfileProcesses(profile, message => messages.push(message), {
+        platform: 'win32',
+        execute: (file, args, options) => {
+            calls.push({ file, args, options });
+            if (calls.length === 1) return JSON.stringify([
+                { ProcessId: 11, CommandLine: `chrome --user-data-dir="${profile}"` },
+                { ProcessId: 12, CommandLine: 'chrome --user-data-dir=C:\\Users\\Default' },
+                { ProcessId: 13, CommandLine: 'chrome --user-data-dir=C:\\Temp\\sr-tour-check-other' },
+                { ProcessId: 14, CommandLine: null },
+                { ProcessId: 15, CommandLine: `renderer ${profile}` },
+            ]);
+            return '';
+        },
+    });
+    assert.equal(calls.length, 3);
+    assert.match(calls[0].args.at(-1), /Get-CimInstance Win32_Process/);
+    assert.match(calls[1].args.at(-1), /Stop-Process -Id 11 -Force/);
+    assert.match(calls[2].args.at(-1), /Stop-Process -Id 15 -Force/);
+    for (const call of calls) {
+        assert.equal(call.file, 'powershell.exe');
+        assert.ok(!call.args.join(' ').includes(profile));
+        assert.equal(call.options.timeout, 5000);
+    }
+    assert.deepEqual(messages, []);
+});
+
+test('プロセス一覧の取得・解析・停止の失敗は警告だけにし、残りの停止を続ける', () => {
+    for (const mode of ['list', 'parse', 'stop']) {
+        const messages = [];
+        let calls = 0;
+        assert.doesNotThrow(() => stopProfileProcesses('profile', message => messages.push(message), {
+            platform: 'win32', execute: () => {
+                calls++;
+                if (mode === 'parse') return 'invalid json';
+                if (mode === 'list' || calls > 1) throw new Error('実行失敗');
+                return JSON.stringify([11, 12].map(ProcessId => ({ ProcessId, CommandLine: 'profile' })));
+            },
+        }));
+        assert.equal(messages.length, mode === 'stop' ? 2 : 1);
+        assert.equal(calls, mode === 'stop' ? 3 : 1);
+    }
+});
+
+test('Windows 以外ではパスを正規表現としてエスケープして引数に渡す', () => {
+    const profile = "/tmp/space ' $ & [x]/sr-tour-check-a.b";
+    const messages = [];
+    stopProfileProcesses(profile, message => messages.push(message), {
+        platform: 'linux', execute: (file, args) => {
+            assert.equal(file, 'pkill');
+            assert.equal(args[0], '-f');
+            const pattern = new RegExp(args[1]);
+            assert.ok(pattern.test(`chrome --user-data-dir=${profile}`));
+            assert.ok(!pattern.test(profile.replace('a.b', 'axb')));
+            assert.ok(!pattern.test('/tmp/sr-tour-check-other'));
+        },
+    });
+    for (const error of [{ code: 'ENOENT' }, { status: 1 }, { status: 2 }]) {
+        assert.doesNotThrow(() => stopProfileProcesses(profile, message => messages.push(message), {
+            platform: 'linux', execute: () => { throw error; },
+        }));
+    }
+    assert.equal(messages.length, 1);
+});
 
 test('引数の既定値と明示指定', () => {
     assert.deepEqual(parseArgs([]), { only: null, lang: 'ja', size: { width: 1280, height: 800 }, settle: 0 });
