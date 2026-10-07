@@ -24,3 +24,11 @@ test('上下左右に収まらない場合は対象から最も離れた隅を�
   expect(place({ ...base, target: { left: 150, right: 1000, top: 0, bottom: 650 } })).toEqual({ left: 10, top: 590 });
   expect(place({ ...base, target: { left: 0, right: 1000, top: 0, bottom: 800 } })).toEqual({ left: 790, top: 590 });
 });
+
+
+test('辺中央も同じ重なりなら四隅の優先を保ち、画面より大きいカードも余白位置に収める', () => {
+  expect(place({ ...base, target: { left: 0, right: 1000, top: 0, bottom: 800 } }))
+    .toEqual({ left: 790, top: 590 });
+  expect(place({ ...base, card: { width: 1200, height: 900 }, target: { left: 0, right: 1000, top: 0, bottom: 800 } }))
+    .toEqual({ left: 10, top: 10 });
+});

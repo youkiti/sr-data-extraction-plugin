@@ -2,7 +2,7 @@ import {
   GUIDE_PROGRESS_STORAGE_KEY, availableTours, completeTour, createEmptyGuideProgress,
   decideProgressSync, dismissTour, hasRemainingSteps, isTourUnavailable, nextStepIndex, parseGuideProgress,
   serializeGuideProgress, setActiveStep, shouldAdvance, shouldSuggest, startTour,
-  suppressSuggestions, tourToSuggestOnEvent, visibleStepPosition,
+  suppressSuggestions, tourToSuggestOnEvent, visibleStepPosition, resolveShownCount, shownStepPosition, recordShownStep, recordResumedStep,
 } from '../../../../src/lib/guide/tourProgress';
 import { GUIDE_TOURS, type GuideTourId, type TourDefinition, type TourStep } from '../../../../src/lib/guide/tours';
 
@@ -19,6 +19,19 @@ const tour: TourDefinition = { id: ID, titleKey: 'title', descriptionKey: 'descr
 const empty = createEmptyGuideProgress;
 
 useTestTours([tour]);
+
+test.each([undefined, 0, -1, 0.5, 4])('再開で越えた先は旧保存値・不正値 %s を移動先の位置で補完する', savedCount => {
+  const base = startTour(empty(), ID);
+  const resumed = recordResumedStep(base, ID, 1, { 'has-documents': true }, savedCount);
+  expect(resumed.active).toEqual({ tourId: ID, stepId: 'protocol', stepIndex: 1, shownCount: 1 });
+  expect(recordResumedStep(base, ID, 2, { 'has-documents': true }, savedCount).active?.shownCount).toBe(2);
+  expect(base.active?.shownCount).toBeUndefined();
+});
+
+test('再開で越えた先は有効な保存表示数に加算する', () => {
+  const resumed = recordResumedStep(startTour(empty(), ID), ID, 1, { 'has-documents': true }, 1);
+  expect(resumed.active?.shownCount).toBe(2);
+});
 
 test('終了以外の省略されない手順がある場合だけ残作業がある', () => {
   expect(hasRemainingSteps(tour, {})).toBe(true);
@@ -152,4 +165,21 @@ test('同期は保存値を正として、同じ手順なら維持、違えば�
   expect(decideProgressSync(active, { tourId: 'another-tour' as GuideTourId, stepIndex: 0 })).toEqual({ type: 'close' });
   expect(decideProgressSync(active, active)).toEqual({ type: 'none' });
   expect(decideProgressSync({ ...active, stepIndex: 2 }, active)).toEqual({ type: 'switch', stepIndex: 2 });
+});
+
+
+test('表示数の保存・補完と、通過済みを保持した残りの計算', () => {
+  const first = recordShownStep(empty(), ID, 0, 0);
+  const moved = recordShownStep(first, ID, 1, first.active!.shownCount!);
+  expect(first.active?.shownCount).toBe(1);
+  expect(moved.active?.shownCount).toBe(2);
+  expect(parseGuideProgress(serializeGuideProgress(moved))).toEqual(moved);
+  expect(shownStepPosition(tour, 1, { 'has-documents': true }, 2)).toEqual({ position: 2, total: 3 });
+  expect(shownStepPosition(tour, 0, new Set(['has-protocol']), 1)).toEqual({ position: 1, total: 2 });
+  expect(resolveShownCount(tour, 2, { 'has-documents': true }, 3)).toBe(3);
+  for (const shownCount of [undefined, null, '2', -1, 0, 1.5, 4, NaN, Infinity]) {
+    const parsed = parseGuideProgress({ active: { tourId: ID, stepIndex: 2, shownCount } });
+    expect(parsed.active?.shownCount).toBeUndefined();
+    expect(resolveShownCount(tour, 2, { 'has-documents': true }, shownCount)).toBe(2);
+  }
 });

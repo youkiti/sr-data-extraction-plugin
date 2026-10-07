@@ -13,7 +13,7 @@ export function intersectsViewport(box: Box, viewport: Size): boolean {
   return box.bottom > 0 && box.top < viewport.height && box.right > 0 && box.left < viewport.width;
 }
 
-/** 下 → 上 → 左 → 右 → 対象との重なりが最小の隅の順で配置する。 */
+/** 下 → 上 → 左 → 右 → 対象との重なりが最小の四隅・四辺中央の順で配置する。 */
 export function computeTourCardPosition(input: CardPlacementInput): { left: number; top: number } {
   const { viewport, card, target, margin, gap, pad } = input;
   const clamp = (value: number, limit: number): number => Math.max(margin, Math.min(value, limit - margin));
@@ -31,14 +31,18 @@ export function computeTourCardPosition(input: CardPlacementInput): { left: numb
   if (before >= margin) return { left: before, top: sideTop };
   const after = target.right + pad + gap;
   if (after + card.width <= viewport.width - margin) return { left: after, top: sideTop };
-  const corners = [
+  const candidates = [
     { left: clamp(leftLimit, leftLimit), top: bottom },
     { left: margin, top: bottom },
     { left: clamp(leftLimit, leftLimit), top: margin },
     { left: margin, top: margin },
+    { left: clamp(leftLimit / 2, leftLimit), top: margin },
+    { left: clamp(leftLimit / 2, leftLimit), top: bottom },
+    { left: margin, top: clamp(topLimit / 2, topLimit) },
+    { left: clamp(leftLimit, leftLimit), top: clamp(topLimit / 2, topLimit) },
   ];
   const overlap = (point: { left: number; top: number }): number =>
     Math.max(0, Math.min(point.left + card.width, target.right) - Math.max(point.left, target.left)) *
     Math.max(0, Math.min(point.top + card.height, target.bottom) - Math.max(point.top, target.top));
-  return corners.reduce((best, corner) => overlap(corner) < overlap(best) ? corner : best);
+  return candidates.reduce((best, corner) => overlap(corner) < overlap(best) ? corner : best);
 }
