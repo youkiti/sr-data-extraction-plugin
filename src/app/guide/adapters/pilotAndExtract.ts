@@ -8,7 +8,8 @@ export const PILOT_AND_EXTRACT_ADAPTER = {
     const run = state.extract.run;
     return {
       'pilot-and-extract-unavailable': !owner || state.counts.schemaVersions < 1 || state.counts.documents < 1,
-      'pilot-and-extract-has-pilot': state.counts.pilotRuns > 0,
+      'pilot-and-extract-has-pilot': !state.pilot.running && state.pilot.runError === null && state.pilot.run !== null
+        && (state.pilot.run.status === 'done' || state.pilot.run.status === 'partial_failure'),
       'pilot-and-extract-has-full': run !== null && (run.status === 'done' || run.status === 'partial_failure'),
     };
   },
