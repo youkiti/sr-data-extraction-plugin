@@ -192,14 +192,14 @@ function renderEstimate(state: AppState, budgetWarningId = 'extract-budget-warni
   const selected = selectedDocuments(state);
   if (fields === null || fields.length === 0 || selected.length === 0) {
     return el('p', {
-      id: 'extract-estimate',
+      id: 'extract-estimate', attributes: { 'data-tour': 'pilot-extract-estimate' },
       className: 'extract__estimate',
       text: t('extraction.estimateSelectStudies'),
     });
   }
   if (hasZeroFieldsSelected(state.extract.selectedFieldIds, fields)) {
     return el('p', {
-      id: 'extract-estimate',
+      id: 'extract-estimate', attributes: { 'data-tour': 'pilot-extract-estimate' },
       className: 'extract__estimate',
       text: t('extraction.estimateSelectFields'),
     });
@@ -271,10 +271,10 @@ function renderEstimate(state: AppState, budgetWarningId = 'extract-budget-warni
         }),
       );
     }
-    return el('div', { id: 'extract-estimate', className: 'extract__estimate' }, lines);
+    return el('div', { id: 'extract-estimate', attributes: { 'data-tour': 'pilot-extract-estimate' }, className: 'extract__estimate' }, lines);
   } catch (err) {
     return el('p', {
-      id: 'extract-estimate',
+      id: 'extract-estimate', attributes: { 'data-tour': 'pilot-extract-estimate' },
       className: 'extract__estimate extract__estimate--error',
       text: t('extraction.estimateError', { reason: err instanceof Error ? err.message : String(err) }),
     });
@@ -327,7 +327,7 @@ function renderSetup(state: AppState, ctx: ViewContext): HTMLElement {
     id: 'extract-run',
     className: 'extract__run',
     text: t('extract.run'),
-    attributes: { type: 'button' },
+    attributes: { type: 'button', 'data-tour': 'pilot-extract-run-full' },
   });
   runButton.disabled =
     state.extract.confirming ||

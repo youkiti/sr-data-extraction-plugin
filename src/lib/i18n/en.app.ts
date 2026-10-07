@@ -33,6 +33,14 @@ export const enApp: Record<keyof typeof jaApp, string> = {
   // ツアー: pilot-and-extract（手順の本文は、この区画の Desc の直後に足す）
   'guide.tourPilotAndExtractTitle': 'Pilot and full extraction',
   'guide.tourPilotAndExtractDesc': 'Check the pilot extraction results, then run full extraction.',
+  'guide.tourPilotAndExtractStepOpenPilot': 'Select “Pilot extraction” to try extraction on a small set of papers.',
+  'guide.tourPilotAndExtractStepSelectStudies': 'Use the checkboxes to choose papers, check the fields and model, then select “Next”.',
+  'guide.tourPilotAndExtractStepRunPilot': 'Check the papers, fields, model and estimated cost. Decide whether to select “Run pilot extraction”, as API charges apply.',
+  'guide.tourPilotAndExtractStepReviewPilot': 'In this section, switch papers and check values and evidence, then select “Next”.',
+  'guide.tourPilotAndExtractStepOpenExtract': 'Select “Full extraction” to open the screen for extracting the remaining papers.',
+  'guide.tourPilotAndExtractStepCheckEstimate': 'Choose the papers, fields and model, check this cost estimate, then select “Next”.',
+  'guide.tourPilotAndExtractStepRunExtract': 'Select “Run full extraction” to open the confirmation card. Decide whether to select “Run”, as API charges apply.',
+  'guide.tourPilotAndExtractStepFinish': 'Select “Finish” to close this guide, then choose another guide from “Tours”.',
   // ツアー: verify-basics（手順の本文は、この区画の Desc の直後に足す）
   'guide.tourVerifyBasicsTitle': 'Verification basics',
   'guide.tourVerifyBasicsDesc': 'Review extracted values while checking the highlighted evidence.',
