@@ -378,6 +378,7 @@ npm run video:tours -- --lang en --silent verify-basics
 - 英字・記号は `video/scripts/tour-videos.mjs` の `READINGS` で音声だけ読み替え、字幕と画面は原文を保つ。**ツアーの文言に新しい英字・記号が入ったら `READINGS` に足すこと**。長い語から適用する。
 - 撮影画像は `video/build/tours/<ID>/capture-ja/`・`capture-en/` に退避する。`--skip-capture` は指定言語の退避済み画像を優先する。退避前の既存画像は、日本語のみ `.tmp/guide-tour-check/` から利用できる（言語記録がなければ日本語として扱うため、日本語の画像であることを確認する）。英語は一度このコマンドで撮影してから再利用する。`check:tours` を別途再実行した後など、新しい画像に更新する際は `--skip-capture` を外す。
 - 完成品は `video/build/tours/<ID>.mp4`・`<ID>.srt`・`<ID>-chapters.txt`。英語は `-en`、無音版は `-silent` を ID の後ろに付ける（例: `verify-basics-en-silent.mp4`）。字幕は各画面の開始から終了まで、章は `0:00 題` の形式。途中の PNG・MP4・WAV は `video/build/tours/<ID>/` に残す。
+- 読み上げつきでは、`<ID>-chapters.txt` の末尾に空行を挟んで `ナレーション: VOICEVOX:<話者名>` が自動で入る。VOICEVOX の話者の利用条件でクレジットの記載が必要なため、**説明欄にはこのファイルの中身をそのまま貼ること**。話者名はエンジンの話者情報から取得するので、`VOICEVOX_SPEAKER` を変えた場合は名前も自動で変わる。話者情報を取得できない・一致する話者がいない場合は動画生成前に停止する。`--silent` ではクレジットを付けない。
 - `check:tours` が落ちる変更は動画の撮り直しも要る合図。各段階のログでツアー・手順・コマンド・失敗出力を確認できる。**YouTube への公開は人の操作**で行う。
 
 ## 生成物一覧（`video/build/`, git 管理外）
