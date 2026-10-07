@@ -164,6 +164,15 @@ export function recordShownStep(progress: GuideProgress, tourId: GuideTourId, in
   return { ...next, active: { ...next.active!, shownCount: previousCount + 1 } };
 }
 
+/** 再開時に越えた先を記録する。旧保存値・不正値は移動先の位置で補完し、加算しない。 */
+export function recordResumedStep(progress: GuideProgress, tourId: GuideTourId, index: number, conditions: GuideConditionValues, savedCount: unknown): GuideProgress {
+  const tour = GUIDE_TOURS[tourId];
+  const shownCount = isValidShownCount(savedCount, tour)
+    ? savedCount + 1 : visibleStepPosition(tour, index, conditions).position;
+  const next = startTour(progress, tourId, index);
+  return { ...next, active: { ...next.active!, shownCount } };
+}
+
 /** イベントでこの手順が進むか。'next' で進む手順はイベントでは進まない。 */
 export function shouldAdvance(step: Pick<TourStep, 'advance'>, event: GuideEventName): boolean {
   return step.advance.type === 'events' && step.advance.events.includes(event);

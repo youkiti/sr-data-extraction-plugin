@@ -1,7 +1,7 @@
 import { t, type MessageKey } from '../../lib/i18n';
 import { GUIDE_TOURS, type GuideTourId, type GuideEventName, type TourDefinition } from '../../lib/guide/tours';
 import {
-  completeTour, dismissTour, nextStepIndex, recordShownStep, decideProgressSync,
+  completeTour, dismissTour, nextStepIndex, recordShownStep, recordResumedStep, decideProgressSync,
   isTourUnavailable, shouldAdvance, resolveShownCount, shownStepPosition, type GuideConditionValues,
 } from '../../lib/guide/tourProgress';
 import { getGuideProgress, subscribeGuideProgressChange, updateGuideProgress } from '../../lib/storage/guideProgressStore';
@@ -162,14 +162,15 @@ export function createTourRunner(host: TourRunnerHost, { doc, win }: { doc: Docu
     if (running) show(running.tour, running.index, running.followed, false, running.shownCount);
   }
 
-  function goTo(tour: TourDefinition, index: number | null): void {
+  function goTo(tour: TourDefinition, index: number | null, resuming = false): void {
     if (index === null) {
       updateGuideProgress(current => completeTour(current, tour.id, new Date().toISOString()));
       stop();
     } else {
       const active = getGuideProgress().active!;
-      const count = running?.shownCount ?? resolveShownCount(tour, active.stepIndex, host.computeConditions(), active.shownCount);
-      updateGuideProgress(current => recordShownStep(current, tour.id, index, count));
+      updateGuideProgress(current => resuming
+        ? recordResumedStep(current, tour.id, index, host.computeConditions(), active.shownCount)
+        : recordShownStep(current, tour.id, index, running!.shownCount));
       show(tour, index, false);
     }
   }
@@ -201,7 +202,7 @@ export function createTourRunner(host: TourRunnerHost, { doc, win }: { doc: Docu
     if (tour.draft || isTourUnavailable(tour, host.computeConditions())) return;
     const index = nextLocalStepIndex(tour, active.stepIndex);
     if (index === active.stepIndex) show(tour, index, false);
-    else goTo(tour, index);
+    else goTo(tour, index, true);
   }
   function handleEvent(name: GuideEventName): void {
     if (!running) return;

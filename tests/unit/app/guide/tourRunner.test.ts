@@ -18,6 +18,39 @@ const navigate = jest.fn();
 const box = (top = 100, height = 30): DOMRect => ({ x: 100, y: top, top, bottom: top + height, left: 100, right: 200, width: 100, height, toJSON: () => ({}) });
 const action = (name: string): HTMLButtonElement => document.querySelector(`[data-guide-action="${name}"]`)!;
 const card = (): HTMLElement | null => document.querySelector('.guide-tour-card');
+
+test.each([0, 1])('旧保存値・不正値からの再開で手順 %s を越えた場合は表示先で補完して保存する', stepIndex => {
+  for (const shownCount of [undefined, 0, -1, 0.5, original.steps.length + 1]) {
+    progress = { ...createEmptyGuideProgress(), active: { tourId: 'getting-started', stepId: original.steps[stepIndex]!.id, stepIndex, shownCount } };
+    conditions = { 'has-documents': true };
+    runner.resume();
+    expect(card()?.dataset.guideStep).toBe('open-protocol');
+    expect(card()?.textContent).toContain('1 / 6');
+    expect(progress.active?.shownCount).toBe(1);
+    runner.stop();
+  }
+});
+
+test.each([0, 1])('有効な保存表示数からの再開で手順 %s を越えた場合は加算して保存する', stepIndex => {
+  progress = { ...progress, active: { tourId: 'getting-started', stepId: original.steps[stepIndex]!.id, stepIndex, shownCount: stepIndex + 1 } };
+  conditions = { 'has-documents': true };
+  runner.resume();
+  expect(card()?.dataset.guideStep).toBe('open-protocol');
+  expect(card()?.textContent).toContain(`${stepIndex + 2} / ${stepIndex + 7}`);
+  expect(progress.active?.shownCount).toBe(stepIndex + 2);
+});
+
+test.each([undefined, 0, -1, 0.5, original.steps.length + 1])('旧保存値・不正値 %s の同じ手順からの再開は位置で補完し、保存しない', shownCount => {
+  progress = { ...progress, active: { tourId: 'getting-started', stepId: 'enter-protocol', stepIndex: 3, shownCount } };
+  conditions = { 'has-documents': true };
+  const writes = jest.mocked(storage.updateGuideProgress);
+  writes.mockClear();
+  runner.resume();
+  expect(card()?.dataset.guideStep).toBe('enter-protocol');
+  expect(card()?.textContent).toContain('2 / 6');
+  expect(writes).not.toHaveBeenCalled();
+});
+
 function target(name: string): HTMLElement {
   const node = document.createElement('button');
   node.dataset.tour = name;

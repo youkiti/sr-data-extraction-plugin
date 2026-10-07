@@ -2,7 +2,7 @@ import {
   GUIDE_PROGRESS_STORAGE_KEY, availableTours, completeTour, createEmptyGuideProgress,
   decideProgressSync, dismissTour, hasRemainingSteps, isTourUnavailable, nextStepIndex, parseGuideProgress,
   serializeGuideProgress, setActiveStep, shouldAdvance, shouldSuggest, startTour,
-  suppressSuggestions, tourToSuggestOnEvent, visibleStepPosition, resolveShownCount, shownStepPosition, recordShownStep,
+  suppressSuggestions, tourToSuggestOnEvent, visibleStepPosition, resolveShownCount, shownStepPosition, recordShownStep, recordResumedStep,
 } from '../../../../src/lib/guide/tourProgress';
 import { GUIDE_TOURS, type GuideTourId, type TourDefinition, type TourStep } from '../../../../src/lib/guide/tours';
 
@@ -19,6 +19,19 @@ const tour: TourDefinition = { id: ID, titleKey: 'title', descriptionKey: 'descr
 const empty = createEmptyGuideProgress;
 
 useTestTours([tour]);
+
+test.each([undefined, 0, -1, 0.5, 4])('再開で越えた先は旧保存値・不正値 %s を移動先の位置で補完する', savedCount => {
+  const base = startTour(empty(), ID);
+  const resumed = recordResumedStep(base, ID, 1, { 'has-documents': true }, savedCount);
+  expect(resumed.active).toEqual({ tourId: ID, stepId: 'protocol', stepIndex: 1, shownCount: 1 });
+  expect(recordResumedStep(base, ID, 2, { 'has-documents': true }, savedCount).active?.shownCount).toBe(2);
+  expect(base.active?.shownCount).toBeUndefined();
+});
+
+test('再開で越えた先は有効な保存表示数に加算する', () => {
+  const resumed = recordResumedStep(startTour(empty(), ID), ID, 1, { 'has-documents': true }, 1);
+  expect(resumed.active?.shownCount).toBe(2);
+});
 
 test('終了以外の省略されない手順がある場合だけ残作業がある', () => {
   expect(hasRemainingSteps(tour, {})).toBe(true);
