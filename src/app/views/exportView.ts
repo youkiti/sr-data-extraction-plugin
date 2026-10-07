@@ -80,7 +80,7 @@ function renderFormatSelector(exportState: ExportState, ctx: ViewContext): HTMLE
   return el(
     'fieldset',
     { id: 'export-format', className: 'export__formats' },
-    [el('legend', { text: t('export.formatLegend') }), ...options],
+    [el('legend', { text: t('export.formatLegend'), attributes: { 'data-tour': 'export-data-format' } }), ...options],
   );
 }
 
@@ -177,6 +177,7 @@ function renderWarningDialog(
   const children: HTMLElement[] = [
     el('h3', {
       id: 'export-warning-title',
+      attributes: { 'data-tour': 'export-data-warning' },
       text: t('export.warningTitle', { n: unverifiedCount }),
     }),
     el('p', {
@@ -465,7 +466,7 @@ export function renderExportView(state: AppState, ctx: ViewContext): HTMLElement
       id: 'export-generate',
       className: 'export__generate',
       text: t('export.generateRSet'),
-      attributes: { type: 'button' },
+      attributes: { type: 'button', 'data-tour': 'export-data-generate' },
     });
     generateButton.disabled = exportState.generating || dataRowCount === 0;
     generateButton.addEventListener('click', () => ctx.export.onGenerate());
@@ -518,7 +519,7 @@ export function renderExportView(state: AppState, ctx: ViewContext): HTMLElement
     id: 'export-generate',
     className: 'export__generate',
     text: t('export.generate'),
-    attributes: { type: 'button' },
+    attributes: { type: 'button', 'data-tour': 'export-data-generate' },
   });
   generateButton.disabled = exportState.generating || built.rowCount === 0;
   generateButton.addEventListener('click', () => ctx.export.onGenerate());

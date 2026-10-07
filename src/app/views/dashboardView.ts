@@ -122,6 +122,7 @@ function renderMatrix(data: DashboardData): HTMLElement {
   return el('table', { id: 'dashboard-matrix', className: 'dashboard__matrix' }, [
     el('caption', {
       className: 'dashboard__matrix-caption',
+      attributes: { 'data-tour': 'export-data-progress' },
       text: t('dashboard.caption'),
     }),
     el('thead', {}, [headRow]),

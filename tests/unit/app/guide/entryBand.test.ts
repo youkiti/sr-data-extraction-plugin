@@ -4,6 +4,14 @@ import { createEmptyGuideProgress, completeTour } from '../../../../src/lib/guid
 import * as storage from '../../../../src/lib/storage/guideProgressStore';
 import { setUiLanguage } from '../../../../src/lib/i18n';
 
+import { useTestTours } from '../../lib/guide/__fixtures__/tours';
+
+useTestTours([{
+  id: 'getting-started', titleKey: 'guide.tourGettingStartedTitle', descriptionKey: 'guide.tourGettingStartedDesc',
+  unavailableIf: 'not-owner',
+  steps: [{ id: 'finish', target: 'tour-list', textKey: 'guide.tourGettingStartedStepFinish', advance: { type: 'next' } }],
+}]);
+
 test('一覧のヘルプは表示言語に追従し、初期フォーカスは閉じるボタンに残る', () => {
   document.body.innerHTML = '<button id="anchor">ツアー</button>';
   const anchor = document.getElementById('anchor')!;
