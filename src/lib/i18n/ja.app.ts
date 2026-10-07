@@ -37,6 +37,14 @@ export const jaApp = {
   // ツアー: dual-review（手順の本文は、この区画の Desc の直後に足す）
   'guide.tourDualReviewTitle': '二重レビューと裁定',
   'guide.tourDualReviewDesc': 'レビュアーの登録、担当セットの分割、不一致の裁定までを案内します。',
+  'guide.tourDualReviewStepOpenHome': '「Home」を押して、レビュアーと担当セットを管理する画面を開きます。',
+  'guide.tourDualReviewStepAddReviewer': '「追加」を押すと、相手のアカウントにスプレッドシートとプロジェクトのフォルダが共有されます。相手に影響するため、追加するかは自分で決めてください。',
+  'guide.tourDualReviewStepReviewMode': 'モード欄で「① AI の結果をレビュー」か「② AI 抜きでレビュー」を選び、AI の結果を検証するか独立入力するかを指定します。',
+  'guide.tourDualReviewStepReviewSets': '「キャリブレーション本数」と「グループ数」を決め、「分ける」で文献を分割します。「分け直す」は今の割り当てを上書きします（案内中は押せません）。',
+  'guide.tourDualReviewStepOpenAdjudicate': '「裁定」を押して、2 名の判定を比較する画面を開きます。',
+  'guide.tourDualReviewStepAgreement': '「一致度を計算」を押すと、レビュアー間の一致率と κ、不一致の一覧を確認できます。',
+  'guide.tourDualReviewStepResolve': '「不一致のみ表示」で絞り込み、根拠を確認して「A を採用」「B を採用」などで最終判定を保存します。共同作業の結果に影響するため、保存するかは自分で決めてください。',
+  'guide.tourDualReviewStepFinish': '「ツアー」を押すと、一覧から案内を再開できます。',
   // ツアー: export-data（手順の本文は、この区画の Desc の直後に足す）
   'guide.tourExportDataTitle': 'エクスポート',
   'guide.tourExportDataDesc': '進捗を確かめ、CSV と R セットを書き出すまでを案内します。',

@@ -577,7 +577,7 @@ function renderCellSection(state: AppState, ctx: ViewContext, working: Adjudicat
 
   const filterCheckbox = el('input', {
     id: 'adjudicate-filter-mismatch',
-    attributes: { type: 'checkbox' },
+    attributes: { type: 'checkbox', 'data-tour': 'dual-review-mismatch' },
   }) as HTMLInputElement;
   filterCheckbox.checked = mismatchOnly;
   filterCheckbox.addEventListener('change', () => ctx.adjudicate.onToggleMismatchOnly(filterCheckbox.checked));
@@ -882,7 +882,7 @@ function renderAgreementCard(state: AppState, ctx: ViewContext): HTMLElement {
   const loadButton = el('button', {
     id: 'agreement-load',
     text: t('adjudicate.agreementLoad'),
-    attributes: { type: 'button' },
+    attributes: { type: 'button', 'data-tour': 'dual-review-agreement' },
   });
   loadButton.addEventListener('click', () => ctx.adjudicate.onLoadAgreement());
   children.push(loadButton);

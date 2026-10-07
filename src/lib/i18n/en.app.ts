@@ -39,6 +39,14 @@ export const enApp: Record<keyof typeof jaApp, string> = {
   // ツアー: dual-review（手順の本文は、この区画の Desc の直後に足す）
   'guide.tourDualReviewTitle': 'Dual review and adjudication',
   'guide.tourDualReviewDesc': 'Register reviewers, split assignment sets, and adjudicate disagreements.',
+  'guide.tourDualReviewStepOpenHome': 'Select “Home” to manage reviewers and review sets.',
+  'guide.tourDualReviewStepAddReviewer': '“Add” shares the spreadsheet and project folder with that account. This affects the other person, so decide for yourself whether to add them.',
+  'guide.tourDualReviewStepReviewMode': 'Choose “① Review AI results” to verify AI results or “② Review without AI” for independent entry.',
+  'guide.tourDualReviewStepReviewSets': 'Set “Calibration studies” and “Number of groups”, then select “Split” to divide the studies. “Split again” overwrites current assignments (disabled during the tour).',
+  'guide.tourDualReviewStepOpenAdjudicate': 'Select “Adjudication” to compare two reviewers’ decisions.',
+  'guide.tourDualReviewStepAgreement': 'Select “Compute agreement” to view reviewer agreement rates, κ, and disagreements.',
+  'guide.tourDualReviewStepResolve': 'Filter with “Show mismatches only”, check the evidence, and select “Adopt A”, “Adopt B”, or another decision action to save a final decision. This affects the shared results, so decide for yourself whether to save.',
+  'guide.tourDualReviewStepFinish': 'Select “Tours” to restart the guidance from the list.',
   // ツアー: export-data（手順の本文は、この区画の Desc の直後に足す）
   'guide.tourExportDataTitle': 'Export data',
   'guide.tourExportDataDesc': 'Check progress and export CSV files and an R set.',
