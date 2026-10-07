@@ -54,6 +54,15 @@ export const enApp: Record<keyof typeof jaApp, string> = {
   // ツアー: dual-review（手順の本文は、この区画の Desc の直後に足す）
   'guide.tourDualReviewTitle': 'Dual review and adjudication',
   'guide.tourDualReviewDesc': 'Register reviewers, split assignment sets, and adjudicate disagreements.',
+  'guide.tourDualReviewStepOpenHome': 'Select “Home” to manage reviewers and review sets.',
+  'guide.tourDualReviewStepReviewMode': 'Before adding a reviewer, choose “① Review AI results” or “② Review without AI” here. The mode cannot be changed after work begins.',
+  'guide.tourDualReviewStepAddReviewer': 'Check the email address, role, and mode before selecting “Add”. This shares the spreadsheet and project folder with that account, so decide for yourself whether to add them.',
+  'guide.tourDualReviewStepReviewSets': 'Set “Calibration studies” and “Number of groups”, then select “Split” to divide the studies. “Split again” overwrites current assignments (disabled during the tour).',
+  'guide.tourDualReviewStepOpenAdjudicate': 'Select “Adjudication” to compare two reviewers’ decisions.',
+  'guide.tourDualReviewStepAgreement': 'Selecting “Compute agreement” displays reviewer agreement rates, κ, and disagreements here.',
+  'guide.tourDualReviewStepOpenStudy': 'Once both reviewers finish their decisions, select “Start adjudication” for a study to open its disagreement resolution screen. If no button is available yet, wait for the reviewers to finish.',
+  'guide.tourDualReviewStepResolve': 'Opening a study for adjudication reveals “Show mismatches only”; check the evidence and select “Adopt A”, “Adopt B”, or another decision action to save a final decision. This affects the shared results, so decide for yourself whether to save.',
+  'guide.tourDualReviewStepFinish': 'Select “Tours” to restart the guidance from the list.',
   // ツアー: export-data（手順の本文は、この区画の Desc の直後に足す）
   'guide.tourExportDataTitle': 'Export data',
   'guide.tourExportDataDesc': 'Check progress and export CSV files and an R set.',

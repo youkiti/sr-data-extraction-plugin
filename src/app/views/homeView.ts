@@ -150,7 +150,7 @@ function renderReviewerForm(ctx: ViewContext, saving: boolean): HTMLFormElement 
   );
   const modeSelect = el('select', {
     id: 'reviewer-mode',
-    attributes: { 'aria-label': t('home.addReviewerModeAria') },
+    attributes: { 'aria-label': t('home.addReviewerModeAria'), 'data-tour': 'dual-review-mode' },
   }) as HTMLSelectElement;
   modeSelect.append(
     el('option', { text: t(MODE_LABEL_KEYS.with_ai), attributes: { value: 'with_ai' } }),
@@ -164,7 +164,7 @@ function renderReviewerForm(ctx: ViewContext, saving: boolean): HTMLFormElement 
   const submit = el('button', {
     id: 'reviewer-add-submit',
     text: t('home.addSubmit'),
-    attributes: { type: 'submit' },
+    attributes: { type: 'submit', 'data-tour': 'dual-review-add-reviewer' },
   }) as HTMLButtonElement;
   submit.disabled = saving;
   form.append(

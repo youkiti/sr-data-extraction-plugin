@@ -36,7 +36,7 @@ function splitForm(
   const submit = el('button', {
     id: used ? 'review-sets-resplit' : 'review-sets-split',
     text: t(used ? 'reviewSets.resplit' : 'reviewSets.split'),
-    attributes: { type: 'submit' },
+    attributes: { type: 'submit', 'data-tour': 'dual-review-split' },
   });
   calibration.disabled = groups.disabled = submit.disabled = saving;
   const form = el('form', { id: 'review-sets-split-form', className: 'reviewers__form' }, [
