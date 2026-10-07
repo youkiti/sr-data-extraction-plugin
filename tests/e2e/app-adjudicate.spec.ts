@@ -373,8 +373,11 @@ test('study 一覧のゲート → 群構成の一致採用 → 一致セル一�
     // run_id は null → 空文字に変換されて送信される（appendRows の既存挙動）
     expect.arrayContaining(['study-1', 'f-arm', 'consensus', 'consensus', 1, 'arm:1', '', '介入群', false]),
   );
+  // Decisions への追記は StudyData / ResultsData の後に行われるので、同じく現れるまで待つ
+  await expect
+    .poll(() => appends.filter((a) => a.url.includes('Decisions') && a.url.includes(':append')).length)
+    .toBeGreaterThan(0);
   const decisionsAppendsAfterBulk = appends.filter((a) => a.url.includes('Decisions') && a.url.includes(':append'));
-  expect(decisionsAppendsAfterBulk.length).toBeGreaterThan(0);
   const bulkDecisionRows = decisionsAppendsAfterBulk[0]?.body['values'] as unknown[][];
   expect(bulkDecisionRows).toHaveLength(2); // mortality + arm_name の 2 件
   expect(bulkDecisionRows.every((row) => row[5] === 'consensus' && row[8] === 'accept')).toBe(true);
