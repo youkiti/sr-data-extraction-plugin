@@ -90,7 +90,7 @@ function renderArmCompletenessWarning(target: VerifyTarget): HTMLElement | null 
 function renderSelector(state: AppState, ctx: ViewContext, targets: readonly VerifyTarget[]): HTMLElement {
   const select = el('select', {
     id: 'verify-study',
-    attributes: { 'aria-label': t('verify.studyAria') },
+    attributes: { 'aria-label': t('verify.studyAria'), 'data-tour': 'verify-basics-study' },
   });
   for (const target of targets) {
     select.append(

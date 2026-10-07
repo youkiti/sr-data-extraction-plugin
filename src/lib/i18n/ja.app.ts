@@ -34,6 +34,13 @@ export const jaApp = {
   // ツアー: verify-basics（手順の本文は、この区画の Desc の直後に足す）
   'guide.tourVerifyBasicsTitle': '検証の進めかた',
   'guide.tourVerifyBasicsDesc': '根拠のハイライトを見ながら、抽出された値を判定する流れを案内します。',
+  'guide.tourVerifyBasicsStepOpenVerify': '「検証」を押して、抽出された値と根拠を確かめる画面を開きます。',
+  'guide.tourVerifyBasicsStepPickStudy': '試験の一覧から AI 抽出結果のある試験を選ぶと、検証パネルが開きます。',
+  'guide.tourVerifyBasicsStepReadEvidence': '「PDF」を押すと、論文の表示に切り替わります。項目を選び、PDF の根拠ハイライトと抽出値を照らし合わせます。',
+  'guide.tourVerifyBasicsStepDecide': '根拠を見てから「承認 (a)」「修正 (e)」「棄却 (x)」「未報告 (n)」のいずれかを選びます。承認にも 1 回の操作が必要です。',
+  'guide.tourVerifyBasicsStepEditEvidence': '「削除」で引用を根拠から外せます（案内中は押せません）。PDF で文を選び「追加」を押すと、引用を根拠に足せます。',
+  'guide.tourVerifyBasicsStepCheckProgress': '進捗で未検証の残りを確認します。未検証のセルが残るとエクスポート時に警告が出ます。',
+  'guide.tourVerifyBasicsStepFinish': '「ツアー」を押すと、いつでも一覧から案内を始められます。',
   // ツアー: dual-review（手順の本文は、この区画の Desc の直後に足す）
   'guide.tourDualReviewTitle': '二重レビューと裁定',
   'guide.tourDualReviewDesc': 'レビュアーの登録、担当セットの分割、不一致の裁定までを案内します。',
