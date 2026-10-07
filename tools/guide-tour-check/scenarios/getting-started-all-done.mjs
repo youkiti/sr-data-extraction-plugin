@@ -6,7 +6,11 @@ export default defineScenario({
     async run(run) {
         await run.open();
         // Home の集計が終わってから開始する。開始直後のカードも記録して手順省略を確認する。
-        await run.visible('#guide-suggest-band');
+        await run.action('件数の表示後、初回提案の帯がないこと', async () => {
+            await run.page.waitForFunction(() =>
+                Number(document.querySelector('.home__summary dd')?.textContent) > 0);
+            if (await run.page.locator('#guide-suggest-band').count()) throw new Error('完了済みのプロジェクトに案内の帯が表示されています');
+        });
         await run.action('表示されたカードの手順を記録する', () => run.page.evaluate(() => {
             window.tourCheckSteps = [];
             new MutationObserver(() => {

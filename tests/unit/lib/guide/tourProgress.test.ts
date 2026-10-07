@@ -1,6 +1,6 @@
 import {
   GUIDE_PROGRESS_STORAGE_KEY, availableTours, completeTour, createEmptyGuideProgress,
-  decideProgressSync, dismissTour, isTourUnavailable, nextStepIndex, parseGuideProgress,
+  decideProgressSync, dismissTour, hasRemainingSteps, isTourUnavailable, nextStepIndex, parseGuideProgress,
   serializeGuideProgress, setActiveStep, shouldAdvance, shouldSuggest, startTour,
   suppressSuggestions, tourToSuggestOnEvent, visibleStepPosition,
 } from '../../../../src/lib/guide/tourProgress';
@@ -19,6 +19,15 @@ const tour: TourDefinition = { id: ID, titleKey: 'title', descriptionKey: 'descr
 const empty = createEmptyGuideProgress;
 
 useTestTours([tour]);
+
+test('終了以外の省略されない手順がある場合だけ残作業がある', () => {
+  expect(hasRemainingSteps(tour, {})).toBe(true);
+  expect(hasRemainingSteps(tour, new Set(['has-documents']))).toBe(true);
+  expect(hasRemainingSteps(tour, { 'has-documents': true, 'has-protocol': true })).toBe(false);
+  expect(hasRemainingSteps({ steps: [steps[2]!] }, {})).toBe(false);
+  expect(hasRemainingSteps({ steps: [] }, {})).toBe(false);
+  expect(hasRemainingSteps({ steps: [{ ...steps[2]!, id: 'action' }] }, {})).toBe(true);
+});
 
 test('保存キーと既定値。不正な値・記録は読み飛ばす', () => {
   expect(GUIDE_PROGRESS_STORAGE_KEY).toBe('guide_progress');

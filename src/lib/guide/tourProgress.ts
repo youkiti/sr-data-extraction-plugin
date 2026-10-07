@@ -111,6 +111,12 @@ export interface VisibleStepPosition {
   total: number;
 }
 
+/** 終了の案内以外に、今の条件で省略されない手順が残っているか。 */
+export function hasRemainingSteps(tour: Pick<TourDefinition, 'steps'>, conditions: GuideConditionValues): boolean {
+  return tour.steps.some(step => step.id !== 'finish' &&
+    (step.skipIf === undefined || !isConditionTrue(conditions, step.skipIf)));
+}
+
 /**
  * カードに出す「n / m」。conditions で飛ばされる手順は数えない。
  * index が飛ばされる手順そのものなら、その位置までに出る手順の数（最低 1。出る手順が1つも無ければ 0 / 0）。

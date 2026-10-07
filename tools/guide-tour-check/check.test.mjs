@@ -6,6 +6,7 @@ import { defineScenario, selectScenarios } from './lib/scenario.mjs';
 import { executeScenarios, summarize } from './lib/results.mjs';
 import { resolveDemoDir } from './lib/paths.mjs';
 import { Run } from './lib/run.mjs';
+import { expectUnchanged, expectTargetBlocked } from './lib/blocked.mjs';
 
 test('引数の既定値と明示指定', () => {
     assert.deepEqual(parseArgs([]), { only: null, lang: 'ja', size: { width: 1280, height: 800 } });
@@ -35,7 +36,7 @@ test('シナリオの必須項目・名前・重複を検査する', () => {
     assert.throws(() => selectScenarios([valid, valid], null));
 });
 
-test('実シナリオはファイル名と定義が一致し、2本とも選択できる', async () => {
+test('実シナリオはファイル名と定義が一致し、6本とも選択できる', async () => {
     const directory = new URL('./scenarios/', import.meta.url);
     const scenarios = [];
     for (const file of readdirSync(directory).filter(f => f.endsWith('.mjs'))) {
@@ -43,7 +44,39 @@ test('実シナリオはファイル名と定義が一致し、2本とも選択�
         assert.equal(`${scenario.name}.mjs`, file);
         scenarios.push(scenario);
     }
-    assert.deepEqual(selectScenarios(scenarios, null).map(s => s.name).sort(), ['getting-started', 'getting-started-all-done']);
+    assert.deepEqual(selectScenarios(scenarios, null).map(s => s.name).sort(), [
+        'dual-review', 'export-data', 'getting-started', 'getting-started-all-done', 'pilot-and-extract', 'verify-basics',
+    ]);
+});
+
+test('遮断の監視は全期間を確認し、途中の変化も検出する', async () => {
+    let samples = 0;
+    await expectUnchanged(async () => ({ quotes: 2 }), { quotes: 2 }, async () => { samples++; });
+    assert.equal(samples, 20);
+    let value = 2;
+    await assert.rejects(() => expectUnchanged(async () => ({ quotes: value }), { quotes: 2 }, async () => { value--; }), /対象の処理/);
+    let index = 0;
+    await assert.rejects(() => expectUnchanged(async () => [2, 1, 2][index++], 2, async () => {}), /対象の処理/);
+});
+
+test('遮断確認はマウスとフォーカス後の Enter を送り、リスナを片づける', async () => {
+    const calls = [];
+    const button = {
+        first() { return this; }, isEnabled: async () => true, evaluate: async () => true,
+        click: async options => calls.push(['click', options]),
+        focus: async () => calls.push('focus'), press: async key => calls.push(key),
+    };
+    const run = {
+        action: async (_condition, fn) => fn(), shot: async label => calls.push(label),
+        page: { locator: () => button, on: () => calls.push('on'), off: () => calls.push('off'), waitForTimeout: async () => {} },
+    };
+    await expectTargetBlocked(run, { target: 'button', unchanged: async () => 2 });
+    assert.deepEqual(calls, ['on', ['click', { force: true }], 'blocked-mouse', 'focus', 'Enter', 'blocked-Enter', 'off']);
+    let count = 0;
+    await assert.rejects(() => expectTargetBlocked(run, { target: 'button', unchanged: async () => count++ }), /対象の処理/);
+    assert.equal(calls.at(-1), 'off');
+    button.isEnabled = async () => false;
+    await assert.rejects(() => expectTargetBlocked(run, { target: 'button', unchanged: async () => 2 }), /対象自体が無効/);
 });
 
 test('失敗後も次を実行し、警告を保持して非ゼロ終了にする', async () => {

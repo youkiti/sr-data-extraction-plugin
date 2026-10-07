@@ -43,6 +43,134 @@ beforeEach(() => {
 });
 afterEach(() => { window.dispatchEvent(new Event('pagehide')); });
 
+// 既存の操作テストは件数読込済みの画面を使う。読込待ちは下の専用テストで扱う。
+beforeEach(() => { store.setState({ home: { ...store.getState().home, countsLoaded: true } }); });
+
+function waitForCounts(): void {
+  store.setState({ home: { ...store.getState().home, countsLoaded: false } });
+}
+function loadCounts(): void {
+  store.setState({ home: { ...store.getState().home, countsLoaded: true } });
+}
+function startFromList(id = 'getting-started'): void {
+  document.getElementById('app-open-tours')!.click();
+  document.querySelector<HTMLButtonElement>(`#guide-tour-list [data-guide-tour="${id}"]`)!.click();
+}
+
+test('件数読込前は帯も再開もなく、読込後に残作業があれば帯を出す', async () => {
+  waitForCounts();
+  await initGuide({ store, win: window, doc: document });
+  store.setState({});
+  expect(band()).toBeNull();
+  expect(runner.resume).not.toHaveBeenCalled();
+  loadCounts();
+  expect(band()).not.toBeNull();
+  expect(runner.resume).toHaveBeenCalledTimes(1);
+});
+
+test.each(['#/home', '#/documents'])('保存済みツアーは %s でも読込後に再開する', async hash => {
+  waitForCounts();
+  window.history.replaceState(null, '', hash);
+  progress = startTour(progress, 'getting-started');
+  await initGuide({ store, win: window, doc: document });
+  expect(runner.resume).not.toHaveBeenCalled();
+  loadCounts();
+  expect(runner.resume).toHaveBeenCalledTimes(1);
+});
+
+test('全手順が済んでいれば帯を出さず、待機中の開始は最初から最後の手順だけを表示する', async () => {
+  const actual = jest.requireActual<typeof import('../../../../src/app/guide/tourRunner')>('../../../../src/app/guide/tourRunner');
+  jest.mocked(createTourRunner).mockImplementationOnce(actual.createTourRunner);
+  const { GETTING_STARTED_TOUR } = jest.requireActual<typeof import('../../../../src/lib/guide/tours/gettingStarted')>('../../../../src/lib/guide/tours/gettingStarted');
+  GUIDE_TOURS['getting-started'] = GETTING_STARTED_TOUR;
+  waitForCounts();
+  await initGuide({ store, win: window, doc: document });
+  startFromList();
+  expect(document.querySelector('.guide-tour-card')).toBeNull();
+  const seen: string[] = [];
+  const append = document.body.append.bind(document.body);
+  const spy = jest.spyOn(document.body, 'append').mockImplementation((...nodes) => {
+    nodes.forEach(node => { if (node instanceof HTMLElement && node.dataset.guideStep) seen.push(node.dataset.guideStep); });
+    append(...nodes);
+  });
+  try {
+    store.setState({
+      counts: { ...store.getState().counts, documents: 1, protocolVersions: 1, schemaVersions: 1 },
+      home: { ...store.getState().home, countsLoaded: true },
+    });
+    expect(seen).toEqual(['finish']);
+    expect(band()).toBeNull();
+    document.querySelector<HTMLButtonElement>('.guide-tour-card [data-guide-action="next"]')!.click();
+    progress = createEmptyGuideProgress();
+    store.setState({});
+    expect(band()).toBeNull();
+    startFromList();
+    expect(document.querySelector('.guide-tour-card')?.getAttribute('data-guide-step')).toBe('finish');
+  } finally { spy.mockRestore(); }
+});
+
+test('待機中の開始は最後の選択を優先し、同じ読込通知で新しい手順を進めない', async () => {
+  waitForCounts();
+  GUIDE_TOURS['verify-basics'] = { ...GUIDE_TOURS['getting-started'], id: 'verify-basics' };
+  await initGuide({ store, win: window, doc: document });
+  startFromList();
+  startFromList('verify-basics');
+  expect(runner.start).not.toHaveBeenCalled();
+  store.setState({ counts: { ...store.getState().counts, documents: 1 }, home: { ...store.getState().home, countsLoaded: true } });
+  expect(runner.start).toHaveBeenCalledTimes(1);
+  expect(runner.start).toHaveBeenCalledWith('verify-basics');
+  expect(runner.handleEvent.mock.invocationCallOrder[0]).toBeLessThan(runner.start.mock.invocationCallOrder[0]!);
+  store.setState({});
+  expect(runner.start).toHaveBeenCalledTimes(1);
+});
+
+test.each([false, true])('件数読込失敗では帯・再開を止め、一覧の開始は許す（読込済み=%s）', async loaded => {
+  store.setState({ home: { ...store.getState().home, countsLoaded: loaded, countsError: '読込失敗' } });
+  await initGuide({ store, win: window, doc: document });
+  expect(band()).toBeNull();
+  expect(runner.resume).not.toHaveBeenCalled();
+  startFromList();
+  expect(runner.start).toHaveBeenCalledWith('getting-started');
+});
+
+test('開始待機中の読込失敗でも開始操作は失わない', async () => {
+  waitForCounts();
+  await initGuide({ store, win: window, doc: document });
+  startFromList();
+  store.setState({ home: { ...store.getState().home, countsError: '読込失敗' } });
+  expect(runner.start).toHaveBeenCalledTimes(1);
+  expect(band()).toBeNull();
+  expect(runner.resume).not.toHaveBeenCalled();
+});
+
+test('帯からの開始も再読込待ちなら待機し、終了後は開始しない', async () => {
+  await initGuide({ store, win: window, doc: document });
+  const button = band()!.querySelector<HTMLButtonElement>('[data-guide-action="start"]')!;
+  waitForCounts();
+  button.click();
+  expect(runner.start).not.toHaveBeenCalled();
+  window.dispatchEvent(new Event('pagehide'));
+  loadCounts();
+  expect(runner.start).not.toHaveBeenCalled();
+});
+
+test('件数を読まない reviewer は役割確定後に再開・開始する', async () => {
+  waitForCounts();
+  GUIDE_TOURS['verify-basics'] = { ...GUIDE_TOURS['getting-started'], id: 'verify-basics', unavailableIf: undefined };
+  store.setState({ role: { ...store.getState().role, role: null } });
+  await initGuide({ store, win: window, doc: document });
+  expect(runner.resume).not.toHaveBeenCalled();
+  store.setState({ role: { ...store.getState().role, role: 'reviewer_with_ai', resolving: true } });
+  expect(runner.resume).not.toHaveBeenCalled();
+  store.setState({ role: { ...store.getState().role, resolving: false, error: '失敗' } });
+  expect(runner.resume).not.toHaveBeenCalled();
+  store.setState({ role: { ...store.getState().role, error: null } });
+  expect(runner.resume).toHaveBeenCalledTimes(1);
+  startFromList('verify-basics');
+  expect(runner.start).toHaveBeenCalledWith('verify-basics');
+  expect(band()).toBeNull();
+});
+
 test('実行部は非オーナーのストア更新でもカードを維持し、利用条件の変化で同じ手順を再開する', async () => {
   const actual = jest.requireActual<typeof import('../../../../src/app/guide/tourRunner')>('../../../../src/app/guide/tourRunner');
   jest.mocked(createTourRunner).mockImplementationOnce(actual.createTourRunner);
