@@ -41,7 +41,7 @@ export const jaApp = {
   'guide.tourExportDataTitle': 'エクスポート',
   'guide.tourExportDataDesc': '進捗を確かめ、CSV と R セットを書き出すまでを案内します。',
   'guide.tourExportDataStepOpenDashboard': '「ダッシュボード」を押して、検証の進捗を開きます。',
-  'guide.tourExportDataStepCheckProgress': 'この見出しの下の表で study ごと・section ごとの判定済み数と総セル数を確かめ、「次へ」で進みます。',
+  'guide.tourExportDataStepCheckProgress': 'この表で study ごと・section ごとの判定済み数と総セル数を確かめ、「次へ」で進みます。',
   'guide.tourExportDataStepOpenExport': '「エクスポート」を押して、書き出す形式を選ぶ画面を開きます。',
   'guide.tourExportDataStepChooseFormat': '「形式」を選ぶと、下に含まれる内容の説明が切り替わります。解析に使うなら「R セット（推奨）」を選びます。',
   'guide.tourExportDataStepUnverifiedWarning': '未検証のセルが残っていると、生成ボタンを押した際に警告が出ます。警告がなければ「次へ」で進み、表示中なら内容を確かめて「中止」で戻れます。',

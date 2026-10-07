@@ -79,8 +79,8 @@ function renderFormatSelector(exportState: ExportState, ctx: ViewContext): HTMLE
   });
   return el(
     'fieldset',
-    { id: 'export-format', className: 'export__formats' },
-    [el('legend', { text: t('export.formatLegend'), attributes: { 'data-tour': 'export-data-format' } }), ...options],
+    { id: 'export-format', className: 'export__formats', attributes: { 'data-tour': 'export-data-format' } },
+    [el('legend', { text: t('export.formatLegend') }), ...options],
   );
 }
 
@@ -177,7 +177,6 @@ function renderWarningDialog(
   const children: HTMLElement[] = [
     el('h3', {
       id: 'export-warning-title',
-      attributes: { 'data-tour': 'export-data-warning' },
       text: t('export.warningTitle', { n: unverifiedCount }),
     }),
     el('p', {
@@ -194,7 +193,7 @@ function renderWarningDialog(
     {
       id: 'export-warning',
       className: 'export__confirm',
-      attributes: { role: 'alertdialog', 'aria-labelledby': 'export-warning-title' },
+      attributes: { role: 'alertdialog', 'aria-labelledby': 'export-warning-title', 'data-tour': 'export-data-warning' },
     },
     children,
   );

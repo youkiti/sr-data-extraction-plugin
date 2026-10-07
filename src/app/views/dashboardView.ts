@@ -119,10 +119,9 @@ function renderMatrix(data: DashboardData): HTMLElement {
       el('td', { className: 'dashboard__rate', text: rateText(row.notReported) }),
     ]),
   );
-  return el('table', { id: 'dashboard-matrix', className: 'dashboard__matrix' }, [
+  return el('table', { id: 'dashboard-matrix', className: 'dashboard__matrix', attributes: { 'data-tour': 'export-data-progress' } }, [
     el('caption', {
       className: 'dashboard__matrix-caption',
-      attributes: { 'data-tour': 'export-data-progress' },
       text: t('dashboard.caption'),
     }),
     el('thead', {}, [headRow]),
