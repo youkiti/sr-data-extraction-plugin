@@ -4,8 +4,11 @@ import { createEmptyGuideProgress, startTour, setActiveStep, type GuideProgress,
 import * as storage from '../../../../src/lib/storage/guideProgressStore';
 import { setUiLanguage, t } from '../../../../src/lib/i18n';
 
+import { useTestTours } from '../../lib/guide/__fixtures__/tours';
+
 jest.mock('../../../../src/lib/storage/guideProgressStore');
 const original = GUIDE_TOURS['getting-started'];
+useTestTours([original]);
 let progress: GuideProgress;
 let listeners: Set<() => void>;
 let conditions: GuideConditionValues;
@@ -39,7 +42,7 @@ beforeEach(() => {
   jest.mocked(storage.subscribeGuideProgressChange).mockImplementation(listener => { listeners.add(listener); return () => { listeners.delete(listener); }; });
   runner = createTourRunner({ computeConditions: () => conditions, currentRoute: () => route, navigate });
 });
-afterEach(() => { runner.stop(); GUIDE_TOURS['getting-started'] = original; jest.useRealTimers(); });
+afterEach(() => { runner.stop(); jest.useRealTimers(); });
 
 test('操作イベント、任意スキップ、完了と終了、Esc は終了させない', () => {
   runner.handleEvent('documents-imported'); runner.resume();
@@ -262,7 +265,11 @@ test('言語による再描画は手順・追従・保存値を保ちフォー�
 });
 
 test('登録した空の枠は直接開始しても進行状態とカードを作らない', () => {
-  for (const tour of Object.values(GUIDE_TOURS).filter(tour => tour.id !== 'getting-started')) {
+  const draft: TourDefinition = {
+    id: 'verify-basics', titleKey: 'title', descriptionKey: 'description', draft: true, steps: [],
+  };
+  GUIDE_TOURS[draft.id] = draft;
+  for (const tour of [draft]) {
     runner.start(tour.id);
     expect(progress.active).toBeNull();
     expect(card()).toBeNull();

@@ -19,6 +19,22 @@
 
 ## 2. 本拡張特有の設計
 
+### 操作ツアーの通し検証（CI 外）
+
+単体テストの定義・部品検査や通常の E2E で検査しない、デモ拡張上で操作ツアーが最後まで進むことを `tools/guide-tour-check/` で確認する。画面やツアーを変えたら手元で実行する。headed Chromium が必要なため CI には入れず、サンドボックス内では実行しない。実データ・実アカウント・実 API は使わない。
+
+```sh
+npm run build:demo
+npm run check:tours
+npm run check:tours -- --only getting-started --lang en --size 1280x800
+```
+
+既定は日本語・1280x800・全シナリオ。`PLAYWRIGHT_CHROMIUM_PATH` で Chromium を指定できる。対象は `dist-demo/`（`EXT_DIST_DIR` でデモビルドの場所を指定可能。通常の `dist/` にはフォールバックしない）。架空 PDF は同梱の `fixtures/demo-paper-01.pdf` を使う。ビルド前に PDF が無ければ、ブラウザを使える環境で [既存の生成手順](../video/fixtures/README.md#生成方法)に従って用意する。
+
+空のデモ（`app/app.html?demoState=empty#/home`）で8手順と取り込み前の再読み込みによる再開を確認し、既定のデモでは最後の手順だけになることを確認する。空のデモも再読み込みするとデータは初期化される。シナリオごとに一時プロファイルを作成・削除する。
+
+手順ごとの画像は `.tmp/guide-tour-check/<シナリオ名>-<連番>-<手順 ID>.png`。カードの画面内配置・強調枠と対象の重なりを検査し、カードが対象を覆う場合は警告として集計する。失敗時は終了コード1と、シナリオ・手順・待ち条件・カード属性・URL・画像を出す。引数・シナリオ定義・結果集計はブラウザ不要の `npm run test:tools` でも確認する。
+
 ヘルプの照合テスト（`tests/unit/lib/help/topics.test.ts`）は `hosted/help.html` を読み、
 対応表のアンカーと `src/` 内の `.ts` / `.html` に直接書かれた `help.html#<id>` の実在、
 全ルートと画面トピックの一対一対応、id の重複、見出しの日英 span、小見出しの節 id 接頭辞、

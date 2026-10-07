@@ -50,6 +50,13 @@ export const enApp: Record<keyof typeof jaApp, string> = {
   // ツアー: export-data（手順の本文は、この区画の Desc の直後に足す）
   'guide.tourExportDataTitle': 'Export data',
   'guide.tourExportDataDesc': 'Check progress and export CSV files and an R set.',
+  'guide.tourExportDataStepOpenDashboard': 'Select “Dashboard” to open verification progress.',
+  'guide.tourExportDataStepCheckProgress': 'Check decided and total cells by study and section in this table, then select “Next”.',
+  'guide.tourExportDataStepOpenExport': 'Select “Export” to open the export format screen.',
+  'guide.tourExportDataStepChooseFormat': 'Choosing a “Format” changes the description of the included content below. For analysis, choose “R set (recommended)”.',
+  'guide.tourExportDataStepUnverifiedWarning': 'If unverified cells remain, a warning appears when you press the generate button. Select “Next” if no warning is shown, or review it and select “Abort” to return.',
+  'guide.tourExportDataStepGenerate': 'Pressing this generate button creates files in Drive. Decide for yourself whether to press it; selecting “Next” alone also continues the tour.',
+  'guide.tourExportDataStepFinish': 'After selecting “Finish” to close, you can start a tour again from “Tours” at any time.',
   'pilot.matrixTitle': 'Fields × studies',
   'pilot.matrixAccept': 'Accepted',
   'pilot.matrixEdit': 'Edited',

@@ -8,6 +8,7 @@ coverage/
 # Playwright の実行成果物
 test-results/
 playwright-report/
+.tmp/
 
 # Selenium 実機確認の専用 Chrome プロファイル（tools/selenium/manualCheck.mjs。
 # Google ログイン状態と手動読込した拡張が永続化されるため共有しない）

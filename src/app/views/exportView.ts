@@ -79,7 +79,7 @@ function renderFormatSelector(exportState: ExportState, ctx: ViewContext): HTMLE
   });
   return el(
     'fieldset',
-    { id: 'export-format', className: 'export__formats' },
+    { id: 'export-format', className: 'export__formats', attributes: { 'data-tour': 'export-data-format' } },
     [el('legend', { text: t('export.formatLegend') }), ...options],
   );
 }
@@ -193,7 +193,7 @@ function renderWarningDialog(
     {
       id: 'export-warning',
       className: 'export__confirm',
-      attributes: { role: 'alertdialog', 'aria-labelledby': 'export-warning-title' },
+      attributes: { role: 'alertdialog', 'aria-labelledby': 'export-warning-title', 'data-tour': 'export-data-warning' },
     },
     children,
   );
@@ -465,7 +465,7 @@ export function renderExportView(state: AppState, ctx: ViewContext): HTMLElement
       id: 'export-generate',
       className: 'export__generate',
       text: t('export.generateRSet'),
-      attributes: { type: 'button' },
+      attributes: { type: 'button', 'data-tour': 'export-data-generate' },
     });
     generateButton.disabled = exportState.generating || dataRowCount === 0;
     generateButton.addEventListener('click', () => ctx.export.onGenerate());
@@ -518,7 +518,7 @@ export function renderExportView(state: AppState, ctx: ViewContext): HTMLElement
     id: 'export-generate',
     className: 'export__generate',
     text: t('export.generate'),
-    attributes: { type: 'button' },
+    attributes: { type: 'button', 'data-tour': 'export-data-generate' },
   });
   generateButton.disabled = exportState.generating || built.rowCount === 0;
   generateButton.addEventListener('click', () => ctx.export.onGenerate());
