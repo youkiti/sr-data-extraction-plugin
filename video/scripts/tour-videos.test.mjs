@@ -5,6 +5,7 @@ import { readFileSync } from 'node:fs';
 import {
     DEFAULT_TOURS, parseArgs, captureArgs, parseDictionary, pickShots, READINGS, toReading,
     silentDuration, frameDuration, srtTime, makeTimeline, frameHtml, requestVoice,
+    speakerNameFor, makeChaptersText, main,
 } from './tour-videos.mjs';
 
 test('撮影引数: 画面サイズと描画を待つ時間を指定する', () => {
@@ -121,6 +122,57 @@ test('字幕と章: 全画面の開始・終了を累積し、分・時の境界
     assert.equal(srtTime(1 / 30), '00:00:00,033');
     const frames = makeTimeline(Array.from({ length: 30 }, () => ({ text: 'a', chapter: 'a', duration: 91 / 30 })));
     assert.equal(frames.duration, 91);
+});
+
+test('話者名: 複数の話者・スタイルから合成に使う ID を探す', () => {
+    const speakers = [
+        { name: '四国めたん', styles: [{ id: 0 }, { id: 2 }] },
+        { name: 'ずんだもん', styles: [{ id: 1 }, { id: 3 }] },
+    ];
+    assert.equal(speakerNameFor(speakers, 2), '四国めたん');
+    assert.equal(speakerNameFor(speakers, 3), 'ずんだもん');
+    assert.throws(() => speakerNameFor(speakers, 99), /話者 ID 99 に一致する話者が見つかりません/);
+    assert.throws(() => speakerNameFor([], 2), /一致する話者が見つかりません/);
+});
+
+test('話者名: 応答の形が違えば理由を出して拒否する', () => {
+    for (const speakers of [null, {}, '不正', [null], [{}],
+        [{ name: '', styles: [] }], [{ name: 123, styles: [] }],
+        [{ name: '四国めたん', styles: {} }],
+        [{ name: '四国めたん', styles: [null] }],
+        [{ name: '四国めたん', styles: [{ id: '2' }] }]]) {
+        assert.throws(() => speakerNameFor(speakers, 2), /応答の形式が不正/);
+    }
+});
+
+test('章の一覧: 読み上げ時だけ空行と話者のクレジットを末尾に付ける', () => {
+    const chapters = makeTimeline([{ text: '説明', chapter: '題', duration: 3 }]).chapters;
+    for (const speakerName of ['四国めたん', 'ずんだもん']) {
+        assert.equal(makeChaptersText(chapters, { ...parseArgs([]), speakerName }),
+            `0:00 題\n\nナレーション: VOICEVOX:${speakerName}\n`);
+    }
+    assert.equal(makeChaptersText(chapters, parseArgs(['--silent'])), chapters);
+    assert.throws(() => makeChaptersText(chapters, parseArgs([])), /話者名がありません/);
+});
+
+test('事前確認: 話者情報の取得失敗・不一致では動画生成へ進まない（実通信なし）', async t => {
+    for (const failure of ['http', 'network', 'missing', 'invalid']) {
+        const endpoints = [];
+        const mocked = t.mock.method(globalThis, 'fetch', async url => {
+            const endpoint = new URL(url).pathname;
+            endpoints.push(endpoint);
+            if (endpoint === '/version') return { ok: true };
+            if (failure === 'network') throw new Error('ECONNREFUSED');
+            if (failure === 'http') return { ok: false, status: 500, text: async () => '取得エラー' };
+            return { ok: true, json: async () => failure === 'missing' ? [] : {} };
+        });
+        try {
+            await assert.rejects(main(['verify-basics']), /\/speakers/);
+            assert.deepEqual(endpoints, ['/version', '/speakers']);
+        } finally {
+            mocked.mock.restore();
+        }
+    }
 });
 
 test('画面HTML: 原文をエスケープし、画像・手順番号・アプリのトークンを配置', () => {

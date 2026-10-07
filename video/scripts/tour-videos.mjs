@@ -120,6 +120,23 @@ export function makeTimeline(cues) {
     return { srt: srt.join('\n'), chapters: chapters.join('\n') + '\n', duration: frames / FPS };
 }
 
+export function speakerNameFor(speakers, speakerId) {
+    if (!Array.isArray(speakers) || speakers.some(speaker =>
+        !speaker || typeof speaker.name !== 'string' || !speaker.name.trim() ||
+        !Array.isArray(speaker.styles) || speaker.styles.some(style => !style || !Number.isInteger(style.id)))) {
+        throw new Error('VOICEVOX /speakers: 応答の形式が不正です。');
+    }
+    const speaker = speakers.find(speaker => speaker.styles.some(style => style.id === speakerId));
+    if (!speaker) throw new Error(`VOICEVOX /speakers: 話者 ID ${speakerId} に一致する話者が見つかりません。`);
+    return speaker.name;
+}
+
+export function makeChaptersText(chapters, { silent, speakerName }) {
+    if (silent) return chapters;
+    if (typeof speakerName !== 'string' || !speakerName.trim()) throw new Error('VOICEVOX のクレジットに必要な話者名がありません。');
+    return `${chapters.trimEnd()}\n\nナレーション: VOICEVOX:${speakerName}\n`;
+}
+
 const escapeHtml = text => text.replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
 
 export function frameHtml({ title, text, image, number, lang }, tokens) {
@@ -290,7 +307,7 @@ async function buildTour(id, options, messages) {
         await ffmpeg(args);
         const timeline = makeTimeline(cues.map(cue => ({ ...cue, text: cue.subtitle })));
         writeFileSync(`${output}.srt`, timeline.srt);
-        writeFileSync(`${output}-chapters.txt`, timeline.chapters);
+        writeFileSync(`${output}-chapters.txt`, makeChaptersText(timeline.chapters, options));
         console.log(`[${id}] 出力: ${output}.mp4 / .srt / -chapters.txt（${timeline.duration.toFixed(1)} 秒）`);
     });
 }
@@ -298,7 +315,11 @@ async function buildTour(id, options, messages) {
 export async function main(args = process.argv.slice(2)) {
     const options = parseArgs(args);
     const messages = parseDictionary(readFileSync(path.join(REPO_ROOT, `src/lib/i18n/${options.lang}.app.ts`), 'utf8'));
-    if (!options.silent) await stage(options.tourIds.join(', '), '音声', '事前確認', 'VOICEVOX GET /version', () => requestVoice('/version'));
+    if (!options.silent) {
+        await stage(options.tourIds.join(', '), '音声', '事前確認', 'VOICEVOX GET /version', () => requestVoice('/version'));
+        options.speakerName = await stage(options.tourIds.join(', '), '音声', 'クレジット確認', 'VOICEVOX GET /speakers', async () =>
+            speakerNameFor(await (await requestVoice('/speakers')).json(), VOICEVOX_SPEAKER));
+    }
     for (const id of options.tourIds) await buildTour(id, options, messages);
 }
 
