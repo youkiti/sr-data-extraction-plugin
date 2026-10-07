@@ -31,6 +31,14 @@ export const jaApp = {
   // ツアー: pilot-and-extract（手順の本文は、この区画の Desc の直後に足す）
   'guide.tourPilotAndExtractTitle': 'パイロットと一括抽出',
   'guide.tourPilotAndExtractDesc': 'パイロット抽出で結果を確かめ、一括抽出を実行するまでを案内します。',
+  'guide.tourPilotAndExtractStepOpenPilot': '「パイロット抽出」を押して、少数の論文で抽出を試す画面を開きます。',
+  'guide.tourPilotAndExtractStepSelectStudies': '一覧のチェックボックスで試す論文を選び、項目とモデルを確認して「次へ」を押します。',
+  'guide.tourPilotAndExtractStepRunPilot': '対象・項目・モデルと概算費用を確認します。API の費用がかかるため、「パイロット抽出を実行」を押すかは自分で決めてください。',
+  'guide.tourPilotAndExtractStepReviewPilot': 'この領域で論文を切り替えて値と根拠を確認し、「次へ」を押します。',
+  'guide.tourPilotAndExtractStepOpenExtract': '「一括抽出」を押して、残りの論文を抽出する画面を開きます。',
+  'guide.tourPilotAndExtractStepCheckEstimate': '対象の論文・項目とモデルを選び、この概算費用を確認して「次へ」を押します。',
+  'guide.tourPilotAndExtractStepRunExtract': '「一括抽出を実行」で確認カードを開きます。API の費用がかかるため、「実行する」を押すかは自分で決めてください。',
+  'guide.tourPilotAndExtractStepFinish': '「完了」で案内を閉じ、「ツアー」から次の案内を選べます。',
   // ツアー: verify-basics（手順の本文は、この区画の Desc の直後に足す）
   'guide.tourVerifyBasicsTitle': '検証の進めかた',
   'guide.tourVerifyBasicsDesc': '根拠のハイライトを見ながら、抽出された値を判定する流れを案内します。',
