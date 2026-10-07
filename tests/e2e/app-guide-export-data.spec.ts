@@ -29,11 +29,17 @@ test('エクスポートの一覧から開始し、カード表示中の axe と
   await expect(card).toHaveAttribute('data-guide-step', 'open-dashboard');
   await expect(card).toHaveAttribute('data-guide-waiting', 'false');
   const nav = page.locator('[data-tour="nav-dashboard"]');
-  const rect = await nav.boundingBox();
   await expect(page.locator('.guide-tour-highlight')).toBeVisible();
-  const frame = await page.locator('.guide-tour-highlight').boundingBox();
-  expect(frame!.x).toBeCloseTo(rect!.x - 3);
-  expect(frame!.y).toBeCloseTo(rect!.y - 3);
+  // 枠は対象の位置に追従する（再配置は一拍遅れることがある）。同じ瞬間に両方を読み、重なるまで待つ
+  await expect
+    .poll(() =>
+      page.evaluate((selector) => {
+        const target = document.querySelector(selector)!.getBoundingClientRect();
+        const frame = document.querySelector('.guide-tour-highlight')!.getBoundingClientRect();
+        return [Math.round(frame.x - target.x), Math.round(frame.y - target.y)];
+      }, '[data-tour="nav-dashboard"]'),
+    )
+    .toEqual([-3, -3]);
   const results = await new AxeBuilder({ page }).analyze();
   expect(results.violations).toEqual([]);
   await card.locator('[data-guide-action="end"]').click();
