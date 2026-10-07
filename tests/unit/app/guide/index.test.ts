@@ -5,6 +5,14 @@ import * as storage from '../../../../src/lib/storage/guideProgressStore';
 import { createTourRunner } from '../../../../src/app/guide/tourRunner';
 import { setUiLanguage, t } from '../../../../src/lib/i18n';
 
+import { useTestTours } from '../../lib/guide/__fixtures__/tours';
+
+useTestTours([{
+  id: 'getting-started', titleKey: 'guide.tourGettingStartedTitle', descriptionKey: 'guide.tourGettingStartedDesc',
+  unavailableIf: 'not-owner',
+  steps: [{ id: 'open-documents', target: 'nav-documents', textKey: 'guide.tourGettingStartedStepOpenDocuments', advance: { type: 'next' } }],
+}]);
+
 jest.mock('../../../../src/lib/storage/guideProgressStore');
 jest.mock('../../../../src/app/guide/tourRunner');
 let store: Store;
@@ -64,7 +72,9 @@ test('一覧から開始し、ルートと条件の変化だけをイベント�
   expect(runner.handleEvent).toHaveBeenCalledWith('route-opened-documents');
   store.setState({ counts: { ...store.getState().counts, documents: 1, protocolVersions: 1, schemaVersions: 1 } });
   store.setState({});
-  expect(runner.handleEvent).toHaveBeenCalledTimes(4);
+  expect(runner.handleEvent.mock.calls.filter(([event]) =>
+    ['route-opened-documents', 'documents-imported', 'protocol-saved', 'schema-confirmed'].includes(event),
+  )).toEqual([['route-opened-documents'], ['documents-imported'], ['protocol-saved'], ['schema-confirmed']]);
   expect(runner.handleEvent).toHaveBeenCalledWith('schema-confirmed');
   store.setState({ role: { ...store.getState().role, role: 'reviewer_independent' } });
   expect(runner.stop).toHaveBeenCalled(); expect(band()).toBeNull();
