@@ -31,7 +31,9 @@ async function main() {
     const summary = summarize(results);
     console.log(summary.text);
     console.log(`画像: ${OUT_DIR}`);
-    process.exitCode = summary.exitCode;
+    // パイプへの集計・警告の書き込みが完了してから、残った接続ごと終了する。
+    await Promise.all([process.stdout, process.stderr].map(stream => new Promise(resolve => stream.write('', resolve))));
+    process.exit(summary.exitCode);
 }
 
 main().catch(error => {
