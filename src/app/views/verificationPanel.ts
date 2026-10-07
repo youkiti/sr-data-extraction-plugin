@@ -740,7 +740,7 @@ export function createVerificationPanel(
   const pdfModeButton = el('button', {
     className: 'verify__view-toggle-btn',
     text: 'PDF',
-    attributes: { type: 'button', 'aria-pressed': 'true' },
+    attributes: { type: 'button', 'aria-pressed': 'true', 'data-tour': 'verify-basics-pdf' },
   }) as HTMLButtonElement;
   const textModeButton = el('button', {
     className: 'verify__view-toggle-btn',

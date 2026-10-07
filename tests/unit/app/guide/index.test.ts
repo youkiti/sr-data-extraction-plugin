@@ -1,9 +1,18 @@
 import { initGuide } from '../../../../src/app/guide';
 import { createStore, createInitialState, type Store } from '../../../../src/app/store';
-import { createEmptyGuideProgress, type GuideProgress } from '../../../../src/lib/guide/tourProgress';
+import { createEmptyGuideProgress, isTourUnavailable, startTour, type GuideProgress } from '../../../../src/lib/guide/tourProgress';
+import { GUIDE_TOURS } from '../../../../src/lib/guide/tours';
 import * as storage from '../../../../src/lib/storage/guideProgressStore';
 import { createTourRunner } from '../../../../src/app/guide/tourRunner';
 import { setUiLanguage, t } from '../../../../src/lib/i18n';
+
+import { useTestTours } from '../../lib/guide/__fixtures__/tours';
+
+useTestTours([{
+  id: 'getting-started', titleKey: 'guide.tourGettingStartedTitle', descriptionKey: 'guide.tourGettingStartedDesc',
+  unavailableIf: 'not-owner',
+  steps: [{ id: 'open-documents', target: 'nav-documents', textKey: 'guide.tourGettingStartedStepOpenDocuments', advance: { type: 'next' } }],
+}]);
 
 jest.mock('../../../../src/lib/storage/guideProgressStore');
 jest.mock('../../../../src/app/guide/tourRunner');
@@ -11,7 +20,7 @@ let store: Store;
 let progress: GuideProgress;
 let postponed: boolean;
 let listeners: Set<() => void>;
-const runner = { start: jest.fn(), resume: jest.fn(), stop: jest.fn(), handleEvent: jest.fn(), rerender: jest.fn() };
+const runner = { start: jest.fn(), resume: jest.fn(), syncAvailability: jest.fn(), stop: jest.fn(), handleEvent: jest.fn(), rerender: jest.fn() };
 const band = (): HTMLElement | null => document.getElementById('guide-suggest-band');
 const click = (name: string): void => document.querySelector<HTMLButtonElement>(`#guide-suggest-band [data-guide-action="${name}"]`)!.click();
 beforeEach(() => {
@@ -26,9 +35,54 @@ beforeEach(() => {
   jest.mocked(storage.postponeGuideSuggestions).mockImplementation(() => { postponed = true; });
   jest.mocked(storage.subscribeGuideProgressChange).mockImplementation(listener => { listeners.add(listener); return () => { listeners.delete(listener); }; });
   jest.mocked(createTourRunner).mockReturnValue(runner);
+  runner.syncAvailability.mockImplementation(() => {
+    const host = jest.mocked(createTourRunner).mock.calls[0]![0];
+    if (progress.active && isTourUnavailable(GUIDE_TOURS[progress.active.tourId], host.computeConditions())) runner.stop();
+  });
   runner.start.mockImplementation(() => { progress.active = { tourId: 'getting-started', stepIndex: 0, stepId: 'open-documents' }; });
 });
 afterEach(() => { window.dispatchEvent(new Event('pagehide')); });
+
+test('実行部は非オーナーのストア更新でもカードを維持し、利用条件の変化で同じ手順を再開する', async () => {
+  const actual = jest.requireActual<typeof import('../../../../src/app/guide/tourRunner')>('../../../../src/app/guide/tourRunner');
+  jest.mocked(createTourRunner).mockImplementationOnce(actual.createTourRunner);
+  GUIDE_TOURS['verify-basics'] = {
+    ...GUIDE_TOURS['getting-started'], id: 'verify-basics', unavailableIf: 'has-protocol',
+    steps: [
+      { id: 'first', target: 'first', textKey: 'guide.tourGettingStartedStepOpenDocuments', advance: { type: 'next' } },
+      { id: 'second', target: 'second', textKey: 'guide.tourGettingStartedStepOpenDocuments', advance: { type: 'next' } },
+    ],
+  };
+  store.setState({ role: { ...store.getState().role, role: 'reviewer_with_ai' } });
+  progress = startTour(progress, 'verify-basics', 1);
+  await initGuide({ store, win: window, doc: document });
+  const card = (): Element | null => document.querySelector('.guide-tour-card');
+  const originalCard = card();
+  expect(originalCard?.getAttribute('data-guide-step')).toBe('second');
+  store.setState({ verify: { ...store.getState().verify, selectedStudyId: 'study-1' } });
+  expect(card()).toBe(originalCard);
+  const saved = progress;
+  store.setState({ counts: { ...store.getState().counts, protocolVersions: 1 } });
+  expect(card()).toBeNull();
+  expect(progress).toBe(saved);
+  store.setState({ counts: { ...store.getState().counts, protocolVersions: 0 } });
+  expect(card()?.getAttribute('data-guide-step')).toBe('second');
+  expect(progress).toBe(saved);
+});
+
+test('実行部はオーナー専用ツアーを権限喪失時に片づけ、役割解決後に再開する', async () => {
+  const actual = jest.requireActual<typeof import('../../../../src/app/guide/tourRunner')>('../../../../src/app/guide/tourRunner');
+  jest.mocked(createTourRunner).mockImplementationOnce(actual.createTourRunner);
+  progress = startTour(progress, 'getting-started');
+  await initGuide({ store, win: window, doc: document });
+  expect(document.querySelector('.guide-tour-card')).not.toBeNull();
+  store.setState({ role: { ...store.getState().role, role: 'reviewer_with_ai' } });
+  expect(document.querySelector('.guide-tour-card')).toBeNull();
+  store.setState({ role: { ...store.getState().role, role: 'owner', resolving: true } });
+  expect(document.querySelector('.guide-tour-card')).toBeNull();
+  store.setState({ role: { ...store.getState().role, resolving: false } });
+  expect(document.querySelector('.guide-tour-card')?.getAttribute('data-guide-step')).toBe('open-documents');
+});
 test('入口が無い環境は何もしない', async () => {
   document.getElementById('app-open-tours')!.remove();
   await initGuide({ store, win: window, doc: document });
@@ -64,7 +118,9 @@ test('一覧から開始し、ルートと条件の変化だけをイベント�
   expect(runner.handleEvent).toHaveBeenCalledWith('route-opened-documents');
   store.setState({ counts: { ...store.getState().counts, documents: 1, protocolVersions: 1, schemaVersions: 1 } });
   store.setState({});
-  expect(runner.handleEvent).toHaveBeenCalledTimes(4);
+  expect(runner.handleEvent.mock.calls.filter(([event]) =>
+    ['route-opened-documents', 'documents-imported', 'protocol-saved', 'schema-confirmed'].includes(event),
+  )).toEqual([['route-opened-documents'], ['documents-imported'], ['protocol-saved'], ['schema-confirmed']]);
   expect(runner.handleEvent).toHaveBeenCalledWith('schema-confirmed');
   store.setState({ role: { ...store.getState().role, role: 'reviewer_independent' } });
   expect(runner.stop).toHaveBeenCalled(); expect(band()).toBeNull();

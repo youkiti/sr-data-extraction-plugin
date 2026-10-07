@@ -48,8 +48,8 @@ export async function initGuide({ store, win, doc }: { store: Store; win: Window
       const next = conditions();
       const events = guideEvents(previous, next);
       previous = next;
-      if (next['not-owner']) runner.stop();
-      else runner.resume();
+      runner.syncAvailability();
+      runner.resume();
       events.forEach(event => runner.handleEvent(event));
       entry.refresh();
       refresh();

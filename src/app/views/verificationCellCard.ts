@@ -363,7 +363,7 @@ function renderQuoteControls(
   }));
   const remove = el('button', {
     className: 'verify__quote-remove', text: t('verify.quoteRemove'),
-    attributes: { type: 'button', 'aria-label': t('verify.quoteRemoveAria') },
+    attributes: { type: 'button', 'aria-label': t('verify.quoteRemoveAria'), 'data-tour': 'verify-basics-quote-remove' },
   });
   remove.disabled = disabled;
   remove.addEventListener('click', () => handlers.onQuoteRemove!(cell.cellKey, quote.quoteId));
@@ -774,7 +774,7 @@ function renderActions(
   reject.disabled = quoteSaving;
   reject.addEventListener('click', () => handlers.onStartEdit(cell.cellKey, 'reject'));
 
-  return el('div', { className: 'verify__actions' }, [
+  return el('div', { className: 'verify__actions', attributes: { 'data-tour': 'verify-basics-decide' } }, [
     accept,
     renderEditButton(cell, handlers, t('verify.actionEdit'), quoteSaving),
     reject,

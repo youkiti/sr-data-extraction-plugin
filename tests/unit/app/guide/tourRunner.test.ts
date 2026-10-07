@@ -4,8 +4,11 @@ import { createEmptyGuideProgress, startTour, setActiveStep, type GuideProgress,
 import * as storage from '../../../../src/lib/storage/guideProgressStore';
 import { setUiLanguage, t } from '../../../../src/lib/i18n';
 
+import { useTestTours } from '../../lib/guide/__fixtures__/tours';
+
 jest.mock('../../../../src/lib/storage/guideProgressStore');
 const original = GUIDE_TOURS['getting-started'];
+useTestTours([original]);
 let progress: GuideProgress;
 let listeners: Set<() => void>;
 let conditions: GuideConditionValues;
@@ -39,7 +42,7 @@ beforeEach(() => {
   jest.mocked(storage.subscribeGuideProgressChange).mockImplementation(listener => { listeners.add(listener); return () => { listeners.delete(listener); }; });
   runner = createTourRunner({ computeConditions: () => conditions, currentRoute: () => route, navigate });
 });
-afterEach(() => { runner.stop(); GUIDE_TOURS['getting-started'] = original; jest.useRealTimers(); });
+afterEach(() => { runner.stop(); jest.useRealTimers(); });
 
 test('操作イベント、任意スキップ、完了と終了、Esc は終了させない', () => {
   runner.handleEvent('documents-imported'); runner.resume();
@@ -262,9 +265,95 @@ test('言語による再描画は手順・追従・保存値を保ちフォー�
 });
 
 test('登録した空の枠は直接開始しても進行状態とカードを作らない', () => {
-  for (const tour of Object.values(GUIDE_TOURS).filter(tour => tour.id !== 'getting-started')) {
+  const draft: TourDefinition = {
+    id: 'verify-basics', titleKey: 'title', descriptionKey: 'description', draft: true, steps: [],
+  };
+  GUIDE_TOURS[draft.id] = draft;
+  for (const tour of [draft]) {
     runner.start(tour.id);
     expect(progress.active).toBeNull();
     expect(card()).toBeNull();
   }
+});
+
+test('実行中のツアーの利用条件だけで片づけ、保存せず同じ手順へ戻る', () => {
+  runner.syncAvailability();
+  custom({ unavailableIf: 'verify-basics-unavailable' });
+  conditions = { 'not-owner': true };
+  runner.start('getting-started', 'b');
+  const currentCard = card();
+  runner.syncAvailability(); runner.resume();
+  expect(card()).toBe(currentCard);
+  const saved = progress;
+  const writes = jest.mocked(storage.updateGuideProgress); writes.mockClear();
+  conditions = { 'not-owner': true, 'verify-basics-unavailable': true };
+  runner.syncAvailability(); runner.resume();
+  expect(card()).toBeNull();
+  expect(progress).toBe(saved);
+  conditions = { 'not-owner': true };
+  runner.syncAvailability(); runner.resume();
+  expect(card()?.dataset.guideStep).toBe('b');
+  expect(writes).not.toHaveBeenCalled();
+});
+
+test('対象と子要素の実行を遮断し、Tab・対象外の操作・手順変更後・終了後は遮断しない', () => {
+  custom(); GUIDE_TOURS['getting-started'].steps[0]!.blockTarget = true;
+  const node = target('a');
+  const child = document.createElement('span'); node.append(child);
+  const outside = target('outside');
+  const clicks = jest.fn(); const keys = jest.fn(); const outsideClicks = jest.fn();
+  node.addEventListener('click', clicks); node.addEventListener('keydown', keys);
+  outside.addEventListener('click', outsideClicks);
+  runner.start('getting-started');
+  node.click(); child.click();
+  for (const key of ['Enter', ' ']) {
+    const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true });
+    child.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(true);
+  }
+  expect(clicks).not.toHaveBeenCalled(); expect(keys).not.toHaveBeenCalled();
+  const tab = new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true });
+  node.focus(); node.dispatchEvent(tab);
+  expect(document.activeElement).toBe(node);
+  expect(tab.defaultPrevented).toBe(false); expect(keys).toHaveBeenCalledTimes(1);
+  outside.click(); expect(outsideClicks).toHaveBeenCalledTimes(1);
+  document.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  node.remove();
+  const replacement = target('a'); replacement.addEventListener('click', clicks);
+  replacement.click(); expect(clicks).not.toHaveBeenCalled();
+  action('next').click();
+  replacement.click(); expect(clicks).toHaveBeenCalledTimes(1);
+  const unblocked = target('b'); unblocked.addEventListener('click', clicks);
+  unblocked.click(); expect(clicks).toHaveBeenCalledTimes(2);
+  runner.start('getting-started'); action('end').click();
+  replacement.click(); expect(clicks).toHaveBeenCalledTimes(3);
+  runner.start('getting-started'); runner.stop();
+  replacement.click(); expect(clicks).toHaveBeenCalledTimes(4);
+});
+
+test('フォーム送信は対象内の submitter だけ遮断し、片づけた後は送信できる', () => {
+  custom(); GUIDE_TOURS['getting-started'].steps[0]!.blockTarget = true;
+  const form = document.createElement('form'); document.body.append(form);
+  const input = document.createElement('input'); form.append(input);
+  const button = target('a') as HTMLButtonElement; button.type = 'submit'; form.append(button);
+  const other = document.createElement('button'); other.type = 'submit'; form.append(other);
+  const submitted = jest.fn((event: Event) => event.preventDefault());
+  form.addEventListener('submit', submitted);
+  runner.start('getting-started');
+  button.click(); expect(submitted).not.toHaveBeenCalled();
+  const event = new SubmitEvent('submit', { submitter: button, bubbles: true, cancelable: true });
+  form.dispatchEvent(event);
+  expect(event.defaultPrevented).toBe(true); expect(submitted).not.toHaveBeenCalled();
+  // jsdom のキーイベントは既定の暗黙送信を起こさないため submitter を明示して検査する。
+  input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+  expect(submitted).not.toHaveBeenCalled();
+  form.dispatchEvent(new SubmitEvent('submit', { submitter: other, bubbles: true, cancelable: true }));
+  form.dispatchEvent(new SubmitEvent('submit', { bubbles: true, cancelable: true }));
+  expect(submitted).toHaveBeenCalledTimes(2);
+  runner.stop();
+  button.click();
+  expect(submitted).toHaveBeenCalledTimes(3);
+  expect((submitted.mock.calls[2]![0] as SubmitEvent).submitter).toBe(button);
+  input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+  expect(submitted).toHaveBeenCalledTimes(3);
 });
