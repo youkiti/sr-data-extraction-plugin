@@ -20,6 +20,8 @@ export interface GuideActiveTour {
   stepId: string;
   /** 実行中の手順の位置（steps の添字）。読み込み時に stepId から今の定義に合わせて求め直す */
   stepIndex: number;
+  /** 実際に表示した手順数。旧保存値は表示時の条件で補完する */
+  shownCount?: number;
 }
 
 export interface GuideProgress {
@@ -68,6 +70,9 @@ export function parseGuideProgress(raw: unknown): GuideProgress {
       // ここでは直せない。
       result.active = { tourId: tour.id, stepId: tour.steps[index]!.id, stepIndex: index };
     }
+    if (result.active && isValidShownCount(raw.active.shownCount, tour)) {
+      result.active.shownCount = raw.active.shownCount;
+    }
   }
 
   result.suppressSuggestions = raw.suppressSuggestions === true;
@@ -105,9 +110,9 @@ export function nextStepIndex(
 }
 
 export interface VisibleStepPosition {
-  /** 今の手順が、飛ばされない手順の中で何番目か（1 始まり） */
+  /** 表示する現在位置（1 始まり。旧形式で全件省略なら 0） */
   position: number;
-  /** 飛ばされない手順の数 */
+  /** 表示する全体の手順数 */
   total: number;
 }
 
@@ -118,9 +123,9 @@ export function hasRemainingSteps(tour: Pick<TourDefinition, 'steps'>, condition
 }
 
 /**
- * カードに出す「n / m」。conditions で飛ばされる手順は数えない。
+ * 旧保存値の表示数を補完するための位置。conditions で飛ばされる手順は数えない。
  * index が飛ばされる手順そのものなら、その位置までに出る手順の数（最低 1。出る手順が1つも無ければ 0 / 0）。
- * 条件は途中で変わりうるので、手順を描画するたびに計算し直す。
+ * 新形式のカード表示は、補完した値を保持して shownStepPosition に渡す。
  */
 export function visibleStepPosition(
   tour: Pick<TourDefinition, 'steps'>,
@@ -135,6 +140,28 @@ export function visibleStepPosition(
     if (i <= index) position += 1;
   });
   return { position: total === 0 ? 0 : Math.max(1, position), total };
+}
+
+function isValidShownCount(value: unknown, tour: Pick<TourDefinition, 'steps'>): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= tour.steps.length;
+}
+
+/** 保存された表示数を使い、旧保存値・不正値だけを現在の条件で補完する。 */
+export function resolveShownCount(tour: Pick<TourDefinition, 'steps'>, index: number, conditions: GuideConditionValues, saved: unknown): number {
+  return isValidShownCount(saved, tour) ? saved : visibleStepPosition(tour, index, conditions).position;
+}
+
+/** 通過済み手順を保持したカードの番号。後続だけを現在の条件で数える。 */
+export function shownStepPosition(tour: Pick<TourDefinition, 'steps'>, index: number, conditions: GuideConditionValues, shownCount: number): VisibleStepPosition {
+  const remaining = tour.steps.filter((step, i) => i > index &&
+    (step.skipIf === undefined || !isConditionTrue(conditions, step.skipIf))).length;
+  return { position: shownCount, total: shownCount + remaining };
+}
+
+/** 新しく表示する手順を記録する。開始時は previousCount を 0 にする。再表示・追従には使わない。 */
+export function recordShownStep(progress: GuideProgress, tourId: GuideTourId, index: number, previousCount: number): GuideProgress {
+  const next = startTour(progress, tourId, index);
+  return { ...next, active: { ...next.active!, shownCount: previousCount + 1 } };
 }
 
 /** イベントでこの手順が進むか。'next' で進む手順はイベントでは進まない。 */

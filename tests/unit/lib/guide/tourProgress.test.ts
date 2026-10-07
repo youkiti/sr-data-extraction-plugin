@@ -2,7 +2,7 @@ import {
   GUIDE_PROGRESS_STORAGE_KEY, availableTours, completeTour, createEmptyGuideProgress,
   decideProgressSync, dismissTour, hasRemainingSteps, isTourUnavailable, nextStepIndex, parseGuideProgress,
   serializeGuideProgress, setActiveStep, shouldAdvance, shouldSuggest, startTour,
-  suppressSuggestions, tourToSuggestOnEvent, visibleStepPosition,
+  suppressSuggestions, tourToSuggestOnEvent, visibleStepPosition, resolveShownCount, shownStepPosition, recordShownStep,
 } from '../../../../src/lib/guide/tourProgress';
 import { GUIDE_TOURS, type GuideTourId, type TourDefinition, type TourStep } from '../../../../src/lib/guide/tours';
 
@@ -152,4 +152,21 @@ test('同期は保存値を正として、同じ手順なら維持、違えば�
   expect(decideProgressSync(active, { tourId: 'another-tour' as GuideTourId, stepIndex: 0 })).toEqual({ type: 'close' });
   expect(decideProgressSync(active, active)).toEqual({ type: 'none' });
   expect(decideProgressSync({ ...active, stepIndex: 2 }, active)).toEqual({ type: 'switch', stepIndex: 2 });
+});
+
+
+test('表示数の保存・補完と、通過済みを保持した残りの計算', () => {
+  const first = recordShownStep(empty(), ID, 0, 0);
+  const moved = recordShownStep(first, ID, 1, first.active!.shownCount!);
+  expect(first.active?.shownCount).toBe(1);
+  expect(moved.active?.shownCount).toBe(2);
+  expect(parseGuideProgress(serializeGuideProgress(moved))).toEqual(moved);
+  expect(shownStepPosition(tour, 1, { 'has-documents': true }, 2)).toEqual({ position: 2, total: 3 });
+  expect(shownStepPosition(tour, 0, new Set(['has-protocol']), 1)).toEqual({ position: 1, total: 2 });
+  expect(resolveShownCount(tour, 2, { 'has-documents': true }, 3)).toBe(3);
+  for (const shownCount of [undefined, null, '2', -1, 0, 1.5, 4, NaN, Infinity]) {
+    const parsed = parseGuideProgress({ active: { tourId: ID, stepIndex: 2, shownCount } });
+    expect(parsed.active?.shownCount).toBeUndefined();
+    expect(resolveShownCount(tour, 2, { 'has-documents': true }, shownCount)).toBe(2);
+  }
 });

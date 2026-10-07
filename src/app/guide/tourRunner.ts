@@ -1,8 +1,8 @@
 import { t, type MessageKey } from '../../lib/i18n';
 import { GUIDE_TOURS, type GuideTourId, type GuideEventName, type TourDefinition } from '../../lib/guide/tours';
 import {
-  completeTour, dismissTour, nextStepIndex, setActiveStep, decideProgressSync,
-  isTourUnavailable, shouldAdvance, startTour, visibleStepPosition, type GuideConditionValues,
+  completeTour, dismissTour, nextStepIndex, recordShownStep, decideProgressSync,
+  isTourUnavailable, shouldAdvance, resolveShownCount, shownStepPosition, type GuideConditionValues,
 } from '../../lib/guide/tourProgress';
 import { getGuideProgress, subscribeGuideProgressChange, updateGuideProgress } from '../../lib/storage/guideProgressStore';
 import { computeTourCardPosition, intersectsViewport } from './placement';
@@ -17,7 +17,7 @@ export interface TourRunnerHost {
 
 /** 保存値の読込後に生成する。stop は表示だけを片づけ、再開位置を保持する。 */
 export function createTourRunner(host: TourRunnerHost, { doc, win }: { doc: Document; win: Window } = { doc: document, win: window }) {
-  let running: { tour: TourDefinition; index: number; followed: boolean } | null = null;
+  let running: { tour: TourDefinition; index: number; followed: boolean; shownCount: number } | null = null;
   let cleanup = (): void => {};
 
   function stop(): void { cleanup(); running = null; }
@@ -26,9 +26,9 @@ export function createTourRunner(host: TourRunnerHost, { doc, win }: { doc: Docu
     if (running && isTourUnavailable(running.tour, host.computeConditions())) stop();
   }
 
-  function show(tour: TourDefinition, index: number, followed: boolean, focus = true): void {
+  function show(tour: TourDefinition, index: number, followed: boolean, focus = true, shownCount = resolveShownCount(tour, index, host.computeConditions(), getGuideProgress().active!.shownCount)): void {
     stop();
-    running = { tour, index, followed };
+    running = { tour, index, followed, shownCount };
     const step = tour.steps[index]!;
     let needsScroll = focus;
     let scrollAttempts = 0;
@@ -99,7 +99,7 @@ export function createTourRunner(host: TourRunnerHost, { doc, win }: { doc: Docu
         }
       }
       const conditions = host.computeConditions();
-      const position = visibleStepPosition(tour, index, conditions);
+      const position = shownStepPosition(tour, index, conditions, shownCount);
       progress.textContent = `${position.position} / ${position.total}`;
       next.textContent = t(step.advance.type === 'events' ? 'guide.skip' : nextStepIndex(tour, index + 1, conditions) === null ? 'guide.complete' : 'guide.next');
       const point = computeTourCardPosition({ viewport, card: card.getBoundingClientRect(), target: visible ? rect : null, margin: 12, gap: 8, pad: 3 });
@@ -135,6 +135,11 @@ export function createTourRunner(host: TourRunnerHost, { doc, win }: { doc: Docu
       const action = decideProgressSync(getGuideProgress().active, { tourId: tour.id, stepIndex: index });
       if (action.type === 'close') stop();
       else if (action.type === 'switch') show(tour, action.stepIndex, true);
+      else {
+        shownCount = resolveShownCount(tour, index, host.computeConditions(), getGuideProgress().active!.shownCount);
+        running!.shownCount = shownCount;
+        reposition();
+      }
     });
     cleanup = () => {
       observer.disconnect();
@@ -154,7 +159,7 @@ export function createTourRunner(host: TourRunnerHost, { doc, win }: { doc: Docu
   }
 
   function rerender(): void {
-    if (running) show(running.tour, running.index, running.followed, false);
+    if (running) show(running.tour, running.index, running.followed, false, running.shownCount);
   }
 
   function goTo(tour: TourDefinition, index: number | null): void {
@@ -162,7 +167,9 @@ export function createTourRunner(host: TourRunnerHost, { doc, win }: { doc: Docu
       updateGuideProgress(current => completeTour(current, tour.id, new Date().toISOString()));
       stop();
     } else {
-      updateGuideProgress(current => setActiveStep(current, index));
+      const active = getGuideProgress().active!;
+      const count = running?.shownCount ?? resolveShownCount(tour, active.stepIndex, host.computeConditions(), active.shownCount);
+      updateGuideProgress(current => recordShownStep(current, tour.id, index, count));
       show(tour, index, false);
     }
   }
@@ -184,7 +191,7 @@ export function createTourRunner(host: TourRunnerHost, { doc, win }: { doc: Docu
     const from = fromStepId === undefined ? 0 : Math.max(0, tour.steps.findIndex(step => step.id === fromStepId));
     const index = nextLocalStepIndex(tour, from);
     if (index === null) { goTo(tour, index); return; }
-    updateGuideProgress(current => startTour(current, tourId, index));
+    updateGuideProgress(current => recordShownStep(current, tourId, index, 0));
     show(tour, index, false);
   }
   function resume(): void {

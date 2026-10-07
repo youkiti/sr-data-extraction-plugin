@@ -423,3 +423,92 @@ test('フォーム送信は対象内の submitter だけ遮断し、片づけた
   input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
   expect(submitted).toHaveBeenCalledTimes(3);
 });
+
+
+test('空のプロジェクトでは操作後も通過済みを保持して 1 から 8 まで数える', () => {
+  const number = (): string | null | undefined => card()?.querySelectorAll('p')[1]?.textContent;
+  runner.start('getting-started');
+  expect(number()).toBe('1 / 8');
+  runner.handleEvent('route-opened-documents');
+  expect(number()).toBe('2 / 8');
+  conditions = { 'has-documents': true };
+  runner.handleEvent('documents-imported');
+  expect(number()).toBe('3 / 8');
+  runner.handleEvent('route-opened-protocol');
+  expect(number()).toBe('4 / 8');
+  conditions = { 'has-documents': true, 'has-protocol': true };
+  runner.handleEvent('protocol-saved');
+  expect(number()).toBe('5 / 8');
+  runner.handleEvent('route-opened-schema');
+  expect(number()).toBe('6 / 8');
+  action('next').click();
+  expect(number()).toBe('7 / 8');
+  conditions = { ...conditions, 'has-confirmed-schema': true };
+  runner.handleEvent('schema-confirmed');
+  expect(number()).toBe('8 / 8');
+});
+
+test('取り込み済みから開始し、後続の省略だけが分母を減らす。再開と再表示は加算しない', () => {
+  conditions = { 'has-documents': true };
+  runner.start('getting-started');
+  expect(card()?.textContent).toContain('1 / 6');
+  const writes = jest.mocked(storage.updateGuideProgress);
+  writes.mockClear();
+  runner.stop(); runner.resume();
+  runner.rerender();
+  setUiLanguage('en'); runner.rerender(); setUiLanguage('ja');
+  jest.advanceTimersByTime(800);
+  expect(card()?.textContent).toContain('1 / 6');
+  expect(progress.active?.shownCount).toBe(1);
+  expect(writes).not.toHaveBeenCalled();
+  conditions = { ...conditions, 'has-confirmed-schema': true };
+  window.dispatchEvent(new Event('resize'));
+  expect(card()?.textContent).toContain('1 / 3');
+});
+
+test('旧保存値を条件で補完し、再描画中は条件が変わっても表示数を保持する', () => {
+  progress = startTour(progress, 'getting-started', 2);
+  runner.resume();
+  expect(card()?.textContent).toContain('3 / 8');
+  conditions = { 'has-documents': true };
+  runner.rerender();
+  expect(card()?.textContent).toContain('3 / 8');
+  runner.handleEvent('route-opened-protocol');
+  expect(progress.active?.shownCount).toBe(4);
+});
+
+test('追従は保存された表示数をそのまま使い、保存も加算もしない', () => {
+  runner.start('getting-started');
+  progress = { ...progress, active: { tourId: 'getting-started', stepId: 'open-protocol', stepIndex: 2, shownCount: 3 } };
+  conditions = { 'has-documents': true };
+  const writes = jest.mocked(storage.updateGuideProgress);
+  writes.mockClear();
+  [...listeners].forEach(listener => listener());
+  runner.rerender();
+  expect(card()?.textContent).toContain('3 / 8');
+  expect(progress.active?.shownCount).toBe(3);
+  expect(writes).not.toHaveBeenCalled();
+});
+
+
+test('同じ手順への通知でも保存値の表示数を使う', () => {
+  runner.start('getting-started', 'open-protocol');
+  progress = { ...progress, active: { ...progress.active!, shownCount: 3 } };
+  const writes = jest.mocked(storage.updateGuideProgress);
+  writes.mockClear();
+  [...listeners].forEach(listener => listener());
+  expect(card()?.textContent).toContain('3 / 8');
+  runner.rerender();
+  expect(card()?.textContent).toContain('3 / 8');
+  expect(writes).not.toHaveBeenCalled();
+});
+
+
+test.each([-1, 0.5, 99])('不正な表示数 %s の再開は現在の条件で補完する', shownCount => {
+  progress = { ...progress, active: { tourId: 'getting-started', stepId: 'open-protocol', stepIndex: 2, shownCount } };
+  conditions = { 'has-documents': true };
+  runner.resume();
+  expect(card()?.textContent).toContain('1 / 6');
+  runner.handleEvent('route-opened-protocol');
+  expect(progress.active?.shownCount).toBe(2);
+});
