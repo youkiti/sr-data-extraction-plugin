@@ -6,9 +6,10 @@ import {
 } from '../../../../src/lib/guide/tourProgress';
 import { GUIDE_TOURS, type GuideTourId, type TourDefinition, type TourStep } from '../../../../src/lib/guide/tours';
 
+import { useTestTours } from './__fixtures__/tours';
+
 const ID = 'getting-started';
 const NOW = '2026-10-07T00:00:00.000Z';
-const original = GUIDE_TOURS[ID];
 const steps: TourStep[] = [
   { id: 'import', target: 'import', textKey: 'import', route: '#/documents', skipIf: 'has-documents', advance: { type: 'events', events: ['route-opened-documents'] } },
   { id: 'protocol', target: 'protocol', textKey: 'protocol', skipIf: 'has-protocol', advance: { type: 'next' } },
@@ -17,8 +18,7 @@ const steps: TourStep[] = [
 const tour: TourDefinition = { id: ID, titleKey: 'title', descriptionKey: 'description', steps, suggestOn: 'route-opened-home' };
 const empty = createEmptyGuideProgress;
 
-beforeEach(() => { GUIDE_TOURS[ID] = tour; });
-afterEach(() => { GUIDE_TOURS[ID] = original; });
+useTestTours([tour]);
 
 test('保存キーと既定値。不正な値・記録は読み飛ばす', () => {
   expect(GUIDE_PROGRESS_STORAGE_KEY).toBe('guide_progress');
@@ -126,7 +126,7 @@ test('初回提案は画面・延期・抑止・実行中・完了・却下を�
 });
 
 test('イベント提案は一致する未完了ツアーだけを返す', () => {
-  expect(tourToSuggestOnEvent(empty(), 'route-opened-home')).toBe(tour);
+  expect(tourToSuggestOnEvent(empty(), 'route-opened-home')).toBe(GUIDE_TOURS[ID]);
   expect(tourToSuggestOnEvent(empty(), 'route-opened-documents', [tour])).toBeNull();
   expect(tourToSuggestOnEvent(empty(), 'route-opened-home', [{ ...tour, suggestOn: undefined }])).toBeNull();
   expect(tourToSuggestOnEvent(empty(), 'route-opened-home', [{ ...tour, draft: true }])).toBeNull();

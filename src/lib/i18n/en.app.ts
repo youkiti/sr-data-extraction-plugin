@@ -33,6 +33,14 @@ export const enApp: Record<keyof typeof jaApp, string> = {
   // ツアー: pilot-and-extract（手順の本文は、この区画の Desc の直後に足す）
   'guide.tourPilotAndExtractTitle': 'Pilot and full extraction',
   'guide.tourPilotAndExtractDesc': 'Check the pilot extraction results, then run full extraction.',
+  'guide.tourPilotAndExtractStepOpenPilot': 'Select “Pilot extraction” to try extraction on a small set of papers.',
+  'guide.tourPilotAndExtractStepSelectStudies': 'Use the checkboxes to choose papers, check the fields and model, then select “Next”.',
+  'guide.tourPilotAndExtractStepRunPilot': 'Check the papers, fields, model and estimated cost. Decide whether to select “Run pilot extraction”, as API charges apply.',
+  'guide.tourPilotAndExtractStepReviewPilot': 'In this section, switch papers and check values and evidence, then select “Next”.',
+  'guide.tourPilotAndExtractStepOpenExtract': 'Select “Full extraction” to open the screen for extracting the remaining papers.',
+  'guide.tourPilotAndExtractStepCheckEstimate': 'Choose the papers, fields and model, check this cost estimate, then select “Next”.',
+  'guide.tourPilotAndExtractStepRunExtract': 'Select “Run full extraction” to open the confirmation card. Decide whether to select “Run”, as API charges apply.',
+  'guide.tourPilotAndExtractStepFinish': 'Select “Finish” to close this guide, then choose another guide from “Tours”.',
   // ツアー: verify-basics（手順の本文は、この区画の Desc の直後に足す）
   'guide.tourVerifyBasicsTitle': 'Verification basics',
   'guide.tourVerifyBasicsDesc': 'Review extracted values while checking the highlighted evidence.',
@@ -49,6 +57,13 @@ export const enApp: Record<keyof typeof jaApp, string> = {
   // ツアー: export-data（手順の本文は、この区画の Desc の直後に足す）
   'guide.tourExportDataTitle': 'Export data',
   'guide.tourExportDataDesc': 'Check progress and export CSV files and an R set.',
+  'guide.tourExportDataStepOpenDashboard': 'Select “Dashboard” to open verification progress.',
+  'guide.tourExportDataStepCheckProgress': 'Check decided and total cells by study and section in this table, then select “Next”.',
+  'guide.tourExportDataStepOpenExport': 'Select “Export” to open the export format screen.',
+  'guide.tourExportDataStepChooseFormat': 'Choosing a “Format” changes the description of the included content below. For analysis, choose “R set (recommended)”.',
+  'guide.tourExportDataStepUnverifiedWarning': 'If unverified cells remain, a warning appears when you press the generate button. Select “Next” if no warning is shown, or review it and select “Abort” to return.',
+  'guide.tourExportDataStepGenerate': 'Pressing this generate button creates files in Drive. Decide for yourself whether to press it; selecting “Next” alone also continues the tour.',
+  'guide.tourExportDataStepFinish': 'After selecting “Finish” to close, you can start a tour again from “Tours” at any time.',
   'pilot.matrixTitle': 'Fields × studies',
   'pilot.matrixAccept': 'Accepted',
   'pilot.matrixEdit': 'Edited',

@@ -114,7 +114,7 @@ function renderStudySelector(state: AppState, ctx: ViewContext): HTMLElement {
   if (items.length === 0) {
     return el('p', { id: 'pilot-documents-empty', text: t('extraction.noStudies') });
   }
-  return el('ul', { id: 'pilot-documents', className: 'pilot__docs' }, items);
+  return el('ul', { id: 'pilot-documents', attributes: { 'data-tour': 'pilot-extract-study' }, className: 'pilot__docs' }, items);
 }
 
 function renderEstimate(state: AppState): HTMLElement {
@@ -219,7 +219,7 @@ function renderSetup(state: AppState, ctx: ViewContext): HTMLElement {
     id: 'pilot-run',
     className: 'pilot__run',
     text: t('pilot.run'),
-    attributes: { type: 'button' },
+    attributes: { type: 'button', 'data-tour': 'pilot-extract-run-pilot' },
   });
   runButton.disabled = hasZeroFieldsSelected(state.pilot.selectedFieldIds, fields);
   runButton.addEventListener('click', () => ctx.pilot.onRun());
@@ -428,7 +428,7 @@ function renderVerification(run: ExtractionRun, state: AppState, ctx: ViewContex
       }),
     );
   }
-  return el('section', { className: 'pilot__verify' }, children);
+  return el('section', { attributes: { 'data-tour': 'pilot-extract-review' }, className: 'pilot__verify' }, children);
 }
 
 /** 完了 run の status を履歴・サマリで表示するラベル（表示言語に追従） */

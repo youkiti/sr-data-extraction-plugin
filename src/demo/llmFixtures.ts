@@ -19,10 +19,9 @@
 // 本文へ再アンカリングして検証するため、ここで嘘の quote を返すと相変わらず失敗する —
 // 必ず本文と完全一致する文字列を返すこと。
 //
-// 本ファイルはスキーマドラフト（draft-schema skill）には対応しない — デモのスキーマは
-// あらかじめ確定済み（seed.ts）で #/schema 画面は「AI がドラフト」を再実行せずに閲覧するだけの
-// シナリオのため。
+// スキーマドラフトは既存のデモ項目を応答形式へ変換して返す。
 import { DEMO_FAILED_QUOTE_CORRECTIONS, DEMO_PAPERS } from './paperContent';
+import { DEMO_SCHEMA_FIELDS } from './schema';
 
 /** extract-data のユーザープロンプトから `- field_id: xxx` 行を全件拾う */
 function extractRequestedFieldIds(promptText: string): Set<string> {
@@ -170,12 +169,26 @@ function buildRelocateQuoteResponseText(promptText: string): string {
 /**
  * Gemini generateContent の応答テキスト（candidates[0].content.parts[0].text 相当）を組み立てる。
  * relocate-quote のプロンプトは buildRelocateQuoteResponseText へ分岐する。
- * それ以外（例: 将来 draft-schema をデモで動かす場合）のプロンプトが来た場合は、
+ * ドラフト以外の未知のプロンプトが来た場合は、
  * 要求された field_id が 1 件も見つからず空配列を返す（呼び出し側の validateAiOutput は
  * 空配列を「該当項目なし」として扱い、例外にはしない設計のため安全側に倒れる）。
  */
 export function buildGenerateContentResponseText(body: unknown): string {
   const promptText = extractPromptText(body);
+  if (promptText.startsWith('## Review protocol\n') && promptText.includes('## Sample article:')) {
+    return JSON.stringify(DEMO_SCHEMA_FIELDS.map(field => ({
+      section: field.section,
+      field_name: field.fieldName,
+      field_label: field.fieldLabel,
+      entity_level: field.entityLevel,
+      data_type: field.dataType,
+      unit: field.unit,
+      allowed_values: field.allowedValues,
+      required: field.required,
+      extraction_instruction: field.extractionInstruction,
+      example: field.example,
+    })));
+  }
   if (isRelocateQuotePrompt(promptText)) {
     return buildRelocateQuoteResponseText(promptText);
   }

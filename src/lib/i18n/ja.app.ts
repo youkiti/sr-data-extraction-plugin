@@ -31,6 +31,14 @@ export const jaApp = {
   // ツアー: pilot-and-extract（手順の本文は、この区画の Desc の直後に足す）
   'guide.tourPilotAndExtractTitle': 'パイロットと一括抽出',
   'guide.tourPilotAndExtractDesc': 'パイロット抽出で結果を確かめ、一括抽出を実行するまでを案内します。',
+  'guide.tourPilotAndExtractStepOpenPilot': '「パイロット抽出」を押して、少数の論文で抽出を試す画面を開きます。',
+  'guide.tourPilotAndExtractStepSelectStudies': '一覧のチェックボックスで試す論文を選び、項目とモデルを確認して「次へ」を押します。',
+  'guide.tourPilotAndExtractStepRunPilot': '対象・項目・モデルと概算費用を確認します。API の費用がかかるため、「パイロット抽出を実行」を押すかは自分で決めてください。',
+  'guide.tourPilotAndExtractStepReviewPilot': 'この領域で論文を切り替えて値と根拠を確認し、「次へ」を押します。',
+  'guide.tourPilotAndExtractStepOpenExtract': '「一括抽出」を押して、残りの論文を抽出する画面を開きます。',
+  'guide.tourPilotAndExtractStepCheckEstimate': '対象の論文・項目とモデルを選び、この概算費用を確認して「次へ」を押します。',
+  'guide.tourPilotAndExtractStepRunExtract': '「一括抽出を実行」で確認カードを開きます。API の費用がかかるため、「実行する」を押すかは自分で決めてください。',
+  'guide.tourPilotAndExtractStepFinish': '「完了」で案内を閉じ、「ツアー」から次の案内を選べます。',
   // ツアー: verify-basics（手順の本文は、この区画の Desc の直後に足す）
   'guide.tourVerifyBasicsTitle': '検証の進めかた',
   'guide.tourVerifyBasicsDesc': '根拠のハイライトを見ながら、抽出された値を判定する流れを案内します。',
@@ -47,6 +55,13 @@ export const jaApp = {
   // ツアー: export-data（手順の本文は、この区画の Desc の直後に足す）
   'guide.tourExportDataTitle': 'エクスポート',
   'guide.tourExportDataDesc': '進捗を確かめ、CSV と R セットを書き出すまでを案内します。',
+  'guide.tourExportDataStepOpenDashboard': '「ダッシュボード」を押して、検証の進捗を開きます。',
+  'guide.tourExportDataStepCheckProgress': 'この表で study ごと・section ごとの判定済み数と総セル数を確かめ、「次へ」で進みます。',
+  'guide.tourExportDataStepOpenExport': '「エクスポート」を押して、書き出す形式を選ぶ画面を開きます。',
+  'guide.tourExportDataStepChooseFormat': '「形式」を選ぶと、下に含まれる内容の説明が切り替わります。解析に使うなら「R セット（推奨）」を選びます。',
+  'guide.tourExportDataStepUnverifiedWarning': '未検証のセルが残っていると、生成ボタンを押した際に警告が出ます。警告がなければ「次へ」で進み、表示中なら内容を確かめて「中止」で戻れます。',
+  'guide.tourExportDataStepGenerate': 'この生成ボタンを押すと Drive にファイルが作られます。押すかどうかは自分で決め、「次へ」だけでも進めます。',
+  'guide.tourExportDataStepFinish': '「完了」で閉じたあとも、「ツアー」からいつでも案内を始められます。',
   'pilot.matrixTitle': '項目 × 論文',
   'pilot.matrixAccept': '採用',
   'pilot.matrixEdit': '修正',
