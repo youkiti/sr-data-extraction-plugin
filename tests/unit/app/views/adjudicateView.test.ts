@@ -1589,3 +1589,34 @@ test('保存バッジは 0 件で隠れ、再描画時の未決着件数を表�
   }
   expect(draw().querySelector<HTMLElement>('#adjudicate-saving')!.hidden).toBe(true);
 });
+
+describe('二重レビューのツアー対象', () => {
+  test.each([
+    { rows: [] },
+    { rows: [makeRow({ pair: { kind: 'waiting', annotators: [] }, gate: null })] },
+    { rows: [makeRow()] },
+  ])('文献一覧または空状態を対象にする: %j', ({ rows }) => {
+    const { ctx } = makeCtx();
+    const root = render(makeState({ rows }), ctx);
+    const target = root.querySelector('[data-tour="dual-review-studies"]');
+    expect(target).not.toBeNull();
+    expect(target).toBe(root.querySelector(rows.length === 0 ? '#adjudicate-empty' : '.adjudicate__list-wrap'));
+    if (rows.some(row => row.gate?.ready)) {
+      expect(target?.querySelector('.adjudicate__open-button')).not.toBeNull();
+    }
+  });
+
+  test.each([
+    { agreement: null },
+    { agreementLoading: true },
+    { agreement: makeAgreementReport() },
+  ])('一致度の計算前・計算中・計算後もカード全体を対象にする: %j', patch => {
+    const { ctx } = makeCtx();
+    const root = render(makeState({ rows: [], ...patch }), ctx);
+    const target = root.querySelector('[data-tour="dual-review-agreement"]');
+    expect(target).toBe(root.querySelector('#adjudicate-agreement-card'));
+    expect(target).not.toBeNull();
+    expect(root.querySelectorAll('[data-tour="dual-review-agreement"]')).toHaveLength(1);
+    expect(target?.querySelector(patch.agreement ? '#agreement-table' : patch.agreementLoading ? '#agreement-loading' : '#agreement-load')).not.toBeNull();
+  });
+});

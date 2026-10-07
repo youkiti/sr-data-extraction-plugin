@@ -38,7 +38,7 @@ test('二重レビューの一覧から開始し、最初の対象を強調し�
   expect(frame!.y).toBeCloseTo(rect!.y - 3);
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
   await nav.click();
-  await expect(card).toHaveAttribute('data-guide-step', 'add-reviewer');
+  await expect(card).toHaveAttribute('data-guide-step', 'review-mode');
   await card.locator('[data-guide-action="end"]').click();
   await expect(card).toHaveCount(0);
   await expect(highlight).toHaveCount(0);

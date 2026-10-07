@@ -193,6 +193,7 @@ function renderList(rows: readonly AdjudicateStudyRow[], state: AppState, ctx: V
   if (rows.length === 0) {
     return el('p', {
       id: 'adjudicate-empty',
+      attributes: { 'data-tour': 'dual-review-studies' },
       text: t('adjudicate.emptyList'),
     });
   }
@@ -216,7 +217,7 @@ function renderList(rows: readonly AdjudicateStudyRow[], state: AppState, ctx: V
       el('tbody', {}, rows.map((row) => renderListRow(row, state, ctx))),
     ]),
   );
-  return el('div', { className: 'adjudicate__list-wrap' }, children);
+  return el('div', { className: 'adjudicate__list-wrap', attributes: { 'data-tour': 'dual-review-studies' } }, children);
 }
 
 // ---------------------------------------------------------------------------
@@ -804,7 +805,7 @@ function renderAgreementCard(state: AppState, ctx: ViewContext): HTMLElement {
 
   if (adjudicate.agreementLoading) {
     children.push(el('p', { id: 'agreement-loading', text: t('adjudicate.agreementLoading') }));
-    return el('section', { id: 'adjudicate-agreement-card', className: 'adjudicate__agreement-card' }, children);
+    return el('section', { id: 'adjudicate-agreement-card', className: 'adjudicate__agreement-card', attributes: { 'data-tour': 'dual-review-agreement' } }, children);
   }
 
   if (adjudicate.agreementOutsideCount > 0)
@@ -860,7 +861,7 @@ function renderAgreementCard(state: AppState, ctx: ViewContext): HTMLElement {
       );
     } else {
       children.push(renderAgreementResult(adjudicate.agreement, ctx));
-      return el('section', { id: 'adjudicate-agreement-card', className: 'adjudicate__agreement-card' }, children);
+      return el('section', { id: 'adjudicate-agreement-card', className: 'adjudicate__agreement-card', attributes: { 'data-tour': 'dual-review-agreement' } }, children);
     }
   } else if (adjudicate.agreementError !== null) {
     children.push(
@@ -882,11 +883,11 @@ function renderAgreementCard(state: AppState, ctx: ViewContext): HTMLElement {
   const loadButton = el('button', {
     id: 'agreement-load',
     text: t('adjudicate.agreementLoad'),
-    attributes: { type: 'button', 'data-tour': 'dual-review-agreement' },
+    attributes: { type: 'button' },
   });
   loadButton.addEventListener('click', () => ctx.adjudicate.onLoadAgreement());
   children.push(loadButton);
-  return el('section', { id: 'adjudicate-agreement-card', className: 'adjudicate__agreement-card' }, children);
+  return el('section', { id: 'adjudicate-agreement-card', className: 'adjudicate__agreement-card', attributes: { 'data-tour': 'dual-review-agreement' } }, children);
 }
 
 // ---------------------------------------------------------------------------
