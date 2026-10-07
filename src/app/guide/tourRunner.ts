@@ -31,6 +31,8 @@ export function createTourRunner(host: TourRunnerHost, { doc, win }: { doc: Docu
     running = { tour, index, followed };
     const step = tour.steps[index]!;
     let needsScroll = focus;
+    let scrollAttempts = 0;
+    let scrollTimer: number | undefined;
     const card = doc.createElement('section');
     card.className = 'guide-tour-card';
     card.dataset.guideStep = step.id;
@@ -58,20 +60,34 @@ export function createTourRunner(host: TourRunnerHost, { doc, win }: { doc: Docu
     block.className = 'guide-tour-block';
     doc.body.append(highlight, block, card);
 
+    function findTarget(): HTMLElement | undefined {
+      return Array.from(doc.querySelectorAll<HTMLElement>(`[data-tour="${step.target}"]`))
+        .find(element => element.getClientRects().length > 0 && win.getComputedStyle(element).visibility !== 'hidden');
+    }
+
     function reposition(): void {
       const viewport = { width: win.innerWidth, height: win.innerHeight };
-      const target = Array.from(doc.querySelectorAll<HTMLElement>(`[data-tour="${step.target}"]`))
-        .find(element => element.getClientRects().length > 0 && win.getComputedStyle(element).visibility !== 'hidden');
-      if (target && needsScroll) {
-        needsScroll = false;
-        const rect = target.getBoundingClientRect();
-        const fullyVisible = rect.top >= 0 && rect.bottom <= viewport.height && rect.left >= 0 && rect.right <= viewport.width;
-        if (step.scroll !== 'if-hidden' || !fullyVisible) {
-          target.scrollIntoView({ block: step.scroll === 'start' || rect.height > viewport.height * 0.6 ? 'start' : 'center', inline: 'nearest' });
-        }
-      }
+      const target = findTarget();
       const rect = target?.getBoundingClientRect();
       const visible = rect !== undefined && intersectsViewport(rect, viewport);
+      if (rect && needsScroll) {
+        const fullyVisible = rect.top >= 0 && rect.bottom <= viewport.height && rect.left >= 0 && rect.right <= viewport.width;
+        if ((scrollAttempts > 0 && visible) || (step.scroll === 'if-hidden' && fullyVisible)) {
+          needsScroll = false;
+          win.clearTimeout(scrollTimer);
+          scrollTimer = undefined;
+        } else if (scrollAttempts < 5 && scrollTimer === undefined) {
+          // 再描画後の要素へスクロールし、成否は次の位置確認で判断する。
+          scrollTimer = win.setTimeout(() => {
+            scrollTimer = undefined;
+            const current = findTarget();
+            if (!current) return;
+            const currentRect = current.getBoundingClientRect();
+            scrollAttempts += 1;
+            current.scrollIntoView({ block: step.scroll === 'start' || currentRect.height > win.innerHeight * 0.6 ? 'start' : 'center', inline: 'nearest' });
+          }, 0);
+        }
+      }
       highlight.hidden = !visible;
       block.hidden = !visible || !step.blockTarget;
       waiting.hidden = visible;
@@ -123,6 +139,7 @@ export function createTourRunner(host: TourRunnerHost, { doc, win }: { doc: Docu
     cleanup = () => {
       observer.disconnect();
       win.clearInterval(timer);
+      win.clearTimeout(scrollTimer);
       win.removeEventListener('resize', reposition);
       win.removeEventListener('scroll', reposition, true);
       doc.removeEventListener('click', onTargetClick);

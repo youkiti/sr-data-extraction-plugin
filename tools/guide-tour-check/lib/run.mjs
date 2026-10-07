@@ -62,6 +62,7 @@ export class Run {
                 if (!card || !highlight || highlight.hidden || !element) return false;
                 const c = card.getBoundingClientRect(), h = highlight.getBoundingClientRect(), t = element.getBoundingClientRect();
                 return c.width > 0 && c.height > 0 && c.left >= 0 && c.top >= 0 && c.right <= innerWidth && c.bottom <= innerHeight &&
+                    t.right > 0 && t.bottom > 0 && t.left < innerWidth && t.top < innerHeight &&
                     h.left < t.right && h.right > t.left && h.top < t.bottom && h.bottom > t.top;
             }, { id, target }, { timeout: TIMEOUT });
             const overlap = await this.page.evaluate(target => {
@@ -77,16 +78,16 @@ export class Run {
         console.log(`  ${this.name}: ${id}`);
     }
 
-    async finish() {
+    async finish(tourId = 'getting-started') {
         await this.click(`${CARD} [data-guide-action="next"]`);
         await this.action('完了でカードが消える', () => this.page.locator(CARD).waitFor({ state: 'detached', timeout: TIMEOUT }));
         await this.click('#app-open-tours');
         await this.visible('#guide-tour-list');
-        await this.action('一覧の「はじめての流れ」に済みが付く', async () => {
-            await this.page.waitForFunction(done => {
-                const button = document.querySelector('#guide-tour-list [data-guide-tour="getting-started"]');
+        await this.action(`一覧の ${tourId} に済みが付く`, async () => {
+            await this.page.waitForFunction(({ tourId, done }) => {
+                const button = document.querySelector(`#guide-tour-list [data-guide-tour="${tourId}"]`);
                 return button?.previousElementSibling?.previousElementSibling?.textContent?.endsWith(` — ${done}`);
-            }, this.lang === 'en' ? 'Done' : '済み', { timeout: TIMEOUT });
+            }, { tourId, done: this.lang === 'en' ? 'Done' : '済み' }, { timeout: TIMEOUT });
             await this.shot('done');
         });
     }

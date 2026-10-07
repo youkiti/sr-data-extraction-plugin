@@ -88,6 +88,8 @@ test('対象の置換・非表示・画面外・覆いと一度だけのスク�
   const node = target('a');
   await Promise.resolve();
   expect(card()?.dataset.guideWaiting).toBe('false');
+  expect(node.scrollIntoView).not.toHaveBeenCalled();
+  jest.advanceTimersByTime(0);
   expect(node.scrollIntoView).toHaveBeenCalledTimes(1);
   expect((document.querySelector('.guide-tour-block') as HTMLElement).hidden).toBe(false);
   window.dispatchEvent(new Event('resize')); window.dispatchEvent(new Event('scroll'));
@@ -109,11 +111,75 @@ test.each(['start', 'if-hidden', undefined] as const)('スクロール指定 %s 
   custom(); GUIDE_TOURS['getting-started'].steps[0]!.scroll = scroll;
   const node = target('a');
   runner.start('getting-started');
+  expect(node.scrollIntoView).not.toHaveBeenCalled();
+  jest.advanceTimersByTime(0);
   if (scroll === 'if-hidden') expect(node.scrollIntoView).not.toHaveBeenCalled();
   else expect(node.scrollIntoView).toHaveBeenLastCalledWith({ block: scroll === 'start' ? 'start' : 'center', inline: 'nearest' });
   node.getBoundingClientRect = () => box(-10, 700);
   runner.start('getting-started');
+  jest.advanceTimersByTime(0);
   expect(node.scrollIntoView).toHaveBeenLastCalledWith({ block: 'start', inline: 'nearest' });
+});
+
+test('スクロールが打ち消されたら再試行し、最大5回で止まる', () => {
+  custom();
+  const node = target('a'); node.getBoundingClientRect = () => box(900);
+  runner.start('getting-started');
+  expect(node.scrollIntoView).not.toHaveBeenCalled();
+  jest.advanceTimersByTime(0);
+  expect(node.scrollIntoView).toHaveBeenCalledTimes(1);
+  window.dispatchEvent(new Event('resize'));
+  window.dispatchEvent(new Event('scroll'));
+  expect(node.scrollIntoView).toHaveBeenCalledTimes(1);
+  jest.advanceTimersByTime(0);
+  expect(node.scrollIntoView).toHaveBeenCalledTimes(2);
+  jest.advanceTimersByTime(4000);
+  expect(node.scrollIntoView).toHaveBeenCalledTimes(5);
+});
+
+test('画面内への移動を確認した後は利用者のスクロールを引き戻さない', () => {
+  custom();
+  const node = target('a'); node.getBoundingClientRect = () => box(900);
+  runner.start('getting-started'); jest.advanceTimersByTime(0);
+  window.dispatchEvent(new Event('scroll'));
+  node.getBoundingClientRect = () => box(100);
+  window.dispatchEvent(new Event('scroll'));
+  node.getBoundingClientRect = () => box(900);
+  window.dispatchEvent(new Event('scroll'));
+  jest.advanceTimersByTime(4000);
+  expect(node.scrollIntoView).toHaveBeenCalledTimes(1);
+});
+
+test('遅延処理は対象を探し直し、対象が消えた場合は次の機会を待つ', () => {
+  custom();
+  const node = target('a');
+  runner.start('getting-started'); node.remove();
+  jest.advanceTimersByTime(0);
+  expect(node.scrollIntoView).not.toHaveBeenCalled();
+  const replacement = target('a');
+  window.dispatchEvent(new Event('resize'));
+  replacement.remove();
+  const latest = target('a');
+  jest.advanceTimersByTime(0);
+  expect(replacement.scrollIntoView).not.toHaveBeenCalled();
+  expect(latest.scrollIntoView).toHaveBeenCalledTimes(1);
+});
+
+test.each(['stop', 'end', 'next', 'rerender'] as const)('遅延スクロールは %s で取り消す', operation => {
+  custom();
+  const node = target('a'); node.getBoundingClientRect = () => box(900);
+  runner.start('getting-started');
+  if (operation === 'stop' || operation === 'rerender') runner[operation]();
+  else action(operation).click();
+  jest.advanceTimersByTime(4000);
+  expect(node.scrollIntoView).not.toHaveBeenCalled();
+});
+
+test.each([{ left: -10 }, { right: 2000 }])('if-hidden は横にはみ出した対象もスクロールする: %s', bounds => {
+  custom(); GUIDE_TOURS['getting-started'].steps[0]!.scroll = 'if-hidden';
+  const node = target('a'); node.getBoundingClientRect = () => ({ ...box(), ...bounds });
+  runner.start('getting-started'); jest.advanceTimersByTime(0);
+  expect(node.scrollIntoView).toHaveBeenCalledTimes(1);
 });
 
 test('再開、利用不可、空のツアー、未知の開始手順、条件によるスキップ', () => {

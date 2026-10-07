@@ -1,4 +1,5 @@
-import { availableTours, shouldSuggest, suppressSuggestions } from '../../lib/guide/tourProgress';
+import { availableTours, hasRemainingSteps, shouldSuggest, suppressSuggestions } from '../../lib/guide/tourProgress';
+import type { GuideTourId } from '../../lib/guide/tours';
 import { getGuideProgress, loadGuideProgress, isGuidePostponed, postponeGuideSuggestions, subscribeGuideProgressChange, updateGuideProgress } from '../../lib/storage/guideProgressStore';
 import { normalizeHash } from '../router';
 import type { Store } from '../store';
@@ -17,17 +18,44 @@ export async function initGuide({ store, win, doc }: { store: Store; win: Window
   const conditions = (): ReturnType<typeof computeGuideConditions> => computeGuideConditions(store.getState());
   const currentRoute = (): ReturnType<typeof normalizeHash> => normalizeHash(win.location.hash);
   const runner = createTourRunner({ computeConditions: conditions, currentRoute, navigate: hash => { win.location.hash = hash; } }, { doc, win });
-  const entry = createTourEntry(doc, anchor, conditions, id => { runner.start(id); refresh(); });
+  let pendingStart: GuideTourId | null = null;
+  const countsReady = (): boolean => {
+    const { home } = store.getState();
+    return home.countsLoaded && home.countsError === null;
+  };
+  const reviewerReady = (): boolean => {
+    const { role } = store.getState();
+    // reviewer は進捗件数を読み込まないため、役割確定後は各ツアーの利用条件で判定する。
+    return role.role !== null && role.role !== 'owner' && !role.resolving && role.error === null;
+  };
+  function settleStart(): void {
+    const { home } = store.getState();
+    if (pendingStart !== null) {
+      if (!countsReady() && home.countsError === null && !reviewerReady()) return;
+      const id = pendingStart;
+      pendingStart = null;
+      runner.start(id);
+    } else if (home.countsError === null && (countsReady() || reviewerReady())) {
+      runner.resume();
+    }
+  }
+  function start(id: GuideTourId): void {
+    pendingStart = id;
+    settleStart();
+    refresh();
+  }
+  const entry = createTourEntry(doc, anchor, conditions, start);
   function refresh(): void {
     const existing = doc.getElementById('guide-suggest-band');
-    const tour = availableTours(undefined, conditions())[0];
-    const suggest = tour && shouldSuggest(getGuideProgress(), {
+    const currentConditions = conditions();
+    const tour = availableTours(undefined, currentConditions).find(item => item.id === 'getting-started');
+    const suggest = countsReady() && tour && hasRemainingSteps(tour, currentConditions) && shouldSuggest(getGuideProgress(), {
       screen: currentRoute() === '#/home' ? 'home' : 'other', postponedThisSession: isGuidePostponed(),
     });
     if (!suggest) { existing?.remove(); return; }
     if (existing) return;
     content!.prepend(createSuggestBand(doc, {
-      start: () => { runner.start(tour.id); refresh(); },
+      start: () => start(tour.id),
       postpone: () => { postponeGuideSuggestions(); refresh(); },
       suppress: () => { updateGuideProgress(suppressSuggestions); refresh(); },
     }));
@@ -49,8 +77,8 @@ export async function initGuide({ store, win, doc }: { store: Store; win: Window
       const events = guideEvents(previous, next);
       previous = next;
       runner.syncAvailability();
-      runner.resume();
       events.forEach(event => runner.handleEvent(event));
+      settleStart();
       entry.refresh();
       refresh();
     });
@@ -71,7 +99,7 @@ export async function initGuide({ store, win, doc }: { store: Store; win: Window
     observer.observe(content, { childList: true });
     win.addEventListener('pagehide', dispose);
     cleanups.push(() => win.removeEventListener('pagehide', dispose));
-    runner.resume();
+    settleStart();
     refresh();
   } catch (error) {
     dispose();
