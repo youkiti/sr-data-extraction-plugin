@@ -355,6 +355,31 @@ CONTRACT の全文と ctx API の詳細は `video/scripts/record.mjs` の先頭�
 - ナレーション音声の合計がシーン映像より長くなった場合は、映像の最終フレームを複製して
   引き伸ばす（`tpad`）。逆に映像がナレーションより長い場合は、映像の自然な尺がそのまま使われる。
 
+## 操作ツアーの解説動画（`npm run video:tours`）
+
+撮影時の画面は 1600x900 とし、検証画面とナビが横に収まるようにする。各手順の画像は 1.5 秒待ってから撮り、PDF の描画と対象を画面内へ入れるスクロールが終わる時間を取る。
+
+操作ツアー 1 本につき、短い解説動画を 1 本作る。映像は `tools/guide-tour-check/run.mjs` が手順ごとに残す画像、原稿は `src/lib/i18n/ja.app.ts` / `en.app.ts` のツアーのカード文言を使う。手書きのシーン・原稿から作る長編とは別の経路で、画面や文言を変えたら再生成で追従する。
+
+```bash
+npm run build:demo
+npm run video:tours
+npm run video:tours -- verify-basics
+npm run video:tours -- --skip-capture verify-basics
+npm run video:tours -- --silent verify-basics
+npm run video:tours -- --lang en --silent verify-basics
+```
+
+- 既定は `getting-started`・`pilot-and-extract`・`verify-basics`・`dual-review`・`export-data` の 5 本。複数 ID も指定できる。
+- 撮影にはデモビルドと通し検証用のブラウザ、画面作成には Playwright の Chromium、動画生成には ffmpeg が必要。Chromium の指定には `PLAYWRIGHT_CHROMIUM_PATH`、ffmpeg の指定には `FFMPEG_PATH` を使える。
+- 日本語の読み上げには起動済みの **VOICEVOX** が必要。接続先・話者は `VOICEVOX_URL` / `VOICEVOX_SPEAKER` で設定する。接続できなければ失敗し、無音版には切り替えない。同じ文言・話者の音声はハッシュ付き WAV として保存し、再利用する。
+- `--silent` は確認用で、公開する動画には使わない。日本語は毎秒 6 文字、英語は毎秒 15 文字、最短 3 秒で画面を表示し、無音の音声トラックを付ける。英語は日本語エンジンでは読ませないため、`--lang en` には `--silent` が必須。
+- 題の画面のあと、画像の連番順に手順ごとの最初の 1 枚を使う。辞書にない補助画像・失敗画像は除き、画像のない手順は警告する。画面は 1920×1080 で、上に画像、下にツアー名・原文・手順番号を置く。読み上げ版の表示時間は音声長 + 前 0.5 秒・後 0.9 秒（フレーム境界に切り上げ）。
+- 英字・記号は `video/scripts/tour-videos.mjs` の `READINGS` で音声だけ読み替え、字幕と画面は原文を保つ。**ツアーの文言に新しい英字・記号が入ったら `READINGS` に足すこと**。長い語から適用する。
+- 撮影画像は `video/build/tours/<ID>/capture-ja/`・`capture-en/` に退避する。`--skip-capture` は指定言語の退避済み画像を優先する。退避前の既存画像は、日本語のみ `.tmp/guide-tour-check/` から利用できる（言語記録がなければ日本語として扱うため、日本語の画像であることを確認する）。英語は一度このコマンドで撮影してから再利用する。`check:tours` を別途再実行した後など、新しい画像に更新する際は `--skip-capture` を外す。
+- 完成品は `video/build/tours/<ID>.mp4`・`<ID>.srt`・`<ID>-chapters.txt`。英語は `-en`、無音版は `-silent` を ID の後ろに付ける（例: `verify-basics-en-silent.mp4`）。字幕は各画面の開始から終了まで、章は `0:00 題` の形式。途中の PNG・MP4・WAV は `video/build/tours/<ID>/` に残す。
+- `check:tours` が落ちる変更は動画の撮り直しも要る合図。各段階のログでツアー・手順・コマンド・失敗出力を確認できる。**YouTube への公開は人の操作**で行う。
+
 ## 生成物一覧（`video/build/`, git 管理外）
 
 | パス | 内容 |

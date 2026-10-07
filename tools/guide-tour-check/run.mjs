@@ -1,4 +1,5 @@
 // デモビルド上の操作ツアーを順に実行する。headed ブラウザが必要なため CI 外で使う。
+// --settle <ミリ秒>（0〜10000、既定 0）で手順画像の撮影前だけ待機する。失敗・遮断確認画像は待機しない。
 import { readdirSync, mkdirSync } from 'node:fs';
 import { parseArgs } from './lib/options.mjs';
 import { defineScenario, selectScenarios } from './lib/scenario.mjs';
@@ -19,7 +20,13 @@ async function main() {
     mkdirSync(OUT_DIR, { recursive: true });
     const results = await executeScenarios(selectScenarios(scenarios, options.only), async (scenario, warnings) => {
         console.log(`開始: ${scenario.name}（${scenario.title}）`);
-        await withFreshBrowser(scenario, options, extensionDir, warnings);
+        await withFreshBrowser({
+            ...scenario,
+            run: run => {
+                run.settle = options.settle;
+                return scenario.run(run);
+            },
+        }, options, extensionDir, warnings);
     });
     const summary = summarize(results);
     console.log(summary.text);

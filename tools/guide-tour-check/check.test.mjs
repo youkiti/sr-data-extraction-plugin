@@ -9,10 +9,44 @@ import { Run } from './lib/run.mjs';
 import { expectUnchanged, expectTargetBlocked } from './lib/blocked.mjs';
 
 test('引数の既定値と明示指定', () => {
-    assert.deepEqual(parseArgs([]), { only: null, lang: 'ja', size: { width: 1280, height: 800 } });
-    assert.deepEqual(parseArgs(['--lang', 'en', '--size', '400x700', '--only', 'getting-started']), {
-        only: 'getting-started', lang: 'en', size: { width: 400, height: 700 },
+    assert.deepEqual(parseArgs([]), { only: null, lang: 'ja', size: { width: 1280, height: 800 }, settle: 0 });
+    assert.deepEqual(parseArgs(['--lang', 'en', '--size', '400x700', '--only', 'getting-started', '--settle', '1500']), {
+        only: 'getting-started', lang: 'en', size: { width: 400, height: 700 }, settle: 1500,
     });
+    for (const value of ['0', '10000']) assert.equal(parseArgs(['--settle', value]).settle, Number(value));
+});
+
+test('撮影前の待ち時間は欠落・範囲外・整数以外を拒否する', () => {
+    for (const args of [['--settle'], ['--settle', '--lang', 'ja'],
+        ...['', '-1', '10001', '1.5', 'NaN', 'Infinity', 'abc', '1e3', '0x10', ' 1', '99999999999999999999']
+            .map(value => ['--settle', value])]) {
+        assert.throws(() => parseArgs(args), /--settle/, args.join(' '));
+    }
+});
+
+test('手順画像だけ指定時間を待ち、既定値・失敗・遮断確認・完了画像は待たない', async () => {
+    const calls = [];
+    const page = {
+        locator: () => ({ waitFor: async () => {}, evaluateAll: async () => [] }),
+        waitForFunction: async () => {}, evaluate: async () => false,
+        waitForTimeout: async ms => calls.push(['wait', ms]),
+        screenshot: async ({ path }) => calls.push(['shot', path.split(/[\\/]/).at(-1)]),
+        url: () => 'chrome-extension://fake/app/app.html',
+    };
+    const run = new Run('sample', page, 'fake', 'ja', 'fake-demo', []);
+    await run.step('first', 'target');
+    assert.deepEqual(calls, [['shot', 'sample-01-first.png']]);
+    calls.length = 0;
+    run.settle = 1500;
+    await run.step('second', 'target');
+    await assert.rejects(run.action('失敗時の撮影', async () => { throw new Error('失敗'); }), /失敗/);
+    await run.shot('blocked-mouse');
+    await run.shot('blocked-Enter');
+    await run.shot('done');
+    assert.deepEqual(calls, [
+        ['wait', 1500], ['shot', 'sample-02-second.png'], ['shot', 'sample-03-FAIL-second.png'],
+        ['shot', 'sample-04-blocked-mouse.png'], ['shot', 'sample-05-blocked-Enter.png'], ['shot', 'sample-06-done.png'],
+    ]);
 });
 
 test('値の欠落・不正な言語・サイズ・パス・未知の引数は拒否する', () => {

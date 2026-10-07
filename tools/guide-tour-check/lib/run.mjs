@@ -9,10 +9,12 @@ export class Run {
         Object.assign(this, { name, page, extId, lang, extensionDir, warnings });
         this.stepId = 'setup';
         this.sequence = 0;
+        this.settle = 0;
     }
 
-    async shot(label = this.stepId) {
+    async shot(label = this.stepId, settle = false) {
         const file = path.join(OUT_DIR, `${this.name}-${String(++this.sequence).padStart(2, '0')}-${label}.png`);
+        if (settle && this.settle > 0) await this.page.waitForTimeout(this.settle);
         await this.page.screenshot({ path: file, timeout: 10000 });
         return file;
     }
@@ -73,7 +75,7 @@ export class Run {
                 return c.left < t.right && c.right > t.left && c.top < t.bottom && c.bottom > t.top;
             }, target);
             if (overlap) this.warnings.push(`${this.name} / ${id}: カードが対象 ${target} を覆っています`);
-            await this.shot();
+            await this.shot(this.stepId, true);
         });
         console.log(`  ${this.name}: ${id}`);
     }
