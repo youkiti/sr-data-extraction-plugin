@@ -1,31 +1,33 @@
+import type { GuideTourId } from '../guide/tours';
 import type { UiLanguage } from '../i18n';
 import { HELP_URL, withUiLanguage } from '../publicPages';
 
 export interface HelpTopic {
   helpAnchor: string;
   route?: string;
+  tourId?: GuideTourId;
 }
 
 /** 画面・機能と公開ヘルプの対応表。説明文は hosted/help.html に置く。 */
 export const HELP_TOPICS = {
-  home: { route: '#/home', helpAnchor: 'project' },
-  documents: { route: '#/documents', helpAnchor: 'documents' },
-  protocol: { route: '#/protocol', helpAnchor: 'protocol' },
-  schema: { route: '#/schema', helpAnchor: 'schema' },
-  pilot: { route: '#/pilot', helpAnchor: 'pilot' },
-  extract: { route: '#/extract', helpAnchor: 'extract' },
-  verify: { route: '#/verify', helpAnchor: 'verify' },
-  dashboard: { route: '#/dashboard', helpAnchor: 'dashboard' },
-  export: { route: '#/export', helpAnchor: 'export' },
-  adjudicate: { route: '#/adjudicate', helpAnchor: 'dual-review' },
+  home: { tourId: 'getting-started', route: '#/home', helpAnchor: 'project' },
+  documents: { tourId: 'getting-started', route: '#/documents', helpAnchor: 'documents' },
+  protocol: { tourId: 'getting-started', route: '#/protocol', helpAnchor: 'protocol' },
+  schema: { tourId: 'getting-started', route: '#/schema', helpAnchor: 'schema' },
+  pilot: { tourId: 'pilot-and-extract', route: '#/pilot', helpAnchor: 'pilot' },
+  extract: { tourId: 'pilot-and-extract', route: '#/extract', helpAnchor: 'extract' },
+  verify: { tourId: 'verify-basics', route: '#/verify', helpAnchor: 'verify' },
+  dashboard: { tourId: 'export-data', route: '#/dashboard', helpAnchor: 'dashboard' },
+  export: { tourId: 'export-data', route: '#/export', helpAnchor: 'export' },
+  adjudicate: { tourId: 'dual-review', route: '#/adjudicate', helpAnchor: 'dual-review' },
   options: { route: '#/options', helpAnchor: 'options' },
-  'ask-paper': { helpAnchor: 'verify-ask-paper' },
-  'review-sets': { helpAnchor: 'project-review-sets' },
+  'ask-paper': { tourId: 'verify-basics', helpAnchor: 'verify-ask-paper' },
+  'review-sets': { tourId: 'dual-review', helpAnchor: 'project-review-sets' },
   tours: { helpAnchor: 'project-tours' },
-  usage: { helpAnchor: 'dashboard-usage' },
-  'usage-export': { helpAnchor: 'export-usage' },
-  'pilot-matrix': { helpAnchor: 'pilot-matrix' },
-  'pilot-notes': { helpAnchor: 'pilot-notes' },
+  usage: { tourId: 'export-data', helpAnchor: 'dashboard-usage' },
+  'usage-export': { tourId: 'export-data', helpAnchor: 'export-usage' },
+  'pilot-matrix': { tourId: 'pilot-and-extract', helpAnchor: 'pilot-matrix' },
+  'pilot-notes': { tourId: 'pilot-and-extract', helpAnchor: 'pilot-notes' },
 } as const satisfies Record<string, HelpTopic>;
 
 export type HelpTopicId = keyof typeof HELP_TOPICS;

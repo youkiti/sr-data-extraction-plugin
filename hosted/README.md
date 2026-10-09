@@ -145,6 +145,9 @@ spreadsheet / pdf モードは `page_version` を検査しない（ready 応答�
 
 ### ヘルプの見出しと画面の対応
 
+- 「?」の吹き出しに出す動画とツアーは、対応表の `tourId` で決まる。画面・カードを足したら、対応するツアーがあれば `tourId` も付ける。
+- ツアー動画を上げ直したら、ツアー定義の `videoId` と `hosted/help.html` の `#project-tours` のリンクを一緒に直す。`tests/unit/lib/guide/toursDefinition.test.ts` の「ツアー動画と公開ヘルプのリンクが登録順で一致する」で照合する。
+
 - ツアーを足したら `tools/guide-tour-check/scenarios/` にシナリオを 1 本足す（書き方は `tools/guide-tour-check/lib/scenario.mjs`）。画面・ツアー変更後は `npm run build:demo` → `npm run check:tours` で通し検証する（[使い方](../docs/test-strategy.md#操作ツアーの通し検証ci-外)）。
 - 画面の操作部を作り変えるとき、その要素に `data-tour` が付いていたら、ツアーの定義（`src/lib/guide/tours/`）とヘルプのツアーの説明も確かめる。`data-tour` を消す・値を変えると `tests/unit/lib/guide/toursDefinition.test.ts` が落ちる。
 - 画面・カードを足したら、見出しを `headingWithHelp` で作り、対応表にトピックを足す。

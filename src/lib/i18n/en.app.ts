@@ -2,7 +2,11 @@
 import type { jaApp } from './ja.app';
 
 export const enApp: Record<keyof typeof jaApp, string> = {
-  'help.openTopic': 'Open help for this item (new tab)',
+  'help.openTopic': 'Open help for this item',
+  'help.menuLabel': 'Help and video',
+  'help.readHelp': 'Read help',
+  'help.watchVideo': '▶ Watch video (in Japanese)',
+  'help.startTour': 'Start the tour for this screen',
   // ツアー共通
   'guide.openTours': 'Open guided tours',
   'guide.tours': 'Tours',

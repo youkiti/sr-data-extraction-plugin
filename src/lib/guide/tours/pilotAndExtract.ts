@@ -10,6 +10,7 @@ const BASE = tourKeyBase('pilot-and-extract');
 
 export const PILOT_AND_EXTRACT_TOUR: TourFor<PilotAndExtractEvent, PilotAndExtractCondition> = {
   id: 'pilot-and-extract',
+  videoId: 'oaIezIWGZI4',
   titleKey: tourTitleKey(BASE),
   descriptionKey: tourDescKey(BASE),
   unavailableIf: 'pilot-and-extract-unavailable',

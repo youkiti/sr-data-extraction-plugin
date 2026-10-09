@@ -323,3 +323,72 @@ test.each(['store', 'hashchange', 'progress', 'observer', 'pagehide'] as const)(
     storeSpy.mockRestore(); addSpy.mockRestore(); observeSpy.mockRestore(); disconnectSpy.mockRestore();
   }
 });
+
+test('ヘルプのツアー開始は既存の開始処理を使い、終了時に委譲を解除する', async () => {
+  await initGuide({ store, win: window, doc: document });
+  const help = document.createElement('a');
+  help.dataset.help = 'home';
+  document.body.append(help);
+  help.click();
+  document.querySelector<HTMLButtonElement>('[data-help-action="tour"]')!.click();
+  expect(runner.start).toHaveBeenCalledWith('getting-started');
+  expect(document.getElementById('help-popover')).toBeNull();
+  help.click();
+  window.dispatchEvent(new Event('pagehide'));
+  expect(document.getElementById('help-popover')).toBeNull();
+  help.click();
+  expect(document.getElementById('help-popover')).toBeNull();
+});
+
+test.each(['store', 'observer'])('%s の通知で付け替え先のないヘルプの吹き出しを閉じる', async source => {
+  await initGuide({ store, win: window, doc: document });
+  const content = document.getElementById('app-content')!;
+  const help = document.createElement('a');
+  help.dataset.help = 'home';
+  content.append(help);
+  help.click();
+  expect(document.getElementById('help-popover')).not.toBeNull();
+  help.remove();
+  if (source === 'store') store.setState({});
+  else await new Promise(resolve => setTimeout(resolve, 0));
+  expect(document.getElementById('help-popover')).toBeNull();
+  expect(help.hasAttribute('aria-expanded')).toBe(false);
+});
+
+
+test.each(['hashchange', 'language'])('%s のハンドラから吹き出しを閉じる', async source => {
+  await initGuide({ store, win: window, doc: document });
+  const help = document.createElement('a');
+  help.dataset.help = 'home';
+  document.getElementById('app-content')!.append(help);
+  try {
+    help.click();
+    expect(document.getElementById('help-popover')).not.toBeNull();
+    if (source === 'hashchange') window.dispatchEvent(new Event('hashchange'));
+    else setUiLanguage('en');
+    expect(document.getElementById('help-popover')).toBeNull();
+    expect(help.hasAttribute('aria-expanded')).toBe(false);
+  } finally {
+    window.dispatchEvent(new Event('pagehide'));
+    setUiLanguage('ja');
+  }
+});
+
+test.each(['store', 'observer'])('%s の通知で同じトピックのヘルプへ付け替える', async source => {
+  // 直前のテストが予約した画面遷移の通知を先に完了させる。
+  await new Promise(resolve => setTimeout(resolve, 0));
+  await initGuide({ store, win: window, doc: document });
+  const content = document.getElementById('app-content')!;
+  const help = document.createElement('a');
+  help.dataset.help = 'home';
+  content.append(help);
+  help.click();
+  const panel = document.getElementById('help-popover');
+  const replacement = help.cloneNode() as HTMLAnchorElement;
+  replacement.removeAttribute('aria-expanded');
+  content.replaceChildren(replacement);
+  if (source === 'store') store.setState({});
+  else await new Promise(resolve => setTimeout(resolve, 0));
+  expect(document.getElementById('help-popover')).toBe(panel);
+  expect(replacement.getAttribute('aria-expanded')).toBe('true');
+});

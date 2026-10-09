@@ -7,6 +7,7 @@ const BASE = tourKeyBase('verify-basics');
 
 export const VERIFY_BASICS_TOUR: TourFor<VerifyBasicsEvent, VerifyBasicsCondition> = {
   id: 'verify-basics',
+  videoId: 'DN5YrhJilOc',
   titleKey: tourTitleKey(BASE),
   descriptionKey: tourDescKey(BASE),
   unavailableIf: 'verify-basics-unavailable',

@@ -1,6 +1,6 @@
 import { t, type MessageKey } from '../../lib/i18n';
 import { availableTours, type GuideConditionValues } from '../../lib/guide/tourProgress';
-import type { GuideTourId } from '../../lib/guide/tours';
+import { buildTourVideoUrl, type GuideTourId } from '../../lib/guide/tours';
 import { getGuideProgress } from '../../lib/storage/guideProgressStore';
 import { guideButton } from './suggestBand';
 import { createHelpButton } from '../ui/helpButton';
@@ -28,6 +28,15 @@ export function createTourEntry(doc: Document, anchor: HTMLElement, conditions: 
       const button = guideButton(doc, 'start', t('guide.start'), () => { close(); start(tour.id); });
       button.dataset.guideTour = tour.id;
       panel.append(title, description, button);
+      if (tour.videoId) {
+        const video = doc.createElement('a');
+        video.dataset.guideVideo = tour.id;
+        video.href = buildTourVideoUrl(tour.videoId);
+        video.target = '_blank';
+        video.rel = 'noopener noreferrer';
+        video.textContent = t('help.watchVideo');
+        panel.append(video);
+      }
     }
   }
   function toggle(): void {

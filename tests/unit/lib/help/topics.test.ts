@@ -1,3 +1,4 @@
+import { GUIDE_TOUR_IDS } from '../../../../src/lib/guide/tours';
 import * as ts from 'typescript';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
@@ -152,4 +153,11 @@ test('画面で使うヘルプ ID が対応表と一致し、全トピックを�
   }
   for (const id of used) expect(isHelpTopicId(id)).toBe(true);
   expect([...used].sort()).toEqual(Object.keys(HELP_TOPICS).sort());
+});
+
+test('対応ツアーは実在し、設定以外の全画面がツアーを持つ', () => {
+  for (const [id, topic] of Object.entries(HELP_TOPICS) as Array<[string, HelpTopic]>) {
+    if (topic.tourId) expect(GUIDE_TOUR_IDS).toContain(topic.tourId);
+    if (topic.route && id !== 'options') expect(topic.tourId).toBeDefined();
+  }
 });

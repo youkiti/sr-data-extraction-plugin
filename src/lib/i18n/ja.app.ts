@@ -1,6 +1,10 @@
 // UI 文言辞書（日本語・app 群）。
 export const jaApp = {
-  'help.openTopic': 'この項目のヘルプを開く（新しいタブ）',
+  'help.openTopic': 'この項目のヘルプを開く',
+  'help.menuLabel': 'ヘルプと動画',
+  'help.readHelp': 'ヘルプを読む',
+  'help.watchVideo': '▶ 動画で見る',
+  'help.startTour': 'この画面のツアーを始める',
   // ツアー共通
   'guide.openTours': '操作ツアーの一覧を開く',
   'guide.tours': 'ツアー',

@@ -8,6 +8,7 @@ const BASE = tourKeyBase('getting-started');
 /** 文献の取り込みからスキーマ確定までの案内。 */
 export const GETTING_STARTED_TOUR: TourFor<GettingStartedEvent, GettingStartedCondition> = {
   id: 'getting-started',
+  videoId: 'SYMLo4VKjMI',
   titleKey: tourTitleKey(BASE),
   descriptionKey: tourDescKey(BASE),
   unavailableIf: 'not-owner',

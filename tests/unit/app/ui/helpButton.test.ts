@@ -4,8 +4,8 @@ import { setUiLanguage } from '../../../../src/lib/i18n';
 afterEach(() => setUiLanguage('ja'));
 
 test.each([
-  ['ja', 'この項目のヘルプを開く（新しいタブ）'],
-  ['en', 'Open help for this item (new tab)'],
+  ['ja', 'この項目のヘルプを開く'],
+  ['en', 'Open help for this item'],
 ] as const)('%s のヘルプリンクと読み上げ名を生成する', (language, label) => {
   setUiLanguage(language);
   const link = createHelpButton('home');

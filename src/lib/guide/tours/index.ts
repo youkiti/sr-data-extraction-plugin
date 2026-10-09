@@ -42,3 +42,7 @@ export const GUIDE_TOUR_IDS = Object.keys(GUIDE_TOURS) as GuideTourId[];
 export function isGuideTourId(value: unknown): value is GuideTourId {
   return typeof value === 'string' && Object.prototype.hasOwnProperty.call(GUIDE_TOURS, value);
 }
+
+export function buildTourVideoUrl(videoId: string): string {
+  return `https://youtu.be/${videoId}`;
+}
