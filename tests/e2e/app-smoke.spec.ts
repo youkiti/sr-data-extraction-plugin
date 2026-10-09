@@ -82,3 +82,19 @@ test('画面の「?」が表示言語と該当節を指す', async ({ page }) =>
   );
   await expect(help).toHaveAttribute('target', '_blank');
 });
+
+test('ホームの「?」でヘルプと動画の吹き出しを開き、Escape で閉じる', async ({ page }) => {
+  await page.goto('/app/app.html#/home');
+  await expect(page.locator('#app-open-tours[aria-controls="guide-tour-list"]')).toBeVisible();
+  await page.locator('#app-content [data-help="home"]').click();
+  const popover = page.locator('#help-popover');
+  await expect(popover).toBeVisible();
+  await expect(popover.locator('[data-help-action="help"]')).toHaveAttribute(
+    'href', 'https://youkiti.github.io/sr-data-extraction-plugin/help.html?lang=ja#project',
+  );
+  await expect(popover.locator('[data-help-action="video"]')).toHaveAttribute('href', 'https://youtu.be/SYMLo4VKjMI');
+  const results = await new AxeBuilder({ page }).analyze();
+  expect(results.violations).toEqual([]);
+  await page.keyboard.press('Escape');
+  await expect(popover).toHaveCount(0);
+});

@@ -1,4 +1,4 @@
-import { GUIDE_TOURS, GUIDE_TOUR_IDS, isGuideTourId, stepKey, tourDescKey, tourKeyBase, tourTitleKey } from '../../../../src/lib/guide/tours';
+import { buildTourVideoUrl, GUIDE_TOURS, GUIDE_TOUR_IDS, isGuideTourId, stepKey, tourDescKey, tourKeyBase, tourTitleKey } from '../../../../src/lib/guide/tours';
 import { jaApp } from '../../../../src/lib/i18n/ja.app';
 import { enApp } from '../../../../src/lib/i18n/en.app';
 import { readFileSync, readdirSync } from 'node:fs';
@@ -91,4 +91,13 @@ test.each([['ja', jaApp], ['en', enApp]])('%s のツアー区画は登録順で�
     expect(section.slice(2)).toEqual(tour.steps.map(step => step.textKey));
     previousEnd = start + section.length - 1;
   }
+});
+
+test('ツアー動画と公開ヘルプのリンクが登録順で一致する', () => {
+  const help = new DOMParser().parseFromString(readFileSync(join(process.cwd(), 'hosted/help.html'), 'utf8'), 'text/html');
+  let list = help.getElementById('project-tours')!.nextElementSibling!;
+  while (list.tagName !== 'UL') list = list.nextElementSibling!;
+  const urls = [...list.querySelectorAll<HTMLAnchorElement>('a[href^="https://youtu.be/"]')].map(link => link.href);
+  expect(urls).toEqual(GUIDE_TOUR_IDS.map(id => buildTourVideoUrl(GUIDE_TOURS[id].videoId!)));
+  for (const tour of Object.values(GUIDE_TOURS).filter(tour => !tour.draft)) expect(tour.videoId).toBeTruthy();
 });

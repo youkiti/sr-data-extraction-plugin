@@ -66,6 +66,7 @@ export interface TourDefinitionOf<E extends string, C extends string> {
   id: GuideTourId;
   titleKey: string;
   descriptionKey: string;
+  videoId?: string;
   /**
    * 真なら、まだ中身の無い枠。GUIDE_TOURS には入るが、一覧・提案・開始・テストの照合の対象から外す
    * （tourProgress.ts の availableTours が除外する）。手順を書き終えたら外す。

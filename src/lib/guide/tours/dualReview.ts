@@ -7,6 +7,7 @@ const BASE = tourKeyBase('dual-review');
 
 export const DUAL_REVIEW_TOUR: TourFor<DualReviewEvent, DualReviewCondition> = {
   id: 'dual-review',
+  videoId: 'BuGpgS_6HRw',
   titleKey: tourTitleKey(BASE),
   descriptionKey: tourDescKey(BASE),
   unavailableIf: 'dual-review-unavailable',

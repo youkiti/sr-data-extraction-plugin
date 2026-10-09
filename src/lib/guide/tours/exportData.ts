@@ -7,6 +7,7 @@ const BASE = tourKeyBase('export-data');
 
 export const EXPORT_DATA_TOUR: TourFor<ExportDataEvent, ExportDataCondition> = {
   id: 'export-data',
+  videoId: 'BZ3UFV31zaY',
   titleKey: tourTitleKey(BASE),
   descriptionKey: tourDescKey(BASE),
   unavailableIf: 'export-data-unavailable',

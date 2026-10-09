@@ -1,3 +1,4 @@
+import { GUIDE_TOURS } from '../../../../src/lib/guide/tours';
 import { createTourEntry } from '../../../../src/app/guide/tourEntry';
 import { createSuggestBand } from '../../../../src/app/guide/suggestBand';
 import { createEmptyGuideProgress, completeTour } from '../../../../src/lib/guide/tourProgress';
@@ -76,4 +77,28 @@ test('一覧の開閉、外側、Esc、開始、済み、owner 制約', () => {
   entry.refresh(); expect(panel()!.textContent).not.toContain('済み');
   entry.destroy(); anchor.click(); expect(panel()).toBeNull();
   progress.mockRestore();
+});
+
+test('動画があるツアーだけ別タブ用リンクを表示し、開始ボタンの属性と分ける', () => {
+  const videoId = GUIDE_TOURS['getting-started'].videoId;
+  GUIDE_TOURS['getting-started'].videoId = 'SYMLo4VKjMI';
+  document.body.innerHTML = '<button id="anchor">ツアー</button>';
+  const anchor = document.getElementById('anchor')!;
+  const entry = createTourEntry(document, anchor, () => ({}), jest.fn());
+  try {
+    anchor.click();
+    const video = document.querySelector<HTMLAnchorElement>('[data-guide-video="getting-started"]')!;
+    expect(video.href).toBe('https://youtu.be/SYMLo4VKjMI');
+    expect(video.target).toBe('_blank');
+    expect(video.rel).toBe('noopener noreferrer');
+    expect(video.hasAttribute('data-guide-tour')).toBe(false);
+    expect(video.previousElementSibling!.getAttribute('data-guide-tour')).toBe('getting-started');
+    expect(video.textContent).toBe('▶ 動画で見る');
+    setUiLanguage('en');
+    entry.refresh();
+    expect(document.querySelector('[data-guide-video]')!.textContent).toBe('▶ Watch video (in Japanese)');
+    delete GUIDE_TOURS['getting-started'].videoId;
+    entry.refresh();
+    expect(document.querySelector('[data-guide-video]')).toBeNull();
+  } finally { GUIDE_TOURS['getting-started'].videoId = videoId; entry.destroy(); setUiLanguage('ja'); }
 });

@@ -6,6 +6,7 @@ import type { Store } from '../store';
 import { computeGuideConditions } from './tourConditions';
 import { createTourRunner } from './tourRunner';
 import { createTourEntry } from './tourEntry';
+import { createHelpPopover } from './helpPopover';
 import { createSuggestBand } from './suggestBand';
 import { guideEvents, routeGuideEvent } from './guideEvents';
 import { onUiLanguageChange } from '../../lib/i18n';
@@ -45,7 +46,9 @@ export async function initGuide({ store, win, doc }: { store: Store; win: Window
     refresh();
   }
   const entry = createTourEntry(doc, anchor, conditions, start);
+  let helpPopover: ReturnType<typeof createHelpPopover>;
   function refresh(): void {
+    helpPopover.refreshAnchor();
     const existing = doc.getElementById('guide-suggest-band');
     const currentConditions = conditions();
     const tour = availableTours(undefined, currentConditions).find(item => item.id === 'getting-started');
@@ -63,6 +66,7 @@ export async function initGuide({ store, win, doc }: { store: Store; win: Window
   let previous = conditions();
   let route = currentRoute();
   const onRoute = (): void => {
+    helpPopover.close();
     const next = currentRoute();
     if (route !== next) { route = next; runner.handleEvent(routeGuideEvent(next)); }
     refresh();
@@ -72,6 +76,8 @@ export async function initGuide({ store, win, doc }: { store: Store; win: Window
     cleanups.splice(0).reverse().forEach(cleanup => cleanup());
   };
   try {
+    helpPopover = createHelpPopover(doc, win, conditions, start);
+    cleanups.push(() => helpPopover.destroy());
     const unsubscribeStore = store.subscribe(() => {
       const next = conditions();
       const events = guideEvents(previous, next);
@@ -88,6 +94,7 @@ export async function initGuide({ store, win, doc }: { store: Store; win: Window
     const unsubscribeProgress = subscribeGuideProgressChange(() => { entry.refresh(); refresh(); });
     cleanups.push(unsubscribeProgress);
     cleanups.push(onUiLanguageChange(() => {
+      helpPopover.close();
       runner.rerender();
       doc.getElementById('guide-suggest-band')?.remove();
       refresh();
