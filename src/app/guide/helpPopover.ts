@@ -76,29 +76,44 @@ export function createHelpPopover(doc: Document, win: Window, conditions: () => 
       previous.focus();
     }
   }
+  function refreshAnchor(): void {
+    if (!anchor || anchor.isConnected) return;
+    const replacement = doc.querySelector<HTMLAnchorElement>(`a[data-help='${anchor.dataset.help}']`);
+    if (!replacement) { close(); return; }
+    anchor.removeAttribute('aria-expanded');
+    anchor = replacement;
+    anchor.setAttribute('aria-expanded', 'true');
+    position(anchor);
+  }
+  function reposition(): void {
+    refreshAnchor();
+    if (!anchor) return;
+    const rect = anchor.getBoundingClientRect();
+    if (rect.bottom < 0 || rect.top > win.innerHeight || rect.right < 0 || rect.left > win.innerWidth) {
+      close();
+      return;
+    }
+    position(anchor);
+  }
   function scroll(event: Event): void {
-    if (!panel.contains(event.target as Node)) close();
+    if (!panel.contains(event.target as Node)) reposition();
+  }
+  function destroy(): void {
+    close();
+    panel.replaceChildren();
+    doc.removeEventListener('click', click);
+    doc.removeEventListener('keydown', escape);
+    doc.removeEventListener('scroll', scroll, true);
+    win.removeEventListener('resize', reposition);
   }
   doc.addEventListener('click', click);
   doc.addEventListener('keydown', escape);
   doc.addEventListener('scroll', scroll, true);
-  return {
-    close,
-    refreshAnchor(): void {
-      if (!anchor || anchor.isConnected) return;
-      const replacement = doc.querySelector<HTMLAnchorElement>(`a[data-help='${anchor.dataset.help}']`);
-      if (!replacement) { close(); return; }
-      anchor.removeAttribute('aria-expanded');
-      anchor = replacement;
-      anchor.setAttribute('aria-expanded', 'true');
-      position(anchor);
-    },
-    destroy(): void {
-      close();
-      panel.replaceChildren();
-      doc.removeEventListener('click', click);
-      doc.removeEventListener('keydown', escape);
-      doc.removeEventListener('scroll', scroll, true);
-    },
-  };
+  try {
+    win.addEventListener('resize', reposition);
+  } catch (error) {
+    destroy();
+    throw error;
+  }
+  return { close, refreshAnchor, destroy };
 }

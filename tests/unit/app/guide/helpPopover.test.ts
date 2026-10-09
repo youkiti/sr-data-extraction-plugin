@@ -139,10 +139,14 @@ test('右端・下端と負の座標を画面内へ寄せる', () => {
 
 test('destroy は閉じてリスナーを解除する', () => {
   const remove = jest.spyOn(document, 'removeEventListener');
+  const removeWindow = jest.spyOn(window, 'removeEventListener');
   click(home); popover.destroy();
   expect(remove).toHaveBeenCalledWith('scroll', expect.any(Function), true);
+  expect(removeWindow).toHaveBeenCalledWith('resize', expect.any(Function));
   remove.mockRestore();
+  removeWindow.mockRestore();
   document.dispatchEvent(new Event('scroll'));
+  window.dispatchEvent(new Event('resize'));
   expect(panel()).toBeNull();
   expect(home.hasAttribute('aria-expanded')).toBe(false);
   expect(click(home).defaultPrevented).toBe(false);
@@ -181,15 +185,91 @@ test.each(['click', 'Escape'])('再描画後は最初の同じトピックへ付
   expect(replacement.hasAttribute('aria-expanded')).toBe(false);
 });
 
-test('吹き出し内のスクロールは保ち、外の非バブリングのスクロールで閉じる', () => {
+test('外の非バブリングのスクロールで追従し、吹き出し内では位置を計算し直さない', () => {
+  const rect = jest.spyOn(home, 'getBoundingClientRect').mockReturnValue({ left: 40, right: 60, top: 40, bottom: 60 } as DOMRect);
   click(home);
+  rect.mockClear();
   panel()!.dispatchEvent(new Event('scroll'));
   action('help').dispatchEvent(new Event('scroll'));
-  expect(panel()).not.toBeNull();
+  expect(rect).not.toHaveBeenCalled();
+  rect.mockReturnValue({ left: 120, right: 140, top: 140, bottom: 160 } as DOMRect);
   home.dispatchEvent(new Event('scroll'));
-  expect(panel()).toBeNull();
-  expect(home.hasAttribute('aria-expanded')).toBe(false);
+  expect(panel()!.style.left).toBe('120px');
+  expect(panel()!.style.top).toBe('168px');
+  expect(home.getAttribute('aria-expanded')).toBe('true');
+});
+
+test('画面を縮めたら位置を画面内へ寄せる', () => {
+  const { innerWidth, innerHeight } = window;
+  try {
+    window.innerWidth = 1000;
+    window.innerHeight = 800;
+    jest.spyOn(home, 'getBoundingClientRect').mockReturnValue({ left: 390, right: 410, top: 390, bottom: 410 } as DOMRect);
+    click(home);
+    jest.spyOn(panel()!, 'getBoundingClientRect').mockReturnValue({ width: 300, height: 150 } as DOMRect);
+    window.dispatchEvent(new Event('resize'));
+    expect(panel()!.style.top).toBe('418px');
+    window.innerWidth = 500;
+    window.innerHeight = 400;
+    window.dispatchEvent(new Event('resize'));
+    expect(panel()!.style.left).toBe('188px');
+    expect(panel()!.style.top).toBe('238px');
+    expect(home.getAttribute('aria-expanded')).toBe('true');
+  } finally { window.innerWidth = innerWidth; window.innerHeight = innerHeight; }
+});
+
+test.each(['scroll', 'resize'])('%s で表示領域の上下左右の外へ出たら閉じる', event => {
+  const rect = jest.spyOn(home, 'getBoundingClientRect');
+  for (const outside of [
+    { bottom: -1 }, { top: window.innerHeight + 1 },
+    { right: -1 }, { left: window.innerWidth + 1 },
+  ]) {
+    rect.mockReturnValue({ top: 40, bottom: 60, left: 40, right: 60 } as DOMRect);
+    click(home);
+    rect.mockReturnValue({ top: 40, bottom: 60, left: 40, right: 60, ...outside } as DOMRect);
+    (event === 'scroll' ? document : window).dispatchEvent(new Event(event));
+    expect(panel()).toBeNull();
+    expect(home.hasAttribute('aria-expanded')).toBe(false);
+  }
+});
+
+test.each(['scroll', 'resize'])('%s の時点で外れたアンカーを付け替え、候補がなければ閉じる', event => {
   click(home);
-  document.dispatchEvent(new Event('scroll'));
+  const originalPanel = panel();
+  const replacement = createHelpButton('home');
+  jest.spyOn(replacement, 'getBoundingClientRect').mockReturnValue({ left: 120, right: 140, top: 140, bottom: 160 } as DOMRect);
+  home.replaceWith(replacement);
+  (event === 'scroll' ? document : window).dispatchEvent(new Event(event));
+  expect(panel()).toBe(originalPanel);
+  expect(home.hasAttribute('aria-expanded')).toBe(false);
+  expect(replacement.getAttribute('aria-expanded')).toBe('true');
+  expect(panel()!.style.left).toBe('120px');
+  expect(panel()!.style.top).toBe('168px');
+  replacement.remove();
+  (event === 'scroll' ? document : window).dispatchEvent(new Event(event));
   expect(panel()).toBeNull();
+  expect(replacement.hasAttribute('aria-expanded')).toBe(false);
+});
+
+test('閉じているときのスクロール・画面サイズ変更では何もしない', () => {
+  const rect = jest.spyOn(home, 'getBoundingClientRect');
+  document.dispatchEvent(new Event('scroll'));
+  window.dispatchEvent(new Event('resize'));
+  expect(rect).not.toHaveBeenCalled();
+  expect(panel()).toBeNull();
+});
+
+test('resize の登録失敗時は document のリスナーも解除する', () => {
+  popover.destroy();
+  const error = new Error('登録失敗');
+  const add = jest.spyOn(window, 'addEventListener').mockImplementationOnce(() => { throw error; });
+  const remove = jest.spyOn(document, 'removeEventListener');
+  try {
+    expect(() => createHelpPopover(document, window, () => ({}), start)).toThrow(error);
+    expect(remove).toHaveBeenCalledWith('click', expect.any(Function));
+    expect(remove).toHaveBeenCalledWith('keydown', expect.any(Function));
+    expect(remove).toHaveBeenCalledWith('scroll', expect.any(Function), true);
+    expect(click(home).defaultPrevented).toBe(false);
+    expect(panel()).toBeNull();
+  } finally { add.mockRestore(); remove.mockRestore(); }
 });
