@@ -2904,9 +2904,9 @@ section.documents__tiab {
 .focus-card__matrix-cell {
   padding: 3px;
 
-  /* 値セルの下限を 0 にして、長い値を省略記号で切り、表を判定項目の枠に収める
-     （自動レイアウトのまま残り幅を列で分け合う） */
-  max-width: 0;
+  /* 値の頭の数文字と判定のバッジが必ず見える幅。群が多くて枠に収まらないときは、
+     表が枠より広くなり、判定項目の枠の中で横スクロールする */
+  min-width: 10em;
 }
 
 .focus-card__matrix-cell--empty {
@@ -2949,7 +2949,10 @@ section.documents__tiab {
 }
 
 .focus-card__matrix-value {
-  min-width: 0;
+  /* 幅 0 から残りを埋める。長い値が列の幅を広げず、省略記号で切れる（下限は 3 文字ぶん） */
+  flex: 1 1 0;
+  width: 0;
+  min-width: 3em;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
