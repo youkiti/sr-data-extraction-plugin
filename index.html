@@ -2,7 +2,7 @@
 <!-- SR Data Extraction Plugin ランディングページ（GitHub Pages 配信）。
      正典はこのファイル（master の hosted/）。デプロイ手順は hosted/README.md を参照。
      ja / en は両方を持ち、表示は lang.js + CSS が片方だけに絞る（併記しない）。
-     version: 2026-08-03 -->
+     version: 2026-10-11 -->
 <html lang="ja">
   <head>
     <meta charset="utf-8" />
@@ -43,6 +43,18 @@
             ><span class="en" lang="en">Watch the walkthrough</span></a
           >
         </div>
+        <p class="hero-note">
+          <span class="ja" lang="ja"
+            >インストール後、アイコンが見当たらないときは、アドレスバー右のパズル型のボタンの中にあります（<a
+              href="help.html#setup"
+              >開き方とピン留め</a
+            >）。</span
+          >
+          <span class="en" lang="en"
+            >After installing, if you can’t see the icon, look inside the puzzle-piece button to the right of the
+            address bar (<a href="help.html#setup">how to open and pin it</a>).</span
+          >
+        </p>
       </div>
     </header>
 
@@ -74,8 +86,21 @@
               loading="lazy"
             ></iframe>
           </div>
+          <p class="video-hint">
+            <span class="ja" lang="ja"
+              >文字が小さいときは、プレーヤー右下の全画面ボタンを押すか、YouTube で開いて見てください。</span
+            >
+            <span class="en" lang="en"
+              >If the text looks small, use the full-screen button at the bottom right of the player, or open the video
+              on YouTube.</span
+            >
+          </p>
           <p class="video-link">
-            <a href="https://youtu.be/huPK6wk-YZk" target="_blank" rel="noopener noreferrer"
+            <a
+              class="btn btn-outline"
+              href="https://youtu.be/huPK6wk-YZk"
+              target="_blank"
+              rel="noopener noreferrer"
               ><span class="ja" lang="ja">YouTube で見る →</span
               ><span class="en" lang="en">Watch on YouTube →</span></a
             >
@@ -139,9 +164,9 @@
           <div class="shots">
             <figure class="shot">
               <img
-                src="screenshots/s3-documents.png"
-                alt="文献取り込み画面。Drive Picker で選んだ PDF の一覧とテキスト抽出状況が並ぶ"
-                data-en-alt="Import screen: the PDFs picked through the Drive Picker with their text-extraction status"
+                src="screenshots/help-03-documents.png"
+                alt="文献取り込み画面。Drive から選ぶボタンとドラッグ＆ドロップ欄の下に、取り込んだ PDF の一覧とテキスト層の状態が並ぶ"
+                data-en-alt="Import screen: below the Drive button and the drop zone, the imported PDFs with their text-layer status"
                 loading="lazy"
               />
               <figcaption>
@@ -151,7 +176,7 @@
             </figure>
             <figure class="shot">
               <img
-                src="screenshots/s5-schema.png"
+                src="screenshots/help-05-schema.png"
                 alt="表のデザイン画面。抽出項目が表形式エディタで並ぶ"
                 data-en-alt="Schema screen: the extraction fields listed in a table editor"
                 loading="lazy"
@@ -163,7 +188,7 @@
             </figure>
             <figure class="shot">
               <img
-                src="screenshots/s8-verify-highlight.png"
+                src="screenshots/help-08-verify.png"
                 alt="検証画面。左に PDF ビューアと根拠ハイライト、右に判定フォーム"
                 data-en-alt="Verification screen: the PDF viewer with an evidence highlight on the left, the decision form on the right"
                 loading="lazy"
@@ -175,7 +200,7 @@
             </figure>
             <figure class="shot">
               <img
-                src="screenshots/s9-dashboard.png"
+                src="screenshots/help-09-dashboard.png"
                 alt="ダッシュボード画面。study × section の検証進捗マトリクス"
                 data-en-alt="Dashboard screen: the study × section verification progress matrix"
                 loading="lazy"

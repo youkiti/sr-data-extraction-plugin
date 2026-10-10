@@ -1,6 +1,6 @@
 /* SR Data Extraction Plugin 公開ページ共通スタイル（index / help / privacy-policy / terms-of-service）。
    トンマナは拡張本体の src/styles/tokens.css（緑基調）に合わせる。
-   version: 2026-08-03 */
+   version: 2026-10-11 */
 
 :root {
   --primary: #1b5e4a;
@@ -194,6 +194,31 @@ body {
   background: rgb(255 255 255 / 25%);
 }
 
+/* 明るい背景の本文に置くボタン（.btn-secondary はヒーローの濃い背景用） */
+.btn-outline {
+  background: #fff;
+  color: var(--primary);
+  border: 2px solid var(--primary);
+}
+
+.btn-outline:hover {
+  background: var(--primary);
+  color: #fff;
+}
+
+/* ヒーローのボタン群の下の補足（濃い背景なので白系・下線つき） */
+.hero-note {
+  margin: 20px auto 0;
+  max-width: 640px;
+  font-size: 0.9rem;
+  color: rgb(255 255 255 / 90%);
+}
+
+.hero-note a {
+  color: #fff;
+  text-decoration: underline;
+}
+
 /* セクション（index） */
 .section {
   padding: 56px 0;
@@ -276,6 +301,28 @@ body {
 
 .shot figcaption {
   margin-top: 8px;
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}
+
+/* 使い方ガイドの本文中に置く図 */
+.shot--guide {
+  max-width: 720px;
+  margin: 16px 0 24px;
+}
+
+/* 使い方ガイドの本文いっぱいに置くアプリ画面の図（クリックで原寸を開く） */
+.shot--screen {
+  max-width: 100%;
+  margin: 16px 0 24px;
+}
+
+.shot--screen a {
+  display: block;
+}
+
+/* 図の使い方の補足文 */
+.shot-hint {
   font-size: 0.875rem;
   color: var(--text-secondary);
 }
@@ -419,12 +466,19 @@ th {
 
 /* index 側はセクション全体が中央寄せ、help 側は本文と同じ左寄せに従う */
 .section .video-lead,
+.section .video-hint,
 .section .video-link {
   text-align: center;
 }
 
-.video-link {
+.video-hint {
+  margin: 0 0 12px;
   font-size: 0.9rem;
+  color: var(--text-secondary);
+}
+
+.video-link {
+  font-size: 1rem;
 }
 
 /* ヘルプの目次 */
