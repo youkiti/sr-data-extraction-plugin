@@ -146,6 +146,40 @@ spreadsheet / pdf モードは `page_version` を検査しない（ready 応答�
   配られない）。1 枚 300KB 以下にし、実データ・個人情報を写さない。`pin-extension.png`（拡張機能の一覧と
   ピン留め）は Chrome 自体の画面なので、Chrome の UI が変わったときだけ撮り直す。
 
+### 使い方ガイドの図（撮影と撮り直し）
+
+使い方ガイド（`help.html`）の画面の図は、架空の論文 3 本のデモビルドを Playwright の Chromium に読み込んで撮る。実データ・ログイン・API 呼び出しは使わない。図の置き方の約束（直下に置く・300KB 以下・実データを写さない）は上の「更新時に守ること」を参照。
+
+```
+npm run video:fixtures          # デモ用の PDF を作る（初回のみ）
+npm run build:demo              # dist-demo/ を作る。.env の OAuth クライアント ID が要る
+npm run help:shots              # 全シーンを撮って hosted/screenshots/ に書き出す
+npm run help:shots -- verify    # 名前を指定したシーンだけ撮り直す
+```
+
+- 既定はヘッドレスで、1280×800・日本語表示の PNG を同じファイル名で上書きする。ウィンドウありで動かすなら `--headed`、出力先は `--out <dir>`、デモビルドの場所は `--ext <dir>`（または環境変数 `EXT_DIST_DIR`）で変える。
+- 1 枚が 300KB を超える、シーン名が未知、デモビルドが無いときは日本語で理由を出して終了コード 1 になる。
+- 画面を変えたら、該当の図を撮り直して同じコミットに含める。
+- ランディング（`index.html`）の「画面イメージ」4 枚（`help-03-documents.png`・`help-05-schema.png`・`help-08-verify.png`・`help-09-dashboard.png`）も同じ図を使う。
+- `pin-extension.png` は Chrome 自体の画面なので、このコマンドの対象外（上の「更新時に守ること」のとおり）。
+- シーンの定義（どの画面をどの状態で撮るか）は `tools/help-shots/scenes.mjs`。
+
+| 節（`help.html` の id） | シーン名 | ファイル |
+|---|---|---|
+| `setup` | `setup` | `help-01-setup.png` |
+| `project` | `project` | `help-02-project.png` |
+| `project` | `home` | `help-02-home.png` |
+| `documents` | `documents` | `help-03-documents.png` |
+| `protocol` | `protocol` | `help-04-protocol.png` |
+| `schema` | `schema` | `help-05-schema.png` |
+| `pilot` | `pilot` | `help-06-pilot.png` |
+| `extract` | `extract` | `help-07-extract.png` |
+| `verify` | `verify` | `help-08-verify.png` |
+| `dashboard` | `dashboard` | `help-09-dashboard.png` |
+| `dual-review` | `dual-review` | `help-10-dual-review.png` |
+| `export` | `export` | `help-11-export.png` |
+| `options` | `options` | `help-12-options.png` |
+
 ### ヘルプの見出しと画面の対応
 
 - 「?」の吹き出しに出す動画とツアーは、対応表の `tourId` で決まる。画面・カードを足したら、対応するツアーがあれば `tourId` も付ける。

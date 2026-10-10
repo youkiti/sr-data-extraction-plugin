@@ -311,6 +311,22 @@ body {
   margin: 16px 0 24px;
 }
 
+/* 使い方ガイドの本文いっぱいに置くアプリ画面の図（クリックで原寸を開く） */
+.shot--screen {
+  max-width: 100%;
+  margin: 16px 0 24px;
+}
+
+.shot--screen a {
+  display: block;
+}
+
+/* 図の使い方の補足文 */
+.shot-hint {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}
+
 /* 本文ページ（help / privacy-policy / terms-of-service） */
 .document-page,
 .help-page {

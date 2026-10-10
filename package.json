@@ -23,6 +23,7 @@
     "facts": "node tools/facts/generateProjectFacts.mjs",
     "facts:check": "node tools/facts/generateProjectFacts.mjs --check",
     "help:gaps": "node tools/help/listHelpGaps.mjs",
+    "help:shots": "node tools/help-shots/shoot.mjs",
     "lint": "eslint \"src/**/*.ts\" \"tests/**/*.ts\"",
     "lint:css": "stylelint \"src/**/*.css\"",
     "typecheck": "tsc --noEmit",
