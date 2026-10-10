@@ -1,6 +1,6 @@
 // 公開ページ URL の正典（issue #214）。静的 HTML（app.html / popup.html）は属性へ直接
 // URL を書くため定数を import できない。ここで HTML を読んで一致を検査し、ドリフトを防ぐ
-import { existsSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 import {
@@ -138,6 +138,56 @@ describe('公開ページ（hosted/）の図と動画', () => {
 
   test('help.html は拡張アイコンの見つけ方の図を参照する', () => {
     expect(readSource(join('hosted', 'help.html'))).toContain('screenshots/pin-extension.png');
+  });
+
+  test('help.html の 12 節はそれぞれ画面の図（help-*.png）を持つ', () => {
+    const html = readSource(join('hosted', 'help.html'));
+    const sections = [
+      'setup',
+      'project',
+      'documents',
+      'protocol',
+      'schema',
+      'pilot',
+      'extract',
+      'verify',
+      'dashboard',
+      'dual-review',
+      'export',
+      'options',
+    ];
+    for (const id of sections) {
+      const start = html.indexOf(`<section id="${id}">`);
+      expect(start).toBeGreaterThanOrEqual(0);
+      const end = html.indexOf('<section ', start + 1);
+      const body = html.slice(start, end === -1 ? undefined : end);
+      expect(body).toContain('src="screenshots/help-');
+    }
+  });
+
+  test('hosted/screenshots/ 直下の png はすべて index.html か help.html から参照されている', () => {
+    const referenced = new Set<string>();
+    for (const file of pages) {
+      for (const match of readSource(join('hosted', file)).matchAll(/src="screenshots\/([^"]+)"/g)) {
+        referenced.add(match[1] ?? '');
+      }
+    }
+    const files = readdirSync(join(repoRoot, 'hosted', 'screenshots')).filter((name) =>
+      name.endsWith('.png'),
+    );
+    expect(files.length).toBeGreaterThan(0);
+    for (const name of files) {
+      expect(referenced.has(name)).toBe(true);
+    }
+  });
+
+  test('撮影コマンドのシーン一覧の出力ファイルは、help.html が参照する help-*.png と一致する', () => {
+    const scenes = readSource(join('tools', 'help-shots', 'scenes.mjs'));
+    const fromScenes = new Set(scenes.match(/help-\d{2}-[a-z-]+\.png/g) ?? []);
+    const html = readSource(join('hosted', 'help.html'));
+    const fromHelp = new Set(html.match(/help-\d{2}-[a-z-]+\.png/g) ?? []);
+    expect(fromScenes.size).toBeGreaterThan(0);
+    expect([...fromScenes].sort()).toEqual([...fromHelp].sort());
   });
 
   test('各ページの img は alt・data-en-alt・遅延読み込みを持つ', () => {
