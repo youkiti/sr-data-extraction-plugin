@@ -1085,6 +1085,77 @@ test('和文 fixture: 抽出テキスト → アンカリング（exact）→ �
   await expect(page.locator('#verify-focus-detail .verify__quote-jump')).toBeVisible();
 });
 
+test('幅 1280px で値が長くても、左メニューが潰れず、項目の一覧表が判定項目の枠に収まる', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  // 値が長いと、省略されない表が本文の幅を押し広げて左メニューを潰していた
+  const longValue = 'Until postoperative day 7 or hospital discharge, whichever came first, with a telephone follow-up at day 30';
+  const longEvidenceRow = EVIDENCE_ROW_1.map((cell, index) => (index === 6 ? longValue : cell));
+  await setupRoutes(page, {
+    schemaRows: [STUDY_FIELD_ROW, STUDY_FIELD_ROW_2],
+    evidenceRows: [longEvidenceRow, EVIDENCE_ROW_2],
+  });
+  await initApp(page, '#/verify?study=study-1');
+
+  await expect(page.locator('.verify__panes')).toBeVisible({ timeout: 15_000 });
+  const matrixButtons = page.locator('#verify-focus-matrix .focus-card__matrix-btn');
+  await expect(matrixButtons).toHaveCount(2);
+  await expect(matrixButtons.nth(0)).toContainText(longValue);
+
+  await expect(page.locator('.app__sidebar')).toHaveJSProperty('offsetWidth', 220);
+  const layout = await page.evaluate(() => ({
+    docScroll: document.documentElement.scrollWidth,
+    matrixRight: document.querySelector('#verify-focus-matrix')!.getBoundingClientRect().right,
+    paneRight: document.querySelector('.verify__pane--form')!.getBoundingClientRect().right,
+  }));
+  expect(layout.docScroll).toBeLessThanOrEqual(1280);
+  expect(layout.matrixRight).toBeLessThanOrEqual(layout.paneRight);
+  // 判定のバッジ（値の右の末尾グループ）が枠の中に見えている
+  await expect(matrixButtons.nth(0).locator('.focus-card__matrix-trailing')).toBeInViewport();
+});
+
+test('幅 1280px で群が 3 つあっても、各セルの値と判定のバッジが見え、ページに横スクロールが出ない', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  // 群ごとの Evidence（arm:1〜3）。群が列になるので、値の列が 3 本の一覧表になる
+  const armRows = ['1', '2', '3'].map((arm) =>
+    ARM_EVIDENCE_ROW.map((cell, index) => (index === 0 ? `ev-arm-${arm}` : index === 5 ? `arm:${arm}` : cell)),
+  );
+  await setupRoutes(page, {
+    schemaRows: [STUDY_FIELD_ROW, ARM_FIELD_ROW, OUTCOME_FIELD_ROW],
+    evidenceRows: [EVIDENCE_ROW_1, EVIDENCE_ROW_2, ...armRows],
+  });
+  await initApp(page, '#/verify?study=study-1');
+  await expect(page.locator('.verify__panes')).toBeVisible({ timeout: 15_000 });
+
+  const names = page.locator('.verify__arm-name');
+  await expect(names).toHaveCount(3);
+  for (let index = 0; index < 3; index += 1) {
+    await names.nth(index).fill(`群 ${index + 1}`);
+  }
+  await page.locator('#verify-arm-confirm').click();
+  const armTab = page.locator('.verify__tab', { hasText: '群（arm）' });
+  await expect(armTab).toBeEnabled();
+  await armTab.click();
+  await expect(page.locator('#verify-focus-matrix thead th')).toHaveCount(4);
+
+  await expect(page.locator('.app__sidebar')).toHaveJSProperty('offsetWidth', 220);
+  const layout = await page.evaluate(() => ({
+    docScroll: document.documentElement.scrollWidth,
+    cells: [...document.querySelectorAll('#verify-focus-matrix .focus-card__matrix-btn')].map((button) => {
+      const cell = (button.closest('td') as HTMLElement).getBoundingClientRect();
+      const value = (button.querySelector('.focus-card__matrix-value') as HTMLElement).getBoundingClientRect();
+      const trailing = (button.querySelector('.focus-card__matrix-trailing') as HTMLElement).getBoundingClientRect();
+      return { valueWidth: value.width, overflow: trailing.right - cell.right };
+    }),
+  }));
+  expect(layout.docScroll).toBeLessThanOrEqual(1280);
+  expect(layout.cells).toHaveLength(3);
+  for (const cell of layout.cells) {
+    // 値が数文字ぶん見え、判定のバッジがセルからはみ出さない（収まらない分は枠の中で横スクロールする）
+    expect(cell.valueWidth).toBeGreaterThanOrEqual(30);
+    expect(cell.overflow).toBeLessThanOrEqual(0);
+  }
+});
+
 test('承認クリック後にユニット内の次の未判定セルへ自動遷移する（フォーカスモードのマトリクス）', async ({ page }) => {
   await setupRoutes(page, {
     schemaRows: [STUDY_FIELD_ROW, STUDY_FIELD_ROW_2],

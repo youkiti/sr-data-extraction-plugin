@@ -219,6 +219,7 @@ async function initApp(page: Page, hash: string): Promise<void> {
 }
 
 test('形式選択 + サマリ + プレビュー → 生成で Drive 保存 + ExportLog 追記 + 結果カード', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
   const captured = await setupRoutes(page);
   await initApp(page, '#/export');
 
@@ -241,6 +242,9 @@ test('形式選択 + サマリ + プレビュー → 生成で Drive 保存 + Ex
   await formats.locator('input[value=audit]').check();
   await expect(preview.locator('thead th').first()).toHaveText('study_label');
   await expect(preview.locator('thead th')).toHaveCount(30);
+  // 列の多い表でも、幅 1280px で左メニューが潰れず、ページに横スクロールが出ない（表は枠内で横スクロールする）
+  await expect(page.locator('.app__sidebar')).toHaveJSProperty('offsetWidth', 220);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(1280);
   await expect(summary).toContainText('未検証セル数');
   await formats.locator('input[value=study_wide]').check();
   await expect(preview.locator('thead th')).toHaveCount(2);
