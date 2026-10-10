@@ -58,6 +58,8 @@ export const jaPages = {
   'popup.openIdPlaceholder': 'スプレッドシート ID または URL を貼り付け',
   'popup.openSubmit': '開く',
   'popup.openOptions': '設定を開く',
+  'popup.reopenHint':
+    '次回は、アドレスバー右のパズル型ボタンからこの拡張をピン留めするか、このページをブックマークすると、すぐに開けます。',
   'popup.openHelp': '使い方',
   'popup.statusLoginRequired': 'ログインが必要です。',
   'popup.statusPickRecent': '最近のスプレッドシートから選ぶか、新しく作成してください。',

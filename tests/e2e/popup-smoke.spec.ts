@@ -54,6 +54,10 @@ test('未ログイン: ログインセクションのみ表示される', async 
   await expect(page.locator('#popup-auth')).toBeVisible();
   await expect(page.locator('#popup-projects')).toBeHidden();
   await expect(page.locator('#login-button')).toBeVisible();
+  await expect(page.locator('#popup-reopen-hint')).toBeVisible();
+  await expect(page.locator('#popup-reopen-hint')).toHaveText(
+    '次回は、アドレスバー右のパズル型ボタンからこの拡張をピン留めするか、このページをブックマークすると、すぐに開けます。',
+  );
 });
 
 test('ログイン済 + 最近 2 件: recent セレクタと各フォームが表示される', async ({ page }) => {

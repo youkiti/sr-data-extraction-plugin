@@ -14,6 +14,8 @@ Chrome 拡張は 3 つのエントリポイントを持つ（sr-query-builder �
 | プロジェクト選択（S1） | プロジェクト選択（選択と同時に同一タブのままメインビューへ遷移する。独立した「開く」ボタンは持たない）。最近のプロジェクト一覧と新規作成 | `popup.html`（新規タブでフルページ表示。アンカー型ポップアップとしては使わない） |
 | メインビュー | フルページの作業画面。本拡張の作業はほぼここで完結 | `app.html`（`chrome.tabs.create` で開く） |
 
+初回インストール時は service worker の `runtime.onInstalled`（`reason === 'install'` のみ）から使い方ガイド `https://youkiti.github.io/sr-data-extraction-plugin/help.html?lang=ja#setup` を新規タブで一度開く。言語は `chrome.i18n.getUILanguage()` が `ja` で始まる場合（大文字小文字を区別しない）は `ja`、それ以外は `en`（`?lang=en#setup`）。更新（`update` / `chrome_update` / `shared_module_update`）では開かない。
+
 拡張アイコンのクリックはポップアップを出さず、service worker の `action.onClicked` がその場で新規タブを開く（manifest に `default_popup` を持たない）: プロジェクト選択済みならメインビュー（`app.html`）、未選択（初回・ログアウト後）なら S1（`popup.html`）へ。
 | Options（S11） | API キー設定、既定 LLM プロバイダ（OpenRouter カスタムモデルは P1）、表示言語 | `options.html`（拡張管理画面から開く）＋アプリ内ルート `#/options`（メインビューのヘッダ歯車・S1 の「設定を開く」から同一タブで遷移。本文マークアップは `options.html` と共通の `settingsSections.ts`） |
 
