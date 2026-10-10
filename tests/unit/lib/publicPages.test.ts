@@ -1,6 +1,6 @@
 // 公開ページ URL の正典（issue #214）。静的 HTML（app.html / popup.html）は属性へ直接
 // URL を書くため定数を import できない。ここで HTML を読んで一致を検査し、ドリフトを防ぐ
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 
 import {
@@ -107,5 +107,49 @@ describe('公開ページ（hosted/）の i18n', () => {
     const css = readSource(join('hosted', 'style.css'));
     expect(css).toContain(':root[data-lang="ja"] .en');
     expect(css).toContain(':root[data-lang="en"] .ja');
+  });
+});
+
+describe('公開ページ（hosted/）の図と動画', () => {
+  const pages = ['index.html', 'help.html'];
+  const MAX_IMAGE_BYTES = 300 * 1024;
+
+  test('参照する図が hosted/screenshots/ に実在し、1 枚 300KB 以下', () => {
+    let count = 0;
+    for (const file of pages) {
+      const html = readSource(join('hosted', file));
+      for (const match of html.matchAll(/src="(screenshots\/[^"]+)"/g)) {
+        count += 1;
+        const imagePath = join(repoRoot, 'hosted', match[1] ?? '');
+        expect(existsSync(imagePath)).toBe(true);
+        expect(statSync(imagePath).size).toBeLessThanOrEqual(MAX_IMAGE_BYTES);
+      }
+    }
+    expect(count).toBeGreaterThan(0);
+  });
+
+  test('動画の節は「YouTube で見る」ボタンと全画面の案内を持つ', () => {
+    for (const file of pages) {
+      const html = readSource(join('hosted', file));
+      expect(html).toMatch(/class="btn btn-outline"[^>]*href="https:\/\/youtu\.be\//);
+      expect(html).toContain('class="video-hint"');
+    }
+  });
+
+  test('help.html は拡張アイコンの見つけ方の図を参照する', () => {
+    expect(readSource(join('hosted', 'help.html'))).toContain('screenshots/pin-extension.png');
+  });
+
+  test('各ページの img は alt・data-en-alt・遅延読み込みを持つ', () => {
+    for (const file of pages) {
+      const html = readSource(join('hosted', file));
+      const images = html.match(/<img\b[^>]*>/g) ?? [];
+      expect(images.length).toBeGreaterThan(0);
+      for (const tag of images) {
+        expect(tag).toContain('alt=');
+        expect(tag).toContain('data-en-alt=');
+        expect(tag).toContain('loading="lazy"');
+      }
+    }
   });
 });
