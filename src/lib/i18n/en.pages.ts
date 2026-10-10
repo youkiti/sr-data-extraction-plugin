@@ -59,6 +59,8 @@ export const enPages: Record<keyof typeof jaPages, string> = {
   'popup.openIdPlaceholder': 'Paste a spreadsheet ID or URL',
   'popup.openSubmit': 'Open',
   'popup.openOptions': 'Open settings',
+  'popup.reopenHint':
+    'To reopen this page later, pin the extension from the puzzle-piece button next to the address bar, or bookmark this page.',
   'popup.openHelp': 'User guide',
   'popup.statusLoginRequired': 'Sign-in required.',
   'popup.statusPickRecent': 'Choose a recent spreadsheet or create a new one.',

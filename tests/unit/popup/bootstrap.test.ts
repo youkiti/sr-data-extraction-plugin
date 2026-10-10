@@ -1,4 +1,6 @@
 // Popup（S1）の状態仕様テスト（docs/ui-states.md §1 と 1:1 対応）
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { installChromeMock, type ChromeMock } from '../../setup/chrome-mock';
 import {
   bootstrapPopup,
@@ -1513,5 +1515,29 @@ describe('bootstrapPopup（表示言語 en。issue #93）', () => {
     expect(el('login-error').textContent).toBe(
       'Sign-in failed. Make sure a Google account is added to your browser.',
     );
+  });
+});
+
+describe('bootstrapPopup（フッタの再起動案内）', () => {
+  afterEach(() => {
+    setUiLanguage('ja');
+  });
+
+  test.each([
+    ['ja', '次回は、アドレスバー右のパズル型ボタンからこの拡張をピン留めするか、このページをブックマークすると、すぐに開けます。'],
+    ['en', 'To reopen this page later, pin the extension from the puzzle-piece button next to the address bar, or bookmark this page.'],
+  ])('未ログインでも %s の案内を表示する', async (language, text) => {
+    const mock = installChromeMock();
+    mock.storage.local.data['settings.uiLanguage'] = language;
+    document.body.innerHTML = readFileSync(
+      resolve(__dirname, '../../../src/popup/popup.html'),
+      'utf8',
+    );
+    await bootstrapPopup(document, makeDeps({ isAuthenticated: jest.fn(async () => false) }));
+    const hint = el('popup-reopen-hint');
+    expect(hint.textContent).toBe(text);
+    expect(hint.closest('.popup__footer')).not.toBeNull();
+    expect(hint.closest('[hidden]')).toBeNull();
+    expect(el('popup-open-help').closest('.popup__footer')).not.toBeNull();
   });
 });

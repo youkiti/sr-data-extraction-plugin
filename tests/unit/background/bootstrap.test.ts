@@ -3,6 +3,9 @@
 import { installChromeMock, type ChromeMock } from '../../setup/chrome-mock';
 import {
   createChromeBackgroundDeps,
+  createChromeInstalledDeps,
+  handleInstalled,
+  type InstalledDeps,
   handleActionClick,
   type BackgroundDeps,
 } from '../../../src/background/bootstrap';
@@ -57,5 +60,51 @@ describe('createChromeBackgroundDeps', () => {
     mock.storage.local.data[CURRENT_PROJECT_STORAGE_KEY] = PROJECT;
     const deps = createChromeBackgroundDeps();
     await expect(deps.loadCurrentProject()).resolves.toEqual(PROJECT);
+  });
+});
+
+describe('handleInstalled', () => {
+  test.each([
+    ['ja', 'ja'],
+    ['JA-jp', 'ja'],
+    ['en-US', 'en'],
+    ['fr', 'en'],
+  ])('初回インストールは UI 言語 %s でガイドを一度開く', (uiLanguage, lang) => {
+    const deps: InstalledDeps = {
+      getUiLanguage: jest.fn(() => uiLanguage),
+      openExternalTab: jest.fn(),
+    };
+    handleInstalled(deps, { reason: 'install' as chrome.runtime.OnInstalledReason });
+    expect(deps.openExternalTab).toHaveBeenCalledTimes(1);
+    expect(deps.openExternalTab).toHaveBeenCalledWith(
+      `https://youkiti.github.io/sr-data-extraction-plugin/help.html?lang=${lang}#setup`,
+    );
+  });
+
+  test.each(['update', 'chrome_update', 'shared_module_update'] as const)(
+    '%s ではガイドを開かず言語も読まない',
+    (reason) => {
+      const deps: InstalledDeps = {
+        getUiLanguage: jest.fn(),
+        openExternalTab: jest.fn(),
+      };
+      handleInstalled(deps, { reason: reason as chrome.runtime.OnInstalledReason });
+      expect(deps.openExternalTab).not.toHaveBeenCalled();
+      expect(deps.getUiLanguage).not.toHaveBeenCalled();
+    },
+  );
+});
+
+describe('createChromeInstalledDeps', () => {
+  test('Chrome の UI 言語を読み、絶対 URL をそのまま新規タブで開く', () => {
+    const mock = installChromeMock();
+    mock.i18n.getUILanguage.mockReturnValue('en-US');
+    const deps = createChromeInstalledDeps();
+    expect(deps.getUiLanguage()).toBe('en-US');
+    expect(mock.i18n.getUILanguage).toHaveBeenCalledTimes(1);
+    const url = 'https://youkiti.github.io/sr-data-extraction-plugin/help.html?lang=en#setup';
+    deps.openExternalTab(url);
+    expect(mock.tabs.create).toHaveBeenCalledWith({ url });
+    expect(mock.runtime.getURL).not.toHaveBeenCalled();
   });
 });
