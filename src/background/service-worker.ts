@@ -4,10 +4,15 @@ import {
   createAuthMessageListener,
   createChromeWebAuthDeps,
 } from './authBroker';
-import { createChromeBackgroundDeps, handleActionClick } from './bootstrap';
+import {
+  createChromeBackgroundDeps,
+  createChromeInstalledDeps,
+  handleActionClick,
+  handleInstalled,
+} from './bootstrap';
 
-chrome.runtime.onInstalled.addListener(() => {
-  console.log('sr-data-extraction-plugin: installed');
+chrome.runtime.onInstalled.addListener((details) => {
+  handleInstalled(createChromeInstalledDeps(), details);
 });
 
 // manifest に default_popup を持たないため、アイコンクリックはここへ届く

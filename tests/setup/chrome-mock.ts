@@ -2,6 +2,7 @@
 // 必要になった API から順に追加する最小実装。テスト内で状態をリセットしたい場合は
 // installChromeMock() を beforeEach で呼び直す
 export interface ChromeMock {
+  i18n: { getUILanguage: jest.Mock };
   storage: {
     local: {
       /** モックが内部に持つ保存済みデータ（テストからの直接検査用） */
@@ -73,6 +74,7 @@ function makeStorageArea(): {
 
 export function installChromeMock(): ChromeMock {
   const mock: ChromeMock = {
+    i18n: { getUILanguage: jest.fn(() => 'ja') },
     storage: {
       local: makeStorageArea(),
       session: makeStorageArea(),

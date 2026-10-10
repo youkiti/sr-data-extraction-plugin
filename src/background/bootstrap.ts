@@ -6,6 +6,7 @@
 // - 未選択（初回起動・ログアウト後）→ S1 プロジェクト選択ページ（popup/popup.html。
 //   メインビューの「プロジェクト選択を開く」導線と同じフルページ表示）
 import { loadCurrentProject } from '../features/project/projectStore';
+import { HELP_URL, withUiLanguage } from '../lib/publicPages';
 import type { ProjectRef } from '../domain/project';
 
 export interface BackgroundDeps {
@@ -28,4 +29,30 @@ export function createChromeBackgroundDeps(): BackgroundDeps {
 export async function handleActionClick(deps: BackgroundDeps): Promise<void> {
   const project = await deps.loadCurrentProject();
   deps.openTab(project !== null ? 'app/app.html' : 'popup/popup.html');
+}
+
+export interface InstalledDeps {
+  /** ブラウザの UI 言語を読む（初回は設定が未保存） */
+  getUiLanguage: () => string;
+  /** 絶対 URL を新規タブで開く */
+  openExternalTab: (url: string) => void;
+}
+
+export function createChromeInstalledDeps(): InstalledDeps {
+  return {
+    getUiLanguage: () => chrome.i18n.getUILanguage(),
+    openExternalTab: (url: string) => {
+      void chrome.tabs.create({ url });
+    },
+  };
+}
+
+/** 初回インストール時だけ使い方ガイドのセットアップ節を開く */
+export function handleInstalled(
+  deps: InstalledDeps,
+  details: chrome.runtime.InstalledDetails,
+): void {
+  if (details.reason !== 'install') return;
+  const lang = deps.getUiLanguage().toLowerCase().startsWith('ja') ? 'ja' : 'en';
+  deps.openExternalTab(`${withUiLanguage(HELP_URL, lang)}#setup`);
 }

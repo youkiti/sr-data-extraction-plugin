@@ -72,6 +72,7 @@ spec が正。実装が追いついていない箇所は以下のとおり（実
   - drive.file では「未許可」と「不存在」を区別できないため、旧文言「スプレッドシートが見つかりません。ID を確認してください」（404 専用）はこの案内文に**置換**する
   - 403 でも権限系以外の reason（API 無効化・クォータ等）は従来どおり一般エラー表示（Picker 誘導しない）
 - ページ末尾のフッタ `.popup__footer` に**使い方ガイドへの外部リンク `#popup-open-help`**（issue #214。`target="_blank"` + `rel="noopener noreferrer"`）を常時表示する（未ログイン状態でも出す）
+- フッタに開き直し方の案内 `#popup-reopen-hint`（issue #357）（`popup.reopenHint`）を常時表示する（未ログイン時も表示）。日本語: 「次回は、アドレスバー右のパズル型ボタンからこの拡張をピン留めするか、このページをブックマークすると、すぐに開けます。」、英語: 「To reopen this page later, pin the extension from the puzzle-piece button next to the address bar, or bookmark this page.」。
 - 設定は `#open-options` からアプリ内ルート `app/app.html#/options` へ同一タブで遷移する（`chrome.tabs.update`。独立ページ `options/options.html` は拡張管理画面の「オプション」からのみ開く）
 - プロジェクト選択（作成 / 既存 ID / 履歴クリック）成功で直ちに同一タブのままメインビューへ遷移する（`chrome.tabs.update`。S1 はフルページ表示のためタブを増やさない）。独立した「メインビューを開く」ボタンは持たない（スケルトン段階の `#open-app` ボタンは廃止）
 
