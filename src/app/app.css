@@ -105,6 +105,9 @@
 
 .app__sidebar {
   width: 220px;
+
+  /* 右の本文に横に広い表があっても、左メニューを潰さない */
+  flex-shrink: 0;
   padding: 16px 0;
   background: var(--color-surface);
   border-right: 1px solid var(--color-border);
@@ -142,6 +145,9 @@
 
 .app__content {
   flex: 1;
+
+  /* flex アイテムの下限が中身の最小幅になり、表の幅がページ全体に伝わるのを止める */
+  min-width: 0;
   padding: 24px 32px;
 }
 
@@ -2889,8 +2895,18 @@ section.documents__tiab {
   font-weight: 600;
 }
 
+/* 項目名の列は幅を決めておく。値セルの下限が 0 なので、決めないと項目名の列が
+   残り幅を取り、値が数文字で切れる */
+.focus-card__matrix-colhead:first-child {
+  width: 9em;
+}
+
 .focus-card__matrix-cell {
   padding: 3px;
+
+  /* 値セルの下限を 0 にして、長い値を省略記号で切り、表を判定項目の枠に収める
+     （自動レイアウトのまま残り幅を列で分け合う） */
+  max-width: 0;
 }
 
 .focus-card__matrix-cell--empty {
@@ -2933,6 +2949,7 @@ section.documents__tiab {
 }
 
 .focus-card__matrix-value {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

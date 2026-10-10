@@ -147,7 +147,7 @@ function renderPreview(data: PreviewData, tableId = 'export-preview'): HTMLEleme
     el('thead', {}, [headRow]),
     el('tbody', {}, bodyRows),
   ]);
-  const parts: HTMLElement[] = [el('div', { className: 'export__preview-wrap' }, [table])];
+  const parts: HTMLElement[] = [el('div', { className: 'export__preview-wrap', attributes: { tabindex: '0' } }, [table])];
   const rest = data.rowCount - data.previewRows.length;
   if (rest > 0) {
     // tableId が既定の 'export-preview' のときは従来どおり 'export-preview-more' になる

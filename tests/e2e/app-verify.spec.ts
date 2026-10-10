@@ -1085,6 +1085,34 @@ test('和文 fixture: 抽出テキスト → アンカリング（exact）→ �
   await expect(page.locator('#verify-focus-detail .verify__quote-jump')).toBeVisible();
 });
 
+test('幅 1280px で値が長くても、左メニューが潰れず、項目の一覧表が判定項目の枠に収まる', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  // 値が長いと、省略されない表が本文の幅を押し広げて左メニューを潰していた
+  const longValue = 'Until postoperative day 7 or hospital discharge, whichever came first, with a telephone follow-up at day 30';
+  const longEvidenceRow = EVIDENCE_ROW_1.map((cell, index) => (index === 6 ? longValue : cell));
+  await setupRoutes(page, {
+    schemaRows: [STUDY_FIELD_ROW, STUDY_FIELD_ROW_2],
+    evidenceRows: [longEvidenceRow, EVIDENCE_ROW_2],
+  });
+  await initApp(page, '#/verify?study=study-1');
+
+  await expect(page.locator('.verify__panes')).toBeVisible({ timeout: 15_000 });
+  const matrixButtons = page.locator('#verify-focus-matrix .focus-card__matrix-btn');
+  await expect(matrixButtons).toHaveCount(2);
+  await expect(matrixButtons.nth(0)).toContainText(longValue);
+
+  await expect(page.locator('.app__sidebar')).toHaveJSProperty('offsetWidth', 220);
+  const layout = await page.evaluate(() => ({
+    docScroll: document.documentElement.scrollWidth,
+    matrixRight: document.querySelector('#verify-focus-matrix')!.getBoundingClientRect().right,
+    paneRight: document.querySelector('.verify__pane--form')!.getBoundingClientRect().right,
+  }));
+  expect(layout.docScroll).toBeLessThanOrEqual(1280);
+  expect(layout.matrixRight).toBeLessThanOrEqual(layout.paneRight);
+  // 判定のバッジ（値の右の末尾グループ）が枠の中に見えている
+  await expect(matrixButtons.nth(0).locator('.focus-card__matrix-trailing')).toBeInViewport();
+});
+
 test('承認クリック後にユニット内の次の未判定セルへ自動遷移する（フォーカスモードのマトリクス）', async ({ page }) => {
   await setupRoutes(page, {
     schemaRows: [STUDY_FIELD_ROW, STUDY_FIELD_ROW_2],
