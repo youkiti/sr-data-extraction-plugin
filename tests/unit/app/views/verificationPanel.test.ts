@@ -1635,6 +1635,52 @@ describe('自動遷移・初期フォーカス・スクロール保持（UX 改�
     panel.dispose();
   });
 
+  test('判定の自動送りと初期表示は横位置を保ち、縦スクロールを妨げない', async () => {
+    const { panel } = await createPanel();
+    const formPane = panel.root.querySelector<HTMLElement>('.verify__pane--form')!;
+    const page = document.documentElement;
+    const originalLeft = page.scrollLeft;
+    cellEl(panel.root, KEY_TOTAL)?.focus();
+    const focus = jest.spyOn(HTMLElement.prototype, 'focus');
+    const scrollIntoView = jest.fn(() => {
+      page.scrollLeft = 264;
+      formPane.scrollLeft = 26;
+      page.scrollTop = 80;
+      formPane.scrollTop = 160;
+    });
+    (HTMLElement.prototype as unknown as { scrollIntoView: unknown }).scrollIntoView = scrollIntoView;
+    try {
+      page.scrollLeft = 12;
+      formPane.scrollLeft = 7;
+      pressKey('a');
+      expect(document.activeElement).toBe(cellEl(panel.root, KEY_COUNTRY));
+      expect(focus).toHaveBeenCalledWith({ preventScroll: true });
+      expect(scrollIntoView).toHaveBeenCalledWith({ block: 'nearest' });
+      expect(page.scrollLeft).toBe(12);
+      expect(formPane.scrollLeft).toBe(7);
+      expect(page.scrollTop).toBe(80);
+      expect(formPane.scrollTop).toBe(160);
+      // 再描画のフォーカス復元はスクロールより先、自動送りはその後にフォーカスする。
+      expect(focus.mock.invocationCallOrder[0]).toBeLessThan(scrollIntoView.mock.invocationCallOrder[0]!);
+      expect(focus.mock.invocationCallOrder[1]).toBeGreaterThan(scrollIntoView.mock.invocationCallOrder[1]!);
+      focus.mockClear();
+      panel.scrollFocusedIntoView();
+      expect(scrollIntoView).toHaveBeenCalledWith({ block: 'start' });
+      expect(page.scrollLeft).toBe(12);
+      expect(formPane.scrollLeft).toBe(7);
+      expect(focus).not.toHaveBeenCalled();
+      pressKey('e');
+      expect(focus).toHaveBeenCalledWith({ preventScroll: true });
+      expect(document.activeElement).toBe(formPane.querySelector('.verify__edit-input'));
+    } finally {
+      focus.mockRestore();
+      delete (HTMLElement.prototype as unknown as { scrollIntoView?: unknown }).scrollIntoView;
+      page.scrollLeft = originalLeft;
+      page.scrollTop = 0;
+      panel.dispose();
+    }
+  });
+
   test('判定後の自動遷移で遷移先セルへ scrollIntoView + フォーカスする', async () => {
     const scrollIntoView = jest.fn();
     (HTMLElement.prototype as unknown as { scrollIntoView: unknown }).scrollIntoView =

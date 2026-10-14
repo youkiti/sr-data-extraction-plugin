@@ -1769,7 +1769,13 @@ export function createVerificationPanel(
       refreshForm();
       // 値入力へ即フォーカス（e キーの操作感。ui-flow.md §7）。enum 項目は入力欄ではなく
       // 許容値チップ列が出るため、先頭チップを着地先にする（issue #254）
-      formPane.querySelector<HTMLElement>('.verify__edit-input, .verify__enum-chip')?.focus();
+      // 縦方向だけ見える位置へ動かす（右ペインを手でスクロールしてカードが画面外でも入力欄を見せる）
+      const editTarget = formPane.querySelector<HTMLElement>('.verify__edit-input, .verify__enum-chip');
+      /* istanbul ignore else -- 編集は表示中のセルからしか始まらず、直前の refreshForm が
+         そのセルへ入力欄か許容値チップを必ず描くため、null になることはない（防御のみ） */
+      if (editTarget !== null) {
+        showAndFocusCell(editTarget);
+      }
     },
     onConfirmEdit(cellKey, action, value, note) {
       const cell = findCell(cellKey);
@@ -1845,8 +1851,7 @@ export function createVerificationPanel(
       focusHighlightNowOrPending(cellKey);
       syncTextViewer();
       const element = findCellElement(cellKey);
-      element.scrollIntoView?.({ block: 'nearest' });
-      element.focus();
+      showAndFocusCell(element);
     },
     onCollapseDecided() {
       expandedDecidedKey = null;
@@ -2074,9 +2079,22 @@ export function createVerificationPanel(
     if (hadFocus && focusedCellKey !== null && editing === null && !tabLocked(activeTab)) {
       // 復元したスクロール位置を尊重しつつ（preventScroll）、フォーカスセルが画面外なら最小移動で見せる
       const element = findCellElement(focusedCellKey);
-      element.focus({ preventScroll: true });
-      element.scrollIntoView?.({ block: 'nearest' });
+      showAndFocusCell(element, true);
     }
+  }
+
+  // 右列の要素（セル・編集欄）を縦方向だけ見える位置へ動かしてフォーカスする。狭い窓幅では
+  // ページ全体が横にはみ出しているため、素の scrollIntoView / focus だとページごと横へ動き、
+  // 左の PDF が隠れる（issue #366）。横位置はページ・右ペインとも呼ぶ前の値へ戻す
+  function showAndFocusCell(element: HTMLElement, focusFirst = false): void {
+    const page = element.ownerDocument.documentElement;
+    const pageLeft = page.scrollLeft;
+    const formLeft = formPane.scrollLeft;
+    if (focusFirst) element.focus({ preventScroll: true });
+    element.scrollIntoView?.({ block: 'nearest' });
+    if (!focusFirst) element.focus({ preventScroll: true });
+    page.scrollLeft = pageLeft;
+    formPane.scrollLeft = formLeft;
   }
 
   /**
@@ -2134,8 +2152,7 @@ export function createVerificationPanel(
     }
     if (behavior.domFocus) {
       const element = findCellElement(cellKey);
-      element.scrollIntoView?.({ block: 'nearest' });
-      element.focus();
+      showAndFocusCell(element);
     }
   }
 
@@ -2161,8 +2178,7 @@ export function createVerificationPanel(
       } else {
         // 初期フォーカスと同一セル（study の先頭など）でもスクロール・フォーカスは行う
         const element = findCellElement(cell.cellKey);
-        element.scrollIntoView?.({ block: 'nearest' });
-        element.focus();
+        showAndFocusCell(element);
       }
       return;
     }
@@ -2250,8 +2266,7 @@ export function createVerificationPanel(
       ensureActiveDocumentForCell(movedTo);
       focusHighlightNowOrPending(movedTo);
       const element = findCellElement(movedTo);
-      element.scrollIntoView?.({ block: 'nearest' });
-      element.focus();
+      showAndFocusCell(element);
     }
     options.onDecision(decision);
   }
@@ -2419,11 +2434,16 @@ export function createVerificationPanel(
       // フォーカス中セル（フォームペイン側）だけを可視化すると、PDF ペインのツールバー
       // （ズームコントロール含む）が画面外に残ったままになり得るため、まずパネル全体の
       // 先頭（= 両ペインのツールバー行）を画面内へ入れてから、フォーカス中セルを微調整する
+      const page = root.ownerDocument.documentElement;
+      const pageLeft = page.scrollLeft;
+      const formLeft = formPane.scrollLeft;
       root.scrollIntoView?.({ block: 'start' });
       const element = [...formPane.querySelectorAll<HTMLElement>('.verify__cell')].find(
         (node) => node.dataset['cellKey'] === focusedCellKey,
       );
       element?.scrollIntoView?.({ block: 'nearest' });
+      page.scrollLeft = pageLeft;
+      formPane.scrollLeft = formLeft;
     },
     syncPaneLayoutMeasurements() {
       applyPaneLayout();

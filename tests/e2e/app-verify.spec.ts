@@ -988,6 +988,34 @@ test('判定保存（非同期ストア更新）の再描画でもペイン内�
   await expect.poll(() => pdfScroller.evaluate((node) => node.scrollTop)).toBe(viewerScrollTop);
 });
 
+test('狭い窓幅で承認して次の未判定セルへ進んでもページの横位置を保つ', async ({ page }) => {
+  await page.setViewportSize({ width: 1000, height: 800 });
+  const countryEvidence = [...EVIDENCE_ROW_1];
+  countryEvidence[0] = 'ev-country';
+  countryEvidence[3] = 'f-country';
+  countryEvidence[6] = 'Japan';
+  const { appendUrls } = await setupRoutes(page, {
+    schemaRows: [STUDY_FIELD_ROW, STUDY_FIELD_ROW_2],
+    evidenceRows: [EVIDENCE_ROW_1, countryEvidence],
+  });
+  await initApp(page, '#/verify?study=study-1');
+  await expect(page.locator('.verify__panes')).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator('.pdf-viewer__hl--unverified')).toHaveCount(2, { timeout: 15_000 });
+  await page.locator('#verify-layout-toggle').click();
+  await expect(page.locator('#verify-focus-card')).toHaveCount(0);
+  await expect(page.locator('.verify__action--accept')).toHaveCount(2);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)).toBe(true);
+  // 操作前の位置を明示し、クリックの自動スクロールが混ざらないキーボード操作で判定する。
+  await page.evaluate(() => window.scrollTo(0, window.scrollY));
+  expect(await page.evaluate(() => window.scrollX)).toBe(0);
+  await page.keyboard.press('a');
+  await expect
+    .poll(() => appendUrls.filter((url) => url.includes('Decisions') && url.includes(':append')).length)
+    .toBeGreaterThan(0);
+  await expect(page.locator('.verify__cell--focused')).toHaveAttribute('data-cell-key', /f-country/);
+  await expect.poll(() => page.evaluate(() => window.scrollX)).toBe(0);
+});
+
 // AI 抽出結果なし（no_result）バナー: RUN_ROW は study-1,study-2 の両方を対象にしているが、
 // Evidence は study-1 ぶんしか渡さない → study-2 は「完了 run の対象だったが Evidence が
 // 1 行も生成されなかった study」として #verify-no-ai-result バナーが出る（Evidence がある
