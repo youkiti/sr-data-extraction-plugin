@@ -30,6 +30,7 @@ export interface OpenAICompatibleProviderOptions {
   fetch?: typeof fetch;
   /** 省略時は 'bearer'（従来どおり）。Azure OpenAI は 'azure_api_key' を渡す */
   authMode?: OpenAiCompatibleAuthMode;
+  providerId?: 'openai_compatible' | 'local_llm';
   /**
    * construction 時点の既定 reasoning effort（Options `settings.defaultReasoningEffort` から
    * `providerFactory.createProvider` が注入する。issue #127 PR5。Azure OpenAI 経由も含む）。
@@ -126,7 +127,7 @@ export class OpenAICompatibleProvider implements LLMProvider {
     this.reasoningEffort = options.reasoningEffort ?? null;
     // LLMApiLog.provider へ書く値を認証方式に連動させる（Azure 分の run を openai_compatible の
     // ログ・コスト集計へ紛れ込ませない）
-    this.providerId = this.authMode === 'azure_api_key' ? 'azure_openai' : 'openai_compatible';
+    this.providerId = this.authMode === 'azure_api_key' ? 'azure_openai' : options.providerId ?? 'openai_compatible';
   }
 
   async chat(messages: readonly ChatMessage[], options: ChatOptions = {}): Promise<ChatResponse> {

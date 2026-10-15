@@ -785,7 +785,7 @@ export interface AppState {
   /**
    * 保存済み LLM 接続方式の override（Options で設定。`loadLlmConnectionSettings().provider`）。
    * null = 未設定（モデル名からの provider 推定 `resolveProviderId` に従う）。
-   * bootstrap 起動時に 1 回だけ読み込む（接続方式は Options でしか変わらないため）。
+   * bootstrap 起動時に読み込み、設定保存時の storage 通知に追従する。
    * 画像非対応モデルの実行ブロック判定（`isRunBlockedByImageUnsupportedModel`）の
    * UI 描画（disabled 表示）で、モデル名推定だけでは openai_compatible 接続時に
    * 誤判定する問題（issue #191 レビュー対応）を防ぐ。
@@ -793,6 +793,7 @@ export interface AppState {
    * ここは UI 描画専用の非同期スナップショットで足りる
    */
   llmProviderOverride: LlmProviderId | null;
+  fetchedModelIds: Partial<Record<LlmProviderId, readonly string[]>>;
 }
 
 export type StateListener = (state: AppState) => void;
@@ -1037,6 +1038,7 @@ export function createInitialState(): AppState {
     },
     settingsReturnHash: null,
     llmProviderOverride: null,
+    fetchedModelIds: {},
   };
 }
 

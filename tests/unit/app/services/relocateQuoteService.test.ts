@@ -1,3 +1,4 @@
+import { providerModelMismatchMessage } from '../../../../src/lib/llm/modelCatalog';
 import {
   relocateQuote,
   type RelocateQuoteDeps,
@@ -226,6 +227,21 @@ describe('relocateQuote', () => {
     const { deps, chatMock } = makeDeps();
     const outcome = await relocateQuote(makeParams({ documentPages: [] }), deps);
     expect(outcome.status).toBe('not_found');
+    expect(chatMock).not.toHaveBeenCalled();
+    expect(ensureChildFolderMock).not.toHaveBeenCalled();
+  });
+
+  test('接続方式とモデルが食い違う場合は LLM を呼ばず案内する', async () => {
+    const { deps, chatMock } = makeDeps({
+      loadDefaultModel: async () => 'gemini-2.5-pro',
+      loadLlmConnectionSettings: async () => ({
+        provider: 'anthropic', openAiCompatibleEndpoint: null, azureOpenAiEndpoint: null, localLlmEndpoint: null,
+      }),
+    });
+    expect(await relocateQuote(makeParams(), deps)).toEqual({
+      status: 'not_found',
+      message: providerModelMismatchMessage('gemini-2.5-pro', 'anthropic'),
+    });
     expect(chatMock).not.toHaveBeenCalled();
     expect(ensureChildFolderMock).not.toHaveBeenCalled();
   });

@@ -105,6 +105,9 @@ function dedupe<T>(items: readonly T[]): T[] {
 
 /** provider の表示名変換（docs/methods-boilerplate.md §3: gemini → Gemini 等） */
 function providerDisplayName(provider: LlmProviderId): string {
+  if (provider === 'local_llm') {
+    return 'Local LLM';
+  }
   if (provider === 'openrouter') {
     return 'OpenRouter';
   }

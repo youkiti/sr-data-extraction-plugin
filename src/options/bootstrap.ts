@@ -1,11 +1,10 @@
-// Options（S11）の実処理: Gemini / OpenRouter API キーの保存（BYOK）と既定モデルの保存。
-// 状態仕様は docs/ui-states.md §2（trim 保存・API キーの空文字は保存抑止・
-// 既定モデルの空は「未設定に戻す」・保存中はボタン無効化）
+// Options（S11）の実処理: 接続方式・キー・既定モデルを保存して接続を確認する。
+// 状態仕様は docs/ui-states.md §2「LLM 接続（統合版）」。
 import { withDevSuffix } from '../build-info';
 import { createModelSelect } from '../app/ui/modelSelect';
 import { showToast } from '../app/ui/toast';
 import type { LlmProviderId } from '../domain/llmApiLog';
-import type { ReasoningEffort } from '../lib/llm/LLMProvider';
+import { LlmProviderError, type ReasoningEffort } from '../lib/llm/LLMProvider';
 import {
   getUiLanguage,
   isUiLanguage,
@@ -15,8 +14,11 @@ import {
   t,
 } from '../lib/i18n';
 import { buildSettingsSections } from './settingsSections';
-import { isCatalogModel } from '../lib/llm/modelCatalog';
-import { MODEL_SELECT_OTHER_VALUE } from '../app/ui/modelSelect';
+import {
+  buildModelCatalogFor,
+  findProviderModelMismatch,
+  providerModelMismatchMessage,
+} from '../lib/llm/modelCatalog';
 import { fetchModelIds, isModelListFetchSupported } from '../lib/llm/modelListFetcher';
 import { createProvider, resolveProviderId } from '../lib/llm/providerFactory';
 import {
@@ -43,6 +45,10 @@ import {
   FACTORY_DEFAULT_MODEL,
   isLoopbackEndpoint,
   loadDefaultModel,
+  loadFetchedModelIds,
+  saveFetchedModelIds,
+  normalizeLocalLlmEndpoint,
+  resolveStoredEndpoint,
   loadDefaultReasoningEffort,
   loadLlmConnectionSettings,
   loadRateLimitCustomConcurrency,
@@ -66,125 +72,6 @@ function makeSetStatus(statusEl: HTMLElement): (text: string, isError: boolean) 
     statusEl.textContent = text;
     statusEl.classList.toggle('options__status--error', isError);
   };
-}
-
-/** API キー節の共通配線（Gemini / OpenRouter で鏡写し。必須要素が欠けている場合は何もしない） */
-async function bootstrapApiKeySection(
-  root: ParentNode,
-  ids: { input: string; saveButton: string; status: string },
-  providerLabel: string,
-  load: () => Promise<string | null>,
-  save: (key: string) => Promise<void>,
-  // 別プロバイダのキーを取り違えて入力したときの警告文言を返す（確信できるときのみ非 null）
-  foreignKeyWarning: (key: string) => string | null,
-): Promise<void> {
-  const input = root.querySelector<HTMLInputElement>(`#${ids.input}`);
-  const saveButton = root.querySelector<HTMLButtonElement>(`#${ids.saveButton}`);
-  const statusEl = root.querySelector<HTMLElement>(`#${ids.status}`);
-  if (!input || !saveButton || !statusEl) {
-    return;
-  }
-
-  const setStatus = makeSetStatus(statusEl);
-
-  // 保存済みのときは平文キーを再表示せず、placeholder で「保存済み」を示す。
-  // 未設定のときは入力を促す既定文言に戻す
-  const setSavedPlaceholder = (saved: boolean): void => {
-    input.placeholder = saved ? t('options.placeholderSavedKey') : t('options.placeholderEnterKey');
-  };
-
-  const savedKey = await load();
-  setSavedPlaceholder(savedKey !== null);
-  setStatus(
-    `${providerLabel}: ${savedKey ? t('options.statusSavedKey') : t('options.statusUnsetKey')}`,
-    false,
-  );
-
-  const handleSave = async (): Promise<void> => {
-    const value = input.value.trim();
-    if (value === '') {
-      setStatus(t('options.toastEmptyKey'), true);
-      return;
-    }
-    const warning = foreignKeyWarning(value);
-    if (warning !== null) {
-      setStatus(warning, true);
-      return;
-    }
-    saveButton.disabled = true;
-    try {
-      await save(value);
-      input.value = '';
-      setSavedPlaceholder(true);
-      setStatus(t('options.toastSaved'), false);
-    } catch {
-      setStatus(t('options.toastSaveFailed'), true);
-    } finally {
-      saveButton.disabled = false;
-    }
-  };
-
-  saveButton.addEventListener('click', () => {
-    void handleSave();
-  });
-}
-
-/**
- * 既定モデル節の配線（必須要素が欠けている場合は何もしない）。
- * モデルセレクタ（共有ウィジェット。プルダウン + その他で直接入力）を
- * #default-model-container へ生成する。保存値は S5 スキーマ画面のモデル入力の
- * 初期値になる（schemaService.loadSchema が注入）
- */
-async function bootstrapDefaultModelSection(root: ParentNode): Promise<void> {
-  const container = root.querySelector<HTMLElement>('#default-model-container');
-  const saveButton = root.querySelector<HTMLButtonElement>('#save-default-model');
-  const statusEl = root.querySelector<HTMLElement>('#default-model-status');
-  if (!container || !saveButton || !statusEl) {
-    return;
-  }
-
-  const setStatus = makeSetStatus(statusEl);
-  // createModelSelect は要素生成に Document が要る。root が Document ならそれ自身、
-  // 要素（アプリ内 #/options の未 attach コンテナ）なら ownerDocument を使う
-  const doc = container.ownerDocument;
-
-  const savedModel = await loadDefaultModel();
-  // セレクタの選択値（その他は trim したテキスト）。保存ボタンがこれを永続化する
-  let pendingModel = savedModel ?? '';
-  container.append(
-    createModelSelect(doc, {
-      id: 'default-model',
-      ariaLabel: t('options.defaultModelTitle'),
-      value: pendingModel,
-      placeholderLabel: t('options.defaultModelPlaceholder'),
-      onChange: (model) => {
-        pendingModel = model;
-      },
-    }),
-  );
-  setStatus(
-    t('options.defaultModelStatus', {
-      status: savedModel ? t('options.statusSavedKey') : t('options.statusUnsetKey'),
-    }),
-    false,
-  );
-
-  const handleSave = async (): Promise<void> => {
-    saveButton.disabled = true;
-    try {
-      // 空（プレースホルダ or その他の空文字）は「未設定に戻す」（API キーと違い空での解除を許す）
-      await saveDefaultModel(pendingModel);
-      setStatus(pendingModel === '' ? t('options.defaultModelCleared') : t('options.toastSaved'), false);
-    } catch {
-      setStatus(t('options.toastSaveFailed'), true);
-    } finally {
-      saveButton.disabled = false;
-    }
-  };
-
-  saveButton.addEventListener('click', () => {
-    void handleSave();
-  });
 }
 
 function isReasoningEffortValue(value: string): value is ReasoningEffort {
@@ -244,309 +131,247 @@ function selectedProvider(select: HTMLSelectElement): LlmProviderId {
     value === 'openrouter' ||
     value === 'openai_compatible' ||
     value === 'anthropic' ||
-    value === 'azure_openai'
+    value === 'azure_openai' ||
+    value === 'local_llm'
   ) {
     return value;
   }
   return 'gemini';
 }
 
-/** Gemini / OpenRouter は接続方式節に専用の入力欄を持たず、上部の BYOK 節の保存済みキーをそのまま使う */
-async function loadKeyForProvider(provider: 'gemini' | 'openrouter'): Promise<string | null> {
-  if (provider === 'openrouter') {
-    return loadOpenRouterApiKey();
+/** プロバイダの例外またはモデル一覧取得のメッセージから HTTP ステータスを読む。 */
+function connectionErrorStatus(error: unknown, reason: string): number | null {
+  if (error instanceof LlmProviderError) {
+    return error.status;
   }
-  return loadGeminiApiKey();
+  return Number(/HTTP (\d{3})/.exec(reason)?.[1]) || null;
 }
 
-/** LLM 接続先の保存と構造化出力の接続テストを配線する */
+/** LLM 接続の検証・保存・一覧取得・呼び出し確認を順に行う。 */
 async function bootstrapLlmConnectionSection(root: ParentNode): Promise<void> {
   const providerSelect = root.querySelector<HTMLSelectElement>('#llm-provider');
-  const customFields = root.querySelector<HTMLElement>('#openai-compatible-fields');
-  const endpointInput = root.querySelector<HTMLInputElement>('#openai-compatible-endpoint');
-  const apiKeyInput = root.querySelector<HTMLInputElement>('#openai-compatible-api-key');
-  const anthropicFields = root.querySelector<HTMLElement>('#anthropic-fields');
-  const anthropicKeyInput = root.querySelector<HTMLInputElement>('#anthropic-api-key');
-  const azureFields = root.querySelector<HTMLElement>('#azure-openai-fields');
-  const azureEndpointInput = root.querySelector<HTMLInputElement>('#azure-openai-endpoint');
-  const azureApiKeyInput = root.querySelector<HTMLInputElement>('#azure-openai-api-key');
-  const saveButton = root.querySelector<HTMLButtonElement>('#save-llm-connection');
-  const testButton = root.querySelector<HTMLButtonElement>('#test-llm-connection');
+  const container = root.querySelector<HTMLElement>('#default-model-container');
+  const saveButton = root.querySelector<HTMLButtonElement>('#save-and-test-llm-connection');
   const statusEl = root.querySelector<HTMLElement>('#llm-connection-status');
-  const fetchModelListButton = root.querySelector<HTMLButtonElement>('#fetch-model-list');
-  const fetchModelListStatusEl = root.querySelector<HTMLElement>('#fetch-model-list-status');
-  if (
-    !providerSelect ||
-    !customFields ||
-    !endpointInput ||
-    !apiKeyInput ||
-    !anthropicFields ||
-    !anthropicKeyInput ||
-    !azureFields ||
-    !azureEndpointInput ||
-    !azureApiKeyInput ||
-    !saveButton ||
-    !testButton ||
-    !statusEl ||
-    !fetchModelListButton ||
-    !fetchModelListStatusEl
-  ) {
+  if (!providerSelect || !container || !saveButton || !statusEl) {
     return;
   }
   const setStatus = makeSetStatus(statusEl);
-  const setFetchModelListStatus = makeSetStatus(fetchModelListStatusEl);
   const settings = await loadLlmConnectionSettings();
-  const defaultModel = (await loadDefaultModel()) ?? FACTORY_DEFAULT_MODEL;
-  providerSelect.value = settings.provider ?? resolveProviderId(defaultModel);
-  // openai_compatible / azure_openai は保存先の設定キーが別（settingsStore.ts 参照）。
-  // 接続方式を切り替えても他方の入力欄の保存値を失わないよう、それぞれ専用のフィールドを読む
-  // （issue #127 PR3 フォローアップ）
-  endpointInput.value = settings.openAiCompatibleEndpoint ?? '';
-  azureEndpointInput.value = settings.azureOpenAiEndpoint ?? '';
-  const savedCustomKey = await loadOpenAiCompatibleApiKey();
-  apiKeyInput.placeholder = savedCustomKey
-    ? t('options.placeholderSavedKey')
-    : t('options.placeholderKeyOptional');
-  const savedAnthropicKey = await loadAnthropicApiKey();
-  anthropicKeyInput.placeholder = savedAnthropicKey
-    ? t('options.placeholderSavedKey')
-    : t('options.placeholderEnterKey');
-  const savedAzureKey = await loadAzureOpenAiApiKey();
-  azureApiKeyInput.placeholder = savedAzureKey
-    ? t('options.placeholderSavedKey')
-    : t('options.placeholderEnterKey');
-
-  // モデル一覧の自動取得（issue #127 PR4）: gemini / azure_openai は対象外
-  // （modelListFetcher.ts 冒頭コメント参照）のため、ボタンを disabled にして理由を明示する。
-  // 取得中はこの関数を呼ばない（renderProvider は接続方式の切替時にも走るため、取得中に
-  // 切替が起きると表示が「未取得」側へ巻き戻るが、取得自体は完了まで別 provider の設定に
-  // 影響しないので実害はない）
-  const renderFetchModelListAvailability = (): void => {
-    const provider = selectedProvider(providerSelect);
-    const supported = isModelListFetchSupported(provider);
-    fetchModelListButton.disabled = !supported;
-    setFetchModelListStatus(
-      supported ? t('options.fetchModelListUnfetched') : t('options.fetchModelListUnsupported'),
-      false,
-    );
-  };
-  const renderProvider = (): void => {
-    const provider = selectedProvider(providerSelect);
-    customFields.hidden = provider !== 'openai_compatible';
-    anthropicFields.hidden = provider !== 'anthropic';
-    azureFields.hidden = provider !== 'azure_openai';
-    renderFetchModelListAvailability();
-  };
-  renderProvider();
-  providerSelect.addEventListener('change', renderProvider);
-  setStatus(
-    settings.provider === null ? t('options.connectionUnsaved') : t('options.connectionSaved'),
-    false,
-  );
-
-  const resolveFormConfig = async (): Promise<{
-    provider: LlmProviderId;
-    endpoint?: string;
-    apiKey: string;
-    model: string;
-    reasoningEffort: ReasoningEffort | null;
-  }> => {
-    const provider = selectedProvider(providerSelect);
-    const model = (await loadDefaultModel()) ?? FACTORY_DEFAULT_MODEL;
-    // 保存済みの reasoning effort（issue #127 PR5）を接続テスト / モデル一覧取得にも反映する。
-    // createProvider が provider ごとの方言へ写す（Gemini は無視）。未設定なら null のままで、
-    // 各 provider は従来どおりの挙動を維持する
-    const reasoningEffort = await loadDefaultReasoningEffort();
-    if (provider === 'anthropic') {
-      const enteredKey = anthropicKeyInput.value.trim();
-      const apiKey = enteredKey || (await loadAnthropicApiKey());
-      if (apiKey === null) {
-        throw new Error(t('options.errKeyMissing', { provider: 'Anthropic' }));
+  let pendingModel = (await loadDefaultModel()) ?? FACTORY_DEFAULT_MODEL;
+  let fetched = await loadFetchedModelIds();
+  providerSelect.value = settings.provider ?? resolveProviderId(pendingModel);
+  if (findProviderModelMismatch(pendingModel, selectedProvider(providerSelect)) !== null) {
+    pendingModel = '';
+  }
+  const fields = [
+    {
+      provider: 'gemini',
+      id: 'gemini',
+      label: 'Gemini',
+      load: loadGeminiApiKey,
+      save: saveGeminiApiKey,
+    },
+    {
+      provider: 'openrouter',
+      id: 'openrouter',
+      label: 'OpenRouter',
+      load: loadOpenRouterApiKey,
+      save: saveOpenRouterApiKey,
+    },
+    {
+      provider: 'anthropic',
+      id: 'anthropic',
+      label: 'Anthropic',
+      load: loadAnthropicApiKey,
+      save: saveAnthropicApiKey,
+    },
+    {
+      provider: 'azure_openai',
+      id: 'azure-openai',
+      label: 'Azure OpenAI',
+      load: loadAzureOpenAiApiKey,
+      save: saveAzureOpenAiApiKey,
+    },
+    {
+      provider: 'openai_compatible',
+      id: 'openai-compatible',
+      label: t('options.providerOpenAiCompatible'),
+      load: loadOpenAiCompatibleApiKey,
+      save: saveOpenAiCompatibleApiKey,
+    },
+    {
+      provider: 'local_llm',
+      id: 'local-llm',
+      label: t('options.providerLocalLlm'),
+      load: async () => null,
+      save: undefined,
+    },
+  ] as const;
+  for (const field of fields) {
+    const input = root.querySelector<HTMLInputElement>('#' + field.id + '-api-key');
+    if (input) {
+      input.placeholder = (await field.load())
+        ? t('options.placeholderSavedKey') : t('options.placeholderEnterKey');
+    }
+    const endpoint = root.querySelector<HTMLInputElement>('#' + field.id + '-endpoint');
+    if (endpoint) {
+      endpoint.value = resolveStoredEndpoint(settings, field.provider) ?? '';
+    }
+  }
+  for (const [preset, port] of [['ollama', '11434'], ['lmstudio', '1234']]) {
+    root.querySelector('#local-llm-preset-' + preset)?.addEventListener('click', () => {
+      const input = root.querySelector<HTMLInputElement>('#local-llm-endpoint');
+      if (input) {
+        input.value = 'http://localhost:' + port + '/v1/chat/completions';
       }
-      return { provider, apiKey, model, reasoningEffort };
+    });
+  }
+  const renderModels = (resetMissing: boolean): void => {
+    const provider = selectedProvider(providerSelect);
+    const groups = buildModelCatalogFor(provider, fetched[provider] ?? []);
+    if (resetMissing && !groups.some((group) => group.models.includes(pendingModel))) {
+      pendingModel = '';
     }
-    if (provider === 'azure_openai') {
-      const endpoint = normalizeOpenAiCompatibleEndpoint(azureEndpointInput.value);
-      const enteredKey = azureApiKeyInput.value.trim();
-      const apiKey = enteredKey || (await loadAzureOpenAiApiKey());
-      // Azure OpenAI は常にキー必須（loopback URL でも空キーを許可しない。providerFactory.ts 参照）
-      if (apiKey === null) {
-        throw new Error(t('options.errKeyMissing', { provider: 'Azure OpenAI' }));
-      }
-      return { provider, endpoint, apiKey, model, reasoningEffort };
-    }
-    if (provider !== 'openai_compatible') {
-      const apiKey = await loadKeyForProvider(provider);
-      if (apiKey === null) {
-        throw new Error(
-          t('options.errKeyMissing', { provider: provider === 'gemini' ? 'Gemini' : 'OpenRouter' }),
-        );
-      }
-      return { provider, apiKey, model, reasoningEffort };
-    }
-    const endpoint = normalizeOpenAiCompatibleEndpoint(endpointInput.value);
-    const enteredKey = apiKeyInput.value.trim();
-    const apiKey = enteredKey || (await loadOpenAiCompatibleApiKey());
-    if (apiKey === null && !isLoopbackEndpoint(endpoint)) {
-      throw new Error(t('options.errCompatibleKeyMissing'));
-    }
-    return { provider, endpoint, apiKey: apiKey ?? '', model, reasoningEffort };
+    container.replaceChildren(createModelSelect(container.ownerDocument, {
+      id: 'default-model',
+      ariaLabel: t('options.defaultModelTitle'),
+      value: pendingModel,
+      placeholderLabel: t('options.defaultModelPlaceholder'),
+      groups,
+      onChange: (model) => {
+        pendingModel = model;
+      },
+    }));
   };
+  const renderFields = (): void => {
+    for (const field of fields) {
+      const element = root.querySelector<HTMLElement>('#' + field.id + '-fields');
+      if (element) {
+        element.hidden = field.provider !== selectedProvider(providerSelect);
+      }
+    }
+  };
+  renderFields();
+  renderModels(false);
+  providerSelect.addEventListener('change', () => {
+    renderFields();
+    renderModels(true);
+  });
+  setStatus(settings.provider === null ? t('options.connectionUnsaved') : t('options.connectionSaved'), false);
 
   saveButton.addEventListener('click', () => {
     void (async () => {
       saveButton.disabled = true;
+      providerSelect.disabled = true;
+      let stage = 1;
+      const provider = selectedProvider(providerSelect);
+      const model = pendingModel.trim();
       try {
-        const config = await resolveFormConfig();
-        if (
-          requiresFullUrlEndpoint(config.provider) &&
-          !(await requestEndpointPermission(config.endpoint as string))
-        ) {
+        setStatus(t('options.connectionValidating'), false);
+        const field = fields.find((item) => item.provider === provider)!;
+        const keyInput = root.querySelector<HTMLInputElement>('#' + field.id + '-api-key');
+        const enteredKey = keyInput?.value.trim() ?? '';
+        if (provider === 'gemini' && looksLikeOpenRouterApiKey(enteredKey)) {
+          throw new Error(t('options.warnOpenRouterKey'));
+        }
+        if (provider === 'openrouter' && looksLikeGeminiApiKey(enteredKey)) {
+          throw new Error(t('options.warnGeminiKey'));
+        }
+        if (model === '') {
+          throw new Error(t('options.errDefaultModelRequired'));
+        }
+        if (findProviderModelMismatch(model, provider) !== null) {
+          throw new Error(providerModelMismatchMessage(model, provider));
+        }
+        const endpointInput = root.querySelector<HTMLInputElement>('#' + field.id + '-endpoint');
+        let endpoint: string | undefined;
+        if (provider === 'local_llm') {
+          endpoint = normalizeLocalLlmEndpoint(endpointInput?.value ?? '');
+        } else if (requiresFullUrlEndpoint(provider)) {
+          endpoint = normalizeOpenAiCompatibleEndpoint(endpointInput?.value ?? '');
+        }
+        const apiKey = enteredKey || (await field.load()) || '';
+        if (apiKey === '' && provider !== 'local_llm' &&
+          !(provider === 'openai_compatible' && isLoopbackEndpoint(endpoint as string))) {
+          throw new Error(t('options.errKeyMissing', { provider: field.label }));
+        }
+        const config = { provider, model, apiKey, endpoint, reasoningEffort: await loadDefaultReasoningEffort() };
+        stage = 2;
+        setStatus(t('options.connectionPermission'), false);
+        if (endpoint !== undefined && !(await requestEndpointPermission(endpoint))) {
           throw new Error(t('options.errPermissionDenied'));
         }
-        if (config.provider === 'openai_compatible' && apiKeyInput.value.trim() !== '') {
-          await saveOpenAiCompatibleApiKey(apiKeyInput.value);
-          apiKeyInput.value = '';
-          apiKeyInput.placeholder = t('options.placeholderSavedKey');
-        }
-        if (config.provider === 'anthropic' && anthropicKeyInput.value.trim() !== '') {
-          await saveAnthropicApiKey(anthropicKeyInput.value);
-          anthropicKeyInput.value = '';
-          anthropicKeyInput.placeholder = t('options.placeholderSavedKey');
-        }
-        if (config.provider === 'azure_openai' && azureApiKeyInput.value.trim() !== '') {
-          await saveAzureOpenAiApiKey(azureApiKeyInput.value);
-          azureApiKeyInput.value = '';
-          azureApiKeyInput.placeholder = t('options.placeholderSavedKey');
-        }
-        // 保存対象の provider に属するフィールドだけを渡す（settingsStore.saveLlmConnectionSettings
-        // が provider ごとに保存キーを分けて扱うため。他方の provider の保存値には触れない）。
-        // openai_compatible / azure_openai は resolveFormConfig が必ず endpoint を検証済み文字列で
-        // 返すため、ここで undefined ↔ null のフォールバックは不要
+        stage = 3;
+        setStatus(t('options.connectionSaving'), false);
         await saveLlmConnectionSettings({
-          provider: config.provider,
-          ...(config.provider === 'openai_compatible'
-            ? { openAiCompatibleEndpoint: config.endpoint }
-            : {}),
-          ...(config.provider === 'azure_openai' ? { azureOpenAiEndpoint: config.endpoint } : {}),
+          provider,
+          ...(provider === 'openai_compatible' ? { openAiCompatibleEndpoint: endpoint } : {}),
+          ...(provider === 'azure_openai' ? { azureOpenAiEndpoint: endpoint } : {}),
+          ...(provider === 'local_llm' ? { localLlmEndpoint: endpoint } : {}),
         });
-        setStatus(t('options.toastSaved'), false);
-      } catch (err) {
-        setStatus(err instanceof Error ? err.message : String(err), true);
-      } finally {
-        saveButton.disabled = false;
-      }
-    })();
-  });
-
-  testButton.addEventListener('click', () => {
-    void (async () => {
-      testButton.disabled = true;
-      try {
-        const config = await resolveFormConfig();
-        if (
-          requiresFullUrlEndpoint(config.provider) &&
-          !(await requestEndpointPermission(config.endpoint as string))
-        ) {
-          throw new Error(t('options.errPermissionDenied'));
+        if (enteredKey !== '' && keyInput) {
+          await field.save!(enteredKey);
+          keyInput.value = '';
+          keyInput.placeholder = t('options.placeholderSavedKey');
         }
+        await saveDefaultModel(model);
+        stage = 4;
+        let count: number | null = null;
+        if (isModelListFetchSupported(provider)) {
+          setStatus(t('options.fetchModelListFetching'), false);
+          const ids = await fetchModelIds({ provider, apiKey, chatCompletionsUrl: endpoint });
+          await saveFetchedModelIds(provider, ids);
+          fetched = await loadFetchedModelIds();
+          count = fetched[provider]?.length ?? 0;
+          renderModels(false);
+        }
+        stage = 5;
+        setStatus(t('options.connectionTesting'), false);
         const response = await createProvider(config).chat(
           [
             { role: 'system', content: 'Return JSON matching the supplied schema.' },
             { role: 'user', content: 'Return {"ok":true}.' },
           ],
-          {
-            responseSchema: CONNECTION_TEST_SCHEMA,
-            maxOutputTokens: CONNECTION_TEST_MAX_OUTPUT_TOKENS,
-            temperature: 0,
-          },
+          { responseSchema: CONNECTION_TEST_SCHEMA, maxOutputTokens: CONNECTION_TEST_MAX_OUTPUT_TOKENS, temperature: 0 },
         );
-        const parsed = JSON.parse(response.text) as { ok?: unknown };
-        if (parsed.ok !== true) {
+        let parsed: { ok?: unknown } | null;
+        try {
+          parsed = JSON.parse(response.text) as { ok?: unknown } | null;
+        } catch {
           throw new Error(t('options.testNoJson'));
         }
-        setStatus(t('options.testSucceeded'), false);
+        if (parsed?.ok !== true) {
+          throw new Error(t('options.testNoJson'));
+        }
+        setStatus(count === null ? t('options.connectionSucceeded', { model }) :
+          t('options.connectionSucceededWithModels', { model, count }), false);
       } catch (err) {
-        setStatus(
-          t('options.testFailed', { reason: err instanceof Error ? err.message : String(err) }),
-          true,
-        );
+        const reason = err instanceof Error ? err.message : String(err);
+        if (stage <= 3) {
+          setStatus(t('options.connectionSaveFailed', {
+            reason: stage === 3 ? t('options.connectionStorageFailed') : reason,
+          }), true);
+        } else {
+          const status = connectionErrorStatus(err, reason);
+          let detail = reason;
+          if (status === 401 || status === 403) {
+            detail = t('options.connectionAuthFailed', { status });
+          } else if (stage === 5 && (status === 404 || /model_not_found|not_found_error/.test(reason))) {
+            detail = t('options.connectionModelMissing', { model });
+          } else if (err instanceof TypeError) {
+            detail = t('options.connectionUnreachable');
+          } else if (stage === 4) {
+            detail = t('options.connectionModelsFailed', { reason });
+          }
+          setStatus(t('options.connectionCheckFailed', { reason: detail }), true);
+        }
       } finally {
-        testButton.disabled = false;
+        saveButton.disabled = false;
+        providerSelect.disabled = false;
       }
     })();
   });
-
-  // モデル一覧の自動取得（issue #127 PR4。docs/ui-states.md §2「モデル一覧を取得」ボタン）。
-  // 未取得 / 取得中 / 成功 / 失敗の 4 状態。取得はこのクリックでのみ起こり、画面表示時には
-  // 一切走らせない（既存キーの消費・レイテンシ・失敗によるブロックを避けるため）。
-  // 失敗時はハードコードのカタログ（MODEL_PRICING 等）が既に選択肢として残っているだけで、
-  // 取得前の状態を壊さずセレクタを使い続けられる（フォールバックのために何もしない）
-  fetchModelListButton.addEventListener('click', () => {
-    void (async () => {
-      const provider = selectedProvider(providerSelect);
-      if (!isModelListFetchSupported(provider)) {
-        return;
-      }
-      fetchModelListButton.disabled = true;
-      setFetchModelListStatus(t('options.fetchModelListFetching'), false);
-      try {
-        const config = await resolveFormConfig();
-        const modelIds = await fetchModelIds(
-          provider === 'openai_compatible'
-            ? { provider, apiKey: config.apiKey, chatCompletionsUrl: config.endpoint as string }
-            : { provider, apiKey: config.apiKey },
-        );
-        applyFetchedModelIds(root, modelIds);
-        setFetchModelListStatus(t('options.fetchModelListFetched', { count: modelIds.length }), false);
-        showToast(t('options.fetchModelListToast'), providerSelect.ownerDocument);
-      } catch (err) {
-        setFetchModelListStatus(
-          t('options.fetchModelListFailed', {
-            reason: err instanceof Error ? err.message : String(err),
-          }),
-          true,
-        );
-      } finally {
-        fetchModelListButton.disabled = false;
-      }
-    })();
-  });
-}
-
-/**
- * 取得したモデル ID を既定モデルセレクタ（`#default-model`）へ反映する。
- * ストレージへは保存しない（現在の Options 画面のメモリ上のみ。issue #127 PR4 ブリーフの
- * 「新規 storage キーを追加しない」制約）。単価表に既にあるモデルは静的カタログの optgroup に
- * 既出のため二重に足さない。再取得時は前回分の「取得したモデル」optgroup を入れ替える
- * （複数回押しても選択肢が増殖しない）
- */
-function applyFetchedModelIds(root: ParentNode, modelIds: readonly string[]): void {
-  const select = root.querySelector<HTMLSelectElement>('#default-model');
-  if (!select) {
-    return;
-  }
-  const groupLabel = t('options.fetchModelListGroupLabel');
-  select.querySelectorAll('optgroup').forEach((group) => {
-    if (group.label === groupLabel) {
-      group.remove();
-    }
-  });
-  const uniqueIds = Array.from(new Set(modelIds)).filter((id) => !isCatalogModel(id));
-  if (uniqueIds.length === 0) {
-    return;
-  }
-  const doc = select.ownerDocument;
-  const optgroup = doc.createElement('optgroup');
-  optgroup.label = groupLabel;
-  for (const id of uniqueIds) {
-    const option = doc.createElement('option');
-    option.value = id;
-    option.textContent = id;
-    optgroup.append(option);
-  }
-  const otherOption = select.querySelector(`option[value="${MODEL_SELECT_OTHER_VALUE}"]`);
-  select.insertBefore(optgroup, otherOption);
 }
 
 /**
@@ -670,25 +495,8 @@ function bootstrapUiLanguageSection(root: ParentNode): void {
  * 生成した（未 attach でよい）コンテナ要素でもよい（querySelector で解決するため）。
  */
 export async function bootstrapOptions(root: ParentNode): Promise<void> {
-  await bootstrapApiKeySection(
-    root,
-    { input: 'gemini-api-key', saveButton: 'save-keys', status: 'options-status' },
-    'Gemini',
-    loadGeminiApiKey,
-    saveGeminiApiKey,
-    (key) => (looksLikeOpenRouterApiKey(key) ? t('options.warnOpenRouterKey') : null),
-  );
-  await bootstrapApiKeySection(
-    root,
-    { input: 'openrouter-api-key', saveButton: 'save-openrouter-key', status: 'openrouter-status' },
-    'OpenRouter',
-    loadOpenRouterApiKey,
-    saveOpenRouterApiKey,
-    (key) => (looksLikeGeminiApiKey(key) ? t('options.warnGeminiKey') : null),
-  );
   await bootstrapLlmConnectionSection(root);
   await bootstrapReasoningEffortSection(root);
-  await bootstrapDefaultModelSection(root);
   await bootstrapRateLimitSection(root);
   bootstrapUiLanguageSection(root);
 }

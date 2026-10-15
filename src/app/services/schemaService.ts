@@ -81,7 +81,7 @@ import type { GoogleApiDeps } from '../../lib/google/types';
 import { appendLlmApiLog } from '../../lib/llm/apiLogRepository';
 import { withLogging } from '../../lib/llm/apiLogger';
 import type { LLMProvider } from '../../lib/llm/LLMProvider';
-import { missingApiKeyMessage } from '../../lib/llm/modelCatalog';
+import { missingApiKeyMessage, providerModelMismatchMessage } from '../../lib/llm/modelCatalog';
 import {
   resolveProviderConfig,
   type ProviderConfig,
@@ -271,6 +271,10 @@ export async function runDraftSchema(store: Store, deps: SchemaServiceDeps): Pro
     return;
   }
   const providerResolution = await resolveProviderConfig(model, deps);
+  if (providerResolution.modelMismatch !== null) {
+    patchSchema(store, { draftError: providerModelMismatchMessage(model, providerResolution.provider) });
+    return;
+  }
   if (providerResolution.config === null) {
     patchSchema(store, { draftError: missingApiKeyMessage(providerResolution.provider) });
     return;

@@ -1,1311 +1,272 @@
-// Options（S11）の状態仕様テスト（docs/ui-states.md §2 と 1:1 対応）
+// 統合された LLM 接続の段階と、既存の補助設定を検証する。
 import { installChromeMock, type ChromeMock } from '../../setup/chrome-mock';
 import { getUiLanguage, onUiLanguageChange, setUiLanguage } from '../../../src/lib/i18n';
-import { MODEL_PRICING } from '../../../src/lib/llm/pricing';
-import { MODEL_SELECT_OTHER_VALUE } from '../../../src/app/ui/modelSelect';
 import { bootstrapOptions, bootstrapOptionsPage } from '../../../src/options/bootstrap';
 import { buildSettingsSections } from '../../../src/options/settingsSections';
+import { LlmProviderError } from '../../../src/lib/llm/LLMProvider';
+import * as factory from '../../../src/lib/llm/providerFactory';
+import * as modelList from '../../../src/lib/llm/modelListFetcher';
 
-const OPTIONS_TEMPLATE = `
-  <main class="options">
-    <p id="options-status">読み込み中…</p>
-    <label for="gemini-api-key">Gemini API キー</label>
-    <input id="gemini-api-key" type="password" autocomplete="off" />
-    <button id="save-keys" type="button">保存</button>
-    <p id="openrouter-status">読み込み中…</p>
-    <label for="openrouter-api-key">OpenRouter API キー</label>
-    <input id="openrouter-api-key" type="password" autocomplete="off" />
-    <button id="save-openrouter-key" type="button">保存</button>
-  </main>
-`;
-
-/** 既定モデル節を含むフルテンプレート（options.html「既定モデル」と同じ要素構成） */
-const OPTIONS_TEMPLATE_WITH_MODEL = `
-  <main class="options">
-    <p id="options-status">読み込み中…</p>
-    <label for="gemini-api-key">Gemini API キー</label>
-    <input id="gemini-api-key" type="password" autocomplete="off" />
-    <button id="save-keys" type="button">保存</button>
-    <p id="openrouter-status">読み込み中…</p>
-    <label for="openrouter-api-key">OpenRouter API キー</label>
-    <input id="openrouter-api-key" type="password" autocomplete="off" />
-    <button id="save-openrouter-key" type="button">保存</button>
-    <p id="default-model-status">読み込み中…</p>
-    <label for="default-model">既定モデル</label>
-    <span id="default-model-container"></span>
-    <button id="save-default-model" type="button">保存</button>
-  </main>
-`;
-
-/** レート制限 tier 節を含むテンプレート（options.html「レート制限」と同じ要素構成） */
-const OPTIONS_TEMPLATE_WITH_RATE_LIMIT = `
-  <main class="options">
-    <p id="options-status">読み込み中…</p>
-    <label for="gemini-api-key">Gemini API キー</label>
-    <input id="gemini-api-key" type="password" autocomplete="off" />
-    <button id="save-keys" type="button">保存</button>
-    <p id="openrouter-status">読み込み中…</p>
-    <label for="openrouter-api-key">OpenRouter API キー</label>
-    <input id="openrouter-api-key" type="password" autocomplete="off" />
-    <button id="save-openrouter-key" type="button">保存</button>
-    <p id="rate-limit-tier-desc" class="options__help"></p>
-    <p id="rate-limit-status">読み込み中…</p>
-    <label for="rate-limit-tier">プラン（tier）</label>
-    <select id="rate-limit-tier" aria-label="レート制限 tier">
-      <option value="gemini_free">Gemini 無料枠（Free）</option>
-      <option value="gemini_tier1">Gemini Tier 1（従量課金）</option>
-      <option value="gemini_tier2">Gemini Tier 2</option>
-      <option value="gemini_tier3">Gemini Tier 3</option>
-      <option value="custom">カスタム（RPM を手動指定）</option>
-      <option value="unlimited">制限なし（スロットルしない）</option>
-    </select>
-    <div id="rate-limit-custom-row" class="options__row" hidden>
-      <label for="rate-limit-custom-rpm">1 分あたりの最大リクエスト数（RPM）</label>
-      <input id="rate-limit-custom-rpm" type="number" min="1" step="1" />
-    </div>
-    <div id="rate-limit-concurrency-row" class="options__row" hidden>
-      <label for="rate-limit-concurrency">同時実行数</label>
-      <input id="rate-limit-concurrency" type="number" min="1" step="1" placeholder="1" />
-    </div>
-    <button id="save-rate-limit" type="button">保存</button>
-  </main>
-`;
-
+const OPTIONS_TEMPLATE = '<main></main>';
+const OPTIONS_TEMPLATE_WITH_RATE_LIMIT = buildSettingsSections().outerHTML;
 const flush = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
-
-function statusEl(): HTMLElement {
-  return document.getElementById('options-status') as HTMLElement;
+const input = (id: string): HTMLInputElement => document.getElementById(id) as HTMLInputElement;
+const select = (id: string): HTMLSelectElement => document.getElementById(id) as HTMLSelectElement;
+const button = (): HTMLButtonElement => document.getElementById('save-and-test-llm-connection') as HTMLButtonElement;
+const status = (): string => document.getElementById('llm-connection-status')!.textContent!;
+function change(id: string, value: string): void {
+  select(id).value = value;
+  select(id).dispatchEvent(new Event('change'));
+}
+function customModel(value: string): void {
+  change('default-model', '__other__');
+  input('default-model-custom').value = value;
+  input('default-model-custom').dispatchEvent(new Event('change'));
 }
 
-function inputEl(): HTMLInputElement {
-  return document.getElementById('gemini-api-key') as HTMLInputElement;
-}
-
-function saveButton(): HTMLButtonElement {
-  return document.getElementById('save-keys') as HTMLButtonElement;
-}
-
-describe('bootstrapOptions', () => {
+describe('統合された LLM 接続', () => {
   let chromeMock: ChromeMock;
-
+  const chat = jest.fn();
+  let fetchIds: jest.SpyInstance;
   beforeEach(() => {
     chromeMock = installChromeMock();
-    document.body.innerHTML = OPTIONS_TEMPLATE;
+    document.body.replaceChildren(buildSettingsSections());
+    chat.mockReset().mockResolvedValue({ text: '{"ok":true}' });
+    jest.spyOn(factory, 'createProvider').mockImplementation((config) => ({
+      providerId: config.provider!, model: config.model, supportsImageInput: true, chat,
+    }));
+    fetchIds = jest.spyOn(modelList, 'fetchModelIds').mockResolvedValue(['custom-model']);
   });
-
-  test('必須要素が欠けている場合は何もしない', async () => {
-    document.body.innerHTML = '<p>壊れた DOM</p>';
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+  async function setup(provider = 'gemini', model = 'custom-model'): Promise<void> {
+    await bootstrapOptions(document);
+    change('llm-provider', provider);
+    customModel(model);
+    const key = document.querySelector<HTMLInputElement>('#' + provider.replaceAll('_', '-') + '-api-key');
+    if (key) {
+      key.value = 'test-key';
+    }
+    if (provider === 'local_llm') {
+      document.getElementById('local-llm-preset-ollama')!.click();
+    }
+    if (provider === 'openai_compatible' || provider === 'azure_openai') {
+      input(provider.replaceAll('_', '-') + '-endpoint').value = 'https://example.org/v1/chat/completions';
+    }
+  }
+  async function save(): Promise<void> {
+    button().click();
+    await flush();
+  }
+  test('Anthropic で Gemini の単価表モデルを直接入力すると保存せず停止する', async () => {
+    await setup('anthropic', 'gemini-3.8-flash');
+    await save();
+    expect(status()).toContain('モデルを選び直してください');
+    expect(chromeMock.storage.local.set).not.toHaveBeenCalled();
+    expect(chat).not.toHaveBeenCalled();
+  });
+  test('OpenAI 互換では単価表と同名のモデルを保存し接続確認する', async () => {
+    await setup('openai_compatible', 'gemini-3.8-flash');
+    await save();
+    expect(chromeMock.storage.local.data['settings.defaultModel']).toBe('gemini-3.8-flash');
+    expect(chat).toHaveBeenCalledTimes(1);
+    expect(status()).not.toContain('モデルを選び直してください');
+  });
+  test('必須要素がない場合は何もしない', async () => {
+    document.body.innerHTML = '';
     await expect(bootstrapOptions(document)).resolves.toBeUndefined();
   });
-
-  test('状態 A: 未設定なら「Gemini: 未設定」+ 入力を促す placeholder', async () => {
+  test('初期値を推定し、方式を切り替えると候補を絞ってモデルを空に戻す', async () => {
     await bootstrapOptions(document);
-    expect(statusEl().textContent).toBe('Gemini: 未設定');
-    expect(inputEl().placeholder).toBe('API キーを入力');
-  });
-
-  test('状態 A: 保存済みなら「Gemini: 保存済み」+ 保存済み placeholder', async () => {
-    chromeMock.storage.local.data['secrets.geminiApiKey'] = 'AIzaSySAVED';
-    await bootstrapOptions(document);
-    expect(statusEl().textContent).toBe('Gemini: 保存済み');
-    expect(inputEl().placeholder).toBe('保存済み（変更する場合のみ入力）');
-  });
-
-  test('空文字（空白のみ）は保存を抑止しエラー表示する', async () => {
-    await bootstrapOptions(document);
-    inputEl().value = '   ';
-    saveButton().click();
+    expect(select('llm-provider').value).toBe('gemini');
+    expect(input('gemini-api-key').placeholder).toBe('API キーを入力');
+    change('llm-provider', 'anthropic');
+    expect(select('default-model').value).toBe('');
+    expect(document.querySelector('#default-model optgroup[label="Gemini"]')).toBeNull();
+    expect(document.getElementById('anthropic-fields')!.hidden).toBe(false);
+    expect(document.getElementById('gemini-fields')!.hidden).toBe(true);
+    button().click();
     await flush();
-    expect(statusEl().textContent).toBe('API キーが空のため保存しませんでした。');
-    expect(statusEl().classList.contains('options__status--error')).toBe(true);
+    expect(status()).toBe('保存できませんでした: 既定モデルを選んでください');
     expect(chromeMock.storage.local.set).not.toHaveBeenCalled();
   });
-
-  test('OpenRouter キー（sk-or-）を Gemini 欄に入れたら弾いて保存しない', async () => {
-    await bootstrapOptions(document);
-    inputEl().value = 'sk-or-WRONGFIELD';
-    saveButton().click();
-    await flush();
-    expect(statusEl().textContent).toBe(
-      'OpenRouter のキー（sk-or- で始まる）のようです。Gemini キーはここへ、OpenRouter キーは下の欄へ入力してください。',
-    );
-    expect(statusEl().classList.contains('options__status--error')).toBe(true);
-    expect(chromeMock.storage.local.set).not.toHaveBeenCalled();
-    expect(inputEl().value).toBe('sk-or-WRONGFIELD');
-  });
-
-  test('状態 B: trim して保存し、完了メッセージを出して入力欄をクリアする', async () => {
-    await bootstrapOptions(document);
-    inputEl().value = '  AIzaSyNEWKEY  ';
-    saveButton().click();
-    await flush();
-    expect(chromeMock.storage.local.data['secrets.geminiApiKey']).toBe('AIzaSyNEWKEY');
-    expect(statusEl().textContent).toBe('保存しました。');
-    expect(statusEl().classList.contains('options__status--error')).toBe(false);
-    expect(inputEl().value).toBe('');
-    expect(inputEl().placeholder).toBe('保存済み（変更する場合のみ入力）');
-    expect(saveButton().disabled).toBe(false);
-  });
-
-  test('状態 B: 保存中はボタンを無効化する', async () => {
-    await bootstrapOptions(document);
-    let resolveSet: () => void = () => undefined;
-    chromeMock.storage.local.set.mockImplementationOnce(
-      () =>
-        new Promise<void>((resolve) => {
-          resolveSet = resolve;
-        }),
-    );
-    inputEl().value = 'AIzaSyPENDING';
-    saveButton().click();
-    await flush();
-    expect(saveButton().disabled).toBe(true);
-    resolveSet();
-    await flush();
-    expect(saveButton().disabled).toBe(false);
-    expect(statusEl().textContent).toBe('保存しました。');
-  });
-
-  test('状態 B: 保存失敗時は赤系メッセージ + ボタン復帰', async () => {
-    await bootstrapOptions(document);
-    chromeMock.storage.local.set.mockRejectedValueOnce(new Error('quota exceeded'));
-    inputEl().value = 'AIzaSyFAIL';
-    saveButton().click();
-    await flush();
-    expect(statusEl().textContent).toBe('保存に失敗しました。もう一度お試しください。');
-    expect(statusEl().classList.contains('options__status--error')).toBe(true);
-    expect(saveButton().disabled).toBe(false);
-  });
-});
-
-describe('bootstrapOptions（OpenRouter API キー節。Gemini と鏡写し）', () => {
-  let chromeMock: ChromeMock;
-
-  function orStatusEl(): HTMLElement {
-    return document.getElementById('openrouter-status') as HTMLElement;
-  }
-
-  function orInputEl(): HTMLInputElement {
-    return document.getElementById('openrouter-api-key') as HTMLInputElement;
-  }
-
-  function orSaveButton(): HTMLButtonElement {
-    return document.getElementById('save-openrouter-key') as HTMLButtonElement;
-  }
-
-  beforeEach(() => {
-    chromeMock = installChromeMock();
-    document.body.innerHTML = OPTIONS_TEMPLATE;
-  });
-
-  test('未設定なら「OpenRouter: 未設定」、保存済みなら「OpenRouter: 保存済み」', async () => {
-    await bootstrapOptions(document);
-    expect(orStatusEl().textContent).toBe('OpenRouter: 未設定');
-    chromeMock.storage.local.data['secrets.openRouterApiKey'] = 'sk-or-SAVED';
-    document.body.innerHTML = OPTIONS_TEMPLATE;
-    await bootstrapOptions(document);
-    expect(orStatusEl().textContent).toBe('OpenRouter: 保存済み');
-  });
-
-  test('Gemini キー（AIza）を OpenRouter 欄に入れたら弾いて保存しない', async () => {
-    await bootstrapOptions(document);
-    orInputEl().value = 'AIzaSyWRONGFIELD';
-    orSaveButton().click();
-    await flush();
-    expect(orStatusEl().textContent).toBe(
-      'Gemini のキー（AIza で始まる）のようです。OpenRouter キーはここへ、Gemini キーは上の欄へ入力してください。',
-    );
-    expect(orStatusEl().classList.contains('options__status--error')).toBe(true);
-    expect(chromeMock.storage.local.set).not.toHaveBeenCalled();
-    expect(orInputEl().value).toBe('AIzaSyWRONGFIELD');
-  });
-
-  test('trim して保存し、完了メッセージを出して入力欄をクリアする', async () => {
-    await bootstrapOptions(document);
-    orInputEl().value = '  sk-or-NEWKEY  ';
-    orSaveButton().click();
-    await flush();
-    expect(chromeMock.storage.local.data['secrets.openRouterApiKey']).toBe('sk-or-NEWKEY');
-    expect(orStatusEl().textContent).toBe('保存しました。');
-    expect(orInputEl().value).toBe('');
-    expect(orSaveButton().disabled).toBe(false);
-  });
-
-  test('空文字は保存を抑止し、Gemini 節の表示には影響しない', async () => {
-    await bootstrapOptions(document);
-    orInputEl().value = '   ';
-    orSaveButton().click();
-    await flush();
-    expect(orStatusEl().textContent).toBe('API キーが空のため保存しませんでした。');
-    expect(orStatusEl().classList.contains('options__status--error')).toBe(true);
-    expect(statusEl().textContent).toBe('Gemini: 未設定');
-    expect(chromeMock.storage.local.set).not.toHaveBeenCalled();
-  });
-
-  test('保存失敗時は赤系メッセージ + ボタン復帰', async () => {
-    await bootstrapOptions(document);
-    chromeMock.storage.local.set.mockRejectedValueOnce(new Error('quota exceeded'));
-    orInputEl().value = 'sk-or-FAIL';
-    orSaveButton().click();
-    await flush();
-    expect(orStatusEl().textContent).toBe('保存に失敗しました。もう一度お試しください。');
-    expect(orSaveButton().disabled).toBe(false);
-  });
-});
-
-describe('bootstrapOptions（既定モデル。docs/ui-states.md §2「既定モデル」+「モデルセレクタ」）', () => {
-  let chromeMock: ChromeMock;
-
-  function modelStatusEl(): HTMLElement {
-    return document.getElementById('default-model-status') as HTMLElement;
-  }
-
-  function modelSelectEl(): HTMLSelectElement {
-    return document.getElementById('default-model') as HTMLSelectElement;
-  }
-
-  function modelCustomEl(): HTMLInputElement {
-    return document.getElementById('default-model-custom') as HTMLInputElement;
-  }
-
-  function modelSaveButton(): HTMLButtonElement {
-    return document.getElementById('save-default-model') as HTMLButtonElement;
-  }
-
-  beforeEach(() => {
-    chromeMock = installChromeMock();
-    document.body.innerHTML = OPTIONS_TEMPLATE_WITH_MODEL;
-  });
-
-  test('既定モデル節の要素が欠けている場合は API キー節だけ配線する', async () => {
-    document.body.innerHTML = OPTIONS_TEMPLATE;
-    await bootstrapOptions(document);
-    expect(statusEl().textContent).toBe('Gemini: 未設定');
-    expect(document.getElementById('default-model-status')).toBeNull();
-  });
-
-  test('セレクタに単価表（MODEL_PRICING）のモデル ID を optgroup 付きで列挙する', async () => {
-    await bootstrapOptions(document);
-    const select = modelSelectEl();
-    // issue #127 PR2: 単価表への Claude 3 モデル追加で Anthropic optgroup が新たに出現する
-    const groups = Array.from(select.querySelectorAll('optgroup')).map((g) => g.label);
-    expect(groups).toEqual(['Gemini', 'OpenRouter', 'Anthropic']);
-    const values = Array.from(select.options).map((option) => option.value);
-    for (const model of Object.keys(MODEL_PRICING)) {
-      expect(values).toContain(model);
-    }
-    expect(values).toContain(MODEL_SELECT_OTHER_VALUE);
-  });
-
-  test('未設定なら「既定モデル: 未設定」+ プレースホルダ選択', async () => {
-    await bootstrapOptions(document);
-    expect(modelStatusEl().textContent).toBe('既定モデル: 未設定');
-    expect(modelSelectEl().value).toBe('');
-    expect(modelSelectEl().options[0]?.textContent).toBe('未設定');
-    expect(modelCustomEl().hidden).toBe(true);
-  });
-
-  test('保存済み（単価表のモデル）なら該当 option を選択して復元する', async () => {
-    chromeMock.storage.local.data['settings.defaultModel'] = 'gemini-2.0-flash';
-    await bootstrapOptions(document);
-    expect(modelStatusEl().textContent).toBe('既定モデル: 保存済み');
-    expect(modelSelectEl().value).toBe('gemini-2.0-flash');
-    expect(modelCustomEl().hidden).toBe(true);
-  });
-
-  test('保存済み（単価表にないモデル）なら「その他」+ テキストに充填して復元する', async () => {
-    chromeMock.storage.local.data['settings.defaultModel'] = 'my/custom-model';
-    await bootstrapOptions(document);
-    expect(modelSelectEl().value).toBe(MODEL_SELECT_OTHER_VALUE);
-    expect(modelCustomEl().hidden).toBe(false);
-    expect(modelCustomEl().value).toBe('my/custom-model');
-  });
-
-  test('プルダウンで選んだモデルを保存し「保存しました。」', async () => {
-    await bootstrapOptions(document);
-    modelSelectEl().value = 'gemini-2.5-pro';
-    modelSelectEl().dispatchEvent(new Event('change'));
-    modelSaveButton().click();
-    await flush();
-    expect(chromeMock.storage.local.data['settings.defaultModel']).toBe('gemini-2.5-pro');
-    expect(modelStatusEl().textContent).toBe('保存しました。');
-    expect(modelStatusEl().classList.contains('options__status--error')).toBe(false);
-    expect(modelSaveButton().disabled).toBe(false);
-  });
-
-  test('「その他」の直接入力は trim して保存する', async () => {
-    await bootstrapOptions(document);
-    modelSelectEl().value = MODEL_SELECT_OTHER_VALUE;
-    modelSelectEl().dispatchEvent(new Event('change'));
-    modelCustomEl().value = '  my/custom-model  ';
-    modelCustomEl().dispatchEvent(new Event('change'));
-    modelSaveButton().click();
-    await flush();
-    expect(chromeMock.storage.local.data['settings.defaultModel']).toBe('my/custom-model');
-    expect(modelStatusEl().textContent).toBe('保存しました。');
-  });
-
-  test('空（プレースホルダ選択）は「未設定に戻す」（キー削除 + 案内文言）', async () => {
-    chromeMock.storage.local.data['settings.defaultModel'] = 'gemini-2.5-pro';
-    await bootstrapOptions(document);
-    modelSelectEl().value = '';
-    modelSelectEl().dispatchEvent(new Event('change'));
-    modelSaveButton().click();
-    await flush();
-    expect(chromeMock.storage.local.remove).toHaveBeenCalledWith('settings.defaultModel');
-    expect(chromeMock.storage.local.data['settings.defaultModel']).toBeUndefined();
-    expect(modelStatusEl().textContent).toBe('未設定に戻しました。');
-    expect(modelStatusEl().classList.contains('options__status--error')).toBe(false);
-  });
-
-  test('保存中はボタンを無効化する', async () => {
-    await bootstrapOptions(document);
-    let resolveSet: () => void = () => undefined;
-    chromeMock.storage.local.set.mockImplementationOnce(
-      () =>
-        new Promise<void>((resolve) => {
-          resolveSet = resolve;
-        }),
-    );
-    modelSelectEl().value = 'gemini-2.5-pro';
-    modelSelectEl().dispatchEvent(new Event('change'));
-    modelSaveButton().click();
-    await flush();
-    expect(modelSaveButton().disabled).toBe(true);
-    resolveSet();
-    await flush();
-    expect(modelSaveButton().disabled).toBe(false);
-    expect(modelStatusEl().textContent).toBe('保存しました。');
-  });
-
-  test('保存失敗時は赤系メッセージ + ボタン復帰', async () => {
-    await bootstrapOptions(document);
-    chromeMock.storage.local.set.mockRejectedValueOnce(new Error('quota exceeded'));
-    modelSelectEl().value = 'gemini-2.5-pro';
-    modelSelectEl().dispatchEvent(new Event('change'));
-    modelSaveButton().click();
-    await flush();
-    expect(modelStatusEl().textContent).toBe('保存に失敗しました。もう一度お試しください。');
-    expect(modelStatusEl().classList.contains('options__status--error')).toBe(true);
-    expect(modelSaveButton().disabled).toBe(false);
-  });
-});
-
-describe('bootstrapOptions（LLM 接続先。Issue #27）', () => {
-  let chromeMock: ChromeMock;
-  let originalFetch: typeof fetch | undefined;
-
-  const provider = (): HTMLSelectElement =>
-    document.getElementById('llm-provider') as HTMLSelectElement;
-  const fields = (): HTMLElement =>
-    document.getElementById('openai-compatible-fields') as HTMLElement;
-  const endpoint = (): HTMLInputElement =>
-    document.getElementById('openai-compatible-endpoint') as HTMLInputElement;
-  const key = (): HTMLInputElement =>
-    document.getElementById('openai-compatible-api-key') as HTMLInputElement;
-  const save = (): HTMLButtonElement =>
-    document.getElementById('save-llm-connection') as HTMLButtonElement;
-  const testConnection = (): HTMLButtonElement =>
-    document.getElementById('test-llm-connection') as HTMLButtonElement;
-  const connectionStatus = (): HTMLElement =>
-    document.getElementById('llm-connection-status') as HTMLElement;
-
-  beforeEach(() => {
-    chromeMock = installChromeMock();
-    originalFetch = globalThis.fetch;
-    document.body.replaceChildren(buildSettingsSections());
-  });
-
-  afterEach(() => {
-    if (originalFetch === undefined) {
-      delete (globalThis as { fetch?: typeof fetch }).fetch;
-    } else {
-      globalThis.fetch = originalFetch;
-    }
-  });
-
-  test('未保存は既定モデルから Gemini を選び、カスタム欄を隠す', async () => {
-    await bootstrapOptions(document);
-    expect(provider().value).toBe('gemini');
-    expect(fields().hidden).toBe(true);
-    expect(connectionStatus().textContent).toBe('未保存（モデル名から自動判定）');
-    expect(key().placeholder).toBe('API キー（loopback は任意）');
-  });
-
-  test('保存済みの OpenAI 互換設定とキー状態を復元し、モデル名より優先して表示する', async () => {
-    chromeMock.storage.local.data['settings.defaultModel'] = 'org/model';
-    chromeMock.storage.local.data['settings.llmProvider'] = 'openai_compatible';
-    chromeMock.storage.local.data['settings.openAiCompatibleEndpoint'] =
-      'https://llm.example/v1/chat/completions';
-    chromeMock.storage.local.data['secrets.openAiCompatibleApiKey'] = 'saved';
-    await bootstrapOptions(document);
-    expect(provider().value).toBe('openai_compatible');
-    expect(fields().hidden).toBe(false);
-    expect(endpoint().value).toBe('https://llm.example/v1/chat/completions');
-    expect(key().placeholder).toBe('保存済み（変更する場合のみ入力）');
-    expect(connectionStatus().textContent).toBe('接続設定: 保存済み');
-  });
-
-  test('接続方式の変更でカスタム欄を表示・非表示にする', async () => {
-    await bootstrapOptions(document);
-    provider().value = 'openai_compatible';
-    provider().dispatchEvent(new Event('change'));
-    expect(fields().hidden).toBe(false);
-    provider().value = 'openrouter';
-    provider().dispatchEvent(new Event('change'));
-    expect(fields().hidden).toBe(true);
-  });
-
-  test('OpenAI 互換設定は origin 権限を得てからキーと URL を保存する', async () => {
-    await bootstrapOptions(document);
-    provider().value = 'openai_compatible';
-    provider().dispatchEvent(new Event('change'));
-    endpoint().value = ' https://llm.example/v1/chat/completions ';
-    key().value = ' custom-key ';
-    save().click();
-    await flush();
-    await flush();
-    expect(chromeMock.permissions.request).toHaveBeenCalledWith({
-      origins: ['https://llm.example/*'],
+  test('保存済みのキーは伏せ、モデルと取得一覧を復元する', async () => {
+    Object.assign(chromeMock.storage.local.data, {
+      'settings.llmProvider': 'anthropic',
+      'settings.defaultModel': 'custom-model',
+      'settings.fetchedModelIds': { anthropic: ['custom-model'] },
+      'secrets.anthropicApiKey': 'saved-key',
     });
-    expect(chromeMock.storage.local.data['settings.llmProvider']).toBe('openai_compatible');
-    expect(chromeMock.storage.local.data['settings.openAiCompatibleEndpoint']).toBe(
-      'https://llm.example/v1/chat/completions',
-    );
-    expect(chromeMock.storage.local.data['secrets.openAiCompatibleApiKey']).toBe('custom-key');
-    expect(key().value).toBe('');
-    expect(connectionStatus().textContent).toBe('保存しました。');
-    expect(save().disabled).toBe(false);
-  });
-
-  test('保存済みカスタムキーを再入力せず接続設定を保存できる', async () => {
-    chromeMock.storage.local.data['secrets.openAiCompatibleApiKey'] = 'saved';
     await bootstrapOptions(document);
-    provider().value = 'openai_compatible';
-    endpoint().value = 'https://llm.example/v1/chat/completions';
-    save().click();
-    await flush();
-    await flush();
-    expect(connectionStatus().textContent).toBe('保存しました。');
+    expect(input('anthropic-api-key').value).toBe('');
+    expect(input('anthropic-api-key').placeholder).toContain('保存済み');
+    expect(select('default-model').value).toBe('custom-model');
+    await save();
+    expect(factory.createProvider).toHaveBeenCalledWith(expect.objectContaining({ apiKey: 'saved-key' }));
   });
-
-  test('loopback HTTP はポートを除いた権限を要求し、API キーなしで保存できる', async () => {
-    await bootstrapOptions(document);
-    provider().value = 'openai_compatible';
-    provider().dispatchEvent(new Event('change'));
-    endpoint().value = 'http://localhost:11434/v1/chat/completions';
-    save().click();
+  test.each(['gemini', 'openrouter', 'anthropic', 'azure_openai', 'openai_compatible', 'local_llm'])(
+    '%s の保存→一覧取得→接続確認を実行する', async (provider) => {
+      await setup(provider);
+      await save();
+      expect(chromeMock.storage.local.data['settings.llmProvider']).toBe(provider);
+      expect(chromeMock.storage.local.data['settings.defaultModel']).toBe('custom-model');
+      expect(chat).toHaveBeenCalledWith(expect.any(Array), expect.objectContaining({ maxOutputTokens: 4096 }));
+      expect(status()).toContain('保存しました。接続を確認しました');
+      expect(button().disabled).toBe(false);
+      if (provider === 'gemini' || provider === 'azure_openai') {
+        expect(fetchIds).not.toHaveBeenCalled();
+        expect(status()).not.toContain('件を取得');
+      } else {
+        expect(fetchIds).toHaveBeenCalled();
+        expect(chromeMock.storage.local.data['settings.fetchedModelIds']).toEqual({ [provider]: ['custom-model'] });
+        expect(select('default-model').value).toBe('custom-model');
+      }
+    },
+  );
+  test('処理中は無効化し、reasoning effort と保存済みキーを使う', async () => {
+    chromeMock.storage.local.data['settings.defaultReasoningEffort'] = 'high';
+    await setup();
+    let complete!: (value: { text: string }) => void;
+    chat.mockReturnValueOnce(new Promise((resolve) => { complete = resolve; }));
+    button().click();
+    expect(button().disabled).toBe(true);
     await flush();
+    expect(factory.createProvider).toHaveBeenCalledWith(expect.objectContaining({ reasoningEffort: 'high' }));
+    complete({ text: '{"ok":true}' });
     await flush();
-    expect(chromeMock.permissions.request).toHaveBeenCalledWith({
-      origins: ['http://localhost/*'],
-    });
-    expect(chromeMock.storage.local.data['settings.openAiCompatibleEndpoint']).toBe(
-      'http://localhost:11434/v1/chat/completions',
-    );
-    expect(chromeMock.storage.local.data['secrets.openAiCompatibleApiKey']).toBeUndefined();
-    expect(connectionStatus().textContent).toBe('保存しました。');
+    expect(button().disabled).toBe(false);
+    expect(input('gemini-api-key').value).toBe('');
   });
-
-  test('権限拒否、URL 不正、キー未設定を理由付きで表示する', async () => {
-    await bootstrapOptions(document);
-    provider().value = 'openai_compatible';
-    endpoint().value = 'invalid';
-    key().value = 'k';
-    save().click();
-    await flush();
-    expect(connectionStatus().textContent).toContain('有効な API エンドポイント');
-
-    endpoint().value = 'https://llm.example/v1/chat/completions';
-    key().value = '';
-    save().click();
-    await flush();
-    expect(connectionStatus().textContent).toContain('API キーが未設定');
-
-    key().value = 'k';
+  test.each([
+    ['gemini', 'sk-or-wrong', 'OpenRouter'],
+    ['openrouter', 'AIzaWrong', 'Gemini'],
+    ['anthropic', '', 'API キー'],
+  ])('入力検証で %s のキー不正を止める', async (provider, key, message) => {
+    await setup(provider);
+    input(provider + '-api-key').value = key;
+    await save();
+    expect(status()).toContain('保存できませんでした:');
+    expect(status()).toContain(message);
+    expect(chat).not.toHaveBeenCalled();
+  });
+  test('ローカルのプリセットと外部 URL 拒否', async () => {
+    await setup('local_llm');
+    expect(input('local-llm-endpoint').value).toBe('http://localhost:11434/v1/chat/completions');
+    document.getElementById('local-llm-preset-lmstudio')!.click();
+    expect(input('local-llm-endpoint').value).toBe('http://localhost:1234/v1/chat/completions');
+    expect(document.getElementById('local-llm-api-key')).toBeNull();
+    input('local-llm-endpoint').value = 'https://remote.example/v1/chat/completions';
+    await save();
+    expect(status()).toContain('ローカル LLM には localhost');
+    expect(chromeMock.storage.local.set).not.toHaveBeenCalled();
+  });
+  test('権限拒否は保存前に停止する', async () => {
+    await setup('local_llm');
     chromeMock.permissions.request.mockResolvedValueOnce(false);
-    save().click();
-    await flush();
-    await flush();
-    expect(connectionStatus().textContent).toBe('接続先へのアクセスが許可されませんでした');
-    expect(connectionStatus().classList.contains('options__status--error')).toBe(true);
+    await save();
+    expect(status()).toBe('保存できませんでした: 接続先へのアクセスが許可されませんでした');
+    expect(chromeMock.storage.local.set).not.toHaveBeenCalled();
+  });
+  test('保存失敗は一覧取得に進まない', async () => {
+    await setup('anthropic');
+    chromeMock.storage.local.set.mockRejectedValueOnce(new Error('storage error'));
+    await save();
+    expect(status()).toBe('保存できませんでした: 保存に失敗しました');
+    expect(fetchIds).not.toHaveBeenCalled();
+  });
+  test.each([
+    [new Error('HTTP 401'), 'API キーが受け付けられませんでした（HTTP 401）'],
+    [new Error('HTTP 403'), 'API キーが受け付けられませんでした（HTTP 403）'],
+    [new TypeError('Failed to fetch'), '接続先に届きませんでした'],
+    [new Error('HTTP 500'), 'モデル一覧を取得できませんでした'],
+    ['unknown', 'モデル一覧を取得できませんでした'],
+  ])('一覧取得失敗は保存を保持し呼び出しを止める: %s', async (error, message) => {
+    await setup('anthropic');
+    fetchIds.mockRejectedValueOnce(error);
+    await save();
+    expect(status()).toContain('保存しました。接続を確認できませんでした:');
+    expect(status()).toContain(message);
+    expect(chromeMock.storage.local.data['settings.defaultModel']).toBe('custom-model');
+    expect(chat).not.toHaveBeenCalled();
+  });
+  test.each([
+    [new LlmProviderError('failed', 'gemini', 404, ''), 'モデル「custom-model」'],
+    [new LlmProviderError('failed', 'gemini', 401, ''), 'API キー'],
+    [new LlmProviderError('failed', 'gemini', 403, ''), 'API キー'],
+    [new LlmProviderError('model_not_found', 'gemini', null, ''), 'モデル「custom-model」'],
+    [new Error('failure'), 'failure'],
+  ])('呼び出し失敗を分類する: %s', async (error, message) => {
+    await setup();
+    chat.mockRejectedValueOnce(error);
+    await save();
+    expect(status()).toContain(message);
+    expect(status()).toContain('保存しました。接続を確認できませんでした:');
+  });
+  test.each(['not json', '{}', 'null'])('JSON の確認に失敗する: %s', async (text) => {
+    await setup();
+    chat.mockResolvedValueOnce({ text });
+    await save();
+    expect(status()).toContain('JSON Schema に従う応答を確認できませんでした');
+  });
+  test('OpenAI 互換の loopback はキーがなくても接続できる', async () => {
+    await setup('openai_compatible');
+    input('openai-compatible-api-key').value = '';
+    input('openai-compatible-endpoint').value = 'http://localhost:1234/v1/chat/completions';
+    await save();
+    expect(factory.createProvider).toHaveBeenCalledWith(expect.objectContaining({ apiKey: '' }));
+  });
+  test('保存済みの方式と工場出荷モデルが食い違うと初期選択を空にする', async () => {
+    chromeMock.storage.local.data['settings.llmProvider'] = 'anthropic';
+    await bootstrapOptions(document);
+    expect(select('default-model').value).toBe('');
+  });
+  test('一部の入力欄がない DOM でも初期化し、URL 未入力を拒否する', async () => {
+    document.getElementById('gemini-fields')!.remove();
+    document.getElementById('local-llm-endpoint')!.remove();
+    await bootstrapOptions(document);
+    document.getElementById('local-llm-preset-ollama')!.click();
+    change('llm-provider', 'local_llm');
+    customModel('local-model');
+    await save();
+    expect(status()).toContain('保存できませんでした:');
+    expect(chat).not.toHaveBeenCalled();
+  });
+  test('OpenAI 互換の URL 欄がない場合は保存も呼び出しもせず案内する', async () => {
+    await setup('openai_compatible');
+    input('openai-compatible-endpoint').remove();
+    await save();
+    expect(status()).toContain('保存できませんでした:');
+    expect(chromeMock.storage.local.set).not.toHaveBeenCalled();
+    expect(chat).not.toHaveBeenCalled();
   });
 
-  test('Gemini / OpenRouter の接続方式を既存キーで保存し、未設定を案内する', async () => {
-    await bootstrapOptions(document);
-    provider().value = 'gemini';
-    save().click();
-    await flush();
-    expect(connectionStatus().textContent).toBe('Gemini API キーが未設定です');
-
-    chromeMock.storage.local.data['secrets.geminiApiKey'] = 'gemini-key';
-    save().click();
-    await flush();
-    expect(chromeMock.storage.local.data['settings.llmProvider']).toBe('gemini');
-
-    provider().value = 'openrouter';
-    save().click();
-    await flush();
-    expect(connectionStatus().textContent).toBe('OpenRouter API キーが未設定です');
-    chromeMock.storage.local.data['secrets.openRouterApiKey'] = 'or-key';
-    save().click();
-    await flush();
-    expect(chromeMock.storage.local.data['settings.llmProvider']).toBe('openrouter');
-  });
-
-  test('OpenAI 互換 API の構造化出力接続テストに成功する', async () => {
-    globalThis.fetch = jest.fn().mockResolvedValue({
-      ok: true,
-      text: async () => JSON.stringify({ choices: [{ message: { content: '{"ok":true}' } }] }),
-    }) as unknown as typeof fetch;
-    await bootstrapOptions(document);
-    provider().value = 'openai_compatible';
-    endpoint().value = 'https://llm.example/v1/chat/completions';
-    key().value = 'key';
-    testConnection().click();
-    await flush();
-    await flush();
-    expect(connectionStatus().textContent).toBe('接続テストに成功しました。');
-    expect(testConnection().disabled).toBe(false);
-    const init = (globalThis.fetch as jest.Mock).mock.calls[0]?.[1] as RequestInit;
-    expect(JSON.parse(init.body as string).response_format.type).toBe('json_schema');
-  });
-
-  test('Gemini の接続テストは思考を含む出力上限 4096 を送信する', async () => {
-    globalThis.fetch = jest.fn().mockResolvedValue({
-      ok: true,
-      text: async () => JSON.stringify({
-        candidates: [{ content: { parts: [{ text: '{"ok":true}' }] }, finishReason: 'STOP' }],
-      }),
-    }) as unknown as typeof fetch;
-    chromeMock.storage.local.data['secrets.geminiApiKey'] = 'gemini-key';
-    await bootstrapOptions(document);
-    provider().value = 'gemini';
-    testConnection().click();
-    await flush();
-    await flush();
-    expect(connectionStatus().textContent).toBe('接続テストに成功しました。');
-    const init = (globalThis.fetch as jest.Mock).mock.calls[0]?.[1] as RequestInit;
-    expect(JSON.parse(init.body as string).generationConfig.maxOutputTokens).toBe(4096);
-  });
-
-  test('OpenAI 互換 API の接続テストは思考を含む出力上限 4096 を送信する', async () => {
-    globalThis.fetch = jest.fn().mockResolvedValue({
-      ok: true,
-      text: async () => JSON.stringify({ choices: [{ message: { content: '{"ok":true}' } }] }),
-    }) as unknown as typeof fetch;
-    await bootstrapOptions(document);
-    provider().value = 'openai_compatible';
-    endpoint().value = 'https://llm.example/v1/chat/completions';
-    key().value = 'key';
-    testConnection().click();
-    await flush();
-    await flush();
-    expect(connectionStatus().textContent).toBe('接続テストに成功しました。');
-    const init = (globalThis.fetch as jest.Mock).mock.calls[0]?.[1] as RequestInit;
-    expect(JSON.parse(init.body as string).max_tokens).toBe(4096);
-  });
-
-  test('接続テストの権限拒否、非準拠応答、JSON エラーを表示する', async () => {
-    globalThis.fetch = jest.fn().mockResolvedValue({
-      ok: true,
-      text: async () => JSON.stringify({ choices: [{ message: { content: '{"ok":false}' } }] }),
-    }) as unknown as typeof fetch;
-    await bootstrapOptions(document);
-    provider().value = 'openai_compatible';
-    endpoint().value = 'https://llm.example/v1/chat/completions';
-    key().value = 'key';
-
-    chromeMock.permissions.request.mockResolvedValueOnce(false);
-    testConnection().click();
-    await flush();
-    expect(connectionStatus().textContent).toContain('アクセスが許可されませんでした');
-
-    testConnection().click();
-    await flush();
-    await flush();
-    expect(connectionStatus().textContent).toContain('JSON Schema に従う応答');
-
-    (globalThis.fetch as jest.Mock).mockResolvedValueOnce({
-      ok: true,
-      text: async () => JSON.stringify({ choices: [{ message: { content: 'not-json' } }] }),
+  test('一覧の保存後に別画面が一覧を消しても接続確認を続ける', async () => {
+    await setup('anthropic');
+    const original = chromeMock.storage.local.set.getMockImplementation()!;
+    chromeMock.storage.local.set.mockImplementation(async (items) => {
+      await original(items);
+      if ('settings.fetchedModelIds' in items) {
+        delete chromeMock.storage.local.data['settings.fetchedModelIds'];
+      }
     });
-    testConnection().click();
-    await flush();
-    await flush();
-    expect(connectionStatus().textContent).toContain('接続テストに失敗しました');
+    await save();
+    expect(status()).toContain('モデル 0 件を取得');
   });
-
-  test('保存と接続テストの非 Error 例外を文字列化する', async () => {
-    await bootstrapOptions(document);
-    provider().value = 'openai_compatible';
-    endpoint().value = 'https://llm.example/v1/chat/completions';
-    key().value = 'key';
-
-    chromeMock.permissions.request.mockRejectedValueOnce('save-denied');
-    save().click();
-    await flush();
-    expect(connectionStatus().textContent).toBe('save-denied');
-
-    chromeMock.permissions.request.mockRejectedValueOnce(503);
-    testConnection().click();
-    await flush();
-    expect(connectionStatus().textContent).toBe('接続テストに失敗しました: 503');
-  });
-});
-
-describe('bootstrapOptions（Anthropic 接続。issue #127 PR2 target spec の実装）', () => {
-  let chromeMock: ChromeMock;
-  let originalFetch: typeof fetch | undefined;
-
-  const provider = (): HTMLSelectElement =>
-    document.getElementById('llm-provider') as HTMLSelectElement;
-  const anthropicFields = (): HTMLElement =>
-    document.getElementById('anthropic-fields') as HTMLElement;
-  const compatibleFields = (): HTMLElement =>
-    document.getElementById('openai-compatible-fields') as HTMLElement;
-  const anthropicKey = (): HTMLInputElement =>
-    document.getElementById('anthropic-api-key') as HTMLInputElement;
-  const save = (): HTMLButtonElement =>
-    document.getElementById('save-llm-connection') as HTMLButtonElement;
-  const testConnection = (): HTMLButtonElement =>
-    document.getElementById('test-llm-connection') as HTMLButtonElement;
-  const connectionStatus = (): HTMLElement =>
-    document.getElementById('llm-connection-status') as HTMLElement;
-
-  beforeEach(() => {
-    chromeMock = installChromeMock();
-    originalFetch = globalThis.fetch;
-    document.body.replaceChildren(buildSettingsSections());
-  });
-
-  afterEach(() => {
-    if (originalFetch === undefined) {
-      delete (globalThis as { fetch?: typeof fetch }).fetch;
-    } else {
-      globalThis.fetch = originalFetch;
-    }
-  });
-
-  test('Anthropic 選択時はエンドポイント欄を隠し、API キー欄だけ表示する', async () => {
-    await bootstrapOptions(document);
-    provider().value = 'anthropic';
-    provider().dispatchEvent(new Event('change'));
-    expect(anthropicFields().hidden).toBe(false);
-    expect(compatibleFields().hidden).toBe(true);
-    expect(anthropicKey().placeholder).toBe('API キーを入力');
-  });
-
-  test('保存済みキーがあれば placeholder を保存済みへ切り替える', async () => {
-    chromeMock.storage.local.data['secrets.anthropicApiKey'] = 'sk-ant-saved';
-    await bootstrapOptions(document);
-    expect(anthropicKey().placeholder).toBe('保存済み（変更する場合のみ入力）');
-  });
-
-  test('キー未入力・未保存では保存も接続テストも「Anthropic API キーが未設定です」', async () => {
-    await bootstrapOptions(document);
-    provider().value = 'anthropic';
-    provider().dispatchEvent(new Event('change'));
-    save().click();
-    await flush();
-    expect(connectionStatus().textContent).toBe('Anthropic API キーが未設定です');
-
-    testConnection().click();
-    await flush();
-    expect(connectionStatus().textContent).toBe(
-      '接続テストに失敗しました: Anthropic API キーが未設定です',
-    );
-  });
-
-  test('API キーを保存すると入力欄をクリアし placeholder を更新する（エンドポイント権限確認は不要）', async () => {
-    await bootstrapOptions(document);
-    provider().value = 'anthropic';
-    provider().dispatchEvent(new Event('change'));
-    anthropicKey().value = '  sk-ant-TESTKEY  ';
-    save().click();
-    await flush();
-    expect(chromeMock.permissions.request).not.toHaveBeenCalled();
-    expect(chromeMock.storage.local.data['settings.llmProvider']).toBe('anthropic');
-    expect(chromeMock.storage.local.data['secrets.anthropicApiKey']).toBe('sk-ant-TESTKEY');
-    expect(anthropicKey().value).toBe('');
-    expect(anthropicKey().placeholder).toBe('保存済み（変更する場合のみ入力）');
-    expect(connectionStatus().textContent).toBe('保存しました。');
-  });
-
-  test('接続テストの成功・失敗を Anthropic 応答の形（content 配列）で判定する', async () => {
-    globalThis.fetch = jest.fn().mockResolvedValue({
-      ok: true,
-      text: async () => JSON.stringify({ content: [{ type: 'text', text: '{"ok":true}' }] }),
-    }) as unknown as typeof fetch;
-    await bootstrapOptions(document);
-    provider().value = 'anthropic';
-    provider().dispatchEvent(new Event('change'));
-    anthropicKey().value = 'sk-ant-TESTKEY';
-    testConnection().click();
-    await flush();
-    await flush();
-    expect(connectionStatus().textContent).toBe('接続テストに成功しました。');
-    const init = (globalThis.fetch as jest.Mock).mock.calls[0]?.[1] as RequestInit;
-    expect((init.headers as Record<string, string>)['x-api-key']).toBe('sk-ant-TESTKEY');
-
-    (globalThis.fetch as jest.Mock).mockResolvedValueOnce({
-      ok: true,
-      text: async () => JSON.stringify({ content: [{ type: 'text', text: '{"ok":false}' }] }),
+  test('別方式の保存値を保持し、未知の保存モデルは直接入力として表示する', async () => {
+    Object.assign(chromeMock.storage.local.data, {
+      'settings.defaultModel': 'private-model',
+      'settings.openAiCompatibleEndpoint': 'https://remote.example/v1/chat/completions',
+      'settings.azureOpenAiEndpoint': 'https://azure.example/chat/completions',
+      'settings.localLlmEndpoint': 'http://localhost:1234/v1/chat/completions',
+      'secrets.openRouterApiKey': 'old-key',
     });
-    testConnection().click();
-    await flush();
-    await flush();
-    expect(connectionStatus().textContent).toContain('接続テストに失敗しました');
-  });
-
-  test('保存済みキーを再入力せず接続テストできる', async () => {
-    chromeMock.storage.local.data['secrets.anthropicApiKey'] = 'sk-ant-saved';
-    globalThis.fetch = jest.fn().mockResolvedValue({
-      ok: true,
-      text: async () => JSON.stringify({ content: [{ type: 'text', text: '{"ok":true}' }] }),
-    }) as unknown as typeof fetch;
     await bootstrapOptions(document);
-    provider().value = 'anthropic';
-    provider().dispatchEvent(new Event('change'));
-    testConnection().click();
-    await flush();
-    await flush();
-    expect(connectionStatus().textContent).toBe('接続テストに成功しました。');
-  });
-});
-
-describe('bootstrapOptions（Azure OpenAI 接続。issue #127 PR3 target spec の実装）', () => {
-  let chromeMock: ChromeMock;
-  let originalFetch: typeof fetch | undefined;
-
-  const provider = (): HTMLSelectElement =>
-    document.getElementById('llm-provider') as HTMLSelectElement;
-  const azureFields = (): HTMLElement =>
-    document.getElementById('azure-openai-fields') as HTMLElement;
-  const compatibleFields = (): HTMLElement =>
-    document.getElementById('openai-compatible-fields') as HTMLElement;
-  const anthropicFields = (): HTMLElement =>
-    document.getElementById('anthropic-fields') as HTMLElement;
-  const azureEndpoint = (): HTMLInputElement =>
-    document.getElementById('azure-openai-endpoint') as HTMLInputElement;
-  const azureKey = (): HTMLInputElement =>
-    document.getElementById('azure-openai-api-key') as HTMLInputElement;
-  const save = (): HTMLButtonElement =>
-    document.getElementById('save-llm-connection') as HTMLButtonElement;
-  const testConnection = (): HTMLButtonElement =>
-    document.getElementById('test-llm-connection') as HTMLButtonElement;
-  const connectionStatus = (): HTMLElement =>
-    document.getElementById('llm-connection-status') as HTMLElement;
-
-  const AZURE_URL =
-    'https://res.openai.azure.com/openai/deployments/gpt-4o-deployment/chat/completions?api-version=2026-01-01';
-
-  beforeEach(() => {
-    chromeMock = installChromeMock();
-    originalFetch = globalThis.fetch;
-    document.body.replaceChildren(buildSettingsSections());
-  });
-
-  afterEach(() => {
-    if (originalFetch === undefined) {
-      delete (globalThis as { fetch?: typeof fetch }).fetch;
-    } else {
-      globalThis.fetch = originalFetch;
-    }
-  });
-
-  test('Azure OpenAI 選択時はエンドポイント欄と API キー欄を表示し、他の接続方式の欄を隠す', async () => {
-    await bootstrapOptions(document);
-    provider().value = 'azure_openai';
-    provider().dispatchEvent(new Event('change'));
-    expect(azureFields().hidden).toBe(false);
-    expect(compatibleFields().hidden).toBe(true);
-    expect(anthropicFields().hidden).toBe(true);
-    expect(azureKey().placeholder).toBe('API キーを入力');
-  });
-
-  test('保存済みキーがあれば placeholder を保存済みへ切り替える', async () => {
-    chromeMock.storage.local.data['secrets.azureOpenAiApiKey'] = 'azure-saved';
-    await bootstrapOptions(document);
-    expect(azureKey().placeholder).toBe('保存済み（変更する場合のみ入力）');
-  });
-
-  test('URL 未入力・キー未入力を理由付きで表示する（loopback でもキー任意にはならない）', async () => {
-    await bootstrapOptions(document);
-    provider().value = 'azure_openai';
-    provider().dispatchEvent(new Event('change'));
-    save().click();
-    await flush();
-    expect(connectionStatus().textContent).toContain('有効な API エンドポイント');
-
-    azureEndpoint().value = 'http://localhost:11434/openai/deployments/x?api-version=2026-01-01';
-    save().click();
-    await flush();
-    expect(connectionStatus().textContent).toBe('Azure OpenAI API キーが未設定です');
-  });
-
-  test('origin 権限を得てから URL とキーを保存する（OpenAI 互換 API と同じ経路）', async () => {
-    await bootstrapOptions(document);
-    provider().value = 'azure_openai';
-    provider().dispatchEvent(new Event('change'));
-    azureEndpoint().value = AZURE_URL;
-    azureKey().value = '  azure-secret  ';
-    save().click();
-    await flush();
-    await flush();
-    expect(chromeMock.permissions.request).toHaveBeenCalledWith({
-      origins: ['https://res.openai.azure.com/*'],
-    });
-    expect(chromeMock.storage.local.data['settings.llmProvider']).toBe('azure_openai');
-    expect(chromeMock.storage.local.data['settings.azureOpenAiEndpoint']).toBe(AZURE_URL);
-    expect(chromeMock.storage.local.data['secrets.azureOpenAiApiKey']).toBe('azure-secret');
-    expect(azureKey().value).toBe('');
-    expect(azureKey().placeholder).toBe('保存済み（変更する場合のみ入力）');
-    expect(connectionStatus().textContent).toBe('保存しました。');
-  });
-
-  test('権限拒否時は理由を表示し、保存しない', async () => {
-    await bootstrapOptions(document);
-    provider().value = 'azure_openai';
-    provider().dispatchEvent(new Event('change'));
-    azureEndpoint().value = AZURE_URL;
-    azureKey().value = 'azure-secret';
-    chromeMock.permissions.request.mockResolvedValueOnce(false);
-    save().click();
-    await flush();
-    await flush();
-    expect(connectionStatus().textContent).toBe('接続先へのアクセスが許可されませんでした');
-    expect(chromeMock.storage.local.data['settings.llmProvider']).toBeUndefined();
-  });
-
-  test('保存済みキーを再入力せず接続テストできる（api-key ヘッダーで送信）', async () => {
-    chromeMock.storage.local.data['secrets.azureOpenAiApiKey'] = 'azure-saved';
-    globalThis.fetch = jest.fn().mockResolvedValue({
-      ok: true,
-      text: async () => JSON.stringify({ choices: [{ message: { content: '{"ok":true}' } }] }),
-    }) as unknown as typeof fetch;
-    await bootstrapOptions(document);
-    provider().value = 'azure_openai';
-    provider().dispatchEvent(new Event('change'));
-    azureEndpoint().value = AZURE_URL;
-    testConnection().click();
-    await flush();
-    await flush();
-    expect(connectionStatus().textContent).toBe('接続テストに成功しました。');
-    const init = (globalThis.fetch as jest.Mock).mock.calls[0]?.[1] as RequestInit;
-    const headers = init.headers as Record<string, string>;
-    expect(headers['api-key']).toBe('azure-saved');
-    expect(headers['Authorization']).toBeUndefined();
-  });
-});
-
-describe('bootstrapOptions（モデル一覧の自動取得。issue #127 PR4 target spec の実装）', () => {
-  let chromeMock: ChromeMock;
-  let originalFetch: typeof fetch | undefined;
-
-  const provider = (): HTMLSelectElement =>
-    document.getElementById('llm-provider') as HTMLSelectElement;
-  const compatibleEndpoint = (): HTMLInputElement =>
-    document.getElementById('openai-compatible-endpoint') as HTMLInputElement;
-  const compatibleKey = (): HTMLInputElement =>
-    document.getElementById('openai-compatible-api-key') as HTMLInputElement;
-  const fetchButton = (): HTMLButtonElement =>
-    document.getElementById('fetch-model-list') as HTMLButtonElement;
-  const fetchStatus = (): HTMLElement =>
-    document.getElementById('fetch-model-list-status') as HTMLElement;
-  const defaultModelSelect = (): HTMLSelectElement =>
-    document.getElementById('default-model') as HTMLSelectElement;
-
-  function toastTexts(): string[] {
-    return Array.from(document.querySelectorAll('.toast')).map((node) => node.textContent ?? '');
-  }
-
-  function jsonResponse(body: unknown): Response {
-    return {
-      ok: true,
-      status: 200,
-      json: async () => body,
-      text: async () => JSON.stringify(body),
-    } as unknown as Response;
-  }
-
-  beforeEach(() => {
-    chromeMock = installChromeMock();
-    originalFetch = globalThis.fetch;
-    document.body.replaceChildren(buildSettingsSections());
-  });
-
-  afterEach(() => {
-    if (originalFetch === undefined) {
-      delete (globalThis as { fetch?: typeof fetch }).fetch;
-    } else {
-      globalThis.fetch = originalFetch;
-    }
-  });
-
-  test('未取得: Anthropic / OpenRouter / OpenAI 互換 API はボタン活性 + 「モデル一覧は未取得です」', async () => {
-    await bootstrapOptions(document);
-    for (const value of ['anthropic', 'openrouter', 'openai_compatible']) {
-      provider().value = value;
-      provider().dispatchEvent(new Event('change'));
-      expect(fetchButton().disabled).toBe(false);
-      expect(fetchStatus().textContent).toBe('モデル一覧は未取得です');
-    }
-  });
-
-  test('Gemini / Azure OpenAI は非対応: ボタンを disabled にし理由を明示する（死んだボタンにしない）', async () => {
-    await bootstrapOptions(document);
-    provider().value = 'gemini';
-    provider().dispatchEvent(new Event('change'));
-    expect(fetchButton().disabled).toBe(true);
-    expect(fetchStatus().textContent).toBe(
-      'この接続方式ではモデル一覧の自動取得に対応していません（Gemini は単価表に収載済み、Azure OpenAI はデプロイメント名がテナント固有のため取得できません）',
-    );
-
-    provider().value = 'azure_openai';
-    provider().dispatchEvent(new Event('change'));
-    expect(fetchButton().disabled).toBe(true);
-    expect(fetchStatus().textContent).toContain('対応していません');
-  });
-
-  test('非対応の接続方式でクリックしても何も起きない（disabled 属性に頼らないガード）', async () => {
-    await bootstrapOptions(document);
-    // ボタンの disabled 属性そのものに依存せず、クリックハンドラ内部のガードだけで
-    // 単体でも安全なことを確認する（対応方式でボタンを活性化させたあと、change を
-    // 発火させずに select 値だけ非対応方式へ書き換える = renderProvider を経由しない）
-    provider().value = 'anthropic';
-    provider().dispatchEvent(new Event('change'));
-    expect(fetchButton().disabled).toBe(false);
-    provider().value = 'gemini';
-    globalThis.fetch = jest.fn();
-    fetchButton().click();
-    await flush();
-    expect(globalThis.fetch).not.toHaveBeenCalled();
-  });
-
-  test('取得中: ボタンを disabled にし「取得しています…」を表示する', async () => {
-    chromeMock.storage.local.data['secrets.anthropicApiKey'] = 'sk-ant-saved';
-    let resolveFetch: (value: Response) => void = () => undefined;
-    globalThis.fetch = jest.fn().mockReturnValue(
-      new Promise<Response>((resolve) => {
-        resolveFetch = resolve;
-      }),
-    );
-    await bootstrapOptions(document);
-    provider().value = 'anthropic';
-    provider().dispatchEvent(new Event('change'));
-    fetchButton().click();
-    expect(fetchButton().disabled).toBe(true);
-    expect(fetchStatus().textContent).toBe('取得しています…');
-
-    resolveFetch(jsonResponse({ data: [{ id: 'claude-fetched' }], has_more: false }));
-    await flush();
-    await flush();
-    expect(fetchButton().disabled).toBe(false);
-  });
-
-  test('成功: Anthropic のモデル一覧を既定モデルセレクタへ反映し、トーストを表示する', async () => {
-    chromeMock.storage.local.data['secrets.anthropicApiKey'] = 'sk-ant-saved';
-    globalThis.fetch = jest
-      .fn()
-      .mockResolvedValue(jsonResponse({ data: [{ id: 'claude-new-model' }], has_more: false }));
-    await bootstrapOptions(document);
-    provider().value = 'anthropic';
-    provider().dispatchEvent(new Event('change'));
-    fetchButton().click();
-    await flush();
-    await flush();
-    await flush();
-
-    expect(fetchStatus().textContent).toBe('1 件のモデルを取得しました');
-    expect(fetchStatus().classList.contains('options__status--error')).toBe(false);
-    expect(toastTexts()).toContain('モデル一覧を更新しました');
-
-    const select = defaultModelSelect();
-    const groups = Array.from(select.querySelectorAll('optgroup')).map((g) => g.label);
-    expect(groups).toContain('取得したモデル');
-    const values = Array.from(select.options).map((option) => option.value);
-    expect(values).toContain('claude-new-model');
-    // 実 API の必須ヘッダを一覧取得でも送っている（issue #210 / #127 の同じ制約）
-    const init = (globalThis.fetch as jest.Mock).mock.calls[0]?.[1] as RequestInit;
-    expect((init.headers as Record<string, string>)['anthropic-dangerous-direct-browser-access']).toBe(
-      'true',
-    );
-  });
-
-  test('再取得すると「取得したモデル」optgroup を入れ替える（増殖しない）', async () => {
-    chromeMock.storage.local.data['secrets.anthropicApiKey'] = 'sk-ant-saved';
-    globalThis.fetch = jest
-      .fn()
-      .mockResolvedValueOnce(jsonResponse({ data: [{ id: 'claude-first' }], has_more: false }))
-      .mockResolvedValueOnce(jsonResponse({ data: [{ id: 'claude-second' }], has_more: false }));
-    await bootstrapOptions(document);
-    provider().value = 'anthropic';
-    provider().dispatchEvent(new Event('change'));
-    fetchButton().click();
-    await flush();
-    await flush();
-    await flush();
-    fetchButton().click();
-    await flush();
-    await flush();
-    await flush();
-
-    const select = defaultModelSelect();
-    const groups = Array.from(select.querySelectorAll('optgroup')).filter(
-      (g) => g.label === '取得したモデル',
-    );
-    expect(groups).toHaveLength(1);
-    const values = Array.from(select.options).map((option) => option.value);
-    expect(values).not.toContain('claude-first');
-    expect(values).toContain('claude-second');
-  });
-
-  test('失敗: 赤系メッセージを表示し、静的カタログはそのまま使える（フォールバック）', async () => {
-    chromeMock.storage.local.data['secrets.anthropicApiKey'] = 'sk-ant-saved';
-    globalThis.fetch = jest.fn().mockResolvedValue({
-      ok: false,
-      status: 401,
-      text: async () => 'invalid x-api-key',
-    } as unknown as Response);
-    await bootstrapOptions(document);
-    provider().value = 'anthropic';
-    provider().dispatchEvent(new Event('change'));
-
-    const select = defaultModelSelect();
-    const valuesBefore = Array.from(select.options).map((option) => option.value);
-
-    fetchButton().click();
-    await flush();
-    await flush();
-    await flush();
-
-    expect(fetchStatus().classList.contains('options__status--error')).toBe(true);
-    expect(fetchStatus().textContent).toContain('モデル一覧の取得に失敗しました');
-    expect(fetchStatus().textContent).toContain('既存のカタログを使用します');
-    expect(fetchButton().disabled).toBe(false);
-    // 静的カタログの選択肢は失われていない（フォールバック）
-    const valuesAfter = Array.from(select.options).map((option) => option.value);
-    expect(valuesAfter).toEqual(valuesBefore);
-  });
-
-  test('失敗: Error 以外の例外は文字列化して表示する', async () => {
-    chromeMock.storage.local.data['secrets.anthropicApiKey'] = 'sk-ant-saved';
-    globalThis.fetch = jest.fn().mockRejectedValue('network-down');
-    await bootstrapOptions(document);
-    provider().value = 'anthropic';
-    provider().dispatchEvent(new Event('change'));
-    fetchButton().click();
-    await flush();
-    await flush();
-    expect(fetchStatus().textContent).toContain('network-down');
-    expect(fetchStatus().classList.contains('options__status--error')).toBe(true);
-  });
-
-  test('失敗: API キー未設定は resolveFormConfig のエラーがそのままフォールバック表示になる', async () => {
-    await bootstrapOptions(document);
-    provider().value = 'anthropic';
-    provider().dispatchEvent(new Event('change'));
-    fetchButton().click();
-    await flush();
-    await flush();
-    expect(fetchStatus().textContent).toContain('Anthropic API キーが未設定です');
-    expect(fetchStatus().classList.contains('options__status--error')).toBe(true);
-  });
-
-  test('OpenAI 互換 API: 保存済み URL から /models を導出して取得する', async () => {
-    globalThis.fetch = jest
-      .fn()
-      .mockResolvedValue(jsonResponse({ data: [{ id: 'local-model' }] }));
-    await bootstrapOptions(document);
-    provider().value = 'openai_compatible';
-    provider().dispatchEvent(new Event('change'));
-    compatibleEndpoint().value = 'https://llm.example/v1/chat/completions';
-    compatibleKey().value = 'compat-key';
-    fetchButton().click();
-    await flush();
-    await flush();
-    await flush();
-
-    const [url, init] = (globalThis.fetch as jest.Mock).mock.calls[0] as [string, RequestInit];
-    expect(url).toBe('https://llm.example/v1/models');
-    expect((init.headers as Record<string, string>)['Authorization']).toBe('Bearer compat-key');
-    expect(toastTexts()).toContain('モデル一覧を更新しました');
-  });
-
-  test('OpenAI 互換 API: 保存済み URL が /chat/completions 形式でなければ推測せずエラーを表示する', async () => {
-    await bootstrapOptions(document);
-    provider().value = 'openai_compatible';
-    provider().dispatchEvent(new Event('change'));
-    compatibleEndpoint().value = 'https://llm.example/v1/completions';
-    compatibleKey().value = 'compat-key';
-    fetchButton().click();
-    await flush();
-    await flush();
-
-    expect(fetchStatus().classList.contains('options__status--error')).toBe(true);
-    expect(fetchStatus().textContent).toContain('推測できません');
-  });
-
-  test('OpenRouter: 公開エンドポイントへ認証なしで取得する', async () => {
-    // resolveFormConfig（save / test と共有）は OpenRouter でも API キー保存済みを要求するため、
-    // 取得エンドポイント自体は無認証でも設定は必要（既存の共有ロジックにそのまま乗る）
-    chromeMock.storage.local.data['secrets.openRouterApiKey'] = 'or-saved';
-    globalThis.fetch = jest
-      .fn()
-      .mockResolvedValue(jsonResponse({ data: [{ id: 'openrouter/new-model' }] }));
-    await bootstrapOptions(document);
-    provider().value = 'openrouter';
-    provider().dispatchEvent(new Event('change'));
-    fetchButton().click();
-    await flush();
-    await flush();
-    await flush();
-
-    const [url, init] = (globalThis.fetch as jest.Mock).mock.calls[0] as [string, RequestInit];
-    expect(url).toBe('https://openrouter.ai/api/v1/models');
-    expect(init.headers).toBeUndefined();
-    const values = Array.from(defaultModelSelect().options).map((option) => option.value);
-    expect(values).toContain('openrouter/new-model');
-  });
-
-  test('取得できたモデルが全て単価表に既存なら「取得したモデル」optgroup を作らない', async () => {
-    chromeMock.storage.local.data['secrets.anthropicApiKey'] = 'sk-ant-saved';
-    globalThis.fetch = jest
-      .fn()
-      .mockResolvedValue(jsonResponse({ data: [{ id: 'claude-opus-5' }], has_more: false }));
-    await bootstrapOptions(document);
-    provider().value = 'anthropic';
-    provider().dispatchEvent(new Event('change'));
-    fetchButton().click();
-    await flush();
-    await flush();
-    await flush();
-
-    expect(fetchStatus().textContent).toBe('1 件のモデルを取得しました');
-    const groups = Array.from(defaultModelSelect().querySelectorAll('optgroup')).map(
-      (g) => g.label,
-    );
-    expect(groups).not.toContain('取得したモデル');
-  });
-
-  test('既定モデルセレクタが DOM に無い場合は何もしない（防御的ガード）', async () => {
-    chromeMock.storage.local.data['secrets.anthropicApiKey'] = 'sk-ant-saved';
-    globalThis.fetch = jest
-      .fn()
-      .mockResolvedValue(jsonResponse({ data: [{ id: 'claude-new-model' }], has_more: false }));
-    await bootstrapOptions(document);
-    provider().value = 'anthropic';
-    provider().dispatchEvent(new Event('change'));
-    // 既定モデル節が無いページ（options.html のごく一部だけ差し替えた場合等）を模す
-    defaultModelSelect().remove();
-    fetchButton().click();
-    await flush();
-    await flush();
-    await flush();
-
-    expect(fetchStatus().textContent).toBe('1 件のモデルを取得しました');
-    expect(toastTexts()).toContain('モデル一覧を更新しました');
-  });
-
-  test('単価表に既にあるモデルは「取得したモデル」optgroup へ二重に足さない', async () => {
-    chromeMock.storage.local.data['secrets.anthropicApiKey'] = 'sk-ant-saved';
-    globalThis.fetch = jest.fn().mockResolvedValue(
-      jsonResponse({
-        data: [{ id: 'claude-opus-5' }, { id: 'claude-brand-new' }],
-        has_more: false,
-      }),
-    );
-    await bootstrapOptions(document);
-    provider().value = 'anthropic';
-    provider().dispatchEvent(new Event('change'));
-    fetchButton().click();
-    await flush();
-    await flush();
-    await flush();
-
-    const select = defaultModelSelect();
-    const fetchedGroup = Array.from(select.querySelectorAll('optgroup')).find(
-      (g) => g.label === '取得したモデル',
-    );
-    const fetchedValues = Array.from(fetchedGroup?.querySelectorAll('option') ?? []).map(
-      (option) => (option as HTMLOptionElement).value,
-    );
-    expect(fetchedValues).toEqual(['claude-brand-new']);
-    // claude-opus-5 は既存の Anthropic optgroup に既出（重複させない）
-    expect(Array.from(select.options).filter((o) => o.value === 'claude-opus-5')).toHaveLength(1);
-  });
-});
-
-// issue #127 PR3 フォローアップ（レビュー対応）: OpenAI 互換 API と Azure OpenAI の
-// エンドポイント保存キーを分離した本来の目的（接続方式の切替で他方の URL を失わない）を
-// Options 画面レベルで検証する
-describe('bootstrapOptions（OpenAI 互換 API と Azure OpenAI の URL 分離。issue #127 PR3 フォローアップ）', () => {
-  let chromeMock: ChromeMock;
-
-  const provider = (): HTMLSelectElement =>
-    document.getElementById('llm-provider') as HTMLSelectElement;
-  const compatibleEndpoint = (): HTMLInputElement =>
-    document.getElementById('openai-compatible-endpoint') as HTMLInputElement;
-  const compatibleKey = (): HTMLInputElement =>
-    document.getElementById('openai-compatible-api-key') as HTMLInputElement;
-  const azureEndpoint = (): HTMLInputElement =>
-    document.getElementById('azure-openai-endpoint') as HTMLInputElement;
-  const azureKey = (): HTMLInputElement =>
-    document.getElementById('azure-openai-api-key') as HTMLInputElement;
-  const save = (): HTMLButtonElement =>
-    document.getElementById('save-llm-connection') as HTMLButtonElement;
-
-  const COMPATIBLE_URL = 'https://llm.example/v1/chat/completions';
-  const AZURE_URL =
-    'https://res.openai.azure.com/openai/deployments/gpt-4o-deployment/chat/completions?api-version=2026-01-01';
-
-  beforeEach(() => {
-    chromeMock = installChromeMock();
-    document.body.replaceChildren(buildSettingsSections());
-  });
-
-  test('OpenAI 互換 API を設定 → Azure へ切替・設定 → 元の OpenAI 互換 API へ戻すと、元の URL がそのまま復元される', async () => {
-    await bootstrapOptions(document);
-
-    // 1. OpenAI 互換 API を設定して保存する
-    provider().value = 'openai_compatible';
-    provider().dispatchEvent(new Event('change'));
-    compatibleEndpoint().value = COMPATIBLE_URL;
-    compatibleKey().value = 'compat-secret';
-    save().click();
-    await flush();
-    await flush();
-    expect(chromeMock.storage.local.data['settings.openAiCompatibleEndpoint']).toBe(
-      COMPATIBLE_URL,
-    );
-
-    // 2. Azure OpenAI へ切り替えて設定・保存する
-    provider().value = 'azure_openai';
-    provider().dispatchEvent(new Event('change'));
-    azureEndpoint().value = AZURE_URL;
-    azureKey().value = 'azure-secret';
-    save().click();
-    await flush();
-    await flush();
-    expect(chromeMock.storage.local.data['settings.azureOpenAiEndpoint']).toBe(AZURE_URL);
-    // Azure を保存しても、OpenAI 互換 API 用の保存キーはクロバーされていない
-    expect(chromeMock.storage.local.data['settings.openAiCompatibleEndpoint']).toBe(
-      COMPATIBLE_URL,
-    );
-
-    // 3. 画面を再読込した状態を模し、Options を再ブートストラップする
-    document.body.replaceChildren(buildSettingsSections());
-    await bootstrapOptions(document);
-
-    // 直近の保存は azure_openai のため、再読込直後は Azure が選択され、Azure の URL を表示する
-    expect(provider().value).toBe('azure_openai');
-    expect(azureEndpoint().value).toBe(AZURE_URL);
-
-    // 4. OpenAI 互換 API へ切り替えると、最初に保存した URL がそのまま復元される
-    provider().value = 'openai_compatible';
-    provider().dispatchEvent(new Event('change'));
-    expect(compatibleEndpoint().value).toBe(COMPATIBLE_URL);
+    expect(select('default-model').value).toBe('__other__');
+    input('gemini-api-key').value = 'new-key';
+    await save();
+    expect(chromeMock.storage.local.data['secrets.openRouterApiKey']).toBe('old-key');
+    expect(chromeMock.storage.local.data['settings.localLlmEndpoint']).toContain('1234');
   });
 });
 
@@ -1345,7 +306,6 @@ describe('bootstrapOptions（レート制限 tier。docs/ui-states.md §2「レ�
   test('要素が欠けている場合は他節だけ配線する（レート制限節は何もしない）', async () => {
     document.body.innerHTML = OPTIONS_TEMPLATE;
     await bootstrapOptions(document);
-    expect(statusEl().textContent).toBe('Gemini: 未設定');
     expect(document.getElementById('rate-limit-status')).toBeNull();
   });
 
@@ -1556,52 +516,6 @@ describe('bootstrapOptions（reasoning effort の既定値。docs/ui-states.md �
     expect(effortStatusEl().classList.contains('options__status--error')).toBe(true);
   });
 
-  // 注入経路の受け入れ条件（issue #127 PR5 ブリーフ work item 5）: Options 接続テストは
-  // resolveProviderConfig を経由しない独自の resolveFormConfig を使うため、そちらにも
-  // 保存済み reasoning effort が反映されることを別途固定する
-  describe('Options 接続テストへの反映（resolveFormConfig 経由）', () => {
-    let originalFetch: typeof fetch | undefined;
-
-    const provider = (): HTMLSelectElement =>
-      document.getElementById('llm-provider') as HTMLSelectElement;
-    const anthropicKey = (): HTMLInputElement =>
-      document.getElementById('anthropic-api-key') as HTMLInputElement;
-    const testConnection = (): HTMLButtonElement =>
-      document.getElementById('test-llm-connection') as HTMLButtonElement;
-    const connectionStatus = (): HTMLElement =>
-      document.getElementById('llm-connection-status') as HTMLElement;
-
-    beforeEach(() => {
-      originalFetch = globalThis.fetch;
-    });
-
-    afterEach(() => {
-      if (originalFetch === undefined) {
-        delete (globalThis as { fetch?: typeof fetch }).fetch;
-      } else {
-        globalThis.fetch = originalFetch;
-      }
-    });
-
-    test('保存済みの reasoning effort を接続テストの output_config.effort へ反映する（Anthropic）', async () => {
-      chromeMock.storage.local.data['settings.defaultReasoningEffort'] = 'high';
-      globalThis.fetch = jest.fn().mockResolvedValue({
-        ok: true,
-        text: async () => JSON.stringify({ content: [{ type: 'text', text: '{"ok":true}' }] }),
-      }) as unknown as typeof fetch;
-      await bootstrapOptions(document);
-      provider().value = 'anthropic';
-      provider().dispatchEvent(new Event('change'));
-      anthropicKey().value = 'sk-ant-TESTKEY';
-      testConnection().click();
-      await flush();
-      await flush();
-      expect(connectionStatus().textContent).toBe('接続テストに成功しました。');
-      const init = (globalThis.fetch as jest.Mock).mock.calls[0]?.[1] as RequestInit;
-      const body = JSON.parse(init.body as string);
-      expect(body.output_config.effort).toBe('high');
-    });
-  });
 });
 
 describe('bootstrapOptions（表示言語。docs/ui-states.md §2「表示言語」・issue #93）', () => {

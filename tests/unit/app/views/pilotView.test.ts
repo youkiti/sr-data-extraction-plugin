@@ -1,5 +1,26 @@
 import { withSpreadsheetWriteLock } from '../../../../src/app/services/verificationService';
 import { renderPilotView } from '../../../../src/app/views/pilotView';
+
+test.each([
+  ['anthropic', true, false],
+  ['gemini', false, true],
+  [null, false, true],
+  ['openai_compatible', false, false],
+] as const)('接続方式 %s の候補・警告・実行可否', (provider, mismatch, hasGemini) => {
+  const state = makeState({ pilot: { model: 'gemini-3.8-flash' } });
+  state.llmProviderOverride = provider;
+  state.fetchedModelIds = { anthropic: ['custom-model'], gemini: ['custom-model'] };
+  const { ctx } = makeCtx();
+  const root = renderPilotView(state, ctx);
+  expect(root.querySelector('#pilot-model-mismatch') !== null).toBe(mismatch);
+  expect(root.querySelector<HTMLButtonElement>('#pilot-run')?.disabled).toBe(mismatch);
+  expect(root.querySelector('#pilot-model optgroup[label="Gemini"]') !== null).toBe(hasGemini);
+  expect(root.querySelector('#pilot-model option[value="custom-model"]') !== null)
+    .toBe(provider === 'anthropic' || provider === 'gemini');
+  if (mismatch) {
+    expect(root.querySelector('#pilot-model-mismatch')?.textContent).toContain('モデルを選び直してください');
+  }
+});
 import { renderCachedVerificationPanel } from '../../../../src/app/views/verificationPanel';
 import type { PilotViewCallbacks, ViewContext } from '../../../../src/app/views/types';
 import { createInitialState, type AppState, type PilotState } from '../../../../src/app/store';

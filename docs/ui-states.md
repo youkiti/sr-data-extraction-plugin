@@ -78,7 +78,60 @@ spec が正。実装が追いついていない箇所は以下のとおり（実
 
 ## 2. Options (`src/options/options.html`)
 
-### 状態 A: 通常表示
+### LLM 接続（統合版。2026-10-16 target spec — 下の「状態 A / B」「既定モデル」「LLM 接続先」「LLM 接続先の拡張」の各節を置き換える）
+
+> 発端: 接続方式を Anthropic にしたまま既定モデルが `gemini-3.8-flash`（未設定時の工場出荷値）だと、接続テストも抽出も Anthropic から HTTP 404 `not_found_error`（`model: gemini-3.8-flash`）が返った。API キーの入力欄が節ごとに散り（Gemini / OpenRouter は独立節、他は接続先節の中）、接続テストとモデル一覧取得が別ボタンで、既定モデルが接続方式と無関係に選べたことが原因。利用者の決定（2026-10-16）で、1 節・1 ボタンに統合し、モデルの候補を接続方式で絞る。下の旧節の記述のうち、この節と矛盾するものはこの節が優先する（URL の検証規則、保存キーの分離、Azure の認証方式、`anthropic-dangerous-direct-browser-access` などは旧節のまま有効）。
+
+**節の構成**（`#llm-connection-section`。Gemini API キー節・OpenRouter API キー節・既定モデル節は廃止し、この節へ吸収する。reasoning effort・レート制限・表示言語・リンクの各節はそのまま）:
+
+1. `#llm-provider`（接続方式）: Gemini / OpenRouter / Anthropic / Azure OpenAI / OpenAI 互換 API（外部サービス）/ **ローカル LLM**（`local_llm`。新設）
+2. 方式ごとの入力欄（選んだ方式の欄だけを同じ位置に出す。他方式の欄は `hidden`）:
+   | 方式 | 欄 |
+   |---|---|
+   | Gemini | `#gemini-api-key`（password） |
+   | OpenRouter | `#openrouter-api-key`（password。取得先リンク <https://openrouter.ai/settings/keys>） |
+   | Anthropic | `#anthropic-api-key`（password） |
+   | Azure OpenAI | `#azure-openai-endpoint` + `#azure-openai-api-key`（既存のヘルプ文言を維持） |
+   | OpenAI 互換 API | `#openai-compatible-endpoint` + `#openai-compatible-api-key`（外部サービス向け。loopback のときキー任意の既存規則は維持） |
+   | ローカル LLM | `#local-llm-endpoint` + プリセットボタン `#local-llm-preset-ollama`（`http://localhost:11434/v1/chat/completions` を入れる）/ `#local-llm-preset-lmstudio`（`http://localhost:1234/v1/chat/completions` を入れる）。**キー欄は出さない**（Authorization ヘッダーを送らない）。URL は loopback（hostname が `localhost` / `127.0.0.1` / `[::1]` と完全一致）だけを受け付け、それ以外は「ローカル LLM には localhost の URL を入力してください。外部のサービスは『OpenAI 互換 API』を選んでください」と赤系で示して保存しない。保存キーは `settings.localLlmEndpoint`（OpenAI 互換 API の `settings.openAiCompatibleEndpoint` とは別） |
+   - API キーの保存先は従来どおり方式ごとの `secrets.*`（`geminiApiKey` / `openRouterApiKey` / `anthropicApiKey` / `azureOpenAiApiKey` / `openAiCompatibleApiKey`）。**移行処理は無い**（既存の保存値をそのまま読む）。方式を切り替えても他方式のキー・URL は消さない。保存済みは placeholder `保存済み（変更する場合のみ入力）` で示し平文は再表示しない
+   - キーの取り違え検出（`looksLikeGeminiApiKey` / `looksLikeOpenRouterApiKey`）は Gemini / OpenRouter の欄で従来どおり働かせる
+3. `#default-model`（既定モデル。モデルセレクタ。下記「モデルの候補」）
+4. 操作ボタンは **`#save-and-test-llm-connection`「保存して接続を確認」の 1 つだけ**（`#save-llm-connection` / `#test-llm-connection` / `#fetch-model-list` / `#save-keys` / `#save-openrouter-key` / `#save-default-model` は廃止）
+5. `#llm-connection-status`（結果 1 行）
+
+**「保存して接続を確認」の段階と表示**（押下中はボタン disabled。段階ごとに `#llm-connection-status` を更新し、失敗したら以降の段階へ進まない）:
+
+アプリ内設定は、画面に表示されている間の再描画（設定の保存通知によるストアの更新など）では同じコンテナを使い、処理中のボタン状態と最終結果を保持する。
+戻り先または表示言語が変わったとき、別の画面へ移ってから戻ったときはコンテナを作り直す（他のタブで保存された設定も読み直す）。
+
+| 段階 | 内容 | 失敗時の表示（赤系。どの段階で失敗したかを書く） |
+|---|---|---|
+| ① 入力の検証 | キー必須の方式で入力も保存値も無い / URL 不正 / ローカル LLM に loopback 以外の URL / 既定モデルが空 | `保存できませんでした: <理由>` |
+| ② 権限確認 | URL を持つ方式（Azure / OpenAI 互換 / ローカル LLM）は入力 URL の origin を `chrome.permissions.request` で確認 | `保存できませんでした: 接続先へのアクセスが許可されませんでした` |
+| ③ 保存 | 接続方式・URL・入力されたキー・既定モデルを保存（キー入力欄はクリアし placeholder を保存済みへ） | `保存できませんでした: 保存に失敗しました` |
+| ④ モデル一覧の取得 | 対応方式（Anthropic / OpenRouter / OpenAI 互換 / ローカル LLM）だけ。Gemini / Azure は飛ばす。成功したら取得した ID を `settings.fetchedModelIds[<provider>]` に保存し、セレクタの候補を更新する | **失敗しても保存は取り消さない**。HTTP 401/403 → `保存しました。接続を確認できませんでした: API キーが受け付けられませんでした（HTTP 401）`、通信失敗 → `…: 接続先に届きませんでした（ローカル LLM は起動しているか確認してください）`、それ以外 → `…: モデル一覧を取得できませんでした（<要約>）`。⑤ へは進まない |
+| ⑤ 呼び出しの確認 | 既定モデルで最小の構造化呼び出し（従来の接続テストと同じ: `json_schema + strict` → `json_schema` → `json_object` のフォールバック、出力上限 4096） | HTTP 404 またはモデル未登録 → `保存しました。接続を確認できませんでした: モデル「<model>」はこの接続方式にありません。モデルを選び直してください`、401/403 → API キーの文言、JSON が返らない → 従来の `testNoJson` 相当 |
+| 成功 | — | `保存しました。接続を確認しました（<model>。モデル <N> 件を取得）`（一覧を取得しない方式は件数を省く） |
+
+**モデルの候補**（Options の `#default-model` と S5 / S6 / S7 の `#schema-model` / `#pilot-model` / `#extract-model` で共通。`createModelSelect` に接続方式と取得済み一覧を渡す）:
+
+取得済みモデルの重複除外は、接続方式で絞り込んだ後の候補だけを対象にする。
+OpenAI 互換 / Azure / ローカル LLM では、単価表と同名でも取得したモデルを候補に残す。
+
+- 接続方式が保存済みのとき: その方式の単価表モデル（`MODEL_IMAGE_CAPABILITY[model].provider` が一致するもの）+ `settings.fetchedModelIds[<provider>]`（単価表と重複するものは除く。optgroup `取得したモデル`）+ 「その他（直接入力）」。Azure / OpenAI 互換 / ローカル LLM は単価表モデルが無いので、取得済み一覧 + 直接入力だけになる
+- 接続方式が未保存（`settings.llmProvider` が無い既存環境）のとき: 従来どおり全 optgroup を出す（モデル名から方式を推定する後方互換を維持）
+- Options では `#llm-provider` を切り替えた時点で候補を入れ替える（保存前でも）。切替前に選んでいたモデルが新しい方式の候補に無ければ、選択をプレースホルダへ戻す
+- 方式を切り替えて既定モデルが空のまま保存しようとしたら ① で止める（`既定モデルを選んでください`）
+
+**食い違いの警告と実行の停止**（S5 / S6 / S7。利用者の決定: 保存値を勝手に書き換えない）:
+
+- 「食い違い」とは、保存済みの接続方式が単価表を持つ方式（Gemini / OpenRouter / Anthropic）で、選択中のモデルが単価表に載っていて、その提供元が保存済みの接続方式と違うこと（例: Anthropic なのに `gemini-3.8-flash`）。直接入力した単価表に無い名前は食い違いとみなさない（判定できないため止めない）
+- 接続方式が Azure OpenAI / OpenAI 互換 API / ローカル LLM のときは判定しない。プロキシ（LiteLLM など）や Gemini の OpenAI 互換窓口のように、単価表と同じモデル名を正当に受け付ける接続先があるため（issue #191 で、OpenAI 互換 API + `qwen/qwen3-235b-a22b-2507` を実行可能とした既存の判断を維持する）
+- 食い違いのときは、モデル欄の直下に赤系で `モデル「<model>」は今の接続方式（<方式名>）では使えません。モデルを選び直してください` を出し、その画面の実行ボタン（`#schema-draft` 相当のドラフト生成・`#pilot-run`・`#extract-run`）を disabled にする。セレクタ上は値を「その他」として表示し続ける（候補から消えたモデルでも値は見える）
+- 判定関数は 1 つにまとめ（`src/lib/llm/` に置く）、UI 描画時とサービス層の実行直前の両方で使う（`isRunBlockedByImageUnsupportedModel` と同じ二重防御）
+
+### 状態 A: 通常表示（旧仕様。上の「LLM 接続（統合版）」で置き換え）
 
 - **可視**: Gemini API キー入力（`type="password"` + `autocomplete="off"`）/ 保存ボタン / OpenRouter API キー入力（`#openrouter-api-key`。Gemini と同じトンマナ + 取得先リンク <https://openrouter.ai/settings/keys>）/ 保存ボタン `#save-openrouter-key` / 既定モデルセレクタ（下記「既定モデル」参照）/ 表示言語セレクタ（下記「表示言語」参照。issue #93）
 - **「アプリを開く」リンク `#options-open-app`**（スタンドアロン options.html のみ。見出し行の右側から `../app/app.html` へ同一タブ遷移。アプリ内 `#/options` はサイドバーと「← 前の画面へ戻る」= `#/options` 進入直前のルート・無ければ `#/home` を持つため、このリンクは出さない — issue #31 B）

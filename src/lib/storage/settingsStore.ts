@@ -9,7 +9,7 @@ import {
 } from '../llm/rateLimitPolicy';
 import { getLocal, removeLocal, setLocal } from './chromeStorage';
 import type { LlmProviderId } from '../../domain/llmApiLog';
-import { isUiLanguage, type UiLanguage } from '../i18n';
+import { isUiLanguage, t, type UiLanguage } from '../i18n';
 import type { ReasoningEffort } from '../llm/LLMProvider';
 
 const DEFAULT_MODEL_STORAGE_KEY = 'settings.defaultModel';
@@ -17,6 +17,28 @@ const UI_LANGUAGE_STORAGE_KEY = 'settings.uiLanguage';
 const LLM_PROVIDER_STORAGE_KEY = 'settings.llmProvider';
 const OPENAI_COMPATIBLE_ENDPOINT_STORAGE_KEY = 'settings.openAiCompatibleEndpoint';
 const AZURE_OPENAI_ENDPOINT_STORAGE_KEY = 'settings.azureOpenAiEndpoint';
+const LOCAL_LLM_ENDPOINT_STORAGE_KEY = 'settings.localLlmEndpoint';
+const FETCHED_MODEL_IDS_STORAGE_KEY = 'settings.fetchedModelIds';
+
+/** 接続方式または取得済みモデル一覧の変更だけを通知する。 */
+export function onLlmConnectionSettingsChanged(listener: () => void): () => void {
+  const source = typeof chrome === 'undefined' ? undefined : chrome.storage?.onChanged;
+  if (!source) {
+    return () => {};
+  }
+  const onChanged = (changes: Record<string, chrome.storage.StorageChange>, areaName: string): void => {
+    if (areaName === 'local' && (
+      Object.prototype.hasOwnProperty.call(changes, LLM_PROVIDER_STORAGE_KEY) ||
+      Object.prototype.hasOwnProperty.call(changes, FETCHED_MODEL_IDS_STORAGE_KEY)
+    )) {
+      listener();
+    }
+  };
+  source.addListener(onChanged);
+  return () => {
+    source.removeListener(onChanged);
+  };
+}
 const DEFAULT_REASONING_EFFORT_STORAGE_KEY = 'settings.defaultReasoningEffort';
 const HTTP_LOOPBACK_HOSTNAMES: ReadonlySet<string> = new Set(['localhost', '127.0.0.1', '[::1]']);
 const RATE_LIMIT_TIER_STORAGE_KEY = 'settings.rateLimitTier';
@@ -91,6 +113,7 @@ export interface LlmConnectionSettings {
   openAiCompatibleEndpoint: string | null;
   /** Azure OpenAI 用の完全 URL。OpenAI 互換 API とは別キーで保存する（issue #127 PR3 フォローアップ） */
   azureOpenAiEndpoint: string | null;
+  localLlmEndpoint: string | null;
 }
 
 const LLM_PROVIDERS: ReadonlySet<string> = new Set([
@@ -99,6 +122,7 @@ const LLM_PROVIDERS: ReadonlySet<string> = new Set([
   'openai_compatible',
   'anthropic',
   'azure_openai',
+  'local_llm',
 ]);
 
 /**
@@ -111,7 +135,7 @@ const LLM_PROVIDERS: ReadonlySet<string> = new Set([
  * 「どの保存キーが対象か」は `resolveStoredEndpoint` が別途担う
  */
 export function requiresFullUrlEndpoint(provider: LlmProviderId): boolean {
-  return provider === 'openai_compatible' || provider === 'azure_openai';
+  return provider === 'openai_compatible' || provider === 'azure_openai' || provider === 'local_llm';
 }
 
 /**
@@ -121,9 +145,13 @@ export function requiresFullUrlEndpoint(provider: LlmProviderId): boolean {
  * 分岐を重複させないようここへ集約する（対象外の provider は null）
  */
 export function resolveStoredEndpoint(
-  settings: Pick<LlmConnectionSettings, 'openAiCompatibleEndpoint' | 'azureOpenAiEndpoint'>,
+  settings: Pick<LlmConnectionSettings, 'openAiCompatibleEndpoint' | 'azureOpenAiEndpoint'> &
+    Partial<Pick<LlmConnectionSettings, 'localLlmEndpoint'>>,
   provider: LlmProviderId,
 ): string | null {
+  if (provider === 'local_llm') {
+    return settings.localLlmEndpoint ?? null;
+  }
   if (provider === 'openai_compatible') {
     return settings.openAiCompatibleEndpoint;
   }
@@ -200,6 +228,40 @@ export function isLoopbackEndpoint(endpoint: string): boolean {
   return url.protocol === 'http:' && HTTP_LOOPBACK_HOSTNAMES.has(url.hostname);
 }
 
+/** ローカル専用の接続先を検証する。 */
+export function normalizeLocalLlmEndpoint(endpoint: string): string {
+  const normalized = normalizeOpenAiCompatibleEndpoint(endpoint);
+  if (!isLoopbackEndpoint(normalized)) {
+    throw new Error(t('options.errLocalEndpoint'));
+  }
+  return normalized;
+}
+
+/** 壊れた要素と空文字を除き、取得順を維持して重複を除く。 */
+function normalizeFetchedModelIds(ids: readonly unknown[]): string[] {
+  return [...new Set(ids.filter((id): id is string => typeof id === 'string')
+    .map((id) => id.trim()).filter((id) => id !== ''))];
+}
+
+export async function loadFetchedModelIds(): Promise<Partial<Record<LlmProviderId, readonly string[]>>> {
+  const stored = await getLocal<unknown>(FETCHED_MODEL_IDS_STORAGE_KEY);
+  const result: Partial<Record<LlmProviderId, readonly string[]>> = {};
+  if (stored === null || typeof stored !== 'object' || Array.isArray(stored)) {
+    return result;
+  }
+  for (const [provider, ids] of Object.entries(stored)) {
+    if (LLM_PROVIDERS.has(provider) && Array.isArray(ids)) {
+      result[provider as LlmProviderId] = normalizeFetchedModelIds(ids);
+    }
+  }
+  return result;
+}
+
+export async function saveFetchedModelIds(provider: LlmProviderId, ids: readonly string[]): Promise<void> {
+  const saved = await loadFetchedModelIds();
+  await setLocal(FETCHED_MODEL_IDS_STORAGE_KEY, { ...saved, [provider]: normalizeFetchedModelIds(ids) });
+}
+
 /** 接続方式と OpenAI 互換 API / Azure OpenAI それぞれの URL を読み出す */
 export async function loadLlmConnectionSettings(): Promise<LlmConnectionSettings> {
   const rawProvider = await getLocal<string>(LLM_PROVIDER_STORAGE_KEY);
@@ -207,14 +269,16 @@ export async function loadLlmConnectionSettings(): Promise<LlmConnectionSettings
     rawProvider !== undefined && LLM_PROVIDERS.has(rawProvider)
       ? (rawProvider as LlmProviderId)
       : null;
-  const [endpoint, azureEndpoint] = await Promise.all([
+  const [endpoint, azureEndpoint, localEndpoint] = await Promise.all([
     getLocal<string>(OPENAI_COMPATIBLE_ENDPOINT_STORAGE_KEY),
     getLocal<string>(AZURE_OPENAI_ENDPOINT_STORAGE_KEY),
+    getLocal<string>(LOCAL_LLM_ENDPOINT_STORAGE_KEY),
   ]);
   return {
     provider,
     openAiCompatibleEndpoint: endpoint?.trim() ? endpoint : null,
     azureOpenAiEndpoint: azureEndpoint?.trim() ? azureEndpoint : null,
+    localLlmEndpoint: localEndpoint?.trim() ? localEndpoint : null,
   };
 }
 
@@ -234,9 +298,16 @@ export async function saveLlmConnectionSettings(settings: {
   provider: LlmProviderId;
   openAiCompatibleEndpoint?: string | null;
   azureOpenAiEndpoint?: string | null;
+  localLlmEndpoint?: string | null;
 }): Promise<void> {
   if (!LLM_PROVIDERS.has(settings.provider)) {
     throw new Error('未対応の LLM 接続方式です');
+  }
+  if (settings.provider === 'local_llm') {
+    const endpoint = normalizeLocalLlmEndpoint(settings.localLlmEndpoint ?? '');
+    await setLocal(LLM_PROVIDER_STORAGE_KEY, settings.provider);
+    await setLocal(LOCAL_LLM_ENDPOINT_STORAGE_KEY, endpoint);
+    return;
   }
   if (settings.provider === 'openai_compatible') {
     const endpoint = normalizeOpenAiCompatibleEndpoint(settings.openAiCompatibleEndpoint ?? '');

@@ -21,7 +21,11 @@ import { t, type MessageKey } from '../../lib/i18n';
 import { el } from '../ui/dom';
 import { headingWithHelp } from '../ui/helpButton';
 import { formatPilotRunDate } from '../ui/formatPilotRunDate';
-import { createModelSelect } from '../ui/modelSelect';
+import { buildModelCatalogForState, createModelSelect } from '../ui/modelSelect';
+import {
+  findProviderModelMismatch,
+  providerModelMismatchMessage,
+} from '../../lib/llm/modelCatalog';
 import type { AppState } from '../store';
 import { renderConflictWarning } from './conflictWarning';
 import { hasZeroFieldsSelected, renderFieldSelectionChecklist } from './fieldSelectionChecklist';
@@ -206,6 +210,7 @@ function renderFieldSelector(state: AppState, ctx: ViewContext): HTMLElement | n
 
 function renderSetup(state: AppState, ctx: ViewContext): HTMLElement {
   const modelSelect = createModelSelect(document, {
+    groups: buildModelCatalogForState(state),
     id: 'pilot-model',
     ariaLabel: t('schema.modelAria'),
     value: state.pilot.model,
@@ -221,7 +226,8 @@ function renderSetup(state: AppState, ctx: ViewContext): HTMLElement {
     text: t('pilot.run'),
     attributes: { type: 'button', 'data-tour': 'pilot-extract-run-pilot' },
   });
-  runButton.disabled = hasZeroFieldsSelected(state.pilot.selectedFieldIds, fields);
+  runButton.disabled = hasZeroFieldsSelected(state.pilot.selectedFieldIds, fields) ||
+    findProviderModelMismatch(state.pilot.model, state.llmProviderOverride) !== null;
   runButton.addEventListener('click', () => ctx.pilot.onRun());
 
   const fieldSelector = renderFieldSelector(state, ctx);
@@ -237,6 +243,13 @@ function renderSetup(state: AppState, ctx: ViewContext): HTMLElement {
     el('div', { className: 'pilot__model' }, [
       el('label', { text: t('extraction.modelLabel'), attributes: { for: 'pilot-model' } }),
       modelSelect,
+      ...(findProviderModelMismatch(state.pilot.model, state.llmProviderOverride) === null ? [] : [
+        el('p', {
+          id: 'pilot-model-mismatch',
+          className: 'pilot__error',
+          text: providerModelMismatchMessage(state.pilot.model, state.llmProviderOverride!),
+        }),
+      ]),
     ]),
     renderEstimate(state),
   ];

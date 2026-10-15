@@ -211,6 +211,8 @@ import {
 } from '../lib/storage/secretsStore';
 import {
   loadLlmConnectionSettings,
+  loadFetchedModelIds,
+  onLlmConnectionSettingsChanged,
   loadDefaultModel,
   FACTORY_DEFAULT_MODEL,
   loadUiLanguage,
@@ -333,11 +335,10 @@ export async function seedState(win: Window): Promise<AppState> {
   if (storedProject) {
     state.currentProject = storedProject;
   }
-  // 保存済み LLM 接続方式（AppState.llmProviderOverride）を起動時に 1 回だけ読み込む
-  // （issue #191 レビュー対応。接続方式は Options でしか変わらないため起動時 1 回で足りる。
-  // 実行直前の authoritative な判定は各サービスが毎回 resolveProviderConfig で行う）
+  // 接続方式と取得済み一覧を読み込み、起動後の設定変更は storage の通知で追従する。
   const connectionSettings = await loadLlmConnectionSettings();
   state.llmProviderOverride = connectionSettings.provider;
+  state.fetchedModelIds = await loadFetchedModelIds();
   const preloaded = win.__E2E_PRELOADED_STATE__;
   if (preloaded) {
     // ロールは通常メインビュー起動時に Sheets を読んで解決する（roleService.loadRole）。
@@ -402,6 +403,9 @@ export function createChromeAppDeps(): AppDeps {
     loadPdf: loadDisposablePdf,
     extractDocxText,
     loadApiKey: (provider) => {
+      if (provider === 'local_llm') {
+        return Promise.resolve(null);
+      }
       if (provider === 'openrouter') {
         return loadOpenRouterApiKey();
       }
@@ -473,6 +477,13 @@ export async function bootstrapApp(
   applyStaticI18n();
 
   const store = createStore(await seedState(win));
+  const unsubscribeLlmConnection = onLlmConnectionSettingsChanged(() => {
+    void Promise.all([loadLlmConnectionSettings(), loadFetchedModelIds()])
+      .then(([settings, fetchedModelIds]) => {
+        store.setState({ llmProviderOverride: settings.provider, fetchedModelIds });
+      });
+  });
+  win.addEventListener('unload', unsubscribeLlmConnection, { once: true });
 
   // API 失敗の診断ログ（issue #249）: プロジェクト選択済みなら記録先を設定する。
   // 未設定（プロジェクト未選択）でも lib/diagnostics/apiErrorLog 側がローカルへ積むだけで

@@ -172,10 +172,12 @@ describe('createChromeAppDeps', () => {
     // issue #127 PR3: 'azure_openai' 未対応のまま Gemini キーへ黙ってフォールバックする回帰の防止
     // （PR2 で Anthropic に対して発生した実バグと同型）
     await expect(deps.loadApiKey('azure_openai')).resolves.toBe('azure-key');
+    await expect(deps.loadApiKey('local_llm')).resolves.toBeNull();
     await expect(deps.loadLlmConnectionSettings?.()).resolves.toEqual({
       provider: null,
       openAiCompatibleEndpoint: null,
       azureOpenAiEndpoint: null,
+      localLlmEndpoint: null,
     });
   });
 });
@@ -437,6 +439,26 @@ describe('seedState', () => {
 });
 
 describe('bootstrapApp', () => {
+  test('storage の擬似イベントで接続方式と取得済みモデルを store に反映する', async () => {
+    const chromeMock = installChromeMock();
+    const source = { addListener: jest.fn(), removeListener: jest.fn() };
+    Object.assign(chromeMock.storage, { onChanged: source });
+    const stub = createWindowStub();
+    const { deps } = createFakeDeps([]);
+    const store = (await bootstrapApp(asWindow(stub), deps))!;
+    expect(store.getState().llmProviderOverride).toBeNull();
+    expect(store.getState().fetchedModelIds).toEqual({});
+    const onChanged = source.addListener.mock.calls[0]![0];
+    chromeMock.storage.local.data['settings.llmProvider'] = 'anthropic';
+    onChanged({ 'settings.llmProvider': { newValue: 'anthropic' } }, 'local');
+    await flush();
+    expect(store.getState().llmProviderOverride).toBe('anthropic');
+    chromeMock.storage.local.data['settings.fetchedModelIds'] = { anthropic: ['custom'] };
+    onChanged({ 'settings.fetchedModelIds': { newValue: { anthropic: ['custom'] } } }, 'local');
+    await flush();
+    expect(store.getState().fetchedModelIds).toEqual({ anthropic: ['custom'] });
+  });
+
   test('未決着の書き込みだけで離脱確認し、バッジを再描画せず更新する', async () => {
     const state = createInitialState();
     state.verify.queuedDecisions = 3;

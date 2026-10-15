@@ -18,70 +18,28 @@ import {
 export function buildSettingsSections(): HTMLElement {
   const body = el('div', { className: 'settings__body' });
 
-  // Gemini API キー
-  const geminiSection = el('section', { className: 'options__section' }, [
-    el('h2', { text: t('options.geminiTitle') }),
-    el('p', {
-      className: 'options__help',
-      text: t('options.geminiHelp'),
-    }),
-    el('p', { id: 'options-status', className: 'options__status', text: t('common.loading') }),
-    el('div', { className: 'options__row' }, [
-      el('label', { text: t('options.geminiLabel'), attributes: { for: 'gemini-api-key' } }),
-      el('input', {
-        id: 'gemini-api-key',
-        attributes: { type: 'password', autocomplete: 'off' },
-      }),
-      el('button', { id: 'save-keys', text: t('options.save'), attributes: { type: 'button' } }),
-    ]),
-  ]);
-  body.append(geminiSection);
-
-  // OpenRouter API キー
-  const openrouterHelp = el('p', { className: 'options__help' });
-  openrouterHelp.append(
-    t('options.openrouterHelpPrefix'),
-    el('a', {
-      text: 'openrouter.ai/settings/keys',
-      attributes: {
-        href: 'https://openrouter.ai/settings/keys',
-        target: '_blank',
-        rel: 'noreferrer',
-      },
-    }),
-    t('options.openrouterHelpSuffix'),
-  );
-  const openrouterSection = el('section', { className: 'options__section' }, [
-    el('h2', { text: t('options.openrouterTitle') }),
-    openrouterHelp,
-    el('p', { id: 'openrouter-status', className: 'options__status', text: t('common.loading') }),
-    el('div', { className: 'options__row' }, [
-      el('label', { text: t('options.openrouterLabel'), attributes: { for: 'openrouter-api-key' } }),
-      el('input', {
-        id: 'openrouter-api-key',
-        attributes: { type: 'password', autocomplete: 'off' },
-      }),
-      el('button', {
-        id: 'save-openrouter-key',
-        text: t('options.save'),
-        attributes: { type: 'button' },
-      }),
-    ]),
-  ]);
-  body.append(openrouterSection);
-
-  // LLM 接続方式（Gemini / OpenRouter / OpenAI 互換 API）
   const providerSelect = el('select', {
     id: 'llm-provider',
     attributes: { 'aria-label': t('options.providerAria') },
   });
-  providerSelect.append(
-    el('option', { text: 'Gemini', attributes: { value: 'gemini' } }),
-    el('option', { text: 'OpenRouter', attributes: { value: 'openrouter' } }),
-    el('option', { text: t('options.providerOpenAiCompatible'), attributes: { value: 'openai_compatible' } }),
-    el('option', { text: 'Anthropic', attributes: { value: 'anthropic' } }),
-    el('option', { text: 'Azure OpenAI', attributes: { value: 'azure_openai' } }),
-  );
+  for (const [value, text] of [
+    ['gemini', 'Gemini'],
+    ['openrouter', 'OpenRouter'],
+    ['anthropic', 'Anthropic'],
+    ['azure_openai', 'Azure OpenAI'],
+    ['openai_compatible', t('options.providerOpenAiCompatible')],
+    ['local_llm', t('options.providerLocalLlm')],
+  ] as const) {
+    providerSelect.append(el('option', { text, attributes: { value } }));
+  }
+  const geminiFields = el('div', { id: 'gemini-fields' }, [
+    el('p', { className: 'options__help', text: t('options.geminiHelp') }),
+    keyRow('gemini-api-key', t('options.geminiLabel')),
+  ]);
+  const openrouterFields = el('div', { id: 'openrouter-fields' }, [
+    externalLink('https://openrouter.ai/settings/keys', 'openrouter.ai/settings/keys'),
+    keyRow('openrouter-api-key', t('options.openrouterLabel')),
+  ]);
   const anthropicFields = el('div', { id: 'anthropic-fields' }, [
     el('div', { className: 'options__row' }, [
       el('label', {
@@ -164,48 +122,45 @@ export function buildSettingsSections(): HTMLElement {
     ]),
   ]);
   customFields.hidden = true;
-  const connectionSection = el('section', { className: 'options__section' }, [
+  const localFields = el('div', { id: 'local-llm-fields' }, [
+    el('div', { className: 'options__row' }, [
+      el('label', { text: t('options.endpointLabel'), attributes: { for: 'local-llm-endpoint' } }),
+      el('input', { id: 'local-llm-endpoint', attributes: { type: 'url', autocomplete: 'off' } }),
+      el('button', { id: 'local-llm-preset-ollama', text: 'Ollama', attributes: { type: 'button' } }),
+      el('button', { id: 'local-llm-preset-lmstudio', text: 'LM Studio', attributes: { type: 'button' } }),
+    ]),
+  ]);
+  for (const fields of [geminiFields, openrouterFields, localFields]) {
+    fields.hidden = true;
+  }
+  const connectionSection = el('section', { id: 'llm-connection-section', className: 'options__section' }, [
     el('h2', { text: t('options.connectionTitle') }),
-    el('p', {
-      className: 'options__help',
-      text: t('options.connectionHelp'),
+    el('p', { className: 'options__help', text: t('options.connectionHelp') }),
+    el('div', { className: 'options__row' }, [
+      el('label', { text: t('options.providerLabel'), attributes: { for: 'llm-provider' } }),
+      providerSelect,
+    ]),
+    geminiFields,
+    openrouterFields,
+    anthropicFields,
+    azureFields,
+    customFields,
+    localFields,
+    el('div', { className: 'options__row' }, [
+      el('label', { text: t('options.defaultModelTitle'), attributes: { for: 'default-model' } }),
+      el('span', { id: 'default-model-container' }),
+    ]),
+    el('p', { className: 'options__help', text: t('options.defaultModelHelp') }),
+    el('button', {
+      id: 'save-and-test-llm-connection',
+      text: t('options.saveAndTestConnection'),
+      attributes: { type: 'button' },
     }),
     el('p', {
       id: 'llm-connection-status',
       className: 'options__status',
       text: t('common.loading'),
-    }),
-    el('div', { className: 'options__row' }, [
-      el('label', { text: t('options.providerLabel'), attributes: { for: 'llm-provider' } }),
-      providerSelect,
-    ]),
-    customFields,
-    anthropicFields,
-    azureFields,
-    el('div', { className: 'options__actions' }, [
-      el('button', {
-        id: 'save-llm-connection',
-        text: t('options.saveConnection'),
-        attributes: { type: 'button' },
-      }),
-      el('button', {
-        id: 'test-llm-connection',
-        text: t('options.testConnection'),
-        attributes: { type: 'button' },
-      }),
-      // モデル一覧の自動取得（issue #127 PR4）。接続方式が単一の select で切り替わるのと同じ理由で、
-      // ボタンも各接続方式で共有する 1 つの id（#fetch-model-list。docs/ui-states.md §2）にする。
-      // 対応可否・活性状態は bootstrapLlmConnectionSection が現在の選択に応じて出し分ける
-      el('button', {
-        id: 'fetch-model-list',
-        text: t('options.fetchModelList'),
-        attributes: { type: 'button' },
-      }),
-    ]),
-    el('p', {
-      id: 'fetch-model-list-status',
-      className: 'options__status',
-      text: t('options.fetchModelListUnfetched'),
+      attributes: { 'aria-live': 'polite' },
     }),
   ]);
   body.append(connectionSection);
@@ -244,26 +199,6 @@ export function buildSettingsSections(): HTMLElement {
     ]),
   ]);
   body.append(reasoningEffortSection);
-
-  // 既定モデル
-  const modelSection = el('section', { className: 'options__section' }, [
-    el('h2', { text: t('options.defaultModelTitle') }),
-    el('p', {
-      className: 'options__help',
-      text: t('options.defaultModelHelp'),
-    }),
-    el('p', { id: 'default-model-status', className: 'options__status', text: t('common.loading') }),
-    el('div', { className: 'options__row' }, [
-      el('label', { text: t('options.defaultModelTitle'), attributes: { for: 'default-model' } }),
-      el('span', { id: 'default-model-container' }),
-      el('button', {
-        id: 'save-default-model',
-        text: t('options.save'),
-        attributes: { type: 'button' },
-      }),
-    ]),
-  ]);
-  body.append(modelSection);
 
   // レート制限 tier（一括抽出の 429 対策。スロットル間隔 + リトライの強さを決める）
   const tierSelect = el('select', {
@@ -361,4 +296,12 @@ function externalLink(href: string, text: string): HTMLElement {
     text,
     attributes: { href, target: '_blank', rel: 'noopener noreferrer' },
   });
+}
+
+/** 平文を復元しない API キー欄。 */
+function keyRow(id: string, label: string): HTMLElement {
+  return el('div', { className: 'options__row' }, [
+    el('label', { text: label, attributes: { for: id } }),
+    el('input', { id, attributes: { type: 'password', autocomplete: 'off' } }),
+  ]);
 }

@@ -24,13 +24,13 @@ import { ANTHROPIC_VERSION, BROWSER_ACCESS_HEADER } from './AnthropicProvider';
 import type { LlmProviderId } from '../../domain/llmApiLog';
 
 /** モデル一覧の自動取得に対応する接続方式 */
-export type ModelListFetchProvider = 'anthropic' | 'openrouter' | 'openai_compatible';
+export type ModelListFetchProvider = 'anthropic' | 'openrouter' | 'openai_compatible' | 'local_llm';
 
 /** 対応する接続方式か（gemini / azure_openai は対象外。上記モジュール冒頭コメント参照） */
 export function isModelListFetchSupported(
   provider: LlmProviderId,
 ): provider is ModelListFetchProvider {
-  return provider === 'anthropic' || provider === 'openrouter' || provider === 'openai_compatible';
+  return provider === 'anthropic' || provider === 'openrouter' || provider === 'openai_compatible' || provider === 'local_llm';
 }
 
 export interface ModelListFetchConfig {
@@ -197,5 +197,9 @@ export async function fetchModelIds(config: ModelListFetchConfig): Promise<strin
   if (config.chatCompletionsUrl === undefined) {
     throw new Error('OpenAI 互換 API のエンドポイント URL が未設定です');
   }
-  return fetchOpenAiCompatibleModelIds(config.chatCompletionsUrl, config.apiKey, fetchImpl);
+  return fetchOpenAiCompatibleModelIds(
+    config.chatCompletionsUrl,
+    config.provider === 'local_llm' ? '' : config.apiKey,
+    fetchImpl,
+  );
 }

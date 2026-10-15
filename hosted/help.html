@@ -247,16 +247,16 @@
             <a href="screenshots/help-01-setup.png" target="_blank" rel="noopener noreferrer">
               <img
                 src="screenshots/help-01-setup.png"
-                alt="設定画面の上部。Gemini と OpenRouter の API キーの入力欄、LLM 接続先（接続方式の選択と「接続設定を保存」「接続テスト」のボタン）が縦に並ぶ"
-                data-en-alt="Top of the Options page: the Gemini and OpenRouter API key fields, then the LLM endpoint card with the connection type selector and the “Save connection settings” and “Test connection” buttons"
+                alt="設定画面の上部。LLM 接続の節に、接続方式の選択、API キーの入力欄、既定モデルの選択、「保存して接続を確認」のボタンが縦に並ぶ"
+                data-en-alt="Top of the Options page: the LLM connection card with the connection type selector, the API key field, the default model selector and the “Save and check connection” button"
                 width="1280"
                 height="800"
                 loading="lazy"
               />
             </a>
             <figcaption>
-              <span class="ja" lang="ja">設定画面の上部。API キーを入れて「保存」し、接続方式を選んで「接続テスト」で通るか確かめます。</span>
-              <span class="en" lang="en">The top of the Options page. Enter an API key and press Save, then choose the connection type and run the connection test.</span>
+              <span class="ja" lang="ja">設定画面の上部。接続方式を選び、API キーとモデルを入れて「保存して接続を確認」を押します。</span>
+              <span class="en" lang="en">The top of the Options page. Choose the connection type, enter an API key and a model, and press “Save and check connection”.</span>
             </figcaption>
           </figure>
           <div class="note">
@@ -1526,38 +1526,53 @@
           <ul>
             <li>
               <span class="ja" lang="ja"
-                ><strong>API キー（BYOK）</strong>: Gemini / OpenRouter
-                のキーを保存します。キーはブラウザ内（<code>chrome.storage.local</code>）にのみ保存され、開発者へ送信されることはありません。</span
+                ><strong>LLM 接続</strong>: 接続方式（Gemini / OpenRouter / Anthropic / Azure OpenAI / OpenAI 互換 API /
+                ローカル LLM）を選ぶと、その方式に要る欄（API キー、方式によっては URL）だけが出ます。キーは方式ごとに保存され、方式を切り替えても消えません。キーはブラウザ内（<code>chrome.storage.local</code>）にのみ保存され、開発者へ送信されることはありません（BYOK）。</span
               >
               <span class="en" lang="en"
-                ><strong>API keys (BYOK)</strong>: store your Gemini / OpenRouter keys. They stay in your browser
-                (<code>chrome.storage.local</code>) and are never sent to the developer.</span
-              >
-            </li>
-            <li>
-              <span class="ja" lang="ja"
-                ><strong>LLM 接続先</strong>: Gemini / OpenRouter / OpenAI 互換 API / Anthropic / Azure OpenAI
-                から選べます。OpenAI 互換 API は完全 URL を入力し、Chrome
-                の接続許可を与えて使います。<code>http://localhost</code>・<code>http://127.0.0.1</code>・<code
-                  >http://[::1]</code
-                >
-                のローカル LLM も指定でき、この場合は API キーを省略できます。</span
-              >
-              <span class="en" lang="en"
-                ><strong>Provider</strong>: Gemini, OpenRouter, an OpenAI-compatible endpoint, Anthropic or Azure OpenAI.
-                For OpenAI-compatible endpoints you enter the full URL and grant Chrome host permission; local LLMs on
-                <code>localhost</code> / <code>127.0.0.1</code> / <code>[::1]</code> are allowed and may omit the
-                key.</span
+                ><strong>LLM connection</strong>: choose a connection type (Gemini, OpenRouter, Anthropic, Azure OpenAI,
+                OpenAI-compatible API or Local LLM) and only the fields it needs appear (an API key, plus a URL for some
+                types). Keys are stored per type, so switching types does not erase them. They stay in your browser
+                (<code>chrome.storage.local</code>) and are never sent to the developer (BYOK).</span
               >
             </li>
             <li>
               <span class="ja" lang="ja"
                 ><strong>既定モデル</strong>: 新しい抽出の初期値になります（工場出荷の既定は
-                <code>gemini-3.8-flash</code>）。接続先によってはモデル一覧を自動取得できます。</span
+                <code>gemini-3.8-flash</code>）。候補には、選んだ接続方式のモデルだけが出ます。</span
               >
               <span class="en" lang="en"
                 ><strong>Default model</strong>: the initial choice for new runs (factory default
-                <code>gemini-3.8-flash</code>). For some providers the model list is fetched automatically.</span
+                <code>gemini-3.8-flash</code>). The list only shows models of the chosen connection type.</span
+              >
+            </li>
+            <li>
+              <span class="ja" lang="ja"
+                ><strong>保存して接続を確認</strong>: 押すと、設定を保存し、モデル一覧を取得し（取得できる方式のみ）、選んだモデルで短い呼び出しを送って、結果を
+                1 行で表示します。失敗したときは、API キーが受け付けられなかったのか、モデルがその方式に無いのかなど、どこで失敗したかを示します。取得したモデルは、スキーマ・パイロット・一括抽出の画面のモデル選択にも出ます。</span
+              >
+              <span class="en" lang="en"
+                ><strong>Save and check connection</strong>: saves the settings, fetches the model list (where the type
+                supports it), sends a short call with the chosen model, and shows the result on one line. On failure it
+                says where it failed, for example a rejected API key or a model that the type does not have. Fetched
+                models also appear in the model choice on the schema, pilot and full-extraction screens.</span
+              >
+            </li>
+            <li>
+              <span class="ja" lang="ja"
+                ><strong>ローカル LLM</strong>: 手元の PC で動かしている LLM（Ollama・LM Studio など）を使います。「Ollama」「LM
+                Studio」のボタンで URL が入ります。URL は <code>localhost</code>・<code>127.0.0.1</code>・<code
+                  >[::1]</code
+                >
+                に限られ、API キーは要りません。外部の OpenAI 互換サービスは「OpenAI 互換 API」を選び、完全 URL と API
+                キーを入力します（Chrome の接続許可も求められます）。</span
+              >
+              <span class="en" lang="en"
+                ><strong>Local LLM</strong>: use an LLM running on your own computer (Ollama, LM Studio and the like). The
+                “Ollama” and “LM Studio” buttons fill in the URL. The URL must be on <code>localhost</code> /
+                <code>127.0.0.1</code> / <code>[::1]</code>, and no API key is needed. For an external OpenAI-compatible
+                service, choose “OpenAI-compatible API” and enter the full URL and an API key (Chrome also asks for host
+                permission).</span
               >
             </li>
             <li>
@@ -1583,16 +1598,16 @@
             <a href="screenshots/help-12-options.png" target="_blank" rel="noopener noreferrer">
               <img
                 src="screenshots/help-12-options.png"
-                alt="設定画面の下部。既定モデルの選択、レート制限のプラン（tier）、表示言語、使い方ガイドなどへのリンク"
-                data-en-alt="Lower part of the Options page: default model, rate-limit plan (tier), display language, and links to the guide and policies"
+                alt="設定画面の下部。reasoning effort の既定値、レート制限のプラン（tier）、表示言語、使い方ガイドなどへのリンク"
+                data-en-alt="Lower part of the Options page: default reasoning effort, rate-limit plan (tier), display language, and links to the guide and policies"
                 width="1280"
                 height="800"
                 loading="lazy"
               />
             </a>
             <figcaption>
-              <span class="ja" lang="ja">設定画面の下部。既定モデル、レート制限のプラン、表示言語を設定します。</span>
-              <span class="en" lang="en">The lower part of the Options page. Set the default model, the rate-limit plan and the display language.</span>
+              <span class="ja" lang="ja">設定画面の下部。reasoning effort の既定値、レート制限のプラン、表示言語を設定します。</span>
+              <span class="en" lang="en">The lower part of the Options page. Set the default reasoning effort, the rate-limit plan and the display language.</span>
             </figcaption>
           </figure>
         </section>
@@ -1618,6 +1633,25 @@
               files it created. A sheet created by someone else therefore has to be granted <strong>once</strong> through
               the Google file picker: press “Grant with Google” under the error and select the same sheet. One grant per
               user and sheet is enough.</span
+            >
+          </p>
+
+          <h3 id="troubleshooting-model-mismatch">
+            <span class="ja" lang="ja">「モデル『…』は今の接続方式では使えません」と出て実行できない</span>
+            <span class="en" lang="en">“The model … cannot be used with the current connection type”</span>
+          </h3>
+          <p>
+            <span class="ja" lang="ja"
+              >スキーマ・パイロット・一括抽出の画面で選んでいるモデルが、設定画面で保存した接続方式のものではありません（例: 接続方式が
+              Anthropic なのに <code>gemini-3.8-flash</code>）。このまま送ると接続先がモデルを見つけられずに失敗するため、実行ボタンを押せなくしています。その画面のモデル欄で、今の接続方式のモデルを選び直してください。質問パネルで出たときは、設定画面の「LLM
+              接続」で既定モデルを選び直します。</span
+            >
+            <span class="en" lang="en"
+              >The model chosen on the schema, pilot or full-extraction screen does not belong to the connection type
+              saved in Options (for example <code>gemini-3.8-flash</code> while the type is Anthropic). Sending it would
+              fail because the provider cannot find the model, so the run button is disabled. Choose a model of the
+              current type in that screen’s model field. If it appears in the question panel, choose the default model
+              again under “LLM connection” in Options.</span
             >
           </p>
 

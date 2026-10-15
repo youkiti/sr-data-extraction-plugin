@@ -718,28 +718,29 @@ async function sceneHome(driver) {
 async function sceneOptions(driver) {
   log('\n[options] Gemini API キーの保存 + 既定モデル設定（手順書 §2 #1）');
   await driver.get(OPTIONS_URL);
-  await driver.wait(until.elementLocated(By.css('#options-status')), 10000);
+  await driver.wait(until.elementLocated(By.css('#default-model')), 10000);
+  await driver.executeScript(() => {
+    const select = document.querySelector('#llm-provider');
+    select.value = 'gemini';
+    select.dispatchEvent(new Event('change'));
+  });
   await ensureGeminiKey(driver);
   await ensureDefaultModel(driver);
 }
 
 /** Gemini API キーの保存（未設定なら手入力を促す） */
 async function ensureGeminiKey(driver) {
-  // 初期判定（「読み込み中…」→「Gemini: 保存済み / 未設定」）を待つ
-  await driver.wait(async () => {
-    const text = await textOf(driver, '#options-status');
-    return text !== '' && !text.includes('読み込み中');
-  }, 15000, 'Options の状態が確定しません');
-  const status = await textOf(driver, '#options-status');
-  if (status.includes('保存済み')) {
-    ok(`Gemini キーは既に保存済みです（${status}）`);
+  const key = await driver.findElement(By.css('#gemini-api-key'));
+  if ((await key.getAttribute('placeholder')).includes('保存済み')) {
+    ok('Gemini キーは既に保存済みです');
     return;
   }
-  log('\n>>> 開いた Options 画面で Gemini API キーを入力し「保存」を押してください');
-  log('>>> （「保存しました。」の表示を自動検知します。キーの値はログに出しません）');
+  await selectModel(driver, 'default-model', DEFAULT_MODEL);
+  log('\n>>> 開いた Options 画面で Gemini API キーを入力し「保存して接続を確認」を押してください');
+  log('>>> （保存済みの placeholder を自動検知します。キーの値はログに出しません）');
   await driver.wait(async () => {
-    const text = await textOf(driver, '#options-status');
-    return text.includes('保存しました');
+    const input = await driver.findElement(By.css('#gemini-api-key'));
+    return (await input.getAttribute('placeholder')).includes('保存済み');
   }, USER_ACTION_TIMEOUT, 'API キーが保存されません');
   ok('Gemini API キーを保存しました');
 }
@@ -750,21 +751,21 @@ async function ensureGeminiKey(driver) {
  */
 async function ensureDefaultModel(driver) {
   log('\n[options] 既定モデルの保存（S11。#/schema への注入を後段で検証）');
-  // 初期判定（HTML 既定「読み込み中…」→ bootstrap の「既定モデル: 保存済み / 未設定」）を待つ
+  // 接続設定の読み込み完了を待つ
   await driver.wait(async () => {
-    const text = await textOf(driver, '#default-model-status');
+    const text = await textOf(driver, '#llm-connection-status');
     return text !== '' && !text.includes('読み込み中');
   }, 15000, '既定モデルの状態が確定しません');
   const current = await readModelValue(driver, 'default-model');
-  const status = await textOf(driver, '#default-model-status');
+  const status = await textOf(driver, '#llm-connection-status');
   if (current === DEFAULT_MODEL && status.includes('保存済み')) {
     ok(`既定モデルは既に ${DEFAULT_MODEL} で保存済みです`);
     return;
   }
   await selectModel(driver, 'default-model', DEFAULT_MODEL);
-  await driver.findElement(By.css('#save-default-model')).click();
+  await driver.findElement(By.css('#save-and-test-llm-connection')).click();
   await driver.wait(async () => {
-    const text = await textOf(driver, '#default-model-status');
+    const text = await textOf(driver, '#llm-connection-status');
     return text.includes('保存しました');
   }, 15000, '既定モデルが保存されません');
   ok(`既定モデルを ${DEFAULT_MODEL} で保存しました`);

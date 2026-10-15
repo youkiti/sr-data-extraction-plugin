@@ -1,3 +1,4 @@
+import { providerModelMismatchMessage } from '../../../../src/lib/llm/modelCatalog';
 import {
   autoLoadLatestPilotRun,
   initPilotSelection,
@@ -587,6 +588,20 @@ describe('runPilot: 事前バリデーション', () => {
 });
 
 describe('runPilot: 実行', () => {
+  test('接続方式とモデルが食い違う場合は抽出を開始せず案内する', async () => {
+    const store = makeReadyStore();
+    store.setState({ pilot: { ...store.getState().pilot, model: 'gemini-2.5-pro' } });
+    const deps = makeDeps({
+      loadLlmConnectionSettings: async () => ({
+        provider: 'anthropic', openAiCompatibleEndpoint: null, azureOpenAiEndpoint: null, localLlmEndpoint: null,
+      }),
+    });
+    await runPilot(store, deps);
+    expect(store.getState().pilot.runError).toBe(providerModelMismatchMessage('gemini-2.5-pro', 'anthropic'));
+    expect(runExtractionMock).not.toHaveBeenCalled();
+    expect(deps.buildProvider).not.toHaveBeenCalled();
+  });
+
   function makeReadyStore(): Store {
     return makeStore({
       documents: [makeDocument(), makeDocument({ documentId: 'doc-2' })],
@@ -810,7 +825,7 @@ describe('runPilot: 実行', () => {
         loadLlmConnectionSettings: async () => ({
           provider: 'openai_compatible',
           openAiCompatibleEndpoint: 'https://llm.example/v1/chat/completions',
-          azureOpenAiEndpoint: null,
+          azureOpenAiEndpoint: null, localLlmEndpoint: null,
         }),
         loadApiKey: jest.fn().mockResolvedValue('custom-key'),
       }),

@@ -4,6 +4,7 @@ import {
   MODEL_SELECT_OTHER_VALUE,
 } from '../../../../src/app/ui/modelSelect';
 import { MODEL_PRICING } from '../../../../src/lib/llm/pricing';
+import { buildModelCatalogFor } from '../../../../src/lib/llm/modelCatalog';
 
 function mount(value: string, onChange: (model: string) => void = () => {}) {
   const container = createModelSelect(document, {
@@ -45,6 +46,21 @@ describe('createModelSelect の構造', () => {
 });
 
 describe('state の値からの決定的な復元', () => {
+  test('取得グループの単価表同名モデルも該当 option を選択して復元する', () => {
+    const container = createModelSelect(document, {
+      id: 'test-model',
+      ariaLabel: 'モデル',
+      value: 'gemini-3.8-flash',
+      placeholderLabel: '選択してください',
+      onChange: jest.fn(),
+      groups: buildModelCatalogFor('openai_compatible', ['gemini-3.8-flash']),
+    });
+    const select = container.querySelector<HTMLSelectElement>('select')!;
+    expect(select.value).toBe('gemini-3.8-flash');
+    expect(select.selectedOptions[0]!.parentElement?.getAttribute('label')).toBe('取得したモデル');
+    expect(container.querySelector<HTMLInputElement>('input')!.hidden).toBe(true);
+  });
+
   test("'' はプレースホルダ選択 + テキスト非表示", () => {
     const { select, custom } = mount('');
     expect(select.value).toBe('');

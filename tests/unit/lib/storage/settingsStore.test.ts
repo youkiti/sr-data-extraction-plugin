@@ -2,6 +2,10 @@ import { installChromeMock, type ChromeMock } from '../../../setup/chrome-mock';
 import { getRateLimitTier } from '../../../../src/lib/llm/rateLimitPolicy';
 import {
   isLoopbackEndpoint,
+  onLlmConnectionSettingsChanged,
+  normalizeLocalLlmEndpoint,
+  loadFetchedModelIds,
+  saveFetchedModelIds,
   loadDefaultModel,
   loadDefaultReasoningEffort,
   loadLlmConnectionSettings,
@@ -35,6 +39,42 @@ describe('settingsStore', () => {
     await expect(loadDefaultModel()).resolves.toBeNull();
   });
 
+  test('local の接続方式と取得済みモデルの変更だけを通知し、購読を解除できる', () => {
+    const source = { addListener: jest.fn(), removeListener: jest.fn() };
+    Object.assign(chromeMock.storage, { onChanged: source });
+    const listener = jest.fn();
+    const unsubscribe = onLlmConnectionSettingsChanged(listener);
+    const onChanged = source.addListener.mock.calls[0]![0];
+    onChanged({ 'settings.llmProvider': { newValue: 'anthropic' } }, 'local');
+    expect(listener).toHaveBeenCalledTimes(1);
+    onChanged({ 'settings.fetchedModelIds': { newValue: { anthropic: ['custom'] } } }, 'local');
+    expect(listener).toHaveBeenCalledTimes(2);
+    onChanged({ 'settings.defaultModel': { newValue: 'custom' } }, 'local');
+    onChanged({ 'settings.llmProvider': { newValue: 'gemini' } }, 'sync');
+    onChanged({ 'settings.fetchedModelIds': { newValue: {} } }, 'sync');
+    expect(listener).toHaveBeenCalledTimes(2);
+    unsubscribe();
+    expect(source.removeListener).toHaveBeenCalledWith(onChanged);
+  });
+
+  test('storage.onChanged がない環境では何もしない', () => {
+    const listener = jest.fn();
+    expect(() => onLlmConnectionSettingsChanged(listener)()).not.toThrow();
+    expect(listener).not.toHaveBeenCalled();
+  });
+
+  test.each([undefined, {}])('chrome または storage がない環境でも何もしない: %p', (value) => {
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'chrome')!;
+    try {
+      Object.defineProperty(globalThis, 'chrome', { configurable: true, value });
+      const listener = jest.fn();
+      expect(() => onLlmConnectionSettingsChanged(listener)()).not.toThrow();
+      expect(listener).not.toHaveBeenCalled();
+    } finally {
+      Object.defineProperty(globalThis, 'chrome', descriptor);
+    }
+  });
+
   test('trim して保存し、読み出せる', async () => {
     await saveDefaultModel('  gemini-2.5-pro  ');
     await expect(loadDefaultModel()).resolves.toBe('gemini-2.5-pro');
@@ -50,6 +90,7 @@ describe('settingsStore', () => {
 
   test('LLM 接続設定: 未設定と不正 provider は後方互換の null', async () => {
     await expect(loadLlmConnectionSettings()).resolves.toEqual({
+      localLlmEndpoint: null,
       provider: null,
       openAiCompatibleEndpoint: null,
       azureOpenAiEndpoint: null,
@@ -57,6 +98,7 @@ describe('settingsStore', () => {
     chromeMock.storage.local.data['settings.llmProvider'] = 'unknown';
     chromeMock.storage.local.data['settings.openAiCompatibleEndpoint'] = '   ';
     await expect(loadLlmConnectionSettings()).resolves.toEqual({
+      localLlmEndpoint: null,
       provider: null,
       openAiCompatibleEndpoint: null,
       azureOpenAiEndpoint: null,
@@ -66,6 +108,7 @@ describe('settingsStore', () => {
   test('LLM 接続設定: "anthropic" は保存済み接続方式として受理され、そのまま往復する（issue #127 PR2）', async () => {
     chromeMock.storage.local.data['settings.llmProvider'] = 'anthropic';
     await expect(loadLlmConnectionSettings()).resolves.toEqual({
+      localLlmEndpoint: null,
       provider: 'anthropic',
       openAiCompatibleEndpoint: null,
       azureOpenAiEndpoint: null,
@@ -77,6 +120,7 @@ describe('settingsStore', () => {
   test('LLM 接続設定: "azure_openai" は保存済み接続方式として受理され、専用キーでそのまま往復する（issue #127 PR3 フォローアップ: 保存キー分離）', async () => {
     chromeMock.storage.local.data['settings.llmProvider'] = 'azure_openai';
     await expect(loadLlmConnectionSettings()).resolves.toEqual({
+      localLlmEndpoint: null,
       provider: 'azure_openai',
       openAiCompatibleEndpoint: null,
       azureOpenAiEndpoint: null,
@@ -87,6 +131,7 @@ describe('settingsStore', () => {
         'https://res.openai.azure.com/openai/deployments/gpt/chat/completions?api-version=2026-01-01',
     });
     await expect(loadLlmConnectionSettings()).resolves.toEqual({
+      localLlmEndpoint: null,
       provider: 'azure_openai',
       openAiCompatibleEndpoint: null,
       azureOpenAiEndpoint:
@@ -101,6 +146,7 @@ describe('settingsStore', () => {
   test('LLM 接続設定: 未知の provider は後方互換の null', async () => {
     chromeMock.storage.local.data['settings.llmProvider'] = 'not-a-real-provider';
     await expect(loadLlmConnectionSettings()).resolves.toEqual({
+      localLlmEndpoint: null,
       provider: null,
       openAiCompatibleEndpoint: null,
       azureOpenAiEndpoint: null,
@@ -113,6 +159,7 @@ describe('settingsStore', () => {
       openAiCompatibleEndpoint: ' https://llm.example/v1/chat/completions ',
     });
     await expect(loadLlmConnectionSettings()).resolves.toEqual({
+      localLlmEndpoint: null,
       provider: 'openai_compatible',
       openAiCompatibleEndpoint: 'https://llm.example/v1/chat/completions',
       azureOpenAiEndpoint: null,
@@ -130,6 +177,7 @@ describe('settingsStore', () => {
       'https://old.example/v1/chat/completions';
     await saveLlmConnectionSettings({ provider: 'gemini' });
     await expect(loadLlmConnectionSettings()).resolves.toEqual({
+      localLlmEndpoint: null,
       provider: 'gemini',
       openAiCompatibleEndpoint: 'https://old.example/v1/chat/completions',
       azureOpenAiEndpoint: null,
@@ -162,6 +210,7 @@ describe('settingsStore', () => {
       openAiCompatibleEndpoint: 'https://llm.example/v1/chat/completions',
     });
     await expect(loadLlmConnectionSettings()).resolves.toEqual({
+      localLlmEndpoint: null,
       provider: 'openai_compatible',
       openAiCompatibleEndpoint: 'https://llm.example/v1/chat/completions',
       azureOpenAiEndpoint:
@@ -180,6 +229,7 @@ describe('settingsStore', () => {
         'https://res.openai.azure.com/openai/deployments/gpt/chat/completions?api-version=2026-01-01',
     });
     await expect(loadLlmConnectionSettings()).resolves.toEqual({
+      localLlmEndpoint: null,
       provider: 'azure_openai',
       openAiCompatibleEndpoint: 'https://llm.example/v1/chat/completions',
       azureOpenAiEndpoint:
@@ -458,5 +508,37 @@ describe('settingsStore reasoning effort の既定値（issue #127 PR5）', () =
     await saveDefaultReasoningEffort(null);
     expect(mock.storage.local.remove).toHaveBeenCalledWith('settings.defaultReasoningEffort');
     await expect(loadDefaultReasoningEffort()).resolves.toBeNull();
+  });
+});
+
+describe('ローカル接続と取得済みモデル', () => {
+  test('ローカル URL を別キーへ保存し、外部 URL と未入力を拒否する', async () => {
+    const mock = installChromeMock();
+    expect(requiresFullUrlEndpoint('local_llm')).toBe(true);
+    expect(normalizeLocalLlmEndpoint(' http://[::1]:1234/v1/chat/completions ')).toBe('http://[::1]:1234/v1/chat/completions');
+    expect(() => normalizeLocalLlmEndpoint('https://example.org/v1/chat/completions')).toThrow('ローカル LLM');
+    await expect(saveLlmConnectionSettings({ provider: 'local_llm' })).rejects.toThrow();
+    await saveLlmConnectionSettings({ provider: 'local_llm', localLlmEndpoint: 'http://localhost:1234/v1/chat/completions' });
+    expect(mock.storage.local.data['settings.localLlmEndpoint']).toContain('1234');
+    const settings = await loadLlmConnectionSettings();
+    expect(settings.localLlmEndpoint).toContain('1234');
+    expect(resolveStoredEndpoint(settings, 'local_llm')).toBe(settings.localLlmEndpoint);
+    expect(resolveStoredEndpoint({ openAiCompatibleEndpoint: null, azureOpenAiEndpoint: null }, 'local_llm')).toBeNull();
+  });
+  test.each([undefined, null, [], 'broken', 42])('壊れた一覧 %s は空として読む', async (value) => {
+    const mock = installChromeMock();
+    mock.storage.local.data['settings.fetchedModelIds'] = value;
+    await expect(loadFetchedModelIds()).resolves.toEqual({});
+  });
+  test('要素の検証・空文字除去・重複除去を行い、他方式の一覧を保持する', async () => {
+    const mock = installChromeMock();
+    mock.storage.local.data['settings.fetchedModelIds'] = {
+      gemini: ['one', null, 1, '', ' one ', 'two'],
+      anthropic: 'broken',
+      invalid: ['x'],
+    };
+    await expect(loadFetchedModelIds()).resolves.toEqual({ gemini: ['one', 'two'] });
+    await saveFetchedModelIds('local_llm', [' local ', '', 'local']);
+    await expect(loadFetchedModelIds()).resolves.toEqual({ gemini: ['one', 'two'], local_llm: ['local'] });
   });
 });

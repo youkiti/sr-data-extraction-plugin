@@ -1,6 +1,8 @@
 // モデル候補カタログ（buildModelCatalog / isCatalogModel / missingApiKeyMessage）の単体テスト
 import {
   buildModelCatalog,
+  buildModelCatalogFor,
+  findProviderModelMismatch,
   isCatalogModel,
   missingApiKeyMessage,
 } from '../../../../src/lib/llm/modelCatalog';
@@ -66,4 +68,39 @@ describe('missingApiKeyMessage', () => {
       'Azure OpenAI API キーが未設定です。設定画面（Options）で保存してください',
     );
   });
+});
+
+test('接続方式ごとの候補と食い違いを同じ単価表から判断する', () => {
+  expect(buildModelCatalogFor(null, ['custom'])).toEqual(buildModelCatalog());
+  expect(buildModelCatalogFor('local_llm', [])).toEqual([]);
+  expect(buildModelCatalogFor('anthropic', ['custom', 'custom', '', 'gemini-2.5-pro'])).toEqual([
+    buildModelCatalog()[2],
+    { label: '取得したモデル', models: ['custom', 'gemini-2.5-pro'] },
+  ]);
+  expect(findProviderModelMismatch('gemini-2.5-pro', null)).toBeNull();
+  expect(findProviderModelMismatch('', 'anthropic')).toBeNull();
+  expect(findProviderModelMismatch('unknown', 'anthropic')).toBeNull();
+  expect(findProviderModelMismatch('gemini-2.5-pro', 'gemini')).toBeNull();
+  expect(findProviderModelMismatch('gemini-2.5-pro', 'anthropic')).toBe('gemini');
+  for (const provider of ['openai_compatible', 'azure_openai', 'local_llm'] as const) {
+    expect(findProviderModelMismatch('gemini-2.5-pro', provider)).toBeNull();
+  }
+  expect(missingApiKeyMessage('local_llm')).toBe('ローカル LLM の URL が未設定です');
+});
+
+test.each(['openai_compatible', 'azure_openai', 'local_llm'] as const)(
+  '%s では単価表と同名の取得モデルも候補に残す', (provider) => {
+    expect(buildModelCatalogFor(provider, ['gemini-3.8-flash'])).toEqual([
+      { label: '取得したモデル', models: ['gemini-3.8-flash'] },
+    ]);
+  },
+);
+
+test('絞り込み後の単価表モデルだけ取得グループから重複除外する', () => {
+  const groups = buildModelCatalogFor('gemini', ['gemini-3.8-flash', 'gemini-x-new']);
+  expect(groups).toEqual([
+    buildModelCatalog()[0],
+    { label: '取得したモデル', models: ['gemini-x-new'] },
+  ]);
+  expect(groups.flatMap((group) => group.models).filter((model) => model === 'gemini-3.8-flash')).toHaveLength(1);
 });
