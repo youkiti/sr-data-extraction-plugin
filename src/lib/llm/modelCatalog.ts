@@ -66,7 +66,8 @@ export function buildModelCatalogFor(
   const groups = buildModelCatalog().filter((group) =>
     group.models.some((model) => MODEL_IMAGE_CAPABILITY[model]!.provider === provider),
   );
-  const models = [...new Set(fetched)].filter((model) => model !== '' && !isCatalogModel(model));
+  const includedModels = new Set(groups.flatMap((group) => group.models));
+  const models = [...new Set(fetched)].filter((model) => model !== '' && !includedModels.has(model));
   if (models.length > 0) {
     groups.push({ label: t('options.fetchedModels'), models });
   }
