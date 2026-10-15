@@ -35,7 +35,11 @@ import type { FieldValidationError } from '../../features/schema/validateField';
 import { t, type MessageKey } from '../../lib/i18n';
 import { el } from '../ui/dom';
 import { headingWithHelp } from '../ui/helpButton';
-import { createModelSelect } from '../ui/modelSelect';
+import { buildModelCatalogForState, createModelSelect } from '../ui/modelSelect';
+import {
+  findProviderModelMismatch,
+  providerModelMismatchMessage,
+} from '../../lib/llm/modelCatalog';
 import type { AppState, RedraftReviewState, SchemaState } from '../store';
 import type { ViewContext } from './types';
 import { renderSchemaPilotMisses } from './pilotMatrixView';
@@ -145,6 +149,7 @@ function renderSampleAndModelFields(state: AppState, ctx: ViewContext): HTMLElem
   }
 
   const modelSelect = createModelSelect(document, {
+    groups: buildModelCatalogForState(state),
     id: 'schema-model',
     ariaLabel: t('schema.modelAria'),
     value: model,
@@ -156,6 +161,13 @@ function renderSampleAndModelFields(state: AppState, ctx: ViewContext): HTMLElem
     el('div', { className: 'schema__field' }, [
       el('label', { text: t('schema.modelLabel'), attributes: { for: 'schema-model' } }),
       modelSelect,
+      ...(findProviderModelMismatch(state.schema.model, state.llmProviderOverride) === null ? [] : [
+        el('p', {
+          id: 'schema-model-mismatch',
+          className: 'schema__error',
+          text: providerModelMismatchMessage(state.schema.model, state.llmProviderOverride!),
+        }),
+      ]),
     ]),
   );
 
@@ -188,6 +200,7 @@ function renderDraftForm(state: AppState, ctx: ViewContext): HTMLElement {
     text: t('schema.draftTitle'),
     attributes: { type: 'button', 'data-tour': 'schema-draft' },
   });
+  runButton.disabled = findProviderModelMismatch(state.schema.model, state.llmProviderOverride) !== null;
   runButton.addEventListener('click', () => ctx.schema.onRunDraft());
   children.push(el('div', { className: 'schema__actions' }, [runButton]));
   // 別のプロジェクトで書き出したスキーマから始める（issue #316）

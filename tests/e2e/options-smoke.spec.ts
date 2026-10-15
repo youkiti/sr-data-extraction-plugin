@@ -24,94 +24,32 @@ function chromeStub(options: { seedModel: boolean }): string {
   `;
 }
 
-test('未設定: Gemini / OpenRouter / 既定モデルとも未設定表示 + プルダウンに候補が列挙される', async ({
-  page,
-}) => {
+test('接続方式を変えると入力欄とモデル候補が切り替わる', async ({ page }) => {
   await page.addInitScript(chromeStub({ seedModel: false }));
   await page.goto('/options/options.html');
-  await expect(page.locator('#options-status')).toHaveText('Gemini: 未設定');
-  await expect(page.locator('#openrouter-status')).toHaveText('OpenRouter: 未設定');
-  await expect(page.locator('#default-model-status')).toHaveText('既定モデル: 未設定');
+  await expect(page.locator('#gemini-api-key')).toBeVisible();
+  await expect(page.locator('#openrouter-api-key')).toBeHidden();
+  await page.locator('#llm-provider').selectOption('anthropic');
+  await expect(page.locator('#anthropic-api-key')).toBeVisible();
+  await expect(page.locator('#gemini-api-key')).toBeHidden();
   await expect(page.locator('#default-model')).toHaveValue('');
-  // 候補 = 単価表（MODEL_PRICING）のモデル ID を Gemini / OpenRouter の optgroup で列挙
-  await expect(
-    page.locator('#default-model optgroup[label="Gemini"] option[value="gemini-2.5-pro"]'),
-  ).toHaveCount(1);
-  await expect(
-    page.locator(
-      '#default-model optgroup[label="OpenRouter"] option[value="qwen/qwen3-235b-a22b-2507"]',
-    ),
-  ).toHaveCount(1);
-  // 「その他（直接入力）」のテキストは選ぶまで隠れている
-  await expect(page.locator('#default-model-custom')).toBeHidden();
+  await expect(page.locator('#default-model optgroup[label="Gemini"]')).toHaveCount(0);
+  await page.locator('#save-and-test-llm-connection').click();
+  await expect(page.locator('#llm-connection-status')).toHaveText('保存できませんでした: 既定モデルを選んでください');
 });
 
-test('既定モデルの保存（プルダウン / その他の trim）→ 未設定に戻す', async ({ page }) => {
-  await page.addInitScript(chromeStub({ seedModel: false }));
-  await page.goto('/options/options.html');
-  await page.locator('#default-model').selectOption('gemini-2.5-pro');
-  await page.locator('#save-default-model').click();
-  await expect(page.locator('#default-model-status')).toHaveText('保存しました。');
-
-  // その他（直接入力）は trim して保存される
-  await page.locator('#default-model').selectOption('__other__');
-  await expect(page.locator('#default-model-custom')).toBeVisible();
-  await page.locator('#default-model-custom').fill('  my/custom-model  ');
-  await page.locator('#default-model-custom').dispatchEvent('change');
-  await page.locator('#save-default-model').click();
-  await expect(page.locator('#default-model-status')).toHaveText('保存しました。');
-
-  // プレースホルダ（未設定）へ戻して保存 = 解除
-  await page.locator('#default-model').selectOption('');
-  await page.locator('#save-default-model').click();
-  await expect(page.locator('#default-model-status')).toHaveText('未設定に戻しました。');
-});
-
-test('OpenRouter API キーの保存フロー', async ({ page }) => {
-  await page.addInitScript(chromeStub({ seedModel: false }));
-  await page.goto('/options/options.html');
-  await page.locator('#openrouter-api-key').fill('  sk-or-TESTKEY  ');
-  await page.locator('#save-openrouter-key').click();
-  await expect(page.locator('#openrouter-status')).toHaveText('保存しました。');
-  await expect(page.locator('#openrouter-api-key')).toHaveValue('');
-  // Gemini 節の表示には影響しない
-  await expect(page.locator('#options-status')).toHaveText('Gemini: 未設定');
-});
-
-test('保存済み: 既定モデルをセレクタで復元する（マスク不要）', async ({ page }) => {
+test('保存済みの既定モデルを復元する', async ({ page }) => {
   await page.addInitScript(chromeStub({ seedModel: true }));
   await page.goto('/options/options.html');
-  await expect(page.locator('#default-model-status')).toHaveText('既定モデル: 保存済み');
   await expect(page.locator('#default-model')).toHaveValue('gemini-2.0-flash');
 });
 
-test('OpenAI 互換 API: 接続先の保存と JSON Schema 接続テスト', async ({ page }) => {
+test('ローカル LLM はキーなしで保存・一覧取得・接続確認を行う', async ({ page }) => {
   await page.addInitScript(chromeStub({ seedModel: false }));
-  await page.route('https://llm.example/v1/chat/completions', async (route) => {
-    const body = route.request().postDataJSON() as { response_format?: { type?: string } };
-    expect(body.response_format?.type).toBe('json_schema');
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({ choices: [{ message: { content: '{"ok":true}' } }] }),
-    });
+  await page.route('http://localhost:11434/v1/models', async (route) => {
+    expect(route.request().headers()['authorization']).toBeUndefined();
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ data: [{ id: 'local-model' }] }) });
   });
-  await page.goto('/options/options.html');
-  await page.locator('#llm-provider').selectOption('openai_compatible');
-  await expect(page.locator('#openai-compatible-fields')).toBeVisible();
-  await page.locator('#openai-compatible-endpoint').fill(
-    'https://llm.example/v1/chat/completions',
-  );
-  await page.locator('#openai-compatible-api-key').fill('custom-key');
-  await page.locator('#test-llm-connection').click();
-  await expect(page.locator('#llm-connection-status')).toHaveText('接続テストに成功しました。');
-  await page.locator('#save-llm-connection').click();
-  await expect(page.locator('#llm-connection-status')).toHaveText('保存しました。');
-  await expect(page.locator('#openai-compatible-api-key')).toHaveValue('');
-});
-
-test('OpenAI 互換 API: loopback HTTP は API キーなしで保存・接続できる', async ({ page }) => {
-  await page.addInitScript(chromeStub({ seedModel: false }));
   await page.route('http://localhost:11434/v1/chat/completions', async (route) => {
     expect(route.request().headers()['authorization']).toBeUndefined();
     await route.fulfill({
@@ -121,70 +59,14 @@ test('OpenAI 互換 API: loopback HTTP は API キーなしで保存・接続で
     });
   });
   await page.goto('/options/options.html');
-  await page.locator('#llm-provider').selectOption('openai_compatible');
-  await page
-    .locator('#openai-compatible-endpoint')
-    .fill('http://localhost:11434/v1/chat/completions');
-  await page.locator('#test-llm-connection').click();
-  await expect(page.locator('#llm-connection-status')).toHaveText('接続テストに成功しました。');
-  await page.locator('#save-llm-connection').click();
-  await expect(page.locator('#llm-connection-status')).toHaveText('保存しました。');
-});
-
-test('Anthropic: エンドポイント欄なしで API キーの保存と接続テストができる（issue #127 PR2）', async ({
-  page,
-}) => {
-  await page.addInitScript(chromeStub({ seedModel: false }));
-  await page.route('https://api.anthropic.com/v1/messages', async (route) => {
-    const headers = route.request().headers();
-    expect(headers['x-api-key']).toBe('sk-ant-TESTKEY');
-    expect(headers['anthropic-version']).toBeTruthy();
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({ content: [{ type: 'text', text: '{"ok":true}' }] }),
-    });
-  });
-  await page.goto('/options/options.html');
-  await page.locator('#llm-provider').selectOption('anthropic');
-  await expect(page.locator('#anthropic-fields')).toBeVisible();
-  await expect(page.locator('#openai-compatible-fields')).toBeHidden();
-  await page.locator('#anthropic-api-key').fill('sk-ant-TESTKEY');
-  await page.locator('#test-llm-connection').click();
-  await expect(page.locator('#llm-connection-status')).toHaveText('接続テストに成功しました。');
-  await page.locator('#save-llm-connection').click();
-  await expect(page.locator('#llm-connection-status')).toHaveText('保存しました。');
-  await expect(page.locator('#anthropic-api-key')).toHaveValue('');
-});
-
-test('Azure OpenAI: 完全 URL + api-key ヘッダーで保存・接続テストができる（issue #127 PR3）', async ({
-  page,
-}) => {
-  await page.addInitScript(chromeStub({ seedModel: false }));
-  const azureUrl =
-    'https://res.openai.azure.com/openai/deployments/gpt-4o-deployment/chat/completions?api-version=2026-01-01';
-  await page.route(azureUrl, async (route) => {
-    const headers = route.request().headers();
-    expect(headers['api-key']).toBe('azure-secret');
-    expect(headers['authorization']).toBeUndefined();
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({ choices: [{ message: { content: '{"ok":true}' } }] }),
-    });
-  });
-  await page.goto('/options/options.html');
-  await page.locator('#llm-provider').selectOption('azure_openai');
-  await expect(page.locator('#azure-openai-fields')).toBeVisible();
-  await expect(page.locator('#openai-compatible-fields')).toBeHidden();
-  await expect(page.locator('#anthropic-fields')).toBeHidden();
-  await page.locator('#azure-openai-endpoint').fill(azureUrl);
-  await page.locator('#azure-openai-api-key').fill('azure-secret');
-  await page.locator('#test-llm-connection').click();
-  await expect(page.locator('#llm-connection-status')).toHaveText('接続テストに成功しました。');
-  await page.locator('#save-llm-connection').click();
-  await expect(page.locator('#llm-connection-status')).toHaveText('保存しました。');
-  await expect(page.locator('#azure-openai-api-key')).toHaveValue('');
+  await page.locator('#llm-provider').selectOption('local_llm');
+  await page.locator('#local-llm-preset-ollama').click();
+  await expect(page.locator('#local-llm-endpoint')).toHaveValue('http://localhost:11434/v1/chat/completions');
+  await page.locator('#default-model').selectOption('__other__');
+  await page.locator('#default-model-custom').fill('local-model');
+  await page.locator('#default-model-custom').dispatchEvent('change');
+  await page.locator('#save-and-test-llm-connection').click();
+  await expect(page.locator('#llm-connection-status')).toHaveText('保存しました。接続を確認しました（local-model。モデル 1 件を取得）');
 });
 
 test('reasoning effort の既定値: 未設定表示 → 選択で即時保存する（issue #127 PR5）', async ({
@@ -212,7 +94,7 @@ test('reasoning effort の既定値: 未設定表示 → 選択で即時保存�
 test('アクセシビリティ違反がない（axe）', async ({ page }) => {
   await page.addInitScript(chromeStub({ seedModel: true }));
   await page.goto('/options/options.html');
-  await expect(page.locator('#default-model-status')).toHaveText('既定モデル: 保存済み');
+  await expect(page.locator('#default-model')).toHaveValue('gemini-2.0-flash');
   const results = await new AxeBuilder({ page }).analyze();
   expect(results.violations).toEqual([]);
 });

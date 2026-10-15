@@ -17,7 +17,8 @@ import {
 } from '../../features/verification/skills/askPaper';
 import { appendLlmApiLog } from '../../lib/llm/apiLogRepository';
 import { withLogging } from '../../lib/llm/apiLogger';
-import { missingApiKeyMessage } from '../../lib/llm/modelCatalog';
+import { missingApiKeyMessage, providerModelMismatchMessage } from '../../lib/llm/modelCatalog';
+import { t } from '../../lib/i18n';
 import { resolveProviderConfig } from '../../lib/llm/providerFactory';
 import { applyRateLimitPolicy, UNLIMITED_POLICY } from '../../lib/llm/rateLimitPolicy';
 import { FACTORY_DEFAULT_MODEL, loadDefaultModel } from '../../lib/storage/settingsStore';
@@ -57,6 +58,13 @@ export async function askPaper(
   try {
     const model = (await (deps.loadDefaultModel ?? loadDefaultModel)()) ?? FACTORY_DEFAULT_MODEL;
     const resolution = await resolveProviderConfig(model, deps);
+    if (resolution.modelMismatch !== null) {
+      return {
+        status: 'error',
+        message: providerModelMismatchMessage(model, resolution.provider) +
+          ' ' + t('options.defaultModelMismatchHint'),
+      };
+    }
     if (resolution.config === null) {
       return { status: 'error', message: missingApiKeyMessage(resolution.provider) };
     }

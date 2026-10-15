@@ -25,7 +25,11 @@ import type { LlmFailureKind } from '../../lib/llm/LLMProvider';
 import { isRunBlockedByImageUnsupportedModel } from '../../lib/llm/providerFactory';
 import { el } from '../ui/dom';
 import { headingWithHelp } from '../ui/helpButton';
-import { createModelSelect } from '../ui/modelSelect';
+import { buildModelCatalogForState, createModelSelect } from '../ui/modelSelect';
+import {
+  findProviderModelMismatch,
+  providerModelMismatchMessage,
+} from '../../lib/llm/modelCatalog';
 import type { AppState } from '../store';
 import {
   fieldSelectionSummaryText,
@@ -303,6 +307,7 @@ function renderFieldSelector(state: AppState, ctx: ViewContext): HTMLElement | n
 
 function renderSetup(state: AppState, ctx: ViewContext): HTMLElement {
   const modelSelect = createModelSelect(document, {
+    groups: buildModelCatalogForState(state),
     id: 'extract-model',
     ariaLabel: t('schema.modelAria'),
     value: state.extract.model,
@@ -330,6 +335,7 @@ function renderSetup(state: AppState, ctx: ViewContext): HTMLElement {
     attributes: { type: 'button', 'data-tour': 'pilot-extract-run-full' },
   });
   runButton.disabled =
+    findProviderModelMismatch(state.extract.model, state.llmProviderOverride) !== null ||
     state.extract.confirming ||
     state.extract.retryingStudyId !== null ||
     hasZeroFieldsSelected(state.extract.selectedFieldIds, fields) ||
@@ -344,6 +350,13 @@ function renderSetup(state: AppState, ctx: ViewContext): HTMLElement {
     el('div', { className: 'extract__model' }, [
       el('label', { text: t('extraction.modelLabel'), attributes: { for: 'extract-model' } }),
       modelSelect,
+      ...(findProviderModelMismatch(state.extract.model, state.llmProviderOverride) === null ? [] : [
+        el('p', {
+          id: 'extract-model-mismatch',
+          className: 'extract__error',
+          text: providerModelMismatchMessage(state.extract.model, state.llmProviderOverride!),
+        }),
+      ]),
     ]),
   ];
   if (imageUnsupportedBlocked) {

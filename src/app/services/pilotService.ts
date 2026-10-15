@@ -30,7 +30,7 @@ import { readPilotRuns } from '../../features/extraction/runRepository';
 import { getSchemaFieldsByVersion } from '../../features/schema/schemaRepository';
 import { ensureChildFolder } from '../../lib/google/drive';
 import type { LLMProvider } from '../../lib/llm/LLMProvider';
-import { missingApiKeyMessage } from '../../lib/llm/modelCatalog';
+import { missingApiKeyMessage, providerModelMismatchMessage } from '../../lib/llm/modelCatalog';
 import {
   isRunBlockedByImageUnsupportedModel,
   resolveProviderConfig,
@@ -241,6 +241,10 @@ export async function runPilot(store: Store, deps: PilotServiceDeps): Promise<vo
     return;
   }
   const providerResolution = await resolveProviderConfig(model, deps);
+  if (providerResolution.modelMismatch !== null) {
+    patchPilot(store, { runError: providerModelMismatchMessage(model, providerResolution.provider) });
+    return;
+  }
   if (providerResolution.config === null) {
     patchPilot(store, { runError: missingApiKeyMessage(providerResolution.provider) });
     return;

@@ -50,9 +50,7 @@ describe('renderSettingsView', () => {
   test('未 attach のコンテナでも bootstrapOptions が配線される（未設定表示 + モデルセレクタ生成）', async () => {
     const view = renderSettingsView(createInitialState(), stubCtx);
     await flush();
-    expect(view.querySelector('#options-status')?.textContent).toBe('Gemini: 未設定');
-    expect(view.querySelector('#openrouter-status')?.textContent).toBe('OpenRouter: 未設定');
-    expect(view.querySelector('#default-model-status')?.textContent).toBe('既定モデル: 未設定');
+    expect(view.querySelector('#llm-connection-status')?.textContent).toContain('未保存');
     // 既定モデルセレクタ（createModelSelect）がコンテナへ生成される
     expect(view.querySelector('#default-model')).not.toBeNull();
   });
@@ -61,7 +59,6 @@ describe('renderSettingsView', () => {
     chromeMock.storage.local.data['settings.defaultModel'] = 'gemini-2.0-flash';
     const view = renderSettingsView(createInitialState(), stubCtx);
     await flush();
-    expect(view.querySelector('#default-model-status')?.textContent).toBe('既定モデル: 保存済み');
     expect((view.querySelector('#default-model') as HTMLSelectElement).value).toBe(
       'gemini-2.0-flash',
     );

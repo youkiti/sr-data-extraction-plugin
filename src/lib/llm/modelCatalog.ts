@@ -3,6 +3,7 @@
 // （docs/ui-states.md §2「モデルセレクタ」）
 import type { LlmProviderId } from '../../domain/llmApiLog';
 import { MODEL_IMAGE_CAPABILITY, MODEL_PRICING } from './pricing';
+import { t } from '../i18n';
 
 // モデル単位の画像入力対応可否（画像非対応モデルの実行ブロック）は lib/llm/pricing.ts の
 // `resolveModelImageInputSupport` / `MODEL_IMAGE_CAPABILITY`（MODEL_PRICING と同じ「カタログ」）を
@@ -11,7 +12,7 @@ import { MODEL_IMAGE_CAPABILITY, MODEL_PRICING } from './pricing';
 
 export interface ModelCatalogGroup {
   /** optgroup の表示ラベル */
-  label: 'Gemini' | 'OpenRouter' | 'Anthropic';
+  label: string;
   models: readonly string[];
 }
 
@@ -54,8 +55,44 @@ export function isCatalogModel(model: string): boolean {
   return model in MODEL_PRICING;
 }
 
+/** 接続方式に対応する単価表モデルと取得済みモデルを候補にする。 */
+export function buildModelCatalogFor(
+  provider: LlmProviderId | null,
+  fetched: readonly string[],
+): readonly ModelCatalogGroup[] {
+  if (provider === null) {
+    return buildModelCatalog();
+  }
+  const groups = buildModelCatalog().filter((group) =>
+    group.models.some((model) => MODEL_IMAGE_CAPABILITY[model]!.provider === provider),
+  );
+  const models = [...new Set(fetched)].filter((model) => model !== '' && !isCatalogModel(model));
+  if (models.length > 0) {
+    groups.push({ label: t('options.fetchedModels'), models });
+  }
+  return groups;
+}
+
+// 互換 API・Azure・ローカルはプロキシ等で単価表と同名のモデルを受け付けるため判定しない。
+const MISMATCH_CHECK_PROVIDERS: ReadonlySet<LlmProviderId> = new Set(['gemini', 'openrouter', 'anthropic']);
+
+/** 単価表で提供元が判明しているモデルだけ、保存済み接続方式との食い違いを返す。 */
+export function findProviderModelMismatch(
+  model: string,
+  provider: LlmProviderId | null,
+): LlmProviderId | null {
+  if (provider === null || !MISMATCH_CHECK_PROVIDERS.has(provider) || !isCatalogModel(model)) {
+    return null;
+  }
+  const expected = MODEL_IMAGE_CAPABILITY[model]!.provider;
+  return expected === provider ? null : expected;
+}
+
 /** API キー未設定エラーの共通文言（S5 / S6 / S7 のサービス層で共用） */
 export function missingApiKeyMessage(provider: LlmProviderId): string {
+  if (provider === 'local_llm') {
+    return t('options.errLocalLlmUrlMissing');
+  }
   const label =
     provider === 'openrouter'
       ? 'OpenRouter'
@@ -67,4 +104,17 @@ export function missingApiKeyMessage(provider: LlmProviderId): string {
             ? 'Azure OpenAI'
             : 'Gemini';
   return `${label} API キーが未設定です。設定画面（Options）で保存してください`;
+}
+
+/** 接続方式とモデルの食い違いを画面とサービスで同じ文言にする。 */
+export function providerModelMismatchMessage(model: string, provider: LlmProviderId): string {
+  const labels = {
+    gemini: 'Gemini',
+    openrouter: 'OpenRouter',
+    anthropic: 'Anthropic',
+    azure_openai: 'Azure OpenAI',
+    openai_compatible: t('options.providerOpenAiCompatible'),
+    local_llm: t('options.providerLocalLlm'),
+  };
+  return t('options.modelMismatch', { model, provider: labels[provider] });
 }

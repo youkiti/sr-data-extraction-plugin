@@ -209,6 +209,7 @@ describe('resolveProviderConfig', () => {
   test('接続設定未注入はモデル ID による従来判定を使う', async () => {
     const loadApiKey = jest.fn().mockResolvedValue('key');
     await expect(resolveProviderConfig('org/model', { loadApiKey })).resolves.toEqual({
+      modelMismatch: null,
       provider: 'openrouter',
       config: { provider: 'openrouter', apiKey: 'key', model: 'org/model' },
     });
@@ -220,12 +221,14 @@ describe('resolveProviderConfig', () => {
       resolveProviderConfig('org/model', {
         loadApiKey: async () => 'custom-key',
         loadLlmConnectionSettings: async () => ({
+          localLlmEndpoint: null,
           provider: 'openai_compatible',
           openAiCompatibleEndpoint: 'https://llm.example/v1/chat/completions',
           azureOpenAiEndpoint: null,
         }),
       }),
     ).resolves.toEqual({
+      modelMismatch: null,
       provider: 'openai_compatible',
       config: {
         provider: 'openai_compatible',
@@ -241,12 +244,13 @@ describe('resolveProviderConfig', () => {
       resolveProviderConfig('gemini-model', {
         loadApiKey: async () => null,
         loadLlmConnectionSettings: async () => ({
+          localLlmEndpoint: null,
           provider: 'gemini',
           openAiCompatibleEndpoint: null,
           azureOpenAiEndpoint: null,
         }),
       }),
-    ).resolves.toEqual({ provider: 'gemini', config: null });
+    ).resolves.toEqual({ provider: 'gemini', config: null, modelMismatch: null });
   });
 
   test('loopback の OpenAI 互換 API はキーなしで config を解決する', async () => {
@@ -254,12 +258,14 @@ describe('resolveProviderConfig', () => {
       resolveProviderConfig('local-model', {
         loadApiKey: async () => null,
         loadLlmConnectionSettings: async () => ({
+          localLlmEndpoint: null,
           provider: 'openai_compatible',
           openAiCompatibleEndpoint: 'http://localhost:11434/v1/chat/completions',
           azureOpenAiEndpoint: null,
         }),
       }),
     ).resolves.toEqual({
+      modelMismatch: null,
       provider: 'openai_compatible',
       config: {
         provider: 'openai_compatible',
@@ -276,12 +282,14 @@ describe('resolveProviderConfig', () => {
       resolveProviderConfig('claude-opus-5', {
         loadApiKey,
         loadLlmConnectionSettings: async () => ({
+          localLlmEndpoint: null,
           provider: 'anthropic',
           openAiCompatibleEndpoint: null,
           azureOpenAiEndpoint: null,
         }),
       }),
     ).resolves.toEqual({
+      modelMismatch: null,
       provider: 'anthropic',
       config: { provider: 'anthropic', apiKey: 'anthropic-key', model: 'claude-opus-5' },
     });
@@ -291,6 +299,7 @@ describe('resolveProviderConfig', () => {
   test('接続方式未保存でも claude- モデル名から anthropic を自動解決する', async () => {
     const loadApiKey = jest.fn().mockResolvedValue('anthropic-key');
     await expect(resolveProviderConfig('claude-haiku-4-5', { loadApiKey })).resolves.toEqual({
+      modelMismatch: null,
       provider: 'anthropic',
       config: { provider: 'anthropic', apiKey: 'anthropic-key', model: 'claude-haiku-4-5' },
     });
@@ -306,6 +315,7 @@ describe('resolveProviderConfig', () => {
       resolveProviderConfig('gpt-4o-deployment', {
         loadApiKey,
         loadLlmConnectionSettings: async () => ({
+          localLlmEndpoint: null,
           provider: 'azure_openai',
           openAiCompatibleEndpoint: null,
           azureOpenAiEndpoint:
@@ -313,6 +323,7 @@ describe('resolveProviderConfig', () => {
         }),
       }),
     ).resolves.toEqual({
+      modelMismatch: null,
       provider: 'azure_openai',
       config: {
         provider: 'azure_openai',
@@ -333,6 +344,7 @@ describe('resolveProviderConfig', () => {
       resolveProviderConfig('gpt-4o-deployment', {
         loadApiKey,
         loadLlmConnectionSettings: async () => ({
+          localLlmEndpoint: null,
           provider: 'azure_openai',
           openAiCompatibleEndpoint: 'https://llm.example/v1/chat/completions',
           azureOpenAiEndpoint:
@@ -355,6 +367,7 @@ describe('resolveProviderConfig', () => {
       resolveProviderConfig('org/model', {
         loadApiKey: async () => 'custom-key',
         loadLlmConnectionSettings: async () => ({
+          localLlmEndpoint: null,
           provider: 'openai_compatible',
           openAiCompatibleEndpoint: 'https://llm.example/v1/chat/completions',
           azureOpenAiEndpoint:
@@ -374,12 +387,13 @@ describe('resolveProviderConfig', () => {
       resolveProviderConfig('local-deployment', {
         loadApiKey: async () => null,
         loadLlmConnectionSettings: async () => ({
+          localLlmEndpoint: null,
           provider: 'azure_openai',
           openAiCompatibleEndpoint: null,
           azureOpenAiEndpoint: 'http://localhost:11434/openai/deployments/x?api-version=2026-01-01',
         }),
       }),
-    ).resolves.toEqual({ provider: 'azure_openai', config: null });
+    ).resolves.toEqual({ provider: 'azure_openai', config: null, modelMismatch: null });
   });
 
   test('OpenAI 互換 endpoint が null なら endpoint を config に足さない', async () => {
@@ -387,12 +401,14 @@ describe('resolveProviderConfig', () => {
       resolveProviderConfig('m', {
         loadApiKey: async () => 'k',
         loadLlmConnectionSettings: async () => ({
+          localLlmEndpoint: null,
           provider: 'openai_compatible',
           openAiCompatibleEndpoint: null,
           azureOpenAiEndpoint: null,
         }),
       }),
     ).resolves.toEqual({
+      modelMismatch: null,
       provider: 'openai_compatible',
       config: { provider: 'openai_compatible', apiKey: 'k', model: 'm' },
     });
@@ -410,6 +426,7 @@ describe('resolveProviderConfig', () => {
       await expect(
         resolveProviderConfig('org/model', { loadApiKey: async () => 'key' }),
       ).resolves.toEqual({
+        modelMismatch: null,
         provider: 'openrouter',
         config: { provider: 'openrouter', apiKey: 'key', model: 'org/model' },
       });
@@ -421,6 +438,7 @@ describe('resolveProviderConfig', () => {
       await expect(
         resolveProviderConfig('org/model', { loadApiKey: async () => 'key' }),
       ).resolves.toEqual({
+        modelMismatch: null,
         provider: 'openrouter',
         config: {
           provider: 'openrouter',
@@ -474,5 +492,34 @@ describe('isRunBlockedByImageUnsupportedModel（画像非対応モデルの実�
         isRunBlockedByImageUnsupportedModel('qwen/qwen3-235b-a22b-2507', true, 'openrouter'),
       ).toBe(true);
     });
+  });
+});
+
+describe('ローカル LLM', () => {
+  test('URL 未設定ならプロバイダを作らず設定を案内する', () => {
+    expect(() => createProvider({ provider: 'local_llm', model: 'local-model', apiKey: '' }))
+      .toThrow('ローカル LLM の URL が未設定です');
+  });
+
+  test('保存済み URL を解決し、キーなしで呼び出してログの方式を分離する', async () => {
+    installChromeMock();
+    const resolved = await resolveProviderConfig('local-model', {
+      loadApiKey: async () => null,
+      loadLlmConnectionSettings: async () => ({
+        provider: 'local_llm',
+        localLlmEndpoint: 'http://localhost:1234/v1/chat/completions',
+        openAiCompatibleEndpoint: null,
+        azureOpenAiEndpoint: null,
+      }),
+    });
+    expect(resolved.config).toMatchObject({ apiKey: '', provider: 'local_llm' });
+    const fetchMock = jest.fn().mockResolvedValue({
+      ok: true,
+      text: async () => JSON.stringify({ choices: [{ message: { content: '{"ok":true}' } }] }),
+    });
+    const provider = createProvider({ ...resolved.config!, apiKey: 'ignored', fetch: fetchMock });
+    expect(provider.providerId).toBe('local_llm');
+    await provider.chat([{ role: 'user', content: 'test' }]);
+    expect(fetchMock.mock.calls[0][1].headers).not.toHaveProperty('Authorization');
   });
 });

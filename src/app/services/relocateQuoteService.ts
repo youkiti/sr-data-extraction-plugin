@@ -38,7 +38,7 @@ import type { GoogleApiDeps } from '../../lib/google/types';
 import { appendLlmApiLog } from '../../lib/llm/apiLogRepository';
 import { withLogging } from '../../lib/llm/apiLogger';
 import type { LLMProvider } from '../../lib/llm/LLMProvider';
-import { missingApiKeyMessage } from '../../lib/llm/modelCatalog';
+import { missingApiKeyMessage, providerModelMismatchMessage } from '../../lib/llm/modelCatalog';
 import {
   resolveProviderConfig,
   type ProviderConfig,
@@ -102,6 +102,9 @@ export async function relocateQuote(
   }
   const model = (await (deps.loadDefaultModel ?? loadDefaultModel)()) ?? FACTORY_DEFAULT_MODEL;
   const providerResolution = await resolveProviderConfig(model, deps);
+  if (providerResolution.modelMismatch !== null) {
+    return { status: 'not_found', message: providerModelMismatchMessage(model, providerResolution.provider) };
+  }
   if (providerResolution.config === null) {
     return { status: 'not_found', message: missingApiKeyMessage(providerResolution.provider) };
   }

@@ -1,6 +1,27 @@
 // #/schema view の描画テスト（ui-states.md §3 の各状態）。
 // render は純粋関数のため、状態を組み立てて DOM を検証する
 import { focusSchemaField, renderSchemaView } from '../../../../src/app/views/schemaView';
+
+test.each([
+  ['anthropic', true, false],
+  ['gemini', false, true],
+  [null, false, true],
+  ['openai_compatible', false, false],
+] as const)('接続方式 %s の候補・警告・実行可否', (provider, mismatch, hasGemini) => {
+  const state = makeState({ versions: [], model: 'gemini-3.8-flash' }, { documents: [makeDocument()] });
+  state.llmProviderOverride = provider;
+  state.fetchedModelIds = { anthropic: ['custom-model'], gemini: ['custom-model'] };
+  const { ctx } = makeCtx();
+  const root = renderSchemaView(state, ctx);
+  expect(root.querySelector('#schema-model-mismatch') !== null).toBe(mismatch);
+  expect(root.querySelector<HTMLButtonElement>('#schema-draft-run')?.disabled).toBe(mismatch);
+  expect(root.querySelector('#schema-model optgroup[label="Gemini"]') !== null).toBe(hasGemini);
+  expect(root.querySelector('#schema-model option[value="custom-model"]') !== null)
+    .toBe(provider === 'anthropic' || provider === 'gemini');
+  if (mismatch) {
+    expect(root.querySelector('#schema-model-mismatch')?.textContent).toContain('モデルを選び直してください');
+  }
+});
 import { emptyPilotMatrix } from '../../../../src/app/services/pilotMatrixService';
 import { makeEvidence as matrixEvidence, makeDecision as matrixDecision, makeRun as matrixRun } from '../../features/verification/pilotMatrixFixtures';
 import type { SchemaViewCallbacks, ViewContext } from '../../../../src/app/views/types';

@@ -167,9 +167,9 @@ test('移行済みの S10 / S12 / Options 本文 / ガードトーストも en �
     'Inter-reviewer agreement',
   );
 
-  // Options 本文（API キー節・レート制限 tier ラベル）も en で構築される
+  // Options 本文（LLM 接続節・レート制限 tier ラベル）も en で構築される
   await page.locator('#app-open-options').click();
-  await expect(page.locator('#options-status')).toHaveText('Gemini: not set');
+  await expect(page.locator('#save-and-test-llm-connection')).toHaveText('Save and check connection');
   await expect(
     page.locator('#rate-limit-tier option[value="gemini_free"]'),
   ).toHaveText('Gemini free tier (Free)');
@@ -200,5 +200,5 @@ test('スタンドアロン options.html も保存済み言語（en）で構築�
   await expect(page.locator('#ui-language')).toHaveValue('en');
   await page.locator('#ui-language').selectOption('ja');
   await expect(page.locator('h1')).toHaveText('設定');
-  await expect(page.locator('#options-status')).toHaveText('Gemini: 未設定');
+  await expect(page.locator('#save-and-test-llm-connection')).toHaveText('保存して接続を確認');
 });

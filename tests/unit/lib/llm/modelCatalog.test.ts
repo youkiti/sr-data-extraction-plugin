@@ -1,6 +1,8 @@
 // モデル候補カタログ（buildModelCatalog / isCatalogModel / missingApiKeyMessage）の単体テスト
 import {
   buildModelCatalog,
+  buildModelCatalogFor,
+  findProviderModelMismatch,
   isCatalogModel,
   missingApiKeyMessage,
 } from '../../../../src/lib/llm/modelCatalog';
@@ -66,4 +68,22 @@ describe('missingApiKeyMessage', () => {
       'Azure OpenAI API キーが未設定です。設定画面（Options）で保存してください',
     );
   });
+});
+
+test('接続方式ごとの候補と食い違いを同じ単価表から判断する', () => {
+  expect(buildModelCatalogFor(null, ['custom'])).toEqual(buildModelCatalog());
+  expect(buildModelCatalogFor('local_llm', [])).toEqual([]);
+  expect(buildModelCatalogFor('anthropic', ['custom', 'custom', '', 'gemini-2.5-pro'])).toEqual([
+    buildModelCatalog()[2],
+    { label: '取得したモデル', models: ['custom'] },
+  ]);
+  expect(findProviderModelMismatch('gemini-2.5-pro', null)).toBeNull();
+  expect(findProviderModelMismatch('', 'anthropic')).toBeNull();
+  expect(findProviderModelMismatch('unknown', 'anthropic')).toBeNull();
+  expect(findProviderModelMismatch('gemini-2.5-pro', 'gemini')).toBeNull();
+  expect(findProviderModelMismatch('gemini-2.5-pro', 'anthropic')).toBe('gemini');
+  for (const provider of ['openai_compatible', 'azure_openai', 'local_llm'] as const) {
+    expect(findProviderModelMismatch('gemini-2.5-pro', provider)).toBeNull();
+  }
+  expect(missingApiKeyMessage('local_llm')).toBe('ローカル LLM の URL が未設定です');
 });

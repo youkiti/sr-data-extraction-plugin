@@ -40,13 +40,15 @@ export default {
 
     // --- cue 2-3: BYOK（options.html の Gemini API キーカード） ---
     await ctx.openExtensionPage('options/options.html');
+    await ctx.page.locator('#default-model').waitFor({ state: 'visible', timeout: 15000 });
+    await ctx.page.locator('#llm-provider').selectOption('gemini');
     await ctx.page.locator('#gemini-api-key').waitFor({ state: 'visible', timeout: 15000 });
     await ctx.sleep(400);
     await playCue(2, async () => {
       await hoverSlow(ctx.page, ctx.page.locator('#gemini-api-key'), { durationMs: 700 });
     });
     await playCue(3, async () => {
-      await hoverSlow(ctx.page, ctx.page.locator('#save-keys'), { durationMs: 500 });
+      await hoverSlow(ctx.page, ctx.page.locator('#save-and-test-llm-connection'), { durationMs: 500 });
     });
 
     // --- cue 4: ログイン（popup.html のログイン中表示） ---
@@ -60,6 +62,8 @@ export default {
 
     // --- cue 5-6: 接続方式・既定モデル・レート制限（再び options.html） ---
     await ctx.openExtensionPage('options/options.html');
+    await ctx.page.locator('#default-model').waitFor({ state: 'visible', timeout: 15000 });
+    await ctx.page.locator('#llm-provider').selectOption('gemini');
     await ctx.page.locator('#llm-provider').waitFor({ state: 'visible', timeout: 15000 });
     await ctx.sleep(400);
     await playCue(5, async () => {

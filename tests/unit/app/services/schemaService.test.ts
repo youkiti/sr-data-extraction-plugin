@@ -1,3 +1,4 @@
+import { providerModelMismatchMessage } from '../../../../src/lib/llm/modelCatalog';
 import {
   addEditorRow,
   applyRedraft,
@@ -407,6 +408,22 @@ describe('toggleSampleDocument / setDraftModel', () => {
 });
 
 describe('runDraftSchema', () => {
+  test('接続方式とモデルが食い違う場合は LLM を呼ばず案内する', async () => {
+    const store = makeStore();
+    seedForDraft(store);
+    store.setState({ schema: { ...store.getState().schema, model: 'gemini-2.5-pro' } });
+    const { deps, chatMock } = makeDeps({
+      loadLlmConnectionSettings: async () => ({
+        provider: 'anthropic', openAiCompatibleEndpoint: null, azureOpenAiEndpoint: null, localLlmEndpoint: null,
+      }),
+    });
+    await runDraftSchema(store, deps);
+    expect(store.getState().schema.draftError).toBe(
+      providerModelMismatchMessage('gemini-2.5-pro', 'anthropic'),
+    );
+    expect(chatMock).not.toHaveBeenCalled();
+  });
+
   test('プロジェクト未選択・実行中は何もしない', async () => {
     const { deps, chatMock } = makeDeps();
     await runDraftSchema(makeStore(false), deps);
@@ -474,7 +491,7 @@ describe('runDraftSchema', () => {
     deps.loadLlmConnectionSettings = async () => ({
       provider: 'openai_compatible',
       openAiCompatibleEndpoint: 'https://llm.example/v1/chat/completions',
-      azureOpenAiEndpoint: null,
+      azureOpenAiEndpoint: null, localLlmEndpoint: null,
     });
     deps.loadApiKey = jest.fn().mockResolvedValue('custom-key');
     deps.buildProvider = jest.fn((config) => ({

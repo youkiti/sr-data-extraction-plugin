@@ -1,3 +1,4 @@
+import { providerModelMismatchMessage } from '../../../../src/lib/llm/modelCatalog';
 import {
   cancelExtractConfirm,
   initExtractSelection,
@@ -611,6 +612,24 @@ describe('requestExtractRun / cancelExtractConfirm', () => {
     expect(retrying.getState().extract.confirming).toBe(false);
   });
 
+  test('接続方式とモデルが食い違う場合は確認カードを開かず案内する', async () => {
+    const store = makeStore({
+      documents: [makeDocument()],
+      fields: [makeField()],
+      extract: { selectedStudyIds: ['study-doc-1'], model: 'gemini-2.5-pro' },
+    });
+    const deps = makeDeps({
+      loadLlmConnectionSettings: async () => ({
+        provider: 'anthropic', openAiCompatibleEndpoint: null, azureOpenAiEndpoint: null, localLlmEndpoint: null,
+      }),
+    });
+    await requestExtractRun(store, deps);
+    expect(store.getState().extract.runError).toBe(providerModelMismatchMessage('gemini-2.5-pro', 'anthropic'));
+    expect(store.getState().extract.confirming).toBe(false);
+    expect(runExtractionMock).not.toHaveBeenCalled();
+    expect(deps.buildProvider).not.toHaveBeenCalled();
+  });
+
   test('スキーマ未読込（null / 空）・対象 0 件・モデル未入力・API キー未設定はインラインエラー', async () => {
     for (const fields of [null, [] as SchemaField[]]) {
       const store = makeStore({ fields });
@@ -741,6 +760,20 @@ describe('runExtract', () => {
     expect(store.getState().extract.confirming).toBe(false);
     expect(store.getState().extract.runError).toContain('Gemini API キーが未設定です');
     expect(runExtractionMock).not.toHaveBeenCalled();
+  });
+
+  test('確認後に接続方式とモデルが食い違った場合は LLM を呼ばず確認カードを閉じる', async () => {
+    const store = makeReadyStore({ model: 'gemini-2.5-pro' });
+    const deps = makeDeps({
+      loadLlmConnectionSettings: async () => ({
+        provider: 'anthropic', openAiCompatibleEndpoint: null, azureOpenAiEndpoint: null, localLlmEndpoint: null,
+      }),
+    });
+    await runExtract(store, deps);
+    expect(store.getState().extract.runError).toBe(providerModelMismatchMessage('gemini-2.5-pro', 'anthropic'));
+    expect(store.getState().extract.confirming).toBe(false);
+    expect(runExtractionMock).not.toHaveBeenCalled();
+    expect(deps.buildProvider).not.toHaveBeenCalled();
   });
 
   test('画像非対応モデルの実行ブロック（defense in depth）: 確認カードを開いたまま unsupported モデルへ変更されていたら実行しない', async () => {
@@ -883,7 +916,7 @@ describe('runExtract', () => {
         loadLlmConnectionSettings: async () => ({
           provider: 'openai_compatible',
           openAiCompatibleEndpoint: 'https://llm.example/v1/chat/completions',
-          azureOpenAiEndpoint: null,
+          azureOpenAiEndpoint: null, localLlmEndpoint: null,
         }),
         loadApiKey: jest.fn().mockResolvedValue('custom-key'),
       }),
@@ -1102,6 +1135,20 @@ describe('runExtract', () => {
 });
 
 describe('retryExtractStudy', () => {
+  test('接続方式とモデルが食い違う場合は再試行せず案内する', async () => {
+    const store = makeFailedStore();
+    store.setState({ extract: { ...store.getState().extract, model: 'gemini-2.5-pro' } });
+    const deps = makeDeps({
+      loadLlmConnectionSettings: async () => ({
+        provider: 'anthropic', openAiCompatibleEndpoint: null, azureOpenAiEndpoint: null, localLlmEndpoint: null,
+      }),
+    });
+    await retryExtractStudy(store, deps, 'study-doc-2');
+    expect(store.getState().extract.runError).toBe(providerModelMismatchMessage('gemini-2.5-pro', 'anthropic'));
+    expect(runExtractionMock).not.toHaveBeenCalled();
+    expect(deps.buildProvider).not.toHaveBeenCalled();
+  });
+
   function makeFailedStore(): Store {
     return makeStore({
       documents: [makeDocument(), makeDocument({ documentId: 'doc-2' })],

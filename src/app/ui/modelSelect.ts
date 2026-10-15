@@ -1,9 +1,16 @@
 // モデル選択の共有ウィジェット（docs/ui-states.md §2「モデルセレクタ」）。
 // tiab-review のモデルプルダウンと同じ体験: <select>（Gemini / OpenRouter の optgroup）
 // + 「その他（直接入力）」でテキスト入力が現れる。
-// 純 DOM 部品（store 非依存・Document を引数で受ける）のため Options からも使う
-import { buildModelCatalog, isCatalogModel } from '../../lib/llm/modelCatalog';
+// DOM 部品は Document を引数で受けるため Options からも使う。
+import { buildModelCatalog, buildModelCatalogFor, type ModelCatalogGroup } from '../../lib/llm/modelCatalog';
 import { t } from '../../lib/i18n';
+import type { AppState } from '../store';
+
+/** 保存済み接続方式と取得済みモデルから画面の候補を組み立てる。 */
+export function buildModelCatalogForState(state: AppState): readonly ModelCatalogGroup[] {
+  const provider = state.llmProviderOverride;
+  return buildModelCatalogFor(provider, provider === null ? [] : state.fetchedModelIds[provider] ?? []);
+}
 
 /** 「その他（直接入力）」の option 値。表示切替専用の sentinel で state には漏らさない */
 export const MODEL_SELECT_OTHER_VALUE = '__other__';
@@ -20,6 +27,7 @@ export interface ModelSelectOptions {
   /** 常に素のモデル文字列（'' 含む）を通知する。sentinel は渡さない */
   onChange: (model: string) => void;
   className?: string;
+  groups?: readonly ModelCatalogGroup[];
 }
 
 /**
@@ -43,7 +51,8 @@ export function createModelSelect(doc: Document, opts: ModelSelectOptions): HTML
   placeholder.textContent = opts.placeholderLabel;
   select.append(placeholder);
 
-  for (const group of buildModelCatalog()) {
+  const groups = opts.groups ?? buildModelCatalog();
+  for (const group of groups) {
     const optgroup = doc.createElement('optgroup');
     optgroup.label = group.label;
     for (const model of group.models) {
@@ -71,7 +80,7 @@ export function createModelSelect(doc: Document, opts: ModelSelectOptions): HTML
   if (opts.value === '') {
     select.value = '';
     custom.hidden = true;
-  } else if (isCatalogModel(opts.value)) {
+  } else if (groups.some((group) => group.models.includes(opts.value))) {
     select.value = opts.value;
     custom.hidden = true;
   } else {

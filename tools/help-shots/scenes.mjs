@@ -33,6 +33,8 @@ export const scenes = [
         title: '準備（Options の API キー欄）',
         async run(shot) {
             await shot.open('options/options.html');
+            await shot.page.locator('#default-model').waitFor({ state: 'visible', timeout: 15000 });
+            await shot.page.locator('#llm-provider').selectOption('gemini');
             await shot.page.locator('#gemini-api-key').waitFor({ state: 'visible', timeout: 15000 });
             await settle(shot.page);
             await shot.snap();

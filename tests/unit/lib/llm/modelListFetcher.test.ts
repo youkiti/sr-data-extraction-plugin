@@ -312,3 +312,15 @@ describe('readErrorBody のフォールバック（res.text() 自体が失敗す
     ).rejects.toThrow(/HTTP 404/);
   });
 });
+
+test('ローカル LLM の一覧はキーを渡されても Authorization を送らない', async () => {
+  const fetchMock = jest.fn().mockResolvedValue({ ok: true, json: async () => ({ data: [{ id: 'local' }] }) });
+  expect(isModelListFetchSupported('local_llm')).toBe(true);
+  await expect(fetchModelIds({
+    provider: 'local_llm',
+    apiKey: 'ignored',
+    chatCompletionsUrl: 'http://localhost:1234/v1/chat/completions',
+    fetch: fetchMock,
+  })).resolves.toEqual(['local']);
+  expect(fetchMock).toHaveBeenCalledWith('http://localhost:1234/v1/models', { method: 'GET', headers: {} });
+});

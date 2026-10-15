@@ -16,6 +16,7 @@ import type { LLMProvider, ReasoningEffort } from './LLMProvider';
 import { OpenAICompatibleProvider } from './OpenAICompatibleProvider';
 import { OpenRouterProvider } from './OpenRouterProvider';
 import { resolveModelImageInputSupport } from './pricing';
+import { findProviderModelMismatch, missingApiKeyMessage } from './modelCatalog';
 
 export interface ProviderConfig {
   /** 省略時は model から自動解決 */
@@ -42,6 +43,7 @@ export interface ProviderResolutionDeps {
 
 export interface ProviderResolution {
   provider: LlmProviderId;
+  modelMismatch: LlmProviderId | null;
   /** null は選択した接続方式で必須の API キーが未設定。loopback HTTP は空キーを許可する */
   config: ProviderConfig | null;
 }
@@ -88,12 +90,15 @@ export function isRunBlockedByImageUnsupportedModel(
 
 export function createProvider(config: ProviderConfig): LLMProvider {
   const provider = config.provider ?? resolveProviderId(config.model);
-  if (provider === 'openai_compatible') {
+  if (provider === 'openai_compatible' || provider === 'local_llm') {
     if (config.endpoint === undefined) {
-      throw new Error('OpenAI 互換 API のエンドポイントが未設定です');
+      throw new Error(provider === 'local_llm'
+        ? missingApiKeyMessage(provider)
+        : 'OpenAI 互換 API のエンドポイントが未設定です');
     }
     return new OpenAICompatibleProvider({
-      apiKey: config.apiKey,
+      apiKey: provider === 'local_llm' ? '' : config.apiKey,
+      providerId: provider,
       model: config.model,
       endpoint: config.endpoint,
       fetch: config.fetch,
@@ -155,19 +160,21 @@ export async function resolveProviderConfig(
   // Azure OpenAI は常にキー必須のため、loopback URL を入力しても空キーを許可しない
   // （issue #127 PR3。ui-states.md §2「Azure OpenAI 選択時」）
   const allowsEmptyApiKey =
-    provider === 'openai_compatible' && endpoint !== null && isLoopbackEndpoint(endpoint);
+    provider === 'local_llm' ||
+    (provider === 'openai_compatible' && endpoint !== null && isLoopbackEndpoint(endpoint));
   // reasoning effort の既定値（issue #127 PR5）。未設定（null）なら config へ足さない
   // （endpoint と同じ「無ければキー自体を持たない」流儀。既存の呼び出し側 / テストが
   // 期待する config の形を、未設定のユーザーに対しては 1 バイトも変えないため）
   const reasoningEffort = await loadDefaultReasoningEffort();
   return {
     provider,
+    modelMismatch: findProviderModelMismatch(model, settings.provider),
     config:
       apiKey === null && !allowsEmptyApiKey
         ? null
         : {
             provider,
-            apiKey: apiKey ?? '',
+            apiKey: provider === 'local_llm' ? '' : apiKey ?? '',
             model,
             ...(endpoint !== null ? { endpoint } : {}),
             ...(reasoningEffort !== null ? { reasoningEffort } : {}),

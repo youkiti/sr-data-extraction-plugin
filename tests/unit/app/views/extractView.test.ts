@@ -1,4 +1,25 @@
 import { renderExtractView } from '../../../../src/app/views/extractView';
+
+test.each([
+  ['anthropic', true, false],
+  ['gemini', false, true],
+  [null, false, true],
+  ['openai_compatible', false, false],
+] as const)('接続方式 %s の候補・警告・実行可否', (provider, mismatch, hasGemini) => {
+  const state = makeState({ extract: { model: 'gemini-3.8-flash' } });
+  state.llmProviderOverride = provider;
+  state.fetchedModelIds = { anthropic: ['custom-model'], gemini: ['custom-model'] };
+  const { ctx } = makeCtx();
+  const root = renderExtractView(state, ctx);
+  expect(root.querySelector('#extract-model-mismatch') !== null).toBe(mismatch);
+  expect(root.querySelector<HTMLButtonElement>('#extract-run')?.disabled).toBe(mismatch);
+  expect(root.querySelector('#extract-model optgroup[label="Gemini"]') !== null).toBe(hasGemini);
+  expect(root.querySelector('#extract-model option[value="custom-model"]') !== null)
+    .toBe(provider === 'anthropic' || provider === 'gemini');
+  if (mismatch) {
+    expect(root.querySelector('#extract-model-mismatch')?.textContent).toContain('モデルを選び直してください');
+  }
+});
 import type { ExtractViewCallbacks, ViewContext } from '../../../../src/app/views/types';
 import { createInitialState, type AppState, type ExtractState } from '../../../../src/app/store';
 import type { DocumentRecord } from '../../../../src/domain/document';

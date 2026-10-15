@@ -36,7 +36,7 @@ import {
 import { getSchemaFieldsByVersion } from '../../features/schema/schemaRepository';
 import { ensureChildFolder } from '../../lib/google/drive';
 import type { GoogleApiDeps } from '../../lib/google/types';
-import { missingApiKeyMessage } from '../../lib/llm/modelCatalog';
+import { missingApiKeyMessage, providerModelMismatchMessage } from '../../lib/llm/modelCatalog';
 import {
   isRunBlockedByImageUnsupportedModel,
   resolveProviderConfig,
@@ -310,6 +310,10 @@ export async function requestExtractRun(store: Store, deps: ExtractServiceDeps):
     return;
   }
   const providerResolution = await resolveProviderConfig(extract.model, deps);
+  if (providerResolution.modelMismatch !== null) {
+    patchExtract(store, { runError: providerModelMismatchMessage(extract.model, providerResolution.provider) });
+    return;
+  }
   if (providerResolution.config === null) {
     patchExtract(store, { runError: missingApiKeyMessage(providerResolution.provider) });
     return;
@@ -443,6 +447,13 @@ export async function runExtract(store: Store, deps: ExtractServiceDeps): Promis
     return;
   }
   const providerResolution = await resolveProviderConfig(state.extract.model, deps);
+  if (providerResolution.modelMismatch !== null) {
+    patchExtract(store, {
+      confirming: false,
+      runError: providerModelMismatchMessage(state.extract.model, providerResolution.provider),
+    });
+    return;
+  }
   if (providerResolution.config === null) {
     patchExtract(store, {
       confirming: false,
@@ -572,6 +583,10 @@ export async function retryExtractStudy(
     return;
   }
   const providerResolution = await resolveProviderConfig(state.extract.model, deps);
+  if (providerResolution.modelMismatch !== null) {
+    patchExtract(store, { runError: providerModelMismatchMessage(state.extract.model, providerResolution.provider) });
+    return;
+  }
   if (providerResolution.config === null) {
     patchExtract(store, { runError: missingApiKeyMessage(providerResolution.provider) });
     return;

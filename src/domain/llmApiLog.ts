@@ -8,7 +8,7 @@
  * 切り替えて流用する（新規 provider クラスは作らない。requirements.md §10 Q11）。
  * いずれも追記型のシートに新しい値を書き足すだけなので既存行への影響はない
  */
-export type LlmProviderId = 'gemini' | 'openrouter' | 'openai_compatible' | 'anthropic' | 'azure_openai';
+export type LlmProviderId = 'gemini' | 'openrouter' | 'openai_compatible' | 'anthropic' | 'azure_openai' | 'local_llm';
 
 export type LlmPurpose =
   | 'draft_schema'

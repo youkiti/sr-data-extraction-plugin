@@ -131,7 +131,7 @@ test('歯車から設定（#/options）へ同一タブで入り、戻る導線�
   await expect(page.locator('#app-content .settings__header h2')).toHaveText('設定');
   // options.html と同じ設定本文がアプリ内に組み上がり配線される
   await expect(page.locator('#app-content #gemini-api-key')).toBeVisible();
-  await expect(page.locator('#app-content #default-model-status')).toHaveText('既定モデル: 未設定');
+  await expect(page.locator('#app-content #llm-connection-status')).toContainText('未保存');
   // サイドバー（ステップナビ + 裁定）は設定表示中も維持される
   await expect(page.locator('#app-nav a')).toHaveCount(10);
 

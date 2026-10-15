@@ -1,3 +1,5 @@
+import { providerModelMismatchMessage } from '../../../../src/lib/llm/modelCatalog';
+import { t } from '../../../../src/lib/i18n';
 import {
   askPaper,
   estimateForQuestion,
@@ -171,6 +173,22 @@ test('応答形式エラーを本文を含まない失敗として返す', async
     status: 'error',
     message: '論文への質問の応答形式が不正です',
   });
+});
+
+test('接続方式と既定モデルが食い違う場合は呼び出さず設定画面へ案内する', async () => {
+  const { deps, chat, buildProvider } = setup();
+  deps.loadDefaultModel = async () => 'gemini-2.5-pro';
+  deps.loadLlmConnectionSettings = async () => ({
+    provider: 'anthropic', openAiCompatibleEndpoint: null, azureOpenAiEndpoint: null, localLlmEndpoint: null,
+  });
+  expect(await askPaper(params, deps)).toEqual({
+    status: 'error',
+    message: providerModelMismatchMessage('gemini-2.5-pro', 'anthropic') +
+      ' ' + t('options.defaultModelMismatchHint'),
+  });
+  expect(chat).not.toHaveBeenCalled();
+  expect(buildProvider).not.toHaveBeenCalled();
+  expect(appendLlmApiLog).not.toHaveBeenCalled();
 });
 
 test('API キー未設定では呼び出しも記録もしない', async () => {

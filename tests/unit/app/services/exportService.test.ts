@@ -359,6 +359,16 @@ describe('loadExportData', () => {
     });
   });
 
+  test('ローカル LLM の実績は専用の表示名を使う', async () => {
+    readDocumentsMock.mockResolvedValue([]);
+    readMethodsRunFactsMock.mockResolvedValue([
+      { runType: 'full', provider: 'local_llm', modelVersion: 'local-model', studyIds: [] },
+    ]);
+    const store = makeStore();
+    await loadExportData(store, makeDeps());
+    expect(store.getState().export.methodsFacts?.providers).toEqual(['Local LLM']);
+  });
+
   test('既に読み込んだ判定から質問後の件数を集計し、追加の読み込みをしない', async () => {
     readAllDecisionsMock.mockResolvedValue([
       { note: '[chat-assist]' },
