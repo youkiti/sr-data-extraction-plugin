@@ -204,11 +204,9 @@ test('ドラフト前: サンプル論文セレクタとモデル選択を表示
   await expect(page.locator('.schema__samples legend')).toContainText('0 / 3 本選択中');
   await expect(page.locator('#schema-sample-list input[type="checkbox"]')).toHaveCount(1);
 
-  // 「その他（直接入力）」経由で単価表にないモデルを指定する（select + テキストの実弾検証）
-  await page.locator('#schema-model').selectOption('__other__');
-  await expect(page.locator('#schema-model-custom')).toBeVisible();
-  await page.locator('#schema-model-custom').fill('gemini-test');
-  await page.locator('#schema-model-custom').dispatchEvent('change');
+  // 単価表にないモデルを入力して確定する。
+  await page.locator('#schema-model').fill('gemini-test');
+  await page.locator('#schema-model').blur();
   await page.locator('#schema-draft-run').click();
   await expect(page.locator('#schema-draft-error')).toContainText('1〜3 本選択');
 

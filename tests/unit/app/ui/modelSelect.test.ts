@@ -1,120 +1,64 @@
-// モデルセレクタ共有ウィジェットの単体テスト（docs/ui-states.md §2「モデルセレクタ」）
-import {
-  createModelSelect,
-  MODEL_SELECT_OTHER_VALUE,
-} from '../../../../src/app/ui/modelSelect';
-import { MODEL_PRICING } from '../../../../src/lib/llm/pricing';
-import { buildModelCatalogFor } from '../../../../src/lib/llm/modelCatalog';
+import { createModelSelect } from '../../../../src/app/ui/modelSelect';
+import { buildModelCatalog, buildModelCatalogFor } from '../../../../src/lib/llm/modelCatalog';
 
-function mount(value: string, onChange: (model: string) => void = () => {}) {
+function mount(value: string, onChange = jest.fn()) {
   const container = createModelSelect(document, {
-    id: 'test-model',
-    ariaLabel: 'モデル名（requested_model）',
-    value,
-    placeholderLabel: '選択してください',
-    onChange,
+    id: 'test-model', ariaLabel: 'モデル', value,
+    placeholderLabel: '選択してください', onChange,
   });
-  document.body.append(container);
-  const select = container.querySelector('#test-model') as HTMLSelectElement;
-  const custom = container.querySelector('#test-model-custom') as HTMLInputElement;
-  return { container, select, custom };
+  const input = container.querySelector('input')!;
+  return { container, input, onChange };
 }
 
-afterEach(() => {
-  document.body.innerHTML = '';
+test('入力欄と単価表の候補をカタログ順に生成する', () => {
+  const { container, input } = mount('');
+  expect(container.className).toBe('model-select');
+  expect(input.id).toBe('test-model');
+  expect(input.type).toBe('text');
+  expect(input.getAttribute('aria-label')).toBe('モデル');
+  expect(input.autocomplete).toBe('off');
+  expect(input.placeholder).toBe('選択してください');
+  expect(input.getAttribute('list')).toBe('test-model-options');
+  const list = container.querySelector('datalist')!;
+  expect(list.id).toBe('test-model-options');
+  expect([...list.options].map((option) => option.value))
+    .toEqual(buildModelCatalog().flatMap((group) => group.models));
+  expect([...list.options].every((option) => option.label === '単価表')).toBe(true);
 });
 
-describe('createModelSelect の構造', () => {
-  test('プレースホルダ + Gemini / OpenRouter / Anthropic optgroup + その他 option を持つ', () => {
-    const { select, custom } = mount('');
-    expect(select.getAttribute('aria-label')).toBe('モデル名（requested_model）');
-    expect(custom.getAttribute('aria-label')).toBe('モデル名（requested_model）（直接入力）');
-
-    const first = select.options[0]!;
-    expect(first.value).toBe('');
-    expect(first.textContent).toBe('選択してください');
-
-    // issue #127 PR2: 単価表への Claude 3 モデル追加で Anthropic optgroup が新たに出現する
-    const groups = [...select.querySelectorAll('optgroup')];
-    expect(groups.map((g) => g.label)).toEqual(['Gemini', 'OpenRouter', 'Anthropic']);
-    const optionValues = [...select.options].map((o) => o.value);
-    for (const model of Object.keys(MODEL_PRICING)) {
-      expect(optionValues).toContain(model);
-    }
-    expect(optionValues[optionValues.length - 1]).toBe(MODEL_SELECT_OTHER_VALUE);
-  });
+test.each(['', 'gemini-2.5-pro', 'gemini-test', '  private-model  '])('現在値 %s をそのまま復元する', (value) => {
+  expect(mount(value).input.value).toBe(value);
 });
 
-describe('state の値からの決定的な復元', () => {
-  test('取得グループの単価表同名モデルも該当 option を選択して復元する', () => {
-    const container = createModelSelect(document, {
-      id: 'test-model',
-      ariaLabel: 'モデル',
-      value: 'gemini-3.8-flash',
-      placeholderLabel: '選択してください',
-      onChange: jest.fn(),
-      groups: buildModelCatalogFor('openai_compatible', ['gemini-3.8-flash']),
-    });
-    const select = container.querySelector<HTMLSelectElement>('select')!;
-    expect(select.value).toBe('gemini-3.8-flash');
-    expect(select.selectedOptions[0]!.parentElement?.getAttribute('label')).toBe('取得したモデル');
-    expect(container.querySelector<HTMLInputElement>('input')!.hidden).toBe(true);
+test('指定候補の順序と取得区分を保持し、追加クラスを設定する', () => {
+  const groups = buildModelCatalogFor('gemini', ['custom-model']);
+  const container = createModelSelect(document, {
+    id: 'test-model', ariaLabel: 'モデル', value: 'custom-model',
+    placeholderLabel: '未設定', onChange: jest.fn(), className: 'extra', groups,
   });
-
-  test("'' はプレースホルダ選択 + テキスト非表示", () => {
-    const { select, custom } = mount('');
-    expect(select.value).toBe('');
-    expect(custom.hidden).toBe(true);
-  });
-
-  test('単価表のモデルは該当 option 選択 + テキスト非表示', () => {
-    const { select, custom } = mount('gemini-2.5-pro');
-    expect(select.value).toBe('gemini-2.5-pro');
-    expect(custom.hidden).toBe(true);
-  });
-
-  test('単価表にないモデルは「その他」選択 + テキスト表示・値充填', () => {
-    const { select, custom } = mount('gemini-test');
-    expect(select.value).toBe(MODEL_SELECT_OTHER_VALUE);
-    expect(custom.hidden).toBe(false);
-    expect(custom.value).toBe('gemini-test');
-  });
+  expect(container.className).toBe('model-select extra');
+  const options = [...container.querySelectorAll('option')];
+  expect(options.map((option) => option.value)).toEqual(groups.flatMap((group) => group.models));
+  expect(options.at(-1)!.label).toBe('取得したモデル');
+  expect(options[0]!.label).toBe('単価表');
 });
 
-describe('イベント通知（sentinel は state へ漏らさない）', () => {
-  test('カタログ option の選択でモデル ID を通知し、テキストを隠す', () => {
-    const onChange = jest.fn();
-    const { select, custom } = mount('gemini-test', onChange);
-    select.value = 'gemini-2.0-flash';
-    select.dispatchEvent(new Event('change'));
-    expect(onChange).toHaveBeenCalledWith('gemini-2.0-flash');
-    expect(custom.hidden).toBe(true);
+test('取得グループの単価表同名モデルも取得区分にする', () => {
+  const container = createModelSelect(document, {
+    id: 'test-model', ariaLabel: 'モデル', value: 'gemini-3.8-flash',
+    placeholderLabel: '未設定', onChange: jest.fn(),
+    groups: buildModelCatalogFor('openai_compatible', ['gemini-3.8-flash']),
   });
+  expect(container.querySelector('input')!.value).toBe('gemini-3.8-flash');
+  expect(container.querySelector('option')!.label).toBe('取得したモデル');
+});
 
-  test("プレースホルダの選択で '' を通知する", () => {
-    const onChange = jest.fn();
-    const { select } = mount('gemini-2.5-pro', onChange);
-    select.value = '';
-    select.dispatchEvent(new Event('change'));
-    expect(onChange).toHaveBeenCalledWith('');
-  });
-
-  test('「その他」の選択でテキストを表示・フォーカスし、確定までは通知しない', () => {
-    const onChange = jest.fn();
-    const { select, custom } = mount('gemini-2.5-pro', onChange);
-    select.value = MODEL_SELECT_OTHER_VALUE;
-    select.dispatchEvent(new Event('change'));
-    expect(custom.hidden).toBe(false);
-    expect(document.activeElement).toBe(custom);
-    // ここで通知すると store 再描画で選択が state 値へ戻るため、テキスト確定まで通知しない
-    expect(onChange).not.toHaveBeenCalled();
-  });
-
-  test('テキストの change で trim した値を通知する', () => {
-    const onChange = jest.fn();
-    const { custom } = mount('gemini-test', onChange);
-    custom.value = '  org/custom-model  ';
-    custom.dispatchEvent(new Event('change'));
-    expect(onChange).toHaveBeenCalledWith('org/custom-model');
-  });
+test.each([' gemini-2.0-flash ', ' org/custom-model ', '   '])('change だけで trim 値を通知する: %s', (value) => {
+  const { input, onChange } = mount('');
+  input.value = value;
+  input.dispatchEvent(new Event('input'));
+  expect(onChange).not.toHaveBeenCalled();
+  input.dispatchEvent(new Event('change'));
+  expect(onChange).toHaveBeenCalledTimes(1);
+  expect(onChange).toHaveBeenCalledWith(value.trim());
 });

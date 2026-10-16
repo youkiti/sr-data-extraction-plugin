@@ -15,8 +15,8 @@ test.each([
   const root = renderSchemaView(state, ctx);
   expect(root.querySelector('#schema-model-mismatch') !== null).toBe(mismatch);
   expect(root.querySelector<HTMLButtonElement>('#schema-draft-run')?.disabled).toBe(mismatch);
-  expect(root.querySelector('#schema-model optgroup[label="Gemini"]') !== null).toBe(hasGemini);
-  expect(root.querySelector('#schema-model option[value="custom-model"]') !== null)
+  expect(root.querySelector('#schema-model-options option[value="gemini-3.8-flash"]') !== null).toBe(hasGemini);
+  expect(root.querySelector('#schema-model-options option[value="custom-model"]') !== null)
     .toBe(provider === 'anthropic' || provider === 'gemini');
   if (mismatch) {
     expect(root.querySelector('#schema-model-mismatch')?.textContent).toContain('モデルを選び直してください');
@@ -466,12 +466,9 @@ describe('renderSchemaView', () => {
         ),
         ctx,
       );
-      // 単価表にないモデル（gemini-test）は「その他」+ 直接入力テキストで復元される
-      const model = view.querySelector('#schema-model') as HTMLSelectElement;
-      const custom = view.querySelector('#schema-model-custom') as HTMLInputElement;
-      expect(model.value).toBe('__other__');
-      expect(custom.hidden).toBe(false);
-      expect(custom.value).toBe('gemini-test');
+      // 単価表にないモデルも入力欄にそのまま復元される。
+      const model = view.querySelector('#schema-model') as HTMLInputElement;
+      expect(model.value).toBe('gemini-test');
       model.value = 'gemini-2.0-flash';
       model.dispatchEvent(new Event('change'));
       expect(callbacks.onChangeModel).toHaveBeenCalledWith('gemini-2.0-flash');
@@ -1312,8 +1309,8 @@ describe('renderSchemaView', () => {
       );
       // サンプル論文セレクタ・モデルセレクタは renderDraftForm と共有ウィジェット（同一 id）
       expect(view.querySelector('#schema-sample-list')).not.toBeNull();
-      const model = view.querySelector('#schema-model') as HTMLSelectElement;
-      expect(model.value).toBe('__other__');
+      const model = view.querySelector('#schema-model') as HTMLInputElement;
+      expect(model.value).toBe('gemini-test');
       (view.querySelector('#schema-redraft-run') as HTMLButtonElement).click();
       expect(callbacks.onRunDraft).toHaveBeenCalledTimes(1);
       // 版履歴の手前に置かれる（版履歴は versions.length > 1 のときだけ出るため、ここは history 無し）

@@ -70,9 +70,7 @@ export const enPages: Record<keyof typeof jaPages, string> = {
     'Signed in with an account different from your Chrome profile ({profileEmail}). Extractions and decisions are recorded under the signed-in account.',
 
   // モデルセレクタ
-  'modelSelect.other': 'Other (enter directly)',
-  'modelSelect.customAria': '{label} (direct input)',
-  'modelSelect.customPlaceholder': 'e.g. org/model-name',
+  'modelSelect.priceList': 'Price list',
 
   // サービス層のトースト・状態エラー
   'common.pickerFailed': 'Could not open the Drive Picker: {reason}',

@@ -70,9 +70,7 @@ export const jaPages = {
     'Chrome プロファイル（{profileEmail}）とは別のアカウントでログインしています。抽出・判定はこのログイン中アカウントで記録されます。',
 
   // モデルセレクタ（ui/modelSelect.ts）
-  'modelSelect.other': 'その他（直接入力）',
-  'modelSelect.customAria': '{label}（直接入力）',
-  'modelSelect.customPlaceholder': '例: org/model-name',
+  'modelSelect.priceList': '単価表',
 
   // サービス層のトースト・状態エラー（S1〜S9 ぶん）
   'common.pickerFailed': 'Drive Picker を開けませんでした: {reason}',

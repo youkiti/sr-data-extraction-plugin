@@ -50,7 +50,7 @@ export function buildModelCatalog(): readonly ModelCatalogGroup[] {
   })).filter((group) => group.models.length > 0);
 }
 
-/** 単価表に載っているモデルか（載っていなければセレクタは「その他」で表示する） */
+/** 単価表に載っているモデルか。 */
 export function isCatalogModel(model: string): boolean {
   return model in MODEL_PRICING;
 }

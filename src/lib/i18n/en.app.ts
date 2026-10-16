@@ -1233,7 +1233,7 @@ export const enApp: Record<keyof typeof jaApp, string> = {
   'extraction.errNoSchema':
     'The confirmed table design is not loaded. Confirm / reload it on the Table design screen',
   'extraction.errNoFields': 'Select at least one field to extract',
-  'extraction.errNoModel': 'Select a model ("Other" allows direct input)',
+  'extraction.errNoModel': 'Select or enter a model',
   'extraction.errImageUnsupportedModel':
     'The selected model "{model}" does not support image input, so the run cannot start. Choose a different model or deselect the affected documents',
   'extraction.errStudyDocsNotFound': 'Documents of study {id} were not found',

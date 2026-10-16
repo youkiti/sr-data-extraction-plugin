@@ -134,6 +134,27 @@ describe('fetchAnthropicModelIds', () => {
 });
 
 describe('fetchOpenRouterModelIds', () => {
+  test('構造化出力と画像入力の非対応だけを除き、不明な項目は許容する', async () => {
+    const fetch = jest.fn().mockResolvedValue(jsonResponse({ data: [
+      { id: 'both', supported_parameters: ['structured_outputs'], architecture: { input_modalities: ['image'] } },
+      { id: 'no-json', supported_parameters: [], architecture: { input_modalities: ['image'] } },
+      { id: 'no-image', supported_parameters: ['structured_outputs'], architecture: { input_modalities: ['text'] } },
+      { id: 'missing' },
+      { id: 'missing-parameters', architecture: { input_modalities: ['image'] } },
+      { id: 'missing-modalities', supported_parameters: ['structured_outputs'], architecture: {} },
+      { id: 'non-arrays', supported_parameters: null, architecture: { input_modalities: 'text' } },
+      { id: 'null-architecture', architecture: null },
+    ] }));
+    await expect(fetchOpenRouterModelIds(fetch)).resolves.toEqual([
+      'both', 'missing', 'missing-parameters', 'missing-modalities', 'non-arrays', 'null-architecture',
+    ]);
+  });
+
+  test('data が無ければ空の一覧を返す', async () => {
+    const fetch = jest.fn().mockResolvedValue(jsonResponse({}));
+    await expect(fetchOpenRouterModelIds(fetch)).resolves.toEqual([]);
+  });
+
   test('公開エンドポイントへ認証なしで GET し、data[].id を返す', async () => {
     const fetch = jest
       .fn()

@@ -1,3 +1,8 @@
+.model-select input {
+  width: 32ch;
+  max-width: 100%;
+}
+
 /* メインビューのレイアウト（左サイドバー + 右作業エリア。ui-flow.md §5） */
 .app {
   display: flex;

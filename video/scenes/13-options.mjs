@@ -42,7 +42,8 @@ export default {
       await ctx.page.locator('#default-reasoning-effort').selectOption('medium').catch(() => {});
       await ctx.sleep(300);
       await hoverSlow(ctx.page, ctx.page.locator('#default-model'), { durationMs: 500 }).catch(() => {});
-      await ctx.page.locator('#default-model').selectOption('gemini-3.5-flash').catch(() => {});
+      await ctx.page.locator('#default-model').fill('gemini-3.5-flash').catch(() => {});
+      await ctx.page.locator('#default-model').blur().catch(() => {});
     });
 
     // cue 3: レート制限 tier を切り替え

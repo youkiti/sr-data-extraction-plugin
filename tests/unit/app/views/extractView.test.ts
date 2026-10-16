@@ -13,8 +13,8 @@ test.each([
   const root = renderExtractView(state, ctx);
   expect(root.querySelector('#extract-model-mismatch') !== null).toBe(mismatch);
   expect(root.querySelector<HTMLButtonElement>('#extract-run')?.disabled).toBe(mismatch);
-  expect(root.querySelector('#extract-model optgroup[label="Gemini"]') !== null).toBe(hasGemini);
-  expect(root.querySelector('#extract-model option[value="custom-model"]') !== null)
+  expect(root.querySelector('#extract-model-options option[value="gemini-3.8-flash"]') !== null).toBe(hasGemini);
+  expect(root.querySelector('#extract-model-options option[value="custom-model"]') !== null)
     .toBe(provider === 'anthropic' || provider === 'gemini');
   if (mismatch) {
     expect(root.querySelector('#extract-model-mismatch')?.textContent).toContain('モデルを選び直してください');
@@ -700,14 +700,11 @@ describe('未実行（setup）', () => {
 
   test('モデル変更・実行ボタンのコールバック + インラインエラー表示', () => {
     const { root, callbacks } = render(
-      makeState({ extract: { runError: 'モデルを選択してください（「その他」で直接入力も可）' } }),
+      makeState({ extract: { runError: 'モデルを選択してください' } }),
     );
-    const model = root.querySelector<HTMLSelectElement>('#extract-model');
-    model!.value = '__other__';
+    const model = root.querySelector<HTMLInputElement>('#extract-model');
+    model!.value = ' gemini-x ';
     model!.dispatchEvent(new Event('change'));
-    const custom = root.querySelector<HTMLInputElement>('#extract-model-custom');
-    custom!.value = ' gemini-x ';
-    custom!.dispatchEvent(new Event('change'));
     expect(callbacks.onChangeModel).toHaveBeenCalledWith('gemini-x');
 
     expect(root.querySelector('#extract-run-error')?.textContent).toContain('モデルを選択');
