@@ -3,7 +3,7 @@
      正典はこのファイル（master の hosted/）。デプロイ手順は hosted/README.md を参照。
      内容はワークフローレベルに留める（画面細部はアプリ内のリード文が担う。issue #214 §3）。
      文言は ja / en を両方持ち、表示は lang.js + CSS が片方だけに絞る（併記しない）。
-     version: 2026-10-11 -->
+     version: 2026-10-17 -->
 <html lang="ja">
   <head>
     <meta charset="utf-8" />
@@ -53,8 +53,8 @@
           <span class="en" lang="en">User guide</span>
         </h1>
         <p class="last-updated">
-          <span class="ja" lang="ja">最終更新: 2026-10-11 / 対象バージョン: v0.17.0</span>
-          <span class="en" lang="en">Last updated: 2026-10-11 / Covers v0.17.0</span>
+          <span class="ja" lang="ja">最終更新: 2026-10-17 / 対象バージョン: v0.19.0</span>
+          <span class="en" lang="en">Last updated: 2026-10-17 / Covers v0.19.0</span>
         </p>
 
         <nav class="toc" aria-label="目次" data-en-aria-label="Table of contents">
@@ -119,8 +119,8 @@
             </li>
             <li>
               <a href="#dual-review"
-                ><span class="ja" lang="ja">独立二重レビューと裁定</span
-                ><span class="en" lang="en">Independent dual review and adjudication</span></a
+                ><span class="ja" lang="ja">独立二重レビューと不一致の解消</span
+                ><span class="en" lang="en">Independent dual review and conflict resolution</span></a
               >
             </li>
             <li>
@@ -247,16 +247,16 @@
             <a href="screenshots/help-01-setup.png" target="_blank" rel="noopener noreferrer">
               <img
                 src="screenshots/help-01-setup.png"
-                alt="設定画面の上部。Gemini と OpenRouter の API キーの入力欄、LLM 接続先（接続方式の選択と「接続設定を保存」「接続テスト」のボタン）が縦に並ぶ"
-                data-en-alt="Top of the Options page: the Gemini and OpenRouter API key fields, then the LLM endpoint card with the connection type selector and the “Save connection settings” and “Test connection” buttons"
+                alt="設定画面の上部。LLM 接続の節に、接続方式の選択、API キーの入力欄、既定モデルの選択、「保存して接続を確認」のボタンが縦に並ぶ"
+                data-en-alt="Top of the Options page: the LLM connection card with the connection type selector, the API key field, the default model selector and the “Save and check connection” button"
                 width="1280"
                 height="800"
                 loading="lazy"
               />
             </a>
             <figcaption>
-              <span class="ja" lang="ja">設定画面の上部。API キーを入れて「保存」し、接続方式を選んで「接続テスト」で通るか確かめます。</span>
-              <span class="en" lang="en">The top of the Options page. Enter an API key and press Save, then choose the connection type and run the connection test.</span>
+              <span class="ja" lang="ja">設定画面の上部。接続方式を選び、API キーとモデルを入れて「保存して接続を確認」を押します。</span>
+              <span class="en" lang="en">The top of the Options page. Choose the connection type, enter an API key and a model, and press “Save and check connection”.</span>
             </figcaption>
           </figure>
           <div class="note">
@@ -443,10 +443,10 @@
           </p>
           <p>
             <span class="ja" lang="ja"
-              >グループに担当者をちょうど 2 名指定すると、その 2 名を裁定のペアとして使います。それ以外は実データからペアを推定します。担当外の判定は裁定・一致度から除外されます。裁定画面で「一致度を計算」を押すと、「キャリブレーションの一致度」でペア別の一致度も確認できます。</span
+              >グループに担当者をちょうど 2 名指定すると、その 2 名を裁定のペアとして使います。それ以外は実データからペアを推定します。担当外の判定は裁定・一致度から除外されます。不一致の解消画面で「一致度を計算」を押すと、「キャリブレーションの一致度」でペア別の一致度も確認できます。</span
             >
             <span class="en" lang="en"
-              >A group with exactly two assigned reviewers uses those reviewers as its adjudication pair; otherwise, the pair is inferred from recorded data. Judgments outside the assigned pair are excluded from adjudication and agreement. Press “Compute agreement” on the adjudication screen to also see agreement by pair under “Calibration agreement”.</span
+              >A group with exactly two assigned reviewers uses those reviewers as its adjudication pair; otherwise, the pair is inferred from recorded data. Judgments outside the assigned pair are excluded from adjudication and agreement. Press “Compute agreement” on the “Resolve conflicts” screen to also see agreement by pair under “Calibration agreement”.</span
             >
           </p>
           <h3 id="project-tours">
@@ -487,8 +487,8 @@
               >
             </li>
             <li>
-              <span class="ja" lang="ja"><strong>二重レビューと裁定</strong>: レビュアーの登録、担当セットの分割、不一致の裁定までを案内します。 オーナーに、取り込んだ文献があるときに表示されます。</span>
-              <span class="en" lang="en"><strong>Dual review and adjudication</strong>: Register reviewers, split assignment sets, and adjudicate disagreements. Shown to the owner once documents have been imported.</span>
+              <span class="ja" lang="ja"><strong>二重レビューと不一致の解消</strong>: レビュアーの登録、担当セットの分割、不一致の裁定までを案内します。 オーナーに、取り込んだ文献があるときに表示されます。</span>
+              <span class="en" lang="en"><strong>Dual review and conflict resolution</strong>: Register reviewers, split assignment sets, and adjudicate disagreements. Shown to the owner once documents have been imported.</span>
               <a href="https://youtu.be/BuGpgS_6HRw" target="_blank" rel="noopener noreferrer"
                 ><span class="ja" lang="ja">▶ 動画で見る（1:48）</span
                 ><span class="en" lang="en">▶ Watch video (1:48)</span></a
@@ -1157,10 +1157,10 @@
           </h3>
           <p>
             <span class="ja" lang="ja"
-              >検証画面または裁定画面で試験を開き、「論文に質問（AI）」を展開します。質問を入力し、入力トークン数と費用の概算を確認して「送信」を押します。オーナー・AI を使うレビュアー・裁定者が利用でき、独立入力のレビュアーには表示されません。</span
+              >検証画面または不一致の解消画面で試験を開き、「論文に質問（AI）」を展開します。質問を入力し、入力トークン数と費用の概算を確認して「送信」を押します。オーナー・AI を使うレビュアー・裁定者が利用でき、独立入力のレビュアーには表示されません。</span
             >
             <span class="en" lang="en"
-              >Open a study in verification or adjudication and expand “Ask the paper (AI)”. Enter a question, check the estimated input tokens and cost, then press “Send”. The panel is available to the owner, reviewers working with AI and adjudicators; it is hidden from independent reviewers.</span
+              >Open a study in verification or “Resolve conflicts” and expand “Ask the paper (AI)”. Enter a question, check the estimated input tokens and cost, then press “Send”. The panel is available to the owner, reviewers working with AI and adjudicators; it is hidden from independent reviewers.</span
             >
           </p>
           <p>
@@ -1199,10 +1199,10 @@
           </h3>
           <p>
             <span class="ja" lang="ja"
-              >検証・パイロット・裁定の画面には、保存中の件数が「保存中（1 件）」のように表示されます。表示が消えるまでタブを開いておいてください。保存中に閉じる・再読み込みなどでページを離れようとすると、ブラウザが確認を求めます。</span
+              >検証・パイロット・不一致の解消の画面には、保存中の件数が「保存中（1 件）」のように表示されます。表示が消えるまでタブを開いておいてください。保存中に閉じる・再読み込みなどでページを離れようとすると、ブラウザが確認を求めます。</span
             >
             <span class="en" lang="en"
-              >Verification, pilot and adjudication screens show the number of pending saves, for example “Saving (1)”. Keep the tab open until the indicator disappears. If you try to close, reload or otherwise leave the page while saves are pending, the browser asks for confirmation.</span
+              >Verification, pilot and “Resolve conflicts” screens show the number of pending saves, for example “Saving (1)”. Keep the tab open until the indicator disappears. If you try to close, reload or otherwise leave the page while saves are pending, the browser asks for confirmation.</span
             >
           </p>
         </section>
@@ -1263,9 +1263,13 @@
 
         <section id="dual-review">
           <h2>
-            <span class="ja" lang="ja">10. 独立二重レビューと裁定</span>
-            <span class="en" lang="en">10. Independent dual review and adjudication</span>
+            <span class="ja" lang="ja">10. 独立二重レビューと不一致の解消</span>
+            <span class="en" lang="en">10. Independent dual review and conflict resolution</span>
           </h2>
+          <p>
+            <span class="ja" lang="ja">検証画面には自分の判定だけが表示されます。オーナーと裁定者には「不一致の解消」への案内が表示され、自分が表示中の論文の判定を終えると「不一致を確認」からその論文へ移動できます。ほかに検証を終えた人の人数も表示されます。オーナーのダッシュボードには、自分も含めた「検証済みの人数」と、その論文の不一致の解消へのリンクが表示されます。人数は自分の判定完了後に読み込みます。検証画面では読み込み中の案内を表示し、失敗時は人数を省略します。ダッシュボードでは集計後に人数を読み込み、読み込み中・失敗時は「—」を表示します。不一致の解消では、判定の保存中は完了を待ってから一覧を更新します。レビュアーにはこれらの案内や人数は表示されません。</span>
+            <span class="en" lang="en">Verification shows only your own decisions. Owners and adjudicators see a link to “Resolve conflicts”. After completing the current study, use “Check conflicts” to open that study; the number of other reviewers who have finished is also shown. The owner's dashboard shows “Completed reviewers”, including the owner, with a link to resolve conflicts for that study. Counts load after you finish your decisions. Verification shows a loading message and omits the count if loading fails. The dashboard loads counts after its summary and shows “—” while loading or unavailable. Resolve conflicts waits for pending decisions to finish saving before refreshing the list. Reviewers do not see these links or counts.</span>
+          </p>
           <p>
             <span class="ja" lang="ja"
               >2 名で独立に抽出し、不一致を裁定する運用に対応しています。オーナーが Home
@@ -1282,16 +1286,16 @@
             <a href="screenshots/help-10-dual-review.png" target="_blank" rel="noopener noreferrer">
               <img
                 src="screenshots/help-10-dual-review.png"
-                alt="裁定画面。群構成の突き合わせ、左に PDF、右に不一致のセルの表（A と B の値が食い違う「群の N」）が見える"
-                data-en-alt="Adjudication screen: the arm matching card, the PDF on the left, and on the right the table of disagreeing cells (the arm N differs between reviewers A and B)"
+                alt="不一致の解消画面。群構成の突き合わせ、左に PDF、右に不一致のセルの表（A と B の値が食い違う「群の N」）が見える"
+                data-en-alt="Resolve conflicts screen: the arm matching card, the PDF on the left, and on the right the table of disagreeing cells (the arm N differs between reviewers A and B)"
                 width="1280"
                 height="800"
                 loading="lazy"
               />
             </a>
             <figcaption>
-              <span class="ja" lang="ja">裁定画面。2 人の判定が食い違うセルだけを表示し、根拠を見ながら確定します。</span>
-              <span class="en" lang="en">The adjudication screen. Only the cells where the two reviewers disagree are shown; decide them with the evidence at hand.</span>
+              <span class="ja" lang="ja">不一致の解消画面。2 人の判定が食い違うセルだけを表示し、根拠を見ながら確定します。</span>
+              <span class="en" lang="en">The “Resolve conflicts” screen. Only the cells where the two reviewers disagree are shown; decide them with the evidence at hand.</span>
             </figcaption>
           </figure>
           <ul>
@@ -1308,22 +1312,22 @@
             </li>
             <li>
               <span class="ja" lang="ja"
-                >2 名の検証が揃った試験は「裁定」画面で処理します。群構成を突き合わせ、一致セルは一括採用、不一致セルは個別に裁定して
+                >2 名の検証が揃った試験は「不一致の解消」画面で処理します。群構成を突き合わせ、一致セルは一括採用、不一致セルは個別に裁定して
                 consensus（確定版）を作ります。レビュアー間一致度（κ）も確認できます。</span
               >
               <span class="en" lang="en"
-                >Once both reviewers are done, the adjudication screen matches the arm structures, bulk-accepts agreeing
+                >Once both reviewers are done, the “Resolve conflicts” screen matches the arm structures, bulk-accepts agreeing
                 cells and lets you settle each disagreement into a consensus row. Inter-reviewer agreement (κ) is shown
                 as well.</span
               >
             </li>
             <li>
               <span class="ja" lang="ja"
-                >裁定画面では、セルごとに 2 名の根拠を並べ、誰の一覧にある引用か（A / B / A・B）を示します。AI
+                >不一致の解消画面では、セルごとに 2 名の根拠を並べ、誰の一覧にある引用か（A / B / A・B）を示します。AI
                 抽出を見ながら検証した人は、引用を直していなければ AI の引用が、独立入力の人は自分で足した引用が並びます。最終の根拠に採用する引用にチェックを入れます。最初に操作するまでは「最終の根拠はまだ選ばれていません」と表示し、自動では採用しません。</span
               >
               <span class="en" lang="en"
-                >On the adjudication screen, each cell lists both reviewers’ evidence and shows whose list each quote is in
+                >On the “Resolve conflicts” screen, each cell lists both reviewers’ evidence and shows whose list each quote is in
                 (A / B / A &amp; B). For a reviewer who verified with AI, this is the AI quotes unless they edited them; for an
                 independent reviewer, it is the quotes they added. Tick the quotes to adopt as final evidence. Until you
                 do, the cell shows “Final quotes have not been chosen”; nothing is adopted automatically.</span
@@ -1526,38 +1530,72 @@
           <ul>
             <li>
               <span class="ja" lang="ja"
-                ><strong>API キー（BYOK）</strong>: Gemini / OpenRouter
-                のキーを保存します。キーはブラウザ内（<code>chrome.storage.local</code>）にのみ保存され、開発者へ送信されることはありません。</span
+                ><strong>LLM 接続</strong>: 接続方式（Gemini / OpenRouter / Anthropic / Azure OpenAI / OpenAI 互換 API /
+                ローカル LLM）を選ぶと、その方式に要る欄（API キー、方式によっては URL）だけが出ます。キーは方式ごとに保存され、方式を切り替えても消えません。キーはブラウザ内（<code>chrome.storage.local</code>）にのみ保存され、開発者へ送信されることはありません（BYOK）。</span
               >
               <span class="en" lang="en"
-                ><strong>API keys (BYOK)</strong>: store your Gemini / OpenRouter keys. They stay in your browser
-                (<code>chrome.storage.local</code>) and are never sent to the developer.</span
-              >
-            </li>
-            <li>
-              <span class="ja" lang="ja"
-                ><strong>LLM 接続先</strong>: Gemini / OpenRouter / OpenAI 互換 API / Anthropic / Azure OpenAI
-                から選べます。OpenAI 互換 API は完全 URL を入力し、Chrome
-                の接続許可を与えて使います。<code>http://localhost</code>・<code>http://127.0.0.1</code>・<code
-                  >http://[::1]</code
-                >
-                のローカル LLM も指定でき、この場合は API キーを省略できます。</span
-              >
-              <span class="en" lang="en"
-                ><strong>Provider</strong>: Gemini, OpenRouter, an OpenAI-compatible endpoint, Anthropic or Azure OpenAI.
-                For OpenAI-compatible endpoints you enter the full URL and grant Chrome host permission; local LLMs on
-                <code>localhost</code> / <code>127.0.0.1</code> / <code>[::1]</code> are allowed and may omit the
-                key.</span
+                ><strong>LLM connection</strong>: choose a connection type (Gemini, OpenRouter, Anthropic, Azure OpenAI,
+                OpenAI-compatible API or Local LLM) and only the fields it needs appear (an API key, plus a URL for some
+                types). Keys are stored per type, so switching types does not erase them. They stay in your browser
+                (<code>chrome.storage.local</code>) and are never sent to the developer (BYOK).</span
               >
             </li>
             <li>
               <span class="ja" lang="ja"
                 ><strong>既定モデル</strong>: 新しい抽出の初期値になります（工場出荷の既定は
-                <code>gemini-3.8-flash</code>）。接続先によってはモデル一覧を自動取得できます。</span
+                <code>gemini-3.8-flash</code>）。候補には、選んだ接続方式のモデルだけが出ます。モデル欄に文字を打つと、その文字を含む候補に絞られます（例:
+                「sonnet」）。候補に無い名前も、そのまま打てば使えます。OpenRouter から取得した一覧には、構造化出力と画像の入力の両方に対応したモデルだけを出します。OpenRouter
+                から取得したモデルは、一覧と一緒に取得した単価で費用を見積もります（それ以外の接続方式で単価表に無いモデルは「概算不可」）。</span
               >
               <span class="en" lang="en"
                 ><strong>Default model</strong>: the initial choice for new runs (factory default
-                <code>gemini-3.8-flash</code>). For some providers the model list is fetched automatically.</span
+                <code>gemini-3.8-flash</code>). The list only shows models of the chosen connection type. Typing in the model
+                field narrows the suggestions to those containing the text (for example “sonnet”); you can also type any
+                name that is not suggested. The list fetched from OpenRouter only includes models that support both
+                structured output and image input. For models fetched from OpenRouter, the cost estimate uses the prices fetched
+                with the list (with other connection types, models not in the price list show “estimate unavailable”).</span
+              >
+            </li>
+            <li>
+              <span class="ja" lang="ja"
+                ><strong>保存して接続を確認</strong>: 押すと、設定を保存し、モデル一覧を取得し（取得できる方式のみ）、選んだモデルで短い呼び出しを送って、結果を
+                1 行で表示します。失敗したときは、API キーが受け付けられなかったのか、モデルがその方式に無いのかなど、どこで失敗したかを示します。取得したモデルは、スキーマ・パイロット・一括抽出の画面のモデル選択にも出ます。</span
+              >
+              <span class="en" lang="en"
+                ><strong>Save and check connection</strong>: saves the settings, fetches the model list (where the type
+                supports it), sends a short call with the chosen model, and shows the result on one line. On failure it
+                says where it failed, for example a rejected API key or a model that the type does not have. Fetched
+                models also appear in the model choice on the schema, pilot and full-extraction screens.</span
+              >
+            </li>
+            <li>
+              <span class="ja" lang="ja"
+                ><strong>ローカル LLM</strong>: 手元の PC で動かしている LLM（Ollama・LM Studio など）を使います。「Ollama」「LM
+                Studio」のボタンで URL が入ります。URL は <code>localhost</code>・<code>127.0.0.1</code>・<code
+                  >[::1]</code
+                >
+                に限られ、API キーは要りません。外部の OpenAI 互換サービスは「OpenAI 互換 API」を選び、完全 URL と API
+                キーを入力します（Chrome の接続許可も求められます）。</span
+              >
+              <span class="en" lang="en"
+                ><strong>Local LLM</strong>: use an LLM running on your own computer (Ollama, LM Studio and the like). The
+                “Ollama” and “LM Studio” buttons fill in the URL. The URL must be on <code>localhost</code> /
+                <code>127.0.0.1</code> / <code>[::1]</code>, and no API key is needed. For an external OpenAI-compatible
+                service, choose “OpenAI-compatible API” and enter the full URL and an API key (Chrome also asks for host
+                permission).</span
+              >
+            </li>
+            <li>
+              <span class="ja" lang="ja"
+                ><strong>reasoning effort の既定値</strong>: モデルが答える前に考える量を low / medium / high から選びます。low
+                ほど速く安くなります。未設定のときは、Gemini 3 系と Anthropic には low を送り、OpenRouter・OpenAI 互換 API・Azure
+                OpenAI には何も送りません（各サービスの既定どおり）。Gemini 2.5 系には送りません。</span
+              >
+              <span class="en" lang="en"
+                ><strong>Default reasoning effort</strong>: how much the model thinks before answering (low, medium or
+                high); lower is faster and cheaper. When unset, low is sent to Gemini 3 models and Anthropic, and nothing is
+                sent to OpenRouter, OpenAI-compatible APIs or Azure OpenAI (their own defaults apply). It is not sent to
+                Gemini 2.5 models.</span
               >
             </li>
             <li>
@@ -1583,16 +1621,16 @@
             <a href="screenshots/help-12-options.png" target="_blank" rel="noopener noreferrer">
               <img
                 src="screenshots/help-12-options.png"
-                alt="設定画面の下部。既定モデルの選択、レート制限のプラン（tier）、表示言語、使い方ガイドなどへのリンク"
-                data-en-alt="Lower part of the Options page: default model, rate-limit plan (tier), display language, and links to the guide and policies"
+                alt="設定画面の下部。reasoning effort の既定値、レート制限のプラン（tier）、表示言語、使い方ガイドなどへのリンク"
+                data-en-alt="Lower part of the Options page: default reasoning effort, rate-limit plan (tier), display language, and links to the guide and policies"
                 width="1280"
                 height="800"
                 loading="lazy"
               />
             </a>
             <figcaption>
-              <span class="ja" lang="ja">設定画面の下部。既定モデル、レート制限のプラン、表示言語を設定します。</span>
-              <span class="en" lang="en">The lower part of the Options page. Set the default model, the rate-limit plan and the display language.</span>
+              <span class="ja" lang="ja">設定画面の下部。reasoning effort の既定値、レート制限のプラン、表示言語を設定します。</span>
+              <span class="en" lang="en">The lower part of the Options page. Set the default reasoning effort, the rate-limit plan and the display language.</span>
             </figcaption>
           </figure>
         </section>
@@ -1618,6 +1656,25 @@
               files it created. A sheet created by someone else therefore has to be granted <strong>once</strong> through
               the Google file picker: press “Grant with Google” under the error and select the same sheet. One grant per
               user and sheet is enough.</span
+            >
+          </p>
+
+          <h3 id="troubleshooting-model-mismatch">
+            <span class="ja" lang="ja">「モデル『…』は今の接続方式では使えません」と出て実行できない</span>
+            <span class="en" lang="en">“The model … cannot be used with the current connection type”</span>
+          </h3>
+          <p>
+            <span class="ja" lang="ja"
+              >スキーマ・パイロット・一括抽出の画面で選んでいるモデルが、設定画面で保存した接続方式のものではありません（例: 接続方式が
+              Anthropic なのに <code>gemini-3.8-flash</code>）。このまま送ると接続先がモデルを見つけられずに失敗するため、実行ボタンを押せなくしています。その画面のモデル欄で、今の接続方式のモデルを選び直してください。質問パネルで出たときは、設定画面の「LLM
+              接続」で既定モデルを選び直します。</span
+            >
+            <span class="en" lang="en"
+              >The model chosen on the schema, pilot or full-extraction screen does not belong to the connection type
+              saved in Options (for example <code>gemini-3.8-flash</code> while the type is Anthropic). Sending it would
+              fail because the provider cannot find the model, so the run button is disabled. Choose a model of the
+              current type in that screen’s model field. If it appears in the question panel, choose the default model
+              again under “LLM connection” in Options.</span
             >
           </p>
 
