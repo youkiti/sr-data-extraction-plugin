@@ -1540,14 +1540,16 @@
               <span class="ja" lang="ja"
                 ><strong>既定モデル</strong>: 新しい抽出の初期値になります（工場出荷の既定は
                 <code>gemini-3.8-flash</code>）。候補には、選んだ接続方式のモデルだけが出ます。モデル欄に文字を打つと、その文字を含む候補に絞られます（例:
-                「sonnet」）。候補に無い名前も、そのまま打てば使えます。OpenRouter から取得した一覧には、構造化出力と画像の入力の両方に対応したモデルだけを出します。</span
+                「sonnet」）。候補に無い名前も、そのまま打てば使えます。OpenRouter から取得した一覧には、構造化出力と画像の入力の両方に対応したモデルだけを出します。OpenRouter
+                から取得したモデルは、一覧と一緒に取得した単価で費用を見積もります（それ以外の接続方式で単価表に無いモデルは「概算不可」）。</span
               >
               <span class="en" lang="en"
                 ><strong>Default model</strong>: the initial choice for new runs (factory default
                 <code>gemini-3.8-flash</code>). The list only shows models of the chosen connection type. Typing in the model
                 field narrows the suggestions to those containing the text (for example “sonnet”); you can also type any
                 name that is not suggested. The list fetched from OpenRouter only includes models that support both
-                structured output and image input.</span
+                structured output and image input. For models fetched from OpenRouter, the cost estimate uses the prices fetched
+                with the list (with other connection types, models not in the price list show “estimate unavailable”).</span
               >
             </li>
             <li>

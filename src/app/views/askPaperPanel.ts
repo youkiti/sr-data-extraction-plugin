@@ -2,6 +2,7 @@
 import { estimateAskPaperCost, type AnchoredCitation } from '../../features/verification/askPaper';
 import { buildAskPaperDocumentPrefix } from '../../features/verification/skills/askPaper';
 import { t } from '../../lib/i18n';
+import type { ModelPricing } from '../../lib/llm/pricing';
 import type { AskPaperParams } from '../services/askPaperService';
 import type { AskPaperState } from '../store';
 import { el } from '../ui/dom';
@@ -41,7 +42,7 @@ export function disposeAskPaperPanelCache(): void {
 
 export function renderAskPaperPanel(
   state: AskPaperState,
-  params: Omit<AskPaperParams, 'history' | 'question'> & { studyId: string },
+  params: Omit<AskPaperParams, 'history' | 'question'> & { studyId: string; fallbackPricing?: ModelPricing },
   callbacks: AskPaperViewCallbacks | undefined,
   onCitation: (citation: AnchoredCitation) => void,
 ): HTMLElement {
@@ -67,6 +68,7 @@ export function renderAskPaperPanel(
       return;
     }
     const result = estimateAskPaperCost({
+      fallbackPricing: params.fallbackPricing,
       model: state.model,
       prefixChars: documentPrefixLength(params),
       historyChars: (state.conversations[params.studyId] ?? [])

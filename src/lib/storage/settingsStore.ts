@@ -11,6 +11,7 @@ import { getLocal, removeLocal, setLocal } from './chromeStorage';
 import type { LlmProviderId } from '../../domain/llmApiLog';
 import { isUiLanguage, t, type UiLanguage } from '../i18n';
 import type { ReasoningEffort } from '../llm/LLMProvider';
+import type { ModelPricing } from '../llm/pricing';
 
 const DEFAULT_MODEL_STORAGE_KEY = 'settings.defaultModel';
 const UI_LANGUAGE_STORAGE_KEY = 'settings.uiLanguage';
@@ -19,8 +20,9 @@ const OPENAI_COMPATIBLE_ENDPOINT_STORAGE_KEY = 'settings.openAiCompatibleEndpoin
 const AZURE_OPENAI_ENDPOINT_STORAGE_KEY = 'settings.azureOpenAiEndpoint';
 const LOCAL_LLM_ENDPOINT_STORAGE_KEY = 'settings.localLlmEndpoint';
 const FETCHED_MODEL_IDS_STORAGE_KEY = 'settings.fetchedModelIds';
+const FETCHED_MODEL_PRICING_STORAGE_KEY = 'settings.fetchedModelPricing';
 
-/** 接続方式または取得済みモデル一覧の変更だけを通知する。 */
+/** 接続方式・取得済みモデル一覧・取得単価の変更だけを通知する。 */
 export function onLlmConnectionSettingsChanged(listener: () => void): () => void {
   const source = typeof chrome === 'undefined' ? undefined : chrome.storage?.onChanged;
   if (!source) {
@@ -29,7 +31,8 @@ export function onLlmConnectionSettingsChanged(listener: () => void): () => void
   const onChanged = (changes: Record<string, chrome.storage.StorageChange>, areaName: string): void => {
     if (areaName === 'local' && (
       Object.prototype.hasOwnProperty.call(changes, LLM_PROVIDER_STORAGE_KEY) ||
-      Object.prototype.hasOwnProperty.call(changes, FETCHED_MODEL_IDS_STORAGE_KEY)
+      Object.prototype.hasOwnProperty.call(changes, FETCHED_MODEL_IDS_STORAGE_KEY) ||
+      Object.prototype.hasOwnProperty.call(changes, FETCHED_MODEL_PRICING_STORAGE_KEY)
     )) {
       listener();
     }
@@ -260,6 +263,57 @@ export async function loadFetchedModelIds(): Promise<Partial<Record<LlmProviderI
 export async function saveFetchedModelIds(provider: LlmProviderId, ids: readonly string[]): Promise<void> {
   const saved = await loadFetchedModelIds();
   await setLocal(FETCHED_MODEL_IDS_STORAGE_KEY, { ...saved, [provider]: normalizeFetchedModelIds(ids) });
+}
+
+export type FetchedModelPricing = Partial<Record<LlmProviderId, Record<string, ModelPricing>>>;
+
+function isPricingObject(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function isValidRate(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0;
+}
+
+/** 保存値は入力・出力単価が有効なモデルだけ復元する。 */
+function normalizeModelPricing(value: unknown): Record<string, ModelPricing> {
+  const result: Record<string, ModelPricing> = {};
+  if (!isPricingObject(value)) {
+    return result;
+  }
+  for (const [model, pricing] of Object.entries(value)) {
+    if (model.trim() === '' || !isPricingObject(pricing) ||
+      !isValidRate(pricing.inputPerMillion) || !isValidRate(pricing.outputPerMillion)) {
+      continue;
+    }
+    result[model] = {
+      inputPerMillion: pricing.inputPerMillion,
+      outputPerMillion: pricing.outputPerMillion,
+      ...(isValidRate(pricing.cachedInputPerMillion) ? { cachedInputPerMillion: pricing.cachedInputPerMillion } : {}),
+    };
+  }
+  return result;
+}
+
+export async function loadFetchedModelPricing(): Promise<FetchedModelPricing> {
+  const stored = await getLocal<unknown>(FETCHED_MODEL_PRICING_STORAGE_KEY);
+  const result: FetchedModelPricing = {};
+  if (isPricingObject(stored)) {
+    for (const [provider, pricing] of Object.entries(stored)) {
+      if (LLM_PROVIDERS.has(provider)) {
+        result[provider as LlmProviderId] = normalizeModelPricing(pricing);
+      }
+    }
+  }
+  return result;
+}
+
+export async function saveFetchedModelPricing(
+  provider: LlmProviderId,
+  pricing: Record<string, ModelPricing>,
+): Promise<void> {
+  const saved = await loadFetchedModelPricing();
+  await setLocal(FETCHED_MODEL_PRICING_STORAGE_KEY, { ...saved, [provider]: normalizeModelPricing(pricing) });
 }
 
 /** 接続方式と OpenAI 互換 API / Azure OpenAI それぞれの URL を読み出す */

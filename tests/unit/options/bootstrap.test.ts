@@ -58,6 +58,18 @@ describe('統合された LLM 接続', () => {
     button().click();
     await flush();
   }
+  test('OpenRouter の一覧と単価を一緒に保存する', async () => {
+    const pricing = { 'custom-model': { inputPerMillion: 0.1, outputPerMillion: 0.4 } };
+    fetchIds.mockImplementation(async (config: modelList.ModelListFetchConfig) => {
+      config.onPricing!(pricing);
+      return ['custom-model'];
+    });
+    await setup('openrouter');
+    await save();
+    expect(fetchIds).toHaveBeenCalledTimes(1);
+    expect(chromeMock.storage.local.data['settings.fetchedModelPricing']).toEqual({ openrouter: pricing });
+    expect(chromeMock.storage.local.data['settings.fetchedModelIds']).toEqual({ openrouter: ['custom-model'] });
+  });
   test('Anthropic で Gemini の単価表モデルを直接入力すると保存せず停止する', async () => {
     await setup('anthropic', 'gemini-3.8-flash');
     await save();

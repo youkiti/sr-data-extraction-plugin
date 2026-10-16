@@ -22,6 +22,7 @@
 // `isModelListFetchSupported` で呼び出し側（Options）が対応可否を判定する。
 import { ANTHROPIC_VERSION, BROWSER_ACCESS_HEADER } from './AnthropicProvider';
 import type { LlmProviderId } from '../../domain/llmApiLog';
+import type { ModelPricing } from './pricing';
 
 /** モデル一覧の自動取得に対応する接続方式 */
 export type ModelListFetchProvider = 'anthropic' | 'openrouter' | 'openai_compatible' | 'local_llm';
@@ -34,6 +35,7 @@ export function isModelListFetchSupported(
 }
 
 export interface ModelListFetchConfig {
+  onPricing?: (pricing: Record<string, ModelPricing>) => void;
   provider: ModelListFetchProvider;
   /** OpenRouter は未使用（公開エンドポイントのため空文字でよい） */
   apiKey: string;
@@ -125,6 +127,13 @@ export async function fetchAnthropicModelIds(
 export async function fetchOpenRouterModelIds(
   fetchImpl: typeof fetch = globalThis.fetch,
 ): Promise<string[]> {
+  return (await fetchOpenRouterModels(fetchImpl)).ids;
+}
+
+/** 一覧と単価を同じ応答から取得する。 */
+export async function fetchOpenRouterModels(
+  fetchImpl: typeof fetch = globalThis.fetch,
+): Promise<{ ids: string[]; pricing: Record<string, ModelPricing> }> {
   const res = await fetchImpl(OPENROUTER_MODELS_ENDPOINT, { method: 'GET' });
   if (!res.ok) {
     const body = await readErrorBody(res);
@@ -135,6 +144,7 @@ export async function fetchOpenRouterModelIds(
   const json = (await res.json()) as {
     data?: Array<{
       id?: unknown;
+      pricing?: { prompt?: unknown; completion?: unknown; input_cache_read?: unknown } | null;
       supported_parameters?: unknown;
       architecture?: { input_modalities?: unknown } | null;
     }>;
@@ -146,7 +156,30 @@ export async function fetchOpenRouterModelIds(
     return (!Array.isArray(parameters) || parameters.includes('structured_outputs'))
       && (!Array.isArray(modalities) || modalities.includes('image'));
   });
-  return extractIds(entries);
+  const pricing: Record<string, ModelPricing> = {};
+  for (const entry of entries ?? []) {
+    const inputPerMillion = perMillion(entry.pricing?.prompt);
+    const outputPerMillion = perMillion(entry.pricing?.completion);
+    if (typeof entry.id !== 'string' || inputPerMillion === undefined || outputPerMillion === undefined) {
+      continue;
+    }
+    const cachedInputPerMillion = perMillion(entry.pricing?.input_cache_read);
+    pricing[entry.id] = {
+      inputPerMillion,
+      outputPerMillion,
+      ...(cachedInputPerMillion === undefined ? {} : { cachedInputPerMillion }),
+    };
+  }
+  return { ids: extractIds(entries), pricing };
+}
+
+/** 空値・非数値を除き、乗算時の浮動小数誤差を丸める。 */
+function perMillion(value: unknown): number | undefined {
+  if ((typeof value !== 'string' && typeof value !== 'number') || String(value).trim() === '') {
+    return undefined;
+  }
+  const converted = Number(value) * 1_000_000;
+  return Number.isFinite(converted) && converted >= 0 ? Number(converted.toPrecision(15)) : undefined;
 }
 
 /** 末尾がこのパスの chat completions URL だけ `/models` への機械導出を許す */
@@ -205,7 +238,9 @@ export async function fetchModelIds(config: ModelListFetchConfig): Promise<strin
     return fetchAnthropicModelIds(config.apiKey, fetchImpl);
   }
   if (config.provider === 'openrouter') {
-    return fetchOpenRouterModelIds(fetchImpl);
+    const result = await fetchOpenRouterModels(fetchImpl);
+    config.onPricing?.(result.pricing);
+    return result.ids;
   }
   if (config.chatCompletionsUrl === undefined) {
     throw new Error('OpenAI 互換 API のエンドポイント URL が未設定です');

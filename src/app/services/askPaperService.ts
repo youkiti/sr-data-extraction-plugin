@@ -2,6 +2,8 @@
 // 文脈は 1 study の本文とスキーマ定義だけとし、Evidence・データ行・Decisions は渡さない。
 // 質問と回答の payload は保存せず、会話はセッション内のみで扱う。
 import type { SchemaField } from '../../domain/schemaField';
+import { resolveFetchedPricing } from '../fetchedPricing';
+import type { AppState } from '../store';
 import {
   anchorAskPaperCitations,
   estimateAskPaperCost,
@@ -39,8 +41,13 @@ export type AskPaperOutcome =
 export function estimateForQuestion(
   params: AskPaperParams,
   model: string,
+  state: Pick<AppState, 'llmProviderOverride' | 'fetchedModelPricing'> = {
+    llmProviderOverride: null,
+    fetchedModelPricing: {},
+  },
 ): ReturnType<typeof estimateAskPaperCost> {
   return estimateAskPaperCost({
+    fallbackPricing: resolveFetchedPricing(state, model),
     model,
     prefixChars: buildAskPaperDocumentPrefix(params).length,
     historyChars: params.history

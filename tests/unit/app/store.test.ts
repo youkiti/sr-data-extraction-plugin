@@ -236,6 +236,7 @@ describe('createInitialState', () => {
       settingsReturnHash: null,
       llmProviderOverride: null,
       fetchedModelIds: {},
+      fetchedModelPricing: {},
     });
   });
 });

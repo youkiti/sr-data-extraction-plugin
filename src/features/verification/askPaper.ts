@@ -2,7 +2,7 @@
 // 文脈は 1 study の本文とスキーマ定義だけとし、Evidence・データ行・Decisions は渡さない。
 // 質問と回答の payload は保存せず、会話はセッション内のみで扱う。
 import type { AnchorStatus } from '../../domain/anchor';
-import { estimateCostUsd } from '../../lib/llm/pricing';
+import { estimateCostUsd, type ModelPricing } from '../../lib/llm/pricing';
 import { anchorQuote } from '../anchoring/anchorQuote';
 import { normalizeText } from '../anchoring/normalizeText';
 import { APPROX_CHARS_PER_TOKEN } from '../extraction/planRun';
@@ -73,6 +73,7 @@ export function anchorAskPaperCitations(
 export const ASK_PAPER_ESTIMATED_OUTPUT_TOKENS = 600;
 
 export function estimateAskPaperCost(input: {
+  fallbackPricing?: ModelPricing;
   model: string;
   prefixChars: number;
   historyChars: number;
@@ -87,6 +88,6 @@ export function estimateAskPaperCost(input: {
   );
   return {
     tokensIn,
-    costUsd: estimateCostUsd(input.model, tokensIn, ASK_PAPER_ESTIMATED_OUTPUT_TOKENS),
+    costUsd: estimateCostUsd(input.model, tokensIn, ASK_PAPER_ESTIMATED_OUTPUT_TOKENS, null, input.fallbackPricing),
   };
 }

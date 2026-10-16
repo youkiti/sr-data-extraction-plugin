@@ -5,6 +5,8 @@ import {
   onLlmConnectionSettingsChanged,
   normalizeLocalLlmEndpoint,
   loadFetchedModelIds,
+  loadFetchedModelPricing,
+  saveFetchedModelPricing,
   saveFetchedModelIds,
   loadDefaultModel,
   loadDefaultReasoningEffort,
@@ -33,6 +35,53 @@ describe('settingsStore', () => {
 
   beforeEach(() => {
     chromeMock = installChromeMock();
+  });
+
+  test.each([undefined, null, [], 'bad', 1])('壊れた単価表は空に戻す: %p', async (value) => {
+    chromeMock.storage.local.data['settings.fetchedModelPricing'] = value;
+    await expect(loadFetchedModelPricing()).resolves.toEqual({});
+  });
+
+  test('有効な単価だけ保存・復元し、別方式を保持する', async () => {
+    const valid = { inputPerMillion: 0.1, outputPerMillion: 0.4, cachedInputPerMillion: 0.01 };
+    chromeMock.storage.local.data['settings.fetchedModelPricing'] = {
+      invalid: { model: valid },
+      anthropic: { model: valid },
+      gemini: [],
+      openrouter: {
+        paid: valid,
+        free: { inputPerMillion: 0, outputPerMillion: 0 },
+        '': valid,
+        null: null,
+        array: [],
+        negative: { ...valid, inputPerMillion: -1 },
+        text: { ...valid, inputPerMillion: '1' },
+        infinite: { ...valid, outputPerMillion: Infinity },
+        missing: { inputPerMillion: 1 },
+        cache: { ...valid, cachedInputPerMillion: -1 },
+      },
+    };
+    expect((await loadFetchedModelPricing()).openrouter).toEqual({
+      paid: valid,
+      free: { inputPerMillion: 0, outputPerMillion: 0 },
+      cache: { inputPerMillion: 0.1, outputPerMillion: 0.4 },
+    });
+    await saveFetchedModelPricing('openrouter', { new: valid });
+    await expect(loadFetchedModelPricing()).resolves.toEqual({
+      anthropic: { model: valid }, gemini: {}, openrouter: { new: valid },
+    });
+  });
+
+  test('取得単価だけの変更でも local なら通知する', () => {
+    const source = { addListener: jest.fn(), removeListener: jest.fn() };
+    Object.assign(chromeMock.storage, { onChanged: source });
+    const listener = jest.fn();
+    onLlmConnectionSettingsChanged(listener);
+    const onChanged = source.addListener.mock.calls[0]![0];
+    onChanged({ 'settings.fetchedModelPricing': {} }, 'sync');
+    expect(listener).not.toHaveBeenCalled();
+    onChanged({ 'settings.fetchedModelPricing': {} }, 'local');
+    expect(listener).toHaveBeenCalledTimes(1);
   });
 
   test('未設定なら null', async () => {

@@ -4,6 +4,7 @@
 //   study 単位の進捗（features/extraction/studyProgress）へ畳み込む。抽出は study の全文書を連結して 1 回
 // - 失敗 study の再試行: runType = 'single_study' で当該 1 study のみ再実行する
 import type { DocumentRecord } from '../../domain/document';
+import { resolveFetchedPricing } from '../fetchedPricing';
 import type { StudyRecord } from '../../domain/study';
 import type { SchemaField } from '../../domain/schemaField';
 import { readDocuments } from '../../features/documents/documentRepository';
@@ -367,6 +368,7 @@ async function performRun(
   // 進捗リストの分母（study 別バッチ数）を実行前に計画しておく。
   // runExtraction は内部で再計画するが、同一入力なら計画は一致する（extractionService の契約）
   const plan = planRun({
+    fallbackPricing: resolveFetchedPricing(store.getState(), params.model),
     documents: params.targets,
     fields: params.fields,
     model: params.model,
@@ -381,6 +383,7 @@ async function performRun(
 
   const outcome = await runExtraction(
     {
+      fallbackPricing: resolveFetchedPricing(store.getState(), params.model),
       spreadsheetId: params.spreadsheetId,
       logsLlmFolderId: llmFolder.id,
       runType: params.runType,

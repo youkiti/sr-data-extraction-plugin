@@ -439,6 +439,21 @@ describe('seedState', () => {
 });
 
 describe('bootstrapApp', () => {
+  test('起動時の取得単価を読み込み、単価だけの変更通知でも再読込する', async () => {
+    const chromeMock = installChromeMock();
+    const source = { addListener: jest.fn(), removeListener: jest.fn() };
+    Object.assign(chromeMock.storage, { onChanged: source });
+    const pricing = { openrouter: { custom: { inputPerMillion: 0.1, outputPerMillion: 0.4 } } };
+    chromeMock.storage.local.data['settings.fetchedModelPricing'] = pricing;
+    const { deps } = createFakeDeps([]);
+    const store = (await bootstrapApp(asWindow(createWindowStub()), deps))!;
+    expect(store.getState().fetchedModelPricing).toEqual(pricing);
+    chromeMock.storage.local.data['settings.fetchedModelPricing'] = {};
+    source.addListener.mock.calls[0]![0]({ 'settings.fetchedModelPricing': { newValue: {} } }, 'local');
+    await flush();
+    expect(store.getState().fetchedModelPricing).toEqual({});
+  });
+
   test('storage の擬似イベントで接続方式と取得済みモデルを store に反映する', async () => {
     const chromeMock = installChromeMock();
     const source = { addListener: jest.fn(), removeListener: jest.fn() };

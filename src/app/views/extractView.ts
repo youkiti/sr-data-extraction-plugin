@@ -2,6 +2,7 @@
 // 状態: 読み込み中 / 読み込み失敗 / 未実行（対象 study 選択 + コスト概算 + 実行）/
 // 実行確認カード / 実行中（study 単位の進捗リスト）/ 完了（done / partial_failure + 再試行）
 import type { DocumentRecord } from '../../domain/document';
+import { resolveFetchedPricing } from '../fetchedPricing';
 import type { ArmCompletenessRunWarning } from '../../domain/extractionRun';
 import {
   areAllUnextractedStudiesSelected,
@@ -214,6 +215,7 @@ function renderEstimate(state: AppState, budgetWarningId = 'extract-budget-warni
   );
   try {
     const plan = planRun({
+      fallbackPricing: resolveFetchedPricing(state, state.extract.model),
       documents: selected,
       fields: estimateFields,
       model: state.extract.model === '' ? 'unknown' : state.extract.model,

@@ -16,6 +16,7 @@
 // 未解決時のみ DEFAULT_FLUSH_EVERY_N_STUDIES へフォールバックする
 // （docs/handoff-20260710-sheets-write-batching.md）
 import type { ExtractionRun, RunType, RunWarning } from '../../domain/extractionRun';
+import type { ModelPricing } from '../../lib/llm/pricing';
 import type { LlmProviderId } from '../../domain/llmApiLog';
 import type { DocumentRecord } from '../../domain/document';
 import type { SchemaField } from '../../domain/schemaField';
@@ -112,6 +113,7 @@ export interface ExtractionServiceDeps {
 }
 
 export interface RunExtractionParams {
+  fallbackPricing?: ModelPricing;
   spreadsheetId: string;
   /** logs/llm フォルダの Drive ID（LLMApiLog のフル payload 保存先） */
   logsLlmFolderId: string;
@@ -181,6 +183,7 @@ export async function runExtraction(
   // documents / fields が 1 件以上であれば plan.batches は必ず 1 件以上になる
   // （空ならその時点で planRun 自身が throw する。§7.4 PR2 で「全文献対象外」の分岐は解消済み）
   const plan = planRun({
+    fallbackPricing: params.fallbackPricing,
     documents: params.documents,
     fields: params.fields,
     model: params.model,
