@@ -300,7 +300,7 @@ async function sceneExtract(driver) {
     }
   }
   const hasFlash38 = await driver.executeScript(
-    'return [...document.querySelector("#extract-model-options").options].some((o) => o.value === "gemini-3.8-flash");',
+    'return !!document.querySelector(\'#extract-model-listbox [data-value="gemini-3.8-flash"]\');',
   );
   if (hasFlash38) await setValue(driver, '#extract-model', 'gemini-3.8-flash');
   await driver.sleep(500);

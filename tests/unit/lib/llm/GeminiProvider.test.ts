@@ -25,6 +25,74 @@ function errorResponse(status: number, body = 'err', retryAfter: string | null =
 
 describe('GeminiProvider.chat', () => {
   test.each([
+    [undefined, undefined, 'low'],
+    [null, undefined, 'low'],
+    ['medium', undefined, 'medium'],
+    ['high', 'low', 'low'],
+    ['low', 'high', 'high'],
+  ] as const)('構築時 %s / 呼び出し時 %s の effort は %s', async (stored, override, expected) => {
+    const fetch = jest.fn().mockResolvedValue(jsonResponse({
+      candidates: [{ content: { parts: [{ text: 'ok' }] } }],
+    }));
+    const provider = new GeminiProvider({ apiKey: 'k', fetch, reasoningEffort: stored });
+    await provider.chat([], { reasoningEffort: override });
+    expect(JSON.parse(fetch.mock.calls[0]![1].body).generationConfig.thinkingConfig)
+      .toEqual({ thinkingLevel: expected });
+  });
+
+  test.each(['gemini-2.5-pro', 'custom-model'])('%s には thinkingConfig を送らない', async (model) => {
+    const fetch = jest.fn().mockResolvedValue(jsonResponse({
+      candidates: [{ content: { parts: [{ text: 'ok' }] } }],
+    }));
+    await new GeminiProvider({ apiKey: 'k', model, fetch, reasoningEffort: 'high' }).chat([]);
+    expect(JSON.parse(fetch.mock.calls[0]![1].body).generationConfig).toBeUndefined();
+  });
+
+  test('Thinking level の 400 だけ指定を外し、その他の設定を保って再送する', async () => {
+    const fetch = jest.fn()
+      .mockResolvedValueOnce(errorResponse(400, 'THINKING LEVEL is not supported'))
+      .mockResolvedValueOnce(jsonResponse({ candidates: [{ content: { parts: [{ text: 'ok' }] } }] }));
+    const provider = new GeminiProvider({ apiKey: 'k', fetch });
+    await expect(provider.chat([], { temperature: 0.3, responseFormat: 'json' }))
+      .resolves.toMatchObject({ text: 'ok' });
+    const first = JSON.parse(fetch.mock.calls[0]![1].body);
+    const second = JSON.parse(fetch.mock.calls[1]![1].body);
+    expect(first.generationConfig.thinkingConfig).toEqual({ thinkingLevel: 'low' });
+    delete first.generationConfig.thinkingConfig;
+    expect(second).toEqual(first);
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
+  test.each([false, true])('再送も失敗ならそのエラーを返す（本文読み取り失敗: %s）', async (broken) => {
+    const response = errorResponse(400, 'Thinking level still rejected', '2');
+    if (broken) {
+      response.text = async () => {
+        throw new Error('切断');
+      };
+    }
+    const fetch = jest.fn()
+      .mockResolvedValueOnce(errorResponse(400, 'Thinking level unsupported'))
+      .mockResolvedValueOnce(response);
+    await expect(new GeminiProvider({ apiKey: 'k', fetch }).chat([])).rejects.toMatchObject({
+      status: 400,
+      responseBody: broken ? '' : 'Thinking level still rejected',
+      retryAfterMs: 2000,
+    });
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
+  test.each([
+    ['gemini-3.8-flash', 500, 'Thinking level'],
+    ['gemini-3.8-flash', 400, 'Invalid key'],
+    ['gemini-2.5-pro', 400, 'Thinking level'],
+  ] as const)('対象外の失敗は再送しない: %s / %s / %s', async (model, status, text) => {
+    const fetch = jest.fn().mockResolvedValue(errorResponse(status, text));
+    await expect(new GeminiProvider({ apiKey: 'k', model, fetch }).chat([]))
+      .rejects.toBeInstanceOf(LlmProviderError);
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  test.each([
     [{ candidatesTokenCount: 20, thoughtsTokenCount: 30 }, 50],
     [{ candidatesTokenCount: 20 }, 20],
     [{ thoughtsTokenCount: 30 }, 30],
@@ -96,7 +164,7 @@ describe('GeminiProvider.chat', () => {
     expect(JSON.stringify(body)).not.toContain('logContext');
     expect(JSON.stringify(body)).not.toContain('study-1');
     expect(body.systemInstruction).toBeUndefined();
-    expect(body.generationConfig).toBeUndefined();
+    expect(body.generationConfig).toEqual({ thinkingConfig: { thinkingLevel: 'low' } });
   });
 
   test('system メッセージは systemInstruction に分離される', async () => {
@@ -113,9 +181,7 @@ describe('GeminiProvider.chat', () => {
     expect(body.contents).toEqual([{ role: 'user', parts: [{ text: 'q' }] }]);
   });
 
-  // issue #127 PR5: reasoning effort は Gemini では未対応。ChatOptions.reasoningEffort を
-  // 渡しても渡さなくても body が完全に同一であることを固定する（未対応 = 無視、を保証する回帰）
-  test('ChatOptions.reasoningEffort を渡しても body に一切反映しない（未対応・無視）', async () => {
+  test('ChatOptions.reasoningEffort を thinkingLevel に反映し、未指定なら low にする', async () => {
     const fetchWithout = jest
       .fn()
       .mockResolvedValue(jsonResponse({ candidates: [{ content: { parts: [{ text: 'ok' }] } }] }));
@@ -130,7 +196,8 @@ describe('GeminiProvider.chat', () => {
     await providerWith.chat([{ role: 'user', content: 'q' }], { reasoningEffort: 'high' });
     const bodyWith = JSON.parse((fetchWith.mock.calls[0][1] as RequestInit).body as string);
 
-    expect(bodyWith).toEqual(bodyWithout);
+    expect(bodyWithout.generationConfig.thinkingConfig).toEqual({ thinkingLevel: 'low' });
+    expect(bodyWith.generationConfig.thinkingConfig).toEqual({ thinkingLevel: 'high' });
   });
 
   test('model ロールはそのまま contents に入る', async () => {
@@ -159,6 +226,7 @@ describe('GeminiProvider.chat', () => {
     });
     const body = JSON.parse((fetch.mock.calls[0][1] as RequestInit).body as string);
     expect(body.generationConfig).toEqual({
+      thinkingConfig: { thinkingLevel: 'low' },
       temperature: 0.2,
       maxOutputTokens: 256,
       responseMimeType: 'application/json',
@@ -198,7 +266,7 @@ describe('GeminiProvider.chat', () => {
     const provider = new GeminiProvider({ apiKey: 'k', fetch });
     await provider.chat([{ role: 'user', content: 'q' }], { responseFormat: 'text' });
     const body = JSON.parse((fetch.mock.calls[0][1] as RequestInit).body as string);
-    expect(body.generationConfig).toBeUndefined();
+    expect(body.generationConfig.responseMimeType).toBeUndefined();
   });
 
   test('複数 parts は連結してテキスト化、空 parts は除外', async () => {

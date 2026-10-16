@@ -7,12 +7,12 @@
 // - `responseSchema` を渡すと `generationConfig.responseSchema` で
 //   **構造化出力（constrained decoding）** を要求し、壊れた JSON を防ぐ（§4.3）
 // - fetch を注入できるので OAuth / network 無しでテスト可能
-// - `ChatOptions.reasoningEffort`（issue #127 PR5）は**意図的に未対応**: Gemini の thinking は
-//   budget（トークン数）で制御する方言で、`low`/`medium`/`high` の 3 段階へ機械的に変換できる
-//   公式な対応表が無い。工場出荷の既定モデル（`gemini-3.8-flash`）は全利用者の既定経路のため、
-//   実測に基づかない budget 値を勝手に決めて投入しない。対応するには、まず budget 値の妥当性を
-//   実データ抽出ベンチマーク（experiments/extraction-benchmark-real/）で検証する必要がある
-//   （別 issue で判断）。このファイルはこのオプションを一切参照しない（構造上、渡されても無視される）
+// - Gemini 3 系だけ thinkingLevel を送る（未設定は low）。2026-10-16 の実 API 確認では
+//   3.1-flash-lite / 3.5-flash / 3.5-flash-lite / 3.7-flash / 3.8-flash が low / medium / high を受理。
+//   3.6-flash の low は一時的な 503 で未確認、medium / high は受理。2.5-pro は全段階を 400 で拒否。
+//   3.8-flash の minimal も 400。Thinking level を含む 400 は指定を外して一度だけ再送する。
+// - 3.8-flash の短い計算問題（各 1 回）は無指定が思考 367 トークン・4.5 秒、low が 100・2.4 秒、
+//   medium が 318・3.6 秒、high が 737・6.5 秒。low での実データ抽出の正確度は未測定。
 import {
   LlmProviderError,
   type ChatMessage,
@@ -22,6 +22,7 @@ import {
   type LLMProvider,
   type LlmUsage,
   type LlmFailureKind,
+  type ReasoningEffort,
 } from './LLMProvider';
 import { parseRetryAfterMs } from './retry';
 
@@ -29,6 +30,7 @@ export interface GeminiProviderOptions {
   apiKey: string;
   model?: string;
   fetch?: typeof fetch;
+  reasoningEffort?: ReasoningEffort | null;
 }
 
 /**
@@ -109,11 +111,13 @@ export class GeminiProvider implements LLMProvider {
   readonly supportsImageInput = true;
   private readonly apiKey: string;
   private readonly fetchImpl: typeof fetch | undefined;
+  private readonly reasoningEffort: ReasoningEffort | null | undefined;
 
   constructor(options: GeminiProviderOptions) {
     this.apiKey = options.apiKey;
     this.model = options.model ?? FALLBACK_MODEL;
     this.fetchImpl = options.fetch;
+    this.reasoningEffort = options.reasoningEffort;
   }
 
   async chat(messages: readonly ChatMessage[], options: ChatOptions = {}): Promise<ChatResponse> {
@@ -122,20 +126,40 @@ export class GeminiProvider implements LLMProvider {
     )}`;
     const body = this.buildRequestBody(messages, options);
     const fetchFn = this.fetchImpl ?? globalThis.fetch;
-    const res = await fetchFn(url, {
+    let res = await fetchFn(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });
     if (!res.ok) {
       const text = await res.text().catch(() => '');
-      throw new LlmProviderError(
-        `Gemini API failed: HTTP ${res.status}`,
-        this.providerId,
-        res.status,
-        text,
-        parseRetryAfterMs(res.headers.get('retry-after')),
-      );
+      const config = body['generationConfig'] as Record<string, unknown> | undefined;
+      if (res.status === 400 && /thinking level/i.test(text) && config?.['thinkingConfig']) {
+        // 同じ本文から指定だけを外す。再送の失敗はそのまま返し、再び縮退しない。
+        delete config['thinkingConfig'];
+        res = await fetchFn(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        if (!res.ok) {
+          throw new LlmProviderError(
+            `Gemini API failed: HTTP ${res.status}`,
+            this.providerId,
+            res.status,
+            await res.text().catch(() => ''),
+            parseRetryAfterMs(res.headers.get('retry-after')),
+          );
+        }
+      } else {
+        throw new LlmProviderError(
+          `Gemini API failed: HTTP ${res.status}`,
+          this.providerId,
+          res.status,
+          text,
+          parseRetryAfterMs(res.headers.get('retry-after')),
+        );
+      }
     }
     // 応答ボディの検査（issue #187）: OpenRouterProvider と同じ方針で、ボディの途切れ・
     // finishReason による打ち切り（MAX_TOKENS / SAFETY / RECITATION 等）・空テキストを
@@ -239,6 +263,11 @@ export class GeminiProvider implements LLMProvider {
     }));
 
     const generationConfig: Record<string, unknown> = {};
+    if (this.model.startsWith('gemini-3')) {
+      generationConfig['thinkingConfig'] = {
+        thinkingLevel: options.reasoningEffort ?? this.reasoningEffort ?? 'low',
+      };
+    }
     if (options.temperature !== undefined) {
       generationConfig['temperature'] = options.temperature;
     }

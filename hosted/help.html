@@ -1581,6 +1581,19 @@
             </li>
             <li>
               <span class="ja" lang="ja"
+                ><strong>reasoning effort の既定値</strong>: モデルが答える前に考える量を low / medium / high から選びます。low
+                ほど速く安くなります。未設定のときは、Gemini 3 系と Anthropic には low を送り、OpenRouter・OpenAI 互換 API・Azure
+                OpenAI には何も送りません（各サービスの既定どおり）。Gemini 2.5 系には送りません。</span
+              >
+              <span class="en" lang="en"
+                ><strong>Default reasoning effort</strong>: how much the model thinks before answering (low, medium or
+                high); lower is faster and cheaper. When unset, low is sent to Gemini 3 models and Anthropic, and nothing is
+                sent to OpenRouter, OpenAI-compatible APIs or Azure OpenAI (their own defaults apply). It is not sent to
+                Gemini 2.5 models.</span
+              >
+            </li>
+            <li>
+              <span class="ja" lang="ja"
                 ><strong>レート制限</strong>: 契約プランに合わせた tier を選ぶと、一括抽出のスロットル間隔・同時実行数・再試行が調整され、429
                 エラーを避けられます。tier を「カスタム」にすれば RPM と同時実行数を直接指定できます。</span
               >

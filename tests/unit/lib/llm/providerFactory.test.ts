@@ -184,7 +184,7 @@ describe('createProvider', () => {
       expect(body.reasoning_effort).toBe('low');
     });
 
-    test('gemini は reasoningEffort を渡しても無視する（未対応）', async () => {
+    test('gemini は reasoningEffort を thinkingLevel に渡す', async () => {
       const fetch = jest.fn().mockResolvedValue({
         ok: true,
         status: 200,
@@ -200,7 +200,7 @@ describe('createProvider', () => {
       await provider.chat([{ role: 'user', content: 'u' }]);
       const body = JSON.parse((fetch.mock.calls[0]?.[1] as RequestInit).body as string);
       expect(body).not.toHaveProperty('reasoningEffort');
-      expect(body.generationConfig).toBeUndefined();
+      expect(body.generationConfig.thinkingConfig).toEqual({ thinkingLevel: 'high' });
     });
   });
 });

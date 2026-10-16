@@ -13,8 +13,8 @@ test.each([
   const root = renderExtractView(state, ctx);
   expect(root.querySelector('#extract-model-mismatch') !== null).toBe(mismatch);
   expect(root.querySelector<HTMLButtonElement>('#extract-run')?.disabled).toBe(mismatch);
-  expect(root.querySelector('#extract-model-options option[value="gemini-3.8-flash"]') !== null).toBe(hasGemini);
-  expect(root.querySelector('#extract-model-options option[value="custom-model"]') !== null)
+  expect(root.querySelector('#extract-model-listbox [role="option"][data-value="gemini-3.8-flash"]') !== null).toBe(hasGemini);
+  expect(root.querySelector('#extract-model-listbox [role="option"][data-value="custom-model"]') !== null)
     .toBe(provider === 'anthropic' || provider === 'gemini');
   if (mismatch) {
     expect(root.querySelector('#extract-model-mismatch')?.textContent).toContain('モデルを選び直してください');

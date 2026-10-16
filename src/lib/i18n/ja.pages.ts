@@ -71,6 +71,8 @@ export const jaPages = {
 
   // モデルセレクタ（ui/modelSelect.ts）
   'modelSelect.priceList': '単価表',
+  'modelSelect.showOptions': '候補を表示',
+  'modelSelect.noOptions': '候補なし（この名前のまま使えます）',
 
   // サービス層のトースト・状態エラー（S1〜S9 ぶん）
   'common.pickerFailed': 'Drive Picker を開けませんでした: {reason}',
@@ -149,10 +151,11 @@ export const jaPages = {
   // reasoning effort の既定値（issue #127 PR5。docs/ui-states.md §2「reasoning effort の既定値」）
   'options.reasoningEffortTitle': 'reasoning effort の既定値',
   'options.reasoningEffortHelp':
-    '未設定のままなら今までどおりの挙動を維持します（Anthropic ネイティブは low 相当を送信し続け、OpenRouter / OpenAI 互換 API は何も送りません）。設定すると、Anthropic ネイティブは output_config.effort へ、OpenRouter / OpenAI 互換 API（Azure OpenAI 含む）は reasoning_effort へそのまま送ります。Gemini では現時点で使用しません。',
+    'Gemini 3 系は thinkingLevel、Anthropic ネイティブは output_config.effort に送ります（未設定なら low）。' +
+    'Gemini 2.5 系には送りません。OpenRouter / OpenAI 互換 API / Azure OpenAI は設定時だけ reasoning_effort に送り、未設定なら何も送りません。',
   'options.reasoningEffortAria': 'reasoning effort の既定値',
   'options.reasoningEffortLabel': 'reasoning effort',
-  'options.reasoningEffortUnset': '未設定（従来どおり）',
+  'options.reasoningEffortUnset': '未設定（Gemini 3 系と Anthropic は low）',
   'options.reasoningEffortLow': '低い（low）',
   'options.reasoningEffortMedium': '中程度（medium）',
   'options.reasoningEffortHigh': '高い（high）',
