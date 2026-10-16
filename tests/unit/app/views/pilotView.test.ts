@@ -14,8 +14,8 @@ test.each([
   const root = renderPilotView(state, ctx);
   expect(root.querySelector('#pilot-model-mismatch') !== null).toBe(mismatch);
   expect(root.querySelector<HTMLButtonElement>('#pilot-run')?.disabled).toBe(mismatch);
-  expect(root.querySelector('#pilot-model optgroup[label="Gemini"]') !== null).toBe(hasGemini);
-  expect(root.querySelector('#pilot-model option[value="custom-model"]') !== null)
+  expect(root.querySelector('#pilot-model-options option[value="gemini-3.8-flash"]') !== null).toBe(hasGemini);
+  expect(root.querySelector('#pilot-model-options option[value="custom-model"]') !== null)
     .toBe(provider === 'anthropic' || provider === 'gemini');
   if (mismatch) {
     expect(root.querySelector('#pilot-model-mismatch')?.textContent).toContain('モデルを選び直してください');
@@ -420,7 +420,7 @@ describe('未実行（setup）', () => {
 
   test('モデル選択の変更と実行ボタン', () => {
     const { root, callbacks } = render(makeState());
-    const model = root.querySelector<HTMLSelectElement>('#pilot-model');
+    const model = root.querySelector<HTMLInputElement>('#pilot-model');
     model!.value = 'gemini-2.0-flash';
     model!.dispatchEvent(new Event('change'));
     expect(callbacks.onChangeModel).toHaveBeenCalledWith('gemini-2.0-flash');

@@ -162,7 +162,7 @@ describe('renderSettingsView', () => {
     chromeMock.storage.local.data['settings.defaultModel'] = 'gemini-2.0-flash';
     const view = renderSettingsView(createInitialState(), stubCtx);
     await flush();
-    expect((view.querySelector('#default-model') as HTMLSelectElement).value).toBe(
+    expect((view.querySelector('#default-model') as HTMLInputElement).value).toBe(
       'gemini-2.0-flash',
     );
   });

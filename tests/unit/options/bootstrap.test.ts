@@ -19,9 +19,8 @@ function change(id: string, value: string): void {
   select(id).dispatchEvent(new Event('change'));
 }
 function customModel(value: string): void {
-  change('default-model', '__other__');
-  input('default-model-custom').value = value;
-  input('default-model-custom').dispatchEvent(new Event('change'));
+  input('default-model').value = value;
+  input('default-model').dispatchEvent(new Event('change'));
 }
 
 describe('統合された LLM 接続', () => {
@@ -82,8 +81,8 @@ describe('統合された LLM 接続', () => {
     expect(select('llm-provider').value).toBe('gemini');
     expect(input('gemini-api-key').placeholder).toBe('API キーを入力');
     change('llm-provider', 'anthropic');
-    expect(select('default-model').value).toBe('');
-    expect(document.querySelector('#default-model optgroup[label="Gemini"]')).toBeNull();
+    expect(input('default-model').value).toBe('');
+    expect(document.querySelector('#default-model-options option[value="gemini-3.8-flash"]')).toBeNull();
     expect(document.getElementById('anthropic-fields')!.hidden).toBe(false);
     expect(document.getElementById('gemini-fields')!.hidden).toBe(true);
     button().click();
@@ -101,7 +100,7 @@ describe('統合された LLM 接続', () => {
     await bootstrapOptions(document);
     expect(input('anthropic-api-key').value).toBe('');
     expect(input('anthropic-api-key').placeholder).toContain('保存済み');
-    expect(select('default-model').value).toBe('custom-model');
+    expect(input('default-model').value).toBe('custom-model');
     await save();
     expect(factory.createProvider).toHaveBeenCalledWith(expect.objectContaining({ apiKey: 'saved-key' }));
   });
@@ -120,7 +119,7 @@ describe('統合された LLM 接続', () => {
       } else {
         expect(fetchIds).toHaveBeenCalled();
         expect(chromeMock.storage.local.data['settings.fetchedModelIds']).toEqual({ [provider]: ['custom-model'] });
-        expect(select('default-model').value).toBe('custom-model');
+        expect(input('default-model').value).toBe('custom-model');
       }
     },
   );
@@ -219,7 +218,7 @@ describe('統合された LLM 接続', () => {
   test('保存済みの方式と工場出荷モデルが食い違うと初期選択を空にする', async () => {
     chromeMock.storage.local.data['settings.llmProvider'] = 'anthropic';
     await bootstrapOptions(document);
-    expect(select('default-model').value).toBe('');
+    expect(input('default-model').value).toBe('');
   });
   test('一部の入力欄がない DOM でも初期化し、URL 未入力を拒否する', async () => {
     document.getElementById('gemini-fields')!.remove();
@@ -262,7 +261,7 @@ describe('統合された LLM 接続', () => {
       'secrets.openRouterApiKey': 'old-key',
     });
     await bootstrapOptions(document);
-    expect(select('default-model').value).toBe('__other__');
+    expect(input('default-model').value).toBe('private-model');
     input('gemini-api-key').value = 'new-key';
     await save();
     expect(chromeMock.storage.local.data['secrets.openRouterApiKey']).toBe('old-key');

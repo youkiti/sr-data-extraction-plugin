@@ -1,3 +1,8 @@
+.model-select input {
+  width: 32ch;
+  max-width: 100%;
+}
+
 /* Options（S11）のレイアウト */
 .options {
   max-width: 640px;

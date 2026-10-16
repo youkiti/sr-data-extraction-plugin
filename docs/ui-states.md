@@ -146,7 +146,18 @@ OpenAI 互換 / Azure / ローカル LLM では、単価表と同名でも取得
 
 ### モデルセレクタ（共通ウィジェット。Options 既定モデル + S5 / S6 / S7 で共有）
 
-`createModelSelect`（`src/app/ui/modelSelect.ts`）が生成する `<select>` + 直接入力テキストの複合部品。tiab-review のモデルプルダウンと同じ体験に揃える。
+**2026-10-16 改訂（入力して絞り込む形へ。下の旧仕様 3 項目を置き換える）**: OpenRouter の取得一覧は 465 件（2026-10-16 時点）あり、プルダウンでは選べないため、利用者の決定で「入力すると候補が絞られる欄」に替える。
+
+- 部品は `<input id={id} type="text" list="{id}-options">` + `<datalist id="{id}-options">`（Chrome 標準の候補リスト。打った文字を含む候補だけが出る）。ID は従来どおり `#default-model` / `#schema-model` / `#pilot-model` / `#extract-model`。`aria-label` は従来の `ariaLabel`、`placeholder` は従来の先頭 option の文言（`未設定` / `選択してください` 等）
+- 候補の順は、単価表のモデル（接続方式で絞ったもの）→ 取得したモデル。datalist に optgroup は無いので、各 `<option>` の `label` に区分（`単価表` / `取得したモデル`。i18n）を入れて候補の右に出す
+- 「その他（直接入力）」と `#{id}-custom` は廃止する（どの名前でも打てるため。sentinel `__other__` も廃止）
+- 確定は input の `change`（候補を選んだとき・Enter・フォーカスが外れたとき）で、trim した値を `onChange` に渡す。打っている途中（`input`）では通知しない（store の再描画で入力中の欄が作り直されないようにするため）
+- 状態からの復元: state の値をそのまま input の値にする（空なら placeholder が見える）
+- 単価表にないモデルはコスト概算が「概算不可」になる（既存仕様のまま）。食い違いの警告（上の「LLM 接続（統合版）」）も従来どおり
+
+**取得一覧の除外（OpenRouter のみ）**: `GET https://openrouter.ai/api/v1/models` の各モデルのうち、`supported_parameters` に `structured_outputs` を含み、かつ `architecture.input_modalities` に `image` を含むものだけを取得一覧に入れる（2026-10-16 時点で 465 → 272 件）。抽出は JSON スキーマで応答させ、スキャン PDF は画像で送るため。どちらかの項目が応答に無いモデルは除外しない（判定できないものは落とさない）。除外したモデルも直接打てば使える。Anthropic・OpenAI 互換・ローカル LLM の一覧は対応状況を返さないので除外しない。
+
+**旧仕様（2026-10-16 まで）**: `createModelSelect`（`src/app/ui/modelSelect.ts`）が生成する `<select>` + 直接入力テキストの複合部品。tiab-review のモデルプルダウンと同じ体験に揃える。
 
 - `<select id={id}>` の構成: 先頭 option（`value=""` = プレースホルダ。画面ごとの文言）→ `<optgroup label="Gemini">` / `<optgroup label="OpenRouter">`（単価表 `MODEL_PRICING` のモデル ID を `/` の有無でグループ分け）→ `その他（直接入力）`（sentinel `__other__`。**state には漏らさない**）
 - 「その他」を選ぶとテキスト入力 `#{id}-custom` が現れフォーカスされる（`aria-label` = `{ariaLabel}（直接入力）`）。テキストの change で trim 値を state へ。単価表にないモデルはコスト概算が「概算不可」になる（既存仕様のまま）

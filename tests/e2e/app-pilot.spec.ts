@@ -253,10 +253,8 @@ test('未実行: 文献セレクタ（no_text_layer は既定選択されない�
     'テキスト層なし: ページ画像を LLM へ送信して抽出します',
   );
 
-  // 注入した非カタログモデル（gemini-test）は「その他（直接入力）」+ テキスト充填で復元される
-  await expect(page.locator('#pilot-model')).toHaveValue('__other__');
-  await expect(page.locator('#pilot-model-custom')).toBeVisible();
-  await expect(page.locator('#pilot-model-custom')).toHaveValue('gemini-test');
+  // 注入した非カタログモデルもそのまま入力欄に復元される。
+  await expect(page.locator('#pilot-model')).toHaveValue('gemini-test');
 
   // コスト概算（単価表にないモデル → 概算不可 + トークン数）
   await expect(page.locator('#pilot-estimate')).toContainText('概算不可（単価表にないモデル）');

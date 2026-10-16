@@ -2448,7 +2448,8 @@ test('抽出前に #/verify を開くと空状態 → 抽出実行 → #/verify 
   await page.locator('.app__nav-link[href="#/extract"]').click();
   const studyCheckbox = page.locator('#extract-studies input[type="checkbox"]').first();
   await expect(studyCheckbox).toBeChecked({ timeout: 15_000 });
-  await page.locator('#extract-model').selectOption('gemini-2.0-flash');
+  await page.locator('#extract-model').fill('gemini-2.0-flash');
+  await page.locator('#extract-model').blur();
   await page.locator('#extract-run').click();
   await page.locator('#extract-confirm-run').click();
   await expect(page.locator('#extract-run-done')).toHaveText('一括抽出が完了しました。', {

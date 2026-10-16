@@ -139,8 +139,6 @@ const OPTIONS_URL = `chrome-extension://${EXTENSION_ID}/options/options.html`;
 
 // S5 ドラフトで使う既定モデル（pricing.ts に単価があるもの）
 const DEFAULT_MODEL = 'gemini-3.5-flash';
-// モデルセレクタの「その他（直接入力）」option 値（src/app/ui/modelSelect.ts と同期）
-const MODEL_SELECT_OTHER = '__other__';
 // LLM 実弾（ドラフト / 抽出）の完了待ち上限
 const LLM_TIMEOUT = 15 * 60 * 1000;
 // ユーザー操作（キー入力・エディタ確認・判定など）の待ち上限
@@ -214,38 +212,16 @@ async function setValue(driver, element, value) {
   );
 }
 
-/**
- * モデルセレクタ（src/app/ui/modelSelect.ts の共有ウィジェット）の現在値を返す。
- * 「その他（直接入力）」選択中は隣のテキスト入力 `#{id}-custom` の値を返す
- */
-async function readModelValue(driver, selectId) {
-  const select = await driver.findElement(By.css(`#${selectId}`));
-  const value = (await select.getAttribute('value')) ?? '';
-  if (value !== MODEL_SELECT_OTHER) {
-    return value;
-  }
-  const custom = await driver.findElement(By.css(`#${selectId}-custom`));
-  return ((await custom.getAttribute('value')) ?? '').trim();
+/** モデル入力欄の現在値を返す。 */
+async function readModelValue(driver, inputId) {
+  const input = await driver.findElement(By.css(`#${inputId}`));
+  return ((await input.getAttribute('value')) ?? '').trim();
 }
 
-/**
- * モデルセレクタへ値を設定する。単価表カタログの option があれば直接選択し、
- * なければ「その他（直接入力）」へ切り替えてテキスト入力へ流し込む
- * （どちらも change 発火でウィジェットの onChange → state 更新まで届かせる）
- */
-async function selectModel(driver, selectId, model) {
-  const select = await driver.findElement(By.css(`#${selectId}`));
-  const hasOption = await driver.executeScript(
-    'return Array.from(arguments[0].options).some((o) => o.value === arguments[1]);',
-    select,
-    model,
-  );
-  if (hasOption) {
-    await setValue(driver, select, model);
-    return;
-  }
-  await setValue(driver, select, MODEL_SELECT_OTHER);
-  await setValue(driver, await driver.findElement(By.css(`#${selectId}-custom`)), model);
+/** モデル入力欄へ値を設定し、change で確定する。 */
+async function selectModel(driver, inputId, model) {
+  const input = await driver.findElement(By.css(`#${inputId}`));
+  await setValue(driver, input, model);
 }
 
 /** いずれかのセレクタが表示されるまで待ち、一致したセレクタ文字列を返す */

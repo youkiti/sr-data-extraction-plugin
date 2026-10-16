@@ -132,8 +132,21 @@ export async function fetchOpenRouterModelIds(
       `OpenRouter モデル一覧の取得に失敗しました: HTTP ${res.status}${body ? ` ${body}` : ''}`,
     );
   }
-  const json = (await res.json()) as { data?: Array<{ id?: unknown }> };
-  return extractIds(json.data);
+  const json = (await res.json()) as {
+    data?: Array<{
+      id?: unknown;
+      supported_parameters?: unknown;
+      architecture?: { input_modalities?: unknown } | null;
+    }>;
+  };
+  // 対応状況が配列で返された場合だけ判定し、不明なモデルは候補に残す。
+  const entries = json.data?.filter((entry) => {
+    const parameters = entry.supported_parameters;
+    const modalities = entry.architecture?.input_modalities;
+    return (!Array.isArray(parameters) || parameters.includes('structured_outputs'))
+      && (!Array.isArray(modalities) || modalities.includes('image'));
+  });
+  return extractIds(entries);
 }
 
 /** 末尾がこのパスの chat completions URL だけ `/models` への機械導出を許す */

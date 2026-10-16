@@ -1212,7 +1212,7 @@ export const jaApp = {
   'extraction.errNoSchema':
     '確定済みの表のデザインを読み込めていません。表のデザイン画面で確定・再読込してください',
   'extraction.errNoFields': '抽出項目を 1 つ以上選択してください',
-  'extraction.errNoModel': 'モデルを選択してください（「その他」で直接入力も可）',
+  'extraction.errNoModel': 'モデルを選択してください（直接入力も可）',
   'extraction.errImageUnsupportedModel':
     '選択中のモデル「{model}」は画像入力に対応していないため実行できません。別のモデルを選ぶか、該当する文献の選択を外してください',
   'extraction.errStudyDocsNotFound': 'study {id} の文書が見つかりません',

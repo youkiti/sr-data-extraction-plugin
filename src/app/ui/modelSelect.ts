@@ -1,7 +1,5 @@
 // モデル選択の共有ウィジェット（docs/ui-states.md §2「モデルセレクタ」）。
-// tiab-review のモデルプルダウンと同じ体験: <select>（Gemini / OpenRouter の optgroup）
-// + 「その他（直接入力）」でテキスト入力が現れる。
-// DOM 部品は Document を引数で受けるため Options からも使う。
+// 入力中は通知せず、候補の選択や入力の確定を change で通知する。
 import { buildModelCatalog, buildModelCatalogFor, type ModelCatalogGroup } from '../../lib/llm/modelCatalog';
 import { t } from '../../lib/i18n';
 import type { AppState } from '../store';
@@ -12,100 +10,49 @@ export function buildModelCatalogForState(state: AppState): readonly ModelCatalo
   return buildModelCatalogFor(provider, provider === null ? [] : state.fetchedModelIds[provider] ?? []);
 }
 
-/** 「その他（直接入力）」の option 値。表示切替専用の sentinel で state には漏らさない */
-export const MODEL_SELECT_OTHER_VALUE = '__other__';
-
 export interface ModelSelectOptions {
-  /** select の id（例: 'schema-model'。テキスト入力は `{id}-custom`） */
+  /** 入力欄の id（例: 'schema-model'） */
   id: string;
-  /** select の aria-label（テキスト入力は `{ariaLabel}（直接入力）`） */
+  /** 入力欄の aria-label */
   ariaLabel: string;
   /** 現在のモデル文字列（'' = 未選択） */
   value: string;
-  /** 先頭 option（value=''）の表示文言（例: '選択してください' / '未設定'） */
+  /** 空欄時の表示文言 */
   placeholderLabel: string;
-  /** 常に素のモデル文字列（'' 含む）を通知する。sentinel は渡さない */
+  /** 確定時に trim したモデル文字列（'' 含む）を通知する */
   onChange: (model: string) => void;
   className?: string;
   groups?: readonly ModelCatalogGroup[];
 }
 
-/**
- * モデルセレクタを生成する。state の値からの復元は決定的:
- * - '' → プレースホルダ選択・テキスト非表示
- * - 単価表のモデル → 該当 option 選択・テキスト非表示
- * - それ以外 → 「その他」選択 + テキスト表示・値充填
- *   （Options の保存値や S5→S6→S7 の引き継ぎ値が任意文字列でも正しく表示される）
- */
+/** 候補付き入力欄を生成し、現在値をそのまま復元する。 */
 export function createModelSelect(doc: Document, opts: ModelSelectOptions): HTMLElement {
   const container = doc.createElement('span');
   container.className =
     opts.className === undefined ? 'model-select' : `model-select ${opts.className}`;
-
-  const select = doc.createElement('select');
-  select.id = opts.id;
-  select.setAttribute('aria-label', opts.ariaLabel);
-
-  const placeholder = doc.createElement('option');
-  placeholder.value = '';
-  placeholder.textContent = opts.placeholderLabel;
-  select.append(placeholder);
-
-  const groups = opts.groups ?? buildModelCatalog();
-  for (const group of groups) {
-    const optgroup = doc.createElement('optgroup');
-    optgroup.label = group.label;
+  const input = doc.createElement('input');
+  input.id = opts.id;
+  input.type = 'text';
+  input.setAttribute('list', `${opts.id}-options`);
+  input.setAttribute('aria-label', opts.ariaLabel);
+  input.autocomplete = 'off';
+  input.placeholder = opts.placeholderLabel;
+  input.value = opts.value;
+  const datalist = doc.createElement('datalist');
+  datalist.id = `${opts.id}-options`;
+  for (const group of opts.groups ?? buildModelCatalog()) {
     for (const model of group.models) {
       const option = doc.createElement('option');
       option.value = model;
-      option.textContent = model;
-      optgroup.append(option);
+      option.label = group.label === t('options.fetchedModels')
+        ? t('options.fetchedModels')
+        : t('modelSelect.priceList');
+      datalist.append(option);
     }
-    select.append(optgroup);
   }
-
-  const other = doc.createElement('option');
-  other.value = MODEL_SELECT_OTHER_VALUE;
-  other.textContent = t('modelSelect.other');
-  select.append(other);
-
-  const custom = doc.createElement('input');
-  custom.id = `${opts.id}-custom`;
-  custom.type = 'text';
-  custom.setAttribute('aria-label', t('modelSelect.customAria', { label: opts.ariaLabel }));
-  custom.placeholder = t('modelSelect.customPlaceholder');
-  custom.className = 'model-select__custom';
-
-  // state の値からの決定的な復元（views は毎 render で DOM を作り直すため）
-  if (opts.value === '') {
-    select.value = '';
-    custom.hidden = true;
-  } else if (groups.some((group) => group.models.includes(opts.value))) {
-    select.value = opts.value;
-    custom.hidden = true;
-  } else {
-    select.value = MODEL_SELECT_OTHER_VALUE;
-    custom.value = opts.value;
-    custom.hidden = false;
-  }
-
-  select.addEventListener('change', () => {
-    if (select.value === MODEL_SELECT_OTHER_VALUE) {
-      // 「その他」へ切替: テキストを表示してフォーカスするだけで通知しない。
-      // ここで onChange すると store 再描画で DOM が作り直され選択が state 値へ戻るため、
-      // state の更新はテキストの change（確定）まで遅らせる。
-      // 確定前に他の操作で再描画されると選択は state 値へ戻る（既知の許容エッジ）
-      custom.hidden = false;
-      custom.focus();
-      return;
-    }
-    custom.hidden = true;
-    opts.onChange(select.value);
+  input.addEventListener('change', () => {
+    opts.onChange(input.value.trim());
   });
-  custom.addEventListener('change', () => {
-    opts.onChange(custom.value.trim());
-  });
-
-  container.append(select, custom);
+  container.append(input, datalist);
   return container;
 }
