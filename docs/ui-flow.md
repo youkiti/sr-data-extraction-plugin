@@ -54,7 +54,7 @@ flowchart LR
 4. Home（縮退版）の「プロジェクトファイルへのアクセスを付与」ボタンで Picker のファイル許可モード（`view=files` + `setFileIds`。issue #139）を開き、Documents タブ由来の必要ファイル（PDF + 抽出テキスト）を**全選択**してファイル単位で drive.file を付与 → 到達性を 1 件試し読み（抽出テキスト本文 / 無ければ先頭 PDF のメタデータ。伝播遅延に備え最大 3 回リトライ）→ `chrome.storage.local` にプロジェクト × アカウント単位のフラグを保存。旧方式（プロジェクトフォルダの選択）は、他人所有の共有フォルダでは配下ファイルへ付与されないことが実機で確定したため廃止（2026-07-18）
 5. ファイルアクセス付与が済むと `#/verify`（adjudicator は `#/adjudicate` も）に入場できる（未付与のうちはガードでブロック）。付与後に owner が取り込んだ文献は付与済みフラグでカバーされないため、Home の「アクセスを付与し直す」で再付与する
 
-owner 側の登録手順（レビュアー管理カード）・盲検の担保範囲・裁定 `#/adjudicate` の詳細は [docs/design-independent-dual-review.md](design-independent-dual-review.md) を参照。
+owner 側の登録手順（レビュアー管理カード）・盲検の担保範囲・不一致の解消 `#/adjudicate` の詳細は [docs/design-independent-dual-review.md](design-independent-dual-review.md) を参照。
 
 ## 2. メインビュー内ルーティング
 
@@ -88,9 +88,11 @@ flowchart TD
 | `#/verify` | 検証（S8） | §3 参照。document 選択 → 2 ペイン検証 | `StudyData` / `ResultsData`（自分の annotator 行の更新）+ `Decisions` 追記 + `ArmStructures` 追記（群構成の確定） |
 | `#/dashboard` | ダッシュボード（S9） | document × section の検証進捗マトリクス、anchor 失敗率、not_reported 率。セルクリックで `#/verify` の該当 document / section へ | `StudyData` / `ResultsData` / `Evidence` / `Documents`（読み取りのみ） |
 | `#/export` | エクスポート（S10） | 形式選択（study_wide / results_long / audit）、プレビュー、CSV 生成 + Drive 保存 + ダウンロード。未検証セル残存時は警告ダイアログ | `ExportLog` 追記 |
-| `#/adjudicate` | 裁定（S12・v0.11） | owner / adjudicator のみ。human annotator 2 名の検証が揃った study を選択（3 名以上の study は一覧のペア選択で裁定する 2 名を選ぶ。issue #63）→ 群構成の突き合わせ（arm 並べ替えマッピング付き）→ セル一覧（一致は一括採用・不一致は個別裁定）→ `consensus` 確定 | `ArmStructures` / `StudyData` / `ResultsData`（consensus 版の追記）+ `Decisions` 追記 |
+| `#/adjudicate` | 不一致の解消（S12・v0.11） | owner / adjudicator のみ。human annotator 2 名の検証が揃った study を選択（3 名以上の study は一覧のペア選択で裁定する 2 名を選ぶ。issue #63）→ 群構成の突き合わせ（arm 並べ替えマッピング付き）→ セル一覧（一致は一括採用・不一致は個別裁定）→ `consensus` 確定 | `ArmStructures` / `StudyData` / `ResultsData`（consensus 版の追記）+ `Decisions` 追記 |
 
 ### ロール別ナビゲーション（v0.11・独立二重レビュー機能 issue #44）
+
+検証画面では owner / adjudicator に「不一致の解消」への常時リンクを表示する。表示中の論文の判定が全件完了すると「不一致を確認」から `#/adjudicate?study=<id>` に移動できる。オーナーのダッシュボードでは「検証済みの人数」列も同じ論文へのリンクになる。reviewer_with_ai / reviewer_independent には、これらの案内・ボタン・人数を表示しない。
 
 メインビュー起動時にログイン email のロール（`owner` / `reviewer_with_ai` / `reviewer_independent` / `adjudicator` / `unregistered`）を 1 回解決し、ロールに応じてサイドバーに出すルートを制限する（ディムではなく非表示）:
 

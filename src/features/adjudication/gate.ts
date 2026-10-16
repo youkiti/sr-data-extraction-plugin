@@ -42,6 +42,19 @@ export interface StudyGate {
   ready: boolean;
 }
 
+/** 自分以外で検証を終えた人の人数（email は判定行と同じ完全一致で比較） */
+export function countOtherCompletedAnnotators(
+  progress: readonly AnnotatorProgressSummary[],
+  myEmail: string,
+): number {
+  return progress.filter((entry) => entry.complete && entry.annotator !== myEmail).length;
+}
+
+/** 自分も含めて検証を終えた人の人数 */
+export function countCompletedAnnotators(progress: readonly AnnotatorProgressSummary[]): number {
+  return progress.filter((entry) => entry.complete).length;
+}
+
 export function computeStudyGate(
   annotatorA: string,
   annotatorB: string,

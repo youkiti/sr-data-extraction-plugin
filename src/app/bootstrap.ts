@@ -1293,10 +1293,16 @@ export async function bootstrapApp(
       });
     }
     if (currentHash === '#/verify') {
+      const role = store.getState().role.role;
+      if (role === 'owner' || role === 'adjudicator') {
+        void loadAdjudicateTargets(store, deps);
+      }
       // 一覧読込 → ?doc=（なければ先頭）の検証データ読込。セレクタ切替も同じ経路
       void syncVerifyRoute();
     }
     if (currentHash === '#/dashboard') {
+      // このルートは guardRoute が owner のみに許可する。
+      void loadAdjudicateTargets(store, deps);
       // 初回表示時に集計を読み込む（読込済みなら loadDashboard 側で no-op）
       void loadDashboard(store, deps);
       void loadUsage(store, deps);

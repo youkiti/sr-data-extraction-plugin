@@ -3,6 +3,7 @@
 // セルクリックは `#/verify?study={study_id}&entity={entity_key}` へのハッシュ遷移
 // （ui-flow.md §3 のセル単位ディープリンク）で、コールバックを介さない
 import { compareReviewSetIds } from '../../domain/reviewSet';
+import { countCompletedAnnotators } from '../../features/adjudication/gate';
 import type {
   AccuracyBreakdown,
   DashboardData,
@@ -94,13 +95,15 @@ function renderSectionCell(row: DashboardRow, cell: DashboardSectionCell | null)
   return td;
 }
 
-function renderMatrix(data: DashboardData): HTMLElement {
+function renderMatrix(data: DashboardData, state: AppState): HTMLElement {
+  const owner = (state.role.role ?? 'owner') === 'owner';
   const headRow = el('tr', {}, [
     el('th', { text: t('dashboard.headStudy'), attributes: { scope: 'col' } }),
     ...data.sections.map((section) => el('th', { text: section, attributes: { scope: 'col' } })),
     el('th', { text: t('dashboard.headAcceptRate'), attributes: { scope: 'col' } }),
     el('th', { text: t('dashboard.summaryAnchor'), attributes: { scope: 'col' } }),
     el('th', { text: t('dashboard.summaryNotReported'), attributes: { scope: 'col' } }),
+    ...(owner ? [el('th', { text: t('dashboard.completedReviewers'), attributes: { scope: 'col' } })] : []),
   ]);
   const bodyRows = data.rows.map((row) =>
     el('tr', { className: 'dashboard__row' }, [
@@ -117,6 +120,7 @@ function renderMatrix(data: DashboardData): HTMLElement {
       }),
       el('td', { className: 'dashboard__rate', text: rateText(row.anchor) }),
       el('td', { className: 'dashboard__rate', text: rateText(row.notReported) }),
+      ...(owner ? [renderCompletedReviewers(state, row.studyId)] : []),
     ]),
   );
   return el('table', { id: 'dashboard-matrix', className: 'dashboard__matrix', attributes: { 'data-tour': 'export-data-progress' } }, [
@@ -127,6 +131,20 @@ function renderMatrix(data: DashboardData): HTMLElement {
     el('thead', {}, [headRow]),
     el('tbody', {}, bodyRows),
   ]);
+}
+
+function renderCompletedReviewers(state: AppState, studyId: string): HTMLElement {
+  const td = el('td', { className: 'dashboard__completed-reviewers' });
+  const row = state.adjudicate.rows?.find((item) => item.study.studyId === studyId);
+  if (state.adjudicate.loading || state.adjudicate.loadError !== null || row === undefined) {
+    td.textContent = '—';
+  } else {
+    td.append(el('a', {
+      text: String(countCompletedAnnotators(row.annotatorProgress)),
+      attributes: { href: `#/adjudicate?study=${encodeURIComponent(studyId)}` },
+    }));
+  }
+  return td;
 }
 
 /** 担当していない組み合わせを横棒で示す reviewer × セット表 */
@@ -223,6 +241,6 @@ export function renderDashboardView(state: AppState, ctx: ViewContext): HTMLElem
     return finish();
   }
 
-  children.push(renderSummary(dashboard.data), renderMatrix(dashboard.data));
+  children.push(renderSummary(dashboard.data), renderMatrix(dashboard.data, state));
   return finish();
 }

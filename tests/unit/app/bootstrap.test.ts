@@ -3389,6 +3389,7 @@ describe('bootstrapApp: #/verify・#/dashboard', () => {
         ],
       });
       const store = await bootstrapApp(asWindow(stub), deps);
+      jest.mocked(loadAdjudicateTargets).mockClear();
       stub.location.hash = '#/verify?study=outside&entity=arm:1';
       stub.fireHashChange();
       await flush();
@@ -3396,6 +3397,9 @@ describe('bootstrapApp: #/verify・#/dashboard', () => {
       expect(store?.getState().verify.selectedStudyId).toBe('study-1');
       expect(stub.location.hash).toBe('#/verify?study=study-1&entity=arm%3A1');
       expect(store?.getState().verify.verifyError).toBeNull();
+      expect(jest.mocked(loadAdjudicateTargets).mock.calls.length > 0).toBe(
+        role === 'owner' || role === 'adjudicator',
+      );
     },
   );
 
@@ -3772,6 +3776,7 @@ describe('bootstrapApp: #/verify・#/dashboard', () => {
     expect(document.querySelector('#dashboard-summary')?.textContent).toContain('検証進捗');
     const link = document.querySelector('#dashboard-matrix a');
     expect(link?.getAttribute('href')).toBe('#/verify?study=study-1&entity=-');
+    expect(loadAdjudicateTargets).toHaveBeenCalledWith(store, deps);
 
     // 同じ状態での再 hashchange は再読込しない（読込済みガード）
     const callsBefore = fetchMock.mock.calls.length;
@@ -3779,6 +3784,22 @@ describe('bootstrapApp: #/verify・#/dashboard', () => {
     await flush();
     expect(fetchMock.mock.calls.length).toBe(callsBefore);
   });
+
+  test.each(['reviewer_with_ai', 'reviewer_independent', 'adjudicator'] as const)(
+    '非オーナーはダッシュボードへ遷移しても人数を読み込まない: %s', async (role) => {
+      const initial = createInitialState();
+      const stub = createWindowStub({ ...verifyPreloaded(),
+        role: { ...initial.role, role, folderAccessGranted: true } });
+      const { deps } = createVerifyFakeDeps(BASE_TABS);
+      await bootstrapApp(asWindow(stub), deps);
+      jest.mocked(loadAdjudicateTargets).mockClear();
+      stub.location.hash = '#/dashboard';
+      stub.fireHashChange();
+      await flush();
+      expect(loadAdjudicateTargets).not.toHaveBeenCalled();
+      expect(document.querySelector('#dashboard-matrix')).toBeNull();
+    },
+  );
 
   test('#/dashboard の読み込み失敗は #dashboard-load-error + 再読み込みで force 再取得する', async () => {
     const stub = createWindowStub(verifyPreloaded());
@@ -4104,6 +4125,7 @@ describe('bootstrapApp: #/adjudicate', () => {
         ...createInitialState().adjudicate,
         rows: [
           {
+            annotatorProgress: [],
             outsideAnnotators: [],
             study: {
               studyId: 'study-9',
@@ -4362,6 +4384,7 @@ describe('bootstrapApp: #/adjudicate', () => {
         ...createInitialState().adjudicate,
         rows: [
           {
+            annotatorProgress: [],
             outsideAnnotators: [],
             study: {
               studyId: 'study-9',

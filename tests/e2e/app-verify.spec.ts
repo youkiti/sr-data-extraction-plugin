@@ -9,6 +9,22 @@ import { createSheetsDataStore } from './helpers/sheetsStore';
 
 const QUOTE = 'Mortality was 12 percent';
 
+test('オーナーの検証画面に自分の判定だけを表示する注記が出る', async ({ page }) => {
+  await setupRoutes(page, { schemaRows: [STUDY_FIELD_ROW], evidenceRows: [EVIDENCE_ROW_1] });
+  await initApp(page, '#/verify?study=study-1');
+  await expect(page.locator('#verify-comparison-note')).toContainText('自分の判定だけ');
+  await expect(page.locator('#verify-comparison-note a')).toHaveAttribute('href', '#/adjudicate');
+});
+
+test('最後の判定後に不一致を確認ボタンからその論文へ移動する', async ({ page }) => {
+  await setupRoutes(page, { schemaRows: [STUDY_FIELD_ROW], evidenceRows: [EVIDENCE_ROW_1] });
+  await initApp(page, '#/verify?study=study-1');
+  await expect(page.locator('#verify-check-conflicts')).toHaveCount(0);
+  await page.locator('.verify__action--accept').click();
+  await page.locator('#verify-check-conflicts').click();
+  await expect(page).toHaveURL(/#\/adjudicate\?study=study-1$/);
+});
+
 test('実 PDF のテキスト層で選んだ文字列を根拠として追加できる', async ({ page }) => {
   await setupRoutes(page, { schemaRows: [STUDY_FIELD_ROW], evidenceRows: [EVIDENCE_ROW_1],
     pdfBuilder: () => minimalPdf('Human selected sentence'), extractedText: 'Human selected sentence' });
@@ -283,6 +299,8 @@ interface RouteRecorder {
    * 「表示していない文書の PDF を読まない」（issue #28 案3）の実弾検証に使う
    */
   pdfFetchIds: string[];
+  /** studyDataConflictOnDemand 指定時、以後の StudyData の GET を競合行に切り替える */
+  armStudyDataConflict(): void;
 }
 
 /**
@@ -309,17 +327,19 @@ async function setupRoutes(
     extractedText?: string;
     /**
      * 保存の競合検出（issue #64）の実弾テスト用: StudyData の GET をステートフルにする。
-     * 1 回目（初回 bundle 読込）はヘッダのみ（自分の行なし）、2 回目以降（判定操作の
-     * upsert 内の再読込 GET）は「別の場所で既に更新済み」の行を返す
+     * armStudyDataConflict() を呼ぶまではヘッダのみ（自分の行なし）、呼んだ後（判定操作の
+     * upsert 内の再読込 GET）は「別の場所で既に更新済み」の行を返す。読み取り回数で
+     * 切り替えないのは、owner の検証画面が他レビュアーの人数を数えるために StudyData を
+     * 別途読むため（読み取り回数が画面の作りに依存する）
      */
-    studyDataConflictAfterFirstRead?: boolean;
+    studyDataConflictOnDemand?: boolean;
     /** Decisions タブの初期行（enum 候補・過去判定の再現用。省略時はヘッダのみ） */
     decisionsRows?: string[][];
   },
 ): Promise<RouteRecorder> {
   const appendUrls: string[] = [];
   const pdfFetchIds: string[] = [];
-  let studyDataReads = 0;
+  let studyDataConflictArmed = false;
   const titles = ['Meta', 'Documents', 'SchemaFields', 'Evidence', 'Decisions'];
   const quoteValues: string[][] = [];
 
@@ -327,7 +347,7 @@ async function setupRoutes(
   // 共有ヘルパ（sheetsStore）でステートフルにする。実 Sheets は append した行がそのまま次の
   // GET で返るが、旧スタブは常にヘッダのみを返していたため、判定 2 件目の楽観ロック期待値検証
   // （expectedUpdatedAt）が「サーバ側に行が存在しない」という偽の不一致
-  // （AnnotationConflictError）を起こしていた。studyDataConflictAfterFirstRead は既存どおり
+  // （AnnotationConflictError）を起こしていた。studyDataConflictOnDemand は既存どおり
   // 「意図的に競合を作る」ための seam として残す（この場合は StudyData の GET をこの
   // ステートフル store より優先する）
   const store = createSheetsDataStore({
@@ -365,8 +385,7 @@ async function setupRoutes(
           json: { values: [DECISIONS_HEADERS, ...(options.decisionsRows ?? [])] },
         });
       } else if (url.includes('/values/StudyData')) {
-        studyDataReads += 1;
-        if (options.studyDataConflictAfterFirstRead === true && studyDataReads > 1) {
+        if (options.studyDataConflictOnDemand === true && studyDataConflictArmed) {
           await route.fulfill({
             json: {
               values: [
@@ -431,7 +450,13 @@ async function setupRoutes(
     await route.fulfill({ json: {} });
   });
 
-  return { appendUrls, pdfFetchIds };
+  return {
+    appendUrls,
+    pdfFetchIds,
+    armStudyDataConflict() {
+      studyDataConflictArmed = true;
+    },
+  };
 }
 
 /**
@@ -1572,17 +1597,18 @@ test('スキャン PDF（no_text_layer）: AI 推定 bbox ハイライト → �
 test('保存の競合検出（issue #64・楽観ロック）: 判定操作が競合を検出 → バナー表示 → 再読み込みで復帰', async ({
   page,
 }) => {
-  const { appendUrls } = await setupRoutes(page, {
+  const { appendUrls, armStudyDataConflict } = await setupRoutes(page, {
     schemaRows: [STUDY_FIELD_ROW],
     evidenceRows: [EVIDENCE_ROW_1],
     // 初回 bundle 読込では自分の StudyData 行なし（studyRowUpdatedAt = null）。
     // 判定操作（upsert 内の再読込 GET）以降は「別の場所で既に更新済み」の行を返し、競合を再現する
-    studyDataConflictAfterFirstRead: true,
+    studyDataConflictOnDemand: true,
   });
   await initApp(page, '#/verify?study=study-1');
 
   await expect(page.locator('.verify__panes')).toBeVisible({ timeout: 15_000 });
   await expect(page.locator('#verify-conflict-warning')).toHaveCount(0);
+  armStudyDataConflict();
 
   // 承認 → StudyData の upsert 内の再読込 GET が競合行を返す → AnnotationConflictError
   await page.locator('.verify__action--accept').click();

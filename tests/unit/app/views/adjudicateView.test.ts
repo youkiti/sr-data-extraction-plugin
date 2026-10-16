@@ -279,6 +279,7 @@ function makeEvidence(overrides: Partial<Evidence> = {}): Evidence {
 
 function makeRow(overrides: Partial<AdjudicateStudyRow> = {}): AdjudicateStudyRow {
   return {
+    annotatorProgress: [],
     outsideAnnotators: [],
     study: makeStudy(),
     pair: { kind: 'ready', annotatorA: 'a@example.com', annotatorB: 'b@example.com' },
@@ -300,6 +301,7 @@ function makeSelectableRow(overrides: Partial<AdjudicateStudyRow> = {}): Adjudic
     ready: true,
   });
   return {
+    annotatorProgress: [],
     outsideAnnotators: [],
     study: makeStudy(),
     pair: { kind: 'selectable', annotators: ['a@example.com', 'b@example.com', 'c@example.com'] },
@@ -1220,7 +1222,7 @@ describe('renderAdjudicateView（表示言語 en。issue #93）', () => {
     setUiLanguage('en');
     const ctx = makeCtx().ctx;
     const root = render(makeState({ rows: [] }), ctx);
-    expect(root.querySelector('h2')?.textContent).toBe('Adjudication');
+    expect(root.querySelector('h2')?.textContent).toBe('Resolve conflicts');
     expect(root.querySelector('#adjudicate-empty')?.textContent).toContain(
       'No studies to adjudicate.',
     );

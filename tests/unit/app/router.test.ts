@@ -219,7 +219,7 @@ describe('findRoute', () => {
         'Verification',
         'Dashboard',
         'Export',
-        'Adjudication',
+        'Resolve conflicts',
       ]);
       expect(findRoute('#/options').label).toBe('Settings');
     } finally {

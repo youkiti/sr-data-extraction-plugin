@@ -478,6 +478,7 @@ describe('loadAdjudicateTargets', () => {
     expect(getSchemaFieldsMock).not.toHaveBeenCalled();
     expect(store.getState().adjudicate.rows).toEqual([
       {
+        annotatorProgress: [],
         outsideAnnotators: [],
         study: makeStudy(),
         pair: { kind: 'waiting', annotators: [] },
@@ -495,6 +496,10 @@ describe('loadAdjudicateTargets', () => {
     expect(rows).toHaveLength(1);
     expect(rows?.[0]?.pair).toEqual({ kind: 'ready', annotatorA: A, annotatorB: B });
     expect(rows?.[0]?.gate?.ready).toBe(true);
+    expect(rows?.[0]?.annotatorProgress).toEqual([
+      { annotator: A, decided: 1, total: 1, complete: true },
+      { annotator: B, decided: 1, total: 1, complete: true },
+    ]);
   });
 
   test('1 名以下は gate=null（waiting）', async () => {
@@ -510,6 +515,14 @@ describe('loadAdjudicateTargets', () => {
     await loadAdjudicateTargets(store, makeDeps());
     expect(store.getState().adjudicate.rows?.[0]?.pair.kind).toBe('waiting');
     expect(store.getState().adjudicate.rows?.[0]?.gate).toBeNull();
+    expect(store.getState().adjudicate.rows?.[0]?.annotatorProgress).toEqual([
+      { annotator: A, decided: 0, total: 1, complete: false },
+    ]);
+    readAllDecisionsMock.mockResolvedValue([makeDecision({ annotator: A })]);
+    await loadAdjudicateTargets(store, makeDeps(), { force: true });
+    expect(store.getState().adjudicate.rows?.[0]?.annotatorProgress).toEqual([
+      { annotator: A, decided: 1, total: 1, complete: true },
+    ]);
   });
 
   test('3 名以上は selectable として全 2 名組合せのゲートを事前計算する（issue #63）', async () => {
@@ -528,6 +541,9 @@ describe('loadAdjudicateTargets', () => {
     expect(row?.pairOptions?.[0]?.gate.ready).toBe(true);
     expect(row?.pairOptions?.[1]?.gate.ready).toBe(false);
     expect(row?.pairOptions?.[2]?.gate.ready).toBe(false);
+    expect(row?.annotatorProgress.map(({ annotator, complete }) => ({ annotator, complete }))).toEqual([
+      { annotator: A, complete: true }, { annotator: B, complete: true }, { annotator: C, complete: false },
+    ]);
   });
 
   test('documents / studies が documents スライスに読込済みならそれを使う（再読込しない）', async () => {
@@ -1908,6 +1924,7 @@ describe('担当ペアと calibration のサービス集計', () => {
     });
     expect(rows[1]).toMatchObject({ pair: { kind: 'selectable' }, outsideAnnotators: [] });
     expect(rows[2]).toMatchObject({ pair: { kind: 'ready' }, outsideAnnotators: [] });
+    expect(rows[0]?.annotatorProgress.map((entry) => entry.annotator)).toEqual([A, B, C]);
   });
   test('担当ペアの片方が未入力なら他の二人がいても waiting', async () => {
     const store = assignedStore();
@@ -1923,6 +1940,10 @@ describe('担当ペアと calibration のサービス集計', () => {
     expect(store.getState().adjudicate.rows?.[0]).toMatchObject({
       pair: { kind: 'waiting', annotators: [A] },
       outsideAnnotators: [C],
+      annotatorProgress: [
+        { annotator: A, decided: 1, total: 1, complete: true },
+        { annotator: C, decided: 1, total: 1, complete: true },
+      ],
     });
     await loadAgreementReport(store, makeDeps());
     expect(store.getState().adjudicate.agreement?.studyCount).toBe(0);

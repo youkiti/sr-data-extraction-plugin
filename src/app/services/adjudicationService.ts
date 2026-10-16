@@ -61,7 +61,7 @@ import {
   type ConsensusCellWrite,
   type ConsensusWriteParams,
 } from '../../features/adjudication/consensusWrites';
-import { computeStudyGate, type StudyGate } from '../../features/adjudication/gate';
+import { computeAnnotatorProgress, computeStudyGate, type StudyGate } from '../../features/adjudication/gate';
 import { resolveAnnotatorPair } from '../../features/adjudication/pairResolution';
 import { readDocuments } from '../../features/documents/documentRepository';
 import { readStudies } from '../../features/documents/studyRepository';
@@ -231,7 +231,15 @@ export async function loadAdjudicateTargets(
           }
         }
       }
-      rows.push({ study, pair, gate, pairOptions, outsideAnnotators: pair.outside ?? [] });
+      const outsideAnnotators = pair.outside ?? [];
+      const annotators = new Set([
+        ...(pair.kind === 'ready' ? [pair.annotatorA, pair.annotatorB] : pair.annotators),
+        ...outsideAnnotators,
+      ]);
+      const annotatorProgress = [...annotators].map((email) =>
+        computeAnnotatorProgress(email, fields, studyDecisions, latestArmStructure(studyArmRows, email)),
+      );
+      rows.push({ study, pair, gate, pairOptions, outsideAnnotators, annotatorProgress });
     }
     patchAdjudicate(store, { loading: false, rows });
   } catch (err) {

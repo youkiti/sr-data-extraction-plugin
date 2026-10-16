@@ -102,6 +102,8 @@ import {
 export type { RelocateQuoteOutcome } from '../services/relocateQuoteService';
 
 export interface VerificationPanelOptions {
+  /** パネル内の最新進捗を画面上部の完了案内へ渡す。 */
+  onProgressChange?: (progress: { decided: number; total: number }) => void;
   data: VerificationData;
   /** 引用一覧の保存。未注入なら編集操作を出さない。 */
   onQuoteSetSave?: (rows: readonly QuoteSetRow[]) => Promise<void>;
@@ -155,6 +157,7 @@ export interface VerificationPanelOptions {
 }
 
 export interface VerificationPanelHandle {
+  setProgressListener(listener: VerificationPanelOptions['onProgressChange']): void;
   root: HTMLElement;
   showCitationHighlight(citation: AnchoredCitation): void;
   /** 指定 entity のタブへ切替え、先頭セルへスクロール・フォーカスする（?entity= ディープリンク） */
@@ -301,6 +304,7 @@ export function createVerificationPanel(
   options: VerificationPanelOptions,
 ): VerificationPanelHandle {
   const { data } = options;
+  let progressListener = options.onProgressChange;
   const now = options.now ?? nowIso8601;
   // 独立入力モード（独立二重レビュー機能。design §5.2）: data.annotatorType から導出する
   // （panelMode は annotatorType の派生であり、パネル外から直接指定はしない）。
@@ -2071,6 +2075,7 @@ export function createVerificationPanel(
       enumCandidates: data.enumCandidates,
       canEditSchema: data.canEditSchema,
     };
+    progressListener?.(model.progress);
     // heightSplitter（issue #193）は refreshForm のたびに作り直される内容の末尾へ
     // 常に再付与する（sticky 配置で bottom:0 に固定され続ける）
     formPane.replaceChildren(renderVerificationForm(model, handlers), heightSplitter);
@@ -2414,6 +2419,10 @@ export function createVerificationPanel(
 
   return {
     root,
+    setProgressListener(listener) {
+      progressListener = listener;
+      listener?.(verificationProgress(data.fields, currentEvidence(), ownDecisions, { armStructure }));
+    },
     showCitationHighlight(citation) {
       if (
         panelMode === 'independent' ||
@@ -2519,6 +2528,7 @@ export function renderCachedVerificationPanel(options: VerificationPanelOptions)
   //   その後は同じキャッシュを返すだけなので、ここで呼び直さないとずれが残り続ける
   // タイミングは scrollFocusedIntoView と同じ「呼び出し側が root を接続し終えた後の microtask」
   const syncTarget = cachedPanel.handle;
+  syncTarget.setProgressListener(options.onProgressChange);
   queueMicrotask(() => {
     if (cachedPanel?.handle === syncTarget) {
       syncTarget.syncPaneLayoutMeasurements();
