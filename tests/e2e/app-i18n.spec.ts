@@ -161,7 +161,7 @@ test('移行済みの S10 / S12 / Options 本文 / ガードトーストも en �
   await expect(page.locator('#app-content h2').first()).toHaveText('Export');
 
   await page.locator('#app-nav a[href="#/adjudicate"]').click();
-  await expect(page.locator('#app-content h2').first()).toHaveText('Adjudication');
+  await expect(page.locator('#app-content h2').first()).toHaveText('Resolve conflicts');
   await expect(page.locator('#adjudicate-empty')).toContainText('No studies to adjudicate.');
   await expect(page.locator('#adjudicate-agreement-card h3')).toHaveText(
     'Inter-reviewer agreement',

@@ -122,6 +122,7 @@ const stubCtx: ViewContext = {
     onReloadTargets: jest.fn(),
   },
   verify: {
+    onNeedComparisonCounts: jest.fn(),
     onAssignedOnlyChange: jest.fn(),
     onQuoteSetSave: jest.fn().mockResolvedValue(undefined),
     onSelectStudy: jest.fn(),
@@ -219,7 +220,7 @@ describe('findRoute', () => {
         'Verification',
         'Dashboard',
         'Export',
-        'Adjudication',
+        'Resolve conflicts',
       ]);
       expect(findRoute('#/options').label).toBe('Settings');
     } finally {

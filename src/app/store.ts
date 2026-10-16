@@ -17,7 +17,7 @@ import type { ExportFormat } from '../domain/exportLog';
 import type { ArmCompletenessRunWarning, ExtractionRun } from '../domain/extractionRun';
 import type { ProjectRole, ReviewerAssignment, ReviewerRole, ReviewMode } from '../domain/reviewer';
 import type { AnnotatorPairResolution } from '../features/adjudication/pairResolution';
-import type { StudyGate } from '../features/adjudication/gate';
+import type { AnnotatorProgressSummary, StudyGate } from '../features/adjudication/gate';
 import type { AdjudicationCell } from '../features/adjudication/cellMatch';
 import type { DraftArmRow } from '../features/adjudication/armMatch';
 import type { AskPaperTurn, AskPaperSourceDocument } from '../features/verification/askPaper';
@@ -606,6 +606,7 @@ export interface AdjudicatePairOption {
 
 /** `#/adjudicate`（S12。docs/design-independent-dual-review.md §6）一覧 1 study ぶんの行 */
 export interface AdjudicateStudyRow {
+  annotatorProgress: AnnotatorProgressSummary[];
   outsideAnnotators: string[];
   study: StudyRecord;
   pair: AnnotatorPairResolution;

@@ -1,4 +1,5 @@
 import { createSavingBadge } from '../ui/savingBadge';
+import { countOtherCompletedAnnotators } from '../../features/adjudication/gate';
 import { resolveFetchedPricing } from '../fetchedPricing';
 // #/verify: 検証（S8・中核画面 / ui-states.md §3。v0.10 フェーズ 3 = study 単位）。
 // 状態: 一覧読み込み中 / 一覧読み込み失敗 / 空 / 通常（study セレクタ + 2 ペイン検証パネル）。
@@ -135,6 +136,13 @@ export function renderVerifyView(state: AppState, ctx: ViewContext): HTMLElement
     }),
   ];
   const verify = state.verify;
+  const canCompare = state.role.role === 'owner' || state.role.role === 'adjudicator';
+  if (canCompare) {
+    children.push(el('p', { id: 'verify-comparison-note' }, [
+      el('span', { text: t('verify.comparisonNote') }),
+      el('a', { text: t('app.navAdjudicate'), attributes: { href: '#/adjudicate' } }),
+    ]));
+  }
 
   if (verify.loadError !== null) {
     const retry = el('button', {
@@ -209,7 +217,49 @@ export function renderVerifyView(state: AppState, ctx: ViewContext): HTMLElement
   const selectedTarget = verify.targets.find(
     (target) => target.study.studyId === verify.selectedStudyId,
   );
+  let onProgressChange: ((progress: { decided: number; total: number }) => void) | undefined;
   if (selectedTarget !== undefined) {
+    if (canCompare) {
+      const container = el('div');
+      let countsRequested = false;
+      onProgressChange = (progress) => {
+        container.replaceChildren();
+        if (progress.total === 0 || progress.decided !== progress.total) return;
+        if (!countsRequested && state.adjudicate.rows === null &&
+            !state.adjudicate.loading && state.adjudicate.loadError === null) {
+          countsRequested = true;
+          queueMicrotask(() => ctx.verify.onNeedComparisonCounts());
+        }
+        const banner = el('div', { id: 'verify-comparison-complete' });
+        if (state.adjudicate.loading) {
+          banner.append(el('p', {
+            id: 'verify-comparison-loading', text: t('verify.comparisonLoading'),
+          }));
+        }
+        const row = state.adjudicate.rows?.find((item) => item.study.studyId === selectedTarget.study.studyId);
+        const verification = verify.verification;
+        if (!state.adjudicate.loading && state.adjudicate.loadError === null && row !== undefined &&
+            verification !== null && verification.study.studyId === selectedTarget.study.studyId) {
+          const n = countOtherCompletedAnnotators(row.annotatorProgress, verification.annotator);
+          banner.append(el('p', {
+            id: 'verify-other-completed',
+            text: n === 0 ? t('verify.noOtherCompleted') : t('verify.otherCompleted', { n }),
+          }));
+        }
+        const button = el('button', {
+          id: 'verify-check-conflicts',
+          text: t('verify.checkConflicts'),
+          attributes: { type: 'button' },
+        });
+        button.addEventListener('click', () => {
+          window.location.hash = `#/adjudicate?study=${encodeURIComponent(selectedTarget.study.studyId)}`;
+        });
+        banner.append(button);
+        container.append(banner);
+      };
+      onProgressChange(selectedTarget.progress);
+      children.push(container);
+    }
     if (selectedTarget.aiExtractionStatus === 'no_result') {
       children.push(renderNoAiResultBanner());
     }
@@ -247,6 +297,7 @@ export function renderVerifyView(state: AppState, ctx: ViewContext): HTMLElement
     children.push(
       renderCachedVerificationPanel({
         data: verify.verification,
+        onProgressChange: verify.verification.study.studyId === verify.selectedStudyId ? onProgressChange : undefined,
         onDecision: (decision) => ctx.verify.onDecision(decision),
         onQuoteSetSave: (rows) => ctx.verify.onQuoteSetSave(rows),
         onArmConfirm: (arms) => ctx.verify.onArmConfirm(arms),

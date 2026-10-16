@@ -257,6 +257,7 @@ export interface ExtractViewCallbacks {
 
 /** #/verify（S8）のユーザー操作コールバック */
 export interface VerifyViewCallbacks {
+  onNeedComparisonCounts(): void;
   /** 引用スナップショットを保存する。 */
   onQuoteSetSave(rows: readonly QuoteSetRow[]): Promise<void>;
   /** owner の「自分の担当のみ」切り替え */

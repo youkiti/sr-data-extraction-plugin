@@ -4376,3 +4376,11 @@ section.documents__tiab {
   outline: 2px solid var(--color-primary);
   outline-offset: 2px;
 }
+
+#verify-comparison-note a {
+  margin-inline-start: 0.5em;
+}
+
+#verify-comparison-complete {
+  margin-block: 0.75rem;
+}

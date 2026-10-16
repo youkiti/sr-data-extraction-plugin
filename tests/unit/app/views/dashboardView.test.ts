@@ -132,6 +132,7 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<DashboardViewCall
         onReloadTargets: jest.fn(),
       },
       verify: {
+        onNeedComparisonCounts: jest.fn(),
         onAssignedOnlyChange: jest.fn(),
         onQuoteSetSave: jest.fn().mockResolvedValue(undefined),
         onSelectStudy: jest.fn(),
@@ -235,6 +236,36 @@ function makeState(patch: Partial<AppState['dashboard']> = {}): AppState {
 
 describe('rateText', () => {
 
+  test.each(['owner', 'adjudicator', 'reviewer_with_ai', 'reviewer_independent'] as const)(
+    '人数列はオーナーだけに表示する: %s', (role) => {
+      const state = makeState({ data: makeData() });
+      state.role.role = role;
+      state.adjudicate.rows = [{ study: { studyId: 'study-1', studyLabel: 'S1', reviewSet: null,
+        registrationId: null, createdAt: 't0', createdBy: 'me', note: null },
+        pair: { kind: 'waiting', annotators: ['me'] }, gate: null, pairOptions: null,
+        outsideAnnotators: [], annotatorProgress: [{ annotator: 'me', decided: 1, total: 1, complete: true }] }];
+      const root = renderDashboardView(state, makeCtx().ctx);
+      expect(root.textContent?.includes('検証済みの人数')).toBe(role === 'owner');
+      const cells = root.querySelectorAll('.dashboard__completed-reviewers');
+      expect(cells.length).toBe(role === 'owner' ? 2 : 0);
+      if (role === 'owner') {
+        expect(cells[0]?.textContent).toBe('1');
+        expect(cells[0]?.querySelector('a')?.getAttribute('href')).toBe('#/adjudicate?study=study-1');
+        expect(cells[1]?.textContent).toBe('—');
+      }
+    },
+  );
+
+  test.each(['loading', 'error'])('人数が読めないときは横棒: %s', (condition) => {
+    const state = makeState({ data: makeData() });
+    state.role.role = 'owner';
+    state.adjudicate.loading = condition === 'loading';
+    state.adjudicate.loadError = condition === 'error' ? '失敗' : null;
+    const root = renderDashboardView(state, makeCtx().ctx);
+    expect(root.querySelector('.dashboard__completed-reviewers')?.textContent).toBe('—');
+    expect(root.querySelector('.dashboard__completed-reviewers a')).toBeNull();
+  });
+
   test('画面の該当節へのヘルプリンクを表示する', () => {
     const { ctx } = makeCtx();
     const view = renderDashboardView(makeState(), ctx);
@@ -306,6 +337,7 @@ describe('renderDashboardView', () => {
       'AI 採用率',
       'anchor 失敗率',
       'not_reported 率',
+      '検証済みの人数',
     ]);
 
     const row1 = matrix.querySelectorAll('tbody tr')[0] as HTMLTableRowElement;
@@ -329,8 +361,8 @@ describe('renderDashboardView', () => {
     const row2 = root.querySelectorAll('#dashboard-matrix tbody tr')[1] as HTMLTableRowElement;
     expect(row2.querySelectorAll('a')).toHaveLength(0);
     const cells = [...row2.querySelectorAll('td')].map((td) => td.textContent);
-    // methods(—) / outcomes(—) / AI 採用率(—) / anchor(—) / not_reported(—)
-    expect(cells).toEqual(['—', '—', '—', '—', '—']);
+    // methods / outcomes / AI 採用率 / anchor / not_reported / 検証済みの人数
+    expect(cells).toEqual(['—', '—', '—', '—', '—', '—']);
     // 空白入り document_id の行見出し（リンクは無いが表示は保つ）
     expect(row2.querySelector('th')?.textContent).toBe('Jones 2021（0 / 0）');
   });

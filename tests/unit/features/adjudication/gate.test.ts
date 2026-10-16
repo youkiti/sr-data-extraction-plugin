@@ -1,6 +1,6 @@
 import type { Decision } from '../../../../src/domain/decision';
 import type { SchemaField } from '../../../../src/domain/schemaField';
-import { computeAnnotatorProgress, computeStudyGate } from '../../../../src/features/adjudication/gate';
+import { computeAnnotatorProgress, computeStudyGate, countCompletedAnnotators, countOtherCompletedAnnotators } from '../../../../src/features/adjudication/gate';
 
 function field(overrides: Partial<SchemaField> = {}): SchemaField {
   return {
@@ -24,6 +24,18 @@ function field(overrides: Partial<SchemaField> = {}): SchemaField {
     ...overrides,
   };
 }
+
+test('完了人数は自分の除外を完全一致で行い、未完了を数えない', () => {
+  const progress = [
+    { annotator: 'me', decided: 1, total: 1, complete: true },
+    { annotator: 'ME', decided: 1, total: 1, complete: true },
+    { annotator: 'other', decided: 0, total: 1, complete: false },
+  ];
+  expect(countCompletedAnnotators(progress)).toBe(2);
+  expect(countOtherCompletedAnnotators(progress, 'me')).toBe(1);
+  expect(countCompletedAnnotators([])).toBe(0);
+  expect(countOtherCompletedAnnotators([], 'me')).toBe(0);
+});
 
 function decision(overrides: Partial<Decision> = {}): Decision {
   return {

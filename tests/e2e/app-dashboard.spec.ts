@@ -273,7 +273,7 @@ test('マトリクス表示 → セルクリックで #/verify?study=&entity= �
   // マトリクス: 列 = section の和集合 + AI 採用率、行 = study（行見出しに進捗）
   const matrix = page.locator('#dashboard-matrix');
   await expect(matrix.locator('thead th')).toHaveText([
-    '研究', 'results', 'outcomes', 'AI 採用率', 'anchor 失敗率', 'not_reported 率',
+    '研究', 'results', 'outcomes', 'AI 採用率', 'anchor 失敗率', 'not_reported 率', '検証済みの人数',
   ]);
   const row1 = matrix.locator('tbody tr').nth(0);
   await expect(row1.locator('th')).toHaveText('Smith 2020（0 / 2）');

@@ -12,6 +12,7 @@ import type { VerificationData } from '../../../../src/features/verification/typ
 
 function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<VerifyViewCallbacks> } {
   const callbacks = {
+    onNeedComparisonCounts: jest.fn(),
     onAssignedOnlyChange: jest.fn(),
     onQuoteSetSave: jest.fn().mockResolvedValue(undefined),
     onSelectStudy: jest.fn(),
@@ -285,6 +286,14 @@ function makeVerification(): VerificationData {
   };
 }
 
+function makeCompletedVerification(): VerificationData {
+  const data = makeVerification();
+  data.decisions = [{ decidedAt: 't1', decidedBy: data.annotator, studyId: data.study.studyId,
+    fieldId: 'f-total', entityKey: '-', annotator: data.annotator, annotatorType: 'human_with_ai',
+    schemaVersion: 1, action: 'accept', value: '10', note: null }];
+  return data;
+}
+
 function makeState(
   patch: Partial<AppState['verify']> = {},
   options: { role?: AppState['role']['role'] } = {},
@@ -315,6 +324,97 @@ afterEach(() => {
 });
 
 describe('renderVerifyView', () => {
+
+  test.each(['needed', 'rows', 'loading', 'error'])(
+    '完了通知後の人数読込は必要時だけ一度予約する: %s', async (condition) => {
+      const state = makeState({ targets: [makeTarget()], selectedStudyId: 'study-1',
+        verification: makeVerification() }, { role: 'owner' });
+      if (condition === 'rows') state.adjudicate.rows = [];
+      if (condition === 'loading') state.adjudicate.loading = true;
+      if (condition === 'error') state.adjudicate.loadError = '失敗';
+      const { ctx, callbacks } = makeCtx();
+      const root = render(state, ctx);
+      expect(callbacks.onNeedComparisonCounts).not.toHaveBeenCalled();
+      (root.querySelector('.verify__action--not-reported') as HTMLButtonElement).click();
+      (root.querySelector('.verify__action--undo') as HTMLButtonElement).click();
+      (root.querySelector('.verify__action--not-reported') as HTMLButtonElement).click();
+      expect(callbacks.onNeedComparisonCounts).not.toHaveBeenCalled();
+      await Promise.resolve();
+      expect(callbacks.onNeedComparisonCounts).toHaveBeenCalledTimes(condition === 'needed' ? 1 : 0);
+      expect(root.querySelector('#verify-comparison-loading')?.textContent ?? null).toBe(
+        condition === 'loading' ? 'ほかのレビュアーの検証状況を確認しています…' : null,
+      );
+    },
+  );
+
+  test('最後の判定と取り消しで完了案内が更新され、再描画でも維持される', () => {
+    const state = makeState({ targets: [makeTarget()], selectedStudyId: 'study-1',
+      verification: makeVerification() }, { role: 'owner' });
+    const { ctx } = makeCtx();
+    let root = render(state, ctx);
+    expect(root.querySelector('#verify-check-conflicts')).toBeNull();
+    (root.querySelector('.verify__action--not-reported') as HTMLButtonElement).click();
+    expect(root.querySelector('#verify-check-conflicts')).not.toBeNull();
+    root = render(state, ctx);
+    expect(root.querySelector('#verify-check-conflicts')).not.toBeNull();
+    (root.querySelector('.verify__action--undo') as HTMLButtonElement).click();
+    expect(root.querySelector('#verify-check-conflicts')).toBeNull();
+  });
+
+  test.each(['owner', 'adjudicator', 'reviewer_with_ai', 'reviewer_independent', null] as const)(
+    '比較への案内と完了ボタンの権限: %s', (role) => {
+      const state = makeState({ targets: [makeTarget({ progress: { decided: 1, total: 1, byTab: [] } })],
+        selectedStudyId: 'study-1', verification: makeCompletedVerification() }, { role });
+      const root = render(state, makeCtx().ctx);
+      const allowed = role === 'owner' || role === 'adjudicator';
+      expect(root.querySelector('#verify-comparison-note') !== null).toBe(allowed);
+      expect(root.querySelector('#verify-check-conflicts') !== null).toBe(allowed);
+      expect(root.querySelector('#verify-other-completed')).toBeNull();
+      if (allowed) {
+        expect(root.querySelector('#verify-comparison-note a')?.getAttribute('href')).toBe('#/adjudicate');
+        (root.querySelector('#verify-check-conflicts') as HTMLButtonElement).click();
+        expect(window.location.hash).toBe('#/adjudicate?study=study-1');
+      }
+    },
+  );
+
+  test.each([0, 1])('完了人数は自分を除外する: %s', (others) => {
+    const state = makeState({ targets: [makeTarget({ progress: { decided: 1, total: 1, byTab: [] } })],
+      selectedStudyId: 'study-1', verification: makeCompletedVerification() }, { role: 'owner' });
+    state.adjudicate.rows = [{ study: makeStudy(), pair: { kind: 'waiting', annotators: [] },
+      gate: null, pairOptions: null, outsideAnnotators: [], annotatorProgress: [
+        { annotator: 'me@example.com', decided: 1, total: 1, complete: true },
+        { annotator: 'other@example.com', decided: others, total: 1, complete: others === 1 },
+      ] }];
+    const root = render(state, makeCtx().ctx);
+    expect(root.querySelector('#verify-other-completed')?.textContent).toBe(others === 0
+      ? 'ほかに検証を終えた人はまだいません' : 'ほかに 1 名が検証済みです');
+  });
+
+  test.each(['loading', 'error', 'missing', 'no-verification', 'different-study'])(
+    '人数が取得できない場合も完了ボタンは残す: %s', (condition) => {
+      const state = makeState({ targets: [makeTarget({ progress: { decided: 1, total: 1, byTab: [] } })],
+        selectedStudyId: 'study-1', verification: makeCompletedVerification() }, { role: 'owner' });
+      state.adjudicate.rows = [{ study: makeStudy(), pair: { kind: 'waiting', annotators: [] },
+        gate: null, pairOptions: null, outsideAnnotators: [], annotatorProgress: [] }];
+      if (condition === 'loading') state.adjudicate.loading = true;
+      if (condition === 'error') state.adjudicate.loadError = '失敗';
+      if (condition === 'missing') state.adjudicate.rows = [];
+      if (condition === 'no-verification') state.verify.verification = null;
+      if (condition === 'different-study') state.verify.verification!.study = makeStudy({ studyId: 'other' });
+      const root = render(state, makeCtx().ctx);
+      expect(root.querySelector('#verify-other-completed')).toBeNull();
+      expect(root.querySelector('#verify-check-conflicts')).not.toBeNull();
+    },
+  );
+
+  test.each([{ decided: 0, total: 0 }, { decided: 0, total: 1 }])(
+    '未完了・総数ゼロではボタンを出さない: %j', (progress) => {
+      const state = makeState({ targets: [makeTarget({ progress: { ...progress, byTab: [] } })],
+        selectedStudyId: 'study-1' }, { role: 'owner' });
+      expect(render(state, makeCtx().ctx).querySelector('#verify-check-conflicts')).toBeNull();
+    },
+  );
 
   test('画面の該当節へのヘルプリンクを表示する', () => {
     const { ctx } = makeCtx();

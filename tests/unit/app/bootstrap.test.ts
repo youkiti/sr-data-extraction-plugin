@@ -1,4 +1,6 @@
 import { withSpreadsheetWriteLock } from '../../../src/app/services/verificationService';
+import * as pendingWrites from '../../../src/app/services/pendingWrites';
+import * as dashboardService from '../../../src/app/services/dashboardService';
 import { createSavingBadge } from '../../../src/app/ui/savingBadge';
 import { saveConsensusQuotes } from '../../../src/app/services/adjudicationService';
 // メインビュー起動配線のテスト。hashchange の発火タイミングを決定的に制御するため、
@@ -201,6 +203,50 @@ function toastTexts(): string[] {
 }
 
 const flush = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
+
+const adjudicateRefreshCases = ['#/adjudicate', '#/dashboard'].flatMap((route) =>
+  ['decision', 'arms', 'instance'].map((action) => ({ route, action })),
+);
+
+async function expectAdjudicateRefresh(stub: WindowStub, deps: AppDeps, route: string): Promise<void> {
+  let finishFirst!: () => void;
+  let finishLast!: () => void;
+  const first = pendingWrites.trackPendingWrite(() => new Promise<void>((resolve) => { finishFirst = resolve; }));
+  const last = pendingWrites.trackPendingWrite(() => new Promise<void>((resolve) => { finishLast = resolve; }));
+  const subscribe = pendingWrites.subscribePendingWrites;
+  const unsubscribe = jest.fn();
+  const subscription = jest.spyOn(pendingWrites, 'subscribePendingWrites').mockImplementation((listener) => {
+    const dispose = subscribe(listener);
+    return () => { unsubscribe(); dispose(); };
+  });
+  jest.mocked(loadAdjudicateTargets).mockClear();
+  stub.location.hash = route;
+  stub.fireHashChange();
+  await flush();
+  expect(loadAdjudicateTargets).not.toHaveBeenCalled();
+  expect(subscription).toHaveBeenCalledTimes(1);
+  finishFirst();
+  await first;
+  await flush();
+  expect(loadAdjudicateTargets).not.toHaveBeenCalled();
+  finishLast();
+  await last;
+  await flush();
+  expect(unsubscribe).toHaveBeenCalledTimes(1);
+  subscription.mockRestore();
+  expect(loadAdjudicateTargets).toHaveBeenCalledTimes(1);
+  expect(loadAdjudicateTargets).toHaveBeenLastCalledWith(expect.anything(), deps, { force: true });
+
+  // 読み直した印は解除され、次の入場では通常のキャッシュを使う。
+  stub.location.hash = '#/home';
+  stub.fireHashChange();
+  stub.location.hash = route;
+  stub.fireHashChange();
+  await flush();
+  expect(loadAdjudicateTargets).toHaveBeenCalledTimes(2);
+  expect(loadAdjudicateTargets).toHaveBeenLastCalledWith(expect.anything(), deps);
+}
+
 
 const PROJECT = {
   projectId: 'p1',
@@ -2286,7 +2332,7 @@ describe('bootstrapApp: #/pilot', () => {
     expect(store?.getState().pilot.verifyStudyId).toBe('study-1');
   });
 
-  test('#/pilot の判定保存（onDecision）と群構成確定（onArmConfirm）が配線されている', async () => {
+  test.each(adjudicateRefreshCases)('#/pilot の判定保存（onDecision）と群構成確定（onArmConfirm）が配線されている（$action → $route）', async ({ route, action }) => {
     const ARM_FIELD = {
       ...FIELD,
       fieldId: 'f-arm-n',
@@ -2388,6 +2434,11 @@ describe('bootstrapApp: #/pilot', () => {
     expect(store?.getState().pilot.studyValues).toEqual({ sample_size_total: '120' });
     expect(document.querySelector('.verify__chip--accept')).not.toBeNull();
 
+    if (action === 'decision') {
+      await expectAdjudicateRefresh(stub, deps, route);
+      return;
+    }
+
     // 群構成の確定 → ArmStructures への追記まで配線されている
     const nameInput = document.querySelector('.verify__arm-name') as HTMLInputElement;
     nameInput.value = '介入群';
@@ -2396,6 +2447,11 @@ describe('bootstrapApp: #/pilot', () => {
     await flush();
     await flush();
     expect(urls().some((url) => url.includes('ArmStructures!A1:append'))).toBe(true);
+
+    if (action === 'arms') {
+      await expectAdjudicateRefresh(stub, deps, route);
+      return;
+    }
 
     // アウトカム追加 → 予約 Decision の追記まで配線されている
     const decisionAppendCount = () =>
@@ -2410,6 +2466,7 @@ describe('bootstrapApp: #/pilot', () => {
     await flush();
     await flush();
     expect(decisionAppendCount()).toBeGreaterThan(beforeOutcomeAdd);
+    await expectAdjudicateRefresh(stub, deps, route);
   });
 
   test('#/pilot の「AI で再特定」（issue #94）が persistPilotRelocateQuote に配線されている', async () => {
@@ -2955,6 +3012,28 @@ describe('bootstrapApp: #/extract', () => {
 // ---------------------------------------------------------------------------
 
 describe('bootstrapApp: #/verify・#/dashboard', () => {
+  test('完了後の人数読込は通常取得で、保存済みでも次の不一致一覧は強制取得する', async () => {
+    const stub = createWindowStub(verifyPreloaded());
+    const { deps } = createVerifyFakeDeps(BASE_TABS);
+    const store = await bootstrapApp(asWindow(stub), deps);
+    stub.location.hash = '#/verify';
+    stub.fireHashChange();
+    await flush();
+    await flush();
+    jest.mocked(loadAdjudicateTargets).mockClear();
+    expect(loadAdjudicateTargets).not.toHaveBeenCalled();
+    (document.querySelector('.verify__action--accept') as HTMLButtonElement).click();
+    await flush();
+    await flush();
+    expect(loadAdjudicateTargets).toHaveBeenCalledWith(store, deps);
+    expect(pendingWrites.getPendingWriteCount()).toBe(0);
+    jest.mocked(loadAdjudicateTargets).mockClear();
+    stub.location.hash = '#/adjudicate';
+    stub.fireHashChange();
+    await flush();
+    expect(loadAdjudicateTargets).toHaveBeenCalledTimes(1);
+    expect(loadAdjudicateTargets).toHaveBeenCalledWith(store, deps, { force: true });
+  });
   afterEach(async () => {
     const { disposeVerificationPanelCache } = await import(
       '../../../src/app/views/verificationPanel'
@@ -3389,6 +3468,7 @@ describe('bootstrapApp: #/verify・#/dashboard', () => {
         ],
       });
       const store = await bootstrapApp(asWindow(stub), deps);
+      jest.mocked(loadAdjudicateTargets).mockClear();
       stub.location.hash = '#/verify?study=outside&entity=arm:1';
       stub.fireHashChange();
       await flush();
@@ -3396,6 +3476,7 @@ describe('bootstrapApp: #/verify・#/dashboard', () => {
       expect(store?.getState().verify.selectedStudyId).toBe('study-1');
       expect(stub.location.hash).toBe('#/verify?study=study-1&entity=arm%3A1');
       expect(store?.getState().verify.verifyError).toBeNull();
+      expect(loadAdjudicateTargets).not.toHaveBeenCalled();
     },
   );
 
@@ -3622,7 +3703,7 @@ describe('bootstrapApp: #/verify・#/dashboard', () => {
     expect(fetchMock.mock.calls.length).toBe(callsBefore);
   });
 
-  test('判定と群構成確定がサービス層の書き込みまで配線されている', async () => {
+  test.each(adjudicateRefreshCases)('判定と群構成確定がサービス層の書き込みまで配線されている（$action → $route）', async ({ route, action }) => {
     const stub = createWindowStub(verifyPreloaded());
     const tabs = {
       ...BASE_TABS,
@@ -3648,6 +3729,11 @@ describe('bootstrapApp: #/verify・#/dashboard', () => {
     await flush();
     expect(urls().some((url) => url.includes('Decisions') && url.includes(':append'))).toBe(true);
 
+    if (action === 'decision') {
+      await expectAdjudicateRefresh(stub, deps, route);
+      return;
+    }
+
     // 群構成の確定 → ArmStructures タブ作成（旧プロジェクト）+ 追記
     const nameInput = document.querySelector('.verify__arm-name') as HTMLInputElement;
     nameInput.value = '介入群';
@@ -3657,6 +3743,11 @@ describe('bootstrapApp: #/verify・#/dashboard', () => {
     await flush();
     expect(urls().some((url) => url.includes(':batchUpdate'))).toBe(true);
     expect(urls().some((url) => url.includes('ArmStructures!A1:append'))).toBe(true);
+
+    if (action === 'arms') {
+      await expectAdjudicateRefresh(stub, deps, route);
+      return;
+    }
 
     // アウトカム追加 → 予約 Decision の追記まで配線されている
     const decisionAppendCount = () =>
@@ -3671,6 +3762,7 @@ describe('bootstrapApp: #/verify・#/dashboard', () => {
     await flush();
     await flush();
     expect(decisionAppendCount()).toBeGreaterThan(beforeOutcomeAdd);
+    await expectAdjudicateRefresh(stub, deps, route);
   });
 
   test('引用の削除が QuoteSets への追記まで配線されている', async () => {
@@ -3763,15 +3855,27 @@ describe('bootstrapApp: #/verify・#/dashboard', () => {
     const stub = createWindowStub(verifyPreloaded());
     const { deps, fetchMock } = createVerifyFakeDeps(BASE_TABS);
     const store = await bootstrapApp(asWindow(stub), deps);
+    let finishDashboard!: () => void;
+    const originalLoad = dashboardService.loadDashboard;
+    const dashboardLoad = jest.spyOn(dashboardService, 'loadDashboard').mockImplementationOnce(async (...args) => {
+      await new Promise<void>((resolve) => { finishDashboard = resolve; });
+      await originalLoad(...args);
+    });
+    jest.mocked(loadAdjudicateTargets).mockClear();
     stub.location.hash = '#/dashboard';
     stub.fireHashChange();
     await flush();
+    expect(loadAdjudicateTargets).not.toHaveBeenCalled();
+    finishDashboard();
     await flush();
+    await flush();
+    dashboardLoad.mockRestore();
 
     expect(store?.getState().dashboard.data?.rows).toHaveLength(1);
     expect(document.querySelector('#dashboard-summary')?.textContent).toContain('検証進捗');
     const link = document.querySelector('#dashboard-matrix a');
     expect(link?.getAttribute('href')).toBe('#/verify?study=study-1&entity=-');
+    expect(loadAdjudicateTargets).toHaveBeenCalledWith(store, deps);
 
     // 同じ状態での再 hashchange は再読込しない（読込済みガード）
     const callsBefore = fetchMock.mock.calls.length;
@@ -3779,6 +3883,22 @@ describe('bootstrapApp: #/verify・#/dashboard', () => {
     await flush();
     expect(fetchMock.mock.calls.length).toBe(callsBefore);
   });
+
+  test.each(['reviewer_with_ai', 'reviewer_independent', 'adjudicator'] as const)(
+    '非オーナーはダッシュボードへ遷移しても人数を読み込まない: %s', async (role) => {
+      const initial = createInitialState();
+      const stub = createWindowStub({ ...verifyPreloaded(),
+        role: { ...initial.role, role, folderAccessGranted: true } });
+      const { deps } = createVerifyFakeDeps(BASE_TABS);
+      await bootstrapApp(asWindow(stub), deps);
+      jest.mocked(loadAdjudicateTargets).mockClear();
+      stub.location.hash = '#/dashboard';
+      stub.fireHashChange();
+      await flush();
+      expect(loadAdjudicateTargets).not.toHaveBeenCalled();
+      expect(document.querySelector('#dashboard-matrix')).toBeNull();
+    },
+  );
 
   test('#/dashboard の読み込み失敗は #dashboard-load-error + 再読み込みで force 再取得する', async () => {
     const stub = createWindowStub(verifyPreloaded());
@@ -4104,6 +4224,7 @@ describe('bootstrapApp: #/adjudicate', () => {
         ...createInitialState().adjudicate,
         rows: [
           {
+            annotatorProgress: [],
             outsideAnnotators: [],
             study: {
               studyId: 'study-9',
@@ -4126,11 +4247,20 @@ describe('bootstrapApp: #/adjudicate', () => {
       },
     });
     const { deps } = createFakeDeps([]);
-    await bootstrapApp(asWindow(stub), deps);
+    const store = await bootstrapApp(asWindow(stub), deps);
     stub.location.hash = '#/adjudicate';
     stub.fireHashChange();
+    await flush();
+    openAdjudicateStudyMock.mockClear();
     (document.querySelector('.adjudicate__open-button') as HTMLButtonElement).click();
     expect(stub.location.hash).toBe('#/adjudicate?study=study-9');
+    expect(openAdjudicateStudyMock).not.toHaveBeenCalled();
+
+    // 直リンクで選択済みの論文でも、同じハッシュの開始ボタンは直接開く。
+    store!.setState({ adjudicate: { ...store!.getState().adjudicate, selectedStudyId: 'study-9' } });
+    (document.querySelector('.adjudicate__open-button') as HTMLButtonElement).click();
+    expect(openAdjudicateStudyMock).toHaveBeenCalledTimes(1);
+    expect(openAdjudicateStudyMock).toHaveBeenCalledWith(store, deps, 'study-9');
   });
 
   test('裁定中画面の各操作をサービスへ委譲する', async () => {
@@ -4362,6 +4492,7 @@ describe('bootstrapApp: #/adjudicate', () => {
         ...createInitialState().adjudicate,
         rows: [
           {
+            annotatorProgress: [],
             outsideAnnotators: [],
             study: {
               studyId: 'study-9',

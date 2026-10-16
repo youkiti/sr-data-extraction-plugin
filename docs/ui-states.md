@@ -1,5 +1,14 @@
 # UI 状態マトリクス（v0.2 — target spec + スケルトン drift 注記）
 
+## レビュアー間の比較への案内
+
+- `#/adjudicate` のメニュー・画面名は「不一致の解消」（Resolve conflicts）。役割・状態・操作名は維持する。
+- 検証画面は owner / adjudicator のみ、自分の判定だけを表示している注記と `#/adjudicate` へのリンクを常時表示する。表示中の論文が総数 > 0 かつ全件判定済みなら「不一致を確認」ボタンで `#/adjudicate?study=<id>` へ移動する。
+- 完了時は描画後に人数の一覧を必要時だけ読み込み、「ほかに N 名が検証済みです」、0 名なら「ほかに検証を終えた人はまだいません」。読込中は「ほかのレビュアーの検証状況を確認しています…」。失敗時はボタンだけ表示し、自動再試行しない。
+- ダッシュボードの人数は本体の集計完了後に読み込む。判定変更後に不一致の解消またはダッシュボードへ入る場合、保存中の書き込みがなくなるまで読み込み中として待ち、一覧を強制再取得する。
+- ダッシュボードは owner のみ「検証済みの人数」列を表示し、自分も含めた完了人数からその論文の不一致の解消へリンクする。未読込・読込中・失敗時は「—」。
+- 人数は担当ペアと担当外の人のレビュアーの重複しない集合で集計し、1 名以下の論文でも計算する。各人の最新の群構成を使い、総数 > 0 かつ全件判定済みを完了とする。他の人の値は表示しない。reviewer_with_ai / reviewer_independent には注記・ボタン・人数列を DOM ごと出さず、案内用の一覧読込も起動しない。
+
 - **作成日**: 2026-07-02（v0.1）/ **更新**: 2026-07-02（v0.2: スケルトン実装開始に伴い drift 注記運用へ移行）
 - **位置付け**: 各画面 × 各状態 × 受入基準を網羅し、目視レビューと AI レビューの共通スペックとする（sr-query-builder の [docs/ui-states.md](../sr-query-builder-plugin/docs/ui-states.md) と同じ運用）
 - **本ドキュメントの status（重要）**: スケルトン実装が入ったため「現実装との乖離は ⚠️ drift 注記で管理し、spec と実装のどちらを正とするか明示してから両方直す」運用に**移行済み**
@@ -25,9 +34,9 @@ spec が正。実装が追いついていない箇所は以下のとおり（実
 | §3 `#/dashboard` | ✅ 実装済み（読み込み中 / 失敗 / 0 件 / 通常〔サマリ + study × section マトリクス + セルの `?study=&entity=` ディープリンク〕。2026-07-02。v0.10 フェーズ 3 で study 単位へ = 2026-07-09）。owner 専用費用集計・予算カードを追加 |
 | §3 `#/export` | ✅ 実装済み（読み込み中 / 失敗 / 通常〔形式選択 + サマリ + プレビュー + 除外警告 + 論文 Methods 記載例カード〕/ 未検証セル警告ダイアログ / 生成中 / 失敗 / 生成完了〔Drive `exports/` 保存 + `ExportLog` 追記 + ローカル保存〕。2026-07-03。Methods 記載例カードは 2026-07-12 追加〔issue #67〕。**R セット（第 4 の形式）は 2026-07-12 追加〔issue #60 PR-B〕**: ファイル一覧 + ma.csv プレビュー + Drive `exports/rset_{YYYYMMDD-HHMMSS}/` への 8 ファイル保存 + BOM なし CSV の Excel/R 読み方案内文。§3 の詳細行を参照）。owner 専用 usage.csv カードを追加  |
 | §4 キーボードショートカット | ✅ 検証パネル（`verificationPanel`）に実装済み。spec の「`#/verify` のみで有効」は「**検証パネルが表示されている画面**（`#/verify` と `#/pilot` の埋め込み）で有効」に読み替える（パネルの DOM 接続中のみ反応・入力フォーカス中は判定キー無効） |
-| 独立二重レビュー（issue #44・v0.11） | ✅ 実装済み（2026-07-11）。`Reviewers` タブ + ロール解決（フェイルクローズ）+ reviewer 系シェル制限 + reviewer オンボーディング（フォルダアクセス付与）+ owner のレビュアー管理カード（Home）+ `#/verify` 独立入力モード + `#/adjudicate`（S12・裁定画面）。jest 144 suites / 2042 tests green・カバレッジ 100%・E2E 64 本（`app-reviewer.spec.ts` 5 / `app-independent.spec.ts` 2 / `app-adjudicate.spec.ts` ほか）green。**2 アカウントでの実機通し確認は 2026-07-19 に完了**（issue #62。残る未実施は 3 アカウント目を使ったペア選択の確認のみ = [docs/manual-testing.md](manual-testing.md) §5-6-3。[docs/design-independent-dual-review.md](design-independent-dual-review.md) §13 参照） |
+| 独立二重レビュー（issue #44・v0.11） | ✅ 実装済み（2026-07-11）。`Reviewers` タブ + ロール解決（フェイルクローズ）+ reviewer 系シェル制限 + reviewer オンボーディング（フォルダアクセス付与）+ owner のレビュアー管理カード（Home）+ `#/verify` 独立入力モード + `#/adjudicate`（S12・不一致の解消画面）。jest 144 suites / 2042 tests green・カバレッジ 100%・E2E 64 本（`app-reviewer.spec.ts` 5 / `app-independent.spec.ts` 2 / `app-adjudicate.spec.ts` ほか）green。**2 アカウントでの実機通し確認は 2026-07-19 に完了**（issue #62。残る未実施は 3 アカウント目を使ったペア選択の確認のみ = [docs/manual-testing.md](manual-testing.md) §5-6-3。[docs/design-independent-dual-review.md](design-independent-dual-review.md) §13 参照） |
 | レビュアー間一致度レポート（issue #66） | ✅ 実装済み（2026-07-12）。`#/adjudicate` 一覧画面にオンデマンド計算カード（純関数 `features/adjudication/agreement.ts`: 項目単位の一致率・Cohen's κ・不一致セル一覧。既存の `cellMatch.buildAdjudicationCells` をそのまま集計素材にする）+ サービス層 `loadAgreementReport` / `downloadAgreementCsv`（CSV 2 種のローカル保存）。jest green・カバレッジ 100%・E2E 1 本追加（`app-adjudicate.spec.ts`）。axe で一覧テーブルの空 `<th>` と見出し階層スキップ（h2 → h4）を検出し修正済み |
-| 裁定画面の v1 簡略化の解消（issue #63） | ✅ 実装済み（2026-07-12）。PDF ペインの Evidence ハイライト（`features/verification/highlights.ts` の `buildDocumentHighlights` を再利用）+ セル一覧の「根拠を表示」ボタン → 該当文書へ切替 + ハイライトへジャンプ + 各レビュアーの `Decisions.note` 表示（A / B の値の下）+ 裁定書き込みのオフラインキュー退避（検証側と共有する 'decisions' キュー。失敗時退避 → 成功時に過去分もまとめて再送）。jest green・カバレッジ 100%・E2E 2 本追加（`app-adjudicate.spec.ts`）+ axe。**arm 並べ替えマッピング（名称一致 → 位置対応 → 残り物同士の既定マッピング + セレクトでの手動変更 + `ArmStructures.note` への `arm_mapping:{...}` 永続化）と 3 人以上対応（ペア選択方式）は 2026-07-13 に issue #63 で解消済み**（2026-07-18・issue #117 で arm マッピングの残エッジ 4 件も修正） |
+| 不一致の解消画面の v1 簡略化の解消（issue #63） | ✅ 実装済み（2026-07-12）。PDF ペインの Evidence ハイライト（`features/verification/highlights.ts` の `buildDocumentHighlights` を再利用）+ セル一覧の「根拠を表示」ボタン → 該当文書へ切替 + ハイライトへジャンプ + 各レビュアーの `Decisions.note` 表示（A / B の値の下）+ 裁定書き込みのオフラインキュー退避（検証側と共有する 'decisions' キュー。失敗時退避 → 成功時に過去分もまとめて再送）。jest green・カバレッジ 100%・E2E 2 本追加（`app-adjudicate.spec.ts`）+ axe。**arm 並べ替えマッピング（名称一致 → 位置対応 → 残り物同士の既定マッピング + セレクトでの手動変更 + `ArmStructures.note` への `arm_mapping:{...}` 永続化）と 3 人以上対応（ペア選択方式）は 2026-07-13 に issue #63 で解消済み**（2026-07-18・issue #117 で arm マッピングの残エッジ 4 件も修正） |
 | quote 再特定（relocate-quote skill。issue #94） | ✅ 実装済み（2026-07-13）。`anchor_status = failed` の項目に「AI で再特定」ボタン（実行中 / 成功〔Evidence 追記済み新行へ差し替え + ハイライトへジャンプ〕/ not_found・失敗〔従来の本文内検索を案内〕）。Evidence は追記型のため新行を追記し `relocated_from` 列（新設）で元行を記録、`anchor_status` は実際の再アンカリング結果をそのまま持つ（詳細は [requirements.md](requirements.md) §3.2「quote の再特定」）。LLM 応答は既存のアンカリング中核で再検証し、fuzzy 以上のときだけ採用。jest green・カバレッジ 100%・E2E 2 本追加（LLM stub の成功 / not_found 経路） |
 | 抽出対象フィールドの選択（issue #80・案 A） | ✅ フェーズ 2（UI 結線）実装済み（2026-07-12）。S6 / S7 の実行前画面に対象項目チェックリスト（既定 = 全選択・section 単位の折りたたみ + 全選択/全解除トグル・選択 0 件は実行ボタン disabled）を追加し、選択サブセットを `runExtraction` の `fieldIds` へ渡す（全選択時は null）。S7 の抽出済みバッジに「直近 run は n/m 項目」注記、実行確認カードに「対象項目: n/m」を追加。失敗 study の再試行は元 run と同じ選択を引き継ぐ（`lastRunFieldIds`）。選択は画面入場・対象再読込のたびに全選択へリセット（storage 永続化なし）。S10 の未検証セル警告ダイアログにサブセット抽出の注意書きを追加。詳細は §3 `#/pilot`・`#/extract`・`#/export` の該当行を参照 |
 
@@ -473,7 +482,7 @@ UI 文言は自前辞書方式（`src/lib/i18n/`。`t(key)` + `ja.ts` / `en.ts` 
 | | Decisions.note の表示（issue #63） | 各セル行の A / B の値の下に、該当 annotator の直近の `Decisions.note`（あれば）を `.adjudicate__cell-note`「A のメモ: …」/「B のメモ: …」の形で表示する（`features/adjudication/cellMatch.ts` の `buildAdjudicationCells` が study 内の該当 annotator の Decisions を decided_at 最新の 1 件へ畳み込む）。note が無ければ表示しない |
 | | 書き込み | 裁定操作は consensus 行（`StudyData` / `ResultsData`）の upsert + `Decisions` 追記（`decided_by` = 裁定者）。即時保存に失敗した場合は検証側（S6/S8）と**共有する 'decisions' オフラインキュー**へ退避し（issue #63）、次回の裁定操作が成功したタイミングでキューに残る過去の退避分（判定・裁定どちらも）をまとめて再送する。キュー退避中でも人間の判断は確定済みとして扱い、セル状態は楽観反映する（`working.consensusDecisions` へ即時追加）。退避件数は作業画面ヘッダの `#adjudicate-queued`「オフライン: n 件キュー中」で示す。楽観ロック（issue #64）は consensus 書き込みには導入しないため、競合検出（conflict バナー）は無い。順番待ち・実行中の書き込みが 1 件以上ある間は `#adjudicate-saving` に「保存中（n 件）」を表示し、タブを閉じる・再読み込みするとブラウザの離脱確認が出る（0 件で非表示。オフラインのキュー表示とは別で、退避済み件数は確認の対象外）。 |
 
-| `#/adjudicate` 補足 | 論文への質問パネル（issue #264・target spec） | 裁定中の study について `#/verify` と同じ `#ask-paper` パネルを出す（盲検解除後の工程のため裁定者も使える）。引用のクリックは裁定画面の PDF ペインで該当箇所をハイライトする。質問後に行った裁定操作の `Decisions.note` に `[chat-assist]` を付ける |
+| `#/adjudicate` 補足 | 論文への質問パネル（issue #264・target spec） | 裁定中の study について `#/verify` と同じ `#ask-paper` パネルを出す（盲検解除後の工程のため裁定者も使える）。引用のクリックは不一致の解消画面の PDF ペインで該当箇所をハイライトする。質問後に行った裁定操作の `Decisions.note` に `[chat-assist]` を付ける |
 
 ## 4. キーボードショートカット・検証パネルのフォーカス挙動
 
