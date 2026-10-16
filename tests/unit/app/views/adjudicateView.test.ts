@@ -163,6 +163,7 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<AdjudicateViewCal
         onReloadTargets: jest.fn(),
       },
       verify: {
+        onNeedComparisonCounts: jest.fn(),
         onAssignedOnlyChange: jest.fn(),
         onQuoteSetSave: jest.fn().mockResolvedValue(undefined),
         onSelectStudy: jest.fn(),

@@ -501,6 +501,7 @@ export async function bootstrapApp(
   }
 
   let currentHash: RouteHash = '#/home';
+  let adjudicateTargetsStale = false;
   // 防御の多重化: 直近にガード評価したロール（ロールが確定・変化したときだけ現在ルートを再ガードする）
   let lastGuardedRole: ProjectRole | null = null;
 
@@ -798,12 +799,15 @@ export async function bootstrapApp(
         }
       },
       onDecision: (decision) => {
+        adjudicateTargetsStale = true;
         void persistPilotDecision(store, deps, decision);
       },
       onArmConfirm: (arms) => {
+        adjudicateTargetsStale = true;
         void persistPilotArmConfirmation(store, deps, arms);
       },
       onInstanceDeclare: (decisions) => {
+        adjudicateTargetsStale = true;
         void persistPilotInstanceDeclarations(store, deps, decisions);
       },
       onRelocateQuote: (evidence) => persistPilotRelocateQuote(store, deps, evidence),
@@ -859,6 +863,7 @@ export async function bootstrapApp(
       },
     },
     verify: {
+      onNeedComparisonCounts: () => { void loadAdjudicateTargets(store, deps); },
       onQuoteSetSave: (rows) => persistVerifyQuoteSet(store, deps, rows),
       onAssignedOnlyChange: (value) => {
         setVerifyAssignedOnly(store, value);
@@ -874,12 +879,15 @@ export async function bootstrapApp(
           .then(() => syncVerifyRoute());
       },
       onDecision: (decision) => {
+        adjudicateTargetsStale = true;
         void persistVerifyDecision(store, deps, decision);
       },
       onArmConfirm: (arms) => {
+        adjudicateTargetsStale = true;
         void persistVerifyArmConfirmation(store, deps, arms);
       },
       onInstanceDeclare: (decisions) => {
+        adjudicateTargetsStale = true;
         void persistVerifyInstanceDeclarations(store, deps, decisions);
       },
       onRelocateQuote: (evidence) => persistVerifyRelocateQuote(store, deps, evidence),
@@ -964,8 +972,13 @@ export async function bootstrapApp(
     },
     adjudicate: {
       onSelectStudy: (studyId) => {
-        // hash 書き換え → hashchange → syncAdjudicateRoute の一本道（#/verify と同じ経路）
-        win.location.hash = `#/adjudicate?study=${encodeURIComponent(studyId)}`;
+        const hash = `#/adjudicate?study=${encodeURIComponent(studyId)}`;
+        if (win.location.hash === hash) {
+          // 直リンクからペアを選んだ場合は hashchange が発生しないため直接開く。
+          void openAdjudicateStudy(store, deps, studyId);
+        } else {
+          win.location.hash = hash;
+        }
       },
       onSelectPair: (studyId, pair) => {
         setAdjudicatePairSelection(store, studyId, pair);
@@ -1096,6 +1109,26 @@ export async function bootstrapApp(
     }
   };
 
+  const loadCurrentAdjudicateTargets = async (): Promise<void> => {
+    if (adjudicateTargetsStale) {
+      if (getPendingWriteCount() > 0) {
+        store.setState({ adjudicate: { ...store.getState().adjudicate, loading: true } });
+        await new Promise<void>((resolve) => {
+          const unsubscribe = subscribePendingWrites(() => {
+            if (getPendingWriteCount() === 0) {
+              unsubscribe();
+              resolve();
+            }
+          });
+        });
+        store.setState({ adjudicate: { ...store.getState().adjudicate, loading: false } });
+      }
+      adjudicateTargetsStale = false;
+      return loadAdjudicateTargets(store, deps, { force: true });
+    }
+    return loadAdjudicateTargets(store, deps);
+  };
+
   /**
    * `#/adjudicate` の表示同期: study 一覧を読み込み、`?study=` があれば裁定作業データを開く
    * （openAdjudicateStudy 側がペア未確定・ゲート未達を検知して workingError へ案内文言を入れる）。
@@ -1103,7 +1136,7 @@ export async function bootstrapApp(
    * — 一覧のゲート状況を見て裁定者が選ぶのが自然な導線のため）
    */
   const syncAdjudicateRoute = async (): Promise<void> => {
-    await loadAdjudicateTargets(store, deps);
+    await loadCurrentAdjudicateTargets();
     await loadAskPaperUsedStudyIds(store, deps);
     const desired = studyQueryOf(win.location.hash);
     if (desired !== null && desired !== store.getState().adjudicate.selectedStudyId) {
@@ -1293,18 +1326,13 @@ export async function bootstrapApp(
       });
     }
     if (currentHash === '#/verify') {
-      const role = store.getState().role.role;
-      if (role === 'owner' || role === 'adjudicator') {
-        void loadAdjudicateTargets(store, deps);
-      }
       // 一覧読込 → ?doc=（なければ先頭）の検証データ読込。セレクタ切替も同じ経路
       void syncVerifyRoute();
     }
     if (currentHash === '#/dashboard') {
       // このルートは guardRoute が owner のみに許可する。
-      void loadAdjudicateTargets(store, deps);
       // 初回表示時に集計を読み込む（読込済みなら loadDashboard 側で no-op）
-      void loadDashboard(store, deps);
+      void loadDashboard(store, deps).then(() => loadCurrentAdjudicateTargets());
       void loadUsage(store, deps);
     }
     if (currentHash === '#/export') {

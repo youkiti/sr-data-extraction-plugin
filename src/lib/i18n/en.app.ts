@@ -129,6 +129,7 @@ export const enApp: Record<keyof typeof jaApp, string> = {
   'app.navExport': 'Export',
   'app.navAdjudicate': 'Resolve conflicts',
   'verify.comparisonNote': 'This screen shows only your decisions. You can view other reviewers’ decisions in “Resolve conflicts”.',
+  'verify.comparisonLoading': 'Checking other reviewers’ verification progress…',
   'verify.otherCompleted': 'Other reviewers who have completed verification: {n}',
   'verify.noOtherCompleted': 'No other reviewers have completed verification yet',
   'verify.checkConflicts': 'Check conflicts',

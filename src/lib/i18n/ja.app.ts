@@ -128,6 +128,7 @@ export const jaApp = {
   'app.navExport': 'エクスポート',
   'app.navAdjudicate': '不一致の解消',
   'verify.comparisonNote': 'この画面には自分の判定だけを表示しています。他のレビュアーの判定は「不一致の解消」で見られます。',
+  'verify.comparisonLoading': 'ほかのレビュアーの検証状況を確認しています…',
   'verify.otherCompleted': 'ほかに {n} 名が検証済みです',
   'verify.noOtherCompleted': 'ほかに検証を終えた人はまだいません',
   'verify.checkConflicts': '不一致を確認',

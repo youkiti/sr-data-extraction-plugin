@@ -12,6 +12,7 @@ import type { VerificationData } from '../../../../src/features/verification/typ
 
 function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<VerifyViewCallbacks> } {
   const callbacks = {
+    onNeedComparisonCounts: jest.fn(),
     onAssignedOnlyChange: jest.fn(),
     onQuoteSetSave: jest.fn().mockResolvedValue(undefined),
     onSelectStudy: jest.fn(),
@@ -323,6 +324,28 @@ afterEach(() => {
 });
 
 describe('renderVerifyView', () => {
+
+  test.each(['needed', 'rows', 'loading', 'error'])(
+    '完了通知後の人数読込は必要時だけ一度予約する: %s', async (condition) => {
+      const state = makeState({ targets: [makeTarget()], selectedStudyId: 'study-1',
+        verification: makeVerification() }, { role: 'owner' });
+      if (condition === 'rows') state.adjudicate.rows = [];
+      if (condition === 'loading') state.adjudicate.loading = true;
+      if (condition === 'error') state.adjudicate.loadError = '失敗';
+      const { ctx, callbacks } = makeCtx();
+      const root = render(state, ctx);
+      expect(callbacks.onNeedComparisonCounts).not.toHaveBeenCalled();
+      (root.querySelector('.verify__action--not-reported') as HTMLButtonElement).click();
+      (root.querySelector('.verify__action--undo') as HTMLButtonElement).click();
+      (root.querySelector('.verify__action--not-reported') as HTMLButtonElement).click();
+      expect(callbacks.onNeedComparisonCounts).not.toHaveBeenCalled();
+      await Promise.resolve();
+      expect(callbacks.onNeedComparisonCounts).toHaveBeenCalledTimes(condition === 'needed' ? 1 : 0);
+      expect(root.querySelector('#verify-comparison-loading')?.textContent ?? null).toBe(
+        condition === 'loading' ? 'ほかのレビュアーの検証状況を確認しています…' : null,
+      );
+    },
+  );
 
   test('最後の判定と取り消しで完了案内が更新され、再描画でも維持される', () => {
     const state = makeState({ targets: [makeTarget()], selectedStudyId: 'study-1',

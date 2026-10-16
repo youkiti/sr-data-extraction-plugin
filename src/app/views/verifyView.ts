@@ -221,10 +221,21 @@ export function renderVerifyView(state: AppState, ctx: ViewContext): HTMLElement
   if (selectedTarget !== undefined) {
     if (canCompare) {
       const container = el('div');
+      let countsRequested = false;
       onProgressChange = (progress) => {
         container.replaceChildren();
         if (progress.total === 0 || progress.decided !== progress.total) return;
+        if (!countsRequested && state.adjudicate.rows === null &&
+            !state.adjudicate.loading && state.adjudicate.loadError === null) {
+          countsRequested = true;
+          queueMicrotask(() => ctx.verify.onNeedComparisonCounts());
+        }
         const banner = el('div', { id: 'verify-comparison-complete' });
+        if (state.adjudicate.loading) {
+          banner.append(el('p', {
+            id: 'verify-comparison-loading', text: t('verify.comparisonLoading'),
+          }));
+        }
         const row = state.adjudicate.rows?.find((item) => item.study.studyId === selectedTarget.study.studyId);
         const verification = verify.verification;
         if (!state.adjudicate.loading && state.adjudicate.loadError === null && row !== undefined &&
