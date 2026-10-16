@@ -206,7 +206,7 @@ test('ドラフト前: サンプル論文セレクタとモデル選択を表示
 
   // 単価表にないモデルを入力して確定する。
   await page.locator('#schema-model').fill('gemini-test');
-  await page.locator('#schema-model').blur();
+  await page.locator('#schema-model').press('Enter');
   await page.locator('#schema-draft-run').click();
   await expect(page.locator('#schema-draft-error')).toContainText('1〜3 本選択');
 

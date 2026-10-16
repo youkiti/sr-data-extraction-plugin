@@ -82,7 +82,7 @@ describe('統合された LLM 接続', () => {
     expect(input('gemini-api-key').placeholder).toBe('API キーを入力');
     change('llm-provider', 'anthropic');
     expect(input('default-model').value).toBe('');
-    expect(document.querySelector('#default-model-options option[value="gemini-3.8-flash"]')).toBeNull();
+    expect(document.querySelector('#default-model-listbox [role="option"][data-value="gemini-3.8-flash"]')).toBeNull();
     expect(document.getElementById('anthropic-fields')!.hidden).toBe(false);
     expect(document.getElementById('gemini-fields')!.hidden).toBe(true);
     button().click();

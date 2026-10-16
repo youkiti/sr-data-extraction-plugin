@@ -262,7 +262,7 @@ test('未実行: 未抽出の既定選択 + 抽出済みバッジ + 中断バナ
   // コスト概算。モデルは S6/S5 未入力のため入力して確定（単価表のモデル → 金額表示）。
   // 既定選択が study-1（text_only）+ study-3（pdf_native）の 2 study = 2 バッチ
   await page.locator('#extract-model').fill('gemini-2.0-flash');
-  await page.locator('#extract-model').blur();
+  await page.locator('#extract-model').press('Enter');
   await expect(page.locator('#extract-estimate')).toContainText('コスト概算: $');
   await expect(page.locator('#extract-estimate')).toContainText('2 バッチ');
 
@@ -294,7 +294,7 @@ test('画像非対応モデルの実行ブロック: 実行ボタン disabled + 
   // 画像非対応と実測済みのモデル（qwen3-235b。lib/llm/pricing.ts の MODEL_IMAGE_CAPABILITY）を
   // 選ぶと実行ボタンが disabled になり、警告が表示される
   await page.locator('#extract-model').fill('qwen/qwen3-235b-a22b-2507');
-  await page.locator('#extract-model').blur();
+  await page.locator('#extract-model').press('Enter');
   await expect(page.locator('#extract-image-unsupported-warning')).toContainText(
     '画像入力（スキャン PDF 等）に対応していないことが判明しています',
   );
@@ -302,7 +302,7 @@ test('画像非対応モデルの実行ブロック: 実行ボタン disabled + 
 
   // 画像対応モデル（Gemini 系）へ切り替えるとブロックが解除される
   await page.locator('#extract-model').fill('gemini-3.5-flash');
-  await page.locator('#extract-model').blur();
+  await page.locator('#extract-model').press('Enter');
   await expect(page.locator('#extract-image-unsupported-warning')).toHaveCount(0);
   await expect(page.locator('#extract-run')).toBeEnabled();
 
@@ -626,7 +626,7 @@ test.describe('予算超過の警告', () => {
     });
     await initApp(page, { documents: [DOC_OK], apiKey: 'test-key' });
     await page.locator('#extract-model').fill('gemini-2.0-flash');
-    await page.locator('#extract-model').blur();
+    await page.locator('#extract-model').press('Enter');
     await expect(page.locator('#extract-budget-warning')).toContainText('実行は妨げません');
     await expect(page.locator('#extract-budget-warning')).toContainText('$0.5000');
     await expect(page.locator('#extract-run')).toBeEnabled();

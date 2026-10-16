@@ -33,7 +33,7 @@ test('接続方式を変えると入力欄とモデル候補が切り替わる',
   await expect(page.locator('#anthropic-api-key')).toBeVisible();
   await expect(page.locator('#gemini-api-key')).toBeHidden();
   await expect(page.locator('#default-model')).toHaveValue('');
-  await expect(page.locator('#default-model-options option[value="gemini-3.8-flash"]')).toHaveCount(0);
+  await expect(page.locator('#default-model-listbox [role="option"][data-value="gemini-3.8-flash"]')).toHaveCount(0);
   await page.locator('#save-and-test-llm-connection').click();
   await expect(page.locator('#llm-connection-status')).toHaveText('保存できませんでした: 既定モデルを選んでください');
 });
@@ -63,7 +63,7 @@ test('ローカル LLM はキーなしで保存・一覧取得・接続確認を
   await page.locator('#local-llm-preset-ollama').click();
   await expect(page.locator('#local-llm-endpoint')).toHaveValue('http://localhost:11434/v1/chat/completions');
   await page.locator('#default-model').fill('local-model');
-  await page.locator('#default-model').blur();
+  await page.locator('#default-model').press('Enter');
   await page.locator('#save-and-test-llm-connection').click();
   await expect(page.locator('#llm-connection-status')).toHaveText('保存しました。接続を確認しました（local-model。モデル 1 件を取得）');
 });

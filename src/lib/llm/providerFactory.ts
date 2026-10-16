@@ -28,9 +28,8 @@ export interface ProviderConfig {
   fetch?: typeof fetch;
   /**
    * Options の既定 reasoning effort（`settings.defaultReasoningEffort`。未設定 = null / 省略）。
-   * Anthropic ネイティブ / OpenRouter / OpenAI 互換（Azure OpenAI 含む）の construction 時点の
-   * 既定値として渡す。Gemini は無視する（issue #127 PR5）。null / 省略なら各 provider は
-   * 従来どおりの挙動を維持する（`AnthropicProvider` 等の JSDoc 参照）
+   * 各プロバイダの構築時の既定値として渡す。null / 省略時は Gemini 3 系と Anthropic は low、
+   * OpenRouter / OpenAI 互換（Azure OpenAI 含む）は送信しない。
    */
   reasoningEffort?: ReasoningEffort | null;
 }
@@ -136,12 +135,11 @@ export function createProvider(config: ProviderConfig): LLMProvider {
       reasoningEffort: config.reasoningEffort,
     });
   }
-  // Gemini は reasoningEffort を受け取らない（未対応。issue #127 PR5 — thinking budget 相当の
-  // 設計は別途検討。GeminiProvider 冒頭コメント参照）
   return new GeminiProvider({
     apiKey: config.apiKey,
     model: config.model,
     fetch: config.fetch,
+    reasoningEffort: config.reasoningEffort,
   });
 }
 

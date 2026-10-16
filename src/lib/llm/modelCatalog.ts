@@ -11,7 +11,9 @@ import { t } from '../i18n';
 // （誰も経由しない re-export はカバレッジ 100% 強制のもとで到達不能な余剰コードになるため）
 
 export interface ModelCatalogGroup {
-  /** optgroup の表示ラベル */
+  /** 表示文言に依存しない候補の出典 */
+  kind: 'catalog' | 'fetched';
+  /** グループの表示ラベル */
   label: string;
   models: readonly string[];
 }
@@ -43,6 +45,7 @@ const CATALOG_GROUP_ORDER: ReadonlyArray<{
  */
 export function buildModelCatalog(): readonly ModelCatalogGroup[] {
   return CATALOG_GROUP_ORDER.map(({ provider, label }) => ({
+    kind: 'catalog' as const,
     label,
     models: Object.keys(MODEL_PRICING).filter(
       (model) => MODEL_IMAGE_CAPABILITY[model]?.provider === provider,
@@ -69,7 +72,7 @@ export function buildModelCatalogFor(
   const includedModels = new Set(groups.flatMap((group) => group.models));
   const models = [...new Set(fetched)].filter((model) => model !== '' && !includedModels.has(model));
   if (models.length > 0) {
-    groups.push({ label: t('options.fetchedModels'), models });
+    groups.push({ kind: 'fetched', label: t('options.fetchedModels'), models });
   }
   return groups;
 }
