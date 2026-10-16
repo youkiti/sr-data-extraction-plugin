@@ -17,6 +17,7 @@ import type { EntityLevel, SchemaField } from '../../domain/schemaField';
 import {
   APPROX_IMAGE_TOKENS_PER_PAGE,
   estimateCostUsd,
+  type ModelPricing,
   resolveModelImageInputSupport,
   resolveThinkingOutputMultiplier,
 } from '../../lib/llm/pricing';
@@ -128,6 +129,7 @@ export interface RunPlan {
 }
 
 export interface PlanRunInput {
+  fallbackPricing?: ModelPricing;
   documents: readonly DocumentRecord[];
   /** 同一 schema_version の抽出項目（混在は契約違反として throw） */
   fields: readonly SchemaField[];
@@ -370,6 +372,8 @@ export function planRun(input: PlanRunInput): RunPlan {
     input.model,
     tokensInEstimate,
     tokensOutEstimate * thinkingOutputMultiplier,
+    null,
+    input.fallbackPricing,
   );
   const inputMode: InputMode = imageDocumentIds.size > 0 ? 'pdf_native' : 'text_only';
 

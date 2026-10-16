@@ -1,4 +1,5 @@
 import { createSavingBadge } from '../ui/savingBadge';
+import { resolveFetchedPricing } from '../fetchedPricing';
 // #/verify: 検証（S8・中核画面 / ui-states.md §3。v0.10 フェーズ 3 = study 単位）。
 // 状態: 一覧読み込み中 / 一覧読み込み失敗 / 空 / 通常（study セレクタ + 2 ペイン検証パネル）。
 // study の切替は URL クエリ ?study= と同期する（セレクタ変更 → hash 書き換え → サービス層が読込）。
@@ -267,6 +268,7 @@ export function renderVerifyView(state: AppState, ctx: ViewContext): HTMLElement
         renderAskPaperPanel(
           state.askPaper,
           {
+            fallbackPricing: resolveFetchedPricing(state, state.askPaper.model ?? ''),
             spreadsheetId: state.currentProject?.spreadsheetId ?? '',
             studyId: bundle.study.studyId,
             fields: bundle.fields,

@@ -6,6 +6,7 @@ import type { Decision } from '../domain/decision';
 import type { PilotMatrixState } from './services/pilotMatrixService';
 import type { DocumentRecord, ExclusionReason } from '../domain/document';
 import type { LlmProviderId } from '../domain/llmApiLog';
+import type { FetchedModelPricing } from '../lib/storage/settingsStore';
 import type { ReviewSetRow } from '../domain/reviewSet';
 import type { ReviewerSetProgress } from '../features/review/reviewSets';
 import type { StudyRecord } from '../domain/study';
@@ -794,6 +795,7 @@ export interface AppState {
    */
   llmProviderOverride: LlmProviderId | null;
   fetchedModelIds: Partial<Record<LlmProviderId, readonly string[]>>;
+  fetchedModelPricing: FetchedModelPricing;
 }
 
 export type StateListener = (state: AppState) => void;
@@ -1039,6 +1041,7 @@ export function createInitialState(): AppState {
     settingsReturnHash: null,
     llmProviderOverride: null,
     fetchedModelIds: {},
+    fetchedModelPricing: {},
   };
 }
 

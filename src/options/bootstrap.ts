@@ -20,6 +20,7 @@ import {
   providerModelMismatchMessage,
 } from '../lib/llm/modelCatalog';
 import { fetchModelIds, isModelListFetchSupported } from '../lib/llm/modelListFetcher';
+import type { ModelPricing } from '../lib/llm/pricing';
 import { createProvider, resolveProviderId } from '../lib/llm/providerFactory';
 import {
   getRateLimitTier,
@@ -47,6 +48,7 @@ import {
   loadDefaultModel,
   loadFetchedModelIds,
   saveFetchedModelIds,
+  saveFetchedModelPricing,
   normalizeLocalLlmEndpoint,
   resolveStoredEndpoint,
   loadDefaultReasoningEffort,
@@ -320,7 +322,16 @@ async function bootstrapLlmConnectionSection(root: ParentNode): Promise<void> {
         let count: number | null = null;
         if (isModelListFetchSupported(provider)) {
           setStatus(t('options.fetchModelListFetching'), false);
-          const ids = await fetchModelIds({ provider, apiKey, chatCompletionsUrl: endpoint });
+          let pricing: Record<string, ModelPricing> = {};
+          const ids = await fetchModelIds({
+            provider, apiKey, chatCompletionsUrl: endpoint,
+            onPricing: (fetchedPricing) => {
+              pricing = fetchedPricing;
+            },
+          });
+          if (provider === 'openrouter') {
+            await saveFetchedModelPricing(provider, pricing);
+          }
           await saveFetchedModelIds(provider, ids);
           fetched = await loadFetchedModelIds();
           count = fetched[provider]?.length ?? 0;

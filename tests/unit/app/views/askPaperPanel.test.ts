@@ -11,6 +11,16 @@ beforeEach(() => {
   disposeAskPaperPanelCache();
   setUiLanguage('ja');
 });
+
+test('取得単価のある未知モデルは質問パネルでも金額を表示する', () => {
+  const root = renderAskPaperPanel(
+    { ...createInitialState().askPaper, model: 'custom' },
+    { ...makeAskParams(), fallbackPricing: { inputPerMillion: 0, outputPerMillion: 0 } },
+    undefined,
+    jest.fn(),
+  );
+  expect(root.querySelector('#ask-paper-estimate')!.textContent).toContain('約 $0.0000');
+});
 function render(
   overrides: Partial<ReturnType<typeof createInitialState>['askPaper']> = {},
   withCallbacks = true,

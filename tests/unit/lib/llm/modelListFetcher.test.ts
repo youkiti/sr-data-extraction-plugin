@@ -6,9 +6,45 @@ import {
   fetchModelIds,
   fetchOpenAiCompatibleModelIds,
   fetchOpenRouterModelIds,
+  fetchOpenRouterModels,
   isModelListFetchSupported,
 } from '../../../../src/lib/llm/modelListFetcher';
 import { BROWSER_ACCESS_HEADER } from '../../../../src/lib/llm/AnthropicProvider';
+
+test('一覧と有効な単価を1回の取得で返し、無料・キャッシュ・除外を扱う', async () => {
+  const pricing = { prompt: '0.0000001', completion: '0.0000004', input_cache_read: '0.00000001' };
+  const fetch = jest.fn().mockResolvedValue(jsonResponse({ data: [
+    { id: 'paid', pricing },
+    { id: 'free', pricing: { prompt: '0', completion: 0 } },
+    { id: 'excluded', pricing, supported_parameters: [] },
+    { id: 123, pricing },
+    ...[-1, 'bad', 'Infinity', '', null, false, [], '1e308'].map((prompt, index) => ({
+      id: `bad-${index}`, pricing: { prompt, completion: '0' },
+    })),
+    { id: 'bad-output', pricing: { prompt: '0', completion: '-1' } },
+    { id: 'bad-cache', pricing: { ...pricing, input_cache_read: '-1' } },
+  ] }));
+  const onPricing = jest.fn();
+  const ids = await fetchModelIds({ provider: 'openrouter', apiKey: '', fetch, onPricing });
+  expect(fetch).toHaveBeenCalledTimes(1);
+  expect(ids).toContain('bad-output');
+  expect(ids).not.toContain('excluded');
+  expect(onPricing).toHaveBeenCalledWith({
+    paid: { inputPerMillion: 0.1, outputPerMillion: 0.4, cachedInputPerMillion: 0.01 },
+    free: { inputPerMillion: 0, outputPerMillion: 0 },
+    'bad-cache': { inputPerMillion: 0.1, outputPerMillion: 0.4 },
+  });
+});
+
+test('一覧と単価の取得も既定の fetch を使う', async () => {
+  const previous = globalThis.fetch;
+  globalThis.fetch = jest.fn().mockResolvedValue(jsonResponse({}));
+  try {
+    await expect(fetchOpenRouterModels()).resolves.toEqual({ ids: [], pricing: {} });
+  } finally {
+    globalThis.fetch = previous;
+  }
+});
 
 function jsonResponse(body: unknown, status = 200): Response {
   return {

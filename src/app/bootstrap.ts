@@ -212,6 +212,7 @@ import {
 import {
   loadLlmConnectionSettings,
   loadFetchedModelIds,
+  loadFetchedModelPricing,
   onLlmConnectionSettingsChanged,
   loadDefaultModel,
   FACTORY_DEFAULT_MODEL,
@@ -339,6 +340,7 @@ export async function seedState(win: Window): Promise<AppState> {
   const connectionSettings = await loadLlmConnectionSettings();
   state.llmProviderOverride = connectionSettings.provider;
   state.fetchedModelIds = await loadFetchedModelIds();
+  state.fetchedModelPricing = await loadFetchedModelPricing();
   const preloaded = win.__E2E_PRELOADED_STATE__;
   if (preloaded) {
     // ロールは通常メインビュー起動時に Sheets を読んで解決する（roleService.loadRole）。
@@ -478,9 +480,9 @@ export async function bootstrapApp(
 
   const store = createStore(await seedState(win));
   const unsubscribeLlmConnection = onLlmConnectionSettingsChanged(() => {
-    void Promise.all([loadLlmConnectionSettings(), loadFetchedModelIds()])
-      .then(([settings, fetchedModelIds]) => {
-        store.setState({ llmProviderOverride: settings.provider, fetchedModelIds });
+    void Promise.all([loadLlmConnectionSettings(), loadFetchedModelIds(), loadFetchedModelPricing()])
+      .then(([settings, fetchedModelIds, fetchedModelPricing]) => {
+        store.setState({ llmProviderOverride: settings.provider, fetchedModelIds, fetchedModelPricing });
       });
   });
   win.addEventListener('unload', unsubscribeLlmConnection, { once: true });

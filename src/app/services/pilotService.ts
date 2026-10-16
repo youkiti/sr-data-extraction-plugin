@@ -2,6 +2,7 @@
 // - パイロット実行: extractionService.runExtraction（runType = 'pilot'）を配線する
 // - 検証データ束の組み立て / 判定・群構成の永続化は S8 と共有の verificationService へ委譲する
 import type { Decision } from '../../domain/decision';
+import { resolveFetchedPricing } from '../fetchedPricing';
 import type { DocumentRecord } from '../../domain/document';
 import type { Evidence } from '../../domain/evidence';
 import { annotatorTypeForRole } from '../../domain/reviewer';
@@ -282,6 +283,7 @@ export async function runPilot(store: Store, deps: PilotServiceDeps): Promise<vo
 
     const outcome = await runExtraction(
       {
+        fallbackPricing: resolveFetchedPricing(store.getState(), model),
         spreadsheetId: project.spreadsheetId,
         logsLlmFolderId: llmFolder.id,
         runType: 'pilot',

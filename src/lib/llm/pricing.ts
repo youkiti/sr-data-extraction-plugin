@@ -120,7 +120,8 @@ export const APPROX_IMAGE_TOKENS_PER_PAGE = 1_100;
 
 /**
  * tokens_in / tokens_out からモデル単価で概算コスト（USD）を計算する。
- * - 単価表に無いモデル、またはトークン数が両方とも null の場合は null を返す。
+ * - 単価表にも補完単価にも無いモデル、またはトークン数が両方とも null の場合は null を返す。
+ * - 補完単価は単価表にモデルが無い場合だけ使う。
  * - 片方のトークン数だけ取れている場合は、取れている側のみで概算する。
  *
  * `cachedTokensIn`（`ChatResponse.cachedTokensIn`）を渡すと、その分を入力単価ではなく
@@ -138,8 +139,9 @@ export function estimateCostUsd(
   tokensIn: number | null,
   tokensOut: number | null,
   cachedTokensIn: number | null = null,
+  fallbackPricing?: ModelPricing,
 ): number | null {
-  const pricing = MODEL_PRICING[model];
+  const pricing = MODEL_PRICING[model] ?? fallbackPricing;
   if (pricing === undefined) {
     return null;
   }

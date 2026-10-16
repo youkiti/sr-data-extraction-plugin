@@ -28,7 +28,7 @@ import type { DocumentRecord } from '../../../../src/domain/document';
 import type { ExtractionRun } from '../../../../src/domain/extractionRun';
 import type { SchemaField } from '../../../../src/domain/schemaField';
 import type { StudyRecord } from '../../../../src/domain/study';
-import { planRun } from '../../../../src/features/extraction/planRun';
+import { planRun, PROMPT_SCAFFOLD_CHARS } from '../../../../src/features/extraction/planRun';
 import { setUiLanguage } from '../../../../src/lib/i18n';
 import type { VerificationData } from '../../../../src/features/verification/types';
 
@@ -50,6 +50,28 @@ const renderPanelMock = renderCachedVerificationPanel as jest.MockedFunction<
   typeof renderCachedVerificationPanel
 >;
 const planRunMock = planRun as jest.MockedFunction<typeof planRun>;
+
+test.each(['openrouter', 'openai_compatible'] as const)('取得単価による S6 概算: %s', (provider) => {
+  const model = 'google/gemini-2.5-flash-lite';
+  const state = makeState({
+    pilot: { model },
+    documents: [makeDocument({ charCount: 40_000 - PROMPT_SCAFFOLD_CHARS - 180 })],
+    fields: [makeField({ fieldId: '', fieldName: '', extractionInstruction: '' })],
+  });
+  state.llmProviderOverride = provider;
+  state.fetchedModelPricing = {
+    openrouter: { [model]: { inputPerMillion: 0.1, outputPerMillion: 0.4, cachedInputPerMillion: 0.01 } },
+  };
+  const { root } = render(state);
+  const estimate = root.querySelector('#pilot-estimate')!.textContent;
+  if (provider === 'openrouter') {
+    // 入力 10,000、本文出力 84。出力だけに実測最大の思考倍率を掛ける。
+    expect(planRunMock.mock.results.at(-1)!.value.costEstimateUsd).toBeCloseTo(0.001069917233686559, 12);
+    expect(estimate).toContain('$0.0011');
+  } else {
+    expect(estimate).toContain('概算不可');
+  }
+});
 
 function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<PilotViewCallbacks> } {
   const callbacks = {
