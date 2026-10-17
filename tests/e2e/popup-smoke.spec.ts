@@ -108,3 +108,21 @@ test('アクセシビリティ違反がない（axe・ログイン済状態）',
   const results = await new AxeBuilder({ page }).analyze();
   expect(results.violations).toEqual([]);
 });
+
+test('最近の一覧は本拡張のプロジェクトだけを表示する', async ({ page }) => {
+  await page.route('https://www.googleapis.com/drive/v3/files**', async (route) => {
+    await route.fulfill({ json: { files: [
+      { id: 'project', name: '抽出プロジェクト' }, { id: 'tiab', name: 'スクリーニング' },
+    ] } });
+  });
+  await page.route('https://sheets.googleapis.com/v4/spreadsheets/*?fields=**', async (route) => {
+    const titles = new URL(route.request().url()).pathname.endsWith('/project')
+      ? ['Documents', 'SchemaFields'] : ['References', 'Decisions'];
+    await route.fulfill({ json: { sheets: titles.map((title) => ({ properties: { title } })) } });
+  });
+  await page.addInitScript(chromeStub({ authed: true, seedRecent: false }));
+  await page.goto('/popup/popup.html');
+  await expect(page.locator('#popup-recent-select option')).toHaveCount(1);
+  await expect(page.locator('#popup-recent-select')).toHaveValue('project');
+  await expect(page.locator('#popup-recent-select option')).toContainText('抽出プロジェクト');
+});

@@ -2,6 +2,7 @@
 // Popup とメインビューで共有する。プロジェクト選択（作成・既存 ID・履歴クリック）は
 // setCurrentProject で currentProject と recentProjects の両方を更新する
 import { getLocal, removeLocal, setLocal } from '../../lib/storage/chromeStorage';
+import { clearProjectSheetVerdicts } from './projectSheetVerdicts';
 import type { ProjectRef } from '../../domain/project';
 
 export const CURRENT_PROJECT_STORAGE_KEY = 'currentProject';
@@ -36,4 +37,5 @@ export async function setCurrentProject(project: ProjectRef): Promise<void> {
 export async function clearProjectSelection(): Promise<void> {
   await removeLocal(CURRENT_PROJECT_STORAGE_KEY);
   await removeLocal(RECENT_PROJECTS_STORAGE_KEY);
+  await clearProjectSheetVerdicts();
 }
