@@ -1,5 +1,6 @@
 import {
   loadProjectMeta,
+  isProjectSheet,
   ProjectSchemaError,
 } from '../../../../src/features/project/selectProject';
 import { CURRENT_SCHEMA_VERSION } from '../../../../src/domain/project';
@@ -198,4 +199,14 @@ describe('loadProjectMeta', () => {
       /サポート外のスキーマバージョンです: 99\.0/,
     );
   });
+});
+
+ test.each([
+  [[], false],
+  [['Documents'], false],
+  [['SchemaFields'], false],
+  [['References', 'Decisions'], false],
+  [['SchemaFields', 'Documents', 'Extra'], true],
+])('必須タブの判定: %j → %s', (titles, expected) => {
+  expect(isProjectSheet(titles as string[])).toBe(expected);
 });

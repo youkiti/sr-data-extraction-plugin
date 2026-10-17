@@ -32,7 +32,9 @@ import {
   type PickerSelection,
   type SpreadsheetPickResult,
 } from '../lib/google/picker';
-import { SheetsAccessDeniedError } from '../lib/google/sheets';
+import { isProjectSheet } from '../features/project/selectProject';
+import { loadProjectSheetVerdicts, saveProjectSheetVerdicts } from '../features/project/projectSheetVerdicts';
+import { getSheetTitles, SheetsAccessDeniedError } from '../lib/google/sheets';
 import type { GoogleApiDeps } from '../lib/google/types';
 import { getUiLanguage, localizeDom, setUiLanguage, t } from '../lib/i18n';
 import { applyPublicPageLanguage } from '../lib/publicPages';
@@ -331,10 +333,32 @@ async function renderRecent(
   }
 
   const localById = new Map(local.map((ref) => [ref.spreadsheetId, ref]));
+  const verdicts = await loadProjectSheetVerdicts();
+  const unknownIds = [...new Set(driveFiles.map((file) => file.id))]
+    .filter((id) => !localById.has(id) && !verdicts.has(id));
+  const checked = await Promise.allSettled(unknownIds.map(async (id) => {
+    const titles = await getSheetTitles(id, deps.google, { maxAttempts: 2 });
+    return [id, isProjectSheet(titles)] as const;
+  }));
+  const newVerdicts = new Map<string, boolean>();
+  for (const result of checked) {
+    if (result.status === 'fulfilled') {
+      const [id, verdict] = result.value;
+      verdicts.set(id, verdict);
+      newVerdicts.set(id, verdict);
+    } else {
+      // 例外には認証情報が含まれうるため詳細を出さず、次回の再検査に委ねる。
+      console.error('[popup] 最近のスプレッドシートのタブ取得に失敗しました');
+    }
+  }
+  if (newVerdicts.size > 0) {
+    await saveProjectSheetVerdicts(newVerdicts);
+  }
+
   const merged: RecentEntry[] = [];
   const seen = new Set<string>();
   for (const file of driveFiles) {
-    if (seen.has(file.id)) {
+    if (seen.has(file.id) || (!localById.has(file.id) && verdicts.get(file.id) !== true)) {
       continue;
     }
     seen.add(file.id);

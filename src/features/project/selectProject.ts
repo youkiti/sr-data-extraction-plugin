@@ -21,6 +21,11 @@ export class ProjectSchemaError extends Error {
 /** 本拡張のプロジェクトであることの判定に使うタブ（docs/ui-states.md §1） */
 const REQUIRED_TABS = ['Documents', 'SchemaFields'] as const;
 
+/** 一覧の絞り込みと開く時の検証で必須タブの定義を共有する。 */
+export function isProjectSheet(tabTitles: readonly string[]): boolean {
+  return REQUIRED_TABS.every((tab) => tabTitles.includes(tab));
+}
+
 /**
  * スプレッドシートの Meta タブを読み、ProjectMeta に変換する。
  *

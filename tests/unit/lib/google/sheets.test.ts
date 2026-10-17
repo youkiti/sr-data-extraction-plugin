@@ -70,6 +70,19 @@ describe('getSheetTitles', () => {
     expect(url).toContain('/sid?fields=sheets.properties.title');
   });
 
+  test('リトライ設定を渡すと指定回数で打ち切る', async () => {
+    const d = deps();
+    d.fetch.mockResolvedValue({
+      ok: false, status: 429, headers: new Headers(), text: async () => 'quota',
+    } as Response);
+    const sleep = jest.fn().mockResolvedValue(undefined);
+    await expect(getSheetTitles('sid', d, {
+      maxAttempts: 2, baseDelayMs: 10, maxDelayMs: 10, random: () => 0, sleep,
+    })).rejects.toMatchObject({ status: 429, retryCount: 1 });
+    expect(d.fetch).toHaveBeenCalledTimes(2);
+    expect(sleep).toHaveBeenCalledWith(10);
+  });
+
   test('sheets が未定義なら []、properties / title 欠落は除外', async () => {
     await expect(getSheetTitles('sid', deps({}))).resolves.toEqual([]);
     const d = deps({ sheets: [{}, { properties: {} }, { properties: { title: 'Meta' } }] });

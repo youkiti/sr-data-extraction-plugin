@@ -1,7 +1,7 @@
 // sr-query-builder-plugin の lib/google/sheets.ts をコピー流用（architecture.md §7-3）。
 // 本拡張向けに getSheetTitles（タブ一覧の取得。既存プロジェクト検証用）と
 // SheetsAccessDeniedError（drive.file スコープのアクセス拒否分類。issue #130）を追加している
-import { GoogleApiError, googleFetch, type GoogleApiDeps } from './types';
+import { GoogleApiError, googleFetch, type GoogleApiDeps, type GoogleFetchRetryOptions } from './types';
 
 const API_BASE = 'https://sheets.googleapis.com/v4/spreadsheets';
 
@@ -129,10 +129,11 @@ export async function createSpreadsheet(
  */
 export async function getSheetTitles(
   spreadsheetId: string,
-  deps: GoogleApiDeps
+  deps: GoogleApiDeps,
+  retryOptions?: GoogleFetchRetryOptions
 ): Promise<string[]> {
   const url = `${API_BASE}/${encodeURIComponent(spreadsheetId)}?fields=sheets.properties.title`;
-  const res = await googleFetch(url, { method: 'GET' }, deps);
+  const res = await googleFetch(url, { method: 'GET' }, deps, retryOptions);
   const json = (await res.json()) as {
     sheets?: { properties?: { title?: string } }[];
   };

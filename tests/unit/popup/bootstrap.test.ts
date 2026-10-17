@@ -1,3 +1,4 @@
+import { loadProjectSheetVerdicts, saveProjectSheetVerdicts } from '../../../src/features/project/projectSheetVerdicts';
 // Popup（S1）の状態仕様テスト（docs/ui-states.md §1 と 1:1 対応）
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -394,6 +395,57 @@ describe('bootstrapPopup', () => {
       );
     }
 
+    test('保存済みの true / false を使い、ローカル履歴は false でも検査しない', async () => {
+      await saveProjectSheetVerdicts(new Map([['yes', true], ['no', false], ['local', false]]));
+      await setCurrentProject({ projectId: 'p', spreadsheetId: 'local', driveFolderId: 'f', name: '履歴' });
+      const fetch = jest.fn();
+      const google = withDriveRecent([
+        { id: 'no', name: '除外' }, { id: 'yes', name: '対象' }, { id: 'local', name: 'Drive 履歴' },
+      ], { getAccessToken: async () => 'tok', fetch });
+      await bootstrapPopup(document, makeDeps({ google }));
+      expect(selectOptions().map((o) => o.value)).toEqual(['yes', 'local']);
+      expect(fetch).not.toHaveBeenCalled();
+    });
+
+    test('未知の ID を並列検査して成功分だけ一括保存し、失敗は次回も検査する', async () => {
+      const pending = new Map<string, (response: Response) => void>();
+      const fetch = jest.fn((input: RequestInfo | URL) => {
+        const id = new URL(String(input)).pathname.split('/').pop() as string;
+        if (id === 'failed') return Promise.reject(new Error('network'));
+        return new Promise<Response>((resolve) => { pending.set(id, resolve); });
+      });
+      const google = withDriveRecent(['yes', 'no', 'failed'].map((id) => ({ id, name: id })), {
+        getAccessToken: async () => 'tok', fetch,
+      });
+      const set = jest.spyOn(chrome.storage.local, 'set');
+      const boot = bootstrapPopup(document, makeDeps({ google }));
+      await flush();
+      expect([...pending.keys()]).toEqual(['yes', 'no']);
+      expect(fetch).toHaveBeenCalledTimes(3);
+      for (const [id, resolve] of pending) {
+        resolve({ ok: true, json: async () => ({ sheets:
+          (id === 'yes' ? ['Documents', 'SchemaFields'] : ['References', 'Decisions'])
+            .map((title) => ({ properties: { title } })),
+        }) } as Response);
+      }
+      await boot;
+      expect(selectOptions().map((o) => o.value)).toEqual(['yes']);
+      expect(await loadProjectSheetVerdicts()).toEqual(new Map([['yes', true], ['no', false]]));
+      expect(set.mock.calls.filter(([items]) => 'projectSheetVerdicts' in items)).toHaveLength(1);
+      await bootstrapPopup(document, makeDeps({ google }));
+      expect(fetch).toHaveBeenCalledTimes(4);
+    });
+
+    test('全件が非プロジェクトまたは検査失敗ならセクションを隠す', async () => {
+      await saveProjectSheetVerdicts(new Map([['no', false]]));
+      const google = withDriveRecent([{ id: 'no', name: '除外' }, { id: 'fail', name: '失敗' }], {
+        getAccessToken: async () => 'tok', fetch: jest.fn().mockRejectedValue(new Error('offline')),
+      });
+      await bootstrapPopup(document, makeDeps({ google }));
+      expect(el('popup-recent-section').hidden).toBe(true);
+      expect(await loadProjectSheetVerdicts()).toEqual(new Map([['no', false]]));
+    });
+
     test('マージ順と重複排除: Drive の recency 順を先頭に、無い ID だけローカル履歴を末尾に足す', async () => {
       // ローカル履歴は [B, A]（後に set した B が先頭）。B は Drive 未収録、A は Drive にも同一 ID で存在
       await setCurrentProject({
@@ -520,6 +572,8 @@ describe('bootstrapPopup', () => {
     });
 
     test('検証エラー（別ツールのシート）は #popup-recent-error に表示しタブを開かない', async () => {
+      // 一覧の判定後にタブや権限が変わった場合も、開く時に再検証する。
+      await saveProjectSheetVerdicts(new Map([['OTHER-SID', true]]));
       const google: GoogleApiDeps = {
         getAccessToken: async () => 'tok',
         fetch: (async (input: RequestInfo | URL) => {
@@ -554,6 +608,8 @@ describe('bootstrapPopup', () => {
     });
 
     test('SheetsAccessDeniedError では popup.accessNeeded のみ表示し、許可ボタンは出さない', async () => {
+      // 一覧の判定後にタブや権限が変わった場合も、開く時に再検証する。
+      await saveProjectSheetVerdicts(new Map([['DENIED-SID', true]]));
       const google: GoogleApiDeps = {
         getAccessToken: async () => 'tok',
         fetch: (async (input: RequestInfo | URL) => {

@@ -1041,6 +1041,46 @@ test('狭い窓幅で承認して次の未判定セルへ進んでもページ�
   await expect.poll(() => page.evaluate(() => window.scrollX)).toBe(0);
 });
 
+test('一覧表示で値が長くても、判定済みの行と AI の値が判定項目の枠に収まり、ページに横スクロールが出ない', async ({
+  page,
+}) => {
+  // 複数選択や質的テーマの引用で値が長いと、判定済みの行（省略表示の 1 行）の幅が
+  // ページ全体へ伝わり、広い窓でも右ペインが画面外まで伸びていた（v0.17.0 で実機報告）
+  await page.setViewportSize({ width: 1600, height: 900 });
+  const longValue = Array.from({ length: 12 }, (_, index) => `Formal clinical documentation education ${index}`).join('; ');
+  const totalEvidence = EVIDENCE_ROW_1.map((cell, index) => (index === 6 ? longValue : cell));
+  const countryEvidence = [...totalEvidence];
+  countryEvidence[0] = 'ev-country';
+  countryEvidence[3] = 'f-country';
+  await setupRoutes(page, {
+    schemaRows: [STUDY_FIELD_ROW, STUDY_FIELD_ROW_2],
+    evidenceRows: [totalEvidence, countryEvidence],
+  });
+  await initApp(page, '#/verify?study=study-1');
+  await expect(page.locator('.verify__panes')).toBeVisible({ timeout: 15_000 });
+  await page.locator('#verify-layout-toggle').click();
+  await expect(page.locator('.verify__action--accept')).toHaveCount(2);
+
+  // 2 件承認すると、1 件目が判定済みブロックの 1 行へ移る（2 件目は直近判定として上に残る）
+  await page.keyboard.press('a');
+  await expect(page.locator('.verify__cell--focused')).toHaveAttribute('data-cell-key', /f-country/);
+  await page.keyboard.press('a');
+  await expect(page.locator('.verify__decided-value')).toHaveCount(1);
+
+  const layout = await page.evaluate(() => {
+    const right = (selector: string): number => document.querySelector(selector)!.getBoundingClientRect().right;
+    return {
+      docScroll: document.documentElement.scrollWidth,
+      paneRight: right('.verify__pane--form'),
+      decidedRight: right('.verify__cell--decided'),
+      aiValueRight: right('.verify__ai-value'),
+    };
+  });
+  expect(layout.docScroll).toBeLessThanOrEqual(1600);
+  expect(layout.decidedRight).toBeLessThanOrEqual(layout.paneRight);
+  expect(layout.aiValueRight).toBeLessThanOrEqual(layout.paneRight);
+});
+
 // AI 抽出結果なし（no_result）バナー: RUN_ROW は study-1,study-2 の両方を対象にしているが、
 // Evidence は study-1 ぶんしか渡さない → study-2 は「完了 run の対象だったが Evidence が
 // 1 行も生成されなかった study」として #verify-no-ai-result バナーが出る（Evidence がある

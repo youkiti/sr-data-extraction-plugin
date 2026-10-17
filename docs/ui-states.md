@@ -57,11 +57,12 @@ spec が正。実装が追いついていない箇所は以下のとおり（実
 
 - 新規作成フォームの説明文は「データ抽出プロジェクトを作成します（スプレッドシート + Drive フォルダを生成）。」
 - **最近のスプレッドシート `#popup-recent-section`**（issue #245。ログイン済み表示 `#popup-projects` 内、アカウント表示の直後）: `<select id="popup-recent-select">` + 「開く」ボタン `#popup-recent-form` のプルダウン形式（旧: ボタン縦並びの `<ul>`）。Drive API の `files.list?orderBy=recency`（`drive.file` スコープにつき、この拡張が作成した or ユーザーが Picker で許可したファイルのみ）とローカル履歴 `recentProjects` をマージして選択肢にする
-  - **候補 0 件**: セクション自体を `hidden`（Drive・ローカルとも 0 件のときのみ）
+  - **プロジェクトの絞り込み**: ローカル履歴は無検査で表示する。Drive のみにある ID は `Documents` / `SchemaFields` の両タブがあるものだけ表示する（開く時と同じ必須タブ定義）。判定は `chrome.storage.local` に最大 200 件を保存し、古い順に削除、ログアウト時に全消去する。未判定 ID は並列検査（最大 2 回試行）し、成功した判定を一括保存する。タブ取得失敗は非表示・判定を保存せず次回再検査し、トークンを含めず `console.error` に記録する。
+  - **候補 0 件**: セクション自体を `hidden`（絞り込み後の Drive 候補・ローカル履歴とも 0 件）
   - **候補あり**: Drive の返却順（recency 降順）を先頭に、Drive に無いローカル履歴をその順のまま末尾に追加する。両方にある ID は Drive 側の位置に 1 つだけ出し、option のラベルは Drive のファイル名を使う（開く際の実体はローカルの `ProjectRef` を優先 — 検証をスキップできる速い経路）。同名シートを区別するため、option ラベルの末尾に spreadsheet ID の先頭 8 文字を付ける（`${ファイル名} — ${id.slice(0, 8)}`。`createProject` はファイル名にそのまま `projectTitle` を使うため、同名タイトルで作った複数プロジェクトはこの識別子が無いと区別できない）
   - **Drive API 失敗**（権限未取得・オフライン等）: セクションを消さず、ローカル履歴のみで一覧を作る。エラー文言は出さない（`console.error` のログのみ。トークン等の機微情報は出さない）
   - **開く成功**: ローカル履歴に一致する ID は `setCurrentProject` のみでメインビューへ遷移し、Drive のみの ID は `loadExistingProject` の検証を経てから遷移する。実行中は「開く」ボタンを disabled + 文言「開いています…」
-  - **非プロジェクトシートを選んだ場合**（Drive のみの ID で `Documents` / `SchemaFields` タブが無い等）: 「スプレッドシート ID / URL で開く」と同じ検証エラー文言を `#popup-recent-error` に表示する
+  - **判定後に非プロジェクトシートになった場合**（Drive のみの ID で `Documents` / `SchemaFields` タブが無い等）: 「スプレッドシート ID / URL で開く」と同じ検証エラー文言を `#popup-recent-error` に表示する
   - **アクセス拒否**（`SheetsAccessDeniedError`）: `popup.accessNeeded` の文言のみを `#popup-recent-error` に表示する。このセクションには「Google で許可する」ボタンは持たない（許可導線は「スプレッドシート ID / URL で開く」セクションへ一本化する）
 - **tiab-review から引き継いで作成 `#popup-tiab-handoff`**（ログイン済み表示 `#popup-projects` 内、「新規プロジェクト」と「スプレッドシート ID / URL で開く」の間。※Q2 の S1 側導線）:
   - **状態 A（初期）**: リード「tiab-review のスプレッドシートを選ぶと、プロジェクトを自動作成し、採用文献（include）の PDF 取り込みまで案内します。」+ ボタン「tiab-review のシートを選ぶ」`#tiab-pick`
