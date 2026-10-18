@@ -30,10 +30,9 @@ debug/
 # 再取得方法は tests/fixtures/pdf/README.md を参照（fetch-pdfs.ps1 で一括取得）
 tests/fixtures/pdf/*.pdf
 
-# 実データ抽出ベンチマーク（不眠 SR の人手 gold・原論文 PDF を再利用）。
-# ライセンス／公開可否の判断が難しいため、生データ・gold・textlayer・runs を含め
-# ディレクトリ丸ごとコミットしない（experiments/extraction-benchmark-real/README.md 参照）。
-experiments/extraction-benchmark-real/
+# 実データ抽出ベンチマークは src/ だけを公開し、ローカル設定・資料・結果は除外する。
+experiments/extraction-benchmark-real/*
+!experiments/extraction-benchmark-real/src/
 
 # anchor-spike の MV3 ハーネスへコピーする vendor / fixture（再現手順は REPORT.md 参照）
 experiments/anchor-spike/mv3-harness/pdf.min.mjs
