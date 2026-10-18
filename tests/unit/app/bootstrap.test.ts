@@ -5497,6 +5497,8 @@ describe('bootstrapApp: 担当セットの配線', () => {
         SchemaVersions: [[...SHEET_HEADERS.SchemaVersions]],
         Decisions: [[...SHEET_HEADERS.Decisions]],
         ArmStructures: [[...SHEET_HEADERS.ArmStructures]],
+        Evidence: [[...SHEET_HEADERS.Evidence]],
+        ExtractionRuns: [[...SHEET_HEADERS.ExtractionRuns]],
       });
       const store = (await bootstrapApp(asWindow(stub), deps))!;
       await flush();

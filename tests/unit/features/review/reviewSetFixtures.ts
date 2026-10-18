@@ -1,4 +1,5 @@
 // 担当セットの純粋関数を検証するための study・スキーマ・判定の素材。
+import type { Evidence } from '../../../../src/domain/evidence';
 import type { StudyRecord } from '../../../../src/domain/study';
 import type { ReviewSetRow } from '../../../../src/domain/reviewSet';
 import type { SchemaField } from '../../../../src/domain/schemaField';
@@ -66,5 +67,14 @@ export function decision(overrides: Partial<Decision> = {}): Decision {
     value: '日本',
     note: null,
     ...overrides,
+  };
+}
+
+export function outcomeEvidence(): Evidence {
+  return {
+    evidenceId: 'ev', runId: 'run', studyId: 's1', documentId: 'doc', fieldId: 'f-out',
+    entityKey: 'outcome:death|arm:1', value: '10', notReported: false,
+    quote: null, page: null, confidence: null, anchorStatus: null, bboxPage: null,
+    bbox: null, relocatedFrom: null, quoteTheme: null, quoteSeq: null, section: null,
   };
 }

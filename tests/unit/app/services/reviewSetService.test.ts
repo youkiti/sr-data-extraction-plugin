@@ -1,4 +1,7 @@
 // 担当セットのロード順・owner 操作・共有進捗素材をローカルの I/O モックで検証する。
+import { outcomeEvidence } from '../../features/review/reviewSetFixtures';
+import { readEvidenceRows } from '../../../../src/features/extraction/evidenceRepository';
+import { readCompletedRunMetas } from '../../../../src/features/extraction/runRepository';
 import { createInitialState, createStore } from '../../../../src/app/store';
 import {
   assignStudyReviewSet,
@@ -73,6 +76,9 @@ jest.mock('../../../../src/app/services/verifyService', () => ({
   readVerifyTargetMaterials: jest.fn(),
 }));
 
+jest.mock('../../../../src/features/extraction/evidenceRepository', () => ({ readEvidenceRows: jest.fn() }));
+jest.mock('../../../../src/features/extraction/runRepository', () => ({ readCompletedRunMetas: jest.fn() }));
+
 const PROJECT = { projectId: 'p', spreadsheetId: 'sid', driveFolderId: 'folder', name: '研究' };
 const deps = {
   google: { fetch: jest.fn(), getAccessToken: jest.fn() },
@@ -132,6 +138,8 @@ function texts() {
 }
 beforeEach(() => {
   jest.resetAllMocks();
+  jest.mocked(readEvidenceRows).mockResolvedValue([]);
+  jest.mocked(readCompletedRunMetas).mockResolvedValue([]);
   document.body.innerHTML = '';
   jest.mocked(loadProjectMeta).mockResolvedValue({
     projectId: 'p',
@@ -892,4 +900,23 @@ test('owner はキャッシュの署名者ではなく Meta から確定する',
   jest.mocked(readReviewSetRows).mockResolvedValue([reviewSet()]);
   await replaceReviewSetStudies(result, deps, ['s1'], 'new', 'group-1', 'owner@example.com');
   expect(result.getState().reviewSets.sets![0]!.studyIds).toEqual(['new']);
+});
+
+test('通常の担当進捗素材には表示中の完了 run の Evidence を返す', async () => {
+  const evidence = outcomeEvidence();
+  jest.mocked(readEvidenceRows).mockResolvedValue([evidence, { ...evidence, runId: 'orphan' }]);
+  jest.mocked(readCompletedRunMetas).mockResolvedValue([
+    { runId: 'run', schemaVersion: 1, startedAt: 't1', studyIds: ['s1'], fieldIds: null, warnings: null },
+  ]);
+  const material = await readReviewSetProgressMaterials(activeStore(), deps);
+  expect(material.aiEvidenceByStudy).toEqual(new Map([['s1', [evidence]]]));
+  expect(readEvidenceRows).toHaveBeenCalledTimes(1);
+  expect(readCompletedRunMetas).toHaveBeenCalledTimes(1);
+});
+
+test('独立入力の担当進捗素材は Evidence と ExtractionRuns を読まない', async () => {
+  const material = await readReviewSetProgressMaterials(activeStore('reviewer_independent'), deps);
+  expect(material.aiEvidenceByStudy.size).toBe(0);
+  expect(readEvidenceRows).not.toHaveBeenCalled();
+  expect(readCompletedRunMetas).not.toHaveBeenCalled();
 });

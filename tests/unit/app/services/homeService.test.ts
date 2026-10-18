@@ -1,10 +1,28 @@
-import { loadProgressCounts, type HomeServiceDeps } from '../../../../src/app/services/homeService';
+import {
+  loadAssignedProgress,
+  loadProgressCounts,
+  type HomeServiceDeps,
+} from '../../../../src/app/services/homeService';
+import {
+  filterReviewSetStudies,
+  readReviewSetProgressMaterials,
+  requireReviewSets,
+  reviewSetStudies,
+  reviewSetsForFiltering,
+} from '../../../../src/app/services/reviewSetService';
 import { createInitialState, createStore, type Store } from '../../../../src/app/store';
 import { readProgressCounts } from '../../../../src/features/project/progressCounts';
+import { getCurrentUserEmail } from '../../../../src/lib/google/identity';
+import { decision, field, outcomeEvidence, reviewSet, study } from '../../features/review/reviewSetFixtures';
 
 jest.mock('../../../../src/features/project/progressCounts', () => ({
   readProgressCounts: jest.fn(),
 }));
+jest.mock('../../../../src/app/services/reviewSetService', () => ({
+  readReviewSetProgressMaterials: jest.fn(), requireReviewSets: jest.fn(),
+  reviewSetStudies: jest.fn(), reviewSetsForFiltering: jest.fn(), filterReviewSetStudies: jest.fn(),
+}));
+jest.mock('../../../../src/lib/google/identity', () => ({ getCurrentUserEmail: jest.fn() }));
 
 const readCountsMock = readProgressCounts as jest.MockedFunction<typeof readProgressCounts>;
 
@@ -123,4 +141,31 @@ describe('loadProgressCounts', () => {
     await loadProgressCounts(store, deps);
     expect(store.getState().home.countsError).toBe('boom');
   });
+});
+
+test('Home は AI 抽出だけの未判定インスタンスがあれば完了に数えない', async () => {
+  const store = makeStore();
+  store.setState({
+    role: { ...store.getState().role, role: 'reviewer_with_ai' },
+    documents: { ...store.getState().documents, records: [{
+      documentId: 'doc', studyId: 's1', documentRole: 'article', driveFileId: 'pdf',
+      sourceFileId: null, filename: '研究.pdf', pmid: null, doi: null, textRef: null,
+      textStatus: 'ok', pageCount: null, charCount: null, importedAt: 't0',
+      importedBy: 'a@example.com', note: null, excluded: false, exclusionReason: null,
+      exclusionNote: null, excludedAt: null,
+    }] },
+  });
+  const studies = [study({ reviewSet: 'group-1' })];
+  jest.mocked(requireReviewSets).mockResolvedValue();
+  jest.mocked(reviewSetStudies).mockResolvedValue(studies);
+  jest.mocked(reviewSetsForFiltering).mockReturnValue([reviewSet()]);
+  jest.mocked(filterReviewSetStudies).mockReturnValue(studies);
+  jest.mocked(getCurrentUserEmail).mockResolvedValue('a@example.com');
+  jest.mocked(readReviewSetProgressMaterials).mockResolvedValue({
+    studies, fields: [field(), field({ fieldId: 'f-out', entityLevel: 'outcome_result' })],
+    decisions: [decision()], armStructures: new Map(),
+    aiEvidenceByStudy: new Map([['s1', [outcomeEvidence()]]]),
+  });
+  await loadAssignedProgress(store, { ...deps, profile: { getProfileUserInfo: jest.fn() } });
+  expect(store.getState().home.assignedProgress).toEqual({ done: 0, total: 1 });
 });

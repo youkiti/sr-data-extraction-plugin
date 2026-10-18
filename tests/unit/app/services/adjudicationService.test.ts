@@ -2118,6 +2118,8 @@ describe('consensus の引用保存', () => {
     const store = seedStore(); const deps = makeDeps();
     await loadAdjudicateTargets(store, deps);
     expect(readQuoteSetRows).not.toHaveBeenCalled();
+    // 一覧の読み込みもゲートの分母に Evidence を読む。ここでは開いた後の読み取り回数だけを見る
+    readEvidenceRowsMock.mockClear();
     await openAdjudicateStudy(store, deps, 'study-1');
     const working = store.getState().adjudicate.working!;
     expect(working.quoteEvidence).toEqual([old, latest]);
@@ -2258,6 +2260,9 @@ test('未編集の引用は項目ごとの最新完了 run を使い、補助ハ
   ]);
   const store = seedStore(); const deps = makeDeps();
   await loadAdjudicateTargets(store, deps);
+  // 一覧の読み込みもゲートの分母に Evidence を読む。ここでは開いた後の読み取り回数だけを見る
+  readEvidenceRowsMock.mockClear();
+  jest.mocked(readCompletedRunMetas).mockClear();
   await openAdjudicateStudy(store, deps, 'study-1');
   const working = store.getState().adjudicate.working!;
   expect(working.evidence).toEqual([running]);
@@ -2277,7 +2282,9 @@ test('AI 引用だけの素通し群キーもセルと同じ辞書で退避し�
     makeEvidence({ fieldId: 'f-arm', entityKey: 'arm:2', evidenceId: 'ai-only', quote: 'AI only source' }),
     makeEvidence({ fieldId: 'f-arm', entityKey: 'arm:6', evidenceId: 'mapped', quote: 'Mapped source' }),
   ];
-  readEvidenceRowsMock.mockResolvedValue(evidence);
+  // 一覧の読み込み時点では Evidence が無い（両者が全セルを判定済みでゲートを通る）状態にする。
+  // AI の arm:1 / arm:2 があると、B の検証画面にも未判定のセルとして出るためゲートを通らない
+  readEvidenceRowsMock.mockResolvedValueOnce([]).mockResolvedValue(evidence);
   jest.mocked(readCompletedRunMetas).mockResolvedValue([
     { runId: 'run-1', schemaVersion: 1, startedAt: 't1', studyIds: ['study-1'], fieldIds: null, warnings: null },
   ]);
@@ -2294,4 +2301,26 @@ test('AI 引用だけの素通し群キーもセルと同じ辞書で退避し�
   expect(resolved.candidates.map((candidate) => candidate.owner)).toEqual(['A', 'B']);
   const escaped = working.cells.find((cell) => cell.field.fieldId === 'f-arm' && cell.entityKey === 'arm:3')!;
   expect(quotesForCell(working, escaped).quotesB.map((quote) => quote.quote)).toEqual(['Stray source']);
+});
+
+test('表示中の完了 run の未判定インスタンスはゲートと完了人数の分母に入る', async () => {
+  setupTwoAnnotatorsReady();
+  getSchemaFieldsMock.mockResolvedValue([
+    makeField(), makeField({ fieldId: 'f-out', entityLevel: 'outcome_result' }),
+  ]);
+  readEvidenceRowsMock.mockResolvedValue([
+    makeEvidence({ runId: 'old', fieldId: 'f-out', entityKey: 'outcome:old|arm:1' }),
+    makeEvidence({ runId: 'latest', fieldId: 'f-out', entityKey: 'outcome:death|arm:1' }),
+    makeEvidence({ runId: 'orphan', fieldId: 'f-out', entityKey: 'outcome:orphan|arm:1' }),
+    makeEvidence({ runId: 'latest', studyId: 'other', fieldId: 'f-out', entityKey: 'outcome:other|arm:1' }),
+  ]);
+  jest.mocked(readCompletedRunMetas).mockResolvedValue([
+    { runId: 'old', schemaVersion: 1, startedAt: 't1', studyIds: ['study-1'], fieldIds: null, warnings: null },
+    { runId: 'latest', schemaVersion: 1, startedAt: 't2', studyIds: ['study-1', 'other'], fieldIds: null, warnings: null },
+  ]);
+  const store = seedStore();
+  await loadAdjudicateTargets(store, makeDeps());
+  const row = store.getState().adjudicate.rows!.find((item) => item.study.studyId === 'study-1')!;
+  expect(row.gate?.ready).toBe(false);
+  expect(row.annotatorProgress.find((entry) => entry.annotator === A)).toMatchObject({ decided: 1, total: 2, complete: false });
 });

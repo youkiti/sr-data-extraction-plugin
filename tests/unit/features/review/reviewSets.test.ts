@@ -1,4 +1,5 @@
 // 担当セットの分割再現性・表示対象・継承・レビュアーごとの進捗を検証する。
+import { outcomeEvidence } from './reviewSetFixtures';
 import {
   assignedPairForStudy,
   currentReviewSets,
@@ -161,7 +162,7 @@ describe('レビュアー × セットの進捗', () => {
         decision({ studyId: 's2', annotator: 'b@example.com' }),
         decision({ studyId: '別の研究', annotator: 'c@example.com' }),
       ],
-      armStructures: new Map(),
+      aiEvidenceByStudy: new Map(), armStructures: new Map(),
     };
     expect(reviewerSetProgress(input)).toEqual([
       { email: 'a@example.com', setId: 'calibration', done: 1, total: 1 },
@@ -185,7 +186,7 @@ describe('レビュアー × セットの進捗', () => {
         decision({ entityKey: 'arm:2' }),
         decision({ entityKey: 'arm:2', action: 'undo', decidedAt: 't1' }),
       ],
-      armStructures: new Map([
+      aiEvidenceByStudy: new Map(), armStructures: new Map([
         [
           's1',
           new Map([
@@ -247,9 +248,18 @@ test('担当列の直接変更を無視し、所属の食い違いを数える',
   expect(assignedPairForStudy(studies[1]!, sets)).toBeNull();
   expect(assignedPairForStudy(studies[2]!, sets)).toBeNull();
   expect(assignedPairForStudy(studies[3]!, [reviewSet({ studyIds: null })])).toBeNull();
-  expect(reviewerSetProgress({ studies, sets, reviewerEmails: ['a@example.com'], fields: [field()], decisions: [decision()], armStructures: new Map() })).toEqual([
+  expect(reviewerSetProgress({ studies, sets, reviewerEmails: ['a@example.com'], fields: [field()], decisions: [decision()], aiEvidenceByStudy: new Map(), armStructures: new Map() })).toEqual([
     { email: 'a@example.com', setId: 'calibration', done: 0, total: 1 },
     { email: 'a@example.com', setId: 'group-1', done: 1, total: 1 },
     { email: 'a@example.com', setId: 'group-3', done: 0, total: 0 },
   ]);
+});
+
+test('AI 抽出だけの未判定インスタンスは担当セットの完了に数えない', () => {
+  expect(reviewerSetProgress({
+    studies: [study({ reviewSet: 'group-1' })], sets: [reviewSet()], reviewerEmails: ['a@example.com'],
+    fields: [field(), field({ fieldId: 'f-out', entityLevel: 'outcome_result' })],
+    decisions: [decision()], armStructures: new Map(),
+    aiEvidenceByStudy: new Map([['s1', [outcomeEvidence()]]]),
+  })).toEqual([{ email: 'a@example.com', setId: 'group-1', done: 0, total: 1 }]);
 });

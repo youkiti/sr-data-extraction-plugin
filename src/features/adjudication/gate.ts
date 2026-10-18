@@ -1,7 +1,9 @@
 // study 単位の裁定ゲート（docs/design-independent-dual-review.md §6.1）。
 // 両 annotator の検証進捗が 100%（判定済みセル数 = 総セル数。かつ総セル数 > 0）の study だけ
-// 裁定開始可とする。進捗は既存の検証画面と同じセルモデル基準（features/verification/progress.ts）
+// 裁定開始可とする。検証画面と同じセル集合を使い、AI を見て検証する人は表示中の
+// run の Evidence を含め、独立入力の人は含めない。
 import type { ConfirmedArmStructure } from '../../domain/armStructure';
+import type { Evidence } from '../../domain/evidence';
 import type { Decision } from '../../domain/decision';
 import type { SchemaField } from '../../domain/schemaField';
 import { verificationProgress } from '../verification/progress';
@@ -14,19 +16,26 @@ export interface AnnotatorProgressSummary {
   complete: boolean;
 }
 
+/** 本人の判定が独立入力のみなら、AI 抽出由来のセルを進捗に含めない */
+export function isIndependentAnnotator(own: readonly Decision[]): boolean {
+  return own.some((decision) => decision.annotatorType === 'human_independent') &&
+    !own.some((decision) => decision.annotatorType === 'human_with_ai');
+}
+
 /**
- * 1 annotator ぶんの検証進捗を数える。decisions は院内の全 study 分でよい（study_id は
- * 呼び出し側で絞り込み済みの前提。verificationProgress 自体は entity_key の集合を
- * decisions/armStructure から導出するため、他 study の decision が混ざると誤集計になる）
+ * 1 annotator の進捗を検証画面と同じセル集合で数える。
+ * studyDecisions と aiEvidence は呼び出し側で同じ study に絞り込み、
+ * aiEvidence は表示中の run を合成したものを渡す。独立入力だけの人は Evidence を使わない。
  */
 export function computeAnnotatorProgress(
   annotator: string,
   fields: readonly SchemaField[],
   studyDecisions: readonly Decision[],
   armStructure: ConfirmedArmStructure | null,
+  aiEvidence: readonly Evidence[],
 ): AnnotatorProgressSummary {
   const own = studyDecisions.filter((decision) => decision.annotator === annotator);
-  const progress = verificationProgress(fields, [], own, { armStructure });
+  const progress = verificationProgress(fields, isIndependentAnnotator(own) ? [] : aiEvidence, own, { armStructure });
   return {
     annotator,
     decided: progress.decided,
@@ -62,8 +71,9 @@ export function computeStudyGate(
   studyDecisions: readonly Decision[],
   armStructureA: ConfirmedArmStructure | null,
   armStructureB: ConfirmedArmStructure | null,
+  aiEvidence: readonly Evidence[],
 ): StudyGate {
-  const progressA = computeAnnotatorProgress(annotatorA, fields, studyDecisions, armStructureA);
-  const progressB = computeAnnotatorProgress(annotatorB, fields, studyDecisions, armStructureB);
+  const progressA = computeAnnotatorProgress(annotatorA, fields, studyDecisions, armStructureA, aiEvidence);
+  const progressB = computeAnnotatorProgress(annotatorB, fields, studyDecisions, armStructureB, aiEvidence);
   return { progressA, progressB, ready: progressA.complete && progressB.complete };
 }

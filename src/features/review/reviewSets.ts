@@ -1,6 +1,7 @@
 // 担当セットの分割・表示対象・継承・進捗集計。I/O を持たない純粋関数。
 import type { ConfirmedArmStructure } from '../../domain/armStructure';
 import type { Decision } from '../../domain/decision';
+import type { Evidence } from '../../domain/evidence';
 import {
   CALIBRATION_SET_ID,
   compareReviewSetIds,
@@ -149,6 +150,7 @@ export interface ReviewerSetProgressInput {
   sets: readonly ReviewSetRow[];
   fields: readonly SchemaField[];
   decisions: readonly Decision[];
+  aiEvidenceByStudy: ReadonlyMap<string, readonly Evidence[]>;
   armStructures: ReadonlyMap<string, ReadonlyMap<string, ConfirmedArmStructure>>;
 }
 
@@ -176,6 +178,7 @@ export function reviewerSetProgress(input: ReviewerSetProgressInput): ReviewerSe
             input.fields,
             input.decisions.filter((decision) => decision.studyId === study.studyId),
             input.armStructures.get(study.studyId)?.get(email) ?? null,
+            input.aiEvidenceByStudy.get(study.studyId) ?? [],
           ).complete,
       ).length;
       progress.push({ email, setId: set.setId, done, total: studies.length });
