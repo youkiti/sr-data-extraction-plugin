@@ -30,9 +30,12 @@ debug/
 # 再取得方法は tests/fixtures/pdf/README.md を参照（fetch-pdfs.ps1 で一括取得）
 tests/fixtures/pdf/*.pdf
 
-# 実データ抽出ベンチマークは src/ だけを公開し、ローカル設定・資料・結果は除外する。
+# 実データ抽出ベンチマークは src/ と実行用のマニフェストだけを公開し、ローカル設定・資料・結果は除外する。
 experiments/extraction-benchmark-real/*
 !experiments/extraction-benchmark-real/src/
+!experiments/extraction-benchmark-real/package.json
+!experiments/extraction-benchmark-real/package-lock.json
+!experiments/extraction-benchmark-real/tsconfig.json
 
 # anchor-spike の MV3 ハーネスへコピーする vendor / fixture（再現手順は REPORT.md 参照）
 experiments/anchor-spike/mv3-harness/pdf.min.mjs

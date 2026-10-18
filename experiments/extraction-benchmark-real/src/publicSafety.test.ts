@@ -96,7 +96,10 @@ test('公開ソース全体に非公開の値がない', () => {
   } else {
     console.log('ローカル設定が無いので具体的な値の照合は飛ばした');
   }
-  const found = sourceFiles(dir).flatMap((file) =>
+  // 公開するマニフェストも走査する。package-lock.json は依存の URL と完全性ハッシュだけで、
+  // ハッシュが長い英数字の形に当たるため対象外にする。
+  const manifests = ['package.json', 'tsconfig.json'].map((name) => path.join(dir, '..', name));
+  const found = [...sourceFiles(dir), ...manifests].flatMap((file) =>
     violations(readFileSync(file, 'utf8'), concrete).map((message) => `${path.relative(dir, file)}: ${message}`));
   assert.deepEqual(found, []);
 });

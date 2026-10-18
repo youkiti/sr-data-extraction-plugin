@@ -32,7 +32,8 @@ import type { NormalizedPage } from '../../../src/domain/anchor';
 import { benchRoot, runsDir, selectedTargets } from './config';
 import { loadBenchmarkSchema, schemaFileName } from './loadSchema';
 
-const CLEAN_DIR = loadLocalConfig().cleanDir;
+// 子プロセスの cwd もこのフォルダにするので、相対パスはベンチのフォルダを基準に絶対パスへ直す
+const CLEAN_DIR = path.resolve(benchRoot, loadLocalConfig().cleanDir);
 const CALL_TIMEOUT_MS = 30 * 60_000;
 const MAX_ATTEMPTS = 2;
 
