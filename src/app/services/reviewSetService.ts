@@ -1,6 +1,10 @@
 // 担当セットのロード・owner の割り当て操作・進捗素材の読み込み。
 // 非 owner はロード失敗時に処理を止め、担当外の研究を表示・許可しない。
 import type { ConfirmedArmStructure } from '../../domain/armStructure';
+import type { Evidence } from '../../domain/evidence';
+import { readEvidenceRows } from '../../features/extraction/evidenceRepository';
+import { readCompletedRunMetas } from '../../features/extraction/runRepository';
+import { composeEvidenceByStudy } from '../../features/verification/composeEvidence';
 import type { DocumentRecord } from '../../domain/document';
 import { CALIBRATION_SET_ID, groupSetId, type ReviewSetRow } from '../../domain/reviewSet';
 import type { StudyRecord } from '../../domain/study';
@@ -157,7 +161,7 @@ export function filterReviewSetStudies(
   return studies.filter((study) => visible.has(study.studyId));
 }
 
-/** Home と dashboard が共有する、AI 抽出の有無に依存しない判定進捗の素材 */
+/** Home と dashboard が共有する、検証画面と同じセル集合で数える判定進捗の素材 */
 export async function readReviewSetProgressMaterials(
   store: Store,
   deps: Pick<ReviewSetServiceDeps, 'google'>,
@@ -182,6 +186,15 @@ export async function readReviewSetProgressMaterials(
         );
   const decisions = await readAllDecisions(project.spreadsheetId, deps.google);
   const armRows = await readAllArmStructures(project.spreadsheetId, deps.google);
+  const aiEvidenceByStudy: ReadonlyMap<string, readonly Evidence[]> =
+    store.getState().role.role === 'reviewer_independent'
+      ? new Map()
+      : new Map(
+          [...composeEvidenceByStudy(
+            await readEvidenceRows(project.spreadsheetId, deps.google),
+            await readCompletedRunMetas(project.spreadsheetId, deps.google),
+          )].map(([studyId, entry]) => [studyId, entry.evidence]),
+        );
   const armStructures = new Map<string, ReadonlyMap<string, ConfirmedArmStructure>>();
   for (const studyId of new Set(armRows.map((row) => row.studyId))) {
     const rows = armRows.filter((row) => row.studyId === studyId);
@@ -195,7 +208,7 @@ export async function readReviewSetProgressMaterials(
       ),
     );
   }
-  return { studies: active, fields, decisions, armStructures };
+  return { studies: active, fields, decisions, armStructures, aiEvidenceByStudy };
 }
 
 /** 割り当てが変わったとき、対象一覧と派生集計のキャッシュを破棄する */

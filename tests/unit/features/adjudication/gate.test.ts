@@ -1,6 +1,8 @@
 import type { Decision } from '../../../../src/domain/decision';
+import type { Evidence } from '../../../../src/domain/evidence';
 import type { SchemaField } from '../../../../src/domain/schemaField';
-import { computeAnnotatorProgress, computeStudyGate, countCompletedAnnotators, countOtherCompletedAnnotators } from '../../../../src/features/adjudication/gate';
+import { verificationProgress } from '../../../../src/features/verification/progress';
+import { isIndependentAnnotator, computeAnnotatorProgress, computeStudyGate, countCompletedAnnotators, countOtherCompletedAnnotators } from '../../../../src/features/adjudication/gate';
 
 function field(overrides: Partial<SchemaField> = {}): SchemaField {
   return {
@@ -56,7 +58,7 @@ function decision(overrides: Partial<Decision> = {}): Decision {
 
 describe('computeAnnotatorProgress', () => {
   test('全セル判定済みなら complete=true', () => {
-    const progress = computeAnnotatorProgress('a@example.com', [field()], [decision()], null);
+    const progress = computeAnnotatorProgress('a@example.com', [field()], [decision()], null, []);
     expect(progress).toEqual({ annotator: 'a@example.com', decided: 1, total: 1, complete: true });
   });
 
@@ -66,12 +68,13 @@ describe('computeAnnotatorProgress', () => {
       [field()],
       [decision({ annotator: 'b@example.com' })],
       null,
+      [],
     );
     expect(progress).toEqual({ annotator: 'a@example.com', decided: 0, total: 1, complete: false });
   });
 
   test('総セル数が 0 なら complete=false（vacuous な完了扱いを避ける）', () => {
-    const progress = computeAnnotatorProgress('a@example.com', [], [], null);
+    const progress = computeAnnotatorProgress('a@example.com', [], [], null, []);
     expect(progress).toEqual({ annotator: 'a@example.com', decided: 0, total: 0, complete: false });
   });
 });
@@ -80,7 +83,7 @@ describe('computeStudyGate', () => {
   test('両者とも完了なら ready=true', () => {
     const fields = [field()];
     const decisions = [decision({ annotator: 'a@example.com' }), decision({ annotator: 'b@example.com' })];
-    const gate = computeStudyGate('a@example.com', 'b@example.com', fields, decisions, null, null);
+    const gate = computeStudyGate('a@example.com', 'b@example.com', fields, decisions, null, null, []);
     expect(gate.ready).toBe(true);
     expect(gate.progressA.complete).toBe(true);
     expect(gate.progressB.complete).toBe(true);
@@ -89,9 +92,38 @@ describe('computeStudyGate', () => {
   test('片方だけ未完了なら ready=false', () => {
     const fields = [field()];
     const decisions = [decision({ annotator: 'a@example.com' })];
-    const gate = computeStudyGate('a@example.com', 'b@example.com', fields, decisions, null, null);
+    const gate = computeStudyGate('a@example.com', 'b@example.com', fields, decisions, null, null, []);
     expect(gate.ready).toBe(false);
     expect(gate.progressA.complete).toBe(true);
     expect(gate.progressB.complete).toBe(false);
   });
 });
+
+test.each([
+  [[], false],
+  [[decision({ annotatorType: 'human_independent' })], true],
+  [[decision()], false],
+  [[decision({ annotatorType: 'human_independent' }), decision()], false],
+] as const)('本人の判定方式から独立入力を判別する: %j', (own, expected) => {
+  expect(isIndependentAnnotator(own)).toBe(expected);
+});
+
+test.each(['human_with_ai', 'human_independent'] as const)(
+  '%s の進捗は検証画面と同じセル集合で数える', (annotatorType) => {
+    const fields = [field(), field({ fieldId: 'f-out', entityLevel: 'outcome_result' })];
+    const evidence: Evidence[] = [{
+      evidenceId: 'ev', runId: 'run', studyId: 'study-1', documentId: 'doc',
+      fieldId: 'f-out', entityKey: 'outcome:death|arm:1', value: '10', notReported: false,
+      quote: null, page: null, confidence: null, anchorStatus: null, bboxPage: null,
+      bbox: null, relocatedFrom: null, quoteTheme: null, quoteSeq: null, section: null,
+    }];
+    const own = [decision({ annotatorType })];
+    const expected = verificationProgress(fields, annotatorType === 'human_with_ai' ? evidence : [], own, { armStructure: null });
+    const progress = computeAnnotatorProgress('a@example.com', fields, own, null, evidence);
+    expect(progress).toMatchObject({ decided: expected.decided, total: expected.total });
+    expect(progress).toMatchObject({ decided: 1, total: annotatorType === 'human_with_ai' ? 2 : 1, complete: annotatorType === 'human_independent' });
+    const gate = computeStudyGate('a@example.com', 'b@example.com', fields,
+      [...own, decision({ annotator: 'b@example.com', annotatorType })], null, null, evidence);
+    expect(gate.ready).toBe(annotatorType === 'human_independent');
+  },
+);

@@ -103,6 +103,7 @@ export async function loadAssignedProgress(
           material.fields,
           material.decisions.filter((decision) => decision.studyId === study.studyId),
           material.armStructures.get(study.studyId)?.get(email) ?? null,
+          material.aiEvidenceByStudy.get(study.studyId) ?? [],
         ).complete,
     ).length;
     patchHome(store, {

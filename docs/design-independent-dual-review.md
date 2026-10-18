@@ -138,7 +138,7 @@ flowchart LR
 ### 6.1 入場と単位
 
 - adjudicator / owner のみ。**study 単位**で裁定する（検証・抽出と同じ単位）
-- study ごとのゲート: **対象 2 annotator（owner + reviewer）の検証進捗が 100% になった study だけ開始可**。未完了 study は一覧でディム + 進捗表示（両者の「完了 / 未完了」だけを見せ、値・判定内訳は見せない — 裁定開始までは盲検を維持）
+- study ごとのゲート: **対象 2 annotator（owner + reviewer）の検証進捗が 100% になった study だけ開始可**。進捗は検証画面と同じセル集合で数え、with_ai は表示中の run の Evidence を含め、independent は含めない。未完了 study は一覧でディム + 進捗表示（両者の「完了 / 未完了」だけを見せ、値・判定内訳は見せない — 裁定開始までは盲検を維持）
 
 ### 6.2 群構成の突き合わせ（セル裁定の前提）
 

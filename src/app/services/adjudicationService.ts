@@ -180,6 +180,9 @@ export async function loadAdjudicateTargets(
     const resultsRows = await readResultsDataRows(spreadsheetId, deps.google);
     const decisions = await readAllDecisions(spreadsheetId, deps.google);
     const armRows = await readAllArmStructures(spreadsheetId, deps.google);
+    const allEvidence = await readEvidenceRows(spreadsheetId, deps.google);
+    const completedRuns = await readCompletedRunMetas(spreadsheetId, deps.google);
+    const byStudy = composeEvidenceByStudy(allEvidence, completedRuns);
     const versions = await listSchemaVersions(spreadsheetId, deps.google);
     const latest = versions[0];
     const fields = latest === undefined ? [] : await getSchemaFieldsByVersion(spreadsheetId, latest.schemaVersion, deps.google);
@@ -193,6 +196,7 @@ export async function loadAdjudicateTargets(
     const rows: AdjudicateStudyRow[] = [];
     for (const item of selection) {
       const { study } = item;
+      const aiEvidence = byStudy.get(study.studyId)?.evidence ?? [];
       const studyDecisions = decisions.filter((decision) => decision.studyId === study.studyId);
       const pair = resolveAnnotatorPair({
         studyId: study.studyId,
@@ -207,7 +211,7 @@ export async function loadAdjudicateTargets(
       if (pair.kind === 'ready') {
         const armStructureA = latestArmStructure(studyArmRows, pair.annotatorA);
         const armStructureB = latestArmStructure(studyArmRows, pair.annotatorB);
-        gate = computeStudyGate(pair.annotatorA, pair.annotatorB, fields, studyDecisions, armStructureA, armStructureB);
+        gate = computeStudyGate(pair.annotatorA, pair.annotatorB, fields, studyDecisions, armStructureA, armStructureB, aiEvidence);
       } else if (pair.kind === 'selectable') {
         // issue #63: 3 名以上は全 2 名組合せ（email 昇順ペア）のゲートを事前計算する
         pairOptions = [];
@@ -226,6 +230,7 @@ export async function loadAdjudicateTargets(
                 studyDecisions,
                 latestArmStructure(studyArmRows, annotatorA),
                 latestArmStructure(studyArmRows, annotatorB),
+                aiEvidence,
               ),
             });
           }
@@ -237,7 +242,7 @@ export async function loadAdjudicateTargets(
         ...outsideAnnotators,
       ]);
       const annotatorProgress = [...annotators].map((email) =>
-        computeAnnotatorProgress(email, fields, studyDecisions, latestArmStructure(studyArmRows, email)),
+        computeAnnotatorProgress(email, fields, studyDecisions, latestArmStructure(studyArmRows, email), aiEvidence),
       );
       rows.push({ study, pair, gate, pairOptions, outsideAnnotators, annotatorProgress });
     }
