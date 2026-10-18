@@ -1,0 +1,85 @@
+{
+  "testFixtures": { "armInvariant": { "armNames": ["example-arm-a", "example-arm-b"] } },
+  "targets": [
+    { "pdfId": "paper-a", "file": "paper-a.pdf" },
+    { "pdfId": "paper-b", "file": "paper-b.pdf" }
+  ],
+  "cleanDir": "local/empty-work",
+  "fields": {
+    "string": [
+      {
+        "rawName": "example_label",
+        "entityLevel": "study",
+        "dataType": "text",
+        "extractionInstruction": "架空例のラベルを記入してください。"
+      }
+    ],
+    "numeric": [
+      {
+        "rawName": "example_count",
+        "entityLevel": "arm",
+        "dataType": "integer",
+        "extractionInstruction": "架空例の個数を記入してください。"
+      }
+    ]
+  },
+  "outcome": {
+    "free": {
+      "or_mean": "架空例の平均を記入してください。",
+      "or_sd": "架空例の標準偏差を記入してください。",
+      "or_n": "架空例の測定数を記入してください。",
+      "or_events": "架空例のイベント数を記入してください。"
+    },
+    "continuous": "架空例では outcome:example のキーを使います。",
+    "events": "架空例では outcome:example_event のキーを使います。"
+  },
+  "probes": {
+    "cachePdfId": "paper-a",
+    "draftConditions": [
+      { "name": "samples1", "papers": ["paper-a"] },
+      { "name": "samples3", "papers": ["paper-a", "paper-b", "paper-c"] }
+    ],
+    "jevPdfId": "paper-a",
+    "robTargets": ["paper-a", "paper-b"],
+    "multiSelect": {
+      "pdfDir": "local/example-pdf",
+      "papers": ["paper-a", "paper-b"],
+      "fields": [
+        {
+          "fieldId": "example-choice",
+          "fieldName": "example_choice",
+          "dataType": "enum",
+          "instruction": "架空例の該当する選択肢を選んでください。",
+          "allowedValues": "alpha|beta|unknown|other",
+          "multi": { "exclusiveValues": ["unknown"], "freeTextValues": ["other"] }
+        },
+        {
+          "fieldId": "example-text",
+          "fieldName": "example_text",
+          "dataType": "text",
+          "instruction": "架空例の短い説明を記入してください。"
+        }
+      ]
+    },
+    "qualitative": {
+      "pdfDir": "local/example-pdf",
+      "papers": ["paper-a", "paper-b"],
+      "fields": [
+        {
+          "fieldId": "example-theme",
+          "fieldName": "example_theme",
+          "fieldIndex": 1,
+          "instruction": "架空例のテーマを列挙してください。",
+          "maxQuotes": 4
+        },
+        {
+          "fieldId": "example-note",
+          "fieldName": "example_note",
+          "fieldIndex": 2,
+          "instruction": "架空例の補足を記入してください。",
+          "maxQuotes": null
+        }
+      ]
+    }
+  }
+}

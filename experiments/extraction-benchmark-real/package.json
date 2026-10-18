@@ -1,0 +1,34 @@
+{
+  "name": "extraction-benchmark-real",
+  "private": true,
+  "version": "0.1.0",
+  "description": "実データ抽出ベンチマーク（不眠 SR の人手 gold を再利用。src/ とマニフェストだけを公開し、データとローカル設定 local/ は git に入れない）",
+  "type": "module",
+  "scripts": {
+    "decode": "tsx src/decodeDownload.ts",
+    "inspect-xlsx": "tsx src/inspectXlsx.ts",
+    "build-schema": "tsx src/buildSchema.ts",
+    "build-outcome-set": "tsx src/buildOutcomeSet.ts",
+    "score-reask": "tsx src/scoreReask.ts",
+    "score-outcome": "tsx src/scoreOutcome.ts",
+    "convert-gold": "tsx src/convertGold.ts",
+    "extract-text": "tsx src/extractText.ts",
+    "run": "tsx src/runner.ts",
+    "score": "tsx src/score.ts",
+    "score-anchor-segments": "tsx src/scoreAnchorSegments.ts",
+    "score-models": "tsx src/scoreModels.ts",
+    "score-arm-invariant": "tsx src/scoreArmInvariant.ts",
+    "test": "tsx --test src/*.test.ts",
+    "typecheck": "tsc --noEmit",
+    "render-smoke": "tsx src/renderSmoke.ts",
+    "export-chrome-schema": "tsx src/exportChromeSchemaTsv.ts",
+    "validate-gold": "tsx src/validateGold.ts"
+  },
+  "devDependencies": {
+    "dotenv": "^17.4.2",
+    "pdfjs-dist": "^6.1.200",
+    "tsx": "^4.22.4",
+    "typescript": "^6.0.3",
+    "xlsx": "^0.18.5"
+  }
+}
