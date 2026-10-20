@@ -110,8 +110,8 @@ export function missingApiKeyMessage(provider: LlmProviderId): string {
   return `${label} API キーが未設定です。設定画面（Options）で保存してください`;
 }
 
-/** 接続方式とモデルの食い違いを画面とサービスで同じ文言にする。 */
-export function providerModelMismatchMessage(model: string, provider: LlmProviderId): string {
+/** 接続方式の表示名（Options の接続方式セレクタと同じ表記。表示言語に追従する） */
+export function llmProviderLabel(provider: LlmProviderId): string {
   const labels = {
     gemini: 'Gemini',
     openrouter: 'OpenRouter',
@@ -120,5 +120,10 @@ export function providerModelMismatchMessage(model: string, provider: LlmProvide
     openai_compatible: t('options.providerOpenAiCompatible'),
     local_llm: t('options.providerLocalLlm'),
   };
-  return t('options.modelMismatch', { model, provider: labels[provider] });
+  return labels[provider];
+}
+
+/** 接続方式とモデルの食い違いを画面とサービスで同じ文言にする。 */
+export function providerModelMismatchMessage(model: string, provider: LlmProviderId): string {
+  return t('options.modelMismatch', { model, provider: llmProviderLabel(provider) });
 }

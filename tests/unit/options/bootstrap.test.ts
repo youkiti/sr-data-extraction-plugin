@@ -669,3 +669,121 @@ describe('bootstrapOptionsPage（スタンドアロン options.html の起動配
     expect(chromeMock.storage.local.data['settings.uiLanguage']).toBe('ja');
   });
 });
+
+describe('bootstrapOptions（AI へ送る内容。docs/ui-states.md §2「AI へ送る内容」・issue #381）', () => {
+  let chromeMock: ChromeMock;
+  const statusEl = (): HTMLElement => document.getElementById('ai-data-consent-status')!;
+  const showButton = (): HTMLButtonElement =>
+    document.getElementById('ai-data-consent-show') as HTMLButtonElement;
+  const revokeButton = (): HTMLButtonElement =>
+    document.getElementById('ai-data-consent-revoke') as HTMLButtonElement;
+
+  beforeEach(() => {
+    chromeMock = installChromeMock();
+    document.body.replaceChildren(buildSettingsSections());
+  });
+  afterEach(() => {
+    setUiLanguage('ja');
+  });
+
+  test('必須要素が欠けている場合は何もしない', async () => {
+    document.body.innerHTML = OPTIONS_TEMPLATE;
+    await expect(bootstrapOptions(document)).resolves.toBeUndefined();
+    expect(document.getElementById('ai-data-consent-status')).toBeNull();
+  });
+
+  test('未同意・古い版・読み込み失敗では「まだ同意していません」で、取り消しは押せない', async () => {
+    await bootstrapOptions(document);
+    expect(statusEl().textContent).toBe('まだ同意していません。最初の AI 機能の実行前に確認します。');
+    expect(revokeButton().disabled).toBe(true);
+
+    document.body.replaceChildren(buildSettingsSections());
+    chromeMock.storage.local.data.aiDataConsent = { version: 0, acceptedAt: '2026-01-01T00:00:00Z' };
+    await bootstrapOptions(document);
+    expect(revokeButton().disabled).toBe(true);
+
+    document.body.replaceChildren(buildSettingsSections());
+    const original = chromeMock.storage.local.get.getMockImplementation()!;
+    chromeMock.storage.local.get.mockImplementation(async (key: string) => {
+      if (key === 'aiDataConsent') throw new Error('storage');
+      return original(key);
+    });
+    await bootstrapOptions(document);
+    expect(revokeButton().disabled).toBe(true);
+  });
+
+  test('同意済みは日時を表示し、壊れた日時はそのまま出す', async () => {
+    chromeMock.storage.local.data.aiDataConsent = { version: 1, acceptedAt: '2026-10-20T03:04:00.000Z' };
+    await bootstrapOptions(document);
+    expect(statusEl().textContent).toMatch(/^同意済み（.*2026.*）$/);
+    expect(revokeButton().disabled).toBe(false);
+
+    document.body.replaceChildren(buildSettingsSections());
+    chromeMock.storage.local.data.aiDataConsent = { version: 1, acceptedAt: 'broken' };
+    await bootstrapOptions(document);
+    expect(statusEl().textContent).toBe('同意済み（broken）');
+  });
+
+  test('説明の再表示は現在の接続方式を差し込み、同意すれば記録、キャンセルでは変えない', async () => {
+    chromeMock.storage.local.data['settings.llmProvider'] = 'anthropic';
+    await bootstrapOptions(document);
+    showButton().focus();
+    showButton().click();
+    await flush();
+    expect(document.getElementById('ai-data-consent')?.textContent).toContain('（Anthropic）');
+    document.getElementById('ai-data-consent-cancel')!.click();
+    await flush();
+    expect(chromeMock.storage.local.data.aiDataConsent).toBeUndefined();
+    expect(document.activeElement).toBe(showButton());
+
+    showButton().click();
+    await flush();
+    document.getElementById('ai-data-consent-accept')!.click();
+    await flush();
+    expect(chromeMock.storage.local.data.aiDataConsent).toMatchObject({ version: 1 });
+    expect(statusEl().textContent).toMatch(/^同意済み/);
+    expect(revokeButton().disabled).toBe(false);
+  });
+
+  test('接続方式が未選択なら既定モデルから送り先を推定する', async () => {
+    chromeMock.storage.local.data['settings.defaultModel'] = 'openai/gpt-5';
+    await bootstrapOptions(document);
+    showButton().click();
+    await flush();
+    expect(document.getElementById('ai-data-consent')?.textContent).toContain('（OpenRouter）');
+    document.getElementById('ai-data-consent-cancel')!.click();
+    await flush();
+
+    delete chromeMock.storage.local.data['settings.defaultModel'];
+    showButton().click();
+    await flush();
+    expect(document.getElementById('ai-data-consent')?.textContent).toContain('（Gemini）');
+    document.getElementById('ai-data-consent-cancel')!.click();
+  });
+
+  test('取り消しで記録を消し、失敗時は赤系メッセージを出す', async () => {
+    chromeMock.storage.local.data.aiDataConsent = { version: 1, acceptedAt: '2026-10-20T03:04:00.000Z' };
+    await bootstrapOptions(document);
+    revokeButton().click();
+    await flush();
+    expect(chromeMock.storage.local.data.aiDataConsent).toBeUndefined();
+    expect(statusEl().textContent).toBe('まだ同意していません。最初の AI 機能の実行前に確認します。');
+
+    chromeMock.storage.local.remove.mockRejectedValueOnce(new Error('x'));
+    revokeButton().disabled = false;
+    revokeButton().click();
+    await flush();
+    expect(statusEl().textContent).toBe('同意の記録を更新できませんでした。');
+    expect(statusEl().classList.contains('options__status--error')).toBe(true);
+  });
+
+  test('同意の保存に失敗したら赤系メッセージを出す', async () => {
+    await bootstrapOptions(document);
+    chromeMock.storage.local.set.mockRejectedValueOnce(new Error('x'));
+    showButton().click();
+    await flush();
+    document.getElementById('ai-data-consent-accept')!.click();
+    await flush();
+    expect(statusEl().textContent).toBe('同意の記録を更新できませんでした。');
+  });
+});

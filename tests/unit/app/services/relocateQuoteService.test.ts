@@ -257,6 +257,16 @@ describe('relocateQuote', () => {
     expect(chatMock).not.toHaveBeenCalled();
   });
 
+  test('AI へ送る前の同意（issue #381）をキャンセルしたら LLM を呼ばず cancelled を返す', async () => {
+    const ensureAiDataConsent = jest.fn().mockResolvedValue(false);
+    const { deps, chatMock } = makeDeps({ ensureAiDataConsent });
+    const outcome = await relocateQuote(makeParams(), deps);
+    expect(outcome).toEqual({ status: 'cancelled' });
+    expect(ensureAiDataConsent).toHaveBeenCalledWith('gemini');
+    expect(chatMock).not.toHaveBeenCalled();
+    expect(appendEvidenceRowsMock).not.toHaveBeenCalled();
+  });
+
   test('LLM 呼び出し自体が失敗（ネットワークエラー等）した場合も not_found へ落とす', async () => {
     const { deps } = makeDeps();
     const chatMock = jest.fn<Promise<ChatResponse>, Parameters<LLMProvider['chat']>>(async () => {

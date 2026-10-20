@@ -80,6 +80,7 @@ import { getCurrentUserEmail, type ProfileDeps } from '../../lib/google/identity
 import type { GoogleApiDeps } from '../../lib/google/types';
 import { appendLlmApiLog } from '../../lib/llm/apiLogRepository';
 import { withLogging } from '../../lib/llm/apiLogger';
+import { confirmAiDataConsent } from '../../lib/llm/aiDataConsent';
 import type { LLMProvider } from '../../lib/llm/LLMProvider';
 import { missingApiKeyMessage, providerModelMismatchMessage } from '../../lib/llm/modelCatalog';
 import {
@@ -250,6 +251,8 @@ async function resolveDocuments(
   return cached ?? (await readDocuments(spreadsheetId, deps.google));
 }
 
+let draftingLocked = false;
+
 /**
  * draft-schema skill を実行してエディタへ流し込む（S5 の中核フロー）。
  * 経過時間は 1 秒ごとに store へ反映し、他の再描画で表示が消えない
@@ -258,7 +261,7 @@ async function resolveDocuments(
 export async function runDraftSchema(store: Store, deps: SchemaServiceDeps): Promise<void> {
   const state = store.getState();
   const project = state.currentProject;
-  if (!project || state.schema.drafting) {
+  if (!project || state.schema.drafting || draftingLocked) {
     return;
   }
   const { selectedDocumentIds, model } = state.schema;
@@ -270,25 +273,31 @@ export async function runDraftSchema(store: Store, deps: SchemaServiceDeps): Pro
     patchSchema(store, { draftError: t('extraction.errNoModel') });
     return;
   }
-  const providerResolution = await resolveProviderConfig(model, deps);
-  if (providerResolution.modelMismatch !== null) {
-    patchSchema(store, { draftError: providerModelMismatchMessage(model, providerResolution.provider) });
-    return;
-  }
-  if (providerResolution.config === null) {
-    patchSchema(store, { draftError: missingApiKeyMessage(providerResolution.provider) });
-    return;
-  }
-
-  patchSchema(store, { drafting: true, draftError: null, draftElapsedSeconds: 0 });
-  const startedAt = Date.now();
-  const ticker = setInterval(() => {
-    patchSchema(store, {
-      draftElapsedSeconds: Math.floor((Date.now() - startedAt) / 1000),
-    });
-  }, 1000);
-
+  draftingLocked = true;
+  let ticker: ReturnType<typeof setInterval> | undefined;
   try {
+    const providerResolution = await resolveProviderConfig(model, deps);
+    if (providerResolution.modelMismatch !== null) {
+      patchSchema(store, { draftError: providerModelMismatchMessage(model, providerResolution.provider) });
+      return;
+    }
+    if (providerResolution.config === null) {
+      patchSchema(store, { draftError: missingApiKeyMessage(providerResolution.provider) });
+      return;
+    }
+    // AI へ送る前の同意（issue #381）。キャンセルなら画面を変えずに戻る
+    if (!(await confirmAiDataConsent(deps, providerResolution.provider))) {
+      return;
+    }
+
+    patchSchema(store, { drafting: true, draftError: null, draftElapsedSeconds: 0 });
+    const startedAt = Date.now();
+    ticker = setInterval(() => {
+      patchSchema(store, {
+        draftElapsedSeconds: Math.floor((Date.now() - startedAt) / 1000),
+      });
+    }, 1000);
+
     const { text: protocolText } = await resolveProtocol(store, deps, project.spreadsheetId);
     const documents = await resolveDocuments(store, deps, project.spreadsheetId);
     const loadPages = makeLoadDocumentPages(documents, deps.google);
@@ -365,6 +374,7 @@ export async function runDraftSchema(store: Store, deps: SchemaServiceDeps): Pro
     patchSchema(store, { drafting: false, draftError: toMessage(err) });
   } finally {
     clearInterval(ticker);
+    draftingLocked = false;
   }
 }
 

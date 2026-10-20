@@ -61,6 +61,8 @@ sr-query-builder では後付けになって手戻りしたため、スケルト
 1. **状態注入**: `app.ts` は `window.__E2E_PRELOADED_STATE__` があればストアのシードに使う（本番動作には影響しない）
 2. **PDF.js worker の URL 解決**【決定済み 2026-07-02】: 本番は `chrome.runtime.getURL('pdf.worker.min.mjs')`。E2E では chrome スタブ側で `chrome.runtime.getURL = (p) => '/' + p` と定義して解決する（`dist/` を丸ごと静的配信しているため worker も同じ相対パスで届く）。**プロダクションコードは無変更**で seam をテスト側に閉じる。MV3 の module worker 事情でこの方式が通らない場合のみ、resolver DI（`loadPdf({ resolveAssetUrl })`）へフォールバック — その判断は architecture.md §7 チェックポイント 2 と同時に行う
 
+AI へ送る前の同意（issue #381）: AI 機能を実行する E2E は、chrome スタブの `chrome.storage.local` に同意済みの記録（`aiDataConsent: { version: 1, acceptedAt }`）を入れて同意画面を出さない。同意画面そのものは `tests/e2e/app-ai-consent.spec.ts` が検証する。同意文の版（`AI_DATA_CONSENT_VERSION`）を上げたら、これらのスタブの `version` も合わせる。
+
 ### 2.2 PDF fixture の 2 層構成
 
 | 層 | 実体 | コミット | 用途 |

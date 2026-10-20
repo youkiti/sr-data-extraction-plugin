@@ -38,6 +38,7 @@ import { getSchemaFieldsByVersion } from '../../features/schema/schemaRepository
 import { ensureChildFolder } from '../../lib/google/drive';
 import type { GoogleApiDeps } from '../../lib/google/types';
 import { missingApiKeyMessage, providerModelMismatchMessage } from '../../lib/llm/modelCatalog';
+import { confirmAiDataConsent } from '../../lib/llm/aiDataConsent';
 import {
   isRunBlockedByImageUnsupportedModel,
   resolveProviderConfig,
@@ -435,6 +436,9 @@ async function performRun(
   return outcome;
 }
 
+// 同意待ちを含め、一括抽出と再試行を相互に排他する。
+let extractionLocked = false;
+
 /**
  * 一括抽出を実行する（S7 の中核フロー。確認カードの「実行する」から呼ばれる）
  */
@@ -445,66 +449,72 @@ export async function runExtract(store: Store, deps: ExtractServiceDeps): Promis
   if (
     !project ||
     state.extract.running ||
+    extractionLocked ||
     state.extract.retryingStudyId !== null ||
     fields === null
   ) {
     return;
   }
-  const providerResolution = await resolveProviderConfig(state.extract.model, deps);
-  if (providerResolution.modelMismatch !== null) {
-    patchExtract(store, {
-      confirming: false,
-      runError: providerModelMismatchMessage(state.extract.model, providerResolution.provider),
-    });
-    return;
-  }
-  if (providerResolution.config === null) {
-    patchExtract(store, {
-      confirming: false,
-      runError: missingApiKeyMessage(providerResolution.provider),
-    });
-    return;
-  }
-  // 画像非対応モデルの実行ブロック: 確認カードを開いたまま裏でモデルを変更されるケースの
-  // defense in depth（requestExtractRun と同じ判定を、実際に解決済みの provider で再確認する）
-  const candidatesForBlockCheck = buildExtractionCandidates(
-    state.documents.studies ?? [],
-    state.documents.records ?? [],
-  );
-  const targetsForBlockCheck = documentsForStudies(
-    candidatesForBlockCheck,
-    effectiveStudyIds(candidatesForBlockCheck, state.extract.selectedStudyIds),
-  );
-  if (
-    isRunBlockedByImageUnsupportedModel(
-      state.extract.model,
-      targetsForBlockCheck.some((doc) => doc.textStatus === 'no_text_layer'),
-      providerResolution.provider,
-    )
-  ) {
-    patchExtract(store, {
-      confirming: false,
-      runError: t('extraction.errImageUnsupportedModel', { model: state.extract.model }),
-    });
-    return;
-  }
-  // 選択サブセットで fields を絞り込む（全選択時は fieldIds: null。issue #80）。
-  // performRun 呼び出し前に lastRunFieldIds を確定させる = 成功・失敗にかかわらず
-  // 再試行（retryExtractStudy）が同じ選択を引き継げる（A-2）
-  const fieldIds = resolveFieldIdsForRun(state.extract.selectedFieldIds);
-  const runFields = filterFieldsBySelection(fields, fieldIds);
-  patchExtract(store, {
-    confirming: false,
-    running: true,
-    runError: null,
-    progress: null,
-    run: null,
-    rejectedCount: 0,
-    armWarnings: [],
-    studyRows: [],
-    lastRunFieldIds: fieldIds,
-  });
+  extractionLocked = true;
   try {
+    const providerResolution = await resolveProviderConfig(state.extract.model, deps);
+    if (providerResolution.modelMismatch !== null) {
+      patchExtract(store, {
+        confirming: false,
+        runError: providerModelMismatchMessage(state.extract.model, providerResolution.provider),
+      });
+      return;
+    }
+    if (providerResolution.config === null) {
+      patchExtract(store, {
+        confirming: false,
+        runError: missingApiKeyMessage(providerResolution.provider),
+      });
+      return;
+    }
+    // 画像非対応モデルの実行ブロック: 確認カードを開いたまま裏でモデルを変更されるケースの
+    // defense in depth（requestExtractRun と同じ判定を、実際に解決済みの provider で再確認する）
+    const candidatesForBlockCheck = buildExtractionCandidates(
+      state.documents.studies ?? [],
+      state.documents.records ?? [],
+    );
+    const targetsForBlockCheck = documentsForStudies(
+      candidatesForBlockCheck,
+      effectiveStudyIds(candidatesForBlockCheck, state.extract.selectedStudyIds),
+    );
+    if (
+      isRunBlockedByImageUnsupportedModel(
+        state.extract.model,
+        targetsForBlockCheck.some((doc) => doc.textStatus === 'no_text_layer'),
+        providerResolution.provider,
+      )
+    ) {
+      patchExtract(store, {
+        confirming: false,
+        runError: t('extraction.errImageUnsupportedModel', { model: state.extract.model }),
+      });
+      return;
+    }
+    // AI へ送る前の同意（issue #381）。キャンセルなら確認カードも開いたままにする
+    if (!(await confirmAiDataConsent(deps, providerResolution.provider))) {
+      return;
+    }
+    // 選択サブセットで fields を絞り込む（全選択時は fieldIds: null。issue #80）。
+    // performRun 呼び出し前に lastRunFieldIds を確定させる = 成功・失敗にかかわらず
+    // 再試行（retryExtractStudy）が同じ選択を引き継げる（A-2）
+    const fieldIds = resolveFieldIdsForRun(state.extract.selectedFieldIds);
+    const runFields = filterFieldsBySelection(fields, fieldIds);
+    patchExtract(store, {
+      confirming: false,
+      running: true,
+      runError: null,
+      progress: null,
+      run: null,
+      rejectedCount: 0,
+      armWarnings: [],
+      studyRows: [],
+      lastRunFieldIds: fieldIds,
+    });
     const records = await resolveDocuments(store, deps.google, project.spreadsheetId);
     const studies = await resolveStudies(store, deps.google, project.spreadsheetId);
     // 除外文書は抽出対象から外す（issue #181）
@@ -563,6 +573,8 @@ export async function runExtract(store: Store, deps: ExtractServiceDeps): Promis
     }
   } catch (err) {
     patchExtract(store, { running: false, progress: null, runError: toMessage(err) });
+  } finally {
+    extractionLocked = false;
   }
 }
 
@@ -581,18 +593,10 @@ export async function retryExtractStudy(
   if (
     !project ||
     state.extract.running ||
+    extractionLocked ||
     state.extract.retryingStudyId !== null ||
     fields === null
   ) {
-    return;
-  }
-  const providerResolution = await resolveProviderConfig(state.extract.model, deps);
-  if (providerResolution.modelMismatch !== null) {
-    patchExtract(store, { runError: providerModelMismatchMessage(state.extract.model, providerResolution.provider) });
-    return;
-  }
-  if (providerResolution.config === null) {
-    patchExtract(store, { runError: missingApiKeyMessage(providerResolution.provider) });
     return;
   }
   // 対象行を差し替えるヘルパ（他の行の結果表示は維持する）
@@ -607,7 +611,17 @@ export async function retryExtractStudy(
   // lastRunFieldIds = 直近実行時に実際に使った値を使う）
   const fieldIds = state.extract.lastRunFieldIds;
   const runFields = filterFieldsBySelection(fields, fieldIds);
+  extractionLocked = true;
   try {
+    const providerResolution = await resolveProviderConfig(state.extract.model, deps);
+    if (providerResolution.modelMismatch !== null) {
+      patchExtract(store, { runError: providerModelMismatchMessage(state.extract.model, providerResolution.provider) });
+      return;
+    }
+    if (providerResolution.config === null) {
+      patchExtract(store, { runError: missingApiKeyMessage(providerResolution.provider) });
+      return;
+    }
     // 対象文書の解決（画像非対応モデルの実行ブロック判定にも使うため、running プレースホルダを
     // 出す前に行う。issue #191 レビュー対応: モデルを画像非対応モデルへ切り替えて再試行すると
     // 既知の 404 を踏む問題を防ぐ。失敗行の表示〔failureKind・detail〕は変更しないまま返す）
@@ -628,6 +642,10 @@ export async function retryExtractStudy(
       patchExtract(store, {
         runError: t('extraction.errImageUnsupportedModel', { model: state.extract.model }),
       });
+      return;
+    }
+    // AI へ送る前の同意（issue #381）。キャンセルなら失敗行の表示を変えずに戻る
+    if (!(await confirmAiDataConsent(deps, providerResolution.provider))) {
       return;
     }
     patchExtract(store, { retryingStudyId: studyId, runError: null, lastRunFieldIds: fieldIds });
@@ -697,5 +715,7 @@ export async function retryExtractStudy(
       failureKind: null,
     });
     patchExtract(store, { retryingStudyId: null, runError: toMessage(err) });
+  } finally {
+    extractionLocked = false;
   }
 }

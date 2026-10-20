@@ -480,6 +480,25 @@
               >
             </p>
           </div>
+          <h3 id="setup-ai-data-consent">
+            <span class="ja" lang="ja">AI へ送る内容の確認（初回だけ）</span>
+            <span class="en" lang="en">What is sent to the AI (shown once)</span>
+          </h3>
+          <p>
+            <span class="ja" lang="ja"
+              >最初に AI の機能（スキーマの AI ドラフト、パイロット抽出、一括抽出、引用の AI 再特定、論文への質問）を使うとき、何をどこへ送るかを示す確認が 1 回だけ出ます。送るのは論文の本文（文字を読み取れない PDF はページの画像）、研究プロトコルの本文、抽出項目の定義、質問の文です。AI の処理のために送る先は、設定した LLM API だけです。送ったプロンプトと応答は、監査の記録として利用者自身の Google Drive（プロジェクトの logs/llm）にも保存されます（画像データは除きます）。論文への質問は本文・質問・回答を保存せず、利用量などのメタデータだけを記録します。開発者のサーバーには何も送りません。Gemini API の無料枠では、送った内容が Google の製品改善に使われ、人が読むことがあります。未公開のデータや機密の資料は有料枠で使ってください。「同意して続行」で実行し、「キャンセル」では何も送りません。確認を開いている間に同じ操作を繰り返しても、処理は増えません。「キャンセル」または Esc で閉じると、開く前の操作部へフォーカスが戻ります。同意はこのブラウザのプロファイルに記録され、設定画面の「AI へ送る内容」から見直し・取り消しができます。</span
+            >
+            <span class="en" lang="en"
+              >The first time you use an AI feature (AI schema draft, pilot extraction, batch extraction, AI quote
+              relocation or asking a paper), a notice shows once what is sent where. The extension sends the text of
+              your papers (page images for PDFs without a text layer), your protocol text, your field definitions and
+              your questions. For AI processing, content is sent only to the LLM API you configured. The prompts sent and the responses are also saved as audit records in your own Google Drive (the project’s logs/llm folder), excluding image data. For paper questions, the paper text, questions and answers are not saved; only metadata such as usage is recorded. Nothing is sent to the developer’s servers. On the Gemini API free tier, what you send may be
+              used to improve Google’s products and may be read by people, so use a paid tier for unpublished data or
+              confidential material. “Agree and continue” runs the feature; “Cancel” sends nothing. Your consent is
+              recorded in this browser profile, and you can review or withdraw it under “What is sent to the AI” in
+              Options. While this notice is open, repeated clicks do not start another operation. Cancel or press Esc to return focus to the control that opened it.</span
+            >
+          </p>
         </section>
 
         <section id="project">
@@ -1797,21 +1816,31 @@
                 ><strong>Display language</strong>: switch between Japanese and English; changes apply immediately.</span
               >
             </li>
+            <li>
+              <span class="ja" lang="ja"
+                ><strong>AI へ送る内容</strong>: AI の機能を使う前に出る確認（<a href="#setup-ai-data-consent">初回だけ</a>）を「AI へ送る内容の説明を表示」で見直せます。「同意を取り消す」を押すと、次に AI の機能を使うときにまた確認が出ます。</span
+              >
+              <span class="en" lang="en"
+                ><strong>What is sent to the AI</strong>: “Show what is sent to the AI” reopens the notice shown before
+                the <a href="#setup-ai-data-consent">first AI feature</a>. “Withdraw consent” makes the notice appear
+                again the next time you use an AI feature.</span
+              >
+            </li>
           </ul>
           <figure class="shot shot--screen">
             <a href="screenshots/help-12-options.png" target="_blank" rel="noopener noreferrer">
               <img
                 src="screenshots/help-12-options.png"
-                alt="設定画面の下部。reasoning effort の既定値、レート制限のプラン（tier）、表示言語、使い方ガイドなどへのリンク"
-                data-en-alt="Lower part of the Options page: default reasoning effort, rate-limit plan (tier), display language, and links to the guide and policies"
+                alt="設定画面の下部。reasoning effort の既定値、レート制限のプラン（tier）、表示言語、AI へ送る内容（同意の状態と、説明の表示・同意の取り消しのボタン）"
+                data-en-alt="Lower part of the Options page: default reasoning effort, rate-limit plan (tier), display language, and What is sent to the AI (consent status with buttons to show the notice and withdraw consent)"
                 width="1280"
                 height="800"
                 loading="lazy"
               />
             </a>
             <figcaption>
-              <span class="ja" lang="ja">設定画面の下部。reasoning effort の既定値、レート制限のプラン、表示言語を設定します。</span>
-              <span class="en" lang="en">The lower part of the Options page. Set the default reasoning effort, the rate-limit plan and the display language.</span>
+              <span class="ja" lang="ja">設定画面の下部。reasoning effort の既定値、レート制限のプラン、表示言語を設定し、AI へ送る内容の説明を見直せます。</span>
+              <span class="en" lang="en">The lower part of the Options page. Set the default reasoning effort, the rate-limit plan and the display language, and review what is sent to the AI.</span>
             </figcaption>
           </figure>
         </section>

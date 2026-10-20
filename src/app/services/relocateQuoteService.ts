@@ -37,6 +37,7 @@ import { ensureChildFolder, uploadTextFile } from '../../lib/google/drive';
 import type { GoogleApiDeps } from '../../lib/google/types';
 import { appendLlmApiLog } from '../../lib/llm/apiLogRepository';
 import { withLogging } from '../../lib/llm/apiLogger';
+import { confirmAiDataConsent } from '../../lib/llm/aiDataConsent';
 import type { LLMProvider } from '../../lib/llm/LLMProvider';
 import { missingApiKeyMessage, providerModelMismatchMessage } from '../../lib/llm/modelCatalog';
 import {
@@ -69,7 +70,9 @@ export interface RelocateQuoteDeps extends ProviderResolutionDeps {
 
 export type RelocateQuoteOutcome =
   | { status: 'relocated'; evidence: Evidence }
-  | { status: 'not_found'; message?: string };
+  | { status: 'not_found'; message?: string }
+  /** AI へ送る前の同意（issue #381）がキャンセルされた。LLM は呼んでおらず、画面は元へ戻す */
+  | { status: 'cancelled' };
 
 export interface RelocateQuoteParams {
   spreadsheetId: string;
@@ -107,6 +110,9 @@ export async function relocateQuote(
   }
   if (providerResolution.config === null) {
     return { status: 'not_found', message: missingApiKeyMessage(providerResolution.provider) };
+  }
+  if (!(await confirmAiDataConsent(deps, providerResolution.provider))) {
+    return { status: 'cancelled' };
   }
 
   try {

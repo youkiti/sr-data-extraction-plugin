@@ -3322,6 +3322,20 @@ describe('「AI で再特定」（relocate-quote。issue #94）', () => {
     panel.dispose();
   });
 
+  test('cancelled（AI へ送る前の同意をキャンセル。issue #381）: 実行前の表示へ戻し、案内も出さない', async () => {
+    const { onRelocateQuote, resolve } = pendingRelocate();
+    const { panel } = await createPanel({}, { onRelocateQuote });
+    cellEl(panel.root, KEY_COUNTRY)?.querySelector<HTMLButtonElement>('.verify__quote-relocate')?.click();
+    resolve({ status: 'cancelled' });
+    await flush();
+    const quoteBlock = cellEl(panel.root, KEY_COUNTRY)?.querySelector('.verify__quote');
+    expect(quoteBlock?.querySelector('.verify__quote-relocate-not-found')).toBeNull();
+    const button = quoteBlock?.querySelector<HTMLButtonElement>('.verify__quote-relocate');
+    expect(button?.textContent).toBe('AI で再特定');
+    expect(button?.disabled).toBe(false);
+    panel.dispose();
+  });
+
   test('onRelocateQuote が reject されても not_found と同様に扱う', async () => {
     const { onRelocateQuote, reject } = pendingRelocate();
     const { panel } = await createPanel({}, { onRelocateQuote });

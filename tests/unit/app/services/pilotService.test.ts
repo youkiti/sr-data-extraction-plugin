@@ -603,6 +603,45 @@ describe('runPilot: 実行', () => {
     expect(deps.buildProvider).not.toHaveBeenCalled();
   });
 
+  test.each([true, false, 'consentError', 'runError'])('同意待ちの再操作を止め、終了時にロックを解除する: %s', async (outcome) => {
+    const store = makeReadyStore();
+    const before = store.getState();
+    let resolveConsent!: (value: boolean) => void;
+    let rejectConsent!: (error: Error) => void;
+    const ensureAiDataConsent = jest.fn(() => new Promise<boolean>((resolve, reject) => {
+      resolveConsent = resolve;
+      rejectConsent = reject;
+    }));
+    if (outcome === 'runError') runExtractionMock.mockRejectedValueOnce(new Error('抽出失敗'));
+    const deps = makeDeps({ ensureAiDataConsent });
+    const pending = runPilot(store, deps);
+    expect(store.getState().pilot.running).toBe(false);
+    while (!resolveConsent) await Promise.resolve();
+    expect(store.getState()).toBe(before);
+    await runPilot(store, deps);
+    expect(ensureAiDataConsent).toHaveBeenCalledTimes(1);
+    expect(runExtractionMock).not.toHaveBeenCalled();
+    if (outcome === 'consentError') rejectConsent(new Error('同意確認失敗'));
+    else resolveConsent(outcome !== false);
+    await pending;
+    expect(runExtractionMock).toHaveBeenCalledTimes(outcome === true || outcome === 'runError' ? 1 : 0);
+    expect(store.getState().pilot.running).toBe(false);
+    if (outcome === false) expect(store.getState()).toBe(before);
+    ensureAiDataConsent.mockResolvedValue(false);
+    await runPilot(store, deps);
+    expect(ensureAiDataConsent).toHaveBeenCalledTimes(2);
+  });
+
+  test('AI へ送る前の同意（issue #381）をキャンセルしたら抽出を始めず、画面も変えない', async () => {
+    const store = makeReadyStore();
+    const ensureAiDataConsent = jest.fn().mockResolvedValue(false);
+    const before = store.getState().pilot;
+    await runPilot(store, makeDeps({ ensureAiDataConsent }));
+    expect(ensureAiDataConsent).toHaveBeenCalledWith('gemini');
+    expect(runExtractionMock).not.toHaveBeenCalled();
+    expect(store.getState().pilot).toEqual(before);
+  });
+
   function makeReadyStore(): Store {
     return makeStore({
       documents: [makeDocument(), makeDocument({ documentId: 'doc-2' })],

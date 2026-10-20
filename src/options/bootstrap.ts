@@ -3,6 +3,7 @@
 import { withDevSuffix } from '../build-info';
 import { createModelSelect } from '../app/ui/modelSelect';
 import { showToast } from '../app/ui/toast';
+import { openAiDataConsentDialog } from '../app/ui/aiDataConsentDialog';
 import type { LlmProviderId } from '../domain/llmApiLog';
 import { LlmProviderError, type ReasoningEffort } from '../lib/llm/LLMProvider';
 import {
@@ -42,6 +43,14 @@ import {
   saveOpenRouterApiKey,
 } from '../lib/storage/secretsStore';
 import { requestEndpointPermission } from '../lib/storage/hostPermission';
+import {
+  AI_DATA_CONSENT_VERSION,
+  clearAiDataConsent,
+  isCurrentAiDataConsent,
+  loadAiDataConsent,
+  saveAiDataConsent,
+  type AiDataConsentRecord,
+} from '../lib/storage/aiDataConsentStore';
 import {
   FACTORY_DEFAULT_MODEL,
   isLoopbackEndpoint,
@@ -501,6 +510,56 @@ function bootstrapUiLanguageSection(root: ParentNode): void {
   });
 }
 
+/** 同意した日時を表示言語の書式で出す（壊れた値はそのまま） */
+function formatConsentDate(timestamp: string): string {
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) return timestamp;
+  return new Intl.DateTimeFormat(getUiLanguage(), { dateStyle: 'medium', timeStyle: 'short' }).format(date);
+}
+
+/**
+ * 「AI へ送る内容」節の配線（issue #381。docs/ui-states.md §2「AI へ送る内容」）。
+ * 説明の再表示は同意画面と同じダイアログを使い、「同意して続行」なら同意を記録する。
+ * 送り先の名前は現在の接続方式（未選択ならモデル ID から推定）
+ */
+async function bootstrapAiDataConsentSection(root: ParentNode): Promise<void> {
+  const statusEl = root.querySelector<HTMLElement>('#ai-data-consent-status');
+  const showButton = root.querySelector<HTMLButtonElement>('#ai-data-consent-show');
+  const revokeButton = root.querySelector<HTMLButtonElement>('#ai-data-consent-revoke');
+  if (!statusEl || !showButton || !revokeButton) {
+    return;
+  }
+  const setStatus = makeSetStatus(statusEl);
+  const render = (record: AiDataConsentRecord | null): void => {
+    const current = isCurrentAiDataConsent(record);
+    setStatus(
+      current
+        ? t('options.aiConsentStatusAccepted', { date: formatConsentDate(record.acceptedAt) })
+        : t('options.aiConsentStatusNone'),
+      false,
+    );
+    revokeButton.disabled = !current;
+  };
+  const failed = (): void => setStatus(t('options.aiConsentFailed'), true);
+  await loadAiDataConsent().then(render, () => render(null));
+
+  showButton.addEventListener('click', () => {
+    void (async () => {
+      const settings = await loadLlmConnectionSettings();
+      const provider = settings.provider ?? resolveProviderId((await loadDefaultModel()) ?? FACTORY_DEFAULT_MODEL);
+      if (!(await openAiDataConsentDialog(showButton.ownerDocument, provider))) {
+        return;
+      }
+      const record = { version: AI_DATA_CONSENT_VERSION, acceptedAt: new Date().toISOString() };
+      await saveAiDataConsent(record);
+      render(record);
+    })().catch(failed);
+  });
+  revokeButton.addEventListener('click', () => {
+    void clearAiDataConsent().then(() => render(null), failed);
+  });
+}
+
 /**
  * 設定本文の配線。root は options.html の `document` でも、アプリ内 #/options が
  * 生成した（未 attach でよい）コンテナ要素でもよい（querySelector で解決するため）。
@@ -510,6 +569,7 @@ export async function bootstrapOptions(root: ParentNode): Promise<void> {
   await bootstrapReasoningEffortSection(root);
   await bootstrapRateLimitSection(root);
   bootstrapUiLanguageSection(root);
+  await bootstrapAiDataConsentSection(root);
 }
 
 /**
