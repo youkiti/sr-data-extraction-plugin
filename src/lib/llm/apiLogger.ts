@@ -5,7 +5,12 @@
 //
 // 移植元からの拡張: skill のプロンプト版数（EXTRACT_DATA_PROMPT_VERSION 等）を
 // Drive 保存する prompt payload に含めて記録する（§4.3「プロンプト版数を LLMApiLog に残す」）
+//
+// payload の Drive 保存が失敗しても、課金済みの応答とログ行は捨てない（issue #381）。
+// 参照 2 列を空にしたログ行を `[payload_upload_failed]` 付きの prompt_summary で残し、
+// 失敗そのものは ApiErrorLog（context='llm_log_upload'）へ記録したうえで元の結果を返す
 import type { LlmApiLogEntry, LlmPurpose } from '../../domain/llmApiLog';
+import { recordApiErrorLog } from '../diagnostics/apiErrorLog';
 import { nowIso8601 } from '../../utils/iso8601';
 import { generateUuid } from '../../utils/uuid';
 import {
@@ -42,6 +47,9 @@ export type ApiLoggerDeps = {
   );
 /** プロンプト先頭 500 文字をプレビューとして抜粋 */
 const PROMPT_SUMMARY_LENGTH = 500;
+
+/** payload の Drive 保存に失敗した行の prompt_summary 先頭に付ける目印（issue #381） */
+export const PAYLOAD_UPLOAD_FAILED_PREFIX = '[payload_upload_failed]';
 
 export function buildPromptSummary(messages: readonly ChatMessage[]): string {
   const text = messages
@@ -115,29 +123,43 @@ export function withLogging(
         // 質問パネルでは本文も要約も保存せず、利用量などのメタデータだけを残す。
         let promptRef = '';
         let responseRef = '';
+        let uploadFailed = false;
         if (!deps.omitPayload) {
-          const promptUpload = await deps.uploadJson({
-            filename: `${logId}.prompt.json`,
-            content: JSON.stringify(
-              {
-                promptVersion: deps.promptVersion ?? null,
-                messages: redactMessagesForLog(messages),
-                options,
-              },
-              null,
-              2,
-            ),
-          });
-          const responseUpload = await deps.uploadJson({
-            filename: `${logId}.response.json`,
-            content: JSON.stringify(
-              response !== null ? response.raw : { error: errorMessage },
-              null,
-              2,
-            ),
-          });
-          promptRef = promptUpload.webViewLink;
-          responseRef = responseUpload.webViewLink;
+          try {
+            const promptUpload = await deps.uploadJson({
+              filename: `${logId}.prompt.json`,
+              content: JSON.stringify(
+                {
+                  promptVersion: deps.promptVersion ?? null,
+                  messages: redactMessagesForLog(messages),
+                  options,
+                },
+                null,
+                2,
+              ),
+            });
+            const responseUpload = await deps.uploadJson({
+              filename: `${logId}.response.json`,
+              content: JSON.stringify(
+                response !== null ? response.raw : { error: errorMessage },
+                null,
+                2,
+              ),
+            });
+            promptRef = promptUpload.webViewLink;
+            responseRef = responseUpload.webViewLink;
+          } catch (uploadErr) {
+            // 保存の失敗で応答（課金済み）とログ行を失わない（issue #381）。参照は両方の保存が
+            // 済んでから代入するため、片方だけ保存できた場合も両方空のまま。失敗は prompt_summary の
+            // 目印と ApiErrorLog に残す。参照が空でも latency_ms を持つため、警告専用行
+            // （isWarningOnlyLogEntry）とは区別される
+            uploadFailed = true;
+            recordApiErrorLog({
+              context: 'llm_log_upload',
+              error: uploadErr,
+              studyId: options?.logContext?.studyId ?? null,
+            });
+          }
         }
         const entry: LlmApiLogEntry = {
           logId,
@@ -147,7 +169,11 @@ export function withLogging(
           purpose,
           promptRef,
           responseRef,
-          promptSummary: deps.omitPayload ? null : buildPromptSummary(messages),
+          promptSummary: deps.omitPayload
+            ? null
+            : uploadFailed
+              ? `${PAYLOAD_UPLOAD_FAILED_PREFIX} ${buildPromptSummary(messages)}`
+              : buildPromptSummary(messages),
           tokensIn: usage?.tokensIn ?? null,
           tokensOut: usage?.tokensOut ?? null,
           cachedTokensIn: usage?.cachedTokensIn ?? null,

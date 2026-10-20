@@ -301,6 +301,15 @@ describe('runExtraction', () => {
     });
   });
 
+  test('Options の reasoning effort を provider の構築へ渡す（issue #381）', async () => {
+    const chat = jest.fn().mockResolvedValue(AI_RESPONSE);
+    const deps = { ...makeDeps(chat), reasoningEffort: 'high' as const };
+    await runExtraction(baseParams(), deps);
+    expect(deps.buildProvider).toHaveBeenCalledWith(
+      expect.objectContaining({ model: 'gemini-2.5-flash', reasoningEffort: 'high' }),
+    );
+  });
+
   test('全文献がテキスト層なしでも「対象外」にはせず、pdf_native（画像入力）として実行する', async () => {
     const chat = jest.fn().mockResolvedValue(AI_RESPONSE);
     const deps = makeDeps(chat);
