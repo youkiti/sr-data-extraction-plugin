@@ -35,6 +35,7 @@ import {
 import { readAllDecisions } from '../../../../src/features/verification/decisionRepository';
 import { readAllArmStructures } from '../../../../src/features/verification/armStructureRepository';
 import { ensureChildFolder, uploadTextFile } from '../../../../src/lib/google/drive';
+import { readLlmApiLogEntries } from '../../../../src/lib/llm/apiLogRepository';
 import { getCurrentUserEmail } from '../../../../src/lib/google/identity';
 import { downloadTextFile } from '../../../../src/app/ui/download';
 import { installChromeMock, type ChromeMock } from '../../../setup/chrome-mock';
@@ -71,6 +72,9 @@ jest.mock('../../../../src/features/verification/decisionRepository', () => ({
 }));
 jest.mock('../../../../src/features/verification/armStructureRepository', () => ({
   readAllArmStructures: jest.fn(),
+}));
+jest.mock('../../../../src/lib/llm/apiLogRepository', () => ({
+  readLlmApiLogEntries: jest.fn(),
 }));
 jest.mock('../../../../src/lib/google/drive', () => ({
   ensureChildFolder: jest.fn(),
@@ -215,6 +219,7 @@ beforeEach(() => {
   readAllArmStructuresMock.mockResolvedValue([]);
   readRunAuditInfosMock.mockResolvedValue([]);
   readMethodsRunFactsMock.mockResolvedValue([]);
+  jest.mocked(readLlmApiLogEntries).mockResolvedValue([]);
   listSchemaVersionsMock.mockResolvedValue([{ schemaVersion: 2 }]);
   getSchemaFieldsByVersionMock.mockResolvedValue([]);
   ensureChildFolderMock.mockResolvedValue({ id: 'exports-folder', webViewLink: 'https://drive/folder' });
@@ -319,54 +324,93 @@ describe('loadExportData', () => {
     expect(store2.getState().export.loadError).toBe('壊れた応答');
   });
 
-  test('Methods 文案カードの実績値（methodsFacts）を組み立てる', async () => {
+  test('Methods 文案カードの実績値（methodsFacts）を既に読み込んだ記録から組み立てる', async () => {
+    readStudiesMock.mockResolvedValue(
+      ['s1', 's2', 's3'].map((studyId) => ({ studyId, studyLabel: studyId, createdAt: 't0' })),
+    );
     readDocumentsMock.mockResolvedValue([
       { documentId: 'd1', studyId: 's1', textStatus: 'ok' },
       { documentId: 'd2', studyId: 's2', textStatus: 'no_text_layer' },
       { documentId: 'd3', studyId: 's3', textStatus: 'no_text_layer' },
     ]);
     readMethodsRunFactsMock.mockResolvedValue([
-      { runType: 'full', provider: 'gemini', modelVersion: 'gemini-3.5-flash-001', studyIds: ['s1'] },
-      { runType: 'full', provider: 'openrouter', modelVersion: 'gpt-test', studyIds: ['s2'] },
-      { runType: 'full', provider: 'openai_compatible', modelVersion: 'custom-model', studyIds: ['s3'] },
-      // issue #127 PR2: anthropic の provider 表示名（Anthropic）を確認する
-      { runType: 'full', provider: 'anthropic', modelVersion: 'claude-opus-5', studyIds: ['s4'] },
-      // issue #127 PR3: azure_openai の provider 表示名（Azure OpenAI）を確認する
-      { runType: 'full', provider: 'azure_openai', modelVersion: 'gpt-4o-deployment', studyIds: ['s5'] },
-      // full の modelVersion 重複は 1 つに畳み込む
-      { runType: 'full', provider: 'gemini', modelVersion: 'gemini-3.5-flash-001', studyIds: ['s1'] },
-      { runType: 'pilot', provider: 'gemini', modelVersion: 'gemini-3.5-flash-001', studyIds: ['s1', 's2'] },
-      { runType: 'pilot', provider: 'gemini', modelVersion: 'gemini-3.5-flash-001', studyIds: ['s3'] },
-      { runType: 'single_study', provider: 'gemini', modelVersion: 'ignored', studyIds: ['s9'] },
+      {
+        runId: 'r1',
+        runType: 'full',
+        status: 'partial_failure',
+        provider: 'gemini',
+        requestedModel: 'gemini-3.8-flash',
+        modelVersion: null,
+        studyIds: ['s1', 's2', 's3'],
+        fieldIds: null,
+        startedAt: '2026-07-10T00:00:00.000Z',
+      },
+    ]);
+    jest.mocked(readLlmApiLogEntries).mockResolvedValue([
+      {
+        logId: 'l1', timestamp: 't', provider: 'gemini', model: 'gemini-3.8-flash', purpose: 'extract_study',
+        promptRef: '', responseRef: '', promptSummary: '[batch_failed] run r1', tokensIn: null, tokensOut: null,
+        cachedTokensIn: null, latencyMs: null, costEstimateUsd: null, error: 'バッチ失敗', runId: 'r1',
+        studyId: 's3', section: null, promptVersion: null, thoughtsTokensOut: null,
+      },
+      {
+        logId: 'l2', timestamp: 't', provider: 'openrouter', model: 'draft-model', purpose: 'draft_schema',
+        promptRef: 'p', responseRef: 'r', promptSummary: null, tokensIn: 1, tokensOut: 1,
+        cachedTokensIn: null, latencyMs: 1, costEstimateUsd: null, error: null, runId: null,
+        studyId: null, section: null, promptVersion: 2, thoughtsTokensOut: null,
+      },
     ]);
     const store = makeStore();
     await loadExportData(store, makeDeps({ getToolVersion: () => '1.2.3' }));
-    expect(readMethodsRunFactsMock).toHaveBeenCalledWith('sheet-1', expect.anything());
-    expect(store.getState().export.methodsFacts).toEqual({
+    expect(readLlmApiLogEntries).toHaveBeenCalledWith('sheet-1', expect.anything());
+    expect(store.getState().export.methodsFacts).toMatchObject({
       toolVersion: '1.2.3',
-      modelIds: [
-        'gemini-3.5-flash-001',
-        'gpt-test',
-        'custom-model',
-        'claude-opus-5',
-        'gpt-4o-deployment',
-      ],
-      providers: ['Gemini', 'OpenRouter', 'OpenAI-compatible', 'Anthropic', 'Azure OpenAI'],
-      pilotStudyCount: 3, // s1 / s2 / s3 の和集合
-      scannedDocumentCount: 2, // d2 / d3
-      pilotRevisionCount: 0,
-      chatAssistDecisionCount: 0,
+      aiDraft: true,
+      draftModelIds: ['draft-model'],
+      draftProviders: ['OpenRouter'],
+      modelIds: ['gemini-3.8-flash'],
+      modelIdsIncludeRequested: true,
+      providers: ['Gemini'],
+      includedStudyCount: 3,
+      extractedStudyCount: 2, // s3 は [batch_failed]
+      partialStudyCount: 0,
+      scannedDocumentCount: 2,
+      unverifiedCellCount: 0,
+      hasConsensus: false,
     });
   });
 
-  test('ローカル LLM の実績は専用の表示名を使う', async () => {
-    readDocumentsMock.mockResolvedValue([]);
-    readMethodsRunFactsMock.mockResolvedValue([
-      { runType: 'full', provider: 'local_llm', modelVersion: 'local-model', studyIds: [] },
-    ]);
+  test('ワークフローの初期値は記録から決め、再読み込みではユーザーの切り替えを上書きしない', async () => {
+    readStudyDataSheetMock.mockResolvedValue({
+      fieldNames: [],
+      rows: [
+        {
+          studyId: 's1', annotator: 'a@example.com', annotatorType: 'human_independent',
+          schemaVersion: 2, runId: null, updatedAt: 't', values: {},
+        },
+      ],
+    });
     const store = makeStore();
     await loadExportData(store, makeDeps());
-    expect(store.getState().export.methodsFacts?.providers).toEqual(['Local LLM']);
+    expect(store.getState().export.methodsWorkflow).toBe('dual');
+    expect(store.getState().export.methodsFacts?.humanIndependentAnnotatorCount).toBe(1);
+    changeMethodsWorkflow(store, 'single');
+    await loadExportData(store, makeDeps(), { force: true });
+    expect(store.getState().export.methodsWorkflow).toBe('single');
+
+    // 人の検証行が AI 併用だけなら単一レビュアー
+    readStudyDataSheetMock.mockResolvedValue({
+      fieldNames: [],
+      rows: [
+        {
+          studyId: 's1', annotator: 'a@example.com', annotatorType: 'human_with_ai',
+          schemaVersion: 2, runId: null, updatedAt: 't', values: {},
+        },
+      ],
+    });
+    const single = makeStore({ export: { methodsWorkflow: 'dual' } });
+    await loadExportData(single, makeDeps());
+    expect(single.getState().export.methodsWorkflow).toBe('single');
   });
 
   test('既に読み込んだ判定から質問後の件数を集計し、追加の読み込みをしない', async () => {
@@ -795,12 +839,25 @@ describe('changeMethodsLanguage / changeMethodsWorkflow', () => {
 describe('copyMethodsText', () => {
   const facts = {
     toolVersion: '1.2.3',
+    aiDraft: false,
+    draftModelIds: [],
+    draftProviders: [],
     modelIds: ['gemini-3.5-flash-001'],
+    modelIdsIncludeRequested: false,
     providers: ['Gemini'],
+    includedStudyCount: 3,
+    extractedStudyCount: 3,
+    partialStudyCount: 0,
     pilotStudyCount: 3,
+    revisedAfterPilot: false,
+    formRevisionCount: 0,
     scannedDocumentCount: 0,
     pilotRevisionCount: 0,
     chatAssistDecisionCount: 0,
+    unverifiedCellCount: 0,
+    humanWithAiAnnotatorCount: 2,
+    humanIndependentAnnotatorCount: 0,
+    hasConsensus: true,
   };
 
   test('現在の言語 / ワークフロー / 実績値から文案を組み立ててクリップボードへ書き込む', async () => {

@@ -325,6 +325,8 @@ test('論文 Methods 記載例カード（issue #67）: 実績値反映 → 言�
     '{{ }} の箇所はご自身の情報に置き換えてください',
   );
   await expect(card.locator('#methods-lang-en')).toHaveAttribute('aria-pressed', 'true');
+  // 記載例であることの注意は常に出す（issue #381）
+  await expect(card.locator('#methods-caution-note')).toContainText('これは記載例です。');
 
   const results = await new AxeBuilder({ page }).analyze();
   expect(results.violations).toEqual([]);

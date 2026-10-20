@@ -1110,6 +1110,12 @@ export const enApp: Record<keyof typeof jaApp, string> = {
   'export.methodsWorkflowDual': 'Dual independent',
   'export.methodsCopy': 'Copy',
   'export.methodsUnresolvedNote': 'Replace the {{ }} placeholders with your own information',
+  'export.methodsCautionNote':
+    'This is an example text. Always check that the numbers, people, and procedures match what you actually did, and edit it before use.',
+  'export.methodsToolVersionNote':
+    'The version is the one installed now, not the one used at the time of extraction.',
+  'export.methodsRequestedModelNote':
+    'Some model names are the model IDs that were requested, not the actual versions returned by the API.',
   'export.rsetFileRow': '{name}: {rows} rows',
   'export.rsetPreviewTitle': 'ma.csv preview',
   'export.rsetUtf8Note':
