@@ -126,7 +126,7 @@ describe('buildMethodsText: 1 段落目（ツールとフォーム）', () => {
     [
       'パイロットなし・版が 2 つ以上',
       { formRevisionCount: 2 },
-      'The form was revised 2 time(s) during the review.',
+      'The form was revised 2 times during the review.',
       'フォームはレビューの過程で 2 回改訂した。',
     ],
   ])('パイロットと改訂の文: %s', (_label, overrides, en, ja) => {
@@ -316,7 +316,7 @@ describe('buildMethodsText: オプション文', () => {
     const sentence =
       language === 'ja'
         ? 'パイロットでの判定に基づき、抽出指示を 2 回改訂した。改訂案は LLM が項目の抽出指示と例に限って作成し、著者らが確認・承認したうえで本抽出に用いた。'
-        : "Based on the reviewers' judgments during the pilot, the extraction instructions were revised 2 time(s); the LLM drafted revision proposals limited to item instructions and examples, which the authors reviewed and approved before full extraction.";
+        : "Based on the reviewers' judgments during the pilot, the extraction instructions were revised 2 times; the LLM drafted revision proposals limited to item instructions and examples, which the authors reviewed and approved before full extraction.";
     const withRevision = buildMethodsText(language, 'single', makeFacts({ pilotRevisionCount: 2 }));
     expect(withRevision.text.endsWith(sentence)).toBe(true);
     expect(withRevision.unresolved).not.toContain('n_pilot_revision');
@@ -336,6 +336,140 @@ describe('buildMethodsText: オプション文', () => {
         ),
       ).toBe(true);
     }
+  });
+});
+
+describe('buildMethodsText: 英語の単数形と複数形', () => {
+  test.each([
+    [
+      '改訂ありのパイロット（単数）',
+      { pilotStudyCount: 1, revisedAfterPilot: true },
+      'The form was piloted on 1 study and revised before full extraction.',
+      'フォームは 1 本の研究でパイロット抽出を行い、改訂したうえで本抽出に用いた。',
+    ],
+    [
+      '改訂ありのパイロット（複数）',
+      { pilotStudyCount: 2, revisedAfterPilot: true },
+      'The form was piloted on 2 studies and revised before full extraction.',
+      'フォームは 2 本の研究でパイロット抽出を行い、改訂したうえで本抽出に用いた。',
+    ],
+    [
+      '改訂なしのパイロット（単数）',
+      { pilotStudyCount: 1 },
+      'The form was piloted on 1 study before full extraction.',
+      'フォームは 1 本の研究でパイロット抽出を行ったうえで本抽出に用いた。',
+    ],
+    [
+      '改訂なしのパイロット（複数）',
+      { pilotStudyCount: 2 },
+      'The form was piloted on 2 studies before full extraction.',
+      'フォームは 2 本の研究でパイロット抽出を行ったうえで本抽出に用いた。',
+    ],
+    [
+      'フォーム改訂（単数）',
+      { formRevisionCount: 1 },
+      'The form was revised once during the review.',
+      'フォームはレビューの過程で 1 回改訂した。',
+    ],
+    [
+      'フォーム改訂（複数）',
+      { formRevisionCount: 2 },
+      'The form was revised 2 times during the review.',
+      'フォームはレビューの過程で 2 回改訂した。',
+    ],
+    [
+      '全研究の事前抽出（単数）',
+      { includedStudyCount: 1, extractedStudyCount: 1 },
+      'For the 1 included study, an LLM ({{model_id}}, accessed via the {{provider}} API) pre-extracted the form items from the full-text PDF and returned, for each value, a verbatim quotation of the supporting text, which the tool located and highlighted in the source PDF.',
+      '採用研究 1 本すべてについて、LLM（{{model_id}}、{{provider}} API 経由）が全文 PDF から各項目の値を事前抽出して値ごとに根拠となる本文の逐語的引用を付与し、本ツールは引用箇所を PDF 上に対応付けてハイライト表示した。',
+    ],
+    [
+      '全研究の事前抽出（複数）',
+      { includedStudyCount: 2, extractedStudyCount: 2 },
+      'For all 2 included studies, an LLM ({{model_id}}, accessed via the {{provider}} API) pre-extracted the form items from the full-text PDF and returned, for each value, a verbatim quotation of the supporting text, which the tool located and highlighted in the source PDF.',
+      '採用研究 2 本すべてについて、LLM（{{model_id}}、{{provider}} API 経由）が全文 PDF から各項目の値を事前抽出して値ごとに根拠となる本文の逐語的引用を付与し、本ツールは引用箇所を PDF 上に対応付けてハイライト表示した。',
+    ],
+    [
+      '一部研究の事前抽出（単数）',
+      { includedStudyCount: 1 },
+      'For {{n_extracted}} of the 1 included study, an LLM ({{model_id}}, accessed via the {{provider}} API) pre-extracted the form items from the full-text PDF and returned, for each value, a verbatim quotation of the supporting text, which the tool located and highlighted in the source PDF.',
+      '採用研究 1 本のうち {{n_extracted}} 本について、LLM（{{model_id}}、{{provider}} API 経由）が全文 PDF から各項目の値を事前抽出して値ごとに根拠となる本文の逐語的引用を付与し、本ツールは引用箇所を PDF 上に対応付けてハイライト表示した。',
+    ],
+    [
+      '一部研究の事前抽出（複数）',
+      { includedStudyCount: 2, extractedStudyCount: 1 },
+      'For 1 of the 2 included studies, an LLM ({{model_id}}, accessed via the {{provider}} API) pre-extracted the form items from the full-text PDF and returned, for each value, a verbatim quotation of the supporting text, which the tool located and highlighted in the source PDF.',
+      '採用研究 2 本のうち 1 本について、LLM（{{model_id}}、{{provider}} API 経由）が全文 PDF から各項目の値を事前抽出して値ごとに根拠となる本文の逐語的引用を付与し、本ツールは引用箇所を PDF 上に対応付けてハイライト表示した。',
+    ],
+    [
+      '未抽出研究（単数）',
+      { includedStudyCount: 2, extractedStudyCount: 1 },
+      'For the remaining 1 study, LLM pre-extraction was not run or did not complete successfully.',
+      '残る 1 本では、LLM による事前抽出を実行していないか、正常に完了しなかった。',
+    ],
+    [
+      '未抽出研究（複数）',
+      { includedStudyCount: 3, extractedStudyCount: 1 },
+      'For the remaining 2 studies, LLM pre-extraction was not run or did not complete successfully.',
+      '残る 2 本では、LLM による事前抽出を実行していないか、正常に完了しなかった。',
+    ],
+    [
+      '一部項目の抽出（単数）',
+      { includedStudyCount: 1, extractedStudyCount: 1, partialStudyCount: 1 },
+      'For the 1 pre-extracted study, pre-extraction may not have covered every item, because the run was limited to selected items or part of the LLM output was discarded or could not be saved.',
+      '事前抽出した研究のうち 1 本では、実行の対象を一部の項目に限った、または LLM 出力の一部を破棄した・保存できなかったため、事前抽出が全項目に及んでいない可能性がある。',
+    ],
+    [
+      '一部項目の抽出（複数）',
+      { includedStudyCount: 2, extractedStudyCount: 2, partialStudyCount: 1 },
+      'For 1 of the pre-extracted studies, pre-extraction may not have covered every item, because the run was limited to selected items or part of the LLM output was discarded or could not be saved.',
+      '事前抽出した研究のうち 1 本では、実行の対象を一部の項目に限った、または LLM 出力の一部を破棄した・保存できなかったため、事前抽出が全項目に及んでいない可能性がある。',
+    ],
+    [
+      '未検証セル（単数）',
+      { unverifiedCellCount: 1 },
+      'Verification fields were initially blank and every value — including accepted values — entered the dataset only through an explicit decision by a reviewer, so no AI-generated value entered the final dataset without human confirmation; at the time of export, 1 cell had not been verified and was left empty.',
+      '検証欄は空欄の状態から開始し、承認を含むすべての値はレビュアーの明示的な判定操作を経てデータセットに入るため、人間の確認を経ていない AI 出力が最終データセットに含まれることはない。ただし、エクスポート時点で 1 件のセルは未検証のままであり、空欄として出力した。',
+    ],
+    [
+      '未検証セル（複数）',
+      { unverifiedCellCount: 2 },
+      'Verification fields were initially blank and every value — including accepted values — entered the dataset only through an explicit decision by a reviewer, so no AI-generated value entered the final dataset without human confirmation; at the time of export, 2 cells had not been verified and were left empty.',
+      '検証欄は空欄の状態から開始し、承認を含むすべての値はレビュアーの明示的な判定操作を経てデータセットに入るため、人間の確認を経ていない AI 出力が最終データセットに含まれることはない。ただし、エクスポート時点で 2 件のセルは未検証のままであり、空欄として出力した。',
+    ],
+    [
+      'スキャンPDF（単数）',
+      { scannedDocumentCount: 1 },
+      'For 1 study available only as a scanned PDF without a text layer, the PDF was submitted directly to the LLM; supporting quotations for this study could not be highlighted and were verified against the quoted text and reported page numbers.',
+      'テキスト層を持たないスキャン PDF のみ入手可能であった 1 本については、PDF を直接 LLM に送信して抽出した。これらの研究では引用箇所のハイライト表示ができないため、引用文と報告ページ番号に基づいて原文と照合した。',
+    ],
+    [
+      'スキャンPDF（複数）',
+      { scannedDocumentCount: 2 },
+      'For 2 studies available only as scanned PDFs without a text layer, the PDFs were submitted directly to the LLM; supporting quotations for these studies could not be highlighted and were verified against the quoted text and reported page numbers.',
+      'テキスト層を持たないスキャン PDF のみ入手可能であった 2 本については、PDF を直接 LLM に送信して抽出した。これらの研究では引用箇所のハイライト表示ができないため、引用文と報告ページ番号に基づいて原文と照合した。',
+    ],
+    [
+      'パイロットの指示改訂（単数）',
+      { pilotRevisionCount: 1 },
+      "Based on the reviewers' judgments during the pilot, the extraction instructions were revised once; the LLM drafted revision proposals limited to item instructions and examples, which the authors reviewed and approved before full extraction.",
+      'パイロットでの判定に基づき、抽出指示を 1 回改訂した。改訂案は LLM が項目の抽出指示と例に限って作成し、著者らが確認・承認したうえで本抽出に用いた。',
+    ],
+    [
+      'パイロットの指示改訂（複数）',
+      { pilotRevisionCount: 2 },
+      "Based on the reviewers' judgments during the pilot, the extraction instructions were revised 2 times; the LLM drafted revision proposals limited to item instructions and examples, which the authors reviewed and approved before full extraction.",
+      'パイロットでの判定に基づき、抽出指示を 2 回改訂した。改訂案は LLM が項目の抽出指示と例に限って作成し、著者らが確認・承認したうえで本抽出に用いた。',
+    ],
+  ])('%s: 英語は数に合わせ、日本語は既存の文を保つ', (_label, overrides, en, ja) => {
+    const facts = makeFacts(overrides);
+    const text = buildMethodsText('en', 'single', facts).text;
+    expect(text).toContain(en);
+    expect(text).not.toContain('1 studies');
+    expect(text).not.toContain('1 cells');
+    expect(text).not.toContain('the 1 included studies');
+    expect(text).not.toContain('time(s)');
+    expect(buildMethodsText('ja', 'single', facts).text).toContain(ja);
   });
 });
 

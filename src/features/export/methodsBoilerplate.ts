@@ -1,6 +1,6 @@
 // 論文 Methods 記載例（S10 エクスポート画面のコピー用文案）を組み立てる純関数群。
 // 文案本文は docs/methods-boilerplate.md §1〜2 の正典から一字一句そのまま引用している。
-// このモジュールは記録に合う文の選択（issue #381）・プレースホルダの自動反映・見出しの
+// このモジュールは記録に合う文と英語の単数形・複数形の選択（issue #381）・プレースホルダの自動反映・見出しの
 // プレーンテキスト化のみを担い、文そのものは書き換えない（変更する場合は正典ドキュメントを先に改訂すること）
 
 export type MethodsLanguage = 'en' | 'ja';
@@ -94,13 +94,28 @@ const PILOT_REVISED: Sentence = {
   en: 'The form was piloted on {{n_pilot}} studies and revised before full extraction.',
   ja: 'フォームは {{n_pilot}} 本の研究でパイロット抽出を行い、改訂したうえで本抽出に用いた。',
 };
+// 数が 1 のときの英語の単数形（日本語は共有）。
+const PILOT_REVISED_ONE: Sentence = {
+  en: 'The form was piloted on {{n_pilot}} study and revised before full extraction.',
+  ja: PILOT_REVISED.ja,
+};
 const PILOT_ONLY: Sentence = {
   en: 'The form was piloted on {{n_pilot}} studies before full extraction.',
   ja: 'フォームは {{n_pilot}} 本の研究でパイロット抽出を行ったうえで本抽出に用いた。',
 };
+// 数が 1 のときの英語の単数形（日本語は共有）。
+const PILOT_ONLY_ONE: Sentence = {
+  en: 'The form was piloted on {{n_pilot}} study before full extraction.',
+  ja: PILOT_ONLY.ja,
+};
 const FORM_REVISED: Sentence = {
-  en: 'The form was revised {{n_form_revision}} time(s) during the review.',
+  en: 'The form was revised {{n_form_revision}} times during the review.',
   ja: 'フォームはレビューの過程で {{n_form_revision}} 回改訂した。',
+};
+// 数が 1 のときの英語の単数形（日本語は共有）。
+const FORM_REVISED_ONE: Sentence = {
+  en: 'The form was revised once during the review.',
+  ja: FORM_REVISED.ja,
 };
 
 // §2.1 事前抽出
@@ -108,9 +123,19 @@ const PREEXTRACT_ALL: Sentence = {
   en: 'For all {{n_included}} included studies, an LLM ({{model_id}}, accessed via the {{provider}} API) pre-extracted the form items from the full-text PDF and returned, for each value, a verbatim quotation of the supporting text, which the tool located and highlighted in the source PDF.',
   ja: '採用研究 {{n_included}} 本すべてについて、LLM（{{model_id}}、{{provider}} API 経由）が全文 PDF から各項目の値を事前抽出して値ごとに根拠となる本文の逐語的引用を付与し、本ツールは引用箇所を PDF 上に対応付けてハイライト表示した。',
 };
+// 数が 1 のときの英語の単数形（日本語は共有）。
+const PREEXTRACT_ALL_ONE: Sentence = {
+  en: 'For the {{n_included}} included study, an LLM ({{model_id}}, accessed via the {{provider}} API) pre-extracted the form items from the full-text PDF and returned, for each value, a verbatim quotation of the supporting text, which the tool located and highlighted in the source PDF.',
+  ja: PREEXTRACT_ALL.ja,
+};
 const PREEXTRACT_SOME: Sentence = {
   en: 'For {{n_extracted}} of the {{n_included}} included studies, an LLM ({{model_id}}, accessed via the {{provider}} API) pre-extracted the form items from the full-text PDF and returned, for each value, a verbatim quotation of the supporting text, which the tool located and highlighted in the source PDF.',
   ja: '採用研究 {{n_included}} 本のうち {{n_extracted}} 本について、LLM（{{model_id}}、{{provider}} API 経由）が全文 PDF から各項目の値を事前抽出して値ごとに根拠となる本文の逐語的引用を付与し、本ツールは引用箇所を PDF 上に対応付けてハイライト表示した。',
+};
+// 数が 1 のときの英語の単数形（日本語は共有）。
+const PREEXTRACT_SOME_ONE: Sentence = {
+  en: 'For {{n_extracted}} of the {{n_included}} included study, an LLM ({{model_id}}, accessed via the {{provider}} API) pre-extracted the form items from the full-text PDF and returned, for each value, a verbatim quotation of the supporting text, which the tool located and highlighted in the source PDF.',
+  ja: PREEXTRACT_SOME.ja,
 };
 
 // §2.2 事前抽出が届かなかった研究
@@ -118,9 +143,19 @@ const NOT_EXTRACTED: Sentence = {
   en: 'For the remaining {{n_not_extracted}} studies, LLM pre-extraction was not run or did not complete successfully.',
   ja: '残る {{n_not_extracted}} 本では、LLM による事前抽出を実行していないか、正常に完了しなかった。',
 };
+// 数が 1 のときの英語の単数形（日本語は共有）。
+const NOT_EXTRACTED_ONE: Sentence = {
+  en: 'For the remaining {{n_not_extracted}} study, LLM pre-extraction was not run or did not complete successfully.',
+  ja: NOT_EXTRACTED.ja,
+};
 const PARTIAL_ITEMS: Sentence = {
   en: 'For {{n_partial}} of the pre-extracted studies, pre-extraction may not have covered every item, because the run was limited to selected items or part of the LLM output was discarded or could not be saved.',
   ja: '事前抽出した研究のうち {{n_partial}} 本では、実行の対象を一部の項目に限った、または LLM 出力の一部を破棄した・保存できなかったため、事前抽出が全項目に及んでいない可能性がある。',
+};
+// 数が 1 のときの英語の単数形（日本語は共有）。
+const PARTIAL_ITEMS_ONE: Sentence = {
+  en: 'For the {{n_partial}} pre-extracted study, pre-extraction may not have covered every item, because the run was limited to selected items or part of the LLM output was discarded or could not be saved.',
+  ja: PARTIAL_ITEMS.ja,
 };
 
 // §2.3 検証（単一レビュアー）
@@ -160,6 +195,11 @@ const SOME_UNVERIFIED: Sentence = {
   en: 'Verification fields were initially blank and every value — including accepted values — entered the dataset only through an explicit decision by a reviewer, so no AI-generated value entered the final dataset without human confirmation; at the time of export, {{n_unverified}} cells had not been verified and were left empty.',
   ja: '検証欄は空欄の状態から開始し、承認を含むすべての値はレビュアーの明示的な判定操作を経てデータセットに入るため、人間の確認を経ていない AI 出力が最終データセットに含まれることはない。ただし、エクスポート時点で {{n_unverified}} 件のセルは未検証のままであり、空欄として出力した。',
 };
+// 数が 1 のときの英語の単数形（日本語は共有）。
+const SOME_UNVERIFIED_ONE: Sentence = {
+  en: 'Verification fields were initially blank and every value — including accepted values — entered the dataset only through an explicit decision by a reviewer, so no AI-generated value entered the final dataset without human confirmation; at the time of export, {{n_unverified}} cell had not been verified and was left empty.',
+  ja: SOME_UNVERIFIED.ja,
+};
 const AUDIT_TRAIL: Sentence = {
   en: 'All AI outputs (values, quotations, page locations, and confidence ratings) and all human decisions were automatically logged, and the complete audit trail is provided in {{supplement_ref}}.',
   ja: 'すべての AI 出力（値・引用・ページ位置・確信度）と人間の判定は自動記録され、監査証跡の全体を {{supplement_ref}} に示す。',
@@ -167,19 +207,34 @@ const AUDIT_TRAIL: Sentence = {
 
 // §2.6 オプション文（スキャン PDF。scannedDocumentCount > 0 のときだけ連結）
 const OPTIONAL_SCANNED: Sentence = {
-  en: 'For {{n_scanned}} studies available only as scanned PDFs without a text layer, the PDF was submitted directly to the LLM; supporting quotations for these studies could not be highlighted and were verified against the quoted text and reported page numbers.',
+  en: 'For {{n_scanned}} studies available only as scanned PDFs without a text layer, the PDFs were submitted directly to the LLM; supporting quotations for these studies could not be highlighted and were verified against the quoted text and reported page numbers.',
   ja: 'テキスト層を持たないスキャン PDF のみ入手可能であった {{n_scanned}} 本については、PDF を直接 LLM に送信して抽出した。これらの研究では引用箇所のハイライト表示ができないため、引用文と報告ページ番号に基づいて原文と照合した。',
+};
+// 数が 1 のときの英語の単数形（日本語は共有）。
+const OPTIONAL_SCANNED_ONE: Sentence = {
+  en: 'For {{n_scanned}} study available only as a scanned PDF without a text layer, the PDF was submitted directly to the LLM; supporting quotations for this study could not be highlighted and were verified against the quoted text and reported page numbers.',
+  ja: OPTIONAL_SCANNED.ja,
 };
 
 const OPTIONAL_PILOT_REVISION: Sentence = {
-  en: "Based on the reviewers' judgments during the pilot, the extraction instructions were revised {{n_pilot_revision}} time(s); the LLM drafted revision proposals limited to item instructions and examples, which the authors reviewed and approved before full extraction.",
+  en: "Based on the reviewers' judgments during the pilot, the extraction instructions were revised {{n_pilot_revision}} times; the LLM drafted revision proposals limited to item instructions and examples, which the authors reviewed and approved before full extraction.",
   ja: 'パイロットでの判定に基づき、抽出指示を {{n_pilot_revision}} 回改訂した。改訂案は LLM が項目の抽出指示と例に限って作成し、著者らが確認・承認したうえで本抽出に用いた。',
+};
+// 数が 1 のときの英語の単数形（日本語は共有）。
+const OPTIONAL_PILOT_REVISION_ONE: Sentence = {
+  en: "Based on the reviewers' judgments during the pilot, the extraction instructions were revised once; the LLM drafted revision proposals limited to item instructions and examples, which the authors reviewed and approved before full extraction.",
+  ja: OPTIONAL_PILOT_REVISION.ja,
 };
 
 const OPTIONAL_CHAT_ASSIST: Sentence = {
   en: 'During verification, reviewers could additionally ask an LLM questions about the full text of the study under review; answers were constrained to verbatim quotations that the tool located in the source text, were not entered into the dataset automatically, and decisions made after such questions were flagged in the audit trail.',
   ja: '検証中、レビュアーは検証対象の研究の本文について LLM に質問することもできた。回答にはツールが原文中で照合した逐語的な引用を必須とし、回答が自動でデータに入力されることはなく、質問後の判定は監査証跡に印を付けて記録した。',
 };
+
+/** 数が 1 のときだけ単数形を選ぶ */
+function byCount(count: number, one: Sentence, many: Sentence): Sentence {
+  return count === 1 ? one : many;
+}
 
 /** 文を言語に合わせてつなぐ（英語は半角スペース、日本語は句点の後に空白を入れない） */
 function joinSentences(language: MethodsLanguage, sentences: readonly Sentence[]): string {
@@ -195,9 +250,11 @@ function paragraph1(facts: MethodsFacts): Sentence[] {
     sentences.push(facts.draftModelIds.length > 0 ? DRAFT_WITH_MODEL : DRAFT_WITHOUT_MODEL);
   }
   if (facts.pilotStudyCount > 0) {
-    sentences.push(facts.revisedAfterPilot ? PILOT_REVISED : PILOT_ONLY);
+    const one = facts.revisedAfterPilot ? PILOT_REVISED_ONE : PILOT_ONLY_ONE;
+    const many = facts.revisedAfterPilot ? PILOT_REVISED : PILOT_ONLY;
+    sentences.push(byCount(facts.pilotStudyCount, one, many));
   } else if (facts.formRevisionCount > 0) {
-    sentences.push(FORM_REVISED);
+    sentences.push(byCount(facts.formRevisionCount, FORM_REVISED_ONE, FORM_REVISED));
   }
   return sentences;
 }
@@ -215,15 +272,19 @@ function dualVerification(facts: MethodsFacts): Sentence[] {
 function paragraph2(workflow: MethodsWorkflow, facts: MethodsFacts): Sentence[] {
   const allExtracted =
     facts.includedStudyCount > 0 && facts.extractedStudyCount === facts.includedStudyCount;
-  const sentences: Sentence[] = [allExtracted ? PREEXTRACT_ALL : PREEXTRACT_SOME];
+  const one = allExtracted ? PREEXTRACT_ALL_ONE : PREEXTRACT_SOME_ONE;
+  const many = allExtracted ? PREEXTRACT_ALL : PREEXTRACT_SOME;
+  const sentences: Sentence[] = [byCount(facts.includedStudyCount, one, many)];
   if (facts.extractedStudyCount > 0 && facts.extractedStudyCount < facts.includedStudyCount) {
-    sentences.push(NOT_EXTRACTED);
+    const remaining = facts.includedStudyCount - facts.extractedStudyCount;
+    sentences.push(byCount(remaining, NOT_EXTRACTED_ONE, NOT_EXTRACTED));
   }
   if (facts.partialStudyCount > 0) {
-    sentences.push(PARTIAL_ITEMS);
+    sentences.push(byCount(facts.extractedStudyCount, PARTIAL_ITEMS_ONE, PARTIAL_ITEMS));
   }
   sentences.push(...(workflow === 'dual' ? dualVerification(facts) : [VERIFY_SINGLE]));
-  sentences.push(facts.unverifiedCellCount > 0 ? SOME_UNVERIFIED : ALL_VERIFIED, AUDIT_TRAIL);
+  const verification = byCount(facts.unverifiedCellCount, SOME_UNVERIFIED_ONE, SOME_UNVERIFIED);
+  sentences.push(facts.unverifiedCellCount > 0 ? verification : ALL_VERIFIED, AUDIT_TRAIL);
   return sentences;
 }
 
@@ -281,10 +342,12 @@ export function buildMethodsText(
     joinSentences(language, paragraph2(workflow, facts)),
   ];
   if (facts.scannedDocumentCount > 0) {
-    parts.push(OPTIONAL_SCANNED[language]);
+    parts.push(byCount(facts.scannedDocumentCount, OPTIONAL_SCANNED_ONE, OPTIONAL_SCANNED)[language]);
   }
   if (facts.pilotRevisionCount > 0) {
-    parts.push(OPTIONAL_PILOT_REVISION[language]);
+    parts.push(
+      byCount(facts.pilotRevisionCount, OPTIONAL_PILOT_REVISION_ONE, OPTIONAL_PILOT_REVISION)[language],
+    );
   }
   if (facts.chatAssistDecisionCount > 0) {
     parts.push(OPTIONAL_CHAT_ASSIST[language]);
