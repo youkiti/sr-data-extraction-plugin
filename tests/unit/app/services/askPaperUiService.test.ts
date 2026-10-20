@@ -223,7 +223,7 @@ describe('AI へ送る前の同意（issue #381）', () => {
     await sendAskPaperQuestion(store, deps, makeAskParams());
     expect(deps.ensureAiDataConsent).toHaveBeenCalledWith('gemini');
     expect(ask).not.toHaveBeenCalled();
-    expect(store.getState().askPaper).toBe(before);
+    expect(store.getState().askPaper).toEqual(before);
   });
 
   test('同意なら従来どおり送る', async () => {
@@ -237,7 +237,7 @@ describe('AI へ送る前の同意（issue #381）', () => {
     expect(store.getState().askPaper.usedStudyIds).toEqual(['study-1']);
   });
 
-  test('API キー未設定・接続方式の食い違い・解決の失敗では同意を求めず、askPaper のエラー表示に任せる', async () => {
+  test('API キー未設定・接続方式の食い違いでは同意を求めず、askPaper のエラー表示に任せる', async () => {
     const { store, deps } = setup();
     const ensureAiDataConsent = jest.fn(async () => false);
     deps.ensureAiDataConsent = ensureAiDataConsent;
@@ -253,6 +253,52 @@ describe('AI へ送る前の同意（issue #381）', () => {
     };
     await sendAskPaperQuestion(store, deps, makeAskParams());
     expect(ensureAiDataConsent).not.toHaveBeenCalled();
-    expect(ask).toHaveBeenCalledTimes(3);
+    expect(ask).toHaveBeenCalledTimes(2);
+    expect(store.getState().askPaper).toMatchObject({ sending: false, error: 'storage' });
+  });
+});
+
+test('設定の初回読み込みが失敗したら再読み込みせず、未同意の質問を送らない', async () => {
+  const { store, deps } = setup();
+  deps.loadDefaultModel = jest.fn()
+    .mockRejectedValueOnce(new Error('設定読み込み失敗'))
+    .mockResolvedValue(FACTORY_DEFAULT_MODEL);
+  deps.ensureAiDataConsent = jest.fn(async () => true);
+  await sendAskPaperQuestion(store, deps, makeAskParams());
+  expect(deps.loadDefaultModel).toHaveBeenCalledTimes(1);
+  expect(deps.ensureAiDataConsent).not.toHaveBeenCalled();
+  expect(ask).not.toHaveBeenCalled();
+  expect(store.getState().askPaper).toMatchObject({
+    sending: false, error: '設定読み込み失敗', usedStudyIds: [], conversations: {},
+  });
+});
+
+test('同意待ちの再送信を止め、同意後の質問と会話を一件だけにする', async () => {
+  const { store, deps } = setup();
+  let resolveConsent!: (value: boolean) => void;
+  deps.loadApiKey = jest.fn(async () => 'key');
+  deps.ensureAiDataConsent = jest.fn(() => new Promise<boolean>((resolve) => {
+    resolveConsent = resolve;
+  }));
+  const pending = sendAskPaperQuestion(store, deps, makeAskParams());
+  expect(store.getState().askPaper).toMatchObject({ sending: true, usedStudyIds: [] });
+  await sendAskPaperQuestion(store, deps, makeAskParams());
+  while (!resolveConsent) await Promise.resolve();
+  expect(deps.ensureAiDataConsent).toHaveBeenCalledTimes(1);
+  resolveConsent(true);
+  await pending;
+  expect(ask).toHaveBeenCalledTimes(1);
+  expect(store.getState().askPaper.sending).toBe(false);
+  expect(store.getState().askPaper.conversations['study-1']).toHaveLength(1);
+});
+
+test('同意確認が例外を返したら送信中を解除し、質問済みの印を付けない', async () => {
+  const { store, deps } = setup();
+  deps.loadApiKey = jest.fn(async () => 'key');
+  deps.ensureAiDataConsent = jest.fn(async () => { throw new Error('同意確認失敗'); });
+  await sendAskPaperQuestion(store, deps, makeAskParams());
+  expect(ask).not.toHaveBeenCalled();
+  expect(store.getState().askPaper).toMatchObject({
+    sending: false, error: '同意確認失敗', usedStudyIds: [],
   });
 });

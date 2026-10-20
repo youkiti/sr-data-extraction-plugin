@@ -755,6 +755,25 @@ describe('runExtract', () => {
     expect(runExtractionMock).not.toHaveBeenCalled();
   });
 
+  test.each([true, false])('一括抽出は同意待ちの再操作を止め、終了時に解除する: %s', async (accepted) => {
+    const store = makeReadyStore();
+    let resolveConsent!: (value: boolean) => void;
+    const ensureAiDataConsent = jest.fn(() => new Promise<boolean>((resolve) => {
+      resolveConsent = resolve;
+    }));
+    const deps = makeDeps({ ensureAiDataConsent });
+    const pending = runExtract(store, deps);
+    expect(store.getState().extract.running).toBe(true);
+    while (!resolveConsent) await Promise.resolve();
+    await runExtract(store, deps);
+    expect(ensureAiDataConsent).toHaveBeenCalledTimes(1);
+    expect(runExtractionMock).not.toHaveBeenCalled();
+    resolveConsent(accepted);
+    await pending;
+    expect(runExtractionMock).toHaveBeenCalledTimes(accepted ? 1 : 0);
+    expect(store.getState().extract.running).toBe(false);
+  });
+
   test('AI へ送る前の同意（issue #381）をキャンセルしたら実行せず、確認カードも開いたままにする', async () => {
     const store = makeReadyStore();
     const ensureAiDataConsent = jest.fn().mockResolvedValue(false);
@@ -762,7 +781,7 @@ describe('runExtract', () => {
     await runExtract(store, makeDeps({ ensureAiDataConsent }));
     expect(ensureAiDataConsent).toHaveBeenCalledWith('gemini');
     expect(runExtractionMock).not.toHaveBeenCalled();
-    expect(store.getState().extract).toBe(before);
+    expect(store.getState().extract).toEqual(before);
     expect(store.getState().extract.confirming).toBe(true);
   });
 
@@ -1203,6 +1222,25 @@ describe('retryExtractStudy', () => {
     });
   }
 
+  test.each([true, false])('再試行は同意待ちの再操作を止め、終了時に解除する: %s', async (accepted) => {
+    const store = makeFailedStore();
+    let resolveConsent!: (value: boolean) => void;
+    const ensureAiDataConsent = jest.fn(() => new Promise<boolean>((resolve) => {
+      resolveConsent = resolve;
+    }));
+    const deps = makeDeps({ ensureAiDataConsent });
+    const pending = retryExtractStudy(store, deps, 'study-doc-2');
+    expect(store.getState().extract.retryingStudyId).toBe('study-doc-2');
+    while (!resolveConsent) await Promise.resolve();
+    await retryExtractStudy(store, deps, 'study-doc-2');
+    expect(ensureAiDataConsent).toHaveBeenCalledTimes(1);
+    expect(runExtractionMock).not.toHaveBeenCalled();
+    resolveConsent(accepted);
+    await pending;
+    expect(runExtractionMock).toHaveBeenCalledTimes(accepted ? 1 : 0);
+    expect(store.getState().extract.retryingStudyId).toBe(null);
+  });
+
   test('AI へ送る前の同意（issue #381）をキャンセルしたら再試行せず、失敗行の表示も変えない', async () => {
     const store = makeFailedStore();
     const ensureAiDataConsent = jest.fn().mockResolvedValue(false);
@@ -1210,7 +1248,7 @@ describe('retryExtractStudy', () => {
     await retryExtractStudy(store, makeDeps({ ensureAiDataConsent }), 'study-doc-2');
     expect(ensureAiDataConsent).toHaveBeenCalledWith('gemini');
     expect(runExtractionMock).not.toHaveBeenCalled();
-    expect(store.getState().extract).toBe(before);
+    expect(store.getState().extract).toEqual(before);
   });
 
   test('プロジェクト未選択・実行中・再試行中・スキーマ未読込は何もしない', async () => {

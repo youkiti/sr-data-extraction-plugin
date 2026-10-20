@@ -242,41 +242,42 @@ export async function runPilot(store: Store, deps: PilotServiceDeps): Promise<vo
     patchPilot(store, { runError: t('extraction.errNoModel') });
     return;
   }
-  const providerResolution = await resolveProviderConfig(model, deps);
-  if (providerResolution.modelMismatch !== null) {
-    patchPilot(store, { runError: providerModelMismatchMessage(model, providerResolution.provider) });
-    return;
-  }
-  if (providerResolution.config === null) {
-    patchPilot(store, { runError: missingApiKeyMessage(providerResolution.provider) });
-    return;
-  }
-  // 選択サブセットで fields を絞り込む（全選択時は fieldIds: null。issue #80）。
-  // 埋め込み検証 UI（runFields）は絞り込まず表のデザインの全項目のまま渡す（幽霊セルと同じ扱いで
-  // 未抽出項目も人間が手動で判定できるようにするため。絞り込むのは LLM 呼び出し側の fields のみ）
-  const fieldIds = resolveFieldIdsForRun(selectedFieldIds);
-  const extractionFields = filterFieldsBySelection(fields, fieldIds);
-  // 画像非対応モデルの実行ブロック（issue #191 レビュー対応）: extractService と同じ判定を
-  // runExtraction 呼び出し前に行う。pilotView.ts には実行ボタンの disabled 表示（S7 と同等の
-  // UI ガード）がまだ無いため、ここが唯一のガードになる
-  const targetsForBlockCheck = documentsForStudies(candidates, targetStudyIds);
-  if (
-    isRunBlockedByImageUnsupportedModel(
-      model,
-      targetsForBlockCheck.some((doc) => doc.textStatus === 'no_text_layer'),
-      providerResolution.provider,
-    )
-  ) {
-    patchPilot(store, { runError: t('extraction.errImageUnsupportedModel', { model }) });
-    return;
-  }
-  // AI へ送る前の同意（issue #381）。キャンセルなら何もせず、画面は元のまま
-  if (!(await confirmAiDataConsent(deps, providerResolution.provider))) {
-    return;
-  }
-
-  patchPilot(store, { running: true, runError: null, progress: null });
+  patchPilot(store, { running: true });
   try {
+    const providerResolution = await resolveProviderConfig(model, deps);
+    if (providerResolution.modelMismatch !== null) {
+      patchPilot(store, { runError: providerModelMismatchMessage(model, providerResolution.provider) });
+      return;
+    }
+    if (providerResolution.config === null) {
+      patchPilot(store, { runError: missingApiKeyMessage(providerResolution.provider) });
+      return;
+    }
+    // 選択サブセットで fields を絞り込む（全選択時は fieldIds: null。issue #80）。
+    // 埋め込み検証 UI（runFields）は絞り込まず表のデザインの全項目のまま渡す（幽霊セルと同じ扱いで
+    // 未抽出項目も人間が手動で判定できるようにするため。絞り込むのは LLM 呼び出し側の fields のみ）
+    const fieldIds = resolveFieldIdsForRun(selectedFieldIds);
+    const extractionFields = filterFieldsBySelection(fields, fieldIds);
+    // 画像非対応モデルの実行ブロック（issue #191 レビュー対応）: extractService と同じ判定を
+    // runExtraction 呼び出し前に行う。pilotView.ts には実行ボタンの disabled 表示（S7 と同等の
+    // UI ガード）がまだ無いため、ここが唯一のガードになる
+    const targetsForBlockCheck = documentsForStudies(candidates, targetStudyIds);
+    if (
+      isRunBlockedByImageUnsupportedModel(
+        model,
+        targetsForBlockCheck.some((doc) => doc.textStatus === 'no_text_layer'),
+        providerResolution.provider,
+      )
+    ) {
+      patchPilot(store, { runError: t('extraction.errImageUnsupportedModel', { model }) });
+      return;
+    }
+    // AI へ送る前の同意（issue #381）。キャンセルなら実行中フラグを戻す
+    if (!(await confirmAiDataConsent(deps, providerResolution.provider))) {
+      return;
+    }
+
+    patchPilot(store, { running: true, runError: null, progress: null });
     // 選択 study の全文書を連結対象にする（study 単位抽出。§4.3）
     const selection = await resolveStudies(store, deps, project.spreadsheetId);
     const targets = documentsForStudies(selection, targetStudyIds);
@@ -377,6 +378,8 @@ export async function runPilot(store: Store, deps: PilotServiceDeps): Promise<vo
     if (store.getState().pilot.matrix?.runId !== outcome.run.runId) await loadPilotMatrix(store, deps);
   } catch (err) {
     patchPilot(store, { running: false, progress: null, runError: toMessage(err) });
+  } finally {
+    patchPilot(store, { running: false });
   }
 }
 

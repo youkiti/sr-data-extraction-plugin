@@ -271,29 +271,31 @@ export async function runDraftSchema(store: Store, deps: SchemaServiceDeps): Pro
     patchSchema(store, { draftError: t('extraction.errNoModel') });
     return;
   }
-  const providerResolution = await resolveProviderConfig(model, deps);
-  if (providerResolution.modelMismatch !== null) {
-    patchSchema(store, { draftError: providerModelMismatchMessage(model, providerResolution.provider) });
-    return;
-  }
-  if (providerResolution.config === null) {
-    patchSchema(store, { draftError: missingApiKeyMessage(providerResolution.provider) });
-    return;
-  }
-  // AI へ送る前の同意（issue #381）。キャンセルなら何もせず、画面は元のまま
-  if (!(await confirmAiDataConsent(deps, providerResolution.provider))) {
-    return;
-  }
-
-  patchSchema(store, { drafting: true, draftError: null, draftElapsedSeconds: 0 });
-  const startedAt = Date.now();
-  const ticker = setInterval(() => {
-    patchSchema(store, {
-      draftElapsedSeconds: Math.floor((Date.now() - startedAt) / 1000),
-    });
-  }, 1000);
-
+  patchSchema(store, { drafting: true });
+  let ticker: ReturnType<typeof setInterval> | undefined;
   try {
+    const providerResolution = await resolveProviderConfig(model, deps);
+    if (providerResolution.modelMismatch !== null) {
+      patchSchema(store, { draftError: providerModelMismatchMessage(model, providerResolution.provider) });
+      return;
+    }
+    if (providerResolution.config === null) {
+      patchSchema(store, { draftError: missingApiKeyMessage(providerResolution.provider) });
+      return;
+    }
+    // AI へ送る前の同意（issue #381）。キャンセルなら実行中フラグを戻す
+    if (!(await confirmAiDataConsent(deps, providerResolution.provider))) {
+      return;
+    }
+
+    patchSchema(store, { drafting: true, draftError: null, draftElapsedSeconds: 0 });
+    const startedAt = Date.now();
+    ticker = setInterval(() => {
+      patchSchema(store, {
+        draftElapsedSeconds: Math.floor((Date.now() - startedAt) / 1000),
+      });
+    }, 1000);
+
     const { text: protocolText } = await resolveProtocol(store, deps, project.spreadsheetId);
     const documents = await resolveDocuments(store, deps, project.spreadsheetId);
     const loadPages = makeLoadDocumentPages(documents, deps.google);
@@ -370,6 +372,7 @@ export async function runDraftSchema(store: Store, deps: SchemaServiceDeps): Pro
     patchSchema(store, { drafting: false, draftError: toMessage(err) });
   } finally {
     clearInterval(ticker);
+    patchSchema(store, { drafting: false });
   }
 }
 

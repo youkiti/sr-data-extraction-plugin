@@ -603,6 +603,25 @@ describe('runPilot: 実行', () => {
     expect(deps.buildProvider).not.toHaveBeenCalled();
   });
 
+  test.each([true, false])('同意待ちの再操作を止め、終了時に実行中を解除する: %s', async (accepted) => {
+    const store = makeReadyStore();
+    let resolveConsent!: (value: boolean) => void;
+    const ensureAiDataConsent = jest.fn(() => new Promise<boolean>((resolve) => {
+      resolveConsent = resolve;
+    }));
+    const deps = makeDeps({ ensureAiDataConsent });
+    const pending = runPilot(store, deps);
+    expect(store.getState().pilot.running).toBe(true);
+    while (!resolveConsent) await Promise.resolve();
+    await runPilot(store, deps);
+    expect(ensureAiDataConsent).toHaveBeenCalledTimes(1);
+    expect(runExtractionMock).not.toHaveBeenCalled();
+    resolveConsent(accepted);
+    await pending;
+    expect(runExtractionMock).toHaveBeenCalledTimes(accepted ? 1 : 0);
+    expect(store.getState().pilot.running).toBe(false);
+  });
+
   test('AI へ送る前の同意（issue #381）をキャンセルしたら抽出を始めず、画面も変えない', async () => {
     const store = makeReadyStore();
     const ensureAiDataConsent = jest.fn().mockResolvedValue(false);
@@ -610,7 +629,7 @@ describe('runPilot: 実行', () => {
     await runPilot(store, makeDeps({ ensureAiDataConsent }));
     expect(ensureAiDataConsent).toHaveBeenCalledWith('gemini');
     expect(runExtractionMock).not.toHaveBeenCalled();
-    expect(store.getState().pilot).toBe(before);
+    expect(store.getState().pilot).toEqual(before);
   });
 
   function makeReadyStore(): Store {

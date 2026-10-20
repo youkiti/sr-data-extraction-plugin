@@ -46,7 +46,9 @@ test('送る内容・送り先・扱い・リンクを示し、モーダルと�
   expect(body.textContent).toContain('抽出項目の定義');
   expect(body.textContent).toContain('論文への質問の文');
   expect(body.textContent).toContain('Gemini API の無料枠');
-  expect(body.textContent).toContain('開発者のサーバーへは何も送りません');
+  expect(body.textContent).toContain('プロジェクトの logs/llm');
+  expect(body.textContent).toContain('論文への質問は本文・質問・回答を保存せず');
+  expect(body.textContent).toContain('開発者のサーバーには何も送りません');
   expect(body.textContent).toContain('出版社の利用条件');
   const privacy = [...panel.querySelectorAll('a')].find((a) => a.textContent === 'プライバシーポリシー')!;
   expect(privacy.href).toBe('https://youkiti.github.io/sr-data-extraction-plugin/privacy-policy.html?lang=ja');
@@ -60,6 +62,8 @@ test('英語表示では文言とリンクの言語が切り替わる', () => {
   setUiLanguage('en');
   void openAiDataConsentDialog(document, 'openai_compatible');
   expect(dialog().textContent).toContain('the LLM API you configured (OpenAI-compatible API)');
+  expect(dialog().textContent).toContain('project’s logs/llm folder');
+  expect(dialog().textContent).toContain('only metadata such as usage is recorded');
   expect(document.getElementById('ai-data-consent-accept')?.textContent).toBe('Agree and continue');
   expect(document.getElementById('ai-data-consent-cancel')?.textContent).toBe('Cancel');
 });

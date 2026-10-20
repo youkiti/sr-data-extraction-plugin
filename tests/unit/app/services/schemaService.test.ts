@@ -447,6 +447,26 @@ describe('runDraftSchema', () => {
     expect(store.getState().schema.draftError).toContain('API キーが未設定');
   });
 
+  test.each([true, false])('同意待ちの再操作を止め、終了時にドラフト中を解除する: %s', async (accepted) => {
+    const store = makeStore();
+    seedForDraft(store);
+    let resolveConsent!: (value: boolean) => void;
+    const ensureAiDataConsent = jest.fn(() => new Promise<boolean>((resolve) => {
+      resolveConsent = resolve;
+    }));
+    const { deps, chatMock } = makeDeps({ ensureAiDataConsent });
+    const pending = runDraftSchema(store, deps);
+    expect(store.getState().schema.drafting).toBe(true);
+    while (!resolveConsent) await Promise.resolve();
+    await runDraftSchema(store, deps);
+    expect(ensureAiDataConsent).toHaveBeenCalledTimes(1);
+    expect(chatMock).not.toHaveBeenCalled();
+    resolveConsent(accepted);
+    await pending;
+    expect(chatMock).toHaveBeenCalledTimes(accepted ? 1 : 0);
+    expect(store.getState().schema.drafting).toBe(false);
+  });
+
   test('AI へ送る前の同意（issue #381）: キャンセルなら LLM を呼ばず画面も変えない / 同意なら実行する', async () => {
     const store = makeStore();
     seedForDraft(store);
@@ -456,7 +476,7 @@ describe('runDraftSchema', () => {
     await runDraftSchema(store, deps);
     expect(ensureAiDataConsent).toHaveBeenCalledWith('gemini');
     expect(chatMock).not.toHaveBeenCalled();
-    expect(store.getState().schema).toBe(before);
+    expect(store.getState().schema).toEqual(before);
 
     await runDraftSchema(store, deps);
     expect(chatMock).toHaveBeenCalledTimes(1);

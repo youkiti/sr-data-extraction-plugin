@@ -214,7 +214,7 @@ export const jaPages = {
   'help.openTopic': 'この項目のヘルプを開く',
   // AI へ送る前の告知と同意（app/ui/aiDataConsentDialog.ts + Options の「AI へ送る内容」節。issue #381）
   'aiConsent.title': 'AI へ送る内容の確認',
-  'aiConsent.intro': 'AI の機能を使うと、次の内容を、設定した LLM API（{provider}）へ送ります。',
+  'aiConsent.intro': 'AI の処理のために送る先は、設定した LLM API（{provider}）だけです。機能に応じて次の内容を送ります。',
   'aiConsent.itemPaper': '論文の本文（文字を読み取れない PDF はページの画像）',
   'aiConsent.itemProtocol': '研究プロトコルの本文',
   'aiConsent.itemSchema': '抽出項目の定義',
@@ -222,7 +222,7 @@ export const jaPages = {
   'aiConsent.providerTerms': '送った内容の扱いは、その API 提供者の規約に従います。',
   'aiConsent.geminiFree':
     'Gemini API の無料枠では、送った内容が Google の製品改善に使われ、人が読むことがあります。未公開のデータや機密の資料は、有料枠で使ってください。',
-  'aiConsent.noDeveloperServer': '開発者のサーバーへは何も送りません。',
+  'aiConsent.noDeveloperServer': '送ったプロンプトと応答は、監査の記録として利用者自身の Google Drive（プロジェクトの logs/llm）にも保存されます（画像データは除きます）。論文への質問は本文・質問・回答を保存せず、利用量などのメタデータだけを記録します。開発者のサーバーには何も送りません。',
   'aiConsent.checkTerms': '使う前に、論文の出版社の利用条件と、送り先の規約を確かめてください。',
   'aiConsent.privacyLink': 'プライバシーポリシー',
   'aiConsent.reviewLater': 'この確認は最初の 1 回だけ表示します。設定画面からいつでも見直し・取り消しができます。',

@@ -216,7 +216,7 @@ export const enPages: Record<keyof typeof jaPages, string> = {
 
   'help.openTopic': 'Open help for this item',
   'aiConsent.title': 'What is sent to the AI',
-  'aiConsent.intro': 'When you use an AI feature, the following is sent to the LLM API you configured ({provider}).',
+  'aiConsent.intro': 'For AI processing, content is sent only to the LLM API you configured ({provider}). Depending on the feature, this includes the following.',
   'aiConsent.itemPaper': 'The text of your papers (page images for PDFs without a text layer)',
   'aiConsent.itemProtocol': 'The text of your study protocol',
   'aiConsent.itemSchema': 'Your extraction field definitions',
@@ -224,7 +224,7 @@ export const enPages: Record<keyof typeof jaPages, string> = {
   'aiConsent.providerTerms': "How the content is handled there is governed by that API provider's terms.",
   'aiConsent.geminiFree':
     "On the Gemini API free tier, what you send may be used to improve Google's products and may be read by people. Use a paid tier for unpublished data or confidential material.",
-  'aiConsent.noDeveloperServer': "Nothing is sent to the developer's servers.",
+  'aiConsent.noDeveloperServer': "The prompts sent and the responses are also saved as audit records in your own Google Drive (the project’s logs/llm folder), excluding image data. For paper questions, the paper text, questions and answers are not saved; only metadata such as usage is recorded. Nothing is sent to the developer's servers.",
   'aiConsent.checkTerms': "Before you start, check the publisher's terms of use for your papers and the API provider's terms.",
   'aiConsent.privacyLink': 'Privacy policy',
   'aiConsent.reviewLater': 'This notice is shown only once. You can review it or withdraw your consent in Options at any time.',

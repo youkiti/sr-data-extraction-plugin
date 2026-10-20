@@ -238,7 +238,7 @@ test('初回の AI 機能の実行前に同意画面を出す。キャンセル�
   await expect(dialog).toContainText('設定した LLM API（Gemini）');
   await expect(dialog).toContainText('研究プロトコルの本文');
   await expect(dialog).toContainText('Gemini API の無料枠');
-  await expect(dialog).toContainText('開発者のサーバーへは何も送りません');
+  await expect(dialog).toContainText('開発者のサーバーには何も送りません');
   await expect(dialog.getByRole('link', { name: 'プライバシーポリシー' })).toHaveAttribute(
     'href',
     'https://youkiti.github.io/sr-data-extraction-plugin/privacy-policy.html?lang=ja',
