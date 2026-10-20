@@ -208,11 +208,11 @@
             </li>
             <li>
               <span class="ja" lang="ja"
-                >スキャン PDF（テキスト層なし）で、人が値を原文と照合しない場合（スキャン PDF では引用の自動照合とハイライトが使えません）</span
+                >スキャン PDF（テキスト層なし）で、人が値を原文と照合しない場合（スキャン PDF では引用の自動照合はできません。座標を返せるモデルでは AI が推定した位置にハイライトを出しますが、位置が正しいかは人が確かめる必要があります）</span
               >
               <span class="en" lang="en"
-                >Scanned PDFs (no text layer) when nobody checks the values against the page (quotes in scanned PDFs are
-                not matched or highlighted automatically)</span
+                >Scanned PDFs (no text layer) when nobody checks the values against the page (quotes cannot be matched
+                automatically; models that return coordinates can highlight AI-estimated locations, but a person must check that the locations are correct)</span
               >
             </li>
             <li>
@@ -466,15 +466,16 @@
           <div class="note">
             <p>
               <span class="ja" lang="ja"
-                >論文本文（スキャン PDF はページ画像）が外部へ送信されるのは、AI 機能（表のデザインの AI ドラフト・抽出・論文に質問）を使うときの、あなたが設定した
-                LLM API だけです。開発者が運用するサーバーは存在しません（<a
+                >取り込んだ PDF と抽出した本文テキストは、あなた自身の Google ドライブのプロジェクトフォルダに保存されます。AI 機能（表のデザインの AI ドラフト・抽出・論文に質問）を使うときだけ、論文本文（スキャン PDF はページ画像）が、あなたが設定した
+                LLM API へ送られます。送ったプロンプトと応答は監査の記録として同じ Drive の logs/llm に保存されます（ページ画像は伏字にし、質問パネルの会話本文は保存しません）。開発者が運用するサーバーは存在しません（<a
                   href="privacy-policy.html"
                   >プライバシーポリシー</a
                 >）。</span
               >
               <span class="en" lang="en"
-                >Full text (or page images for scanned PDFs) leaves your browser only when you use the AI features
-                (AI schema drafting, extraction, Ask the paper), and only to the LLM API you configured. There is no
+                >Imported PDFs and extracted full text are saved in the project folder in your own Google Drive. Full text
+                (or page images for scanned PDFs) is sent to the LLM API you configured only when you use the AI features
+                (AI schema drafting, extraction, Ask the paper). Sent prompts and responses are saved as audit records in logs/llm in the same Drive (page images are redacted, and conversation text from the question panel is not saved). There is no
                 developer-operated server (see the <a href="privacy-policy.html">privacy policy</a>).</span
               >
             </p>
@@ -1326,11 +1327,11 @@
           </p>
           <p>
             <span class="ja" lang="ja"
-              >この機能は探索的・補助的な使い方のためのものです。回答を抽出の結果にせず、PDF で根拠を確認してから、自分で値を入力・判定してください。このタブで質問した試験では、そのあとの判定の
-              note（監査証跡）の先頭に <code>[chat-assist]</code> が付き、質問を参考にした判定を区別できます。質問と回答はこのタブの中だけに保持され、閉じるか再読み込みすると消えます。共有フォルダには保存されません。</span
+              >この機能は探索的・補助的な使い方のためのものです。回答を抽出の結果にせず、PDF で根拠を確認してから、自分で値を入力・判定してください。質問と回答の本文はこのタブの中だけに保持され、閉じるか再読み込みすると消えます。共有フォルダには保存されません。質問した試験の印は、アカウントとプロジェクトごとにこのブラウザに残ります。タブを開き直した後も、その試験の判定の
+              note（監査証跡）の先頭に <code>[chat-assist]</code> が付き、質問を参考にした判定を区別できます。</span
             >
             <span class="en" lang="en"
-              >This feature is for exploratory, supporting use. Do not treat answers as extraction results; check the evidence in the PDF before entering or judging a value yourself. For a study you asked about in this tab, later judgments get <code>[chat-assist]</code> at the start of their note in the audit trail, so judgments informed by a question can be told apart. Questions and answers remain only in this tab and disappear when it is closed or reloaded; they are not saved in the shared folder.</span
+              >This feature is for exploratory, supporting use. Do not treat answers as extraction results; check the evidence in the PDF before entering or judging a value yourself. Question and answer text remains only in this tab and disappears when it is closed or reloaded; it is not saved in the shared folder. A marker for each study you asked about remains in this browser, separately for each account and project. Even after reopening the tab, judgments for that study get <code>[chat-assist]</code> at the start of their note in the audit trail, so judgments informed by a question can be told apart.</span
             >
           </p>
 

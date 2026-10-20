@@ -205,8 +205,27 @@
                     <span class="en" lang="en">Only the LLM API configured by the user</span>
                   </td>
                   <td>
-                    <span class="ja" lang="ja">AI によるデータ抽出。本文が外部へ送信されるのはこの経路だけです</span>
-                    <span class="en" lang="en">AI extraction — the only route by which full text leaves the browser</span>
+                    <span class="ja" lang="ja">AI によるデータ抽出。本文を受け取る第三者は、この LLM API だけです</span>
+                    <span class="en" lang="en">AI extraction. This LLM API is the only third party that receives the full text</span>
+                  </td>
+                </tr>
+                <tr>
+                  <td>
+                    <span class="ja" lang="ja"
+                      >AI へ送ったプロンプトと応答（スキャン PDF のページ画像は伏字。「論文に質問」の会話は保存しない）</span
+                    >
+                    <span class="en" lang="en"
+                      >Prompts sent to the AI and its responses (page images of scanned PDFs are redacted; “Ask the
+                      paper” conversations are not saved)</span
+                    >
+                  </td>
+                  <td>
+                    <span class="ja" lang="ja">利用者の Google Drive（プロジェクトの <code>logs/llm</code>）</span>
+                    <span class="en" lang="en">The user’s Google Drive (the project’s <code>logs/llm</code>)</span>
+                  </td>
+                  <td>
+                    <span class="ja" lang="ja">AI 呼び出しの監査証跡</span>
+                    <span class="en" lang="en">Audit trail of AI calls</span>
                   </td>
                 </tr>
                 <tr>
@@ -451,13 +470,13 @@
               <span class="ja" lang="ja"
                 ><strong>Gemini API</strong>: 無料枠（課金を有効にしていない Google Cloud
                 プロジェクト）では、送った内容と応答が Google の製品の改善に使われ、人が読むことがあります。Google
-                は無料枠へ機密情報や個人情報を送らないよう求めています。未公開のデータや機密資料を扱うときは、課金を有効にした有料枠で使ってください。根拠:
+                は無料枠へ機微な情報・機密情報・個人情報を送らないよう求めています。ただし、欧州経済領域・スイス・英国の利用者には、無料枠でも有料枠と同じデータの扱いが適用され、上記の改善への利用と人による閲覧の記述は当てはまりません。未公開のデータや機密資料を扱うときは、課金を有効にした有料枠で使ってください。根拠:
                 <a href="https://ai.google.dev/gemini-api/terms">Gemini API 追加利用規約</a></span
               >
               <span class="en" lang="en"
                 ><strong>Gemini API</strong>: on the free tier (a Google Cloud project without billing enabled), what
                 you send and the responses are used to improve Google’s products, and humans may read them. Google asks
-                users not to send confidential or personal information to the free tier. Use a billing-enabled paid
+                users not to send sensitive, confidential, or personal information to the free tier. However, for users in the European Economic Area, Switzerland, or the United Kingdom, paid-service data handling applies even to the free tier, so the statements above about use for product improvement and human review do not apply. Use a billing-enabled paid
                 tier for unpublished data or confidential material. Source:
                 <a href="https://ai.google.dev/gemini-api/terms">Gemini API Additional Terms of Service</a></span
               >
