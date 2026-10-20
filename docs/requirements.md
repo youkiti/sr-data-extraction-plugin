@@ -420,7 +420,7 @@ AI 抽出の根拠情報。ハイライト表示（§5）と audit.csv の素材
 | schema_version | int | ✓ | 判定時点で対象行が依拠していたスキーマ版（スキーマ改訂 → 再抽出後の再検証を区別する） |
 | action | enum | ✓ | `accept` / `edit` / `reject` / `not_reported` / `undo` |
 | value | string | | 操作後の値 |
-| note | string | | 検証時のメモ（例: Table 2 と本文で数値不一致、Table 2 を採用）。論文への質問パネル（v0.24・issue #264）で質問した study の以後の判定・裁定は、先頭に印 `[chat-assist]` が自動で付く（メモがあれば `[chat-assist] メモ`） |
+| note | string | | 検証時のメモ（例: Table 2 と本文で数値不一致、Table 2 を採用）。論文への質問パネル（v0.24・issue #264）で質問した study の以後の判定・裁定は、先頭に印 `[chat-assist]` が自動で付く（メモがあれば `[chat-assist] メモ`）。引用が本文で照合できていないセル（`anchor_status = failed`、またはスキャン PDF で照合なし）を警告のあとに accept した判定には `[unanchored-accept]` が付く（issue #381。質問後の印と重なると `[chat-assist] [unanchored-accept]`） |
 
 > **インスタンス宣言イベント（2026-07-09 追記）**: AI が丸ごと見落とした outcome_result を人間が追加する操作は、`Decisions` に予約 `field_id = __entity_instance__` の行として追記する。`entity_key` には追加した outcome_result キー、`annotator` は操作した人間、`annotator_type` は宣言者のロールに応じた値（`human_with_ai`。独立入力モードでは `human_independent`。v0.11）、`action = edit`、`value = entity_key`、`note = outcome_instance_declared` を入れる。この行はセル判定ではなく「entity インスタンスを人間が宣言した」監査イベントなので、`StudyData` / `ResultsData` の annotator 行は更新しない。検証 UI のセル生成はこの宣言行をインスタンス源として読むが、audit.csv の判定行からは除外する（原本の `Decisions` には残る）。
 

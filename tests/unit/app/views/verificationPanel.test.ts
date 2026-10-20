@@ -1704,6 +1704,10 @@ describe('判定済みブロック（未判定を上・判定済みを下部へ�
     pressKey('a'); // f-total accept → 直近判定として元の位置に残る
     expect(panel.root.querySelector('.verify__group--decided')).toBeNull();
     expect(cellEl(panel.root, KEY_TOTAL)?.classList.contains('verify__cell--decided')).toBe(false);
+    // f-country は引用が本文で見つからないため、1 回目の accept は警告だけ（issue #381）
+    pressKey('a');
+    expect(panel.root.querySelector('.verify__group--decided')).toBeNull();
+    expect(panel.root.querySelector('.verify__unanchored-warning')).not.toBeNull();
     pressKey('a'); // f-country accept → f-total が判定済みブロックのコンパクト行へ
     expect(panel.root.querySelector('.verify__group--decided')).not.toBeNull();
     expect(cellEl(panel.root, KEY_TOTAL)?.classList.contains('verify__cell--decided')).toBe(true);
@@ -5020,4 +5024,148 @@ test.each(['list', 'focus'] as const)('引用保存中は修正・棄却と e / 
   pressKey('x');
   expect(panel.root.querySelector('.verify__editor')).not.toBeNull();
   panel.dispose();
+});
+
+describe('照合できなかった引用のセルの accept 前の警告（issue #381）', () => {
+  const warning = (root: HTMLElement) => root.querySelector('.verify__unanchored-warning');
+  const acceptButton = (root: HTMLElement, cellKey: string) =>
+    cellEl(root, cellKey)!.querySelector<HTMLButtonElement>('.verify__action--accept')!;
+
+  test('failed の引用は 1 回目の accept で警告し、2 回目で印付きで確定する（ボタン・a キー）', async () => {
+    const { panel, onDecision } = await createPanel({
+      evidence: [makeEvidence({ anchorStatus: 'failed', quote: 'nowhere' })],
+    });
+    acceptButton(panel.root, KEY_TOTAL).click();
+    expect(onDecision).not.toHaveBeenCalled();
+    expect(warning(panel.root)?.getAttribute('role')).toBe('alert');
+    expect(warning(panel.root)?.textContent).toContain('PDF の本文で見つかっていません');
+    expect(chipOf(panel.root, KEY_TOTAL)).toBe('未検証');
+    pressKey('a');
+    expect(onDecision).toHaveBeenCalledTimes(1);
+    expect(onDecision.mock.calls[0]![0]).toMatchObject({ action: 'accept', value: '12', note: '[unanchored-accept]' });
+    expect(warning(panel.root)).toBeNull();
+    panel.dispose();
+  });
+
+  test.each(['list', 'focus'] as const)('%s: a の自動リピートは警告を通過せず、押し直すと確定する', async (layoutMode) => {
+    const { panel, onDecision } = await createPanel(
+      { evidence: [makeEvidence({ anchorStatus: 'failed', quote: 'nowhere' })] },
+      { layoutMode },
+    );
+    pressKey('a');
+    expect(warning(panel.root)).not.toBeNull();
+    expect(onDecision).not.toHaveBeenCalled();
+    pressKey('a', { repeat: true });
+    expect(warning(panel.root)).not.toBeNull();
+    expect(onDecision).not.toHaveBeenCalled();
+    document.dispatchEvent(new KeyboardEvent('keyup', { key: 'a', bubbles: true }));
+    pressKey('a');
+    expect(onDecision).toHaveBeenCalledTimes(1);
+    expect(onDecision.mock.calls[0]![0]).toMatchObject({ action: 'accept', note: '[unanchored-accept]' });
+    expect(warning(panel.root)).toBeNull();
+    panel.dispose();
+  });
+
+  test.each(['a', 'e', 'x', 'n', 'z'])('%s の自動リピートでは判定も編集開始もしない', async (key) => {
+    const { panel, onDecision } = await createPanel({ evidence: [makeEvidence()] });
+    pressKey(key, { repeat: true });
+    expect(onDecision).not.toHaveBeenCalled();
+    expect(panel.root.querySelector('.verify__edit-input')).toBeNull();
+    expect(warning(panel.root)).toBeNull();
+    panel.dispose();
+  });
+
+  test('移動の自動リピートを維持し、根拠へのジャンプで判定しない', async () => {
+    const { panel, onDecision } = await createPanel();
+    pressKey('j', { repeat: true });
+    expect(cellEl(panel.root, KEY_COUNTRY)?.classList.contains('verify__cell--focused')).toBe(true);
+    pressKey('f', { repeat: true });
+    expect(cellEl(panel.root, KEY_COUNTRY)?.classList.contains('verify__cell--focused')).toBe(true);
+    expect(onDecision).not.toHaveBeenCalled();
+    panel.dispose();
+  });
+
+  test('本文と一致した引用は 1 回で確定し、印を付けない', async () => {
+    const { panel, onDecision } = await createPanel({ evidence: [makeEvidence()] });
+    pressKey('a');
+    expect(onDecision.mock.calls[0]![0]).toMatchObject({ action: 'accept', note: null });
+    expect(warning(panel.root)).toBeNull();
+    panel.dispose();
+  });
+
+  test('スキャン PDF（照合なし）は別の文言で警告する', async () => {
+    const { panel, onDecision } = await createPanel({
+      evidence: [makeEvidence({ anchorStatus: null, bboxPage: 1, bbox: { ymin: 1, xmin: 1, ymax: 2, xmax: 2 } })],
+    });
+    pressKey('a');
+    expect(onDecision).not.toHaveBeenCalled();
+    expect(warning(panel.root)?.textContent).toContain('スキャン PDF');
+    panel.dispose();
+  });
+
+  test('別のセルへ移る・修正を始める・タブを切り替えると警告は消え、確定には再び 2 回要る', async () => {
+    const { panel, onDecision } = await createPanel({
+      evidence: [makeEvidence({ anchorStatus: 'failed', quote: 'nowhere' })],
+    });
+    pressKey('a');
+    expect(warning(panel.root)).not.toBeNull();
+    pressKey('j');
+    expect(warning(panel.root)).toBeNull();
+    pressKey('k');
+    pressKey('a');
+    expect(onDecision).not.toHaveBeenCalled();
+    expect(warning(panel.root)).not.toBeNull();
+    pressKey('e');
+    expect(warning(panel.root)).toBeNull();
+    panel.root.querySelector<HTMLButtonElement>('.verify__edit-cancel')!.click();
+    pressKey('a');
+    expect(onDecision).not.toHaveBeenCalled();
+    panel.root.querySelectorAll<HTMLButtonElement>('.verify__tab')[1]!.click();
+    panel.root.querySelectorAll<HTMLButtonElement>('.verify__tab')[0]!.click();
+    expect(warning(panel.root)).toBeNull();
+    pressKey('a');
+    expect(onDecision).not.toHaveBeenCalled();
+    pressKey('n');
+    expect(onDecision.mock.calls[0]![0]).toMatchObject({ action: 'not_reported', note: null });
+    expect(warning(panel.root)).toBeNull();
+    panel.dispose();
+  });
+
+  test('フォーカスモードの詳細ストリップにも警告を出す', async () => {
+    const { panel, onDecision } = await createPanel(
+      { evidence: [makeEvidence({ anchorStatus: 'failed', quote: 'nowhere' })] },
+      { layoutMode: 'focus' },
+    );
+    pressKey('a');
+    expect(panel.root.querySelector('#verify-focus-detail .verify__unanchored-warning')).not.toBeNull();
+    pressKey('a');
+    expect(onDecision.mock.calls[0]![0]).toMatchObject({ note: '[unanchored-accept]' });
+    panel.dispose();
+  });
+
+  test('複数の引用のうち 1 件でも本文で見つからなければ警告する', async () => {
+    const { panel, onDecision } = await createPanel({
+      fields: [makeField({ maxQuotes: 2 })],
+      evidence: [
+        makeEvidence({ quoteSeq: 1, quote: 'mortality' }),
+        makeEvidence({ quoteSeq: 2, quote: 'missing quote', anchorStatus: 'failed' }),
+      ],
+    });
+    pressKey('a');
+    expect(onDecision).not.toHaveBeenCalled();
+    expect(warning(panel.root)).not.toBeNull();
+    panel.dispose();
+  });
+
+  test('人が編集した引用一覧では、その一覧の照合状態で判断する', async () => {
+    const original = makeEvidence({ quote: 'missing', anchorStatus: 'failed' });
+    const { panel, onDecision } = await createPanel(
+      { fields: [makeField()], evidence: [original], quoteSetRows: editedQuotes([original]) },
+      { onQuoteSetSave: jest.fn().mockResolvedValue(undefined) },
+    );
+    pressKey('a');
+    expect(onDecision).not.toHaveBeenCalled();
+    expect(warning(panel.root)).not.toBeNull();
+    panel.dispose();
+  });
 });

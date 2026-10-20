@@ -14,12 +14,20 @@ export interface PilotEntity {
   evidence: Evidence;
   decision: Decision | null;
   status: PilotCellStatus;
+  /** 外れの候補（未判定のアンカリング失敗を含む。項目編集欄の参考情報に使う） */
   miss: boolean;
 }
+// 外れの数と割合は、人が判定したものだけで数える（issue #381）。未判定（未判定のアンカリング失敗を
+// 含む）は「外れ 0」と読めないように分母から外し、未判定の件数として別に示す
 export interface PilotMatrixCell {
   studyId: string;
   entities: PilotEntity[];
+  /** 判定済みで外れた entity の数 */
   misses: number;
+  /** 判定済みの entity の数 */
+  judged: number;
+  /** 未判定の entity の数 */
+  pending: number;
   status: PilotCellStatus;
 }
 export interface PilotMatrixRow {
@@ -27,6 +35,10 @@ export interface PilotMatrixRow {
   cells: PilotMatrixCell[];
   misses: number;
   missedStudies: number;
+  /** 外れた論文と、抽出がある entity をすべて判定した論文（割合の分母） */
+  judgedStudies: number;
+  /** 未判定の entity が残る論文（外れた論文も含む） */
+  pendingStudies: number;
   extractedStudies: number;
   decided: number;
 }
@@ -62,28 +74,34 @@ export function buildPilotMatrix(
   return [...fields].sort((a, b) => a.fieldIndex - b.fieldIndex).map((field) => {
     const cells = [...byStudy].map(([studyId, all]): PilotMatrixCell => {
       const entities = all.filter((item) => item.evidence.fieldId === field.fieldId);
-      return { studyId, entities, misses: entities.filter((item) => item.miss).length,
+      const judged = entities.filter((item) => item.decision !== null);
+      return { studyId, entities, misses: judged.filter((item) => item.miss).length,
+        judged: judged.length, pending: entities.length - judged.length,
         status: entities[0]?.status ?? 'empty' };
     });
+    const extracted = cells.filter((cell) => cell.entities.length > 0);
+    const judgedStudies = extracted.filter((cell) => cell.misses > 0 || cell.pending === 0).length;
     return { field, cells, misses: cells.reduce((n, cell) => n + cell.misses, 0),
       missedStudies: cells.filter((cell) => cell.misses > 0).length,
-      extractedStudies: cells.filter((cell) => cell.entities.length > 0).length,
+      judgedStudies, pendingStudies: extracted.filter((cell) => cell.pending > 0).length,
+      extractedStudies: extracted.length,
       decided: cells.flatMap((cell) => cell.entities).filter((item) => item.decision !== null).length };
   });
 }
 
 export function sortPilotMatrix(rows: readonly PilotMatrixRow[]): PilotMatrixRow[] {
   return [...rows].sort((a, b) =>
-    b.missedStudies / (b.extractedStudies || 1) - a.missedStudies / (a.extractedStudies || 1)
+    b.missedStudies / (b.judgedStudies || 1) - a.missedStudies / (a.judgedStudies || 1)
     || b.misses - a.misses || a.field.fieldIndex - b.field.fieldIndex);
 }
 
 export type PilotComparison = 'improved' | 'worsened' | 'unchanged' | 'unavailable';
 export function comparePilotRows(current: PilotMatrixRow, previous?: PilotMatrixRow): PilotComparison {
-  if (!previous || previous.extractedStudies === 0 || current.decided === 0 || previous.decided === 0) {
+  // 判定済みの論文だけで比べる（issue #381）
+  if (!previous || previous.judgedStudies === 0 || current.judgedStudies === 0) {
     return 'unavailable';
   }
-  const difference = current.missedStudies * previous.extractedStudies - previous.missedStudies * current.extractedStudies;
+  const difference = current.missedStudies * previous.judgedStudies - previous.missedStudies * current.judgedStudies;
   return difference < 0 ? 'improved' : difference > 0 ? 'worsened' : 'unchanged';
 }
 

@@ -850,6 +850,7 @@ async function collectReadyStudyInputs(
 ): Promise<{
   inputs: AgreementStudyInput[];
   outsideCount: number;
+  incompleteCount: number;
   calibration: CalibrationPairAgreement[] | null;
 }> {
   const documents = await resolveDocuments(store, deps, spreadsheetId);
@@ -858,6 +859,23 @@ async function collectReadyStudyInputs(
   const resultsRows = await readResultsDataRows(spreadsheetId, deps.google);
   const decisions = await readAllDecisions(spreadsheetId, deps.google);
   const armRows = await readAllArmStructures(spreadsheetId, deps.google);
+  // 2 名とも検証を終えた組だけを数えるため、裁定一覧と同じゲート（computeStudyGate）で判定する
+  // （issue #381。見出しの「2 名が検証した研究」と揃える）
+  const allEvidence = await readEvidenceRows(spreadsheetId, deps.google);
+  const completedRuns = await readCompletedRunMetas(spreadsheetId, deps.google);
+  const evidenceByStudy = composeEvidenceByStudy(allEvidence, completedRuns);
+  const pairComplete = (studyId: string, annotatorA: string, annotatorB: string): boolean => {
+    const studyArmRows = armRows.filter((row) => row.studyId === studyId);
+    return computeStudyGate(
+      annotatorA,
+      annotatorB,
+      fields,
+      decisions.filter((decision) => decision.studyId === studyId),
+      latestArmStructure(studyArmRows, annotatorA),
+      latestArmStructure(studyArmRows, annotatorB),
+      evidenceByStudy.get(studyId)?.evidence ?? [],
+    ).ready;
+  };
 
   const selection = buildStudySelection(studies, documents);
   const sets = store.getState().reviewSets.sets ?? [];
@@ -904,9 +922,11 @@ async function collectReadyStudyInputs(
           studyDataRows: studySheet.rows,
           resultsDataRows: resultsRows,
           decisions,
+          pairComplete,
         })
       : null;
   let outsideCount = 0;
+  let incompleteCount = 0;
   const inputs: AgreementStudyInput[] = [];
   for (const item of selection) {
     const { study } = item;
@@ -929,6 +949,10 @@ async function collectReadyStudyInputs(
     if (pair.kind !== 'ready') {
       continue;
     }
+    if (!pairComplete(study.studyId, pair.annotatorA, pair.annotatorB)) {
+      incompleteCount += 1;
+      continue;
+    }
     const studyDataRowA =
       studySheet.rows.find((r) => r.studyId === study.studyId && r.annotator === pair.annotatorA) ?? null;
     const studyDataRowB =
@@ -944,7 +968,7 @@ async function collectReadyStudyInputs(
     const cells = buildAdjudicationCells(fields, studyDataRowA, studyDataRowB, resultsRowsA, remappedResultsRowsB);
     inputs.push({ studyId: study.studyId, studyLabel: study.studyLabel, cells });
   }
-  return { inputs, outsideCount, calibration };
+  return { inputs, outsideCount, incompleteCount, calibration };
 }
 
 /**
@@ -978,13 +1002,13 @@ export async function loadAgreementReport(store: Store, deps: AdjudicationServic
       latest === undefined
         ? []
         : await getSchemaFieldsByVersion(spreadsheetId, latest.schemaVersion, deps.google);
-    const { inputs, outsideCount, calibration } = await collectReadyStudyInputs(
+    const { inputs, outsideCount, incompleteCount, calibration } = await collectReadyStudyInputs(
       store,
       deps,
       spreadsheetId,
       fields,
     );
-    const report = buildAgreementReport(fields, inputs);
+    const report = buildAgreementReport(fields, inputs, incompleteCount);
     patchAdjudicate(store, {
       agreementLoading: false,
       agreement: report,

@@ -247,6 +247,7 @@ function makeCell(overrides: Partial<AdjudicationCell> = {}): AdjudicationCell {
     schemaVersionA: 1,
     schemaVersionB: 1,
     matches: false,
+    bothEmpty: false,
     schemaVersionMismatch: false,
     noteA: null,
     noteB: null,
@@ -357,6 +358,7 @@ function makeWorking(overrides: Partial<AdjudicateWorking> = {}): AdjudicateWork
 function makeAgreementReport(overrides: Partial<AgreementReport> = {}): AgreementReport {
   return {
     studyCount: 1,
+    incompleteStudyCount: 0,
     fields: [
       {
         fieldId: 'f-1',
@@ -815,7 +817,24 @@ describe('renderAdjudicateView: 裁定中（working）', () => {
       makeState({ rows: [makeRow()], working: makeWorking({ cells }), mismatchOnlyFilter: false }),
       ctx,
     );
-    expect(root.querySelector('#adjudicate-summary')?.textContent).toBe('一致 1 件 / 不一致 1 件');
+    expect(root.querySelector('#adjudicate-summary')?.textContent).toBe(
+      '一致 1 件 / 不一致 1 件 / 両者とも未入力（比べられない） 0 件',
+    );
+  });
+
+  test('両者とも空のセルは別のチップと件数で示し、「不一致のみ」でも表示する（issue #381）', () => {
+    const { ctx } = makeCtx();
+    const cells = [
+      makeCell({ matches: true }),
+      makeCell({ cellKey: 'k2', valueA: null, valueB: null, matches: false, bothEmpty: true }),
+    ];
+    const root = render(makeState({ rows: [makeRow()], working: makeWorking({ cells }) }), ctx);
+    expect(root.querySelector('#adjudicate-summary')?.textContent).toBe(
+      '一致 1 件 / 不一致 0 件 / 両者とも未入力（比べられない） 1 件',
+    );
+    const rows = root.querySelectorAll('#adjudicate-cells tbody tr');
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.querySelector('.adjudicate__chip--empty')?.textContent).toBe('両者とも未入力');
   });
 
   test('「不一致のみ」フィルタの切替が発火する', () => {
@@ -1170,7 +1189,7 @@ describe('renderAdjudicateView: レビュアー間一致度カード（issue #66
     });
     const root = render(makeState({ rows: [makeRow()], agreement: report }), ctx);
     const fieldRow = root.querySelector('#agreement-table tbody tr');
-    expect(fieldRow?.textContent).toContain('0 (—)');
+    expect(fieldRow?.textContent).not.toContain('0 (—)');
     expect(fieldRow?.textContent).toContain('—');
   });
 
@@ -1178,8 +1197,24 @@ describe('renderAdjudicateView: レビュアー間一致度カード（issue #66
     const { ctx } = makeCtx();
     const report = makeAgreementReport({ disagreements: [] });
     const root = render(makeState({ rows: [makeRow()], agreement: report }), ctx);
-    expect(root.querySelector('#agreement-disagreements-empty')).not.toBeNull();
+    expect(root.querySelector('#agreement-disagreements-empty')?.textContent).toBe('不一致セルはありません。');
     expect(root.querySelector('#agreement-disagreements')).toBeNull();
+  });
+
+  test('比べたセルが 0 件なら「比べられるセルがありません」と出し、未完了の研究数を示す（issue #381）', () => {
+    const { ctx } = makeCtx();
+    const report = makeAgreementReport({
+      disagreements: [],
+      incompleteStudyCount: 3,
+      overall: { pairCount: 0, agreementCount: 0, agreementRate: null, kappa: null },
+    });
+    const root = render(makeState({ rows: [makeRow()], agreement: report }), ctx);
+    expect(root.querySelector('#agreement-disagreements-empty')?.textContent).toBe(
+      '比べられるセルがありません（2 名とも値を入れたセルがありません）。',
+    );
+    expect(root.querySelector('#adjudicate-agreement-incomplete')?.textContent).toContain('3 件');
+    const none = render(makeState({ rows: [makeRow()], agreement: makeAgreementReport() }), ctx);
+    expect(none.querySelector('#adjudicate-agreement-incomplete')).toBeNull();
   });
 
   test('未入力の値は「未入力」と表示する（A 側・B 側どちらも）', () => {

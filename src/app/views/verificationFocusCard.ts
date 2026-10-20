@@ -25,6 +25,7 @@ import {
   type QuoteEditState,
 } from './verificationCellCard';
 import { allowedValuesWarningText, renderAllowedValuesBadge } from './enumChoiceEditor';
+import type { UnanchoredReason } from '../../features/verification/unanchoredAccept';
 
 /** renderVerificationFocusCard が要求するハンドラ集合（詳細ストリップ・マトリクスの双方で使う） */
 export interface VerificationFocusCardHandlers extends CellCardHandlers {
@@ -84,6 +85,8 @@ export interface VerificationFocusCardModel {
   enumCandidates?: ReadonlyMap<string, readonly string[]>;
   /** 「許容値外」警告に `#/schema` 導線を出してよいか（issue #254。owner のみ true） */
   canEditSchema?: boolean;
+  /** 照合できなかった引用のセルの accept 前の警告（issue #381）。verificationCellCard.CellCardModel 参照 */
+  unanchoredAcceptWarning?: { cellKey: string; reason: UnanchoredReason } | null;
 }
 
 /**
@@ -308,6 +311,7 @@ function renderDetailStrip(
     // （「renderCell 再利用で自動追随」は描画ロジックだけの話。issue #254 レビュー指摘）
     enumCandidates: model.enumCandidates,
     canEditSchema: model.canEditSchema,
+    unanchoredAcceptWarning: model.unanchoredAcceptWarning,
   };
   return el('div', { id: 'verify-focus-detail', className: 'focus-card__detail' }, [
     renderCell(cell, cellCardModel, handlers),

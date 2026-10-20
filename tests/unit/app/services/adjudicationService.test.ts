@@ -1529,6 +1529,21 @@ describe('セル単位の個別裁定', () => {
 });
 
 describe('loadAgreementReport（issue #66）', () => {
+  /** arm レベル項目を判定し終えた状態を作る（一致度は 2 名とも検証を終えた研究だけを数えるため。issue #381） */
+  function armDecision(annotator: string, entityKey: string, value: string): Decision {
+    return makeDecision({ annotator, decidedBy: annotator, fieldId: 'f-arm', entityKey, action: 'edit', value });
+  }
+
+  test('ready ペアでも 2 名の検証が終わっていない研究は数えず、件数を別に持つ（issue #381）', async () => {
+    const store = seedStore();
+    setupTwoAnnotatorsReady();
+    readAllDecisionsMock.mockResolvedValue(completeDecisionsFor(A));
+    await loadAgreementReport(store, makeDeps());
+    const agreement = store.getState().adjudicate.agreement;
+    expect(agreement?.studyCount).toBe(0);
+    expect(agreement?.incompleteStudyCount).toBe(1);
+  });
+
   test('プロジェクト未選択は no-op', async () => {
     const store = createStore();
     await loadAgreementReport(store, makeDeps());
@@ -1564,6 +1579,7 @@ describe('loadAgreementReport（issue #66）', () => {
     expect(store.getState().adjudicate.agreementError).toBeNull();
     expect(store.getState().adjudicate.agreement).toEqual({
       studyCount: 0,
+      incompleteStudyCount: 0,
       fields: [],
       overall: { pairCount: 0, agreementCount: 0, agreementRate: null, kappa: null },
       disagreements: [],
@@ -1609,7 +1625,10 @@ describe('loadAgreementReport（issue #66）', () => {
       makeResultsRow({ fieldId: 'f-arm', annotator: A, entityKey: 'arm:1', value: '介入群' }),
       makeResultsRow({ fieldId: 'f-arm', annotator: B, entityKey: 'arm:1', value: '対照群' }),
     ]);
-    readAllDecisionsMock.mockResolvedValue([]);
+    readAllDecisionsMock.mockResolvedValue([
+      armDecision(A, 'arm:1', '介入群'),
+      armDecision(B, 'arm:1', '対照群'),
+    ]);
     listSchemaVersionsMock.mockResolvedValue([makeSchemaVersion()]);
     getSchemaFieldsMock.mockResolvedValue([armField]);
     await loadAgreementReport(store, makeDeps());
@@ -1631,7 +1650,7 @@ describe('loadAgreementReport（issue #66）', () => {
       // B は自身の確定 ArmStructures では arm:2 として同じ群を宣言している想定
       makeResultsRow({ resultId: 'r-b', fieldId: 'f-arm', annotator: B, entityKey: 'arm:2', value: '介入群' }),
     ]);
-    readAllDecisionsMock.mockResolvedValue([]);
+    readAllDecisionsMock.mockResolvedValue([armDecision(A, 'arm:1', '介入群'), armDecision(B, 'arm:2', '介入群')]);
     // 裁定画面で群構成を確定した際に永続化された辞書（B の arm:2 → 正準 arm:1）
     readAllArmStructuresMock.mockResolvedValue([
       makeArmRow({
@@ -1664,7 +1683,7 @@ describe('loadAgreementReport（issue #66）', () => {
       makeResultsRow({ resultId: 'r-a', fieldId: 'f-arm', annotator: A, entityKey: 'arm:1', value: '介入群' }),
       makeResultsRow({ resultId: 'r-b', fieldId: 'f-arm', annotator: B, entityKey: 'arm:2', value: '介入群' }),
     ]);
-    readAllDecisionsMock.mockResolvedValue([]);
+    readAllDecisionsMock.mockResolvedValue([armDecision(A, 'arm:1', '介入群'), armDecision(B, 'arm:2', '介入群')]);
     readAllArmStructuresMock.mockResolvedValue([]); // consensus 群構成が無い（マッピング未保存）
     listSchemaVersionsMock.mockResolvedValue([makeSchemaVersion()]);
     getSchemaFieldsMock.mockResolvedValue([armField]);
@@ -1751,7 +1770,7 @@ describe('downloadAgreementCsv（issue #66）', () => {
       rows: [makeStudyDataRow({ annotator: A, values: { sample_size: '120' } }), makeStudyDataRow({ annotator: B, values: { sample_size: '130' } })],
     });
     readResultsDataRowsMock.mockResolvedValue([]);
-    readAllDecisionsMock.mockResolvedValue([]);
+    readAllDecisionsMock.mockResolvedValue([...completeDecisionsFor(A), ...completeDecisionsFor(B)]);
     listSchemaVersionsMock.mockResolvedValue([makeSchemaVersion()]);
     getSchemaFieldsMock.mockResolvedValue([makeField()]);
     await loadAgreementReport(store, makeDeps());
@@ -1877,7 +1896,14 @@ describe('担当ペアと calibration のサービス集計', () => {
           makeResultsRow({ annotator, entityKey: 'arm:2', value: annotator === B ? '10' : '20' }),
         ]),
       );
-      readAllDecisionsMock.mockResolvedValue([]);
+      // 2 名とも検証を終えた組だけを集計するため、各人の判定を用意する（issue #381）
+      readAllDecisionsMock.mockResolvedValue(
+        annotators.flatMap((annotator) =>
+          ['arm:1', 'arm:2'].map((entityKey) =>
+            makeDecision({ annotator, decidedBy: annotator, entityKey, action: 'edit', value: 'x' }),
+          ),
+        ),
+      );
       getSchemaFieldsMock.mockResolvedValue([makeField({ entityLevel: 'arm' })]);
       readAllArmStructuresMock.mockResolvedValue([
         makeArmRow({
