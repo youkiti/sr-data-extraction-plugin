@@ -4,6 +4,7 @@ S10（`#/export`）に表示する「論文の Methods セクションにこう�
 
 - 記載例は **言語（English / 日本語）× ワークフロー（単一レビュアー検証 / 二重独立検証）** の組み合わせで出す。
 - 文は**記録（ExtractionRuns・LLMApiLog・SchemaVersions・StudyData / ResultsData・Decisions）と合う形だけ**を出す。記録から言えないこと（全項目を抽出した・全セルを判定した・草案を AI が作った 等）は、記録がそう示すときにしか書かない（issue #381）。文の出し分けの条件は §1〜§2 の各文に付ける。
+- 英語は数に応じて単数形・複数形（study/studies、cell/cells、once/times など）を切り替える。日本語は変えない。
 - `{{...}}` はプレースホルダ。自動反映できるものはプロジェクトの実績値で埋め、埋められないものはプレースホルダのまま表示してユーザーに編集を促す（§3）。
 - 内容は PRISMA 2020 チェックリスト item 9（data collection process: レビュアー数・独立性・自動化ツールの詳細）を満たすことを意図している。
 - **これは記載例であり、そのまま使える文ではない。** 数値・人数・手順が実際と一致しているかは、ユーザーが必ず確かめて直す（カードの説明文で常に示す。§4）。
@@ -48,17 +49,29 @@ S10（`#/export`）に表示する「論文の Methods セクションにこう�
 
   > フォームは {{n_pilot}} 本の研究でパイロット抽出を行い、改訂したうえで本抽出に用いた。
 
+  数が 1 のときの英語（日本語は上と同じ）:
+
+  > The form was piloted on {{n_pilot}} study and revised before full extraction.
+
 - パイロットに成功した研究があり、その後の版が無い:
 
   > The form was piloted on {{n_pilot}} studies before full extraction.
 
   > フォームは {{n_pilot}} 本の研究でパイロット抽出を行ったうえで本抽出に用いた。
 
+  数が 1 のときの英語（日本語は上と同じ）:
+
+  > The form was piloted on {{n_pilot}} study before full extraction.
+
 - パイロットが無く、フォームの版が 2 つ以上ある:
 
-  > The form was revised {{n_form_revision}} time(s) during the review.
+  > The form was revised {{n_form_revision}} times during the review.
 
   > フォームはレビューの過程で {{n_form_revision}} 回改訂した。
+
+  数が 1 のときの英語（日本語は上と同じ）:
+
+  > The form was revised once during the review.
 
 - パイロットが無く、版が 1 つだけ: 文を出さない。
 
@@ -72,11 +85,19 @@ S10（`#/export`）に表示する「論文の Methods セクションにこう�
 
   > 採用研究 {{n_included}} 本すべてについて、LLM（{{model_id}}、{{provider}} API 経由）が全文 PDF から各項目の値を事前抽出して値ごとに根拠となる本文の逐語的引用を付与し、本ツールは引用箇所を PDF 上に対応付けてハイライト表示した。
 
+  数が 1 のときの英語（日本語は上と同じ）:
+
+  > For the {{n_included}} included study, an LLM ({{model_id}}, accessed via the {{provider}} API) pre-extracted the form items from the full-text PDF and returned, for each value, a verbatim quotation of the supporting text, which the tool located and highlighted in the source PDF.
+
 - それ以外:
 
   > For {{n_extracted}} of the {{n_included}} included studies, an LLM ({{model_id}}, accessed via the {{provider}} API) pre-extracted the form items from the full-text PDF and returned, for each value, a verbatim quotation of the supporting text, which the tool located and highlighted in the source PDF.
 
   > 採用研究 {{n_included}} 本のうち {{n_extracted}} 本について、LLM（{{model_id}}、{{provider}} API 経由）が全文 PDF から各項目の値を事前抽出して値ごとに根拠となる本文の逐語的引用を付与し、本ツールは引用箇所を PDF 上に対応付けてハイライト表示した。
+
+  数が 1 のときの英語（日本語は上と同じ）:
+
+  > For {{n_extracted}} of the {{n_included}} included study, an LLM ({{model_id}}, accessed via the {{provider}} API) pre-extracted the form items from the full-text PDF and returned, for each value, a verbatim quotation of the supporting text, which the tool located and highlighted in the source PDF.
 
 ### 2.2 事前抽出が届かなかった研究（条件付き）
 
@@ -86,11 +107,19 @@ S10（`#/export`）に表示する「論文の Methods セクションにこう�
 
   > 残る {{n_not_extracted}} 本では、LLM による事前抽出を実行していないか、正常に完了しなかった。
 
+  数が 1 のときの英語（日本語は上と同じ）:
+
+  > For the remaining {{n_not_extracted}} study, LLM pre-extraction was not run or did not complete successfully.
+
 - 全項目の事前抽出を確かめられない研究が 1 本以上ある:
 
   > For {{n_partial}} of the pre-extracted studies, pre-extraction may not have covered every item, because the run was limited to selected items or part of the LLM output was discarded or could not be saved.
 
   > 事前抽出した研究のうち {{n_partial}} 本では、実行の対象を一部の項目に限った、または LLM 出力の一部を破棄した・保存できなかったため、事前抽出が全項目に及んでいない可能性がある。
+
+  数が 1 のときの英語（日本語は上と同じ）:
+
+  > For the {{n_partial}} pre-extracted study, pre-extraction may not have covered every item, because the run was limited to selected items or part of the LLM output was discarded or could not be saved.
 
 ### 2.3 検証（単一レビュアー）
 
@@ -148,6 +177,10 @@ S10（`#/export`）に表示する「論文の Methods セクションにこう�
 
   > 検証欄は空欄の状態から開始し、承認を含むすべての値はレビュアーの明示的な判定操作を経てデータセットに入るため、人間の確認を経ていない AI 出力が最終データセットに含まれることはない。ただし、エクスポート時点で {{n_unverified}} 件のセルは未検証のままであり、空欄として出力した。
 
+  数が 1 のときの英語（日本語は上と同じ）:
+
+  > Verification fields were initially blank and every value — including accepted values — entered the dataset only through an explicit decision by a reviewer, so no AI-generated value entered the final dataset without human confirmation; at the time of export, {{n_unverified}} cell had not been verified and was left empty.
+
 - 監査証跡（常に出す）:
 
   > All AI outputs (values, quotations, page locations, and confidence ratings) and all human decisions were automatically logged, and the complete audit trail is provided in {{supplement_ref}}.
@@ -160,15 +193,23 @@ S10（`#/export`）に表示する「論文の Methods セクションにこう�
 
 - スキャン PDF（`no_text_layer`）を含むプロジェクト:
 
-  > For {{n_scanned}} studies available only as scanned PDFs without a text layer, the PDF was submitted directly to the LLM; supporting quotations for these studies could not be highlighted and were verified against the quoted text and reported page numbers.
+  > For {{n_scanned}} studies available only as scanned PDFs without a text layer, the PDFs were submitted directly to the LLM; supporting quotations for these studies could not be highlighted and were verified against the quoted text and reported page numbers.
 
   > テキスト層を持たないスキャン PDF のみ入手可能であった {{n_scanned}} 本については、PDF を直接 LLM に送信して抽出した。これらの研究では引用箇所のハイライト表示ができないため、引用文と報告ページ番号に基づいて原文と照合した。
 
+  数が 1 のときの英語（日本語は上と同じ）:
+
+  > For {{n_scanned}} study available only as a scanned PDF without a text layer, the PDF was submitted directly to the LLM; supporting quotations for this study could not be highlighted and were verified against the quoted text and reported page numbers.
+
 - パイロットの判定から抽出指示を改訂した（`SchemaVersions.created_by_type = pilot_revision` の版が 1 件以上ある）プロジェクト（issue #266）:
 
-  > Based on the reviewers' judgments during the pilot, the extraction instructions were revised {{n_pilot_revision}} time(s); the LLM drafted revision proposals limited to item instructions and examples, which the authors reviewed and approved before full extraction.
+  > Based on the reviewers' judgments during the pilot, the extraction instructions were revised {{n_pilot_revision}} times; the LLM drafted revision proposals limited to item instructions and examples, which the authors reviewed and approved before full extraction.
 
   > パイロットでの判定に基づき、抽出指示を {{n_pilot_revision}} 回改訂した。改訂案は LLM が項目の抽出指示と例に限って作成し、著者らが確認・承認したうえで本抽出に用いた。
+
+  数が 1 のときの英語（日本語は上と同じ）:
+
+  > Based on the reviewers' judgments during the pilot, the extraction instructions were revised once; the LLM drafted revision proposals limited to item instructions and examples, which the authors reviewed and approved before full extraction.
 
 - 論文への質問パネルを使った判定がある（`Decisions.note` が `[chat-assist]` で始まる判定が 1 件以上ある）プロジェクト（issue #264）:
 
