@@ -147,8 +147,8 @@ const CONSENSUS: Sentence = {
   ja: '不一致は協議により解消し、必要に応じて第 3 のレビュアー（{{adjudicator_initials}}）が裁定して、コンセンサス値を最終データセットに用いた。',
 };
 const NO_CONSENSUS: Sentence = {
-  en: 'At the time of export, disagreements between the reviewers had not yet been resolved, and no consensus values had been recorded.',
-  ja: 'エクスポート時点では、レビュアー間の不一致はまだ解消しておらず、コンセンサス値は記録していなかった。',
+  en: 'At the time of export, no consensus values (final values after resolving disagreements) had been recorded.',
+  ja: 'エクスポート時点では、コンセンサス値（不一致を解消した最終値）は記録していなかった。',
 };
 
 // §2.5 未検証のセルと監査証跡

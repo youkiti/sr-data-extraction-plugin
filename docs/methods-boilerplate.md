@@ -130,9 +130,9 @@ S10（`#/export`）に表示する「論文の Methods セクションにこう�
 
 - `consensus` の行が無い:
 
-  > At the time of export, disagreements between the reviewers had not yet been resolved, and no consensus values had been recorded.
+  > At the time of export, no consensus values (final values after resolving disagreements) had been recorded.
 
-  > エクスポート時点では、レビュアー間の不一致はまだ解消しておらず、コンセンサス値は記録していなかった。
+  > エクスポート時点では、コンセンサス値（不一致を解消した最終値）は記録していなかった。
 
 ### 2.5 未検証のセルと監査証跡（単一・二重で共通）
 
@@ -202,10 +202,12 @@ S10（`#/export`）に表示する「論文の Methods セクションにこう�
 ### 事前抽出の成功の判定
 
 - 対象は `ExtractionRuns` の完了行（`status = done` / `partial_failure`）を持つ run（全 `run_type`）。完了行の無い run（中断）は数えない。
-- run が対象にした研究のうち、`LLMApiLog` に同じ `run_id`・`study_id` の `[batch_failed]` 行がある研究は、その run では失敗とする。それ以外は成功とする。
+- run が対象にした研究のうち、`LLMApiLog` に同じ `run_id`・`study_id` の `[batch_failed]` 行が無い研究は成功とする。失敗行がある研究も、同じ run・研究の失敗していない節に成功した `extract_study` 呼び出し（警告専用でなく `error` が空）があれば、部分的な抽出として成功に数え、その run のモデルも列挙する。その成功行が無ければ、その run では失敗とする。
 - 研究は、成功した run が 1 つ以上あれば「事前抽出に成功した」（`n_extracted`）。
-- 成功した run のうち、次の両方を満たす run が 1 つも無い研究は「全項目の事前抽出を確かめられない」（`n_partial`）:
+- 成功した run のうち、次のすべてを満たす run が 1 つも無い研究は「全項目の事前抽出を確かめられない」（`n_partial`）。別の run で全項目の抽出を確認できれば部分には数えない:
   - `field_ids` が空（全項目の実行）
+  - 同じ run・研究に `[batch_failed]` 行が無い
+  - 同じ run に `[transfer_failed]` 行が無い（転記失敗がある run は、研究別のバッチ失敗の有無にかかわらず全項目の根拠にしない）
   - `status = done`、または `partial_failure` で同じ run に `[batch_failed]` 行がある（失敗の原因が研究単位で分かる）。`partial_failure` で `[batch_failed]` 行が無い run は、AI 出力の一部の破棄・保存失敗など研究を特定できない失敗を含むため、全項目とはみなさない。
 - 限界: `[batch_failed]` 行がある `partial_failure` の run で、別の研究に要素の破棄が重なっていても、研究単位の記録が無いため区別できない。
 

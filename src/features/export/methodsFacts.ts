@@ -10,6 +10,7 @@ import type { MethodsFacts } from './methodsBoilerplate';
 
 /** LLMApiLog の抽出バッチ失敗行の接頭辞（extractionService の recordBatchFailure が書く） */
 const BATCH_FAILED_PREFIX = '[batch_failed]';
+const TRANSFER_FAILED_PREFIX = '[transfer_failed]';
 
 export interface MethodsFactsInput {
   toolVersion: string | null;
@@ -69,7 +70,9 @@ export function buildMethodsFacts(input: MethodsFactsInput): MethodsFacts {
 
   // [batch_failed] 行: run × study の失敗と、研究単位で失敗を特定できる run
   const failedRunStudies = new Set<string>();
+  const failedRunSections = new Set<string>();
   const runsWithAttributedFailures = new Set<string>();
+  const runsWithTransferFailures = new Set<string>();
   for (const log of input.logs) {
     if (
       log.promptSummary?.startsWith(BATCH_FAILED_PREFIX) === true &&
@@ -77,7 +80,26 @@ export function buildMethodsFacts(input: MethodsFactsInput): MethodsFacts {
       log.studyId !== null
     ) {
       failedRunStudies.add(runStudyKey(log.runId, log.studyId));
+      failedRunSections.add(JSON.stringify([log.runId, log.studyId, log.section]));
       runsWithAttributedFailures.add(log.runId);
+    }
+    if (log.promptSummary?.startsWith(TRANSFER_FAILED_PREFIX) === true && log.runId !== null) {
+      runsWithTransferFailures.add(log.runId);
+    }
+  }
+
+  // 失敗した節の応答は除き、同じ研究の別の節が成功した記録だけを使う。
+  const succeededRunStudies = new Set<string>();
+  for (const log of input.logs) {
+    if (
+      log.purpose === 'extract_study' &&
+      log.error === null &&
+      !isWarningOnlyLogEntry(log) &&
+      log.runId !== null &&
+      log.studyId !== null &&
+      !failedRunSections.has(JSON.stringify([log.runId, log.studyId, log.section]))
+    ) {
+      succeededRunStudies.add(runStudyKey(log.runId, log.studyId));
     }
   }
 
@@ -87,16 +109,19 @@ export function buildMethodsFacts(input: MethodsFactsInput): MethodsFacts {
   const usedRuns: MethodsRunFact[] = [];
   let earliestPilotStart: string | null = null;
   for (const run of input.runFacts) {
-    // status = done、または失敗を研究単位で特定できる partial_failure だけが「全項目」の根拠になる
-    const statusComplete = run.status === 'done' || runsWithAttributedFailures.has(run.runId);
+    // 転記失敗が無く、done または失敗を研究単位で特定できる run だけが「全項目」の根拠になる。
+    const statusComplete = !runsWithTransferFailures.has(run.runId) &&
+      (run.status === 'done' || runsWithAttributedFailures.has(run.runId));
     let succeededAny = false;
     for (const studyId of run.studyIds) {
-      if (!active.has(studyId) || failedRunStudies.has(runStudyKey(run.runId, studyId))) {
+      const hasBatchFailure = failedRunStudies.has(runStudyKey(run.runId, studyId));
+      if (!active.has(studyId) ||
+        (hasBatchFailure && !succeededRunStudies.has(runStudyKey(run.runId, studyId)))) {
         continue;
       }
       succeededAny = true;
       extracted.add(studyId);
-      if (statusComplete && run.fieldIds === null) {
+      if (statusComplete && !hasBatchFailure && run.fieldIds === null) {
         complete.add(studyId);
       }
       if (run.runType === 'pilot') {

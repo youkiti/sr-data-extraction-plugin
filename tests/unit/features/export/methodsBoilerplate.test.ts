@@ -289,14 +289,14 @@ describe('buildMethodsText: 検証（二重独立）', () => {
     expect(withConsensus.unresolved).toContain('adjudicator_initials');
     const without = buildMethodsText('en', 'dual', typicalFacts());
     expect(without.text).toContain(
-      'At the time of export, disagreements between the reviewers had not yet been resolved, and no consensus values had been recorded.',
+      'At the time of export, no consensus values (final values after resolving disagreements) had been recorded.',
     );
     expect(without.unresolved).not.toContain('adjudicator_initials');
     expect(buildMethodsText('ja', 'dual', typicalFacts({ hasConsensus: true })).text).toContain(
       '第 3 のレビュアー（{{adjudicator_initials}}）が裁定して',
     );
     expect(buildMethodsText('ja', 'dual', typicalFacts()).text).toContain(
-      'エクスポート時点では、レビュアー間の不一致はまだ解消しておらず',
+      'エクスポート時点では、コンセンサス値（不一致を解消した最終値）は記録していなかった。',
     );
   });
 });

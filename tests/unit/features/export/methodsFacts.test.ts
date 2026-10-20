@@ -47,7 +47,7 @@ function makeLog(overrides: Partial<LlmApiLogEntry> = {}): LlmApiLogEntry {
 }
 
 /** extractionService の recordBatchFailure が書く行（警告専用行 = payload 参照が空） */
-function batchFailed(runId: string | null, studyId: string | null): LlmApiLogEntry {
+function batchFailed(runId: string | null, studyId: string | null, section: string | null = null): LlmApiLogEntry {
   return makeLog({
     promptRef: '',
     responseRef: '',
@@ -55,6 +55,7 @@ function batchFailed(runId: string | null, studyId: string | null): LlmApiLogEnt
     error: 'バッチ失敗（api_error）: 500',
     runId,
     studyId,
+    section,
   });
 }
 
@@ -111,6 +112,77 @@ describe('buildMethodsFacts: 事前抽出の成否', () => {
       }),
     );
     // 失敗は研究単位で特定できない → 成功に数えるが、全項目とはみなさない
+    expect(facts.extractedStudyCount).toBe(1);
+    expect(facts.partialStudyCount).toBe(1);
+  });
+
+  test('ある節が失敗しても別の節が成功した研究は抽出済みかつ部分として数え、モデルも含める', () => {
+    const facts = buildMethodsFacts(
+      makeInput({
+        runFacts: [makeRun({ status: 'partial_failure', modelVersion: 'partial-model' })],
+        // 成功行が失敗行より先でも、失敗した節を除外する。
+        logs: [
+          makeLog({ runId: 'run-1', studyId: 's1', section: 'methods' }),
+          batchFailed('run-1', 's1', 'results'),
+        ],
+      }),
+    );
+    expect(facts.extractedStudyCount).toBe(1);
+    expect(facts.partialStudyCount).toBe(1);
+    expect(facts.modelIds).toEqual(['partial-model']);
+  });
+
+  test.each<Partial<LlmApiLogEntry>>([
+    { section: 'results' },
+    { purpose: 'draft_schema' },
+    { error: '500' },
+    { promptRef: '', responseRef: '' },
+    { runId: null },
+    { studyId: null },
+    { runId: 'other-run' },
+    { studyId: 's2' },
+  ])('失敗していない節の成功行が無い研究は未抽出（対象外の行: %j）', (overrides) => {
+    const facts = buildMethodsFacts(
+      makeInput({
+        runFacts: [makeRun({ status: 'partial_failure' })],
+        logs: [
+          batchFailed('run-1', 's1', 'results'),
+          makeLog({ runId: 'run-1', studyId: 's1', section: 'methods', ...overrides }),
+        ],
+      }),
+    );
+    expect(facts.extractedStudyCount).toBe(0);
+    expect(facts.partialStudyCount).toBe(0);
+    expect(facts.modelIds).toEqual([]);
+  });
+
+  test.each(['done', 'partial_failure'] as const)(
+    '転記失敗と別研究のバッチ失敗が併存すれば、失敗していない研究も全項目に数えない（%s）',
+    (status) => {
+      const facts = buildMethodsFacts(
+        makeInput({
+          runFacts: [makeRun({ status, studyIds: ['s1', 's2'] })],
+          logs: [
+            batchFailed('run-1', 's2', 'results'),
+            makeLog({ promptSummary: '[transfer_failed] run run-1', runId: 'run-1' }),
+          ],
+        }),
+      );
+      expect(facts.extractedStudyCount).toBe(1);
+      expect(facts.partialStudyCount).toBe(1);
+    },
+  );
+
+  test('バッチ失敗が無くても転記失敗のある done run は全項目の根拠にしない。run 不明の行は除く', () => {
+    const facts = buildMethodsFacts(
+      makeInput({
+        runFacts: [makeRun()],
+        logs: [
+          makeLog({ promptSummary: '[transfer_failed] run run-1', runId: 'run-1' }),
+          makeLog({ promptSummary: '[transfer_failed] run unknown' }),
+        ],
+      }),
+    );
     expect(facts.extractedStudyCount).toBe(1);
     expect(facts.partialStudyCount).toBe(1);
   });
