@@ -42,8 +42,11 @@ export function acceptRateText(accuracy: AccuracyBreakdown): string {
   return rateText({ numerator: accuracy.accept, denominator: accuracy.decided });
 }
 
-/** AI 精度の内訳（承認 / 修正 / 棄却 / 報告なし）を人向け文字列に */
+/** AI 精度の内訳（承認 / 修正 / 棄却 / 報告なし）を人向け文字列に。判定 0 件は「—」（issue #381） */
 export function accuracyBreakdownText(accuracy: AccuracyBreakdown): string {
+  if (accuracy.decided === 0) {
+    return '—';
+  }
   return t('dashboard.accuracyBreakdown', {
     accept: accuracy.accept,
     edit: accuracy.edit,

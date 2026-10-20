@@ -30,6 +30,7 @@ import {
   renderVerificationFocusCard,
   type VerificationFocusCardModel,
 } from './verificationFocusCard';
+import type { UnanchoredReason } from '../../features/verification/unanchoredAccept';
 
 export type { CellHighlightInfo } from './verificationCellCard';
 
@@ -131,6 +132,8 @@ export interface VerificationFormModel {
   enumCandidates?: ReadonlyMap<string, readonly string[]>;
   /** 「許容値外」警告に `#/schema` 導線を出してよいか（issue #254。owner のみ true） */
   canEditSchema?: boolean;
+  /** 照合できなかった引用のセルの accept 前の警告（issue #381）。verificationCellCard.CellCardModel 参照 */
+  unanchoredAcceptWarning?: { cellKey: string; reason: UnanchoredReason } | null;
 }
 
 export interface VerificationFormHandlers {

@@ -4111,6 +4111,7 @@ describe('bootstrapApp: #/adjudicate', () => {
     schemaVersionA: 1,
     schemaVersionB: 1,
     matches: false,
+    bothEmpty: false,
     schemaVersionMismatch: false,
     noteA: null,
     noteB: null,
@@ -4384,6 +4385,7 @@ describe('bootstrapApp: #/adjudicate', () => {
         rows: [],
         agreement: {
           studyCount: 1,
+          incompleteStudyCount: 0,
           fields: [
             {
               fieldId: 'f-1',

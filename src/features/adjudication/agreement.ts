@@ -9,6 +9,10 @@
 // 片側未入力は「まだ検証が終わっていないだけ」で評価不能（検証の完了度の問題）として統計からは
 // 除外するが、実務上は要確認セルのため不一致一覧には含める（cellMatch の `matches` は片側 null も
 // 不一致として扱うため、そのままフィルタなしで不一致一覧に使い回せる）。
+// 両者とも空のセル（cellMatch の `bothEmpty`）は比べられないため、統計にも不一致一覧にも入れない（issue #381）。
+//
+// 【対象の研究】2 名とも検証を終えた研究だけを渡す（呼び出し元が裁定と同じゲート〔computeStudyGate〕で
+// 絞る。issue #381）。終えていない研究の件数は incompleteStudyCount として別に示す。
 //
 // 【Cohen's κ（Cohen, J. 1960. "A coefficient of agreement for nominal scales."
 // Educational and Psychological Measurement, 20(1), 37-46.）】
@@ -67,8 +71,10 @@ export interface AgreementDisagreement {
 }
 
 export interface AgreementReport {
-  /** レポート対象（ready ペア）の study 数 */
+  /** レポート対象（ready ペアで 2 名とも検証を終えた）の study 数 */
   studyCount: number;
+  /** ready ペアだが 2 名の検証が終わっていないため対象外にした study 数（issue #381） */
+  incompleteStudyCount: number;
   /** 最新確定スキーマの項目順 */
   fields: FieldAgreement[];
   /** 全項目プールの合算（fields と同じ規則） */
@@ -88,7 +94,7 @@ const KAPPA_DENOM_EPSILON = 1e-9;
  * κ のカテゴリ分布だけこの関数内で複数選択を正準化して trim 後の値文字列として組み直す
  */
 function computeAgreementStats(cells: readonly AdjudicationCell[]): AgreementStats {
-  const paired = cells.filter((cell) => cell.valueA !== null && cell.valueB !== null);
+  const paired = cells.filter((cell) => cell.valueA !== null && cell.valueB !== null && !cell.bothEmpty);
   const pairCount = paired.length;
   if (pairCount === 0) {
     return { pairCount: 0, agreementCount: 0, agreementRate: null, kappa: null };
@@ -125,6 +131,7 @@ function computeAgreementStats(cells: readonly AdjudicationCell[]): AgreementSta
 export function buildAgreementReport(
   fields: readonly SchemaField[],
   studies: readonly AgreementStudyInput[],
+  incompleteStudyCount = 0,
 ): AgreementReport {
   const orderedFields = [...fields].sort((a, b) => a.fieldIndex - b.fieldIndex);
 
@@ -150,7 +157,7 @@ export function buildAgreementReport(
   for (const study of studies) {
     for (const cell of study.cells) {
       allCells.push(cell);
-      if (!cell.matches) {
+      if (!cell.matches && !cell.bothEmpty) {
         disagreements.push({
           studyId: study.studyId,
           studyLabel: study.studyLabel,
@@ -166,6 +173,7 @@ export function buildAgreementReport(
 
   return {
     studyCount: studies.length,
+    incompleteStudyCount,
     fields: fieldAgreements,
     overall: computeAgreementStats(allCells),
     disagreements,
@@ -237,6 +245,11 @@ export interface CalibrationAgreementInput {
   studyDataRows: readonly StudyDataRow[];
   resultsDataRows: readonly ResultsDataRow[];
   decisions: readonly Decision[];
+  /**
+   * 2 名とも検証を終えた組かどうか（issue #381）。渡すと、終えていない組の study を集計から外す。
+   * 省略時は全 study を集計する
+   */
+  pairComplete?: (studyId: string, annotatorA: string, annotatorB: string) => boolean;
 }
 
 export interface CalibrationPairAgreement {
@@ -275,6 +288,7 @@ export function computeCalibrationAgreement(
     for (let i = 0; i < annotators.length; i++) {
       const annotatorA = annotators[i] as string;
       for (const annotatorB of annotators.slice(i + 1)) {
+        if (input.pairComplete !== undefined && !input.pairComplete(study.studyId, annotatorA, annotatorB)) continue;
         const key = JSON.stringify([annotatorA, annotatorB]);
         let pair = pairs.get(key);
         if (pair === undefined) {

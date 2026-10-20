@@ -867,10 +867,10 @@
           </h3>
           <p>
             <span class="ja" lang="ja"
-              >パイロット結果の「項目 × 論文」では、行が抽出項目、列が試験です。採用・修正・棄却・未報告・根拠の位置特定失敗などを凡例と照らして確認します。群やアウトカムなど、1 試験に複数の値がある項目は、外れ数と判定対象数で表示します。外れには修正、棄却、AI が値を出したものを未報告とした判定、未判定で全引用の位置特定に失敗したものを数えます。</span
+              >パイロット結果の「項目 × 論文」では、行が抽出項目、列が試験です。採用・修正・棄却・未報告・根拠の位置特定失敗などを凡例と照らして確認します。群やアウトカムなど、1 試験に複数の値がある項目は、外れ数と判定済みの数で表示します。外れには修正、棄却、AI が値を出したものを未報告とした判定を数えます。外れの数と割合は判定済みのものだけで数え、未判定（根拠の位置特定に失敗したまま未判定のものを含む）は「未判定の論文」の列に別に出します。判定済みが 0 件の項目は割合を「—」と表示します。</span
             >
             <span class="en" lang="en"
-              >In “Fields × studies”, rows are extraction fields and columns are studies. Use the legend to read accepted, edited, rejected, not-reported and anchoring states. Fields with multiple values per study, such as arms or outcomes, show misses out of the number of entities. Misses include edits, rejections, values supplied by AI but judged not reported, and unreviewed values whose quotes all failed anchoring.</span
+              >In “Fields × studies”, rows are extraction fields and columns are studies. Use the legend to read accepted, edited, rejected, not-reported and anchoring states. Fields with multiple values per study, such as arms or outcomes, show misses out of the number of reviewed entities. Misses include edits, rejections and values supplied by AI but judged not reported. Misses and proportions count reviewed values only; unreviewed values (including unreviewed values whose quotes failed anchoring) appear separately in the “Studies not yet reviewed” column. A field with no reviewed studies shows “—” for the proportion.</span
             >
           </p>
           <p>
@@ -1032,11 +1032,27 @@
             <li>
               <span class="ja" lang="ja"
                 >根拠が本文に見つからなかった項目（anchor
-                失敗）は quote 全文と「本文内を検索」ボタンが出ます。「AI で再特定」で位置を取り直すこともできます。</span
+                失敗）は quote 全文と「本文内を検索」ボタンが出ます。「AI で再特定」で位置を取り直すこともできます。AI
+                の値の横のバッジは、引用と本文の照合の結果を「本文と一致」「本文とおおむね一致（要確認）」「本文で見つからない」で示します。</span
               >
               <span class="en" lang="en"
                 >When a quote could not be anchored, the full quote and a “search in text” button appear; you can also
-                ask AI to relocate it.</span
+                ask AI to relocate it. The badge next to the AI value shows how the quote matched the PDF text: “Matches
+                the text”, “Roughly matches the text (check it)” or “Not found in the text”.</span
+              >
+            </li>
+            <li>
+              <span class="ja" lang="ja"
+                >引用が本文で見つからない項目と、スキャン PDF のため本文と照合できていない項目では、1 回目の承認
+                (a) では確定せず、注意を表示します。PDF で値を確かめてから、もう一度承認すると確定します。この承認は判定の記録（Decisions
+                のメモ）に <code>[unanchored-accept]</code> の印が付きます。別の項目へ移るか、修正・棄却・未報告を選ぶと注意は消えます。</span
+              >
+              <span class="en" lang="en"
+                >For a value whose quote was not found in the PDF text, or could not be checked because the PDF is a scan,
+                the first Accept (a) does not save; a caution appears instead. Check the value in the PDF and press Accept
+                again to save it. That decision is marked <code>[unanchored-accept]</code> in the decision log (the
+                Decisions note). Moving to another field, or choosing edit, reject or not reported, clears the
+                caution.</span
               >
             </li>
             <li>
@@ -1215,11 +1231,15 @@
           <p>
             <span class="ja" lang="ja"
               >study × section の検証進捗マトリクスに加え、AI 採用率（人が無修正で承認した割合）・anchor
-              失敗率・not_reported 率を表示します。セルをクリックすると該当箇所の検証画面へ直接飛べます。</span
+              失敗率・not_reported 率を表示します。セルをクリックすると該当箇所の検証画面へ直接飛べます。AI
+              も「報告なし」と出していた項目を人が未報告と判定した場合は、AI と一致として承認に数えます。判定がまだ 1
+              件もないときは、内訳を「—」と表示します。</span
             >
             <span class="en" lang="en"
               >A study × section progress matrix plus AI acceptance rate (values approved unchanged), anchor failure rate
-              and not_reported rate. Click a cell to jump straight to that spot in the verification screen.</span
+              and not_reported rate. Click a cell to jump straight to that spot in the verification screen. When the AI
+              also said “not reported” and the reviewer judged the value not reported, it counts as agreeing with the AI
+              (approved). With no decisions yet, the breakdown shows “—”.</span
             >
           </p>
           <figure class="shot shot--screen">
@@ -1313,12 +1333,16 @@
             <li>
               <span class="ja" lang="ja"
                 >2 名の検証が揃った試験は「不一致の解消」画面で処理します。群構成を突き合わせ、一致セルは一括採用、不一致セルは個別に裁定して
-                consensus（確定版）を作ります。レビュアー間一致度（κ）も確認できます。</span
+                consensus（確定版）を作ります。2 名とも空のセルは比べられないため、一致には数えず「両者とも未入力」として別に件数を出し、一括採用の対象からも外します（「不一致のみ表示」でも表示されるので、個別に裁定してください）。レビュアー間一致度（κ）も確認できます。一致度は 2
+                名とも検証を終えた試験だけで計算し、比べられるセルが 1 件もないときは「比べられるセルがありません」と表示します。</span
               >
               <span class="en" lang="en"
                 >Once both reviewers are done, the “Resolve conflicts” screen matches the arm structures, bulk-accepts agreeing
-                cells and lets you settle each disagreement into a consensus row. Inter-reviewer agreement (κ) is shown
-                as well.</span
+                cells and lets you settle each disagreement into a consensus row. Cells empty on both sides cannot be
+                compared: they are not counted as matching, are shown with their own count as “Both empty”, are left out
+                of the bulk accept, and still appear under “Show mismatches only” so you can settle them one by one.
+                Inter-reviewer agreement (κ) is shown as well. It uses only studies both reviewers have finished, and
+                shows “No cells to compare” when no cell has values from both reviewers.</span
               >
             </li>
             <li>

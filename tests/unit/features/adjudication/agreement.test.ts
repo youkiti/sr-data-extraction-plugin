@@ -34,7 +34,7 @@ function field(overrides: Partial<SchemaField> = {}): SchemaField {
   };
 }
 
-/** AdjudicationCell を手組みするテスト用ヘルパ。matches は cellMatch と同じ trim 完全一致で算出する */
+/** AdjudicationCell を手組みするテスト用ヘルパ。matches は cellMatch と同じ trim 完全一致（両者とも空は除く）で算出する */
 function cell(input: {
   field: SchemaField;
   entityKey?: string;
@@ -42,7 +42,8 @@ function cell(input: {
   valueB: string | null;
 }): AdjudicationCell {
   const entityKey = input.entityKey ?? STUDY_ENTITY_KEY;
-  const matches = (input.valueA ?? '').trim() === (input.valueB ?? '').trim();
+  const bothEmpty = (input.valueA ?? '').trim() === '' && (input.valueB ?? '').trim() === '';
+  const matches = !bothEmpty && (input.valueA ?? '').trim() === (input.valueB ?? '').trim();
   return {
     cellKey: `${input.field.fieldId}::${entityKey}`,
     field: input.field,
@@ -52,6 +53,7 @@ function cell(input: {
     schemaVersionA: 1,
     schemaVersionB: 1,
     matches,
+    bothEmpty,
     schemaVersionMismatch: false,
     noteA: null,
     noteB: null,
@@ -211,10 +213,23 @@ describe('buildAgreementReport', () => {
     const report = buildAgreementReport([], []);
     expect(report).toEqual({
       studyCount: 0,
+      incompleteStudyCount: 0,
       fields: [],
       overall: { pairCount: 0, agreementCount: 0, agreementRate: null, kappa: null },
       disagreements: [],
     });
+  });
+
+  test('両者とも空のセルは統計にも不一致一覧にも入れず、未完了の研究数を持つ（issue #381）', () => {
+    const f = field();
+    const cells: AdjudicationCell[] = [
+      cell({ field: f, valueA: null, valueB: null }),
+      cell({ field: f, entityKey: 'e2', valueA: '', valueB: '' }),
+    ];
+    const report = buildAgreementReport([f], [study({ cells })], 2);
+    expect(report.overall.pairCount).toBe(0);
+    expect(report.disagreements).toEqual([]);
+    expect(report.incompleteStudyCount).toBe(2);
   });
 
   test('不一致セル一覧は study → セル出現順（study の並びを保ったまま）', () => {
@@ -245,6 +260,7 @@ describe('buildAgreementSummaryCsv', () => {
   function makeReport(overrides: Partial<AgreementReport> = {}): AgreementReport {
     return {
       studyCount: 1,
+      incompleteStudyCount: 0,
       fields: [
         {
           fieldId: 'f-1',
@@ -336,6 +352,7 @@ describe('buildAgreementDisagreementsCsv', () => {
   test('ヘッダ + 不一致セル行を出力する（未入力は空セル）', () => {
     const report: AgreementReport = {
       studyCount: 1,
+      incompleteStudyCount: 0,
       fields: [],
       overall: { pairCount: 0, agreementCount: 0, agreementRate: null, kappa: null },
       disagreements: [
@@ -369,6 +386,7 @@ describe('buildAgreementDisagreementsCsv', () => {
   test('カンマ・引用符を含む値はエスケープされる', () => {
     const report: AgreementReport = {
       studyCount: 1,
+      incompleteStudyCount: 0,
       fields: [],
       overall: { pairCount: 0, agreementCount: 0, agreementRate: null, kappa: null },
       disagreements: [

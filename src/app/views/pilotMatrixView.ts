@@ -20,8 +20,9 @@ export function pilotMatrixRows(state: AppState): PilotMatrixRow[] {
 function labelOf(state: AppState, studyId: string): string {
   return state.documents.studies?.find((study) => study.studyId === studyId)?.studyLabel ?? studyId;
 }
+/** 外れた論文 / 判定済みの論文。判定済みが 0 件なら「—」（未判定を外れ 0 と読ませない。issue #381） */
 function ratio(row: PilotMatrixRow): string {
-  return `${row.missedStudies}/${row.extractedStudies}`;
+  return row.judgedStudies === 0 ? '—' : `${row.missedStudies}/${row.judgedStudies}`;
 }
 
 export function renderPilotMatrix(state: AppState, ctx: ViewContext): HTMLElement {
@@ -61,28 +62,37 @@ export function renderPilotMatrix(state: AppState, ctx: ViewContext): HTMLElemen
   section.append(sort);
   const table = (rows: PilotMatrixRow[]): HTMLElement => {
     const heads = [t('pilot.matrixField'), ...run.studyIds.map((id) => labelOf(state, id)),
-      t('pilot.matrixMisses'), t('pilot.matrixStudies'), ...(previous === null ? [] : [t('pilot.matrixPrevious')])];
+      t('pilot.matrixMisses'), t('pilot.matrixStudies'), t('pilot.matrixPendingStudies'),
+      ...(previous === null ? [] : [t('pilot.matrixPrevious')])];
     return el('table', { className: 'pilot__matrix-table' }, [
       el('thead', {}, [el('tr', {}, heads.map((text) => el('th', { text, attributes: { scope: 'col' } })))]),
       el('tbody', {}, rows.map((row) => {
         const cells = row.cells.map((cell) => {
+          // 他レベルは「外れ / 判定済み」。判定 0 件は未判定の記号、未判定が残れば件数を添える
+          const entityText = cell.judged === 0 ? PILOT_SYMBOLS.unverified
+            : cell.pending === 0 ? `${cell.misses}/${cell.judged}`
+              : t('pilot.matrixEntityCell', { misses: cell.misses, judged: cell.judged, pending: cell.pending });
           const text = row.field.entityLevel === 'study' ? PILOT_SYMBOLS[cell.status]
-            : cell.entities.length === 0 ? '' : `${cell.misses}/${cell.entities.length}`;
+            : cell.entities.length === 0 ? '' : entityText;
           return el('td', { text, attributes: { 'aria-label': row.field.entityLevel === 'study'
-            ? t(statusKeys[cell.status]) : t('pilot.matrixEntityRatio', { misses: cell.misses, total: cell.entities.length }) } });
+            ? t(statusKeys[cell.status])
+            : t('pilot.matrixEntityRatio', { misses: cell.misses, total: cell.judged, pending: cell.pending }) } });
         });
         if (previous !== null) {
           const before = previousRows.find((item) => item.field.fieldId === row.field.fieldId);
           const comparison = matrix.compareError === null ? comparePilotRows(row, before) : 'unavailable';
           const symbols = { improved: '↓', worsened: '↑', unchanged: '=', unavailable: '—' };
           const keys: Record<typeof comparison, MessageKey> = { improved: 'pilot.matrixImproved', worsened: 'pilot.matrixWorsened', unchanged: 'pilot.matrixUnchanged', unavailable: 'pilot.matrixUnavailable' };
+          const beforeText = before === undefined ? '—' : ratio(before);
           const comparisonCell = !matrix.compareLoaded && matrix.compareError === null
             ? el('td', { text: t('common.loading') })
-            : el('td', { text: `${symbols[comparison]} ${t('pilot.matrixComparison', { before: before === undefined ? '0/0' : ratio(before), current: ratio(row) })}`,
-              attributes: { 'aria-label': `${t(keys[comparison])}: ${before === undefined ? '0/0' : ratio(before)} → ${ratio(row)}` } });
-          cells.push(el('td', { text: String(row.misses) }), el('td', { text: ratio(row) }), comparisonCell);
+            : el('td', { text: `${symbols[comparison]} ${t('pilot.matrixComparison', { before: beforeText, current: ratio(row) })}`,
+              attributes: { 'aria-label': `${t(keys[comparison])}: ${beforeText} → ${ratio(row)}` } });
+          cells.push(el('td', { text: String(row.misses) }), el('td', { text: ratio(row) }),
+            el('td', { text: String(row.pendingStudies) }), comparisonCell);
         } else {
-          cells.push(el('td', { text: String(row.misses) }), el('td', { text: ratio(row) }));
+          cells.push(el('td', { text: String(row.misses) }), el('td', { text: ratio(row) }),
+            el('td', { text: String(row.pendingStudies) }));
         }
         return el('tr', {}, [el('th', { attributes: { scope: 'row' } }, [el('a', {
           text: row.field.fieldLabel, attributes: { href: `#/schema?field=${encodeURIComponent(row.field.fieldId)}` },

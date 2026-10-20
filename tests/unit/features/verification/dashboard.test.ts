@@ -259,19 +259,38 @@ describe('buildDashboard', () => {
       ],
       EMPTY_RUN_STARTED_AT,
     );
+    // f-arm-n は AI も「報告なし」と出していたため、人の not_reported は AI と一致 = 承認に数える（issue #381）
     expect(data.rows[0]?.accuracy).toEqual({
-      accept: 1,
+      accept: 2,
       edit: 1,
       reject: 0,
-      notReported: 1,
+      notReported: 0,
       decided: 3,
     });
     expect(data.totals.accuracy).toEqual({
-      accept: 1,
+      accept: 2,
       edit: 1,
       reject: 0,
-      notReported: 1,
+      notReported: 0,
       decided: 3,
+    });
+  });
+
+  test('AI が値を出していたセルの not_reported 判定だけを報告なし（過剰抽出）に数える', () => {
+    const data = buildDashboard(
+      [
+        makeInput({
+          ownDecisions: [makeDecision({ action: 'not_reported', value: null })],
+        }),
+      ],
+      EMPTY_RUN_STARTED_AT,
+    );
+    expect(data.rows[0]?.accuracy).toEqual({
+      accept: 0,
+      edit: 0,
+      reject: 0,
+      notReported: 1,
+      decided: 1,
     });
   });
 
