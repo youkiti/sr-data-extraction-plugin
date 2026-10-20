@@ -54,7 +54,7 @@ import { uploadTextFile } from '../../lib/google/drive';
 import type { GoogleApiDeps } from '../../lib/google/types';
 import { appendLlmApiLog, ensureLlmApiLogColumns } from '../../lib/llm/apiLogRepository';
 import { withLogging } from '../../lib/llm/apiLogger';
-import type { LLMProvider } from '../../lib/llm/LLMProvider';
+import type { LLMProvider, ReasoningEffort } from '../../lib/llm/LLMProvider';
 import { createProvider, type ProviderConfig } from '../../lib/llm/providerFactory';
 import {
   applyRateLimitPolicy,
@@ -77,6 +77,11 @@ export interface ExtractionServiceDeps {
   provider?: LlmProviderId;
   /** OpenAI 互換 API の完全 URL */
   endpoint?: string;
+  /**
+   * Options の既定 reasoning effort（resolveProviderConfig が解決した値。未設定 = 省略 / null）。
+   * schemaService 等と同じく provider の構築時に渡す（issue #381: 抽出だけ渡していなかった）
+   */
+  reasoningEffort?: ReasoningEffort | null;
   /**
    * extracted_texts/{document_id}.txt を読み、ページ別テキストへ復元する。
    * テキストファイルの保存形式は S3（文献取り込み）実装側で確定するため、ここでは注入に留める
@@ -196,6 +201,7 @@ export async function runExtraction(
     model: params.model,
     provider: deps.provider,
     endpoint: deps.endpoint,
+    reasoningEffort: deps.reasoningEffort,
   });
   // 429 対策: レート制限ポリシーに従い withRetry(withThrottle(withLogging(...))) で包む。
   // throttle が RPM 間隔でバッチ連射を間引き、retry が 429/5xx を（サーバ提示の retryDelay も

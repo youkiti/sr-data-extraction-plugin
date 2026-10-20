@@ -166,9 +166,10 @@ export function buildSettingsSections(): HTMLElement {
   body.append(connectionSection);
 
   // reasoning effort の既定値（issue #127 PR5。docs/ui-states.md §2「reasoning effort の既定値」）。
-  // 保存キーは settings.defaultReasoningEffort（未設定 = null）。Anthropic ネイティブは
-  // output_config.effort へ、OpenRouter / OpenAI 互換（Azure OpenAI 含む）は reasoning_effort へ
-  // 写す。Gemini は現時点で無視する（options.reasoningEffortHelp 参照）
+  // 保存キーは settings.defaultReasoningEffort（未設定 = null）。Gemini 3 系は thinkingLevel へ、
+  // Anthropic ネイティブは output_config.effort へ写す（どちらも未設定なら low）。OpenRouter /
+  // OpenAI 互換（Azure OpenAI 含む）は設定時だけ reasoning_effort へ写す。Gemini 2.5 系には
+  // 送らない（GeminiProvider.ts / options.reasoningEffortHelp 参照）
   const reasoningEffortSelect = el('select', {
     id: 'default-reasoning-effort',
     attributes: { 'aria-label': t('options.reasoningEffortAria') },

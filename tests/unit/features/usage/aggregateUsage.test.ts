@@ -106,6 +106,7 @@ describe('aggregateUsage', () => {
       log({
         promptRef: '',
         responseRef: '',
+        latencyMs: null,
         error: '警告',
         costEstimateUsd: 999,
         timestamp: '2026-10-01T00:00:00Z',
@@ -143,9 +144,33 @@ describe('aggregateUsage', () => {
     expect(JSON.stringify(logs)).toBe(before);
   });
 
+  // issue #381: 質問パネル（ask_paper）と payload 保存に失敗した呼び出しは参照が空でも
+  // 実際に課金されうる API 呼び出しのため、呼び出し数・使用量・費用へ含める
+  test('参照が空でも latency を持つ行（質問パネル・payload 保存失敗）は費用に含める', () => {
+    const summary = aggregateUsage({
+      logs: [
+        log({
+          purpose: 'ask_paper',
+          promptRef: '',
+          responseRef: '',
+          runId: null,
+          studyId: 's1',
+          costEstimateUsd: 0.5,
+        }),
+        log({ promptRef: '', responseRef: '', costEstimateUsd: 1.5 }),
+      ],
+      runs: [run()],
+    });
+    expect(summary.totals).toMatchObject({ calls: 2, costUsd: 2, tokensIn: 200 });
+    expect(summary.byPurpose.map((row) => [row.key, row.calls, row.costUsd])).toEqual([
+      ['ask_paper', 1, 0.5],
+      ['extract_study', 1, 1.5],
+    ]);
+  });
+
   test('警告だけなら成功 study 数や旧 run 推定にも影響しない', () => {
     const summary = aggregateUsage({
-      logs: [log({ promptRef: '', responseRef: '' })],
+      logs: [log({ promptRef: '', responseRef: '', latencyMs: null })],
       runs: [],
     });
     expect(summary.totals.calls).toBe(0);
@@ -176,7 +201,7 @@ describe('aggregateUsage', () => {
         log({ thoughtsTokensOut: null, tokensOut: null }),
         log({ thoughtsTokensOut: 0 }),
         log({ provider: 'anthropic', thoughtsTokensOut: null }),
-        log({ promptRef: '', responseRef: '', thoughtsTokensOut: null }),
+        log({ promptRef: '', responseRef: '', latencyMs: null, thoughtsTokensOut: null }),
       ],
       runs: [],
     });
@@ -407,6 +432,7 @@ describe('バッチ失敗と中断の費用集計', () => {
     return log({
       promptRef: '',
       responseRef: '',
+      latencyMs: null,
       promptSummary: '[batch_failed] run r1',
       error: 'バッチ失敗',
       tokensIn: null,
@@ -417,6 +443,19 @@ describe('バッチ失敗と中断の費用集計', () => {
       ...patch,
     });
   }
+
+  // issue #381: 根拠の再特定も元の run_id・study_id を記録するが、抽出の失敗費用には数えない
+  test('同じ run・study・section の再特定（relocate_quote）は失敗費用に含めない', () => {
+    const summary = aggregateUsage({
+      logs: [
+        failure({ section: null }),
+        log({ purpose: 'relocate_quote', section: null, costEstimateUsd: 1 }),
+        log({ section: null, costEstimateUsd: 2 }),
+      ],
+      runs: [run()],
+    });
+    expect(summary.totals).toMatchObject({ calls: 2, costUsd: 3, wastedCostUsd: 2 });
+  });
 
   test('全要素破棄の警告で成功 study を除き、課金済み非エラー call を失敗費用に数える', () => {
     const summary = aggregateUsage({
