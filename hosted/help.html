@@ -867,10 +867,10 @@
           </h3>
           <p>
             <span class="ja" lang="ja"
-              >パイロット結果の「項目 × 論文」では、行が抽出項目、列が試験です。採用・修正・棄却・未報告・根拠の位置特定失敗などを凡例と照らして確認します。群やアウトカムなど、1 試験に複数の値がある項目は、外れ数と判定済みの数で表示します。外れには修正、棄却、AI が値を出したものを未報告とした判定を数えます。外れの数と割合は判定済みのものだけで数え、未判定（根拠の位置特定に失敗したまま未判定のものを含む）は「未判定の論文」の列に別に出します。判定済みが 0 件の項目は割合を「—」と表示します。</span
+              >パイロット結果の「項目 × 論文」では、行が抽出項目、列が試験です。採用・修正・棄却・未報告・根拠の位置特定失敗などを凡例と照らして確認します。群やアウトカムなど、1 試験に複数の値がある項目は、外れ数と判定済みの数で表示します。外れには修正、棄却、AI が値を出したものを未報告とした判定を数えます。外れの数と割合は判定済みのものだけで数え、未判定（根拠の位置特定に失敗したまま未判定のものを含む）は「未判定の論文」の列に別に出します。外れがあり未判定も残る論文は、判定済みと未判定の両方の列に数えます。判定済みが 0 件の項目は割合を「—」と表示します。</span
             >
             <span class="en" lang="en"
-              >In “Fields × studies”, rows are extraction fields and columns are studies. Use the legend to read accepted, edited, rejected, not-reported and anchoring states. Fields with multiple values per study, such as arms or outcomes, show misses out of the number of reviewed entities. Misses include edits, rejections and values supplied by AI but judged not reported. Misses and proportions count reviewed values only; unreviewed values (including unreviewed values whose quotes failed anchoring) appear separately in the “Studies not yet reviewed” column. A field with no reviewed studies shows “—” for the proportion.</span
+              >In “Fields × studies”, rows are extraction fields and columns are studies. Use the legend to read accepted, edited, rejected, not-reported and anchoring states. Fields with multiple values per study, such as arms or outcomes, show misses out of the number of reviewed entities. Misses include edits, rejections and values supplied by AI but judged not reported. Misses and proportions count reviewed values only; unreviewed values (including unreviewed values whose quotes failed anchoring) appear separately in the “Studies not yet reviewed” column. Studies with both misses and unreviewed values count in both the reviewed and not-yet-reviewed columns. A field with no reviewed studies shows “—” for the proportion.</span
             >
           </p>
           <p>
@@ -1044,13 +1044,13 @@
             <li>
               <span class="ja" lang="ja"
                 >引用が本文で見つからない項目と、スキャン PDF のため本文と照合できていない項目では、1 回目の承認
-                (a) では確定せず、注意を表示します。PDF で値を確かめてから、もう一度承認すると確定します。この承認は判定の記録（Decisions
+                (a) では確定せず、注意を表示します。PDF で値を確かめてから、もう一度承認すると確定します。a キーの押しっぱなしでは確定しないので、一度離して押し直してください。この承認は判定の記録（Decisions
                 のメモ）に <code>[unanchored-accept]</code> の印が付きます。別の項目へ移るか、修正・棄却・未報告を選ぶと注意は消えます。</span
               >
               <span class="en" lang="en"
                 >For a value whose quote was not found in the PDF text, or could not be checked because the PDF is a scan,
                 the first Accept (a) does not save; a caution appears instead. Check the value in the PDF and press Accept
-                again to save it. That decision is marked <code>[unanchored-accept]</code> in the decision log (the
+                again to save it. Holding down a does not confirm the value; release the key and press it again. That decision is marked <code>[unanchored-accept]</code> in the decision log (the
                 Decisions note). Moving to another field, or choosing edit, reject or not reported, clears the
                 caution.</span
               >

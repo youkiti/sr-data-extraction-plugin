@@ -37,7 +37,7 @@ export interface PilotMatrixRow {
   missedStudies: number;
   /** 外れた論文と、抽出がある entity をすべて判定した論文（割合の分母） */
   judgedStudies: number;
-  /** 抽出はあるが判定が済んでいない論文（外れた論文を除く） */
+  /** 未判定の entity が残る論文（外れた論文も含む） */
   pendingStudies: number;
   extractedStudies: number;
   decided: number;
@@ -83,7 +83,7 @@ export function buildPilotMatrix(
     const judgedStudies = extracted.filter((cell) => cell.misses > 0 || cell.pending === 0).length;
     return { field, cells, misses: cells.reduce((n, cell) => n + cell.misses, 0),
       missedStudies: cells.filter((cell) => cell.misses > 0).length,
-      judgedStudies, pendingStudies: extracted.length - judgedStudies,
+      judgedStudies, pendingStudies: extracted.filter((cell) => cell.pending > 0).length,
       extractedStudies: extracted.length,
       decided: cells.flatMap((cell) => cell.entities).filter((item) => item.decision !== null).length };
   });

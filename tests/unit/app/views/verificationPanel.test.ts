@@ -5047,6 +5047,44 @@ describe('照合できなかった引用のセルの accept 前の警告（issue
     panel.dispose();
   });
 
+  test.each(['list', 'focus'] as const)('%s: a の自動リピートは警告を通過せず、押し直すと確定する', async (layoutMode) => {
+    const { panel, onDecision } = await createPanel(
+      { evidence: [makeEvidence({ anchorStatus: 'failed', quote: 'nowhere' })] },
+      { layoutMode },
+    );
+    pressKey('a');
+    expect(warning(panel.root)).not.toBeNull();
+    expect(onDecision).not.toHaveBeenCalled();
+    pressKey('a', { repeat: true });
+    expect(warning(panel.root)).not.toBeNull();
+    expect(onDecision).not.toHaveBeenCalled();
+    document.dispatchEvent(new KeyboardEvent('keyup', { key: 'a', bubbles: true }));
+    pressKey('a');
+    expect(onDecision).toHaveBeenCalledTimes(1);
+    expect(onDecision.mock.calls[0]![0]).toMatchObject({ action: 'accept', note: '[unanchored-accept]' });
+    expect(warning(panel.root)).toBeNull();
+    panel.dispose();
+  });
+
+  test.each(['a', 'e', 'x', 'n', 'z'])('%s の自動リピートでは判定も編集開始もしない', async (key) => {
+    const { panel, onDecision } = await createPanel({ evidence: [makeEvidence()] });
+    pressKey(key, { repeat: true });
+    expect(onDecision).not.toHaveBeenCalled();
+    expect(panel.root.querySelector('.verify__edit-input')).toBeNull();
+    expect(warning(panel.root)).toBeNull();
+    panel.dispose();
+  });
+
+  test('移動の自動リピートを維持し、根拠へのジャンプで判定しない', async () => {
+    const { panel, onDecision } = await createPanel();
+    pressKey('j', { repeat: true });
+    expect(cellEl(panel.root, KEY_COUNTRY)?.classList.contains('verify__cell--focused')).toBe(true);
+    pressKey('f', { repeat: true });
+    expect(cellEl(panel.root, KEY_COUNTRY)?.classList.contains('verify__cell--focused')).toBe(true);
+    expect(onDecision).not.toHaveBeenCalled();
+    panel.dispose();
+  });
+
   test('本文と一致した引用は 1 回で確定し、印を付けない', async () => {
     const { panel, onDecision } = await createPanel({ evidence: [makeEvidence()] });
     pressKey('a');

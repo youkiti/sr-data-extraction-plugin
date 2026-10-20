@@ -63,9 +63,17 @@ test.each(['arm', 'outcome_result', 'rob_domain'] as const)('%s の複数 entity
   expect(row.cells[0]!.misses).toBe(2);
   expect(row.cells[0]!.entities).toHaveLength(5);
   expect([row.cells[0]!.judged, row.cells[0]!.pending]).toEqual([2, 3]);
-  // study-1 は外れがあるため分母に入る。study-2 は未判定だけのため未判定の論文に数える
+  // study-1 は外れがあるため分母に入り、未判定も残るため study-2 とともに未判定の論文に数える
   expect([row.misses, row.missedStudies, row.judgedStudies, row.pendingStudies, row.extractedStudies])
-    .toEqual([2, 1, 1, 1, 2]);
+    .toEqual([2, 1, 1, 2, 2]);
+});
+
+test('外れが 1 件あり未判定も 1 件残る論文は判定済みと未判定の両方に数える', () => {
+  const evidence = [makeEvidence({ entityKey: 'arm:1' }), makeEvidence({ entityKey: 'arm:2' })];
+  const decisions = [makeDecision({ entityKey: 'arm:1', action: 'edit' })];
+  const row = buildPilotMatrix(['study-1'], [makeField({ entityLevel: 'arm' })], evidence, decisions)[0]!;
+  expect([row.cells[0]!.misses, row.cells[0]!.pending]).toEqual([1, 1]);
+  expect([row.missedStudies, row.judgedStudies, row.pendingStudies, row.extractedStudies]).toEqual([1, 1, 1, 1]);
 });
 
 test('外れのない entity は全部判定したときだけ分母に入る', () => {

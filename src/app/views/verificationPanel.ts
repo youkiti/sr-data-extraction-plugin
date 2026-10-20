@@ -2405,6 +2405,10 @@ export function createVerificationPanel(
     if (focusedCellKey === null) {
       return;
     }
+    // 押しっぱなしで警告を通過したり、次のセルへ判定を連続保存したりしないようにする
+    if (event.repeat && ['a', 'e', 'x', 'n', 'z'].includes(event.key)) {
+      return;
+    }
     switch (event.key) {
       case 'a':
         event.preventDefault();
