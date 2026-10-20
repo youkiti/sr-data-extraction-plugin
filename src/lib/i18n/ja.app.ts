@@ -266,7 +266,8 @@ export const jaApp = {
 
   // S3 文献取り込み（documentsView.ts）
   'documents.title': '文献取り込み・グルーピング',
-  'documents.notice': '取り込んだ PDF が外部へ送信されるのは LLM API への抽出リクエストのみです。',
+  'documents.notice':
+    '取り込んだ PDF の本文（スキャン PDF はページ画像）は、AI 機能を使うときに、設定した LLM API へ送られます。それ以外の外部送信先は、あなたの Google Drive / Sheets だけです。出版社の利用条件と送信先の規約を確かめてください。',
   'documents.lead':
     '採用論文の PDF を取り込みます。Drive から選択するか、この PC から PDF をドラッグ&ドロップ / ファイル選択できます。フォルダを選ぶと直下の PDF をまとめて取り込み、同一試験の複数文書は取り込み後に「統合」でまとめられます。',
   'documents.importDrive': 'Drive から PDF / フォルダを選択',
@@ -1098,6 +1099,12 @@ export const jaApp = {
   'export.methodsWorkflowDual': '二重独立',
   'export.methodsCopy': 'コピー',
   'export.methodsUnresolvedNote': '{{ }} の箇所はご自身の情報に置き換えてください',
+  'export.methodsCautionNote':
+    'これは記載例です。数値・人数・手順が実際と一致しているかを必ず確かめ、直してから使ってください。',
+  'export.methodsToolVersionNote':
+    'バージョンは、抽出したときの版ではなく、今インストールしている版です。',
+  'export.methodsRequestedModelNote':
+    'モデル名の一部は、API が返した実際の版ではなく、要求したモデル ID です。',
   'export.rsetFileRow': '{name}: {rows} 行',
   'export.rsetPreviewTitle': 'ma.csv プレビュー',
   'export.rsetUtf8Note':

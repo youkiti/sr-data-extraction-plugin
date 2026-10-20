@@ -46,7 +46,7 @@ test('サイドバーから #/documents へ遷移できる（注意書きの常�
   await page.locator('#app-nav a[href="#/documents"]').click();
   await expect(page.locator('#app-content h2')).toHaveText('文献取り込み・グルーピング');
   await expect(page.locator('#app-content')).toContainText(
-    '取り込んだ PDF が外部へ送信されるのは LLM API への抽出リクエストのみです',
+    '取り込んだ PDF の本文（スキャン PDF はページ画像）は、AI 機能を使うときに、設定した LLM API へ送られます',
   );
 });
 

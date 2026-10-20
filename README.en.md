@@ -59,7 +59,7 @@ flowchart LR
         Sheets[("Google Sheets<br/>(project database)")]
         Drive[("Google Drive<br/>(PDFs, extracted text, logs)")]
     end
-    LLM["Gemini / Anthropic / OpenRouter / OpenAI-compatible API (BYOK)"]
+    LLM["Gemini / Anthropic / OpenRouter / Azure OpenAI / OpenAI-compatible API / local LLM (BYOK)"]
 
     Ext <-->|"OAuth 2.0<br/>userinfo.email + drive.file scopes only"| Sheets
     Ext <-->|PDF copies, extracted text| Drive
@@ -142,9 +142,11 @@ A preprint describing the tool and its evaluation is planned (see [issue #258](h
 
 > youkiti. sr-data-extraction-plugin (version X.Y.Z) [Chrome extension]. https://github.com/youkiti/sr-data-extraction-plugin
 
-The installed version is shown in `chrome://extensions`. A copy-ready Methods paragraph for your manuscript is available on the export screen.
+The installed version is shown in `chrome://extensions`. The export screen offers an example Methods paragraph; check that its numbers, reviewer counts and procedures match what you actually did, and edit it before use.
 
 This work was supported by JSPS KAKENHI Grant Number 25K13585.
+
+Conflicts of interest: the developer receives no money or other benefits from the AI companies this tool connects to (Google, Anthropic, OpenAI, OpenRouter, Microsoft and others).
 
 ## License
 

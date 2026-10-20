@@ -571,14 +571,22 @@ function rowToExtractionRun(raw: (string | null)[], rowIndex: number): Extractio
 
 /**
  * Methods 文案カード（S10。docs/methods-boilerplate.md）が使う完了 run の最小情報。
- * run_type ごとに集計方法が異なる（full → モデル / provider 列挙、pilot → 対象 study 数）ため、
- * 呼び出し側（exportService）で run_type ごとにフィルタして畳み込む
+ * 研究ごとの事前抽出の成否（LLMApiLog の [batch_failed] と突き合わせる）・全項目の実行か・
+ * モデル名（model_version が無ければ requested_model）・パイロットの開始時刻を
+ * 呼び出し側（features/export/methodsFacts）で畳み込む
  */
 export interface MethodsRunFact {
+  runId: string;
   runType: RunType;
+  /** 完了行の status（done / partial_failure） */
+  status: RunStatus;
   provider: LlmProviderId;
+  requestedModel: string;
   modelVersion: string | null;
   studyIds: string[];
+  /** null = 全項目（後方互換規約） */
+  fieldIds: string[] | null;
+  startedAt: string | null;
 }
 
 /**
@@ -596,10 +604,15 @@ export async function readMethodsRunFacts(
       continue;
     }
     facts.push({
+      runId: raw[0] ?? '',
       runType: (raw[1] ?? '') as RunType,
+      status: raw[8] as RunStatus,
       provider: (raw[4] ?? '') as LlmProviderId,
+      requestedModel: raw[5] ?? '',
       modelVersion: emptyToNull(raw[6]),
       studyIds: parseStudyIds(raw[3]),
+      fieldIds: parseFieldIds(raw[14]),
+      startedAt: emptyToNull(raw[9]),
     });
   }
   return facts.reverse(); // シート追記順の逆 = 新しい順

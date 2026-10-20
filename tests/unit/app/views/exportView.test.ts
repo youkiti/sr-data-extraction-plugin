@@ -608,12 +608,25 @@ describe('renderExportView: R セット（issue #60）', () => {
 describe('renderExportView: 論文 Methods 記載例カード（issue #67）', () => {
   const facts = {
     toolVersion: '1.2.3',
+    aiDraft: false,
+    draftModelIds: [],
+    draftProviders: [],
     modelIds: ['gemini-3.5-flash-001'],
+    modelIdsIncludeRequested: false,
     providers: ['Gemini'],
+    includedStudyCount: 3,
+    extractedStudyCount: 3,
+    partialStudyCount: 0,
     pilotStudyCount: 3,
+    revisedAfterPilot: false,
+    formRevisionCount: 0,
     scannedDocumentCount: 0,
     pilotRevisionCount: 0,
     chatAssistDecisionCount: 0,
+    unverifiedCellCount: 0,
+    humanWithAiAnnotatorCount: 2,
+    humanIndependentAnnotatorCount: 0,
+    hasConsensus: true,
   };
 
   test('methodsFacts 未読込（null）はカード自体を出さない', () => {
@@ -643,9 +656,32 @@ describe('renderExportView: 論文 Methods 記載例カード（issue #67）', (
     expect(view.querySelector('#methods-unresolved-note')?.textContent).toBe(
       '{{ }} の箇所はご自身の情報に置き換えてください',
     );
+    // 記載例であること・版が今インストールしている版であることは常に示す（issue #381）
+    expect(view.querySelector('#methods-caution-note')?.textContent).toBe(
+      'これは記載例です。数値・人数・手順が実際と一致しているかを必ず確かめ、直してから使ってください。',
+    );
+    expect(view.querySelector('#methods-tool-version-note')?.textContent).toBe(
+      'バージョンは、抽出したときの版ではなく、今インストールしている版です。',
+    );
+    // モデル名はすべて API が返した版のため、要求したモデル ID の注は出さない
+    expect(view.querySelector('#methods-requested-model-note')).toBeNull();
 
     (view.querySelector('#methods-copy') as HTMLButtonElement).click();
     expect(callbacks.onCopyMethods).toHaveBeenCalledTimes(1);
+  });
+
+  test('モデル名に要求したモデル ID が入るときは、その旨の注を出す', () => {
+    const { ctx } = makeCtx();
+    const view = renderExportView(
+      makeState({
+        built: makeBuiltAll(),
+        methodsFacts: { ...facts, modelIdsIncludeRequested: true },
+      }),
+      ctx,
+    );
+    expect(view.querySelector('#methods-requested-model-note')?.textContent).toBe(
+      'モデル名の一部は、API が返した実際の版ではなく、要求したモデル ID です。',
+    );
   });
 
   test('言語タブ / ワークフロートグルのクリックでコールバックが呼ばれる', () => {
@@ -679,7 +715,7 @@ describe('renderExportView: 論文 Methods 記載例カード（issue #67）', (
 
   test('未反映プレースホルダが残らない場合は注意書きを出さない', () => {
     const { ctx } = makeCtx();
-    // 正典の文案では n_sample / reviewer_initials / supplement_ref が必ず残るため実際には
+    // 正典の文案では reviewer_initials / supplement_ref が必ず残るため実際には
     // 起こらない組み合わせだが、将来の文案改訂に備えた防御分岐を検証するため差し替える
     buildMethodsTextMock.mockReturnValueOnce({ text: '差し替え済み本文', unresolved: [] });
     const view = renderExportView(makeState({ built: makeBuiltAll(), methodsFacts: facts }), ctx);
