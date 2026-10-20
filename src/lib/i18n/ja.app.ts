@@ -1,6 +1,5 @@
 // UI 文言辞書（日本語・app 群）。
 export const jaApp = {
-  'help.openTopic': 'この項目のヘルプを開く',
   'help.menuLabel': 'ヘルプと動画',
   'help.readHelp': 'ヘルプを読む',
   'help.watchVideo': '▶ 動画で見る',

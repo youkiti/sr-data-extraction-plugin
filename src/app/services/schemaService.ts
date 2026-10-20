@@ -80,6 +80,7 @@ import { getCurrentUserEmail, type ProfileDeps } from '../../lib/google/identity
 import type { GoogleApiDeps } from '../../lib/google/types';
 import { appendLlmApiLog } from '../../lib/llm/apiLogRepository';
 import { withLogging } from '../../lib/llm/apiLogger';
+import { confirmAiDataConsent } from '../../lib/llm/aiDataConsent';
 import type { LLMProvider } from '../../lib/llm/LLMProvider';
 import { missingApiKeyMessage, providerModelMismatchMessage } from '../../lib/llm/modelCatalog';
 import {
@@ -277,6 +278,10 @@ export async function runDraftSchema(store: Store, deps: SchemaServiceDeps): Pro
   }
   if (providerResolution.config === null) {
     patchSchema(store, { draftError: missingApiKeyMessage(providerResolution.provider) });
+    return;
+  }
+  // AI へ送る前の同意（issue #381）。キャンセルなら何もせず、画面は元のまま
+  if (!(await confirmAiDataConsent(deps, providerResolution.provider))) {
     return;
   }
 

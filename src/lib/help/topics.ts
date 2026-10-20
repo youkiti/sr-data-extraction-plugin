@@ -28,6 +28,7 @@ export const HELP_TOPICS = {
   'usage-export': { tourId: 'export-data', helpAnchor: 'export-usage' },
   'pilot-matrix': { tourId: 'pilot-and-extract', helpAnchor: 'pilot-matrix' },
   'pilot-notes': { tourId: 'pilot-and-extract', helpAnchor: 'pilot-notes' },
+  'ai-data-consent': { helpAnchor: 'setup-ai-data-consent' },
 } as const satisfies Record<string, HelpTopic>;
 
 export type HelpTopicId = keyof typeof HELP_TOPICS;

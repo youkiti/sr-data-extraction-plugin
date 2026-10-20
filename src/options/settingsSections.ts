@@ -272,6 +272,18 @@ export function buildSettingsSections(): HTMLElement {
   ]);
   body.append(languageSection);
 
+  // AI へ送る内容（issue #381）: 同意ダイアログの再表示と同意の取り消し。配線は bootstrapOptions
+  const aiConsentSection = el('section', { className: 'options__section' }, [
+    el('h2', { text: t('options.aiConsentTitle') }),
+    el('p', { className: 'options__help', text: t('options.aiConsentHelp') }),
+    el('p', { id: 'ai-data-consent-status', className: 'options__status' }),
+    el('div', { className: 'options__row' }, [
+      el('button', { id: 'ai-data-consent-show', text: t('options.aiConsentShow'), attributes: { type: 'button' } }),
+      el('button', { id: 'ai-data-consent-revoke', text: t('options.aiConsentRevoke'), attributes: { type: 'button' } }),
+    ]),
+  ]);
+  body.append(aiConsentSection);
+
   // 公開ページへのリンク（issue #214。GitHub Pages 配信。実体は hosted/）
   const linksSection = el('section', { className: 'options__section' }, [
     el('h2', { text: t('options.linksTitle') }),

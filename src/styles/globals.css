@@ -71,3 +71,52 @@ select {
   background: var(--color-surface);
   box-shadow: 0 2px 8px rgb(0 0 0 / 15%);
 }
+
+/* AI へ送る前の告知と同意のダイアログ（issue #381。app/ui/aiDataConsentDialog.ts）。
+   アプリと設定ページの両方で出すため本ファイルに置く。操作ツアーのカード（guide.css の 2002）より前面 */
+.ai-consent {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgb(0 0 0 / 45%);
+  z-index: 3000;
+}
+
+.ai-consent__panel {
+  width: min(560px, 100%);
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+  padding: 20px 24px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface);
+  box-shadow: 0 4px 16px rgb(0 0 0 / 25%);
+}
+
+.ai-consent__panel h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.ai-consent__body ul {
+  margin: 8px 0;
+  padding-left: 20px;
+}
+
+.ai-consent__body p {
+  margin: 8px 0;
+}
+
+.ai-consent__note {
+  color: var(--color-text-muted);
+  font-size: 13px;
+}
+
+.ai-consent__actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+}

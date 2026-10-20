@@ -15,6 +15,7 @@ import { installDemoFetchMock, setDemoDelaysEnabled } from './fetchMock';
 import { seedDemoData } from './seed';
 import { setCurrentProject } from '../features/project/projectStore';
 import { saveGeminiApiKey } from '../lib/storage/secretsStore';
+import { AI_DATA_CONSENT_VERSION, saveAiDataConsent } from '../lib/storage/aiDataConsentStore';
 import {
   DEMO_DRIVE_FOLDER_ID,
   DEMO_PROJECT_ID,
@@ -52,6 +53,9 @@ export async function seedDemoState(): Promise<void> {
     });
     // Options が「設定済み」状態で映るようにする（デモ用ダミー値。本物のキーは絶対に埋め込まない）
     await saveGeminiApiKey(DEMO_GEMINI_API_KEY);
+    // AI へ送る前の同意（issue #381）は同意済みにする（録画・ツアー検証・ヘルプの図の撮影に
+    // 同意画面が写らないように。同意画面そのものは E2E の app-ai-consent.spec.ts で検証する）
+    await saveAiDataConsent({ version: AI_DATA_CONSENT_VERSION, acceptedAt: '2026-07-01T00:00:00.000Z' });
     await seedDemoData(new URLSearchParams(window.location.search).get('demoState') === 'empty');
   } finally {
     setDemoDelaysEnabled(true);

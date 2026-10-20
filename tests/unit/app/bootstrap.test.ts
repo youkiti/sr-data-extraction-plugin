@@ -182,6 +182,14 @@ describe('createChromeAppDeps', () => {
       localLlmEndpoint: null,
     });
   });
+
+  test('AI へ送る前の同意のゲートを必ず注入する（issue #381。未注入だと確認なしで送ってしまう）', async () => {
+    const chromeMock = installChromeMock();
+    chromeMock.storage.local.data.aiDataConsent = { version: 1, acceptedAt: '2026-10-20T00:00:00Z' };
+    const deps = createChromeAppDeps();
+    expect(deps.ensureAiDataConsent).toBeDefined();
+    await expect(deps.ensureAiDataConsent?.('gemini')).resolves.toBe(true);
+  });
 });
 
 const APP_TEMPLATE = `

@@ -38,6 +38,7 @@ import { getSchemaFieldsByVersion } from '../../features/schema/schemaRepository
 import { ensureChildFolder } from '../../lib/google/drive';
 import type { GoogleApiDeps } from '../../lib/google/types';
 import { missingApiKeyMessage, providerModelMismatchMessage } from '../../lib/llm/modelCatalog';
+import { confirmAiDataConsent } from '../../lib/llm/aiDataConsent';
 import {
   isRunBlockedByImageUnsupportedModel,
   resolveProviderConfig,
@@ -487,6 +488,10 @@ export async function runExtract(store: Store, deps: ExtractServiceDeps): Promis
     });
     return;
   }
+  // AI へ送る前の同意（issue #381）。キャンセルなら実行せず、確認カードも開いたままにする
+  if (!(await confirmAiDataConsent(deps, providerResolution.provider))) {
+    return;
+  }
   // 選択サブセットで fields を絞り込む（全選択時は fieldIds: null。issue #80）。
   // performRun 呼び出し前に lastRunFieldIds を確定させる = 成功・失敗にかかわらず
   // 再試行（retryExtractStudy）が同じ選択を引き継げる（A-2）
@@ -627,6 +632,10 @@ export async function retryExtractStudy(
       patchExtract(store, {
         runError: t('extraction.errImageUnsupportedModel', { model: state.extract.model }),
       });
+      return;
+    }
+    // AI へ送る前の同意（issue #381）。キャンセルなら失敗行の表示を変えずに戻る
+    if (!(await confirmAiDataConsent(deps, providerResolution.provider))) {
       return;
     }
     patchExtract(store, { retryingStudyId: studyId, runError: null, lastRunFieldIds: fieldIds });

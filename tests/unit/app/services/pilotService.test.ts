@@ -602,6 +602,16 @@ describe('runPilot: 実行', () => {
     expect(deps.buildProvider).not.toHaveBeenCalled();
   });
 
+  test('AI へ送る前の同意（issue #381）をキャンセルしたら抽出を始めず、画面も変えない', async () => {
+    const store = makeReadyStore();
+    const ensureAiDataConsent = jest.fn().mockResolvedValue(false);
+    const before = store.getState().pilot;
+    await runPilot(store, makeDeps({ ensureAiDataConsent }));
+    expect(ensureAiDataConsent).toHaveBeenCalledWith('gemini');
+    expect(runExtractionMock).not.toHaveBeenCalled();
+    expect(store.getState().pilot).toBe(before);
+  });
+
   function makeReadyStore(): Store {
     return makeStore({
       documents: [makeDocument(), makeDocument({ documentId: 'doc-2' })],

@@ -32,6 +32,7 @@ import { getSchemaFieldsByVersion } from '../../features/schema/schemaRepository
 import { ensureChildFolder } from '../../lib/google/drive';
 import type { LLMProvider } from '../../lib/llm/LLMProvider';
 import { missingApiKeyMessage, providerModelMismatchMessage } from '../../lib/llm/modelCatalog';
+import { confirmAiDataConsent } from '../../lib/llm/aiDataConsent';
 import {
   isRunBlockedByImageUnsupportedModel,
   resolveProviderConfig,
@@ -267,6 +268,10 @@ export async function runPilot(store: Store, deps: PilotServiceDeps): Promise<vo
     )
   ) {
     patchPilot(store, { runError: t('extraction.errImageUnsupportedModel', { model }) });
+    return;
+  }
+  // AI へ送る前の同意（issue #381）。キャンセルなら何もせず、画面は元のまま
+  if (!(await confirmAiDataConsent(deps, providerResolution.provider))) {
     return;
   }
 

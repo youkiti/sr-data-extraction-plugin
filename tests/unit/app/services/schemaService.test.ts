@@ -447,6 +447,29 @@ describe('runDraftSchema', () => {
     expect(store.getState().schema.draftError).toContain('API キーが未設定');
   });
 
+  test('AI へ送る前の同意（issue #381）: キャンセルなら LLM を呼ばず画面も変えない / 同意なら実行する', async () => {
+    const store = makeStore();
+    seedForDraft(store);
+    const ensureAiDataConsent = jest.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+    const { deps, chatMock } = makeDeps({ ensureAiDataConsent });
+    const before = store.getState().schema;
+    await runDraftSchema(store, deps);
+    expect(ensureAiDataConsent).toHaveBeenCalledWith('gemini');
+    expect(chatMock).not.toHaveBeenCalled();
+    expect(store.getState().schema).toBe(before);
+
+    await runDraftSchema(store, deps);
+    expect(chatMock).toHaveBeenCalledTimes(1);
+  });
+
+  test('AI へ送る前の同意は API キーの検証より後に確かめる', async () => {
+    const store = makeStore();
+    seedForDraft(store);
+    const ensureAiDataConsent = jest.fn();
+    await runDraftSchema(store, makeDeps({ loadApiKey: async () => null, ensureAiDataConsent }).deps);
+    expect(ensureAiDataConsent).not.toHaveBeenCalled();
+  });
+
   test('成功: プロンプト構築 → LLM 呼び出し（ログ付き）→ エディタへ流し込む', async () => {
     const store = makeStore();
     seedForDraft(store);

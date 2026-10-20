@@ -213,3 +213,46 @@ test('送信は質問済みIDのみを保存し、保存失敗でも質問と判
   expect(warning).toHaveBeenCalled();
   warning.mockRestore();
 });
+
+describe('AI へ送る前の同意（issue #381）', () => {
+  test('キャンセルなら質問済みの印も付けず、質問を送らない', async () => {
+    const { store, deps } = setup();
+    deps.loadApiKey = jest.fn(async () => 'key');
+    deps.ensureAiDataConsent = jest.fn(async () => false);
+    const before = store.getState().askPaper;
+    await sendAskPaperQuestion(store, deps, makeAskParams());
+    expect(deps.ensureAiDataConsent).toHaveBeenCalledWith('gemini');
+    expect(ask).not.toHaveBeenCalled();
+    expect(store.getState().askPaper).toBe(before);
+  });
+
+  test('同意なら従来どおり送る', async () => {
+    const { store, deps } = setup();
+    deps.loadApiKey = jest.fn(async () => 'key');
+    deps.loadDefaultModel = async () => 'claude-sonnet-4-5';
+    deps.ensureAiDataConsent = jest.fn(async () => true);
+    await sendAskPaperQuestion(store, deps, makeAskParams());
+    expect(deps.ensureAiDataConsent).toHaveBeenCalledWith('anthropic');
+    expect(ask).toHaveBeenCalledTimes(1);
+    expect(store.getState().askPaper.usedStudyIds).toEqual(['study-1']);
+  });
+
+  test('API キー未設定・接続方式の食い違い・解決の失敗では同意を求めず、askPaper のエラー表示に任せる', async () => {
+    const { store, deps } = setup();
+    const ensureAiDataConsent = jest.fn(async () => false);
+    deps.ensureAiDataConsent = ensureAiDataConsent;
+    deps.loadApiKey = jest.fn(async () => null);
+    await sendAskPaperQuestion(store, deps, makeAskParams());
+    deps.loadApiKey = jest.fn(async () => 'key');
+    deps.loadLlmConnectionSettings = async () => ({
+      provider: 'anthropic', openAiCompatibleEndpoint: null, azureOpenAiEndpoint: null, localLlmEndpoint: null,
+    });
+    await sendAskPaperQuestion(store, deps, makeAskParams());
+    deps.loadLlmConnectionSettings = async () => {
+      throw new Error('storage');
+    };
+    await sendAskPaperQuestion(store, deps, makeAskParams());
+    expect(ensureAiDataConsent).not.toHaveBeenCalled();
+    expect(ask).toHaveBeenCalledTimes(3);
+  });
+});

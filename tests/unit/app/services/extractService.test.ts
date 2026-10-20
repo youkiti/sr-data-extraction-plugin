@@ -754,6 +754,17 @@ describe('runExtract', () => {
     expect(runExtractionMock).not.toHaveBeenCalled();
   });
 
+  test('AI へ送る前の同意（issue #381）をキャンセルしたら実行せず、確認カードも開いたままにする', async () => {
+    const store = makeReadyStore();
+    const ensureAiDataConsent = jest.fn().mockResolvedValue(false);
+    const before = store.getState().extract;
+    await runExtract(store, makeDeps({ ensureAiDataConsent }));
+    expect(ensureAiDataConsent).toHaveBeenCalledWith('gemini');
+    expect(runExtractionMock).not.toHaveBeenCalled();
+    expect(store.getState().extract).toBe(before);
+    expect(store.getState().extract.confirming).toBe(true);
+  });
+
   test('API キー未設定は確認カードを閉じてインラインエラー', async () => {
     const store = makeReadyStore();
     await runExtract(store, makeDeps({ loadApiKey: jest.fn().mockResolvedValue(null) }));
@@ -1180,6 +1191,16 @@ describe('retryExtractStudy', () => {
       },
     });
   }
+
+  test('AI へ送る前の同意（issue #381）をキャンセルしたら再試行せず、失敗行の表示も変えない', async () => {
+    const store = makeFailedStore();
+    const ensureAiDataConsent = jest.fn().mockResolvedValue(false);
+    const before = store.getState().extract;
+    await retryExtractStudy(store, makeDeps({ ensureAiDataConsent }), 'study-doc-2');
+    expect(ensureAiDataConsent).toHaveBeenCalledWith('gemini');
+    expect(runExtractionMock).not.toHaveBeenCalled();
+    expect(store.getState().extract).toBe(before);
+  });
 
   test('プロジェクト未選択・実行中・再試行中・スキーマ未読込は何もしない', async () => {
     await retryExtractStudy(makeStore({ withProject: false }), makeDeps(), 'study-doc-2');

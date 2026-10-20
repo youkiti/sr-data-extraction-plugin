@@ -3,6 +3,7 @@
 // - 既定モデルは抽出精度ベンチマークで確定するまで固定しない（requirements.md Q8）ため
 //   model は必須（移植元の DEFAULT_MODEL フォールバックを持たない）
 import type { LlmProviderId } from '../../domain/llmApiLog';
+import type { EnsureAiDataConsent } from './aiDataConsent';
 import {
   isLoopbackEndpoint,
   loadDefaultReasoningEffort,
@@ -38,6 +39,11 @@ export interface ProviderResolutionDeps {
   loadApiKey: (provider: LlmProviderId) => Promise<string | null>;
   /** 未注入は既存環境としてモデル ID による従来判定を使う */
   loadLlmConnectionSettings?: () => Promise<LlmConnectionSettings>;
+  /**
+   * AI へ送る前の同意の確認（issue #381。lib/llm/aiDataConsent.ts）。
+   * 未注入は確認なし（unit テスト用）。本番は app/bootstrap.ts が必ず注入する
+   */
+  ensureAiDataConsent?: EnsureAiDataConsent;
 }
 
 export interface ProviderResolution {

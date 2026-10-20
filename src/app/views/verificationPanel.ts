@@ -936,6 +936,12 @@ export function createVerificationPanel(
       }
       return;
     }
+    if (outcome.status === 'cancelled') {
+      // AI へ送る前の同意をキャンセルした（issue #381）: 実行前の表示へ戻す
+      relocateStatus.delete(cellKey);
+      refreshForm();
+      return;
+    }
     relocateStatus.set(cellKey, 'not_found');
     refreshForm();
   }

@@ -213,4 +213,28 @@ export const enPages: Record<keyof typeof jaPages, string> = {
   'options.tierUnlimitedLabel': 'Unlimited (no throttling)',
   'options.tierUnlimitedDesc':
     'Only when the server allows ample limits. No waiting is inserted between batches.',
+
+  'help.openTopic': 'Open help for this item',
+  'aiConsent.title': 'What is sent to the AI',
+  'aiConsent.intro': 'When you use an AI feature, the following is sent to the LLM API you configured ({provider}).',
+  'aiConsent.itemPaper': 'The text of your papers (page images for PDFs without a text layer)',
+  'aiConsent.itemProtocol': 'The text of your study protocol',
+  'aiConsent.itemSchema': 'Your extraction field definitions',
+  'aiConsent.itemQuestion': 'Questions you ask about a paper',
+  'aiConsent.providerTerms': "How the content is handled there is governed by that API provider's terms.",
+  'aiConsent.geminiFree':
+    "On the Gemini API free tier, what you send may be used to improve Google's products and may be read by people. Use a paid tier for unpublished data or confidential material.",
+  'aiConsent.noDeveloperServer': "Nothing is sent to the developer's servers.",
+  'aiConsent.checkTerms': "Before you start, check the publisher's terms of use for your papers and the API provider's terms.",
+  'aiConsent.privacyLink': 'Privacy policy',
+  'aiConsent.reviewLater': 'This notice is shown only once. You can review it or withdraw your consent in Options at any time.',
+  'aiConsent.accept': 'Agree and continue',
+  'options.aiConsentTitle': 'What is sent to the AI',
+  'options.aiConsentHelp':
+    'Before you use an AI feature, the extension shows what is sent where and records your consent. The record is kept only in this browser profile.',
+  'options.aiConsentShow': 'Show what is sent to the AI',
+  'options.aiConsentRevoke': 'Withdraw consent',
+  'options.aiConsentStatusNone': 'Not agreed yet. You will be asked before the first AI feature runs.',
+  'options.aiConsentStatusAccepted': 'Agreed ({date})',
+  'options.aiConsentFailed': 'Could not update the consent record.',
 };

@@ -209,4 +209,30 @@ export const jaPages = {
     'OpenRouter や上記に当てはまらない場合に、実際の 1 分あたりリクエスト数を入力します。同時実行数を上げるとスループットが上がりますが、429 / TPM に当たる場合は下げてください。',
   'options.tierUnlimitedLabel': '制限なし（スロットルしない）',
   'options.tierUnlimitedDesc': 'サーバ側で十分な上限がある場合のみ。バッチ間の待ち時間を入れません。',
+
+  // ヘルプ「?」の読み上げ名（app/ui/helpButton.ts。同意ダイアログが options でも使うためページ共通群。issue #381）
+  'help.openTopic': 'この項目のヘルプを開く',
+  // AI へ送る前の告知と同意（app/ui/aiDataConsentDialog.ts + Options の「AI へ送る内容」節。issue #381）
+  'aiConsent.title': 'AI へ送る内容の確認',
+  'aiConsent.intro': 'AI の機能を使うと、次の内容を、設定した LLM API（{provider}）へ送ります。',
+  'aiConsent.itemPaper': '論文の本文（文字を読み取れない PDF はページの画像）',
+  'aiConsent.itemProtocol': '研究プロトコルの本文',
+  'aiConsent.itemSchema': '抽出項目の定義',
+  'aiConsent.itemQuestion': '論文への質問の文',
+  'aiConsent.providerTerms': '送った内容の扱いは、その API 提供者の規約に従います。',
+  'aiConsent.geminiFree':
+    'Gemini API の無料枠では、送った内容が Google の製品改善に使われ、人が読むことがあります。未公開のデータや機密の資料は、有料枠で使ってください。',
+  'aiConsent.noDeveloperServer': '開発者のサーバーへは何も送りません。',
+  'aiConsent.checkTerms': '使う前に、論文の出版社の利用条件と、送り先の規約を確かめてください。',
+  'aiConsent.privacyLink': 'プライバシーポリシー',
+  'aiConsent.reviewLater': 'この確認は最初の 1 回だけ表示します。設定画面からいつでも見直し・取り消しができます。',
+  'aiConsent.accept': '同意して続行',
+  'options.aiConsentTitle': 'AI へ送る内容',
+  'options.aiConsentHelp':
+    'AI の機能を使う前に、何をどこへ送るかを示して同意を記録します。記録はこのブラウザのプロファイルにだけ残ります。',
+  'options.aiConsentShow': 'AI へ送る内容の説明を表示',
+  'options.aiConsentRevoke': '同意を取り消す',
+  'options.aiConsentStatusNone': 'まだ同意していません。最初の AI 機能の実行前に確認します。',
+  'options.aiConsentStatusAccepted': '同意済み（{date}）',
+  'options.aiConsentFailed': '同意の記録を更新できませんでした。',
 } as const;

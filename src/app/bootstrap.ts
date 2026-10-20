@@ -11,6 +11,7 @@ import { emptyPilotMatrix, loadPilotMatrix } from './services/pilotMatrixService
 import { focusSchemaField } from './views/schemaView';
 import { guardRoute } from './guards';
 import { showToast } from './ui/toast';
+import { createChromeAiDataConsentGate } from './ui/aiDataConsentDialog';
 import { captureScrollPositions, restoreScrollPositions } from './ui/preserveScroll';
 import { captureFocusState, restoreFocusState } from './ui/preserveFocus';
 import type { ViewContext } from './views/types';
@@ -425,6 +426,8 @@ export function createChromeAppDeps(): AppDeps {
     loadLlmConnectionSettings,
     buildProvider: createProvider,
     resolveRateLimitPolicy,
+    // AI へ送る前の告知と同意（issue #381）。LLM を呼ぶ全サービスがこの deps を受け取る
+    ensureAiDataConsent: createChromeAiDataConsentGate(document),
   };
 }
 

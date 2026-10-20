@@ -95,8 +95,11 @@ async function initApp(
   await page.addInitScript(
     ({ pilot, documents, apiKey }) => {
       const win = window as unknown as Record<string, unknown>;
-      const stored: Record<string, unknown> =
-        apiKey === null ? {} : { 'secrets.geminiApiKey': apiKey };
+      // AI へ送る前の同意（issue #381）は同意済みにする（同意画面は app-ai-consent.spec.ts で検証）
+      const stored: Record<string, unknown> = {
+        aiDataConsent: { version: 1, acceptedAt: '2026-07-01T00:00:00.000Z' },
+        ...(apiKey === null ? {} : { 'secrets.geminiApiKey': apiKey }),
+      };
       win.chrome = {
         storage: {
           local: {
