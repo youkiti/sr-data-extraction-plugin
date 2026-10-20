@@ -7,6 +7,7 @@ import type { BuiltExport } from '../../features/export/buildExport';
 import { PREVIEW_ROW_LIMIT } from '../../features/export/buildExport';
 import {
   buildMethodsText,
+  usesRequestedModelIds,
   type MethodsLanguage,
   type MethodsWorkflow,
 } from '../../features/export/methodsBoilerplate';
@@ -298,7 +299,27 @@ function renderMethodsCard(exportState: ExportState, ctx: ViewContext): HTMLElem
     el('div', { className: 'export__methods-controls' }, [langGroup, workflowGroup]),
     textArea,
     copyButton,
+    // 記載例であること・版が今インストールしている版であることは常に示す（issue #381）
+    el('p', {
+      id: 'methods-caution-note',
+      className: 'export__methods-note',
+      text: t('export.methodsCautionNote'),
+    }),
+    el('p', {
+      id: 'methods-tool-version-note',
+      className: 'export__methods-note',
+      text: t('export.methodsToolVersionNote'),
+    }),
   ];
+  if (usesRequestedModelIds(facts)) {
+    children.push(
+      el('p', {
+        id: 'methods-requested-model-note',
+        className: 'export__methods-note',
+        text: t('export.methodsRequestedModelNote'),
+      }),
+    );
+  }
   if (unresolved.length > 0) {
     children.push(
       el('p', {

@@ -1089,6 +1089,12 @@ export const jaApp = {
   'export.methodsWorkflowDual': '二重独立',
   'export.methodsCopy': 'コピー',
   'export.methodsUnresolvedNote': '{{ }} の箇所はご自身の情報に置き換えてください',
+  'export.methodsCautionNote':
+    'これは記載例です。数値・人数・手順が実際と一致しているかを必ず確かめ、直してから使ってください。',
+  'export.methodsToolVersionNote':
+    'バージョンは、抽出したときの版ではなく、今インストールしている版です。',
+  'export.methodsRequestedModelNote':
+    'モデル名の一部は、API が返した実際の版ではなく、要求したモデル ID です。',
   'export.rsetFileRow': '{name}: {rows} 行',
   'export.rsetPreviewTitle': 'ma.csv プレビュー',
   'export.rsetUtf8Note':

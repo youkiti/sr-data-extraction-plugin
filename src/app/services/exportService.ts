@@ -4,8 +4,6 @@
 // 生成（未検証セル警告 → Drive `exports/` へ保存 → ExportLog 追記）を担う。
 // あわせて論文 Methods 記載例カード（docs/methods-boilerplate.md, issue #67）の実績値組み立てと
 // クリップボードコピーも担う
-import type { LlmProviderId } from '../../domain/llmApiLog';
-import type { DocumentRecord } from '../../domain/document';
 import { readQuoteSetRows } from '../../features/verification/quoteSetRepository';
 import { readCompletedRunMetas } from '../../features/extraction/runRepository';
 import { bundleEvidence } from '../../features/verification/evidenceBundles';
@@ -16,12 +14,10 @@ import { readStudies, resolveActiveStudies } from '../../features/documents/stud
 import { readResultsDataRows, readStudyDataSheet } from '../../features/extraction/annotationRepository';
 import { readEvidenceRows } from '../../features/extraction/evidenceRepository';
 import { readMethodsRunFacts, readRunAuditInfos } from '../../features/extraction/runRepository';
-import type { MethodsRunFact } from '../../features/extraction/runRepository';
 import { buildAllExports, type ClassicExportFormat } from '../../features/export/buildExport';
 import { appendExportLog } from '../../features/export/exportLogRepository';
 import {
   buildMethodsText,
-  type MethodsFacts,
   type MethodsLanguage,
   type MethodsWorkflow,
 } from '../../features/export/methodsBoilerplate';
@@ -33,12 +29,14 @@ import {
   type RSetManifestMeta,
   type RSetMaterials,
 } from '../../features/export/rset/buildRSet';
+import { buildMethodsFacts } from '../../features/export/methodsFacts';
 import { deriveReviewMode } from '../../features/export/rset/reviewMode';
 import { listSchemaVersions, getSchemaFieldsByVersion } from '../../features/schema/schemaRepository';
 import { hasChatAssistMarker } from '../../features/verification/chatAssist';
 import { readAllDecisions } from '../../features/verification/decisionRepository';
 import { readAllArmStructures } from '../../features/verification/armStructureRepository';
 import { ensureChildFolder, uploadTextFile } from '../../lib/google/drive';
+import { readLlmApiLogEntries } from '../../lib/llm/apiLogRepository';
 import { getCurrentUserEmail, type ProfileDeps } from '../../lib/google/identity';
 import type { GoogleApiDeps } from '../../lib/google/types';
 import { nowIso8601 } from '../../utils/iso8601';
@@ -90,85 +88,6 @@ function defaultGetToolVersion(): string | null {
   return null;
 }
 
-/** 配列の重複除去（出現順を維持） */
-function dedupe<T>(items: readonly T[]): T[] {
-  const seen = new Set<T>();
-  const result: T[] = [];
-  for (const item of items) {
-    if (!seen.has(item)) {
-      seen.add(item);
-      result.push(item);
-    }
-  }
-  return result;
-}
-
-/** provider の表示名変換（docs/methods-boilerplate.md §3: gemini → Gemini 等） */
-function providerDisplayName(provider: LlmProviderId): string {
-  if (provider === 'local_llm') {
-    return 'Local LLM';
-  }
-  if (provider === 'openrouter') {
-    return 'OpenRouter';
-  }
-  if (provider === 'openai_compatible') {
-    return 'OpenAI-compatible';
-  }
-  if (provider === 'anthropic') {
-    return 'Anthropic';
-  }
-  if (provider === 'azure_openai') {
-    return 'Azure OpenAI';
-  }
-  return 'Gemini';
-}
-
-/**
- * ExtractionRuns の完了行実績 + Documents から Methods 文案カードの MethodsFacts を組み立てる
- * （§3 プレースホルダ一覧: model_id / provider は run_type=full、n_pilot は run_type=pilot の
- * 対象 study 数、n_scanned は Documents.text_status の集計）
- */
-function buildMethodsFacts(
-  documents: readonly DocumentRecord[],
-  runFacts: readonly MethodsRunFact[],
-  toolVersion: string | null,
-  pilotRevisionCount: number,
-  chatAssistDecisionCount: number,
-): MethodsFacts {
-  const fullFacts = runFacts.filter((fact) => fact.runType === 'full');
-  const modelIds = dedupe(
-    fullFacts
-      .map((fact) => fact.modelVersion)
-      .filter((modelVersion): modelVersion is string => modelVersion !== null && modelVersion !== ''),
-  );
-  const providerIds = dedupe(
-    fullFacts
-      .map((fact) => fact.provider)
-      .filter((provider): provider is LlmProviderId => provider !== ('' as LlmProviderId)),
-  );
-  const pilotStudyIds = new Set<string>();
-  for (const fact of runFacts) {
-    if (fact.runType !== 'pilot') {
-      continue;
-    }
-    for (const studyId of fact.studyIds) {
-      pilotStudyIds.add(studyId);
-    }
-  }
-  const scannedDocumentCount = documents.filter(
-    (document) => document.textStatus === 'no_text_layer',
-  ).length;
-  return {
-    toolVersion,
-    modelIds,
-    providers: providerIds.map(providerDisplayName),
-    pilotStudyCount: pilotStudyIds.size,
-    scannedDocumentCount,
-    pilotRevisionCount,
-    chatAssistDecisionCount,
-  };
-}
-
 /** export スライスだけを差し替える setState ヘルパ（他スライスは維持） */
 function patchExport(store: Store, patch: Partial<ExportState>): void {
   store.setState({ export: { ...store.getState().export, ...patch } });
@@ -212,6 +131,7 @@ export async function loadExportData(
       methodsRunFacts,
       quoteSetRows,
       completedRuns,
+      llmApiLogs,
     ] = await Promise.all([
       readDocuments(spreadsheetId, deps.google),
       readStudies(spreadsheetId, deps.google),
@@ -225,6 +145,8 @@ export async function loadExportData(
       readMethodsRunFacts(spreadsheetId, deps.google),
       readQuoteSetRows(spreadsheetId, deps.google),
       readCompletedRunMetas(spreadsheetId, deps.google),
+      // Methods 文案の事前抽出の成否（[batch_failed]）とフォームの草案のモデル（draft_schema）
+      readLlmApiLogEntries(spreadsheetId, deps.google),
     ]);
     const latest = versions[0]; // listSchemaVersions は降順
     if (latest === undefined) {
@@ -249,13 +171,6 @@ export async function loadExportData(
       fields,
     });
     const toolVersion = (deps.getToolVersion ?? defaultGetToolVersion)();
-    const methodsFacts = buildMethodsFacts(
-      documents,
-      methodsRunFacts,
-      toolVersion,
-      versions.filter((version) => version.createdByType === 'pilot_revision').length,
-      decisions.filter((decision) => hasChatAssistMarker(decision.note)).length,
-    );
 
     // R セット（issue #60）。素材は generateExport が正確な exported_at で再構築できるよう保持し、
     // ここでの構築結果はサマリ・プレビュー表示専用（rSetMaterials 参照。design-r-export.md §13）
@@ -275,6 +190,18 @@ export async function loadExportData(
       reviewMode: deriveReviewMode(studySheet.rows, resultsRows),
     };
     const rSet = buildRSet(rSetMaterials, rSetMeta);
+    // Methods 文案カードの実績値（docs/methods-boilerplate.md §3。記録に合う文だけを出すための素材）
+    const methodsFacts = buildMethodsFacts({
+      toolVersion,
+      activeStudyIds: studies.map((study) => study.studyId),
+      documents,
+      runFacts: methodsRunFacts,
+      logs: llmApiLogs,
+      versions,
+      chatAssistDecisionCount: decisions.filter((decision) => hasChatAssistMarker(decision.note)).length,
+      unverifiedCellCount: countRSetUnverifiedCells(rSet),
+      annotationRows: [...studySheet.rows, ...resultsRows],
+    });
 
     patchExport(store, {
       loading: false,
@@ -283,6 +210,11 @@ export async function loadExportData(
       rSet,
       schemaVersion: latest.schemaVersion,
       methodsFacts,
+      // ワークフローの初期値は記録（R セットの review_mode と同じ導出）から決める。
+      // 再読み込みではユーザーが切り替えた値を上書きしない（docs/methods-boilerplate.md §4）
+      ...(state.export.methodsFacts === null
+        ? { methodsWorkflow: rSetMeta.reviewMode.startsWith('dual_') ? 'dual' : 'single' }
+        : {}),
     });
   } catch (err) {
     patchExport(store, { loading: false, loadError: toMessage(err) });
