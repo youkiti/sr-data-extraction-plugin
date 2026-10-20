@@ -1625,7 +1625,10 @@ test('スキャン PDF（no_text_layer）: AI 推定 bbox ハイライト → �
   await highlight.click();
   await expect(page.locator('#verify-focus-detail .verify__cell-label')).toHaveText('死亡率');
 
-  // (e) 承認 → Decisions への append が記録される
+  // (e) 承認 → Decisions への append が記録される。スキャン PDF は引用を本文と照合できないため、
+  // 1 回目の承認は注意を出すだけで、もう一度承認すると確定する（issue #381）
+  await page.locator('#verify-focus-detail .verify__action--accept').click();
+  await expect(page.locator('#verify-focus-detail .verify__unanchored-warning')).toContainText('スキャン PDF');
   await page.locator('#verify-focus-detail .verify__action--accept').click();
   await expect(page.locator('#verify-focus-detail .verify__chip')).toHaveText('承認');
   await expect

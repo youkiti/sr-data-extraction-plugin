@@ -852,10 +852,15 @@ describe('readMethodsRunFacts', () => {
     ];
     const facts = await readMethodsRunFacts('sheet-1', readDeps(values));
     expect(facts[0]).toEqual({
+      runId: 'run-1',
       runType: 'pilot',
+      status: 'done',
       provider: 'openrouter',
+      requestedModel: 'gemini-test',
       modelVersion: 'gpt-test',
       studyIds: ['study-a', 'study-b'],
+      fieldIds: null,
+      startedAt: null,
     });
   });
 
@@ -873,6 +878,23 @@ describe('readMethodsRunFacts', () => {
     const values = [[...SHEET_HEADERS.ExtractionRuns], sparse];
     const facts = await readMethodsRunFacts('sheet-1', readDeps(values));
     expect(facts[0]).toMatchObject({ runType: '', provider: '' });
+  });
+
+  test('run_id / requested_model の null セルは空文字列、field_ids / started_at は列から読む', async () => {
+    const raw: (string | null)[] = [
+      null, 'full', '1', 'study-1', 'gemini', null, null, 'text_only', 'partial_failure',
+      '2026-07-01T00:00:00.000Z', '2026-07-01T00:10:00.000Z', null, null, null, 'f1,f2',
+    ];
+    const values = [[...SHEET_HEADERS.ExtractionRuns], raw];
+    const facts = await readMethodsRunFacts('sheet-1', readDeps(values));
+    expect(facts[0]).toMatchObject({
+      runId: '',
+      status: 'partial_failure',
+      requestedModel: '',
+      modelVersion: null,
+      fieldIds: ['f1', 'f2'],
+      startedAt: '2026-07-01T00:00:00.000Z',
+    });
   });
 
   test('status セル自体が null（未完了扱い）の行は除外する', async () => {

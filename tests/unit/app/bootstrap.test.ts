@@ -3990,12 +3990,25 @@ describe('bootstrapApp: #/export', () => {
         schemaVersion: 2,
         methodsFacts: {
           toolVersion: '1.2.3',
+          aiDraft: false,
+          draftModelIds: [],
+          draftProviders: [],
           modelIds: ['gemini-3.5-flash-001'],
+          modelIdsIncludeRequested: false,
           providers: ['Gemini'],
+          includedStudyCount: 3,
+          extractedStudyCount: 3,
+          partialStudyCount: 0,
           pilotStudyCount: 3,
+          revisedAfterPilot: false,
+          formRevisionCount: 0,
           scannedDocumentCount: 0,
           pilotRevisionCount: 0,
           chatAssistDecisionCount: 0,
+          unverifiedCellCount: 0,
+          humanWithAiAnnotatorCount: 2,
+          humanIndependentAnnotatorCount: 0,
+          hasConsensus: true,
         },
       }),
     );
@@ -4119,6 +4132,7 @@ describe('bootstrapApp: #/adjudicate', () => {
     schemaVersionA: 1,
     schemaVersionB: 1,
     matches: false,
+    bothEmpty: false,
     schemaVersionMismatch: false,
     noteA: null,
     noteB: null,
@@ -4392,6 +4406,7 @@ describe('bootstrapApp: #/adjudicate', () => {
         rows: [],
         agreement: {
           studyCount: 1,
+          incompleteStudyCount: 0,
           fields: [
             {
               fieldId: 'f-1',

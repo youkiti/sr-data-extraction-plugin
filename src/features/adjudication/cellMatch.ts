@@ -2,6 +2,7 @@
 // 素材は StudyData / ResultsData の両 annotator 行の「現在値」（判定履歴ではない）。
 // セル集合は両者の entity_key × field_id の和集合。片側にしかないセルは相手側「未入力」として
 // 不一致扱いになる。一致判定は複数選択を正準化してから trim 後の完全一致（NR 同士も一致）。
+// 両者とも空（未入力・空値）のセルは比べられないため一致に数えず、bothEmpty で区別する（issue #381）。
 // schema_version が両行で異なるセルは警告フラグを立てるがブロックしない（Q-d）
 import { NOT_REPORTED_TOKEN, type ResultsDataRow, type StudyDataRow } from '../../domain/annotation';
 import type { Decision } from '../../domain/decision';
@@ -22,8 +23,13 @@ export interface AdjudicationCell {
   valueB: string | null;
   schemaVersionA: number | null;
   schemaVersionB: number | null;
-  /** 複数選択は正準化し、trim 後の完全文字列一致 */
+  /** 複数選択は正準化し、trim 後の完全文字列一致。両者とも空のセルは比べられないため false */
   matches: boolean;
+  /**
+   * 両者とも空（未入力・空値。trim 後に空文字）で比べられないセル（issue #381）。
+   * 一致の件数・一括採用・一致度の統計には入れず、裁定者が見るべきセルとして不一致側に表示する
+   */
+  bothEmpty: boolean;
   /** 両行が存在し、かつ schema_version が異なる */
   schemaVersionMismatch: boolean;
   /**
@@ -101,6 +107,9 @@ function makeCell(
   decisionsA: readonly Decision[],
   decisionsB: readonly Decision[],
 ): AdjudicationCell {
+  const a = normalize(canonicalizeMultiSelectValue(field, valueA));
+  const b = normalize(canonicalizeMultiSelectValue(field, valueB));
+  const bothEmpty = a === '' && b === '';
   return {
     cellKey: cellKeyOf(field.fieldId, entityKey),
     field,
@@ -109,7 +118,8 @@ function makeCell(
     valueB,
     schemaVersionA,
     schemaVersionB,
-    matches: normalize(canonicalizeMultiSelectValue(field, valueA)) === normalize(canonicalizeMultiSelectValue(field, valueB)),
+    matches: !bothEmpty && a === b,
+    bothEmpty,
     schemaVersionMismatch:
       schemaVersionA !== null && schemaVersionB !== null && schemaVersionA !== schemaVersionB,
     noteA: latestNoteFor(decisionsA, field.fieldId, entityKey),

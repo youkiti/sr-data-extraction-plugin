@@ -296,7 +296,7 @@ describe('renderVerificationForm', () => {
     expect(root.querySelector('.verify__badge--confidence-high')?.textContent).toBe(
       'confidence: high',
     );
-    expect(root.querySelector('.verify__badge--anchor-exact')?.textContent).toBe('anchor: exact');
+    expect(root.querySelector('.verify__badge--anchor-exact')?.textContent).toBe('本文と一致');
   });
 
   test('not_reported な AI 値は「未報告（NR）」、値なしは「（値なし）」', () => {

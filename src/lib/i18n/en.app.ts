@@ -92,11 +92,13 @@ export const enApp: Record<keyof typeof jaApp, string> = {
   'pilot.matrixSortMisses': 'Most misses first',
   'pilot.matrixField': 'Field',
   'pilot.matrixMisses': 'Misses',
-  'pilot.matrixStudies': 'Studies with misses',
+  'pilot.matrixStudies': 'Studies with misses / reviewed studies',
+  'pilot.matrixPendingStudies': 'Studies not yet reviewed',
   'pilot.matrixPrevious': 'Previous',
   'pilot.matrixCompareNote': 'The previous and current pilots use different studies. Differences in proportions also reflect differences between studies.',
   'pilot.matrixCompareError': 'Could not load the previous comparison: {reason}',
-  'pilot.matrixEntityRatio': '{misses} misses / {total} entities',
+  'pilot.matrixEntityRatio': '{misses} misses / {total} reviewed, {pending} not yet reviewed',
+  'pilot.matrixEntityCell': '{misses}/{judged} ({pending} not reviewed)',
   'pilot.matrixImproved': 'Improved',
   'pilot.matrixWorsened': 'Worsened',
   'pilot.matrixUnchanged': 'Unchanged',
@@ -269,7 +271,7 @@ export const enApp: Record<keyof typeof jaApp, string> = {
   // S3 文献取り込み
   'documents.title': 'Document import & grouping',
   'documents.notice':
-    'Imported PDFs are sent externally only as extraction requests to the LLM API.',
+    "When you use the AI features, the text of imported PDFs (page images for scanned PDFs) is sent to the LLM API you configured. The only other external destination is your own Google Drive / Sheets. Check the publisher's terms of use and the provider's terms.",
   'documents.lead':
     'Import the PDFs of included articles. Choose them from Drive, or drag & drop / select PDFs from this PC. Selecting a folder imports the PDFs directly under it, and multiple documents of the same study can be grouped afterwards with "Merge".',
   'documents.importDrive': 'Choose PDFs / a folder from Drive',
@@ -991,6 +993,13 @@ export const enApp: Record<keyof typeof jaApp, string> = {
   'verify.quoteNotLocated': 'Could not be located',
   'verify.cycleMatch': '{others} other matches ({index} / {total})',
   'verify.unanchored': 'Cannot locate the highlight',
+  'verify.anchorMatched': 'Matches the text',
+  'verify.anchorFuzzy': 'Roughly matches the text (check it)',
+  'verify.anchorFailed': 'Not found in the text',
+  'verify.unanchoredAcceptFailed':
+    'Caution: the quote was not found in the PDF text. Check the value in the PDF, then press Accept (a) again.',
+  'verify.unanchoredAcceptUnchecked':
+    'Caution: this is a scanned PDF, so the quote could not be checked against the PDF text. Check the value in the PDF, then press Accept (a) again.',
   'verify.searchInText': 'Search the text',
   'verify.relocate': 'Relocate with AI',
   'verify.relocating': 'Relocating with AI…',
@@ -1109,6 +1118,12 @@ export const enApp: Record<keyof typeof jaApp, string> = {
   'export.methodsWorkflowDual': 'Dual independent',
   'export.methodsCopy': 'Copy',
   'export.methodsUnresolvedNote': 'Replace the {{ }} placeholders with your own information',
+  'export.methodsCautionNote':
+    'This is an example text. Always check that the numbers, people, and procedures match what you actually did, and edit it before use.',
+  'export.methodsToolVersionNote':
+    'The version is the one installed now, not the one used at the time of extraction.',
+  'export.methodsRequestedModelNote':
+    'Some model names are the model IDs that were requested, not the actual versions returned by the API.',
   'export.rsetFileRow': '{name}: {rows} rows',
   'export.rsetPreviewTitle': 'ma.csv preview',
   'export.rsetUtf8Note':
@@ -1135,6 +1150,7 @@ export const enApp: Record<keyof typeof jaApp, string> = {
     'Review human disagreements and confirm them as consensus rows (matching cells can be adopted in bulk).',
   'adjudicate.chipMatch': 'Match',
   'adjudicate.chipMismatch': 'Mismatch',
+  'adjudicate.chipBothEmpty': 'Both empty',
   'adjudicate.chipAccept': 'Adjudicated (adopted)',
   'adjudicate.chipEdit': 'Adjudicated (edited)',
   'adjudicate.chipReject': 'Adjudicated (rejected)',
@@ -1187,7 +1203,7 @@ export const enApp: Record<keyof typeof jaApp, string> = {
   'adjudicate.filterMismatch': 'Show mismatches only',
   'adjudicate.bulkAccept': 'Adopt all matching cells',
   'adjudicate.cellsEmpty': 'No cells to show.',
-  'adjudicate.summaryLine': '{match} matching / {mismatch} mismatching',
+  'adjudicate.summaryLine': '{match} matching / {mismatch} mismatching / {empty} empty on both sides (not comparable)',
   'adjudicate.headSection': 'Group',
   'adjudicate.headField': 'Field',
   'adjudicate.headState': 'State',
@@ -1208,9 +1224,11 @@ export const enApp: Record<keyof typeof jaApp, string> = {
   'adjudicate.agreementCsvDisagreements': 'Save disagreements as CSV',
   'adjudicate.disagreementsTitle': 'Disagreement cells',
   'adjudicate.disagreementsEmpty': 'No disagreement cells.',
+  'adjudicate.noComparableCells': 'No cells to compare (no cell has values from both reviewers).',
+  'adjudicate.agreementIncomplete': '{n} studies where the two reviewers have not both finished verification are excluded from the agreement.',
   'adjudicate.valueMissing': 'not entered',
   'adjudicate.agreementNote1':
-    'Only cells entered by both reviewers count towards the agreement rate and κ. Cells entered by only one side appear in the disagreement list but are excluded from the statistics (cells, agreement, κ).',
+    'Only cells entered by both reviewers count towards the agreement rate and κ. Cells entered by only one side appear in the disagreement list but are excluded from the statistics (cells, agreement, κ). Cells empty on both sides cannot be compared, so they appear in neither the statistics nor the disagreement list.',
   'adjudicate.agreementNote2':
     'A κ of "—" means κ is undefined for the field (e.g. both reviewers used a single category). The agreement rate is still informative unless it is "—".',
   'adjudicate.loadError': 'Failed to load adjudication targets: {reason}',

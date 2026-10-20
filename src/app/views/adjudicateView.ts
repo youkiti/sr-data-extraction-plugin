@@ -40,12 +40,13 @@ import { renderMultiEnumChoiceEditor } from './multiEnumChoiceEditor';
 import { formatMultiSelectForDisplay } from '../../domain/multiSelect';
 import type { ViewContext } from './types';
 
-type ChipStatus = 'match' | 'mismatch' | 'accept' | 'edit' | 'reject' | 'not_reported' | 'skipped';
+type ChipStatus = 'match' | 'mismatch' | 'empty' | 'accept' | 'edit' | 'reject' | 'not_reported' | 'skipped';
 
 // 表示言語に追従させるため、ラベルは描画時に t() で解決する（キー対応表のみ固定。issue #93）
 const CHIP_LABEL_KEYS: Record<ChipStatus, MessageKey> = {
   match: 'adjudicate.chipMatch',
   mismatch: 'adjudicate.chipMismatch',
+  empty: 'adjudicate.chipBothEmpty',
   accept: 'adjudicate.chipAccept',
   edit: 'adjudicate.chipEdit',
   reject: 'adjudicate.chipReject',
@@ -63,6 +64,9 @@ function chipStatus(cell: AdjudicationCell, consensusState: CellState, skipped: 
   }
   if (consensusState.status !== 'unverified') {
     return consensusState.status;
+  }
+  if (cell.bothEmpty) {
+    return 'empty';
   }
   return cell.matches ? 'match' : 'mismatch';
 }
@@ -574,8 +578,12 @@ function renderCellSection(state: AppState, ctx: ViewContext, working: Adjudicat
   };
   const mismatchOnly = state.adjudicate.mismatchOnlyFilter;
   const armLocked = working.needsArmConfirmation && working.consensusArmStructure === null;
+  // 両者とも空のセルは比べられないため一致にも不一致にも数えず、件数を別に出す（issue #381）。
+  // 裁定者が見るべきセルとして「不一致のみ表示」では表示する（一括採用の対象外のため、
+  // 隠すと個別の裁定〔未報告・第 3 の値・スキップ〕の機会がなくなる）
   const matchCount = working.cells.filter((cell) => cell.matches).length;
-  const mismatchCount = working.cells.length - matchCount;
+  const bothEmptyCount = working.cells.filter((cell) => cell.bothEmpty).length;
+  const mismatchCount = working.cells.length - matchCount - bothEmptyCount;
 
   const filterCheckbox = el('input', {
     id: 'adjudicate-filter-mismatch',
@@ -637,7 +645,7 @@ function renderCellSection(state: AppState, ctx: ViewContext, working: Adjudicat
       ]),
       el('p', {
         id: 'adjudicate-summary',
-        text: t('adjudicate.summaryLine', { match: matchCount, mismatch: mismatchCount }),
+        text: t('adjudicate.summaryLine', { match: matchCount, mismatch: mismatchCount, empty: bothEmptyCount }),
       }),
       body,
     ]),
@@ -716,7 +724,13 @@ function renderAgreementFieldRow(field: FieldAgreement): HTMLElement {
   return el('tr', {}, [
     el('td', { text: field.fieldLabel }),
     el('td', { text: String(field.pairCount) }),
-    el('td', { text: `${field.agreementCount} (${formatAgreementPercent(field.agreementRate)})` }),
+    // 比べたセルが 0 件の項目は一致数も「—」にする（0 件一致と読めないように。issue #381）
+    el('td', {
+      text:
+        field.pairCount === 0
+          ? '—'
+          : `${field.agreementCount} (${formatAgreementPercent(field.agreementRate)})`,
+    }),
     el('td', { text: formatKappa(field.kappa) }),
   ]);
 }
@@ -731,9 +745,14 @@ function renderAgreementDisagreementRow(item: AgreementDisagreement): HTMLElemen
   ]);
 }
 
-function renderAgreementDisagreements(disagreements: readonly AgreementDisagreement[]): HTMLElement {
+function renderAgreementDisagreements(report: AgreementReport): HTMLElement {
+  const { disagreements } = report;
   if (disagreements.length === 0) {
-    return el('p', { id: 'agreement-disagreements-empty', text: t('adjudicate.disagreementsEmpty') });
+    // 比べたセルが 0 件なら「不一致なし」ではなく「比べられるセルがない」と出す（issue #381）
+    return el('p', {
+      id: 'agreement-disagreements-empty',
+      text: t(report.overall.pairCount === 0 ? 'adjudicate.noComparableCells' : 'adjudicate.disagreementsEmpty'),
+    });
   }
   return el('div', { id: 'agreement-disagreements', className: 'adjudicate__agreement-disagreements' }, [
     el('table', {}, [
@@ -786,7 +805,7 @@ function renderAgreementResult(report: AgreementReport, ctx: ViewContext): HTMLE
       el('tbody', {}, report.fields.map(renderAgreementFieldRow)),
     ]),
     el('h4', { text: t('adjudicate.disagreementsTitle') }),
-    renderAgreementDisagreements(report.disagreements),
+    renderAgreementDisagreements(report),
     el('div', { className: 'adjudicate__agreement-actions' }, [summaryCsvButton, disagreementsCsvButton]),
     el('p', {
       className: 'adjudicate__agreement-note',
@@ -816,6 +835,14 @@ function renderAgreementCard(state: AppState, ctx: ViewContext): HTMLElement {
         id: 'adjudicate-agreement-outside',
         className: 'view__notice',
         text: t('adjudicate.agreementOutside', { n: adjudicate.agreementOutsideCount }),
+      }),
+    );
+  if (adjudicate.agreement !== null && adjudicate.agreement.incompleteStudyCount > 0)
+    children.push(
+      el('p', {
+        id: 'adjudicate-agreement-incomplete',
+        className: 'view__notice',
+        text: t('adjudicate.agreementIncomplete', { n: adjudicate.agreement.incompleteStudyCount }),
       }),
     );
   if (adjudicate.calibrationAgreement !== null && adjudicate.calibrationAgreement.length > 0) {

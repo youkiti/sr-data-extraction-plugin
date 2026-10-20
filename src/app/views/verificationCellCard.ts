@@ -5,6 +5,7 @@
 // CellCardHandlers）を公開する — VerificationFormModel / VerificationFormHandlers は
 // フィールドを維持したまま構造的にこの部分型を満たすため、呼び出し側の変更は不要
 import type { CellQuote, ResolvedCellQuotes } from '../../domain/quoteSet';
+import type { AnchorStatus } from '../../domain/anchor';
 import type { Evidence } from '../../domain/evidence';
 import { NOT_REPORTED_TOKEN } from '../../domain/annotation';
 import { formatMultiSelectForDisplay, isMultiSelectField, splitPipeList } from '../../domain/multiSelect';
@@ -17,6 +18,7 @@ import {
   renderMermaid,
 } from '../../features/verification/mermaidPreview';
 import type { RobAlgorithmInfo } from '../../features/verification/robAlgorithm';
+import type { UnanchoredReason } from '../../features/verification/unanchoredAccept';
 import { collectOtherValues } from '../../features/verification/enumOptions';
 import { t, type MessageKey } from '../../lib/i18n';
 import { el } from '../ui/dom';
@@ -93,6 +95,12 @@ export interface CellCardModel {
    * 省略時 false = 導線を出さない（フェイルセーフ）
    */
   canEditSchema?: boolean;
+  /**
+   * 照合できなかった引用のセルで 1 回目の accept を受けたときの警告（issue #381）。
+   * 対象セルと理由。もう一度 accept すると確定する。別のセルへ移る・他の判定で消える。
+   * 省略時 null = 警告なし
+   */
+  unanchoredAcceptWarning?: { cellKey: string; reason: UnanchoredReason } | null;
 }
 
 /** renderCell が実際に呼び出す最小のハンドラ集合 */
@@ -136,6 +144,14 @@ const STATUS_LABEL_KEYS: Record<CellStatus, MessageKey> = {
   not_reported: 'verify.statusNotReported',
 };
 
+// 照合状態のバッジ（issue #381）。exact / normalized はどちらも「本文と一致」として同じ表示にする
+const ANCHOR_LABEL_KEYS: Record<AnchorStatus, MessageKey> = {
+  exact: 'verify.anchorMatched',
+  normalized: 'verify.anchorMatched',
+  fuzzy: 'verify.anchorFuzzy',
+  failed: 'verify.anchorFailed',
+};
+
 export function renderStatusChip(status: CellStatus): HTMLElement {
   return el('span', {
     className: `verify__chip verify__chip--${status}`,
@@ -168,7 +184,7 @@ function renderAiSummary(cell: VerificationCell): HTMLElement {
     parts.push(
       el('span', {
         className: `verify__badge verify__badge--anchor-${evidence.anchorStatus}`,
-        text: `anchor: ${evidence.anchorStatus}`,
+        text: t(ANCHOR_LABEL_KEYS[evidence.anchorStatus]),
       }),
     );
   }
@@ -865,6 +881,14 @@ export function renderCell(
   if (model.editing !== null && model.editing.cellKey === cell.cellKey) {
     children.push(renderEditor(cell, model.editing.action, handlers, mode, model));
   } else {
+    const warning = model.unanchoredAcceptWarning;
+    if (warning != null && warning.cellKey === cell.cellKey) {
+      children.push(el('p', {
+        className: 'verify__unanchored-warning',
+        attributes: { role: 'alert' },
+        text: t(warning.reason === 'failed' ? 'verify.unanchoredAcceptFailed' : 'verify.unanchoredAcceptUnchecked'),
+      }));
+    }
     children.push(renderActions(cell, handlers, mode, model));
   }
   const node = el('div', { className: 'verify__cell', attributes: { tabindex: '-1' } }, children);

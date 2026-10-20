@@ -268,7 +268,7 @@ describe('renderDocumentsView', () => {
     const { ctx } = makeCtx();
     const view = renderDocumentsView(makeState(), ctx);
     expect(view.textContent).toContain(
-      '取り込んだ PDF が外部へ送信されるのは LLM API への抽出リクエストのみです',
+      '取り込んだ PDF の本文（スキャン PDF はページ画像）は、AI 機能を使うときに、設定した LLM API へ送られます',
     );
   });
 
@@ -1392,7 +1392,7 @@ describe('renderDocumentsView（表示言語 en。issue #93）', () => {
     );
     expect(view.querySelector('h2')?.textContent).toBe('Document import & grouping');
     expect(view.textContent).toContain(
-      'Imported PDFs are sent externally only as extraction requests to the LLM API.',
+      "When you use the AI features, the text of imported PDFs (page images for scanned PDFs) is sent to the LLM API you configured. The only other external destination is your own Google Drive / Sheets. Check the publisher's terms of use and the provider's terms.",
     );
     expect(view.querySelector('#documents-import')?.textContent).toBe(
       'Choose PDFs / a folder from Drive',

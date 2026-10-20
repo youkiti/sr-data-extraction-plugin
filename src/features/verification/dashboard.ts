@@ -17,10 +17,11 @@ export interface RateCount {
 /**
  * AI 精度の内訳（人の判定 = AI 出力への変更）。undo 反映後の現在セル状態基準で、
  * 判定済みセルを人の判定種別で分類する。未検証セルは母数に含めない。
- * - accept: AI 値を無修正で承認（AI 正解）
+ * - accept: AI 値を無修正で承認（AI 正解）。AI も「報告なし」と出していたセルを人が not_reported と
+ *   判定した場合も AI と一致としてここに数える（issue #381）
  * - edit: 人が AI 値を書き換え（AI 不正確）
  * - reject: 棄却（AI 誤り）
- * - notReported: 人が「報告なし」と判定（AI の過剰抽出）
+ * - notReported: AI が値を出していたセルを人が「報告なし」と判定（AI の過剰抽出）
  * 採用率 = accept / decided（率表示は view 側）
  */
 export interface AccuracyBreakdown {
@@ -173,7 +174,13 @@ function buildRow(
       if (isAiAccuracyEligible(cell, runStartedAt)) {
         accuracy.decided += 1;
         if (status === 'not_reported') {
-          accuracy.notReported += 1;
+          // AI も「報告なし」と出していたセルを人が not_reported と判定したのは AI と一致（承認に数える。
+          // パイロット行列の NR✓ と同じ扱い。issue #381）。AI が値を出していた場合だけ過剰抽出側に数える
+          if ((cell.evidence as Evidence).notReported) {
+            accuracy.accept += 1;
+          } else {
+            accuracy.notReported += 1;
+          }
         } else {
           // status は accept / edit / reject のいずれか
           accuracy[status] += 1;

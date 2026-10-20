@@ -122,7 +122,7 @@ function evidence(overrides: Partial<Evidence> = {}): Evidence {
 }
 
 describe('buildAdjudicationCells', () => {
-  test('study レベルは全項目を無条件で 1 セルとして比較する（両側とも行が無ければ両方 null = 一致）', () => {
+  test('study レベルは全項目を無条件で 1 セルとして比較する（両側とも行が無ければ両方 null = 比べられない）', () => {
     const cells = buildAdjudicationCells([field()], null, null, [], []);
     expect(cells).toEqual([
       {
@@ -133,12 +133,32 @@ describe('buildAdjudicationCells', () => {
         valueB: null,
         schemaVersionA: null,
         schemaVersionB: null,
-        matches: true,
+        matches: false,
+        bothEmpty: true,
         schemaVersionMismatch: false,
         noteA: null,
         noteB: null,
       },
     ]);
+  });
+
+  test('両者とも空値（空白のみを含む）のセルは一致に数えず bothEmpty にする（issue #381）', () => {
+    const cells = buildAdjudicationCells(
+      [field()],
+      studyRow({ values: { sample_size: ' ' } }),
+      studyRow({ values: { sample_size: null } }),
+      [],
+      [],
+    );
+    expect(cells[0]).toMatchObject({ matches: false, bothEmpty: true });
+    const filled = buildAdjudicationCells(
+      [field()],
+      studyRow({ values: { sample_size: '120' } }),
+      studyRow({ values: { sample_size: null } }),
+      [],
+      [],
+    );
+    expect(filled[0]).toMatchObject({ matches: false, bothEmpty: false });
   });
 
   test('study レベルの値が trim 後に一致すれば matches=true', () => {

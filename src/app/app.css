@@ -2403,9 +2403,16 @@ section.documents__tiab {
   color: var(--color-danger);
 }
 
+/* fuzzy は failed より弱い注意（文字色は通常のまま。issue #381） */
+.verify__badge--anchor-fuzzy {
+  background: var(--color-warning-bg);
+  border-color: var(--color-warning-border);
+}
+
 /* 決定論的な数値整合性チェック（issue #65）: セル詳細（リストモードのセルカード /
    フォーカスモードの詳細ストリップ）の警告一覧。判定操作は増やさない情報提示のみ */
-.verify__consistency-warnings {
+.verify__consistency-warnings,
+.verify__unanchored-warning {
   margin: 6px 0;
   padding: 6px 10px;
   border-radius: 6px;
@@ -4019,7 +4026,8 @@ section.documents__tiab {
   border-color: #ea4335;
 }
 
-.adjudicate__chip--edit {
+.adjudicate__chip--edit,
+.adjudicate__chip--empty {
   background: #fef7e0;
   color: #8a4b00;
   border-color: #fbbc04;

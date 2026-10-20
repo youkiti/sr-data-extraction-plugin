@@ -90,11 +90,13 @@ export const jaApp = {
   'pilot.matrixSortMisses': '外れが多い順',
   'pilot.matrixField': '項目',
   'pilot.matrixMisses': '外れ数',
-  'pilot.matrixStudies': '外れた論文',
+  'pilot.matrixStudies': '外れた論文 / 判定済みの論文',
+  'pilot.matrixPendingStudies': '未判定の論文',
   'pilot.matrixPrevious': '前回',
   'pilot.matrixCompareNote': '前回と今回で対象の論文が違います。割合の差には論文の違いも含まれます',
   'pilot.matrixCompareError': '前回の比較を読み込めませんでした: {reason}',
-  'pilot.matrixEntityRatio': '外れ {misses} / 判定対象 {total}',
+  'pilot.matrixEntityRatio': '外れ {misses} / 判定済み {total}・未判定 {pending}',
+  'pilot.matrixEntityCell': '{misses}/{judged}（未判定 {pending}）',
   'pilot.matrixImproved': '改善',
   'pilot.matrixWorsened': '悪化',
   'pilot.matrixUnchanged': '変化なし',
@@ -263,7 +265,8 @@ export const jaApp = {
 
   // S3 文献取り込み（documentsView.ts）
   'documents.title': '文献取り込み・グルーピング',
-  'documents.notice': '取り込んだ PDF が外部へ送信されるのは LLM API への抽出リクエストのみです。',
+  'documents.notice':
+    '取り込んだ PDF の本文（スキャン PDF はページ画像）は、AI 機能を使うときに、設定した LLM API へ送られます。それ以外の外部送信先は、あなたの Google Drive / Sheets だけです。出版社の利用条件と送信先の規約を確かめてください。',
   'documents.lead':
     '採用論文の PDF を取り込みます。Drive から選択するか、この PC から PDF をドラッグ&ドロップ / ファイル選択できます。フォルダを選ぶと直下の PDF をまとめて取り込み、同一試験の複数文書は取り込み後に「統合」でまとめられます。',
   'documents.importDrive': 'Drive から PDF / フォルダを選択',
@@ -975,6 +978,13 @@ export const jaApp = {
   'verify.quoteNotLocated': '照合できませんでした',
   'verify.cycleMatch': '他 {others} 箇所に一致（{index} / {total}）',
   'verify.unanchored': 'ハイライト位置を特定できません',
+  'verify.anchorMatched': '本文と一致',
+  'verify.anchorFuzzy': '本文とおおむね一致（要確認）',
+  'verify.anchorFailed': '本文で見つからない',
+  'verify.unanchoredAcceptFailed':
+    '注意: 引用が PDF の本文で見つかっていません。PDF で値を確かめてから、もう一度 承認 (a) してください。',
+  'verify.unanchoredAcceptUnchecked':
+    '注意: スキャン PDF のため、引用を PDF の本文と照合できていません。PDF で値を確かめてから、もう一度 承認 (a) してください。',
   'verify.searchInText': '本文内を検索',
   'verify.relocate': 'AI で再特定',
   'verify.relocating': 'AI で再特定中…',
@@ -1088,6 +1098,12 @@ export const jaApp = {
   'export.methodsWorkflowDual': '二重独立',
   'export.methodsCopy': 'コピー',
   'export.methodsUnresolvedNote': '{{ }} の箇所はご自身の情報に置き換えてください',
+  'export.methodsCautionNote':
+    'これは記載例です。数値・人数・手順が実際と一致しているかを必ず確かめ、直してから使ってください。',
+  'export.methodsToolVersionNote':
+    'バージョンは、抽出したときの版ではなく、今インストールしている版です。',
+  'export.methodsRequestedModelNote':
+    'モデル名の一部は、API が返した実際の版ではなく、要求したモデル ID です。',
   'export.rsetFileRow': '{name}: {rows} 行',
   'export.rsetPreviewTitle': 'ma.csv プレビュー',
   'export.rsetUtf8Note':
@@ -1114,6 +1130,7 @@ export const jaApp = {
     'ヒトの不一致をレビューし、consensus 行として確定します（一致セルは一括採用できます）。',
   'adjudicate.chipMatch': '一致',
   'adjudicate.chipMismatch': '不一致',
+  'adjudicate.chipBothEmpty': '両者とも未入力',
   'adjudicate.chipAccept': '裁定済み（採用）',
   'adjudicate.chipEdit': '裁定済み（編集）',
   'adjudicate.chipReject': '裁定済み（棄却）',
@@ -1166,7 +1183,7 @@ export const jaApp = {
   'adjudicate.filterMismatch': '不一致のみ表示',
   'adjudicate.bulkAccept': '一致セルを一括採用',
   'adjudicate.cellsEmpty': '表示するセルがありません。',
-  'adjudicate.summaryLine': '一致 {match} 件 / 不一致 {mismatch} 件',
+  'adjudicate.summaryLine': '一致 {match} 件 / 不一致 {mismatch} 件 / 両者とも未入力（比べられない） {empty} 件',
   'adjudicate.headSection': '区分',
   'adjudicate.headField': '項目',
   'adjudicate.headState': '状態',
@@ -1187,9 +1204,11 @@ export const jaApp = {
   'adjudicate.agreementCsvDisagreements': '不一致一覧を CSV 保存',
   'adjudicate.disagreementsTitle': '不一致セル一覧',
   'adjudicate.disagreementsEmpty': '不一致セルはありません。',
+  'adjudicate.noComparableCells': '比べられるセルがありません（2 名とも値を入れたセルがありません）。',
+  'adjudicate.agreementIncomplete': '2 名の検証が終わっていない研究 {n} 件は、一致度の対象から外しています。',
   'adjudicate.valueMissing': '未入力',
   'adjudicate.agreementNote1':
-    '両者が入力済みのセルのみを一致率・κ の対象にしています。片側未入力のセルは不一致一覧に含みますが、統計（対象セル・一致・κ）からは除外します。',
+    '両者が入力済みのセルのみを一致率・κ の対象にしています。片側未入力のセルは不一致一覧に含みますが、統計（対象セル・一致・κ）からは除外します。両者とも空のセルは比べられないため、統計にも不一致一覧にも入れません。',
   'adjudicate.agreementNote2':
     'κ が「—」の項目は、両者の値が単一カテゴリのみ等の理由で κ を定義できないことを示します（一致率は「—」でない限り参考にできます）。',
   'adjudicate.loadError': '裁定対象を読み込めませんでした: {reason}',

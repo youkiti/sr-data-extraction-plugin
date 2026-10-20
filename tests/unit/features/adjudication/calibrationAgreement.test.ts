@@ -47,6 +47,23 @@ const empty: CalibrationAgreementInput = {
 };
 
 describe('calibration の全ペア一致度', () => {
+  test('検証を終えていない組の study は集計から外す（issue #381）', () => {
+    const studies = [
+      study({ studyId: 's1', reviewSet: 'calibration' }),
+      study({ studyId: 's2', reviewSet: 'calibration' }),
+    ];
+    const rows = [studyRow(a, 's1', '日本'), studyRow(b, 's1', '日本'), studyRow(a, 's2', '米国'), studyRow(b, 's2', '日本')];
+    const result = computeCalibrationAgreement({
+      ...empty,
+      studies,
+      studyDataRows: rows,
+      pairComplete: (studyId) => studyId === 's1',
+    });
+    expect(result.map(({ studyCount, agreementRate }) => ({ studyCount, agreementRate }))).toEqual([
+      { studyCount: 1, agreementRate: 1 },
+    ]);
+  });
+
   test('3 名なら 3 ペアを昇順で返し、共存した study をプールして一致率と κ を算出する', () => {
     const studies = [
       study({ studyId: 's1', reviewSet: 'calibration' }),

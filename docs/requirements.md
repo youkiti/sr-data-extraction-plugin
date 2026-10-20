@@ -73,7 +73,7 @@
 - SRWS-PSG のメンティーを含む初学者〜中級者の SR 実施者
 - 対象文献は**テキスト層を持つ born-digital PDF** が原則（OA 論文が中心想定）。くわえて**画像のみの PDF（スキャン PDF）にも対応**する: PDF のまま対応 AI に投げる `pdf_native` モードで抽出（アンカリングは不可だが、bbox 対応モデルの run は AI 推定の座標ハイライトを表示 ※Q7）
 - 1 プロジェクトの規模想定: 採用 study 5〜100 件（1 study あたり文書 1〜5 本）、スキーマ項目 10〜200、エンティティ展開後の抽出セル数 最大 ~20,000（annotator 1 名あたり。セルは study 単位）
-- 学術研究目的のデータ抽出（テキスト・データマイニング）は**著作権法上の権利制限規定（30 条の 4 等）の範囲内であり適法**との整理。拡張内に著作権確認の UI・記録列・注意書きは設けない。取り込み画面には PDF の外部送信先が LLM API のみである旨の説明を常時表示する
+- 学術研究目的のデータ抽出（テキスト・データマイニング）は**著作権法上の権利制限規定（30 条の 4 等）の範囲内であり適法**との整理。拡張内に著作権確認の UI・記録列は設けない。取り込み画面には PDF の外部送信先（AI 機能を使うときの LLM API と、利用者の Drive / Sheets）の説明と、「出版社の利用条件と送信先の規約を確かめてください」という短い注意を常時表示する（短い注意は 2026-10-20 に追加。issue #381）
 
 ---
 
@@ -110,7 +110,7 @@ https://www.googleapis.com/auth/drive.file      # Drive Picker で選択した�
 
 ### 2.2 Manifest V3 要件
 
-- `permissions`: `identity`（launchWebAuthFlow 用）, `identity.email`（初回 login_hint シード + 別アカウント表示の比較用。§2.1）, `storage`, `tabs`
+- `permissions`: `identity`（launchWebAuthFlow 用）, `identity.email`（初回 login_hint シード + 別アカウント表示の比較用。§2.1）, `storage`（`tabs` は 2026-10-20 に削除。issue #381。使うのは `chrome.tabs.create` / `update` / `remove` / `onRemoved` だけで、タブの URL・タイトルを読まないため権限は不要）
 - `host_permissions`:
   - `https://sheets.googleapis.com/*`
   - `https://www.googleapis.com/*`
@@ -420,7 +420,7 @@ AI 抽出の根拠情報。ハイライト表示（§5）と audit.csv の素材
 | schema_version | int | ✓ | 判定時点で対象行が依拠していたスキーマ版（スキーマ改訂 → 再抽出後の再検証を区別する） |
 | action | enum | ✓ | `accept` / `edit` / `reject` / `not_reported` / `undo` |
 | value | string | | 操作後の値 |
-| note | string | | 検証時のメモ（例: Table 2 と本文で数値不一致、Table 2 を採用）。論文への質問パネル（v0.24・issue #264）で質問した study の以後の判定・裁定は、先頭に印 `[chat-assist]` が自動で付く（メモがあれば `[chat-assist] メモ`） |
+| note | string | | 検証時のメモ（例: Table 2 と本文で数値不一致、Table 2 を採用）。論文への質問パネル（v0.24・issue #264）で質問した study の以後の判定・裁定は、先頭に印 `[chat-assist]` が自動で付く（メモがあれば `[chat-assist] メモ`）。引用が本文で照合できていないセル（`anchor_status = failed`、またはスキャン PDF で照合なし）を警告のあとに accept した判定には `[unanchored-accept]` が付く（issue #381。質問後の印と重なると `[chat-assist] [unanchored-accept]`） |
 
 > **インスタンス宣言イベント（2026-07-09 追記）**: AI が丸ごと見落とした outcome_result を人間が追加する操作は、`Decisions` に予約 `field_id = __entity_instance__` の行として追記する。`entity_key` には追加した outcome_result キー、`annotator` は操作した人間、`annotator_type` は宣言者のロールに応じた値（`human_with_ai`。独立入力モードでは `human_independent`。v0.11）、`action = edit`、`value = entity_key`、`note = outcome_instance_declared` を入れる。この行はセル判定ではなく「entity インスタンスを人間が宣言した」監査イベントなので、`StudyData` / `ResultsData` の annotator 行は更新しない。検証 UI のセル生成はこの宣言行をインスタンス源として読むが、audit.csv の判定行からは除外する（原本の `Decisions` には残る）。
 
@@ -788,7 +788,7 @@ Chrome ウェブストアの [Disclosure Requirements](https://developer.chrome.
 | quote アンカリング失敗率が高い | §5 の段階的マッチング + フォールバック検索 UI + パイロットでの入力方式比較 |
 | 表内数値の抽出精度が低い | パイロットで表由来項目の精度を分離計測。低ければ「表由来項目は必ず人間入力」の運用ガイドを UI に組み込み |
 | AI 値の鵜呑み（automation bias） | human 行は空セル（未検証）から開始し、accept にも必ず 1 操作を要求（`Decisions` に記録）。未検証セル残存時のエクスポート警告 |
-| 取り込む PDF の著作権 | 学術研究目的のデータ抽出は著作権法上の権利制限規定（30 条の 4 等）の範囲内であり適法との整理（確認 UI・記録列・注意書きは持たない）。拡張側で PDF を外部送信するのは LLM API のみである旨を UI と README に明示 |
+| 取り込む PDF の著作権 | 学術研究目的のデータ抽出は著作権法上の権利制限規定（30 条の 4 等）の範囲内であり適法との整理（確認 UI・記録列は持たない）。拡張側で PDF を外部送信するのは LLM API のみである旨と、出版社の利用条件・送信先の規約を確かめる短い注意を UI に、送信先の詳細をプライバシーポリシーに明示（短い注意は issue #381 で追加） |
 | Sheets 行数・レート制限 | batchUpdate、指数バックオフ、レート制限 tier + スロットル + 429 リトライ（2026-07-10）。**40,000 行規模の負荷試験は実施済み（2026-07-12・ローカル実測）**: CSV エクスポートは audit.csv が最大（51,600 行=約 0.8s / 103,200 行=約 1.6s。study_wide / results_long は一瞬）、cellState 畳み込みは 103,200 判定=約 66ms で、いずれも実用域（MVP バー「数秒以内」クリア）。ただし ai 行転記（`upsertStudyData/ResultsDataRows`）の appendRows にチャンク制御が無く、全 study 一括抽出で最大 ~40k 行を 1 リクエストに詰めうる非対称性を発見 → issue #69（Evidence 側の flush/上限パターンを横展開して対処） |
 
 ---

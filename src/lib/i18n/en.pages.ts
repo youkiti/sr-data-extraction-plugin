@@ -151,6 +151,7 @@ export const enPages: Record<keyof typeof jaPages, string> = {
   // Default reasoning effort (issue #127 PR5. docs/ui-states.md §2 "reasoning effort の既定値")
   'options.reasoningEffortTitle': 'Default reasoning effort',
   'options.reasoningEffortHelp':
+    'Lower settings are faster and cheaper but can reduce extraction accuracy. ' +
     'Gemini 3 models use thinkingLevel and Anthropic native uses output_config.effort (low when unset). ' +
     'Nothing is sent to Gemini 2.5 models. OpenRouter / OpenAI-compatible APIs / Azure OpenAI use reasoning_effort ' +
     'only when set; nothing is sent when unset.',

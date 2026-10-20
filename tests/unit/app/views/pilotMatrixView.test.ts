@@ -58,7 +58,16 @@ test('表見出し、表示だけのセル、凡例、リンクと並べ替え',
   root = renderPilotMatrix(state, ctx);
   expect(root.querySelector('details')).toBeNull();
   expect(root.querySelector('button')?.getAttribute('aria-pressed')).toBe('true');
+  // 未判定のアンカリング失敗は外れにも分母にも数えない（issue #381）
+  expect(root.querySelector('tbody td')?.textContent).toBe('·');
+  state.pilot.matrix!.decisions = [makeDecision({ fieldId: 'arm', entityKey: 'arm:1', action: 'edit' })];
+  root = renderPilotMatrix(state, ctx);
   expect(root.querySelector('tbody td')?.textContent).toBe('1/1');
+  state.pilot.evidence!.push(makeEvidence({ fieldId: 'arm', entityKey: 'arm:2' }));
+  root = renderPilotMatrix(state, ctx);
+  const cell = root.querySelector('tbody td');
+  expect(cell?.textContent).toBe('1/1（未判定 1）');
+  expect(cell?.getAttribute('aria-label')).toBe('外れ 1 / 判定済み 1・未判定 1');
 });
 
 test('前回比較・対象集合の違い・比較失敗を表示する', () => {
@@ -74,7 +83,7 @@ test('前回比較・対象集合の違い・比較失敗を表示する', () =>
   let root = renderPilotMatrix(state, ctx);
   expect(root.querySelector('#pilot-matrix-compare-note')).not.toBeNull();
   expect(root.textContent).toContain('研究 A');
-  expect(root.textContent).toContain('前回 0/0 → 今回 0/0');
+  expect(root.textContent).toContain('前回 — → 今回 —');
   expect(root.textContent).toContain('前回 1/1 → 今回 0/1');
   expect(root.querySelector('td[aria-label^="改善"]')).not.toBeNull();
   state.pilot.matrix!.previous.studyIds = ['study-1'];

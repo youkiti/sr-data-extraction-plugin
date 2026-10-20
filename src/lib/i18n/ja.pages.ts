@@ -151,6 +151,7 @@ export const jaPages = {
   // reasoning effort の既定値（issue #127 PR5。docs/ui-states.md §2「reasoning effort の既定値」）
   'options.reasoningEffortTitle': 'reasoning effort の既定値',
   'options.reasoningEffortHelp':
+    'low ほど速く安くなりますが、抽出の正確度が下がることがあります。' +
     'Gemini 3 系は thinkingLevel、Anthropic ネイティブは output_config.effort に送ります（未設定なら low）。' +
     'Gemini 2.5 系には送りません。OpenRouter / OpenAI 互換 API / Azure OpenAI は設定時だけ reasoning_effort に送り、未設定なら何も送りません。',
   'options.reasoningEffortAria': 'reasoning effort の既定値',

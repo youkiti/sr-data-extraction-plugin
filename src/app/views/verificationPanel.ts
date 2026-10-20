@@ -48,6 +48,12 @@ import { collectConsistencyWarnings } from '../../features/verification/consiste
 import { bundleEvidence, quoteKeyOf, cellKeyFromQuoteKey } from '../../features/verification/evidenceBundles';
 import { collectRobAlgorithmInfo } from '../../features/verification/robAlgorithm';
 import {
+  UNANCHORED_ACCEPT_NOTE_MARKER,
+  unanchoredReasonOf,
+  type AnchorCheckQuote,
+  type UnanchoredReason,
+} from '../../features/verification/unanchoredAccept';
+import {
   buildFocusUnits,
   nextPendingCellInUnit,
   nextPendingUnit,
@@ -451,6 +457,9 @@ export function createVerificationPanel(
   };
   let focusedCellKey: string | null = null;
   let editing: { cellKey: string; action: 'edit' | 'reject' } | null = null;
+  // 照合できなかった引用のセルの 1 回目の accept で出す警告（issue #381）。もう一度 accept すると
+  // 確定する。別のセルへ移る・他の判定・タブ切替で消す（quoteEdit などと同じくパネルのローカル状態）
+  let unanchoredWarning: { cellKey: string; reason: UnanchoredReason } | null = null;
   let outcomeKeyDraft = nextOutcomeId(
     entityInstances('outcome_result', currentEvidence(), ownDecisions, { armStructure }),
   );
@@ -568,6 +577,7 @@ export function createVerificationPanel(
       // enum 項目の許容値チップ・許容値外警告（issue #254）
       enumCandidates: data.enumCandidates,
       canEditSchema: data.canEditSchema,
+      unanchoredAcceptWarning: unanchoredWarning,
     };
   }
 
@@ -1623,6 +1633,20 @@ export function createVerificationPanel(
     return currentTabModel().cells.find((cell) => cell.cellKey === cellKey) as VerificationCell;
   }
 
+  /** セルに表示している引用（人が編集した一覧があればそちら）。照合状態の警告に使う（issue #381） */
+  function displayedQuotesOf(cell: VerificationCell): readonly AnchorCheckQuote[] {
+    const edited = quoteEdit.get(cell.cellKey);
+    if (edited?.edited) return edited.quotes;
+    return cell.quotes.length > 0 ? cell.quotes : [cell.evidence as Evidence];
+  }
+
+  /** 警告を消す。表示中の警告は DOM から直接外す（再構築すると直後の click が取り消されるため） */
+  function clearUnanchoredWarning(): void {
+    if (unanchoredWarning === null) return;
+    unanchoredWarning = null;
+    formPane.querySelector('.verify__unanchored-warning')?.remove();
+  }
+
   /** cellKey がどのタブに属するか（ビューアクリック時のタブ切替に使う） */
   function tabOfCell(cellKey: string): EntityLevel | null {
     for (const tab of tabs) {
@@ -1753,6 +1777,7 @@ export function createVerificationPanel(
     },
     // ロック中タブの排他は verificationForm 側が担う（disabled ボタンにはリスナを付けない）
     onSelectTab(tab) {
+      unanchoredWarning = null;
       activeTab = tab;
       focusedCellKey = computeInitialFocusKey(tab);
       selectedQuoteKey = null;
@@ -1769,10 +1794,25 @@ export function createVerificationPanel(
       if (cell.evidence === null) {
         return;
       }
-      commit(cell, 'accept', cell.evidence.notReported ? NOT_REPORTED_TOKEN : cell.evidence.value);
+      // 引用が本文で確かめられていないセルは、1 回目の accept では確定せず注意を出す（issue #381）。
+      // 警告を経た accept は Decisions.note に印を付けて監査証跡で識別できるようにする
+      const reason = unanchoredReasonOf(displayedQuotesOf(cell));
+      if (reason !== null && unanchoredWarning?.cellKey !== cellKey) {
+        unanchoredWarning = { cellKey, reason };
+        focusedCellKey = cellKey;
+        refreshForm();
+        return;
+      }
+      commit(
+        cell,
+        'accept',
+        cell.evidence.notReported ? NOT_REPORTED_TOKEN : cell.evidence.value,
+        reason === null ? null : UNANCHORED_ACCEPT_NOTE_MARKER,
+      );
     },
     onStartEdit(cellKey, action) {
       if (quoteSaving.size > 0) return;
+      unanchoredWarning = null;
       editing = { cellKey, action };
       focusedCellKey = cellKey;
       selectedQuoteKey = null;
@@ -2080,6 +2120,7 @@ export function createVerificationPanel(
       // enum 項目の許容値チップ・許容値外警告（issue #254）
       enumCandidates: data.enumCandidates,
       canEditSchema: data.canEditSchema,
+      unanchoredAcceptWarning: unanchoredWarning,
     };
     progressListener?.(model.progress);
     // heightSplitter（issue #193）は refreshForm のたびに作り直される内容の末尾へ
@@ -2119,6 +2160,7 @@ export function createVerificationPanel(
     if (cellKey === focusedCellKey) {
       return;
     }
+    clearUnanchoredWarning();
     const tab = tabOfCell(cellKey);
     if (tab === null || tabLocked(tab)) {
       // ロック中のタブへはジャンプしない（ハイライトクリック経由。群構成の確定が先）
@@ -2221,6 +2263,7 @@ export function createVerificationPanel(
       // 再チェックが貼り直す）
       mermaidWarnings.delete(cell.cellKey);
     }
+    unanchoredWarning = null;
     const decision: Decision = {
       decidedAt: now(),
       decidedBy: data.annotator,
@@ -2366,6 +2409,10 @@ export function createVerificationPanel(
         break;
     }
     if (focusedCellKey === null) {
+      return;
+    }
+    // 押しっぱなしで警告を通過したり、次のセルへ判定を連続保存したりしないようにする
+    if (event.repeat && ['a', 'e', 'x', 'n', 'z'].includes(event.key)) {
       return;
     }
     switch (event.key) {
