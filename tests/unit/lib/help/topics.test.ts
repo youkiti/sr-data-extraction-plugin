@@ -87,7 +87,7 @@ describe('ヘルプの対応表と公開ページの照合', () => {
 
   test('既存の節の id と順序を維持する', () => {
     expect([...help.querySelectorAll('section')].map((section) => section.id)).toEqual([
-      'video', 'setup', 'project', 'documents', 'protocol', 'schema', 'pilot',
+      'about', 'video', 'setup', 'project', 'documents', 'protocol', 'schema', 'pilot',
       'extract', 'verify', 'dashboard', 'dual-review', 'export', 'options',
       'troubleshooting', 'faq',
     ]);

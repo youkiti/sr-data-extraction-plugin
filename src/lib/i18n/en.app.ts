@@ -270,7 +270,7 @@ export const enApp: Record<keyof typeof jaApp, string> = {
   // S3 文献取り込み
   'documents.title': 'Document import & grouping',
   'documents.notice':
-    'Imported PDFs are sent externally only as extraction requests to the LLM API.',
+    "When you use the AI features, the text of imported PDFs (page images for scanned PDFs) is sent to the LLM API you configured. The only other external destination is your own Google Drive / Sheets. Check the publisher's terms of use and the provider's terms.",
   'documents.lead':
     'Import the PDFs of included articles. Choose them from Drive, or drag & drop / select PDFs from this PC. Selecting a folder imports the PDFs directly under it, and multiple documents of the same study can be grouped afterwards with "Merge".',
   'documents.importDrive': 'Choose PDFs / a folder from Drive',

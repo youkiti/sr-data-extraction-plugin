@@ -62,7 +62,13 @@
             <span class="ja" lang="ja">目次</span>
             <span class="en" lang="en">Contents</span>
           </h2>
-          <ol>
+          <ol start="0">
+            <li>
+              <a href="#about"
+                ><span class="ja" lang="ja">このツールの位置づけ</span
+                ><span class="en" lang="en">What this tool is for</span></a
+              >
+            </li>
             <li>
               <a href="#setup"
                 ><span class="ja" lang="ja">準備（インストールと LLM 接続の設定）</span
@@ -149,6 +155,151 @@
             </li>
           </ol>
         </nav>
+
+        <section id="about">
+          <h2>
+            <span class="ja" lang="ja">0. このツールの位置づけ</span>
+            <span class="en" lang="en">0. What this tool is for</span>
+          </h2>
+          <p>
+            <span class="ja" lang="ja"
+              >本拡張は、システマティックレビュー（SR）のデータ抽出を<strong>補助する</strong>ツールです。レビュアーを置き換えるものではありません。AI
+              が値と根拠の引用を下書きし、<strong>すべての値を人が原文で確かめて判定します</strong>。独立した 2
+              名による二重レビュー（<a href="#dual-review">→ 10</a>）を勧めます。</span
+            >
+            <span class="en" lang="en"
+              >This extension <strong>assists</strong> the data-extraction step of a systematic review (SR); it does
+              not replace reviewers. AI drafts each value with a supporting quote, and <strong>a person checks every
+              value against the source and decides on it</strong>. We recommend independent dual review by two people
+              (<a href="#dual-review">→ 10</a>).</span
+            >
+          </p>
+          <p>
+            <span class="ja" lang="ja"
+              >RAISE 3 の表 2 では、生成 AI によるデータ抽出とバイアスのリスクの評価は「レビューの中での検証が必要」とされています。パイロット抽出（<a
+                href="#pilot"
+                >→ 6</a
+              >）で AI の値を自分たちの抽出と突き合わせ、そのレビューでの精度を確かめてから本抽出へ進んでください。</span
+            >
+            <span class="en" lang="en"
+              >Table 2 of RAISE 3 lists data extraction and risk-of-bias assessment with generative AI as uses that
+              “require validation within the review”. Use the pilot extraction (<a href="#pilot">→ 6</a>) to compare
+              the AI’s values with your own and check its accuracy in your review before the full extraction.</span
+            >
+          </p>
+          <p>
+            <span class="ja" lang="ja"
+              >「論文に質問」（<a href="#verify-ask-paper">→ 8</a>）は探索的・補助的な使い方のための機能です。答えを抽出の結果にせず、値は原文を確かめて自分で入力・判定してください。</span
+            >
+            <span class="en" lang="en"
+              >“Ask the paper” (<a href="#verify-ask-paper">→ 8</a>) is for exploratory, supporting use. Do not treat
+              its answers as extraction results; check the source and enter or judge values yourself.</span
+            >
+          </p>
+
+          <h3 id="about-not-for">
+            <span class="ja" lang="ja">使うべきでない場面</span>
+            <span class="en" lang="en">When not to use it</span>
+          </h3>
+          <ul>
+            <li>
+              <span class="ja" lang="ja">人が値を検証せず、AI の出力をそのまま結果にする運用</span>
+              <span class="en" lang="en">Workflows in which nobody verifies the values and AI output becomes the result</span>
+            </li>
+            <li>
+              <span class="ja" lang="ja"
+                >スキャン PDF（テキスト層なし）で、人が値を原文と照合しない場合（スキャン PDF では引用の自動照合とハイライトが使えません）</span
+              >
+              <span class="en" lang="en"
+                >Scanned PDFs (no text layer) when nobody checks the values against the page (quotes in scanned PDFs are
+                not matched or highlighted automatically)</span
+              >
+            </li>
+            <li>
+              <span class="ja" lang="ja">人の検証を経ずに、規制当局への提出資料などに使う場合</span>
+              <span class="en" lang="en">Regulatory submissions or similar documents prepared without human verification</span>
+            </li>
+          </ul>
+
+          <h3 id="about-limits">
+            <span class="ja" lang="ja">評価の限界</span>
+            <span class="en" lang="en">Limits of our evaluation</span>
+          </h3>
+          <p>
+            <span class="ja" lang="ja"
+              >既定モデルの選定とプロンプトの改良には、開発者による実データでのベンチマークを使いました。AI
+              単独の正確度は、どのモデルでも人の確認なしで使える水準に届いていません。この評価には次の限界があります。</span
+            >
+            <span class="en" lang="en"
+              >We chose the default model and refined the prompts using our own benchmark on real data. With AI alone,
+              no model reached an accuracy that could be used without human checking. The evaluation has these
+              limits:</span
+            >
+          </p>
+          <ul>
+            <li>
+              <span class="ja" lang="ja">正解データは開発者自身が作ったものです</span>
+              <span class="en" lang="en">The reference (gold) data were created by the developer</span>
+            </li>
+            <li>
+              <span class="ja" lang="ja"
+                >対象は、不眠治療の SR に含まれる英語の RCT 10 本だけです（テキスト入力のみ。スキャン PDF の経路は評価していません）</span
+              >
+              <span class="en" lang="en"
+                >It covers only 10 English-language RCTs from one SR on insomnia treatment (text input only; the
+                scanned-PDF route was not evaluated)</span
+              >
+            </li>
+            <li>
+              <span class="ja" lang="ja">同じデータを、プロンプトの改良と既定モデルの選定の両方に使いました</span>
+              <span class="en" lang="en">The same data were used both to refine the prompts and to choose the default model</span>
+            </li>
+            <li>
+              <span class="ja" lang="ja">対象論文は公開済みのため、モデルの学習データに含まれていた可能性があります</span>
+              <span class="en" lang="en">The papers are published, so they may have been in the models’ training data</span>
+            </li>
+            <li>
+              <span class="ja" lang="ja">外部のデータでの検証はまだありません</span>
+              <span class="en" lang="en">There is no validation on external data yet</span>
+            </li>
+            <li>
+              <span class="ja" lang="ja">抽出の反復は各モデル 1 回です</span>
+              <span class="en" lang="en">Each model was run once (no repeated runs)</span>
+            </li>
+          </ul>
+          <p>
+            <span class="ja" lang="ja"
+              >集計値と条件は
+              <a
+                href="https://github.com/youkiti/sr-data-extraction-plugin/tree/master/experiments/extraction-benchmark-real-summary"
+                >experiments/extraction-benchmark-real-summary/</a
+              >
+              で公開しています（原論文・正解データは非公開）。</span
+            >
+            <span class="en" lang="en"
+              >Aggregate results and conditions are published in
+              <a
+                href="https://github.com/youkiti/sr-data-extraction-plugin/tree/master/experiments/extraction-benchmark-real-summary"
+                >experiments/extraction-benchmark-real-summary/</a
+              >
+              (the papers and gold data are not public).</span
+            >
+          </p>
+
+          <h3 id="about-environment">
+            <span class="ja" lang="ja">環境への負荷</span>
+            <span class="en" lang="en">Environmental cost</span>
+          </h3>
+          <p>
+            <span class="ja" lang="ja"
+              >LLM の呼び出しは電力を使います。パイロット抽出で項目を絞ってから本抽出へ進み、不要な再抽出を避けてください。</span
+            >
+            <span class="en" lang="en"
+              >LLM calls consume electricity. Narrow down the fields with a pilot extraction before the full run, and
+              avoid unnecessary re-extraction.</span
+            >
+          </p>
+        </section>
 
         <!-- 操作解説動画（YouTube）。動画を差し替えたときは index.html 側の埋め込みも同時に直す。
              埋め込み先は youtube-nocookie.com（プライバシー強化モード） -->
@@ -315,13 +466,15 @@
           <div class="note">
             <p>
               <span class="ja" lang="ja"
-                >論文本文が外部へ送信されるのは、あなたが設定した LLM API への抽出リクエストのときだけです。開発者が運用するサーバーは存在しません（<a
+                >論文本文（スキャン PDF はページ画像）が外部へ送信されるのは、AI 機能（表のデザインの AI ドラフト・抽出・論文に質問）を使うときの、あなたが設定した
+                LLM API だけです。開発者が運用するサーバーは存在しません（<a
                   href="privacy-policy.html"
                   >プライバシーポリシー</a
                 >）。</span
               >
               <span class="en" lang="en"
-                >Full text leaves your browser only in extraction requests to the LLM API you configured. There is no
+                >Full text (or page images for scanned PDFs) leaves your browser only when you use the AI features
+                (AI schema drafting, extraction, Ask the paper), and only to the LLM API you configured. There is no
                 developer-operated server (see the <a href="privacy-policy.html">privacy policy</a>).</span
               >
             </p>
@@ -1173,10 +1326,11 @@
           </p>
           <p>
             <span class="ja" lang="ja"
-              >回答は参考情報です。PDF で根拠を確認してから、自分で値を入力・判定してください。質問と回答はこのタブの中だけに保持され、閉じるか再読み込みすると消えます。共有フォルダには保存されません。</span
+              >この機能は探索的・補助的な使い方のためのものです。回答を抽出の結果にせず、PDF で根拠を確認してから、自分で値を入力・判定してください。このタブで質問した試験では、そのあとの判定の
+              note（監査証跡）の先頭に <code>[chat-assist]</code> が付き、質問を参考にした判定を区別できます。質問と回答はこのタブの中だけに保持され、閉じるか再読み込みすると消えます。共有フォルダには保存されません。</span
             >
             <span class="en" lang="en"
-              >Treat answers as reference material. Check the evidence in the PDF before entering or judging a value yourself. Questions and answers remain only in this tab and disappear when it is closed or reloaded; they are not saved in the shared folder.</span
+              >This feature is for exploratory, supporting use. Do not treat answers as extraction results; check the evidence in the PDF before entering or judging a value yourself. For a study you asked about in this tab, later judgments get <code>[chat-assist]</code> at the start of their note in the audit trail, so judgments informed by a question can be told apart. Questions and answers remain only in this tab and disappear when it is closed or reloaded; they are not saved in the shared folder.</span
             >
           </p>
 
@@ -1456,11 +1610,11 @@
             <span class="ja" lang="ja"
               >CSV は Drive に保存され、同時にダウンロードされます。メタ解析用の R セット（<code>ma.csv</code>
               等）の書き出しと、論文の Methods
-              にそのまま使える文案カードも用意しています。未検証の項目が残っているとエクスポート前に警告が出ます。</span
+              の記載例を出すカードも用意しています（数値・人数・手順が実際と一致しているかを必ず確かめて直してください）。未検証の項目が残っているとエクスポート前に警告が出ます。</span
             >
             <span class="en" lang="en"
               >CSVs are saved to Drive and downloaded at the same time. You can also export an R-ready meta-analysis set
-              (e.g. <code>ma.csv</code>) and copy a ready-made Methods paragraph. A warning appears if unverified cells
+              (e.g. <code>ma.csv</code>) and copy an example Methods paragraph (always check that its numbers, reviewer counts and procedures match what you actually did, and edit it). A warning appears if unverified cells
               remain.</span
             >
           </p>
@@ -1531,13 +1685,15 @@
             <li>
               <span class="ja" lang="ja"
                 ><strong>LLM 接続</strong>: 接続方式（Gemini / OpenRouter / Anthropic / Azure OpenAI / OpenAI 互換 API /
-                ローカル LLM）を選ぶと、その方式に要る欄（API キー、方式によっては URL）だけが出ます。キーは方式ごとに保存され、方式を切り替えても消えません。キーはブラウザ内（<code>chrome.storage.local</code>）にのみ保存され、開発者へ送信されることはありません（BYOK）。</span
+                ローカル LLM）を選ぶと、その方式に要る欄（API キー、方式によっては URL）だけが出ます。キーは方式ごとに保存され、方式を切り替えても消えません。キーはブラウザ内（<code>chrome.storage.local</code>）にだけ、<strong>暗号化せずに</strong>保存され、選んだ接続先への認証にだけ送られます。開発者へ送信されることはありません（BYOK）。共用の PC では、自分専用の Chrome プロファイルで使うか、使い終わったら拡張を削除してください。</span
               >
               <span class="en" lang="en"
                 ><strong>LLM connection</strong>: choose a connection type (Gemini, OpenRouter, Anthropic, Azure OpenAI,
                 OpenAI-compatible API or Local LLM) and only the fields it needs appear (an API key, plus a URL for some
                 types). Keys are stored per type, so switching types does not erase them. They stay in your browser
-                (<code>chrome.storage.local</code>) and are never sent to the developer (BYOK).</span
+                (<code>chrome.storage.local</code>) <strong>unencrypted</strong>, are sent only to the chosen provider for
+                authentication, and are never sent to the developer (BYOK). On a shared computer, use your own Chrome
+                profile or remove the extension when you are done.</span
               >
             </li>
             <li>
@@ -1588,12 +1744,12 @@
             <li>
               <span class="ja" lang="ja"
                 ><strong>reasoning effort の既定値</strong>: モデルが答える前に考える量を low / medium / high から選びます。low
-                ほど速く安くなります。未設定のときは、Gemini 3 系と Anthropic には low を送り、OpenRouter・OpenAI 互換 API・Azure
+                ほど速く安くなりますが、抽出の正確度が下がることがあります。未設定のときは、Gemini 3 系と Anthropic には low を送り、OpenRouter・OpenAI 互換 API・Azure
                 OpenAI には何も送りません（各サービスの既定どおり）。Gemini 2.5 系には送りません。</span
               >
               <span class="en" lang="en"
                 ><strong>Default reasoning effort</strong>: how much the model thinks before answering (low, medium or
-                high); lower is faster and cheaper. When unset, low is sent to Gemini 3 models and Anthropic, and nothing is
+                high); lower is faster and cheaper but can reduce extraction accuracy. When unset, low is sent to Gemini 3 models and Anthropic, and nothing is
                 sent to OpenRouter, OpenAI-compatible APIs or Azure OpenAI (their own defaults apply). It is not sent to
                 Gemini 2.5 models.</span
               >
@@ -1700,12 +1856,12 @@
           <p>
             <span class="ja" lang="ja"
               >設定画面の「レート制限」で、契約プランに合った tier（無料枠なら低い tier）を選んでください。失敗した文献は一括抽出画面から再試行できます。無料枠では
-              1 分あたりの上限が小さいため、件数が多い場合は時間をおいて分割実行するのが確実です。</span
+              1 分あたりの上限が小さく、1 日あたりの上限もあるため、件数が多い場合は時間をおいて分割実行するのが確実です。</span
             >
             <span class="en" lang="en"
               >Pick the tier matching your plan (a low tier for free quotas) under “Rate limiting”. Failed documents can
-              be retried from the extraction screen. On free quotas, splitting a large batch over time is the safest
-              route.</span
+              be retried from the extraction screen. Free quotas have small per-minute limits and daily limits too, so
+              splitting a large batch over time is the safest route.</span
             >
           </p>
 
@@ -1817,6 +1973,23 @@
                 contract (free tiers work too).</span
               >
             </p>
+            <p>
+              <span class="ja" lang="ja"
+                >無料枠には次の点に注意してください。Gemini API の無料枠（課金を有効にしていないプロジェクト）では、送った内容が
+                Google の製品の改善に使われ、人が読むことがあります。未公開のデータや機密資料は有料枠で扱ってください（<a
+                  href="privacy-policy.html#providers"
+                  >プライバシーポリシー</a
+                >）。無料枠には 1 分あたりだけでなく 1
+                日あたりの上限もあります。ダッシュボードの費用は、無料枠で使っていても有料の単価での推定で表示されます。</span
+              >
+              <span class="en" lang="en"
+                >Note on free tiers: on the Gemini API free tier (a project without billing enabled), what you send is
+                used to improve Google’s products and may be read by humans, so handle unpublished data or confidential
+                material on a paid tier (see the <a href="privacy-policy.html#providers">privacy policy</a>). Free tiers
+                have daily limits as well as per-minute limits. The dashboard shows costs estimated at paid prices even
+                when you use a free tier.</span
+              >
+            </p>
           </details>
 
           <details class="faq">
@@ -1826,12 +1999,17 @@
             </summary>
             <p>
               <span class="ja" lang="ja"
-                >既定は <code>gemini-3.8-flash</code> です（実データでのベンチマークで、項目正確度が従来の既定と同程度以上で、費用と応答時間が小さかったため）。まずはパイロット抽出で
-                2〜3 本試し、あなたの領域の論文で妥当な結果が出るモデルを選んでください。</span
+                >既定は <code>gemini-3.8-flash</code> です（実データでのベンチマークで、項目正確度が従来の既定と同程度以上で、費用と応答時間が小さかったため）。ただし、このベンチマークは、Gemini
+                の reasoning effort を low に固定する変更（2026-10-16）より前に、モデル既定の思考量で測りました。現在の既定（low）での正確度は測っていません（<a
+                  href="#about-limits"
+                  >評価の限界</a
+                >）。まずはパイロット抽出で 2〜3
+                本試し、あなたの領域の論文で妥当な結果が出るモデルを選んでください。モデルや reasoning effort
+                を変えたときも、パイロット抽出で確かめてください。</span
               >
               <span class="en" lang="en"
-                >The default is <code>gemini-3.8-flash</code>: on our real-data benchmark its accuracy was on par with or better than the previous default, at lower cost and latency. Run a pilot
-                on 2–3 papers and pick whatever performs well on the literature in your field.</span
+                >The default is <code>gemini-3.8-flash</code>: on our real-data benchmark its accuracy was on par with or better than the previous default, at lower cost and latency. That benchmark, however, ran with each model’s default amount of thinking, before Gemini’s reasoning effort was fixed at low (2026-10-16); accuracy at the current default (low) has not been measured (see <a href="#about-limits">limits of our evaluation</a>). Run a pilot
+                on 2–3 papers and pick whatever performs well on the literature in your field, and run a pilot again whenever you change the model or reasoning effort.</span
               >
             </p>
           </details>
@@ -1883,6 +2061,24 @@
               <span class="en" lang="en"
                 >Delete the project files in your Google Drive / Sheets and uninstall the extension; Chrome removes the
                 in-browser settings (API keys and so on) with it.</span
+              >
+            </p>
+          </details>
+
+          <details class="faq">
+            <summary>
+              <span class="ja" lang="ja">開発の資金と利益相反は？</span>
+              <span class="en" lang="en">Who funds the development? Any conflicts of interest?</span>
+            </summary>
+            <p>
+              <span class="ja" lang="ja"
+                >開発は JSPS 科研費 25K13585 の助成を受けています。開発者は、本ツールが接続する AI
+                事業者（Google・Anthropic・OpenAI・OpenRouter・Microsoft 等）から金銭その他の利益を受けていません。</span
+              >
+              <span class="en" lang="en"
+                >Development is supported by JSPS KAKENHI Grant Number 25K13585. The developer receives no money or
+                other benefits from the AI companies this tool connects to (Google, Anthropic, OpenAI, OpenRouter,
+                Microsoft and others).</span
               >
             </p>
           </details>

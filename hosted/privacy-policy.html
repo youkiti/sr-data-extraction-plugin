@@ -54,11 +54,11 @@
         </h1>
         <p class="last-updated">
           <span class="ja" lang="ja"
-            >最終更新: 2026-08-01<br />
+            >最終更新: 2026-10-20<br />
             対象: Chrome 拡張機能「SR Data Extraction」（sr-data-extraction-plugin）</span
           >
           <span class="en" lang="en"
-            >Last updated: 2026-08-01<br />
+            >Last updated: 2026-10-20<br />
             Applies to the Chrome extension “SR Data Extraction”
             (sr-data-extraction-plugin)</span
           >
@@ -122,6 +122,27 @@
               >
             </li>
           </ol>
+          <p>
+            <span class="ja" lang="ja"
+              >例外として、Google Drive のファイルを選ぶときだけ、開発者が GitHub Pages に置いた静的ページと Google
+              Picker を使います（→ <a href="#picker">ファイル選択（Google Picker）</a>）。このページもデータを保存・送信しません。</span
+            >
+            <span class="en" lang="en"
+              >The one exception: when you pick files from Google Drive, the extension uses a static page the developer
+              hosts on GitHub Pages together with Google Picker (see <a href="#picker">File selection (Google Picker)</a>).
+              That page does not store or send your data either.</span
+            >
+          </p>
+          <p>
+            <span class="ja" lang="ja"
+              >開発者は、利用者が取り込む論文・プロトコル・抽出結果について権利を主張せず、それらを受け取らず、AI
+              の学習にも使いません。</span
+            >
+            <span class="en" lang="en"
+              >The developer claims no rights in the papers, protocols or extraction results you bring into the
+              extension, never receives them, and never uses them to train AI models.</span
+            >
+          </p>
         </section>
 
         <section>
@@ -190,16 +211,100 @@
                 </tr>
                 <tr>
                   <td>
-                    <span class="ja" lang="ja">Google OAuth トークン</span>
-                    <span class="en" lang="en">Google OAuth token</span>
+                    <span class="ja" lang="ja">スキャン PDF（本文テキストの無い PDF）のページ画像</span>
+                    <span class="en" lang="en">Page images of scanned PDFs (PDFs without a text layer)</span>
                   </td>
                   <td>
-                    <span class="ja" lang="ja">利用者のブラウザ内（<code>chrome.storage</code>）</span>
-                    <span class="en" lang="en">Inside the user’s browser (<code>chrome.storage</code>)</span>
+                    <span class="ja" lang="ja">利用者が設定した LLM API</span>
+                    <span class="en" lang="en">The LLM API configured by the user</span>
                   </td>
                   <td>
-                    <span class="ja" lang="ja">Google API 認証。開発者へは送信されません</span>
-                    <span class="en" lang="en">Google API authentication; never sent to the developer</span>
+                    <span class="ja" lang="ja">AI によるデータ抽出</span>
+                    <span class="en" lang="en">AI extraction</span>
+                  </td>
+                </tr>
+                <tr>
+                  <td>
+                    <span class="ja" lang="ja">研究プロトコルの本文・抽出項目の定義</span>
+                    <span class="en" lang="en">Review protocol text and extraction field definitions</span>
+                  </td>
+                  <td>
+                    <span class="ja" lang="ja">利用者が設定した LLM API</span>
+                    <span class="en" lang="en">The LLM API configured by the user</span>
+                  </td>
+                  <td>
+                    <span class="ja" lang="ja">抽出スキーマの作成（AI ドラフト）と AI 抽出</span>
+                    <span class="en" lang="en">Drafting the extraction schema with AI, and AI extraction</span>
+                  </td>
+                </tr>
+                <tr>
+                  <td>
+                    <span class="ja" lang="ja">「論文に質問」の質問文 + 論文本文・抽出項目の定義</span>
+                    <span class="en" lang="en">Questions typed in “Ask the paper”, plus the paper text and field definitions</span>
+                  </td>
+                  <td>
+                    <span class="ja" lang="ja">利用者が設定した LLM API</span>
+                    <span class="en" lang="en">The LLM API configured by the user</span>
+                  </td>
+                  <td>
+                    <span class="ja" lang="ja">質問への回答。質問と回答の本文は保存しません</span>
+                    <span class="en" lang="en">Answering the question; the question and answer text are not saved</span>
+                  </td>
+                </tr>
+                <tr>
+                  <td>
+                    <span class="ja" lang="ja">サインイン中のメールアドレス</span>
+                    <span class="en" lang="en">Email address of the signed-in account</span>
+                  </td>
+                  <td>
+                    <span class="ja" lang="ja">利用者の Google Sheets（記録者の列）、ブラウザ内（<code>chrome.storage.local</code>）、Google の認可画面（<code>login_hint</code>）</span>
+                    <span class="en" lang="en">The user’s Google Sheets (recorder columns), the browser (<code>chrome.storage.local</code>), and Google’s authorization screen (<code>login_hint</code>)</span>
+                  </td>
+                  <td>
+                    <span class="ja" lang="ja">「誰が抽出・判定したか」の記録と、次回サインイン時のアカウント指定</span>
+                    <span class="en" lang="en">Recording who extracted or decided each value, and preselecting the account at the next sign-in</span>
+                  </td>
+                </tr>
+                <tr>
+                  <td>
+                    <span class="ja" lang="ja">共同研究者のメールアドレス（利用者が入力したもの）</span>
+                    <span class="en" lang="en">Collaborators’ email addresses (entered by the user)</span>
+                  </td>
+                  <td>
+                    <span class="ja" lang="ja">Google Drive の共有 API、利用者の Google Sheets（<code>Reviewers</code> タブ）</span>
+                    <span class="en" lang="en">The Google Drive sharing API and the user’s Google Sheets (<code>Reviewers</code> tab)</span>
+                  </td>
+                  <td>
+                    <span class="ja" lang="ja">プロジェクトのファイルの共有設定と、役割の管理</span>
+                    <span class="en" lang="en">Sharing the project files and managing roles</span>
+                  </td>
+                </tr>
+                <tr>
+                  <td>
+                    <span class="ja" lang="ja">LLM に送ったプロンプトと応答の全文（ページ画像は伏字）</span>
+                    <span class="en" lang="en">Full prompts sent to the LLM and its responses (page images redacted)</span>
+                  </td>
+                  <td>
+                    <span class="ja" lang="ja">利用者の Google Drive（<code>logs/llm/</code>）</span>
+                    <span class="en" lang="en">The user’s Google Drive (<code>logs/llm/</code>)</span>
+                  </td>
+                  <td>
+                    <span class="ja" lang="ja">監査と再現のための記録</span>
+                    <span class="en" lang="en">Audit and reproducibility log</span>
+                  </td>
+                </tr>
+                <tr>
+                  <td>
+                    <span class="ja" lang="ja">Google OAuth アクセストークン</span>
+                    <span class="en" lang="en">Google OAuth access token</span>
+                  </td>
+                  <td>
+                    <span class="ja" lang="ja">利用者のブラウザ内（<code>chrome.storage.session</code>。ブラウザを閉じると消えます）</span>
+                    <span class="en" lang="en">Inside the user’s browser (<code>chrome.storage.session</code>; cleared when the browser closes)</span>
+                  </td>
+                  <td>
+                    <span class="ja" lang="ja">Google API 認証。開発者のサーバーへは送信されません（ファイル選択時の受け渡しは<a href="#picker">下記</a>）</span>
+                    <span class="en" lang="en">Google API authentication; never sent to a developer server (for the hand-off during file selection, see <a href="#picker">below</a>)</span>
                   </td>
                 </tr>
                 <tr>
@@ -208,12 +313,12 @@
                     <span class="en" lang="en">LLM API key</span>
                   </td>
                   <td>
-                    <span class="ja" lang="ja">利用者のブラウザ内（<code>chrome.storage.local</code>）</span>
-                    <span class="en" lang="en">Inside the user’s browser (<code>chrome.storage.local</code>)</span>
+                    <span class="ja" lang="ja">利用者のブラウザ内（<code>chrome.storage.local</code>。<strong>暗号化せずに保存します</strong>）</span>
+                    <span class="en" lang="en">Inside the user’s browser (<code>chrome.storage.local</code>; <strong>stored unencrypted</strong>)</span>
                   </td>
                   <td>
-                    <span class="ja" lang="ja">LLM API 認証。開発者へは送信されません</span>
-                    <span class="en" lang="en">LLM API authentication; never sent to the developer</span>
+                    <span class="ja" lang="ja">対応する LLM API への認証にだけ送ります。開発者へは送信されません</span>
+                    <span class="en" lang="en">Sent only to the matching LLM API for authentication; never sent to the developer</span>
                   </td>
                 </tr>
               </tbody>
@@ -315,6 +420,139 @@
               Japanese copyright law (Article 30-4 and related provisions).</span
             >
           </p>
+          <p>
+            <span class="ja" lang="ja"
+              >なお、AI 機能を使うと、PDF の本文やページ画像が利用者の選んだ LLM
+              へ送られます。出版社の利用条件と送信先の規約を確かめてください。</span
+            >
+            <span class="en" lang="en"
+              >Note that using the AI features sends the PDF text or page images to the LLM you chose. Check the
+              publisher’s terms of use and the terms of that provider.</span
+            >
+          </p>
+        </section>
+
+        <section id="providers">
+          <h2>
+            <span class="ja" lang="ja">プロバイダごとのデータの扱い</span>
+            <span class="en" lang="en">How each provider handles your data</span>
+          </h2>
+          <p>
+            <span class="ja" lang="ja"
+              >送った内容をプロバイダがどう扱うか（保存期間・人によるレビュー・モデルの学習への利用）は、プロバイダと契約の種類によって違います。使う前に各社の規約を確認してください。</span
+            >
+            <span class="en" lang="en"
+              >How a provider handles what you send (retention, human review, use for model training) depends on the
+              provider and on your plan. Check each provider’s terms before use.</span
+            >
+          </p>
+          <ul>
+            <li>
+              <span class="ja" lang="ja"
+                ><strong>Gemini API</strong>: 無料枠（課金を有効にしていない Google Cloud
+                プロジェクト）では、送った内容と応答が Google の製品の改善に使われ、人が読むことがあります。Google
+                は無料枠へ機密情報や個人情報を送らないよう求めています。未公開のデータや機密資料を扱うときは、課金を有効にした有料枠で使ってください。根拠:
+                <a href="https://ai.google.dev/gemini-api/terms">Gemini API 追加利用規約</a></span
+              >
+              <span class="en" lang="en"
+                ><strong>Gemini API</strong>: on the free tier (a Google Cloud project without billing enabled), what
+                you send and the responses are used to improve Google’s products, and humans may read them. Google asks
+                users not to send confidential or personal information to the free tier. Use a billing-enabled paid
+                tier for unpublished data or confidential material. Source:
+                <a href="https://ai.google.dev/gemini-api/terms">Gemini API Additional Terms of Service</a></span
+              >
+            </li>
+            <li>
+              <span class="ja" lang="ja"
+                ><strong>OpenRouter</strong>:
+                リクエストを上流のプロバイダへ転送します。データの扱いはモデルと上流のプロバイダごとに違います。OpenRouter
+                の設定とプライバシーポリシーを確認してください</span
+              >
+              <span class="en" lang="en"
+                ><strong>OpenRouter</strong>: forwards requests to upstream providers, and data handling differs by
+                model and upstream provider. Check your OpenRouter settings and its privacy policy</span
+              >
+            </li>
+            <li>
+              <span class="ja" lang="ja"
+                ><strong>Anthropic・Azure OpenAI・利用者指定の接続先（ローカル LLM を含む）</strong>:
+                各社（接続先の運営者）の規約に従います</span
+              >
+              <span class="en" lang="en"
+                ><strong>Anthropic, Azure OpenAI, and user-specified endpoints (including local LLMs)</strong>:
+                governed by the terms of each provider (or whoever operates the endpoint)</span
+              >
+            </li>
+          </ul>
+        </section>
+
+        <section id="picker">
+          <h2>
+            <span class="ja" lang="ja">ファイル選択（Google Picker）</span>
+            <span class="en" lang="en">File selection (Google Picker)</span>
+          </h2>
+          <p>
+            <span class="ja" lang="ja"
+              >Manifest V3 では Google Picker
+              のスクリプトを拡張の中で読み込めないため、Drive のファイルやスプレッドシートを選ぶときだけ、次の流れを使います。</span
+            >
+            <span class="en" lang="en"
+              >Manifest V3 does not allow loading the Google Picker script inside the extension, so file and
+              spreadsheet selection works as follows.</span
+            >
+          </p>
+          <ol>
+            <li>
+              <span class="ja" lang="ja"
+                >拡張が、開発者が GitHub Pages に置いた静的ページ
+                <code>https://youkiti.github.io/sr-data-extraction-plugin/picker.html</code>
+                を新しいタブで開きます。このページが Google Picker（<code>apis.google.com</code>）を読み込みます</span
+              >
+              <span class="en" lang="en"
+                >The extension opens a static page the developer hosts on GitHub Pages,
+                <code>https://youkiti.github.io/sr-data-extraction-plugin/picker.html</code>, in a new tab. That page
+                loads Google Picker (<code>apis.google.com</code>)</span
+              >
+            </li>
+            <li>
+              <span class="ja" lang="ja"
+                >ページから要求を受けると、拡張は送信元のタブ・ページの URL・起動ごとの使い捨ての値（nonce）を確かめたうえで、<code
+                  >drive.file</code
+                >
+                スコープの OAuth アクセストークンを拡張のメッセージ応答で渡します。トークンは URL に載せません</span
+              >
+              <span class="en" lang="en"
+                >When the page asks, the extension checks the sending tab, the page URL and a one-time value (nonce)
+                created for each launch, then hands over an OAuth access token for the <code>drive.file</code> scope
+                in its message response. The token is never put in a URL</span
+              >
+            </li>
+            <li>
+              <span class="ja" lang="ja"
+                >ページはトークンを Picker
+                の呼び出しにだけ使い、保存も外部への送信もしません。選ばれたファイルの ID と名前を拡張へ返し、タブは閉じられます</span
+              >
+              <span class="en" lang="en"
+                >The page uses the token only to call Picker; it neither stores nor sends it anywhere. It returns the
+                IDs and names of the chosen files to the extension, and the tab closes</span
+              >
+            </li>
+          </ol>
+          <p>
+            <span class="ja" lang="ja"
+              >ページのソースは
+              <a href="https://github.com/youkiti/sr-data-extraction-plugin/blob/master/hosted/picker.html"
+                >hosted/picker.html</a
+              >
+              で公開しています。GitHub Pages の配信は GitHub の、Picker は Google の規約に従います。</span
+            >
+            <span class="en" lang="en"
+              >The page source is public at
+              <a href="https://github.com/youkiti/sr-data-extraction-plugin/blob/master/hosted/picker.html"
+                >hosted/picker.html</a
+              >. Delivery via GitHub Pages is governed by GitHub’s terms, and Picker by Google’s.</span
+            >
+          </p>
         </section>
 
         <section>
@@ -326,23 +564,45 @@
             <li>
               <span class="ja" lang="ja"
                 >すべてのデータは利用者自身の Google
-                アカウントとブラウザローカルストレージに保存されます。削除は、利用者が Google Drive / Sheets
+                アカウントとブラウザ内のストレージに保存されます。削除は、利用者が Google Drive / Sheets
                 上のファイルを削除し、拡張を削除（またはブラウザのストレージをクリア）することで完結します。</span
               >
               <span class="en" lang="en"
-                >All data lives in the user’s own Google account and in browser local storage. Deleting the files in
+                >All data lives in the user’s own Google account and in the browser’s extension storage. Deleting the files in
                 Google Drive / Sheets and removing the extension (or clearing browser storage) removes everything.</span
               >
             </li>
             <li>
               <span class="ja" lang="ja"
-                >本拡張をアンインストールすると、<code>chrome.storage</code> 内の設定（API キー・OAuth
-                トークン・既定モデル等）は Chrome によって削除されます。Google Drive / Sheets
+                >OAuth アクセストークンは <code>chrome.storage.session</code>
+                に置き、ブラウザを閉じると消えます。サインアウトするとトークンを失効させます。</span
+              >
+              <span class="en" lang="en"
+                >The OAuth access token is kept in <code>chrome.storage.session</code> and is cleared when the browser
+                closes. Signing out revokes the token.</span
+              >
+            </li>
+            <li>
+              <span class="ja" lang="ja"
+                >LLM API キーは暗号化せずに <code>chrome.storage.local</code> に保存します。同じ Chrome
+                プロファイルを使える人は読める可能性があります。共用の PC では、自分専用の Chrome
+                プロファイルで使うか、使い終わったら拡張を削除してください（拡張を削除するとキーも消えます）。</span
+              >
+              <span class="en" lang="en"
+                >LLM API keys are stored unencrypted in <code>chrome.storage.local</code>, so anyone with access to the
+                same Chrome profile may be able to read them. On a shared computer, use your own Chrome profile, or
+                remove the extension when you are done (removing it also deletes the keys).</span
+              >
+            </li>
+            <li>
+              <span class="ja" lang="ja"
+                >本拡張をアンインストールすると、<code>chrome.storage</code> 内の設定（API
+                キー・メールアドレス・既定モデル等）は Chrome によって削除されます。Google Drive / Sheets
                 上のファイルは利用者の資産としてそのまま残ります。</span
               >
               <span class="en" lang="en"
-                >Uninstalling the extension makes Chrome delete its <code>chrome.storage</code> settings (API keys, OAuth
-                tokens, default model). Files in Google Drive / Sheets remain, as they belong to the user.</span
+                >Uninstalling the extension makes Chrome delete its <code>chrome.storage</code> settings (API keys,
+                email address, default model). Files in Google Drive / Sheets remain, as they belong to the user.</span
               >
             </li>
           </ul>
