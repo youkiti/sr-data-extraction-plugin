@@ -299,6 +299,7 @@ export async function runPilot(store: Store, deps: PilotServiceDeps): Promise<vo
         apiKey: providerResolution.config.apiKey,
         provider: providerResolution.config.provider,
         endpoint: providerResolution.config.endpoint,
+        reasoningEffort: providerResolution.config.reasoningEffort,
         loadDocumentPages: makeLoadDocumentPages(targets, deps.google),
         loadDocumentPageImages: makeLoadDocumentPageImages(targets, deps.google),
         buildProvider: deps.buildProvider,
