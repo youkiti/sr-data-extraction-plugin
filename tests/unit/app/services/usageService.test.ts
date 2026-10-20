@@ -97,6 +97,38 @@ describe('費用読込・予算保存・使用量出力', () => {
     expect(logs).toHaveBeenCalledTimes(2);
   });
 
+  // issue #381: 質問パネルの行は参照が空でも、ダッシュボードの費用（S9）に入る
+  test('質問パネル（ask_paper）の行をダッシュボードの費用に含める', async () => {
+    const { store, deps } = setup();
+    logs.mockResolvedValue([
+      {
+        logId: 'ask-1',
+        timestamp: '2026-08-04T00:00:00Z',
+        provider: 'gemini',
+        model: 'gemini-3.8-flash',
+        purpose: 'ask_paper',
+        promptRef: '',
+        responseRef: '',
+        promptSummary: null,
+        tokensIn: 1000,
+        tokensOut: 100,
+        cachedTokensIn: null,
+        latencyMs: 900,
+        costEstimateUsd: 0.25,
+        error: null,
+        runId: null,
+        studyId: 's1',
+        section: null,
+        promptVersion: 1,
+        thoughtsTokensOut: 0,
+      },
+    ]);
+    await loadUsage(store, deps);
+    const summary = store.getState().dashboard.usage.summary;
+    expect(summary?.totals).toMatchObject({ calls: 1, costUsd: 0.25 });
+    expect(summary?.byPurpose.map((row) => row.key)).toEqual(['ask_paper']);
+  });
+
   test.each(['プロジェクトなし', 'reviewer', '読込中'])(
     '%s の読込は何もしない',
     async (condition) => {

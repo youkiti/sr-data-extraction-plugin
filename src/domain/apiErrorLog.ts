@@ -9,12 +9,15 @@
  * - evidence_append: AI 抽出の根拠を Evidence タブへ追記する経路
  * - decision_save: 人間の判定を Decisions タブへ追記する経路
  * - annotation_upsert: StudyData / ResultsData の annotator 行 upsert（判定保存・ai 転記の共通経路）
+ * - llm_log_upload: LLM 呼び出しの prompt / response payload を Drive（logs/llm/）へ保存する経路
+ *   （lib/llm/apiLogger.ts。失敗しても呼び出しの結果と LLMApiLog 行は残す。issue #381）
  */
 export type ApiErrorLogContext =
   | 'pdf_load'
   | 'evidence_append'
   | 'decision_save'
-  | 'annotation_upsert';
+  | 'annotation_upsert'
+  | 'llm_log_upload';
 
 export interface ApiErrorLogEntry {
   logId: string;

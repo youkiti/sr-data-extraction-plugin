@@ -1,7 +1,13 @@
 // withLogging（LLMApiLog + Drive 保存ラッパ）の単体テスト
 // （sr-query-builder から流用。purpose は本拡張の enum、promptVersion 記録のテストを追加）
-import type { LlmApiLogEntry } from '../../../../src/domain/llmApiLog';
-import { buildPromptSummary, redactMessagesForLog, withLogging } from '../../../../src/lib/llm/apiLogger';
+import { isWarningOnlyLogEntry, type LlmApiLogEntry } from '../../../../src/domain/llmApiLog';
+import { recordApiErrorLog } from '../../../../src/lib/diagnostics/apiErrorLog';
+import {
+  PAYLOAD_UPLOAD_FAILED_PREFIX,
+  buildPromptSummary,
+  redactMessagesForLog,
+  withLogging,
+} from '../../../../src/lib/llm/apiLogger';
 import { OpenRouterProvider } from '../../../../src/lib/llm/OpenRouterProvider';
 import {
   LlmProviderError,
@@ -9,6 +15,8 @@ import {
   type ChatResponse,
   type LLMProvider,
 } from '../../../../src/lib/llm/LLMProvider';
+
+jest.mock('../../../../src/lib/diagnostics/apiErrorLog', () => ({ recordApiErrorLog: jest.fn() }));
 
 function makeProvider(impl: LLMProvider['chat']): LLMProvider {
   return {
@@ -576,4 +584,74 @@ test.each([
       : 'Error',
   );
   expect(recorded.uploads).toEqual([]);
+});
+
+// issue #381: payload の Drive 保存に失敗しても、課金済みの応答と LLMApiLog 行を失わない
+describe('withLogging の payload 保存失敗', () => {
+  const uploadError = new Error('drive 503');
+
+  test.each([
+    ['prompt の保存で失敗', 1],
+    ['response の保存で失敗', 2],
+  ])('%s: 応答を返し、参照を空にした行を目印付きで残して ApiErrorLog へ記録する', async (_label, failAt) => {
+    const response: ChatResponse = {
+      text: 'ok',
+      tokensIn: 5,
+      tokensOut: 7,
+      cachedTokensIn: null,
+      raw: {},
+    };
+    const provider = makeProvider(async () => response);
+    const { deps, recorded } = makeDeps();
+    let calls = 0;
+    const logged = withLogging(provider, 'extract_study', {
+      ...deps,
+      uploadJson: async () => {
+        calls += 1;
+        if (calls === failAt) {
+          throw uploadError;
+        }
+        return { webViewLink: 'https://drive/ok' };
+      },
+    });
+
+    await expect(
+      logged.chat([{ role: 'user', content: 'q' }], { logContext: { studyId: 's1', section: null } }),
+    ).resolves.toBe(response);
+    expect(recorded.entries).toHaveLength(1);
+    const entry = recorded.entries[0]!;
+    expect(entry).toMatchObject({ promptRef: '', responseRef: '', tokensIn: 5, error: null });
+    expect(entry.promptSummary).toBe(`${PAYLOAD_UPLOAD_FAILED_PREFIX} [user] q`);
+    expect(entry.latencyMs).not.toBeNull();
+    // 参照が空でも警告専用行とはみなさない（費用集計に含める）
+    expect(isWarningOnlyLogEntry(entry)).toBe(false);
+    expect(recordApiErrorLog).toHaveBeenCalledWith({
+      context: 'llm_log_upload',
+      error: uploadError,
+      studyId: 's1',
+    });
+  });
+
+  test('呼び出し自体が失敗した場合は、保存失敗ではなく元の例外を再送出する', async () => {
+    const providerError = new LlmProviderError('boom', 'gemini', 500, '');
+    const provider = makeProvider(async () => {
+      throw providerError;
+    });
+    const { deps, recorded } = makeDeps();
+    const logged = withLogging(provider, 'extract_study', {
+      ...deps,
+      uploadJson: async () => {
+        throw uploadError;
+      },
+    });
+
+    await expect(logged.chat([{ role: 'user', content: 'q' }])).rejects.toBe(providerError);
+    expect(recorded.entries[0]).toMatchObject({ promptRef: '', responseRef: '' });
+    expect(recorded.entries[0]?.error).toContain('status=500');
+    expect(recordApiErrorLog).toHaveBeenCalledWith({
+      context: 'llm_log_upload',
+      error: uploadError,
+      studyId: null,
+    });
+  });
 });
