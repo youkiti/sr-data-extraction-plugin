@@ -14,6 +14,8 @@ export type AskPaperQuestionParams = Omit<AskPaperParams, 'spreadsheetId' | 'his
   studyId: string;
 };
 
+let sendingLocked = false;
+
 export async function sendAskPaperQuestion(
   store: Store,
   deps: AskPaperDeps & { profile?: ProfileDeps },
@@ -24,15 +26,14 @@ export async function sendAskPaperQuestion(
     !state.currentProject ||
     !canAskPaper(state.role.role) ||
     state.askPaper.sending ||
+    sendingLocked ||
     !params.question.trim()
   )
     return;
-  // 同意待ちも送信中として扱い、再操作による二重送信を防ぐ。
-  store.setState({ askPaper: { ...state.askPaper, sending: true, error: null } });
+  sendingLocked = true;
   try {
     const ensureConsent = deps.ensureAiDataConsent;
     if (ensureConsent && !(await confirmAskPaperConsent(deps, ensureConsent))) {
-      store.setState({ askPaper: { ...store.getState().askPaper, sending: false } });
       return;
     }
     // API エラーでも質問に着手した事実を開示するため、同意後に印を付ける。
@@ -40,6 +41,8 @@ export async function sendAskPaperQuestion(
     store.setState({
       askPaper: {
         ...beforeSend,
+        sending: true,
+        error: null,
         usedStudyIds: [...new Set([...beforeSend.usedStudyIds, params.studyId])],
       },
     });
@@ -83,6 +86,8 @@ export async function sendAskPaperQuestion(
         error: error instanceof Error ? error.message : String(error),
       },
     });
+  } finally {
+    sendingLocked = false;
   }
 }
 

@@ -447,24 +447,34 @@ describe('runDraftSchema', () => {
     expect(store.getState().schema.draftError).toContain('API キーが未設定');
   });
 
-  test.each([true, false])('同意待ちの再操作を止め、終了時にドラフト中を解除する: %s', async (accepted) => {
+  test.each([true, false, 'consentError', 'runError'])('同意待ちの再操作を止め、終了時にロックを解除する: %s', async (outcome) => {
     const store = makeStore();
     seedForDraft(store);
+    const before = store.getState();
     let resolveConsent!: (value: boolean) => void;
-    const ensureAiDataConsent = jest.fn(() => new Promise<boolean>((resolve) => {
+    let rejectConsent!: (error: Error) => void;
+    const ensureAiDataConsent = jest.fn(() => new Promise<boolean>((resolve, reject) => {
       resolveConsent = resolve;
+      rejectConsent = reject;
     }));
     const { deps, chatMock } = makeDeps({ ensureAiDataConsent });
+    if (outcome === 'runError') chatMock.mockRejectedValueOnce(new Error('ドラフト失敗'));
     const pending = runDraftSchema(store, deps);
-    expect(store.getState().schema.drafting).toBe(true);
+    expect(store.getState().schema.drafting).toBe(false);
     while (!resolveConsent) await Promise.resolve();
+    expect(store.getState()).toBe(before);
     await runDraftSchema(store, deps);
     expect(ensureAiDataConsent).toHaveBeenCalledTimes(1);
     expect(chatMock).not.toHaveBeenCalled();
-    resolveConsent(accepted);
+    if (outcome === 'consentError') rejectConsent(new Error('同意確認失敗'));
+    else resolveConsent(outcome !== false);
     await pending;
-    expect(chatMock).toHaveBeenCalledTimes(accepted ? 1 : 0);
+    expect(chatMock).toHaveBeenCalledTimes(outcome === true || outcome === 'runError' ? 1 : 0);
     expect(store.getState().schema.drafting).toBe(false);
+    if (outcome === false) expect(store.getState()).toBe(before);
+    ensureAiDataConsent.mockResolvedValue(false);
+    await runDraftSchema(store, deps);
+    expect(ensureAiDataConsent).toHaveBeenCalledTimes(2);
   });
 
   test('AI へ送る前の同意（issue #381）: キャンセルなら LLM を呼ばず画面も変えない / 同意なら実行する', async () => {

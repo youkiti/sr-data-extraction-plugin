@@ -436,6 +436,9 @@ async function performRun(
   return outcome;
 }
 
+// 同意待ちを含め、一括抽出と再試行を相互に排他する。
+let extractionLocked = false;
+
 /**
  * 一括抽出を実行する（S7 の中核フロー。確認カードの「実行する」から呼ばれる）
  */
@@ -446,12 +449,13 @@ export async function runExtract(store: Store, deps: ExtractServiceDeps): Promis
   if (
     !project ||
     state.extract.running ||
+    extractionLocked ||
     state.extract.retryingStudyId !== null ||
     fields === null
   ) {
     return;
   }
-  patchExtract(store, { running: true });
+  extractionLocked = true;
   try {
     const providerResolution = await resolveProviderConfig(state.extract.model, deps);
     if (providerResolution.modelMismatch !== null) {
@@ -491,7 +495,7 @@ export async function runExtract(store: Store, deps: ExtractServiceDeps): Promis
       });
       return;
     }
-    // AI へ送る前の同意（issue #381）。キャンセルなら実行中フラグを戻し、確認カードも開いたままにする
+    // AI へ送る前の同意（issue #381）。キャンセルなら確認カードも開いたままにする
     if (!(await confirmAiDataConsent(deps, providerResolution.provider))) {
       return;
     }
@@ -570,7 +574,7 @@ export async function runExtract(store: Store, deps: ExtractServiceDeps): Promis
   } catch (err) {
     patchExtract(store, { running: false, progress: null, runError: toMessage(err) });
   } finally {
-    patchExtract(store, { running: false });
+    extractionLocked = false;
   }
 }
 
@@ -589,6 +593,7 @@ export async function retryExtractStudy(
   if (
     !project ||
     state.extract.running ||
+    extractionLocked ||
     state.extract.retryingStudyId !== null ||
     fields === null
   ) {
@@ -606,7 +611,7 @@ export async function retryExtractStudy(
   // lastRunFieldIds = 直近実行時に実際に使った値を使う）
   const fieldIds = state.extract.lastRunFieldIds;
   const runFields = filterFieldsBySelection(fields, fieldIds);
-  patchExtract(store, { retryingStudyId: studyId });
+  extractionLocked = true;
   try {
     const providerResolution = await resolveProviderConfig(state.extract.model, deps);
     if (providerResolution.modelMismatch !== null) {
@@ -711,6 +716,6 @@ export async function retryExtractStudy(
     });
     patchExtract(store, { retryingStudyId: null, runError: toMessage(err) });
   } finally {
-    patchExtract(store, { retryingStudyId: null });
+    extractionLocked = false;
   }
 }

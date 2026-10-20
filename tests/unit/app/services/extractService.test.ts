@@ -755,23 +755,34 @@ describe('runExtract', () => {
     expect(runExtractionMock).not.toHaveBeenCalled();
   });
 
-  test.each([true, false])('一括抽出は同意待ちの再操作を止め、終了時に解除する: %s', async (accepted) => {
+  test.each([true, false, 'consentError', 'runError'])('一括抽出は同意待ちの再操作を止め、終了時にロックを解除する: %s', async (outcome) => {
     const store = makeReadyStore();
+    const before = store.getState();
     let resolveConsent!: (value: boolean) => void;
-    const ensureAiDataConsent = jest.fn(() => new Promise<boolean>((resolve) => {
+    let rejectConsent!: (error: Error) => void;
+    const ensureAiDataConsent = jest.fn(() => new Promise<boolean>((resolve, reject) => {
       resolveConsent = resolve;
+      rejectConsent = reject;
     }));
+    if (outcome === 'runError') runExtractionMock.mockRejectedValueOnce(new Error('抽出失敗'));
     const deps = makeDeps({ ensureAiDataConsent });
     const pending = runExtract(store, deps);
-    expect(store.getState().extract.running).toBe(true);
+    expect(store.getState().extract.running).toBe(false);
     while (!resolveConsent) await Promise.resolve();
+    expect(store.getState()).toBe(before);
     await runExtract(store, deps);
+    await retryExtractStudy(store, deps, 'study-doc-1');
     expect(ensureAiDataConsent).toHaveBeenCalledTimes(1);
     expect(runExtractionMock).not.toHaveBeenCalled();
-    resolveConsent(accepted);
+    if (outcome === 'consentError') rejectConsent(new Error('同意確認失敗'));
+    else resolveConsent(outcome !== false);
     await pending;
-    expect(runExtractionMock).toHaveBeenCalledTimes(accepted ? 1 : 0);
+    expect(runExtractionMock).toHaveBeenCalledTimes(outcome === true || outcome === 'runError' ? 1 : 0);
     expect(store.getState().extract.running).toBe(false);
+    if (outcome === false) expect(store.getState()).toBe(before);
+    ensureAiDataConsent.mockResolvedValue(false);
+    await retryExtractStudy(store, deps, 'study-doc-1');
+    expect(ensureAiDataConsent).toHaveBeenCalledTimes(2);
   });
 
   test('AI へ送る前の同意（issue #381）をキャンセルしたら実行せず、確認カードも開いたままにする', async () => {
@@ -1222,23 +1233,34 @@ describe('retryExtractStudy', () => {
     });
   }
 
-  test.each([true, false])('再試行は同意待ちの再操作を止め、終了時に解除する: %s', async (accepted) => {
+  test.each([true, false, 'consentError', 'runError'])('再試行は同意待ちの再操作を止め、終了時にロックを解除する: %s', async (outcome) => {
     const store = makeFailedStore();
+    const before = store.getState();
     let resolveConsent!: (value: boolean) => void;
-    const ensureAiDataConsent = jest.fn(() => new Promise<boolean>((resolve) => {
+    let rejectConsent!: (error: Error) => void;
+    const ensureAiDataConsent = jest.fn(() => new Promise<boolean>((resolve, reject) => {
       resolveConsent = resolve;
+      rejectConsent = reject;
     }));
+    if (outcome === 'runError') runExtractionMock.mockRejectedValueOnce(new Error('抽出失敗'));
     const deps = makeDeps({ ensureAiDataConsent });
     const pending = retryExtractStudy(store, deps, 'study-doc-2');
-    expect(store.getState().extract.retryingStudyId).toBe('study-doc-2');
+    expect(store.getState().extract.retryingStudyId).toBe(null);
     while (!resolveConsent) await Promise.resolve();
+    expect(store.getState()).toBe(before);
     await retryExtractStudy(store, deps, 'study-doc-2');
+    await runExtract(store, deps);
     expect(ensureAiDataConsent).toHaveBeenCalledTimes(1);
     expect(runExtractionMock).not.toHaveBeenCalled();
-    resolveConsent(accepted);
+    if (outcome === 'consentError') rejectConsent(new Error('同意確認失敗'));
+    else resolveConsent(outcome !== false);
     await pending;
-    expect(runExtractionMock).toHaveBeenCalledTimes(accepted ? 1 : 0);
+    expect(runExtractionMock).toHaveBeenCalledTimes(outcome === true || outcome === 'runError' ? 1 : 0);
     expect(store.getState().extract.retryingStudyId).toBe(null);
+    if (outcome === false) expect(store.getState()).toBe(before);
+    ensureAiDataConsent.mockResolvedValue(false);
+    await runExtract(store, deps);
+    expect(ensureAiDataConsent).toHaveBeenCalledTimes(2);
   });
 
   test('AI へ送る前の同意（issue #381）をキャンセルしたら再試行せず、失敗行の表示も変えない', async () => {

@@ -251,6 +251,8 @@ async function resolveDocuments(
   return cached ?? (await readDocuments(spreadsheetId, deps.google));
 }
 
+let draftingLocked = false;
+
 /**
  * draft-schema skill を実行してエディタへ流し込む（S5 の中核フロー）。
  * 経過時間は 1 秒ごとに store へ反映し、他の再描画で表示が消えない
@@ -259,7 +261,7 @@ async function resolveDocuments(
 export async function runDraftSchema(store: Store, deps: SchemaServiceDeps): Promise<void> {
   const state = store.getState();
   const project = state.currentProject;
-  if (!project || state.schema.drafting) {
+  if (!project || state.schema.drafting || draftingLocked) {
     return;
   }
   const { selectedDocumentIds, model } = state.schema;
@@ -271,7 +273,7 @@ export async function runDraftSchema(store: Store, deps: SchemaServiceDeps): Pro
     patchSchema(store, { draftError: t('extraction.errNoModel') });
     return;
   }
-  patchSchema(store, { drafting: true });
+  draftingLocked = true;
   let ticker: ReturnType<typeof setInterval> | undefined;
   try {
     const providerResolution = await resolveProviderConfig(model, deps);
@@ -283,7 +285,7 @@ export async function runDraftSchema(store: Store, deps: SchemaServiceDeps): Pro
       patchSchema(store, { draftError: missingApiKeyMessage(providerResolution.provider) });
       return;
     }
-    // AI へ送る前の同意（issue #381）。キャンセルなら実行中フラグを戻す
+    // AI へ送る前の同意（issue #381）。キャンセルなら画面を変えずに戻る
     if (!(await confirmAiDataConsent(deps, providerResolution.provider))) {
       return;
     }
@@ -372,7 +374,7 @@ export async function runDraftSchema(store: Store, deps: SchemaServiceDeps): Pro
     patchSchema(store, { drafting: false, draftError: toMessage(err) });
   } finally {
     clearInterval(ticker);
-    patchSchema(store, { drafting: false });
+    draftingLocked = false;
   }
 }
 

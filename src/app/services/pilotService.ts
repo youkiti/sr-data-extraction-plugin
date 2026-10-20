@@ -204,6 +204,8 @@ async function resolveStudies(
   return buildExtractionCandidates(studies, records);
 }
 
+let pilotLocked = false;
+
 /**
  * パイロット抽出を実行する（S6 の中核フロー）。
  * 完了後は最初の抽出済み文献の検証データを読み込み、埋め込み検証 UI へつなぐ
@@ -211,7 +213,7 @@ async function resolveStudies(
 export async function runPilot(store: Store, deps: PilotServiceDeps): Promise<void> {
   const state = store.getState();
   const project = state.currentProject;
-  if (!project || state.pilot.running) {
+  if (!project || state.pilot.running || pilotLocked) {
     return;
   }
   const fields = state.schema.currentFields;
@@ -242,7 +244,7 @@ export async function runPilot(store: Store, deps: PilotServiceDeps): Promise<vo
     patchPilot(store, { runError: t('extraction.errNoModel') });
     return;
   }
-  patchPilot(store, { running: true });
+  pilotLocked = true;
   try {
     const providerResolution = await resolveProviderConfig(model, deps);
     if (providerResolution.modelMismatch !== null) {
@@ -272,7 +274,7 @@ export async function runPilot(store: Store, deps: PilotServiceDeps): Promise<vo
       patchPilot(store, { runError: t('extraction.errImageUnsupportedModel', { model }) });
       return;
     }
-    // AI へ送る前の同意（issue #381）。キャンセルなら実行中フラグを戻す
+    // AI へ送る前の同意（issue #381）。キャンセルなら画面を変えずに戻る
     if (!(await confirmAiDataConsent(deps, providerResolution.provider))) {
       return;
     }
@@ -379,7 +381,7 @@ export async function runPilot(store: Store, deps: PilotServiceDeps): Promise<vo
   } catch (err) {
     patchPilot(store, { running: false, progress: null, runError: toMessage(err) });
   } finally {
-    patchPilot(store, { running: false });
+    pilotLocked = false;
   }
 }
 
