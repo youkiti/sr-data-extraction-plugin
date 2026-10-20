@@ -49,7 +49,7 @@ flowchart LR
         Sheets[("Google Sheets<br/>（プロジェクト DB）")]
         Drive[("Google Drive<br/>（PDF・抽出テキスト・ログ実体）")]
     end
-    LLM["Gemini / Anthropic / OpenRouter / OpenAI 互換 API（BYOK）"]
+    LLM["Gemini / Anthropic / OpenRouter / Azure OpenAI / OpenAI 互換 API / ローカル LLM（BYOK）"]
 
     Ext <-->|"OAuth 2.0<br/>userinfo.email / drive.file スコープのみ"| Sheets
     Ext <-->|PDF コピー・テキスト保存| Drive
@@ -122,3 +122,4 @@ E2E はローカルの chromium を使います。`npx playwright install chromi
 
 - ライセンス: [MIT](LICENSE)
 - 本ツールの開発は JSPS 科研費 **25K13585** の助成を受けています（This work was supported by JSPS KAKENHI Grant Number 25K13585）
+- 利益相反: 開発者は、本ツールが接続する AI 事業者（Google・Anthropic・OpenAI・OpenRouter・Microsoft 等）から金銭その他の利益を受けていません

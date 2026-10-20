@@ -163,7 +163,7 @@ test('一覧: study 単位グループと role セレクト・text_status バッ
   await expect(page.locator('.documents__badge--partial')).toHaveText('partial');
   await expect(page.locator('.documents__badge--no_text_layer')).toHaveText('no_text_layer');
   await expect(page.locator('.documents__badge-note')).toHaveText('pdf_native 抽出・ハイライトは AI 推定（bbox）');
-  await expect(page.locator('.view__notice')).toContainText('取り込んだ PDF が外部へ送信されるのは LLM API への抽出リクエストのみです');
+  await expect(page.locator('.view__notice')).toContainText('取り込んだ PDF の本文（スキャン PDF はページ画像）は、AI 機能を使うときに、設定した LLM API へ送られます');
   // 選択 0 件では統合ボタンは無効
   await expect(page.locator('#documents-merge')).toBeDisabled();
 });
