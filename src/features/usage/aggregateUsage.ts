@@ -258,7 +258,10 @@ export function aggregateUsage(input: {
     if (isWarningOnlyLogEntry(log)) {
       continue;
     }
-    const wasted = isErrorCall(log) || failedBatches.has(batchKey(log));
+    // 失敗バッチの照合は抽出の呼び出しだけに限る。根拠の再特定（relocate_quote）も元の
+    // run_id・study_id を記録するため（issue #381）、抽出以外まで失敗費用に数えないようにする
+    const wasted =
+      isErrorCall(log) || (log.purpose === 'extract_study' && failedBatches.has(batchKey(log)));
     addCall(totals, log, wasted);
     addAxis(purposes, log.purpose, log, wasted);
     addAxis(models, log.model, log, wasted);

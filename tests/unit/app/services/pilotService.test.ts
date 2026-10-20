@@ -26,6 +26,7 @@ import {
 } from '../../../../src/app/services/verificationService';
 import { persistVerifyDecision } from '../../../../src/app/services/verifyService';
 import { runExtraction } from '../../../../src/app/services/extractionService';
+import { installChromeMock } from '../../../setup/chrome-mock';
 import { relocateQuote } from '../../../../src/app/services/relocateQuoteService';
 import { resolveProtocol } from '../../../../src/app/services/schemaService';
 import { createInitialState, createStore, type Store } from '../../../../src/app/store';
@@ -675,6 +676,16 @@ describe('runPilot: 実行', () => {
     expect(store.getState().pilot.selectedStudyIds).toEqual(['s4']);
     expect(store.getState().pilot.selectionTouched).toBe(false);
     expect(store.getState().pilot.selectionHistoryApplied).toBe(true);
+  });
+
+  test('Options の reasoning effort を runExtraction の依存へ渡す（issue #381）', async () => {
+    const chromeMock = installChromeMock();
+    chromeMock.storage.local.data['settings.defaultReasoningEffort'] = 'low';
+    const store = makeReadyStore();
+    runExtractionMock.mockResolvedValue(makeOutcome());
+    await runPilot(store, makeDeps());
+    expect(runExtractionMock.mock.calls[0]?.[1].reasoningEffort).toBe('low');
+    delete chromeMock.storage.local.data['settings.defaultReasoningEffort'];
   });
 
   test('runExtraction を pilot 設定で呼び、counts と run 結果を反映して検証データを読み込む', async () => {

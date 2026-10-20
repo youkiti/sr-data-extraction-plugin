@@ -40,7 +40,7 @@ export interface LlmApiLogEntry {
   latencyMs: number | null;
   costEstimateUsd: number | null;
   error: string | null;
-  /** 抽出実行の識別子。抽出以外の呼び出し・旧行は null */
+  /** 抽出実行の識別子。根拠の再特定は元 Evidence の run_id（issue #381）。それ以外の呼び出し・旧行は null */
   runId: string | null;
   /** 呼び出し対象の study。対象なし・旧行は null */
   studyId: string | null;
@@ -55,7 +55,13 @@ export interface LlmApiLogEntry {
   thoughtsTokensOut: number | null;
 }
 
-/** 旧行には他の識別マーカーがないため、両 payload 参照が空の行を警告専用と判定する。 */
+/**
+ * 警告専用行（API を呼んでいない記録行。`[batch_failed]` / `[arm_completeness]` /
+ * `[transfer_failed]`）かどうか。警告行は extractionService だけが書き、どれも両 payload 参照と
+ * latency_ms が空になる（旧行も同じ）。参照が空というだけでは判定しない: 質問パネル（ask_paper）は
+ * 設計上本文を残さず、payload の保存に失敗した呼び出し（apiLogger）も参照が空になるが、
+ * どちらも実際に API を呼んで課金されうるため latency_ms を持つ（issue #381）
+ */
 export function isWarningOnlyLogEntry(entry: LlmApiLogEntry): boolean {
-  return entry.promptRef === '' && entry.responseRef === '';
+  return entry.promptRef === '' && entry.responseRef === '' && entry.latencyMs === null;
 }
