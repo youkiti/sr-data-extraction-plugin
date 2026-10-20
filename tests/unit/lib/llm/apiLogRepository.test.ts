@@ -167,12 +167,25 @@ describe('ensureLlmApiLogColumns', () => {
 
 describe('isWarningOnlyLogEntry', () => {
   test.each([
-    ['', '', true],
-    ['', 'response', false],
-    ['prompt', '', false],
-    ['prompt', 'response', false],
-  ])('両参照が空の場合だけ警告専用と判定する: %j / %j', (promptRef, responseRef, expected) => {
-    expect(isWarningOnlyLogEntry(makeEntry({ promptRef, responseRef }))).toBe(expected);
+    ['', '', null, true],
+    ['', '', 1234, false],
+    ['', 'response', null, false],
+    ['prompt', '', null, false],
+    ['prompt', 'response', null, false],
+  ])(
+    '両参照と latency_ms が空の場合だけ警告専用と判定する: %j / %j / %j',
+    (promptRef, responseRef, latencyMs, expected) => {
+      expect(isWarningOnlyLogEntry(makeEntry({ promptRef, responseRef, latencyMs }))).toBe(expected);
+    },
+  );
+
+  // issue #381: 質問パネルの行は設計上参照が空だが、実際に API を呼んでいるため警告行ではない
+  test('質問パネル（ask_paper）の行は警告専用とみなさない', () => {
+    expect(
+      isWarningOnlyLogEntry(
+        makeEntry({ purpose: 'ask_paper', promptRef: '', responseRef: '', promptSummary: null }),
+      ),
+    ).toBe(false);
   });
 });
 

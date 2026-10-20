@@ -130,6 +130,10 @@ export async function relocateQuote(
           return { webViewLink: file.webViewLink };
         },
         appendLogEntry: (entry) => appendLlmApiLog(params.spreadsheetId, entry, deps.google),
+        // 再特定で追記する Evidence は元の run_id を引き継ぐ（下の relocated）。その行が
+        // 元の抽出とは別のモデル・プロンプトで作られたことを、LLMApiLog の run_id +
+        // purpose=relocate_quote から後で追えるよう、ログ行にも同じ run_id を残す（issue #381）
+        runId: params.evidence.runId,
         promptVersion: RELOCATE_QUOTE_PROMPT_VERSION,
         newUuid: deps.newUuid,
         now: deps.now,

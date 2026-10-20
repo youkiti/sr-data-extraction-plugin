@@ -404,6 +404,7 @@ async function performRun(
       apiKey: params.providerConfig.apiKey,
       provider: params.providerConfig.provider,
       endpoint: params.providerConfig.endpoint,
+      reasoningEffort: params.providerConfig.reasoningEffort,
       loadDocumentPages: makeLoadDocumentPages(params.targets, deps.google),
       loadDocumentPageImages: makeLoadDocumentPageImages(params.targets, deps.google),
       buildProvider: deps.buildProvider,

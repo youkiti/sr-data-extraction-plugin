@@ -16,6 +16,7 @@ import {
   type ExtractServiceDeps,
 } from '../../../../src/app/services/extractService';
 import { runExtraction } from '../../../../src/app/services/extractionService';
+import { installChromeMock } from '../../../setup/chrome-mock';
 import { resolveProtocol } from '../../../../src/app/services/schemaService';
 import { createInitialState, createStore, type Store } from '../../../../src/app/store';
 import type { DocumentRecord } from '../../../../src/domain/document';
@@ -852,6 +853,16 @@ describe('runExtract', () => {
     ]);
   });
 
+  test('Options の reasoning effort を runExtraction の依存へ渡す（issue #381）', async () => {
+    const chromeMock = installChromeMock();
+    chromeMock.storage.local.data['settings.defaultReasoningEffort'] = 'high';
+    const store = makeReadyStore();
+    runExtractionMock.mockResolvedValue(makeOutcome());
+    await runExtract(store, makeDeps());
+    expect(runExtractionMock.mock.calls[0]?.[1].reasoningEffort).toBe('high');
+    delete chromeMock.storage.local.data['settings.defaultReasoningEffort'];
+  });
+
   test('ai 行への転記が失敗した場合: runError に転記失敗の文言を出し、toastDone/toastPartial ではなく専用トーストを出す', async () => {
     const store = makeReadyStore();
     runExtractionMock.mockResolvedValue(
@@ -1273,6 +1284,16 @@ describe('retryExtractStudy', () => {
     ]);
     expect(state.extract.extractedStudyIds?.sort()).toEqual(['study-doc-1', 'study-doc-2']);
     expect(state.counts).toMatchObject({ evidenceRows: 1, dataRows: 1 });
+  });
+
+  test('再試行でも Options の reasoning effort を runExtraction の依存へ渡す（issue #381）', async () => {
+    const chromeMock = installChromeMock();
+    chromeMock.storage.local.data['settings.defaultReasoningEffort'] = 'medium';
+    const store = makeFailedStore();
+    runExtractionMock.mockResolvedValue(makeOutcome({ studyIds: ['study-doc-2'] }));
+    await retryExtractStudy(store, makeDeps(), 'study-doc-2');
+    expect(runExtractionMock.mock.calls[0]?.[1].reasoningEffort).toBe('medium');
+    delete chromeMock.storage.local.data['settings.defaultReasoningEffort'];
   });
 
   test('ai 行への転記が失敗した場合: runError に転記失敗の文言を出し、toastRetryDone/toastRetryPartial ではなく専用トーストを出す', async () => {

@@ -172,10 +172,11 @@ describe('relocateQuote', () => {
     // ensureEvidenceRelocatedFromColumn → appendEvidenceRows の順で呼ばれる
     expect(ensureEvidenceRelocatedFromColumnMock).toHaveBeenCalledWith('sheet-1', deps.google);
     expect(appendEvidenceRowsMock).toHaveBeenCalledWith('sheet-1', [outcome.evidence], deps.google);
-    // LLMApiLog（withLogging）記録
+    // LLMApiLog（withLogging）記録。元 Evidence の run_id を残す（issue #381: 再特定で作った
+    // Evidence 行が別モデル・別プロンプト由来であることを run_id + purpose で追えるようにする）
     expect(appendLlmApiLogMock).toHaveBeenCalledTimes(1);
     expect(appendLlmApiLogMock.mock.calls[0]?.[1]).toMatchObject({
-      runId: null, studyId: 'study-1', section: null,
+      runId: 'run-1', studyId: 'study-1', section: null,
     });
     expect(appendLlmApiLogMock.mock.calls[0]?.[1]).toMatchObject({ purpose: 'relocate_quote' });
     expect(chatMock).toHaveBeenCalledTimes(1);

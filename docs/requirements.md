@@ -431,14 +431,19 @@ AI 抽出の根拠情報。ハイライト表示（§5）と audit.csv の素材
   `thoughts_tokens_out` をこの順で追加する（旧行の追加列は空 = 不明）。抽出開始前に先頭 13 列を
   検証してヘッダを拡張し、空・欠落セルは補完する（空でない列名の競合だけを拒否）。
   既存のデータ行は変更しない。抽出ログには run と呼び出し対象の study /
-  section を記録する。抽出以外の `run_id` は空、根拠再特定では対象の `study_id` を記録する。
+  section を記録する。抽出以外の `run_id` は空とする。根拠再特定では元の Evidence の `run_id` と対象の `study_id` を記録する（再特定で追記する Evidence は元の `run_id` を引き継ぐため、その行が元の抽出とは別のモデル・プロンプトで作られたことを `run_id` + `purpose=relocate_quote` の行で追えるようにする。issue #381。費用集計の失敗バッチ照合は `extract_study` の行だけに行う）。
   プロンプト版数は列と Drive の prompt payload の両方に残す。
   `tokens_out` は思考・推論を含む課金対象出力の合計、`thoughts_tokens_out` はその思考分の内数で、
   個別の報告がなければ空とする。Gemini は usageMetadata があれば未報告の思考分を 0 とする。
   応答内容エラー（出力上限等）でもプロバイダが使用量を返せば、トークン数・概算費用を記録し、
   抽出実行の失敗バッチも返された使用量を実行合計に加算する。HTTP エラー・解析不能な応答の
   使用量は不明とする。警告専用行は旧行にも適用できる
-  `prompt_ref === '' && response_ref === ''` で識別する。警告行には run と、対象があれば study /
+  `prompt_ref === '' && response_ref === '' && latency_ms` が空、で識別する（issue #381。
+  `ask_paper` の行と payload の保存に失敗した行は参照が空でも API を呼んでいて `latency_ms` を持つため、
+  警告専用行とはみなさず呼び出し数・使用量・費用に含める）。
+  payload（prompt / response）の Drive 保存に失敗しても、呼び出しの結果は呼び出し元へ返し、
+  ログ行は参照 2 列を空・`prompt_summary` の先頭を `[payload_upload_failed]` にして残す。
+  保存の失敗自体は `ApiErrorLog`（context=`llm_log_upload`）へ記録する（issue #381）。警告行には run と、対象があれば study /
   section を記録し、`prompt_version` / `thoughts_tokens_out` は空とする。
   費用集計では警告専用行を呼び出し数・使用量・費用のすべてから除外し、
   予算の累積費用は **全 purpose の既知費用の合計**とする。費用不明かつ入出力のいずれかが既知の
@@ -509,7 +514,7 @@ Google API 呼び出しの失敗を記録する診断ログ（issue #249）。�
 | log_id | string(uuid) | ✓ | |
 | occurred_at | iso8601 | ✓ | **失敗が発生した時刻**（シートへ書き込んだ時刻ではない。ローカル退避 → 復旧後フラッシュでも保持する） |
 | logged_by | email | ✓ | サインイン中のメール（annotator と同じ値）。未設定時は空 |
-| context | enum | ✓ | 失敗した操作の種別: `pdf_load`（PDF バイナリ取得）/ `evidence_append`（Evidence 追記）/ `decision_save`（Decisions 追記）/ `annotation_upsert`（StudyData・ResultsData の annotator 行 upsert。判定保存と ai 転記の共通経路） |
+| context | enum | ✓ | 失敗した操作の種別: `pdf_load`（PDF バイナリ取得）/ `evidence_append`（Evidence 追記）/ `decision_save`（Decisions 追記）/ `annotation_upsert`（StudyData・ResultsData の annotator 行 upsert。判定保存と ai 転記の共通経路）/ `llm_log_upload`（LLM 呼び出しの prompt / response payload の Drive 保存。失敗しても呼び出しの結果と `LLMApiLog` 行は残す。issue #381） |
 | api | string | ✓ | `drive.files.get` / `sheets.values.append` のような短い API 名。URL そのものは記録しない（クエリにファイル ID が入るため） |
 | http_status | int | | ネットワーク層の失敗（fetch 自体が reject）は空 |
 | message | string | ✓ | 打ち切り済みのエラーメッセージ（`GoogleApiError.responseBody` を含みうるが定数長で打ち切る。トークン・認可ヘッダ・リクエストボディは含まない） |
