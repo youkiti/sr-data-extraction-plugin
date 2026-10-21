@@ -124,3 +124,17 @@ test('参考情報は外れ entity の AI 値・確定値・メモを表示す�
   state.pilot.run = null;
   expect(renderSchemaPilotMisses(state, 'f-1')).toBeNull();
 });
+
+
+test('FALSE は未判定の有効な値で、編集参考情報の AI 値と修正後を読み替える', () => {
+  const state = stateOf();
+  state.pilot.runFields = [makeField({ dataType: 'boolean' })];
+  state.pilot.evidence = [makeEvidence({ value: 'FALSE' })];
+  const root = renderPilotMatrix(state, ctx);
+  expect(root.querySelector('tbody td')?.textContent).toBe('·');
+  expect(pilotMatrixRows(state)[0]!.misses).toBe(0);
+  state.pilot.matrix!.decisions = [makeDecision({ action: 'edit', value: 'TRUE' })];
+  expect(renderSchemaPilotMisses(state, 'f-1')?.textContent).toContain('いいえ → はい');
+  expect(state.pilot.evidence[0]!.value).toBe('FALSE');
+  expect(state.pilot.matrix!.decisions[0]!.value).toBe('TRUE');
+});
