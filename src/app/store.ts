@@ -285,8 +285,19 @@ export interface RevertFromState {
   error: string | null;
 }
 
+export interface EnumSuggestion {
+  /** 行の移動には追従し、編集・削除後の古い候補は適用しない。 */
+  row: SchemaEditorRow;
+  loading: boolean;
+  values: string | null;
+  appendInstruction: boolean;
+  error: string | null;
+}
+
 /** #/schema（S5）の画面状態 */
 export interface SchemaState {
+  /** 自由記述から選択肢への変換案（未反映の下書き）。 */
+  enumSuggestion?: EnumSuggestion | null;
   /** パイロットから移動した項目。通常の入場時は未設定。 */
   pilotFieldId?: string | null;
   /** SchemaVersions タブの全版（降順）。null = 未読込 */
