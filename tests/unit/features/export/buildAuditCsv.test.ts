@@ -480,3 +480,17 @@ describe('buildAuditCsv', () => {
     expect(rows[0]?.slice(17, 22)).toEqual(['', '', '', '', '']);
   });
 });
+
+test('印の付け外しを各一行で出し、印イベントだけでは未検証警告を減らさない', () => {
+  const flag = decision('d1', 'f1', '-', 'flag_consult', 't2', { note: '相談メモ' });
+  const clear = { ...flag, action: 'unflag_consult' as const, decidedAt: 't3' };
+  const inputs = [study('d1', 'Study')];
+  const ev = [evidence('ev', 'run', 'd1', 'f1', '-')];
+  const fields = [field('f1', 'country', 1)];
+  const markedOnly = buildAuditCsv(inputs, [flag, clear], ev, [], fields);
+  expect(markedOnly.undecidedCellCount).toBe(1);
+  expect(markedOnly.csv.match(/,flag_consult,/g)).toHaveLength(1);
+  expect(markedOnly.csv.match(/,unflag_consult,/g)).toHaveLength(1);
+  const finalized = buildAuditCsv(inputs, [decision('d1', 'f1', '-', 'accept', 't1'), flag, clear], ev, [], fields);
+  expect(finalized.undecidedCellCount).toBe(0);
+});

@@ -4,6 +4,7 @@
 // 生成（未検証セル警告 → Drive `exports/` へ保存 → ExportLog 追記）を担う。
 // あわせて論文 Methods 記載例カード（docs/methods-boilerplate.md, issue #67）の実績値組み立てと
 // クリップボードコピーも担う
+import { isConsultAction } from '../../domain/decision';
 import { readQuoteSetRows } from '../../features/verification/quoteSetRepository';
 import { readCompletedRunMetas } from '../../features/extraction/runRepository';
 import { bundleEvidence } from '../../features/verification/evidenceBundles';
@@ -199,7 +200,7 @@ export async function loadExportData(
       runFacts: methodsRunFacts,
       logs: llmApiLogs,
       versions,
-      chatAssistDecisionCount: decisions.filter((decision) => hasChatAssistMarker(decision.note)).length,
+      chatAssistDecisionCount: decisions.filter((decision) => !isConsultAction(decision.action) && hasChatAssistMarker(decision.note)).length,
       unverifiedCellCount: countRSetUnverifiedCells(rSet),
       annotationRows: [...studySheet.rows, ...resultsRows],
     });

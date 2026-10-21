@@ -1,3 +1,4 @@
+import type { Decision } from '../../../../src/domain/decision';
 import type { ResultsDataRow } from '../../../../src/domain/annotation';
 import type { StudyRecord } from '../../../../src/domain/study';
 import type { SchemaField } from '../../../../src/domain/schemaField';
@@ -72,10 +73,10 @@ describe('buildResultsLongCsv', () => {
     ];
     const result = buildResultsLongCsv(studies, rows, fields);
     expect(result.csv).toBe(
-      `${CSV_BOM}study_label,annotator,entity_key,field_name,value,unit,not_reported\r\n` +
-        `Smith 2020,a@example.com,arm:1,event_count,5,,false\r\n` +
-        `Smith 2020,a@example.com,arm:1,group_n,50,persons,false\r\n` +
-        `Smith 2020,a@example.com,arm:2,event_count,3,,false\r\n`,
+      `${CSV_BOM}study_label,annotator,entity_key,field_name,value,unit,not_reported,flag\r\n` +
+        `Smith 2020,a@example.com,arm:1,event_count,5,,false,\r\n` +
+        `Smith 2020,a@example.com,arm:1,group_n,50,persons,false,\r\n` +
+        `Smith 2020,a@example.com,arm:2,event_count,3,,false,\r\n`,
     );
     expect(result.skippedStudyIds).toEqual([]);
     expect(result.droppedRowCount).toBe(0);
@@ -108,7 +109,7 @@ describe('buildResultsLongCsv', () => {
     const result = buildResultsLongCsv(studies, rows, fields);
     expect(result.skippedStudyIds).toEqual(['d1']);
     expect(result.csv).toBe(
-      `${CSV_BOM}study_label,annotator,entity_key,field_name,value,unit,not_reported\r\n`,
+      `${CSV_BOM}study_label,annotator,entity_key,field_name,value,unit,not_reported,flag\r\n`,
     );
   });
 
@@ -146,17 +147,32 @@ test('仮 long は人の値・空文字・未報告を保持し、未検証と�
     resultRow('amb', 'f', '1', 'B', { annotator: 'b' }),
   ];
   const fields = [field('f', 'value', 1)];
-  const result = buildResultsLongCsv(studies, rows, fields, true);
+  const result = buildResultsLongCsv(studies, rows, fields, [], true);
   expect(result.csv).toBe(CSV_BOM +
-    'study_label,annotator,entity_key,field_name,value,unit,not_reported,source\r\n' +
-    '確認中,a@example.com,1,value,人,,false,human\r\n' +
-    '確認中,ai,2,value,AI,,false,ai_unverified\r\n' +
-    '確認中,a@example.com,3,value,,,false,human\r\n' +
-    '確認中,a@example.com,4,value,,,true,human\r\n' +
-    '確認中,ai,5,value,AI,,false,ai_unverified\r\n' +
-    'AIのみ,ai,1,value,AI,,false,ai_unverified\r\n' +
-    '裁定,consensus,1,value,裁定,,false,consensus\r\n');
+    'study_label,annotator,entity_key,field_name,value,unit,not_reported,flag,source\r\n' +
+    '確認中,a@example.com,1,value,人,,false,,human\r\n' +
+    '確認中,ai,2,value,AI,,false,,ai_unverified\r\n' +
+    '確認中,a@example.com,3,value,,,false,,human\r\n' +
+    '確認中,a@example.com,4,value,,,true,,human\r\n' +
+    '確認中,ai,5,value,AI,,false,,ai_unverified\r\n' +
+    'AIのみ,ai,1,value,AI,,false,,ai_unverified\r\n' +
+    '裁定,consensus,1,value,裁定,,false,,consensus\r\n');
   expect(result.skippedStudyIds).toEqual(['amb']);
   expect(result.droppedRowCount).toBe(1);
-  expect(buildResultsLongCsv(studies, rows, fields, false)).toEqual(buildResultsLongCsv(studies, rows, fields));
+  expect(buildResultsLongCsv(studies, rows, fields, [], false)).toEqual(buildResultsLongCsv(studies, rows, fields));
+});
+
+test('仮 long は flag の後に source を出し、AI 補完セルには人の印を付けない', () => {
+  const ai = { annotator: 'ai', annotatorType: 'ai' as const };
+  const rows = [resultRow('d1', 'f1', 'arm:1', '5'), resultRow('d1', 'f1', 'arm:1', '6', ai),
+    resultRow('d1', 'f1', 'arm:2', null), resultRow('d1', 'f1', 'arm:2', '8', ai)];
+  const flags: Decision[] = ['arm:1', 'arm:2'].map((entityKey) => ({
+    studyId: 'd1', fieldId: 'f1', entityKey, annotator: 'a@example.com', annotatorType: 'human_with_ai',
+    schemaVersion: 1, decidedAt: 't1', decidedBy: 'a@example.com', action: 'flag_consult', value: null, note: null,
+  }));
+  const result = buildResultsLongCsv([study('d1', 'Study')], rows, [field('f1', 'events', 1)], flags, true);
+  expect(result.csv).toBe(CSV_BOM +
+    'study_label,annotator,entity_key,field_name,value,unit,not_reported,flag,source\r\n' +
+    'Study,a@example.com,arm:1,events,5,,false,consult,human\r\n' +
+    'Study,ai,arm:2,events,8,,false,,ai_unverified\r\n');
 });

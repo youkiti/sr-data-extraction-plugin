@@ -238,7 +238,7 @@ test('形式選択 + サマリ + プレビュー → 生成で Drive 保存 + Ex
   // doc-2（Jones 2021）は human 行がなく確定 annotator を特定できない → 除外警告
   await expect(page.locator('#export-skipped')).toContainText('Jones 2021');
   const preview = page.locator('#export-preview');
-  await expect(preview.locator('thead th')).toHaveText(['study_label', 'mortality_pct']);
+  await expect(preview.locator('thead th')).toHaveText(['study_label', 'mortality_pct', 'consult_fields']);
   await expect(preview.locator('tbody')).toContainText('Smith 2020');
 
   // 形式切替: audit はプレビュー列と未検証セル数（判定 0 件セル = ev-2 の 1 件）が追随する。
@@ -251,7 +251,7 @@ test('形式選択 + サマリ + プレビュー → 生成で Drive 保存 + Ex
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(1280);
   await expect(summary).toContainText('未検証セル数');
   await formats.locator('input[value=study_wide]').check();
-  await expect(preview.locator('thead th')).toHaveCount(2);
+  await expect(preview.locator('thead th')).toHaveCount(3);
 
   const results = await new AxeBuilder({ page }).analyze();
   expect(results.violations).toEqual([]);
@@ -460,7 +460,7 @@ test('仮エクスポートは未確認分を補い、通常へ戻すと従来�
   await draft.check();
   await expect(page.locator('#export-draft-note')).toContainText('最終データではありません');
   await expect(page.locator('#export-preview thead th')).toHaveText([
-    'study_label', 'mortality_pct', 'mortality_pct__source',
+    'study_label', 'mortality_pct', 'mortality_pct__source', 'consult_fields',
   ]);
   await expect(page.locator('#export-preview tbody')).toContainText('AI12');
   await expect(page.locator('#export-preview tbody')).toContainText('Jones 2021');
@@ -475,6 +475,6 @@ test('仮エクスポートは未確認分を補い、通常へ戻すと従来�
   await expect(page.locator('#export-draft-note')).toHaveCount(0);
   await page.locator('#export-format input[value=study_wide]').check();
   await draft.uncheck();
-  await expect(page.locator('#export-preview thead th')).toHaveText(['study_label', 'mortality_pct']);
+  await expect(page.locator('#export-preview thead th')).toHaveText(['study_label', 'mortality_pct', 'consult_fields']);
   await expect(page.locator('#export-preview tbody')).not.toContainText('AI12');
 });

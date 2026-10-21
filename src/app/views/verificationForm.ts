@@ -7,6 +7,7 @@
 //   'focus' はユニット単位のマトリクスカード（verificationFocusCard.renderVerificationFocusCard）
 //   へ委譲する。タブ行・進捗バー・群構成カード・アウトカム追加フォーム・ロック中タブの案内は
 //   モードに関わらず共通描画する
+import type { Decision } from '../../domain/decision';
 import type { EntityLevel } from '../../domain/schemaField';
 import { formatFieldValue } from '../../lib/formatFieldValue';
 import {
@@ -132,6 +133,8 @@ export interface VerificationFormModel {
   enumCandidates?: ReadonlyMap<string, readonly string[]>;
   /** 「許容値外」警告に `#/schema` 導線を出してよいか（issue #254。owner のみ true） */
   canEditSchema?: boolean;
+  /** 自分のセルごとの有効な要相談イベント。値の判定とは独立。 */
+  consultFlags?: ReadonlyMap<string, Decision>;
   /** 照合できなかった引用のセルの accept 前の警告（issue #381）。verificationCellCard.CellCardModel 参照 */
   unanchoredAcceptWarning?: { cellKey: string; reason: UnanchoredReason } | null;
 }
@@ -152,6 +155,7 @@ export interface VerificationFormHandlers {
   ): void;
   onCancelEdit(): void;
   onNotReported(cellKey: string): void;
+  onConsultToggle?(cellKey: string, note: string | null): void;
   onUndo(cellKey: string): void;
   /** 現在項目のハイライトへ PDF をスクロール（f） */
   onJump(cellKey: string): void;

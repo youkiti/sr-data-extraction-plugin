@@ -1232,6 +1232,19 @@ describe('persistPilotDecision', () => {
     });
   }
 
+  test.each(['flag_consult', 'unflag_consult'] as const)('要相談 %s は値を変更せず保存し一覧素材を無効化する', async (action) => {
+    const store = makeVerifyingStore();
+    const before = store.getState().pilot.studyValues;
+    const deps = makeDeps();
+    await persistPilotDecision(store, deps, makeDecision({ action, value: '値を変えない' }));
+    expect(upsertStudyMock).not.toHaveBeenCalled();
+    expect(upsertResultsMock).not.toHaveBeenCalled();
+    expect(appendDecisionsMock).toHaveBeenCalledWith('sheet-1', [expect.objectContaining({ action })], deps.google);
+    expect(store.getState().pilot.studyValues).toEqual(before);
+    expect(store.getState().dashboard.data).toBeNull();
+    expect(store.getState().export.built).toBeNull();
+  });
+
   test('プロジェクト未選択は何もしない', async () => {
     await persistPilotDecision(makeStore({ withProject: false }), makeDeps(), makeDecision());
     expect(appendDecisionsMock).not.toHaveBeenCalled();

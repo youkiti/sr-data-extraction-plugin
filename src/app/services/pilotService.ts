@@ -1,7 +1,7 @@
 // #/pilot（S6）のサービス層。
 // - パイロット実行: extractionService.runExtraction（runType = 'pilot'）を配線する
 // - 検証データ束の組み立て / 判定・群構成の永続化は S8 と共有の verificationService へ委譲する
-import type { Decision } from '../../domain/decision';
+import { isConsultAction, type Decision } from '../../domain/decision';
 import { resolveFetchedPricing } from '../fetchedPricing';
 import type { DocumentRecord } from '../../domain/document';
 import type { Evidence } from '../../domain/evidence';
@@ -614,7 +614,7 @@ export async function persistPilotDecision(
     return;
   }
   let studyValues: Record<string, string | null> | null = null;
-  if (field.entityLevel === 'study') {
+  if (field.entityLevel === 'study' && !isConsultAction(decision.action)) {
     studyValues = { ...(state.pilot.studyValues ?? {}), [field.fieldName]: decision.value };
     patchPilot(store, { studyValues });
   }
@@ -641,6 +641,8 @@ export async function persistPilotDecision(
         : (current.resultsRowUpdatedAt[resultsCellKeyOf(decision.entityKey, decision.fieldId)] ??
           null);
     const result = await persistDecisionWrite(project.spreadsheetId, write, deps, expectedUpdatedAt);
+    invalidateDashboard(store);
+    store.setState({ export: { ...store.getState().export, built: null, rSetMaterials: null } });
     if (result.status !== 'conflict') {
       const matrix = store.getState().pilot.matrix ?? emptyPilotMatrix();
       patchPilot(store, { matrix: { ...matrix, decisions: [...matrix.decisions, decision] } });

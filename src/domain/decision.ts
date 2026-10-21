@@ -2,7 +2,13 @@
 // 人間の判定操作を 1 操作 = 1 行で追記し、undo も 1 行として残す
 import type { AnnotatorType } from './annotation';
 
-export type DecisionAction = 'accept' | 'edit' | 'reject' | 'not_reported' | 'undo';
+export type ValueDecisionAction = 'accept' | 'edit' | 'reject' | 'not_reported' | 'undo';
+export type DecisionAction = ValueDecisionAction | 'flag_consult' | 'unflag_consult';
+
+/** 値の判定と独立した要相談の印イベント。 */
+export function isConsultAction(action: DecisionAction): boolean {
+  return action === 'flag_consult' || action === 'unflag_consult';
+}
 
 export interface Decision {
   decidedAt: string;

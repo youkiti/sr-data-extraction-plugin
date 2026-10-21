@@ -106,7 +106,7 @@ export function buildExport(format: ClassicExportFormat, materials: ExportMateri
   const { studies, fields } = materials;
   switch (format) {
     case 'study_wide': {
-      const result = buildStudyWideCsv(studies, materials.studyRows, fields, draft);
+      const result = buildStudyWideCsv(studies, materials.studyRows, fields, materials.decisions, draft);
       return finish(
         format,
         result.csv,
@@ -117,7 +117,7 @@ export function buildExport(format: ClassicExportFormat, materials: ExportMateri
       );
     }
     case 'results_long': {
-      const result = buildResultsLongCsv(studies, materials.resultsRows, fields, draft);
+      const result = buildResultsLongCsv(studies, materials.resultsRows, fields, materials.decisions, draft);
       return finish(
         format,
         result.csv,

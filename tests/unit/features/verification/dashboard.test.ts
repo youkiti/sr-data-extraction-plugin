@@ -467,3 +467,18 @@ describe('buildDashboard', () => {
     expect(data.totals.notReported).toEqual({ numerator: 1, denominator: 4 });
   });
 });
+
+test('要相談一覧は現在値・メモ・判定者を持ち、解除で消え、進捗と精度は変わらない', () => {
+  const value = makeDecision();
+  const flag = makeDecision({ action: 'flag_consult', decidedAt: 't2', note: '相談メモ' });
+  const baseline = buildDashboard([makeInput({ ownDecisions: [value] })], new Map());
+  const marked = buildDashboard([makeInput({ ownDecisions: [value, flag,
+    makeDecision({ action: 'flag_consult', fieldId: 'deleted', decidedAt: 't3' })] })], new Map());
+  expect(marked.totals).toEqual(baseline.totals);
+  expect(marked.rows[0]?.consults).toEqual([{ fieldLabel: '総サンプルサイズ', cellKey: '["f-total","-"]', entityKey: '-', value: '120', flag }]);
+  const cleared = buildDashboard([makeInput({ ownDecisions: [value, flag, { ...flag, action: 'unflag_consult', decidedAt: 't4' }] })], new Map());
+  expect(cleared.rows[0]?.consults).toEqual([]);
+  expect(cleared.totals).toEqual(baseline.totals);
+  const undone = buildDashboard([makeInput({ ownDecisions: [value, flag, { ...value, action: 'undo', decidedAt: 't3' }] })], new Map());
+  expect(undone.rows[0]?.consults?.[0]?.value).toBeNull();
+});

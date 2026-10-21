@@ -421,7 +421,12 @@ describe('loadExportData', () => {
       { note: null },
       { note: '通常メモ' },
       { note: '文中の[chat-assist]' },
-    ]);
+      { action: 'flag_consult', note: '[chat-assist] 要相談' },
+      { action: 'unflag_consult', note: '[chat-assist] 相談済み' },
+    ].map((row) => ({
+      studyId: 'study-1', fieldId: 'f', entityKey: '-', annotator: 'me', annotatorType: 'human_with_ai',
+      schemaVersion: 1, action: 'accept', value: null, decidedAt: 't1', decidedBy: 'me', ...row,
+    })));
     const store = makeStore();
     await loadExportData(store, makeDeps());
     expect(store.getState().export.methodsFacts?.chatAssistDecisionCount).toBe(2);
@@ -964,7 +969,7 @@ test('仮切替で素材から再構築し、R セット・Methods は保持す�
   expect(store.getState().export.confirmingWarning).toBe(false);
   expect(store.getState().export.rSet).toBe(original.rSet);
   expect(store.getState().export.methodsFacts).toBe(original.methodsFacts);
-  expect(store.getState().export.built?.study_wide.header).toEqual(['study_label']);
+  expect(store.getState().export.built?.study_wide.header).toEqual(['study_label', 'consult_fields']);
   await loadExportData(store, deps, { force: true });
   expect(store.getState().export.draft).toBe(true);
   setExportDraft(store, false);

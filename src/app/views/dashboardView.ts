@@ -13,7 +13,7 @@ import type {
 } from '../../features/verification/dashboard';
 import { currentReviewSets } from '../../features/review/reviewSets';
 import { resolveActiveStudies } from '../../features/documents/studyRepository';
-import { t } from '../../lib/i18n';
+import { t, type MessageKey } from '../../lib/i18n';
 import { el } from '../ui/dom';
 import { headingWithHelp } from '../ui/helpButton';
 import type { AppState } from '../store';
@@ -191,6 +191,28 @@ function renderReviewSetProgress(state: AppState): HTMLElement | null {
   ]);
 }
 
+function renderConsults(data: DashboardData): HTMLElement {
+  const rows = data.rows.flatMap((row) => (row.consults ?? []).map((cell) =>
+    el('tr', {}, [
+      el('td', {}, [el('a', { text: row.studyLabel, attributes: { href: verifyHref(row.studyId, cell.cellKey) } })]),
+      el('td', { text: `${cell.fieldLabel} (${cell.entityKey})` }),
+      el('td', { text: cell.value ?? '' }),
+      el('td', { text: cell.flag.note ?? '' }),
+      el('td', { text: cell.flag.decidedBy }),
+    ]),
+  ));
+  return el('section', { id: 'dashboard-consults' }, [
+    headingWithHelp('h3', t('verify.consult'), 'consult'),
+    el('table', {}, [
+      el('thead', {}, [el('tr', {}, (['dashboard.headStudy', 'dashboard.consultField', 'dashboard.consultValue',
+        'verify.noteAria', 'dashboard.consultReviewer'] satisfies MessageKey[]).map((key) => el('th', {
+          text: t(key), attributes: { scope: 'col' },
+        })))]),
+      el('tbody', {}, rows),
+    ]),
+  ]);
+}
+
 export function renderDashboardView(state: AppState, ctx: ViewContext): HTMLElement {
   const children: HTMLElement[] = [
     headingWithHelp('h2', t('app.navDashboard'), 'dashboard'),
@@ -244,6 +266,6 @@ export function renderDashboardView(state: AppState, ctx: ViewContext): HTMLElem
     return finish();
   }
 
-  children.push(renderSummary(dashboard.data), renderMatrix(dashboard.data, state));
+  children.push(renderSummary(dashboard.data), renderMatrix(dashboard.data, state), renderConsults(dashboard.data));
   return finish();
 }
