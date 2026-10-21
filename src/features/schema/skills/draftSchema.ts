@@ -12,7 +12,7 @@ import type { SchemaEditorRow } from '../types';
 export const DRAFT_SCHEMA_SKILL_NAME = 'draft-schema';
 
 /** プロンプト版数。プロンプト文言・スキーマを変えたら必ずインクリメントする */
-export const DRAFT_SCHEMA_PROMPT_VERSION = 2;
+export const DRAFT_SCHEMA_PROMPT_VERSION = 3;
 
 /** サンプル論文 1 本ぶんのページ別本文（extracted_texts/{id}.txt 由来） */
 export interface DraftSchemaSamplePaper {
@@ -39,6 +39,9 @@ export interface DraftSchemaPromptInput {
  * DTA / 予後の結果インスタンスは arm セグメントなしの outcome_result として
  * 既存のエンティティモデルへそのまま格納できる（requirements.md §3.3）
  *
+ * 版数 3: 件数集計・分類する項目は enum（unclear 必須、網羅できない場合は other も追加）、
+ * 原文の引用や記述を保持する項目に限り text を提案する。
+ *
  * 末尾の "Propose 10-40 fields" は AI が一度に提案する項目数の目安であり、
  * スキーマ全体の項目数上限ではない（issue #80）。ユーザーは表形式エディタで項目を
  * 自由に追加・編集でき、SchemaFields タブ・CSV エクスポートのいずれも項目数を制限しない
@@ -53,7 +56,9 @@ Rules:
 - "section": one of "identification", "methods", "population", "intervention", "outcomes", or another short lowercase group name.
 - "entity_level": "study" for once-per-article fields (design, country, total N), "arm" for per-group fields (arm name, intervention detail, group N), "outcome_result" for fields repeated per result instance (per-outcome-per-timepoint results, per-index-test accuracy data, per-prognostic-factor effect estimates). Never use any other level.
 - "data_type": one of "text", "integer", "float", "boolean", "enum", "date".
-- "allowed_values": ONLY when data_type is "enum" — the permitted values joined by "|" (e.g. "rct|quasi_rct|observational"). Otherwise null.
+- Use "enum" for fields that will be counted or classified by category in the results table (e.g. study design, data collection method, setting, participant type).
+- "allowed_values": ONLY when data_type is "enum" — the permitted values joined by "|" (e.g. "rct|quasi_rct|observational|other|unclear"). Every enum must include "unclear"; also include "other" when the listed categories may not cover all cases. Otherwise null.
+- Use "text" only for fields where quotations or descriptions should be preserved as written (e.g. intervention details or the wording of definitions).
 - "unit": the expected unit (e.g. "mg/day") or null. Values are extracted as reported; units are never converted.
 - "required": true for fields essential to the review question; extraction must report not_reported explicitly for them.
 - "extraction_instruction": a concrete instruction in English telling the extractor exactly what to look for and how to report it.
