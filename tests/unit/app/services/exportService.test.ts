@@ -420,7 +420,12 @@ describe('loadExportData', () => {
       { note: null },
       { note: '通常メモ' },
       { note: '文中の[chat-assist]' },
-    ]);
+      { action: 'flag_consult', note: '[chat-assist] 要相談' },
+      { action: 'unflag_consult', note: '[chat-assist] 相談済み' },
+    ].map((row) => ({
+      studyId: 'study-1', fieldId: 'f', entityKey: '-', annotator: 'me', annotatorType: 'human_with_ai',
+      schemaVersion: 1, action: 'accept', value: null, decidedAt: 't1', decidedBy: 'me', ...row,
+    })));
     const store = makeStore();
     await loadExportData(store, makeDeps());
     expect(store.getState().export.methodsFacts?.chatAssistDecisionCount).toBe(2);

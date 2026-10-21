@@ -1177,6 +1177,19 @@ describe('persistVerifyDecision', () => {
     });
   }
 
+  test.each(['flag_consult', 'unflag_consult'] as const)('要相談 %s は値を変更せず保存し一覧素材を無効化する', async (action) => {
+    const store = makeVerifyingStore();
+    const before = store.getState().verify.studyValues;
+    const deps = makeDeps();
+    await persistVerifyDecision(store, deps, makeDecision({ action, value: '値を変えない' }));
+    expect(upsertStudyMock).not.toHaveBeenCalled();
+    expect(upsertResultsMock).not.toHaveBeenCalled();
+    expect(appendDecisionsMock).toHaveBeenCalledWith('sheet-1', [expect.objectContaining({ action })], deps.google);
+    expect(store.getState().verify.studyValues).toEqual(before);
+    expect(store.getState().dashboard.data).toBeNull();
+    expect(store.getState().export.built).toBeNull();
+  });
+
   test.each([false, true])('質問したstudyだけ印を付け、失敗時のキューにも残す: %s', async (used) => {
     const store = makeVerifyingStore();
     store.setState({

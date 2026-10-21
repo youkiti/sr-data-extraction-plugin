@@ -152,8 +152,8 @@ describe('buildExport', () => {
   test('study_wide: ヘッダ / プレビュー行 / 行数 / 試験数 / 未検証 0 を返す', () => {
     const built = buildExport('study_wide', makeMaterials());
     expect(built.format).toBe('study_wide');
-    expect(built.header).toEqual(['study_label', 'sample_size_total']);
-    expect(built.previewRows).toEqual([['Smith 2020', '120']]);
+    expect(built.header).toEqual(['study_label', 'sample_size_total', 'consult_fields']);
+    expect(built.previewRows).toEqual([['Smith 2020', '120', '']]);
     expect(built.rowCount).toBe(1);
     expect(built.studyCount).toBe(1);
     expect(built.unverifiedCellCount).toBe(0);
@@ -232,4 +232,22 @@ test('根拠の表は引用を 17 列で出し、audit と同じ未検証警告�
   expect(built.rowCount).toBe(1);
   expect(built.studyCount).toBe(1);
   expect(built.unverifiedCellCount).toBe(buildExport('audit', materials).unverifiedCellCount);
+});
+
+test('wide / long の印は確定 annotator のみで、解除後は空欄・未検証件数は不変', () => {
+  const materials = makeMaterials();
+  const flag = makeDecision({ action: 'flag_consult' });
+  const resultFlag = makeDecision({ action: 'flag_consult', fieldId: 'f-events', entityKey: 'arm:1' });
+  const flagged = { ...materials, decisions: [flag, resultFlag] };
+  const wide = buildExport('study_wide', flagged);
+  expect(wide.previewRows[0]).toEqual(['Smith 2020', '120', 'sample_size_total']);
+  expect(wide.unverifiedCellCount).toBe(buildExport('study_wide', materials).unverifiedCellCount);
+  const long = buildExport('results_long', flagged);
+  expect(long.header.at(-1)).toBe('flag');
+  expect(long.previewRows.find((row) => row[2] === 'arm:1')?.at(-1)).toBe('consult');
+  expect(long.unverifiedCellCount).toBeNull();
+  const cleared = { ...flagged, decisions: [...flagged.decisions, { ...flag, action: 'unflag_consult' as const }] };
+  expect(buildExport('study_wide', cleared).previewRows[0]?.at(-1)).toBe('');
+  expect(buildExport('study_wide', { ...materials, decisions: [{ ...flag, annotator: 'someone-else' }] }).previewRows[0]?.at(-1)).toBe('');
+  expect(buildExport('results_long', { ...materials, decisions: [{ ...resultFlag, annotator: 'someone-else' }] }).previewRows[0]?.at(-1)).toBe('');
 });

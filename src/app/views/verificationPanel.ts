@@ -9,6 +9,7 @@ import { createQuoteAddBar, quoteAddReason as sharedQuoteAddReason, updateQuoteA
 // ストア再描画（route render）とライフサイクルの整合は renderCachedVerificationPanel が取る:
 // 同じ VerificationData 参照なら同一インスタンス（DOM / PDF canvas / 判定の楽観状態）を返し、
 // データが差し替わったときだけ作り直す
+import { activeConsultFlags } from '../../features/verification/consultFlags';
 import type { CellQuote, QuoteSetRow } from '../../domain/quoteSet';
 import { isMultiSelectField } from '../../domain/multiSelect';
 import { anchorQuote } from '../../features/anchoring/anchorQuote';
@@ -577,6 +578,7 @@ export function createVerificationPanel(
       // enum 項目の許容値チップ・許容値外警告（issue #254）
       enumCandidates: data.enumCandidates,
       canEditSchema: data.canEditSchema,
+      consultFlags: new Map([...activeConsultFlags(ownDecisions).values()].map((flag) => [cellKeyOf(flag.fieldId, flag.entityKey), flag])),
       unanchoredAcceptWarning: unanchoredWarning,
     };
   }
@@ -1846,6 +1848,20 @@ export function createVerificationPanel(
     onNotReported(cellKey) {
       commit(findCell(cellKey), 'not_reported', NOT_REPORTED_TOKEN);
     },
+    onConsultToggle(cellKey, note) {
+      const cell = findCell(cellKey);
+      const flagged = [...activeConsultFlags(ownDecisions).values()]
+        .some((flag) => cellKeyOf(flag.fieldId, flag.entityKey) === cellKey);
+      const decision: Decision = {
+        decidedAt: now(), decidedBy: data.annotator, studyId: data.study.studyId,
+        fieldId: cell.field.fieldId, entityKey: cell.entityKey, annotator: data.annotator,
+        annotatorType: data.annotatorType, schemaVersion: data.schemaVersion,
+        action: flagged ? 'unflag_consult' : 'flag_consult', value: cell.state.value, note,
+      };
+      ownDecisions.push(decision);
+      refreshForm();
+      options.onDecision(decision);
+    },
     onUndo(cellKey) {
       const cell = findCell(cellKey);
       if (cell.state.stack.length === 0) {
@@ -2120,6 +2136,7 @@ export function createVerificationPanel(
       // enum 項目の許容値チップ・許容値外警告（issue #254）
       enumCandidates: data.enumCandidates,
       canEditSchema: data.canEditSchema,
+      consultFlags: new Map([...activeConsultFlags(ownDecisions).values()].map((flag) => [cellKeyOf(flag.fieldId, flag.entityKey), flag])),
       unanchoredAcceptWarning: unanchoredWarning,
     };
     progressListener?.(model.progress);
@@ -2222,7 +2239,7 @@ export function createVerificationPanel(
       const model = buildTabModel(tab, data.fields, currentEvidence(), ownDecisions, {
         armStructure,
       });
-      const cell = model.cells.find((candidate) => candidate.entityKey === entityKey);
+      const cell = model.cells.find((candidate) => candidate.entityKey === entityKey || candidate.cellKey === entityKey);
       if (cell === undefined) {
         continue;
       }

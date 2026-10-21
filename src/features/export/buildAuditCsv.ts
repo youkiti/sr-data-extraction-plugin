@@ -1,7 +1,7 @@
 // audit.csv（requirements.md §4.4 v0.6）: 判定中心デノーマライズ型。
 // 1 行 = 1 判定イベント（undo 含む）に「その判定が見ていた Evidence」を横持ちで添付し、
 // 判定が 0 件のセルは代表 Evidence（最新 run）+ 判定列空のプレースホルダ行で未検証を明示する
-import type { Decision } from '../../domain/decision';
+import { isConsultAction, type Decision } from '../../domain/decision';
 import type { StudyRecord } from '../../domain/study';
 import type { Evidence } from '../../domain/evidence';
 import type { RunAuditInfo } from '../../domain/extractionRun';
@@ -169,7 +169,7 @@ export function buildAuditCsv(
         continue;
       }
       const cell = cellKey(decision.fieldId, decision.entityKey);
-      decidedCells.add(cell);
+      if (!isConsultAction(decision.action)) decidedCells.add(cell);
       const key = `${cell}${SEP}${decision.annotator}${SEP}${decision.annotatorType}`;
       const group = byCellAnnotator.get(key);
       if (group === undefined) {

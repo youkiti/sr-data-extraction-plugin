@@ -1,3 +1,4 @@
+import type { Decision } from '../../../../src/domain/decision';
 import { NOT_REPORTED_TOKEN } from '../../../../src/domain/annotation';
 import type { StudyDataRow } from '../../../../src/domain/annotation';
 import type { StudyRecord } from '../../../../src/domain/study';
@@ -64,7 +65,7 @@ describe('buildStudyWideCsv', () => {
     const result = buildStudyWideCsv([study('s1', 'Study')],
       [studyRow('s1', 'consensus', { design: '' })], [multi]);
     expect(result.csv).toBe(CSV_BOM +
-      'study_label,design,design__a,design__b,design__other,design__other_text\r\nStudy,,,,,\r\n');
+      'study_label,design,design__a,design__b,design__other,design__other_text,consult_fields\r\nStudy,,,,,,\r\n');
   });
 
   test('複数選択の列を直後に展開し、ヘッダ全体の衝突を連番で避ける', () => {
@@ -76,14 +77,14 @@ describe('buildStudyWideCsv', () => {
     const result = buildStudyWideCsv(values.map((_, i) => study(String(i), String(i))),
       values.map((x, i) => studyRow(String(i), 'consensus', { x, x__a: 'v', x__a_2: 'w' })), fields);
     expect(result.csv).toBe(CSV_BOM + [
-      'study_label,x,x__a_3,x__a_4,x__other,x__other_text,x__other_text_2,x__opt5,x__unclear,x__a,x__a_2',
-      '0,,,,,,,,,v,w',
-      '1,NR,,,,,,,,v,w',
-      '2,unclear,0,0,0,,0,0,1,v,w',
-      '3,A!|Other: 説明|未知,1,0,1,説明,0,0,0,v,w',
-      '4,Other,0,0,1,,0,0,0,v,w',
-      '5,Other text,0,0,0,,1,0,0,v,w',
-      '6,,,,,,,,,v,w',
+      'study_label,x,x__a_3,x__a_4,x__other,x__other_text,x__other_text_2,x__opt5,x__unclear,x__a,x__a_2,consult_fields',
+      '0,,,,,,,,,v,w,',
+      '1,NR,,,,,,,,v,w,',
+      '2,unclear,0,0,0,,0,0,1,v,w,',
+      '3,A!|Other: 説明|未知,1,0,1,説明,0,0,0,v,w,',
+      '4,Other,0,0,1,,0,0,0,v,w,',
+      '5,Other text,0,0,0,,1,0,0,v,w,',
+      '6,,,,,,,,,v,w,',
       '',
     ].join('\r\n'));
     expect(result.unverifiedCellCount).toBe(1);
@@ -103,9 +104,9 @@ describe('buildStudyWideCsv', () => {
     ];
     const result = buildStudyWideCsv(studies, rows, fields);
     expect(result.csv).toBe(
-      `${CSV_BOM}study_label,country,sample_size_total\r\n` +
-        `Smith 2020,JP,120\r\n` +
-        `"Tanaka, 2021",US,NR\r\n`,
+      `${CSV_BOM}study_label,country,sample_size_total,consult_fields\r\n` +
+        `Smith 2020,JP,120,\r\n` +
+        `"Tanaka, 2021",US,NR,\r\n`,
     );
     expect(result.skippedStudyIds).toEqual([]);
     expect(result.unverifiedCellCount).toBe(0);
@@ -120,7 +121,7 @@ describe('buildStudyWideCsv', () => {
     ];
     const result = buildStudyWideCsv(studies, rows, fields);
     expect(result.unverifiedCellCount).toBe(2);
-    expect(result.csv).toContain('Smith 2020,,,NR');
+    expect(result.csv).toContain('Smith 2020,,,NR,');
   });
 
   test('確定 annotator を特定できない study は除外して study_id を報告する', () => {
@@ -129,7 +130,45 @@ describe('buildStudyWideCsv', () => {
     const rows = [studyRow('d1', 'ai', { country: 'JP' })]; // d1 は ai のみ、d2 は行なし
     const result = buildStudyWideCsv(studies, rows, fields);
     expect(result.skippedStudyIds).toEqual(['d1', 'd2']);
-    expect(result.csv).toBe(`${CSV_BOM}study_label,country\r\n`);
+    expect(result.csv).toBe(`${CSV_BOM}study_label,country,consult_fields\r\n`);
     expect(result.studyCount).toBe(0);
   });
+});
+
+
+const flag = (overrides: Partial<Decision> = {}): Decision => ({
+  studyId: 'd1', fieldId: 'f1', entityKey: '-', annotator: 'a@example.com', annotatorType: 'human_with_ai',
+  schemaVersion: 1, decidedAt: 't1', decidedBy: 'a@example.com', action: 'flag_consult', value: null, note: null,
+  ...overrides,
+});
+
+test('consult_fields は確定 annotator の study 項目名だけをデザイン順に連結し、解除を反映する', () => {
+  const studies = [study('d1', 'Smith'), study('d2', 'Jones')];
+  const fields = [field('f2', 'design', 2), field('f3', 'total_n', 3), field('f1', 'country', 1),
+    field('f4', 'events', 4, 'outcome_result')];
+  const rows = [studyRow('d1', 'human_with_ai', { country: 'JP', design: 'RCT', total_n: '120' }),
+    studyRow('d2', 'consensus', { country: 'US', design: 'cohort', total_n: 'NR' }, 'consensus'),
+    studyRow('d2', 'human_with_ai', { country: 'JP' })];
+  const decisions = [flag({ fieldId: 'f2' }), flag(), flag({ fieldId: 'f3' }),
+    flag({ fieldId: 'f3', action: 'unflag_consult', decidedAt: 't2' }),
+    flag({ fieldId: 'f4', entityKey: 'arm:1' }), flag({ fieldId: 'deleted' }),
+    flag({ studyId: 'd2' }), flag({ studyId: 'd2', fieldId: 'f2', annotator: 'consensus', annotatorType: 'consensus' })];
+  const result = buildStudyWideCsv(studies, rows, fields, decisions);
+  expect(result.csv).toBe(CSV_BOM +
+    'study_label,country,design,total_n,consult_fields\r\nSmith,JP,RCT,120,country|design\r\nJones,US,cohort,NR,design\r\n');
+  expect(result.unverifiedCellCount).toBe(buildStudyWideCsv(studies, rows, fields).unverifiedCellCount);
+});
+
+test('consult_fields の列名が既存項目名と重なると連番で回避し、値には元の項目名を使う', () => {
+  const fields = [field('f1', 'consult_fields', 1), field('f2', 'consult_fields_2', 2)];
+  const result = buildStudyWideCsv([study('d1', 'Study')],
+    [studyRow('d1', 'human_with_ai', { consult_fields: 'a', consult_fields_2: 'b' })], fields,
+    [flag(), flag({ fieldId: 'f2' })]);
+  expect(result.csv).toBe(CSV_BOM +
+    'study_label,consult_fields,consult_fields_2,consult_fields_3\r\nStudy,a,b,consult_fields|consult_fields_2\r\n');
+});
+
+test('study 項目がなくても末尾の consult_fields 列を出す', () => {
+  const result = buildStudyWideCsv([study('d1', 'Study')], [studyRow('d1', 'human_with_ai', {})], []);
+  expect(result.csv).toBe(CSV_BOM + 'study_label,consult_fields\r\nStudy,\r\n');
 });

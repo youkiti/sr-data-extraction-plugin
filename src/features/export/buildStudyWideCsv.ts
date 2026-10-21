@@ -5,6 +5,8 @@
 import type { StudyDataRow } from '../../domain/annotation';
 import type { StudyRecord } from '../../domain/study';
 import type { SchemaField } from '../../domain/schemaField';
+import type { Decision } from '../../domain/decision';
+import { activeConsultFlags, consultFlagKey } from '../verification/consultFlags';
 import { buildCsv, CSV_BOM } from './csvEncode';
 import { selectFinalAnnotator } from './finalAnnotator';
 import { buildMultiSelectColumns, multiSelectColumnValues } from './multiSelectColumns';
@@ -23,15 +25,19 @@ export function buildStudyWideCsv(
   studies: readonly StudyRecord[],
   rows: readonly StudyDataRow[],
   fields: readonly SchemaField[],
+  decisions: readonly Decision[] = [],
 ): StudyWideCsvResult {
+  const flags = activeConsultFlags(decisions);
   const studyFields = fields
     .filter((field) => field.entityLevel === 'study')
     .sort((a, b) => a.fieldIndex - b.fieldIndex);
   const used = new Set(['study_label', ...fields.map((field) => field.fieldName)]);
   const columns = studyFields.map((field) => buildMultiSelectColumns(field, used));
+  let consultColumn = 'consult_fields';
+  for (let suffix = 2; used.has(consultColumn); suffix++) consultColumn = `consult_fields_${suffix}`;
   const header = ['study_label', ...studyFields.flatMap((field, index) =>
     [field.fieldName, ...columns[index]!.map((column) => column.name)],
-  )];
+  ), consultColumn];
 
   const csvRows: string[][] = [];
   const skippedStudyIds: string[] = [];
@@ -44,14 +50,19 @@ export function buildStudyWideCsv(
       continue;
     }
     const line = [study.studyLabel];
+    const consultFields: string[] = [];
     for (const [index, field] of studyFields.entries()) {
       const value = finalRow.values[field.fieldName] ?? null;
       if (value === null) {
         unverifiedCellCount++; // 空セル = 未検証（NR は「未報告」でありここに含めない）
       }
       line.push(value ?? '');
+      if (flags.has(consultFlagKey({ ...finalRow, fieldId: field.fieldId, entityKey: '-' }))) {
+        consultFields.push(field.fieldName);
+      }
       line.push(...multiSelectColumnValues(field, value, columns[index]!));
     }
+    line.push(consultFields.join('|'));
     csvRows.push(line);
   }
   return {

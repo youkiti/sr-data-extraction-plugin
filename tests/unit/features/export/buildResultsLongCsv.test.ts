@@ -72,10 +72,10 @@ describe('buildResultsLongCsv', () => {
     ];
     const result = buildResultsLongCsv(studies, rows, fields);
     expect(result.csv).toBe(
-      `${CSV_BOM}study_label,annotator,entity_key,field_name,value,unit,not_reported\r\n` +
-        `Smith 2020,a@example.com,arm:1,event_count,5,,false\r\n` +
-        `Smith 2020,a@example.com,arm:1,group_n,50,persons,false\r\n` +
-        `Smith 2020,a@example.com,arm:2,event_count,3,,false\r\n`,
+      `${CSV_BOM}study_label,annotator,entity_key,field_name,value,unit,not_reported,flag\r\n` +
+        `Smith 2020,a@example.com,arm:1,event_count,5,,false,\r\n` +
+        `Smith 2020,a@example.com,arm:1,group_n,50,persons,false,\r\n` +
+        `Smith 2020,a@example.com,arm:2,event_count,3,,false,\r\n`,
     );
     expect(result.skippedStudyIds).toEqual([]);
     expect(result.droppedRowCount).toBe(0);
@@ -108,7 +108,7 @@ describe('buildResultsLongCsv', () => {
     const result = buildResultsLongCsv(studies, rows, fields);
     expect(result.skippedStudyIds).toEqual(['d1']);
     expect(result.csv).toBe(
-      `${CSV_BOM}study_label,annotator,entity_key,field_name,value,unit,not_reported\r\n`,
+      `${CSV_BOM}study_label,annotator,entity_key,field_name,value,unit,not_reported,flag\r\n`,
     );
   });
 

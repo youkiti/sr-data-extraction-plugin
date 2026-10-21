@@ -5183,3 +5183,43 @@ describe('照合できなかった引用のセルの accept 前の警告（issue
     panel.dispose();
   });
 });
+
+test.each(['list', 'focus'] as const)('要相談の付け外しは現在値と進捗を保ちメモを記録する: %s', async (layoutMode) => {
+  const { panel, onDecision } = await createPanel({ fields: [makeField({ fieldId: 'f-country', fieldName: 'country' })], decisions: [makeDecision({ note: '判定メモ' })] }, { layoutMode });
+  panel.root.querySelector<HTMLButtonElement>('.verify__cell--decided')?.click();
+  const progress = panel.root.querySelector('#verify-progress')!.textContent;
+  const note = panel.root.querySelector<HTMLInputElement>('.verify__consult-note')!;
+  expect(note.value).toBe('判定メモ');
+  note.value = '表と本文で迷う';
+  panel.root.querySelector<HTMLButtonElement>('.verify__consult-toggle')!.click();
+  expect(onDecision).toHaveBeenLastCalledWith(expect.objectContaining({ action: 'flag_consult', value: 'Japan', note: '表と本文で迷う' }));
+  expect(panel.root.querySelector('.verify__consult-toggle')!.getAttribute('aria-pressed')).toBe('true');
+  expect(panel.root.querySelector('#verify-progress')!.textContent).toBe(progress);
+  panel.root.querySelector<HTMLInputElement>('.verify__consult-note')!.value = '';
+  panel.root.querySelector<HTMLButtonElement>('.verify__consult-toggle')!.click();
+  expect(onDecision).toHaveBeenLastCalledWith(expect.objectContaining({ action: 'unflag_consult', value: 'Japan', note: null }));
+  expect(panel.root.querySelector('.verify__consult-toggle')!.getAttribute('aria-pressed')).toBe('false');
+  expect(panel.root.querySelector('#verify-progress')!.textContent).toBe(progress);
+  panel.dispose();
+});
+
+test('未検証セルの印は無効、空メモの確定セルは付けられ、undo 後も解除できる', async () => {
+  const { panel, onDecision } = await createPanel();
+  expect(panel.root.querySelector<HTMLButtonElement>('.verify__consult-toggle')!.disabled).toBe(true);
+  panel.dispose();
+  const flagged = await createPanel({ fields: [makeField({ fieldId: 'f-country', fieldName: 'country' })], decisions: [makeDecision({ note: null }), makeDecision({ action: 'flag_consult' }),
+    makeDecision({ action: 'undo' })] });
+  expect(flagged.panel.root.querySelector<HTMLButtonElement>('.verify__consult-toggle')!.disabled).toBe(false);
+  flagged.panel.root.querySelector<HTMLButtonElement>('.verify__consult-toggle')!.click();
+  expect(flagged.onDecision).toHaveBeenCalledWith(expect.objectContaining({ action: 'unflag_consult', value: null }));
+  expect(onDecision).not.toHaveBeenCalled();
+  flagged.panel.dispose();
+});
+
+test('相談一覧のセルキーを指定したディープリンクは同じ entity の該当項目へ移動する', async () => {
+  const { panel } = await createPanel({ fields: [makeField(), makeField({ fieldId: 'f-second', fieldLabel: '第二項目', fieldIndex: 2 })] },
+    { focusEntityKey: cellKeyOf('f-second', '-'), layoutMode: 'focus' });
+  panel.focusEntity(cellKeyOf('f-second', '-'));
+  expect(panel.root.querySelector('#verify-focus-detail .verify__cell')?.getAttribute('data-cell-key')).toBe(cellKeyOf('f-second', '-'));
+  panel.dispose();
+});

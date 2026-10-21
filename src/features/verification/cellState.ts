@@ -3,10 +3,10 @@
 // - 非 undo の判定はスタックへ積み、undo は 1 件取り消す（tiab-review の「直近履歴を
 //   戻る」を項目単位に読み替えた仕様。ui-flow.md §3）
 // - スタックが空 = 未検証（human 行は空セルから開始する。requirements.md §4.2）
-import type { Decision, DecisionAction } from '../../domain/decision';
+import { isConsultAction, type Decision, type ValueDecisionAction } from '../../domain/decision';
 
 /** 未検証を含むセル状態のステータス（判定チップの表示値） */
-export type CellStatus = 'unverified' | Exclude<DecisionAction, 'undo'>;
+export type CellStatus = 'unverified' | Exclude<ValueDecisionAction, 'undo'>;
 
 export interface CellState {
   status: CellStatus;
@@ -44,6 +44,7 @@ export function deriveCellStates(decisions: readonly Decision[]): Map<string, Ce
     .sort((a, b) => a.decidedAt.localeCompare(b.decidedAt));
   const stacks = new Map<string, Decision[]>();
   for (const decision of sorted) {
+    if (isConsultAction(decision.action)) continue;
     const key = cellKeyOf(decision.fieldId, decision.entityKey);
     const stack = stacks.get(key) ?? [];
     if (decision.action === 'undo') {

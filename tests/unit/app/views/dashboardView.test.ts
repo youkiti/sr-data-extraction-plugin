@@ -435,3 +435,16 @@ describe('費用カードのロール制限', () => {
     expect(renderDashboardView(state, ctx).querySelector('#dashboard-usage')).toBeNull();
   });
 });
+
+test('要相談一覧に現在値・メモ・判定者とセルへのリンクを表示する', () => {
+  const data = makeData();
+  const flag = {
+    studyId: 'study-1', fieldId: 'f', entityKey: '-', annotator: 'me', annotatorType: 'human_with_ai' as const,
+    decidedAt: 't1', decidedBy: 'me', schemaVersion: 1, action: 'flag_consult' as const, value: 'old', note: '相談メモ',
+  };
+  data.rows[0]!.consults = [{ fieldLabel: '項目', entityKey: '-', cellKey: '["f","-"]', value: '現在値', flag },
+    { fieldLabel: '空値', entityKey: '-', cellKey: '["g","-"]', value: null, flag: { ...flag, note: null } }];
+  const view = renderDashboardView(makeState({ data }), makeCtx().ctx);
+  expect(view.querySelector('#dashboard-consults')?.textContent).toContain('現在値相談メモme');
+  expect(view.querySelector('#dashboard-consults tbody a')?.getAttribute('href')).toBe('#/verify?study=study-1&entity=%5B%22f%22%2C%22-%22%5D');
+});

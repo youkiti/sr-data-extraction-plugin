@@ -5,9 +5,10 @@
 //   一切読まず、Studies × 最新確定スキーマから対象一覧を組む（readIndependentVerifyTargetMaterials）
 // - study の選択（?study= 直リンク / セレクタ切替）: verificationService.loadVerificationBundle
 // - 判定・群構成確定の永続化: verificationService へ委譲
+import { invalidateDashboard } from './dashboardService';
 import type { QuoteSetRow } from '../../domain/quoteSet';
 import { appendQuoteSetRows, readQuoteSetRows } from '../../features/verification/quoteSetRepository';
-import type { Decision } from '../../domain/decision';
+import { isConsultAction, type Decision } from '../../domain/decision';
 import type { DocumentRecord } from '../../domain/document';
 import type { Evidence } from '../../domain/evidence';
 import { annotatorTypeForRole } from '../../domain/reviewer';
@@ -535,7 +536,7 @@ export async function persistVerifyDecision(
     return;
   }
   let studyValues: Record<string, string | null> | null = null;
-  if (field.entityLevel === 'study') {
+  if (field.entityLevel === 'study' && !isConsultAction(decision.action)) {
     studyValues = { ...(state.verify.studyValues ?? {}), [field.fieldName]: decision.value };
     patchVerify(store, { studyValues });
   }
@@ -563,6 +564,8 @@ export async function persistVerifyDecision(
         : (current.resultsRowUpdatedAt[resultsCellKeyOf(decision.entityKey, decision.fieldId)] ??
           null);
     const result = await persistDecisionWrite(project.spreadsheetId, write, deps, expectedUpdatedAt);
+    invalidateDashboard(store);
+    store.setState({ export: { ...store.getState().export, built: null, rSetMaterials: null } });
     if (result.status === 'queued') {
       patchVerify(store, { queuedDecisions: store.getState().verify.queuedDecisions + 1 });
     } else if (result.status === 'conflict') {

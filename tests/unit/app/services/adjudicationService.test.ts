@@ -1981,6 +1981,8 @@ describe('担当ペアと calibration のサービス集計', () => {
     readAllDecisionsMock.mockResolvedValue([
       ...decisions,
       makeDecision({ annotator: C, action: 'edit' }),
+      makeDecision({ annotator: C, action: 'flag_consult' }),
+      makeDecision({ annotator: C, action: 'unflag_consult' }),
       makeDecision({ annotator: C, annotatorType: 'ai' }),
     ]);
     await loadAgreementReport(store, makeDeps());
