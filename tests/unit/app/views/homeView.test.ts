@@ -48,7 +48,7 @@ test.each([false, true])('レビュアーの共有案内は付与済み=%s で�
   const view = renderHomeView(state, ctx);
   const hint = view.querySelector('#home-folder-access-empty-hint');
   expect(hint?.textContent).toContain('一覧が空');
-  expect(hint?.textContent).toContain('一部のファイル');
+  expect(hint?.textContent).toContain('一部だけ表示されるのは正常');
   expect(hint?.textContent).toContain('フォルダを共有し直す');
   expect(hint?.previousElementSibling?.id).toBe(granted ? 'home-regrant-files' : 'home-grant-folder-access');
 });

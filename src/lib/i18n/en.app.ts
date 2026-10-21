@@ -247,7 +247,7 @@ export const enApp: Record<keyof typeof jaApp, string> = {
   'home.folderShareFailed': 'Sharing with {email} failed: {reason}',
   'home.openProjectFolder': 'Open the project folder in Drive',
   'home.folderShareManual': 'Please share it manually using the Share button in Drive.',
-  'home.folderAccessEmptyHint': 'If the selection list is empty or shows only some files, the project folder has not been shared with this account. Ask the owner to click “Share the folder again” under Reviewer management.',
+  'home.folderAccessEmptyHint': 'The selection screen lists only files you have not granted access to yet, so seeing just some files is expected. If the list is empty, the project folder may not be shared with this account. Ask the owner to click “Share the folder again” under Reviewer management.',
   'home.modeConfirmTitle': 'Change the review mode?',
   'home.modeConfirmBody':
     '{email} is already registered. The mode can be changed because no judgments, data, or arm structures have been recorded yet; once work starts, the mode can no longer be changed. If this person has the app open, ask them to reopen it after the change (a screen left open keeps saving in the previous mode).',
