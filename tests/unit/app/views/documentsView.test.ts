@@ -1081,6 +1081,7 @@ describe('renderDocumentsView: tiab-review 取り込みカード', () => {
       includeCount: 2,
       orIncludeCount: 2,
       adjudicationExcluded: [],
+      notCandidateExcluded: [],
       items: [
         {
           refId: 'r1',
@@ -1209,7 +1210,7 @@ describe('renderDocumentsView: tiab-review 取り込みカード', () => {
       orIncludeCount: 3,
       adjudicationExcluded: [{
         refId: 'excluded', title: '<b>裁定で除外</b>', year: null,
-        authors: null, doi: null, pmid: null, fulltextUrl: null,
+        authors: null, doi: null, pmid: null, fulltextUrl: null, fulltextSet: null, relatedRefId: null,
       }],
     });
     const view = renderDocumentsView(makeState({ tiabImport: tiabState({ plan }) }), ctx);
@@ -1228,13 +1229,33 @@ describe('renderDocumentsView: tiab-review 取り込みカード', () => {
 
   test('裁定反映後が 0 件でも差分を表示し、件数一致なら警告を出さない', () => {
     const { ctx } = makeCtx();
-    const empty = makePlan({ items: [], includeCount: 0 });
+    const empty = makePlan({ items: [], includeCount: 0, adjudicationExcluded: [{
+      refId: 'r', title: 'Excluded', year: null, authors: null, doi: null, pmid: null,
+      fulltextUrl: null, fulltextSet: null, relatedRefId: null,
+    }] });
     const view = renderDocumentsView(makeState({ tiabImport: tiabState({ plan: empty }) }), ctx);
     expect(view.querySelector('#tiab-adjudication-warning')).not.toBeNull();
     const equal = renderDocumentsView(makeState({ tiabImport: tiabState({ plan: makePlan() }) }), ctx);
     expect(equal.querySelector('#tiab-adjudication-warning')).toBeNull();
     expect(equal.textContent).not.toContain('既存の study は自動除外されません');
     expect(equal.querySelector('#tiab-or-summary')).not.toBeNull();
+  });
+
+  test('候補外の警告は裁定と別に件数・題名を示し、取り込みを妨げない', () => {
+    const { ctx } = makeCtx();
+    const plan = makePlan({ orIncludeCount: 3, notCandidateExcluded: [{
+      refId: 'r', title: '<b>候補外</b>', year: null, authors: null, doi: null, pmid: null,
+      fulltextUrl: null, fulltextSet: null, relatedRefId: null,
+    }] });
+    const view = renderDocumentsView(makeState({ tiabImport: tiabState({ plan }) }), ctx);
+    expect(view.querySelector('#tiab-not-candidate-warning')?.getAttribute('role')).toBe('alert');
+    expect(view.querySelector('#tiab-not-candidate-warning')?.textContent).toContain('1 件');
+    expect(view.querySelector('#tiab-not-candidate-excluded li')?.textContent).toBe('<b>候補外</b>');
+    expect(view.querySelector('#tiab-not-candidate-excluded b')).toBeNull();
+    expect(view.querySelector('#tiab-adjudication-warning')).toBeNull();
+    expect((view.querySelector('#tiab-apply') as HTMLButtonElement).disabled).toBe(false);
+    const empty = renderDocumentsView(makeState({ tiabImport: tiabState({ plan: makePlan() }) }), ctx);
+    expect(empty.querySelector('#tiab-not-candidate-warning')).toBeNull();
   });
 
   test('プレビュー: TiAb 相のサマリ表記・反映 0 件は実行ボタンを無効化する', () => {

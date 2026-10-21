@@ -69,6 +69,8 @@ describe('readTiabSheet', () => {
     );
     await expect(readTiabSheet('sheet-1', emptyRound)).resolves.toMatchObject({
       activeFulltextAiRound: null,
+      fulltextPoolRule: null,
+      fulltextAssignmentStatus: 'none',
     });
 
     // 値セルが欠落したラグ行（B 列なし）も null 扱い
@@ -79,6 +81,8 @@ describe('readTiabSheet', () => {
     );
     await expect(readTiabSheet('sheet-1', raggedRound)).resolves.toMatchObject({
       activeFulltextAiRound: null,
+      fulltextPoolRule: null,
+      fulltextAssignmentStatus: 'none',
     });
 
     const missingConfig = makeDeps((url) =>
@@ -88,7 +92,26 @@ describe('readTiabSheet', () => {
     );
     await expect(readTiabSheet('sheet-1', missingConfig)).resolves.toMatchObject({
       activeFulltextAiRound: null,
+      fulltextPoolRule: null,
+      fulltextAssignmentStatus: 'none',
     });
+  });
+
+  test.each([
+    { rows: [['fulltext_pool_rule', '{"voters":["human:a"],"threshold":1}'], ['fulltext_pool_rule', '']], pool: { version: 1, voters: ['human:a'], threshold: 1 }, status: 'none' },
+    { rows: [['fulltext_pool_rule', '{"voters":[],"threshold":1}'], ['fulltext_pool_rule', 'bad'], ['fulltext_assignment_status', 'configured'], ['fulltext_assignment_status', ''], ['fulltext_assignment_status', 'invalid']], pool: null, status: 'configured' },
+    { rows: [['fulltext_assignment_status', 'configured'], ['fulltext_assignment_status', 'none'], ['fulltext_ai_active_round', 'old'], ['fulltext_ai_active_round', 'new']], pool: null, status: 'none' },
+    { rows: [['fulltext_pool_rule'], ['fulltext_assignment_status']], pool: null, status: 'none' },
+  ])('Config は後の有効行を採用し空値は読み飛ばす: $status', async ({ rows, pool, status }) => {
+    const deps = makeDeps((url) => url.includes('values:batchGet')
+      ? okJson({ valueRanges: [{ values: [REF_HEADER] }, { values: [DEC_HEADER] }] })
+      : okJson({ values: rows }));
+    const data = await readTiabSheet('sheet-1', deps);
+    expect(data.fulltextPoolRule).toEqual(pool);
+    expect(data.fulltextAssignmentStatus).toBe(status);
+    if (rows.some((row) => row[1] === 'new')) {
+      expect(data.activeFulltextAiRound).toBe('new');
+    }
   });
 
   test('batchGet の 400（タブ欠落）は tiab-review シートでない旨のエラーへ変換する', async () => {

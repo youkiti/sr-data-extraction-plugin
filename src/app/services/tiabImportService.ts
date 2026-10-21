@@ -135,6 +135,7 @@ export async function previewTiabImport(
       sheet.references,
       sheet.decisions,
       sheet.activeFulltextAiRound,
+      sheet,
     );
     const plan = planTiabImport({ adopted, studies, documents: records });
     patchTiab(store, { loading: false, plan });
@@ -274,6 +275,7 @@ export async function runTiabHandoffImport(
       sheet.references,
       sheet.decisions,
       sheet.activeFulltextAiRound,
+      sheet,
     );
     const fileIds = [
       ...new Set(

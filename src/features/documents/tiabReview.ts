@@ -18,6 +18,8 @@ export interface TiabReference {
   pmid: string | null;
   /** fulltext キャッシュ / OA 直リンクの URL（Drive の webViewLink を含む） */
   fulltextUrl: string | null;
+  fulltextSet: string | null;
+  relatedRefId: string | null;
 }
 
 export type TiabDecisionValue = 'include' | 'exclude' | 'maybe' | 'pending';
@@ -31,6 +33,7 @@ export interface TiabDecision {
   decidedAt: string;
   /** screening_phase 列。空欄は 'tiab' 扱い（tiab 側の後方互換規約） */
   screeningPhase: TiabScreeningPhase;
+  clientVersion: string | null;
 }
 
 /** 最終判定 include の抽出結果 */
@@ -43,6 +46,8 @@ export interface TiabAdoptedList {
   orIncludeCount: number;
   /** OR では採用だが裁定で採用対象外になった文献 */
   adjudicationExcluded: TiabReference[];
+  /** フルテキスト候補外のため採用から外した文献 */
+  notCandidateExcluded: TiabReference[];
 }
 
 /** プレビュー 1 行（include 1 件）の反映状態 */
@@ -66,6 +71,8 @@ export interface TiabImportPlan {
   orIncludeCount: number;
   /** OR では採用だが裁定で採用対象外になった文献 */
   adjudicationExcluded: TiabReference[];
+  /** フルテキスト候補外のため採用から外した文献 */
+  notCandidateExcluded: TiabReference[];
   includeCount: number;
   items: TiabPlanItem[];
   /** study_label を上書きする Studies 行（変更があるもののみ） */
@@ -143,6 +150,8 @@ export function parseTiabReferences(values: readonly (readonly string[])[]): Tia
       doi: emptyToNull(cellAt(raw, index.get('doi'))),
       pmid: emptyToNull(cellAt(raw, index.get('pmid'))),
       fulltextUrl: emptyToNull(cellAt(raw, index.get('fulltext_url'))),
+      fulltextSet: emptyToNull(cellAt(raw, index.get('fulltext_set'))),
+      relatedRefId: emptyToNull(cellAt(raw, index.get('related_ref_id'))),
     });
   }
   return rows;
@@ -179,6 +188,7 @@ export function parseTiabDecisions(values: readonly (readonly string[])[]): Tiab
       decision: decision as TiabDecisionValue,
       decidedAt: cellAt(raw, index.get('decided_at')),
       screeningPhase: cellAt(raw, index.get('screening_phase')) === 'fulltext' ? 'fulltext' : 'tiab',
+      clientVersion: emptyToNull(cellAt(raw, index.get('client_version'))),
     });
   }
   return rows;
@@ -248,6 +258,101 @@ export function buildTiabStudyLabel(ref: TiabReference): string {
   return ref.year === null ? base : `${base} (${ref.year})`;
 }
 
+/** フルテキスト候補プールの票主体と必要票数 */
+export interface FulltextPoolRule {
+  version: 1;
+  voters: string[];
+  threshold: number;
+}
+
+/** プロジェクト全体のフルテキスト候補設定 */
+export interface TiabCandidateConfig {
+  fulltextPoolRule: FulltextPoolRule | null;
+  fulltextAssignmentStatus: 'configured' | 'none';
+}
+
+/** Config のプール規則を解析し、不正な値は規則なしにする */
+export function parseFulltextPoolRule(json: string): FulltextPoolRule | null {
+  try {
+    const parsed = JSON.parse(json) as Partial<FulltextPoolRule> | null;
+    if (
+      parsed &&
+      Array.isArray(parsed.voters) &&
+      parsed.voters.every((v) => typeof v === 'string') &&
+      typeof parsed.threshold === 'number' &&
+      parsed.threshold >= 1
+    ) {
+      return { version: 1, voters: parsed.voters, threshold: parsed.threshold };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/** TiAb 票の票主体キーを作る（人物と LLM 実行を区別する） */
+function voterKeyOf(d: TiabDecision): string | null {
+  const reviewerId = d.reviewerId.trim();
+  if (!reviewerId) {
+    return null;
+  }
+  if (reviewerId.startsWith('llm:')) {
+    return reviewerId;
+  }
+  const version = d.clientVersion;
+  const isHuman = version !== null && (version === '0.1.0' || version.includes('-human'));
+  if (version?.includes('-ml') && !isHuman) {
+    return `ml:${reviewerId}`;
+  }
+  return `human:${reviewerId}`;
+}
+
+/** 選択された票主体の最新 TiAb include 票を数える */
+export function countIncludeVotes(decisions: readonly TiabDecision[], rule: FulltextPoolRule): number {
+  const selected = new Set(rule.voters);
+  const latest = new Map<string, TiabDecision>();
+  for (const d of decisions) {
+    if (d.screeningPhase !== 'tiab') {
+      continue;
+    }
+    const key = voterKeyOf(d);
+    if (!key || !selected.has(key)) {
+      continue;
+    }
+    const personKey = key.startsWith('llm:') ? key : `person:${d.reviewerId.trim()}`;
+    const existing = latest.get(personKey);
+    if (!existing || d.decidedAt > existing.decidedAt) {
+      latest.set(personKey, d);
+    }
+  }
+  let votes = 0;
+  for (const d of latest.values()) {
+    if (d.decision === 'include') {
+      votes++;
+    }
+  }
+  return votes;
+}
+
+/** tiab-review と同じ規則でプロジェクト全体のフルテキスト候補を判定する */
+export function isProjectFulltextCandidateRef(input: {
+  ref: TiabReference;
+  decisions: readonly TiabDecision[];
+  config: TiabCandidateConfig;
+}): boolean {
+  const { ref, decisions, config } = input;
+  if ((ref.relatedRefId || '').trim() !== '') {
+    return true;
+  }
+  if (config.fulltextAssignmentStatus === 'configured' && (ref.fulltextSet || '').trim() !== '') {
+    return true;
+  }
+  if (config.fulltextPoolRule) {
+    return countIncludeVotes(decisions, config.fulltextPoolRule) >= config.fulltextPoolRule.threshold;
+  }
+  return decisions.some((d) => d.screeningPhase === 'tiab' && d.decision === 'include');
+}
+
 /** (phase, refId, reviewerId) ごとに decided_at 最新の判定へ畳み込むキー */
 function latestKey(d: TiabDecision): string {
   return `${d.screeningPhase} ${d.refId} ${d.reviewerId}`;
@@ -266,6 +371,7 @@ export function resolveAdoptedReferences(
   references: readonly TiabReference[],
   decisions: readonly TiabDecision[],
   activeFulltextAiRound: string | null,
+  candidateConfig: TiabCandidateConfig = { fulltextPoolRule: null, fulltextAssignmentStatus: 'none' },
 ): TiabAdoptedList {
   const adjudications = new Map<string, TiabDecision>();
   const latest = new Map<string, TiabDecision>();
@@ -314,15 +420,30 @@ export function resolveAdoptedReferences(
   const phase: TiabScreeningPhase = hasFulltextDecision ? 'fulltext' : 'tiab';
   const effective = byPhase[phase];
   const orIncludes = references.filter((ref) => effective.get(ref.refId)?.has('include') === true);
-  const includes = references.filter((ref) => {
+  const adopted = references.filter((ref) => {
     const adjudication = phase === 'fulltext' ? adjudications.get(ref.refId) : undefined;
     return adjudication === undefined
       ? effective.get(ref.refId)?.has('include') === true
       : adjudication.decision === 'include';
   });
-  const adoptedIds = new Set(includes.map((ref) => ref.refId));
+  const adoptedIds = new Set(adopted.map((ref) => ref.refId));
   const adjudicationExcluded = orIncludes.filter((ref) => !adoptedIds.has(ref.refId));
-  return { phase, includes, totalReferences: references.length, orIncludeCount: orIncludes.length, adjudicationExcluded };
+  const notCandidateExcluded: TiabReference[] = [];
+  const includes = adopted.filter((ref) => {
+    if (phase === 'fulltext' && !isProjectFulltextCandidateRef({
+      ref,
+      decisions: decisions.filter((d) => d.refId === ref.refId),
+      config: candidateConfig,
+    })) {
+      notCandidateExcluded.push(ref);
+      return false;
+    }
+    return true;
+  });
+  return {
+    phase, includes, totalReferences: references.length, orIncludeCount: orIncludes.length,
+    adjudicationExcluded, notCandidateExcluded,
+  };
 }
 
 /**
@@ -422,6 +543,7 @@ export function planTiabImport(params: {
     includeCount: adopted.includes.length,
     orIncludeCount: adopted.orIncludeCount,
     adjudicationExcluded: adopted.adjudicationExcluded,
+    notCandidateExcluded: adopted.notCandidateExcluded,
     items,
     studyUpdates: [...scheduledStudies.values()],
     documentUpdates: [...scheduledDocs.values()],
