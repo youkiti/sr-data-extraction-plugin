@@ -23,14 +23,17 @@ export function buildStudyWideCsv(
   studies: readonly StudyRecord[],
   rows: readonly StudyDataRow[],
   fields: readonly SchemaField[],
+  draft = false,
 ): StudyWideCsvResult {
   const studyFields = fields
     .filter((field) => field.entityLevel === 'study')
     .sort((a, b) => a.fieldIndex - b.fieldIndex);
-  const used = new Set(['study_label', ...fields.map((field) => field.fieldName)]);
+  const used = new Set(['study_label', ...fields.map((field) => field.fieldName),
+    ...(draft ? studyFields.map((field) => `${field.fieldName}__source`) : [])]);
   const columns = studyFields.map((field) => buildMultiSelectColumns(field, used));
   const header = ['study_label', ...studyFields.flatMap((field, index) =>
-    [field.fieldName, ...columns[index]!.map((column) => column.name)],
+    [field.fieldName, ...columns[index]!.map((column) => column.name),
+      ...(draft ? [`${field.fieldName}__source`] : [])],
   )];
 
   const csvRows: string[][] = [];
@@ -39,18 +42,24 @@ export function buildStudyWideCsv(
   for (const study of studies) {
     const studyRows = rows.filter((row) => row.studyId === study.studyId);
     const finalRow = selectFinalAnnotator(studyRows);
-    if (finalRow === null) {
+    const aiRow = draft ? studyRows.find((row) => row.annotatorType === 'ai') : undefined;
+    if (finalRow === null && aiRow === undefined) {
       skippedStudyIds.push(study.studyId);
       continue;
     }
     const line = [study.studyLabel];
     for (const [index, field] of studyFields.entries()) {
-      const value = finalRow.values[field.fieldName] ?? null;
-      if (value === null) {
+      const humanValue = finalRow?.values[field.fieldName] ?? null;
+      const value = humanValue ?? aiRow?.values[field.fieldName] ?? null;
+      if (humanValue === null) {
         unverifiedCellCount++; // 空セル = 未検証（NR は「未報告」でありここに含めない）
       }
       line.push(value ?? '');
       line.push(...multiSelectColumnValues(field, value, columns[index]!));
+      if (draft) {
+        line.push(humanValue === null ? 'ai_unverified'
+          : finalRow!.annotatorType === 'consensus' ? 'consensus' : 'human');
+      }
     }
     csvRows.push(line);
   }

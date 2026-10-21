@@ -9,6 +9,7 @@ import {
   loadExportData,
   requestExportGenerate,
   selectExportFormat,
+  setExportDraft,
   timestampForFilename,
   type ExportServiceDeps,
 } from '../../../../src/app/services/exportService';
@@ -475,6 +476,7 @@ describe('requestExportGenerate', () => {
       {
         exportId: 'uuid-1',
         format: 'study_wide',
+        isDraft: false,
         schemaVersion: 2,
         studyCount: 1,
         fileRef: 'https://drive/file-1',
@@ -947,4 +949,53 @@ test('根拠の表は S8 と同じ完了 run の項目別合成を使い、非�
   expect(csv).not.toContain('未完了の引用');
   expect(csv).not.toContain('非アクティブの引用');
   expect(csv).toContain('paper.pdf');
+});
+
+test('仮切替で素材から再構築し、R セット・Methods は保持する。生成中と素材なしは変更不可', async () => {
+  const deps = makeDeps();
+  const store = makeStore();
+  setExportDraft(store, true);
+  expect(store.getState().export.draft).toBe(false);
+  await loadExportData(store, deps);
+  const original = store.getState().export;
+  store.setState({ export: { ...original, confirmingWarning: true } });
+  setExportDraft(store, true);
+  expect(store.getState().export.draft).toBe(true);
+  expect(store.getState().export.confirmingWarning).toBe(false);
+  expect(store.getState().export.rSet).toBe(original.rSet);
+  expect(store.getState().export.methodsFacts).toBe(original.methodsFacts);
+  expect(store.getState().export.built?.study_wide.header).toEqual(['study_label']);
+  await loadExportData(store, deps, { force: true });
+  expect(store.getState().export.draft).toBe(true);
+  setExportDraft(store, false);
+  expect(store.getState().export.built).toEqual(original.built);
+  store.setState({ export: { ...store.getState().export, generating: true } });
+  setExportDraft(store, true);
+  expect(store.getState().export.draft).toBe(false);
+});
+
+test.each(['study_wide', 'results_long', 'audit', 'evidence_quotes'] as const)(
+  '仮指定時の %s は対象形式だけファイル名とログを仮扱いにする', async (format) => {
+    const store = makeStore({ export: { built: makeBuiltAll(), schemaVersion: 2, format, draft: true } });
+    await requestExportGenerate(store, makeDeps());
+    const expectedDraft = format === 'study_wide' || format === 'results_long';
+    expect(store.getState().export.result?.filename)
+      .toBe(`${format}_20260703-090000${expectedDraft ? '_draft' : ''}.csv`);
+    expect(appendExportLogMock.mock.calls[0][1].isDraft).toBe(expectedDraft);
+  },
+);
+
+test('仮指定のオン・オフで R セットの全ファイルとログは同一', async () => {
+  const files: unknown[] = [];
+  const deps = makeDeps();
+  for (const draft of [false, true]) {
+    const store = makeStore({ export: {
+      draft, format: 'r_set', built: makeBuiltAll(), schemaVersion: 2,
+      rSet: makeBuiltRSet(), rSetMaterials: emptyRSetMaterials(),
+    } });
+    await requestExportGenerate(store, deps);
+    files.push(store.getState().export.rSetResult);
+  }
+  expect(files[1]).toEqual(files[0]);
+  expect(appendExportLogMock.mock.calls[1]).toEqual(appendExportLogMock.mock.calls[0]);
 });

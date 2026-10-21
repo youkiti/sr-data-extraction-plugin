@@ -1065,6 +1065,8 @@ export const jaApp = {
   'guards.noExportData': 'エクスポートできるデータがまだありません',
 
   // S10 エクスポート（exportView.ts + exportService.ts）
+  'export.draftLabel': '未確認分を AI の値で補う（仮エクスポート）',
+  'export.draftNote': '最終データではありません。人が確認していない AI の値を含みます',
   'export.lead':
     '確定データを study_wide / results_long / audit の CSV として生成し、Drive に保存します。',
   'export.formatLegend': '形式',

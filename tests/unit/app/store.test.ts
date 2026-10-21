@@ -216,6 +216,8 @@ describe('createInitialState', () => {
         agreementError: null,
       },
       export: {
+        draft: false,
+        materials: null,
         usage: null,
         format: 'study_wide',
         built: null,

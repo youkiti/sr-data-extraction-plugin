@@ -264,6 +264,7 @@ export const SHEET_HEADERS: Record<SheetTabName, readonly string[]> = {
     'file_ref',
     'exported_at',
     'exported_by',
+    'is_draft',
   ],
   Reviewers: ['email', 'role', 'review_mode', 'assigned_by', 'assigned_at'],
   ReviewSets: ['set_id', 'reviewer_emails', 'seed', 'updated_by', 'updated_at', 'study_ids'],

@@ -1083,6 +1083,8 @@ export const enApp: Record<keyof typeof jaApp, string> = {
   'guards.noExportData': 'There is no data to export yet',
 
   // S10 エクスポート
+  'export.draftLabel': 'Fill unverified cells with AI values (draft export)',
+  'export.draftNote': 'This is not final data. It includes AI values that have not been verified by a human.',
   'export.lead':
     'Generates the confirmed data as study_wide / results_long / audit CSVs and saves them to Drive.',
   'export.formatLegend': 'Format',
