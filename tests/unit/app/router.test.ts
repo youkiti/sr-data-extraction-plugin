@@ -147,6 +147,7 @@ const stubCtx: ViewContext = {
   },
   export: {
     onSelectFormat: jest.fn(),
+        onChangeDraft: jest.fn(),
     onGenerate: jest.fn(),
     onConfirmGenerate: jest.fn(),
     onCancelGenerate: jest.fn(),

@@ -219,6 +219,7 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<SchemaViewCallbac
       },
       export: {
         onSelectFormat: jest.fn(),
+        onChangeDraft: jest.fn(),
         onGenerate: jest.fn(),
         onConfirmGenerate: jest.fn(),
         onCancelGenerate: jest.fn(),
@@ -2051,4 +2052,25 @@ test.each([0, 1, 2])('候補パネルを対象行の直下で全列にわたり�
   const movedView = renderSchemaView(state, ctx);
   expect(movedView.querySelector('#schema-enum-suggestion')!.closest('tr'))
     .toBe(movedView.querySelector('#schema-editor-table tbody > tr:last-child'));
+});
+
+test.each(['ja', 'en'] as const)('必須と削除の説明を %s で表示する', (language) => {
+  setUiLanguage(language);
+  try {
+    const state = makeState({ versions: [], editorRows: [makeEditorRow()] });
+    const { ctx } = makeCtx();
+    const root = renderSchemaView(state, ctx);
+    const required = root.querySelectorAll('#schema-editor-table th')[8]!;
+    expect(required.getAttribute('title')).toContain(language === 'ja' ? '外しても列は残ります' : 'Unchecking keeps the column');
+    const hint = root.querySelector<HTMLParagraphElement>('p.schema__editor-hint')!;
+    expect(hint.textContent).toBe(required.getAttribute('title'));
+    expect(hint.classList.contains('schema__sample-note')).toBe(true);
+    expect(hint.hidden).toBe(false);
+    expect(root.querySelector('#schema-editor-table')!.parentElement!.previousElementSibling).toBe(hint);
+    const remove = root.querySelector('.schema__row-remove')!;
+    expect(remove.getAttribute('title')).toBe(language === 'ja' ? 'この項目を表から外す' : 'Remove this item from the table');
+    expect(remove.getAttribute('aria-description')).toBe(remove.getAttribute('title'));
+  } finally {
+    setUiLanguage('ja');
+  }
 });

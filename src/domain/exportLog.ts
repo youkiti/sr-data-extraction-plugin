@@ -9,6 +9,8 @@
 export type ExportFormat = 'study_wide' | 'results_long' | 'audit' | 'evidence_quotes' | 'r_set' | 'usage';
 
 export interface ExportLogEntry {
+  /** 未指定の既存ログは通常エクスポートとして扱う */
+  isDraft?: boolean;
   exportId: string;
   format: ExportFormat;
   schemaVersion: number;

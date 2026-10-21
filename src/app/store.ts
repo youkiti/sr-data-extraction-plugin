@@ -22,7 +22,7 @@ import type { AdjudicationCell } from '../features/adjudication/cellMatch';
 import type { DraftArmRow } from '../features/adjudication/armMatch';
 import type { AskPaperTurn, AskPaperSourceDocument } from '../features/verification/askPaper';
 import type { AgreementReport, CalibrationPairAgreement } from '../features/adjudication/agreement';
-import type { BuiltExport, ClassicExportFormat } from '../features/export/buildExport';
+import type { BuiltExport, ClassicExportFormat, ExportMaterials } from '../features/export/buildExport';
 import type {
   MethodsFacts,
   MethodsLanguage,
@@ -569,6 +569,8 @@ export interface RSetResultInfo {
 
 /** #/export（S10）の画面状態 */
 export interface ExportState {
+  draft: boolean;
+  materials: ExportMaterials | null;
   /** 使用量 CSV は形式選択と独立した生成状態を持つ */
   usage: {
     generating: boolean;
@@ -1033,6 +1035,8 @@ export function createInitialState(): AppState {
       agreementError: null,
     },
     export: {
+      draft: false,
+      materials: null,
       usage: null,
       format: 'study_wide',
       built: null,

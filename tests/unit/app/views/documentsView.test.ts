@@ -199,6 +199,7 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<DocumentsViewCall
       },
       export: {
         onSelectFormat: jest.fn(),
+        onChangeDraft: jest.fn(),
         onGenerate: jest.fn(),
         onConfirmGenerate: jest.fn(),
         onCancelGenerate: jest.fn(),

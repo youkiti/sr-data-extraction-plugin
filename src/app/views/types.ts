@@ -342,6 +342,7 @@ export interface AdjudicateViewCallbacks {
 
 /** #/export（S10）のユーザー操作コールバック */
 export interface ExportViewCallbacks {
+  onChangeDraft(draft: boolean): void;
   /** 使用量 CSV の独立した生成・ローカル保存 */
   onGenerateUsage(): void;
   onDownloadUsage(): void;

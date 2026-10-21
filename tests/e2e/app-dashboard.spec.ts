@@ -85,7 +85,7 @@ function minimalPdf(text: string): Buffer {
 }
 
 /** Sheets / Drive の stub を配線する（ArmStructures タブは確定済みの群構成を返す） */
-async function setupRoutes(page: Page): Promise<void> {
+async function setupRoutes(page: Page, decisions: string[][] = []): Promise<void> {
   await page.route('https://sheets.googleapis.com/**', async (route) => {
     const url = decodeURIComponent(route.request().url());
     if (route.request().method() === 'GET') {
@@ -103,7 +103,7 @@ async function setupRoutes(page: Page): Promise<void> {
       } else if (url.includes('/values/Studies')) {
         await route.fulfill({ json: { values: [STUDIES_HEADERS, STUDY_ROW_1, STUDY_ROW_2] } });
       } else if (url.includes('/values/Decisions')) {
-        await route.fulfill({ json: { values: [DECISIONS_HEADERS] } });
+        await route.fulfill({ json: { values: [DECISIONS_HEADERS, ...decisions] } });
       } else if (url.includes('/values/StudyData')) {
         await route.fulfill({ json: { values: [STUDY_DATA_HEADERS] } });
       } else if (url.includes('/values/ResultsData')) {
@@ -116,6 +116,12 @@ async function setupRoutes(page: Page): Promise<void> {
       } else {
         await route.fulfill({ json: { values: [] } });
       }
+      return;
+    }
+    if (url.includes('/values/Decisions') && route.request().method() === 'POST') {
+      const body = route.request().postDataJSON() as { values: string[][] };
+      decisions.push(...body.values);
+      await route.fulfill({ json: { updates: { updatedRows: body.values.length } } });
       return;
     }
     await route.fulfill({ json: {} });
@@ -380,4 +386,29 @@ test.describe('owner の費用と予算', () => {
     expect(meta[1]).toEqual(base.slice(0, -1));
     await expect(page.locator('#dashboard-budget-clear')).toHaveCount(0);
   });
+});
+
+
+test('要相談を付けて一覧から該当セルへ移り、解除すると一覧から消える', async ({ page }) => {
+  const decisions = [['t1', 'e2e@example.com', 'study-1', 'f-total', '-', 'e2e@example.com',
+    'human_with_ai', '1', 'accept', '12', '']];
+  await setupRoutes(page, decisions);
+  await initApp(page, '#/verify?study=study-1&entity=-');
+  const toggle = page.locator('.verify__consult-toggle').first();
+  await expect(toggle).toBeEnabled({ timeout: 15_000 });
+  const progress = await page.locator('#verify-progress').textContent();
+  await page.locator('.verify__consult-note').first().fill('表と本文で迷う');
+  await toggle.click();
+  await expect.poll(() => decisions.filter((row) => row[8] === 'flag_consult').length).toBe(1);
+  await expect(page.locator('#verify-progress')).toHaveText(progress!);
+  await page.evaluate(() => { location.hash = '#/dashboard'; });
+  const list = page.locator('#dashboard-consults');
+  await expect(list).toContainText('表と本文で迷う');
+  await expect(list).toContainText('12');
+  await list.locator('tbody a').click();
+  await expect(page.locator('.verify__consult-toggle').first()).toHaveAttribute('aria-pressed', 'true');
+  await page.locator('.verify__consult-toggle').first().click();
+  await expect.poll(() => decisions.filter((row) => row[8] === 'unflag_consult').length).toBe(1);
+  await page.evaluate(() => { location.hash = '#/dashboard'; });
+  await expect(page.locator('#dashboard-consults tbody tr')).toHaveCount(0);
 });

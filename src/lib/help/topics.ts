@@ -17,6 +17,7 @@ export const HELP_TOPICS = {
   pilot: { tourId: 'pilot-and-extract', route: '#/pilot', helpAnchor: 'pilot' },
   extract: { tourId: 'pilot-and-extract', route: '#/extract', helpAnchor: 'extract' },
   verify: { tourId: 'verify-basics', route: '#/verify', helpAnchor: 'verify' },
+  consult: { helpAnchor: 'dashboard-consult' },
   dashboard: { tourId: 'export-data', route: '#/dashboard', helpAnchor: 'dashboard' },
   export: { tourId: 'export-data', route: '#/export', helpAnchor: 'export' },
   adjudicate: { tourId: 'dual-review', route: '#/adjudicate', helpAnchor: 'dual-review' },

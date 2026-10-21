@@ -632,7 +632,7 @@ function renderEditorRow(
   const removeButton = el('button', {
     className: 'schema__row-remove',
     text: t('schema.rowRemove'),
-    attributes: { type: 'button', 'aria-label': t('schema.rowRemoveAria', { row: index + 1 }) },
+    attributes: { type: 'button', 'aria-label': t('schema.rowRemoveAria', { row: index + 1 }), title: t('schema.rowRemoveHint'), 'aria-description': t('schema.rowRemoveHint') },
   });
   removeButton.addEventListener('click', () => ctx.schema.onRemoveRow(index));
 
@@ -1305,7 +1305,7 @@ function renderEditor(
     el('th', { text: 'data_type' }),
     el('th', { text: t('schema.headUnit') }),
     el('th', { text: t('schema.headAllowedValues') }),
-    el('th', { text: t('schema.headRequired') }),
+    el('th', { text: t('schema.headRequired'), attributes: { title: t('schema.requiredHint') } }),
     el('th', { text: t('schema.headInstruction') }),
     el('th', { text: t('schema.headExample') }),
     el('th', { text: t('schema.headActions') }),
@@ -1460,7 +1460,11 @@ function renderEditor(
   if (schema.presetDialog !== null) {
     children.push(renderPresetDialog(schema.presetDialog, ctx));
   }
-  children.push(dataTypeHelp, el('div', { className: 'schema__table-wrap' }, [table]));
+  children.push(
+    dataTypeHelp,
+    el('p', { className: 'schema__editor-hint schema__sample-note', text: t('schema.requiredHint') }),
+    el('div', { className: 'schema__table-wrap' }, [table]),
+  );
   if (errorItems.length > 0) {
     children.push(
       el('ul', { id: 'schema-editor-errors', className: 'schema__editor-errors' }, errorItems),

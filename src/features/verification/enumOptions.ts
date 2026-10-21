@@ -2,7 +2,7 @@
 // DOM を持たないため、判定画面（verificationCellCard）と裁定画面（adjudicateView）の双方から
 // 同じ規則で使える。DOM 側は app/views/enumChoiceEditor.ts が担う
 import { NOT_REPORTED_TOKEN, type AnnotatorType } from '../../domain/annotation';
-import type { Decision } from '../../domain/decision';
+import { isConsultAction, type Decision } from '../../domain/decision';
 import type { SchemaField } from '../../domain/schemaField';
 import { isMultiSelectField, parseMultiSelectValue } from '../../domain/multiSelect';
 
@@ -85,7 +85,7 @@ export function buildEnumCandidates(
 ): Map<string, string[]> {
   const byField = new Map<string, string[]>();
   for (const decision of decisions) {
-    if (decision.annotator !== annotator || decision.annotatorType !== annotatorType) {
+    if (isConsultAction(decision.action) || decision.annotator !== annotator || decision.annotatorType !== annotatorType) {
       continue;
     }
     const { value } = decision;

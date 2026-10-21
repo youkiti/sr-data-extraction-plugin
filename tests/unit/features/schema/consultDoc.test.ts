@@ -1,3 +1,4 @@
+import { setUiLanguage } from '../../../../src/lib/i18n';
 // 相談用ドキュメントの HTML ビルダー（純関数）の文字列検証
 import {
   buildSchemaConsultDocHtml,
@@ -352,3 +353,22 @@ describe('buildSchemaConsultDocHtml（事前設定）', () => {
     expect(html).not.toContain('益か害か');
   });
 });
+
+
+test.each([['ja', 'いいえ', 'はい'], ['en', 'No', 'Yes']] as const)(
+  '相談用ドキュメントの boolean の AI 値と修正後を %s で表示する', (language, no, yes) => {
+    setUiLanguage(language);
+    try {
+      const evidence = makeEvidence({ value: 'FALSE' });
+      const decision = makeDecision({ action: 'edit', value: 'TRUE' });
+      const html = buildSchemaConsultDocHtml(base({ fields: [makeField({ dataType: 'boolean' })],
+        pilot: { run: makeRun(), evidence: [evidence], decisions: [decision], studyLabels: labels } }));
+      expect(html).toContain(`<td>${no}</td>`);
+      expect(html).toContain(`修正後: ${yes}`);
+      expect(evidence.value).toBe('FALSE');
+      expect(decision.value).toBe('TRUE');
+    } finally {
+      setUiLanguage('ja');
+    }
+  },
+);

@@ -187,3 +187,8 @@ describe('buildEnumCandidates', () => {
     expect(candidates.get('f-rob')).toEqual(['第 3 の値']);
   });
 });
+
+test('要相談イベントの値は enum 候補へ追加しない', () => {
+  expect(buildEnumCandidates([makeDecision({ action: 'flag_consult', value: '相談時の値' }),
+    makeDecision({ action: 'unflag_consult', value: '解除時の値' })], 'me@example.com', 'human_with_ai').size).toBe(0);
+});

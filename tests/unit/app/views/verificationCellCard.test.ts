@@ -709,3 +709,21 @@ test('空の未編集引用モデルは従来どおり引用領域を出さな�
   expect(root.querySelector('.verify__quote')).toBeNull();
   expect(root.querySelector('.verify__quote-remove')).toBeNull();
 });
+
+
+test('boolean の AI 値と判定値を読み替え、編集入力と保存は元の形式を保つ', () => {
+  const cell = makeCell({ field: makeField({ dataType: 'boolean', fieldName: 'term_defined' }),
+    evidence: makeEvidence({ value: 'FALSE' }),
+    state: { ...emptyCellState(), status: 'edit', value: 'TRUE' } });
+  const handlers = makeHandlers();
+  const root = renderCell(cell, makeModel({ editing: { cellKey: cell.cellKey, action: 'edit' } }), handlers);
+  expect(root.querySelector('.verify__ai-value')?.textContent).toBe('いいえ');
+  expect(root.querySelector('.verify__current-value')?.textContent).toContain('はい');
+  const input = root.querySelector<HTMLInputElement>('.verify__edit-input')!;
+  expect(input.value).toBe('TRUE');
+  input.value = 'FALSE';
+  input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
+  expect(handlers.onConfirmEdit).toHaveBeenCalledWith(cell.cellKey, 'edit', 'FALSE', null);
+  expect(cell.evidence!.value).toBe('FALSE');
+  expect(cell.state.value).toBe('TRUE');
+});

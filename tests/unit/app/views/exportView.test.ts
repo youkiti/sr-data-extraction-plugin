@@ -21,6 +21,7 @@ const buildMethodsTextMock = buildMethodsText as jest.Mock;
 function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<ExportViewCallbacks> } {
   const callbacks = {
     onSelectFormat: jest.fn(),
+    onChangeDraft: jest.fn(),
     onGenerate: jest.fn(),
     onConfirmGenerate: jest.fn(),
     onCancelGenerate: jest.fn(),
@@ -786,4 +787,22 @@ describe('独立した使用量 CSV カード', () => {
     state.export.built = makeBuiltAll();
     expect(renderExportView(state, ctx).querySelector('#export-usage')).toBeNull();
   });
+});
+
+test('仮チェックは既定オフで切替を通知し、オンの注意を対象形式だけに表示する', () => {
+  const { ctx, callbacks } = makeCtx();
+  const view = renderExportView(makeState({ built: makeBuiltAll() }), ctx);
+  const input = view.querySelector<HTMLInputElement>('#export-draft')!;
+  expect(input.checked).toBe(false);
+  expect(input.disabled).toBe(false);
+  input.checked = true;
+  input.dispatchEvent(new Event('change'));
+  expect(callbacks.onChangeDraft).toHaveBeenCalledWith(true);
+  expect(view.querySelector('#export-draft-note')).toBeNull();
+  const draft = renderExportView(makeState({ built: makeBuiltAll(), draft: true }), ctx);
+  expect(draft.querySelector('#export-draft-note')?.textContent)
+    .toBe('最終データではありません。人が確認していない AI の値を含みます');
+  const audit = renderExportView(makeState({ built: makeBuiltAll(), draft: true, format: 'audit' }), ctx);
+  expect(audit.querySelector<HTMLInputElement>('#export-draft')!.disabled).toBe(true);
+  expect(audit.querySelector('#export-draft-note')).toBeNull();
 });

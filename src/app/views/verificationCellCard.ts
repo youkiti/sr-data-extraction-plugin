@@ -4,11 +4,13 @@
 // 変更せず、参照する状態・ハンドラを実際に使う分だけへ最小化した型（CellCardModel /
 // CellCardHandlers）を公開する — VerificationFormModel / VerificationFormHandlers は
 // フィールドを維持したまま構造的にこの部分型を満たすため、呼び出し側の変更は不要
+import { formatFieldValue } from '../../lib/formatFieldValue';
+import type { Decision } from '../../domain/decision';
 import type { CellQuote, ResolvedCellQuotes } from '../../domain/quoteSet';
 import type { AnchorStatus } from '../../domain/anchor';
 import type { Evidence } from '../../domain/evidence';
 import { NOT_REPORTED_TOKEN } from '../../domain/annotation';
-import { formatMultiSelectForDisplay, isMultiSelectField, splitPipeList } from '../../domain/multiSelect';
+import { isMultiSelectField, splitPipeList } from '../../domain/multiSelect';
 import { renderMultiEnumChoiceEditor } from './multiEnumChoiceEditor';
 import type { VerificationCell } from '../../features/verification/cells';
 import type { CellStatus } from '../../features/verification/cellState';
@@ -95,6 +97,8 @@ export interface CellCardModel {
    * 省略時 false = 導線を出さない（フェイルセーフ）
    */
   canEditSchema?: boolean;
+  /** 自分のセルごとの有効な要相談イベント。値の判定とは独立。 */
+  consultFlags?: ReadonlyMap<string, Decision>;
   /**
    * 照合できなかった引用のセルで 1 回目の accept を受けたときの警告（issue #381）。
    * 対象セルと理由。もう一度 accept すると確定する。別のセルへ移る・他の判定で消える。
@@ -120,6 +124,7 @@ export interface CellCardHandlers {
   onCancelEdit(): void;
   onNotReported(cellKey: string): void;
   onUndo(cellKey: string): void;
+  onConsultToggle?(cellKey: string, note: string | null): void;
   /** セルキー（代表）または引用キーのハイライトへスクロール（f） */
   onJump(quoteKey: string): void;
   /** quote を PDF.js テキスト検索へ投入（anchor failed のフォールバック） */
@@ -169,7 +174,7 @@ function renderAiSummary(cell: VerificationCell): HTMLElement {
       className: 'verify__ai-value',
       text: evidence.notReported
         ? t('verify.aiNotReported', { token: NOT_REPORTED_TOKEN })
-        : (formatMultiSelectForDisplay(cell.field, evidence.value) ?? t('verify.aiValueNone')),
+        : (formatFieldValue(cell.field, evidence.value) ?? t('verify.aiValueNone')),
     }),
   ];
   if (evidence.confidence !== null) {
@@ -850,7 +855,7 @@ export function renderCell(
     children.push(
       el('p', {
         className: 'verify__current-value',
-        text: t('verify.decidedValue', { value: formatMultiSelectForDisplay(cell.field, cell.state.value) ?? t('verify.valueEmpty') }),
+        text: t('verify.decidedValue', { value: formatFieldValue(cell.field, cell.state.value) ?? t('verify.valueEmpty') }),
       }),
     );
   }
@@ -890,6 +895,19 @@ export function renderCell(
       }));
     }
     children.push(renderActions(cell, handlers, mode, model));
+  }
+  const onConsultToggle = handlers.onConsultToggle;
+  if (onConsultToggle !== undefined) {
+    const flag = model.consultFlags?.get(cell.cellKey);
+    const note = el('input', { className: 'verify__consult-note', attributes: {
+      type: 'text', 'aria-label': t('verify.noteAria'), placeholder: t('verify.consultNote'),
+    } });
+    note.value = flag?.note ?? cell.state.stack.at(-1)?.note ?? '';
+    const toggle = el('button', { className: 'verify__consult-toggle', text: t('verify.consult'),
+      attributes: { type: 'button', 'aria-pressed': String(flag !== undefined) } });
+    toggle.disabled = cell.state.status === 'unverified' && flag === undefined;
+    toggle.addEventListener('click', () => onConsultToggle(cell.cellKey, note.value.trim() || null));
+    children.push(el('div', { className: 'verify__consult' }, [note, toggle]));
   }
   const node = el('div', { className: 'verify__cell', attributes: { tabindex: '-1' } }, children);
   node.dataset['cellKey'] = cell.cellKey;
