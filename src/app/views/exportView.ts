@@ -459,6 +459,15 @@ export function renderExportView(state: AppState, ctx: ViewContext): HTMLElement
   }
 
   children.push(renderFormatSelector(exportState, ctx));
+  const supportsDraft = exportState.format === 'study_wide' || exportState.format === 'results_long';
+  const draftInput = el('input', { id: 'export-draft', attributes: { type: 'checkbox' } });
+  draftInput.checked = exportState.draft;
+  draftInput.disabled = exportState.generating || !supportsDraft;
+  draftInput.addEventListener('change', () => ctx.export.onChangeDraft(draftInput.checked));
+  children.push(el('label', {}, [draftInput, t('export.draftLabel')]));
+  if (exportState.draft && supportsDraft) {
+    children.push(el('p', { id: 'export-draft-note', attributes: { role: 'alert' }, text: t('export.draftNote') }));
+  }
   const methodsCard = renderMethodsCard(exportState, ctx);
   if (methodsCard !== null) {
     children.push(methodsCard);

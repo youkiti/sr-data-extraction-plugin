@@ -129,3 +129,34 @@ describe('buildResultsLongCsv', () => {
     expect(result.droppedRowCount).toBe(1);
   });
 });
+
+test('仮 long は人の値・空文字・未報告を保持し、未検証と欠落行を AI で補う', () => {
+  const studies = [study('s', '確認中'), study('ai', 'AIのみ'), study('c', '裁定'), study('amb', '複数人')];
+  const ai = { annotator: 'ai', annotatorType: 'ai' as const };
+  const rows = [
+    ...['1', '2', '3', '4', '5'].map((key) => resultRow('s', 'f', key, 'AI', ai)),
+    resultRow('s', 'f', '1', '人'),
+    resultRow('s', 'f', '2', null),
+    resultRow('s', 'f', '3', ''),
+    resultRow('s', 'f', '4', null, { notReported: true }),
+    resultRow('ai', 'f', '1', 'AI', ai),
+    resultRow('ai', 'unknown', '2', '除外', ai),
+    resultRow('c', 'f', '1', '裁定', { annotator: 'consensus', annotatorType: 'consensus' }),
+    resultRow('amb', 'f', '1', 'A'),
+    resultRow('amb', 'f', '1', 'B', { annotator: 'b' }),
+  ];
+  const fields = [field('f', 'value', 1)];
+  const result = buildResultsLongCsv(studies, rows, fields, true);
+  expect(result.csv).toBe(CSV_BOM +
+    'study_label,annotator,entity_key,field_name,value,unit,not_reported,source\r\n' +
+    '確認中,a@example.com,1,value,人,,false,human\r\n' +
+    '確認中,ai,2,value,AI,,false,ai_unverified\r\n' +
+    '確認中,a@example.com,3,value,,,false,human\r\n' +
+    '確認中,a@example.com,4,value,,,true,human\r\n' +
+    '確認中,ai,5,value,AI,,false,ai_unverified\r\n' +
+    'AIのみ,ai,1,value,AI,,false,ai_unverified\r\n' +
+    '裁定,consensus,1,value,裁定,,false,consensus\r\n');
+  expect(result.skippedStudyIds).toEqual(['amb']);
+  expect(result.droppedRowCount).toBe(1);
+  expect(buildResultsLongCsv(studies, rows, fields, false)).toEqual(buildResultsLongCsv(studies, rows, fields));
+});

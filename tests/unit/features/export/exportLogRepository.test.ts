@@ -27,6 +27,7 @@ describe('exportLogToRow', () => {
       'https://drive.google.com/file/d/x/view',
       '2026-07-03T00:00:00.000Z',
       'me@example.com',
+      'false',
     ]);
   });
 });
@@ -43,8 +44,10 @@ describe('appendExportLog', () => {
       fetch,
       getAccessToken: jest.fn().mockResolvedValue('token'),
     });
-    expect(fetch).toHaveBeenCalledTimes(1);
-    const [url, init] = fetch.mock.calls[0];
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(decodeURIComponent(fetch.mock.calls[0][0] as string)).toContain('ExportLog!H1');
+    expect(JSON.parse(fetch.mock.calls[0][1].body).values).toEqual([['is_draft']]);
+    const [url, init] = fetch.mock.calls[1];
     expect(decodeURIComponent(url as string)).toContain('/sid/values/ExportLog!A1:append');
     const body = JSON.parse((init as RequestInit).body as string);
     expect(body.values[0]).toEqual([
@@ -55,6 +58,11 @@ describe('appendExportLog', () => {
       'https://drive.google.com/file/d/x/view',
       '2026-07-03T00:00:00.000Z',
       'me@example.com',
+      'false',
     ]);
   });
+});
+
+test('仮エクスポートをログ末尾に記録する', () => {
+  expect(exportLogToRow(makeEntry({ isDraft: true })).at(-1)).toBe('true');
 });
