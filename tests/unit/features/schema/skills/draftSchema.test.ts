@@ -138,7 +138,7 @@ describe('parseDraftSchemaResponse', () => {
 
 describe('定数', () => {
   test('プロンプト版数とシステムプロンプト・応答スキーマが定義されている', () => {
-    expect(DRAFT_SCHEMA_PROMPT_VERSION).toBe(2);
+    expect(DRAFT_SCHEMA_PROMPT_VERSION).toBe(3);
     expect(DRAFT_SCHEMA_SYSTEM_PROMPT).toContain('snake_case');
     expect(DRAFT_SCHEMA_RESPONSE_SCHEMA['type']).toBe('array');
   });

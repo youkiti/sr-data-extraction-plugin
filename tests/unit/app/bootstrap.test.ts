@@ -1,3 +1,4 @@
+import * as schemaEnumService from '../../../src/app/services/schemaEnumService';
 import { withSpreadsheetWriteLock } from '../../../src/app/services/verificationService';
 import * as pendingWrites from '../../../src/app/services/pendingWrites';
 import * as dashboardService from '../../../src/app/services/dashboardService';
@@ -1422,6 +1423,41 @@ describe('bootstrapApp', () => {
     (document.getElementById('schema-draft-run') as HTMLButtonElement).click();
     await flush();
     expect(document.getElementById('schema-draft-error')?.textContent).toContain('1〜3 本選択');
+  });
+
+  test('選択肢の提案・編集・反映・キャンセルをサービスへ配線する', async () => {
+    const suggest = jest.spyOn(schemaEnumService, 'suggestEnum').mockResolvedValue();
+    const update = jest.spyOn(schemaEnumService, 'updateEnumSuggestion');
+    const apply = jest.spyOn(schemaEnumService, 'applyEnumSuggestion');
+    const cancel = jest.spyOn(schemaEnumService, 'cancelEnumSuggestion');
+    const stub = createWindowStub({ currentProject: PROJECT,
+      counts: { protocolVersions: 1 } as AppState['counts'],
+      schema: { versions: [], editorRows: [EDITOR_ROW] } as unknown as AppState['schema'],
+    });
+    const { deps } = createFakeDeps([[...SHEET_HEADERS.Protocol]]);
+    const store = (await bootstrapApp(asWindow(stub), deps))!;
+    stub.location.hash = '#/schema';
+    stub.fireHashChange();
+    await flush();
+    (document.querySelector('.schema__suggest-enum') as HTMLButtonElement).click();
+    expect(suggest).toHaveBeenCalledWith(store, 0, deps);
+    const row = store.getState().schema.editorRows![0]!;
+    store.setState({ schema: { ...store.getState().schema, enumSuggestion: {
+      row, loading: false, values: 'a|unclear|other', appendInstruction: true, error: null,
+    } } });
+    const values = document.getElementById('schema-enum-values') as HTMLInputElement;
+    values.value = 'b|unclear|other';
+    values.dispatchEvent(new Event('input'));
+    expect(update).toHaveBeenCalledWith(store, { values: 'b|unclear|other' });
+    (document.getElementById('schema-enum-apply') as HTMLButtonElement).click();
+    expect(apply).toHaveBeenCalledWith(store);
+    store.setState({ schema: { ...store.getState().schema, enumSuggestion: {
+      row: store.getState().schema.editorRows![0]!,
+      loading: false, values: '', appendInstruction: true, error: '失敗',
+    } } });
+    (document.getElementById('schema-enum-cancel') as HTMLButtonElement).click();
+    expect(cancel).toHaveBeenCalledWith(store);
+    suggest.mockRestore(); update.mockRestore(); apply.mockRestore(); cancel.mockRestore();
   });
 
   test('#/schema のエディタ操作（追加 / 編集 / 削除 / プリセット / 確定 / キャンセル）が配線されている', async () => {
