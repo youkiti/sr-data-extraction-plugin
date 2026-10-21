@@ -212,8 +212,8 @@ const EXPECTED = {
     actual: () => ({ version: EXTRACT_DATA_PROMPT_VERSION, hash: extractDataFingerprint() }),
   },
   'draft-schema（DRAFT_SCHEMA_PROMPT_VERSION）': {
-    version: 3,
-    hash: 'feb314f86cdda5591c6cc2a70abbed47',
+    version: 4,
+    hash: '1440d8a0a29696a26bad0a5dae52d321',
     actual: () => ({ version: DRAFT_SCHEMA_PROMPT_VERSION, hash: draftSchemaFingerprint() }),
   },
   'relocate-quote（RELOCATE_QUOTE_PROMPT_VERSION）': {

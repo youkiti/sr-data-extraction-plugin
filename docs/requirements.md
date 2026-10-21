@@ -558,6 +558,8 @@ SR のデータ抽出は「研究 → 群（arm）→ アウトカム × 時点�
 >
 > **draft-schema のカテゴリ項目（プロンプト版数 3）**: 結果表で件数を数える・分類する項目（研究デザイン、データ収集方法、設定、対象者の種別など）は `enum` で提案する。許容値は既存の小文字スネークケース・`|` 区切りに合わせ、全ての enum に `unclear` を必須とし、選択肢で網羅しきれない場合は `other` も含める。`text` は、介入の詳細や定義の文言など、引用や記述をそのまま残したい項目に限る。
 >
+> **draft-schema の研究デザイン・データに基づくレベル選択（プロンプト版数 4）**: レビュータイプの名称だけで判断せず、プロトコルとサンプル論文の本文の両方から、対象研究の群間比較と群別・結果別の数値データ（N・イベント数・平均値・効果量など）の有無を判断する。どちらもない場合は `arm` / `outcome_result` の項目を作らず、全項目を `study` レベルで提案する。質的研究・横断的サーベイ・概念の整理などが該当し、scoping / mapping と明記されていない系統的レビューにも適用する。複数の領域・テーマは結果インスタンスに分けず、study レベルのカテゴリ項目（`enum`）や記述項目（`text`）で表す。研究全体の総 N だけでは arm / outcome_result は必要としない。介入比較・DTA・予後で群間比較や群別・結果別の数値データを扱う場合の既存の指示、および版数 3 の enum の規則は維持する。
+>
 > **estimate（result）単位の RoB オーバーライド（issue #109・2026-07-20 確定）**: QUADAS-3 v1.2 の Phase 3〜6（flow 図・評価対象 estimate の特定・**selected estimate ごと**の RoB / applicability / overall）に対応するため、rob_domain の entity_key を複合キー文法へ拡張する。
 > - **キー形式**: study 単位の `rob:<domain_id>`（現行 = **base 評価**）に加え、`rob:<domain_id>|outcome:<key>[|arm:<n>][|time:<t>]`（= **estimate 単位のオーバーライド**）を許容する。estimate の同定は **outcome_result インスタンスキーの流用**であり、独立の estimate 台帳・選定 UI は作らない（原典 Phase 4 の「レビューに含める estimate の選定はデータ抽出の一部」= スキーマ定義 + 抽出 + 検証を通過した outcome_result インスタンスがそのまま selected estimate、という整理）
 > - **解決規則**: estimate × ドメインの評価 = オーバーライド行があればそれ、なければ base 行（原典 Table 5 脚注 "After the first estimate, only domains where characteristics are different between estimates need to be assessed" の直訳）。全 estimate × 全ドメインの自動直積はしない（幽霊セルの分母はオーバーライドの宣言分だけ増える）
