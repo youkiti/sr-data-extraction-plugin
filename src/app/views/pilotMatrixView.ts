@@ -1,3 +1,4 @@
+import { formatFieldValue } from '../../lib/formatFieldValue';
 import { emptyPilotMatrix } from '../services/pilotMatrixService';
 import { buildPilotMatrix, comparePilotRows, previousPilotDecisions, PILOT_SYMBOLS, sortPilotMatrix,
   type PilotMatrixRow, type PilotCellStatus } from '../../features/verification/pilotMatrix';
@@ -121,10 +122,10 @@ export function renderSchemaPilotMisses(state: AppState, fieldId: string): HTMLE
   if (!state.pilot.run || state.pilot.matrix?.runId !== state.pilot.run.runId || state.pilot.matrix.error !== null) return null;
   const row = pilotMatrixRows(state).find((item) => item.field.fieldId === fieldId);
   const items = row?.cells.flatMap((cell) => cell.entities.filter((item) => item.miss).map((item) => {
-    const after = item.status === 'edit' ? item.decision?.value ?? ''
+    const after = item.status === 'edit' ? formatFieldValue(row.field, item.decision?.value ?? '')
       : item.status === 'nrMiss' ? t('pilot.matrixNotReported') : t(statusKeys[item.status]);
     const entity = row.field.entityLevel === 'study' ? '' : ` / ${entityKeyLabel(item.evidence.entityKey)}`;
-    return el('li', { text: `${labelOf(state, cell.studyId)}${entity}: ${item.evidence.value ?? t('pilot.matrixNr')} → ${after}${item.decision?.note ? ` (${item.decision.note})` : ''}` });
+    return el('li', { text: `${labelOf(state, cell.studyId)}${entity}: ${formatFieldValue(row.field, item.evidence.value) ?? t('pilot.matrixNr')} → ${after}${item.decision?.note ? ` (${item.decision.note})` : ''}` });
   })) ?? [];
   return items.length === 0 ? null : el('div', { className: 'schema__pilot-misses' }, [
     el('p', { text: t('pilot.matrixReference') }), el('ul', {}, items),
