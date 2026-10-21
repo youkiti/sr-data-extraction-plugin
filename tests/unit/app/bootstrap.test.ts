@@ -1116,6 +1116,9 @@ describe('bootstrapApp', () => {
       phase: 'fulltext',
       totalReferences: 1,
       includeCount: 1,
+      orIncludeCount: 1,
+      adjudicationExcluded: [],
+      notCandidateExcluded: [],
       items: [
         {
           refId: 'r1',

@@ -4,6 +4,9 @@
 import type { DocumentRecord } from '../../../../src/domain/document';
 import type { StudyRecord } from '../../../../src/domain/study';
 import {
+  countIncludeVotes,
+  isProjectFulltextCandidateRef,
+  parseFulltextPoolRule,
   buildTiabStudyLabel,
   extractDriveFileId,
   parseTiabDecisions,
@@ -25,6 +28,8 @@ function makeRef(overrides: Partial<TiabReference> = {}): TiabReference {
     doi: null,
     pmid: null,
     fulltextUrl: null,
+    fulltextSet: null,
+    relatedRefId: null,
     ...overrides,
   };
 }
@@ -36,6 +41,7 @@ function makeDecision(overrides: Partial<TiabDecision> = {}): TiabDecision {
     decision: 'include',
     decidedAt: '2026-07-01T00:00:00Z',
     screeningPhase: 'fulltext',
+    clientVersion: null,
     ...overrides,
   };
 }
@@ -117,6 +123,8 @@ describe('parseTiabReferences', () => {
         doi: '10.1/x',
         pmid: '123',
         fulltextUrl: 'https://drive.google.com/file/d/f1/view',
+        fulltextSet: null,
+        relatedRefId: null,
       },
     ]);
   });
@@ -175,6 +183,7 @@ describe('parseTiabDecisions', () => {
         decision: 'include',
         decidedAt: '2026-07-01T00:00:00Z',
         screeningPhase: 'tiab',
+        clientVersion: null,
       },
       {
         refId: 'r1',
@@ -182,6 +191,7 @@ describe('parseTiabDecisions', () => {
         decision: 'exclude',
         decidedAt: '2026-07-02T00:00:00Z',
         screeningPhase: 'fulltext',
+        clientVersion: null,
       },
     ]);
   });
@@ -264,9 +274,72 @@ describe('buildTiabStudyLabel', () => {
 
 describe('resolveAdoptedReferences', () => {
   const refs = [makeRef({ refId: 'r1' }), makeRef({ refId: 'r2' }), makeRef({ refId: 'r3' })];
+  const candidates = refs.map((ref) => makeDecision({ refId: ref.refId, screeningPhase: 'tiab' }));
+
+  test.each(['exclude', 'maybe', 'pending'] as const)('通常票の include より裁定の %s を優先する', (decision) => {
+    const adopted = resolveAdoptedReferences(refs, [
+      ...candidates,
+      makeDecision({ refId: 'r1', reviewerId: 'a', decision: 'include' }),
+      makeDecision({ refId: 'r1', reviewerId: 'b', decision: 'exclude' }),
+      makeDecision({ refId: 'r1', reviewerId: 'adjudication:owner', decision }),
+    ], null);
+    expect(adopted.includes).toEqual([]);
+    expect(adopted.orIncludeCount).toBe(1);
+    expect(adopted.adjudicationExcluded).toEqual([refs[0]]);
+    const plan = planTiabImport({ adopted, studies: [makeStudy()], documents: [makeDoc()] });
+    expect(plan.orIncludeCount).toBe(1);
+    expect(plan.adjudicationExcluded).toEqual([refs[0]]);
+    expect(plan.studyUpdates).toEqual([]);
+    expect(plan.documentUpdates).toEqual([]);
+  });
+
+  test('通常票が全員 exclude でも裁定 include なら採用する', () => {
+    const adopted = resolveAdoptedReferences(refs, [
+      ...candidates,
+      makeDecision({ refId: 'r1', decision: 'exclude' }),
+      makeDecision({ refId: 'r1', reviewerId: 'adjudication:owner', decision: 'include' }),
+    ], null);
+    expect(adopted.includes).toEqual([refs[0]]);
+    expect(adopted.orIncludeCount).toBe(0);
+    expect(adopted.adjudicationExcluded).toEqual([]);
+  });
+
+  test.each([false, true])('判定者をまたいで最新の裁定を採用する（逆順=%s）', (reverse) => {
+    const decisions = [
+      makeDecision({ refId: 'r1', reviewerId: 'a', decision: 'include' }),
+      makeDecision({ refId: 'r1', reviewerId: 'adjudication:a', decision: 'include', decidedAt: '' }),
+      makeDecision({ refId: 'r1', reviewerId: 'adjudication:b', decision: 'exclude', decidedAt: '2026-10-02' }),
+      makeDecision({ refId: 'r1', reviewerId: 'adjudication:a', decision: 'maybe', decidedAt: '2026-10-01' }),
+    ];
+    const adopted = resolveAdoptedReferences(refs, [...candidates, ...(reverse ? decisions.reverse() : decisions)], null);
+    expect(adopted.includes).toEqual([]);
+    expect(adopted.adjudicationExcluded).toEqual([refs[0]]);
+  });
+
+  test('同時刻・空時刻の裁定は先の票を採用し、裁定だけでも fulltext 相にする', () => {
+    const adopted = resolveAdoptedReferences(refs, [
+      ...candidates,
+      makeDecision({ refId: 'r1', reviewerId: 'adjudication:a', decision: 'exclude', decidedAt: '' }),
+      makeDecision({ refId: 'r1', reviewerId: 'adjudication:b', decision: 'include', decidedAt: '' }),
+      makeDecision({ refId: 'r2', screeningPhase: 'tiab', decision: 'include' }),
+    ], null);
+    expect(adopted.phase).toBe('fulltext');
+    expect(adopted.includes).toEqual([]);
+  });
+
+  test('TiAb 相は裁定の特別扱いをせず従来の OR 合議を維持する', () => {
+    const adopted = resolveAdoptedReferences(refs, [
+      makeDecision({ refId: 'r1', screeningPhase: 'tiab', decision: 'include' }),
+      makeDecision({ refId: 'r1', screeningPhase: 'tiab', reviewerId: 'adjudication:a', decision: 'exclude' }),
+    ], null);
+    expect(adopted.includes).toEqual([refs[0]]);
+    expect(adopted.orIncludeCount).toBe(1);
+    expect(adopted.adjudicationExcluded).toEqual([]);
+  });
 
   test('fulltext 相の判定があるシートは fulltext 相の OR 合議で include を決める', () => {
     const decisions = [
+      ...candidates,
       // r1: fulltext で A exclude / B include → OR で include
       makeDecision({ refId: 'r1', reviewerId: 'a@example.com', decision: 'exclude' }),
       makeDecision({ refId: 'r1', reviewerId: 'b@example.com', decision: 'include' }),
@@ -293,6 +366,7 @@ describe('resolveAdoptedReferences', () => {
 
   test('同一（相・文献・判定者）は decided_at 最新の判定だけを有効にする', () => {
     const decisions = [
+      ...candidates,
       makeDecision({ refId: 'r1', decision: 'include', decidedAt: '2026-07-01T00:00:00Z' }),
       makeDecision({ refId: 'r1', decision: 'exclude', decidedAt: '2026-07-02T00:00:00Z' }),
       // r2 は逆順（後から古い行を読んでも上書きしない）
@@ -315,6 +389,7 @@ describe('resolveAdoptedReferences', () => {
     const decisions = [
       makeDecision({ refId: 'r1', reviewerId: 'llm:round-1', decision: 'include' }),
       makeDecision({ refId: 'r2', reviewerId: 'llm:round-2', decision: 'include' }),
+      ...candidates,
     ];
     const adopted = resolveAdoptedReferences(refs, decisions, 'llm:round-1');
     expect(adopted.phase).toBe('fulltext');
@@ -341,7 +416,7 @@ describe('resolveAdoptedReferences', () => {
 
 describe('planTiabImport', () => {
   function adoptedOf(includes: TiabReference[], totalReferences = includes.length): TiabAdoptedList {
-    return { phase: 'fulltext', includes, totalReferences };
+    return { phase: 'fulltext', includes, totalReferences, orIncludeCount: includes.length, adjudicationExcluded: [], notCandidateExcluded: [] };
   }
 
   test('fulltext_url の Drive ファイル ID = source_file_id で突き合わせ、study_label と DOI / PMID を反映する', () => {
@@ -556,5 +631,83 @@ describe('planTiabImport', () => {
       documents: [makeDoc({ pmid: '11' })],
     });
     expect(plan.items[0]?.status).toBe('already');
+  });
+});
+
+describe('フルテキスト候補', () => {
+  const config = { fulltextPoolRule: null, fulltextAssignmentStatus: 'none' as const };
+  const tiab = (overrides: Partial<TiabDecision> = {}) => makeDecision({ screeningPhase: 'tiab', ...overrides });
+
+  test.each(['bad', 'null', '{}', '{"voters":[1],"threshold":1}', '{"voters":[],"threshold":"1"}', '{"voters":[],"threshold":0}'])('不正な規則 %s は null', (json) => {
+    expect(parseFulltextPoolRule(json)).toBeNull();
+  });
+
+  test('規則の版は 1 に正規化し、追加列もヘッダ名で読む', () => {
+    expect(parseFulltextPoolRule('{"version":9,"voters":["human:a"],"threshold":1}')).toEqual({ version: 1, voters: ['human:a'], threshold: 1 });
+    expect(parseTiabReferences([['ref_id', 'title', 'fulltext_set', 'related_ref_id'], ['r', 'T', ' set ', ' parent ']])[0]).toMatchObject({ fulltextSet: 'set', relatedRefId: 'parent' });
+    expect(parseTiabDecisions([['ref_id', 'reviewer_id', 'decision', 'client_version'], ['r', 'a', 'include', ' v-ml ']])[0]?.clientVersion).toBe('v-ml');
+    expect(parseTiabDecisions([['ref_id', 'reviewer_id', 'decision'], ['r', 'a', 'include']])[0]?.clientVersion).toBeNull();
+  });
+
+  test('関連文献は無条件、担当セットは configured のときだけ候補にする', () => {
+    const excludedPool = { ...config, fulltextPoolRule: { version: 1 as const, voters: [], threshold: 1 } };
+    expect(isProjectFulltextCandidateRef({ ref: makeRef({ relatedRefId: ' parent ' }), decisions: [], config: excludedPool })).toBe(true);
+    expect(isProjectFulltextCandidateRef({ ref: makeRef({ fulltextSet: ' set ', relatedRefId: ' ' }), decisions: [], config: { ...excludedPool, fulltextAssignmentStatus: 'configured' } })).toBe(true);
+    expect(isProjectFulltextCandidateRef({ ref: makeRef({ fulltextSet: 'set' }), decisions: [], config: excludedPool })).toBe(false);
+    expect(isProjectFulltextCandidateRef({ ref: makeRef(), decisions: [], config: { ...config, fulltextAssignmentStatus: 'configured' } })).toBe(false);
+    expect(isProjectFulltextCandidateRef({ ref: makeRef({ fulltextSet: ' ' }), decisions: [], config: { ...config, fulltextAssignmentStatus: 'configured' } })).toBe(false);
+  });
+
+  test('規則なしは過去も含め TiAb include があれば候補、全文票だけでは候補にしない', () => {
+    expect(isProjectFulltextCandidateRef({ ref: makeRef(), decisions: [makeDecision(), tiab({ decision: 'exclude' })], config })).toBe(false);
+    expect(isProjectFulltextCandidateRef({ ref: makeRef(), decisions: [tiab(), tiab({ decision: 'exclude', decidedAt: 'z' })], config })).toBe(true);
+    expect(isProjectFulltextCandidateRef({ ref: makeRef(), decisions: [], config })).toBe(false);
+  });
+
+  test('ML キー、同一人物の最新票、LLM 実行ごとの票と閾値を使う', () => {
+    const rule = { version: 1 as const, voters: ['human:a', 'ml:a', 'ml:b', 'llm:one', 'llm:two', 'human:legacy', 'human:mixed'], threshold: 6 };
+    const decisions = [
+      tiab({ reviewerId: 'a', clientVersion: 'v-human', decidedAt: '1' }),
+      tiab({ reviewerId: ' a ', clientVersion: 'v-ml', decidedAt: '2' }),
+      tiab({ reviewerId: 'a', clientVersion: 'v-human', decision: 'exclude', decidedAt: '1' }),
+      tiab({ reviewerId: 'a', clientVersion: 'v-human', decision: 'exclude', decidedAt: '2' }),
+      tiab({ reviewerId: 'b', clientVersion: 'v-ml', decidedAt: '' }),
+      tiab({ reviewerId: 'llm:one' }),
+      tiab({ reviewerId: 'llm:one', decision: 'exclude', decidedAt: '' }),
+      tiab({ reviewerId: 'llm:two' }),
+      tiab({ reviewerId: 'legacy', clientVersion: '0.1.0' }),
+      tiab({ reviewerId: 'mixed', clientVersion: 'v-ml-human' }),
+      tiab({ reviewerId: 'unselected', clientVersion: '' }),
+      tiab({ reviewerId: ' ' }),
+      makeDecision({ reviewerId: 'b' }),
+    ];
+    expect(countIncludeVotes(decisions, rule)).toBe(6);
+    expect(countIncludeVotes(decisions, { ...rule, voters: ['human:b'] })).toBe(0);
+    expect(countIncludeVotes([tiab({ reviewerId: 'a', decision: 'exclude' })], rule)).toBe(0);
+    expect(isProjectFulltextCandidateRef({ ref: makeRef(), decisions, config: { ...config, fulltextPoolRule: rule } })).toBe(true);
+    expect(isProjectFulltextCandidateRef({ ref: makeRef(), decisions, config: { ...config, fulltextPoolRule: { ...rule, threshold: 7 } } })).toBe(false);
+  });
+
+  test.each([false, true])('TiAb 全員除外は全文 include でも候補外（裁定=%s）', (adjudicated) => {
+    const ref = makeRef();
+    const pool = { version: 1 as const, voters: ['human:a', 'human:b', 'human:c', 'human:d'], threshold: 1 };
+    const decisions = pool.voters.map((v) => tiab({ reviewerId: v.slice(6), decision: 'exclude' }));
+    decisions.push(makeDecision({ reviewerId: adjudicated ? 'adjudication:owner' : 'a' }));
+    const adopted = resolveAdoptedReferences([ref], decisions, null, { ...config, fulltextPoolRule: pool });
+    expect(adopted.includes).toEqual([]);
+    expect(adopted.notCandidateExcluded).toEqual([ref]);
+    expect(adopted.orIncludeCount).toBe(adjudicated ? 0 : 1);
+    expect(adopted.adjudicationExcluded).toEqual([]);
+    expect(planTiabImport({ adopted, studies: [], documents: [] }).notCandidateExcluded).toEqual([ref]);
+    expect(resolveAdoptedReferences([ref], [tiab()], null, { ...config, fulltextPoolRule: pool }).includes).toEqual([ref]);
+  });
+
+  test('プールの LLM は全文採用ラウンドと無関係で、文献ごとに判定する', () => {
+    const refs = [makeRef({ refId: 'r1' }), makeRef({ refId: 'r2' })];
+    const decisions = [tiab({ refId: 'r1', reviewerId: 'llm:old' }), makeDecision({ refId: 'r1' }), makeDecision({ refId: 'r2' })];
+    const adopted = resolveAdoptedReferences(refs, decisions, 'llm:new', { ...config, fulltextPoolRule: { version: 1, voters: ['llm:old'], threshold: 1 } });
+    expect(adopted.includes).toEqual([refs[0]]);
+    expect(adopted.notCandidateExcluded).toEqual([refs[1]]);
+    expect(adopted.orIncludeCount).toBe(2);
   });
 });

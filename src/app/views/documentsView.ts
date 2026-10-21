@@ -437,6 +437,26 @@ function renderTiabPlan(plan: TiabImportPlan, tiab: TiabImportState, ctx: ViewCo
       }),
     }),
   ];
+  children.push(
+    el('p', { id: 'tiab-or-summary', text: t('documents.tiabOrSummary', { n: plan.orIncludeCount }) }),
+  );
+  if (plan.adjudicationExcluded.length > 0) {
+    children.push(el('div', { id: 'tiab-adjudication-warning', attributes: { role: 'alert' } }, [
+      el('p', { text: t('documents.tiabAdjudicationWarning') }),
+      el('ul', { id: 'tiab-adjudication-excluded' }, plan.adjudicationExcluded.map((ref) =>
+        el('li', { text: ref.title }),
+      )),
+      el('p', { text: t('documents.tiabExistingStudies') }),
+    ]));
+  }
+  if (plan.notCandidateExcluded.length > 0) {
+    children.push(el('div', { id: 'tiab-not-candidate-warning', attributes: { role: 'alert' } }, [
+      el('p', { text: t('documents.tiabNotCandidateWarning', { n: plan.notCandidateExcluded.length }) }),
+      el('ul', { id: 'tiab-not-candidate-excluded' }, plan.notCandidateExcluded.map((ref) =>
+        el('li', { text: ref.title }),
+      )),
+    ]));
+  }
   if (plan.items.length === 0) {
     children.push(
       el('p', {
