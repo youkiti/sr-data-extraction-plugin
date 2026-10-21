@@ -48,6 +48,7 @@ import { exportSchemaConsultDoc, selectConsultDocVersion } from '../../../src/ap
 jest.mock('../../../src/app/services/exportService', () => ({
   loadExportData: jest.fn(),
   selectExportFormat: jest.fn(),
+  setExportDraft: jest.fn(),
   requestExportGenerate: jest.fn(),
   confirmExportGenerate: jest.fn(),
   cancelExportWarning: jest.fn(),
@@ -66,6 +67,7 @@ import {
   loadExportData,
   requestExportGenerate,
   selectExportFormat,
+  setExportDraft,
 } from '../../../src/app/services/exportService';
 // #/adjudicate（S12）の配線テストもサービス呼び出しの委譲だけを見る（実処理は adjudicationService.test.ts）
 jest.mock('../../../src/app/services/adjudicationService', () => ({
@@ -4019,6 +4021,11 @@ describe('bootstrapApp: #/export', () => {
     stub.location.hash = '#/export';
     stub.fireHashChange();
     expect(loadExportDataMock).toHaveBeenCalledWith(store, deps);
+
+    const draft = document.getElementById('export-draft') as HTMLInputElement;
+    draft.checked = true;
+    draft.dispatchEvent(new Event('change'));
+    expect(setExportDraft).toHaveBeenCalledWith(store, true);
 
     // 形式ラジオ切替 → selectExportFormat
     const radios = document.querySelectorAll<HTMLInputElement>('#export-format input[type=radio]');

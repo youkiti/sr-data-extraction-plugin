@@ -2,6 +2,8 @@
 // v0.10 フェーズ 3 = study 単位）。study × section の検証進捗マトリクスと、anchor 失敗率・
 // not_reported 率を組み立てる。1 study の Evidence は配下の全文書ぶんを合算する。
 // 進捗はセルモデル（cells.ts）基準 = 検証画面の進捗チップと同じ数え方（自分の判定のみ）
+import { activeConsultFlags } from './consultFlags';
+import { cellKeyOf, deriveCellStates } from './cellState';
 import type { Decision } from '../../domain/decision';
 import type { Evidence } from '../../domain/evidence';
 import type { ConfirmedArmStructure } from '../../domain/armStructure';
@@ -44,6 +46,7 @@ export interface DashboardSectionCell {
 
 /** マトリクス 1 行 = 1 study */
 export interface DashboardRow {
+  consults?: { fieldLabel: string; entityKey: string; cellKey: string; value: string | null; flag: Decision }[];
   studyId: string;
   studyLabel: string;
   /** DashboardData.sections と同順。当該 study のスキーマにない section は null */
@@ -148,6 +151,7 @@ function buildRow(
   sections: readonly string[],
   runStartedAt: ReadonlyMap<string, string | null>,
 ): DashboardRow {
+  const states = deriveCellStates(input.ownDecisions);
   const own = documentSections(input.fields);
   const bySection = new Map<string, DashboardSectionCell>(
     own.map((section) => [section, { section, decided: 0, total: 0, entityKey: null }]),
@@ -191,6 +195,13 @@ function buildRow(
   const anchored = input.evidence.filter((item) => item.anchorStatus !== null);
   const reportedRows = input.evidence.filter((item) => item.quoteSeq === null || item.quoteSeq === 1);
   return {
+    consults: [...activeConsultFlags(input.ownDecisions).values()].flatMap((flag) => {
+      const field = input.fields.find((field) => field.fieldId === flag.fieldId);
+      if (field === undefined) return [];
+      const cellKey = cellKeyOf(flag.fieldId, flag.entityKey);
+      const value = states.get(cellKey)?.value ?? null;
+      return [{ fieldLabel: field.fieldLabel, entityKey: flag.entityKey, cellKey, value, flag }];
+    }),
     studyId: input.studyId,
     studyLabel: input.studyLabel,
     cells: sections.map((section) => bySection.get(section) ?? null),

@@ -12,7 +12,7 @@
 //   （キューは「オフライン」を扱うためのものであり、競合をキューに入れても解決しない）
 import { NOT_REPORTED_TOKEN } from '../../domain/annotation';
 import type { ConfirmedArmStructure } from '../../domain/armStructure';
-import type { Decision } from '../../domain/decision';
+import { isConsultAction, type Decision } from '../../domain/decision';
 import type { DocumentRecord } from '../../domain/document';
 import type { QuoteSetRow } from '../../domain/quoteSet';
 import type { Evidence } from '../../domain/evidence';
@@ -412,6 +412,10 @@ export async function saveDecisionWrite(
   if (isEntityInstanceDeclaration(decision)) {
     throw new Error('インスタンス宣言イベントは通常の判定保存経路では保存できません');
   }
+  if (isConsultAction(decision.action)) {
+    await appendDecisionRows(spreadsheetId, [decision], deps.google);
+    return;
+  }
   if (write.studyValues !== null) {
     await upsertStudyDataRows(
       spreadsheetId,
@@ -569,6 +573,7 @@ export function foldDecisionWriteTokens(
   let studyRowUpdatedAt = tokens.studyRowUpdatedAt;
   const resultsRowUpdatedAt = { ...tokens.resultsRowUpdatedAt };
   for (const item of written) {
+    if (isConsultAction(item.decision.action)) continue;
     if (item.entityLevel === 'study') {
       studyRowUpdatedAt = item.decision.decidedAt;
     } else {

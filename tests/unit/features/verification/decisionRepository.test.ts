@@ -191,3 +191,9 @@ describe('readDecisionsByStudy', () => {
     expect(decisions.map((decision) => decision.studyId)).toEqual(['doc-1', 'doc-2']);
   });
 });
+
+test.each(['flag_consult', 'unflag_consult'] as const)('既存ヘッダで印イベント %s を読み戻す', async (action) => {
+  const flag = makeDecision({ action, note: '相談' });
+  const deps = makeDeps([DECISIONS_HEADER, decisionToRow(flag).map((value) => String(value ?? ''))]);
+  expect(await readAllDecisions('sheet', deps)).toEqual([flag]);
+});

@@ -567,6 +567,10 @@ export const jaApp = {
   'schema.presetQuips': 'QUIPS テンプレートを挿入',
   'schema.headUnit': '単位',
   'schema.headAllowedValues': '許容値（| 区切り）',
+  'value.booleanYes': 'はい',
+  'value.booleanNo': 'いいえ',
+  'schema.requiredHint': '必須 = 論文に必ず書いてあるはずの項目。外しても列は残ります。使わない項目は「削除」してください。',
+  'schema.rowRemoveHint': 'この項目を表から外す',
   'schema.headRequired': '必須',
   'schema.headInstruction': '抽出指示',
   'schema.headExample': '例',
@@ -1017,6 +1021,11 @@ export const jaApp = {
   'verify.actionAccept': '承認 (a)',
   'verify.actionReject': '棄却 (x)',
   'verify.actionNotReported': '未報告 (n)',
+  'verify.consult': '要相談',
+  'verify.consultNote': '相談したい点（任意）',
+  'dashboard.consultField': '項目',
+  'dashboard.consultValue': '現在の値',
+  'dashboard.consultReviewer': '判定者',
   'verify.actionUndo': '戻す (z)',
   'verify.collapse': 'たたむ',
   'verify.focusPrevUnit': '前のユニット',
@@ -1064,6 +1073,8 @@ export const jaApp = {
   'guards.noExportData': 'エクスポートできるデータがまだありません',
 
   // S10 エクスポート（exportView.ts + exportService.ts）
+  'export.draftLabel': '未確認分を AI の値で補う（仮エクスポート）',
+  'export.draftNote': '最終データではありません。人が確認していない AI の値を含みます',
   'export.lead':
     '確定データを study_wide / results_long / audit の CSV として生成し、Drive に保存します。',
   'export.formatLegend': '形式',

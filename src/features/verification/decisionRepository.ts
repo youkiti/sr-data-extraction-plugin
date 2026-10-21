@@ -16,6 +16,8 @@ const DECISION_ACTIONS: readonly DecisionAction[] = [
   'reject',
   'not_reported',
   'undo',
+  'flag_consult',
+  'unflag_consult',
 ];
 
 const ANNOTATOR_TYPES: readonly AnnotatorType[] = [

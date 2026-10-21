@@ -893,3 +893,15 @@ describe('persistInstanceDeclarations', () => {
     );
   });
 });
+
+test.each(['flag_consult', 'unflag_consult'] as const)('要相談イベント %s は Decisions のみ追記し、値・更新トークンに触れない', async (action) => {
+  const write: QueuedDecisionWrite = {
+    decision: makeDecision({ action }), fieldName: 'sample_size_total', entityLevel: 'study', studyValues: null,
+  };
+  await saveDecisionWrite('sheet-1', write, makeDeps(), 't0');
+  expect(appendDecisionRowsMock).toHaveBeenCalledWith('sheet-1', [write.decision], expect.anything());
+  expect(upsertStudyMock).not.toHaveBeenCalled();
+  expect(upsertResultsMock).not.toHaveBeenCalled();
+  expect(foldDecisionWriteTokens([write], { studyRowUpdatedAt: 't0', resultsRowUpdatedAt: {} }))
+    .toEqual({ studyRowUpdatedAt: 't0', resultsRowUpdatedAt: {} });
+});

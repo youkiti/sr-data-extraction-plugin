@@ -4,6 +4,7 @@
 // 生成（未検証セル警告 → Drive `exports/` へ保存 → ExportLog 追記）を担う。
 // あわせて論文 Methods 記載例カード（docs/methods-boilerplate.md, issue #67）の実績値組み立てと
 // クリップボードコピーも担う
+import { isConsultAction } from '../../domain/decision';
 import { readQuoteSetRows } from '../../features/verification/quoteSetRepository';
 import { readCompletedRunMetas } from '../../features/extraction/runRepository';
 import { bundleEvidence } from '../../features/verification/evidenceBundles';
@@ -14,7 +15,7 @@ import { readStudies, resolveActiveStudies } from '../../features/documents/stud
 import { readResultsDataRows, readStudyDataSheet } from '../../features/extraction/annotationRepository';
 import { readEvidenceRows } from '../../features/extraction/evidenceRepository';
 import { readMethodsRunFacts, readRunAuditInfos } from '../../features/extraction/runRepository';
-import { buildAllExports, type ClassicExportFormat } from '../../features/export/buildExport';
+import { buildAllExports, type ClassicExportFormat, type ExportMaterials } from '../../features/export/buildExport';
 import { appendExportLog } from '../../features/export/exportLogRepository';
 import {
   buildMethodsText,
@@ -158,7 +159,7 @@ export async function loadExportData(
     const studies = resolveActiveStudies(allStudies, documents);
     const bundlesByStudy = new Map([...composeEvidenceByStudy(evidences, completedRuns)]
       .map(([studyId, entry]) => [studyId, bundleEvidence(entry.evidence)]));
-    const built = buildAllExports({
+    const materials: ExportMaterials = {
       documents,
       quoteSetRows,
       bundlesByStudy,
@@ -169,7 +170,8 @@ export async function loadExportData(
       evidences,
       runs,
       fields,
-    });
+    };
+    const built = buildAllExports(materials, store.getState().export.draft);
     const toolVersion = (deps.getToolVersion ?? defaultGetToolVersion)();
 
     // R セット（issue #60）。素材は generateExport が正確な exported_at で再構築できるよう保持し、
@@ -198,13 +200,14 @@ export async function loadExportData(
       runFacts: methodsRunFacts,
       logs: llmApiLogs,
       versions,
-      chatAssistDecisionCount: decisions.filter((decision) => hasChatAssistMarker(decision.note)).length,
+      chatAssistDecisionCount: decisions.filter((decision) => !isConsultAction(decision.action) && hasChatAssistMarker(decision.note)).length,
       unverifiedCellCount: countRSetUnverifiedCells(rSet),
       annotationRows: [...studySheet.rows, ...resultsRows],
     });
 
     patchExport(store, {
       loading: false,
+      materials,
       built,
       rSetMaterials,
       rSet,
@@ -229,6 +232,15 @@ export function selectExportFormat(store: Store, format: Exclude<ExportFormat, '
   patchExport(store, { format });
 }
 
+/** 仮エクスポートの切替。保存済みの素材だけでプレビューを再構築する。 */
+export function setExportDraft(store: Store, draft: boolean): void {
+  const state = store.getState().export;
+  if (state.generating || state.materials === null) return;
+  patchExport(store, {
+    draft, built: buildAllExports(state.materials, draft), confirmingWarning: false,
+  });
+}
+
 /** CSV を生成して Drive `exports/` へ保存し、ExportLog に 1 行追記する（従来 3 形式） */
 async function generateClassicExport(store: Store, deps: ExportServiceDeps): Promise<void> {
   const state = store.getState();
@@ -245,7 +257,9 @@ async function generateClassicExport(store: Store, deps: ExportServiceDeps): Pro
   try {
     const folder = await ensureChildFolder(EXPORTS_FOLDER_NAME, project.driveFolderId, deps.google);
     const exportedAt = (deps.now ?? nowIso8601)();
-    const filename = `${target.format}_${timestampForFilename(exportedAt)}.csv`;
+    const isDraft = state.export.draft &&
+      (target.format === 'study_wide' || target.format === 'results_long');
+    const filename = `${target.format}_${timestampForFilename(exportedAt)}${isDraft ? '_draft' : ''}.csv`;
     const file = await uploadTextFile(
       { name: filename, content: target.csv, parentId: folder.id, mimeType: 'text/csv' },
       deps.google,
@@ -254,6 +268,7 @@ async function generateClassicExport(store: Store, deps: ExportServiceDeps): Pro
     const entry: ExportLogEntry = {
       exportId: (deps.newUuid ?? generateUuid)(),
       format: target.format,
+      isDraft,
       schemaVersion,
       studyCount: target.studyCount,
       fileRef: file.webViewLink,

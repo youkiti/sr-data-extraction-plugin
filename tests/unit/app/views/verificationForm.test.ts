@@ -1092,3 +1092,11 @@ describe('判定済みコンパクト行の許容値外バッジ（issue #254・
     expect(row.getAttribute('title')).toBe('クリックで詳細を表示');
   });
 });
+
+
+test('リストの判定済み boolean 値を読み替える', () => {
+  const cell = makeCell({ field: makeField({ dataType: 'boolean' }),
+    state: { ...emptyCellState(), status: 'accept', value: 'FALSE' } });
+  const { root } = render(makeModel([cell]));
+  expect(root.querySelector('.verify__decided-value')?.textContent).toContain('いいえ');
+});

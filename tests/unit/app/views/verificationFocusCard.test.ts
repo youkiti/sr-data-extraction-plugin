@@ -468,3 +468,15 @@ describe('マトリクスの許容値外バッジ（issue #254・形態 B）', (
     expect((detail.querySelector(`#${listId}`) as HTMLElement).querySelectorAll('option')).toHaveLength(1);
   });
 });
+
+
+test('フォーカスの boolean 値をマトリクス・直近判定・読み上げで読み替える', () => {
+  const field = makeField({ dataType: 'boolean' });
+  const cell = makeCell({ field, evidence: makeEvidence({ value: 'FALSE' }) });
+  const recentCell = makeCell({ field, state: { ...emptyCellState(), status: 'accept', value: 'TRUE' } });
+  const unit = makeUnit({ rows: [{ field, cells: [cell] }] });
+  const { root } = render(makeModel({ unit, recentCell }));
+  expect(root.querySelector('.focus-card__matrix-value')?.textContent).toBe('いいえ');
+  expect(root.querySelector('.focus-card__matrix-btn')?.getAttribute('aria-label')).toContain('いいえ');
+  expect(root.querySelector('.focus-card__recent-value')?.textContent).toContain('はい');
+});

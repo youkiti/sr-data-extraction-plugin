@@ -5,6 +5,8 @@
 import type { StudyDataRow } from '../../domain/annotation';
 import type { StudyRecord } from '../../domain/study';
 import type { SchemaField } from '../../domain/schemaField';
+import type { Decision } from '../../domain/decision';
+import { activeConsultFlags, consultFlagKey } from '../verification/consultFlags';
 import { buildCsv, CSV_BOM } from './csvEncode';
 import { selectFinalAnnotator } from './finalAnnotator';
 import { buildMultiSelectColumns, multiSelectColumnValues } from './multiSelectColumns';
@@ -23,15 +25,22 @@ export function buildStudyWideCsv(
   studies: readonly StudyRecord[],
   rows: readonly StudyDataRow[],
   fields: readonly SchemaField[],
+  decisions: readonly Decision[] = [],
+  draft = false,
 ): StudyWideCsvResult {
+  const flags = activeConsultFlags(decisions);
   const studyFields = fields
     .filter((field) => field.entityLevel === 'study')
     .sort((a, b) => a.fieldIndex - b.fieldIndex);
-  const used = new Set(['study_label', ...fields.map((field) => field.fieldName)]);
+  const used = new Set(['study_label', ...fields.map((field) => field.fieldName),
+    ...(draft ? studyFields.map((field) => `${field.fieldName}__source`) : [])]);
   const columns = studyFields.map((field) => buildMultiSelectColumns(field, used));
+  let consultColumn = 'consult_fields';
+  for (let suffix = 2; used.has(consultColumn); suffix++) consultColumn = `consult_fields_${suffix}`;
   const header = ['study_label', ...studyFields.flatMap((field, index) =>
-    [field.fieldName, ...columns[index]!.map((column) => column.name)],
-  )];
+    [field.fieldName, ...columns[index]!.map((column) => column.name),
+      ...(draft ? [`${field.fieldName}__source`] : [])],
+  ), consultColumn];
 
   const csvRows: string[][] = [];
   const skippedStudyIds: string[] = [];
@@ -39,19 +48,30 @@ export function buildStudyWideCsv(
   for (const study of studies) {
     const studyRows = rows.filter((row) => row.studyId === study.studyId);
     const finalRow = selectFinalAnnotator(studyRows);
-    if (finalRow === null) {
+    const aiRow = draft ? studyRows.find((row) => row.annotatorType === 'ai') : undefined;
+    if (finalRow === null && aiRow === undefined) {
       skippedStudyIds.push(study.studyId);
       continue;
     }
     const line = [study.studyLabel];
+    const consultFields: string[] = [];
     for (const [index, field] of studyFields.entries()) {
-      const value = finalRow.values[field.fieldName] ?? null;
-      if (value === null) {
+      const humanValue = finalRow?.values[field.fieldName] ?? null;
+      const value = humanValue ?? aiRow?.values[field.fieldName] ?? null;
+      if (humanValue === null) {
         unverifiedCellCount++; // 空セル = 未検証（NR は「未報告」でありここに含めない）
       }
       line.push(value ?? '');
+      if (finalRow !== null && flags.has(consultFlagKey({ ...finalRow, fieldId: field.fieldId, entityKey: '-' }))) {
+        consultFields.push(field.fieldName);
+      }
       line.push(...multiSelectColumnValues(field, value, columns[index]!));
+      if (draft) {
+        line.push(humanValue === null ? 'ai_unverified'
+          : finalRow!.annotatorType === 'consensus' ? 'consensus' : 'human');
+      }
     }
+    line.push(consultFields.join('|'));
     csvRows.push(line);
   }
   return {

@@ -1,3 +1,4 @@
+import { isConsultAction } from '../../domain/decision';
 import { reviewerQuoteType } from '../../features/adjudication/cellQuotes';
 import type { CellQuote } from '../../domain/quoteSet';
 import { buildQuoteSetRows } from '../../features/verification/cellQuotes';
@@ -941,6 +942,7 @@ async function collectReadyStudyInputs(
     const outside = new Set(pair.outside);
     outsideCount += decisions.filter(
       (decision) =>
+        !isConsultAction(decision.action) &&
         decision.studyId === study.studyId &&
         outside.has(decision.annotator) &&
         (decision.annotatorType === 'human_with_ai' ||

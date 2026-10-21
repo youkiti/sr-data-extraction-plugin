@@ -861,6 +861,14 @@
           </figure>
           <ul>
             <li>
+              <span class="ja" lang="ja">「必須」は、論文に必ず書いてあるはずの項目です。チェックを外しても列は残ります。使わない項目は「削除」で表から外してください。</span>
+              <span class="en" lang="en">“Required” means an item expected to be reported in the paper. Unchecking it keeps the column. Use “Remove” to take an unused item out of the table.</span>
+            </li>
+            <li>
+              <span class="ja" lang="ja">はい / いいえの項目（boolean）は、パイロット結果・検証画面・相談用ドキュメントで「はい」「いいえ」と表示します。「いいえ」（FALSE）も有効な結果で、抽出失敗ではありません。保存値と CSV は TRUE / FALSE のままです。</span>
+              <span class="en" lang="en">Boolean items appear as “Yes” or “No” in pilot results, verification, and consultation documents. “No” (FALSE) is a valid result, not an extraction failure. Stored values and CSV exports remain TRUE / FALSE.</span>
+            </li>
+            <li>
               <span class="ja" lang="ja"
                 >項目数に上限はありません（AI が一度に提案する目安が 10〜40 個というだけです）。</span
               >
@@ -1387,6 +1395,10 @@
             >
           </p>
 
+          <p>
+            <span class="ja" lang="ja">値を承認・修正・棄却・未報告で確定してから「要相談」を付け、任意のメモに相談したい点を記入できます。値は検証済みとして数え、印は未検証警告に影響しません。相談が済んだら同じボタンで外してください。付け外しは監査ログに残り、値の変更や undo では消えません。</span>
+            <span class="en" lang="en">After accepting, editing, rejecting or marking a value not reported, use “Needs discussion” and add an optional note. The value remains verified, with no change to unverified warnings. Use the same button to clear the flag after discussion. Both events remain in the audit log; changing or undoing the value does not clear the flag.</span>
+          </p>
           <h3 id="verify-saving">
             <span class="ja" lang="ja">判定の保存完了を確認する</span>
             <span class="en" lang="en">Wait for judgments to finish saving</span>
@@ -1437,6 +1449,14 @@
             </figcaption>
           </figure>
 
+          <h3 id="dashboard-consult">
+            <span class="ja" lang="ja">要相談の一覧</span>
+            <span class="en" lang="en">Items needing discussion</span>
+          </h3>
+          <p>
+            <span class="ja" lang="ja">自分が「要相談」を付けたセルを study・項目・現在の値・メモ・判定者の一覧で確認できます。study のリンクで該当セルへ移り、印を外すと一覧から消えます。wide CSV の末尾には consult_fields 列を常に出し、確定 annotator の印がある項目名を表のデザインの項目順に | で連結します（印なしは空欄）。列名が既存列と重なる場合は _2、_3 … を付けます。long の flag 列は有効な印を consult、印なしを空欄で出します。audit.csv には付け外しが各 1 行で出ます。</span>
+            <span class="en" lang="en">Your flagged cells are listed with study, field, current value, note and reviewer. Follow the study link to the exact cell; clearing the flag removes it from the list. Wide CSV always ends with consult_fields, listing the flagged study field names for the final annotator in schema field order, separated by | (blank when none). If the column name is already used, it receives a suffix such as _2 or _3. The long CSV flag column contains consult for active flags, otherwise blank. audit.csv contains one row per flag or clear event.</span>
+          </p>
           <h3 id="dashboard-usage">
             <span class="ja" lang="ja">費用の集計と予算</span>
             <span class="en" lang="en">Track usage and set a budget</span>
@@ -1638,6 +1658,10 @@
               </tbody>
             </table>
           </div>
+          <p>
+            <span class="ja" lang="ja">確認途中で考察やミーティングの準備に使うときは、「未確認分を AI の値で補う（仮エクスポート）」をオンにします（既定はオフ）。study_wide / results_long のみ、未確認の文献・セルを AI の値で補います。最終データではありません。人が確認していない AI の値を含みます。wide の各項目の <code>{field}__source</code> 列、long の <code>source</code> 列で <code>human</code>（人の確認済み）/ <code>consensus</code>（裁定済み）/ <code>ai_unverified</code>（未確認）を区別し、ファイル名に <code>_draft</code> が付きます。audit・R セット・Methods 文案・根拠の表には影響しません。最終データを出すときはオフに戻してください。</span>
+            <span class="en" lang="en">For discussion or meeting preparation while verification is ongoing, enable “Fill unverified cells with AI values (draft export)” (off by default). Only study_wide and results_long fill unverified studies and cells with AI values. This is not final data: it includes AI values that have not been verified by a human. Each wide field has a <code>{field}__source</code> column; long has a <code>source</code> column: <code>human</code> (verified), <code>consensus</code> (adjudicated), or <code>ai_unverified</code> (unverified). Filenames include <code>_draft</code>. Audit, R sets, Methods text and evidence quotes remain unchanged. Turn this option off when exporting final data.</span>
+          </p>
           <figure class="shot shot--screen">
             <a href="screenshots/help-11-export.png" target="_blank" rel="noopener noreferrer">
               <img

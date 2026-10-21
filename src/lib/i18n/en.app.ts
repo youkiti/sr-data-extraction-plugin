@@ -572,6 +572,10 @@ export const enApp: Record<keyof typeof jaApp, string> = {
   'schema.presetQuips': 'Insert the QUIPS template',
   'schema.headUnit': 'Unit',
   'schema.headAllowedValues': 'Allowed values (|-separated)',
+  'value.booleanYes': 'Yes',
+  'value.booleanNo': 'No',
+  'schema.requiredHint': 'Required = an item expected to be reported in the paper. Unchecking keeps the column. Use “Remove” for unused items.',
+  'schema.rowRemoveHint': 'Remove this item from the table',
   'schema.headRequired': 'Required',
   'schema.headInstruction': 'Extraction instruction',
   'schema.headExample': 'Example',
@@ -1033,6 +1037,11 @@ export const enApp: Record<keyof typeof jaApp, string> = {
   'verify.actionAccept': 'Accept (a)',
   'verify.actionReject': 'Reject (x)',
   'verify.actionNotReported': 'Not reported (n)',
+  'verify.consult': 'Needs discussion',
+  'verify.consultNote': 'What to discuss (optional)',
+  'dashboard.consultField': 'Field',
+  'dashboard.consultValue': 'Current value',
+  'dashboard.consultReviewer': 'Reviewer',
   'verify.actionUndo': 'Undo (z)',
   'verify.collapse': 'Collapse',
   'verify.focusPrevUnit': 'Previous unit',
@@ -1082,6 +1091,8 @@ export const enApp: Record<keyof typeof jaApp, string> = {
   'guards.noExportData': 'There is no data to export yet',
 
   // S10 エクスポート
+  'export.draftLabel': 'Fill unverified cells with AI values (draft export)',
+  'export.draftNote': 'This is not final data. It includes AI values that have not been verified by a human.',
   'export.lead':
     'Generates the confirmed data as study_wide / results_long / audit CSVs and saves them to Drive.',
   'export.formatLegend': 'Format',

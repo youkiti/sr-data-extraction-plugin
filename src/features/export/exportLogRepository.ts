@@ -1,7 +1,7 @@
 // ExportLog タブ I/O（requirements.md §3.1: 追記のみ・上書き禁止）。
 // エクスポート 1 回 = Drive 保存の完了後に 1 行追記する
 import type { ExportLogEntry } from '../../domain/exportLog';
-import { appendRow } from '../../lib/google/sheets';
+import { appendRow, updateRange } from '../../lib/google/sheets';
 import type { GoogleApiDeps } from '../../lib/google/types';
 
 const EXPORT_LOG_TAB = 'ExportLog';
@@ -16,6 +16,7 @@ export function exportLogToRow(entry: ExportLogEntry): (string | number)[] {
     entry.fileRef,
     entry.exportedAt,
     entry.exportedBy,
+    entry.isDraft === true ? 'true' : 'false',
   ];
 }
 
@@ -24,5 +25,7 @@ export async function appendExportLog(
   entry: ExportLogEntry,
   deps: GoogleApiDeps,
 ): Promise<void> {
+  // 旧プロジェクトにも末尾列の名前だけを補い、過去のログ行は変更しない。
+  await updateRange(spreadsheetId, 'ExportLog!H1', [['is_draft']], deps);
   await appendRow(spreadsheetId, EXPORT_LOG_TAB, exportLogToRow(entry), deps);
 }

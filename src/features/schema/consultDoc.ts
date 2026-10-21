@@ -4,6 +4,7 @@
 // 載せるもの: スキーマ項目・パイロットの AI 例・項目別の判定内訳・RoB 等の事前設定。
 // 載せないもの: 判定のメモ（Decision.note）、アンカリング結果（anchor_status）、独立二重レビュー
 // （human_independent）の行。判定は human_with_ai の行だけを入力に使う。
+import { formatFieldValue } from '../../lib/formatFieldValue';
 import type { Decision } from '../../domain/decision';
 import type { Evidence } from '../../domain/evidence';
 import type { ExtractionRun } from '../../domain/extractionRun';
@@ -165,10 +166,10 @@ function renderFieldSpec(field: SchemaField): string {
 }
 
 /** 判定後の値の説明。AI と同じ判定は null（印を付けない） */
-function describeDecision(entity: PilotEntity): string | null {
+function describeDecision(field: SchemaField, entity: PilotEntity): string | null {
   const { decision, status } = entity;
   if (decision === null) return null;
-  if (status === 'edit') return `修正後: ${e(decision.value ?? '')}`;
+  if (status === 'edit') return `修正後: ${e(formatFieldValue(field, decision.value) ?? '')}`;
   if (status === 'reject') return '棄却（値なし）';
   if (status === 'nrMiss') return '未報告と判定（AI は値あり）';
   return null;
@@ -203,10 +204,10 @@ function renderExamples(
       const evidence = entity.evidence;
       const label = pilot.studyLabels.get(row.studyId) ?? row.studyId;
       const entityText = field.entityLevel === 'study' ? '—' : entityKeyLabel(evidence.entityKey);
-      const aiValue = evidence.notReported ? '未報告' : (evidence.value ?? '');
+      const aiValue = evidence.notReported ? '未報告' : (formatFieldValue(field, evidence.value) ?? '');
       // 行列の entity は同じ根拠から作られるため、束の引用は必ずある
       const quotes = row.quotesByCell.get(cellKeyOf(evidence.fieldId, evidence.entityKey)) as readonly Evidence[];
-      const decided = describeDecision(entity);
+      const decided = describeDecision(field, entity);
       const decisionHtml = decided === null ? '' : `<b>${DIFF_MARK}</b><br>${decided}`;
       body.push(
         `<tr>${cell(e(label))}${cell(e(entityText))}${cell(e(aiValue))}` +
