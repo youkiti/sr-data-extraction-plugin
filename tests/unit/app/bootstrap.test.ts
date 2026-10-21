@@ -1118,6 +1118,7 @@ describe('bootstrapApp', () => {
       includeCount: 1,
       orIncludeCount: 1,
       adjudicationExcluded: [],
+      notCandidateExcluded: [],
       items: [
         {
           refId: 'r1',

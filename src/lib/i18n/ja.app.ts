@@ -309,6 +309,7 @@ export const jaApp = {
   'documents.tiabSummary':
     '裁定を反映した採用件数（取り込む件数）{include} 件（{phase}の判定・全 {total} 件中）: 反映 {update} 件 / 適用済み {already} 件 / PDF 未取り込み {unmatched} 件',
   'documents.tiabOrSummary': 'OR 合議なら採用になる件数: {n} 件',
+  'documents.tiabNotCandidateWarning': 'tiab-review のフルテキスト候補に入っていない（TiAb で除外された等）ため、取り込み対象から外した文献が {n} 件あります。tiab-review の結果画面の件数と揃えるためです。',
   'documents.tiabAdjudicationWarning': '裁定により OR 合議の採用件数と異なります。以下は裁定で採用対象外になった文献です。取り込みは続行できます。',
   'documents.tiabExistingStudies': '再取り込みでも、既存の study は自動除外されません。裁定で採用対象外になった文献が取り込み済みの場合は、必要に応じて「study の除外」を行ってください。',
   'documents.tiabPlanEmpty':

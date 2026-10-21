@@ -549,6 +549,7 @@ test('tiab-review 取り込み: 導線ボタン → プレビュー（Sheets 直
             {
               values: [
                 decHeader,
+                ['tiab1', 'r1', 'a@example.com', 'include', '', '', '', '2026-06-01T00:00:00Z', '', '', 'tiab'],
                 ['d1', 'r1', 'a@example.com', 'include', '', '', '', '2026-07-01T00:00:00Z', '', '', 'fulltext'],
                 ['d2', 'r2', 'a@example.com', 'include', '', '', '', '2026-07-01T00:00:00Z', '', '', 'fulltext'],
                 ['d3', 'r2', 'adjudication:owner@example.com', 'exclude', '', '', '', '2026-07-02T00:00:00Z', '', '', 'fulltext'],
@@ -676,6 +677,7 @@ test('アクセシビリティ違反がない（axe）', async ({ page }) => {
         includeCount: 1,
         orIncludeCount: 1,
         adjudicationExcluded: [],
+        notCandidateExcluded: [],
         items: [
           {
             refId: 'r1',

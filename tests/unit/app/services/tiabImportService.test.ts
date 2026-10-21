@@ -151,6 +151,7 @@ function makePlan(overrides: Partial<TiabImportPlan> = {}): TiabImportPlan {
     includeCount: 1,
     orIncludeCount: 1,
     adjudicationExcluded: [],
+    notCandidateExcluded: [],
     items: [
       {
         refId: 'r1',
@@ -194,6 +195,8 @@ function includedSheetResponse(fulltextUrl: string | null = 'https://drive.googl
         authors: 'Smith, J',
         doi: null,
         pmid: null,
+        fulltextSet: 'set',
+        relatedRefId: null,
         fulltextUrl,
       },
     ],
@@ -203,10 +206,10 @@ function includedSheetResponse(fulltextUrl: string | null = 'https://drive.googl
         reviewerId: 'a@example.com',
         decision: 'include' as const,
         decidedAt: 't1',
-        screeningPhase: 'fulltext' as const,
+        clientVersion: null, screeningPhase: 'fulltext' as const,
       },
     ],
-    activeFulltextAiRound: null,
+    fulltextPoolRule: null, fulltextAssignmentStatus: 'configured' as const, activeFulltextAiRound: null,
   };
 }
 
@@ -262,6 +265,8 @@ describe('previewTiabImport', () => {
           authors: 'Smith, J',
           doi: null,
           pmid: '123',
+          fulltextSet: 'set',
+          relatedRefId: null,
           fulltextUrl: 'https://drive.google.com/file/d/src-1/view',
         },
       ],
@@ -271,10 +276,10 @@ describe('previewTiabImport', () => {
           reviewerId: 'a@example.com',
           decision: 'include',
           decidedAt: 't1',
-          screeningPhase: 'fulltext',
+          clientVersion: null, screeningPhase: 'fulltext',
         },
       ],
-      activeFulltextAiRound: null,
+      fulltextPoolRule: null, fulltextAssignmentStatus: 'configured' as const, activeFulltextAiRound: null,
     });
 
     await previewTiabImport(store, makeDeps(), SHEET_URL);
@@ -372,7 +377,7 @@ describe('previewTiabImport', () => {
         tiabImport: { ...store.getState().documents.tiabImport, accessDenied: true, error: '前回のエラー' },
       },
     });
-    mockReadTiabSheet.mockResolvedValue({ references: [], decisions: [], activeFulltextAiRound: null });
+    mockReadTiabSheet.mockResolvedValue({ references: [], decisions: [], fulltextPoolRule: null, fulltextAssignmentStatus: 'configured' as const, activeFulltextAiRound: null });
     await previewTiabImport(store, makeDeps(), SHEET_URL);
     expect(store.getState().documents.tiabImport.accessDenied).toBe(false);
   });
@@ -468,6 +473,8 @@ describe('grantTiabSheetAccess（issue #142。docs/ui-states.md §3 tiab カー�
           authors: 'Smith, J',
           doi: null,
           pmid: '123',
+          fulltextSet: 'set',
+          relatedRefId: null,
           fulltextUrl: null,
         },
       ],
@@ -477,10 +484,10 @@ describe('grantTiabSheetAccess（issue #142。docs/ui-states.md §3 tiab カー�
           reviewerId: 'a@example.com',
           decision: 'include',
           decidedAt: 't1',
-          screeningPhase: 'fulltext',
+          clientVersion: null, screeningPhase: 'fulltext',
         },
       ],
-      activeFulltextAiRound: null,
+      fulltextPoolRule: null, fulltextAssignmentStatus: 'configured' as const, activeFulltextAiRound: null,
     });
     const store = makeDeniedStore();
     await grantTiabSheetAccess(store, makeDeps());
@@ -747,6 +754,8 @@ describe('runTiabHandoffImport（S3 tiab-review 引き継ぎパネル。ui-state
           authors: 'Smith, J',
           doi: null,
           pmid: null,
+          fulltextSet: 'set',
+          relatedRefId: null,
           fulltextUrl: 'https://drive.google.com/file/d/src-9/view',
         },
         {
@@ -757,14 +766,16 @@ describe('runTiabHandoffImport（S3 tiab-review 引き継ぎパネル。ui-state
           doi: null,
           pmid: null,
           // r1 と同じ Drive ファイル（重複除去の対象）
+          fulltextSet: 'set',
+          relatedRefId: null,
           fulltextUrl: 'https://drive.google.com/file/d/src-9/view',
         },
       ],
       decisions: [
-        { refId: 'r1', reviewerId: 'a@example.com', decision: 'include', decidedAt: 't1', screeningPhase: 'fulltext' },
-        { refId: 'r2', reviewerId: 'a@example.com', decision: 'include', decidedAt: 't1', screeningPhase: 'fulltext' },
+        { refId: 'r1', reviewerId: 'a@example.com', decision: 'include', decidedAt: 't1', clientVersion: null, screeningPhase: 'fulltext' },
+        { refId: 'r2', reviewerId: 'a@example.com', decision: 'include', decidedAt: 't1', clientVersion: null, screeningPhase: 'fulltext' },
       ],
-      activeFulltextAiRound: null,
+      fulltextPoolRule: null, fulltextAssignmentStatus: 'configured' as const, activeFulltextAiRound: null,
     });
     mockOpenProjectFilesPicker.mockResolvedValue(null); // キャンセルで以降を省略
 

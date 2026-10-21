@@ -11,13 +11,15 @@ import {
 } from '../../lib/google/sheets';
 import { GoogleApiError, type GoogleApiDeps } from '../../lib/google/types';
 import {
+  parseFulltextPoolRule,
+  type TiabCandidateConfig,
   parseTiabDecisions,
   parseTiabReferences,
   type TiabDecision,
   type TiabReference,
 } from './tiabReview';
 
-export interface TiabSheetData {
+export interface TiabSheetData extends TiabCandidateConfig {
   references: TiabReference[];
   decisions: TiabDecision[];
   /** tiab の Config.fulltext_ai_active_round（未設定・Config 欠落は null） */
@@ -75,18 +77,24 @@ export async function readTiabSheet(
   const decisions = parseTiabDecisions(decisionValues);
 
   let activeFulltextAiRound: string | null = null;
+  let fulltextPoolRule: TiabCandidateConfig['fulltextPoolRule'] = null;
+  let fulltextAssignmentStatus: TiabCandidateConfig['fulltextAssignmentStatus'] = 'none';
   try {
     const configValues = await getSheetValues(spreadsheetId, 'Config', deps);
     for (const row of configValues) {
+      const value = (row[1] ?? '').trim();
       if (row[0] === 'fulltext_ai_active_round') {
-        const value = (row[1] ?? '').trim();
         activeFulltextAiRound = value === '' ? null : value;
+      } else if (row[0] === 'fulltext_pool_rule' && value !== '') {
+        fulltextPoolRule = parseFulltextPoolRule(value);
+      } else if (row[0] === 'fulltext_assignment_status' && (value === 'configured' || value === 'none')) {
+        fulltextAssignmentStatus = value;
       }
     }
   } catch {
-    // Config タブが無い旧シートは採用ラウンドなしとして扱う
+    // Config タブが無い旧シートは採用ラウンド・候補設定なしとして扱う
     activeFulltextAiRound = null;
   }
 
-  return { references, decisions, activeFulltextAiRound };
+  return { references, decisions, activeFulltextAiRound, fulltextPoolRule, fulltextAssignmentStatus };
 }

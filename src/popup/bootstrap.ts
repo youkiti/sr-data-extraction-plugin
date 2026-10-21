@@ -647,6 +647,7 @@ function bindTiabHandoff(els: PopupElements, deps: PopupDeps): void {
           sheet.references,
           sheet.decisions,
           sheet.activeFulltextAiRound,
+          sheet,
         );
         if (adopted.includes.length === 0) {
           // include 0 件のまま作成しても S3 の引き継ぎで取り込めるものが無い（行き止まり）
