@@ -40,7 +40,7 @@ import {
   findProviderModelMismatch,
   providerModelMismatchMessage,
 } from '../../lib/llm/modelCatalog';
-import type { AppState, RedraftReviewState, SchemaState } from '../store';
+import type { AppState, EnumSuggestion, RedraftReviewState, SchemaState } from '../store';
 import type { ViewContext } from './types';
 import { renderSchemaPilotMisses } from './pilotMatrixView';
 
@@ -66,6 +66,15 @@ const DATA_TYPE_DESCRIPTION_KEYS: Record<FieldDataType, MessageKey> = {
   boolean: 'schema.dataTypeBoolean',
   enum: 'schema.dataTypeEnum',
   date: 'schema.dataTypeDate',
+};
+
+const DATA_TYPE_LABEL_KEYS: Record<FieldDataType, MessageKey> = {
+  text: 'schema.dataTypeLabelText',
+  integer: 'schema.dataTypeLabelInteger',
+  float: 'schema.dataTypeLabelFloat',
+  boolean: 'schema.dataTypeLabelBoolean',
+  enum: 'schema.dataTypeLabelEnum',
+  date: 'schema.dataTypeLabelDate',
 };
 
 const CREATED_BY_TYPE_LABEL_KEYS: Record<SchemaVersion['createdByType'], MessageKey> = {
@@ -498,10 +507,11 @@ function selectCell(
   current: string,
   ariaLabel: string,
   onCommit: (value: string) => void,
+  label: (value: string) => string = (value) => value,
 ): HTMLTableCellElement {
   const select = el('select', { attributes: { 'aria-label': ariaLabel } });
   for (const value of values) {
-    const option = el('option', { text: value, attributes: { value } });
+    const option = el('option', { text: label(value), attributes: { value } });
     option.selected = value === current;
     select.append(option);
   }
@@ -547,6 +557,13 @@ function renderEditorRow(
     if (misses !== null) instructionChildren.push(misses);
   }
   if (row.dataType === 'text') {
+    const suggest = el('button', {
+      className: 'schema__suggest-enum', text: t('schema.enumSuggest'),
+      attributes: { type: 'button', 'aria-label': t('schema.enumSuggestAria', { label: row.fieldLabel }) },
+    });
+    suggest.disabled = state.schema.enumSuggestion?.loading === true;
+    suggest.addEventListener('click', () => ctx.schema.onSuggestEnum(index));
+    instructionChildren.push(suggest);
     const checkbox = el('input', {
       className: 'schema__multi-quote',
       attributes: { type: 'checkbox' },
@@ -676,6 +693,7 @@ function renderEditorRow(
         multiSelect: value === 'enum' ? row.multiSelect : false,
         exclusiveValues: value === 'enum' ? row.exclusiveValues : null,
         freeTextValues: value === 'enum' ? row.freeTextValues : null }),
+      (value) => t(DATA_TYPE_LABEL_KEYS[value as FieldDataType]),
     ),
     textCell(row.unit ?? '', { ariaLabel: t('schema.rowUnitAria', { row: index + 1 }) }, (value) =>
       edit({ unit: emptyToNull(value) }),
@@ -1237,6 +1255,36 @@ function renderPresetDialog(dialog: PresetDialogState, ctx: ViewContext): HTMLEl
   }
 }
 
+/** 自由記述を選択肢に変えるための未反映の候補。 */
+function renderEnumSuggestion(suggestion: EnumSuggestion, ctx: ViewContext): HTMLElement {
+  const children: HTMLElement[] = [
+    headingWithHelp('h3', t('schema.enumTitle', { label: suggestion.row.fieldLabel }), 'schema-enum'),
+  ];
+  if (suggestion.loading) {
+    children.push(el('p', { text: t('schema.enumLoading'), attributes: { role: 'status' } }));
+  } else if (suggestion.values !== null) {
+    const values = el('input', { id: 'schema-enum-values', attributes: { type: 'text' } });
+    values.value = suggestion.values;
+    values.addEventListener('input', () => ctx.schema.onUpdateEnumSuggestion({ values: values.value }));
+    const append = el('input', { id: 'schema-enum-instruction', attributes: { type: 'checkbox' } });
+    append.checked = suggestion.appendInstruction;
+    append.addEventListener('change', () => ctx.schema.onUpdateEnumSuggestion({ appendInstruction: append.checked }));
+    const apply = el('button', { id: 'schema-enum-apply', text: t('schema.enumApply'), attributes: { type: 'button' } });
+    apply.addEventListener('click', () => ctx.schema.onApplyEnumSuggestion());
+    children.push(
+      el('label', { attributes: { for: values.id }, text: t('schema.enumValues') }), values,
+      el('label', {}, [append, t('schema.enumAppendInstruction')]), apply,
+    );
+  }
+  if (suggestion.error !== null) {
+    children.push(el('p', { className: 'schema__error', text: suggestion.error, attributes: { role: 'alert' } }));
+  }
+  const cancel = el('button', { id: 'schema-enum-cancel', text: t('common.cancel'), attributes: { type: 'button' } });
+  cancel.addEventListener('click', () => ctx.schema.onCancelEnumSuggestion());
+  children.push(cancel);
+  return el('section', { id: 'schema-enum-suggestion', className: 'schema__redraft-form' }, children);
+}
+
 /** 編集中: 表形式エディタ + 検証エラー + プリセット挿入 + 版として確定 */
 function renderEditor(
   rows: readonly SchemaEditorRow[],
@@ -1267,7 +1315,18 @@ function renderEditor(
     el(
       'tbody',
       {},
-      rows.map((row, index) => renderEditorRow(row, index, rows.length, invalidColumns, ctx, state)),
+      rows.flatMap((row, index) => {
+        const rendered = [renderEditorRow(row, index, rows.length, invalidColumns, ctx, state)];
+        const suggestion = schema.enumSuggestion;
+        if (suggestion?.row === row) {
+          rendered.push(el('tr', {}, [
+            el('td', { attributes: { colspan: String(header.children.length) } }, [
+              renderEnumSuggestion(suggestion, ctx),
+            ]),
+          ]));
+        }
+        return rendered;
+      }),
     ),
   ]);
 

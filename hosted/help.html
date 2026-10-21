@@ -967,6 +967,18 @@
               >
             </li>
           </ul>
+          <h3 id="schema-enum">
+            <span class="ja" lang="ja">自由記述を選択肢に変える</span>
+            <span class="en" lang="en">Convert free text to a choice list</span>
+          </h3>
+          <p>
+            <span class="ja" lang="ja">データ型は「自由記述（text）」「選択肢（enum）」「整数（integer）」などの名前で表示します。自由記述の項目を分類して集計したいときは、編集中の行の「選択肢にする」を押してください。AI が項目のラベル・抽出指示と、読み込み済みのパイロットの値（あれば）をもとに、unclear / other を含む3〜8個の小文字スネークケースの選択肢（例: <code>interview|focus_group|other|unclear</code>）を提案します。設定した既定モデルを使うため API の費用がかかります。</span>
+            <span class="en" lang="en">Data types are shown as “Free text (text)”, “Choice list (enum)”, “Integer (integer)”, and so on. To group free-text answers for analysis, click “Make a choice list” on the row you are editing. Using the field label, extraction instruction, and loaded pilot values (if available), AI suggests 3–8 lowercase snake_case choices including unclear / other (e.g. <code>interview|focus_group|other|unclear</code>). This uses your default model and incurs API costs.</span>
+          </p>
+          <p>
+            <span class="ja" lang="ja">押した行の直下に出る候補を | 区切りの欄で編集し、抽出指示に「次から1つ選ぶ」と候補を追記するかを選んで、「この候補を反映」を押します。データ型が「選択肢（enum）」になり、許容値が入ります。最後に「版として確定」で保存してください。キャンセルや生成失敗では元の行は変わりません。</span>
+            <span class="en" lang="en">Edit the suggested choices in the box directly below that row, separated by |. Choose whether to append “Choose one of the following” and the choices to the extraction instruction, then click “Apply these choices”. The data type becomes “Choice list (enum)” and the allowed values are filled in. Save with “Confirm as a version”. Cancelling or a failed suggestion leaves the original row unchanged.</span>
+          </p>
           <div class="note">
             <p>
               <span class="ja" lang="ja"

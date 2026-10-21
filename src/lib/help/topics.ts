@@ -21,6 +21,7 @@ export const HELP_TOPICS = {
   export: { tourId: 'export-data', route: '#/export', helpAnchor: 'export' },
   adjudicate: { tourId: 'dual-review', route: '#/adjudicate', helpAnchor: 'dual-review' },
   options: { route: '#/options', helpAnchor: 'options' },
+  'schema-enum': { helpAnchor: 'schema-enum' },
   'ask-paper': { tourId: 'verify-basics', helpAnchor: 'verify-ask-paper' },
   'review-sets': { tourId: 'dual-review', helpAnchor: 'project-review-sets' },
   tours: { helpAnchor: 'project-tours' },

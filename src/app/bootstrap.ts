@@ -1,3 +1,4 @@
+import { suggestEnum, updateEnumSuggestion, applyEnumSuggestion, cancelEnumSuggestion } from './services/schemaEnumService';
 import { initGuide } from './guide';
 import { saveConsensusQuotes } from './services/adjudicationService';
 import { getPendingWriteCount, subscribePendingWrites } from './services/pendingWrites';
@@ -690,6 +691,10 @@ export async function bootstrapApp(
       onRunDraft: () => {
         void runDraftSchema(store, deps);
       },
+      onSuggestEnum: (index) => { void suggestEnum(store, index, deps); },
+      onUpdateEnumSuggestion: (patch) => { updateEnumSuggestion(store, patch); },
+      onApplyEnumSuggestion: () => { applyEnumSuggestion(store); },
+      onCancelEnumSuggestion: () => { cancelEnumSuggestion(store); },
       onEditRow: (index, patch) => {
         updateEditorRow(store, index, patch);
       },

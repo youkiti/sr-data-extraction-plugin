@@ -79,6 +79,10 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<SchemaViewCallbac
     onChangeModel: jest.fn(),
     onRunDraft: jest.fn(),
     onEditRow: jest.fn(),
+    onSuggestEnum: jest.fn(),
+    onUpdateEnumSuggestion: jest.fn(),
+    onApplyEnumSuggestion: jest.fn(),
+    onCancelEnumSuggestion: jest.fn(),
     onAddRow: jest.fn(),
     onRemoveRow: jest.fn(),
     onMoveRow: jest.fn(),
@@ -1969,4 +1973,82 @@ describe('スキーマのファイル（issue #316）', () => {
     expect(view.querySelector('#schema-redraft-removed-note')?.textContent).toContain('既定では残します');
     expect((view.querySelector('#schema-redraft-removed input') as HTMLInputElement).checked).toBe(false);
   });
+});
+
+test.each(['ja', 'en'] as const)('データ型を説明付きで表示し保存値は維持する %s', (language) => {
+  setUiLanguage(language);
+  const row = makeEditorRow();
+  const state = makeState({ versions: [], editorRows: [row] });
+  const { ctx, callbacks } = makeCtx();
+  const view = renderSchemaView(state, ctx);
+  const select = view.querySelectorAll<HTMLSelectElement>('#schema-editor-table tbody tr select')[1]!;
+  expect([...select.options].map((option) => option.value)).toEqual(['text', 'integer', 'float', 'boolean', 'enum', 'date']);
+  expect(select.querySelector('option[value="enum"]')!.textContent)
+    .toBe(language === 'ja' ? '選択肢（enum）' : 'Choice list (enum)');
+  expect(select.querySelector('option[value="text"]')!.textContent)
+    .toBe(language === 'ja' ? '自由記述（text）' : 'Free text (text)');
+  (view.querySelector('.schema__suggest-enum') as HTMLButtonElement).click();
+  expect(callbacks.onSuggestEnum).toHaveBeenCalledWith(0);
+  setUiLanguage('ja');
+});
+
+test('候補カードの生成中・編集・エラー・キャンセルを描画する', () => {
+  setUiLanguage('ja');
+  const row = makeEditorRow();
+  const state = makeState({ versions: [], editorRows: [row], enumSuggestion: {
+    row, loading: true, values: null, appendInstruction: true, error: null,
+  } });
+  const { ctx, callbacks } = makeCtx();
+  let view = renderSchemaView(state, ctx);
+  expect(view.querySelector('#schema-enum-suggestion [role="status"]')!.textContent).toContain('提案');
+  expect(view.querySelector<HTMLButtonElement>('.schema__suggest-enum')!.disabled).toBe(true);
+  expect(view.querySelector('#schema-enum-values')).toBeNull();
+  state.schema.enumSuggestion = { row, loading: false, values: 'a|unclear|other',
+    appendInstruction: true, error: '候補が不正' };
+  view = renderSchemaView(state, ctx);
+  const input = view.querySelector<HTMLInputElement>('#schema-enum-values')!;
+  expect(input.value).toBe('a|unclear|other');
+  input.value = 'b|unclear|other';
+  input.dispatchEvent(new Event('input'));
+  expect(callbacks.onUpdateEnumSuggestion).toHaveBeenCalledWith({ values: 'b|unclear|other' });
+  const append = view.querySelector<HTMLInputElement>('#schema-enum-instruction')!;
+  append.checked = false;
+  append.dispatchEvent(new Event('change'));
+  expect(callbacks.onUpdateEnumSuggestion).toHaveBeenCalledWith({ appendInstruction: false });
+  expect(view.querySelector('#schema-enum-suggestion [role="alert"]')!.textContent).toBe('候補が不正');
+  expect(view.querySelector('[data-help="schema-enum"]')).not.toBeNull();
+  (view.querySelector('#schema-enum-apply') as HTMLButtonElement).click();
+  expect(callbacks.onApplyEnumSuggestion).toHaveBeenCalled();
+  (view.querySelector('#schema-enum-cancel') as HTMLButtonElement).click();
+  expect(callbacks.onCancelEnumSuggestion).toHaveBeenCalled();
+  state.schema.enumSuggestion = { ...state.schema.enumSuggestion, values: null };
+  view = renderSchemaView(state, ctx);
+  expect(view.querySelector('#schema-enum-apply')).toBeNull();
+});
+
+
+test.each([0, 1, 2])('候補パネルを対象行の直下で全列にわたり表示する: 行 %s', (index) => {
+  const rows = Array.from({ length: 3 }, () => makeEditorRow());
+  const row = rows[index]!;
+  const state = makeState({ versions: [], editorRows: rows, enumSuggestion: {
+    row, loading: false, values: 'interview|unclear|other', appendInstruction: true, error: null,
+  } });
+  const { ctx } = makeCtx();
+  const view = renderSchemaView(state, ctx);
+  const renderedRows = view.querySelectorAll('#schema-editor-table tbody > tr');
+  const panel = view.querySelector('#schema-enum-suggestion')!;
+  const panelRow = panel.closest('tr')!;
+  expect(renderedRows).toHaveLength(4);
+  expect(renderedRows[index + 1]).toBe(panelRow);
+  expect(panelRow.previousElementSibling).toBe(renderedRows[index]);
+  expect(panelRow.children).toHaveLength(1);
+  expect(panel.closest('td')!.colSpan).toBe(view.querySelectorAll('#schema-editor-table thead th').length);
+  // 同じ属性でも、対象とは別の行オブジェクトには候補を付けない。
+  state.schema.enumSuggestion = { ...state.schema.enumSuggestion!, row: { ...row } };
+  expect(renderSchemaView(state, ctx).querySelector('#schema-enum-suggestion')).toBeNull();
+  state.schema.enumSuggestion = { ...state.schema.enumSuggestion, row };
+  state.schema.editorRows = [...rows.filter((item) => item !== row), row];
+  const movedView = renderSchemaView(state, ctx);
+  expect(movedView.querySelector('#schema-enum-suggestion')!.closest('tr'))
+    .toBe(movedView.querySelector('#schema-editor-table tbody > tr:last-child'));
 });

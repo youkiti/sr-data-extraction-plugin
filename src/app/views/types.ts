@@ -141,6 +141,10 @@ export interface SchemaViewCallbacks {
   onRunDraft(): void;
   /** エディタ行の編集確定（change イベント単位） */
   onEditRow(index: number, patch: Partial<SchemaEditorRow>): void;
+  onSuggestEnum(index: number): void;
+  onUpdateEnumSuggestion(patch: { values?: string; appendInstruction?: boolean }): void;
+  onApplyEnumSuggestion(): void;
+  onCancelEnumSuggestion(): void;
   onAddRow(): void;
   onRemoveRow(index: number): void;
   /** エディタ行の並び替え（上下移動）。field_index は配列位置から採番されるため、これが並び順の唯一の変更手段 */
