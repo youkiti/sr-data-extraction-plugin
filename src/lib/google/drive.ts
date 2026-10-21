@@ -5,6 +5,55 @@ import { googleFetch, type GoogleApiDeps } from './types';
 const METADATA_API = 'https://www.googleapis.com/drive/v3/files';
 const UPLOAD_API = 'https://www.googleapis.com/upload/drive/v3/files';
 
+export interface DriveSharingStatus {
+  /** 個別ユーザーの共有先メールアドレス（小文字）。 */
+  emails: Set<string>;
+  /** anyone / domain / group 権限があり、個別メールでは共有状況を判定できない。 */
+  hasBroadAccess: boolean;
+}
+
+/** ファイル・フォルダの共有先を全ページから集める。 */
+export async function listFilePermissions(
+  fileId: string,
+  deps: GoogleApiDeps,
+): Promise<DriveSharingStatus> {
+  const emails = new Set<string>();
+  let hasBroadAccess = false;
+  let pageToken: string | undefined;
+  do {
+    const params = new URLSearchParams({
+      fields: 'nextPageToken,permissions(type,role,emailAddress)',
+      pageSize: '100',
+    });
+    if (pageToken) {
+      params.set('pageToken', pageToken);
+    }
+    const res = await googleFetch(
+      `${METADATA_API}/${encodeURIComponent(fileId)}/permissions?${params.toString()}`,
+      { method: 'GET' },
+      deps,
+    );
+    const body = (await res.json()) as {
+      nextPageToken?: string;
+      permissions?: Array<{ type: string; role: string; emailAddress?: string }>;
+    };
+    for (const permission of body.permissions ?? []) {
+      if (permission.type === 'user' && permission.emailAddress) {
+        emails.add(permission.emailAddress.toLowerCase());
+      }
+      if (
+        permission.type === 'anyone' ||
+        permission.type === 'domain' ||
+        permission.type === 'group'
+      ) {
+        hasBroadAccess = true;
+      }
+    }
+    pageToken = body.nextPageToken;
+  } while (pageToken);
+  return { emails, hasBroadAccess };
+}
+
 /**
  * Drive API v3 の薄いラッパ。プロジェクト作成段階で必要なのはフォルダ作成・
  * テキストファイル保存・テキスト取得の 3 本だけ（PDF コピーは S3 実装時に追加）。

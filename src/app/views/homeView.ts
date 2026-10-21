@@ -43,8 +43,36 @@ const TRASH_ICON = [
   'M10 11v6',
   'M14 11v6',
 ];
+// 共有し直すボタンのアイコン（path のみ）。svgIcon で SVG 化する
+const SHARE_ICON = ['M12 16V3', 'M7 8l5-5 5 5', 'M5 13v8h14v-8'];
 
-function renderReviewerRow(row: ReviewerAssignment, ctx: ViewContext): HTMLElement {
+function renderReviewerRow(row: ReviewerAssignment, state: AppState, ctx: ViewContext): HTMLElement {
+  const { reviewers } = state;
+  const emailCell = el('td', { text: row.email });
+  const sharing = reviewers.folderSharing;
+  if (
+    row.role !== 'revoked' &&
+    sharing.status === 'checked' &&
+    !sharing.hasBroadAccess &&
+    !sharing.emails.has(row.email.toLowerCase())
+  ) {
+    emailCell.append(el('span', { className: 'reviewers__unshared', text: t('home.folderUnshared') }));
+  }
+  const actions: HTMLElement[] = [];
+  if (row.role !== 'revoked') {
+    const reshare = el('button', {
+      className: 'reviewers__reshare reviewers__icon-button',
+      attributes: {
+        type: 'button',
+        'aria-label': t('home.reshareAria', { email: row.email }),
+        title: t('home.reshareTitle'),
+      },
+    }) as HTMLButtonElement;
+    reshare.append(svgIcon(SHARE_ICON));
+    reshare.disabled = reviewers.saving || reviewers.resharing;
+    reshare.addEventListener('click', () => ctx.home.onReshareReviewer(row.email));
+    actions.push(reshare);
+  }
   const modeText =
     row.role === 'reviewer' && row.reviewMode !== null ? t(MODE_LABEL_KEYS[row.reviewMode]) : '–';
   // ごみ箱アイコン = 登録解除（削除）
@@ -72,10 +100,10 @@ function renderReviewerRow(row: ReviewerAssignment, ctx: ViewContext): HTMLEleme
   copyInvite.disabled = row.role === 'revoked';
   copyInvite.addEventListener('click', () => ctx.home.onCopyInvite(row.email));
   return el('tr', { className: 'reviewers__row' }, [
-    el('td', { text: row.email }),
+    emailCell,
     el('td', { text: t(ROLE_LABEL_KEYS[row.role]) }),
     el('td', { text: modeText }),
-    el('td', { className: 'reviewers__actions' }, [revoke, copyInvite]),
+    el('td', { className: 'reviewers__actions' }, [revoke, copyInvite, ...actions]),
   ]);
 }
 
@@ -228,7 +256,7 @@ function renderReviewerAdminCard(state: AppState, ctx: ViewContext): HTMLElement
               el('th', { text: t('home.reviewersActions') }),
             ]),
           ]),
-          el('tbody', {}, rows.map((row) => renderReviewerRow(row, ctx))),
+          el('tbody', {}, rows.map((row) => renderReviewerRow(row, state, ctx))),
         ]),
       );
     }
@@ -243,7 +271,44 @@ function renderReviewerAdminCard(state: AppState, ctx: ViewContext): HTMLElement
       }),
     );
   }
-  children.push(renderReviewerForm(ctx, reviewers.saving));
+  if (reviewers.folderSharing.status === 'unknown') {
+    children.push(
+      el('p', {
+        id: 'home-reviewers-share-unknown',
+        attributes: { role: 'status' },
+        text: t('home.folderSharingUnknown'),
+      }),
+    );
+  }
+  if (reviewers.shareErrors.length > 0) {
+    children.push(
+      el(
+        'div',
+        {
+          id: 'home-reviewers-share-error',
+          className: 'home__error',
+          attributes: { role: 'alert' },
+        },
+        [
+          ...reviewers.shareErrors.map(({ email, reason }) =>
+            el('p', {
+              text: t('home.folderShareFailed', { email, reason }),
+            }),
+          ),
+          el('a', {
+            text: t('home.openProjectFolder'),
+            attributes: {
+              href: `https://drive.google.com/drive/folders/${encodeURIComponent(state.currentProject!.driveFolderId)}`,
+              target: '_blank',
+              rel: 'noopener noreferrer',
+            },
+          }),
+          el('p', { text: t('home.folderShareManual') }),
+        ],
+      ),
+    );
+  }
+  children.push(renderReviewerForm(ctx, reviewers.saving || reviewers.resharing));
   if (reviewers.blockedChange !== null) {
     children.push(renderReviewerModeBlocked(reviewers.blockedChange.email, ctx));
   }
@@ -390,6 +455,10 @@ function renderReviewerHome(state: AppState, ctx: ViewContext): HTMLElement {
             text: t('home.folderAccessLead'),
           }),
       grant,
+      el('p', {
+        id: 'home-folder-access-empty-hint',
+        text: t('home.folderAccessEmptyHint'),
+      }),
     ];
     if (hasMissing) {
       stepChildren.push(buildSkipMissingButton());
@@ -436,6 +505,12 @@ function renderReviewerHome(state: AppState, ctx: ViewContext): HTMLElement {
       );
     }
     grantedChildren.push(el('p', { text: t('home.regrantLead') }), regrant);
+    grantedChildren.push(
+      el('p', {
+        id: 'home-folder-access-empty-hint',
+        text: t('home.folderAccessEmptyHint'),
+      }),
+    );
     if (hasMissing) {
       grantedChildren.push(buildSkipMissingButton());
     }

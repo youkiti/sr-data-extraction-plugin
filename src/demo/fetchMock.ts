@@ -20,7 +20,10 @@ import {
   DEMO_DRIVE_PDF_FILE_IDS,
   DEMO_DRIVE_TEXT_FILE_IDS,
   DEMO_FIXTURE_PDF_FILENAMES,
+  DEMO_REVIEWER_A_EMAIL,
+  DEMO_REVIEWER_B_EMAIL,
   DEMO_SPREADSHEET_ID,
+  DEMO_USER_EMAIL,
 } from './constants';
 import { DEMO_PAPERS } from './paperContent';
 
@@ -347,6 +350,18 @@ function routeGoogleApis(pathname: string, url: URL, method: string, init?: Requ
       return jsonResponse(400, { error: { message: 'Demo: invalid text upload' } });
     }
     return handleDriveCreate();
+  }
+
+  // レビュアー管理カードの共有状況の確認（lib/google/drive.ts の listFilePermissions）。
+  // デモではオーナーとレビュアー 2 名に共有済みとして返す
+  if (/^\/drive\/v3\/files\/[^/]+\/permissions$/.test(pathname) && method === 'GET') {
+    return jsonResponse(200, {
+      permissions: [DEMO_USER_EMAIL, DEMO_REVIEWER_A_EMAIL, DEMO_REVIEWER_B_EMAIL].map((emailAddress) => ({
+        type: 'user',
+        role: emailAddress === DEMO_USER_EMAIL ? 'owner' : 'reader',
+        emailAddress,
+      })),
+    });
   }
 
   const fileMatch = /^\/drive\/v3\/files\/([^/]+)$/.exec(pathname);

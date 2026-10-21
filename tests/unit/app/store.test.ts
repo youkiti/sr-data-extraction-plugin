@@ -40,6 +40,9 @@ describe('createInitialState', () => {
         confirmingResplit: null,
       },
       reviewers: {
+        folderSharing: { status: 'unchecked' },
+        resharing: false,
+        shareErrors: [],
         assignments: null,
         loading: false,
         loadError: null,

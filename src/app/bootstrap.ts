@@ -171,6 +171,7 @@ import {
   dismissReviewerBlocked,
   confirmReviewerChange,
   copyReviewInvite,
+  reshareReviewer,
   loadReviewers,
   requestAddReviewer,
   revokeReviewer,
@@ -547,6 +548,9 @@ export async function bootstrapApp(
       },
       onCopyInvite: (email) => {
         void copyReviewInvite(store, deps, email);
+      },
+      onReshareReviewer: (email) => {
+        void reshareReviewer(store, deps, email);
       },
       onReloadReviewSets: () => {
         void loadReviewSets(store, deps, { force: true });

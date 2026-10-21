@@ -1,8 +1,8 @@
 <!doctype html>
 <!--
   Drive Picker ホストページ（lib/google/picker.ts の対向実装）。
-  version: 2026-07-19a (issue #141: buildPicker 集約 + page_version ハンドシェイク +
-           files モードの file_ids を ready 応答経由に変更)
+  version: 2026-10-22a
+  files モードの本文とモーダルタイトルに、一覧が空のときのフォルダ共有案内を追加。
 
   MV3 では apis.google.com のスクリプトを拡張ページで読み込めないため、
   このページを HTTPS でホストし（既定: GitHub Pages。lib/google/picker.ts の
@@ -62,8 +62,8 @@
     </p>
     <p id="files-note" class="muted" hidden>
       一覧の先頭を選択 → 末尾を Shift+クリックすると全件を範囲選択できます。選択したファイルだけが
-      拡張から読めるようになります。ファイルが表示されない場合は、プロジェクトフォルダがあなたの
-      Google アカウントに共有されているかを Drive で確認してください。
+      拡張から読めるようになります。一覧が空なら、プロジェクトのフォルダがあなたの
+      Google アカウントに共有されていません。プロジェクトのオーナーにフォルダの共有を依頼してください。
     </p>
     <script>
       // デプロイ時に実値へ書き換える（API キーはブラウザキー = 公開前提の値）
@@ -186,7 +186,7 @@
           // Picker はモーダルでページ本文（#status / #files-note）を覆い隠すため、
           // 全選択の操作説明はモーダル上に常時見えるタイトルへ入れる（Picker 内部は
           // Google 配信の iframe で、ページ側から選択操作を代行するボタンは作れない）
-          'すべて選択してください: 先頭を 1 クリック → 末尾を Shift+クリック',
+          'すべて選択してください: 先頭を 1 クリック → 末尾を Shift+クリック（一覧が空ならフォルダ未共有。オーナーに共有を依頼）',
           { token: token, multiselect: true },
         );
         statusEl.textContent =

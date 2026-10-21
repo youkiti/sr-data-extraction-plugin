@@ -55,6 +55,7 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<ProtocolViewCallb
     onDismissReviewerBlocked: jest.fn(),
     onRevokeReviewer: jest.fn(),
     onCopyInvite: jest.fn(),
+    onReshareReviewer: jest.fn(),
   },
       documents: {
         onUpdateMergeReviewSet: jest.fn(),

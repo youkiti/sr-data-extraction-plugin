@@ -23,6 +23,7 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<HomeViewCallbacks
     onDismissReviewerBlocked: jest.fn(),
     onRevokeReviewer: jest.fn(),
     onCopyInvite: jest.fn(),
+    onReshareReviewer: jest.fn(),
   };
   return { ctx: { home: callbacks } as unknown as ViewContext, callbacks };
 }
@@ -38,6 +39,19 @@ function makeState(patch: Partial<AppState['home']> = {}): AppState {
   state.home = { ...state.home, ...patch };
   return state;
 }
+
+test.each([false, true])('レビュアーの共有案内は付与済み=%s でもボタンの下に出る', (granted) => {
+  const { ctx } = makeCtx();
+  const state = makeState();
+  state.role.role = 'reviewer_with_ai';
+  state.role.folderAccessGranted = granted;
+  const view = renderHomeView(state, ctx);
+  const hint = view.querySelector('#home-folder-access-empty-hint');
+  expect(hint?.textContent).toContain('一覧が空');
+  expect(hint?.textContent).toContain('一部のファイル');
+  expect(hint?.textContent).toContain('フォルダを共有し直す');
+  expect(hint?.previousElementSibling?.id).toBe(granted ? 'home-regrant-files' : 'home-grant-folder-access');
+});
 
 describe('renderHomeView（owner）', () => {
 
@@ -101,6 +115,61 @@ describe('renderHomeView（owner のレビュアー管理カード。docs/design
     state.reviewers = { ...state.reviewers, ...patch };
     return state;
   }
+
+  test.each([
+    ['unchecked', false, false, 'reviewer', false],
+    ['unknown', false, false, 'reviewer', false],
+    ['checked', false, false, 'reviewer', true],
+    ['checked', false, true, 'reviewer', false],
+    ['checked', true, false, 'reviewer', false],
+    ['checked', false, false, 'revoked', false],
+  ] as const)('共有状態 %s / 広範囲 %s / 登録済み %s / role %s のバッジ', (status, hasBroadAccess, shared, role, badge) => {
+    const { ctx } = makeCtx();
+    const view = renderHomeView(stateWithReviewers({
+      assignments: [{ email: 'R@Example.com', role, reviewMode: null, assignedBy: 'o', assignedAt: 't' }],
+      folderSharing: status === 'checked'
+        ? { status, emails: new Set(shared ? ['r@example.com'] : []), hasBroadAccess }
+        : { status },
+    }), ctx);
+    expect(view.querySelector('.reviewers__unshared') !== null).toBe(badge);
+    expect(view.querySelector('.reviewers__reshare') !== null).toBe(role !== 'revoked');
+    expect(view.querySelector('#home-reviewers-share-unknown')?.getAttribute('role'))
+      .toBe(status === 'unknown' ? 'status' : undefined);
+  });
+
+  test.each([[false, false], [true, false], [false, true]])('再共有ボタンの配線と無効化 saving=%s resharing=%s', (saving, resharing) => {
+    const { ctx, callbacks } = makeCtx();
+    const view = renderHomeView(stateWithReviewers({
+      assignments: [{ email: 'r@example.com', role: 'adjudicator', reviewMode: null, assignedBy: 'o', assignedAt: 't' }],
+      saving, resharing,
+    }), ctx);
+    const button = view.querySelector('.reviewers__reshare') as HTMLButtonElement;
+    expect(button.disabled).toBe(saving || resharing);
+    expect(button.title).toBe('フォルダを共有し直す');
+    expect(button.getAttribute('aria-label')).toContain('r@example.com');
+    expect(button.querySelector('svg')).not.toBeNull();
+    button.click();
+    expect(callbacks.onReshareReviewer).toHaveBeenCalledTimes(saving || resharing ? 0 : 1);
+    if (!saving && !resharing) {
+      expect(callbacks.onReshareReviewer).toHaveBeenCalledWith('r@example.com');
+    }
+  });
+
+  test('共有失敗の警告に email・理由と手動共有のリンクを残す', () => {
+    const { ctx } = makeCtx();
+    const view = renderHomeView(stateWithReviewers({
+      shareErrors: [{ email: 'r@example.com', reason: 'folder denied' }],
+    }), ctx);
+    const warning = view.querySelector('#home-reviewers-share-error');
+    expect(warning?.getAttribute('role')).toBe('alert');
+    expect(warning?.textContent).toContain('r@example.com');
+    expect(warning?.textContent).toContain('folder denied');
+    expect(warning?.textContent).toContain('Drive の共有ボタンから手動で共有してください');
+    const link = warning?.querySelector('a');
+    expect(link?.getAttribute('href')).toBe('https://drive.google.com/drive/folders/f1');
+    expect(link?.getAttribute('target')).toBe('_blank');
+    expect(link?.getAttribute('rel')).toBe('noopener noreferrer');
+  });
 
   test('読み込み中は #home-reviewers-loading を出す', () => {
     const { ctx } = makeCtx();

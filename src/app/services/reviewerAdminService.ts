@@ -16,7 +16,7 @@ import {
   readReviewerAssignments,
 } from '../../features/project/reviewerRepository';
 import { readAnnotatorTypesForEmail } from '../../features/project/reviewerWorkRepository';
-import { shareFileWithUser } from '../../lib/google/drive';
+import { listFilePermissions, shareFileWithUser } from '../../lib/google/drive';
 import { getCurrentUserEmail, type ProfileDeps } from '../../lib/google/identity';
 import type { GoogleApiDeps } from '../../lib/google/types';
 import { nowIso8601 } from '../../utils/iso8601';
@@ -82,6 +82,57 @@ function patchReviewers(store: Store, patch: Partial<ReviewersState>): void {
   store.setState({ reviewers: { ...store.getState().reviewers, ...patch } });
 }
 
+/** フォルダの共有状況を再取得し、取得失敗時は確認不能として記録する。 */
+async function refreshFolderSharing(
+  store: Store,
+  deps: ReviewerAdminServiceDeps,
+  project: ShareableProject,
+): Promise<void> {
+  try {
+    const sharing = await listFilePermissions(project.driveFolderId, deps.google);
+    patchReviewers(store, { folderSharing: { status: 'checked', ...sharing } });
+  } catch {
+    patchReviewers(store, { folderSharing: { status: 'unknown' } });
+  }
+}
+
+/** 指定メールの共有エラーを更新し、成功時は取り除く。 */
+function setShareError(store: Store, email: string, reason: string | null): void {
+  const errors = store.getState().reviewers.shareErrors.filter(
+    (error) => error.email.toLowerCase() !== email.toLowerCase(),
+  );
+  if (reason !== null) {
+    errors.push({ email, reason });
+  }
+  patchReviewers(store, { shareErrors: errors });
+}
+
+/** 登録内容を変えず、シートとフォルダを共有し直す。 */
+export async function reshareReviewer(
+  store: Store,
+  deps: ReviewerAdminServiceDeps,
+  email: string,
+): Promise<void> {
+  const { currentProject: project, reviewers } = store.getState();
+  if (!project || reviewers.saving || reviewers.resharing) {
+    return;
+  }
+  patchReviewers(store, { resharing: true });
+  try {
+    const share = deps.shareProjectWithReviewer ?? defaultShareProjectWithReviewer;
+    await share(project, email, deps.google);
+    setShareError(store, email, null);
+    showToast(t('home.toastReshared', { email }));
+    await refreshFolderSharing(store, deps, project);
+  } catch (err) {
+    const reason = toMessage(err);
+    setShareError(store, email, reason);
+    showToast(t('home.toastReshareFailed', { email, reason }));
+  } finally {
+    patchReviewers(store, { resharing: false });
+  }
+}
+
 /**
  * Reviewers タブの登録状況（email ごとに畳み込んだ最新行）を読み込む。
  * 読込済み（assignments !== null）なら force 指定時のみ再読込。プロジェクト未選択・読込中は no-op
@@ -107,6 +158,7 @@ export async function loadReviewers(
   try {
     const rows = await readReviewerAssignments(project.spreadsheetId, deps.google);
     patchReviewers(store, { loading: false, assignments: foldReviewerAssignments(rows) });
+    await refreshFolderSharing(store, deps, project);
   } catch (err) {
     patchReviewers(store, { loading: false, loadError: toMessage(err) });
   }
@@ -238,10 +290,10 @@ async function submitReviewerAssignment(
     const row: ReviewerAssignment = { ...input, assignedBy, assignedAt };
     const current = store.getState().reviewers.assignments ?? [];
     patchReviewers(store, {
-      saving: false,
       assignments: foldReviewerAssignments([...current, row]),
     });
     if (input.role === 'revoked') {
+      patchReviewers(store, { saving: false });
       // 解除は行追記のみ（他人の Drive アクセスを消す自動アンシェアはしない）
       showToast(t('home.toastRevoked', { email: input.email }));
       return;
@@ -254,10 +306,14 @@ async function submitReviewerAssignment(
         input.email,
         deps.google,
       );
+      setShareError(store, input.email, null);
       showToast(t('home.toastAdded', { email: input.email }));
+      await refreshFolderSharing(store, deps, project);
     } catch (shareErr) {
+      setShareError(store, input.email, toMessage(shareErr));
       showToast(t('home.toastAddedShareFailed', { email: input.email, reason: toMessage(shareErr) }));
     }
+    patchReviewers(store, { saving: false });
   } catch (err) {
     patchReviewers(store, { saving: false, saveError: toMessage(err) });
     showToast(t('home.toastSaveFailed', { reason: toMessage(err) }));

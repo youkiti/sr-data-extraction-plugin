@@ -42,6 +42,8 @@ export interface HomeViewCallbacks {
   onRevokeReviewer(email: string): void;
   /** owner: レビュー相手への依頼文をクリップボードへコピー */
   onCopyInvite(email: string): void;
+  /** owner: レビュー相手にシートとフォルダを共有し直す */
+  onReshareReviewer(email: string): void;
   /** 担当セットと担当進捗の再読み込み */
   onReloadReviewSets(): void;
   onReloadAssignedProgress(): void;

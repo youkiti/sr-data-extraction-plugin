@@ -383,6 +383,18 @@
   max-width: 560px;
 }
 
+.reviewers__unshared {
+  display: block;
+  width: fit-content;
+  white-space: nowrap;
+  margin-top: 4px;
+  padding: 2px 6px;
+  border: 1px solid var(--color-warning-border);
+  border-radius: 4px;
+  background: var(--color-warning-bg);
+  font-size: 12px;
+}
+
 .reviewers__confirm-actions {
   display: flex;
   gap: 8px;
