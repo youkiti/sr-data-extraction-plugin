@@ -27,6 +27,26 @@
 
 ## host_permissions
 
+### ダッシュボードの 1 欄に貼る版（1000 字以内）
+
+デベロッパー ダッシュボードの「ホスト権限の使用理由」は 1 欄で、1000 字までしか入らない（2026-10-21 に本人が確認）。下の各節を 1 つにまとめた版。日本語 761 字、英語 939 字（改行を除く。Python の `len` で数えた）。節の内容を変えたら、この版も直して数え直す。
+
+- **JA**:
+
+  > ホスト権限は、利用者自身の Google アカウントと API キー（BYOK）で、次の送信先とだけ通信するために使います。開発者のサーバーはありません。
+  > ・sheets.googleapis.com / www.googleapis.com / oauth2.googleapis.com：プロジェクト DB である Google Sheets の読み書き、Google Drive への PDF・抽出テキスト・ログの保存と取得、サインイン中のアカウントのメールの取得、ログアウト時のトークンの失効。範囲は OAuth スコープ userinfo.email と drive.file（利用者が選んだファイルと拡張が作ったファイルだけ）に限られます。
+  > ・generativelanguage.googleapis.com / openrouter.ai / api.anthropic.com：利用者が選んだ LLM プロバイダ（Gemini・OpenRouter・Anthropic）へ論文本文と抽出の指示を送り、AI によるデータ抽出を行います。Anthropic は、接続確認でのモデル一覧の取得にも使います。
+  > ・任意のホスト権限（https://*/*、http://localhost/*、http://127.0.0.1/*、http://[::1]/*）：利用者が OpenAI 互換 API（ローカル LLM を含む）か Azure OpenAI の URL を設定したときだけ、chrome.permissions.request でその接続先を示して許可を求め、許可された接続先へだけ送ります。HTTP は loopback に限ります。
+  > いずれも、任意の Web サイトの閲覧や改変には使いません。
+
+- **EN**:
+
+  > Used only to reach the hosts below with the user's own Google account and API keys (BYOK). There is no developer server.
+  > - sheets.googleapis.com, www.googleapis.com, oauth2.googleapis.com: the user's Google Sheets (project database), PDFs/text/logs in Google Drive, the signed-in email, and token revocation at sign-out. Limited to the scopes userinfo.email and drive.file (files the user selects or the extension creates).
+  > - generativelanguage.googleapis.com, openrouter.ai, api.anthropic.com: send article text and extraction prompts to the LLM provider the user chose; Anthropic also lists models in the connection check.
+  > - Optional https://*/* and http://localhost, 127.0.0.1, [::1]: only when the user enters the URL of an OpenAI-compatible API (incl. a local LLM) or Azure OpenAI; the extension requests that host via chrome.permissions.request and sends data only there. HTTP is loopback only.
+  > Never used to read or modify websites.
+
 ### `https://sheets.googleapis.com/*` / `https://www.googleapis.com/*` / `https://oauth2.googleapis.com/*`
 
 - **JA**: プロジェクト DB である Google Sheets の読み書き、Google Drive へのファイル（PDF コピー・抽出テキスト・ログ）の保存・取得、およびサインイン中アカウントのメール取得（userinfo）に使用します。アクセス範囲は OAuth スコープ `userinfo.email` と `drive.file`（ユーザーが選択したファイル + 拡張が作成したファイルのみ。Sheets へのアクセスもこの範囲に限定）です。`oauth2.googleapis.com` はログアウト時のトークン失効（revoke）にのみ使用します。
