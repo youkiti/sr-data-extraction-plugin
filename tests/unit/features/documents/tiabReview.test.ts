@@ -265,6 +265,64 @@ describe('buildTiabStudyLabel', () => {
 describe('resolveAdoptedReferences', () => {
   const refs = [makeRef({ refId: 'r1' }), makeRef({ refId: 'r2' }), makeRef({ refId: 'r3' })];
 
+  test.each(['exclude', 'maybe', 'pending'] as const)('通常票の include より裁定の %s を優先する', (decision) => {
+    const adopted = resolveAdoptedReferences(refs, [
+      makeDecision({ refId: 'r1', reviewerId: 'a', decision: 'include' }),
+      makeDecision({ refId: 'r1', reviewerId: 'b', decision: 'exclude' }),
+      makeDecision({ refId: 'r1', reviewerId: 'adjudication:owner', decision }),
+    ], null);
+    expect(adopted.includes).toEqual([]);
+    expect(adopted.orIncludeCount).toBe(1);
+    expect(adopted.adjudicationExcluded).toEqual([refs[0]]);
+    const plan = planTiabImport({ adopted, studies: [makeStudy()], documents: [makeDoc()] });
+    expect(plan.orIncludeCount).toBe(1);
+    expect(plan.adjudicationExcluded).toEqual([refs[0]]);
+    expect(plan.studyUpdates).toEqual([]);
+    expect(plan.documentUpdates).toEqual([]);
+  });
+
+  test('通常票が全員 exclude でも裁定 include なら採用する', () => {
+    const adopted = resolveAdoptedReferences(refs, [
+      makeDecision({ refId: 'r1', decision: 'exclude' }),
+      makeDecision({ refId: 'r1', reviewerId: 'adjudication:owner', decision: 'include' }),
+    ], null);
+    expect(adopted.includes).toEqual([refs[0]]);
+    expect(adopted.orIncludeCount).toBe(0);
+    expect(adopted.adjudicationExcluded).toEqual([]);
+  });
+
+  test.each([false, true])('判定者をまたいで最新の裁定を採用する（逆順=%s）', (reverse) => {
+    const decisions = [
+      makeDecision({ refId: 'r1', reviewerId: 'a', decision: 'include' }),
+      makeDecision({ refId: 'r1', reviewerId: 'adjudication:a', decision: 'include', decidedAt: '' }),
+      makeDecision({ refId: 'r1', reviewerId: 'adjudication:b', decision: 'exclude', decidedAt: '2026-10-02' }),
+      makeDecision({ refId: 'r1', reviewerId: 'adjudication:a', decision: 'maybe', decidedAt: '2026-10-01' }),
+    ];
+    const adopted = resolveAdoptedReferences(refs, reverse ? decisions.reverse() : decisions, null);
+    expect(adopted.includes).toEqual([]);
+    expect(adopted.adjudicationExcluded).toEqual([refs[0]]);
+  });
+
+  test('同時刻・空時刻の裁定は先の票を採用し、裁定だけでも fulltext 相にする', () => {
+    const adopted = resolveAdoptedReferences(refs, [
+      makeDecision({ refId: 'r1', reviewerId: 'adjudication:a', decision: 'exclude', decidedAt: '' }),
+      makeDecision({ refId: 'r1', reviewerId: 'adjudication:b', decision: 'include', decidedAt: '' }),
+      makeDecision({ refId: 'r2', screeningPhase: 'tiab', decision: 'include' }),
+    ], null);
+    expect(adopted.phase).toBe('fulltext');
+    expect(adopted.includes).toEqual([]);
+  });
+
+  test('TiAb 相は裁定の特別扱いをせず従来の OR 合議を維持する', () => {
+    const adopted = resolveAdoptedReferences(refs, [
+      makeDecision({ refId: 'r1', screeningPhase: 'tiab', decision: 'include' }),
+      makeDecision({ refId: 'r1', screeningPhase: 'tiab', reviewerId: 'adjudication:a', decision: 'exclude' }),
+    ], null);
+    expect(adopted.includes).toEqual([refs[0]]);
+    expect(adopted.orIncludeCount).toBe(1);
+    expect(adopted.adjudicationExcluded).toEqual([]);
+  });
+
   test('fulltext 相の判定があるシートは fulltext 相の OR 合議で include を決める', () => {
     const decisions = [
       // r1: fulltext で A exclude / B include → OR で include
@@ -341,7 +399,7 @@ describe('resolveAdoptedReferences', () => {
 
 describe('planTiabImport', () => {
   function adoptedOf(includes: TiabReference[], totalReferences = includes.length): TiabAdoptedList {
-    return { phase: 'fulltext', includes, totalReferences };
+    return { phase: 'fulltext', includes, totalReferences, orIncludeCount: includes.length, adjudicationExcluded: [] };
   }
 
   test('fulltext_url の Drive ファイル ID = source_file_id で突き合わせ、study_label と DOI / PMID を反映する', () => {

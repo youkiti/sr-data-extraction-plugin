@@ -1074,6 +1074,8 @@ describe('renderDocumentsView: tiab-review 取り込みカード', () => {
       phase: 'fulltext',
       totalReferences: 3,
       includeCount: 2,
+      orIncludeCount: 2,
+      adjudicationExcluded: [],
       items: [
         {
           refId: 'r1',
@@ -1179,7 +1181,7 @@ describe('renderDocumentsView: tiab-review 取り込みカード', () => {
     const { ctx, callbacks } = makeCtx();
     const view = renderDocumentsView(makeState({ tiabImport: tiabState({ plan: makePlan() }) }), ctx);
     expect(view.querySelector('#tiab-summary')?.textContent).toBe(
-      '最終判定 include 2 件（全文スクリーニングの判定・全 3 件中）: 反映 1 件 / 適用済み 0 件 / PDF 未取り込み 1 件',
+      '裁定を反映した採用件数（取り込む件数）2 件（全文スクリーニングの判定・全 3 件中）: 反映 1 件 / 適用済み 0 件 / PDF 未取り込み 1 件',
     );
     const rows = view.querySelectorAll('#tiab-plan tbody tr');
     expect(rows).toHaveLength(2);
@@ -1194,6 +1196,40 @@ describe('renderDocumentsView: tiab-review 取り込みカード', () => {
     expect(apply.disabled).toBe(false);
     apply.click();
     expect(callbacks.onTiabApply).toHaveBeenCalledTimes(1);
+  });
+
+  test('裁定との差分を表示しても反映でき、タイトルはテキストとして表示する', () => {
+    const { ctx, callbacks } = makeCtx();
+    const plan = makePlan({
+      orIncludeCount: 3,
+      adjudicationExcluded: [{
+        refId: 'excluded', title: '<b>裁定で除外</b>', year: null,
+        authors: null, doi: null, pmid: null, fulltextUrl: null,
+      }],
+    });
+    const view = renderDocumentsView(makeState({ tiabImport: tiabState({ plan }) }), ctx);
+    expect(view.querySelector('#tiab-or-summary')?.textContent).toBe('OR 合議なら採用になる件数: 3 件');
+    expect(view.querySelector('#tiab-adjudication-warning')?.getAttribute('role')).toBe('alert');
+    expect(view.querySelector('#tiab-adjudication-excluded li')?.textContent).toBe('<b>裁定で除外</b>');
+    expect(view.querySelector('#tiab-adjudication-excluded b')).toBeNull();
+    expect(view.querySelector('#tiab-adjudication-warning')?.lastElementChild?.textContent).toContain(
+      '既存の study は自動除外されません',
+    );
+    const apply = view.querySelector('#tiab-apply') as HTMLButtonElement;
+    expect(apply.disabled).toBe(false);
+    apply.click();
+    expect(callbacks.onTiabApply).toHaveBeenCalledTimes(1);
+  });
+
+  test('裁定反映後が 0 件でも差分を表示し、件数一致なら警告を出さない', () => {
+    const { ctx } = makeCtx();
+    const empty = makePlan({ items: [], includeCount: 0 });
+    const view = renderDocumentsView(makeState({ tiabImport: tiabState({ plan: empty }) }), ctx);
+    expect(view.querySelector('#tiab-adjudication-warning')).not.toBeNull();
+    const equal = renderDocumentsView(makeState({ tiabImport: tiabState({ plan: makePlan() }) }), ctx);
+    expect(equal.querySelector('#tiab-adjudication-warning')).toBeNull();
+    expect(equal.textContent).not.toContain('既存の study は自動除外されません');
+    expect(equal.querySelector('#tiab-or-summary')).not.toBeNull();
   });
 
   test('プレビュー: TiAb 相のサマリ表記・反映 0 件は実行ボタンを無効化する', () => {

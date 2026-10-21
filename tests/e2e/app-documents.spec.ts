@@ -535,7 +535,7 @@ test('tiab-review 取り込み: 導線ボタン → プレビュー（Sheets 直
       return;
     }
     if (method === 'GET' && url.includes('values:batchGet')) {
-      // tiab シートの References / Decisions（fulltext 相の include 1 件）
+      // tiab シートの References / Decisions（採用 1 件・裁定で除外 1 件）
       await route.fulfill({
         json: {
           valueRanges: [
@@ -543,12 +543,15 @@ test('tiab-review 取り込み: 導線ボタン → プレビュー（Sheets 直
               values: [
                 refHeader,
                 ['r1', 'Effect of X on Y', '', '2020', 'Smith, John; Doe, A', '10.1000/xyz', '123', 'https://drive.google.com/file/d/src-doc-1/view'],
+                ['r2', 'Excluded after adjudication', '', '2021', '', '', '', ''],
               ],
             },
             {
               values: [
                 decHeader,
                 ['d1', 'r1', 'a@example.com', 'include', '', '', '', '2026-07-01T00:00:00Z', '', '', 'fulltext'],
+                ['d2', 'r2', 'a@example.com', 'include', '', '', '', '2026-07-01T00:00:00Z', '', '', 'fulltext'],
+                ['d3', 'r2', 'adjudication:owner@example.com', 'exclude', '', '', '', '2026-07-02T00:00:00Z', '', '', 'fulltext'],
               ],
             },
           ],
@@ -586,8 +589,11 @@ test('tiab-review 取り込み: 導線ボタン → プレビュー（Sheets 直
   await page.locator('#tiab-sheet-input').fill('https://docs.google.com/spreadsheets/d/tiab-sheet-1/edit');
   await page.locator('#tiab-preview').click();
   await expect(page.locator('#tiab-summary')).toContainText(
-    '最終判定 include 1 件（全文スクリーニングの判定・全 1 件中）',
+    '裁定を反映した採用件数（取り込む件数）1 件（全文スクリーニングの判定・全 2 件中）',
   );
+  await expect(page.locator('#tiab-or-summary')).toContainText('2 件');
+  await expect(page.locator('#tiab-adjudication-excluded')).toContainText('Excluded after adjudication');
+  await expect(page.locator('#tiab-apply')).toBeEnabled();
   await expect(page.locator('#tiab-plan tbody tr')).toHaveCount(1);
   await expect(page.locator('.documents__tiab-status--update')).toHaveText('反映');
 
@@ -668,6 +674,8 @@ test('アクセシビリティ違反がない（axe）', async ({ page }) => {
         phase: 'fulltext',
         totalReferences: 2,
         includeCount: 1,
+        orIncludeCount: 1,
+        adjudicationExcluded: [],
         items: [
           {
             refId: 'r1',

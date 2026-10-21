@@ -312,7 +312,10 @@ export const enApp: Record<keyof typeof jaApp, string> = {
   'documents.tiabStatusAlready': 'Already applied',
   'documents.tiabStatusUnmatched': 'PDF not imported',
   'documents.tiabSummary':
-    'Final include: {include} (judged in {phase}, of {total} references) — to apply {update} / already applied {already} / PDF not imported {unmatched}',
+    'Included after adjudication (to import): {include} (judged in {phase}, of {total} references) — to apply {update} / already applied {already} / PDF not imported {unmatched}',
+  'documents.tiabOrSummary': 'Included by OR consensus: {n}',
+  'documents.tiabAdjudicationWarning': 'Adjudication changes the OR consensus count. References below are no longer included after adjudication. You can continue importing.',
+  'documents.tiabExistingStudies': 'Re-importing does not automatically exclude existing studies. If a reference is no longer included after adjudication and was already imported, use “Exclude study” as needed.',
   'documents.tiabPlanEmpty':
     'No included references were found. Check the decisions in tiab-review.',
   'documents.tiabHeadReference': 'Reference',

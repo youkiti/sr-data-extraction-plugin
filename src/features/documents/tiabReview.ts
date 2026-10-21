@@ -39,6 +39,10 @@ export interface TiabAdoptedList {
   phase: TiabScreeningPhase;
   includes: TiabReference[];
   totalReferences: number;
+  /** 通常票の OR 合議なら採用になる件数 */
+  orIncludeCount: number;
+  /** OR では採用だが裁定で採用対象外になった文献 */
+  adjudicationExcluded: TiabReference[];
 }
 
 /** プレビュー 1 行（include 1 件）の反映状態 */
@@ -58,6 +62,10 @@ export interface TiabPlanItem {
 export interface TiabImportPlan {
   phase: TiabScreeningPhase;
   totalReferences: number;
+  /** 通常票の OR 合議なら採用になる件数 */
+  orIncludeCount: number;
+  /** OR では採用だが裁定で採用対象外になった文献 */
+  adjudicationExcluded: TiabReference[];
   includeCount: number;
   items: TiabPlanItem[];
   /** study_label を上書きする Studies 行（変更があるもののみ） */
@@ -250,7 +258,8 @@ function latestKey(d: TiabDecision): string {
  * - 判定は (相, 文献, 判定者) ごとに decided_at 最新の 1 件へ畳み込む（tiab の「最新判定のみ有効」規約）
  * - `llm:` 判定者は fulltext 相の採用ラウンド（Config.fulltext_ai_active_round）のみ集計する
  *   （TiAb 相の LLM run の有効・無効判別は LLM_Runs の読み出しが必要なため v1 では集計しない）
- * - fulltext 相の有効判定が 1 件でもあるシートは fulltext 相の OR 合議（誰か 1 人でも include）、
+ * - fulltext 相は最新の裁定票を優先し、裁定票がなければ通常票の OR 合議。
+ *   fulltext 相の有効判定または裁定票が 1 件でもあれば fulltext 相を使い、
  *   無ければ TiAb 相の OR 合議で include を決める
  */
 export function resolveAdoptedReferences(
@@ -258,8 +267,16 @@ export function resolveAdoptedReferences(
   decisions: readonly TiabDecision[],
   activeFulltextAiRound: string | null,
 ): TiabAdoptedList {
+  const adjudications = new Map<string, TiabDecision>();
   const latest = new Map<string, TiabDecision>();
   for (const decision of decisions) {
+    if (decision.screeningPhase === 'fulltext' && decision.reviewerId.startsWith('adjudication:')) {
+      const previous = adjudications.get(decision.refId);
+      if (previous === undefined || decision.decidedAt > previous.decidedAt) {
+        adjudications.set(decision.refId, decision);
+      }
+      continue;
+    }
     const key = latestKey(decision);
     const existing = latest.get(key);
     if (existing === undefined || decision.decidedAt > existing.decidedAt) {
@@ -272,7 +289,7 @@ export function resolveAdoptedReferences(
     tiab: new Map(),
     fulltext: new Map(),
   };
-  let hasFulltextDecision = false;
+  let hasFulltextDecision = adjudications.size > 0;
   for (const decision of latest.values()) {
     if (decision.decision === 'pending') {
       continue;
@@ -296,8 +313,16 @@ export function resolveAdoptedReferences(
 
   const phase: TiabScreeningPhase = hasFulltextDecision ? 'fulltext' : 'tiab';
   const effective = byPhase[phase];
-  const includes = references.filter((ref) => effective.get(ref.refId)?.has('include') === true);
-  return { phase, includes, totalReferences: references.length };
+  const orIncludes = references.filter((ref) => effective.get(ref.refId)?.has('include') === true);
+  const includes = references.filter((ref) => {
+    const adjudication = phase === 'fulltext' ? adjudications.get(ref.refId) : undefined;
+    return adjudication === undefined
+      ? effective.get(ref.refId)?.has('include') === true
+      : adjudication.decision === 'include';
+  });
+  const adoptedIds = new Set(includes.map((ref) => ref.refId));
+  const adjudicationExcluded = orIncludes.filter((ref) => !adoptedIds.has(ref.refId));
+  return { phase, includes, totalReferences: references.length, orIncludeCount: orIncludes.length, adjudicationExcluded };
 }
 
 /**
@@ -395,6 +420,8 @@ export function planTiabImport(params: {
     phase: adopted.phase,
     totalReferences: adopted.totalReferences,
     includeCount: adopted.includes.length,
+    orIncludeCount: adopted.orIncludeCount,
+    adjudicationExcluded: adopted.adjudicationExcluded,
     items,
     studyUpdates: [...scheduledStudies.values()],
     documentUpdates: [...scheduledDocs.values()],

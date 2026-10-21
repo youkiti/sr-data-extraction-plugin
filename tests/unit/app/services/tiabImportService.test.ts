@@ -149,6 +149,8 @@ function makePlan(overrides: Partial<TiabImportPlan> = {}): TiabImportPlan {
     phase: 'fulltext',
     totalReferences: 2,
     includeCount: 1,
+    orIncludeCount: 1,
+    adjudicationExcluded: [],
     items: [
       {
         refId: 'r1',
