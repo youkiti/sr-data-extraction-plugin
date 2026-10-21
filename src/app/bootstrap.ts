@@ -191,6 +191,7 @@ import {
   loadExportData,
   requestExportGenerate,
   selectExportFormat,
+  setExportDraft,
 } from './services/exportService';
 import { createChromeGoogleApiDeps } from './services/factories';
 import type { ProjectRole } from '../domain/reviewer';
@@ -944,6 +945,9 @@ export async function bootstrapApp(
       },
       onDownloadUsage: () => {
         downloadUsageExport(store);
+      },
+      onChangeDraft: (draft) => {
+        setExportDraft(store, draft);
       },
       onSelectFormat: (format) => {
         selectExportFormat(store, format);

@@ -233,3 +233,17 @@ test('根拠の表は引用を 17 列で出し、audit と同じ未検証警告�
   expect(built.studyCount).toBe(1);
   expect(built.unverifiedCellCount).toBe(buildExport('audit', materials).unverifiedCellCount);
 });
+
+test('仮指定は wide / long のみへ伝わり、audit / 引用のバイト列は変わらない', () => {
+  const materials = makeMaterials({
+    studyRows: [makeStudyRow({ annotator: 'ai', annotatorType: 'ai' })],
+    resultsRows: [makeResultsRow({ annotator: 'ai', annotatorType: 'ai' })],
+  });
+  const normal = buildAllExports(materials);
+  const draft = buildAllExports(materials, true);
+  expect(buildAllExports(materials, false)).toEqual(normal);
+  expect(draft.study_wide.previewRows[0]).toEqual(['Smith 2020', '120', 'ai_unverified']);
+  expect(draft.results_long.previewRows[0]?.at(-1)).toBe('ai_unverified');
+  expect(draft.audit).toEqual(normal.audit);
+  expect(draft.evidence_quotes).toEqual(normal.evidence_quotes);
+});
