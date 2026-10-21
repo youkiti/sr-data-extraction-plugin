@@ -3,7 +3,7 @@
      正典はこのファイル（master の hosted/）。デプロイ手順は hosted/README.md を参照。
      内容はワークフローレベルに留める（画面細部はアプリ内のリード文が担う。issue #214 §3）。
      文言は ja / en を両方持ち、表示は lang.js + CSS が片方だけに絞る（併記しない）。
-     version: 2026-10-21 -->
+     version: 2026-10-22 -->
 <html lang="ja">
   <head>
     <meta charset="utf-8" />
@@ -53,8 +53,8 @@
           <span class="en" lang="en">User guide</span>
         </h1>
         <p class="last-updated">
-          <span class="ja" lang="ja">最終更新: 2026-10-21 / 対象バージョン: v0.19.1</span>
-          <span class="en" lang="en">Last updated: 2026-10-21 / Covers v0.19.1</span>
+          <span class="ja" lang="ja">最終更新: 2026-10-22 / 対象バージョン: v0.21.0</span>
+          <span class="en" lang="en">Last updated: 2026-10-22 / Covers v0.21.0</span>
         </p>
 
         <nav class="toc" aria-label="目次" data-en-aria-label="Table of contents">
@@ -747,6 +747,10 @@
               import.</span
             >
           </p>
+          <p>
+            <span class="ja" lang="ja">tiab-review の採用リストは、フルテキストの最新の裁定を優先します（裁定がなければ通常票の OR 合議）。裁定が maybe の文献は取り込みません。プレビューに「裁定を反映した採用件数（取り込む件数）」と「OR 合議なら採用になる件数」を表示します。裁定で採用対象外になった文献があれば、警告とタイトル一覧が出ます。フルテキスト相では、tiab-review のフルテキスト候補に入らない文献は取り込みません。候補外のため取り込み対象から外した文献は、別の警告で件数とタイトル一覧をプレビューに表示します。取り込みは続行できます。TiAb 相の採用判定は変わりません。再取り込みでも既存 study は自動除外されません。必要に応じて「study の除外」を行ってください。</span>
+            <span class="en" lang="en">The tiab-review included list uses the latest full-text adjudication, falling back to OR consensus of regular votes when there is no adjudication. A maybe adjudication is not included. The preview shows the count after adjudication (to import) and the OR consensus count. A warning lists any titles no longer included after adjudication. In the full-text phase, references outside tiab-review’s project full-text candidates are not imported. A separate preview warning shows the count and titles excluded for this reason. You can continue importing. Title/abstract phase inclusion is unchanged. Re-importing does not automatically exclude existing studies. Use “Exclude study” as needed.</span>
+          </p>
           <figure class="shot shot--screen">
             <a href="screenshots/help-03-documents.png" target="_blank" rel="noopener noreferrer">
               <img
@@ -856,6 +860,14 @@
             </figcaption>
           </figure>
           <ul>
+            <li>
+              <span class="ja" lang="ja">「必須」は、論文に必ず書いてあるはずの項目です。チェックを外しても列は残ります。使わない項目は「削除」で表から外してください。</span>
+              <span class="en" lang="en">“Required” means an item expected to be reported in the paper. Unchecking it keeps the column. Use “Remove” to take an unused item out of the table.</span>
+            </li>
+            <li>
+              <span class="ja" lang="ja">はい / いいえの項目（boolean）は、パイロット結果・検証画面・相談用ドキュメントで「はい」「いいえ」と表示します。「いいえ」（FALSE）も有効な結果で、抽出失敗ではありません。保存値と CSV は TRUE / FALSE のままです。</span>
+              <span class="en" lang="en">Boolean items appear as “Yes” or “No” in pilot results, verification, and consultation documents. “No” (FALSE) is a valid result, not an extraction failure. Stored values and CSV exports remain TRUE / FALSE.</span>
+            </li>
             <li>
               <span class="ja" lang="ja"
                 >項目数に上限はありません（AI が一度に提案する目安が 10〜40 個というだけです）。</span
@@ -967,6 +979,18 @@
               >
             </li>
           </ul>
+          <h3 id="schema-enum">
+            <span class="ja" lang="ja">自由記述を選択肢に変える</span>
+            <span class="en" lang="en">Convert free text to a choice list</span>
+          </h3>
+          <p>
+            <span class="ja" lang="ja">データ型は「自由記述（text）」「選択肢（enum）」「整数（integer）」などの名前で表示します。自由記述の項目を分類して集計したいときは、編集中の行の「選択肢にする」を押してください。AI が項目のラベル・抽出指示と、読み込み済みのパイロットの値（あれば）をもとに、unclear / other を含む3〜8個の小文字スネークケースの選択肢（例: <code>interview|focus_group|other|unclear</code>）を提案します。設定した既定モデルを使うため API の費用がかかります。</span>
+            <span class="en" lang="en">Data types are shown as “Free text (text)”, “Choice list (enum)”, “Integer (integer)”, and so on. To group free-text answers for analysis, click “Make a choice list” on the row you are editing. Using the field label, extraction instruction, and loaded pilot values (if available), AI suggests 3–8 lowercase snake_case choices including unclear / other (e.g. <code>interview|focus_group|other|unclear</code>). This uses your default model and incurs API costs.</span>
+          </p>
+          <p>
+            <span class="ja" lang="ja">押した行の直下に出る候補を | 区切りの欄で編集し、抽出指示に「次から1つ選ぶ」と候補を追記するかを選んで、「この候補を反映」を押します。データ型が「選択肢（enum）」になり、許容値が入ります。最後に「版として確定」で保存してください。キャンセルや生成失敗では元の行は変わりません。</span>
+            <span class="en" lang="en">Edit the suggested choices in the box directly below that row, separated by |. Choose whether to append “Choose one of the following” and the choices to the extraction instruction, then click “Apply these choices”. The data type becomes “Choice list (enum)” and the allowed values are filled in. Save with “Confirm as a version”. Cancelling or a failed suggestion leaves the original row unchanged.</span>
+          </p>
           <div class="note">
             <p>
               <span class="ja" lang="ja"
@@ -1183,11 +1207,11 @@
             <li>
               <span class="ja" lang="ja"
                 >項目は study（試験レベル）→ arm（群）→ outcome_result（アウトカム）の順にタブが並びます。arm
-                タブの冒頭で群の数と名称を確定すると、arm / outcome の入力ができるようになります。</span
+                タブを開く前に群構成カードで群の数と名称を確定すると、arm / outcome の入力ができるようになります。群比較のない調査・質的研究などで 0 群の場合は「群比較なし（単群）として確定」を押すと、「全体」1 群で確定できます（独立入力も同様）。確定後も「改訂」で名称変更や群の追加ができます。ロック中のタブには「群構成を確定すると開きます」という説明が付きます。</span
               >
               <span class="en" lang="en"
-                >Tabs run study → arm → outcome_result. Confirm the number and names of arms at the top of the arm tab to
-                unlock arm and outcome entry.</span
+                >Tabs run study → arm → outcome_result. Confirm the number and names of arms in the arm structure card to
+                unlock arm and outcome entry. For surveys, qualitative studies or other studies without group comparisons, when no arms are listed, choose “Confirm as a single arm (no group comparison)” to confirm one arm named “All participants” (also available for independent entry). Use “Revise” afterward to rename it or add arms. Locked tabs explain: “Confirm the arm structure to open this tab”.</span
               >
             </li>
             <li>
@@ -1383,6 +1407,10 @@
             >
           </p>
 
+          <p>
+            <span class="ja" lang="ja">値を承認・修正・棄却・未報告で確定してから「要相談」を付け、任意のメモに相談したい点を記入できます。値は検証済みとして数え、印は未検証警告に影響しません。相談が済んだら同じボタンで外してください。付け外しは監査ログに残り、値の変更や undo では消えません。</span>
+            <span class="en" lang="en">After accepting, editing, rejecting or marking a value not reported, use “Needs discussion” and add an optional note. The value remains verified, with no change to unverified warnings. Use the same button to clear the flag after discussion. Both events remain in the audit log; changing or undoing the value does not clear the flag.</span>
+          </p>
           <h3 id="verify-saving">
             <span class="ja" lang="ja">判定の保存完了を確認する</span>
             <span class="en" lang="en">Wait for judgments to finish saving</span>
@@ -1433,6 +1461,14 @@
             </figcaption>
           </figure>
 
+          <h3 id="dashboard-consult">
+            <span class="ja" lang="ja">要相談の一覧</span>
+            <span class="en" lang="en">Items needing discussion</span>
+          </h3>
+          <p>
+            <span class="ja" lang="ja">自分が「要相談」を付けたセルを study・項目・現在の値・メモ・判定者の一覧で確認できます。study のリンクで該当セルへ移り、印を外すと一覧から消えます。wide CSV の末尾には consult_fields 列を常に出し、確定 annotator の印がある項目名を表のデザインの項目順に | で連結します（印なしは空欄）。列名が既存列と重なる場合は _2、_3 … を付けます。long の flag 列は有効な印を consult、印なしを空欄で出します。audit.csv には付け外しが各 1 行で出ます。</span>
+            <span class="en" lang="en">Your flagged cells are listed with study, field, current value, note and reviewer. Follow the study link to the exact cell; clearing the flag removes it from the list. Wide CSV always ends with consult_fields, listing the flagged study field names for the final annotator in schema field order, separated by | (blank when none). If the column name is already used, it receives a suffix such as _2 or _3. The long CSV flag column contains consult for active flags, otherwise blank. audit.csv contains one row per flag or clear event.</span>
+          </p>
           <h3 id="dashboard-usage">
             <span class="ja" lang="ja">費用の集計と予算</span>
             <span class="en" lang="en">Track usage and set a budget</span>
@@ -1468,12 +1504,12 @@
             <span class="ja" lang="ja"
               >2 名で独立に抽出し、不一致を裁定する運用に対応しています。オーナーが Home
               の「レビュアー管理」で共同研究者のメールアドレスを登録し、モード（AI 抽出を見ながらの検証 = with AI / AI
-              を見ずに自分で入力 = independent）を選びます。</span
+              を見ずに自分で入力 = independent）を選びます。「フォルダ未共有」が表示されたら、その行の「フォルダを共有し直す」でシートとフォルダを共有し直せます。共有に失敗した場合は、カード内の警告に従って Drive から手動で共有してください。</span
             >
             <span class="en" lang="en"
               >Two reviewers can extract independently and have disagreements adjudicated. The owner registers
               collaborators by email under “Reviewer management” on Home and picks their mode (verify with AI, or
-              independent entry without seeing AI output).</span
+              independent entry without seeing AI output). If “Folder not shared” appears, use “Share the folder again” on that row to share the sheet and folder again. If sharing fails, follow the warning in the card to share manually in Drive.</span
             >
           </p>
           <figure class="shot shot--screen">
@@ -1634,6 +1670,10 @@
               </tbody>
             </table>
           </div>
+          <p>
+            <span class="ja" lang="ja">確認途中で考察やミーティングの準備に使うときは、「未確認分を AI の値で補う（仮エクスポート）」をオンにします（既定はオフ）。study_wide / results_long のみ、未確認の文献・セルを AI の値で補います。最終データではありません。人が確認していない AI の値を含みます。wide の各項目の <code>{field}__source</code> 列、long の <code>source</code> 列で <code>human</code>（人の確認済み）/ <code>consensus</code>（裁定済み）/ <code>ai_unverified</code>（未確認）を区別し、ファイル名に <code>_draft</code> が付きます。audit・R セット・Methods 文案・根拠の表には影響しません。最終データを出すときはオフに戻してください。</span>
+            <span class="en" lang="en">For discussion or meeting preparation while verification is ongoing, enable “Fill unverified cells with AI values (draft export)” (off by default). Only study_wide and results_long fill unverified studies and cells with AI values. This is not final data: it includes AI values that have not been verified by a human. Each wide field has a <code>{field}__source</code> column; long has a <code>source</code> column: <code>human</code> (verified), <code>consensus</code> (adjudicated), or <code>ai_unverified</code> (unverified). Filenames include <code>_draft</code>. Audit, R sets, Methods text and evidence quotes remain unchanged. Turn this option off when exporting final data.</span>
+          </p>
           <figure class="shot shot--screen">
             <a href="screenshots/help-11-export.png" target="_blank" rel="noopener noreferrer">
               <img
@@ -1895,11 +1935,11 @@
           <p>
             <span class="ja" lang="ja"
               >同じ理由です。Home の「プロジェクトファイルへのアクセスを付与」から Picker
-              を開き、表示されたファイル（PDF と抽出テキスト）を<strong>すべて選択</strong>してください。付与後にオーナーが新しい文献を追加した場合は「アクセスを付与し直す」でやり直します。</span
+              を開き、表示されたファイル（PDF と抽出テキスト）を<strong>すべて選択</strong>してください。付与後にオーナーが新しい文献を追加した場合は「アクセスを付与し直す」でやり直します。一覧には未付与のファイルだけが表示されます。一覧が空のときは、フォルダが共有されていない可能性があります。オーナーに、レビュアー管理の「フォルダを共有し直す」を依頼してください。</span
             >
             <span class="en" lang="en"
               >Same cause. Open the picker from “Grant access to project files” on Home and <strong>select them
-              all</strong> (PDFs and extracted text). If the owner adds documents later, use “Grant access again”.</span
+              all</strong> (PDFs and extracted text). If the owner adds documents later, use “Grant access again”. The list shows only files not yet granted. If it is empty, the folder may not be shared with you. Ask the owner to use “Share the folder again” under Reviewer management.</span
             >
           </p>
 
