@@ -1,3 +1,4 @@
+import { setUiLanguage } from '../../../../src/lib/i18n';
 import {
   renderVerificationForm,
   type CellHighlightInfo,
@@ -746,6 +747,32 @@ describe('renderVerificationForm: 群構成確定カード（ui-states.md §3 `#
     error: null,
   };
 
+  test.each([
+    ['ja', '群構成を確定すると開きます'],
+    ['en', 'Confirm the arm structure to open this tab'],
+  ] as const)('%s: ロック理由を title と支援技術向け説明に付ける', (language, reason) => {
+    setUiLanguage(language);
+    try {
+      const { root, handlers } = render(makeModel([makeCell()], {
+        armCard: { ...editingCard, rows: [] }, armLocked: true,
+      }));
+      const tabs = root.querySelectorAll<HTMLButtonElement>('.verify__tab');
+      expect(tabs[0]?.hasAttribute('aria-describedby')).toBe(false);
+      for (const tab of [...tabs].filter((tab) => tab.disabled)) {
+        expect(tab.title).toBe(reason);
+        const description = root.querySelector(`#${tab.getAttribute('aria-describedby')}`);
+        expect(description?.textContent).toBe(reason);
+      }
+      const single = root.querySelector<HTMLButtonElement>('#verify-arm-confirm-single');
+      expect(single?.classList.contains('verify__arm-confirm')).toBe(true);
+      expect(root.querySelector('#verify-arm-confirm')?.classList.contains('verify__arm-confirm')).toBe(false);
+      single!.click();
+      expect(handlers.onArmConfirm).toHaveBeenCalledWith(true);
+    } finally {
+      setUiLanguage('ja');
+    }
+  });
+
   test('arm 未確定: study 以外のタブをディムし、編集カード + 確定案内を出す', () => {
     const { root, handlers } = render(
       makeModel([makeCell()], { armCard: editingCard, armLocked: true }),
@@ -765,6 +792,8 @@ describe('renderVerificationForm: 群構成確定カード（ui-states.md §3 `#
     );
     const inputs = card?.querySelectorAll<HTMLInputElement>('.verify__arm-name');
     expect(inputs).toHaveLength(2);
+    expect(root.querySelector('#verify-arm-confirm-single')).toBeNull();
+    expect(root.querySelector('#verify-arm-confirm')?.classList.contains('verify__arm-confirm')).toBe(true);
     expect(inputs?.[0]?.value).toBe('介入群');
     // 未確定のうちはキャンセルボタンなし
     expect(card?.querySelector('.verify__arm-cancel')).toBeNull();

@@ -174,7 +174,7 @@ export interface VerificationFormHandlers {
   onArmAddRow(): void;
   onArmRemoveRow(index: number): void;
   /** 「群構成を確定」（検証 → ArmStructures へ新 version 追記） */
-  onArmConfirm(): void;
+  onArmConfirm(singleArm?: boolean): void;
   /** 確定済みカードの「改訂」 */
   onArmRevise(): void;
   /** 改訂のキャンセル（確定済みがあるときだけ出る） */
@@ -317,6 +317,8 @@ function renderTabs(model: VerificationFormModel, handlers: VerificationFormHand
       button.disabled = true;
       button.classList.add('verify__tab--locked');
       button.setAttribute('aria-disabled', 'true');
+      button.title = t('verify.lockedReason');
+      button.setAttribute('aria-describedby', 'verify-arm-locked-reason');
     } else {
       button.addEventListener('click', () => handlers.onSelectTab(tab));
     }
@@ -382,13 +384,23 @@ function renderArmCardEditor(
 
   const confirmButton = el('button', {
     id: 'verify-arm-confirm',
-    className: 'verify__arm-confirm',
+    className: card.rows.length === 0 ? '' : 'verify__arm-confirm',
     text: t('verify.armConfirm'),
     attributes: { type: 'button' },
   });
   confirmButton.addEventListener('click', () => handlers.onArmConfirm());
 
   const actions: HTMLElement[] = [addButton, confirmButton];
+  if (card.rows.length === 0) {
+    const singleButton = el('button', {
+      id: 'verify-arm-confirm-single',
+      className: 'verify__arm-confirm',
+      text: t('verify.armConfirmSingle'),
+      attributes: { type: 'button' },
+    });
+    singleButton.addEventListener('click', () => handlers.onArmConfirm(true));
+    actions.unshift(singleButton);
+  }
   if (card.confirmedVersion !== null) {
     const cancelButton = el('button', {
       className: 'verify__arm-cancel',
@@ -407,6 +419,9 @@ function renderArmCardEditor(
         text: card.mode === 'independent' ? t('verify.armLeadIndependent') : t('verify.armLead'),
       }),
     );
+  }
+  if (card.rows.length === 0) {
+    children.push(el('p', { className: 'verify__arm-single-hint', text: t('verify.armSingleHint') }));
   }
   children.push(el('ul', { className: 'verify__arm-rows' }, rows));
   if (card.error !== null) {
@@ -628,6 +643,13 @@ export function renderVerificationForm(
     ]),
     renderProgress(model.progress, model.activeTab),
   ];
+  if (model.armLocked) {
+    children.push(el('span', {
+      id: 'verify-arm-locked-reason',
+      text: t('verify.lockedReason'),
+      attributes: { hidden: '' },
+    }));
+  }
   if (model.armCard !== null) {
     children.push(renderArmCard(model.armCard, handlers));
   }

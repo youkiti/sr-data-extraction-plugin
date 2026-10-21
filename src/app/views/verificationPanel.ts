@@ -1935,7 +1935,10 @@ export function createVerificationPanel(
       armRows.splice(index, 1);
       refreshForm();
     },
-    onArmConfirm() {
+    onArmConfirm(singleArm = false) {
+      if (singleArm) {
+        armRows = [{ armKey: nextArmKey(), armName: t('verify.armSingleName') }];
+      }
       const trimmed = armRows.map((arm) => ({ armKey: arm.armKey, armName: arm.armName.trim() }));
       if (trimmed.length === 0) {
         armError = t('verify.armErrorNeedOne');
