@@ -4,12 +4,13 @@
 // 変更せず、参照する状態・ハンドラを実際に使う分だけへ最小化した型（CellCardModel /
 // CellCardHandlers）を公開する — VerificationFormModel / VerificationFormHandlers は
 // フィールドを維持したまま構造的にこの部分型を満たすため、呼び出し側の変更は不要
+import { formatFieldValue } from '../../lib/formatFieldValue';
 import type { Decision } from '../../domain/decision';
 import type { CellQuote, ResolvedCellQuotes } from '../../domain/quoteSet';
 import type { AnchorStatus } from '../../domain/anchor';
 import type { Evidence } from '../../domain/evidence';
 import { NOT_REPORTED_TOKEN } from '../../domain/annotation';
-import { formatMultiSelectForDisplay, isMultiSelectField, splitPipeList } from '../../domain/multiSelect';
+import { isMultiSelectField, splitPipeList } from '../../domain/multiSelect';
 import { renderMultiEnumChoiceEditor } from './multiEnumChoiceEditor';
 import type { VerificationCell } from '../../features/verification/cells';
 import type { CellStatus } from '../../features/verification/cellState';
@@ -173,7 +174,7 @@ function renderAiSummary(cell: VerificationCell): HTMLElement {
       className: 'verify__ai-value',
       text: evidence.notReported
         ? t('verify.aiNotReported', { token: NOT_REPORTED_TOKEN })
-        : (formatMultiSelectForDisplay(cell.field, evidence.value) ?? t('verify.aiValueNone')),
+        : (formatFieldValue(cell.field, evidence.value) ?? t('verify.aiValueNone')),
     }),
   ];
   if (evidence.confidence !== null) {
@@ -854,7 +855,7 @@ export function renderCell(
     children.push(
       el('p', {
         className: 'verify__current-value',
-        text: t('verify.decidedValue', { value: formatMultiSelectForDisplay(cell.field, cell.state.value) ?? t('verify.valueEmpty') }),
+        text: t('verify.decidedValue', { value: formatFieldValue(cell.field, cell.state.value) ?? t('verify.valueEmpty') }),
       }),
     );
   }

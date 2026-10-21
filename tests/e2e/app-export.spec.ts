@@ -460,7 +460,7 @@ test('仮エクスポートは未確認分を補い、通常へ戻すと従来�
   await draft.check();
   await expect(page.locator('#export-draft-note')).toContainText('最終データではありません');
   await expect(page.locator('#export-preview thead th')).toHaveText([
-    'study_label', 'mortality_pct', 'mortality_pct__source',
+    'study_label', 'mortality_pct', 'mortality_pct__source', 'consult_fields',
   ]);
   await expect(page.locator('#export-preview tbody')).toContainText('AI12');
   await expect(page.locator('#export-preview tbody')).toContainText('Jones 2021');
@@ -475,6 +475,6 @@ test('仮エクスポートは未確認分を補い、通常へ戻すと従来�
   await expect(page.locator('#export-draft-note')).toHaveCount(0);
   await page.locator('#export-format input[value=study_wide]').check();
   await draft.uncheck();
-  await expect(page.locator('#export-preview thead th')).toHaveText(['study_label', 'mortality_pct']);
+  await expect(page.locator('#export-preview thead th')).toHaveText(['study_label', 'mortality_pct', 'consult_fields']);
   await expect(page.locator('#export-preview tbody')).not.toContainText('AI12');
 });

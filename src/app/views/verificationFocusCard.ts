@@ -11,7 +11,7 @@
 //   5. 直近判定バー（ユニットをまたいでも直近判定セルの undo を固定表示する）
 import type { Decision } from '../../domain/decision';
 import { NOT_REPORTED_TOKEN } from '../../domain/annotation';
-import { formatMultiSelectForDisplay } from '../../domain/multiSelect';
+import { formatFieldValue } from '../../lib/formatFieldValue';
 import type { VerificationCell } from '../../features/verification/cells';
 import type { FocusUnit, FocusUnitColumn, FocusUnitRow } from '../../features/verification/focusUnits';
 import type { RobAlgorithmInfo } from '../../features/verification/robAlgorithm';
@@ -104,7 +104,7 @@ function displayValue(cell: VerificationCell): string {
   if (raw === NOT_REPORTED_TOKEN) {
     return t('verify.aiNotReported', { token: NOT_REPORTED_TOKEN });
   }
-  return formatMultiSelectForDisplay(cell.field, raw)!;
+  return formatFieldValue(cell.field, raw)!;
 }
 
 /**

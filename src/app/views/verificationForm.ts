@@ -9,7 +9,7 @@
 //   モードに関わらず共通描画する
 import type { Decision } from '../../domain/decision';
 import type { EntityLevel } from '../../domain/schemaField';
-import { formatMultiSelectForDisplay } from '../../domain/multiSelect';
+import { formatFieldValue } from '../../lib/formatFieldValue';
 import {
   splitDecidedCells,
   type DecidedEntry,
@@ -224,7 +224,7 @@ function renderDecidedRow(
   if (entry.heading !== '') {
     children.push(el('span', { className: 'verify__decided-heading', text: entry.heading }));
   }
-  const valueText = t('verify.decidedValue', { value: formatMultiSelectForDisplay(cell.field, cell.state.value) ?? t('verify.valueEmpty') });
+  const valueText = t('verify.decidedValue', { value: formatFieldValue(cell.field, cell.state.value) ?? t('verify.valueEmpty') });
   children.push(el('span', { className: 'verify__decided-value', text: valueText }));
   // 許容値外の警告（issue #254・形態 B）。この行自体が <button> のため <a> は入れ子にできない
   // （axe: nested-interactive）。非対話バッジ + aria-label / title への連結で伝える
