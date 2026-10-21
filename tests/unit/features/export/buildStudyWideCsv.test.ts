@@ -172,3 +172,46 @@ test('study 項目がなくても末尾の consult_fields 列を出す', () => {
   const result = buildStudyWideCsv([study('d1', 'Study')], [studyRow('d1', 'human_with_ai', {})], []);
   expect(result.csv).toBe(CSV_BOM + 'study_label,consult_fields\r\nStudy,\r\n');
 });
+
+test('仮エクスポートは人の判定を保持し、未検証だけを AI で補う', () => {
+  const studies = [study('s', '確認中'), study('ai', 'AIのみ'), study('c', '裁定'), study('none', '未抽出')];
+  const fields = ['a', 'b', 'c', 'd', 'e'].map((name, i) => field(name, name, i));
+  const rows = [
+    studyRow('s', 'ai', { a: 'AI', b: '補完', c: 'AI', d: 'AI' }),
+    studyRow('s', 'human_with_ai', { a: '人', b: null, c: '', d: 'NR' }),
+    studyRow('ai', 'ai', { a: 'AI' }),
+    studyRow('c', 'consensus', { a: '裁定' }),
+  ];
+  const result = buildStudyWideCsv(studies, rows, fields, [], true);
+  expect(result.csv).toBe(CSV_BOM +
+    'study_label,a,a__source,b,b__source,c,c__source,d,d__source,e,e__source,consult_fields\r\n' +
+    '確認中,人,human,補完,ai_unverified,,human,NR,human,,ai_unverified,\r\n' +
+    'AIのみ,AI,ai_unverified,,ai_unverified,,ai_unverified,,ai_unverified,,ai_unverified,\r\n' +
+    '裁定,裁定,consensus,,ai_unverified,,ai_unverified,,ai_unverified,,ai_unverified,\r\n');
+  expect(result.skippedStudyIds).toEqual(['none']);
+  expect(result.unverifiedCellCount).toBe(11);
+  expect(buildStudyWideCsv(studies, rows, fields, [], false)).toEqual(buildStudyWideCsv(studies, rows, fields));
+});
+
+test('複数選択列も補完した値から展開する', () => {
+  const multi: SchemaField = { ...field('f', 'design', 1), dataType: 'enum', allowedValues: 'A|Source',
+    multiSelect: { exclusiveValues: [], freeTextValues: [] } };
+  expect(buildStudyWideCsv([study('s', 'S')], [studyRow('s', 'ai', { design: 'A' })], [multi], [], true).csv)
+    .toBe(CSV_BOM + 'study_label,design,design__a,design__source_2,design__source,consult_fields\r\nS,A,1,0,ai_unverified,\r\n');
+});
+
+test('仮 wide は要相談の一覧を最後に保ち、値と展開列の後へ source を出す', () => {
+  const multi: SchemaField = { ...field('f2', 'design', 2), dataType: 'enum', allowedValues: 'A|Source',
+    multiSelect: { exclusiveValues: [], freeTextValues: [] } };
+  const fields = [multi, field('f1', 'country', 1)];
+  const rows = [studyRow('d1', 'human_with_ai', { country: 'JP', design: null }),
+    studyRow('d1', 'ai', { country: 'AI', design: 'A' }),
+    studyRow('d2', 'ai', { country: 'AI', design: 'A' })];
+  const result = buildStudyWideCsv([study('d1', 'Study'), study('d2', 'AI')], rows, fields,
+    [flag(), flag({ studyId: 'd2' })], true);
+  expect(result.csv).toBe(CSV_BOM +
+    'study_label,country,country__source,design,design__a,design__source_2,design__source,consult_fields\r\n' +
+    'Study,JP,human,A,1,0,ai_unverified,country\r\n' +
+    'AI,AI,ai_unverified,A,1,0,ai_unverified,\r\n');
+  expect(result.unverifiedCellCount).toBe(3);
+});

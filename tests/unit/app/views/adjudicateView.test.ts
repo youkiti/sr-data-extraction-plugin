@@ -184,6 +184,7 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<AdjudicateViewCal
       },
       export: {
         onSelectFormat: jest.fn(),
+        onChangeDraft: jest.fn(),
         onGenerate: jest.fn(),
         onConfirmGenerate: jest.fn(),
         onCancelGenerate: jest.fn(),

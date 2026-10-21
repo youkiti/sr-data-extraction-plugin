@@ -102,11 +102,11 @@ export function toStudyLabels(
   return studyIds.map((id) => labelById.get(id) ?? id);
 }
 
-export function buildExport(format: ClassicExportFormat, materials: ExportMaterials): BuiltExport {
+export function buildExport(format: ClassicExportFormat, materials: ExportMaterials, draft = false): BuiltExport {
   const { studies, fields } = materials;
   switch (format) {
     case 'study_wide': {
-      const result = buildStudyWideCsv(studies, materials.studyRows, fields, materials.decisions);
+      const result = buildStudyWideCsv(studies, materials.studyRows, fields, materials.decisions, draft);
       return finish(
         format,
         result.csv,
@@ -117,7 +117,7 @@ export function buildExport(format: ClassicExportFormat, materials: ExportMateri
       );
     }
     case 'results_long': {
-      const result = buildResultsLongCsv(studies, materials.resultsRows, fields, materials.decisions);
+      const result = buildResultsLongCsv(studies, materials.resultsRows, fields, materials.decisions, draft);
       return finish(
         format,
         result.csv,
@@ -149,10 +149,11 @@ export function buildExport(format: ClassicExportFormat, materials: ExportMateri
 /** 3 形式まとめて構築する（読み込み 1 回で形式切替を即時にするため） */
 export function buildAllExports(
   materials: ExportMaterials,
+  draft = false,
 ): Record<ClassicExportFormat, BuiltExport> {
   return {
-    study_wide: buildExport('study_wide', materials),
-    results_long: buildExport('results_long', materials),
+    study_wide: buildExport('study_wide', materials, draft),
+    results_long: buildExport('results_long', materials, draft),
     audit: buildExport('audit', materials),
     evidence_quotes: buildExport('evidence_quotes', materials),
   };

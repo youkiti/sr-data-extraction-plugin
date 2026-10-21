@@ -1646,6 +1646,10 @@
               </tbody>
             </table>
           </div>
+          <p>
+            <span class="ja" lang="ja">確認途中で考察やミーティングの準備に使うときは、「未確認分を AI の値で補う（仮エクスポート）」をオンにします（既定はオフ）。study_wide / results_long のみ、未確認の文献・セルを AI の値で補います。最終データではありません。人が確認していない AI の値を含みます。wide の各項目の <code>{field}__source</code> 列、long の <code>source</code> 列で <code>human</code>（人の確認済み）/ <code>consensus</code>（裁定済み）/ <code>ai_unverified</code>（未確認）を区別し、ファイル名に <code>_draft</code> が付きます。audit・R セット・Methods 文案・根拠の表には影響しません。最終データを出すときはオフに戻してください。</span>
+            <span class="en" lang="en">For discussion or meeting preparation while verification is ongoing, enable “Fill unverified cells with AI values (draft export)” (off by default). Only study_wide and results_long fill unverified studies and cells with AI values. This is not final data: it includes AI values that have not been verified by a human. Each wide field has a <code>{field}__source</code> column; long has a <code>source</code> column: <code>human</code> (verified), <code>consensus</code> (adjudicated), or <code>ai_unverified</code> (unverified). Filenames include <code>_draft</code>. Audit, R sets, Methods text and evidence quotes remain unchanged. Turn this option off when exporting final data.</span>
+          </p>
           <figure class="shot shot--screen">
             <a href="screenshots/help-11-export.png" target="_blank" rel="noopener noreferrer">
               <img

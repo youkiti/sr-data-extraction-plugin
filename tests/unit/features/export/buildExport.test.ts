@@ -251,3 +251,27 @@ test('wide / long の印は確定 annotator のみで、解除後は空欄・未
   expect(buildExport('study_wide', { ...materials, decisions: [{ ...flag, annotator: 'someone-else' }] }).previewRows[0]?.at(-1)).toBe('');
   expect(buildExport('results_long', { ...materials, decisions: [{ ...resultFlag, annotator: 'someone-else' }] }).previewRows[0]?.at(-1)).toBe('');
 });
+
+test('仮指定は wide / long のみへ伝わり、audit / 引用のバイト列は変わらない', () => {
+  const materials = makeMaterials({
+    studyRows: [makeStudyRow({ annotator: 'ai', annotatorType: 'ai' })],
+    resultsRows: [makeResultsRow({ annotator: 'ai', annotatorType: 'ai' })],
+  });
+  const normal = buildAllExports(materials);
+  const draft = buildAllExports(materials, true);
+  expect(buildAllExports(materials, false)).toEqual(normal);
+  expect(draft.study_wide.previewRows[0]).toEqual(['Smith 2020', '120', 'ai_unverified', '']);
+  expect(draft.results_long.previewRows[0]?.at(-1)).toBe('ai_unverified');
+  expect(draft.audit).toEqual(normal.audit);
+  expect(draft.evidence_quotes).toEqual(normal.evidence_quotes);
+});
+
+test('仮指定と要相談の履歴を wide / long の両方へ渡す', () => {
+  const materials = makeMaterials({ decisions: [makeDecision({ action: 'flag_consult' }),
+    makeDecision({ action: 'flag_consult', fieldId: 'f-events', entityKey: 'arm:1' })] });
+  const result = buildAllExports(materials, true);
+  expect(result.study_wide.header).toEqual(['study_label', 'sample_size_total', 'sample_size_total__source', 'consult_fields']);
+  expect(result.study_wide.previewRows[0]).toEqual(['Smith 2020', '120', 'human', 'sample_size_total']);
+  expect(result.results_long.header.slice(-2)).toEqual(['flag', 'source']);
+  expect(result.results_long.previewRows[0]?.slice(-2)).toEqual(['consult', 'human']);
+});
