@@ -12,7 +12,7 @@ import type { SchemaEditorRow } from '../types';
 export const DRAFT_SCHEMA_SKILL_NAME = 'draft-schema';
 
 /** プロンプト版数。プロンプト文言・スキーマを変えたら必ずインクリメントする */
-export const DRAFT_SCHEMA_PROMPT_VERSION = 3;
+export const DRAFT_SCHEMA_PROMPT_VERSION = 4;
 
 /** サンプル論文 1 本ぶんのページ別本文（extracted_texts/{id}.txt 由来） */
 export interface DraftSchemaSamplePaper {
@@ -42,6 +42,9 @@ export interface DraftSchemaPromptInput {
  * 版数 3: 件数集計・分類する項目は enum（unclear 必須、網羅できない場合は other も追加）、
  * 原文の引用や記述を保持する項目に限り text を提案する。
  *
+ * 版数 4: レビュータイプにかかわらず、プロトコルとサンプル論文の本文から群比較・
+ * 群別や結果別の数値データの有無を判断し、どちらもなければ study レベルだけで提案する。
+ *
  * 末尾の "Propose 10-40 fields" は AI が一度に提案する項目数の目安であり、
  * スキーマ全体の項目数上限ではない（issue #80）。ユーザーは表形式エディタで項目を
  * 自由に追加・編集でき、SchemaFields タブ・CSV エクスポートのいずれも項目数を制限しない
@@ -63,11 +66,12 @@ Rules:
 - "required": true for fields essential to the review question; extraction must report not_reported explicitly for them.
 - "extraction_instruction": a concrete instruction in English telling the extractor exactly what to look for and how to report it.
 - "example": a realistic example value as it would appear in an article, or null.
-- First infer the review type from the protocol, then cover the protocol's key concepts at the entity levels that fit that type:
+- Choose entity levels from the study designs and data needed for the review, using both the protocol and the full text of the sample articles, regardless of the review type's name. If there are neither between-group comparisons nor per-group or per-result numeric data (such as N, event counts, means or effect estimates), do not create any "arm" or "outcome_result" fields; propose all fields at the "study" level. This applies, for example, to qualitative studies, cross-sectional surveys and concept synthesis, even when the review is not called scoping or mapping. Represent multiple domains or themes with study-level enum fields for categories or text fields for descriptions, rather than separate result instances. A study-level total N alone does not require "arm" or "outcome_result" fields.
+- First infer the review type from the protocol and sample articles, then cover the protocol's key concepts at the entity levels that fit the actual comparisons and numeric data:
   - Intervention (comparative) reviews: identification and methods fields, population fields, arm-level intervention fields, and outcome_result fields for every protocol-defined outcome (for binary outcomes: events and totals per arm; for continuous: mean, SD and N per arm).
   - Diagnostic test accuracy reviews: study-level fields for the target condition, setting, index test and reference standard details; outcome_result fields repeated per index test for TP, FP, FN, TN and reported sensitivity/specificity, plus a positivity-threshold field when thresholds vary. Use "arm" only when the protocol actually compares participant groups.
   - Prognosis reviews: study-level cohort and follow-up fields; outcome_result fields repeated per prognostic factor and outcome (and timepoint when reported) for the reported effect estimates (HR, OR, RR, ...) with their confidence intervals and adjustment variables. Use "arm" only when the studies define distinct exposure groups.
-  - Scoping or mapping reviews: chart the concepts the protocol lists as "study" level fields. Do not invent "arm" or "outcome_result" fields when the protocol defines no per-group or per-result numeric data.
+  - Scoping or mapping reviews: chart the concepts the protocol lists as "study" level fields, following the study-design and data rule above.
   - Other review types (prevalence, qualitative, ...): choose the closest structure above; prefer "study" level when in doubt.
 - Propose 10-40 fields. Do not include risk-of-bias domains.
 `.trim();

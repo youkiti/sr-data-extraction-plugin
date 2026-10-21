@@ -138,7 +138,7 @@ describe('parseDraftSchemaResponse', () => {
 
 describe('定数', () => {
   test('プロンプト版数とシステムプロンプト・応答スキーマが定義されている', () => {
-    expect(DRAFT_SCHEMA_PROMPT_VERSION).toBe(3);
+    expect(DRAFT_SCHEMA_PROMPT_VERSION).toBe(4);
     expect(DRAFT_SCHEMA_SYSTEM_PROMPT).toContain('snake_case');
     expect(DRAFT_SCHEMA_RESPONSE_SCHEMA['type']).toBe('array');
   });
@@ -151,5 +151,24 @@ describe('定数', () => {
     expect(DRAFT_SCHEMA_SYSTEM_PROMPT).toContain('Diagnostic test accuracy reviews');
     expect(DRAFT_SCHEMA_SYSTEM_PROMPT).toContain('Prognosis reviews');
     expect(DRAFT_SCHEMA_SYSTEM_PROMPT).toContain('Scoping or mapping reviews');
+  });
+
+  test('群比較も群別・結果別の数値もなければレビュー名によらず study のみを提案する', () => {
+    expect(DRAFT_SCHEMA_SYSTEM_PROMPT).toContain('using both the protocol and the full text of the sample articles');
+    expect(DRAFT_SCHEMA_SYSTEM_PROMPT).toContain("regardless of the review type's name");
+    expect(DRAFT_SCHEMA_SYSTEM_PROMPT).toContain('neither between-group comparisons nor per-group or per-result numeric data');
+    expect(DRAFT_SCHEMA_SYSTEM_PROMPT).toContain('do not create any "arm" or "outcome_result" fields; propose all fields at the "study" level');
+    expect(DRAFT_SCHEMA_SYSTEM_PROMPT).toContain('qualitative studies, cross-sectional surveys and concept synthesis');
+    expect(DRAFT_SCHEMA_SYSTEM_PROMPT).toContain('study-level enum fields for categories or text fields for descriptions');
+    expect(DRAFT_SCHEMA_SYSTEM_PROMPT).toContain('A study-level total N alone does not require "arm" or "outcome_result" fields');
+  });
+
+  test('比較・DTA・予後の数値結果とカテゴリ項目の既存規則を保持する', () => {
+    expect(DRAFT_SCHEMA_SYSTEM_PROMPT).toContain('arm-level intervention fields, and outcome_result fields');
+    expect(DRAFT_SCHEMA_SYSTEM_PROMPT).toContain('outcome_result fields repeated per index test for TP, FP, FN, TN');
+    expect(DRAFT_SCHEMA_SYSTEM_PROMPT).toContain('outcome_result fields repeated per prognostic factor and outcome');
+    expect(DRAFT_SCHEMA_SYSTEM_PROMPT).toContain('Use "enum" for fields that will be counted or classified by category');
+    expect(DRAFT_SCHEMA_SYSTEM_PROMPT).toContain('Every enum must include "unclear"; also include "other"');
+    expect(DRAFT_SCHEMA_SYSTEM_PROMPT).toContain('Use "text" only for fields where quotations or descriptions should be preserved as written');
   });
 });
