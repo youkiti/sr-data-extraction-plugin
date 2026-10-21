@@ -563,7 +563,8 @@ function renderEditorRow(
     });
     suggest.disabled = state.schema.enumSuggestion?.loading === true;
     suggest.addEventListener('click', () => ctx.schema.onSuggestEnum(index));
-    instructionChildren.push(suggest);
+    // 直後の「複数の引用を許可」の文言を折らないよう、ボタンは 1 行に分ける
+    instructionChildren.push(el('div', {}, [suggest]));
     const checkbox = el('input', {
       className: 'schema__multi-quote',
       attributes: { type: 'checkbox' },
@@ -1260,6 +1261,7 @@ function renderEnumSuggestion(suggestion: EnumSuggestion, ctx: ViewContext): HTM
   const children: HTMLElement[] = [
     headingWithHelp('h3', t('schema.enumTitle', { label: suggestion.row.fieldLabel }), 'schema-enum'),
   ];
+  const actions: HTMLElement[] = [];
   if (suggestion.loading) {
     children.push(el('p', { text: t('schema.enumLoading'), attributes: { role: 'status' } }));
   } else if (suggestion.values !== null) {
@@ -1269,19 +1271,24 @@ function renderEnumSuggestion(suggestion: EnumSuggestion, ctx: ViewContext): HTM
     const append = el('input', { id: 'schema-enum-instruction', attributes: { type: 'checkbox' } });
     append.checked = suggestion.appendInstruction;
     append.addEventListener('change', () => ctx.schema.onUpdateEnumSuggestion({ appendInstruction: append.checked }));
-    const apply = el('button', { id: 'schema-enum-apply', text: t('schema.enumApply'), attributes: { type: 'button' } });
+    const apply = el('button', {
+      id: 'schema-enum-apply', className: 'schema__primary', text: t('schema.enumApply'), attributes: { type: 'button' },
+    });
     apply.addEventListener('click', () => ctx.schema.onApplyEnumSuggestion());
     children.push(
       el('label', { attributes: { for: values.id }, text: t('schema.enumValues') }), values,
-      el('label', {}, [append, t('schema.enumAppendInstruction')]), apply,
+      el('label', {}, [append, t('schema.enumAppendInstruction')]),
     );
+    actions.push(apply);
   }
   if (suggestion.error !== null) {
     children.push(el('p', { className: 'schema__error', text: suggestion.error, attributes: { role: 'alert' } }));
   }
   const cancel = el('button', { id: 'schema-enum-cancel', text: t('common.cancel'), attributes: { type: 'button' } });
   cancel.addEventListener('click', () => ctx.schema.onCancelEnumSuggestion());
-  children.push(cancel);
+  actions.push(cancel);
+  // 既存のフォームと同じく、ボタンは grid の 1 行に横並びで置く（直接置くと表の幅いっぱいに伸びる）
+  children.push(el('div', { className: 'schema__actions' }, actions));
   return el('section', { id: 'schema-enum-suggestion', className: 'schema__redraft-form' }, children);
 }
 
