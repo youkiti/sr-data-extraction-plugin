@@ -7,8 +7,14 @@ import {
   loadReviewers,
   requestAddReviewer,
   revokeReviewer,
+  reshareReviewer,
   type ReviewerAdminServiceDeps,
 } from '../../../../src/app/services/reviewerAdminService';
+import { listFilePermissions } from '../../../../src/lib/google/drive';
+jest.mock('../../../../src/lib/google/drive', () => ({
+  ...jest.requireActual('../../../../src/lib/google/drive'),
+  listFilePermissions: jest.fn(),
+}));
 import { createInitialState, createStore, type Store } from '../../../../src/app/store';
 import type { ReviewerAssignment } from '../../../../src/domain/reviewer';
 import {
@@ -69,6 +75,95 @@ beforeEach(() => {
   jest.clearAllMocks();
   appendReviewerAssignmentMock.mockResolvedValue(undefined);
   shareProjectWithReviewerMock.mockResolvedValue(undefined);
+  jest.mocked(listFilePermissions).mockResolvedValue({ emails: new Set(), hasBroadAccess: false });
+});
+
+describe('フォルダ共有状況と再共有', () => {
+  test('一覧の後にフォルダの権限を読み込む', async () => {
+    readReviewerAssignmentsMock.mockResolvedValue([]);
+    const sharing = { emails: new Set(['r@example.com']), hasBroadAccess: true };
+    jest.mocked(listFilePermissions).mockResolvedValue(sharing);
+    const store = makeStore();
+    expect(store.getState().reviewers.folderSharing).toEqual({ status: 'unchecked' });
+    await loadReviewers(store, deps);
+    expect(listFilePermissions).toHaveBeenCalledWith('folder-1', deps.google);
+    expect(store.getState().reviewers.folderSharing).toEqual({ status: 'checked', ...sharing });
+  });
+
+  test('権限取得失敗でも一覧を残し loadError は立てない', async () => {
+    const rows: ReviewerAssignment[] = [{ email: 'r@example.com', role: 'reviewer', reviewMode: 'with_ai', assignedBy: 'o', assignedAt: 't' }];
+    readReviewerAssignmentsMock.mockResolvedValue(rows);
+    jest.mocked(listFilePermissions).mockRejectedValue(new Error('403'));
+    const store = makeStore();
+    await loadReviewers(store, deps);
+    expect(store.getState().reviewers.assignments).toEqual(rows);
+    expect(store.getState().reviewers.loadError).toBeNull();
+    expect(store.getState().reviewers.folderSharing).toEqual({ status: 'unknown' });
+  });
+
+  test('再共有成功で対象 email の警告だけ消し、権限を再取得する', async () => {
+    const store = makeStore();
+    store.setState({ reviewers: { ...store.getState().reviewers, shareErrors: [
+      { email: 'R@example.com', reason: '403' },
+      { email: 'other@example.com', reason: '404' },
+    ] } });
+    let complete!: () => void;
+    shareProjectWithReviewerMock.mockImplementationOnce(() => new Promise<void>((resolve) => { complete = resolve; }));
+    const pending = reshareReviewer(store, deps, 'r@example.com');
+    expect(store.getState().reviewers.resharing).toBe(true);
+    await reshareReviewer(store, deps, 'other@example.com');
+    expect(shareProjectWithReviewerMock).toHaveBeenCalledTimes(1);
+    complete();
+    await pending;
+    expect(shareProjectWithReviewerMock).toHaveBeenCalledWith(PROJECT, 'r@example.com', deps.google);
+    expect(store.getState().reviewers.shareErrors).toEqual([{ email: 'other@example.com', reason: '404' }]);
+    expect(store.getState().reviewers.folderSharing.status).toBe('checked');
+    expect(store.getState().reviewers.resharing).toBe(false);
+    expect(document.body.textContent).toContain('r@example.com にシートとフォルダを共有し直しました');
+    expect(appendReviewerAssignmentMock).not.toHaveBeenCalled();
+  });
+
+  test('再共有失敗は理由つきの警告を残す', async () => {
+    const store = makeStore();
+    shareProjectWithReviewerMock.mockRejectedValueOnce(new Error('folder denied'));
+    await reshareReviewer(store, deps, 'r@example.com');
+    expect(store.getState().reviewers.shareErrors).toEqual([{ email: 'r@example.com', reason: 'folder denied' }]);
+    expect(store.getState().reviewers.resharing).toBe(false);
+    expect(listFilePermissions).not.toHaveBeenCalled();
+    expect(document.body.textContent).toContain('r@example.com への共有に失敗しました: folder denied');
+  });
+
+  test('未選択・保存中は再共有しない', async () => {
+    await reshareReviewer(makeStore(false), deps, 'r@example.com');
+    const store = makeStore();
+    store.setState({ reviewers: { ...store.getState().reviewers, saving: true } });
+    await reshareReviewer(store, deps, 'r@example.com');
+    expect(shareProjectWithReviewerMock).not.toHaveBeenCalled();
+  });
+
+  test('未注入の再共有もシート writer とフォルダ reader を送る', async () => {
+    const fetch = jest.fn().mockResolvedValue({ ok: true, status: 200, json: async () => ({}) } as Response);
+    await reshareReviewer(makeStore(), {
+      google: { fetch, getAccessToken: async () => 't' }, profile: deps.profile,
+    }, 'r@example.com');
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(fetch.mock.calls[0][0]).toContain('/sheet-1/permissions?sendNotificationEmail=true');
+    expect(JSON.parse((fetch.mock.calls[0][1] as RequestInit).body as string)).toMatchObject({ role: 'writer', emailAddress: 'r@example.com' });
+    expect(fetch.mock.calls[1][0]).toContain('/folder-1/permissions?sendNotificationEmail=false');
+    expect(JSON.parse((fetch.mock.calls[1][1] as RequestInit).body as string)).toMatchObject({ role: 'reader' });
+  });
+
+  test('追加失敗の警告を残し、追加の再試行成功で消す', async () => {
+    const store = makeStore();
+    const input = { email: 'r@example.com', role: 'reviewer' as const, reviewMode: 'with_ai' as const };
+    shareProjectWithReviewerMock.mockRejectedValueOnce('folder error');
+    await requestAddReviewer(store, deps, input);
+    expect(store.getState().reviewers.shareErrors).toEqual([{ email: input.email, reason: 'folder error' }]);
+    expect(store.getState().reviewers.assignments).toHaveLength(1);
+    await requestAddReviewer(store, deps, input);
+    expect(store.getState().reviewers.shareErrors).toEqual([]);
+    expect(listFilePermissions).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('loadReviewers', () => {

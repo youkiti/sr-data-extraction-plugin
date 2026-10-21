@@ -22,6 +22,7 @@ const stubCtx: ViewContext = {
     onDismissReviewerBlocked: jest.fn(),
     onRevokeReviewer: jest.fn(),
     onCopyInvite: jest.fn(),
+    onReshareReviewer: jest.fn(),
   },
   documents: {
     onUpdateMergeReviewSet: jest.fn(),

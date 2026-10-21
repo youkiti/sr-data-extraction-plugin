@@ -7,12 +7,54 @@ import {
   getFileMd5,
   getFileText,
   listFolderPdfs,
+  listFilePermissions,
   listRecentSpreadsheets,
   moveFileToFolder,
   shareFileWithUser,
   uploadBinaryFile,
   uploadTextFile,
 } from '../../../../src/lib/google/drive';
+
+describe('listFilePermissions', () => {
+  test('全ページの user email を小文字で集め、email 欠落と group は除く', async () => {
+    const fetch = jest.fn()
+      .mockResolvedValueOnce(okJson({
+        nextPageToken: 'next/+token',
+        permissions: [
+          { type: 'user', role: 'writer', emailAddress: 'Owner@Example.com' },
+          { type: 'user', role: 'reader' },
+          { type: 'group', role: 'reader', emailAddress: 'group@example.com' },
+        ],
+      }))
+      .mockResolvedValueOnce(okJson({ permissions: [
+        { type: 'user', role: 'reader', emailAddress: 'owner@example.com' },
+        { type: 'user', role: 'reader', emailAddress: 'R@Example.com' },
+      ] }));
+    const result = await listFilePermissions('folder/id', {
+      fetch, getAccessToken: async () => 't',
+    });
+    expect(result).toEqual({ emails: new Set(['owner@example.com', 'r@example.com']), hasBroadAccess: true });
+    const first = new URL(fetch.mock.calls[0][0] as string);
+    expect(first.pathname).toBe('/drive/v3/files/folder%2Fid/permissions');
+    expect(first.searchParams.get('fields')).toBe('nextPageToken,permissions(type,role,emailAddress)');
+    expect(first.searchParams.get('pageSize')).toBe('100');
+    expect(first.searchParams.has('pageToken')).toBe(false);
+    expect(new URL(fetch.mock.calls[1][0] as string).searchParams.get('pageToken')).toBe('next/+token');
+    expect(fetch.mock.calls[0][1]).toMatchObject({ method: 'GET' });
+  });
+
+  test.each(['anyone', 'domain', 'group'])('%s 権限があれば広範囲共有として返す', async (type) => {
+    const fetch = jest.fn().mockResolvedValue(okJson({ permissions: [{ type, role: 'reader' }] }));
+    expect(await listFilePermissions('f', { fetch, getAccessToken: async () => 't' }))
+      .toEqual({ emails: new Set(), hasBroadAccess: true });
+  });
+
+  test('permissions が無い応答は空集合', async () => {
+    const fetch = jest.fn().mockResolvedValue(okJson({}));
+    expect(await listFilePermissions('f', { fetch, getAccessToken: async () => 't' }))
+      .toEqual({ emails: new Set(), hasBroadAccess: false });
+  });
+});
 
 function okJson(body: unknown): Response {
   return {

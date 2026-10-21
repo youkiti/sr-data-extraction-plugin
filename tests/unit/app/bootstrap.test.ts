@@ -1748,6 +1748,7 @@ describe('bootstrapApp', () => {
       currentProject: PROJECT,
       home: COUNTS_LOADED,
       reviewers: {
+        ...createInitialState().reviewers,
         assignments: [],
         loading: false,
         loadError: null,
@@ -4727,6 +4728,7 @@ describe('bootstrapApp: 独立二重レビュー機能', () => {
       currentProject: PROJECT,
       home: COUNTS_LOADED,
       reviewers: {
+        ...createInitialState().reviewers,
         assignments: [
           {
             email: 'r1@example.com',
@@ -4776,6 +4778,12 @@ describe('bootstrapApp: 独立二重レビュー機能', () => {
     expect(writeText).toHaveBeenCalledTimes(1);
     expect(toastTexts()).toContain('レビュー依頼文をコピーしました');
 
+    // 再共有ボタンからサービスへ配線され、完了すると再び操作できる。
+    (document.querySelector('.reviewers__reshare') as HTMLButtonElement).click();
+    await flush();
+    expect(toastTexts()).toContain('r1@example.com にシートとフォルダを共有し直しました');
+    expect((document.querySelector('.reviewers__reshare') as HTMLButtonElement).disabled).toBe(false);
+
     // 既存 reviewer の review_mode だけを変える送信はモード変更確認ダイアログへ（onAddReviewer → confirmingChange）
     const email2 = document.getElementById('reviewer-email') as HTMLInputElement;
     email2.value = 'r1@example.com';
@@ -4822,6 +4830,7 @@ describe('bootstrapApp: 独立二重レビュー機能', () => {
       // 既定（E2E seam）は「読込済み（0 件）」扱いで自動読込を抑止するため、ここでは明示的に
       // 未読込（null）へ戻して起動時の自動読込（loadReviewers）を実際に走らせる
       reviewers: {
+        ...createInitialState().reviewers,
         assignments: null,
         loading: false,
         loadError: null,

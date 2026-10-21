@@ -445,6 +445,11 @@ test('作業済みレビュアーを独立モードへ変更すると登録も�
     }
   });
   await page.route('https://www.googleapis.com/drive/v3/**', async (route) => {
+    // フォルダの共有状況の読み取り（GET）は共有に当たらないため数えない
+    if (route.request().method() === 'GET') {
+      await route.fulfill({ json: { permissions: [] } });
+      return;
+    }
     permissionUrls.push(route.request().url());
     await route.fulfill({ json: {} });
   });

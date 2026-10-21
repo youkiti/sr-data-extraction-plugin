@@ -437,6 +437,11 @@ test('owner のレビュアー管理カードで追加すると Reviewers タブ
   // 追加時の Drive 自動共有（permissions.create）を捕捉する。未 route だと実ネットワークへ出る
   const sharePermissions: Array<{ fileId: string; body: string }> = [];
   await page.route('https://www.googleapis.com/drive/v3/files/**', async (route) => {
+    // フォルダの共有状況の読み取り（GET）は共有に当たらないため数えない
+    if (route.request().method() === 'GET') {
+      await route.fulfill({ json: { permissions: [] } });
+      return;
+    }
     const url = decodeURIComponent(route.request().url());
     const fileId = url.match(/\/files\/([^/?]+)\/permissions/)?.[1] ?? '';
     sharePermissions.push({ fileId, body: route.request().postData() ?? '' });

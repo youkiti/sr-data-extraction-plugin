@@ -108,6 +108,14 @@ export interface ReviewerFormInput {
 
 /** owner の「レビュアー管理」カードの状態 */
 export interface ReviewersState {
+  /** フォルダ共有状況。unchecked = 未確認、unknown = 権限一覧を読めなかった、checked = 確認済み。 */
+  folderSharing:
+    | { status: 'unchecked' | 'unknown' }
+    | { status: 'checked'; emails: Set<string>; hasBroadAccess: boolean };
+  /** シートとフォルダの共有し直しを実行中。 */
+  resharing: boolean;
+  /** 共有に失敗したメールアドレスと理由。 */
+  shareErrors: Array<{ email: string; reason: string }>;
   /** email ごとに畳み込んだ現在の登録状態（revoked 含む）。null = 未読込 */
   assignments: ReviewerAssignment[] | null;
   loading: boolean;
@@ -859,6 +867,9 @@ export function createInitialState(): AppState {
       confirmingResplit: null,
     },
     reviewers: {
+      folderSharing: { status: 'unchecked' },
+      resharing: false,
+      shareErrors: [],
       assignments: null,
       loading: false,
       loadError: null,
