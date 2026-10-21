@@ -1834,6 +1834,45 @@ describe('キーボードガード', () => {
 });
 
 describe('群構成の確定ゲート（arm 未確定時。ui-states.md §3 `#/verify`）', () => {
+  test.each([
+    ['ja', 'human_with_ai', '全体'],
+    ['en', 'human_independent', 'All participants'],
+  ] as const)('%s / %s: 0 群から単群確定し、アウトカムを開いて改訂できる', async (language, annotatorType, name) => {
+    setUiLanguage(language);
+    try {
+      const onArmConfirm = jest.fn();
+      const fields = [...FIELDS, makeField({ fieldId: 'f-outcome', entityLevel: 'outcome_result' })];
+      const { panel } = await createPanel({ armStructure: null, fields, evidence: [], annotatorType }, { onArmConfirm });
+      expect(panel.root.querySelectorAll('.verify__arm-row')).toHaveLength(0);
+      const outcomeTab = () => panel.root.querySelectorAll<HTMLButtonElement>('.verify__tab')[2]!;
+      expect(outcomeTab().disabled).toBe(true);
+      panel.root.querySelector<HTMLButtonElement>('#verify-arm-confirm-single')!.click();
+      expect(onArmConfirm).toHaveBeenLastCalledWith([{ armKey: 'arm:1', armName: name }]);
+      expect(panel.root.querySelector('.verify__arm-summary')?.textContent).toContain(name);
+      expect(outcomeTab().disabled).toBe(false);
+      expect(outcomeTab().hasAttribute('aria-describedby')).toBe(false);
+      expect(outcomeTab().title).toBe('');
+      outcomeTab().click();
+      expect(outcomeTab().getAttribute('aria-selected')).toBe('true');
+      panel.root.querySelector<HTMLButtonElement>('#verify-arm-revise')!.click();
+      const input = panel.root.querySelector<HTMLInputElement>('.verify__arm-name')!;
+      expect(input.value).toBe(name);
+      input.value = '調査対象者';
+      input.dispatchEvent(new Event('change'));
+      panel.root.querySelector<HTMLButtonElement>('.verify__arm-add')!.click();
+      const added = panel.root.querySelectorAll<HTMLInputElement>('.verify__arm-name')[1]!;
+      added.value = '追加群';
+      added.dispatchEvent(new Event('change'));
+      panel.root.querySelector<HTMLButtonElement>('#verify-arm-confirm')!.click();
+      expect(onArmConfirm).toHaveBeenLastCalledWith([
+        { armKey: 'arm:1', armName: '調査対象者' }, { armKey: 'arm:2', armName: '追加群' },
+      ]);
+      panel.dispose();
+    } finally {
+      setUiLanguage('ja');
+    }
+  });
+
   test('未確定: arm タブがディムされ、AI ドラフトを初期値にした編集カードが出る', async () => {
     const { panel } = await createPanel({ armStructure: null });
     const tabs = panel.root.querySelectorAll<HTMLButtonElement>('.verify__tab');

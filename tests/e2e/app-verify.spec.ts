@@ -2735,3 +2735,24 @@ test('判定の保存中は件数と離脱確認を表示し、決着後に解�
   const results = await new AxeBuilder({ page }).analyze();
   expect(results.violations).toEqual([]);
 });
+
+
+test('0 群から単群として確定するとアウトカムタブが開く', async ({ page }) => {
+  const { appendUrls } = await setupRoutes(page, {
+    schemaRows: [STUDY_FIELD_ROW, OUTCOME_FIELD_ROW],
+    evidenceRows: [EVIDENCE_ROW_1],
+  });
+  await initApp(page, '#/verify?study=study-1');
+  await expect(page.locator('.verify__panes')).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator('.verify__arm-name')).toHaveCount(0);
+  const outcomeTab = page.locator('.verify__tab', { hasText: 'アウトカム' });
+  await expect(outcomeTab).toBeDisabled();
+  await expect(outcomeTab).toHaveAttribute('title', '群構成を確定すると開きます');
+  await page.locator('#verify-arm-confirm-single').click();
+  await expect(page.locator('.verify__arm-summary')).toContainText('全体');
+  await expect(outcomeTab).toBeEnabled();
+  await outcomeTab.click();
+  await expect(outcomeTab).toHaveAttribute('aria-selected', 'true');
+  await expect(page.locator('#verify-outcome-add')).toBeVisible();
+  await expect.poll(() => appendUrls.filter((url) => url.includes('ArmStructures!A1:append')).length).toBeGreaterThan(0);
+});

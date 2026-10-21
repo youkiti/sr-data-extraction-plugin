@@ -970,6 +970,10 @@ export const enApp: Record<keyof typeof jaApp, string> = {
   'verify.armRemoveAria': 'Remove arm {key}',
   'verify.armAdd': 'Add an arm',
   'verify.armConfirm': 'Confirm the arm structure',
+  'verify.armConfirmSingle': 'Confirm as a single arm (no group comparison)',
+  'verify.armSingleName': 'All participants',
+  'verify.armSingleHint': 'For studies without group comparisons, choose “Confirm as a single arm (no group comparison)”.',
+  'verify.lockedReason': 'Confirm the arm structure to open this tab',
   'verify.armLead':
     'Confirm the arm structure first (the AI draft is the initial value; confirm the names and number of arms)',
   'verify.armLeadIndependent':
