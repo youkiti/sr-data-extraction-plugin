@@ -16,6 +16,7 @@ import {
   setVerifyAssignedOnly,
   setVerifyLayoutMode,
   setVerifyPaneLayout,
+  syncVerifyTargetProgress,
 } from '../../../../src/app/services/verifyService';
 import { relocateQuote } from '../../../../src/app/services/relocateQuoteService';
 import {
@@ -1805,6 +1806,24 @@ describe('担当セットによる検証対象', () => {
     const reviewer = assignedStore('reviewer_with_ai');
     setVerifyAssignedOnly(reviewer, true);
     expect(reviewer.getState().verify.assignedOnly).toBe(false);
+  });
+  test('syncVerifyTargetProgress: 該当 study の進捗だけを書き換え、同値・未読込・不明 study では store を更新しない', () => {
+    const other = makeTarget({ study: makeStudy({ studyId: 'study-2' }) });
+    const store = makeStore({ verify: { targets: [makeTarget(), other] } });
+    const listener = jest.fn();
+    store.subscribe(listener);
+    const progress = { decided: 1, total: 1, byTab: [] };
+    syncVerifyTargetProgress(store, 'study-doc-1', progress);
+    const targets = store.getState().verify.targets!;
+    expect(targets).toEqual([expect.objectContaining({ progress }), other]);
+    expect(targets[1]).toBe(other);
+    expect(listener).toHaveBeenCalledTimes(1);
+    syncVerifyTargetProgress(store, 'study-doc-1', { decided: 1, total: 1, byTab: [] });
+    syncVerifyTargetProgress(store, 'missing', progress);
+    expect(listener).toHaveBeenCalledTimes(1);
+    const unloaded = makeStore({ verify: { targets: null } });
+    syncVerifyTargetProgress(unloaded, 'study-doc-1', progress);
+    expect(unloaded.getState().verify.targets).toBeNull();
   });
   test.each(['reviewer_with_ai', 'reviewer_independent', 'adjudicator'] as const)(
     '%s のセット読込失敗はキャッシュ済み一覧も隠す',

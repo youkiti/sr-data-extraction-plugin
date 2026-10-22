@@ -671,6 +671,30 @@ export function setVerifyAssignedOnly(store: Store, value: boolean): void {
   patchVerify(store, { assignedOnly: value });
 }
 
+/**
+ * 検証パネル内の最新進捗を一覧（study セレクタの「判定済み n / m」）へ書き戻す。
+ * 一覧の progress は読込時点の値のため、判定のたびに反映しないと再読込まで 0 / m のまま残る。
+ * パネルは描画のたびに同じ値を通知するので、値が変わらなければ store を更新しない（再描画ループ防止）
+ */
+export function syncVerifyTargetProgress(
+  store: Store,
+  studyId: string,
+  progress: VerifyTarget['progress'],
+): void {
+  const targets = store.getState().verify.targets;
+  const target = targets?.find((candidate) => candidate.study.studyId === studyId);
+  if (
+    targets === null ||
+    target === undefined ||
+    (target.progress.decided === progress.decided && target.progress.total === progress.total)
+  ) {
+    return;
+  }
+  patchVerify(store, {
+    targets: targets.map((candidate) => (candidate === target ? { ...candidate, progress } : candidate)),
+  });
+}
+
 /** 引用一覧を排他制御下で追記し、失敗をパネルへ返す。 */
 export async function persistVerifyQuoteSet(
   store: Store, deps: VerificationDeps, rows: readonly QuoteSetRow[],

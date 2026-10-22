@@ -12,6 +12,7 @@ import { canAskPaper } from '../../features/verification/chatAssist';
 import { t } from '../../lib/i18n';
 import { el } from '../ui/dom';
 import { headingWithHelp } from '../ui/helpButton';
+import type { VerificationProgress } from '../../features/verification/progress';
 import type { AppState, VerifyTarget } from '../store';
 import { renderAskPaperPanel } from './askPaperPanel';
 import { renderConflictWarning } from './conflictWarning';
@@ -217,12 +218,22 @@ export function renderVerifyView(state: AppState, ctx: ViewContext): HTMLElement
   const selectedTarget = verify.targets.find(
     (target) => target.study.studyId === verify.selectedStudyId,
   );
-  let onProgressChange: ((progress: { decided: number; total: number }) => void) | undefined;
+  let onProgressChange: ((progress: VerificationProgress) => void) | undefined;
   if (selectedTarget !== undefined) {
+    // セレクタの「判定済み n / m」を判定のたびに一覧へ書き戻す（値が変わったときだけ）。
+    // パネルは描画中に通知してくるため、store 更新は描画後の microtask へ送る
+    const syncSelector = (progress: VerificationProgress): void => {
+      if (progress.decided === selectedTarget.progress.decided && progress.total === selectedTarget.progress.total) {
+        return;
+      }
+      queueMicrotask(() => ctx.verify.onProgressChange(selectedTarget.study.studyId, progress));
+    };
+    onProgressChange = syncSelector;
     if (canCompare) {
       const container = el('div');
       let countsRequested = false;
       onProgressChange = (progress) => {
+        syncSelector(progress);
         container.replaceChildren();
         if (progress.total === 0 || progress.decided !== progress.total) return;
         if (!countsRequested && state.adjudicate.rows === null &&
