@@ -222,25 +222,26 @@ function saveFileAccessRecord(
 
 /**
  * Documents から付与が必要な Drive ファイル ID（PDF = drive_file_id / 抽出テキスト = text_ref）を
- * 重複なく集める。sampleTextId は到達性確認に使う先頭の抽出テキスト ID（解析可能なものが無ければ null）
+ * 重複なく集める。files は試し読み対象の選択と失敗時の案内に使う。
  */
 export function collectRequiredFileIds(documents: readonly DocumentRecord[]): {
   ids: string[];
-  sampleTextId: string | null;
+  files: { id: string; filename: string; kind: 'text' | 'pdf' }[];
 } {
   const ids = new Set<string>();
-  let sampleTextId: string | null = null;
+  const files: { id: string; filename: string; kind: 'text' | 'pdf' }[] = [];
   for (const doc of documents) {
     if (doc.driveFileId !== '') {
       ids.add(doc.driveFileId);
+      files.push({ id: doc.driveFileId, filename: doc.filename, kind: 'pdf' });
     }
     const textFileId = doc.textRef === null ? null : parseDriveFileId(doc.textRef);
     if (textFileId !== null) {
       ids.add(textFileId);
-      sampleTextId ??= textFileId;
+      files.push({ id: textFileId, filename: doc.filename, kind: 'text' });
     }
   }
-  return { ids: [...ids], sampleTextId };
+  return { ids: [...ids], files };
 }
 
 /** Picker と差分検知は同じ担当範囲を使う。裁定者と owner は全件を保持する */
@@ -275,8 +276,9 @@ async function documentsForFileAccess(
  * 不足分の件数（folderAccessMissingCount）を state に残すだけで、エラーとして弾かない
  * （収束型: 次にこの関数を呼んだときは残りの不足分だけが再提示される）。
  * candidates が 0 件（＝ required が granted / skipped で埋まっている）なら Picker を開かず、
- * 到達性を 1 件だけ試し読み（抽出テキストがあれば本文 / 無ければ先頭 PDF のメタデータ）して
+ * skipped を除いた 1 件だけ試し読み（抽出テキストがあれば本文 / 無ければ先頭 PDF のメタデータ）して
  * 確認する（付与直後の伝播遅延に備え、試し読みのみ最大 3 回・約 2 秒間隔でリトライ）。
+ * 全件 skipped なら試し読みを省略する。最終失敗時は granted を空にして再選択を案内する。
  * 付与対象（required）が 0 件なら選択操作なしでフラグを立てる。キャンセルは何もしない。
  * 付与済み後も再実行できる（Home の再付与ボタン。owner が後から取り込んだ文献のぶんを追加付与する）。
  * 関数名・state キー（folderAccess*）は互換のため旧称のまま
@@ -326,21 +328,36 @@ export async function grantFolderAccess(store: Store, deps: RoleServiceDeps): Pr
     return;
   }
 
-  const { ids: requiredIds, sampleTextId } = collectRequiredFileIds(documents);
+  const { ids: requiredIds, files } = collectRequiredFileIds(documents);
   const [firstRequiredId] = requiredIds;
   if (firstRequiredId === undefined) {
     await confirmGranted();
     return;
   }
 
-  // 到達性の確認のみ。内容は使わない。抽出テキストが 1 件も無いプロジェクト（全スキャン PDF）は
-  // 先頭 PDF のメタデータ取得で代替する（バイナリのダウンロードは避ける）。
+  let record: FileAccessRecord;
+  try {
+    record = toFileAccessRecord(await loadFileAccessRecordRaw(project.spreadsheetId, email));
+  } catch (err) {
+    fail(toMessage(err));
+    return;
+  }
+  const grantedSet = new Set(record.granted);
+  const skippedSet = new Set(record.skipped);
+  const probeFiles = files.filter((file) => !skippedSet.has(file.id));
+  const target = probeFiles.find((file) => file.kind === 'text') ?? probeFiles[0];
+
+  // 到達性の確認のみ。内容は使わない。skipped を除いた抽出テキストを優先し、
+  // 無ければ先頭 PDF のメタデータ取得で代替する（バイナリのダウンロードは避ける）。
   // リトライは試し読みだけに掛ける（保存やトーストの失敗を到達性エラーと誤分類しない）
   const probeReachable = async (): Promise<boolean> => {
+    if (target === undefined) {
+      return true;
+    }
     const probe =
-      sampleTextId !== null
-        ? (): Promise<unknown> => getFileText(sampleTextId, deps.google)
-        : (): Promise<unknown> => getFileMd5(firstRequiredId, deps.google);
+      target.kind === 'text'
+        ? (): Promise<unknown> => getFileText(target.id, deps.google)
+        : (): Promise<unknown> => getFileMd5(target.id, deps.google);
     const sleep = deps.sleep ?? defaultSleep;
     // 最終試行だけループの外に出す: TypeScript は for ループが必ず return することを
     // 静的に証明できないため、ループ内だけで完結させると到達不能な末尾 return が必要になる
@@ -358,20 +375,26 @@ export async function grantFolderAccess(store: Store, deps: RoleServiceDeps): Pr
       await probe();
       return true;
     } catch (err) {
-      fail(toMessage(err));
+      try {
+        await saveFileAccessRecord(project.spreadsheetId, email, {
+          granted: [],
+          skipped: record.skipped,
+        });
+      } catch (saveError) {
+        fail(toMessage(saveError));
+        return false;
+      }
+      fail(
+        t('home.folderAccessProbeFailed', {
+          filename: target.filename || target.id,
+          kind: t(target.kind === 'text' ? 'home.folderAccessKindText' : 'home.folderAccessKindPdf'),
+          reason: toMessage(err),
+        }),
+      );
       return false;
     }
   };
 
-  let record: FileAccessRecord;
-  try {
-    record = toFileAccessRecord(await loadFileAccessRecordRaw(project.spreadsheetId, email));
-  } catch (err) {
-    fail(toMessage(err));
-    return;
-  }
-  const grantedSet = new Set(record.granted);
-  const skippedSet = new Set(record.skipped);
   const candidates = requiredIds.filter((id) => !grantedSet.has(id) && !skippedSet.has(id));
 
   if (candidates.length === 0) {

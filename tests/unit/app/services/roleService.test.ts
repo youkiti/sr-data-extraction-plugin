@@ -534,11 +534,12 @@ describe('grantFolderAccess（issue #139: ファイル単位付与・issue #141:
   test('候補 0 件（required が既に granted / skipped で埋まっている）なら Picker を開かず到達性のみ確認する', async () => {
     readDocumentsMock.mockResolvedValue([doc()]);
     mockStoredRecord('r1@example.com', { granted: ['drive-1'], skipped: ['txt-1'] });
-    getFileTextMock.mockResolvedValue('本文');
+    getFileMd5Mock.mockResolvedValue('md5');
     const store = makeStore();
     await grantFolderAccess(store, makeDeps('r1@example.com'));
     expect(openProjectFilesPickerMock).not.toHaveBeenCalled();
-    expect(getFileTextMock).toHaveBeenCalledWith('txt-1', expect.anything());
+    expect(getFileTextMock).not.toHaveBeenCalled();
+    expect(getFileMd5Mock).toHaveBeenCalledWith('drive-1', expect.anything());
     expect(store.getState().role.folderAccessGranted).toBe(true);
     expect(store.getState().role.folderAccessMissingCount).toBe(0);
   });
@@ -546,15 +547,22 @@ describe('grantFolderAccess（issue #139: ファイル単位付与・issue #141:
   test('候補 0 件で到達性確認に失敗したらフラグを立てず、最後のエラーを記録する', async () => {
     readDocumentsMock.mockResolvedValue([doc()]);
     mockStoredRecord('r1@example.com', { granted: ['drive-1'], skipped: ['txt-1'] });
-    getFileTextMock.mockRejectedValue(new Error('HTTP 404'));
+    getFileMd5Mock.mockRejectedValue(new Error('HTTP 404'));
     const store = makeStore();
     const { deps, sleep } = depsWithSleep('r1@example.com');
     await grantFolderAccess(store, deps);
     expect(openProjectFilesPickerMock).not.toHaveBeenCalled();
-    expect(getFileTextMock).toHaveBeenCalledTimes(3);
+    expect(getFileTextMock).not.toHaveBeenCalled();
+    expect(getFileMd5Mock).toHaveBeenCalledTimes(3);
     expect(sleep).toHaveBeenCalledTimes(2);
     expect(store.getState().role.folderAccessGranted).toBe(false);
-    expect(store.getState().role.folderAccessError).toBe('HTTP 404');
+    expect(store.getState().role.folderAccessError).toBe('「a.pdf」のPDFを読めませんでした（HTTP 404）。付与の記録をリセットしました。もう一度ボタンを押し、開いた一覧をすべて選択し直してください。');
+    expect(setLocalMock).toHaveBeenCalledWith(fileAccessRecordStorageKey('sheet-1', 'r1@example.com'), {
+      granted: [],
+      skipped: ['txt-1'],
+    });
+    expect(setLocalMock).not.toHaveBeenCalledWith(folderAccessStorageKey('sheet-1', 'r1@example.com'), true);
+    expect(document.querySelector('#toast-container')?.lastElementChild?.textContent).toContain(store.getState().role.folderAccessError);
   });
 
   test('全件選択 + text_ref の試し読み成功でフラグを立てる', async () => {
@@ -657,7 +665,94 @@ describe('grantFolderAccess（issue #139: ファイル単位付与・issue #141:
     }
   });
 
-  test('試し読みが 3 回失敗したらフラグを立てず、最後のエラーを記録する（選択分の記録は残る）', async () => {
+  test('失敗後の再実行は skipped 以外の必要ファイル全件で Picker を開き直す', async () => {
+    readDocumentsMock.mockResolvedValue([
+      doc(),
+      doc({ driveFileId: 'drive-2', textRef: null }),
+    ]);
+    let record: FileAccessRecord = { granted: ['drive-1', 'drive-2'], skipped: ['txt-1'] };
+    getLocalMock.mockImplementation(async () => record);
+    setLocalMock.mockImplementation(async (_key, value) => {
+      record = value as FileAccessRecord;
+    });
+    getFileMd5Mock.mockRejectedValue(new Error('HTTP 404'));
+    const store = makeStore();
+    const { deps } = depsWithSleep('r1@example.com');
+    await grantFolderAccess(store, deps);
+    expect(record).toEqual({ granted: [], skipped: ['txt-1'] });
+    openProjectFilesPickerMock.mockResolvedValue(null);
+    await grantFolderAccess(store, deps);
+    expect(openProjectFilesPickerMock).toHaveBeenCalledWith(expect.anything(), ['drive-1', 'drive-2']);
+    setLocalMock.mockResolvedValue(undefined);
+  });
+
+  test('skipped の抽出テキストと PDF を除き、次の抽出テキストを優先する', async () => {
+    readDocumentsMock.mockResolvedValue([
+      doc(),
+      doc({ driveFileId: 'drive-2', textRef: 'https://drive.google.com/file/d/txt-2/view' }),
+    ]);
+    mockStoredRecord('r1@example.com', { granted: ['drive-2', 'txt-2'], skipped: ['drive-1', 'txt-1'] });
+    getFileTextMock.mockResolvedValue('本文');
+    const store = makeStore();
+    await grantFolderAccess(store, makeDeps('r1@example.com'));
+    expect(getFileTextMock).toHaveBeenCalledTimes(1);
+    expect(getFileTextMock).toHaveBeenCalledWith('txt-2', expect.anything());
+    expect(getFileMd5Mock).not.toHaveBeenCalled();
+  });
+
+  test('抽出テキストがすべて skipped なら skipped でない先頭 PDF を選ぶ', async () => {
+    readDocumentsMock.mockResolvedValue([doc(), doc({ driveFileId: 'drive-2', textRef: null })]);
+    mockStoredRecord('r1@example.com', { granted: ['drive-2'], skipped: ['drive-1', 'txt-1'] });
+    getFileMd5Mock.mockResolvedValue('md5');
+    await grantFolderAccess(makeStore(), makeDeps('r1@example.com'));
+    expect(getFileTextMock).not.toHaveBeenCalled();
+    expect(getFileMd5Mock).toHaveBeenCalledWith('drive-2', expect.anything());
+  });
+
+  test('必要ファイルがすべて skipped なら試し読みせず付与済みにする', async () => {
+    readDocumentsMock.mockResolvedValue([doc()]);
+    mockStoredRecord('r1@example.com', { granted: [], skipped: ['drive-1', 'txt-1'] });
+    const store = makeStore();
+    await grantFolderAccess(store, makeDeps('r1@example.com'));
+    expect(getFileTextMock).not.toHaveBeenCalled();
+    expect(getFileMd5Mock).not.toHaveBeenCalled();
+    expect(openProjectFilesPickerMock).not.toHaveBeenCalled();
+    expect(store.getState().role.folderAccessGranted).toBe(true);
+    expect(setLocalMock).toHaveBeenCalledWith(folderAccessStorageKey('sheet-1', 'r1@example.com'), true);
+  });
+
+  test('再付与の失敗でも記録をリセットし、付与済み状態を維持して空のファイル名は ID で補う', async () => {
+    readDocumentsMock.mockResolvedValue([doc({ filename: '' })]);
+    mockStoredRecord('r1@example.com', { granted: ['drive-1', 'txt-1'], skipped: [] });
+    getFileTextMock.mockRejectedValue(new Error('HTTP 404'));
+    const store = makeStore({ folderAccessGranted: true });
+    const { deps } = depsWithSleep('r1@example.com');
+    await grantFolderAccess(store, deps);
+    expect(store.getState().role.folderAccessGranted).toBe(true);
+    expect(store.getState().role.folderAccessError).toContain('「txt-1」の抽出テキスト');
+    expect(setLocalMock).toHaveBeenCalledWith(fileAccessRecordStorageKey('sheet-1', 'r1@example.com'), {
+      granted: [],
+      skipped: [],
+    });
+    expect(setLocalMock).not.toHaveBeenCalledWith(folderAccessStorageKey('sheet-1', 'r1@example.com'), true);
+  });
+
+  test('記録リセットの保存失敗は試し読みエラーより優先して表示する', async () => {
+    readDocumentsMock.mockResolvedValue([doc()]);
+    mockStoredRecord('r1@example.com', { granted: ['drive-1', 'txt-1'], skipped: [] });
+    getFileTextMock.mockRejectedValue(new Error('HTTP 404'));
+    setLocalMock.mockRejectedValueOnce(new Error('storage full'));
+    const store = makeStore();
+    const { deps } = depsWithSleep('r1@example.com');
+    await grantFolderAccess(store, deps);
+    expect(store.getState().role.folderAccessError).toBe('storage full');
+    expect(store.getState().role.folderAccessChecking).toBe(false);
+    expect(store.getState().role.folderAccessGranted).toBe(false);
+    expect(document.querySelector('#toast-container')?.lastElementChild?.textContent).toContain('storage full');
+    expect(setLocalMock).toHaveBeenCalledTimes(1);
+  });
+
+  test('試し読みが 3 回失敗したらフラグを立てず、付与記録をリセットして対象と理由を記録する', async () => {
     readDocumentsMock.mockResolvedValue([doc()]);
     openProjectFilesPickerMock.mockResolvedValue([
       { sourceFileId: 'drive-1', filename: 'a.pdf' },
@@ -670,13 +765,13 @@ describe('grantFolderAccess（issue #139: ファイル単位付与・issue #141:
     expect(getFileTextMock).toHaveBeenCalledTimes(3);
     expect(sleep).toHaveBeenCalledTimes(2);
     expect(store.getState().role.folderAccessGranted).toBe(false);
-    expect(store.getState().role.folderAccessError).toBe('HTTP 404');
-    // 選択分の永続化（record）は既に行われている。boolean フラグだけが未設定のまま
-    expect(setLocalMock).toHaveBeenCalledTimes(1);
-    expect(setLocalMock).toHaveBeenCalledWith(fileAccessRecordStorageKey('sheet-1', 'r1@example.com'), {
-      granted: ['drive-1', 'txt-1'],
+    expect(store.getState().role.folderAccessError).toBe('「a.pdf」の抽出テキストを読めませんでした（HTTP 404）。付与の記録をリセットしました。もう一度ボタンを押し、開いた一覧をすべて選択し直してください。');
+    expect(setLocalMock).toHaveBeenCalledTimes(2);
+    expect(setLocalMock).toHaveBeenLastCalledWith(fileAccessRecordStorageKey('sheet-1', 'r1@example.com'), {
+      granted: [],
       skipped: [],
     });
+    expect(setLocalMock).not.toHaveBeenCalledWith(folderAccessStorageKey('sheet-1', 'r1@example.com'), true);
   });
 });
 

@@ -269,6 +269,9 @@ export const enApp: Record<keyof typeof jaApp, string> = {
   'home.grantFolderAccess': 'Grant access to the project files (select all files in the picker)',
   'home.folderAccessChecking': 'Checking…',
   'home.folderAccessError': 'Could not confirm access: {reason}',
+  'home.folderAccessProbeFailed': 'Could not read the {kind} for “{filename}” ({reason}). The access grant record has been reset. Click the button again and select all files in the list that opens.',
+  'home.folderAccessKindText': 'extracted text',
+  'home.folderAccessKindPdf': 'PDF',
   'home.folderAccessMissing':
     'There are {n} files without access. The grant button will list only the missing files (select them all).',
   'home.skipMissingFiles': 'Skip unreadable files and continue',
