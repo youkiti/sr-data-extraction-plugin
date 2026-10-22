@@ -12,6 +12,7 @@ import type { ProtocolSubmitInput } from '../../features/protocol/submitInput';
 import type { SchemaPresetKind } from '../../features/schema/presets';
 import type { PresetDialogPatch } from '../../features/schema/presets/prespecDialog';
 import type { SchemaEditorRow } from '../../features/schema/types';
+import type { VerificationProgress } from '../../features/verification/progress';
 import type { SchemaImportFile } from '../services/schemaTransferService';
 import type { VerifyLayoutMode, VerifyPaneLayout } from '../../lib/storage/settingsStore';
 import type { ExclusionDialogState } from '../store';
@@ -264,6 +265,8 @@ export interface ExtractViewCallbacks {
 /** #/verify（S8）のユーザー操作コールバック */
 export interface VerifyViewCallbacks {
   onNeedComparisonCounts(): void;
+  /** 検証パネル内の進捗を study セレクタの「判定済み n / m」へ反映する */
+  onProgressChange(studyId: string, progress: VerificationProgress): void;
   /** 引用スナップショットを保存する。 */
   onQuoteSetSave(rows: readonly QuoteSetRow[]): Promise<void>;
   /** owner の「自分の担当のみ」切り替え */

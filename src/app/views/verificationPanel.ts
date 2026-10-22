@@ -79,7 +79,7 @@ import {
   parseMermaid,
 } from '../../features/verification/mermaidPreview';
 import { robDomainOptions } from '../../features/verification/robEstimateFields';
-import { verificationProgress } from '../../features/verification/progress';
+import { verificationProgress, type VerificationProgress } from '../../features/verification/progress';
 import { findQuoteContext } from '../../features/verification/textContext';
 import type {
   LoadedPdfView,
@@ -110,7 +110,7 @@ export type { RelocateQuoteOutcome } from '../services/relocateQuoteService';
 
 export interface VerificationPanelOptions {
   /** パネル内の最新進捗を画面上部の完了案内へ渡す。 */
-  onProgressChange?: (progress: { decided: number; total: number }) => void;
+  onProgressChange?: (progress: VerificationProgress) => void;
   data: VerificationData;
   /** 引用一覧の保存。未注入なら編集操作を出さない。 */
   onQuoteSetSave?: (rows: readonly QuoteSetRow[]) => Promise<void>;

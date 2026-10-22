@@ -13,6 +13,7 @@ import type { VerificationData } from '../../../../src/features/verification/typ
 function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<VerifyViewCallbacks> } {
   const callbacks = {
     onNeedComparisonCounts: jest.fn(),
+    onProgressChange: jest.fn(),
     onAssignedOnlyChange: jest.fn(),
     onQuoteSetSave: jest.fn().mockResolvedValue(undefined),
     onSelectStudy: jest.fn(),
@@ -352,6 +353,36 @@ describe('renderVerifyView', () => {
       );
     },
   );
+
+  test.each(['owner', 'reviewer_with_ai'] as const)(
+    'パネルの判定でセレクタの進捗を一覧へ書き戻す（値が変わったときだけ）: %s', async (role) => {
+      const state = makeState({ targets: [makeTarget({ progress: { decided: 0, total: 1, byTab: [] } })],
+        selectedStudyId: 'study-1', verification: makeVerification() }, { role });
+      const { ctx, callbacks } = makeCtx();
+      const root = render(state, ctx);
+      await Promise.resolve();
+      expect(callbacks.onProgressChange).not.toHaveBeenCalled();
+      (root.querySelector('.verify__action--not-reported') as HTMLButtonElement).click();
+      expect(callbacks.onProgressChange).not.toHaveBeenCalled();
+      await Promise.resolve();
+      expect(callbacks.onProgressChange).toHaveBeenCalledWith(
+        'study-1',
+        expect.objectContaining({ decided: 1, total: 1 }),
+      );
+    },
+  );
+
+  test('一覧の進捗が古ければ、初回描画の時点で最新値へ書き戻す', async () => {
+    const state = makeState({ targets: [makeTarget()], selectedStudyId: 'study-1',
+      verification: makeVerification() });
+    const { ctx, callbacks } = makeCtx();
+    render(state, ctx);
+    await Promise.resolve();
+    expect(callbacks.onProgressChange).toHaveBeenCalledWith(
+      'study-1',
+      expect.objectContaining({ decided: 0, total: 1 }),
+    );
+  });
 
   test('最後の判定と取り消しで完了案内が更新され、再描画でも維持される', () => {
     const state = makeState({ targets: [makeTarget()], selectedStudyId: 'study-1',

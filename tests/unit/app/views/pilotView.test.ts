@@ -202,6 +202,7 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<PilotViewCallback
       },
       verify: {
         onNeedComparisonCounts: jest.fn(),
+        onProgressChange: jest.fn(),
         onAssignedOnlyChange: jest.fn(),
         onQuoteSetSave: jest.fn().mockResolvedValue(undefined),
         onSelectStudy: jest.fn(),

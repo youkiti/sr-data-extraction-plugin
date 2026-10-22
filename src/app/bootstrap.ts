@@ -130,6 +130,7 @@ import {
   setVerifyLayoutMode,
   setVerifyPaneLayout,
   setVerifyAssignedOnly,
+  syncVerifyTargetProgress,
 } from './services/verifyService';
 import { sendAskPaperQuestion } from './services/askPaperUiService';
 import { loadAskPaperUsedStudyIds } from './services/askPaperMetadataService';
@@ -877,6 +878,7 @@ export async function bootstrapApp(
     },
     verify: {
       onNeedComparisonCounts: () => { void loadAdjudicateTargets(store, deps); },
+      onProgressChange: (studyId, progress) => syncVerifyTargetProgress(store, studyId, progress),
       onQuoteSetSave: (rows) => persistVerifyQuoteSet(store, deps, rows),
       onAssignedOnlyChange: (value) => {
         setVerifyAssignedOnly(store, value);
