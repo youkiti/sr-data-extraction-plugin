@@ -264,6 +264,9 @@ export const jaApp = {
   'home.grantFolderAccess': 'プロジェクトファイルへのアクセスを付与（開いた一覧をすべて選択）',
   'home.folderAccessChecking': '確認しています…',
   'home.folderAccessError': 'アクセスを確認できませんでした: {reason}',
+  'home.folderAccessProbeFailed': '「{filename}」の{kind}を読めませんでした（{reason}）。付与の記録をリセットしました。もう一度ボタンを押し、開いた一覧をすべて選択し直してください。',
+  'home.folderAccessKindText': '抽出テキスト',
+  'home.folderAccessKindPdf': 'PDF',
   'home.folderAccessMissing':
     '未付与のファイルが {n} 件あります。付与ボタンを押すと不足分だけが一覧に表示されます（すべて選択してください）。',
   'home.skipMissingFiles': '読めないファイルをスキップして続行',
