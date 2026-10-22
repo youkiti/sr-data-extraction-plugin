@@ -737,6 +737,34 @@ describe('grantFolderAccess（issue #139: ファイル単位付与・issue #141:
     expect(setLocalMock).not.toHaveBeenCalledWith(folderAccessStorageKey('sheet-1', 'r1@example.com'), true);
   });
 
+  test.each([
+    { label: '成功したら不足件数を消す', saveFails: false, expectedCount: null },
+    { label: '失敗したら不足件数を保持する', saveFails: true, expectedCount: 1 },
+  ])('残りの選択後の試し読み失敗で記録リセットの保存が $label', async ({ saveFails, expectedCount }) => {
+    readDocumentsMock.mockResolvedValue([doc()]);
+    mockStoredRecord('r1@example.com', { granted: ['drive-1'], skipped: [] });
+    openProjectFilesPickerMock.mockResolvedValue([{ sourceFileId: 'txt-1', filename: 'a.txt' }]);
+    getFileTextMock.mockRejectedValue(new Error('HTTP 404'));
+    setLocalMock.mockResolvedValueOnce(undefined);
+    if (saveFails) {
+      setLocalMock.mockRejectedValueOnce(new Error('storage full'));
+    }
+    const store = makeStore({ folderAccessMissingCount: 1 });
+    const { deps } = depsWithSleep('r1@example.com');
+    await grantFolderAccess(store, deps);
+    expect(openProjectFilesPickerMock).toHaveBeenCalledWith(expect.anything(), ['txt-1']);
+    expect(getFileTextMock).toHaveBeenCalledTimes(3);
+    expect(setLocalMock).toHaveBeenCalledTimes(2);
+    expect(setLocalMock).toHaveBeenLastCalledWith(fileAccessRecordStorageKey('sheet-1', 'r1@example.com'), {
+      granted: [],
+      skipped: [],
+    });
+    expect(store.getState().role.folderAccessMissingCount).toBe(expectedCount);
+    expect(store.getState().role.folderAccessChecking).toBe(false);
+    expect(store.getState().role.folderAccessGranted).toBe(false);
+    expect(store.getState().role.folderAccessError).toContain(saveFails ? 'storage full' : 'HTTP 404');
+  });
+
   test('記録リセットの保存失敗は試し読みエラーより優先して表示する', async () => {
     readDocumentsMock.mockResolvedValue([doc()]);
     mockStoredRecord('r1@example.com', { granted: ['drive-1', 'txt-1'], skipped: [] });

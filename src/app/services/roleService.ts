@@ -291,8 +291,12 @@ export async function grantFolderAccess(store: Store, deps: RoleServiceDeps): Pr
   }
   patchRole(store, { folderAccessChecking: true, folderAccessError: null });
 
-  const fail = (reason: string): void => {
-    patchRole(store, { folderAccessChecking: false, folderAccessError: reason });
+  const fail = (reason: string, resetMissingCount = false): void => {
+    patchRole(store, {
+      folderAccessChecking: false,
+      folderAccessError: reason,
+      ...(resetMissingCount ? { folderAccessMissingCount: null } : {}),
+    });
     showToast(t('home.toastFolderAccessFailed', { reason }));
   };
 
@@ -390,6 +394,7 @@ export async function grantFolderAccess(store: Store, deps: RoleServiceDeps): Pr
           kind: t(target.kind === 'text' ? 'home.folderAccessKindText' : 'home.folderAccessKindPdf'),
           reason: toMessage(err),
         }),
+        true,
       );
       return false;
     }
