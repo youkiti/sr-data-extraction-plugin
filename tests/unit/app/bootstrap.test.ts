@@ -1799,7 +1799,7 @@ describe('bootstrapApp', () => {
     );
     await flush();
     expect(toastTexts()).toContain(
-      'new@example.com を登録し、シート（編集可）とフォルダ（閲覧）を共有しました',
+      'new@example.com を登録し、シートとフォルダを共有して、参加手順をメールで送りました',
     );
   });
 
@@ -4766,7 +4766,7 @@ describe('bootstrapApp: 独立二重レビュー機能', () => {
     );
     await flush();
     expect(toastTexts()).toContain(
-      'r2@example.com を登録し、シート（編集可）とフォルダ（閲覧）を共有しました',
+      'r2@example.com を登録し、シートとフォルダを共有して、参加手順をメールで送りました',
     );
     expect(document.querySelectorAll('#home-reviewers-list tbody tr')).toHaveLength(2);
 
@@ -4811,7 +4811,7 @@ describe('bootstrapApp: 独立二重レビュー機能', () => {
     (document.getElementById('reviewer-mode-confirm-ok') as HTMLButtonElement).click();
     await flush();
     expect(toastTexts()).toContain(
-      'r1@example.com を登録し、シート（編集可）とフォルダ（閲覧）を共有しました',
+      'r1@example.com を登録し、シートとフォルダを共有して、参加手順をメールで送りました',
     );
 
     // 解除（onRevokeReviewer）

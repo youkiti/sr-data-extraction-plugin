@@ -44,6 +44,7 @@ export interface ReviewerAdminServiceDeps {
     project: ShareableProject,
     email: string,
     google: GoogleApiDeps,
+    emailMessage?: string,
   ) => Promise<void>;
   /** クリップボードへの書き込み。既定は navigator.clipboard.writeText。テストは fake を注入する */
   writeClipboard?: (text: string) => Promise<void>;
@@ -58,9 +59,11 @@ async function defaultShareProjectWithReviewer(
   project: ShareableProject,
   email: string,
   google: GoogleApiDeps,
+  emailMessage?: string,
 ): Promise<void> {
   await shareFileWithUser(project.spreadsheetId, email, 'writer', google, {
     sendNotificationEmail: true,
+    emailMessage,
   });
   await shareFileWithUser(project.driveFolderId, email, 'reader', google);
 }
@@ -120,7 +123,14 @@ export async function reshareReviewer(
   patchReviewers(store, { resharing: true });
   try {
     const share = deps.shareProjectWithReviewer ?? defaultShareProjectWithReviewer;
-    await share(project, email, deps.google);
+    const assignment = latestReviewerAssignment(reviewers.assignments ?? [], email);
+    await share(project, email, deps.google, buildReviewInvite({
+      projectName: project.name,
+      spreadsheetId: project.spreadsheetId,
+      reviewerEmail: email,
+      role: assignment?.role === 'revoked' ? null : assignment?.role ?? null,
+      reviewMode: assignment?.reviewMode ?? null,
+    }));
     setShareError(store, email, null);
     showToast(t('home.toastReshared', { email }));
     await refreshFolderSharing(store, deps, project);
@@ -305,6 +315,13 @@ async function submitReviewerAssignment(
         { spreadsheetId: project.spreadsheetId, driveFolderId: project.driveFolderId },
         input.email,
         deps.google,
+        buildReviewInvite({
+          projectName: project.name,
+          spreadsheetId: project.spreadsheetId,
+          reviewerEmail: input.email,
+          role: input.role,
+          reviewMode: input.reviewMode,
+        }),
       );
       setShareError(store, input.email, null);
       showToast(t('home.toastAdded', { email: input.email }));
@@ -333,16 +350,19 @@ export interface ReviewInviteInput {
   projectName: string;
   spreadsheetId: string;
   reviewerEmail: string;
+  /** 役割が不明なときはレビュアーとして案内する */
+  role: Exclude<ReviewerRole, 'revoked'> | null;
   /** 未登録・adjudicator 等でモードが無いときは null（AI 結果レビューとして案内する） */
   reviewMode: ReviewMode | null;
 }
 
 /**
- * レビュー相手へそのまま送れる依頼文を組み立てる（owner がコピーして共有ツールで渡す想定）。
+ * 共有通知メールとコピーで共通の依頼文を組み立てる。
  * スプレッドシート URL（ID 直打ちでも URL でも Popup が受ける）+ 参加手順 + レビュー方式を含む。
  */
 export function buildReviewInvite(input: ReviewInviteInput): string {
   const url = `https://docs.google.com/spreadsheets/d/${input.spreadsheetId}/edit`;
+  const isAdjudicator = input.role === 'adjudicator';
   const modeNote =
     input.reviewMode === 'independent'
       ? t('home.inviteModeIndependent')
@@ -350,15 +370,18 @@ export function buildReviewInvite(input: ReviewInviteInput): string {
   return [
     t('home.inviteGreeting', { email: input.reviewerEmail }),
     '',
-    t('home.inviteBody', { project: input.projectName }),
+    t(isAdjudicator ? 'home.inviteBodyAdjudicator' : 'home.inviteBody', { project: input.projectName }),
     '',
     t('home.inviteStep1'),
     t('home.inviteStep2'),
     `   ${url}`,
     t('home.inviteStep3'),
-    t('home.inviteStep4'),
+    t(isAdjudicator ? 'home.inviteStep4Adjudicator' : 'home.inviteStep4'),
     '',
-    modeNote,
+    ...(!isAdjudicator ? [modeNote, ''] : []),
+    t(!isAdjudicator && input.reviewMode === 'independent'
+      ? 'home.inviteApiKeyIndependent'
+      : 'home.inviteApiKey'),
   ].join('\n');
 }
 
@@ -380,6 +403,7 @@ export async function copyReviewInvite(
     projectName: project.name,
     spreadsheetId: project.spreadsheetId,
     reviewerEmail: email,
+    role: assignment?.role === 'revoked' ? null : assignment?.role ?? null,
     reviewMode: assignment?.reviewMode ?? null,
   });
   const write = deps.writeClipboard ?? ((value: string) => navigator.clipboard.writeText(value));

@@ -482,7 +482,7 @@ describe('shareFileWithUser', () => {
     await shareFileWithUser('SHEET-1', 'r1@example.com', 'writer', deps);
     const [url, init] = fetch.mock.calls[0];
     expect(url).toContain('/drive/v3/files/SHEET-1/permissions');
-    expect(url).toContain('sendNotificationEmail=false');
+    expect(url).toBe('https://www.googleapis.com/drive/v3/files/SHEET-1/permissions?sendNotificationEmail=false&fields=id');
     expect((init as RequestInit).method).toBe('POST');
     expect(JSON.parse((init as RequestInit).body as string)).toEqual({
       role: 'writer',
@@ -499,6 +499,21 @@ describe('shareFileWithUser', () => {
     });
     const [url] = fetch.mock.calls[0];
     expect(url).toContain('/drive/v3/files/FOLDER-1/permissions');
-    expect(url).toContain('sendNotificationEmail=true');
+    expect(url).toBe('https://www.googleapis.com/drive/v3/files/FOLDER-1/permissions?sendNotificationEmail=true&fields=id');
+  });
+
+  test.each([
+    [true, '参加手順\nURL: https://example.com/?a=1&b=2', true],
+    [false, '参加手順', false],
+    [true, '', false],
+  ])('通知=%s・本文=%s のクエリを組み立てる', async (sendNotificationEmail, emailMessage, included) => {
+    const fetch = jest.fn().mockResolvedValue(okJson({ id: 'perm' }));
+    await shareFileWithUser('file', 'r@example.com', 'writer', {
+      fetch, getAccessToken: jest.fn().mockResolvedValue('t'),
+    }, { sendNotificationEmail, emailMessage });
+    const expectedMessage = included ? `&emailMessage=${encodeURIComponent(emailMessage)}` : '';
+    expect(fetch.mock.calls[0][0]).toBe(
+      `https://www.googleapis.com/drive/v3/files/file/permissions?sendNotificationEmail=${String(sendNotificationEmail)}${expectedMessage}&fields=id`,
+    );
   });
 });
