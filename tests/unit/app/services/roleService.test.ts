@@ -1275,6 +1275,15 @@ describe('担当セットとファイル許可', () => {
       { granted: [], skipped: ['pdf-assigned', 'pdf-cal'] },
     );
   });
+  test('全文書が除外された担当 study の PDF は付与対象にしない', async () => {
+    const store = assignedStore('reviewer_independent');
+    const rows = await readDocumentsMock('sheet-1', makeDeps('r1@example.com').google);
+    readDocumentsMock.mockResolvedValue(rows.map((row: DocumentRecord) => ({
+      ...row, excluded: row.studyId === 'assigned',
+    })));
+    await grantFolderAccess(store, makeDeps('r1@example.com'));
+    expect(openProjectFilesPickerMock.mock.calls[0]?.[1]).toEqual(['pdf-cal']);
+  });
   test('studyIds が全て空なら従来の全件', async () => {
     const store = assignedStore('reviewer_with_ai');
     store.setState({

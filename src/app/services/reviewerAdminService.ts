@@ -1,7 +1,7 @@
 // owner の「レビュアー管理」カード（Home）のサービス層（docs/design-independent-dual-review.md §7.1）。
 // 登録済み一覧の読込 + 追加（モード変更は確認ダイアログを挟む）+ 解除（revoked 行の追記）を担う。
 // 追加・モード変更の確定時には、スプレッドシート（編集可）とプロジェクトフォルダ（閲覧）を
-// 対象 email へ自動共有する（drive.file スコープで permissions.create。tiab-review と同方式）。
+// 対象 email へ自動共有し、フォルダ共有失敗時は文書ファイルを個別に共有する。
 // 共有失敗は登録行を残したまま警告に縮退する。解除では自動アンシェアはしない（破壊的操作のため）
 import {
   annotatorTypeForAssignment,
@@ -16,6 +16,8 @@ import {
   readReviewerAssignments,
 } from '../../features/project/reviewerRepository';
 import { readAnnotatorTypesForEmail } from '../../features/project/reviewerWorkRepository';
+import type { DocumentRecord } from '../../domain/document';
+import { readDocuments } from '../../features/documents/documentRepository';
 import { listFilePermissions, shareFileWithUser } from '../../lib/google/drive';
 import { getCurrentUserEmail, type ProfileDeps } from '../../lib/google/identity';
 import type { GoogleApiDeps } from '../../lib/google/types';
@@ -45,7 +47,9 @@ export interface ReviewerAdminServiceDeps {
     email: string,
     google: GoogleApiDeps,
     emailMessage?: string,
-  ) => Promise<void>;
+  ) => Promise<void | { fileCount: number }>;
+  /** 文書がストアに無いときの読み取り。テストでは fake を注入する。 */
+  readDocuments?: typeof readDocuments;
   /** クリップボードへの書き込み。既定は navigator.clipboard.writeText。テストは fake を注入する */
   writeClipboard?: (text: string) => Promise<void>;
 }
@@ -53,19 +57,67 @@ export interface ReviewerAdminServiceDeps {
 /**
  * 既定の共有実装。スプレッドシートは編集者（判定行・Decisions を書き込むため）、
  * プロジェクトフォルダは閲覧者（PDF を読むため）で共有する。シートのみ通知メールを送り、
- * レビュアーが対象を見つけやすくする（フォルダはシート配下扱いで通知は重複させない）。
+ * レビュアーが対象を見つけやすくする（フォルダと個別ファイルでは通知を重複させない）。
+ * フォルダ共有が失敗したら、除外していない文書の PDF と抽出テキストを順番に共有する。
  */
 async function defaultShareProjectWithReviewer(
   project: ShareableProject,
   email: string,
   google: GoogleApiDeps,
-  emailMessage?: string,
-): Promise<void> {
+  emailMessage: string,
+  loadDocuments: () => Promise<readonly DocumentRecord[]>,
+): Promise<void | { fileCount: number }> {
   await shareFileWithUser(project.spreadsheetId, email, 'writer', google, {
     sendNotificationEmail: true,
     emailMessage,
   });
-  await shareFileWithUser(project.driveFolderId, email, 'reader', google);
+  try {
+    await shareFileWithUser(project.driveFolderId, email, 'reader', google);
+    return;
+  } catch {
+    // drive.file では配下に未付与のファイルがあるとフォルダ共有が失敗する。
+    // 理由によらず、拡張が管理する文書ファイルの個別共有へ進む。
+  }
+  const documents = await loadDocuments();
+  const ids = new Set(
+    documents.filter((doc) => !doc.excluded)
+      .flatMap((doc) => [doc.driveFileId, doc.textRef])
+      .filter((id): id is string => !!id),
+  );
+  let failed = 0;
+  for (const id of ids) {
+    try {
+      await shareFileWithUser(id, email, 'reader', google);
+    } catch {
+      failed += 1;
+    }
+  }
+  if (failed > 0) throw new Error(t('home.fileShareFailed', { n: ids.size, m: failed }));
+  return { fileCount: ids.size };
+}
+
+async function projectDocuments(
+  store: Store,
+  deps: ReviewerAdminServiceDeps,
+  project: ShareableProject,
+) {
+  return store.getState().documents.records ??
+    (await (deps.readDocuments ?? readDocuments)(project.spreadsheetId, deps.google));
+}
+
+function shareReviewer(
+  store: Store,
+  deps: ReviewerAdminServiceDeps,
+  project: ShareableProject,
+  email: string,
+  emailMessage: string,
+) {
+  return deps.shareProjectWithReviewer
+    ? deps.shareProjectWithReviewer(project, email, deps.google, emailMessage)
+    : defaultShareProjectWithReviewer(
+        project, email, deps.google, emailMessage,
+        () => projectDocuments(store, deps, project),
+      );
 }
 
 /** 追加フォームが送信する入力（email + role + review_mode）。review_mode は role='reviewer' のときのみ使う */
@@ -93,6 +145,19 @@ async function refreshFolderSharing(
 ): Promise<void> {
   try {
     const sharing = await listFilePermissions(project.driveFolderId, deps.google);
+    const needsPdf = !sharing.hasBroadAccess &&
+      (store.getState().reviewers.assignments ?? []).some((row) =>
+        row.role !== 'revoked' && !sharing.emails.has(row.email.toLowerCase()));
+    if (needsPdf) {
+      const documents = await projectDocuments(store, deps, project);
+      const latest = documents.filter((doc) => !doc.excluded)
+        .sort((a, b) => b.importedAt.localeCompare(a.importedAt))[0];
+      if (latest) {
+        const pdf = await listFilePermissions(latest.driveFileId, deps.google);
+        for (const email of pdf.emails) sharing.emails.add(email);
+        sharing.hasBroadAccess = pdf.hasBroadAccess;
+      }
+    }
     patchReviewers(store, { folderSharing: { status: 'checked', ...sharing } });
   } catch {
     patchReviewers(store, { folderSharing: { status: 'unknown' } });
@@ -122,9 +187,8 @@ export async function reshareReviewer(
   }
   patchReviewers(store, { resharing: true });
   try {
-    const share = deps.shareProjectWithReviewer ?? defaultShareProjectWithReviewer;
     const assignment = latestReviewerAssignment(reviewers.assignments ?? [], email);
-    await share(project, email, deps.google, buildReviewInvite({
+    const result = await shareReviewer(store, deps, project, email, buildReviewInvite({
       projectName: project.name,
       spreadsheetId: project.spreadsheetId,
       reviewerEmail: email,
@@ -132,7 +196,9 @@ export async function reshareReviewer(
       reviewMode: assignment?.reviewMode ?? null,
     }));
     setShareError(store, email, null);
-    showToast(t('home.toastReshared', { email }));
+    showToast(result
+      ? t('home.toastResharedFiles', { email, n: result.fileCount })
+      : t('home.toastReshared', { email }));
     await refreshFolderSharing(store, deps, project);
   } catch (err) {
     const reason = toMessage(err);
@@ -309,12 +375,12 @@ async function submitReviewerAssignment(
       return;
     }
     // 役割登録が成功した後で Drive を自動共有する。共有失敗は登録を巻き戻さず警告に縮退する
-    const share = deps.shareProjectWithReviewer ?? defaultShareProjectWithReviewer;
     try {
-      await share(
+      const result = await shareReviewer(
+        store,
+        deps,
         { spreadsheetId: project.spreadsheetId, driveFolderId: project.driveFolderId },
         input.email,
-        deps.google,
         buildReviewInvite({
           projectName: project.name,
           spreadsheetId: project.spreadsheetId,
@@ -324,7 +390,9 @@ async function submitReviewerAssignment(
         }),
       );
       setShareError(store, input.email, null);
-      showToast(t('home.toastAdded', { email: input.email }));
+      showToast(result
+        ? t('home.toastAddedFiles', { email: input.email, n: result.fileCount })
+        : t('home.toastAdded', { email: input.email }));
       await refreshFolderSharing(store, deps, project);
     } catch (shareErr) {
       setShareError(store, input.email, toMessage(shareErr));

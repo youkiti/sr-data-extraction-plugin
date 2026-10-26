@@ -7,6 +7,7 @@ import {
   updateStudyReviewSets,
   readStudies,
   resolveActiveStudies,
+  resolveReviewSetStudies,
   studyLabelMap,
   studyToRow,
   updateStudies,
@@ -201,6 +202,13 @@ describe('updateStudies', () => {
 });
 
 describe('resolveActiveStudies', () => {
+  test('担当セットは有効文書の参照だけを数え、検証用の解決は除外済みも保持する', () => {
+    const studies = [makeStudy(), makeStudy({ studyId: 'excluded' }), makeStudy({ studyId: 'mixed' })];
+    const documents = [makeDoc(), makeDoc({ studyId: 'excluded', excluded: true }),
+      makeDoc({ studyId: 'mixed', excluded: true }), makeDoc({ studyId: 'mixed' })];
+    expect(resolveReviewSetStudies(studies, documents).map((s) => s.studyId)).toEqual(['study-1', 'mixed']);
+    expect(resolveActiveStudies(studies, documents)).toEqual(studies);
+  });
   test('Documents から参照される study だけを作成順で返す', () => {
     const studies = [
       makeStudy({ studyId: 'study-1' }),

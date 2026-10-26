@@ -49,7 +49,7 @@ test.each([false, true])('レビュアーの共有案内は付与済み=%s で�
   const hint = view.querySelector('#home-folder-access-empty-hint');
   expect(hint?.textContent).toContain('一覧が空');
   expect(hint?.textContent).toContain('一部だけ表示されるのは正常');
-  expect(hint?.textContent).toContain('フォルダを共有し直す');
+  expect(hint?.textContent).toContain('共有し直す');
   expect(hint?.previousElementSibling?.id).toBe(granted ? 'home-regrant-files' : 'home-grant-folder-access');
 });
 
@@ -145,7 +145,7 @@ describe('renderHomeView（owner のレビュアー管理カード。docs/design
     }), ctx);
     const button = view.querySelector('.reviewers__reshare') as HTMLButtonElement;
     expect(button.disabled).toBe(saving || resharing);
-    expect(button.title).toBe('フォルダを共有し直す');
+    expect(button.title).toBe('共有し直す');
     expect(button.getAttribute('aria-label')).toContain('r@example.com');
     expect(button.querySelector('svg')).not.toBeNull();
     button.click();
@@ -164,7 +164,7 @@ describe('renderHomeView（owner のレビュアー管理カード。docs/design
     expect(warning?.getAttribute('role')).toBe('alert');
     expect(warning?.textContent).toContain('r@example.com');
     expect(warning?.textContent).toContain('folder denied');
-    expect(warning?.textContent).toContain('Drive の共有ボタンから手動で共有してください');
+    expect(warning?.textContent).toContain('Drive の共有ボタンで r@example.com を閲覧者として共有してください');
     const link = warning?.querySelector('a');
     expect(link?.getAttribute('href')).toBe('https://drive.google.com/drive/folders/f1');
     expect(link?.getAttribute('target')).toBe('_blank');

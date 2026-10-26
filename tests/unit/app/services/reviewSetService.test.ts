@@ -136,6 +136,25 @@ function activeStore(role: ProjectRole = 'owner') {
 function texts() {
   return document.body.textContent ?? '';
 }
+
+test('全文書が除外された study は分割・担当絞り込み・進捗から外れる', async () => {
+  const result = activeStore('reviewer_with_ai');
+  const excluded = { ...doc('cal'), excluded: true };
+  result.setState({ documents: { ...result.getState().documents, records: [doc(), excluded] } });
+  expect(filterReviewSetStudies(result, result.getState().documents.studies!, [doc(), excluded],
+    'a@example.com', true).map((row) => row.studyId)).toEqual(['s1']);
+  expect((await readReviewSetProgressMaterials(result, deps)).studies.map((row) => row.studyId)).toEqual(['s1']);
+  jest.mocked(getCurrentUserEmail).mockResolvedValueOnce('a@example.com');
+  await loadAssignedProgress(result, deps);
+  expect(result.getState().home.assignedProgress?.total).toBe(1);
+  const owner = store();
+  owner.setState({ documents: { ...owner.getState().documents,
+    studies: [study(), study({ studyId: 'cal' })], records: [doc(), excluded] } });
+  await splitReviewSets(owner, deps, { calibrationCount: 0, groupCount: 1 });
+  expect(jest.mocked(updateStudyReviewSets).mock.calls[0]?.[1]).toEqual([
+    { studyId: 's1', reviewSet: 'group-1' },
+  ]);
+});
 beforeEach(() => {
   jest.resetAllMocks();
   jest.mocked(readEvidenceRows).mockResolvedValue([]);
