@@ -466,7 +466,7 @@ test('owner のレビュアー管理カードで追加すると Reviewers タブ
   await page.locator('#reviewer-add-submit').click();
 
   await expect(page.locator('.toast')).toContainText(
-    'reviewer@example.com を登録し、シート（編集可）とフォルダ（閲覧）を共有しました',
+    'reviewer@example.com を登録し、シートとフォルダを共有して、参加手順をメールで送りました',
   );
   // タブ作成（旧プロジェクト）+ Reviewers への実追記まで実弾で確認する
   await expect.poll(() => batchUpdateBodies.some((body) => body.includes('"Reviewers"'))).toBe(true);

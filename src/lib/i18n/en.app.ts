@@ -224,7 +224,7 @@ export const enApp: Record<keyof typeof jaApp, string> = {
   'home.summaryDataRows': 'Data rows (StudyData + ResultsData)',
   'home.reviewersTitle': 'Reviewer management',
   'home.reviewersNotice':
-    'Adding a reviewer automatically shares the spreadsheet (editable) and the project folder (view-only) with the account. If sharing fails, the registration is kept and manual sharing instructions are shown.',
+    'Adding a collaborator shares the spreadsheet (editable) and project folder (view-only) and sends a sharing notification email with instructions for joining. Invitees do not need an API key. If sharing fails, the registration is kept and manual sharing instructions are shown.',
   'home.reviewersLoading': 'Loading…',
   'home.reviewersError': 'Failed to load the list: {reason}',
   'home.reviewersEmpty': 'No reviewers registered yet.',
@@ -1383,7 +1383,7 @@ export const enApp: Record<keyof typeof jaApp, string> = {
   'verify.pdfDocNotFound': 'document_id "{id}" was not found among the study documents',
   'home.toastEmailRequired': 'Enter an email address',
   'home.toastRevoked': 'Revoked the registration of {email}',
-  'home.toastAdded': 'Registered {email} and shared the sheet (editable) and folder (view-only)',
+  'home.toastAdded': 'Registered {email}, shared the sheet and folder, and emailed instructions for joining',
   'home.toastAddedShareFailed':
     'Registered {email}, but automatic sharing failed. Share manually in Google Drive ({reason})',
   'home.toastSaveFailed': 'Saving failed: {reason}',
@@ -1398,14 +1398,20 @@ export const enApp: Record<keyof typeof jaApp, string> = {
     'Review mode: review AI results (judge each AI-extracted field with accept / edit / reject / not_reported)',
   'home.inviteGreeting': 'Dear {email},',
   'home.inviteBody':
-    'Please join the systematic review data extraction "{project}" as the second reviewer. Follow these steps.',
+    'Please join the systematic review data extraction "{project}" as a reviewer. Follow these steps.',
+  'home.inviteBodyAdjudicator':
+    'Please join the systematic review data extraction "{project}" as an adjudicator. Follow these steps.',
   'home.inviteStep1':
     '1. Install the Chrome extension "SR Data Extraction Plugin" and sign in with your Google account',
   'home.inviteStep2':
-    '2. Click the extension icon → paste the following into "Open by spreadsheet ID / URL":',
+    '2. Click the extension icon → paste the following into "Open by spreadsheet ID / URL" and open it (the first time, click "Allow with Google" and select this spreadsheet):',
   'home.inviteStep3':
     '3. On Home, use "Grant access to the project files" and select every file shown in the picker',
   'home.inviteStep4': '4. Judge your assigned items on the "Verification" screen',
+  'home.inviteStep4Adjudicator': '4. Adjudicate on the "Resolve conflicts" screen',
+  'home.inviteApiKey':
+    'You do not need to configure an API key (AI extraction is already complete. Only if you use the question panel, save your own key in Settings).',
+  'home.inviteApiKeyIndependent': 'You do not need to configure an API key.',
 
   // PDF ビューア
   'pdf.prevPage': 'Previous page',

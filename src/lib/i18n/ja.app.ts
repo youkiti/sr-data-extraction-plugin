@@ -219,7 +219,7 @@ export const jaApp = {
   'home.summaryDataRows': 'データ行数（StudyData + ResultsData）',
   'home.reviewersTitle': 'レビュアー管理',
   'home.reviewersNotice':
-    '追加すると、対象アカウントへスプレッドシート（編集可）とプロジェクトフォルダ（閲覧）を自動で共有します。共有に失敗した場合は登録だけ残し、手動共有の案内を表示します。',
+    '追加すると、スプレッドシート（編集可）とプロジェクトフォルダ（閲覧）を共有し、参加手順を書いた共有通知メールを送ります。招待された人に API キーは要りません。共有に失敗したときは登録だけ残し、手動共有の案内を出します。',
   'home.reviewersLoading': '読み込んでいます…',
   'home.reviewersError': '一覧を読み込めませんでした: {reason}',
   'home.reviewersEmpty': 'まだレビュアーが登録されていません。',
@@ -1363,7 +1363,7 @@ export const jaApp = {
   'verify.pdfDocNotFound': 'document_id "{id}" が study 配下の文書に見つかりません',
   'home.toastEmailRequired': 'email を入力してください',
   'home.toastRevoked': '{email} の登録を解除しました',
-  'home.toastAdded': '{email} を登録し、シート（編集可）とフォルダ（閲覧）を共有しました',
+  'home.toastAdded': '{email} を登録し、シートとフォルダを共有して、参加手順をメールで送りました',
   'home.toastAddedShareFailed':
     '{email} を登録しました。ただし自動共有に失敗したため、Google Drive で手動共有してください（{reason}）',
   'home.toastSaveFailed': '保存に失敗しました: {reason}',
@@ -1378,13 +1378,19 @@ export const jaApp = {
     'レビュー方式: AI の結果をレビュー（AI が抽出した各項目を accept / edit / reject / not_reported で判定してください）',
   'home.inviteGreeting': '{email} さん',
   'home.inviteBody':
-    '系統的レビューのデータ抽出「{project}」の第 2 レビュアーをお願いします。以下の手順で参加してください。',
+    '系統的レビューのデータ抽出「{project}」のレビュアーをお願いします。以下の手順で参加してください。',
+  'home.inviteBodyAdjudicator':
+    '系統的レビューのデータ抽出「{project}」の裁定者をお願いします。以下の手順で参加してください。',
   'home.inviteStep1':
     '1. Chrome 拡張「SR Data Extraction Plugin」をインストールし、ご自身の Google アカウントでログイン',
-  'home.inviteStep2': '2. 拡張アイコン →「スプレッドシート ID / URL で開く」に次を貼り付けて開く:',
+  'home.inviteStep2': '2. 拡張アイコン →「スプレッドシート ID / URL で開く」に次を貼り付けて開く（初めてのときは「Google で許可する」を押し、このスプレッドシートを選ぶ）:',
   'home.inviteStep3':
     '3. Home の「プロジェクトファイルへのアクセスを付与」で、表示されたファイルをすべて選択',
   'home.inviteStep4': '4.「検証」画面で担当ぶんを判定してください',
+  'home.inviteStep4Adjudicator': '4.「不一致の解消」画面で裁定してください',
+  'home.inviteApiKey':
+    'API キーの設定は要りません（AI の下読みは済んでいます。質問パネルを使うときだけ、設定画面でご自身のキーを保存してください）。',
+  'home.inviteApiKeyIndependent': 'API キーの設定は要りません。',
 
   // PDF ビューア（ui/pdfViewer.ts。検証・裁定の左ペイン共通）
   'pdf.prevPage': '前のページ',

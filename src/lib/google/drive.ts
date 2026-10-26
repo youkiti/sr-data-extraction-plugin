@@ -429,6 +429,8 @@ export type DrivePermissionRole = 'reader' | 'writer';
 export interface ShareFileOptions {
   /** 共有先へ Google の通知メールを送るか（既定 false）。相手が対象を見つけやすくしたいときだけ true */
   sendNotificationEmail?: boolean;
+  /** 共有通知メールに載せる平文。sendNotificationEmail が true のときだけ送る */
+  emailMessage?: string;
 }
 
 /**
@@ -452,7 +454,7 @@ export async function shareFileWithUser(
   const sendNotificationEmail = options.sendNotificationEmail ?? false;
   const url = `${METADATA_API}/${encodeURIComponent(fileId)}/permissions?sendNotificationEmail=${String(
     sendNotificationEmail
-  )}&fields=id`;
+  )}${sendNotificationEmail && options.emailMessage ? `&emailMessage=${encodeURIComponent(options.emailMessage)}` : ''}&fields=id`;
   await googleFetch(
     url,
     {

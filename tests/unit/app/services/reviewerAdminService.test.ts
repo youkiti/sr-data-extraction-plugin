@@ -1,3 +1,4 @@
+import { setUiLanguage, t } from '../../../../src/lib/i18n';
 import {
   buildReviewInvite,
   cancelReviewerChange,
@@ -115,7 +116,7 @@ describe('フォルダ共有状況と再共有', () => {
     expect(shareProjectWithReviewerMock).toHaveBeenCalledTimes(1);
     complete();
     await pending;
-    expect(shareProjectWithReviewerMock).toHaveBeenCalledWith(PROJECT, 'r@example.com', deps.google);
+    expect(shareProjectWithReviewerMock).toHaveBeenCalledWith(PROJECT, 'r@example.com', deps.google, expect.any(String));
     expect(store.getState().reviewers.shareErrors).toEqual([{ email: 'other@example.com', reason: '404' }]);
     expect(store.getState().reviewers.folderSharing.status).toBe('checked');
     expect(store.getState().reviewers.resharing).toBe(false);
@@ -399,6 +400,7 @@ describe('レビュアー追加時の Drive 自動共有', () => {
       { spreadsheetId: 'sheet-1', driveFolderId: 'folder-1' },
       'r1@example.com',
       deps.google,
+      expect.any(String),
     );
     expect(store.getState().reviewers.assignments).toEqual([
       expect.objectContaining({ email: 'r1@example.com', role: 'reviewer', reviewMode: 'independent' }),
@@ -461,6 +463,7 @@ describe('buildReviewInvite', () => {
       projectName: 'テスト SR',
       spreadsheetId: 'sheet-1',
       reviewerEmail: 'r1@example.com',
+      role: null,
       reviewMode: 'with_ai',
     });
     expect(text).toContain('r1@example.com さん');
@@ -474,6 +477,7 @@ describe('buildReviewInvite', () => {
       projectName: 'テスト SR',
       spreadsheetId: 'sheet-1',
       reviewerEmail: 'r1@example.com',
+      role: null,
       reviewMode: 'independent',
     });
     expect(text).toContain('AI 抜きの独立入力');
@@ -484,6 +488,7 @@ describe('buildReviewInvite', () => {
       projectName: 'テスト SR',
       spreadsheetId: 'sheet-1',
       reviewerEmail: 'r1@example.com',
+      role: null,
       reviewMode: null,
     });
     expect(text).toContain('AI の結果をレビュー');
@@ -748,5 +753,82 @@ describe('モード変更の続行時の再確認', () => {
     expect(store.getState().reviewers.confirmingChange).toBeNull();
     expect(appendReviewerAssignmentMock).not.toHaveBeenCalled();
     expect(shareProjectWithReviewerMock).not.toHaveBeenCalled();
+  });
+});
+
+
+describe('共有通知メールとコピーの参加手順', () => {
+  afterEach(() => setUiLanguage('ja'));
+
+  describe.each(['ja', 'en'] as const)('%s', (language) => {
+    test.each([
+      ['reviewer', 'with_ai'],
+      ['reviewer', 'independent'],
+      ['adjudicator', 'with_ai'],
+    ] as const)('%s / %s の追加と再共有は同じ役割別の本文を送る', async (role, reviewMode) => {
+      setUiLanguage(language);
+      const email = 'r1@example.com';
+      const fetch = jest.fn().mockResolvedValue({
+        ok: true, status: 200, json: async () => ({ id: 'perm' }),
+      } as Response);
+      const writeClipboard = jest.fn().mockResolvedValue(undefined);
+      const testDeps: ReviewerAdminServiceDeps = {
+        ...deps,
+        google: { fetch, getAccessToken: jest.fn().mockResolvedValue('t') },
+        shareProjectWithReviewer: undefined,
+        writeClipboard,
+      };
+      const store = makeStore();
+      await requestAddReviewer(store, testDeps, { email, role, reviewMode });
+      const message = new URL(fetch.mock.calls[0][0] as string).searchParams.get('emailMessage') as string;
+      expect(fetch.mock.calls[0][0]).toContain(`sendNotificationEmail=true&emailMessage=${encodeURIComponent(message)}`);
+      expect(fetch.mock.calls[1][0]).toBe('https://www.googleapis.com/drive/v3/files/folder-1/permissions?sendNotificationEmail=false&fields=id');
+      const adjudicator = role === 'adjudicator';
+      const independent = !adjudicator && reviewMode === 'independent';
+      const body = language === 'ja'
+        ? `系統的レビューのデータ抽出「テスト SR」の${adjudicator ? '裁定者' : 'レビュアー'}をお願いします。以下の手順で参加してください。`
+        : `Please join the systematic review data extraction "テスト SR" as ${adjudicator ? 'an adjudicator' : 'a reviewer'}. Follow these steps.`;
+      expect(message.split('\n')[2]).toBe(body);
+      expect(message).toContain(t('popup.openGrant'));
+      expect(message).toContain(language === 'ja' ? 'このスプレッドシートを選ぶ' : 'select this spreadsheet');
+      expect(message).toContain(adjudicator
+        ? `4.${language === 'ja' ? '「不一致の解消」画面で裁定してください' : ' Adjudicate on the "Resolve conflicts" screen'}`
+        : t('home.inviteStep4'));
+      expect(message).toContain(t(adjudicator ? 'app.navAdjudicate' : 'app.navVerify'));
+      if (adjudicator) {
+        expect(message).not.toContain(t('home.inviteModeIndependent'));
+        expect(message).not.toContain(t('home.inviteModeWithAi'));
+      } else {
+        expect(message).toContain(t(independent ? 'home.inviteModeIndependent' : 'home.inviteModeWithAi'));
+      }
+      expect(message.split('\n').at(-1)).toBe(language === 'ja'
+        ? independent ? 'API キーの設定は要りません。' : 'API キーの設定は要りません（AI の下読みは済んでいます。質問パネルを使うときだけ、設定画面でご自身のキーを保存してください）。'
+        : independent ? 'You do not need to configure an API key.' : 'You do not need to configure an API key (AI extraction is already complete. Only if you use the question panel, save your own key in Settings).');
+      await copyReviewInvite(store, testDeps, email);
+      expect(writeClipboard).toHaveBeenLastCalledWith(message);
+      // 古い役割の行があっても、再共有とコピーは最新の登録内容を使う。
+      store.setState({ reviewers: { ...store.getState().reviewers, assignments: [
+        { email, role: adjudicator ? 'reviewer' : 'adjudicator', reviewMode: null, assignedBy: 'o', assignedAt: 't-before' },
+        ...(store.getState().reviewers.assignments ?? []),
+      ] } });
+      await reshareReviewer(store, testDeps, email);
+      expect(new URL(fetch.mock.calls[2][0] as string).searchParams.get('emailMessage')).toBe(message);
+      expect(fetch.mock.calls[3][0]).toBe(fetch.mock.calls[1][0]);
+      await copyReviewInvite(store, testDeps, email);
+      expect(writeClipboard).toHaveBeenLastCalledWith(message);
+    });
+  });
+
+  test('解除済みの役割は不明としてレビュアーの案内を使う', async () => {
+    const store = makeStore();
+    const email = 'r@example.com';
+    store.setState({ reviewers: { ...store.getState().reviewers, assignments: [
+      { email, role: 'revoked', reviewMode: null, assignedBy: 'o', assignedAt: 't' },
+    ] } });
+    const writeClipboard = jest.fn().mockResolvedValue(undefined);
+    await reshareReviewer(store, deps, email);
+    await copyReviewInvite(store, { ...deps, writeClipboard }, email);
+    expect(writeClipboard).toHaveBeenCalledWith(shareProjectWithReviewerMock.mock.calls[0][3]);
+    expect(writeClipboard.mock.calls[0][0]).toContain('のレビュアーをお願いします');
   });
 });
