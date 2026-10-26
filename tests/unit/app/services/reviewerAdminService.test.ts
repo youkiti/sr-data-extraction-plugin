@@ -87,7 +87,7 @@ beforeEach(() => {
 function shareDoc(overrides: Partial<DocumentRecord> = {}): DocumentRecord {
   return {
     documentId: 'd', studyId: 's', documentRole: 'article', driveFileId: 'pdf',
-    sourceFileId: null, filename: '研究.pdf', pmid: null, doi: null, textRef: 'text',
+    sourceFileId: null, filename: '研究.pdf', pmid: null, doi: null, textRef: 'https://drive.google.com/file/d/text/view',
     textStatus: 'ok', pageCount: null, charCount: null, importedAt: '2026-10-01',
     importedBy: 'owner', note: null, excluded: false, exclusionReason: null,
     exclusionNote: null, excludedAt: null, ...overrides,
@@ -100,6 +100,8 @@ describe('文書ファイルへの共有フォールバック', () => {
       const store = makeStore();
       const documents = [shareDoc(), shareDoc({ driveFileId: 'pdf2', textRef: '' }),
         shareDoc({ driveFileId: 'pdf', textRef: null }),
+        shareDoc({ driveFileId: 'pdf', textRef: 'invalid' }),
+        shareDoc({ driveFileId: 'pdf', textRef: 'https://drive.google.com/open?id=text' }),
         shareDoc({ driveFileId: 'excluded', excluded: true })];
       store.setState({ documents: { ...store.getState().documents, records: documents } });
       const calls: string[] = [];

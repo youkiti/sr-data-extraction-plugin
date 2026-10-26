@@ -19,7 +19,7 @@ import type {
   TiabScreeningPhase,
 } from '../../features/documents/tiabReview';
 import { isReviewSetsActive, inheritReviewSet, reviewSetForStudy } from '../../features/review/reviewSets';
-import { resolveReviewSetStudies } from '../../features/documents/studyRepository';
+import { resolveActiveStudies } from '../../features/documents/studyRepository';
 import { t, type MessageKey } from '../../lib/i18n';
 import { activeStudyGroups, visibleMergeCandidates } from '../services/documentsService';
 import { el } from '../ui/dom';
@@ -738,7 +738,7 @@ function renderMergeDialog(dialog: MergeDialogState, state: AppState, ctx: ViewC
   const studies = state.documents.studies ?? [];
   const sourceStudies = studies.filter((study) => dialog.studyIds.includes(study.studyId));
   const reviewSets = state.reviewSets.sets ?? [];
-  const active = resolveReviewSetStudies(studies, state.documents.records ?? []);
+  const active = resolveActiveStudies(studies, state.documents.records ?? []);
   if (
     isReviewSetsActive(active, reviewSets) &&
     new Set(sourceStudies.map((study) => reviewSetForStudy(study, reviewSets))).size > 1

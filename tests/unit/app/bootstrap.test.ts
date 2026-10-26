@@ -1,3 +1,4 @@
+import { readDocuments } from '../../../src/features/documents/documentRepository';
 import * as schemaEnumService from '../../../src/app/services/schemaEnumService';
 import { withSpreadsheetWriteLock } from '../../../src/app/services/verificationService';
 import * as pendingWrites from '../../../src/app/services/pendingWrites';
@@ -3638,7 +3639,7 @@ describe('bootstrapApp: #/verify・#/dashboard', () => {
     );
   });
 
-  test('文書一覧が未キャッシュで entity 未指定でも担当外リンクを退避する', async () => {
+  test.each([true, false])('文書一覧のキャッシュ有無によらず entity 未指定でも担当外リンクを退避する（%s）', async (cached) => {
     const initial = createInitialState();
     const stub = createWindowStub({
       ...verifyPreloaded(),
@@ -3664,6 +3665,20 @@ describe('bootstrapApp: #/verify・#/dashboard', () => {
       Studies: [[...SHEET_HEADERS.Studies], [...STUDY_ROW.slice(0, 6), 'calibration']],
     });
     const store = await bootstrapApp(asWindow(stub), deps);
+    if (cached) {
+      store!.setState({ documents: { ...store!.getState().documents,
+        records: await readDocuments(store!.getState().currentProject!.spreadsheetId, deps.google),
+      } });
+    } else {
+      // 一覧の読込完了とルート同期の間に文書キャッシュが無効化された場合。
+      const unsubscribe = store!.subscribe(() => {
+        const state = store!.getState();
+        if (state.verify.targets !== null) {
+          unsubscribe();
+          store!.setState({ documents: { ...state.documents, records: null } });
+        }
+      });
+    }
     stub.location.hash = '#/verify?study=outside';
     stub.fireHashChange();
     await flush();

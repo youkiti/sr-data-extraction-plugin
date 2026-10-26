@@ -11,7 +11,7 @@ import type { HomeState, Store } from '../store';
 import { computeAnnotatorProgress } from '../../features/adjudication/gate';
 import { isReviewSetsActive } from '../../features/review/reviewSets';
 import { readDocuments } from '../../features/documents/documentRepository';
-import { resolveReviewSetStudies } from '../../features/documents/studyRepository';
+import { resolveActiveStudies } from '../../features/documents/studyRepository';
 import { getCurrentUserEmail } from '../../lib/google/identity';
 import {
   readReviewSetProgressMaterials,
@@ -89,13 +89,13 @@ export async function loadAssignedProgress(
       store.getState().documents.records ??
       (await readDocuments(project.spreadsheetId, deps.google));
     const sets = reviewSetsForFiltering(store, true);
-    if (!isReviewSetsActive(resolveReviewSetStudies(studies, documents), sets)) {
+    if (!isReviewSetsActive(resolveActiveStudies(studies, documents), sets)) {
       patchHome(store, { assignedProgressLoading: false, assignedProgress: null });
       return;
     }
     const email = (await getCurrentUserEmail(deps.profile)) ?? '';
     const material = await readReviewSetProgressMaterials(store, deps);
-    const ownStudies = filterReviewSetStudies(store, material.studies, documents, email, true);
+    const ownStudies = filterReviewSetStudies(store, material.activeStudies, documents, email, true);
     const done = ownStudies.filter(
       (study) =>
         computeAnnotatorProgress(

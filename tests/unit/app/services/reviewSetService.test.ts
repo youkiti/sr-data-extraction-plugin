@@ -939,3 +939,24 @@ test('独立入力の担当進捗素材は Evidence と ExtractionRuns を読ま
   expect(readEvidenceRows).not.toHaveBeenCalled();
   expect(readCompletedRunMetas).not.toHaveBeenCalled();
 });
+
+
+test('割当済み study が全て除外されても担当絞り込みを維持する', async () => {
+  const result = activeStore('reviewer_with_ai');
+  const studies = [study(), study({ studyId: 'outside' })];
+  const documents = [{ ...doc(), excluded: true }, doc('outside')];
+  result.setState({
+    documents: { ...result.getState().documents, studies, records: documents },
+    reviewSets: { ...result.getState().reviewSets, sets: [reviewSet()] },
+  });
+  expect(filterReviewSetStudies(result, studies, documents, 'a@example.com', true)).toEqual([]);
+  expect(filterReviewSetStudies(result, studies, documents, 'a@example.com', false)).toEqual(studies);
+  const material = await readReviewSetProgressMaterials(result, deps);
+  expect(material.activeStudies).toEqual(studies);
+  expect(material.studies).toEqual([studies[1]]);
+  jest.mocked(getCurrentUserEmail).mockResolvedValue('a@example.com');
+  await loadAssignedProgress(result, deps);
+  expect(result.getState().home.assignedProgress).toEqual({ done: 0, total: 0 });
+  await loadDashboard(result, deps);
+  expect(result.getState().dashboard.reviewSetProgress).not.toBeNull();
+});

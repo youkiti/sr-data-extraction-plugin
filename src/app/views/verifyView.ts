@@ -7,7 +7,7 @@ import { resolveFetchedPricing } from '../fetchedPricing';
 // ?entity=（S9 ダッシュボードのセル単位ディープリンク）は該当タブへの切替 + 先頭セルへの
 // スクロール・フォーカスとしてパネルへ渡す。2 ペイン本体は #/pilot と同じ verificationPanel を使う
 import { isReviewSetsActive } from '../../features/review/reviewSets';
-import { resolveReviewSetStudies } from '../../features/documents/studyRepository';
+import { resolveActiveStudies } from '../../features/documents/studyRepository';
 import { canAskPaper } from '../../features/verification/chatAssist';
 import { t } from '../../lib/i18n';
 import { el } from '../ui/dom';
@@ -170,10 +170,10 @@ export function renderVerifyView(state: AppState, ctx: ViewContext): HTMLElement
   }
 
   const studies = state.documents.studies ?? verify.targets.map((target) => target.study);
-  const active =
-    state.documents.records === null
-      ? studies
-      : resolveReviewSetStudies(studies, state.documents.records);
+  const active = resolveActiveStudies(
+    studies,
+    state.documents.records ?? verify.targets.flatMap((target) => target.documents),
+  );
   if (state.role.role === 'owner' && isReviewSetsActive(active, state.reviewSets.sets ?? [])) {
     const toggle = el('input', {
       id: 'verify-assigned-only',

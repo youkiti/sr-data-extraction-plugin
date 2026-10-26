@@ -17,6 +17,7 @@ import {
 } from '../../features/project/reviewerRepository';
 import { readAnnotatorTypesForEmail } from '../../features/project/reviewerWorkRepository';
 import type { DocumentRecord } from '../../domain/document';
+import { parseDriveFileId } from '../../features/documents/loadDocumentPages';
 import { readDocuments } from '../../features/documents/documentRepository';
 import { listFilePermissions, shareFileWithUser } from '../../lib/google/drive';
 import { getCurrentUserEmail, type ProfileDeps } from '../../lib/google/identity';
@@ -81,7 +82,7 @@ async function defaultShareProjectWithReviewer(
   const documents = await loadDocuments();
   const ids = new Set(
     documents.filter((doc) => !doc.excluded)
-      .flatMap((doc) => [doc.driveFileId, doc.textRef])
+      .flatMap((doc) => [doc.driveFileId, doc.textRef === null ? null : parseDriveFileId(doc.textRef)])
       .filter((id): id is string => !!id),
   );
   let failed = 0;

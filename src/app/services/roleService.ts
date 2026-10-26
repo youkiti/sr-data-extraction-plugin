@@ -8,7 +8,7 @@
 import type { DocumentRecord } from '../../domain/document';
 import type { ProjectRole } from '../../domain/reviewer';
 import { readDocuments } from '../../features/documents/documentRepository';
-import { resolveReviewSetStudies } from '../../features/documents/studyRepository';
+import { resolveActiveStudies } from '../../features/documents/studyRepository';
 import { parseDriveFileId } from '../../features/documents/loadDocumentPages';
 import { loadProjectMeta } from '../../features/project/selectProject';
 import { latestReviewerAssignment, readReviewerAssignments } from '../../features/project/reviewerRepository';
@@ -260,7 +260,7 @@ async function documentsForFileAccess(
   );
   // 有効化していなければ従来どおり。Studies 未読込の旧プロジェクトもここへ入る。
   const sets = reviewSetsForFiltering(store, true);
-  if (!isReviewSetsActive(resolveReviewSetStudies(studies, documents), sets)) return documents;
+  if (!isReviewSetsActive(resolveActiveStudies(studies, documents), sets)) return documents;
   return documents.filter((doc) => allowed.has(doc.studyId));
 }
 

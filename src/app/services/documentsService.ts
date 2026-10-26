@@ -33,7 +33,6 @@ import {
   ensureStudyReviewSetColumn,
   readStudies,
   resolveActiveStudies,
-  resolveReviewSetStudies,
   updateStudy,
 } from '../../features/documents/studyRepository';
 import { readRunStudyCoverage } from '../../features/extraction/runRepository';
@@ -686,7 +685,7 @@ export async function confirmMerge(
       const doc = byId.get(reassign.documentId) as DocumentRecord;
       await updateDocument(project.spreadsheetId, { ...doc, studyId: reassign.studyId }, deps.google);
     }
-    if (isReviewSetsActive(resolveReviewSetStudies(studies, records), reviewSets))
+    if (isReviewSetsActive(resolveActiveStudies(studies, records), reviewSets))
       await replaceReviewSetStudies(
         store,
         deps,
