@@ -24,6 +24,7 @@ import {
 import { resolveProviderId } from '../../lib/llm/providerFactory';
 import {
   EXTRACT_DATA_ARM_COMPLETENESS_RULE,
+  EXTRACT_DATA_OUTCOME_SOURCE_RULE,
   EXTRACT_DATA_SYSTEM_PROMPT,
 } from './skills/extractData';
 
@@ -222,12 +223,18 @@ function estimateBatch(
   const armCompletenessChars = fields.some((field) => field.entityLevel === 'arm')
     ? EXTRACT_DATA_ARM_COMPLETENESS_RULE.length + 2
     : 0;
+  // outcome_result レベル項目を含むバッチは buildSuffixSections が出所の規則を追記する
+  // ため、同じ条件でそのぶんの文字数（+ セクション結合の '\n\n'）を概算にも加算して同期を保つ
+  const outcomeSourceChars = fields.some((field) => field.entityLevel === 'outcome_result')
+    ? EXTRACT_DATA_OUTCOME_SOURCE_RULE.length + 2
+    : 0;
   const promptChars =
     PROMPT_SCAFFOLD_CHARS +
     protocolChars +
     fields.reduce((sum, field) => sum + fieldPromptChars(field), 0) +
     textBodyChars +
-    armCompletenessChars;
+    armCompletenessChars +
+    outcomeSourceChars;
   const items = fields.reduce((sum, field) => {
     const config = multiSelectConfigOf(field);
     return sum + ENTITY_INSTANCE_ESTIMATE[field.entityLevel] * (config !== null && isMultiSelectField(field)

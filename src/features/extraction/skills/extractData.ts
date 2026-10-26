@@ -55,8 +55,11 @@ export const EXTRACT_DATA_SKILL_NAME = 'extract-data';
  *   outcome_result だけのバッチ等）にも番号づけの規則が出るようにするため（issue #293）。
  *   outcome_result の項目を含まないバッチのプロンプトは変わらない
  * v12（2026-10-04）: 複数選択で選択肢ごとの要素を返し、全要素に section を返す（issue #307）。
+ * v13（2026-10-26）: 利用者の実データで序論の先行研究の記述がアウトカムに抽出されたため、
+ *   outcome_result の出所をその研究自身の結果に限る規則を suffix 末尾へ追加。
+ *   outcome_result の項目を含まないバッチのプロンプトは変わらない
  */
-export const EXTRACT_DATA_PROMPT_VERSION = 12;
+export const EXTRACT_DATA_PROMPT_VERSION = 13;
 
 /** text_only モードで LLM へ渡すページ別本文（extracted_texts/{id}.txt 由来） */
 export interface ExtractDataPage {
@@ -203,6 +206,23 @@ export const EXTRACT_DATA_ARM_COMPLETENESS_RULE = `
 Before returning, verify your JSON array is COMPLETE for arm-level fields: for EVERY arm-level field listed under "## Fields to extract", return at least one item for EVERY arm that appears in the documents ("arm:1", "arm:2", ...). If the study has A arms and this batch lists F arm-level fields, your array must contain at least A x F arm-level items (plus the items for other levels); additional items are allowed only for fields with max_quotes (up to that limit per field and arm) and for fields with multi_select (one per applicable allowed value). Do NOT stop after the first arm; arms 2, 3, ... require the same complete set of items as arm 1.
 `.trim();
 
+/**
+ * outcome_result レベル項目の出所を、その研究自身の結果に限定する規則。
+ * 利用者の実データで、序論の先行研究の記述がアウトカムに抽出されたため追加する。
+ * - なぜ suffix 末尾か: suffix はバッチごとに変わる部分で、ここへの追記は
+ *   prefix（Protocol context + Documents + 画像）のキャッシュヒットに影響しない
+ * - なぜ条件付きか: outcome_result の無いバッチでは無関係な規則がノイズになるため、
+ *   presentLevels に outcome_result が含まれるときだけ追加する
+ *
+ * export しているのは planRun のトークン概算（estimateBatch）が同じ条件で .length を
+ * 加算し、見積りとプロンプト実体の同期を保つため
+ */
+export const EXTRACT_DATA_OUTCOME_SOURCE_RULE = `
+## Source of outcome findings (outcome_result-level fields)
+
+For outcome_result-level fields, extract only findings supported by this study's own results: what this study measured, observed or reported about its own participants or data. Do NOT extract statements from the Introduction or Background, findings attributed to previous studies or cited literature, or interpretations and speculations that this study's own results do not support, even when they name the same outcome or use the same terms. If an outcome appears only in such statements, do not create an outcome_result entity for it; if a listed outcome_result field has no support in this study's own results, return it with "not_reported": true.
+`.trim();
+
 /** 1 項目ぶんの定義ブロック。null / 空の補助情報は行ごと省略する */
 function renderField(field: SchemaField): string {
   const lines = [
@@ -304,7 +324,8 @@ function buildPrefixSections(input: ExtractDataPromptInput): string[] {
 
 /**
  * プロンプト後半（バッチごとに変わる部分）のセクション群: Fields to extract → entity_key rules →
- * Output format（→ arm レベル項目を含むバッチのみ Completeness check）。
+ * Output format → arm の Completeness check → outcome_result の Source of outcome findings。
+ * 末尾の各規則は、そのレベルの項目を含むバッチだけに追加する。
  * fields は fieldIndex 順に並べ、entity_key 規約は当該バッチに現れる entity_level のぶんだけ提示する
  */
 function buildSuffixSections(input: ExtractDataPromptInput): string[] {
@@ -331,6 +352,9 @@ function buildSuffixSections(input: ExtractDataPromptInput): string[] {
   // arm レベル項目を含むバッチだけ、suffix 末尾へ completeness 強調を追記する（issue #97）
   if (presentLevels.has('arm')) {
     sections.push(EXTRACT_DATA_ARM_COMPLETENESS_RULE);
+  }
+  if (presentLevels.has('outcome_result')) {
+    sections.push(EXTRACT_DATA_OUTCOME_SOURCE_RULE);
   }
 
   return sections;
