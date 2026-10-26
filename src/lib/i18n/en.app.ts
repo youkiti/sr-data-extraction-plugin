@@ -910,6 +910,8 @@ export const enApp: Record<keyof typeof jaApp, string> = {
     'While viewing the PDF, enter values (edit) or mark not_reported (no AI extraction is shown).',
   'verify.selectorOption': '{label} ({decided} / {total} decided)',
   'verify.selectorOptionNoResult': '{label} [No AI result] ({decided} / {total} decided)',
+  'verify.selectorOptionCalibration': '{label} [Calibration] ({decided} / {total} decided)',
+  'verify.selectorOptionCalibrationNoResult': '{label} [Calibration] [No AI result] ({decided} / {total} decided)',
   'verify.noAiResultLead':
     'There is no AI extraction result (the extraction failed or returned an empty response). You can still record values by hand.',
   'verify.noAiResultRobLimit':

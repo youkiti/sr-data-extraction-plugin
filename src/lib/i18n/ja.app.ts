@@ -898,6 +898,8 @@ export const jaApp = {
     'PDF を確認しながら、値を入力（edit）/ not_reported で判定します（AI 抽出は行われません）。',
   'verify.selectorOption': '{label}（判定済み {decided} / {total}）',
   'verify.selectorOptionNoResult': '{label}［AI 抽出結果なし］（判定済み {decided} / {total}）',
+  'verify.selectorOptionCalibration': '{label}［キャリブレーション］（判定済み {decided} / {total}）',
+  'verify.selectorOptionCalibrationNoResult': '{label}［キャリブレーション］［AI 抽出結果なし］（判定済み {decided} / {total}）',
   'verify.noAiResultLead':
     'AI 抽出結果がありません（抽出に失敗したか応答が空でした）。値は手入力で記録できます。',
   'verify.noAiResultRobLimit':
