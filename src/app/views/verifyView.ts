@@ -170,10 +170,10 @@ export function renderVerifyView(state: AppState, ctx: ViewContext): HTMLElement
   }
 
   const studies = state.documents.studies ?? verify.targets.map((target) => target.study);
-  const active =
-    state.documents.records === null
-      ? studies
-      : resolveActiveStudies(studies, state.documents.records);
+  const active = resolveActiveStudies(
+    studies,
+    state.documents.records ?? verify.targets.flatMap((target) => target.documents),
+  );
   if (state.role.role === 'owner' && isReviewSetsActive(active, state.reviewSets.sets ?? [])) {
     const toggle = el('input', {
       id: 'verify-assigned-only',

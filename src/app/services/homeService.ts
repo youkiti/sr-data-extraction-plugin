@@ -95,7 +95,7 @@ export async function loadAssignedProgress(
     }
     const email = (await getCurrentUserEmail(deps.profile)) ?? '';
     const material = await readReviewSetProgressMaterials(store, deps);
-    const ownStudies = filterReviewSetStudies(store, material.studies, documents, email, true);
+    const ownStudies = filterReviewSetStudies(store, material.activeStudies, documents, email, true);
     const done = ownStudies.filter(
       (study) =>
         computeAnnotatorProgress(

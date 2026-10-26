@@ -1275,6 +1275,38 @@ describe('担当セットとファイル許可', () => {
       { granted: [], skipped: ['pdf-assigned', 'pdf-cal'] },
     );
   });
+  test('全文書が除外された担当 study の PDF は付与対象にしない', async () => {
+    const store = assignedStore('reviewer_independent');
+    const rows = await readDocumentsMock('sheet-1', makeDeps('r1@example.com').google);
+    readDocumentsMock.mockResolvedValue(rows.map((row: DocumentRecord) => ({
+      ...row, excluded: row.studyId === 'assigned',
+    })));
+    await grantFolderAccess(store, makeDeps('r1@example.com'));
+    expect(openProjectFilesPickerMock.mock.calls[0]?.[1]).toEqual(['pdf-cal']);
+  });
+  test.each(['reviewer_with_ai', 'reviewer_independent'] as const)(
+    '%s の割当済み study が全て除外されても担当外へファイル許可を広げない',
+    async (role) => {
+      const store = assignedStore(role);
+      store.setState({ reviewSets: { ...store.getState().reviewSets,
+        sets: [store.getState().reviewSets.sets![0]!],
+      } });
+      const rows = await readDocumentsMock('sheet-1', makeDeps('r1@example.com').google);
+      readDocumentsMock.mockResolvedValue(rows.map((row: DocumentRecord) => ({
+        ...row, excluded: row.studyId === 'assigned',
+      })));
+      await checkMissingFileAccess(store, makeDeps('r1@example.com'));
+      expect(store.getState().role.folderAccessMissingCount).toBe(0);
+      expect(getFileMd5Mock).not.toHaveBeenCalled();
+      await grantFolderAccess(store, makeDeps('r1@example.com'));
+      expect(openProjectFilesPickerMock).not.toHaveBeenCalled();
+      await skipMissingFileAccess(store, makeDeps('r1@example.com'));
+      expect(setLocalMock).not.toHaveBeenCalledWith(
+        fileAccessRecordStorageKey('sheet-1', 'r1@example.com'),
+        expect.objectContaining({ skipped: expect.arrayContaining(['pdf-outside']) }),
+      );
+    },
+  );
   test('studyIds が全て空なら従来の全件', async () => {
     const store = assignedStore('reviewer_with_ai');
     store.setState({

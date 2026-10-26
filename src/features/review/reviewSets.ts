@@ -13,7 +13,7 @@ import type { SchemaField } from '../../domain/schemaField';
 import type { StudyRecord } from '../../domain/study';
 import { computeAnnotatorProgress } from '../adjudication/gate';
 
-/** studies は呼び出し側でアクティブな行に絞る。sets は畳み込み済みの行を渡す */
+/** studies は除外前の resolveActiveStudies の行を渡す。sets は畳み込み済みの行を渡す */
 export function isReviewSetsActive(
   studies: readonly StudyRecord[],
   sets: readonly ReviewSetRow[],

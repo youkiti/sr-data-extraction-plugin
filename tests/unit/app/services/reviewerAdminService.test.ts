@@ -1,4 +1,7 @@
 import { setUiLanguage, t } from '../../../../src/lib/i18n';
+import type { DocumentRecord } from '../../../../src/domain/document';
+import { readDocuments } from '../../../../src/features/documents/documentRepository';
+jest.mock('../../../../src/features/documents/documentRepository', () => ({ readDocuments: jest.fn() }));
 import {
   buildReviewInvite,
   cancelReviewerChange,
@@ -65,6 +68,7 @@ const deps: ReviewerAdminServiceDeps = {
 
 function makeStore(withProject = true): Store {
   const state = createInitialState();
+  state.documents.records = [];
   if (withProject) {
     state.currentProject = PROJECT;
   }
@@ -74,9 +78,124 @@ function makeStore(withProject = true): Store {
 beforeEach(() => {
   jest.mocked(readQuoteSetRows).mockResolvedValue([]);
   jest.clearAllMocks();
+  jest.mocked(readDocuments).mockResolvedValue([]);
   appendReviewerAssignmentMock.mockResolvedValue(undefined);
   shareProjectWithReviewerMock.mockResolvedValue(undefined);
   jest.mocked(listFilePermissions).mockResolvedValue({ emails: new Set(), hasBroadAccess: false });
+});
+
+function shareDoc(overrides: Partial<DocumentRecord> = {}): DocumentRecord {
+  return {
+    documentId: 'd', studyId: 's', documentRole: 'article', driveFileId: 'pdf',
+    sourceFileId: null, filename: '研究.pdf', pmid: null, doi: null, textRef: 'https://drive.google.com/file/d/text/view',
+    textStatus: 'ok', pageCount: null, charCount: null, importedAt: '2026-10-01',
+    importedBy: 'owner', note: null, excluded: false, exclusionReason: null,
+    exclusionNote: null, excludedAt: null, ...overrides,
+  };
+}
+
+describe('文書ファイルへの共有フォールバック', () => {
+  test.each(['add', 'reshare'] as const)('%s は順番に重複なく共有し、全件を試して結果を通知する', async (action) => {
+    for (const failFile of [false, true]) {
+      const store = makeStore();
+      const documents = [shareDoc(), shareDoc({ driveFileId: 'pdf2', textRef: '' }),
+        shareDoc({ driveFileId: 'pdf', textRef: null }),
+        shareDoc({ driveFileId: 'pdf', textRef: 'invalid' }),
+        shareDoc({ driveFileId: 'pdf', textRef: 'https://drive.google.com/open?id=text' }),
+        shareDoc({ driveFileId: 'excluded', excluded: true })];
+      store.setState({ documents: { ...store.getState().documents, records: documents } });
+      const calls: string[] = [];
+      let active = false;
+      const fetch = jest.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        expect(active).toBe(false);
+        active = true;
+        await Promise.resolve();
+        active = false;
+        const id = url.split('/files/')[1]!.split('/')[0]!;
+        calls.push(id);
+        expect(init?.method).toBe('POST');
+        if (id !== 'sheet-1') expect(url).toContain('sendNotificationEmail=false');
+        const fail = id === 'folder-1' || (failFile && id === 'text');
+        return { ok: !fail, status: fail ? 403 : 200, text: async () => '' } as Response;
+      });
+      const localDeps = { ...deps, shareProjectWithReviewer: undefined,
+        google: { fetch, getAccessToken: async () => 't' } };
+      if (action === 'add') await requestAddReviewer(store, localDeps,
+        { email: 'r@example.com', role: 'reviewer', reviewMode: 'with_ai' });
+      else await reshareReviewer(store, localDeps, 'r@example.com');
+      expect(calls).toEqual(['sheet-1', 'folder-1', 'pdf', 'text', 'pdf2']);
+      if (failFile) {
+        expect(store.getState().reviewers.shareErrors[0]?.reason).toBe('3 件中 1 件のファイルを共有できませんでした');
+      } else {
+        expect(store.getState().reviewers.shareErrors).toEqual([]);
+        expect(document.body.textContent).toContain(action === 'add'
+          ? 'r@example.com を登録し、シートと文書ファイル 3 件を共有して、参加手順をメールで送りました'
+          : 'r@example.com にシートと文書ファイル 3 件を共有し直しました');
+      }
+    }
+  });
+
+  test.each(['add', 'reshare'] as const)('%s はシート失敗で以降を呼ばない', async (action) => {
+    const store = makeStore();
+    const fetch = jest.fn().mockResolvedValue({ ok: false, status: 403, text: async () => '' });
+    const read = jest.fn();
+    const localDeps = { ...deps, shareProjectWithReviewer: undefined, readDocuments: read,
+      google: { fetch, getAccessToken: async () => 't' } };
+    if (action === 'add') await requestAddReviewer(store, localDeps,
+      { email: 'r@example.com', role: 'reviewer', reviewMode: 'with_ai' });
+    else await reshareReviewer(store, localDeps, 'r@example.com');
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(read).not.toHaveBeenCalled();
+  });
+
+  test.each([true, false])('ストア未読込なら Documents を取得し、0 件なら個別共有は不要（注入=%s）', async (inject) => {
+    const store = makeStore();
+    store.setState({ documents: { ...store.getState().documents, records: null } });
+    const read = jest.fn().mockResolvedValue([]);
+    const fetch = jest.fn().mockResolvedValueOnce({ ok: true })
+      .mockResolvedValueOnce({ ok: false, status: 400, text: async () => '' });
+    await reshareReviewer(store, { ...deps, shareProjectWithReviewer: undefined,
+      readDocuments: inject ? read : undefined, google: { fetch, getAccessToken: async () => 't' } }, 'r@example.com');
+    expect(inject ? read : readDocuments).toHaveBeenCalledWith('sheet-1', expect.anything());
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(document.body.textContent).toContain('文書ファイル 0 件');
+  });
+
+  test.each([true, false])('フォルダ未共有時は最新の有効 PDF で確認する（共有=%s）', async (shared) => {
+    const store = makeStore();
+    store.setState({ documents: { ...store.getState().documents, records: [
+      shareDoc(), shareDoc({ driveFileId: 'latest', importedAt: '2026-10-20' }),
+      shareDoc({ driveFileId: 'excluded', importedAt: '2026-10-25', excluded: true }),
+    ] } });
+    readReviewerAssignmentsMock.mockResolvedValue([
+      { email: 'R@example.com', role: 'reviewer', reviewMode: 'with_ai', assignedBy: 'o', assignedAt: 't' },
+    ]);
+    jest.mocked(listFilePermissions).mockResolvedValueOnce({ emails: new Set(), hasBroadAccess: false })
+      .mockResolvedValueOnce({ emails: new Set(shared ? ['r@example.com'] : []), hasBroadAccess: false });
+    await loadReviewers(store, deps);
+    expect(jest.mocked(listFilePermissions).mock.calls.map(([id]) => id)).toEqual(['folder-1', 'latest']);
+    const sharing = store.getState().reviewers.folderSharing;
+    expect(sharing.status === 'checked' && sharing.emails.has('r@example.com')).toBe(shared);
+  });
+
+  test('フォルダに共有済みなら PDF を読まず、PDF 権限の取得失敗は unknown とする', async () => {
+    const store = makeStore();
+    store.setState({ documents: { ...store.getState().documents, records: [shareDoc()] } });
+    readReviewerAssignmentsMock.mockResolvedValue([
+      { email: 'r@example.com', role: 'reviewer', reviewMode: 'with_ai', assignedBy: 'o', assignedAt: 't' },
+    ]);
+    jest.mocked(listFilePermissions).mockResolvedValueOnce({ emails: new Set(['r@example.com']), hasBroadAccess: false });
+    await loadReviewers(store, deps);
+    expect(listFilePermissions).toHaveBeenCalledTimes(1);
+    jest.mocked(listFilePermissions).mockResolvedValueOnce({ emails: new Set(), hasBroadAccess: false })
+      .mockRejectedValueOnce(new Error('PDF denied'));
+    await loadReviewers(store, deps, { force: true });
+    expect(store.getState().reviewers.folderSharing).toEqual({ status: 'unknown' });
+    expect(readReviewerAssignmentsMock).toHaveBeenCalledTimes(2);
+    expect(jest.mocked(listFilePermissions).mock.calls.map(([id]) => id))
+      .toEqual(['folder-1', 'folder-1', 'pdf']);
+  });
 });
 
 describe('フォルダ共有状況と再共有', () => {
@@ -187,15 +306,24 @@ describe('loadReviewers', () => {
     expect(readReviewerAssignmentsMock).not.toHaveBeenCalled();
   });
 
-  test('読込済みなら no-op、force で強制再取得する', async () => {
+  test('読込済みなら何も読まず、force で一覧と共有状況を再取得する', async () => {
     readReviewerAssignmentsMock.mockResolvedValue([]);
     const store = makeStore();
     store.setState({ reviewers: { ...store.getState().reviewers, assignments: [] } });
+    const loadedState = store.getState();
     await loadReviewers(store, deps);
     expect(readReviewerAssignmentsMock).not.toHaveBeenCalled();
+    expect(listFilePermissions).not.toHaveBeenCalled();
+    expect(readDocuments).not.toHaveBeenCalled();
+    expect(store.getState()).toBe(loadedState);
 
     await loadReviewers(store, deps, { force: true });
     expect(readReviewerAssignmentsMock).toHaveBeenCalledTimes(1);
+    expect(listFilePermissions).toHaveBeenCalledTimes(1);
+    expect(listFilePermissions).toHaveBeenCalledWith('folder-1', deps.google);
+    expect(store.getState().reviewers.folderSharing).toEqual({
+      status: 'checked', emails: new Set(), hasBroadAccess: false,
+    });
   });
 
   test('読込中の再入は no-op', async () => {

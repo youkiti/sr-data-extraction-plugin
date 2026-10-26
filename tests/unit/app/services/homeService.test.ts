@@ -162,7 +162,7 @@ test('Home は AI 抽出だけの未判定インスタンスがあれば完了�
   jest.mocked(filterReviewSetStudies).mockReturnValue(studies);
   jest.mocked(getCurrentUserEmail).mockResolvedValue('a@example.com');
   jest.mocked(readReviewSetProgressMaterials).mockResolvedValue({
-    studies, fields: [field(), field({ fieldId: 'f-out', entityLevel: 'outcome_result' })],
+    activeStudies: studies, studies, fields: [field(), field({ fieldId: 'f-out', entityLevel: 'outcome_result' })],
     decisions: [decision()], armStructures: new Map(),
     aiEvidenceByStudy: new Map([['s1', [outcomeEvidence()]]]),
   });

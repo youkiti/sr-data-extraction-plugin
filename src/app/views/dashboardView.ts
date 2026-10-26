@@ -12,7 +12,7 @@ import type {
   RateCount,
 } from '../../features/verification/dashboard';
 import { currentReviewSets } from '../../features/review/reviewSets';
-import { resolveActiveStudies } from '../../features/documents/studyRepository';
+import { resolveReviewSetStudies } from '../../features/documents/studyRepository';
 import { t, type MessageKey } from '../../lib/i18n';
 import { el } from '../ui/dom';
 import { headingWithHelp } from '../ui/helpButton';
@@ -155,7 +155,7 @@ function renderReviewSetProgress(state: AppState): HTMLElement | null {
   const progress = state.dashboard.reviewSetProgress;
   if (progress === null) return null;
   const emails = [...new Set(progress.map((row) => row.email))].sort();
-  const studies = resolveActiveStudies(
+  const studies = resolveReviewSetStudies(
     state.documents.studies ?? [],
     state.documents.records ?? [],
   );

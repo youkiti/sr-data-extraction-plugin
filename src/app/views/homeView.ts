@@ -290,11 +290,10 @@ function renderReviewerAdminCard(state: AppState, ctx: ViewContext): HTMLElement
           attributes: { role: 'alert' },
         },
         [
-          ...reviewers.shareErrors.map(({ email, reason }) =>
-            el('p', {
-              text: t('home.folderShareFailed', { email, reason }),
-            }),
-          ),
+          ...reviewers.shareErrors.flatMap(({ email, reason }) => [
+            el('p', { text: t('home.folderShareFailed', { email, reason }) }),
+            el('p', { text: t('home.folderShareManual', { email }) }),
+          ]),
           el('a', {
             text: t('home.openProjectFolder'),
             attributes: {
@@ -303,7 +302,6 @@ function renderReviewerAdminCard(state: AppState, ctx: ViewContext): HTMLElement
               rel: 'noopener noreferrer',
             },
           }),
-          el('p', { text: t('home.folderShareManual') }),
         ],
       ),
     );

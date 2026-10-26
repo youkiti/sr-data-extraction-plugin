@@ -142,6 +142,7 @@ import {
   cancelResplit,
   confirmResplit,
   loadReviewSets,
+  reviewSetStudies,
   saveReviewSetEmails,
   splitReviewSets,
 } from './services/reviewSetService';
@@ -198,6 +199,8 @@ import {
 } from './services/exportService';
 import { createChromeGoogleApiDeps } from './services/factories';
 import type { ProjectRole } from '../domain/reviewer';
+import { readDocuments } from '../features/documents/documentRepository';
+import { resolveActiveStudies } from '../features/documents/studyRepository';
 import { isReviewSetsActive } from '../features/review/reviewSets';
 import { loadCurrentProject } from '../features/project/projectStore';
 import { extractDocxText } from '../lib/docx/extractDocxText';
@@ -1094,7 +1097,10 @@ export async function bootstrapApp(
     if (
       assigned &&
       isReviewSetsActive(
-        targets.map((target) => target.study),
+        resolveActiveStudies(
+          await reviewSetStudies(store, deps),
+          state.documents.records ?? await readDocuments(state.currentProject!.spreadsheetId, deps.google),
+        ),
         sets,
       ) &&
       !targets.some((target) => target.study.studyId === desired)

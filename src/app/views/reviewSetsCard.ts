@@ -6,7 +6,7 @@ import {
   type ReviewSetRow,
 } from '../../domain/reviewSet';
 import type { StudyRecord } from '../../domain/study';
-import { resolveActiveStudies } from '../../features/documents/studyRepository';
+import { resolveReviewSetStudies } from '../../features/documents/studyRepository';
 import { currentReviewSets, reviewSetForStudy, reviewSetMismatchCount } from '../../features/review/reviewSets';
 import { t } from '../../lib/i18n';
 import type { AppState } from '../store';
@@ -211,7 +211,7 @@ export function renderReviewSetsCard(state: AppState, ctx: ViewContext): HTMLEle
     );
     return card();
   }
-  const studies = resolveActiveStudies(documents.studies, documents.records);
+  const studies = resolveReviewSetStudies(documents.studies, documents.records);
   const mismatchCount = reviewSetMismatchCount(studies, reviewSets.sets);
   if (mismatchCount > 0)
     children.push(

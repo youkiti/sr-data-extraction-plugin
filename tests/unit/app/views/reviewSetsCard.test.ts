@@ -81,6 +81,19 @@ test('参照されていない study しか無ければ案内だけを出す', (
   expect(view.querySelector('#review-sets-empty')?.textContent).toContain('文献を取り込んで');
   expect(view.querySelector('form')).toBeNull();
 });
+
+test('既存セットの件数と未割当表示は除外された study を含めない', () => {
+  const f = fixture(true);
+  f.state.reviewSets.sets = f.state.reviewSets.sets!.map((set) => ({ ...set, seed: '42' }));
+  f.state.documents.records = f.state.documents.records!.map((row) => ({
+    ...row, excluded: row.studyId !== 'cal',
+  }));
+  const view = f.render();
+  const rows = [...view.querySelectorAll('#review-sets-list tbody tr')];
+  expect(rows.find((row) => row.querySelector('th')?.textContent === 'group-1')?.querySelector('td')?.textContent).toBe('0');
+  expect(rows.find((row) => row.querySelector('th')?.textContent === 'calibration')?.querySelector('td')?.textContent).toBe('1');
+  expect(view.querySelector('#review-sets-unassigned')).toBeNull();
+});
 test('使用中は seed・数値順の表・全員・二人でない注記・未割当を出す', () => {
   const f = fixture(true);
   const view = f.render();

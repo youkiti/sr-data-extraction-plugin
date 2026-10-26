@@ -194,6 +194,17 @@ export function resolveActiveStudies(
   return studies.filter((study) => referenced.has(study.studyId));
 }
 
+/**
+ * 担当セットでは除外していない文書を持つ study だけを対象にする。
+ * 検証・エクスポートで除外済みも保持する resolveActiveStudies とは対象を分ける。
+ */
+export function resolveReviewSetStudies(
+  studies: readonly StudyRecord[],
+  documents: readonly DocumentRecord[],
+): StudyRecord[] {
+  return resolveActiveStudies(studies, documents.filter((doc) => !doc.excluded));
+}
+
 /** study_id → study_label の解決マップ（表示ラベルの引き当て用）。見つからない id は呼び出し側でフォールバック */
 export function studyLabelMap(studies: readonly StudyRecord[]): Map<string, string> {
   return new Map(studies.map((study) => [study.studyId, study.studyLabel]));

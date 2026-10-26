@@ -600,18 +600,18 @@
           </h3>
           <p>
             <span class="ja" lang="ja"
-              >文献を取り込んだら、オーナーが Home の「担当セット」で「キャリブレーション本数」と「グループ数」を入力し、「分ける」を押します。文献が無作為に分割され、キャリブレーションは全員の対象になります。各グループには担当者のメールアドレスをカンマ区切りで入力し、「保存」を押します。</span
+              >文献を取り込んだら、オーナーが Home の「担当セット」で「キャリブレーション本数」と「グループ数」を入力し、「分ける」を押します。除外した文献は割り振りの対象になりません。文献が無作為に分割され、キャリブレーションは全員の対象になります。各グループには担当者のメールアドレスをカンマ区切りで入力し、「保存」を押します。</span
             >
             <span class="en" lang="en"
-              >After importing studies, the owner opens “Review sets” on Home, enters “Calibration studies” and “Number of groups”, then presses “Split”. Studies are randomly divided, with calibration studies assigned to everyone. Enter comma-separated reviewer email addresses for each group and press “Save”.</span
+              >After importing studies, the owner opens “Review sets” on Home, enters “Calibration studies” and “Number of groups”, then presses “Split”. Excluded documents are not included when assigning review sets. Studies are randomly divided, with calibration studies assigned to everyone. Enter comma-separated reviewer email addresses for each group and press “Save”.</span
             >
           </p>
           <p>
             <span class="ja" lang="ja"
-              >担当セットを使うと、レビュアーの検証対象はキャリブレーションと自分の担当グループに絞られます。オーナーは検証画面の「自分の担当のみ」で絞り込めます。追加した文献は「未割当の study」から割り当てます。「分け直す」は確認後、すべてのアクティブな試験の担当セットを上書きします。</span
+              >担当セットを使うと、レビュアーの検証対象はキャリブレーションと自分の担当グループに絞られます。担当文献をすべて除外しても担当外の文献は表示されず、対象は 0 件になります。オーナーは検証画面の「自分の担当のみ」で絞り込めます。追加した文献は「未割当の study」から割り当てます。「分け直す」は確認後、すべてのアクティブな試験の担当セットを上書きします。</span
             >
             <span class="en" lang="en"
-              >With review sets in use, reviewers see calibration studies and their assigned groups in verification. The owner can filter with “Only my assigned studies”. Assign newly added studies under “Unassigned studies”. After confirmation, “Split again” replaces the assignments for all active studies.</span
+              >With review sets in use, reviewers see calibration studies and their assigned groups in verification. If all assigned studies are excluded, the list is empty and studies outside their assignments remain hidden. The owner can filter with “Only my assigned studies”. Assign newly added studies under “Unassigned studies”. After confirmation, “Split again” replaces the assignments for all active studies.</span
             >
           </p>
           <p>
@@ -1504,12 +1504,12 @@
             <span class="ja" lang="ja"
               >2 名で独立に抽出し、不一致を裁定する運用に対応しています。オーナーが Home
               の「レビュアー管理」で共同研究者のメールアドレスを登録し、モード（AI 抽出を見ながらの検証 = with AI / AI
-              を見ずに自分で入力 = independent）を選びます。追加すると、参加手順を書いた共有通知メールが相手に届き、行の「レビュー依頼文をコピー」でも同じ文面をコピーできます。招待された人に API キーは要らず、質問パネルを使うときだけ各自のキーを設定します。「フォルダ未共有」が表示されたら、その行の「フォルダを共有し直す」でシートとフォルダを共有し直せます。共有に失敗した場合は、カード内の警告に従って Drive から手動で共有してください。</span
+              を見ずに自分で入力 = independent）を選びます。追加すると、参加手順を書いた共有通知メールが相手に届き、行の「レビュー依頼文をコピー」でも同じ文面をコピーできます。招待された人に API キーは要らず、質問パネルを使うときだけ各自のキーを設定します。「未共有のファイルあり」が表示されたら、その行の「共有し直す」でシートとフォルダを共有し直せます。フォルダで共有できないときは、除外していない文書の PDF と抽出テキストを 1 つずつ共有します。あとから文書を取り込んだ場合も「共有し直す」を押してください。共有に失敗した場合は、カード内の警告に従って Drive から手動で共有してください。</span
             >
             <span class="en" lang="en"
               >Two reviewers can extract independently and have disagreements adjudicated. The owner registers
               collaborators by email under “Reviewer management” on Home and picks their mode (verify with AI, or
-              independent entry without seeing AI output). Adding a collaborator sends them a sharing notification email with instructions for joining; “Copy the review invitation” on the row copies the same text. Invitees do not need an API key unless they use the question panel, which requires their own key. If “Folder not shared” appears, use “Share the folder again” on that row to share the sheet and folder again. If sharing fails, follow the warning in the card to share manually in Drive.</span
+              independent entry without seeing AI output). Adding a collaborator sends them a sharing notification email with instructions for joining; “Copy the review invitation” on the row copies the same text. Invitees do not need an API key unless they use the question panel, which requires their own key. If “Some files not shared” appears, use “Share again” on that row to share the sheet and folder again. If folder sharing fails, PDFs and extracted text for non-excluded documents are shared one file at a time. Use “Share again” after importing more documents too. If sharing fails, follow the warning in the card to share manually in Drive.</span
             >
           </p>
           <figure class="shot shot--screen">
@@ -1938,14 +1938,14 @@
               を開き、表示されたファイル（PDF と抽出テキスト）を<strong>すべて選択</strong>してください。
               確認に失敗したときは、エラーに読めなかったファイル名と種別が表示されます。
               もう一度ボタンを押すと一覧が開き直すので、すべて選択し直してください。
-              付与後にオーナーが新しい文献を追加した場合は「アクセスを付与し直す」でやり直します。一覧には未付与のファイルだけが表示されます。一覧が空のときは、フォルダが共有されていない可能性があります。オーナーに、レビュアー管理の「フォルダを共有し直す」を依頼してください。</span
+              付与後にオーナーが新しい文献を追加した場合は「アクセスを付与し直す」でやり直します。一覧には未付与のファイルだけが表示されます。一覧が空のときは、文書ファイルが共有されていない可能性があります。フォルダで共有できないときは文書ファイルを個別に共有します。オーナーに、レビュアー管理の「共有し直す」を依頼してください。</span
             >
             <span class="en" lang="en"
               >Same cause. Open the picker from “Grant access to project files” on Home and <strong>select them
               all</strong> (PDFs and extracted text).
               If the access check fails, the error shows the filename and type of the file that could not be read.
               Click the button again to reopen the list and select all files again.
-              If the owner adds documents later, use “Grant access again”. The list shows only files not yet granted. If it is empty, the folder may not be shared with you. Ask the owner to use “Share the folder again” under Reviewer management.</span
+              If the owner adds documents later, use “Grant access again”. The list shows only files not yet granted. If it is empty, document files may not be shared with you. If folder sharing fails, files are shared individually. Ask the owner to use “Share again” under Reviewer management.</span
             >
           </p>
 

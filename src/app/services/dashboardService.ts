@@ -90,7 +90,7 @@ export async function loadDashboard(
     let sets = store.getState().reviewSets.sets ?? [];
     if (sets.length > 0) {
       const material = await readReviewSetProgressMaterials(store, deps, options);
-      if (isReviewSetsActive(material.studies, sets)) {
+      if (isReviewSetsActive(material.activeStudies, sets)) {
         // 登録済みの担当者は、まだ判定を始めていなくても calibration の行に含める。
         sets = currentReviewSets(material.studies, sets);
         const calibrationIds = new Set(

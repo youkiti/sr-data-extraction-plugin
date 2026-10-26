@@ -12,6 +12,7 @@ import { readDocuments } from '../../features/documents/documentRepository';
 import {
   readStudies,
   resolveActiveStudies,
+  resolveReviewSetStudies,
   updateStudyReviewSets,
 } from '../../features/documents/studyRepository';
 import {
@@ -155,8 +156,9 @@ export function filterReviewSetStudies(
   assignedOnly: boolean,
 ): StudyRecord[] {
   const sets = reviewSetsForFiltering(store, assignedOnly);
-  const active = resolveActiveStudies(studies, documents);
-  if (!assignedOnly || !isReviewSetsActive(active, sets)) return [...studies];
+  const active = resolveReviewSetStudies(studies, documents);
+  const activeBeforeExclusion = resolveActiveStudies(studies, documents);
+  if (!assignedOnly || !isReviewSetsActive(activeBeforeExclusion, sets)) return [...studies];
   const visible = new Set(visibleStudyIdsForReviewer(email, active, sets));
   return studies.filter((study) => visible.has(study.studyId));
 }
@@ -174,7 +176,7 @@ export async function readReviewSetProgressMaterials(
     : (store.getState().documents.records ??
       (await readDocuments(project.spreadsheetId, deps.google)));
   const studies = await reviewSetStudies(store, deps, options);
-  const active = resolveActiveStudies(studies, documents);
+  const active = resolveReviewSetStudies(studies, documents);
   const versions = await listSchemaVersions(project.spreadsheetId, deps.google);
   const fields =
     versions[0] === undefined
@@ -208,7 +210,12 @@ export async function readReviewSetProgressMaterials(
       ),
     );
   }
-  return { studies: active, fields, decisions, armStructures, aiEvidenceByStudy };
+  return {
+    studies: active,
+    // セット利用の判定だけは除外前の研究集合を使う。
+    activeStudies: resolveActiveStudies(studies, documents),
+    fields, decisions, armStructures, aiEvidenceByStudy,
+  };
 }
 
 /** 割り当てが変わったとき、対象一覧と派生集計のキャッシュを破棄する */
@@ -280,8 +287,8 @@ async function executeSplit(
       store.getState().documents.records ?? (await readDocuments(spreadsheetId, deps.google));
     const studies =
       store.getState().documents.studies ?? (await readStudies(spreadsheetId, deps.google));
-    const active = resolveActiveStudies(studies, documents);
-    if (!confirmed && isReviewSetsActive(active, store.getState().reviewSets.sets!)) {
+    const active = resolveReviewSetStudies(studies, documents);
+    if (!confirmed && isReviewSetsActive(resolveActiveStudies(studies, documents), store.getState().reviewSets.sets!)) {
       patch(store, { confirmingResplit: input });
       return false;
     }

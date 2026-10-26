@@ -65,7 +65,7 @@ import {
 import { computeAnnotatorProgress, computeStudyGate, type StudyGate } from '../../features/adjudication/gate';
 import { resolveAnnotatorPair } from '../../features/adjudication/pairResolution';
 import { readDocuments } from '../../features/documents/documentRepository';
-import { readStudies } from '../../features/documents/studyRepository';
+import { readStudies, resolveActiveStudies } from '../../features/documents/studyRepository';
 import { buildStudySelection } from '../../features/documents/studySelection';
 import type { DisposablePdfDocument } from '../../features/documents/extractTextLayer';
 import { readResultsDataRows, readStudyDataSheet } from '../../features/extraction/annotationRepository';
@@ -191,7 +191,7 @@ export async function loadAdjudicateTargets(
     const selection = buildStudySelection(studies, documents);
     const sets = store.getState().reviewSets.sets ?? [];
     const active = isReviewSetsActive(
-      selection.map((item) => item.study),
+      resolveActiveStudies(studies, documents),
       sets,
     );
     const rows: AdjudicateStudyRow[] = [];
@@ -881,7 +881,7 @@ async function collectReadyStudyInputs(
   const selection = buildStudySelection(studies, documents);
   const sets = store.getState().reviewSets.sets ?? [];
   const active = isReviewSetsActive(
-    selection.map((item) => item.study),
+    resolveActiveStudies(studies, documents),
     sets,
   );
   const calibrationStudies = selection
