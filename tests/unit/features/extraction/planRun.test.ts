@@ -26,7 +26,11 @@ import {
   estimateCostUsd,
   resolveThinkingOutputMultiplier,
 } from '../../../../src/lib/llm/pricing';
-import { buildExtractDataUserPrompt, EXTRACT_DATA_ARM_COMPLETENESS_RULE } from '../../../../src/features/extraction/skills/extractData';
+import {
+  buildExtractDataUserPrompt,
+  EXTRACT_DATA_ARM_COMPLETENESS_RULE,
+  EXTRACT_DATA_OUTCOME_SOURCE_RULE,
+} from '../../../../src/features/extraction/skills/extractData';
 
 function makeField(
   overrides: Pick<SchemaField, 'fieldId' | 'fieldName'> & Partial<SchemaField>,
@@ -238,6 +242,28 @@ describe('planRun のバッチ分割', () => {
 });
 
 describe('planRun のトークン概算', () => {
+  it.each([false, true])('outcome_result を含むバッチだけ出所の規則ぶんを加算する（arm の併用: %s）', (withArm) => {
+    const outcomeField = makeField({ fieldId: 'f_o', fieldName: 'o', entityLevel: 'outcome_result' });
+    const baseFields = withArm
+      ? [makeField({ fieldId: 'f_a', fieldName: 'a', entityLevel: 'arm' })]
+      : [STUDY_FIELD];
+    for (const includeOutcome of [false, true]) {
+      const fields = includeOutcome ? [...baseFields, outcomeField] : baseFields;
+      const plan = planRun({
+        documents: [makeDocument({ documentId: 'd1' })],
+        fields,
+        model: 'gemini-2.5-pro',
+      });
+      const fieldChars = fields.reduce(
+        (sum, field) => sum + FIELD_PROMPT_OVERHEAD_CHARS + field.fieldId.length + field.fieldName.length,
+        0,
+      );
+      const extraChars = (withArm ? EXTRACT_DATA_ARM_COMPLETENESS_RULE.length + 2 : 0)
+        + (includeOutcome ? EXTRACT_DATA_OUTCOME_SOURCE_RULE.length + 2 : 0);
+      expect(plan.batches[0]?.tokensInEstimate).toBe(expectedTokensIn(4_000, fieldChars, 0, extraChars));
+    }
+  });
+
   it('entity_level ごとの応答要素数の目安を出力トークンに反映する', () => {
     const fields = [
       makeField({ fieldId: 'f_s', fieldName: 's', fieldIndex: 1, entityLevel: 'study' }),

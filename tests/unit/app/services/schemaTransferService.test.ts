@@ -125,7 +125,7 @@ describe('exportSchemaFile', () => {
       schemaVersion: 2,
       exportedAt: '2026-10-05T12:00:00Z',
       exportedBy: 'me@example.com',
-      extractPromptVersion: 12,
+      extractPromptVersion: 13,
       appVersion: '0.13.0',
     });
     expect(json.fields.map((field: { fieldName: string }) => field.fieldName)).toEqual(['study_design', 'sample_size']);

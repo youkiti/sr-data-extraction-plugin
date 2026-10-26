@@ -207,8 +207,8 @@ function askPaperFingerprint(): string {
 // 版数を上げたら、その skill の version と hash を新しい値へ更新する
 const EXPECTED = {
   'extract-data（EXTRACT_DATA_PROMPT_VERSION）': {
-    version: 12,
-    hash: 'aa3e470e39d31dd02e625b47ca59e957',
+    version: 13,
+    hash: 'f328ff536d4d18bf1fce39ae10724c70',
     actual: () => ({ version: EXTRACT_DATA_PROMPT_VERSION, hash: extractDataFingerprint() }),
   },
   'draft-schema（DRAFT_SCHEMA_PROMPT_VERSION）': {

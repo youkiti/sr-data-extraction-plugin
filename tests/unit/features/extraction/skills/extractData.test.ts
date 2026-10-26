@@ -12,6 +12,8 @@ import {
   buildExtractDataUserPrompt,
   extractDataResponseSchema,
   parseExtractDataResponse,
+  EXTRACT_DATA_ARM_COMPLETENESS_RULE,
+  EXTRACT_DATA_OUTCOME_SOURCE_RULE,
   EXTRACT_DATA_PROMPT_VERSION,
   EXTRACT_DATA_RESPONSE_SCHEMA,
   EXTRACT_DATA_SKILL_NAME,
@@ -111,8 +113,8 @@ const DOCS = [makeDoc()];
 describe('extract-data skill 定数', () => {
   it('skill 名とプロンプト版数を公開する（LLMApiLog 記録用）', () => {
     expect(EXTRACT_DATA_SKILL_NAME).toBe('extract-data');
-    // v11: outcome_result だけのバッチにも群の番号づけ規約を提示
-    expect(EXTRACT_DATA_PROMPT_VERSION).toBe(12);
+    // v13: outcome_result の出所をその研究自身の結果に限定
+    expect(EXTRACT_DATA_PROMPT_VERSION).toBe(13);
   });
 
   it('システムプロンプトに verbatim quote の規約（300 文字上限）と document_index の規約を含む', () => {
@@ -207,6 +209,29 @@ describe('extractDataResponseSchema（box_2d 込みスキーマ。§7.4 PR3）',
 });
 
 describe('buildExtractDataUserPrompt', () => {
+  it.each([
+    { fields: [OUTCOME_FIELD] },
+    { fields: [ARM_FIELD, OUTCOME_FIELD] },
+  ])('outcome_result の出所の規則を suffix 末尾へ全文追加する（$fields）', ({ fields }) => {
+    const prompt = buildExtractDataUserPrompt({ fields, documents: DOCS });
+    expect(prompt).toContain('## Source of outcome findings (outcome_result-level fields)');
+    expect(prompt.endsWith(`\n\n${EXTRACT_DATA_OUTCOME_SOURCE_RULE}`)).toBe(true);
+    expect(prompt.indexOf(EXTRACT_DATA_OUTCOME_SOURCE_RULE)).toBeGreaterThan(
+      prompt.indexOf('## Output format'),
+    );
+    if (fields.includes(ARM_FIELD)) {
+      expect(prompt).toContain(
+        `${EXTRACT_DATA_ARM_COMPLETENESS_RULE}\n\n${EXTRACT_DATA_OUTCOME_SOURCE_RULE}`,
+      );
+    }
+  });
+
+  it.each([STUDY_FIELD, ARM_FIELD])('outcome_result の無いバッチには出所の規則を追加しない（$entityLevel）', (field) => {
+    const prompt = buildExtractDataUserPrompt({ fields: [field], documents: DOCS });
+    expect(prompt).not.toContain('## Source of outcome findings');
+    expect(prompt).not.toContain(EXTRACT_DATA_OUTCOME_SOURCE_RULE);
+  });
+
   it('抽出項目が空なら投げる', () => {
     expect(() => buildExtractDataUserPrompt({ fields: [], documents: DOCS })).toThrow(
       '抽出項目が 1 件も',
