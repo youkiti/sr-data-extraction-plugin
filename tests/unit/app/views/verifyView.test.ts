@@ -949,6 +949,72 @@ describe('renderVerifyView（表示言語 en。issue #93）', () => {
   });
 });
 
+describe('キャリブレーションのセレクタ表示', () => {
+  afterEach(() => setUiLanguage('ja'));
+
+  test.each(['owner', 'reviewer_with_ai', 'reviewer_independent', 'adjudicator'] as const)(
+    '%s: キャリブレーションを安定順で先頭に表示し、対象配列と選択を保持する', (role) => {
+      const { ctx, callbacks } = makeCtx();
+      const targets = ['group-a', 'cal-a', 'group-b', 'cal-b'].map((studyId) => makeTarget({
+        study: makeStudy({ studyId, studyLabel: studyId, reviewSet: 'group-1' }),
+        documents: [makeDocument({ studyId, excluded: true })],
+        aiExtractionStatus: studyId.endsWith('b') ? 'no_result' : 'extracted',
+      }));
+      const state = makeState({ targets, selectedStudyId: 'group-a' }, { role });
+      state.documents.studies = targets.map((target) => target.study);
+      state.documents.records = targets.flatMap((target) => target.documents);
+      state.reviewSets.sets = [{
+        setId: 'calibration', studyIds: ['cal-b', 'cal-a'], reviewerEmails: [], seed: null,
+        updatedBy: 'owner@example.com', updatedAt: 't0',
+      }];
+      for (const language of ['ja', 'en'] as const) {
+        setUiLanguage(language);
+        const select = render(state, ctx).querySelector('#verify-study') as HTMLSelectElement;
+        expect([...select.options].map((option) => option.value)).toEqual([
+          'cal-a', 'cal-b', 'group-a', 'group-b',
+        ]);
+        expect([...select.options].map((option) => option.textContent)).toEqual(language === 'ja' ? [
+          'cal-a［キャリブレーション］（判定済み 1 / 4）',
+          'cal-b［キャリブレーション］［AI 抽出結果なし］（判定済み 1 / 4）',
+          'group-a（判定済み 1 / 4）',
+          'group-b［AI 抽出結果なし］（判定済み 1 / 4）',
+        ] : [
+          'cal-a [Calibration] (1 / 4 decided)',
+          'cal-b [Calibration] [No AI result] (1 / 4 decided)',
+          'group-a (1 / 4 decided)',
+          'group-b [No AI result] (1 / 4 decided)',
+        ]);
+        expect(select.value).toBe('group-a');
+        select.value = 'cal-b';
+        select.dispatchEvent(new Event('change'));
+        expect(callbacks.onSelectStudy).toHaveBeenLastCalledWith('cal-b');
+        expect(state.verify.selectedStudyId).toBe('group-a');
+        expect(state.verify.targets).toBe(targets);
+        expect(targets.map((target) => target.study.studyId)).toEqual([
+          'group-a', 'cal-a', 'group-b', 'cal-b',
+        ]);
+      }
+    },
+  );
+
+  test.each([null, []])('セット未読込または未使用ならラベルと順序を変えない: %j', (sets) => {
+    const { ctx } = makeCtx();
+    const targets = [makeTarget(), makeTarget({
+      study: makeStudy({ studyId: 'cal', studyLabel: 'Calibration study', reviewSet: 'calibration' }),
+      documents: [makeDocument({ studyId: 'cal' })],
+      aiExtractionStatus: 'no_result',
+    })];
+    const state = makeState({ targets, selectedStudyId: 'study-1' });
+    state.reviewSets.sets = sets;
+    const select = render(state, ctx).querySelector('#verify-study') as HTMLSelectElement;
+    expect([...select.options].map((option) => option.value)).toEqual(['study-1', 'cal']);
+    expect([...select.options].map((option) => option.textContent)).toEqual([
+      'Smith 2020（判定済み 1 / 4）',
+      'Calibration study［AI 抽出結果なし］（判定済み 1 / 4）',
+    ]);
+  });
+});
+
 test('owner の担当のみ切り替えは有効時だけ出し、空一覧からも解除できる', () => {
   const { ctx, callbacks } = makeCtx();
   const target = makeTarget({ study: makeStudy({ reviewSet: 'group-1' }) });

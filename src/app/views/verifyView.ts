@@ -6,7 +6,8 @@ import { resolveFetchedPricing } from '../fetchedPricing';
 // study の切替は URL クエリ ?study= と同期する（セレクタ変更 → hash 書き換え → サービス層が読込）。
 // ?entity=（S9 ダッシュボードのセル単位ディープリンク）は該当タブへの切替 + 先頭セルへの
 // スクロール・フォーカスとしてパネルへ渡す。2 ペイン本体は #/pilot と同じ verificationPanel を使う
-import { isReviewSetsActive } from '../../features/review/reviewSets';
+import { CALIBRATION_SET_ID } from '../../domain/reviewSet';
+import { isReviewSetsActive, reviewSetForStudy } from '../../features/review/reviewSets';
 import { resolveActiveStudies } from '../../features/documents/studyRepository';
 import { canAskPaper } from '../../features/verification/chatAssist';
 import { t } from '../../lib/i18n';
@@ -19,10 +20,13 @@ import { renderConflictWarning } from './conflictWarning';
 import type { ViewContext } from './types';
 import { renderCachedVerificationPanel, showVerificationCitation } from './verificationPanel';
 
-function selectorLabel(target: VerifyTarget): string {
+function selectorLabel(target: VerifyTarget, calibration: boolean): string {
   const { progress } = target;
-  const key =
-    target.aiExtractionStatus === 'no_result' ? 'verify.selectorOptionNoResult' : 'verify.selectorOption';
+  const key = calibration
+    ? target.aiExtractionStatus === 'no_result'
+      ? 'verify.selectorOptionCalibrationNoResult' : 'verify.selectorOptionCalibration'
+    : target.aiExtractionStatus === 'no_result'
+      ? 'verify.selectorOptionNoResult' : 'verify.selectorOption';
   return t(key, {
     label: target.study.studyLabel,
     decided: progress.decided,
@@ -90,15 +94,21 @@ function renderArmCompletenessWarning(target: VerifyTarget): HTMLElement | null 
   );
 }
 
-function renderSelector(state: AppState, ctx: ViewContext, targets: readonly VerifyTarget[]): HTMLElement {
+function renderSelector(
+  state: AppState, ctx: ViewContext, targets: readonly VerifyTarget[], reviewSetsActive: boolean,
+): HTMLElement {
   const select = el('select', {
     id: 'verify-study',
     attributes: { 'aria-label': t('verify.studyAria'), 'data-tour': 'verify-basics-study' },
   });
-  for (const target of targets) {
+  const sets = state.reviewSets.sets ?? [];
+  const isCalibration = (target: VerifyTarget): boolean => reviewSetsActive &&
+    reviewSetForStudy(target.study, sets) === CALIBRATION_SET_ID;
+  const options = [...targets].sort((a, b) => Number(isCalibration(b)) - Number(isCalibration(a)));
+  for (const target of options) {
     select.append(
       el('option', {
-        text: selectorLabel(target),
+        text: selectorLabel(target, isCalibration(target)),
         attributes: { value: target.study.studyId },
       }),
     );
@@ -174,7 +184,8 @@ export function renderVerifyView(state: AppState, ctx: ViewContext): HTMLElement
     studies,
     state.documents.records ?? verify.targets.flatMap((target) => target.documents),
   );
-  if (state.role.role === 'owner' && isReviewSetsActive(active, state.reviewSets.sets ?? [])) {
+  const reviewSetsActive = isReviewSetsActive(active, state.reviewSets.sets ?? []);
+  if (state.role.role === 'owner' && reviewSetsActive) {
     const toggle = el('input', {
       id: 'verify-assigned-only',
       attributes: { type: 'checkbox' },
@@ -211,7 +222,7 @@ export function renderVerifyView(state: AppState, ctx: ViewContext): HTMLElement
     return el('section', { className: 'view view--verify' }, children);
   }
 
-  children.push(renderSelector(state, ctx, verify.targets));
+  children.push(renderSelector(state, ctx, verify.targets, reviewSetsActive));
 
   // 選択中 study の AI 抽出結果なしバナー・arm 欠落警告（issue #106）。
   // セレクタ直下 = パネル読み込み中でも見える
