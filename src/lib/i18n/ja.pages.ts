@@ -112,6 +112,8 @@ export const jaPages = {
   'options.connectionPermission': '接続先へのアクセス権限を確認しています…',
   'options.connectionSaving': '保存しています…',
   'options.connectionTesting': '保存しました。接続を確認しています…',
+  'options.connectionTestingSlow': '保存しました。接続を確認しています…（{seconds} 秒経過。設定は保存済みなので、別の画面へ移っても構いません。Gemini の無料の API キーでは数分かかることがあります）',
+  'options.connectionTimedOut': '5分待っても応答がありませんでした。時間をおいてもう一度お試しください',
   'options.connectionSaveFailed': '保存できませんでした: {reason}',
   'options.connectionStorageFailed': '保存に失敗しました',
   'options.connectionCheckFailed': '保存しました。接続を確認できませんでした: {reason}',

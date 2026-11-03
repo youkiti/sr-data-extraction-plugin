@@ -113,6 +113,8 @@ export const enPages: Record<keyof typeof jaPages, string> = {
   'options.connectionPermission': 'Checking endpoint access permission…',
   'options.connectionSaving': 'Saving…',
   'options.connectionTesting': 'Saved. Checking connection…',
+  'options.connectionTestingSlow': 'Saved. Checking connection… ({seconds} s so far. Your settings are already saved, so you can move to another screen. A free Gemini API key can take several minutes.)',
+  'options.connectionTimedOut': 'No response after 5 minutes. Please try again later',
   'options.connectionSaveFailed': 'Could not save: {reason}',
   'options.connectionStorageFailed': 'Saving failed',
   'options.connectionCheckFailed': 'Saved. Could not verify the connection: {reason}',

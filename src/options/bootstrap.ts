@@ -128,6 +128,33 @@ async function bootstrapReasoningEffortSection(root: ParentNode): Promise<void> 
 // 2026-10-07 の実測では Gemini 3.5 / 3.6 / 3.8 Flash が上限 64 で各 3 回中 3 / 3 / 2 回失敗し、
 // 4096 では各 3 回とも成功した。構造化出力を守らないローカル LLM などの出力を止めるため、上限は残す。
 const CONNECTION_TEST_MAX_OUTPUT_TOKENS = 4_096;
+// 2026-11-03 の gemini-3.8-flash 同一要求の実測: 無料キーは 12 回中 11 回が 9.8〜193.9 秒、1 回が 200 秒超、有料キーは 12 回とも 1.6〜2.5 秒。
+const CONNECTION_TEST_SLOW_AFTER_MS = 10_000;
+const CONNECTION_TEST_STATUS_INTERVAL_MS = 1_000;
+const CONNECTION_TEST_TIMEOUT_MS = 300_000;
+
+class ConnectionTestTimeoutError extends Error {}
+
+/** 呼び出しの完了を待ちながら経過を知らせ、待機終了後はタイマーを止める。要求自体は中断しない。 */
+async function waitForConnectionTest<T>(chat: Promise<T>, onSlow: (seconds: number) => void): Promise<T> {
+  const startedAt = Date.now();
+  const interval = setInterval(() => {
+    const elapsed = Date.now() - startedAt;
+    if (elapsed >= CONNECTION_TEST_SLOW_AFTER_MS) {
+      onSlow(Math.floor(elapsed / 1_000));
+    }
+  }, CONNECTION_TEST_STATUS_INTERVAL_MS);
+  let timeout!: ReturnType<typeof setTimeout>;
+  const timedOut = new Promise<never>((_resolve, reject) => {
+    timeout = setTimeout(() => reject(new ConnectionTestTimeoutError()), CONNECTION_TEST_TIMEOUT_MS);
+  });
+  try {
+    return await Promise.race([chat, timedOut]);
+  } finally {
+    clearInterval(interval);
+    clearTimeout(timeout);
+  }
+}
 
 const CONNECTION_TEST_SCHEMA = {
   type: 'object',
@@ -348,13 +375,13 @@ async function bootstrapLlmConnectionSection(root: ParentNode): Promise<void> {
         }
         stage = 5;
         setStatus(t('options.connectionTesting'), false);
-        const response = await createProvider(config).chat(
+        const response = await waitForConnectionTest(createProvider(config).chat(
           [
             { role: 'system', content: 'Return JSON matching the supplied schema.' },
             { role: 'user', content: 'Return {"ok":true}.' },
           ],
           { responseSchema: CONNECTION_TEST_SCHEMA, maxOutputTokens: CONNECTION_TEST_MAX_OUTPUT_TOKENS, temperature: 0 },
-        );
+        ), (seconds) => setStatus(t('options.connectionTestingSlow', { seconds }), false));
         let parsed: { ok?: unknown } | null;
         try {
           parsed = JSON.parse(response.text) as { ok?: unknown } | null;
@@ -375,7 +402,9 @@ async function bootstrapLlmConnectionSection(root: ParentNode): Promise<void> {
         } else {
           const status = connectionErrorStatus(err, reason);
           let detail = reason;
-          if (status === 401 || status === 403) {
+          if (err instanceof ConnectionTestTimeoutError) {
+            detail = t('options.connectionTimedOut');
+          } else if (status === 401 || status === 403) {
             detail = t('options.connectionAuthFailed', { status });
           } else if (stage === 5 && (status === 404 || /model_not_found|not_found_error/.test(reason))) {
             detail = t('options.connectionModelMissing', { model });
