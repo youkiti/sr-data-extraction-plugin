@@ -58,6 +58,71 @@ describe('統合された LLM 接続', () => {
     button().click();
     await flush();
   }
+  describe('呼び出し確認の待機表示', () => {
+    beforeEach(async () => {
+      await setup();
+      jest.useFakeTimers();
+    });
+    afterEach(() => {
+      jest.useRealTimers();
+    });
+    const slowText = (seconds: number): string =>
+      `保存しました。接続を確認しています…（${seconds} 秒経過。設定は保存済みなので、別の画面へ移っても構いません。Gemini の無料の API キーでは数分かかることがあります）`;
+
+    test('10 秒後から毎秒経過を示し、5 分で終了して遅れた応答を表示しない', async () => {
+      let complete!: (value: { text: string }) => void;
+      chat.mockReturnValueOnce(new Promise((resolve) => { complete = resolve; }));
+      button().click();
+      await jest.advanceTimersByTimeAsync(0);
+      expect(status()).toBe('保存しました。接続を確認しています…');
+      await jest.advanceTimersByTimeAsync(9_999);
+      expect(status()).toBe('保存しました。接続を確認しています…');
+      await jest.advanceTimersByTimeAsync(1);
+      expect(status()).toBe(slowText(10));
+      await jest.advanceTimersByTimeAsync(1_000);
+      expect(status()).toBe(slowText(11));
+      await jest.advanceTimersByTimeAsync(289_000);
+      const timedOutText = '保存しました。接続を確認できませんでした: 5分待っても応答がありませんでした。時間をおいてもう一度お試しください';
+      expect(status()).toBe(timedOutText);
+      expect(document.getElementById('llm-connection-status')!.classList.contains('options__status--error')).toBe(true);
+      expect(button().disabled).toBe(false);
+      expect(select('llm-provider').disabled).toBe(false);
+      expect(chromeMock.storage.local.data['settings.llmProvider']).toBe('gemini');
+      expect(chromeMock.storage.local.data['settings.defaultModel']).toBe('custom-model');
+      expect(jest.getTimerCount()).toBe(0);
+      complete({ text: '{"ok":true}' });
+      await jest.advanceTimersByTimeAsync(300_000);
+      expect(status()).toBe(timedOutText);
+    });
+
+    test.each([true, false])('15 秒後の完了後は表示を更新しない（成功: %s）', async (succeeded) => {
+      let complete!: (value: { text: string }) => void;
+      let fail!: (reason: Error) => void;
+      chat.mockReturnValueOnce(new Promise((resolve, reject) => {
+        complete = resolve;
+        fail = reject;
+      }));
+      button().click();
+      await jest.advanceTimersByTimeAsync(0);
+      await jest.advanceTimersByTimeAsync(15_000);
+      expect(status()).toBe(slowText(15));
+      if (succeeded) {
+        complete({ text: '{"ok":true}' });
+      } else {
+        fail(new LlmProviderError('failed', 'gemini', 401, ''));
+      }
+      await jest.advanceTimersByTimeAsync(0);
+      const finalText = succeeded
+        ? '保存しました。接続を確認しました（custom-model）'
+        : '保存しました。接続を確認できませんでした: API キーが受け付けられませんでした（HTTP 401）';
+      expect(status()).toBe(finalText);
+      expect(button().disabled).toBe(false);
+      expect(select('llm-provider').disabled).toBe(false);
+      expect(jest.getTimerCount()).toBe(0);
+      await jest.advanceTimersByTimeAsync(300_000);
+      expect(status()).toBe(finalText);
+    });
+  });
   test('OpenRouter の一覧と単価を一緒に保存する', async () => {
     const pricing = { 'custom-model': { inputPerMillion: 0.1, outputPerMillion: 0.4 } };
     fetchIds.mockImplementation(async (config: modelList.ModelListFetchConfig) => {

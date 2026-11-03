@@ -1799,11 +1799,13 @@
             <li>
               <span class="ja" lang="ja"
                 ><strong>保存して接続を確認</strong>: 押すと、設定を保存し、モデル一覧を取得し（取得できる方式のみ）、選んだモデルで短い呼び出しを送って、結果を
-                1 行で表示します。失敗したときは、API キーが受け付けられなかったのか、モデルがその方式に無いのかなど、どこで失敗したかを示します。取得したモデルは、スキーマ・パイロット・一括抽出の画面のモデル選択にも出ます。</span
+                1 行で表示します。Gemini の無料の API キーでは確認に数分かかることがあり、10 秒後から経過秒数を表示します。設定は保存済みなので、別の画面へ移っても構いません。5 分で確認を打ち切ります。失敗したときは、API キーが受け付けられなかったのか、モデルがその方式に無いのかなど、どこで失敗したかを示します。取得したモデルは、スキーマ・パイロット・一括抽出の画面のモデル選択にも出ます。</span
               >
               <span class="en" lang="en"
                 ><strong>Save and check connection</strong>: saves the settings, fetches the model list (where the type
-                supports it), sends a short call with the chosen model, and shows the result on one line. On failure it
+                supports it), sends a short call with the chosen model, and shows the result on one line. A free Gemini
+                API key can take several minutes; elapsed seconds appear after 10 seconds. Your settings are already
+                saved, so you can move to another screen. The check gives up after 5 minutes. On failure it
                 says where it failed, for example a rejected API key or a model that the type does not have. Fetched
                 models also appear in the model choice on the schema, pilot and full-extraction screens.</span
               >
