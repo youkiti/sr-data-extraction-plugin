@@ -449,9 +449,68 @@ test('要相談一覧に現在値・メモ・判定者とセルへのリンク�
     studyId: 'study-1', fieldId: 'f', entityKey: '-', annotator: 'me', annotatorType: 'human_with_ai' as const,
     decidedAt: 't1', decidedBy: 'me', schemaVersion: 1, action: 'flag_consult' as const, value: 'old', note: '相談メモ',
   };
-  data.rows[0]!.consults = [{ fieldLabel: '項目', entityKey: '-', cellKey: '["f","-"]', value: '現在値', flag },
-    { fieldLabel: '空値', entityKey: '-', cellKey: '["g","-"]', value: null, flag: { ...flag, note: null } }];
+  data.rows[0]!.consults = [{ fieldLabel: '項目', entityKey: '-', cellKey: '["f","-"]', value: '現在値', flag, own: true },
+    { fieldLabel: '空値', entityKey: '-', cellKey: '["g","-"]', value: null, flag: { ...flag, note: null }, own: true }];
   const view = renderDashboardView(makeState({ data }), makeCtx().ctx);
   expect(view.querySelector('#dashboard-consults')?.textContent).toContain('現在値相談メモme');
   expect(view.querySelector('#dashboard-consults tbody a')?.getAttribute('href')).toBe('#/verify?study=study-1&entity=%5B%22f%22%2C%22-%22%5D');
+  // 自分の印だけなら絞り込みも閲覧のみの注記も出さない
+  expect(view.querySelector('#dashboard-consults-reviewer')).toBeNull();
+  expect(view.querySelector('#dashboard-consults-others')).toBeNull();
+});
+
+describe('要相談一覧: オーナー・裁定者に出す他のレビュアーの印（issue #424）', () => {
+  const flagOf = (annotator: string) => ({
+    studyId: 'study-1', fieldId: 'f', entityKey: '-', annotator, annotatorType: 'human_with_ai' as const,
+    decidedAt: 't1', decidedBy: annotator, schemaVersion: 1, action: 'flag_consult' as const, value: 'v', note: null,
+  });
+  function makeConsultData(): DashboardData {
+    const data = makeData();
+    data.rows[0]!.consults = [
+      { fieldLabel: '項目', entityKey: '-', cellKey: '["f","-"]', value: 'A の値', flag: flagOf('a@example.com'), own: false },
+      { fieldLabel: '項目', entityKey: '-', cellKey: '["f","-"]', value: '自分の値', flag: flagOf('me@example.com'), own: true },
+    ];
+    data.rows[1]!.consults = [
+      { fieldLabel: '項目', entityKey: '-', cellKey: '["f","-"]', value: 'B の値', flag: flagOf('b@example.com'), own: false },
+    ];
+    return data;
+  }
+  const rowsOf = (view: HTMLElement) => [...view.querySelectorAll<HTMLTableRowElement>('#dashboard-consults tbody tr')];
+
+  test('他人の印はリンクにせず担当者を添え、閲覧のみの注記を出す', () => {
+    const view = renderDashboardView(makeState({ data: makeConsultData() }), makeCtx().ctx);
+    const rows = rowsOf(view);
+    expect(rows).toHaveLength(3);
+    expect(rows[0]!.querySelector('a')).toBeNull();
+    expect(rows[0]!.cells[0]!.textContent).toBe('Smith 2020 担当: a@example.com');
+    expect(rows[0]!.cells[2]!.textContent).toBe('A の値');
+    expect(rows[1]!.querySelector('a')?.textContent).toBe('Smith 2020');
+    expect(view.querySelector('#dashboard-consults-others')?.textContent).toBe('他のレビュアーの印は閲覧のみです。値を直すのは担当者です。');
+  });
+
+  test('判定者で絞り込め、選んだ判定者は再描画でも保ち、いなくなれば「すべて」に戻る', () => {
+    const view = renderDashboardView(makeState({ data: makeConsultData() }), makeCtx().ctx);
+    const select = view.querySelector<HTMLSelectElement>('#dashboard-consults-reviewer')!;
+    expect([...select.options].map((option) => option.textContent)).toEqual(['すべて', 'a@example.com', 'b@example.com', 'me@example.com']);
+    expect(view.querySelector('label[for="dashboard-consults-reviewer"]')?.textContent).toBe('判定者で絞り込み ');
+    select.value = 'b@example.com';
+    select.dispatchEvent(new Event('change'));
+    expect(rowsOf(view).map((row) => row.hidden)).toEqual([true, true, false]);
+    const again = renderDashboardView(makeState({ data: makeConsultData() }), makeCtx().ctx);
+    expect(again.querySelector<HTMLSelectElement>('#dashboard-consults-reviewer')!.value).toBe('b@example.com');
+    expect(rowsOf(again).map((row) => row.hidden)).toEqual([true, true, false]);
+    // 「すべて」に戻すと全部出る
+    const againSelect = again.querySelector<HTMLSelectElement>('#dashboard-consults-reviewer')!;
+    againSelect.value = '';
+    againSelect.dispatchEvent(new Event('change'));
+    expect(rowsOf(again).every((row) => !row.hidden)).toBe(true);
+    // 絞り込み中の判定者の印が消えたら「すべて」に戻る
+    againSelect.value = 'b@example.com';
+    againSelect.dispatchEvent(new Event('change'));
+    const data = makeConsultData();
+    data.rows[1]!.consults = [];
+    const after = renderDashboardView(makeState({ data }), makeCtx().ctx);
+    expect(after.querySelector<HTMLSelectElement>('#dashboard-consults-reviewer')!.value).toBe('');
+    expect(rowsOf(after).every((row) => !row.hidden)).toBe(true);
+  });
 });

@@ -394,21 +394,48 @@ test('要相談を付けて一覧から該当セルへ移り、解除すると�
     'human_with_ai', '1', 'accept', '12', '']];
   await setupRoutes(page, decisions);
   await initApp(page, '#/verify?study=study-1&entity=-');
-  const toggle = page.locator('.verify__consult-toggle').first();
+  // 判定ボタンの列の「要相談 (q)」で印を付け、開いたメモ欄に相談したい点を保存する（issue #425）
+  const toggle = page.locator('.verify__action--consult').first();
   await expect(toggle).toBeEnabled({ timeout: 15_000 });
   const progress = await page.locator('#verify-progress').textContent();
-  await page.locator('.verify__consult-note').first().fill('表と本文で迷う');
   await toggle.click();
   await expect.poll(() => decisions.filter((row) => row[8] === 'flag_consult').length).toBe(1);
+  await page.locator('.verify__consult-note').first().fill('表と本文で迷う');
+  await page.locator('.verify__consult-save').first().click();
+  await expect.poll(() => decisions.filter((row) => row[8] === 'flag_consult').length).toBe(2);
   await expect(page.locator('#verify-progress')).toHaveText(progress!);
+  await expect(page.locator('#verify-study option:checked')).toContainText('・要相談 1');
   await page.evaluate(() => { location.hash = '#/dashboard'; });
   const list = page.locator('#dashboard-consults');
   await expect(list).toContainText('表と本文で迷う');
   await expect(list).toContainText('12');
   await list.locator('tbody a').click();
-  await expect(page.locator('.verify__consult-toggle').first()).toHaveAttribute('aria-pressed', 'true');
-  await page.locator('.verify__consult-toggle').first().click();
+  await expect(page.locator('.verify__action--consult').first()).toHaveAttribute('aria-pressed', 'true');
+  await page.locator('.verify__action--consult').first().click();
   await expect.poll(() => decisions.filter((row) => row[8] === 'unflag_consult').length).toBe(1);
   await page.evaluate(() => { location.hash = '#/dashboard'; });
   await expect(page.locator('#dashboard-consults tbody tr')).toHaveCount(0);
+});
+
+test('オーナーのダッシュボードに他のレビュアーの印が担当者付き・閲覧のみで出る（issue #424）', async ({ page }) => {
+  const other = 'reviewer@example.com';
+  const decisions = [
+    ['t1', 'e2e@example.com', 'study-1', 'f-total', '-', 'e2e@example.com', 'human_with_ai', '1', 'accept', '12', ''],
+    ['t2', 'e2e@example.com', 'study-1', 'f-total', '-', 'e2e@example.com', 'human_with_ai', '1', 'flag_consult', '12', '自分の相談'],
+    ['t1', other, 'study-1', 'f-total', '-', other, 'human_with_ai', '1', 'edit', '15', ''],
+    ['t2', other, 'study-1', 'f-total', '-', other, 'human_with_ai', '1', 'flag_consult', '15', '表と本文で迷う'],
+  ];
+  await setupRoutes(page, decisions);
+  await initApp(page, '#/dashboard');
+  const list = page.locator('#dashboard-consults');
+  await expect(list.locator('tbody tr')).toHaveCount(2, { timeout: 15_000 });
+  const othersRow = list.locator('tbody tr', { hasText: other });
+  await expect(othersRow).toContainText(`担当: ${other}`);
+  await expect(othersRow).toContainText('15');
+  await expect(othersRow).toContainText('表と本文で迷う');
+  await expect(othersRow.locator('a')).toHaveCount(0);
+  await expect(page.locator('#dashboard-consults-others')).toBeVisible();
+  await page.locator('#dashboard-consults-reviewer').selectOption(other);
+  await expect(list.locator('tbody tr:visible')).toHaveCount(1);
+  expect((await new AxeBuilder({ page }).include('#dashboard-consults').analyze()).violations).toEqual([]);
 });

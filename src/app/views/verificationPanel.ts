@@ -10,6 +10,7 @@ import { createQuoteAddBar, quoteAddReason as sharedQuoteAddReason, updateQuoteA
 // 同じ VerificationData 参照なら同一インスタンス（DOM / PDF canvas / 判定の楽観状態）を返し、
 // データが差し替わったときだけ作り直す
 import { activeConsultFlags } from '../../features/verification/consultFlags';
+import { isConsultHintSeen, markConsultHintSeen } from '../../lib/storage/consultHintStore';
 import type { CellQuote, QuoteSetRow } from '../../domain/quoteSet';
 import { isMultiSelectField } from '../../domain/multiSelect';
 import { anchorQuote } from '../../features/anchoring/anchorQuote';
@@ -161,6 +162,11 @@ export interface VerificationPanelOptions {
    * 毎回 setReadOnly を呼び直して同期する
    */
   readOnly?: boolean;
+  /**
+   * 「要相談」の初回案内を閉じた記録の読み書き（issue #425。テスト差し替え用）。
+   * 未指定は chrome.storage.local（consultHintStore）を data.annotator で引く
+   */
+  consultHint?: { isSeen(): Promise<boolean>; markSeen(): Promise<void> };
 }
 
 export interface VerificationPanelHandle {
@@ -473,6 +479,32 @@ export function createVerificationPanel(
   // 判定済みブロック（ui-states.md §3）: 直近判定の 1 件だけ元の位置へ残し、
   // それ以外の判定済みセルは下部ブロックへ送る。展開中セルは通常カードで描画する
   let recentDecidedKey: string | null = null;
+  // 「要相談」の初回案内（issue #425）。consultHintSeen は記録の読込前 null。
+  // 初めて値を確定したら consultHintVisible を立て、閉じるまで直近判定セルのトグルの横に出す
+  const consultHintStore = options.consultHint ?? {
+    isSeen: () => isConsultHintSeen(data.annotator),
+    markSeen: () => markConsultHintSeen(data.annotator),
+  };
+  // 要相談のメモ欄の書きかけ（cellKey → 入力中の文字）。保存・印の付け外しで消す
+  const consultNoteDrafts = new Map<string, string>();
+  let consultHintSeen: boolean | null = null;
+  let consultHintVisible = false;
+  consultHintStore.isSeen().then(
+    (seen) => { consultHintSeen = seen; },
+    // 読めないときは出さない側に倒す（案内は補助のため、出し損ねても操作には影響しない）
+    () => { consultHintSeen = true; },
+  );
+  function hideConsultHint(): void {
+    if (consultHintSeen === true && !consultHintVisible) return;
+    consultHintSeen = true;
+    consultHintVisible = false;
+    // 記録の失敗は無視する（次回また出るだけ）
+    consultHintStore.markSeen().catch(() => undefined);
+  }
+  /** 現在の初回案内の対象セル（直近判定セル）。出していなければ null */
+  function consultHintCellKey(): string | null {
+    return consultHintVisible ? recentDecidedKey : null;
+  }
   let expandedDecidedKey: string | null = null;
 
   const currentTabModel = (): TabModel =>
@@ -579,6 +611,8 @@ export function createVerificationPanel(
       enumCandidates: data.enumCandidates,
       canEditSchema: data.canEditSchema,
       consultFlags: new Map([...activeConsultFlags(ownDecisions).values()].map((flag) => [cellKeyOf(flag.fieldId, flag.entityKey), flag])),
+      consultHintCellKey: consultHintCellKey(),
+      consultNoteDrafts,
       unanchoredAcceptWarning: unanchoredWarning,
     };
   }
@@ -1849,18 +1883,18 @@ export function createVerificationPanel(
       commit(findCell(cellKey), 'not_reported', NOT_REPORTED_TOKEN);
     },
     onConsultToggle(cellKey, note) {
-      const cell = findCell(cellKey);
-      const flagged = [...activeConsultFlags(ownDecisions).values()]
-        .some((flag) => cellKeyOf(flag.fieldId, flag.entityKey) === cellKey);
-      const decision: Decision = {
-        decidedAt: now(), decidedBy: data.annotator, studyId: data.study.studyId,
-        fieldId: cell.field.fieldId, entityKey: cell.entityKey, annotator: data.annotator,
-        annotatorType: data.annotatorType, schemaVersion: data.schemaVersion,
-        action: flagged ? 'unflag_consult' : 'flag_consult', value: cell.state.value, note,
-      };
-      ownDecisions.push(decision);
+      toggleConsult(cellKey, note);
+    },
+    onConsultNote(cellKey, note) {
+      // メモの保存は印を付け直す形で追記する（最後の印イベントを採る畳み込みのため印は残る）
+      recordConsult(cellKey, 'flag_consult', note);
+    },
+    onConsultNoteDraft(cellKey, value) {
+      consultNoteDrafts.set(cellKey, value);
+    },
+    onConsultHintClose() {
+      hideConsultHint();
       refreshForm();
-      options.onDecision(decision);
     },
     onUndo(cellKey) {
       const cell = findCell(cellKey);
@@ -2091,6 +2125,10 @@ export function createVerificationPanel(
     renderQuoteAdd();
     const doc = root.ownerDocument;
     const hadFocus = formPane.contains(doc.activeElement);
+    // 要相談のメモ欄に入力中なら、作り直した後も同じセルのメモ欄へフォーカスを戻す（issue #425）
+    const active = doc.activeElement;
+    const typingConsultKey = active instanceof HTMLInputElement && active.classList.contains('verify__consult-note')
+      ? (active.dataset['cellKey'] as string) : null; // メモ欄は必ず data-cell-key を持つ（renderConsultNote）
     // フォームペイン全体を作り直すためスクロール位置が 0 へクランプされる。退避して復元する
     const savedScrollTop = formPane.scrollTop;
     const tabModel = currentTabModel();
@@ -2140,6 +2178,8 @@ export function createVerificationPanel(
       enumCandidates: data.enumCandidates,
       canEditSchema: data.canEditSchema,
       consultFlags: new Map([...activeConsultFlags(ownDecisions).values()].map((flag) => [cellKeyOf(flag.fieldId, flag.entityKey), flag])),
+      consultHintCellKey: consultHintCellKey(),
+      consultNoteDrafts,
       unanchoredAcceptWarning: unanchoredWarning,
     };
     progressListener?.(model.progress);
@@ -2148,7 +2188,13 @@ export function createVerificationPanel(
     formPane.replaceChildren(renderVerificationForm(model, handlers), heightSplitter);
     formPane.scrollTop = savedScrollTop;
     applyReadOnlyState();
-    if (hadFocus && focusedCellKey !== null && editing === null && !tabLocked(activeTab)) {
+    const consultNote = typingConsultKey === null ? undefined
+      : [...formPane.querySelectorAll<HTMLInputElement>('.verify__consult-note')]
+        .find((input) => input.dataset['cellKey'] === typingConsultKey);
+    if (consultNote !== undefined) {
+      consultNote.focus({ preventScroll: true });
+      consultNote.setSelectionRange(consultNote.value.length, consultNote.value.length);
+    } else if (hadFocus && focusedCellKey !== null && editing === null && !tabLocked(activeTab)) {
       // 復元したスクロール位置を尊重しつつ（preventScroll）、フォーカスセルが画面外なら最小移動で見せる
       const element = findCellElement(focusedCellKey);
       showAndFocusCell(element, true);
@@ -2271,6 +2317,47 @@ export function createVerificationPanel(
     refreshForm();
   }
 
+  /** 要相談の印イベントを追記する（値の判定スタックとは独立。issue #401 / #425） */
+  function recordConsult(cellKey: string, action: 'flag_consult' | 'unflag_consult', note: string | null): void {
+    const cell = findCell(cellKey);
+    consultNoteDrafts.delete(cellKey);
+    const decision: Decision = {
+      decidedAt: now(), decidedBy: data.annotator, studyId: data.study.studyId,
+      fieldId: cell.field.fieldId, entityKey: cell.entityKey, annotator: data.annotator,
+      annotatorType: data.annotatorType, schemaVersion: data.schemaVersion,
+      action, value: cell.state.value, note,
+    };
+    ownDecisions.push(decision);
+    refreshForm();
+    options.onDecision(decision);
+  }
+
+  function isConsultFlagged(cellKey: string): boolean {
+    return [...activeConsultFlags(ownDecisions).values()]
+      .some((flag) => cellKeyOf(flag.fieldId, flag.entityKey) === cellKey);
+  }
+
+  /** 要相談の付け外し（トグル・キー q 共通） */
+  function toggleConsult(cellKey: string, note: string | null): void {
+    // トグルを見つけて押したので、初回案内はもう要らない（issue #425）
+    hideConsultHint();
+    recordConsult(cellKey, isConsultFlagged(cellKey) ? 'unflag_consult' : 'flag_consult', note);
+  }
+
+  /**
+   * キー q の対象セル（issue #425）。フォーカス中のセルが確定済みならそのセル、
+   * 未検証なら直前に確定したセル。どちらも当てはまらなければ null
+   */
+  function consultKeyTarget(focused: string): string | null {
+    const usable = (key: string): boolean => {
+      const cell = currentTabModel().cells.find((candidate) => candidate.cellKey === key);
+      return cell !== undefined && (cell.state.status !== 'unverified' || isConsultFlagged(key));
+    };
+    if (usable(focused)) return focused;
+    if (recentDecidedKey !== null && usable(recentDecidedKey)) return recentDecidedKey;
+    return null;
+  }
+
   function commit(
     cell: VerificationCell,
     action: DecisionAction,
@@ -2308,6 +2395,10 @@ export function createVerificationPanel(
     } else {
       recentDecidedKey = cell.cellKey;
       expandedDecidedKey = null;
+      // 初めて値を確定したときに「要相談」の案内を出す（issue #425）。閉じるまで直近判定に付いて回る
+      if (consultHintSeen === false) {
+        consultHintVisible = true;
+      }
     }
     // 判定後は次の未判定セルへ自動遷移する（j キーの手動送りを不要に）。
     // 全セル判定済み・undo（取り消し直後に同じセルで再判定するため）は現在セルに留まる
@@ -2432,7 +2523,7 @@ export function createVerificationPanel(
       return;
     }
     // 押しっぱなしで警告を通過したり、次のセルへ判定を連続保存したりしないようにする
-    if (event.repeat && ['a', 'e', 'x', 'n', 'z'].includes(event.key)) {
+    if (event.repeat && ['a', 'e', 'x', 'n', 'z', 'q'].includes(event.key)) {
       return;
     }
     switch (event.key) {
@@ -2468,6 +2559,15 @@ export function createVerificationPanel(
         event.preventDefault();
         handlers.onJump(focusedCellKey);
         break;
+      case 'q': {
+        // 要相談の付け外し（issue #425）。確定済みのセルが無ければ何もしない
+        event.preventDefault();
+        const target = consultKeyTarget(focusedCellKey);
+        if (target !== null) {
+          toggleConsult(target, null);
+        }
+        break;
+      }
       default:
         break;
     }

@@ -475,10 +475,44 @@ test('要相談一覧は現在値・メモ・判定者を持ち、解除で消�
   const marked = buildDashboard([makeInput({ ownDecisions: [value, flag,
     makeDecision({ action: 'flag_consult', fieldId: 'deleted', decidedAt: 't3' })] })], new Map());
   expect(marked.totals).toEqual(baseline.totals);
-  expect(marked.rows[0]?.consults).toEqual([{ fieldLabel: '総サンプルサイズ', cellKey: '["f-total","-"]', entityKey: '-', value: '120', flag }]);
+  expect(marked.rows[0]?.consults).toEqual([{ fieldLabel: '総サンプルサイズ', cellKey: '["f-total","-"]', entityKey: '-', value: '120', flag, own: true }]);
   const cleared = buildDashboard([makeInput({ ownDecisions: [value, flag, { ...flag, action: 'unflag_consult', decidedAt: 't4' }] })], new Map());
   expect(cleared.rows[0]?.consults).toEqual([]);
   expect(cleared.totals).toEqual(baseline.totals);
   const undone = buildDashboard([makeInput({ ownDecisions: [value, flag, { ...value, action: 'undo', decidedAt: 't3' }] })], new Map());
   expect(undone.rows[0]?.consults?.[0]?.value).toBeNull();
+});
+
+test('オーナー・裁定者向けには全レビュアーの印を、印を付けた人の値で、項目 → entity → 判定者の順に出す（issue #424）', () => {
+  const A = 'a@example.com';
+  const B = 'b@example.com';
+  const reviewerDecisions = [
+    // 自分（オーナー）の値と印
+    makeDecision({ value: '999' }),
+    makeDecision({ action: 'flag_consult', decidedAt: 't2', note: '自分のメモ' }),
+    // レビュアー A（AI を見ながら）: 群の項目と総 N に印
+    makeDecision({ annotator: A, decidedBy: A, value: '120' }),
+    makeDecision({ annotator: A, decidedBy: A, action: 'flag_consult', decidedAt: 't2', note: 'A のメモ' }),
+    makeDecision({ annotator: A, decidedBy: A, fieldId: 'f-arm-n', entityKey: 'arm:2', value: '30' }),
+    makeDecision({ annotator: A, decidedBy: A, fieldId: 'f-arm-n', entityKey: 'arm:2', action: 'flag_consult', decidedAt: 't2' }),
+    makeDecision({ annotator: A, decidedBy: A, fieldId: 'f-arm-n', entityKey: 'arm:1', value: '50' }),
+    makeDecision({ annotator: A, decidedBy: A, fieldId: 'f-arm-n', entityKey: 'arm:1', action: 'flag_consult', decidedAt: 't2' }),
+    // レビュアー B（独立入力）: 印を付けてから外した
+    makeDecision({ annotator: B, decidedBy: B, annotatorType: 'human_independent', value: '118' }),
+    makeDecision({ annotator: B, decidedBy: B, annotatorType: 'human_independent', action: 'flag_consult', decidedAt: 't2' }),
+    makeDecision({ annotator: B, decidedBy: B, annotatorType: 'human_independent', action: 'unflag_consult', decidedAt: 't3' }),
+    // 裁定（consensus）の印は対象外
+    makeDecision({ annotator: 'consensus', annotatorType: 'consensus', action: 'flag_consult', decidedAt: 't2' }),
+  ];
+  const data = buildDashboard([makeInput({ ownDecisions: reviewerDecisions.slice(0, 2), reviewerDecisions, self: ME })], new Map());
+  const consults = data.rows[0]?.consults ?? [];
+  expect(consults.map((cell) => [cell.cellKey, cell.flag.annotator, cell.value, cell.flag.note, cell.own])).toEqual([
+    ['["f-total","-"]', A, '120', 'A のメモ', false],
+    ['["f-total","-"]', ME, '999', '自分のメモ', true],
+    ['["f-arm-n","arm:1"]', A, '50', null, false],
+    ['["f-arm-n","arm:2"]', A, '30', null, false],
+  ]);
+  // 自分のメールアドレスが分からなければ、どの印も自分のものとして扱わない
+  const unknown = buildDashboard([makeInput({ reviewerDecisions })], new Map());
+  expect(unknown.rows[0]?.consults?.every((cell) => !cell.own)).toBe(true);
 });

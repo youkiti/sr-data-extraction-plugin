@@ -135,6 +135,11 @@ export interface VerifyTargetMaterial {
   target: VerifyTarget;
   /** 自分の annotator 行への判定のみ（cells.ts と同じ契約） */
   ownDecisions: Decision[];
+  /**
+   * 当該 study の全判定（全 annotator。ダッシュボードの要相談の一覧で、オーナー・裁定者に
+   * 全レビュアーの印を出すための素材。issue #424）。独立入力モードの素材では持たない
+   */
+  studyDecisions?: Decision[];
   /** 自分が確定した群構成。未確定なら null */
   armStructure: ConfirmedArmStructure | null;
 }
@@ -148,6 +153,8 @@ export interface VerifyTargetMaterialsResult {
    * 独立入力モードは常に空 map（下記 readIndependentVerifyTargetMaterials 呼び出し側参照）
    */
   runStartedAt: Map<string, string | null>;
+  /** 読込時の自分のメールアドレス（取得できなければ空文字。issue #424 で自分の印を見分ける） */
+  annotator?: string;
 }
 
 /**
@@ -276,9 +283,8 @@ export async function readVerifyTargetMaterials(
       continue;
     }
 
-    const ownDecisions = allDecisions.filter(
-      (decision) => decision.studyId === item.study.studyId && decision.annotator === annotator,
-    );
+    const studyDecisions = allDecisions.filter((decision) => decision.studyId === item.study.studyId);
+    const ownDecisions = studyDecisions.filter((decision) => decision.annotator === annotator);
     const armStructure = latestArmStructure(
       allArmRows.filter((row) => row.studyId === item.study.studyId),
       annotator,
@@ -313,6 +319,7 @@ export async function readVerifyTargetMaterials(
         aiExtractionStatus,
       },
       ownDecisions,
+      studyDecisions,
       armStructure,
     });
   }
@@ -331,6 +338,7 @@ export async function readVerifyTargetMaterials(
   return {
     materials: materials.filter((material) => visible.has(material.target.study.studyId)),
     runStartedAt,
+    annotator,
   };
 }
 
@@ -686,7 +694,8 @@ export function syncVerifyTargetProgress(
   if (
     targets === null ||
     target === undefined ||
-    (target.progress.decided === progress.decided && target.progress.total === progress.total)
+    (target.progress.decided === progress.decided && target.progress.total === progress.total &&
+      (target.progress.consults ?? 0) === (progress.consults ?? 0))
   ) {
     return;
   }

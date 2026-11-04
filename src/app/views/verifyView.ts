@@ -31,6 +31,8 @@ function selectorLabel(target: VerifyTarget, calibration: boolean): string {
     label: target.study.studyLabel,
     decided: progress.decided,
     total: progress.total,
+    // 自分の「要相談」の印の件数（issue #425）。0 件なら何も足さない
+    consults: (progress.consults ?? 0) > 0 ? t('verify.selectorConsults', { n: progress.consults as number }) : '',
   });
 }
 
@@ -234,7 +236,8 @@ export function renderVerifyView(state: AppState, ctx: ViewContext): HTMLElement
     // セレクタの「判定済み n / m」を判定のたびに一覧へ書き戻す（値が変わったときだけ）。
     // パネルは描画中に通知してくるため、store 更新は描画後の microtask へ送る
     const syncSelector = (progress: VerificationProgress): void => {
-      if (progress.decided === selectedTarget.progress.decided && progress.total === selectedTarget.progress.total) {
+      if (progress.decided === selectedTarget.progress.decided && progress.total === selectedTarget.progress.total &&
+        (progress.consults ?? 0) === (selectedTarget.progress.consults ?? 0)) {
         return;
       }
       queueMicrotask(() => ctx.verify.onProgressChange(selectedTarget.study.studyId, progress));

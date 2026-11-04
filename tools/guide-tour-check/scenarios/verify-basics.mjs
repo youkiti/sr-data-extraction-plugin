@@ -17,6 +17,8 @@ export default defineScenario({
         await next(run);
         await run.step('decide', 'verify-basics-decide');
         await next(run);
+        await run.step('consult', 'verify-basics-consult');
+        await next(run);
         await run.step('edit-evidence', 'verify-basics-quote-remove');
         await expectTargetBlocked(run, {
             target: '[data-tour="verify-basics-quote-remove"]',

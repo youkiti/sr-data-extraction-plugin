@@ -191,26 +191,68 @@ function renderReviewSetProgress(state: AppState): HTMLElement | null {
   ]);
 }
 
+// 要相談の一覧の「判定者」の絞り込み（issue #424）。'' = すべて。再描画をまたいで保つため
+// モジュールに持つ（画面の表示だけの状態で、保存はしない）
+let consultReviewerFilter = '';
+
 function renderConsults(data: DashboardData): HTMLElement {
-  const rows = data.rows.flatMap((row) => (row.consults ?? []).map((cell) =>
-    el('tr', {}, [
-      el('td', {}, [el('a', { text: row.studyLabel, attributes: { href: verifyHref(row.studyId, cell.cellKey) } })]),
+  const entries = data.rows.flatMap((row) => (row.consults ?? []).map((cell) => ({ row, cell })));
+  const reviewers = [...new Set(entries.map(({ cell }) => cell.flag.annotator))].sort();
+  if (!reviewers.includes(consultReviewerFilter)) {
+    consultReviewerFilter = '';
+  }
+  const rows = entries.map(({ row, cell }) => {
+    // 自分の印は検証画面の該当セルへ移る。他人の印はその人の値を直せないため閲覧だけにし、
+    // リンクの代わりに担当者を添える
+    const study = cell.own
+      ? el('td', {}, [el('a', { text: row.studyLabel, attributes: { href: verifyHref(row.studyId, cell.cellKey) } })])
+      : el('td', {}, [
+        el('span', { text: row.studyLabel }),
+        el('span', {
+          className: 'dashboard__consult-assignee',
+          text: ` ${t('dashboard.consultAssignee', { email: cell.flag.annotator })}`,
+        }),
+      ]);
+    const tr = el('tr', {}, [
+      study,
       el('td', { text: `${cell.fieldLabel} (${cell.entityKey})` }),
       el('td', { text: cell.value ?? '' }),
       el('td', { text: cell.flag.note ?? '' }),
       el('td', { text: cell.flag.decidedBy }),
-    ]),
-  ));
-  return el('section', { id: 'dashboard-consults' }, [
-    headingWithHelp('h3', t('verify.consult'), 'consult'),
-    el('table', {}, [
-      el('thead', {}, [el('tr', {}, (['dashboard.headStudy', 'dashboard.consultField', 'dashboard.consultValue',
-        'verify.noteAria', 'dashboard.consultReviewer'] satisfies MessageKey[]).map((key) => el('th', {
-          text: t(key), attributes: { scope: 'col' },
-        })))]),
-      el('tbody', {}, rows),
-    ]),
-  ]);
+    ]);
+    tr.dataset['reviewer'] = cell.flag.annotator;
+    tr.hidden = consultReviewerFilter !== '' && consultReviewerFilter !== cell.flag.annotator;
+    return tr;
+  });
+  const children: HTMLElement[] = [headingWithHelp('h3', t('verify.consult'), 'consult')];
+  if (reviewers.length > 1) {
+    const select = el('select', { id: 'dashboard-consults-reviewer' }, [
+      el('option', { text: t('dashboard.consultReviewerAll'), attributes: { value: '' } }),
+      ...reviewers.map((email) => el('option', { text: email, attributes: { value: email } })),
+    ]);
+    select.value = consultReviewerFilter;
+    select.addEventListener('change', () => {
+      consultReviewerFilter = select.value;
+      for (const tr of rows) {
+        tr.hidden = consultReviewerFilter !== '' && consultReviewerFilter !== tr.dataset['reviewer'];
+      }
+    });
+    children.push(el('p', { className: 'dashboard__consult-filter' }, [
+      el('label', { text: `${t('dashboard.consultReviewerFilter')} `, attributes: { for: 'dashboard-consults-reviewer' } }),
+      select,
+    ]));
+  }
+  if (entries.some(({ cell }) => !cell.own)) {
+    children.push(el('p', { id: 'dashboard-consults-others', text: t('dashboard.consultOthersNote') }));
+  }
+  children.push(el('table', {}, [
+    el('thead', {}, [el('tr', {}, (['dashboard.headStudy', 'dashboard.consultField', 'dashboard.consultValue',
+      'verify.noteAria', 'dashboard.consultReviewer'] satisfies MessageKey[]).map((key) => el('th', {
+        text: t(key), attributes: { scope: 'col' },
+      })))]),
+    el('tbody', {}, rows),
+  ]));
+  return el('section', { id: 'dashboard-consults' }, children);
 }
 
 export function renderDashboardView(state: AppState, ctx: ViewContext): HTMLElement {

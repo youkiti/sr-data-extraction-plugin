@@ -236,6 +236,49 @@ describe('loadDashboard', () => {
     });
   });
 
+  describe('要相談の一覧の範囲（issue #424）', () => {
+    const decision = (annotator: string, action: 'accept' | 'flag_consult') => ({
+      decidedAt: action === 'accept' ? 't1' : 't2', decidedBy: annotator, studyId: 'study-doc-1', fieldId: 'f-total',
+      entityKey: '-', annotator, annotatorType: 'human_with_ai' as const, schemaVersion: 1, action, value: '120', note: null,
+    });
+    function materialWithFlags(): VerifyTargetMaterial {
+      const material = makeMaterial();
+      material.ownDecisions = [decision('me@example.com', 'accept'), decision('me@example.com', 'flag_consult')];
+      material.studyDecisions = [...material.ownDecisions, decision('a@example.com', 'accept'), decision('a@example.com', 'flag_consult')];
+      return material;
+    }
+    const annotatorsOf = (store: Store) =>
+      store.getState().dashboard.data?.rows[0]?.consults?.map((cell) => [cell.flag.annotator, cell.own]);
+
+    test.each(['owner', 'adjudicator'] as const)('%s には全レビュアーの印を出し、自分の印を見分ける', async (role) => {
+      readMaterialsMock.mockResolvedValue({ ...makeMaterialsResult([materialWithFlags()]), annotator: 'me@example.com' });
+      const store = makeStore();
+      store.setState({ role: { ...store.getState().role, role } });
+      await loadDashboard(store, makeDeps());
+      expect(annotatorsOf(store)).toEqual([['a@example.com', false], ['me@example.com', true]]);
+    });
+
+    test('レビュアーには自分の印だけを出す', async () => {
+      readMaterialsMock.mockResolvedValue({ ...makeMaterialsResult([materialWithFlags()]), annotator: 'me@example.com' });
+      const store = makeStore();
+      store.setState({ role: { ...store.getState().role, role: 'reviewer_with_ai' } });
+      await loadDashboard(store, makeDeps());
+      expect(annotatorsOf(store)).toEqual([['me@example.com', true]]);
+    });
+
+    test('全判定の素材が無ければ自分の印だけ、メールアドレスが分からなければ自分の印として扱わない', async () => {
+      const withoutAll = materialWithFlags();
+      delete withoutAll.studyDecisions;
+      readMaterialsMock.mockResolvedValue(makeMaterialsResult([withoutAll]));
+      const store = makeStore();
+      await loadDashboard(store, makeDeps());
+      expect(annotatorsOf(store)).toEqual([['me@example.com', true]]);
+      readMaterialsMock.mockResolvedValue(makeMaterialsResult([materialWithFlags()]));
+      await loadDashboard(store, makeDeps(), { force: true });
+      expect(annotatorsOf(store)).toEqual([['a@example.com', false], ['me@example.com', false]]);
+    });
+  });
+
   test('readVerifyTargetMaterials の runStartedAt を buildDashboard へそのまま渡す（PR #190 レビュー対応: セル単位の AI 精度算入判定）', async () => {
     const material = makeMaterial(); // evidence の runId は既定 'run-1'
     material.ownDecisions = [

@@ -45,8 +45,20 @@ export interface DashboardSectionCell {
 }
 
 /** マトリクス 1 行 = 1 study */
+/** 要相談の一覧の 1 行（issue #401 / #424） */
+export interface DashboardConsult {
+  fieldLabel: string;
+  entityKey: string;
+  cellKey: string;
+  /** 印を付けた人の行の現在値（オーナー自身の値ではない） */
+  value: string | null;
+  flag: Decision;
+  /** 自分が付けた印か。他人の印は閲覧のみ（検証画面へのリンクを出さない） */
+  own: boolean;
+}
+
 export interface DashboardRow {
-  consults?: { fieldLabel: string; entityKey: string; cellKey: string; value: string | null; flag: Decision }[];
+  consults?: DashboardConsult[];
   studyId: string;
   studyLabel: string;
   /** DashboardData.sections と同順。当該 study のスキーマにない section は null */
@@ -84,6 +96,50 @@ export interface DashboardStudyInput {
   ownDecisions: readonly Decision[];
   /** 自分が確定した群構成。確定 arm 由来の空セルも分母へ含める */
   armStructure?: ConfirmedArmStructure | null;
+  /**
+   * 要相談の一覧に全レビュアーの印を出すときの素材（issue #424。オーナー・裁定者のみ）。
+   * 当該 study の human_with_ai / human_independent の判定（印と値の両方）。省略時は自分の印だけ
+   */
+  reviewerDecisions?: readonly Decision[];
+  /** 自分のメールアドレス（reviewerDecisions の中で自分の印を見分ける）。省略時は空文字 */
+  self?: string;
+}
+
+const REVIEWER_TYPES: ReadonlySet<Decision['annotatorType']> = new Set(['human_with_ai', 'human_independent']);
+
+/**
+ * 要相談の一覧（issue #401 / #424）。reviewerDecisions があれば全レビュアーの印、無ければ自分の印。
+ * 値は印を付けた annotator の判定を畳み込んだ現在値。並びは項目順（表のデザインの項目順）→ entity → 判定者
+ */
+function buildConsults(input: DashboardStudyInput): DashboardConsult[] {
+  const all = input.reviewerDecisions;
+  const source = all === undefined
+    ? input.ownDecisions
+    : all.filter((decision) => REVIEWER_TYPES.has(decision.annotatorType));
+  const statesByAnnotator = new Map<string, ReturnType<typeof deriveCellStates>>();
+  const statesOf = (annotator: string): ReturnType<typeof deriveCellStates> => {
+    let states = statesByAnnotator.get(annotator);
+    if (states === undefined) {
+      // 検証画面の自分の行と同じく、annotator ごとに判定を畳み込む
+      states = deriveCellStates(source.filter((decision) => decision.annotator === annotator));
+      statesByAnnotator.set(annotator, states);
+    }
+    return states;
+  };
+  const fieldOrder = new Map(input.fields.map((field, index) => [field.fieldId, index]));
+  const consults = [...activeConsultFlags(source).values()].flatMap((flag) => {
+    const index = fieldOrder.get(flag.fieldId);
+    if (index === undefined) return [];
+    const field = input.fields[index] as SchemaField;
+    const cellKey = cellKeyOf(flag.fieldId, flag.entityKey);
+    const value = statesOf(flag.annotator).get(cellKey)?.value ?? null;
+    const own = all === undefined || flag.annotator === (input.self ?? '');
+    return [{ index, consult: { fieldLabel: field.fieldLabel, entityKey: flag.entityKey, cellKey, value, flag, own } }];
+  });
+  consults.sort((a, b) => a.index - b.index ||
+    a.consult.entityKey.localeCompare(b.consult.entityKey) ||
+    a.consult.flag.annotator.localeCompare(b.consult.flag.annotator));
+  return consults.map((entry) => entry.consult);
 }
 
 /** 検証フォームと同じ順（タブ順 → グループ順）で全セルを連結する */
@@ -151,7 +207,6 @@ function buildRow(
   sections: readonly string[],
   runStartedAt: ReadonlyMap<string, string | null>,
 ): DashboardRow {
-  const states = deriveCellStates(input.ownDecisions);
   const own = documentSections(input.fields);
   const bySection = new Map<string, DashboardSectionCell>(
     own.map((section) => [section, { section, decided: 0, total: 0, entityKey: null }]),
@@ -195,13 +250,7 @@ function buildRow(
   const anchored = input.evidence.filter((item) => item.anchorStatus !== null);
   const reportedRows = input.evidence.filter((item) => item.quoteSeq === null || item.quoteSeq === 1);
   return {
-    consults: [...activeConsultFlags(input.ownDecisions).values()].flatMap((flag) => {
-      const field = input.fields.find((field) => field.fieldId === flag.fieldId);
-      if (field === undefined) return [];
-      const cellKey = cellKeyOf(flag.fieldId, flag.entityKey);
-      const value = states.get(cellKey)?.value ?? null;
-      return [{ fieldLabel: field.fieldLabel, entityKey: flag.entityKey, cellKey, value, flag }];
-    }),
+    consults: buildConsults(input),
     studyId: input.studyId,
     studyLabel: input.studyLabel,
     cells: sections.map((section) => bySection.get(section) ?? null),

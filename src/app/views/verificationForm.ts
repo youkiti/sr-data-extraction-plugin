@@ -22,6 +22,7 @@ import { t, type MessageKey } from '../../lib/i18n';
 import { el } from '../ui/dom';
 import {
   renderCell,
+  renderConsultBadge,
   renderStatusChip,
   type CellHighlightInfo,
   type QuoteEditState,
@@ -135,6 +136,10 @@ export interface VerificationFormModel {
   canEditSchema?: boolean;
   /** 自分のセルごとの有効な要相談イベント。値の判定とは独立。 */
   consultFlags?: ReadonlyMap<string, Decision>;
+  /** 「要相談」の初回案内を出すセル（issue #425）。verificationCellCard.CellCardModel 参照 */
+  consultHintCellKey?: string | null;
+  /** 要相談のメモ欄の書きかけ（issue #425）。verificationCellCard.CellCardModel 参照 */
+  consultNoteDrafts?: ReadonlyMap<string, string>;
   /** 照合できなかった引用のセルの accept 前の警告（issue #381）。verificationCellCard.CellCardModel 参照 */
   unanchoredAcceptWarning?: { cellKey: string; reason: UnanchoredReason } | null;
 }
@@ -156,6 +161,9 @@ export interface VerificationFormHandlers {
   onCancelEdit(): void;
   onNotReported(cellKey: string): void;
   onConsultToggle?(cellKey: string, note: string | null): void;
+  onConsultNote?(cellKey: string, note: string | null): void;
+  onConsultNoteDraft?(cellKey: string, value: string): void;
+  onConsultHintClose?(): void;
   onUndo(cellKey: string): void;
   /** 現在項目のハイライトへ PDF をスクロール（f） */
   onJump(cellKey: string): void;
@@ -226,6 +234,11 @@ function renderDecidedRow(
   }
   const valueText = t('verify.decidedValue', { value: formatFieldValue(cell.field, cell.state.value) ?? t('verify.valueEmpty') });
   children.push(el('span', { className: 'verify__decided-value', text: valueText }));
+  // 要相談の札（issue #425）。行の読み上げ名（aria-label 未指定時は中身の文字）にも「要相談」が入る
+  const consulted = model.consultFlags?.has(cell.cellKey) === true;
+  if (consulted) {
+    children.push(renderConsultBadge());
+  }
   // 許容値外の警告（issue #254・形態 B）。この行自体が <button> のため <a> は入れ子にできない
   // （axe: nested-interactive）。非対話バッジ + aria-label / title への連結で伝える
   const enumWarning = allowedValuesWarningText(cell.field, cell.state.value);
@@ -234,7 +247,7 @@ function renderDecidedRow(
     children.push(renderAllowedValuesBadge());
     const message = enumWarning.replace(/^⚠ /, '');
     attributes['aria-label'] =
-      `${cell.field.fieldLabel}: ${valueText}${t('verify.enumAriaSuffix', { message })}`;
+      `${cell.field.fieldLabel}: ${valueText}${consulted ? t('verify.consultAriaSuffix') : ''}${t('verify.enumAriaSuffix', { message })}`;
     attributes['title'] = `${t('verify.decidedRowTitle')}\n${message}`;
   }
   const row = el(
