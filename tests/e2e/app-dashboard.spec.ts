@@ -416,3 +416,26 @@ test('要相談を付けて一覧から該当セルへ移り、解除すると�
   await page.evaluate(() => { location.hash = '#/dashboard'; });
   await expect(page.locator('#dashboard-consults tbody tr')).toHaveCount(0);
 });
+
+test('オーナーのダッシュボードに他のレビュアーの印が担当者付き・閲覧のみで出る（issue #424）', async ({ page }) => {
+  const other = 'reviewer@example.com';
+  const decisions = [
+    ['t1', 'e2e@example.com', 'study-1', 'f-total', '-', 'e2e@example.com', 'human_with_ai', '1', 'accept', '12', ''],
+    ['t2', 'e2e@example.com', 'study-1', 'f-total', '-', 'e2e@example.com', 'human_with_ai', '1', 'flag_consult', '12', '自分の相談'],
+    ['t1', other, 'study-1', 'f-total', '-', other, 'human_with_ai', '1', 'edit', '15', ''],
+    ['t2', other, 'study-1', 'f-total', '-', other, 'human_with_ai', '1', 'flag_consult', '15', '表と本文で迷う'],
+  ];
+  await setupRoutes(page, decisions);
+  await initApp(page, '#/dashboard');
+  const list = page.locator('#dashboard-consults');
+  await expect(list.locator('tbody tr')).toHaveCount(2, { timeout: 15_000 });
+  const othersRow = list.locator('tbody tr', { hasText: other });
+  await expect(othersRow).toContainText(`担当: ${other}`);
+  await expect(othersRow).toContainText('15');
+  await expect(othersRow).toContainText('表と本文で迷う');
+  await expect(othersRow.locator('a')).toHaveCount(0);
+  await expect(page.locator('#dashboard-consults-others')).toBeVisible();
+  await page.locator('#dashboard-consults-reviewer').selectOption(other);
+  await expect(list.locator('tbody tr:visible')).toHaveCount(1);
+  expect((await new AxeBuilder({ page }).include('#dashboard-consults').analyze()).violations).toEqual([]);
+});

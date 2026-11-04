@@ -68,12 +68,16 @@ export async function loadDashboard(
   patchDashboard(store, { loading: true, loadError: null });
   try {
     await requireReviewSets(store, deps);
-    const { materials, runStartedAt } = await readVerifyTargetMaterials(
+    const { materials, runStartedAt, annotator } = await readVerifyTargetMaterials(
       store,
       deps,
       project.spreadsheetId,
       { assignedOnly: false, force: options.force },
     );
+    // 要相談の一覧（issue #424）: オーナー・裁定者には全レビュアーの印を出す。
+    // レビュアーは従来どおり自分の印だけ（reviewerDecisions を渡さない）
+    const role = store.getState().role.role ?? 'owner';
+    const seesAllConsults = role === 'owner' || role === 'adjudicator';
     // 表示ラベルは target.study（Studies 由来。v0.10）
     const data = buildDashboard(
       materials.map((material) => ({
@@ -83,6 +87,9 @@ export async function loadDashboard(
         evidence: material.target.evidence,
         ownDecisions: material.ownDecisions,
         armStructure: material.armStructure,
+        ...(seesAllConsults && material.studyDecisions !== undefined
+          ? { reviewerDecisions: material.studyDecisions, self: annotator ?? '' }
+          : {}),
       })),
       runStartedAt,
     );
