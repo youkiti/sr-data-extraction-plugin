@@ -144,7 +144,21 @@ export const scenes = [
         async run(shot) {
             await goTo(shot, '#/verify', '.verify__pane--pdf canvas');
             await shot.page.locator('.pdf-viewer__hl').first().waitFor({ state: 'visible', timeout: 20000 });
+            // 先頭の値を承認し、「要相談 (q)」の印とメモを付けた状態を写す（issue #425）。
+            // 直近判定の帯のトグル・メモ欄と、項目の表の札・研究の選択欄の件数が図に入る
+            await shot.page.keyboard.press('a');
+            await shot.page.keyboard.press('q');
+            const note = shot.page.locator('#verify-focus-recent + .verify__consult .verify__consult-note');
+            await note.waitFor({ state: 'visible', timeout: 5000 });
+            await note.fill('表 2 と本文で値が違う');
+            await shot.page.locator('#verify-focus-recent + .verify__consult .verify__consult-save').click();
             await settle(shot.page);
+            // 右のペインを項目の表の見出しまで送る（判定ボタンの列と直近判定の帯を図に入れる）
+            await shot.page.locator('.focus-card__matrix').first().evaluate((node) => {
+                const pane = node.closest('.verify__pane--form');
+                if (pane !== null) pane.scrollTop += node.getBoundingClientRect().top - pane.getBoundingClientRect().top;
+            });
+            await shot.page.waitForTimeout(200);
             await shot.snap();
         },
     },

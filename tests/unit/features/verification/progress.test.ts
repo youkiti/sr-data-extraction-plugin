@@ -109,6 +109,24 @@ describe('verificationProgress', () => {
     });
   });
 
+  test('自分の有効な要相談の印を数え、外した印・今のセルに無い項目の印は数えない（issue #425）', () => {
+    const progress = verificationProgress(
+      [makeField(), makeField({ fieldId: 'f-2', fieldIndex: 2, fieldName: 'second' })],
+      [makeEvidence(), makeEvidence({ fieldId: 'f-2' })],
+      [
+        makeDecision(),
+        makeDecision({ decidedAt: 't2', action: 'flag_consult' }),
+        makeDecision({ fieldId: 'f-2' }),
+        makeDecision({ fieldId: 'f-2', decidedAt: 't2', action: 'flag_consult' }),
+        makeDecision({ fieldId: 'f-2', decidedAt: 't3', action: 'unflag_consult' }),
+        makeDecision({ fieldId: 'f-gone', decidedAt: 't2', action: 'flag_consult' }),
+      ],
+    );
+    expect(progress.consults).toBe(1);
+    // 判定の進捗は印に左右されない
+    expect(progress.decided).toBe(2);
+  });
+
   test('ArmStructures 由来の Evidence なしセルも分母に含める', () => {
     const fields = [
       makeField({ fieldId: 'f-arm', fieldIndex: 1, fieldName: 'arm_n', entityLevel: 'arm' }),

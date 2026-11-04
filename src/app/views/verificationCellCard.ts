@@ -100,6 +100,11 @@ export interface CellCardModel {
   /** 自分のセルごとの有効な要相談イベント。値の判定とは独立。 */
   consultFlags?: ReadonlyMap<string, Decision>;
   /**
+   * 「要相談」の初回案内を横に出すセル（issue #425）。null / 省略 = 出さない。
+   * パネルが「初めて値を確定した」ときに直近判定セルのキーを入れ、閉じるまで付いて回る
+   */
+  consultHintCellKey?: string | null;
+  /**
    * 照合できなかった引用のセルで 1 回目の accept を受けたときの警告（issue #381）。
    * 対象セルと理由。もう一度 accept すると確定する。別のセルへ移る・他の判定で消える。
    * 省略時 null = 警告なし
@@ -125,6 +130,10 @@ export interface CellCardHandlers {
   onNotReported(cellKey: string): void;
   onUndo(cellKey: string): void;
   onConsultToggle?(cellKey: string, note: string | null): void;
+  /** 印が付いたセルのメモを保存する（issue #425。flag_consult を同じ note で追記し直す） */
+  onConsultNote?(cellKey: string, note: string | null): void;
+  /** 「要相談」の初回案内を閉じる（issue #425） */
+  onConsultHintClose?(): void;
   /** セルキー（代表）または引用キーのハイライトへスクロール（f） */
   onJump(quoteKey: string): void;
   /** quote を PDF.js テキスト検索へ投入（anchor failed のフォールバック） */
@@ -763,6 +772,117 @@ function renderUndoButton(cell: VerificationCell, handlers: CellCardHandlers): H
   return undo;
 }
 
+/**
+ * 「要相談 (q)」トグル（issue #425）。判定ボタンの列に同じ大きさで並べる。
+ * 未検証セルでは押せない（理由は title で示す）。undo 後にも残る印は外せるよう押せるままにする
+ */
+export function renderConsultButton(
+  cell: VerificationCell,
+  model: Pick<CellCardModel, 'consultFlags'>,
+  onConsultToggle: (cellKey: string, note: string | null) => void,
+): HTMLElement {
+  const flagged = model.consultFlags?.has(cell.cellKey) === true;
+  const attributes: Record<string, string> = {
+    type: 'button',
+    'aria-pressed': String(flagged),
+    'data-tour': 'verify-basics-consult',
+  };
+  const disabled = cell.state.status === 'unverified' && !flagged;
+  if (disabled) {
+    attributes['title'] = t('verify.consultDisabledTitle');
+  }
+  const button = el('button', {
+    className: `verify__action verify__action--consult${flagged ? ' verify__action--consult-on' : ''}`,
+    text: t('verify.actionConsult'),
+    attributes,
+  });
+  button.disabled = disabled;
+  // メモは印が付いた後にメモ欄から保存する。トグル自体は印の付け外しだけを行う
+  button.addEventListener('click', () => onConsultToggle(cell.cellKey, null));
+  return button;
+}
+
+/** 印が付いたセルのメモ欄（issue #425）。印が無ければ null */
+export function renderConsultNote(
+  cell: VerificationCell,
+  model: Pick<CellCardModel, 'consultFlags'>,
+  onConsultNote: ((cellKey: string, note: string | null) => void) | undefined,
+): HTMLElement | null {
+  const flag = model.consultFlags?.get(cell.cellKey);
+  if (flag === undefined || onConsultNote === undefined) {
+    return null;
+  }
+  const note = el('input', {
+    className: 'verify__consult-note',
+    attributes: { type: 'text', 'aria-label': t('verify.consultNote'), placeholder: t('verify.consultNote') },
+  });
+  note.value = flag.note ?? '';
+  const save = (): void => {
+    const value = note.value.trim() || null;
+    if (value !== flag.note) {
+      onConsultNote(cell.cellKey, value);
+    }
+  };
+  note.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter' || event.isComposing || event.keyCode === 229) return;
+    event.preventDefault();
+    save();
+  });
+  const saveButton = el('button', {
+    className: 'verify__consult-save',
+    text: t('verify.consultNoteSave'),
+    attributes: { type: 'button' },
+  });
+  saveButton.addEventListener('click', save);
+  return el('div', { className: 'verify__consult' }, [note, saveButton]);
+}
+
+/** 「要相談」の初回案内の吹き出し（issue #425）。対象セルでなければ null */
+export function renderConsultHint(
+  cell: VerificationCell,
+  model: Pick<CellCardModel, 'consultHintCellKey'>,
+  onClose: (() => void) | undefined,
+): HTMLElement | null {
+  if (onClose === undefined || model.consultHintCellKey == null || model.consultHintCellKey !== cell.cellKey) {
+    return null;
+  }
+  const close = el('button', {
+    className: 'verify__consult-hint-close',
+    text: t('verify.consultHintClose'),
+    attributes: { type: 'button' },
+  });
+  close.addEventListener('click', () => onClose());
+  return el('div', { className: 'verify__consult-hint', attributes: { role: 'status' } }, [
+    el('span', { text: t('verify.consultHint') }),
+    close,
+  ]);
+}
+
+/** 印のあるセルに状態バッジと並べて出す札（issue #425）。色だけに頼らず文字を出す */
+export function renderConsultBadge(): HTMLElement {
+  return el('span', { className: 'verify__consult-badge', text: t('verify.consult') });
+}
+
+/** 判定ボタンの列 + その下のメモ欄・案内（要相談の配線が無い画面では列だけ） */
+function renderActionArea(
+  cell: VerificationCell,
+  handlers: CellCardHandlers,
+  mode: 'review' | 'independent',
+  model: CellCardModel,
+): HTMLElement[] {
+  const actions = renderActions(cell, handlers, mode, model);
+  const onConsultToggle = handlers.onConsultToggle;
+  if (onConsultToggle === undefined) {
+    return [actions];
+  }
+  actions.append(renderConsultButton(cell, model, onConsultToggle));
+  const extras = [
+    renderConsultHint(cell, model, handlers.onConsultHintClose),
+    renderConsultNote(cell, model, handlers.onConsultNote),
+  ].filter((node): node is HTMLElement => node !== null);
+  return [actions, ...extras];
+}
+
 function renderActions(
   cell: VerificationCell,
   handlers: CellCardHandlers,
@@ -819,6 +939,9 @@ export function renderCell(
     el('code', { className: 'verify__cell-name', text: cell.field.fieldName }),
     renderStatusChip(cell.state.status),
   ];
+  if (model.consultFlags?.has(cell.cellKey) === true) {
+    headerChildren.push(renderConsultBadge());
+  }
   if (cell.cellKey === model.expandedDecidedKey) {
     // 判定済みブロック内の展開カードにだけ「たたむ」を出す
     const collapseButton = el('button', {
@@ -894,20 +1017,7 @@ export function renderCell(
         text: t(warning.reason === 'failed' ? 'verify.unanchoredAcceptFailed' : 'verify.unanchoredAcceptUnchecked'),
       }));
     }
-    children.push(renderActions(cell, handlers, mode, model));
-  }
-  const onConsultToggle = handlers.onConsultToggle;
-  if (onConsultToggle !== undefined) {
-    const flag = model.consultFlags?.get(cell.cellKey);
-    const note = el('input', { className: 'verify__consult-note', attributes: {
-      type: 'text', 'aria-label': t('verify.noteAria'), placeholder: t('verify.consultNote'),
-    } });
-    note.value = flag?.note ?? cell.state.stack.at(-1)?.note ?? '';
-    const toggle = el('button', { className: 'verify__consult-toggle', text: t('verify.consult'),
-      attributes: { type: 'button', 'aria-pressed': String(flag !== undefined) } });
-    toggle.disabled = cell.state.status === 'unverified' && flag === undefined;
-    toggle.addEventListener('click', () => onConsultToggle(cell.cellKey, note.value.trim() || null));
-    children.push(el('div', { className: 'verify__consult' }, [note, toggle]));
+    children.push(...renderActionArea(cell, handlers, mode, model));
   }
   const node = el('div', { className: 'verify__cell', attributes: { tabindex: '-1' } }, children);
   node.dataset['cellKey'] = cell.cellKey;

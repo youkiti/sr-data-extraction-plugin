@@ -6,6 +6,7 @@ import {
   type VerificationFormModel,
 } from '../../../../src/app/views/verificationForm';
 import type { VerificationFocusCardModel } from '../../../../src/app/views/verificationFocusCard';
+import type { Decision } from '../../../../src/domain/decision';
 import type { Evidence } from '../../../../src/domain/evidence';
 import type { SchemaField } from '../../../../src/domain/schemaField';
 import type { TabModel, VerificationCell } from '../../../../src/features/verification/cells';
@@ -1111,6 +1112,15 @@ describe('判定済みコンパクト行の許容値外バッジ（issue #254・
     expect(row.querySelector('a')).toBeNull();
     expect(row.getAttribute('aria-label')).toContain('low risk');
     expect(row.getAttribute('title')).toContain('low risk');
+  });
+
+  test('要相談の印があれば、札を出し aria-label の警告の前に「（要相談）」を足す（issue #425）', () => {
+    const cell = makeOutOfRangeCell('low risk');
+    const flag = { action: 'flag_consult', note: null } as unknown as Decision;
+    const { root } = render(makeModel([cell], { consultFlags: new Map([[cell.cellKey, flag]]) }));
+    const row = root.querySelector('.verify__cell--decided') as HTMLElement;
+    expect(row.querySelector('.verify__consult-badge')?.textContent).toBe('要相談');
+    expect(row.getAttribute('aria-label')).toMatch(/^D1 判定: .*low risk（要相談）/);
   });
 
   test('許容値内の確定値にはバッジも aria-label も付けない（従来どおりの title のまま）', () => {

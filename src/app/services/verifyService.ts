@@ -686,7 +686,8 @@ export function syncVerifyTargetProgress(
   if (
     targets === null ||
     target === undefined ||
-    (target.progress.decided === progress.decided && target.progress.total === progress.total)
+    (target.progress.decided === progress.decided && target.progress.total === progress.total &&
+      (target.progress.consults ?? 0) === (progress.consults ?? 0))
   ) {
     return;
   }

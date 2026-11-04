@@ -394,20 +394,24 @@ test('要相談を付けて一覧から該当セルへ移り、解除すると�
     'human_with_ai', '1', 'accept', '12', '']];
   await setupRoutes(page, decisions);
   await initApp(page, '#/verify?study=study-1&entity=-');
-  const toggle = page.locator('.verify__consult-toggle').first();
+  // 判定ボタンの列の「要相談 (q)」で印を付け、開いたメモ欄に相談したい点を保存する（issue #425）
+  const toggle = page.locator('.verify__action--consult').first();
   await expect(toggle).toBeEnabled({ timeout: 15_000 });
   const progress = await page.locator('#verify-progress').textContent();
-  await page.locator('.verify__consult-note').first().fill('表と本文で迷う');
   await toggle.click();
   await expect.poll(() => decisions.filter((row) => row[8] === 'flag_consult').length).toBe(1);
+  await page.locator('.verify__consult-note').first().fill('表と本文で迷う');
+  await page.locator('.verify__consult-save').first().click();
+  await expect.poll(() => decisions.filter((row) => row[8] === 'flag_consult').length).toBe(2);
   await expect(page.locator('#verify-progress')).toHaveText(progress!);
+  await expect(page.locator('#verify-study option:checked')).toContainText('・要相談 1');
   await page.evaluate(() => { location.hash = '#/dashboard'; });
   const list = page.locator('#dashboard-consults');
   await expect(list).toContainText('表と本文で迷う');
   await expect(list).toContainText('12');
   await list.locator('tbody a').click();
-  await expect(page.locator('.verify__consult-toggle').first()).toHaveAttribute('aria-pressed', 'true');
-  await page.locator('.verify__consult-toggle').first().click();
+  await expect(page.locator('.verify__action--consult').first()).toHaveAttribute('aria-pressed', 'true');
+  await page.locator('.verify__action--consult').first().click();
   await expect.poll(() => decisions.filter((row) => row[8] === 'unflag_consult').length).toBe(1);
   await page.evaluate(() => { location.hash = '#/dashboard'; });
   await expect(page.locator('#dashboard-consults tbody tr')).toHaveCount(0);

@@ -19,6 +19,10 @@ import { t } from '../../lib/i18n';
 import { el } from '../ui/dom';
 import {
   renderCell,
+  renderConsultBadge,
+  renderConsultButton,
+  renderConsultHint,
+  renderConsultNote,
   renderStatusChip,
   type CellCardHandlers,
   type CellCardModel,
@@ -88,6 +92,11 @@ export interface VerificationFocusCardModel {
   canEditSchema?: boolean;
   /** 自分のセルごとの有効な要相談イベント。値の判定とは独立。 */
   consultFlags?: ReadonlyMap<string, Decision>;
+  /**
+   * 「要相談」の初回案内を出すセル（issue #425）。フォーカスモードでは直近判定バーの
+   * トグルの横にだけ出す（詳細ストリップには渡さない。同じセルに 2 つ出るのを防ぐ）
+   */
+  consultHintCellKey?: string | null;
   /** 照合できなかった引用のセルの accept 前の警告（issue #381）。verificationCellCard.CellCardModel 参照 */
   unanchoredAcceptWarning?: { cellKey: string; reason: UnanchoredReason } | null;
 }
@@ -175,6 +184,11 @@ function renderMatrixDataCell(
   const baseLabel = `${fieldLabel} × ${column.label}: ${value}`;
   const trailing: HTMLElement[] = [renderStatusChip(cell.state.status)];
   const attributes: Record<string, string> = { type: 'button', 'aria-label': baseLabel };
+  if (model.consultFlags?.has(cell.cellKey) === true) {
+    // 要相談の札（issue #425）。ボタンは aria-label を明示しているため読み上げ名にも足す
+    trailing.push(renderConsultBadge());
+    attributes['aria-label'] = `${baseLabel}${t('verify.consultAriaSuffix')}`;
+  }
   const titleParts: string[] = [];
   if (warnings.length > 0) {
     // 決定論的な数値整合性チェック（issue #65）: バッジ + aria-label / title に警告文を含める
@@ -186,7 +200,7 @@ function renderMatrixDataCell(
         text: '⚠',
       }),
     );
-    attributes['aria-label'] = `${baseLabel}${t('verify.consistencyAriaSuffix', { warnings: warnings.join('。') })}`;
+    attributes['aria-label'] = `${attributes['aria-label']}${t('verify.consistencyAriaSuffix', { warnings: warnings.join('。') })}`;
     titleParts.push(...warnings);
   }
   const robInfo = model.robAlgorithmInfo.get(cell.cellKey);
@@ -315,6 +329,8 @@ function renderDetailStrip(
     enumCandidates: model.enumCandidates,
     canEditSchema: model.canEditSchema,
     consultFlags: model.consultFlags,
+    // 初回案内は直近判定バー側に出す。直近判定セルをこのストリップで開いているときだけここに出す
+    consultHintCellKey: model.recentCell?.cellKey === model.focusedCellKey ? model.consultHintCellKey : null,
     unanchoredAcceptWarning: model.unanchoredAcceptWarning,
   };
   return el('div', { id: 'verify-focus-detail', className: 'focus-card__detail' }, [
@@ -329,10 +345,10 @@ function renderDetailStrip(
 function renderRecentBar(
   model: VerificationFocusCardModel,
   handlers: VerificationFocusCardHandlers,
-): HTMLElement | null {
+): HTMLElement[] {
   const cell = model.recentCell;
   if (cell === null) {
-    return null;
+    return [];
   }
   const undoButton = el('button', {
     className: 'focus-card__recent-undo',
@@ -341,21 +357,37 @@ function renderRecentBar(
   });
   undoButton.disabled = cell.state.stack.length === 0;
   undoButton.addEventListener('click', () => handlers.onUndo(cell.cellKey));
-  return el(
+  const barChildren: HTMLElement[] = [
+    el('span', { className: 'focus-card__recent-label-lead', text: t('verify.recentLead') }),
+    renderStatusChip(cell.state.status),
+    el('span', { className: 'focus-card__recent-label', text: cell.field.fieldLabel }),
+    el('span', { className: 'focus-card__recent-value', text: `= ${displayValue(cell)}` }),
+    undoButton,
+  ];
+  // 確定するとフォーカスは次のセルへ移るため、確定したばかりのセルの「要相談」を
+  // この帯からも付け外せるようにする（issue #425）。メモ欄・初回案内も帯の直下に出す
+  const extras: HTMLElement[] = [];
+  // 直近判定セルを詳細ストリップでも開いている（全セル判定済みで留まった等）ときは、
+  // 同じトグル・メモ欄が 2 つ並ばないよう詳細ストリップ側だけに出す
+  if (handlers.onConsultToggle !== undefined && cell.cellKey !== model.focusedCellKey) {
+    barChildren.push(renderConsultButton(cell, model, handlers.onConsultToggle));
+    for (const node of [
+      renderConsultHint(cell, model, handlers.onConsultHintClose),
+      renderConsultNote(cell, model, handlers.onConsultNote),
+    ]) {
+      if (node !== null) extras.push(node);
+    }
+  }
+  const bar = el(
     'div',
     {
       id: 'verify-focus-recent',
       className: 'focus-card__recent',
       attributes: { role: 'status', 'aria-live': 'polite' },
     },
-    [
-      el('span', { className: 'focus-card__recent-label-lead', text: t('verify.recentLead') }),
-      renderStatusChip(cell.state.status),
-      el('span', { className: 'focus-card__recent-label', text: cell.field.fieldLabel }),
-      el('span', { className: 'focus-card__recent-value', text: `= ${displayValue(cell)}` }),
-      undoButton,
-    ],
+    barChildren,
   );
+  return [bar, ...extras];
 }
 
 export function renderVerificationFocusCard(
@@ -369,9 +401,6 @@ export function renderVerificationFocusCard(
     );
   }
   children.push(renderDetailStrip(model, handlers));
-  const recentBar = renderRecentBar(model, handlers);
-  if (recentBar !== null) {
-    children.push(recentBar);
-  }
+  children.push(...renderRecentBar(model, handlers));
   return el('section', { id: 'verify-focus-card', className: 'focus-card' }, children);
 }

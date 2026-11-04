@@ -1821,6 +1821,10 @@ describe('担当セットによる検証対象', () => {
     syncVerifyTargetProgress(store, 'study-doc-1', { decided: 1, total: 1, byTab: [] });
     syncVerifyTargetProgress(store, 'missing', progress);
     expect(listener).toHaveBeenCalledTimes(1);
+    // 要相談の件数だけが変わっても書き戻す（issue #425）
+    syncVerifyTargetProgress(store, 'study-doc-1', { decided: 1, total: 1, byTab: [], consults: 1 });
+    expect(store.getState().verify.targets![0]!.progress.consults).toBe(1);
+    expect(listener).toHaveBeenCalledTimes(2);
     const unloaded = makeStore({ verify: { targets: null } });
     syncVerifyTargetProgress(unloaded, 'study-doc-1', progress);
     expect(unloaded.getState().verify.targets).toBeNull();

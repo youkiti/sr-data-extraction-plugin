@@ -20,6 +20,8 @@ export const VERIFY_BASICS_TOUR: TourFor<VerifyBasicsEvent, VerifyBasicsConditio
       textKey: stepKey(BASE, 'read-evidence'), advance: { type: 'next' } },
     { id: 'decide', route: '#/verify', target: 'verify-basics-decide', dynamicTarget: true,
       textKey: stepKey(BASE, 'decide'), advance: { type: 'next' } },
+    { id: 'consult', route: '#/verify', target: 'verify-basics-consult', dynamicTarget: true,
+      textKey: stepKey(BASE, 'consult'), advance: { type: 'next' } },
     { id: 'edit-evidence', route: '#/verify', target: 'verify-basics-quote-remove', dynamicTarget: true, blockTarget: true,
       textKey: stepKey(BASE, 'edit-evidence'), advance: { type: 'next' } },
     { id: 'check-progress', route: '#/verify', target: 'verify-basics-progress', dynamicTarget: true,

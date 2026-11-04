@@ -2472,12 +2472,13 @@ describe('独立入力モード（design §5.2。annotatorType = human_independe
     panel.dispose();
   });
 
-  test('操作は入力 (e) / 未報告 (n) / 戻す (z) の 3 つのみで、承認・棄却ボタンは出さない', async () => {
+  test('操作は入力 (e) / 未報告 (n) / 戻す (z) と要相談 (q) のみで、承認・棄却ボタンは出さない', async () => {
     const { panel } = await createPanel({ annotatorType: 'human_independent' });
     const actions = [
       ...(cellEl(panel.root, KEY_TOTAL)?.querySelectorAll<HTMLButtonElement>('.verify__action') ?? []),
     ];
-    expect(actions.map((button) => button.textContent)).toEqual(['入力 (e)', '未報告 (n)', '戻す (z)']);
+    // 要相談 (q) は判定ボタンの列の右端に並ぶ（issue #425。独立入力モードでも付けられる）
+    expect(actions.map((button) => button.textContent)).toEqual(['入力 (e)', '未報告 (n)', '戻す (z)', '要相談 (q)']);
     expect(cellEl(panel.root, KEY_TOTAL)?.querySelector('.verify__action--accept')).toBeNull();
     expect(cellEl(panel.root, KEY_TOTAL)?.querySelector('.verify__action--reject')).toBeNull();
     panel.dispose();
@@ -5223,36 +5224,235 @@ describe('照合できなかった引用のセルの accept 前の警告（issue
   });
 });
 
-test.each(['list', 'focus'] as const)('要相談の付け外しは現在値と進捗を保ちメモを記録する: %s', async (layoutMode) => {
-  const { panel, onDecision } = await createPanel({ fields: [makeField({ fieldId: 'f-country', fieldName: 'country' })], decisions: [makeDecision({ note: '判定メモ' })] }, { layoutMode });
-  panel.root.querySelector<HTMLButtonElement>('.verify__cell--decided')?.click();
-  const progress = panel.root.querySelector('#verify-progress')!.textContent;
-  const note = panel.root.querySelector<HTMLInputElement>('.verify__consult-note')!;
-  expect(note.value).toBe('判定メモ');
-  note.value = '表と本文で迷う';
-  panel.root.querySelector<HTMLButtonElement>('.verify__consult-toggle')!.click();
-  expect(onDecision).toHaveBeenLastCalledWith(expect.objectContaining({ action: 'flag_consult', value: 'Japan', note: '表と本文で迷う' }));
-  expect(panel.root.querySelector('.verify__consult-toggle')!.getAttribute('aria-pressed')).toBe('true');
-  expect(panel.root.querySelector('#verify-progress')!.textContent).toBe(progress);
-  panel.root.querySelector<HTMLInputElement>('.verify__consult-note')!.value = '';
-  panel.root.querySelector<HTMLButtonElement>('.verify__consult-toggle')!.click();
-  expect(onDecision).toHaveBeenLastCalledWith(expect.objectContaining({ action: 'unflag_consult', value: 'Japan', note: null }));
-  expect(panel.root.querySelector('.verify__consult-toggle')!.getAttribute('aria-pressed')).toBe('false');
-  expect(panel.root.querySelector('#verify-progress')!.textContent).toBe(progress);
-  panel.dispose();
+const consultButton = (root: ParentNode): HTMLButtonElement =>
+  root.querySelector<HTMLButtonElement>('.verify__action--consult')!;
+/** 案内を閉じた記録の差し替え。既定は「まだ閉じていない」 */
+function hintStore(seen: Promise<boolean> = Promise.resolve(false)) {
+  return { isSeen: jest.fn(() => seen), markSeen: jest.fn(() => Promise.resolve()) };
+}
+
+describe('要相談の印（issue #401 / #425）', () => {
+  test.each(['list', 'focus'] as const)('判定ボタンの列のトグルで付け外しし、付いている間はメモ欄で相談したい点を保存する: %s', async (layoutMode) => {
+    const { panel, onDecision } = await createPanel(
+      { fields: [makeField({ fieldId: 'f-country', fieldName: 'country' })], decisions: [makeDecision({ note: '判定メモ' })] },
+      { layoutMode, consultHint: hintStore(Promise.resolve(true)) },
+    );
+    panel.root.querySelector<HTMLButtonElement>('.verify__cell--decided')?.click();
+    const progress = panel.root.querySelector('#verify-progress')!.textContent;
+    // 判定ボタンの列（承認・修正・棄却・未報告・戻す）の右端に並ぶ
+    const row = consultButton(panel.root).closest('.verify__actions')!;
+    expect([...row.querySelectorAll('.verify__action')].at(-1)!.textContent).toBe('要相談 (q)');
+    expect(panel.root.querySelector('.verify__consult-note')).toBeNull();
+    expect(panel.root.querySelector('.verify__consult-badge')).toBeNull();
+    consultButton(panel.root).click();
+    expect(onDecision).toHaveBeenLastCalledWith(expect.objectContaining({ action: 'flag_consult', value: 'Japan', note: null }));
+    expect(consultButton(panel.root).getAttribute('aria-pressed')).toBe('true');
+    expect(consultButton(panel.root).classList.contains('verify__action--consult-on')).toBe(true);
+    expect(panel.root.querySelector('.verify__cell-header .verify__consult-badge')?.textContent).toBe('要相談');
+    expect(panel.root.querySelector('#verify-progress')!.textContent).toBe(progress);
+    // メモ欄は印が付いてから出る（判定メモは引き継がない）
+    const note = panel.root.querySelector<HTMLInputElement>('.verify__consult-note')!;
+    expect(note.value).toBe('');
+    note.value = '表と本文で迷う';
+    panel.root.querySelector<HTMLButtonElement>('.verify__consult-save')!.click();
+    expect(onDecision).toHaveBeenLastCalledWith(expect.objectContaining({ action: 'flag_consult', note: '表と本文で迷う' }));
+    expect(onDecision).toHaveBeenCalledTimes(2);
+    // 同じ内容のまま保存しても追記しない
+    panel.root.querySelector<HTMLButtonElement>('.verify__consult-save')!.click();
+    expect(onDecision).toHaveBeenCalledTimes(2);
+    expect(panel.root.querySelector<HTMLInputElement>('.verify__consult-note')!.value).toBe('表と本文で迷う');
+    consultButton(panel.root).click();
+    expect(onDecision).toHaveBeenLastCalledWith(expect.objectContaining({ action: 'unflag_consult', value: 'Japan', note: null }));
+    expect(consultButton(panel.root).getAttribute('aria-pressed')).toBe('false');
+    expect(panel.root.querySelector('.verify__consult-note')).toBeNull();
+    expect(panel.root.querySelector('#verify-progress')!.textContent).toBe(progress);
+    panel.dispose();
+  });
+
+  test('メモ欄は Enter で保存し、変換中の Enter・他のキーでは保存しない', async () => {
+    const { panel, onDecision } = await createPanel(
+      { fields: [makeField({ fieldId: 'f-country', fieldName: 'country' })], decisions: [makeDecision(), makeDecision({ action: 'flag_consult', note: '元' })] },
+      { consultHint: hintStore(Promise.resolve(true)) },
+    );
+    panel.root.querySelector<HTMLButtonElement>('.verify__cell--decided')?.click();
+    const note = panel.root.querySelector<HTMLInputElement>('.verify__consult-note')!;
+    expect(note.value).toBe('元');
+    note.value = '  ';
+    note.dispatchEvent(new KeyboardEvent('keydown', { key: 'a', bubbles: true }));
+    note.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, isComposing: true }));
+    note.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, keyCode: 229 }));
+    expect(onDecision).not.toHaveBeenCalled();
+    note.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    expect(onDecision).toHaveBeenLastCalledWith(expect.objectContaining({ action: 'flag_consult', note: null }));
+    panel.dispose();
+  });
+
+  test('未検証セルの印は無効で理由を title に出し、undo 後も残る印は解除できる', async () => {
+    const { panel, onDecision } = await createPanel({}, { consultHint: hintStore(Promise.resolve(true)) });
+    expect(consultButton(panel.root).disabled).toBe(true);
+    expect(consultButton(panel.root).title).toBe('値を確定してから付けられます');
+    panel.dispose();
+    const flagged = await createPanel({ fields: [makeField({ fieldId: 'f-country', fieldName: 'country' })], decisions: [makeDecision({ note: null }), makeDecision({ action: 'flag_consult' }),
+      makeDecision({ action: 'undo' })] }, { consultHint: hintStore(Promise.resolve(true)) });
+    expect(consultButton(flagged.panel.root).disabled).toBe(false);
+    expect(consultButton(flagged.panel.root).hasAttribute('title')).toBe(false);
+    consultButton(flagged.panel.root).click();
+    expect(flagged.onDecision).toHaveBeenCalledWith(expect.objectContaining({ action: 'unflag_consult', value: null }));
+    expect(onDecision).not.toHaveBeenCalled();
+    flagged.panel.dispose();
+  });
+
+  test('キー q は確定済みのフォーカスセル、未検証なら直前に確定したセルの印を付け外し、どちらも無ければ何もしない', async () => {
+    const { panel, onDecision } = await createPanel({}, { consultHint: hintStore(Promise.resolve(true)) });
+    // 未検証で直近判定も無い。割り当ての無いキーも何もしない
+    pressKey('q');
+    pressKey('w');
+    expect(onDecision).not.toHaveBeenCalled();
+    pressKey('a');
+    expect(onDecision).toHaveBeenCalledTimes(1);
+    const decided = onDecision.mock.calls[0][0] as Decision;
+    // フォーカスは次の未検証セルへ移るので、直前に確定したセルが対象になる
+    pressKey('q');
+    expect(onDecision).toHaveBeenLastCalledWith(expect.objectContaining({ action: 'flag_consult', fieldId: decided.fieldId }));
+    // 押しっぱなしでは繰り返さない
+    pressKey('q', { repeat: true });
+    expect(onDecision).toHaveBeenCalledTimes(2);
+    // 確定済みのセルへフォーカスを戻すと、そのセルが対象になる
+    pressKey('k');
+    pressKey('q');
+    expect(onDecision).toHaveBeenLastCalledWith(expect.objectContaining({ action: 'unflag_consult', fieldId: decided.fieldId }));
+    panel.dispose();
+  });
+
+  test('キー q: 直前に確定したセルが別のタブにあるときは何もしない', async () => {
+    const { panel, onDecision } = await createPanel({}, { consultHint: hintStore(Promise.resolve(true)) });
+    pressKey('a');
+    panel.root.querySelectorAll<HTMLButtonElement>('.verify__tab')[1]?.click();
+    onDecision.mockClear();
+    pressKey('q');
+    expect(onDecision).not.toHaveBeenCalled();
+    panel.dispose();
+  });
+
+  test('印のあるセルは判定済みの行・項目の表に札を出し、読み上げ名にも含める', async () => {
+    const decisions = [makeDecision(), makeDecision({ action: 'flag_consult' })];
+    const list = await createPanel({ decisions }, { consultHint: hintStore(Promise.resolve(true)) });
+    const row = cellEl(list.panel.root, KEY_COUNTRY)!;
+    expect(row.classList.contains('verify__cell--decided')).toBe(true);
+    expect(row.querySelector('.verify__consult-badge')?.textContent).toBe('要相談');
+    expect(cellEl(list.panel.root, KEY_TOTAL)!.querySelector('.verify__consult-badge')).toBeNull();
+    list.panel.dispose();
+    const focus = await createPanel({ decisions }, { layoutMode: 'focus', consultHint: hintStore(Promise.resolve(true)) });
+    const buttons = [...focus.panel.root.querySelectorAll<HTMLButtonElement>('.focus-card__matrix-btn')];
+    const marked = buttons.filter((button) => button.querySelector('.verify__consult-badge') !== null);
+    expect(marked).toHaveLength(1);
+    expect(marked[0]!.getAttribute('aria-label')).toMatch(/（要相談）$/);
+    focus.panel.dispose();
+  });
+
+  test('フォーカスモードは直近判定の帯にもトグルを置き、確定したばかりのセルに印を付けられる', async () => {
+    const { panel, onDecision } = await createPanel({}, { layoutMode: 'focus', consultHint: hintStore(Promise.resolve(true)) });
+    expect(panel.root.querySelector('#verify-focus-recent')).toBeNull();
+    pressKey('a');
+    const decided = onDecision.mock.calls[0][0] as Decision;
+    const recent = panel.root.querySelector('#verify-focus-recent')!;
+    const toggle = recent.querySelector<HTMLButtonElement>('.verify__action--consult')!;
+    expect(toggle.disabled).toBe(false);
+    toggle.click();
+    expect(onDecision).toHaveBeenLastCalledWith(expect.objectContaining({ action: 'flag_consult', fieldId: decided.fieldId }));
+    // 帯の直下にメモ欄が出る
+    expect(panel.root.querySelector('#verify-focus-recent + .verify__consult .verify__consult-note')).not.toBeNull();
+    panel.dispose();
+  });
 });
 
-test('未検証セルの印は無効、空メモの確定セルは付けられ、undo 後も解除できる', async () => {
-  const { panel, onDecision } = await createPanel();
-  expect(panel.root.querySelector<HTMLButtonElement>('.verify__consult-toggle')!.disabled).toBe(true);
-  panel.dispose();
-  const flagged = await createPanel({ fields: [makeField({ fieldId: 'f-country', fieldName: 'country' })], decisions: [makeDecision({ note: null }), makeDecision({ action: 'flag_consult' }),
-    makeDecision({ action: 'undo' })] });
-  expect(flagged.panel.root.querySelector<HTMLButtonElement>('.verify__consult-toggle')!.disabled).toBe(false);
-  flagged.panel.root.querySelector<HTMLButtonElement>('.verify__consult-toggle')!.click();
-  expect(flagged.onDecision).toHaveBeenCalledWith(expect.objectContaining({ action: 'unflag_consult', value: null }));
-  expect(onDecision).not.toHaveBeenCalled();
-  flagged.panel.dispose();
+describe('要相談の初回案内（issue #425）', () => {
+  const hint = (root: ParentNode): HTMLElement | null => root.querySelector('.verify__consult-hint');
+
+  test('初めて値を確定したら直近判定セルのトグルの横に出し、閉じるまで付いて回り、閉じたら記録する', async () => {
+    const store = hintStore();
+    const { panel } = await createPanel({}, { consultHint: store });
+    expect(hint(panel.root)).toBeNull();
+    pressKey('a');
+    const first = hint(panel.root)!;
+    expect(first.getAttribute('role')).toBe('status');
+    expect(first.textContent).toContain('迷ったらここで印を付けると、あとでまとめて相談できます');
+    // 直近判定セル（元の位置に残るカード）のトグルの直後に出る
+    expect(first.previousElementSibling?.querySelector('.verify__action--consult')).not.toBeNull();
+    const firstCell = first.closest<HTMLElement>('.verify__cell')!.dataset['cellKey'];
+    pressKey('n');
+    const second = hint(panel.root)!;
+    expect(second.closest<HTMLElement>('.verify__cell')!.dataset['cellKey']).not.toBe(firstCell);
+    expect(panel.root.querySelectorAll('.verify__consult-hint')).toHaveLength(1);
+    second.querySelector<HTMLButtonElement>('.verify__consult-hint-close')!.click();
+    expect(hint(panel.root)).toBeNull();
+    expect(store.markSeen).toHaveBeenCalledTimes(1);
+    pressKey('n');
+    expect(hint(panel.root)).toBeNull();
+    panel.dispose();
+  });
+
+  test('トグルを押したら案内は消え、閉じた記録を残す（2 回目以降は記録し直さない）', async () => {
+    const store = hintStore();
+    const { panel } = await createPanel({}, { consultHint: store });
+    pressKey('a');
+    expect(hint(panel.root)).not.toBeNull();
+    pressKey('q');
+    expect(hint(panel.root)).toBeNull();
+    pressKey('q');
+    expect(store.markSeen).toHaveBeenCalledTimes(1);
+    panel.dispose();
+  });
+
+  test('閉じた記録があれば出さない。記録を読めないときも出さない', async () => {
+    const seen = await createPanel({}, { consultHint: hintStore(Promise.resolve(true)) });
+    pressKey('a');
+    expect(hint(seen.panel.root)).toBeNull();
+    seen.panel.dispose();
+    const failed = await createPanel({}, { consultHint: hintStore(Promise.reject(new Error('x'))) });
+    pressKey('a');
+    expect(hint(failed.panel.root)).toBeNull();
+    failed.panel.dispose();
+  });
+
+  test('記録の保存に失敗しても操作は続けられる', async () => {
+    const store = { isSeen: jest.fn(() => Promise.resolve(false)), markSeen: jest.fn(() => Promise.reject(new Error('x'))) };
+    const { panel } = await createPanel({}, { consultHint: store });
+    pressKey('a');
+    hint(panel.root)!.querySelector<HTMLButtonElement>('.verify__consult-hint-close')!.click();
+    await flush();
+    expect(hint(panel.root)).toBeNull();
+    panel.dispose();
+  });
+
+  test('フォーカスモードは直近判定の帯の直下に出し、詳細で同じセルを開いているときは詳細側に出す', async () => {
+    const { panel } = await createPanel({}, { layoutMode: 'focus', consultHint: hintStore() });
+    pressKey('a');
+    expect(panel.root.querySelector('#verify-focus-recent + .verify__consult-hint')).not.toBeNull();
+    expect(panel.root.querySelector('#verify-focus-detail .verify__consult-hint')).toBeNull();
+    // 直近判定セルを詳細で開くと、帯のトグルは消えて詳細側に案内が移る
+    pressKey('k');
+    expect(panel.root.querySelector('#verify-focus-recent .verify__action--consult')).toBeNull();
+    expect(panel.root.querySelector('#verify-focus-detail .verify__consult-hint')).not.toBeNull();
+    expect(panel.root.querySelectorAll('.verify__consult-hint')).toHaveLength(1);
+    panel.dispose();
+  });
+
+  test('既定の記録先は chrome.storage.local のユーザーごとの記録', async () => {
+    const chromeMock = (globalThis as unknown as { chrome: { storage: { local: { data: Record<string, unknown> } } } }).chrome;
+    delete chromeMock.storage.local.data['consultHintSeenBy'];
+    const { panel } = await createPanel();
+    pressKey('a');
+    hint(panel.root)!.querySelector<HTMLButtonElement>('.verify__consult-hint-close')!.click();
+    await flush();
+    expect(chromeMock.storage.local.data['consultHintSeenBy']).toEqual([ME]);
+    panel.dispose();
+    const again = await createPanel();
+    pressKey('a');
+    expect(hint(again.panel.root)).toBeNull();
+    again.panel.dispose();
+    delete chromeMock.storage.local.data['consultHintSeenBy'];
+  });
 });
 
 test('相談一覧のセルキーを指定したディープリンクは同じ entity の該当項目へ移動する', async () => {

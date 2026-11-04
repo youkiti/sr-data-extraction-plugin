@@ -25,6 +25,28 @@ test('最後の判定後に不一致を確認ボタンからその論文へ移�
   await expect(page).toHaveURL(/#\/adjudicate\?study=study-1$/);
 });
 
+test('要相談: 初回の案内・判定ボタンの列のトグル・表の札・選択欄の件数が出て、アクセシビリティ違反がない（issue #425）', async ({ page }) => {
+  await setupRoutes(page, { schemaRows: [STUDY_FIELD_ROW], evidenceRows: [EVIDENCE_ROW_1] });
+  await initApp(page, '#/verify?study=study-1');
+  const toggle = page.locator('#verify-focus-detail .verify__action--consult');
+  await expect(toggle).toBeDisabled({ timeout: 15_000 });
+  await expect(toggle).toHaveAttribute('title', '値を確定してから付けられます');
+  await page.locator('.verify__action--accept').click();
+  // 初めて値を確定したので、トグルの横に案内が一度だけ出る
+  const hint = page.locator('.verify__consult-hint');
+  await expect(hint).toHaveCount(1);
+  await expect(hint).toContainText('迷ったらここで印を付けると');
+  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+  // キー q で印を付けると案内は消え、押下状態・メモ欄・札・件数が出る
+  await page.locator('body').press('q');
+  await expect(hint).toHaveCount(0);
+  await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('.verify__consult-note')).toBeVisible();
+  await expect(page.locator('.focus-card__matrix-btn .verify__consult-badge')).toHaveText('要相談');
+  await expect(page.locator('#verify-study option:checked')).toContainText('・要相談 1');
+  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+});
+
 test('実 PDF のテキスト層で選んだ文字列を根拠として追加できる', async ({ page }) => {
   await setupRoutes(page, { schemaRows: [STUDY_FIELD_ROW], evidenceRows: [EVIDENCE_ROW_1],
     pdfBuilder: () => minimalPdf('Human selected sentence'), extractedText: 'Human selected sentence' });

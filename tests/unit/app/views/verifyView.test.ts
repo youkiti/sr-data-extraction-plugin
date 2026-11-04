@@ -372,6 +372,24 @@ describe('renderVerifyView', () => {
     },
   );
 
+  test('要相談の印の件数だけが変わっても一覧へ書き戻す（issue #425）', async () => {
+    // 一覧の進捗を「判定後」と同じ 1 / 1 にしておき、印の件数だけが差になるようにする
+    const state = makeState({ targets: [makeTarget({ progress: { decided: 1, total: 1, byTab: [] } })],
+      selectedStudyId: 'study-1', verification: makeVerification() });
+    const { ctx, callbacks } = makeCtx();
+    const root = render(state, ctx);
+    (root.querySelector('.verify__action--not-reported') as HTMLButtonElement).click();
+    await Promise.resolve();
+    expect(callbacks.onProgressChange).not.toHaveBeenCalledWith('study-1', expect.objectContaining({ decided: 1, consults: 1 }));
+    callbacks.onProgressChange.mockClear();
+    (root.querySelector('.verify__action--consult') as HTMLButtonElement).click();
+    await Promise.resolve();
+    expect(callbacks.onProgressChange).toHaveBeenCalledWith(
+      'study-1',
+      expect.objectContaining({ decided: 1, total: 1, consults: 1 }),
+    );
+  });
+
   test('一覧の進捗が古ければ、初回描画の時点で最新値へ書き戻す', async () => {
     const state = makeState({ targets: [makeTarget()], selectedStudyId: 'study-1',
       verification: makeVerification() });
@@ -518,15 +536,16 @@ describe('renderVerifyView', () => {
       makeTarget({
         study: makeStudy({ studyId: 'study-2', studyLabel: 'Jones 2021' }),
         documents: [makeDocument({ documentId: 'doc-2', studyId: 'study-2', filename: 'jones2021.pdf' })],
-        progress: { decided: 0, total: 2, byTab: [] },
+        progress: { decided: 0, total: 2, byTab: [], consults: 2 },
       }),
     ];
     const root = render(makeState({ targets, selectedStudyId: 'study-2' }), ctx);
     const select = root.querySelector('#verify-study') as HTMLSelectElement;
-    // セレクタのラベルは study_label（Studies 由来・v0.10 フェーズ 3）
+    // セレクタのラベルは study_label（Studies 由来・v0.10 フェーズ 3）。
+    // 要相談の印があれば件数を足し、0 件なら出さない（issue #425）
     expect([...select.options].map((option) => option.textContent)).toEqual([
       'Smith 2020（判定済み 1 / 4）',
-      'Jones 2021（判定済み 0 / 2）',
+      'Jones 2021（判定済み 0 / 2・要相談 2）',
     ]);
     expect(select.value).toBe('study-2');
     select.value = 'study-1';

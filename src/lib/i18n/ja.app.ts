@@ -49,6 +49,7 @@ export const jaApp = {
   'guide.tourVerifyBasicsStepPickStudy': '試験の一覧から AI 抽出結果のある試験を選ぶと、検証パネルが開きます。',
   'guide.tourVerifyBasicsStepReadEvidence': '「PDF」を押すと、論文の表示に切り替わります。項目を選び、PDF の根拠ハイライトと抽出値を照らし合わせます。',
   'guide.tourVerifyBasicsStepDecide': '根拠を見てから「承認 (a)」「修正 (e)」「棄却 (x)」「未報告 (n)」のいずれかを選びます。承認にも 1 回の操作が必要です。',
+  'guide.tourVerifyBasicsStepConsult': '判断に迷った値は、確定してから「要相談 (q)」で印を付けます。任意のメモに相談したい点を書けます。印を付けたセルは、ダッシュボードの「要相談」の一覧にまとまります。',
   'guide.tourVerifyBasicsStepEditEvidence': '「削除」で引用を根拠から外せます（案内中は押せません）。PDF で文を選び「追加」を押すと、引用を根拠に足せます。',
   'guide.tourVerifyBasicsStepCheckProgress': '進捗で未検証の残りを確認します。未検証のセルが残るとエクスポート時に警告が出ます。',
   'guide.tourVerifyBasicsStepFinish': '「ツアー」を押すと、いつでも一覧から案内を始められます。',
@@ -896,10 +897,11 @@ export const jaApp = {
     'PDF 上の根拠ハイライトを見ながら、AI 抽出値を accept / edit / reject / not_reported で判定します。',
   'verify.leadIndependent':
     'PDF を確認しながら、値を入力（edit）/ not_reported で判定します（AI 抽出は行われません）。',
-  'verify.selectorOption': '{label}（判定済み {decided} / {total}）',
-  'verify.selectorOptionNoResult': '{label}［AI 抽出結果なし］（判定済み {decided} / {total}）',
-  'verify.selectorOptionCalibration': '{label}［キャリブレーション］（判定済み {decided} / {total}）',
-  'verify.selectorOptionCalibrationNoResult': '{label}［キャリブレーション］［AI 抽出結果なし］（判定済み {decided} / {total}）',
+  'verify.selectorOption': '{label}（判定済み {decided} / {total}{consults}）',
+  'verify.selectorOptionNoResult': '{label}［AI 抽出結果なし］（判定済み {decided} / {total}{consults}）',
+  'verify.selectorOptionCalibration': '{label}［キャリブレーション］（判定済み {decided} / {total}{consults}）',
+  'verify.selectorOptionCalibrationNoResult': '{label}［キャリブレーション］［AI 抽出結果なし］（判定済み {decided} / {total}{consults}）',
+  'verify.selectorConsults': '・要相談 {n}',
   'verify.noAiResultLead':
     'AI 抽出結果がありません（抽出に失敗したか応答が空でした）。値は手入力で記録できます。',
   'verify.noAiResultRobLimit':
@@ -993,9 +995,9 @@ export const jaApp = {
   'verify.robEstNoOutcome':
     'outcome_result インスタンスがありません。先にアウトカムを検証・追加してください',
   'verify.shortcutNoteFocus':
-    'ショートカット: a 承認 / e 修正 / x 棄却 / n 未報告 / z 直近判定を戻す / j・k 行移動 / h・l 列移動 / J・K ユニット切替 / f ハイライトへ',
+    'ショートカット: a 承認 / e 修正 / x 棄却 / n 未報告 / z 直近判定を戻す / q 要相談 / j・k 行移動 / h・l 列移動 / J・K ユニット切替 / f ハイライトへ',
   'verify.shortcutNoteList':
-    'ショートカット: a 承認 / e 修正 / x 棄却 / n 未報告 / z 戻す / j・k 項目移動 / f ハイライトへ',
+    'ショートカット: a 承認 / e 修正 / x 棄却 / n 未報告 / z 戻す / q 要相談 / j・k 項目移動 / f ハイライトへ',
   'verify.lockedNote': 'まず群構成を確定してください',
   'verify.emptyTab': 'このタブに表示できる項目がありません（AI 抽出にインスタンスがありません）',
   'verify.decidedGroupHeading': '判定済み（{n}）',
@@ -1063,6 +1065,12 @@ export const jaApp = {
   'verify.actionNotReported': '未報告 (n)',
   'verify.consult': '要相談',
   'verify.consultNote': '相談したい点（任意）',
+  'verify.actionConsult': '要相談 (q)',
+  'verify.consultDisabledTitle': '値を確定してから付けられます',
+  'verify.consultNoteSave': 'メモを保存',
+  'verify.consultAriaSuffix': '（要相談）',
+  'verify.consultHint': '迷ったらここで印を付けると、あとでまとめて相談できます',
+  'verify.consultHintClose': '閉じる',
   'dashboard.consultField': '項目',
   'dashboard.consultValue': '現在の値',
   'dashboard.consultReviewer': '判定者',
