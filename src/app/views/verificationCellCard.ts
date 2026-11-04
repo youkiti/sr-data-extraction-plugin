@@ -105,6 +105,11 @@ export interface CellCardModel {
    */
   consultHintCellKey?: string | null;
   /**
+   * 要相談のメモ欄の書きかけ（issue #425）。cellKey → 入力中の文字。判定の保存や PDF の読込で
+   * フォームが作り直されても、入力中のメモを失わないようにパネルが持つ。省略時は空扱い
+   */
+  consultNoteDrafts?: ReadonlyMap<string, string>;
+  /**
    * 照合できなかった引用のセルで 1 回目の accept を受けたときの警告（issue #381）。
    * 対象セルと理由。もう一度 accept すると確定する。別のセルへ移る・他の判定で消える。
    * 省略時 null = 警告なし
@@ -132,6 +137,8 @@ export interface CellCardHandlers {
   onConsultToggle?(cellKey: string, note: string | null): void;
   /** 印が付いたセルのメモを保存する（issue #425。flag_consult を同じ note で追記し直す） */
   onConsultNote?(cellKey: string, note: string | null): void;
+  /** メモ欄の入力のたびに書きかけを渡す（issue #425。作り直しで消えないようパネルが保持する） */
+  onConsultNoteDraft?(cellKey: string, value: string): void;
   /** 「要相談」の初回案内を閉じる（issue #425） */
   onConsultHintClose?(): void;
   /** セルキー（代表）または引用キーのハイライトへスクロール（f） */
@@ -805,10 +812,11 @@ export function renderConsultButton(
 /** 印が付いたセルのメモ欄（issue #425）。印が無ければ null */
 export function renderConsultNote(
   cell: VerificationCell,
-  model: Pick<CellCardModel, 'consultFlags'>,
-  onConsultNote: ((cellKey: string, note: string | null) => void) | undefined,
+  model: Pick<CellCardModel, 'consultFlags' | 'consultNoteDrafts'>,
+  handlers: Pick<CellCardHandlers, 'onConsultNote' | 'onConsultNoteDraft'>,
 ): HTMLElement | null {
   const flag = model.consultFlags?.get(cell.cellKey);
+  const onConsultNote = handlers.onConsultNote;
   if (flag === undefined || onConsultNote === undefined) {
     return null;
   }
@@ -816,7 +824,10 @@ export function renderConsultNote(
     className: 'verify__consult-note',
     attributes: { type: 'text', 'aria-label': t('verify.consultNote'), placeholder: t('verify.consultNote') },
   });
-  note.value = flag.note ?? '';
+  // 作り直し後にフォーカスを戻す目印（verificationPanel.refreshForm）
+  note.dataset['cellKey'] = cell.cellKey;
+  note.value = model.consultNoteDrafts?.get(cell.cellKey) ?? flag.note ?? '';
+  note.addEventListener('input', () => handlers.onConsultNoteDraft?.(cell.cellKey, note.value));
   const save = (): void => {
     const value = note.value.trim() || null;
     if (value !== flag.note) {
@@ -878,7 +889,7 @@ function renderActionArea(
   actions.append(renderConsultButton(cell, model, onConsultToggle));
   const extras = [
     renderConsultHint(cell, model, handlers.onConsultHintClose),
-    renderConsultNote(cell, model, handlers.onConsultNote),
+    renderConsultNote(cell, model, handlers),
   ].filter((node): node is HTMLElement => node !== null);
   return [actions, ...extras];
 }

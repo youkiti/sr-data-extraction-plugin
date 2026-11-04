@@ -5302,6 +5302,46 @@ describe('要相談の印（issue #401 / #425）', () => {
     flagged.panel.dispose();
   });
 
+  test('メモ欄の書きかけとフォーカスは、フォームが作り直されても残り、保存すると書きかけを消す', async () => {
+    const { panel, onDecision } = await createPanel(
+      { decisions: [makeDecision(), makeDecision({ action: 'flag_consult' })] },
+      { consultHint: hintStore() },
+    );
+    // 総 N を確定して初回案内を出し、判定済みの「国」を展開してメモ欄を開く
+    pressKey('a');
+    expect(panel.root.querySelector('.verify__consult-hint')).not.toBeNull();
+    cellEl(panel.root, KEY_COUNTRY)!.click();
+    const note = panel.root.querySelector<HTMLInputElement>('.verify__consult-note')!;
+    note.focus();
+    note.value = '書きかけ';
+    note.dispatchEvent(new Event('input'));
+    // 案内を閉じるとフォームが作り直される（click() はフォーカスを動かさない）
+    panel.root.querySelector<HTMLButtonElement>('.verify__consult-hint-close')!.click();
+    const rebuilt = panel.root.querySelector<HTMLInputElement>('.verify__consult-note')!;
+    expect(rebuilt).not.toBe(note);
+    expect(rebuilt.value).toBe('書きかけ');
+    expect(document.activeElement).toBe(rebuilt);
+    onDecision.mockClear();
+    panel.root.querySelector<HTMLButtonElement>('.verify__consult-save')!.click();
+    expect(onDecision).toHaveBeenLastCalledWith(expect.objectContaining({ action: 'flag_consult', note: '書きかけ' }));
+    expect(panel.root.querySelector<HTMLInputElement>('.verify__consult-note')!.value).toBe('書きかけ');
+    panel.dispose();
+  });
+
+  test('作り直した後にメモ欄が無くなっていれば、フォーカスは通常どおりセルへ戻す', async () => {
+    const { panel } = await createPanel(
+      { decisions: [makeDecision(), makeDecision({ action: 'flag_consult' })] },
+      { consultHint: hintStore(Promise.resolve(true)) },
+    );
+    cellEl(panel.root, KEY_COUNTRY)!.click();
+    const note = panel.root.querySelector<HTMLInputElement>('.verify__consult-note')!;
+    note.focus();
+    // 印を外すとメモ欄が消える
+    consultButton(cellEl(panel.root, KEY_COUNTRY)!).click();
+    expect(panel.root.querySelector('.verify__consult-note')).toBeNull();
+    panel.dispose();
+  });
+
   test('キー q は確定済みのフォーカスセル、未検証なら直前に確定したセルの印を付け外し、どちらも無ければ何もしない', async () => {
     const { panel, onDecision } = await createPanel({}, { consultHint: hintStore(Promise.resolve(true)) });
     // 未検証で直近判定も無い。割り当ての無いキーも何もしない

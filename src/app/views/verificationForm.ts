@@ -138,6 +138,8 @@ export interface VerificationFormModel {
   consultFlags?: ReadonlyMap<string, Decision>;
   /** 「要相談」の初回案内を出すセル（issue #425）。verificationCellCard.CellCardModel 参照 */
   consultHintCellKey?: string | null;
+  /** 要相談のメモ欄の書きかけ（issue #425）。verificationCellCard.CellCardModel 参照 */
+  consultNoteDrafts?: ReadonlyMap<string, string>;
   /** 照合できなかった引用のセルの accept 前の警告（issue #381）。verificationCellCard.CellCardModel 参照 */
   unanchoredAcceptWarning?: { cellKey: string; reason: UnanchoredReason } | null;
 }
@@ -160,6 +162,7 @@ export interface VerificationFormHandlers {
   onNotReported(cellKey: string): void;
   onConsultToggle?(cellKey: string, note: string | null): void;
   onConsultNote?(cellKey: string, note: string | null): void;
+  onConsultNoteDraft?(cellKey: string, value: string): void;
   onConsultHintClose?(): void;
   onUndo(cellKey: string): void;
   /** 現在項目のハイライトへ PDF をスクロール（f） */

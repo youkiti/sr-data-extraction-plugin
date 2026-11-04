@@ -97,6 +97,8 @@ export interface VerificationFocusCardModel {
    * トグルの横にだけ出す（詳細ストリップには渡さない。同じセルに 2 つ出るのを防ぐ）
    */
   consultHintCellKey?: string | null;
+  /** 要相談のメモ欄の書きかけ（issue #425）。verificationCellCard.CellCardModel 参照 */
+  consultNoteDrafts?: ReadonlyMap<string, string>;
   /** 照合できなかった引用のセルの accept 前の警告（issue #381）。verificationCellCard.CellCardModel 参照 */
   unanchoredAcceptWarning?: { cellKey: string; reason: UnanchoredReason } | null;
 }
@@ -329,6 +331,7 @@ function renderDetailStrip(
     enumCandidates: model.enumCandidates,
     canEditSchema: model.canEditSchema,
     consultFlags: model.consultFlags,
+    consultNoteDrafts: model.consultNoteDrafts,
     // 初回案内は直近判定バー側に出す。直近判定セルをこのストリップで開いているときだけここに出す
     consultHintCellKey: model.recentCell?.cellKey === model.focusedCellKey ? model.consultHintCellKey : null,
     unanchoredAcceptWarning: model.unanchoredAcceptWarning,
@@ -373,7 +376,7 @@ function renderRecentBar(
     barChildren.push(renderConsultButton(cell, model, handlers.onConsultToggle));
     for (const node of [
       renderConsultHint(cell, model, handlers.onConsultHintClose),
-      renderConsultNote(cell, model, handlers.onConsultNote),
+      renderConsultNote(cell, model, handlers),
     ]) {
       if (node !== null) extras.push(node);
     }

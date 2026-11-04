@@ -485,6 +485,8 @@ export function createVerificationPanel(
     isSeen: () => isConsultHintSeen(data.annotator),
     markSeen: () => markConsultHintSeen(data.annotator),
   };
+  // 要相談のメモ欄の書きかけ（cellKey → 入力中の文字）。保存・印の付け外しで消す
+  const consultNoteDrafts = new Map<string, string>();
   let consultHintSeen: boolean | null = null;
   let consultHintVisible = false;
   consultHintStore.isSeen().then(
@@ -610,6 +612,7 @@ export function createVerificationPanel(
       canEditSchema: data.canEditSchema,
       consultFlags: new Map([...activeConsultFlags(ownDecisions).values()].map((flag) => [cellKeyOf(flag.fieldId, flag.entityKey), flag])),
       consultHintCellKey: consultHintCellKey(),
+      consultNoteDrafts,
       unanchoredAcceptWarning: unanchoredWarning,
     };
   }
@@ -1886,6 +1889,9 @@ export function createVerificationPanel(
       // メモの保存は印を付け直す形で追記する（最後の印イベントを採る畳み込みのため印は残る）
       recordConsult(cellKey, 'flag_consult', note);
     },
+    onConsultNoteDraft(cellKey, value) {
+      consultNoteDrafts.set(cellKey, value);
+    },
     onConsultHintClose() {
       hideConsultHint();
       refreshForm();
@@ -2119,6 +2125,10 @@ export function createVerificationPanel(
     renderQuoteAdd();
     const doc = root.ownerDocument;
     const hadFocus = formPane.contains(doc.activeElement);
+    // 要相談のメモ欄に入力中なら、作り直した後も同じセルのメモ欄へフォーカスを戻す（issue #425）
+    const active = doc.activeElement;
+    const typingConsultKey = active instanceof HTMLInputElement && active.classList.contains('verify__consult-note')
+      ? (active.dataset['cellKey'] as string) : null; // メモ欄は必ず data-cell-key を持つ（renderConsultNote）
     // フォームペイン全体を作り直すためスクロール位置が 0 へクランプされる。退避して復元する
     const savedScrollTop = formPane.scrollTop;
     const tabModel = currentTabModel();
@@ -2169,6 +2179,7 @@ export function createVerificationPanel(
       canEditSchema: data.canEditSchema,
       consultFlags: new Map([...activeConsultFlags(ownDecisions).values()].map((flag) => [cellKeyOf(flag.fieldId, flag.entityKey), flag])),
       consultHintCellKey: consultHintCellKey(),
+      consultNoteDrafts,
       unanchoredAcceptWarning: unanchoredWarning,
     };
     progressListener?.(model.progress);
@@ -2177,7 +2188,13 @@ export function createVerificationPanel(
     formPane.replaceChildren(renderVerificationForm(model, handlers), heightSplitter);
     formPane.scrollTop = savedScrollTop;
     applyReadOnlyState();
-    if (hadFocus && focusedCellKey !== null && editing === null && !tabLocked(activeTab)) {
+    const consultNote = typingConsultKey === null ? undefined
+      : [...formPane.querySelectorAll<HTMLInputElement>('.verify__consult-note')]
+        .find((input) => input.dataset['cellKey'] === typingConsultKey);
+    if (consultNote !== undefined) {
+      consultNote.focus({ preventScroll: true });
+      consultNote.setSelectionRange(consultNote.value.length, consultNote.value.length);
+    } else if (hadFocus && focusedCellKey !== null && editing === null && !tabLocked(activeTab)) {
       // 復元したスクロール位置を尊重しつつ（preventScroll）、フォーカスセルが画面外なら最小移動で見せる
       const element = findCellElement(focusedCellKey);
       showAndFocusCell(element, true);
@@ -2303,6 +2320,7 @@ export function createVerificationPanel(
   /** 要相談の印イベントを追記する（値の判定スタックとは独立。issue #401 / #425） */
   function recordConsult(cellKey: string, action: 'flag_consult' | 'unflag_consult', note: string | null): void {
     const cell = findCell(cellKey);
+    consultNoteDrafts.delete(cellKey);
     const decision: Decision = {
       decidedAt: now(), decidedBy: data.annotator, studyId: data.study.studyId,
       fieldId: cell.field.fieldId, entityKey: cell.entityKey, annotator: data.annotator,
