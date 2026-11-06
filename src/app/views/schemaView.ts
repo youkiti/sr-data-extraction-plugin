@@ -569,31 +569,33 @@ function renderEditorRow(
     instructionChildren.push(el('div', {}, [suggest]));
     const checkbox = el('input', {
       className: 'schema__multi-quote',
-      attributes: { type: 'checkbox' },
+      attributes: { type: 'checkbox', 'aria-description': t('schema.multiQuoteHint') },
     });
     checkbox.checked = row.maxQuotes !== null;
     checkbox.addEventListener('change', () => edit({ maxQuotes: checkbox.checked ? 10 : null }));
-    const maximum = el('input', {
-      className: 'schema__max-quotes',
-      attributes: { type: 'number', min: '2', max: '20' },
-    });
-    maximum.disabled = row.maxQuotes === null;
-    maximum.value = row.maxQuotes === null ? '' : String(row.maxQuotes);
-    if (invalid('max_quotes')) {
-      maximum.setAttribute('aria-invalid', 'true');
-      maximum.classList.add('schema__cell-input--error');
+    instructionChildren.push(el('label', { attributes: { title: t('schema.multiQuoteHint') } }, [checkbox, t('schema.multiQuote')]));
+    if (row.maxQuotes !== null || invalid('max_quotes')) {
+      const maximum = el('input', {
+        className: 'schema__max-quotes',
+        attributes: { type: 'number', min: '2', max: '20' },
+      });
+      maximum.disabled = row.maxQuotes === null;
+      maximum.value = row.maxQuotes === null ? '' : String(row.maxQuotes);
+      if (invalid('max_quotes')) {
+        maximum.setAttribute('aria-invalid', 'true');
+        maximum.classList.add('schema__cell-input--error');
+      }
+      maximum.addEventListener('change', () => edit({ maxQuotes: maximum.valueAsNumber }));
+      instructionChildren.push(el('label', {}, [t('schema.maxQuotes'), maximum]));
     }
-    maximum.addEventListener('change', () => edit({ maxQuotes: maximum.valueAsNumber }));
-    instructionChildren.push(
-      el('label', {}, [checkbox, t('schema.multiQuote')]),
-      el('label', {}, [t('schema.maxQuotes'), maximum]),
-      el('p', { className: 'schema__multi-quote-hint', text: t('schema.multiQuoteHint') }),
-    );
+    if (row.maxQuotes !== null) {
+      instructionChildren.push(el('p', { className: 'schema__multi-quote-hint', text: t('schema.multiQuoteHint') }));
+    }
   }
 
   if (row.dataType === 'enum') {
     const checkbox = el('input', {
-      className: 'schema__multi-select', attributes: { type: 'checkbox' },
+      className: 'schema__multi-select', attributes: { type: 'checkbox', 'aria-description': t('schema.multiSelectHint') },
     });
     checkbox.checked = row.multiSelect;
     if (invalid('multiSelect')) {
@@ -614,11 +616,14 @@ function renderEditorRow(
         edit({ multiSelect: true });
       }
     });
-    instructionChildren.push(el('label', {}, [checkbox, t('schema.multiSelect')]));
+    instructionChildren.push(el('label', { attributes: { title: t('schema.multiSelectHint') } }, [checkbox, t('schema.multiSelect')]));
     for (const [column, className] of [
       ['exclusiveValues', 'schema__exclusive-values'],
       ['freeTextValues', 'schema__free-text-values'],
     ] as const) {
+      if (!row.multiSelect && !invalid(column)) {
+        continue;
+      }
       const input = el('input', { className, attributes: { type: 'text' } });
       input.disabled = !row.multiSelect;
       input.value = row[column] ?? '';
@@ -629,7 +634,9 @@ function renderEditorRow(
       input.addEventListener('change', () => edit({ [column]: emptyToNull(input.value) }));
       instructionChildren.push(el('label', {}, [t(`schema.${column}`), input]));
     }
-    instructionChildren.push(el('p', { className: 'schema__multi-quote-hint', text: t('schema.multiSelectHint') }));
+    if (row.multiSelect) {
+      instructionChildren.push(el('p', { className: 'schema__multi-quote-hint', text: t('schema.multiSelectHint') }));
+    }
   }
 
   const removeButton = el('button', {

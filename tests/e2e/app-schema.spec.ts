@@ -123,10 +123,16 @@ test('編集表のセルを変更して離れてもスクロール位置を保�
   await wrap.evaluate((element) => {
     element.scrollTop = 1500;
   });
-  const instruction = page.locator('#schema-editor-table tbody tr').nth(5).locator('.schema__cell-instruction');
+  // fill() は対象の欄が見えるまでスクロールするため、比べる基準は書き込んだ直後の位置にする
+  const instruction = page.locator('#schema-editor-table tbody tr').nth(20).locator('.schema__cell-instruction');
   await instruction.fill('変更した指示');
+  const beforeLeave = await wrap.evaluate((element) => element.scrollTop);
+  expect(beforeLeave).toBeGreaterThan(500);
   await page.keyboard.press('Tab');
-  await expect.poll(() => wrap.evaluate((element) => element.scrollTop)).toBeGreaterThan(1000);
+  await expect(page.locator('#schema-editor-table tbody tr').nth(20).locator('.schema__cell-instruction'))
+    .toHaveValue('変更した指示');
+  const afterLeave = await wrap.evaluate((element) => element.scrollTop);
+  expect(Math.abs(afterLeave - beforeLeave)).toBeLessThan(200);
 });
 
 async function initApp(
