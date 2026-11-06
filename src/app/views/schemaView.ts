@@ -551,7 +551,9 @@ function renderEditorRow(
   }
   instruction.addEventListener('change', () => edit({ extractionInstruction: instruction.value }));
 
-  const instructionChildren: HTMLElement[] = [instruction];
+  const instructionChildren: HTMLElement[] = [
+    el('div', { className: 'schema__instruction-box' }, [instruction]),
+  ];
   if (row.fieldId !== null && row.fieldId === state.schema.pilotFieldId) {
     const misses = renderSchemaPilotMisses(state, row.fieldId);
     if (misses !== null) instructionChildren.push(misses);
@@ -1470,7 +1472,10 @@ function renderEditor(
   children.push(
     dataTypeHelp,
     el('p', { className: 'schema__editor-hint schema__sample-note', text: t('schema.requiredHint') }),
-    el('div', { className: 'schema__table-wrap' }, [table]),
+    el('div', {
+      className: 'schema__table-wrap schema__table-wrap--editor',
+      attributes: { 'data-preserve-scroll': 'schema-editor' },
+    }, [table]),
   );
   if (errorItems.length > 0) {
     children.push(
