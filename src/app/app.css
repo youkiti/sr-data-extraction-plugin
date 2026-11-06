@@ -1075,6 +1075,18 @@ section.documents__tiab {
   overflow-x: auto;
 }
 
+.schema__table-wrap--editor {
+  max-height: calc(100vh - 160px);
+  overflow-y: auto;
+}
+
+.schema__table-wrap--editor :where(thead) th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--color-surface);
+}
+
 .schema__table {
   border-collapse: collapse;
 }
@@ -1097,9 +1109,36 @@ section.documents__tiab {
   min-width: 110px;
 }
 
+.schema__instruction-box {
+  position: relative;
+  font-size: 13px;
+  width: 240px;
+  height: calc(2lh + 10px);
+}
+
 .schema__cell-instruction {
-  min-width: 240px;
-  resize: vertical;
+  box-sizing: border-box;
+  width: 240px;
+  height: calc(2lh + 10px);
+  resize: none;
+}
+
+/* 抽出指示の列は表の右寄りにあるため、欄の右端を基準に左へ広げる（右へ広げると、
+   表を右端までスクロールしたときに広げた部分が包みの外へはみ出す） */
+.schema__cell-instruction:focus {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 2;
+  width: 560px;
+  max-width: none;
+  height: auto;
+  min-height: calc(2lh + 10px);
+  max-height: calc(12lh + 10px);
+  field-sizing: content;
+  overflow-y: auto;
+  background: var(--color-surface);
+  box-shadow: 0 4px 12px rgb(0 0 0 / 20%);
 }
 
 .schema__cell-input--error {

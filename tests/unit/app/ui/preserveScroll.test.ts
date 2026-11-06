@@ -27,7 +27,7 @@ describe('captureScrollPositions', () => {
     document.body.append(preserved, unmarked);
 
     const snapshots = captureScrollPositions(document);
-    expect(snapshots).toEqual([{ element: preserved, top: 120, left: 40 }]);
+    expect(snapshots).toEqual([{ element: preserved, key: '', top: 120, left: 40 }]);
   });
 
   test('対象要素が無ければ空配列', () => {
@@ -36,6 +36,61 @@ describe('captureScrollPositions', () => {
 });
 
 describe('restoreScrollPositions', () => {
+  test('キー付き要素を作り直すと同じ文書の同じキーへ縦横の位置を引き継ぐ', () => {
+    const ownerDocument = document.implementation.createHTMLDocument();
+    const preserved = ownerDocument.createElement('div');
+    preserved.setAttribute(PRESERVE_SCROLL_ATTRIBUTE, 'editor["key"]');
+    preserved.scrollTop = 1500;
+    preserved.scrollLeft = 300;
+    ownerDocument.body.append(preserved);
+    const snapshots = captureScrollPositions(ownerDocument);
+
+    const unrelated = ownerDocument.createElement('div');
+    unrelated.setAttribute(PRESERVE_SCROLL_ATTRIBUTE, 'other');
+    const replacement = preserved.cloneNode() as HTMLElement;
+    ownerDocument.body.replaceChildren(unrelated, replacement);
+
+    restoreScrollPositions(snapshots);
+    expect(replacement.scrollTop).toBe(1500);
+    expect(replacement.scrollLeft).toBe(300);
+    expect(unrelated.scrollTop).toBe(0);
+    expect(unrelated.scrollLeft).toBe(0);
+  });
+
+  test('空のキーの要素を作り直しても新しい要素へ復元しない', () => {
+    const preserved = preserveTarget();
+    preserved.scrollTop = 120;
+    preserved.scrollLeft = 40;
+    document.body.append(preserved);
+    const snapshots = captureScrollPositions(document);
+
+    const replacement = preserveTarget();
+    document.body.replaceChildren(replacement);
+
+    restoreScrollPositions(snapshots);
+    expect(replacement.scrollTop).toBe(0);
+    expect(replacement.scrollLeft).toBe(0);
+  });
+
+  test('一致するキーが無ければ他の要素の位置を変えない', () => {
+    const preserved = preserveTarget();
+    preserved.setAttribute(PRESERVE_SCROLL_ATTRIBUTE, 'schema-editor');
+    preserved.scrollTop = 1500;
+    preserved.scrollLeft = 300;
+    document.body.append(preserved);
+    const snapshots = captureScrollPositions(document);
+
+    const replacement = preserveTarget();
+    replacement.setAttribute(PRESERVE_SCROLL_ATTRIBUTE, 'other');
+    replacement.scrollTop = 20;
+    replacement.scrollLeft = 10;
+    document.body.replaceChildren(replacement);
+
+    restoreScrollPositions(snapshots);
+    expect(replacement.scrollTop).toBe(20);
+    expect(replacement.scrollLeft).toBe(10);
+  });
+
   test('接続中の同一インスタンスへスクロール位置を復元する', () => {
     const preserved = preserveTarget();
     preserved.scrollTop = 120;

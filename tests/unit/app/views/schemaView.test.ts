@@ -2,6 +2,28 @@
 // render は純粋関数のため、状態を組み立てて DOM を検証する
 import { focusSchemaField, renderSchemaView } from '../../../../src/app/views/schemaView';
 
+test('編集表だけにスクロール用の包みを付け、抽出指示の後続要素は欄の包みの外に置く', () => {
+  const { ctx } = makeCtx();
+  const editor = renderSchemaView(makeState({ versions: [], editorRows: [makeEditorRow()] }), ctx);
+  const table = editor.querySelector('#schema-editor-table')!;
+  expect(table.parentElement?.classList.contains('schema__table-wrap--editor')).toBe(true);
+  expect(table.parentElement?.classList.contains('schema__table-wrap')).toBe(true);
+  expect(table.parentElement?.getAttribute('data-preserve-scroll')).toBe('schema-editor');
+  const instruction = table.querySelector<HTMLTextAreaElement>('.schema__cell-instruction')!;
+  expect(instruction.parentElement?.className).toBe('schema__instruction-box');
+  expect(instruction.rows).toBe(2);
+  expect(instruction.parentElement?.children).toHaveLength(1);
+  expect(instruction.parentElement?.nextElementSibling?.querySelector('.schema__suggest-enum')).not.toBeNull();
+  expect(instruction.closest('td')?.querySelector('.schema__multi-quote')?.parentElement?.parentElement)
+    .toBe(instruction.parentElement?.parentElement);
+
+  const current = renderSchemaView(makeState({ versions: [makeVersion(1)], currentFields: [makeField()] }), ctx);
+  const currentWrap = current.querySelector('#schema-current-table')!.parentElement!;
+  expect(currentWrap.classList.contains('schema__table-wrap')).toBe(true);
+  expect(currentWrap.classList.contains('schema__table-wrap--editor')).toBe(false);
+  expect(currentWrap.hasAttribute('data-preserve-scroll')).toBe(false);
+});
+
 test.each([
   ['anthropic', true, false],
   ['gemini', false, true],
