@@ -47,6 +47,30 @@ export class GoogleApiError extends Error {
   }
 }
 
+/** 応答本文から理由を出現順に重複なく取得する。解析できない本文は空配列にする */
+export function googleApiErrorReasons(error: GoogleApiError): string[] {
+  try {
+    const body = JSON.parse(error.responseBody) as {
+      error?: { errors?: { reason?: unknown }[]; status?: unknown };
+    } | null;
+    const reasons: string[] = [];
+    if (Array.isArray(body?.error?.errors)) {
+      for (const entry of body.error.errors) {
+        const reason = entry?.reason;
+        if (typeof reason === 'string' && reason.length > 0 && !reasons.includes(reason)) {
+          reasons.push(reason);
+        }
+      }
+    }
+    if (reasons.length === 0 && typeof body?.error?.status === 'string' && body.error.status.length > 0) {
+      reasons.push(body.error.status);
+    }
+    return reasons;
+  } catch {
+    return [];
+  }
+}
+
 /** googleFetch のリトライ挙動を調整するオプション（すべて省略可・既定値あり） */
 export interface GoogleFetchRetryOptions {
   /** 最大試行回数（初回を含む）。既定 5 回 */
