@@ -57,6 +57,8 @@ describe('予算フォームから範囲保存・再読込まで', () => {
     const callbacks = {
       onReload: jest.fn(),
       onReloadUsage: jest.fn(),
+      onCalculateComparison: jest.fn(),
+      onDownloadComparisonCsv: jest.fn(),
       onBudgetDraftChange: (value: string) => {
         const dashboard = store.getState().dashboard;
         store.setState({

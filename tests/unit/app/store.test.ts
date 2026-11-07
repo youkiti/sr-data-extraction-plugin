@@ -186,6 +186,7 @@ describe('createInitialState', () => {
         conflictMessage: null,
       },
       dashboard: {
+        comparison: { loading: false, error: null, data: null },
         usage: {
           summary: null,
           budget: null,

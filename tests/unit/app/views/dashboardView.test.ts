@@ -3,12 +3,16 @@ import { createInitialState, type AppState } from '../../../../src/app/store';
 import { setUiLanguage } from '../../../../src/lib/i18n';
 import type { DashboardViewCallbacks, ViewContext } from '../../../../src/app/views/types';
 import type { DashboardData } from '../../../../src/features/verification/dashboard';
+import { buildComparisonCells } from '../../../../src/features/verification/aiHumanComparison';
+import { makeField, makeEvidence, makeRun } from '../../features/verification/pilotMatrixFixtures';
 
 function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<DashboardViewCallbacks> } {
   const callbacks = {
     onReload: jest.fn(),
     onReloadUsage: jest.fn(),
     onSaveBudget: jest.fn(),
+    onCalculateComparison: jest.fn(),
+    onDownloadComparisonCsv: jest.fn(),
     onBudgetDraftChange: jest.fn(),
     onBudgetError: jest.fn(),
   };
@@ -285,6 +289,83 @@ describe('rateText', () => {
 });
 
 describe('renderDashboardView', () => {
+  test('比較カードは owner / adjudicator の手動操作で読み込み、他のロールには見せない', () => {
+    const { ctx, callbacks } = makeCtx();
+    const state = makeState();
+    for (const role of ['owner', 'adjudicator', null] as const) {
+      state.role.role = role;
+      const view = renderDashboardView(state, ctx);
+      expect(view.querySelector('#dashboard-ai-compare')).not.toBeNull();
+      (view.querySelector('#dashboard-ai-compare-calculate') as HTMLButtonElement).click();
+    }
+    expect(callbacks.onCalculateComparison).toHaveBeenCalledTimes(3);
+    for (const role of ['reviewer_independent', 'reviewer_with_ai', 'unregistered'] as const) {
+      state.role.role = role;
+      expect(renderDashboardView(state, ctx).querySelector('#dashboard-ai-compare')).toBeNull();
+    }
+  });
+
+  test('比較の読み込み中・失敗・0 件・通常と CSV を表示する', () => {
+    const { ctx, callbacks } = makeCtx();
+    const state = makeState();
+    state.role.role = 'owner';
+    state.dashboard.comparison.loading = true;
+    let view = renderDashboardView(state, ctx);
+    expect(view.querySelector('#dashboard-ai-compare-loading')).not.toBeNull();
+    expect((view.querySelector('#dashboard-ai-compare-calculate') as HTMLButtonElement).disabled).toBe(true);
+    state.dashboard.comparison = { loading: false, error: 'failed', data: null };
+    expect(renderDashboardView(state, ctx).querySelector('#dashboard-ai-compare-error')?.getAttribute('role')).toBe('alert');
+    state.dashboard.comparison = { loading: false, error: null, data: {
+      cells: [], unextractedStudyIds: ['s'], noFinalStudyIds: ['s2'],
+    } };
+    view = renderDashboardView(state, ctx);
+    expect(view.querySelector('#dashboard-ai-compare-empty')).not.toBeNull();
+    expect(view.querySelector('#dashboard-ai-compare h4')).toBeNull();
+    expect(view.querySelector('#dashboard-ai-compare table')).toBeNull();
+    const data = buildComparisonCells({ studies: [{ studyId: 'study-1', studyLabel: '研究 1' }], fields: [makeField()], resultRows: [],
+      studyRows: [{ studyId: 'study-1', annotator: 'h', annotatorType: 'human_with_ai', values: { sample_size_total: '120' },
+        schemaVersion: 1, runId: null, updatedAt: 't' }], evidence: [makeEvidence()], runs: [makeRun()] });
+    state.dashboard.comparison.data = data;
+    view = renderDashboardView(state, ctx);
+    expect(view.querySelector('#dashboard-ai-compare')?.textContent).toContain('独立の比較ではありません');
+    expect(view.querySelector('[data-preserve-scroll="ai-compare-human_with_ai"]')?.textContent).toContain('100.0%');
+    expect(view.querySelector('#dashboard-ai-compare-empty')).toBeNull();
+    expect(view.querySelector('#dashboard-ai-compare caption')).toBeNull();
+    expect(view.querySelector('.dashboard__compare-scroll')?.hasAttribute('style')).toBe(false);
+    expect(view.querySelector('.dashboard__compare-scroll tbody')?.textContent).not.toContain(makeField().fieldId);
+    expect(view.querySelector('.dashboard__compare-scroll tbody th')?.textContent).toBe('全体');
+    for (const kind of ['summary', 'cells']) {
+      (view.querySelector(`#dashboard-ai-compare-${kind}-csv`) as HTMLButtonElement).click();
+      expect(callbacks.onDownloadComparisonCsv).toHaveBeenCalledWith(kind);
+    }
+    data.cells[0]!.category = 'incomparable';
+    data.cells[0]!.reason = 'human_unjudged';
+    view = renderDashboardView(state, ctx);
+    expect(view.querySelector('#dashboard-ai-compare-empty')).not.toBeNull();
+    expect(view.querySelector('#dashboard-ai-compare h4')).toBeNull();
+    expect(view.querySelector('#dashboard-ai-compare table')).toBeNull();
+  });
+
+  test('比較表の項目見出しは検証タブのレベル表示名と項目ラベルで区別する', () => {
+    const { ctx } = makeCtx();
+    const state = makeState();
+    state.role.role = 'owner';
+    const fields = [makeField(), ...(['arm', 'outcome_result', 'rob_domain'] as const).map((entityLevel) =>
+      makeField({ fieldId: `uuid-${entityLevel}`, entityLevel }))];
+    state.dashboard.comparison = { loading: false, error: null, data: buildComparisonCells({
+      studies: [{ studyId: 'study-1', studyLabel: '研究 1' }], fields, resultRows: [],
+      studyRows: [{ studyId: 'study-1', annotator: 'h', annotatorType: 'human_with_ai', values: { sample_size_total: '120' },
+        schemaVersion: 1, runId: null, updatedAt: 't' }],
+      evidence: fields.map((field) => makeEvidence({ fieldId: field.fieldId, entityKey: '-' })), runs: [makeRun()],
+    }) };
+    const view = renderDashboardView(state, ctx);
+    const headings = [...view.querySelectorAll('#dashboard-ai-compare tbody th')].map((node) => node.textContent);
+    for (const label of ['Study', '群（arm）', 'アウトカム', 'RoB']) {
+      expect(headings).toContain(label);
+      expect(headings).toContain(`${label}: ${makeField().fieldLabel}`);
+    }
+    expect(view.querySelector('#dashboard-ai-compare')?.textContent).not.toContain('uuid-');
+  });
   test('読み込み中（data 未読込 / loading = true）は #dashboard-loading', () => {
     const { ctx } = makeCtx();
     const unloaded = renderDashboardView(makeState(), ctx);

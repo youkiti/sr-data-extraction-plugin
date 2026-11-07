@@ -8,6 +8,8 @@ function render(patch: Partial<DashboardState['usage']> = {}) {
     onReload: jest.fn(),
     onReloadUsage: jest.fn(),
     onSaveBudget: jest.fn(),
+    onCalculateComparison: jest.fn(),
+    onDownloadComparisonCsv: jest.fn(),
     onBudgetDraftChange: jest.fn(),
     onBudgetError: jest.fn(),
   };
@@ -170,6 +172,8 @@ describe('費用・予算カード', () => {
       onReload: jest.fn(),
       onReloadUsage: jest.fn(),
       onSaveBudget: jest.fn(),
+      onCalculateComparison: jest.fn(),
+      onDownloadComparisonCsv: jest.fn(),
       onBudgetDraftChange: (value: string) => {
         const dashboard = store.getState().dashboard;
         store.setState({

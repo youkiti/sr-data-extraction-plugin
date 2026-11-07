@@ -751,6 +751,11 @@ export interface AdjudicateState {
 
 /** #/dashboard（S9）の画面状態 */
 export interface DashboardState {
+  comparison: {
+    loading: boolean;
+    error: string | null;
+    data: import('../features/verification/aiHumanComparison').ComparisonReport | null;
+  };
   reviewSetProgress: ReviewerSetProgress[] | null;
   /** 費用と予算は検証進捗と独立して読み込む */
   usage: {
@@ -1013,6 +1018,7 @@ export function createInitialState(): AppState {
       conflictMessage: null,
     },
     dashboard: {
+      comparison: { loading: false, error: null, data: null },
       reviewSetProgress: null,
       usage: {
         summary: null,
