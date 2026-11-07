@@ -18,6 +18,7 @@ import { el } from '../ui/dom';
 import { headingWithHelp } from '../ui/helpButton';
 import type { AppState } from '../store';
 import { renderDashboardUsage } from './dashboardUsage';
+import { renderDashboardComparison } from './dashboardComparison';
 import type { ViewContext } from './types';
 
 /** 率の表示（分母 0 は「—」。ui-states.md §3 `#/dashboard`） */
@@ -265,6 +266,10 @@ export function renderDashboardView(state: AppState, ctx: ViewContext): HTMLElem
   ];
   const dashboard = state.dashboard;
   const finish = (): HTMLElement => {
+    const role = state.role.role ?? 'owner';
+    if (role === 'owner' || role === 'adjudicator') {
+      children.push(renderDashboardComparison(dashboard.comparison, ctx.dashboard));
+    }
     if ((state.role.role ?? 'owner') === 'owner') {
       children.push(renderDashboardUsage(dashboard.usage, ctx.dashboard));
     }

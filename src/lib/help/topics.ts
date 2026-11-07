@@ -19,6 +19,7 @@ export const HELP_TOPICS = {
   verify: { tourId: 'verify-basics', route: '#/verify', helpAnchor: 'verify' },
   consult: { helpAnchor: 'dashboard-consult' },
   dashboard: { tourId: 'export-data', route: '#/dashboard', helpAnchor: 'dashboard' },
+  aiCompare: { helpAnchor: 'dashboard-ai-compare' },
   export: { tourId: 'export-data', route: '#/export', helpAnchor: 'export' },
   adjudicate: { tourId: 'dual-review', route: '#/adjudicate', helpAnchor: 'dual-review' },
   options: { route: '#/options', helpAnchor: 'options' },

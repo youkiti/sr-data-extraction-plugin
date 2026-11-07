@@ -22,6 +22,8 @@ This is the public changelog of this extension. Any change that can alter AI out
   Record the AI value and evidence IDs seen at decision time, plus the log, model and prompt version of AI quote relocation, and export them in audit.csv (2026-11-07).
 - 裁定値の出所と AI の値を accept した側の採用を Decisions・audit.csv に記録し、2 人とも AI を見ながら検証した研究を一致度カードと summary CSV で示します（2026-11-07）。
   Record the source of consensus values and adopted AI accepts in Decisions and audit.csv, and identify studies where both reviewers viewed AI values in the agreement card and summary CSV (2026-11-07).
+- ダッシュボードに AI と人の抽出の比較を追加。一致・誤った値・作り話・欠けを独立比較と最終値の種類別に集計し、集計とセル一覧の CSV を保存できます（2026-11-07、#383）。  
+  Added dashboard comparisons of AI and human extraction, separating matches, wrong values, fabrications and omissions by independent reviewers and final-value type, with summary and cell CSV downloads (2026-11-07, #383).
 - 公開の変更履歴（このファイル）を作り、利用規約とヘルプから変更の告知先として案内するようにしました。リリースの手順で、既定モデル・プロンプトの版数・推論の強さの既定が前回のリリースから変わったのにこのファイルが更新されていなければ止まるようにしました。  
   Added this public changelog and named it in the terms of service and the help page as the place where changes are announced. The release procedure now stops when the default model, a prompt version or the default reasoning effort has changed since the previous release and this file has not been updated.
 

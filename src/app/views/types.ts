@@ -293,6 +293,8 @@ export interface VerifyViewCallbacks {
 
 /** #/dashboard（S9）のユーザー操作コールバック（セルクリックはハッシュ遷移のためここに持たない） */
 export interface DashboardViewCallbacks {
+  onCalculateComparison(): void;
+  onDownloadComparisonCsv(kind: 'summary' | 'cells'): void;
   /** 費用だけを再読み込み */
   onReloadUsage(): void;
   /** 予算入力の下書きを保持し、前のエラーを解除 */

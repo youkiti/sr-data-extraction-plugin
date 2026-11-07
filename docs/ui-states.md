@@ -506,6 +506,12 @@ Chrome ウェブストアの Disclosure Requirements（集めるデータと用�
 | `#/dashboard` | 費用読込済み | `#dashboard-usage-summary` に累計 USD（小数 4 桁）、呼び出し数とエラー数、入出力トークン、キャッシュ率、失敗費用、価格不明の除外件数、成功 study 当たり費用（全体 / pilot / full / single_study は実績時のみ）を表示。不明は「—」。旧 Gemini 過小計上は `#dashboard-usage-undercount`、時間推定と未割り当ては `#dashboard-usage-estimated` に件数・費用を表示。run / purpose / model / UTC 月の表は `#dashboard-usage-by-run` / `-by-purpose` / `-by-model` / `-by-month`。空は未実行の短文、run の推定はバッジ表示。完了行のない running は状態列に「中断」を表示し、成功 study 数は 0 とする。未割当費用は全体の研究単価には含むが実行種別には割当できない旨を注記 |
 | `#/dashboard` | 予算未設定 / 設定済み / 超過 | `#dashboard-budget` に状態 `#dashboard-budget-status`（未設定、または上限 / 累計 / 比率 / 最新更新者・日時）、超過時だけ `#dashboard-budget-over`（role="status"）。予算入力 `#dashboard-budget-input`（type=text、inputmode=decimal、aria-label）、保存 `#dashboard-budget-save`、設定済みのみ解除 `#dashboard-budget-clear`。S7 で警告するだけで実行を止めないことと、設定すると旧版の拡張ではプロジェクトを開けず、解除すると再び開けることを注記。解除は Meta の予算ヘッダと値を消去し、予算ヘッダがなければ書き込まない |
 | `#/dashboard` | 予算入力不正 / 保存中 / 保存失敗 | 空・0 以下・非数値はサービスを呼ばず `#dashboard-budget-error`（role="alert"）。保存中は入力・保存・解除を無効化。保存失敗も同じエラー領域。入力下書きと検証エラーは state に保持し、進捗や費用の再描画でも消さない。入力途中の「10.」とキャレット・選択範囲も保持する。入力変更時はエラーを解除し、保存成功時だけ下書きを解除して費用と予算を再読込 |
+| `#/dashboard` | AI と人の比較・読み込み前 | owner / adjudicator のみ `#dashboard-ai-compare`。ヘルプ付き見出しと `#dashboard-ai-compare-calculate`。自動読込なし |
+| | AI と人の比較・読み込み中 / 失敗 | `#dashboard-ai-compare-loading`、計算ボタン無効。失敗は `#dashboard-ai-compare-error`（role="alert"）と再計算 |
+| | AI と人の比較・0 件 | 比べたセルが全体で 0 件なら `#dashboard-ai-compare-empty` だけを出し、相手別見出しと表は出さない。集計 / セル CSV ボタンは表示 |
+| | AI と人の比較・通常 | 独立比較 A と最終値比較 B（consensus / human_independent / human_with_ai）別に集計。行がない相手は空の案内文 |
+| | 比較表 | 全体・レベル・項目別の件数・率、理由別件数、引用なし件数。項目行は「レベルの表示名: 項目ラベル」。横スクロール枠に data-preserve-scroll |
+| | 比較の注記と保存 | AI 未抽出研究数・最終値選定不可研究数。human_with_ai は独立比較でない旨を明示。集計 / セル CSV ボタン |
 | `#/dashboard` | 読み込み中 | `#dashboard-loading`「進捗を読み込んでいます…」（Evidence がある study 一覧 + Decisions を読む間。初回表示時に自動読込） |
 | | reviewer × セットの進捗（issue #263・target spec） | 担当セットを使うプロジェクトでは、owner のダッシュボードに `#dashboard-review-sets`（`<table>`。行 = 担当者 email、列 = セット〔calibration / group-n〕、セル = 「完了 m / 担当 n」。担当していないセットは「—」）を出す。担当セットを使わないプロジェクトでは出さない |
 | | 読み込み失敗 | `#dashboard-load-error`「進捗を読み込めませんでした: {理由}」（`role="alert"`）+ 再読み込み `#dashboard-reload` |

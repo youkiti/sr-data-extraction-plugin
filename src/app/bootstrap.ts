@@ -136,7 +136,7 @@ import { sendAskPaperQuestion } from './services/askPaperUiService';
 import { loadAskPaperUsedStudyIds } from './services/askPaperMetadataService';
 import { loadUsage, saveBudget } from './services/usageService';
 import { generateUsageExport, downloadUsageExport } from './services/usageExportService';
-import { loadDashboard } from './services/dashboardService';
+import { loadDashboard, loadAiHumanComparison, downloadAiHumanComparisonCsv } from './services/dashboardService';
 import {
   assignStudyReviewSet,
   cancelResplit,
@@ -924,6 +924,12 @@ export async function bootstrapApp(
       },
     },
     dashboard: {
+      onCalculateComparison: () => {
+        void loadAiHumanComparison(store, deps);
+      },
+      onDownloadComparisonCsv: (kind) => {
+        downloadAiHumanComparisonCsv(store, deps, kind);
+      },
       onBudgetDraftChange: (value) => {
         const dashboard = store.getState().dashboard;
         store.setState({
