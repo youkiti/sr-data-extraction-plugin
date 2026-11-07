@@ -1317,6 +1317,8 @@ export const enApp: Record<keyof typeof jaApp, string> = {
   'adjudicate.disagreementsEmpty': 'No disagreement cells.',
   'adjudicate.noComparableCells': 'No cells to compare (no cell has values from both reviewers).',
   'adjudicate.agreementIncomplete': '{n} studies where the two reviewers have not both finished verification are excluded from the agreement.',
+  'adjudicate.agreementWithAi': 'In {n} studies, both reviewers verified while viewing the AI values. Agreement in these studies is not independent agreement (it is still included in κ).',
+  'adjudicate.calibrationWithAi': ' (both viewed AI: {n})',
   'adjudicate.valueMissing': 'not entered',
   'adjudicate.agreementNote1':
     'Only cells entered by both reviewers count towards the agreement rate and κ. Cells entered by only one side appear in the disagreement list but are excluded from the statistics (cells, agreement, κ). Cells empty on both sides cannot be compared, so they appear in neither the statistics nor the disagreement list.',

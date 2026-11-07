@@ -10,10 +10,12 @@ import { canonicalizeMultiSelectValue } from '../../domain/multiSelect';
 import type { Evidence } from '../../domain/evidence';
 import type { EntityLevel, SchemaField } from '../../domain/schemaField';
 import { parseEntityKey, STUDY_ENTITY_KEY } from '../../utils/entityKey';
-import { cellKeyOf } from '../verification/cellState';
+import { cellKeyOf, deriveCellStates, type CellState } from '../verification/cellState';
 import { bundleEvidence } from '../verification/evidenceBundles';
 
 export interface AdjudicationCell {
+  aiAcceptA?: boolean;
+  aiAcceptB?: boolean;
   cellKey: string;
   field: SchemaField;
   entityKey: string;
@@ -106,11 +108,15 @@ function makeCell(
   schemaVersionB: number | null,
   decisionsA: readonly Decision[],
   decisionsB: readonly Decision[],
+  statesA: ReadonlyMap<string, CellState>,
+  statesB: ReadonlyMap<string, CellState>,
 ): AdjudicationCell {
   const a = normalize(canonicalizeMultiSelectValue(field, valueA));
   const b = normalize(canonicalizeMultiSelectValue(field, valueB));
   const bothEmpty = a === '' && b === '';
   return {
+    aiAcceptA: isAiAccept(statesA.get(cellKeyOf(field.fieldId, entityKey))),
+    aiAcceptB: isAiAccept(statesB.get(cellKeyOf(field.fieldId, entityKey))),
     cellKey: cellKeyOf(field.fieldId, entityKey),
     field,
     entityKey,
@@ -125,6 +131,11 @@ function makeCell(
     noteA: latestNoteFor(decisionsA, field.fieldId, entityKey),
     noteB: latestNoteFor(decisionsB, field.fieldId, entityKey),
   };
+}
+
+function isAiAccept(state: CellState | undefined): boolean {
+  const latest = state?.stack.at(-1);
+  return latest?.action === 'accept' && latest.annotatorType === 'human_with_ai';
 }
 
 /**
@@ -148,6 +159,8 @@ export function buildAdjudicationCells(
   const cells: AdjudicationCell[] = [];
   const indexA = indexResultsRows(resultsRowsA);
   const indexB = indexResultsRows(resultsRowsB);
+  const statesA = deriveCellStates(decisionsA);
+  const statesB = deriveCellStates(decisionsB);
 
   for (const level of ENTITY_LEVEL_ORDER) {
     const levelFields = fields
@@ -168,6 +181,8 @@ export function buildAdjudicationCells(
             studyDataRowB?.schemaVersion ?? null,
             decisionsA,
             decisionsB,
+            statesA,
+            statesB,
           ),
         );
       }
@@ -189,6 +204,8 @@ export function buildAdjudicationCells(
             rowB?.schemaVersion ?? null,
             decisionsA,
             decisionsB,
+            statesA,
+            statesB,
           ),
         );
       }

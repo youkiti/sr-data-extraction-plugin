@@ -1315,7 +1315,7 @@ describe('acceptAllMatchingCells', () => {
     await acceptAllMatchingCells(store, makeDeps());
     expect(applyConsensusWritesMock).toHaveBeenCalledTimes(1);
     const [, writes, params] = applyConsensusWritesMock.mock.calls[0] as unknown as Parameters<typeof applyConsensusWrites>;
-    expect(writes).toEqual([{ field: makeField(), entityKey: '-', action: 'accept', value: '120' }]);
+    expect(writes).toEqual([{ field: makeField(), entityKey: '-', action: 'accept', value: '120', source: 'bulk_match', adoptedAiAccept: 'A,B' }]);
     expect(params.decidedBy).toBe(JUDGE);
     expect(store.getState().adjudicate.working?.consensusDecisions).toHaveLength(1);
   });
@@ -1456,7 +1456,7 @@ describe('セル単位の個別裁定', () => {
     await adjudicateCellChoice(store, makeDeps(), cellKey, 'A');
     expect(applyConsensusWritesMock).toHaveBeenCalledTimes(1);
     const [, writes] = applyConsensusWritesMock.mock.calls[0] as unknown as Parameters<typeof applyConsensusWrites>;
-    expect(writes).toEqual([{ field: makeField(), entityKey: '-', action: 'edit', value: '120' }]);
+    expect(writes).toEqual([{ field: makeField(), entityKey: '-', action: 'edit', value: '120', source: 'A', adoptedAiAccept: 'A' }]);
   });
 
   test('B を採用すると valueB が書き込まれる', async () => {
@@ -1483,7 +1483,7 @@ describe('セル単位の個別裁定', () => {
     const cellKey = (store.getState().adjudicate.working?.cells[0] as { cellKey: string }).cellKey;
     await adjudicateCellNotReported(store, makeDeps(), cellKey);
     const [, writes] = applyConsensusWritesMock.mock.calls[0] as unknown as Parameters<typeof applyConsensusWrites>;
-    expect(writes[0]).toEqual({ field: makeField(), entityKey: '-', action: 'not_reported', value: NOT_REPORTED_TOKEN });
+    expect(writes[0]).toEqual({ field: makeField(), entityKey: '-', action: 'not_reported', value: NOT_REPORTED_TOKEN, source: 'not_reported', adoptedAiAccept: 'none' });
   });
 
   test('群構成未確定の arm / outcome_result セルは裁定できずトーストのみ', async () => {
@@ -1559,6 +1559,8 @@ describe('loadAgreementReport（issue #66）', () => {
     expect(agreementLoading).toBe(false);
     expect(agreementError).toBeNull();
     expect(agreement?.studyCount).toBe(1);
+    expect(agreement?.withAiStudyCount).toBe(1);
+    expect(agreement?.overall.withAiPairCount).toBe(1);
     expect(agreement?.fields).toHaveLength(1);
     // setupTwoAnnotatorsReady は A・B とも sample_size='120' なので完全一致・単一カテゴリ（κ=null）
     expect(agreement?.fields[0]).toEqual(
@@ -1578,10 +1580,11 @@ describe('loadAgreementReport（issue #66）', () => {
     expect(getSchemaFieldsMock).not.toHaveBeenCalled();
     expect(store.getState().adjudicate.agreementError).toBeNull();
     expect(store.getState().adjudicate.agreement).toEqual({
+      withAiStudyCount: 0,
       studyCount: 0,
       incompleteStudyCount: 0,
       fields: [],
-      overall: { pairCount: 0, agreementCount: 0, agreementRate: null, kappa: null },
+      overall: { withAiPairCount: 0, pairCount: 0, agreementCount: 0, agreementRate: null, kappa: null },
       disagreements: [],
     });
   });

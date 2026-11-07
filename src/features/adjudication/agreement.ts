@@ -38,9 +38,11 @@ import { reviewSetForStudy } from '../review/reviewSets';
 import { buildCsv } from '../export/csvEncode';
 import { buildAdjudicationCells, type AdjudicationCell } from './cellMatch';
 import { resolveAnnotatorPair } from './pairResolution';
+import { isBothWithAi } from './withAiPair';
 
 /** 1 study ぶんの突き合わせ済みセル（cellMatch.buildAdjudicationCells の出力をそのまま渡す） */
 export interface AgreementStudyInput {
+  bothWithAi?: boolean;
   studyId: string;
   studyLabel: string;
   cells: readonly AdjudicationCell[];
@@ -52,6 +54,7 @@ export interface FieldAgreement {
   fieldLabel: string;
   /** 両者とも入力済み（valueA・valueB とも非 null）のセル数 = 分母 */
   pairCount: number;
+  withAiPairCount: number;
   agreementCount: number;
   /** pairCount 0 → null */
   agreementRate: number | null;
@@ -73,12 +76,13 @@ export interface AgreementDisagreement {
 export interface AgreementReport {
   /** レポート対象（ready ペアで 2 名とも検証を終えた）の study 数 */
   studyCount: number;
+  withAiStudyCount: number;
   /** ready ペアだが 2 名の検証が終わっていないため対象外にした study 数（issue #381） */
   incompleteStudyCount: number;
   /** 最新確定スキーマの項目順 */
   fields: FieldAgreement[];
   /** 全項目プールの合算（fields と同じ規則） */
-  overall: Pick<FieldAgreement, 'pairCount' | 'agreementCount' | 'agreementRate' | 'kappa'>;
+  overall: AgreementStats & { withAiPairCount: number };
   /** 不一致セル一覧（study → セル出現順。片側未入力の不一致も含む） */
   disagreements: AgreementDisagreement[];
 }
@@ -149,6 +153,8 @@ export function buildAgreementReport(
       fieldName: field.fieldName,
       fieldLabel: field.fieldLabel,
       ...computeAgreementStats(cellsForField),
+      withAiPairCount: computeAgreementStats(studies.filter((study) => study.bothWithAi)
+        .flatMap((study) => study.cells.filter((cell) => cell.field.fieldId === field.fieldId))).pairCount,
     };
   });
 
@@ -173,9 +179,12 @@ export function buildAgreementReport(
 
   return {
     studyCount: studies.length,
+    withAiStudyCount: studies.filter((study) => study.bothWithAi).length,
     incompleteStudyCount,
     fields: fieldAgreements,
-    overall: computeAgreementStats(allCells),
+    overall: { ...computeAgreementStats(allCells),
+      withAiPairCount: computeAgreementStats(studies.filter((study) => study.bothWithAi)
+        .flatMap((study) => study.cells)).pairCount },
     disagreements,
   };
 }
@@ -191,9 +200,9 @@ function numericCsvCell(value: number | null): string {
   return value === null ? '' : roundForCsv(value);
 }
 
-/** ヘッダ: field_id,field_name,field_label,pair_count,agreement_count,agreement_rate,kappa（末尾に overall 行） */
+/** ヘッダ: field_id,field_name,field_label,pair_count,agreement_count,agreement_rate,kappa,with_ai_pair_count（末尾に overall 行） */
 export function buildAgreementSummaryCsv(report: AgreementReport): string {
-  const header = ['field_id', 'field_name', 'field_label', 'pair_count', 'agreement_count', 'agreement_rate', 'kappa'];
+  const header = ['field_id', 'field_name', 'field_label', 'pair_count', 'agreement_count', 'agreement_rate', 'kappa', 'with_ai_pair_count'];
   const rows: string[][] = report.fields.map((field) => [
     field.fieldId,
     field.fieldName,
@@ -202,6 +211,7 @@ export function buildAgreementSummaryCsv(report: AgreementReport): string {
     String(field.agreementCount),
     numericCsvCell(field.agreementRate),
     numericCsvCell(field.kappa),
+    String(field.withAiPairCount),
   ]);
   rows.push([
     '(overall)',
@@ -211,6 +221,7 @@ export function buildAgreementSummaryCsv(report: AgreementReport): string {
     String(report.overall.agreementCount),
     numericCsvCell(report.overall.agreementRate),
     numericCsvCell(report.overall.kappa),
+    String(report.overall.withAiPairCount),
   ]);
   return buildCsv(header, rows);
 }
@@ -330,7 +341,8 @@ export function computeCalibrationAgreement(
             annotatorB,
           ),
         );
-        pair.studies.push({ studyId: study.studyId, studyLabel: study.studyLabel, cells });
+        pair.studies.push({ studyId: study.studyId, studyLabel: study.studyLabel, cells,
+          bothWithAi: isBothWithAi(studyRows, resultRows, annotatorA, annotatorB) });
       }
     }
   }

@@ -1297,6 +1297,8 @@ export const jaApp = {
   'adjudicate.disagreementsEmpty': '不一致セルはありません。',
   'adjudicate.noComparableCells': '比べられるセルがありません（2 名とも値を入れたセルがありません）。',
   'adjudicate.agreementIncomplete': '2 名の検証が終わっていない研究 {n} 件は、一致度の対象から外しています。',
+  'adjudicate.agreementWithAi': '{n} 件の研究は、2 人とも AI の値を見ながら検証しています。この研究の一致は独立の一致ではありません（κ にはそのまま含めています）。',
+  'adjudicate.calibrationWithAi': '（うち 2 人とも AI を見た研究 {n}）',
   'adjudicate.valueMissing': '未入力',
   'adjudicate.agreementNote1':
     '両者が入力済みのセルのみを一致率・κ の対象にしています。片側未入力のセルは不一致一覧に含みますが、統計（対象セル・一致・κ）からは除外します。両者とも空のセルは比べられないため、統計にも不一致一覧にも入れません。',

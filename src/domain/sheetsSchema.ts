@@ -241,6 +241,8 @@ export const SHEET_HEADERS: Record<SheetTabName, readonly string[]> = {
     'note',
     'seen_evidence_ids',
     'seen_ai_value',
+    'consensus_source',
+    'adopted_ai_accept',
   ],
   LLMApiLog: [
     'log_id',

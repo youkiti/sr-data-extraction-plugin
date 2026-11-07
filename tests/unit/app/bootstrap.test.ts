@@ -4475,6 +4475,7 @@ describe('bootstrapApp: #/adjudicate', () => {
         ...createInitialState().adjudicate,
         rows: [],
         agreement: {
+          withAiStudyCount: 0,
           studyCount: 1,
           incompleteStudyCount: 0,
           fields: [
@@ -4482,13 +4483,14 @@ describe('bootstrapApp: #/adjudicate', () => {
               fieldId: 'f-1',
               fieldName: 'sample_size',
               fieldLabel: '総サンプルサイズ',
+              withAiPairCount: 0,
               pairCount: 1,
               agreementCount: 1,
               agreementRate: 1,
               kappa: null,
             },
           ],
-          overall: { pairCount: 1, agreementCount: 1, agreementRate: 1, kappa: null },
+          overall: { withAiPairCount: 0, pairCount: 1, agreementCount: 1, agreementRate: 1, kappa: null },
           disagreements: [],
         },
       },

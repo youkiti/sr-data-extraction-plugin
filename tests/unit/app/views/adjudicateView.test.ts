@@ -364,6 +364,7 @@ function makeWorking(overrides: Partial<AdjudicateWorking> = {}): AdjudicateWork
 
 function makeAgreementReport(overrides: Partial<AgreementReport> = {}): AgreementReport {
   return {
+    withAiStudyCount: 0,
     studyCount: 1,
     incompleteStudyCount: 0,
     fields: [
@@ -371,13 +372,13 @@ function makeAgreementReport(overrides: Partial<AgreementReport> = {}): Agreemen
         fieldId: 'f-1',
         fieldName: 'sample_size',
         fieldLabel: '総サンプルサイズ',
-        pairCount: 10,
+        withAiPairCount: 0, pairCount: 10,
         agreementCount: 8,
         agreementRate: 0.8,
         kappa: 0.6,
       },
     ],
-    overall: { pairCount: 10, agreementCount: 8, agreementRate: 0.8, kappa: 0.6 },
+    overall: { withAiPairCount: 0, pairCount: 10, agreementCount: 8, agreementRate: 0.8, kappa: 0.6 },
     disagreements: [
       {
         studyId: 'study-1',
@@ -1128,7 +1129,7 @@ describe('renderAdjudicateView: レビュアー間一致度カード（issue #66
 
   test('対象なし: 計算済み（studyCount=0）はエラー扱いにせず role="alert" を付けない', () => {
     const { ctx } = makeCtx();
-    const emptyReport = makeAgreementReport({ studyCount: 0, fields: [], overall: { pairCount: 0, agreementCount: 0, agreementRate: null, kappa: null }, disagreements: [] });
+    const emptyReport = makeAgreementReport({ studyCount: 0, fields: [], overall: { withAiPairCount: 0, pairCount: 0, agreementCount: 0, agreementRate: null, kappa: null }, disagreements: [] });
     const root = render(makeState({ rows: [makeRow()], agreement: emptyReport }), ctx);
     const notice = root.querySelector('#agreement-error');
     expect(notice).not.toBeNull();
@@ -1167,7 +1168,7 @@ describe('renderAdjudicateView: レビュアー間一致度カード（issue #66
           fieldId: 'f-1',
           fieldName: 'sample_size',
           fieldLabel: '総サンプルサイズ',
-          pairCount: 3,
+          withAiPairCount: 0, pairCount: 3,
           agreementCount: 3,
           agreementRate: 1,
           kappa: null,
@@ -1187,7 +1188,7 @@ describe('renderAdjudicateView: レビュアー間一致度カード（issue #66
           fieldId: 'f-2',
           fieldName: 'unused',
           fieldLabel: '未使用項目',
-          pairCount: 0,
+          withAiPairCount: 0, pairCount: 0,
           agreementCount: 0,
           agreementRate: null,
           kappa: null,
@@ -1213,7 +1214,7 @@ describe('renderAdjudicateView: レビュアー間一致度カード（issue #66
     const report = makeAgreementReport({
       disagreements: [],
       incompleteStudyCount: 3,
-      overall: { pairCount: 0, agreementCount: 0, agreementRate: null, kappa: null },
+      overall: { withAiPairCount: 0, pairCount: 0, agreementCount: 0, agreementRate: null, kappa: null },
     });
     const root = render(makeState({ rows: [makeRow()], agreement: report }), ctx);
     expect(root.querySelector('#agreement-disagreements-empty')?.textContent).toBe(
@@ -1435,6 +1436,21 @@ test('担当外判定は ready と waiting の行に注記する', () => {
     '担当外の判定（c@example.com, d@example.com）は裁定と一致度から除外しています',
   );
 });
+test('AI を見た研究がある場合だけ独立の一致ではない注意を出し、較正にも件数を添える', () => {
+  const { ctx } = makeCtx();
+  const report = makeAgreementReport({ withAiStudyCount: 2 });
+  const state = makeState({ rows: [makeRow()], agreement: report, calibrationAgreement: [{
+    annotatorA: 'a', annotatorB: 'b', studyCount: 3, agreementRate: 1, kappa: null, report,
+  }] });
+  const view = renderAdjudicateView(state, ctx);
+  expect(view.querySelector('p.view__notice#adjudicate-agreement-with-ai')?.textContent)
+    .toBe(t('adjudicate.agreementWithAi', { n: 2 }));
+  expect(view.querySelector('#adjudicate-calibration-agreement tbody td')?.textContent)
+    .toBe('3' + t('adjudicate.calibrationWithAi', { n: 2 }));
+  expect(renderAdjudicateView(makeState({ agreement: makeAgreementReport() }), ctx)
+    .querySelector('#adjudicate-agreement-with-ai')).toBeNull();
+});
+
 test('calibration は本体が空でも全ペアの一致度を表示する', () => {
   const { ctx } = makeCtx();
   const report = makeAgreementReport();
@@ -1470,7 +1486,7 @@ test('calibration は本体が空でも全ペアの一致度を表示する', ()
   state.adjudicate.agreement = makeAgreementReport({
     studyCount: 0,
     fields: [],
-    overall: { pairCount: 0, agreementCount: 0, agreementRate: null, kappa: null },
+    overall: { withAiPairCount: 0, pairCount: 0, agreementCount: 0, agreementRate: null, kappa: null },
   });
   view = renderAdjudicateView(state, ctx);
   expect(view.querySelector('#adjudicate-calibration-agreement')).not.toBeNull();

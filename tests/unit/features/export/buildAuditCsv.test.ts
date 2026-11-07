@@ -30,17 +30,17 @@ test('引用 JSON は選択 run の束を昇順に添付し、通常は空・根
   expect(AUDIT_HEADER.slice(28, 30)).toEqual(['quotes_json', 'section']);
   expect(placeholder.undecidedCellCount).toBe(1);
   expect(placeholder.csv).toContain(',new,first,');
-  expect(placeholder.csv.endsWith(expectedEnd.replace('\r\n', ',.,.,,,\r\n'))).toBe(true);
+  expect(placeholder.csv.endsWith(expectedEnd.replace('\r\n', ',.,.,,,,.,.\r\n'))).toBe(true);
   const decided = buildAuditCsv(studies, [decision('d1', 'f1', '-', 'accept', 't2', { schemaVersion: 2 })], rows, runs, fields);
-  expect(decided.csv.endsWith(expectedEnd.replace('\r\n', ',,,,,\r\n'))).toBe(true);
+  expect(decided.csv.endsWith(expectedEnd.replace('\r\n', ',,,,,,,\r\n'))).toBe(true);
   const historical = buildAuditCsv(studies, [decision('d1', 'f1', '-', 'accept', 't2', {
     schemaVersion: 2, seenEvidenceIds: ['first', 'second'],
   })], [...rows, { ...first, evidenceId: 'relocated', quote: 'new quote' }], runs, fields);
-  expect(historical.csv.endsWith(expectedEnd.replace('\r\n', ',first second,,,,\r\n'))).toBe(true);
+  expect(historical.csv.endsWith(expectedEnd.replace('\r\n', ',first second,,,,,,\r\n'))).toBe(true);
   const normal = buildAuditCsv(studies, [], [evidence('normal', 'old', 'd1', 'f1', '-')], runs, fields);
-  expect(dataRows(normal.csv)[0]?.at(-1)).toBe('');
+  expect(dataRows(normal.csv)[0]?.[34]).toBe('');
   const missing = buildAuditCsv(studies, [decision('d1', 'f1', '-', 'accept', 't2', { schemaVersion: 3 })], rows, runs, fields);
-  expect(dataRows(missing.csv)[0]?.at(-1)).toBe('.');
+  expect(dataRows(missing.csv)[0]?.[34]).toBe('.');
 });
 
 test('断片のセルは元の値と先頭引用を保ち、quotes_json に全断片を出す', () => {
@@ -53,7 +53,7 @@ test('断片のセルは元の値と先頭引用を保ち、quotes_json に全�
     { seq: 1, theme: null, quote: first.quote, page: 1, document_id: first.documentId, anchor_status: 'exact', section: null },
     { seq: 2, theme: null, quote: second.quote, page: 5, document_id: second.documentId, anchor_status: 'fuzzy', section: null },
   ]);
-  expect(result.csv.endsWith(`,"${json.replace(/"/g, '""')}",,.,.,,,\r\n`)).toBe(true);
+  expect(result.csv.endsWith(`,"${json.replace(/"/g, '""')}",,.,.,,,,.,.\r\n`)).toBe(true);
 });
 /** 構造的欠損トークン（可読性のための短縮名） */
 const NA = AUDIT_MISSING_TOKEN;
@@ -168,6 +168,15 @@ const decision = (
 
 const headerLine = AUDIT_HEADER.join(',');
 
+test('裁定の出所と AI accept 由来を末尾列に出す', () => {
+  expect(AUDIT_HEADER.slice(-2)).toEqual(['consensus_source', 'adopted_ai_accept']);
+  const rows = dataRows(buildAuditCsv([study('d1', 'Study')], [
+    decision('d1', 'f1', '-', 'edit', '1', { annotator: 'consensus', annotatorType: 'consensus',
+      consensusSource: 'A', adoptedAiAccept: 'A' }),
+  ], [], [], [field('f1', 'value', 1)]).csv);
+  expect(rows[0]?.slice(-2)).toEqual(['A', 'A']);
+});
+
 test('再抽出・再特定後も判定時の根拠と出所を出す', () => {
   const original = evidence('old', 'r1', 'd1', 'f1', '-', {
     value: 'old value', quote: 'old quote', sourceLogId: 'log', sourceModel: 'model', sourcePromptVersion: 2,
@@ -182,7 +191,7 @@ test('再抽出・再特定後も判定時の根拠と出所を出す', () => {
   const rows = dataRows(buildAuditCsv([study('d1', 'Study')], decisions, [original, relocated, fresh],
     [run('r1', 1, '1'), run('r2', 1, '2')], [field('f1', 'value', 1)]).csv);
   expect(rows[0]?.slice(10, 14)).toEqual(['old', 'old value', 'false', 'old quote']);
-  expect(rows[0]?.slice(30)).toEqual(['old missing', 'old value', 'log', 'model', '2']);
+  expect(rows[0]?.slice(30)).toEqual(['old missing', 'old value', 'log', 'model', '2', '', '']);
   expect(rows[1]?.[10]).toBe('fresh');
   expect(rows[1]?.[30]).toBe('none');
   expect(rows[2]?.[10]).toBe('fresh');
@@ -266,7 +275,7 @@ describe('buildAuditCsv', () => {
     expect(rows[0]?.[6]).toBe('1'); // schema_version は代表 Evidence の run から
     expect(rows[0]?.[7]).toBe(NA); // annotator が構造的欠損 = 未検証の明示
     // 判定列ブロック（decision_seq〜note）も構造的欠損（study_id 列の追加で開始位置は 22）
-    expect(rows[0]?.slice(22)).toEqual([NA, NA, NA, NA, NA, NA, '', '', NA, NA, '', '', '']);
+    expect(rows[0]?.slice(22)).toEqual([NA, NA, NA, NA, NA, NA, '', '', NA, NA, '', '', '', NA, NA]);
     expect(result.undecidedCellCount).toBe(1);
   });
 

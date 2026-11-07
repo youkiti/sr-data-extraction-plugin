@@ -2,7 +2,7 @@
 // 判定 1 操作 = 1 行で追記し、undo も 1 行として残す（§4.2 の監査証跡）。
 // 現在のセル状態は cellState.ts が判定履歴の畳み込みで導出する
 import type { AnnotatorType } from '../../domain/annotation';
-import type { Decision, DecisionAction } from '../../domain/decision';
+import type { AdoptedAiAccept, ConsensusSource, Decision, DecisionAction } from '../../domain/decision';
 import { SHEET_HEADERS } from '../../domain/sheetsSchema';
 import { withApiErrorLogging } from '../../lib/diagnostics/apiErrorLog';
 import { appendRows, getBatchValues, getSheetValues, updateRow } from '../../lib/google/sheets';
@@ -81,6 +81,8 @@ export function decisionToRow(decision: Decision): (string | number | null)[] {
     decision.note,
     decision.seenEvidenceIds == null ? null : decision.seenEvidenceIds.join(' ') || 'none',
     decision.seenAiValue ?? null,
+    decision.consensusSource ?? null,
+    decision.adoptedAiAccept ?? null,
   ];
 }
 
@@ -161,8 +163,14 @@ export async function readAllDecisions(
       seenEvidenceIds: cellAt(raw, 11) === '' ? null
         : cellAt(raw, 11) === 'none' ? [] : cellAt(raw, 11).split(' ').filter(Boolean),
       seenAiValue: emptyToNull(cellAt(raw, 12)),
+      consensusSource: parseOptionalEnum<ConsensusSource>(cellAt(raw, 13), ['A', 'B', 'third', 'bulk_match', 'not_reported', 'undo']),
+      adoptedAiAccept: parseOptionalEnum<AdoptedAiAccept>(cellAt(raw, 14), ['A', 'B', 'A,B', 'none']),
     };
   });
+}
+
+function parseOptionalEnum<T extends string>(value: string, allowed: readonly T[]): T | null {
+  return allowed.includes(value as T) ? value as T : null;
 }
 
 /**

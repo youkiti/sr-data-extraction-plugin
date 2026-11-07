@@ -2,6 +2,7 @@ import { NOT_REPORTED_TOKEN } from '../../../../src/domain/annotation';
 import type { AdjudicationCell } from '../../../../src/features/adjudication/cellMatch';
 import { emptyCellState } from '../../../../src/features/verification/cellState';
 import type { CellState } from '../../../../src/features/verification/cellState';
+import type { ConsensusCellWrite } from '../../../../src/features/adjudication/consensusWrites';
 import {
   buildBulkAcceptWrites,
   buildChoiceWrite,
@@ -47,6 +48,29 @@ function cell(overrides: Partial<AdjudicationCell> = {}): AdjudicationCell {
   };
 }
 
+test('出所と採った側の AI accept 由来を全裁定操作で保存する', () => {
+  const c = cell({ aiAcceptA: true, aiAcceptB: false });
+  const params = { studyId: 's', decidedBy: 'j', decidedAt: 't', schemaVersion: 1 };
+  const cases: [ConsensusCellWrite, string, string | null][] = [
+    [buildChoiceWrite(c, 'A'), 'A', 'A'],
+    [buildChoiceWrite(c, 'B'), 'B', 'none'],
+    [buildChoiceWrite(cell({ aiAcceptB: true }), 'B'), 'B', 'B'],
+    [buildCustomValueWrite(c, 'new'), 'third', 'none'],
+    [buildNotReportedWrite(c), 'not_reported', 'none'],
+    [buildUndoWrite(c, { status: 'edit', value: 'v', stack: [toConsensusDecision(buildChoiceWrite(c, 'A'), params)] })!, 'undo', null],
+  ];
+  for (const [aiAcceptA, aiAcceptB, expected] of [
+    [true, true, 'A,B'], [true, false, 'A'], [false, true, 'B'], [false, false, 'none'],
+  ] as const) {
+    cases.push([buildBulkAcceptWrites([cell({ aiAcceptA, aiAcceptB })], new Map())[0]!, 'bulk_match', expected]);
+  }
+  for (const [write, consensusSource, adoptedAiAccept] of cases) {
+    expect(toConsensusDecision(write, params)).toMatchObject({ consensusSource, adoptedAiAccept });
+  }
+  const legacy = { field: c.field, entityKey: '-', action: 'edit', value: 'v' } as ConsensusCellWrite;
+  expect(toConsensusDecision(legacy, params)).toMatchObject({ consensusSource: null, adoptedAiAccept: null });
+});
+
 describe('toConsensusDecision', () => {
   test('複数選択の A・B・第三の値・一括採用と監査値を正準化する', () => {
     const target = cell({ valueA: 'B|A', valueB: 'b|a', field: { ...cell().field, dataType: 'enum',
@@ -60,7 +84,7 @@ describe('toConsensusDecision', () => {
   });
   test('annotator は常に consensus 固定・decided_by は裁定者', () => {
     const decision = toConsensusDecision(
-      { field: cell().field, entityKey: '-', action: 'accept', value: '120' },
+      { field: cell().field, entityKey: '-', action: 'accept', value: '120', source: 'bulk_match', adoptedAiAccept: 'none' },
       { studyId: 'study-1', decidedBy: 'judge@example.com', decidedAt: 't1', schemaVersion: 1 },
     );
     expect(decision).toEqual({
@@ -75,6 +99,8 @@ describe('toConsensusDecision', () => {
       action: 'accept',
       value: '120',
       note: null,
+      consensusSource: 'bulk_match',
+      adoptedAiAccept: 'none',
     });
   });
 });
@@ -88,7 +114,7 @@ describe('buildBulkAcceptWrites', () => {
       ['decided', { status: 'accept', value: '5', stack: [] as never[] }],
     ]);
     const writes = buildBulkAcceptWrites([matched, mismatched, alreadyDecided], states);
-    expect(writes).toEqual([{ field: matched.field, entityKey: '-', action: 'accept', value: '120' }]);
+    expect(writes).toEqual([{ field: matched.field, entityKey: '-', action: 'accept', value: '120', source: 'bulk_match', adoptedAiAccept: 'none' }]);
   });
 
   test('対象が無ければ空配列', () => {
@@ -99,12 +125,12 @@ describe('buildBulkAcceptWrites', () => {
 describe('buildChoiceWrite', () => {
   test('A を選ぶと valueA を action=edit で書き出す', () => {
     const c = cell({ valueA: 'A 値', valueB: 'B 値' });
-    expect(buildChoiceWrite(c, 'A')).toEqual({ field: c.field, entityKey: '-', action: 'edit', value: 'A 値' });
+    expect(buildChoiceWrite(c, 'A')).toEqual({ field: c.field, entityKey: '-', action: 'edit', value: 'A 値', source: 'A', adoptedAiAccept: 'none' });
   });
 
   test('B を選ぶと valueB を action=edit で書き出す', () => {
     const c = cell({ valueA: 'A 値', valueB: 'B 値' });
-    expect(buildChoiceWrite(c, 'B')).toEqual({ field: c.field, entityKey: '-', action: 'edit', value: 'B 値' });
+    expect(buildChoiceWrite(c, 'B')).toEqual({ field: c.field, entityKey: '-', action: 'edit', value: 'B 値', source: 'B', adoptedAiAccept: 'none' });
   });
 });
 
@@ -116,12 +142,13 @@ describe('buildCustomValueWrite', () => {
       entityKey: '-',
       action: 'edit',
       value: '第 3 の値',
+      source: 'third', adoptedAiAccept: 'none',
     });
   });
 
   test('空欄（trim 後空文字）は明示的な null 値になる', () => {
     const c = cell();
-    expect(buildCustomValueWrite(c, '   ')).toEqual({ field: c.field, entityKey: '-', action: 'edit', value: null });
+    expect(buildCustomValueWrite(c, '   ')).toEqual({ field: c.field, entityKey: '-', action: 'edit', value: null, source: 'third', adoptedAiAccept: 'none' });
   });
 });
 
@@ -133,6 +160,7 @@ describe('buildNotReportedWrite', () => {
       entityKey: '-',
       action: 'not_reported',
       value: NOT_REPORTED_TOKEN,
+      source: 'not_reported', adoptedAiAccept: 'none',
     });
   });
 });
@@ -161,6 +189,7 @@ describe('buildUndoWrite', () => {
       field: cell().field,
       entityKey: '-',
       action: 'undo',
+      source: 'undo', adoptedAiAccept: null,
       value: null, // スタックが 1 件だけなので取り消すと未検証（空セル）に戻る
     });
   });
@@ -174,7 +203,7 @@ test('旧版の設定プロパティがない裁定の書き込みと再送は�
   expect(buildChoiceWrite(target, 'A').value).toBe('B|A');
   expect(buildChoiceWrite(target, 'B').value).toBe('A|B');
   expect(toConsensusDecision(
-    { field: target.field, entityKey: '-', action: 'accept', value: 'B|A' },
+    { field: target.field, entityKey: '-', action: 'accept', value: 'B|A' } as Parameters<typeof toConsensusDecision>[0],
     { studyId: 's', decidedBy: 'a', decidedAt: 't', schemaVersion: 1 },
   ).value).toBe('B|A');
 });
