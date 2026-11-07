@@ -94,6 +94,62 @@ describe('ヘルプの対応表と公開ページの照合', () => {
   });
 });
 
+describe('公開ヘルプの「こんなとき」', () => {
+  test('全 FAQ に faq- で始まる id がある', () => {
+    const faqs = [...help.querySelectorAll('details.faq')];
+    expect(faqs).toHaveLength(8);
+    for (const faq of faqs) expect(faq.id).toMatch(/^faq-[a-z]+(?:-[a-z]+)*$/);
+  });
+
+  test('見出しの直後に一つだけ置かれている', () => {
+    const blocks = [...help.querySelectorAll('.help-when')];
+    expect(blocks.length).toBeGreaterThan(0);
+    const headings = new Set<Element>();
+    for (const block of blocks) {
+      const heading = block.previousElementSibling;
+      expect(heading).not.toBeNull();
+      expect(heading!.matches('h2, h3, summary')).toBe(true);
+      expect(headings.has(heading!)).toBe(false);
+      headings.add(heading!);
+      expect(block.nextElementSibling?.matches('.help-when')).not.toBe(true);
+    }
+  });
+
+  test('ラベルと二つから四つの例に空でない日英の対がある', () => {
+    for (const block of help.querySelectorAll('.help-when')) {
+      const labels = block.querySelectorAll(':scope > p.help-when-label');
+      expect(labels).toHaveLength(1);
+      const items = [...block.querySelectorAll(':scope > ul > li')];
+      expect(items.length).toBeGreaterThanOrEqual(2);
+      expect(items.length).toBeLessThanOrEqual(4);
+      for (const element of [labels[0]!, ...items]) {
+        for (const language of ['ja', 'en']) {
+          const spans = element.querySelectorAll(`span.${language}[lang="${language}"]`);
+          expect(spans).toHaveLength(1);
+          expect(spans[0]!.textContent!.trim()).not.toBe('');
+        }
+      }
+    }
+  });
+
+  test('全小見出しと FAQ、本文がある節の冒頭に付いている', () => {
+    // 小見出しや個別 FAQ より前に本文を持たない節は除外する。
+    const emptySectionIds = ['troubleshooting', 'faq'];
+    const headings = [...help.querySelectorAll('h3[id], details.faq > summary')];
+    for (const section of help.querySelectorAll('section[id]')) {
+      const heading = section.querySelector(':scope > h2')!;
+      if (emptySectionIds.includes(section.id)) {
+        expect(heading.nextElementSibling?.matches('.help-when')).not.toBe(true);
+      } else {
+        headings.push(heading);
+      }
+    }
+    for (const heading of headings) {
+      expect(heading.nextElementSibling?.matches('.help-when')).toBe(true);
+    }
+  });
+});
+
 describe('ヘルプの URL とトピック検索', () => {
   test.each(['ja', 'en'] as const)('%s の表示言語とアンカーを URL に付ける', (language) => {
     expect(buildHelpUrl('verify', language)).toBe(
