@@ -8,13 +8,28 @@ import { readDocuments } from '../../features/documents/documentRepository';
 import { readStudies, resolveActiveStudies } from '../../features/documents/studyRepository';
 import { readStudyDataSheet, readResultsDataRows } from '../../features/extraction/annotationRepository';
 import { readEvidenceRows } from '../../features/extraction/evidenceRepository';
-import { readCompletedRunMetas, readPilotRuns } from '../../features/extraction/runRepository';
+import { countPilotRuns, readCompletedRunMetas, readPilotRuns } from '../../features/extraction/runRepository';
 import { listSchemaVersions, getSchemaFieldsByVersion } from '../../features/schema/schemaRepository';
 import { getCurrentUserEmail } from '../../lib/google/identity';
 import { nowIso8601 } from '../../utils/iso8601';
-import { t } from '../../lib/i18n';
+import { t, type MessageKey } from '../../lib/i18n';
 import type { Store } from '../store';
 import { withSpreadsheetWriteLock, type VerificationDeps } from './verificationService';
+
+const VALIDATION_MESSAGES: Record<string, MessageKey> = {
+  comparator: 'criteria.invalidComparator', entity_levels: 'criteria.invalidLevels', rates_required: 'criteria.ratesRequired',
+  min_accuracy: 'criteria.invalidRate', max_fabrication_rate: 'criteria.invalidRate',
+  max_omission_rate: 'criteria.invalidRate', max_wrong_value_rate: 'criteria.invalidRate',
+  min_compared_cells: 'criteria.invalidCells',
+};
+const RATE_LABELS: Record<string, MessageKey> = {
+  min_accuracy: 'criteria.minAccuracy', max_fabrication_rate: 'criteria.maxFabricationRate',
+  max_omission_rate: 'criteria.maxOmissionRate', max_wrong_value_rate: 'criteria.maxWrongValueRate',
+};
+
+function toMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
 
 export interface CriteriaState {
   versions: AcceptanceCriteria[] | null;
@@ -62,13 +77,13 @@ export async function loadCriteria(store: Store, deps: VerificationDeps): Promis
   const id = project.spreadsheetId;
   patch(store, { loading: true, error: null });
   try {
-    const [data, runs] = await Promise.all([readAcceptanceCriteria(id, deps.google), readPilotRuns(id, deps.google)]);
+    const [data, pilotCount] = await Promise.all([readAcceptanceCriteria(id, deps.google), countPilotRuns(id, deps.google)]);
     if (store.getState().currentProject?.spreadsheetId === id) {
-      patch(store, { ...data, loading: false, pilotCount: runs.length, evaluation: null });
+      patch(store, { ...data, loading: false, pilotCount, evaluation: null });
     }
   } catch (err) {
     if (store.getState().currentProject?.spreadsheetId === id) {
-      patch(store, { loading: false, error: String(err) });
+      patch(store, { loading: false, error: toMessage(err) });
     }
   }
 }
@@ -84,36 +99,39 @@ export async function saveCriteria(store: Store, deps: VerificationDeps, confirm
   }
   const errors = validateCriteriaDraft(form.draft);
   if (errors.length > 0) {
-    patch(store, { error: t('criteria.invalid', { fields: errors.join(', ') }), confirming: false });
+    const fields = errors.map((error) => t(VALIDATION_MESSAGES[error]!, {
+      field: t(RATE_LABELS[error] ?? 'criteria.title'),
+    })).join(' ');
+    patch(store, { error: t('criteria.invalid', { fields }), confirming: false });
     return;
   }
   const id = project.spreadsheetId;
   patch(store, { saving: true, error: null });
   try {
     await withSpreadsheetWriteLock(id, async () => {
-      const [data, runs] = await Promise.all([readAcceptanceCriteria(id, deps.google), readPilotRuns(id, deps.google)]);
+      const [data, pilotCount] = await Promise.all([readAcceptanceCriteria(id, deps.google), countPilotRuns(id, deps.google)]);
       if (store.getState().currentProject?.spreadsheetId !== id) {
         return;
       }
       if (!confirmed) {
-        patch(store, { ...data, pilotCount: runs.length, confirming: true });
+        patch(store, { ...data, pilotCount, confirming: true });
         return;
       }
       if ((store.getState().role.role ?? 'owner') !== 'owner') {
         return;
       }
       const email = await getCurrentUserEmail(deps.profile);
-      const criteria = confirmCriteria(form.draft, data.versions, email ?? '', (deps.now ?? nowIso8601)(), runs);
+      const criteria = confirmCriteria(form.draft, data.versions, email ?? '', (deps.now ?? nowIso8601)(), pilotCount);
       await appendAcceptanceCriteria(id, criteria, deps.google);
       if (store.getState().currentProject?.spreadsheetId === id) {
         patch(store, { versions: [criteria, ...data.versions], ignoredCount: data.ignoredCount,
-          confirming: false, evaluation: null, pilotCount: runs.length });
+          confirming: false, evaluation: null, pilotCount });
         store.setState({ export: { ...store.getState().export, built: null } });
       }
     });
   } catch (err) {
     if (store.getState().currentProject?.spreadsheetId === id) {
-      patch(store, { error: String(err) });
+      patch(store, { error: toMessage(err) });
     }
   } finally {
     if (store.getState().currentProject?.spreadsheetId === id) {
@@ -131,10 +149,10 @@ export async function calculateCriteria(store: Store, deps: VerificationDeps): P
   const id = project.spreadsheetId;
   patch(store, { calculating: true, error: null, evaluation: null });
   try {
-    const [criteria, studies, documents, studySheet, resultRows, evidence, runs, pilots, versions] = await Promise.all([
+    const [criteria, studies, documents, studySheet, resultRows, evidence, runs, pilots, versions, pilotCount] = await Promise.all([
       readAcceptanceCriteria(id, deps.google), readStudies(id, deps.google), readDocuments(id, deps.google),
       readStudyDataSheet(id, deps.google), readResultsDataRows(id, deps.google), readEvidenceRows(id, deps.google),
-      readCompletedRunMetas(id, deps.google), readPilotRuns(id, deps.google), listSchemaVersions(id, deps.google),
+      readCompletedRunMetas(id, deps.google), readPilotRuns(id, deps.google), listSchemaVersions(id, deps.google), countPilotRuns(id, deps.google),
     ]);
     const latest = versions[0];
     const fields = latest === undefined ? [] : await getSchemaFieldsByVersion(id, latest.schemaVersion, deps.google);
@@ -143,11 +161,11 @@ export async function calculateCriteria(store: Store, deps: VerificationDeps): P
     const current = currentCriteria(criteria.versions);
     const evaluation = current === null ? null : evaluateCriteria(current, cells, pilots, new Set(active.map((study) => study.studyId)));
     if (store.getState().currentProject?.spreadsheetId === id) {
-      patch(store, { ...criteria, evaluation, calculating: false, pilotCount: pilots.length });
+      patch(store, { ...criteria, evaluation, calculating: false, pilotCount });
     }
   } catch (err) {
     if (store.getState().currentProject?.spreadsheetId === id) {
-      patch(store, { calculating: false, error: String(err) });
+      patch(store, { calculating: false, error: toMessage(err) });
     }
   }
 }

@@ -7,6 +7,7 @@ import { emptyCriteriaState, type CriteriaState } from '../services/acceptanceCr
 import type { AppState } from '../store';
 import { el } from '../ui/dom';
 import { headingWithHelp } from '../ui/helpButton';
+import { formatPilotRunDate } from '../ui/formatPilotRunDate';
 import type { PilotViewCallbacks } from './types';
 
 const GROUP_LABELS = { independent: 'dashboard.compareIndependent', consensus: 'dashboard.compareConsensus',
@@ -19,7 +20,7 @@ const CRITERIA_LABELS = { min_accuracy: 'criteria.minAccuracy', max_fabrication_
   below_minimum: 'criteria.belowMinimum' } as const;
 
 function versionLabel(criteria: AcceptanceCriteria): string {
-  return t('criteria.version', { version: criteria.version, date: criteria.confirmed_at, by: criteria.confirmed_by,
+  return t('criteria.version', { version: criteria.version, date: formatPilotRunDate(criteria.confirmed_at), by: criteria.confirmed_by,
     timing: t(criteria.pilot_runs_before === 0 ? 'criteria.before' : 'criteria.after') });
 }
 
@@ -85,12 +86,28 @@ function renderCurrent(current: AcceptanceCriteria, form: CriteriaState): HTMLEl
   const result = form.evaluation;
   const resultKeys = { min_accuracy: 'accuracy', max_fabrication_rate: 'fabrication_rate',
     max_omission_rate: 'omission_rate', max_wrong_value_rate: 'wrong_value_rate' } as const;
+  const rows: HTMLElement[] = [];
+  const judgment = (met: boolean | null): string => met === null ? '—' : t(met ? 'criteria.met' : 'criteria.notMet');
+  const row = (label: string, setting: string, value: string, met: boolean | null): HTMLElement => el('tr', {}, [
+    el('th', { text: label, attributes: { scope: 'row' } }), el('td', { text: setting }),
+    el('td', { text: value }), el('td', { text: judgment(met) }),
+  ]);
   for (const key of RATE_KEYS) {
     const value = result?.[resultKeys[key]];
-    children.push(el('p', { text: `${t(CRITERIA_LABELS[key])}: ${current[key] ?? t('criteria.unused')}` +
-      (result === null ? '' : ` / ${value == null ? '—' : `${value.toFixed(2)}%`}`) }));
+    const threshold = current[key];
+    const comparable = threshold !== null && value != null;
+    const met = comparable ? (key === 'min_accuracy' ? value >= threshold : value <= threshold) : null;
+    rows.push(row(t(CRITERIA_LABELS[key]), threshold === null ? t('criteria.unused') : `${threshold}%`,
+      comparable ? `${value.toFixed(1)}%` : '—', met));
   }
-  children.push(el('p', { text: `${t('criteria.minComparedCells')}: ${current.min_compared_cells ?? t('criteria.unused')}` }));
+  const minimum = current.min_compared_cells;
+  rows.push(row(t('criteria.comparedCells'), minimum === null ? t('criteria.unused') : `≥ ${minimum}`,
+    result === null ? '—' : String(result.compared), result === null || minimum === null ? null : result.compared >= minimum));
+  children.push(el('div', { className: 'dashboard__compare-scroll' }, [el('table', {}, [
+    el('thead', {}, [el('tr', {}, ['criteria.criterion', 'criteria.setting', 'criteria.pilotValue', 'criteria.judgment']
+      .map((key) => el('th', { text: t(key as MessageKey), attributes: { scope: 'col' } })))]),
+    el('tbody', {}, rows),
+  ])]));
   if (current.note !== '') {
     children.push(el('p', { text: current.note }));
   }

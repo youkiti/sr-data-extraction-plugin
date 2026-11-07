@@ -5,7 +5,7 @@ import { addSheetTab, appendRows, getSheetTitles, getSheetValues, writeHeaderRow
 import type { GoogleApiDeps } from '../../../../src/lib/google/types';
 jest.mock('../../../../src/lib/google/sheets');
 const deps = {} as GoogleApiDeps;
-const value = confirmCriteria({ ...emptyCriteriaDraft(), min_accuracy: '90' }, [], 'owner@example.com', '2026-11-07T00:00:00Z', []);
+const value = confirmCriteria({ ...emptyCriteriaDraft(), min_accuracy: '90' }, [], 'owner@example.com', '2026-11-07T00:00:00Z', 0);
 
 test('旧プロジェクトは空、存在するタブはヘッダを検証して読み込む', async () => {
   jest.mocked(getSheetTitles).mockResolvedValue([]);

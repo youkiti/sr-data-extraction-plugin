@@ -409,47 +409,63 @@ export function buildMethodsText(
   return { text, unresolved: findUnresolvedPlaceholders(text) };
 }
 
-/** 保存された閾値だけを列挙し、事後確定と非独立比較を明記する。 */
+/** 保存済みの基準と結果を、論文に貼れる文にする。 */
 function buildCriteriaSentence(language: MethodsLanguage, fact: NonNullable<MethodsFacts['acceptanceCriteria']>): string {
   const { criteria: c, evaluation: e } = fact;
   const ja = language === 'ja';
+  const before = c.pilot_runs_before === 0;
   const groups = {
-    independent: ja ? '独立の人' : 'independent reviewers',
-    consensus: ja ? '裁定後の最終値' : 'consensus final values',
-    human_independent: ja ? '独立抽出者の最終値' : 'independent reviewers’ final values',
-    human_with_ai: ja ? 'AI の出力を見ながら判定した検証者との比較' : 'comparison with reviewers who saw the AI output',
+    independent: ja ? 'AI の出力を見ずにレビュアーが独立に抽出した値'
+      : 'values extracted independently by reviewers who did not see the AI output',
+    consensus: ja ? '裁定後の合意値' : 'consensus values after adjudication',
+    human_independent: ja ? '独立にデータを抽出したレビュアーの最終値'
+      : 'final values from a reviewer who extracted the data independently',
+    human_with_ai: ja ? 'AI の出力を検証したレビュアーの最終値（独立の比較ではない）'
+      : 'final values from reviewers who verified the AI output, which is not an independent comparison',
   };
   const levels = { study: ja ? '研究' : 'study', arm: ja ? '群' : 'arm',
     outcome_result: ja ? 'アウトカム結果' : 'outcome result', rob_domain: ja ? 'バイアスの領域' : 'risk-of-bias domain' };
+  const join = (items: string[]): string => ja ? items.join('、')
+    : items.length < 2 ? items.join('') : `${items.slice(0, -1).join(', ')} and ${items[items.length - 1]}`;
   const thresholds: string[] = [];
-  const labels = [ja ? '正確度 ≥' : 'accuracy ≥', ja ? '作り話の率 ≤' : 'fabrication rate ≤',
-    ja ? '欠けの率 ≤' : 'omission rate ≤', ja ? '誤った値の率 ≤' : 'wrong-value rate ≤'];
+  const labels = ja ? ['正確度', '作り話の率', '欠けの率', '誤った値の率']
+    : ['accuracy of at least', 'a fabrication rate of at most', 'an omission rate of at most', 'a wrong-value rate of at most'];
   [c.min_accuracy, c.max_fabrication_rate, c.max_omission_rate, c.max_wrong_value_rate].forEach((value, index) => {
     if (value !== null) {
-      thresholds.push(`${labels[index]} ${value}%`);
+      thresholds.push(`${labels[index]} ${value}%${ja ? (index === 0 ? ' 以上' : ' 以下') : ''}`);
     }
   });
   if (c.min_compared_cells !== null) {
-    thresholds.push(`${ja ? '比べられたセル ≥' : 'compared cells ≥'} ${c.min_compared_cells}`);
+    thresholds.push(ja ? `比べられたセル ${c.min_compared_cells} 件以上` : `at least ${c.min_compared_cells} compared cells`);
   }
-  const result = { met: ja ? '満たす' : 'met', not_met: ja ? '満たさない' : 'not met', not_evaluable: ja ? '判定できない' : 'not evaluable' };
-  const reasons = { '': '', no_pilot: ja ? 'パイロットがない。' : 'No completed pilot.',
-    no_compared_cells: ja ? '比べられたセルが 0。' : 'No compared cells.',
-    below_minimum: ja ? '比べられたセルが最小数未満。' : 'Compared cells below the minimum.' };
-  const percent = (value: number | null): string => value === null ? (ja ? '算出できず' : 'unavailable') : `${value.toFixed(2)}%`;
-  const timing = c.pilot_runs_before === 0 ? (ja ? 'パイロットの前に' : 'before the pilot')
-    : (ja ? 'パイロット開始後に' : 'after the pilot began');
-  const levelText = c.entity_levels.map((level) => levels[level]).join(', ');
+  const timing = before ? (ja ? 'パイロットの前に' : 'Before the pilot, we prespecified')
+    : (ja ? 'パイロットの開始後に' : 'After the pilot had begun, we specified');
+  const levelText = join(c.entity_levels.map((level) => levels[level]));
+  const version = ja ? `版 ${c.version}、${c.confirmed_at.slice(0, 10)} 確定`
+    : `version ${c.version}, confirmed on ${c.confirmed_at.slice(0, 10)}`;
+  const criteriaText = ja ? `${timing}、AI 抽出の合格基準（${version}）を、${join(thresholds)}とし、` +
+    `${groups[c.comparator]}と比べて${levelText}の単位で評価することを${before ? '事前に' : ''}定めた。`
+    : `${timing} acceptance criteria for AI extraction (${version}): ${join(thresholds)}, ` +
+      `assessed against ${groups[c.comparator]} at the ${levelText} ${c.entity_levels.length === 1 ? 'level' : 'levels'}. `;
+  if (e.result === 'not_evaluable') {
+    const reasons = {
+      '': ja ? '評価に必要な情報がなかった' : 'the information required for evaluation was unavailable',
+      no_pilot: ja ? 'パイロットがなかった' : 'there was no pilot run',
+      no_compared_cells: ja ? '比べられたセルがなかった' : 'no cells could be compared',
+      below_minimum: ja ? `比べられたセルが${before ? '事前に' : ''}定めた最小数に届かなかった`
+        : `fewer cells than the ${before ? 'prespecified' : 'specified'} minimum could be compared`,
+    };
+    return criteriaText + (ja ? `パイロットでは、${reasons[e.not_evaluable_reason]}ため、この基準を評価できなかった。`
+      : `In the pilot, these criteria could not be evaluated because ${reasons[e.not_evaluable_reason]}.`);
+  }
+  const percent = (value: number | null): string => value === null ? (ja ? '算出できず' : 'unavailable') : `${value.toFixed(1)}%`;
   if (ja) {
-    return `AI 抽出の合格基準（版 ${c.version}）は ${c.confirmed_at.slice(0, 10)} に、${timing}確定した。` +
-      `比較相手: ${groups[c.comparator]}。対象レベル: ${levelText}。基準: ${thresholds.join(', ')}。` +
-      `パイロット ${e.pilot_studies} 研究の結果: ${result[e.result]}（比べられたセル ${e.compared}、` +
+    return criteriaText + `パイロットの ${e.pilot_studies} 研究で、AI 抽出はこの基準を${e.result === 'met' ? '満たした' : '満たさなかった'}（` +
       `正確度 ${percent(e.accuracy)}、作り話の率 ${percent(e.fabrication_rate)}、欠けの率 ${percent(e.omission_rate)}、` +
-      `誤った値の率 ${percent(e.wrong_value_rate)}）。${reasons[e.not_evaluable_reason]}`;
+      `誤った値の率 ${percent(e.wrong_value_rate)}、比べられたセル ${e.compared} 件）。`;
   }
-  return `Acceptance criteria for AI extraction (version ${c.version}) were confirmed on ${c.confirmed_at.slice(0, 10)}, ${timing}. ` +
-    `Comparator: ${groups[c.comparator]}. Entity levels: ${levelText}. Criteria: ${thresholds.join(', ')}. ` +
-    `Results for ${e.pilot_studies} pilot studies: ${result[e.result]} (compared cells ${e.compared}; ` +
-    `accuracy ${percent(e.accuracy)}; fabrication rate ${percent(e.fabrication_rate)}; omission rate ${percent(e.omission_rate)}; ` +
-    `wrong-value rate ${percent(e.wrong_value_rate)}). ${reasons[e.not_evaluable_reason]}`;
+  return criteriaText + `In the pilot of ${e.pilot_studies} ${e.pilot_studies === 1 ? 'study' : 'studies'}, ` +
+    `AI extraction ${e.result === 'met' ? 'met' : 'did not meet'} these criteria (accuracy ${percent(e.accuracy)}, ` +
+    `fabrication rate ${percent(e.fabrication_rate)}, omission rate ${percent(e.omission_rate)}, ` +
+    `wrong-value rate ${percent(e.wrong_value_rate)}, ${e.compared} compared ${e.compared === 1 ? 'cell' : 'cells'}).`;
 }

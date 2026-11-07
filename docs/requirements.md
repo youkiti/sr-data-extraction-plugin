@@ -575,7 +575,7 @@ owner だけが確定できる。旧プロジェクトでは初回確定時に�
 | max_omission_rate | 欠けの率の上限（同上） |
 | max_wrong_value_rate | 誤った値の率の上限（同上） |
 | min_compared_cells | 比べられたセルの最小数（正の整数、空欄可） |
-| pilot_runs_before | 確定時に既にあった完了済み pilot run 数。0 はパイロット前、1 以上は後の確定 |
+| pilot_runs_before | 確定した時点で ExtractionRuns にあったパイロット run の数（状態を問わない、重複する run_id は 1 つ）。0 はパイロット前、1 以上は開始後の確定 |
 | note | 任意の自由記述 |
 
 率の 4 項目のうち 1 つ以上を必須とする。入力初期値は空欄、対象レベルは全選択。

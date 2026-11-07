@@ -1305,18 +1305,24 @@
             正確度の下限、作り話・欠け・誤った値の率の上限（0〜100%、4 つのうち 1 つ以上）、任意の最小セル数、
             比べる相手（独立の人、裁定後の値、独立抽出者の最終値、AI を見ながら判定した人）、対象レベルを指定します。
             初期値は空欄です。CESAR の感度 92%、重大な誤り 3% は参考で、自動入力されません。
-            AI を見ながら判定した人との比較は独立比較ではありません。パイロット後に確定した版は、その事実も記録します。</span>
+            AI を見ながら判定した人との比較は独立比較ではありません。
+            実行中・中断・失敗を含め、一度でもパイロットを始めた後の確定は、開始後に確定した版として記録します。</span>
             <span class="en" lang="en">Before the pilot, the owner sets and confirms acceptance criteria: minimum accuracy,
             maximum fabrication, omission and wrong-value rates (0–100%; at least one rate), optional minimum compared cells,
             comparator (independent reviewers, consensus, independent final values, or AI-assisted final values), and entity levels.
             Inputs start blank. CESAR sensitivity 92% and major errors 3% are references and are not filled in automatically.
-            AI-assisted review is not an independent comparison. Versions confirmed after a pilot are recorded as such.</span></p>
+            AI-assisted review is not an independent comparison.
+            Confirmation after any pilot has started, including running, interrupted or failed runs, is recorded as occurring after the pilot began.</span></p>
           <p><span class="ja" lang="ja">「結果を計算」で完了済みパイロットの研究を比較します。基準をすべて満たせば「満たす」、
             いずれかに届かなければ「満たさない」、パイロットなし・比較セル 0・最小数未満なら理由付きで「判定できない」と表示します。
+            表には基準、設定値、パイロットの値、判定が並びます。設定なしの率と計算前の値・判定は「—」で表示します。
+            比べられたセル数の行では、最小数があればその判定も示します。
             版は追記保存され、過去版は消えません。現行の基準と結果は Methods 文案に、各版は R セットの acceptance_criteria.csv に出ます。</span>
             <span class="en" lang="en">Use “Calculate results” to compare completed pilot studies. Results are “Met” if all criteria
             are satisfied, “Not met” if any criterion fails, or “Not evaluable” with a reason if there is no pilot, no compared cells,
-            or too few cells. Versions are appended and preserved. The current criteria and result appear in the Methods text;
+            or too few cells. The table shows each criterion, setting, pilot value and judgment.
+            Unset rates and values and judgments before calculation show “—”. The compared-cell row also evaluates the minimum if set.
+            Versions are appended and preserved. The current criteria and result appear in the Methods text;
             every version appears in acceptance_criteria.csv in the R set.</span></p>
           <h3 id="pilot-notes">
             <span class="ja" lang="ja">判定メモと再パイロット</span>

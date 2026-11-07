@@ -595,7 +595,7 @@ describe('bootstrapApp', () => {
       state.schema.currentFields = [matrixField()];
       const draft = { ...emptyCriteriaDraft(), min_accuracy: '90' };
       state.pilot.criteria = { ...criteriaService.emptyCriteriaState(), draft, confirming: true, error: 'retry',
-        versions: [confirmCriteria(draft, [], 'owner@example.com', '2026-11-07T00:00:00Z', [])] };
+        versions: [confirmCriteria(draft, [], 'owner@example.com', '2026-11-07T00:00:00Z', 0)] };
       state.pilot.history = [];
       state.pilot.historyInitialized = true;
       const stub = createWindowStub(state);

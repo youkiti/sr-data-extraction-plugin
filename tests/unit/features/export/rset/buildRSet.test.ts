@@ -16,7 +16,7 @@ describe('buildRSet', () => {
 
   test('合格基準は版なしでヘッダーだけ、各版を判定し manifest に行数を載せる', () => {
     expect(parseCsv(built.files.find((file) => file.name === 'acceptance_criteria.csv')!.content)).toHaveLength(1);
-    const criteria = confirmCriteria({ ...emptyCriteriaDraft(), min_accuracy: '90' }, [], 'owner@example.com', '2026-11-07T00:00:00Z', []);
+    const criteria = confirmCriteria({ ...emptyCriteriaDraft(), min_accuracy: '90' }, [], 'owner@example.com', '2026-11-07T00:00:00Z', 0);
     const result = buildRSet({ ...MATERIALS, acceptanceCriteria: [criteria, { ...criteria, version: 2 }], comparisonRuns: [],
       pilotRuns: [{ runType: 'pilot', studyIds: MATERIALS.studies.map((study) => study.studyId) }] }, MANIFEST_META);
     const csv = result.files.find((file) => file.name === 'acceptance_criteria.csv')!;

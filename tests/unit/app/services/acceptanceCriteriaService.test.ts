@@ -4,7 +4,7 @@ import { calculateCriteria, cancelCriteriaConfirmation, changeCriteriaDraft, cri
 import type { VerificationDeps } from '../../../../src/app/services/verificationService';
 import { confirmCriteria, emptyCriteriaDraft } from '../../../../src/features/verification/acceptanceCriteria';
 import { appendAcceptanceCriteria, readAcceptanceCriteria } from '../../../../src/features/verification/acceptanceCriteriaRepository';
-import { readCompletedRunMetas, readPilotRuns } from '../../../../src/features/extraction/runRepository';
+import { countPilotRuns, readCompletedRunMetas, readPilotRuns } from '../../../../src/features/extraction/runRepository';
 import { getCurrentUserEmail } from '../../../../src/lib/google/identity';
 import { readStudies } from '../../../../src/features/documents/studyRepository';
 import { readDocuments } from '../../../../src/features/documents/documentRepository';
@@ -12,6 +12,7 @@ import { readStudyDataSheet, readResultsDataRows } from '../../../../src/feature
 import { readEvidenceRows } from '../../../../src/features/extraction/evidenceRepository';
 import { listSchemaVersions, getSchemaFieldsByVersion } from '../../../../src/features/schema/schemaRepository';
 import { makeRun } from '../../features/verification/pilotMatrixFixtures';
+import { setUiLanguage } from '../../../../src/lib/i18n';
 
 jest.mock('../../../../src/features/verification/acceptanceCriteriaRepository');
 jest.mock('../../../../src/features/extraction/runRepository');
@@ -25,15 +26,17 @@ jest.mock('../../../../src/features/extraction/evidenceRepository');
 jest.mock('../../../../src/features/schema/schemaRepository');
 const deps = { google: {}, profile: {}, now: () => '2026-11-07T00:00:00Z' } as VerificationDeps;
 const draft = { ...emptyCriteriaDraft(), min_accuracy: '90' };
-const criteria = confirmCriteria(draft, [], 'me@example.com', deps.now!(), []);
+const criteria = confirmCriteria(draft, [], 'me@example.com', deps.now!(), 0);
 function storeOf() {
   const state = createInitialState();
   state.currentProject = { projectId: 'p', spreadsheetId: 's', driveFolderId: 'd', name: 'SR' };
   return createStore(state);
 }
 beforeEach(() => {
+  setUiLanguage('ja');
   jest.mocked(readAcceptanceCriteria).mockResolvedValue({ versions: [criteria], ignoredCount: 0 });
   jest.mocked(readPilotRuns).mockResolvedValue([makeRun(), makeRun({ runType: 'full' })]);
+  jest.mocked(countPilotRuns).mockResolvedValue(1);
   jest.mocked(readCompletedRunMetas).mockResolvedValue([]);
   jest.mocked(getCurrentUserEmail).mockResolvedValue('me@example.com');
   jest.mocked(readStudies).mockResolvedValue([]);
@@ -43,6 +46,55 @@ beforeEach(() => {
   jest.mocked(readEvidenceRows).mockResolvedValue([]);
   jest.mocked(listSchemaVersions).mockResolvedValue([]);
   jest.mocked(getSchemaFieldsByVersion).mockResolvedValue([]);
+});
+
+test('完了 run がなくても開始済み件数を読込・警告・確定・計算後に保つ', async () => {
+  const store = storeOf();
+  jest.mocked(readPilotRuns).mockResolvedValue([]);
+  jest.mocked(countPilotRuns).mockResolvedValue(2);
+  await loadCriteria(store, deps);
+  expect(criteriaState(store).pilotCount).toBe(2);
+  changeCriteriaDraft(store, draft);
+  await saveCriteria(store, deps);
+  expect(criteriaState(store)).toMatchObject({ pilotCount: 2, confirming: true });
+  await saveCriteria(store, deps, true);
+  expect(appendAcceptanceCriteria).toHaveBeenCalledWith('s', expect.objectContaining({ pilot_runs_before: 2 }), deps.google);
+  await calculateCriteria(store, deps);
+  expect(criteriaState(store)).toMatchObject({ pilotCount: 2, evaluation: { not_evaluable_reason: 'no_pilot' } });
+});
+
+test.each(['ja', 'en'] as const)('入力エラーを %s の利用者向け文言で示す', async (language) => {
+  setUiLanguage(language);
+  const store = storeOf();
+  const invalid = { ...draft, comparator: 'invalid' as 'independent', entity_levels: [], min_accuracy: '-1',
+    max_fabrication_rate: '101', max_omission_rate: 'NaN', max_wrong_value_rate: 'Infinity', min_compared_cells: '0' };
+  changeCriteriaDraft(store, invalid);
+  await saveCriteria(store, deps);
+  const error = criteriaState(store).error!;
+  for (const key of ['min_accuracy', 'entity_levels', 'min_compared_cells']) {
+    expect(error).not.toContain(key);
+  }
+  expect(error).toContain(language === 'ja' ? '対象レベルを 1 つ以上' : 'Select at least one entity level');
+  expect(error).toContain(language === 'ja' ? '正確度 ≥ (%) は 0〜100' : 'from 0 to 100 for Accuracy');
+  expect(error).toContain(language === 'ja' ? '正の整数' : 'positive integer');
+  changeCriteriaDraft(store, emptyCriteriaDraft());
+  await saveCriteria(store, deps);
+  expect(criteriaState(store).error).toContain(language === 'ja' ? '4 つの率のうち 1 つ以上' : 'at least one of the four rates');
+  setUiLanguage('ja');
+});
+
+test('非 Error の読み込み・保存失敗と Error の計算失敗も接頭辞なしで表示する', async () => {
+  const store = storeOf();
+  jest.mocked(readAcceptanceCriteria).mockRejectedValueOnce('read failure');
+  await loadCriteria(store, deps);
+  expect(criteriaState(store).error).toBe('read failure');
+  changeCriteriaDraft(store, draft);
+  jest.mocked(readAcceptanceCriteria).mockRejectedValueOnce('save failure');
+  await saveCriteria(store, deps);
+  expect(criteriaState(store).error).toBe('save failure');
+  jest.mocked(readAcceptanceCriteria).mockRejectedValueOnce(new Error('calculate failure'));
+  await calculateCriteria(store, deps);
+  expect(criteriaState(store).error).toBe('calculate failure');
 });
 
 test('下書き保持と取消、非 owner・保存中は変更不可', () => {
@@ -68,7 +120,7 @@ test('読込・重複起動・失敗・再読込', async () => {
   expect(readAcceptanceCriteria).toHaveBeenCalledTimes(1);
   jest.mocked(readAcceptanceCriteria).mockRejectedValueOnce(new Error('read failure'));
   await loadCriteria(store, deps);
-  expect(criteriaState(store).error).toContain('read failure');
+  expect(criteriaState(store).error).toBe('read failure');
   await loadCriteria(store, deps);
   expect(criteriaState(store).error).toBeNull();
 });
@@ -91,7 +143,7 @@ test('owner は確認を挟み最大版の次に追記、パイロットだけ�
 test('検証・保存失敗・メール無し、非 owner は確定しない', async () => {
   const store = storeOf();
   await saveCriteria(store, deps);
-  expect(criteriaState(store).error).toContain('rates_required');
+  expect(criteriaState(store).error).toContain('4 つの率のうち 1 つ以上を入れてください');
   changeCriteriaDraft(store, draft);
   await saveCriteria(store, deps);
   jest.mocked(getCurrentUserEmail).mockResolvedValueOnce(null);
@@ -99,7 +151,7 @@ test('検証・保存失敗・メール無し、非 owner は確定しない', a
   expect(criteriaState(store).error).toContain('Invalid');
   jest.mocked(appendAcceptanceCriteria).mockRejectedValueOnce(new Error('write failure'));
   await saveCriteria(store, deps, true);
-  expect(criteriaState(store).error).toContain('write failure');
+  expect(criteriaState(store).error).toBe('write failure');
   expect(criteriaState(store).saving).toBe(false);
   store.setState({ role: { ...store.getState().role, role: 'adjudicator' } });
   jest.mocked(appendAcceptanceCriteria).mockClear();

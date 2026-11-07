@@ -84,7 +84,7 @@ function validEmail(value: string): boolean {
 }
 
 export function confirmCriteria(
-  draft: CriteriaDraft, rows: readonly AcceptanceCriteria[], email: string, now: string, pilotRuns: readonly PilotRun[],
+  draft: CriteriaDraft, rows: readonly AcceptanceCriteria[], email: string, now: string, pilotCount: number,
 ): AcceptanceCriteria {
   const errors = validateCriteriaDraft(draft);
   if (errors.length > 0 || !validEmail(email) || !validTimestamp(now)) {
@@ -96,7 +96,7 @@ export function confirmCriteria(
     min_accuracy: numberOrNull(draft.min_accuracy), max_fabrication_rate: numberOrNull(draft.max_fabrication_rate),
     max_omission_rate: numberOrNull(draft.max_omission_rate), max_wrong_value_rate: numberOrNull(draft.max_wrong_value_rate),
     min_compared_cells: numberOrNull(draft.min_compared_cells),
-    pilot_runs_before: pilotRuns.filter((run) => run.runType === 'pilot').length, note: draft.note };
+    pilot_runs_before: pilotCount, note: draft.note };
 }
 
 export function criteriaToRow(criteria: AcceptanceCriteria): string[] {
@@ -122,7 +122,7 @@ export function parseCriteriaRows(rows: readonly (readonly string[])[]): { versi
       ignoredCount++;
       continue;
     }
-    const parsed = confirmCriteria(draft, [], row[2]!, row[1]!, []);
+    const parsed = confirmCriteria(draft, [], row[2]!, row[1]!, 0);
     versions.push({ ...parsed, version, pilot_runs_before: pilotCount });
   }
   return { versions: versions.sort((a, b) => b.version - a.version), ignoredCount };

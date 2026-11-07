@@ -76,7 +76,7 @@ function makeInput(overrides: Partial<MethodsFactsInput> = {}): MethodsFactsInpu
 }
 
 test('Methods の現行版と結果は共通判定から作り、版なしでは追加しない', () => {
-  const criteria = confirmCriteria({ ...emptyCriteriaDraft(), min_accuracy: '90' }, [], 'owner@example.com', '2026-11-07T00:00:00Z', []);
+  const criteria = confirmCriteria({ ...emptyCriteriaDraft(), min_accuracy: '90' }, [], 'owner@example.com', '2026-11-07T00:00:00Z', 0);
   expect(buildMethodsFacts(makeInput()).acceptanceCriteria).toBeUndefined();
   expect(buildMethodsFacts(makeInput({ acceptanceCriteria: [criteria, { ...criteria, version: 2 }] })).acceptanceCriteria)
     .toMatchObject({ criteria: { version: 2 }, evaluation: { result: 'not_evaluable', not_evaluable_reason: 'no_pilot' } });

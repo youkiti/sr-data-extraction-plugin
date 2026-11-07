@@ -4,7 +4,7 @@ import type { ComparisonCell } from '../../../../src/features/verification/aiHum
 import { parseCsv } from '../../../../src/features/export/parseCsv';
 
 export const draft = (patch: Partial<CriteriaDraft> = {}): CriteriaDraft => ({ ...emptyCriteriaDraft(), min_accuracy: '75', ...patch });
-export const criteria = (patch: Partial<CriteriaDraft> = {}) => confirmCriteria(draft(patch), [], 'owner@example.com', '2026-11-07T00:00:00Z', []);
+export const criteria = (patch: Partial<CriteriaDraft> = {}) => confirmCriteria(draft(patch), [], 'owner@example.com', '2026-11-07T00:00:00Z', 0);
 export const cell = (patch: Partial<ComparisonCell> = {}): ComparisonCell => ({ studyId: 's1', studyLabel: 'Study',
   fieldId: 'f1', fieldName: 'name', fieldLabel: 'Name', entityLevel: 'study', entityKey: 'study', group: 'independent',
   annotator: 'human', annotatorType: 'human_independent', category: 'match', reason: null, aiValue: 'a', humanValue: 'a', missingQuote: false, ...patch });
@@ -28,16 +28,16 @@ test('初期値は空、率を 1 つ以上必須とし、範囲・有限数・�
   expect(validateCriteriaDraft(draft({ comparator: 'invalid' as 'independent' }))).toContain('comparator');
 });
 
-test('最大版を選び、完了パイロット数と確定者を記録する', () => {
+test('最大版を選び、開始済みパイロット数と確定者を記録する', () => {
   const first = criteria();
-  const second = confirmCriteria(draft({ min_compared_cells: '3' }), [first], 'a@b', first.confirmed_at, pilots);
+  const second = confirmCriteria(draft({ min_compared_cells: '3' }), [first], 'a@b', first.confirmed_at, 2);
   expect(second.version).toBe(2);
   expect(second.pilot_runs_before).toBe(2);
   expect(second.min_compared_cells).toBe(3);
   expect(currentCriteria([])).toBeNull();
   expect(currentCriteria([second, first])).toBe(second);
   for (const [value, email, now] of [[emptyCriteriaDraft(), 'a@b', first.confirmed_at], [draft(), '', first.confirmed_at], [draft(), 'a@b', 'bad']] as const) {
-    expect(() => confirmCriteria(value, [], email, now, [])).toThrow();
+    expect(() => confirmCriteria(value, [], email, now, 0)).toThrow();
   }
 });
 

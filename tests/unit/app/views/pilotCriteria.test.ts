@@ -6,13 +6,38 @@ import { confirmCriteria, emptyCriteriaDraft, evaluateCriteria } from '../../../
 import { registerMessages } from '../../../../src/lib/i18n';
 import { jaApp } from '../../../../src/lib/i18n/ja.app';
 import { enApp } from '../../../../src/lib/i18n/en.app';
+import { formatPilotRunDate } from '../../../../src/app/ui/formatPilotRunDate';
 registerMessages({ ja: jaApp, en: enApp });
 const criteria = confirmCriteria({ ...emptyCriteriaDraft(), min_accuracy: '90', note: '事前に決定' }, [],
-  'owner@example.com', '2026-11-07T00:00:00Z', []);
+  'owner@example.com', '2026-11-07T00:00:00Z', 0);
 function callbacks(): PilotViewCallbacks {
   return { onCriteriaDraft: jest.fn(), onConfirmCriteria: jest.fn(), onCancelCriteria: jest.fn(),
     onCalculateCriteria: jest.fn(), onReloadCriteria: jest.fn() } as unknown as PilotViewCallbacks;
 }
+
+test('結果表は設定・実測・個別判定を分け、計算前と設定なしはダッシュを表示する', () => {
+  const state = createInitialState();
+  const current = { ...criteria, max_fabrication_rate: 3, max_omission_rate: 8, min_compared_cells: 50 };
+  state.pilot.criteria = { ...emptyCriteriaState(), versions: [current] };
+  let view = renderPilotCriteria(state, callbacks());
+  expect(view.textContent).toContain(formatPilotRunDate(criteria.confirmed_at));
+  expect([...view.querySelectorAll('thead th')].map((node) => node.textContent)).toEqual(['基準', '設定値', 'パイロットの値', '判定']);
+  for (const row of view.querySelectorAll('tbody tr')) {
+    expect([...row.querySelectorAll('td')].slice(1).map((node) => node.textContent)).toEqual(['—', '—']);
+  }
+  for (const compared of [49, 50]) {
+    state.pilot.criteria.evaluation = { ...evaluateCriteria(current, [], [], new Set()),
+      accuracy: 89.95, fabrication_rate: 3, omission_rate: 9, wrong_value_rate: 5, compared };
+    view = renderPilotCriteria(state, callbacks());
+    const rows = [...view.querySelectorAll('tbody tr')].map((row) => [...row.querySelectorAll('td')].map((node) => node.textContent));
+    expect(rows).toEqual([
+      ['90%', '90.0%', '満たさない'], ['3%', '3.0%', '満たす'], ['8%', '9.0%', '満たさない'],
+      ['設定なし', '—', '—'], ['≥ 50', String(compared), compared === 50 ? '満たす' : '満たさない'],
+    ]);
+    expect(view.querySelector('#pilot-criteria-result')?.getAttribute('role')).toBe('status');
+    expect(view.querySelector('.dashboard__compare-scroll table')).not.toBeNull();
+  }
+});
 
 test('未設定は空入力、全レベル選択、各入力の変更と確認・取消を通知する', () => {
   const state = createInitialState();
@@ -68,7 +93,7 @@ test('現行と過去版、計算・エラー・警告・読み取り専用、�
       expect(view.querySelector('#pilot-criteria-result')).not.toBeNull();
       expect(view.textContent).toContain('版 2');
       expect(view.textContent).toContain('過去の版');
-      expect(view.textContent).toContain('95.00%');
+      expect(view.textContent).toContain('95.0%');
       expect(view.textContent).toContain('事前に決定');
       expect(view.querySelector('#pilot-criteria-confirm')).toBeNull();
       view.querySelector<HTMLButtonElement>('#pilot-criteria-calculate')!.click();
