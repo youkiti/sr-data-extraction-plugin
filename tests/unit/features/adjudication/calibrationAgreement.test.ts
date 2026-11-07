@@ -79,6 +79,8 @@ describe('calibration の全ペア一致度', () => {
     ];
     const input = { ...empty, studies, studyDataRows: rows };
     const result = computeCalibrationAgreement(input);
+    expect(result.map((pair) => pair.report.withAiStudyCount)).toEqual([2, 2, 2]);
+    expect(result.map((pair) => pair.report.overall.withAiPairCount)).toEqual([2, 2, 2]);
     expect(
       result.map(({ annotatorA, annotatorB, studyCount, agreementRate, kappa }) => ({
         annotatorA,
@@ -97,6 +99,7 @@ describe('calibration の全ペア一致度', () => {
       studies.map((s) => ({
         studyId: s.studyId,
         studyLabel: s.studyLabel,
+        bothWithAi: true,
         cells: buildAdjudicationCells(
           input.fields,
           rows.find((r) => r.studyId === s.studyId && r.annotator === a) as StudyDataRow,

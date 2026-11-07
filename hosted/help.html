@@ -2024,7 +2024,7 @@
               <span class="ja" lang="ja"
                 >2 名の検証が揃った試験は「不一致の解消」画面で処理します。群構成を突き合わせ、一致セルは一括採用、不一致セルは個別に裁定して
                 consensus（確定版）を作ります。2 名とも空のセルは比べられないため、一致には数えず「両者とも未入力」として別に件数を出し、一括採用の対象からも外します（「不一致のみ表示」でも表示されるので、個別に裁定してください）。レビュアー間一致度（κ）も確認できます。一致度は 2
-                名とも検証を終えた試験だけで計算し、比べられるセルが 1 件もないときは「比べられるセルがありません」と表示します。</span
+                名とも検証を終えた試験だけで計算し、比べられるセルが 1 件もないときは「比べられるセルがありません」と表示します。裁定の記録にはどちらの値を採ったか・その値が AI の値の accept だったかが残り、2 人とも AI を見ながら検証した研究は一致度カードに「独立の一致ではない」と表示されます（κ には含めます）。</span
               >
               <span class="en" lang="en"
                 >Once both reviewers are done, the “Resolve conflicts” screen matches the arm structures, bulk-accepts agreeing
@@ -2032,7 +2032,7 @@
                 compared: they are not counted as matching, are shown with their own count as “Both empty”, are left out
                 of the bulk accept, and still appear under “Show mismatches only” so you can settle them one by one.
                 Inter-reviewer agreement (κ) is shown as well. It uses only studies both reviewers have finished, and
-                shows “No cells to compare” when no cell has values from both reviewers.</span
+                shows “No cells to compare” when no cell has values from both reviewers. Adjudication records retain whose value was adopted and whether it came from accepting the AI value; studies where both reviewers viewed AI values are marked as not independent agreement in the agreement card (still included in κ).</span
               >
             </li>
             <li>
