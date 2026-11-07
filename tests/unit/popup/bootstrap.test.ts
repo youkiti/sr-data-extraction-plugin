@@ -19,12 +19,19 @@ import { loadTiabHandoff } from '../../../src/features/project/tiabHandoffStore'
 import { PICKER_PAGE_URL, type PickerSelection } from '../../../src/lib/google/picker';
 import type { GoogleApiDeps } from '../../../src/lib/google/types';
 import { setUiLanguage } from '../../../src/lib/i18n';
+import { loadSignInDataConsent } from '../../../src/lib/storage/signInDataConsentStore';
+
+function installConsentedChromeMock(): ChromeMock {
+  const mock = installChromeMock();
+  mock.storage.local.data.signInDataConsent = { version: 1, acceptedAt: '2026-07-01T00:00:00.000Z' };
+  return mock;
+}
 
 const POPUP_TEMPLATE = `
   <main class="popup">
     <p id="popup-status">読み込み中…</p>
     <section id="popup-auth" hidden>
-      <button id="login-button" type="button">Google でログイン</button>
+      <button id="login-button" type="button">同意して Google でログイン</button>
       <p id="login-error"></p>
     </section>
     <div id="popup-projects" hidden>
@@ -67,6 +74,163 @@ const flush = async (): Promise<void> => {
     await new Promise((resolve) => setTimeout(resolve, 0));
   }
 };
+
+describe('サインインの前の告知と同意', () => {
+  let mock: ChromeMock;
+  beforeEach(() => {
+    mock = installChromeMock();
+    document.body.innerHTML = POPUP_TEMPLATE;
+  });
+
+  test('認可の前に現在の版と日時を記録する', async () => {
+    const deps = makeDeps({
+      isAuthenticated: jest.fn(async () => false),
+      signIn: jest.fn(async () => {
+        expect(await loadSignInDataConsent()).toEqual({ version: 1, acceptedAt: expect.any(String) });
+        return false;
+      }),
+    });
+    await bootstrapPopup(document, deps);
+    el('login-button').click();
+    await flush();
+    expect(deps.signIn).toHaveBeenCalledTimes(1);
+    expect(Number.isNaN(Date.parse((await loadSignInDataConsent())!.acceptedAt))).toBe(false);
+  });
+
+  test('保存に失敗したら認可へ進まずエラーを表示する', async () => {
+    const deps = makeDeps({ isAuthenticated: jest.fn(async () => false) });
+    await bootstrapPopup(document, deps);
+    mock.storage.local.set.mockRejectedValueOnce(new Error('保存失敗'));
+    el('login-button').click();
+    expect(el<HTMLButtonElement>('login-button').disabled).toBe(true);
+    await flush();
+    expect(deps.signIn).not.toHaveBeenCalled();
+    expect(el('login-error').textContent).toBe('同意を記録できませんでした。もう一度お試しください。');
+    expect(el<HTMLButtonElement>('login-button').disabled).toBe(false);
+  });
+
+  test.each([null, { version: 0, acceptedAt: 'old' }])('未同意または旧版 %p はプロジェクトを隠して小窓で確認する', async (record) => {
+    mock.storage.local.data.signInDataConsent = record;
+    const deps = makeDeps();
+    el('open-options').focus();
+    const boot = bootstrapPopup(document, deps);
+    await flush();
+    const panel = el('sign-in-data-consent');
+    expect(panel).not.toBeNull();
+    expect(document.activeElement).toBe(panel);
+    expect(el('popup-projects').hidden).toBe(true);
+    expect(deps.chromeProfileEmail).not.toHaveBeenCalled();
+    expect(panel.querySelector('h2')!.textContent).toBe('この拡張が扱うデータ');
+    const link = panel.querySelector('a')!;
+    expect(link.href).toBe('https://youkiti.github.io/sr-data-extraction-plugin/privacy-policy.html?lang=ja');
+    expect(link.target).toBe('_blank');
+    el('sign-in-data-consent-accept').click();
+    await boot;
+    expect(await loadSignInDataConsent()).toEqual({ version: 1, acceptedAt: expect.any(String) });
+    expect(document.getElementById('sign-in-data-consent')).toBeNull();
+    expect(el('popup-projects').hidden).toBe(false);
+    expect(document.activeElement).toBe(el('open-options'));
+  });
+
+  test('小窓で保存失敗を表示し、再試行で続行する', async () => {
+    const boot = bootstrapPopup(document, makeDeps());
+    await flush();
+    mock.storage.local.set.mockRejectedValueOnce(new Error('保存失敗'));
+    el('sign-in-data-consent-accept').click();
+    expect(el<HTMLButtonElement>('sign-in-data-consent-logout').disabled).toBe(true);
+    await flush();
+    expect(el('sign-in-data-consent-error').textContent).toBe('同意を記録できませんでした。もう一度お試しください。');
+    expect(el('popup-projects').hidden).toBe(true);
+    expect(el<HTMLButtonElement>('sign-in-data-consent-accept').disabled).toBe(false);
+    el('sign-in-data-consent-accept').click();
+    await boot;
+    expect(el('popup-projects').hidden).toBe(false);
+  });
+
+  test('小窓からログアウトすると選択状態も消し、同意は記録しない', async () => {
+    await setCurrentProject({ projectId: 'p', spreadsheetId: 's', driveFolderId: 'f', name: 'test' });
+    const deps = makeDeps();
+    const boot = bootstrapPopup(document, deps);
+    await flush();
+    (deps.isAuthenticated as jest.Mock).mockResolvedValue(false);
+    el('sign-in-data-consent-logout').click();
+    await boot;
+    expect(deps.signOut).toHaveBeenCalledTimes(1);
+    expect(await loadCurrentProject()).toBeNull();
+    expect(await loadSignInDataConsent()).toBeNull();
+    expect(el('popup-auth').hidden).toBe(false);
+  });
+
+  test('現在の版なら小窓を出さず、通常ログアウトでも記録を残す', async () => {
+    const record = { version: 1, acceptedAt: '2026-07-01T00:00:00.000Z' };
+    mock.storage.local.data.signInDataConsent = record;
+    const deps = makeDeps();
+    await bootstrapPopup(document, deps);
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    expect(el('popup-projects').hidden).toBe(false);
+    (deps.isAuthenticated as jest.Mock).mockResolvedValue(false);
+    el('logout-button').click();
+    await flush();
+    expect(await loadSignInDataConsent()).toEqual(record);
+  });
+
+  test.each(['connected', 'removed', 'none'])('小窓は Esc を無視し Tab を循環させる（元のフォーカス %s）', async (focus) => {
+    const previous = el('open-options');
+    previous.focus();
+    if (focus === 'none') {
+      jest.spyOn(document, 'activeElement', 'get').mockReturnValueOnce(null);
+    }
+    const boot = bootstrapPopup(document, makeDeps());
+    await flush();
+    const panel = el('sign-in-data-consent');
+    const first = panel.querySelector('a')!;
+    const accept = el('sign-in-data-consent-accept');
+    const last = el('sign-in-data-consent-logout');
+    const key = (value: string, shiftKey = false): KeyboardEvent => {
+      const event = new KeyboardEvent('keydown', { key: value, shiftKey, bubbles: true, cancelable: true });
+      document.dispatchEvent(event);
+      return event;
+    };
+    expect(key('Escape').defaultPrevented).toBe(true);
+    expect(panel.isConnected).toBe(true);
+    expect(key('Enter').defaultPrevented).toBe(false);
+    key('Tab', true);
+    expect(document.activeElement).toBe(last);
+    key('Tab');
+    expect(document.activeElement).toBe(first);
+    key('Tab', true);
+    expect(document.activeElement).toBe(last);
+    first.focus();
+    expect(key('Tab').defaultPrevented).toBe(false);
+    accept.focus();
+    expect(key('Tab', true).defaultPrevented).toBe(false);
+    previous.focus();
+    key('Tab');
+    expect(document.activeElement).toBe(first);
+    if (focus === 'removed') {
+      previous.remove();
+    }
+    accept.click();
+    await boot;
+    jest.restoreAllMocks();
+  });
+
+  test.each(['ja', 'en'])('未ログインの告知本文と小窓の本文は %s で一致する', async (language) => {
+    mock.storage.local.data['settings.uiLanguage'] = language;
+    document.body.innerHTML = readFileSync(resolve(__dirname, '../../../src/popup/popup.html'), 'utf8');
+    const deps = makeDeps({ isAuthenticated: jest.fn(async () => false) });
+    await bootstrapPopup(document, deps);
+    const body = document.querySelector('[data-i18n="signInConsent.body"]')!.textContent;
+    expect(body).not.toBe('');
+    (deps.isAuthenticated as jest.Mock).mockResolvedValue(true);
+    const boot = bootstrapPopup(document, deps);
+    await flush();
+    expect(el('sign-in-data-consent-body').textContent).toBe(body);
+    el('sign-in-data-consent-accept').click();
+    await boot;
+    setUiLanguage('ja');
+  });
+});
 
 /** createProject / loadProjectMeta が発行する全 API に応答する寛容なスタブ */
 function makeGoogle(): GoogleApiDeps {
@@ -206,7 +370,7 @@ function makeTiabGoogle(options: { includeCount?: number } = {}): GoogleApiDeps 
 
 describe('bootstrapPopup', () => {
   beforeEach(() => {
-    installChromeMock();
+    installConsentedChromeMock();
     document.body.innerHTML = POPUP_TEMPLATE;
   });
 
@@ -1257,7 +1421,7 @@ describe('bootstrapPopup', () => {
     });
 
     test('引き継ぎ状態の storage 保存に失敗しても（ベストエフォート）#/documents へ遷移する', async () => {
-      const chromeMock = installChromeMock();
+      const chromeMock = installConsentedChromeMock();
       // tiab-handoff キーの書き込みだけ失敗させる（プロジェクト作成自体の保存は通常どおり）
       chromeMock.storage.local.set.mockImplementation(async (items: Record<string, unknown>) => {
         if (Object.keys(items).some((key) => key.startsWith('sr-data-extraction:tiab-handoff:'))) {
@@ -1287,7 +1451,7 @@ describe('bootstrapPopup', () => {
     });
 
     test('状態 E（失敗）: 作成失敗でエラー表示・ボタン復帰・プロジェクトは作られない', async () => {
-      const chromeMock = installChromeMock();
+      const chromeMock = installConsentedChromeMock();
       const openTiabSheetPicker = jest.fn(async () => SELECTION);
       const google: GoogleApiDeps = {
         getAccessToken: async () => 'tok',
@@ -1341,7 +1505,7 @@ describe('createChromePopupDeps', () => {
   let chromeMock: ChromeMock;
 
   beforeEach(() => {
-    chromeMock = installChromeMock();
+    chromeMock = installConsentedChromeMock();
   });
 
   test('openAppTab / openOptions とも同一タブでメインビューへ遷移する（別タブを開かない）', () => {
@@ -1478,7 +1642,7 @@ describe('bootstrapPopup（表示言語 en。issue #93）', () => {
     <main class="popup">
       <p id="popup-status" data-i18n="popup.loading">読み込み中…</p>
       <section id="popup-auth" hidden>
-        <button id="login-button" type="button" data-i18n="popup.login">Google でログイン</button>
+        <button id="login-button" type="button" data-i18n="popup.login">同意して Google でログイン</button>
         <p id="login-error"></p>
       </section>
       <div id="popup-projects" hidden>
@@ -1528,7 +1692,7 @@ describe('bootstrapPopup（表示言語 en。issue #93）', () => {
   `;
 
   beforeEach(() => {
-    const chromeMock = installChromeMock();
+    const chromeMock = installConsentedChromeMock();
     chromeMock.storage.local.data['settings.uiLanguage'] = 'en';
     document.body.innerHTML = POPUP_TEMPLATE_I18N;
     document.documentElement.lang = 'ja';
@@ -1541,7 +1705,7 @@ describe('bootstrapPopup（表示言語 en。issue #93）', () => {
   test('保存済み言語（en）で静的文言と <html lang> を解決する', async () => {
     await bootstrapPopup(document, makeDeps({ isAuthenticated: jest.fn(async () => false) }));
     expect(document.documentElement.lang).toBe('en');
-    expect(el('login-button').textContent).toBe('Sign in with Google');
+    expect(el('login-button').textContent).toBe('Agree and sign in with Google');
     expect(el('open-options').textContent).toBe('Open settings');
     expect(el<HTMLInputElement>('popup-create-title').placeholder).toBe('Project title');
     // 動的ステータスも en
@@ -1583,7 +1747,7 @@ describe('bootstrapPopup（フッタの再起動案内）', () => {
     ['ja', '次回は、アドレスバー右のパズル型ボタンからこの拡張をピン留めするか、このページをブックマークすると、すぐに開けます。'],
     ['en', 'To reopen this page later, pin the extension from the puzzle-piece button next to the address bar, or bookmark this page.'],
   ])('未ログインでも %s の案内を表示する', async (language, text) => {
-    const mock = installChromeMock();
+    const mock = installConsentedChromeMock();
     mock.storage.local.data['settings.uiLanguage'] = language;
     document.body.innerHTML = readFileSync(
       resolve(__dirname, '../../../src/popup/popup.html'),

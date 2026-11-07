@@ -20,13 +20,18 @@
           プロジェクトは Google Sheets / Drive に保存されます。Google
           アカウントでログインしてください。
         </p>
+        <h2 class="popup__section-title" data-i18n="signInConsent.title">この拡張が扱うデータ</h2>
+        <p class="popup__muted" data-i18n="signInConsent.body">Google アカウントのメールアドレスは、誰が抽出・判定したかの記録と、次のログインでのアカウントの指定に使います。プロジェクト（スプレッドシートと Drive のフォルダ）、取り込んだ PDF、抽出したデータ、判定の記録は、あなた自身の Google Drive と Sheets に保存します。開発者のサーバーには送りません。AI の機能で送る内容は、使う前に別に確かめます。</p>
+        <p class="popup__muted">
+          <a href="https://youkiti.github.io/sr-data-extraction-plugin/privacy-policy.html" data-public-page target="_blank" rel="noopener noreferrer" data-i18n="aiConsent.privacyLink">プライバシーポリシー</a>
+        </p>
         <button
           type="button"
           id="login-button"
           class="popup__button popup__button--primary"
           data-i18n="popup.login"
         >
-          Google でログイン
+          同意して Google でログイン
         </button>
         <p class="popup__form-error" id="login-error"></p>
       </section>

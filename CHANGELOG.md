@@ -14,12 +14,17 @@ This is the public changelog of this extension. Any change that can alter AI out
 ## 未リリース / Unreleased
 
 ### その他の変更 / Other changes
+- 同意画面の Gemini の無料枠の説明を Gemini API 追加利用規約の原文の範囲にそろえました。同意済みの方にも、次の AI 機能の実行前に 1 回だけ確認を出し直します（2026-11-07、#381）。  
+  Aligned the Gemini free tier explanation in the consent notice with the scope of the Gemini API Additional Terms of Service. Users who already agreed will see the notice once again before their next AI feature (2026-11-07, #381).
 - 文献取り込みで Drive からのコピーに失敗したとき、進捗の表示に Google が返した理由（例 `appNotAuthorizedToFile`）を添え、診断ログ（ApiErrorLog タブ）にも記録するようにしました（2026-11-07、issue #279）。  
   When copying from Drive fails during document import, the progress display now includes the reason returned by Google (e.g. `appNotAuthorizedToFile`), and the failure is also recorded in the diagnostic log (ApiErrorLog tab) (2026-11-07, issue #279).
 - 判定時に見ていた AI の値と根拠 ID、引用の AI 再特定のログ・モデル・プロンプト版を記録し、audit.csv に出力します（2026-11-07）。
   Record the AI value and evidence IDs seen at decision time, plus the log, model and prompt version of AI quote relocation, and export them in audit.csv (2026-11-07).
 - 公開の変更履歴（このファイル）を作り、利用規約とヘルプから変更の告知先として案内するようにしました。リリースの手順で、既定モデル・プロンプトの版数・推論の強さの既定が前回のリリースから変わったのにこのファイルが更新されていなければ止まるようにしました。  
   Added this public changelog and named it in the terms of service and the help page as the place where changes are announced. The release procedure now stops when the default model, a prompt version or the default reasoning effort has changed since the previous release and this file has not been updated.
+
+- 最初のログインの前に、メールアドレスの用途と自分の Drive・Sheets への保存を告知し、同意を記録するようにしました。ログイン済みの方には、次にプロジェクト選択ページを開いたときに 1 回だけ確認を出します（2026-11-07、#381）。  
+  Before the first sign-in, a notice explains how your email address is used and that data is saved in your own Drive and Sheets, and your consent is recorded. Users who are already signed in will see the notice once when they next open the project page (2026-11-07, #381).
 
 ## v0.23.0（2026-10-26）
 

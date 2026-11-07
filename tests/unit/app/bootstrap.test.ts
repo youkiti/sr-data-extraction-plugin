@@ -124,6 +124,7 @@ import { SHEET_HEADERS } from '../../../src/domain/sheetsSchema';
 import { documentToRow } from '../../../src/features/documents/documentRepository';
 import { CURRENT_PROJECT_STORAGE_KEY } from '../../../src/features/project/projectStore';
 import { setUiLanguage } from '../../../src/lib/i18n';
+import { AI_DATA_CONSENT_VERSION } from '../../../src/lib/storage/aiDataConsentStore';
 
 interface WindowStub {
   document: Document;
@@ -189,7 +190,7 @@ describe('createChromeAppDeps', () => {
 
   test('AI へ送る前の同意のゲートを必ず注入する（issue #381。未注入だと確認なしで送ってしまう）', async () => {
     const chromeMock = installChromeMock();
-    chromeMock.storage.local.data.aiDataConsent = { version: 1, acceptedAt: '2026-10-20T00:00:00Z' };
+    chromeMock.storage.local.data.aiDataConsent = { version: AI_DATA_CONSENT_VERSION, acceptedAt: '2026-10-20T00:00:00Z' };
     const deps = createChromeAppDeps();
     expect(deps.ensureAiDataConsent).toBeDefined();
     await expect(deps.ensureAiDataConsent?.('gemini')).resolves.toBe(true);

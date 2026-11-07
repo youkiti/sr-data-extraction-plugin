@@ -274,7 +274,7 @@ test('初回の AI 機能の実行前に同意画面を出す。キャンセル�
   const record = await page.evaluate(
     () => (window as unknown as { __E2E_STORED__: Record<string, unknown> }).__E2E_STORED__.aiDataConsent,
   );
-  expect(record).toMatchObject({ version: 1 });
+  expect(record).toMatchObject({ version: 2 });
 });
 
 test('Options の「AI へ送る内容」で説明を見直し、同意と取り消しができる', async ({ page }) => {
