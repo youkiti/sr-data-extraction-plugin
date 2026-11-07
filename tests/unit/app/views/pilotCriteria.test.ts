@@ -7,6 +7,7 @@ import { registerMessages } from '../../../../src/lib/i18n';
 import { jaApp } from '../../../../src/lib/i18n/ja.app';
 import { enApp } from '../../../../src/lib/i18n/en.app';
 import { formatPilotRunDate } from '../../../../src/app/ui/formatPilotRunDate';
+import type { ComparisonCell } from '../../../../src/features/verification/aiHumanComparison';
 registerMessages({ ja: jaApp, en: enApp });
 const criteria = confirmCriteria({ ...emptyCriteriaDraft(), min_accuracy: '90', note: '事前に決定' }, [],
   'owner@example.com', '2026-11-07T00:00:00Z', 0);
@@ -27,7 +28,9 @@ test('結果表は設定・実測・個別判定を分け、計算前と設定�
   }
   for (const compared of [49, 50]) {
     state.pilot.criteria.evaluation = { ...evaluateCriteria(current, [], [], new Set()),
-      accuracy: 89.95, fabrication_rate: 3, omission_rate: 9, wrong_value_rate: 5, compared };
+      accuracy: 89.95, fabrication_rate: 3, omission_rate: 9, wrong_value_rate: 5, compared,
+      checks: { min_accuracy: false, max_fabrication_rate: true, max_omission_rate: false,
+        max_wrong_value_rate: null, min_compared_cells: compared === 50 } };
     view = renderPilotCriteria(state, callbacks());
     const rows = [...view.querySelectorAll('tbody tr')].map((row) => [...row.querySelectorAll('td')].map((node) => node.textContent));
     expect(rows).toEqual([
@@ -124,4 +127,31 @@ test('省略可能なコールバックがない場合も表示と操作は安�
   view.querySelectorAll('button').forEach((node) => node.click());
   view.querySelectorAll('input, textarea').forEach((node) => node.dispatchEvent(new Event('input')));
   view.querySelectorAll('select, input[type="checkbox"]').forEach((node) => node.dispatchEvent(new Event('change')));
+});
+
+test('計算中は確認と確定の両ボタンを無効にする', () => {
+  const state = createInitialState();
+  const ctx = callbacks();
+  state.pilot.criteria = { ...emptyCriteriaState(), calculating: true, confirming: true };
+  const view = renderPilotCriteria(state, ctx);
+  for (const id of ['confirm', 'save']) {
+    const button = view.querySelector<HTMLButtonElement>(`#pilot-criteria-${id}`)!;
+    expect(button.disabled).toBe(true);
+    button.click();
+  }
+  expect(ctx.onConfirmCriteria).not.toHaveBeenCalled();
+});
+
+test('正確度 29% の境界で行と全体がともに満たすと表示する', () => {
+  const state = createInitialState();
+  const current = { ...criteria, min_accuracy: 29 };
+  const cells = Array.from({ length: 100 }, (_, index): ComparisonCell => ({ studyId: 's1', studyLabel: 'Study',
+    fieldId: 'f1', fieldName: 'name', fieldLabel: 'Name', entityLevel: 'study', entityKey: 'study', group: 'independent',
+    annotator: 'human', annotatorType: 'human_independent', category: index < 29 ? 'match' : 'omission',
+    reason: null, aiValue: 'a', humanValue: 'a', missingQuote: false }));
+  const evaluation = evaluateCriteria(current, cells, [{ runType: 'pilot', studyIds: ['s1'] }], new Set(['s1']));
+  state.pilot.criteria = { ...emptyCriteriaState(), versions: [current], evaluation };
+  const view = renderPilotCriteria(state, callbacks());
+  expect(view.querySelector('tbody tr')?.textContent).toContain('29.0%満たす');
+  expect(view.querySelector('#pilot-criteria-result')?.textContent).toBe('満たす');
 });

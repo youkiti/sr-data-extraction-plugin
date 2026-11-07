@@ -93,7 +93,7 @@ export async function saveCriteria(store: Store, deps: VerificationDeps, confirm
   const state = store.getState();
   const project = state.currentProject;
   const form = criteriaState(store);
-  if (!project || (state.role.role ?? 'owner') !== 'owner' || form.saving || form.loading ||
+  if (!project || (state.role.role ?? 'owner') !== 'owner' || form.saving || form.calculating || form.loading ||
       (confirmed && !form.confirming)) {
     return;
   }
@@ -147,6 +147,7 @@ export async function calculateCriteria(store: Store, deps: VerificationDeps): P
     return;
   }
   const id = project.spreadsheetId;
+  const initialVersion = currentCriteria(criteriaState(store).versions ?? [])?.version;
   patch(store, { calculating: true, error: null, evaluation: null });
   try {
     const [criteria, studies, documents, studySheet, resultRows, evidence, runs, pilots, versions, pilotCount] = await Promise.all([
@@ -161,6 +162,10 @@ export async function calculateCriteria(store: Store, deps: VerificationDeps): P
     const current = currentCriteria(criteria.versions);
     const evaluation = current === null ? null : evaluateCriteria(current, cells, pilots, new Set(active.map((study) => study.studyId)));
     if (store.getState().currentProject?.spreadsheetId === id) {
+      if (currentCriteria(criteriaState(store).versions ?? [])?.version !== initialVersion) {
+        patch(store, { calculating: false });
+        return;
+      }
       patch(store, { ...criteria, evaluation, calculating: false, pilotCount });
     }
   } catch (err) {

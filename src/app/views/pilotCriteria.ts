@@ -66,11 +66,11 @@ function renderDraft(form: CriteriaState, ctx: PilotViewCallbacks): HTMLElement 
   if (form.pilotCount > 0) {
     children.push(el('p', { text: t('criteria.afterWarning') }));
   }
-  children.push(button('pilot-criteria-confirm', 'criteria.confirm', () => ctx.onConfirmCriteria?.(false), form.loading || form.saving));
+  children.push(button('pilot-criteria-confirm', 'criteria.confirm', () => ctx.onConfirmCriteria?.(false), form.loading || form.saving || form.calculating));
   if (form.confirming) {
     children.push(el('div', { id: 'pilot-criteria-confirmation', attributes: { role: 'group', 'aria-label': t('criteria.confirm') } }, [
       el('p', { text: t('criteria.confirmPrompt') }),
-      button('pilot-criteria-save', 'criteria.confirmSave', () => ctx.onConfirmCriteria?.(true), form.saving),
+      button('pilot-criteria-save', 'criteria.confirmSave', () => ctx.onConfirmCriteria?.(true), form.saving || form.calculating),
       button('pilot-criteria-cancel', 'common.cancel', () => ctx.onCancelCriteria?.(), form.saving),
     ]));
   }
@@ -96,13 +96,12 @@ function renderCurrent(current: AcceptanceCriteria, form: CriteriaState): HTMLEl
     const value = result?.[resultKeys[key]];
     const threshold = current[key];
     const comparable = threshold !== null && value != null;
-    const met = comparable ? (key === 'min_accuracy' ? value >= threshold : value <= threshold) : null;
     rows.push(row(t(CRITERIA_LABELS[key]), threshold === null ? t('criteria.unused') : `${threshold}%`,
-      comparable ? `${value.toFixed(1)}%` : '—', met));
+      comparable ? `${value.toFixed(1)}%` : '—', result?.checks[key] ?? null));
   }
   const minimum = current.min_compared_cells;
   rows.push(row(t('criteria.comparedCells'), minimum === null ? t('criteria.unused') : `≥ ${minimum}`,
-    result === null ? '—' : String(result.compared), result === null || minimum === null ? null : result.compared >= minimum));
+    result === null ? '—' : String(result.compared), result?.checks.min_compared_cells ?? null));
   children.push(el('div', { className: 'dashboard__compare-scroll' }, [el('table', {}, [
     el('thead', {}, [el('tr', {}, ['criteria.criterion', 'criteria.setting', 'criteria.pilotValue', 'criteria.judgment']
       .map((key) => el('th', { text: t(key as MessageKey), attributes: { scope: 'col' } })))]),

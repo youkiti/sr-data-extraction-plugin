@@ -178,6 +178,31 @@ test('結果は明示計算し、現在の版とパイロットを使う、空�
   expect(criteriaState(store).calculating).toBe(false);
 });
 
+test('計算中は確認も確定保存も開始しない', async () => {
+  const store = storeOf();
+  await loadCriteria(store, deps);
+  changeCriteriaDraft(store, draft);
+  await saveCriteria(store, deps);
+  jest.mocked(readAcceptanceCriteria).mockClear();
+  const calculating = calculateCriteria(store, deps);
+  await saveCriteria(store, deps);
+  await saveCriteria(store, deps, true);
+  expect(readAcceptanceCriteria).toHaveBeenCalledTimes(1);
+  expect(appendAcceptanceCriteria).not.toHaveBeenCalled();
+  await calculating;
+  expect(criteriaState(store).versions).toEqual([criteria]);
+});
+
+test('計算中に現行版が進んだら新しい状態を保持して結果を捨てる', async () => {
+  const store = storeOf();
+  await loadCriteria(store, deps);
+  const calculating = calculateCriteria(store, deps);
+  const updated = { ...criteriaState(store), versions: [{ ...criteria, version: 2 }], pilotCount: 7, ignoredCount: 3 };
+  store.setState({ pilot: { ...store.getState().pilot, criteria: updated } });
+  await calculating;
+  expect(criteriaState(store)).toEqual({ ...updated, calculating: false });
+});
+
 test('プロジェクト無しと保存中・読み込み中のガード', async () => {
   const store = createStore(createInitialState());
   await loadCriteria(store, deps);

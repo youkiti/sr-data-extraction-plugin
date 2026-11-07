@@ -100,3 +100,26 @@ test('CSV は全版を現在値で判定し、空版はヘッダーのみ、率�
   expect(parseCsv(buildAcceptanceCriteriaCsv([], [], [], active))).toHaveLength(1);
   expect(buildAcceptanceCriteriaCsv([criteria()], [], [], active)).toContain('not_evaluable,no_pilot,0,');
 });
+
+test('正確度 29% の等号を個別と全体で共有し、未設定と比較なしは判定しない', () => {
+  const cells = Array.from({ length: 100 }, (_, index) => cell({ category: index < 29 ? 'match' : 'omission' }));
+  const c = criteria({ min_accuracy: '29', min_compared_cells: '100' });
+  expect(evaluateCriteria(c, cells, pilots, active)).toMatchObject({ result: 'met', checks: {
+    min_accuracy: true, max_fabrication_rate: null, max_omission_rate: null, max_wrong_value_rate: null, min_compared_cells: true,
+  } });
+  expect(Object.values(evaluateCriteria(c, [], pilots, active).checks)).toEqual([null, null, null, null, null]);
+  expect(evaluateCriteria(criteria({ min_accuracy: '29.01' }), cells, pilots, active)).toMatchObject({
+    result: 'not_met', checks: { min_accuracy: false },
+  });
+});
+
+test.each([
+  ['fabrication', 'max_fabrication_rate'], ['omission', 'max_omission_rate'], ['wrong_value', 'max_wrong_value_rate'],
+] as const)('%s の上限は件数で判定し、等号を含む', (category, key) => {
+  const cells = Array.from({ length: 100 }, (_, index) => cell({ category: index < 29 ? category : 'match' }));
+  for (const [threshold, passed] of [['28.99', false], ['29', true], ['29.01', true], ['100', true], ['0', false]] as const) {
+    const evaluation = evaluateCriteria(criteria({ min_accuracy: '', [key]: threshold }), cells, pilots, active);
+    expect(evaluation.checks[key]).toBe(passed);
+    expect(evaluation.result).toBe(passed ? 'met' : 'not_met');
+  }
+});

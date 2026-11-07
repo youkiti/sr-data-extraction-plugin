@@ -31,6 +31,7 @@ export interface AcceptanceCriteria extends Record<CriteriaRate, number | null> 
 }
 export type PilotRun = { studyIds: readonly string[]; runType: string };
 export interface CriteriaEvaluation {
+  checks: Record<CriteriaRate | 'min_compared_cells', boolean | null>;
   result: 'met' | 'not_met' | 'not_evaluable';
   not_evaluable_reason: 'no_pilot' | 'no_compared_cells' | 'below_minimum' | '';
   compared: number;
@@ -146,11 +147,19 @@ export function evaluateCriteria(
   const reason = !runs.some((run) => run.runType === 'pilot') ? 'no_pilot' : values.compared === 0 ? 'no_compared_cells'
     : values.compared < (criteria.min_compared_cells ?? 1) ? 'below_minimum' : '';
   // 割り算の丸めで等号を落とさないよう、百分率と件数を交差乗算する。
-  const met = (criteria.min_accuracy === null || (summary?.match ?? 0) * 100 >= criteria.min_accuracy * values.compared) &&
-    (criteria.max_fabrication_rate === null || (summary?.fabrication ?? 0) * 100 <= criteria.max_fabrication_rate * values.compared) &&
-    (criteria.max_omission_rate === null || (summary?.omission ?? 0) * 100 <= criteria.max_omission_rate * values.compared) &&
-    (criteria.max_wrong_value_rate === null || (summary?.wrong_value ?? 0) * 100 <= criteria.max_wrong_value_rate * values.compared);
-  return { ...values, result: reason !== '' ? 'not_evaluable' : met ? 'met' : 'not_met', not_evaluable_reason: reason };
+  const check = (threshold: number | null, passed: boolean): boolean | null =>
+    threshold === null || values.compared === 0 ? null : passed;
+  const checks: CriteriaEvaluation['checks'] = {
+    min_accuracy: check(criteria.min_accuracy, (summary?.match ?? 0) * 100 >= (criteria.min_accuracy ?? 0) * values.compared),
+    max_fabrication_rate: check(criteria.max_fabrication_rate,
+      (summary?.fabrication ?? 0) * 100 <= (criteria.max_fabrication_rate ?? 0) * values.compared),
+    max_omission_rate: check(criteria.max_omission_rate, (summary?.omission ?? 0) * 100 <= (criteria.max_omission_rate ?? 0) * values.compared),
+    max_wrong_value_rate: check(criteria.max_wrong_value_rate,
+      (summary?.wrong_value ?? 0) * 100 <= (criteria.max_wrong_value_rate ?? 0) * values.compared),
+    min_compared_cells: check(criteria.min_compared_cells, values.compared >= (criteria.min_compared_cells ?? 0)),
+  };
+  const met = Object.values(checks).every((value) => value !== false);
+  return { ...values, checks, result: reason !== '' ? 'not_evaluable' : met ? 'met' : 'not_met', not_evaluable_reason: reason };
 }
 
 export const CRITERIA_RESULT_COLUMNS = ['result', 'not_evaluable_reason', 'compared', 'accuracy', 'fabrication_rate',
