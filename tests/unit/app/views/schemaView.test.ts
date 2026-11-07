@@ -84,7 +84,7 @@ import {
 } from '../../../../src/features/schema/presets/robinsIPrespec';
 import { createQuadas3PrespecDialogState } from '../../../../src/features/schema/presets/quadas3Prespec';
 import { createQuipsPrespecDialogState } from '../../../../src/features/schema/presets/quipsPrespec';
-import { setUiLanguage } from '../../../../src/lib/i18n';
+import { setUiLanguage, t } from '../../../../src/lib/i18n';
 import type { SchemaEditorRow } from '../../../../src/features/schema/types';
 import {
   buildImportDiff,
@@ -1694,6 +1694,62 @@ describe('renderSchemaView（表示言語 en。issue #93）', () => {
   });
 });
 
+describe('複数引用と複数選択の補助欄の表示', () => {
+  test.each(['text', 'enum'] as const)('%s は ON のときだけ補助欄と説明文を出す', (dataType) => {
+    const { ctx } = makeCtx();
+    const checkboxSelector = dataType === 'text' ? '.schema__multi-quote' : '.schema__multi-select';
+    const inputSelectors = dataType === 'text'
+      ? ['.schema__max-quotes']
+      : ['.schema__exclusive-values', '.schema__free-text-values'];
+    const hint = t(dataType === 'text' ? 'schema.multiQuoteHint' : 'schema.multiSelectHint');
+    for (const enabled of [false, true, false]) {
+      const view = renderSchemaView(makeState({
+        versions: [],
+        editorRows: [makeEditorRow({ dataType, maxQuotes: dataType === 'text' && enabled ? 10 : null, multiSelect: dataType === 'enum' && enabled })],
+      }), ctx);
+      const checkbox = view.querySelector<HTMLInputElement>(checkboxSelector)!;
+      expect(checkbox.checked).toBe(enabled);
+      expect(checkbox.closest('label')?.title).toBe(hint);
+      expect(checkbox.getAttribute('aria-description')).toBe(hint);
+      const paragraph = view.querySelector('p.schema__multi-quote-hint');
+      if (enabled) {
+        expect(paragraph?.textContent).toBe(hint);
+        for (const selector of inputSelectors) {
+          const input = view.querySelector<HTMLInputElement>(selector)!;
+          expect(input.closest('label')).not.toBeNull();
+          expect(input.disabled).toBe(false);
+        }
+      } else {
+        expect(paragraph).toBeNull();
+        for (const selector of inputSelectors) {
+          expect(view.querySelector(selector)).toBeNull();
+        }
+        expect(checkbox.closest('td')?.children).toHaveLength(dataType === 'text' ? 3 : 2);
+      }
+    }
+  });
+
+  test.each([
+    ['text', 'max_quotes', '.schema__max-quotes'],
+    ['enum', 'exclusiveValues', '.schema__exclusive-values'],
+    ['enum', 'freeTextValues', '.schema__free-text-values'],
+  ] as const)('OFF の %s でも %s のエラー欄を表示する', (dataType, column, selector) => {
+    const { ctx } = makeCtx();
+    const view = renderSchemaView(makeState({
+      versions: [],
+      editorRows: [makeEditorRow({ dataType, maxQuotes: null, multiSelect: false, exclusiveValues: 'NA', freeTextValues: 'Other' })],
+      editorErrors: [{ index: 0, column, message: '不正な設定です' }],
+    }), ctx);
+    const input = view.querySelector<HTMLInputElement>(selector)!;
+    expect(input.closest('label')).not.toBeNull();
+    expect(input.getAttribute('aria-invalid')).toBe('true');
+    expect(input.classList.contains('schema__cell-input--error')).toBe(true);
+    expect(view.querySelectorAll('.schema__max-quotes, .schema__exclusive-values, .schema__free-text-values')).toHaveLength(1);
+    expect(view.querySelector('p.schema__multi-quote-hint')).toBeNull();
+    expect(view.querySelector('#schema-editor-errors')?.textContent).toContain('不正な設定です');
+  });
+});
+
 describe('複数引用の設定 UI', () => {
   test('チェックの ON/OFF、件数変更と空入力を更新値として渡す', () => {
     const { ctx, callbacks } = makeCtx();
@@ -1701,7 +1757,7 @@ describe('複数引用の設定 UI', () => {
       versions: [], editorRows: [makeEditorRow({ maxQuotes })],
     }), ctx);
     const off = render(null);
-    expect((off.querySelector('.schema__max-quotes') as HTMLInputElement).disabled).toBe(true);
+    expect(off.querySelector('.schema__max-quotes')).toBeNull();
     const check = off.querySelector('.schema__multi-quote') as HTMLInputElement;
     check.checked = true;
     check.dispatchEvent(new Event('change'));
@@ -1755,7 +1811,7 @@ describe('複数選択の項目設定', () => {
   ])('ON の初期入力: %p', (allowedValues, exclusiveValues, freeTextValues) => {
     const { ctx, callbacks } = makeCtx();
     const view = renderSchemaView(makeState({ versions: [], editorRows: [makeEditorRow({ dataType: 'enum', allowedValues })] }), ctx);
-    expect(view.querySelector<HTMLInputElement>('.schema__exclusive-values')?.disabled).toBe(true);
+    expect(view.querySelector('.schema__exclusive-values')).toBeNull();
     const checkbox = view.querySelector<HTMLInputElement>('.schema__multi-select')!;
     checkbox.checked = true;
     checkbox.dispatchEvent(new Event('change'));
