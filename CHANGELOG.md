@@ -19,6 +19,9 @@ This is the public changelog of this extension. Any change that can alter AI out
 - 公開の変更履歴（このファイル）を作り、利用規約とヘルプから変更の告知先として案内するようにしました。リリースの手順で、既定モデル・プロンプトの版数・推論の強さの既定が前回のリリースから変わったのにこのファイルが更新されていなければ止まるようにしました。  
   Added this public changelog and named it in the terms of service and the help page as the place where changes are announced. The release procedure now stops when the default model, a prompt version or the default reasoning effort has changed since the previous release and this file has not been updated.
 
+- 最初のログインの前に、メールアドレスの用途と自分の Drive・Sheets への保存を告知し、同意を記録するようにしました。ログイン済みの方には、次にプロジェクト選択ページを開いたときに 1 回だけ確認を出します（2026-11-07、#381）。  
+  Before the first sign-in, a notice explains how your email address is used and that data is saved in your own Drive and Sheets, and your consent is recorded. Users who are already signed in will see the notice once when they next open the project page (2026-11-07, #381).
+
 ## v0.23.0（2026-10-26）
 
 ### AI の結果に影響する変更 / Changes that affect AI output

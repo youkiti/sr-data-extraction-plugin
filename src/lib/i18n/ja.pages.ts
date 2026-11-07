@@ -28,7 +28,11 @@ export const jaPages = {
   'popup.loading': '読み込み中…',
   'popup.authLead':
     'プロジェクトは Google Sheets / Drive に保存されます。Google アカウントでログインしてください。',
-  'popup.login': 'Google でログイン',
+  'popup.login': '同意して Google でログイン',
+  'signInConsent.title': 'この拡張が扱うデータ',
+  'signInConsent.body': 'Google アカウントのメールアドレスは、誰が抽出・判定したかの記録と、次のログインでのアカウントの指定に使います。プロジェクト（スプレッドシートと Drive のフォルダ）、取り込んだ PDF、抽出したデータ、判定の記録は、あなた自身の Google Drive と Sheets に保存します。開発者のサーバーには送りません。AI の機能で送る内容は、使う前に別に確かめます。',
+  'signInConsent.accept': '同意して続行',
+  'signInConsent.saveFailed': '同意を記録できませんでした。もう一度お試しください。',
   'popup.loginFailed':
     'ログインに失敗しました。ブラウザに Google アカウントが追加されているか確認してください。',
   'popup.loggedInAs': 'ログイン中:',
