@@ -8,7 +8,7 @@ import {
   type ImportSelection,
 } from '../../../../src/features/documents/importDocuments';
 import { copyFile, getFileBinary, uploadBinaryFile, uploadTextFile } from '../../../../src/lib/google/drive';
-import type { GoogleApiDeps } from '../../../../src/lib/google/types';
+import { GoogleApiError, type GoogleApiDeps } from '../../../../src/lib/google/types';
 
 jest.mock('../../../../src/features/documents/documentRepository');
 jest.mock('../../../../src/features/documents/studyRepository');
@@ -98,6 +98,22 @@ describe('defaultStudyLabel', () => {
 });
 
 describe('importDocuments（Drive Picker 経由）', () => {
+  test.each([
+    [new GoogleApiError('Google API failed: HTTP 403', 403, 'url',
+      '{"error":{"errors":[{"reason":"appNotAuthorizedToFile"}]}}'),
+    'Google API failed: HTTP 403 [appNotAuthorizedToFile]'],
+    [new GoogleApiError('Google API failed: HTTP 403', 403, 'url',
+      '{"error":{"errors":[{"reason":"cannotCopyFile"},{"reason":"insufficientFilePermissions"}]}}'),
+    'Google API failed: HTTP 403 [cannotCopyFile, insufficientFilePermissions]'],
+    [new GoogleApiError('Google API failed: HTTP 403', 403, 'url', '{}'),
+    'Google API failed: HTTP 403'],
+    [new Error('copy boom'), 'copy boom'],
+  ])('コピー失敗の detail に応答の理由を添え、理由が無ければ従来の message: %s', async (error, detail) => {
+    mockedCopy.mockRejectedValueOnce(error);
+    const result = await importDocuments(baseParams([driveSelection('src-1', 'a.pdf')]), makeDeps());
+    expect(result.failures).toEqual([{ key: 'src-1', filename: 'a.pdf', stage: 'copy', detail }]);
+  });
+
   test('コピー → 抽出 → txt 保存 → Studies → Documents 追記まで通し、1 PDF = 1 study を生成する', async () => {
     const progress: ImportProgress[] = [];
     const deps = makeDeps({ onProgress: (p) => progress.push(p) });
