@@ -342,9 +342,10 @@ function readSentSettings(body: Record<string, unknown>): SentRequestSettings {
     temperature: (body['temperature'] as number | undefined) ?? null,
     reasoningEffort: (body['reasoning_effort'] as string | undefined) ?? null,
     maxOutputTokens: (body['max_tokens'] as number | undefined) ?? null,
+    // buildRequestBody は json_schema に常に strict:true を付けて送るため、strict として記録する
     structuredOutput:
       format?.type === 'json_schema'
-        ? 'json_schema'
+        ? 'json_schema_strict'
         : format?.type === 'json_object'
           ? 'json_object'
           : 'none',

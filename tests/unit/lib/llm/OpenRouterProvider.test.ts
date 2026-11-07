@@ -39,9 +39,12 @@ describe('OpenRouterProvider.chat', () => {
       responseSchema: { type: 'object' },
     });
     const body = JSON.parse(fetch.mock.calls[0]![1].body);
+    // 送った本文が strict 付きの json_schema であり、記録もそれと一致する
+    expect(body.response_format.type).toBe('json_schema');
+    expect(body.response_format.json_schema.strict).toBe(true);
     expect(result.sentSettings).toEqual({
       temperature: body.temperature ?? null, reasoningEffort: body.reasoning_effort ?? null,
-      maxOutputTokens: body.max_tokens ?? null, structuredOutput: body.response_format.type,
+      maxOutputTokens: body.max_tokens ?? null, structuredOutput: 'json_schema_strict',
       adjustments: [],
     });
     expect(result.responseModel).toBe(typeof model === 'string' ? model : null);
