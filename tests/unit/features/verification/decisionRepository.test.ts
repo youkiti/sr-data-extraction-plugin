@@ -1,10 +1,42 @@
 import type { Decision } from '../../../../src/domain/decision';
 import {
   appendDecisionRows,
+  clearDecisionsProvenanceCache,
+  ensureDecisionsProvenanceColumns,
   decisionToRow,
   readAllDecisions,
   readDecisionsByStudy,
 } from '../../../../src/features/verification/decisionRepository';
+import { SHEET_HEADERS } from '../../../../src/domain/sheetsSchema';
+
+beforeEach(clearDecisionsProvenanceCache);
+
+test('13 列のシートを読み、最初の追記で 15 列に伸ばす', async () => {
+  const header = SHEET_HEADERS.Decisions.slice(0, 13);
+  const old = decisionToRow(makeDecision()).slice(0, 13).map((v) => String(v ?? ''));
+  const deps = makeDeps([header, old]);
+  expect((await readAllDecisions('thirteen', deps))[0]).toMatchObject({ consensusSource: null, adoptedAiAccept: null });
+  await appendDecisionRows('thirteen', [makeDecision()], deps);
+  const put = deps.fetch.mock.calls.find(([, init]) => init?.method === 'PUT');
+  expect(JSON.parse(String(put?.[1].body)).values).toEqual([SHEET_HEADERS.Decisions]);
+  expect(SHEET_HEADERS.Decisions).toHaveLength(15);
+});
+
+test.each([
+  ['A', 'A'], ['B', 'B'], ['third', 'none'], ['bulk_match', 'A,B'],
+  ['not_reported', 'none'], ['undo', null], [null, null],
+] as const)('裁定の記録を往復する: %s / %s', async (consensusSource, adoptedAiAccept) => {
+  const item = makeDecision({ annotator: 'consensus', annotatorType: 'consensus', consensusSource, adoptedAiAccept });
+  const deps = makeDeps([[...SHEET_HEADERS.Decisions], decisionToRow(item).map((v) => String(v ?? ''))]);
+  expect(await readAllDecisions('consensus', deps)).toEqual([item]);
+});
+
+test('将来の未知の出所は未記録として読み込む', async () => {
+  const row = decisionToRow(makeDecision()).map((v) => String(v ?? ''));
+  row[13] = 'future'; row[14] = 'future';
+  expect((await readAllDecisions('future', makeDeps([[...SHEET_HEADERS.Decisions], row])))[0])
+    .toMatchObject({ consensusSource: null, adoptedAiAccept: null });
+});
 
 const DECISIONS_HEADER = [
   'decided_at',
@@ -33,6 +65,10 @@ function makeDecision(overrides: Partial<Decision> = {}): Decision {
     action: 'accept',
     value: '120',
     note: null,
+    seenEvidenceIds: null,
+    seenAiValue: null,
+    consensusSource: null,
+    adoptedAiAccept: null,
     ...overrides,
   };
 }
@@ -46,7 +82,9 @@ interface MockDeps {
 function makeDeps(values: string[][] = []): MockDeps {
   const fetch = jest.fn().mockImplementation(async (_input: RequestInfo | URL, init?: RequestInit) => {
     const method = init?.method ?? 'GET';
-    const json = method === 'GET' ? { values } : {};
+    const json = method === 'GET' ? String(_input).includes('values:batchGet')
+      ? { valueRanges: [{ values: values.length === 0 ? [DECISIONS_HEADER] : values }] }
+      : { values } : {};
     return {
       ok: true,
       status: 200,
@@ -77,6 +115,10 @@ describe('decisionToRow', () => {
       'accept',
       '120',
       null,
+      null,
+      null,
+      null,
+      null,
     ]);
   });
 
@@ -86,6 +128,42 @@ describe('decisionToRow', () => {
     expect(row[9]).toBeNull();
     expect(row[10]).toBeNull();
   });
+});
+
+test('旧ヘッダを拡張し、成功後は再読込しない', async () => {
+  const deps = makeDeps([DECISIONS_HEADER]);
+  await appendDecisionRows('old', [makeDecision()], deps);
+  await appendDecisionRows('old', [makeDecision()], deps);
+  expect(deps.fetch.mock.calls.filter(([, init]) => init?.method === 'PUT')).toHaveLength(1);
+  expect(deps.fetch.mock.calls.filter(([url]) => String(url).includes('batchGet'))).toHaveLength(1);
+});
+
+test('移行失敗は記憶せず、追記しない', async () => {
+  const deps = makeDeps([['wrong']]);
+  await expect(appendDecisionRows('bad', [makeDecision()], deps)).rejects.toThrow('ヘッダ');
+  await expect(ensureDecisionsProvenanceColumns('bad', deps)).rejects.toThrow('ヘッダ');
+  expect(postCalls(deps)).toHaveLength(0);
+});
+
+test('空のヘッダ応答では移行を拒否する', async () => {
+  const deps = makeDeps();
+  deps.fetch.mockResolvedValue({ ok: true, status: 200, json: async () => ({ valueRanges: [] }) });
+  await expect(ensureDecisionsProvenanceColumns('empty', deps)).rejects.toThrow('ヘッダ');
+});
+
+test.each([null, [], ['a', 'b']] as const)('表示記録を往復する: %p', async (ids) => {
+  const item = makeDecision({ seenEvidenceIds: ids, seenAiValue: '全文' });
+  const deps = makeDeps([[...SHEET_HEADERS.Decisions], decisionToRow(item).map((v) => String(v ?? ''))]);
+  expect(await readAllDecisions('new', deps)).toEqual([item]);
+  await ensureDecisionsProvenanceColumns('new', deps);
+  expect(deps.fetch.mock.calls.filter(([, init]) => init?.method === 'PUT')).toHaveLength(0);
+});
+
+test('部分拡張ヘッダも検証し、ID の余分な空白を捨てる', async () => {
+  const item = decisionToRow(makeDecision()).map((v) => String(v ?? ''));
+  item[11] = ' a  b ';
+  expect((await readAllDecisions('partial', makeDeps([SHEET_HEADERS.Decisions.slice(0, 12), item])))[0]?.seenEvidenceIds).toEqual(['a', 'b']);
+  await expect(readAllDecisions('bad', makeDeps([[...DECISIONS_HEADER, 'wrong']]))).rejects.toThrow('12');
 });
 
 describe('appendDecisionRows', () => {

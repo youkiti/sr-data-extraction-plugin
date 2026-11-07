@@ -30,7 +30,11 @@ export const enPages: Record<keyof typeof jaPages, string> = {
   'popup.loading': 'Loading…',
   'popup.authLead':
     'Projects are stored in Google Sheets / Drive. Please sign in with your Google account.',
-  'popup.login': 'Sign in with Google',
+  'popup.login': 'Agree and sign in with Google',
+  'signInConsent.title': 'Data this extension handles',
+  'signInConsent.body': "Your Google account email address is used to record who extracted and judged each item, and to choose the account at your next sign-in. Your projects (a spreadsheet and a Drive folder), imported PDFs, extracted data and decision records are saved in your own Google Drive and Sheets. Nothing is sent to the developer's servers. Before an AI feature sends anything, you are asked separately.",
+  'signInConsent.accept': 'Agree and continue',
+  'signInConsent.saveFailed': 'Could not record your consent. Please try again.',
   'popup.loginFailed': 'Sign-in failed. Make sure a Google account is added to your browser.',
   'popup.loggedInAs': 'Signed in as:',
   'popup.logout': 'Sign out',
@@ -227,7 +231,7 @@ export const enPages: Record<keyof typeof jaPages, string> = {
   'aiConsent.itemHelpConsult': 'Your help question and the selected public help text',
   'aiConsent.providerTerms': "How the content is handled there is governed by that API provider's terms.",
   'aiConsent.geminiFree':
-    "On the Gemini API free tier, what you send may be used to improve Google's products and may be read by people. Use a paid tier for unpublished data or confidential material.",
+    'On the Gemini API free tier, what you send and the responses are used to provide, improve, and develop Google products, services, and machine learning technologies, and may be read by people. Use a paid tier for unpublished data or confidential material.',
   'aiConsent.noDeveloperServer': "The prompts sent and the responses are also saved as audit records in your own Google Drive (the project’s logs/llm folder), excluding image data. For paper questions, the paper text, questions and answers are not saved; only metadata such as usage is recorded. Nothing is sent to the developer's servers.",
   'aiConsent.checkTerms': "Before you start, check the publisher's terms of use for your papers and the API provider's terms.",
   'aiConsent.privacyLink': 'Privacy policy',

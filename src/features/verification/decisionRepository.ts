@@ -2,13 +2,42 @@
 // 判定 1 操作 = 1 行で追記し、undo も 1 行として残す（§4.2 の監査証跡）。
 // 現在のセル状態は cellState.ts が判定履歴の畳み込みで導出する
 import type { AnnotatorType } from '../../domain/annotation';
-import type { Decision, DecisionAction } from '../../domain/decision';
+import type { AdoptedAiAccept, ConsensusSource, Decision, DecisionAction } from '../../domain/decision';
 import { SHEET_HEADERS } from '../../domain/sheetsSchema';
 import { withApiErrorLogging } from '../../lib/diagnostics/apiErrorLog';
-import { appendRows, getSheetValues } from '../../lib/google/sheets';
+import { appendRows, getBatchValues, getSheetValues, updateRow } from '../../lib/google/sheets';
 import type { GoogleApiDeps } from '../../lib/google/types';
 
 const DECISIONS_TAB = 'Decisions';
+const provenanceSheets = new Set<string>();
+
+/** テスト間で移行済みシートの記憶を初期化する。 */
+export function clearDecisionsProvenanceCache(): void {
+  provenanceSheets.clear();
+}
+
+function validateHeader(header: readonly string[]): void {
+  SHEET_HEADERS.Decisions.slice(0, Math.max(11, header.length)).forEach((name, i) => {
+    if (cellAt(header, i) !== name) {
+      throw new Error(`Decisions のヘッダ ${i + 1} 列目が "${name}" ではありません（実際: "${cellAt(header, i)}"）`);
+    }
+  });
+}
+
+/** 古いシートの判定時記録列を、最初の追記前に補う。 */
+export async function ensureDecisionsProvenanceColumns(
+  spreadsheetId: string,
+  deps: GoogleApiDeps,
+): Promise<void> {
+  if (provenanceSheets.has(spreadsheetId)) return;
+  const [rows] = await getBatchValues(spreadsheetId, [`${DECISIONS_TAB}!1:1`], deps);
+  const header = rows?.[0] ?? [];
+  validateHeader(header);
+  if (header.length < SHEET_HEADERS.Decisions.length) {
+    await updateRow(spreadsheetId, DECISIONS_TAB, 1, SHEET_HEADERS.Decisions, deps);
+  }
+  provenanceSheets.add(spreadsheetId);
+}
 
 const DECISION_ACTIONS: readonly DecisionAction[] = [
   'accept',
@@ -50,6 +79,10 @@ export function decisionToRow(decision: Decision): (string | number | null)[] {
     decision.action,
     decision.value,
     decision.note,
+    decision.seenEvidenceIds == null ? null : decision.seenEvidenceIds.join(' ') || 'none',
+    decision.seenAiValue ?? null,
+    decision.consensusSource ?? null,
+    decision.adoptedAiAccept ?? null,
   ];
 }
 
@@ -70,6 +103,8 @@ export async function appendDecisionRows(
     'decision_save',
     { studyId: decisions[0]?.studyId ?? null },
     async () => {
+      if (decisions.length === 0) return;
+      await ensureDecisionsProvenanceColumns(spreadsheetId, deps);
       await appendRows(spreadsheetId, DECISIONS_TAB, decisions.map(decisionToRow), deps);
     },
   );
@@ -110,13 +145,7 @@ export async function readAllDecisions(
   if (header === undefined) {
     throw new Error('Decisions タブにヘッダ行がありません（プロジェクト初期化が不完全です）');
   }
-  SHEET_HEADERS.Decisions.forEach((name, i) => {
-    if (cellAt(header, i) !== name) {
-      throw new Error(
-        `Decisions のヘッダ ${i + 1} 列目が "${name}" ではありません（実際: "${cellAt(header, i)}"）`,
-      );
-    }
-  });
+  validateHeader(header);
   return values.slice(1).map((raw, i) => {
     const context = `Decisions ${i + 2} 行目`;
     return {
@@ -131,8 +160,17 @@ export async function readAllDecisions(
       action: parseAction(cellAt(raw, 8), context),
       value: emptyToNull(cellAt(raw, 9)),
       note: emptyToNull(cellAt(raw, 10)),
+      seenEvidenceIds: cellAt(raw, 11) === '' ? null
+        : cellAt(raw, 11) === 'none' ? [] : cellAt(raw, 11).split(' ').filter(Boolean),
+      seenAiValue: emptyToNull(cellAt(raw, 12)),
+      consensusSource: parseOptionalEnum<ConsensusSource>(cellAt(raw, 13), ['A', 'B', 'third', 'bulk_match', 'not_reported', 'undo']),
+      adoptedAiAccept: parseOptionalEnum<AdoptedAiAccept>(cellAt(raw, 14), ['A', 'B', 'A,B', 'none']),
     };
   });
+}
+
+function parseOptionalEnum<T extends string>(value: string, allowed: readonly T[]): T | null {
+  return allowed.includes(value as T) ? value as T : null;
 }
 
 /**

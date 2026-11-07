@@ -103,6 +103,8 @@ async function setupRoutes(
         await route.fulfill({
           json: { values: [SCHEMA_FIELDS_HEADERS, ...(options.schemaRows ?? [STUDY_FIELD_ROW])] },
         });
+      } else if (url.includes('values:batchGet') && url.includes('Decisions')) {
+        await route.fulfill({ json: { valueRanges: [{ values: [SHEET_HEADERS.Decisions] }] } });
       } else if (url.includes('/values/Decisions')) {
         await route.fulfill({
           json: { values: [DECISIONS_HEADERS, ...(options.decisionsRows ?? [])] },

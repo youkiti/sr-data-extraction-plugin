@@ -146,7 +146,7 @@ async function initApp(
       const win = window as unknown as Record<string, unknown>;
       // AI へ送る前の同意（issue #381）は同意済みにする（同意画面は app-ai-consent.spec.ts で検証）
       const stored: Record<string, unknown> = {
-        aiDataConsent: { version: 1, acceptedAt: '2026-07-01T00:00:00.000Z' },
+        aiDataConsent: { version: 2, acceptedAt: '2026-07-01T00:00:00.000Z' },
         ...(apiKey === null ? {} : { 'secrets.geminiApiKey': apiKey }),
       };
       win.chrome = {
@@ -337,7 +337,8 @@ test('実行 → 完了 → 埋め込み検証 UI（ハイライト + 判定 + D
       if (url.includes('Protocol')) {
         await route.fulfill({ json: { values: [PROTOCOL_HEADERS, PROTOCOL_ROW] } });
       } else if (url.includes('Decisions')) {
-        await route.fulfill({ json: { values: [DECISIONS_HEADERS] } });
+        await route.fulfill({ json: url.includes('values:batchGet')
+          ? { valueRanges: [{ values: [SHEET_HEADERS.Decisions] }] } : { values: [DECISIONS_HEADERS] } });
       } else if (url.includes('StudyData')) {
         await route.fulfill({ json: { values: store.studyValues() } });
       } else if (url.includes('ResultsData')) {
@@ -539,7 +540,8 @@ test('履歴からの復元: 過去のパイロット結果を自動読込 → �
     } else if (url.includes('SchemaFields')) {
       await route.fulfill({ json: { values: [SCHEMA_FIELDS_HEADERS, SCHEMA_FIELD_ROW] } });
     } else if (url.includes('Decisions')) {
-      await route.fulfill({ json: { values: [DECISIONS_HEADERS] } });
+      await route.fulfill({ json: url.includes('values:batchGet')
+          ? { valueRanges: [{ values: [SHEET_HEADERS.Decisions] }] } : { values: [DECISIONS_HEADERS] } });
     } else if (url.includes('StudyData')) {
       await route.fulfill({ json: { values: store.studyValues() } });
     } else if (url.includes('ResultsData')) {
@@ -627,7 +629,8 @@ test('S6 埋め込み検証: enum 項目は許容値チップで判定でき、�
     } else if (url.includes('SchemaFields')) {
       await route.fulfill({ json: { values: [SCHEMA_FIELDS_HEADERS, ENUM_FIELD_ROW] } });
     } else if (url.includes('Decisions')) {
-      await route.fulfill({ json: { values: [DECISIONS_HEADERS] } });
+      await route.fulfill({ json: url.includes('values:batchGet')
+          ? { valueRanges: [{ values: [SHEET_HEADERS.Decisions] }] } : { values: [DECISIONS_HEADERS] } });
     } else if (url.includes('StudyData')) {
       await route.fulfill({ json: { values: store.studyValues() } });
     } else if (url.includes('ResultsData')) {
@@ -764,7 +767,9 @@ test('パイロットの検証で判定メモを入力し、Decisions の note �
         },
       });
     } else if (url.includes('Decisions')) {
-      await route.fulfill({ json: { values: [DECISIONS_HEADERS, ...decisionRows] } });
+      await route.fulfill({ json: url.includes('values:batchGet')
+        ? { valueRanges: [{ values: [SHEET_HEADERS.Decisions] }] }
+        : { values: [DECISIONS_HEADERS, ...decisionRows] } });
     } else if (url.includes('StudyData')) {
       await route.fulfill({ json: { values: dataStore.studyValues() } });
     } else if (url.includes('ResultsData')) {

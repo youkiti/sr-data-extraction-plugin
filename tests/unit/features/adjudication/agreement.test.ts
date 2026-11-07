@@ -10,6 +10,42 @@ import {
 import { buildAdjudicationCells, type AdjudicationCell } from '../../../../src/features/adjudication/cellMatch';
 import { CSV_BOM } from '../../../../src/features/export/csvEncode';
 import { STUDY_ENTITY_KEY } from '../../../../src/utils/entityKey';
+import { isBothWithAi } from '../../../../src/features/adjudication/withAiPair';
+
+test('AI を見た両者のデータ行だけの研究を判定する', () => {
+  const row = (annotator: string, annotatorType: StudyDataRow['annotatorType'] = 'human_with_ai'): StudyDataRow => ({
+    studyId: 's', annotator, annotatorType, schemaVersion: 1, runId: null, updatedAt: 't', values: {},
+  });
+  expect(isBothWithAi([row('a'), row('b'), row('other', 'human_independent')], [], 'a', 'b')).toBe(true);
+  expect(isBothWithAi([row('a'), row('b'), row('b', 'human_independent')], [], 'a', 'b')).toBe(false);
+  expect(isBothWithAi([row('a')], [], 'a', 'b')).toBe(false);
+  expect(isBothWithAi([], [], 'a', 'b')).toBe(false);
+  expect(isBothWithAi([], [
+    { resultId: 'r', studyId: 's', annotator: 'a', annotatorType: 'human_with_ai', schemaVersion: 1,
+      entityKey: 'arm:1', fieldId: 'f', runId: null, updatedAt: 't', value: 'v', notReported: false },
+    { resultId: 'r2', studyId: 's', annotator: 'b', annotatorType: 'human_with_ai', schemaVersion: 1,
+      entityKey: 'arm:1', fieldId: 'f', runId: null, updatedAt: 't', value: 'v', notReported: false },
+  ], 'a', 'b')).toBe(true);
+});
+
+test('AI を見た研究と分母内のセル数を、既存統計を変えずに添える', () => {
+  const f = field();
+  const g = field({ fieldId: 'other' });
+  const cells = [cell({ field: f, valueA: 'yes', valueB: 'yes' }),
+    cell({ field: f, valueA: 'yes', valueB: null }),
+    cell({ field: f, valueA: '', valueB: '' }), cell({ field: g, valueA: 'no', valueB: 'yes' })];
+  const studies = [study({ cells, bothWithAi: true }), study({ studyId: 'other', cells })];
+  const report = buildAgreementReport([f, g], studies);
+  expect(report.withAiStudyCount).toBe(1);
+  expect(report.fields.map((item) => item.withAiPairCount)).toEqual([1, 1]);
+  expect(report.overall.withAiPairCount).toBe(2);
+  expect(report.overall.pairCount).toBe(4);
+  const without = buildAgreementReport([f, g], studies.map((item) => ({ ...item, bothWithAi: false })));
+  expect(report.overall.kappa).toBe(without.overall.kappa);
+  expect(report.overall.agreementRate).toBe(without.overall.agreementRate);
+  expect(buildAgreementSummaryCsv(report)).toContain('with_ai_pair_count');
+  expect(buildAgreementSummaryCsv(report)).toContain('(overall),,(overall),4,2,0.5,0,2');
+});
 
 function field(overrides: Partial<SchemaField> = {}): SchemaField {
   return {
@@ -83,10 +119,10 @@ describe('buildAgreementReport', () => {
     const report = buildAgreementReport([f], [study({ cells })]);
     expect(report.fields).toHaveLength(1);
     expect(report.fields[0]).toEqual(
-      expect.objectContaining({ pairCount: 10, agreementCount: 8, agreementRate: 0.8, kappa: expect.closeTo(0.6, 10) }),
+      expect.objectContaining({ withAiPairCount: 0, pairCount: 10, agreementCount: 8, agreementRate: 0.8, kappa: expect.closeTo(0.6, 10) }),
     );
     expect(report.overall).toEqual(
-      expect.objectContaining({ pairCount: 10, agreementCount: 8, agreementRate: 0.8, kappa: expect.closeTo(0.6, 10) }),
+      expect.objectContaining({ withAiPairCount: 0, pairCount: 10, agreementCount: 8, agreementRate: 0.8, kappa: expect.closeTo(0.6, 10) }),
     );
   });
 
@@ -115,7 +151,7 @@ describe('buildAgreementReport', () => {
     ];
     const report = buildAgreementReport([f], [study({ cells })]);
     expect(report.fields[0]).toEqual(
-      expect.objectContaining({ pairCount: 3, agreementCount: 3, agreementRate: 1, kappa: null }),
+      expect.objectContaining({ withAiPairCount: 0, pairCount: 3, agreementCount: 3, agreementRate: 1, kappa: null }),
     );
   });
 
@@ -124,7 +160,7 @@ describe('buildAgreementReport', () => {
     const cells: AdjudicationCell[] = [cell({ field: f, valueA: null, valueB: null })];
     const report = buildAgreementReport([f], [study({ cells })]);
     expect(report.fields[0]).toEqual(
-      expect.objectContaining({ pairCount: 0, agreementCount: 0, agreementRate: null, kappa: null }),
+      expect.objectContaining({ withAiPairCount: 0, pairCount: 0, agreementCount: 0, agreementRate: null, kappa: null }),
     );
   });
 
@@ -136,7 +172,7 @@ describe('buildAgreementReport', () => {
     ];
     const report = buildAgreementReport([f], [study({ cells })]);
     expect(report.fields[0]).toEqual(
-      expect.objectContaining({ pairCount: 2, agreementCount: 1, agreementRate: 0.5 }),
+      expect.objectContaining({ withAiPairCount: 0, pairCount: 2, agreementCount: 1, agreementRate: 0.5 }),
     );
     expect(report.disagreements).toHaveLength(1);
     expect(report.disagreements[0]).toEqual(
@@ -154,7 +190,7 @@ describe('buildAgreementReport', () => {
     const report = buildAgreementReport([f], [study({ cells })]);
     // 分母は valueA・valueB とも非 null の 1 セルのみ
     expect(report.fields[0]).toEqual(
-      expect.objectContaining({ pairCount: 1, agreementCount: 1, agreementRate: 1 }),
+      expect.objectContaining({ withAiPairCount: 0, pairCount: 1, agreementCount: 1, agreementRate: 1 }),
     );
     // 不一致一覧には片側未入力の 2 件も含めて 2 件（一致セルは含まない）
     expect(report.disagreements).toHaveLength(2);
@@ -178,7 +214,7 @@ describe('buildAgreementReport', () => {
     const report = buildAgreementReport([f], [studyA, studyB]);
     expect(report.studyCount).toBe(2);
     expect(report.fields[0]).toEqual(
-      expect.objectContaining({ pairCount: 2, agreementCount: 1, agreementRate: 0.5 }),
+      expect.objectContaining({ withAiPairCount: 0, pairCount: 2, agreementCount: 1, agreementRate: 0.5 }),
     );
     expect(report.disagreements).toHaveLength(1);
     expect(report.disagreements[0]).toEqual(
@@ -205,17 +241,17 @@ describe('buildAgreementReport', () => {
     const report = buildAgreementReport([f1, f2], [study({ cells })]);
     expect(report.fields).toHaveLength(2);
     expect(report.fields[1]).toEqual(
-      expect.objectContaining({ fieldId: 'f-2', pairCount: 0, agreementCount: 0, agreementRate: null, kappa: null }),
+      expect.objectContaining({ fieldId: 'f-2', withAiPairCount: 0, pairCount: 0, agreementCount: 0, agreementRate: null, kappa: null }),
     );
   });
 
   test('study・fields が空でも空の（対象なしを表す）レポートを返す', () => {
     const report = buildAgreementReport([], []);
     expect(report).toEqual({
-      studyCount: 0,
+      withAiStudyCount: 0, studyCount: 0,
       incompleteStudyCount: 0,
       fields: [],
-      overall: { pairCount: 0, agreementCount: 0, agreementRate: null, kappa: null },
+      overall: { withAiPairCount: 0, pairCount: 0, agreementCount: 0, agreementRate: null, kappa: null },
       disagreements: [],
     });
   });
@@ -259,20 +295,20 @@ describe('buildAgreementReport', () => {
 describe('buildAgreementSummaryCsv', () => {
   function makeReport(overrides: Partial<AgreementReport> = {}): AgreementReport {
     return {
-      studyCount: 1,
+      withAiStudyCount: 0, studyCount: 1,
       incompleteStudyCount: 0,
       fields: [
         {
           fieldId: 'f-1',
           fieldName: 'sample_size',
           fieldLabel: '総サンプルサイズ',
-          pairCount: 10,
+          withAiPairCount: 0, pairCount: 10,
           agreementCount: 8,
           agreementRate: 0.8,
           kappa: 0.6,
         },
       ],
-      overall: { pairCount: 10, agreementCount: 8, agreementRate: 0.8, kappa: 0.6 },
+      overall: { withAiPairCount: 0, pairCount: 10, agreementCount: 8, agreementRate: 0.8, kappa: 0.6 },
       disagreements: [],
       ...overrides,
     };
@@ -281,9 +317,9 @@ describe('buildAgreementSummaryCsv', () => {
   test('ヘッダ + 項目行 + overall 行を出力する', () => {
     const csv = buildAgreementSummaryCsv(makeReport());
     const lines = csv.replace(CSV_BOM, '').split('\r\n').filter((line) => line.length > 0);
-    expect(lines[0]).toBe('field_id,field_name,field_label,pair_count,agreement_count,agreement_rate,kappa');
-    expect(lines[1]).toBe('f-1,sample_size,総サンプルサイズ,10,8,0.8,0.6');
-    expect(lines[2]).toBe('(overall),,(overall),10,8,0.8,0.6');
+    expect(lines[0]).toBe('field_id,field_name,field_label,pair_count,agreement_count,agreement_rate,kappa,with_ai_pair_count');
+    expect(lines[1]).toBe('f-1,sample_size,総サンプルサイズ,10,8,0.8,0.6,0');
+    expect(lines[2]).toBe('(overall),,(overall),10,8,0.8,0.6,0');
   });
 
   test('rate / kappa が null のときは空セルになる', () => {
@@ -294,18 +330,18 @@ describe('buildAgreementSummaryCsv', () => {
             fieldId: 'f-1',
             fieldName: 'sample_size',
             fieldLabel: '総サンプルサイズ',
-            pairCount: 0,
+            withAiPairCount: 0, pairCount: 0,
             agreementCount: 0,
             agreementRate: null,
             kappa: null,
           },
         ],
-        overall: { pairCount: 0, agreementCount: 0, agreementRate: null, kappa: null },
+        overall: { withAiPairCount: 0, pairCount: 0, agreementCount: 0, agreementRate: null, kappa: null },
       }),
     );
     const lines = csv.replace(CSV_BOM, '').split('\r\n').filter((line) => line.length > 0);
-    expect(lines[1]).toBe('f-1,sample_size,総サンプルサイズ,0,0,,');
-    expect(lines[2]).toBe('(overall),,(overall),0,0,,');
+    expect(lines[1]).toBe('f-1,sample_size,総サンプルサイズ,0,0,,,0');
+    expect(lines[2]).toBe('(overall),,(overall),0,0,,,0');
   });
 
   test('カンマ・引用符・改行を含む値は RFC 4180 でエスケープされる', () => {
@@ -316,7 +352,7 @@ describe('buildAgreementSummaryCsv', () => {
             fieldId: 'f-1',
             fieldName: 'weird_field',
             fieldLabel: '項目名, "特殊"\n文字',
-            pairCount: 1,
+            withAiPairCount: 0, pairCount: 1,
             agreementCount: 1,
             agreementRate: 1,
             kappa: null,
@@ -335,7 +371,7 @@ describe('buildAgreementSummaryCsv', () => {
             fieldId: 'f-1',
             fieldName: 'sample_size',
             fieldLabel: '総サンプルサイズ',
-            pairCount: 3,
+            withAiPairCount: 0, pairCount: 3,
             agreementCount: 2,
             agreementRate: 2 / 3,
             kappa: 4 / 7,
@@ -344,17 +380,17 @@ describe('buildAgreementSummaryCsv', () => {
       }),
     );
     const lines = csv.replace(CSV_BOM, '').split('\r\n').filter((line) => line.length > 0);
-    expect(lines[1]).toBe('f-1,sample_size,総サンプルサイズ,3,2,0.6667,0.5714');
+    expect(lines[1]).toBe('f-1,sample_size,総サンプルサイズ,3,2,0.6667,0.5714,0');
   });
 });
 
 describe('buildAgreementDisagreementsCsv', () => {
   test('ヘッダ + 不一致セル行を出力する（未入力は空セル）', () => {
     const report: AgreementReport = {
-      studyCount: 1,
+      withAiStudyCount: 0, studyCount: 1,
       incompleteStudyCount: 0,
       fields: [],
-      overall: { pairCount: 0, agreementCount: 0, agreementRate: null, kappa: null },
+      overall: { withAiPairCount: 0, pairCount: 0, agreementCount: 0, agreementRate: null, kappa: null },
       disagreements: [
         {
           studyId: 'study-1',
@@ -385,10 +421,10 @@ describe('buildAgreementDisagreementsCsv', () => {
 
   test('カンマ・引用符を含む値はエスケープされる', () => {
     const report: AgreementReport = {
-      studyCount: 1,
+      withAiStudyCount: 0, studyCount: 1,
       incompleteStudyCount: 0,
       fields: [],
-      overall: { pairCount: 0, agreementCount: 0, agreementRate: null, kappa: null },
+      overall: { withAiPairCount: 0, pairCount: 0, agreementCount: 0, agreementRate: null, kappa: null },
       disagreements: [
         {
           studyId: 'study-1',
@@ -421,7 +457,7 @@ test('複数選択の順序をそろえた周辺分布で一致率 2/3・κ 0.4 
   const report = buildAgreementReport([f], inputs);
   for (const stats of [report.fields[0], report.overall]) {
     expect(stats).toEqual(expect.objectContaining({
-      pairCount: 3, agreementCount: 2, agreementRate: 2 / 3, kappa: expect.closeTo(0.4, 10),
+      withAiPairCount: 0, pairCount: 3, agreementCount: 2, agreementRate: 2 / 3, kappa: expect.closeTo(0.4, 10),
     }));
   }
 });

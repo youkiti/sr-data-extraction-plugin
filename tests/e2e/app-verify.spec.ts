@@ -402,6 +402,8 @@ async function setupRoutes(
         await route.fulfill({ json: { values: [EVIDENCE_HEADERS, ...options.evidenceRows] } });
       } else if (url.includes('/values/ExtractionRuns')) {
         await route.fulfill({ json: { values: [RUNS_HEADERS, RUN_ROW] } });
+      } else if (url.includes('values:batchGet') && url.includes('Decisions')) {
+        await route.fulfill({ json: { valueRanges: [{ values: [SHEET_HEADERS.Decisions] }] } });
       } else if (url.includes('/values/Decisions')) {
         await route.fulfill({
           json: { values: [DECISIONS_HEADERS, ...(options.decisionsRows ?? [])] },
@@ -599,7 +601,7 @@ async function initApp(
       // LLM 呼び出し実弾テスト用。issue #94。未指定時は従来どおり常に空を返す）
       // AI へ送る前の同意（issue #381）は同意済みにする（同意画面は app-ai-consent.spec.ts で検証）
       const stored: Record<string, unknown> = {
-        aiDataConsent: { version: 1, acceptedAt: '2026-07-01T00:00:00.000Z' },
+        aiDataConsent: { version: 2, acceptedAt: '2026-07-01T00:00:00.000Z' },
         ...(apiKey === null ? {} : { 'secrets.geminiApiKey': apiKey }),
       };
       // ペインサイズ調整（issue #193）のリロード後保持等、page.reload() をまたぐ永続化を
@@ -2345,6 +2347,8 @@ test('抽出前に #/verify を開くと空状態 → 抽出実行 → #/verify 
         await route.fulfill({ json: { values: [EVIDENCE_HEADERS, ...evidenceRowsAccum] } });
       } else if (url.includes('/values/ExtractionRuns')) {
         await route.fulfill({ json: { values: [RUNS_HEADERS, ...extractionRunsRows] } });
+      } else if (url.includes('values:batchGet') && url.includes('Decisions')) {
+        await route.fulfill({ json: { valueRanges: [{ values: [SHEET_HEADERS.Decisions] }] } });
       } else if (url.includes('/values/Decisions')) {
         await route.fulfill({ json: { values: [DECISIONS_HEADERS] } });
       } else if (url.includes('/values/SchemaFields')) {
@@ -2433,7 +2437,7 @@ test('抽出前に #/verify を開くと空状態 → 抽出実行 → #/verify 
                 }
                 // AI へ送る前の同意（issue #381）は同意済み
                 if (key === 'aiDataConsent') {
-                  found[key] = { version: 1, acceptedAt: '2026-07-01T00:00:00.000Z' };
+                  found[key] = { version: 2, acceptedAt: '2026-07-01T00:00:00.000Z' };
                 }
               }
               return found;

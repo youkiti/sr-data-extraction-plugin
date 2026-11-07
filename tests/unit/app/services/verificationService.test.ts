@@ -210,6 +210,8 @@ function makeField(overrides: Partial<SchemaField> = {}): SchemaField {
 /** issue #63: S12 裁定の consensus 書き込み 1 セルぶん（features/adjudication/consensusWrites） */
 function makeConsensusWrite(overrides: Partial<ConsensusCellWrite> = {}): ConsensusCellWrite {
   return {
+    source: 'bulk_match',
+    adoptedAiAccept: 'none',
     field: makeField(),
     entityKey: '-',
     action: 'accept',

@@ -1,4 +1,5 @@
 import { NOT_REPORTED_TOKEN } from '../../../../src/domain/annotation';
+import { SHEET_HEADERS } from '../../../../src/domain/sheetsSchema';
 import { applyConsensusWrites } from '../../../../src/features/adjudication/consensusRepository';
 import type { ConsensusCellWrite, ConsensusWriteParams } from '../../../../src/features/adjudication/consensusWrites';
 import type { SchemaField } from '../../../../src/domain/schemaField';
@@ -64,7 +65,9 @@ function makeDeps(options: { studyDataValues?: string[][] }): MockDeps {
     const url = String(input);
     const method = init?.method ?? 'GET';
     let json: unknown = {};
-    if (method === 'GET' && url.includes('/values/StudyData')) {
+    if (method === 'GET' && url.includes('values:batchGet')) {
+      json = { valueRanges: [{ values: [SHEET_HEADERS.Decisions] }] };
+    } else if (method === 'GET' && url.includes('/values/StudyData')) {
       json = { values: options.studyDataValues ?? [STUDY_DATA_HEADER] };
     } else if (method === 'GET' && url.includes('/values/ResultsData')) {
       json = { values: [RESULTS_DATA_HEADER] };
@@ -105,7 +108,7 @@ describe('applyConsensusWrites', () => {
     });
     // 既存行に値が無い（動的値列が無い）想定。まず値列を持つ行を用意する別ケースは下で検証する
     const writes: ConsensusCellWrite[] = [
-      { field: field(), entityKey: '-', action: 'accept', value: '120' },
+      { field: field(), entityKey: '-', action: 'accept', value: '120', source: 'bulk_match', adoptedAiAccept: 'none' },
     ];
     await applyConsensusWrites('sheet-1', writes, PARAMS, deps);
     // ResultsData への書き込みは発生しない（study レベルのみ）
@@ -115,7 +118,7 @@ describe('applyConsensusWrites', () => {
     expect(decisionsPosts).toHaveLength(1);
     const decisionsBody = JSON.parse(String(decisionsPosts[0]?.[1].body)) as { values: unknown[][] };
     expect(decisionsBody.values).toEqual([
-      ['t-now', 'judge@example.com', 'study-1', 'f-1', '-', 'consensus', 'consensus', 1, 'accept', '120', ''],
+      ['t-now', 'judge@example.com', 'study-1', 'f-1', '-', 'consensus', 'consensus', 1, 'accept', '120', '', '', '', 'bulk_match', 'none'],
     ]);
   });
 
@@ -127,7 +130,7 @@ describe('applyConsensusWrites', () => {
       ],
     });
     const writes: ConsensusCellWrite[] = [
-      { field: field({ fieldName: 'sample_size' }), entityKey: '-', action: 'accept', value: '120' },
+      { field: field({ fieldName: 'sample_size' }), entityKey: '-', action: 'accept', value: '120', source: 'bulk_match', adoptedAiAccept: 'none' },
     ];
     await applyConsensusWrites('sheet-1', writes, PARAMS, deps);
     // 既存行の上書き（values:batchUpdate。issue #185）が呼ばれ、design 列（'RCT'）が保持されていること
@@ -148,7 +151,7 @@ describe('applyConsensusWrites', () => {
     const deps = makeDeps({});
     const armField = field({ fieldId: 'f-arm', fieldName: 'arm_name', entityLevel: 'arm' });
     const writes: ConsensusCellWrite[] = [
-      { field: armField, entityKey: 'arm:1', action: 'not_reported', value: NOT_REPORTED_TOKEN },
+      { field: armField, entityKey: 'arm:1', action: 'not_reported', value: NOT_REPORTED_TOKEN, source: 'not_reported', adoptedAiAccept: 'none' },
     ];
     await applyConsensusWrites('sheet-1', writes, PARAMS, deps);
     const resultsPosts = callsOf(deps, 'POST').filter(([url]) => url.includes('ResultsData'));
@@ -175,8 +178,8 @@ describe('applyConsensusWrites', () => {
     const deps = makeDeps({ studyDataValues: [STUDY_DATA_HEADER] });
     const armField = field({ fieldId: 'f-arm', fieldName: 'arm_name', entityLevel: 'arm' });
     const writes: ConsensusCellWrite[] = [
-      { field: field(), entityKey: '-', action: 'accept', value: '120' },
-      { field: armField, entityKey: 'arm:1', action: 'edit', value: '介入群' },
+      { field: field(), entityKey: '-', action: 'accept', value: '120', source: 'bulk_match', adoptedAiAccept: 'none' },
+      { field: armField, entityKey: 'arm:1', action: 'edit', value: '介入群', source: 'third', adoptedAiAccept: 'none' },
     ];
     await applyConsensusWrites('sheet-1', writes, PARAMS, deps);
     expect(callsOf(deps, 'POST').filter(([url]) => url.includes('StudyData'))).toHaveLength(1);

@@ -4,6 +4,8 @@ import type { AnnotatorType } from './annotation';
 
 export type ValueDecisionAction = 'accept' | 'edit' | 'reject' | 'not_reported' | 'undo';
 export type DecisionAction = ValueDecisionAction | 'flag_consult' | 'unflag_consult';
+export type ConsensusSource = 'A' | 'B' | 'third' | 'bulk_match' | 'not_reported' | 'undo';
+export type AdoptedAiAccept = 'A' | 'B' | 'A,B' | 'none';
 
 /** 値の判定と独立した要相談の印イベント。 */
 export function isConsultAction(action: DecisionAction): boolean {
@@ -30,4 +32,9 @@ export interface Decision {
   value: string | null;
   /** 検証時のメモ（例: Table 2 と本文で数値不一致、Table 2 を採用） */
   note: string | null;
+  /** 判定時の表示根拠。未記録は null、根拠なしは空配列 */
+  seenEvidenceIds?: readonly string[] | null;
+  seenAiValue?: string | null;
+  consensusSource?: ConsensusSource | null;
+  adoptedAiAccept?: AdoptedAiAccept | null;
 }

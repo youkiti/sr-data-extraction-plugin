@@ -228,6 +228,9 @@ export const SHEET_HEADERS: Record<SheetTabName, readonly string[]> = {
     'quote_theme',
     'quote_seq',
     'section',
+    'source_log_id',
+    'source_model',
+    'source_prompt_version',
   ],
   Decisions: [
     'decided_at',
@@ -241,6 +244,10 @@ export const SHEET_HEADERS: Record<SheetTabName, readonly string[]> = {
     'action',
     'value',
     'note',
+    'seen_evidence_ids',
+    'seen_ai_value',
+    'consensus_source',
+    'adopted_ai_accept',
   ],
   LLMApiLog: [
     'log_id',

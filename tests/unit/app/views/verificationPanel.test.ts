@@ -1295,6 +1295,8 @@ describe('判定操作', () => {
       action: 'accept',
       value: '12',
       note: null,
+      seenEvidenceIds: ['ev-1'],
+      seenAiValue: '12',
     });
     expect(chipOf(panel.root, KEY_TOTAL)).toBe('承認');
     // ハイライトが verified （緑）へ変わる
@@ -1332,7 +1334,7 @@ describe('判定操作', () => {
     // n は遷移先の f-country に効く
     pressKey('n');
     expect(onDecision).toHaveBeenLastCalledWith(
-      expect.objectContaining({ fieldId: 'f-country', action: 'not_reported', value: 'NR' }),
+      expect.objectContaining({ fieldId: 'f-country', action: 'not_reported', value: 'NR', seenEvidenceIds: ['ev-2'], seenAiValue: 'Japan' }),
     );
     panel.dispose();
   });
@@ -1351,7 +1353,7 @@ describe('判定操作', () => {
     expect(cellEl(panel.root, KEY_ARM)?.classList.contains('verify__cell--focused')).toBe(true);
     pressKey('z'); // undo → accept の値 '50' へ戻す・留まる
     expect(onDecision).toHaveBeenLastCalledWith(
-      expect.objectContaining({ action: 'undo', value: '50' }),
+      expect.objectContaining({ action: 'undo', value: '50', seenEvidenceIds: ['ev-3'], seenAiValue: '50' }),
     );
     expect(chipOf(panel.root, KEY_ARM)).toBe('承認');
     expect(cellEl(panel.root, KEY_ARM)?.classList.contains('verify__cell--focused')).toBe(true);
@@ -1383,7 +1385,7 @@ describe('判定操作', () => {
     input!.value = '  15  ';
     input!.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
     expect(onDecision).toHaveBeenLastCalledWith(
-      expect.objectContaining({ action: 'edit', value: '15' }),
+      expect.objectContaining({ action: 'edit', value: '15', seenEvidenceIds: ['ev-1'], seenAiValue: '12' }),
     );
     expect(chipOf(panel.root, KEY_TOTAL)).toBe('修正');
     panel.dispose();
@@ -1396,7 +1398,7 @@ describe('判定操作', () => {
     expect(input?.value).toBe('');
     panel.root.querySelector<HTMLButtonElement>('.verify__edit-confirm')?.click();
     expect(onDecision).toHaveBeenLastCalledWith(
-      expect.objectContaining({ action: 'reject', value: null }),
+      expect.objectContaining({ action: 'reject', value: null, seenEvidenceIds: ['ev-1'], seenAiValue: '12' }),
     );
     panel.dispose();
   });
@@ -2505,8 +2507,12 @@ describe('独立入力モード（design §5.2。annotatorType = human_independe
     input!.value = '42';
     panel.root.querySelector<HTMLButtonElement>('.verify__edit-confirm')?.click();
     expect(onDecision).toHaveBeenCalledWith(
-      expect.objectContaining({ annotatorType: 'human_independent', action: 'edit', value: '42' }),
+      expect.objectContaining({ annotatorType: 'human_independent', action: 'edit', value: '42', seenEvidenceIds: [], seenAiValue: '' }),
     );
+    pressKey('q');
+    expect(onDecision).toHaveBeenLastCalledWith(expect.objectContaining({
+      action: 'flag_consult', seenEvidenceIds: [], seenAiValue: '',
+    }));
     panel.dispose();
   });
 
@@ -5245,7 +5251,7 @@ describe('要相談の印（issue #401 / #425）', () => {
     expect(panel.root.querySelector('.verify__consult-note')).toBeNull();
     expect(panel.root.querySelector('.verify__consult-badge')).toBeNull();
     consultButton(panel.root).click();
-    expect(onDecision).toHaveBeenLastCalledWith(expect.objectContaining({ action: 'flag_consult', value: 'Japan', note: null }));
+    expect(onDecision).toHaveBeenLastCalledWith(expect.objectContaining({ action: 'flag_consult', value: 'Japan', note: null, seenEvidenceIds: ['ev-2'], seenAiValue: 'Japan' }));
     expect(consultButton(panel.root).getAttribute('aria-pressed')).toBe('true');
     expect(consultButton(panel.root).classList.contains('verify__action--consult-on')).toBe(true);
     expect(panel.root.querySelector('.verify__cell-header .verify__consult-badge')?.textContent).toBe('要相談');

@@ -570,7 +570,7 @@ function renderCellSection(state: AppState, ctx: ViewContext, working: Adjudicat
   const evidenceIndex = indexEvidenceByCellKey(working.evidence);
   // enum 項目の「その他」候補（issue #254）。裁定画面の候補は **過去の consensus 値**とする —
   // A/B 採用（buildChoiceWrite）と第 3 の値（buildCustomValueWrite）はどちらも action='edit' を
-  // 書くため、現データからは第 3 の値だけを厳密には識別できない（design §6.4）
+  // 書くため、consensus_source を持たない古い行では第 3 の値だけを厳密には識別できない（design §6.4）
   const enumContext: AdjudicateEnumContext = {
     candidates: buildEnumCandidates(working.consensusDecisions, 'consensus', 'consensus'),
     // `#/schema` は owner のみ到達可能（guards.ts）。adjudicator には導線を出さない
@@ -845,6 +845,14 @@ function renderAgreementCard(state: AppState, ctx: ViewContext): HTMLElement {
         text: t('adjudicate.agreementIncomplete', { n: adjudicate.agreement.incompleteStudyCount }),
       }),
     );
+  if (adjudicate.agreement !== null && adjudicate.agreement.withAiStudyCount > 0)
+    children.push(
+      el('p', {
+        id: 'adjudicate-agreement-with-ai',
+        className: 'view__notice',
+        text: t('adjudicate.agreementWithAi', { n: adjudicate.agreement.withAiStudyCount }),
+      }),
+    );
   if (adjudicate.calibrationAgreement !== null && adjudicate.calibrationAgreement.length > 0) {
     children.push(
       el(
@@ -869,7 +877,8 @@ function renderAgreementCard(state: AppState, ctx: ViewContext): HTMLElement {
                   text: `${pair.annotatorA} / ${pair.annotatorB}`,
                   attributes: { scope: 'row' },
                 }),
-                el('td', { text: String(pair.studyCount) }),
+                el('td', { text: String(pair.studyCount) + (pair.report.withAiStudyCount > 0
+                  ? t('adjudicate.calibrationWithAi', { n: pair.report.withAiStudyCount }) : '') }),
                 el('td', { text: formatAgreementPercent(pair.agreementRate) }),
                 el('td', { text: formatKappa(pair.kappa) }),
               ]),
