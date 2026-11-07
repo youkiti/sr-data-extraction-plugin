@@ -50,7 +50,7 @@ async function initApp(page: Page): Promise<void> {
     win.chrome = {
       storage: {
         local: {
-          get: async () => ({}),
+          get: async () => ({ signInDataConsent: { version: 1, acceptedAt: '2026-07-01T00:00:00.000Z' } }),
           set: async () => undefined,
           remove: async () => undefined,
         },

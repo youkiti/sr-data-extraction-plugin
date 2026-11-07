@@ -473,12 +473,10 @@
             </li>
             <li>
               <span class="ja" lang="ja"
-                >拡張アイコンをクリックするとプロジェクト選択画面が新しいタブで開きます。「Google
-                でログイン」を押し、メールアドレスと Drive（選択したファイルのみ）へのアクセスを許可します。</span
+                >拡張アイコンをクリックするとプロジェクト選択画面が新しいタブで開きます。メールアドレスの用途と自分の Drive・Sheets への保存の告知を読み、「同意して Google でログイン」を押し、メールアドレスと Drive（選択したファイルのみ）へのアクセスを許可します。ログイン済みの方には、次にプロジェクト選択画面を開いたときに 1 回だけ確認が出ます。</span
               >
               <span class="en" lang="en"
-                >Click the extension icon to open the project page in a new tab, sign in with Google and grant access to
-                your email address and Drive (selected files only).</span
+                >Click the extension icon to open the project page in a new tab. Read the notice about how your email address is used and storage in your own Drive and Sheets, then click "Agree and sign in with Google" and grant access to your email address and Drive (selected files only). If you are already signed in, you will see a confirmation once when you next open the project page.</span
               >
             </li>
           </ol>
@@ -598,15 +596,14 @@
           </div>
           <p>
             <span class="ja" lang="ja"
-              >最初に AI の機能（スキーマの AI ドラフト、パイロット抽出、一括抽出、引用の AI 再特定、論文への質問、ヘルプへの相談）を使うとき、何をどこへ送るかを示す確認が 1 回だけ出ます。送るのは論文の本文（文字を読み取れない PDF はページの画像）、研究プロトコルの本文、抽出項目の定義、質問の文です。ヘルプへの相談では、質問と選ばれた公開ヘルプの本文だけを送り、相談の内容は保存しません。AI の処理のために送る先は、設定した LLM API だけです。送ったプロンプトと応答は、監査の記録として利用者自身の Google Drive（プロジェクトの logs/llm）にも保存されます（画像データは除きます）。論文への質問は本文・質問・回答を保存せず、利用量などのメタデータだけを記録します。開発者のサーバーには何も送りません。Gemini API の無料枠では、送った内容が Google の製品改善に使われ、人が読むことがあります。未公開のデータや機密の資料は有料枠で使ってください。「同意して続行」で実行し、「キャンセル」では何も送りません。確認を開いている間に同じ操作を繰り返しても、処理は増えません。「キャンセル」または Esc で閉じると、開く前の操作部へフォーカスが戻ります。同意はこのブラウザのプロファイルに記録され、設定画面の「AI へ送る内容」から見直し・取り消しができます。</span
+              >最初に AI の機能（スキーマの AI ドラフト、パイロット抽出、一括抽出、引用の AI 再特定、論文への質問、ヘルプへの相談）を使うとき、何をどこへ送るかを示す確認が 1 回だけ出ます。送るのは論文の本文（文字を読み取れない PDF はページの画像）、研究プロトコルの本文、抽出項目の定義、質問の文です。ヘルプへの相談では、質問と選ばれた公開ヘルプの本文だけを送り、相談の内容は保存しません。AI の処理のために送る先は、設定した LLM API だけです。送ったプロンプトと応答は、監査の記録として利用者自身の Google Drive（プロジェクトの logs/llm）にも保存されます（画像データは除きます）。論文への質問は本文・質問・回答を保存せず、利用量などのメタデータだけを記録します。開発者のサーバーには何も送りません。Gemini API の無料枠では、送った内容と応答が、Google の製品・サービスと機械学習技術の提供・改善・開発に使われ、人が読むことがあります。未公開のデータや機密の資料は有料枠で使ってください。「同意して続行」で実行し、「キャンセル」では何も送りません。確認を開いている間に同じ操作を繰り返しても、処理は増えません。「キャンセル」または Esc で閉じると、開く前の操作部へフォーカスが戻ります。同意の内容を変えたときは、もう一度表示します。同意はこのブラウザのプロファイルに記録され、設定画面の「AI へ送る内容」から見直し・取り消しができます。</span
             >
             <span class="en" lang="en"
               >The first time you use an AI feature (AI schema draft, pilot extraction, batch extraction, AI quote
               relocation, asking a paper or help consultation), a notice shows once what is sent where. The extension sends the text of
               your papers (page images for PDFs without a text layer), your protocol text, your field definitions and
-              your questions. Help consultation sends only your question and selected public help text, and does not save consultation content. For AI processing, content is sent only to the LLM API you configured. The prompts sent and the responses are also saved as audit records in your own Google Drive (the project’s logs/llm folder), excluding image data. For paper questions, the paper text, questions and answers are not saved; only metadata such as usage is recorded. Nothing is sent to the developer’s servers. On the Gemini API free tier, what you send may be
-              used to improve Google’s products and may be read by people, so use a paid tier for unpublished data or
-              confidential material. “Agree and continue” runs the feature; “Cancel” sends nothing. Your consent is
+              your questions. Help consultation sends only your question and selected public help text, and does not save consultation content. For AI processing, content is sent only to the LLM API you configured. The prompts sent and the responses are also saved as audit records in your own Google Drive (the project’s logs/llm folder), excluding image data. For paper questions, the paper text, questions and answers are not saved; only metadata such as usage is recorded. Nothing is sent to the developer’s servers. On the Gemini API free tier, what you send and the responses are used to provide, improve, and develop Google products, services, and machine learning technologies, and may be read by people, so use a paid tier for unpublished data or
+              confidential material. If the notice changes, it is shown again. “Agree and continue” runs the feature; “Cancel” sends nothing. Your consent is
               recorded in this browser profile, and you can review or withdraw it under “What is sent to the AI” in
               Options. While this notice is open, repeated clicks do not start another operation. Cancel or press Esc to return focus to the control that opened it.</span
             >

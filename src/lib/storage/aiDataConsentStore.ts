@@ -8,8 +8,9 @@ export const AI_DATA_CONSENT_STORAGE_KEY = 'aiDataConsent';
 /**
  * 同意文の版。ダイアログで示す内容（送る内容・送り先・扱い）を実質的に変えたら上げる。
  * 記録の版と一致しないときは同意を取り直す
+ * Gemini の無料枠の文を追加利用規約の原文の範囲にそろえたため版を上げた
  */
-export const AI_DATA_CONSENT_VERSION = 1;
+export const AI_DATA_CONSENT_VERSION = 2;
 
 export interface AiDataConsentRecord {
   version: number;

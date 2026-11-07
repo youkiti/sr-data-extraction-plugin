@@ -42,6 +42,13 @@ import { loadUiLanguage } from '../lib/storage/settingsStore';
 import { readTiabSheet } from '../features/documents/tiabSheetReader';
 import { resolveAdoptedReferences } from '../features/documents/tiabReview';
 import { saveTiabHandoff } from '../features/project/tiabHandoffStore';
+import {
+  isCurrentSignInDataConsent,
+  loadSignInDataConsent,
+  saveSignInDataConsent,
+  SIGN_IN_DATA_CONSENT_VERSION,
+} from '../lib/storage/signInDataConsentStore';
+import { openSignInDataConsentDialog } from './signInDataConsentDialog';
 
 export interface PopupDeps {
   /**
@@ -246,13 +253,21 @@ async function refresh(
 ): Promise<void> {
   const authed = await deps.isAuthenticated();
   els.auth.hidden = authed;
-  els.projects.hidden = !authed;
+  els.projects.hidden = true;
 
   if (!authed) {
     els.status.textContent = t('popup.statusLoginRequired');
     return;
   }
 
+  if (!isCurrentSignInDataConsent(await loadSignInDataConsent())) {
+    if (!await openSignInDataConsentDialog(doc)) {
+      await logout(doc, els, deps, recentEntries);
+      return;
+    }
+  }
+
+  els.projects.hidden = false;
   await renderAccount(els, deps);
   await renderRecent(doc, els, deps, recentEntries);
   els.status.textContent =
@@ -448,7 +463,18 @@ function bindLoginButton(
     els.loginError.textContent = '';
     // 状態 C（ログイン処理中）: ボタンを無効化して Google 認可ウィンドウの結果を待つ
     els.loginButton.disabled = true;
-    void deps.signIn().then(async (ok) => {
+    void (async () => {
+      try {
+        await saveSignInDataConsent({
+          version: SIGN_IN_DATA_CONSENT_VERSION,
+          acceptedAt: new Date().toISOString(),
+        });
+      } catch {
+        els.loginError.textContent = t('signInConsent.saveFailed');
+        els.loginButton.disabled = false;
+        return;
+      }
+      const ok = await deps.signIn();
       els.loginButton.disabled = false;
       if (!ok) {
         // 状態 D（ログイン失敗）
@@ -456,8 +482,20 @@ function bindLoginButton(
         return;
       }
       await refresh(doc, els, deps, recentEntries);
-    });
+    })();
   });
+}
+
+async function logout(
+  doc: Document,
+  els: PopupElements,
+  deps: PopupDeps,
+  recentEntries: Map<string, RecentEntry>
+): Promise<void> {
+  await deps.signOut();
+  // 別アカウントでログインし直しても他人の履歴が残らないようにする。
+  await clearProjectSelection();
+  await refresh(doc, els, deps, recentEntries);
 }
 
 function bindLogoutButton(
@@ -469,12 +507,7 @@ function bindLogoutButton(
   els.logoutButton.addEventListener('click', () => {
     // E-Popup-4: 処理中の再クリックを防ぐ
     els.logoutButton.disabled = true;
-    void deps
-      .signOut()
-      // プロジェクト選択状態もユーザーに紐付くため一緒にクリアする
-      // （別アカウントでログインし直しても他人の recent が残らない）
-      .then(() => clearProjectSelection())
-      .then(() => refresh(doc, els, deps, recentEntries))
+    void logout(doc, els, deps, recentEntries)
       .finally(() => {
         els.logoutButton.disabled = false;
       });
