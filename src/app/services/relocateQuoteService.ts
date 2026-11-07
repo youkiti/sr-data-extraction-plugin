@@ -16,13 +16,14 @@
 // app/services/verifyService.ts の「run_id が既知 run か」判定は無改修のまま新行を正しく採用する
 import type { NormalizedPage } from '../../domain/anchor';
 import type { Evidence } from '../../domain/evidence';
+import { SHEET_HEADERS } from '../../domain/sheetsSchema';
 import { t } from '../../lib/i18n';
 import type { SchemaField } from '../../domain/schemaField';
 import { anchorQuote } from '../../features/anchoring/anchorQuote';
 import { normalizeText } from '../../features/anchoring/normalizeText';
 import {
   appendEvidenceRows,
-  ensureEvidenceRelocatedFromColumn,
+  ensureEvidenceQuoteColumns,
 } from '../../features/extraction/evidenceRepository';
 import {
   buildRelocateQuoteUserPrompt,
@@ -120,6 +121,8 @@ export async function relocateQuote(
     const llmFolder = await ensureChildFolder('llm', logsFolder.id, deps.google);
     const baseProvider = deps.buildProvider(providerResolution.config);
     const policy = await (deps.resolveRateLimitPolicy ?? (async () => UNLIMITED_POLICY))();
+    let sourceLogId: string | null = null;
+    let sourceModel: string | null = null;
     const provider = applyRateLimitPolicy(
       withLogging(baseProvider, 'relocate_quote', {
         uploadJson: async ({ filename, content }) => {
@@ -129,7 +132,11 @@ export async function relocateQuote(
           );
           return { webViewLink: file.webViewLink };
         },
-        appendLogEntry: (entry) => appendLlmApiLog(params.spreadsheetId, entry, deps.google),
+        appendLogEntry: (entry) => {
+          sourceLogId = entry.logId;
+          sourceModel = entry.responseModel ?? entry.model;
+          return appendLlmApiLog(params.spreadsheetId, entry, deps.google);
+        },
         // 再特定で追記する Evidence は元の run_id を引き継ぐ（下の relocated）。その行が
         // 元の抽出とは別のモデル・プロンプトで作られたことを、LLMApiLog の run_id +
         // purpose=relocate_quote から後で追えるよう、ログ行にも同じ run_id を残す（issue #381）
@@ -200,8 +207,11 @@ export async function relocateQuote(
       quoteTheme: null,
       quoteSeq: null,
       section: null,
+      sourceLogId,
+      sourceModel,
+      sourcePromptVersion: RELOCATE_QUOTE_PROMPT_VERSION,
     };
-    await ensureEvidenceRelocatedFromColumn(params.spreadsheetId, deps.google);
+    await ensureEvidenceQuoteColumns(params.spreadsheetId, deps.google, SHEET_HEADERS.Evidence.length);
     await appendEvidenceRows(params.spreadsheetId, [relocated], deps.google);
     return { status: 'relocated', evidence: relocated };
   } catch (err) {

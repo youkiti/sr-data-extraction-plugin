@@ -118,6 +118,8 @@ async function setupRoutes(page: Page, options: { unverifiedStudy?: boolean; aiS
         await route.fulfill({ json: { values: [RESULTS_DATA_HEADERS] } });
       } else if (url.includes('/values/Evidence')) {
         await route.fulfill({ json: { values: [EVIDENCE_HEADERS, EVIDENCE_ROW_1, EVIDENCE_ROW_2] } });
+      } else if (url.includes('values:batchGet') && url.includes('Decisions')) {
+        await route.fulfill({ json: { valueRanges: [{ values: [SHEET_HEADERS.Decisions] }] } });
       } else if (url.includes('/values/Decisions')) {
         await route.fulfill({ json: { values: [DECISIONS_HEADERS, DECISION_ROW] } });
       } else if (url.includes('/values/ExtractionRuns')) {
@@ -245,7 +247,7 @@ test('形式選択 + サマリ + プレビュー → 生成で Drive 保存 + Ex
   // 列数 30 = 従来 28 列 + 複数引用の quotes_json 1 列 + 節の見出しの section 1 列
   await formats.locator('input[value=audit]').check();
   await expect(preview.locator('thead th').first()).toHaveText('study_label');
-  await expect(preview.locator('thead th')).toHaveCount(30);
+  await expect(preview.locator('thead th')).toHaveCount(35);
   // 列の多い表でも、幅 1280px で左メニューが潰れず、ページに横スクロールが出ない（表は枠内で横スクロールする）
   await expect(page.locator('.app__sidebar')).toHaveJSProperty('offsetWidth', 220);
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(1280);

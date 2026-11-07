@@ -42,6 +42,11 @@ export const AUDIT_HEADER = [
   'note',
   'quotes_json',
   'section',
+  'seen_evidence_ids',
+  'seen_ai_value',
+  'evidence_source_log_id',
+  'evidence_source_model',
+  'evidence_source_prompt_version',
 ] as const;
 
 /**
@@ -136,6 +141,9 @@ export function buildAuditCsv(
     evidence.bbox === null ? '' : String(evidence.bbox.ymax),
     evidence.bbox === null ? '' : String(evidence.bbox.xmax),
   ];
+  const sourceColumns = (evidence: Evidence | null): string[] => evidence === null
+    ? [AUDIT_MISSING_TOKEN, AUDIT_MISSING_TOKEN, AUDIT_MISSING_TOKEN]
+    : [evidence.sourceLogId ?? '', evidence.sourceModel ?? '', String(evidence.sourcePromptVersion ?? '')];
   const cellKey = (fieldId: string, entityKey: string): string => `${fieldId}${SEP}${entityKey}`;
 
   const csvRows: string[][] = [];
@@ -145,10 +153,12 @@ export function buildAuditCsv(
 
   for (const study of studies) {
     const evidenceByCell = new Map<string, Evidence[]>();
+    const evidenceById = new Map<string, Evidence>();
     for (const evidence of evidences) {
       if (evidence.studyId !== study.studyId) {
         continue;
       }
+      evidenceById.set(evidence.evidenceId, evidence);
       const key = cellKey(evidence.fieldId, evidence.entityKey);
       const cell = evidenceByCell.get(key);
       if (cell === undefined) {
@@ -193,7 +203,13 @@ export function buildAuditCsv(
         const candidates = (
           evidenceByCell.get(cellKey(decision.fieldId, decision.entityKey)) ?? []
         ).filter((evidence) => runById.get(evidence.runId)?.schemaVersion === decision.schemaVersion);
-        const attached = latestEvidence(candidates);
+        const seen = (decision.seenEvidenceIds ?? []).map((id) => evidenceById.get(id));
+        const representative = seen[0];
+        const attached = representative === undefined ? latestEvidence(candidates) : {
+          ...bundleEvidence(seen.filter((item): item is Evidence => item !== undefined))
+            .get(cellKeyOf(representative.fieldId, representative.entityKey))!,
+          evidence: representative,
+        };
         const seq = index + 1;
         items.push({
           // entity_key → field_index → annotator（annotator_type・seq で一意化）
@@ -218,6 +234,9 @@ export function buildAuditCsv(
             decision.note ?? '',
             quotesJson(attached),
             attached === null ? AUDIT_MISSING_TOKEN : attached.evidence.section ?? '',
+            decision.seenEvidenceIds == null ? '' : decision.seenEvidenceIds.join(' ') || 'none',
+            decision.seenAiValue ?? '',
+            ...sourceColumns(attached === null ? null : attached.evidence),
           ],
         });
       });
@@ -260,6 +279,9 @@ export function buildAuditCsv(
           AUDIT_MISSING_TOKEN,
           quotesJson(bundle),
           representative.section ?? '',
+          AUDIT_MISSING_TOKEN,
+          AUDIT_MISSING_TOKEN,
+          ...sourceColumns(representative),
         ],
       });
     }

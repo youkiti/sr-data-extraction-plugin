@@ -221,6 +221,8 @@ async function setupRoutes(page: Page, options: SetupRoutesOptions = {}): Promis
         await route.fulfill({ json: { values: [RESULTS_DATA_HEADERS, RESULTS_ROW_A, RESULTS_ROW_B] } });
       } else if (url.includes('/values/ArmStructures')) {
         await route.fulfill({ json: { values: [ARM_STRUCTURES_HEADERS, ARM_ROW_A, ARM_ROW_B] } });
+      } else if (url.includes('values:batchGet') && url.includes('Decisions')) {
+        await route.fulfill({ json: { valueRanges: [{ values: [SHEET_HEADERS.Decisions] }] } });
       } else if (url.includes('/values/Decisions')) {
         await route.fulfill({ json: { values: [DECISIONS_HEADERS, ...STUDY1_DECISIONS, ...STUDY3_DECISIONS] } });
       } else if (url.includes('/values/ExtractionRuns')) {
