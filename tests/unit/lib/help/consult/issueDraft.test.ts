@@ -15,6 +15,12 @@ test('メール・許可外 URL・資格情報とポート付き URL・長い識
   expect(sanitizeForIssue('短いID safe_123')).toBe('短いID safe_123');
 });
 
+test('許可した URL でもクエリとフラグメントのメール・長い識別子は伏せる', () => {
+  expect(sanitizeForIssue(`${pages}/help.html?email=person@example.org`)).toBe(`${pages}/help.html[REDACTED]`);
+  expect(sanitizeForIssue(`${repository}/issues/1#Abcdefghijklmn_123456-789`)).toBe(`${repository}/issues/1#[REDACTED]`);
+  expect(sanitizeForIssue(`${pages}/help.html?lang=en#setup`)).toBe(`${pages}/help.html?lang=en#setup`);
+});
+
 test('全項目を伏せ、質問を一行化したタイトルと日英の本文を作る', () => {
   const draft = createIssueDraft({ question: '質問\nperson@example.org', answer: 'https://private.example', environment: { version: 'person@example.org', uiLang: 'person@example.org', screen: 'person@example.org', provider: 'person@example.org', model: 'person@example.org', configuredProviders: ['person@example.org'], errorText: '123456789012345678901' } });
   expect(draft.title).toBe('ヘルプ相談: 質問 [REDACTED]');

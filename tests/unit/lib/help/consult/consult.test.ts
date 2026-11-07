@@ -53,6 +53,10 @@ test.each(['gemini', 'anthropic', 'openrouter'] as const)('%s は固定モデル
       expect(parsed.model).toBe(CONSULT_MODELS[providerId]);
       // Anthropic は本文予算に既存 provider の思考用4,000トークンを上乗せする。
       expect(parsed.max_tokens).toBe(providerId === 'anthropic' ? 12192 : 8192);
+      // strict の構造化出力は、ルートの additionalProperties: false が無いと 400 になる。
+      if (index === 0) {
+        expect(body).toContain('"additionalProperties":false');
+      }
     }
     expect(call[1].signal).toBeInstanceOf(AbortSignal);
   }

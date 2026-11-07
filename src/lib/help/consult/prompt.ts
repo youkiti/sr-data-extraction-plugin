@@ -6,6 +6,8 @@ export const SELECTION_RESPONSE_SCHEMA = {
   type: 'object',
   properties: { sectionIds: { type: 'array', items: { type: 'string' } } },
   required: ['sectionIds'],
+  // Anthropic と OpenRouter（strict の構造化出力）は、ルートに additionalProperties: false が無いと 400 で拒む。
+  additionalProperties: false,
 };
 
 export function buildSelectionMessages(sections: readonly HelpSection[], question: string): ChatMessage[] {

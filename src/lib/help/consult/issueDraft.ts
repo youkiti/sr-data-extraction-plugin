@@ -6,6 +6,20 @@ const REDACTED = '[REDACTED]';
 const WARNING = 'この下書きは公開の Issue になります。個人情報や未公開の研究内容が含まれていないか確認してください。\nThis draft will become a public Issue. Check that it contains no personal information or unpublished research.\n\n';
 const TRUNCATED = '\n（URL の長さ制限により省略しました / Truncated to fit the URL length limit.）';
 
+function redactText(text: string): string {
+  return text.replace(/[A-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, REDACTED)
+    .replace(/[A-Z0-9_-]{20,}/gi, REDACTED);
+}
+
+/** 許可した URL も、クエリとフラグメントには利用者の情報が入りうるので通常の文字列として伏せる。 */
+function redactAllowedUrl(url: string): string {
+  const cut = url.search(/[?#]/);
+  if (cut < 0) {
+    return url;
+  }
+  return url.slice(0, cut) + redactText(url.slice(cut));
+}
+
 export function sanitizeForIssue(text: string): string {
   // URL は先に分離し、許可済みパスの長い ID を通常の文字列として再処理しない。
   return text.split(/([a-z][a-z0-9+.-]*:\/\/[^\s<>"'）)]+)/gi).map((part) => {
@@ -18,13 +32,12 @@ export function sanitizeForIssue(text: string): string {
         });
         return allowed && !url.username && !url.password && !url.port
           && !/^https?:\/\/[^/]*:/i.test(part)
-          ? part : REDACTED;
+          ? redactAllowedUrl(part) : REDACTED;
       } catch {
         return REDACTED;
       }
     }
-    return part.replace(/[A-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, REDACTED)
-      .replace(/[A-Z0-9_-]{20,}/gi, REDACTED);
+    return redactText(part);
   }).join('');
 }
 
