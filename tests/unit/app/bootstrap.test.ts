@@ -5334,6 +5334,28 @@ describe('費用・予算・使用量出力の起動配線', () => {
     installChromeMock();
     document.body.innerHTML = APP_TEMPLATE;
   });
+  test('比較はボタン操作で計算し、CSV の種類をサービスへ渡す', async () => {
+    const calculate = jest.spyOn(dashboardService, 'loadAiHumanComparison').mockResolvedValue();
+    const download = jest.spyOn(dashboardService, 'downloadAiHumanComparisonCsv').mockImplementation(() => undefined);
+    const stub = createWindowStub({ currentProject: PROJECT, home: COUNTS_LOADED });
+    const { deps } = createFakeDeps([[...SHEET_HEADERS.Documents]]);
+    const store = await bootstrapApp(asWindow(stub), deps);
+    store!.setState({ role: { ...store!.getState().role, role: 'owner' } });
+    stub.location.hash = '#/dashboard';
+    stub.fireHashChange();
+    await flush();
+    expect(calculate).not.toHaveBeenCalled();
+    (document.getElementById('dashboard-ai-compare-calculate') as HTMLButtonElement).click();
+    expect(calculate).toHaveBeenCalledWith(store, deps);
+    store!.setState({ dashboard: { ...store!.getState().dashboard,
+      comparison: { loading: false, error: null, data: { cells: [], unextractedStudyIds: [], noFinalStudyIds: [] } } } });
+    for (const kind of ['summary', 'cells']) {
+      (document.getElementById(`dashboard-ai-compare-${kind}-csv`) as HTMLButtonElement).click();
+      expect(download).toHaveBeenCalledWith(store, deps, kind);
+    }
+    calculate.mockRestore();
+    download.mockRestore();
+  });
   test('部分注入でも usage の既定値を維持する', async () => {
     const stub = createWindowStub({ dashboard: {
       usage: { budgetError: '注入' },

@@ -1896,6 +1896,34 @@
             </figcaption>
           </figure>
 
+          <h3 id="dashboard-ai-compare">
+            <span class="ja" lang="ja">AI と人の抽出の比較</span>
+            <span class="en" lang="en">Compare AI and human extraction</span>
+          </h3>
+          <div class="help-when">
+            <p class="help-when-label">
+              <span class="ja" lang="ja">こんなとき</span>
+              <span class="en" lang="en">When to read this</span>
+            </p>
+            <ul>
+              <li>
+                <span class="ja" lang="ja">AI の作り話・誤った値・欠けの割合を確かめたい</span>
+                <span class="en" lang="en">I want to measure AI fabrications, wrong values and omissions</span>
+              </li>
+              <li>
+                <span class="ja" lang="ja">独立の人や最終値との比較を CSV で保存したい</span>
+                <span class="en" lang="en">I want to save comparisons with independent reviewers or final values as CSV</span>
+              </li>
+            </ul>
+          </div>
+          <p>
+            <span class="ja" lang="ja">オーナーと裁定者は「比較を計算」で、AI と人の現在値を比べられます。「一致」は同じ値（複数選択は並びをそろえて比較）、「欠け」は人が値を出したのに AI が報告なし・値なし、「作り話」は人が報告なしとした値を AI が出した場合、または異なる値で全引用が本文で見つからない場合、「誤った値」はそれ以外の異なる値です。値が一致すれば、引用の失敗は別の件数にだけ数えます。</span>
+            <span class="en" lang="en">Owners and adjudicators can calculate a comparison of current AI and human values. A match means equal values (with multiple selections put in canonical order). An omission means the human has a value but AI reports none or has no value. A fabrication means AI supplies a value where the human reports none, or supplies a different value with all quotes failing to match the text. Other differing values are wrong values. Equal values remain matches even if their quotes fail; quote failures are also counted separately.</span>
+          </p>
+          <p>
+            <span class="ja" lang="ja">人が未判定、またはその項目が AI の抽出対象外なら「比べられない」として率の分母から外します。両方空も一致にしません。完了した AI 抽出のない研究は別計上します。A は独立の人ごとに比較、B は最終値を裁定値・独立の人・AI を見た人に分けて表示します。AI を見ながら判定した人との比較は独立の比較ではありません。群番号の対応付けは行いません。集計とセル一覧を CSV で保存できます。</span>
+            <span class="en" lang="en">Unjudged human cells and fields outside completed AI extraction runs are incomparable and excluded from rates. Two empty values are not a match. Studies without completed AI extraction are counted separately. A compares each independent reviewer; B separates final consensus values, independent human values, and AI-assisted human values. Comparisons with reviewers who saw AI output are not independent. Arm numbering is not mapped. Summary and cell CSV files are available.</span>
+          </p>
           <h3 id="dashboard-consult">
             <span class="ja" lang="ja">要相談の一覧</span>
             <span class="en" lang="en">Items needing discussion</span>

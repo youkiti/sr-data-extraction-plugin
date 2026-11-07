@@ -196,6 +196,8 @@ function makeCtx(): { ctx: ViewContext; callbacks: jest.Mocked<DocumentsViewCall
         onReload: jest.fn(),
         onReloadUsage: jest.fn(),
         onSaveBudget: jest.fn(),
+        onCalculateComparison: jest.fn(),
+        onDownloadComparisonCsv: jest.fn(),
         onBudgetDraftChange: jest.fn(),
         onBudgetError: jest.fn(),
       },

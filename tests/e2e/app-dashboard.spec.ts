@@ -259,6 +259,35 @@ async function initApp(page: Page, hash: string): Promise<void> {
   await page.goto(`/app/app.html${hash}`);
 }
 
+test('AI と人の比較を手動計算して集計・セル CSV を保存する', async ({ page }) => {
+  await setupRoutes(page);
+  await page.route('https://sheets.googleapis.com/**/values/SchemaVersions**', (route) => route.fulfill({ json: {
+    values: [[...SHEET_HEADERS.SchemaVersions], ['1', '', '1', 'user_edit', 't0', 'e2e@example.com', '']],
+  } }));
+  await page.route('https://sheets.googleapis.com/**/values/SchemaFields**', (route) => route.fulfill({ json: {
+    values: [SCHEMA_FIELDS_HEADERS, STUDY_FIELD_ROW, ARM_FIELD_ROW],
+  } }));
+  // 比較は Documents から参照される研究だけを対象にする（resolveActiveStudies）
+  await page.route('https://sheets.googleapis.com/**/values/Documents**', (route) => route.fulfill({ json: {
+    values: [[...SHEET_HEADERS.Documents], ['doc-1', 'study-1', 'article', 'drive-1', 'src-1', 'smith2020.pdf', '', '',
+      'https://drive.google.com/file/d/txt-1/view', 'ok', '1', '4000', '2026-07-01T00:00:00Z', 'e2e@example.com', '']],
+  } }));
+  await page.route('https://sheets.googleapis.com/**/values/StudyData**', (route) => route.fulfill({ json: {
+    values: [[...STUDY_DATA_HEADERS, 'mortality_pct'],
+      ['study-1', 'independent@example.com', 'human_independent', '1', '', 't1', '12']],
+  } }));
+  await initApp(page, '#/dashboard');
+  await expect(page.locator('#dashboard-ai-compare')).toBeVisible();
+  await expect(page.locator('#dashboard-ai-compare-summary-csv')).toHaveCount(0);
+  await page.locator('#dashboard-ai-compare-calculate').click();
+  await expect(page.locator('[data-preserve-scroll="ai-compare-independent"]')).toContainText('100.0%');
+  for (const kind of ['summary', 'cells']) {
+    const event = page.waitForEvent('download');
+    await page.locator(`#dashboard-ai-compare-${kind}-csv`).click();
+    expect((await event).suggestedFilename()).toMatch(new RegExp(`^ai_human_comparison_${kind}_\\d{8}-\\d{6}\\.csv$`));
+  }
+});
+
 test('マトリクス表示 → セルクリックで #/verify?study=&entity= へ遷移する', async ({ page }) => {
   await setupRoutes(page);
   await initApp(page, '#/dashboard');

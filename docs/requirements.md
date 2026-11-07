@@ -609,7 +609,7 @@ SR のデータ抽出は「研究 → 群（arm）→ アウトカム × 時点�
 | S6 | パイロット抽出 | 2〜3 件の study で AI 抽出 → S8 と同じ検証 UI（修正・棄却時に任意の判定メモを入力・保存）→ 「表のデザインを改訂して再パイロット」導線。再パイロットの既定は過去のパイロットで使っていない study を優先する（v0.22・issue #266）。**対象項目チェックリスト**（既定 = 全選択。issue #80 §4.3） |
 | S7 | 一括抽出 | 対象 study 選択、モデル選択、コスト概算表示、進捗バー、失敗リトライ（オフラインキュー tiab-review 準拠）。**対象項目チェックリスト**（既定 = 全選択。issue #80 §4.3） |
 | S8 | 検証（中核画面） | §4.2 |
-| S9 | ダッシュボード | study × section 単位の検証進捗マトリクス、anchor 失敗率、not_reported 率（複数の引用・分割した断片を持つセル〔issue #275・#294〕は、anchor 失敗率では引用 1 件ずつを数え、not_reported 率ではセルを 1 件と数える）、費用集計とプロジェクト予算設定 |
+| S9 | ダッシュボード | study × section 単位の検証進捗マトリクス、anchor 失敗率、not_reported 率（複数の引用・分割した断片を持つセル〔issue #275・#294〕は、anchor 失敗率では引用 1 件ずつを数え、not_reported 率ではセルを 1 件と数える）、費用集計とプロジェクト予算設定、AI と人の抽出の比較レポート（§8、issue #383） |
 | S10 | エクスポート | 形式選択（study_wide / results_long / audit）、プレビュー、CSV 生成 + Drive 保存、usage.csv（全体 / run / 月の費用・使用量）、論文 Methods 記載例のコピー |
 | S11 | Options / 設定 | **LLM 接続（v0.37 で 1 節・1 ボタンに統合）**: 接続方式（Gemini / OpenRouter / Anthropic〔issue #127 PR2〕/ Azure OpenAI〔PR3〕/ OpenAI 互換 API / **ローカル LLM**〔v0.37〕）を選ぶとその方式の API キー（方式により URL）だけを出し、既定モデルの候補をその方式に絞り、「保存して接続を確認」で保存・モデル一覧取得・構造化呼び出しを順に行う。以下は v0.36 までの記述: 接続方式、OpenAI 互換 API の完全 URL + origin 権限要求 + JSON Schema 接続テスト（Azure OpenAI も同様にクエリ文字列付き完全 URL を入力）、既定モデル（プルダウン + その他で直接入力。**カスタムモデル一覧管理 UI は不採用〔v0.12〕** — OpenAI 互換 + ローカル LLM〔localhost〕+ 直接入力で実需をカバー。モデル一覧の自動取得〔PR4〕で補う）、reasoning effort の既定値（未設定可。PR5）、表示言語。**独自認証は投機実装しないの不採用宣言を Anthropic ネイティブ・Azure OpenAI に限って明示的に覆す〔v0.16・issue #127〕**: 両者はプロバイダごとに固定の認証方式を実装する実需（公開ユーザーが持っているキーの 2 大勢力）であり、投機実装ではない。引き続き不採用のまま維持するのは①利用者が自由にヘッダー名/値を追加する汎用の任意ヘッダー入力 UI、②カスタムモデル一覧の手動管理 UI（→ モデル一覧自動取得で代替） |
 | S12 | 裁定画面（v0.11） | owner / adjudicator が、human annotator 2 名（reviewer_with_ai / reviewer_independent 等）の検証が揃った study について群構成の突き合わせ・セル単位の一致判定 / 個別裁定を行い `consensus` 行を確定（※Q4） |
@@ -806,6 +806,61 @@ Chrome ウェブストアの [Disclosure Requirements](https://developer.chrome.
 ---
 
 ## 8. 検証・評価計画（研究としての位置づけ）
+
+### AI と人の比較（issue #383）
+
+S9 の owner / adjudicator 専用カードから「比較を計算」で全行を読み込む。初回表示では自動計算しない。
+既存の採用率・パイロット行列・人同士の一致度とは別に、同じレビューの現在値を比較する。
+
+- AI の値は S8 と同じ `composeEvidenceByStudy` の Evidence を `bundleEvidence` でセルに束ねた代表値。
+  `notReported` は報告なし、null / trim 後空文字は値なし。引用は束の引用（空なら代表行）で、全引用の `anchorStatus` が `failed` のとき本文で見つからないとする。
+- 人の基準は StudyData / ResultsData の現在値。study は field_name 列、他は field_id × entity_key で取り出す。
+  StudyData の `NOT_REPORTED_TOKEN` と ResultsData の `notReported` を NR とし、複数選択を正準化して trim 後に完全一致で比べる。数値の許容誤差は設けない。
+- AI の対象は、その研究を含む完了 run があり、field_ids が空（全項目）か当該項目を含むこと。
+  完了 run のない研究は比較対象から外し「AI 未抽出の研究」として別計上する。
+- 最新確定スキーマの各項目を比較する。study は `STUDY_ENTITY_KEY` の 1 セル。
+  他のレベルは、その項目について基準者の ResultsData と AI Evidence の entity_key の和集合を用いる。
+  **群番号の対応付けは行わず、生の entity_key で比較するため、番号の食い違いが不一致・欠けとして計上されうる。**
+
+値を先に見て、次の順で分類する。
+
+| 条件（H = 人、A = AI） | 区分 |
+|---|---|
+| H が null / trim 後空 | 比べられない（人が未判定）。両方空も一致にしない |
+| AI の対象外の項目 | 比べられない（AI が抽出していない） |
+| H = NR、A が報告なし / 値なし | 一致 |
+| H = NR、A が値 | 作り話 |
+| H が値、A が報告なし / 値なし（Evidence なしを含む） | 欠け |
+| H と A が値で完全一致 | 一致（引用が見つからなくても一致） |
+| H と A が値で不一致、全引用が failed | 作り話 |
+| H と A が値で不一致、それ以外 | 誤った値 |
+
+率の分母は「一致 + 誤った値 + 作り話 + 欠け」。正確度は一致 / 分母。
+分母 0 は null（画面は「—」）。比べられない件数とその理由を別計上する。
+AI が値を出して全引用が failed のセルも区分とは別に数える（比べられないセルは除く）。
+
+A は `human_independent` 各人との比較を合算し、1 セル × 1 人を 1 件とする。
+B は `selectFinalAnnotator`（consensus、なければ唯一の人）を使い、選べない抽出済み研究数を別計上する。
+B は consensus / human_independent / human_with_ai を分け、種類をまたぐ合計を作らない。
+human_with_ai は AI を見ながら判定した人であり、独立比較ではない旨を表示する。
+各比較相手につき全体・entity_level 別・項目 × entity_level 別を集計する。
+純粋な分類と集計を分離し、集計 API は研究 ID 集合と entity_level 集合で絞り込める。
+
+CSV は集計とセル一覧の 2 本（UTF-8 BOM 付き）。
+集計列（順序通り）:
+
+- `group, entity_level, field_id, field_name, field_label, compared, match, wrong_value, fabrication, omission, incomparable`
+- `human_unjudged, ai_not_extracted, missing_quote, accuracy, wrong_value_rate, fabrication_rate, omission_rate, unextracted_studies, no_final_studies`
+
+セル列（順序通り）:
+
+- `study_label, study_id, field_id, field_name, field_label, entity_level, entity_key, group, annotator, annotator_type`
+- `category, reason, ai_value, human_value, missing_quote`
+
+ファイル名は `ai_human_comparison_summary_<時刻>.csv` / `ai_human_comparison_cells_<時刻>.csv`。
+group は A が independent、B が最終値の annotator_type。reason は human_unjudged / ai_not_extracted（比較可能なら空）。
+集計の entity_level / field_id が空なら全体、field_id だけ空ならレベル合計。
+率は小数点以下 4 桁に丸め、分母 0 の率は空欄。
 
 - tiab-review の LLM ベンチマーク運用（`experiments/` 配下、採用基準の事前設定、固定バージョン ID 採用）を踏襲し、**抽出精度ベンチマーク**を実施してから既定モデルを確定する
 - 評価指標（案）: 項目レベル正確度（人間ゴールドスタンダード比）、not_reported 判定の感度 / 特異度、quote アンカリング成功率、検証所要時間（AI 支援あり vs なし）

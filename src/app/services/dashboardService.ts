@@ -18,6 +18,16 @@ import {
 } from '../../features/project/reviewerRepository';
 import { CALIBRATION_SET_ID } from '../../domain/reviewSet';
 import { readReviewSetProgressMaterials, requireReviewSets } from './reviewSetService';
+import { buildComparisonCells, buildComparisonCellsCsv, buildComparisonSummaryCsv } from '../../features/verification/aiHumanComparison';
+import { readStudies, resolveActiveStudies } from '../../features/documents/studyRepository';
+import { readDocuments } from '../../features/documents/documentRepository';
+import { readStudyDataSheet, readResultsDataRows } from '../../features/extraction/annotationRepository';
+import { readEvidenceRows } from '../../features/extraction/evidenceRepository';
+import { readCompletedRunMetas } from '../../features/extraction/runRepository';
+import { listSchemaVersions, getSchemaFieldsByVersion } from '../../features/schema/schemaRepository';
+import { downloadTextFile } from '../ui/download';
+import { nowIso8601 } from '../../utils/iso8601';
+import { timestampForFilename } from './exportService';
 
 function toMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
@@ -39,6 +49,7 @@ export function invalidateDashboard(store: Store): void {
     data: null,
     reviewSetProgress: null,
     loadError: null,
+    comparison: { loading: false, error: null, data: null },
     usage: {
       ...store.getState().dashboard.usage,
       summary: null,
@@ -46,6 +57,56 @@ export function invalidateDashboard(store: Store): void {
       loadError: null,
     },
   });
+}
+
+/** 他の人の行を読む比較は、権限を確認してボタン操作時だけ計算する。 */
+export async function loadAiHumanComparison(store: Store, deps: VerificationDeps): Promise<void> {
+  const state = store.getState();
+  const project = state.currentProject;
+  const role = state.role.role ?? 'owner';
+  if (!project || state.dashboard.comparison.loading ||
+      (role !== 'owner' && role !== 'adjudicator')) {
+    return;
+  }
+  patchDashboard(store, { comparison: { loading: true, error: null, data: null } });
+  try {
+    const id = project.spreadsheetId;
+    const [studies, studySheet, resultRows, evidence, runs, versions, documents] = await Promise.all([
+      readStudies(id, deps.google), readStudyDataSheet(id, deps.google), readResultsDataRows(id, deps.google),
+      readEvidenceRows(id, deps.google), readCompletedRunMetas(id, deps.google), listSchemaVersions(id, deps.google),
+      readDocuments(id, deps.google),
+    ]);
+    const latest = versions[0];
+    const fields = latest === undefined ? [] : await getSchemaFieldsByVersion(id, latest.schemaVersion, deps.google);
+    const activeStudies = resolveActiveStudies(studies, documents);
+    const data = buildComparisonCells({ studies: activeStudies, fields,
+      studyRows: studySheet.rows, resultRows, evidence, runs });
+    if (store.getState().currentProject?.spreadsheetId === id) {
+      patchDashboard(store, { comparison: { loading: false, error: null, data } });
+    }
+  } catch (err) {
+    if (store.getState().currentProject?.spreadsheetId === project.spreadsheetId) {
+      patchDashboard(store, { comparison: { loading: false, error: toMessage(err), data: null } });
+    }
+  }
+}
+
+/** 計算済みの比較を UTF-8 CSV として保存する。 */
+export function downloadAiHumanComparisonCsv(
+  store: Store,
+  deps: Pick<VerificationDeps, 'now'>,
+  kind: 'summary' | 'cells',
+  download: typeof downloadTextFile = downloadTextFile,
+): void {
+  const state = store.getState();
+  const report = state.dashboard.comparison.data;
+  const role = state.role.role ?? 'owner';
+  if (report === null || (role !== 'owner' && role !== 'adjudicator')) {
+    return;
+  }
+  const timestamp = timestampForFilename((deps.now ?? nowIso8601)());
+  download(`ai_human_comparison_${kind}_${timestamp}.csv`,
+    kind === 'summary' ? buildComparisonSummaryCsv(report) : buildComparisonCellsCsv(report.cells), 'text/csv');
 }
 
 /**

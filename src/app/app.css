@@ -4508,3 +4508,7 @@ section.documents__tiab {
 #verify-comparison-complete {
   margin-block: 0.75rem;
 }
+
+.dashboard__compare-scroll {
+  overflow-x: auto;
+}
