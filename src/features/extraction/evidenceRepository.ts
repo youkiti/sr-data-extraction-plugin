@@ -53,6 +53,9 @@ export function evidenceToRow(evidence: Evidence): (string | number | boolean | 
     evidence.quoteTheme,
     evidence.quoteSeq,
     evidence.section,
+    evidence.sourceLogId ?? null,
+    evidence.sourceModel ?? null,
+    evidence.sourcePromptVersion ?? null,
   ];
 }
 
@@ -72,7 +75,8 @@ export async function appendEvidenceRows(
     'evidence_append',
     { studyId: evidence[0]?.studyId ?? null, documentId: evidence[0]?.documentId ?? null },
     async () => {
-      const width = evidence.some((item) => item.section !== null) ? 21
+      const width = evidence.some((item) => item.sourceLogId != null || item.sourceModel != null || item.sourcePromptVersion != null) ? SHEET_HEADERS.Evidence.length
+        : evidence.some((item) => item.section !== null) ? 21
         : evidence.some((item) => item.quoteSeq !== null) ? 20 : 18;
       if (width > 18) await ensureEvidenceQuoteColumns(spreadsheetId, deps, width);
       const rows = evidence.map((item) => {
@@ -335,6 +339,9 @@ export async function readEvidenceRows(
       anchorStatus: parseAnchorStatus(cellAt(raw, 11), context),
       relocatedFrom: emptyToNull(cellAt(raw, 17)),
       section: emptyToNull(cellAt(raw, 20)),
+      sourceLogId: emptyToNull(cellAt(raw, 21)),
+      sourceModel: emptyToNull(cellAt(raw, 22)),
+      sourcePromptVersion: cellAt(raw, 23) === '' ? null : parsePositiveInt(cellAt(raw, 23), 'source_prompt_version', context),
       quoteTheme: emptyToNull(cellAt(raw, 18)),
       quoteSeq: cellAt(raw, 19) === '' ? null : parsePositiveInt(cellAt(raw, 19), 'quote_seq', context),
       bboxPage,

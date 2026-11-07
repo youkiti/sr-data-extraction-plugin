@@ -63,6 +63,8 @@ async function setupCcittRoutes(page: Page): Promise<void> {
         await route.fulfill({ json: { values: [EVIDENCE_HEADERS, CCITT_EVIDENCE_ROW] } });
       } else if (url.includes('/values/ExtractionRuns')) {
         await route.fulfill({ json: { values: [RUNS_HEADERS, RUN_ROW] } });
+      } else if (url.includes('values:batchGet') && url.includes('Decisions')) {
+        await route.fulfill({ json: { valueRanges: [{ values: [SHEET_HEADERS.Decisions] }] } });
       } else if (url.includes('/values/Decisions')) {
         await route.fulfill({ json: { values: [DECISIONS_HEADERS] } });
       } else if (url.includes('/values/StudyData')) {

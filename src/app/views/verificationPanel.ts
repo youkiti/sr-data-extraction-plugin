@@ -48,6 +48,7 @@ import {
 } from '../../features/verification/cellState';
 import { collectConsistencyWarnings } from '../../features/verification/consistencyChecks';
 import { bundleEvidence, quoteKeyOf, cellKeyFromQuoteKey } from '../../features/verification/evidenceBundles';
+import { seenEvidenceOf } from '../../features/verification/seenEvidence';
 import { collectRobAlgorithmInfo } from '../../features/verification/robAlgorithm';
 import {
   UNANCHORED_ACCEPT_NOTE_MARKER,
@@ -2326,6 +2327,7 @@ export function createVerificationPanel(
       fieldId: cell.field.fieldId, entityKey: cell.entityKey, annotator: data.annotator,
       annotatorType: data.annotatorType, schemaVersion: data.schemaVersion,
       action, value: cell.state.value, note,
+      ...seenEvidenceOf(panelMode === 'independent' ? { evidence: null, quotes: [] } : cell),
     };
     ownDecisions.push(decision);
     refreshForm();
@@ -2383,6 +2385,7 @@ export function createVerificationPanel(
       action,
       value,
       note,
+      ...seenEvidenceOf(panelMode === 'independent' ? { evidence: null, quotes: [] } : cell),
     };
     ownDecisions.push(decision);
     // 判定済みブロックの制御: 直近判定の 1 件だけ元の位置へ残す（見直し・戻す (z) 用）。

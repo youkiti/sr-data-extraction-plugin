@@ -1,4 +1,5 @@
 import { NOT_REPORTED_TOKEN } from '../../../../src/domain/annotation';
+import { SHEET_HEADERS } from '../../../../src/domain/sheetsSchema';
 import { applyConsensusWrites } from '../../../../src/features/adjudication/consensusRepository';
 import type { ConsensusCellWrite, ConsensusWriteParams } from '../../../../src/features/adjudication/consensusWrites';
 import type { SchemaField } from '../../../../src/domain/schemaField';
@@ -64,7 +65,9 @@ function makeDeps(options: { studyDataValues?: string[][] }): MockDeps {
     const url = String(input);
     const method = init?.method ?? 'GET';
     let json: unknown = {};
-    if (method === 'GET' && url.includes('/values/StudyData')) {
+    if (method === 'GET' && url.includes('values:batchGet')) {
+      json = { valueRanges: [{ values: [SHEET_HEADERS.Decisions] }] };
+    } else if (method === 'GET' && url.includes('/values/StudyData')) {
       json = { values: options.studyDataValues ?? [STUDY_DATA_HEADER] };
     } else if (method === 'GET' && url.includes('/values/ResultsData')) {
       json = { values: [RESULTS_DATA_HEADER] };
@@ -115,7 +118,7 @@ describe('applyConsensusWrites', () => {
     expect(decisionsPosts).toHaveLength(1);
     const decisionsBody = JSON.parse(String(decisionsPosts[0]?.[1].body)) as { values: unknown[][] };
     expect(decisionsBody.values).toEqual([
-      ['t-now', 'judge@example.com', 'study-1', 'f-1', '-', 'consensus', 'consensus', 1, 'accept', '120', ''],
+      ['t-now', 'judge@example.com', 'study-1', 'f-1', '-', 'consensus', 'consensus', 1, 'accept', '120', '', '', ''],
     ]);
   });
 

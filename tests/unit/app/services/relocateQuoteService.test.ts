@@ -8,7 +8,7 @@ import type { Evidence } from '../../../../src/domain/evidence';
 import type { SchemaField } from '../../../../src/domain/schemaField';
 import {
   appendEvidenceRows,
-  ensureEvidenceRelocatedFromColumn,
+  ensureEvidenceQuoteColumns,
 } from '../../../../src/features/extraction/evidenceRepository';
 import type { ExtractDataPage } from '../../../../src/features/extraction/skills/extractData';
 import { ensureChildFolder, uploadTextFile } from '../../../../src/lib/google/drive';
@@ -24,15 +24,15 @@ jest.mock('../../../../src/lib/llm/apiLogRepository', () => ({
 }));
 jest.mock('../../../../src/features/extraction/evidenceRepository', () => ({
   appendEvidenceRows: jest.fn(),
-  ensureEvidenceRelocatedFromColumn: jest.fn(),
+  ensureEvidenceQuoteColumns: jest.fn(),
 }));
 
 const ensureChildFolderMock = ensureChildFolder as jest.MockedFunction<typeof ensureChildFolder>;
 const uploadTextFileMock = uploadTextFile as jest.MockedFunction<typeof uploadTextFile>;
 const appendLlmApiLogMock = appendLlmApiLog as jest.MockedFunction<typeof appendLlmApiLog>;
 const appendEvidenceRowsMock = appendEvidenceRows as jest.MockedFunction<typeof appendEvidenceRows>;
-const ensureEvidenceRelocatedFromColumnMock = ensureEvidenceRelocatedFromColumn as jest.MockedFunction<
-  typeof ensureEvidenceRelocatedFromColumn
+const ensureEvidenceQuoteColumnsMock = ensureEvidenceQuoteColumns as jest.MockedFunction<
+  typeof ensureEvidenceQuoteColumns
 >;
 
 function makeEvidence(overrides: Partial<Evidence> = {}): Evidence {
@@ -143,7 +143,7 @@ beforeEach(() => {
   });
   appendLlmApiLogMock.mockResolvedValue(undefined);
   appendEvidenceRowsMock.mockResolvedValue(undefined);
-  ensureEvidenceRelocatedFromColumnMock.mockResolvedValue(undefined);
+  ensureEvidenceQuoteColumnsMock.mockResolvedValue(undefined);
 });
 
 describe('relocateQuote', () => {
@@ -166,11 +166,14 @@ describe('relocateQuote', () => {
       quote: 'a total of 120 patients were randomised into two arms.',
       confidence: 'high', // 元の confidence を維持
       relocatedFrom: 'ev-1',
+      sourceLogId: 'new-ev-uuid',
+      sourceModel: expect.any(String),
+      sourcePromptVersion: expect.any(Number),
     });
     expect(outcome.evidence.anchorStatus).not.toBe('failed');
     expect(outcome.evidence.anchorStatus).not.toBeNull();
-    // ensureEvidenceRelocatedFromColumn → appendEvidenceRows の順で呼ばれる
-    expect(ensureEvidenceRelocatedFromColumnMock).toHaveBeenCalledWith('sheet-1', deps.google);
+    // ensureEvidenceQuoteColumns → appendEvidenceRows の順で呼ばれる
+    expect(ensureEvidenceQuoteColumnsMock).toHaveBeenCalledWith('sheet-1', deps.google, 24);
     expect(appendEvidenceRowsMock).toHaveBeenCalledWith('sheet-1', [outcome.evidence], deps.google);
     // LLMApiLog（withLogging）記録。元 Evidence の run_id を残す（issue #381: 再特定で作った
     // Evidence 行が別モデル・別プロンプト由来であることを run_id + purpose で追えるようにする）
@@ -319,6 +322,14 @@ describe('relocateQuote', () => {
     expect(resolveRateLimitPolicy).toHaveBeenCalledTimes(1);
   });
 
+  test('応答モデルがあれば要求モデルより優先して記録する', async () => {
+    const { deps, chatMock } = makeDeps();
+    const response = await chatMock([]);
+    chatMock.mockResolvedValue({ ...response, responseModel: 'resolved-model' });
+    const outcome = await relocateQuote(makeParams(), deps);
+    expect(outcome).toMatchObject({ status: 'relocated', evidence: { sourceModel: 'resolved-model' } });
+  });
+
   test('Evidence 追記（appendEvidenceRows）が失敗しても throw せず not_found へ落とす', async () => {
     const { deps } = makeDeps();
     appendEvidenceRowsMock.mockRejectedValue(new Error('append failed'));
@@ -341,7 +352,7 @@ describe('relocateQuote', () => {
 
   test('Error インスタンスでない値が reject されても String() 化して message に残す', async () => {
     const { deps } = makeDeps();
-    ensureEvidenceRelocatedFromColumnMock.mockRejectedValue('plain string rejection');
+    ensureEvidenceQuoteColumnsMock.mockRejectedValue('plain string rejection');
     const outcome = await relocateQuote(makeParams(), deps);
     expect(outcome.status).toBe('not_found');
     if (outcome.status === 'not_found') {

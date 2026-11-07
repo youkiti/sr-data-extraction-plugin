@@ -102,6 +102,8 @@ async function setupRoutes(page: Page, decisions: string[][] = []): Promise<void
         await route.fulfill({ json: { values: [RUNS_HEADERS, RUN_ROW] } });
       } else if (url.includes('/values/Studies')) {
         await route.fulfill({ json: { values: [STUDIES_HEADERS, STUDY_ROW_1, STUDY_ROW_2] } });
+      } else if (url.includes('values:batchGet') && url.includes('Decisions')) {
+        await route.fulfill({ json: { valueRanges: [{ values: [SHEET_HEADERS.Decisions] }] } });
       } else if (url.includes('/values/Decisions')) {
         await route.fulfill({ json: { values: [DECISIONS_HEADERS, ...decisions] } });
       } else if (url.includes('/values/StudyData')) {

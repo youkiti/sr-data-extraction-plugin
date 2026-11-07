@@ -27,12 +27,16 @@ test('引用 JSON は選択 run の束を昇順に添付し、通常は空・根
   })));
   const expectedEnd = `,"${json.replace(/"/g, '""')}",Methods\r\n`;
   const placeholder = buildAuditCsv(studies, [], rows, runs, fields);
-  expect(AUDIT_HEADER.slice(-2)).toEqual(['quotes_json', 'section']);
+  expect(AUDIT_HEADER.slice(28, 30)).toEqual(['quotes_json', 'section']);
   expect(placeholder.undecidedCellCount).toBe(1);
   expect(placeholder.csv).toContain(',new,first,');
-  expect(placeholder.csv.endsWith(expectedEnd)).toBe(true);
+  expect(placeholder.csv.endsWith(expectedEnd.replace('\r\n', ',.,.,,,\r\n'))).toBe(true);
   const decided = buildAuditCsv(studies, [decision('d1', 'f1', '-', 'accept', 't2', { schemaVersion: 2 })], rows, runs, fields);
-  expect(decided.csv.endsWith(expectedEnd)).toBe(true);
+  expect(decided.csv.endsWith(expectedEnd.replace('\r\n', ',,,,,\r\n'))).toBe(true);
+  const historical = buildAuditCsv(studies, [decision('d1', 'f1', '-', 'accept', 't2', {
+    schemaVersion: 2, seenEvidenceIds: ['first', 'second'],
+  })], [...rows, { ...first, evidenceId: 'relocated', quote: 'new quote' }], runs, fields);
+  expect(historical.csv.endsWith(expectedEnd.replace('\r\n', ',first second,,,,\r\n'))).toBe(true);
   const normal = buildAuditCsv(studies, [], [evidence('normal', 'old', 'd1', 'f1', '-')], runs, fields);
   expect(dataRows(normal.csv)[0]?.at(-1)).toBe('');
   const missing = buildAuditCsv(studies, [decision('d1', 'f1', '-', 'accept', 't2', { schemaVersion: 3 })], rows, runs, fields);
@@ -49,7 +53,7 @@ test('断片のセルは元の値と先頭引用を保ち、quotes_json に全�
     { seq: 1, theme: null, quote: first.quote, page: 1, document_id: first.documentId, anchor_status: 'exact', section: null },
     { seq: 2, theme: null, quote: second.quote, page: 5, document_id: second.documentId, anchor_status: 'fuzzy', section: null },
   ]);
-  expect(result.csv.endsWith(`,"${json.replace(/"/g, '""')}",\r\n`)).toBe(true);
+  expect(result.csv.endsWith(`,"${json.replace(/"/g, '""')}",,.,.,,,\r\n`)).toBe(true);
 });
 /** 構造的欠損トークン（可読性のための短縮名） */
 const NA = AUDIT_MISSING_TOKEN;
@@ -164,6 +168,26 @@ const decision = (
 
 const headerLine = AUDIT_HEADER.join(',');
 
+test('再抽出・再特定後も判定時の根拠と出所を出す', () => {
+  const original = evidence('old', 'r1', 'd1', 'f1', '-', {
+    value: 'old value', quote: 'old quote', sourceLogId: 'log', sourceModel: 'model', sourcePromptVersion: 2,
+  });
+  const relocated = { ...original, evidenceId: 'relocated', quote: 'new quote' };
+  const fresh = { ...original, evidenceId: 'fresh', runId: 'r2', value: 'new value' };
+  const decisions = [
+    decision('d1', 'f1', '-', 'accept', '1', { seenEvidenceIds: ['old', 'missing'], seenAiValue: 'old value' }),
+    decision('d1', 'f1', '-', 'edit', '2', { seenEvidenceIds: [] }),
+    decision('d1', 'f1', '-', 'undo', '3', { seenEvidenceIds: ['missing'] }),
+  ];
+  const rows = dataRows(buildAuditCsv([study('d1', 'Study')], decisions, [original, relocated, fresh],
+    [run('r1', 1, '1'), run('r2', 1, '2')], [field('f1', 'value', 1)]).csv);
+  expect(rows[0]?.slice(10, 14)).toEqual(['old', 'old value', 'false', 'old quote']);
+  expect(rows[0]?.slice(30)).toEqual(['old missing', 'old value', 'log', 'model', '2']);
+  expect(rows[1]?.[10]).toBe('fresh');
+  expect(rows[1]?.[30]).toBe('none');
+  expect(rows[2]?.[10]).toBe('fresh');
+});
+
 /** CSV をヘッダー除きの行配列（各行は列配列）へ戻す。テストデータは引用が必要な文字を含まない前提 */
 const dataRows = (csv: string): string[][] =>
   csv
@@ -242,7 +266,7 @@ describe('buildAuditCsv', () => {
     expect(rows[0]?.[6]).toBe('1'); // schema_version は代表 Evidence の run から
     expect(rows[0]?.[7]).toBe(NA); // annotator が構造的欠損 = 未検証の明示
     // 判定列ブロック（decision_seq〜note）も構造的欠損（study_id 列の追加で開始位置は 22）
-    expect(rows[0]?.slice(22)).toEqual([NA, NA, NA, NA, NA, NA, '', '']);
+    expect(rows[0]?.slice(22)).toEqual([NA, NA, NA, NA, NA, NA, '', '', NA, NA, '', '', '']);
     expect(result.undecidedCellCount).toBe(1);
   });
 
