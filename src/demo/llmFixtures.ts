@@ -175,6 +175,17 @@ function buildRelocateQuoteResponseText(promptText: string): string {
  */
 export function buildGenerateContentResponseText(body: unknown): string {
   const promptText = extractPromptText(body);
+  const system = (body as { systemInstruction?: { parts?: { text: string }[] } }).systemInstruction;
+  const instructions = system?.parts?.map(part => part.text).join('\n') ?? '';
+  if (instructions.includes('ヘルプの小節を最大3つ')) {
+    const data = JSON.parse(promptText) as { sections: { id: string }[] };
+    return JSON.stringify({ sectionIds: data.sections.slice(0, 1).map(section => section.id) });
+  }
+  if (instructions.includes('ヘルプの案内役') || instructions.includes('help guide')) {
+    return instructions.includes('help guide')
+      ? 'Open the linked help section and follow its steps.'
+      : '下のリンクからヘルプの該当箇所を開き、手順を確認してください。';
+  }
   if (promptText.startsWith('## Review protocol\n') && promptText.includes('## Sample article:')) {
     return JSON.stringify(DEMO_SCHEMA_FIELDS.map(field => ({
       section: field.section,
