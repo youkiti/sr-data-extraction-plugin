@@ -117,6 +117,13 @@ module.exports = (env, argv) => {
     module: {
       rules: [
         {
+          test: /help\.html$/,
+          include: path.resolve(__dirname, 'hosted'),
+          resourceQuery: /[?&]help-sections(?:&|$)/,
+          type: 'javascript/auto',
+          loader: path.resolve(__dirname, 'tools/help/helpSections.cjs'),
+        },
+        {
           test: /\.ts$/,
           loader: 'ts-loader',
           exclude: /node_modules/,
