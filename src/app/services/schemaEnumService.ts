@@ -54,10 +54,11 @@ export async function suggestEnum(
     const pilotValues = [...new Set((state.pilot.evidence ?? [])
       .filter((item) => row.fieldId !== null && item.fieldId === row.fieldId && !item.notReported)
       .map((item) => (item.value ?? '').trim()).filter((value) => value !== ''))].slice(0, 30);
-    const policy = await (deps.resolveRateLimitPolicy ?? (async () => UNLIMITED_POLICY))();
-    if (store.getState().schema.enumSuggestion !== pending) return;
     const logsFolder = await ensureChildFolder('logs', project.driveFolderId, deps.google);
     const llmFolder = await ensureChildFolder('llm', logsFolder.id, deps.google);
+    const policy = await (deps.resolveRateLimitPolicy ?? (async () => UNLIMITED_POLICY))();
+    // フォルダの用意と制限の解決を待つ間に取り消されたら、LLM へ送らない
+    if (store.getState().schema.enumSuggestion !== pending) return;
     const provider = applyRateLimitPolicy(withLogging(deps.buildProvider(resolution.config), 'suggest_enum', {
       uploadJson: async ({ filename, content }) => {
         const file = await uploadTextFile(

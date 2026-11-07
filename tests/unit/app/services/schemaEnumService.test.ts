@@ -174,6 +174,22 @@ test('生成後に移動した行へ適用する', async () => {
   applyEnumSuggestion(store);
   expect(store.getState().schema.editorRows![1]!.dataType).toBe('enum');
 });
+test('記録のフォルダを用意する間に取り消すと、LLM へ送らない', async () => {
+  const { store, deps, chat } = setup();
+  let finish!: () => void;
+  const wait = new Promise<void>((resolve) => { finish = resolve; });
+  jest.mocked(ensureChildFolder).mockImplementationOnce(async (name: string) => {
+    await wait;
+    return { id: name } as Awaited<ReturnType<typeof ensureChildFolder>>;
+  });
+  const run = suggestEnum(store, 0, deps);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  cancelEnumSuggestion(store);
+  finish();
+  await run;
+  expect(chat).not.toHaveBeenCalled();
+  expect(store.getState().schema.enumSuggestion).toBeNull();
+});
 test.each(['success', 'failure', 'consent', 'consentAccepted'])('キャンセル後の遅延応答を捨てる %s', async (mode) => {
   const { store, deps, chat } = setup();
   let finish!: () => void;
