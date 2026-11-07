@@ -52,6 +52,7 @@ import {
   type DraftArmRow,
 } from '../../features/adjudication/armMatch';
 import { buildAdjudicationCells, type AdjudicationCell } from '../../features/adjudication/cellMatch';
+import { isBothWithAi } from '../../features/adjudication/withAiPair';
 import {
   buildBulkAcceptWrites,
   buildChoiceWrite,
@@ -968,7 +969,11 @@ async function collectReadyStudyInputs(
         ? resultsRowsB
         : resultsRowsB.map((r) => ({ ...r, entityKey: remapArmEntityKey(r.entityKey, persistedRemap) }));
     const cells = buildAdjudicationCells(fields, studyDataRowA, studyDataRowB, resultsRowsA, remappedResultsRowsB);
-    inputs.push({ studyId: study.studyId, studyLabel: study.studyLabel, cells });
+    inputs.push({ studyId: study.studyId, studyLabel: study.studyLabel, cells,
+      bothWithAi: isBothWithAi(
+        studySheet.rows.filter((row) => row.studyId === study.studyId),
+        [...resultsRowsA, ...resultsRowsB], pair.annotatorA, pair.annotatorB,
+      ) });
   }
   return { inputs, outsideCount, incompleteCount, calibration };
 }

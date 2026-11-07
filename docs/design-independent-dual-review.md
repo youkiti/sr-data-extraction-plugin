@@ -165,7 +165,7 @@ RoB タブ（`rob_domain`）と study タブは群構成に依存しないため
 - 左: セル一覧。「不一致のみ」フィルタ既定 ON。各行 = フィールド名 / owner の値 / reviewer の値 / 状態チップ
 - 右: PDF ビューア（既存 `pdfViewer` + study の文書切替タブをそのまま流用）。**裁定フェーズは盲検解除後なので、AI の Evidence ハイライトと両者の判定メモ（`Decisions.note`）を表示してよい**（根拠探しの補助）
 - セルごとの裁定アクション: **A を採用 / B を採用 / 第 3 の値を入力 / not_reported / スキップ**（スキップ = consensus セルを作らない。片側だけのインスタンスを「採用しない」場合に使う）
-- 「第 3 の値を入力」は `data_type = enum` の項目では**検証画面と同じ許容値チップ UI** になる（issue #254。`.adjudicate__custom-input` を `enumChoiceEditor` へ差し替え）。裁定済みセルには許容値外の警告（形態 A）を出す。候補（「その他」の `<datalist>`）は **過去の consensus 値**とする — `buildChoiceWrite`（A/B 採用）と `buildCustomValueWrite`（第 3 の値）はどちらも `action:'edit'` を書くため、現データからは第 3 の値だけを厳密に識別できない。「A/B 採用を含む過去 consensus 値」という正直な規則を採る。**`<datalist>` の id はモジュール内連番**にする（S12 は全 visible セルの入力欄を同時描画し、同じ `field_id` が複数 `entity_key` へ展開されるため、`field_id` 由来の id は必ず衝突し axe `duplicate-id` になる）
+- 「第 3 の値を入力」は `data_type = enum` の項目では**検証画面と同じ許容値チップ UI** になる（issue #254。`.adjudicate__custom-input` を `enumChoiceEditor` へ差し替え）。裁定済みセルには許容値外の警告（形態 A）を出す。候補（「その他」の `<datalist>`）は **過去の consensus 値**とする — `buildChoiceWrite`（A/B 採用）と `buildCustomValueWrite`（第 3 の値）はどちらも `action:'edit'` を書くため、consensus_source を持たない古い行では第 3 の値だけを厳密に識別できない。「A/B 採用を含む過去 consensus 値」という正直な規則を採る。**`<datalist>` の id はモジュール内連番**にする（S12 は全 visible セルの入力欄を同時描画し、同じ `field_id` が複数 `entity_key` へ展開されるため、`field_id` 由来の id は必ず衝突し axe `duplicate-id` になる） 新しい行は `consensus_source` で A/B 採用と第 3 の値を区別できる。
 - 一致セル（両者とも空のセルを除く。§6.3）は「**一致セルを一括採用**」ボタンで 1 操作確定（1 セル = 1 Decisions 行を batch 追記。automation bias 対策の「1 操作必須」原則は一括操作 1 回で満たすと整理する）
 
 ### 6.5 書き込み

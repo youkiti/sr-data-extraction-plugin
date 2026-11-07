@@ -11,6 +11,33 @@ import { SHEET_HEADERS } from '../../../../src/domain/sheetsSchema';
 
 beforeEach(clearDecisionsProvenanceCache);
 
+test('13 列のシートを読み、最初の追記で 15 列に伸ばす', async () => {
+  const header = SHEET_HEADERS.Decisions.slice(0, 13);
+  const old = decisionToRow(makeDecision()).slice(0, 13).map((v) => String(v ?? ''));
+  const deps = makeDeps([header, old]);
+  expect((await readAllDecisions('thirteen', deps))[0]).toMatchObject({ consensusSource: null, adoptedAiAccept: null });
+  await appendDecisionRows('thirteen', [makeDecision()], deps);
+  const put = deps.fetch.mock.calls.find(([, init]) => init?.method === 'PUT');
+  expect(JSON.parse(String(put?.[1].body)).values).toEqual([SHEET_HEADERS.Decisions]);
+  expect(SHEET_HEADERS.Decisions).toHaveLength(15);
+});
+
+test.each([
+  ['A', 'A'], ['B', 'B'], ['third', 'none'], ['bulk_match', 'A,B'],
+  ['not_reported', 'none'], ['undo', null], [null, null],
+] as const)('裁定の記録を往復する: %s / %s', async (consensusSource, adoptedAiAccept) => {
+  const item = makeDecision({ annotator: 'consensus', annotatorType: 'consensus', consensusSource, adoptedAiAccept });
+  const deps = makeDeps([[...SHEET_HEADERS.Decisions], decisionToRow(item).map((v) => String(v ?? ''))]);
+  expect(await readAllDecisions('consensus', deps)).toEqual([item]);
+});
+
+test('将来の未知の出所は未記録として読み込む', async () => {
+  const row = decisionToRow(makeDecision()).map((v) => String(v ?? ''));
+  row[13] = 'future'; row[14] = 'future';
+  expect((await readAllDecisions('future', makeDeps([[...SHEET_HEADERS.Decisions], row])))[0])
+    .toMatchObject({ consensusSource: null, adoptedAiAccept: null });
+});
+
 const DECISIONS_HEADER = [
   'decided_at',
   'decided_by',
@@ -40,6 +67,8 @@ function makeDecision(overrides: Partial<Decision> = {}): Decision {
     note: null,
     seenEvidenceIds: null,
     seenAiValue: null,
+    consensusSource: null,
+    adoptedAiAccept: null,
     ...overrides,
   };
 }
@@ -85,6 +114,8 @@ describe('decisionToRow', () => {
       2,
       'accept',
       '120',
+      null,
+      null,
       null,
       null,
       null,
