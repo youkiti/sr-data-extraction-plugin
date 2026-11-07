@@ -1,6 +1,7 @@
 // R セット（issue #60）のオーケストレータ結合テスト。golden fixture（__fixtures__/scenario.ts）で
 // 受け入れ条件の 8 シナリオ（①study_label 重複〜⑧未知 field_id）を一括検証する
 import { CSV_BOM } from '../../../../../src/features/export/csvEncode';
+import { confirmCriteria, emptyCriteriaDraft } from '../../../../../src/features/verification/acceptanceCriteria';
 import { parseCsv } from '../../../../../src/features/export/parseCsv';
 import {
   buildRSet,
@@ -13,8 +14,20 @@ import { MANIFEST_META, MATERIALS, SPECIAL_CHAR_VALUE } from './__fixtures__/sce
 describe('buildRSet', () => {
   const built = buildRSet(MATERIALS, MANIFEST_META);
 
-  test('8 ファイル（tab1/tab1_status/ma/ma_status/rob/data_dictionary/export_issues/manifest）を生成する', () => {
+  test('合格基準は版なしでヘッダーだけ、各版を判定し manifest に行数を載せる', () => {
+    expect(parseCsv(built.files.find((file) => file.name === 'acceptance_criteria.csv')!.content)).toHaveLength(1);
+    const criteria = confirmCriteria({ ...emptyCriteriaDraft(), min_accuracy: '90' }, [], 'owner@example.com', '2026-11-07T00:00:00Z', 0);
+    const result = buildRSet({ ...MATERIALS, acceptanceCriteria: [criteria, { ...criteria, version: 2 }], comparisonRuns: [],
+      pilotRuns: [{ runType: 'pilot', studyIds: MATERIALS.studies.map((study) => study.studyId) }] }, MANIFEST_META);
+    const csv = result.files.find((file) => file.name === 'acceptance_criteria.csv')!;
+    expect(parseCsv(csv.content)).toHaveLength(3);
+    expect(csv.content).toContain('not_evaluable,no_compared_cells');
+    expect(result.manifest.files['acceptance_criteria.csv']).toEqual({ rows: 2 });
+  });
+
+  test('合格基準を含む 9 ファイルを生成する', () => {
     expect(built.files.map((file) => file.name)).toEqual([
+      'acceptance_criteria.csv',
       'tab1.csv',
       'tab1_status.csv',
       'ma.csv',

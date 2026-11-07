@@ -28,7 +28,7 @@
 
 ## 2. 出力ファイルセット
 
-1 回の R セットエクスポート = 以下 8 ファイルを一括生成する（`buildRSet.ts` が返す `BuiltRSet.files`。実際の Drive 保存・フォルダ命名は PR-B）。
+1 回の R セットエクスポート = 以下 9 ファイルを一括生成する（`buildRSet.ts` が返す `BuiltRSet.files`。実際の Drive 保存・フォルダ命名は PR-B）。
 
 | ファイル | 1 行の単位 | 主キー |
 |---|---|---|
@@ -39,6 +39,7 @@
 | `rob.csv` | study × RoB ドメイン（long） | `study_id, tool, domain_id` |
 | `data_dictionary.csv` | 1 スキーマ項目 | `field_id` |
 | `export_issues.csv` | 1 除外/警告イベント | なし |
+| `acceptance_criteria.csv` | 合格基準の版（現在値での判定結果を含む） | `version` |
 | `export_manifest.json` | メタデータ | — |
 
 文字コードは UTF-8・BOM なし（`csvEncode.ts` の `buildCsv` は BOM を付けない。既存 3 形式が使う BOM 付きの表記〔`CSV_BOM`〕とは別経路）。改行は既存 3 形式と同じ CRLF（`buildCsv` 共通）。
@@ -270,7 +271,7 @@ src/features/export/
     buildDataDictionaryCsv.ts  data_dictionary.csv
     buildExportIssuesCsv.ts    export_issues.csv
     buildExportManifest.ts     export_manifest.json（純関数。exported_at は引数）
-    buildRSet.ts               8 ファイルをまとめて構築するオーケストレータ
+    buildRSet.ts               9 ファイルをまとめて構築するオーケストレータ
     rsetStatus.ts              ステータス導出（§3.1）
     presetFields.ts            not_applicable 判定（§5）
     timepoint.ts                timepoint の best-effort パース（§6）
@@ -305,10 +306,10 @@ PR-A 時点の `csvEncode.ts` の `buildCsv` は既存 3 形式・R セットの
 
 ### 13.3 `ExportLog` への表現（新規列は追加しない）
 
-R セットは 8 ファイルを 1 回で生成するため、既存 `ExportLog` の 1 行 1 URL 前提（`file_ref`）とそのままでは噛み合わない。D-1 の「既存形式への変更は最小限」という方針を汲み、**既存列のみで表現し新規列は追加しない**：
+R セットは 9 ファイルを 1 回で生成するため、既存 `ExportLog` の 1 行 1 URL 前提（`file_ref`）とそのままでは噛み合わない。D-1 の「既存形式への変更は最小限」という方針を汲み、**既存列のみで表現し新規列は追加しない**：
 
 - `format`: `'r_set'`
-- `file_ref`: 8 ファイルの保存先サブフォルダ（`exports/rset_{YYYYMMDD-HHMMSS}/`）の Drive `webViewLink`。個々のファイルの URL は記録しないが、フォルダを開けば全ファイルにアクセスできるため実用上十分と判断した
+- `file_ref`: 9 ファイルの保存先サブフォルダ（`exports/rset_{YYYYMMDD-HHMMSS}/`）の Drive `webViewLink`。個々のファイルの URL は記録しないが、フォルダを開けば全ファイルにアクセスできるため実用上十分と判断した
 - `study_count`: `tab1.csv` の行数（確定 annotator を特定できた study 数）。`tab1.csv` は study 単位 1 行の表のため、既存 3 形式の `study_count`（CSV に行が出た study 数）と同じ意味になる
 
 ### 13.4 Drive 保存構成・ExportLog 追記の順序
@@ -318,12 +319,12 @@ R セットは 8 ファイルを 1 回で生成するため、既存 `ExportLog`
 1. `export_manifest.json` の `exported_at` / `app_version` / `review_mode` をこの時点で解決してから `buildRSet()` を実行する（画面表示中のプレビュー用ビルドとは別に、保存直前に正確な時刻で作り直す。`app_version` は Methods 文案カード（issue #67）と同じ `getToolVersion` seam を再利用し、`chrome.runtime.getManifest().version` が取れない環境では空文字にフォールバックする）
 2. プロジェクトフォルダ直下 `exports/` を `ensureChildFolder` で確保（既存 3 形式と共有）
 3. その配下に `rset_{YYYYMMDD-HHMMSS}/` を `ensureChildFolder` で作成
-4. 8 ファイルを `uploadTextFile` で順に保存（CSV は `text/csv`、`export_manifest.json` は `application/json`）
+4. 9 ファイルを `uploadTextFile` で順に保存（CSV は `text/csv`、`export_manifest.json` は `application/json`）
 5. `ExportLog` に 1 行追記（§13.3）
 
 ### 13.5 ローカル保存（zip 化しない）
 
-生成完了カードの「ローカル保存」は、8 ファイルを `app/ui/download.ts` の `downloadTextFile` で個別に `<a download>` クリックする素朴な実装。zip 化はブラウザ拡張の制約（zip 生成ライブラリの追加は過剰）と要望文面（「zip 化はしない」）の両方から見送った。
+生成完了カードの「ローカル保存」は、9 ファイルを `app/ui/download.ts` の `downloadTextFile` で個別に `<a download>` クリックする素朴な実装。zip 化はブラウザ拡張の制約（zip 生成ライブラリの追加は過剰）と要望文面（「zip 化はしない」）の両方から見送った。
 
 ### 13.6 生成完了カードの UTF-8（BOM なし）案内文（D-6 の初心者向け説明）
 

@@ -7,7 +7,7 @@ import {
 } from '../../../src/domain/sheetsSchema';
 
 describe('SHEET_TABS', () => {
-  test('引用一覧を含む 18 タブを定義順に持つ', () => {
+  test('合格基準を含む 19 タブを定義順に持つ', () => {
     expect(SHEET_TABS).toEqual([
       'Meta',
       'Protocol',
@@ -27,6 +27,7 @@ describe('SHEET_TABS', () => {
       'ReviewSets',
       'QuoteSets',
       'ApiErrorLog',
+      'AcceptanceCriteria',
     ]);
   });
 

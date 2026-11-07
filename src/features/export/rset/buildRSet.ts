@@ -1,5 +1,5 @@
 // R セット（issue #60）のオーケストレータ。tab1 / ma / rob / dictionary / issues / manifest の
-// 8 ファイルを 1 回の呼び出しでまとめて構築する純関数。Drive への保存・ExportLog 追記は
+// 合格基準を含む 9 ファイルを 1 回の呼び出しでまとめて構築する純関数。Drive への保存・ExportLog 追記は
 // PR-B（S10 UI 配線）のスコープで、ここでは CSV / JSON のテキストを返すところまでに留める
 import type { ResultsDataRow, StudyDataRow } from '../../../domain/annotation';
 import type { ArmStructureRow } from '../../../domain/armStructure';
@@ -7,6 +7,8 @@ import type { Decision } from '../../../domain/decision';
 import type { Evidence } from '../../../domain/evidence';
 import type { SchemaField } from '../../../domain/schemaField';
 import type { StudyRecord } from '../../../domain/study';
+import { buildAcceptanceCriteriaCsv, type AcceptanceCriteria, type PilotRun } from '../../verification/acceptanceCriteria';
+import { buildComparisonCells, type ComparisonInput } from '../../verification/aiHumanComparison';
 import { buildDataDictionaryCsv } from './buildDataDictionaryCsv';
 import { buildExportIssuesCsv } from './buildExportIssuesCsv';
 import { buildExportManifest, manifestToJson, type RSetManifest } from './buildExportManifest';
@@ -24,6 +26,9 @@ import {
 /** R セット構築に必要な素材一式。buildExport.ts の ExportMaterials を拡張した形（studies は
  * アクティブ study のみ・作成順で渡す。既存 3 形式と同じ前提を踏襲する） */
 export interface RSetMaterials {
+  acceptanceCriteria?: readonly AcceptanceCriteria[];
+  comparisonRuns?: ComparisonInput['runs'];
+  pilotRuns?: readonly PilotRun[];
   studies: readonly StudyRecord[];
   studyRows: readonly StudyDataRow[];
   resultsRows: readonly ResultsDataRow[];
@@ -82,6 +87,10 @@ export function buildRSet(materials: RSetMaterials, meta: RSetManifestMeta): Bui
   const issuesCsv = buildExportIssuesCsv(allIssues);
 
   const files: RSetFile[] = [
+    { name: 'acceptance_criteria.csv', rowCount: materials.acceptanceCriteria?.length ?? 0,
+      content: buildAcceptanceCriteriaCsv(materials.acceptanceCriteria ?? [], buildComparisonCells({ studies, fields, studyRows,
+        resultRows: resultsRows, evidence: evidences, runs: materials.comparisonRuns ?? [] }).cells,
+      materials.pilotRuns ?? [], new Set(studies.map((study) => study.studyId))) },
     { name: 'tab1.csv', content: tab1.csv, rowCount: tab1.rowCount },
     { name: 'tab1_status.csv', content: tab1.statusCsv, rowCount: tab1.rowCount },
     { name: 'ma.csv', content: ma.csv, rowCount: ma.rowCount },

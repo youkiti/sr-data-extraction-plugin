@@ -54,6 +54,55 @@ const STUDY_DATA_HEADERS = [...SHEET_HEADERS.StudyData];
 
 const RESULTS_DATA_HEADERS = [...SHEET_HEADERS.ResultsData];
 
+test.beforeEach(async ({ page }) => {
+  await page.route('https://sheets.googleapis.com/**', async (route) => {
+    const url = decodeURIComponent(route.request().url());
+    const tab = Object.keys(SHEET_HEADERS).find((name) => url.includes(`/values/${name}`)) as keyof typeof SHEET_HEADERS | undefined;
+    await route.fulfill({ json: tab === undefined
+      ? { sheets: Object.keys(SHEET_HEADERS).map((title) => ({ properties: { title } })) }
+      : { values: [[...SHEET_HEADERS[tab]]] } });
+  });
+});
+
+test('合格基準を入力・確認・追記保存し、結果を明示計算する', async ({ page }) => {
+  const rows: string[][] = [];
+  await page.route('https://sheets.googleapis.com/**', async (route) => {
+    const request = route.request();
+    const url = decodeURIComponent(request.url());
+    if (request.method() === 'GET' && !url.includes('/values/')) {
+      await route.fulfill({ json: { sheets: Object.keys(SHEET_HEADERS).map((title) => ({ properties: { title } })) } });
+      return;
+    }
+    if (url.includes('/values/AcceptanceCriteria') && request.method() === 'POST') {
+      const body = request.postDataJSON() as { values: string[][] };
+      rows.push(...body.values.map((row) => row.map(String)));
+      await route.fulfill({ json: {} });
+      return;
+    }
+    const tab = Object.keys(SHEET_HEADERS).find((name) => url.includes(`/values/${name}`)) as keyof typeof SHEET_HEADERS | undefined;
+    if (request.method() === 'GET' && tab !== undefined) {
+      const data = tab === 'AcceptanceCriteria' ? rows : tab === 'Studies'
+        ? [['study-1', 'Study', '', '2026-07-01T00:00:00Z', 'e2e@example.com', '', '']]
+        : tab === 'Documents' ? [['doc-1', 'study-1', 'article', 'drive-1', 'src-1', 'paper.pdf', '', '', 'text-ref',
+          'ok', '1', '4000', '2026-07-01T00:00:00Z', 'e2e@example.com', '']] : [];
+      await route.fulfill({ json: { values: [[...SHEET_HEADERS[tab]], ...data] } });
+      return;
+    }
+    await route.fulfill({ json: { values: [] } });
+  });
+  await initApp(page);
+  await expect(page.locator('#pilot-criteria-min_accuracy')).toHaveValue('');
+  await page.locator('#pilot-criteria-min_accuracy').fill('90');
+  await page.locator('#pilot-criteria-confirm').click();
+  await expect(page.locator('#pilot-criteria-confirmation')).toBeVisible();
+  await page.locator('#pilot-criteria-save').click();
+  await expect(page.locator('#pilot-criteria-current')).toContainText('版 1');
+  expect(rows).toHaveLength(1);
+  await page.locator('#pilot-criteria-calculate').click();
+  await expect(page.locator('#pilot-criteria-result')).toHaveText('判定できない');
+  await expect(page.locator('#pilot-criteria')).toContainText('パイロットがありません');
+});
+
 /** テキスト層つきの最小 1 ページ PDF（Helvetica 埋め込みなし・非圧縮） */
 function minimalPdf(text: string): Buffer {
   const content = `BT /F1 12 Tf 72 720 Td (${text}) Tj ET`;

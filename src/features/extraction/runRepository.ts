@@ -657,3 +657,9 @@ export async function readPilotRuns(
   });
   return runs.reverse();
 }
+
+/** 状態を問わず、開始記録のあるパイロットを run_id ごとに一度だけ数える。 */
+export async function countPilotRuns(spreadsheetId: string, deps: GoogleApiDeps): Promise<number> {
+  const rows = await readRunRows(spreadsheetId, deps);
+  return new Set(rows.filter((row) => row[1] === 'pilot').map((row) => row[0])).size;
+}

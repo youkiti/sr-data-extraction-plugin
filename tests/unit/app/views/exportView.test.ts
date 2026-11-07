@@ -517,7 +517,7 @@ describe('renderExportView: R セット（issue #60）', () => {
 
     const generate = view.querySelector('#export-generate') as HTMLButtonElement;
     expect(generate.disabled).toBe(false);
-    expect(generate.textContent).toBe('8 ファイルを生成して Drive に保存');
+    expect(generate.textContent).toBe('9 ファイルを生成して Drive に保存');
     generate.click();
     expect(callbacks.onGenerate).toHaveBeenCalledTimes(1);
   });
@@ -568,7 +568,7 @@ describe('renderExportView: R セット（issue #60）', () => {
     const { ctx } = makeCtx();
     const view = renderExportView(rSetState({ generating: true }), ctx);
     expect(view.querySelector('#export-generating')?.textContent).toBe(
-      '8 ファイルを生成して Drive に保存しています…',
+      '9 ファイルを生成して Drive に保存しています…',
     );
     expect((view.querySelector('#export-generate') as HTMLButtonElement).disabled).toBe(true);
   });
@@ -597,7 +597,7 @@ describe('renderExportView: R セット（issue #60）', () => {
     );
     const card = view.querySelector('#export-rset-result');
     expect(card?.textContent).toContain(
-      'rset_20260703-090000 フォルダに 8 ファイルを Drive に保存しました（ExportLog に記録済み）。',
+      'rset_20260703-090000 フォルダに 9 ファイルを Drive に保存しました（ExportLog に記録済み）。',
     );
     const link = view.querySelector('#export-rset-result-link');
     expect(link?.getAttribute('href')).toBe('https://drive/rset-folder');

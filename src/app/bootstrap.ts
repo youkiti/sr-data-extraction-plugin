@@ -1,5 +1,6 @@
 import { suggestEnum, updateEnumSuggestion, applyEnumSuggestion, cancelEnumSuggestion } from './services/schemaEnumService';
 import { initGuide } from './guide';
+import { loadCriteria, changeCriteriaDraft, saveCriteria, cancelCriteriaConfirmation, calculateCriteria } from './services/acceptanceCriteriaService';
 import { saveConsensusQuotes } from './services/adjudicationService';
 import { getPendingWriteCount, subscribePendingWrites } from './services/pendingWrites';
 import { updateSavingBadges } from './ui/savingBadge';
@@ -775,6 +776,11 @@ export async function bootstrapApp(
       },
     },
     pilot: {
+      onCriteriaDraft: (draft) => changeCriteriaDraft(store, draft),
+      onConfirmCriteria: (confirmed) => { void saveCriteria(store, deps, confirmed); },
+      onCancelCriteria: () => cancelCriteriaConfirmation(store),
+      onCalculateCriteria: () => { void calculateCriteria(store, deps); },
+      onReloadCriteria: () => { void loadCriteria(store, deps); },
       onRetryMatrix: () => { void loadPilotMatrix(store, deps); },
       onSortMatrix: () => {
         const pilot = store.getState().pilot;
@@ -1338,6 +1344,7 @@ export async function bootstrapApp(
         loadDocuments(store, deps),
         loadSchema(store, deps),
         loadPilotHistory(store, deps),
+        loadCriteria(store, deps),
       ]).then(() => {
         initPilotSelection(store);
         void autoLoadLatestPilotRun(store, deps);

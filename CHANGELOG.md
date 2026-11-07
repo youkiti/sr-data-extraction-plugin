@@ -16,6 +16,8 @@ This is the public changelog of this extension. Any change that can alter AI out
 ### その他の変更 / Other changes
 - 同意画面の Gemini の無料枠の説明を Gemini API 追加利用規約の原文の範囲にそろえました。同意済みの方にも、次の AI 機能の実行前に 1 回だけ確認を出し直します（2026-11-07、#381）。  
   Aligned the Gemini free tier explanation in the consent notice with the scope of the Gemini API Additional Terms of Service. Users who already agreed will see the notice once again before their next AI feature (2026-11-07, #381).
+- AI 抽出の合格基準をパイロット前に決め、版ごとに記録・判定できるようにしました。結果を R セットに出力し、Methods 文案にも基準と結果を追加します（2026-11-07、#382）。  
+  Added versioned acceptance criteria for AI extraction before the pilot, with evaluation results in the R set and criteria and results in the Methods text (2026-11-07, #382).
 - 文献取り込みで Drive からのコピーに失敗したとき、進捗の表示に Google が返した理由（例 `appNotAuthorizedToFile`）を添え、診断ログ（ApiErrorLog タブ）にも記録するようにしました（2026-11-07、issue #279）。  
   When copying from Drive fails during document import, the progress display now includes the reason returned by Google (e.g. `appNotAuthorizedToFile`), and the failure is also recorded in the diagnostic log (ApiErrorLog tab) (2026-11-07, issue #279).
 - 判定時に見ていた AI の値と根拠 ID、引用の AI 再特定のログ・モデル・プロンプト版を記録し、audit.csv に出力します（2026-11-07）。

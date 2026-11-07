@@ -31,6 +31,7 @@ export const HELP_TOPICS = {
   usage: { tourId: 'export-data', helpAnchor: 'dashboard-usage' },
   'usage-export': { tourId: 'export-data', helpAnchor: 'export-usage' },
   'pilot-matrix': { tourId: 'pilot-and-extract', helpAnchor: 'pilot-matrix' },
+  'pilot-criteria': { helpAnchor: 'pilot-criteria' },
   'pilot-notes': { tourId: 'pilot-and-extract', helpAnchor: 'pilot-notes' },
   'ai-data-consent': { helpAnchor: 'setup-ai-data-consent' },
 } as const satisfies Record<string, HelpTopic>;

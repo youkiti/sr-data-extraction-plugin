@@ -14,6 +14,7 @@ import {
   readCompletedRunMetas,
   readMethodsRunFacts,
   readPilotRuns,
+  countPilotRuns,
   readRunAuditInfos,
   readRunStudyCoverage,
   readRunSchemaVersions,
@@ -624,6 +625,19 @@ describe('readPilotRuns', () => {
     o.costEstimate ?? '',
     o.fieldIds ?? '',
   ];
+
+  test('開始済みパイロットは状態を問わず数え、同じ run_id は一度だけ数える', async () => {
+    const values = [[...SHEET_HEADERS.ExtractionRuns],
+      pilotRow({ runId: 'running', status: 'running' }),
+      pilotRow({ runId: 'interrupted', status: 'running' }),
+      pilotRow({ runId: 'failed', status: 'failed' }),
+      pilotRow({ runId: 'completed', status: 'running' }),
+      pilotRow({ runId: 'completed', status: 'done' }),
+      pilotRow({ runId: 'full', runType: 'full' })];
+    expect(await countPilotRuns('sheet-1', readDeps(values))).toBe(4);
+    expect(await countPilotRuns('sheet-1', readDeps([[...SHEET_HEADERS.ExtractionRuns]]))).toBe(0);
+    expect(await readPilotRuns('sheet-1', readDeps(values))).toHaveLength(1);
+  });
 
   test('run_type=pilot の完了行のみを新しい順で返す（full / running 行は除外）', async () => {
     const values = [
