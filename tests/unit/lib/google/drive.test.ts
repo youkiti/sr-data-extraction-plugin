@@ -14,6 +14,9 @@ import {
   uploadBinaryFile,
   uploadTextFile,
 } from '../../../../src/lib/google/drive';
+import { configureApiErrorLog } from '../../../../src/lib/diagnostics/apiErrorLog';
+import { GoogleApiError } from '../../../../src/lib/google/types';
+import { installChromeMock } from '../../../setup/chrome-mock';
 
 describe('listFilePermissions', () => {
   test('全ページの user email を小文字で集め、email 欠落と group は除く', async () => {
@@ -460,6 +463,42 @@ describe('getFileMd5', () => {
 });
 
 describe('copyFile', () => {
+  test('失敗は document_import と応答本文を ApiErrorLog に記録して再送出する', async () => {
+    installChromeMock();
+    const body = '{"error":{"errors":[{"reason":"appNotAuthorizedToFile"}]}}';
+    const fetch = jest.fn().mockResolvedValue({
+      ok: false, status: 403, text: async () => body,
+    } as Response);
+    const logFetch = jest.fn().mockImplementation(async (input: RequestInfo | URL) =>
+      okJson(String(input).includes('fields=sheets.properties.title')
+        ? { sheets: [{ properties: { title: 'ApiErrorLog' } }] }
+        : {}));
+    configureApiErrorLog({
+      spreadsheetId: 'SID', loggedBy: 'me@example.com', appVersion: '1.0.0',
+      google: { fetch: logFetch, getAccessToken: async () => 't' },
+    });
+    try {
+      await expect(copyFile('SRC-1', { name: 'a.pdf', parentId: 'DOCS' }, {
+        fetch, getAccessToken: async () => 't',
+      })).rejects.toBeInstanceOf(GoogleApiError);
+      // 記録は非同期なので、既存の診断ログテストと同じくマクロタスク境界を挟む
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      const append = logFetch.mock.calls.find(([url]) =>
+        decodeURIComponent(String(url)).includes('ApiErrorLog') && String(url).includes(':append'));
+      expect(append).toBeDefined();
+      const { values } = JSON.parse((append?.[1] as RequestInit).body as string) as { values: unknown[][] };
+      expect(values).toHaveLength(1);
+      const [row] = values as [unknown[]];
+      expect(row[3]).toBe('document_import');
+      expect(row[4]).toBe('drive.files.copy');
+      expect(row[5]).toBe(403);
+      expect(row[6]).toContain(body);
+      expect(row.slice(7, 9)).toEqual(['', '']);
+    } finally {
+      configureApiErrorLog(null);
+    }
+  });
+
   test('files.copy でコピー先フォルダと名前を指定する', async () => {
     const fetch = jest
       .fn()

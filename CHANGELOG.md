@@ -14,8 +14,9 @@ This is the public changelog of this extension. Any change that can alter AI out
 ## 未リリース / Unreleased
 
 ### その他の変更 / Other changes
-
-- ダッシュボードに AI と人の抽出の比較を追加。一致・誤った値・作り話・欠けを独立比較と最終値の種類別に集計し、集計とセル一覧の CSV を保存できます（2026-11-07、#383）。
+- 文献取り込みで Drive からのコピーに失敗したとき、進捗の表示に Google が返した理由（例 `appNotAuthorizedToFile`）を添え、診断ログ（ApiErrorLog タブ）にも記録するようにしました（2026-11-07、issue #279）。  
+  When copying from Drive fails during document import, the progress display now includes the reason returned by Google (e.g. `appNotAuthorizedToFile`), and the failure is also recorded in the diagnostic log (ApiErrorLog tab) (2026-11-07, issue #279).
+- ダッシュボードに AI と人の抽出の比較を追加。一致・誤った値・作り話・欠けを独立比較と最終値の種類別に集計し、集計とセル一覧の CSV を保存できます（2026-11-07、#383）。  
   Added dashboard comparisons of AI and human extraction, separating matches, wrong values, fabrications and omissions by independent reviewers and final-value type, with summary and cell CSV downloads (2026-11-07, #383).
 - 公開の変更履歴（このファイル）を作り、利用規約とヘルプから変更の告知先として案内するようにしました。リリースの手順で、既定モデル・プロンプトの版数・推論の強さの既定が前回のリリースから変わったのにこのファイルが更新されていなければ止まるようにしました。  
   Added this public changelog and named it in the terms of service and the help page as the place where changes are announced. The release procedure now stops when the default model, a prompt version or the default reasoning effort has changed since the previous release and this file has not been updated.

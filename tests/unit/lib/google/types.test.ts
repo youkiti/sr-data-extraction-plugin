@@ -1,8 +1,41 @@
 import {
   GOOGLE_RETRYABLE_STATUSES,
   GoogleApiError,
+  googleApiErrorReasons,
   googleFetch,
 } from '../../../../src/lib/google/types';
+
+describe('googleApiErrorReasons', () => {
+  test('errors の理由を出現順に返し、重複・空文字・文字列以外を除く', () => {
+    const body = JSON.stringify({ error: {
+      errors: [
+        { reason: 'appNotAuthorizedToFile' }, { reason: '' }, { reason: 123 }, {}, null,
+        { reason: 'cannotCopyFile' }, { reason: 'appNotAuthorizedToFile' },
+      ],
+      status: 'PERMISSION_DENIED',
+    } });
+    expect(googleApiErrorReasons(new GoogleApiError('msg', 403, 'url', body)))
+      .toEqual(['appNotAuthorizedToFile', 'cannotCopyFile']);
+  });
+
+  test.each([
+    { error: { status: 'PERMISSION_DENIED' } },
+    { error: { errors: [], status: 'PERMISSION_DENIED' } },
+    { error: { errors: [{ reason: '' }], status: 'PERMISSION_DENIED' } },
+  ])('理由が無ければ status を返す: %j', (body) => {
+    expect(googleApiErrorReasons(new GoogleApiError('msg', 403, 'url', JSON.stringify(body))))
+      .toEqual(['PERMISSION_DENIED']);
+  });
+
+  test.each([
+    '', 'not json', 'null', '{}', '[]', '123', '"text"',
+    '{"error":null}', '{"error":"text"}', '{"error":[]}',
+    '{"error":{"errors":{}}}', '{"error":{"errors":[null,{},123,""]}}',
+    '{"error":{"status":""}}', '{"error":{"status":403}}',
+  ])('空・不正な本文や理由の無い本文は空配列: %s', (body) => {
+    expect(googleApiErrorReasons(new GoogleApiError('msg', 403, 'url', body))).toEqual([]);
+  });
+});
 
 function makeDeps(response: Response): { fetch: jest.Mock; getAccessToken: jest.Mock } {
   return {

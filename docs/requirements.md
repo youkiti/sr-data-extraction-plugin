@@ -537,7 +537,7 @@ Google API 呼び出しの失敗を記録する診断ログ（issue #249）。�
 | log_id | string(uuid) | ✓ | |
 | occurred_at | iso8601 | ✓ | **失敗が発生した時刻**（シートへ書き込んだ時刻ではない。ローカル退避 → 復旧後フラッシュでも保持する） |
 | logged_by | email | ✓ | サインイン中のメール（annotator と同じ値）。未設定時は空 |
-| context | enum | ✓ | 失敗した操作の種別: `pdf_load`（PDF バイナリ取得）/ `evidence_append`（Evidence 追記）/ `decision_save`（Decisions 追記）/ `annotation_upsert`（StudyData・ResultsData の annotator 行 upsert。判定保存と ai 転記の共通経路）/ `llm_log_upload`（LLM 呼び出しの prompt / response payload の Drive 保存。失敗しても呼び出しの結果と `LLMApiLog` 行は残す。issue #381） |
+| context | enum | ✓ | 失敗した操作の種別: `pdf_load`（PDF バイナリ取得）/ `evidence_append`（Evidence 追記）/ `decision_save`（Decisions 追記）/ `annotation_upsert`（StudyData・ResultsData の annotator 行 upsert。判定保存と ai 転記の共通経路）/ `llm_log_upload`（LLM 呼び出しの prompt / response payload の Drive 保存。失敗しても呼び出しの結果と `LLMApiLog` 行は残す。issue #381） / `document_import`（文献取り込みの Drive コピー `files.copy`。issue #279） |
 | api | string | ✓ | `drive.files.get` / `sheets.values.append` のような短い API 名。URL そのものは記録しない（クエリにファイル ID が入るため） |
 | http_status | int | | ネットワーク層の失敗（fetch 自体が reject）は空 |
 | message | string | ✓ | 打ち切り済みのエラーメッセージ（`GoogleApiError.responseBody` を含みうるが定数長で打ち切る。トークン・認可ヘッダ・リクエストボディは含まない） |

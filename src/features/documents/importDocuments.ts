@@ -6,7 +6,7 @@
 import { DEFAULT_DOCUMENT_ROLE, type DocumentRecord } from '../../domain/document';
 import type { StudyRecord } from '../../domain/study';
 import { copyFile, getFileBinary, uploadBinaryFile, uploadTextFile } from '../../lib/google/drive';
-import type { GoogleApiDeps } from '../../lib/google/types';
+import { GoogleApiError, googleApiErrorReasons, type GoogleApiDeps } from '../../lib/google/types';
 import { nowIso8601 } from '../../utils/iso8601';
 import { generateUuid } from '../../utils/uuid';
 import { detectRegistrationId } from './detectRegistrationId';
@@ -85,6 +85,10 @@ export function defaultStudyLabel(filename: string): string {
 }
 
 function toDetail(err: unknown): string {
+  if (err instanceof GoogleApiError) {
+    const reasons = googleApiErrorReasons(err);
+    if (reasons.length > 0) return `${err.message} [${reasons.join(', ')}]`;
+  }
   return err instanceof Error ? err.message : String(err);
 }
 
