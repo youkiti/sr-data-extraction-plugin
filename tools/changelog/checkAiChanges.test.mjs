@@ -12,6 +12,7 @@ const files = {
   'src/features/schema/skills/draftSchema.ts': 'export const DRAFT_SCHEMA_PROMPT_VERSION = 4;',
   'src/features/schema/skills/suggestEnum.ts': 'export const SUGGEST_ENUM_PROMPT_VERSION = 1;',
   'src/features/verification/skills/askPaper.ts': 'export const ASK_PAPER_PROMPT_VERSION = 1;',
+  'src/lib/help/consult/prompt.ts': 'export const HELP_CONSULT_PROMPT_VERSION = 1;',
   'src/lib/llm/GeminiProvider.ts': "thinkingLevel: options.reasoningEffort ?? this.reasoningEffort ?? 'low',",
 };
 const grep = Object.entries(files).filter(([, value]) => value.includes('_PROMPT_VERSION')).map(([path, value]) => `HEAD:${path}:1:${value}`).join('\n');
