@@ -10,7 +10,11 @@ export function positionHelpPopover(anchor: DOMRect, panel: DOMRect, width: numb
   };
 }
 
-export function createHelpPopover(doc: Document, win: Window, conditions: () => GuideConditionValues, start: (id: GuideTourId) => void) {
+export function createHelpPopover(doc: Document, win: Window, conditions: () => GuideConditionValues, start: (id: GuideTourId) => void,
+  openConsult = async () => {
+    const { openConsultDialog } = await import(/* webpackChunkName: "help-consult" */ './consult/consultDialog');
+    await openConsultDialog(doc);
+  }) {
   let anchor: HTMLAnchorElement | null = null;
   const panel = doc.createElement('div');
   panel.id = 'help-popover';
@@ -47,7 +51,6 @@ export function createHelpPopover(doc: Document, win: Window, conditions: () => 
     const topic: HelpTopic = HELP_TOPICS[topicId];
     const tour = topic.tourId ? GUIDE_TOURS[topic.tourId] : undefined;
     const canStart = tour && availableTours(undefined, conditions()).some(item => item.id === tour.id);
-    if (!tour?.videoId && !canStart) return;
     event.preventDefault();
     if (anchor === candidate) { close(); return; }
     close();
@@ -64,6 +67,17 @@ export function createHelpPopover(doc: Document, win: Window, conditions: () => 
       button.addEventListener('click', () => { close(); start(tour.id); });
       panel.append(button);
     }
+    const consult = doc.createElement('button');
+    consult.type = 'button';
+    consult.dataset.helpAction = 'consult';
+    consult.textContent = t('help.consultTitle');
+    consult.addEventListener('click', () => {
+      const previous = anchor!;
+      close();
+      previous.focus();
+      void openConsult();
+    });
+    panel.append(consult);
     doc.body.append(panel);
     position(anchor);
     anchor.setAttribute('aria-expanded', 'true');

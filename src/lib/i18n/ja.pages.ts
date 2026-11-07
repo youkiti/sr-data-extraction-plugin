@@ -222,6 +222,7 @@ export const jaPages = {
   'aiConsent.itemProtocol': '研究プロトコルの本文',
   'aiConsent.itemSchema': '抽出項目の定義',
   'aiConsent.itemQuestion': '論文への質問の文',
+  'aiConsent.itemHelpConsult': 'ヘルプへの相談の文と、選ばれた公開ヘルプの本文',
   'aiConsent.providerTerms': '送った内容の扱いは、その API 提供者の規約に従います。',
   'aiConsent.geminiFree':
     'Gemini API の無料枠では、送った内容が Google の製品改善に使われ、人が読むことがあります。未公開のデータや機密の資料は、有料枠で使ってください。',

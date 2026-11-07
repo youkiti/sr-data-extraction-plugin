@@ -2,6 +2,9 @@ import { createHelpPopover, positionHelpPopover } from '../../../../src/app/guid
 import { createHelpButton } from '../../../../src/app/ui/helpButton';
 import { GUIDE_TOURS } from '../../../../src/lib/guide/tours';
 import { setUiLanguage } from '../../../../src/lib/i18n';
+import { openConsultDialog } from '../../../../src/app/guide/consult/consultDialog';
+
+jest.mock('../../../../src/app/guide/consult/consultDialog', () => ({ openConsultDialog: jest.fn() }));
 
 let popover: ReturnType<typeof createHelpPopover>;
 let home: HTMLAnchorElement;
@@ -35,7 +38,7 @@ test('document 全体から開き、項目と属性・フォーカス・位置�
   expect(panel()!.className).toBe('help-popover');
   expect(panel()!.getAttribute('role')).toBe('dialog');
   expect(panel()!.getAttribute('aria-label')).toBe('ヘルプと動画');
-  expect([...panel()!.children].map(item => item.getAttribute('data-help-action'))).toEqual(['help', 'video', 'tour']);
+  expect([...panel()!.children].map(item => item.getAttribute('data-help-action'))).toEqual(['help', 'video', 'tour', 'consult']);
   expect(action('help').getAttribute('href')).toBe('https://youkiti.github.io/sr-data-extraction-plugin/help.html?lang=ja#project');
   expect(action('video').getAttribute('href')).toBe('https://youtu.be/SYMLo4VKjMI');
   for (const name of ['help', 'video']) {
@@ -64,6 +67,17 @@ test('同じリンクで閉じ、別のリンクでは一つだけ切り替え�
   expect(home.hasAttribute('aria-expanded')).toBe(false);
   expect(verify.getAttribute('aria-expanded')).toBe('true');
   expect(action('video').getAttribute('href')).toBe('https://youtu.be/DN5YrhJilOc');
+});
+
+test.each(['options', 'tours'])('ヘルプだけの話題 %s でも相談を開く', async id => {
+  home.dataset.help = id;
+  expect(click(home).defaultPrevented).toBe(true);
+  click(action('consult'));
+  await Promise.resolve();
+  await Promise.resolve();
+  expect(panel()).toBeNull();
+  expect(document.activeElement).toBe(home);
+  expect(openConsultDialog).toHaveBeenCalledWith(document);
 });
 
 test('Escape は元のリンクにフォーカスを戻す', () => {
@@ -95,7 +109,7 @@ test.each<MouseEventInit>([{ ctrlKey: true }, { metaKey: true }, { shiftKey: tru
   expect(panel()).toBeNull();
 });
 
-test.each(['unknown', 'toString', '', 'options', 'tours'])('未知またはヘルプだけの %s は素通しする', id => {
+test.each(['unknown', 'toString', ''])('未知の %s は素通しする', id => {
   home.dataset.help = id;
   expect(click(home).defaultPrevented).toBe(false);
   expect(panel()).toBeNull();
@@ -108,7 +122,7 @@ test('ツアーが使えなくても動画は表示する', () => {
   expect(action('video')).not.toBeNull();
 });
 
-test('動画がなくても利用可能なツアーは出し、両方なければ素通しする', () => {
+test('動画がなくても利用可能なツアーは出し、両方なくても相談を表示する', () => {
   const tour = GUIDE_TOURS['getting-started'];
   const videoId = tour.videoId;
   delete tour.videoId;
@@ -118,8 +132,8 @@ test('動画がなくても利用可能なツアーは出し、両方なけれ�
     expect(action('tour')).not.toBeNull();
     click(home);
     unavailable = true;
-    expect(click(home).defaultPrevented).toBe(false);
-    expect(panel()).toBeNull();
+    expect(click(home).defaultPrevented).toBe(true);
+    expect(action('consult')).not.toBeNull();
   } finally { tour.videoId = videoId; }
 });
 

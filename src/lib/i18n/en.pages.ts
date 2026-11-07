@@ -224,6 +224,7 @@ export const enPages: Record<keyof typeof jaPages, string> = {
   'aiConsent.itemProtocol': 'The text of your study protocol',
   'aiConsent.itemSchema': 'Your extraction field definitions',
   'aiConsent.itemQuestion': 'Questions you ask about a paper',
+  'aiConsent.itemHelpConsult': 'Your help question and the selected public help text',
   'aiConsent.providerTerms': "How the content is handled there is governed by that API provider's terms.",
   'aiConsent.geminiFree':
     "On the Gemini API free tier, what you send may be used to improve Google's products and may be read by people. Use a paid tier for unpublished data or confidential material.",

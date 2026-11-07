@@ -26,6 +26,7 @@ export const HELP_TOPICS = {
   'ask-paper': { tourId: 'verify-basics', helpAnchor: 'verify-ask-paper' },
   'review-sets': { tourId: 'dual-review', helpAnchor: 'project-review-sets' },
   tours: { helpAnchor: 'project-tours' },
+  'help-consult': { helpAnchor: 'project-help-consult' },
   usage: { tourId: 'export-data', helpAnchor: 'dashboard-usage' },
   'usage-export': { tourId: 'export-data', helpAnchor: 'export-usage' },
   'pilot-matrix': { tourId: 'pilot-and-extract', helpAnchor: 'pilot-matrix' },
