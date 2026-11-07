@@ -80,6 +80,18 @@ test.each(['options', 'tours'])('ヘルプだけの話題 %s でも相談を開�
   expect(openConsultDialog).toHaveBeenCalledWith(document);
 });
 
+test('モーダルの中の「?」では相談を出さず、ヘルプだけの話題は素通しする', () => {
+  const modal = document.createElement('div');
+  modal.setAttribute('aria-modal', 'true');
+  const consent = createHelpButton('ai-data-consent');
+  modal.append(consent, home);
+  document.body.append(modal);
+  expect(click(consent).defaultPrevented).toBe(false);
+  expect(panel()).toBeNull();
+  expect(click(home).defaultPrevented).toBe(true);
+  expect([...panel()!.children].map(item => item.getAttribute('data-help-action'))).toEqual(['help', 'video', 'tour']);
+});
+
 test('Escape は元のリンクにフォーカスを戻す', () => {
   document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
   click(home);

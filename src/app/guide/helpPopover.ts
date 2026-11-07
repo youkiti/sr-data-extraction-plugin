@@ -51,6 +51,10 @@ export function createHelpPopover(doc: Document, win: Window, conditions: () => 
     const topic: HelpTopic = HELP_TOPICS[topicId];
     const tour = topic.tourId ? GUIDE_TOURS[topic.tourId] : undefined;
     const canStart = tour && availableTours(undefined, conditions()).some(item => item.id === tour.id);
+    // モーダル（同意ダイアログ・相談の小窓）の中では相談を重ねて開かない。
+    // 背後のモーダルがキー操作を握ったままになるため、従来どおりの項目だけにする
+    const inModal = candidate.closest('[aria-modal="true"]') !== null;
+    if (inModal && !tour?.videoId && !canStart) return;
     event.preventDefault();
     if (anchor === candidate) { close(); return; }
     close();
@@ -77,7 +81,7 @@ export function createHelpPopover(doc: Document, win: Window, conditions: () => 
       previous.focus();
       void openConsult();
     });
-    panel.append(consult);
+    if (!inModal) panel.append(consult);
     doc.body.append(panel);
     position(anchor);
     anchor.setAttribute('aria-expanded', 'true');
