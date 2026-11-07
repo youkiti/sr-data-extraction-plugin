@@ -85,6 +85,7 @@ test('編集表の中でスクロールでき、抽出指示は行高と列幅�
   });
   const wrap = page.locator('.schema__table-wrap--editor');
   await expect.poll(() => wrap.evaluate((element) => element.scrollHeight > element.clientHeight)).toBe(true);
+  // 画面の作り直しの途中に外れた古い行を測ると 0 になるため、測る箇所は値が落ち着くまで待つ
   const row = page.locator('#schema-editor-table tbody tr').first();
   const instruction = row.locator('.schema__cell-instruction');
   const rowHeight = await row.evaluate((element) => element.getBoundingClientRect().height);
@@ -93,16 +94,16 @@ test('編集表の中でスクロールでき、抽出指示は行高と列幅�
   const usualHeight = await instruction.evaluate((element) => element.getBoundingClientRect().height);
   await instruction.focus();
   await expect.poll(() => instruction.evaluate((element) => element.getBoundingClientRect().width)).toBeGreaterThanOrEqual(500);
-  expect(await row.evaluate((element) => element.getBoundingClientRect().height)).toBe(rowHeight);
-  expect(await table.evaluate((element) => element.getBoundingClientRect().width)).toBe(tableWidth);
+  await expect.poll(() => row.evaluate((element) => element.getBoundingClientRect().height)).toBe(rowHeight);
+  await expect.poll(() => table.evaluate((element) => element.getBoundingClientRect().width)).toBe(tableWidth);
   await page.keyboard.press('Tab');
   await expect(instruction).not.toBeFocused();
   await expect.poll(() => instruction.evaluate((element) => element.getBoundingClientRect().width)).toBeLessThan(300);
   await instruction.fill('本文中の対象者の特徴と研究方法を、根拠となる記述に沿って具体的に抽出してください。'.repeat(5));
   await instruction.focus();
   await expect.poll(() => instruction.evaluate((element) => element.getBoundingClientRect().height)).toBeGreaterThan(usualHeight);
-  expect(await row.evaluate((element) => element.getBoundingClientRect().height)).toBe(rowHeight);
-  expect(await table.evaluate((element) => element.getBoundingClientRect().width)).toBe(tableWidth);
+  await expect.poll(() => row.evaluate((element) => element.getBoundingClientRect().height)).toBe(rowHeight);
+  await expect.poll(() => table.evaluate((element) => element.getBoundingClientRect().width)).toBe(tableWidth);
   await page.keyboard.press('Tab');
   await expect.poll(() => instruction.evaluate((element) => element.getBoundingClientRect().width)).toBeLessThan(300);
   await expect.poll(() => instruction.evaluate((element) => element.getBoundingClientRect().height)).toBe(usualHeight);
@@ -131,8 +132,9 @@ test('編集表のセルを変更して離れてもスクロール位置を保�
   await page.keyboard.press('Tab');
   await expect(page.locator('#schema-editor-table tbody tr').nth(20).locator('.schema__cell-instruction'))
     .toHaveValue('変更した指示');
-  const afterLeave = await wrap.evaluate((element) => element.scrollTop);
-  expect(Math.abs(afterLeave - beforeLeave)).toBeLessThan(200);
+  // 離れた後の作り直しは非同期に 2 回起きるため、落ち着いた位置で比べる
+  await expect.poll(() => wrap.evaluate((element, before) => Math.abs(element.scrollTop - before), beforeLeave))
+    .toBeLessThan(200);
 });
 
 async function initApp(
