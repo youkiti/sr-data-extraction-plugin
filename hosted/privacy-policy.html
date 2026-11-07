@@ -54,11 +54,11 @@
         </h1>
         <p class="last-updated">
           <span class="ja" lang="ja"
-            >最終更新: 2026-10-20<br />
+            >最終更新: 2026-11-07<br />
             対象: Chrome 拡張機能「SR Data Extraction」（sr-data-extraction-plugin）</span
           >
           <span class="en" lang="en"
-            >Last updated: 2026-10-20<br />
+            >Last updated: 2026-11-07<br />
             Applies to the Chrome extension “SR Data Extraction”
             (sr-data-extraction-plugin)</span
           >
@@ -385,13 +385,19 @@
             <span class="ja" lang="ja"
               >本拡張は、Google API
               から取得したユーザーデータを、上記の機能提供以外の目的（広告・分析・第三者への提供・機械学習モデルの学習等）に
-              <strong>一切使用しません</strong>。Google API Services User Data Policy（Limited Use
-              要件を含む）を遵守します。</span
+              <strong>一切使用しません</strong>。第三者へ渡すのは、利用者が AI の機能を使うときに、利用者が設定した LLM API
+              へ送る場合だけです（<a href="#providers">プロバイダごとのデータの扱い</a>）。Google API から受け取った情報の利用は、Chrome
+              ウェブストアのユーザーデータに関するポリシー（Chrome Web Store User Data Policy。Limited Use
+              の要件を含む）と、Google API Services User Data Policy（Limited Use の要件を含む）に従います。</span
             >
             <span class="en" lang="en"
               >User data obtained through Google APIs is <strong>never</strong> used for anything beyond the features
-              described above — no advertising, analytics, transfer to third parties, or model training. The extension
-              complies with the Google API Services User Data Policy, including its Limited Use requirements.</span
+              described above: no advertising, analytics, transfer to third parties, or model training. The only
+              transfer to a third party is sending content to the LLM API you configured, when you use an AI feature
+              (see <a href="#providers">How each provider handles your data</a>). The use of information received
+              from Google APIs will adhere to the Chrome Web Store User Data Policy, including the Limited Use
+              requirements. The extension also complies with the Google API Services User Data Policy, including its
+              Limited Use requirements.</span
             >
           </p>
         </section>
@@ -474,13 +480,17 @@
             <li>
               <span class="ja" lang="ja"
                 ><strong>Gemini API</strong>: 無料枠（課金を有効にしていない Google Cloud
-                プロジェクト）では、送った内容と応答が Google の製品の改善に使われ、人が読むことがあります。Google
+                プロジェクト）では、送った内容と応答が、Google の製品・サービスと機械学習技術の提供・改善・開発に使われます。品質の向上のために、人が読み、注釈を付けることがあります（Google
+                は、人が見る前に Google アカウント・API キー・Cloud プロジェクトとの結び付きを外すとしています）。Google
                 は無料枠へ機微な情報・機密情報・個人情報を送らないよう求めています。ただし、欧州経済領域・スイス・英国の利用者には、無料枠でも有料枠と同じデータの扱いが適用され、上記の改善への利用と人による閲覧の記述は当てはまりません。未公開のデータや機密資料を扱うときは、課金を有効にした有料枠で使ってください。根拠:
                 <a href="https://ai.google.dev/gemini-api/terms">Gemini API 追加利用規約</a></span
               >
               <span class="en" lang="en"
                 ><strong>Gemini API</strong>: on the free tier (a Google Cloud project without billing enabled), what
-                you send and the responses are used to improve Google’s products, and humans may read them. Google asks
+                you send and the responses are used to provide, improve, and develop Google products, services, and
+                machine learning technologies. Human reviewers may read and annotate them to improve quality (Google
+                says it disconnects this data from your Google Account, API key, and Cloud project before reviewers
+                see it). Google asks
                 users not to send sensitive, confidential, or personal information to the free tier. However, for users in the European Economic Area, Switzerland, or the United Kingdom, paid-service data handling applies even to the free tier, so the statements above about use for product improvement and human review do not apply. Use a billing-enabled paid
                 tier for unpublished data or confidential material. Source:
                 <a href="https://ai.google.dev/gemini-api/terms">Gemini API Additional Terms of Service</a></span
