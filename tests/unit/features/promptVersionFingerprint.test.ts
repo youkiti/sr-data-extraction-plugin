@@ -38,6 +38,14 @@ import {
   buildAskPaperDocumentPrefix,
   buildAskPaperMessages,
 } from '../../../src/features/verification/skills/askPaper';
+import {
+  buildSuggestEnumUserPrompt, SUGGEST_ENUM_PROMPT_VERSION,
+  SUGGEST_ENUM_RESPONSE_SCHEMA, SUGGEST_ENUM_SYSTEM_PROMPT,
+} from '../../../src/features/schema/skills/suggestEnum';
+import {
+  buildSelectionMessages, buildAnswerMessages, HELP_CONSULT_PROMPT_VERSION, SELECTION_RESPONSE_SCHEMA,
+} from '../../../src/lib/help/consult/prompt';
+import type { HelpSection } from '../../../src/lib/help/consult/types';
 import { md5Hex } from '../../../src/utils/md5';
 
 /** UTF-8 にした JSON の MD5（改ざん検知ではなく変更検知だけが目的なので MD5 で足りる） */
@@ -205,7 +213,42 @@ function askPaperFingerprint(): string {
 }
 
 // 版数を上げたら、その skill の version と hash を新しい値へ更新する
+function suggestEnumFingerprint(): string {
+  return fingerprint({
+    system: SUGGEST_ENUM_SYSTEM_PROMPT,
+    schema: SUGGEST_ENUM_RESPONSE_SCHEMA,
+    user: buildSuggestEnumUserPrompt({
+      fieldLabel: 'Study design', extractionInstruction: 'Report the design.',
+      pilotValues: ['RCT', 'cohort', 'unclear'],
+    }),
+  });
+}
+
+function helpConsultFingerprint(): string {
+  const sections: HelpSection[] = [{
+    id: 'setup', kind: 'section', sectionId: 'setup', sectionTitle: 'Setup',
+    title: 'API key', when: ['Connect an API'], body: 'Set your API key in Options.',
+  }];
+  const question = 'Where do I set my API key?';
+  return fingerprint({
+    schema: SELECTION_RESPONSE_SCHEMA,
+    selection: buildSelectionMessages(sections, question),
+    answerJa: buildAnswerMessages(sections, question, 'ja'),
+    answerEn: buildAnswerMessages(sections, question, 'en'),
+  });
+}
+
 const EXPECTED = {
+  'suggest-enum（SUGGEST_ENUM_PROMPT_VERSION）': {
+    version: 1,
+    hash: '63ac498d95adb8ca69dbd42e1c21dcf4',
+    actual: () => ({ version: SUGGEST_ENUM_PROMPT_VERSION, hash: suggestEnumFingerprint() }),
+  },
+  'help-consult（HELP_CONSULT_PROMPT_VERSION）': {
+    version: 1,
+    hash: '0dd85ba44e9fd922504a22add8da6232',
+    actual: () => ({ version: HELP_CONSULT_PROMPT_VERSION, hash: helpConsultFingerprint() }),
+  },
   'extract-data（EXTRACT_DATA_PROMPT_VERSION）': {
     version: 13,
     hash: 'f328ff536d4d18bf1fce39ae10724c70',

@@ -46,11 +46,11 @@
   5. Confirmed data are exported as CSV (study-wide, results-long, and audit layouts) plus an R-ready set.
 
   FEATURES
-  - Risk-of-bias templates (RoB 2, ROBINS-I)
+  - Risk-of-bias templates (RoB 2, ROBINS-I, QUADAS-3, QUIPS)
   - Independent dual review with adjudication, and agreement rates with Cohen's kappa
   - Safeguards against automation bias: human cells start empty, accepting a value requires an explicit action, and exports warn about unverified cells
   - Several reports of one trial can be grouped into a single study
-  - Numeric consistency checks and a copy-ready Methods paragraph for your manuscript
+  - Numeric consistency checks and a Methods paragraph draft for your manuscript that you check and edit
   - English and Japanese user interface
 
   WHAT YOU NEED

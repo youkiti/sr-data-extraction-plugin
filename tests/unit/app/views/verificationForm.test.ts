@@ -348,7 +348,7 @@ describe('renderVerificationForm', () => {
   test('RoB 2 アルゴリズム提案（issue #61）: 提案チップを表示する', () => {
     const cell = makeCell({ field: makeField({ fieldId: 'f-judgement', fieldName: 'rob2_judgement' }) });
     const info = new Map([
-      [cell.cellKey, { cellKey: cell.cellKey, suggestion: 'some_concerns' as const, currentValue: 'some_concerns' as const, mismatch: false, aiUnconfirmed: false }],
+      [cell.cellKey, { cellKey: cell.cellKey, suggestion: 'some_concerns' as const, currentValue: 'some_concerns' as const, mismatch: false, suggestionUsesUnverifiedAi: false, aiUnconfirmed: false }],
     ]);
     const { root } = render(makeModel([cell], { robAlgorithmInfo: info }));
     expect(root.querySelector('.verify__rob-suggestion')?.textContent).toBe('アルゴリズム提案: some_concerns');
@@ -363,8 +363,8 @@ describe('renderVerificationForm', () => {
       entityKey: 'rob:d2_deviations',
     });
     const info = new Map([
-      [cellA.cellKey, { cellKey: cellA.cellKey, suggestion: 'high' as const, currentValue: 'low' as const, mismatch: true, aiUnconfirmed: false }],
-      [cellB.cellKey, { cellKey: cellB.cellKey, suggestion: 'high' as const, currentValue: 'low' as const, mismatch: true, aiUnconfirmed: false }],
+      [cellA.cellKey, { cellKey: cellA.cellKey, suggestion: 'high' as const, currentValue: 'low' as const, mismatch: true, suggestionUsesUnverifiedAi: false, aiUnconfirmed: false }],
+      [cellB.cellKey, { cellKey: cellB.cellKey, suggestion: 'high' as const, currentValue: 'low' as const, mismatch: true, suggestionUsesUnverifiedAi: false, aiUnconfirmed: false }],
     ]);
     const { root } = render(makeModel([cellA, cellB], { robAlgorithmInfo: info }));
     const blocks = root.querySelectorAll('.verify__rob-mismatch-warnings');
@@ -379,12 +379,31 @@ describe('renderVerificationForm', () => {
   test('RoB 2 判定・未確認バッジ（issue #61 オーナー追加要件）: AI 値があり判定 0 件のときだけ表示する', () => {
     const cell = makeCell({ field: makeField({ fieldId: 'f-judgement', fieldName: 'rob2_judgement' }) });
     const info = new Map([
-      [cell.cellKey, { cellKey: cell.cellKey, suggestion: null, currentValue: 'low' as const, mismatch: false, aiUnconfirmed: true }],
+      [cell.cellKey, { cellKey: cell.cellKey, suggestion: null, currentValue: 'low' as const, mismatch: false, suggestionUsesUnverifiedAi: false, aiUnconfirmed: true }],
     ]);
     const { root } = render(makeModel([cell], { robAlgorithmInfo: info }));
     expect(root.querySelector('.verify__rob-unconfirmed')?.textContent).toBe(
       'AI 判定・未確認（まだ人が確認していません）',
     );
+  });
+
+  test.each([
+    ['low', true, true],
+    ['low', false, false],
+    [null, true, false],
+  ] as const)('提案元の未確認 AI の注意を必要な場合だけ表示する（%s / %s）', (suggestion, usesAi, shown) => {
+    const cell = makeCell();
+    const info = new Map([[cell.cellKey, {
+      cellKey: cell.cellKey, suggestion, currentValue: null, mismatch: false,
+      aiUnconfirmed: false, suggestionUsesUnverifiedAi: usesAi,
+    }]]);
+    const { root } = render(makeModel([cell], { robAlgorithmInfo: info }));
+    const note = root.querySelector('.verify__rob-suggestion-unverified');
+    expect(note !== null).toBe(shown);
+    if (shown) {
+      expect(note?.textContent).toBe('この提案は、まだ確かめていない AI の回答から計算しています。回答を確かめると変わることがあります。');
+      expect(root.querySelector('.verify__rob-suggestion')?.nextElementSibling).toBe(note);
+    }
   });
 
   test('RoB 2 アルゴリズム情報が無いセル（rob_domain 以外・情報未計算）には何も描画しない', () => {

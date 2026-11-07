@@ -1037,7 +1037,7 @@ export const enApp: Record<keyof typeof jaApp, string> = {
     'This document has no extracted text (no_text_layer, or the extraction failed)',
   'askPaper.title': 'Ask the paper (AI)',
   'askPaper.notice':
-    'Answers are for reference. Check the PDF before entering values yourself. Questions and answers are kept per study while this tab is open, disappear when you close or reload it, and are never saved in the shared folder.',
+    'Asking a paper is meant for exploratory, supplementary use. Answers are for reference. Check the PDF before entering values yourself. Questions and answers are kept per study while this tab is open, disappear when you close or reload it, and are never saved in the shared folder.',
   'askPaper.input': 'Question about the paper',
   'askPaper.send': 'Send',
   'askPaper.estimatePending': 'Preparing estimate…',
@@ -1117,6 +1117,7 @@ export const enApp: Record<keyof typeof jaApp, string> = {
   'verify.aiNotReported': 'Not reported ({token})',
   'verify.aiValueNone': '(no value)',
   'verify.robSuggestion': 'Algorithm suggestion: {suggestion}',
+  'verify.robSuggestionUnverified': 'This suggestion is computed from AI answers you have not verified yet. It may change once you verify them.',
   'verify.robMismatch':
     '⚠ The algorithm suggestion ({suggestion}) does not match the current judgment ({current})',
   'verify.robUnconfirmed': 'AI judgment, unconfirmed (not yet reviewed by a human)',

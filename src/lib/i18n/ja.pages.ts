@@ -225,6 +225,7 @@ export const jaPages = {
   'aiConsent.itemPaper': '論文の本文（文字を読み取れない PDF はページの画像）',
   'aiConsent.itemProtocol': '研究プロトコルの本文',
   'aiConsent.itemSchema': '抽出項目の定義',
+  'aiConsent.itemEnumValues': '抽出項目の選択肢を提案するときは、その項目のパイロットの抽出値（最大 30 件）',
   'aiConsent.itemQuestion': '論文への質問の文',
   'aiConsent.itemHelpConsult': 'ヘルプへの相談の文と、選ばれた公開ヘルプの本文',
   'aiConsent.providerTerms': '送った内容の扱いは、その API 提供者の規約に従います。',

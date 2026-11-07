@@ -878,6 +878,43 @@ function makeD1Group(overrides: { sqValues?: [string, string, string]; judgement
 }
 
 describe('collectRobAlgorithmInfo', () => {
+  test.each([false, true])('SQ の未確認 AI 値を提案元として示す（確定済み: %s）', (confirmed) => {
+    const d1 = makeD1Group();
+    for (const cell of d1.cells.filter((item) => item.field.fieldName !== 'rob2_judgement')) {
+      if (confirmed) {
+        cell.state = { status: 'accept', value: cell.evidence!.value, stack: [] };
+      }
+    }
+    const info = collectRobAlgorithmInfo({ groups: [d1], cells: [] })
+      .get(cellKeyOf('f-rob2_judgement', 'rob:d1_randomization'));
+    expect(info?.suggestion).toBe('low');
+    expect(info?.suggestionUsesUnverifiedAi).toBe(!confirmed);
+  });
+
+  test('未回答で提案が無いときは未確認 AI 値があっても注意しない', () => {
+    const d1 = makeD1Group();
+    d1.cells.pop();
+    d1.cells[0]!.evidence = null;
+    d1.cells.push(makeSqCell('rob2_judgement', 'rob:d1_randomization', 'low'));
+    const info = collectRobAlgorithmInfo({ groups: [d1], cells: [] })
+      .get(cellKeyOf('f-rob2_judgement', 'rob:d1_randomization'));
+    expect(info?.suggestion).toBeNull();
+    expect(info?.suggestionUsesUnverifiedAi).toBe(false);
+  });
+
+  test.each([false, true])('overall の集約元の未確認 AI 値を示す（確定済み: %s）', (confirmed) => {
+    const domains = ['d1_randomization', 'd2_deviations', 'd3_missing_data', 'd4_measurement', 'd5_reporting'];
+    const groups = domains.map((id, index) => group([
+      makeSqCell('rob2_judgement', 'rob:' + id, 'low',
+        confirmed || index > 0 ? { stateValue: 'low', status: 'accept' } : {}),
+    ]));
+    groups.push(group([makeSqCell('rob2_judgement', 'rob:overall', 'low')]));
+    const info = collectRobAlgorithmInfo({ groups, cells: [] })
+      .get(cellKeyOf('f-rob2_judgement', 'rob:overall'));
+    expect(info?.suggestion).toBe('low');
+    expect(info?.suggestionUsesUnverifiedAi).toBe(!confirmed);
+  });
+
   test('SQ 回答が揃ったドメインは提案を算出する（現在値と一致すれば mismatch なし）', () => {
     const model: TabModel = { groups: [makeD1Group()], cells: [] };
     const result = collectRobAlgorithmInfo(model);
@@ -885,6 +922,7 @@ describe('collectRobAlgorithmInfo', () => {
     expect(info).toEqual({
       cellKey: cellKeyOf('f-rob2_judgement', 'rob:d1_randomization'),
       suggestion: 'low',
+      suggestionUsesUnverifiedAi: true,
       currentValue: 'low',
       mismatch: false,
       aiUnconfirmed: true, // AI 値があり判定は未検証（emptyCellState）

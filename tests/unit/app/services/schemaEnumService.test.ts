@@ -5,11 +5,16 @@ import { emptyEditorRow, updateEditorRow, moveEditorRow } from '../../../../src/
 import type { SchemaServiceDeps } from '../../../../src/app/services/schemaService';
 import { createInitialState, createStore } from '../../../../src/app/store';
 import type { Evidence } from '../../../../src/domain/evidence';
+import { ensureChildFolder, uploadTextFile } from '../../../../src/lib/google/drive';
 import { appendLlmApiLog } from '../../../../src/lib/llm/apiLogRepository';
 import { FACTORY_DEFAULT_MODEL, loadDefaultModel } from '../../../../src/lib/storage/settingsStore';
 import { UNLIMITED_POLICY } from '../../../../src/lib/llm/rateLimitPolicy';
 import type { LLMProvider } from '../../../../src/lib/llm/LLMProvider';
 
+jest.mock('../../../../src/lib/google/drive', () => ({
+  ensureChildFolder: jest.fn(async (name: string) => ({ id: name })),
+  uploadTextFile: jest.fn(async ({ name }: { name: string }) => ({ webViewLink: 'https://drive.test/' + name })),
+}));
 jest.mock('../../../../src/lib/llm/apiLogRepository', () => ({ appendLlmApiLog: jest.fn() }));
 jest.mock('../../../../src/lib/storage/settingsStore', () => ({
   ...jest.requireActual('../../../../src/lib/storage/settingsStore'),
@@ -25,7 +30,7 @@ function setup() {
   const store = createStore(initial);
   const chat = jest.fn<ReturnType<LLMProvider['chat']>, Parameters<LLMProvider['chat']>>(async () => ({
     text: '{"allowed_values":["interview","unclear","other"]}', tokensIn: 100, tokensOut: 20,
-    cachedTokensIn: 0, raw: {},
+    cachedTokensIn: 0, raw: { text: '保存する応答全文' },
   }));
   const buildProvider = jest.fn((config) => ({ model: config.model, providerId: 'gemini' as const,
     supportsImageInput: false, chat }));
@@ -55,8 +60,16 @@ test('パイロット値を重複排除して30件まで送り、候補を編集
   expect(store.getState().schema.editorRows![0]).toBe(row);
   expect(appendLlmApiLog).toHaveBeenCalledWith('sheet', expect.objectContaining({
     purpose: 'suggest_enum', tokensIn: 100, tokensOut: 20, promptVersion: 1,
-    promptRef: '', responseRef: '',
+    promptRef: 'https://drive.test/log.prompt.json', responseRef: 'https://drive.test/log.response.json',
   }), deps.google);
+  expect(ensureChildFolder).toHaveBeenCalledWith('logs', 'folder', deps.google);
+  expect(ensureChildFolder).toHaveBeenCalledWith('llm', 'logs', deps.google);
+  const uploads = jest.mocked(uploadTextFile).mock.calls;
+  const promptUpload = uploads.find(([file]) => file.name === 'log.prompt.json')![0];
+  const responseUpload = uploads.find(([file]) => file.name === 'log.response.json')![0];
+  expect(promptUpload).toMatchObject({ parentId: 'llm', mimeType: 'application/json' });
+  expect(JSON.parse(promptUpload.content)).toMatchObject({ promptVersion: 1, messages: chat.mock.calls[0]![0] });
+  expect(JSON.parse(responseUpload.content)).toEqual({ text: '保存する応答全文' });
   updateEnumSuggestion(store, { values: ' survey |unclear|other' });
   applyEnumSuggestion(store);
   expect(store.getState().schema.editorRows![0]).toMatchObject({ dataType: 'enum',
@@ -160,6 +173,22 @@ test('生成後に移動した行へ適用する', async () => {
   moveEditorRow(store, 0, 1);
   applyEnumSuggestion(store);
   expect(store.getState().schema.editorRows![1]!.dataType).toBe('enum');
+});
+test('記録のフォルダを用意する間に取り消すと、LLM へ送らない', async () => {
+  const { store, deps, chat } = setup();
+  let finish!: () => void;
+  const wait = new Promise<void>((resolve) => { finish = resolve; });
+  jest.mocked(ensureChildFolder).mockImplementationOnce(async (name: string) => {
+    await wait;
+    return { id: name } as Awaited<ReturnType<typeof ensureChildFolder>>;
+  });
+  const run = suggestEnum(store, 0, deps);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  cancelEnumSuggestion(store);
+  finish();
+  await run;
+  expect(chat).not.toHaveBeenCalled();
+  expect(store.getState().schema.enumSuggestion).toBeNull();
 });
 test.each(['success', 'failure', 'consent', 'consentAccepted'])('キャンセル後の遅延応答を捨てる %s', async (mode) => {
   const { store, deps, chat } = setup();

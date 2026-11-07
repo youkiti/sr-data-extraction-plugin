@@ -64,6 +64,7 @@ export function openAiDataConsentDialog(doc: Document, provider: LlmProviderId):
             el('li', { text: t('aiConsent.itemPaper') }),
             el('li', { text: t('aiConsent.itemProtocol') }),
             el('li', { text: t('aiConsent.itemSchema') }),
+            el('li', { text: t('aiConsent.itemEnumValues') }),
             el('li', { text: t('aiConsent.itemQuestion') }),
             el('li', { text: t('aiConsent.itemHelpConsult') }),
           ]),

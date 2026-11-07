@@ -2,6 +2,9 @@
 import type { ChatMessage } from '../../llm/LLMProvider';
 import type { HelpLanguage, HelpSection } from './types';
 
+/** 相談のプロンプトの版。文面を変えたら上げる。 */
+export const HELP_CONSULT_PROMPT_VERSION = 1;
+
 export const SELECTION_RESPONSE_SCHEMA = {
   type: 'object',
   properties: { sectionIds: { type: 'array', items: { type: 'string' } } },
