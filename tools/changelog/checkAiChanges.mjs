@@ -13,6 +13,7 @@ export const watchedValues = [
   { label: 'draft-schema プロンプトの版数', path: 'src/features/schema/skills/draftSchema.ts', name: 'DRAFT_SCHEMA_PROMPT_VERSION' },
   { label: 'suggest-enum プロンプトの版数', path: 'src/features/schema/skills/suggestEnum.ts', name: 'SUGGEST_ENUM_PROMPT_VERSION' },
   { label: 'ask-paper プロンプトの版数', path: 'src/features/verification/skills/askPaper.ts', name: 'ASK_PAPER_PROMPT_VERSION' },
+  { label: 'help-consult プロンプトの版数', path: 'src/lib/help/consult/prompt.ts', name: 'HELP_CONSULT_PROMPT_VERSION' },
   { label: 'Gemini の推論の強さの既定', path: 'src/lib/llm/GeminiProvider.ts', pattern: /thinkingLevel: options\.reasoningEffort \?\? this\.reasoningEffort \?\? '([^']+)',/ },
 ].map((item) => ({ ...item, pattern: item.pattern ?? new RegExp(`export const ${item.name} = (\\d+);`) }));
 
