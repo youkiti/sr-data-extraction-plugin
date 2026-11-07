@@ -63,7 +63,8 @@ export function main(argv, deps = {}) {
   const runGit = (args) => git(['-c', 'core.quotepath=false', '-c', 'i18n.logOutputEncoding=UTF-8', ...args]);
   try {
     const options = parseArgs(argv);
-    const since = options.since ?? findRelease(runGit(['log', '--first-parent', '--format=%H%x09%s', 'HEAD']));
+    // リリースのバンプは PR の側の親に入ることがあるので、first-parent に限らず日付の新しい順で探す。
+    const since = options.since ?? findRelease(runGit(['log', '--format=%H%x09%s', 'HEAD']));
     // 明示されたリビジョンをコミットへ解決してから、範囲や差分の引数に使う。
     const hash = runGit(['rev-parse', '--verify', '--end-of-options', `${since}^{commit}`]).trim();
     const [base] = parseCommits(runGit(['log', '-1', `--format=${commitFormat}`, hash]));

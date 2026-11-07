@@ -25,7 +25,7 @@ function run(argv = [], { commits = [], files = {}, history = `${base.hash}\t${b
         return (files[commit.hash] ?? []).join('\n');
       }
       if (command.includes('--format=%H%x09%s')) {
-        assert.deepEqual(command, ['log', '--first-parent', '--format=%H%x09%s', 'HEAD']);
+        assert.deepEqual(command, ['log', '--format=%H%x09%s', 'HEAD']);
         return history;
       }
       if (command[1] === '-1') {
