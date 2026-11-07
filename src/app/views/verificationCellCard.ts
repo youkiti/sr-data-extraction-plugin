@@ -249,6 +249,12 @@ function renderRobAlgorithmInfo(cell: VerificationCell, model: CellCardModel): H
       }),
     );
   }
+  if (info.suggestion !== null && info.suggestionUsesUnverifiedAi) {
+    children.push(el('p', {
+      className: 'verify__rob-suggestion-unverified',
+      text: t('verify.robSuggestionUnverified'),
+    }));
+  }
   if (info.mismatch) {
     children.push(
       el(

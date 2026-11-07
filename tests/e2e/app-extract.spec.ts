@@ -119,7 +119,7 @@ async function initApp(page: Page, options: InitOptions = {}): Promise<void> {
       const win = window as unknown as Record<string, unknown>;
       // AI へ送る前の同意（issue #381）は同意済みにする（同意画面は app-ai-consent.spec.ts で検証）
       const stored: Record<string, unknown> = {
-        aiDataConsent: { version: 2, acceptedAt: '2026-07-01T00:00:00.000Z' },
+        aiDataConsent: { version: 3, acceptedAt: '2026-07-01T00:00:00.000Z' },
         ...(apiKey === null ? {} : { 'secrets.geminiApiKey': apiKey }),
       };
       win.chrome = {

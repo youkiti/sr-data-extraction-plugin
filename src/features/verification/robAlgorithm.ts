@@ -1040,6 +1040,8 @@ export interface RobAlgorithmInfo {
   cellKey: string;
   /** SQ 回答（overall は他ドメインの現在判定値）から導出した提案。回答不足なら null */
   suggestion: Rob2Judgement | RobinsIJudgement | null;
+  /** 提案の計算に未確認の AI の回答を使ったか。提案なしなら false */
+  suggestionUsesUnverifiedAi: boolean;
   /** セルの現在値（判定確定値 > AI 値）。judgement の enum 値として解釈できないときも null */
   currentValue: Rob2Judgement | RobinsIJudgement | null;
   /** suggestion・currentValue が共に存在し、値が食い違うか */
@@ -1048,11 +1050,15 @@ export interface RobAlgorithmInfo {
   aiUnconfirmed: boolean;
 }
 
-function buildInfo(cell: VerificationCell, suggestion: Rob2Judgement | RobinsIJudgement | null): RobAlgorithmInfo {
+function buildInfo(
+  cell: VerificationCell, suggestion: Rob2Judgement | RobinsIJudgement | null,
+  usesUnverifiedAi: boolean,
+): RobAlgorithmInfo {
   const currentValue = parseJudgementValue(resolveCellRawValue(cell));
   return {
     cellKey: cell.cellKey,
     suggestion,
+    suggestionUsesUnverifiedAi: suggestion !== null && usesUnverifiedAi,
     currentValue,
     mismatch: suggestion !== null && currentValue !== null && suggestion !== currentValue,
     aiUnconfirmed: cell.evidence !== null && cell.state.status === 'unverified',
@@ -1077,6 +1083,7 @@ export function collectRobAlgorithmInfo(model: TabModel): Map<string, RobAlgorit
   const result = new Map<string, RobAlgorithmInfo>();
   // スコープ（base = 空文字 / estimate = 参照先 outcome キーの正準形）→ ドメイン id → 現在判定値
   const scopedDomainValues = new Map<string, Map<string, Rob2Judgement | RobinsIJudgement | null>>();
+  const scopedUnverifiedDomains = new Map<string, Map<string, boolean>>();
   const overallCells: { cell: VerificationCell; scope: string }[] = [];
 
   for (const group of model.groups) {
@@ -1109,17 +1116,24 @@ export function collectRobAlgorithmInfo(model: TabModel): Map<string, RobAlgorit
             }),
           );
 
+    const usesUnverifiedAi = algorithm !== undefined && algorithm.fieldNames.some((name) => {
+      const cell = findCellByFieldName(group, name);
+      return cell !== undefined && cell.evidence !== null && cell.state.status === 'unverified';
+    });
     for (const judgementCell of judgementCells) {
       const fieldName = judgementCell.field.fieldName;
       const isPrimaryJudgement =
         fieldName === ROB2_JUDGEMENT_FIELD_NAME || fieldName === ROBINS_I_JUDGEMENT_FIELD_NAME;
-      const info = buildInfo(judgementCell, isPrimaryJudgement ? sqSuggestion : null);
+      const info = buildInfo(judgementCell, isPrimaryJudgement ? sqSuggestion : null, usesUnverifiedAi);
       result.set(info.cellKey, info);
       if (isPrimaryJudgement) {
         const domainValues =
           scopedDomainValues.get(scope) ?? new Map<string, Rob2Judgement | RobinsIJudgement | null>();
         domainValues.set(parsed.domain, info.currentValue);
         scopedDomainValues.set(scope, domainValues);
+        const unverifiedDomains = scopedUnverifiedDomains.get(scope) ?? new Map<string, boolean>();
+        unverifiedDomains.set(parsed.domain, info.aiUnconfirmed);
+        scopedUnverifiedDomains.set(scope, unverifiedDomains);
       }
     }
   }
@@ -1137,7 +1151,9 @@ export function collectRobAlgorithmInfo(model: TabModel): Map<string, RobAlgorit
         ROBINS_I_DOMAIN_IDS.map((id) => (domainValues?.get(id) as RobinsIJudgement | null) ?? null),
       );
     }
-    const info = buildInfo(cell, suggestion);
+    const domainIds = fieldName === ROB2_JUDGEMENT_FIELD_NAME ? ROB2_RCT_DOMAIN_IDS : ROBINS_I_DOMAIN_IDS;
+    const usesUnverifiedAi = domainIds.some((id) => scopedUnverifiedDomains.get(scope)?.get(id) === true);
+    const info = buildInfo(cell, suggestion, usesUnverifiedAi);
     result.set(info.cellKey, info);
   }
 

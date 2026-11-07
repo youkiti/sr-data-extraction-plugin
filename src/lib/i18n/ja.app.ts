@@ -1023,7 +1023,7 @@ export const jaApp = {
     'この文書には抽出テキストがありません（no_text_layer、または抽出に失敗しています）',
   'askPaper.title': '論文に質問（AI）',
   'askPaper.notice':
-    '回答は参考情報です。値は PDF で確認してから自分で入力してください。質問と回答はこのタブを閉じる（再読み込みする）と消え、共有フォルダには保存しません',
+    '論文への質問は、探索的・補助的な使い方のための機能です。回答は参考情報です。値は PDF で確認してから自分で入力してください。質問と回答はこのタブを閉じる（再読み込みする）と消え、共有フォルダには保存しません',
   'askPaper.input': '論文への質問',
   'askPaper.send': '送信',
   'askPaper.estimatePending': '概算を準備しています…',
@@ -1101,6 +1101,7 @@ export const jaApp = {
   'verify.aiNotReported': '未報告（{token}）',
   'verify.aiValueNone': '（値なし）',
   'verify.robSuggestion': 'アルゴリズム提案: {suggestion}',
+  'verify.robSuggestionUnverified': 'この提案は、まだ確かめていない AI の回答から計算しています。回答を確かめると変わることがあります。',
   'verify.robMismatch':
     '⚠ アルゴリズム提案 ({suggestion}) と現在の判定 ({current}) が一致しません',
   'verify.robUnconfirmed': 'AI 判定・未確認（まだ人が確認していません）',

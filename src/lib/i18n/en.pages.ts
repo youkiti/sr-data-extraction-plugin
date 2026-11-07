@@ -227,6 +227,7 @@ export const enPages: Record<keyof typeof jaPages, string> = {
   'aiConsent.itemPaper': 'The text of your papers (page images for PDFs without a text layer)',
   'aiConsent.itemProtocol': 'The text of your study protocol',
   'aiConsent.itemSchema': 'Your extraction field definitions',
+  'aiConsent.itemEnumValues': 'When suggesting choices for a field, that field\'s values from the pilot extraction (up to 30)',
   'aiConsent.itemQuestion': 'Questions you ask about a paper',
   'aiConsent.itemHelpConsult': 'Your help question and the selected public help text',
   'aiConsent.providerTerms': "How the content is handled there is governed by that API provider's terms.",

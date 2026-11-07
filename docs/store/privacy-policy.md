@@ -1,6 +1,6 @@
 # プライバシーポリシー — SR Data Extraction（sr-data-extraction-plugin）
 
-- **最終更新**: 2026-11-07
+- **最終更新**: 2026-11-08
 - **対象**: Chrome 拡張機能「SR Data Extraction」（sr-data-extraction-plugin）
 - **配布元**: 本拡張は MIT ライセンスの OSS です。開発は JSPS 科研費 25K13585 の助成を受けています。
 
@@ -45,6 +45,8 @@
 本拡張は、Google API から取得したユーザーデータを、上記の機能提供以外の目的（広告・分析・第三者への提供・機械学習モデルの学習等）に **一切使用しません**。第三者へ渡すのは、利用者が AI の機能を使うときに、利用者が設定した LLM API へ送る場合だけです（下の「プロバイダごとのデータの扱い」）。Google API から受け取った情報の利用は、Chrome ウェブストアのユーザーデータに関するポリシー（Chrome Web Store User Data Policy。Limited Use の要件を含む）と、Google API Services User Data Policy（Limited Use の要件を含む）に従います。
 
 ## LLM API への送信について
+
+選択肢の提案では、その項目のパイロットの抽出値（最大 30 件）を、設定した LLM API へ送ります。
 
 AI 抽出を実行すると、対象論文の本文テキストと抽出指示プロンプトが、利用者が設定した LLM API（Gemini API、OpenRouter、Anthropic、Azure OpenAI、または利用者指定の OpenAI 互換 API）へ送信されます。送信先によるデータの取り扱いは、その運営者の利用規約・プライバシーポリシーに従います。本拡張はプロバイダを仲介せず、利用者のブラウザから直接 API を呼び出します。OpenAI 互換 API を指定する場合、本拡張は保存前に接続先の scheme + hostname pattern を表示し、Chrome の実行時ホスト権限を利用者へ要求します。HTTP は `localhost`、`127.0.0.1`、`[::1]` に限って許可します。loopback HTTP の通信は暗号化されません。
 

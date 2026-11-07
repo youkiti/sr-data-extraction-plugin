@@ -32,6 +32,13 @@ This is the public changelog of this extension. Any change that can alter AI out
 - 最初のログインの前に、メールアドレスの用途と自分の Drive・Sheets への保存を告知し、同意を記録するようにしました。ログイン済みの方には、次にプロジェクト選択ページを開いたときに 1 回だけ確認を出します（2026-11-07、#381）。  
   Before the first sign-in, a notice explains how your email address is used and that data is saved in your own Drive and Sheets, and your consent is recorded. Users who are already signed in will see the notice once when they next open the project page (2026-11-07, #381).
 
+- 選択肢の提案で送るパイロットの抽出値を同意画面とプライバシーポリシーに書き、送った全文を他の AI 機能と同じく Drive の記録に残すようにした。同意済みの人にも、次の AI 機能の前に 1 回だけ確認を出し直す（2026-11-08、#381）。  
+  Disclosed the pilot extraction values sent when suggesting choices in the consent notice and privacy policy, and save the full payload in Drive logs like other AI features. Users who already agreed will see the notice once again before their next AI feature (2026-11-08, #381).
+- 論文への質問の注意に、探索的・補助的な使い方のための機能であることを足した（2026-11-08、#381）。  
+  Added a notice that asking a paper is meant for exploratory, supplementary use (2026-11-08, #381).
+- RoB の判定の提案が、まだ確かめていない AI の回答から計算されているときに、その旨を表示するようにした（2026-11-08、#381）。  
+  Added a note when a RoB judgement suggestion is computed from AI answers that have not yet been verified (2026-11-08, #381).
+
 ## v0.23.0（2026-10-26）
 
 ### AI の結果に影響する変更 / Changes that affect AI output

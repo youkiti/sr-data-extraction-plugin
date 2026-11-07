@@ -242,7 +242,7 @@ describe('renderVerificationFocusCard', () => {
     const cell = makeCell();
     const unit = makeUnit();
     const robInfo = new Map([
-      [cell.cellKey, { cellKey: cell.cellKey, suggestion: 'high' as const, currentValue: 'low' as const, mismatch: true, aiUnconfirmed: false }],
+      [cell.cellKey, { cellKey: cell.cellKey, suggestion: 'high' as const, currentValue: 'low' as const, mismatch: true, suggestionUsesUnverifiedAi: false, aiUnconfirmed: false }],
     ]);
     const { root } = render(makeModel({ unit, robAlgorithmInfo: robInfo }));
     const button = root.querySelector<HTMLButtonElement>('.focus-card__matrix-btn');
@@ -257,7 +257,7 @@ describe('renderVerificationFocusCard', () => {
     const cell = makeCell();
     const unit = makeUnit();
     const robInfo = new Map([
-      [cell.cellKey, { cellKey: cell.cellKey, suggestion: 'low' as const, currentValue: 'low' as const, mismatch: false, aiUnconfirmed: false }],
+      [cell.cellKey, { cellKey: cell.cellKey, suggestion: 'low' as const, currentValue: 'low' as const, mismatch: false, suggestionUsesUnverifiedAi: false, aiUnconfirmed: false }],
     ]);
     const { root } = render(makeModel({ unit, robAlgorithmInfo: robInfo }));
     const button = root.querySelector<HTMLButtonElement>('.focus-card__matrix-btn');
@@ -271,7 +271,7 @@ describe('renderVerificationFocusCard', () => {
     const consistencyMessage = 'イベント数 (12) が解析対象数 (10) を超えています';
     const consistencyWarnings = new Map<string, string[]>([[cell.cellKey, [consistencyMessage]]]);
     const robInfo = new Map([
-      [cell.cellKey, { cellKey: cell.cellKey, suggestion: 'high' as const, currentValue: 'low' as const, mismatch: true, aiUnconfirmed: false }],
+      [cell.cellKey, { cellKey: cell.cellKey, suggestion: 'high' as const, currentValue: 'low' as const, mismatch: true, suggestionUsesUnverifiedAi: false, aiUnconfirmed: false }],
     ]);
     const { root } = render(makeModel({ unit, consistencyWarnings, robAlgorithmInfo: robInfo }));
     const button = root.querySelector<HTMLButtonElement>('.focus-card__matrix-btn');

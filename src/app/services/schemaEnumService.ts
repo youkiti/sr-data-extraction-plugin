@@ -2,6 +2,7 @@ import {
   buildSuggestEnumUserPrompt, parseSuggestEnumResponse, validateEnumChoices,
   SUGGEST_ENUM_PROMPT_VERSION, SUGGEST_ENUM_RESPONSE_SCHEMA, SUGGEST_ENUM_SYSTEM_PROMPT,
 } from '../../features/schema/skills/suggestEnum';
+import { ensureChildFolder, uploadTextFile } from '../../lib/google/drive';
 import { t } from '../../lib/i18n';
 import { confirmAiDataConsent } from '../../lib/llm/aiDataConsent';
 import { appendLlmApiLog } from '../../lib/llm/apiLogRepository';
@@ -55,8 +56,16 @@ export async function suggestEnum(
       .map((item) => (item.value ?? '').trim()).filter((value) => value !== ''))].slice(0, 30);
     const policy = await (deps.resolveRateLimitPolicy ?? (async () => UNLIMITED_POLICY))();
     if (store.getState().schema.enumSuggestion !== pending) return;
+    const logsFolder = await ensureChildFolder('logs', project.driveFolderId, deps.google);
+    const llmFolder = await ensureChildFolder('llm', logsFolder.id, deps.google);
     const provider = applyRateLimitPolicy(withLogging(deps.buildProvider(resolution.config), 'suggest_enum', {
-      omitPayload: true,
+      uploadJson: async ({ filename, content }) => {
+        const file = await uploadTextFile(
+          { name: filename, content, parentId: llmFolder.id, mimeType: 'application/json' },
+          deps.google,
+        );
+        return { webViewLink: file.webViewLink };
+      },
       appendLogEntry: (entry) => appendLlmApiLog(project.spreadsheetId, entry, deps.google),
       promptVersion: SUGGEST_ENUM_PROMPT_VERSION,
       newUuid: deps.newUuid,
