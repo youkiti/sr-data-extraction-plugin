@@ -15,17 +15,18 @@ npm run release -- minor    # 機能追加を含む ／ patch = 修正のみ ／
 
 `npm run release -- minor -Submit` なら push 後にアップロード・審査提出まで進む。初期設定は [docs/store/README.md](../../../docs/store/README.md) の「ストア API での提出（CLI）」を参照。`-Submit` を付けない場合は従来どおり zip 作成と push まで。
 
-[`tools/release/release.ps1`](../../../tools/release/release.ps1) が **前提チェック → version バンプ（3 ファイル）+ `docs/project-facts.md` 再生成・`hosted/help.html` 対象バージョン更新（2 ファイル）→ commit → `npm run build` → `pack.ps1`（key 除去・zip 化・検証）→ origin/master へ push** まで通す。所要 1 分弱。**どこかで NG が出れば非 0 終了する**ので、壊れた提出物も、検証を飛ばした push も発生しない。人間が判断するのは「どのバンプ種別か」と、出来た zip を Store へ出す（手順 3）ことだけ。
+[`tools/release/release.ps1`](../../../tools/release/release.ps1) が **前提チェック → version バンプ（3 ファイル）+ `docs/project-facts.md` 再生成・`hosted/help.html` 対象バージョン更新・`CHANGELOG.md` の「未リリース」を新しい版の見出しへ切り替え（3 ファイル）→ commit → `npm run build` → `pack.ps1`（key 除去・zip 化・検証）→ origin/master へ push** まで通す。所要 1 分弱。**どこかで NG が出れば非 0 終了する**ので、壊れた提出物も、検証を飛ばした push も発生しない。人間が判断するのは「どのバンプ種別か」と、出来た zip を Store へ出す（手順 3）ことだけ。
 
-- **なぜ PR を経由しないか**: 差分が version 3 ファイルと現在値・ヘルプ対象版の文書 2 ファイルで、直前の master が CI green であることをスクリプトが `gh run list` で機械チェックするため。**CLAUDE.md 作業原則 1（master で直接作業しない）の明示的な例外**であり、version バンプ commit にのみ適用する。機能変更を混ぜようとしても作業ツリーの汚れチェックで止まる。
+- **なぜ PR を経由しないか**: 差分が version 3 ファイルと現在値・ヘルプ対象版・CHANGELOG の文書 3 ファイルで、直前の master が CI green であることをスクリプトが `gh run list` で機械チェックするため。**CLAUDE.md 作業原則 1（master で直接作業しない）の明示的な例外**であり、version バンプ commit にのみ適用する。機能変更を混ぜようとしても作業ツリーの汚れチェックで止まる。
 - 主なオプション（`npm run release -- patch -NoPush` のように渡す）:
   - `-Submit` — push 後にストアへ審査提出（`-NoPush`・`-IncludeKeyPem` と併用不可。バンプ前の認証・提出可否チェックは `-Force` でも解除不可）
   - `-NoPush` — push せずローカル commit + zip まで
   - `-SkipCiCheck` — gh が無い / 未認証の環境
   - `-Force` — master 以外のブランチ・origin と不一致・CI が green でないときの停止を警告に落とす（作業ツリーの汚れ・ヘルプ確認による停止は解除されない）
   - `-HelpReviewed` — ヘルプ未記載の候補を確認済みとして続行する（候補の取得失敗は解除されない）
+  - `-ChangelogReviewed` — 既定モデル・プロンプトの版数・Gemini の推論の強さの既定が前回のリリースから変わったのに `CHANGELOG.md` が更新されていない状態を、確認済みとして続行する（値の取得失敗は解除されない。単独では `npm run changelog:check`）
   - `-IncludeKeyPem` — 初回アップロード専用（2026-07-10 に使用済み。通常は不要）
-- **失敗時の後始末**: build / pack で落ちた場合、push はまだなので origin は無傷。ローカルのバンプ commit だけが残るので `git reset --hard HEAD~1` で戻せる（version 3 ファイル + 文書 2 ファイルの計 5 ファイルを戻す）。
+- **失敗時の後始末**: build / pack で落ちた場合、push はまだなので origin は無傷。ローカルのバンプ commit だけが残るので `git reset --hard HEAD~1` で戻せる（version 3 ファイル + 文書 3 ファイルの計 6 ファイルを戻す）。
 
 以下は、この一発コマンドが内部で何を確認しているか（＝手で追うときの手順）と、Store 提出の手順。パッケージング部分は [`tools/release/pack.ps1`](../../../tools/release/pack.ps1) 単体でも `npm run pack:release` として実行できる。
 
@@ -117,8 +118,9 @@ pwsh -NoProfile -File tools/release/pack.ps1 -IncludeKeyPem
 | `dist が dev ビルドです` で停止 | 直前に `npm run dev` / `npm run watch` を回して dist が dev のまま。`npm run build` からやり直す |
 | ビルドが `WEBAUTH_CLIENT_ID が未設定です` で停止 | `.env` の `WEBAUTH_CLIENT_ID` 未設定（`LOCAL_WEBAUTH_CLIENT_ID` だけでは production に入らない）。手順 0-3 を確認して 1 をやり直す。※旧 `OAUTH_CLIENT_ID`（getAuthToken 時代）は issue #129 で廃止済みで、いくら設定しても読まれない |
 | `package.json の version が manifest と一致しません` で停止 | 3 箇所のバンプ漏れ。手順 0-2 |
-| `作業ツリーが汚れています` で停止 | 未コミットの変更がある（前回の失敗で version 編集が残っている場合は `git checkout -- src/manifest.json package.json package-lock.json docs/project-facts.md hosted/help.html`）。機能変更を release コマンドで master へ持ち込ませないための停止なので、`-Force` でも解除されない |
+| `作業ツリーが汚れています` で停止 | 未コミットの変更がある（前回の失敗で version 編集が残っている場合は `git checkout -- src/manifest.json package.json package-lock.json docs/project-facts.md hosted/help.html CHANGELOG.md`）。機能変更を release コマンドで master へ持ち込ませないための停止なので、`-Force` でも解除されない |
 | `ヘルプ未記載の候補があります` で停止 | 一覧を見て `hosted/help.html` を直す。追記不要と確かめたら `-HelpReviewed`。別の PR で修正済みでも元の候補は残るため、確認後に同オプションを使う。`-Force` では解除されない |
+| `AI の値が変わったのに CHANGELOG.md が更新されていません` で停止 | 表示された値の変更を `CHANGELOG.md` の「未リリース / Unreleased」の「AI の結果に影響する変更」に書いて PR でマージしてから再実行する。追記不要と確かめたら `-ChangelogReviewed`。`-Force` では解除されない。「監視の表」を求めるエラーは、プロンプトの版数の定数を足した・既定値の書き方を変えたときに出るので、`tools/changelog/checkAiChanges.mjs` の `watchedValues` を直す |
 | `master の CI がまだ実行中です` / `失敗しています` で停止 | CI の完了を待つ。急ぐなら `-Force`（自己責任）、gh が使えない環境なら `-SkipCiCheck` |
 | `manifest の version 行を一意に特定できません` で停止 | `src/manifest.json` の整形が変わった（トップレベルのインデントは半角 2 個が前提）。`tools/release/release.ps1` の `$versionLinePattern` を追随させる |
 | `manifest の key 行を一意に特定できません` で停止 | dist/manifest.json の整形が変わった（webpack の `transformManifest` は `JSON.stringify(manifest, null, 2)` 前提でトップレベルのインデントは半角 2 個）。webpack.config.js の変更を確認し、必要なら `tools/release/pack.ps1` の `$keyLinePattern` を追随させる |
