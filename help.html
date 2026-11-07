@@ -3,7 +3,7 @@
      正典はこのファイル（master の hosted/）。デプロイ手順は hosted/README.md を参照。
      内容はワークフローレベルに留める（画面細部はアプリ内のリード文が担う。issue #214 §3）。
      文言は ja / en を両方持ち、表示は lang.js + CSS が片方だけに絞る（併記しない）。
-     version: 2026-11-07 -->
+     version: 2026-11-08 -->
 <html lang="ja">
   <head>
     <meta charset="utf-8" />
@@ -53,8 +53,8 @@
           <span class="en" lang="en">User guide</span>
         </h1>
         <p class="last-updated">
-          <span class="ja" lang="ja">最終更新: 2026-11-07 / 対象バージョン: v0.27.0</span>
-          <span class="en" lang="en">Last updated: 2026-11-07 / Covers v0.27.0</span>
+          <span class="ja" lang="ja">最終更新: 2026-11-08 / 対象バージョン: v0.27.0</span>
+          <span class="en" lang="en">Last updated: 2026-11-08 / Covers v0.27.0</span>
         </p>
 
         <nav class="toc" aria-label="目次" data-en-aria-label="Table of contents">
@@ -596,12 +596,12 @@
           </div>
           <p>
             <span class="ja" lang="ja"
-              >最初に AI の機能（スキーマの AI ドラフト、パイロット抽出、一括抽出、引用の AI 再特定、論文への質問、ヘルプへの相談）を使うとき、何をどこへ送るかを示す確認が 1 回だけ出ます。送るのは論文の本文（文字を読み取れない PDF はページの画像）、研究プロトコルの本文、抽出項目の定義、質問の文です。ヘルプへの相談では、質問と選ばれた公開ヘルプの本文だけを送り、相談の内容は保存しません。AI の処理のために送る先は、設定した LLM API だけです。送ったプロンプトと応答は、監査の記録として利用者自身の Google Drive（プロジェクトの logs/llm）にも保存されます（画像データは除きます）。論文への質問は本文・質問・回答を保存せず、利用量などのメタデータだけを記録します。開発者のサーバーには何も送りません。Gemini API の無料枠では、送った内容と応答が、Google の製品・サービスと機械学習技術の提供・改善・開発に使われ、人が読むことがあります。未公開のデータや機密の資料は有料枠で使ってください。「同意して続行」で実行し、「キャンセル」では何も送りません。確認を開いている間に同じ操作を繰り返しても、処理は増えません。「キャンセル」または Esc で閉じると、開く前の操作部へフォーカスが戻ります。同意の内容を変えたときは、もう一度表示します。同意はこのブラウザのプロファイルに記録され、設定画面の「AI へ送る内容」から見直し・取り消しができます。</span
+              >最初に AI の機能（スキーマの AI ドラフト、パイロット抽出、一括抽出、引用の AI 再特定、論文への質問、ヘルプへの相談）を使うとき、何をどこへ送るかを示す確認が 1 回だけ出ます。送るのは論文の本文（文字を読み取れない PDF はページの画像）、研究プロトコルの本文、抽出項目の定義、選択肢の提案に使う項目のパイロットの抽出値（最大 30 件）、質問の文です。ヘルプへの相談では、質問と選ばれた公開ヘルプの本文だけを送り、相談の内容は保存しません。AI の処理のために送る先は、設定した LLM API だけです。送ったプロンプトと応答は、監査の記録として利用者自身の Google Drive（プロジェクトの logs/llm）にも保存されます（画像データは除きます）。論文への質問は本文・質問・回答を保存せず、利用量などのメタデータだけを記録します。開発者のサーバーには何も送りません。Gemini API の無料枠では、送った内容と応答が、Google の製品・サービスと機械学習技術の提供・改善・開発に使われ、人が読むことがあります。未公開のデータや機密の資料は有料枠で使ってください。「同意して続行」で実行し、「キャンセル」では何も送りません。確認を開いている間に同じ操作を繰り返しても、処理は増えません。「キャンセル」または Esc で閉じると、開く前の操作部へフォーカスが戻ります。同意の内容を変えたときは、もう一度表示します。同意はこのブラウザのプロファイルに記録され、設定画面の「AI へ送る内容」から見直し・取り消しができます。</span
             >
             <span class="en" lang="en"
               >The first time you use an AI feature (AI schema draft, pilot extraction, batch extraction, AI quote
               relocation, asking a paper or help consultation), a notice shows once what is sent where. The extension sends the text of
-              your papers (page images for PDFs without a text layer), your protocol text, your field definitions and
+              your papers (page images for PDFs without a text layer), your protocol text, your field definitions, pilot extraction values for the field when suggesting choices (up to 30), and
               your questions. Help consultation sends only your question and selected public help text, and does not save consultation content. For AI processing, content is sent only to the LLM API you configured. The prompts sent and the responses are also saved as audit records in your own Google Drive (the project’s logs/llm folder), excluding image data. For paper questions, the paper text, questions and answers are not saved; only metadata such as usage is recorded. Nothing is sent to the developer’s servers. On the Gemini API free tier, what you send and the responses are used to provide, improve, and develop Google products, services, and machine learning technologies, and may be read by people, so use a paid tier for unpublished data or
               confidential material. If the notice changes, it is shown again. “Agree and continue” runs the feature; “Cancel” sends nothing. Your consent is
               recorded in this browser profile, and you can review or withdraw it under “What is sent to the AI” in
@@ -1106,6 +1106,10 @@
               <span class="en" lang="en"
                 >Risk-of-bias templates (RoB 2, ROBINS-I, QUADAS-3, QUIPS) can be pre-loaded into the schema.</span
               >
+              <p>
+                <span class="ja" lang="ja">RoB の判定の提案が、まだ確かめていない AI の回答から計算されているときは、提案の下にその旨を表示し、回答を確かめると変わることがあると案内します。</span>
+                <span class="en" lang="en">When a RoB judgement suggestion is computed from AI answers you have not verified yet, a note below the suggestion explains this and that it may change once you verify the answers.</span>
+              </p>
             </li>
             <li>
               <span class="ja" lang="ja"
@@ -1291,6 +1295,39 @@
             </figcaption>
           </figure>
 
+          <h3 id="pilot-criteria">
+            <span class="ja" lang="ja">合格基準</span><span class="en" lang="en">Acceptance criteria</span>
+          </h3>
+          <div class="help-when">
+            <p class="help-when-label"><span class="ja" lang="ja">こんなとき</span><span class="en" lang="en">When to read this</span></p>
+            <ul><li><span class="ja" lang="ja">AI 抽出の合格基準を前もって決め、結果を報告したい</span>
+              <span class="en" lang="en">Set acceptance criteria in advance and report the results</span></li>
+              <li><span class="ja" lang="ja">パイロットの結果が基準を満たすか確かめたい</span>
+                <span class="en" lang="en">Check whether the pilot meets the criteria</span></li></ul>
+          </div>
+          <p><span class="ja" lang="ja">パイロットの前に owner が合格基準を決め、「確定する」から確認して保存します。
+            正確度の下限、作り話・欠け・誤った値の率の上限（0〜100%、4 つのうち 1 つ以上）、任意の最小セル数、
+            比べる相手（独立の人、裁定後の値、独立抽出者の最終値、AI を見ながら判定した人）、対象レベルを指定します。
+            初期値は空欄です。CESAR の感度 92%、重大な誤り 3% は参考で、自動入力されません。
+            AI を見ながら判定した人との比較は独立比較ではありません。
+            実行中・中断・失敗を含め、一度でもパイロットを始めた後の確定は、開始後に確定した版として記録します。</span>
+            <span class="en" lang="en">Before the pilot, the owner sets and confirms acceptance criteria: minimum accuracy,
+            maximum fabrication, omission and wrong-value rates (0–100%; at least one rate), optional minimum compared cells,
+            comparator (independent reviewers, consensus, independent final values, or AI-assisted final values), and entity levels.
+            Inputs start blank. CESAR sensitivity 92% and major errors 3% are references and are not filled in automatically.
+            AI-assisted review is not an independent comparison.
+            Confirmation after any pilot has started, including running, interrupted or failed runs, is recorded as occurring after the pilot began.</span></p>
+          <p><span class="ja" lang="ja">「結果を計算」で完了済みパイロットの研究を比較します。基準をすべて満たせば「満たす」、
+            いずれかに届かなければ「満たさない」、パイロットなし・比較セル 0・最小数未満なら理由付きで「判定できない」と表示します。
+            表には基準、設定値、パイロットの値、判定が並びます。設定なしの率と計算前の値・判定は「—」で表示します。
+            比べられたセル数の行では、最小数があればその判定も示します。
+            版は追記保存され、過去版は消えません。現行の基準と結果は Methods 文案に、各版は R セットの acceptance_criteria.csv に出ます。</span>
+            <span class="en" lang="en">Use “Calculate results” to compare completed pilot studies. Results are “Met” if all criteria
+            are satisfied, “Not met” if any criterion fails, or “Not evaluable” with a reason if there is no pilot, no compared cells,
+            or too few cells. The table shows each criterion, setting, pilot value and judgment.
+            Unset rates and values and judgments before calculation show “—”. The compared-cell row also evaluates the minimum if set.
+            Versions are appended and preserved. The current criteria and result appear in the Methods text;
+            every version appears in acceptance_criteria.csv in the R set.</span></p>
           <h3 id="pilot-notes">
             <span class="ja" lang="ja">判定メモと再パイロット</span>
             <span class="en" lang="en">Judgment notes and repeat pilots</span>
@@ -1893,6 +1930,34 @@
             </figcaption>
           </figure>
 
+          <h3 id="dashboard-ai-compare">
+            <span class="ja" lang="ja">AI と人の抽出の比較</span>
+            <span class="en" lang="en">Compare AI and human extraction</span>
+          </h3>
+          <div class="help-when">
+            <p class="help-when-label">
+              <span class="ja" lang="ja">こんなとき</span>
+              <span class="en" lang="en">When to read this</span>
+            </p>
+            <ul>
+              <li>
+                <span class="ja" lang="ja">AI の作り話・誤った値・欠けの割合を確かめたい</span>
+                <span class="en" lang="en">I want to measure AI fabrications, wrong values and omissions</span>
+              </li>
+              <li>
+                <span class="ja" lang="ja">独立の人や最終値との比較を CSV で保存したい</span>
+                <span class="en" lang="en">I want to save comparisons with independent reviewers or final values as CSV</span>
+              </li>
+            </ul>
+          </div>
+          <p>
+            <span class="ja" lang="ja">オーナーと裁定者は「比較を計算」で、AI と人の現在値を比べられます。「一致」は同じ値（複数選択は並びをそろえて比較）、「欠け」は人が値を出したのに AI が報告なし・値なし、「作り話」は人が報告なしとした値を AI が出した場合、または異なる値で全引用が本文で見つからない場合、「誤った値」はそれ以外の異なる値です。値が一致すれば、引用の失敗は別の件数にだけ数えます。</span>
+            <span class="en" lang="en">Owners and adjudicators can calculate a comparison of current AI and human values. A match means equal values (with multiple selections put in canonical order). An omission means the human has a value but AI reports none or has no value. A fabrication means AI supplies a value where the human reports none, or supplies a different value with all quotes failing to match the text. Other differing values are wrong values. Equal values remain matches even if their quotes fail; quote failures are also counted separately.</span>
+          </p>
+          <p>
+            <span class="ja" lang="ja">人が未判定、またはその項目が AI の抽出対象外なら「比べられない」として率の分母から外します。両方空も一致にしません。完了した AI 抽出のない研究は別計上します。A は独立の人ごとに比較、B は最終値を裁定値・独立の人・AI を見た人に分けて表示します。AI を見ながら判定した人との比較は独立の比較ではありません。群番号の対応付けは行いません。集計とセル一覧を CSV で保存できます。</span>
+            <span class="en" lang="en">Unjudged human cells and fields outside completed AI extraction runs are incomparable and excluded from rates. Two empty values are not a match. Studies without completed AI extraction are counted separately. A compares each independent reviewer; B separates final consensus values, independent human values, and AI-assisted human values. Comparisons with reviewers who saw AI output are not independent. Arm numbering is not mapped. Summary and cell CSV files are available.</span>
+          </p>
           <h3 id="dashboard-consult">
             <span class="ja" lang="ja">要相談の一覧</span>
             <span class="en" lang="en">Items needing discussion</span>
@@ -2024,7 +2089,7 @@
               <span class="ja" lang="ja"
                 >2 名の検証が揃った試験は「不一致の解消」画面で処理します。群構成を突き合わせ、一致セルは一括採用、不一致セルは個別に裁定して
                 consensus（確定版）を作ります。2 名とも空のセルは比べられないため、一致には数えず「両者とも未入力」として別に件数を出し、一括採用の対象からも外します（「不一致のみ表示」でも表示されるので、個別に裁定してください）。レビュアー間一致度（κ）も確認できます。一致度は 2
-                名とも検証を終えた試験だけで計算し、比べられるセルが 1 件もないときは「比べられるセルがありません」と表示します。</span
+                名とも検証を終えた試験だけで計算し、比べられるセルが 1 件もないときは「比べられるセルがありません」と表示します。裁定の記録にはどちらの値を採ったか・その値が AI の値の accept だったかが残り、2 人とも AI を見ながら検証した研究は一致度カードに「独立の一致ではない」と表示されます（κ には含めます）。</span
               >
               <span class="en" lang="en"
                 >Once both reviewers are done, the “Resolve conflicts” screen matches the arm structures, bulk-accepts agreeing
@@ -2032,7 +2097,7 @@
                 compared: they are not counted as matching, are shown with their own count as “Both empty”, are left out
                 of the bulk accept, and still appear under “Show mismatches only” so you can settle them one by one.
                 Inter-reviewer agreement (κ) is shown as well. It uses only studies both reviewers have finished, and
-                shows “No cells to compare” when no cell has values from both reviewers.</span
+                shows “No cells to compare” when no cell has values from both reviewers. Adjudication records retain whose value was adopted and whether it came from accepting the AI value; studies where both reviewers viewed AI values are marked as not independent agreement in the agreement card (still included in κ).</span
               >
             </li>
             <li>
@@ -2247,13 +2312,13 @@
               <span class="ja" lang="ja"
                 ><code>is_final</code> が TRUE になるのは、確定版（consensus、無ければ唯一の人の行）の一覧にある引用です。裁定した試験で最終の根拠を選んでいないセルには、TRUE の行はありません。人の行が確定版で、その人が引用を直していないセルでは、AI
                 抽出を見ながら検証した人なら AI の引用が TRUE になり、独立入力の人なら TRUE の行はありません。確定版を決められない試験（2 名が検証し、裁定がまだの試験など）は、すべて FALSE です。<code>audit.csv</code>
-                には、人が直した引用は載りません。</span
+                には、人が直した引用は載りません。判定時に見ていた AI の値と引用の ID は記録に残ります。</span
               >
               <span class="en" lang="en"
                 ><code>is_final</code> is TRUE for quotes in the final annotator’s list (consensus, or the only human
                 reviewer if there is no consensus). In an adjudicated study, a cell whose final evidence was not chosen has no TRUE row. When the final annotator is a single reviewer, for cells that reviewer did not edit, the AI quotes are TRUE if they
                 verified with AI; if they entered data independently, no row is TRUE. If the final annotator cannot be determined (for example, two reviewers and no adjudication yet), every row is FALSE. <code>audit.csv</code> does not
-                include quotes edited by people.</span
+                include quotes edited by people. The AI value and quote IDs seen at decision time are retained in the audit record.</span
               >
             </li>
           </ul>
