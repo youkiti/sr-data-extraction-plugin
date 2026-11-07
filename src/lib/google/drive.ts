@@ -410,17 +410,19 @@ export async function copyFile(
   params: { name: string; parentId: string },
   deps: GoogleApiDeps
 ): Promise<DriveFileRef> {
-  const url = `${METADATA_API}/${encodeURIComponent(sourceFileId)}/copy?fields=id,webViewLink`;
-  const res = await googleFetch(
-    url,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: params.name, parents: [params.parentId] }),
-    },
-    deps
-  );
-  return (await res.json()) as DriveFileRef;
+  return withApiErrorLogging('document_import', {}, async () => {
+    const url = `${METADATA_API}/${encodeURIComponent(sourceFileId)}/copy?fields=id,webViewLink`;
+    const res = await googleFetch(
+      url,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: params.name, parents: [params.parentId] }),
+      },
+      deps
+    );
+    return (await res.json()) as DriveFileRef;
+  });
 }
 
 /** Drive 権限のロール（本アプリで使うのは reader / writer のみ） */
