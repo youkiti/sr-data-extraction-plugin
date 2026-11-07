@@ -4,21 +4,21 @@
 
 .DESCRIPTION
   master が green な状態から Chrome ウェブストア提出物を作るまでを 1 コマンドにまとめる:
-    1. 前提チェック（ブランチ / 作業ツリー / origin 同期 / ヘルプ未記載の候補 / master の CI / .env）
-    2. version バンプ（src/manifest.json + package.json + package-lock.json の 3 ファイル）+ 文書 2 ファイルの自動更新
+    1. 前提チェック（ブランチ / 作業ツリー / origin 同期 / ヘルプ未記載の候補 / AI の値と CHANGELOG / master の CI / .env）
+    2. version バンプ（src/manifest.json + package.json + package-lock.json の 3 ファイル）+ 文書 3 ファイル（現在値・ヘルプ対象版・CHANGELOG）の自動更新
     3. バンプ commit（ローカル）
     4. npm run build（production）
     5. tools/release/pack.ps1（key 除去・zip 化・検証）
     6. origin/master へ push
     7. -Submit 指定時のみストアへアップロード・審査提出
 
-  version バンプの差分は version 3 ファイルと現在値・ヘルプ対象版の文書 2 ファイルで、直前の master は CI green
+  version バンプの差分は version 3 ファイルと現在値・ヘルプ対象版・CHANGELOG の文書 3 ファイルで、直前の master は CI green
   （手順 1 で機械チェックする）。そのため PR / CI 待ちを挟まず master へ直接コミットする
   ＝ CLAUDE.md 作業原則 1（master で直接作業しない）の明示的な例外。
   機能変更をこのスクリプトで master へ持ち込んではいけない（作業ツリーが汚れていれば止まる）。
 
   build / pack が失敗した場合、push はまだ実行されていないので origin は無傷。
-  ローカルのバンプ commit だけが残るので `git reset --hard HEAD~1` で戻せる（version 3 ファイル + 文書 2 ファイルを戻す）。
+  ローカルのバンプ commit だけが残るので `git reset --hard HEAD~1` で戻せる（version 3 ファイル + 文書 3 ファイルを戻す）。
 
 .PARAMETER Bump
   major / minor / patch のいずれか、または明示の version（例 0.7.3）。
@@ -37,6 +37,9 @@
 .PARAMETER HelpReviewed
   ヘルプ未記載の候補を確認済みとして続行する。候補の取得失敗は解除しない。
 
+.PARAMETER ChangelogReviewed
+  AI の結果に影響する値が変わったのに CHANGELOG.md を更新していない状態を、確認済みとして続行する。値の取得失敗は解除しない。
+
 .PARAMETER IncludeKeyPem
   zip へ key.pem を同梱する（初回アップロード専用。2026-07-10 に完了済みなので通常は不要）。
 
@@ -49,6 +52,7 @@
   npm run release -- 1.0.0      # version を明示
   npm run release -- minor -Submit # 審査提出まで進める
   npm run release -- patch -HelpReviewed # ヘルプ未記載の候補を確認済みとして続行
+  npm run release -- patch -ChangelogReviewed # AI の値の変更と変更履歴を確認済みとして続行
 #>
 [CmdletBinding()]
 param(
@@ -58,6 +62,7 @@ param(
   [switch]$SkipCiCheck,
   [switch]$Force,
   [switch]$HelpReviewed,
+  [switch]$ChangelogReviewed,
   [switch]$IncludeKeyPem,
   [switch]$Submit
 )
@@ -112,7 +117,7 @@ $dirty = @(git status --porcelain --ignore-submodules=dirty | Where-Object { $_ 
 if ($dirty.Count -gt 0) {
   Write-Host ($dirty -join "`n") -ForegroundColor DarkGray
   # ここは -Force でも解除しない: 未コミットの変更が混ざった zip を提出させないため
-  Stop-WithError '作業ツリーが汚れています。commit / stash してから再実行してください（前回の失敗で version 編集が残っている場合は `git checkout -- src/manifest.json package.json package-lock.json docs/project-facts.md hosted/help.html`）'
+  Stop-WithError '作業ツリーが汚れています。commit / stash してから再実行してください（前回の失敗で version 編集が残っている場合は `git checkout -- src/manifest.json package.json package-lock.json docs/project-facts.md hosted/help.html CHANGELOG.md`）'
 }
 Write-Ok '作業ツリーはクリーン'
 
@@ -136,6 +141,19 @@ if ($LASTEXITCODE -eq 0) {
   }
 } else {
   Stop-WithError 'ヘルプ未記載の候補の取得に失敗しました（-HelpReviewed でも -Force でも解除できません）'
+}
+
+node tools/changelog/checkAiChanges.mjs --fail-on-unlogged
+if ($LASTEXITCODE -eq 0) {
+  Write-Ok 'AI の値と CHANGELOG.md の確認は完了しました'
+} elseif ($LASTEXITCODE -eq 2) {
+  if ($ChangelogReviewed) {
+    Write-Warn 'AI の値の変更と CHANGELOG.md を確認済みとして続行（-ChangelogReviewed）'
+  } else {
+    Stop-WithError 'AI の値が変わったのに CHANGELOG.md が更新されていません。CHANGELOG.md を直すか、確認済みなら -ChangelogReviewed を付けてください（-Force では解除できません）'
+  }
+} else {
+  Stop-WithError 'AI の値と CHANGELOG.md の確認に失敗しました（-ChangelogReviewed でも -Force でも解除できません）'
 }
 
 if ($SkipCiCheck) {
@@ -243,12 +261,18 @@ if ($LASTEXITCODE -ne 0) {
 }
 Write-Ok 'docs/project-facts.md を再生成・hosted/help.html の対象バージョンを更新'
 
+node tools/changelog/stampChangelog.mjs $next (Get-Date -Format 'yyyy-MM-dd')
+if ($LASTEXITCODE -ne 0) {
+  Stop-WithError 'CHANGELOG.md の「未リリース」の切り替えに失敗しました'
+}
+Write-Ok "CHANGELOG.md の「未リリース」を v$next の見出しへ切り替え"
+
 # ---------------------------------------------------------------------------
 # 3. バンプ commit（ローカル）
 # ---------------------------------------------------------------------------
 Write-Host '=== 3. バンプ commit ===' -ForegroundColor Cyan
 
-git add src/manifest.json package.json package-lock.json docs/project-facts.md hosted/help.html
+git add src/manifest.json package.json package-lock.json docs/project-facts.md hosted/help.html CHANGELOG.md
 git commit --quiet -m "chore: リリース v$next へ version をバンプ"
 if ($LASTEXITCODE -ne 0) {
   Stop-WithError 'git commit が失敗しました'
