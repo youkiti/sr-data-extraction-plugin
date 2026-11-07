@@ -227,7 +227,7 @@ export const enPages: Record<keyof typeof jaPages, string> = {
   'aiConsent.itemHelpConsult': 'Your help question and the selected public help text',
   'aiConsent.providerTerms': "How the content is handled there is governed by that API provider's terms.",
   'aiConsent.geminiFree':
-    "On the Gemini API free tier, what you send may be used to improve Google's products and may be read by people. Use a paid tier for unpublished data or confidential material.",
+    'On the Gemini API free tier, what you send and the responses are used to provide, improve, and develop Google products, services, and machine learning technologies, and may be read by people. Use a paid tier for unpublished data or confidential material.',
   'aiConsent.noDeveloperServer': "The prompts sent and the responses are also saved as audit records in your own Google Drive (the project’s logs/llm folder), excluding image data. For paper questions, the paper text, questions and answers are not saved; only metadata such as usage is recorded. Nothing is sent to the developer's servers.",
   'aiConsent.checkTerms': "Before you start, check the publisher's terms of use for your papers and the API provider's terms.",
   'aiConsent.privacyLink': 'Privacy policy',
