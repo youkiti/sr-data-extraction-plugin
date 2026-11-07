@@ -3,7 +3,7 @@
 import { expect, test } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
 
-function chromeStub(options: { authed: boolean; seedRecent: boolean }): string {
+function chromeStub(options: { authed: boolean; seedRecent: boolean; consent?: boolean }): string {
   // addInitScript は関数を文字列化して注入するため、閉包変数を避けて文字列組み立てで渡す
   return `
     (() => {
@@ -18,6 +18,9 @@ function chromeStub(options: { authed: boolean; seedRecent: boolean }): string {
       }`
           : '{}'
       };
+      if (${options.authed && options.consent !== false}) {
+        data.signInDataConsent = { version: 1, acceptedAt: '2026-07-01T00:00:00.000Z' };
+      }
       window.chrome = {
         storage: {
           local: {
@@ -46,6 +49,29 @@ function chromeStub(options: { authed: boolean; seedRecent: boolean }): string {
     })();
   `;
 }
+
+test('未ログインの告知と同意するログインボタンを表示する', async ({ page }) => {
+  await page.addInitScript(chromeStub({ authed: false, seedRecent: false }));
+  await page.goto('/popup/popup.html');
+  await expect(page.locator('#popup-auth h2')).toHaveText('この拡張が扱うデータ');
+  await expect(page.locator('#popup-auth [data-i18n="signInConsent.body"]')).toContainText('あなた自身の Google Drive と Sheets に保存します。');
+  await expect(page.locator('#login-button')).toHaveText('同意して Google でログイン');
+  const privacy = page.locator('#popup-auth a[data-public-page]');
+  await expect(privacy).toHaveAttribute('href', 'https://youkiti.github.io/sr-data-extraction-plugin/privacy-policy.html?lang=ja');
+  await expect(privacy).toHaveAttribute('target', '_blank');
+});
+
+test('ログイン済みで記録が無ければ小窓を表示してプロジェクト欄を隠す', async ({ page }) => {
+  await page.addInitScript(chromeStub({ authed: true, seedRecent: true, consent: false }));
+  await page.goto('/popup/popup.html');
+  const dialog = page.getByRole('dialog');
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole('heading')).toHaveText('この拡張が扱うデータ');
+  await expect(page.locator('#popup-projects')).toBeHidden();
+  await expect(dialog).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(dialog).toBeVisible();
+});
 
 test('未ログイン: ログインセクションのみ表示される', async ({ page }) => {
   await page.addInitScript(chromeStub({ authed: false, seedRecent: false }));

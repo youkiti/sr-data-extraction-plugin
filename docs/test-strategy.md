@@ -63,6 +63,8 @@ sr-query-builder では後付けになって手戻りしたため、スケルト
 
 AI へ送る前の同意（issue #381）: AI 機能を実行する E2E は、chrome スタブの `chrome.storage.local` に同意済みの記録（`aiDataConsent: { version: 2, acceptedAt }`）を入れて同意画面を出さない。同意画面そのものは `tests/e2e/app-ai-consent.spec.ts` が検証する。同意文の版（`AI_DATA_CONSENT_VERSION`）を上げたら、これらのスタブの `version` も合わせる。
 
+サインインの前の同意: ログイン済みから始まる S1 と S1 へ戻る E2E の chrome スタブには、`signInDataConsent: { version: 1, acceptedAt: '2026-07-01T00:00:00.000Z' }` を入れる。未ログインの告知と、記録の無い既存利用者への小窓は `tests/e2e/popup-smoke.spec.ts` で検証する。
+
 ### 2.2 PDF fixture の 2 層構成
 
 | 層 | 実体 | コミット | 用途 |
