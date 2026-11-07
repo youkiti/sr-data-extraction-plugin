@@ -6,6 +6,7 @@
 /**
  * 失敗を検知した経路（呼び出し元の操作の種別）。
  * - pdf_load: PDF ビューアが Drive からバイナリを取得する経路（lib/google/drive.ts の getFileBinary）
+ * - document_import: 文献取り込みで Drive の PDF をプロジェクトの documents/ へ files.copy する経路
  * - evidence_append: AI 抽出の根拠を Evidence タブへ追記する経路
  * - decision_save: 人間の判定を Decisions タブへ追記する経路
  * - annotation_upsert: StudyData / ResultsData の annotator 行 upsert（判定保存・ai 転記の共通経路）
@@ -14,6 +15,7 @@
  */
 export type ApiErrorLogContext =
   | 'pdf_load'
+  | 'document_import'
   | 'evidence_append'
   | 'decision_save'
   | 'annotation_upsert'
