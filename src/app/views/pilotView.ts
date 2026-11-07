@@ -6,6 +6,7 @@ import { resolveFetchedPricing } from '../fetchedPricing';
 // 検証 UI は S8 と同じ verificationPanel を埋め込む（requirements.md §4.1 S6）
 import type { DocumentRecord } from '../../domain/document';
 import type { ExtractionRun } from '../../domain/extractionRun';
+import { renderPilotCriteria } from './pilotCriteria';
 import {
   buildExtractionCandidates,
   documentsForStudies,
@@ -546,6 +547,7 @@ export function renderPilotView(state: AppState, ctx: ViewContext): HTMLElement 
     children.push(renderProgress(state));
     return el('section', { className: 'view view--pilot' }, children);
   }
+  children.push(renderPilotCriteria(state, ctx.pilot));
   const history = renderHistory(state, ctx);
   if (history !== null) {
     children.push(history);

@@ -547,6 +547,29 @@ Google API 呼び出しの失敗を記録する診断ログ（issue #249）。�
 
 **実装方針**: `lib/` は `features/` を import できない（architecture.md §2.1）ため、計装対象の `getFileBinary`（`lib/google/drive.ts`）を含む本機能は `lib/diagnostics/apiErrorLog.ts` に実装する（`reviewerRepository.ts` と同じ「タブが無ければ書き込み時に自動作成」パターンをそちらに複製）。Sheets への書き込みが失敗している間は `chrome.storage.local` のリングバッファ（上限件数超過で古い順に破棄）へ退避し、次に同経路の呼び出しが成功したタイミングでフラッシュする（fire-and-forget。ログの失敗・遅延で本業の判定保存・PDF 表示を止めない）。`ApiErrorLog` タブ自体への書き込み失敗は再帰的に記録しない（無限ループ・キュー膨張の防止）。1 回のフラッシュで書く行数にも上限を設け、1 プロジェクトあたりの行数が無制限に増えないようにする。
 
+#### `AcceptanceCriteria`（19 タブ目・追記型）
+
+1 行 = 1 版。上書き・削除せず、読める行の version 最大を現行とする。壊れた行は除外して警告件数を表示する。
+owner だけが確定できる。旧プロジェクトでは初回確定時にタブとヘッダーを作り、新規プロジェクトでは初期作成する。
+
+| 列 | 内容 |
+|---|---|
+| version | 1 からの連番、確定のたびに +1 |
+| confirmed_at | ISO 8601 の確定日時 |
+| confirmed_by | 確定者の email |
+| comparator | independent / consensus / human_independent / human_with_ai の 1 つ |
+| entity_levels | study,arm,outcome_result,rob_domain の部分集合（カンマ区切り、1 つ以上） |
+| min_accuracy | 正確度の下限（百分率 0〜100、小数可、空欄は不使用） |
+| max_fabrication_rate | 作り話の率の上限（同上） |
+| max_omission_rate | 欠けの率の上限（同上） |
+| max_wrong_value_rate | 誤った値の率の上限（同上） |
+| min_compared_cells | 比べられたセルの最小数（正の整数、空欄可） |
+| pilot_runs_before | 確定時に既にあった完了済み pilot run 数。0 はパイロット前、1 以上は後の確定 |
+| note | 任意の自由記述 |
+
+率の 4 項目のうち 1 つ以上を必須とする。入力初期値は空欄、対象レベルは全選択。
+CESAR の感度 92%・重大な誤り 3%（Q8）は参考として表示し、自動入力しない。
+
 ### 3.3 エンティティモデル（entity_level）
 
 SR のデータ抽出は「研究 → 群（arm）→ アウトカム × 時点の結果」という階層構造を持つ。完全な汎用化は UI もエクスポートも複雑化するため、study / arm / outcome_result / rob_domain の 4 レベルに限定する（`rob_domain` は v0.9 で P1 から MVP へ前倒し）。
@@ -598,6 +621,8 @@ SR のデータ抽出は「研究 → 群（arm）→ アウトカム × 時点�
 ## 4. 機能要件（画面と主要フロー）
 
 ### 4.1 画面一覧
+
+S6 は上部に合格基準カードを持つ（owner の入力・確認・追記保存、各ロールの現行基準・結果の表示）。
 
 | # | 画面 | 概要 |
 | --- | --- | --- |
@@ -663,6 +688,11 @@ SR のデータ抽出は「研究 → 群（arm）→ アウトカム × 時点�
 - **run 単位のフィールド選択（issue #80・案 A。2026-07-12）**: S6 / S7 の実行前画面に対象項目チェックリストを置き、**既定は全選択**。section（`SchemaField.section`）単位で折りたたみ + 全選択/全解除トグルを持ち、選択 0 件は実行不可（実行ボタン disabled + 理由表示）。選択サブセットは fields の絞り込みで実現し、`runExtraction` の `fields` 引数へ絞った項目を渡す（トークン / コスト概算 = `planRun` も同じ絞り込み fields を受けるため自動的に選択分だけになる）と同時に `ExtractionRuns.field_ids`（§3.2）へ記録する `fieldIds`（**全選択時は null**）を渡す。**S6 の埋め込み検証 UI（`runFields`）は絞り込まない** — 表のデザインの全項目のまま渡し、AI が対象にしなかった項目も人間が手動で `edit` / `not_reported` 判定できるようにする（ghost cell と同じ扱い）。S7 の study 一覧では、直近の完了 run がサブセットだった study の「抽出済み」バッジに「直近 run は n/m 項目」を添える（n = 直近 run の対象項目数、m = その run の schema_version の全項目数）。失敗 study の再試行（`run_type=single_study`）は**元 run と同じ field 選択を引き継ぐ**（現在のチェックリスト選択ではなく、実行直前に確定させた値を保持して使う）。選択状態は画面入場・対象再読込のたびに全選択へリセットする（storage への永続化はしない = 毎回の実行意図を明示させる設計）。S10 の未検証セル警告ダイアログには「サブセット抽出で意図的に未抽出のままの項目が含まれる可能性がある」旨の注意書きを追加する（分母・集計ロジックは不変更 = サブセット run で対象外にした項目も引き続き「未検証セル」として数える。除外はしない）
 
 ### 4.4 CSV エクスポート（S10）
+
+R セットに `acceptance_criteria.csv`（1 行 = 1 版、保存列 + result / not_evaluable_reason / compared / accuracy /
+fabrication_rate / omission_rate / wrong_value_rate / pilot_studies）を含める。率は百分率。版なしはヘッダーのみ。
+各版をエクスポート素材の現在値で再判定し、manifest に行数を記録する。データ辞書は SchemaFields の対応表のままとする。
+Methods 文案（英日 × 単一 / 二重）には現行の基準・確定日・版・パイロットの前後と結果を追加する。版なしなら追加しない。
 
 シート構造（§3.2）をそのまま反映した 3 形式と、引用の一覧を出す `evidence_quotes.csv`。既定では確定 annotator（`consensus`、なければ唯一の human）の行を出力する。
 
@@ -867,6 +897,21 @@ group は A が independent、B が最終値の annotator_type。reason は huma
 - ベンチマーク用データセットは進行中の LLM 評価ベンチマーク構築と接続可能（既存の抽出済み SR データを再利用）
 
 ---
+
+### 合格基準の事前登録（issue #382）
+
+S6 上部で owner がパイロット前に合格基準を確定する。保存前には確認手順を挟み、パイロット後ならその旨を警告・記録する。
+他のロールは表示だけ。結果はボタン操作時に計算する。human_with_ai は独立比較ではない旨を併記する。
+対象研究は完了済み pilot run の studyIds の和集合のうち、Documents から参照される研究（resolveActiveStudies）。
+AI と人の比較の分類・数え方は上記のまま使う。最新確定スキーマ・同じ比較入力から buildComparisonCells を作り、
+summarizeComparison の研究集合・entity_levels 絞り込み後の comparator の全体行だけを判定に使う。
+
+- 満たす（met）: 比べられたセル ≥ 1 かつ最小数以上で、設定した基準をすべて満たす。
+- 満たさない（not_met）: 同じセル数条件を満たすが、設定した基準のいずれかに届かない。
+- 判定できない（not_evaluable）: パイロットなし / 比べられたセル 0 / 最小数未満。理由を表示する。
+
+率は百分率で比較し、境界は等号を含む（正確度 ≥、誤りの各率 ≤）。未設定の基準は判定に使わない。
+判定・CSV・Methods には同じ純粋関数を使う。R セットは各版の結果を出し、Methods は現行版のみを出す。
 
 ## 9. リスクと対応
 

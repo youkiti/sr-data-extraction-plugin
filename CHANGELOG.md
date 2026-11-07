@@ -14,6 +14,8 @@ This is the public changelog of this extension. Any change that can alter AI out
 ## 未リリース / Unreleased
 
 ### その他の変更 / Other changes
+- AI 抽出の合格基準をパイロット前に決め、版ごとに記録・判定できるようにしました。結果を R セットに出力し、Methods 文案にも基準と結果を追加します（2026-11-07、#382）。
+  Added versioned acceptance criteria for AI extraction before the pilot, with evaluation results in the R set and criteria and results in the Methods text (2026-11-07, #382).
 - 文献取り込みで Drive からのコピーに失敗したとき、進捗の表示に Google が返した理由（例 `appNotAuthorizedToFile`）を添え、診断ログ（ApiErrorLog タブ）にも記録するようにしました（2026-11-07、issue #279）。  
   When copying from Drive fails during document import, the progress display now includes the reason returned by Google (e.g. `appNotAuthorizedToFile`), and the failure is also recorded in the diagnostic log (ApiErrorLog tab) (2026-11-07, issue #279).
 - ダッシュボードに AI と人の抽出の比較を追加。一致・誤った値・作り話・欠けを独立比較と最終値の種類別に集計し、集計とセル一覧の CSV を保存できます（2026-11-07、#383）。  

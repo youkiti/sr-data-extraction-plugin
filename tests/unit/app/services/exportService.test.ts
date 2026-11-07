@@ -25,7 +25,7 @@ import {
   readStudyDataSheet,
 } from '../../../../src/features/extraction/annotationRepository';
 import { readEvidenceRows } from '../../../../src/features/extraction/evidenceRepository';
-import { readCompletedRunMetas, readMethodsRunFacts, readRunAuditInfos } from '../../../../src/features/extraction/runRepository';
+import { readCompletedRunMetas, readMethodsRunFacts, readRunAuditInfos, readPilotRuns } from '../../../../src/features/extraction/runRepository';
 import type { BuiltExport, ClassicExportFormat } from '../../../../src/features/export/buildExport';
 import { appendExportLog } from '../../../../src/features/export/exportLogRepository';
 import type { BuiltRSet, RSetFile, RSetMaterials } from '../../../../src/features/export/rset/buildRSet';
@@ -59,6 +59,7 @@ jest.mock('../../../../src/features/extraction/evidenceRepository', () => ({
 jest.mock('../../../../src/features/extraction/runRepository', () => ({
   readRunAuditInfos: jest.fn(),
   readCompletedRunMetas: jest.fn(),
+  readPilotRuns: jest.fn(),
   readMethodsRunFacts: jest.fn(),
 }));
 jest.mock('../../../../src/features/export/exportLogRepository', () => ({
@@ -211,6 +212,7 @@ function makeStore(patch: {
 beforeEach(() => {
   jest.mocked(getSheetTitles).mockResolvedValue([]);
   jest.mocked(readCompletedRunMetas).mockResolvedValue([]);
+  jest.mocked(readPilotRuns).mockResolvedValue([]);
   readDocumentsMock.mockResolvedValue([]);
   readStudiesMock.mockResolvedValue([]);
   readStudyDataSheetMock.mockResolvedValue({ fieldNames: [], rows: [] });
@@ -254,6 +256,7 @@ describe('loadExportData', () => {
     // R セット（issue #60）: 8 ファイルが構築され、素材（rSetMaterials）も再生成用に保持される
     expect(exportState.rSetMaterials).not.toBeNull();
     expect(exportState.rSet?.files.map((file) => file.name)).toEqual([
+      'acceptance_criteria.csv',
       'tab1.csv',
       'tab1_status.csv',
       'ma.csv',
@@ -613,7 +616,7 @@ describe('requestExportGenerate: R セット（issue #60）', () => {
       'exports-folder',
       expect.anything(),
     );
-    expect(uploadTextFileMock).toHaveBeenCalledTimes(8);
+    expect(uploadTextFileMock).toHaveBeenCalledTimes(9);
     expect(uploadTextFileMock).toHaveBeenCalledWith(
       { name: 'tab1.csv', content: expect.any(String), parentId: 'rset-folder', mimeType: 'text/csv' },
       expect.anything(),
@@ -765,7 +768,7 @@ describe('confirmExportGenerate / cancelExportWarning', () => {
     });
     await confirmExportGenerate(store, makeDeps());
     expect(store.getState().export.confirmingWarning).toBe(false);
-    expect(uploadTextFileMock).toHaveBeenCalledTimes(8);
+    expect(uploadTextFileMock).toHaveBeenCalledTimes(9);
     expect(store.getState().export.rSetResult).not.toBeNull();
   });
 });

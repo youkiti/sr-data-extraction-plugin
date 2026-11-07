@@ -1,5 +1,15 @@
 # UI 状態マトリクス（v0.2 — target spec + スケルトン drift 注記）
 
+## S6 `#/pilot` 合格基準
+
+画面上部の `#pilot-criteria` は未設定ならその旨を表示し、現行ありなら最大版の基準・確定日時・確定者・対象・パイロットの前後と過去版一覧を表示する。
+owner だけが入力・確定できる。百分率と最小セル数・メモの初期値は空、対象レベルは全選択。下書きは state に保持する。
+入力検証エラーと読込・保存失敗は `role="alert"`。確定前に確認カードを挟み、既存パイロットがあれば後に確定した版になる旨を示す。
+保存中はボタンを無効化する。壊れた行は除外して件数を警告する。
+結果は「結果を計算」操作時のみ全行を読む。計算中・失敗・満たす・満たさない・判定できないを表示する。
+判定できない理由はパイロットなし・比べられたセル 0・最小数未満のいずれか。各指標の値と基準、比べられたセル数を併記する。
+owner 以外は現行の基準と結果の表示のみ。AI を見ながら判定した人を選んだ場合は独立比較ではない旨を表示する。
+
 ## レビュアー間の比較への案内
 
 - `#/adjudicate` のメニュー・画面名は「不一致の解消」（Resolve conflicts）。役割・状態・操作名は維持する。
@@ -32,7 +42,7 @@ spec が正。実装が追いついていない箇所は以下のとおり（実
 | §3 `#/verify` | ✅ 実装済み（一覧読み込み中 / 失敗 / 通常〔進捗チップ + ?study= 同期〕/ study 切替 / 複数文書の文書切替タブ + 出所 PDF 自動切替〔v0.10 フェーズ 3 = 2026-07-09〕/ 群構成の確定〔未確定タブディム → 確定 → `ArmStructures` 追記〕/ `?entity=` ディープリンク〔S9 と同時実装。2026-07-02〕）。RoB 2 SQ アルゴリズム提案バッジ（issue #61。2026-07-12）実装済み。with_ai レビューのセルカードに抽出指示の折りたたみ（issue #81）+ フォーカスモードのユニットヘッダに前後移動ボタン（issue #82）を追加（2026-07-12）。anchor failed 項目の「AI で再特定」ボタン（relocate-quote skill。issue #94）を 2026-07-13 追加 |
 | §3 `#/extract` | ✅ 実装済み（読み込み中 / 失敗 / 未実行〔未抽出の既定選択 + 抽出済みバッジ + コスト概算 + 中断バナー = 2026-07-06〕/ 実行確認カード / 実行中〔**study 単位**進捗リスト〕/ 完了〔done / partial_failure + 再試行 = single_study run〕。2026-07-02。v0.10 フェーズ 2 で document 単位 → study 単位へ更新 = 2026-07-09）。ai annotator 行（StudyData / ResultsData）への転記が失敗しても run を中断扱いにせず、`#extract-run-error` + 専用トーストで案内する「転記失敗」状態を追加（一括抽出・再試行 `single_study` とも。2026-08-05）。owner 専用の予算超過見込み警告（実行はブロックしない）を追加  |
 | §3 `#/dashboard` | ✅ 実装済み（読み込み中 / 失敗 / 0 件 / 通常〔サマリ + study × section マトリクス + セルの `?study=&entity=` ディープリンク〕。2026-07-02。v0.10 フェーズ 3 で study 単位へ = 2026-07-09）。owner 専用費用集計・予算カードを追加 |
-| §3 `#/export` | ✅ 実装済み（読み込み中 / 失敗 / 通常〔形式選択 + サマリ + プレビュー + 除外警告 + 論文 Methods 記載例カード〕/ 未検証セル警告ダイアログ / 生成中 / 失敗 / 生成完了〔Drive `exports/` 保存 + `ExportLog` 追記 + ローカル保存〕。2026-07-03。Methods 記載例カードは 2026-07-12 追加〔issue #67〕。**R セット（第 4 の形式）は 2026-07-12 追加〔issue #60 PR-B〕**: ファイル一覧 + ma.csv プレビュー + Drive `exports/rset_{YYYYMMDD-HHMMSS}/` への 8 ファイル保存 + BOM なし CSV の Excel/R 読み方案内文。§3 の詳細行を参照）。owner 専用 usage.csv カードを追加  |
+| §3 `#/export` | ✅ 実装済み（読み込み中 / 失敗 / 通常〔形式選択 + サマリ + プレビュー + 除外警告 + 論文 Methods 記載例カード〕/ 未検証セル警告ダイアログ / 生成中 / 失敗 / 生成完了〔Drive `exports/` 保存 + `ExportLog` 追記 + ローカル保存〕。2026-07-03。Methods 記載例カードは 2026-07-12 追加〔issue #67〕。**R セット（第 4 の形式）は 2026-07-12 追加〔issue #60 PR-B〕**: ファイル一覧 + ma.csv プレビュー + Drive `exports/rset_{YYYYMMDD-HHMMSS}/` への 9 ファイル保存 + BOM なし CSV の Excel/R 読み方案内文。§3 の詳細行を参照）。owner 専用 usage.csv カードを追加  |
 | §4 キーボードショートカット | ✅ 検証パネル（`verificationPanel`）に実装済み。spec の「`#/verify` のみで有効」は「**検証パネルが表示されている画面**（`#/verify` と `#/pilot` の埋め込み）で有効」に読み替える（パネルの DOM 接続中のみ反応・入力フォーカス中は判定キー無効） |
 | 独立二重レビュー（issue #44・v0.11） | ✅ 実装済み（2026-07-11）。`Reviewers` タブ + ロール解決（フェイルクローズ）+ reviewer 系シェル制限 + reviewer オンボーディング（フォルダアクセス付与）+ owner のレビュアー管理カード（Home）+ `#/verify` 独立入力モード + `#/adjudicate`（S12・不一致の解消画面）。jest 144 suites / 2042 tests green・カバレッジ 100%・E2E 64 本（`app-reviewer.spec.ts` 5 / `app-independent.spec.ts` 2 / `app-adjudicate.spec.ts` ほか）green。**2 アカウントでの実機通し確認は 2026-07-19 に完了**（issue #62。残る未実施は 3 アカウント目を使ったペア選択の確認のみ = [docs/manual-testing.md](manual-testing.md) §5-6-3。[docs/design-independent-dual-review.md](design-independent-dual-review.md) §13 参照） |
 | レビュアー間一致度レポート（issue #66） | ✅ 実装済み（2026-07-12）。`#/adjudicate` 一覧画面にオンデマンド計算カード（純関数 `features/adjudication/agreement.ts`: 項目単位の一致率・Cohen's κ・不一致セル一覧。既存の `cellMatch.buildAdjudicationCells` をそのまま集計素材にする）+ サービス層 `loadAgreementReport` / `downloadAgreementCsv`（CSV 2 種のローカル保存）。jest green・カバレッジ 100%・E2E 1 本追加（`app-adjudicate.spec.ts`）。axe で一覧テーブルの空 `<th>` と見出し階層スキップ（h2 → h4）を検出し修正済み |
@@ -519,11 +529,11 @@ Chrome ウェブストアの Disclosure Requirements（集めるデータと用�
 | | 生成中 | `#export-generating`「CSV を生成して Drive に保存しています…」+ 生成ボタン・形式ラジオを無効化 |
 | | 生成失敗 | `#export-generate-error`「エクスポートに失敗しました: {理由}」（`role="alert"`）。生成ボタンは復帰し再試行できる |
 | | 生成完了 | 結果カード `#export-result`: 「{filename} を Drive に保存しました（ExportLog に記録済み）」+ Drive リンク `#export-result-link`（`webViewLink`。`target="_blank"`）+ ローカル保存 `#export-download`（Blob ダウンロード）。形式を切り替えて続けて生成できる（結果カードは次の生成開始まで残す）。Drive 保存先は プロジェクトフォルダ直下の `exports/`（初回生成時に作成）、ファイル名は `{format}_{YYYYMMDD-HHMMSS}.csv` |
-| `#/export`（R セット。issue #60 PR-B・2026-07-12） | 通常（r_set 選択時） | 通常状態の形式選択ラジオ・Methods カードは共通のまま、選択形式の内容が差し替わる: サマリ `#export-rset-summary`（`<dl>`: ファイル数〔常に 8〕/ データ行数〔tab1 + ma + rob の合計〕/ 未検証セル数/ export_issues 件数）+ ファイル一覧 `#export-rset-files`（`<ul>`: ファイル名ごとの行数。`export_manifest.json` のみ行数概念なし）+ プレビュー `#export-rset-preview`（`<table>`: **ma.csv** のヘッダ + 先頭 10 行。8 ファイルのうち最も参照頻度が高い解析単位表を代表として表示）+ 生成ボタン `#export-generate`「8 ファイルを生成して Drive に保存」。**データ行 0 件（tab1 / ma / rob の合計）は生成ボタンを無効化** + 案内文「R セットで出力できるデータ行がありません。」 |
+| `#/export`（R セット。issue #60 PR-B・2026-07-12） | 通常（r_set 選択時） | 通常状態の形式選択ラジオ・Methods カードは共通のまま、選択形式の内容が差し替わる: サマリ `#export-rset-summary`（`<dl>`: ファイル数〔常に 9〕/ データ行数〔tab1 + ma + rob の合計〕/ 未検証セル数/ export_issues 件数）+ ファイル一覧 `#export-rset-files`（`<ul>`: ファイル名ごとの行数。`export_manifest.json` のみ行数概念なし）+ プレビュー `#export-rset-preview`（`<table>`: **ma.csv** のヘッダ + 先頭 10 行。9 ファイルのうち最も参照頻度が高い解析単位表を代表として表示）+ 生成ボタン `#export-generate`「9 ファイルを生成して Drive に保存」。**データ行 0 件（tab1 / ma / rob の合計）は生成ボタンを無効化** + 案内文「R セットで出力できるデータ行がありません。」 |
 | | 未検証セル残存（警告） | `#export-generate` クリック時、`export_issues.csv` の `unverified_cell` 件数 > 0 なら確認ダイアログ `#export-warning`（`role="alertdialog"`。従来 3 形式と共通コンポーネント）「未検証の項目が {n} 件あります。」+ サブセット抽出の注意書き（issue #80 A-3。`#export-warning` 共通のため R セットにも出る）+「R セットでは未検証セルは値列を空にし、ステータス列（tab1_status.csv / ma_status.csv / rob.csv）と export_issues.csv に明示されます。」の注記 + 「続行して生成」/「中止」 |
-| | 生成中 | `#export-generating`「8 ファイルを生成して Drive に保存しています…」+ 生成ボタン・形式ラジオを無効化 |
+| | 生成中 | `#export-generating`「9 ファイルを生成して Drive に保存しています…」+ 生成ボタン・形式ラジオを無効化 |
 | | 生成失敗 | `#export-generate-error`「エクスポートに失敗しました: {理由}」（`role="alert"`）。生成ボタンは復帰し再試行できる |
-| | 生成完了 | 結果カード `#export-rset-result`: 「{folderName} フォルダに 8 ファイルを Drive に保存しました（ExportLog に記録済み）。」+ Drive フォルダリンク `#export-rset-result-link`（`target="_blank"`）+ ファイル一覧 `#export-rset-result-files` + ローカル保存 `#export-rset-download`（8 ファイルを個別ダウンロード。zip 化はしない）+ UTF-8 案内文 `#export-rset-utf8-note`「CSV は UTF-8（BOM なし）で保存されます。Excel でダブルクリックで開くと日本語が文字化けすることがあります。Excel で開く場合は『データ > テキストまたは CSV から』で文字コード UTF-8 を指定してください。R の readr::read_csv() はそのまま読み込めます。」（D-6 の初心者向け説明）。Drive 保存先はプロジェクトフォルダ直下 `exports/` 配下のサブフォルダ `rset_{YYYYMMDD-HHMMSS}/`。`ExportLog` は既存列のみで表現（`format='r_set'` / `file_ref`=サブフォルダの `webViewLink` / `study_count`=tab1.csv の行数。design-r-export.md §13.3） |
+| | 生成完了 | 結果カード `#export-rset-result`: 「{folderName} フォルダに 9 ファイルを Drive に保存しました（ExportLog に記録済み）。」+ Drive フォルダリンク `#export-rset-result-link`（`target="_blank"`）+ ファイル一覧 `#export-rset-result-files` + ローカル保存 `#export-rset-download`（9 ファイルを個別ダウンロード。zip 化はしない）+ UTF-8 案内文 `#export-rset-utf8-note`「CSV は UTF-8（BOM なし）で保存されます。Excel でダブルクリックで開くと日本語が文字化けすることがあります。Excel で開く場合は『データ > テキストまたは CSV から』で文字コード UTF-8 を指定してください。R の readr::read_csv() はそのまま読み込めます。」（D-6 の初心者向け説明）。Drive 保存先はプロジェクトフォルダ直下 `exports/` 配下のサブフォルダ `rset_{YYYYMMDD-HHMMSS}/`。`ExportLog` は既存列のみで表現（`format='r_set'` / `file_ref`=サブフォルダの `webViewLink` / `study_count`=tab1.csv の行数。design-r-export.md §13.3） |
 | `#/adjudicate`（S12・v0.11。owner / adjudicator のみ到達可能） | 読み込み中 | `#adjudicate-loading`「裁定対象を読み込んでいます…」（human annotator 2 名の検証状況を読む間） |
 | | 担当ペアと担当外の判定（issue #263・target spec） | 担当者がちょうど 2 名のグループの study は、その 2 名で ready / waiting を判定する（3 人目の判定があっても selectable にしない）。担当外の人の判定がある study は一覧の行に `.adjudicate__outside-note`「担当外の判定（{email}）は裁定と一致度から除外しています」。一致度カードでは担当ペアの study を κ に含め、除外した担当外の判定件数を `#adjudicate-agreement-outside`（0 件なら出さない）に出す。calibration セットの study は一致度カードの別枠 `#adjudicate-calibration-agreement`（全ペアの一覧: ペア・対象 study 数・一致率・κ）に出す（calibration の study が 0 件なら出さない） |
 | | 読み込み失敗 | `#adjudicate-error`（`role="alert"`）+ 再試行 `#adjudicate-retry` |

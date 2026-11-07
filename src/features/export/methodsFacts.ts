@@ -7,12 +7,17 @@ import { isWarningOnlyLogEntry, type LlmApiLogEntry, type LlmProviderId } from '
 import type { SchemaVersion } from '../../domain/schemaVersion';
 import type { MethodsRunFact } from '../extraction/runRepository';
 import type { MethodsFacts } from './methodsBoilerplate';
+import { currentCriteria, evaluateCriteria, type AcceptanceCriteria, type PilotRun } from '../verification/acceptanceCriteria';
+import type { ComparisonCell } from '../verification/aiHumanComparison';
 
 /** LLMApiLog の抽出バッチ失敗行の接頭辞（extractionService の recordBatchFailure が書く） */
 const BATCH_FAILED_PREFIX = '[batch_failed]';
 const TRANSFER_FAILED_PREFIX = '[transfer_failed]';
 
 export interface MethodsFactsInput {
+  acceptanceCriteria?: readonly AcceptanceCriteria[];
+  comparisonCells?: readonly ComparisonCell[];
+  pilotRuns?: readonly PilotRun[];
   toolVersion: string | null;
   /** エクスポート対象の研究（Documents から参照される研究）の study_id */
   activeStudyIds: readonly string[];
@@ -167,7 +172,10 @@ export function buildMethodsFacts(input: MethodsFactsInput): MethodsFacts {
       input.annotationRows.filter((row) => row.annotatorType === type).map((row) => row.annotator),
     ).size;
 
+  const criteria = currentCriteria(input.acceptanceCriteria ?? []);
   return {
+    ...(criteria === null ? {} : { acceptanceCriteria: { criteria,
+      evaluation: evaluateCriteria(criteria, input.comparisonCells ?? [], input.pilotRuns ?? [], active) } }),
     toolVersion: input.toolVersion,
     aiDraft,
     draftModelIds: dedupe(draftLogs.map((log) => log.model).filter((model) => model !== '')),

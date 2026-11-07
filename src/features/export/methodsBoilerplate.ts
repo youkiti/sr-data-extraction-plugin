@@ -3,6 +3,8 @@
 // このモジュールは記録に合う文と英語の単数形・複数形の選択（issue #381）・プレースホルダの自動反映・見出しの
 // プレーンテキスト化のみを担い、文そのものは書き換えない（変更する場合は正典ドキュメントを先に改訂すること）
 
+import type { AcceptanceCriteria, CriteriaEvaluation } from '../verification/acceptanceCriteria';
+
 export type MethodsLanguage = 'en' | 'ja';
 export type MethodsWorkflow = 'single' | 'dual';
 
@@ -11,6 +13,7 @@ export type MethodsWorkflow = 'single' | 'dual';
  * 数値の 0 / 空配列は「反映できない」= {{...}} のまま残すか、その文を出さない（各文の条件は正典）
  */
 export interface MethodsFacts {
+  acceptanceCriteria?: { criteria: AcceptanceCriteria; evaluation: CriteriaEvaluation };
   /** 今インストールしている拡張の版（抽出時の版ではない。カードの説明文で示す） */
   toolVersion: string | null;
   /** AI の草案の記録（成功した draft_schema 呼び出し、または ai_draft の版）がある */
@@ -366,6 +369,9 @@ export function buildMethodsText(
     `${HEADING[language]} ${joinSentences(language, paragraph1(facts))}`,
     joinSentences(language, paragraph2(workflow, facts)),
   ];
+  if (facts.acceptanceCriteria !== undefined) {
+    parts.push(buildCriteriaSentence(language, facts.acceptanceCriteria));
+  }
   if (facts.scannedDocumentCount > 0) {
     parts.push(byCount(facts.scannedDocumentCount, OPTIONAL_SCANNED_ONE, OPTIONAL_SCANNED)[language]);
   }
@@ -401,4 +407,49 @@ export function buildMethodsText(
   }
   // n_sample / reviewer_initials / adjudicator_initials / supplement_ref は常に自動反映しない（§3）
   return { text, unresolved: findUnresolvedPlaceholders(text) };
+}
+
+/** 保存された閾値だけを列挙し、事後確定と非独立比較を明記する。 */
+function buildCriteriaSentence(language: MethodsLanguage, fact: NonNullable<MethodsFacts['acceptanceCriteria']>): string {
+  const { criteria: c, evaluation: e } = fact;
+  const ja = language === 'ja';
+  const groups = {
+    independent: ja ? '独立の人' : 'independent reviewers',
+    consensus: ja ? '裁定後の最終値' : 'consensus final values',
+    human_independent: ja ? '独立抽出者の最終値' : 'independent reviewers’ final values',
+    human_with_ai: ja ? 'AI の出力を見ながら判定した検証者との比較' : 'comparison with reviewers who saw the AI output',
+  };
+  const levels = { study: ja ? '研究' : 'study', arm: ja ? '群' : 'arm',
+    outcome_result: ja ? 'アウトカム結果' : 'outcome result', rob_domain: ja ? 'バイアスの領域' : 'risk-of-bias domain' };
+  const thresholds: string[] = [];
+  const labels = [ja ? '正確度 ≥' : 'accuracy ≥', ja ? '作り話の率 ≤' : 'fabrication rate ≤',
+    ja ? '欠けの率 ≤' : 'omission rate ≤', ja ? '誤った値の率 ≤' : 'wrong-value rate ≤'];
+  [c.min_accuracy, c.max_fabrication_rate, c.max_omission_rate, c.max_wrong_value_rate].forEach((value, index) => {
+    if (value !== null) {
+      thresholds.push(`${labels[index]} ${value}%`);
+    }
+  });
+  if (c.min_compared_cells !== null) {
+    thresholds.push(`${ja ? '比べられたセル ≥' : 'compared cells ≥'} ${c.min_compared_cells}`);
+  }
+  const result = { met: ja ? '満たす' : 'met', not_met: ja ? '満たさない' : 'not met', not_evaluable: ja ? '判定できない' : 'not evaluable' };
+  const reasons = { '': '', no_pilot: ja ? 'パイロットがない。' : 'No completed pilot.',
+    no_compared_cells: ja ? '比べられたセルが 0。' : 'No compared cells.',
+    below_minimum: ja ? '比べられたセルが最小数未満。' : 'Compared cells below the minimum.' };
+  const percent = (value: number | null): string => value === null ? (ja ? '算出できず' : 'unavailable') : `${value.toFixed(2)}%`;
+  const timing = c.pilot_runs_before === 0 ? (ja ? 'パイロットの前に' : 'before the pilot')
+    : (ja ? 'パイロット開始後に' : 'after the pilot began');
+  const levelText = c.entity_levels.map((level) => levels[level]).join(', ');
+  if (ja) {
+    return `AI 抽出の合格基準（版 ${c.version}）は ${c.confirmed_at.slice(0, 10)} に、${timing}確定した。` +
+      `比較相手: ${groups[c.comparator]}。対象レベル: ${levelText}。基準: ${thresholds.join(', ')}。` +
+      `パイロット ${e.pilot_studies} 研究の結果: ${result[e.result]}（比べられたセル ${e.compared}、` +
+      `正確度 ${percent(e.accuracy)}、作り話の率 ${percent(e.fabrication_rate)}、欠けの率 ${percent(e.omission_rate)}、` +
+      `誤った値の率 ${percent(e.wrong_value_rate)}）。${reasons[e.not_evaluable_reason]}`;
+  }
+  return `Acceptance criteria for AI extraction (version ${c.version}) were confirmed on ${c.confirmed_at.slice(0, 10)}, ${timing}. ` +
+    `Comparator: ${groups[c.comparator]}. Entity levels: ${levelText}. Criteria: ${thresholds.join(', ')}. ` +
+    `Results for ${e.pilot_studies} pilot studies: ${result[e.result]} (compared cells ${e.compared}; ` +
+    `accuracy ${percent(e.accuracy)}; fabrication rate ${percent(e.fabrication_rate)}; omission rate ${percent(e.omission_rate)}; ` +
+    `wrong-value rate ${percent(e.wrong_value_rate)}). ${reasons[e.not_evaluable_reason]}`;
 }

@@ -1,4 +1,5 @@
 import type { QuoteSetRow } from '../domain/quoteSet';
+import type { CriteriaState } from './services/acceptanceCriteriaService';
 // メインビューの中央ストア（単方向フロー）。view は render(state) の純粋関数とし、
 // 状態変更は必ず setState 経由で行う（architecture.md §2.2）
 import type { ConfirmedArmStructure } from '../domain/armStructure';
@@ -365,6 +366,7 @@ export interface ConsultDocState {
 
 /** #/pilot（S6）の画面状態。run の結果と埋め込み検証 UI の素材はタブのセッション内で保持する */
 export interface PilotState {
+  criteria?: CriteriaState;
   /** 完了 run の表示時に初期化する、保存しない集計素材。 */
   matrix?: PilotMatrixState;
   /** 対象 study の選択。未使用のテキスト付き study を最大 3 件優先する */

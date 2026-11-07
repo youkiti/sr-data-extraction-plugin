@@ -1,5 +1,18 @@
 # 論文 Methods 記載例（エクスポート画面のコピー用文案）
 
+## 合格基準の文（英日 × 単一 / 二重に共通）
+
+現行の AcceptanceCriteria があるときだけ、次の型を追加する。版が無いときは文を出さない。
+各値は保存済みの版と、エクスポート素材に対する共通の判定関数から埋める。未設定の基準は列挙しない。
+
+- 日本語: 「AI 抽出の合格基準（版 {{criteria_version}}）は {{criteria_date}} に、{{criteria_timing}}確定した。比較相手: {{criteria_comparator}}。対象レベル: {{criteria_levels}}。基準: {{criteria_thresholds}}。パイロット {{criteria_studies}} 研究の結果: {{criteria_result}}（比べられたセル {{criteria_compared}}、正確度 {{criteria_accuracy}}、作り話の率 {{criteria_fabrication}}、欠けの率 {{criteria_omission}}、誤った値の率 {{criteria_wrong}}）。{{criteria_reason}}」
+- 英語: “Acceptance criteria for AI extraction (version {{criteria_version}}) were confirmed on {{criteria_date}}, {{criteria_timing}}. Comparator: {{criteria_comparator}}. Entity levels: {{criteria_levels}}. Criteria: {{criteria_thresholds}}. Results for {{criteria_studies}} pilot studies: {{criteria_result}} (compared cells {{criteria_compared}}; accuracy {{criteria_accuracy}}; fabrication rate {{criteria_fabrication}}; omission rate {{criteria_omission}}; wrong-value rate {{criteria_wrong}}). {{criteria_reason}}”
+
+timing は pilot_runs_before が 0 なら「パイロットの前に」/ “before the pilot”、1 以上なら「パイロット開始後に」/ “after the pilot began”。
+human_with_ai の comparator は「AI の出力を見ながら判定した検証者との比較」/ “comparison with reviewers who saw the AI output”。
+result は満たす / 満たさない / 判定できない（met / not met / not evaluable）。判定できない場合は理由も記す。
+率は百分率。計算できない率は「算出できず」/ “unavailable”。最小セル数が設定されていれば thresholds に含める。
+
 S10（`#/export`）に表示する「論文の Methods セクションにこう書ける」記載例の正典。エクスポート画面にカードとして表示し、ワンクリックでクリップボードへコピーできるようにする（[requirements.md §4.4](requirements.md)、[ui-states.md `#/export`](ui-states.md)）。
 
 - 記載例は **言語（English / 日本語）× ワークフロー（単一レビュアー検証 / 二重独立検証）** の組み合わせで出す。

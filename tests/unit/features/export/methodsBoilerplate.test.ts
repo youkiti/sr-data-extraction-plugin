@@ -3,6 +3,40 @@ import {
   usesRequestedModelIds,
   type MethodsFacts,
 } from '../../../../src/features/export/methodsBoilerplate';
+import { confirmCriteria, emptyCriteriaDraft, evaluateCriteria } from '../../../../src/features/verification/acceptanceCriteria';
+
+test('合格基準は英日・単一/二重で前後・比較相手・3 値を記し、版なしは出さない', () => {
+  const initial = confirmCriteria({ ...emptyCriteriaDraft(), min_accuracy: '90', max_fabrication_rate: '3',
+    max_omission_rate: '4', max_wrong_value_rate: '5', min_compared_cells: '10' }, [], 'owner@example.com', '2026-11-07T00:00:00Z', []);
+  for (const language of ['ja', 'en'] as const) {
+    for (const workflow of ['single', 'dual'] as const) {
+      expect(buildMethodsText(language, workflow, makeFacts()).text).not.toContain(language === 'ja' ? '合格基準' : 'Acceptance criteria');
+      for (const comparator of ['independent', 'consensus', 'human_independent', 'human_with_ai'] as const) {
+        for (const after of [0, 2]) {
+          for (const result of ['met', 'not_met', 'not_evaluable'] as const) {
+            const criteria = { ...initial, comparator, pilot_runs_before: after };
+            const evaluation = { ...evaluateCriteria(criteria, [], [], new Set()), result };
+            const text = buildMethodsText(language, workflow, makeFacts({ acceptanceCriteria: { criteria, evaluation } })).text;
+            expect(text).toContain('2026-11-07');
+            expect(text).toContain(language === 'ja' ? '版 1' : 'version 1');
+            expect(text).toContain(language === 'ja' ? (after === 0 ? 'パイロットの前に' : 'パイロット開始後に')
+              : (after === 0 ? 'before the pilot' : 'after the pilot began'));
+            if (comparator === 'human_with_ai') {
+              expect(text).toContain(language === 'ja' ? 'AI の出力を見ながら判定した検証者' : 'reviewers who saw the AI output');
+            }
+          }
+        }
+      }
+      for (const reason of ['', 'no_compared_cells', 'below_minimum'] as const) {
+        const criteria = { ...initial, min_accuracy: null, max_fabrication_rate: null, max_omission_rate: null,
+          max_wrong_value_rate: null, min_compared_cells: null };
+        const evaluation = { ...evaluateCriteria(initial, [], [], new Set()), not_evaluable_reason: reason,
+          accuracy: 100, fabrication_rate: 0, omission_rate: 0, wrong_value_rate: 0 };
+        expect(buildMethodsText(language, workflow, makeFacts({ acceptanceCriteria: { criteria, evaluation } })).text).toContain('100.00%');
+      }
+    }
+  }
+});
 
 /** 記録が何も無いプロジェクト（全文が既定の分岐・プレースホルダのまま） */
 function makeFacts(overrides: Partial<MethodsFacts> = {}): MethodsFacts {

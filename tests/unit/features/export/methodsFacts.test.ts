@@ -1,4 +1,5 @@
 import type { LlmApiLogEntry } from '../../../../src/domain/llmApiLog';
+import { confirmCriteria, emptyCriteriaDraft } from '../../../../src/features/verification/acceptanceCriteria';
 import type { MethodsRunFact } from '../../../../src/features/extraction/runRepository';
 import {
   buildMethodsFacts,
@@ -73,6 +74,15 @@ function makeInput(overrides: Partial<MethodsFactsInput> = {}): MethodsFactsInpu
     ...overrides,
   };
 }
+
+test('Methods の現行版と結果は共通判定から作り、版なしでは追加しない', () => {
+  const criteria = confirmCriteria({ ...emptyCriteriaDraft(), min_accuracy: '90' }, [], 'owner@example.com', '2026-11-07T00:00:00Z', []);
+  expect(buildMethodsFacts(makeInput()).acceptanceCriteria).toBeUndefined();
+  expect(buildMethodsFacts(makeInput({ acceptanceCriteria: [criteria, { ...criteria, version: 2 }] })).acceptanceCriteria)
+    .toMatchObject({ criteria: { version: 2 }, evaluation: { result: 'not_evaluable', not_evaluable_reason: 'no_pilot' } });
+  expect(buildMethodsFacts(makeInput({ acceptanceCriteria: [criteria], comparisonCells: [], pilotRuns: [{ runType: 'pilot', studyIds: ['s1'] }] }))
+    .acceptanceCriteria?.evaluation.not_evaluable_reason).toBe('no_compared_cells');
+});
 
 describe('buildMethodsFacts: 事前抽出の成否', () => {
   test('モデル版と送信設定を分割し、空・未送信・重複を除く', () => {
