@@ -5,6 +5,21 @@ import type { Evidence } from '../../../../src/domain/evidence';
 import type { SchemaField } from '../../../../src/domain/schemaField';
 import { buildAdjudicationCells, indexEvidenceByCellKey } from '../../../../src/features/adjudication/cellMatch';
 
+test('AI accept 由来は undo と相談イベントを畳み込んだ有効判定から読む', () => {
+  const cells = (a: Decision[], b: Decision[]) => buildAdjudicationCells(
+    [field()], studyRow(), studyRow(), [], [], a, b,
+  )[0];
+  const accepted = decision();
+  const edited = decision({ action: 'edit', decidedAt: 't2' });
+  expect(cells([accepted], [edited])).toMatchObject({ aiAcceptA: true, aiAcceptB: false });
+  expect(cells([accepted, edited, decision({ action: 'undo', decidedAt: 't3' })],
+    [decision({ annotatorType: 'human_independent' })])).toMatchObject({ aiAcceptA: true, aiAcceptB: false });
+  expect(cells([accepted, decision({ action: 'flag_consult', decidedAt: 't2' })],
+    [accepted])).toMatchObject({ aiAcceptA: true, aiAcceptB: true });
+  expect(cells([accepted, decision({ action: 'undo', decidedAt: 't2' })], []))
+    .toMatchObject({ aiAcceptA: false, aiAcceptB: false });
+});
+
 test('裁定の代表は最新 run の最小 seq の引用になる', () => {
   const first = evidence({ quoteSeq: 1 });
   const second = evidence({ quoteSeq: 2, evidenceId: 'second' });
@@ -136,6 +151,8 @@ describe('buildAdjudicationCells', () => {
         matches: false,
         bothEmpty: true,
         schemaVersionMismatch: false,
+        aiAcceptA: false,
+        aiAcceptB: false,
         noteA: null,
         noteB: null,
       },

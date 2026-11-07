@@ -2,15 +2,18 @@
 // consensus 行は annotator='consensus' / annotator_type='consensus' のリテラル固定（更新キーの
 // 一意性を構造的に保証する）。action の読み替え: 一致セルの一括採用 = accept、A/B いずれか採用・
 // 第 3 の値 = edit、not_reported 裁定 = not_reported、取り消し = undo（cellState の畳み込みに乗る）
+// 採った値の出所は consensus_source 列で区別する。
 import { NOT_REPORTED_TOKEN } from '../../domain/annotation';
 import { canonicalizeMultiSelectValue } from '../../domain/multiSelect';
-import type { Decision, DecisionAction } from '../../domain/decision';
+import type { AdoptedAiAccept, ConsensusSource, Decision, DecisionAction } from '../../domain/decision';
 import type { SchemaField } from '../../domain/schemaField';
 import { type CellState, undoRevertValue } from '../verification/cellState';
 import type { AdjudicationCell } from './cellMatch';
 
 /** 1 セルぶんの consensus 書き込み内容（Decision + StudyData/ResultsData 反映に必要な最小情報） */
 export interface ConsensusCellWrite {
+  source: ConsensusSource;
+  adoptedAiAccept: AdoptedAiAccept | null;
   field: SchemaField;
   entityKey: string;
   action: DecisionAction;
@@ -43,6 +46,9 @@ export function toConsensusDecision(write: ConsensusCellWrite, params: Consensus
     action: write.action,
     value: canonicalizeMultiSelectValue(write.field, write.value),
     note: params.note ?? null,
+    // 古いオフラインキューには出所が無いため、未記録として再送する。
+    consensusSource: write.source ?? null,
+    adoptedAiAccept: write.adoptedAiAccept ?? null,
   };
 }
 
@@ -61,6 +67,9 @@ export function buildBulkAcceptWrites(
       field: cell.field,
       entityKey: cell.entityKey,
       action: 'accept' as const,
+      source: 'bulk_match' as const,
+      adoptedAiAccept: cell.aiAcceptA ? (cell.aiAcceptB ? 'A,B' as const : 'A' as const)
+        : cell.aiAcceptB ? 'B' as const : 'none' as const,
       value: canonicalizeMultiSelectValue(cell.field, cell.valueA),
     }));
 }
@@ -71,6 +80,8 @@ export function buildChoiceWrite(cell: AdjudicationCell, choice: 'A' | 'B'): Con
     field: cell.field,
     entityKey: cell.entityKey,
     action: 'edit',
+    source: choice,
+    adoptedAiAccept: (choice === 'A' ? cell.aiAcceptA : cell.aiAcceptB) ? choice : 'none',
     value: canonicalizeMultiSelectValue(cell.field, choice === 'A' ? cell.valueA : cell.valueB),
   };
 }
@@ -82,13 +93,16 @@ export function buildCustomValueWrite(cell: AdjudicationCell, rawValue: string):
     field: cell.field,
     entityKey: cell.entityKey,
     action: 'edit',
+    source: 'third',
+    adoptedAiAccept: 'none',
     value: canonicalizeMultiSelectValue(cell.field, trimmed === '' ? null : trimmed),
   };
 }
 
 /** not_reported 裁定（§6.5: action='not_reported'） */
 export function buildNotReportedWrite(cell: AdjudicationCell): ConsensusCellWrite {
-  return { field: cell.field, entityKey: cell.entityKey, action: 'not_reported', value: NOT_REPORTED_TOKEN };
+  return { field: cell.field, entityKey: cell.entityKey, action: 'not_reported', value: NOT_REPORTED_TOKEN,
+    source: 'not_reported', adoptedAiAccept: 'none' };
 }
 
 /** 取り消し（undo）。consensus 側にまだ判定が無ければ null（戻すものが無い） */
@@ -100,6 +114,8 @@ export function buildUndoWrite(cell: AdjudicationCell, consensusState: CellState
     field: cell.field,
     entityKey: cell.entityKey,
     action: 'undo',
+    source: 'undo',
+    adoptedAiAccept: null,
     value: undoRevertValue(consensusState),
   };
 }
