@@ -2250,13 +2250,13 @@
               <span class="ja" lang="ja"
                 ><code>is_final</code> が TRUE になるのは、確定版（consensus、無ければ唯一の人の行）の一覧にある引用です。裁定した試験で最終の根拠を選んでいないセルには、TRUE の行はありません。人の行が確定版で、その人が引用を直していないセルでは、AI
                 抽出を見ながら検証した人なら AI の引用が TRUE になり、独立入力の人なら TRUE の行はありません。確定版を決められない試験（2 名が検証し、裁定がまだの試験など）は、すべて FALSE です。<code>audit.csv</code>
-                には、人が直した引用は載りません。</span
+                には、人が直した引用は載りません。判定時に見ていた AI の値と引用の ID は記録に残ります。</span
               >
               <span class="en" lang="en"
                 ><code>is_final</code> is TRUE for quotes in the final annotator’s list (consensus, or the only human
                 reviewer if there is no consensus). In an adjudicated study, a cell whose final evidence was not chosen has no TRUE row. When the final annotator is a single reviewer, for cells that reviewer did not edit, the AI quotes are TRUE if they
                 verified with AI; if they entered data independently, no row is TRUE. If the final annotator cannot be determined (for example, two reviewers and no adjudication yet), every row is FALSE. <code>audit.csv</code> does not
-                include quotes edited by people.</span
+                include quotes edited by people. The AI value and quote IDs seen at decision time are retained in the audit record.</span
               >
             </li>
           </ul>

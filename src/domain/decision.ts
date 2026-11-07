@@ -30,4 +30,7 @@ export interface Decision {
   value: string | null;
   /** 検証時のメモ（例: Table 2 と本文で数値不一致、Table 2 を採用） */
   note: string | null;
+  /** 判定時の表示根拠。未記録は null、根拠なしは空配列 */
+  seenEvidenceIds?: readonly string[] | null;
+  seenAiValue?: string | null;
 }

@@ -1,10 +1,15 @@
 import type { Decision } from '../../../../src/domain/decision';
 import {
   appendDecisionRows,
+  clearDecisionsProvenanceCache,
+  ensureDecisionsProvenanceColumns,
   decisionToRow,
   readAllDecisions,
   readDecisionsByStudy,
 } from '../../../../src/features/verification/decisionRepository';
+import { SHEET_HEADERS } from '../../../../src/domain/sheetsSchema';
+
+beforeEach(clearDecisionsProvenanceCache);
 
 const DECISIONS_HEADER = [
   'decided_at',
@@ -33,6 +38,8 @@ function makeDecision(overrides: Partial<Decision> = {}): Decision {
     action: 'accept',
     value: '120',
     note: null,
+    seenEvidenceIds: null,
+    seenAiValue: null,
     ...overrides,
   };
 }
@@ -46,7 +53,9 @@ interface MockDeps {
 function makeDeps(values: string[][] = []): MockDeps {
   const fetch = jest.fn().mockImplementation(async (_input: RequestInfo | URL, init?: RequestInit) => {
     const method = init?.method ?? 'GET';
-    const json = method === 'GET' ? { values } : {};
+    const json = method === 'GET' ? String(_input).includes('values:batchGet')
+      ? { valueRanges: [{ values: values.length === 0 ? [DECISIONS_HEADER] : values }] }
+      : { values } : {};
     return {
       ok: true,
       status: 200,
@@ -77,6 +86,8 @@ describe('decisionToRow', () => {
       'accept',
       '120',
       null,
+      null,
+      null,
     ]);
   });
 
@@ -86,6 +97,42 @@ describe('decisionToRow', () => {
     expect(row[9]).toBeNull();
     expect(row[10]).toBeNull();
   });
+});
+
+test('旧ヘッダを拡張し、成功後は再読込しない', async () => {
+  const deps = makeDeps([DECISIONS_HEADER]);
+  await appendDecisionRows('old', [makeDecision()], deps);
+  await appendDecisionRows('old', [makeDecision()], deps);
+  expect(deps.fetch.mock.calls.filter(([, init]) => init?.method === 'PUT')).toHaveLength(1);
+  expect(deps.fetch.mock.calls.filter(([url]) => String(url).includes('batchGet'))).toHaveLength(1);
+});
+
+test('移行失敗は記憶せず、追記しない', async () => {
+  const deps = makeDeps([['wrong']]);
+  await expect(appendDecisionRows('bad', [makeDecision()], deps)).rejects.toThrow('ヘッダ');
+  await expect(ensureDecisionsProvenanceColumns('bad', deps)).rejects.toThrow('ヘッダ');
+  expect(postCalls(deps)).toHaveLength(0);
+});
+
+test('空のヘッダ応答では移行を拒否する', async () => {
+  const deps = makeDeps();
+  deps.fetch.mockResolvedValue({ ok: true, status: 200, json: async () => ({ valueRanges: [] }) });
+  await expect(ensureDecisionsProvenanceColumns('empty', deps)).rejects.toThrow('ヘッダ');
+});
+
+test.each([null, [], ['a', 'b']] as const)('表示記録を往復する: %p', async (ids) => {
+  const item = makeDecision({ seenEvidenceIds: ids, seenAiValue: '全文' });
+  const deps = makeDeps([[...SHEET_HEADERS.Decisions], decisionToRow(item).map((v) => String(v ?? ''))]);
+  expect(await readAllDecisions('new', deps)).toEqual([item]);
+  await ensureDecisionsProvenanceColumns('new', deps);
+  expect(deps.fetch.mock.calls.filter(([, init]) => init?.method === 'PUT')).toHaveLength(0);
+});
+
+test('部分拡張ヘッダも検証し、ID の余分な空白を捨てる', async () => {
+  const item = decisionToRow(makeDecision()).map((v) => String(v ?? ''));
+  item[11] = ' a  b ';
+  expect((await readAllDecisions('partial', makeDeps([SHEET_HEADERS.Decisions.slice(0, 12), item])))[0]?.seenEvidenceIds).toEqual(['a', 'b']);
+  await expect(readAllDecisions('bad', makeDeps([[...DECISIONS_HEADER, 'wrong']]))).rejects.toThrow('12');
 });
 
 describe('appendDecisionRows', () => {

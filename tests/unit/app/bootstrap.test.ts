@@ -294,9 +294,10 @@ const STUDY_ROW = ['study-1', 'Smith 2020', '', '2026-07-02T00:00:00Z', 'tester@
 
 /** Sheets API を values 応答で偽装した AppDeps（Picker / PDF は使う直前で失敗させる） */
 function createFakeDeps(values: string[][]): { deps: AppDeps; fetchMock: jest.Mock } {
-  const fetchMock = jest.fn(async () => ({
+  const fetchMock = jest.fn(async (input: RequestInfo | URL) => ({
     ok: true,
-    json: async () => ({ values }),
+    json: async () => String(input).includes('values:batchGet') && decodeURIComponent(String(input)).includes('Decisions!1:1')
+      ? { valueRanges: [{ values: [SHEET_HEADERS.Decisions] }] } : { values },
     text: async () => '',
   }));
   const deps: AppDeps = {
@@ -341,7 +342,9 @@ function createTabRoutingDeps(tabValues: Record<string, string[][]>): {
     const url = decodeURIComponent(String(input));
     const method = init?.method ?? 'GET';
     let json: unknown = {};
-    if (method === 'GET' && url.includes('/values/')) {
+    if (method === 'GET' && url.includes('values:batchGet') && url.includes('Decisions!1:1')) {
+      json = { valueRanges: [{ values: [SHEET_HEADERS.Decisions] }] };
+    } else if (method === 'GET' && url.includes('/values/')) {
       const tab = Object.keys(tabValues).find((name) => url.includes(`/values/${name}`));
       json = { values: tab === undefined ? [] : tabValues[tab] };
     }
@@ -3213,6 +3216,8 @@ describe('bootstrapApp: #/verify・#/dashboard', () => {
         json = {
           sheets: ['Meta', ...Object.keys(tabValues)].map((title) => ({ properties: { title } })),
         };
+      } else if (method === 'GET' && url.includes('values:batchGet') && url.includes('Decisions!1:1')) {
+        json = { valueRanges: [{ values: [SHEET_HEADERS.Decisions] }] };
       } else if (method === 'GET' && url.includes('/values/')) {
         const tab = Object.keys(tabValues).find((name) => url.includes(`/values/${name}`));
         json = { values: tab === undefined ? [] : tabValues[tab] };

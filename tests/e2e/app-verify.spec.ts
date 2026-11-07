@@ -402,6 +402,8 @@ async function setupRoutes(
         await route.fulfill({ json: { values: [EVIDENCE_HEADERS, ...options.evidenceRows] } });
       } else if (url.includes('/values/ExtractionRuns')) {
         await route.fulfill({ json: { values: [RUNS_HEADERS, RUN_ROW] } });
+      } else if (url.includes('values:batchGet') && url.includes('Decisions')) {
+        await route.fulfill({ json: { valueRanges: [{ values: [SHEET_HEADERS.Decisions] }] } });
       } else if (url.includes('/values/Decisions')) {
         await route.fulfill({
           json: { values: [DECISIONS_HEADERS, ...(options.decisionsRows ?? [])] },
@@ -2345,6 +2347,8 @@ test('抽出前に #/verify を開くと空状態 → 抽出実行 → #/verify 
         await route.fulfill({ json: { values: [EVIDENCE_HEADERS, ...evidenceRowsAccum] } });
       } else if (url.includes('/values/ExtractionRuns')) {
         await route.fulfill({ json: { values: [RUNS_HEADERS, ...extractionRunsRows] } });
+      } else if (url.includes('values:batchGet') && url.includes('Decisions')) {
+        await route.fulfill({ json: { valueRanges: [{ values: [SHEET_HEADERS.Decisions] }] } });
       } else if (url.includes('/values/Decisions')) {
         await route.fulfill({ json: { values: [DECISIONS_HEADERS] } });
       } else if (url.includes('/values/SchemaFields')) {

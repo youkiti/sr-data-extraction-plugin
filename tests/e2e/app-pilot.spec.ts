@@ -288,7 +288,8 @@ test('実行 → 完了 → 埋め込み検証 UI（ハイライト + 判定 + D
       if (url.includes('Protocol')) {
         await route.fulfill({ json: { values: [PROTOCOL_HEADERS, PROTOCOL_ROW] } });
       } else if (url.includes('Decisions')) {
-        await route.fulfill({ json: { values: [DECISIONS_HEADERS] } });
+        await route.fulfill({ json: url.includes('values:batchGet')
+          ? { valueRanges: [{ values: [SHEET_HEADERS.Decisions] }] } : { values: [DECISIONS_HEADERS] } });
       } else if (url.includes('StudyData')) {
         await route.fulfill({ json: { values: store.studyValues() } });
       } else if (url.includes('ResultsData')) {
@@ -490,7 +491,8 @@ test('履歴からの復元: 過去のパイロット結果を自動読込 → �
     } else if (url.includes('SchemaFields')) {
       await route.fulfill({ json: { values: [SCHEMA_FIELDS_HEADERS, SCHEMA_FIELD_ROW] } });
     } else if (url.includes('Decisions')) {
-      await route.fulfill({ json: { values: [DECISIONS_HEADERS] } });
+      await route.fulfill({ json: url.includes('values:batchGet')
+          ? { valueRanges: [{ values: [SHEET_HEADERS.Decisions] }] } : { values: [DECISIONS_HEADERS] } });
     } else if (url.includes('StudyData')) {
       await route.fulfill({ json: { values: store.studyValues() } });
     } else if (url.includes('ResultsData')) {
@@ -578,7 +580,8 @@ test('S6 埋め込み検証: enum 項目は許容値チップで判定でき、�
     } else if (url.includes('SchemaFields')) {
       await route.fulfill({ json: { values: [SCHEMA_FIELDS_HEADERS, ENUM_FIELD_ROW] } });
     } else if (url.includes('Decisions')) {
-      await route.fulfill({ json: { values: [DECISIONS_HEADERS] } });
+      await route.fulfill({ json: url.includes('values:batchGet')
+          ? { valueRanges: [{ values: [SHEET_HEADERS.Decisions] }] } : { values: [DECISIONS_HEADERS] } });
     } else if (url.includes('StudyData')) {
       await route.fulfill({ json: { values: store.studyValues() } });
     } else if (url.includes('ResultsData')) {
@@ -715,7 +718,9 @@ test('パイロットの検証で判定メモを入力し、Decisions の note �
         },
       });
     } else if (url.includes('Decisions')) {
-      await route.fulfill({ json: { values: [DECISIONS_HEADERS, ...decisionRows] } });
+      await route.fulfill({ json: url.includes('values:batchGet')
+        ? { valueRanges: [{ values: [SHEET_HEADERS.Decisions] }] }
+        : { values: [DECISIONS_HEADERS, ...decisionRows] } });
     } else if (url.includes('StudyData')) {
       await route.fulfill({ json: { values: dataStore.studyValues() } });
     } else if (url.includes('ResultsData')) {

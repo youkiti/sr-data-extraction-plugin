@@ -65,4 +65,7 @@ export interface Evidence {
   quoteSeq: number | null;
   /** 引用の直上にある原文のセクション見出し */
   section: string | null;
+  sourceLogId?: string | null;
+  sourceModel?: string | null;
+  sourcePromptVersion?: number | null;
 }
