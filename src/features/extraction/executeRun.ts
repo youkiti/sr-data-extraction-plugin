@@ -26,6 +26,7 @@ import type {
   ChatResponse,
   LLMProvider,
   LlmFailureKind,
+  SentRequestSettings,
 } from '../../lib/llm/LLMProvider';
 import { generateUuid } from '../../utils/uuid';
 import { anchorQuote } from '../anchoring/anchorQuote';
@@ -90,6 +91,12 @@ export interface RunProgress {
   section: string | null;
   /** 直近のバッチが失敗していればその内訳（S7 の study 単位進捗リストの素材）。成功なら null */
   failure: BatchFailure | null;
+}
+
+/** バッチ呼び出しで取得できた送信設定と成功応答モデル。 */
+interface RunCallRecord {
+  sentSettings: SentRequestSettings | null;
+  responseModel: string | null;
 }
 
 export interface ExecuteRunDeps {
@@ -197,8 +204,10 @@ export interface ExecuteRunResult {
   /** 実測合計（ExtractionRuns.tokens_in/out）。プロバイダが一度も返さなければ null */
   tokensIn: number | null;
   tokensOut: number | null;
-  /** API 応答から取れた実モデル版（ExtractionRuns.model_version）。最初に取れた値を採用 */
+  /** API 応答の実モデル版を出現順に重複なしで連結する。 */
   modelVersion: string | null;
+  temperature: string | null;
+  reasoningEffort: string | null;
 }
 
 /** 実測トークンの合算。値が取れた呼び出しだけ足し込み、一度も取れなければ null のまま */
@@ -206,13 +215,21 @@ function addTokens(total: number | null, value: number | null): number | null {
   return value === null ? total : (total ?? 0) + value;
 }
 
-/** Gemini 応答の modelVersion（実モデル版）。無い・型不正なら null */
-function extractModelVersion(raw: unknown): string | null {
-  if (typeof raw !== 'object' || raw === null) {
-    return null;
-  }
-  const value = (raw as { modelVersion?: unknown }).modelVersion;
-  return typeof value === 'string' ? value : null;
+/** 各試行の既知の設定を出現順に連結する。null は未送信を表す。 */
+function aggregateSettings(
+  records: readonly RunCallRecord[],
+  key: 'temperature' | 'reasoningEffort',
+): string | null {
+  const values = records.flatMap(({ sentSettings }) =>
+    sentSettings === null ? [] : [String(sentSettings[key] ?? 'none')],
+  );
+  return [...new Set(values)].join(',') || null;
+}
+
+/** 成功応答のモデル版を出現順・重複なしで連結する。 */
+function aggregateModels(records: readonly RunCallRecord[]): string | null {
+  const models = records.flatMap(({ responseModel }) => responseModel === null ? [] : [responseModel]);
+  return [...new Set(models)].join(',') || null;
 }
 
 /** partial_failure の detail に載せるプロバイダ応答本文の最大長（UI / Sheets 表示用に責め切り） */
@@ -445,7 +462,7 @@ export async function executeRun(
   const loadedDocuments = new Map<string, Promise<LoadedDocument>>();
   let tokensIn: number | null = null;
   let tokensOut: number | null = null;
-  let modelVersion: string | null = null;
+  const localCallRecords: RunCallRecord[] = [];
   let completedBatches = 0;
 
   /**
@@ -629,7 +646,7 @@ export async function executeRun(
 
   // 1 バッチ（= 1 study）の処理。共有アキュムレータ（evidence / tokens など）を書き込むが、
   // JS は単一スレッドなので各 await 間の同期ブロックは競合しない。加算・push は可換で、
-  // 並行実行でも順不同なだけで結果は同値になる（modelVersion は「最初に取れた値」の非決定はあるが許容）
+  // 並行実行の設定・モデルは、応答が返った順に記録する。
   const processBatch = async (batch: PlannedBatch): Promise<void> => {
     // study の全文書を document_index 順にロードする。ロードできた文書だけを連結対象にし、
     // その順序が document_index（1 始まり）になる。1 件もロードできなければバッチ失敗
@@ -708,6 +725,10 @@ export async function executeRun(
       // failureKind は provider が構造化フィールドから判別できたときだけ持つ
       // （LlmProviderError 以外・不明時は null。BatchFailure のコメント参照）
       const failureKind = err instanceof LlmProviderError ? err.failureKind : null;
+      localCallRecords.push({
+        sentSettings: err instanceof LlmProviderError ? err.sentSettings : null,
+        responseModel: null,
+      });
       if (err instanceof LlmProviderError && err.usage !== null) {
         tokensIn = addTokens(tokensIn, err.usage.tokensIn);
         tokensOut = addTokens(tokensOut, err.usage.tokensOut);
@@ -717,7 +738,10 @@ export async function executeRun(
     }
     tokensIn = addTokens(tokensIn, response.tokensIn);
     tokensOut = addTokens(tokensOut, response.tokensOut);
-    modelVersion ??= extractModelVersion(response.raw);
+    localCallRecords.push({
+      sentSettings: response.sentSettings ?? null,
+      responseModel: response.responseModel ?? null,
+    });
 
     let validated: ValidateAiOutputResult;
     try {
@@ -833,6 +857,8 @@ export async function executeRun(
     evidenceRowCountWarning,
     tokensIn,
     tokensOut,
-    modelVersion,
+    modelVersion: aggregateModels(localCallRecords),
+    temperature: aggregateSettings(localCallRecords, 'temperature'),
+    reasoningEffort: aggregateSettings(localCallRecords, 'reasoningEffort'),
   };
 }

@@ -1,5 +1,6 @@
 // AnthropicProvider（固定認証ヘッダー / system 分離 / 構造化出力方言変換）の単体テスト（issue #127 PR1）
 import { AnthropicProvider, toAnthropicSchema } from '../../../../src/lib/llm/AnthropicProvider';
+import { LlmProviderError } from '../../../../src/lib/llm/LLMProvider';
 import {
   EXTRACT_DATA_RESPONSE_SCHEMA,
   extractDataResponseSchema,
@@ -25,6 +26,33 @@ function errorResponse(status: number, body = 'err', retryAfter: string | null =
 }
 
 describe('AnthropicProvider.chat', () => {
+  test.each([undefined, null, 42, 'claude-version'])('最終本文と応答モデル版を記録する: %j', async (model) => {
+    const fetch = jest.fn().mockResolvedValue(jsonResponse({
+      model, content: [{ type: 'text', text: 'ok' }], stop_reason: 'end_turn',
+    }));
+    const result = await new AnthropicProvider({ apiKey: 'k', model: 'test-model', fetch }).chat([], {
+      temperature: 0.3, maxOutputTokens: 123, responseSchema: { type: 'object' },
+    });
+    const body = JSON.parse(fetch.mock.calls[0]![1].body);
+    expect(body.temperature).toBeUndefined();
+    expect(result.sentSettings).toEqual({
+      temperature: body.temperature ?? null, reasoningEffort: body.output_config?.effort ?? null,
+      maxOutputTokens: body.max_tokens ?? null, structuredOutput: 'output_format', adjustments: [],
+    });
+    expect(result.responseModel).toBe(typeof model === 'string' ? model : null);
+  });
+
+  test('HTTP 失敗にも最終本文の設定を残す', async () => {
+    const fetch = jest.fn().mockResolvedValue(errorResponse(500));
+    const error = await new AnthropicProvider({ apiKey: 'k', model: 'test-model', fetch }).chat([]).catch((err: unknown) => err);
+    const body = JSON.parse(fetch.mock.calls[0]![1].body);
+    expect(error).toBeInstanceOf(LlmProviderError);
+    expect((error as LlmProviderError).sentSettings).toEqual({
+      temperature: null, reasoningEffort: body.output_config?.effort ?? null,
+      maxOutputTokens: body.max_tokens, structuredOutput: 'none', adjustments: [],
+    });
+  });
+
   test('user メッセージを messages に渡し、テキストを返す（固定ヘッダー4種・max_tokens既定・effort既定）', async () => {
     const fetch = jest.fn().mockResolvedValue(
       jsonResponse({
@@ -36,7 +64,7 @@ describe('AnthropicProvider.chat', () => {
     const provider = new AnthropicProvider({ apiKey: 'sk-ant-xxx', model: 'claude-opus-5', fetch });
     const result = await provider.chat([{ role: 'user', content: 'hi' }]);
     // usage が返っているので cachedTokensIn は 0（= 計測できてヒット 0 件）。null は usage ごと無い場合
-    expect(result).toEqual({ text: 'Hello!', tokensIn: 10, tokensOut: 20, cachedTokensIn: 0, raw: expect.any(Object) });
+    expect(result).toEqual({ text: 'Hello!', tokensIn: 10, tokensOut: 20, cachedTokensIn: 0, raw: expect.any(Object), responseModel: null, sentSettings: expect.any(Object) });
     expect(provider.providerId).toBe('anthropic');
     expect(provider.model).toBe('claude-opus-5');
     expect(provider.supportsImageInput).toBe(true);

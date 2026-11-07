@@ -19,6 +19,30 @@ export type LlmPurpose =
   | 'ask_paper'
   | 'other';
 
+/** 実際に送った要求本文の構造化出力方式。 */
+export type StructuredOutputMethod =
+  | 'none'
+  | 'json_mime'
+  | 'response_schema'
+  | 'output_format'
+  | 'json_schema_strict'
+  | 'json_schema'
+  | 'json_object';
+
+/** 最終送信本文の生成設定。未送信の値は null。 */
+export interface SentRequestSettings {
+  /** 送信した温度。 */
+  temperature: number | null;
+  /** 送信した推論の強さ。 */
+  reasoningEffort: string | null;
+  /** 送信した最大出力トークン数。 */
+  maxOutputTokens: number | null;
+  /** 送信した構造化出力方式。 */
+  structuredOutput: StructuredOutputMethod;
+  /** 同じ呼び出し内の再送で変更した設定。発生順。 */
+  adjustments: string[];
+}
+
 export interface LlmApiLogEntry {
   logId: string;
   timestamp: string;
@@ -54,6 +78,10 @@ export interface LlmApiLogEntry {
    * null = 個別の報告なし（Gemini 以外、または usageMetadata なし）。
    */
   thoughtsTokensOut: number | null;
+  /** 応答モデル版。欠落した旧行は不明。 */
+  responseModel?: string | null;
+  /** 最終送信設定。旧行・要求前の失敗・警告専用行は不明。 */
+  sentSettings?: SentRequestSettings | null;
 }
 
 /**

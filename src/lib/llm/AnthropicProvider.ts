@@ -21,6 +21,7 @@ import {
   type LLMProvider,
   type LlmUsage,
   type ReasoningEffort,
+  type SentRequestSettings,
 } from './LLMProvider';
 import { parseRetryAfterMs } from './retry';
 
@@ -158,6 +159,7 @@ interface AnthropicStopDetails {
 }
 
 interface AnthropicResponse {
+  model?: unknown;
   content?: AnthropicContentBlock[];
   stop_reason?: string;
   stop_details?: AnthropicStopDetails | null;
@@ -217,6 +219,8 @@ export class AnthropicProvider implements LLMProvider {
   }
 
   async chat(messages: readonly ChatMessage[], options: ChatOptions = {}): Promise<ChatResponse> {
+    const body = this.buildRequestBody(messages, options);
+    const sentSettings = readSentSettings(body);
     const fetchFn = this.fetchImpl ?? globalThis.fetch;
     const res = await fetchFn(ENDPOINT, {
       method: 'POST',
@@ -226,7 +230,7 @@ export class AnthropicProvider implements LLMProvider {
         'content-type': 'application/json',
         [BROWSER_ACCESS_HEADER]: 'true',
       },
-      body: JSON.stringify(this.buildRequestBody(messages, options)),
+      body: JSON.stringify(body),
     });
     if (!res.ok) {
       const text = await res.text().catch(() => '');
@@ -241,9 +245,11 @@ export class AnthropicProvider implements LLMProvider {
         // 429 はサーバ提示の retry-after を retryAfterMs 経路へ渡す（failureKind は null のまま）
         res.status === 529,
         null,
+        null,
+        sentSettings,
       );
     }
-    return this.parseSuccessResponse(res);
+    return this.parseSuccessResponse(res, sentSettings);
   }
 
   /**
@@ -253,7 +259,10 @@ export class AnthropicProvider implements LLMProvider {
    * 安全分類器による拒否は HTTP 200 + `content` 配列が空で返ることがあるため、
    * `content[0]` を無条件に読まず、`stop_reason === 'refusal'` を先に判定してから本文を読む
    */
-  private async parseSuccessResponse(res: Response): Promise<ChatResponse> {
+  private async parseSuccessResponse(
+    res: Response,
+    sentSettings: SentRequestSettings,
+  ): Promise<ChatResponse> {
     const bodyText = await res.text();
     let json: AnthropicResponse;
     try {
@@ -267,6 +276,8 @@ export class AnthropicProvider implements LLMProvider {
         null,
         true,
         'malformed',
+        null,
+        sentSettings,
       );
     }
     const usage = this.parseUsage(json);
@@ -285,6 +296,7 @@ export class AnthropicProvider implements LLMProvider {
         false,
         'content_filter',
         usage,
+        sentSettings,
       );
     }
     if (stopReason === 'max_tokens') {
@@ -297,6 +309,7 @@ export class AnthropicProvider implements LLMProvider {
         false,
         'output_limit',
         usage,
+        sentSettings,
       );
     }
     const text = extractText(json);
@@ -310,6 +323,7 @@ export class AnthropicProvider implements LLMProvider {
         false,
         null,
         usage,
+        sentSettings,
       );
     }
     return {
@@ -318,6 +332,8 @@ export class AnthropicProvider implements LLMProvider {
       tokensOut: usage.tokensOut,
       cachedTokensIn: usage.cachedTokensIn,
       raw: json,
+      sentSettings,
+      responseModel: typeof json.model === 'string' ? json.model : null,
     };
   }
 
@@ -507,4 +523,16 @@ function convertTypeArraySchema(
     branches.push({ type: 'null' });
   }
   return { anyOf: branches };
+}
+
+/** 最終送信本文から生成設定を読み取る。 */
+function readSentSettings(body: Record<string, unknown>): SentRequestSettings {
+  const config = body['output_config'] as Record<string, unknown> | undefined;
+  return {
+    temperature: (body['temperature'] as number | undefined) ?? null,
+    reasoningEffort: (config?.['effort'] as string | undefined) ?? null,
+    maxOutputTokens: body['max_tokens'] as number,
+    structuredOutput: config?.['format'] ? 'output_format' : 'none',
+    adjustments: [],
+  };
 }

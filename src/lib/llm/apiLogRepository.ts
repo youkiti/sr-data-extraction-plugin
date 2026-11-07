@@ -1,7 +1,7 @@
 // LLMApiLog タブへの追記（requirements.md §3.2）。
 // apiLogger（withLogging）の appendLogEntry 依存として注入する。
 // フル payload は Drive（logs/llm/）側で、シートにはメタ情報 + 参照 URL のみを残す
-import type { LlmApiLogEntry } from '../../domain/llmApiLog';
+import type { LlmApiLogEntry, SentRequestSettings } from '../../domain/llmApiLog';
 import { SHEET_HEADERS } from '../../domain/sheetsSchema';
 import { appendRow, getBatchValues, getSheetValues, updateRow } from '../google/sheets';
 import type { GoogleApiDeps } from '../google/types';
@@ -30,6 +30,8 @@ export function logEntryToRow(entry: LlmApiLogEntry): (string | number | null)[]
     entry.section,
     entry.promptVersion,
     entry.thoughtsTokensOut,
+    entry.responseModel ?? null,
+    entry.sentSettings == null ? null : JSON.stringify(entry.sentSettings),
   ];
 }
 
@@ -79,6 +81,33 @@ function numericCell(cell: string | null | undefined): number | null {
   return Number.isFinite(number) ? number : null;
 }
 
+/** 旧行や壊れた JSON は不明として扱い、他のログ行の読み出しを続ける。 */
+function parseSentSettings(cell: string | null | undefined): SentRequestSettings | null {
+  if (!cell) {
+    return null;
+  }
+  try {
+    const value: unknown = JSON.parse(cell);
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+      return null;
+    }
+    const settings = value as Record<string, unknown>;
+    if (
+      !(settings['temperature'] === null || typeof settings['temperature'] === 'number') ||
+      !(settings['reasoningEffort'] === null || typeof settings['reasoningEffort'] === 'string') ||
+      !(settings['maxOutputTokens'] === null || typeof settings['maxOutputTokens'] === 'number') ||
+      typeof settings['structuredOutput'] !== 'string' ||
+      !Array.isArray(settings['adjustments']) ||
+      !settings['adjustments'].every((item: unknown) => typeof item === 'string')
+    ) {
+      return null;
+    }
+    return settings as unknown as SentRequestSettings;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * 行は logEntryToRow と同じ列位置で読む（旧ヘッダが 13 / 14 列でも追記行は広がり得る）。
  * provider / purpose の未知の値もそのまま保持する。union へのキャストは検証ではない。
@@ -111,5 +140,7 @@ export async function readLlmApiLogEntries(
       section: nullableCell(row[16]),
       promptVersion: numericCell(row[17]),
       thoughtsTokensOut: numericCell(row[18]),
+      responseModel: nullableCell(row[19]),
+      sentSettings: parseSentSettings(row[20]),
     }));
 }

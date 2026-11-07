@@ -74,6 +74,21 @@ function makeRun(overrides: Partial<ExtractionRun> = {}): ExtractionRun {
 }
 
 describe('extractionRunToRow', () => {
+  test('実行者・送信設定・版を追加 5 列に書き、完了行から読み戻す', async () => {
+    const run = makeRun({ runType: 'pilot', executedBy: 'user@example.test', temperature: '0,none',
+      reasoningEffort: 'low,none', promptVersion: 13, extensionVersion: '1.2.3' });
+    const row = extractionRunToRow(run);
+    expect(row.slice(16)).toEqual(['user@example.test', '0,none', 'low,none', 13, '1.2.3']);
+    const values = [[...SHEET_HEADERS.ExtractionRuns], row.map((cell) => cell === null ? '' : String(cell))];
+    const deps = { getAccessToken: async () => 'token', fetch: jest.fn().mockResolvedValue({
+      ok: true, json: async () => ({ values }),
+    }) };
+    expect(await readPilotRuns('sid', deps)).toEqual([run]);
+    expect((await readMethodsRunFacts('sid', deps))[0]).toMatchObject({
+      temperature: '0,none', reasoningEffort: 'low,none',
+    });
+  });
+
   test('SHEET_HEADERS.ExtractionRuns の列順に対応し、study_ids はカンマ区切り。fieldIds=null は空文字（全項目。issue #80）', () => {
     expect(extractionRunToRow(makeRun())).toEqual([
       'run-1',
@@ -92,6 +107,7 @@ describe('extractionRunToRow', () => {
       0.01,
       '', // fieldIds: null → 全項目 = 空文字
       '', // warnings: null → 警告なし = 空文字（issue #106）
+      null, null, null, null, null,
     ]);
   });
 
@@ -196,7 +212,7 @@ describe('extractionRunToRow', () => {
         costEstimate: null,
       }),
     );
-    expect(row.slice(6)).toEqual([null, 'text_only', 'done', null, null, null, null, null, '', '']);
+    expect(row.slice(6)).toEqual([null, 'text_only', 'done', null, null, null, null, null, '', '', null, null, null, null, null]);
   });
 });
 
@@ -636,6 +652,11 @@ describe('readPilotRuns', () => {
     ];
     const runs = await readPilotRuns('sheet-1', readDeps(values));
     expect(runs[0]).toEqual({
+      temperature: null,
+      reasoningEffort: null,
+      executedBy: null,
+      promptVersion: null,
+      extensionVersion: null,
       runId: 'run-1',
       runType: 'pilot',
       schemaVersion: 3,
@@ -748,6 +769,11 @@ describe('readPilotRuns', () => {
     ];
     const runs = await readPilotRuns('sheet-1', readDeps([[...SHEET_HEADERS.ExtractionRuns], nullRow]));
     expect(runs[0]).toEqual({
+      temperature: null,
+      reasoningEffort: null,
+      executedBy: null,
+      promptVersion: null,
+      extensionVersion: null,
       runId: '',
       runType: 'pilot',
       schemaVersion: 1,
@@ -852,6 +878,8 @@ describe('readMethodsRunFacts', () => {
     ];
     const facts = await readMethodsRunFacts('sheet-1', readDeps(values));
     expect(facts[0]).toEqual({
+      temperature: null,
+      reasoningEffort: null,
       runId: 'run-1',
       runType: 'pilot',
       status: 'done',

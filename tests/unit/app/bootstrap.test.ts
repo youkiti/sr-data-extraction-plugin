@@ -4051,6 +4051,8 @@ describe('bootstrapApp: #/export', () => {
           draftModelIds: [],
           draftProviders: [],
           modelIds: ['gemini-3.5-flash-001'],
+          temperatures: [],
+          reasoningEfforts: [],
           modelIdsIncludeRequested: false,
           providers: ['Gemini'],
           includedStudyCount: 3,

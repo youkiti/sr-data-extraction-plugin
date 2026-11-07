@@ -167,6 +167,11 @@ export const SHEET_HEADERS: Record<SheetTabName, readonly string[]> = {
     // run 単位の警告（issue #106: arm completeness チェック）。RunWarning[] の JSON、
     // 空 = 警告なし。field_ids と同じ後方互換方式（末尾追加・読み書き側で許容）
     'warnings',
+    'executed_by',
+    'temperature',
+    'reasoning_effort',
+    'prompt_version',
+    'extension_version',
   ],
   StudyData: STUDY_DATA_FIXED_HEADERS,
   ResultsData: [
@@ -255,6 +260,8 @@ export const SHEET_HEADERS: Record<SheetTabName, readonly string[]> = {
     'section',
     'prompt_version',
     'thoughts_tokens_out',
+    'response_model',
+    'sent_settings',
   ],
   ExportLog: [
     'export_id',

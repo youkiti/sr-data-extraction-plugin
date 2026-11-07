@@ -5,7 +5,8 @@
 // マルチモーダル対応（handoff-scanned-pdf-native-highlight.md §7.4 PR1）: `content` は
 // 文字列（従来どおり）に加えて「テキスト + 画像パート」の配列も受け付ける。この PR は
 // 型の土台と各プロバイダの写像だけを整備し、UI からはまだ画像パートを送らない。
-import type { LlmProviderId } from '../../domain/llmApiLog';
+import type { LlmProviderId, SentRequestSettings } from '../../domain/llmApiLog';
+export type { SentRequestSettings, StructuredOutputMethod } from '../../domain/llmApiLog';
 
 /** テキスト + 画像を混在させられる `ChatMessage.content` の 1 パート */
 export type ChatContentPart =
@@ -103,6 +104,10 @@ export interface ChatOptions {
 }
 
 export interface ChatResponse {
+  /** 最終送信本文の生成設定。取得不能なら欠落。 */
+  sentSettings?: SentRequestSettings;
+  /** API が返したモデル版。文字列でなければ null。 */
+  responseModel?: string | null;
   /** モデル出力テキスト（responseFormat=json でも文字列のまま） */
   text: string;
   /**
@@ -222,6 +227,8 @@ export class LlmProviderError extends Error {
     retryable = false,
     failureKind: LlmFailureKind | null = null,
     usage: LlmUsage | null = null,
+    /** 失敗した最終送信本文の生成設定。要求前の失敗は null。 */
+    readonly sentSettings: SentRequestSettings | null = null,
   ) {
     super(message);
     this.name = 'LlmProviderError';

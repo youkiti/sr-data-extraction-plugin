@@ -11,6 +11,24 @@ S10（`#/export`）に表示する「論文の Methods セクションにこう�
 
 文案は 1 段落目（ツール・フォーム）+ 2 段落目（事前抽出・検証）+ オプション文（末尾）の順に、下の文を条件に合うものだけつなげて組み立てる。英語・日本語とも同じ条件で出し分ける。
 
+事前抽出の文の直後に、使った完了 run で送信が記録された生成設定の文を追加する。
+`model_version` はカンマ分割してモデルを列挙し、版がない run だけ `requested_model` で代用する。
+温度・推論の強さはカンマ分割し、空と `none` を除き、重複なしで「, 」区切りにする。
+抽出した run がない場合、または両設定が不明・未送信の場合は設定文を出さない。
+
+- 両方がある:
+  > The LLM was called with a temperature of {{temperature}} and a reasoning effort setting of {{reasoning_effort}}.
+
+  > LLM の呼び出しでは temperature を {{temperature}}、推論の強さ（reasoning effort）を {{reasoning_effort}} に設定した。
+- 温度だけ:
+  > The LLM was called with a temperature of {{temperature}}.
+
+  > LLM の呼び出しでは temperature を {{temperature}} に設定した。
+- 推論の強さだけ:
+  > The LLM was called with a reasoning effort setting of {{reasoning_effort}}.
+
+  > LLM の呼び出しでは推論の強さ（reasoning effort）を {{reasoning_effort}} に設定した。
+
 ## 1. 1 段落目（ツールとフォーム。単一・二重で共通）
 
 ### 1.1 ツール（常に出す）

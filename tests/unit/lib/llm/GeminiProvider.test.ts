@@ -24,6 +24,39 @@ function errorResponse(status: number, body = 'err', retryAfter: string | null =
 }
 
 describe('GeminiProvider.chat', () => {
+  test.each([undefined, null, 42, 'gemini-version'])('送信本文とモデル版を記録する: %j', async (modelVersion) => {
+    const fetch = jest.fn().mockResolvedValue(jsonResponse({
+      modelVersion, candidates: [{ content: { parts: [{ text: 'ok' }] } }],
+    }));
+    const result = await new GeminiProvider({ apiKey: 'k', fetch }).chat([], {
+      temperature: 0.2, maxOutputTokens: 123, responseSchema: { type: 'object' },
+    });
+    const config = JSON.parse(fetch.mock.calls[0]![1].body).generationConfig;
+    expect(result.sentSettings).toEqual({
+      temperature: config.temperature ?? null,
+      reasoningEffort: config.thinkingConfig?.thinkingLevel ?? null,
+      maxOutputTokens: config.maxOutputTokens ?? null,
+      structuredOutput: 'response_schema', adjustments: [],
+    });
+    expect(result.responseModel).toBe(typeof modelVersion === 'string' ? modelVersion : null);
+  });
+
+  test('再送後の本文を記録し、失敗にも設定を残す', async () => {
+    const fetch = jest.fn()
+      .mockResolvedValueOnce(errorResponse(400, 'thinking level unsupported'))
+      .mockResolvedValueOnce(errorResponse(500));
+    const error = await new GeminiProvider({ apiKey: 'k', fetch }).chat([], {
+      temperature: 0.3, maxOutputTokens: 50, responseFormat: 'json',
+    }).catch((err: unknown) => err);
+    expect(error).toBeInstanceOf(LlmProviderError);
+    const config = JSON.parse(fetch.mock.calls[1]![1].body).generationConfig;
+    expect((error as LlmProviderError).sentSettings).toEqual({
+      temperature: config.temperature, reasoningEffort: config.thinkingConfig?.thinkingLevel ?? null,
+      maxOutputTokens: config.maxOutputTokens, structuredOutput: 'json_mime',
+      adjustments: ['thinking_config_dropped'],
+    });
+  });
+
   test.each([
     [undefined, undefined, 'low'],
     [null, undefined, 'low'],
@@ -53,13 +86,20 @@ describe('GeminiProvider.chat', () => {
       .mockResolvedValueOnce(errorResponse(400, 'THINKING LEVEL is not supported'))
       .mockResolvedValueOnce(jsonResponse({ candidates: [{ content: { parts: [{ text: 'ok' }] } }] }));
     const provider = new GeminiProvider({ apiKey: 'k', fetch });
-    await expect(provider.chat([], { temperature: 0.3, responseFormat: 'json' }))
-      .resolves.toMatchObject({ text: 'ok' });
+    const result = await provider.chat([], { temperature: 0.3, responseFormat: 'json' });
+    expect(result.text).toBe('ok');
     const first = JSON.parse(fetch.mock.calls[0]![1].body);
     const second = JSON.parse(fetch.mock.calls[1]![1].body);
     expect(first.generationConfig.thinkingConfig).toEqual({ thinkingLevel: 'low' });
     delete first.generationConfig.thinkingConfig;
     expect(second).toEqual(first);
+    expect(result.sentSettings).toEqual({
+      temperature: second.generationConfig.temperature,
+      reasoningEffort: second.generationConfig.thinkingConfig?.thinkingLevel ?? null,
+      maxOutputTokens: second.generationConfig.maxOutputTokens ?? null,
+      structuredOutput: 'json_mime',
+      adjustments: ['thinking_config_dropped'],
+    });
     expect(fetch).toHaveBeenCalledTimes(2);
   });
 
@@ -152,7 +192,7 @@ describe('GeminiProvider.chat', () => {
       // usage が返っているので 0（計測できてヒット 0 件）。null は usage ごと無い場合
       cachedTokensIn: 0,
       thoughtsTokensOut: 0,
-      raw: expect.any(Object),
+      raw: expect.any(Object), responseModel: null, sentSettings: expect.any(Object),
     });
     expect(provider.providerId).toBe('gemini');
     expect(provider.model).toBe('gemini-3.5-flash');

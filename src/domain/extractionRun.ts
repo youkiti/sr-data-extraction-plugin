@@ -87,4 +87,14 @@ export interface ExtractionRun {
    * 空セル・列自体が無い旧プロジェクトの行を読むと null になる）
    */
   warnings: RunWarning[] | null;
+  /** 実行時の Google アカウントのメール。取得不能・旧行は null。 */
+  executedBy?: string | null;
+  /** 送信温度を出現順・重複なしで連結。未送信は none、不明・実行中は null。 */
+  temperature?: string | null;
+  /** 送信した推論の強さを出現順・重複なしで連結。未送信は none、不明・実行中は null。 */
+  reasoningEffort?: string | null;
+  /** 抽出プロンプトの版。旧行は null。 */
+  promptVersion?: number | null;
+  /** 実行時の拡張の版。取得不能・旧行は null。 */
+  extensionVersion?: string | null;
 }

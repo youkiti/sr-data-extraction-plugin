@@ -4,6 +4,7 @@
 // 生成（未検証セル警告 → Drive `exports/` へ保存 → ExportLog 追記）を担う。
 // あわせて論文 Methods 記載例カード（docs/methods-boilerplate.md, issue #67）の実績値組み立てと
 // クリップボードコピーも担う
+import { getToolVersion as defaultGetToolVersion } from '../../utils/toolVersion';
 import { isConsultAction } from '../../domain/decision';
 import { readQuoteSetRows } from '../../features/verification/quoteSetRepository';
 import { readCompletedRunMetas } from '../../features/extraction/runRepository';
@@ -72,21 +73,6 @@ export interface ExportServiceDeps {
 
 function toMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
-}
-
-/**
- * 既定の tool_version 取得実装。chrome 拡張ランタイム上でのみ値を返し、
- * それ以外（jest / 一部 E2E 環境）では null（{{tool_version}} は未反映のまま残る）
- */
-function defaultGetToolVersion(): string | null {
-  if (
-    typeof chrome !== 'undefined' &&
-    chrome.runtime &&
-    typeof chrome.runtime.getManifest === 'function'
-  ) {
-    return chrome.runtime.getManifest().version;
-  }
-  return null;
 }
 
 /** export スライスだけを差し替える setState ヘルパ（他スライスは維持） */

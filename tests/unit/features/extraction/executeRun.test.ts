@@ -492,7 +492,7 @@ describe('executeRun の正常系', () => {
         tokensIn: 100,
         tokensOut: 50,
         cachedTokensIn: null,
-        raw: { modelVersion: 'gemini-2.5-pro-001' },
+        responseModel: 'gemini-2.5-pro-001',
       }),
     ]);
     const { deps, saved, progress } = makeDeps(provider);
@@ -691,6 +691,8 @@ describe('executeRun の正常系', () => {
       tokensIn: null,
       tokensOut: null,
       modelVersion: null,
+      temperature: null,
+      reasoningEffort: null,
     });
     expect(calls).toHaveLength(0);
     expect(progress).toHaveLength(0);
@@ -1870,12 +1872,35 @@ describe('executeRun の実測集計', () => {
     expect(loadPages).toHaveBeenCalledTimes(3);
   });
 
-  test('modelVersion は最初に取れた文字列を採用し、型不正・欠落は無視する', async () => {
+  test('設定は失敗した最終呼び出しと未送信も含めて出現順に集計する', async () => {
+    const sentSettings = { temperature: 0, reasoningEffort: 'low', maxOutputTokens: null,
+      structuredOutput: 'none' as const, adjustments: [] };
     const { provider } = providerOf([
-      chatResponse([DESIGN_ITEM], { raw: 'not-an-object' }),
-      chatResponse([ARM_ITEM], { raw: { modelVersion: 42 } }),
-      chatResponse([ARM_ITEM], { raw: { modelVersion: 'gemini-2.5-pro-002' } }),
-      chatResponse([ARM_ITEM], { raw: { modelVersion: 'gemini-2.5-pro-999' } }),
+      chatResponse([DESIGN_ITEM], { sentSettings, responseModel: 'actual-model' }),
+      new LlmProviderError('failed', 'gemini', 500, '', null, false, null, null,
+        { ...sentSettings, temperature: null, reasoningEffort: null }),
+      chatResponse([ARM_ITEM], { sentSettings: { ...sentSettings, temperature: 0.3 }, responseModel: 'actual-model' }),
+      chatResponse([ARM_ITEM], { sentSettings }),
+    ]);
+    const { deps } = makeDeps(provider);
+    const result = await execute({ runId: 'r1', fields: FIELDS, plan: makePlan([
+      makeBatch({ studyId: 'd1', fieldIds: ['f_design'] }),
+      makeBatch({ studyId: 'd2', fieldIds: ['f_n'] }),
+      makeBatch({ studyId: 'd3', fieldIds: ['f_n'] }),
+      makeBatch({ studyId: 'd4', fieldIds: ['f_n'] }),
+    ]) }, deps);
+    expect(result.temperature).toBe('0,none,0.3');
+    expect(result.reasoningEffort).toBe('low,none');
+    expect(result.modelVersion).toBe('actual-model');
+  });
+
+  test('modelVersion は成功応答の版を出現順・重複なしで連結し、欠落は無視する', async () => {
+    const { provider } = providerOf([
+      chatResponse([DESIGN_ITEM], { responseModel: undefined }),
+      chatResponse([ARM_ITEM], { responseModel: null }),
+      chatResponse([ARM_ITEM], { responseModel: 'gemini-2.5-pro-002' }),
+      chatResponse([ARM_ITEM], { responseModel: 'gemini-2.5-pro-999' }),
+      chatResponse([ARM_ITEM], { responseModel: 'gemini-2.5-pro-002' }),
     ]);
     const { deps } = makeDeps(provider);
     const result = await execute(
@@ -1886,12 +1911,13 @@ describe('executeRun の実測集計', () => {
           makeBatch({ studyId: 'd2', fieldIds: ['f_n'] }),
           makeBatch({ studyId: 'd3', fieldIds: ['f_n'] }),
           makeBatch({ studyId: 'd4', fieldIds: ['f_n'] }),
+          makeBatch({ studyId: 'd5', fieldIds: ['f_n'] }),
         ]),
         fields: FIELDS,
       },
       deps,
     );
-    expect(result.modelVersion).toBe('gemini-2.5-pro-002');
+    expect(result.modelVersion).toBe('gemini-2.5-pro-002,gemini-2.5-pro-999');
   });
 
   test('raw が null の応答でも落ちない', async () => {
