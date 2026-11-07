@@ -225,7 +225,7 @@ export const jaPages = {
   'aiConsent.itemHelpConsult': 'ヘルプへの相談の文と、選ばれた公開ヘルプの本文',
   'aiConsent.providerTerms': '送った内容の扱いは、その API 提供者の規約に従います。',
   'aiConsent.geminiFree':
-    'Gemini API の無料枠では、送った内容が Google の製品改善に使われ、人が読むことがあります。未公開のデータや機密の資料は、有料枠で使ってください。',
+    'Gemini API の無料枠では、送った内容と応答が、Google の製品・サービスと機械学習技術の提供・改善・開発に使われ、人が読むことがあります。未公開のデータや機密の資料は、有料枠で使ってください。',
   'aiConsent.noDeveloperServer': '送ったプロンプトと応答は、監査の記録として利用者自身の Google Drive（プロジェクトの logs/llm）にも保存されます（画像データは除きます）。論文への質問は本文・質問・回答を保存せず、利用量などのメタデータだけを記録します。開発者のサーバーには何も送りません。',
   'aiConsent.checkTerms': '使う前に、論文の出版社の利用条件と、送り先の規約を確かめてください。',
   'aiConsent.privacyLink': 'プライバシーポリシー',

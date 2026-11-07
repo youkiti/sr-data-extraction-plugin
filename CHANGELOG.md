@@ -14,6 +14,8 @@ This is the public changelog of this extension. Any change that can alter AI out
 ## 未リリース / Unreleased
 
 ### その他の変更 / Other changes
+- 同意画面の Gemini の無料枠の説明を Gemini API 追加利用規約の原文の範囲にそろえました。同意済みの方にも、次の AI 機能の実行前に 1 回だけ確認を出し直します（2026-11-07、#381）。  
+  Aligned the Gemini free tier explanation in the consent notice with the scope of the Gemini API Additional Terms of Service. Users who already agreed will see the notice once again before their next AI feature (2026-11-07, #381).
 - 公開の変更履歴（このファイル）を作り、利用規約とヘルプから変更の告知先として案内するようにしました。リリースの手順で、既定モデル・プロンプトの版数・推論の強さの既定が前回のリリースから変わったのにこのファイルが更新されていなければ止まるようにしました。  
   Added this public changelog and named it in the terms of service and the help page as the place where changes are announced. The release procedure now stops when the default model, a prompt version or the default reasoning effort has changed since the previous release and this file has not been updated.
 

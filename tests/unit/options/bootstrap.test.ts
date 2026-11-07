@@ -6,6 +6,7 @@ import { buildSettingsSections } from '../../../src/options/settingsSections';
 import { LlmProviderError } from '../../../src/lib/llm/LLMProvider';
 import * as factory from '../../../src/lib/llm/providerFactory';
 import * as modelList from '../../../src/lib/llm/modelListFetcher';
+import { AI_DATA_CONSENT_VERSION } from '../../../src/lib/storage/aiDataConsentStore';
 
 const OPTIONS_TEMPLATE = '<main></main>';
 const OPTIONS_TEMPLATE_WITH_RATE_LIMIT = buildSettingsSections().outerHTML;
@@ -778,13 +779,13 @@ describe('bootstrapOptions（AI へ送る内容。docs/ui-states.md §2「AI へ
   });
 
   test('同意済みは日時を表示し、壊れた日時はそのまま出す', async () => {
-    chromeMock.storage.local.data.aiDataConsent = { version: 1, acceptedAt: '2026-10-20T03:04:00.000Z' };
+    chromeMock.storage.local.data.aiDataConsent = { version: AI_DATA_CONSENT_VERSION, acceptedAt: '2026-10-20T03:04:00.000Z' };
     await bootstrapOptions(document);
     expect(statusEl().textContent).toMatch(/^同意済み（.*2026.*）$/);
     expect(revokeButton().disabled).toBe(false);
 
     document.body.replaceChildren(buildSettingsSections());
-    chromeMock.storage.local.data.aiDataConsent = { version: 1, acceptedAt: 'broken' };
+    chromeMock.storage.local.data.aiDataConsent = { version: AI_DATA_CONSENT_VERSION, acceptedAt: 'broken' };
     await bootstrapOptions(document);
     expect(statusEl().textContent).toBe('同意済み（broken）');
   });
@@ -805,7 +806,7 @@ describe('bootstrapOptions（AI へ送る内容。docs/ui-states.md §2「AI へ
     await flush();
     document.getElementById('ai-data-consent-accept')!.click();
     await flush();
-    expect(chromeMock.storage.local.data.aiDataConsent).toMatchObject({ version: 1 });
+    expect(chromeMock.storage.local.data.aiDataConsent).toMatchObject({ version: AI_DATA_CONSENT_VERSION });
     expect(statusEl().textContent).toMatch(/^同意済み/);
     expect(revokeButton().disabled).toBe(false);
   });
@@ -827,7 +828,7 @@ describe('bootstrapOptions（AI へ送る内容。docs/ui-states.md §2「AI へ
   });
 
   test('取り消しで記録を消し、失敗時は赤系メッセージを出す', async () => {
-    chromeMock.storage.local.data.aiDataConsent = { version: 1, acceptedAt: '2026-10-20T03:04:00.000Z' };
+    chromeMock.storage.local.data.aiDataConsent = { version: AI_DATA_CONSENT_VERSION, acceptedAt: '2026-10-20T03:04:00.000Z' };
     await bootstrapOptions(document);
     revokeButton().click();
     await flush();
