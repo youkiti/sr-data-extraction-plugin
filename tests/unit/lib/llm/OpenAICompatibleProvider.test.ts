@@ -11,6 +11,58 @@ function response(body: unknown, ok = true, status = 200): Response {
 }
 
 describe('OpenAICompatibleProvider', () => {
+  test.each([undefined, null, 42, 'model-version'])('本文と応答モデルを記録する: %j', async (model) => {
+    const fetch = jest.fn().mockResolvedValue(response({ model, choices: [{ message: { content: 'ok' } }] }));
+    const result = await new OpenAICompatibleProvider({
+      apiKey: 'k', model: 'm', endpoint: 'https://llm.example/v1', fetch,
+    }).chat([], { temperature: 0.2, maxOutputTokens: 123, reasoningEffort: 'high' });
+    const body = JSON.parse(fetch.mock.calls[0]![1].body);
+    expect(result.sentSettings).toEqual({
+      temperature: body.temperature ?? null, reasoningEffort: body.reasoning_effort ?? null,
+      maxOutputTokens: body.max_tokens ?? null, structuredOutput: 'none', adjustments: [],
+    });
+    expect(result.responseModel).toBe(typeof model === 'string' ? model : null);
+  });
+
+  test('推論指定の削除と構造化出力の降格を最終本文に合わせて記録する', async () => {
+    const ok = response({ choices: [{ message: { content: 'ok' } }] });
+    const fetch = jest.fn()
+      .mockResolvedValueOnce(response({ error: 'reasoning_effort unsupported' }, false, 400))
+      .mockResolvedValueOnce(response({ error: 'response_format unsupported' }, false, 400))
+      .mockResolvedValueOnce(response({ error: 'response_format unsupported' }, false, 400))
+      .mockResolvedValue(ok);
+    const provider = new OpenAICompatibleProvider({
+      apiKey: 'k', model: 'm', endpoint: 'https://llm.example/v1', fetch,
+    });
+    const options = { temperature: 0.3, reasoningEffort: 'high' as const,
+      maxOutputTokens: 123, responseSchema: { type: 'object' } };
+    const result = await provider.chat([], options);
+    const body = JSON.parse(fetch.mock.calls[3]![1].body);
+    expect(result.sentSettings).toEqual({
+      temperature: body.temperature, reasoningEffort: body.reasoning_effort ?? null,
+      maxOutputTokens: body.max_tokens, structuredOutput: body.response_format.type,
+      adjustments: ['reasoning_effort_dropped',
+        'structured_output:json_schema_strict->json_schema', 'structured_output:json_schema->json_object'],
+    });
+    const second = await provider.chat([], options);
+    expect(second.sentSettings?.adjustments).toEqual([]);
+    expect(second.sentSettings?.structuredOutput).toBe('json_object');
+    expect(JSON.parse(fetch.mock.calls[4]![1].body).response_format.type).toBe('json_object');
+  });
+
+  test('HTTP 失敗にも最終本文の設定を残す', async () => {
+    const fetch = jest.fn().mockResolvedValue(response({}, false, 500));
+    const error = await new OpenAICompatibleProvider({
+      apiKey: 'k', model: 'm', endpoint: 'https://llm.example/v1', fetch,
+    }).chat([]).catch((err: unknown) => err);
+    const body = JSON.parse(fetch.mock.calls[0]![1].body);
+    expect(error).toBeInstanceOf(LlmProviderError);
+    expect((error as LlmProviderError).sentSettings).toEqual({
+      temperature: body.temperature ?? null, reasoningEffort: body.reasoning_effort ?? null,
+      maxOutputTokens: body.max_tokens ?? null, structuredOutput: 'none', adjustments: [],
+    });
+  });
+
   test('Bearer 認証で構造化出力を要求し、usage と本文を返す', async () => {
     const fetchMock = jest.fn().mockResolvedValue(
       response({

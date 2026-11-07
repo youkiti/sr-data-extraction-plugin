@@ -58,6 +58,29 @@ function makeDeps(now = '2026-07-01T00:00:00.000Z'): {
 }
 
 describe('OpenRouter の報告費用', () => {
+  test.each(['success', 'provider-error', 'other-error'])('送信設定とモデルを payload と行へ残す: %s', async (kind) => {
+    const sentSettings = { temperature: 0, reasoningEffort: null, maxOutputTokens: 123,
+      structuredOutput: 'none' as const, adjustments: ['reasoning_effort_dropped'] };
+    const provider = makeProvider(async () => {
+      if (kind === 'provider-error') {
+        throw new LlmProviderError('failed', 'gemini', 500, '', null, false, null, null, sentSettings);
+      }
+      if (kind === 'other-error') {
+        throw new Error('failed');
+      }
+      return { text: 'ok', tokensIn: null, tokensOut: null, cachedTokensIn: null, raw: {},
+        sentSettings, responseModel: 'actual-model' };
+    });
+    const { deps, recorded } = makeDeps();
+    await withLogging(provider, 'extract_study', deps).chat([]).catch(() => undefined);
+    const expectedSettings = kind === 'other-error' ? null : sentSettings;
+    const responseModel = kind === 'success' ? 'actual-model' : null;
+    expect(recorded.entries[0]).toMatchObject({ sentSettings: expectedSettings, responseModel });
+    expect(JSON.parse(recorded.uploads[0]!.content)).toMatchObject({
+      sentSettings: expectedSettings, responseModel,
+    });
+  });
+
   test.each([
     [0.00207214, 0.00207214], [0, 0], [undefined, 0.000308],
     [null, 0.000308], ['0.1', 0.000308], [-1, 0.000308],
@@ -221,6 +244,8 @@ describe('withLogging', () => {
     await logged.chat([{ role: 'user', content: 'q' }], { temperature: 0 });
     const promptUpload = JSON.parse(recorded.uploads[0]!.content);
     expect(promptUpload).toEqual({
+      responseModel: null,
+      sentSettings: null,
       promptVersion: 3,
       messages: [{ role: 'user', content: 'q' }],
       options: { temperature: 0 },

@@ -12,6 +12,8 @@ function makeFacts(overrides: Partial<MethodsFacts> = {}): MethodsFacts {
     draftModelIds: [],
     draftProviders: [],
     modelIds: [],
+    temperatures: [],
+    reasoningEfforts: [],
     modelIdsIncludeRequested: false,
     providers: [],
     includedStudyCount: 0,
@@ -30,6 +32,37 @@ function makeFacts(overrides: Partial<MethodsFacts> = {}): MethodsFacts {
     ...overrides,
   };
 }
+
+describe('生成設定の文案', () => {
+  test.each([
+    [['0', '0.3'], ['low', 'high'],
+      'The LLM was called with a temperature of 0, 0.3 and a reasoning effort setting of low, high.',
+      'LLM の呼び出しでは temperature を 0, 0.3、推論の強さ（reasoning effort）を low, high に設定した。'],
+    [['0'], [], 'The LLM was called with a temperature of 0.',
+      'LLM の呼び出しでは temperature を 0 に設定した。'],
+    [[], ['low'], 'The LLM was called with a reasoning effort setting of low.',
+      'LLM の呼び出しでは推論の強さ（reasoning effort）を low に設定した。'],
+    [[], [], '', ''],
+  ])('温度 %j / 推論 %j の記録だけを反映する', (temperatures, reasoningEfforts, en, ja) => {
+    const facts = makeFacts({
+      temperatures: temperatures as string[],
+      reasoningEfforts: reasoningEfforts as string[],
+      includedStudyCount: 1,
+      extractedStudyCount: 1,
+    });
+    for (const [language, sentence] of [['en', en], ['ja', ja]] as const) {
+      const text = buildMethodsText(language, 'single', facts).text;
+      if (sentence) {
+        expect(text).toContain(sentence);
+      } else {
+        expect(text).not.toContain('temperature');
+        expect(text).not.toContain('reasoning effort');
+      }
+    }
+    const empty = buildMethodsText('en', 'single', { ...facts, extractedStudyCount: 0 }).text;
+    expect(empty).not.toContain('The LLM was called');
+  });
+});
 
 /** 典型的なプロジェクト（AI 草案・パイロット後に改訂・全研究で事前抽出・全セル検証済み） */
 function typicalFacts(overrides: Partial<MethodsFacts> = {}): MethodsFacts {

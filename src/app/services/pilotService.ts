@@ -305,6 +305,7 @@ export async function runPilot(store: Store, deps: PilotServiceDeps): Promise<vo
       {
         google: deps.google,
         apiKey: providerResolution.config.apiKey,
+        profile: deps.profile,
         provider: providerResolution.config.provider,
         endpoint: providerResolution.config.endpoint,
         reasoningEffort: providerResolution.config.reasoningEffort,

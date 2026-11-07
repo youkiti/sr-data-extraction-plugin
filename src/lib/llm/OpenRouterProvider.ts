@@ -8,6 +8,7 @@ import {
   type LlmUsage,
   type LlmFailureKind,
   type ReasoningEffort,
+  type SentRequestSettings,
 } from './LLMProvider';
 import { parseRetryAfterMs } from './retry';
 
@@ -51,6 +52,7 @@ interface OpenRouterChoice {
 }
 
 interface OpenRouterResponse {
+  model?: unknown;
   choices?: OpenRouterChoice[];
   usage?: {
     prompt_tokens?: number;
@@ -156,6 +158,7 @@ export class OpenRouterProvider implements LLMProvider {
 
   async chat(messages: readonly ChatMessage[], options: ChatOptions = {}): Promise<ChatResponse> {
     const body = this.buildRequestBody(messages, options);
+    const sentSettings = readSentSettings(body);
     const fetchFn = this.fetchImpl ?? globalThis.fetch;
     const res = await fetchFn(ENDPOINT, {
       method: 'POST',
@@ -178,6 +181,8 @@ export class OpenRouterProvider implements LLMProvider {
         false,
         // HTTP 404 の画像入力非対応エラー（実測済み）だけを判別する。それ以外は不明のまま
         classifyHttpErrorFailureKind(res.status, text),
+        null,
+        sentSettings,
       );
     }
     // 応答ボディの検査（issue #187）: 実プロジェクトで「HTTP 200 なのにボディが途切れて
@@ -204,6 +209,8 @@ export class OpenRouterProvider implements LLMProvider {
         null,
         true,
         'malformed',
+        null,
+        sentSettings,
       );
     }
     const usage = this.parseUsage(json);
@@ -220,6 +227,7 @@ export class OpenRouterProvider implements LLMProvider {
         true, // 上流プロバイダの一時障害の可能性があるため再試行対象
         classifyChoiceErrorFailureKind(choice),
         usage,
+        sentSettings,
       );
     }
     if (finishReason === 'length' || finishReason === 'content_filter') {
@@ -233,6 +241,7 @@ export class OpenRouterProvider implements LLMProvider {
         false,
         finishReason === 'length' ? 'output_limit' : 'content_filter',
         usage,
+        sentSettings,
       );
     }
     if (content === undefined || content === null || content === '') {
@@ -245,6 +254,7 @@ export class OpenRouterProvider implements LLMProvider {
         false,
         null,
         usage,
+        sentSettings,
       );
     }
     return {
@@ -254,6 +264,8 @@ export class OpenRouterProvider implements LLMProvider {
       cachedTokensIn: usage.cachedTokensIn,
       ...('costUsd' in usage ? { costUsd: usage.costUsd } : {}),
       raw: json,
+      sentSettings,
+      responseModel: typeof json.model === 'string' ? json.model : null,
     };
   }
 
@@ -321,4 +333,22 @@ export class OpenRouterProvider implements LLMProvider {
     }
     return body;
   }
+}
+
+/** 最終送信本文から生成設定を読み取る。 */
+function readSentSettings(body: Record<string, unknown>): SentRequestSettings {
+  const format = body['response_format'] as { type: string } | undefined;
+  return {
+    temperature: (body['temperature'] as number | undefined) ?? null,
+    reasoningEffort: (body['reasoning_effort'] as string | undefined) ?? null,
+    maxOutputTokens: (body['max_tokens'] as number | undefined) ?? null,
+    // buildRequestBody は json_schema に常に strict:true を付けて送るため、strict として記録する
+    structuredOutput:
+      format?.type === 'json_schema'
+        ? 'json_schema_strict'
+        : format?.type === 'json_object'
+          ? 'json_object'
+          : 'none',
+    adjustments: [],
+  };
 }

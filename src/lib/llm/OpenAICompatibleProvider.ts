@@ -8,6 +8,7 @@ import {
   type LLMProvider,
   type LlmUsage,
   type ReasoningEffort,
+  type SentRequestSettings,
 } from './LLMProvider';
 import { normalizeOpenAiCompatibleEndpoint } from '../storage/settingsStore';
 
@@ -40,6 +41,7 @@ export interface OpenAICompatibleProviderOptions {
 }
 
 interface OpenAICompatibleResponse {
+  model?: unknown;
   choices?: Array<{
     message?: { role?: string; content?: string | null };
     finish_reason?: string;
@@ -154,21 +156,22 @@ export class OpenAICompatibleProvider implements LLMProvider {
     // （`reasoningEffortDropped` は false→true の一方向のみ、`mode` も配列を前進するだけで
     // 後退しない。どちらも有限回で尽きるため、最終的に必ず throw で終わる）
     let reasoningEffortDropped = false;
+    const adjustments: string[] = [];
 
     for (;;) {
       const sendReasoningEffort = !reasoningEffortDropped;
+      const body = this.buildRequestBody(messages, options, mode, !sendReasoningEffort);
+      const sentSettings = readSentSettings(body, adjustments);
       const res = await fetchFn(this.endpoint, {
         method: 'POST',
         headers,
-        body: JSON.stringify(
-          this.buildRequestBody(messages, options, mode, !sendReasoningEffort),
-        ),
+        body: JSON.stringify(body),
       });
       if (res.ok) {
         if (mode !== undefined) {
           this.structuredOutputMode = mode;
         }
-        return this.parseSuccessResponse(res);
+        return this.parseSuccessResponse(res, sentSettings);
       }
       const text = await res.text().catch(() => '');
       const error = new LlmProviderError(
@@ -176,6 +179,11 @@ export class OpenAICompatibleProvider implements LLMProvider {
         this.providerId,
         res.status,
         text,
+        null,
+        false,
+        null,
+        null,
+        sentSettings,
       );
 
       // reasoning_effort 拒否の判定を構造化出力の判定より先に見る（このリクエストで実際に
@@ -189,6 +197,7 @@ export class OpenAICompatibleProvider implements LLMProvider {
         isReasoningEffortRejection(res.status, text)
       ) {
         reasoningEffortDropped = true;
+        adjustments.push('reasoning_effort_dropped');
         continue;
       }
 
@@ -201,6 +210,7 @@ export class OpenAICompatibleProvider implements LLMProvider {
       ) {
         throw error;
       }
+      adjustments.push(`structured_output:${mode}->${nextMode}`);
       mode = nextMode;
     }
   }
@@ -214,7 +224,10 @@ export class OpenAICompatibleProvider implements LLMProvider {
    * 上記に当てはまらなければ理由不明のまま null にする（構造化出力の互換性リトライ〔上位の
    * for ループ〕は HTTP ステータスだけで判定するため、ここでの応答内容検査とは独立に働く）
    */
-  private async parseSuccessResponse(res: Response): Promise<ChatResponse> {
+  private async parseSuccessResponse(
+    res: Response,
+    sentSettings: SentRequestSettings,
+  ): Promise<ChatResponse> {
     const bodyText = await res.text();
     let json: OpenAICompatibleResponse;
     try {
@@ -228,6 +241,8 @@ export class OpenAICompatibleProvider implements LLMProvider {
         null,
         true,
         'malformed',
+        null,
+        sentSettings,
       );
     }
     const usage = this.parseUsage(json);
@@ -245,6 +260,7 @@ export class OpenAICompatibleProvider implements LLMProvider {
         false,
         finishReason === 'length' ? 'output_limit' : 'content_filter',
         usage,
+        sentSettings,
       );
     }
     if (content === undefined || content === null || content === '') {
@@ -257,6 +273,7 @@ export class OpenAICompatibleProvider implements LLMProvider {
         false,
         null,
         usage,
+        sentSettings,
       );
     }
     return {
@@ -265,6 +282,8 @@ export class OpenAICompatibleProvider implements LLMProvider {
       tokensOut: usage.tokensOut,
       cachedTokensIn: usage.cachedTokensIn,
       raw: json,
+      sentSettings,
+      responseModel: typeof json.model === 'string' ? json.model : null,
     };
   }
 
@@ -330,4 +349,25 @@ export class OpenAICompatibleProvider implements LLMProvider {
     }
     return body;
   }
+}
+
+/** 最終送信本文から生成設定を読み取る。 */
+function readSentSettings(body: Record<string, unknown>, adjustments: string[]): SentRequestSettings {
+  const format = body['response_format'] as
+    | { type: string; json_schema?: { strict?: boolean } }
+    | undefined;
+  return {
+    temperature: (body['temperature'] as number | undefined) ?? null,
+    reasoningEffort: (body['reasoning_effort'] as string | undefined) ?? null,
+    maxOutputTokens: (body['max_tokens'] as number | undefined) ?? null,
+    structuredOutput:
+      format?.type === 'json_schema'
+        ? format.json_schema?.strict
+          ? 'json_schema_strict'
+          : 'json_schema'
+        : format?.type === 'json_object'
+          ? 'json_object'
+          : 'none',
+    adjustments: [...adjustments],
+  };
 }

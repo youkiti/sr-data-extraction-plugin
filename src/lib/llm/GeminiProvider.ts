@@ -23,6 +23,7 @@ import {
   type LlmUsage,
   type LlmFailureKind,
   type ReasoningEffort,
+  type SentRequestSettings,
 } from './LLMProvider';
 import { parseRetryAfterMs } from './retry';
 
@@ -41,6 +42,7 @@ const FALLBACK_MODEL = 'gemini-3.5-flash';
 const ENDPOINT_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
 
 interface GeminiResponse {
+  modelVersion?: unknown;
   candidates?: Array<{
     content?: { parts?: Array<{ text?: string }>; role?: string };
     finishReason?: string;
@@ -125,6 +127,8 @@ export class GeminiProvider implements LLMProvider {
       this.apiKey,
     )}`;
     const body = this.buildRequestBody(messages, options);
+    const adjustments: string[] = [];
+    let sentSettings = readSentSettings(body, adjustments);
     const fetchFn = this.fetchImpl ?? globalThis.fetch;
     let res = await fetchFn(url, {
       method: 'POST',
@@ -137,6 +141,8 @@ export class GeminiProvider implements LLMProvider {
       if (res.status === 400 && /thinking level/i.test(text) && config?.['thinkingConfig']) {
         // 同じ本文から指定だけを外す。再送の失敗はそのまま返し、再び縮退しない。
         delete config['thinkingConfig'];
+        adjustments.push('thinking_config_dropped');
+        sentSettings = readSentSettings(body, adjustments);
         res = await fetchFn(url, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -149,6 +155,10 @@ export class GeminiProvider implements LLMProvider {
             res.status,
             await res.text().catch(() => ''),
             parseRetryAfterMs(res.headers.get('retry-after')),
+            false,
+            null,
+            null,
+            sentSettings,
           );
         }
       } else {
@@ -158,6 +168,10 @@ export class GeminiProvider implements LLMProvider {
           res.status,
           text,
           parseRetryAfterMs(res.headers.get('retry-after')),
+          false,
+          null,
+          null,
+          sentSettings,
         );
       }
     }
@@ -180,6 +194,8 @@ export class GeminiProvider implements LLMProvider {
         null,
         true,
         'malformed',
+        null,
+        sentSettings,
       );
     }
     const usage = this.parseUsage(json);
@@ -199,6 +215,7 @@ export class GeminiProvider implements LLMProvider {
         false,
         FINISH_REASON_FAILURE_KIND[finishReason] ?? null,
         usage,
+        sentSettings,
       );
     }
     const text = extractText(json);
@@ -217,12 +234,15 @@ export class GeminiProvider implements LLMProvider {
         false,
         blockReason !== undefined ? (BLOCK_REASON_FAILURE_KIND[blockReason] ?? null) : null,
         usage,
+        sentSettings,
       );
     }
     return {
       text,
       ...usage,
       raw: json,
+      sentSettings,
+      responseModel: typeof json.modelVersion === 'string' ? json.modelVersion : null,
     };
   }
 
@@ -417,4 +437,21 @@ export function toGeminiSchema(schema: JsonSchema): Record<string, unknown> {
     }
   }
   return out;
+}
+
+/** 最終送信本文から生成設定を読み取る。 */
+function readSentSettings(body: Record<string, unknown>, adjustments: string[]): SentRequestSettings {
+  const config = body['generationConfig'] as Record<string, unknown> | undefined;
+  const thinking = config?.['thinkingConfig'] as { thinkingLevel?: string } | undefined;
+  return {
+    temperature: (config?.['temperature'] as number | undefined) ?? null,
+    reasoningEffort: thinking?.thinkingLevel ?? null,
+    maxOutputTokens: (config?.['maxOutputTokens'] as number | undefined) ?? null,
+    structuredOutput: config?.['responseSchema']
+      ? 'response_schema'
+      : config?.['responseMimeType']
+        ? 'json_mime'
+        : 'none',
+    adjustments: [...adjustments],
+  };
 }

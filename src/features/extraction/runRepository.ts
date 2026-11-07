@@ -158,6 +158,11 @@ export function extractionRunToRow(run: ExtractionRun): (string | number | null)
     run.costEstimate,
     fieldIdsToCell(run.fieldIds),
     warningsToCell(run.warnings),
+    run.executedBy ?? null,
+    run.temperature ?? null,
+    run.reasoningEffort ?? null,
+    run.promptVersion ?? null,
+    run.extensionVersion ?? null,
   ];
 }
 
@@ -170,7 +175,7 @@ export async function appendExtractionRun(
 }
 
 /**
- * ExtractionRuns タブのヘッダ行を任意列（field_ids / warnings）込みのフルヘッダへ拡張する
+ * ExtractionRuns タブのヘッダ行を任意列込みのフルヘッダへ拡張する。
  * （既存プロジェクトの後方互換移行。evidenceRepository.ensureEvidenceBboxColumns と同じ方式）。
  * - 先頭 14 列（旧ヘッダ）が SHEET_HEADERS.ExtractionRuns と食い違う場合は throw
  *   （想定外のタブ・壊れたプロジェクトへの書き込み事故を防ぐ）
@@ -190,7 +195,7 @@ export async function ensureRunOptionalColumns(
   SHEET_HEADERS.ExtractionRuns.slice(0, LEGACY_COLUMN_COUNT).forEach((name, i) => {
     if ((header[i] ?? '') !== name) {
       throw new Error(
-        `ExtractionRuns のヘッダ ${i + 1} 列目が "${name}" ではありません（実際: "${header[i] ?? ''}"）。任意列（field_ids / warnings）の移行を中止します`,
+        `ExtractionRuns のヘッダ ${i + 1} 列目が "${name}" ではありません（実際: "${header[i] ?? ''}"）。任意列の移行を中止します`,
       );
     }
   });
@@ -198,7 +203,7 @@ export async function ensureRunOptionalColumns(
     const idx = LEGACY_COLUMN_COUNT + i;
     if (idx < header.length && (header[idx] ?? '') !== name) {
       throw new Error(
-        `ExtractionRuns のヘッダ ${idx + 1} 列目が "${name}" ではありません（実際: "${header[idx] ?? ''}"）。任意列（field_ids / warnings）の移行を中止します`,
+        `ExtractionRuns のヘッダ ${idx + 1} 列目が "${name}" ではありません（実際: "${header[idx] ?? ''}"）。任意列の移行を中止します`,
       );
     }
   });
@@ -566,6 +571,11 @@ function rowToExtractionRun(raw: (string | null)[], rowIndex: number): Extractio
     costEstimate: parseNullableNumber(raw[13], context, 'cost_estimate'),
     fieldIds: parseFieldIds(raw[14]),
     warnings: parseRunWarnings(raw[15]),
+    executedBy: emptyToNull(raw[16]),
+    temperature: emptyToNull(raw[17]),
+    reasoningEffort: emptyToNull(raw[18]),
+    promptVersion: parseNullableNumber(raw[19], context, 'prompt_version'),
+    extensionVersion: emptyToNull(raw[20]),
   };
 }
 
@@ -576,6 +586,10 @@ function rowToExtractionRun(raw: (string | null)[], rowIndex: number): Extractio
  * 呼び出し側（features/export/methodsFacts）で畳み込む
  */
 export interface MethodsRunFact {
+  /** 送信温度の一覧。旧行は不明。 */
+  temperature?: string | null;
+  /** 送信した推論の強さの一覧。旧行は不明。 */
+  reasoningEffort?: string | null;
   runId: string;
   runType: RunType;
   /** 完了行の status（done / partial_failure） */
@@ -610,6 +624,8 @@ export async function readMethodsRunFacts(
       provider: (raw[4] ?? '') as LlmProviderId,
       requestedModel: raw[5] ?? '',
       modelVersion: emptyToNull(raw[6]),
+      temperature: emptyToNull(raw[17]),
+      reasoningEffort: emptyToNull(raw[18]),
       studyIds: parseStudyIds(raw[3]),
       fieldIds: parseFieldIds(raw[14]),
       startedAt: emptyToNull(raw[9]),

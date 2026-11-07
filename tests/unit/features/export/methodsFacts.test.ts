@@ -75,6 +75,16 @@ function makeInput(overrides: Partial<MethodsFactsInput> = {}): MethodsFactsInpu
 }
 
 describe('buildMethodsFacts: 事前抽出の成否', () => {
+  test('モデル版と送信設定を分割し、空・未送信・重複を除く', () => {
+    const facts = buildMethodsFacts(makeInput({ runFacts: [
+      makeRun({ modelVersion: 'a,b,a', temperature: '0,none,0.3,0', reasoningEffort: 'none,low,high,low' }),
+      makeRun({ runId: 'r2', modelVersion: null, requestedModel: 'fallback', temperature: '', reasoningEffort: '' }),
+    ] }));
+    expect(facts.modelIds).toEqual(['a', 'b', 'fallback']);
+    expect(facts.temperatures).toEqual(['0', '0.3']);
+    expect(facts.reasoningEfforts).toEqual(['low', 'high']);
+  });
+
   test('done の run の研究は成功。採用研究（アクティブ）でない研究は数えない', () => {
     const facts = buildMethodsFacts(
       makeInput({ runFacts: [makeRun({ studyIds: ['s1', 's2', 'inactive'] })] }),

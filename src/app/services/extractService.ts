@@ -402,6 +402,7 @@ async function performRun(
     {
       google: deps.google,
       apiKey: params.providerConfig.apiKey,
+      profile: deps.profile,
       provider: params.providerConfig.provider,
       endpoint: params.providerConfig.endpoint,
       reasoningEffort: params.providerConfig.reasoningEffort,

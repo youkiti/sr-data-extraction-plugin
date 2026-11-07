@@ -230,6 +230,8 @@ function makeOutcome(
       tokensIn: 100,
       tokensOut: 50,
       modelVersion: 'gemini-test-001',
+      temperature: null,
+      reasoningEffort: null,
     },
   };
 }

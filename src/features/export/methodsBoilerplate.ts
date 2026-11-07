@@ -21,6 +21,10 @@ export interface MethodsFacts {
   draftProviders: string[];
   /** 事前抽出に成功した run のモデル（model_version。無ければ requested_model。新しい順・重複除去） */
   modelIds: string[];
+  /** 事前抽出に使った送信温度。未送信・不明は除く。 */
+  temperatures: string[];
+  /** 事前抽出に使った推論の強さ。未送信・不明は除く。 */
+  reasoningEfforts: string[];
   /** modelIds に requested_model で代用したものがある（カードの説明文で示す） */
   modelIdsIncludeRequested: boolean;
   /** 同 run の provider 表示名（gemini → Gemini / openrouter → OpenRouter。重複除去） */
@@ -136,6 +140,20 @@ const PREEXTRACT_SOME: Sentence = {
 const PREEXTRACT_SOME_ONE: Sentence = {
   en: 'For {{n_extracted}} of the {{n_included}} included study, an LLM ({{model_id}}, accessed via the {{provider}} API) pre-extracted the form items from the full-text PDF and returned, for each value, a verbatim quotation of the supporting text, which the tool located and highlighted in the source PDF.',
   ja: PREEXTRACT_SOME.ja,
+};
+
+/** 記録から分かる生成設定だけを文案へ反映する。 */
+const SETTINGS_BOTH: Sentence = {
+  en: 'The LLM was called with a temperature of {{temperature}} and a reasoning effort setting of {{reasoning_effort}}.',
+  ja: 'LLM の呼び出しでは temperature を {{temperature}}、推論の強さ（reasoning effort）を {{reasoning_effort}} に設定した。',
+};
+const SETTINGS_TEMPERATURE: Sentence = {
+  en: 'The LLM was called with a temperature of {{temperature}}.',
+  ja: 'LLM の呼び出しでは temperature を {{temperature}} に設定した。',
+};
+const SETTINGS_REASONING: Sentence = {
+  en: 'The LLM was called with a reasoning effort setting of {{reasoning_effort}}.',
+  ja: 'LLM の呼び出しでは推論の強さ（reasoning effort）を {{reasoning_effort}} に設定した。',
 };
 
 // §2.2 事前抽出が届かなかった研究
@@ -275,6 +293,13 @@ function paragraph2(workflow: MethodsWorkflow, facts: MethodsFacts): Sentence[] 
   const one = allExtracted ? PREEXTRACT_ALL_ONE : PREEXTRACT_SOME_ONE;
   const many = allExtracted ? PREEXTRACT_ALL : PREEXTRACT_SOME;
   const sentences: Sentence[] = [byCount(facts.includedStudyCount, one, many)];
+  if (facts.extractedStudyCount > 0) {
+    if (facts.temperatures.length > 0) {
+      sentences.push(facts.reasoningEfforts.length > 0 ? SETTINGS_BOTH : SETTINGS_TEMPERATURE);
+    } else if (facts.reasoningEfforts.length > 0) {
+      sentences.push(SETTINGS_REASONING);
+    }
+  }
   if (facts.extractedStudyCount > 0 && facts.extractedStudyCount < facts.includedStudyCount) {
     const remaining = facts.includedStudyCount - facts.extractedStudyCount;
     sentences.push(byCount(remaining, NOT_EXTRACTED_ONE, NOT_EXTRACTED));
@@ -357,6 +382,8 @@ export function buildMethodsText(
     draft_model_id: listOrNull(facts.draftModelIds),
     draft_provider: listOrNull(facts.draftProviders),
     model_id: listOrNull(facts.modelIds),
+    temperature: listOrNull(facts.temperatures),
+    reasoning_effort: listOrNull(facts.reasoningEfforts),
     provider: listOrNull(facts.providers),
     n_pilot: positiveOrNull(facts.pilotStudyCount),
     n_form_revision: String(facts.formRevisionCount),

@@ -144,7 +144,7 @@ export function buildMethodsFacts(input: MethodsFactsInput): MethodsFacts {
   // 事前抽出のモデル: 実際の版（model_version）が無い run は要求したモデル ID で代用する
   const modelIds = dedupe(
     usedRuns
-      .map((run) => run.modelVersion ?? run.requestedModel)
+      .flatMap((run) => (run.modelVersion ?? run.requestedModel).split(','))
       .filter((model) => model !== ''),
   );
   const modelIdsIncludeRequested = usedRuns.some(
@@ -173,6 +173,14 @@ export function buildMethodsFacts(input: MethodsFactsInput): MethodsFacts {
     draftModelIds: dedupe(draftLogs.map((log) => log.model).filter((model) => model !== '')),
     draftProviders: providerNames(draftLogs.map((log) => log.provider)),
     modelIds,
+    temperatures: dedupe(
+      usedRuns.flatMap((run) => (run.temperature ?? '').split(','))
+        .filter((value) => value !== '' && value !== 'none'),
+    ),
+    reasoningEfforts: dedupe(
+      usedRuns.flatMap((run) => (run.reasoningEffort ?? '').split(','))
+        .filter((value) => value !== '' && value !== 'none'),
+    ),
     modelIdsIncludeRequested,
     providers: providerNames(usedRuns.map((run) => run.provider)),
     includedStudyCount: active.size,

@@ -107,7 +107,8 @@ const AI_RESPONSE: ChatResponse = {
   tokensIn: 1000,
   tokensOut: 200,
   cachedTokensIn: null,
-  raw: { modelVersion: 'gemini-2.5-flash-001' },
+  responseModel: 'gemini-2.5-flash-001',
+  raw: {},
 };
 
 function makeProvider(chat: jest.Mock): LLMProvider {
@@ -146,6 +147,28 @@ beforeEach(() => {
   mockedReadArmRows.mockResolvedValue([]);
 });
 
+describe('抽出実行の再現情報', () => {
+  test.each(['signed-in', 'no-profile', 'failed'])('実行者の取得状態 %s と版を記録する', async (kind) => {
+    const deps = makeDeps(jest.fn().mockResolvedValue(AI_RESPONSE));
+    const profile = kind === 'no-profile' ? undefined : {
+      getProfileUserInfo: jest.fn().mockImplementation(async () => {
+        if (kind === 'failed') {
+          throw new Error('profile failed');
+        }
+        return { email: 'user@example.test', id: '' };
+      }),
+    };
+    const { run } = await runExtraction(baseParams(), { ...deps, profile, getToolVersion: () => '1.2.3' });
+    expect(run).toMatchObject({
+      executedBy: kind === 'signed-in' ? 'user@example.test' : null,
+      promptVersion: EXTRACT_DATA_PROMPT_VERSION, extensionVersion: '1.2.3',
+    });
+    expect(mockedAppendRun.mock.calls[0]![1]).toMatchObject({
+      temperature: null, reasoningEffort: null, status: 'running',
+    });
+  });
+});
+
 describe('runExtraction', () => {
   test('planRun → executeRun → Evidence 追記 → ai 行転記 → ExtractionRuns 追記を結線する', async () => {
     const chat = jest.fn().mockResolvedValue(AI_RESPONSE);
@@ -159,6 +182,11 @@ describe('runExtraction', () => {
     // 実行結果と ExtractionRuns 行
     expect(outcome.result.status).toBe('done');
     expect(outcome.run).toEqual({
+      executedBy: null,
+      promptVersion: EXTRACT_DATA_PROMPT_VERSION,
+      extensionVersion: '0.0.0-test',
+      temperature: null,
+      reasoningEffort: null,
       runId: 'u1', // 最初の uuid が run_id
       runType: 'full',
       schemaVersion: 2,

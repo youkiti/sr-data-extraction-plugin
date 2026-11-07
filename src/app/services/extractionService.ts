@@ -15,6 +15,7 @@
 // 値は tier 連動（レート制限ポリシーの flushEveryNStudies）を優先し、
 // 未解決時のみ DEFAULT_FLUSH_EVERY_N_STUDIES へフォールバックする
 // （docs/handoff-20260710-sheets-write-batching.md）
+import { getToolVersion as defaultGetToolVersion } from '../../utils/toolVersion';
 import type { ExtractionRun, RunType, RunWarning } from '../../domain/extractionRun';
 import type { ModelPricing } from '../../lib/llm/pricing';
 import type { LlmProviderId } from '../../domain/llmApiLog';
@@ -50,6 +51,7 @@ import {
   type ExtractDataImagePage,
   type ExtractDataPage,
 } from '../../features/extraction/skills/extractData';
+import { getCurrentUserEmail, type ProfileDeps } from '../../lib/google/identity';
 import { uploadTextFile } from '../../lib/google/drive';
 import type { GoogleApiDeps } from '../../lib/google/types';
 import { appendLlmApiLog, ensureLlmApiLogColumns } from '../../lib/llm/apiLogRepository';
@@ -71,6 +73,9 @@ function toMessage(err: unknown): string {
 
 export interface ExtractionServiceDeps {
   google: GoogleApiDeps;
+  profile?: ProfileDeps;
+  /** テスト用の拡張版取得。省略時は manifest を読む。 */
+  getToolVersion?: () => string | null;
   /** BYOK の API キー（secretsStore から呼び出し側が解決して渡す） */
   apiKey: string;
   /** 明示設定時の接続方式。未指定は従来どおりモデル ID から解決 */
@@ -237,7 +242,19 @@ export async function runExtraction(
   // 複数バッチになりうるため一意化する）。no_text_layer 文書もページ画像で抽出対象になる
   // ため除外されない（pdf_native。handoff-scanned-pdf-native-highlight.md §7.4 PR2）
   const studyIds = [...new Set(plan.batches.map((batch) => batch.studyId))];
+  let executedBy: string | null = null;
+  if (deps.profile) {
+    try {
+      executedBy = await getCurrentUserEmail(deps.profile);
+    } catch {
+      // 実行者を取得できなくても抽出は続行し、空欄で記録する。
+    }
+  }
+  const extensionVersion = (deps.getToolVersion ?? defaultGetToolVersion)();
   const runBase = {
+    executedBy,
+    promptVersion: EXTRACT_DATA_PROMPT_VERSION,
+    extensionVersion,
     runId,
     runType: params.runType,
     schemaVersion: plan.schemaVersion,
@@ -281,6 +298,8 @@ export async function runExtraction(
     {
       ...runBase,
       modelVersion: null,
+      temperature: null,
+      reasoningEffort: null,
       status: 'running',
       finishedAt: null,
       tokensIn: null,
@@ -332,6 +351,8 @@ export async function runExtraction(
             section: failure.section,
             promptVersion: null,
             thoughtsTokensOut: null,
+            responseModel: null,
+            sentSettings: null,
             latencyMs: null,
             costEstimateUsd: null,
             error: `バッチ失敗（${failure.kind}）: ${failure.detail}`,
@@ -360,6 +381,8 @@ export async function runExtraction(
             section: warning.section,
             promptVersion: null,
             thoughtsTokensOut: null,
+            responseModel: null,
+            sentSettings: null,
             latencyMs: null,
             costEstimateUsd: null,
             error: `警告（arm_completeness）: ${describeArmCompletenessWarning(warning, fieldNameById)}`,
@@ -427,6 +450,8 @@ export async function runExtraction(
           section: null,
           promptVersion: null,
           thoughtsTokensOut: null,
+          responseModel: null,
+          sentSettings: null,
           latencyMs: null,
           costEstimateUsd: null,
           error: `転記失敗: ${transferError}`,
@@ -453,6 +478,8 @@ export async function runExtraction(
   const run: ExtractionRun = {
     ...runBase,
     modelVersion: result.modelVersion,
+    temperature: result.temperature,
+    reasoningEffort: result.reasoningEffort,
     status: transferError === null ? result.status : 'partial_failure',
     finishedAt: now(),
     tokensIn: result.tokensIn,

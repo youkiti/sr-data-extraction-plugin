@@ -23,6 +23,8 @@ function makeEntry(overrides: Partial<LlmApiLogEntry> = {}): LlmApiLogEntry {
     section: null,
     promptVersion: null,
     thoughtsTokensOut: null,
+    responseModel: null,
+    sentSettings: null,
     ...overrides,
   };
 }
@@ -56,6 +58,8 @@ describe('logEntryToRow', () => {
       'methods',
       9,
       50,
+      null,
+      null,
     ]);
   });
 
@@ -73,7 +77,7 @@ describe('logEntryToRow', () => {
     );
     expect(row.slice(7)).toEqual([
       null, null, null, null, null, 'boom (status=503)', null,
-      null, null, null, null, null,
+      null, null, null, null, null, null, null,
     ]);
   });
 });
@@ -190,6 +194,40 @@ describe('isWarningOnlyLogEntry', () => {
 });
 
 describe('readLlmApiLogEntries', () => {
+  test.each([
+    '', '{broken', 'null', '[]', '42', '{}',
+    JSON.stringify({ temperature: 'bad', reasoningEffort: null, maxOutputTokens: null,
+      structuredOutput: 'none', adjustments: [] }),
+    JSON.stringify({ temperature: null, reasoningEffort: 1, maxOutputTokens: null,
+      structuredOutput: 'none', adjustments: [] }),
+    JSON.stringify({ temperature: null, reasoningEffort: null, maxOutputTokens: 'bad',
+      structuredOutput: 'none', adjustments: [] }),
+    JSON.stringify({ temperature: null, reasoningEffort: null, maxOutputTokens: null,
+      structuredOutput: 1, adjustments: [] }),
+    JSON.stringify({ temperature: null, reasoningEffort: null, maxOutputTokens: null,
+      structuredOutput: 'none', adjustments: 'bad' }),
+    JSON.stringify({ temperature: null, reasoningEffort: null, maxOutputTokens: null,
+      structuredOutput: 'none', adjustments: [1] }),
+  ])('不正な設定 %s は不明として読み続ける', async (cell) => {
+    const row = logEntryToRow(makeEntry());
+    row[20] = cell;
+    const entries = await readLlmApiLogEntries('sid', depsFor([[...SHEET_HEADERS.LLMApiLog], row, row]));
+    expect(entries).toHaveLength(2);
+    expect(entries[0]!.sentSettings).toBeNull();
+  });
+
+  test('追加 2 列を JSON で書き込み、送信済み値と未送信値を読み戻す', async () => {
+    const sentSettings = { temperature: 0, reasoningEffort: null, maxOutputTokens: 123,
+      structuredOutput: 'json_schema' as const, adjustments: ['reasoning_effort_dropped'] };
+    const entry = makeEntry({ responseModel: 'actual-model', sentSettings });
+    const row = logEntryToRow(entry);
+    expect(row.slice(19)).toEqual(['actual-model', JSON.stringify(sentSettings)]);
+    expect(await readLlmApiLogEntries('sid', depsFor([[...SHEET_HEADERS.LLMApiLog], row]))).toEqual([entry]);
+    const empty = { ...sentSettings, temperature: null, reasoningEffort: 'low', maxOutputTokens: null };
+    const emptyRow = logEntryToRow(makeEntry({ sentSettings: empty }));
+    expect((await readLlmApiLogEntries('sid', depsFor([[], emptyRow])))[0]!.sentSettings).toEqual(empty);
+  });
+
   function depsFor(values: unknown[][]) {
     return {
       getAccessToken: jest.fn().mockResolvedValue('token'),
@@ -278,6 +316,8 @@ describe('readLlmApiLogEntries', () => {
         section: null,
         promptVersion: null,
         thoughtsTokensOut: null,
+        responseModel: null,
+        sentSettings: null,
       },
     ]);
   });

@@ -21,6 +21,7 @@ import {
   type ChatResponse,
   type LLMProvider,
   type LlmUsage,
+  type SentRequestSettings,
 } from './LLMProvider';
 import { estimateCostUsd } from './pricing';
 
@@ -110,15 +111,19 @@ export function withLogging(
       let response: ChatResponse | null = null;
       let usage: ChatResponse | LlmUsage | null = null;
       let errorMessage: string | null = null;
+      let sentSettings: SentRequestSettings | null = null;
       try {
         response = await provider.chat(messages, options);
         usage = response;
+        sentSettings = response.sentSettings ?? null;
         return response;
       } catch (err) {
         errorMessage = deps.omitPayload ? formatPayloadFreeError(err) : formatError(err);
         usage = err instanceof LlmProviderError ? err.usage : null;
+        sentSettings = err instanceof LlmProviderError ? err.sentSettings : null;
         throw err;
       } finally {
+        const responseModel = response?.responseModel ?? null;
         const latencyMs = Date.now() - startMs;
         // 質問パネルでは本文も要約も保存せず、利用量などのメタデータだけを残す。
         let promptRef = '';
@@ -133,6 +138,8 @@ export function withLogging(
                   promptVersion: deps.promptVersion ?? null,
                   messages: redactMessagesForLog(messages),
                   options,
+                  sentSettings,
+                  responseModel,
                 },
                 null,
                 2,
@@ -182,6 +189,8 @@ export function withLogging(
           section: options?.logContext?.section ?? null,
           promptVersion: deps.promptVersion ?? null,
           thoughtsTokensOut: usage?.thoughtsTokensOut ?? null,
+          responseModel,
+          sentSettings,
           latencyMs,
           // プロバイダの報告費用を優先し、未報告ならモデル単価表から概算する。未知モデルは null。
           // キャッシュヒット分はキャッシュ単価で積む（tokensIn はキャッシュ分を含む総入力

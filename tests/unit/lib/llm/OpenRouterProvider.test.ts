@@ -32,6 +32,35 @@ function chatCompletion(
 }
 
 describe('OpenRouterProvider.chat', () => {
+  test.each([undefined, null, 42, 'router-version'])('本文と応答モデルを記録する: %j', async (model) => {
+    const fetch = jest.fn().mockResolvedValue(jsonResponse({ ...chatCompletion('ok'), model }));
+    const result = await new OpenRouterProvider({ apiKey: 'k', model: 'test-model', fetch }).chat([], {
+      temperature: 0.2, reasoningEffort: 'high', maxOutputTokens: 123,
+      responseSchema: { type: 'object' },
+    });
+    const body = JSON.parse(fetch.mock.calls[0]![1].body);
+    // 送った本文が strict 付きの json_schema であり、記録もそれと一致する
+    expect(body.response_format.type).toBe('json_schema');
+    expect(body.response_format.json_schema.strict).toBe(true);
+    expect(result.sentSettings).toEqual({
+      temperature: body.temperature ?? null, reasoningEffort: body.reasoning_effort ?? null,
+      maxOutputTokens: body.max_tokens ?? null, structuredOutput: 'json_schema_strict',
+      adjustments: [],
+    });
+    expect(result.responseModel).toBe(typeof model === 'string' ? model : null);
+  });
+
+  test('HTTP 失敗にも最終本文の設定を残す', async () => {
+    const fetch = jest.fn().mockResolvedValue(errorResponse(500));
+    const error = await new OpenRouterProvider({ apiKey: 'k', model: 'test-model', fetch }).chat([]).catch((err: unknown) => err);
+    const body = JSON.parse(fetch.mock.calls[0]![1].body);
+    expect(error).toBeInstanceOf(LlmProviderError);
+    expect((error as LlmProviderError).sentSettings).toEqual({
+      temperature: body.temperature ?? null, reasoningEffort: body.reasoning_effort ?? null,
+      maxOutputTokens: body.max_tokens ?? null, structuredOutput: 'none', adjustments: [],
+    });
+  });
+
   test('正しい URL / Authorization / ロール変換 / body を送る', async () => {
     const fetch = jest
       .fn()
@@ -52,7 +81,7 @@ describe('OpenRouterProvider.chat', () => {
       tokensOut: 20,
       // usage が返っているので 0（計測できてヒット 0 件）。null は usage ごと無い場合
       cachedTokensIn: 0,
-      raw: expect.any(Object),
+      raw: expect.any(Object), responseModel: null, sentSettings: expect.any(Object),
     });
     expect(provider.providerId).toBe('openrouter');
     expect(provider.model).toBe('qwen/qwen3-235b-a22b-2507');
